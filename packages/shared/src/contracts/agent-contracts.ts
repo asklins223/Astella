@@ -60,6 +60,10 @@ export const agentTurnInterpretationProposalV1Schema = z.object({
   ambiguities: z.array(z.string().max(200)),
   /** Semantic, current-turn TTS direction. `none` never inherits a past request implicitly. */
   voiceStyle: agentVoiceStyleDecisionV1Schema,
+  /** Current-turn restrictions narrow execution, never grant authority.
+   * Optional for stored interpretations predating this contract. */
+  executionConstraints: z.object({ timeBasedWakeups: z.enum(["forbid", "unspecified"]),
+    sourceQuote: z.string().max(2000).nullable().optional() }).strict().optional(),
   /**
    * 伴星自己消息里**用户这一句没有接**的收尾邀请，按宿主给出的候选索引回填。
    *
@@ -133,6 +137,18 @@ export const agentArtifactRefV1Schema = z.discriminatedUnion("kind", [
   }).strict(),
 ]);
 
+/**
+ * 这一样成果在界面上的叫法，**只有这一处**（2026-10-14）：手记里的成果卡、聊天里的推荐卡
+ * 说的是同一个东西，词分叉的那天，用户就会看到"互动演示"和"演示页面"两张卡。
+ * 伴星以前只能把这些名字自己抄进正文，抄出来的不一定是页面上那个。
+ */
+export const AGENT_ARTIFACT_KIND_LABELS_V1: Record<AgentArtifactRefV1["kind"], string> = {
+  note_mind_map: "思维导图",
+  note_overview: "速看",
+  note_dynamic_artifact: "互动演示",
+  note_expansion: "拓展草稿",
+  card_candidates: "待审核学习卡",
+};
 /** 唯一登记制卡能力的名字；card 侧两种结果只配它。 */
 export const AGENT_CARD_GENERATION_CAPABILITY = "card_generation_generate";
 

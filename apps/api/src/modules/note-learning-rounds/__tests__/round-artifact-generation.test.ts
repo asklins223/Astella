@@ -1347,3 +1347,21 @@ test("真 provider：非 2xx 按可重试性分类，形状不合与截断都归
   assert.equal(unconfigured.ok, false);
   assert.equal(unconfigured.ok === false && unconfigured.class, "invalid_input");
 });
+
+test("引文卡存的是读者看到的那一句：列表行首符号不进引文，也不影响出处核对", () => {
+  // 实测（2026-10-14）：演示的 outline 引文落成 `- 自主：下一步动作由系统自己选…`，
+  // 而笔记页面上那个位置画的是圆点列表，读者看不到短横。
+  const blocks: readonly ArtifactEvidenceBlockV1[] = [
+    { ordinal: 9, type: "list", text: "- 自主：下一步由系统自己选\n- 行动：它能改变外部状态" },
+  ];
+  const grounded = groundArtifactStepsV1({
+    blocks,
+    steps: [
+      { title: "自主", narration: "下一步不是外部脚本写好的", evidenceOrdinal: 9, evidenceQuote: "自主：下一步由系统自己选" },
+      { title: "行动", narration: "它有能力改变外部状态", evidenceOrdinal: 9, evidenceQuote: "- 行动：它能改变外部状态" },
+    ],
+  });
+  assert.ok(grounded.ok, "模型带不带行首短横，都算逐字命中");
+  assert.equal(grounded.nodes[0]?.quote, "自主：下一步由系统自己选");
+  assert.equal(grounded.nodes[1]?.quote, "行动：它能改变外部状态", "落库形态与页面上那一句一致");
+});

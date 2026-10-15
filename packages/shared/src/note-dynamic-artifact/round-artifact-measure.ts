@@ -33,6 +33,8 @@
  * 是常事，为此判它编造是误伤。**逐字顺序不放松**——字符必须仍按原顺序出现在那一块里。
  */
 
+import { noteBlockRenderedTextV1 } from "../note-doc-schema.ts";
+
 /** 冻结快照里的一块正文。这里只声明核对真正用到的字段，所以能直接吃教学那侧的块。 */
 export interface ArtifactEvidenceBlockV1 {
   readonly ordinal: number;
@@ -94,6 +96,34 @@ export type ArtifactGroundingResultV1 =
   | { readonly ok: false; readonly reason: "empty" | "too_few"; readonly detail: string };
 
 /**
+ * 引号字形与 markdown 标记是「怎么排的」，不是「说了什么」——引文核对时一律不看。
+ *
+ * 实测（2026-10-14，《瑞利散射与天空的颜色》脑图）：原文存的是 ASCII 直引号 `"`，
+ * 模型按中文排版复述成 `“ ”`；核对把这一字之差判成"原文里找不到"，repair 那一发又
+ * 写成同样的弯引号，一发烧两次调用判红——用户只看到"这次生成没有完成"。
+ *
+ * 竖线是同一个形状的第二种成因（2026-10-14，37 万字符长文的脑图）：提示里给模型看的是
+ * **原始 markdown**（表格整行 `| 当前交流 | 当前请求… |`），核对用的却是**渲染后的正文**，
+ * 而 `noteBlockRenderedTextV1` 把竖线去掉了。于是模型引的每一句表格行都核不回去——
+ * 长笔记里表格行最多，必然在第一发就撞上（节点 g44c3 引第 891 段、节点 c42_objects
+ * 引第 42 段，两发都判死）。竖线和反引号一样是排版骨架，不是文字。
+ *
+ * 这条判据此前同时住在四份实现里（脑图/速看/扩展各自的 compactEvidence 与演示那套
+ * 整串比较），漏改一处就会静默分叉；这里收成唯一的一处。
+ */
+export const GROUNDING_MARKERS_V1 = "*_~`|\"'“”‘’‛„‟";
+
+/** 逐字符核对用的判据：这些字符不参与"是否同一句"的比较（空白由调用方自己判）。 */
+export function isGroundingMarkerV1(char: string): boolean {
+  return GROUNDING_MARKERS_V1.includes(char);
+}
+
+/** 整串比较用的归一：弯引号一律按直引号看（拿不到原文偏移的那套核对走这条）。 */
+export function normalizeGroundingQuotesV1(value: string): string {
+  return value.replace(/[“„‟”‘‛’]/gu, '"');
+}
+
+/**
  * 去掉 markdown 标记，得到「这句话读起来是什么」——与教学那侧的 `plainTextOfBlockV1`
  * 同一套规则。核对只在纯文本上进行：带 `**` 与不带 `**` 的同一段话必须都算命中。
  */
@@ -102,8 +132,18 @@ export function plainTextForGroundingV1(content: string): string {
     .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
     .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
     .replace(/^\s{0,3}#{1,6}\s*/gm, "")
+    // 列表符号在页面上画成圆点与编号，不是行首那个字符。留着它，模型照素材复述出来的
+    // 引文就带着「- 」（2026-10-14 实测：演示的 outline 引文全是 `- 自主：…`），
+    // 而读者在笔记上看到的那一句没有。权威形态是 noteBlockRenderedTextV1，
+    // 这一份是它的纯文本近似——两者要对齐着改。
+    .replace(/^\s{0,3}[-*+]\s+/gm, "")
+    .replace(/^\s{0,3}\d+[.)]\s+/gm, "")
     .replace(/^\s{0,3}>\s?/gm, "")
     .replace(/`{1,3}/g, "")
+    // 表格竖线：权威形态那一步把 markdown 解析成节点，竖线落在单元格边界上、不进文本
+    // （2026-10-14 实测：37 万字符长文的表格行整行渲染后没有一个 `|`）。这里剥掉它，
+    // 才对得上"读者看到的那一句"；与 GROUNDING_MARKERS_V1 里那个 `|` 是同一条决定。
+    .replace(/\|/g, "")
     .replace(/(\*\*|__)(.*?)\1/g, "$2")
     .replace(/(\*|_)(.*?)\1/g, "$2")
     .replace(/<[^>]+>/g, "")
@@ -118,7 +158,39 @@ function squashWhitespaceV1(text: string): string {
 
 /** 字面命中那一句判据的唯一写法：`plain` 已经是去掉标记并压掉空白的那一份。 */
 function containsQuoteV1(plainBlockText: string, quote: string): boolean {
-  return plainBlockText.includes(squashWhitespaceV1(quote));
+  // 引文那一侧走**同一道剥离**：模型从素材里逐字复制时会把行首的 `- ` 一起抄下来，
+  // 底本已经不看它，needle 再留着就变成"逐字对不上"的误伤。
+  // 引号字形同理不参与判等（见 normalizeGroundingQuotesV1 的注释）。
+  const needle = normalizeGroundingQuotesV1(
+    squashWhitespaceV1(plainTextForGroundingV1(quote)),
+  );
+  return needle.length > 0 && normalizeGroundingQuotesV1(plainBlockText).includes(needle);
+}
+
+/**
+ * 存给读者的那一句：到**渲染后的块文本**里把这句定位出来，取渲染文本的那一段。
+ *
+ * `plainTextForGroundingV1` 只剥行内标记，列表项的 `- ` 会留下——于是演示的引文卡上写着
+ * 「- 自主：下一步动作由系统自己选…」，而笔记页面上读者看到的那一句没有那个短横。
+ * 脑图/速看/扩展存的都是渲染文本，这里对齐成同一个口径。定位不到就照原样存，
+ * 不因此丢掉那一步：这句是否真的在块里，上面 `containsQuoteV1` 已经判过。
+ */
+function readerVisibleQuoteV1(block: ArtifactEvidenceBlockV1, quote: string): string {
+  const rendered = Array.from(noteBlockRenderedTextV1(block.type, block.text));
+  const kept: number[] = [];
+  for (let index = 0; index < rendered.length; index += 1) {
+    const char = rendered[index]!;
+    if (/\s/u.test(char) || isGroundingMarkerV1(char)) continue;
+    kept.push(index);
+  }
+  const target = Array.from(plainTextForGroundingV1(quote))
+    .filter(char => !/\s/u.test(char) && !isGroundingMarkerV1(char))
+    .join("");
+  if (target.length === 0 || kept.length < target.length) return quote;
+  const flat = kept.map(index => rendered[index]!).join("");
+  const at = flat.indexOf(target);
+  if (at < 0) return quote;
+  return rendered.slice(kept[at]!, kept[at + target.length - 1]! + 1).join("").trim() || quote;
 }
 
 /**
@@ -223,7 +295,7 @@ export function groundArtifactStepsV1(input: {
       title,
       narration,
       sectionLabel: sectionLabelForBlockV1(input.blocks, block.ordinal),
-      quote,
+      quote: readerVisibleQuoteV1(block, quote),
     });
   });
 

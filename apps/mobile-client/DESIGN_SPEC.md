@@ -1,71 +1,48 @@
-# 原生手机客户端界面与动效规范
+# 手机端：简约玻璃与伴星交互
 
-日期：2026-10-15。两端的目标是让同一产品看起来、用起来属于同一个“随身书房”，同时让系统返回、选图、键盘、录音权限和导航由各自宿主接管。iOS 是视觉与动效标尺；Android 保持同一版面重心、节奏、材质和触控反馈，以 Compose 与 Android 系统控件实现。不要拿 Web 页面包壳或跨端渲染来模拟原生宿主。
+2026-10-15 当前裁决。用户要求保留简约、玻璃、设计感和高级感；不接受系统控件默认外观堆叠，也不采用纸面绿色或装饰性英文编号的方向。iOS 登录／注册保留现有流程并优化；其他页面按同一套新结构重建，Android 对齐 iOS 的构图、比例、材质和动效。SwiftUI、UIKit、Compose 是实现技术，不决定产品的默认外观。
 
-**2026-10-15 修订**：按用户 2026-10-15 裁决全量修订本规范——伴星正式形态改为 Live2D 模型并明确在场矩阵（对话页完整在场、其他页轻量形态、事件全屏浮层）；动效基线提升为 Telegram 级：物理 spring、共享元素转场、可中断可反转手势，默认弹性而非例外，iOS 参数为 Android 标尺；对话输入区新增「+」二级菜单；新增选段→伴星三段式；对话支持文件附件与手机本机解析导入手记；录音与回复朗读以粒子波动双侧呼应并接入 TTS；认证页改为优先紧凑、放不下时表单区内滚动；AI 外发同意改为进入门槛。本规范的动效细则以新增的 [DESIGN_TOKENS.md](DESIGN_TOKENS.md) 双端参数表为准（该文件 2026-10-15 建立）。
+## Current decision — white authentication screens (2026-10-15)
 
-从登录页提炼的设计理由、官方资料与可迁移到后续页面的方法见[手机端界面设计心得与官方依据](DESIGN_NOTES.md)。
+The user requested direct implementation after the image exploration. This decision supersedes the earlier illustrated, iridescent authentication mockups: all nine authentication routes use a flat white background, the official app icon, typography and ordinary neutral glass. **Do not add companion portraits or hero illustrations to authentication pages.** The companion's name may remain in the approved copy. This restriction applies to authentication, not the actual companion conversation scene.
 
-## 视觉基础
+Inputs and submit/back buttons use a single blurred material plane, a uniform neutral edge and a small contact shadow. No caustics, colored sheen, rainbow borders, animated glow or opaque blue submit pill. Input labels remain outside the controls; focus uses a quiet blue outline. Verification uses six separate cells with one real native editing field. Existing API routes, session storage and server validation remain the owners of authentication.
 
-- iOS 优先使用动态语义颜色：系统背景、系统表面、主／次级文字、分隔线和系统蓝。Android 用 Material 3 颜色角色映射同一套中性色层级与单一品牌蓝，并分别适配明暗主题；不跟随壁纸引入无关的装饰色。
-- 不使用多色渐变、装饰性撞色或大面积彩色光晕。纸面来自清楚的表面层级与轻量分隔；状态颜色保留平台语义。
-- 伴星是页面重心，保留清楚的形象、名字和所在书房。正式形态为 Live2D 模型，由 Cubism SDK 双端原生接入；模型资产不进 App 包，经对象存储与服务端下发的临时签名下载链接在运行时下载并由客户端缓存；静态 PNG 只作降级形态。动作映射覆盖 idle 呼吸、视线跟随、吸收、说话口型、思考与失败。仓库记录该模型 `redistributionAllowed:false`、`commercialReleaseAllowed:false`；运行时下载是规避打包分发的形态，发布前需再确认分发合规。
-- 伴星在场矩阵：对话页 Live2D 完整在场；手边、手记与派生页只用轻量形态（页头小化身或状态点），可召唤；非对话空态不重复大幅角色图；生成、吸收等事件用全屏浮层响应。
-- iOS 26 及以上将原生 Liquid Glass 用于导航、短操作和真实可交互的输入面；不要将整页或长正文做成玻璃。iOS 18 使用对比清楚的系统表面回退。Android 用 Material 3 Surface、颜色、形状和状态表达对应层级，不称为 Apple Liquid Glass。
-- 文字、图标与玻璃及内容背景保持清楚对比。主要触控区域至少约 44pt / 48dp；尊重 iOS Dynamic Type 与 Android 字体缩放，长名称、长正文和中文断行不能截断核心操作。
+Both clients use 24 pt/dp horizontal padding, 44 pt/dp brand and back controls, 56 pt/dp input/submit minimum heights, 26 pt/dp input corners, 28 pt/dp submit corners and 8 pt/dp spacing between verification cells. Titles and form spacing collapse when the keyboard or large text needs room. Authentication remains light even when the device uses dark appearance; the signed-in dark theme remains available. Forms scroll when necessary and never hide the alternate login/registration navigation solely because a field is focused.
 
-## 页面与布局
+## 视觉关系
 
-登录页使用高清品牌图标配合中英文名“拾星笔记 / ASTELLA”，不再用大幅伴星插画代替品牌。主标题说清回来之后要做什么，副文案说明手记、对话和进度如何同步。首屏以邮箱和密码开始：字段标签常驻、提示给出示例；密码有安全输入与可见性控制；忘记密码靠近登录表单。主操作突出但不与次级入口争抢。邮箱验证码登录和创建账号作为清楚的替代路径。注册、验证码验证、邮箱登录、密码重置分步展开，各自只呈现所需字段、当前说明、下一步与返回；验证就近显示，已输入内容不因切换步骤丢失。登录和新密码字段提供对应平台的凭据自动填充语义；邮箱验证码用数字键盘和一次性验证码输入能力，不误标成短信验证码。认证页优先紧凑排布：键盘出现或可用高度缩小时切换紧凑排布、收起次要说明与页脚，仍让当前字段、状态提示和主操作可见；放不下时允许表单区内滚动，绝不裁切字段、错误提示和主操作，也不依赖整页滚动。验收标准：150% 字号加最小屏仍可完成登录。服务端错误用带标题、图标和可执行说明的行内状态面板呈现，不展示孤立的通用错误词。
+白色画布、低饱和蓝色强调、深色文字。背景保持平整，不添加环境光、渐变、焦散或伴星插画。玻璃集中用于导航、输入、附件菜单和短交互浮层；正文保持清晰稳定。自绘图形、控件几何、留白和字阶共同形成身份，不把所有信息包成同样的玻璃卡。
 
-一级导航只有三项：
+普通玻璃由背景采样模糊、轻微中性染色、均匀细描边和轻接触阴影组成，不使用彩虹折射、方向性炫光或强发光。iOS 用自定形状的 Material，不使用认证页的 Liquid Glass 系统按钮样式；Android 用 Haze Blur 采样实际背景，不用不透明 Material Surface 冒充模糊。Android 31 以下采用有对比的半透明降级；iOS 减少透明度开启时使用实色表面。具体色值见 [DESIGN_TOKENS.md](DESIGN_TOKENS.md)。
 
-1. **对话**：打开即见伴星。顶部“伴星／记录”分段切换在会面场景和完整消息记录之间转换；两种视图共用 inbox、消息、待发送图片和草稿。底部输入区容纳图片、语音与文字，软键盘出现时优先留住草稿和发送入口。
-2. **手边**：显示真实进行中的学习工作、处理进度与书房连接状态。需要确认的回合明确显示“等你确认”；空态不重复显示“0”和同义的空状态句，而是围绕当前状态给出简短说明和一个可继续的动作，不伪造历史队列或完成记录。
-3. **手记**：搜索共享笔记并以连续纸页阅读。列表与详情各自提供加载、错误、重试和空状态。阅读详情收起一级导航；“在对话里继续提问”会附上服务端返回的当前不可变版本 ID，并在发送成功后清除这条上下文。返回保留原列表与滚动位置。手机账户权限决定的只读边界由 API 执行。
+## 信息结构
 
-### 对话页
+一级入口为伴星、手边、手记。账户从页头进入。伴星页首先呈现角色和当前回应，通过页头入口查看同一份交流记录，不再放占据整行的系统分段器。输入区与导航分开，键盘出现时为输入让出空间。导航、输入、菜单都由应用设计；系统返回手势、文本编辑、选区、相册、文件选择与权限仍使用可靠的宿主能力。
 
-- 输入区「+」打开二级菜单：加图片、加文件、引用手记。菜单项从所点控件位置以弹簧散开，逐项 stagger 24ms，收起时收回来源；语音保留独立的按住说话键，不并入「+」。
-- 文件可随对话发送，也可导入手记：解析在手机本机完成（iOS 用 PDFKit，Android 用 pdfbox；docx 按 zip/XML 抽取正文），“原件不出本机”保持有效；回合只上送客户端抽取的正文，原件资产留档。
-- 伴星吸收动效：缩略图跟随手指 → 沿贝塞尔曲线飞行 → 伴星三拍反应 → chip 确认；失败时散轻烟并在消息行内给出错误。
-- 粒子波动双侧：录音时由麦克风振幅驱动伴星身周粒子；回复朗读接服务端 TTS（`POST /voice/tts`，移动端待接）驱动口型与粒子，并提供播放、暂停与停止控制；语音完整体验需部署侧开启 `COMPANION_VOICE_DIALOGUE_V1_ENABLED` / `COMPANION_STREAMING_VOICE_V1_ENABLED`（生产默认关）。reduceMotion 时两侧降级为静态波形条。
-- 消息动效：发送气泡以共享元素从输入区飞入落座；长按消息出现弹性菜单，可中断、可反转。
-- 伴星完整在场仅限本页；离开对话页按在场矩阵降为轻量形态。
+手边呈现真实的运行状态、等待决定的建议及可继续的内容，不展示工具调用次数或虚构百分比。手记页负责搜索和继续阅读；详情页收起一级导航，给原文独立空间。账户与偏好使用自定行、字段和开关，不恢复系统 Form 的分组外观。
 
-### 选段→伴星
+## 伴星是交互的接收者
 
-1. 正文选中文字后就近弹出工具条：复制、批注、伴星解释、伴星改写。
-2. 点击伴星解释或伴星改写，底部升起纸面 sheet 流式呈现结果；改写给出前后对照 diff。
-3. 用户确认后由伴星写入通道落库：复用已有 selection、pageContext 与 `companion_edit_note` 地基；服务端“手机上人不改正文，伴星改”的闸门不动，写入一律走伴星内部通道。
+- 对话页完整呈现 Live2D，其他页以轻量入口与当前任务关联；避免每屏复制大角色。模型失败有静态降级，不把下载当作成功渲染。
+- 「＋」从触点展开加图片、加文件、引用手记，关闭回到来源。文件和图片是独立选择路径。
+- 图片／文件选择或拖入后，缩略图沿曲线进入伴星所在位置，角色作真实接收反馈；这表示材料进入待发草稿，不能暗示已经上传或已经读懂。只有发送成功才清除待发材料。
+- 选区动作使用真正的所选范围，带上当前不可变笔记版本。解释与改写在原文附近延续；改写先展示服务端建议与前后内容，确认后再由伴星写入。建议过期、版本冲突、写入失败都保留原文。
+- 麦克风粒子由真实录音电平驱动；朗读粒子与口型由真实播放音频驱动。文字流不能模拟语音幅度。提供取消录音、暂停、继续与停止，离开页面或进入后台停止音频。
+- 动画可被快速点按、反向导航和新意图打断，功能与焦点不等待动画结束。减少动态时移除飞行、位移和装饰循环，保留静态状态。
 
-具体页面按任务选版式，不复用一套卡片骨架：书架便于搜索和浏览；手记正文保持连续、稳定的阅读纸面，段落操作通过长按就近出现，避免在每段旁重复放置图标；版本突出保存轨迹与恢复关系；讲解围绕当前材料逐步展开；思维图以层级关系为中心。个人页从各一级页右上角进入，承载昵称、邮箱、可访问书房、AI 使用同意与数据策略、服务地址和退出。AI 授权先解释数据范围，再由本人明确确认；策略写入账号级 API，切换书房沿用账号选择。AI 外发同意同时作为进入门槛：新用户注册后强制签署方可进入应用，老用户未签先补签。生成类页面进入后先读取账号级授权：状态尚未确认、尚未签署所需协议或“允许使用外部 AI”关闭时，主操作保持禁用并给出下一步；服务端返回未授权后，同步刷新应用级授权和数据策略，系统外观切换或页面重建也不能解锁生成。切换书房必须保存服务端重新签发的 token 并重载对应数据。两端共享语义、信息优先级和用户可完成的任务；导航栏、返回手势、键盘和选择器遵循原生交互。
+## 数据与产品边界
 
-生成类页面的空态要从当前手记出发，说明用户将得到什么、依据来自哪里。用真实输出结构作简短预览，不显示虚构的生成结果：速览说明主线、原文依据与图片覆盖；脑图展示主题、分支和引用的层级；讲解展示主题、说明与原文如何并列。主操作固定在安全区底部，内容保持可滚动；空态本身不用一张大卡片填满屏幕，也不能只留一行提示和大片空白。内容表面只在确实需要分组时使用，列表条目用间距和细分隔线建立次序，不把相邻信息重复包进白卡。
+文件解析在手机完成：PDF 提取文本、DOCX 提取文档正文、TXT／Markdown 解码。扫描件、加密／损坏文档、超限和无正文必须明确报错，不静默截断。当前限制为 20 MB 原件、100,000 字符抽取正文；图片先规范为 JPEG，最大 10 MB。
 
-空态和欢迎页要把图像、标题、上下文与下一步组成一个完整视觉单元。不要让角色插画、主标题、说明和快捷操作分散在视口不同位置，也不要用大块无依据留白把它们拆开；同样不要为了“填满”空白添加虚构内容。书架优先用真实正文摘要、标题和更新时间呈现条目；设置中的可编辑区域必须有可辨认的表面边界，保存状态准确反映是否有未保存更改。
+“解析在本机”不等于“原件永不上传”：对话发送文件时，原件经过鉴权上传到文件资产接口，抽取正文进入同一回合；单独存为手记只发送抽取的文字。AI 外发遵循账号级同意与数据策略；未同意仍可登录阅读，AI 请求由现有服务端门禁拒绝并解释下一步，不强迫为阅读功能签署 AI 同意。
 
-## 动效与操作反馈
+运行时下载模型不绕过分发授权。正式发布仍必须使用具备相应授权的模型／资源；本地测试对象前缀不能当作公共发行渠道。
 
-- 页面进退跟随真实导航方向，连续点按或反向操作从当前状态接续，不等待旧动画结束。主内容立即响应，过渡只负责解释空间关系。
-- 动效默认弹性：以物理 spring 驱动，可中断、可反转，快速往返、连续输入和打断时都从当前状态接续。参数双端同值，iOS 为 Android 标尺；本规范的动效细则以 [DESIGN_TOKENS.md](DESIGN_TOKENS.md) 双端参数表为准。“伴星／记录”切换与打开手记详情使用共享元素或系统导航转场；分段选中状态始终清楚。
-- 手势驱动的位移（拖拽、滑动、长按菜单）设位移阈值：越过阈值释放即完成动作，未越过则弹性回弹，中途可被新手势接管。
-- 按钮在按下时提供轻微系统反馈；输入聚焦、发送成功、录音中、上传失败都以真实状态反馈，不用假进度或纯装饰循环。
-- 伴星 idle 只允许低幅、慢速呼吸与视线跟随。无 TTS 音频就不做口型或说话动作；回合流式文字不能当作音频活动。
-- iOS 遵循系统“减少动态效果”；Android 遵循系统动画时长缩放，本机另留手动覆盖项。关闭时取消装饰性循环与位移，粒子降级为静态波形条，贝塞尔飞行降级为淡入淡出，保留焦点、选中、完成、错误等静态状态。动效偏好只提供“跟随系统减少动态 + 本机手动覆盖”两项，不跨设备同步，App 设置不做动效风格或时长调节。
-- 滚动旧消息时，不因新事件强行抢回底部；用户回到最新位置后才跟随新消息。发出消息时保留当前输入状态，失败时保留草稿和待发图片。
+## 验证
 
-## 两端实现入口
+构建、真实 API、实际窗口、真机手感是不同证据。只记录实际跑过的范围；未测的 TTS 正向播放、实体设备音频、硬件刷新率和极端字号不能写为已完成。当前实施与验证记录见 [MOBILE_AUDIT.md](MOBILE_AUDIT.md)，接口与构建入口见 [README.md](README.md)。
 
-- iOS：`ios/Astella/App/` 放数据、Keychain、API、WebSocket、音频和设计 token；`ios/Astella/Screens/` 放 SwiftUI 页面。
-- Android：`android/app/src/main/java/com/astella/mobile/data/` 放数据、Keystore、API、WebSocket、音频和 ViewModel；`ui/` 与 `ui/screens/` 放 Compose 设计组件和页面。
-- 两端不共享视图代码；接口字段、权限、消息块、回执和失败语义以 `packages/shared` 与 API 合同为准。改动 API 时必须核对两端调用。
+## Authentication continuity correction — 2026-10-15
 
-## 验收重点
-
-在小屏、字体放大、软键盘、系统减少动态、弱网、断线重连、短录音、权限拒绝、私有图片和长消息下检查布局与操作。登录流程额外检查字段语义键盘、自动填充、验证码、校验错误、加载和返回恢复。iOS 模拟器构建和 Android Gradle 构建不能替代真机麦克风、系统手势、设备刷新率或掉帧验收；不能承诺所有设备稳定 60/120fps。
-
-当前原生页面已覆盖认证与会话恢复、三项主导航、手记详情及速览／脑图／讲解／版本、批注、使用设置、伴星中心和账户资料。页面与真实接口映射、按构建记录的逐页验证范围及尚未复验的内容见 [原生手机页面多轮审查记录](MOBILE_AUDIT.md)。
-
-2026-10-15 又按用户认可的登录页标准返工双端基础视觉：iOS 使用系统语义背景、原生 `glassProminent` 主操作与交互输入玻璃；内容状态面明确为稳定表面；Android 按 Material 3 语义角色和圆角主操作映射。认证页以固定视口为优先、错误状态压缩辅助内容；同日修订进一步明确：放不下时允许表单区内滚动，绝不裁切字段、错误和主操作。双端 Debug 构建成功并安装到模拟器；但主机锁定，CUA 不能检查此构建的当前窗口，因此旧截图不能作为本次视觉验收。两端仍未做实体设备验收；邮箱有效验证码、AI 生成与真机硬件行为的边界见审查报告；能力限制见 [README 当前限制](README.md#当前限制)。
+The user rejected the fixed-header / whole-page replacement approach because it removed the earlier element continuity. Authentication now retains one view composition: keep the official icon visible, move and gently scale the same brand group to make room for Back, retain common input controls by stable field IDs, and reposition the same submit control as the form changes. Title and supporting content changes follow the current navigation direction. Return reverses the geometry. This replaces the previous instruction to preserve a fixed brand header during full-page pushes. White backgrounds, soft blue submit tint, ordinary glass, no companion art and no submit arrow remain required.

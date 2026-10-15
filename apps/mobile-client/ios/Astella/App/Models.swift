@@ -30,6 +30,9 @@ struct CompanionBlock: Hashable {
     var url: String?
     var label: String?
     var alt: String?
+    var name: String? = nil
+    var proposalId: String? = nil
+    var code: String? = nil
 }
 
 struct CompanionMessage: Identifiable, Hashable {
@@ -38,20 +41,22 @@ struct CompanionMessage: Identifiable, Hashable {
     var role: String
     var blocks: [CompanionBlock]
     var createdAt: String
+    var runId: String? = nil
 
     var displayText: String {
         blocks.compactMap { block in
-            if block.type == "quote" { return block.text }
-            return block.text
+            guard block.type != "file" else { return nil }
+            return block.text ?? block.code
         }.joined(separator: "\n\n")
     }
 
-    init(id: String, seq: Int, role: String, blocks: [CompanionBlock], createdAt: String) {
+    init(id: String, seq: Int, role: String, blocks: [CompanionBlock], createdAt: String, runId: String? = nil) {
         self.id = id
         self.seq = seq
         self.role = role
         self.blocks = blocks
         self.createdAt = createdAt
+        self.runId = runId
     }
 
     init?(_ value: [String: Any]) {
@@ -60,13 +65,17 @@ struct CompanionMessage: Identifiable, Hashable {
         seq = value["seq"] as? Int ?? 0
         role = value["role"] as? String ?? "assistant"
         createdAt = value["createdAt"] as? String ?? ""
+        runId = value["runId"] as? String
         blocks = (value["blocks"] as? [[String: Any]] ?? []).map {
             CompanionBlock(
                 type: $0["type"] as? String ?? "text",
                 text: $0["text"] as? String,
                 url: $0["url"] as? String,
                 label: $0["label"] as? String,
-                alt: $0["alt"] as? String
+                alt: $0["alt"] as? String,
+                name: $0["name"] as? String,
+                proposalId: $0["proposalId"] as? String,
+                code: $0["code"] as? String
             )
         }
     }

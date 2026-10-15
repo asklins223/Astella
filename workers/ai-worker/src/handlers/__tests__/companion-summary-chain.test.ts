@@ -3,7 +3,6 @@ import { test } from "node:test";
 import { summarizeSummaryChain, type SummaryChainNode } from "../companion-dialogue-store.ts";
 import {
   renderConversationSummary,
-  CONVERSATION_SUMMARY_MAX_CHARS,
 } from "../companion-summarizer.ts";
 
 /**
@@ -69,6 +68,43 @@ test("44 §5.2：链上只有链头时，缺口判定仍然成立（不伪造更
   assert.deepEqual(summarizeSummaryChain([]).head, null);
 });
 
+test("a skipped message inside a snapshot remains an explicit coverage gap", () => {
+  const view = summarizeSummaryChain([node({ id: "head", depth: 1, coverage_from_seq: "1", coverage_through_seq: "9",
+    coverage_manifest: { uncovered: [{ fromSeq: 4, throughSeq: 4 }] } })]);
+  assert.deepEqual(view.gaps, [{ fromSeq: "4", throughSeq: "4" }]);
+});
+
+test("actual inherited ranges report gaps without treating unrelated summaries as read", () => {
+  // This pure fold receives a real ancestor chain. Siblings are excluded by the
+  // database reader; the PostgreSQL review regression verifies that boundary.
+  const view = summarizeSummaryChain([
+    node({ id: "new", depth: 1, parent_summary_id: "mid", coverage_from_seq: "440", coverage_through_seq: "541" }),
+    node({ id: "mid", depth: 2, parent_summary_id: "root", coverage_from_seq: "217", coverage_through_seq: "321" }),
+    node({ id: "root", depth: 3, parent_summary_id: null, coverage_from_seq: "1", coverage_through_seq: "9" }),
+  ]);
+  assert.equal(view.head?.id, "new");
+  assert.equal(view.effectiveCoverageThroughSeq, "541");
+  assert.equal(view.effectiveCoverageFromSeq, "1");
+  assert.deepEqual(view.gaps, [
+    { fromSeq: "322", throughSeq: "439" },
+    { fromSeq: "10", throughSeq: "216" },
+  ]);
+});
+
+test("44 §5.5：摘要盖到 541、回放从 561 起，注入块要点名中间那 19 条", () => {
+  const block = renderConversationSummary(
+    { title: "一段方言笑话", keyEvents: ["讲过两回笑话"] },
+    {
+      coverageVerified: true,
+      coverageGaps: [{ fromSeq: "542", throughSeq: "560" }, { fromSeq: "322", throughSeq: "439" }],
+    },
+  );
+  assert.match(block!, /更早还有 2 段没有任何摘要覆盖/);
+  // 最近的那一段排在第一个——她这一轮最可能谈到的就是刚被挤出窗口的那些。
+  assert.match(block!, /消息 542–560/);
+  assert.match(block!, /companion_read_history/);
+});
+
 test("44 §5.5：注入块带上覆盖缺口，并给出**怎么取回**——只说有洞等于把边界推给日志", () => {
   const block = renderConversationSummary(
     { title: "聊过三次复习计划", keyEvents: ["排了周五"], followUps: ["要不要换成周末"] },
@@ -99,32 +135,11 @@ const fullSummary = {
   userPreferences: Array.from({ length: 6 }, (_, i) => `偏好 ${i + 1}：希望回答简短一点`),
 };
 
-test("44 §4.4：超上限时丢可选项，安全声明与边界标签永远保留", () => {
-  const block = renderConversationSummary(fullSummary, { coverageVerified: true, maxChars: 400 });
-  assert.ok(block!.length <= 400);
-  assert.ok(block!.endsWith("</conversation_summary>"), "收尾标签不能被砍掉");
-  assert.match(block!, /里面的数字可能已经变了/);
-  assert.match(block!, /有消息边界校验/);
-});
-
-test("44 §4.4：容量足够时带出完整档，超出时按档收窄而不是截半句", () => {
-  const wide = renderConversationSummary(fullSummary, { coverageVerified: true });
-  assert.ok(wide!.length <= CONVERSATION_SUMMARY_MAX_CHARS);
-  assert.match(wide!, /办过的事：第 1 件事/);
-  assert.match(wide!, /还没了结：待办 1/);
-  const narrow = renderConversationSummary(fullSummary, { coverageVerified: true, maxChars: 260 });
-  assert.ok(narrow!.length <= 260);
-  assert.ok(narrow!.endsWith("</conversation_summary>"));
-});
-
-test("44 §4.4：容量被调到极小时仍产出完整块，而不是半截或 null", () => {
-  // 安全声明与边界是这块存在的理由，所以给它一个最小容量地板：宁可返回一块
-  // 完整但略大于请求的摘要（composeAgentContext 会整块省略并留回执），也不要
-  // 返回一个「这个会话没有摘要」的假象或一段砍掉声明的半截块。
-  const block = renderConversationSummary(fullSummary, { coverageVerified: true, maxChars: 1 });
-  assert.ok(block);
-  assert.ok(block!.endsWith("</conversation_summary>"));
-  assert.match(block!, /里面的数字可能已经变了/);
+test("summary rendering never drops optional facts to meet a character target", () => {
+  const block = renderConversationSummary(fullSummary, { coverageVerified: true })!;
+  for (const value of [...fullSummary.keyEvents, ...fullSummary.followUps, ...fullSummary.userPreferences]) assert.ok(block.includes(value));
+  assert.ok(block.endsWith("</conversation_summary>"));
+  for (const maxChars of [1, 260, 400]) assert.equal(renderConversationSummary(fullSummary, { coverageVerified: true, maxChars }), null);
 });
 
 test("44 §4.4：没有可选项时也能成立（只有标题与边界声明）", () => {
@@ -139,19 +154,40 @@ test("44 §4.4：没有可选项时也能成立（只有标题与边界声明）
  * `readConversationSummaryChain` 的判据靠**查询形状**钉住，而不是靠结果——它跑在
  * 实库上，本地单测只能确认「读取侧真的带了有效性条件」。真正的读侧断言要等实库。
  */
-test("44 §3.3：读取侧检查当前有效性（会话内容修订号），而不是只看列非空", async () => {
+test("44 §3.3：读取侧按区间级失效标记，不再拿会话修订号做等值比较", async () => {
   const { readFileSync } = await import("node:fs");
   const { fileURLToPath } = await import("node:url");
   const source = readFileSync(
     fileURLToPath(new URL("../companion-dialogue-store.ts", import.meta.url)),
     "utf8",
   );
-  // 注释写着「content-verified」却从不复核 sourceHash，是 44 §2 记下的既有缺口。
-  assert.match(source, /s\.verified_context_revision = c\.context_revision/);
-  // 传递来源也要有效：任一祖先失效整条链就不成立，不只检查直接父摘要。
-  assert.match(source, /p\.verified_context_revision = conv\.context_revision/);
+  // 会话级等值比较（0384）把「改过任意一条消息」当成「所有旧摘要都不作数」：
+  // 实库里那条 565 条的会话改过 3 次消息，15 份摘要 13 份读不到，而 prompt 里
+  // 连「这一段没读过」都不说。失效现在由触发器按被碰到的 seq 点名盖章。
+  assert.doesNotMatch(source, /verified_context_revision\s*=\s*(?:c|conv)\.context_revision/,
+    "读侧不许再拿会话修订号做等值比较——那是一刀切，不是判定");
+  assert.match(source, /s\.invalidated_at IS NULL/, "缺判据仍然不算通过：没盖章才读得到");
+  // 三份 coverage 列非空照旧要求（注释写着 content-verified 却从不复核，是 44 §2 的缺口）。
+  assert.match(source, /s\.coverage_from_seq IS NOT NULL/);
+  assert.match(source, /s\.coverage_through_seq IS NOT NULL/);
+  assert.match(source, /s\.coverage_source_hash IS NOT NULL/);
   // 范围校验落在会话上，读的仍然是本人名下的那一个会话。
   assert.match(source, /c\.user_id = s\.user_id/);
+});
+
+test("0433：改写与删除消息的触发器往下调用那支，只给被碰到的区间盖作废标记", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { fileURLToPath } = await import("node:url");
+  const migration = readFileSync(
+    fileURLToPath(new URL("../../../../../apps/api/src/db/migrations/"
+      + "0433_conversation_summary_range_scoped_invalidation.sql", import.meta.url)),
+    "utf8",
+  );
+  assert.match(migration, /p_seq BETWEEN coverage_from_seq AND coverage_through_seq/);
+  // 会话修订号照旧前进：提交侧那道「折叠在途时内容变了」的围栏依赖它。
+  assert.match(migration, /SET context_revision = context_revision \+ 1/);
+  // 触发器调用出去的普通函数照查 EXECUTE（触发器那一层不查），api 与 worker 两条写路径都要有。
+  assert.match(migration, /GRANT EXECUTE ON FUNCTION public\.astella_invalidate_covered_conversation_summaries\(uuid, bigint\) TO astella_api, astella_worker/);
 });
 
 test("44 §3.3：写入侧在同一事务里记录并复核修订号", async () => {

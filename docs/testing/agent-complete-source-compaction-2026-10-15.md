@@ -1,0 +1,33 @@
+# Complete-source semantic compaction — 2026-10-15
+
+Scope: desktop client and its dependent Agent/backend chain. Mobile is excluded by the user's correction. The persistent audit remains active.
+
+## Source coverage
+
+Background summarization selected the newest messages fitting one request and recorded oversized messages as uncovered. That marker was honest, but the oversized source could remain perpetually unsummarized. Active tool compaction also attempted to send all selected read rounds to its summarizer in one request, so the summarizer itself could overflow.
+
+Both paths now partition the complete immutable source into consecutive requests and carry the complete previous semantic checkpoint forward. Capacity measurement includes protocol, checkpoint, metadata and the new source part. Paragraph/message boundaries are preferred and Unicode surrogate pairs remain intact. No suffix is discarded: concatenating the submitted parts reconstructs the exact source. There is no fixed part count or restored replay-character limit.
+
+Background summarization freezes every eligible source row, including an individually oversized message. It commits whole-range coverage only after every part succeeds, then rereads the complete range through database pages and rechecks source hash, parent and revision under the existing commit fences. Failure, cancellation or mutation cannot mark unprocessed material covered. The latest answered exchange remains native. Policy identity: `companion-summary-v5-complete-source`.
+
+Active compaction still selects only completed older read rounds; current requests, policies, latest evidence, pending calls and write arguments/receipts remain protected. The replacement checkpoint is returned only after all source parts succeed. Each cumulative checkpoint is now a validated JSON object with facts, constraints, unresolved items and references. It cannot add `sourcePart` or other unexpected top-level fields. Generated checkpoints do not create action authority, and exact quotation/editing still requires rereading original evidence.
+
+## Real-model failures and repairs
+
+The first background run read all four parts but inferred user preferences from practice material and persisted processing offsets as a conversation event. It is a semantic failure, retained in `agent-real-complete-summary-attribution-failure.json`. The protocol now requires explicit user evidence for adopted preferences/goals, separates practice and hypothetical material from personal commitments, and excludes processing metadata. Two later production-handler runs consumed four parts each, kept the final project/address/color corrections and unfinished optics research, and passed those focused semantic checks. Evidence: `agent-real-complete-summary-attribution-fixed-first.json` and `agent-real-complete-summary.json`.
+
+Active probing first exhausted a 1,000-token output allowance (`agent-real-active-source-output-limit-failure.json`). A subsequent free-text checkpoint echoed input structure and invented a following source part, making its next request too large (`agent-real-active-source-echo-failure.json`). Neither produced an accepted replacement. This motivated explicit cumulative-checkpoint instructions and the validated object contract; a plausible source hash alone cannot establish semantic correctness.
+
+An intermediate structured result still carried processing offsets/output rules into task facts (`agent-real-active-source-metadata-pollution.json`); its mechanical success is not clean semantic acceptance. The final input keeps numeric segment positions in host accounting, outside model task material, and supplies only source text plus completion state. The final real probe consumed eight consecutive parts reconstructing the exact 18,417-character tool source. Every recorded checkpoint retained the note identity; the final state retained the unperformed edit, required reread of exact `expectedBlocks`, and lack of a save receipt. It carried no numeric processing offsets or copied output-format instructions. Evidence: `agent-real-active-source-compaction.json`. Repeated continuation/no-new-facts statements still appear, so long-run checkpoint compactness is not accepted as solved.
+
+Summary input capacity also now follows the actual 3,000-token output request, independent input ceilings, and whether that output allowance is enforced. Reserving the entire platform output maximum for a smaller enforceable summary request caused unnecessary partitioning; treating an unenforced allowance as binding would instead over-admit source. Tests distinguish both cases.
+
+These probes use the configured real MiMo provider, synthetic material and a temporary declared 20,000-token QA window to force segmentation. Production platform configuration is unchanged. Background probes use the actual handler and isolated PostgreSQL, not native UI submission. The active probe records every intermediate checkpoint for inspection.
+
+## Verification and remaining work
+
+Final full worker regression: 1,824 passed, 0 failed (`work/semantic-source-release-worker-full.log`, exit 0). Worker package `npm run typecheck` exited 0 (`work/semantic-source-release-typecheck.log`). PostgreSQL history/dialogue/initiative/complete-summary regressions passed 75 (`work/semantic-source-final-postgres.log`); after the final capacity change, all three complete-summary database cases passed again (`work/semantic-source-release-postgres.log`, exit 0). They prove complete oversized-source delivery, no coverage after a middle failure, and rejection after concurrent source mutation. Unit tests also reject empty checkpoints and echoed input envelopes.
+
+The native foreground-quiet attempt lost foreground presence before the account threshold, so it is not an acceptance pass. Still open: recovery before the main runtime when history already exceeds the window; a protected current request/latest exchange larger than the model window; inherited coverage-hole backfill; restart during format correction; native quiet participation, longer desktop runs and comparable first-output latency measurements. Source delivery proves what was submitted, not semantic completeness of generated summaries. Durable originals and retrieval remain authoritative.
+
+Intermediate semantic checkpoints currently live in the summarization attempt, not a durable resumable part ledger. A crash repeats that work while retaining all original source. Multipart active compaction also shares the running Agent's deadline; source completeness alone does not prove timely recovery for arbitrarily large inputs. Durable part resumption and native pressure/deadline acceptance remain unverified.

@@ -83,6 +83,7 @@ export function CompanionReplyAttachments({ chat, paused, followupsReady = true,
   if (!reply || blocks.length === 0) return null;
   const followups = blocks.flatMap((block) => block.type === "follow_up_suggestions" ? block.prompts : []);
   const links = blocks.filter(block => block.type === "nav");
+  const recommendations = blocks.filter(block => block.type === "recommendation");
   const material = blocks.filter(block => block.type === "quote" || block.type === "citation");
   const results = blocks.filter((block): block is ResultBlock => block.type === "image" || block.type === "diagram" || block.type === "card" || block.type === "code");
   const noteOpen = (key: string, open: boolean) => setOpened(previous => {
@@ -93,6 +94,9 @@ export function CompanionReplyAttachments({ chat, paused, followupsReady = true,
   return <div className="companion-reply-attachments" onPointerMove={life.activity} onKeyDown={life.activity} onWheel={life.activity} onFocus={life.activity}>
     {followupsReady && followups.length > 0 ? <CompanionFollowupPrompts prompts={followups} chat={chat} /> : null}
     {links.length ? <div className="companion-reply-attachments__destinations"><CompanionMessageRichBlocks blocks={links} chat={chat} onNavNavigated={onDismiss} /></div> : null}
+    {recommendations.length ? <div className="companion-reply-attachments__recommendations" aria-label="伴星推荐的学习内容">
+      <CompanionMessageRichBlocks blocks={recommendations} chat={chat} onNavNavigated={onDismiss} />
+    </div> : null}
     {results.length ? <ReplyContentGallery key={reply.messageId} blocks={results} chat={chat} onReadingChange={setReadingContent} /> : null}
     {material.length ? <details className="companion-reply-attachments__materials" onToggle={event => noteOpen("materials", event.currentTarget.open)}>
       <summary><FileText size={14} aria-hidden="true" /><span>查阅的材料</span><small>{material.length}</small></summary>

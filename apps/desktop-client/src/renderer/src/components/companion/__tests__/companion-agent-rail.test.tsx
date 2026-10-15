@@ -98,6 +98,7 @@ describe("CompanionAgentRail", () => {
   it.each(["not_executed", "unavailable", "outcome_unknown", "waiting_confirmation", "cancelled"] as const)("%s 的操作不会显示成成功", state => {
     render(<CompanionAgentRail nodes={[toolNode({ state })]} progress={null} turnState="done" companionName="大肥鱼" />);
     expect(screen.getByRole("status").textContent).not.toContain("操作已完成");
+    expect(screen.getByRole("status").textContent).not.toContain("正在翻你的笔记");
   });
 
   it("回复已结束但工具缺少回执时，明确保留待核对状态", () => {

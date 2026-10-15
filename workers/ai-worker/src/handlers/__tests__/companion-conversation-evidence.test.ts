@@ -1,15 +1,29 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { buildCompanionPersonaMessages, validateCompanionOutput } from "../companion-dialogue-content.ts";
-import { conversationInstant, renderCompanionConversationEvidence } from "../companion-conversation-evidence.ts";
+import { companionConversationTimeEvidence, conversationInstant, renderCompanionConversationEvidence } from "../companion-conversation-evidence.ts";
 
 const clock = { observedAt: "2026-10-07T16:01:00Z", timezone: "Asia/Shanghai", currentMessageCreatedAt: "2026-10-07T16:00:59Z" };
+
+test("retrieved source times use the account timezone and absolute intervals across daylight-saving transitions", () => {
+  const shanghai = companionConversationTimeEvidence({ timezone: "Asia/Shanghai", observedAt: "2026-10-15T09:03:12Z" });
+  const question = shanghai.stamp("2026-10-15T07:10:14.518Z");
+  const greeting = shanghai.stamp("2026-10-15T08:38:02.215Z", question.utteredAt);
+  assert.equal(question.localDateTime, "2026-10-15 15:10:14");
+  assert.equal(greeting.localDateTime, "2026-10-15 16:38:02");
+  assert.equal(greeting.gapFromPreviousMs, 5_267_697);
+  assert.equal(greeting.gapFromPrevious, "1 小时 27 分钟 47 秒");
+  const newYork = companionConversationTimeEvidence({ timezone: "America/New_York", observedAt: "2026-11-01T07:00:00Z" });
+  const before = newYork.stamp("2026-11-01T05:30:00Z"), after = newYork.stamp("2026-11-01T06:30:00Z", before.utteredAt);
+  assert.equal(before.localDateTime, after.localDateTime);
+  assert.equal(after.gapFromPreviousMs, 3_600_000, "repeated 01:30 is one real hour apart");
+});
 function payload(text: string | null) {
   assert.ok(text);
   return JSON.parse(text.split("\n")[2]!) as {
     observedAt: string | null; timezone: string | null;
     history: Array<{ position: number; speaker: string; utteredAt: string | null; elapsedMs: number | null; localDateTime: string | null; replyState: string | null; gapFromPreviousMs: number | null; gapFromPrevious: string | null }>;
-    current: { utteredAt: string | null; elapsedMs: number | null; gapFromPreviousMs: number | null; gapFromPrevious: string | null };
+    current: { speaker: string; source: string; utteredAt: string | null; elapsedMs: number | null; gapFromPreviousMs: number | null; gapFromPrevious: string | null };
   };
 }
 
@@ -27,6 +41,17 @@ test("跨本地午夜仍按绝对时间计算间隔，原文和角色保持完�
   assert.equal(timeline.history[1]?.speaker, "assistant");
   assert.equal(timeline.current.elapsedMs, 1_000);
   assert.equal(timeline.timezone, "Asia/Shanghai");
+});
+
+test("a host occasion is never labeled as a fresh user utterance and failed history is terminal", () => {
+  const history = [{ role: "user" as const, text: "an old failed question", replyStatus: "failed" }];
+  const timeline = renderCompanionConversationEvidence(history, clock, "host_observation")!;
+  const data = JSON.parse(timeline.split("\n")[2]!);
+  assert.equal(data.current.speaker, "host");
+  assert.equal(data.current.source, "host_observation");
+  assert.equal(data.current.utteredAt, null, "no synthetic user send time is invented");
+  assert.equal(data.history[0].replyTerminal, true);
+  assert.equal(data.history[0].replyState, "回复已结束（失败）");
 });
 
 test("缺时间、无时区时间、无效日期、未来消息都不能伪造已流逝时长", () => {
@@ -89,6 +114,6 @@ test("隔夜失败消息标明本地日期和真实间隔，而不是假装刚�
     { role: "user", text: "哈哈哈", createdAt: "2026-10-08T06:07:00Z", replyStatus: "failed" },
   ], { observedAt: "2026-10-08T23:23:01Z", timezone: "Asia/Shanghai", currentMessageCreatedAt: "2026-10-08T23:23:00Z" }));
   assert.equal(data.history[0]?.localDateTime, "2026-10-08 14:07:00");
-  assert.equal(data.history[0]?.replyState, "回复未完成");
+  assert.equal(data.history[0]?.replyState, "回复已结束（失败）");
   assert.equal(data.current.gapFromPrevious, "17 小时 16 分钟");
 });

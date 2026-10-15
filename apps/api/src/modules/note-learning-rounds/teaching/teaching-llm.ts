@@ -7,7 +7,7 @@ import { roundTeachingContentV1Schema } from "@astella/shared/note-learning-roun
 import { resolveSystemPlatform } from "@astella/shared/platform-config-node";
 import { chatThinkingRequestFields } from "@astella/shared/platform-config";
 import type { ResolvedPlatform } from "@astella/shared/platform-config";
-import { resolveDashScopeTextEndpoint, resolveOpenAIChatCompletionsUrl } from "@astella/shared/ai-endpoints";
+import { resolveDashScopeTextEndpoint, resolveOpenAIChatCompletionsUrl, resolveOpenAIResponsesUrl } from "@astella/shared/ai-endpoints";
 import type { TeachingExplainInputV1, TeachingExplainProviderV1, TeachingExplainScope } from "./teaching-explain.ts";
 import { roundTargetDraftSchema } from "./round-target-contract.ts";
 
@@ -22,14 +22,43 @@ import { roundTargetDraftSchema } from "./round-target-contract.ts";
  * `chatThinkingRequestFields` 按平台声明算，这里三个调用点都带"关思考"的意图。
  */
 export type TeachingModelConfig = { url: string; key: string; model: string; maxOutputTokens?: number;
+  protocol?: "chat_completions" | "responses";
   headers?: Record<string, string>; thinkingFields?: Record<string, unknown> };
+/**
+ * 能直接被这里拼成 `/chat/completions` 调用的平台类型。
+ *
+ * **讲解与演示共用这一份**（2026-10-15）：此前两处各写一个字面量白名单，
+ * 演示那条 2026-10-12 加了 `opencode_go`、讲解那条忘了加——后果不是"讲解少一个
+ * 平台"而是 **API 整个起不来**：`resolveTeachingModelConfig` 在 Fastify 路由装配期
+ * 抛错 → 容器 unhealthy → 4000 拒绝连接，连跟讲解无关的端点一起挂。
+ * 一个子系统的平台白名单不该有两次机会不一致，所以只留这一处。
+ */
+const CHAT_COMPLETIONS_PLATFORM_TYPES = ["openai_compatible", "dashscope", "siliconflow", "opencode_go"];
+
+/**
+ * OpenCode Go 的 `/chat/completions` 实测可用（2026-10-12，200 + json_object），但它要求
+ * 客户端自报身份：缺 `x-opencode-session` 直接 400 `MissingSessionID`。会话号按
+ * 「一个实例一次会话」给，与 worker 侧同一条约束（`opencode-go.ts` 文件头）。
+ *
+ * 两条路径都调它：会话头由**调用配置这一侧**给，谁消费 `config.headers` 谁负责发（见
+ * `llmTeachingExplainProvider` 与 runtime-collaborators 的 artifact 装配）。
+ */
+function withOpenCodeSession(platform: ResolvedPlatform, config: TeachingModelConfig): TeachingModelConfig {
+  if (platform.type !== "opencode_go") return config;
+  return { ...config, headers: {
+    accept: "application/json", "user-agent": "astella-api/1.0", "x-opencode-session": randomUUID(),
+    ...config.headers } };
+}
+
 export function resolveTeachingModelConfig(): TeachingModelConfig | null {
   const platform = resolveSystemPlatform("text_generation");
   if (!platform?.baseUrl || !platform.apiKey || !platform.model || platform.type === "mock") return null;
-  if (!["openai_compatible", "dashscope", "siliconflow"].includes(platform.type)) {
-    throw new Error("Teaching requires a configured JSON chat provider in text_generation");
+  if (platform.type === "mimo_responses") return responsesModelConfig(platform);
+  if (!CHAT_COMPLETIONS_PLATFORM_TYPES.includes(platform.type)) {
+    // fail-fast 保留在这里：白名单是共享的，走到这一步只剩"配了真正不认识的平台类型"。
+    throw new Error(`Teaching requires a configured JSON chat provider in text_generation (unsupported platform type: ${platform.type})`);
   }
-  return chatCompletionsModelConfig(platform);
+  return withOpenCodeSession(platform, chatCompletionsModelConfig(platform));
 }
 
 /**
@@ -45,12 +74,9 @@ export function resolveTeachingModelConfig(): TeachingModelConfig | null {
 export function resolveArtifactModelConfig(): TeachingModelConfig | null {
   const platform = resolveSystemPlatform("agent_turn");
   if (!platform?.baseUrl || !platform.apiKey || !platform.model || platform.type === "mock") return null;
-  if (!["openai_compatible", "dashscope", "siliconflow", "opencode_go"].includes(platform.type)) return null;
-  const config = chatCompletionsModelConfig(platform);
-  if (platform.type !== "opencode_go") return config;
-  return { ...config, headers: {
-    accept: "application/json", "user-agent": "astella-api/1.0", "x-opencode-session": randomUUID(),
-    ...config.headers } };
+  if (platform.type === "mimo_responses") return responsesModelConfig(platform);
+  if (!CHAT_COMPLETIONS_PLATFORM_TYPES.includes(platform.type)) return null;
+  return withOpenCodeSession(platform, chatCompletionsModelConfig(platform));
 }
 
 function chatCompletionsModelConfig(platform: ResolvedPlatform): TeachingModelConfig {
@@ -60,6 +86,71 @@ function chatCompletionsModelConfig(platform: ResolvedPlatform): TeachingModelCo
     ...(platform.modelProfile?.maxOutputTokens
       ? { maxOutputTokens: platform.modelProfile.maxOutputTokens } : {}),
     thinkingFields: chatThinkingRequestFields(platform.options, platform.modelProfile, true) };
+}
+
+function responsesModelConfig(platform: ResolvedPlatform): TeachingModelConfig {
+  return { url: resolveOpenAIResponsesUrl(platform.baseUrl!), key: platform.apiKey!, model: platform.model!,
+    protocol: "responses",
+    ...(platform.modelProfile?.maxOutputTokens
+      ? { maxOutputTokens: platform.modelProfile.maxOutputTokens } : {}) };
+}
+
+/** Wire headers shared by the direct teaching and evidence-checking calls. */
+export function teachingModelHeaders(config: TeachingModelConfig): Record<string, string> {
+  return {
+    ...(config.protocol === "responses" ? { "api-key": config.key } : { authorization: `Bearer ${config.key}` }),
+    "content-type": "application/json",
+    ...config.headers,
+  };
+}
+
+/** Build one-shot JSON generation request in the platform's actual wire protocol. */
+export function teachingModelBody(config: TeachingModelConfig, prompt: string, temperature: number): Record<string, unknown> {
+  if (config.protocol === "responses") {
+    return {
+      model: config.model,
+      input: [{ role: "user", content: prompt }],
+      stream: false,
+      reasoning: { effort: "none" },
+      text: { format: { type: "json_object" } },
+      ...(config.maxOutputTokens ? { max_output_tokens: config.maxOutputTokens } : {}),
+    };
+  }
+  return {
+    model: config.model,
+    messages: [{ role: "user", content: prompt }],
+    temperature,
+    response_format: { type: "json_object" },
+    stream: false,
+    ...(config.maxOutputTokens ? { max_tokens: config.maxOutputTokens } : {}),
+    ...config.thinkingFields,
+  };
+}
+
+/** Extract structured text from either Chat Completions or Responses output. */
+export function teachingModelText(config: TeachingModelConfig, body: unknown): string {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return "";
+  const record = body as Record<string, unknown>;
+  if (config.protocol !== "responses") {
+    const choices = record.choices;
+    const message = Array.isArray(choices) && choices[0] && typeof choices[0] === "object"
+      ? (choices[0] as Record<string, unknown>).message : null;
+    return message && typeof message === "object"
+      && typeof (message as Record<string, unknown>).content === "string"
+      ? (message as Record<string, unknown>).content as string : "";
+  }
+  if (typeof record.output_text === "string") return record.output_text;
+  if (!Array.isArray(record.output)) return "";
+  return record.output.flatMap((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+    const outputItem = item as Record<string, unknown>;
+    if (outputItem.type !== "message" || !Array.isArray(outputItem.content)) return [];
+    return outputItem.content.flatMap((part) => {
+      if (!part || typeof part !== "object" || Array.isArray(part)) return [];
+      const content = part as Record<string, unknown>;
+      return content.type === "output_text" && typeof content.text === "string" ? [content.text] : [];
+    });
+  }).join("");
 }
 
 /** The task identity that owns every teaching model call, for cost and audit bucketing. */
@@ -137,21 +228,17 @@ export function llmTeachingExplainProvider(options: {
       return { ok: false, class: "invalid_input", message: "teaching_material_missing" };
     }
     const response = await requester(options.config.url, {
-      authorization: `Bearer ${options.config.key}`, "content-type": "application/json",
-    }, {
-      model: options.config.model,
-      messages: [{ role: "user", content: buildTeachingPrompt(input) }],
-      temperature: 0.2, response_format: { type: "json_object" }, stream: false,
-      ...options.config.thinkingFields,
-    }, step.signal);
+      ...teachingModelHeaders(options.config),
+    }, teachingModelBody(options.config, buildTeachingPrompt(input), 0.2), step.signal);
     if (response.status < 200 || response.status >= 300) {
       return { ok: false, class: [408, 425, 429].includes(response.status) || response.status >= 500
         ? "transport" : "quality", message: `teaching provider returned ${response.status}` };
     }
-    const body = response.body as { choices?: Array<{ message?: { content?: string } }>;
-      usage?: { prompt_tokens?: number; completion_tokens?: number } };
+    const body = response.body as { usage?: {
+      prompt_tokens?: number; completion_tokens?: number; input_tokens?: number; output_tokens?: number;
+    } };
     try {
-      const raw = body.choices?.[0]?.message?.content ?? "";
+      const raw = teachingModelText(options.config, response.body);
       const output = outputSchema.parse(JSON.parse(raw.replace(/^\s*```(?:json)?\s*/, "").replace(/\s*```\s*$/, "")));
       const allowed = new Set(input.blocks.map((block) => block.ordinal));
       if (output.sourceBlockOrdinals.some((ordinal) => !allowed.has(ordinal))) {
@@ -171,7 +258,8 @@ export function llmTeachingExplainProvider(options: {
         }
       }
       return { ok: true, output: { ...output, sourceBlockOrdinals: [...new Set(output.sourceBlockOrdinals)].sort((a, b) => a - b) },
-        promptTokens: body.usage?.prompt_tokens, completionTokens: body.usage?.completion_tokens };
+        promptTokens: body.usage?.prompt_tokens ?? body.usage?.input_tokens,
+        completionTokens: body.usage?.completion_tokens ?? body.usage?.output_tokens };
     } catch {
       return { ok: false, class: "output_shape", message: "teaching output does not match its contract" };
     }

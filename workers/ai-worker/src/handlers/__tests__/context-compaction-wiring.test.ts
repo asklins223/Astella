@@ -48,13 +48,13 @@ test("44 §5.4：闸拦下 → 折一次 → 重发；被折掉的消息真的�
     );
 
     const send = boundedStepSender({
-      // 折叠规则是真的：只折被一份**校验过的**摘要盖住的那一条。
+      // Fold the verified older exchange, preserving the latest answered pair.
       fold: (messages) => {
         const result = foldReplayUnderSummaryCoverage({
           system: [],
-          tail: [{ message: messages[0]!, seq: "1" }],
-          trailing: messages.slice(1),
-          coverage: { fromSeq: "1", throughSeq: "1", sourceSha256: "a".repeat(64) },
+          tail: messages.slice(0, 4).map((message, index) => ({ message, seq: String(index + 1) })),
+          trailing: messages.slice(4),
+          coverage: { fromSeq: "1", throughSeq: "2", sourceSha256: "a".repeat(64) },
         });
         return result.receipt
           ? { messages: replayToMessages(result.replay), receipt: result.receipt }
@@ -70,6 +70,9 @@ test("44 §5.4：闸拦下 → 折一次 → 重发；被折掉的消息真的�
       systemPrompt: "短。",
       messages: [
         { role: "user", content: longContent },
+        { role: "assistant", content: "the actual old answer" },
+        { role: "user", content: "latest answered question" },
+        { role: "assistant", content: "latest complete answer" },
         { role: "user", content: "现在这个问题" },
       ],
       tools: [], toolChoice: "auto", maxTokens: 1_000, temperature: 0.4,
@@ -84,7 +87,7 @@ test("44 §5.4：闸拦下 → 折一次 → 重发；被折掉的消息真的�
 
     // 第一次发出去之前就被闸拦下（闸在真实 provider 包装器里），所以 provider 只被调用一次。
     assert.equal(sizes.length, 2, "发一次、被压一次、重发一次");
-    assert.deepEqual(sizes, [2, 1], "重发的那次只剩当前请求——被摘要盖住的那段没有再发出去");
+    assert.deepEqual(sizes, [5, 3], "the retry retains the latest exchange and current request");
     assert.deepEqual(folded, ["folded"]);
   } finally {
     if (previous === undefined) delete process.env.MOCK_CONTEXT_WINDOW_TOKENS;

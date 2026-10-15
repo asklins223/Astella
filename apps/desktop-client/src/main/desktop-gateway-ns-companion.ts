@@ -737,6 +737,7 @@ export async function listCompanionHistory(t: GatewayTransport,
     const params = new URLSearchParams();
     if (query.before) params.set("before", query.before);
     if (query.throughMessageId) params.set("throughMessageId", query.throughMessageId);
+    if (query.runId) params.set("runId", query.runId);
     if (query.limit !== undefined) params.set("limit", String(query.limit));
     const suffix = params.toString();
     const result = await t.request(

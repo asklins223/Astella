@@ -1,4 +1,4 @@
-import { parseMindMap, reconcileMergedMindMap } from "./note-mind-map-output.ts";
+import { buildMindMapRepairAttempt, parseMindMap, reconcileMergedMindMap } from "./note-mind-map-output.ts";
 import { foldDuplicateConcepts, orderMindMapBySource } from "./note-mind-map-structure.ts";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { measureChatRequest } from "@astella/agent-core";
@@ -22,15 +22,6 @@ import type { JobPayload } from "./index.ts";
 
 const visible = sql.raw(noteVisibleSqlText("notes", "NULLIF(current_setting('app.user_id', true), '')::uuid"));
 const SHAPE = `严格 JSON {"schemaVersion":1,"rootId":"root","nodes":[{"id":"root","parentId":null,"kind":"root","label":"主题","explanation":null,"references":[]},{"id":"n1","parentId":"root","kind":"concept","label":"简短知识点","explanation":"保留条件、公式和结论的白话解释","references":[{"blockOrdinal":0,"quote":"逐字原文"}]}]}。节点 id 唯一，只有一个 root，parentId 必须存在，无环，层级按内容的从属关系自然展开。group 仅是分类名，其 explanation=null、references=[]；concept 必须引用原文。引用不能来自图片、提示或其他段落。根主题不写额外解释。名字与解释的长度以说清楚为准，不设字数。`;
-
-/**
- * 重试时交给模型的修正要求。带上**上一次的具体失败原因**（哪个节点、哪条引用），
- * 否则模型只能把同一张图原样再交一遍，那一格重试预算等于白花。
- */
-function repairPrompt(detail: string | null): string {
-  const head = "上一次的返回没有通过结构或引用校验。请只修正下面这一处，其余部分保持不变，然后完整返回严格 JSON。";
-  return detail ? `${head}\n\n具体原因：${detail}` : `${head}\n\n请重新检查唯一根节点、父子关系与逐字引用。`;
-}
 
 export async function runNoteMindMapGenerate(job: JobPayload, providerFactory: typeof createProvider = createProvider): Promise<void> {
   const input = readNoteMindMapGenerateJobPayload(job.payload);
@@ -106,6 +97,7 @@ export async function runNoteMindMapGenerate(job: JobPayload, providerFactory: t
     // 上一次到底哪一处没过：泛泛一句"校验未通过"模型无从下手，只能把同一张图再交一遍，
     // 于是那一格重试预算白花掉，用户看到的是"这次生成没有完成"。
     let lastValidationError: string | null = null;
+    let lastRejectedOutput: string | null = null;
     const output = await runWorkerAiTask({ job, userId: job.requestedBy!, taskId: "note_mind_map_stage", taskVersion: 1,
       idempotencyKey: `note-mind-map:${job.id}:${name}:${hash}`, inputSnapshotRef: { kind: "note_version", id: frozen.versionId, hash }, input: request,
       modelId: provider.modelId, promptVersion: `${provider.promptVersion}:mind-map-v1`, resourceClass: "interactive_ai",
@@ -115,13 +107,16 @@ export async function runNoteMindMapGenerate(job: JobPayload, providerFactory: t
         try { await agent.reserveModelCall(); }
         catch (error) { if (error && typeof error === "object" && "code" in error && error.code === "budget_exhausted") throw new NoteMindMapOutputError("本次生成预算已用完", "NOTE_MIND_MAP_BUDGET"); throw error; }
         const attempt: ChatMessage[] = retry
-          ? [...request, { role: "user" as const, content: repairPrompt(lastValidationError) }]
+          ? buildMindMapRepairAttempt(request, lastRejectedOutput, lastValidationError)
           : request;
         const response = await provider.chatCompletion(attempt, parameters, signal);
         try {
           return { ok: true, output: validate(response.content), promptTokens: response.usage?.promptTokens ?? undefined, completionTokens: response.usage?.completionTokens ?? undefined };
         } catch (error) {
-          if (error instanceof NoteMindMapOutputError) lastValidationError = error.message;
+          if (error instanceof NoteMindMapOutputError) {
+            lastValidationError = error.message;
+            lastRejectedOutput = response.content;
+          }
           throw error;
         }
       },

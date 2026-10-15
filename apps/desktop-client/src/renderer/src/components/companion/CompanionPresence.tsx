@@ -1,5 +1,4 @@
 import { isCompanionSpeechActive, subscribeCompanionSpeechActivity } from "../../app/companion-voice-playback";
-import { requireWorkspaceEpoch } from "../../app/desktop-client";
 import { useCompanionAwareness } from "../../app/use-companion-awareness";
 import { useSpaceArrival } from "../hud/space-arrival";
 import { publishCompanionAccountChanged, subscribeCompanionAccountChanged } from "./companion-events";
@@ -495,16 +494,28 @@ export function CompanionPresence() {
     const cue = companionProjection.projection?.proactiveCue, delivery = cue?.initiative;
     if (!cue || !delivery || !receiveInitiative || chatPhase === "sending" || replySpeaking || presencePaused || companionSilenced || assessmentMode || guideOpen) return;
     let cancelled = false;
-    void requireWorkspaceEpoch().then(async epoch => {
-      const api = window.astella?.companion?.initiative;
-      if (!api) return;
-      const identity = unwrapGatewayResult(await api.identity({ meta: createRequestMeta(epoch) }));
-      // 这一次机会是发给**哪台设备**的，由服务端在观察时定下来。认不出目标设备就谁都不出声：
-      // 原来的写法在 deviceSessionId 为空时两边都会接，同一句问候会在两台机器上各念一遍。
-      if (cancelled || delivery.deviceSessionId !== identity.deviceSessionId) return;
-      await receiveInitiative(delivery);
-      await cueDeliveryReporter.shown({cueKey:`initiative:${delivery.runId}`,inboxSequence:cue.revision});
-    }).catch(() => undefined);
+    /**
+     * 谁在小屋界面谁说这一次，**不再问这一句当初是发给哪台设备的**。
+     *
+     * 原来这里要求投递记录的设备与本设备当前会话**严格相等**才出声：那句"发给谁"来自观察
+     * 那一刻的租约，而他手机上开着的原型页比桌面新，于是桌面永久静音。
+     * 实测 16 条主动投递里 10 条这样停在 `queued` 直到过期——她说了，两台设备都不出声。
+     * 正文本来就落在共享对话里，投递只管"回到屋里还来不来得及补念这一次"；
+     * 只说一次由这条回执（present→displayed）与服务端那份跨设备租约把关，
+     * 认领过后投影就不再把它交给任何设备。
+     *
+     * 回执只在**她的话真的落到气泡上**之后发（`receiveInitiative` 的返回值）。
+     * 无条件发的代价不是少一条记录：`readProactiveCue` 只认 `queued`/`delivered`，
+     * 一句被记成 `displayed` 的话从此不再交给任何设备——没露出来的气泡把这一句
+     * 永久吃掉，而数据上看起来"已展示"（22 条投递里 9 条就是这个形状）。
+     */
+    void (async () => {
+      try {
+        const shown = await receiveInitiative(delivery);
+        if (cancelled || !shown) return;
+        await cueDeliveryReporter.shown({ cueKey: `initiative:${delivery.runId}`, inboxSequence: cue.revision });
+      } catch { /* 这一次没接住：下一条机会照旧 */ }
+    })();
     return () => { cancelled = true; };
   }, [companionProjection.projection?.proactiveCue, receiveInitiative, chatPhase, replySpeaking, presencePaused, companionSilenced, assessmentMode, guideOpen, cueDeliveryReporter]);
 

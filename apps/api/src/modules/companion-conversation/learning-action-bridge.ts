@@ -17,6 +17,7 @@ import { sql } from "drizzle-orm";
 import { acceptCompanionToolReview } from "./companion-tool-review-action.ts";
 import { companionGroundedTutorGrantV1Schema, companionLearningContextV1Schema, companionLearningRunContextV1Schema, learningRunAssistanceConsequenceV1, proposedLearningActionPayloadV1Schema } from "@astella/shared";
 import { sha256Utf8V1, canonicalJsonV1 } from "@astella/shared/content-hash";
+import { lockCompanionConversationWaitingRuns, lockCompanionRunForEventWrite } from "@astella/shared/companion-lock-order";
 import { withWorkspaceTransaction, type ApiTransaction } from "../../db/client.ts";
 // Plan 23 CS-05/CS-06：Objective Surface 派生 companion 上下文（不再依赖 V1 card_key_points.claim）。
 import { deliver } from "./delivery/delivery-service.ts";
@@ -290,6 +291,11 @@ async function createCompanionProposalInTransaction(
       // conversation：提供时校验；缺省时原子创建 dialogue
       let conversationId = args.conversationId;
       if (conversationId) {
+        // 锁序规约：先 run 行、后会话行（见 @astella/shared/companion-lock-order）。
+        // 下面的 `FOR UPDATE` 会锁会话行，而随后的 reclaim 会碰 run 行；若不先锁 run，
+        // 本事务就是「先会话后 run」的 A 序，与流式路径并发即 AB-BA
+        // （2026-10-14 dev 库实测两例死锁）。
+        await lockCompanionConversationWaitingRuns(tx, conversationId);
         const conv = await tx.execute<{ id: string; kind: string; status: string }>(sql`
           SELECT id, kind, status FROM companion_conversations WHERE id = ${conversationId}
           FOR UPDATE
@@ -681,6 +687,35 @@ async function decideCompanionProposalInCurrentTransaction(args: CompanionPropos
   const result = await withWorkspaceTransaction(
     { workspaceId: args.workspaceId, userId: args.userId },
     async (tx) => {
+      // 四表全序（见 @astella/shared/companion-lock-order）：
+      //   turn_runs → conversations → action_proposals → agent_tool_calls
+      // 本事务原来第一句就是 `SELECT … FOR UPDATE` 锁 proposal 行，直到很后面
+      // 才锁 run/会话；而 `cancel` 是先锁 run（companion-cancel.ts:95）、最后才锁
+      // proposal（:140）。同一条 pending proposal + 它的 agent run 两边都碰、取锁
+      // 次序相反：decide 持 proposal 等 run，cancel 持 run 等 proposal → AB-BA。
+      //
+      // proposal 的 conversation_id / agent_run_id 由 INSERT 定死、全仓没有任何
+      // UPDATE 改过它们，所以先**无锁**读出这两个定位字段，按全序锁完 run 与
+      // 会话，再 FOR UPDATE 重读并做全部校验——校验用的仍是已锁行，语义不变。
+      const locate = await tx.execute<{ conversation_id: string; agent_run_id: string | null }>(sql`
+        SELECT conversation_id, agent_run_id
+        FROM companion_action_proposals
+        WHERE id = ${args.proposalId}
+      `);
+      if (!locate[0]) {
+        throw new CompanionConversationError("NOT_FOUND", 404, "proposal not found");
+      }
+      // 菜单/路由 proposal 的 agent_run_id 为 NULL，没有具体 run 可锁；锁住本
+      // 会话所有 waiting 的 run，正好覆盖 agent_tool proposal 等待确认的那一条。
+      if (locate[0].agent_run_id) {
+        await lockCompanionRunForEventWrite(tx, locate[0].agent_run_id);
+      }
+      await lockCompanionConversationWaitingRuns(tx, locate[0].conversation_id);
+      await tx.execute(sql`
+        SELECT id FROM companion_conversations
+        WHERE id = ${locate[0].conversation_id}
+        FOR UPDATE
+      `);
       const rows = await tx.execute<{
         id: string; conversation_id: string; source_message_id: string | null; status: string; decision: string | null;
         decision_key_hash: string | null; expires_at: Date | null;
@@ -791,11 +826,9 @@ async function decideCompanionProposalInCurrentTransaction(args: CompanionPropos
           throw new CompanionConversationError("ACTION_STALE", 409, "agent run is no longer current");
         }
       }
-      await tx.execute(sql`
-        SELECT id FROM companion_conversations
-        WHERE id = ${proposal.conversation_id}
-        FOR UPDATE
-      `);
+      // 会话行已在事务开头按四表全序锁过（见顶部 locate → 预锁 → conversations
+      // FOR UPDATE），这里不再重复取锁；`proposal.conversation_id` 与 locate 读到
+      // 的是同一行的同一字段——全仓没有任何 UPDATE 改过它，两次读之间不会变。
       // 显式 ::uuid 转型：菜单/路由 proposal 的 agent_run_id 为 NULL，而裸参数出现在
       // `$n IS NULL` 中时 PostgreSQL 无法从该表达式推断类型（另一处 `id <> $n` 是
       // **另一个**占位符，不能替它定型），于是报 42P18 could not determine data type

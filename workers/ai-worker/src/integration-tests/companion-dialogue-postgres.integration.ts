@@ -17,19 +17,31 @@ import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
+import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { sql as drizzleSql } from "drizzle-orm";
 import {
+  AgentRole,
+  type AgentTurnRequest,
   COMPANION_IDENTITY_BOUNDARY_V4,
-  COMPANION_PERSONA_V13_PROMPT_ID,
-  COMPANION_PERSONA_V13_SHA256,
+  COMPANION_PERSONA_V14_PROMPT_ID,
+  COMPANION_PERSONA_V14_SHA256,
+  companionPublicErrorCodeV1Schema,
 } from "@astella/shared";
-import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
+import { arrangeCompanionAttention } from "@astella/agent-host";
+import { canonicalJsonV1, sha256Utf8V1, stableStringify } from "@astella/shared/content-hash";
 import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 import type { CompanionContextHandoffSnapshotV1 } from "../handlers/companion-dialogue-content.ts";
 import { OpenCodeGoProvider } from "../lib/providers/opencode-go.ts";
 import { ProviderStreamError } from "../lib/provider-request-error.ts";
-import { AgentOutputError } from "../lib/non-retryable-errors.ts";
+import { AgentOutputError, CompanionContextChangedError } from "../lib/non-retryable-errors.ts";
+import { JobLeaseLostError } from "../lib/job-lease.ts";
 import { AIContextOverflowError } from "../lib/context-governor.ts";
+import { createCompanionCompactionProgressStore } from "../handlers/companion-compaction-progress.ts";
+import { summarizeCompleteCompanionSource } from "../handlers/companion-semantic-chunks.ts";
+import type { CompanionSemanticCheckpoint } from "../handlers/companion-semantic-checkpoint.ts";
+import { decodeCompanionToolResult } from "../handlers/companion-runtime-checkpoint.ts";
+import { agentTurnInterpretationV1Schema } from "@astella/shared/agent-contracts";
 
 const CONN = testDatabaseUrl("DATABASE_URL_API");
 // worker db.ts 读 DATABASE_URL，
@@ -60,7 +72,11 @@ const {
   persistCompanionContextHandoffSnapshot,
   markCompanionRunFailed,
   readConversationSummary,
+  readCompanionHistoryRows,
+  companionRecentHistoryFromRows,
+  recordCompanionContextCompactions,
 } = await import("../handlers/companion-dialogue-store.ts");
+const { buildCompanionPersonaMessages } = await import("../handlers/companion-dialogue-content.ts");
 const { withWorkerWorkspaceTransaction } = await import("../db.ts");
 const { seedFormalAnswerRun } = await import("./helpers/formal-answer-fixture.ts");
 
@@ -114,6 +130,11 @@ async function seedDialogueRun(
     userText?: string;
     /** 插入一条更新的 text 用户消息，验证 userText 不按“最近 text”取。 */
     newerTextMessage?: boolean;
+    /**
+     * 主动交流那一轮（方案 56）：没有用户消息，run 的 `input_source` 记 initiative。
+     * 0423 的 `companion_turn_input_identity` 只允许这一形状（二者必居其一）。
+     */
+    initiative?: boolean;
     /** 多个 run 共用同一测试账号时，由最后一个 fixture 统一删除账号和空间。 */
     cleanupWorkspace?: boolean;
     /**
@@ -133,32 +154,64 @@ async function seedDialogueRun(
   const userMessageId = randomUUID();
   const olderTextId = randomUUID();
   const pageContextId = randomUUID();
+  // 主动交流的 run 由 `companion_initiative` 那一轮 job 建立，`input_source.preparationJobId`
+  // 指向它（0423 的 worker 插入策略按这条链认来源）。这里照生产形状建一行。
+  const preparationJobId = randomUUID();
+  // 主动轮的 `facts.canSpeak=true` 是"人现在真的在前台"的声明；装配前的
+  // `assertCompanionContextSourcesCurrent` 会回查这一行（45 秒内、前台且解锁、不在打字）。
+  // 不种它，整轮会在 provider 边界之前以 CONTEXT_STALE 结束——测不到终态写入。
+  const initiativeDeviceSessionId = `device:${randomUUID()}`;
   const userText = options.userText ?? "帮我复习光合作用";
   await sql.begin(async (tx) => {
     await tx`SELECT set_config('app.workspace_id', ${ws}, true)`;
     await tx`SELECT set_config('app.user_id', ${uid}, true)`;
     await tx`INSERT INTO companion_conversations (id, workspace_id, user_id, kind, title, title_source, status)
              VALUES (${cid}, ${ws}, ${uid}, 'dialogue', '会话', 'auto', 'active')`;
-    // 本 run 的用户消息（可能是 voice_transcript，kind ≠ 'text'）
-    await tx`INSERT INTO companion_messages (id, conversation_id, workspace_id, user_id, role, seq, kind, blocks, content_sha256)
-             VALUES (${userMessageId}, ${cid}, ${ws}, ${uid}, 'user', 1, ${options.userKind ?? "text"},
-                     ${tx.json([{ type: "text", text: userText }])}, ${"0".repeat(64)})`;
-    if (options.newerTextMessage) {
-      // 更新的 text 消息——修复前 userText 会错误取到它（ORDER BY seq DESC + kind='text'）
+    if (!options.initiative) {
+      // 本 run 的用户消息（可能是 voice_transcript，kind ≠ 'text'）
       await tx`INSERT INTO companion_messages (id, conversation_id, workspace_id, user_id, role, seq, kind, blocks, content_sha256)
-               VALUES (${olderTextId}, ${cid}, ${ws}, ${uid}, 'user', 2, 'text',
-                       ${tx.json([{ type: "text", text: "上一轮的旧文本" }])}, ${"1".repeat(64)})`;
+               VALUES (${userMessageId}, ${cid}, ${ws}, ${uid}, 'user', 1, ${options.userKind ?? "text"},
+                       ${tx.json([{ type: "text", text: userText }])}, ${"0".repeat(64)})`;
+      if (options.newerTextMessage) {
+        // 更新的 text 消息——修复前 userText 会错误取到它（ORDER BY seq DESC + kind='text'）
+        await tx`INSERT INTO companion_messages (id, conversation_id, workspace_id, user_id, role, seq, kind, blocks, content_sha256)
+                 VALUES (${olderTextId}, ${cid}, ${ws}, ${uid}, 'user', 2, 'text',
+                         ${tx.json([{ type: "text", text: "上一轮的旧文本" }])}, ${"1".repeat(64)})`;
+      }
     }
     // 账号状态行：生产里由 turn-service 在建 run 之前幂等建（2026-10-06 补的 fail-closed 修复）。
     // 这里照着建，否则这条夹具就绕过了生产路径——而 worker 的预留语句是 INNER JOIN
     // user_companion_account_state，缺行 ⇒ AGENT_BUDGET_EXCEEDED。
     await tx`INSERT INTO user_companion_account_state (user_id) VALUES (${uid})
              ON CONFLICT (user_id) DO NOTHING`;
+    if (options.initiative) {
+      await tx`INSERT INTO jobs
+                 (id, type, workspace_id, requested_by, payload, status, attempts,
+                  started_at, lease_token, priority, resource_class)
+               VALUES (${preparationJobId}, 'companion_initiative', ${ws}, ${uid},
+                       ${tx.json({ userId: uid })}, 'running', 0, now(), 'fixture-lease', 1, 'interactive_ai')`;
+      await tx`INSERT INTO companion_awareness_sessions
+                 (workspace_id, user_id, device_session_id, app_launch_id, host, context,
+                  typing_until, observed_at, updated_at)
+               VALUES (${ws}, ${uid}, ${initiativeDeviceSessionId}, ${randomUUID()}, 'desktop',
+                       ${tx.json({ foreground: true, unlocked: true, typing: false, learning: false,
+                           conversationId: cid,
+                           page: { key: "home", label: "书房", revision: null, context: null } })},
+                       NULL, now(), now())`;
+    }
     await tx`INSERT INTO companion_turn_runs
              (id, conversation_id, workspace_id, user_id, user_message_id, generation, status,
-              idempotency_key_hash, request_body_hash, job_id)
-             VALUES (${runId}, ${cid}, ${ws}, ${uid}, ${userMessageId}, 1, ${options.runStatus ?? "accepted"},
-                     ${"a".repeat(64)}, ${"b".repeat(64)}, ${jobId})`;
+              idempotency_key_hash, request_body_hash, job_id, input_source)
+             VALUES (${runId}, ${cid}, ${ws}, ${uid}, ${options.initiative ? null : userMessageId},
+                     1, ${options.runStatus ?? "accepted"}, ${"a".repeat(64)}, ${"b".repeat(64)}, ${jobId},
+                     ${options.initiative
+                       ? tx.json({ version: 1, kind: "initiative", preparationJobId,
+                           observationId: null, attentionKey: null, attentionRevision: null,
+                           preferenceRevision: 0, parentRunId: null,
+                           deviceSessionId: initiativeDeviceSessionId,
+                           topic: "attention.due", intent: "安静下来时问她一句近况。",
+                           facts: { canSpeak: true } })
+                       : null})`;
     await tx`INSERT INTO jobs
                (id, type, workspace_id, requested_by, payload, status, attempts,
                 started_at, lease_token, priority, resource_class)
@@ -194,7 +247,11 @@ async function seedDialogueRun(
       await tx`DELETE FROM assistant_page_contexts WHERE id = ${pageContextId}`;
       await tx`DELETE FROM companion_turn_runs WHERE id = ${runId}`;
       await tx`DELETE FROM jobs WHERE id = ${jobId}`;
+      // 主动轮的来源 job（普通轮没有这一行；DELETE 命中 0 行也无所谓）。
+      await tx`DELETE FROM jobs WHERE id = ${preparationJobId}`;
       await tx`DELETE FROM conversation_summaries WHERE conversation_id = ${cid}`;
+      await tx`DELETE FROM companion_messages WHERE conversation_id = ${cid} AND action_ref IS NOT NULL`;
+      await tx`DELETE FROM companion_action_proposals WHERE conversation_id = ${cid}`;
       await tx`DELETE FROM companion_messages WHERE conversation_id = ${cid}`;
       await tx`DELETE FROM companion_stream_events WHERE conversation_id = ${cid}`;
       await tx`DELETE FROM companion_conversations WHERE id = ${cid}`;
@@ -222,6 +279,539 @@ function invokeRun(
     signal: new AbortController().signal,
   });
 }
+
+for (const decision of ["confirm", "reject"] as const) test(`confirmation retains earlier reads and every unexecuted call / ${decision}`, async () => {
+  const scope = await seedBase();
+  const userText = "先核对原始记录，写一篇本轮测试笔记，不要读取笔记库，再读取当前上下文。";
+  const run = await seedDialogueRun(scope.workspaceId, scope.userId, { userText });
+  const admin = postgres(testDatabaseUrl("DATABASE_URL_MIGRATOR"), { max: 1 });
+  const original = MockProvider.prototype.executeAgentTurn;
+  const nextJobId = randomUUID();
+  try {
+    const interpretation = agentTurnInterpretationV1Schema.parse({ version: 1, requestHash: sha256Utf8V1(userText),
+      intent: "task", toolUse: "act", subjects: [], goalRelation: "new", goalReference: null,
+      candidateOperations: ["companion_create_note"], ambiguities: [], status: "interpreted" });
+    await readInScope(scope, tx => tx`UPDATE companion_turn_runs SET permission_level='read_only',
+      turn_interpretation=${tx.json(interpretation)} WHERE id=${run.runId}`);
+    const calls = [{ id: "read-before-card", name: "companion_read_history", arguments: { fromSeq: 1, limit: 3 } },
+      { id: "write-at-card", name: "companion_create_note", arguments: { title: "Confirmation recovery fixture", markdown: "Full retained body.", links: [] } },
+      { id: "read-after-card", name: "companion_read_context", arguments: {} }];
+    let originalCalls = 0;
+    MockProvider.prototype.executeAgentTurn = async () => {
+      assert.equal(++originalCalls, 1, "the original mixed batch must pause at its confirmation card");
+      return { content: null, toolCalls: calls, finishReason: "tool_calls", usage: {}, providerRequestId: "mixed-round-before-confirmation" };
+    };
+    await invokeRun(scope.workspaceId, scope.userId, run);
+    const before = await readInScope(scope, async tx => ({
+      run: (await tx`SELECT status,waiting_proposal_id FROM companion_turn_runs WHERE id=${run.runId}`)[0],
+      step: (await tx`SELECT status,runtime_checkpoint FROM companion_agent_steps WHERE run_id=${run.runId}`)[0],
+      tools: await tx`SELECT tool_call_id,name,status FROM companion_agent_tool_calls WHERE run_id=${run.runId}`,
+    }));
+    assert.equal(before.run!.status, "waiting_for_confirmation");
+    assert.equal(before.step!.status, "waiting");
+    const snapshot = JSON.parse(before.step!.runtime_checkpoint.stateJson);
+    assert.equal(snapshot.phase, "waiting");
+    assert.equal(snapshot.proposalId, before.run!.waiting_proposal_id);
+    assert.equal(snapshot.pendingCallId, "write-at-card");
+    assert.equal(before.tools.length, 2, "the later read has not executed while waiting");
+    const priorRead = snapshot.state.messages.find((message: { role: string; toolCallId?: string }) => message.role === "tool" && message.toolCallId === "read-before-card");
+    assert.ok(priorRead.content.includes(userText));
+    const preamble = "我先按你给的正文新建这篇笔记。";
+    snapshot.state.visibleSegments = [preamble];
+    snapshot.state.visibleSegmentDelivered = [true];
+    snapshot.state.messages.find((message: { role: string; toolCalls?: unknown[] }) => message.role === "assistant" && message.toolCalls?.length === 3).content = preamble;
+    const stateJson = stableStringify(snapshot);
+    // A prior process committed only the first delta before its confirmation
+    // card changed the run to waiting. Its full safe preamble survives privately.
+    const checkpoint = { ...before.step!.runtime_checkpoint, stateJson, stateSha256: sha256Utf8V1(stateJson) };
+    await readInScope(scope, async tx => {
+      await tx`UPDATE companion_agent_steps SET runtime_checkpoint=${tx.json(checkpoint)} WHERE run_id=${run.runId}`;
+      const [counter] = await tx`UPDATE companion_conversations SET next_event_seq=next_event_seq+1 WHERE id=${run.cid} RETURNING next_event_seq`;
+      await tx`INSERT INTO companion_stream_events(conversation_id,seq,workspace_id,user_id,run_id,generation,account_epoch,type,payload,expires_at)
+        VALUES(${run.cid},${Number(counter!.next_event_seq)-1},${scope.workspaceId},${scope.userId},${run.runId},1,0,'assistant.delta',
+          ${tx.json({ appendFrom: 0, textDelta: preamble.slice(0,-3) })},now()+interval '1 hour')`;
+    });
+    await admin`UPDATE companion_action_proposals SET decision=${decision},status=${decision === "confirm" ? "accepted" : "rejected"}
+      WHERE id=${before.run!.waiting_proposal_id}`;
+    await admin`UPDATE companion_agent_tool_calls SET status=${decision === "confirm" ? "requested" : "not_executed"}
+      WHERE run_id=${run.runId} AND tool_call_id='write-at-card'`;
+    await admin`INSERT INTO jobs(id,type,workspace_id,requested_by,payload,status,lease_token,started_at,priority,resource_class)
+      VALUES(${nextJobId},'companion_agent',${scope.workspaceId},${scope.userId},
+        ${admin.json({ runId: run.runId, proposalId: before.run!.waiting_proposal_id })},'running','confirmation-worker',now(),1,'interactive_ai')`;
+    // The decision API rebinds the run to this continuation job after enqueue.
+    await admin`UPDATE companion_turn_runs SET status='accepted',waiting_proposal_id=NULL,job_id=${nextJobId}
+      WHERE id=${run.runId}`;
+    // A quick decision may arrive while the original job still holds its own
+    // valid lease. Its late bookkeeping cannot restore the old waiting state.
+    const events = await import("../handlers/companion-agent-events.ts");
+    const oldEvent = { ctx: { id: run.jobId, payload: { runId: run.runId }, workspaceId: scope.workspaceId,
+      requestedBy: scope.userId, leaseToken: "fixture-lease", signal: new AbortController().signal },
+    read: { runId: run.runId, conversationId: run.cid, userId: scope.userId, generation: 1, accountEpoch: 0 },
+    expiresAt: new Date(Date.now() + 60_000).toISOString(), constraints: {} } as unknown as Parameters<typeof events.persistStep>[0];
+    await events.updateRunMeta(oldEvent, { stepCount: 99, status: "waiting_for_confirmation", waitingProposalId: snapshot.proposalId });
+    await events.appendAgentEvent(oldEvent, "agent.tool", { tool: { name: "obsolete-confirmation-owner" } });
+    await markCompanionRunFailed(oldEvent.read, oldEvent.ctx, "INTERNAL_ERROR", true, "obsolete failure", "execution");
+    const [stillAccepted] = await readInScope(scope, tx => tx`SELECT status,waiting_proposal_id,job_id,step_count FROM companion_turn_runs WHERE id=${run.runId}`);
+    assert.equal(stillAccepted!.status, "accepted");
+    assert.equal(stillAccepted!.waiting_proposal_id, null);
+    assert.equal(stillAccepted!.job_id, nextJobId);
+    assert.notEqual(stillAccepted!.step_count, 99);
+    await admin`UPDATE jobs SET status='succeeded' WHERE id=${run.jobId}`;
+    let resumedCalls = 0;
+    MockProvider.prototype.executeAgentTurn = async request => {
+      resumedCalls++;
+      if (resumedCalls === 1) {
+        assert.deepEqual(request.messages.find(message => message.role === "tool" && message.toolCallId === "read-before-card"), priorRead);
+        assert.deepEqual(request.messages.find(message => message.role === "assistant" && message.toolCalls?.length === 3)?.toolCalls, calls);
+        const decided = JSON.parse(String(request.messages.find(message => message.role === "tool" && message.toolCallId === "write-at-card")?.content));
+        assert.equal(decided.ok, decision === "confirm", JSON.stringify(decided));
+        if (decision === "confirm") assert.ok(decided.data, "the complete saved result returns to the model");
+        const deferred = JSON.parse(String(request.messages.find(message => message.role === "tool" && message.toolCallId === "read-after-card")?.content));
+        assert.equal(deferred.status, "not_executed");
+        return { content: null, toolCalls: [
+          ...(decision === "reject" ? [{ ...calls[1]!, id: "rejected-write-with-new-provider-id" }] : []),
+          { ...calls[2]!, id: "remaining-read-replanned" }], finishReason: "tool_calls", usage: {},
+          providerRequestId: "remaining-read-after-confirmation" };
+      }
+      return { content: "已按本轮的决定继续完成核对。", toolCalls: [], finishReason: "stop", usage: {}, providerRequestId: "completed-after-confirmation" };
+    };
+    await runCompanionDialogue({ id: nextJobId, payload: { runId: run.runId, proposalId: before.run!.waiting_proposal_id },
+      workspaceId: scope.workspaceId, requestedBy: scope.userId, leaseToken: "confirmation-worker", signal: new AbortController().signal });
+    assert.equal(resumedCalls, 2);
+    await readInScope(scope, async tx => {
+      const [finished] = await tx`SELECT status FROM companion_turn_runs WHERE id=${run.runId}`;
+      assert.equal(finished!.status, "succeeded");
+      const replies = await tx`SELECT blocks FROM companion_messages WHERE run_id=${run.runId} AND role='assistant' AND kind='text' ORDER BY seq`;
+      const finalText = replies.at(-1)!.blocks.find((block: { type: string }) => block.type === "text").text;
+      assert.ok(finalText.startsWith(preamble + "\n\n"), "the complete original preamble is retained once");
+      const deltas = await tx`SELECT payload FROM companion_stream_events WHERE run_id=${run.runId} AND type='assistant.delta' ORDER BY seq`;
+      assert.equal(deltas.map(row => row.payload.textDelta).join(""), finalText, "no pre-confirmation tail disappears at resume");
+      const [notes] = await tx`SELECT count(*)::int AS count FROM notes WHERE workspace_id=${scope.workspaceId}`;
+      assert.equal(notes!.count, decision === "confirm" ? 1 : 0);
+      const tools = await tx`SELECT tool_call_id FROM companion_agent_tool_calls WHERE run_id=${run.runId}`;
+      assert.equal(tools.length, 3, "the original read is not executed again");
+      assert.equal(tools.some(row => row.tool_call_id === "read-after-card"), false);
+      assert.equal(tools.some(row => row.tool_call_id === "rejected-write-with-new-provider-id"), false,
+        "a new provider call id cannot bypass the user's rejection in the same run");
+      const [proposals] = await tx`SELECT count(*)::int AS count FROM companion_action_proposals WHERE agent_run_id=${run.runId}`;
+      assert.equal(proposals!.count, 1, "rejection must not create the same confirmation card again");
+      const steps = await tx`SELECT status FROM companion_agent_steps WHERE run_id=${run.runId}`;
+      assert.equal(steps.some(row => row.status === "waiting"), false, "the decided model step no longer appears pending");
+    });
+  } finally {
+    MockProvider.prototype.executeAgentTurn = original;
+    await admin`DELETE FROM jobs WHERE id=${nextJobId}`;
+    await admin.end({ timeout: 2 });
+    await run.cleanup();
+  }
+});
+
+test("a late failed attempt cannot close a step or fail the run after another worker acquires its lease", async () => {
+  const scope = await seedBase();
+  const userText = "Answer only this current question.";
+  const run = await seedDialogueRun(scope.workspaceId, scope.userId, { userText });
+  const admin = postgres(testDatabaseUrl("DATABASE_URL_MIGRATOR"), { max: 1 });
+  const original = MockProvider.prototype.executeAgentTurn;
+  try {
+    const interpretation = agentTurnInterpretationV1Schema.parse({ version: 1, requestHash: sha256Utf8V1(userText),
+      intent: "question", toolUse: "none", subjects: [], goalRelation: "unrelated", goalReference: null,
+      candidateOperations: [], ambiguities: [], status: "interpreted" });
+    await readInScope(scope, tx => tx`UPDATE companion_turn_runs SET turn_interpretation=${tx.json(interpretation)} WHERE id=${run.runId}`);
+    MockProvider.prototype.executeAgentTurn = async () => {
+      await admin`UPDATE jobs SET lease_token='replacement-worker',lease_renewed_at=now() WHERE id=${run.jobId}`;
+      throw new ProviderStreamError("mock", "stream_failed");
+    };
+    await assert.rejects(invokeRun(scope.workspaceId, scope.userId, run), JobLeaseLostError);
+    const before = await readInScope(scope, async tx => ({
+      run: (await tx`SELECT status,error_code FROM companion_turn_runs WHERE id=${run.runId}`)[0],
+      step: (await tx`SELECT id,status,runtime_checkpoint FROM companion_agent_steps WHERE run_id=${run.runId}`)[0],
+      errors: await tx`SELECT type FROM companion_stream_events WHERE run_id=${run.runId} AND type='error'`,
+    }));
+    assert.equal(before.run!.status, "running");
+    assert.equal(before.run!.error_code, null);
+    assert.equal(before.step!.status, "running");
+    assert.ok(before.step!.runtime_checkpoint);
+    assert.equal(before.errors.length, 0, "the old worker cannot publish a failure for the new owner");
+    const events = await import("../handlers/companion-agent-events.ts");
+    const event = { ctx: { id: run.jobId, payload: { runId: run.runId }, workspaceId: scope.workspaceId,
+      requestedBy: scope.userId, leaseToken: "fixture-lease", signal: new AbortController().signal },
+    read: { runId: run.runId, conversationId: run.cid, userId: scope.userId, generation: 1, accountEpoch: 0 },
+    expiresAt: new Date(Date.now() + 60_000).toISOString(), constraints: {} } as unknown as Parameters<typeof events.persistStep>[0];
+    await assert.rejects(events.persistStep(event, 2, "a".repeat(64)), JobLeaseLostError);
+    await assert.rejects(events.updateRunMeta(event, { stepCount: 99, status: "waiting_for_confirmation" }), JobLeaseLostError);
+    await assert.rejects(events.appendAgentEvent(event, "agent.tool", { tool: { name: "old-worker" } }), JobLeaseLostError);
+    await assert.rejects(events.finishStep(event, before.step!.id, "failed"), JobLeaseLostError);
+    const ledger = await import("../handlers/companion-tool-call-ledger.ts");
+    const { getCompanionAgentTool } = await import("@astella/shared");
+    const definition = getCompanionAgentTool("companion_read_history")!;
+    const args = { conversationId: run.cid, fromSeq: 1, toSeq: 1 };
+    await assert.rejects(ledger.ensureAgentToolCall(event, before.step!.id, definition,
+      { id: "old-worker-read", arguments: args }, sha256Utf8V1(canonicalJsonV1(args))), JobLeaseLostError);
+    await assert.rejects(ledger.updateToolCall(event, "old-worker-read", { status: "succeeded" }), JobLeaseLostError);
+    await assert.rejects(ledger.updateToolCall(event, "old-worker-read", { status: "failed" }), JobLeaseLostError);
+    await assert.rejects(ledger.recordRejectedToolCall(event, before.step!.id,
+      { id: "old-worker-rejected", name: definition.name }, "a".repeat(64), definition, "blocked", "stale worker"), JobLeaseLostError);
+    const [ledgerRows] = await readInScope(scope, tx => tx`SELECT count(*)::int AS count FROM companion_agent_tool_calls WHERE run_id=${run.runId}`);
+    assert.equal(ledgerRows!.count, 0, "a replaced owner cannot leave new audit rows or receipts");
+    MockProvider.prototype.executeAgentTurn = async () => ({ content: "The current answer is preserved.", toolCalls: [],
+      finishReason: "stop", usage: {}, providerRequestId: "replacement-worker-answer" });
+    await runCompanionDialogue({ ...event.ctx, leaseToken: "replacement-worker" });
+    const [finished] = await readInScope(scope, tx => tx`SELECT status FROM companion_turn_runs WHERE id=${run.runId}`);
+    assert.equal(finished!.status, "succeeded");
+  } finally {
+    MockProvider.prototype.executeAgentTurn = original;
+    await admin.end({ timeout: 2 });
+    await run.cleanup();
+  }
+});
+
+test("a lease replaced after the settled checkpoint fences final delivery and resumes without another model call", async () => {
+  const scope = await seedBase();
+  const userText = "Answer only this current question.";
+  const run = await seedDialogueRun(scope.workspaceId, scope.userId, { userText });
+  const admin = postgres(testDatabaseUrl("DATABASE_URL_MIGRATOR"), { max: 1 });
+  const original = MockProvider.prototype.executeAgentTurn;
+  const hook = `qa_settled_lease_${run.runId.replaceAll("-", "")}`;
+  try {
+    const interpretation = agentTurnInterpretationV1Schema.parse({ version: 1, requestHash: sha256Utf8V1(userText),
+      intent: "question", toolUse: "none", subjects: [], goalRelation: "unrelated", goalReference: null,
+      candidateOperations: [], ambiguities: [], status: "interpreted" });
+    await readInScope(scope, tx => tx`UPDATE companion_turn_runs SET turn_interpretation=${tx.json(interpretation)} WHERE id=${run.runId}`);
+    // QA-only fault at the committed working-state/final-publication boundary.
+    // Identifiers and UUIDs below are generated in this isolated test, never external input.
+    await admin.unsafe(`CREATE FUNCTION public.${hook}() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
+      SET search_path=pg_catalog,public AS $$ BEGIN
+      UPDATE public.jobs SET lease_token='replacement-at-final',lease_renewed_at=now() WHERE id='${run.jobId}';
+      RETURN NEW; END $$`);
+    await admin.unsafe(`CREATE TRIGGER ${hook} AFTER UPDATE OF runtime_checkpoint ON public.companion_agent_steps
+      FOR EACH ROW WHEN (NEW.run_id='${run.runId}' AND ((NEW.runtime_checkpoint->>'stateJson')::jsonb->>'phase')='settled')
+      EXECUTE FUNCTION public.${hook}()`);
+    let modelCalls = 0;
+    MockProvider.prototype.executeAgentTurn = async () => {
+      modelCalls++;
+      return { content: "The completed answer survives final delivery recovery.", toolCalls: [], finishReason: "stop",
+        usage: {}, providerRequestId: "settled-before-lease-replacement" };
+    };
+    await assert.rejects(invokeRun(scope.workspaceId, scope.userId, run), JobLeaseLostError);
+    const before = await readInScope(scope, async tx => ({
+      run: (await tx`SELECT status FROM companion_turn_runs WHERE id=${run.runId}`)[0],
+      step: (await tx`SELECT runtime_checkpoint FROM companion_agent_steps WHERE run_id=${run.runId} ORDER BY step_no DESC LIMIT 1`)[0],
+      finals: await tx`SELECT type FROM companion_stream_events WHERE run_id=${run.runId} AND type='assistant.final'`,
+    }));
+    assert.equal(before.run!.status, "running");
+    assert.equal(JSON.parse(before.step!.runtime_checkpoint.stateJson).phase, "settled");
+    assert.equal(before.finals.length, 0, "the obsolete owner cannot publish completion");
+    await admin.unsafe(`DROP TRIGGER ${hook} ON public.companion_agent_steps`);
+    await runCompanionDialogue({ id: run.jobId, payload: { runId: run.runId }, workspaceId: scope.workspaceId,
+      requestedBy: scope.userId, leaseToken: "replacement-at-final", signal: new AbortController().signal });
+    assert.equal(modelCalls, 1, "the replacement uses the complete settled result");
+    const [finished] = await readInScope(scope, tx => tx`SELECT status FROM companion_turn_runs WHERE id=${run.runId}`);
+    assert.equal(finished!.status, "succeeded");
+  } finally {
+    MockProvider.prototype.executeAgentTurn = original;
+    await admin.unsafe(`DROP TRIGGER IF EXISTS ${hook} ON public.companion_agent_steps`);
+    await admin.unsafe(`DROP FUNCTION IF EXISTS public.${hook}()`);
+    await admin.end({ timeout: 2 });
+    await run.cleanup();
+  }
+});
+
+test("a timed-out owner can record failure with its current lease", async () => {
+  const scope = await seedBase(), run = await seedDialogueRun(scope.workspaceId, scope.userId);
+  const controller = new AbortController(); controller.abort();
+  try {
+    await markCompanionRunFailed({ runId: run.runId, conversationId: run.cid, userId: scope.userId,
+      generation: 1, accountEpoch: 0 }, { id: run.jobId, workspaceId: scope.workspaceId, requestedBy: scope.userId,
+      leaseToken: "fixture-lease", signal: controller.signal }, "AGENT_BUDGET_EXCEEDED", false, "handler timed out", "execution");
+    const [finished] = await readInScope(scope, tx => tx`SELECT status,error_code FROM companion_turn_runs WHERE id=${run.runId}`);
+    assert.equal(finished!.status, "failed");
+    assert.equal(finished!.error_code, "AGENT_BUDGET_EXCEEDED");
+  } finally { await run.cleanup(); }
+});
+
+for (const mode of ["read", "repair-completes", "repair-repeated", "prefix-repair", "partial-stream"] as const)
+  test(`a killed worker resumes exact tool evidence and correction state / ${mode}`, async () => {
+    const scope = await seedBase();
+    const userText = "只根据当前请求和已经读到的原文作答，不安排其他事。";
+    const run = await seedDialogueRun(scope.workspaceId, scope.userId, { userText });
+    const originalExecute = MockProvider.prototype.executeAgentTurn;
+    let child: ReturnType<typeof spawn> | undefined;
+    let childClosed: Promise<unknown> | undefined;
+    try {
+      const interpretation = agentTurnInterpretationV1Schema.parse({ version: 1, requestHash: sha256Utf8V1(userText),
+        intent: "question", toolUse: "none", subjects: [], goalRelation: "unrelated", goalReference: null,
+        candidateOperations: [], ambiguities: [], status: "interpreted" });
+      await readInScope(scope, tx => tx`UPDATE companion_turn_runs SET turn_interpretation=${tx.json(interpretation)} WHERE id=${run.runId}`);
+      child = spawn(process.execPath, ["--import", "tsx", fileURLToPath(new URL("./helpers/companion-runtime-recovery-process.ts", import.meta.url)),
+        JSON.stringify({ ...scope, runId: run.runId, jobId: run.jobId,
+          mode: ["read", "prefix-repair", "partial-stream"].includes(mode) ? mode : "format" })],
+      { env: process.env, stdio: ["ignore", "pipe", "pipe"] });
+      childClosed = new Promise(resolve => child!.once("exit", (code, signal) => resolve({ code, signal })));
+      await new Promise<void>((resolve, reject) => {
+        let output = "", errors = "";
+        const timer = setTimeout(() => reject(new Error(`worker did not reach its recovery boundary: ${errors.slice(-400)}`)), 20_000);
+        child!.stdout!.on("data", chunk => {
+          output += String(chunk);
+          if (output.includes(`RUNTIME_RECOVERY_HELD:${run.runId}`)) { clearTimeout(timer); resolve(); }
+        });
+        child!.stderr!.on("data", chunk => { errors += String(chunk); });
+        child!.once("error", error => { clearTimeout(timer); reject(error); });
+        child!.once("exit", code => { clearTimeout(timer); reject(new Error(`worker exited before hold: ${code}, ${errors.slice(-400)}`)); });
+      });
+      const before = await readInScope(scope, async tx => ({
+        steps: await tx`SELECT step_no,status,runtime_checkpoint FROM companion_agent_steps WHERE run_id=${run.runId} ORDER BY step_no`,
+        tools: await tx`SELECT name,status,result_payload FROM companion_agent_tool_calls WHERE run_id=${run.runId}`,
+      }));
+      assert.equal(before.steps.length, mode === "partial-stream" ? 1 : 2);
+      assert.equal(before.steps.at(-1)!.status, "running");
+      const snapshot = JSON.parse(before.steps.at(-1)!.runtime_checkpoint.stateJson);
+      if (mode === "read") {
+        assert.equal(before.tools.length, 1);
+        const payload = decodeCompanionToolResult(before.tools[0]!.result_payload)!;
+        assert.equal((payload.value.messages as Array<{ text: string }>)[0]!.text, userText);
+        assert.ok(snapshot.state.messages.some((message: { role: string; content: string }) => message.role === "tool"
+          && message.content.includes(userText)), "the next step input includes the complete read result");
+      } else if (mode !== "partial-stream") {
+        assert.equal(snapshot.state.outputRepairToolCount, 0);
+        assert.ok(snapshot.state.messages.some((message: { role: string; content: string }) => message.role === "system"
+          && message.content.includes("上一版")));
+        assert.equal(before.tools.length, 0, "textual protocol has no effects");
+      }
+      child.kill("SIGKILL");
+      assert.deepEqual(await childClosed, { code: null, signal: "SIGKILL" });
+      let resumedCalls = 0;
+      const finalText = "已按当前原文核对，这轮没有新增操作。";
+      MockProvider.prototype.executeAgentTurn = async request => {
+        resumedCalls++;
+        if (mode === "partial-stream") {
+          assert.equal(request.messages.at(-1)?.content, userText);
+          assert.ok(request.messages.some(message => message.role === "assistant" && message.content === "我先核对眼前这一句话的意思。"));
+          assert.ok(request.messages.some(message => message.role === "system" && String(message.content).includes("执行进程中断")));
+        } else assert.deepEqual(request.messages, snapshot.state.messages, "recovery uses the exact saved working transcript");
+        return { content: mode === "repair-repeated"
+          ? "<tool_call><function=agent_calculate><parameter=expression>1+1</parameter></function></tool_call>" : finalText,
+        toolCalls: [], finishReason: "stop", usage: {}, providerRequestId: "resumed-worker-answer" };
+      };
+      if (mode === "repair-repeated") await assert.rejects(invokeRun(scope.workspaceId, scope.userId, run), AgentOutputError);
+      else await invokeRun(scope.workspaceId, scope.userId, run);
+      assert.equal(resumedCalls, 1, "a restart cannot reset the already-used no-progress repair allowance");
+      await readInScope(scope, async tx => {
+        const [finished] = await tx`SELECT status FROM companion_turn_runs WHERE id=${run.runId}`;
+        assert.equal(finished!.status, mode === "repair-repeated" ? "failed" : "succeeded");
+        const tools = await tx`SELECT name FROM companion_agent_tool_calls WHERE run_id=${run.runId}`;
+        assert.equal(tools.length, mode === "read" ? 1 : 0, "completed reads are not requested again and format text never executes");
+        if (mode !== "repair-repeated") {
+          const messages = await tx`SELECT blocks FROM companion_messages WHERE run_id=${run.runId} AND role='assistant'`;
+          const expected = ["prefix-repair", "partial-stream"].includes(mode) ? "我先核对眼前这一句话的意思。\n\n" + finalText : finalText;
+          assert.equal(messages[0]!.blocks[0].text, expected);
+          const deltas = await tx`SELECT payload FROM companion_stream_events WHERE run_id=${run.runId} AND type='assistant.delta' ORDER BY seq`;
+          assert.equal(deltas.map(row => row.payload.textDelta).join(""), expected, "delivered prefix survives exactly once");
+        }
+      });
+    } finally {
+      child?.kill("SIGKILL");
+      if (childClosed) await childClosed;
+      MockProvider.prototype.executeAgentTurn = originalExecute;
+      await run.cleanup();
+    }
+  });
+
+for (const mode of ["protocol-stream", "arguments-stream", "protocol-buffered"] as const)
+  for (const repaired of [true, false]) test(`malformed tool output / ${mode}: ${repaired ? "explicit correction completes" : "no-progress repetition terminates"}`, async () => {
+    const scope = await seedBase();
+    const userText = "只接着眼前这一句话自然聊，不执行操作。";
+    const run = await seedDialogueRun(scope.workspaceId, scope.userId, { userText });
+    const original = MockProvider.prototype.executeAgentTurn;
+    const streamTools = Object.getOwnPropertyDescriptor(MockProvider.prototype, "chatCompletionStreamToolCalls");
+    const prefix = "我先核对眼前这一句话的意思。";
+    const answer = "现在就接着这一句聊，不另外安排事情。";
+    const bad = "<tool_call><function=agent_calculate><parameter=expression>1+1</parameter></function></tool_call>";
+    let attempts = 0;
+    const scripted = async (request: import("@astella/shared").AgentTurnRequest, onDelta?: (text: string) => void) => {
+      attempts++;
+      if (attempts > 1) {
+        assert.ok(request.messages.some(message => message.role === "system" && String(message.content).includes("上一版")), "retry carries explicit model feedback");
+        assert.equal(request.messages.at(-1)?.content, userText, "the exact current request is reattached");
+      }
+      const invalid = attempts === 1 || !repaired;
+      const text = invalid ? prefix + (mode === "arguments-stream" ? "" : bad) : answer;
+      if (onDelta) {
+        if (invalid) { onDelta(prefix); await new Promise(resolve => setTimeout(resolve, 20)); if (mode !== "arguments-stream") onDelta(bad); }
+        else onDelta(answer);
+      }
+      if (invalid && mode === "arguments-stream") throw new AgentOutputError("arguments_malformed", "invalid native JSON");
+      return { content: text, toolCalls: [], finishReason: "stop" as const, usage: null, providerRequestId: null };
+    };
+    try {
+      const interpretation = agentTurnInterpretationV1Schema.parse({ version: 1, requestHash: sha256Utf8V1(userText),
+        intent: "conversation", toolUse: "none", subjects: [], goalRelation: "unrelated", goalReference: null,
+        candidateOperations: [], ambiguities: [], status: "interpreted" });
+      await readInScope(scope, tx => tx`UPDATE companion_turn_runs SET turn_interpretation=${tx.json(interpretation)} WHERE id=${run.runId}`);
+      MockProvider.prototype.executeAgentTurn = request => scripted(request);
+      if (mode !== "protocol-buffered") {
+        Object.defineProperty(MockProvider.prototype, "chatCompletionStreamToolCalls", { configurable: true, value: true });
+        Object.defineProperty(MockProvider.prototype, "chatCompletionStream", { ...mockStreamDescriptor,
+          value: async (_messages: unknown, options: { nativeAgentRequest: import("@astella/shared").AgentTurnRequest },
+            _signal: unknown, onDelta: (text: string) => void) => scripted(options.nativeAgentRequest, onDelta) });
+      }
+      if (repaired) await invokeRun(scope.workspaceId, scope.userId, run);
+      else await assert.rejects(invokeRun(scope.workspaceId, scope.userId, run), error => error instanceof AgentOutputError);
+      assert.equal(attempts, 2, "a correction is tried, but unchanged failed evidence cannot spin forever");
+      const actual = await readInScope(scope, async tx => ({
+        run: (await tx`SELECT status,error_code FROM companion_turn_runs WHERE id=${run.runId}`)[0],
+        messages: await tx`SELECT blocks FROM companion_messages WHERE run_id=${run.runId} AND role='assistant'`,
+        events: await tx`SELECT type,payload FROM companion_stream_events WHERE run_id=${run.runId} ORDER BY seq`,
+        calls: await tx`SELECT name FROM companion_agent_tool_calls WHERE run_id=${run.runId}`,
+      }));
+      assert.equal(actual.calls.length, 0, "textual tool syntax is never executed");
+      assert.equal(actual.run!.status, repaired ? "succeeded" : "failed");
+      const visible = actual.events.filter(event => event.type === "assistant.delta").map(event => event.payload.textDelta).join("");
+      assert.doesNotMatch(visible + JSON.stringify(actual.messages), /tool_call|parameter=|function=/);
+      if (repaired) {
+        assert.ok(visible.endsWith(answer));
+        assert.equal(visible, mode === "protocol-buffered" ? answer : prefix + "\n\n" + answer);
+        assert.ok(actual.events.some(event => event.type === "assistant.final"));
+        assert.ok(actual.events.every(event => event.type !== "error"));
+      } else {
+        assert.ok(actual.events.every(event => event.type !== "assistant.final"));
+        assert.equal(actual.run!.error_code, mode === "arguments-stream" ? "TOOL_ARGUMENTS_INVALID" : "REPLY_FORMAT_INVALID");
+      }
+    } finally {
+      MockProvider.prototype.executeAgentTurn = original;
+      Object.defineProperty(MockProvider.prototype, "chatCompletionStream", { ...mockStreamDescriptor, value: undefined });
+      if (streamTools) Object.defineProperty(MockProvider.prototype, "chatCompletionStreamToolCalls", streamTools);
+      else Reflect.deleteProperty(MockProvider.prototype, "chatCompletionStreamToolCalls");
+      await run.cleanup();
+    }
+  });
+
+for (const repaired of [true, false]) test(`无效工具参数反馈：${repaired ? "按字段修正后继续完成" : "相同无效输入不会无限重试"}`, async () => {
+  const scope = await seedBase();
+  const run = await seedDialogueRun(scope.workspaceId, scope.userId, { userText: "计算1加1。" });
+  const originalChat = MockProvider.prototype.chatCompletion;
+  const originalExecute = MockProvider.prototype.executeAgentTurn;
+  let calls = 0;
+  try {
+    MockProvider.prototype.chatCompletion = async () => ({ content: JSON.stringify({ intent: "question", toolUse: "read",
+      subjects: [], goalRelation: "unrelated", candidateOperations: ["agent_calculate"], ambiguities: [],
+      voiceStyle: { decision: "none", instruction: null }, pendingOfferIndexes: [] }), usage: {} });
+    MockProvider.prototype.executeAgentTurn = async request => {
+      calls += 1;
+      if (calls === 2) {
+        const receipt = request.messages.find(message => message.role === "tool");
+        const feedback = JSON.parse(String(receipt?.content));
+        assert.equal(feedback.code, "invalid_arguments");
+        assert.ok(feedback.validationIssues.some((issue: { path: string[]; expected: string }) =>
+          issue.path.join(".") === "expression" && issue.expected === "string"));
+      }
+      if (calls === 3 && repaired) return { content: "算出来是2。", toolCalls: [], finishReason: "stop", usage: null, providerRequestId: null };
+      return { content: "", toolCalls: [{ id: `calculation-${calls}`, name: "agent_calculate",
+        arguments: { expression: repaired && calls === 2 ? "1+1" : 2 } }],
+        finishReason: "tool_calls", usage: null, providerRequestId: null };
+    };
+    if (repaired) await invokeRun(scope.workspaceId, scope.userId, run);
+    else await assert.rejects(invokeRun(scope.workspaceId, scope.userId, run),
+      (error: unknown) => error instanceof AgentOutputError && error.code === "arguments_malformed");
+    assert.equal(calls, repaired ? 3 : 2);
+    const [result] = await readInScope(scope, tx => tx`SELECT status FROM companion_turn_runs WHERE id=${run.runId}`);
+    assert.equal(result.status, repaired ? "succeeded" : "failed");
+    if (!repaired) {
+      const steps = await readInScope(scope, tx => tx`SELECT error_code FROM companion_agent_steps WHERE run_id=${run.runId} ORDER BY step_no`);
+      assert.equal(steps.at(-1)?.error_code, "REPEATED_INVALID_TOOL_ARGUMENTS");
+      const errors = await readInScope(scope, tx => tx`SELECT payload FROM companion_stream_events WHERE run_id=${run.runId} AND type='error'`);
+      assert.equal(errors[0]?.payload.code, "TOOL_ARGUMENTS_INVALID");
+      assert.ok(companionPublicErrorCodeV1Schema.safeParse(errors[0]?.payload.code).success);
+      assert.equal(errors[0]?.payload.recoverable, false);
+    }
+  } finally {
+    MockProvider.prototype.chatCompletion = originalChat;
+    MockProvider.prototype.executeAgentTurn = originalExecute;
+    await run.cleanup();
+  }
+});
+
+for (const repaired of [true, false]) test(`动作回执缺失：${repaired ? "核验无需变更后完成" : "纠正后仍不执行时不能交付完成声明"}`, async () => {
+  const scope = await seedBase();
+  const run = await seedDialogueRun(scope.workspaceId, scope.userId, { userText: "只保留前台安静事件，不要设置重评时间。" });
+  const plan = { key: "quiet", expectedRevision: 0, intent: "只关注前台安静事件。", topics: ["presence.quiet"] as "presence.quiet"[],
+    nextReviewAt: null, expiresAt: null, preferenceRevision: null, selfNote: null, state: "active" as const };
+  const origin = { conversationId: run.cid, runId: run.runId };
+  const saved = await withWorkerWorkspaceTransaction(scope, tx => arrangeCompanionAttention(tx, scope, plan, origin));
+  const originalChat = MockProvider.prototype.chatCompletion, originalExecute = MockProvider.prototype.executeAgentTurn;
+  let calls = 0;
+  try {
+    MockProvider.prototype.chatCompletion = async () => ({ content: JSON.stringify({ intent: "task_control", toolUse: "act",
+      subjects: [], goalRelation: "unrelated", candidateOperations: ["companion_arrange_attention"], ambiguities: [],
+      voiceStyle: { decision: "none", instruction: null }, pendingOfferIndexes: [] }), usage: {} });
+    MockProvider.prototype.executeAgentTurn = async request => {
+      calls += 1;
+      if (calls === 2 && repaired) return { content: "", toolCalls: [{ id: "verify-quiet", name: "companion_arrange_attention",
+        arguments: { ...plan, expectedRevision: 1 } }], finishReason: "tool_calls", usage: null, providerRequestId: null };
+      if (calls === 3 && repaired) {
+        const receipt = request.messages.find(message => message.role === "tool");
+        const result = JSON.parse(String(receipt?.content));
+        assert.equal(result.ok, true); assert.equal(result.data.changed, false);
+        assert.deepEqual(result.data.attention, saved.attention);
+      }
+      return { content: "实际结果：只保留安静事件，没有定时唤醒。", toolCalls: [], finishReason: "stop", usage: null, providerRequestId: null };
+    };
+    if (repaired) await invokeRun(scope.workspaceId, scope.userId, run);
+    else await assert.rejects(invokeRun(scope.workspaceId, scope.userId, run),
+      (error: unknown) => error instanceof AgentOutputError && error.code === "action_unverified");
+    assert.equal(calls, 3);
+    const [state] = await readInScope(scope, tx => tx`SELECT status FROM companion_turn_runs WHERE id=${run.runId}`);
+    assert.equal(state.status, repaired ? "succeeded" : "failed");
+    const [current] = await readInScope(scope, tx => tx`SELECT revision,updated_at FROM companion_attention_plans WHERE user_id=${scope.userId}`);
+    assert.equal(current.revision, 1); assert.equal(new Date(current.updated_at).toISOString(), saved.attention.updatedAt);
+    if (!repaired) {
+      const errors = await readInScope(scope, tx => tx`SELECT payload FROM companion_stream_events WHERE run_id=${run.runId} AND type='error'`);
+      assert.equal(errors[0]?.payload.code, "ACTION_NOT_EXECUTED"); assert.equal(errors[0]?.payload.recoverable, false);
+      assert.ok(companionPublicErrorCodeV1Schema.safeParse(errors[0]?.payload.code).success);
+      const deltas = await readInScope(scope, tx => tx`SELECT payload FROM companion_stream_events WHERE run_id=${run.runId} AND type='assistant.delta'`);
+      assert.equal(deltas.length, 0, "unverified completion text must never become visible");
+    }
+  } finally {
+    MockProvider.prototype.chatCompletion = originalChat; MockProvider.prototype.executeAgentTurn = originalExecute;
+    await run.cleanup();
+  }
+});
+
+for (const repaired of [true, false]) test(`本轮禁止时间唤醒：${repaired ? "仅事件的修正可继续保存" : "换个时间也不能绕过禁止"}`, async () => {
+  const scope = await seedBase();
+  const run = await seedDialogueRun(scope.workspaceId, scope.userId, { userText: "只按安静事件触发，不要设置固定时间。" });
+  const originalChat = MockProvider.prototype.chatCompletion;
+  const originalExecute = MockProvider.prototype.executeAgentTurn;
+  let calls = 0;
+  try {
+    MockProvider.prototype.chatCompletion = async () => ({ content: JSON.stringify({ intent: "task", toolUse: "act",
+      subjects: [], goalRelation: "unrelated", candidateOperations: ["companion_arrange_attention"], ambiguities: [],
+      executionConstraints: { timeBasedWakeups: "forbid", sourceQuote: "不要设置固定时间" },
+      voiceStyle: { decision: "none", instruction: null }, pendingOfferIndexes: [] }), usage: {} });
+    MockProvider.prototype.executeAgentTurn = async request => {
+      calls += 1;
+      assert.match(request.systemPrompt, /本轮执行边界/);
+      if (calls === 2) assert.ok(request.messages.some(message => message.role === "tool"
+        && String(message.content).includes("execution_constraint")));
+      if (calls === 3 && repaired) return { content: "已按事件安排，没有定时重评。", toolCalls: [], finishReason: "stop", usage: null, providerRequestId: null };
+      return { content: "", toolCalls: [{ id: `attention-${calls}`, name: "companion_arrange_attention", arguments: {
+        key: "quiet-event-only", expectedRevision: 0, intent: "前台安静时自然问近况，只按事件触发。", topics: ["presence.quiet"],
+        nextReviewAt: repaired && calls === 2 ? null : new Date(Date.now() + calls * 3600000).toISOString(),
+        expiresAt: null, preferenceRevision: null, selfNote: null, state: "active",
+      } }], finishReason: "tool_calls", usage: null, providerRequestId: null };
+    };
+    if (repaired) await invokeRun(scope.workspaceId, scope.userId, run);
+    else await assert.rejects(invokeRun(scope.workspaceId, scope.userId, run),
+      (error: unknown) => error instanceof AgentOutputError && error.code === "arguments_malformed");
+    assert.equal(calls, repaired ? 3 : 2);
+    const plans = await readInScope(scope, tx => tx`SELECT next_review_at FROM companion_attention_plans WHERE entry_key='quiet-event-only'`);
+    assert.equal(plans.length, repaired ? 1 : 0);
+    if (repaired) assert.equal(plans[0].next_review_at, null);
+  } finally {
+    MockProvider.prototype.chatCompletion = originalChat;
+    MockProvider.prototype.executeAgentTurn = originalExecute;
+    await run.cleanup();
+  }
+});
 
 test("原文引文纠正后仍不匹配时发布失败，不保存成功答案或重投整轮", async () => {
   const scope = await seedBase();
@@ -366,8 +956,19 @@ for (const mode of ["eof", "output-limit", "delayed-phase"] as const) {
             const data = (event: unknown) => encoder.encode(`data: ${JSON.stringify(event)}\n\n`);
             yield data({ type: "response.output_text.delta", output_index: 0,
               delta: mode === "delayed-phase" ? "私有中间说明不应送达" : text });
-            // 让真实分类放行闸和受限角色的 delta 事务完成，再模拟终止事件/断流。
-            await new Promise(resolve => setTimeout(resolve, 100));
+            // This case tests preservation of an already delivered prefix.
+            // Synchronize on its real committed event; a fixed 100ms raced the
+            // classifier/restricted-role flush under the full regression load.
+            if (mode !== "delayed-phase") {
+              const deadline = Date.now() + 10_000;
+              for (;;) {
+                const rows = await readInScope(scope, tx => tx`SELECT 1 FROM companion_stream_events
+                  WHERE run_id=${s.runId} AND type='assistant.delta' LIMIT 1`);
+                if (rows.length) break;
+                assert.ok(Date.now() < deadline, "the scripted prefix must be committed before simulating interruption");
+                await new Promise(resolve => setTimeout(resolve, 20));
+              }
+            }
             if (mode === "output-limit") yield data({ type: "response.incomplete", response: {
               status: "incomplete", incomplete_details: { reason: "max_output_tokens" } } });
             if (mode === "delayed-phase") yield data({ type: "response.completed", response: {
@@ -497,7 +1098,7 @@ test("P2 §5.2：accepted run → assistant message + status/delta/final 事件 
           generation: 1,
           accountEpoch: 0,
         },
-        workspaceId,
+        { id: failed.jobId, workspaceId, requestedBy: userId, leaseToken: "fixture-lease" },
         "PROVIDER_UNAVAILABLE",
         true,
         "provider unavailable",
@@ -524,10 +1125,11 @@ test("P2 §5.2：accepted run → assistant message + status/delta/final 事件 
     assert.ok(rows.run.assistant_message_id, "assistant_message_id 已写");
     assert.ok(Number(rows.run.last_event_seq) >= 3, "last_event_seq 已推进");
     assert.equal(rows.run.provider_id, "mock", "mock provider 显式记录");
-    assert.equal(rows.run.prompt_version, COMPANION_PERSONA_V13_PROMPT_ID, "现役提示词版本已写入回合记录");
-    assert.equal(rows.run.prompt_hash, COMPANION_PERSONA_V13_SHA256, "现役提示词哈希已写入回合记录");
+    assert.equal(rows.run.prompt_version, COMPANION_PERSONA_V14_PROMPT_ID, "现役提示词版本已写入回合记录");
+    assert.equal(rows.run.prompt_hash, COMPANION_PERSONA_V14_SHA256, "现役提示词哈希已写入回合记录");
     assert.equal(rows.assistant.length, 1, "恰好一条 assistant message");
     assert.equal(rows.assistant[0].run_id, s.runId, "assistant message 绑定本 run");
+    assert.equal(rows.assistant[0].kind, "text", "用户提问的回答不能被记成主动发言（对照主动轮的 proactive）");
     const types = rows.events.map((e) => e.type);
     assert.ok(types.includes("assistant.status"), "assistant.status 事件存在");
     assert.ok(types.includes("assistant.delta"), "assistant.delta 事件存在");
@@ -662,6 +1264,75 @@ test("P2 §5.2 userText 归属：voice_transcript turn 取本 run 用户消息�
     assert.equal(rows.assistant.length, 1, "assistant 回复已写入");
   } finally {
     await s.cleanup();
+  }
+});
+
+/**
+ * 2026-10-13 方案 56 遗留缺陷：主动那一轮的**普通收尾**原来也写 `kind='text'`。
+ *
+ * 两处写入口径必须一致：`companion_publish_utterance` 早就是 initiative ⇒ proactive，
+ * 而终态正文写死 text，于是 `runCompanionInitiative` 的节奏读数
+ * （`max(created_at) ... AND kind='proactive'`）与按 kind 认她发言的历史/记忆/摘要
+ * 都漏掉她主动说的大部分话（真库读数：23 条 initiative 助手消息里 22 条是 text）。
+ *
+ * 这条用例把两侧一起钉住：主动轮 ⇒ proactive，普通问答 ⇒ text——后者同样重要，
+ * 不能反过来把回答用户提问的消息记成主动发言。
+ */
+test("主动交流的普通收尾记 kind='proactive'，普通问答仍是 'text'", async () => {
+  const initiativeScope = await seedBase();
+  const ordinaryScope = await seedBase();
+  const initiative = await seedDialogueRun(initiativeScope.workspaceId, initiativeScope.userId, { initiative: true });
+  const ordinary = await seedDialogueRun(ordinaryScope.workspaceId, ordinaryScope.userId, {});
+  try {
+    await invokeRun(initiativeScope.workspaceId, initiativeScope.userId, initiative);
+    await invokeRun(ordinaryScope.workspaceId, ordinaryScope.userId, ordinary);
+
+    const rows = await readInScope(initiativeScope, tx => tx`
+      SELECT role, kind, blocks->0->>'text' AS text FROM companion_messages
+      WHERE run_id=${initiative.runId} AND role='assistant'`);
+    assert.equal(rows.length, 1, "主动轮同样只写一条终态消息");
+    assert.equal(rows[0].kind, "proactive", "她自己开口的那一轮，普通收尾也必须算 proactive");
+    assert.ok(String(rows[0].text ?? "").trim().length > 0, "主动轮的收尾仍然有正文");
+
+    const ordinaryRows = await readInScope(ordinaryScope, tx => tx`
+      SELECT role, kind FROM companion_messages WHERE run_id=${ordinary.runId} AND role='assistant'`);
+    assert.equal(ordinaryRows.length, 1);
+    assert.equal(ordinaryRows[0].kind, "text", "用户提问的回答不能被记成主动发言");
+  } finally {
+    await initiative.cleanup();
+    await ordinary.cleanup();
+  }
+});
+
+test("a host-only reply containing voice markers ends silently; an empty human answer remains a failure", async () => {
+  const original = MockProvider.prototype.executeAgentTurn;
+  const fixtures: Array<Awaited<ReturnType<typeof seedDialogueRun>>> = [];
+  try {
+    MockProvider.prototype.executeAgentTurn = async () => ({ content: "[neutral]", toolCalls: [],
+      finishReason: "stop", usage: {}, providerRequestId: "silent-host-markers" });
+    for (const initiative of [true, false]) {
+      const scope = await seedBase();
+      const run = await seedDialogueRun(scope.workspaceId, scope.userId, { initiative, userText: "你好" });
+      fixtures.push(run);
+      if (initiative) await invokeRun(scope.workspaceId, scope.userId, run);
+      else await assert.rejects(invokeRun(scope.workspaceId, scope.userId, run), /empty_after_markdown_strip/);
+      await readInScope(scope, async tx => {
+        const [state] = await tx`SELECT status FROM companion_turn_runs WHERE id=${run.runId}`;
+        assert.equal(state!.status, initiative ? "succeeded" : "failed");
+        const messages = await tx`SELECT id FROM companion_messages WHERE run_id=${run.runId} AND role='assistant'`;
+        if (initiative) assert.equal(messages.length, 0, "an internal quiet decision creates no failure/speech message");
+        const errors = await tx`SELECT seq FROM companion_stream_events WHERE run_id=${run.runId} AND type='error'`;
+        assert.equal(errors.length, initiative ? 0 : 1);
+        if (initiative) {
+          const finals = await tx`SELECT payload FROM companion_stream_events WHERE run_id=${run.runId} AND type='turn.completed'`;
+          assert.equal(finals.length, 1);
+          assert.equal(finals[0]!.payload.silent, true);
+        }
+      });
+    }
+  } finally {
+    MockProvider.prototype.executeAgentTurn = original;
+    for (const run of fixtures) await run.cleanup();
   }
 });
 
@@ -932,15 +1603,15 @@ test("真实读取保留每条消息的时间和来源；重试不更新首次�
     assert.doesNotMatch(system, /用户这一轮问的是学习数据/, "普通聊天不能被恒定的作答影响键转成学习统计问题");
     const timeline = JSON.parse(system.slice(system.indexOf("<conversation_timeline>")).split("\n")[2]!);
     assert.equal(timeline.timezone, "Asia/Tokyo");
-    // The existing 2,048-token interactive replay target omits this oversized
-    // user message whole. Its original text/time remain readable below; the
-    // inline timeline must describe the exact tail that the provider received.
-    assert.equal(snapshot.replayWindow?.omittedCount, 1);
-    assert.equal(timeline.history.length, 1);
-    assert.equal(timeline.history[0].speaker, "assistant");
-    assert.equal(timeline.history[0].utteredAt, "2026-10-03T02:03:05.000Z");
-    assert.equal(snapshot.modelMessages[1]!.content, "已经交了呀。");
-    assert.equal(snapshot.modelMessages[2]!.content, "你今天有什么有意思的事？");
+    // The question and its answer remain together, including the late correction.
+    assert.equal(snapshot.replayWindow?.omittedCount, 0);
+    assert.equal(timeline.history.length, 2);
+    assert.equal(timeline.history[0].speaker, "user");
+    assert.equal(timeline.history[0].utteredAt, "2026-10-03T02:03:04.000Z");
+    assert.equal(timeline.history[1].utteredAt, "2026-10-03T02:03:05.000Z");
+    assert.equal(snapshot.modelMessages[1]!.content, oldText);
+    assert.equal(snapshot.modelMessages[2]!.content, "已经交了呀。");
+    assert.equal(snapshot.modelMessages[3]!.content, "你今天有什么有意思的事？");
     const [message] = await readInScope({workspaceId,userId}, tx => tx`SELECT created_at FROM companion_messages WHERE id=${s.userMessageId}`);
     assert.equal(timeline.current.utteredAt, new Date(message!.created_at).toISOString());
     assert.ok(timeline.history[0].elapsedMs > 0);
@@ -958,4 +1629,322 @@ test("真实读取保留每条消息的时间和来源；重试不更新首次�
     assert.equal(retried.sha256, row.snapshot_sha256);
     assert.equal(retried.snapshot.modelMessages[0]!.content, system);
   } finally { await s.cleanup(); }
+});
+
+/**
+ * reasoning 明文随终态消息落库，并经读取与 persona 组装带回去（0435）。
+ *
+ * 网关在思考模式下要求交回每个"纯文本续写位" assistant 的 `reasoning_text`
+ * （三发实测：带明文过、只带 encrypted_content 400、完全不带 400，见
+ * `scripts/probe-plaintext-reasoning.ts`）。这条链断在任何一环，主动参与轮
+ * 每一轮都会 400——而 400 恰恰是最难从"消息有没有念出来"看出来的失败。
+ *
+ * 三段一起钉，因为它们分别落在三处不同的代码里、且没有一层能替代另一层：
+ *   写入  insertCompanionFinalAssistantMessage（终态事务）
+ *   读取  readCompanionHistoryRows 的 SELECT 列表
+ *   回放  buildCompanionPersonaMessages 的 messages 组装
+ * 快照那一段另由 companion-context-handoff.test.ts 盯。
+ */
+test("reasoning 明文：终态落库 → 历史读回 → persona 组装带回", async () => {
+  const scope = await seedBase();
+  const run = await seedDialogueRun(scope.workspaceId, scope.userId, { userText: "帮我复习光合作用" });
+  const originalChat = MockProvider.prototype.chatCompletion;
+  const originalExecute = MockProvider.prototype.executeAgentTurn;
+  // 真实形状：明文在 `content[].reasoning_text` 里，其余字段原样保留。
+  const reasoning = [{ type: "reasoning", id: "rs-int", status: "completed",
+    encrypted_content: "enc-int", summary: [],
+    content: [{ type: "reasoning_text", text: "他要复习，先给一篇最常考的。" }] }];
+  try {
+    MockProvider.prototype.chatCompletion = async () => ({ content: JSON.stringify({ intent: "question",
+      toolUse: "none", subjects: [], goalRelation: "unrelated", candidateOperations: [],
+      ambiguities: [], voiceStyle: { decision: "none", instruction: null }, pendingOfferIndexes: [] }),
+      usage: {} });
+    MockProvider.prototype.executeAgentTurn = async () => ({
+      content: "光合作用先看光反应和暗反应这两段。",
+      toolCalls: [], finishReason: "stop", reasoning,
+      usage: null, providerRequestId: null });
+
+    await invokeRun(scope.workspaceId, scope.userId, run);
+
+    // ① 写入：终态 assistant 消息必须把明文存进 reasoning 列。
+    const [written] = (await readInScope(scope, tx =>
+      tx`SELECT reasoning FROM companion_messages WHERE run_id=${run.runId} AND role='assistant'`)
+    ) as Array<{ reasoning: unknown }>;
+    assert.ok(written, "终态 assistant 消息应当已写入");
+    assert.equal(Array.isArray(written!.reasoning), true, "reasoning 必须是数组而不是标量");
+    const writtenItem = (written!.reasoning as Array<Record<string, unknown>>)[0]!;
+    assert.equal(writtenItem.id, "rs-int");
+    assert.equal(
+      (writtenItem.content as Array<{ text: string }>)[0]?.text,
+      "他要复习，先给一篇最常考的。",
+      "明文 reasoning_text 必须原样落库——网关要的就是这句话，剥掉就凑不回来");
+
+    // ② 读取：下一轮读历史时要能把这一列带出来。
+    const rows = await withWorkerWorkspaceTransaction(scope, tx =>
+      readCompanionHistoryRows(tx, run.cid, { limit: 32 }));
+    const recent = companionRecentHistoryFromRows(rows);
+    const trailing = [...recent].reverse().find(message => message.role === "assistant");
+    assert.ok(trailing, "历史里应当读得见这条 assistant 消息");
+    assert.equal(trailing!.reasoning?.[0]?.id, "rs-int",
+      "readCompanionHistoryRows 的 SELECT 必须带上 reasoning 列");
+
+    // ③ 回放：persona 组装要把 reasoning 挂到 assistant 消息上交给 provider。
+    const messages = buildCompanionPersonaMessages({
+      userText: "那暗反应呢？", recentMessages: recent, pageContext: null,
+    });
+    const replayed = [...messages].reverse().find(message => message.role === "assistant") as
+      { role: string; reasoning?: unknown } | undefined;
+    assert.ok(replayed, "组装后的消息里应当有这条 assistant");
+    assert.equal(
+      (replayed!.reasoning as Array<Record<string, unknown>> | undefined)?.[0]?.id, "rs-int",
+      "buildCompanionPersonaMessages 必须把 reasoning 挂回消息——不挂，"
+      + "以 assistant 收尾的主动轮就会被网关 400");
+  } finally {
+    MockProvider.prototype.chatCompletion = originalChat;
+    MockProvider.prototype.executeAgentTurn = originalExecute;
+    await run.cleanup();
+  }
+});
+
+for (const mode of ["buffered", "speculative", "latest-history-read", "history-read-advisory", "host-observation"] as const) test(`unsummarized overflowing history recovers on the first answer / ${mode}`, async () => {
+  const scope = await seedBase();
+  const userText = "为什么天空是蓝色的？";
+  const run = await seedDialogueRun(scope.workspaceId, scope.userId, { userText, initiative: mode === "host-observation" });
+  const oldWindow = process.env.MOCK_CONTEXT_WINDOW_TOKENS;
+  const originalExecute = MockProvider.prototype.executeAgentTurn;
+  const originalChat = MockProvider.prototype.chatCompletion;
+  const currentStream = Object.getOwnPropertyDescriptor(MockProvider.prototype, "chatCompletionStream")!;
+  const currentStreamTools = Object.getOwnPropertyDescriptor(MockProvider.prototype, "chatCompletionStreamToolCalls");
+  const oldText = "Old source, retain the final restriction.\n" + "source ".repeat(25_000) + "\nThe final restriction forbids executing old tasks.";
+  const parts: string[] = [];
+  const toolParts: string[] = [];
+  let answerCalls = 0;
+  try {
+    process.env.MOCK_CONTEXT_WINDOW_TOKENS = "250000";
+    await readInScope(scope, async tx => {
+      await tx`SET LOCAL app.allow_history_mutation = 'on'`;
+      await tx`UPDATE companion_messages SET seq=9 WHERE id=${run.userMessageId}`;
+      for (const [index, text] of [oldText, "Completed older answer.", "A middle question.", "A middle answer.",
+        "Another older question.", "Another complete answer.", "Latest answered question.", "Latest complete answer."].entries()) {
+        const blocks = [{ type: "text", text }];
+        await tx`INSERT INTO companion_messages(id,workspace_id,user_id,conversation_id,seq,role,kind,blocks,content_sha256,created_at)
+          VALUES(${randomUUID()},${scope.workspaceId},${scope.userId},${run.cid},${index + 1},${index % 2 ? "assistant" : "user"},
+            'text',${tx.json(blocks)},${sha256Utf8V1(canonicalJsonV1(blocks))},now()-interval '1 hour'+${index}*interval '1 second')`;
+      }
+      await tx`UPDATE companion_conversations SET next_message_seq=${mode === "host-observation" ? 9 : 10} WHERE id=${run.cid}`;
+      if (mode !== "speculative") {
+        const attention = agentTurnInterpretationV1Schema.parse({ version: 1, requestHash: sha256Utf8V1(userText), intent: "question",
+          toolUse: mode === "history-read-advisory" ? "read" : "none", subjects: [], goalRelation: "unrelated", goalReference: null,
+          candidateOperations: mode === "history-read-advisory" ? ["companion_recall_past_conversation", "companion_read_history"] : [],
+          ambiguities: [], status: "interpreted" });
+        await tx`UPDATE companion_turn_runs SET turn_interpretation=${tx.json(attention)} WHERE id=${run.runId}`;
+      }
+    });
+    MockProvider.prototype.chatCompletion = async function(messages, options, signal) {
+      if (String(messages[0]?.content).includes("将已完成的工具回合整理成")) {
+        const part = JSON.parse(String(messages.at(-1)!.content));
+        toolParts.push(part.sourceText);
+        return { content: JSON.stringify({ facts: ["The complete historical source was read."],
+          constraints: ["Do not execute old tasks."], unresolved: [], references: [run.cid, "seq:1"] }), usage: {} };
+      }
+      if (String(messages[0]?.content).includes("会话摘要器")) {
+        parts.push(String(messages.at(-1)!.content));
+        return { content: JSON.stringify({ title: "Older complete exchanges", topics: [], userGoals: [], keyEvents: ["Older answers completed."],
+          userPreferences: ["Do not execute old tasks."], followUps: [], emotionalState: "neutral" }), usage: {} };
+      }
+      return originalChat.call(this, messages, options, signal);
+    };
+    const answer = mode === "host-observation" ? "我在这儿，慢慢来。" : "阳光中的蓝光更容易被空气分子散射，所以晴朗的天空呈现蓝色。";
+    const accept = async (request: import("@astella/shared").AgentTurnRequest) => {
+      answerCalls++;
+      if (mode === "history-read-advisory") {
+        assert.equal(request.toolChoice, "auto", "a narrow classifier view cannot force a redundant history read");
+        assert.ok(request.tools.some(tool => tool.name === "companion_read_history"), "missing evidence can still be retrieved");
+      }
+      assert.match(String(request.messages[0]?.content), /compacted_conversation_history/);
+      assert.equal(request.messages[1]?.content, "Latest answered question.");
+      assert.equal(request.messages[2]?.content, "Latest complete answer.");
+      if (mode === "host-observation") {
+        assert.equal(request.messages.filter(message => message.hostObservation).length, 1, "the current occasion stays verbatim after history compaction");
+        assert.ok(!request.messages.some(message => message.role === "user" && message.content === userText), "a host occasion is not a new human request");
+      } else assert.ok(request.messages.some(message => message.role === "user" && message.content === userText));
+      const [saved] = await withWorkerWorkspaceTransaction(scope, tx => tx.execute<{ snapshot: CompanionContextHandoffSnapshotV1 }>(
+        drizzleSql`SELECT snapshot FROM companion_context_handoff_snapshots WHERE run_id=${run.runId}`));
+      const [progress] = await readInScope(scope, tx => tx`SELECT compaction_checkpoint FROM companion_agent_steps
+        WHERE run_id=${run.runId} AND status='running' ORDER BY step_no DESC LIMIT 1`);
+      const activeSource = mode === "latest-history-read" && answerCalls > 1;
+      const sourceState = progress!.compaction_checkpoint[activeSource ? "active_tool_rounds" : "history_exchanges"].state;
+      assert.equal(sourceState.end, sourceState.total, "complete source scan is durable before replacement/answer generation");
+      assert.equal(sourceState.sourceSha256, sha256Utf8V1((activeSource ? toolParts : parts).join("")));
+      assert.ok(saved!.snapshot.compactions!.some(trace => trace.checkpoint
+        && canonicalJsonV1(JSON.parse(trace.checkpoint.messagesJson)) === canonicalJsonV1(request.messages)), "complete checkpoint is durable before the answer call");
+      if (mode === "latest-history-read" && answerCalls === 1) return { content: null, toolCalls: [
+        { id: "huge-latest-history-read", name: "companion_read_history", arguments: { fromSeq: 1, limit: 2 } }],
+        finishReason: "tool_calls", usage: {}, providerRequestId: "history-pressure-read" };
+      if (mode === "latest-history-read") {
+        const checkpoint = saved!.snapshot.compactions!.find(trace => trace.sourceKind === "active_tool_rounds")!.checkpoint!;
+        assert.ok(checkpoint.source, "the complete original tool output is durable before answer generation");
+        assert.equal(toolParts.join(""), checkpoint.source.json);
+        const originalRound = JSON.parse(checkpoint.source.json) as Array<{ role: string; content: string }>;
+        const originalResult = originalRound.find(message => message.role === "tool")!;
+        assert.equal(JSON.parse(originalResult.content).data.messages[0].text, oldText);
+        assert.ok(request.messages.some(message => message.role === "assistant" && String(message.content).includes("compacted_tool_working_state")));
+      }
+      return { content: answer, toolCalls: [], finishReason: "stop", usage: {}, providerRequestId: "history-pressure-fixture" };
+    };
+    MockProvider.prototype.executeAgentTurn = async request => accept(request);
+    if (mode === "speculative") {
+      Object.defineProperty(MockProvider.prototype, "chatCompletionStreamToolCalls", { configurable: true, value: true });
+      Object.defineProperty(MockProvider.prototype, "chatCompletionStream", { ...mockStreamDescriptor,
+        value: async (_messages: unknown, options: import("@astella/shared").ChatOptions, _signal: unknown, onDelta: (text: string) => void) => {
+          const result = await accept(options.nativeAgentRequest!);
+          onDelta(answer);
+          return result;
+        } });
+    }
+    await invokeRun(scope.workspaceId, scope.userId, run);
+    assert.equal(answerCalls, mode === "latest-history-read" ? 2 : 1, "oversized requests are rejected before model execution");
+    assert.ok(parts.length > 1, "the old message really needs multiple source requests");
+    const source = JSON.parse(parts.join(""));
+    assert.equal(source.conversationId, run.cid);
+    assert.equal(source.messages[0].text, oldText);
+    assert.deepEqual(source.messages.map((message: { seq: string }) => message.seq), ["1", "2", "3", "4", "5", "6"]);
+    await readInScope(scope, async tx => {
+      const [state] = await tx`SELECT status FROM companion_turn_runs WHERE id=${run.runId}`;
+      assert.equal(state!.status, "succeeded");
+      const [stored] = await tx`SELECT blocks FROM companion_messages WHERE conversation_id=${run.cid} AND seq=1`;
+      assert.equal(stored!.blocks[0].text, oldText, "durable source was not rewritten");
+      const remainingProgress = await tx`SELECT id FROM companion_agent_steps
+        WHERE run_id=${run.runId} AND compaction_checkpoint IS NOT NULL`;
+      assert.equal(remainingProgress.length, 0, "finished steps clear intermediate private progress");
+    });
+    const [checkpoint] = await withWorkerWorkspaceTransaction(scope, tx => tx.execute<{ snapshot: CompanionContextHandoffSnapshotV1 }>(
+      drizzleSql`SELECT snapshot FROM companion_context_handoff_snapshots WHERE run_id=${run.runId}`));
+    assert.ok(checkpoint!.snapshot.compactions!.some(item => item.sourceKind === "history_exchanges"));
+  } finally {
+    if (oldWindow === undefined) delete process.env.MOCK_CONTEXT_WINDOW_TOKENS; else process.env.MOCK_CONTEXT_WINDOW_TOKENS = oldWindow;
+    MockProvider.prototype.executeAgentTurn = originalExecute;
+    MockProvider.prototype.chatCompletion = originalChat;
+    Object.defineProperty(MockProvider.prototype, "chatCompletionStream", currentStream);
+    if (currentStreamTools) Object.defineProperty(MockProvider.prototype, "chatCompletionStreamToolCalls", currentStreamTools);
+    else delete (MockProvider.prototype as unknown as Record<string, unknown>).chatCompletionStreamToolCalls;
+    await run.cleanup();
+  }
+});
+
+test("semantic source progress survives a fresh store instance and rejects stale request, owner and terminal run writes", async () => {
+  const scope = await seedBase(), other = await seedBase();
+  const run = await seedDialogueRun(scope.workspaceId, scope.userId, { userText: "Use the actual current request." });
+  const otherRun = await seedDialogueRun(other.workspaceId, other.userId);
+  const stepId = randomUUID();
+  const request: AgentTurnRequest = { role: AgentRole.COMPANION_AGENT, systemPrompt: "Frozen current policy.",
+    messages: [{ role: "user", content: "Use the actual current request." }], tools: [], maxTokens: 40, temperature: 0.2 };
+  const event = { ctx: { id: run.jobId, payload: { runId: run.runId }, workspaceId: scope.workspaceId,
+    requestedBy: scope.userId, leaseToken: "fixture-lease", signal: new AbortController().signal },
+    read: { runId: run.runId, conversationId: run.cid, userId: scope.userId, generation: 1, accountEpoch: 0 } };
+  const input = { event, stepId, request, provider: new MockProvider(), sourceKind: "history_exchanges" as const };
+  const text = "Original task constraints.\n" + "complete source 🙂\n".repeat(60) + "Final correction: do not execute old tasks.";
+  const seen: string[] = [];
+  const parse = (value: unknown) => { assert.equal(typeof value, "string"); return value as string; };
+  const common = { text, previous: null, inputTokens: 400, options: { maxTokens: 40 },
+    counting: { countTokens: (value: string) => value.length },
+    messages: (part: { text: string }, previous: string | null) => [{ role: "system" as const, content: JSON.stringify({ previous }) },
+      { role: "user" as const, content: part.text }] };
+  try {
+    await readInScope(scope, tx => tx`INSERT INTO companion_agent_steps
+      (id,workspace_id,user_id,conversation_id,run_id,step_no,kind,status,request_hash,checkpoint)
+      VALUES(${stepId},${scope.workspaceId},${scope.userId},${run.cid},${run.runId},1,'model','running',
+        ${sha256Utf8V1(canonicalJsonV1({ request: "fixture" }))},${tx.json({ independentModelResult: "preserve this column" })})`);
+    await assert.rejects(summarizeCompleteCompanionSource({ ...common,
+      checkpoint: { store: createCompanionCompactionProgressStore(input), parse },
+      summarize: async (_messages, part, index) => {
+        if (index === 1) throw new Error("process interrupted during the next source request");
+        seen.push(part.text); return "first completed source state";
+      } }), /process interrupted/);
+    const [partial] = await readInScope(scope, tx => tx`SELECT status,checkpoint,compaction_checkpoint FROM companion_agent_steps WHERE id=${stepId}`);
+    const state = partial!.compaction_checkpoint.history_exchanges.state as CompanionSemanticCheckpoint;
+    assert.ok(state.end > 0 && state.end < text.length);
+    assert.equal(state.parts, 1);
+    assert.equal(partial!.status, "running", "a partial source scan is not a completed model step");
+    assert.deepEqual(partial!.checkpoint, { independentModelResult: "preserve this column" });
+    assert.equal(await createCompanionCompactionProgressStore({ ...input, request: { ...request, systemPrompt: "Changed policy." } }).load(), null);
+    await assert.rejects(createCompanionCompactionProgressStore({ ...input,
+      event: { ...event, ctx: { ...event.ctx, leaseToken: "old-owner-token" } } }).save(state), JobLeaseLostError);
+    await assert.rejects(createCompanionCompactionProgressStore({ ...input,
+      event: { ...event, ctx: { ...event.ctx, workspaceId: other.workspaceId, requestedBy: other.userId },
+        read: { ...event.read, userId: other.userId } } }).load());
+    const completed = await summarizeCompleteCompanionSource({ ...common,
+      checkpoint: { store: createCompanionCompactionProgressStore(input), parse },
+      summarize: async (messages, part, index) => {
+        assert.equal(index, seen.length);
+        assert.equal(part.start, seen.join("").length);
+        if (index === 1) assert.equal(JSON.parse(String(messages[0]!.content)).previous, "first completed source state");
+        seen.push(part.text); return "cumulative valid source state";
+      } });
+    assert.equal(seen.join(""), text, "resumption does not repeat the saved prefix or skip the unread suffix");
+    assert.equal(completed.parts, seen.length);
+    const finalStore = createCompanionCompactionProgressStore(input);
+    const finalState = await finalStore.load() as CompanionSemanticCheckpoint;
+    assert.equal(finalState.end, text.length);
+    await readInScope(scope, tx => tx`UPDATE companion_turn_runs SET status='cancelled',finished_at=now() WHERE id=${run.runId}`);
+    await assert.rejects(finalStore.save(finalState), CompanionContextChangedError);
+    const [after] = await readInScope(scope, tx => tx`SELECT checkpoint,compaction_checkpoint FROM companion_agent_steps WHERE id=${stepId}`);
+    assert.deepEqual(after!.checkpoint, partial!.checkpoint);
+    assert.deepEqual(after!.compaction_checkpoint.history_exchanges.state, finalState, "a late write cannot change cancelled progress");
+  } finally { await run.cleanup(); await otherRun.cleanup(); }
+});
+
+test("private compaction append merges concurrent traces, preserves frozen input, and resumes a versioned snapshot", async () => {
+  const scope = await seedBase(), other = await seedBase();
+  const userText = "Test checkpoint append fences.";
+  const run = await seedDialogueRun(scope.workspaceId, scope.userId, { userText });
+  const otherRun = await seedDialogueRun(other.workspaceId, other.userId, { userText });
+  try {
+    const snapshot: CompanionContextHandoffSnapshotV1 = { version: 1, runId: run.runId, conversationId: run.cid,
+      watermark: { throughMessageSeq: "1", throughEventSeq: "0", historyStartSeq: "1", clippedMessageCount: 0 },
+      currentRequest: { messageId: run.userMessageId, messageSeq: "1", contentSha256: sha256Utf8V1(userText) },
+      authorization: { contextGrantId: null, permissionLevel: null, permissionSnapshot: null },
+      runState: { status: "accepted", cancelRequestedAt: null }, pageSnapshotSha256: null, summaryCoverage: null,
+      historyTail: [], actionLedger: { completed: [], unresolved: [], notCompleted: [] }, proposals: [], memoryRefs: [],
+      modelMessages: [{ role: "user", content: userText }] };
+    const sha256 = sha256Utf8V1(canonicalJsonV1(snapshot));
+    await persistCompanionContextHandoffSnapshot({ ...scope, runId: run.runId, snapshot, sha256 });
+    const trace = (id: string) => ({ sourceKind: "history_exchanges" as const, foldedFromSeq: id, foldedThroughSeq: id,
+      foldedMessageCount: 1, summarySourceSha256: sha256Utf8V1(id), remainingFromSeq: "3", uncoveredBeforeSeq: null,
+      modelId: "fixture", inputTokens: 400, triggerTokens: 300, hardInputTokens: 500, reason: "over_trigger_line", at: new Date().toISOString() });
+    const a = trace("1"), b = trace("2");
+    assert.deepEqual(await Promise.all([
+      recordCompanionContextCompactions({ ...scope, runId: run.runId, snapshot, sha256, compactions: [a, a] }),
+      recordCompanionContextCompactions({ ...scope, runId: run.runId, snapshot, sha256, compactions: [b] }),
+    ]), [true, true]);
+    const [current] = await withWorkerWorkspaceTransaction(scope, tx => tx.execute<{
+      snapshot: CompanionContextHandoffSnapshotV1; snapshot_sha256: string; snapshot_version: number;
+    }>(drizzleSql`SELECT snapshot,snapshot_sha256,snapshot_version FROM companion_context_handoff_snapshots WHERE run_id=${run.runId}`));
+    assert.equal(current!.snapshot_version, 3);
+    assert.equal(current!.snapshot.compactions!.length, 2);
+    assert.deepEqual(new Set(current!.snapshot.compactions!.map(item => item.foldedFromSeq)), new Set(["1", "2"]));
+    assert.deepEqual(current!.snapshot.modelMessages, snapshot.modelMessages);
+    assert.equal(current!.snapshot_sha256, sha256Utf8V1(canonicalJsonV1(current!.snapshot)));
+    const restored = await persistCompanionContextHandoffSnapshot({ ...scope, runId: run.runId, snapshot, sha256 });
+    assert.equal(restored.sha256, current!.snapshot_sha256, "storage version greater than one remains recoverable");
+    assert.deepEqual(restored.snapshot.modelMessages, snapshot.modelMessages);
+    assert.equal(await recordCompanionContextCompactions({ ...scope, runId: run.runId, snapshot, sha256, compactions: [a, b] }), true);
+    assert.equal(await recordCompanionContextCompactions({ ...other, runId: run.runId, snapshot, sha256, compactions: [trace("4")] }), false);
+    const altered = { ...snapshot, modelMessages: [{ role: "user" as const, content: "Attempt to replace frozen input." }] };
+    assert.equal(await recordCompanionContextCompactions({ ...scope, runId: run.runId, snapshot: altered,
+      sha256: sha256Utf8V1(canonicalJsonV1(altered)), compactions: [trace("5")] }), false);
+    const [grants] = await withWorkerWorkspaceTransaction(scope, tx => tx.execute<{ direct_update: boolean; api_execute: boolean }>(drizzleSql`
+      SELECT has_table_privilege(current_user,'companion_context_handoff_snapshots','UPDATE') AS direct_update,
+        has_function_privilege('astella_api','astella_append_handoff_compactions_v1(uuid,text,jsonb,text)','EXECUTE') AS api_execute`));
+    assert.equal(grants!.direct_update, false);
+    assert.equal(grants!.api_execute, false);
+    await assert.rejects(readInScope(scope, tx => tx`SELECT public.astella_append_handoff_compactions_v1(${run.runId}::uuid,
+      ${current!.snapshot_sha256},'[]'::jsonb,${sha256})`), /permission denied/);
+    const [replacement] = await withWorkerWorkspaceTransaction(scope, tx => tx.execute<{ appended: boolean }>(drizzleSql`
+      SELECT public.astella_append_handoff_compactions_v1(${run.runId}::uuid,${current!.snapshot_sha256},
+        ${JSON.stringify([trace("6")])}::jsonb,${sha256}) AS appended`));
+    assert.equal(replacement!.appended, false, "the append function refuses replacement of prior traces");
+    await readInScope(scope, tx => tx`UPDATE companion_turn_runs SET status='cancelled',cancel_requested_at=now(),finished_at=now() WHERE id=${run.runId}`);
+    assert.equal(await recordCompanionContextCompactions({ ...scope, runId: run.runId, snapshot, sha256, compactions: [trace("7")] }), false);
+  } finally { await run.cleanup(); await otherRun.cleanup(); }
 });

@@ -50,7 +50,16 @@ export type CompanionAttentionV1 = z.infer<typeof companionAttentionV1Schema>;
 export const companionAwarenessContextV1Schema = z.object({
   foreground: z.boolean(), unlocked: z.boolean(), typing: z.boolean(), learning: z.boolean(),
   speaking: z.boolean().optional(), participationAllowed: z.boolean().optional(),
-  quietForMs: z.number().int().min(180_000).max(86_400_000).optional(),
+  /**
+   * 客户端观察到的前台安静时长。地板必须与 `COMPANION_QUIET_PRESENCE_AFTER_MS`
+   * （90 秒，客户端真的会开始上报的时刻）**同一个数**：这里原来写的是 180_000，
+   * 于是 90–180 秒之间的每一次上报都被 API 校验拒掉，而客户端把它 catch 掉了，
+   * 表现为"安静门槛悄悄变成 3 分钟"外加每 15 秒一次无效请求。
+   * 真正的档位门槛在服务端（`COMPANION_QUIET_PRESENCE_MIN_MS`）。
+   */
+  quietForMs: z.number().int().min(90_000).max(86_400_000).optional(),
+  /** Same foreground pause keeps its identity across heartbeat thresholds. */
+  quietEpisodeId: z.string().uuid().optional(),
   conversationId: z.string().uuid().nullable(),
   page: z.object({
     key: z.string().min(1).max(240), label: z.string().min(1).max(120),
@@ -62,7 +71,7 @@ export type CompanionAwarenessContextV1 = z.infer<typeof companionAwarenessConte
 export const companionAwarenessObservationV1Schema = z.object({
   version: z.literal(1), id: z.string().uuid(),
   deviceSessionId: z.string().min(1).max(200), appLaunchId: z.string().uuid(),
-  host: z.enum(["desktop", "browser"]),
+  host: z.enum(["desktop", "browser", "ios", "android"]),
   topic: z.enum(["app.started", "app.foreground", "page.arrived", "help.available", "result.available", "context.updated", "presence.quiet"]),
   occurredAt: z.string().datetime({ offset: true }),
   /** Monotonic elapsed duration; wall-clock changes, lock, sleep and background do not earn study time. */
@@ -88,13 +97,26 @@ export const companionAwarenessReceiptV1Schema = z.object({
 }).strict();
 export const companionAwarenessIdentityV1Schema = z.object({
   version: z.literal(1), appLaunchId: z.string().uuid(), deviceSessionId: z.string().min(1).max(200),
-  host: z.enum(["desktop", "browser"]),
+  host: z.enum(["desktop", "browser", "ios", "android"]),
 }).strict();
 export const companionInitiativeDeliveryRefV1Schema = z.object({
   conversationId: z.string().uuid(), messageId: z.string().uuid(), runId: z.string().uuid(),
   generation: z.number().int().positive(), deviceSessionId: z.string().max(200).nullable(),
 }).strict();
 export type CompanionInitiativeDeliveryRefV1 = z.infer<typeof companionInitiativeDeliveryRefV1Schema>;
+
+/**
+ * 她主动开口的那句话在收件箱里等多久。
+ *
+ * 原来是 90 秒，等于拿"她决定说话那一刻你是否正好在小屋界面"当闸门：实测 16 条主动投递
+ * 里 11 条停在 `queued` 直到过期——她说了，没人接，而且这一句再也不会被念第二次。
+ *
+ * 正文本来就落在共享对话里（`companion_messages`），所以这个窗口只管一件事：
+ * **你回到屋里的哪一次还来得及把这句补念出来**。两小时是"回来还听得懂"和"别拿三小时前的
+ * 话突然开口"之间给的位置，不是按秒赌的运气。设备认领与只念一次由投递租约把关，
+ * 不靠这个窗口。
+ */
+export const COMPANION_INITIATIVE_DELIVERY_TTL_HOURS = 2;
 export const companionInitiativeInputV1Schema = z.object({
   version: z.literal(1), kind: z.literal("initiative"),
   preparationJobId: z.string().uuid(),

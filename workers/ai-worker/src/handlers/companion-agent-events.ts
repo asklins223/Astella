@@ -41,11 +41,13 @@ import { z } from "zod";
 import { withWorkerWorkspaceTransaction } from "../db.ts";
 import { insertStreamEvent } from "./companion-dialogue-store.ts";
 import { lockJobLease } from "../lib/job-lease.ts";
-import { CompanionAgentBudgetExceededError } from "../lib/non-retryable-errors.ts";
+import { CompanionAgentBudgetExceededError, CompanionContextChangedError } from "../lib/non-retryable-errors.ts";
 import type { AgentEventContext } from "./companion-read-tools.ts";
 import { assertCompanionContextSourcesCurrent } from "./companion-context-sources.ts";
 import { companionExecutionPolicy } from "./companion-execution-policy.ts";
 import { agentTurnInterpretationV1Schema, type AgentTurnInterpretationV1, type AgentAttentionObjectV1 } from "@astella/shared/agent-contracts";
+import { lockCompanionRunForEventWrite } from "@astella/shared/companion-lock-order";
+import { withCompanionRecoveryTransaction, type CompanionRuntimeCheckpoint } from "./companion-runtime-checkpoint.ts";
 
 const persistedAgentStepCheckpointSchema = agentTurnResultSchema;
 
@@ -64,6 +66,7 @@ export async function reserveCompanionProviderCall(event: {
   if (event.ctx.requestedBy !== event.read.userId) throw new CompanionAgentBudgetExceededError("companion initiating user changed");
   const modelCallLimit = companionExecutionPolicy().maxModelCalls ?? null;
   await withWorkerWorkspaceTransaction({ workspaceId: event.ctx.workspaceId, userId: event.read.userId }, async tx => {
+    await lockCompanionRunForEventWrite(tx, event.read.runId);
     await lockJobLease(tx, event.ctx);
     await assertCompanionContextSourcesCurrent(tx, { workspaceId: event.ctx.workspaceId, userId: event.read.userId }, event.read.runId);
     const rows = await tx.execute(sql`UPDATE companion_turn_runs r
@@ -253,6 +256,16 @@ export async function appendAgentEvent(
   await withWorkerWorkspaceTransaction(
     { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
     async (tx) => {
+      // 锁序规约：先 run 行、后会话计数器（见 @astella/shared/companion-lock-order）。
+      // 这里写的正是 `agent.tool`——它**会**触发 companion_stream_events 的 AFTER INSERT
+      // 触发器去 UPDATE companion_turn_runs。原来把计数器放第一句，于是本事务在
+      // INSERT 时才去抢 run 行锁：与「先锁 run 再拿计数器」的流式路径并发即 AB-BA。
+      // 2026-10-14 dev 库实测两例死锁，用户那一轮直接 INTERNAL_ERROR。
+      await lockCompanionRunForEventWrite(tx, event.read.runId);
+      await lockJobLease(tx, event.ctx);
+      const [owner] = await tx.execute(sql`SELECT id FROM companion_turn_runs WHERE id=${event.read.runId}
+        AND (job_id IS NULL OR job_id=${event.ctx.id})`);
+      if (!owner) return;
       const counters = await tx.execute<{ next_event_seq: string }>(sql`
         UPDATE companion_conversations
         SET next_event_seq = next_event_seq + 1
@@ -329,10 +342,14 @@ export async function updateRunMeta(
   await withWorkerWorkspaceTransaction(
     { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
     async (tx) => {
+      await lockCompanionRunForEventWrite(tx, event.read.runId);
+      await lockJobLease(tx, event.ctx);
       await tx.execute(sql`
         UPDATE companion_turn_runs
         SET ${sql.join(fields, sql`, `)}, updated_at = now()
         WHERE id = ${event.read.runId}
+          AND generation = ${event.read.generation} AND account_epoch = ${event.read.accountEpoch}
+          AND (job_id IS NULL OR job_id=${event.ctx.id})
           AND status IN ('accepted', 'running', 'waiting_for_confirmation')
       `);
     },
@@ -347,6 +364,12 @@ export async function persistStep(
   return withWorkerWorkspaceTransaction(
     { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
     async (tx) => {
+      await lockCompanionRunForEventWrite(tx, event.read.runId);
+      await lockJobLease(tx, event.ctx);
+      const [active] = await tx.execute(sql`SELECT id FROM companion_turn_runs
+        WHERE id=${event.read.runId} AND generation=${event.read.generation} AND account_epoch=${event.read.accountEpoch}
+          AND status IN ('accepted','running')`);
+      if (!active) throw new CompanionContextChangedError();
       const inserted = await tx.execute<{ id: string }>(sql`
         INSERT INTO companion_agent_steps
           (id, workspace_id, user_id, conversation_id, run_id, step_no, kind, status,
@@ -388,6 +411,7 @@ export function createCompanionAgentStepCheckpointPort(
     load: async (key) => withWorkerWorkspaceTransaction(
       { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
       async (tx) => {
+        await lockCompanionRunForEventWrite(tx, event.read.runId);
         await lockJobLease(tx, event.ctx);
         const rows = await tx.execute<{ status: string; checkpoint: unknown }>(sql`
           SELECT status, checkpoint
@@ -418,6 +442,7 @@ export function createCompanionAgentStepCheckpointPort(
       await withWorkerWorkspaceTransaction(
         { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
         async (tx) => {
+          await lockCompanionRunForEventWrite(tx, event.read.runId);
           await lockJobLease(tx, event.ctx);
           const rows = await tx.execute<{ id: string }>(sql`
             UPDATE companion_agent_steps
@@ -444,15 +469,31 @@ export async function finishStep(
   status: "succeeded" | "waiting" | "failed" | "cancelled",
   resultHash?: string,
   errorCode?: string,
+  runtimeCheckpoint?: CompanionRuntimeCheckpoint,
 ): Promise<void> {
-  await withWorkerWorkspaceTransaction(
-    { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
+  const transaction = runtimeCheckpoint
+    ? <T>(body: (tx: import("../db.ts").WorkerTransaction) => Promise<T>) => withCompanionRecoveryTransaction(event, body)
+    : <T>(body: (tx: import("../db.ts").WorkerTransaction) => Promise<T>) => withWorkerWorkspaceTransaction(
+      { workspaceId: event.ctx.workspaceId, userId: event.read.userId }, body);
+  await transaction(
     async (tx) => {
+      // Failure bookkeeping may run after this handler's timeout signal, but a
+      // replaced job lease can never close the new worker's logical step.
+      if (!runtimeCheckpoint) {
+        await lockCompanionRunForEventWrite(tx, event.read.runId);
+        await lockJobLease(tx, { ...event.ctx, signal: undefined });
+      }
       await tx.execute(sql`
         UPDATE companion_agent_steps
         SET status = ${status}, result_hash = ${resultHash ?? null},
-            error_code = ${errorCode ?? null}, finished_at = now(), checkpoint = NULL
+            error_code = ${errorCode ?? null}, finished_at = now(), checkpoint = NULL, compaction_checkpoint = NULL,
+            runtime_checkpoint = COALESCE(${runtimeCheckpoint ? JSON.stringify(runtimeCheckpoint) : null}::jsonb,runtime_checkpoint)
         WHERE id = ${stepId} AND run_id = ${event.read.runId}
+          AND status = 'running'
+          AND EXISTS (SELECT 1 FROM companion_turn_runs r WHERE r.id=companion_agent_steps.run_id
+            AND r.generation=${event.read.generation} AND r.account_epoch=${event.read.accountEpoch}
+            AND (r.job_id IS NULL OR r.job_id=${event.ctx.id})
+            AND r.status IN ('accepted','running'))
       `);
     },
   );

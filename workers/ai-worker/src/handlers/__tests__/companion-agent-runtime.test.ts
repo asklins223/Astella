@@ -1245,6 +1245,18 @@ test("分类器不可用时不强制工具，不继承历史执行授权", async
   assert.equal(companionStepRequiresTool(null), false);
 });
 
+test("a classifier history-read hint leaves the full-context model free to answer while other reads/actions remain required", () => {
+  for (const name of ["companion_read_history", "companion_recall_past_conversation", "companion_recall_memory", "companion_read_memory"]) {
+    assert.equal(companionStepRequiresTool(true, [name]), false, name);
+  }
+  assert.equal(companionStepRequiresTool(true, ["companion_read_history", "companion_recall_memory"]), false);
+  for (const name of ["companion_read_note", "agent_web_search", "agent_calculate", "companion_edit_note"]) {
+    assert.equal(companionStepRequiresTool(true, ["companion_read_history", name]), true, name);
+  }
+  assert.equal(companionStepRequiresTool(true, []), true, "an unclassified read is not silently waived");
+  assert.equal(companionStepRequiresTool(true), true, "action callers do not pass advisory candidates");
+});
+
 test("不变量：任何一步都不许同时出现 tools:[] 与 toolChoice:\"required\"", () => {
   const offered = [{ name: "companion_read_context", description: "读上下文", parameters: {} }];
   const step = (finalAnswerOnly: boolean, requiresTool: boolean, toolCallCount: number, tools = offered) =>

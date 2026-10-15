@@ -135,6 +135,49 @@ export const companionImageBlockV1Schema = z.object({
  */
 export const COMPANION_CARD_BLOCK_PREVIEW_MAX_CHARS = 600;
 
+/**
+ * 推荐落点卡片：一条 = 一样东西。`kindLabel`/`title`/`updatedLabel` 都由服务端查库带出，
+ * 只有 `reason` 是她的话（她凭什么把这一样挑出来），长度按"纸上一行"收。
+ *
+ * 一次推荐的上限 `COMPANION_RECOMMENDATION_MAX_ITEMS` 同时也是她那条工具能提交的
+ * 条目上限——两处用同一个数，否则会出现"她递 7 条、消息只落 5 条"那种半截结果。
+ */
+export const COMPANION_RECOMMENDATION_MAX_ITEMS = 5;
+export const COMPANION_RECOMMENDATION_REASON_MAX_CHARS = 120;
+
+export const companionRecommendationBlockV1Schema = z.object({
+  type: z.literal("recommendation"),
+  /** 落点种类的自己一个字说法（笔记／学习卡／互动演示／思维导图／速看）。 */
+  kindLabel: z.string().min(1).max(12),
+  /** 库里真实的标题，不是她转述的名字。 */
+  title: z.string().min(1).max(80),
+  /** 为什么是这一样；没有就不显示这一行。 */
+  reason: z.string().min(1).max(COMPANION_RECOMMENDATION_REASON_MAX_CHARS).nullable(),
+  /** 「3 天前更新」这类时间读数，与她在正文里看到的口径同源。 */
+  updatedLabel: z.string().min(1).max(20).nullable(),
+  route: allowedMainRouteV2Schema,
+}).strict();
+export type CompanionRecommendationBlockV1 = z.infer<typeof companionRecommendationBlockV1Schema>;
+
+/**
+ * `companion_recommend_learning` 的参数。她只报"哪一样"，不报"在哪张表"：
+ * 学习卡那条路已经证明，用户/到期列表递过来的 id 可能是 objective_id 而不是 card_id
+ * （`companion_open_card` 的别名规则），产物三张表也各有各的 id——让她分辨表格只会多一类
+ * "她报错了种类"的失败。执行体按 id 查回真实身份与种类，认不出来就如实报那一条。
+ */
+export const COMPANION_RECOMMENDATION_TARGET_KINDS_V1 = ["note", "card", "artifact"] as const;
+
+export const companionRecommendLearningV1Schema = z.object({
+  items: z.array(z.object({
+    kind: z.enum(COMPANION_RECOMMENDATION_TARGET_KINDS_V1)
+      .describe("note=她搜到的笔记，card=学习卡（到期复习列表给的那个 id 也算），artifact=笔记学出来的互动演示/思维导图/速看"),
+    targetId: z.string().uuid().describe("这一样的 id：本轮工具回执里的那个，不要沿用旧回复"),
+    reason: z.string().min(1).max(COMPANION_RECOMMENDATION_REASON_MAX_CHARS).optional()
+      .describe("为什么把这一样推荐给他，一句话；不是标题的复述"),
+  }).strict()).min(1).max(COMPANION_RECOMMENDATION_MAX_ITEMS),
+}).strict();
+export type CompanionRecommendLearningV1 = z.infer<typeof companionRecommendLearningV1Schema>;
+
 /** Optional next-message prompts attached to a completed assistant reply. */
 export const companionFollowupSuggestionsBlockV1Schema = z.object({
   type: z.literal("follow_up_suggestions"),
@@ -185,6 +228,16 @@ export const companionContentBlockV1Schema = z.discriminatedUnion("type", [
     label: z.string().min(1).max(80),
     route: allowedMainRouteV2Schema,
   }).strict(),
+  /**
+   * 她推荐给用户的那一样东西（2026-10-14）。
+   *
+   * `nav` 是「她带我去哪儿」的一张纸签，一次只对应一个落点、话由她说完再递门牌；
+   * 推荐是反过来的：一次给出几样，每样都要能自己站住——是什么、为什么是它、点哪儿。
+   * 所以标题与种类由服务端查库带出（她报的 id 只用来定位行，不进卡片文字），
+   * `reason` 才是她的判断。跳转仍要用户点：这一份的落点是"先看一眼"，
+   * 不是"换屏"，五样连跳五次是事故。
+   */
+  companionRecommendationBlockV1Schema,
   /**
    * 她读出来的那段原文（方案 29 §4.8，抱怨 #10「只能输出纯文本」）。
    *
@@ -990,6 +1043,12 @@ export const companionPublicErrorCodeV1Schema = z.enum([
   "ACTION_CONFIRMATION_REQUIRED",
   "ACTION_EXPIRED",
   "ACTION_STALE",
+  "ACTION_NOT_EXECUTED",
+  "TOOL_ARGUMENTS_INVALID",
+  "REPLY_LENGTH_LIMIT",
+  "REPLY_FORMAT_INVALID",
+  "AGENT_BUDGET_EXCEEDED",
+  "AI_DATA_POLICY_DENIED",
   // 2026-08-12+（15a-E）：学习快捷方式错误码细分——context 变化/无进行中会话/无候选
   "CONTEXT_STALE",
   "NO_ACTIVE_RUN",
@@ -1237,9 +1296,7 @@ export const companionTtsStreamRequestV1Schema = z.object({
  * 是 `defineAgentCapability` 的默认 4,000——两头都对不上：真要按 4,000 执法就会把消息切半。
  * 规则不变：**一条消息要么整条给，要么这一轮不给**，装不下的留给下一次 `fromSeq`。
  */
-export const PAST_MESSAGES_MAX_CHARS = 6_000;
-
-/** 结果信封（会话 id、覆盖区间、truncated 与游标）的最大尺寸：按最大合法载荷实测 235 字。 */
-export const PAST_MESSAGES_RESULT_ENVELOPE_CHARS = 300;
-
-export const PAST_MESSAGES_MAX_RESULT_CHARS = PAST_MESSAGES_MAX_CHARS + PAST_MESSAGES_RESULT_ENVELOPE_CHARS;
+// Soft page target, not an output ceiling. A single longer message is returned
+// intact; remaining whole messages have an explicit source cursor. Provenance
+// and server-derived time metadata also count in the full model request budget.
+export const PAST_MESSAGES_PAGE_TARGET_CHARS = 6_000;

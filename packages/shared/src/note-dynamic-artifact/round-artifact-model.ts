@@ -55,6 +55,7 @@ import {
 } from "./round-artifact-measure.ts";
 import { ARTIFACT_DOCUMENT_MIN_CHARS_V1, artifactDocumentTextV1, checkArtifactDocumentV1 } from "./round-artifact-doc.ts";
 type DynamicArtifactModelConfigV1 = { url: string; key: string; model: string;
+  protocol?: "chat_completions" | "responses";
   /**
    * 思考字段按平台方言算（与讲解/核查同一规则，见 `chatThinkingRequestFields`）。
    * 这条路径自己拼请求体，写死 `enable_thinking:false` 会在只认
@@ -98,7 +99,8 @@ export const dynamicArtifactDocV1Schema = z.strictObject({
    */
   document: z.string().min(ARTIFACT_DOCUMENT_MIN_CHARS_V1),
   /**
-   * 讲解的骨架（2–6 条）。**不是**画面的步骤，是这份页面在讲什么。
+   * 讲解的骨架（至少 2 条，条数由内容决定——每段笔记的要点都进来，不设上限）。
+   * **不是**画面的步骤，是这份页面在讲什么。
    *
    * 它由服务端渲染成真实 DOM（frame 之外、永远在屏上），所以它同时是：文字等价表达
    * （§6.3）、关闭动效时读得到的那一份、以及依据回执。每一条都必须带一句在冻结正文里
@@ -286,11 +288,23 @@ export function llmDynamicArtifactProvider(options: {
       session = createDynamicArtifactResponseSessionV1();
       sessions.set(input, session);
     }
+    const prompt = session.prompt(input);
     const response = await options.requester(options.config.url, {
-      authorization: `Bearer ${options.config.key}`, "content-type": "application/json", ...options.headers,
-    }, {
+      ...(options.config.protocol === "responses"
+        ? { "api-key": options.config.key }
+        : { authorization: `Bearer ${options.config.key}` }),
+      "content-type": "application/json", ...options.headers,
+    }, options.config.protocol === "responses" ? {
       model: options.config.model,
-      messages: [{ role: "user", content: session.prompt(input) }],
+      input: [{ role: "user", content: prompt }],
+      reasoning: { effort: "none" },
+      temperature: 0.4,
+      max_output_tokens: completionTokens,
+      text: { format: { type: "json_object" } },
+      stream: false,
+    } : {
+      model: options.config.model,
+      messages: [{ role: "user", content: prompt }],
       temperature: 0.4, max_tokens: completionTokens,
       response_format: { type: "json_object" }, stream: false,
       ...options.config.thinkingFields,
@@ -299,23 +313,34 @@ export function llmDynamicArtifactProvider(options: {
       return { ok: false, class: [408, 425, 429].includes(response.status) || response.status >= 500
         ? "transport" : "quality", message: `artifact provider returned ${response.status}` };
     }
-    const body = response.body as { choices?: Array<{ finish_reason?: string; message?: { content?: string } }>;
-      usage?: { prompt_tokens?: number; completion_tokens?: number } };
-    const finish = body.choices?.[0]?.finish_reason;
+    const body = response.body as {
+      status?: string;
+      incomplete_details?: { reason?: string };
+      output?: Array<{ type?: string; content?: Array<{ type?: string; text?: string }> }>;
+      output_text?: string;
+      choices?: Array<{ finish_reason?: string; message?: { content?: string } }>;
+      usage?: { prompt_tokens?: number; completion_tokens?: number; input_tokens?: number; output_tokens?: number };
+    };
+    const finish = options.config.protocol === "responses"
+      ? (body.status === "incomplete" && body.incomplete_details?.reason === "max_output_tokens" ? "length" : body.status)
+      : body.choices?.[0]?.finish_reason;
     if (finish === "length") {
       // 截断的半份页面写不进合同，值得再花一次钱：这一类归 `output_shape`，内核按
       // 可重试处理，整页重发的次数由任务预算（至多三次）兜着，不在这自己数。
       return { ok: false, class: "output_shape", message: "artifact page was truncated by the token limit" };
     }
     try {
-      const raw = body.choices?.[0]?.message?.content ?? "";
+      const raw = options.config.protocol === "responses"
+        ? body.output_text ?? body.output?.flatMap(item => item.type === "message"
+          ? item.content?.filter(part => part.type === "output_text").map(part => part.text ?? "") ?? [] : []).join("") ?? ""
+        : body.choices?.[0]?.message?.content ?? "";
       const accepted = session.accept(JSON.parse(raw.replace(/^\s*```(?:json)?\s*/, "").replace(/\s*```\s*$/, "")), input);
       if (!accepted.ok) return accepted;
       return {
         ok: true,
         output: accepted.output,
-        promptTokens: body.usage?.prompt_tokens,
-        completionTokens: body.usage?.completion_tokens,
+        promptTokens: body.usage?.prompt_tokens ?? body.usage?.input_tokens,
+        completionTokens: body.usage?.completion_tokens ?? body.usage?.output_tokens,
       };
     } catch {
       return { ok: false, class: "output_shape", message: "artifact output does not match its contract" };

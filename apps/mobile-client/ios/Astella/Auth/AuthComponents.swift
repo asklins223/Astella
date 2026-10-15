@@ -1,23 +1,87 @@
 import SwiftUI
 import UIKit
 
+struct AuthBrandHeader: View {
+    var compact = false
+
+    var body: some View {
+        HStack(spacing: 11) {
+            Image("BrandMark")
+                .resizable().scaledToFit()
+                .frame(width: compact ? 36 : 44, height: compact ? 36 : 44)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("拾星笔记")
+                    .font(.system(size: compact ? 16 : 18, weight: .semibold))
+                    .foregroundStyle(StudyPalette.ink)
+                Text("ASTELLA")
+                    .font(.system(size: 9, weight: .medium))
+                    .tracking(2.5)
+                    .foregroundStyle(StudyPalette.muted)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("拾星笔记，Astella")
+    }
+}
+
+struct AuthHeading: View {
+    let title: String
+    let detail: String
+    var compact = false
+    var transition: AnyTransition = .opacity
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: compact ? 4 : 10) {
+            Text(title)
+                .font(compact ? .title2.weight(.semibold) : .largeTitle.weight(.semibold))
+                .tracking(-0.8)
+                .foregroundStyle(StudyPalette.ink)
+                .id(title)
+                .transition(transition)
+            if !compact {
+                Text(detail)
+                    .font(.subheadline)
+                    .foregroundStyle(StudyPalette.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .id(detail)
+                    .transition(.opacity)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+struct AuthPrimaryButtonStyle: ButtonStyle {
+    var busy = false
+    @Environment(\.isEnabled) private var enabled
+    @Environment(\.accessibilityReduceMotion) private var reduced
+
+    func makeBody(configuration: Configuration) -> some View {
+        let active = enabled || busy
+        configuration.label
+            .font(.body.weight(.semibold))
+            .foregroundStyle(active ? StudyPalette.ink : StudyPalette.muted)
+            .padding(.horizontal, 22)
+            .frame(minHeight: 56)
+            .modifier(StudyGlassSurfaceStyle(radius: 28, interactive: true,
+                                           tint: active ? StudyPalette.actionFill.opacity(0.82) : nil))
+            .contentShape(Capsule())
+            .opacity(active ? (configuration.isPressed ? 0.76 : 1) : 0.6)
+            .scaleEffect(configuration.isPressed && !reduced ? 0.98 : 1)
+            .animation(Motion.gated(reduced, Motion.press), value: configuration.isPressed)
+    }
+}
+
 struct AuthStepProgress: View {
+    let title: String
     let current: Int
     let total: Int
 
     var body: some View {
-        HStack(spacing: 7) {
-            HStack(spacing: 4) {
-                ForEach(0..<total, id: \.self) { index in
-                    Capsule()
-                        .fill(index < current ? StudyPalette.accent : StudyPalette.paperEdge)
-                        .frame(width: 17, height: 4)
-                }
-            }
-            Text("\(current) / \(total)")
-                .font(.caption2.weight(.medium).monospacedDigit())
-                .foregroundStyle(StudyPalette.muted)
-        }
+        Text("\(title) · \(current) / \(total)")
+            .font(.footnote.weight(.medium).monospacedDigit())
+            .foregroundStyle(StudyPalette.muted)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("第 \(current) 步，共 \(total) 步")
     }
@@ -88,19 +152,7 @@ struct AuthFeedbackBanner: View {
 
 struct AuthInputSurface: ViewModifier {
     func body(content: Content) -> some View {
-        if #available(iOS 26.0, *) {
-            content.glassEffect(
-                .regular.interactive(),
-                in: RoundedRectangle(cornerRadius: StudyRadius.md, style: .continuous)
-            )
-        } else {
-            content
-                .background(StudyPalette.paper, in: RoundedRectangle(cornerRadius: StudyRadius.md, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: StudyRadius.md, style: .continuous)
-                        .stroke(StudyPalette.paperEdge.opacity(0.8), lineWidth: 0.8)
-                }
-        }
+        content.modifier(StudyGlassSurfaceStyle(radius: 26, interactive: true))
     }
 }
 
@@ -122,12 +174,17 @@ struct AuthTextField: View {
             Text(label)
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(StudyPalette.ink.opacity(0.82))
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
+                Image(systemName: symbol)
+                    .font(.system(size: 18, weight: .regular))
+                    .foregroundStyle(StudyPalette.muted)
+                    .frame(width: 21)
+                    .accessibilityHidden(true)
                 Group {
                     if secure && !revealsSecureText {
-                        SecureField(placeholder, text: $text)
+                        SecureField("", text: $text, prompt: Text(placeholder).foregroundStyle(StudyPalette.muted))
                     } else {
-                        TextField(placeholder, text: $text)
+                        TextField("", text: $text, prompt: Text(placeholder).foregroundStyle(StudyPalette.muted))
                     }
                 }
                 .textContentType(contentType)
@@ -135,6 +192,7 @@ struct AuthTextField: View {
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .font(.body)
+                .foregroundStyle(StudyPalette.ink)
                 .focused($focusedInput, equals: field)
                 .submitLabel(submitLabel)
                 .onSubmit { onSubmit() }
@@ -152,11 +210,28 @@ struct AuthTextField: View {
                     .accessibilityLabel(revealsSecureText ? "隐藏密码" : "显示密码")
                 }
             }
-            .padding(.horizontal, 15)
-            .frame(minHeight: 54)
+            .padding(.leading, 19)
+            .padding(.trailing, secure ? 8 : 19)
+            .frame(minHeight: 56)
             .modifier(AuthInputSurface())
+            .overlay {
+                RoundedRectangle(cornerRadius: 26, style: .continuous)
+                    .stroke(focusedInput == field ? StudyPalette.accent.opacity(0.5) : .clear, lineWidth: 1)
+                    .allowsHitTesting(false)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .onChange(of: contentType) { _, _ in revealsSecureText = false }
+    }
+
+    private var symbol: String {
+        switch field {
+        case .email: "envelope"
+        case .displayName: "person"
+        case .inviteToken: "gift"
+        case .password, .confirmPassword: "lock"
+        case .code: "number"
+        }
     }
 }
 
@@ -169,7 +244,7 @@ struct AuthCodeInput: View {
 
     var body: some View {
         ZStack {
-            HStack(spacing: 0) {
+            HStack(spacing: 8) {
                 ForEach(0..<6, id: \.self) { index in
                     VStack(spacing: 5) {
                         Text(index < digits.count ? String(digits[index]) : " ")
@@ -180,14 +255,15 @@ struct AuthCodeInput: View {
                             .fill(focusedInput == .code && index == min(code.count, 5) ? StudyPalette.accent : .clear)
                             .frame(width: 19, height: 2)
                     }
-                    .frame(maxWidth: .infinity)
-                    if index < 5 {
-                        Rectangle()
-                            .fill(StudyPalette.paperEdge.opacity(0.75))
-                            .frame(width: 1, height: 22)
+                    .frame(maxWidth: .infinity, minHeight: 58)
+                    .modifier(StudyGlassSurfaceStyle(radius: 16))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(focusedInput == .code && index == min(code.count, 5) ? StudyPalette.accent.opacity(0.5) : .clear, lineWidth: 1)
                     }
                 }
             }
+            .accessibilityHidden(true)
             TextField("验证码", text: $code)
                 .keyboardType(.numberPad)
                 .textContentType(.oneTimeCode)
@@ -199,10 +275,8 @@ struct AuthCodeInput: View {
                 .focused($focusedInput, equals: .code)
                 .accessibilityLabel("6 位邮箱验证码")
         }
-        .padding(.horizontal, 10)
         .frame(maxWidth: .infinity, minHeight: 58)
         .contentShape(RoundedRectangle(cornerRadius: StudyRadius.md, style: .continuous))
-        .modifier(AuthInputSurface())
         .onTapGesture { focusedInput = .code }
     }
 }

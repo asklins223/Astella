@@ -9,6 +9,7 @@ import CryptoKit
 struct CompanionModelManifest: Decodable {
     struct Download: Decodable {
         let url: String
+        let authorization: String?
     }
     struct File: Decodable {
         let path: String
@@ -190,11 +191,16 @@ final class ModelDownloadManager {
     }
 
     private func fetchAndValidate(_ file: CompanionModelManifest.File) async throws -> Data {
-        guard let url = URL(string: file.download.url) else {
+        let downloadURL = file.download.url.hasPrefix("/") ? try api.url(file.download.url) : URL(string: file.download.url)
+        guard let url = downloadURL else {
             throw URLError(.badURL)
         }
         var request = URLRequest(url: url)
         request.timeoutInterval = 60
+        if file.download.authorization == "session", let token = api.token,
+           let origin = URL(string: api.baseURL), url.scheme == origin.scheme, url.host == origin.host, url.port == origin.port {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw URLError(.badServerResponse)

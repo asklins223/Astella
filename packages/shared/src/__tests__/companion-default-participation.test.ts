@@ -35,4 +35,11 @@ test("only a content-bearing page or an eligible event wakes a default considera
   assert.equal(isCompanionDefaultParticipationOpportunity("study.started", {}), true);
   assert.equal(isCompanionDefaultParticipationOpportunity("presence.quiet", {}), true);
   assert.equal(isCompanionDefaultParticipationOpportunity("context.updated", {}), false);
+
+  /**
+   * 「安静安排稍后重评」这句政策原来会被她**说出来**：实测 17 条主动成稿里 16 条是
+   * 「我不吵你，先在这儿待着」——没给他任何东西，却占掉一次主动开口的机会，
+   * 而他那边体感就是"她从不需要我"。所以政策文本要直接点名这一类。
+   */
+  assert.match(COMPANION_DEFAULT_PARTICIPATION_POLICY_V1, /不要把「我先不打扰你」「我在旁边待着」说出来占一次主动/);
 });

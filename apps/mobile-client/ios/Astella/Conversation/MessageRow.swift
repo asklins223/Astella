@@ -23,7 +23,16 @@ struct MessageRow: View {
                     if block.type == "image", let url = block.url {
                         AuthenticatedCompanionImage(url: url, label: block.alt ?? block.label ?? "对话图片")
                     }
-                    if let text = block.text, !text.isEmpty {
+                    if block.type == "file" {
+                        Label(block.name ?? "文件附件", systemImage: "doc.text.fill")
+                            .font(.subheadline.weight(.medium)).padding(12)
+                            .background(StudyPalette.inset, in: RoundedRectangle(cornerRadius: 12))
+                    }
+                    if let proposalId = block.proposalId { CompanionProposalCard(proposalId: proposalId) }
+                    if let code = block.code {
+                        ScrollView(.horizontal) { Text(code).font(.system(.footnote, design: .monospaced)).textSelection(.enabled).padding(12) }
+                    }
+                    if block.type != "file", let text = block.text, !text.isEmpty {
                         Text(text)
                             .font(.system(size: bodyPointSize * store.readingScale))
                             .lineSpacing(4)
@@ -38,6 +47,12 @@ struct MessageRow: View {
                         in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             if message.role == "user" {
                 Spacer(minLength: 0)
+            }
+        }
+        .contextMenu {
+            Button("复制", systemImage: "doc.on.doc") { UIPasteboard.general.string = message.displayText }
+            if message.role == "assistant" {
+                Button("朗读", systemImage: "speaker.wave.2") { store.voicePlayback.play(message.displayText, store: store) }
             }
         }
     }

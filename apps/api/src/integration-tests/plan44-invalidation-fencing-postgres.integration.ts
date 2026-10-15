@@ -108,10 +108,20 @@ test("0388：用户遗忘那条记忆之后，它派生出那份摘要立刻不�
 test("0389：快照推进到下一版；run 结束后的迟到结果写不进去", async () => {
   const ids = await seed();
   try {
+    // 0423 给 run 加了输入身份约束：`user_message_id` 与 `input_source` 二者必须有一个
+    // 对得上（这条用例测的是交接快照围栏，不涉及输入来源），所以给这一轮配一条真实的
+    // 用户消息。清理走 conversation_id 的级联，不必单独删。
+    const userMessageId = randomUUID();
+    await sql`INSERT INTO companion_messages
+      (id, workspace_id, user_id, conversation_id, seq, role, kind, blocks, content_sha256)
+      VALUES (${userMessageId}, ${workspaceId}, ${userId}, ${ids.conversationId}, 1,
+              'user', 'text', ${sql.json([{ type: "text", text: "这一轮的问题" }])},
+              ${"d".repeat(64)})`;
     await sql`INSERT INTO companion_turn_runs
-      (id, workspace_id, user_id, conversation_id, generation, status, idempotency_key_hash, request_body_hash)
+      (id, workspace_id, user_id, conversation_id, generation, status, idempotency_key_hash,
+       request_body_hash, user_message_id)
       VALUES (${ids.runId}, ${workspaceId}, ${userId}, ${ids.conversationId}, 1, 'running',
-              ${"b".repeat(64)}, ${"c".repeat(64)})`;
+              ${"b".repeat(64)}, ${"c".repeat(64)}, ${userMessageId})`;
     await sql`INSERT INTO companion_context_handoff_snapshots
       (run_id, workspace_id, user_id, conversation_id, snapshot, snapshot_sha256, snapshot_version)
       VALUES (${ids.runId}, ${workspaceId}, ${userId}, ${ids.conversationId},

@@ -31,7 +31,7 @@ class MobileApi(context: Context) {
         .pingInterval(25, TimeUnit.SECONDS)
         .build()
 
-    fun url(path: String): String = baseUrl.trimEnd('/') + "/" + path.trimStart('/')
+    fun url(path: String): String = baseUrl.trimEnd('/') + "/" + (if (path.startsWith("/api/uploads/")) path.removePrefix("/api") else path).trimStart('/')
 
     fun request(path: String, method: String = "GET", body: JSONObject? = null, idempotencyKey: String? = null): JSONObject {
         val builder = Request.Builder().url(url(path)).header("Accept", "application/json")
@@ -94,6 +94,20 @@ class MobileApi(context: Context) {
         return execute(Request.Builder().url(url("/uploads/avatars")).post(body).authenticated().build())
     }
 
+    fun uploadFile(file: CompanionFile): JSONObject {
+        val body = MultipartBody.Builder().setType(MultipartBody.FORM)
+            .addFormDataPart("file", file.name.replace("\r", "").replace("\n", "").replace("\"", ""), file.bytes.toRequestBody(file.mime.toMediaType())).build()
+        return execute(Request.Builder().url(url("/uploads/companion-files")).post(body).authenticated().build())
+    }
+
+    fun synthesize(text: String): ByteArray {
+        val body = JSONObject().put("text", text).toString().toRequestBody("application/json".toMediaType())
+        return client.newCall(Request.Builder().url(url("/voice/tts")).post(body).authenticated().build()).execute().use { response ->
+            if (!response.isSuccessful) throw failure(response.code, response.body.string())
+            response.body.bytes()
+        }
+    }
+
     fun transcribe(wav: ByteArray, durationMs: Int): JSONObject {
         val body = MultipartBody.Builder().setType(MultipartBody.FORM)
             .addFormDataPart("purpose", "companion_dialogue")
@@ -106,7 +120,11 @@ class MobileApi(context: Context) {
 
     fun loadImage(address: String): ByteArray? {
         val target = if (address.startsWith("http")) address else url(address)
-        val request = Request.Builder().url(target).get().authenticated().build()
+        val builder = Request.Builder().url(target).get()
+        val targetUrl = target.toHttpUrl()
+        val origin = baseUrl.toHttpUrl()
+        if (targetUrl.host == origin.host && targetUrl.port == origin.port && targetUrl.scheme == origin.scheme) builder.authenticated()
+        val request = builder.build()
         return client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) throw failure(response.code, response.body.string())
             response.body.bytes()

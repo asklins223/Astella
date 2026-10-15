@@ -41,6 +41,70 @@
 		A10000000000000000000009 /* NotesScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000009 /* NotesScreen.swift */; };
 		A10000000000000000000010 /* HandAndAccountScreens.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000010 /* HandAndAccountScreens.swift */; };
 		A10000000000000000000011 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000011 /* Assets.xcassets */; };
+		A10000000000000000000037 /* CubismCdiJson.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000039 /* CubismCdiJson.cpp */; };
+		A10000000000000000000038 /* CubismDefaultParameterId.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000041 /* CubismDefaultParameterId.cpp */; };
+		A10000000000000000000039 /* CubismFramework.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000043 /* CubismFramework.cpp */; };
+		A10000000000000000000040 /* CubismModelSettingJson.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000047 /* CubismModelSettingJson.cpp */; };
+		A10000000000000000000041 /* CubismBreath.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000052 /* CubismBreath.cpp */; };
+		A10000000000000000000042 /* CubismEyeBlink.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000054 /* CubismEyeBlink.cpp */; };
+		A10000000000000000000043 /* CubismLook.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000056 /* CubismLook.cpp */; };
+		A10000000000000000000044 /* CubismPose.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000058 /* CubismPose.cpp */; };
+		A10000000000000000000045 /* CubismId.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000060 /* CubismId.cpp */; };
+		A10000000000000000000046 /* CubismIdManager.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000062 /* CubismIdManager.cpp */; };
+		A10000000000000000000047 /* CubismMath.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000064 /* CubismMath.cpp */; };
+		A10000000000000000000048 /* CubismMatrix44.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000066 /* CubismMatrix44.cpp */; };
+		A10000000000000000000049 /* CubismModelMatrix.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000068 /* CubismModelMatrix.cpp */; };
+		A10000000000000000000050 /* CubismTargetPoint.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000070 /* CubismTargetPoint.cpp */; };
+		A10000000000000000000051 /* CubismVector2.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000072 /* CubismVector2.cpp */; };
+		A10000000000000000000052 /* CubismViewMatrix.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000074 /* CubismViewMatrix.cpp */; };
+		A10000000000000000000053 /* CubismMoc.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000076 /* CubismMoc.cpp */; };
+		A10000000000000000000054 /* CubismModel.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000078 /* CubismModel.cpp */; };
+		A10000000000000000000055 /* CubismModelMultiplyAndScreenColor.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000080 /* CubismModelMultiplyAndScreenColor.cpp */; };
+		A10000000000000000000056 /* CubismModelUserData.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000082 /* CubismModelUserData.cpp */; };
+		A10000000000000000000057 /* CubismModelUserDataJson.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000084 /* CubismModelUserDataJson.cpp */; };
+		A10000000000000000000058 /* CubismUserModel.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000086 /* CubismUserModel.cpp */; };
+		A10000000000000000000059 /* ACubismMotion.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000088 /* ACubismMotion.cpp */; };
+		A10000000000000000000060 /* CubismBreathUpdater.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000090 /* CubismBreathUpdater.cpp */; };
+		A10000000000000000000061 /* CubismExpressionMotion.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000092 /* CubismExpressionMotion.cpp */; };
+		A10000000000000000000062 /* CubismExpressionMotionManager.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000094 /* CubismExpressionMotionManager.cpp */; };
+		A10000000000000000000063 /* CubismExpressionUpdater.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000096 /* CubismExpressionUpdater.cpp */; };
+		A10000000000000000000064 /* CubismEyeBlinkUpdater.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000098 /* CubismEyeBlinkUpdater.cpp */; };
+		A10000000000000000000065 /* CubismLipSyncUpdater.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000100 /* CubismLipSyncUpdater.cpp */; };
+		A10000000000000000000066 /* CubismLookUpdater.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000102 /* CubismLookUpdater.cpp */; };
+		A10000000000000000000067 /* CubismMotion.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000104 /* CubismMotion.cpp */; };
+		A10000000000000000000068 /* CubismMotionJson.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000107 /* CubismMotionJson.cpp */; };
+		A10000000000000000000069 /* CubismMotionManager.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000109 /* CubismMotionManager.cpp */; };
+		A10000000000000000000070 /* CubismMotionQueueEntry.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000111 /* CubismMotionQueueEntry.cpp */; };
+		A10000000000000000000071 /* CubismMotionQueueManager.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000113 /* CubismMotionQueueManager.cpp */; };
+		A10000000000000000000072 /* CubismPhysicsUpdater.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000115 /* CubismPhysicsUpdater.cpp */; };
+		A10000000000000000000073 /* CubismPoseUpdater.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000117 /* CubismPoseUpdater.cpp */; };
+		A10000000000000000000074 /* CubismUpdateScheduler.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000119 /* CubismUpdateScheduler.cpp */; };
+		A10000000000000000000075 /* ICubismUpdater.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000121 /* ICubismUpdater.cpp */; };
+		A10000000000000000000076 /* IParameterProvider.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000123 /* IParameterProvider.cpp */; };
+		A10000000000000000000077 /* CubismPhysics.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000125 /* CubismPhysics.cpp */; };
+		A10000000000000000000078 /* CubismPhysicsJson.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000128 /* CubismPhysicsJson.cpp */; };
+		A10000000000000000000079 /* CubismRenderer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000131 /* CubismRenderer.cpp */; };
+		A10000000000000000000080 /* csmBlendMode.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000135 /* csmBlendMode.cpp */; };
+		A10000000000000000000081 /* CubismCommandBuffer_Metal.mm in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000138 /* CubismCommandBuffer_Metal.mm */; settings = {COMPILER_FLAGS = "-fno-objc-arc"; }; };
+		A10000000000000000000082 /* CubismDeviceInfo_Metal.mm in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000140 /* CubismDeviceInfo_Metal.mm */; settings = {COMPILER_FLAGS = "-fno-objc-arc"; }; };
+		A10000000000000000000083 /* CubismOffscreenManager_Metal.mm in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000142 /* CubismOffscreenManager_Metal.mm */; settings = {COMPILER_FLAGS = "-fno-objc-arc"; }; };
+		A10000000000000000000084 /* CubismOffscreenRenderTarget_Metal.mm in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000144 /* CubismOffscreenRenderTarget_Metal.mm */; settings = {COMPILER_FLAGS = "-fno-objc-arc"; }; };
+		A10000000000000000000085 /* CubismRenderTarget_Metal.mm in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000146 /* CubismRenderTarget_Metal.mm */; settings = {COMPILER_FLAGS = "-fno-objc-arc"; }; };
+		A10000000000000000000086 /* CubismRenderer_Metal.mm in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000148 /* CubismRenderer_Metal.mm */; settings = {COMPILER_FLAGS = "-fno-objc-arc"; }; };
+		A10000000000000000000087 /* CubismShader_Metal.mm in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000150 /* CubismShader_Metal.mm */; settings = {COMPILER_FLAGS = "-fno-objc-arc"; }; };
+		A10000000000000000000088 /* csmRectF.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000156 /* csmRectF.cpp */; };
+		A10000000000000000000089 /* csmString.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000158 /* csmString.cpp */; };
+		A10000000000000000000090 /* CubismDebug.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000162 /* CubismDebug.cpp */; };
+		A10000000000000000000091 /* CubismJson.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000164 /* CubismJson.cpp */; };
+		A10000000000000000000092 /* CubismString.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000166 /* CubismString.cpp */; };
+		A10000000000000000000093 /* CubismBridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000169 /* CubismBridge.mm */; };
+		A10000000000000000000094 /* LAppAllocator.mm in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000171 /* LAppAllocator.mm */; };
+		A10000000000000000000095 /* LAppDefine.mm in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000173 /* LAppDefine.mm */; };
+		A10000000000000000000096 /* LAppModel.mm in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000175 /* LAppModel.mm */; };
+		A10000000000000000000097 /* LAppPal.mm in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000177 /* LAppPal.mm */; };
+		A10000000000000000000098 /* LAppTextureManager.mm in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000179 /* LAppTextureManager.mm */; };
+		A10000000000000000000099 /* Live2DRenderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000180 /* Live2DRenderView.swift */; };
+		D11000000000000000000001 /* CompanionInteractions.swift in Sources */ = {isa = PBXBuildFile; fileRef = D12000000000000000000001 /* CompanionInteractions.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -80,6 +144,150 @@
 		A20000000000000000000011 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A20000000000000000000012 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A20000000000000000000013 /* Astella.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Astella.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A20000000000000000000039 /* CubismCdiJson.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = CubismCdiJson.cpp; sourceTree = "<group>"; };
+		A20000000000000000000040 /* CubismCdiJson.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = CubismCdiJson.hpp; sourceTree = "<group>"; };
+		A20000000000000000000041 /* CubismDefaultParameterId.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = CubismDefaultParameterId.cpp; sourceTree = "<group>"; };
+		A20000000000000000000042 /* CubismDefaultParameterId.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = CubismDefaultParameterId.hpp; sourceTree = "<group>"; };
+		A20000000000000000000043 /* CubismFramework.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = CubismFramework.cpp; sourceTree = "<group>"; };
+		A20000000000000000000044 /* CubismFramework.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = CubismFramework.hpp; sourceTree = "<group>"; };
+		A20000000000000000000045 /* CubismFrameworkConfig.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = CubismFrameworkConfig.hpp; sourceTree = "<group>"; };
+		A20000000000000000000046 /* CubismJsonHolder.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = CubismJsonHolder.hpp; sourceTree = "<group>"; };
+		A20000000000000000000047 /* CubismModelSettingJson.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = CubismModelSettingJson.cpp; sourceTree = "<group>"; };
+		A20000000000000000000048 /* CubismModelSettingJson.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = CubismModelSettingJson.hpp; sourceTree = "<group>"; };
+		A20000000000000000000049 /* ICubismAllocator.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = ICubismAllocator.hpp; sourceTree = "<group>"; };
+		A20000000000000000000050 /* ICubismModelSetting.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = ICubismModelSetting.hpp; sourceTree = "<group>"; };
+		A20000000000000000000051 /* Live2DCubismCore.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Live2DCubismCore.hpp; sourceTree = "<group>"; };
+		A20000000000000000000052 /* CubismBreath.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Effect/CubismBreath.cpp; sourceTree = "<group>"; };
+		A20000000000000000000053 /* CubismBreath.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Effect/CubismBreath.hpp; sourceTree = "<group>"; };
+		A20000000000000000000054 /* CubismEyeBlink.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Effect/CubismEyeBlink.cpp; sourceTree = "<group>"; };
+		A20000000000000000000055 /* CubismEyeBlink.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Effect/CubismEyeBlink.hpp; sourceTree = "<group>"; };
+		A20000000000000000000056 /* CubismLook.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Effect/CubismLook.cpp; sourceTree = "<group>"; };
+		A20000000000000000000057 /* CubismLook.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Effect/CubismLook.hpp; sourceTree = "<group>"; };
+		A20000000000000000000058 /* CubismPose.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Effect/CubismPose.cpp; sourceTree = "<group>"; };
+		A20000000000000000000059 /* CubismPose.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Effect/CubismPose.hpp; sourceTree = "<group>"; };
+		A20000000000000000000060 /* CubismId.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Id/CubismId.cpp; sourceTree = "<group>"; };
+		A20000000000000000000061 /* CubismId.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Id/CubismId.hpp; sourceTree = "<group>"; };
+		A20000000000000000000062 /* CubismIdManager.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Id/CubismIdManager.cpp; sourceTree = "<group>"; };
+		A20000000000000000000063 /* CubismIdManager.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Id/CubismIdManager.hpp; sourceTree = "<group>"; };
+		A20000000000000000000064 /* CubismMath.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Math/CubismMath.cpp; sourceTree = "<group>"; };
+		A20000000000000000000065 /* CubismMath.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Math/CubismMath.hpp; sourceTree = "<group>"; };
+		A20000000000000000000066 /* CubismMatrix44.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Math/CubismMatrix44.cpp; sourceTree = "<group>"; };
+		A20000000000000000000067 /* CubismMatrix44.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Math/CubismMatrix44.hpp; sourceTree = "<group>"; };
+		A20000000000000000000068 /* CubismModelMatrix.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Math/CubismModelMatrix.cpp; sourceTree = "<group>"; };
+		A20000000000000000000069 /* CubismModelMatrix.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Math/CubismModelMatrix.hpp; sourceTree = "<group>"; };
+		A20000000000000000000070 /* CubismTargetPoint.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Math/CubismTargetPoint.cpp; sourceTree = "<group>"; };
+		A20000000000000000000071 /* CubismTargetPoint.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Math/CubismTargetPoint.hpp; sourceTree = "<group>"; };
+		A20000000000000000000072 /* CubismVector2.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Math/CubismVector2.cpp; sourceTree = "<group>"; };
+		A20000000000000000000073 /* CubismVector2.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Math/CubismVector2.hpp; sourceTree = "<group>"; };
+		A20000000000000000000074 /* CubismViewMatrix.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Math/CubismViewMatrix.cpp; sourceTree = "<group>"; };
+		A20000000000000000000075 /* CubismViewMatrix.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Math/CubismViewMatrix.hpp; sourceTree = "<group>"; };
+		A20000000000000000000076 /* CubismMoc.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Model/CubismMoc.cpp; sourceTree = "<group>"; };
+		A20000000000000000000077 /* CubismMoc.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Model/CubismMoc.hpp; sourceTree = "<group>"; };
+		A20000000000000000000078 /* CubismModel.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Model/CubismModel.cpp; sourceTree = "<group>"; };
+		A20000000000000000000079 /* CubismModel.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Model/CubismModel.hpp; sourceTree = "<group>"; };
+		A20000000000000000000080 /* CubismModelMultiplyAndScreenColor.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Model/CubismModelMultiplyAndScreenColor.cpp; sourceTree = "<group>"; };
+		A20000000000000000000081 /* CubismModelMultiplyAndScreenColor.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Model/CubismModelMultiplyAndScreenColor.hpp; sourceTree = "<group>"; };
+		A20000000000000000000082 /* CubismModelUserData.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Model/CubismModelUserData.cpp; sourceTree = "<group>"; };
+		A20000000000000000000083 /* CubismModelUserData.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Model/CubismModelUserData.hpp; sourceTree = "<group>"; };
+		A20000000000000000000084 /* CubismModelUserDataJson.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Model/CubismModelUserDataJson.cpp; sourceTree = "<group>"; };
+		A20000000000000000000085 /* CubismModelUserDataJson.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Model/CubismModelUserDataJson.hpp; sourceTree = "<group>"; };
+		A20000000000000000000086 /* CubismUserModel.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Model/CubismUserModel.cpp; sourceTree = "<group>"; };
+		A20000000000000000000087 /* CubismUserModel.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Model/CubismUserModel.hpp; sourceTree = "<group>"; };
+		A20000000000000000000088 /* ACubismMotion.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Motion/ACubismMotion.cpp; sourceTree = "<group>"; };
+		A20000000000000000000089 /* ACubismMotion.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Motion/ACubismMotion.hpp; sourceTree = "<group>"; };
+		A20000000000000000000090 /* CubismBreathUpdater.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Motion/CubismBreathUpdater.cpp; sourceTree = "<group>"; };
+		A20000000000000000000091 /* CubismBreathUpdater.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Motion/CubismBreathUpdater.hpp; sourceTree = "<group>"; };
+		A20000000000000000000092 /* CubismExpressionMotion.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Motion/CubismExpressionMotion.cpp; sourceTree = "<group>"; };
+		A20000000000000000000093 /* CubismExpressionMotion.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Motion/CubismExpressionMotion.hpp; sourceTree = "<group>"; };
+		A20000000000000000000094 /* CubismExpressionMotionManager.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Motion/CubismExpressionMotionManager.cpp; sourceTree = "<group>"; };
+		A20000000000000000000095 /* CubismExpressionMotionManager.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Motion/CubismExpressionMotionManager.hpp; sourceTree = "<group>"; };
+		A20000000000000000000096 /* CubismExpressionUpdater.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Motion/CubismExpressionUpdater.cpp; sourceTree = "<group>"; };
+		A20000000000000000000097 /* CubismExpressionUpdater.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Motion/CubismExpressionUpdater.hpp; sourceTree = "<group>"; };
+		A20000000000000000000098 /* CubismEyeBlinkUpdater.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Motion/CubismEyeBlinkUpdater.cpp; sourceTree = "<group>"; };
+		A20000000000000000000099 /* CubismEyeBlinkUpdater.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Motion/CubismEyeBlinkUpdater.hpp; sourceTree = "<group>"; };
+		A20000000000000000000100 /* CubismLipSyncUpdater.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Motion/CubismLipSyncUpdater.cpp; sourceTree = "<group>"; };
+		A20000000000000000000101 /* CubismLipSyncUpdater.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Motion/CubismLipSyncUpdater.hpp; sourceTree = "<group>"; };
+		A20000000000000000000102 /* CubismLookUpdater.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Motion/CubismLookUpdater.cpp; sourceTree = "<group>"; };
+		A20000000000000000000103 /* CubismLookUpdater.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Motion/CubismLookUpdater.hpp; sourceTree = "<group>"; };
+		A20000000000000000000104 /* CubismMotion.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Motion/CubismMotion.cpp; sourceTree = "<group>"; };
+		A20000000000000000000105 /* CubismMotion.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Motion/CubismMotion.hpp; sourceTree = "<group>"; };
+		A20000000000000000000106 /* CubismMotionInternal.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Motion/CubismMotionInternal.hpp; sourceTree = "<group>"; };
+		A20000000000000000000107 /* CubismMotionJson.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Motion/CubismMotionJson.cpp; sourceTree = "<group>"; };
+		A20000000000000000000108 /* CubismMotionJson.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Motion/CubismMotionJson.hpp; sourceTree = "<group>"; };
+		A20000000000000000000109 /* CubismMotionManager.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Motion/CubismMotionManager.cpp; sourceTree = "<group>"; };
+		A20000000000000000000110 /* CubismMotionManager.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Motion/CubismMotionManager.hpp; sourceTree = "<group>"; };
+		A20000000000000000000111 /* CubismMotionQueueEntry.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Motion/CubismMotionQueueEntry.cpp; sourceTree = "<group>"; };
+		A20000000000000000000112 /* CubismMotionQueueEntry.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Motion/CubismMotionQueueEntry.hpp; sourceTree = "<group>"; };
+		A20000000000000000000113 /* CubismMotionQueueManager.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Motion/CubismMotionQueueManager.cpp; sourceTree = "<group>"; };
+		A20000000000000000000114 /* CubismMotionQueueManager.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Motion/CubismMotionQueueManager.hpp; sourceTree = "<group>"; };
+		A20000000000000000000115 /* CubismPhysicsUpdater.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Motion/CubismPhysicsUpdater.cpp; sourceTree = "<group>"; };
+		A20000000000000000000116 /* CubismPhysicsUpdater.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Motion/CubismPhysicsUpdater.hpp; sourceTree = "<group>"; };
+		A20000000000000000000117 /* CubismPoseUpdater.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Motion/CubismPoseUpdater.cpp; sourceTree = "<group>"; };
+		A20000000000000000000118 /* CubismPoseUpdater.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Motion/CubismPoseUpdater.hpp; sourceTree = "<group>"; };
+		A20000000000000000000119 /* CubismUpdateScheduler.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Motion/CubismUpdateScheduler.cpp; sourceTree = "<group>"; };
+		A20000000000000000000120 /* CubismUpdateScheduler.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Motion/CubismUpdateScheduler.hpp; sourceTree = "<group>"; };
+		A20000000000000000000121 /* ICubismUpdater.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Motion/ICubismUpdater.cpp; sourceTree = "<group>"; };
+		A20000000000000000000122 /* ICubismUpdater.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Motion/ICubismUpdater.hpp; sourceTree = "<group>"; };
+		A20000000000000000000123 /* IParameterProvider.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Motion/IParameterProvider.cpp; sourceTree = "<group>"; };
+		A20000000000000000000124 /* IParameterProvider.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Motion/IParameterProvider.hpp; sourceTree = "<group>"; };
+		A20000000000000000000125 /* CubismPhysics.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Physics/CubismPhysics.cpp; sourceTree = "<group>"; };
+		A20000000000000000000126 /* CubismPhysics.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Physics/CubismPhysics.hpp; sourceTree = "<group>"; };
+		A20000000000000000000127 /* CubismPhysicsInternal.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Physics/CubismPhysicsInternal.hpp; sourceTree = "<group>"; };
+		A20000000000000000000128 /* CubismPhysicsJson.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Physics/CubismPhysicsJson.cpp; sourceTree = "<group>"; };
+		A20000000000000000000129 /* CubismPhysicsJson.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Physics/CubismPhysicsJson.hpp; sourceTree = "<group>"; };
+		A20000000000000000000130 /* CubismClippingManager.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Rendering/CubismClippingManager.hpp; sourceTree = "<group>"; };
+		A20000000000000000000131 /* CubismRenderer.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Rendering/CubismRenderer.cpp; sourceTree = "<group>"; };
+		A20000000000000000000132 /* CubismRenderer.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Rendering/CubismRenderer.hpp; sourceTree = "<group>"; };
+		A20000000000000000000133 /* ICubismOffscreenManager.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Rendering/ICubismOffscreenManager.hpp; sourceTree = "<group>"; };
+		A20000000000000000000134 /* ICubismOffscreenRenderTarget.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Rendering/ICubismOffscreenRenderTarget.hpp; sourceTree = "<group>"; };
+		A20000000000000000000135 /* csmBlendMode.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Rendering/csmBlendMode.cpp; sourceTree = "<group>"; };
+		A20000000000000000000136 /* csmBlendMode.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Rendering/csmBlendMode.hpp; sourceTree = "<group>"; };
+		A20000000000000000000137 /* CubismCommandBuffer_Metal.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Rendering/Metal/CubismCommandBuffer_Metal.hpp; sourceTree = "<group>"; };
+		A20000000000000000000138 /* CubismCommandBuffer_Metal.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = Rendering/Metal/CubismCommandBuffer_Metal.mm; sourceTree = "<group>"; };
+		A20000000000000000000139 /* CubismDeviceInfo_Metal.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Rendering/Metal/CubismDeviceInfo_Metal.hpp; sourceTree = "<group>"; };
+		A20000000000000000000140 /* CubismDeviceInfo_Metal.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = Rendering/Metal/CubismDeviceInfo_Metal.mm; sourceTree = "<group>"; };
+		A20000000000000000000141 /* CubismOffscreenManager_Metal.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Rendering/Metal/CubismOffscreenManager_Metal.hpp; sourceTree = "<group>"; };
+		A20000000000000000000142 /* CubismOffscreenManager_Metal.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = Rendering/Metal/CubismOffscreenManager_Metal.mm; sourceTree = "<group>"; };
+		A20000000000000000000143 /* CubismOffscreenRenderTarget_Metal.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Rendering/Metal/CubismOffscreenRenderTarget_Metal.hpp; sourceTree = "<group>"; };
+		A20000000000000000000144 /* CubismOffscreenRenderTarget_Metal.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = Rendering/Metal/CubismOffscreenRenderTarget_Metal.mm; sourceTree = "<group>"; };
+		A20000000000000000000145 /* CubismRenderTarget_Metal.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Rendering/Metal/CubismRenderTarget_Metal.hpp; sourceTree = "<group>"; };
+		A20000000000000000000146 /* CubismRenderTarget_Metal.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = Rendering/Metal/CubismRenderTarget_Metal.mm; sourceTree = "<group>"; };
+		A20000000000000000000147 /* CubismRenderer_Metal.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Rendering/Metal/CubismRenderer_Metal.hpp; sourceTree = "<group>"; };
+		A20000000000000000000148 /* CubismRenderer_Metal.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = Rendering/Metal/CubismRenderer_Metal.mm; sourceTree = "<group>"; };
+		A20000000000000000000149 /* CubismShader_Metal.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Rendering/Metal/CubismShader_Metal.hpp; sourceTree = "<group>"; };
+		A20000000000000000000150 /* CubismShader_Metal.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = Rendering/Metal/CubismShader_Metal.mm; sourceTree = "<group>"; };
+		A20000000000000000000151 /* BlendShaderFuncs.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = Rendering/Metal/Shaders/BlendShaderFuncs.h; sourceTree = "<group>"; };
+		A20000000000000000000152 /* BlendShaderStructs.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = Rendering/Metal/Shaders/BlendShaderStructs.h; sourceTree = "<group>"; };
+		A20000000000000000000153 /* MetalShaderTypes.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = Rendering/Metal/Shaders/MetalShaderTypes.h; sourceTree = "<group>"; };
+		A20000000000000000000154 /* CubismBasicType.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Type/CubismBasicType.hpp; sourceTree = "<group>"; };
+		A20000000000000000000155 /* csmMap.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Type/csmMap.hpp; sourceTree = "<group>"; };
+		A20000000000000000000156 /* csmRectF.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Type/csmRectF.cpp; sourceTree = "<group>"; };
+		A20000000000000000000157 /* csmRectF.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Type/csmRectF.hpp; sourceTree = "<group>"; };
+		A20000000000000000000158 /* csmString.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Type/csmString.cpp; sourceTree = "<group>"; };
+		A20000000000000000000159 /* csmString.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Type/csmString.hpp; sourceTree = "<group>"; };
+		A20000000000000000000160 /* csmVector.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Type/csmVector.hpp; sourceTree = "<group>"; };
+		A20000000000000000000161 /* csmVectorSort.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Type/csmVectorSort.hpp; sourceTree = "<group>"; };
+		A20000000000000000000162 /* CubismDebug.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Utils/CubismDebug.cpp; sourceTree = "<group>"; };
+		A20000000000000000000163 /* CubismDebug.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Utils/CubismDebug.hpp; sourceTree = "<group>"; };
+		A20000000000000000000164 /* CubismJson.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Utils/CubismJson.cpp; sourceTree = "<group>"; };
+		A20000000000000000000165 /* CubismJson.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Utils/CubismJson.hpp; sourceTree = "<group>"; };
+		A20000000000000000000166 /* CubismString.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Utils/CubismString.cpp; sourceTree = "<group>"; };
+		A20000000000000000000167 /* CubismString.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Utils/CubismString.hpp; sourceTree = "<group>"; };
+		A20000000000000000000168 /* CubismBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = CubismBridge.h; sourceTree = "<group>"; };
+		A20000000000000000000169 /* CubismBridge.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = CubismBridge.mm; sourceTree = "<group>"; };
+		A20000000000000000000170 /* LAppAllocator.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = LAppAllocator.h; sourceTree = "<group>"; };
+		A20000000000000000000171 /* LAppAllocator.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = LAppAllocator.mm; sourceTree = "<group>"; };
+		A20000000000000000000172 /* LAppDefine.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = LAppDefine.h; sourceTree = "<group>"; };
+		A20000000000000000000173 /* LAppDefine.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = LAppDefine.mm; sourceTree = "<group>"; };
+		A20000000000000000000174 /* LAppModel.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = LAppModel.h; sourceTree = "<group>"; };
+		A20000000000000000000175 /* LAppModel.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = LAppModel.mm; sourceTree = "<group>"; };
+		A20000000000000000000176 /* LAppPal.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = LAppPal.h; sourceTree = "<group>"; };
+		A20000000000000000000177 /* LAppPal.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = LAppPal.mm; sourceTree = "<group>"; };
+		A20000000000000000000178 /* LAppTextureManager.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = LAppTextureManager.h; sourceTree = "<group>"; };
+		A20000000000000000000179 /* LAppTextureManager.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = LAppTextureManager.mm; sourceTree = "<group>"; };
+		A20000000000000000000180 /* Live2DRenderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Live2DRenderView.swift; sourceTree = "<group>"; };
+		A20000000000000000000181 /* Astella-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = Astella-Bridging-Header.h; sourceTree = "<group>"; };
+		D12000000000000000000001 /* CompanionInteractions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionInteractions.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -184,9 +392,11 @@
 		A30000000000000000000011 /* Companion */ = {
 			isa = PBXGroup;
 			children = (
+				A30000000000000000000014 /* Cubism */,
 				A20000000000000000000035 /* ModelDownloadManager.swift */,
 				A20000000000000000000036 /* CompanionEvents.swift */,
 				A20000000000000000000037 /* CompanionStageView.swift */,
+				D12000000000000000000001 /* CompanionInteractions.swift */,
 			);
 			path = Companion;
 			sourceTree = "<group>";
@@ -194,6 +404,7 @@
 		A30000000000000000000003 /* Astella */ = {
 			isa = PBXGroup;
 			children = (
+				A20000000000000000000181 /* Astella-Bridging-Header.h */,
 				A30000000000000000000001 /* App */,
 				A30000000000000000000006 /* Auth */,
 				A30000000000000000000007 /* Shell */,
@@ -211,6 +422,7 @@
 			isa = PBXGroup;
 			children = (
 				A30000000000000000000003 /* Astella */,
+				A30000000000000000000015 /* CubismSdkForNative-5-r.5 Framework */,
 				A30000000000000000000013 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -223,6 +435,163 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
+		A30000000000000000000014 /* Cubism */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000168 /* CubismBridge.h */,
+				A20000000000000000000169 /* CubismBridge.mm */,
+				A20000000000000000000170 /* LAppAllocator.h */,
+				A20000000000000000000171 /* LAppAllocator.mm */,
+				A20000000000000000000172 /* LAppDefine.h */,
+				A20000000000000000000173 /* LAppDefine.mm */,
+				A20000000000000000000174 /* LAppModel.h */,
+				A20000000000000000000175 /* LAppModel.mm */,
+				A20000000000000000000176 /* LAppPal.h */,
+				A20000000000000000000177 /* LAppPal.mm */,
+				A20000000000000000000178 /* LAppTextureManager.h */,
+				A20000000000000000000179 /* LAppTextureManager.mm */,
+				A20000000000000000000180 /* Live2DRenderView.swift */,
+			);
+			path = Cubism;
+			sourceTree = "<group>";
+		};
+		A30000000000000000000015 /* CubismSdkForNative-5-r.5 Framework */ = {
+			isa = PBXGroup;
+			name = "CubismSdkForNative-5-r.5 Framework";
+			children = (
+				A20000000000000000000039 /* CubismCdiJson.cpp */,
+				A20000000000000000000040 /* CubismCdiJson.hpp */,
+				A20000000000000000000041 /* CubismDefaultParameterId.cpp */,
+				A20000000000000000000042 /* CubismDefaultParameterId.hpp */,
+				A20000000000000000000043 /* CubismFramework.cpp */,
+				A20000000000000000000044 /* CubismFramework.hpp */,
+				A20000000000000000000045 /* CubismFrameworkConfig.hpp */,
+				A20000000000000000000046 /* CubismJsonHolder.hpp */,
+				A20000000000000000000047 /* CubismModelSettingJson.cpp */,
+				A20000000000000000000048 /* CubismModelSettingJson.hpp */,
+				A20000000000000000000049 /* ICubismAllocator.hpp */,
+				A20000000000000000000050 /* ICubismModelSetting.hpp */,
+				A20000000000000000000051 /* Live2DCubismCore.hpp */,
+				A20000000000000000000052 /* CubismBreath.cpp */,
+				A20000000000000000000053 /* CubismBreath.hpp */,
+				A20000000000000000000054 /* CubismEyeBlink.cpp */,
+				A20000000000000000000055 /* CubismEyeBlink.hpp */,
+				A20000000000000000000056 /* CubismLook.cpp */,
+				A20000000000000000000057 /* CubismLook.hpp */,
+				A20000000000000000000058 /* CubismPose.cpp */,
+				A20000000000000000000059 /* CubismPose.hpp */,
+				A20000000000000000000060 /* CubismId.cpp */,
+				A20000000000000000000061 /* CubismId.hpp */,
+				A20000000000000000000062 /* CubismIdManager.cpp */,
+				A20000000000000000000063 /* CubismIdManager.hpp */,
+				A20000000000000000000064 /* CubismMath.cpp */,
+				A20000000000000000000065 /* CubismMath.hpp */,
+				A20000000000000000000066 /* CubismMatrix44.cpp */,
+				A20000000000000000000067 /* CubismMatrix44.hpp */,
+				A20000000000000000000068 /* CubismModelMatrix.cpp */,
+				A20000000000000000000069 /* CubismModelMatrix.hpp */,
+				A20000000000000000000070 /* CubismTargetPoint.cpp */,
+				A20000000000000000000071 /* CubismTargetPoint.hpp */,
+				A20000000000000000000072 /* CubismVector2.cpp */,
+				A20000000000000000000073 /* CubismVector2.hpp */,
+				A20000000000000000000074 /* CubismViewMatrix.cpp */,
+				A20000000000000000000075 /* CubismViewMatrix.hpp */,
+				A20000000000000000000076 /* CubismMoc.cpp */,
+				A20000000000000000000077 /* CubismMoc.hpp */,
+				A20000000000000000000078 /* CubismModel.cpp */,
+				A20000000000000000000079 /* CubismModel.hpp */,
+				A20000000000000000000080 /* CubismModelMultiplyAndScreenColor.cpp */,
+				A20000000000000000000081 /* CubismModelMultiplyAndScreenColor.hpp */,
+				A20000000000000000000082 /* CubismModelUserData.cpp */,
+				A20000000000000000000083 /* CubismModelUserData.hpp */,
+				A20000000000000000000084 /* CubismModelUserDataJson.cpp */,
+				A20000000000000000000085 /* CubismModelUserDataJson.hpp */,
+				A20000000000000000000086 /* CubismUserModel.cpp */,
+				A20000000000000000000087 /* CubismUserModel.hpp */,
+				A20000000000000000000088 /* ACubismMotion.cpp */,
+				A20000000000000000000089 /* ACubismMotion.hpp */,
+				A20000000000000000000090 /* CubismBreathUpdater.cpp */,
+				A20000000000000000000091 /* CubismBreathUpdater.hpp */,
+				A20000000000000000000092 /* CubismExpressionMotion.cpp */,
+				A20000000000000000000093 /* CubismExpressionMotion.hpp */,
+				A20000000000000000000094 /* CubismExpressionMotionManager.cpp */,
+				A20000000000000000000095 /* CubismExpressionMotionManager.hpp */,
+				A20000000000000000000096 /* CubismExpressionUpdater.cpp */,
+				A20000000000000000000097 /* CubismExpressionUpdater.hpp */,
+				A20000000000000000000098 /* CubismEyeBlinkUpdater.cpp */,
+				A20000000000000000000099 /* CubismEyeBlinkUpdater.hpp */,
+				A20000000000000000000100 /* CubismLipSyncUpdater.cpp */,
+				A20000000000000000000101 /* CubismLipSyncUpdater.hpp */,
+				A20000000000000000000102 /* CubismLookUpdater.cpp */,
+				A20000000000000000000103 /* CubismLookUpdater.hpp */,
+				A20000000000000000000104 /* CubismMotion.cpp */,
+				A20000000000000000000105 /* CubismMotion.hpp */,
+				A20000000000000000000106 /* CubismMotionInternal.hpp */,
+				A20000000000000000000107 /* CubismMotionJson.cpp */,
+				A20000000000000000000108 /* CubismMotionJson.hpp */,
+				A20000000000000000000109 /* CubismMotionManager.cpp */,
+				A20000000000000000000110 /* CubismMotionManager.hpp */,
+				A20000000000000000000111 /* CubismMotionQueueEntry.cpp */,
+				A20000000000000000000112 /* CubismMotionQueueEntry.hpp */,
+				A20000000000000000000113 /* CubismMotionQueueManager.cpp */,
+				A20000000000000000000114 /* CubismMotionQueueManager.hpp */,
+				A20000000000000000000115 /* CubismPhysicsUpdater.cpp */,
+				A20000000000000000000116 /* CubismPhysicsUpdater.hpp */,
+				A20000000000000000000117 /* CubismPoseUpdater.cpp */,
+				A20000000000000000000118 /* CubismPoseUpdater.hpp */,
+				A20000000000000000000119 /* CubismUpdateScheduler.cpp */,
+				A20000000000000000000120 /* CubismUpdateScheduler.hpp */,
+				A20000000000000000000121 /* ICubismUpdater.cpp */,
+				A20000000000000000000122 /* ICubismUpdater.hpp */,
+				A20000000000000000000123 /* IParameterProvider.cpp */,
+				A20000000000000000000124 /* IParameterProvider.hpp */,
+				A20000000000000000000125 /* CubismPhysics.cpp */,
+				A20000000000000000000126 /* CubismPhysics.hpp */,
+				A20000000000000000000127 /* CubismPhysicsInternal.hpp */,
+				A20000000000000000000128 /* CubismPhysicsJson.cpp */,
+				A20000000000000000000129 /* CubismPhysicsJson.hpp */,
+				A20000000000000000000130 /* CubismClippingManager.hpp */,
+				A20000000000000000000131 /* CubismRenderer.cpp */,
+				A20000000000000000000132 /* CubismRenderer.hpp */,
+				A20000000000000000000133 /* ICubismOffscreenManager.hpp */,
+				A20000000000000000000134 /* ICubismOffscreenRenderTarget.hpp */,
+				A20000000000000000000135 /* csmBlendMode.cpp */,
+				A20000000000000000000136 /* csmBlendMode.hpp */,
+				A20000000000000000000137 /* CubismCommandBuffer_Metal.hpp */,
+				A20000000000000000000138 /* CubismCommandBuffer_Metal.mm */,
+				A20000000000000000000139 /* CubismDeviceInfo_Metal.hpp */,
+				A20000000000000000000140 /* CubismDeviceInfo_Metal.mm */,
+				A20000000000000000000141 /* CubismOffscreenManager_Metal.hpp */,
+				A20000000000000000000142 /* CubismOffscreenManager_Metal.mm */,
+				A20000000000000000000143 /* CubismOffscreenRenderTarget_Metal.hpp */,
+				A20000000000000000000144 /* CubismOffscreenRenderTarget_Metal.mm */,
+				A20000000000000000000145 /* CubismRenderTarget_Metal.hpp */,
+				A20000000000000000000146 /* CubismRenderTarget_Metal.mm */,
+				A20000000000000000000147 /* CubismRenderer_Metal.hpp */,
+				A20000000000000000000148 /* CubismRenderer_Metal.mm */,
+				A20000000000000000000149 /* CubismShader_Metal.hpp */,
+				A20000000000000000000150 /* CubismShader_Metal.mm */,
+				A20000000000000000000151 /* BlendShaderFuncs.h */,
+				A20000000000000000000152 /* BlendShaderStructs.h */,
+				A20000000000000000000153 /* MetalShaderTypes.h */,
+				A20000000000000000000154 /* CubismBasicType.hpp */,
+				A20000000000000000000155 /* csmMap.hpp */,
+				A20000000000000000000156 /* csmRectF.cpp */,
+				A20000000000000000000157 /* csmRectF.hpp */,
+				A20000000000000000000158 /* csmString.cpp */,
+				A20000000000000000000159 /* csmString.hpp */,
+				A20000000000000000000160 /* csmVector.hpp */,
+				A20000000000000000000161 /* csmVectorSort.hpp */,
+				A20000000000000000000162 /* CubismDebug.cpp */,
+				A20000000000000000000163 /* CubismDebug.hpp */,
+				A20000000000000000000164 /* CubismJson.cpp */,
+				A20000000000000000000165 /* CubismJson.hpp */,
+				A20000000000000000000166 /* CubismString.cpp */,
+				A20000000000000000000167 /* CubismString.hpp */,
+			);
+			path = "../native-sdk/CubismSdkForNative-5-r.5/Framework/src";
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -233,6 +602,7 @@
 				A40000000000000000000001 /* Sources */,
 				A40000000000000000000002 /* Frameworks */,
 				A40000000000000000000003 /* Resources */,
+				A90000000000000000000001 /* Generate Cubism Framework Metallibs */,
 			);
 			buildRules = (
 			);
@@ -287,11 +657,31 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		A90000000000000000000001 /* Generate Cubism Framework Metallibs */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			name = "Generate Cubism Framework Metallibs";
+			outputFileListPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "export SRC=\"${SRCROOT}/../native-sdk/CubismSdkForNative-5-r.5/Framework/src/Rendering/Metal/Shaders\"\nexport OUT=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/FrameworkMetallibs\"\nexport SDK=\"${PLATFORM_NAME}\"\n\"${SRCROOT}/Scripts/gen-framework-metallibs.sh\"";
+			showEnvVarsInLog = 0;
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		A40000000000000000000001 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D11000000000000000000001 /* CompanionInteractions.swift in Sources */,
 				A10000000000000000000001 /* Models.swift in Sources */,
 				A10000000000000000000002 /* KeychainTokenStore.swift in Sources */,
 				A10000000000000000000003 /* MobileAPI.swift in Sources */,
@@ -325,6 +715,69 @@
 				A10000000000000000000036 /* CompanionModelMethods.swift in Sources */,
 				A10000000000000000000009 /* NotesScreen.swift in Sources */,
 				A10000000000000000000010 /* HandAndAccountScreens.swift in Sources */,
+				A10000000000000000000037 /* CubismCdiJson.cpp in Sources */,
+				A10000000000000000000038 /* CubismDefaultParameterId.cpp in Sources */,
+				A10000000000000000000039 /* CubismFramework.cpp in Sources */,
+				A10000000000000000000040 /* CubismModelSettingJson.cpp in Sources */,
+				A10000000000000000000041 /* CubismBreath.cpp in Sources */,
+				A10000000000000000000042 /* CubismEyeBlink.cpp in Sources */,
+				A10000000000000000000043 /* CubismLook.cpp in Sources */,
+				A10000000000000000000044 /* CubismPose.cpp in Sources */,
+				A10000000000000000000045 /* CubismId.cpp in Sources */,
+				A10000000000000000000046 /* CubismIdManager.cpp in Sources */,
+				A10000000000000000000047 /* CubismMath.cpp in Sources */,
+				A10000000000000000000048 /* CubismMatrix44.cpp in Sources */,
+				A10000000000000000000049 /* CubismModelMatrix.cpp in Sources */,
+				A10000000000000000000050 /* CubismTargetPoint.cpp in Sources */,
+				A10000000000000000000051 /* CubismVector2.cpp in Sources */,
+				A10000000000000000000052 /* CubismViewMatrix.cpp in Sources */,
+				A10000000000000000000053 /* CubismMoc.cpp in Sources */,
+				A10000000000000000000054 /* CubismModel.cpp in Sources */,
+				A10000000000000000000055 /* CubismModelMultiplyAndScreenColor.cpp in Sources */,
+				A10000000000000000000056 /* CubismModelUserData.cpp in Sources */,
+				A10000000000000000000057 /* CubismModelUserDataJson.cpp in Sources */,
+				A10000000000000000000058 /* CubismUserModel.cpp in Sources */,
+				A10000000000000000000059 /* ACubismMotion.cpp in Sources */,
+				A10000000000000000000060 /* CubismBreathUpdater.cpp in Sources */,
+				A10000000000000000000061 /* CubismExpressionMotion.cpp in Sources */,
+				A10000000000000000000062 /* CubismExpressionMotionManager.cpp in Sources */,
+				A10000000000000000000063 /* CubismExpressionUpdater.cpp in Sources */,
+				A10000000000000000000064 /* CubismEyeBlinkUpdater.cpp in Sources */,
+				A10000000000000000000065 /* CubismLipSyncUpdater.cpp in Sources */,
+				A10000000000000000000066 /* CubismLookUpdater.cpp in Sources */,
+				A10000000000000000000067 /* CubismMotion.cpp in Sources */,
+				A10000000000000000000068 /* CubismMotionJson.cpp in Sources */,
+				A10000000000000000000069 /* CubismMotionManager.cpp in Sources */,
+				A10000000000000000000070 /* CubismMotionQueueEntry.cpp in Sources */,
+				A10000000000000000000071 /* CubismMotionQueueManager.cpp in Sources */,
+				A10000000000000000000072 /* CubismPhysicsUpdater.cpp in Sources */,
+				A10000000000000000000073 /* CubismPoseUpdater.cpp in Sources */,
+				A10000000000000000000074 /* CubismUpdateScheduler.cpp in Sources */,
+				A10000000000000000000075 /* ICubismUpdater.cpp in Sources */,
+				A10000000000000000000076 /* IParameterProvider.cpp in Sources */,
+				A10000000000000000000077 /* CubismPhysics.cpp in Sources */,
+				A10000000000000000000078 /* CubismPhysicsJson.cpp in Sources */,
+				A10000000000000000000079 /* CubismRenderer.cpp in Sources */,
+				A10000000000000000000080 /* csmBlendMode.cpp in Sources */,
+				A10000000000000000000081 /* CubismCommandBuffer_Metal.mm in Sources */,
+				A10000000000000000000082 /* CubismDeviceInfo_Metal.mm in Sources */,
+				A10000000000000000000083 /* CubismOffscreenManager_Metal.mm in Sources */,
+				A10000000000000000000084 /* CubismOffscreenRenderTarget_Metal.mm in Sources */,
+				A10000000000000000000085 /* CubismRenderTarget_Metal.mm in Sources */,
+				A10000000000000000000086 /* CubismRenderer_Metal.mm in Sources */,
+				A10000000000000000000087 /* CubismShader_Metal.mm in Sources */,
+				A10000000000000000000088 /* csmRectF.cpp in Sources */,
+				A10000000000000000000089 /* csmString.cpp in Sources */,
+				A10000000000000000000090 /* CubismDebug.cpp in Sources */,
+				A10000000000000000000091 /* CubismJson.cpp in Sources */,
+				A10000000000000000000092 /* CubismString.cpp in Sources */,
+				A10000000000000000000093 /* CubismBridge.mm in Sources */,
+				A10000000000000000000094 /* LAppAllocator.mm in Sources */,
+				A10000000000000000000095 /* LAppDefine.mm in Sources */,
+				A10000000000000000000096 /* LAppModel.mm in Sources */,
+				A10000000000000000000097 /* LAppPal.mm in Sources */,
+				A10000000000000000000098 /* LAppTextureManager.mm in Sources */,
+				A10000000000000000000099 /* Live2DRenderView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -358,6 +811,29 @@
 		A70000000000000000000003 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) DEBUG";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				ARCHS = arm64;
+				/* ARCHS=arm64：Core 静态库的模拟器目录取 arm64（本机 Apple Silicon）；
+				   x86_64 目录虽存在但不链接（任务约定：模拟器 x86_64 不管）。真机同为 arm64。 */
+				CLANG_CXX_LANGUAGE_STANDARD = "c++17";
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/Astella/Companion/Cubism",
+					"$(SRCROOT)/../native-sdk/CubismSdkForNative-5-r.5/Core/include",
+					"$(SRCROOT)/../native-sdk/CubismSdkForNative-5-r.5/Framework/src",
+				);
+				/* Core 静态库按 CONFIGURATION+SDK 选目录；模拟器固定 -iphonesimulator-arm64
+				   （本机 Apple Silicon；x86_64 目录存在但不链接，见任务说明）。 */
+				"LIBRARY_SEARCH_PATHS[sdk=iphoneos*]" = "$(SRCROOT)/../native-sdk/CubismSdkForNative-5-r.5/Core/lib/ios/$(CONFIGURATION)-iphoneos";
+				"LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*]" = "$(SRCROOT)/../native-sdk/CubismSdkForNative-5-r.5/Core/lib/ios/$(CONFIGURATION)-iphonesimulator-arm64";
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-lLive2DCubismCore",
+					"-lc++",
+				);
+				SWIFT_OBJC_BRIDGING_HEADER = "Astella/Astella-Bridging-Header.h";
 				CODE_SIGN_STYLE = Automatic;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Astella/Info.plist;
@@ -374,6 +850,27 @@
 		A70000000000000000000004 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ARCHS = arm64;
+				/* ARCHS=arm64：Core 静态库的模拟器目录取 arm64（本机 Apple Silicon）；
+				   x86_64 目录虽存在但不链接（任务约定：模拟器 x86_64 不管）。真机同为 arm64。 */
+				CLANG_CXX_LANGUAGE_STANDARD = "c++17";
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/Astella/Companion/Cubism",
+					"$(SRCROOT)/../native-sdk/CubismSdkForNative-5-r.5/Core/include",
+					"$(SRCROOT)/../native-sdk/CubismSdkForNative-5-r.5/Framework/src",
+				);
+				/* Core 静态库按 CONFIGURATION+SDK 选目录；模拟器固定 -iphonesimulator-arm64
+				   （本机 Apple Silicon；x86_64 目录存在但不链接，见任务说明）。 */
+				"LIBRARY_SEARCH_PATHS[sdk=iphoneos*]" = "$(SRCROOT)/../native-sdk/CubismSdkForNative-5-r.5/Core/lib/ios/$(CONFIGURATION)-iphoneos";
+				"LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*]" = "$(SRCROOT)/../native-sdk/CubismSdkForNative-5-r.5/Core/lib/ios/$(CONFIGURATION)-iphonesimulator-arm64";
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-lLive2DCubismCore",
+					"-lc++",
+				);
+				SWIFT_OBJC_BRIDGING_HEADER = "Astella/Astella-Bridging-Header.h";
 				CODE_SIGN_STYLE = Automatic;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Astella/Info.plist;

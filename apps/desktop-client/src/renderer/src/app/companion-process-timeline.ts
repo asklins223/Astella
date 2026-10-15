@@ -50,6 +50,14 @@ export function companionProcessRows(trace: CompanionRunTrace): CompanionProcess
     ? { ...row, node: trace.nodes.find(node => node.key === row.key) ?? row.node } : row);
 }
 
+/**
+ * 收起那一格只说她在做什么，不搬思考原文。
+ *
+ * 原来给的是最后一条 row，而最后一条常常是 thinking：模型的内心独白是英文写的，
+ * 于是「执行工具 4 次」后面挂着半句 "Recommending it again is fine, it's substantive.
+ * Write the final reply."（2026-10-14 用户截图指出）。完整思考记录的位置是展开后的
+ * 时间线，那一格本来就是给它留的；收起态要的是进度，不是原文。
+ */
 export function companionProcessPreview(trace: CompanionRunTrace, rows: readonly CompanionProcessRow[]): string {
   const latest = trace.events?.at(-1);
   if (latest?.type === "agent.tool") {
@@ -57,7 +65,7 @@ export function companionProcessPreview(trace: CompanionRunTrace, rows: readonly
     const node = trace.nodes.find(node => node.key === `tool:${tool?.toolCallId}`);
     if (node) return [nodeLabel(node), node.summary].filter(Boolean).join(" · ");
   }
-  const row = rows.at(-1);
-  return row?.kind === "thinking" ? row.text : row?.kind === "node"
-    ? [nodeLabel(row.node), row.node.summary].filter(Boolean).join(" · ") : "";
+  const lastTool = [...rows].reverse().find(row => row.kind === "node");
+  return lastTool?.kind === "node"
+    ? [nodeLabel(lastTool.node), lastTool.node.summary].filter(Boolean).join(" · ") : "";
 }

@@ -74,7 +74,7 @@ test("纠正的分类输入保留同一消息的时间证据，来源错位不�
     const data = JSON.parse(String(input[1]?.content));
     assert.deepEqual(data.conversationClock, clock);
     assert.equal(data.recent[0].createdAt, calls++ === 0 ? "2026-10-09T10:00:00.000Z" : null);
-    assert.equal(data.recent[1].createdAt, null);
+    assert.equal(data.recent.length, 1, "current 不在 recent 中重复发送");
     assert.match(String(input[0]?.content), /不为了证明改口而额外查询/);
     return { content: JSON.stringify(proposal(false)), usage: {} };
   } } as AIProvider;
@@ -360,6 +360,17 @@ test("退休用途开关不能扩大分类输入、输出额度或重启来源�
   await interpretCompanionTurn(model, [{ role: "user", content: "我还没交呢" }], taskContext());
   assert.equal(sent.length, 2);
   assert.deepEqual(sent[1], sent[0], "开关开与关送出去的分类输入与这一发参数必须一字不差");
+});
+
+test("分类输入只发送一次完整当前长文，保留历史的原索引和全文", () => {
+  const current = "当前完整请求。".repeat(2000);
+  const previous = "上一条完整正文。".repeat(2000);
+  const request = buildCompanionTurnInterpretationMessages([
+    { role: "assistant", content: previous }, { role: "user", content: current },
+  ], {});
+  const data = JSON.parse(String(request![1]!.content));
+  assert.equal(data.current, current);
+  assert.deepEqual(data.recent, [{ index: 0, role: "assistant", content: previous, createdAt: null }]);
 });
 
 test("模型有效返回 uncertain 与调用失败在观测中分别记录", async () => {

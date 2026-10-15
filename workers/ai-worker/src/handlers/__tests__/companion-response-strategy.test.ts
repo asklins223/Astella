@@ -59,11 +59,13 @@ test("动作、控制与带读取的聊天保留工具执行档", () => {
     const strategy = companionResponseStrategy(attention);
     assert.equal(strategy.mode, "task");
     assert.equal(strategy.temperature, 0.4);
+    assert.equal(strategy.guidance, COMPANION_KNOWLEDGE_REVIEW_V1,
+      "任务结果可能包含知识解释，不能因动作意图跳过事实约束");
     assert.equal(companionTurnThinking(attention).disableThinking, false);
   }
 });
 
-test("发布前复核只接管明确要求解释的无工具提问，不增加闲聊或工具动作的往返", () => {
+test("离线审校实验只选择明确要求解释的无工具提问，不代表生产已经执行复核", () => {
   assert.equal(isCompanionExplanation({intent:"question"},"为什么咖啡会凉？",0),true);
   assert.equal(isCompanionExplanation({intent:"question"},"Explain inertia",0),true);
   assert.equal(isCompanionExplanation({intent:"question"},"你今天看到什么？",0),false);

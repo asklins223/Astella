@@ -279,11 +279,13 @@ export class MemoryRevisionConflictError extends Error {
   const other = (Array.isArray(rows) ? rows : [])[0]?.id;
   if (!other) return;
   const group = randomUUID();
+  // 只是给两条互判相似的记录打同一个组号，不改内容也不改「这条认识是什么时候的事」，
+  // 所以不动 `updatedAt`（0434：时效那一路是她在排序里用的，例行记账不该推它）。
   await executor.update(assistantMemoryItems)
-    .set({ conflictGroup: group, updatedAt: new Date() })
+    .set({ conflictGroup: group })
     .where(eq(assistantMemoryItems.id, memoryId));
   await executor.update(assistantMemoryItems)
-    .set({ conflictGroup: group, updatedAt: new Date() })
+    .set({ conflictGroup: group })
     .where(eq(assistantMemoryItems.id, other));
 }
 

@@ -171,6 +171,14 @@ extension AppStore {
     }
 
     func logout() {
+        voicePlayback.stop()
+        intakeGeneration += 1
+        draft = ""
+        selectedFile = nil
+        pendingTurnRequest = nil; pendingTurnSignature = nil
+        selectionRunId = nil; streamingRunId = nil
+        pendingSelection = nil
+        selectionRequestTitle = nil
         realtime.stop()
         KeychainTokenStore.delete()
         api.token = nil

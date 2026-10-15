@@ -21,6 +21,7 @@ import type { AgentTurnRequest, AgentTurnResult } from "@astella/shared";
 import type { AIProvider } from "../lib/ai-provider.ts";
 import { resolveProviderCallTimeout } from "../lib/handler-timeout-config.ts";
 import { logger } from "../lib/logger.ts";
+import { AIContextCompactionRequiredError, AIContextOverflowError } from "../lib/context-governor.ts";
 import { companionStepOutputCeiling } from "./companion-dialogue-content.ts";
 import { stepHoldChars } from "./companion-step-plan.ts";
 import { canRetryCompanionStream, runStreamingAgentStep } from "./companion-agent-streaming-step.ts";
@@ -154,9 +155,17 @@ export function startCompanionSpeculativeFirstSteps(args: {
     try {
       const result = await flight;
       logger.info({ runId: settle.runId, ms: Date.now() - settle.handlerStartedAtMs },
-        `speculative ${label} first step kept; answering without waiting for the classifier round-trip`);
+        `speculative ${label} first step kept after interpretation; generation overlapped the classifier round-trip`);
       return { request, result, emitted: state.emitted };
     } catch (err) {
+      // Speculation has no compaction owner. A locally rejected request has
+      // delivered nothing; let the formal bounded sender compact its actual
+      // request instead of terminating before that recovery path can run.
+      if (!state.emitted && !args.ctxSignal.aborted && Date.now() < settle.deadlineAt
+        && (err instanceof AIContextCompactionRequiredError || err instanceof AIContextOverflowError)) {
+        logger.info({ runId: settle.runId }, "speculative context pressure deferred to formal request compaction");
+        return null;
+      }
       // 投机请求一旦送达文字，或输出额度/鉴权等确定性失败，就和正式流式
       // 步一样直接失败。无条件回退会再次生成、重复送达已发布的前缀。
       // `state.emitted` 必须读到**出错那一刻**的值：字是在 await 期间才发出去的。

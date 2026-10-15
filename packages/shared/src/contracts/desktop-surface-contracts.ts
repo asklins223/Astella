@@ -286,7 +286,11 @@ export type DesktopNoteListPage = z.infer<typeof desktopNoteListPageSchema>;
  */
 export const desktopNoteCreateRequestSchema = z.object({
   title: z.string().max(200).optional(),
-  blocks: z.array(noteBlockWriteV1Schema).max(10_000).optional(),
+  // 块数不设上限：服务端 `noteCreateSchema`（POST /notes）与 `/import/markdown`
+  // 都不设，这里再写一个就是同一份数字的第二处声明，而且比服务端**更严**——
+  // 12,000 块的长文会在 IPC 这层先被判红，而同一篇从导入进得去。
+  // 正文规模的唯一闸门是传输层的 MAX_SOURCE_TEXT_BYTES。
+  blocks: z.array(noteBlockWriteV1Schema).optional(),
 }).passthrough();
 export type DesktopNoteCreateRequest = z.infer<typeof desktopNoteCreateRequestSchema>;
 

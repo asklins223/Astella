@@ -19,25 +19,27 @@
 import { sql } from "drizzle-orm";
 import { db } from "../db.ts";
 import { logger } from "../lib/logger.ts";
+import { createTickThrottle } from "./tick-throttle.ts";
 
 const RECONCILE_INTERVAL_MS = 30_000;
-let lastReconcileAt = 0;
+const throttle = createTickThrottle(RECONCILE_INTERVAL_MS);
 
 /** 回收一次；返回被终结的 run 数。失败只告警——这是兜底路径，不能影响主队列。 */
 export async function tickCompanionRunReconcile(nowMs = Date.now()): Promise<number> {
-  if (nowMs - lastReconcileAt < RECONCILE_INTERVAL_MS) return 0;
+  if (!throttle.due(nowMs)) return 0;
   try {
     const rows = await db.execute<{ reclaimed: number }>(sql`
       SELECT public.astella_reclaim_orphaned_companion_runs() AS reclaimed
     `);
-    // 只有 SQL 成功返回后才推进本地时间戳：DB 抖动要在下一轮重试，而不是静默跳过。
-    lastReconcileAt = nowMs;
+    // 只有 SQL 成功返回后才推进周期：DB 抖动要在下一轮重试，而不是静默跳过。
+    throttle.succeed(nowMs);
     const reclaimed = Number((Array.isArray(rows) ? rows : [])[0]?.reclaimed ?? 0);
     if (reclaimed > 0) {
       logger.warn({ reclaimed }, "companion run reconcile terminated orphaned runs");
     }
     return reclaimed;
   } catch (err) {
+    throttle.fail(nowMs);
     logger.warn(
       { err: err instanceof Error ? err.message : String(err) },
       "companion run reconcile sweep failed",
@@ -48,5 +50,5 @@ export async function tickCompanionRunReconcile(nowMs = Date.now()): Promise<num
 
 /** 测试用：重置进程内节流（生产代码不要调用）。 */
 export function resetCompanionRunReconcileThrottleForTest(): void {
-  lastReconcileAt = 0;
+  throttle.reset();
 }

@@ -3,6 +3,7 @@ import test from "node:test";
 import { assembleCompanionStepRequest, companionStepPolicyText, companionStepToolSurface, companionWebSearchAllowedForStep } from "../companion-agent-step-assembly.ts";
 import { companionStepOutputCeiling } from "../companion-dialogue-content.ts";
 import type { AgentTurnRequest } from "@astella/shared";
+import { companionStepCorrectionMessages } from "../companion-step-plan.ts";
 
 const READ_TOOL = { name: "companion_read_note", description: "读笔记", parameters: {} };
 const WEB_TOOL = { name: "agent_web_search", description: "联网", parameters: {} };
@@ -12,6 +13,23 @@ const attention = {
   goalRelation: "unrelated", goalReference: null, candidateOperations: [], ambiguities: [], status: "interpreted",
   voiceStyle: { decision: "none" },
 } as never;
+
+test("host occasions do not inherit the user-dialogue continuation task", () => {
+  const base = { permissionLevel: "full", stepBudget: Infinity, finalAnswerOnly: false,
+    offeredToolNames: ["companion_read_note"], writingAnnotation: false, completeNoteReply: false };
+  for (const attentionIntent of ["conversation", "question", "task"]) for (const toolCount of [0, 3]) {
+    const policy = companionStepPolicyText({ ...base, attentionIntent, toolCount, requestSource: "host_observation" });
+    assert.match(policy, /当前任务是处理末尾 hostObservation/);
+    assert.doesNotMatch(policy, /把最后一条消息作为对方向你说的话来接|每次工具返回后都回到本轮最后一条用户问题/);
+  }
+  const userPolicy = companionStepPolicyText({ ...base, attentionIntent: "conversation", toolCount: 3, requestSource: "user" });
+  assert.match(userPolicy, /把最后一条消息作为对方向你说的话来接/);
+  const currentRequest = { role: "system" as const, hostObservation: true as const, content: "app.started: current occasion" };
+  const correction = companionStepCorrectionMessages({ currentRequest, instruction: "核对当前时刻", alreadyDisplayed: false });
+  assert.deepEqual(correction.at(-1), currentRequest, "repair keeps host authority and the exact observation");
+  assert.match(String(correction[0]?.content), /当前宿主观察/);
+  assert.doesNotMatch(String(correction[0]?.content), /完整回答当前问题/);
+});
 
 test("终答步收起工具时绝不留下空工具面配 required 的那一对", () => {
   const shape = companionStepToolSurface({

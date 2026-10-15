@@ -72,6 +72,7 @@ const KNOWN_PLATFORM_TYPES = [
   "openai_compatible",
   "siliconflow",
   "opencode_go",
+  "mimo_responses",
 ] as const;
 
 /**
@@ -91,8 +92,9 @@ const LEGACY_PLATFORM_OPTION_KEYS = [
 /** 推理档位的合法取值（与 shared 的 ReasoningEffort 同集合）。 */
 const REASONING_LEVELS = ["none", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 
-/** 思考开关字段的两种方言（与 shared 的 ThinkingParamDialect 同集合）。 */
-const THINKING_PARAM_DIALECTS = ["enable_thinking", "reasoning_effort"] as const;
+/** 思考开关字段的方言（与 shared 的 ThinkingParamDialect 同集合）。 */
+const THINKING_PARAM_DIALECTS = ["enable_thinking", "reasoning_effort", "thinking_type"] as const;
+const MAX_TOKENS_PARAMS = ["max_tokens", "max_completion_tokens"] as const;
 
 export function resolveConfigPath(raw: string | undefined = process.env.AI_PLATFORMS_CONFIG): string {
   return resolve(raw && raw.trim().length > 0 ? raw.trim() : DEFAULT_CONFIG_PATH);
@@ -235,13 +237,22 @@ export function validateConfig(raw: unknown): ConfigIssue[] {
           }
         }
         // 思考开关方言：拼错的值会被 provider 当成"未声明"，于是回落到
-        // enable_thinking —— 面板上的说法与实际下发的字段不一致，正是"改了但没生效"。
+        // 默认方言 —— 面板上的说法与实际下发的字段不一致，正是"改了但没生效"。
         const thinkingParam = options.thinkingParam;
         if (thinkingParam !== undefined
           && !(typeof thinkingParam === "string" && (THINKING_PARAM_DIALECTS as readonly string[]).includes(thinkingParam))) {
           issues.push({
             path: `platforms.${id}.options.thinkingParam`,
-            message: `思考开关方言必须是 ${THINKING_PARAM_DIALECTS.join(" / ")}（写错会被当成未声明，回落 enable_thinking）`,
+            message: `思考开关方言必须是 ${THINKING_PARAM_DIALECTS.join(" / ")}（写错会被当成未声明，回落默认方言）`,
+            blocking: true,
+          });
+        }
+        const maxTokensParam = options.maxTokensParam;
+        if (maxTokensParam !== undefined
+          && !(typeof maxTokensParam === "string" && (MAX_TOKENS_PARAMS as readonly string[]).includes(maxTokensParam))) {
+          issues.push({
+            path: `platforms.${id}.options.maxTokensParam`,
+            message: `输出 token 上限字段必须是 ${MAX_TOKENS_PARAMS.join(" / ")}`,
             blocking: true,
           });
         }
@@ -265,6 +276,12 @@ export function validateConfig(raw: unknown): ConfigIssue[] {
           }
           if (profile.vision !== undefined && typeof profile.vision !== "boolean") {
             issues.push({ path: `platforms.${id}.models.${model}.vision`, message: "vision 必须是布尔值", blocking: true });
+          }
+          if (profile.protocol !== undefined
+            && !(typeof profile.protocol === "string"
+              && ["openai-completions", "openai-responses"].includes(profile.protocol))) {
+            issues.push({ path: `platforms.${id}.models.${model}.protocol`,
+              message: "protocol 必须是 openai-completions / openai-responses", blocking: true });
           }
           if (profile.temperature !== undefined && (typeof profile.temperature !== "string"
             || !["always", "reasoning_none_only", "unsupported"].includes(profile.temperature))) {

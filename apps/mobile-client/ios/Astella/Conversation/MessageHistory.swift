@@ -16,6 +16,7 @@ struct MessageHistory: View {
                     ForEach(messages) { message in
                         MessageRow(message: message)
                             .id(message.id)
+                            .transition(reduceMotion || store.localReduceMotion ? .opacity : .offset(y: 18).combined(with: .opacity).combined(with: .scale(scale: 0.97, anchor: message.role == "user" ? .bottomTrailing : .bottomLeading)))
                     }
                     if !streamingText.isEmpty {
                         HStack {
@@ -32,6 +33,7 @@ struct MessageHistory: View {
                     }
                     Color.clear.frame(height: 1).id("latest")
                 }
+                .animation(Motion.gated(reduceMotion || store.localReduceMotion, Motion.messageSend), value: messages.count)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
             }
@@ -56,7 +58,7 @@ struct MessageHistory: View {
                 if reduceMotion || store.localReduceMotion {
                     proxy.scrollTo("latest", anchor: .bottom)
                 } else {
-                    withAnimation(.easeOut(duration: 0.22)) { proxy.scrollTo("latest", anchor: .bottom) }
+                    withAnimation(Motion.messageSend) { proxy.scrollTo("latest", anchor: .bottom) }
                 }
             }
             .onChange(of: streamingText) { _, _ in
@@ -69,7 +71,7 @@ struct MessageHistory: View {
                 if reduceMotion || store.localReduceMotion {
                     proxy.scrollTo("latest", anchor: .bottom)
                 } else {
-                    withAnimation(.easeOut(duration: 0.18)) { proxy.scrollTo("latest", anchor: .bottom) }
+                    withAnimation(Motion.messageSend) { proxy.scrollTo("latest", anchor: .bottom) }
                 }
             }
             .overlay {

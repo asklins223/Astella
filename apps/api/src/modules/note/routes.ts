@@ -33,6 +33,7 @@ import {
 } from "./collaboration.ts";
 import { readNoteDocState } from "./document-state.ts";
 import { noteSaveRequestV1Schema } from "@astella/shared/note-save-contracts";
+import { MAX_SOURCE_TEXT_BYTES } from "@astella/shared/object-transfer-contracts";
 import { noteShareScopeRequestV1Schema } from "@astella/shared/note-share-contracts";
 import { clampLimit } from "../../lib/pagination-utils.ts";
 
@@ -268,7 +269,15 @@ userId: req.session.userId,
   );
 
   // RBAC: 笔记增删改仅 owner 可执行，member 只读
-  app.post("/notes", { preHandler: [requireOwner] }, async (req) => {
+  // bodyLimit 与正文本身能有多大对齐（`/sources` 那一支同样是这个理由）：这里不设的话
+  // 走的是 Fastify 默认 1 MiB——实测（2026-10-14）75 万字符的整篇新建回 413
+  // `FST_ERR_CTP_BODY_TOO_LARGE`，而同一篇正文从 `/import/markdown`（50 MiB）能进来。
+  // 那句框架英文客户端也分辨不出是"太长"还是"坏了"。中文在 JSON 里保持 UTF-8 原字节，
+  // 两倍再加 1 MiB 是给引号/控制字符的转义余量。
+  app.post("/notes", {
+    preHandler: [requireOwner],
+    bodyLimit: MAX_SOURCE_TEXT_BYTES * 2 + 1024 * 1024,
+  }, async (req) => {
     const body = parseBody(app, noteCreateSchema, req.body);
     const result = await withWorkspaceTransaction(
       scopeOfSession(req.session),

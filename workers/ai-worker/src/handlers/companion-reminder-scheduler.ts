@@ -14,24 +14,26 @@
 import { sql } from "drizzle-orm";
 import { db } from "../db.ts";
 import { logger } from "../lib/logger.ts";
+import { createTickThrottle } from "./tick-throttle.ts";
 
 const TICK_INTERVAL_MS = 60_000;
 const CLAIM_LIMIT = 20;
-let lastTickAt = 0;
+const throttle = createTickThrottle(TICK_INTERVAL_MS);
 
 /** 返回本轮兑现的条数。失败只告警：这是后台定时器，不能拖垮 worker 主循环。 */
 export async function tickCompanionReminderDelivery(nowMs = Date.now()): Promise<number> {
-  if (nowMs - lastTickAt < TICK_INTERVAL_MS) return 0;
+  if (!throttle.due(nowMs)) return 0;
   try {
     const rows = await db.execute<{ fired: number }>(sql`
       SELECT public.astella_fire_due_companion_reminders(${CLAIM_LIMIT}) AS fired
     `);
-    // 只有 SQL 真的返回了才推进本地时间戳：DB 抖动要在下一轮重试。
-    lastTickAt = nowMs;
+    // 只有 SQL 真的返回了才推进周期：DB 抖动要在下一轮重试。
+    throttle.succeed(nowMs);
     const fired = Number((Array.isArray(rows) ? rows : [])[0]?.fired ?? 0);
     if (fired > 0) logger.info({ fired }, "companion reminders delivered");
     return fired;
   } catch (err) {
+    throttle.fail(nowMs);
     logger.warn(
       { err: err instanceof Error ? err.message : String(err) },
       "companion reminder tick failed",
@@ -42,5 +44,5 @@ export async function tickCompanionReminderDelivery(nowMs = Date.now()): Promise
 
 /** 测试用：重置进程内节流。 */
 export function resetCompanionReminderTickForTest(): void {
-  lastTickAt = 0;
+  throttle.reset();
 }

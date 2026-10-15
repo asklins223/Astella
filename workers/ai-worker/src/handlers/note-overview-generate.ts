@@ -5,6 +5,8 @@ import { AI_UNDECLARED_OUTPUT_TOKENS, type ChatMessage } from "@astella/shared";
 import { readNoteOverviewGenerateJobPayload } from "@astella/shared/job-payload-contracts";
 import { loadAgentGenerationContext } from "../agent/generation-context.ts";
 import { noteVisibleSqlText } from "@astella/shared/note-visibility";
+import { noteBlockRenderedTextV1 } from "@astella/shared/note-doc-schema";
+import { exactQuote as quoteFromSource } from "./note-grounding-source.ts";
 import * as schema from "@astella/shared/db-schema";
 import {
   AIConsentRequiredError,
@@ -47,39 +49,13 @@ const overviewChunkSchema = z.strictObject({
 type SourceBlock = { ordinal: number; type: string; content: string };
 type OverviewPoint = { blockOrdinal: number; quote: string; explanation: string };
 
-function compactEvidence(value: string): { text: string; sourceOffsets: number[] } {
-  const chars = Array.from(value);
-  const text: string[] = [];
-  const sourceOffsets: number[] = [];
-  for (let index = 0; index < chars.length; index += 1) {
-    const char = chars[index]!;
-    if (/\s/u.test(char)) continue;
-    // Ignore common Markdown emphasis/code markers while retaining the exact
-    // original offsets for the quotation that will be shown to the reader.
-    if ("*_~`".includes(char)) continue;
-    text.push(char);
-    sourceOffsets.push(index);
-  }
-  return { text: text.join(""), sourceOffsets };
-}
-
+/**
+ * 引文核对的唯一一份在 `note-grounding-source.ts`（脑图/速看/拓展共用）；
+ * 速看这一档保留自己的"至少 8 个字"下限——太短的句子撑不起一个要点，
+ * 而这个闸是原有行为，收口时不能顺手丢掉。
+ */
 export function exactQuote(blockText: string, candidate: string): string | null {
-  const needle = compactEvidence(candidate).text;
-  if (needle.length < 8) return null;
-  const source = compactEvidence(blockText);
-  const offset = source.text.indexOf(needle);
-  if (offset < 0) return null;
-  // `indexOf` 给的是 UTF-16 码元下标，而 sourceOffsets 是按**码点**记的：正文里只要有
-  // emoji 这类增补平面字符，两者就不再相等，直接用会把一条本来正确的引用判成"核不回
-  // 原文"（脑图那边早就做了这个换算，速看这边漏了）。
-  const start = Array.from(source.text.slice(0, offset)).length;
-  const from = source.sourceOffsets[start];
-  const to = source.sourceOffsets[start + Array.from(needle).length - 1];
-  if (from === undefined || to === undefined) return null;
-  const quote = Array.from(blockText).slice(from, to + 1).join("").trim();
-  // 引多长由它要支撑的那个重点决定：原先超过 500 字就判"核不回原文"，
-  // 于是模型引用一段长论证时，整份速看跟着失败。
-  return quote.length > 0 ? quote : null;
+  return quoteFromSource(blockText, candidate, { minNeedleChars: 8 });
 }
 
 function imageSafeText(content: string): { text: string; imageCount: number } {
@@ -153,7 +129,11 @@ export function resolveOverviewPoints(
   let dropped = 0;
   for (const point of points) {
     const source = blockAt(point.blockOrdinal);
-    const quote = source && source.type !== "image" ? exactQuote(source.content, point.quote) : null;
+    // 与脑图、扩展同一个口径：底本先渲染再逐字定位，落库的是读者在笔记上看到的那一句，
+    // 不是带 `**`、`- ` 的 markdown 源码。
+    const quote = source && source.type !== "image"
+      ? exactQuote(noteBlockRenderedTextV1(source.type, source.content), point.quote)
+      : null;
     if (!quote) { dropped += 1; continue; }
     kept.push({ blockOrdinal: point.blockOrdinal, quote, explanation: point.explanation });
   }

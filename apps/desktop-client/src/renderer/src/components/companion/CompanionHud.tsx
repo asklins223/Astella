@@ -659,6 +659,15 @@ export function CompanionHud({
       // 流式草稿正显示着、或"说到一半被打断"的留档还在，都不复位——复位只在
       // 真的一无所有时发生。
       if (chat.draft) return;
+      // A failed/interrupted draft has no final event to seal its audio queue.
+      // Close it before preserving the partial text, otherwise speaking stays
+      // true indefinitely and suppresses every later quiet-presence opportunity.
+      activeSpeechPlanRef.current = null;
+      speechSessionRef.current?.stop();
+      speechSessionRef.current = null;
+      speechPositionSessionRef.current = null;
+      pendingVoiceSegmentsRef.current = [];
+      seenVoiceSegmentIdsRef.current.clear();
       const partial = chat.interrupted?.text ?? "";
       if (partial.trim().length > 0) {
         // 失败/超时：文本不会再长了，剩下的字交给驱动器按阅读节奏露完。
@@ -673,12 +682,6 @@ export function CompanionHud({
       }
       // 这一轮再也没有终态回复了（失败/被丢弃）：正在念的也要停掉，
       // 否则用户会听到一句"库里的记录里已经没有的话"。
-      activeSpeechPlanRef.current = null;
-      speechSessionRef.current?.stop();
-      speechSessionRef.current = null;
-      speechPositionSessionRef.current = null;
-      pendingVoiceSegmentsRef.current = [];
-      seenVoiceSegmentIdsRef.current.clear();
       reveal.reset();
       setBubbleStage("visible");
       draftRunIdRef.current = null;
@@ -869,7 +872,7 @@ export function CompanionHud({
     el.style.height = `${Math.min(112, Math.max(40, el.scrollHeight))}px`;
   }, [input, chat.mode]);
   // Input sizing precedes placement, so its first visible frame uses the final geometry.
-  const hasVisualDelivery = chat.richReply?.blocks.some(block => block.type === "image" || block.type === "diagram" || block.type === "card" || block.type === "code") ?? false;
+  const hasVisualDelivery = chat.richReply?.blocks.some(block => block.type === "image" || block.type === "diagram" || block.type === "card" || block.type === "recommendation" || block.type === "code") ?? false;
   const { side, controlsSide } = useCompanionFloatingPlacement(hudRef, floatingRef, headRef, !floatingBlocked && !settingsOpen && !goalBubbleOpen && chat.mode !== "history", hasVisualDelivery ? 420 : 370);
 
   // 会话层保留本轮的中止正文。不能缓存“最后一次非空输出”：新轮尚未输出时，

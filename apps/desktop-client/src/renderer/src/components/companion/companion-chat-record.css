@@ -435,6 +435,29 @@
 .companion-record__card { border-top: 4px solid #b9cda7; }
 .companion-record__card-front { margin-top: 10px; font-size: 14px; line-height: 1.8; }
 .companion-record__card-summary { margin-top: 11px; padding-top: 9px; border-top: 1px dashed #daceac; color: var(--companion-muted); font-size: 12px; line-height: 1.75; }
+.companion-record__recommendation {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  margin: 8px 0;
+  padding: 12px 13px 11px;
+  border: 1px solid #d8cba9;
+  border-radius: 15px 20px 14px 18px;
+  background: linear-gradient(145deg, #fffaf0, #f4f0df);
+  box-shadow: inset 0 1px 0 #ffffffd9, 0 3px 10px #54482b0a;
+  overflow-wrap: anywhere;
+}
+.companion-record__recommendation-head { display: flex; align-items: center; justify-content: space-between; gap: 9px; }
+.companion-record__recommendation-kind { padding: 2px 7px; border-radius: 999px; background: #e5ecd8; color: #53684a; font-size: 10px; font-weight: 700; line-height: 1.5; }
+.companion-record__recommendation-updated { color: var(--companion-muted); font-size: 10px; line-height: 1.5; }
+.companion-record__recommendation-title { color: var(--companion-ink); font-size: 13px; font-weight: 700; line-height: 1.6; }
+.companion-record__recommendation-reason { margin: -2px 0 0; color: #706952; font-size: 11.5px; line-height: 1.65; }
+.companion-record__recommendation-open { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 36px; margin-top: 2px; padding: 6px 9px; border: 1px solid #c7d1b6; border-radius: 10px 13px 9px 12px; background: #e6ecd9; color: #435b3e; font: inherit; font-size: 11px; font-weight: 650; text-align: left; cursor: pointer; transition: background-color 150ms ease, border-color 150ms ease, transform 150ms ease; }
+.companion-record__recommendation-open:hover:not(:disabled) { border-color: #aab995; background: #dce7d1; transform: translateY(-1px); }
+.companion-record__recommendation-open:focus-visible { outline: 2px solid #718c63; outline-offset: 2px; }
+.companion-record__recommendation-open:disabled { opacity: .65; cursor: progress; }
+.companion-record__recommendation-unavailable, .companion-record__recommendation-error { color: var(--companion-muted); font-size: 10.5px; line-height: 1.5; }
+.companion-record__recommendation-error { color: #8b543c; }
 .companion-record__code-sheet { min-width: 0; max-width: 100%; margin: 8px 0; border: 1px solid #ddcfaa; border-radius: 13px 17px 12px 15px; overflow: hidden; background: #f4ecd7; }
 .companion-record__code-sheet > figcaption { display: flex; align-items: center; justify-content: space-between; gap: 9px; padding: 7px 11px; color: var(--companion-muted); font-size: 11px; }
 .companion-record__code-sheet > figcaption > span { min-width: 0; overflow-wrap: anywhere; }
@@ -513,6 +536,7 @@
 .companion-record__rich-turn > .companion-record__quote,
 .companion-record__rich-turn > .companion-record__diagram,
 .companion-record__rich-turn > .companion-record__card,
+.companion-record__rich-turn > .companion-record__recommendation,
 .companion-record__rich-turn > .companion-record__nav {
   margin-top: 0;
 }

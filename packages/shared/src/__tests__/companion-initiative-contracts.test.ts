@@ -2,7 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { companionParticipationPreferencesWriteV1Schema, companionAttentionWriteV1Schema,
-  companionAwarenessObservationV1Schema, companionInitiativeInputV1Schema } from "../contracts/companion-initiative-contracts.ts";
+  companionAwarenessObservationV1Schema, companionInitiativeInputV1Schema,
+  COMPANION_INITIATIVE_DELIVERY_TTL_HOURS } from "../contracts/companion-initiative-contracts.ts";
 import { companionStreamEventV1Schema } from "../contracts/companion-conversation-contracts.ts";
 import { getCompanionAgentTool, validateCompanionAgentToolArguments } from "../companion-agent-registry.ts";
 
@@ -43,4 +44,16 @@ test("initiative source has its own identity, and speech/silence have explicit e
   assert.equal(companionStreamEventV1Schema.safeParse({ ...base, type: "turn.completed", payload: { messageIds: [], silent: true } }).success, true);
   for (const name of ["companion_read_participation", "companion_save_participation", "companion_arrange_attention", "companion_publish_utterance"]) assert.ok(getCompanionAgentTool(name), name);
   assert.equal(validateCompanionAgentToolArguments("companion_publish_utterance", { text: "先用一个小例子说明。" }).success, true);
+});
+
+/**
+ * 她主动开口的那句话在收件箱里活多久。
+ *
+ * 原来 90 秒（`ttlHours: 0.025`），等于拿"她决定说话那一刻你是否正好在小屋界面"当闸门：
+ * 实测 16 条主动投递里 11 条停在 `queued` 直到过期。正文本来就落在共享对话里，
+ * 这个窗口只管"回到屋里还来不来得及补念这一次"，所以它必须比一次起身倒水长。
+ */
+test("主动开口的认领窗口按「回到屋里还来得及」定，不按秒赌", () => {
+  assert.ok(COMPANION_INITIATIVE_DELIVERY_TTL_HOURS * 60 >= 90, "短于一个半小时就会把离开一会儿的人全部漏掉");
+  assert.ok(COMPANION_INITIATIVE_DELIVERY_TTL_HOURS <= 6, "太久会把几小时前的念头突然念出来");
 });

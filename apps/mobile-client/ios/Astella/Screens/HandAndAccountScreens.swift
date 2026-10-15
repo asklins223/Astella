@@ -5,157 +5,73 @@ import ImageIO
 
 struct HandScreen: View {
     @Environment(AppStore.self) private var store
-
     var body: some View {
-        GeometryReader { proxy in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                VStack(alignment: .leading, spacing: 6) {
-                    SectionEyebrow(text: store.profile?.workspaceName ?? "我的书房")
-                    Text("手边")
-                        .font(.system(.largeTitle, weight: .semibold))
-                        .tracking(-0.45)
-                        .foregroundStyle(StudyPalette.ink)
-                    Text("需要你接续的学习工作，会在这里等你。")
-                        .font(.subheadline)
-                        .foregroundStyle(StudyPalette.muted)
-                }
-
-                HStack(spacing: 8) {
-                    Circle().fill(store.realtimeStatus == "已连接" ? StudyPalette.success : StudyPalette.muted.opacity(0.65))
-                        .frame(width: 8, height: 8)
-                    Text(store.realtimeStatus == "已连接" ? "书房已连接" : store.realtimeStatus)
-                        .font(.footnote.weight(.medium))
-                        .foregroundStyle(StudyPalette.muted)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 28) {
+                PageHeading(eyebrow: "继续未完的想法", title: "手边", subtitle: "交给伴星的事，在这里接续。")
+                HStack(spacing: 12) {
+                    AstellaStar().fill(StudyPalette.accent).frame(width: 27, height: 36).padding(.horizontal, 5)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(store.runs.isEmpty ? "现在，可以慢一点。" : "伴星正在替你整理")
+                            .font(.headline)
+                        Text(store.realtimeStatus == "已连接" ? "和你的书房连在一起" : store.realtimeStatus)
+                            .font(.caption).foregroundStyle(StudyPalette.muted)
+                    }
                     Spacer()
-                    if store.realtimeStatus != "已连接" {
-                        Button("重新连接") { Task { await store.loadConversation() } }
-                            .font(.footnote.weight(.semibold))
-                    }
-                }
-
+                    Button { store.returnToConversation(records: false) } label: {
+                        Image(systemName: "arrow.up.right").frame(width: 44, height: 44)
+                    }.accessibilityLabel("回到伴星身边")
+                }.padding(20).modifier(StudyGlassSurfaceStyle(radius: 24))
                 if let error = store.errorMessage {
-                    statusPanel(title: "连接暂时中断", detail: error, symbol: "wifi.exclamationmark") {
-                        Task { await store.loadConversation() }
-                    }
+                    ConversationFailurePanel(message: error) { Task { await store.loadConversation() } }
                 }
-
-                if !store.runs.isEmpty {
-                    HStack(alignment: .firstTextBaseline) {
-                        Text("正在进行")
-                            .font(.title3.weight(.semibold))
-                            .foregroundStyle(StudyPalette.ink)
-                        Spacer()
-                        Text("\(store.runs.count) 项")
-                            .font(.caption)
-                            .foregroundStyle(StudyPalette.muted)
-                    }
-                    ForEach(store.runs) { run in
-                        VStack(alignment: .leading, spacing: 11) {
-                            HStack(spacing: 9) {
-                                Image(systemName: run.status == "waiting_for_confirmation" ? "hand.raised" : "clock.arrow.circlepath")
-                                    .foregroundStyle(StudyPalette.accent)
-                                Text(run.statusLabel)
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(StudyPalette.ink)
-                                Spacer()
-                                if run.status != "waiting_for_confirmation" { ProgressView().controlSize(.small) }
-                            }
-                            Text(run.thinkingText ?? defaultDescription(for: run))
-                                .font(.body)
-                                .lineSpacing(3)
-                                .foregroundStyle(StudyPalette.ink)
-                                .fixedSize(horizontal: false, vertical: true)
-                            HStack(spacing: 8) {
-                                Text("\(run.stepCount) 步")
-                                Text("·")
-                                Text("\(run.toolCallCount) 次工具调用")
-                                Spacer()
-                                Button("查看对话") { store.selectedTab = .conversation }
-                                    .font(.footnote.weight(.semibold))
-                            }
-                            .font(.caption)
-                            .foregroundStyle(StudyPalette.muted)
-                        }
-                        .padding(.vertical, 14)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .overlay(alignment: .bottom) { Divider().overlay(StudyPalette.paperEdge) }
-                    }
+                if store.runs.isEmpty {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("暂时没有待接续的事").font(.title3.weight(.semibold))
+                        Text("一个问题、一段原文，或者一份刚收到的资料，都可以交给伴星一起想。")
+                            .font(.body).foregroundStyle(StudyPalette.muted).lineSpacing(5)
+                        Button { store.returnToConversation(records: false) } label: {
+                            Label("和伴星聊聊", systemImage: "bubble.left.and.bubble.right").font(.subheadline.weight(.medium))
+                        }.padding(.top, 8)
+                    }.padding(.vertical, 20)
                 } else {
-                    VStack(spacing: 8) {
-                        Image(systemName: "checkmark.circle")
-                            .font(.system(size: 31, weight: .light))
-                            .foregroundStyle(StudyPalette.accent)
-                            .padding(.bottom, 5)
-                        Text("暂时没有待确认事项")
-                            .font(.title3.weight(.semibold))
-                            .tracking(-0.25)
-                            .foregroundStyle(StudyPalette.ink)
-                        Text("新的学习步骤会在需要你时出现在这里。")
-                            .font(.subheadline)
-                            .multilineTextAlignment(.center)
-                            .foregroundStyle(StudyPalette.muted)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Button("回到对话") { store.selectedTab = .conversation }
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(StudyPalette.accent)
-                            .padding(.top, 3)
-                            .frame(minHeight: 44)
+                    ForEach(store.runs) { run in
+                        HStack(alignment: .top, spacing: 16) {
+                            Image(systemName: run.status == "waiting_for_confirmation" ? "hand.raised" : "sparkles")
+                                .font(.title3).foregroundStyle(StudyPalette.accent)
+                                .frame(width: 36, height: 36).background(StudyPalette.sky, in: Circle())
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text(run.statusLabel).font(.headline)
+                                Text(run.thinkingText?.isEmpty == false ? run.thinkingText! : run.status == "waiting_for_confirmation" ? "先看看伴星准备的建议，再决定怎样继续。" : "整理完成后，会递回你们的对话里。")
+                                    .font(.subheadline).foregroundStyle(StudyPalette.muted).lineSpacing(4)
+                                HStack {
+                                    Button("查看对话") { store.returnToConversation(records: true) }
+                                    Spacer()
+                                    Button("停止") { Task { await store.cancelActiveRuns() } }
+                                }.font(.footnote.weight(.medium))
+                            }
+                        }.padding(.vertical, 8)
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .padding(.vertical, 20)
                 }
-
-                if !store.runs.isEmpty || store.realtimeStatus != "已连接" {
-                    HStack(spacing: 8) {
-                        Image(systemName: "point.3.connected.trianglepath.dotted")
-                            .foregroundStyle(StudyPalette.muted)
-                        Text("工作状态会和同一书房的其他设备同步。")
-                            .foregroundStyle(StudyPalette.muted)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .font(.caption)
+                let proposalIds = store.messages.flatMap(\.blocks).compactMap(\.proposalId)
+                ForEach(Array(Set(proposalIds)), id: \.self) { CompanionProposalCard(proposalId: $0) }
+                if let note = store.notes.first {
+                    VStack(alignment: .leading, spacing: 12) {
+                        SectionEyebrow(text: "也可以，接着上次的思路")
+                        Text(note.title).font(.title3.weight(.semibold))
+                        if let snippet = note.snippet { Text(snippet).font(.subheadline).foregroundStyle(StudyPalette.muted).lineLimit(3) }
+                        Button("带着这篇手记继续聊") {
+                            Task {
+                                await store.loadNote(note.id)
+                                if let document = store.noteDocument { store.continueWithNote(document) }
+                            }
+                        }.font(.subheadline.weight(.medium))
+                    }.padding(.top, 12)
                 }
-            }
-                .padding(.horizontal, 24)
-                .padding(.top, 14)
-                .padding(.bottom, 28)
-                .frame(minHeight: proxy.size.height, alignment: .top)
-            }
-            .scrollIndicators(.hidden)
-        }
-        .background(DawnBackground())
-        .refreshable {
-            await store.refreshMessages()
-            await store.refreshRuns()
-        }
-    }
-
-    private func defaultDescription(for run: ActiveRun) -> String {
-        switch run.status {
-        case "accepted": return "这一轮已经接收，马上开始处理。"
-        case "waiting_for_confirmation": return "伴星正在等你确认下一步。请回到对话查看具体内容。"
-        case "cancel_requested": return "正在结束这一轮，稍后会同步最终状态。"
-        default: return "这一轮还在路上。你可以切去读手记，工作会继续。"
-        }
-    }
-
-    private func statusPanel(title: String, detail: String, symbol: String, retry: @escaping () -> Void) -> some View {
-        NoticeSurface {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: symbol).foregroundStyle(StudyPalette.accent)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(StudyPalette.ink)
-                    Text(detail).font(.footnote).foregroundStyle(StudyPalette.muted)
-                    Button("重新连接", action: retry)
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(StudyPalette.accent)
-                        .padding(.top, 2)
-                }
-                Spacer(minLength: 0)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
+            }.padding(24)
+        }.scrollIndicators(.hidden).background(DawnBackground())
+            .task { await store.refreshRuns(); if store.notes.isEmpty { await store.loadNotes() } }
+            .refreshable { await store.refreshRuns() }
     }
 }
 
@@ -170,14 +86,16 @@ struct AccountScreen: View {
     var body: some View {
         let currentAvatarURL = store.profile?.avatarURL
         let isAccountBusy = store.isAccountBusy
-        Form {
+        ScrollView {
+          VStack(alignment: .leading, spacing: 24) {
+            PageHeading(eyebrow: "你的随身书房", title: "我的", subtitle: "按自己的节奏，和伴星一起。")
             if let message = store.accountError {
-                Section { accountNotice(message, symbol: "exclamationmark.circle.fill", color: StudyPalette.danger) }
+                AccountSection { accountNotice(message, symbol: "exclamationmark.circle.fill", color: StudyPalette.danger) }
             } else if let message = store.accountNotice {
-                Section { accountNotice(message, symbol: "checkmark.circle.fill", color: StudyPalette.success) }
+                AccountSection { accountNotice(message, symbol: "checkmark.circle.fill", color: StudyPalette.success) }
             }
 
-            Section("账号") {
+            AccountSection("账号") {
                 HStack(spacing: 12) {
                     PhotosPicker(selection: $avatarItem, matching: .images) {
                         if let avatarURL = currentAvatarURL {
@@ -203,6 +121,7 @@ struct AccountScreen: View {
                 }
                 TextField("显示名称", text: $displayName, prompt: Text("留空时使用邮箱前缀"))
                     .textContentType(.name)
+                    .padding(14).background(StudyPalette.inset, in: RoundedRectangle(cornerRadius: 14))
                     .onChange(of: displayName) { _, value in
                         if value.count > 32 { displayName = String(value.prefix(32)) }
                     }
@@ -221,7 +140,7 @@ struct AccountScreen: View {
                 .disabled(isAccountBusy || displayName.trimmingCharacters(in: .whitespacesAndNewlines) == (store.profile?.displayName ?? ""))
             }
 
-            Section("伴星权限") {
+            AccountSection("伴星权限") {
                 Label {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(permissionDescription(store.companionPermissionLevel))
@@ -239,7 +158,7 @@ struct AccountScreen: View {
                 }
             }
 
-            Section("拾星") {
+            AccountSection("拾星") {
                 NavigationLink {
                     MobileSettingsScreen()
                 } label: {
@@ -253,7 +172,7 @@ struct AccountScreen: View {
             }
 
             if store.workspaces.count > 1 {
-                Section("书房") {
+                AccountSection("书房") {
                     Menu {
                         ForEach(store.workspaces) { workspace in
                             Button {
@@ -282,7 +201,7 @@ struct AccountScreen: View {
             }
 
             if let settings = store.aiSettings {
-                Section("AI 与数据") {
+                AccountSection("AI 与数据") {
                     Text("控制哪些内容可以发送到外部模型服务。")
                         .font(.footnote)
                         .foregroundStyle(StudyPalette.muted)
@@ -314,10 +233,10 @@ struct AccountScreen: View {
                         .disabled(isAccountBusy)
                 }
             } else if isAccountBusy {
-                Section("AI 与数据") { ProgressView("正在读取账户设置…") }
+                AccountSection("AI 与数据") { ProgressView("正在读取账户设置…") }
             }
 
-            Section {
+            AccountSection {
                 DisclosureGroup("开发与服务") {
                     Text("仅在自建服务时修改。保存后会退出当前会话。")
                         .font(.footnote)
@@ -325,6 +244,7 @@ struct AccountScreen: View {
                     TextField("https://study.example.com", text: $address)
                         .textInputAutocapitalization(.never)
                         .keyboardType(.URL)
+                        .padding(14).background(StudyPalette.inset, in: RoundedRectangle(cornerRadius: 14))
                         .autocorrectionDisabled()
                     Button("保存并重新登录") {
                         store.setServiceAddress(address)
@@ -334,17 +254,19 @@ struct AccountScreen: View {
                 }
             }
 
-            Section {
+            AccountSection {
                 Button(role: .destructive) { store.logout() } label: {
                     Label("退出登录", systemImage: "rectangle.portrait.and.arrow.right")
                 }
             }
         }
-        .scrollContentBackground(.hidden)
+          .padding(24)
+        }
+        .scrollIndicators(.hidden)
         .background(DawnBackground())
         .tint(StudyPalette.accent)
-        .navigationTitle("我的")
-        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.hidden, for: .navigationBar)
+        .safeAreaInset(edge: .top, spacing: 0) { AstellaDetailHeader(title: "我的") }
         .task {
             address = store.api.baseURL
             displayName = store.profile?.displayName ?? ""
@@ -482,21 +404,23 @@ private struct MobileSettingsScreen: View {
     private var userId: String { store.profile?.userId ?? "unknown" }
 
     var body: some View {
-        Form {
-            Section("阅读") {
-                Picker("正文大小", selection: Binding(
-                    get: { textScale },
-                    set: { value in
-                        textScale = value
-                        store.setReadingScale(value)
-                        UserDefaults.standard.set(value, forKey: mobilePreferenceKey(userId, "textScale"))
+        ScrollView {
+          VStack(alignment: .leading, spacing: 24) {
+            PageHeading(eyebrow: "按你的习惯", title: "使用设置")
+            AccountSection("阅读") {
+                HStack(spacing: 10) {
+                    ForEach([1.0, 1.2, 1.4], id: \.self) { value in
+                        Button {
+                            textScale = value; store.setReadingScale(value)
+                            UserDefaults.standard.set(value, forKey: mobilePreferenceKey(userId, "textScale"))
+                        } label: {
+                            Text(value == 1 ? "标准" : value == 1.2 ? "较大" : "大字")
+                                .font(.system(size: 13, weight: .medium)).frame(maxWidth: .infinity, minHeight: 44)
+                                .foregroundStyle(textScale == value ? StudyPalette.paper : StudyPalette.ink)
+                                .background(textScale == value ? StudyPalette.accent : StudyPalette.inset, in: RoundedRectangle(cornerRadius: 12))
+                        }.buttonStyle(AstellaPressStyle()).accessibilityAddTraits(textScale == value ? [.isSelected] : [])
                     }
-                )) {
-                    Text("标准").tag(1.0)
-                    Text("较大").tag(1.2)
-                    Text("大字").tag(1.4)
                 }
-                .pickerStyle(.segmented)
                 Text("先看一个例子，再用自己的话解释。")
                     .font(.system(size: previewPointSize * textScale))
                     .lineSpacing(4)
@@ -514,8 +438,8 @@ private struct MobileSettingsScreen: View {
                     .font(.caption)
                     .foregroundStyle(StudyPalette.muted)
             }
-            Section("我们怎样相处") { ParticipationPreferencesEditor() }
-            Section("动效") {
+            AccountSection("我们怎样相处") { ParticipationPreferencesEditor() }
+            AccountSection("动效") {
                 Toggle("减少动效", isOn: Binding(
                     get: { reduceMotion },
                     set: { value in
@@ -530,16 +454,19 @@ private struct MobileSettingsScreen: View {
                     .font(.caption)
                     .foregroundStyle(StudyPalette.muted)
             }
-            Section {
+            AccountSection {
                 Text("阅读字号、打开方式和动效偏好只保存在这台设备上。")
                     .font(.caption)
                     .foregroundStyle(StudyPalette.muted)
             }
         }
-        .scrollContentBackground(.hidden)
+          .padding(24)
+          }
+        .scrollIndicators(.hidden)
         .background(DawnBackground())
         .tint(StudyPalette.accent)
-        .navigationTitle("使用设置").navigationBarTitleDisplayMode(.inline)
+        .toolbar(.hidden, for: .navigationBar)
+        .safeAreaInset(edge: .top, spacing: 0) { AstellaDetailHeader(title: "使用设置") }
         .task(id: userId) {
             textScale = UserDefaults.standard.object(forKey: mobilePreferenceKey(userId, "textScale")) as? Double ?? 1
             showRecords = UserDefaults.standard.bool(forKey: mobilePreferenceKey(userId, "showRecords"))
@@ -729,7 +656,8 @@ private struct CompanionCenterScreen: View {
             }
             .scrollIndicators(.hidden)
         }
-        .background(DawnBackground()).navigationTitle("伴星中心").navigationBarTitleDisplayMode(.inline)
+        .background(DawnBackground()).toolbar(.hidden, for: .navigationBar)
+        .safeAreaInset(edge: .top, spacing: 0) { AstellaDetailHeader(title: "伴星中心") }
     }
 }
 
@@ -746,4 +674,20 @@ private func featureAccountMessage(_ text: String, isError: Bool, retry: (() -> 
             if let retry { Button("重新读取", action: retry).font(.caption.weight(.semibold)).foregroundStyle(StudyPalette.accent) }
         }
     }.padding(11).frame(maxWidth: .infinity, alignment: .leading).background(StudyPalette.inset, in: RoundedRectangle(cornerRadius: 13))
+}
+
+private struct AccountSection<Content: View>: View {
+    var title: String?
+    @ViewBuilder var content: Content
+    init(_ title: String? = nil, @ViewBuilder content: () -> Content) {
+        self.title = title; self.content = content()
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if let title { Text(title).font(.caption.weight(.semibold)).foregroundStyle(StudyPalette.muted) }
+            content
+        }.frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 8)
+        .overlay(alignment: .bottom) { Divider().overlay(StudyPalette.paperEdge.opacity(0.5)).offset(y: 12) }
+    }
 }

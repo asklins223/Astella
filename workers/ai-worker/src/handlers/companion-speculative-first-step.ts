@@ -143,6 +143,7 @@ export function shouldKeepSpeculativeFirstStep(attention: Pick<AgentTurnInterpre
   readonly ambiguities?: readonly unknown[];
   readonly pendingOfferIndexes?: readonly number[];
   readonly voiceStyle?: AgentTurnInterpretationV1["voiceStyle"];
+  readonly executionConstraints?: AgentTurnInterpretationV1["executionConstraints"];
 }): boolean {
   return attention.intent === "conversation"
     && attention.toolUse === "none"
@@ -150,6 +151,7 @@ export function shouldKeepSpeculativeFirstStep(attention: Pick<AgentTurnInterpre
     && (attention.ambiguities?.length ?? 0) === 0
     // An ambiguous dialect request needs the clarified interpretation in the real prompt.
     && attention.voiceStyle?.decision !== "clarify"
+    && attention.executionConstraints?.timeBasedWakeups !== "forbid"
     // 投机的请求是按未改写的历史发出去的；留着它就等于绕过了收尾降级。
     && (attention.pendingOfferIndexes?.length ?? 0) === 0;
 }
@@ -170,6 +172,7 @@ export function shouldKeepSpeculativeQuestionStep(attention: Pick<AgentTurnInter
   readonly pendingOfferIndexes?: readonly number[];
   readonly goalRelation?: AgentTurnInterpretationV1["goalRelation"];
   readonly voiceStyle?: AgentTurnInterpretationV1["voiceStyle"];
+  readonly executionConstraints?: AgentTurnInterpretationV1["executionConstraints"];
 }): boolean {
   return attention.intent === "question"
     && attention.toolUse === "none"
@@ -178,5 +181,6 @@ export function shouldKeepSpeculativeQuestionStep(attention: Pick<AgentTurnInter
     && (attention.candidateOperations?.length ?? 0) === 0
     && attention.goalRelation === "unrelated"
     && attention.voiceStyle?.decision !== "clarify"
+    && attention.executionConstraints?.timeBasedWakeups !== "forbid"
     && (attention.pendingOfferIndexes?.length ?? 0) === 0;
 }

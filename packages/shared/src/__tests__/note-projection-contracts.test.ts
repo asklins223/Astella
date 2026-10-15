@@ -60,3 +60,18 @@ test("NoteDetailV1 binds the OCC revision to the current version", () => {
   assert.equal(noteDetailV1Schema.safeParse(value).success, false);
 });
 
+
+test("超过一万块的长笔记照样读得回（写侧不设块数，读侧就不许设）", () => {
+  // 实测事故（2026-10-14）：markdown 导入造出的 12,000 块笔记，`GET /v2/notes/:id`
+  // 被这里的 `.max(10_000)` 判红 → ZodError → 500。响应合同只核结构，不替写侧发明上限。
+  const blocks = Array.from({ length: 12_000 }, (_, ordinal) => ({
+    ordinal,
+    type: "paragraph" as const,
+    content: `第${ordinal}段`,
+  }));
+  const value = { ...fixture(), currentVersion: { ...fixture().currentVersion, blocks } };
+  const parsed = noteDetailV1Schema.safeParse(value);
+  assert.equal(parsed.success, true,
+    !parsed.success ? parsed.error.issues[0]?.message : "");
+  if (parsed.success) assert.equal(parsed.data.currentVersion.blocks.length, 12_000);
+});

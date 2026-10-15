@@ -683,6 +683,18 @@ test("Agent 确认续跑：历史行无句柄时不注入 reasoning 字段（021
   }
 });
 
+/** Ledger writes now require a real current job, as they do in the handler. */
+async function leasedToolEvent(ws: string, uid: string, f: Fixture) {
+  const event = continuationEvent(ws, uid, f);
+  await sql.begin(async tx => {
+    await tx`SELECT set_config('app.workspace_id',${ws},true),set_config('app.user_id',${uid},true)`;
+    await tx`INSERT INTO jobs(id,type,workspace_id,requested_by,payload,status,lease_token,started_at)
+      VALUES(${event.ctx.id},'companion_agent',${ws},${uid},${tx.json({ runId: f.runId })},'running','fixture-lease',now())`;
+    await tx`UPDATE companion_turn_runs SET job_id=${event.ctx.id} WHERE id=${f.runId}`;
+  });
+  return event;
+}
+
 test("Agent 工具调用：句柄经真实写入 SQL 落库，形状与读回一致（0218 写读往返）", async () => {
   const { workspaceId, userId } = await seedBase();
   const f = await seedAgentRun(workspaceId, userId, { userText: "开始学习" });
@@ -704,7 +716,7 @@ test("Agent 工具调用：句柄经真实写入 SQL 落库，形状与读回一
 
     // 走生产写入路径（类型检查覆盖不到列名/参数绑定，必须实库往返）
     const record = await ensureAgentToolCall(
-      continuationEvent(workspaceId, userId, f),
+      await leasedToolEvent(workspaceId, userId, f),
       stepId,
       definition,
       { id: "call_rt_1", arguments: {} },
@@ -742,7 +754,7 @@ test("Agent 写操作结果不明：provider 换 call id 时不重放；相同�
                VALUES (${stepId}, ${workspaceId}, ${userId}, ${f.conversationId}, ${f.runId}, 1,
                        'model', 'running')`;
     });
-    const event = continuationEvent(workspaceId, userId, f);
+    const event = await leasedToolEvent(workspaceId, userId, f);
     const definition = getCompanionAgentTool("companion_schedule_reminder");
     assert.ok(definition);
     const arguments_ = { text: "复习", fireAtLocal: "2026-10-01T18:00" };

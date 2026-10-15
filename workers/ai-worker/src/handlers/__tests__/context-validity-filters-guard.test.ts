@@ -22,6 +22,8 @@ test("44 §3.3：会话内的接续链与跨会话检索用同一套有效性判
     "utf8",
   );
   // 同一个判据，两处读路径；只在一头生效等于「已经接上治理」这句话说半截。
-  assert.match(chain, /s\.verified_context_revision = c\.context_revision/);
-  assert.match(crossSession, /s\.verified_context_revision = c\.context_revision/);
+  // 0433 起判据 = 区间级失效标记（invalidated_at），不再用会话级修订号等值比较
+  // ——后者会让该会话所有旧摘要永久读不到（实库那份 565 条的会话因此只剩两块）。
+  assert.match(chain, /s\.invalidated_at IS NULL/);
+  assert.match(crossSession, /s\.invalidated_at IS NULL/);
 });

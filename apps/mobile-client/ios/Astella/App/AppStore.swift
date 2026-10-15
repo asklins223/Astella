@@ -50,6 +50,25 @@ final class AppStore {
     var noteErrorMessage: String?
     var authErrorMessage: String?
     var authNoticeMessage: String?
+    let awarenessLaunchId = UUID().uuidString.lowercased()
+    var lastInteraction = ProcessInfo.processInfo.systemUptime
+    var lastObservation = ProcessInfo.processInfo.systemUptime
+    var visibleNoteId: String?
+    var composerHasFocus = false
+    var draft = ""
+    var selectedFile: CompanionFile?
+    var attachmentRevision = UUID()
+    var intakeGeneration = 0
+    var companionEvent: CompanionEvent = .idle
+    var companionEventRevision = 0
+    var voicePlayback = CompanionVoicePlayback()
+    var pendingTurnSignature: Data?
+    var pendingTurnRequest: [String: Any]?
+    var streamingRunId: String?
+    var pendingSelection: String?
+    var selectionRequestTitle: String?
+    var selectionRunId: String?
+    var openedNoteId: String?
     var selectedImage: Data?
     var selectedImageName = "手机照片.jpg"
     var voiceArtifactId: String?

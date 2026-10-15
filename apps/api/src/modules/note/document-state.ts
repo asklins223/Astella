@@ -417,6 +417,25 @@ export async function readNoteDocState(
 }
 
 /**
+ * 一次语句最多带多少行块。
+ *
+ * Postgres 的扩展协议一条语句上限 65,536 个绑定参数，`note_blocks` 每行要 7 个——
+ * 实测（2026-10-14）导入一篇 12,000 段的长文时，整批一次性插入当场在这条 insert 上抛错，
+ * 那一整篇一个字都没落库（`/import/markdown` 的正文上限是 50 万字符，够走到这一格）。
+ * 500 行/批与搜索投影那支 `INSERT_BATCH_SIZE` 取同一个量级：留在参数上限之下很远，
+ * 又不至于把一次长文保存变成几千次往返。
+ */
+const NOTE_BLOCK_ROW_BATCH_SIZE = 500;
+
+function sliceRows<T>(rows: readonly T[]): T[][] {
+  const batches: T[][] = [];
+  for (let start = 0; start < rows.length; start += NOTE_BLOCK_ROW_BATCH_SIZE) {
+    batches.push(rows.slice(start, start + NOTE_BLOCK_ROW_BATCH_SIZE));
+  }
+  return batches;
+}
+
+/**
  * 投影成某个版本的 `note_blocks` 行。
  *
  * 按 ordinal 对齐做增量（改变化的、补缺的、删多的），**不**删重插。两个理由：
@@ -472,10 +491,14 @@ export async function projectBlocksIntoVersion(
 
   const stale = existing.filter((row) => !kept.has(row.ordinal)).map((row) => row.id);
   if (stale.length > 0) {
-    await tx.delete(noteBlocks).where(inArray(noteBlocks.id, stale));
+    for (const batch of sliceRows(stale)) {
+      await tx.delete(noteBlocks).where(inArray(noteBlocks.id, batch));
+    }
   }
   if (toInsert.length > 0) {
-    await tx.insert(noteBlocks).values(toInsert);
+    for (const batch of sliceRows(toInsert)) {
+      await tx.insert(noteBlocks).values(batch);
+    }
   }
   if (toUpdate.length > 0) {
     /**
@@ -489,17 +512,19 @@ export async function projectBlocksIntoVersion(
      * 存储形状与逐行版完全一致。裸 SQL 里 `'null'::jsonb` 与 SQL `NULL` 是两回事，
      * `source_ref` 这一列不值得在这里赌一次口径变化。
      */
-    await tx
-      .insert(noteBlocks)
-      .values(toUpdate)
-      .onConflictDoUpdate({
-        target: noteBlocks.id,
-        set: {
-          type: sql`excluded.type`,
-          content: sql`excluded.content`,
-          imageAssetId: sql`excluded.image_asset_id`,
-          sourceRef: sql`excluded.source_ref`,
-        },
-      });
+    for (const batch of sliceRows(toUpdate)) {
+      await tx
+        .insert(noteBlocks)
+        .values(batch)
+        .onConflictDoUpdate({
+          target: noteBlocks.id,
+          set: {
+            type: sql`excluded.type`,
+            content: sql`excluded.content`,
+            imageAssetId: sql`excluded.image_asset_id`,
+            sourceRef: sql`excluded.source_ref`,
+          },
+        });
+    }
   }
 }

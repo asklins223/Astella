@@ -173,3 +173,112 @@
 - 「决定窗口的地方只有一处」：摘要器改走 `selectCompanionInteractiveReplayWindow`。看了实现，那层只是把本轮声明的容量夹成 `min(路由预算, 2048)` 再转给**同一个** `selectCompanionReplayWindow`，不是第二个按条数切尾部的口子；守卫只是把那一条 `doesNotMatch`（禁第二个切点）原样留着，加了一个名字。改法成立。
 - 两份新集测的注册面：都进了 `apps/api` 的 `test:companion:postgres`，棘轮绿。
 - 同一层追出的一条新红：embedding 调度把 consent 判据搬进了库内函数 `astella_enqueue_companion_memory_embedding_repair`（`0431:37-38` 有 `consent_at`/`consent_version` 两条），而守卫只读 TS 源码。已把断言搬到判据真正住的地方，并按函数名找迁移文件（不写死迁移号）；现在 2/2，worker 全量 1707/1707、shared 916/916、api 与 worker typecheck 0 错。
+
+## 2026-10-14（下午）：主动交流"看不见"的四处收口
+
+判据来源是库里的真实读数，不是推断：
+
+| 读数 | 修前 | 修后 |
+| --- | --- | --- |
+| `assistant_deliveries` 里 `initiative:*` 的归宿 | 16 条中 **11 条停在 `queued` 直到过期** | 认领窗口 90 秒 → 2 小时（一处声明） |
+| 派给别的设备的那一句 | 10 条派给 browser，桌面按严格相等静音 → 两台都不念 | 谁在小屋谁说一次，回执与跨设备租约兜住重复 |
+| 她的主动成稿内容 | 17 条里 **16 条是「我不吵你／先在这儿待着」** | 政策与观察渲染点名这一类：没实事就安静收尾 |
+| `study.started` | 免闸 → 13:49–13:52 四分钟连开四次 | 回到账号档位间隔 |
+| 「闲下来」这道门 | 要求前台连续 3 分钟零输入，两天只报 **1 次** | 停止输入＋页面稳定（90 秒），裸移鼠标不清零 |
+
+回归：shared 920/920、worker 1742/1742、desktop 3605/3607（剩 2 条红属于并行那一支正在加的
+`learning_artifact` 路由，与本次无关；同一次 `packages/shared` typecheck 的
+`AgentArtifactRefV1` 未使用报错也在那支改的文件里）。桌面与 worker 的 typecheck 干净。
+
+**未验**：真实窗口里"回小屋补念一次"这条还没用眼睛和耳朵核过——需要跑 dev 渲染层（`make desktop` 那侧），
+打包好的 App 不含今天这两处界面改动；认领窗口拉长后的堆积表现也只按读数推断。
+
+## 2026-10-14（晚）：她从来不说，是"门开了她不开口"
+
+用户复核仍是"做的还是不太行"。这一轮先读真实库，再在实链路上复现，最后按复现结果改。
+
+### 真实读数（开发库 `astella`，主用账号 da64bbce）
+
+| 读数 | 事实 |
+| --- | --- |
+| `presence.quiet` 运行数 | 2 条观察、**0 次运行** |
+| 那 2 条观察的 `quietForMs` | 212,763 / 240,126 毫秒（契约地板 180 秒，客户端常量 90 秒） |
+| 主动运行产出的 assistant 消息 | 23 条：22 条 `kind='text'`、1 条 `proactive` |
+| `study.started` 成稿 | 8 条里 6 条是「我不打扰，就露个面」这一类 |
+| 启动问候 | 夹着"上回那条改笔记的事我这边还卡着"；有一次直接输出了一整段笔记修改答案 |
+| `initiative:*` 投递 | 22 条：9 条 `displayed`，13 条 `queued` 直到过期（那 13 条创建时桌面确实没开） |
+| `companion_attention_plans` | 全库 0 条：她从来没给自己排过"回头再看一眼" |
+
+### 实链路复现（关键证据）
+
+手工投一条合格的 `presence.quiet` 观察（复制真实 session 的 context，前台、安静 200 秒、可参与），
+用现役 worker 与现役模型跑：prep 通过、运行创建（job 80 毫秒内 `RUN-CREATED`），
+她 **6.3 秒内**调用 `companion_finish_participation`，`turn.completed.silent=true`，**一句话都没说**。
+
+所以「她从来不主动」不是链路断了，是门开之后她被告知"没有值得说的就安静结束"——
+而旧观察消息的末尾正是这一句，还把她前几天的失败原话（「我先不打扰你」「我就在旁边待着」）当反面例子压在那里。
+
+### 改了什么（详见方案 56 文末同名修正）
+
+1. 契约地板 180 秒 → 90 秒，与客户端常量对齐；档位门槛搬到服务端 `COMPANION_QUIET_PRESENCE_MIN_MS`
+   （安静 10 分／适中 3 分／活跃 90 秒）。
+2. 例行间隔只按**真的产出了消息**的主动运行算；`attention.due`／`self_note.due` 不进这条闸；
+   三档间隔 90 分／30 分／10 分。
+3. 陪聊档默认反过来：开口是常态、安静是例外；同时点名不许把推测说成知道、不许汇报待办、
+   不许编造屏幕外的生活。需要依据的场合保持原口径。
+4. 启动问候不许变成接着办事。
+5. 主动运行由最终正文交付的那一支也写 `kind='proactive'`。
+
+### 修后实测（同一开发栈、同一模型、同一账号）
+
+同一条 `presence.quiet` 观察，她发出的是一句：
+
+> 那我先不念叨那篇笔记了。今天过得咋样？
+
+——不再报进度，也不再自编生活。修前同一条件她说的是「我去吃饭了，你先忙你的」那一类。
+
+同一次启动问候（`app.started`）修后是：
+
+> 嗨，回来啦。今晚过得咋样？
+
+### 顺带查出来的"假回执"（她说了没人接的另一半）
+
+桌面认领主动投递时，只有运行落在当前会话里才真的把正文送进气泡；落在别的 `dialogue`
+会话里时旧代码直接 `return`，**回执照发**。投影只认 `queued`/`delivered`，所以这一句
+对谁都永久消失，而库里记着 `displayed`。真库实证：3 条投递的 `initiative.conversationId`
+指向 `dialogue` 会话，其中 2 条在创建后 0.5–0.7 秒被写成 `displayed`——认领了，却不可能显示过。
+
+三处修掉（`apps/desktop-client`）：回执只在正文真的进了气泡时才发（没接住的留 `queued`
+等下次投影刷新）；落在别的会话里的正文用现役跨会话历史读回来；过了展示窗口仍没被接住的，
+在通知中心留一枚「有几句话你还没听过 → 打开动态」的路标（不发原话、不抢焦点、一次只一枚）。
+
+另外确认过的两件事（不改）：主动发言不经过通知中心是既定设计（`cue.origin==="initiative"`
+直接 return）；过了 2 小时投递窗口的正文仍在普通对话与「伴星中心 → 对话」里读得到，
+动态卡片在 `expired` 时也仍给「查看」，跳转对没有用户消息的运行有效。
+
+### 本轮验证范围
+
+- `packages/shared`：`companion-proactive-policy` / `companion-default-participation` /
+  `companion-awareness-idle` / `companion-initiative-contracts` 四份定向测试 15/15 通过；typecheck 干净。
+- `workers/ai-worker`：`companion-initiative-observation` 12/12；typecheck 干净。
+- 隔离库 `astella_initiative_20261014b`（`scripts/dev-disposable-db.sh` 全量迁移）上
+  `test:companion-initiative:postgres` **24/24 通过**，其中新增两条钉住新口径：
+  「门槛之下的安静不算时机，且沉默不吃间隔」「她自己排的到点关注不被自己的节奏推走」，
+  另一条按新间隔重写。
+- `apps/desktop-client`：`companion-account-presence` 7/7、`companion-center-copy-guard` 3/3
+  （三档文案的数字从 `PROACTIVE_CADENCE_MS` 现算，改映射即跟着走）；
+  伴星相关定向 69 个文件 / **634 项通过**，`npm run typecheck` 干净（含上面那三处回执修复）。
+- `apps/api`：本轮未改它的源码；工作区里同时有另一条锁序工作流在改
+  `learning-action-bridge.ts` 等文件，与本轮无关，未触碰。
+- 实链路：见上（真实模型、真实 worker、真实库；测试用的观察与运行已清理，账号状态已还原）。
+
+**未验**：真实桌面窗口里"她说一句、气泡在她身边出现"这条仍没有用眼睛核过（桌面进程当前没在跑，
+最后一个租约是 09:27 UTC）；假回执修复后的观感（跨会话读回、没有服务端语音片段时的逐字显现）
+只有代码与测试证据。跨日自然度、不同档位的体感差异、以及"她主动开口"在长会话里的重复感
+需要连用几天才能定。
+
+**另外记两件本轮核对到的边界**：①「陪着的时候」现在只有桌面一个宿主在报——工作区里手机端的
+浏览器原型已随原生端改造删除，`apps/mobile-client` 下（含 android/）已没有 `presence.quiet`
+的生产者，方案 56 §7／§12.4 里"手机端也发同一件事"的说法相对当前工作区已过期；
+②真实库里的 `browser:*` 租约是那个已删除的原型留下的，不是现役客户端。
+

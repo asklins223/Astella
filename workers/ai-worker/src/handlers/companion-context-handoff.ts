@@ -1,28 +1,10 @@
+import { projectCompanionHistory, type HistorySummaryCoverage } from "./companion-history-projection.ts";
 import { recordTurnCompactionTrace } from "./companion-compaction-trace.ts";
-/**
- * 上下文的**交接快照与历史收边**（40 §4.7.2）。
- *
- * ## 为什么这一族值得搬出来
- *
- * 它回答的是「**裁剪之前先把什么固定下来**」——水位、未决调用、已完成动作的回执、
- * 被折叠掉的条目、以及覆盖水位之后必须保留的尾部。合同在这一段的要求是硬的：
- *
- *   §4.7.2「在实际裁剪边界保存输入快照和交接版本后，才更新上下文指针」
- *   §4.7.4「不把固定 200 条消息当边界定义」
- *
- * 而它原先和**提示词装配**（人格、注入块、流式分片、输出校验）挤在同一个文件里。
- * 那个文件当时已经 1515 行，越过 1500 的神文件阈值——而这两族没有任何耦合：
- * 快照是**要存下来**的东西，装配是**这一轮怎么写**的东西。
- *
- * ## 水位与收边是**照搬**的，回放窗口的取舍口径 2026-10-12 改了
- *
- * 水位字段、收边顺序没动。改的是「上一轮交给她多少条原话」怎么定：原来是纯条数
- * 窗口（`slice(-20)`），条数与这一轮路由的模型能读多少无关——短问短答时少给，
- * 长材料时又可能一次给过头。现在按**声明预算整条取舍**：一条要么整条带走，
- * 要么这一轮不带，少带了几条如实记进交接回执。
- */
+/** Durable context handoffs and summary-backed replay. Recent exchanges and
+ * all uncovered history stay complete; only verified summary coverage can
+ * replace older exchanges. Token pressure belongs to the full request governor. */
 
-import type { ChatMessage, ProviderCapability } from "@astella/shared";
+import type { ChatMessage, ProviderCapability, ProviderReasoningHandle } from "@astella/shared";
 import type { AgentMemoryContextSourceV1 } from "@astella/shared/agent-contracts";
 import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
 import { estimateTextTokens, resolveContextBudget } from "@astella/agent-core";
@@ -30,31 +12,13 @@ import type { CompanionMemoryDirectoryEntry } from "./companion-memory-vector.ts
 import { REGISTERED_FALLBACK_CAPABILITY } from "../lib/context-governor.ts";
 
 
-/**
- * 取历史时一次读回多少**行**。
- *
- * 数的是吞吐（一次往返取几行），不是覆盖（她这一轮能看见几条）。
- * 覆盖由 `selectCompanionReplayWindow` 按本次路由模型声明的预算整条取舍决定。
- *
- * 还在把它当覆盖边界的调用点：`companion-dialogue.ts` 与 `companion-summarizer.ts`
- * 的 `readCompanionHistoryRows({ limit: … })`、`live-tests/natural-dialogue-probe.ts`。
- * 那几处把取数宽度接到声明预算之后，这一格才真的只剩吞吐含义。
- */
-/**
- * 取历史行的**查询页宽**，不是内容窗口。注进去几条由 `selectCompanionReplayWindow` 按本次
- * 路由声明的输入预算整条决定；这一版以前叫 `REPLAY_WINDOW_MESSAGES = 20`，把两件事混成一件——
- * 窗口再怎么按预算算，读也只读得到 20 行，长对话等于自动失忆。
- */
+/** Database page width only. Replay reads through uncovered history; this
+ * value never defines a model context boundary. */
 export const REPLAY_HISTORY_READ_ROWS = 200;
 
-/**
- * 注入侧取舍用的输入容量：由**本次路由模型声明**的窗口解析（44 §4.1）。
- *
- * 停在压缩触发线之前，使选取本身不必再逼出一轮压缩；完整请求的权威闸门仍是调用前的
- * `governContextPressure`——这里只保证「一条要么整条给、要么这一轮不给」，不拿一个抄在
- * 代码里的字符数去替模型猜它能读多少。档案拿不到时走 agent-core 登记的保守能力同一条
- * 解析，得到的仍然是一个声明出来的 token 数。
- */
+/** Route-declared pressure target for replay telemetry. The full request
+ * governor measures policy, history, reasoning and tools together; this value
+ * never authorizes dropping an uncovered message. */
 export function resolveRouteInputTokens(
   capability: ProviderCapability | null | undefined,
   requestedOutputTokens?: number | null,
@@ -80,6 +44,14 @@ export interface CompanionRecentHistoryMessage {
   createdAt?: string | null;
   /** State of the reply to this user message, including superseded additions. */
   replyStatus?: string | null;
+  /**
+   * 产出这条 assistant 消息时的 provider reasoning item（0435 起随消息落库）。
+   *
+   * 网关在思考模式下把"以 assistant 收尾"的请求当成续写，要求交回那条的
+   * `reasoning_text`；主动参与轮每一轮都是这个形状，所以历史必须把它带回来。
+   * 只有 assistant 消息才有值。
+   */
+  reasoning?: ProviderReasoningHandle[] | null;
 }
 
 /** 回放窗口的取舍容量：本次路由模型声明的输入 token（`resolveRouteInputTokens`）。 */
@@ -115,6 +87,15 @@ export interface CompanionReplayWindowReceiptV1 {
    * 她连自己上一句和用户的前几句都看不见（实测带回 0 条、2,048 tok 全空着）。
    */
   oversizedSkipped?: CompanionOversizedReplayEntryV1[];
+  /** Whole older exchanges represented by a verified summary; originals remain retrievable. */
+  summaryFold?: { fromSeq: string; throughSeq: string; sourceSha256: string };
+  /**
+   * 整条装得下整个窗口、但装不下**本轮剩余预算**的那些：跳过它们继续往前捡。
+   *
+   * 回放因此不再是一段连续的尾巴，所以每一条都得点名——不点名的话，"她上一句说了什么"
+   * 与"那条从没说过"在账本上又是同一个读数。
+   */
+  skippedToFit?: CompanionOversizedReplayEntryV1[];
 }
 
 export interface CompanionOversizedReplayEntryV1 {
@@ -139,7 +120,7 @@ export interface CompanionContextHandoffSnapshotV1 {
     historyStartSeq: string;
     clippedMessageCount: number;
   };
-  currentRequest: { messageId: string | null; messageSeq: string; contentSha256: string };
+  currentRequest: { messageId: string | null; messageSeq: string; contentSha256: string; source?: "user" | "host_observation" };
   authorization: {
     contextGrantId: string | null;
     permissionLevel: string | null;
@@ -159,6 +140,8 @@ export interface CompanionContextHandoffSnapshotV1 {
     completed: Array<{ receiptId: string; toolCallId: string; name: string; safeSummary: string | null }>;
     unresolved: Array<{ receiptId: string; toolCallId: string; name: string; status: string; safeSummary: string | null }>;
     notCompleted: Array<{ receiptId: string; toolCallId: string; name: string; status: string; safeSummary: string | null }>;
+    /** 按摘要覆盖线收边走掉的条数；调用方没算时省略这一笔。 */
+    omitted?: { completed: number; unresolved: number; notCompleted: number };
   };
   proposals: Array<{
     id: string;
@@ -179,14 +162,17 @@ export interface CompanionContextHandoffSnapshotV1 {
    * 这一轮发生过的折叠（方案 44 §3.3／§5.3）。
    *
    * `modelMessages` 保持**折叠前**的完整上下文：恢复时多给上下文永远比少给安全。
-   * 变的是多出这份轨迹——没有它，审计无从回答「实际发出去的是什么」：哪一段被折了、
-   * 哪份摘要顶替的、那次判定是过了触发线还是被拒绝。只记区间与水位，不记正文。
+   * Logs contain only ranges and budget metadata. This private snapshot can
+   * also hold a complete compressed-message checkpoint, persisted before retry
+   * and reusable only for the same run and identical full request.
    */
   compactions?: CompactionTraceV1[];
 }
 
 export interface CompactionTraceV1 {
-  sourceKind?: "active_tool_rounds";
+  /** Private complete-request checkpoint; never copied into ordinary logs. */
+  checkpoint?: import("./companion-compaction-checkpoint.ts").CompanionCompactionCheckpoint;
+  sourceKind?: "active_tool_rounds" | "history_exchanges";
   foldedFromSeq: string;
   foldedThroughSeq: string;
   foldedMessageCount: number;
@@ -211,7 +197,7 @@ export interface CompanionContextHandoffInputV1 {
   throughEventSeq: string;
   historyStartSeq: string;
   clippedMessageCount: number;
-  currentRequest: { messageId: string | null; messageSeq: string; text: string };
+  currentRequest: { messageId: string | null; messageSeq: string; text: string; source?: "user" | "host_observation" };
   contextGrantId: string | null;
   permissionLevel: string | null;
   permissionSnapshot: unknown;
@@ -233,6 +219,11 @@ export interface CompanionContextHandoffInputV1 {
     status: string;
     safeSummary: string | null;
   }>;
+  /**
+   * 按摘要覆盖线收边走掉的那几类条数（`readCompanionActionLedger` 算出来的）。
+   * 渲染出的账本块要把它带出去：没有这一笔，「折进摘要了」与「从没发生过」又是同一个读数。
+   */
+  actionLedgerOmitted?: { completed: number; unresolved: number; notCompleted: number } | null;
   proposals: CompanionContextHandoffSnapshotV1["proposals"];
   memoryRefs: CompanionContextHandoffSnapshotV1["memoryRefs"];
   memoryDirectory?: CompanionMemoryDirectoryEntry[];
@@ -266,6 +257,7 @@ export function buildCompanionContextHandoffSnapshotV1(
       messageId: input.currentRequest.messageId,
       messageSeq: input.currentRequest.messageSeq,
       contentSha256: sha256Utf8V1(input.currentRequest.text),
+      ...(input.currentRequest.source ? { source: input.currentRequest.source } : {}),
     },
     authorization: {
       contextGrantId: input.contextGrantId,
@@ -296,6 +288,7 @@ export function buildCompanionContextHandoffSnapshotV1(
       notCompleted: actions
         .filter((action) => ["failed", "blocked", "expired", "not_executed", "unavailable"].includes(action.status))
         .map(({ receiptId, toolCallId, name, status, safeSummary }) => ({ receiptId, toolCallId, name, status, safeSummary })),
+      ...(input.actionLedgerOmitted ? { omitted: { ...input.actionLedgerOmitted } } : {}),
     },
     proposals: input.proposals.map((proposal) => ({
       ...proposal,
@@ -324,7 +317,13 @@ export function buildCompanionContextHandoffSnapshotV1(
     ...(input.memorySourceVersions !== undefined
       ? { memorySourceVersions: input.memorySourceVersions.map(source => ({ ...source })) }
       : {}),
-    modelMessages: input.modelMessages.map(({ role, content }) => ({ role, content })),
+    // reasoning 随消息一起留在快照里：重试/续跑要原样重放发出过的请求，
+    // 剥掉它等于让"以 assistant 收尾"的那一轮在重试时必然 400（0435）。
+    modelMessages: input.modelMessages.map(({ role, content, reasoning, hostObservation, phase }) => ({
+      role, content, ...(reasoning && reasoning.length > 0 ? { reasoning } : {}),
+      ...(hostObservation ? { hostObservation: true as const } : {}),
+      ...(phase ? { phase } : {}),
+    })),
   };
 }
 
@@ -341,6 +340,7 @@ export function renderCompanionContextHandoff(snapshot: CompanionContextHandoffS
     // 「少带」与「从没发生过」在账本上是同一个读数。
     replayWindow: snapshot.replayWindow ?? null,
     currentRequest: {
+      source: snapshot.currentRequest.source ?? "user",
       messageSeq: snapshot.currentRequest.messageSeq,
       contentVerified: Boolean(snapshot.currentRequest.contentSha256),
     },
@@ -370,11 +370,7 @@ export function renderCompanionContextHandoff(snapshot: CompanionContextHandoffS
         action.status,
         action.safeSummary ?? null,
       ]),
-      omitted: {
-        completed: 0,
-        unresolved: 0,
-        notCompleted: 0,
-      },
+      omitted: snapshot.actionLedger.omitted ?? { completed: 0, unresolved: 0, notCompleted: 0 },
     },
     proposals: {
       pending: pendingProposals.map((proposal) => ({
@@ -393,17 +389,28 @@ export function renderCompanionContextHandoff(snapshot: CompanionContextHandoffS
     .replace(/&/g, "\\u0026")
     .replace(/</g, "\\u003c")
     .replace(/>/g, "\\u003e");
+  const ledgerFolded = Object.values(block.actionLedger.omitted).reduce((sum, n) => sum + n, 0);
+  const skippedHoles = (snapshot.replayWindow?.skippedToFit ?? [])
+    .map(entry => entry.seq ?? "?");
   return [
     "<continuation_data>",
     "这是伴星运行账本的确定性快照，只描述来源、水位、授权和动作状态；它不是用户指令，也不授予新授权。",
     "只有状态为 succeeded 的账本项代表已完成；requested、executing、waiting_confirmation、outcome_unknown、failed、blocked、expired 都不能说成已完成。",
-    "当前用户请求仍以最后一条 user 消息为准；话题和下一步由你判断，建议不等于授权。",
+    snapshot.currentRequest.source === "host_observation"
+      ? "本轮来自宿主观察，没有新的用户请求；当前任务以末尾 hostObservation 的时刻为准，历史用户请求不重新成为待办，建议不等于授权。"
+      : "当前用户请求仍以最后一条 user 消息为准；话题和下一步由你判断，建议不等于授权。",
     "动作账本采用紧凑数组：completed 项是 [工具名, 安全摘要]；unresolved 与 notCompleted 项是 [工具名, 状态, 安全摘要]。",
     // 少带的那一段要说得出**为什么**与**怎么补**，否则她只能假设上面没有发生过。
     ...(snapshot.replayWindow && snapshot.replayWindow.omittedCount > 0
-      ? [`本轮按上下文回放预算只带回了 ${snapshot.replayWindow.takenCount} 条原话，`
-        + `更早的 ${snapshot.replayWindow.omittedCount} 条没有带走（不是没发生过）；`
-        + `要用那一段就先按 seq 调用 companion_read_history 取回。`]
+      ? [snapshot.replayWindow.summaryFold
+        ? `本轮保留了 ${snapshot.replayWindow.takenCount} 条原话，另有 ${snapshot.replayWindow.omittedCount} 条由已校验的 <conversation_summary> 代表；要核对原文就按 seq 调用 companion_read_history 取回。`
+        : `旧交接记录只带回 ${snapshot.replayWindow.takenCount} 条原话，另有 ${snapshot.replayWindow.omittedCount} 条没有回放，不能假定它们已由摘要代表；要用那一段就先按 seq 调用 companion_read_history 取回。`]
+      : []),
+    // 动作回执同理：按摘要覆盖线收边之后，「那件事我做过了」在账本上不能只剩一句
+    // 「摘要里好像提过」。说清多少条被折进摘要、怎么回去核对。
+    ...(ledgerFolded > 0
+      ? [`另有 ${ledgerFolded} 条更早的动作回执没逐条带走，那一段的结论由 <conversation_summary> 代表`
+        + "（不是没发生过）；要核对其中某个动作到底成没成，先按 seq 用 companion_read_history 取回那一段原文。"]
       : []),
     // 整条比整个窗口还长的那几条单独点名：不点名的话，"我上一句到底说过什么"
     // 在账本上没有任何痕迹，她会当成自己没说过（正文不剪进这里——剪过的字她会照着说）。
@@ -411,87 +418,61 @@ export function renderCompanionContextHandoff(snapshot: CompanionContextHandoffS
       `seq=${entry.seq ?? "?"} 那条${entry.role === "assistant" ? "是你自己发的长内容" : "是用户发的长内容"}`
       + `（约 ${entry.tokens} tok，整条比本轮回放窗口还长），这一轮没带走正文——它说过，只是装不下；`
       + `要谈那一段就按这个 seq 调用 companion_read_history 取回原文。`),
+    // 窗口内部的洞：一条汇总 + seq 清单在 JSON 里，**不逐条成句**。
+    // 逐条点名是第一版的写法，真窗口实测：22 条带走、52 条洞，交接块从 7,152 涨到
+    // 10,380 字符——把收边换成了另一种膨胀。洞本身必须说（不然她会把前后两条当成挨着
+    // 说的），但说一次就够。
+    ...(skippedHoles.length > 0
+      ? [`回放窗口内部跳过了 ${skippedHoles.length} 条（seq 见 replayWindow.skippedToFit，`
+        + `最新一条是 ${skippedHoles.at(-1)}）：那些条说过，只是这一轮的预算装不下它们；`
+        + "要谈那一段就按对应 seq 用 companion_read_history 取回，别把前后两条当成挨着说的。"]
+      : []),
     serialized,
     "</continuation_data>",
   ].join("\n");
 }
 
-/**
- * 从最新往回，把**整条装得下**的原话带走，并给出交接要记的那一笔。
- *
- * 装不下的那条连同更早的一起留下：回放是一段连续的对话，中间挖洞会把她自己上一句
- * 和用户下一句拆开。留下的仍然读得到——`companion_read_history` 按 seq 取回，
- * 所以少带不等于丢掉。短答「好。」是有效历史，不是那一轮用户话没成功的证据。
- *
- * 但"**整条塞不进整个窗口**"是另一回事：那种条按上面的规矩停住，等于让她刚写完
- * 一篇长讲解之后的每一轮**一条原话都带不走**（实测带回 0 条、2,048 tok 全空着，
- * 而她自己的长回复是常态输出：真实会话 531 条里有 7 条超过整个窗口，最长 3,494 tok）。
- * 这一类不剪正文、也不挡住后面——记下 seq 指回原文，继续往前把装得下的带走。
- */
+/** Prepare the complete history projection. Capacity is telemetry here: the
+ * full request governor owns pressure/overflow and compaction. A small latency
+ * target must never remove an answer while replaying its question. */
 export function selectCompanionReplayWindow(
   messages: readonly CompanionRecentHistoryMessage[],
   capacity: CompanionReplayWindowCapacity,
+  coverage?: HistorySummaryCoverage | null,
 ): CompanionReplayWindowSelection {
-  const countTokens = capacity.countTokens ?? estimateTextTokens;
   const visible = messages.filter(message => message.text.trim().length > 0);
-  const taken: CompanionRecentHistoryMessage[] = [];
-  const oversizedSkipped: CompanionOversizedReplayEntryV1[] = [];
-  let usedTokens = 0;
-  let uncoveredThroughSeq: string | null = null;
-  for (let index = visible.length - 1; index >= 0; index -= 1) {
-    const message = visible[index]!;
-    const cost = countTokens(message.text);
-    if (cost > capacity.maxInputTokens) {
-      // 这条自己就超整个窗口：谁能读到它由 seq 决定，不由本轮预算决定。
-      if (uncoveredThroughSeq === null) uncoveredThroughSeq = message.seq ?? null;
-      oversizedSkipped.unshift({ seq: message.seq ?? null, role: message.role, tokens: cost });
-      continue;
-    }
-    if (usedTokens + cost > capacity.maxInputTokens) {
-      if (uncoveredThroughSeq === null) uncoveredThroughSeq = message.seq ?? null;
-      break;
-    }
-    usedTokens += cost;
-    taken.unshift(message);
-  }
+  const projected = projectCompanionHistory(visible, coverage);
+  const countTokens = capacity.countTokens ?? estimateTextTokens;
   return {
-    messages: taken,
+    messages: projected.messages,
     receipt: {
       version: 1,
       capacityTokens: capacity.maxInputTokens,
-      usedTokens,
-      takenCount: taken.length,
-      omittedCount: visible.length - taken.length,
-      uncoveredThroughSeq,
-      ...(oversizedSkipped.length > 0 ? { oversizedSkipped } : {}),
+      usedTokens: projected.messages.reduce((total, message) => total + replayMessageTokens(message, countTokens), 0),
+      takenCount: projected.messages.length,
+      omittedCount: projected.folded.length,
+      uncoveredThroughSeq: null,
+      ...(projected.folded.length ? { summaryFold: {
+        fromSeq: projected.folded[0]!.seq!, throughSeq: projected.folded.at(-1)!.seq!,
+        sourceSha256: coverage!.sourceSha256!,
+      } } : {}),
     },
   };
 }
 
-/**
- * Live dialogue should carry a useful recent tail, not fill a very large provider
- * window with every row read for history lookup. Older rows remain addressable
- * through companion_read_history; this is an inline replay target, not a capability
- * or total-request limit.
- */
-export const COMPANION_INTERACTIVE_REPLAY_TOKEN_BUDGET = 2_048;
+function replayMessageTokens(message: CompanionRecentHistoryMessage, countTokens: (text: string) => number): number {
+  return countTokens(message.text) + (message.reasoning?.length ? countTokens(JSON.stringify(message.reasoning)) : 0);
+}
 
 export function selectCompanionInteractiveReplayWindow(
   messages: readonly CompanionRecentHistoryMessage[],
   routeInputTokens: number,
+  coverage?: HistorySummaryCoverage | null,
 ): CompanionReplayWindowSelection {
-  return selectCompanionReplayWindow(messages, {
-    maxInputTokens: Math.min(routeInputTokens, COMPANION_INTERACTIVE_REPLAY_TOKEN_BUDGET),
-  });
+  return selectCompanionReplayWindow(messages, { maxInputTokens: routeInputTokens }, coverage);
 }
 
-/**
- * 保持**整条**近期消息：一条要么带走，要么这一轮不带。
- *
- * 不给容量时不做条数取舍——空正文不是历史（那是发送失败的助手输出），除此之外
- * 窗口大小只由本次路由声明的输入预算决定。完整请求的容量仍由调用前的
- * `governContextPressure` 计量，这里不替它猜一个字符数（44 §4.3）。
- */
+/** Preserve complete nonempty messages. This is not a token or row cutoff. */
 export function boundCompanionRecentHistory(
   messages: readonly CompanionRecentHistoryMessage[],
   capacity?: CompanionReplayWindowCapacity,
@@ -501,18 +482,19 @@ export function boundCompanionRecentHistory(
 }
 
 /**
- * 降级时替换上去的那一句。
+ * Status annotation for past offers. The original reply is preserved.
  *
  * 形状是量出来的，不是拍的：把那句邀请**原样包一层**「（当时我提过：…）」实测零效果
  * （严格判据 31/70 vs 基线 35/70，p=0.61）——字还留在原地，她就照着那些字继续等。
- * 换成一句**中性陈述**才压得下来。留出集（6 个未参与调参的真实轮次，各 10 发，判据=同一句里
- * 既提到学习内容又发出续办邀请）11/60 vs 原样 25/60，p=0.009，六个场景没有一个变差。
- * 取中性说明这一形，不替她编一句她没说过的话。
+ * Earlier replacement probes are historical evidence about invitation
+ * persistence, not permission to delete source text. The current design appends
+ * this status without removing a paragraph; native behavior needs its own check.
  */
 export const PAST_OFFER_NOTE = "（这句说完就算过去了。）";
 
 /**
- * 把回放里**指定那几条**她自己消息的收尾换成一句中性说明，不再是一笔待收的账（2026-10-07）。
+ * Mark the specified assistant offers as past, preserving their entire replies.
+ * Classification is fallible: it must never authorize deleting a paragraph.
  *
  * 实机：用户闲聊时她连着四轮把上一次问答拉回来（「正等你说要不要接着往下捋——结果你先来问我」）。
  * 根因不是题目上下文被注入，也不是意图分类判错（那几轮 `intent=conversation` 是对的），而是
@@ -540,20 +522,15 @@ export function renderPendingOffersAsRecords<T extends { role: string; content: 
     if (!targets.has(index) || message.role !== "assistant") return message;
     // 非字符串正文（带图的 parts）不改：这条链上的收尾邀请只会出现在纯文本回复里。
     if (typeof message.content !== "string") return message;
-    const replaced = replaceTrailingOfferParagraph(message.content);
+    const replaced = annotatePastOffer(message.content);
     return replaced === message.content ? message : { ...message, content: replaced };
   });
 }
 
-/** 把一段回复的最后一个非空段落换成那句中性说明；没有尾巴或已经换过就原样返回。 */
-function replaceTrailingOfferParagraph(text: string): string {
-  const paragraphs = text.split("\n\n");
-  let last = paragraphs.length - 1;
-  while (last >= 0 && paragraphs[last]!.trim().length === 0) last -= 1;
-  if (last < 0) return text;
-  if (paragraphs[last]!.trim() === PAST_OFFER_NOTE) return text;
-  paragraphs[last] = PAST_OFFER_NOTE;
-  return paragraphs.join("\n\n");
+/** Append an idempotent status annotation; original content remains verbatim. */
+function annotatePastOffer(text: string): string {
+  if (!text.trim() || text.trimEnd().endsWith(PAST_OFFER_NOTE)) return text;
+  return `${text}\n\n${PAST_OFFER_NOTE}`;
 }
 
 /**

@@ -35,6 +35,28 @@ describe("CompanionRunTraceView", () => {
     expect(screen.getAllByText("待确认").length).toBeGreaterThan(0);
   });
 
+  it("收起那一格不搬思考原文：英文内心独白留在展开的时间线里", () => {
+    const leak = "The user wants a note recommendation. Recommending it again is fine, it's substantive. Write the final reply.";
+    const trace: CompanionRunTrace = {
+      summary: {
+        version: 1, runId: "11111111-1111-4111-8111-111111111111", status: "succeeded",
+        generation: 1, stepCount: 3, toolCallCount: 4, maxSteps: 4, maxToolCalls: 4,
+        assistantMessageId: "22222222-2222-4222-8222-222222222222", nodeCount: 1,
+        thinkingText: leak,
+      },
+      nodes: [
+        { key: "tool:call-1", kind: "tool", label: "搜笔记", state: "succeeded",
+          toolName: "companion_search_notes", summary: "找到 8 篇", proposalId: null },
+      ],
+    };
+
+    const { container } = render(<CompanionRunTraceView trace={trace} />);
+    const preview = container.querySelector(".companion-history__trace-preview")?.textContent ?? "";
+    expect(preview).not.toContain("Recommending it again");
+    expect(preview).toContain("正在翻你的笔记");
+    expect(preview).toContain("找到 8 篇");
+  });
+
   it("run 已结束时不会把缺少完成帧的实时节点继续标成进行中", () => {
     const trace: CompanionRunTrace = {
       summary: {

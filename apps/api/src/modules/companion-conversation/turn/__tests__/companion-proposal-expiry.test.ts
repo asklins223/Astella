@@ -115,9 +115,12 @@ test("supersede 作废：过期该 run 的冻结工具调用与 pending proposal
   await invalidateSupersededRunProposals(tx as never, { runId: "run-1" });
 
   assert.equal(statements.length, 2);
-  assert.match(statements[0].text, /^UPDATE companion_agent_tool_calls/);
-  assert.match(statements[0].text, /status IN \('requested', 'executing', 'waiting_confirmation'\)/);
-  assert.match(statements[1].text, /^UPDATE companion_action_proposals/);
-  assert.match(statements[1].text, /agent_run_id = \? AND status = 'pending'/);
-  assert.deepEqual(statements[1].params, ["run-1"]);
+  // 两条 UPDATE 相互独立（都只按 run_id 定位、都设 expired，互不读取对方结果），
+  // 所以语句**内容**是契约、**顺序**只是取锁序——四表全序要求 proposals 先于
+  // tool_calls（见 @astella/shared/companion-lock-order），与 cancel.ts 同向。
+  assert.match(statements[0].text, /^UPDATE companion_action_proposals/);
+  assert.match(statements[0].text, /agent_run_id = \? AND status = 'pending'/);
+  assert.deepEqual(statements[0].params, ["run-1"]);
+  assert.match(statements[1].text, /^UPDATE companion_agent_tool_calls/);
+  assert.match(statements[1].text, /status IN \('requested', 'executing', 'waiting_confirmation'\)/);
 });

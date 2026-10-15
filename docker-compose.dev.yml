@@ -258,13 +258,7 @@ services:
       SILICONFLOW_API_KEY: ${SILICONFLOW_API_KEY:-}
       BIGMODEL_API_KEY: ${BIGMODEL_API_KEY:-}
       TOKENRHYTHM_API_KEY: ${TOKENRHYTHM_API_KEY:-}
-      # capabilities.agent_turn 当前走 opencode-go（deepseek-v4.1-flash），以
-      # config/ai-platforms.json 为准；tokenrhythm（qwen3.8-flash）为备用。
-      # 两个平台的 key 都必须透传——compose 只传显式列出的变量：2026-09-17 就因
-      # 漏传 OPENCODE_GO_API_KEY 导致容器内解析为空 → 平台不可用 → 学习卡生成
-      # fail-closed（与 Assessment Critic 同类事故）。切 provider 时同步改这里与
-      # config/ai-platforms.json。
-      OPENCODE_GO_API_KEY: ${OPENCODE_GO_API_KEY:-}
+      # 对话与文本生成仅使用 MiMo；向量检索和语音合成保留专用服务。
       MIMO_API_KEY: ${MIMO_API_KEY:-}
       # 方案 16：LearningRun 独立 Assessment Critic（OpenAI-compatible；未配置 fail closed）。
       ASSESSMENT_CRITIC_URL: ${ASSESSMENT_CRITIC_URL:-}
@@ -356,13 +350,7 @@ services:
       SILICONFLOW_API_KEY: ${SILICONFLOW_API_KEY:-}
       BIGMODEL_API_KEY: ${BIGMODEL_API_KEY:-}
       TOKENRHYTHM_API_KEY: ${TOKENRHYTHM_API_KEY:-}
-      # capabilities.agent_turn 当前走 opencode-go（deepseek-v4.1-flash），以
-      # config/ai-platforms.json 为准；tokenrhythm（qwen3.8-flash）为备用。
-      # 两个平台的 key 都必须透传——compose 只传显式列出的变量：2026-09-17 就因
-      # 漏传 OPENCODE_GO_API_KEY 导致容器内解析为空 → 平台不可用 → 学习卡生成
-      # fail-closed（与 Assessment Critic 同类事故）。切 provider 时同步改这里与
-      # config/ai-platforms.json。
-      OPENCODE_GO_API_KEY: ${OPENCODE_GO_API_KEY:-}
+      # 对话与文本生成仅使用 MiMo；向量检索和语音合成保留专用服务。
       MIMO_API_KEY: ${MIMO_API_KEY:-}
       AI_ALLOW_DOCKER_DESKTOP_SYNTHETIC_DNS: ${AI_ALLOW_DOCKER_DESKTOP_SYNTHETIC_DNS:-true}
       # Keep worker-side execution authorization aligned with the API

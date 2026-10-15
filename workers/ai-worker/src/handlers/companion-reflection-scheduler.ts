@@ -19,26 +19,28 @@ import { sql } from "drizzle-orm";
 
 import { db } from "../db.ts";
 import { logger } from "../lib/logger.ts";
+import { createTickThrottle } from "./tick-throttle.ts";
 
 const TICK_INTERVAL_MS = 60 * 1000;
-let lastTickAt = 0;
+const throttle = createTickThrottle(TICK_INTERVAL_MS);
 
 export async function tickCompanionReflectionScheduler(): Promise<void> {
   const now = Date.now();
-  if (now - lastTickAt < TICK_INTERVAL_MS) return;
+  if (!throttle.due(now)) return;
   try {
     const rows = await db.execute<{ enqueued: number }>(sql`
       SELECT public.astella_enqueue_companion_reflection() + public.astella_enqueue_companion_self_wakes() + public.astella_enqueue_companion_attention() AS enqueued
     `);
-    lastTickAt = now;
+    throttle.succeed(now);
     const enqueued = Number((Array.isArray(rows) ? rows : [])[0]?.enqueued ?? 0);
     if (enqueued > 0) logger.info({ enqueued }, "companion reflection jobs enqueued");
   } catch (err) {
-    logger.warn({ err }, "companion reflection enqueue failed; retrying next tick");
+    throttle.fail(now);
+    logger.warn({ err }, "companion reflection enqueue failed; retrying with backoff");
   }
 }
 
-/** 测试与手动触发用的复位口：不推进时间戳就没法在同一个进程里连跑两轮。 */
+/** 测试与手动触发用的复位口：不放开节流就没法在同一个进程里连跑两轮。 */
 export function resetCompanionReflectionSchedulerTick(): void {
-  lastTickAt = 0;
+  throttle.reset();
 }

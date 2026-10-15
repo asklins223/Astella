@@ -77,6 +77,17 @@ test("正文里有 emoji 时，引用照样核得回原文（码元下标与码�
   assert.equal(exactQuote("😀😀第二段也有话说，这里再讲一遍。", "第二段"), null);
 });
 
+test("行首编号与表格竖线不算内容差别：长文里这两类引文不该被判掉", () => {
+  // 判据现在三条链共用一份（note-grounding-source.ts）；这两句是长笔记实测里
+  // 速看悄悄 pointsDropped 的形状：模型照抄 `1. ` 与竖线，渲染后的正文里没有它们。
+  // 行首 `1. ` 不进正文，落库从正文第一个字开始；行中的 `**` 是原文里真在的，照留。
+  assert.equal(exactQuote("1. **单次调用可以是完整执行。** 明确的小任务允许直接完成。", "1. **单次调用可以是完整执行。** 明确的小任务允许直接完成"),
+    "单次调用可以是完整执行。** 明确的小任务允许直接完成");
+  // 真实形状：底本是渲染后的正文（竖线已剥），模型引的是原始 markdown（带竖线）。
+  assert.equal(exactQuote("当前交流当前请求、相关记忆与方法明确长期要求", "当前交流 | 当前请求、相关记忆与方法 | 明确长期要求"),
+    "当前交流当前请求、相关记忆与方法明确长期要求");
+});
+
 test("该拒的照拒：不是可核对的结构化内容、或者一条重点都没有", () => {
   for (const raw of ["这不是 JSON", chunk([])]) {
     assert.throws(() => parseOverviewChunk(raw), (error: unknown) => error instanceof NoteOverviewOutputError);

@@ -15,7 +15,12 @@ final class MobileAPI {
     var token: String?
 
     init() {
-        let configured = UserDefaults.standard.string(forKey: "api.baseURL")
+        #if DEBUG
+        let debugOrigin = ProcessInfo.processInfo.environment["ASTELLA_API_ORIGIN"]
+        #else
+        let debugOrigin: String? = nil
+        #endif
+        let configured = debugOrigin ?? UserDefaults.standard.string(forKey: "api.baseURL")
             ?? Bundle.main.object(forInfoDictionaryKey: "API_BASE_URL") as? String
             ?? "http://127.0.0.1:4000"
         baseURL = configured.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
@@ -26,7 +31,7 @@ final class MobileAPI {
         guard var components = URLComponents(string: baseURL) else {
             throw MobileAPIError(status: 0, code: "invalid_origin", message: "服务地址格式不正确。")
         }
-        components.path = path
+        components.path = path.hasPrefix("/api/uploads/") ? String(path.dropFirst(4)) : path
         components.queryItems = query.isEmpty ? nil : query
         guard let url = components.url else {
             throw MobileAPIError(status: 0, code: "invalid_url", message: "无法生成请求地址。")
@@ -96,7 +101,10 @@ final class MobileAPI {
         }
         var request = URLRequest(url: imageURL)
         request.timeoutInterval = 30
-        if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        if let token, let origin = URL(string: baseURL), imageURL.scheme == origin.scheme,
+           imageURL.host == origin.host, imageURL.port == origin.port {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let response = response as? HTTPURLResponse, (200..<300).contains(response.statusCode) else {
             throw MobileAPIError(status: (response as? HTTPURLResponse)?.statusCode ?? 0,
@@ -105,16 +113,16 @@ final class MobileAPI {
         return data
     }
 
-    func uploadImage(_ data: Data, fileName: String, mimeType: String) async throws -> [String: Any] {
+    func uploadImage(_ data: Data, fileName: String, mimeType: String, endpoint: String = "/uploads/companion-images") async throws -> [String: Any] {
         let boundary = "Astella-\(UUID().uuidString)"
-        var request = URLRequest(url: try url("/uploads/companion-images"))
+        var request = URLRequest(url: try url(endpoint))
         request.httpMethod = "POST"
         request.timeoutInterval = 60
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
         var body = Data()
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(fileName)\"\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(fileName.replacingOccurrences(of: "\"", with: "").replacingOccurrences(of: "\r", with: "").replacingOccurrences(of: "\n", with: ""))\"\r\n".data(using: .utf8)!)
         body.append("Content-Type: \(mimeType)\r\n\r\n".data(using: .utf8)!)
         body.append(data)
         body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
@@ -146,7 +154,7 @@ final class MobileAPI {
         if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
         var body = Data()
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(fileName)\"\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(fileName.replacingOccurrences(of: "\"", with: "").replacingOccurrences(of: "\r", with: "").replacingOccurrences(of: "\n", with: ""))\"\r\n".data(using: .utf8)!)
         body.append("Content-Type: \(mimeType)\r\n\r\n".data(using: .utf8)!)
         body.append(data)
         body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
@@ -161,6 +169,10 @@ final class MobileAPI {
                                  message: payload?["message"] as? String ?? "头像上传失败。")
         }
         return try JSONSerialization.jsonObject(with: responseData) as? [String: Any] ?? [:]
+    }
+
+    func synthesizeSpeech(_ text: String) async throws -> Data {
+        try await perform("/voice/tts", method: "POST", body: ["text": text], query: [], idempotencyKey: nil)
     }
 
     func transcribeWAV(_ data: Data, durationMilliseconds: Int) async throws -> [String: Any] {

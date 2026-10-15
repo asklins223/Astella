@@ -19,7 +19,6 @@ import test from "node:test";
 import {
   boundCompanionRecentHistory,
   buildCompanionContextHandoffSnapshotV1,
-  COMPANION_INTERACTIVE_REPLAY_TOKEN_BUDGET,
   renderCompanionContextHandoff,
   renderPendingOffersAsRecords,
   selectCompanionInteractiveReplayWindow,
@@ -86,11 +85,55 @@ test("尾部按内容指纹保存，而不是把正文原样再存一份", () =>
     "正文换了指纹却没变 —— 那就说明指纹是摆设");
 });
 
+/**
+ * `modelMessages` 是重试时**原样重发**的那一份（"A retry must replay the exact
+ * committed messages"）。2026-10-14（0435）起它必须连 reasoning 一起保住：
+ * 网关在思考模式下要交回每个"纯文本续写位" assistant 的 `reasoning_text`，
+ * 快照里剥掉它，重试就必然 400。此前三处映射（快照、运行时历史、persona 组装）
+ * 都只保留 `{role, content}`，把句柄丢了——这条盯快照那一处。
+ */
+test("快照的 modelMessages 保留 reasoning，重试才交得回明文", () => {
+  const reasoning = [{ type: "reasoning", id: "rs-1", status: "completed",
+    encrypted_content: "enc-1", summary: [],
+    content: [{ type: "reasoning_text", text: "先弄清他要什么" }] }];
+  const snapshot = buildCompanionContextHandoffSnapshotV1(input({
+    modelMessages: [
+      { role: "system", content: "你是伴星" },
+      { role: "user", content: "在吗" },
+      { role: "assistant", content: "在的", reasoning },
+    ],
+  }));
+  const last = snapshot.modelMessages.at(-1)!;
+  assert.deepEqual(last.reasoning, reasoning,
+    "明文 reasoning 必须随快照保留——丢掉它，重试那一轮会被网关 400");
+  // user/system 消息不挂 reasoning：只在产出它的那条 assistant 上才有意义。
+  assert.equal("reasoning" in snapshot.modelMessages[1]!, false);
+  // 带 reasoning 的消息不影响指纹式正文之外的既有形状。
+  assert.equal(snapshot.modelMessages[0]!.content, "你是伴星");
+});
+
+test("handoff recovery retains host provenance and the assistant phase", () => {
+  const modelMessages = [{ role: "system" as const, hostObservation: true as const, content: "terminal history data" },
+    { role: "assistant" as const, phase: "final_answer" as const, content: "actual answer" }];
+  const snapshot = buildCompanionContextHandoffSnapshotV1(input({ modelMessages }));
+  assert.deepEqual(snapshot.modelMessages, modelMessages);
+});
+
 test("当前请求也按指纹存：用户最新请求与授权单列（§4.7.2）", () => {
   const snapshot = buildCompanionContextHandoffSnapshotV1(input());
   assert.equal(snapshot.currentRequest.messageSeq, "m-41");
   assert.ok(snapshot.currentRequest.contentSha256.length > 0);
   assert.equal(snapshot.authorization.permissionLevel, "moderate");
+});
+
+test("a host-origin handoff cannot instruct the model to resume the last historical user request", () => {
+  const snapshot = buildCompanionContextHandoffSnapshotV1(input({ currentRequest: {
+    messageId: null, messageSeq: "41", text: "", source: "host_observation",
+  } }));
+  assert.equal(snapshot.currentRequest.source, "host_observation");
+  const rendered = renderCompanionContextHandoff(snapshot);
+  assert.match(rendered, /本轮来自宿主观察，没有新的用户请求/);
+  assert.doesNotMatch(rendered, /当前用户请求仍以最后一条 user 消息为准/);
 });
 
 test("渲染出的交接块**明说**什么算完成，且把 outcome_unknown 留在未决里", () => {
@@ -126,50 +169,48 @@ test("【自证】把 outcome_unknown 混进 completed 会立刻被抓出来", (
 });
 
 
-test("回放窗口按声明预算整条取舍：留下的必须是最近那一段，少带了几条当场说清", () => {
-  // §4.7.4：不把固定条数当**边界定义**。2026-10-12 起窗口由本次路由模型声明的输入
-  // 预算决定，一条要么整条带走、要么这一轮不带；不给容量时根本不做条数取舍。
-  const history = Array.from({ length: 40 }, (_, i) =>
-    msg(i % 2 === 0 ? "user" : "assistant", `第 ${i} 条`, `m-${i}`));
-
-  const whole = boundCompanionRecentHistory(history);
-  assert.equal(whole.length, 40, "没给声明容量时不该再按条数收边");
-
-  const capacity = { maxInputTokens: 100 };
-  const { messages: taken, receipt } = selectCompanionReplayWindow(history, capacity);
-  assert.ok(taken.length > 0 && taken.length < history.length, "紧容量必须真的取舍，否则下面的断言全是空的");
-  // 留下的是**末尾那一段连续的整条**：中间挖洞会把她上一句和用户下一句拆开
-  assert.deepEqual(taken, history.slice(history.length - taken.length));
-  assert.equal(receipt.takenCount, taken.length);
-  assert.equal(receipt.omittedCount, history.length - taken.length, "少带的条数要如实等于少掉的条数");
-  assert.equal(receipt.capacityTokens, capacity.maxInputTokens);
-  assert.ok(receipt.usedTokens <= capacity.maxInputTokens);
-  // 没带走的那一段里最新的一条：她由此知道「不是没发生过」，也知道从哪个 seq 取回
-  assert.equal(receipt.uncoveredThroughSeq, history[history.length - taken.length - 1]?.seq);
+test("capacity pressure never punches holes into an uncovered exchange", () => {
+  const history = [msg("user", "old question", "1"), msg("assistant", "long answer".repeat(1_000), "2"), msg("user", "follow-up", "3")];
+  const result = selectCompanionReplayWindow(history, { maxInputTokens: 100 });
+  assert.deepEqual(result.messages, history);
+  assert.ok(result.receipt.usedTokens > result.receipt.capacityTokens, "the full-request governor must see actual pressure");
+  assert.equal(result.receipt.omittedCount, 0);
+  assert.equal(result.receipt.uncoveredThroughSeq, null);
 });
 
-test("交互历史不因模型超大窗口而无限变长，旧消息仍留下按需取回水位", () => {
-  const history = Array.from({ length: 24 }, (_, index) =>
-    msg(index % 2 === 0 ? "user" : "assistant", `消息 ${index}：${"x".repeat(1_200)}`, `m-${index}`));
-  const selected = selectCompanionInteractiveReplayWindow(history, 1_000_000);
-
-  assert.equal(selected.receipt.capacityTokens, COMPANION_INTERACTIVE_REPLAY_TOKEN_BUDGET);
-  assert.ok(selected.messages.length > 0 && selected.messages.length < history.length);
-  assert.deepEqual(selected.messages, history.slice(history.length - selected.messages.length),
-    "保留的必须是最近连续尾部，不能在历史中间挖洞");
-  assert.equal(selected.receipt.omittedCount, history.length - selected.messages.length);
-  assert.equal(selected.receipt.uncoveredThroughSeq, history[history.length - selected.messages.length - 1]?.seq);
-  assert.ok(selected.receipt.usedTokens <= selected.receipt.capacityTokens);
+test("verified summaries replace older complete exchanges while retaining the latest answer", () => {
+  const history = Array.from({ length: 24 }, (_, index) => msg(index % 2 ? "assistant" : "user", "x".repeat(1_200), String(index + 1)));
+  assert.deepEqual(selectCompanionInteractiveReplayWindow(history, 1_000_000).messages, history);
+  const projected = selectCompanionInteractiveReplayWindow(history, 100, { fromSeq: "1", throughSeq: "24", sourceSha256: "verified" });
+  assert.deepEqual(projected.messages, history.slice(-2));
+  assert.equal(projected.receipt.omittedCount, 22);
+  assert.equal(projected.receipt.summaryFold?.throughSeq, "22");
+  assert.equal(projected.receipt.uncoveredThroughSeq, null, "folded history is represented, not missing");
 });
 
-test("交互尾部遵守更小的路由硬容量", () => {
-  const history = Array.from({ length: 8 }, (_, index) => msg(
-    index % 2 === 0 ? "user" : "assistant", `消息 ${index}：${"x".repeat(900)}`, `m-${index}`));
-  const selected = selectCompanionInteractiveReplayWindow(history, 1_500);
+test("an oversized latest exchange is retained for semantic compaction instead of silently dropping its answer", () => {
+  const history = [msg("user", "question", "1"), msg("assistant", "x".repeat(9_000), "2")];
+  const result = selectCompanionInteractiveReplayWindow(history, 1_500, { fromSeq: "1", throughSeq: "2", sourceSha256: "verified" });
+  assert.deepEqual(result.messages, history);
+  assert.ok(result.receipt.usedTokens > 1_500);
+});
 
-  assert.equal(selected.receipt.capacityTokens, 1_500);
-  assert.ok(selected.receipt.usedTokens <= 1_500);
-  assert.equal(selected.messages.at(-1)?.seq, "m-7", "最新一条历史必须保留");
+test("the real failure shape retains answered math questions together with their long answers and reasoning", () => {
+  const history: CompanionRecentHistoryMessage[] = [
+    msg("user", "请推导贝叶斯公式并计算三个例子。", "1"),
+    msg("assistant", "此前的三个例子都已回答。".repeat(500), "2"),
+    msg("user", "零概率条件事件的边界呢？不要重讲例子。", "3"),
+    { ...msg("assistant", "条件事件概率为零时不能按比值定义条件概率。".repeat(150), "4"),
+      reasoning: [{ type: "reasoning", content: [{ type: "reasoning_text", text: "先核对当前边界。".repeat(500) }] }] },
+    { ...msg("user", "刚才那句能推出严格集合包含吗？", "5"), replyStatus: "failed" },
+  ];
+  for (const capacity of [1_000, 100_000]) {
+    const result = selectCompanionInteractiveReplayWindow(history, capacity);
+    assert.deepEqual(result.messages, history);
+    const compacted = selectCompanionInteractiveReplayWindow(history, capacity, { fromSeq: "1", throughSeq: "4", sourceSha256: "verified" });
+    assert.deepEqual(compacted.messages, history.slice(2));
+    assert.deepEqual(compacted.messages[1]?.reasoning, history[3]!.reasoning);
+  }
 });
 
 test("短回复与前面的用户问题都保持原样", () => {
@@ -185,22 +226,14 @@ test("短回复与前面的用户问题都保持原样", () => {
   assert.ok(texts.includes("那我换一个问法"));
 });
 
-test("【自证】判据认得出「留下的是最早那批」这个真实退化", () => {
-  // 这一条要防的退化从来没变：紧容量下留下的若是**最早那批**，她就读不到自己上一句。
-  // 变的只是判据不再由条数 20 决定，而由声明预算整条取舍决定。
-  const history = Array.from({ length: 40 }, (_, i) =>
-    msg(i % 2 === 0 ? "user" : "assistant", `第 ${i} 条`, `m-${i}`));
-  const { messages: taken, receipt } = selectCompanionReplayWindow(history, { maxInputTokens: 100 });
-  assert.ok(taken.length > 0 && taken.length < history.length, "自证样本没造好：这一轮没发生取舍");
-  // 正控制：保留的是**末尾**那批，最早那条已被丢掉（不再是因为条数刚好 20）。
-  assert.equal(taken[taken.length - 1]?.text, "第 39 条");
-  assert.ok(taken.some((m) => m.text === "第 39 条"), "最近那条必须留着");
-  assert.ok(!taken.some((m) => m.text === "第 0 条"), "最早那条应当已被丢掉");
-  assert.equal(receipt.uncoveredThroughSeq, "m-29", "没带走的那一段最新的是一条要说得清 seq");
-  // 反向：若实现从前面切（留下最早那批、条数一样），上面两条判据都会红。
-  const forwardCut = history.slice(0, taken.length);
-  assert.ok(forwardCut.some((m) => m.text === "第 0 条") && !forwardCut.some((m) => m.text === "第 39 条"),
-    "自证样本没造好：从前面切那一批必须同时满足这两条反向判据");
+test("partial summary coverage never separates a historical question from its answer", () => {
+  const history = [msg("user", "old q", "1"), msg("assistant", "old a", "2"), msg("user", "new q", "3"), msg("assistant", "new a", "4")];
+  for (const coverage of [
+    { fromSeq: "1", throughSeq: "1", sourceSha256: "hash" },
+    { fromSeq: "2", throughSeq: "2", sourceSha256: "hash" },
+    { fromSeq: "1", throughSeq: "2", sourceSha256: null },
+    { fromSeq: "1", throughSeq: "2", sourceSha256: "hash", uncovered: [{ fromSeq: "2", throughSeq: "2" }] },
+  ]) assert.deepEqual(selectCompanionReplayWindow(history, { maxInputTokens: 10 }, coverage).messages, history);
 });
 
 test("按索引降级她自己的收尾：问句和陈述式的等待句都算，没点到的不动", () => {
@@ -214,21 +247,21 @@ test("按索引降级她自己的收尾：问句和陈述式的等待句都算�
   ];
   const rendered = renderPendingOffersAsRecords(history, [0, 2]);
   assert.equal(rendered[0]?.content,
-    "熵衡量的是一杯墨水能散成多少种摆法。\n\n（这句说完就算过去了。）");
-  assert.equal(rendered[2]?.content, "（这句说完就算过去了。）",
+    history[0]!.content + "\n\n（这句说完就算过去了。）");
+  assert.equal(rendered[2]?.content, history[2]!.content + "\n\n（这句说完就算过去了。）",
     "陈述式的等待句一样降级——判据是解释给的索引，不是标点");
   assert.equal(rendered[4]?.content, history[4]!.content, "没被点到的消息一个字不改");
   assert.equal(rendered[1]?.content, "在干嘛呢", "用户消息永不被改写");
 });
 
-test("降级只动末段、可重复应用，并保住正文之外的字段", () => {
+test("an offer annotation preserves the full reply, is idempotent, and retains native fields", () => {
   const once = renderPendingOffersAsRecords([{ role: "assistant", content: "第一段。\n\n末尾问句？" }], [0]);
-  assert.equal(once[0]?.content, "第一段。\n\n（这句说完就算过去了。）");
+  assert.equal(once[0]?.content, "第一段。\n\n末尾问句？\n\n（这句说完就算过去了。）");
   assert.deepEqual(renderPendingOffersAsRecords(once, [0]), once, "渲染两次必须是同一个结果（已经换过的不再套第二层）");
   assert.equal(
     renderPendingOffersAsRecords([{ role: "assistant", content: "上一段里也有一个？\n\n末尾是陈述。" }], [0])[0]?.content,
-    "上一段里也有一个？\n\n（这句说完就算过去了。）",
-    "只改最后那一段，正文里原有的问句不动",
+    "上一段里也有一个？\n\n末尾是陈述。\n\n（这句说完就算过去了。）",
+    "a mistaken classifier index cannot remove substantive prose",
   );
   assert.equal(
     renderPendingOffersAsRecords([{ role: "assistant", content: "随便一句？" }], [])[0]?.content,
@@ -240,7 +273,7 @@ test("降级只动末段、可重复应用，并保住正文之外的字段", ()
     toolCalls: [{ id: "c1", name: "companion_read_note", arguments: {} }],
     reasoning: [{ handle: "h1" }],
   }], [0])[0] as Record<string, unknown>;
-  assert.equal(carried.content, "（这句说完就算过去了。）");
+  assert.equal(carried.content, "要不要接着讲？\n\n（这句说完就算过去了。）");
   assert.deepEqual(carried.toolCalls, [{ id: "c1", name: "companion_read_note", arguments: {} }], "工具调用不能被改写抹掉");
   assert.deepEqual(carried.reasoning, [{ handle: "h1" }], "思考句柄不能被改写抹掉");
 
@@ -283,27 +316,61 @@ test("长任务交接保留全部回执、待确认提案和完整说明", () =>
   ]);
 });
 
-test("尾部那条整条塞不进窗口时：短话照样带得回来，超长那条记进回执", () => {
-  // 2026-10-14 实测到的塌陷形状：从最新往回装，第一条塞不下就 break。
-  // 她刚写完一篇长讲解（真实会话 531 条里有 7 条比整个回放窗口还长，最长 3,494 tok），
-  // 于是接下来那几轮回放**一条都没有**：带回 0 条、用掉 0 tok、2,048 容量全空着，
-  // 连自己上一句和用户的前几句都看不见。这不是预算不够，是停了不该停的地方。
-  const oversized = "长".repeat(9_000);
-  const history = [
-    ...Array.from({ length: 8 }, (_, index) =>
-      msg(index % 2 === 0 ? "user" : "assistant", `第 ${index + 1} 句短话`, `m-${index + 1}`)),
-    msg("assistant", oversized, "m-9"),
-  ];
-  const { messages: taken, receipt } = selectCompanionReplayWindow(history, { maxInputTokens: 2_048 });
+test("consecutive user additions and segmented replies form an indivisible exchange", () => {
+  const history = [msg("user", "first", "1"), msg("user", "addition", "2"), msg("assistant", "part a", "3"), msg("assistant", "part b", "4"), msg("user", "current", "5"), msg("assistant", "current answer", "6")];
+  const partial = selectCompanionReplayWindow(history, { maxInputTokens: 10 }, { fromSeq: "2", throughSeq: "4", sourceSha256: "hash" });
+  assert.deepEqual(partial.messages, history);
+  const complete = selectCompanionReplayWindow(history, { maxInputTokens: 10 }, { fromSeq: "1", throughSeq: "4", sourceSha256: "hash" });
+  assert.deepEqual(complete.messages, history.slice(4));
+});
 
-  assert.ok(taken.length > 0, "超长那一条不许把前面的短话一起清零");
-  assert.equal(taken.some((item) => item.text === oversized), false, "整条超窗口的正文不带进来，剪半句更糟");
-  assert.equal(taken.at(-1)?.seq, "m-8", "跳过超长那条之后，紧邻它前面那条要带走");
-  assert.equal(taken.at(0)?.seq, "m-1");
-  assert.deepEqual(receipt.oversizedSkipped?.map((entry) => entry.seq), ["m-9"]);
-  assert.equal(receipt.uncoveredThroughSeq, "m-9", "没带走里最新的一条是那条超长的，不是被预算挡住的更早的");
-  assert.ok(receipt.usedTokens <= receipt.capacityTokens);
-  assert.equal(receipt.omittedCount, history.length - taken.length, "少带的条数仍然如实");
+test("an invalid summary boundary fails open to original history", () => {
+  const history = [msg("user", "q", "1"), msg("assistant", "a", "2"), msg("user", "next", "3"), msg("assistant", "next answer", "4")];
+  for (const coverage of [
+    { fromSeq: "broken", throughSeq: "4", sourceSha256: "hash" },
+    { fromSeq: "4", throughSeq: "1", sourceSha256: "hash" },
+    { fromSeq: "1", throughSeq: "4", sourceSha256: "hash", uncovered: [{ fromSeq: "4", throughSeq: "2" }] },
+  ]) assert.deepEqual(selectCompanionReplayWindow(history, { maxInputTokens: 10 }, coverage).messages, history);
+});
+
+test("coverage holes retain their whole exchanges rather than isolated messages", () => {
+  const history = Array.from({ length: 8 }, (_, i) => msg(i % 2 ? "assistant" : "user", String(i), String(i + 1)));
+  const result = selectCompanionReplayWindow(history, { maxInputTokens: 1 }, { fromSeq: "1", throughSeq: "8", sourceSha256: "hash", uncovered: [{ fromSeq: "4", throughSeq: "4" }] });
+  assert.deepEqual(result.messages.map(m => m.seq), ["3", "4", "7", "8"]);
+});
+
+test("窗口内部的洞说一次就够：给条数、给最新那条 seq、给取回入口", () => {
+  const snapshot = buildCompanionContextHandoffSnapshotV1(input({
+    replayWindow: {
+      version: 1,
+      capacityTokens: 2_048,
+      usedTokens: 1_700,
+      takenCount: 8,
+      omittedCount: 3,
+      uncoveredThroughSeq: "m-9",
+      skippedToFit: [
+        { seq: "m-7", role: "assistant", tokens: 600 },
+        { seq: "m-9", role: "user", tokens: 120 },
+      ],
+    },
+  }));
+  const block = renderCompanionContextHandoff(snapshot);
+  assert.match(block, /回放窗口内部跳过了 2 条/);
+  assert.match(block, /最新一条是 m-9/);
+  assert.match(block, /别把前后两条当成挨着说的/);
+  assert.match(block, /companion_read_history/);
+  // 洞的 seq 清单在 JSON 里可读，不再逐条成句（第一版逐条成句，实测 52 个洞把交接块顶到 10,380 字符）。
+  assert.ok(!block.includes("seq=m-7 那条"), "不再逐条成句");
+});
+
+test("账本按摘要覆盖线收边时，块里要说清折走了几条", () => {
+  const snapshot = buildCompanionContextHandoffSnapshotV1(input({
+    actionLedgerOmitted: { completed: 116, unresolved: 1, notCompleted: 4 },
+  }));
+  const block = renderCompanionContextHandoff(snapshot);
+  assert.match(block, /另有 121 条更早的动作回执没逐条带走/);
+  assert.match(block, /conversation_summary/);
+  assert.match(block, /"omitted":\{"completed":116,"unresolved":1,"notCompleted":4\}/);
 });
 
 test("超长那条在交接块里说得清：说过、这一轮没带正文、按哪个 seq 取回", () => {
@@ -324,4 +391,17 @@ test("超长那条在交接块里说得清：说过、这一轮没带正文、�
   assert.match(rendered, /是你自己发的长内容/);
   assert.match(rendered, /没带走正文/);
   assert.match(rendered, /companion_read_history/);
+});
+
+test("replay capacity includes persisted reasoning sent with assistant history", () => {
+  const history: CompanionRecentHistoryMessage[] = [
+    { seq: "1", role: "user", text: "question" },
+    { seq: "2", role: "assistant", text: "short answer", reasoning: [{ type: "reasoning", content: [{ type: "reasoning_text", text: "r".repeat(200) }] }] },
+  ];
+  const narrow = selectCompanionReplayWindow(history, { maxInputTokens: 100, countTokens: text => text.length });
+  assert.deepEqual(narrow.messages, history);
+  assert.ok(narrow.receipt.usedTokens > narrow.receipt.capacityTokens);
+  assert.deepEqual(narrow.messages[1]?.reasoning, history[1]!.reasoning);
+  const wide = selectCompanionReplayWindow(history, { maxInputTokens: 1_000, countTokens: text => text.length });
+  assert.equal(wide.receipt.usedTokens, history[0]!.text.length + history[1]!.text.length + JSON.stringify(history[1]!.reasoning).length);
 });

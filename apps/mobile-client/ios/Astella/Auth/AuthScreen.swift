@@ -6,6 +6,7 @@ struct LoginScreen: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var route: AuthRoute = .login
+    @State private var navigatingBack = false
     @State private var email = ""
     @State private var password = ""
     @State private var confirmPassword = ""
@@ -16,6 +17,8 @@ struct LoginScreen: View {
     @State private var resendIn = 0
     @FocusState private var focusedInput: AuthInput?
 
+    private var reducedMotion: Bool { reduceMotion || store.localReduceMotion }
+
     private var normalizedEmail: String { email.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var validEmail: Bool {
         let parts = normalizedEmail.split(separator: "@", omittingEmptySubsequences: false)
@@ -24,7 +27,7 @@ struct LoginScreen: View {
     private var validCode: Bool { code.count == 6 && code.allSatisfy(\.isNumber) }
     private var passwordReady: Bool { password.count >= 8 && password.count <= 200 }
     private var confirmMatches: Bool { !confirmPassword.isEmpty && confirmPassword == password }
-    private var canContinue: Bool {
+    private func canContinue(for route: AuthRoute) -> Bool {
         switch route {
         case .login: validEmail && !password.isEmpty
         case .register: validEmail
@@ -34,46 +37,42 @@ struct LoginScreen: View {
         }
     }
 
-    private var title: String {
+    private func title(for route: AuthRoute) -> String {
         switch route {
-        case .login: "继续你的学习"
-        case .register: "创建你的书房"
-        case .registerPassword: "设置登录密码"
-        case .registerCode: "确认你的邮箱"
-        case .forgot: "重置登录密码"
-        case .reset: "验证你的邮箱"
+        case .login: "欢迎回来"
+        case .register: "创建账号"
+        case .registerPassword: "设置密码"
+        case .registerCode, .reset: "验证邮箱"
+        case .forgot: "找回密码"
         case .resetPassword: "设置新密码"
-        case .emailLogin: "通过邮箱登录"
-        case .emailLoginCode: "输入登录验证码"
+        case .emailLogin: "邮箱登录"
+        case .emailLoginCode: "查收邮件"
         }
     }
 
-    private var detail: String {
+    private func detail(for route: AuthRoute) -> String {
         switch route {
-        case .login: "登录后，你的手记、对话和进度都会同步。"
-        case .register: "填写邮箱和称呼，下一步为书房设置密码。"
-        case .registerPassword: "密码至少 8 位。设置完成后，我们会发送验证邮件。"
-        case .registerCode: "输入发到邮箱的 6 位验证码，完成注册。"
-        case .forgot: "填写注册邮箱，我们会发送密码重置验证码。"
-        case .reset: "输入邮件中的 6 位验证码，确认这是你的邮箱。"
-        case .resetPassword: "设置至少 8 位新密码，完成后即可重新登录。"
-        case .emailLogin: "我们会发送一次性验证码，不需要密码。"
-        case .emailLoginCode: "输入邮件中的 6 位验证码，安全登录书房。"
+        case .login: "和伴星一起，继续你的学习。"
+        case .register: "和伴星一起，开启你的学习。"
+        case .registerPassword: "为你的手记与对话，添一份安心。"
+        case .registerCode: "只差一步，就能和伴星相遇。"
+        case .forgot: "验证邮箱，就能重新设置密码。"
+        case .reset: "确认是你，再为账号设置新密码。"
+        case .resetPassword: "换一个新密码，继续你的学习。"
+        case .emailLogin: "一封验证码，继续你的学习。"
+        case .emailLoginCode: "输入验证码，和伴星继续同行。"
         }
     }
 
-    private var symbol: String {
+    private func flowName(for route: AuthRoute) -> String {
         switch route {
-        case .login: "book.closed.fill"
-        case .register: "person.crop.circle.badge.plus"
-        case .registerPassword, .resetPassword: "lock.fill"
-        case .registerCode, .reset, .emailLoginCode: "envelope.badge.fill"
-        case .forgot: "key.fill"
-        case .emailLogin: "envelope.fill"
+        case .register, .registerPassword, .registerCode: "创建账号"
+        case .forgot, .reset, .resetPassword: "找回密码"
+        default: "验证码登录"
         }
     }
 
-    private var progress: (current: Int, total: Int)? {
+    private func progress(for route: AuthRoute) -> (current: Int, total: Int)? {
         switch route {
         case .register: (1, 3)
         case .registerPassword: (2, 3)
@@ -95,7 +94,7 @@ struct LoginScreen: View {
         }
     }
 
-    private var errorTitle: String {
+    private func errorTitle(for route: AuthRoute) -> String {
         switch route {
         case .login, .emailLoginCode: "登录没有完成"
         case .register, .registerPassword, .registerCode: "账号还没有创建"
@@ -108,30 +107,27 @@ struct LoginScreen: View {
         GeometryReader { proxy in
             let compact = proxy.size.height < 660 || focusedInput != nil || dynamicTypeSize.isAccessibilitySize
                 || (store.authErrorMessage != nil && proxy.size.height < 720)
-            VStack(alignment: .leading, spacing: 0) {
-                if route == .login {
-                    brandHeader(compact: compact)
-                    loginHeading(compact: compact)
-                } else {
-                    flowHeader(compact: compact)
+            VStack(spacing: 0) {
+                ZStack(alignment: .leading) {
+                    AuthBrandHeader(compact: compact)
+                        .scaleEffect(route == .login ? 1 : 0.94, anchor: .leading)
+                        .offset(x: route == .login ? 0 : 56)
+                    if route != .login {
+                        authBackButton.transition(.opacity)
+                    }
                 }
+                .frame(maxWidth: 432, minHeight: 44, alignment: .leading)
+                .padding(.horizontal, 24)
+                .padding(.top, compact ? 8 : 12)
+                .frame(maxWidth: .infinity)
+                .disabled(store.isLoading)
 
-                authForm(compact: compact)
-                    .id(route)
-                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 5)))
-                if !compact {
-                    routeFooter
-                        .padding(.top, route == .login ? 13 : 10)
-                }
-                Spacer(minLength: 8)
+                authPage(route, compact: compact)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .padding(.horizontal, 27)
-            .padding(.top, compact ? 8 : 20)
-            .padding(.bottom, compact ? 8 : 20)
-            .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: compact)
-            .disabled(store.isLoading)
+            .animation(reducedMotion ? nil : Motion.authRoute, value: compact)
         }
+        .background(Color.white.ignoresSafeArea())
+        .preferredColorScheme(.light)
         .task(id: resendIn) {
             guard resendIn > 0 else { return }
             try? await Task.sleep(nanoseconds: 1_000_000_000)
@@ -153,247 +149,224 @@ struct LoginScreen: View {
         }
     }
 
-    private func brandHeader(compact: Bool) -> some View {
-        HStack(spacing: 11) {
-            Image("BrandMark")
-                .resizable()
-                .interpolation(.high)
-                .scaledToFit()
-                .frame(width: compact ? 38 : 46, height: compact ? 38 : 46)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("拾星笔记")
-                    .font(compact ? .subheadline.weight(.semibold) : .headline.weight(.semibold))
-                    .tracking(-0.35)
-                    .foregroundStyle(StudyPalette.ink)
-                Text("ASTELLA")
-                    .font(.system(.caption2, design: .rounded).weight(.medium))
-                    .tracking(2.0)
-                    .foregroundStyle(StudyPalette.muted)
-            }
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("拾星笔记，Astella")
-        .padding(.top, compact ? 2 : 7)
-    }
-
-    private func loginHeading(compact: Bool) -> some View {
-        VStack(alignment: .leading, spacing: compact ? 3 : 6) {
-            Text(title)
-                .font(compact ? .title.weight(.semibold) : .largeTitle.weight(.semibold))
-                .tracking(-0.8)
-                .foregroundStyle(StudyPalette.ink)
-            if !compact {
-                Text(detail)
-                    .font(.body)
-                    .foregroundStyle(StudyPalette.muted)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .padding(.top, compact ? 18 : 34)
-    }
-
-    private func flowHeader(compact: Bool) -> some View {
-        VStack(alignment: .leading, spacing: compact ? 8 : 17) {
-            HStack {
-                authBackButton
-                Spacer()
-                if let progress {
-                    AuthStepProgress(current: progress.current, total: progress.total)
-                }
-            }
-            .frame(minHeight: 42)
-
-            HStack(spacing: 13) {
-                Image(systemName: symbol)
-                    .font(.system(size: compact ? 19 : 23, weight: .medium))
-                    .foregroundStyle(StudyPalette.accent)
-                    .frame(width: compact ? 44 : 54, height: compact ? 44 : 54)
-                    .background(StudyPalette.sky, in: Circle())
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(title)
-                        .font(compact ? .title2.weight(.semibold) : .title.weight(.semibold))
-                        .tracking(-0.65)
-                        .foregroundStyle(StudyPalette.ink)
+    private func authPage(_ page: AuthRoute, compact: Bool) -> some View {
+        GeometryReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    AuthHeading(title: title(for: page), detail: detail(for: page), compact: compact, transition: contentTransition)
+                        .transaction { if reducedMotion { $0.animation = Motion.authFade } }
+                        .padding(.top, compact ? 18 : page == .login ? 52 : 34)
+                    if let step = progress(for: page) {
+                        AuthStepProgress(title: flowName(for: page), current: step.current, total: step.total)
+                            .padding(.top, compact ? 12 : 24)
+                            .transition(contentTransition)
+                    }
+                    authForm(compact: compact, route: page)
+                    routeFooter(for: page)
+                        .id(page)
+                        .transition(.opacity)
+                        .padding(.top, compact ? 8 : 16)
+                    Spacer(minLength: compact ? 12 : 28)
                     if !compact {
-                        Text(detail)
-                            .font(.subheadline)
+                        Text("你的手记与对话，会在各端同步")
+                            .font(.caption)
                             .foregroundStyle(StudyPalette.muted)
-                            .lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 16)
                     }
                 }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 16)
+                .frame(maxWidth: 480, minHeight: proxy.size.height, alignment: .topLeading)
+                .frame(maxWidth: .infinity)
+                .disabled(store.isLoading)
             }
+            .scrollIndicators(.hidden)
+            .scrollDismissesKeyboard(.interactively)
         }
-        .padding(.top, compact ? 0 : 3)
+        .background(Color.white)
+        .toolbar(.hidden, for: .navigationBar)
+    }
+
+    private var contentTransition: AnyTransition {
+        if reducedMotion { return .opacity }
+        let direction: CGFloat = navigatingBack ? -1 : 1
+        return .asymmetric(
+            insertion: .opacity.combined(with: .offset(x: 22 * direction)),
+            removal: .opacity.combined(with: .offset(x: -14 * direction))
+        )
+    }
+
+    private func fields(for page: AuthRoute) -> [AuthInput] {
+        switch page {
+        case .login: [.email, .password]
+        case .register: [.email, .displayName]
+        case .registerPassword, .resetPassword: [.password, .confirmPassword]
+        case .forgot, .emailLogin: [.email]
+        case .registerCode, .reset, .emailLoginCode: []
+        }
     }
 
     @ViewBuilder
-    private func authForm(compact: Bool) -> some View {
+    private func sharedInput(_ field: AuthInput, page: AuthRoute) -> some View {
+        switch field {
+        case .email:
+            input(page == .forgot ? "注册邮箱" : "邮箱",
+                  placeholder: page == .forgot ? "请输入注册时的邮箱" : "请输入邮箱地址",
+                  text: $email, field: .email, keyboardType: .emailAddress, contentType: .emailAddress,
+                  next: page == .login ? .password : page == .register ? .displayName : nil)
+        case .displayName:
+            input("称呼（选填）", placeholder: "希望伴星怎么称呼你", text: $displayName, field: .displayName, contentType: .name)
+        case .password:
+            input(page == .resetPassword ? "新密码" : "密码",
+                  placeholder: page == .login ? "请输入密码" : "至少 8 个字符",
+                  text: $password, field: .password, contentType: page == .login ? .password : .newPassword,
+                  secure: true, next: page == .login ? nil : .confirmPassword)
+        case .confirmPassword:
+            input(page == .resetPassword ? "确认新密码" : "确认密码",
+                  placeholder: page == .resetPassword ? "请再次输入新密码" : "请再次输入密码",
+                  text: $confirmPassword, field: .confirmPassword, contentType: .newPassword, secure: true)
+        case .inviteToken, .code: EmptyView()
+        }
+    }
+
+    private func authForm(compact: Bool, route: AuthRoute) -> some View {
         VStack(alignment: .leading, spacing: compact ? 10 : 14) {
-            switch route {
-            case .login:
-                AuthFieldGroup(spacing: compact ? 10 : 15) {
-                    input("邮箱", placeholder: "name@example.com", text: $email, field: .email,
-                          keyboardType: .emailAddress, contentType: .emailAddress, next: .password)
-                    input("密码", placeholder: "输入密码", text: $password, field: .password,
-                          contentType: .password, secure: true)
+            // Stable field IDs preserve the email/password controls and their positions across routes.
+            AuthFieldGroup(spacing: compact ? 10 : 15) {
+                ForEach(fields(for: route), id: \.self) { field in
+                    sharedInput(field, page: route)
+                        .transition(contentTransition)
                 }
-                if !normalizedEmail.isEmpty && !validEmail { fieldError("请输入有效的邮箱地址") }
-                HStack {
-                    Spacer()
-                    Button("忘记密码？") { navigate(.forgot) }
-                        .font(.footnote.weight(.medium))
-                        .foregroundStyle(StudyPalette.accent)
-                        .frame(minHeight: 40)
-                }
-            case .register:
-                AuthFieldGroup(spacing: compact ? 10 : 15) {
-                    input("邮箱", placeholder: "name@example.com", text: $email, field: .email,
-                          keyboardType: .emailAddress, contentType: .emailAddress, next: .displayName)
-                    input("称呼", placeholder: "选填", text: $displayName, field: .displayName,
-                          contentType: .name)
-                }
-                if !normalizedEmail.isEmpty && !validEmail { fieldError("请输入有效的邮箱地址") }
-                Button(showInviteField ? "收起邀请码" : "有邀请码？") {
-                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) { showInviteField.toggle() }
-                }
-                .font(.footnote.weight(.medium))
-                .foregroundStyle(StudyPalette.accent)
-                .frame(minHeight: 36, alignment: .leading)
-                if showInviteField {
-                    input("邀请码", placeholder: "选填", text: $inviteToken, field: .inviteToken)
-                }
-            case .registerPassword:
-                AuthFieldGroup(spacing: compact ? 10 : 15) {
-                    input("密码", placeholder: "至少 8 个字符", text: $password, field: .password,
-                          contentType: .newPassword, secure: true, next: .confirmPassword)
-                    input("确认密码", placeholder: "再输入一次", text: $confirmPassword, field: .confirmPassword,
-                          contentType: .newPassword, secure: true)
-                }
-                if !confirmPassword.isEmpty && !confirmMatches { fieldError("两次输入的密码不一致") }
-                Text("密码仅用于保护你的书房，可随时重置。")
-                    .font(.caption)
-                    .foregroundStyle(StudyPalette.muted)
-            case .registerCode, .reset, .emailLoginCode:
-                codeRecipient
-                AuthCodeInput(code: $code, focusedInput: $focusedInput)
-                    .frame(height: 60)
-                codeActions
-            case .resetPassword:
-                AuthFieldGroup(spacing: compact ? 10 : 15) {
-                    input("新密码", placeholder: "至少 8 个字符", text: $password, field: .password,
-                          contentType: .newPassword, secure: true, next: .confirmPassword)
-                    input("确认新密码", placeholder: "再输入一次", text: $confirmPassword, field: .confirmPassword,
-                          contentType: .newPassword, secure: true)
-                }
-                if !confirmPassword.isEmpty && !confirmMatches { fieldError("两次输入的密码不一致") }
-            case .forgot, .emailLogin:
-                input("邮箱", placeholder: "name@example.com", text: $email, field: .email,
-                      keyboardType: .emailAddress, contentType: .emailAddress)
-                if !normalizedEmail.isEmpty && !validEmail { fieldError("请输入有效的邮箱地址") }
             }
+            if fields(for: route).contains(.email), !normalizedEmail.isEmpty && !validEmail && focusedInput != .email {
+                fieldError("请输入有效的邮箱地址")
+            }
+            Group {
+                switch route {
+                case .login:
+                    HStack {
+                        Spacer()
+                        Button("忘记密码？") { navigate(.forgot) }
+                            .font(.footnote.weight(.medium))
+                            .foregroundStyle(StudyPalette.accent)
+                            .frame(minHeight: 40)
+                    }
+                case .register:
+                    Button(showInviteField ? "收起邀请码" : "有邀请码？") {
+                        withAnimation(reducedMotion ? Motion.authFade : Motion.authRoute) { showInviteField.toggle() }
+                    }
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(StudyPalette.accent)
+                    .frame(minHeight: 36, alignment: .leading)
+                    if showInviteField {
+                        input("邀请码", placeholder: "选填", text: $inviteToken, field: .inviteToken)
+                            .transition(contentTransition)
+                    }
+                case .registerPassword, .resetPassword:
+                    if !confirmPassword.isEmpty && !confirmMatches { fieldError("两次输入的密码不一致") }
+                    Text(route == .registerPassword ? "密码可随时重置，请放心记录。" : "更新后，请使用新密码登录。")
+                        .font(.caption)
+                        .foregroundStyle(StudyPalette.muted)
+                case .registerCode, .reset, .emailLoginCode:
+                    codeRecipient(for: route)
+                    Text("邮箱验证码")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(StudyPalette.ink.opacity(0.82))
+                    AuthCodeInput(code: $code, focusedInput: $focusedInput)
+                        .frame(height: 58)
+                    codeActions
+                case .forgot, .emailLogin:
+                    Text(route == .forgot ? "我们会向此邮箱发送重置验证码。" : "无需密码，验证码将发送到你的邮箱。")
+                        .font(.caption)
+                        .foregroundStyle(StudyPalette.muted)
+                }
+            }
+            .transition(contentTransition)
 
             if let error = store.authErrorMessage {
-                AuthFeedbackBanner(title: errorTitle, message: error, kind: .error)
+                AuthFeedbackBanner(title: errorTitle(for: route), message: error, kind: .error)
             }
             if let notice = store.authNoticeMessage, route != .registerCode, route != .reset, route != .emailLoginCode {
                 AuthFeedbackBanner(title: "已完成", message: notice, kind: .success)
             }
 
-            primaryAction
+            primaryAction(for: route)
                 .padding(.top, compact ? 0 : 4)
-
-            if route == .login && !compact {
-                HStack(spacing: 12) {
-                    Rectangle().fill(StudyPalette.paperEdge.opacity(0.8)).frame(height: 1)
-                    Text("或")
-                        .font(.caption)
-                        .foregroundStyle(StudyPalette.muted)
-                    Rectangle().fill(StudyPalette.paperEdge.opacity(0.8)).frame(height: 1)
-                }
-                .padding(.top, 2)
-                emailCodeAction
-            }
+            if route == .login { emailCodeAction.transition(.opacity) }
         }
-        .padding(.top, route == .login ? (compact ? 14 : 23) : (compact ? 10 : 16))
+        .padding(.top, compact ? 16 : 24)
     }
 
-    private var codeRecipient: some View {
-        HStack(spacing: 9) {
-            Image(systemName: "envelope.fill")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(StudyPalette.accent)
-                .accessibilityHidden(true)
-            Text(normalizedEmail)
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(StudyPalette.ink)
-                .lineLimit(1)
-                .truncationMode(.middle)
-            Spacer(minLength: 4)
-            Button("更改") {
-                switch route {
-                case .registerCode: navigate(.register)
-                case .reset: navigate(.forgot)
-                case .emailLoginCode: navigate(.emailLogin)
-                default: break
+    private func codeRecipient(for route: AuthRoute) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(route == .reset ? "重置验证码已发送至" : "验证码已发送至")
+                .font(.subheadline)
+                .foregroundStyle(StudyPalette.muted)
+            HStack(spacing: 8) {
+                Text(normalizedEmail)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(StudyPalette.ink)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: 0)
+                Button("更改邮箱") {
+                    switch route {
+                    case .registerCode: navigate(.register)
+                    case .reset: navigate(.forgot)
+                    case .emailLoginCode: navigate(.emailLogin)
+                    default: break
+                    }
                 }
+                .font(.footnote.weight(.medium))
+                .foregroundStyle(StudyPalette.accent)
+                .frame(minHeight: 44)
+                .buttonStyle(AstellaPressStyle())
             }
-            .font(.footnote.weight(.medium))
-            .foregroundStyle(StudyPalette.accent)
-            .frame(minHeight: 40)
         }
-        .padding(.horizontal, 12)
-        .background(StudyPalette.sky.opacity(0.6), in: RoundedRectangle(cornerRadius: StudyRadius.md, style: .continuous))
+        .padding(.bottom, 8)
     }
 
     private var codeActions: some View {
-        HStack {
-            Text("没有收到邮件？")
-                .font(.caption)
-                .foregroundStyle(StudyPalette.muted)
-            Spacer()
-            Button(resendIn > 0 ? "\(resendIn)s 后重发" : "重新发送") {
-                sendCode(advance: false)
-            }
-            .font(.footnote.weight(.medium))
-            .foregroundStyle(StudyPalette.accent)
-            .disabled(store.isLoading || resendIn > 0)
-            .frame(minHeight: 40)
+        Button(resendIn > 0 ? "重新发送（\(resendIn)秒）" : "重新发送验证码") {
+            sendCode(advance: false)
         }
+        .font(.footnote.weight(.medium))
+        .foregroundStyle(resendIn > 0 ? StudyPalette.muted : StudyPalette.accent)
+        .frame(maxWidth: .infinity, minHeight: 44)
+        .buttonStyle(AstellaPressStyle())
+        .disabled(store.isLoading || resendIn > 0)
     }
 
-    private var routeFooter: some View {
-        VStack(spacing: 17) {
-            if route == .login {
+    @ViewBuilder
+    private func routeFooter(for route: AuthRoute) -> some View {
+        Group {
+            switch route {
+            case .login:
                 HStack(spacing: 5) {
-                    Text("第一次使用？").foregroundStyle(StudyPalette.muted)
+                    Text("还没有账号？").foregroundStyle(StudyPalette.muted)
                     Button("创建账号") { navigate(.register) }
-                        .fontWeight(.semibold)
-                        .foregroundStyle(StudyPalette.accent)
                 }
-                .font(.subheadline)
-                HStack(spacing: 6) {
-                    Image(systemName: "icloud")
-                        .font(.caption)
-                    Text("学习记录会在拾星各端同步")
-                        .font(.caption)
+            case .register:
+                HStack(spacing: 5) {
+                    Text("已有账号？").foregroundStyle(StudyPalette.muted)
+                    Button("返回登录") { navigate(.login) }
                 }
-                .foregroundStyle(StudyPalette.muted)
-            } else if route == .register {
-                Button("已经有书房？返回登录") { navigate(.login) }
-                    .font(.footnote.weight(.medium))
+            case .registerCode:
+                Text("完成验证后，将自动登录。")
                     .foregroundStyle(StudyPalette.muted)
-                    .frame(minHeight: 40)
-            } else if route == .forgot {
-                Button("想起密码了？返回登录") { navigate(.login) }
-                    .font(.footnote.weight(.medium))
-                    .foregroundStyle(StudyPalette.muted)
-                    .frame(minHeight: 40)
+            case .emailLogin, .emailLoginCode:
+                Button("使用密码登录") { navigate(.login) }
+            case .forgot, .resetPassword:
+                Button("返回登录") { navigate(.login) }
+            case .registerPassword, .reset:
+                Button("返回上一步", action: goBack)
             }
         }
-        .frame(maxWidth: .infinity)
+        .font(.footnote.weight(.medium))
+        .foregroundStyle(StudyPalette.accent)
+        .buttonStyle(AstellaPressStyle())
+        .frame(maxWidth: .infinity, minHeight: 44)
     }
 
     private func input(
@@ -434,71 +407,46 @@ struct LoginScreen: View {
         .accessibilityAddTraits(.updatesFrequently)
     }
 
-    private var primaryActionLabel: some View {
-        HStack(spacing: 8) {
-            if store.isLoading { ProgressView().tint(.white) }
-            Text(store.isLoading ? busyTitle : actionTitle)
+    private func primaryAction(for route: AuthRoute) -> some View {
+        Button(action: submit) {
+            HStack(spacing: 8) {
+                if store.isLoading { ProgressView().tint(StudyPalette.ink) }
+                Text(store.isLoading ? busyTitle(for: route) : actionTitle(for: route))
+                    .contentTransition(.opacity)
+            }
+            .frame(maxWidth: .infinity)
         }
-        .font(.body.weight(.semibold))
-                .frame(maxWidth: .infinity, minHeight: 52)
-        .contentShape(Capsule())
-    }
-
-    @ViewBuilder
-    private var primaryAction: some View {
-        if #available(iOS 26.0, *) {
-            Button(action: submit) { primaryActionLabel }
-                .buttonStyle(.glassProminent)
-                .buttonBorderShape(.capsule)
-                .tint(StudyPalette.accent)
-                .disabled(store.isLoading || !canContinue)
-        } else {
-            Button(action: submit) { primaryActionLabel }
-                .modifier(PrimaryActionStyle())
-                .disabled(store.isLoading || !canContinue)
-        }
+        .buttonStyle(AuthPrimaryButtonStyle(busy: store.isLoading))
+        .disabled(store.isLoading || !canContinue(for: route))
     }
 
     private var emailCodeAction: some View {
-        Button { navigate(.emailLogin) } label: {
-            Label("邮箱验证码登录", systemImage: "envelope")
-                .font(.subheadline.weight(.medium))
-                .frame(maxWidth: .infinity, minHeight: 48)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(StudyPalette.accent)
-    }
-
-    @ViewBuilder
-    private var authBackButton: some View {
-        if #available(iOS 26.0, *) {
-            Button(action: goBack) {
-                Label("返回", systemImage: "chevron.left")
-                    .font(.subheadline.weight(.medium))
-                    .frame(minHeight: 44)
-            }
-            .buttonStyle(.glass)
-            .buttonBorderShape(.capsule)
-            .tint(StudyPalette.accent)
-        } else {
-            Button(action: goBack) {
-                Label("返回", systemImage: "chevron.left")
-                    .font(.subheadline.weight(.medium))
-                    .frame(minHeight: 44)
-            }
-            .buttonStyle(.plain)
+        Button("邮箱验证码登录") { navigate(.emailLogin) }
+            .font(.subheadline.weight(.medium))
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .buttonStyle(AstellaPressStyle())
             .foregroundStyle(StudyPalette.accent)
-        }
     }
 
-    private var actionTitle: String {
+    private var authBackButton: some View {
+        Button(action: goBack) {
+            Image(systemName: "chevron.left")
+                .font(.system(size: 17, weight: .medium))
+                .foregroundStyle(StudyPalette.ink)
+                .frame(width: 44, height: 44)
+                .modifier(StudyGlassSurfaceStyle(radius: 22, interactive: true))
+        }
+        .buttonStyle(AstellaPressStyle())
+        .accessibilityLabel("返回上一步")
+    }
+
+    private func actionTitle(for route: AuthRoute) -> String {
         switch route {
         case .login: "登录"
         case .register: "继续"
-        case .registerPassword: "发送验证邮件"
+        case .registerPassword: "发送验证码"
         case .registerCode: "验证并创建账号"
-        case .forgot: "发送重置验证码"
+        case .forgot: "发送验证码"
         case .reset: "继续设置密码"
         case .resetPassword: "更新密码"
         case .emailLogin: "发送验证码"
@@ -506,7 +454,7 @@ struct LoginScreen: View {
         }
     }
 
-    private var busyTitle: String {
+    private func busyTitle(for route: AuthRoute) -> String {
         switch route {
         case .registerPassword, .forgot, .emailLogin: "正在发送验证码"
         case .registerCode: "正在创建账号"
@@ -518,7 +466,7 @@ struct LoginScreen: View {
     }
 
     private func submit() {
-        guard canContinue, !store.isLoading else { return }
+        guard canContinue(for: route), !store.isLoading else { return }
         focusedInput = nil
         switch route {
         case .login:
@@ -569,9 +517,11 @@ struct LoginScreen: View {
     }
 
     private func navigate(_ next: AuthRoute, preserveNotice: Bool = false) {
+        guard next != route, !store.isLoading else { return }
         focusedInput = nil
+        navigatingBack = next.depth < route.depth
         if !preserveNotice { store.clearAuthFeedback() }
-        withAnimation(Motion.gated(reduceMotion, Motion.routePush)) {
+        withAnimation(Motion.gated(reducedMotion, Motion.authRoute)) {
             route = next
         }
     }
@@ -601,6 +551,17 @@ enum AuthRoute: Hashable {
     case resetPassword
     case emailLogin
     case emailLoginCode
+}
+
+private extension AuthRoute {
+    var depth: Int {
+        switch self {
+        case .login: 0
+        case .register, .forgot, .emailLogin: 1
+        case .registerPassword, .reset, .emailLoginCode: 2
+        case .registerCode, .resetPassword: 3
+        }
+    }
 }
 
 enum AuthInput: Hashable {

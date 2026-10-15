@@ -25,8 +25,9 @@ export function useCompanionAwareness(conversationId: string | null) {
     if (!api) return;
     let closed = false, started = false, typingUntil = 0, lastInputAt = -Infinity, lastAt = performance.now();
     const quietPresence = createCompanionQuietPresenceTracker(lastAt);
-    let quietEpisodeVersion = 0, quietObservationId: string | null = null, lastActivityObservationAt = -Infinity;
-    let identity: { version: 1; appLaunchId: string; deviceSessionId: string; host: "desktop" | "browser" } | undefined;
+    let quietEpisodeVersion = 0, lastActivityObservationAt = -Infinity;
+    let quietEpisodeId = crypto.randomUUID();
+    let identity: Pick<CompanionAwarenessObservationV1, "version" | "appLaunchId" | "deviceSessionId" | "host"> | undefined;
     let sequence = Promise.resolve();
     const context = (): CompanionAwarenessContextV1 => {
       const { page: p, conversationId: currentConversation } = latest.current;
@@ -40,7 +41,7 @@ export function useCompanionAwareness(conversationId: string | null) {
       return { foreground, unlocked: true, typing: performance.now() < typingUntil, learning, speaking:isCompanionSpeechActive(),
         participationAllowed: !room.onboardingOpen && !room.companionGuideOpen
           && !room.mutedCompanionSceneKeys.includes(room.surface ?? "room") && !room.companionFocusUntilTaskEnd,
-        conversationId: currentConversation, page: { key: currentPageKey, label: HUD_PAGES[p.hudPage].title,
+        conversationId: currentConversation, quietEpisodeId, page: { key: currentPageKey, label: HUD_PAGES[p.hudPage].title,
           revision: currentPage.revision,
           context: p.activeNoteId && ["note-read", "note-edit", "note-learning"].includes(p.hudPage)
             ? { version: 1, context: { pageKind: "note", sharing: "page_registered", noteId: p.activeNoteId, ...(p.activeNoteVersionId ? { noteVersionId: p.activeNoteVersionId } : {}) } }
@@ -61,19 +62,18 @@ export function useCompanionAwareness(conversationId: string | null) {
             : null;
           if (topic === "presence.quiet" && quietForMs === null) return;
           const episodeVersion = quietEpisodeVersion;
-          if (topic === "presence.quiet") quietObservationId ??= crypto.randomUUID();
+          // 一段持续的安静按 90 秒一格继续上报（判据见 shared 的 companion-awareness-idle）：
+          // 每次都是一个新的观察身份。只报一次的话，适中档要 3 分钟，而客户端在第 90 秒
+          // 就把这一集标成"报过了"，于是"安静了 5 分钟"永远等不到自己的档位门槛。
           const request = { ...identity,
-            id: topic === "presence.quiet" ? quietObservationId! : crypto.randomUUID(),
+            id: crypto.randomUUID(),
             topic, occurredAt: new Date().toISOString(),
             elapsedMs: Math.min(45_000, Math.max(0, Math.round(now - lastAt))),
             context: quietForMs === null ? currentContext : { ...currentContext, quietForMs },
             ...(evidence ? { evidence } : {}) };
           lastAt = now;
           unwrapGatewayResult(await api.observe({ meta: createRequestMeta(epoch), request }));
-          if (topic === "presence.quiet" && quietEpisodeVersion === episodeVersion) {
-            quietPresence.markReported();
-            quietObservationId = null;
-          }
+          if (topic === "presence.quiet" && quietEpisodeVersion === episodeVersion) quietPresence.markReported(quietForMs!);
           if (!started && currentContext.foreground && currentContext.participationAllowed) {
             unwrapGatewayResult(await api.observe({ meta: createRequestMeta(epoch), request: { ...request, id: crypto.randomUUID(), topic: "app.started", elapsedMs: 0 } }));
             started = true;
@@ -86,7 +86,7 @@ export function useCompanionAwareness(conversationId: string | null) {
     const activity = () => {
       const now = performance.now();
       quietEpisodeVersion += 1;
-      quietObservationId = null;
+      quietEpisodeId = crypto.randomUUID();
       quietPresence.markActivity(now);
       if (now - lastActivityObservationAt >= 5_000) {
         lastActivityObservationAt = now;
@@ -94,13 +94,9 @@ export function useCompanionAwareness(conversationId: string | null) {
       }
     };
     activityRef.current = activity;
-    let lastPointerMoveAt = -Infinity;
-    const pointerMove = () => {
-      const now = performance.now();
-      if (now - lastPointerMoveAt < 1_000) return;
-      lastPointerMoveAt = now;
-      activity();
-    };
+    // 裸的鼠标移动**不算**活动：手放着在读同一页时，指针飘一下就把"安静"清零，
+    // 她那扇门两天只开过一次（判据见 shared 的 companion-awareness-idle）。
+    // 按下、敲击、滚动、触摸、翻页才算他还在做事。
     const foreground = () => {
       activity();
       void publish(document.hasFocus() && document.visibilityState === "visible" ? "app.foreground" : "context.updated");
@@ -123,7 +119,7 @@ export function useCompanionAwareness(conversationId: string | null) {
     const stopSpeechWatch = subscribeCompanionSpeechActivity(() => void publish("context.updated"));
     window.addEventListener("focus", foreground); window.addEventListener("blur", foreground);
     document.addEventListener("visibilitychange", foreground); document.addEventListener("input", typing, true);
-    document.addEventListener("pointerdown", activity, true); document.addEventListener("pointermove", pointerMove, { capture: true, passive: true });
+    document.addEventListener("pointerdown", activity, true);
     document.addEventListener("keydown", activity, true); document.addEventListener("wheel", activity, { capture: true, passive: true });
     document.addEventListener("touchstart", activity, { capture: true, passive: true });
     window.addEventListener("astella:companion-help-opportunity", help);
@@ -134,7 +130,7 @@ export function useCompanionAwareness(conversationId: string | null) {
       stopSpeechWatch();
       window.removeEventListener("focus", foreground); window.removeEventListener("blur", foreground);
       document.removeEventListener("visibilitychange", foreground); document.removeEventListener("input", typing, true);
-      document.removeEventListener("pointerdown", activity, true); document.removeEventListener("pointermove", pointerMove, true);
+      document.removeEventListener("pointerdown", activity, true);
       document.removeEventListener("keydown", activity, true); document.removeEventListener("wheel", activity, true);
       document.removeEventListener("touchstart", activity, true);
       window.removeEventListener("astella:companion-help-opportunity", help);

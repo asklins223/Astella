@@ -114,6 +114,7 @@ import "./providers/dashscope.ts";
 import "./providers/openai-compatible.ts";
 import "./providers/siliconflow.ts";
 import "./providers/opencode-go.ts";
+import "./providers/pi-agent.ts";
 import { createCapabilityProvider } from "./provider-factory.ts";
 import type { ProviderRuntimeConfig as SharedRuntimeConfig } from "@astella/shared";
 import { resolveSystemPlatform } from "@astella/shared/platform-config-node";

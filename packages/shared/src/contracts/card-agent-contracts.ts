@@ -139,9 +139,12 @@ export type ProviderUsage = z.infer<typeof providerUsageSchema>;
  * 契约约束：
  * - **provider 私有**：只有产出它的 provider 能解释其字段；调用方只做原样透传
  *   （以及按需持久化），不得解析或改写。
- * - **剥离明文思维链**：provider 必须去掉明文思考内容（Responses API 的
- *   `content[].reasoning_text`）后再返回。实测剥离后仍满足 muse-spark 与
- *   deepseek 的上游校验，因此模型内部推理不需要随事件或数据库落盘。
+ * - **不再剥离明文思维链**（2026-10-14 用户决定）。旧约束要求 provider 删掉
+ *   `content[].reasoning_text` 再返回，理由是"模型内部推理不必落库"；实测这条与
+ *   网关的思考模式契约正面冲突——同一份原文三发：带明文过、只带 `encrypted_content`
+ *   400、完全不带 400（`workers/ai-worker/scripts/probe-plaintext-reasoning.ts`）。
+ *   以 assistant 收尾的主动参与轮每一轮都要交回那句话，剥掉之后就再也凑不回来。
+ *   因此 `content` 一并保留，并按需落库（0435：`companion_messages.reasoning`）。
  * - **调用方不得把句柄写入日志或事件 payload**（它仍是模型侧数据）。
  * - 形状为不透明记录（而非固定字段），因为不同 provider/协议的句柄字段不同。
  */

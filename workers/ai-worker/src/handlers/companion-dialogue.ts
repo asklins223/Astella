@@ -1,8 +1,8 @@
-import { finishCompanionParticipation } from "./companion-participation-tools.ts";
+import { finishCompanionParticipation, companionFollowupRepeatsParent } from "./companion-participation-tools.ts";
 import { enqueueParticipationObservation } from "@astella/agent-host";
 import { enqueueSystemEventDelivery } from "./companion-delivery-write.ts";
 import { readParticipationPreferences } from "@astella/agent-host";
-import { companionInitiativeInputV1Schema } from "@astella/shared/companion-initiative-contracts";
+import { companionInitiativeInputV1Schema, COMPANION_INITIATIVE_DELIVERY_TTL_HOURS } from "@astella/shared/companion-initiative-contracts";
 import { listCompanionSelfNotes } from "@astella/agent-host";
 import { COMPANION_AGENT_TOOL_LABELS, companionTurnWritesDocumentContent, renderCompanionSelfNotes } from "@astella/shared";
 import { resolveCompanionPersonaContext } from "./companion-identity-context.ts";
@@ -50,10 +50,12 @@ import { ProviderRequestError } from "../lib/provider-request-error.ts";
 import { withWorkerWorkspaceTransaction } from "../db.ts";
 import { loadHereAndNow, renderHereAndNow } from "./companion-here-and-now.ts";
 import { loadThisTurnFacts } from "./companion-this-turn-facts.ts";
-import { renderConversationSummary } from "./companion-summarizer.ts";
+import { renderSummaryInjection, type SummaryInjectionInput } from "./companion-summary-injection.ts";
 import {
   CompanionStreamStoppedError,
   createCompanionStreamDelivery,
+  readCompanionDeliveredPrefix,
+  projectCompanionVisible,
   reconcileStreamedText,
 } from "./companion-dialogue-stream.ts";
 import { createCompanionThinkingDelivery } from "./companion-thinking-stream.ts";
@@ -72,10 +74,10 @@ import {
 } from "./companion-context-handoff.ts";
 import { resolveCompanionTurnProviders } from "./companion-turn-providers.ts";
 import { createCompactionCooldownPorts } from "./companion-compaction-cooldown.ts";
-import { foldReplayUnderSummaryCoverage, replayToMessages } from "./companion-compaction.ts";
+import { foldReplayUnderSummaryCoverage, replayToMessages, type SummaryCoverageBound } from "./companion-compaction.ts";
 import {
-  COMPANION_PERSONA_V13_PROMPT_ID,
-  COMPANION_PERSONA_V13_SHA256,
+  COMPANION_PERSONA_V14_PROMPT_ID,
+  COMPANION_PERSONA_V14_SHA256,
   type ChatMessage,
 } from "@astella/shared";
 import { PET_PERSONA_PRESET_VERSION } from "@astella/shared/pet-persona-presets";
@@ -84,6 +86,8 @@ import { AgentOutputError, CompanionAgentBudgetExceededError, CompanionContextCh
 import { AIContextOverflowError } from "../lib/context-governor.ts";
 import { AgentContextError } from "@astella/agent-core";
 import { assertCompanionContextSourcesCurrent } from "./companion-context-sources.ts";
+import { lockJobLease } from "../lib/job-lease.ts";
+import { lockCompanionRunForEventWrite } from "@astella/shared/companion-lock-order";
 import type { AgentMemoryContextSourceV1, AgentVoiceStyleDecisionV1 } from "@astella/shared/agent-contracts";
 import {
   companionSegmentId,
@@ -105,6 +109,7 @@ import {
   buildCompanionPersonaMessages,
   validateCompanionOutput,
   textOfCompanionBlocks,
+  companionAssistantMessageKind,
   parsePageContext,
   GROUNDED_TUTOR_COMPANION_PROMPT,
   boundCompanionRecentHistory,
@@ -112,7 +117,6 @@ import {
   finalizeCompanionReplyText,
   renderCompanionContextHandoff,
   renderUserAttachedImagesLine,
-  REPLAY_HISTORY_READ_ROWS,
 } from "./companion-dialogue-content.ts";
 import {
   type CompanionDialogueHandlerContext,
@@ -130,9 +134,11 @@ import {
   enqueueCompanionMemoryJobs,
   enqueueCompanionFollowupSuggestions,
   readConversationSummaryChain,
-  readCompanionHistoryRows,
+  readCompanionActionLedger,
+  readCompanionReplayHistoryRows,
   countCompanionHistoryMessages,
-  companionHistoryText,
+  companionRecentHistoryFromRows,
+  insertCompanionFinalAssistantMessage,
   persistCompanionContextHandoffSnapshot,
   GROUNDED_TUTOR_PROMPT_ID,
   computeGroundedTutorPromptSha256,
@@ -173,7 +179,7 @@ export async function runCompanionDialogue(
   // 折叠所需的两个事实：回放尾部每条消息的来源 seq，以及当前摘要覆盖到哪一段
   // （44 §5.2）。它们只在读事务里成立，因此提到外面给压缩用。
   let replayTailSeqs: Array<string | null> = [];
-  let replaySummaryCoverage: { fromSeq: string | null; throughSeq: string | null; sourceSha256: string | null } | null = null;
+  let replaySummaryCoverage: SummaryCoverageBound | null = null;
 
   // ── 阶段 1：读（RLS 事务） ────────────────────────────────────────────
   let read: ReadContext | null = null;
@@ -246,19 +252,17 @@ export async function runCompanionDialogue(
         const currentUserSeq = userRows[0]?.seq ?? conv.next_message_seq;
         // 排除非对话与未完成的助手输出，保留用户连发的补充以及发送时间、回合状态；摘要水位
         // 必须从这份相同的可见尾部计算，不能让 system 注记占掉最近消息名额。
-        const historyRows = await readCompanionHistoryRows(tx, run.conversation_id, {
-          beforeSeq: currentUserSeq, limit: REPLAY_HISTORY_READ_ROWS,
+        const summaryChain = await readConversationSummaryChain(tx, run.conversation_id);
+        const historyRows = await readCompanionReplayHistoryRows(tx, run.conversation_id, {
+          beforeSeq: currentUserSeq,
+          coverage: summaryChain.head ? {
+            fromSeq: summaryChain.effectiveCoverageFromSeq,
+            throughSeq: summaryChain.effectiveCoverageThroughSeq,
+            sourceSha256: summaryChain.head.coverage_source_hash,
+            uncovered: summaryChain.gaps,
+          } : null,
         });
-        const recentWithSeq = historyRows
-          .slice()
-          .reverse()
-          .map((m) => ({
-            seq: m.seq,
-            role: m.role as "user" | "assistant",
-            text: companionHistoryText(m),
-            createdAt: m.created_at,
-            replyStatus: m.run_status,
-          }));
+        const recentWithSeq = companionRecentHistoryFromRows(historyRows);
         const visibleRecent = boundCompanionRecentHistory(recentWithSeq);
         replayTailSeqs = visibleRecent.map((message) => message.seq ?? null);
         const recentMessages = visibleRecent;
@@ -357,6 +361,7 @@ export async function runCompanionDialogue(
           workspaceId: ctx.workspaceId,
           userId: run.user_id,
           conversationId: run.conversation_id,
+          currentRequestSeq: currentUserSeq,
           pageContext: run.page_context,
           userText,
         });
@@ -386,35 +391,35 @@ export async function runCompanionDialogue(
         // 覆盖伸进回放窗口时，那段由摘要代表、可以折；没伸进来时折不动，也不该硬折。
         // 覆盖起点取**链的**有效起点而不是链头自己那一段的——链头只盖了最近一块，
         // 拿它当「摘要盖到多早」会让回执把更早的覆盖误报成「没人代表」。
-        const summaryChain = await readConversationSummaryChain(tx, run.conversation_id);
         const summaryRow = summaryChain.head;
         replaySummaryCoverage = summaryRow
           ? {
             fromSeq: summaryChain.effectiveCoverageFromSeq ?? summaryRow.coverage_from_seq,
             throughSeq: summaryRow.coverage_through_seq,
             sourceSha256: summaryRow.coverage_source_hash,
+            uncovered: summaryChain.gaps,
           }
           : null;
-        const conversationSummary = renderConversationSummary(summaryRow?.summary, {
-          coverageVerified: Boolean(
-            summaryRow?.coverage_from_seq
-            && summaryRow.coverage_through_seq
-            && summaryRow.coverage_source_hash,
-          ),
-          // 链上有洞就如实告诉她：谈那部分之前要先按线索取回原文（44 §5.5）。
+        const summaryCoverageVerified = Boolean(
+          summaryRow?.coverage_from_seq
+          && summaryRow.coverage_through_seq
+          && summaryRow.coverage_source_hash,
+        );
+        const summaryInjection: SummaryInjectionInput = {
+          source: summaryRow?.summary ?? null,
+          coverageVerified: summaryCoverageVerified,
+          chainGaps: summaryChain.gaps,
+          throughSeq: summaryChain.effectiveCoverageThroughSeq
+            ?? summaryRow?.coverage_through_seq ?? null,
+        };
+        // 动作账本按摘要覆盖线收边（判据与 omitted 计数都在 store 那一条读里）。
+        const actionLedgerRead = await readCompanionActionLedger(tx, {
+          conversationId: run.conversation_id,
+          runId: run.id,
+          coverageThroughSeq: replaySummaryCoverage?.throughSeq ?? null,
+          coverageFromSeq: replaySummaryCoverage?.fromSeq ?? null,
           coverageGaps: summaryChain.gaps,
         });
-        const toolCallRows = await tx.execute<{
-          receipt_id: string; tool_call_id: string; name: string; status: string;
-          result_safe_summary: string | null;
-        }>(sql`
-          SELECT id::text AS receipt_id, tool_call_id, name, status, result_safe_summary
-          FROM companion_agent_tool_calls
-          WHERE conversation_id = ${run.conversation_id}
-          ORDER BY CASE WHEN status IN ('requested', 'executing', 'waiting_confirmation', 'outcome_unknown')
-                        THEN 0 ELSE 1 END,
-                   updated_at DESC, id DESC
-        `);
         const proposalRows = await tx.execute<{
           id: string; status: string; decision: string | null; title: string;
           target_summary: string; result_safe_summary: string | null; expires_at: string | null;
@@ -448,6 +453,7 @@ export async function runCompanionDialogue(
             historyStartSeq,
             clippedMessageCount,
             currentRequest: {
+              source: run.input_source ? "host_observation" : "user",
               messageId: run.user_message_id,
               messageSeq: currentUserSeq,
               text: userText,
@@ -469,13 +475,7 @@ export async function runCompanionDialogue(
               ? [{ seq: message.seq, role: message.role, text: message.text }]
               : []),
           },
-          actionLedger: toolCallRows.map((action) => ({
-            receiptId: action.receipt_id,
-            toolCallId: action.tool_call_id,
-            name: action.name,
-            status: action.status,
-            safeSummary: action.result_safe_summary,
-          })),
+          actionLedger: actionLedgerRead.entries,
           proposals: proposalRows.map((proposal) => ({
             id: proposal.id,
             status: proposal.status,
@@ -500,10 +500,13 @@ export async function runCompanionDialogue(
           playbookCandidates: [],
           organizationSurface: null,
           memoryRefs: [],
+          actionLedgerOmitted: actionLedgerRead.omitted,
           hereAndNow,
           thisTurnFacts: thisTurnFacts?.block ?? null,
           factSpans: snapshot.factSpans,
-          conversationSummary,
+          conversationSummary: null,
+          summaryInjection,
+
           personaProfileRevision,
           personaExamplesRevision,
           defaultExpressionVersion,
@@ -521,7 +524,7 @@ export async function runCompanionDialogue(
 
   const parsedPageContext = parsePageContext(read.pageContext);
   if (isGroundedTutorRequestedPageContext(parsedPageContext) && !read.groundedTutorContext) {
-    await markCompanionRunFailed(read, ctx.workspaceId, "ACTION_STALE", false, "grounded tutor evidence unavailable", "state");
+    await markCompanionRunFailed(read, ctx, "ACTION_STALE", false, "grounded tutor evidence unavailable", "state");
     throw new Error("grounded tutor evidence unavailable");
   }
 
@@ -531,7 +534,7 @@ export async function runCompanionDialogue(
     return;
   }
   if (!isCompanionDialogueEnabled()) {
-    await markCompanionRunFailed(read, ctx.workspaceId, "INTERNAL_ERROR", false, "feature disabled", "execution");
+    await markCompanionRunFailed(read, ctx, "INTERNAL_ERROR", false, "feature disabled", "execution");
     throw new Error("COMPANION_DIALOGUE_V1_ENABLED is false — companion dialogue disabled");
   }
 
@@ -539,7 +542,7 @@ export async function runCompanionDialogue(
   if (!govCtx.consentOk) {
     await markCompanionRunFailed(
       read,
-      ctx.workspaceId,
+      ctx,
       "AI_CONSENT_REQUIRED",
       false,
       "workspace AI consent required",
@@ -549,7 +552,7 @@ export async function runCompanionDialogue(
   }
   if (govCtx.providerName !== "mock" && !govCtx.policy.sendToExternal) {
     const reason = "请在 AI 数据同意页开启「允许发送到外部模型服务」后继续。";
-    await markCompanionRunFailed(read, ctx.workspaceId, "AI_DATA_POLICY_DENIED", false, reason, "state");
+    await markCompanionRunFailed(read, ctx, "AI_DATA_POLICY_DENIED", false, reason, "state");
     throw new AIDataPolicyDeniedError(reason);
   }
   const contextReceipts = createCompanionContextReceipts();
@@ -564,14 +567,24 @@ export async function runCompanionDialogue(
     reserveCall: () => reserveCompanionProviderCall({ ctx, read }),
   });
 
-  // Read up to 200 rows for retrieval, but do not place the whole page into every
-  // interactive model request. A large declared context window is a hard capacity,
-  // not a reason to replay unrelated years of dialogue; older messages stay
-  // addressable through companion_read_history and the existing summary coverage.
-  const replayWindow = selectCompanionInteractiveReplayWindow(
+  // Replace only complete older exchanges represented by a verified summary.
+  // Uncovered history is kept whole, even above the pressure target; the full
+  // request governor owns compaction and provider capacity checks.
+  const availableSummary = read.summaryInjection
+    ? renderSummaryInjection(read.summaryInjection) : read.conversationSummary;
+  let replayWindow = selectCompanionInteractiveReplayWindow(
     read.recentMessages,
     resolveRouteInputTokens(provider.getCapabilities?.() ?? null, provider.resolveOutputTokenLimit?.()),
+    availableSummary && !read.groundedTutorContext ? replaySummaryCoverage : null,
   );
+  // 摘要注入块要在窗口裁完、`read.recentMessages` 还没被换掉时定稿（判据见 `companion-summary-injection.ts`）。
+  if (read.summaryInjection) read.conversationSummary = renderSummaryInjection(
+    read.summaryInjection, replayWindow.messages[0]?.seq ?? null, read.recentMessages);
+  if (!read.conversationSummary && replayWindow.receipt.omittedCount > 0) {
+    replayWindow = selectCompanionInteractiveReplayWindow(read.recentMessages,
+      resolveRouteInputTokens(provider.getCapabilities?.() ?? null, provider.resolveOutputTokenLimit?.()));
+  }
+  if (!read.conversationSummary || read.groundedTutorContext) replaySummaryCoverage = null;
   read.recentMessages = replayWindow.messages;
   replayTailSeqs = replayWindow.messages.map((message) => message.seq ?? null);
   if (read.contextHandoff) {
@@ -653,7 +666,8 @@ export async function runCompanionDialogue(
       throughEventSeq: "0",
       historyStartSeq: "0",
       clippedMessageCount: 0,
-      currentRequest: { messageId: read.userMessageId, messageSeq: "0", text: read.userText },
+      currentRequest: { messageId: read.userMessageId, messageSeq: "0", text: read.userText,
+        source: read.initiativeInput ? "host_observation" : "user" },
       contextGrantId: null,
       permissionLevel: null,
       permissionSnapshot: null,
@@ -664,6 +678,7 @@ export async function runCompanionDialogue(
       historyTail: [],
     }),
     actionLedger: read.actionLedger ?? [],
+    actionLedgerOmitted: read.actionLedgerOmitted ?? null,
     proposals: read.proposals ?? [],
     memoryRefs: memoryContext.memoryRefs,
     memoryDirectory: memoryContext.memoryDirectory,
@@ -718,7 +733,7 @@ export async function runCompanionDialogue(
   } catch (error) {
     if (error instanceof AgentContextError) {
       const overflow = error.code === "required_context_overflow";
-      await markCompanionRunFailed(read, ctx.workspaceId,
+      await markCompanionRunFailed(read, ctx,
         overflow ? "AGENT_BUDGET_EXCEEDED" : "INTERNAL_ERROR", false,
         overflow ? "这次需要带入的内容太多，没法一次读完；可以按段继续。"
           : "这一轮的引用范围或装配配置不完整，请重新发起。", "execution");
@@ -744,12 +759,16 @@ export async function runCompanionDialogue(
     sha256: proposedHandoffSha256,
   }).catch(async error => {
     if (error instanceof CompanionContextChangedError)
-      await markCompanionRunFailed(read, ctx.workspaceId, error.code, true, error.message, "execution");
+      await markCompanionRunFailed(read, ctx, error.code, true, error.message, "execution");
     throw error;
   });
   // A retry must replay the exact committed messages and memory receipt set, even if
   // background memory maintenance changed what a fresh retrieval would return.
   const committedMessages = committedHandoff.snapshot.modelMessages as ChatMessage[];
+  replayTailSeqs = committedHandoff.snapshot.historyTail.map(message => message.seq);
+  // A retry can recover an older frozen replay after background maintenance.
+  // Fresh summary bounds/gaps do not describe that committed replay.
+  if (committedHandoff.sha256 !== proposedHandoffSha256) replaySummaryCoverage = null;
   memoryContext = { ...memoryContext, memoryRefs: committedHandoff.snapshot.memoryRefs };
   read.memoryRefs = memoryContext.memoryRefs;
   read.memoryDirectory = committedHandoff.snapshot.memoryDirectory ?? [];
@@ -791,6 +810,12 @@ export async function runCompanionDialogue(
   const claimed = await withWorkerWorkspaceTransaction(
     { workspaceId: ctx.workspaceId, userId: read.userId },
     async (tx) => {
+      await lockCompanionRunForEventWrite(tx, read.runId);
+      await lockJobLease(tx, ctx);
+      await assertCompanionContextSourcesCurrent(tx, { workspaceId: ctx.workspaceId, userId: read.userId }, read.runId);
+      const [account] = await tx.execute(sql`SELECT user_id FROM user_companion_account_state
+        WHERE user_id=${read.userId} AND epoch=${read.accountEpoch} AND global_enabled`);
+      if (!account) throw new Error("companion agent account epoch is stale or globally disabled");
       const claimedRow = await tx.execute<{ id: string }>(sql`
         UPDATE companion_turn_runs
         SET status = 'running', started_at = COALESCE(started_at, now())
@@ -800,6 +825,10 @@ export async function runCompanionDialogue(
             OR (status = 'waiting_for_confirmation' AND waiting_proposal_id = ${continuationProposalId ?? null})
           )
           AND generation = ${read.generation}
+          AND (job_id IS NULL OR job_id = ${ctx.id})
+          AND account_epoch = ${read.accountEpoch}
+          AND EXISTS (SELECT 1 FROM user_companion_account_state a
+            WHERE a.user_id = companion_turn_runs.user_id AND a.epoch = companion_turn_runs.account_epoch AND a.global_enabled)
         RETURNING id
       `);
       if (!claimedRow[0]) {
@@ -954,7 +983,9 @@ export async function runCompanionDialogue(
       logger.warn({ err: error, runId: read.runId }, "companion voice segment emission disabled for turn");
     }
   };
+  const initialDelivery = await readCompanionDeliveredPrefix(ctx, read);
   const streamingDelivery = createCompanionStreamDelivery({
+    initial: initialDelivery,
     job: ctx,
     ctx,
     read,
@@ -993,12 +1024,29 @@ export async function runCompanionDialogue(
         visionEnabled: govCtx.policy.sendImageContent === true && resolveVisionReader(govCtx) !== null,
       },
       baseMessages: committedMessages,
+      initialVisibleText: initialDelivery.text,
+      onVisibleCheckpoint: async modelText => {
+        const projected = projectCompanionVisible(modelText, read.factSpans?.values ?? {});
+        if (projected.kind !== "visible") return false;
+        const delivered = streamingDelivery.deliveredText();
+        // An interrupted input may have an additional committed partial step;
+        // its recovery branch preserves that suffix and supplies correction.
+        if (delivered.length > projected.text.length && delivered.startsWith(projected.text)) return true;
+        return streamingDelivery.writeTail(projected.text, modelText);
+      },
+      historyForCompaction: committedHandoff.snapshot,
+      compactionCheckpoints: committedHandoff.snapshot.compactions,
+      persistCompactionTraces: async () => {
+        await compactionTrace.commit({ workspaceId: ctx.workspaceId, userId: read.userId, runId: read.runId,
+          snapshot: committedHandoff.snapshot, sha256: committedHandoff.sha256 });
+      },
       contextReceipts,
       // 只有组装回放的这一层知道每条尾部消息的来源 seq 与摘要覆盖到哪（44 §5.2）。
-      // 折叠是无损的：折掉的每条都被一份校验过的摘要盖住，原文仍在库里按 seq 可读回。
+      // Fold only covered whole exchanges. A semantic summary is lossy; source
+      // messages remain recoverable from the database by conversation and seq.
       replayFold: (messages) => {
         const tail = replayTailSeqs.flatMap((seq, index) => (
-          seq && messages[index] ? [{ message: messages[index]!, seq }] : []
+          messages[index] ? [{ message: messages[index]!, seq }] : []
         ));
         if (tail.length === 0) return null;
         const folded = foldReplayUnderSummaryCoverage({
@@ -1053,8 +1101,14 @@ export async function runCompanionDialogue(
     // 交付管线主动叫停（增量校验命中泄露/超限、fence 失联）：同样不可重试——
     // 重投不会让"泄露"消失。已下发的部分必然是最终文本的前缀，客户端按 error 收尾。
     const streamStopped = err instanceof CompanionStreamStoppedError;
+    const protocolLeak = (streamStopped && streamingDelivery.failureReason() === "tool_protocol_leak")
+      || (err instanceof AgentOutputError && err.code === "tool_protocol_leak");
+    const invalidReplyFailureText = "这次答复格式异常，已停止输出；已完成的操作仍然保留。";
     const outputIncomplete = err instanceof AgentOutputError && err.code === "output_truncated";
     const outputUnverified = err instanceof AgentOutputError && err.code === "unverified_quote";
+    const argumentsInvalid = err instanceof AgentOutputError && err.code === "arguments_malformed";
+    const actionUnverified = err instanceof AgentOutputError && err.code === "action_unverified";
+    const invalidArgumentsFailureText = "这一步没能执行，已停止重复尝试；已完成的操作仍然保留。";
     let noteEditSaved = false;
     let savedWriteNames: string[] = [];
     if (outputUnverified) {
@@ -1076,17 +1130,17 @@ export async function runCompanionDialogue(
     const policyDenied = err instanceof AIDataPolicyDeniedError;
     await markCompanionRunFailed(
       read,
-      ctx.workspaceId,
-      contextChanged ? err.code : policyDenied ? "AI_DATA_POLICY_DENIED" : outputIncomplete ? "REPLY_LENGTH_LIMIT" : budgetExceeded ? "AGENT_BUDGET_EXCEEDED" : rateLimited ? "RATE_LIMITED" : providerRejected ? "PROVIDER_UNAVAILABLE" : "INTERNAL_ERROR",
-      !policyDenied && !budgetExceeded && !outputIncomplete && !outputUnverified && !streamStopped && !(providerRejected && [401,402,403].includes(err.status)),
-      contextChanged ? err.message : policyDenied ? "请在 AI 数据同意页开启「允许发送到外部模型服务」后继续。" : contextOverflow ? "这次需要带入的内容太多，没法一次读完；可以按段继续。" : outputUnverified ? unverifiedQuoteFailureText : outputIncomplete ? "这次答复达到长度上限，已说出的内容保留；可以接着分段讲。" : budgetExceeded
+      ctx,
+      contextChanged ? err.code : policyDenied ? "AI_DATA_POLICY_DENIED" : protocolLeak ? "REPLY_FORMAT_INVALID" : actionUnverified ? "ACTION_NOT_EXECUTED" : argumentsInvalid ? "TOOL_ARGUMENTS_INVALID" : outputIncomplete ? "REPLY_LENGTH_LIMIT" : budgetExceeded ? "AGENT_BUDGET_EXCEEDED" : rateLimited ? "RATE_LIMITED" : providerRejected ? "PROVIDER_UNAVAILABLE" : "INTERNAL_ERROR",
+      !policyDenied && !protocolLeak && !budgetExceeded && !contextChanged && !outputIncomplete && !outputUnverified && !actionUnverified && !argumentsInvalid && !streamStopped && !(providerRejected && [401,402,403].includes(err.status)),
+      contextChanged ? err.message : policyDenied ? "请在 AI 数据同意页开启「允许发送到外部模型服务」后继续。" : contextOverflow ? "这次需要带入的内容太多，没法一次读完；可以按段继续。" : protocolLeak ? invalidReplyFailureText : actionUnverified ? "这次没有取得所要求操作的执行或无需变更回执，不能确认完成；已完成的其他操作仍保留。" : outputUnverified ? unverifiedQuoteFailureText : argumentsInvalid ? invalidArgumentsFailureText : outputIncomplete ? "这次答复达到长度上限，已说出的内容保留；可以接着分段讲。" : budgetExceeded
         ? "companion agent budget exceeded"
         : streamStopped
           ? `companion stream stopped: ${streamingDelivery.failureReason() ?? "delivery pipeline"}`.slice(0, 240)
           : rateLimited ? "模型服务暂时繁忙，请稍后重试；已经完成的操作仍保留。"
             : providerRejected ? "模型服务暂时无法完成这次请求，已经完成的操作仍保留。"
               : "companion agent execution failed",
-      policyDenied ? "state" : streamStopped ? "delivery" : outputUnverified ? "output" : budgetExceeded || outputIncomplete || contextChanged ? "execution" : "transport",
+      policyDenied ? "state" : protocolLeak ? "output" : streamStopped ? "delivery" : outputUnverified || actionUnverified || argumentsInvalid ? "output" : budgetExceeded || outputIncomplete || contextChanged ? "execution" : "transport",
     );
     // 她已经说出来的那半句不能随失败一起消失（2026-09-19）。
     await persistFailedPartial({
@@ -1095,7 +1149,7 @@ export async function runCompanionDialogue(
       conversationId: read.conversationId,
       runId: read.runId,
       deliveredText: streamingDelivery.deliveredText(),
-      failureText: outputUnverified ? unverifiedQuoteFailureText : undefined,
+      failureText: protocolLeak ? invalidReplyFailureText : outputUnverified ? unverifiedQuoteFailureText : argumentsInvalid ? invalidArgumentsFailureText : undefined,
     });
     throw err;
   } finally {
@@ -1141,11 +1195,24 @@ export async function runCompanionDialogue(
   });
   ttsRawText = finalized.text;
 
+  // A host occasion may end without speech. Providers can return only voice
+  // markers instead of an empty string; that still has no visible
+  // content. Do not turn this quiet decision into an unsolicited failure card.
+  // Human replies, delivered prefixes, rich results and other invalid outputs
+  // continue through the ordinary validation/failure path.
+  if (read.initiativeInput && !streamingDelivery.deliveredText().trim() && agentResult.blocks.length === 0) {
+    const visible = validateCompanionOutput(ttsRawText);
+    if (!visible.ok && visible.reason === "empty_after_markdown_strip") {
+      await finishCompanionParticipation(ctx, read, expiresAt);
+      return;
+    }
+  }
+
   // 信任边界：流式期间每个 flush 前都已跑过增量校验（长度/泄露），这里收尾；
   // 校验失败在此终结：已投递的稳定前缀仍在（它是最终文本的前缀），run 按失败收尾。
   const streamed = await streamingDelivery.finish();
   if (!streamed.ok) {
-    await markCompanionRunFailed(read, ctx.workspaceId, "INTERNAL_ERROR", false, streamed.reason, "output");
+    await markCompanionRunFailed(read, ctx, "INTERNAL_ERROR", false, streamed.reason, "output");
     await persistFailedPartial({
       workspaceId: ctx.workspaceId,
       userId: read.userId,
@@ -1189,7 +1256,9 @@ export async function runCompanionDialogue(
         "companion streamed prefix diverged from validated text",
       );
     }
-    await markCompanionRunFailed(read, ctx.workspaceId, "INTERNAL_ERROR", false, validated.reason, "output");
+    const protocolLeak = validated.reason === "tool_protocol_leak";
+    await markCompanionRunFailed(read, ctx, protocolLeak ? "REPLY_FORMAT_INVALID" : "INTERNAL_ERROR", false,
+      protocolLeak ? "这次答复格式异常，已停止输出；已完成的操作仍然保留。" : validated.reason, "output");
     await persistFailedPartial({
       workspaceId: ctx.workspaceId,
       userId: read.userId,
@@ -1197,11 +1266,16 @@ export async function runCompanionDialogue(
       runId: read.runId,
       deliveredText: streamingDelivery.deliveredText(),
     });
+    if (protocolLeak) throw new AgentOutputError("tool_protocol_leak", "companion returned native tool syntax as prose");
     throw new Error(`companion output validation failed: ${validated.reason}`);
   }
   // delta 与终态 assistant message 使用同一份净化文本（markdown/标签剥离后），
   // 否则客户端流式渲染的内容与 assistant.final 指向的消息不一致。
   assistantText = validated.text;
+  if (await companionFollowupRepeatsParent(read, { workspaceId: ctx.workspaceId, userId: read.userId }, assistantText)) {
+    await finishCompanionParticipation(ctx, read, expiresAt);
+    return;
+  }
   if (streamingDelivery.deliveredChars() === 0) {
     // 没走成流式（provider 无流式实现 / 信封守卫 / 空流）：回退到整段补写 delta，
     // 事件布局与 2026-09-18 之后的实现完全一致。
@@ -1215,13 +1289,13 @@ export async function runCompanionDialogue(
       });
       if (!batched) return;
     } catch (err) {
-      await markCompanionRunFailed(read, ctx.workspaceId, err instanceof CompanionContextChangedError ? err.code : "INTERNAL_ERROR",
+      await markCompanionRunFailed(read, ctx, err instanceof CompanionContextChangedError ? err.code : "INTERNAL_ERROR",
         true, err instanceof CompanionContextChangedError ? err.message : "companion delta write failed", "delivery");
       throw err;
     }
   } else if (!(await streamingDelivery.writeTail(assistantText, ttsRawText))) {
     // 已下发内容与终态文本必须逐字对齐（appendFrom 的基准就是下发长度）。
-    await markCompanionRunFailed(read, ctx.workspaceId, "INTERNAL_ERROR", false, "delta_stream_diverged", "delivery");
+    await markCompanionRunFailed(read, ctx, "INTERNAL_ERROR", false, "delta_stream_diverged", "delivery");
     await persistFailedPartial({
       workspaceId: ctx.workspaceId,
       userId: read.userId,
@@ -1260,12 +1334,18 @@ export async function runCompanionDialogue(
     await withWorkerWorkspaceTransaction(
       { workspaceId: ctx.workspaceId, userId: read.userId },
       async (tx) => {
+        await lockCompanionRunForEventWrite(tx, read.runId);
+        await lockJobLease(tx, ctx);
         await assertCompanionContextSourcesCurrent(tx, { workspaceId: ctx.workspaceId, userId: read.userId }, read.runId);
         const alive = await tx.execute<{ id: string }>(sql`
           UPDATE companion_turn_runs
           SET status = 'running', updated_at = now()
           WHERE id = ${read.runId} AND status IN ('accepted', 'running')
             AND generation = ${read.generation}
+            AND (job_id IS NULL OR job_id = ${ctx.id})
+            AND account_epoch = ${read.accountEpoch}
+            AND EXISTS (SELECT 1 FROM user_companion_account_state a
+              WHERE a.user_id = companion_turn_runs.user_id AND a.epoch = companion_turn_runs.account_epoch AND a.global_enabled)
           RETURNING id
         `);
         if (!alive[0]) {
@@ -1290,13 +1370,18 @@ export async function runCompanionDialogue(
         const messageSeq = Number(next.next_message_seq) - 1;
         const eventStart = Number(next.next_event_seq) - eventCount;
 
-        await tx.execute(sql`
-          INSERT INTO companion_messages
-            (id, workspace_id, user_id, conversation_id, seq, role, kind, blocks, run_id, content_sha256)
-          VALUES (${assistantMessageId}, ${ctx.workspaceId}, ${read.userId},
-                  ${read.conversationId}, ${messageSeq}, 'assistant', 'text',
-                  ${JSON.stringify(blocks)}, ${read.runId}, ${contentSha256})
-        `);
+        // 主动那一轮的收尾消息也必须记成 `proactive`，和 `companion_publish_utterance`
+        // 的写法一致（判据收在 `companionAssistantMessageKind` 一处）：`runCompanionInitiative`
+        // 用 `max(created_at) WHERE role='assistant' AND kind='proactive'` 量主动节奏，
+        // 历史/记忆/摘要也按 kind 认她主动说过的话。写死 'text' 会让她自己开口的
+        // 大部分发言在这三处都不算数（2026-10-13 方案 56 遗留缺陷）。
+        // reasoning 随消息一起落库的判据在 store 那个函数里（0435）。
+        await insertCompanionFinalAssistantMessage(tx, {
+          messageId: assistantMessageId, workspaceId: ctx.workspaceId, userId: read.userId,
+          conversationId: read.conversationId, messageSeq, kind: companionAssistantMessageKind(read),
+          blocks, runId: read.runId, contentSha256,
+          reasoning: agentResult.status === "completed" ? agentResult.reasoning ?? null : null,
+        });
 
         await tx.execute(sql`
           INSERT INTO companion_stream_events
@@ -1350,8 +1435,8 @@ export async function runCompanionDialogue(
               waiting_proposal_id = NULL,
               provider_id = ${provider.id},
               model_id = ${provider.modelId},
-              prompt_version = ${read.groundedTutorContext ? GROUNDED_TUTOR_PROMPT_ID : COMPANION_PERSONA_V13_PROMPT_ID},
-              prompt_hash = ${read.groundedTutorContext ? groundedTutorPromptSha256 : COMPANION_PERSONA_V13_SHA256},
+              prompt_version = ${read.groundedTutorContext ? GROUNDED_TUTOR_PROMPT_ID : COMPANION_PERSONA_V14_PROMPT_ID},
+              prompt_hash = ${read.groundedTutorContext ? groundedTutorPromptSha256 : COMPANION_PERSONA_V14_SHA256},
               finished_at = now()
           WHERE id = ${read.runId}
             AND status IN ('accepted', 'running')
@@ -1418,7 +1503,7 @@ export async function runCompanionDialogue(
         const [publishedBeforeFinal] = read.initiativeInput ? await tx.execute(sql`SELECT 1 FROM companion_run_utterances WHERE run_id=${read.runId} LIMIT 1`) : [];
         if (read.initiativeInput && !publishedBeforeFinal) await enqueueSystemEventDelivery(tx, {
           workspaceId: ctx.workspaceId, userId: read.userId, systemEventId: `initiative:${assistantMessageId}`,
-          text: assistantText, ttlHours: 0.025, initiative: { conversationId: read.conversationId,
+          text: assistantText, ttlHours: COMPANION_INITIATIVE_DELIVERY_TTL_HOURS, initiative: { conversationId: read.conversationId,
             messageId: assistantMessageId, runId: read.runId, generation: read.generation, deviceSessionId: read.initiativeInput.deviceSessionId },
         });
         if (read.userMessageId && !(read.pageContext as { context?: { replyPurpose?: string } } | null)?.context?.replyPurpose) await enqueueParticipationObservation(tx, { workspaceId: ctx.workspaceId, userId: read.userId }, {
@@ -1481,7 +1566,7 @@ export async function runCompanionDialogue(
     // 写阶段失败：终态事务回滚，但前面已落库的 delta 仍然存在；显式
     // 投影 failed/error，避免 job retry/dead-letter 后 run 永久停在 running。
     logger.warn({ jobId: ctx.id, runId, err }, "companion_agent write phase failed");
-    await markCompanionRunFailed(read, ctx.workspaceId, err instanceof CompanionContextChangedError ? err.code : "INTERNAL_ERROR",
+    await markCompanionRunFailed(read, ctx, err instanceof CompanionContextChangedError ? err.code : "INTERNAL_ERROR",
       true, err instanceof CompanionContextChangedError ? err.message : "companion response commit failed", "delivery");
     await persistFailedPartial({
       workspaceId: ctx.workspaceId,

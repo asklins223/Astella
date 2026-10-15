@@ -21,7 +21,7 @@ test("读近期历史交付完整原文、序号、来源时间；不把旧记�
   assert.equal(value.source.kind,"current_conversation_tail");
   assert.equal(value.source.observedAt,"2026-10-07T10:00:00Z");
   assert.equal(value.source.timestampMeaning,"message_creation_not_narrated_event");
-  // 这一条给的第一条消息正文 12,600 字，已经超开一页（`PAST_MESSAGES_MAX_CHARS`＝同一份
+  // 这一条给的第一条消息正文 12,600 字，已经超开一页（`PAST_MESSAGES_PAGE_TARGET_CHARS`＝同一份
   // 声明层常量）。规则与取回原文那一支一致：**整条给，绝不切半条**，装不下的下一条
   // 不悄悄丢掉，而是如实说「还有」并把它的序号交回来续读。
   assert.equal(value.messages.length,1,"一页装不下的消息不硬塞，交给 nextFromSeq");

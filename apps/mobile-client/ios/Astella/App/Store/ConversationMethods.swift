@@ -37,14 +37,17 @@ extension AppStore {
                                 text: block.text,
                                 url: block.url,
                                 label: block.label,
-                                alt: block.alt
+                                alt: block.alt,
+                                name: block.name,
+                                proposalId: block.proposalId,
+                                code: block.code
                             )
                         },
-                        createdAt: item.createdAt
+                        createdAt: item.createdAt, runId: item.runId
                     )
                 }
                 .sorted { $0.seq < $1.seq }
-            streamingText = ""
+
         } catch {
             errorMessage = mobilePageError(error, fallback: "对话记录暂时无法读取，请重新连接后重试。")
         }
@@ -66,77 +69,83 @@ extension AppStore {
         }
     }
 
-    func submit(text rawText: String) async {
+    @discardableResult
+    func submit(text rawText: String, selection: String? = nil, context: PendingNoteContext? = nil) async -> String? {
         let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let conversationId, !isSending,
-              !text.isEmpty || selectedImage != nil else { return }
+        let isSelection = selection != nil
+        let image = isSelection ? nil : selectedImage
+        let imageName = selectedImageName
+        let file = isSelection ? nil : selectedFile
+        guard let conversationId, !isSending, !text.isEmpty || image != nil || file != nil else { return nil }
+        let session = api.token
+        let sendingContext = context ?? pendingNoteContext
+        let sendingVoiceId = isSelection ? nil : voiceArtifactId
+        let revision = attachmentRevision
+        let signature = try? JSONSerialization.data(withJSONObject: [
+            "conversation": conversationId, "text": text, "attachment": isSelection ? "" : revision.uuidString,
+            "selection": selection ?? "", "note": sendingContext?.noteId ?? "",
+            "version": sendingContext?.versionId ?? "", "voice": sendingVoiceId ?? ""
+        ], options: .sortedKeys)
         isSending = true
         errorMessage = nil
-        defer { isSending = false }
+        defer { if session == api.token { isSending = false } }
         do {
-            var blocks: [[String: Any]] = [[
-                "type": "text",
-                "text": text.isEmpty ? "看看这张图" : text
-            ]]
-            var inputKind = "text"
-            var request: [String: Any] = [
-                "version": 1,
-                "clientMessageId": UUID().uuidString.lowercased(),
-                "inputKind": inputKind,
-                "sourceSurface": "main"
-            ]
-            if let image = selectedImage {
-                let upload = try await api.uploadImage(image, fileName: selectedImageName, mimeType: "image/jpeg")
-                guard let url = upload["url"] as? String,
-                      let assetId = upload["assetId"] as? String else {
-                    throw MobileAPIError(status: 0, code: "invalid_upload", message: "服务端没有返回可用的图片地址。")
+            var request: [String: Any]
+            if signature == pendingTurnSignature, let cached = pendingTurnRequest {
+                request = cached
+            } else {
+                pendingTurnSignature = signature; pendingTurnRequest = nil
+                var blocks: [[String: Any]] = text.isEmpty ? [] : [["type": "text", "text": text]]
+                request = ["version": 1, "clientMessageId": UUID().uuidString.lowercased(),
+                           "inputKind": "text", "sourceSurface": "main", "clientSurface": "mobile"]
+                if let image {
+                    let upload = try await api.uploadImage(image, fileName: imageName, mimeType: "image/jpeg")
+                    guard let url = upload["url"] as? String, let assetId = upload["assetId"] as? String else {
+                        throw MobileAPIError(status: 502, code: "invalid_upload", message: "图片没有收到上传回执，请重试。")
+                    }
+                    blocks.append(["type": "image", "url": url, "label": imageName, "alt": imageName, "assetId": assetId])
+                } else if let file {
+                    let upload = try await api.uploadImage(file.data, fileName: file.name, mimeType: file.mime, endpoint: "/uploads/companion-files")
+                    guard let url = upload["url"] as? String else {
+                        throw MobileAPIError(status: 502, code: "invalid_upload", message: "文件没有收到上传回执，请重试。")
+                    }
+                    blocks.append(["type": "file", "url": url, "name": file.name, "mime": file.mime, "byteLength": file.data.count, "text": file.text])
+                } else if let sendingVoiceId {
+                    request["voiceArtifactId"] = sendingVoiceId; request["inputKind"] = "voice_transcript"
                 }
-                blocks.append([
-                    "type": "image",
-                    "url": url,
-                    "label": selectedImageName,
-                    "alt": selectedImageName,
-                    "assetId": assetId
-                ])
-            } else if let voiceArtifactId {
-                inputKind = "voice_transcript"
-                request["voiceArtifactId"] = voiceArtifactId
-                request["inputKind"] = inputKind
+                request["blocks"] = blocks
+                if let selection { request["selection"] = ["text": selection, "sharing": "user_selected"] }
+                if let context = sendingContext {
+                    request["context"] = ["pageKind": "note", "sharing": "page_registered", "noteId": context.noteId, "noteVersionId": context.versionId]
+                }
+                guard session == api.token, self.conversationId == conversationId else { return nil }
+                pendingTurnRequest = request
             }
-            request["blocks"] = blocks
-            if let context = pendingNoteContext {
-                request["context"] = [
-                    "pageKind": "note",
-                    "sharing": "page_registered",
-                    "noteId": context.noteId,
-                    "noteVersionId": context.versionId
-                ]
-            }
+            guard session == api.token, self.conversationId == conversationId else { return nil }
+            let response: CompanionTurnSubmitResponseDTO
             if realtime.isReady {
-                do {
-                    try await realtime.submit(request)
-                } catch {
-                    let _: CompanionTurnSubmitResponseDTO = try await api.request(
-                        "/companion/conversations/\(conversationId)/turns",
-                        method: "POST",
-                        body: request,
-                        idempotencyKey: request["clientMessageId"] as? String
-                    )
+                do { response = try await realtime.submit(request) }
+                catch {
+                    response = try await api.request("/companion/conversations/\(conversationId)/turns", method: "POST", body: request, idempotencyKey: request["clientMessageId"] as? String)
                 }
             } else {
-                let _: CompanionTurnSubmitResponseDTO = try await api.request(
-                    "/companion/conversations/\(conversationId)/turns",
-                    method: "POST",
-                    body: request,
-                    idempotencyKey: request["clientMessageId"] as? String
-                )
+                response = try await api.request("/companion/conversations/\(conversationId)/turns", method: "POST", body: request, idempotencyKey: request["clientMessageId"] as? String)
             }
-            selectedImage = nil
-            voiceArtifactId = nil
-            pendingNoteContext = nil
+            guard session == api.token else { return nil }
+            pendingTurnRequest = nil; pendingTurnSignature = nil
+            if !isSelection {
+                if attachmentRevision == revision { selectedImage = nil; selectedFile = nil }
+                voiceArtifactId = nil
+                if pendingNoteContext == sendingContext { pendingNoteContext = nil }
+            }
+            emitCompanion(.thinking)
             await refreshMessages()
+            await refreshRuns()
+            return response.runId
         } catch {
+            guard session == api.token else { return nil }
             errorMessage = mobilePageError(error, fallback: "这一轮还没有发出去，草稿已保留，请重试。")
+            return nil
         }
     }
 
@@ -161,21 +170,38 @@ extension AppStore {
         let payload = event["payload"] as? [String: Any] ?? [:]
         switch type {
         case "assistant.delta":
+            let runId = event["runId"] as? String
+            if streamingRunId != runId { streamingText = ""; streamingRunId = runId }
             streamingText += payload["textDelta"] as? String ?? ""
         case "sync.required":
             Task { await loadConversation() }
         case "turn.completed", "assistant.final":
+            if streamingRunId == event["runId"] as? String { streamingText = ""; streamingRunId = nil }
             Task {
                 await refreshMessages()
                 await refreshRuns()
             }
+        case "action.proposed":
+            Task { await refreshMessages(); await refreshRuns() }
         case "turn.accepted", "assistant.status", "agent.tool":
             Task { await refreshRuns() }
         case "error":
+            emitCompanion(.fail)
             errorMessage = mobileServerMessage(payload["message"] as? String, fallback: "这一轮暂时没有完成，请保留草稿后重试。")
             Task { await refreshMessages() }
         default:
             break
         }
+    }
+}
+
+extension AppStore {
+    func cancelActiveRuns() async {
+        for run in runs {
+            do { _ = try await api.request("/companion/runs/\(run.id)/cancel", method: "POST", body: [:]) }
+            catch { errorMessage = mobilePageError(error, fallback: "暂时没有停下来，请重试。") }
+        }
+        voicePlayback.stop()
+        await refreshRuns()
     }
 }

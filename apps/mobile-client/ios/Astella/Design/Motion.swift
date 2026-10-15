@@ -10,9 +10,13 @@ enum Motion {
     static let pressSoft = Animation.spring(duration: 0.2, bounce: 0.04)
     /// 页面路由推入/退出。
     static let routePush = Animation.spring(duration: 0.32, bounce: 0.06)
+    static let authRoute = Animation.timingCurve(0.23, 1, 0.32, 1, duration: 0.26)
+    static let authFade = Animation.timingCurve(0.23, 1, 0.32, 1, duration: 0.16)
     /// 分段/页签切换。
     static let segment = Animation.spring(duration: 0.38, bounce: 0.08)
     /// 菜单项散开间隔（Telegram 式 + 菜单）。
+    static let messageSend = Animation.spring(duration: 0.32, bounce: 0.12)
+    static let sheetRise = Animation.spring(duration: 0.38, bounce: 0.08)
     static let menuStagger: TimeInterval = 0.024
 
     /// reduceMotion 门控入口：替代散落的 `reduceMotion ? nil : .spring(...)`。

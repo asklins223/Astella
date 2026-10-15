@@ -10,6 +10,7 @@
 
 import type {
   ProviderUsage,
+  ProviderReasoningHandle,
   AgentTurnRequest,
   AgentTurnResult,
 } from "./contracts/card-agent-contracts.ts";
@@ -42,8 +43,19 @@ export type Capability =
 /** Chat 消息格式（OpenAI 兼容） */
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
+  /** Host observation/data at its actual transcript position, never a new
+   * human utterance. Native adapters preserve its system identity. */
+  hostObservation?: true;
   /** Original Responses assistant phase, when available. Never attached to user messages. */
   phase?: "commentary" | "final_answer";
+  /**
+   * 产出这条 assistant 消息时的 provider reasoning item。
+   *
+   * 网关在思考模式下把它当成"续写上一条 assistant"的凭据：以 assistant 收尾的
+   * 请求（主动参与轮每一轮都是）必须把它交回去，只带 `encrypted_content` 同样 400。
+   * 只有 provider 产出它时才有值；user/system 消息恒为 undefined。
+   */
+  reasoning?: ProviderReasoningHandle[];
   content: string | Array<
     | { type: "text"; text: string }
     | { type: "image_url"; image_url: { url: string; detail?: "auto" | "low" | "high" } }

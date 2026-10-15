@@ -58,6 +58,13 @@ function baseEvent(overrides: Record<string, unknown> = {}): Record<string, unkn
   };
 }
 
+test("agent terminal failures survive strict stream validation and can close the client turn", () => {
+  for (const code of ["ACTION_NOT_EXECUTED", "TOOL_ARGUMENTS_INVALID", "REPLY_LENGTH_LIMIT", "REPLY_FORMAT_INVALID", "AGENT_BUDGET_EXCEEDED", "AI_DATA_POLICY_DENIED"]) {
+    const frame = baseEvent({ type: "error", payload: { code, recoverable: false } });
+    assert.equal(companionStreamEventV1Schema.safeParse(frame).success, true, `${code} must reach the client`);
+  }
+});
+
 test("conversation schema accepts a valid row", () => {
   const result = companionConversationV1Schema.safeParse({
     version: 1,

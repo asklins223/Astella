@@ -29,7 +29,7 @@ test("长流程的参数、工具结果与对话块都保留全部步骤", async
 test("确认预览保留参数；笔记已经离开时不准备错误目标的改动", async () => {
   const definition = getCompanionAgentTool("companion_set_activeness")!;
   const args = { activeness: "quiet" };
-  const review = await prepareCompanionToolReview({} as never, definition, args);
+  const review = await prepareCompanionToolReview({ read: { pageContext: null } } as never, definition, args);
   assert.equal(review.arguments, args);
   assert.match(review.preview.markdown!, /安静|quiet/);
   await assert.rejects(prepareCompanionToolReview({ read: { pageContext: null } } as never,

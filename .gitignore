@@ -164,3 +164,6 @@ apps/desktop-client/.devlog
 
 # Windows 安装生命周期测试的诊断产物（CI 上传成 artifact）
 apps/desktop-client/astella-diagnostics/
+
+# Native CMake intermediates
+apps/mobile-client/android/app/.cxx/

@@ -125,8 +125,14 @@ export function CompanionAgentRail({ nodes, progress, turnState, companionName, 
     : turnState === "stopped" ? "cancelled" : turnState === "running" && running ? "running" : issue?.state ?? (turnState === "running" ? "running" : running ? "outcome_unknown" : "succeeded"));
   const composing = turnState === "running" && !running && !unresolved && !issue;
   const active = turnState === "running" && !composing;
-  const headline = composing ? "正在组织回复…" : active || unresolved || issue ? nodeLabel(current)
-    : state === "succeeded" ? "操作已完成" : state === "failed" ? "回复未完成" : STATE_LABEL[state];
+  const headline = composing ? "正在组织回复…"
+    : state === "failed" ? "回复未完成"
+      : state === "cancelled" ? "这一轮已停止"
+        : state === "outcome_unknown" ? "操作结果待核对"
+          : state === "waiting_confirmation" ? "等你确认这项操作"
+            : state === "not_executed" ? "这项操作没有开始"
+              : state === "unavailable" ? "这项操作这次没能使用"
+                : active ? nodeLabel(current) : "操作已完成";
   const CurrentIcon = composing ? BookOpen : state === "succeeded" && !active ? Check : state === "cancelled" ? X : nodeIcon(current);
   const countText = `${count} 项操作`;
 

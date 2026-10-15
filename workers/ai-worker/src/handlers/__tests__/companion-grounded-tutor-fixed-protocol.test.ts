@@ -29,7 +29,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  COMPANION_HOST_PROTOCOL_V8,
+  COMPANION_HOST_PROTOCOL_V9,
   COMPANION_IDENTITY_BOUNDARY_V4,
   COMPANION_CHARACTER_BASE_V12,
 } from "@astella/shared";
@@ -68,7 +68,7 @@ function everydaySystem(): string {
 
 test("答题那一屏**仍然带着固定协议与身份边界**，一字不差", () => {
   const system = groundedSystem();
-  assert.ok(system.includes(COMPANION_HOST_PROTOCOL_V8),
+  assert.ok(system.includes(COMPANION_HOST_PROTOCOL_V9),
     "固定协议在 grounded tutor 那一屏不见了：任务提示词顶替了宿主协议（A77）");
   assert.ok(system.includes(COMPANION_IDENTITY_BOUNDARY_V4),
     "身份边界不见了：那一屏上她可以开始编造'我今天看见过'这类亲身经历");
@@ -132,7 +132,7 @@ test("【变异自证】把装配改回旧的「替换」形状，上面三条�
     "</grounded_target>",
   ].join("\n");
   assert.notEqual(replaced, groundedSystem(), "变异造不出差异：拼出来的形状和实际装配一样");
-  assert.ok(!replaced.includes(COMPANION_HOST_PROTOCOL_V8), "自证样本没造好：替换形状应当不含固定协议");
+  assert.ok(!replaced.includes(COMPANION_HOST_PROTOCOL_V9), "自证样本没造好：替换形状应当不含固定协议");
   assert.ok(!replaced.includes(COMPANION_IDENTITY_BOUNDARY_V4), "自证样本没造好：替换形状应当不含身份边界");
   // 层序判据同样对它敏感。
   assert.ok(

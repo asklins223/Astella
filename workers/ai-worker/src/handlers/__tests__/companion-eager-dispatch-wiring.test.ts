@@ -28,7 +28,7 @@ const runtime = read("companion-agent-runtime.ts");
 
 /** 工具步循环体。 */
 function dispatchLoop(): string {
-  const start = runtime.indexOf("for (const call of calls) {");
+  const start = runtime.indexOf("for (const [callIndex, call] of calls.entries()) {");
   assert.ok(start > 0, "找不到工具步循环 —— 守卫的扫描范围要跟着代码走");
   return runtime.slice(start, runtime.indexOf("\n    }", start));
 }
@@ -45,7 +45,7 @@ test("默认关闭：没有环境变量时，运行时压根不建调度器", ()
 test("收口在循环看到 toolCalls 之前 —— 否则会重复执行", () => {
   // close 必须在第一次派发**之前**，因为 `calls` 是从 `result.toolCalls` 来的。
   const close = runtime.indexOf("eagerScheduler.close(false)");
-  const ledger = runtime.indexOf("for (const call of calls) {");
+  const ledger = runtime.indexOf("for (const [callIndex, call] of calls.entries()) {");
   assert.ok(close >= 0, "成功路上没有 close —— 提前派发开跑过的格会以 requested 状态进循环，然后被跑第二遍");
   assert.ok(close < ledger, "close 排在工具步循环之后 —— 顺序反了");
 });
@@ -70,7 +70,7 @@ test("不新写「跳过已派发调用」的分支：靠的是循环已有的�
   const loop = dispatchLoop();
   const branch = loop.indexOf("if (!replayable) {");
   assert.ok(branch > 0, "重放分支不见了 —— 跑过的工具会被再跑一遍");
-  const tail = loop.slice(branch, loop.indexOf("if (record.isNew && toolCallCount"));
+  const tail = loop.slice(branch, loop.indexOf("if (record.isNew && budget.maxToolCalls"));
   assert.ok(tail.includes("continue;"), "重放分支不再 continue —— 它会往下走到执行");
   assert.ok(tail.includes('role: "tool"'), "重放分支不推 tool 消息 —— 下一次请求会被 provider 拒");
   // 明确不许出现"跳过提前派发过的调用"这种自写分支。

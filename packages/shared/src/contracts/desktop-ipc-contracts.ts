@@ -4,7 +4,7 @@ import { createNoteMindMapTaskV1Schema, noteMindMapLatestTaskQueryV1Schema, note
 import type { NoteWritingAction, NoteWritingResult } from "./note-writing-contracts.ts";
 export { noteWritingActionSchema, noteWritingResultSchema, type NoteWritingAction, type NoteWritingResult } from "./note-writing-contracts.ts";
 import {agentLongGoalsV1Schema,type AgentLongGoalsQueryV1} from "./agent-long-goal-contracts.ts";
-import { agentRunV1Schema, agentRunListV1Schema, agentRunListQueryV1Schema, agentRunHistoryV1Schema, agentRunHistoryQueryV1Schema, createAgentRunV1Schema, reviseAgentRunV1Schema, controlAgentRunV1Schema } from "./agent-contracts.ts";
+import { agentRunV1Schema, agentRunListV1Schema, agentRunListQueryV1Schema, agentRunHistoryV1Schema, agentRunHistoryQueryV1Schema, createAgentRunV1Schema, reviseAgentRunV1Schema, controlAgentRunV1Schema, agentArtifactRefV1Schema } from "./agent-contracts.ts";
 import { agentMethodV1Schema, agentMethodListV1Schema, agentMethodHistoryV1Schema, agentMethodUsesV1Schema,
   agentMethodUseV1Schema, proposeAgentMethodV1Schema, reviseAgentMethodV1Schema, controlAgentMethodV1Schema,
   agentMethodFeedbackV1Schema } from "./agent-growth-contracts.ts";
@@ -917,6 +917,7 @@ export const desktopRouteKindValues = [
   "source.detail",
   "note.library",
   "note.detail",
+  "note.artifact",
   "note.cardGeneration",
   "review.queue",
   "learningRun.detail",
@@ -946,6 +947,7 @@ export const desktopRouteKindM2Values = [
   "source.detail",
   "note.library",
   "note.detail",
+  "note.artifact",
   "note.cardGeneration",
   "review.queue",
   "learningRun.detail",
@@ -982,6 +984,13 @@ const workspaceRouteSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("source.detail"), sourceId: uuidSchema }),
   z.strictObject({ kind: z.literal("note.library") }),
   z.strictObject({ kind: z.literal("note.detail"), noteId: uuidSchema }),
+  // 打开某一篇笔记的**那一份**学习产物（互动演示／思维导图／速看）。
+  // 装的是既有的 `agentArtifactRefV1`：那一形状本来就是"按回执精确取回一份成果"，
+  // 手记里的成果卡已经在用它跳这一页，不再为聊天入口抄第二份字段清单。
+  z.strictObject({
+    kind: z.literal("note.artifact"),
+    artifact: agentArtifactRefV1Schema,
+  }),
   z.strictObject({
     kind: z.literal("note.cardGeneration"),
     cardGenerationRunId: uuidSchema,

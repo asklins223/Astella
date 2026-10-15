@@ -17,6 +17,10 @@
  * 「成功才推进」在 30s 节流下只是每 30s 重试一次，可以接受；这里是兜底清理，
  * 持续失败时「成功才推进」等于**没有节流**，正是事故形态。所以时间戳必须在
  * 查询之前推进。本守卫锁死的就是这个顺序，而不只是「有没有节流」。
+ *
+ * 2026-10-14 把同一条原则铺到全目录：兄弟调度器不再各写一份时间戳，共用
+ * `tick-throttle.ts`（成功推进周期；失败首拍重试一次，之后指数退避到一个周期）。
+ * 「每 30s 重试一次」那条前提本来就不成立——主循环是 500ms～5s 一拍。
  */
 
 import assert from "node:assert/strict";
@@ -72,7 +76,13 @@ test("时间戳在查询之前推进（到点就跑，不等结果）", () => {
 
 test("每日维护那道门没有被这次改动顺手改掉", () => {
   assert.match(source, /const MAINTENANCE_INTERVAL_MS = 24 \* 60 \* 60 \* 1000;/);
-  assert.match(source, /if \(now - lastMaintenanceAt >= MAINTENANCE_INTERVAL_MS\)/);
+  // 2026-10-14：这道门搬进共用的 `createTickThrottle`——24h 周期判据不变，
+  // 变的是失败路径（从「每拍重撞」改成首拍重试 + 指数退避，见 tick-throttle.ts）。
+  // 这里钉的是「每日那一道门还在、仍然只管每日维护、仍然成功才推进」，不是字面写法。
+  assert.match(source, /const maintenanceThrottle = createTickThrottle\(MAINTENANCE_INTERVAL_MS\);/);
+  assert.match(source, /if \(maintenanceThrottle\.due\(now\)\) \{/);
+  assert.match(source, /maintenanceThrottle\.succeed\(now\)/);
+  assert.match(source, /maintenanceThrottle\.fail\(now\)/);
 });
 
 test("【自证】判据认得出「成功后推进」这个真实退化", () => {

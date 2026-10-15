@@ -127,6 +127,26 @@ describe("手记正文与附页的阅读层级", () => {
 });
 
 describe("CompanionChatRecordArticle 的跳转块（方案 29 §4.8）", () => {
+  it("推荐内容单独呈卡片，并在用户点击时跳到笔记", () => {
+    const goToRoute = vi.fn().mockResolvedValue(undefined);
+    render(<CompanionChatRecordArticle message={message({ blocks: [
+      { type: "text", text: "这篇笔记正好接着你刚才的问题。" },
+      {
+        type: "recommendation",
+        kindLabel: "笔记",
+        title: "间隔重复与记忆巩固",
+        reason: "里面解释了复习时机如何影响长期记忆。",
+        updatedLabel: "昨天更新",
+        route: { kind: "note", noteId: "5a5a5a5a-5a5a-4a5a-8a5a-5a5a5a5a5a5a" },
+      },
+    ] })} chat={session(goToRoute)} />);
+
+    expect(screen.getByText("间隔重复与记忆巩固").closest(".companion-record__recommendation")).toBeTruthy();
+    expect(screen.getByText("里面解释了复习时机如何影响长期记忆。")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "打开笔记：间隔重复与记忆巩固" }));
+    expect(goToRoute).toHaveBeenCalledWith({ kind: "note.detail", noteId: "5a5a5a5a-5a5a-4a5a-8a5a-5a5a5a5a5a5a" });
+  });
+
   it("nav 块渲染成消息里可点的落点，点击走同一条 goToRoute", () => {
     const goToRoute = vi.fn().mockResolvedValue(undefined);
     render(

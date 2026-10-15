@@ -23,12 +23,16 @@ export interface CompanionAgentModelStepOptions {
   execute: (signal: AbortSignal) => Promise<AgentTurnResult>;
 }
 
+export function companionAgentModelInputHash(options: Pick<CompanionAgentModelStepOptions, "request" | "provider" | "permissionLevel">) {
+  return auditHash({ request: options.request, providerId: options.provider.id, modelId: options.provider.modelId,
+    promptVersion: options.provider.promptVersion, permissionLevel: options.permissionLevel });
+}
+
 
 /** Interactive host wiring; model/checkpoint execution lives in agent-core. */
 export async function runCompanionAgentModelStep(options: CompanionAgentModelStepOptions): Promise<AgentTurnResult> {
   const taskId = "companion_agent_model_step", taskVersion = 1;
-  const hash = auditHash({ request: options.request, providerId: options.provider.id, modelId: options.provider.modelId,
-    promptVersion: options.provider.promptVersion, permissionLevel: options.permissionLevel });
+  const hash = companionAgentModelInputHash(options);
   const signal = options.signal ?? options.job.signal;
   return runAgentModelStep({
     request: options.request, timeoutMs: options.timeoutMs, resourceClass: "interactive_ai",

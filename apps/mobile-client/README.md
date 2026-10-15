@@ -2,12 +2,12 @@
 
 手机端现由两套独立原生 App 组成：iOS 使用 SwiftUI 与少量 UIKit（照片选择、音频采集、Keychain）；Android 使用 Kotlin 与 Jetpack Compose。React/Vite 浏览器客户端已退出产品构建链路，真实调用代码位于 `ios/Astella/` 与 `android/app/src/main/`。历史 `prototype/` 只供追溯，不参与原生构建。
 
-两端复用同一账号、书房、伴星 inbox、消息、手记与 API 语义；界面和系统动作分别由宿主平台原生实现。一级入口统一为“对话／手边／手记”，个人页从右上角进入。对话中的“伴星／记录”切换始终呈现同一份会话。视觉使用 Apple 系统中性色与单一系统蓝，适配深浅色外观，不用装饰性多色渐变；视觉层级、纸面与动效合同见 [原生界面与动效规范](DESIGN_SPEC.md)。
+两端复用同一账号、书房、伴星 inbox、消息、手记与 API 语义；界面和系统动作分别由宿主平台原生实现。一级入口统一为“对话／手边／手记”，个人页从右上角进入。对话中的“伴星／记录”切换始终呈现同一份会话。视觉采用两端共享的中性色与蓝色强调，浅色画布统一白底，普通玻璃使用细描边与轻阴影，不用装饰性多色渐变；视觉层级、纸面与动效合同见 [原生界面与动效规范](DESIGN_SPEC.md)。
 
 ## 已接入的真实链路
 
 - Bearer 邮箱登录，凭据分别保存到 iOS Keychain 与 Android Keystore 加密存储。
-- 注册、邮箱验证码登录、忘记密码与密码重置使用服务端邮件验证码流程；认证屏按现有实现保持固定视口，状态说明就近呈现（2026-10-15 裁决已改为优先紧凑排布、放不下时表单区内滚动，随全量重构落地）。
+- 注册、邮箱验证码登录、忘记密码与密码重置使用服务端邮件验证码流程；认证屏使用白底、正式图标与普通玻璃，不放伴星插画；键盘和大字号下紧凑排布，超出可用空间时滚动，切换登录方式和注册的入口保持可达。
 - `/companion/inbox/ensure` 获取共享会话；鉴权 WebSocket `/companion/realtime` 订阅持久事件并提交回合，连接不可用时用相同 `clientMessageId` 回退 HTTP。
 - 图片在用户发送时上传到 `/uploads/companion-images`，可以与文字同回合发送；历史私有图片通过登录态读取。
 - 麦克风录音为 16 kHz 单声道 WAV，通过 `/voice/transcribe` 调用现有小米 MiMo 整段识别；结果可编辑并保留 `voiceArtifactId` 来源。没有流式 ASR 或 TTS 播放。
@@ -65,3 +65,7 @@ Android `local.properties`、Gradle 缓存和构建产物不会提交。开发�
 ## 当前限制
 
 移动端 TTS、流式 ASR 和手记正文编辑仍未实现；服务端目前提供的整段语音识别、只读正文和派生学习内容已由原生页面直接接入。批注入口以整段原文为范围；若 Markdown 结构无法与服务端锚点规则精确对应，会显示服务端冲突并保留原文，不会写入错位批注。语音与文件的完整体验需部署侧开启 `COMPANION_VOICE_DIALOGUE_V1_ENABLED` / `COMPANION_STREAMING_VOICE_V1_ENABLED`（生产默认关）并完成 AI 外发同意签署：新用户注册后强制签署方可进入，老用户未签先补签；能力的分端现状见上方[服务能力对照](#服务能力对照2026-10-15)。相机／麦克风权限、不同 Android 设备音频行为、实体设备长时间交互和硬件刷新率／帧率仍待真机验收；模拟器不能证明稳定 60/120 fps。
+
+## White authentication implementation — 2026-10-15
+
+The current authentication implementation follows the user's final decision: white background, official app icon only, no companion picture, ordinary neutral glass. Android authentication now lives in `ui/screens/AuthScreen.kt`; iOS uses `Auth/AuthScreen.swift` and `Auth/AuthComponents.swift`. The nine routes keep the existing API-backed login, registration, email-code and password-reset handlers. Earlier image concepts are historical references and do not override the current visual decision. See [the implementation review](../../docs/testing/mobile-auth-white-glass-2026-10-15.md) for verification coverage.

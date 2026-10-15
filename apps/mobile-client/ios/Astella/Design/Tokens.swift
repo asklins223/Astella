@@ -1,20 +1,28 @@
 import SwiftUI
 import UIKit
 
-/// 语义色。iOS 用系统动态语义色（深浅色自适应）；Android 端按 DESIGN_TOKENS.md §四
-/// 映射 Material 3 角色。业务代码只用这里的语义名，不直接写平台颜色。
+/// Astella's mist / ice palette. Platform semantic colors are kept out of
+/// the product chrome; both clients use these exact light and dark values.
 enum StudyPalette {
-    static let ink = Color(uiColor: .label)
-    static let muted = Color(uiColor: .secondaryLabel)
-    /// 单一强调色（2026-10-15 合并原 blue/blueDeep，两者本同为 systemBlue）。
-    static let accent = Color(uiColor: .systemBlue)
-    static let sky = Color(uiColor: UIColor.systemBlue.withAlphaComponent(0.09))
-    static let canvas = Color(uiColor: .systemBackground)
-    static let paper = Color(uiColor: .secondarySystemBackground)
-    static let inset = Color(uiColor: .tertiarySystemBackground)
-    static let paperEdge = Color(uiColor: .separator)
-    static let success = Color(uiColor: .systemGreen)
-    static let danger = Color(uiColor: .systemRed)
+    private static func adaptive(_ light: UInt32, _ dark: UInt32) -> Color {
+        Color(uiColor: UIColor { traits in
+            let value = traits.userInterfaceStyle == .dark ? dark : light
+            return UIColor(red: CGFloat((value >> 16) & 255) / 255, green: CGFloat((value >> 8) & 255) / 255, blue: CGFloat(value & 255) / 255, alpha: 1)
+        })
+    }
+    static let ink = adaptive(0x27334B, 0xEDF2FF)
+    static let muted = adaptive(0x66758A, 0x9AA9C2)
+    static let accent = adaptive(0x5A7CD1, 0xA9C2FF)
+    static let actionFill = adaptive(0x8DB8F4, 0xA9C2FF)
+    static let sky = adaptive(0xE5EEFF, 0x263B60)
+    static let canvas = adaptive(0xFFFFFF, 0x101827)
+    static let paper = adaptive(0xFFFFFF, 0x1C2B43)
+    static let inset = adaptive(0xF3F5F8, 0x283A55)
+    static let paperEdge = adaptive(0xDDE2E9, 0x3D5274)
+    static let success = adaptive(0x6C9DAB, 0xA3CDD6)
+    static let danger = adaptive(0xB76752, 0xE5A38D)
+    static let night = Color(red: 0.15, green: 0.21, blue: 0.34)
+    static let pollen = Color(red: 0.73, green: 0.85, blue: 1.0)
 }
 
 /// 间距 scale（pt/dp 同值，见 DESIGN_TOKENS.md §四）。

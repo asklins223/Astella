@@ -73,6 +73,8 @@ export async function assertCompanionContextSourcesCurrent(tx: AgentSqlExecutor,
       if (!valid) throw new CompanionContextChangedError();
     }
     if (input.facts.canSpeak === true) {
+      const quietEpisodeId = input.topic === "presence.quiet"
+        ? (input.facts.observation as { context?: { quietEpisodeId?: string } } | null)?.context?.quietEpisodeId : undefined;
       const [typing] = await queryRows(tx,sql`SELECT 1 FROM companion_awareness_sessions WHERE workspace_id=${scope.workspaceId}
         AND user_id=${scope.userId} AND updated_at>now()-interval '45 seconds' AND typing_until>now()`);
       if (typing) throw new CompanionContextChangedError();
@@ -80,6 +82,7 @@ export async function assertCompanionContextSourcesCurrent(tx: AgentSqlExecutor,
         WHERE workspace_id=${scope.workspaceId} AND user_id=${scope.userId} AND device_session_id=${input.deviceSessionId}
           AND updated_at>now()-interval '45 seconds' AND context->>'foreground'='true' AND context->>'unlocked'='true'
           AND coalesce(context->>'participationAllowed','true')='true'
+          AND (${quietEpisodeId ?? null}::text IS NULL OR context->>'quietEpisodeId'=${quietEpisodeId ?? null}::text)
           AND (typing_until IS NULL OR typing_until<=now())
           AND (${input.facts.currentPageKey ?? null}::text IS NULL OR context->'page'->>'key'=${input.facts.currentPageKey ?? null}::text)
           AND (${input.facts.currentPageRevision ?? null}::text IS NULL OR context->'page'->>'revision'=${input.facts.currentPageRevision ?? null}::text)`);

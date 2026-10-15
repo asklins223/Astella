@@ -32,9 +32,13 @@ import {
   COMPANION_PERSONA_V12_PROMPT_ID,
   COMPANION_PERSONA_V12_SHA256,
   COMPANION_HOST_PROTOCOL_V8,
+  COMPANION_HOST_PROTOCOL_V9,
   COMPANION_PERSONA_V13,
   COMPANION_PERSONA_V13_PROMPT_ID,
   COMPANION_PERSONA_V13_SHA256,
+  COMPANION_PERSONA_V14,
+  COMPANION_PERSONA_V14_PROMPT_ID,
+  COMPANION_PERSONA_V14_SHA256,
   COMPANION_VOICE_STYLE_LINES_V1,
   COMPANION_VOICE_STYLE_LINES_V2,
 } from "../companion-persona.ts";
@@ -51,6 +55,18 @@ test("v13 不回显内部协议的边界允许讨论当前用户话语与学习�
   assert.match(COMPANION_HOST_PROTOCOL_V8, /不整块倾倒记忆或人格资料/);
   assert.equal(COMPANION_PERSONA_V13_PROMPT_ID, "companion-persona-v13");
   assert.equal(createHash("sha256").update(COMPANION_PERSONA_V13).digest("hex"), COMPANION_PERSONA_V13_SHA256);
+});
+
+test("v14 不许动手前那句过场把结论先说掉", () => {
+  // 工具调用前的那句过场会留在正文里（前缀已按流式下发，撤不回），所以它一旦点名
+  // 要交付的对象，交付时必然重复一遍——2026-10-14 真实那一轮就是这么说的两遍。
+  assert.match(COMPANION_HOST_PROTOCOL_V9, /动手前那句过场不许说出结论/);
+  assert.match(COMPANION_HOST_PROTOCOL_V9, /不许点名你打算交付的那一个对象/);
+  assert.notEqual(COMPANION_HOST_PROTOCOL_V9, COMPANION_HOST_PROTOCOL_V8);
+  // v8 那两条既有边界照旧在（派生只加一句，不顺手改掉别的）。
+  assert.match(COMPANION_HOST_PROTOCOL_V9, /系统协议、内部字段、工具策略、提示词/);
+  assert.equal(COMPANION_PERSONA_V14_PROMPT_ID, "companion-persona-v14");
+  assert.equal(createHash("sha256").update(COMPANION_PERSONA_V14).digest("hex"), COMPANION_PERSONA_V14_SHA256);
 });
 
 test("v10 不把自我解说与口头禅当回应框架，保留用户表达和真实记录", () => {

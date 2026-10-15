@@ -11,7 +11,7 @@ struct NotesScreen: View {
             VStack(alignment: .leading, spacing: 22) {
                 HStack(alignment: .top) {
                     PageHeading(
-                        eyebrow: "你的书架",
+                        eyebrow: "留住你的思路",
                         title: "手记",
                         subtitle: store.notes.isEmpty ? "和伴星整理过的内容，都会留在这里。" : "\(store.notes.count) 篇 · 最近更新在前"
                     )
@@ -45,7 +45,7 @@ struct NotesScreen: View {
                 }
                 .padding(.horizontal, 14)
                 .frame(minHeight: 48)
-                .modifier(StudyGlassSurfaceStyle(radius: StudyRadius.md, interactive: true))
+                .modifier(StudyGlassSurfaceStyle(radius: 14, interactive: false))
 
                 if let error = store.notesErrorMessage {
                     NoticeSurface {
@@ -217,41 +217,25 @@ struct NoteShelfRow: View {
 
 private struct FeaturedNoteRow: View {
     let note: NoteSummary
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .center) {
-                Label("最近更新", systemImage: "clock")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(StudyPalette.muted)
+        VStack(alignment: .leading, spacing: 18) {
+            HStack {
+                Text("最近打开").font(.system(size: 11, weight: .medium))
                 Spacer()
-                Image(systemName: "arrow.up.right")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(StudyPalette.accent)
+                AstellaStar().fill(StudyPalette.accent).frame(width: 12, height: 18)
+            }.foregroundStyle(StudyPalette.muted)
+            Text(note.title).font(.system(size: 22, weight: .semibold)).lineSpacing(4).lineLimit(3).foregroundStyle(StudyPalette.ink)
+            if let snippet = note.snippet, !snippet.isEmpty {
+                Text(snippet).font(.system(size: 13)).lineSpacing(5).lineLimit(3).foregroundStyle(StudyPalette.muted)
             }
-            Text(note.title)
-                .font(.system(.title3, weight: .semibold))
-                .tracking(-0.35)
-                .foregroundStyle(StudyPalette.ink)
-                .multilineTextAlignment(.leading)
-                .lineLimit(3)
-                .fixedSize(horizontal: false, vertical: true)
-            if let snippet = note.snippet?.trimmingCharacters(in: .whitespacesAndNewlines), !snippet.isEmpty {
-                Text(snippet)
-                    .font(.subheadline)
-                    .lineSpacing(2)
-                    .foregroundStyle(StudyPalette.muted)
-                    .multilineTextAlignment(.leading)
-                    .lineLimit(3)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Text("打开手记")
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(StudyPalette.accent)
-        }
-        .padding(.vertical, 13)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
+            HStack {
+                Text(NoteShelfRow.dateLabel(note.updatedAt)).font(.system(size: 10)).foregroundStyle(StudyPalette.muted)
+                Spacer()
+                Text("接着读").font(.system(size: 12, weight: .medium))
+                Image(systemName: "arrow.right").font(.system(size: 15, weight: .light))
+            }.foregroundStyle(StudyPalette.accent).padding(.top, 8)
+        }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
+            .modifier(StudyGlassSurfaceStyle(radius: 24))
     }
 }
 
@@ -263,6 +247,9 @@ struct NoteDetailScreen: View {
     @State private var selectedAnnotationBlock: NoteBlock?
     @State private var pendingAnnotationRemoval: NoteAnnotation?
     @State private var confirmsAnnotationRemoval = false
+    @State private var showSelection = false
+    @State private var selectionOriginal = ""
+    @State private var selectionBaseline = Set<String>()
 
     var body: some View {
         ScrollView {
@@ -270,7 +257,7 @@ struct NoteDetailScreen: View {
                 VStack(alignment: .leading, spacing: 16) {
                     SectionEyebrow(text: "手记 · 当前版本")
                     Text(document.title)
-                        .font(.system(.largeTitle, weight: .semibold))
+                        .font(.system(size: 29, weight: .semibold))
                         .tracking(-0.6)
                         .foregroundStyle(StudyPalette.ink)
                         .fixedSize(horizontal: false, vertical: true)
@@ -280,7 +267,17 @@ struct NoteDetailScreen: View {
                     NoteFeatureLinks(noteId: noteId)
                     VStack(alignment: .leading, spacing: 20) {
                         ForEach(document.blocks) { block in
-                            noteBlock(block)
+                            Group {
+                                if ["paragraph", "quote", "heading"].contains(block.type) {
+                                    CompanionSelectableText(text: block.type == "heading" ? Self.headingText(block.content) : block.type == "quote" ? Self.quoteText(block.content) : block.content,
+                                        fontSize: (block.type == "heading" ? headingPointSize : bodyPointSize) * store.readingScale) { selected, rewrite in
+                                        selectionOriginal = selected
+                                        selectionBaseline = Set(store.messages.map(\.id))
+                                        showSelection = true
+                                        Task { await store.askAboutSelection(selected, document: document, rewrite: rewrite) }
+                                    }
+                                } else { noteBlock(block) }
+                            }
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .contextMenu {
                                     if ["paragraph", "heading", "quote", "code", "list"].contains(block.type) {
@@ -380,11 +377,22 @@ struct NoteDetailScreen: View {
                 .padding(.horizontal, 20)
                 .padding(.top, 9)
                 .padding(.bottom, 7)
-                .background(.regularMaterial)
+                .background(StudyPalette.canvas)
             }
         }
         .toolbar(.hidden, for: .tabBar)
-        .task(id: noteId) { await store.loadNote(noteId) }
+        .toolbar(.hidden, for: .navigationBar)
+        .safeAreaInset(edge: .top, spacing: 0) { AstellaDetailHeader(title: "手记") }
+        .task(id: noteId) {
+            store.visibleNoteId = noteId
+            await store.loadNote(noteId)
+            await store.reportAwareness(topic: "page.arrived", foreground: true)
+        }
+        .onDisappear { if store.visibleNoteId == noteId { store.visibleNoteId = nil } }
+        .sheet(isPresented: $showSelection, onDismiss: { Task { await store.loadNote(noteId) } }) {
+            CompanionSelectionSheet(original: selectionOriginal, baseline: selectionBaseline)
+                .presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
+        }
         .sheet(item: $selectedAnnotationBlock) { block in
             if let document = store.noteDocument, let anchor = NoteAnnotationAnchor.wholeBlock(block, versionId: document.versionId) {
                 NoteAnnotationComposer(noteId: noteId, anchor: anchor)
@@ -744,12 +752,14 @@ private struct NoteFeatureScreen: View {
 
     @ViewBuilder
     var body: some View {
-        switch route.kind {
+        Group { switch route.kind {
         case .overview: NoteOverviewScreen(noteId: route.noteId)
         case .mindMap: NoteMindMapScreen(noteId: route.noteId)
         case .explain: NoteExplainScreen(noteId: route.noteId)
         case .versions: NoteVersionsScreen(noteId: route.noteId)
-        }
+        } }
+        .toolbar(.hidden, for: .navigationBar)
+        .safeAreaInset(edge: .top, spacing: 0) { AstellaDetailHeader(title: "手记 · 学习") }
     }
 }
 
@@ -951,7 +961,7 @@ private struct NoteOverviewScreen: View {
             .disabled(working || store.noteDocument == nil || store.aiSettings?.requiresConsent != false || store.aiSettings?.dataPolicy.sendToExternal != true || requiresAIConsent(failure) || requiresAIDataPolicy(failure))
             .padding(.horizontal, 20)
             .padding(.vertical, 11)
-            .background(.regularMaterial)
+            .background(StudyPalette.canvas)
         }
         .navigationTitle("").navigationBarTitleDisplayMode(.inline)
         .task {
@@ -1087,7 +1097,7 @@ private struct NoteMindMapScreen: View {
             .disabled(working || store.noteDocument == nil || store.aiSettings?.requiresConsent != false || store.aiSettings?.dataPolicy.sendToExternal != true || requiresAIConsent(failure) || requiresAIDataPolicy(failure))
             .padding(.horizontal, 20)
             .padding(.vertical, 11)
-            .background(.regularMaterial)
+            .background(StudyPalette.canvas)
         }
         .navigationTitle("").navigationBarTitleDisplayMode(.inline)
         .task {
@@ -1214,7 +1224,7 @@ private struct NoteExplainScreen: View {
             .disabled(working || store.noteDocument == nil || store.aiSettings?.requiresConsent != false || store.aiSettings?.dataPolicy.sendToExternal != true || requiresAIConsent(failure) || requiresAIDataPolicy(failure))
             .padding(.horizontal, 20)
             .padding(.vertical, 11)
-            .background(.regularMaterial)
+            .background(StudyPalette.canvas)
         }
         .navigationTitle("").navigationBarTitleDisplayMode(.inline)
         .task {

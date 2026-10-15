@@ -2,9 +2,11 @@ import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
+import { enqueueParticipationObservation } from "@astella/agent-host";
 import { sql } from "drizzle-orm";
 import type { AgentTurnRequest, AgentTurnResult } from "@astella/shared";
 import { assertCompanionContextSourcesCurrent } from "../handlers/companion-context-sources.ts";
+import { CompanionContextChangedError } from "../lib/non-retryable-errors.ts";
 import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 import { recordCompanionAwareness, readParticipationPreferences, writeParticipationPreferences,
   arrangeCompanionAttention, writeCompanionSelfNote } from "@astella/agent-host";
@@ -36,8 +38,8 @@ async function fixture() {
   return { userId, workspaceId, conversationId, launchId };
 }
 type Fixture = Awaited<ReturnType<typeof fixture>>;
-const prefs = (f: Fixture, markdown: string, expectedRevision = 0) => transaction(f, tx => writeParticipationPreferences(tx, f,
-  { markdown, enabled: true, expectedRevision, source: { kind: "settings", workspaceId: f.workspaceId, messageId: null, quote: null } }));
+const prefs = async (f: Fixture, markdown: string, expectedRevision = 0) => (await transaction(f, tx => writeParticipationPreferences(tx, f,
+  { markdown, enabled: true, expectedRevision, source: { kind: "settings", workspaceId: f.workspaceId, messageId: null, quote: null } }))).preferences;
 async function observe(f: Fixture, typing = false) {
   return transaction(f, tx => recordCompanionAwareness(tx, f, { version: 1, id: randomUUID(), appLaunchId: f.launchId,
     deviceSessionId: `device:${f.launchId}`, host: "desktop", topic: "app.started", occurredAt: new Date().toISOString(), elapsedMs: 0,
@@ -67,6 +69,43 @@ async function runPrepared(f: Fixture, answer: (request: AgentTurnRequest) => Pr
 }
 const silentAnswer = async (): Promise<AgentTurnResult> => ({ content:"",toolCalls:[],finishReason:"stop",usage:{promptTokens:10,completionTokens:0},providerRequestId:null });
 
+test("reply-finished publication suppresses an exact parent paragraph through both final and tool channels", async () => {
+  for (const channel of ["final", "tool"] as const) {
+    const f = await fixture();
+    await observe(f); await prepare(f);
+    const [pending] = await admin`SELECT id FROM companion_turn_runs WHERE user_id=${f.userId} ORDER BY generation DESC LIMIT 1`;
+    const userMessageId = randomUUID();
+    await admin`INSERT INTO companion_messages(id,workspace_id,user_id,conversation_id,seq,role,kind,blocks,content_sha256)
+      VALUES(${userMessageId},${f.workspaceId},${f.userId},${f.conversationId},1,'user','text',
+        '[{"type":"text","text":"更新称呼为小柚，保留解释先举生活例子的偏好。"}]'::jsonb,${"0".repeat(64)})`;
+    await admin`UPDATE companion_conversations SET next_message_seq=2 WHERE id=${f.conversationId}`;
+    await admin`UPDATE companion_turn_runs SET user_message_id=${userMessageId},input_source=NULL WHERE id=${pending!.id}`;
+    const text = "改好了，小柚：以后就这么称呼你，解释先举生活例子的偏好原样保留。";
+    const parent = pending!, message = { id: randomUUID() };
+    await admin`INSERT INTO companion_messages(id,workspace_id,user_id,conversation_id,seq,role,kind,blocks,run_id,content_sha256)
+      VALUES(${message.id},${f.workspaceId},${f.userId},${f.conversationId},2,'assistant','text',
+        ${admin.json([{ type: "text", text: `我去把那条记录找出来更新。\n\n${text}` }])},${parent.id},${"1".repeat(64)})`;
+    await admin`UPDATE companion_turn_runs SET status='succeeded',assistant_message_id=${message.id},finished_at=now() WHERE id=${parent.id}`;
+    await admin`UPDATE companion_conversations SET next_message_seq=3 WHERE id=${f.conversationId}`;
+    await transaction(f, tx => enqueueParticipationObservation(tx, f, {
+      topic: "reply.finished", dedupeKey: `reply:${parent.id}`, parentRunId: parent.id,
+      conversationId: f.conversationId, facts: { messageIds: [message.id] }, ttlMs: 120_000,
+    }));
+    await prepare(f);
+    let attempts = 0;
+    const followup = await runPrepared(f, async () => channel === "final"
+      ? { ...(await silentAnswer()), content: text }
+      : attempts++ > 0 ? silentAnswer() : { ...(await silentAnswer()), finishReason: "tool_calls", toolCalls: [
+        { id: "repeated-parent-paragraph", name: "companion_publish_utterance", arguments: { text, final: true } },
+      ] });
+    assert.equal((await admin`SELECT 1 FROM companion_messages WHERE run_id=${followup.id}`).length, 0, channel);
+    const events = await admin`SELECT type,payload FROM companion_stream_events WHERE run_id=${followup.id}`;
+    assert.ok(events.some(e => e.type === "turn.completed" && e.payload.silent === true), channel);
+    assert.ok(events.every(e => !["assistant.delta", "assistant.utterance", "assistant.final", "voice.segment.ready"].includes(e.type)), channel);
+    assert.equal((await admin`SELECT status FROM companion_turn_runs WHERE id=${followup.id}`)[0]?.status, "succeeded", channel);
+  }
+});
+
 test("built-in defaults greet a new account with no saved participation preference", async () => {
   const f = await fixture();
   assert.equal((await transaction(f,tx=>readParticipationPreferences(tx,f))).markdown,"");
@@ -84,6 +123,40 @@ test("built-in defaults greet a new account with no saved participation preferen
   });
   const [message] = await admin`SELECT blocks FROM companion_messages WHERE run_id=${run.id} AND role='assistant'`;
   assert.equal(message!.blocks[0].text,"欢迎回来。");
+});
+
+test("startup after a failed user turn keeps the history but assembles a host-occasion task", async () => {
+  const f = await fixture();
+  await observe(f); await prepare(f);
+  const [old] = await admin`SELECT id FROM companion_turn_runs WHERE user_id=${f.userId} ORDER BY generation DESC LIMIT 1`;
+  const messageId = randomUUID(), question = "P(A)=0 能否推出严格集合包含？请给一个反例。";
+  await admin`INSERT INTO companion_messages(id,workspace_id,user_id,conversation_id,seq,role,kind,blocks,content_sha256)
+    VALUES(${messageId},${f.workspaceId},${f.userId},${f.conversationId},1,'user','text',
+      ${admin.json([{ type: "text", text: question }])},${"a".repeat(64)})`;
+  await admin`UPDATE companion_turn_runs SET user_message_id=${messageId},input_source=NULL,status='failed',finished_at=now() WHERE id=${old!.id}`;
+  await admin`UPDATE companion_conversations SET next_message_seq=2 WHERE id=${f.conversationId}`;
+  f.launchId = randomUUID();
+  await observe(f); await prepare(f);
+  let checked = false;
+  const current = await runPrepared(f, async request => {
+    const historical = request.messages.find(message => message.role === "system" && String(message.content).startsWith("<historical_turn_outcome>"));
+    assert.ok(historical?.hostObservation, "the terminal question is retained as attributed historical data");
+    const record = JSON.parse(String(historical.content).split("\n")[2]!);
+    assert.equal(record.originalText, question, "the failed question remains complete and unchanged");
+    assert.equal(record.replyStatus, "failed");
+    assert.equal(request.messages.filter(message => message.role === "user").length, 0, "no invented or pending user request is appended");
+    assert.match(request.systemPrompt, /当前任务是处理末尾 hostObservation/);
+    assert.doesNotMatch(request.systemPrompt, /把最后一条消息作为对方向你说的话来接|当前用户请求仍以最后一条 user 消息为准|当前问题以最后一条 user 消息为准/);
+    const timeline = JSON.parse(request.systemPrompt.slice(request.systemPrompt.indexOf("<conversation_timeline>")).split("\n")[2]!);
+    assert.equal(timeline.current.speaker, "host");
+    assert.equal(timeline.history[0].replyTerminal, true);
+    if (checked) return silentAnswer();
+    checked = true;
+    return { ...(await silentAnswer()), toolCalls: [{ id: "host-greeting", name: "companion_publish_utterance", arguments: { text: "欢迎回来，今天怎么样？", final: true } }], finishReason: "tool_calls" };
+  });
+  assert.ok(checked);
+  const [saved] = await admin`SELECT snapshot FROM companion_context_handoff_snapshots WHERE run_id=${current.id}`;
+  assert.equal(saved!.snapshot.currentRequest.source, "host_observation");
 });
 
 test("content-page help and learning review are built in without personal preferences", async () => {
@@ -237,11 +310,11 @@ test("preference and live presence changes stop an accepted initiative before it
   const [account] = await admin`SELECT presence FROM user_companion_account_state WHERE user_id=${f.userId}`;
   await transaction(f, tx => assertCompanionContextSourcesCurrent(tx,f,run!.id));
   await admin`UPDATE user_companion_account_state SET presence='{"presence":"dnd"}'::jsonb WHERE user_id=${f.userId}`;
-  await assert.rejects(()=>transaction(f,tx=>assertCompanionContextSourcesCurrent(tx,f,run!.id)),/已变更或撤回/);
+  await assert.rejects(()=>transaction(f,tx=>assertCompanionContextSourcesCurrent(tx,f,run!.id)),CompanionContextChangedError);
   await admin`UPDATE user_companion_account_state SET presence=${admin.json(account!.presence)} WHERE user_id=${f.userId}`;
   await prefs(f,"以后不用启动问候。",1);
   let calls=0;
-  await assert.rejects(()=>runPrepared(f,async()=>{calls++;return silentAnswer();}),/已变更或撤回/);
+  await assert.rejects(()=>runPrepared(f,async()=>{calls++;return silentAnswer();}),CompanionContextChangedError);
   assert.equal(calls,0);
   const [result] = await admin`SELECT status,error_code FROM companion_turn_runs WHERE id=${run!.id}`;
   assert.equal(result!.status,"cancelled");assert.equal(result!.error_code,null);
@@ -360,7 +433,7 @@ test("an agent's own revision advances its note without rewriting the input, whi
   await transaction(f,tx=>assertCompanionContextSourcesCurrent(tx,f,run.id));
   await transaction(f,tx=>writeCompanionSelfNote(tx,f,{key:"own-inquiry",expectedRevision:2,title:"用户纠正了这个疑问",body:"先按这次纠正重新核对。",
     tier:"active",nextReviewAt:null,expiresAt:null,reason:"用户更正。"}));
-  await assert.rejects(()=>transaction(f,tx=>assertCompanionContextSourcesCurrent(tx,f,run.id)),/已变更或撤回/);
+  await assert.rejects(()=>transaction(f,tx=>assertCompanionContextSourcesCurrent(tx,f,run.id)),CompanionContextChangedError);
 });
 
 test("the same domain fact cannot reopen a help opportunity after a renderer reload", async () => {
@@ -443,6 +516,74 @@ test("an internal execution reads the exchange as a conversation, with the host 
   assert.equal((await admin`SELECT status FROM companion_turn_runs WHERE id=${run.id}`)[0]!.status,"succeeded");
 });
 
+test("attention verification preserves satisfied state and still enforces CAS and live authority", async () => {
+  const f = await fixture(); await prefs(f, "安静时可以想起点什么。"); await observe(f); await prepare(f);
+  const [run] = await admin`SELECT id FROM companion_turn_runs WHERE user_id=${f.userId}`;
+  const origin = { conversationId: f.conversationId, runId: run!.id };
+  const plan = { key: "quiet", expectedRevision: 0, intent: "只关注前台安静事件。",
+    topics: ["presence.quiet", "app.foreground"] as ("presence.quiet" | "app.foreground")[],
+    nextReviewAt: null, expiresAt: null, preferenceRevision: 1, selfNote: null, state: "active" as const };
+  const created = await transaction(f, tx => arrangeCompanionAttention(tx, f, plan, origin));
+  assert.equal(created.changed, true);
+  const verified = await transaction(f, tx => arrangeCompanionAttention(tx, f,
+    { ...plan, expectedRevision: 1, topics: ["app.foreground", "presence.quiet", "presence.quiet"] }, origin));
+  assert.equal(verified.changed, false);
+  assert.deepEqual(verified.attention, created.attention, "verification preserves version, timestamp, origin and topics");
+  await assert.rejects(transaction(f, tx => arrangeCompanionAttention(tx, f, plan, origin)),
+    { code: "attention_stale" }, "an identical payload cannot bypass a stale CAS");
+  const changed = await transaction(f, tx => arrangeCompanionAttention(tx, f,
+    { ...plan, expectedRevision: 1, topics: ["presence.quiet"] }, origin));
+  assert.equal(changed.changed, true); assert.equal(changed.attention.revision, 2);
+  await prefs(f, "安静时也不要主动说话。", 1);
+  await assert.rejects(transaction(f, tx => arrangeCompanionAttention(tx, f,
+    { ...plan, expectedRevision: 2, topics: ["presence.quiet"] }, origin)), { code: "participation_stale" });
+});
+
+test("identical preference writes preserve plans, while a newly affirmed source renews authority", async () => {
+  const f = await fixture(); await prefs(f, "只在安静时主动说话。"); await observe(f); await prepare(f);
+  const [run] = await admin`SELECT id FROM companion_turn_runs WHERE user_id=${f.userId}`;
+  const origin = { conversationId: f.conversationId, runId: run!.id };
+  await transaction(f, tx => arrangeCompanionAttention(tx, f, { key: "quiet", expectedRevision: 0, intent: "安静时考虑说一句。",
+    topics: ["presence.quiet"], nextReviewAt: null, expiresAt: null, preferenceRevision: 1, selfNote: null, state: "active" }, origin));
+  const before = await transaction(f, tx => readParticipationPreferences(tx, f));
+  const input = { expectedRevision: 1, markdown: before.markdown, enabled: true, source: before.source! };
+  const replay = await transaction(f, tx => writeParticipationPreferences(tx, f, input));
+  assert.equal(replay.changed, false); assert.deepEqual(replay.preferences, before);
+  assert.equal((await admin`SELECT state FROM companion_attention_plans WHERE user_id=${f.userId}`)[0]!.state, "active");
+  await assert.rejects(transaction(f, tx => writeParticipationPreferences(tx, f, { ...input, expectedRevision: 0 })), { code: "participation_stale" });
+  const messageId = randomUUID();
+  await admin`INSERT INTO companion_messages(id,workspace_id,user_id,conversation_id,seq,role,kind,blocks,content_sha256)
+    VALUES(${messageId},${f.workspaceId},${f.userId},${f.conversationId},1,'user','text',
+      '[{"type":"text","text":"只在安静时主动说话。"}]'::jsonb,${"0".repeat(64)})`;
+  const renewed = await transaction(f, tx => writeParticipationPreferences(tx, f,
+    { ...input, source: { kind: "user_message", workspaceId: f.workspaceId, messageId, quote: before.markdown } }));
+  assert.equal(renewed.changed, true); assert.equal(renewed.preferences.revision, 2);
+  assert.equal((await admin`SELECT state FROM companion_attention_plans WHERE user_id=${f.userId}`)[0]!.state, "completed");
+});
+
+test("attention receipts reflect completed timers and reject expired or invalid note authority", async () => {
+  const f = await fixture(); await observe(f); await prepare(f);
+  const [run] = await admin`SELECT id FROM companion_turn_runs WHERE user_id=${f.userId}`;
+  const origin = { conversationId: f.conversationId, runId: run!.id };
+  const plan = { key: "own", expectedRevision: 0, intent: "关注一个真实疑问。", topics: ["presence.quiet"] as "presence.quiet"[],
+    nextReviewAt: null, expiresAt: null, preferenceRevision: null, selfNote: null, state: "active" as const };
+  await assert.rejects(transaction(f, tx => arrangeCompanionAttention(tx, f,
+    { ...plan, expiresAt: new Date(Date.now() - 1_000).toISOString() }, origin)), { code: "attention_expired" });
+  await assert.rejects(transaction(f, tx => arrangeCompanionAttention(tx, f,
+    { ...plan, nextReviewAt: new Date(Date.now() + 60_000).toISOString(), expiresAt: new Date(Date.now() + 30_000).toISOString() }, origin)),
+    { code: "attention_after_expiry" });
+  const completed = await transaction(f, tx => arrangeCompanionAttention(tx, f,
+    { ...plan, state: "completed", nextReviewAt: new Date(Date.now() - 1_000).toISOString() }, origin));
+  assert.equal(completed.attention.nextReviewAt, null);
+  assert.equal((await admin`SELECT next_review_at FROM companion_attention_plans WHERE user_id=${f.userId}`)[0]!.next_review_at, null);
+  await transaction(f, tx => writeCompanionSelfNote(tx, f, { key: "inquiry", expectedRevision: 0, title: "疑问", body: "还需要查证。",
+    tier: "active", nextReviewAt: null, expiresAt: null, reason: "保留未完关注。" }));
+  const linked = { ...plan, key: "linked", selfNote: { key: "inquiry", revision: 1 } };
+  await transaction(f, tx => arrangeCompanionAttention(tx, f, linked, origin));
+  await admin`UPDATE companion_self_notes SET user_disabled=true WHERE user_id=${f.userId} AND entry_key='inquiry'`;
+  await assert.rejects(transaction(f, tx => arrangeCompanionAttention(tx, f, { ...linked, expectedRevision: 1 }, origin)), { code: "self_note_stale" });
+});
+
 test("a rejected attention revision has a known outcome and can be corrected by the same agent", async () => {
   const f = await fixture(); await prefs(f,"学习开始后关注休息时机。"); await observe(f); await prepare(f);
   let step = 0;
@@ -500,41 +641,148 @@ test("one note earns one help chance per launch, not one per saved version", asy
 test("a routine opening yields to the account's declared cadence while a greeting does not", async () => {
   const f = await fixture();
   await admin`UPDATE user_companion_account_state SET intervention_level='moderate' WHERE user_id=${f.userId}`;
-  await admin`INSERT INTO companion_messages(id,workspace_id,user_id,conversation_id,seq,role,kind,blocks,content_sha256,created_at)
-    VALUES(${randomUUID()},${f.workspaceId},${f.userId},${f.conversationId},1,'assistant','proactive',
-      '[{"type":"text","text":"刚才那段要不要再看一遍。"}]'::jsonb,${"0".repeat(64)},now()-interval '10 minutes')`;
-  await admin`UPDATE companion_conversations SET next_message_seq=2 WHERE id=${f.conversationId}`;
-  const noteId = randomUUID();
-  await transaction(f, tx => recordCompanionAwareness(tx, f, { version: 1, id: randomUUID(), appLaunchId: f.launchId,
-    deviceSessionId: `device:${f.launchId}`, host: "desktop", topic: "page.arrived", occurredAt: new Date().toISOString(), elapsedMs: 0,
+  const arrive = (noteId: string) => transaction(f, tx => recordCompanionAwareness(tx, f, { version: 1, id: randomUUID(),
+    appLaunchId: f.launchId, deviceSessionId: `device:${f.launchId}`, host: "desktop", topic: "page.arrived",
+    occurredAt: new Date().toISOString(), elapsedMs: 0,
     context: { foreground: true, unlocked: true, typing: false, learning: false, conversationId: f.conversationId,
       page: { key: `note-read:${noteId}`, label: "笔记", revision: "version-1", context: null } } }));
+  // 她刚在另一篇笔记上搭过一次话：这一次真的产出了消息，间隔从这一刻开始计。
+  await arrive(randomUUID());
   await prepare(f);
-  assert.equal((await admin`SELECT 1 FROM companion_turn_runs WHERE user_id=${f.userId}`).length, 0,
-    "到页面的搭话是新起话题，90 分钟前刚说过就不再起一整轮");
+  await runPrepared(f, async () => ({ content: "", toolCalls: [{ id: "first-help", name: "companion_publish_utterance",
+    arguments: { text: "这篇的开头有个容易混的地方。" } }], finishReason: "tool_calls",
+    usage: { promptTokens: 10, completionTokens: 10 }, providerRequestId: null }));
+  assert.equal((await admin`SELECT 1 FROM companion_messages WHERE user_id=${f.userId} AND role='assistant'`).length, 1);
+  // 换一篇笔记：仍然是「她自己新起的话题」，适中档 30 分钟内不再起一整轮。
+  await arrive(randomUUID());
+  await prepare(f);
+  assert.equal((await admin`SELECT 1 FROM companion_turn_runs WHERE user_id=${f.userId}`).length, 1,
+    "到页面的搭话是新起话题，适中档 30 分钟内刚说过就不再起一整轮");
   // 招呼是用户先要过的相处方式，不进这条节奏。
   await observe(f); await prepare(f);
-  assert.equal((await admin`SELECT 1 FROM companion_turn_runs WHERE user_id=${f.userId}`).length, 1);
+  assert.equal((await admin`SELECT 1 FROM companion_turn_runs WHERE user_id=${f.userId}`).length, 2);
 });
 
-test("a quiet-presence chance is considered once per declared cadence, even when she says nothing", async () => {
+/**
+ * 2026-10-14 用户判定"第一版还是不太行"之后，这条判据反过来钉。
+ *
+ * 旧实现把"安静结束的那次考虑"也算一次主动，于是她每档只能开一次口，而只要有一次
+ * 选择不说，下一次机会又往后推一整个间隔——实链路复现的体感就是"她从来不主动"。
+ * 现在：只有真的产出了 assistant 消息的运行才算一次开口；沉默是成本问题，
+ * 由每档的安静门槛与"一段安静只开一次门"管。
+ */
+test("a quiet chance below the level's threshold is not an occasion, and silence does not spend the cadence", async () => {
   const f = await fixture();
   await admin`UPDATE user_companion_account_state SET intervention_level='moderate' WHERE user_id=${f.userId}`;
-  const quiet = () => transaction(f, tx => recordCompanionAwareness(tx, f, { version: 1, id: randomUUID(),
+  const runs = async () => Number((await admin`SELECT count(*)::int AS n FROM companion_turn_runs WHERE user_id=${f.userId}`)[0]!.n);
+  const quiet = (quietForMs: number) => transaction(f, tx => recordCompanionAwareness(tx, f, { version: 1, id: randomUUID(),
     appLaunchId: f.launchId, deviceSessionId: `device:${f.launchId}`, host: "desktop", topic: "presence.quiet",
     occurredAt: new Date().toISOString(), elapsedMs: 0,
     context: { foreground: true, unlocked: true, typing: false, learning: false, speaking: false,
-      participationAllowed: true, quietForMs: 240_000, conversationId: f.conversationId,
+      participationAllowed: true, quietForMs, conversationId: f.conversationId,
       page: { key: "home", label: "书房", revision: null, context: null } } }));
-  assert.equal(await quiet(), true);
+
+  // 客户端在安静满 90 秒时就会上报；适中档要 3 分钟才算一个合适的开口时机。
+  assert.equal(await quiet(120_000), true, "不到门槛的安静仍然如实入库");
   await prepare(f);
+  assert.equal(await runs(), 0, "适中档 2 分钟的安静还不到开口时机");
+
+  // 真的安静下来了：起一轮，她这一轮选择不说。
+  assert.equal(await quiet(240_000), true);
+  await prepare(f);
+  assert.equal(await runs(), 1);
   await runPrepared(f, async () => silentAnswer());
-  // 又一轮安静：她什么都没说出来，但这一次「想起要说点什么」已经花过一回了。
-  assert.equal(await quiet(), true, "第二次闲场仍然如实入库");
+
+  // 沉默不吃额度：下一段安静照旧可以起一轮。旧实现正是在这里把她静音掉的。
+  assert.equal(await quiet(240_000), true);
   await prepare(f);
-  assert.equal((await admin`SELECT 1 FROM companion_turn_runs WHERE user_id=${f.userId}`).length, 1,
-    "间隔内不再起第二轮；只按发言计的话，用户会感到她隔一会儿就想起一次，哪怕一句也没说");
-  // 招呼是用户先要过的，不受这条节奏管。
+  assert.equal(await runs(), 2, "安静结束不该把下一次机会推后一整个间隔——那正是「她从来不主动」的成因");
+  await runPrepared(f, async () => silentAnswer());
+
+  // 她真的说了话：这一次才开始计间隔。
+  assert.equal(await quiet(240_000), true);
+  await prepare(f);
+  assert.equal(await runs(), 3);
+  await runPrepared(f, async () => ({ content: "", toolCalls: [{ id: "say-hi", name: "companion_publish_utterance",
+    arguments: { text: "在呢。今天怎么样？" } }], finishReason: "tool_calls", usage: { promptTokens: 10, completionTokens: 10 }, providerRequestId: null }));
+  assert.equal((await admin`SELECT 1 FROM companion_messages WHERE user_id=${f.userId} AND role='assistant'`).length, 1,
+    "她真的开了一次口，这一次才该被算进间隔");
+
+  assert.equal(await quiet(240_000), true);
+  await prepare(f);
+  assert.equal(await runs(), 3, "刚说过一句之后，适中档 30 分钟内的下一段安静不再起新话题");
+
+  // 招呼仍然不进这条闸：用户先要过的东西不受她自己说话的节奏管。
   await observe(f); await prepare(f);
   assert.equal((await admin`SELECT 1 FROM companion_turn_runs WHERE user_id=${f.userId} AND input_source->>'topic'='app.started'`).length, 1);
+});
+
+test("a due attention she arranged herself is not pushed away by her own cadence", async () => {
+  const f = await fixture();
+  await admin`UPDATE user_companion_account_state SET intervention_level='moderate' WHERE user_id=${f.userId}`;
+  // 她先在一篇笔记上搭过一次话：这一次真的产出了消息，间隔从这一刻开始计。
+  await transaction(f, tx => recordCompanionAwareness(tx, f, { version: 1, id: randomUUID(), appLaunchId: f.launchId,
+    deviceSessionId: `device:${f.launchId}`, host: "desktop", topic: "page.arrived", occurredAt: new Date().toISOString(), elapsedMs: 0,
+    context: { foreground: true, unlocked: true, typing: false, learning: false, conversationId: f.conversationId,
+      page: { key: `note-read:${randomUUID()}`, label: "笔记", revision: "version-1", context: null } } }));
+  await prepare(f);
+  const spoke = await runPrepared(f, async () => ({ content: "", toolCalls: [{ id: "first-help", name: "companion_publish_utterance",
+    arguments: { text: "这篇的开头有个容易混的地方。" } }], finishReason: "tool_calls",
+    usage: { promptTokens: 10, completionTokens: 10 }, providerRequestId: null }));
+  // 同一次运行里她自己排了一条「回头再看一眼」——这是她答应自己（和用户）的事。
+  await transaction(f, tx => arrangeCompanionAttention(tx, f, { key: "own-plan", expectedRevision: 0,
+    intent: "接着想他上次没弄懂的那一步；没有新内容就安静结束。", topics: [], nextReviewAt: new Date(Date.now() + 3_600_000).toISOString(),
+    expiresAt: null, preferenceRevision: null, selfNote: null, state: "active" },
+    { conversationId: f.conversationId, runId: spoke.id }));
+  await admin`UPDATE companion_attention_plans SET next_review_at=now()-interval '1 second' WHERE user_id=${f.userId}`;
+  // 到点由维护 tick 入队（在场才入队），而不是靠她自己再起一个新话题。
+  await admin`UPDATE companion_awareness_sessions SET updated_at=now() WHERE user_id=${f.userId}`;
+  await admin`SELECT astella_enqueue_companion_attention()`;
+  const queued = await admin`SELECT payload FROM jobs WHERE requested_by=${f.userId} AND type='companion_initiative' AND status='pending'`;
+  assert.ok(queued.some(row => row.payload.attentionKey === "own-plan"), "到点的关注要真的入队");
+  await prepare(f);
+  assert.equal((await admin`SELECT 1 FROM companion_turn_runs WHERE user_id=${f.userId} AND input_source->>'topic'='attention.due'`).length, 1,
+    "她先前答应自己回来看一眼的事，不该被自己刚说过一句话挡掉");
+});
+
+test("initiative without a hint uses the existing inbox rather than creating a detached dialogue", async () => {
+  const f = await fixture(), inboxId = randomUUID();
+  await admin`INSERT INTO companion_conversations(id,workspace_id,user_id,kind,title,title_source,status)
+    VALUES(${inboxId},${f.workspaceId},${f.userId},'inbox','inbox','system','active')`;
+  await transaction(f, tx => recordCompanionAwareness(tx, f, { version: 1, id: randomUUID(), appLaunchId: f.launchId,
+    deviceSessionId: `device:${f.launchId}`, host: "desktop", topic: "app.started", occurredAt: new Date().toISOString(), elapsedMs: 0,
+    context: { foreground: true, unlocked: true, typing: false, learning: false, conversationId: null,
+      page: { key: "home", label: "书房", revision: null, context: null } } }));
+  await prepare(f);
+  const [run] = await admin`SELECT conversation_id FROM companion_turn_runs WHERE user_id=${f.userId}`;
+  assert.equal(run?.conversation_id, inboxId);
+});
+
+test("one quiet spell is considered once; new input cancels stale opportunities and rearms consideration", async () => {
+  const f = await fixture(), firstEpisode = randomUUID(), nextEpisode = randomUUID();
+  const deviceSessionId = `device:${f.launchId}`;
+  const context = (quietEpisodeId: string) => ({ foreground: true, unlocked: true, typing: false, learning: false,
+    quietEpisodeId, conversationId: f.conversationId, page: { key: "home", label: "书房", revision: null, context: null } });
+  const quiet = (quietEpisodeId: string, quietForMs = 240_000) => transaction(f, tx => recordCompanionAwareness(tx, f,
+    { version: 1, id: randomUUID(), appLaunchId: f.launchId, deviceSessionId, host: "desktop", topic: "presence.quiet",
+      occurredAt: new Date().toISOString(), elapsedMs: 0, context: { ...context(quietEpisodeId), quietForMs } }));
+  const count = async () => (await admin`SELECT 1 FROM companion_turn_runs WHERE user_id=${f.userId}`).length;
+  await quiet(firstEpisode); await prepare(f);
+  await runPrepared(f, silentAnswer);
+  await quiet(firstEpisode, 330_000); await prepare(f);
+  assert.equal(await count(), 1, "silent outcome must not cause another paid run for the same pause");
+  await quiet(firstEpisode, 420_000);
+  await transaction(f, tx => recordCompanionAwareness(tx, f, { version: 1, id: randomUUID(), appLaunchId: f.launchId,
+    deviceSessionId, host: "desktop", topic: "context.updated", occurredAt: new Date().toISOString(), elapsedMs: 0,
+    context: context(nextEpisode) }));
+  await prepare(f);
+  assert.equal(await count(), 1, "an observation queued before activity no longer owns a speaking opportunity");
+  await quiet(nextEpisode); await prepare(f);
+  assert.equal(await count(), 2, "new activity starts a new opportunity without a speech cooldown from silence");
+  const [run] = await admin`SELECT id FROM companion_turn_runs WHERE user_id=${f.userId} ORDER BY generation DESC LIMIT 1`;
+  await transaction(f, tx => recordCompanionAwareness(tx, f, { version: 1, id: randomUUID(), appLaunchId: f.launchId,
+    deviceSessionId, host: "desktop", topic: "context.updated", occurredAt: new Date().toISOString(), elapsedMs: 0,
+    context: context(randomUUID()) }));
+  await assert.rejects(transaction(f, tx => assertCompanionContextSourcesCurrent(tx, f, run!.id)),
+    /context|上下文|CONTEXT/i, "new input also revokes a model run already in progress");
 });

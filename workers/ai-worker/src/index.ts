@@ -39,7 +39,7 @@ import {
   waitForV2OutboxDrain,
 } from "./card-generation-v2/outbox-queue.ts";
 
-import { runWithAbortTimeout, runWithAbortBudget } from "./lib/handler-timeout.ts";
+import { HandlerTimeoutError, runWithAbortTimeout, runWithAbortBudget } from "./lib/handler-timeout.ts";
 import { runWithLeaseHeartbeat } from "./lib/lease-heartbeat.ts";
 import { withJobTransaction, lockJobLease } from "./lib/job-lease.ts";
 import { resolveHandlerTimeout, resolveProviderCallTimeout, RESOLVED_TIMEOUT_INFO } from "./lib/handler-timeout-config.ts";
@@ -420,6 +420,17 @@ async function pollV2OutboxWithinTick(): Promise<void> {
   try {
     await pollV2Outbox(1, V2_POLL_TICK_BUDGET_MS);
   } catch (error) {
+    // 5 秒预算是**设计内的提前返回**，不是失败（`pollV2Outbox` 头注释：主 tick 该
+    // 多久返回与 job 该跑多久是两个互不相干的期限）。正常制卡要几分钟，只要被领走的
+    // 那单超过 5 秒，runWithAbortTimeout 就抛 HandlerTimeoutError 让主 tick 先走，
+    // 任务本身仍由 v2Inflight 持有、靠 30 分钟租约兜底。此前这里一律 WARN
+    // 「outbox poll failed」，dev 库每跑一次制卡就记一条像故障的告警（2026-10-14
+    // 实测 7 条，全部对应正常在途任务），真出错那条反而被淹掉。预算超时降为 debug。
+    if (error instanceof HandlerTimeoutError) {
+      logger.debug({ budgetMs: V2_POLL_TICK_BUDGET_MS },
+        "V2 card generation outbox poll reached its tick budget; in-flight job continues");
+      return;
+    }
     logger.warn(
       { error: sanitizeOperationalError(error) },
       "V2 card generation outbox poll failed",

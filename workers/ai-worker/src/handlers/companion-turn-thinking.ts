@@ -5,7 +5,7 @@
  * - 其他纯闲聊（`intent=conversation` 且 `toolUse=none`）→ 请求关闭。这一类话要的是即时与轻，
  *   高档思考把它拖到几十秒，用户体感就是「她还没说完上一条」。
  * - 提问、任务、混合、任务控制，或本轮要看要动工具（read/act/uncertain）→ 开，
- *   按模型档案声明的默认档（当前是 high）。解释概念、带路、读图都在这一类。
+ *   按模型档案声明的默认档。解释概念、带路、读图都在这一类。
  * - 注意力解释本身失败时是 `intent=question` + `toolUse=uncertain`（见 agent-core 的
  *   `resolveAgentTurnInterpretation` 兜底），所以**判不出来时按开处理**：宁可慢一点，
  *   也不要把一个可能要看东西的轮次降级成随口答。

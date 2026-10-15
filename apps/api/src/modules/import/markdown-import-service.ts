@@ -15,7 +15,7 @@ import { visibleNotesCondition } from "../note/visibility.ts";
 import { computeContentHash } from "../note/content-hash.ts";
 import { applyNoteDocUpdate } from "../note/document-state.ts";
 import { ensureImageAssetsForBlocks } from "../note/service.ts";
-import { writeFragmentBlocks } from "../note/doc-fragment.ts";
+import { writeFragmentBlocks, setNoteTitle } from "../note/doc-fragment.ts";
 import { preRegisterImageAssetsForImport } from "../../lib/image-asset.ts";
 import { markdownToBlocks, extractTitleFromBlocks, type ParsedBlock } from "@astella/shared/markdown-parser";
 import { extractObjectKeyFromMarkdownImage } from "../../lib/markdown-image.ts";
@@ -137,6 +137,19 @@ export async function prepareMarkdownImport(
 }
 
 /**
+ * 回给客户端的那一句失败原因。
+ *
+ * Drizzle 的查询错误把**整条语句连同全部绑定参数**塞进 `err.message`：一篇 12,000 段的
+ * 长文导入失败时实测是 240 万字符——整篇正文加 workspace/user id 原样出一次网。
+ * 完整副本在调用点的 `logger.error` 里，这一格只需要够认出是哪一篇、哪一步。
+ */
+function briefImportError(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  const chars = Array.from(message);
+  return chars.length <= 500 ? message : `${chars.slice(0, 500).join("")}…`;
+}
+
+/**
  * 在导入主事务中逐篇创建笔记。nested transaction 在 postgres-js 中使用 SAVEPOINT，
  * 因此单篇失败只回滚当前 item，不会污染同批其他笔记。
  */
@@ -231,6 +244,9 @@ async function importItems(
             version.id,
             (doc) => {
               writeFragmentBlocks(doc, importedBlocks);
+              // A preloaded fresh document has no title metadata. Preserve the
+              // explicit filename/title before projecting the document to notes.
+              setNoteTitle(doc, title, titleWasProvided ? "manual" : "auto");
             },
             importedBlocks,
           );
@@ -268,7 +284,10 @@ async function importItems(
       errors.push({
         index: item.originalIndex,
         title: item.title || "(auto)",
-        error: err instanceof Error ? err.message : "unknown error",
+        // Drizzle 把整条语句连同**全部绑定参数**写进 `err.message`：实测（2026-10-14）
+        // 一篇 12,000 段的长文导入失败时，这一格回给客户端的是 240 万字符——整篇正文
+        // 加 workspace/user id 原样出一次网，完整副本在上面的 logger.error 里已经有了。
+        error: briefImportError(err),
       });
     }
   }

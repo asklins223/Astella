@@ -35,6 +35,9 @@ data class CompanionBlock(
     val url: String? = null,
     val label: String? = null,
     val alt: String? = null,
+    val name: String? = null,
+    val proposalId: String? = null,
+    val code: String? = null,
 )
 
 data class CompanionMessage(
@@ -43,8 +46,9 @@ data class CompanionMessage(
     val role: String,
     val blocks: List<CompanionBlock>,
     val createdAt: String,
+    val runId: String? = null,
 ) {
-    val displayText: String get() = blocks.mapNotNull { it.text }.joinToString("\n\n")
+    val displayText: String get() = blocks.filter { it.type != "file" }.mapNotNull { it.text ?: it.code }.joinToString("\n\n")
 
     companion object {
         fun from(value: JSONObject): CompanionMessage = CompanionMessage(
@@ -58,9 +62,13 @@ data class CompanionMessage(
                     url = block.optNullableString("url"),
                     label = block.optNullableString("label"),
                     alt = block.optNullableString("alt"),
+                    name = block.optNullableString("name"),
+                    proposalId = block.optNullableString("proposalId"),
+                    code = block.optNullableString("code"),
                 )
             },
             createdAt = value.optString("createdAt"),
+            runId = value.optNullableString("runId"),
         )
     }
 }

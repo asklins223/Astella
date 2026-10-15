@@ -22,12 +22,24 @@ import { sql, type SQL } from "drizzle-orm";
 import { pageReadableV1Schema } from "@astella/shared/companion-bridge-contracts";
 import { noteVisibleSqlText } from "@astella/shared/note-visibility";
 import { noteBlocksToPmNodes, pmNodesToNoteBlocks, type NoteDocBlockSpec } from "@astella/shared/note-doc-schema";
-import { PAGE_KIND_LABELS } from "./companion-here-and-now.ts";
+import { ageLabel, PAGE_KIND_LABELS } from "./companion-here-and-now.ts";
 import { CompanionToolUnavailableError } from "./companion-tool-result.ts";
 
 
 import { withWorkerWorkspaceTransaction, type WorkerTransaction } from "../db.ts";
-import type { CompanionAgentToolExecutionConstraints } from "@astella/shared";
+import {
+  COMPANION_RECOMMENDATION_REASON_MAX_CHARS,
+  type CompanionAgentToolExecutionConstraints,
+  type CompanionRecommendationBlockV1,
+} from "@astella/shared";
+import {
+  COMPANION_LEARNING_ARTIFACT_KINDS_V2,
+  type CompanionLearningArtifactKindV2,
+} from "@astella/shared/companion-bridge-contracts";
+import {
+  AGENT_ARTIFACT_KIND_LABELS_V1,
+  type AgentArtifactRefV1,
+} from "@astella/shared/agent-contracts";
 import type { CompanionDialogueHandlerContext, ReadContext } from "./companion-dialogue-store.ts";
 
 export interface AgentEventContext {
@@ -41,6 +53,11 @@ export interface AgentEventContext {
   constraints: CompanionAgentToolExecutionConstraints;
   verifyUtterance?: (text: string) => void;
   onUtterancePublished?: (messageId: string, text: string, rawText: string) => Promise<void>;
+  /** Freeze the whole pending batch in the proposal's publication transaction. */
+  prepareConfirmation?: (proposalId: string) => {
+    stepId: string;
+    checkpoint: import("./companion-runtime-checkpoint.ts").CompanionRuntimeCheckpoint;
+  };
 }
 
 /** 每页正文预算；超长块用块内游标续读，不丢弃余下正文。 */
@@ -448,6 +465,117 @@ export interface DueReviewRow extends Record<string, unknown> {
   card_id: string | null;
   title: string;
   overdue_hours: number;
+}
+
+/**
+ * `companion_recommend_learning` 的结果（纯函数，便于测）。
+ *
+ * 为什么这一族要单独存在（2026-10-14，用户原话「只做介绍，不给我一个可以跳转的卡片式消息」）：
+ * `companion_search_notes` 只回 noteId，而运行时只在工具带回 `route` 时才生成落点块；
+ * 带 route 的那几条（open_note/open_card/open_page）在 full 档会**真的换屏**。
+ * 于是"推荐五样"要么一条都点不动，要么连跳五次——她两头都不该被选中，实际选了闭嘴念一段介绍。
+ *
+ * 这里的形状是第三条：每样一张卡片，**顶层不带 route**，所以两种授权档都得用户自己点。
+ * 标题、种类、时间全部查库带出（她的正文负责讲为什么，不复述卡片上的名字）；
+ * 认不出的 id 原样列在回执里，不换成相近的那一样。
+ */
+export interface RecommendedLearningRow extends Record<string, unknown> {
+  /** 这一行是从哪张表来的：notes / learning_cards_v2 / 三张产物表之一。 */
+  source: "note" | "card" | "artifact";
+  /** 卡片标题用的那一列的真实值；速看没有自己的标题，取所属笔记的。 */
+  title: string | null;
+  age_minutes: number;
+  id?: string;
+  note_id?: string;
+  note_version_id?: string;
+  task_id?: string;
+  artifact_kind?: string;
+  source_kind?: string | null;
+  card_id?: string;
+  objective_id?: string;
+}
+
+export function recommendationToolResult(
+  items: readonly { kind: "note" | "card" | "artifact"; targetId: string; reason?: string }[],
+  rows: readonly RecommendedLearningRow[],
+): { value: Record<string, unknown>; blocks: CompanionRecommendationBlockV1[]; safeSummary: string } {
+  // 她递来的 id 与表里的键对不上是常态：学习卡的到期列表 id 可能是 objective_id
+  // （`companion_open_card` 的别名规则），所以卡片按两个键都认，落点仍用查回来的真 card_id。
+  const byRequestedId = new Map<string, RecommendedLearningRow>();
+  for (const row of rows) {
+    if (row.source === "card") {
+      byRequestedId.set(`card:${row.card_id}`, row);
+      byRequestedId.set(`card:${row.objective_id}`, row);
+    } else if (row.source === "note") {
+      byRequestedId.set(`note:${row.id}`, row);
+    } else {
+      byRequestedId.set(`artifact:${row.id}`, row);
+    }
+  }
+  const attached: { title: string; kindLabel: string }[] = [];
+  const unrecognized: string[] = [];
+  const blocks: CompanionRecommendationBlockV1[] = [];
+  for (const item of items) {
+    const row = byRequestedId.get(`${item.kind}:${item.targetId}`);
+    if (!row) {
+      unrecognized.push(item.targetId);
+      continue;
+    }
+    const kindLabel = recommendationKindLabel(row);
+    const title = (row.title ?? "").replace(/\s+/g, " ").trim().slice(0, 80) || kindLabel;
+    const route = recommendationRoute(item.kind, row);
+    if (!route) {
+      // 产物那一行没有 generation_job_id 时到这里为止：取回执要 noteId+taskId，
+      // 少了 taskId 就点不开那一份。这不算"认出来了"，如实归到没挂上那一批。
+      unrecognized.push(item.targetId);
+      continue;
+    }
+    blocks.push({
+      type: "recommendation",
+      kindLabel,
+      title,
+      reason: item.reason?.replace(/\s+/g, " ").trim().slice(0, COMPANION_RECOMMENDATION_REASON_MAX_CHARS) ?? null,
+      updatedLabel: `${ageLabel(Number(row.age_minutes))}${row.source === "artifact" ? "生成" : "更新"}`,
+      route,
+    });
+    attached.push({ title, kindLabel });
+  }
+  return {
+    value: { attached, unrecognized },
+    blocks,
+    safeSummary: attached.length > 0
+      ? `已挂上 ${attached.length} 张推荐卡片${unrecognized.length > 0 ? `，有 ${unrecognized.length} 个 id 在这一轮的空间里认不出来` : ""}`
+      : `${unrecognized.length} 个 id 在这一轮的空间里认不出来，没有挂上卡片`,
+  };
+}
+
+/** 落点种类的说法取自库里真实的那一列，不是她自述的；名字与手记成果卡同一处声明。 */
+function recommendationKindLabel(row: RecommendedLearningRow): string {
+  if (row.source === "note") return "笔记";
+  if (row.source === "card") return "学习卡";
+  // 原句解释走批注那条链，不在 agent 成果的五种里，所以点名它，剩下三种照表取。
+  if (row.artifact_kind === "note_dynamic_artifact" && row.source_kind === "annotation") return "原句解释";
+  const artifactKind = row.artifact_kind as AgentArtifactRefV1["kind"] | undefined;
+  return (artifactKind && AGENT_ARTIFACT_KIND_LABELS_V1[artifactKind]) || "学习产物";
+}
+
+/** 卡片上的跳转落点。产物的四个 id 缺一个就回 null，宁可不给入口也不给一个点了没反应的。 */
+function recommendationRoute(
+  kind: "note" | "card" | "artifact", row: RecommendedLearningRow,
+): CompanionRecommendationBlockV1["route"] | null {
+  if (kind === "note") return { kind: "note", noteId: String(row.id) };
+  if (kind === "card") return { kind: "card", cardId: String(row.card_id), objectiveId: String(row.objective_id) };
+  const artifactKind = row.artifact_kind as CompanionLearningArtifactKindV2 | undefined;
+  if (!artifactKind || !COMPANION_LEARNING_ARTIFACT_KINDS_V2.includes(artifactKind)) return null;
+  if (!row.task_id || !row.note_id || !row.note_version_id || !row.id) return null;
+  return {
+    kind: "learning_artifact",
+    artifactKind,
+    artifactId: String(row.id),
+    taskId: String(row.task_id),
+    noteId: String(row.note_id),
+    noteVersionId: String(row.note_version_id),
+  };
 }
 
 /**

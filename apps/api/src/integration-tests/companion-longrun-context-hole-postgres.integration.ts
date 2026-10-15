@@ -25,7 +25,8 @@ const conversationId = randomUUID();
 const prefix = userId.slice(0, 8);
 
 const {
-  readCompanionHistoryRows,
+  readCompanionReplayHistoryRows,
+  readConversationSummaryChain,
   companionHistoryText,
   countCompanionHistoryMessages,
 } = await import("../../../../workers/ai-worker/src/handlers/companion-dialogue-store.ts");
@@ -34,14 +35,13 @@ const {
   selectCompanionInteractiveReplayWindow,
   resolveRouteInputTokens,
   REPLAY_HISTORY_READ_ROWS,
-  COMPANION_INTERACTIVE_REPLAY_TOKEN_BUDGET,
 } = await import("../../../../workers/ai-worker/src/handlers/companion-context-handoff.ts");
 const {
   buildSummarizerSnapshot,
   resolveSummarizerInputTokens,
   resolveCompanionSummarizerTailAnchor,
+  readSummarizerSourceRows,
 } = await import("../../../../workers/ai-worker/src/handlers/companion-summarizer.ts");
-type SummarizerSnapshotMessage = Parameters<typeof buildSummarizerSnapshot>[0][number];
 const { closeDatabase: closeWorkerDatabase, withWorkerWorkspaceTransaction } =
   await import("../../../../workers/ai-worker/src/db.ts");
 
@@ -102,7 +102,9 @@ async function seedTurns(turnCount: number, startedAt: Date): Promise<void> {
 /** 对话侧：这一轮真正进 prompt 的那一段原话。 */
 async function measureInlineWindow() {
   return withWorkerWorkspaceTransaction({ workspaceId, userId }, async (tx) => {
-    const rows = await readCompanionHistoryRows(tx, conversationId, { limit: REPLAY_HISTORY_READ_ROWS });
+    const chain = await readConversationSummaryChain(tx, conversationId);
+    const coverage = chain.head ? { fromSeq: chain.effectiveCoverageFromSeq, throughSeq: chain.effectiveCoverageThroughSeq, sourceSha256: chain.head.coverage_source_hash, uncovered: chain.gaps } : null;
+    const rows = await readCompanionReplayHistoryRows(tx, conversationId, { coverage });
     const pool = rows.slice().reverse().map((row) => ({
       seq: row.seq,
       role: row.role as "user" | "assistant",
@@ -113,7 +115,7 @@ async function measureInlineWindow() {
     const visible = boundCompanionRecentHistory(pool);
     const window = selectCompanionInteractiveReplayWindow(
       visible,
-      resolveRouteInputTokens(null, null),
+      resolveRouteInputTokens(null, null), coverage,
     );
     const total = await countCompanionHistoryMessages(tx, conversationId, "9223372036854775807");
     return {
@@ -132,39 +134,45 @@ async function measureInlineWindow() {
   });
 }
 
-/** 摘要侧：摘要器现在跑的话，会写到哪一段（锚点直接调生产那一个函数，不复刻规则）。 */
-async function measureSummaryCoverage() {
+/** 摘要侧：摘要器现在跑的话，会写到哪一段（直接调生产那一条分页判据，不复刻规则）。 */
+async function measureSummaryCoverage(previousCoverageThroughSeq: string | null) {
   return withWorkerWorkspaceTransaction({ workspaceId, userId }, async (tx) => {
     const tailStartSeq = await resolveCompanionSummarizerTailAnchor(tx, conversationId);
     const chunkTokens = resolveSummarizerInputTokens(null);
-    const sourceRows: SummarizerSnapshotMessage[] = [];
-    let beforeSeq = tailStartSeq;
-    for (;;) {
-      const rows = await readCompanionHistoryRows(tx, conversationId, { beforeSeq, limit: 100 });
-      if (rows.length === 0) break;
-      sourceRows.push(...rows.map((row) => ({
-        id: row.id,
-        seq: row.seq,
-        role: row.role,
-        contentSha256: row.content_sha256,
-        blocks: row.blocks,
-        pageContext: row.page_context,
-        createdAt: row.created_at,
-        replyStatus: row.run_status,
-      })));
-      const candidate = buildSummarizerSnapshot(sourceRows, chunkTokens, conversationId);
-      if (candidate.coverageFromSeq || rows.length < 100) break;
-      beforeSeq = rows.at(-1)!.seq;
-    }
-    const snapshot = buildSummarizerSnapshot(sourceRows, chunkTokens, conversationId);
+    const sourceRows = await readSummarizerSourceRows(tx, {
+      conversationId,
+      chunkTokens,
+      beforeSeq: tailStartSeq,
+      previousCoverageThroughSeq,
+    });
+    const snapshot = buildSummarizerSnapshot(sourceRows.map((row) => ({
+      id: row.id,
+      seq: row.seq,
+      role: row.role,
+      contentSha256: row.content_sha256,
+      blocks: row.blocks,
+      pageContext: row.page_context,
+      createdAt: row.created_at,
+      replyStatus: row.run_status,
+    })), chunkTokens, conversationId);
     return {
       tailAnchorSeq: tailStartSeq ?? null,
+      previousCoverageThroughSeq,
       coverageFromSeq: snapshot.coverageFromSeq,
       coverageThroughSeq: snapshot.coverageThroughSeq,
       uncovered: snapshot.uncovered,
       transcript: snapshot.transcript,
     };
   });
+}
+
+/** 库里已经折到哪一段——夹具直接把上一份的边界读出来，不猜。 */
+async function latestSummaryThroughSeq(): Promise<string | null> {
+  const rows = await admin<{ coverage_through_seq: string | null }[]>`
+    SELECT max(coverage_through_seq)::text AS coverage_through_seq
+    FROM conversation_summaries WHERE conversation_id = ${conversationId}
+  `;
+  return rows[0]?.coverage_through_seq ?? null;
 }
 
 const report: string[] = [];
@@ -190,6 +198,7 @@ before(async () => {
 });
 
 after(async () => {
+  await admin`DELETE FROM conversation_summaries WHERE conversation_id = ${conversationId}`;
   await admin`DELETE FROM companion_messages WHERE conversation_id = ${conversationId}`;
   await admin`DELETE FROM companion_conversations WHERE id = ${conversationId}`;
   await admin`DELETE FROM workspace_members WHERE workspace_id = ${workspaceId}`;
@@ -202,13 +211,13 @@ after(async () => {
 test("连续 150 轮：量出原话回放、摘要覆盖与中间那层空洞", async () => {
   const startedAt = new Date(Date.now() - 3 * 24 * 3_600_000);
   const checkpoints = [10, 25, 50, 75, 100, 125, 150];
-  log(`\n=== 长会话覆盖实测（回放预算 ${COMPANION_INTERACTIVE_REPLAY_TOKEN_BUDGET} tok，读取页 ${REPLAY_HISTORY_READ_ROWS} 行）===`);
+  log(`\n=== 长会话覆盖实测（摘要覆盖投影，读取页 ${REPLAY_HISTORY_READ_ROWS} 行）===`);
   log("轮次 | 库内消息 | 回放条数 | 回放seq区间 | 回放用量tok | 摘要覆盖到seq | 空洞条数 | 空洞字符");
 
   for (const turnCount of checkpoints) {
     await seedTurns(turnCount, startedAt);
     const inline = await measureInlineWindow();
-    const summary = await measureSummaryCoverage();
+    const summary = await measureSummaryCoverage(await latestSummaryThroughSeq());
     const through = summary.coverageThroughSeq ? BigInt(summary.coverageThroughSeq) : 0n;
     const inlineFrom = inline.inlineFromSeq ? BigInt(inline.inlineFromSeq) : through + 1n;
     const holeMessages = inlineFrom > through + 1n ? Number(inlineFrom - through - 1n) : 0;
@@ -219,7 +228,7 @@ test("连续 150 轮：量出原话回放、摘要覆盖与中间那层空洞", 
   }
 
   const inline = await measureInlineWindow();
-  const summary = await measureSummaryCoverage();
+  const summary = await measureSummaryCoverage(await latestSummaryThroughSeq());
   const through = BigInt(summary.coverageThroughSeq ?? "0");
   const inlineFrom = BigInt(inline.inlineFromSeq ?? "0");
 
@@ -235,7 +244,7 @@ test("早期那条关键事实：不在回放里，就必须落在摘要链的�
   const startedAt = new Date(Date.now() - 3 * 24 * 3_600_000);
   if (seeded.length < 300) await seedTurns(150, startedAt);
   const inline = await measureInlineWindow();
-  const summary = await measureSummaryCoverage();
+  const summary = await measureSummaryCoverage(await latestSummaryThroughSeq());
   const factSeq = seeded.find((row) => row.text === EARLY_FACT)?.seq ?? 0n;
   const topicSeq = seeded.find((row) => row.text === EARLY_TOPIC)?.seq ?? 0n;
   const through = BigInt(summary.coverageThroughSeq ?? "0");
@@ -284,4 +293,154 @@ test("一条长回复把整个回放窗口挤掉：预算没用完，历史却�
   assert.equal(inline.inlineText.includes("这一份是完整的讲解稿"), false,
     "整条超窗口的正文不该被剪进窗口——剪过的字她会照着说");
   assert.ok(inline.usedTokens <= inline.capacityTokens, "跳过超长那条之后仍然不许超预算");
+});
+
+/**
+ * 折叠必须**接得上上一份摘要**（2026-10-14 的真实缺陷）。
+ *
+ * 判据按库里的形状给，不按理想化的均匀流给：那条 565 条的真实会话里，上一份摘要盖到
+ * 321、本次折叠从 440 起，中间 119 条谁都不负责——而注入的摘要自称「更早那段对话」。
+ * 旧的分页判据是「读出一段覆盖就停」，每轮最多折一页（100 条），回放裁剪点跑得比一页
+ * 快时就会留下这种洞，所以前面那两条 150 轮的用例量不出来。
+ */
+test("上一份只盖到 100：本次折叠要接上它，不许从 201 起", async () => {
+  const startedAt = new Date(Date.now() - 3 * 24 * 3_600_000);
+  if (seeded.length < 300) await seedTurns(150, startedAt);
+  const previousId = randomUUID();
+  await admin`
+    INSERT INTO conversation_summaries
+      (id, workspace_id, user_id, conversation_id, summary,
+       coverage_from_seq, coverage_through_seq, coverage_source_hash, verified_context_revision)
+    VALUES (${previousId}, ${workspaceId}, ${userId}, ${conversationId},
+            ${admin.json({ title: "最早那一段" })}, 1, 100, ${"a".repeat(64)}, 1)
+  `;
+
+  const previous = await latestSummaryThroughSeq();
+  assert.equal(previous, "100", "夹具插进去的那一份要读得到");
+  const summary = await measureSummaryCoverage(previous);
+  const inline = await measureInlineWindow();
+  const from = BigInt(summary.coverageFromSeq ?? "0");
+  log("\n=== 折叠接得上上一份 ===");
+  log(`上一份盖到 ${previous}；本次切片=[${summary.coverageFromSeq}..${summary.coverageThroughSeq}]，`
+    + `回放从 ${inline.inlineFromSeq} 起，带回 ${inline.takenCount} 条 / ${inline.usedTokens} tok`);
+
+  assert.ok(from <= 101n,
+    `上一份盖到 100，本次切片却从 ${from} 起：中间 ${Number(from - 101n)} 条既没进摘要也没进回放`);
+  assert.ok(BigInt(summary.coverageThroughSeq ?? "0") + 1n >= BigInt(inline.inlineFromSeq ?? "0"),
+    `折叠完仍然有洞：摘要盖到 ${summary.coverageThroughSeq}，回放却从 ${inline.inlineFromSeq} 起`);
+
+  // 把这一刀实际会写出的那一段插回去（测量只算不写），链读回来必须接得上。
+  const foldedId = randomUUID();
+  await admin`
+    INSERT INTO conversation_summaries
+      (id, workspace_id, user_id, conversation_id, summary,
+       coverage_from_seq, coverage_through_seq, coverage_source_hash, verified_context_revision, parent_summary_id)
+    VALUES (${foldedId}, ${workspaceId}, ${userId}, ${conversationId},
+            ${admin.json({ title: "接上的那一段" })},
+            ${summary.coverageFromSeq}, ${summary.coverageThroughSeq}, ${"b".repeat(64)}, 1, ${previousId})
+  `;
+  const chain = await withWorkerWorkspaceTransaction({ workspaceId, userId },
+    tx => readConversationSummaryChain(tx, conversationId));
+  assert.equal(chain.head?.coverage_through_seq, summary.coverageThroughSeq,
+    "链头应当是刚折出来的那一份");
+  assert.equal(chain.effectiveCoverageFromSeq, "1", "两段接起来要覆盖到会话开头");
+  assert.deepEqual(chain.gaps, [], "接得上就不该有洞");
+
+  await admin`DELETE FROM conversation_summaries WHERE id IN (${previousId}, ${foldedId})`;
+});
+
+/**
+ * 库里已经存在的那种形状（2026-10-14 实测）：两份摘要都把手挂在最早那一份底下、
+ * 中间 430 条谁都不负责。读取侧现在按覆盖区间读，所以这件事**必须报得出洞**——
+ * 报不出来的话，注入的摘要就在自称「更早那段对话」。
+ */
+test("两份摘要之间断了 430 条：链读回来要报出这一格，不谎报全覆盖", async () => {
+  const rootId = randomUUID();
+  const headId = randomUUID();
+  await admin`
+    INSERT INTO conversation_summaries
+      (id, workspace_id, user_id, conversation_id, summary,
+       coverage_from_seq, coverage_through_seq, coverage_source_hash, verified_context_revision)
+    VALUES (${rootId}, ${workspaceId}, ${userId}, ${conversationId},
+            ${admin.json({ title: "最早那一份" })}, 1, 9, ${"c".repeat(64)}, 1)
+  `;
+  await admin`
+    INSERT INTO conversation_summaries
+      (id, workspace_id, user_id, conversation_id, summary,
+       coverage_from_seq, coverage_through_seq, coverage_source_hash,
+       verified_context_revision, parent_summary_id)
+    VALUES (${headId}, ${workspaceId}, ${userId}, ${conversationId},
+            ${admin.json({ title: "最近那一份" })}, 440, 541, ${"d".repeat(64)}, 1, ${rootId})
+  `;
+  const chain = await withWorkerWorkspaceTransaction({ workspaceId, userId },
+    tx => readConversationSummaryChain(tx, conversationId));
+  log("\n=== 断裂的链 ===");
+  log(`depth=${chain.depth} 有效覆盖=[${chain.effectiveCoverageFromSeq}..${chain.effectiveCoverageThroughSeq}] `
+    + `洞=${chain.gaps.map(gap => `${gap.fromSeq}–${gap.throughSeq}`).join(",") || "无"}`);
+
+  assert.equal(chain.depth, 2, "两份都读回来了（不再沿父指针只走到最早那一份）");
+  assert.equal(chain.head?.id, headId, "链头是覆盖最靠后的那一份");
+  assert.deepEqual(chain.gaps, [{ fromSeq: "10", throughSeq: "439" }]);
+
+  await admin`DELETE FROM conversation_summaries WHERE id IN (${rootId}, ${headId})`;
+});
+
+/**
+ * 0433 的那道判定：改写一条消息，只作废**覆盖到它**的那几份摘要。
+ *
+ * 旧写法是拿会话修订号做等值比较——改一条就把这个会话所有旧摘要一起读不到。
+ * 真实数据里那条 565 条的会话改过 3 次消息，15 份摘要 13 份因此消失，而 prompt
+ * 里连「这一段没读过」都没有。
+ */
+test("改写一条消息：只有盖住它的那一份作废，其余照读", async () => {
+  const earlyId = randomUUID();
+  const touchedId = randomUUID();
+  await admin`
+    INSERT INTO conversation_summaries
+      (id, workspace_id, user_id, conversation_id, summary,
+       coverage_from_seq, coverage_through_seq, coverage_source_hash, verified_context_revision)
+    VALUES (${earlyId}, ${workspaceId}, ${userId}, ${conversationId},
+            ${admin.json({ title: "前一百条" })}, 1, 100, ${"e".repeat(64)}, 1)
+  `;
+  await admin`
+    INSERT INTO conversation_summaries
+      (id, workspace_id, user_id, conversation_id, summary,
+       coverage_from_seq, coverage_through_seq, coverage_source_hash, verified_context_revision)
+    VALUES (${touchedId}, ${workspaceId}, ${userId}, ${conversationId},
+            ${admin.json({ title: "中间那一百条" })}, 101, 200, ${"f".repeat(64)}, 1)
+  `;
+
+  const revisionBefore = await admin<{ context_revision: string }[]>`
+    SELECT context_revision::text FROM companion_conversations WHERE id = ${conversationId}`;
+  // 改的是 seq=150 那一条——只有 101–200 那一份盖住它。走真实 UPDATE：0420 起
+  // 触发器只认 `blocks`／`content_sha256` 这类内容列（`follow_up_prompts` 那种
+  // 附带写入不该把整段历史判成过期）。
+  await admin`
+    UPDATE companion_messages
+       SET blocks = ${admin.json([{ type: "text", text: "这一条被改写过了" }])},
+           content_sha256 = ${createHash("sha256").update("这一条被改写过了").digest("hex")},
+           edited_at = now()
+     WHERE conversation_id = ${conversationId} AND seq = 150
+  `;
+
+  const stamped = await admin<{ id: string; invalidated: boolean }[]>`
+    SELECT id, (invalidated_at IS NOT NULL) AS invalidated
+    FROM conversation_summaries WHERE id IN (${earlyId}, ${touchedId})
+  `;
+  const byId = new Map(stamped.map(row => [row.id, row.invalidated]));
+  log("\n=== 区间级失效 ===");
+  log(`盖住 seq=150 的那一份作废=${byId.get(touchedId)}；没盖住的=${byId.get(earlyId)}`);
+  assert.equal(byId.get(touchedId), true, "被碰到的那段必须作废——摘要不能再冒充原文");
+  assert.equal(byId.get(earlyId), false, "没被碰到的段不许陪着一起消失");
+
+  const revisionAfter = await admin<{ context_revision: string }[]>`
+    SELECT context_revision::text FROM companion_conversations WHERE id = ${conversationId}`;
+  assert.notEqual(revisionAfter[0]?.context_revision, revisionBefore[0]?.context_revision,
+    "会话修订号照旧前进：折叠在途那道围栏依赖它");
+
+  const chain = await withWorkerWorkspaceTransaction({ workspaceId, userId },
+    tx => readConversationSummaryChain(tx, conversationId));
+  assert.equal(chain.head?.id, earlyId, "读回来的链头应当是仍然有效的那一份");
+
+  await admin`DELETE FROM conversation_summaries WHERE id IN (${earlyId}, ${touchedId})`;
 });

@@ -36,6 +36,34 @@ export function readChatCompletionContent(value: unknown): string | undefined {
   return readString(asJsonRecord(firstChoice?.message), "content");
 }
 
+/** Xiaomi MiMo Chat Completions returns its thinking text in this non-standard field. */
+export function readChatCompletionReasoningContent(value: unknown): string | undefined {
+  const choices = asJsonRecord(value)?.choices;
+  if (!Array.isArray(choices)) return undefined;
+  const firstChoice = asJsonRecord(choices[0]);
+  return readString(asJsonRecord(firstChoice?.message), "reasoning_content");
+}
+
+/** Store Chat Completions thinking in the same internal item shape used by Responses providers. */
+export function reasoningHandlesFromContent(text: string): Array<Record<string, unknown>> {
+  return [{ type: "reasoning", content: [{ type: "reasoning_text", text }] }];
+}
+
+/** Extract plaintext reasoning from provider handles for Chat Completions pass-back. */
+export function reasoningContentFromHandles(reasoning: unknown): string | null {
+  if (!Array.isArray(reasoning)) return null;
+  const parts: string[] = [];
+  for (const handle of reasoning) {
+    const content = asJsonRecord(handle)?.content;
+    if (!Array.isArray(content)) continue;
+    for (const part of content) {
+      const record = asJsonRecord(part);
+      if (record?.type === "reasoning_text" && typeof record.text === "string") parts.push(record.text);
+    }
+  }
+  return parts.length > 0 ? parts.join("") : null;
+}
+
 // ─── v0.6: Provider Usage Extraction (计划 §6.6, §10.5) ──────────────────
 
 /**
@@ -388,6 +416,7 @@ export function buildAgentTurnMessages(
     >;
     toolCallId?: string;
     toolCalls?: Array<{ id: string; name: string; arguments: Record<string, unknown> }>;
+    reasoning?: Array<Record<string, unknown>>;
     phase?: "commentary" | "final_answer";
   }>,
 ): Array<{
@@ -397,6 +426,7 @@ export function buildAgentTurnMessages(
     | { type: "image_url"; image_url: { url: string; detail?: "auto" | "low" | "high" } }
   >;
   tool_call_id?: string;
+  reasoning_content?: string;
   phase?: "commentary" | "final_answer";
   tool_calls?: Array<{ id: string; type: "function"; function: { name: string; arguments: string } }>;
 }> {
@@ -418,6 +448,9 @@ export function buildAgentTurnMessages(
       content: m.content,
       ...(m.role === "assistant" && m.phase ? { phase: m.phase } : {}),
       ...(m.toolCallId ? { tool_call_id: m.toolCallId } : {}),
+      ...(m.role === "assistant" && m.reasoning
+        ? { reasoning_content: reasoningContentFromHandles(m.reasoning) ?? undefined }
+        : {}),
       ...(m.toolCalls ? {
         tool_calls: m.toolCalls.map((call) => ({
           id: call.id,

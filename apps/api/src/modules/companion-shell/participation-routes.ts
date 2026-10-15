@@ -18,11 +18,11 @@ export async function companionParticipationRoutes(app: FastifyInstance) {
       return await withWorkspaceTransaction(scope, async tx => {
         const result = await writeParticipationPreferences(tx, scope, { ...body,
           source: { kind: "settings", workspaceId: scope.workspaceId, messageId: null, quote: null } });
-        if (result.enabled && result.markdown.trim()) await enqueueParticipationObservation(tx, scope, {
-          dedupeKey: `participation:${scope.userId}:${result.revision}`, topic: "preference.changed",
-          facts: { preferenceRevision: result.revision }, ttlMs: 10 * 60_000,
+        if (result.changed && result.preferences.enabled && result.preferences.markdown.trim()) await enqueueParticipationObservation(tx, scope, {
+          dedupeKey: `participation:${scope.userId}:${result.preferences.revision}`, topic: "preference.changed",
+          facts: { preferenceRevision: result.preferences.revision }, ttlMs: 10 * 60_000,
         });
-        return result;
+        return result.preferences;
       });
     } catch (error) {
       if (error instanceof AgentStoreError) return reply.code(error.statusCode).send(buildSimpleErrorBody(error));

@@ -35,7 +35,7 @@ import { createHash } from "node:crypto";
 import {isVisionGatedCompanionTool,
   companionPageLabelV2,
   type CompanionAgentToolDefinitionV1,
-  PAST_MESSAGES_MAX_CHARS,
+  PAST_MESSAGES_PAGE_TARGET_CHARS,
   COMPANION_CARD_BLOCK_PREVIEW_MAX_CHARS,
 } from "@astella/shared";
 import { stableStringify, sha256Utf8V1 } from "@astella/shared/content-hash";
@@ -59,7 +59,8 @@ import {
 import { getObjectBytes } from "../lib/object-storage.ts";
 import { resolveProviderCallTimeout } from "../lib/handler-timeout-config.ts";
 import { companionStepOutputCeiling, noteSearchTerms, parsePageContext, stripProviderControlTokens } from "./companion-dialogue-content.ts";
-import { readPastConversationMessages, searchPastConversationSummaries } from "./companion-summary-retrieval.ts";
+import { readPastConversationMessages, searchPastConversationSummaries, searchPastConversationMessages,
+  MAX_PAST_CONVERSATION_HITS } from "./companion-summary-retrieval.ts";
 import { companionMemoryMutationLockKey } from "@astella/shared/db-schema/assistant-memory";
 import { listAgentLongGoals, listAgentMethods } from "@astella/agent-host";
 import {
@@ -90,7 +91,7 @@ import {
   type TaskQueueRow,
 } from "./companion-read-tools.ts";
 import { partitionPersonaPatch } from "./companion-step-plan.ts";
-import { conversationInstant } from "./companion-conversation-evidence.ts";
+import { companionConversationTimeEvidence, conversationInstant } from "./companion-conversation-evidence.ts";
 import { runWorkerAiTask } from "./worker-ai-task.ts";
 
 /** 工具报错与结果类型已搬到 `companion-tool-result.ts`（先搬状态、再搬方法，见那里）。 */
@@ -104,6 +105,7 @@ import { executeCompanionMemoryTool } from "./companion-memory-tools.ts";
 import { executeCompanionCreateNote } from "./companion-note-authoring.ts";
 import { executeCompanionNoteEdit } from "./companion-note-edit.ts";
 import { executeCompanionShareNote } from "./companion-note-share.ts";
+import { executeCompanionLearningDiscoveryTool } from "./companion-learning-discovery.ts";
 
 
 
@@ -130,8 +132,8 @@ export async function executeReadTool(
   // 这里再拦一次是因为**工具名是模型给的**：不复核就等于"下发面没列出来"这件事
   // 只是运气好，而不是一个保证。判定只看服务端解析出的约束，不看模型自述。
   if (event.constraints?.noteLibraryReadEnabled === false
-    && ["companion_search_notes", "companion_read_note"].includes(definition.name)) {
-    throw new CompanionToolBlockedError("你这轮要求不读取笔记库，我不会搜索或读取其他笔记。");
+    && ["companion_search_notes", "companion_search_cards", "companion_read_note", "companion_recommend_learning"].includes(definition.name)) {
+    throw new CompanionToolBlockedError("你这轮要求不读取笔记库和学习卡资料，我不会搜索或读取库内学习内容。");
   }
   if (isVisionGatedCompanionTool(definition.name) && event.constraints.visionEnabled !== true) {
     throw new CompanionToolBlockedError(VISION_EGRESS_DENIED_MESSAGE);
@@ -222,7 +224,7 @@ export async function executeReadTool(
         // 只给会话 id 不给起点，就退回复检索：拿 id 去猜内容正是这个工具禁止的做法。
         return {
           value: { hits: [], error: "取回原文必须同时给出 conversationId 与 fromSeq（来自上一步的覆盖区间）。" },
-          safeSummary: "取回原文缺少起始序号，已改为按关键词检索",
+          safeSummary: "取回原文缺少起始序号，尚未检索",
         };
       }
       return await withWorkerWorkspaceTransaction(
@@ -232,7 +234,7 @@ export async function executeReadTool(
             const excerpt = await readPastConversationMessages(
               tx,
               { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
-              { conversationId, fromSeq: String(fromSeq) },
+              { conversationId, fromSeq: String(fromSeq), clock: event.read.conversationClock },
             );
             return {
               value: { ...excerpt },
@@ -242,22 +244,41 @@ export async function executeReadTool(
             };
           }
           const scope = { workspaceId: event.ctx.workspaceId, userId: event.read.userId };
-          const hits = await searchPastConversationSummaries(
-            tx, scope, { query, excludeConversationId: event.read.conversationId ?? null },
-          );
           // 44 §3.2：跨会话连续性由「可检索历史、有效记忆、方法与目标快照」**共同**
           // 提供。只给会话摘要等于漏掉另两条——上次定下的做法（方法）与正在进行的目标，
           // 恰恰是用户最容易「你怎么又忘了」的那两样。两边都已经是本人范围的窄口读取，
           // 这里只是把它们摆到同一个结果里，而不是再造一条检索通道。
-          const [methods, goals] = await Promise.all([
-            listAgentMethods(tx as never, scope, true).catch(() => []),
-            listAgentLongGoals(tx as never, scope, { query }).catch(() => ({ version: 1 as const, items: [], nextCursor: null })),
+          const limit = Math.max(1, Math.min(MAX_PAST_CONVERSATION_HITS, typeof args.limit === "number" ? args.limit : 3));
+          const searchInput = { query, excludeConversationId: event.read.conversationId ?? null, limit,
+            clock: event.read.conversationClock };
+          const [summaryResult, transcriptResult, methodResult, goalResult] = await Promise.allSettled([
+            searchPastConversationSummaries(tx, scope, searchInput),
+            searchPastConversationMessages(tx, scope, searchInput),
+            listAgentMethods(tx as never, scope, true),
+            listAgentLongGoals(tx as never, scope, { query }),
           ]);
+          const summaries = summaryResult.status === "fulfilled" ? summaryResult.value : [];
+          const transcripts = transcriptResult.status === "fulfilled" ? transcriptResult.value : [];
+          const methods = methodResult.status === "fulfilled" ? methodResult.value : [];
+          const goals = goalResult.status === "fulfilled" ? goalResult.value.items : [];
+          // Exact source locators remain usable before a background summary
+          // exists. Do not spend the result limit twice on the same source span.
+          const hits = [...transcripts, ...summaries.filter(summary => !transcripts.some(hit =>
+            hit.conversationId === summary.conversationId && BigInt(hit.matchedSeq) >= BigInt(summary.coverageFromSeq)
+              && BigInt(hit.matchedSeq) <= BigInt(summary.coverageThroughSeq)))
+            .map(summary => ({ ...summary, sourceKind: "summary" as const, fromSeq: summary.coverageFromSeq }))].slice(0, limit);
+          const sourceStatus = {
+            transcripts: transcriptResult.status === "fulfilled" ? "searched" : "unavailable",
+            summaries: summaryResult.status === "fulfilled" ? "searched" : "unavailable",
+            methods: methodResult.status === "fulfilled" ? "searched" : "unavailable",
+            goals: goalResult.status === "fulfilled" ? "searched" : "unavailable",
+          };
+          const partial = Object.values(sourceStatus).includes("unavailable");
           return {
             value: {
               hits,
               searchScope: { kind: "other_conversations", excludedConversationId: event.read.conversationId,
-                coverage: "indexed_summaries_methods_and_goals" },
+                coverage: "transcripts_valid_summaries_methods_and_goals", exhaustive: false, sourceStatus },
               // 方法目录只给标题与触发条件：正文按 id+revision 另行展开（companion_read_playbook）。
               methods: methods.map((method) => ({
                 methodId: method.methodId,
@@ -265,7 +286,7 @@ export async function executeReadTool(
                 title: method.title,
                 appliesWhen: method.appliesWhen,
               })),
-              goals: goals.items.map((goal) => ({
+              goals: goals.map((goal) => ({
                 memoryId: goal.ref.memoryId,
                 revision: goal.ref.revision,
                 content: goal.content,
@@ -273,9 +294,10 @@ export async function executeReadTool(
                 taskCount: goal.taskCount,
               })),
             },
-            safeSummary: hits.length + methods.length + goals.items.length > 0
-              ? `找到 ${hits.length} 段更早的对话、${methods.length} 条做法、${goals.items.length} 个长期目标`
-              : "更早的记录里没有找到相关内容",
+            safeSummary: partial ? "部分历史来源暂时未能查询，已返回可用的检索结果"
+              : hits.length + methods.length + goals.length > 0
+              ? `找到 ${hits.length} 段更早的对话、${methods.length} 条做法、${goals.length} 个长期目标`
+              : "本次检索没有匹配到相关内容",
           };
         },
       );
@@ -292,7 +314,7 @@ export async function executeReadTool(
             const excerpt = await readPastConversationMessages(
               tx,
               { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
-              { conversationId: event.read.conversationId, fromSeq: String(fromSeq), limit },
+              { conversationId: event.read.conversationId, fromSeq: String(fromSeq), limit, clock: event.read.conversationClock },
             );
             return {
               value: { ...excerpt },
@@ -312,15 +334,17 @@ export async function executeReadTool(
       let chars = 0;
       let skipped: typeof window[number] | null = null;
       for (const message of window) {
-        if (taken.length > 0 && chars + message.text.length > PAST_MESSAGES_MAX_CHARS) {
+        if (taken.length > 0 && chars + message.text.length > PAST_MESSAGES_PAGE_TARGET_CHARS) {
           skipped = message;
           break;
         }
         taken.push(message);
         chars += message.text.length;
       }
-      const history = taken.map((message) => ({ seq: message.seq ?? null, role: message.role,
-        text: message.text, createdAt: conversationInstant(message.createdAt) }));
+      const time = companionConversationTimeEvidence(event.read.conversationClock);
+      const history = taken.map((message, index) => ({ seq: message.seq ?? null, role: message.role,
+        text: message.text, createdAt: conversationInstant(message.createdAt), replyStatus: message.replyStatus ?? null,
+        time: time.stamp(message.createdAt, window[index - 1]?.createdAt) }));
       const truncated = skipped !== null;
       return { value: { messages: history, truncated,
         nextFromSeq: skipped?.seq ?? null,
@@ -328,7 +352,7 @@ export async function executeReadTool(
           timestampMeaning: "message_creation_not_narrated_event", observedAt: event.read.conversationClock?.observedAt ?? null,
           timezone: event.read.conversationClock?.timezone ?? null },
       }, safeSummary: truncated
-        ? `已读取 ${history.length} 条对话历史，这一页装不下的部分按 nextFromSeq 续读`
+        ? `已读取 ${history.length} 条对话历史，还有后续记录可继续查看`
         : `已读取 ${history.length} 条对话历史` };
     }
         case "companion_read_memory":
@@ -450,7 +474,7 @@ export async function executeReadTool(
     case "companion_search_notes": {
       // 不再把搜索词剪到 120 字：她写长了一点，被裁掉的那半句会悄悄改掉搜出来的东西。
       const query = String(args.query).trim();
-      const limit = typeof args.limit === "number" ? Math.min(10, Math.max(1, args.limit)) : 5;
+      const limit = typeof args.limit === "number" ? Math.min(8, Math.max(1, args.limit)) : 5;
       const terms = noteSearchTerms(query);
       const anyMatch = args.match === "any";
       if (terms.length === 0) {
@@ -504,6 +528,9 @@ export async function executeReadTool(
           : `没有找到与「${query.slice(0, 20)}」相关的笔记`,
       };
     }
+    case "companion_search_cards":
+    case "companion_recommend_learning":
+      return executeCompanionLearningDiscoveryTool(event, definition.name, args);
     case "companion_read_note": {
       const noteId = String(args.noteId);
       const noteVersionId = typeof args.noteVersionId === "string" ? args.noteVersionId : undefined;
@@ -1048,7 +1075,7 @@ export async function executeDirectTool(
               intent: `接着推进自己的记事「${saved.title}」。${String(args.reason)}`, topics: [], nextReviewAt: args.at as string | null,
               expiresAt: saved.expiresAt, preferenceRevision: null, selfNote: { key: saved.key, revision: saved.revision },
               state: args.at ? "active" : "completed" }, { conversationId: event.read.conversationId, runId: event.read.runId });
-            return { ...saved, nextReviewAt: attention.nextReviewAt };
+            return { ...saved, nextReviewAt: attention.attention.nextReviewAt };
           }
           const input = args as unknown as import("@astella/shared").CompanionSelfNoteWriteV1;
           const saved = await writeCompanionSelfNote(tx, scope, { ...input, nextReviewAt: null });

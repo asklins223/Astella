@@ -11,6 +11,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   OpenCodeGoProvider,
+  continuationAssistantsCarryPlaintext,
   parseResponsesAgentTurn,
   readResponsesReasoningHandles,
   readResponsesText,
@@ -204,7 +205,10 @@ test("带工具的真实流式步骤在终止事件前交付首句，并保留�
   } finally { release(); }
   const result = await pending;
   assert.deepEqual(result.toolCalls, [{ id: "call_context", name: "companion_read_context", arguments: { section: "current" } }]);
-  assert.deepEqual(result.reasoning, [{ type: "reasoning", id: "rs_stream", summary: [], encrypted_content: "opaque-stream" }]);
+  assert.deepEqual(result.reasoning, [
+    { type: "reasoning", id: "rs_stream", summary: [], encrypted_content: "opaque-stream",
+      content: [{ text: "private reasoning" }] },
+  ], "明文随句柄一起带回：网关在思考模式下要的就是它（0435）");
   assert.equal(result.providerRequestId, "resp_test_1");
   assert.equal(result.usage?.totalTokens, 160);
 });
@@ -222,7 +226,7 @@ test("原生流式工具调用允许无正文；损坏参数和缺失终止快�
   assert.equal(result.content, "");
   assert.equal(result.finishReason, "tool_calls");
   assert.equal(result.toolCalls[0]?.id, "read_1");
-  assert.equal(valid.captured[0]?.body.tool_choice, "auto", "思考与 required 的兼容规则与整段请求一致");
+  assert.equal(valid.captured[0]?.body.tool_choice, "required", "强制工具轮关闭思考后仍使用 required");
   for (const [response, code] of [
     [{ status: "completed", output: [{ ...tool, arguments: '{"broken":' }] }, "arguments_malformed"],
     [{ status: "completed" }, "stream_incomplete"],
@@ -451,7 +455,7 @@ test("executeAgentTurn: 档案档位同样作用于工具调用请求", async ()
  * 调 `companion_read_image`，正好撞上，整轮失败。思考档与强制工具调用在这端互斥，
  * 所以降级成 auto；关掉思考时才允许真的强制。
  */
-test("executeAgentTurn: 开着思考时 required 降级为 auto，关着思考才保留 required", async () => {
+test("executeAgentTurn: 模型支持 none 时关闭思考以保留 required tool choice", async () => {
   const thinkingOn = recordingRequester(ok(completionResponse({
     output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: "ok" }] }],
   })));
@@ -460,8 +464,8 @@ test("executeAgentTurn: 开着思考时 required 降级为 auto，关着思考�
     modelProfile: { reasoning: { levels: ["none", "high"], default: "high" } },
   });
   await onProvider.executeAgentTurn(agentTurnRequest({ toolChoice: "required" }));
-  assert.deepEqual(thinkingOn.calls[0].body.reasoning, { effort: "high" });
-  assert.equal(thinkingOn.calls[0].body.tool_choice, "auto");
+  assert.deepEqual(thinkingOn.calls[0].body.reasoning, { effort: "none" });
+  assert.equal(thinkingOn.calls[0].body.tool_choice, "required");
 
   const thinkingOff = recordingRequester(ok(completionResponse({
     output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: "ok" }] }],
@@ -472,6 +476,176 @@ test("executeAgentTurn: 开着思考时 required 降级为 auto，关着思考�
   });
   await offProvider.executeAgentTurn(agentTurnRequest({ toolChoice: "required" }));
   assert.equal(thinkingOff.calls[0].body.tool_choice, "required");
+});
+
+/**
+ * 网关契约（2026-10-14 真网关实测，完整矩阵记在 `scripts/probe-plaintext-reasoning.ts`）：
+ * 思考开 + 带工具 + **正文非空的 assistant 收尾** + 没带回那条的 `reasoning_text` 明文
+ * = 400「reasoning_text must be passed back」。主动参与轮天生是这个形状，
+ * 所以 0435 起明文随消息落库；带不回来时才降到关思考。
+ */
+test("continuationAssistantsCarryPlaintext：只认带明文 reasoning_text 的续写", () => {
+  const carries = (messages: Array<Record<string, unknown>>) =>
+    continuationAssistantsCarryPlaintext(messages as never);
+  const plain = [{ type: "reasoning_text", text: "我先想清楚他要什么" }];
+  const encryptedOnly = [{ type: "summary", text: "…" }];
+
+  assert.equal(carries([
+    { role: "user", content: "hi" },
+    { type: "reasoning", content: plain },
+    { role: "assistant", content: "嗨" },
+  ]), true, "带明文 → 网关放行，不必关思考");
+
+  assert.equal(carries([
+    { role: "user", content: "hi" },
+    { type: "reasoning", content: encryptedOnly },
+    { role: "assistant", content: "嗨" },
+  ]), false, "只带 encrypted_content 同样 400，必须关思考");
+
+  assert.equal(carries([
+    { role: "user", content: "hi" },
+    { type: "reasoning", content: plain },
+    { role: "assistant", content: "嗨" },
+    { role: "system", content: "宿主观察：人在学习页" },
+  ]), true, "尾部宿主观察不改变判定");
+
+  assert.equal(carries([
+    { role: "user", content: "hi" },
+    { role: "assistant", content: "嗨" },
+  ]), false, "没带 reasoning → 关思考");
+
+  // 工具循环续跑位：assistant 带 toolCalls、后面接回执。实测 encrypted-only 句柄
+  // 就够（probe-reasoning-passback-v4.ts 的 E 发），不要求明文。
+  assert.equal(carries([
+    { role: "user", content: "hi" },
+    { type: "reasoning", content: encryptedOnly },
+    { role: "assistant", content: "查一下进度" },
+    { type: "function_call_output", call_id: "c1", output: "{}" },
+  ]), true, "工具循环位不要求明文，不误伤续跑");
+
+  assert.equal(carries([
+    { role: "user", content: "hi" },
+    { role: "assistant", content: "" },
+  ]), true, "正文为空的 assistant 收尾实测能过，不在约束里");
+
+  assert.equal(carries([
+    { type: "reasoning", content: plain },
+    { role: "user", content: "hi" },
+  ]), true, "没有 assistant 消息，不适用");
+
+  // 真实失败快照的形状（probe-mutate-snapshot.ts 的 V0）：末尾三条连发 assistant，
+  // 只有最后一条带明文 → 400。逐条判据必须抓到中间那两条缺的。
+  assert.equal(carries([
+    { role: "user", content: "hi" },
+    { role: "assistant", content: "上一条" },
+    { role: "assistant", content: "这一条" },
+    { type: "reasoning", content: plain },
+    { role: "assistant", content: "末条" },
+  ]), false, "末尾连发的 assistant 中间两条缺明文 → 关思考（真实 V0 形状）");
+
+  assert.equal(carries([
+    { role: "user", content: "hi" },
+    { type: "reasoning", content: plain },
+    { role: "assistant", content: "上一条" },
+    { type: "reasoning", content: plain },
+    { role: "assistant", content: "这一条" },
+    { type: "reasoning", content: plain },
+    { role: "assistant", content: "末条" },
+  ]), true, "每条都带明文（真实 V2 形状）");
+
+  assert.equal(carries([
+    { role: "user", content: "hi" },
+    { role: "assistant", content: "中间那条" },
+    { role: "user", content: "再来" },
+    { type: "reasoning", content: plain },
+    { role: "assistant", content: "末条" },
+  ]), true, "被用户消息隔开的 assistant 不在约束里（真实 V1 形状）");
+});
+
+test("executeAgentTurn: 带工具且 assistant 收尾时，只在没带回明文时关思考", async () => {
+  // 真实的 reasoning item 形状：完整 item，明文在 `content[].reasoning_text` 里。
+  const plainReasoning = [{
+    type: "reasoning", id: "rs_1", status: "completed", summary: [],
+    content: [{ type: "reasoning_text", text: "想清楚他要什么" }],
+  }];
+
+  // 带明文 → 思考照发。
+  const withPlaintext = recordingRequester(ok(completionResponse({
+    output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: "ok" }] }],
+  })));
+  const plaintextProvider = makeProvider({
+    request: withPlaintext.request,
+    modelProfile: { reasoning: { levels: ["none", "high"], default: "high" } },
+  });
+  await plaintextProvider.executeAgentTurn(agentTurnRequest({ messages: [
+    { role: "user", content: "嗨" },
+    { role: "assistant", content: "嗨，学起来吗？", reasoning: plainReasoning },
+  ] as never }));
+  assert.deepEqual(withPlaintext.calls[0].body.reasoning, { effort: "high" },
+    "带回明文：网关放行，思考保得住——这正是 0435 落库的意义");
+
+  // 没带明文 → 关思考。
+  const noPlaintext = recordingRequester(ok(completionResponse({
+    output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: "ok" }] }],
+  })));
+  const noPlaintextProvider = makeProvider({
+    request: noPlaintext.request,
+    modelProfile: { reasoning: { levels: ["none", "high"], default: "high" } },
+  });
+  await noPlaintextProvider.executeAgentTurn(agentTurnRequest({ messages: [
+    { role: "user", content: "嗨" },
+    { role: "assistant", content: "嗨，学起来吗？" },
+  ] as never }));
+  assert.deepEqual(noPlaintext.calls[0].body.reasoning, { effort: "none" },
+    "带不回明文（历史早于 0435）：降到关思考，不让整轮死掉");
+
+  // 以用户收尾 → 不受影响。
+  const userTurn = recordingRequester(ok(completionResponse({
+    output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: "ok" }] }],
+  })));
+  const userProvider = makeProvider({
+    request: userTurn.request,
+    modelProfile: { reasoning: { levels: ["none", "high"], default: "high" } },
+  });
+  await userProvider.executeAgentTurn(agentTurnRequest());
+  assert.deepEqual(userTurn.calls[0].body.reasoning, { effort: "high" },
+    "以用户收尾的正常轮不受守卫影响");
+
+  // 无工具 → 不受影响。
+  const noTools = recordingRequester(ok(completionResponse({
+    output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: "ok" }] }],
+  })));
+  const noToolsProvider = makeProvider({
+    request: noTools.request,
+    modelProfile: { reasoning: { levels: ["none", "high"], default: "high" } },
+  });
+  await noToolsProvider.executeAgentTurn(agentTurnRequest({ tools: [], messages: [
+    { role: "user", content: "嗨" },
+    { role: "assistant", content: "嗨，学起来吗？" },
+  ] as never }));
+  assert.deepEqual(noTools.calls[0].body.reasoning, { effort: "high" },
+    "无工具的续写形状实测能过网关，不降级");
+});
+
+test("chatCompletionStream: 流式原生路径同样受守卫（同一条网关契约）", async () => {
+  const stream = streamingRequester([
+    `data: ${JSON.stringify({ type: "response.completed", response: {
+      status: "completed",
+      output: [{ type: "message", content: [{ type: "output_text", text: "好" }] }],
+    } })}\n\n`,
+  ]);
+  const provider = makeProvider({
+    streamRequest: stream.request,
+    modelProfile: { reasoning: { levels: ["none", "high"], default: "high" } },
+  });
+  await provider.chatCompletionStream([], {
+    responseFormat: "text",
+    nativeAgentRequest: agentTurnRequest({ messages: [
+      { role: "user", content: "嗨" },
+      { role: "assistant", content: "嗨，学起来吗？" },
+    ] as never }),
+  }, undefined, () => undefined);
+  assert.deepEqual(stream.captured[0]?.body.reasoning, { effort: "none" });
 });
 
 test("chatCompletion: disableMaxTokens 时不带 max_output_tokens", async () => {
@@ -1025,7 +1199,15 @@ test("chatCompletionStream: HTTP 错误抛 ProviderRequestError", async () => {
 
 // ─── reasoning 句柄（多轮工具循环回放） ──────────────────────────────────
 
-test("readResponsesReasoningHandles: 剥离明文 reasoning_text，保留不透明字段", () => {
+/**
+ * 2026-10-14 用户决定（0435）：**不再剥离明文思维链**。
+ *
+ * 旧约束要求 provider 删掉 `content[].reasoning_text` 再返回。真网关三发实测推翻了它：
+ * "思考开 + 带工具 + 以 assistant 收尾"这个形状下，带明文过、只带 encrypted_content 400、
+ * 完全不带 400（`scripts/probe-plaintext-reasoning.ts`）。主动参与轮每一轮都是这个形状，
+ * 剥掉之后那句话就再也凑不回来。
+ */
+test("readResponsesReasoningHandles: 保留明文 reasoning_text（网关要求交回）", () => {
   const handles = readResponsesReasoningHandles({
     output: [
       {
@@ -1040,12 +1222,12 @@ test("readResponsesReasoningHandles: 剥离明文 reasoning_text，保留不透�
     ],
   });
   assert.equal(handles.length, 1);
-  assert.equal("content" in handles[0], false, "明文推理不得进入契约");
   assert.deepEqual(handles[0], {
     id: "rs_1",
     type: "reasoning",
     status: "completed",
     encrypted_content: "opaque-handle",
+    content: [{ type: "reasoning_text", text: "这里是模型内部推理明文" }],
     summary: [],
   });
 });
@@ -1055,7 +1237,7 @@ test("readResponsesReasoningHandles: 无 reasoning item 时为空数组", () => 
   assert.deepEqual(readResponsesReasoningHandles({}), []);
 });
 
-test("executeAgentTurn: 返回 reasoning 句柄（不含明文）", async () => {
+test("executeAgentTurn: 返回 reasoning item 且含明文 reasoning_text", async () => {
   const { request } = recordingRequester(ok(completionResponse({
     output: [
       {
@@ -1075,7 +1257,9 @@ test("executeAgentTurn: 返回 reasoning 句柄（不含明文）", async () => 
   assert.equal(result.reasoning?.length, 1);
   assert.equal(result.reasoning?.[0].id, "rs_deepseek");
   assert.equal(result.reasoning?.[0].summary !== undefined, true, "muse-spark 要求 summary 字段存在");
-  assert.equal("content" in (result.reasoning?.[0] ?? {}), false, "明文推理不得外泄给调用方");
+  assert.deepEqual(result.reasoning?.[0].content,
+    [{ type: "reasoning_text", text: "明文思考内容" }],
+    "明文必须原样带出：网关在思考模式下要的就是这句话，剥掉就凑不回来（0435）");
 });
 
 test("executeAgentTurn: 无 reasoning 的响应不带 reasoning 字段", async () => {

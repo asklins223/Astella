@@ -14,70 +14,70 @@ import androidx.compose.ui.graphics.Color
  */
 private val LightStudyScheme = lightColorScheme(
     // 单一强调色 = systemBlue(light)。业务代码只经 StudyPalette.accent 取用。
-    primary = Color(0xFF007AFF),
+    primary = Color(0xFF5A7CD1),
     onPrimary = Color.White,
-    primaryContainer = Color(0xFFEAF3FF), // primary 9% 叠在 paper 上（≈ sky）
-    onPrimaryContainer = Color(0xFF007AFF),
-    secondary = Color(0xFF007AFF),
+    primaryContainer = Color(0xFFE5EEFF), // primary 9% 叠在 paper 上（≈ sky）
+    onPrimaryContainer = Color(0xFF5A7CD1),
+    secondary = Color(0xFF5A7CD1),
     onSecondary = Color.White,
-    secondaryContainer = Color(0xFFEAF3FF),
-    onSecondaryContainer = Color(0xFF007AFF),
+    secondaryContainer = Color(0xFFE5EEFF),
+    onSecondaryContainer = Color(0xFF5A7CD1),
     // 语义绿（systemGreen）放在 tertiary 槽：M3 没有 success 槽，error 槽留给 danger。
-    tertiary = Color(0xFF34C759),
+    tertiary = Color(0xFF6C9DAB),
     onTertiary = Color.White,
     tertiaryContainer = Color(0xFFD8F5E2),
     onTertiaryContainer = Color(0xFF0A5B2E),
-    background = Color(0xFFFAFAFC), // systemBackground
-    onBackground = Color(0xFF1C1C1E), // label
-    surface = Color.White, // secondarySystemBackground
-    onSurface = Color(0xFF1C1C1E),
-    surfaceVariant = Color(0xFFF2F2F7), // tertiarySystemBackground
-    onSurfaceVariant = Color(0xFF6C6C70), // secondaryLabel
-    outline = Color(0xFFE1E1E6), // separator
-    outlineVariant = Color(0xFFE1E1E6),
-    error = Color(0xFFFF3B30), // systemRed
+    background = Color(0xFFFFFFFF), // systemBackground
+    onBackground = Color(0xFF27334B), // label
+    surface = Color(0xFFFFFFFF), // secondarySystemBackground
+    onSurface = Color(0xFF27334B),
+    surfaceVariant = Color(0xFFF3F5F8), // tertiarySystemBackground
+    onSurfaceVariant = Color(0xFF66758A), // secondaryLabel
+    outline = Color(0xFFDDE2E9), // separator
+    outlineVariant = Color(0xFFDDE2E9),
+    error = Color(0xFFB76752), // systemRed
     onError = Color.White,
     // 中性容器族：替换 M3 baseline 的紫调默认（AlertDialog/DropdownMenu 等走这些槽）。
     surfaceDim = Color(0xFFE8E8EC),
     surfaceBright = Color(0xFFFDFDFD),
     surfaceContainerLowest = Color(0xFFFFFFFF),
-    surfaceContainerLow = Color(0xFFFAFAFC),
+    surfaceContainerLow = Color(0xFFFFFFFF),
     surfaceContainer = Color(0xFFF4F4F7),
-    surfaceContainerHigh = Color(0xFFF2F2F7),
+    surfaceContainerHigh = Color(0xFFF3F5F8),
     surfaceContainerHighest = Color(0xFFECECF1),
 )
 
 private val DarkStudyScheme = darkColorScheme(
-    primary = Color(0xFF0A84FF),
+    primary = Color(0xFFA9C2FF),
     onPrimary = Color.White,
-    primaryContainer = Color(0xFF162A40),
-    onPrimaryContainer = Color(0xFF0A84FF),
-    secondary = Color(0xFF0A84FF),
+    primaryContainer = Color(0xFF263B60),
+    onPrimaryContainer = Color(0xFFA9C2FF),
+    secondary = Color(0xFFA9C2FF),
     onSecondary = Color.White,
-    secondaryContainer = Color(0xFF162A40),
-    onSecondaryContainer = Color(0xFF0A84FF),
-    tertiary = Color(0xFF30D158), // systemGreen(dark)
+    secondaryContainer = Color(0xFF263B60),
+    onSecondaryContainer = Color(0xFFA9C2FF),
+    tertiary = Color(0xFFA3CDD6), // systemGreen(dark)
     onTertiary = Color(0xFF00321A),
     tertiaryContainer = Color(0xFF124A2B),
     onTertiaryContainer = Color(0xFF9DF2C4),
-    background = Color(0xFF101012),
-    onBackground = Color(0xFFF5F5F7),
-    surface = Color(0xFF1C1C1E),
-    onSurface = Color(0xFFF5F5F7),
-    surfaceVariant = Color(0xFF2C2C2E),
-    onSurfaceVariant = Color(0xFF98989D),
-    outline = Color(0xFF38383A),
-    outlineVariant = Color(0xFF38383A),
-    error = Color(0xFFFF453A),
+    background = Color(0xFF101827),
+    onBackground = Color(0xFFEDF2FF),
+    surface = Color(0xFF1C2B43),
+    onSurface = Color(0xFFEDF2FF),
+    surfaceVariant = Color(0xFF283A55),
+    onSurfaceVariant = Color(0xFF9AA9C2),
+    outline = Color(0xFF3D5274),
+    outlineVariant = Color(0xFF3D5274),
+    error = Color(0xFFE5A38D),
     onError = Color.Black,
     // 中性容器族（深色），同上替换 baseline 默认。
     surfaceDim = Color(0xFF08080A),
-    surfaceBright = Color(0xFF1C1C1E),
+    surfaceBright = Color(0xFF27334B),
     surfaceContainerLowest = Color(0xFF0B0B0D),
-    surfaceContainerLow = Color(0xFF101012),
+    surfaceContainerLow = Color(0xFF101827),
     surfaceContainer = Color(0xFF161619),
-    surfaceContainerHigh = Color(0xFF1C1C1E),
-    surfaceContainerHighest = Color(0xFF2C2C2E),
+    surfaceContainerHigh = Color(0xFF27334B),
+    surfaceContainerHighest = Color(0xFF283A55),
 )
 
 /**
@@ -86,10 +86,13 @@ private val DarkStudyScheme = darkColorScheme(
  * 业务代码只用这里的语义名，不直接写平台颜色。
  */
 object StudyPalette {
+    val actionFill = Color(0xFF8DB8F4)
+    val night = Color(0xFF263656)
+    val pollen = Color(0xFFBAD9FF)
     val ink: Color @Composable get() = MaterialTheme.colorScheme.onSurface
     val muted: Color @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
     val accent: Color @Composable get() = MaterialTheme.colorScheme.primary
-    val sky: Color @Composable get() = MaterialTheme.colorScheme.primary.copy(alpha = 0.09f)
+    val sky: Color @Composable get() = MaterialTheme.colorScheme.primaryContainer
     val canvas: Color @Composable get() = MaterialTheme.colorScheme.background
     val paper: Color @Composable get() = MaterialTheme.colorScheme.surface
     val inset: Color @Composable get() = MaterialTheme.colorScheme.surfaceVariant
@@ -100,9 +103,9 @@ object StudyPalette {
 
 /** 主题入口：色（M3 角色承载）、字阶、形状 token 一次装配。 */
 @Composable
-fun StudyTheme(content: @Composable () -> Unit) {
+fun StudyTheme(darkTheme: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
     MaterialTheme(
-        colorScheme = if (isSystemInDarkTheme()) DarkStudyScheme else LightStudyScheme,
+        colorScheme = if (darkTheme) DarkStudyScheme else LightStudyScheme,
         typography = StudyTypography,
         shapes = StudyShapes,
         content = content,

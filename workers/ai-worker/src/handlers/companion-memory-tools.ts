@@ -678,7 +678,7 @@ export async function executeCompanionMemoryTool(
             const conflictGroup = randomUUID();
             await tx.execute(sql`
               UPDATE assistant_memory_items
-                 SET conflict_group = ${conflictGroup}::uuid, updated_at = now()
+                 SET conflict_group = ${conflictGroup}::uuid
                WHERE id IN (${memoryId}::uuid, ${similarId}::uuid)
             `);
           }

@@ -6,6 +6,20 @@ import { agentToolParameters } from "../agent-tool-parameters.ts";
 import { createAgentRunV1Schema } from "../contracts/agent-contracts.ts";
 import { getCompanionAgentTool, validateCompanionAgentToolArguments } from "../companion-agent-registry.ts";
 
+test("invalid tool arguments expose repair fields without echoing submitted values", () => {
+  const result = validateCompanionAgentToolArguments("companion_arrange_attention", {
+    key: "quiet", expectedRevision: "RAW_PRIVATE_VALUE", intent: "", topics: ["not-a-topic"],
+    nextReviewAt: "invalid-time", expiresAt: null, preferenceRevision: 1, selfNote: null, state: "active",
+  });
+  assert.equal(result.success, false);
+  if (result.success) return;
+  assert.ok(result.issues.some(issue => issue.path.join(".") === "expectedRevision" && issue.expected === "number"));
+  assert.ok(result.issues.some(issue => issue.path.join(".") === "intent" && issue.minimum === 1));
+  assert.ok(result.issues.some(issue => issue.path.join(".") === "topics.0" && issue.allowedValues?.includes("presence.quiet")));
+  assert.ok(result.issues.some(issue => issue.path.join(".") === "nextReviewAt"));
+  assert.ok(!JSON.stringify(result).includes("RAW_PRIVATE_VALUE"));
+});
+
 test("the same capability schema supplies model bounds and rejects invalid or expanded authority", () => {
   const start = agentGoalToolManifest.find(entry => entry.definition.name === "agent_start_goal")!;
   const parameters = start.definition.parameters as { properties: Record<string, { maxLength?: number; maxItems?: number }>; required: string[]; additionalProperties: boolean };

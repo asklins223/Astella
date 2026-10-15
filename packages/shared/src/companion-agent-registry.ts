@@ -45,7 +45,7 @@ export function resolveAllCompanionAgentTools(
     (!isVisionGatedCompanionTool(definition.name) || constraints.visionEnabled === true)
     && (definition.name !== "agent_web_search" || constraints.webSearchEnabled === true)
     && (constraints.noteLibraryReadEnabled !== false
-      || !["companion_search_notes", "companion_read_note"].includes(definition.name))
+      || !["companion_search_notes", "companion_search_cards", "companion_read_note", "companion_recommend_learning"].includes(definition.name))
     );
 }
 export function getCompanionAgentTool(toolName: string): CompanionAgentToolDefinitionV1 | null {

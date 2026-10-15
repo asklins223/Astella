@@ -5,7 +5,7 @@ import { companionVoiceSegmentExpression, projectCompanionVoiceExpression } from
 import {
   COMPANION_HOST_PROTOCOL_V5,
   COMPANION_IDENTITY_BOUNDARY_V4,
-  COMPANION_PERSONA_V13,
+  COMPANION_PERSONA_V14,
   COMPANION_PERSONA_V13_PROMPT_ID,
   type ChatMessage,
 } from "@astella/shared";
@@ -90,10 +90,9 @@ test("摘要裁剪水位复用 prompt 的可见尾部选择规则", () => {
     selectCompanionReplayWindow(history, capacity).messages,
     "摘要水位与 prompt 尾部不再走同一个选择器");
   const windowed = selectCompanionReplayWindow(history, capacity);
-  assert.ok(windowed.messages.length > 0 && windowed.receipt.omittedCount > 0, "样本要真的发生取舍");
-  assert.equal(windowed.messages[0]?.seq, String(21 - windowed.messages.length + 1));
-  assert.equal(windowed.receipt.uncoveredThroughSeq, String(21 - windowed.messages.length),
-    "少带的那一段最新一条要说得出 seq，摘要才接得上裁剪点");
+  assert.deepEqual(windowed.messages, history, "uncovered messages stay complete regardless of a small target");
+  assert.equal(windowed.receipt.omittedCount, 0);
+  assert.equal(windowed.receipt.uncoveredThroughSeq, null);
 });
 
 test("交接快照绑定输入水位并按账本状态区分完成、未决和失败动作", () => {
@@ -175,8 +174,8 @@ test("T0：回合编码是原生多轮（历史是真 messages，上下文是 sy
   assert.equal(messages[0].role, "system");
   // persona 正文必须原样在最前；其后允许追加安全护栏（2026-09-19 起多了
   // 反回显护栏——实机出现过模型把输入上下文整段复述成回复）。
-  assert.ok(String(messages[0].content).startsWith(COMPANION_PERSONA_V13),
-    "现役 v11 prompt（含宿主协议与角色底座）必须是 system 消息的第一段");
+  assert.ok(String(messages[0].content).startsWith(COMPANION_PERSONA_V14),
+    "现役 v14 prompt（含宿主协议与角色底座）必须是 system 消息的第一段");
   assert.ok(String(messages[0].content).includes(COMPANION_IDENTITY_BOUNDARY_V4),
     "固定身份边界必须进入实际装配的对话 prompt");
   assert.ok(
@@ -394,7 +393,8 @@ test("模型能分清本轮没注入记忆与记忆不存在，并只在相关�
   assert.match(system, /当前问题确实需要相关旧记忆时/);
   assert.match(system, /companion_recall_memory/);
   assert.match(system, /长期记忆不是每轮都要搜索/);
-  assert.match(system, /过去的交流或约定/);
+  assert.match(system, /只有缺少会改变回答的旧交流、约定/);
+  assert.match(system, /已有原文或本轮提供的完整问题足够时直接回答/);
   assert.match(system, /记录\/修订时间/);
   assert.match(system, /模型推断、待核、争议或已替代/);
 });

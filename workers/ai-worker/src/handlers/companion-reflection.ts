@@ -197,9 +197,18 @@ async function prepareReflection(
         toolReceipts: receipts,
         relatedMemories: related,
       }, inputBudget ?? undefined);
-      if (snapshot.inputOmitted) {
+      // `boundReflectionSnapshot` 只要给了预算就**恒会**返回 inputOmitted（连全 0 也带
+      // triggerTokens），所以判据必须是"真的有条目被挡在外面"（求和 > 0）——与提示词
+      // 那一侧 renderReflectionPrompt 用的是同一条（2026-10-14 修）。此前只判对象存在，
+      // 于是 dev 库每次回顾都打一行「omitted whole sources」而 omitted 四项全是 0：
+      // 观测上看着像素材被预算吃掉，实际一条没少。
+      const omittedItems = snapshot.inputOmitted;
+      const omittedCount = omittedItems
+        ? omittedItems.messages + omittedItems.toolReceipts + omittedItems.relatedMemories + omittedItems.selfNotes
+        : 0;
+      if (omittedCount > 0 && omittedItems) {
         // 「她这次没读到什么」要能在日志里答出来；被整条挡住不等于没发生。
-        logger.info({ jobId: job.id, conversationId: input.conversationId, omitted: snapshot.inputOmitted },
+        logger.info({ jobId: job.id, conversationId: input.conversationId, omitted: omittedItems },
           "companion reflection omitted whole sources over the declared input budget");
       }
       const fingerprint = reflectionInputFingerprint(snapshot, COMPANION_REFLECTION_STRATEGY_VERSION);

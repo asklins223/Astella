@@ -11,6 +11,7 @@ import { COMPANION_SELECTION_MAX_CHARS, COMPANION_P2_LIMITS } from "@astella/sha
 const state = vi.hoisted(() => ({
   chat: null as unknown,
   voiceOptions: null as unknown,
+  speechSession: null as unknown,
   /** 手摇的会话状态：测试自己把相位与字幕摆上去，看界面跟不跟。 */
   voice: { phase: "idle", caption: null } as { phase: CompanionVoicePhase; caption: CompanionVoiceCaption | null },
   refresh: (() => {}) as () => void,
@@ -45,7 +46,9 @@ vi.mock("../use-companion-voice-input", async importOriginal => {
 });
 vi.mock("../../../app/companion-voice-playback", async importOriginal => {
   const actual = await importOriginal<typeof import("../../../app/companion-voice-playback")>();
-  return { ...actual, stopCompanionSpeech: vi.fn(), subscribeCompanionSpeech: () => () => undefined };
+  return { ...actual, stopCompanionSpeech: vi.fn(), subscribeCompanionSpeech: () => () => undefined,
+    beginCompanionSpeechLine: (...args: Parameters<typeof actual.beginCompanionSpeechLine>) =>
+      state.speechSession ?? actual.beginCompanionSpeechLine(...args) };
 });
 vi.mock("../../../app/companion-voice-level", async importOriginal => {
   const actual = await importOriginal<typeof import("../../../app/companion-voice-level")>();
@@ -73,12 +76,27 @@ beforeEach(() => {
   Object.defineProperty(window, "matchMedia", { configurable: true, value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) });
   Object.defineProperty(Element.prototype, "getAnimations", { configurable: true, value: () => [] });
   state.chat = interactionSession();
+  state.speechSession = null;
   state.voice = { phase: "idle", caption: null };
   voiceToggle.mockClear(); voiceCancel.mockClear();
 });
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe("production companion interaction", () => {
+  it("closes a failed draft's voice queue while keeping its partial text visible", () => {
+    const stop = vi.fn();
+    state.speechSession = { planId: "failed-draft", mode: "voice", stop,
+      feed: vi.fn(), feedSegment: vi.fn(), finish: vi.fn(), currentVisibleChars: () => null };
+    const partial = "先从条件概率定义开始推导。";
+    state.chat = interactionSession({ phase: "sending", liveReply: null,
+      draft: { runId: "failed", text: partial }, interrupted: null });
+    render(<Harness voiceEnabled />);
+    expect(stop).not.toHaveBeenCalled();
+    patch({ phase: "error", draft: null, liveReply: null,
+      interrupted: { text: partial, message: "这次回复没有完成。" }, failure: "这次回复没有完成。" });
+    expect(stop).toHaveBeenCalledOnce();
+    expect(document.body.textContent).toContain(partial);
+  });
   it("keeps a created note and all its material in one reply, then clears it together on close", () => {
     const dismissLiveReply = vi.fn(() => patch({ liveReply: null }));
     const dismissRichReply = vi.fn(() => patch({ richReply: null }));

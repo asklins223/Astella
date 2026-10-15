@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRoomStore } from "../../app/room-store";
-import { useUpdateStatus } from "../../app/update-status";
 import {
   createRequestMeta,
   gatewayErrorMessage,
@@ -235,7 +234,7 @@ function decodeBase64Audio(context: AudioContext, base64: string): Promise<Audio
 }
 
 /**
- * Audio is created only inside a trusted user gesture and stays silent in tasks.
+ * Audio is prepared during idle time or on demand for companion speech.
  * It is also the single owner of companion voice playback, so the interface
  * transients and speech share one context, one mute gate and one amplitude
  * channel for the Live2D mouth. Nothing plays on its own: every cue is built at
@@ -250,9 +249,8 @@ export function HomeV2AudioController() {
   const masterMuted = useRoomStore((state) => state.masterMuted);
   const surface = useRoomStore((state) => state.surface);
   const windowState = useRoomStore((state) => state.windowState);
-  const installedUpdateVersion = useUpdateStatus(state => state.state.installedUpdate?.version);
-  const startupAudioAllowed = useRef(false);
-  startupAudioAllowed.current = Boolean(installedUpdateVersion) && !masterMuted && windowState === "visible" && !document.hidden;
+  const foregroundAudioAllowed = useRef(false);
+  foregroundAudioAllowed.current = !masterMuted && windowState === "visible" && !document.hidden;
   const invalidation = useHomeProjectionInvalidation();
   const workspaceEpochRef = useRef(invalidation.workspaceEpoch);
   workspaceEpochRef.current = invalidation.workspaceEpoch;
@@ -373,12 +371,11 @@ export function HomeV2AudioController() {
       try {
         const graph = graphRef.current ?? buildAudioGraph();
         graphRef.current = graph;
-        if (interacted || startupAudioAllowed.current) {
+        if (interacted || foregroundAudioAllowed.current) {
           void graph.context.resume().catch(() => undefined);
           setUnlocked(true);
         } else {
-          // Warm the audio device before the first click; keep playback locked
-          // until a real user gesture has arrived.
+          // Keep a muted/background startup silent until it becomes eligible.
           void graph.context.suspend().catch(() => undefined);
         }
       } catch (err) {
@@ -459,7 +456,10 @@ export function HomeV2AudioController() {
    * 它与 §2026-09-16 裁决 3 是同一条线："按页静音只抑制主动输出、不阻断用户主动
    * 触发的互动"；看不见同样只该抑制主动输出。
    */
-  const replyAudible = shouldPlayCompanionReplyVoice({ unlocked, masterMuted });
+  // Startup greetings can arrive before idle preparation or any user gesture.
+  // Let eligible speech reach synthesis, which prepares the graph on demand;
+  // otherwise beginCompanionSpeechLine permanently chooses its silent mode.
+  const replyAudible = shouldPlayCompanionReplyVoice({ unlocked: unlocked || foregroundAudioAllowed.current, masterMuted });
   const replyAudibleRef = useRef(false);
   /**
    * 正在播的那一段的**音频时钟读数**（方案 29 §14.11 修复 ⑤）。
@@ -490,15 +490,17 @@ export function HomeV2AudioController() {
     return built;
   }, []);
 
-  // A confirmed update is an expected startup message. Reopen the existing
-  // local audio channel for it while respecting mute and window visibility.
+  // A foreground startup can speak without a click (Electron permits autoplay).
+  // Reopen a graph prepared while muted/hidden; leave initial construction to
+  // idle preparation or actual speech so navigation never builds it inline.
   useEffect(() => {
-    if (!installedUpdateVersion || masterMuted || windowState !== "visible" || document.hidden) return;
-    const graph = ensureGraph();
+    if (!foregroundAudioAllowed.current) return;
+    const graph = graphRef.current;
+    if (!graph) return;
     void graph.context.resume().then(() => {
       if (graphRef.current === graph && graph.context.state === "running") setUnlocked(true);
     }).catch(() => undefined);
-  }, [installedUpdateVersion, masterMuted, windowState, ensureGraph]);
+  }, [masterMuted, windowState]);
 
   const synthesizeVoice = useCallback(async (text: string, signal?: AbortSignal): Promise<AudioBuffer> => {
     const speakApi = window.astella?.companion?.voice?.speak;

@@ -1,4 +1,20 @@
+> **2026-10-15 scope correction:** This audit and its acceptance criteria cover the desktop client and its dependent Agent/backend chain only. The user explicitly excluded unreleased mobile clients; earlier audit references to required mobile validation no longer apply.
+
+> **2026-10-15 working-state recovery:** Migration 0440 persists complete tool results, correction state, delivered-prefix recovery and mixed-batch confirmation context. A native SIGKILL run resumed the same request without resubmission; late failure bookkeeping now checks the current lease. See [implementation, evidence and remaining acceptance](../../testing/agent-runtime-recovery-2026-10-15.md). This supersedes the earlier statement that ordinary multi-step recovery is wholly missing; native confirmation, mid-write, background and long-running acceptance remain open.
+
+> **2026-10-15 partial source recovery:** Pressure compaction can now persist a schema/hash-bound cumulative state on the private running step. A native SIGKILL test resumed at UTF-16 offset 155,713, read the remaining 20,291 code units once, and completed the same run with the final corrections intact. See [implementation, migration 0439, verification and recovery boundaries](../../testing/agent-semantic-progress-recovery-2026-10-15.md). General tool-transcript reconstruction, format-correction state and background-job progress remain open.
+
+> **2026-10-15 desktop continuation:** A valid native worker-crash run resumed its complete checkpoint and finished without a second user submission. Pure historical retrieval hints no longer force an extra read before the main Agent can assess its complete context. Native samples and additional host pressure/quiet-output defects are recorded in [retrieval decisions and host pressure](../../testing/agent-history-retrieval-decisions-2026-10-15.md); remaining acceptance work is explicit there.
+
+> **2026-10-15 implementation continuation:** Background history and active read-tool compaction now consume complete source through measured parts before accepting replacement coverage. See [complete-source implementation and real-provider verification](../../testing/agent-complete-source-compaction-2026-10-15.md). Pre-runtime overflow recovery, oversized protected current exchanges and native quiet/long-run acceptance remain open.
+
+> **2026-10-15 pressure/recovery continuation:** First-answer history pressure and oversized historical tool reads now have complete-source compaction and private request-bound checkpoints. Native Electron completed the valid 175k-character fixture, but first visible output was 118.6 seconds; latency is not accepted. See [pressure, persistence, restart limits and native evidence](../../testing/agent-history-pressure-recovery-2026-10-15.md). Protected current exchanges, intermediate checkpoint resumption and the remaining native acceptance cases are still open.
+
+> **2026-10-15 user decision:** Do not use hard truncation to fix context or latency. Durable originals, verified semantic summaries/checkpoints, complete recent exchanges and retrievable source references are the governing design. The fixed 2,048-token replay target and 1,600-character summary rendering cutoff have been removed. Read the current [implementation and verification record](../../testing/agent-context-mature-agents-2026-10-15.md); remaining overflow recovery and autonomy defects are explicitly open. Older quota/omission descriptions below are historical where they conflict with this decision.
+
 # 44 · 全系统上下文治理、可靠压缩与经验接续
+
+> **2026-10-15 审查修正：**只有链头实际继承的父摘要可计入本轮覆盖；同会话的兄弟摘要未注入正文，不能仅按区间合并成已读。0436 将父摘要的失效传播到派生后代，区间内明确未覆盖的消息与动作回执继续保留。摘要递增输入使用父摘要完整结构，显示投影的容量不再影响后续摘要。策略升至 v4，重试键绑定完整输入快照。验证与限制见 [本次审查记录](../../testing/agent-context-initiative-review-2026-10-15.md)。
 
 > **2026-10-11 用户决定与伴星修复：**上下文计量管理实际模型窗口，不能用固定字符预算、步数或工具次数替代任务完成。伴星装配已撤去独立的 100,000 字符和来源局部字符截断；压力压缩已扩展到当前任务的已完成读取回合，保留用户要求、最新证据、写回执与未完成调用。新增长请求可以再次压缩，同一失败请求不反复重发。真实模型接续语义和发布后窗口仍需验收，范围见[本次修复记录](../../../workers/ai-worker/src/live-tests/companion-agent-reliability-2026-10-12.md)。
 
@@ -285,7 +301,7 @@ P >= T 时尝试有界压缩；压缩后重新装配并测量。保留当前已�
 - [ ] 完整工具调用/结果关系与 JSON 保留；outcome_unknown 不被摘要改成完成或失败。证据：`44 §5.2：尾部之后的一切原样保留（工具调用与结果是一对，不许剪开）`；`44 §6.2：outcome_unknown 既不是成功也不是失败，规则只能说「先核对」`。
 - [ ] 并发压缩、重复入队、超时、失租、迟到结果与重启恢复不覆盖新指针、不重复提交。证据（判据形状）：`44 §5.4：额度已经用尽时不再折，原样把真实限制交回`。待环境：并发与恢复实测见 `workers/ai-worker` 的 `npm run test:companion-integration:postgres`（含 `companion-runtime-recovery-postgres`）。
 - [ ] 失败有界与冷却有效；降级仍检查完整请求，无法容纳时不无限重发或静默丢掉要求。证据：`冷却期没过：同一个失败输入不再每轮重触发`；`连续无进展：这条路在当前输入上走不通，不再靠加时间重试`。
-- [ ] 原始来源被纠正、删除、遗忘或撤权后，父子摘要、索引、经验与缓存同步失效。证据：`44 §3.3：读取侧检查当前有效性（会话内容修订号），而不是只看列非空`；`44 §6.4：证据传播仍按 memoryId 找到派生方法——不能把记忆引用折掉`。待环境：撤权端到端见 `workers/ai-worker` 的 `npm run test:companion-integration:postgres`（含 `companion-memory-cross-space`）。
+- [ ] 原始来源被纠正、删除、遗忘或撤权后，父子摘要、索引、经验与缓存同步失效。证据：`44 §3.3：读取侧按区间级失效标记，不再拿会话修订号做等值比较`；`44 §6.4：证据传播仍按 memoryId 找到派生方法——不能把记忆引用折掉`。待环境：撤权端到端见 `workers/ai-worker` 的 `npm run test:companion-integration:postgres`（含 `companion-memory-cross-space`）。
 
 ### 8.3 跨会话与后台隔离
 
@@ -797,3 +813,8 @@ typecheck 立刻报 `',' expected`。这条已经记过一次了，还是踩了�
   的判据看不见它们）。
 
 
+
+
+### 2026-10-15: pressure projection and host terminal history
+
+The pressure fallback now reuses the whole-exchange history projection. Verified summary coverage cannot remove only part of a user/assistant exchange; gaps, the latest answered exchange, and later user additions remain complete. Terminal unanswered questions in host-origin runs remain complete attributed historical records, with original source role and terminal status, rather than pending native user inputs. See [host/recovery validation](../../testing/agent-host-recovery-2026-10-15.md) for native evidence, rejected approaches and remaining unsummarized-history compaction/retrieval work. No hard replay or summary-rendering cutoff was restored.

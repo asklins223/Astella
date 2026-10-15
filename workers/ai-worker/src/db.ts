@@ -8,10 +8,12 @@ import * as schema from "@astella/shared/db-schema";
 import {
   WorkspaceTransactionScope,
   registerActiveTransactionReader,
+  runWithTransactionConflictRetry,
   type ActiveWorkspaceTransaction,
   type WorkspaceScopeContext,
 } from "@astella/shared/workspace-transaction";
 import { parseQueueConcurrency } from "./lib/worker-concurrency.ts";
+import { logger } from "./lib/logger.ts";
 
 const DEFAULT_DATABASE_URL = "postgres://astella:astella_dev@postgres:5432/astella";
 
@@ -205,19 +207,28 @@ export async function withWorkerWorkspaceTransaction<T>(
     }
   }
 
-  return db.transaction(async (transaction) => {
-    await setWorkerTransactionContext(transaction, normalized);
-    const scopedTransaction: ActiveWorkerWorkspaceTransaction = {
-      context: normalized,
-      transaction,
-      open: true,
-    };
-    try {
-      return await workerScope.run(scopedTransaction, () => operation(transaction));
-    } finally {
-      scopedTransaction.open = false;
-    }
-  });
+  return runWithTransactionConflictRetry(
+    () => db.transaction(async (transaction) => {
+      await setWorkerTransactionContext(transaction, normalized);
+      const scopedTransaction: ActiveWorkerWorkspaceTransaction = {
+        context: normalized,
+        transaction,
+        open: true,
+      };
+      try {
+        return await workerScope.run(scopedTransaction, () => operation(transaction));
+      } finally {
+        scopedTransaction.open = false;
+      }
+    }),
+    {
+      // 死锁牺牲者这一侧唯一正确的处置是整事务重跑（40P01，见共享层注释）：
+      // 2026-10-14 实测伴星事件写入的 A/B 两种取锁序并发即死锁，用户那一轮
+      // 直接 INTERNAL_ERROR。重试在这里收口，调用方不必各写一份。
+      onRetry: ({ attempt, delayMs, sqlState }) =>
+        logger.warn({ attempt, delayMs, sqlState }, "workspace transaction conflict; retrying"),
+    },
+  );
 }
 
 /** Stop accepting new queries and drain the Postgres.js pool on shutdown. */

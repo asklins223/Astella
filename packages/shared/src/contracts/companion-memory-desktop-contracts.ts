@@ -795,6 +795,7 @@ export type CompanionHistoryClearResultV1 = z.infer<typeof companionHistoryClear
 export const companionHistoryQueryV1Schema = z.strictObject({
   before: z.string().max(2000).optional(),
   throughMessageId: z.string().uuid().optional(),
+  runId: z.string().uuid().optional(),
   limit: z.number().int().min(1).max(100).optional(),
 });
 export type CompanionHistoryQueryV1 = z.infer<typeof companionHistoryQueryV1Schema>;

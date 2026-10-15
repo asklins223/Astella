@@ -8,14 +8,13 @@ import { z } from "zod";
  * `{workspaceId}/companion-files/{uploaderId}/{file}` 路径段做租户与上传者隔离。
  *
  * 文件正文（text 字段）由**客户端本机抽取**（iOS PDFKit / Android pdfbox；docx
- * 为 zip+XML 抽正文），随回合上送；原件同时作为资产留档，「原件不出本机」条款
- * 保持有效（解析不发生服务端）。
+ * 为 zip+XML 抽正文），随回合上送；解析在本机完成；用户发送时原件上传为私有附件，抽取正文随回合提供给伴星。
  */
 
 /** 对话文件 MIME 白名单：PDF / DOCX / 纯文本 / Markdown。 */
 export const COMPANION_FILE_MIME_TYPES = [
   "application/pdf",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.docx",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "text/plain",
   "text/markdown",
 ] as const;
@@ -55,7 +54,7 @@ export function companionFileUrlFromObjectKey(objectKey: string): string {
 export function companionFileExtensionForMimeType(mime: CompanionFileMimeType): string {
   switch (mime) {
     case "application/pdf": return "pdf";
-    case "application/vnd.openxmlformats-officedocument.wordprocessingml.docx": return "docx";
+    case "application/vnd.openxmlformats-officedocument.wordprocessingml.document": return "docx";
     case "text/plain": return "txt";
     case "text/markdown": return "md";
   }

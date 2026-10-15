@@ -6,8 +6,11 @@ import { buildAgentTurnMessages } from "../lib/providers/json-response.ts";
 import { createCompanionEnvelopeDecoder } from "./companion-dialogue-envelope.ts";
 import { CompanionStreamStoppedError } from "./companion-dialogue-stream.ts";
 import { ProviderRequestError } from "../lib/provider-request-error.ts";
-import { isNonRetryableError } from "../lib/non-retryable-errors.ts";
+import { AgentOutputError, isNonRetryableError } from "../lib/non-retryable-errors.ts";
 import { stripVoiceExpressionTags, withholdPartialVoiceExpressionTag } from "@astella/shared/voice-expression-tags";
+import { containsCompanionToolProtocol,
+  withholdPartialCompanionToolProtocol } from "./companion-tool-protocol-output.ts";
+import { CompanionToolOutputRepairError } from "./companion-tool-output-repair.ts";
 
 /** A different response transport cannot repair an account or rate rejection. */
 export function canRetryCompanionStream(error: unknown, state: { emitted: boolean; now: number; deadline: number }): boolean {
@@ -163,10 +166,15 @@ export async function runStreamingAgentStep(args: {
   let gateOpen = args.releaseGate === undefined;
   let discarded = false;
   let released = holdUntilChars <= 0 && gateOpen;
+  let publishedText = "";
+  let draftText = "";
+  let projectedThrough = 0;
+  let invalidToolProtocol = false;
 
   /** 把一段文本交给交付管线。这里是"第一个字符真的下发了"的唯一现场。 */
   const deliver = (text: string): void => {
     if (text.length === 0 || args.deferPublication) return;
+    publishedText += text;
     if (pendingSeparator.length > 0) {
       text = pendingSeparator + text;
       pendingSeparator = "";
@@ -211,7 +219,7 @@ export async function runStreamingAgentStep(args: {
     deliver(text);
   };
 
-  const emit = (text: string): void => {
+  const emitValidated = (text: string): void => {
     if (text.length === 0 || discarded) return;
     if (!released) {
       held += text;
@@ -219,6 +227,23 @@ export async function runStreamingAgentStep(args: {
       return;
     }
     deliver(text);
+  };
+
+  // Quarantine an invalid draft before the public delivery stream sees its
+  // control syntax. Continue consuming the provider result so the runtime can
+  // issue explicit correction feedback instead of treating this as a good,
+  // shortened answer or blindly replaying a failed transport request.
+  const emit = (text: string): void => {
+    draftText += text;
+    if (invalidToolProtocol) return;
+    if (containsCompanionToolProtocol(draftText, true)) {
+      invalidToolProtocol = true;
+      return;
+    }
+    const safe = withholdPartialCompanionToolProtocol(draftText);
+    const delta = safe.slice(projectedThrough);
+    projectedThrough = safe.length;
+    emitValidated(delta);
   };
 
   /**
@@ -333,7 +358,9 @@ export async function runStreamingAgentStep(args: {
           // 只在调用方要了的时候才挂：不挂就是 undefined，provider 不做任何额外工作。
           ...(args.onToolCallStarted ? { onToolCallStarted: args.onToolCallStarted } : {}),
           ...(args.onToolCallSettled
-            ? { onToolCallSettled: (slot: { index: number; id: string; name: string; argsText: string }) => args.onToolCallSettled!(slot) }
+            ? { onToolCallSettled: (slot: { index: number; id: string; name: string; argsText: string }) => {
+              if (!invalidToolProtocol) args.onToolCallSettled!(slot);
+            } }
             : {}),
           // 只在调用方要了的时候才挂：不挂时 provider 一个字都不多做。
           ...(args.onReasoningDelta ? { onReasoningDelta: emitReasoning } : {}),
@@ -361,6 +388,8 @@ export async function runStreamingAgentStep(args: {
     // 前缀，下游 `reconcileStreamedText` 要求"最终正文以已下发内容开头"，
     // 返回原始 JSON 会把这个不变量交给 unwrap 的运气去赌。
     const decoded = envelopeDecoder.text();
+    if (invalidToolProtocol || containsCompanionToolProtocol(decoded.length > 0 ? decoded : content))
+      throw new CompanionToolOutputRepairError(publishedText, draftText || content);
     return {
       content: decoded.length > 0 ? decoded : content,
       toolCalls: toolCalls ?? [],
@@ -375,6 +404,11 @@ export async function runStreamingAgentStep(args: {
     if (discarded) throw new CompanionSpeculativeStepDiscardedError();
     if (stopped && !(error instanceof CompanionStreamStoppedError)) {
       throw new CompanionStreamStoppedError("companion stream stopped by delivery pipeline");
+    }
+    if (!args.ctxSignal.aborted && !stopped && !(error instanceof CompanionToolOutputRepairError)
+      && (invalidToolProtocol || (error instanceof AgentOutputError && error.code === "arguments_malformed"))) {
+      controller.abort();
+      throw new CompanionToolOutputRepairError(publishedText, draftText, invalidToolProtocol ? "tool_protocol_leak" : "arguments_malformed");
     }
     stopped = true;
     controller.abort();

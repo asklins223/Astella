@@ -33,7 +33,11 @@ export const noteLearningArtifactTaskPageV1Schema = z.strictObject({
 });
 
 export const noteLearningArtifactOutlineV1Schema = z.strictObject({
-  index: z.number().int().min(0).max(5),
+  // 序号（第几步），由落库时的数组顺序决定。**不设上限**：演示的要点条数由内容决定
+  // （生成侧按段落读完笔记，每段产出能核对得上的要点），这里只是宽度护栏的旧残影。
+  // 曾钉 `max(5)`：超 6 条的演示生成成功后读回时 ZodError → 500「做出来但拿不回来」
+  // （2026-10-14 实测：8 条 outline 的 artifact GET 500）。
+  index: z.number().int().min(0),
   title: z.string().min(1).max(24),
   narration: z.string().min(1).max(200),
   sectionLabel: z.string().min(1).max(200),
@@ -56,7 +60,10 @@ export const noteLearningArtifactV1Schema = z.strictObject({
   title: z.string().min(1).max(40),
   subject: z.string().min(1).max(60),
   caution: z.string().min(1).max(120),
-  outline: z.array(noteLearningArtifactOutlineV1Schema).min(2).max(6),
+  // 至少 2 条（一个"演示"讲不动 1 步），**不设条数上限**：条数由内容决定，
+  // 生成侧的 doc 合同（round-artifact-model.ts 的 dynamicArtifactDocV1Schema）早已
+  // 只有 min、没有 max；这里跟着放开，读回与落库才说得上同一句话。
+  outline: z.array(noteLearningArtifactOutlineV1Schema).min(2),
   versionState: z.enum(["current", "older"]),
   createdAt: z.string().datetime({ offset: true }),
 });

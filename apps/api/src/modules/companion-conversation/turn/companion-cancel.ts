@@ -130,16 +130,22 @@ export async function cancelCompanionRun(args: {
 
       // A cancelled Agent run must invalidate its frozen proposal and audit
       // row. A later confirm therefore cannot resurrect or execute the action.
+      //
+      // 两条 UPDATE 语义独立（都只按 run.id 定位），但取锁次序要遵守四表全序
+      // （见 @astella/shared/companion-lock-order）：
+      //   turn_runs → companion_conversations → action_proposals → agent_tool_calls
+      // 原来 tool_calls 在 proposals 之前，而 reclaim / decide 都是 proposals 先——
+      // 同一条 proposal 的审计行两边都碰，次序相反 → AB-BA。
+      await tx.execute(sql`
+        UPDATE companion_action_proposals
+        SET status = 'expired', updated_at = now()
+        WHERE agent_run_id = ${run.id} AND status = 'pending'
+      `);
       await tx.execute(sql`
         UPDATE companion_agent_tool_calls
         SET status = 'expired', result_safe_summary = '运行已取消', updated_at = now()
         WHERE run_id = ${run.id}
           AND status IN ('requested', 'executing', 'waiting_confirmation')
-      `);
-      await tx.execute(sql`
-        UPDATE companion_action_proposals
-        SET status = 'expired', updated_at = now()
-        WHERE agent_run_id = ${run.id} AND status = 'pending'
       `);
 
       // turn.cancelled event（reason=user，§5.2）

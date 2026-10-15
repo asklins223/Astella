@@ -74,9 +74,12 @@ describe("账号级 presence 选项（2026-09-16 裁决 3）", () => {
  */
 describe("「主动介入」的说明文案", () => {
   it("三档各说各的间隔", () => {
-    expect(companionInterventionHint("quiet")).toContain("3 小时");
-    expect(companionInterventionHint("moderate")).toContain("1 小时 30 分");
-    expect(companionInterventionHint("active")).toContain("30 分钟");
+    // 2026-10-14：3 小时 / 90 分 / 30 分收到 90 分 / 30 分 / 10 分。
+    // 用户判定"第一版还是不太行"之后，这一档不再只按"她说出口的那一句"计，
+    // 安静结束的考虑也不再吃掉下一次机会（见 companion-proactive-policy.ts）。
+    expect(companionInterventionHint("quiet")).toContain("1 小时 30 分");
+    expect(companionInterventionHint("moderate")).toContain("30 分钟");
+    expect(companionInterventionHint("active")).toContain("10 分钟");
   });
 
   it("说清这是「主动开口的间隔」，并交代两个边界", () => {

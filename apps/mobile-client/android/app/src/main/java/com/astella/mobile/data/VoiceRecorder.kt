@@ -14,6 +14,8 @@ class VoiceRecorder {
     private var worker: Thread? = null
     private val output = ByteArrayOutputStream()
     private val sampleRate = 16_000
+    @Volatile var level: Float = 0f
+        private set
 
     @Synchronized
     fun start() {
@@ -34,7 +36,18 @@ class VoiceRecorder {
             val chunk = ByteArray(3_200)
             while (recording) {
                 val count = recorder.read(chunk, 0, chunk.size)
-                if (count > 0) synchronized(output) { output.write(chunk, 0, count) }
+                if (count > 0) {
+                    var sum = 0.0
+                    for (index in 0 until count - 1 step 2) {
+                        val sample = ((chunk[index].toInt() and 255) or (chunk[index + 1].toInt() shl 8)).toShort().toDouble() / 32768
+                        sum += sample * sample
+                    }
+                    level = level * .65f + (kotlin.math.sqrt(sum / maxOf(1, count / 2)) * 5).toFloat().coerceIn(0f, 1f) * .35f
+                    synchronized(output) {
+                        // Hard cap prevents a background recorder from growing without bound.
+                        if (output.size() < sampleRate * 2 * 60) output.write(chunk, 0, minOf(count, sampleRate * 2 * 60 - output.size()))
+                    }
+                }
             }
         }.apply { name = "astella-audio-capture"; start() }
     }
@@ -43,6 +56,7 @@ class VoiceRecorder {
     fun finish(): Pair<ByteArray, Int> {
         val recorder = audioRecord ?: throw IOException("当前没有录音。")
         recording = false
+        level = 0f
         worker?.join(500)
         recorder.stop()
         recorder.release()

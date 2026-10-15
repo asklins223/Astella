@@ -57,6 +57,7 @@ beforeEach(() => {
     createGain = () => node("gain");
     createAnalyser = () => ({ ...node("analyser"), fftSize: 32, getFloatTimeDomainData: vi.fn() });
     createOscillator = () => node("oscillator");
+    decodeAudioData = vi.fn(async () => ({ duration: 1 } as AudioBuffer));
   });
   useRoomStore.setState({ masterMuted: false, surface: null, windowState: "visible" });
   useUpdateStatus.setState({ state: UNKNOWN_UPDATE_STATE });
@@ -89,19 +90,68 @@ it.each([{ masterMuted: true, windowState: "visible" as const }, { masterMuted: 
   expect(started).toEqual([]);
 });
 
-it("constructs the graph in idle time, stays silent before a gesture, and reuses it on the first click", async () => {
+it("prepares foreground startup speech in idle time without a gesture or starting any source", async () => {
   const view = render(<HomeV2AudioController />);
   expect(construct).not.toHaveBeenCalled();
   await act(async () => { warm(); });
   expect(construct).toHaveBeenCalledTimes(1);
-  expect(suspend).toHaveBeenCalled();
-  expect(audible()).toBe(false);
+  expect(suspend).not.toHaveBeenCalled();
+  expect(audible()).toBe(true);
+  expect(started).toEqual([]);
   await act(async () => { interact(); });
   expect(construct).toHaveBeenCalledTimes(1);
   expect(resume).toHaveBeenCalled();
   expect(audible()).toBe(true);
   view.unmount();
   expect(close).toHaveBeenCalledTimes(1);
+});
+
+it.each([false, true])("plays a server-issued startup greeting without a gesture (idle prepared: %s)", async prepared => {
+  const speakSegment = vi.fn(async () => ({ version: 1, ok: true, data: { audioBase64: "AA==" } }));
+  Object.defineProperty(window, "astella", { configurable: true, value: { companion: { voice: { speakSegment } } } });
+  const playback = await vi.importActual<typeof import("../../../app/companion-voice-playback")>("../../../app/companion-voice-playback");
+  const view = render(<HomeV2AudioController />);
+  try {
+    if (prepared) await act(async () => { warm(); });
+    else expect(construct).not.toHaveBeenCalled();
+    const host = vi.mocked(setCompanionVoiceHost).mock.calls.at(-1)![0]!;
+    playback.setCompanionVoiceHost(host);
+    await act(async () => {
+      const speech = playback.beginCompanionSpeechLine({ strictSegments: true });
+      expect(speech.mode).toBe("voice");
+      speech.feedSegment({ ref: { version: 2, conversationId: "00000000-0000-4000-8000-000000000001",
+        runId: "00000000-0000-4000-8000-000000000002", generation: 1, ordinal: 1, segmentId: "a".repeat(64) },
+        displayText: "晚上好。", displayStart: 0, displayEnd: 4,
+        cue: { version: 1, intent: "explain", emotion: "neutral", intensity: 0.3 } });
+      speech.finish();
+      // Drain synthesis, decoding and the playback queue without a click/key.
+      for (let index = 0; index < 30; index++) await Promise.resolve();
+    });
+    expect(speakSegment).toHaveBeenCalledOnce();
+    expect(construct).toHaveBeenCalledTimes(1);
+    expect(started).toEqual(["bufferSource"]);
+    await act(async () => { useRoomStore.setState({ masterMuted: true }); });
+    expect(audible()).toBe(false);
+    expect(playback.isCompanionSpeechActive()).toBe(false);
+  } finally {
+    playback.resetCompanionVoicePlayback();
+    view.unmount();
+    Reflect.deleteProperty(window, "astella");
+  }
+});
+
+it.each([{ masterMuted: true, windowState: "visible" as const }, { masterMuted: false, windowState: "hidden" as const }])("ordinary startup respects mute and background state: %j", async patch => {
+  useRoomStore.setState(patch);
+  render(<HomeV2AudioController />);
+  expect(audible()).toBe(false);
+  await act(async () => { warm(); });
+  expect(resume).not.toHaveBeenCalled();
+  expect(audible()).toBe(false);
+  expect(started).toEqual([]);
+  await act(async () => { useRoomStore.setState({ masterMuted: false, windowState: "visible" }); });
+  expect(audible()).toBe(true);
+  expect(resume).toHaveBeenCalled();
+  expect(started).toEqual([]);
 });
 
 it("窗口被盖住不再挂起音频通道：这一轮朗读照旧，看不见的只是房间", async () => {
@@ -157,6 +207,7 @@ it("an early click never creates AudioContext in the input handler", async () =>
 });
 
 it("untrusted events cannot unlock sound and unmount cancels unfinished warmup", async () => {
+  useRoomStore.setState({ windowState: "hidden" });
   const view = render(<HomeV2AudioController />);
   await act(async () => { interact(false); });
   expect(audible()).toBe(false);

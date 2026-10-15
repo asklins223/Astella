@@ -6,6 +6,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -33,6 +34,8 @@ data class AppUiState(
     val aiSettings: AISettings? = null,
     val companionPermissionLevel: String? = null,
     val streamingText: String = "",
+    val streamingRunId: String? = null,
+    val selectionRunId: String? = null,
     val realtimeStatus: String = "尚未连接",
     val isLoading: Boolean = false,
     val isSending: Boolean = false,
@@ -46,6 +49,14 @@ data class AppUiState(
     val isAccountBusy: Boolean = false,
     val authError: String? = null,
     val authNotice: String? = null,
+    val companionModel: com.astella.mobile.companion.CachedCompanionModel? = null,
+    val draft: String = "",
+    val selectedFile: CompanionFile? = null,
+    val attachmentRevision: String = "",
+    val audioLevel: Float = 0f,
+    val isPlaying: Boolean = false,
+    val isPaused: Boolean = false,
+    val isVoiceLoading: Boolean = false,
     val selectedImage: Uri? = null,
     val voiceTranscript: String = "",
     val serviceAddress: String = "",
@@ -69,6 +80,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private var noteRequestGeneration = 0
     private var annotationRequestGeneration = 0
     private var annotationOperationGeneration = 0
+    private val awarenessLaunchId = UUID.randomUUID().toString()
+    private var lastInteraction = android.os.SystemClock.elapsedRealtime()
+    private var lastObservation = android.os.SystemClock.elapsedRealtime()
+    private var pendingTurnSignature: String? = null
+    private var pendingTurnRequest: JSONObject? = null
+    private var voiceJob: kotlinx.coroutines.Job? = null
+    private var audioPlayer: android.media.MediaPlayer? = null
+    private var audioFile: java.io.File? = null
+    private var meterJob: kotlinx.coroutines.Job? = null
+    private var intakeGeneration = 0
 
     fun hasStoredSession(): Boolean = api.token != null
 
@@ -214,6 +235,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         try {
             val me = withContext(Dispatchers.IO) { api.request("/auth/me") }
             val profile = UserProfile.from(me)
+            viewModelScope.launch {
+                val model = withContext(Dispatchers.IO) { com.astella.mobile.companion.CompanionModelCache(getApplication(), api).load() }
+                if (_state.value.profile?.userId == profile.userId) _state.value = _state.value.copy(companionModel = model)
+            }
             val key = profile.userId
             _state.value = _state.value.copy(
                 profile = profile,
@@ -257,7 +282,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             withContext(Dispatchers.IO) { api.request("/companion/conversations/$id/messages?limit=50") }
         }.onSuccess { page ->
             val messages = page.optJSONArray("items").objects().map(CompanionMessage::from).sortedBy(CompanionMessage::seq)
-            _state.value = _state.value.copy(messages = messages, streamingText = "")
+            _state.value = _state.value.copy(messages = messages)
         }.onFailure { patch(error = pageMessage(it, "对话记录暂时无法读取，请重新连接后重试。")) }
     }
 
@@ -632,75 +657,151 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun selectImage(uri: Uri?) {
-        _state.value = _state.value.copy(selectedImage = uri, error = null)
+    fun selectDroppedImage(uri: Uri) = viewModelScope.launch {
+        try {
+            val local = withContext(Dispatchers.IO) {
+                val target = java.io.File.createTempFile("dropped-image-", ".jpg", getApplication<Application>().cacheDir)
+                getApplication<Application>().contentResolver.openInputStream(uri).use { input ->
+                    requireNotNull(input)
+                    target.outputStream().use { output ->
+                        val buffer = ByteArray(8192); var count = 0
+                        while (true) { val size = input.read(buffer); if (size < 0) break; count += size
+                            require(count <= 10 * 1024 * 1024) { "图片不能超过 10 MB。" }; output.write(buffer, 0, size) }
+                    }
+                }
+                Uri.fromFile(target)
+            }
+            selectImage(local)
+        } catch (error: Exception) { reportError(error.message ?: "图片没有读取完成。") }
+    }
+
+    fun selectImage(uri: Uri?) = viewModelScope.launch {
+        if (uri == null) { clearAttachment(); return@launch }
+        val generation = ++intakeGeneration
+        val session = api.token
+        try {
+            val local = withContext(Dispatchers.IO) {
+                val resolver = getApplication<Application>().contentResolver
+                val bytes = resolver.openInputStream(uri)?.use { input ->
+                    val output = java.io.ByteArrayOutputStream(); val buffer = ByteArray(8192)
+                    while (true) { val count = input.read(buffer); if (count < 0) break
+                        require(output.size() + count <= 10 * 1024 * 1024) { "图片不能超过 10 MB。" }; output.write(buffer, 0, count) }
+                    output.toByteArray()
+                } ?: error("这张图片没有读取完成。")
+                val options = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+                require(options.outWidth > 0 && options.outHeight > 0) { "无法识别这张图片。" }
+                var sample = 1
+                while (maxOf(options.outWidth, options.outHeight) / sample > 4096) sample *= 2
+                val bitmap = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }) ?: error("无法识别这张图片。")
+                val file = java.io.File.createTempFile("companion-image-", ".jpg", getApplication<Application>().cacheDir)
+                try { file.outputStream().use { output -> require(bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, output)) } }
+                finally { bitmap.recycle() }
+                require(file.length() <= 10 * 1024 * 1024) { "图片不能超过 10 MB。" }
+                Uri.fromFile(file)
+            }
+            if (generation != intakeGeneration || session != api.token) return@launch
+            _state.value = _state.value.copy(selectedImage = local, selectedFile = null, attachmentRevision = UUID.randomUUID().toString(), error = null)
+        } catch (failure: Exception) {
+            if (generation == intakeGeneration && session == api.token) reportError(failure.message ?: "图片没有读取完成。")
+        }
     }
 
     suspend fun imageBytes(address: String): ByteArray? = withContext(Dispatchers.IO) { api.loadImage(address) }
 
-    fun submit(text: String) = viewModelScope.launch {
+    fun submit(text: String, selection: String? = null, noteContext: PendingNoteContext? = null) = viewModelScope.launch {
         val current = _state.value
         val id = current.conversationId ?: return@launch
         val content = text.trim()
-        if (current.isSending || (content.isEmpty() && current.selectedImage == null)) return@launch
+        val isSelection = selection != null
+        val image = if (isSelection) null else current.selectedImage
+        val file = if (isSelection) null else current.selectedFile
+        val context = noteContext ?: current.pendingNoteContext
+        if (current.isSending || (content.isEmpty() && image == null && file == null)) return@launch
         patch(isSending = true, error = null)
-        val clientMessageId = UUID.randomUUID().toString()
+        val session = api.token
+        val signature = JSONObject().put("conversation", id).put("text", content).put("selection", selection)
+            .put("attachment", if (isSelection) "" else current.attachmentRevision)
+            .put("note", context?.noteId).put("version", context?.versionId)
+            .put("voice", if (isSelection) null else voiceArtifactId).toString()
         try {
-            val blocks = JSONArray().put(JSONObject().put("type", "text").put("text", content.ifEmpty { "看看这张图" }))
-            var inputKind = "text"
-            var body = JSONObject()
-                .put("version", 1)
-                .put("clientMessageId", clientMessageId)
-                .put("inputKind", inputKind)
-                .put("sourceSurface", "main")
-            if (current.selectedImage != null) {
-                val upload = withContext(Dispatchers.IO) {
-                    api.uploadImage(current.selectedImage, "手机照片.jpg")
+            val body = if (signature == pendingTurnSignature && pendingTurnRequest != null) pendingTurnRequest!! else {
+                pendingTurnSignature = signature; pendingTurnRequest = null
+                val blocks = JSONArray()
+                if (content.isNotEmpty()) blocks.put(JSONObject().put("type", "text").put("text", content))
+                val request = JSONObject().put("version", 1).put("clientMessageId", UUID.randomUUID().toString())
+                    .put("inputKind", "text").put("sourceSurface", "main").put("clientSurface", "mobile")
+                if (image != null) {
+                    val upload = withContext(Dispatchers.IO) { api.uploadImage(image, "手机照片.jpg") }
+                    check(upload.optString("url").isNotBlank() && upload.optString("assetId").isNotBlank()) { "图片没有收到上传回执。" }
+                    blocks.put(JSONObject().put("type", "image").put("url", upload.getString("url"))
+                        .put("label", "手机照片.jpg").put("alt", "手机照片.jpg").put("assetId", upload.getString("assetId")))
+                } else if (file != null) {
+                    val upload = withContext(Dispatchers.IO) { api.uploadFile(file) }
+                    val url = upload.optString("url").takeIf { it.isNotBlank() } ?: error("文件没有收到上传回执。")
+                    blocks.put(JSONObject().put("type", "file").put("url", url).put("name", file.name)
+                        .put("mime", file.mime).put("byteLength", file.bytes.size).put("text", file.text))
+                } else if (!isSelection && voiceArtifactId != null && current.voiceTranscript == content) {
+                    request.put("inputKind", "voice_transcript").put("voiceArtifactId", voiceArtifactId)
                 }
-                blocks.put(JSONObject().put("type", "image")
-                    .put("url", upload.optString("url"))
-                    .put("label", "手机照片.jpg")
-                    .put("alt", "手机照片.jpg")
-                    .put("assetId", upload.optString("assetId")))
-            } else if (voiceArtifactId != null && current.voiceTranscript == content) {
-                inputKind = "voice_transcript"
-                body.put("voiceArtifactId", voiceArtifactId)
+                request.put("blocks", blocks)
+                selection?.let { request.put("selection", JSONObject().put("text", it).put("sharing", "user_selected")) }
+                context?.let { request.put("context", JSONObject().put("pageKind", "note").put("sharing", "page_registered").put("noteId", it.noteId).put("noteVersionId", it.versionId)) }
+                if (session != api.token || id != _state.value.conversationId) return@launch
+                pendingTurnRequest = request
+                request
             }
-            body.put("inputKind", inputKind).put("blocks", blocks)
-            current.pendingNoteContext?.let { context ->
-                body.put("context", JSONObject()
-                    .put("pageKind", "note")
-                    .put("sharing", "page_registered")
-                    .put("noteId", context.noteId)
-                    .put("noteVersionId", context.versionId))
+            if (session != api.token || id != _state.value.conversationId) return@launch
+            val key = body.getString("clientMessageId")
+            val response = try {
+                val live = realtime
+                if (live?.isReady == true) live.submit(body)
+                else withContext(Dispatchers.IO) { api.request("/companion/conversations/$id/turns", "POST", body, key) }
+            } catch (failure: Exception) {
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                withContext(Dispatchers.IO) { api.request("/companion/conversations/$id/turns", "POST", body, key) }
             }
-            try {
-                if (realtime?.isReady == true) realtime?.submit(body)
-                else withContext(Dispatchers.IO) {
-                    api.request("/companion/conversations/$id/turns", "POST", body, clientMessageId)
-                }
-            } catch (_: Throwable) {
-                // The HTTP write uses the same idempotency key, so a lost WS ack
-                // cannot create a second turn if the first submit was accepted.
-                withContext(Dispatchers.IO) {
-                    api.request("/companion/conversations/$id/turns", "POST", body, clientMessageId)
-                }
+            if (session != api.token) return@launch
+            pendingTurnSignature = null; pendingTurnRequest = null
+            if (isSelection) _state.value = _state.value.copy(isSending = false, selectionRunId = response.getString("runId"))
+            else {
+                voiceArtifactId = null
+                val sameAttachment = current.attachmentRevision == _state.value.attachmentRevision
+                _state.value = _state.value.copy(isSending = false,
+                    selectedImage = if (sameAttachment) null else _state.value.selectedImage,
+                    selectedFile = if (sameAttachment) null else _state.value.selectedFile,
+                    draft = if (_state.value.draft == text) "" else _state.value.draft,
+                    voiceTranscript = "", pendingNoteContext = if (_state.value.pendingNoteContext == context) null else _state.value.pendingNoteContext)
             }
-            voiceArtifactId = null
-            _state.value = _state.value.copy(isSending = false, selectedImage = null, voiceTranscript = "", pendingNoteContext = null)
-            refreshMessages()
-        } catch (error: Throwable) {
-            patch(isSending = false, error = pageMessage(error, "这一轮还没有发出去，草稿已保留，请重试。"))
+            refreshMessages(); refreshRuns()
+        } catch (failure: Exception) {
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (session == api.token) patch(isSending = false, error = pageMessage(failure, "这一轮还没有发出去，草稿已保留，请重试。"))
         }
     }
 
     fun startRecording() {
+        if (_state.value.isRecording || _state.value.isTranscribing) return
+        stopVoice()
         runCatching { recorder.start() }
-            .onSuccess { _state.value = _state.value.copy(isRecording = true, error = null) }
+            .onSuccess {
+                _state.value = _state.value.copy(isRecording = true, error = null)
+                meterJob = viewModelScope.launch {
+                    val start = android.os.SystemClock.elapsedRealtime()
+                    while (_state.value.isRecording) {
+                        _state.value = _state.value.copy(audioLevel = recorder.level)
+                        if (android.os.SystemClock.elapsedRealtime() - start >= 59_000) { stopAndTranscribe(); break }
+                        delay(40)
+                    }
+                }
+            }
             .onFailure { patch(error = pageMessage(it, "无法开始录音，请检查麦克风权限后重试。")) }
     }
 
     fun stopAndTranscribe() = viewModelScope.launch {
+        if (!_state.value.isRecording) return@launch
+        meterJob?.cancel(); meterJob = null
+        _state.value = _state.value.copy(audioLevel = 0f)
         patch(isRecording = false, isTranscribing = true, error = null)
         try {
             val recording = withContext(Dispatchers.IO) { recorder.finish() }
@@ -709,13 +810,15 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             val text = result.optString("text").trim().takeIf(String::isNotEmpty)
                 ?: error("没有听清这句话，你可以重录或直接打字。")
             voiceArtifactId = result.optString("voiceArtifactId").takeIf(String::isNotBlank)
-            _state.value = _state.value.copy(isTranscribing = false, voiceTranscript = text, error = null)
+            _state.value = _state.value.copy(isTranscribing = false, voiceTranscript = text, draft = text, error = null)
         } catch (error: Throwable) {
             patch(isTranscribing = false, error = pageMessage(error, "语音识别没有完成，请稍后重试。"))
         }
     }
 
     fun draftChanged(value: String) {
+        recordInteraction()
+        _state.value = _state.value.copy(draft = value)
         if (value != _state.value.voiceTranscript) voiceArtifactId = null
     }
 
@@ -728,11 +831,15 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun logout() {
+        intakeGeneration++
+        cancelRecording()
+        stopVoice()
         realtime?.stop()
         realtime = null
         TokenStore.clear(getApplication())
         api.token = null
         voiceArtifactId = null
+        pendingTurnSignature = null; pendingTurnRequest = null
         _state.value = AppUiState(serviceAddress = api.baseUrl)
     }
 
@@ -741,13 +848,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             when (event.optString("type")) {
                 "assistant.delta" -> {
                     val addition = event.optJSONObject("payload")?.optString("textDelta").orEmpty()
-                    _state.value = _state.value.copy(streamingText = _state.value.streamingText + addition)
+                    val runId = event.optNullableString("runId")
+                    _state.value = _state.value.copy(streamingRunId = runId,
+                        streamingText = (if (_state.value.streamingRunId == runId) _state.value.streamingText else "") + addition)
                 }
                 "sync.required" -> loadConversation()
                 "turn.completed", "assistant.final" -> {
+                    if (_state.value.streamingRunId == event.optNullableString("runId")) _state.value = _state.value.copy(streamingText = "", streamingRunId = null)
                     refreshMessages()
                     refreshRuns()
                 }
+                "action.proposed" -> { refreshMessages(); refreshRuns() }
                 "turn.accepted", "assistant.status", "agent.tool" -> refreshRuns()
                 "error" -> {
                     _state.value = _state.value.copy(error = pageMessage(
@@ -759,6 +870,150 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
+
+    fun recordInteraction() { lastInteraction = android.os.SystemClock.elapsedRealtime() }
+
+    suspend fun reportAwareness(topic: String, foreground: Boolean, page: String, noteId: String? = null) {
+        val current = _state.value
+        if (current.profile == null) return
+        val now = android.os.SystemClock.elapsedRealtime()
+        val elapsed = if (foreground) (now - lastObservation).coerceIn(0, 45_000) else 0
+        lastObservation = now
+        val quiet = (now - lastInteraction).coerceIn(0, 86_400_000)
+        val typing = foreground && quiet < 3000 && current.draft.isNotEmpty()
+        if (topic == "presence.quiet" && (quiet < 90_000 || typing)) return
+        val context = JSONObject().put("foreground", foreground).put("unlocked", foreground)
+            .put("typing", typing).put("learning", noteId != null).put("speaking", current.isPlaying)
+            .put("participationAllowed", true).put("conversationId", current.conversationId ?: JSONObject.NULL)
+            .put("page", JSONObject().put("key", noteId?.let { "note:$it" } ?: "mobile:$page")
+                .put("label", page).put("revision", if (noteId != null) current.noteDocument?.versionId ?: JSONObject.NULL else JSONObject.NULL)
+                .put("context", noteId?.let { JSONObject().put("noteId", it) } ?: JSONObject.NULL))
+        if (topic == "presence.quiet") context.put("quietForMs", quiet)
+        try {
+            requestApi("/me/companion/awareness", "POST", JSONObject().put("version", 1).put("id", UUID.randomUUID().toString())
+                .put("deviceSessionId", awarenessLaunchId).put("appLaunchId", awarenessLaunchId).put("host", "android")
+                .put("topic", topic).put("occurredAt", java.time.Instant.now().toString()).put("elapsedMs", elapsed).put("context", context))
+        } catch (_: Exception) { /* Passive presence does not replace an actionable error. */ }
+    }
+
+    fun isQuiet(): Boolean = android.os.SystemClock.elapsedRealtime() - lastInteraction >= 90_000
+
+    fun reportError(message: String) = patch(error = message)
+
+    suspend fun decideProposal(id: String, decision: String, hash: String, key: String): JSONObject = withContext(Dispatchers.IO) {
+        api.request("/companion/proposals/$id/decision", "POST", JSONObject().put("version", 1).put("decision", decision)
+            .put("expectedPayloadSha256", hash).put("idempotencyKey", key), key)
+    }
+
+    fun referenceNote(id: String) = viewModelScope.launch {
+        try {
+            val document = NoteDocument.from(requestApi("/v2/notes/$id")) ?: error("这篇手记暂时打不开。")
+            continueWithNote(document)
+        } catch (failure: Exception) { patch(error = failure.message) }
+    }
+
+    fun selectFile(uri: Uri) = viewModelScope.launch {
+        val generation = ++intakeGeneration
+        val session = api.token
+        try {
+            val file = withContext(Dispatchers.IO) { CompanionFile.read(getApplication(), uri) }
+            if (generation != intakeGeneration || session != api.token) return@launch
+            _state.value = _state.value.copy(selectedFile = file, selectedImage = null, attachmentRevision = file.id, error = null)
+        } catch (error: Exception) { patch(error = error.message ?: "文件没有读取完成，请重试。") }
+    }
+
+    fun clearAttachment() { intakeGeneration++; _state.value = _state.value.copy(selectedFile = null, selectedImage = null) }
+
+    fun importPreparedFile() = viewModelScope.launch {
+        val file = _state.value.selectedFile ?: return@launch
+        if (_state.value.isSending) return@launch
+        val session = api.token
+        patch(isSending = true, error = null)
+        try {
+            val response = requestApi("/import/markdown", "POST", JSONObject().put("importId", "mobile-${file.id}")
+                .put("items", JSONArray().put(JSONObject().put("title", file.name.substringBeforeLast('.')).put("content", file.text))))
+            if (session != api.token) return@launch
+            check(response.optInt("imported") == 1) { "文件没有成功导入，请检查内容后重试。" }
+            if (_state.value.selectedFile?.id == file.id) clearAttachment()
+            loadNotes("")
+        } catch (failure: Exception) {
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (session == api.token) patch(error = failure.message ?: "导入没有完成，文件已保留。")
+        } finally { if (session == api.token) patch(isSending = false) }
+    }
+
+    fun askAboutSelection(text: String, document: NoteDocument, rewrite: Boolean) {
+        if (_state.value.isSending) return
+        _state.value = _state.value.copy(selectionRunId = null, streamingText = "")
+        submit(if (rewrite) "请改写我选中的这段原文，保留原意，先给出修改对照，等我确认后再写回手记。" else "请结合这篇手记解释我选中的原文，讲清含义与关键关系。",
+            selection = text.take(20_000), noteContext = PendingNoteContext(document.id, document.versionId, document.title))
+    }
+
+    fun cancelActiveRuns() = viewModelScope.launch {
+        stopVoice()
+        try { _state.value.runs.forEach { requestApi("/companion/runs/${it.id}/cancel", "POST", JSONObject()) }; refreshRuns() }
+        catch (error: Exception) { patch(error = error.message ?: "暂时没有停下来，请重试。") }
+    }
+
+    fun cancelRecording() {
+        meterJob?.cancel(); meterJob = null
+        if (_state.value.isRecording) runCatching { recorder.finish() }
+        _state.value = _state.value.copy(isRecording = false, audioLevel = 0f)
+    }
+
+    fun playVoice(text: String) {
+        stopVoice()
+        if (text.isBlank()) return
+        _state.value = _state.value.copy(isVoiceLoading = true, error = null)
+        voiceJob = viewModelScope.launch {
+            try {
+                val chunks = text.chunked(1800)
+                for (chunk in chunks) {
+                    val bytes = withContext(Dispatchers.IO) { api.synthesize(chunk) }
+                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                    val file = java.io.File.createTempFile("astella-voice-", ".mp3", getApplication<Application>().cacheDir)
+                    audioFile = file
+                    withContext(Dispatchers.IO) { file.writeBytes(bytes) }
+                    val envelope = withContext(Dispatchers.IO) { AudioEnvelope.decode(file) }
+                    val player = android.media.MediaPlayer()
+                    audioPlayer = player
+                    player.setAudioAttributes(android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH).build())
+                    player.setDataSource(file.absolutePath)
+                    withContext(Dispatchers.IO) { player.prepare() }
+                    var completed = false
+                    player.setOnCompletionListener { completed = true }
+                    player.setOnErrorListener { _, _, _ -> completed = true; patch(error = "这段声音播放失败，请重试。"); true }
+                    player.start()
+                    _state.value = _state.value.copy(isPlaying = true, isVoiceLoading = false)
+                    while (!completed) {
+                        val position = player.currentPosition
+                        _state.value = _state.value.copy(audioLevel = if (_state.value.isPaused) 0f else envelope.getOrElse(position / 40) { 0f })
+                        delay(40)
+                    }
+                    player.release(); audioPlayer = null
+                    file.delete(); audioFile = null
+                }
+                _state.value = _state.value.copy(isPlaying = false, audioLevel = 0f, isVoiceLoading = false)
+            } catch (cancel: kotlinx.coroutines.CancellationException) { throw cancel }
+            catch (error: Exception) { stopVoice(); patch(error = pageMessage(error, "声音暂时没有接回来，可以重试朗读。")) }
+        }
+    }
+
+    fun toggleVoicePause() {
+        val player = audioPlayer ?: return
+        if (_state.value.isPaused) player.start() else player.pause()
+        _state.value = _state.value.copy(isPaused = !_state.value.isPaused, isPlaying = !_state.value.isPlaying, audioLevel = 0f)
+    }
+
+    fun stopVoice() {
+        voiceJob?.cancel(); voiceJob = null
+        audioPlayer?.release(); audioPlayer = null
+        audioFile?.delete(); audioFile = null
+        _state.value = _state.value.copy(isPlaying = false, isPaused = false, isVoiceLoading = false, audioLevel = 0f)
+    }
+
+    override fun onCleared() { cancelRecording(); stopVoice(); realtime?.stop(); super.onCleared() }
 
     private fun patch(
         isLoading: Boolean = _state.value.isLoading,

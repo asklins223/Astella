@@ -35,13 +35,13 @@ test("近期原文完整保留，短确认不会带走用户刚给的约束", ()
   assert.deepEqual(boundCompanionRecentHistory(messages), messages);
 });
 
-test("摘要只覆盖中间一条时，前后没有覆盖的原文仍会发出", () => {
+test("partial summary coverage cannot split consecutive user additions in one exchange", () => {
   const folded = foldReplayUnderSummaryCoverage({ system: [], trailing: [],
     tail: [1, 2, 3].map(n => ({ seq: String(n), message: { role: "user", content: `消息${n}` } })),
     coverage: { fromSeq: "2", throughSeq: "2", sourceSha256: "a".repeat(64) },
   });
-  assert.deepEqual(replayToMessages(folded.replay).map(m => m.content), ["消息1", "消息3"]);
-  assert.equal(folded.receipt?.foldedMessageCount, 1);
+  assert.deepEqual(replayToMessages(folded.replay).map(m => m.content), ["消息1", "消息2", "消息3"]);
+  assert.equal(folded.receipt, null);
 });
 
 test("摘要缺失或非法起点不能证明覆盖，因此不删除原文", () => {

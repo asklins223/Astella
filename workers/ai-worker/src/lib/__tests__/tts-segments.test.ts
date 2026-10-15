@@ -303,3 +303,71 @@ test("展示段：流式增量下不重复、不遗漏（cursor 只前进）", (
   }
   assert.equal(seen.join(""), full, "增量切段拼起来正好是全文");
 });
+
+// 2026-10-14（用户报"声音一顿一顿、必出现"）：`。”` 后面紧跟空行时，`\n` 自己就是切分
+// 字符，右引号被顶成孤零零一段。库里近 3 天 53 次合成失败**全部**是这种 1 字符段
+// （`”` 39、`"` 8、`）` 6）；qwen 直接拒（`Please ensure input text is valid`，实测 91ms
+// 就回来），回落 edge 又赶上容器整条 502，客户端重试三次就是六到十一秒静音。
+const SPEAKABLE = /[\p{L}\p{N}]/u;
+
+type DisplaySegment = ReturnType<typeof splitCommittedDisplaySegments>["segments"][number];
+
+/** 按固定批长模拟流式提交，最后一次 isFinal——生产就是这个形状。 */
+function collectDisplaySegments(full: string, chunk = 17): {
+  readonly segments: DisplaySegment[];
+  readonly cursor: number;
+} {
+  let state = { cursor: 0, sentCount: 0 };
+  const segments: DisplaySegment[] = [];
+  for (let i = 0; i < full.length; i += chunk) {
+    const upto = Math.min(i + chunk, full.length);
+    const r = splitCommittedDisplaySegments(full.slice(0, upto), state, upto === full.length);
+    state = r.next;
+    segments.push(...r.segments);
+  }
+  return { segments, cursor: state.cursor };
+}
+
+test("展示段：引号后面紧跟空行时不切成孤段，且覆盖仍然连续", () => {
+  const full = "医生问：“那不按呢？”\n\n第二个：老师问：“谁能用‘果然’造个句子？”小明说：“果然很好吃。”";
+  const { segments, cursor } = collectDisplaySegments(full);
+  assert.ok(segments.length >= 3, `正常切成多段：${segments.length}`);
+  for (const seg of segments) {
+    assert.ok(SPEAKABLE.test(seg.displayText), `不可朗读段：${JSON.stringify(seg.displayText)}`);
+  }
+  let covered = 0;
+  for (const seg of segments) {
+    assert.equal(
+      /^\s*$/u.test(full.slice(covered, seg.displayStart)),
+      true,
+      `段间缺口只能是被剥掉的首尾空白：${JSON.stringify(full.slice(covered, seg.displayStart))}`,
+    );
+    covered = seg.displayEnd;
+  }
+  assert.equal(SPEAKABLE.test(full.slice(covered)), false, "没覆盖到的尾巴读不出任何声音");
+  assert.equal(cursor, full.length, "尾巴已跨过，不会再作为第二段追回来");
+});
+
+test("展示段：直引号、右括号、右书名号同型——标点并进有字的段", () => {
+  for (const punctuation of [`"`, `”`, `）`, `』`, `……`]) {
+    const full = `第一句${punctuation}\n\n第二句在这里。`;
+    const { segments } = collectDisplaySegments(full, 7);
+    assert.ok(segments.length >= 2, `${punctuation} 那条例子仍切出多段`);
+    for (const seg of segments) {
+      assert.ok(SPEAKABLE.test(seg.displayText), `${punctuation} 不该单独成段：${seg.displayText}`);
+    }
+  }
+});
+
+test("展示段：final 收尾时尾巴上的引号不再发一段", () => {
+  const full = "她说：“那你别按。”";
+  const r = splitCommittedDisplaySegments(full, { cursor: 0, sentCount: 0 }, true);
+  assert.deepEqual(r.segments.map((s) => s.displayText), ["她说：“那你别按。"]);
+  assert.equal(r.next.cursor, full.length, "尾巴被跨过，final 之后不再有段");
+});
+
+test("展示段：整条正文都没有可读的字 → 零段（不去敲合成服务）", () => {
+  const r = splitCommittedDisplaySegments("……\n\n？？", { cursor: 0, sentCount: 0 }, true);
+  assert.equal(r.segments.length, 0, "纯标点不发段");
+  assert.equal(r.next.cursor, 6, "cursor 仍然前进，不会原地打转");
+});

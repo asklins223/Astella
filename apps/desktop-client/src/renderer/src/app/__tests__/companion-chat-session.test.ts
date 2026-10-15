@@ -110,11 +110,16 @@ describe("navChipsStillOutsideMessages（§4.8：消息里的落点取代游离 
  */
 describe("applyRouteToRoom（白名单里每种路由都必须真正换页）", () => {
   // 带必填 id 的 kind 补一个能过 zod 的最小形状；这里要量的是"有没有落点"，不是 id 归属。
+  // 枚举字段按第一项给：塞一个 uuid 进去会造出"服务端发得出、客户端认不出"的假形状，
+  // 那正好把这条判据要防的那件事（映射不到却自以为过了）演成空跑。
   const agentRoutes = allowedMainRouteV2Schema.options.map((option) => {
     const route: Record<string, unknown> = { kind: option.shape.kind.value };
     for (const [field, schema] of Object.entries(option.shape)) {
       if (field === "kind" || schema.isOptional()) continue;
-      route[field] = NOTE_ID;
+      // Shared and renderer can resolve separate Zod module instances, so `instanceof`
+      // misses the enum even though it is the real runtime schema.
+      const enumOptions = "options" in schema && Array.isArray(schema.options) ? schema.options : undefined;
+      route[field] = enumOptions?.[0] ?? NOTE_ID;
     }
     return route as CompanionAgentRouteEventV1["route"];
   });
@@ -132,10 +137,10 @@ describe("applyRouteToRoom（白名单里每种路由都必须真正换页）", 
     }
   };
 
-  it("正控制：白名单确实读到了这十三个 kind（读空了整个循环就是空跑）", () => {
+  it("正控制：白名单确实读到了这十四个 kind（读空了整个循环就是空跑）", () => {
     expect(agentRoutes.map((route) => route.kind).sort()).toEqual([
-      "card", "conversation", "home", "learning_run", "note", "note_library", "objective_library",
-      "review", "search", "settings", "source", "star_map", "today",
+      "card", "conversation", "home", "learning_artifact", "learning_run", "note", "note_library",
+      "objective_library", "review", "search", "settings", "source", "star_map", "today",
     ]);
   });
 

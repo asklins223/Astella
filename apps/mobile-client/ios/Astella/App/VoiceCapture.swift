@@ -11,12 +11,34 @@ final class VoiceCapture {
     private(set) var isRecording = false
     private(set) var isTranscribing = false
     private(set) var transcript = ""
+    private(set) var level: Double = 0
+    private var meterTask: Task<Void, Never>?
+    private var activation = UUID()
+    private var isRequestingPermission = false
+    func cancel() {
+        activation = UUID()
+        isRequestingPermission = false
+        meterTask?.cancel()
+        meterTask = nil
+        recorder?.stop()
+        recorder = nil
+        if let fileURL { try? FileManager.default.removeItem(at: fileURL) }
+        fileURL = nil
+        isRecording = false
+        level = 0
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    }
 
     func start(store: AppStore) {
-        guard !isRecording, !isTranscribing else { return }
+        guard !isRecording, !isTranscribing, !isRequestingPermission else { return }
+        isRequestingPermission = true
+        activation = UUID()
+        let request = activation
+        store.voicePlayback.stop()
         AVAudioApplication.requestRecordPermission { [weak self] allowed in
             Task { @MainActor in
-                guard let self else { return }
+                guard let self, self.activation == request else { return }
+                self.isRequestingPermission = false
                 guard allowed else {
                     store.errorMessage = "没有麦克风权限。请在系统设置里允许后再试。"
                     return
@@ -45,6 +67,19 @@ final class VoiceCapture {
                     self.startedAt = Date()
                     self.transcript = ""
                     self.isRecording = true
+                    self.meterTask = Task { [weak self] in
+                        while !Task.isCancelled {
+                            guard let self, self.isRecording else { return }
+                            recorder.updateMeters()
+                            let target = min(1, pow(10, Double(recorder.averagePower(forChannel: 0)) / 30))
+                            self.level = self.level * 0.65 + target * 0.35
+                            if Date().timeIntervalSince(self.startedAt) >= 59 {
+                                Task { if let text = await self.finish(store: store) { store.draft = text } }
+                                return
+                            }
+                            try? await Task.sleep(for: .milliseconds(40))
+                        }
+                    }
                     store.errorMessage = nil
                 } catch {
                     store.errorMessage = error.localizedDescription
@@ -56,6 +91,9 @@ final class VoiceCapture {
     func finish(store: AppStore) async -> String? {
         guard isRecording, let recorder, let fileURL else { return nil }
         isRecording = false
+        meterTask?.cancel()
+        meterTask = nil
+        level = 0
         recorder.stop()
         let duration = Int(Date().timeIntervalSince(startedAt) * 1_000)
         defer {

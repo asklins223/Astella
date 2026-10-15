@@ -42,14 +42,42 @@ export interface ProactivePolicyDecision {
  * 实测 2026-09-21 13:20 那三条被从没展示过的僵尸念头占满，她连续 21 小时没出声，
  * 而所有上游健康检查都是绿的（§9.58）。
  *
- * 间隔才是"少而轻 vs 多而密"：安静档 3 小时一次（醒着的时间一天约 4–5 次机会），
- * 适度 90 分钟，活跃 30 分钟。节奏只限制例行主动机会，不决定 Agent 是否有值得说的话。
+ * 间隔才是"少而轻 vs 多而密"。2026-10-14 用户判定"第一版还是不太行"之后，这组数字
+ * 从 3 小时 / 90 分 / 30 分收到 90 分 / 30 分 / 10 分，同时改了两条口径：
+ *
+ * 1. **安静结束的那次考虑不再计入间隔**（`companion-initiative.ts` 只按真的说了话的
+ *    那几次算）。原来的写法把"闲到几分钟 → 想一想 → 没什么可说"也当成一次主动，
+ *    于是她每 90 分钟才有一次机会，而只要有一次选择不说，下一次机会又往后推 90 分钟。
+ *    用户的体感就是"她从来不主动"——她确实有机会，机会被自己的沉默吃掉了。
+ *    沉默是成本问题，不是打扰问题；成本由"一段安静只开一次门"和每档的安静门槛管。
+ * 2. 档位仍然只控制**她自己新起的话题**多久可以说一次，不决定她有没有值得说的话；
+ *    招呼、答后接续、真实失败与学习结果照旧不受这条管。
  */
 export const PROACTIVE_CADENCE_MS: Readonly<Record<CompanionInterventionLevelV1, number>> =
   Object.freeze({
-    quiet: 3 * 60 * 60 * 1000,
-    moderate: 90 * 60 * 1000,
-    active: 30 * 60 * 1000,
+    quiet: 90 * 60 * 1000,
+    moderate: 30 * 60 * 1000,
+    active: 10 * 60 * 1000,
+  });
+
+/**
+ * 「陪着的时候」这一档要安静多久，才算一个合适的开口时机。
+ *
+ * 这是**时机的门槛**，不是说话的额度：安静档 10 分钟（她给你留足空间），
+ * 适中 3 分钟，活跃 90 秒（等于客户端能观察到的最早时刻）。
+ * 客户端一律在安静满 90 秒时开始上报，之后按 90 秒一格继续报（见
+ * `companion-awareness-idle` 的 tracker）；服务端按账号档位决定哪一格算时机，
+ * 所以档位既不改客户端行为，也不需要客户端先知道账号状态。
+ *
+ * 门槛之下的每一格都是一次**便宜的**核对：观察入库、起一个 prep job，
+ * 在起整轮模型之前就被这条判据挡住。这不是"被拒绝的机会"——
+ * 同一段安静继续下去，下一格会再核对一次。
+ */
+export const COMPANION_QUIET_PRESENCE_MIN_MS: Readonly<Record<CompanionInterventionLevelV1, number>> =
+  Object.freeze({
+    quiet: 10 * 60 * 1000,
+    moderate: 3 * 60 * 1000,
+    active: 90 * 1000,
   });
 
 export function proactiveCadenceMs(level: CompanionInterventionLevelV1): number {

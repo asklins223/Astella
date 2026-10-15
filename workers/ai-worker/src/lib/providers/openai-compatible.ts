@@ -16,10 +16,13 @@ import { shouldUsePromptCache, AI_UNDECLARED_OUTPUT_TOKENS, chatThinkingRequestF
 import type { AIProvider, ProviderUsage } from "../ai-provider.ts";
 import {
   readChatCompletionContent,
+  readChatCompletionReasoningContent,
   readProviderCode,
   readUsage,
   parseAgentTurnToolCalls,
   buildAgentTurnMessages,
+  reasoningContentFromHandles,
+  reasoningHandlesFromContent,
 } from "./json-response.ts";
 import type {
   ChatMessage,
@@ -108,9 +111,9 @@ export class OpenAICompatibleProvider implements AIProvider {
   /**
    * 思考字段（模型档案 + 平台方言驱动，2026-10-06 配置重设计 / 2026-10-12 方言）。
    *
-   * 字段名由平台 `options.thinkingParam` 声明：缺省 `enable_thinking`（开/关，
-   * DashScope 系网关）；声明 `reasoning_effort` 的网关（小米 MiMo 实测忽略
-   * enable_thinking）按档案档位下发具体 effort。每次调用自带的 `disableThinking`
+   * 字段由平台 `options.thinkingParam` 声明：缺省 `enable_thinking`（DashScope），
+   * MiMo Chat Completions 使用 `thinking.type`，其他网关可声明 `reasoning_effort`。
+   * 每次调用自带的 `disableThinking`
    * （离线评测等需要确定性/低延迟的调用）优先级最高，落到声明档位里最接近关的一档。
    */
   private thinkingField(perCallDisable: boolean): Record<string, unknown> {
@@ -127,19 +130,45 @@ export class OpenAICompatibleProvider implements AIProvider {
     return modelOutputTokenLimit(this.modelProfile, AI_UNDECLARED_OUTPUT_TOKENS);
   }
 
+  private outputTokenParam(): "max_tokens" | "max_completion_tokens" {
+    return this.platformOptions?.maxTokensParam ?? "max_tokens";
+  }
+
+  private setOutputTokenLimit(body: Record<string, unknown>, value: number | undefined): void {
+    if (value !== undefined) body[this.outputTokenParam()] = value;
+  }
+
   private applyModelSampling(body: Record<string, unknown>): void {
     // 用**实际下发**的档位判断，而不是调用方的意愿：reasoning_effort 方言下
     // "关"是 none，enable_thinking 方言下"关"是 false，其余情况档位未知。
+    const thinking = body.thinking as { type?: unknown } | undefined;
     const effort = typeof body.reasoning_effort === "string" ? body.reasoning_effort
-      : body.enable_thinking === false ? "none" : undefined;
+      : body.enable_thinking === false || thinking?.type === "disabled" ? "none" : undefined;
     const fields = modelTemperatureFields(this.modelProfile, typeof body.temperature === "number" ? body.temperature : undefined,
       effort);
     if (!("temperature" in fields)) delete body.temperature;
   }
 
-  private compatibleMessages<T extends { role: string; phase?: "commentary" | "final_answer" }>(messages: T[]): Array<Omit<T, "phase">> {
-    // phase is Responses metadata; Chat Completions does not accept it.
-    return messages.map(({ phase: _phase, ...message }) => message);
+  private compatibleMessages<T extends {
+    role: string;
+    phase?: "commentary" | "final_answer";
+    reasoning?: unknown;
+    reasoning_content?: unknown;
+  }>(messages: T[]): Array<Omit<T, "phase" | "reasoning" | "reasoning_content"> & { reasoning_content?: string }> {
+    // phase and internal reasoning handles are not Chat Completions fields.
+    // MiMo requires the handle's complete plaintext as `reasoning_content` on
+    // assistant messages so thinking survives tool-call round trips.
+    return messages.map(({ phase: _phase, reasoning, reasoning_content, ...message }) => {
+      const reasoningText = typeof reasoning_content === "string"
+        ? reasoning_content
+        : reasoningContentFromHandles(reasoning);
+      return {
+        ...message,
+        ...(message.role === "assistant" && reasoningText !== null
+          ? { reasoning_content: reasoningText }
+          : {}),
+      };
+    });
   }
 
   /**
@@ -184,7 +213,12 @@ export class OpenAICompatibleProvider implements AIProvider {
     options: ChatOptions,
     signal: AbortSignal | undefined,
     onDelta: (deltaText: string) => void,
-  ): Promise<{ content: string; toolCalls: AgentTurnResult["toolCalls"]; finishReason: string }> {
+  ): Promise<{
+    content: string;
+    toolCalls: AgentTurnResult["toolCalls"];
+    finishReason: string;
+    reasoning?: AgentTurnResult["reasoning"];
+  }> {
     if (signal?.aborted) throw abortError(signal, "before request");
     const maxTokens = this.outputTokenLimit();
     const temperature = options.temperature ?? 0.2;
@@ -217,7 +251,7 @@ export class OpenAICompatibleProvider implements AIProvider {
       ...this.thinkingField(options.disableThinking ?? false),
     };
     this.applyModelSampling(body);
-    if (shouldSetMaxTokens) body.max_tokens = maxTokens;
+    if (shouldSetMaxTokens) this.setOutputTokenLimit(body, maxTokens);
     const headers: Record<string, string> = {
       Accept: "text/event-stream",
       "Content-Type": "application/json",
@@ -248,6 +282,7 @@ export class OpenAICompatibleProvider implements AIProvider {
     const decoder = new TextDecoder();
     let buffer = "";
     let content = "";
+    let reasoningContent = "";
     let finishReason = "stop";
     let sawTerminal = false;
     let responseBytes = 0;
@@ -294,6 +329,7 @@ export class OpenAICompatibleProvider implements AIProvider {
       content: string;
       toolCalls: AgentTurnResult["toolCalls"];
       finishReason: string;
+      reasoning?: AgentTurnResult["reasoning"];
     } => {
       if (!sawTerminal) throw new ProviderStreamError(this.id, "stream_incomplete");
       if (finishReason === "length") throw new AgentOutputError("output_truncated", "provider stream exhausted its output limit");
@@ -306,7 +342,12 @@ export class OpenAICompatibleProvider implements AIProvider {
           if (slot) options.onToolCallSettled(slot);
         }
       }
-      return { content, toolCalls: collectToolCalls(), finishReason };
+      return {
+        content,
+        toolCalls: collectToolCalls(),
+        finishReason,
+        ...(reasoningContent.length > 0 ? { reasoning: reasoningHandlesFromContent(reasoningContent) } : {}),
+      };
     };
     /**
      * 流式失败带机器码（2026-09-19 ④ 修复补充）。
@@ -331,6 +372,7 @@ export class OpenAICompatibleProvider implements AIProvider {
           choices?: Array<{
             delta?: {
               content?: unknown;
+              reasoning_content?: unknown;
               tool_calls?: Array<{
                 index?: unknown;
                 id?: unknown;
@@ -346,6 +388,11 @@ export class OpenAICompatibleProvider implements AIProvider {
           sawTerminal = true;
         }
         const delta = choice?.delta?.content;
+        const reasoningDelta = choice?.delta?.reasoning_content;
+        if (typeof reasoningDelta === "string" && reasoningDelta.length > 0) {
+          reasoningContent += reasoningDelta;
+          options.onReasoningDelta?.(reasoningDelta);
+        }
         if (typeof delta === "string" && delta.length > 0) {
           content += delta;
           onDelta(delta);
@@ -535,7 +582,7 @@ export class OpenAICompatibleProvider implements AIProvider {
     disableThinking = false,
   ): Promise<{ content: string; usage: ProviderUsage | null }> {
     if (signal?.aborted) throw abortError(signal, "before request");
-    // R1: maxTokensStrategy controls max_tokens ("always" for DashScope, "env-gated" for OpenAI-compatible)
+    // R1: maxTokensStrategy controls whether the configured output-limit field is sent.
     const disableMaxTokens = this.platformOptions?.disableMaxTokens ?? false;
     const shouldSetMaxTokens = this.maxTokensStrategy === "always" || !disableMaxTokens;
     const body: Record<string, unknown> = {
@@ -555,7 +602,7 @@ export class OpenAICompatibleProvider implements AIProvider {
     };
     this.applyModelSampling(body);
     if (shouldSetMaxTokens) {
-      body.max_tokens = this.outputTokenLimit();
+      this.setOutputTokenLimit(body, this.outputTokenLimit());
     }
     // R1: Merge extra headers (e.g., X-DashScope-WorkSpace)
     const headers: Record<string, string> = {
@@ -655,13 +702,13 @@ export class OpenAICompatibleProvider implements AIProvider {
     };
 
     this.applyModelSampling(requestBody);
-    // R1: maxTokensStrategy controls max_tokens
+    // R1: maxTokensStrategy controls whether the configured output-limit field is sent.
     const disableMaxTokens = this.platformOptions?.disableMaxTokens ?? false;
     const shouldSetMaxTokens = this.maxTokensStrategy === "always" || !disableMaxTokens;
     if (shouldSetMaxTokens) {
       // AI P2 #25：出口夹取；非法/缺失即省略字段（用 provider 默认），不发垃圾值。
       const maxTokens = this.outputTokenLimit();
-      if (maxTokens !== undefined) requestBody.max_tokens = maxTokens;
+      this.setOutputTokenLimit(requestBody, maxTokens);
     }
 
     if (hasTools) {
@@ -707,7 +754,7 @@ export class OpenAICompatibleProvider implements AIProvider {
         model: requestBody.model,
         toolNames: (requestBody.tools as Array<{function:{name:string}}> | undefined)?.map(t => t.function.name),
         toolChoice: requestBody.tool_choice,
-        maxTokens: requestBody.max_tokens,
+        maxTokens: requestBody[this.outputTokenParam()],
         msgCount: (requestBody.messages as Array<{role:string}>).length,
         userMsgLen: (requestBody.messages as Array<{content:string}>).map(m => (m.content ?? "").length),
         systemLen: ((requestBody.messages as Array<{role:string,content:string}>).find(m=>m.role==="system")?.content ?? "").length,
@@ -755,6 +802,7 @@ export class OpenAICompatibleProvider implements AIProvider {
     // `message.tool_calls` and a JSON `content` body.
     const { content, toolCalls, finishReason, requestId } =
       parseAgentTurnToolCalls(body, hasTools, ["id", "request_id"]);
+    const reasoningContent = readChatCompletionReasoningContent(body);
 
     // 输出截断 / 参数损坏检测（截断空转修复）：
     // - finish_reason="length"：输出达到 token 上限被截断，arguments 可能不完整。
@@ -782,6 +830,9 @@ export class OpenAICompatibleProvider implements AIProvider {
       content,
       toolCalls,
       finishReason,
+      ...(reasoningContent !== undefined
+        ? { reasoning: reasoningHandlesFromContent(reasoningContent) }
+        : {}),
       usage,
       providerRequestId: requestId,
     };

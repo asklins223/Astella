@@ -35,6 +35,14 @@ export interface CompanionAgentLoopArgs {
    */
   toolConstraints: CompanionAgentToolExecutionConstraints;
   baseMessages: ChatMessage[];
+  /** Hash/scope-verified committed deltas already shown in this same run. */
+  initialVisibleText?: string;
+  /** Commit complete, validated visible step text before pausing or resuming. */
+  onVisibleCheckpoint?: (modelText: string) => Promise<boolean>;
+  /** Source identities from this run's committed snapshot, never a fresh read. */
+  historyForCompaction?: import("../handlers/companion-history-pressure-compaction.ts").HistoryCompactionSource;
+  compactionCheckpoints?: readonly import("../handlers/companion-context-handoff.ts").CompactionTraceV1[];
+  persistCompactionTraces?: () => Promise<void>;
   contextReceipts?: CompanionContextReceipts;
   /** 把一次请求的回放尾部折成「已被校验摘要盖住」的形态（44 §5.2）。只有组装回放
    * 的那层知道每条尾部消息的来源 seq 与当前摘要覆盖到哪；返回 null 表示无可折内容。 */

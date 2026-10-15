@@ -11,6 +11,7 @@
  *   2026-08-12+（15a 新反馈）：用户明确不要朗读上限，去掉原 20 段/2000 字、
  *   40 段/4000 字的限制。
  * - 净化后为空 → 零段（不发 voice.segment.ready）；
+ * - 每段至少含一个读得出来的字：`。”` 后紧跟空行时右引号并进下一段，不单独成段；
  * - segmentId = sha256(runId:ordinal:text)（64 hex，稳定唯一）；textSha256 = sha256(text)。
  */
 
@@ -47,6 +48,20 @@ export interface CompanionTtsSegment {
 
 const SPLIT_PATTERN = /(?<=[。！？；\n.!?;])\s*/;
 const HARD_SPLIT_PATTERN = /(?<=[，,、])/;
+const SENTENCE_END_CHAR = /[。！？；\n.!?;]/;
+/** 读得出来的字：字母/数字（含中日韩）。引号、括号、破折号、空白都不算。 */
+const SPEAKABLE_CHAR = /[\p{L}\p{N}]/u;
+/**
+ * 朗读段里必须至少有一个读得出来的字。
+ *
+ * `。”\n\n下一个例子：…` 这种排版里，`\n` 自己就是切分字符，于是右引号被顶成
+ * 孤零零一段。那种段引擎直接拒（实测 qwen 报 `Please ensure input text is valid`），
+ * 拒了还要回落 edge、客户端重试三次——一段就是六到十一秒的可听静音。
+ */
+function hasSpeakableChar(text: string): boolean {
+  return SPEAKABLE_CHAR.test(text);
+}
+
 /** 目标长度内最后一个"逗号级停顿"之后的位置；没有就返回 -1。 */
 function lastSecondaryBoundary(text: string, limit: number): number {
   for (let index = Math.min(text.length, limit) - 1; index >= 0; index -= 1) {
@@ -154,6 +169,7 @@ export function splitCommittedDisplaySegments(
     while (displayEnd > displayStart && /\s/.test(fullText[displayEnd - 1] ?? "")) displayEnd -= 1;
     cursor = end;
     if (displayEnd <= displayStart || ordinal >= maxSegments) return;
+    if (!hasSpeakableChar(fullText.slice(displayStart, displayEnd))) return;
     ordinal += 1;
     segments.push({
       ordinal,
@@ -168,13 +184,20 @@ export function splitCommittedDisplaySegments(
     const hardEnd = Math.min(fullText.length, cursor + maxSegmentChars);
     let boundary = -1;
     const scanLimit = Math.min(remaining.length, maxSegmentChars);
+    let pendingHasSpeakableChar = false;
     for (let index = 0; index < scanLimit; index += 1) {
-      if (/[。！？；\n.!?;]/.test(remaining[index] ?? "")) {
-        boundary = cursor + index + 1;
-        break;
-      }
+      const char = remaining[index] ?? "";
+      if (!pendingHasSpeakableChar && SPEAKABLE_CHAR.test(char)) pendingHasSpeakableChar = true;
+      if (!SENTENCE_END_CHAR.test(char)) continue;
+      // 切下去这一段没有可读的字：不在这里切，继续往后找停顿，让这点标点并进下一段
+      // （它本来就属于上一句的收尾，读起来也只是静音）。
+      if (!pendingHasSpeakableChar) continue;
+      boundary = cursor + index + 1;
+      break;
     }
-    const expressionEnd = opts?.expressionBoundaries?.find(end => end > cursor && end <= hardEnd);
+    const expressionEnd = opts?.expressionBoundaries?.find(
+      (end) => end > cursor && end <= hardEnd && hasSpeakableChar(fullText.slice(cursor, end)),
+    );
     if (expressionEnd !== undefined && (boundary < 0 || expressionEnd < boundary)) boundary = expressionEnd;
 
     if (boundary > cursor) {

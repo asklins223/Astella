@@ -9,6 +9,30 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.material3.Surface
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
+import com.astella.mobile.R
+import com.astella.mobile.ui.design.MotionTokens
+import kotlinx.coroutines.delay
+
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
@@ -40,6 +64,11 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.astella.mobile.data.AppViewModel
 import com.astella.mobile.data.MainTab
 import com.astella.mobile.ui.design.DawnBackground
+import com.astella.mobile.ui.design.AstellaAtmosphere
+import com.astella.mobile.ui.design.LocalAstellaHaze
+import com.astella.mobile.ui.design.astellaGlass
+import dev.chrisbanes.haze.rememberHazeState
+import dev.chrisbanes.haze.hazeSource
 import com.astella.mobile.ui.design.LocalReduceMotion
 import com.astella.mobile.ui.design.StudyPalette
 import com.astella.mobile.ui.design.rememberSystemReducedMotion
@@ -57,12 +86,40 @@ import com.astella.mobile.ui.screens.MobileSettingsScreen
 @Composable
 fun AstellaRoot(viewModel: AppViewModel = viewModel()) {
     val state by viewModel.state.collectAsState()
+    val haze = rememberHazeState()
     val reduceMotion = state.localReduceMotion || rememberSystemReducedMotion()
     var selectedTab by rememberSaveable { mutableStateOf(MainTab.Conversation) }
     var showAccount by rememberSaveable { mutableStateOf(false) }
     var accountSubpage by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedNoteId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedNoteFeature by rememberSaveable { mutableStateOf<String?>(null) }
+    val owner = LocalLifecycleOwner.current
+    val page = if (showAccount) "我的" else if (selectedNoteId != null) "阅读手记" else selectedTab.label
+    val observedPage by rememberUpdatedState(page)
+    val observedNote by rememberUpdatedState(selectedNoteId)
+    LaunchedEffect(owner, state.profile?.userId) {
+        owner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            viewModel.recordInteraction()
+            viewModel.reportAwareness("app.foreground", true, observedPage, observedNote)
+            try {
+                while (true) {
+                    delay(15_000)
+                    viewModel.reportAwareness(if (viewModel.isQuiet()) "presence.quiet" else "context.updated", true, observedPage, observedNote)
+                }
+            } finally {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { viewModel.reportAwareness("context.updated", false, observedPage, observedNote) }
+            }
+        }
+    }
+    LaunchedEffect(page, selectedNoteId) {
+        viewModel.recordInteraction()
+        viewModel.reportAwareness("page.arrived", true, page, selectedNoteId)
+    }
+    LaunchedEffect(state.attachmentRevision) {
+        if (state.attachmentRevision.isNotEmpty() && (showAccount || selectedNoteId != null || selectedTab != MainTab.Conversation)) {
+            showAccount = false; selectedNoteId = null; selectedNoteFeature = null; selectedTab = MainTab.Conversation
+        }
+    }
     BackHandler(showAccount || selectedNoteId != null || selectedNoteFeature != null) {
         when {
             showAccount && accountSubpage != null -> accountSubpage = null
@@ -73,7 +130,7 @@ fun AstellaRoot(viewModel: AppViewModel = viewModel()) {
         }
     }
 
-    CompositionLocalProvider(LocalReduceMotion provides state.localReduceMotion) {
+    CompositionLocalProvider(LocalReduceMotion provides reduceMotion,LocalAstellaHaze provides haze) {
         if (!state.isAuthenticated) {
             if (viewModel.hasStoredSession()) SessionRecoveryScreen(state, viewModel)
             else LoginScreen(state, viewModel)
@@ -81,28 +138,35 @@ fun AstellaRoot(viewModel: AppViewModel = viewModel()) {
         }
 
         val inSubpage = showAccount || selectedNoteId != null || selectedNoteFeature != null
+        Box(Modifier.fillMaxSize()) {
+        AstellaAtmosphere(Modifier.fillMaxSize().hazeSource(haze))
         Scaffold(
+            containerColor = androidx.compose.ui.graphics.Color.Transparent,
             contentWindowInsets = WindowInsets.safeDrawing,
             bottomBar = {
                 if (!inSubpage) {
-                    NavigationBar(
-                        containerColor = StudyPalette.paper.copy(alpha = .96f),
-                        tonalElevation = 1.dp,
-                    ) {
-                        MainTab.entries.forEach { tab ->
-                            NavigationBarItem(
-                                selected = selectedTab == tab,
-                                onClick = { selectedTab = tab },
-                                icon = { Icon(tabIcon(tab), contentDescription = null) },
-                                label = { Text(tab.label) },
-                                alwaysShowLabel = true,
-                            )
+                    Box(Modifier.fillMaxWidth().navigationBarsPadding().padding(start = 42.dp,end = 42.dp,top = 8.dp,bottom = 5.dp)) {
+                        Row(Modifier.fillMaxWidth().height(69.dp).astellaGlass(29.dp,interactive = true).padding(horizontal = 10.dp,vertical = 5.dp)) {
+                            MainTab.entries.forEach { tab ->
+                                val selected = selectedTab == tab
+                                com.astella.mobile.ui.design.AstellaTap({ selectedTab = tab },Modifier.weight(1f).fillMaxHeight()) {
+                                    Column(Modifier.align(Alignment.Center),horizontalAlignment = Alignment.CenterHorizontally,verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Box(Modifier.size(22.dp,25.dp),contentAlignment = Alignment.BottomCenter) {
+                                            if (selected) Box(Modifier.align(Alignment.TopCenter).width(13.dp).height(2.dp).background(StudyPalette.accent.copy(alpha = .85f),RoundedCornerShape(2.dp)))
+                                            Icon(tabIcon(tab),null,Modifier.size(21.dp),tint = if (selected) StudyPalette.ink else StudyPalette.muted)
+                                        }
+                                        Text(if (tab == MainTab.Conversation) "伴星" else tab.label,fontSize = androidx.compose.ui.unit.TextUnit(10f,androidx.compose.ui.unit.TextUnitType.Sp),color = if (selected) StudyPalette.ink else StudyPalette.muted)
+                                    }
+                                }
+                            }
                         }
                     }
                 }
             },
         ) { inset ->
-            DawnBackground(Modifier.padding(inset)) {
+            DawnBackground(Modifier.padding(inset).pointerInput(Unit) {
+                awaitEachGesture { awaitFirstDown(requireUnconsumed = false); viewModel.recordInteraction() }
+            }) {
                 AnimatedContent(
                     targetState = when {
                         showAccount -> accountSubpage?.let { "account:$it" } ?: "account"
@@ -119,21 +183,21 @@ fun AstellaRoot(viewModel: AppViewModel = viewModel()) {
                             val targetDepth = destinationDepth(targetState)
                             when {
                                 targetDepth > initialDepth ->
-                                    (slideInHorizontally(tween(280)) { it } + fadeIn(tween(160))) togetherWith
-                                        (slideOutHorizontally(tween(280)) { -it } + fadeOut(tween(120)))
+                                    (slideInHorizontally(MotionTokens.routePush()) { it } + fadeIn(tween(160))) togetherWith
+                                        (slideOutHorizontally(MotionTokens.routePush()) { -it } + fadeOut(tween(120)))
                                 targetDepth < initialDepth ->
-                                    (slideInHorizontally(tween(280)) { -it } + fadeIn(tween(160))) togetherWith
-                                        (slideOutHorizontally(tween(280)) { it } + fadeOut(tween(120)))
+                                    (slideInHorizontally(MotionTokens.routePush()) { -it } + fadeIn(tween(160))) togetherWith
+                                        (slideOutHorizontally(MotionTokens.routePush()) { it } + fadeOut(tween(120)))
                                 else -> fadeIn(tween(180)) togetherWith fadeOut(tween(120))
                             }
                         }
                     },
                 ) { destination ->
                     when {
-                        showAccount && accountSubpage == "settings" -> MobileSettingsScreen(
+                        destination == "account:settings" -> MobileSettingsScreen(
                             state, viewModel, onBack = { accountSubpage = null },
                         )
-                        showAccount && accountSubpage == "companion" -> CompanionCenterScreen(
+                        destination == "account:companion" -> CompanionCenterScreen(
                             state, viewModel, onBack = { accountSubpage = null },
                             onConversation = { records ->
                                 viewModel.setChatShowsRecords(records)
@@ -144,15 +208,15 @@ fun AstellaRoot(viewModel: AppViewModel = viewModel()) {
                                 selectedTab = MainTab.Conversation
                             },
                         )
-                        showAccount -> AccountScreen(
+                        destination == "account" -> AccountScreen(
                             state, viewModel,
                             onBack = { showAccount = false },
                             onSettings = { accountSubpage = "settings" },
                             onCompanion = { accountSubpage = "companion" },
                         )
-                        selectedNoteFeature != null && selectedNoteId != null -> NoteFeatureScreen(
-                            noteId = selectedNoteId!!,
-                            kind = selectedNoteFeature!!,
+                        destination.startsWith("feature:") -> NoteFeatureScreen(
+                            noteId = destination.substringAfterLast(":"),
+                            kind = destination.split(":")[1],
                             state = state,
                             viewModel = viewModel,
                             onBack = { selectedNoteFeature = null },
@@ -188,6 +252,7 @@ fun AstellaRoot(viewModel: AppViewModel = viewModel()) {
                     }
                 }
             }
+        }
         }
     }
 }

@@ -31,6 +31,7 @@ import { companionFileObjectKeyFromUrl } from "@astella/shared/companion-file-co
 import { resolveAuthSurfaceManifestSecret } from "../../../companion-contracts/auth-surface.ts";
 import { ensureCompanionAccountState, getCompanionAccountEpoch } from "../../../companion-contracts/companion-account-epoch.ts";
 import { reclaimExpiredCompanionProposals, invalidateSupersededRunProposals } from "./companion-proposal-expiry.ts";
+import { lockCompanionConversationLifecycleRuns } from "@astella/shared/companion-lock-order";
 import { retainCompanionCancelledPartial } from "./companion-cancelled-retention.ts";
 import { activateAssistantPersonaForNewTurn } from "../pet-profile-service.ts";
 import {
@@ -340,6 +341,14 @@ export async function createCompanionTurn(args: {  workspaceId: string;
   }
 
   return withWorkspaceTransaction({ workspaceId: args.workspaceId, userId: args.userId }, async (tx) => {
+    // 锁序规约：先 run 行、后会话行（见 @astella/shared/companion-lock-order）。
+    // 建轮路径第一句就拿会话行锁（整条路径的串行化点，不能后移），而本事务随后
+    // 要碰两类 run 行：① reclaim 要终结的**待确认** run；② 被 supersede 的
+    // **在跑** run（下面的 `UPDATE companion_turn_runs SET status='superseded'`）。
+    // 不先把它们锁齐，本事务就是「先会话后 run」的 A 序——与所有流式路径
+    // （先锁 run 再拿会话计数器）并发即 AB-BA，正是 2026-10-14 dev 库实测两例
+    // 死锁的同一形状：用户发一句话，turn 直接 INTERNAL_ERROR、run 被标 failed。
+    await lockCompanionConversationLifecycleRuns(tx, args.conversationId);
     const conversationRows = await tx
       .select()
       .from(companionConversations)

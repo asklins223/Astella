@@ -425,7 +425,7 @@ function validateCompanionFileMagic(buffer: Buffer, mime: CompanionFileMimeType)
   if (mime === "application/pdf") {
     return buffer.length >= 5 && buffer.toString("ascii", 0, 5) === "%PDF-";
   }
-  if (mime === "application/vnd.openxmlformats-officedocument.wordprocessingml.docx") {
+  if (mime === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
     return buffer.length >= 4 && buffer[0] === 0x50 && buffer[1] === 0x4b && buffer[2] === 0x03 && buffer[3] === 0x04;
   }
   try {

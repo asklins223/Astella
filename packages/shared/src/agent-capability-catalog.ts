@@ -58,12 +58,33 @@ export function collectAgentCapabilitySceneGuidance(
   }
   return out;
 }
+export type AgentCapabilityArgumentIssue = {
+  path: string[]; code: string; expected?: string; format?: string;
+  minimum?: number; maximum?: number; allowedValues?: unknown[]; fields?: string[];
+};
+
 export function validateAgentCapabilityArguments(name: string, args: unknown, surface?: AgentCapabilitySurface):
-  { success: true; data: Record<string, unknown> } | { success: false; reason: string } {
+  { success: true; data: Record<string, unknown> }
+  | { success: false; reason: string; issues: AgentCapabilityArgumentIssue[] } {
   const entry = getAgentCapability(name);
   if (!entry || (surface && !entry.surfaces.includes(surface)))
-    return { success: false, reason: "这个工具的参数要求没有登记，这一步没有执行" };
+    return { success: false, reason: "这个工具的参数要求没有登记，这一步没有执行", issues: [] };
   const parsed = entry.argumentSchema.safeParse(args);
   return parsed.success ? { success: true, data: parsed.data }
-    : { success: false, reason: "这一步要填的内容没有对上，没有执行" };
+    : { success: false, reason: "这一步要填的内容没有对上，没有执行",
+      // Model repair needs the failing fields. Keep raw values and arbitrary
+      // validator prose out of receipts, logs and user-facing error summaries.
+      issues: parsed.error.issues.map(issue => {
+        const data = issue as unknown as Record<string, unknown>;
+        return { path: issue.path.map(String), code: issue.code,
+          ...(typeof data.expected === "string" ? { expected: data.expected } : {}),
+          ...(typeof data.format === "string" ? { format: data.format } : {}),
+          ...(typeof data.validation === "string" ? { format: data.validation } : {}),
+          ...(typeof data.minimum === "number" ? { minimum: data.minimum } : {}),
+          ...(typeof data.maximum === "number" ? { maximum: data.maximum } : {}),
+          ...(Array.isArray(data.values) ? { allowedValues: data.values } : {}),
+          ...(Array.isArray(data.options) ? { allowedValues: data.options } : {}),
+          ...(Array.isArray(data.keys) ? { fields: data.keys.map(String) } : {}),
+        };
+      }) };
 }

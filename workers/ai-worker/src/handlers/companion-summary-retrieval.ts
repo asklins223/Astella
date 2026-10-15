@@ -2,7 +2,7 @@ import { sql, type SQL } from "drizzle-orm";
 import { extractQueryKeywords } from "./companion-memory-vector.ts";
 import { companionHistoryText } from "./companion-dialogue-store.ts";
 import { toTextArrayLiteral } from "@astella/shared/pg-text-array";
-import { conversationInstant } from "./companion-conversation-evidence.ts";
+import { companionConversationTimeEvidence, conversationInstant, type CompanionConversationClock } from "./companion-conversation-evidence.ts";
 
 /**
  * 方案 44 §3.2／§8.3：跨会话找回。
@@ -26,9 +26,13 @@ export const MAX_PAST_CONVERSATION_HITS = 5;
 /** 取回原文时一次最多读多少条消息。 */
 export const MAX_PAST_CONVERSATION_MESSAGES = 20;
 
-// 分页预算的唯一来源在声明层（`companion-conversation-contracts.ts`）：这一族的两格
-// `maxOutputChars` 由它派生，这里只是执行它。规则照旧——一条消息要么整条给，要么不给。
-import { PAST_MESSAGES_MAX_CHARS } from "@astella/shared";
+// A shared soft page target groups complete source messages. It cannot be an
+// output ceiling: the first message may be longer and metadata has its own size.
+// Full-request token governance accounts for the actual serialized result.
+import { PAST_MESSAGES_PAGE_TARGET_CHARS } from "@astella/shared";
+
+type HistoryClock = Pick<CompanionConversationClock, "observedAt" | "timezone">;
+type HistoryTime = ReturnType<ReturnType<typeof companionConversationTimeEvidence>["stamp"]>;
 
 export interface PastConversationScope {
   workspaceId: string;
@@ -54,6 +58,11 @@ export interface PastConversationMessage {
   role: "user" | "assistant";
   text: string;
   createdAt: string | null;
+  messageId: string | null;
+  sourceHash: string | null;
+  replyStatus: string | null;
+  kind: string | null;
+  time: HistoryTime;
 }
 
 export interface PastConversationExcerpt {
@@ -64,6 +73,91 @@ export interface PastConversationExcerpt {
   throughSeq: string | null;
   /** 因上限被截断时为 true——她必须知道后面还有没读。 */
   truncated: boolean;
+  /** First unread source sequence, including when sequence numbers have gaps. */
+  nextFromSeq: string | null;
+  source: { kind: "conversation_excerpt"; timezone: string | null; observedAt: string | null;
+    timestampMeaning: "message_creation_not_narrated_event" };
+}
+
+export interface PastConversationTranscriptHit {
+  sourceKind: "transcript";
+  conversationId: string;
+  title: string;
+  fromSeq: string;
+  matchedSeq: string;
+  messageId: string;
+  sourceHash: string;
+  role: "user" | "assistant";
+  createdAt: string | null;
+  replyStatus: string | null;
+  time: HistoryTime;
+  timezone: string | null;
+}
+
+function searchPatterns(query: string) {
+  const text = query.trim();
+  if (!text) return null;
+  const literal = `%${text.replace(/[\\%_]/g, "\\$&")}%`;
+  return { literal, patterns: toTextArrayLiteral([literal, ...extractQueryKeywords(text, 8).map(word => `%${word}%`)]) };
+}
+
+/** Search source records independently of summary production. Results are
+ * locators, not shortened messages or claims that the whole history was read. */
+export async function searchPastConversationMessages(
+  tx: Executor,
+  scope: PastConversationScope,
+  input: { query: string; excludeConversationId?: string | null; limit?: number; clock?: HistoryClock },
+): Promise<PastConversationTranscriptHit[]> {
+  const search = searchPatterns(input.query);
+  if (!search) return [];
+  const limit = Math.max(1, Math.min(MAX_PAST_CONVERSATION_HITS, input.limit ?? MAX_PAST_CONVERSATION_HITS));
+  const { literal, patterns } = search;
+  const time = companionConversationTimeEvidence(input.clock);
+  const rows = asRows(await tx.execute(sql`
+    WITH matches AS (
+      SELECT m.id, m.conversation_id, m.seq, m.role, m.content_sha256,
+             m.created_at, c.title,
+             (m.blocks::text ILIKE ${literal}) AS exact_match,
+             (SELECT count(*) FROM unnest(${patterns}::text[]) AS p(pattern) WHERE m.blocks::text ILIKE p.pattern) AS relevance
+      FROM companion_messages m
+      JOIN companion_conversations c ON c.id = m.conversation_id
+        AND c.workspace_id = m.workspace_id AND c.user_id = m.user_id
+      WHERE m.workspace_id = ${scope.workspaceId} AND m.user_id = ${scope.userId}
+        AND m.role IN ('user', 'assistant') AND m.kind NOT IN ('error', 'cancelled')
+        ${input.excludeConversationId ? sql`AND m.conversation_id <> ${input.excludeConversationId}` : sql``}
+        AND m.blocks::text ILIKE ANY(${patterns}::text[])
+      ORDER BY exact_match DESC, relevance DESC, m.created_at DESC, m.id DESC
+      LIMIT ${limit}
+    )
+    SELECT hit.id, hit.conversation_id, hit.seq::text AS seq, hit.role, hit.content_sha256, hit.title,
+           to_char(hit.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS created_at,
+           (SELECT to_char(previous.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+             FROM companion_messages previous WHERE previous.conversation_id=hit.conversation_id
+               AND previous.seq < hit.seq AND previous.role IN ('user','assistant') ORDER BY previous.seq DESC LIMIT 1) AS previous_created_at,
+           (SELECT r.status FROM companion_turn_runs r WHERE r.user_message_id = hit.id
+              AND hit.role = 'user' ORDER BY r.created_at DESC LIMIT 1) AS reply_status,
+           coalesce((
+             SELECT min(u.seq) FROM companion_messages u
+             WHERE u.conversation_id = hit.conversation_id AND u.role = 'user'
+               AND u.seq <= hit.seq AND u.seq > coalesce((
+                 SELECT max(previous.seq) FROM companion_messages previous
+                 WHERE previous.conversation_id = hit.conversation_id AND previous.role <> 'user'
+                   AND previous.seq < (SELECT max(last_user.seq) FROM companion_messages last_user
+                     WHERE last_user.conversation_id = hit.conversation_id AND last_user.role = 'user'
+                       AND last_user.seq <= hit.seq)
+               ), 0)
+           ), hit.seq)::text AS from_seq
+    FROM matches hit
+    ORDER BY hit.exact_match DESC, hit.relevance DESC, hit.created_at DESC, hit.id DESC
+  `));
+  return rows.flatMap(row => row.id && row.conversation_id && row.seq && row.content_sha256
+    ? [{ sourceKind: "transcript" as const, conversationId: String(row.conversation_id),
+      title: String(row.title ?? ""), fromSeq: String(row.from_seq ?? row.seq), matchedSeq: String(row.seq),
+      messageId: String(row.id), sourceHash: String(row.content_sha256),
+      role: row.role === "assistant" ? "assistant" as const : "user" as const,
+      createdAt: conversationInstant(row.created_at), replyStatus: typeof row.reply_status === "string" ? row.reply_status : null,
+      time: time.stamp(row.created_at, row.previous_created_at), timezone: time.timezone }]
+    : []);
 }
 
 interface Executor {
@@ -116,23 +210,22 @@ export async function searchPastConversationSummaries(
   scope: PastConversationScope,
   input: { query: string; excludeConversationId?: string | null; limit?: number },
 ): Promise<PastConversationHit[]> {
+  const search = searchPatterns(input.query);
+  if (!search) return [];
   const limit = Math.max(1, Math.min(MAX_PAST_CONVERSATION_HITS, input.limit ?? MAX_PAST_CONVERSATION_HITS));
-  const keywords = extractQueryKeywords(input.query, 8);
   // 关键词由 extractQueryKeywords 限定在 [\p{L}\p{N}]+ 内，`%`/`_` 进不来，
   // 加通配符不引入 LIKE 注入面（与记忆关键词检索同一条纪律）。
-  const patterns = toTextArrayLiteral(keywords.map((keyword) => `%${keyword}%`));
-  const keywordFilter = patterns
-    ? sql` AND (s.summary::text ILIKE ANY(${patterns}::text[]))`
-    : sql``;
+  const keywordFilter = sql` AND (s.summary::text ILIKE ANY(${search.patterns}::text[]))`;
   const rows = asRows(await tx.execute(sql`
     SELECT s.conversation_id, s.summary, s.coverage_from_seq::text AS coverage_from_seq,
            s.coverage_through_seq::text AS coverage_through_seq, s.coverage_source_hash,
            s.updated_at
     FROM conversation_summaries s
-    -- 方案 44 §3.3：读取侧检查当前有效性。会话消息被改写或删除后，会话的
-    -- context_revision 会前进，而这份摘要记下的是**它被验证时**的取值——对不上就
-    -- 说明它盖住的那一段已经变了。跨会话找回读的是同一批摘要，只认 status 不认
-    -- 修订号，就会把一份来源已经变了的摘要当成「以前聊过什么」讲出来。
+    -- 方案 44 §3.3：读取侧检查当前有效性——与链读（companion-dialogue-store.ts）
+    -- 用**同一套判据**。0433 起判据是区间级失效标记：消息被改写/删除时，只有
+    -- 覆盖区间真被碰到的摘要才盖上 invalidated_at；会话级修订号的等值比较已弃用
+    -- （它会让该会话所有旧摘要永久读不到——实库那份 565 条的会话因此只剩两块
+    -- 可读）。跨会话找回读的是同一批摘要，两边不一致等于「同一件事两个判据」。
     JOIN companion_conversations c
       ON c.id = s.conversation_id AND c.workspace_id = s.workspace_id AND c.user_id = s.user_id
     WHERE s.workspace_id = ${scope.workspaceId}
@@ -142,7 +235,7 @@ export async function searchPastConversationSummaries(
       AND s.coverage_through_seq IS NOT NULL
       AND s.coverage_from_seq <= s.coverage_through_seq
       AND s.coverage_source_hash IS NOT NULL
-      AND s.verified_context_revision = c.context_revision
+      AND s.invalidated_at IS NULL
       ${input.excludeConversationId
         ? sql`AND s.conversation_id <> ${input.excludeConversationId}`
         : sql``}
@@ -164,20 +257,23 @@ export async function searchPastConversationSummaries(
 export async function readPastConversationMessages(
   tx: Executor,
   scope: PastConversationScope,
-  input: { conversationId: string; fromSeq: string; throughSeq?: string | null; limit?: number },
+  input: { conversationId: string; fromSeq: string; throughSeq?: string | null; limit?: number; clock?: HistoryClock },
 ): Promise<PastConversationExcerpt> {
+  const time = companionConversationTimeEvidence(input.clock);
   const empty: PastConversationExcerpt = {
-    conversationId: input.conversationId, messages: [], fromSeq: null, throughSeq: null, truncated: false,
+    conversationId: input.conversationId, messages: [], fromSeq: null, throughSeq: null, truncated: false, nextFromSeq: null,
+    source: { kind: "conversation_excerpt", timezone: time.timezone, observedAt: time.observedAt,
+      timestampMeaning: "message_creation_not_narrated_event" },
   };
   let fromSeq: bigint;
-  let throughSeq: bigint;
+  let throughSeq: bigint | null;
   try {
     fromSeq = BigInt(input.fromSeq);
-    throughSeq = input.throughSeq ? BigInt(input.throughSeq) : fromSeq + BigInt(MAX_PAST_CONVERSATION_MESSAGES) - 1n;
+    throughSeq = input.throughSeq ? BigInt(input.throughSeq) : null;
   } catch {
     return empty;
   }
-  if (fromSeq <= 0n || throughSeq < fromSeq) return empty;
+  if (fromSeq <= 0n || (throughSeq !== null && throughSeq < fromSeq)) return empty;
 
   const limit = Math.max(1, Math.min(MAX_PAST_CONVERSATION_MESSAGES, input.limit ?? MAX_PAST_CONVERSATION_MESSAGES));
   const rows = asRows(await tx.execute(sql`
@@ -188,12 +284,18 @@ export async function readPastConversationMessages(
     -- sql 标签提前截断。注释写在 sql 标签里必须避开反引号。）
     -- 写法对齐 readCompanionHistoryRows（companion-dialogue-store）：子查询取该轮次的
     -- selection，没有对应轮次时就是 null——不猜，也不从别处拼。
-    SELECT m.id, m.seq::text AS seq, m.role, m.blocks,
+    SELECT m.id, m.seq::text AS seq, m.role, m.kind, m.blocks, m.content_sha256,
            to_char(m.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS created_at,
+           (SELECT to_char(previous.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+             FROM companion_messages previous WHERE previous.conversation_id=m.conversation_id
+               AND previous.seq < m.seq AND previous.role IN ('user','assistant') ORDER BY previous.seq DESC LIMIT 1) AS previous_created_at,
            (SELECT jsonb_build_object('selection', coalesce(r.page_context->'selection', r.page_context->'context'->'selection'))
               FROM companion_turn_runs r
              WHERE r.user_message_id = m.id AND m.role = 'user'
-             ORDER BY r.created_at DESC LIMIT 1) AS page_context
+             ORDER BY r.created_at DESC LIMIT 1) AS page_context,
+           (SELECT r.status FROM companion_turn_runs r WHERE (r.user_message_id = m.id AND m.role = 'user')
+               OR (r.id = m.run_id AND m.role = 'assistant')
+             ORDER BY r.created_at DESC LIMIT 1) AS reply_status
     FROM companion_messages m
     JOIN companion_conversations c ON c.id = m.conversation_id
     WHERE m.conversation_id = ${input.conversationId}
@@ -201,8 +303,9 @@ export async function readPastConversationMessages(
       -- 消息上——否则一个猜到的 conversationId 就足以读到别人的对话。
       AND c.workspace_id = ${scope.workspaceId}
       AND c.user_id = ${scope.userId}
+      AND m.workspace_id = c.workspace_id AND m.user_id = c.user_id
       AND m.seq >= ${fromSeq.toString()}::bigint
-      AND m.seq <= ${throughSeq.toString()}::bigint
+      ${throughSeq !== null ? sql`AND m.seq <= ${throughSeq.toString()}::bigint` : sql``}
       AND m.role IN ('user', 'assistant')
     ORDER BY m.seq
     LIMIT ${limit + 1}
@@ -218,12 +321,16 @@ export async function readPastConversationMessages(
       blocks: row.blocks,
       page_context: row.page_context,
     });
-    if (messages.length > 0 && chars + text.length > PAST_MESSAGES_MAX_CHARS) {
+    if (messages.length > 0 && chars + text.length > PAST_MESSAGES_PAGE_TARGET_CHARS) {
       truncated = true;
       break;
     }
     messages.push({ seq: String(row.seq), role: row.role === "assistant" ? "assistant" : "user", text,
-      createdAt: conversationInstant(row.created_at) });
+      createdAt: conversationInstant(row.created_at), messageId: row.id ? String(row.id) : null,
+      sourceHash: row.content_sha256 ? String(row.content_sha256) : null,
+      replyStatus: typeof row.reply_status === "string" ? row.reply_status : null,
+      kind: typeof row.kind === "string" ? row.kind : null,
+      time: time.stamp(row.created_at, row.previous_created_at) });
     chars += text.length;
   }
   // 多取一行就是用来判「还有没有」的：取到了 limit+1 说明被上限挡住。
@@ -234,5 +341,7 @@ export async function readPastConversationMessages(
     fromSeq: messages[0]?.seq ?? null,
     throughSeq: messages.at(-1)?.seq ?? null,
     truncated,
+    nextFromSeq: truncated && rows[messages.length] ? String(rows[messages.length]!.seq) : null,
+    source: empty.source,
   };
 }

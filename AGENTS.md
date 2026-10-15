@@ -1,57 +1,59 @@
-# 项目协作说明
+# Project Collaboration Guidelines
 
-理解用户这次想完成的体验，沿真实调用链把工作做完。用户的新决定优先于旧文档和通用 skill；发现冲突时修正相关依据，说明取舍。现有页面是理解产品的起点，也可以重构。
+Use English for all subsequent project communication and documentation updates unless the user explicitly requests another language.
 
-## 当前文档入口
+Understand the experience the user wants to achieve in the current task, and follow the actual call chain through to completion. The user's latest decisions take precedence over older documents and general skills; when conflicts arise, update the relevant guidance and explain the tradeoffs. Existing pages are a starting point for understanding the product and may be restructured.
 
-按任务选择需要的文档，不用把全部文档加载一遍。
+## Current Documentation Entry Points
 
-| 主题 | 入口 |
+Choose the documents relevant to the task; there is no need to load every document.
+
+| Topic | Entry point |
 | --- | --- |
-| 产品、用户、权限与已确认能力 | [PRODUCT.md](PRODUCT.md) |
-| 视觉方向、布局与交互 | [DESIGN.md](DESIGN.md) |
-| 伴星主动交流、用户自定义参与偏好、分句与自主续答、页面感知和唤醒能力 | [方案 56](docs/plans/learning-companion/56-companion-initiative-and-natural-exchange-2026-10-13.md)（所有账号默认支持自然分句与答后补充考虑、相关页面帮助、启动问候、久学休息，以及**人在前台、手头安静下来时她自己想起点什么就说一句或问一句近况**；口气按参与依据分档，招呼与闲聊走陪聊、页面与难题走讲解；定时批量念想链已删除，不再有独立的「伴星念想」页。个人自由偏好用于细化，不是启用前提。真实调用链与验证范围见实施记录） |
-| App 与小程序的随身伴星、便携学习与共享数据 | [方案 51](docs/plans/learning-companion/51-mobile-companion-full-agent-product-design-2026-10-10.md)（2026-10-14 用户决定以 iOS SwiftUI 和 Android Kotlin/Compose 两套原生 App 取代 React 手机客户端；原生端视觉采用系统中性色与单一系统蓝；旧工程状态见文首更新） |
-| 手机交流重设计、服务端语音与两端共用 WebSocket | [方案 55](docs/plans/learning-companion/55-mobile-redesign-and-companion-realtime-2026-10-12.md)（原生端复用伴星 WebSocket 与 MiMo 整段 ASR；没有流式 ASR/TTS，桌面仍用 SSE 与本机 ASR） |
-| 全项目 Agent、持续身份、成长闭环与伴星体验 | [方案 42](docs/plans/learning-companion/42-unified-agent-and-companion-experience-2026-10-04.md) |
-| 伴星带路、首次使用、新空间认识与空间到达体验（42 之后实施） | [方案 43](docs/plans/learning-companion/43-companion-guidance-and-space-arrival-2026-10-04.md) |
-| 笔记学习的页面、流程与状态 | [方案 41](docs/plans/learning-companion/41-note-companion-learning-experience-2026-09-28.md) |
-| 模型调用与后台任务 | [方案 41a](docs/plans/learning-companion/41a-unified-agent-foundation-2026-09-28.md) |
-| 伴星人格、记忆与日记 | [方案 40](docs/plans/learning-companion/40-companion-long-term-experience-and-diary-prd-2026-09-25.md) |
-| 伴星运行时、失败表达与观测 | [方案 40b](docs/plans/learning-companion/40b-companion-runtime-and-observability-2026-09-27.md) |
+| Product, users, permissions, and confirmed capabilities | [PRODUCT.md](PRODUCT.md) |
+| Visual direction, layout, and interaction | [DESIGN.md](DESIGN.md) |
+| Proactive companion conversation, user-defined participation preferences, sentence segmentation and autonomous follow-up replies, page awareness, and wake-up capabilities | [Plan 56](docs/plans/learning-companion/56-companion-initiative-and-natural-exchange-2026-10-13.md) (All accounts support the following by default: natural sentence segmentation, additional thoughts after a reply, relevant page assistance, startup greetings, breaks during long study sessions, and **the companion spontaneously sharing a thought or asking how things are going when the user has the app in the foreground and their activity settles down**. Tone varies with the basis for participation; greetings and casual conversation use the companionship path, while page assistance and difficult questions use the explanation path. The scheduled batch thought-generation chain has been removed, and there is no separate "Companion Thoughts" page. Personal free-form preferences refine the behavior; they are not a prerequisite for enabling it. See the implementation record for the actual call chain and verification coverage.) |
+| Companion access on the go, portable learning, and shared data across apps and mini programs | [Plan 51](docs/plans/learning-companion/51-mobile-companion-full-agent-product-design-2026-10-10.md) (On 2026-10-14, the user decided to replace the React mobile client with two native apps: iOS SwiftUI and Android Kotlin/Compose. Native visuals use system neutral colors and a single system blue. See the update at the beginning of the document for the old project's status.) |
+| Mobile conversation redesign, server-side voice, and a shared WebSocket for both native clients | [Plan 55](docs/plans/learning-companion/55-mobile-redesign-and-companion-realtime-2026-10-12.md) (Native clients reuse the companion WebSocket and MiMo whole-utterance ASR. There is no streaming ASR/TTS; desktop continues to use SSE and local ASR.) |
+| Project-wide agent, persistent identity, growth feedback loop, and companion experience | [Plan 42](docs/plans/learning-companion/42-unified-agent-and-companion-experience-2026-10-04.md) |
+| Companion guidance, first use, getting to know new spaces, and the space arrival experience (implemented after Plan 42) | [Plan 43](docs/plans/learning-companion/43-companion-guidance-and-space-arrival-2026-10-04.md) |
+| Note-based learning pages, flows, and states | [Plan 41](docs/plans/learning-companion/41-note-companion-learning-experience-2026-09-28.md) |
+| Model calls and background tasks | [Plan 41a](docs/plans/learning-companion/41a-unified-agent-foundation-2026-09-28.md) |
+| Companion personality, memory, and diary | [Plan 40](docs/plans/learning-companion/40-companion-long-term-experience-and-diary-prd-2026-09-25.md) |
+| Companion runtime, failure communication, and observability | [Plan 40b](docs/plans/learning-companion/40b-companion-runtime-and-observability-2026-09-27.md) |
 
-现行方案索引在 `docs/plans/learning-companion/README.md`。归档只用于追溯来由；审计报告、`outputs/`、`.workbuddy/memory/`、`.impeccable/` 和 `project-archive/` 是历史或工作材料。文档状态词和旧「已完成」声明不能证明当前实现；现状以代码与真实窗口核对。
+The current plan index is in `docs/plans/learning-companion/README.md`. Archives are only for tracing earlier decisions; audit reports, `outputs/`, `.workbuddy/memory/`, `.impeccable/`, and `project-archive/` are historical or working materials. Document status labels and old "completed" claims do not prove the current implementation; verify the actual state against the code and real application windows.
 
-## 设计与体验
+## Design and Experience
 
-项目是 Electron 桌面学习书房，面向个人学习者。温暖、有物件感的纸面与旁边的 Live2D 伴星构成身份。设计从用户正在阅读、思考或操作的内容出发，给它合适的空间和重心。
+This project is an Electron desktop study room for individual learners. Warm, tangible paper surfaces alongside a Live2D companion define its identity. Start with what the user is reading, thinking about, or doing, and give that content appropriate space and emphasis.
 
-欢迎有判断的设计：可以重组版面、改变比例、尝试新的物件隐喻、强调色与交互方式。已有 token、字体和控件可提供连续性，不意味着每页沿用同一骨架。方案数量、固定分栏、卡片层数、主按钮数量和动画时长不设统一配额；根据具体内容决定。
+Thoughtful design decisions are welcome: reorganize layouts, change proportions, and try new object metaphors, accent colors, and interaction patterns. Existing tokens, fonts, and controls provide continuity without requiring every page to use the same structure. There are no universal quotas for the number of proposals, fixed columns, card layers, primary buttons, or animation durations; decide according to the content.
 
-需要探索时，可以用草图或可交互 Demo 比较真正不同的构图；方向清楚的小改动直接实施。说明设计概念如何帮助这个任务，让巧思进入阅读、操作或状态变化，而不只增加装饰。
+When exploration is needed, use sketches or interactive demos to compare meaningfully different compositions; implement small changes directly when the direction is clear. Explain how the design concept helps the task, and bring inventive ideas into reading, interaction, or state changes instead of merely adding decoration.
 
-动效既表达空间关系，也提供触感。操作及时生效，过渡跟随最新意图；快速往返、连续输入和打断时仍应连贯。键盘操作也可以有空间反馈，焦点与功能不等待动画。强弱和节奏按物件、距离、情境以及用户动效偏好判断。
+Motion conveys spatial relationships and tactile feedback. Actions should take effect promptly, and transitions should follow the latest intent; rapid back-and-forth actions, continuous input, and interruptions should remain coherent. Keyboard interactions can also provide spatial feedback, while focus and functionality must not wait for animations. Judge intensity and rhythm according to the object, distance, context, and the user's motion preferences.
 
-在真实窗口感受成品：视觉重心是否明确，内容是否好读，连续操作是否顺手，角色与纸面是否各得其所。截图、测试和源码检查各自提供证据，不能替代交互体验。
+Experience the result in a real application window: check whether the visual emphasis is clear, the content is readable, consecutive interactions feel natural, and the character and paper surfaces each have appropriate space. Screenshots, tests, and source inspection provide distinct evidence and cannot replace hands-on interaction.
 
-## 工程结构与分层
+## Engineering Structure and Layers
 
-渲染源码按功能域组织：`notebook / run / settings / library / source / space / companion / review / study`。组件、样式、文案和状态逻辑放在相近的位置，跨域复用再提到公共层；测试放在 `__tests__/`。
+Organize renderer source by feature domain: `notebook / run / settings / library / source / space / companion / review / study`. Keep related components, styles, copy, and state logic close together, moving them to a shared layer when reused across domains; place tests in `__tests__/`.
 
-页面组件负责取数、派生、摆位和接事件。读不清的状态域、加载过程和格式化逻辑可以抽到同目录模块。拆分按依赖与职责判断，覆盖 renderer、main 和 preload；行数与 hook 数是线索，不是拆分目标。
+Page components handle data fetching, derived values, layout, and event wiring. State domains, loading flows, and formatting logic that are difficult to read can be extracted into modules in the same directory. Split code according to dependencies and responsibilities across renderer, main, and preload; line counts and hook counts are clues, not extraction targets.
 
-样式从 `apps/desktop-client/src/renderer/src/styles.ts` 接入。静态版面在 CSS 中表达，运行期几何与动画参数可由代码提供。复用控件时核对真实样式赢家与 portal，避免同名样式、失效选择器和多处接管同一动效。
+Styles enter through `apps/desktop-client/src/renderer/src/styles.ts`. Express static layout in CSS; code may supply runtime geometry and animation parameters. When reusing controls, check which styles actually win and how portals render, avoiding style name collisions, ineffective selectors, and multiple owners of the same animation.
 
-移动代码时保留真实类型、状态作用域与调用关系。可变状态通过持有它的对象或访问器传递；抽取区间按语法结构确认。较大批量改动先留备份，逐项检查差异。守卫的扫描范围跟随契约的实际承载文件更新。
+When moving code, preserve its actual types, state scope, and call relationships. Pass mutable state through its owning object or accessors; confirm extraction boundaries against the syntax structure. Back up larger batches of changes first and inspect each diff. Update guard scan scopes to follow the files that actually carry the contracts.
 
-项目尚未上线。确认没有运行时调用、构建入口或有效测试依赖的旧链路可以直接清理，避免留下无人维护的兼容层。工作区可能已有用户改动，保留与本次任务无关的内容。
+The project has not launched yet. Old paths may be removed directly once confirmed to have no runtime callers, build entry points, or valid test dependencies, avoiding unmaintained compatibility layers. The workspace may already contain user changes; preserve everything unrelated to the current task.
 
-## 验证与交付
+## Verification and Delivery
 
-选择与改动相关的测试、类型检查和窗口检查。需要全量回归时先记基线，区分已有失败与新增失败；对本次引入的问题负责，也如实记录仍存在的限制。
+Choose tests, type checks, and application window checks relevant to the change. When a full regression run is needed, record a baseline first and distinguish existing failures from newly introduced ones; take responsibility for problems introduced by the current change and accurately record remaining limitations.
 
-类型检查使用对应包的 `npm run typecheck`。桌面根 tsconfig 只有 references，直接 `tsc --noEmit` 可能什么都没检查；语法错误修复后再看类型结论。涉及共享类型或跨包配置时检查 shared、api、desktop-client 和 ai-worker。
+Run type checks with the relevant package's `npm run typecheck`. The desktop root tsconfig contains only references, so running `tsc --noEmit` directly may check nothing; fix syntax errors before assessing type-check results. When changing shared types or cross-package configuration, check shared, api, desktop-client, and ai-worker.
 
-守卫帮助发现样式遗漏、接口错位和结构问题。与新的用户决定冲突时，先核对它保护的行为，再同步测试；通过守卫不等于设计好。动效改动关注快速重复、反向切换、Off、系统减少动态与焦点路径，窗口检查关注真实长内容、缩放和伴星位置。
+Guards help detect missing styles, interface mismatches, and structural issues. When a guard conflicts with a new user decision, first examine the behavior it protects, then update the tests accordingly; passing guards does not establish good design. For motion changes, check rapid repetition, reverse transitions, Off mode, the system's reduced-motion setting, and focus paths. Window checks should cover real long-form content, zoom, and companion placement.
 
-交付说明结果、验证范围与未确认部分。实现记录和排障经过留在任务或测试附近，避免重新堆进这份入口文档。
+Explain the result, verification coverage, and anything still unconfirmed in the handoff. Keep implementation records and troubleshooting details close to the relevant task or tests, rather than accumulating them again in this entry document.

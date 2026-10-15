@@ -568,6 +568,12 @@ export function createGovernedProvider(
   };
   const governed: import("./ai-provider.ts").AIProvider = {
     ...provider,
+    // Capabilities may be prototype getters as well as own instance fields.
+    // Losing this declaration routes native streaming providers through the
+    // buffered path even though their tool-call stream is supported.
+    ...(provider.chatCompletionStreamToolCalls === undefined ? {} : {
+      chatCompletionStreamToolCalls: provider.chatCompletionStreamToolCalls,
+    }),
     chatCompletion: async (messages, options, signal) => {
       const providerOutputLimit = provider.resolveOutputTokenLimit?.();
       options = {

@@ -21,6 +21,7 @@ const historySearchQuerySchema = z.object({
 const historyListQuerySchema = z.object({
   before: z.string().max(2_000).optional(),
   throughMessageId: z.string().uuid().optional(),
+  runId: z.string().uuid().optional(),
   limit: z.coerce.number().int().min(1).max(100).optional().default(50),
 });
 
@@ -35,6 +36,7 @@ export async function continuousHistoryRoutes(app: FastifyInstance) {
 userId: req.session.userId,
         before: query.data.before,
         throughMessageId: query.data.throughMessageId,
+        runId: query.data.runId,
         limit: query.data.limit,
       });
       if (result.invalidCursor) {

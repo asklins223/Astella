@@ -2,6 +2,8 @@
 
 日期：2026-10-13，Asia/Shanghai。
 
+**2026-10-15 审查补充：**桌面为每段真实前台停顿提供 `quietEpisodeId`，心跳仍可持续上报以跨过账号门槛，同一片段成功考虑后不因静默每 90 秒重启模型。真实操作更新片段身份，撤销排队中及已运行的旧安静机会；下一片段与自主安排的唤醒各自可用。未上报片段身份的旧客户端沿用既有节奏判据。主动任务优先选择明确的交流落点，其次使用现役 inbox；观察的领域证据按实际持久化结构读取。验证见 [本次审查记录](../../testing/agent-context-initiative-review-2026-10-15.md)。
+
 **状态：主动交流基础已实施并接入 shared、agent-host、API、worker、桌面与手机浏览器端。** 自由偏好、真实观察、关注唤醒、同一 Agent 的多发言与答后考虑已贯通；实际数据库角色、真实模型和桌面偏好窗口已有验证。声音协议已检查，实际听感、跨日陪伴和手机后台能力不在本次已验证范围。证据和限制见 [实施记录](../../testing/companion-initiative-2026-10-13.md)；工作区实现不等于已发布安装包。
 
 本方案沿用 [42](./42-unified-agent-and-companion-experience-2026-10-04.md) 的同一 Agent、持续身份与状态归属，[44](./44-unified-context-window-and-compaction-2026-10-05.md) 的上下文治理，以及 [50](./50-companion-persona-presence-and-growth-refactor-2026-10-10.md) 的自主记事。主动交流由这位伴星参与当前生活与学习，不新建另一位后台角色。
@@ -274,7 +276,7 @@ Agent 能收到应用就绪观察，读取本次有关偏好和当前交流，�
 | 相关纸页，内容就绪且无关键操作 | 正常交流 | 可在身边或页边提供贴题短发言 | 合适时送达，声音跟随页面与用户选择 |
 | 隐藏窗口、失去材料权限或切换账号 | 暂停呈现，按控制范围处理运行 | 原情境失效或等待新的有效机会 | 当前设备不播报，持久偏好保留 |
 
-当前问题需要的几个发言不吃“普通感想间隔”。可选续答按交流关联判断，不被统一 90 分钟冷却挡住。新话题与无关联感想仍受主动密度、重复反馈和累计资源限制。
+当前问题需要的几个发言不吃“普通感想间隔”。可选续答按交流关联判断，不被统一冷却挡住（2026-10-14 后三档间隔是 90 分／30 分／10 分）。新话题与无关联感想仍受主动密度、重复反馈和累计资源限制。
 
 合并可以让招呼、到达说明和一条相关帮助成为一句自然发言，但须保留各自来源和执行回执。系统下载、任务完成、复习通知与一次性约定提醒继续有独立通知合同；不能伪造为新的用户消息，或用它们覆盖正在交流的内容。
 
@@ -324,6 +326,8 @@ Agent 能收到应用就绪观察，读取本次有关偏好和当前交流，�
 当前主动运行不再自带写死的次数与条数闸门（2026-10-13 用户决定：Agent 不设硬上限，运行侧只留失控收敛判据）：次数由那份执行政策的声明值决定，不再有「本轮 8 次／关联链 24 次／一轮 40 条发言／同时只关注 20 件事／重评最早 15 秒」这类按数字砍的闸。跨运行的接续靠结构收口：主动运行没有用户消息，因此不产生 `reply.finished`；到点的关注要在场才被消费、要能过期；活跃关注必须有事件或重评时间，否则写不进去。由计时安排派生的下一次执行继承关联，真实新观察可开启新的有限考虑。
 
 她自己新起的话题（到页面的搭话、到点的关注与记事）在**起运行之前**过账号已声明的介入档位间隔，使用 shared 中唯一的例行主动节奏判据；招呼、答后接续、真实失败与学习结果这类用户先要过或正在等的东西不进这条闸。密度拦在 prep，不拦在说话前——一次翻到某篇笔记原本要付一整轮 Agent。同一篇笔记在这次启动里只有一次帮忙的机会，改存一版不算新的一次（去重身份是「这次启动的这一页」，正文版本仍在 prep 核对，旧页面不能在新版本上开口）。
+
+**2026-10-14 修订这条判据**（详见文末同名修正）：间隔只按**她真的说出了话**的那几次算，安静结束的考虑不再计入；她自己安排到点的关注与记事（`attention.due`／`self_note.due`）不进这条闸，因为那是她先前答应自己回来看一眼的事，次数已由那条安排的 `next_review_at` 自限。三档间隔同时收到 90 分／30 分／10 分。「陪着的时候」另有一道按档位的安静门槛（安静 10 分／适中 3 分／活跃 90 秒），管的是**时机**而不是说话的额度。
 
 内部空正文且无发言是成功的安静结束，不显示用户错误；模型把短执行收尾写成“安静结束／本轮不发言”时也不发布成对白，同一轮把同一句再说一遍会被当作失控拦下（这是按重复判，不是按说到第几条判）。偏好或关注 CAS 拒绝返回已知未执行结果与实际版本，允许同一 Agent 读取后修正，不记成已经保存或不确定副作用。到点的关注如果那一刻人不在前台，重新安排而不是吃掉水位——一次没人听见的运行不该让这件事永远睡着。
 
@@ -432,3 +436,102 @@ Agent 能收到应用就绪观察，读取本次有关偏好和当前交流，�
 原句发起的伴星解释使用 `companion_write_annotation` 写成独立产物。宿主绑定保存身份、不可变版本与精确原句锚点；模型只提交完整 Markdown，不能把对白、分次发言或执行说明当成解释。写入时核对用户范围、运行世代、取消状态、任务租约与原文位置。
 
 真实保存回执即完成解释交付，不为总结已完成的解释额外调用模型。用户还有其他明确工作时，Agent 可用 `final=false` 继续。界面据工具回执呈现完整批注；断流后按同一产物身份重读。编辑、删除、重开和后续拓展都围绕独立批注进行，与聊天保存身份无关。
+
+## 2026-10-14 修正：她确实开口了，但没人接
+
+用户反馈"主动聊天一次都没见过"。翻库对出来的事实是**链路在跑、话被扔掉**，而不是没实现：
+两天 36 个主动回合、17 条成稿，而 `assistant_deliveries` 里 16 条 `initiative:*` 有 **11 条停在
+`queued` 直到过期**。四处独立成因，逐条改掉：
+
+1. **认领窗口 90 秒**（`ttlHours: 0.025`，两处发起点各写一份）。她决定说话那一刻人不在小屋界面，
+   这句话就永久没人念。正文本来就落在共享对话里，窗口只管"回到屋里还来不来得及补念这一次"，
+   于是长度收到一处声明：`COMPANION_INITIATIVE_DELIVERY_TTL_HOURS = 2`（shared），
+   worker 两处都引用它，判据在 `companion-initiative-delivery.test.ts`。
+2. **设备严格相等才出声**（`CompanionPresence`）。投递记的 `deviceSessionId` 来自观察那一刻的租约，
+   手机上开着的原型页比桌面新，10 条派给 browser 的话**两台设备都不念**。现在谁在小屋谁说这一次，
+   只说一次由回执（`present→displayed`）与服务端那份跨设备租约把关；判据见
+   `companion-initiative-claim.test.ts`。
+3. **"说不出实事也别开口"**。17 条成稿里 16 条是「我不吵你，先在这儿待着」——用户体感等同于她从不主动，
+   而它确实占掉了一次机会。观察渲染那句原来只禁「没什么补充」「本轮不发言」，这种换了客气说法的同一类
+   从闸缝里过去了；现在点名这一类（`companion-initiative-observation.ts`），并把 shared 的
+   「学习休息」政策里"安静安排稍后重评"改成**真的安静**，不要说出来报备。
+4. **`study.started` 不再有免闸权**。它原在 `TRIGGERED_TOPICS` 里，于是节奏闸既挡不住它、
+   也不把它算进"上一次考虑"——实测 2026-10-13 13:49–13:52 四分钟内连开四次口。
+   一段学习的开始不会连续发生四次，也不是他要的打招呼方式，所以回到账号声明的档位间隔里。
+
+另外把「陪着的时候」那道门的判据改了：原来要前台**连续 3 分钟零鼠标零键盘**，两天只报上来 1 次，
+等于那扇门没开。现在按**停止输入＋页面稳定**判（裸的鼠标移动不再清零，`COMPANION_QUIET_PRESENCE_AFTER_MS = 90_000`），
+说多频繁仍由账号的介入档位决定，不在界面里另加一层。
+
+未修但已记录的（2026-10-14 晚已修，见下一节）：主动那一轮的普通收尾当时仍写 `kind='text'`
+（只有她说工具那一支写 `proactive`），所以按 kind 统计会低估她的主动发言。
+
+## 2026-10-14 修正：门开了，她自己选择不说话
+
+用户复核后仍是"做的还是不太行"。这次不再读代码推断，先读**库里的真实读数**，再在实链路上复现：
+
+| 读数 | 事实 |
+| --- | --- |
+| `presence.quiet` 的运行数 | 两天 2 条观察、**0 次运行**——「她自己想起点什么说一句」这条默认从没生效过 |
+| 那 2 条观察的门槛 | `quietForMs` 是 212,763 / 240,126 毫秒：契约地板写的是 180 秒，客户端常量写的是 90 秒 |
+| 主动发言的分布 | 主动运行产出 23 条 assistant 消息，22 条 `kind='text'`、1 条 `proactive` |
+| 成稿内容 | 8 条 `study.started` 里 6 条是「我不打扰，就露个面」这一类；启动问候里夹着"上回那条改笔记的事我这边还卡着" |
+| 投递 | 22 条 `initiative:*` 里 13 条停在 `queued` 直到过期 |
+
+**实链路复现（本机开发栈、现役模型）**：手工投一条合格的 `presence.quiet` 观察，prep 通过、运行创建，
+她 **6 秒内**调用 `companion_finish_participation` 收尾，一句都没说。所以问题不在门，在门开之后她被告知了什么。
+
+改掉的四处：
+
+1. **安静门槛的契约地板与客户端常量对齐**（`companion-initiative-contracts.ts` 180_000 → 90_000）。
+   原来 90–180 秒之间的每一次上报都被 API 校验拒掉、又被客户端 `catch` 吞掉，表现为
+   "门槛悄悄变成 3 分钟"外加每 15 秒一次无效请求。档位门槛改到服务端
+   （`COMPANION_QUIET_PRESENCE_MIN_MS`：安静 10 分／适中 3 分／活跃 90 秒），
+   客户端行为与账号状态解耦；客户端在一段持续的安静里按 90 秒一格继续上报
+   （`companion-awareness-idle` 的 tracker），否则"报过一次就关掉整集"会让
+   比 90 秒更高的档位门槛永远等不到。门槛之下的每一格只花一次观察入库与一次 prep，
+   在起整轮模型之前就被挡住。
+2. **例行间隔只按她真的说了话的那几次算**。旧写法把"安静结束的那次考虑"也当一次主动，
+   于是每档只能开一次口，只要有一次选择不说，下一次机会又往后推一整个间隔——这正是
+   "她从来不主动"的成因。三档数字同时收到 90 分／30 分／10 分。她自己安排到点的关注与记事
+   不进这条闸（那是她先前答应自己回来看一眼的事，次数已由 `next_review_at` 自限），
+   但仍然计入间隔。
+3. **陪聊档的默认反过来**：开口是常态、安静是例外。旧观察消息末尾只有「没有值得说的就安静结束这一轮」，
+   还把她前几天的失败原话当反面例子压在那里——对"陪着的时候"来说，那句把**开口**教成了违规动作。
+   现在点名"寒暄和闲聊本身就是相处，不必等到有值得汇报的事"，并同时给出两条不许做的：
+   不把推测说成知道、不汇报待办（实测她开口第一句是「刚才那篇笔记改不改得成，就等你哪天顺手把它点开」）、
+   不编造屏幕外的生活（实测她说过「我去吃饭了，你先忙你的」）。需要依据的场合（页面帮助、答后补充）
+   保持原来的"没有值得说的就安静结束"。
+4. **启动问候不许变成接着办事**：不汇报待办、不复述卡住的任务、不回答历史里没答完的请求
+   （实测有一次启动问候直接输出了一整段笔记修改答案）。
+
+**修后实测（同一开发栈、同一模型）**：同一条 `presence.quiet` 观察，她发出的是一句
+「那我先不念叨那篇笔记了。今天过得咋样？」——不再报进度，也不再自编生活。
+
+同一轮顺手收掉的：主动运行里由最终正文交付的那一支现在也写 `kind='proactive'`
+（原来只写工具发布那一支，于是按 kind 数会漏掉她绝大多数主动发言）。判据收在一处
+（`companionAssistantMessageKind`），工具发布与最终正文两条交付路径都走它；
+读边全部核对过，没有一处按 `kind='text'` 认她的话——`proactive` 本来就在各处的联合类型、
+白名单与 `0229` 的 CHECK 里，所以这次只动写边。真库里旧数据仍是 21 条 `text`／1 条 `proactive`，
+按 kind 回看历史时要知道这一段。
+
+**还有一处"她说了没人接"是假回执。** 桌面认领主动投递时，只有运行落在当前会话里才真的把
+正文送进气泡；落在别的 `dialogue` 会话里时旧代码直接 `return`，但**回执照发**——
+投影只认 `queued`/`delivered`，于是这一句对谁都永久消失，而库里记着 `displayed`。
+真库实证：3 条投递的 `initiative.conversationId` 指向 `dialogue` 会话，其中 2 条在创建后
+0.5–0.7 秒被写成 `displayed`——桌面确实认领了，却不可能显示过；9 条 `displayed` 里就混着
+这种假回执，所以"用户一次都没见过"在数据上一直看不出来。现在三处改掉：
+① 回执只在正文真的进了气泡时才发，没接住的留在 `queued` 等下次投影刷新补念；
+② 落在别的会话里的真实正文用现役跨会话历史读回来放进气泡，不再静默放弃；
+③ 过了展示窗口仍没被接住的，在通知中心留一枚路标（「有几句话你还没听过」→ 打开动态），
+不发她的原话、不抢焦点、一次"你不在的时候"只留一枚。
+
+
+
+### 2026-10-15: startup after failed or cancelled turns
+
+Host occasions use their own current-task policy and source identity. Completed dialogue remains native history. Only trailing terminal user turns are projected as complete host historical data; no assistant reply or human request is fabricated. The handoff preserves that provenance and runtime/Pi retain its original system identity. A copied failed-turn fixture reproduced the old resumption bug; after this repair, native Electron run `e5708077-2021-4603-a17f-508f09a6bab0` greeted while retaining all 19 eligible history messages with zero omissions. See [validation and limitations](../../testing/agent-host-recovery-2026-10-15.md). Quiet-presence, device and long-run acceptance remain open.
+
+### 2026-10-15: desktop host pressure and quiet output
+
+Native desktop follow-up and quiet-presence runs exposed an additional history binding mismatch: the current host observation was counted as part of the frozen historical prefix. Binding now excludes only that appended current observation, while the request retains it verbatim. A host reply consisting only of voice-control markers also finishes silently before empty-body validation can create an unsolicited failure card; empty human replies remain failures. PostgreSQL covers both behaviors and the current related suite passes 82 cases. Real quiet participation after both repairs still requires a continuously foreground desktop episode; the last observation after the rerun was background, which correctly cannot qualify. See [native evidence and remaining verification](../../testing/agent-history-retrieval-decisions-2026-10-15.md). This audit covers desktop only, per the user's latest scope decision.

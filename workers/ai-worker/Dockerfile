@@ -1,6 +1,6 @@
 # Build context must be the repo root (set by docker-compose).
 # F-027: 锁定 node patch 版本，避免 latest 标签漂移
-FROM node:22.11.0-alpine3.20 AS base
+FROM node:22.23.2-alpine3.23 AS base
 WORKDIR /app
 
 # 国内 apk 镜像（清华 USTC）

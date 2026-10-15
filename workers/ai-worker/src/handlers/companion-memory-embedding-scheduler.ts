@@ -10,28 +10,30 @@
 import { sql } from "drizzle-orm";
 import { db } from "../db.ts";
 import { logger } from "../lib/logger.ts";
+import { createTickThrottle } from "./tick-throttle.ts";
 
 const TICK_INTERVAL_MS = 30 * 60 * 1000;
-let lastTickAt = 0;
+const throttle = createTickThrottle(TICK_INTERVAL_MS);
 
 export async function tickCompanionMemoryEmbeddingScheduler(executor: typeof db = db): Promise<void> {
   const now = Date.now();
-  if (now - lastTickAt < TICK_INTERVAL_MS) return;
+  if (!throttle.due(now)) return;
   try {
     const rows = await executor.execute<{ enqueued: number }>(sql`
       SELECT public.astella_enqueue_companion_memory_embedding_repair() AS enqueued
     `);
-    lastTickAt = now;
+    throttle.succeed(now);
     const enqueued = Number((Array.isArray(rows) ? rows : [])[0]?.enqueued ?? 0);
     if (enqueued > 0) logger.info({ enqueued }, "companion memory embedding retry jobs enqueued");
   } catch (err) {
     // 这条以前只 warn：调度器的 SQL 引用了 `jobs.created_at`（没这列）加上策略拒绝，
     // 连错 6 小时 4,425 次也没人看见，向量表一直是 0 行。补偿路径坏掉是**事故**，
     // 不是可以下轮再说的抖动。
-    logger.error({ err }, "companion memory embedding scheduler failed; retrying next tick");
+    throttle.fail(now);
+    logger.error({ err }, "companion memory embedding scheduler failed; retrying with backoff");
   }
 }
 
 export function resetCompanionMemoryEmbeddingSchedulerForTest(): void {
-  lastTickAt = 0;
+  throttle.reset();
 }

@@ -44,6 +44,7 @@ struct CompanionMessageDTO: Decodable {
     let role: String
     /// companionMessageV1Schema.createdAt（ISO 8601）
     let createdAt: String
+    let runId: String?
     /// companionMessageV1Schema.blocks → companionContentBlockV1Schema
     /// 块级只取渲染在用的五个字段；其余键（assetId、quote 引用等）解码时忽略
     let blocks: [CompanionMessageBlockDTO]
@@ -62,6 +63,9 @@ struct CompanionMessageBlockDTO: Decodable {
     let label: String?
     /// block.alt（image 块替代文本）
     let alt: String?
+    let name: String?
+    let proposalId: String?
+    let code: String?
 }
 
 /// GET /companion/conversations/:id/run-nodes 响应快照。

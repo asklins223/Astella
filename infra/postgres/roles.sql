@@ -1057,6 +1057,11 @@ BEGIN
 
   -- 0345–0362：回收区恢复、期限维护与记忆整理。上方的全量 REVOKE 会
   -- 清掉迁移授权；在这里按原有调用角色恢复，并与下面的允许/必需清单对账。
+  -- 0426/0432 的手记实时归档也挂在这一份上：它不是应用代码直接 SELECT 的函数，
+  -- 而是 `companion_stream_events` 的 AFTER INSERT 触发器往下调用的那支。触发器那一层
+  -- 不查 session 用户的 EXECUTE，**它调用出去的普通函数照查**（SECURITY INVOKER）——
+  -- 缺它时每帧事件都 42501，伴星整轮对话在"正在准备回复…"上重试三次后 job 变 dead
+  -- （2026-10-14 实测）。上面那条按 `astella_` 前缀扫 worker 源码的守卫抓不到它。
   FOR fn IN SELECT * FROM (VALUES
     ('public.astella_restore_companion_memory(uuid,uuid,uuid)', 'astella_api'),
     ('public.astella_purge_expired_companion_memory()', 'astella_api, astella_worker'),
@@ -1065,7 +1070,21 @@ BEGIN
     ('public.astella_reclaim_stale_memory_organization_leases()', 'astella_worker'),
     ('public.astella_commit_memory_organization(uuid,uuid,text,text,integer)', 'astella_worker'),
     ('public.astella_enqueue_companion_memory_organize()', 'astella_worker'),
-    ('public.astella_companion_memory_organization_thresholds()', 'astella_worker')
+    ('public.astella_companion_memory_organization_thresholds()', 'astella_worker'),
+    -- 0431：向量记忆补偿重建的入队函数。0431 自己 GRANT 过 worker，而这份白名单
+    -- 没有它——于是每次 role-grants 重跑都收掉，worker 的补偿调度器每一轮 tick
+    -- 都 42501（2026-10-14 实测 3 分钟内 39 条），历史 pending 向量永远补不上。
+    ('public.astella_enqueue_companion_memory_embedding_repair()', 'astella_worker'),
+    -- 0433：摘要按覆盖区间作废。它不是应用代码直接调的函数，而是
+    -- `companion_messages` 的 UPDATE/DELETE 触发器往下调用那一支——缺授权时触发器照样
+    -- 被 fire、会话修订号照样前进，但那份盖了被改写区间的摘要再也盖不上作废标记，
+    -- 于是读侧继续注入一份自称「更早那段对话」的过期摘要。
+    ('public.astella_invalidate_covered_conversation_summaries(uuid, bigint)', 'astella_api, astella_worker'),
+    -- 0389：交接快照的压缩围栏。worker 把它写在一条 UPDATE 的 WHERE 里
+    -- （companion-dialogue-store.ts:469），缺授权时整条 UPDATE 抛错，
+    -- 长会话压缩交接快照那一步必挂；平时不压缩就一声不响，所以一直没被发现。
+    ('public.astella_assert_handoff_snapshot_fence(uuid,integer)', 'astella_worker'),
+    ('public.companion_process_event_payload(text,jsonb)', 'astella_api, astella_worker')
   ) AS required(signature, roles) LOOP
     IF to_regprocedure(fn.signature) IS NOT NULL THEN
       EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO %s', fn.signature, fn.roles);
@@ -2140,6 +2159,17 @@ BEGIN
       to_regprocedure('public.l2_distance(halfvec,halfvec)')
     AND p.oid IS DISTINCT FROM
       to_regprocedure('public.inner_product(halfvec,halfvec)')
+    -- 0426/0432：手记实时归档（与上面那份 GRANT、下面那份必检清单成对，三处一起改）。
+    AND p.oid IS DISTINCT FROM
+      to_regprocedure('public.companion_process_event_payload(text,jsonb)')
+    -- 0431/0389：worker 侧向量补偿入队与交接快照围栏（同样三份清单成对）。
+    AND p.oid IS DISTINCT FROM
+      to_regprocedure('public.astella_enqueue_companion_memory_embedding_repair()')
+    -- 0433：触发器往下调用、给摘要盖区间级作废标记的那一支。
+    AND p.oid IS DISTINCT FROM
+      to_regprocedure('public.astella_invalidate_covered_conversation_summaries(uuid, bigint)')
+    AND p.oid IS DISTINCT FROM
+      to_regprocedure('public.astella_assert_handoff_snapshot_fence(uuid,integer)')
     -- 扩展函数（pg_trgm/pgvector/…）按 deptype='e' 整体放行：它们是库代码，
     -- 上面按扩展统一恢复 EXECUTE，逐个列举会再次变成打地鼠。
     AND NOT EXISTS (
@@ -2156,6 +2186,9 @@ BEGIN
   JOIN pg_namespace n ON n.oid = p.pronamespace
   WHERE n.nspname = 'public'
     AND has_function_privilege('astella_api', p.oid, 'EXECUTE')
+    -- 0426/0432：手记实时归档（api 也写 companion_stream_events，同一支函数）。
+    AND p.oid IS DISTINCT FROM
+      to_regprocedure('public.companion_process_event_payload(text,jsonb)')
     AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_companion_study_spans(uuid)')
     AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_create_private_note_v1(uuid,uuid,uuid,uuid,text,text,jsonb,uuid)')
     AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_pending_companion_note_edits_v1()')
@@ -2242,6 +2275,12 @@ BEGIN
       to_regprocedure('public.astella_companion_memory_retention_limits()')
     AND p.oid IS DISTINCT FROM
       to_regprocedure('public.astella_enforce_companion_memory_retention()')
+    -- 0433：摘要盖的区间被改写/删除碰到时盖作废章的那支。api 也会改/删消息
+    -- （用户改写、删除），触发器往下调用照查 session 用户的 EXECUTE——缺这行豁免，
+    -- 一次性库与任何新环境的引导自检直接 RAISE（API has unexpected function EXECUTE
+    -- privileges），而 dev 库因为尚未应用 0433 一时看不出来。
+    AND p.oid IS DISTINCT FROM
+      to_regprocedure('public.astella_invalidate_covered_conversation_summaries(uuid, bigint)')
     AND NOT EXISTS (
       SELECT 1 FROM pg_depend d
       WHERE d.objid = p.oid AND d.deptype = 'e'
@@ -2260,9 +2299,10 @@ $$;
 -- 漏一支的后果不是启动失败，而是**某条业务功能静默 permission denied**——
 -- 如果调用方还 catch 成日志（0267 那支正是如此），就变成"用户说她不记得了，可查无实据"。
 --
--- 这份清单只列**应用代码显式 SELECT/PERFORM 的**函数（触发器函数不算：触发执行不查
--- session 用户的 EXECUTE）。新增一支这样的函数时，三处要一起改：迁移的 GRANT、
--- 上面的 GRANT 块、这里的一行。
+-- 这份清单只列**应用代码显式 SELECT/PERFORM 的**函数，加上**触发器往下调用的普通函数**
+-- （触发器那一层不查 session 用户的 EXECUTE，但它 SECURITY INVOKER 地调用出去的函数照查
+-- ——0426 就是栽在这一层，见下面最后两行）。新增一支这样的函数时，三处要一起改：迁移的
+-- GRANT、上面的 GRANT 块、这里的一行。
 DO $$
 DECLARE
   missing text;
@@ -2351,7 +2391,18 @@ BEGIN
       ('astella_api', 'astella_admin_recent_audit(integer)'),
       ('astella_api', 'astella_admin_platform_counts()'),
       ('astella_api', 'astella_admin_retry_failed_jobs(text,integer)'),
-      ('astella_api', 'astella_admin_purge_dead_jobs(text,integer)')
+      ('astella_api', 'astella_admin_purge_dead_jobs(text,integer)'),
+      -- 0426/0432：`companion_stream_events` 的归档触发器调用出去的函数。缺它时
+      -- 触发器照样被 fire，然后在第一帧事件上 42501，整轮对话静默失败。
+      ('astella_api', 'companion_process_event_payload(text,jsonb)'),
+      ('astella_worker', 'companion_process_event_payload(text,jsonb)'),
+      -- 0431/0389：worker 显式调用的两支（前者是调度器入队，后者写在 UPDATE 的 WHERE 里）。
+      ('astella_worker', 'astella_enqueue_companion_memory_embedding_repair()'),
+      ('astella_worker', 'astella_assert_handoff_snapshot_fence(uuid,integer)'),
+      -- 0433：改写/删除消息的触发器往下调用这一支给摘要盖区间级作废标记，
+      -- api 与 worker 两条写路径都会触发。
+      ('astella_api', 'astella_invalidate_covered_conversation_summaries(uuid, bigint)'),
+      ('astella_worker', 'astella_invalidate_covered_conversation_summaries(uuid, bigint)')
     ) AS required(role, fn)
     -- 函数还不存在（首次 bootstrap、迁移尚未跑到）时不该报错：与本文件其余检查
     -- 一致的 `to_regprocedure IS NOT NULL` 口径。

@@ -83,12 +83,13 @@ const HTTP_401_403_CONTEXT =
  *   截断是确定性的：相同的输出预算下重试仍会截断，重投只会无限空转。
  * - `arguments_malformed`：工具调用 arguments 不是合法 JSON（不可静默降级）。
  * - `unverified_quote`：引文纠正额度用完，终答仍与已读取原文不匹配。
+ * - `action_unverified`：纠正后仍未取得所要求动作的真实结果，不能交付完成声明。
  */
 export class AgentOutputError extends Error {
-  readonly code: "output_truncated" | "arguments_malformed" | "unverified_quote";
+  readonly code: "output_truncated" | "arguments_malformed" | "unverified_quote" | "action_unverified" | "tool_protocol_leak";
 
   constructor(
-    code: "output_truncated" | "arguments_malformed" | "unverified_quote",
+    code: "output_truncated" | "arguments_malformed" | "unverified_quote" | "action_unverified" | "tool_protocol_leak",
     message: string,
   ) {
     super(message);
@@ -117,7 +118,7 @@ export class CompanionAgentBudgetExceededError extends Error {
 export class CompanionContextChangedError extends Error {
   readonly code = "CONTEXT_STALE" as const;
   constructor() {
-    super("这一轮引用的记忆已变更或撤回。请重新发送，我会按现在的内容继续。");
+    super("这一轮依据的上下文已经变化，原来的回复已停止；需要继续时请重新发送。");
     this.name = "CompanionContextChangedError";
   }
 }

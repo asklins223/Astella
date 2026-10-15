@@ -11,6 +11,7 @@ import { test } from "node:test";
 import type { AgentTurnInterpretationV1 } from "@astella/shared/agent-contracts";
 import type { AIProvider } from "../../lib/ai-provider.ts";
 import { startCompanionSpeculativeFirstSteps } from "../companion-speculative-flights.ts";
+import { AIContextCompactionRequiredError, AIContextOverflowError } from "../../lib/context-governor.ts";
 
 const interpretation = (overrides: Record<string, unknown>): AgentTurnInterpretationV1 => ({
   intent: "conversation", toolUse: "none", subjects: [], ambiguities: [], candidateOperations: [],
@@ -123,4 +124,17 @@ test("解释带来指称或歧义时两版都不留，正式第一步照原路�
   });
   assert.equal(settled, null);
   assert.equal(sent.length, 2, "两条都发过、也都没留下");
+});
+
+test("speculative input pressure with no delivered text yields to the formal compaction path", async () => {
+  const receipt = { decision: { detail: "source needs compaction" }, measurement: { inputTokens: 80000 }, budget: { hardInputTokens: 60000 } } as never;
+  for (const error of [new AIContextCompactionRequiredError(receipt), new AIContextOverflowError(receipt)]) {
+    const { provider } = recordingProvider({ streamToolCalls: true });
+    provider.chatCompletionStream = async () => { throw error; };
+    let visible = 0;
+    const attention = interpretation({ intent: "question" });
+    const flights = start({ ...baseArgs(provider, attention), onProviderDelta: async () => { visible++; return true; } });
+    assert.equal(await flights.settle({ attention, runId: "pressure-run", deadlineAt: Date.now() + 60000, handlerStartedAtMs: Date.now() }), null);
+    assert.equal(visible, 0);
+  }
 });

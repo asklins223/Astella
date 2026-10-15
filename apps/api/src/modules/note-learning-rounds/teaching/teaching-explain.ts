@@ -14,6 +14,7 @@ import {
 } from "@astella/shared/ai-task-kernel";
 import type { RoundTeachingContentV1 } from "@astella/shared/note-learning-round-contracts";
 import type { RoundTargetDraft } from "./round-target-contract.ts";
+import { DEFAULT_AI_PROVIDER_TIMEOUT_MS, DEFAULT_AI_TASK_TIMEOUT_MS } from "@astella/shared";
 import type { NoteReflectionTeachingSnapshotV1 } from "@astella/shared/note-learning-reflection-contracts";
 import type { RoundSuspectClaimV1 } from "@astella/shared/note-learning-round-contracts";
 import type { SuspectClaimRecheckTargetV1 } from "../suspect-claim-recheck.ts";
@@ -184,11 +185,18 @@ export function deterministicTeachingExplainProviderV1(): TeachingExplainProvide
 }
 
 /**
- * 单步与整任务的时长上界：与评估那一步**同一把尺子**（一次生成＝一次模型调用的量级），
- * 而且都显著小于任何外层租约/请求上界——真模型接进来时不至于把一次用户动作拖过它。
+ * 单步与整任务的时长上界：**与同一条轮次链上的互动演示取同一份声明**
+ * （`DEFAULT_AI_PROVIDER_TIMEOUT_MS` / `DEFAULT_AI_TASK_TIMEOUT_MS`）。
+ *
+ * 这里过去写死的是 55 s / 110 s，理由是那一步只有一发 JSON。实测（2026-10-14）一篇
+ * 37 万字符的长笔记：同链的速看那一发光输入 227,103 token、跑了 52.8 s——正好贴着
+ * 55 s 那格；讲解要读的是整篇正文，110 s 到点整发判 503 `teaching_failed`，长笔记
+ * 因此**永远讲不出来**，而且失败信息只说"这次解释没有生成"。
+ * 一次用户动作该等多久是产品决定，但它该由"这一发要读多少材料"决定，
+ * 而不是由某篇短笔记的实测耗时决定；同一条链上两种整篇生成各拿一个数更是没有依据。
  */
-const TEACHING_STEP_TIMEOUT_MS = 55_000;
-const TEACHING_TASK_DEADLINE_MS = 110_000;
+const TEACHING_STEP_TIMEOUT_MS = DEFAULT_AI_PROVIDER_TIMEOUT_MS;
+const TEACHING_TASK_DEADLINE_MS = DEFAULT_AI_TASK_TIMEOUT_MS;
 
 export type NoteTeachingExplainTaskDepsV1 = {
   provider: TeachingExplainProviderV1;

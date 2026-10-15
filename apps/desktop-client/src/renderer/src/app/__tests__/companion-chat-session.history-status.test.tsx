@@ -20,6 +20,11 @@ let streamEvent: ((event: GatewayEventV1) => void) | null;
 let items: CompanionMessageV1[];
 const page = () => ok({ items, total: items.length, oldestSeq: items[0]?.seq ?? null, hasMore: false });
 const listMessages = vi.fn(async () => page());
+const listHistory = vi.fn(async () => ok({
+  version: 1 as const,
+  items: [] as Array<Record<string, unknown>>,
+  nextCursor: null as string | null,
+}));
 const listRunNodes = vi.fn(async () => ok({ items: [] as unknown[], runs: [] as unknown[] }));
 const ensureResult = (conversationId: string) => ok({
   version: 1 as const,
@@ -56,6 +61,17 @@ async function startSend() {
   expect(chat.phase).toBe("sending");
   return { sending };
 }
+
+it("stopping an accepted send is handled successfully and keeps the history view", async () => {
+  await openHistory();
+  const { sending } = await startSend();
+  vi.mocked(window.astella.companion.chat.cancelRun).mockResolvedValueOnce(ok({ version: 1 } as never));
+  await act(async () => { expect(await chat.cancel()).toBe(true); });
+  await act(async () => { expect(await sending).toBe(true); });
+  expect(chat.mode).toBe("history");
+  expect(chat.phase).toBe("ready");
+  expect(chat.failure).toBeNull();
+});
 function addReply() {
   items = [...items, {
     version: 1, id: id(9), workspaceId: id(10), conversationId: id(5), seq: 2,
@@ -68,6 +84,7 @@ function addReply() {
 
 beforeEach(() => {
   streamEvent = null; items = []; listMessages.mockReset().mockImplementation(async () => page());
+  listHistory.mockReset().mockImplementation(async () => ok({ version: 1, items: [], nextCursor: null }));
   listRunNodes.mockReset().mockImplementation(async () => ok({ items: [], runs: [] }));
   useRoomStore.setState({ hudPage: "home", activeNoteRef: null, pageReadableView: null });
   Object.defineProperty(window, "astella", { configurable: true, value: {
@@ -81,7 +98,9 @@ beforeEach(() => {
         listAgentRoutes: vi.fn(async () => ok({ items: [], latestSeq: 0 })),
         listRunNodes,
         sendTurn: vi.fn(async () => ok({ runId: id(6), generation: 1, eventCursor: 0 })),
+        cancelRun: vi.fn(async () => ok({ version: 1 })),
       },
+      history: { list: listHistory },
     },
     subscriptions: {
       subscribe: vi.fn(async () => ok({ subscriptionId: id(7) })), unsubscribe: vi.fn(async () => ok({})),
@@ -90,7 +109,7 @@ beforeEach(() => {
   } });
   render(<CompanionChatProvider><Capture /></CompanionChatProvider>);
 });
-afterEach(() => { cleanup(); vi.restoreAllMocks(); Reflect.deleteProperty(window, "astella"); });
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); Reflect.deleteProperty(window, "astella"); });
 
 describe("手记记录刷新与当前回复的状态归属", () => {
   it("同一轮可逐句发言，第一句之后仍在继续，完成时不重复追加正文", async () => {
@@ -111,7 +130,7 @@ describe("手记记录刷新与当前回复的状态归属", () => {
     expect(chat.liveReply?.text).toBe(`${first.blocks[0]!.text}\n\n${second.blocks[0]!.text}`);
   });
   it("主动参与可以安静结束，不产生等待超时或虚构消息", async () => {
-    await openHistory(); let receiving!: Promise<void>;
+    await openHistory(); let receiving!: Promise<boolean>;
     act(() => { receiving = chat.receiveInitiative!({ conversationId: id(5), messageId: id(40), runId: id(6), generation: 1, deviceSessionId: null }); });
     await waitFor(() => expect(streamEvent).not.toBeNull());
     emit("turn.accepted", { clientMessageId: id(8), userMessageId: null, status: "accepted" });
@@ -120,7 +139,94 @@ describe("手记记录刷新与当前回复的状态归属", () => {
     expect(chat.draft).toBeNull();
     emit("turn.completed", { messageIds: [], silent: true });
     await act(async () => { await receiving; });
+    expect(await receiving).toBe(false);
     expect(chat.phase).toBe("ready"); expect(chat.failure).toBeNull(); expect(chat.messages).toHaveLength(0);
+  });
+  /**
+   * 主动开口的落点与桌面的实时会话**可以不是同一条**：worker 按观察那一刻的会话选 run
+   * 的落点，而桌面永远用 `/companion/inbox/ensure` 那一条。以前这里直接放弃——气泡不出声，
+   * 投递却被记成 `displayed`（投影从此不再把它交给任何设备），那一句对谁都永久消失。
+   * 正文是真实存在的，所以现在从共享历史（跨 dialogue + inbox）读回来放进气泡。
+   */
+  it("投递落在别的对话里时，正文从共享历史读回来，而不是悄悄丢掉", async () => {
+    const spoken = "来啦。晚上这会儿还开着，是想接着抠导热那块，还是随便转转？";
+    listHistory.mockResolvedValue(ok({ version: 1, items: [
+      { version: 1, messageId: id(40), role: "assistant", kind: "proactive", runId: id(6),
+        blocks: [{ type: "text", text: spoken }], createdAt: date, editedAt: null },
+      { version: 1, messageId: id(41), role: "assistant", kind: "text", runId: id(6),
+        blocks: [{ type: "text", text: "导热那块我翻到一条能接上的线索。" }], createdAt: date, editedAt: null },
+      { version: 1, messageId: id(42), role: "assistant", kind: "text", runId: id(60),
+        blocks: [{ type: "text", text: "这是另一轮的正文，不该混进来。" }], createdAt: date, editedAt: null },
+    ], nextCursor: null }));
+    let shown!: Promise<boolean>;
+    act(() => { shown = chat.receiveInitiative!({ conversationId: id(12), messageId: id(40), runId: id(6), generation: 1, deviceSessionId: null }); });
+    await act(async () => { await shown; });
+    expect(await shown).toBe(true);
+    // 别人的会话没有事件流可订阅：这一次只读正文，不认领 run。
+    expect(streamEvent).toBeNull();
+    expect(listHistory).toHaveBeenCalledWith(expect.objectContaining({ query: { limit: 100, runId: id(6) } }));
+    expect(chat.liveReply?.text).toBe(`${spoken}\n\n导热那块我翻到一条能接上的线索。`);
+    // 投影刷新会让同一条投递再问一次（回执可能还没认领成功）：不重复出声，但
+    // "屏幕上已经有了"这件事照旧成立——回执才敢重发。
+    listHistory.mockClear();
+    await act(async () => { expect(await chat.receiveInitiative!({ conversationId: id(12), messageId: id(40), runId: id(6), generation: 1, deviceSessionId: null })).toBe(true); });
+    expect(listHistory).not.toHaveBeenCalled();
+  });
+  it("主动发言跨历史分页时按自然顺序读全，再确认展示", async () => {
+    const item = (messageId: string, text: string) => ({ version: 1, messageId, role: "assistant", kind: "text", runId: id(6),
+      blocks: [{ type: "text", text }], createdAt: date, editedAt: null });
+    listHistory.mockResolvedValueOnce(ok({ version: 1, items: [item(id(41), "后半句。")], nextCursor: "older-page" }))
+      .mockResolvedValueOnce(ok({ version: 1, items: [item(id(40), "第一句。")], nextCursor: null }));
+    let shown!: Promise<boolean>;
+    act(() => { shown = chat.receiveInitiative!({ conversationId: id(12), messageId: id(40), runId: id(6), generation: 1, deviceSessionId: null }); });
+    await act(async () => { await shown; });
+    expect(await shown).toBe(true);
+    expect(chat.liveReply?.text).toBe("第一句。\n\n后半句。");
+    expect(listHistory).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      query: { limit: 100, runId: id(6), before: "older-page" },
+    }));
+  });
+
+  it("重复历史游标不能把不完整的主动发言确认成已展示", async () => {
+    listHistory.mockResolvedValue(ok({ version: 1, items: [{ version: 1, messageId: id(40), role: "assistant", kind: "proactive", runId: id(6),
+      blocks: [{ type: "text", text: "只有第一句。" }], createdAt: date, editedAt: null }], nextCursor: "loop" }));
+    let shown!: Promise<boolean>;
+    act(() => { shown = chat.receiveInitiative!({ conversationId: id(12), messageId: id(40), runId: id(6), generation: 1, deviceSessionId: null }); });
+    await act(async () => { await shown; });
+    expect(await shown).toBe(false);
+    expect(chat.liveReply).toBeNull();
+    expect(listHistory).toHaveBeenCalledTimes(2);
+  });
+
+  it("用户正在另一轮里时不接这一句，也不假装接过", async () => {
+    await openHistory();
+    const { sending } = await startSend();
+    await expect(chat.receiveInitiative!({ conversationId: id(5), messageId: id(40), runId: id(6), generation: 1, deviceSessionId: null })).resolves.toBe(false);
+    addReply();
+    await act(async () => { expect(await sending).toBe(true); });
+  });
+  it("历史主动消息还在读取时不提前确认展示；输入后迟到正文不再抢回气泡", async () => {
+    const pending = deferred<Awaited<ReturnType<typeof listHistory>>>();
+    listHistory.mockReturnValue(pending.promise);
+    const delivery = { conversationId: id(12), messageId: id(40), runId: id(6), generation: 1, deviceSessionId: null };
+    let receiving!: Promise<boolean>;
+    act(() => { receiving = chat.receiveInitiative!(delivery); });
+    await waitFor(() => expect(listHistory).toHaveBeenCalled());
+    await expect(chat.receiveInitiative!(delivery)).resolves.toBe(false);
+    act(() => window.dispatchEvent(new Event("astella:companion-user-input")));
+    pending.resolve(ok({ version: 1, items: [{ messageId: id(40), role: "assistant", runId: id(6),
+      blocks: [{ type: "text", text: "迟到的旧话" }] }], nextCursor: null }));
+    await act(async () => { expect(await receiving).toBe(false); });
+    expect(chat.liveReply).toBeNull();
+  });
+  it("历史主动消息读取失败后允许重试，不把进行中的认领记成已展示", async () => {
+    const delivery = { conversationId: id(12), messageId: id(40), runId: id(6), generation: 1, deviceSessionId: null };
+    listHistory.mockRejectedValueOnce(new Error("offline"));
+    await act(async () => { expect(await chat.receiveInitiative!(delivery)).toBe(false); });
+    listHistory.mockResolvedValue(ok({ version: 1, items: [{ messageId: id(40), role: "assistant", runId: id(6),
+      blocks: [{ type: "text", text: "已恢复的问候" }] }], nextCursor: null }));
+    await act(async () => { expect(await chat.receiveInitiative!(delivery)).toBe(true); });
+    expect(chat.liveReply?.text).toBe("已恢复的问候");
   });
   it("本轮工具即刻投影，快照补回丢失回执；新轮不继承旧工具或旧统计", async () => {
     await openHistory();
@@ -341,4 +447,30 @@ it("接替重试又撞 409 时空手再发一次：那条 run 刚好没了不该
   addReply();
   await act(async () => { expect(await sending).toBe(true); });
   expect(chat.blockedByRun).toBeNull();
+});
+
+
+it("two minutes of silent SSE stay below the shared read quota and still recover the final reply", async () => {
+  cleanup();
+  vi.useFakeTimers();
+  render(<CompanionChatProvider><Capture /></CompanionChatProvider>);
+  await act(async () => { chat.setMode("history"); });
+  let sending!: Promise<boolean>;
+  await act(async () => { sending = chat.send({ text: "请继续，等待真实完成" }); });
+  expect(streamEvent).not.toBeNull();
+  expect(chat.phase).toBe("sending");
+  listMessages.mockClear(); listRunNodes.mockClear();
+  vi.mocked(window.astella.companion.chat.listAgentRoutes).mockClear();
+  await act(async () => { await vi.advanceTimersByTimeAsync(120_000); });
+  const reads = listMessages.mock.calls.length + listRunNodes.mock.calls.length
+    + vi.mocked(window.astella.companion.chat.listAgentRoutes).mock.calls.length;
+  expect(reads).toBeLessThan(120);
+  expect(listMessages.mock.calls.length).toBeGreaterThan(15);
+  expect(chat.phase).toBe("sending");
+  items = [{ ...userMessage(id(5)), id: id(9), role: "assistant", runId: id(6), seq: 2,
+    blocks: [{ type: "text", text: "流丢失后取回的真实终答。" }] }];
+  listRunNodes.mockResolvedValue(ok({ items: [], runs: [{ runId: id(6), status: "succeeded" }] }));
+  await act(async () => { await vi.advanceTimersByTimeAsync(6_000); });
+  await act(async () => { expect(await sending).toBe(true); });
+  expect(chat.liveReply?.text).toBe("流丢失后取回的真实终答。");
 });

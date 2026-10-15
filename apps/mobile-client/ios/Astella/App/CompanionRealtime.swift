@@ -11,7 +11,7 @@ final class CompanionRealtime {
     private var conversationId = ""
     private var cursor = 0
     private var api: MobileAPI?
-    private var pendingCommands: [String: CheckedContinuation<Void, Error>] = [:]
+    private var pendingCommands: [String: CheckedContinuation<CompanionTurnSubmitResponseDTO, Error>] = [:]
     private(set) var isReady = false
     var onEvent: (@MainActor ([String: Any]) -> Void)?
     var onState: (@MainActor (String) -> Void)?
@@ -47,7 +47,7 @@ final class CompanionRealtime {
         pendingCommands.removeAll()
     }
 
-    func submit(_ body: [String: Any]) async throws {
+    func submit(_ body: [String: Any]) async throws -> CompanionTurnSubmitResponseDTO {
         guard isReady, let socket else {
             throw MobileAPIError(status: 503, code: "realtime_unavailable", message: "实时连接正在恢复。")
         }
@@ -59,7 +59,7 @@ final class CompanionRealtime {
             "conversationId": conversationId,
             "body": body
         ]
-        try await withCheckedThrowingContinuation { continuation in
+        return try await withCheckedThrowingContinuation { continuation in
             pendingCommands[requestId] = continuation
             Task { @MainActor [weak self, weak socket] in
                 guard let self, let socket else {
@@ -141,7 +141,10 @@ final class CompanionRealtime {
         case "turn.result":
             guard let requestId = message["requestId"] as? String else { return }
             if message["ok"] as? Bool == true {
-                finishCommand(requestId, result: .success(()))
+                do {
+                    let result = try JSONSerialization.data(withJSONObject: message["result"] ?? [:])
+                    finishCommand(requestId, result: .success(try JSONDecoder().decode(CompanionTurnSubmitResponseDTO.self, from: result)))
+                } catch { finishCommand(requestId, result: .failure(error)) }
             } else if let error = message["error"] as? [String: Any] {
                 finishCommand(requestId, result: .failure(MobileAPIError(
                     status: error["statusCode"] as? Int ?? 400,
@@ -182,7 +185,7 @@ final class CompanionRealtime {
         return text
     }
 
-    private func finishCommand(_ requestId: String, result: Result<Void, Error>) {
+    private func finishCommand(_ requestId: String, result: Result<CompanionTurnSubmitResponseDTO, Error>) {
         guard let continuation = pendingCommands.removeValue(forKey: requestId) else { return }
         continuation.resume(with: result)
     }

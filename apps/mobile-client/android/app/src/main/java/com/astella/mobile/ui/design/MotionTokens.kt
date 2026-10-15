@@ -5,6 +5,9 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import androidx.compose.animation.core.SpringSpec
+import androidx.compose.animation.core.TweenSpec
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -34,6 +37,9 @@ import androidx.compose.ui.platform.LocalContext
  * | segment | 0.38s bounce .08 | damping .92 / stiffness 85 |
  */
 object MotionTokens {
+    private val authEase = CubicBezierEasing(.23f, 1f, .32f, 1f)
+    fun <T> authRoute(): TweenSpec<T> = tween(durationMillis = 260, easing = authEase)
+    fun <T> authFade(): TweenSpec<T> = tween(durationMillis = 160, easing = authEase)
     /** 主按钮按压缩放（scale 0.985，见 [pressScale]）。 */
     fun <T> press(): SpringSpec<T> = spring(dampingRatio = 0.94f, stiffness = 255f)
 

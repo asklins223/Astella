@@ -1417,25 +1417,27 @@ const scanSynthetic = async (statements: string[], label: string): Promise<ScanR
   return runScan([{ file: label, text: `${text}\n` }]);
 };
 
-test("自证：递归 CTE 的锚点项一旦漏了括号，守卫必须报 syntax error", async () => {
+test("自证：读摘要接续链那条语句一旦引用不存在的列，守卫必须报出来", async () => {
+  // 这条自证原本盯的是递归 CTE 的括号（0433 之前那条查询的形状）。读链现在按覆盖区间
+  // 平读，不再沿父指针递归——判据换成了「这条查询在真 parser 上过得了，且它引用的列真存在」，
+  // 因为历史数据已经证明：父指针那条路走不通时，报错的形态恰恰是**静默少读**，不是语法错。
   const fixed = extractFromSource(
     "workers/ai-worker/src/handlers/companion-dialogue-store.ts",
-    (text) => /WITH RECURSIVE chain AS/.test(text),
+    (text) => /FROM conversation_summaries s/.test(text) && /invalidated_at IS NULL/.test(text),
   );
-  // 缺陷形态＝把两个迭代项外面那对括号去掉：`ORDER BY … LIMIT 1` 直接顶到 `UNION ALL` 前面。
-  const withoutParens = fixed
-    .replace(/\(\s*\n\s*SELECT s\.id/, "\n      SELECT s.id")
-    .replace(/LIMIT 1\s*\n\s*\)\s*\n\s*UNION ALL\s*\n\s*\(\s*\n\s*SELECT p\.id/, "LIMIT 1\n      UNION ALL\n      SELECT p.id")
-    .replace(/conv\.context_revision\s*\n\s*\)\s*\n\s*\)/, "conv.context_revision\n    )");
-  assert.notEqual(withoutParens, fixed, "没能构造出「未加括号」的形态——递归 CTE 的源码形状变了，自证用例需要同步");
+  const broken = fixed.replace(
+    "AND s.invalidated_at IS NULL",
+    "AND s.invalidated_at_wrong IS NULL",
+  );
+  assert.notEqual(broken, fixed, "没能构造出「引用不存在的列」的形态——读链查询的形状变了，自证用例需要同步");
 
-  // 一条好的 + 一条坏的：守卫必须只把坏的那条挑出来，且归到「语法错误」。
-  const result = await scanSynthetic([fixed, withoutParens], "self-proof: 漏括号的递归 CTE");
+  const result = await scanSynthetic([fixed, broken], "self-proof: 读链引用不存在的列");
   assert.equal(result.unique.length, 2, "自证：扫描器应当自己发现这两条语句");
   assert.equal(result.parsed, 1, "自证：修好的那一条必须解析通过");
   assert.equal(result.failures.length, 1, "自证：坏的那一条必须被报出来");
-  assert.equal(result.failures[0]!.kind, "syntax", "错误分类应当落在「语法错误」");
-  assert.match(result.failures[0]!.message, /syntax error/i, `实际报错：${result.failures[0]!.message}`);
+  assert.equal(result.failures[0]!.kind, "missing-object", "错误分类应当落在「列/表不存在」");
+  assert.match(result.failures[0]!.message, /invalidated_at_wrong does not exist/i,
+    `实际报错：${result.failures[0]!.message}`);
 });
 
 test("自证：引用一张表上并不存在的列，守卫必须报 column … does not exist", async () => {

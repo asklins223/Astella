@@ -22,7 +22,8 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
-import { upsertCommittedSummary, type CommittedSummaryUpsert } from "../handlers/companion-dialogue-store.ts";
+import { upsertCommittedSummary, readParentSummary, readConversationSummary, readConversationSummaryChain,
+  type CommittedSummaryUpsert } from "../handlers/companion-dialogue-store.ts";
 import { withWorkerWorkspaceTransaction, type WorkerTransaction } from "../db.ts";
 
 process.env.DATABASE_URL_API = testDatabaseUrl("DATABASE_URL_API");
@@ -153,4 +154,18 @@ test("44 §5.3：同一来源键但父版本已经变了时整份作废——返
   `));
   assert.equal(rows[0]!.coverage_through_seq, "100", "已有的行必须原封不动");
   assert.equal(rows[0]!.coverage_source_hash, "e".repeat(64));
+});
+
+test("summary heads sort numeric sequence columns across 75, 155 and 1000, not their text projections", async () => {
+  await seedScope();
+  const first = await commit({ coverageFromSeq: "1", coverageThroughSeq: "75", sourceHash: "1".repeat(64) });
+  const second = await commit({ coverageFromSeq: "76", coverageThroughSeq: "155", sourceHash: "2".repeat(64), parentSummaryId: first });
+  const third = await commit({ coverageFromSeq: "156", coverageThroughSeq: "1000", sourceHash: "3".repeat(64), parentSummaryId: second });
+  assert.ok(first && second && third);
+  assert.equal((await inWorker(tx => readParentSummary(tx, conversationId)))?.id, third);
+  const prior = await inWorker(tx => readConversationSummary(tx, conversationId, "156"));
+  assert.equal(prior?.coverage_through_seq, "155");
+  const chain = await inWorker(tx => readConversationSummaryChain(tx, conversationId));
+  assert.equal(chain.head?.id, third); assert.equal(chain.depth, 3);
+  assert.equal(chain.effectiveCoverageFromSeq, "1"); assert.deepEqual(chain.gaps, []);
 });

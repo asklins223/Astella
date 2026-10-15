@@ -561,7 +561,7 @@ function routingTx(vectorRows: unknown[], keywordRows: unknown[]) {
   };
 }
 
-test("并集：向量命中的与缺向量的合并去重，向量侧优先", async () => {
+test("并集：向量与缺向量的合并去重，查询词证据优先", async () => {
   const provider: EmbeddingProviderLike = {
     id: "mock", embeddingModelId: "mock-v1", embed: async () => new Array(1024).fill(0.01),
   };
@@ -578,8 +578,20 @@ test("并集：向量命中的与缺向量的合并去重，向量侧优先", as
   );
   assert.equal(result.mode, "vector", "向量侧有命中时模式仍是 vector");
   assert.deepEqual(result.items.map((i) => i.content), [
-    "喜欢用语音交流", "习惯在图书馆三楼复习",
+    "习惯在图书馆三楼复习", "喜欢用语音交流",
   ], "新写的 pending 记忆必须被补召回带回来");
+});
+
+test("a full vector page cannot discard the relevant pending memory before ranking", async () => {
+  const provider: EmbeddingProviderLike = { id: "mock", embeddingModelId: "mock-v1", embed: async () => null };
+  const old = Array.from({ length: 8 }, (_, index) => memoryRow(`old-${index}`, "喜欢语音讲解"));
+  const tx = routingTx(old, [memoryRow("new-location", "习惯在图书馆三楼复习")]);
+  for (const topK of [1, 8]) {
+    const result = await retrieveCompanionMemoriesVector(tx as never, { workspaceId: "w", userId: "u" },
+      "图书馆", provider, topK, null, new Array(1024).fill(0.01));
+    assert.equal(result.items[0]?.memoryId, "new-location");
+    assert.equal(result.items.length, topK);
+  }
 });
 
 test("全部条目都有 ready 向量且向量无命中 → 仍是空集（并集不得引入乱召回）", async () => {

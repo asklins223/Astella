@@ -110,6 +110,13 @@ export const assistantMemoryItems = pgTable(
     dismissedAt: timestamp("dismissed_at", { withTimezone: true }),
     /** embedding 状态：none | pending | ready | failed。 */
     embeddingStatus: text("embedding_status").notNull().default("none"),
+    /**
+     * 向量上一次被记账的时间（0434）。补偿重建的按天/按小时退避看这一列，
+     * **不看 `updatedAt`**——后者是她排「这条认识是什么时候的事」用的内容时间，
+     * 一次例行重算不该把它推到今天（实测这样把 77 条 ready 记忆刷成同一分钟，
+     * 召回与目录排序里时效那一路直接恒等失效）。
+     */
+    embeddingCheckedAt: timestamp("embedding_checked_at", { withTimezone: true }),
     /** 内容/来源/认识状态每次变化递增；用于防止旧修订覆盖用户的新纠正。 */
     revision: integer("revision").notNull().default(1),
     /** 谁写下当前版本，不等同于 sourceType（来源性质）。词表见 0360。 */

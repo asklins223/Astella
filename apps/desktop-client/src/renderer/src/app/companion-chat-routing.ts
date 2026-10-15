@@ -47,9 +47,11 @@ import type {
   CompanionChatProposalGetResultV1,
 } from "@astella/shared/companion-chat-desktop-contracts";
 import type { DesktopRouteV1 } from "@astella/shared/desktop-ipc-contracts";
+import { agentArtifactRefV1Schema } from "@astella/shared/agent-contracts";
 import type { MainPageContextInputV2, PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 import { companionPageRouteV2, SETTINGS_SECTION_IDS_V2 } from "@astella/shared/companion-bridge-contracts";
 import { useRoomStore } from "./room-store";
+import { openAgentArtifact } from "../components/companion/agent-goal-presentation";
 import type { HudPageId } from "../components/hud/hud-pages";
 import { createRequestMeta, gatewayErrorMessage, requireWorkspaceEpoch, unwrapGatewayResult, RendererGatewayError } from "./desktop-client";
 import {
@@ -79,6 +81,18 @@ export function desktopRouteFromAgentRoute(route: CompanionAgentRouteEventV1["ro
       return { kind: "note.detail", noteId: route.noteId };
     case "card":
       return { kind: "objective.detail", objectiveId: route.objectiveId };
+    // 那一份产物按回执精确取回，形状就是手记成果卡在用的 `agentArtifactRefV1`。
+    // 认不出来（种类不在落点表里）就映射成 null——递一个点了没反应的按钮比没有按钮更糟。
+    case "learning_artifact": {
+      const parsed = agentArtifactRefV1Schema.safeParse({
+        kind: route.artifactKind,
+        id: route.artifactId,
+        jobId: route.taskId,
+        noteId: route.noteId,
+        noteVersionId: route.noteVersionId,
+      });
+      return parsed.success ? { kind: "note.artifact", artifact: parsed.data } : null;
+    }
     case "learning_run":
       return { kind: "learningRun.detail", runId: route.runId };
     case "home":
@@ -149,6 +163,11 @@ export async function applyRouteToRoom(route: DesktopRouteV1): Promise<boolean> 
       room.setNoteReturnTo("library");
       room.invoke("open-notebook");
       return true;
+    case "note.artifact":
+      // 与手记里那张成果卡同一个落点：同一份 setActiveNoteRef（带 learningResult/learningView）
+      // 加同一次 invoke。这里再写一遍"怎么打开一份学习产物"就会分叉——那条路径上
+      // 版本号、taskId 与清掉 learningView 的时机都各有讲究。
+      return openAgentArtifact(route.artifact, room.workspaceScopeRevision);
     case "learningRun.detail":
       // 与 ReviewSurface / WorkspaceLibrarySurface 同一条入口：设 activeRunId **并且**
       // 真正切页。只设 id 不会换页（Player 挂在任务视图那一页里，页面由 `invoke` 决定），
@@ -171,6 +190,25 @@ export async function applyRouteToRoom(route: DesktopRouteV1): Promise<boolean> 
     default:
       return false;
   }
+}
+
+/**
+ * 历史消息没有活动会话对象，但其中保存的推荐仍应能按用户点击前往。
+ * 复用与会话 goToRoute 相同的服务端解析、工作区切换检查和页面落点。
+ */
+export async function navigateCompanionHistoryRoute(route: DesktopRouteV1): Promise<void> {
+  const scopeRevision = useRoomStore.getState().workspaceScopeRevision;
+  const resolved = unwrapGatewayResult(await window.astella.navigation.resolve({ meta: createRequestMeta(), route }));
+  if (resolved.current.scope !== "workspace") throw new Error("navigation did not resolve to the current workspace");
+  if (useRoomStore.getState().workspaceScopeRevision !== scopeRevision) throw new Error("工作空间已切换，请在当前空间重新操作。");
+  unwrapGatewayResult(await window.astella.navigation.go({
+    meta: createRequestMeta(resolved.current.workspaceEpoch),
+    route: resolved.current.route,
+    entryKind: "user",
+  }));
+  if (useRoomStore.getState().workspaceScopeRevision !== scopeRevision) throw new Error("工作空间已切换，请在当前空间重新操作。");
+  if (!await applyRouteToRoom(resolved.current.route)) throw new Error("这个落点在桌面端还没有对应的页面");
+  if (useRoomStore.getState().workspaceScopeRevision !== scopeRevision) throw new Error("工作空间已切换，请在当前空间重新操作。");
 }
 
 export function navChipSharesTarget(a: CompanionNavChip, b: CompanionNavChip): boolean {
@@ -236,11 +274,14 @@ export function companionTurnErrorMessage(error: unknown, blockedRunIdentified =
 }
 
 export function companionReplyFailureMessage(code: unknown, recoverable: unknown): string {
-  if (code === "CONTEXT_STALE") return "这一轮引用的记忆已变更或撤回。重新发送，我会按现在的内容继续。";
+  if (code === "TOOL_ARGUMENTS_INVALID") return "这一步没能执行，已停止重复尝试；已经做好的内容还在。";
+  if (code === "REPLY_FORMAT_INVALID") return "这次答复格式异常，已停止输出；已经做好的内容还在。";
+  if (code === "ACTION_NOT_EXECUTED") return "这次没能确认操作完成，已经做好的内容还在。";
+  if (code === "CONTEXT_STALE") return "这一轮依据的上下文已变化，原回复已停止。请先查看已有结果，再按当前内容继续。";
   // 孤儿 run 被回收（迁移 0232/0424）：这一轮的处理任务根本没跑起来，或跑它的进程
   // 已经没了。说清楚"不是这句话的问题"，并且别再指向一颗此刻并不存在的停止按钮。
   if (typeof code === "string" && code.startsWith("JOB_")) {
-    return "这一轮没能开始处理（后台任务没跑起来）。这句可以直接再发一次。";
+    return "这一轮的后台任务已中断。已有内容和操作结果仍保留，请先查看结果再决定是否继续。";
   }
   // 达到长度上限不是"没做成"：已经说出的那半句是有效的，缺的是后半段。
   // 以前这条落进 recoverable=false 的通用文案，用户看到「这一轮没能完成。重新说一遍就好」＋半截正文，
@@ -248,5 +289,5 @@ export function companionReplyFailureMessage(code: unknown, recoverable: unknown
   if (code === "REPLY_LENGTH_LIMIT") return "这次答复达到长度上限，已经说出的内容保留；说一句「接着讲」，我就从断的地方往下说。";
   if (code === "RATE_LIMITED") return "模型服务暂时繁忙，稍后再试就好。已经做好的内容还在。";
   if (code === "PROVIDER_UNAVAILABLE") return "模型服务暂时不可用，已经做好的内容还在。";
-  return recoverable === false ? "这一轮没能完成。重新说一遍就好。" : "这一轮没能完成，可以再试一次。";
+  return recoverable === false ? "这一轮没能完成。已有内容和操作结果仍保留，请先查看结果再决定下一步。" : "这一轮暂时没能完成，可以先查看已有内容再继续。";
 }

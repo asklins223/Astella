@@ -1,6 +1,44 @@
 package com.astella.mobile.ui.design
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.*
+import androidx.compose.animation.core.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.foundation.isSystemInDarkTheme
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeInput
+import dev.chrisbanes.haze.HazeSourceRetention
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.blur.HazeBlurStyle
+import dev.chrisbanes.haze.blur.HazeColorEffect
+import dev.chrisbanes.haze.blur.hazeBlur
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.material3.ButtonColors
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -37,10 +75,7 @@ import com.astella.mobile.R
 /** 全屏画布底（= canvas）。 */
 @Composable
 fun DawnBackground(modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
-    Box(
-        modifier.fillMaxSize().background(StudyPalette.canvas),
-        content = content,
-    )
+    Box(modifier.fillMaxSize(),content = content)
 }
 
 /**
@@ -123,11 +158,11 @@ fun PageHeading(
             Text(
                 title,
                 color = StudyPalette.ink,
-                style = MaterialTheme.typography.headlineLarge,
-                fontWeight = FontWeight.SemiBold,
+                style = MaterialTheme.typography.headlineLarge.copy(fontSize = 30.sp,lineHeight = 40.sp,fontFamily = FontFamily.Default),
+                fontWeight = FontWeight.Medium,
             )
             if (subtitle != null) {
-                Text(subtitle, color = StudyPalette.muted, style = MaterialTheme.typography.bodyMedium)
+                Text(subtitle, color = StudyPalette.muted, style = MaterialTheme.typography.bodySmall)
             }
         }
         trailing?.invoke()
@@ -188,4 +223,125 @@ fun CompanionPortrait(modifier: Modifier = Modifier, height: Dp = 248.dp, reduce
             modifier = Modifier.height(height),
         )
     }
+}
+
+
+@Composable
+fun AstellaStar(modifier: Modifier = Modifier, color: Color = StudyPalette.accent) {
+    Canvas(modifier) {
+        val x = center.x; val y = center.y; val rx = size.width / 2; val ry = size.height / 2
+        val p = Path().apply {
+            moveTo(x,y-ry); quadraticTo(x+rx*.18f,y-ry*.18f,x+rx,y)
+            quadraticTo(x+rx*.18f,y+ry*.18f,x,y+ry)
+            quadraticTo(x-rx*.18f,y+ry*.18f,x-rx,y)
+            quadraticTo(x-rx*.18f,y-ry*.18f,x,y-ry); close()
+        }; drawPath(p,color)
+    }
+}
+
+@Composable
+fun AstellaTap(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, content: @Composable BoxScope.() -> Unit) {
+    val source = remember { MutableInteractionSource() }
+    val pressed by source.collectIsPressedAsState()
+    val reduced = LocalReduceMotion.current
+    val scale by animateFloatAsState(if (pressed && !reduced) .97f else 1f, tween(130), label = "astella-press")
+    Box(modifier.scale(scale).clickable(enabled = enabled, interactionSource = source, indication = null, role = Role.Button, onClick = onClick), content = content)
+}
+
+@Composable
+fun AstellaAppHeader(workspace: String, initial: String, onAccount: () -> Unit, records: Boolean? = null, onRecords: ((Boolean) -> Unit)? = null, modifier: Modifier = Modifier, edge: Dp = 24.dp) {
+    Row(modifier.fillMaxWidth().padding(start = edge,end = edge,top = 6.dp,bottom = 14.dp).heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (records == true) {
+            AstellaTap({ onRecords?.invoke(false) }, Modifier.size(42.dp,44.dp), content = { Icon(Icons.Default.ArrowBack,"回到伴星身边",Modifier.align(Alignment.Center).size(20.dp),tint = StudyPalette.ink) })
+            Text("交流记录",fontSize = 20.sp,fontWeight = FontWeight.SemiBold,color = StudyPalette.ink)
+        } else {
+            Box(Modifier.size(38.dp),contentAlignment = Alignment.Center) {
+                val accent = StudyPalette.accent
+                Canvas(Modifier.size(32.dp,18.dp)) { rotate(-35f) { drawOval(accent.copy(alpha = .5f),style = Stroke(.8.dp.toPx())) } }
+                AstellaStar(Modifier.size(19.dp,25.dp))
+            }
+            Column(Modifier.padding(start = 10.dp),verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text("伴星",fontSize = 19.sp,fontWeight = FontWeight.SemiBold,color = StudyPalette.ink)
+                Text(workspace,fontSize = 11.sp,color = StudyPalette.muted,maxLines = 1)
+            }
+        }
+        Spacer(Modifier.weight(1f))
+        if (records == false) AstellaTap({ onRecords?.invoke(true) }, Modifier.size(40.dp,44.dp),content = {
+            Icon(Icons.Default.ChatBubbleOutline,"交流记录",Modifier.align(Alignment.Center).size(19.dp),tint = StudyPalette.ink)
+        })
+        AstellaTap(onAccount,Modifier.size(38.dp).astellaGlass(16.dp,interactive = true),content = {
+            Text(initial.take(1).uppercase(),Modifier.align(Alignment.Center),fontSize = 13.sp,fontWeight = FontWeight.SemiBold,color = StudyPalette.ink)
+        })
+    }
+}
+
+
+@Composable
+fun AstellaIconButton(onClick: () -> Unit,modifier: Modifier = Modifier,enabled: Boolean = true,content: @Composable () -> Unit) {
+    AstellaTap(onClick,modifier.sizeIn(minWidth = 44.dp,minHeight = 44.dp),enabled) { Box(Modifier.align(Alignment.Center)) { content() } }
+}
+@Composable
+fun AstellaTextButton(onClick: () -> Unit,modifier: Modifier = Modifier,enabled: Boolean = true,contentPadding: PaddingValues = PaddingValues(horizontal = 12.dp,vertical = 8.dp),content: @Composable RowScope.() -> Unit) {
+    AstellaTap(onClick,modifier.heightIn(min = 44.dp),enabled) {
+        CompositionLocalProvider(LocalContentColor provides StudyPalette.accent.copy(alpha = if (enabled) 1f else .4f)) {
+            Row(Modifier.align(Alignment.Center).padding(contentPadding),verticalAlignment = Alignment.CenterVertically,horizontalArrangement = Arrangement.Center,content = content)
+        }
+    }
+}
+@Composable
+fun AstellaButton(onClick: () -> Unit,modifier: Modifier = Modifier,enabled: Boolean = true,shape: Shape = RoundedCornerShape(16.dp),colors: ButtonColors? = null,contentPadding: PaddingValues = PaddingValues(horizontal = 18.dp,vertical = 12.dp),content: @Composable RowScope.() -> Unit) {
+    val fill = colors?.containerColor ?: StudyPalette.accent
+    AstellaTap(onClick,modifier.heightIn(min = 48.dp).background(fill.copy(alpha = if (enabled) 1f else .4f),shape),enabled) {
+        CompositionLocalProvider(LocalContentColor provides (colors?.contentColor ?: StudyPalette.paper)) {
+            Row(Modifier.align(Alignment.Center).padding(contentPadding),verticalAlignment = Alignment.CenterVertically,horizontalArrangement = Arrangement.Center,content = content)
+        }
+    }
+}
+@Composable
+fun AstellaOutlinedButton(onClick: () -> Unit,modifier: Modifier = Modifier,enabled: Boolean = true,shape: Shape = RoundedCornerShape(16.dp),border: BorderStroke? = null,contentPadding: PaddingValues = PaddingValues(horizontal = 18.dp,vertical = 12.dp),content: @Composable RowScope.() -> Unit) {
+    AstellaTap(onClick,modifier.heightIn(min = 46.dp).background(StudyPalette.sky,shape),enabled) {
+        CompositionLocalProvider(LocalContentColor provides StudyPalette.accent) {
+            Row(Modifier.align(Alignment.Center).padding(contentPadding),verticalAlignment = Alignment.CenterVertically,horizontalArrangement = Arrangement.Center,content = content)
+        }
+    }
+}
+@Composable
+fun AstellaSwitch(checked: Boolean,onCheckedChange: (Boolean) -> Unit,modifier: Modifier = Modifier,enabled: Boolean = true) {
+    val source = remember { MutableInteractionSource() }
+    val offset by animateDpAsState(if (checked) 18.dp else 0.dp,if (LocalReduceMotion.current) snap() else MotionTokens.press(),label = "astella-toggle")
+    Box(modifier.sizeIn(minWidth = 48.dp,minHeight = 44.dp).toggleable(value = checked,enabled = enabled,role = Role.Switch,interactionSource = source,indication = null,onValueChange = onCheckedChange),contentAlignment = Alignment.Center) {
+        Box(Modifier.size(46.dp,28.dp).background(if (checked) StudyPalette.accent else StudyPalette.paperEdge,RoundedCornerShape(14.dp))) {
+            Box(Modifier.padding(4.dp).offset(x = offset).size(20.dp).background(StudyPalette.paper,androidx.compose.foundation.shape.CircleShape))
+        }
+    }
+}
+
+
+val LocalAstellaHaze = staticCompositionLocalOf<HazeState?> { null }
+
+@Composable
+fun AstellaAtmosphere(modifier: Modifier = Modifier) {
+    val base = StudyPalette.canvas
+    Canvas(modifier) { drawRect(base) }
+}
+
+@Composable
+fun Modifier.astellaGlass(radius: Dp,haze: HazeState? = LocalAstellaHaze.current,interactive: Boolean = false,tint: Color = Color.Transparent): Modifier {
+    val shape = RoundedCornerShape(radius)
+    val paper = StudyPalette.paper
+    val dark = paper.luminance() < .5f
+    val edge = StudyPalette.paperEdge
+    val style = remember(paper,dark) {
+        HazeBlurStyle {
+            blurRadius(22.dp); noiseFactor(0f)
+            colorEffects(listOf(HazeColorEffect.tint(paper.copy(alpha = if (dark) .42f else .40f))))
+        }
+    }
+    val effect = if (haze != null && android.os.Build.VERSION.SDK_INT >= 31)
+        Modifier.hazeBlur(input = HazeInput.Sources(haze,retention = HazeSourceRetention.ClearWhenUnavailable),style = style)
+    else Modifier.background(paper.copy(alpha = .88f))
+    return this.shadow(if (interactive) 6.dp else 3.dp,shape,ambientColor = Color.Black.copy(alpha = .035f),spotColor = Color.Black.copy(alpha = .035f))
+        .clip(shape).then(effect)
+        .background(tint)
+        .border(.8.dp,if (tint.alpha > 0f) Color.White.copy(alpha = .2f) else edge.copy(alpha = .75f),shape)
 }

@@ -57,6 +57,8 @@ import {
 } from "./companion-tool-result.ts";
 
 export type AgentMessage = AgentTurnRequest["messages"][number];
+import { encodeCompanionToolResult, decodeCompanionToolResult, withCompanionRecoveryTransaction, withCompanionFailureTransaction } from "./companion-runtime-checkpoint.ts";
+import { CompanionContextChangedError } from "../lib/non-retryable-errors.ts";
 
 /** SSE contract bounds for provider-supplied tool-call identity. */
 export const TOOL_CALL_ID_MAX_CHARS = 200;
@@ -87,11 +89,19 @@ export function boundedToolCallIdentity(
  * `companion_start_learning`，等于系统自己把用户没要过的学习运行推上桌。
  */
 /**
- * Only a confirmed current-turn intent requires tools. Unknown intent leaves
- * read capabilities available, but never grants an inherited action authority.
+ * Unknown intent leaves capabilities available. The classifier sees only a
+ * recent-message view, so a history/memory retrieval candidate cannot prove
+ * that the complete main request lacks evidence. Let that model decide using
+ * its full context. Callers pass candidates only for a read interpretation;
+ * actions and other reads retain the existing required-tool contract.
  */
-export function companionStepRequiresTool(decision: boolean | null): boolean {
-  return decision === true;
+const CONTEXT_RETRIEVAL_TOOLS = new Set([
+  "companion_read_history", "companion_recall_past_conversation",
+  "companion_recall_memory", "companion_read_memory",
+]);
+export function companionStepRequiresTool(decision: boolean | null, readCandidates?: readonly string[]): boolean {
+  return decision === true && (!readCandidates?.length
+    || readCandidates.some(name => !CONTEXT_RETRIEVAL_TOOLS.has(name)));
 }
 
 /**
@@ -212,8 +222,7 @@ export async function recordRejectedToolCall(
   status: "blocked" | "failed" | "not_executed" | "unavailable",
   safeSummary: string,
 ): Promise<void> {
-  await withWorkerWorkspaceTransaction(
-    { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
+  await withCompanionRecoveryTransaction(event,
     async (tx) => {
       await tx.execute(sql`
         INSERT INTO companion_agent_tool_calls
@@ -306,7 +315,9 @@ export async function executeTool(
     });
     return { waiting: true, proposalId: proposal.proposalId };
   }
-  await updateToolCall(event, call.id, { status: "executing" });
+  if (!await updateToolCall(event, call.id, { status: "executing" })) {
+    throw new CompanionToolOutcomeUnknownError(TOOL_OUTCOME_UNKNOWN_SAFE_SUMMARY);
+  }
   await appendAgentEvent(event, "agent.tool", {
     tool: {
       toolCallId: call.id,
@@ -331,6 +342,7 @@ export async function executeTool(
     status: "succeeded",
     safeSummary: result.safeSummary,
     resultRef: result.resultRef ?? (result.route ? JSON.stringify(result.route) : undefined),
+    resultPayload: result,
   });
   // Recovery may have changed an interrupted write to outcome_unknown while
   // this process was still finishing. Do not publish a late success over it.
@@ -344,10 +356,6 @@ export async function executeTool(
   // SSE 与审计行也就说同一句话。抛的是**不继承** CompanionToolError 的那一类，
   // 否则会被 `classifyCompanionToolFailure` 归成 failed（= 确定没发生）。
   if (!recorded) throw new CompanionToolOutcomeUnknownError(TOOL_OUTCOME_UNKNOWN_SAFE_SUMMARY);
-  if (confirmedProposalId) await withWorkerWorkspaceTransaction({ workspaceId: event.ctx.workspaceId, userId: event.read.userId },
-    tx => tx.execute(sql`UPDATE companion_action_proposals SET status='succeeded',result_ref=${call.id},
-      result_safe_summary=${result.safeSummary},result_route=${JSON.stringify(result.route ?? null)}::jsonb,updated_at=now()
-      WHERE id=${confirmedProposalId}::uuid AND status='accepted' AND decision='confirm'`));
   // 迟到复查（40b §4.1-2「迟到结果在提交前复查取消、租约、权限和内容版本」）。
   //
   // 上面那道 fence 只覆盖"超时那一刻已经知道"的情形；这一支覆盖"调用方在预算
@@ -379,25 +387,37 @@ export async function executeTool(
 export async function updateToolCall(
   event: AgentEventContext,
   toolCallId: string,
-  patch: { status: string; proposalId?: string; resultRef?: string; safeSummary?: string },
+  patch: { status: string; proposalId?: string; resultRef?: string; safeSummary?: string; resultPayload?: AgentToolExecutionResult },
 ): Promise<boolean> {
-  return withWorkerWorkspaceTransaction(
-    { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
+  const write = ["failed", "outcome_unknown", "blocked", "not_executed", "unavailable"].includes(patch.status)
+    ? withCompanionFailureTransaction : withCompanionRecoveryTransaction;
+  return write(event,
     async (tx) => {
-      const updated = await tx.execute<{ tool_call_id: string }>(sql`
+      const updated = await tx.execute<{ tool_call_id: string; proposal_id: string | null }>(sql`
         UPDATE companion_agent_tool_calls
         SET status = ${patch.status},
             proposal_id = COALESCE(${patch.proposalId ?? null}, proposal_id),
             result_ref = COALESCE(${patch.resultRef ?? null}, result_ref),
             result_safe_summary = COALESCE(${patch.safeSummary ?? null}, result_safe_summary),
+            result_payload = COALESCE(${patch.resultPayload ? JSON.stringify(encodeCompanionToolResult(patch.resultPayload)) : null}::jsonb,result_payload),
             updated_at = now()
         WHERE run_id = ${event.read.runId} AND tool_call_id = ${toolCallId}
           -- 单调状态机：只有未终结的调用可被推进。工具执行超时后，在途事务
           -- 迟到的 succeeded 不得把已判定 outcome_unknown/failed/blocked 的审计行改回去
           -- （否则审计表与发给模型/客户端的 tool result 互相矛盾）。
           AND status IN ('requested', 'executing')
-        RETURNING tool_call_id
+        RETURNING tool_call_id, proposal_id
       `);
+      const proposalId = updated[0]?.proposal_id;
+      if (patch.status === "succeeded" && proposalId) {
+        // Commit the confirmed card and complete tool receipt together. A crash
+        // between separate commits must not leave a successful write "pending".
+        await tx.execute(sql`UPDATE companion_action_proposals SET status='succeeded',result_ref=${toolCallId},
+          result_safe_summary=${patch.safeSummary ?? null},
+          result_route=${JSON.stringify(patch.resultPayload?.route ?? null)}::jsonb,updated_at=now()
+          WHERE id=${proposalId}::uuid AND agent_run_id=${event.read.runId}
+            AND status='accepted' AND decision='confirm'`);
+      }
       return updated.length > 0;
     },
   );
@@ -436,6 +456,7 @@ export type AgentToolCallRecord = {
   proposalId: string | null;
   resultRef: string | null;
   safeSummary: string | null;
+  resultPayload?: AgentToolExecutionResult | null;
 };
 
 /**
@@ -454,14 +475,14 @@ export async function ensureAgentToolCall(
   call: { id: string; arguments: Record<string, unknown> },
   argsHash: string,
   /**
-   * 本轮的 provider 不透明 reasoning 句柄。落库是为了让「用户确认 → 新 job 续跑」
-   * 能从数据反建出带句柄的 assistant 消息（见 loadContinuation）；句柄已剥离明文
-   * 思维链，可安全持久化。非思考模型为 undefined。
+   * 本轮的 provider 不透明 reasoning item。落库是为了让「用户确认 → 新 job 续跑」
+   * 能从数据反建出带句柄的 assistant 消息（见 loadContinuation）。非思考模型为 undefined。
+   * 2026-10-14 起含明文思维链：网关在思考模式下要求交回它，只带 encrypted_content
+   * 会 400（0435 解除"明文不落库"约束，同一份原文三发实测见 probe-plaintext-reasoning.ts）。
    */
   reasoning?: ProviderReasoningHandle[],
 ): Promise<AgentToolCallRecord> {
-  return withWorkerWorkspaceTransaction(
-    { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
+  return withCompanionRecoveryTransaction(event,
     async (tx) => {
       type ExistingCallRow = {
         status: string;
@@ -471,9 +492,10 @@ export async function ensureAgentToolCall(
         result_ref: string | null;
         result_safe_summary: string | null;
         arguments_sha256: string;
+        result_payload: unknown;
       };
       const readByCallId = (toolCallId = call.id) => tx.execute<ExistingCallRow>(sql`
-        SELECT status, name, tool_call_id, proposal_id, result_ref, result_safe_summary, arguments_sha256
+        SELECT status, name, tool_call_id, proposal_id, result_ref, result_safe_summary, arguments_sha256, result_payload
         FROM companion_agent_tool_calls
         WHERE run_id = ${event.read.runId} AND tool_call_id = ${toolCallId}
         LIMIT 1
@@ -485,6 +507,7 @@ export async function ensureAgentToolCall(
         proposalId: row.proposal_id,
         resultRef: row.result_ref,
         safeSummary: row.result_safe_summary,
+        ...(row.result_payload == null ? {} : { resultPayload: decodeCompanionToolResult(row.result_payload) }),
       });
       const blockedRecord = (): AgentToolCallRecord => ({
         isNew: false,
@@ -539,12 +562,14 @@ export async function ensureAgentToolCall(
         const existingAfterLock = await readByCallId();
         if (existingAfterLock[0]) return reuseRow(existingAfterLock[0]);
         const settledOperation = await tx.execute<ExistingCallRow>(sql`
-          SELECT status, name, tool_call_id, proposal_id, result_ref, result_safe_summary, arguments_sha256
+          SELECT status, name, tool_call_id, proposal_id, result_ref, result_safe_summary, arguments_sha256, result_payload
           FROM companion_agent_tool_calls
           WHERE run_id = ${event.read.runId}
             AND name = ${definition.name}
             AND arguments_sha256 = ${argsHash}
-            AND status IN ('requested', 'executing', 'succeeded', 'waiting_confirmation', 'outcome_unknown')
+            AND (status IN ('requested', 'executing', 'succeeded', 'waiting_confirmation', 'outcome_unknown')
+              OR (status='not_executed' AND proposal_id IN (SELECT id FROM companion_action_proposals
+                WHERE agent_run_id=${event.read.runId} AND decision='reject')))
           ORDER BY created_at ASC
           LIMIT 1
         `);
@@ -594,6 +619,7 @@ export async function loadContinuation(
   baseMessages: AgentMessage[],
   proposalId: string,
   deadlineAt = Infinity,
+  recovery?: { pendingCallId: string; onExecution: (result: AgentToolExecutionResult) => void },
 ): Promise<AgentMessage[]> {
   const rows = await withWorkerWorkspaceTransaction(
     { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
@@ -603,6 +629,7 @@ export async function loadContinuation(
       arguments: Record<string, unknown>;
       result_ref: string | null;
       result_safe_summary: string | null;
+      result_payload: unknown;
       status: string;
       decision: string | null;
       reasoning_handles: ProviderReasoningHandle[] | null;
@@ -611,7 +638,7 @@ export async function loadContinuation(
       step_id: string;
     }>(sql`
       SELECT tc.tool_call_id, tc.name, tc.arguments, tc.result_ref,
-             tc.result_safe_summary, tc.status, p.decision, tc.reasoning_handles,
+             tc.result_safe_summary, tc.result_payload, tc.status, p.decision, tc.reasoning_handles,
              p.status AS proposal_status,p.payload AS proposal_payload,tc.step_id
       FROM companion_agent_tool_calls tc
       JOIN companion_action_proposals p ON p.id = tc.proposal_id
@@ -623,7 +650,7 @@ export async function loadContinuation(
   if (!row || (row.decision !== "confirm" && row.decision !== "reject")) {
     throw new Error("agent continuation proposal is not decided");
   }
-  let resumedValue: unknown;
+  let execution = decodeCompanionToolResult(row.result_payload);
   if (row.decision === "confirm" && row.proposal_payload?.kind === "agent_tool_review"
     && row.proposal_status === "accepted" && row.status === "requested") {
     const definition = getCompanionAgentTool(row.name);
@@ -637,8 +664,9 @@ export async function loadContinuation(
     row.status = run.kind === "success" ? "succeeded" : run.ledgerStatus;
     row.result_safe_summary = run.kind === "success" ? run.execution.safeSummary : run.safeSummary;
     row.result_ref = run.kind === "success" ? run.execution.resultRef ?? null : null;
-    if (run.kind === "success") resumedValue = run.execution.value;
-    await withWorkerWorkspaceTransaction({ workspaceId: event.ctx.workspaceId, userId: event.read.userId }, async tx => {
+    if (run.kind === "success") execution = run.execution;
+    const finish = run.kind === "failure" ? withCompanionFailureTransaction : withCompanionRecoveryTransaction;
+    await finish(event, async tx => {
       await tx.execute(sql`UPDATE companion_agent_steps SET status=${run.kind === "success" ? "succeeded" : "failed"},finished_at=now()
         WHERE id=${row.step_id}::uuid AND status='waiting'`);
       if (run.kind === "failure") await tx.execute(sql`UPDATE companion_action_proposals SET status='failed',
@@ -647,10 +675,24 @@ export async function loadContinuation(
   }
   const toolResult = row.decision === "confirm" && row.status === "succeeded"
     ? { ok: true, summary: row.result_safe_summary ?? "操作已完成", resultRef: row.result_ref,
-      ...(resumedValue !== undefined ? { data: resumedValue } : {}) }
+      ...(execution ? { data: execution.value } : {}) }
     : { ok: false, status: row.status, summary: row.decision === "reject"
       ? "用户取消了这次预览或操作，原内容保持当前状态；不要重新执行或自动再次提出这次写入。"
       : row.result_safe_summary ?? "操作尚未得到保存回执，请先核对结果。" };
+  if (recovery) {
+    const index = baseMessages.findIndex(message => message.role === "tool" && message.toolCallId === recovery.pendingCallId);
+    if (index < 0 || !baseMessages.some(message => message.role === "assistant"
+      && message.toolCalls?.some(call => call.id === recovery.pendingCallId && call.name === row.name)))
+      throw new CompanionContextChangedError();
+    const finish = row.status === "succeeded" ? withCompanionRecoveryTransaction : withCompanionFailureTransaction;
+    await finish(event, async tx => {
+      await tx.execute(sql`UPDATE companion_agent_steps
+        SET status=${row.decision === "reject" ? "cancelled" : row.status === "succeeded" ? "succeeded" : "failed"},finished_at=now()
+        WHERE id=${row.step_id}::uuid AND run_id=${event.read.runId} AND status='waiting'`);
+    });
+    if (row.decision === "confirm" && row.status === "succeeded" && execution) recovery.onExecution(execution);
+    return baseMessages.map((message, position) => position === index ? { ...message, content: JSON.stringify(toolResult) } : message);
+  }
   // 续跑是新 job：首轮 reasoning 已不在内存里，只能从列里取回，否则要求回传
   // reasoning 的模型（deepseek 思考模式）会在这一步 400。0218 之前创建的历史
   // 待确认提案该列为 NULL，只能不带句柄续跑（muse-spark/grok-4.6 正常，

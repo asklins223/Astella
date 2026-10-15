@@ -80,6 +80,27 @@ test("手记重读：从旧 run 恢复原文，普通消息/助手不串引用�
     assert.ok(!JSON.stringify(searched).includes('privateContext'));
     const otherUser = await listContinuousHistory({ ...scope, userId: randomUUID(), limit: 100 });
     assert.deepEqual(otherUser.value?.items, []);
+
+    // An initiative delivery anchors the first sentence. A backwards anchor
+    // query cannot recover later sentences; the run filter must page all of them.
+    const initiativeRunId = await scoped(async (tx) => {
+      const [run] = await tx`SELECT id FROM companion_turn_runs WHERE user_message_id = ${messageIds[0]}`;
+      await tx`UPDATE companion_messages SET run_id = ${run.id} WHERE id IN (${messageIds[1]}, ${messageIds[3]})`;
+      return run.id as string;
+    });
+    const through = await listContinuousHistory({ ...scope, throughMessageId: messageIds[1], limit: 100 });
+    assert.ok(!through.value?.items.some(item => item.messageId === messageIds[3]));
+    const runLatest = await listContinuousHistory({ ...scope, runId: initiativeRunId, limit: 1 });
+    assert.deepEqual(runLatest.value?.items.map(item => item.messageId), [messageIds[3]]);
+    assert.ok(runLatest.value?.nextCursor);
+    const runOlder = await listContinuousHistory({ ...scope, runId: initiativeRunId, limit: 1,
+      before: runLatest.value!.nextCursor! });
+    assert.deepEqual(runOlder.value?.items.map(item => item.messageId), [messageIds[1]]);
+    assert.equal(runOlder.value?.nextCursor, null);
+    const wrongUser = await listContinuousHistory({ ...scope, userId: randomUUID(), runId: initiativeRunId, limit: 100 });
+    assert.deepEqual(wrongUser.value?.items, [], "runId cannot bypass user scope");
+    const absentRun = await listContinuousHistory({ ...scope, runId: randomUUID(), limit: 100 });
+    assert.deepEqual(absentRun.value?.items, []);
   } finally {
     await scoped(async (tx) => {
       await tx`DELETE FROM companion_turn_runs WHERE conversation_id = ${conversationId}`;

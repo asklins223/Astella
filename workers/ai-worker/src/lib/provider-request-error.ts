@@ -17,7 +17,19 @@ export class ProviderRequestError extends Error {
     this.providerCode = input.providerCode == null
       ? null
       : String(input.providerCode).slice(0, 80);
-    this.code = `provider_http_${input.status}`;
+    // `code` 是失败入库后**唯一**保留下来的机器字段（jobs.last_error 走
+    // safeErrorMessage，只投影 category/name/code，providerCode 字段到不了那里）。
+    // 2026-10-14 实测：10 条 companion_agent dead 全是 provider_http_400，
+    // 但网关在 body 里给的错误类型（如 invalid_request_error / MissingSessionID）
+    // 一条都没留下，只能靠人肉重放猜。把网关错误类型归一化后拼进 code：
+    // 只保留 [A-Za-z0-9_.-]（safeCode 的合法字符集），总长控制在 40 以内。
+    const normalized = this.providerCode
+      ?.replace(/[^A-Za-z0-9_.-]+/g, "-")
+      .replace(/^[-_.]+|[-_.]+$/g, "")
+      .slice(0, 20);
+    this.code = normalized
+      ? `provider_http_${input.status}_${normalized}`
+      : `provider_http_${input.status}`;
   }
 }
 

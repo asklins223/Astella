@@ -6,7 +6,7 @@ import type { ResolvedPlatform } from "@astella/shared/platform-config";
 import type { Capability } from "@astella/shared";
 import { postJsonToPublicEndpoint, postSseToPublicEndpoint, type PublicJsonRequester,
   type PublicStreamingRequester } from "@astella/shared/public-json-http";
-import { OpenCodeGoProvider } from "../lib/providers/opencode-go.ts";
+import { PiAgentProvider } from "../lib/providers/pi-agent.ts";
 import { OpenAICompatibleProvider } from "../lib/providers/openai-compatible.ts";
 import type { AIProvider } from "../lib/ai-provider.ts";
 import { ProviderRequestError, ProviderStreamError } from "../lib/provider-request-error.ts";
@@ -156,7 +156,9 @@ export function observedProvider(p:ResolvedPlatform, sessionId:string, receipts:
       finally{receipt.elapsedMs=elapsed();}})()};
   };
   const config={apiKey:p.apiKey!,baseUrl:p.baseUrl!,model:p.model,modelProfile:p.modelProfile,request,streamRequest};
-  if(p.type==="opencode_go")return new OpenCodeGoProvider({...config,sessionId,platformOptions:p.options});
+  if(p.type==="opencode_go" || p.type==="mimo_responses")return new PiAgentProvider({
+    ...config, providerId:p.type, sessionId, platformOptions:p.options,
+  });
   return new OpenAICompatibleProvider({...config,platformOptions:p.options});
 }
 

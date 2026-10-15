@@ -1,5 +1,5 @@
 /**
- * OpenCode Go provider — OpenAI Responses API（`/responses`）实现。
+ * Legacy direct OpenCode Responses adapter.
  *
  * 为什么不复用 OpenAICompatibleProvider：
  * OpenCode Go 的 muse-spark-*（含 muse-spark-1.3-contributor，1,048,576 上下文）、
@@ -8,7 +8,9 @@
  * function_call_output），响应体是 `output` items + `status`，与 chat/completions
  * 的 messages/choices 契约不同，无法靠改写 endpoint 复用同一实现。
  *
- * 端点约束（https://opencode.ai/docs/go）：
+ * Production Agent routing is registered through Pi's protocol adapter in
+ * `pi-agent.ts`; this implementation remains for direct diagnostics and
+ * compatibility probes. Endpoint constraints (https://opencode.ai/docs/go):
  * - 每个请求必须带 `x-opencode-session`，否则 400 `MissingSessionID`。
  *   本 provider 在构造时生成一个稳定 UUID：一个 provider 实例对应一次
  *   job/会话，满足上游「每个会话一个稳定 session」的路由与 prompt cache 要求。
@@ -25,14 +27,12 @@ import { randomUUID } from "node:crypto";
 import type {
   AgentTurnRequest,
   AgentTurnResult,
-  CapabilityImpl,
   ChatMessage,
   ChatOptions,
   ChatResult,
   ModelProfile,
   PlatformOptions,
   ProviderCapability,
-  ProviderRuntimeConfig,
   ProviderUsage,
   ReasoningEffort,
 } from "@astella/shared";
@@ -44,16 +44,13 @@ import {
   type PublicStreamingRequester,
 } from "@astella/shared/public-json-http";
 import type { AIProvider } from "../ai-provider.ts";
-import { registerFactory } from "../provider-factory.ts";
 import { ProviderRequestError, ProviderStreamError } from "../provider-request-error.ts";
+import { logger } from "../logger.ts";
 import { AgentOutputError } from "../non-retryable-errors.ts";
 import { profileFingerprint } from "./profile-fingerprint.ts";
 import { modelTemperatureFields } from "./model-sampling.ts";
 import { modelOutputTokenLimit } from "./model-output-budget.ts";
 import { countModelTextTokens, DEEPSEEK_TOKENIZER_REVISION } from "../model-tokenizers.ts";
-
-/** OpenCode Go 默认端点（Responses API 根路径）。 */
-const DEFAULT_BASE_PATH = "https://opencode.ai/zen/go/v1";
 
 /** 客户端自报标识——端点要求非通用 SDK/HTTP 库名。 */
 const USER_AGENT = "astella-ai-worker/1.0";
@@ -88,6 +85,20 @@ export function resolveOpenCodeGoEndpoint(baseUrl: string): string {
   return resolveOpenAIResponsesUrl(baseUrl);
 }
 
+/** Xiaomi's native OpenAI Responses endpoint. Restrict this provider to the official API host. */
+export function resolveMiMoResponsesEndpoint(baseUrl: string): string {
+  let hostname: string;
+  try {
+    hostname = new URL(baseUrl).hostname;
+  } catch {
+    throw new Error(`Invalid MiMo baseUrl: ${baseUrl}`);
+  }
+  if (hostname.toLowerCase() !== "api.xiaomimimo.com") {
+    throw new Error("MiMo Responses baseUrl must use api.xiaomimimo.com");
+  }
+  return resolveOpenAIResponsesUrl(baseUrl);
+}
+
 // ─── Responses API wire types ────────────────────────────────────────────
 
 type ResponsesImageDetail = "auto" | "low" | "high";
@@ -106,8 +117,9 @@ type ResponsesInputItem =
  * 回放的 reasoning item。
  *
  * 字段按上游要求原样保留（**muse-spark 缺 `summary` 会 400
- * `missing required field 'summary'`**），但明文思考内容 `content`
- * （`reasoning_text`）在产出句柄时已被剥离，不进入契约。
+ * `missing required field 'summary'`**）。2026-10-14 起含明文思考内容
+ * `content`（`reasoning_text`）：网关在思考模式下要求交回它，只带
+ * `encrypted_content` 同样 400（详见 `readResponsesReasoningHandles`）。
  */
 type ReasoningReplayItem = { type: "reasoning" } & Record<string, unknown>;
 
@@ -150,6 +162,104 @@ function buildChatInput(messages: ChatMessage[]): {
   }
   const instructions = systemParts.filter((part) => part.trim()).join("\n\n");
   return { instructions: instructions || null, input };
+}
+
+/**
+ * input 是否以 assistant 收尾——即"没有新的用户回合，模型要续写她自己上一条"。
+ *
+ * 只跳过尾部的 system item（主动参与轮的宿主观察压在历史之后，见
+ * `companion-agent-runtime` 的 initiativeObservation）；工具回执（function_call_output）
+ * 等无 role 的 item 一旦出现在尾部就不是续写形状，直接判否。
+ *
+ * 这个形状本身不是错误——错的是**在思考模式下带着工具**走进它。
+ * 判据与完整实验矩阵见 `continuationAssistantsCarryPlaintext`。
+ */
+export function endsWithAssistantTurn(input: readonly ResponsesInputItem[]): boolean {
+  for (let index = input.length - 1; index >= 0; index -= 1) {
+    const role = (input[index] as { role?: string }).role;
+    if (role === "system") continue;
+    return role === "assistant";
+  }
+  return false;
+}
+
+/**
+ * 末条 assistant 是否带着**明文** `reasoning_text`——网关认的就是这句话本身。
+ *
+ * 2026-10-14 实测（真网关，`scripts/probe-plaintext-reasoning.ts`）：
+ * 同一个"思考开 + 带工具 + 以 assistant 收尾"的形状，三发对照——
+ *
+ *   带 `content[].reasoning_text` 明文 → 过
+ *   只带 `encrypted_content`          → 400
+ *   完全不带 reasoning                → 400
+ *
+ * 触发条件也不是"以 assistant 收尾"本身。以下形状在思考开 + 带工具下都能过：
+ *  - 以 user 收尾；
+ *  - 以 tool 回执收尾（工具循环续跑，encrypted-only 句柄就够）；
+ *  - 末条 assistant **正文为空**；
+ *  - assistant 后面跟着**别的用户消息**（它不是被续写的那条）。
+ * 网关只在"要模型接着写一段正文"时才要求交回 `reasoning_text`；尾部追加
+ * system 观察救不了它——网关只看 user/assistant/工具项，不看 system。
+ *
+ * 而且**不是只有末条**要带（2026-10-14 在真实失败快照上逐条变异，脚本
+ * `probe-mutate-snapshot.ts`）：`…user assistant assistant user assistant assistant
+ * assistant[rs]` 这种"末尾三条连发、只有最后一条带"是 400；去掉中间两条缺的、
+ * 或给每条都挂上、或只留最后一条，三种改法都过。所以判据是**逐条**的：
+ * 凡是处在"纯文本续写位"上的 assistant，每一条都得带明文。
+ *
+ * 所以判断"要不要关思考"得看两件事：形状对不对，**和**该带的明文带没带。
+ * 0435 把明文随消息落库之后，主动参与轮通常带得回来；带不回来时（历史早于
+ * 0435、非思考模型、provider 没返回 reasoning）才降到关思考。
+ *
+ * 工具循环续跑（`loadContinuation`）不受这条约束：那条链的 assistant 带 toolCalls、
+ * 后面接回执，`companion_agent_tool_calls.reasoning_handles` 现存 243 行
+ * encrypted-only 就够用（实测 `probe-reasoning-passback-v4.ts` 的 E 发）。
+ */
+export function continuationAssistantsCarryPlaintext(input: readonly ResponsesInputItem[]): boolean {
+  const items = input as readonly { role?: string; type?: string; content?: unknown }[];
+  /** 这个 assistant item 前面紧挨着的 reasoning 有没有明文。 */
+  const assistantHasPlaintext = (index: number): boolean => {
+    for (let back = index - 1; back >= 0; back -= 1) {
+      const prior = items[back]!;
+      // buildAgentTurnInput 把 reasoning item 排在它所归属的 assistant message 之前
+      // （顺序必须与模型产出一致，见 buildAgentTurnInput）。
+      if (prior.type === "reasoning") return reasoningItemHasPlaintext(prior.content);
+      // 跨到了另一条消息上：这条 assistant 没有自己的 reasoning。
+      if (prior.role !== undefined) return false;
+    }
+    return false;
+  };
+  /** 这条 assistant 之后到结尾，是不是"纯文本续写位"：没有 user，也没有工具项。 */
+  const isTextContinuationSlot = (index: number): boolean => {
+    for (let next = index + 1; next < items.length; next += 1) {
+      const after = items[next]!;
+      // 尾部的宿主观察（system）不改变判定，网关也不看它。
+      if (after.role === "system") continue;
+      if (after.role === "user") return false;
+      if (after.type === "function_call" || after.type === "function_call_output") return false;
+      // 另一条 assistant（连发）：它自己单独判，这里继续往后看。
+    }
+    return true;
+  };
+  for (let index = 0; index < items.length; index += 1) {
+    if (items[index]!.role !== "assistant") continue;
+    // 正文为空的 assistant 收尾实测能过网关，不在这个约束里。
+    const content = items[index]!.content;
+    const text = typeof content === "string" ? content : "";
+    if (text.trim().length === 0) continue;
+    if (!isTextContinuationSlot(index)) continue;
+    if (!assistantHasPlaintext(index)) return false;
+  }
+  return true;
+}
+
+/** reasoning item 的 `content` 里是否真有一段 `reasoning_text` 正文。 */
+function reasoningItemHasPlaintext(content: unknown): boolean {
+  if (!Array.isArray(content)) return false;
+  return content.some(part =>
+    (part as { type?: string; text?: unknown }).type === "reasoning_text"
+    && typeof (part as { text?: unknown }).text === "string"
+    && (part as { text: string }).text.trim().length > 0);
 }
 
 /**
@@ -326,20 +436,25 @@ export function readResponsesUsage(body: unknown): ProviderUsage | null {
 }
 
 /**
- * 从 output 中提取 reasoning 句柄（供下一轮工具循环回放）。
+ * 从 output 中提取 reasoning item（供下一轮回放）。
  *
- * **隐私约束**：明文思考内容 `content`（`reasoning_text`）在此剥离，只保留
- * 不透明字段（id / encrypted_content / status / summary / …）。实测剥离后
- * deepseek 与 muse-spark 的上游校验都通过，因此模型内部推理不必落库。
- * 注意其余字段必须原样保留：muse-spark 缺 `summary` 会 400
- * `missing required field 'summary'`。
+ * 2026-10-14 用户决定：**不再剥离明文思考**。旧版在这里删掉 `content`
+ * （`reasoning_text`），理由是"模型内部推理不必落库"。这条约束与网关的思考模式
+ * 契约正面冲突——实测（`scripts/probe-plaintext-reasoning.ts`，同一份原文三发）：
+ * 带明文过、只带 `encrypted_content` 400、完全不带 400；网关要的就是那句话本身，
+ * 剥掉之后就再也凑不回来。主动参与轮的历史天生以她上一条收尾、带工具、开思考，
+ * 于是每一轮都撞这堵墙（43 条主动轮里思考档位为开的全灭）。
+ *
+ * 字段仍须原样保留：muse-spark 缺 `summary` 会 400 `missing required field 'summary'`。
+ * 现在 `content` 也一并保留，所以下游（`companion_agent_tool_calls.reasoning_handles`
+ * 与 `companion_messages.reasoning`）落库的是完整 item。
  */
 export function readResponsesReasoningHandles(body: unknown): Array<Record<string, unknown>> {
   const handles: Array<Record<string, unknown>> = [];
   for (const item of readOutputItems(body)) {
     if (item.type !== "reasoning") continue;
-    const { content: _plaintext, ...opaque } = item as Record<string, unknown>;
-    if (Object.keys(opaque).length > 0) handles.push(opaque);
+    const handle = { ...(item as Record<string, unknown>) };
+    if (Object.keys(handle).length > 0) handles.push(handle);
   }
   return handles;
 }
@@ -474,12 +589,49 @@ function readOpenCodeGoErrorCode(body: unknown): string | undefined {
   return typeof code === "string" || typeof code === "number" ? String(code) : undefined;
 }
 
+/** 网关错误体里的那句话（`error.message`）。code 只到 `invalid_request_error` 这一层， */
+/** 具体哪一句非法只能从这里读。 */
+function readOpenCodeGoErrorMessage(body: unknown): string | undefined {
+  const message = asRecord(asRecord(body)?.error)?.message ?? asRecord(body)?.message;
+  if (typeof message !== "string" || !message.trim()) return undefined;
+  return message.replace(/\s+/g, " ").slice(0, 400);
+}
+
+/**
+ * 网关拒绝这一发时，先把**它自己说的理由**留下再抛。
+ *
+ * 失败入库只剩 `category/name/code`（`provider-request-error.ts` 的注释写了这件事），
+ * 而 code 只到错误类型名——2026-10-14 实测 10 条 `provider_http_400` 里，"到底哪句非法"
+ * 一条都没留，只能靠人肉重放猜。日志是这一层唯一的完整通道：400 是那种必须能回答
+ * 「我请求里哪一行不对」的失败，没有那句话就修不了。
+ */
+function logOpenCodeRejection(provider: string, status: number, body: unknown): void {
+  if (status < 400 || status > 499) return;
+  logger.warn({ provider, status, code: readOpenCodeGoErrorCode(body), gateway: readOpenCodeGoErrorMessage(body) },
+    "OpenAI Responses request rejected");
+}
+
 // ─── Provider ────────────────────────────────────────────────────────────
 
+export interface OpenAIResponsesProviderOptions {
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+  request?: PublicJsonRequester;
+  streamRequest?: PublicStreamingRequester;
+  /** Explicit conversation identity (OpenCode Go requires it; MiMo ignores it). */
+  sessionId?: string;
+  platformOptions?: PlatformOptions;
+  /** Model capability profile: reasoning/context/output limits are declared here. */
+  modelProfile?: ModelProfile;
+  /** The wire-compatible Responses gateway served by this implementation. */
+  protocol?: "opencode_go" | "mimo_responses";
+}
+
 export class OpenCodeGoProvider implements AIProvider {
-  readonly id = "opencode_go";
+  readonly id: string;
   readonly chatCompletionStreamToolCalls = true;
-  readonly promptVersion = "v6-opencode-go";
+  readonly promptVersion: string;
   readonly modelId: string;
   readonly visionModelId: string;
   private readonly endpoint: string;
@@ -493,23 +645,18 @@ export class OpenCodeGoProvider implements AIProvider {
   private readonly modelProfile: ModelProfile | undefined;
   /** 模型档案覆盖的最大输出 token（缺省用内置的 131K）。 */
   private readonly maxOutputTokens: number;
+  private readonly protocol: "opencode_go" | "mimo_responses";
 
-  constructor(options: {
-    apiKey: string;
-    baseUrl: string;
-    model: string;
-    request?: PublicJsonRequester;
-    streamRequest?: PublicStreamingRequester;
-    /** 显式会话 ID（默认每个实例生成一个 UUID）。 */
-    sessionId?: string;
-    platformOptions?: PlatformOptions;
-    /** 模型能力档案（2026-10-06）：推理档位/上下文/输出上限在这里。 */
-    modelProfile?: ModelProfile;
-  }) {
+  constructor(options: OpenAIResponsesProviderOptions) {
+    this.protocol = options.protocol ?? "opencode_go";
+    this.id = this.protocol;
+    this.promptVersion = this.protocol === "mimo_responses" ? "v1-mimo-responses" : "v6-opencode-go";
     this.apiKey = options.apiKey;
     this.modelId = options.model;
     this.visionModelId = options.model;
-    this.endpoint = resolveOpenCodeGoEndpoint(options.baseUrl);
+    this.endpoint = this.protocol === "mimo_responses"
+      ? resolveMiMoResponsesEndpoint(options.baseUrl)
+      : resolveOpenCodeGoEndpoint(options.baseUrl);
     this.sessionId = options.sessionId ?? randomUUID();
     this.request = options.request ?? postJsonToPublicEndpoint;
     this.streamRequest = options.streamRequest ?? postSseToPublicEndpoint;
@@ -545,6 +692,14 @@ export class OpenCodeGoProvider implements AIProvider {
   }
 
   private headers(stream: boolean): Record<string, string> {
+    if (this.protocol === "mimo_responses") {
+      return {
+        Accept: stream ? "text/event-stream" : "application/json",
+        "Content-Type": "application/json",
+        "api-key": this.apiKey,
+        ...this.platformOptions?.extraHeaders,
+      };
+    }
     return {
       Accept: stream ? "text/event-stream" : "application/json",
       Authorization: `Bearer ${this.apiKey}`,
@@ -561,11 +716,34 @@ export class OpenCodeGoProvider implements AIProvider {
     if (tools.length === 0) return {};
     const effort = asRecord(reasoning.reasoning)?.effort;
     // This gateway rejects required tools while thinking is enabled.
-    const forcedWithThinkingOn = toolChoice === "required" && effort !== undefined && effort !== "none";
+    const forcedWithThinkingOn = this.protocol === "opencode_go"
+      && toolChoice === "required" && effort !== undefined && effort !== "none";
     return {
       tools: tools.map(tool => ({ type: "function", name: tool.name, description: tool.description, parameters: tool.parameters })),
-      tool_choice: forcedWithThinkingOn ? "auto" : toolChoice ?? "auto",
+      // MiMo Responses documents only `auto`; other values are silently removed.
+      // We detect a missed required call after parsing and route it through the
+      // existing cross-model fallback instead of pretending the requirement held.
+      tool_choice: this.protocol === "mimo_responses" || forcedWithThinkingOn ? "auto" : toolChoice ?? "auto",
     };
+  }
+
+  private mustFallbackForMissingRequiredTool(
+    toolChoice: AgentTurnRequest["toolChoice"] | undefined,
+    tools: AgentTurnRequest["tools"],
+    reasoning: Record<string, unknown>,
+  ): boolean {
+    if (toolChoice !== "required" || tools.length === 0) return false;
+    if (this.protocol === "mimo_responses") return false;
+    const effort = asRecord(reasoning.reasoning)?.effort;
+    return this.protocol === "opencode_go" && effort !== undefined && effort !== "none";
+  }
+
+  private requiredToolChoiceUnsupportedError(): ProviderRequestError {
+    return new ProviderRequestError({
+      provider: this.id,
+      status: 400,
+      providerCode: "MODEL_TOOL_CHOICE_NOT_SUPPORTED",
+    });
   }
 
   /** 2xx 但 status="failed" 的响应体 → 抛错（含隐私安全的错误码）。 */
@@ -605,6 +783,7 @@ export class OpenCodeGoProvider implements AIProvider {
     const response = await this.request(this.endpoint, this.headers(false), body, signal);
     if (signal?.aborted) throw abortError(signal, "after response");
     if (response.status < 200 || response.status >= 300) {
+      logOpenCodeRejection(this.id, response.status, response.body);
       throw new ProviderRequestError({
         provider: this.id,
         status: response.status,
@@ -645,9 +824,23 @@ export class OpenCodeGoProvider implements AIProvider {
     const { instructions, input } = options.nativeAgentRequest
       ? buildAgentTurnInput(options.nativeAgentRequest.systemPrompt, options.nativeAgentRequest.messages)
       : buildChatInput(messages);
-    const reasoning = this.reasoningField(options.disableThinking ?? false);
     const tools = options.nativeAgentRequest?.tools ?? options.tools ?? [];
     const hasTools = tools.length > 0;
+    const toolChoice = options.nativeAgentRequest?.toolChoice ?? options.toolChoice;
+    // 与 executeAgentTurn 同一条网关契约（见 continuationAssistantsCarryPlaintext）：
+    // 带工具 + 以 assistant 收尾 + 思考开，且**没把那条的 reasoning_text 明文带回来**
+    // ——网关会 400。流式这条路同样会撞，所以同样降级。
+    const continuationGuard = this.protocol === "opencode_go" && hasTools && endsWithAssistantTurn(input)
+      && !continuationAssistantsCarryPlaintext(input);
+    const requiredToolThinkingOff = this.protocol === "opencode_go" && toolChoice === "required"
+      && hasTools && this.modelProfile?.reasoning?.levels.includes("none") === true;
+    if (continuationGuard && !(options.disableThinking ?? false)) {
+      logger.info({ provider: this.id, model },
+        `${this.id} thinking disabled: assistant-terminated tool request without plaintext reasoning_text (gateway demands passback)`);
+    }
+    const reasoning = this.reasoningField(
+      (options.disableThinking ?? false) || continuationGuard || requiredToolThinkingOff,
+    );
     const body: Record<string, unknown> = {
       model,
       input,
@@ -658,7 +851,7 @@ export class OpenCodeGoProvider implements AIProvider {
         ? {}
         : { text: { format: { type: "json_object" as const } } }),
       ...reasoning,
-      ...this.nativeToolFields(tools, options.nativeAgentRequest?.toolChoice ?? options.toolChoice, reasoning),
+      ...this.nativeToolFields(tools, toolChoice, reasoning),
     };
     if (!(this.platformOptions?.disableMaxTokens ?? false)) {
       body.max_output_tokens = this.resolveOutputTokenLimit();
@@ -670,12 +863,15 @@ export class OpenCodeGoProvider implements AIProvider {
     }
     if (response.status < 200 || response.status >= 300) {
       let providerCode: string | undefined;
+      let parsedBody: unknown = null;
       try {
         const raw = await readStreamingBodyText(response.body);
-        providerCode = readOpenCodeGoErrorCode(raw ? JSON.parse(raw) : null);
+        parsedBody = raw ? JSON.parse(raw) : null;
+        providerCode = readOpenCodeGoErrorCode(parsedBody);
       } catch {
         // 非 JSON 错误体：保留原始状态码即可
       }
+      logOpenCodeRejection(this.id, response.status, parsedBody);
       throw new ProviderRequestError({ provider: this.id, status: response.status, providerCode });
     }
 
@@ -821,6 +1017,9 @@ export class OpenCodeGoProvider implements AIProvider {
             const malformed = parsedTurn.toolCalls.find(call => call.argumentsMalformed);
             if (malformed) providerError = new AgentOutputError("arguments_malformed", "provider stream returned malformed tool arguments");
             toolCalls = parsedTurn.toolCalls.map(({ id, name, arguments: args }) => ({ id, name, arguments: args }));
+            if (this.mustFallbackForMissingRequiredTool(toolChoice, tools, reasoning) && toolCalls.length === 0) {
+              providerError = this.requiredToolChoiceUnsupportedError();
+            }
             terminal.output.forEach((item, index) => observeTool(item, index, true));
             reasoningHandles = readResponsesReasoningHandles(terminal);
             usage = readResponsesUsage(terminal);
@@ -904,7 +1103,22 @@ export class OpenCodeGoProvider implements AIProvider {
     const model = request.model ?? this.modelId;
     const { instructions, input } = buildAgentTurnInput(request.systemPrompt, request.messages);
     const hasTools = request.tools.length > 0;
-    const reasoning = this.reasoningField(request.disableThinking ?? false);
+    const requiredToolThinkingOff = this.protocol === "opencode_go" && request.toolChoice === "required"
+      && hasTools && this.modelProfile?.reasoning?.levels.includes("none") === true;
+    // OpenCode Go 网关契约（2026-10-14 实测，见 continuationAssistantsCarryPlaintext）：带工具 + 以
+    // assistant 收尾 + 思考开，且没把那条的 reasoning_text 明文带回来 = 400。
+    // 主动参与轮天生是这个形状；0435 起明文随消息落库、正常能带回来，带不回来时
+    // （历史早于 0435、provider 没返回 reasoning）才降到关思考，不让整轮死掉。
+    // 无工具、以用户收尾、或正文为空的 assistant 收尾都不受影响。
+    const continuationGuard = this.protocol === "opencode_go" && hasTools && endsWithAssistantTurn(input)
+      && !continuationAssistantsCarryPlaintext(input);
+    if (continuationGuard && !(request.disableThinking ?? false)) {
+      logger.info({ provider: this.id, model },
+        `${this.id} thinking disabled: assistant-terminated tool request without plaintext reasoning_text (gateway demands passback)`);
+    }
+    const reasoning = this.reasoningField(
+      (request.disableThinking ?? false) || continuationGuard || requiredToolThinkingOff,
+    );
     const body: Record<string, unknown> = {
       model,
       input,
@@ -924,6 +1138,7 @@ export class OpenCodeGoProvider implements AIProvider {
     const response = await this.request(this.endpoint, this.headers(false), body, signal);
     if (signal?.aborted) throw abortError(signal, "after agent turn response");
     if (response.status < 200 || response.status >= 300) {
+      logOpenCodeRejection(this.id, response.status, response.body);
       throw new ProviderRequestError({
         provider: this.id,
         status: response.status,
@@ -953,6 +1168,10 @@ export class OpenCodeGoProvider implements AIProvider {
         "arguments_malformed",
         `tool call "${malformed.name}" has malformed arguments JSON (id=${malformed.id || "unknown"})`,
       );
+    }
+    if (this.mustFallbackForMissingRequiredTool(request.toolChoice, request.tools, reasoning)
+      && toolCalls.length === 0) {
+      throw this.requiredToolChoiceUnsupportedError();
     }
 
     return {
@@ -1003,36 +1222,21 @@ export class OpenCodeGoProvider implements AIProvider {
   }
 }
 
+/** MiMo's official Responses endpoint shares this wire implementation, without OpenCode-only headers/guards. */
+export class MiMoResponsesProvider extends OpenCodeGoProvider {
+  constructor(options: Omit<OpenAIResponsesProviderOptions, "protocol">) {
+    super({ ...options, protocol: "mimo_responses" });
+  }
+}
+
 async function readStreamingBodyText(body: AsyncIterable<Uint8Array>): Promise<string> {
   const decoder = new TextDecoder();
   let bytes = 0;
   let text = "";
   for await (const chunk of body) {
     bytes += chunk.byteLength;
-    if (bytes > 1024 * 1024) throw new Error("OpenCode Go error response exceeded 1048576 bytes");
+    if (bytes > 1024 * 1024) throw new Error("Responses API error response exceeded 1048576 bytes");
     text += decoder.decode(chunk, { stream: true });
   }
   return text + decoder.decode();
 }
-
-// ─── R2: Factory registration ───────────────────────────────────────────
-
-function createOpenCodeGoProvider(config: ProviderRuntimeConfig): OpenCodeGoProvider | null {
-  const apiKey = config.apiKey;
-  if (!apiKey) return null;
-  const baseUrl = config.baseUrl ?? DEFAULT_BASE_PATH;
-  const model = config.model ?? "muse-spark-1.3-contributor";
-  return new OpenCodeGoProvider({
-    apiKey,
-    baseUrl,
-    model,
-    ...(config.sessionId ? { sessionId: config.sessionId } : {}),
-    ...(config.modelProfile ? { modelProfile: config.modelProfile } : {}),
-    ...(config.options ? { platformOptions: config.options } : {}),
-  });
-}
-
-registerFactory("opencode_go", "agent_turn", (config) => {
-  const provider = createOpenCodeGoProvider(config);
-  return provider ? provider as unknown as CapabilityImpl : null;
-});

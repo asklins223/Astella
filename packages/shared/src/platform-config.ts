@@ -44,7 +44,7 @@
  * 使用 provider 缺省值并告警一次。
  *
  * Supported platform types: mock, dashscope, openai_compatible, siliconflow,
- * opencode_go (OpenAI Responses API).
+ * opencode_go and mimo_responses (OpenAI Responses API).
  * Adding a new platform type requires code (implementing the provider class +
  * registering the factory). Adding a new platform instance of an existing
  * type only requires editing the config file.
@@ -63,25 +63,30 @@ import type { Capability } from "./provider-capabilities.ts";
  * - muse-spark-*：minimal/low/medium/high/xhigh/max（**不支持 none**）
  * - deepseek-v4.1-flash / v4-flash / v4-pro：支持 none（关闭思考）
  * - gpt-5.6-luna：**不支持 minimal**，支持 none
+ * - MiMo Responses：官方文档声明 `none` 关闭思考，其他档位均开启（当前强度行为相同）
  * 因此「最低档」/「关闭」都没有通用值，只能按目标模型显式指定。
  */
 export type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
+/** Model-level wire dialect selected by multi-protocol agent adapters such as Pi. */
+export type AgentModelProtocol = "openai-completions" | "openai-responses";
+
 /** Provider-specific options (passed through to the provider constructor). */
 export interface PlatformOptions {
-  /** Disable max_tokens field in API requests（网关怪癖，如 tokenrhythm/siliconflow-chat）. */
+  /** Disable the output token limit field in API requests（网关怪癖，如 tokenrhythm/siliconflow-chat）. */
   disableMaxTokens?: boolean;
+  /** Output token limit field used by the platform; defaults to the OpenAI-compatible `max_tokens`. */
+  maxTokensParam?: "max_tokens" | "max_completion_tokens";
   /** DashScope workspace ID (sent as X-DashScope-WorkSpace header). */
   workspace?: string;
   /** Extra request headers. */
   extraHeaders?: Record<string, string>;
   /**
-   * 思考开关的网关方言（2026-10-12 小米 MiMo 接入实测）。
+   * 思考开关的网关方言。
    *
    * chat/completions 没有统一的思考开关字段。DashScope 系网关认
-   * `enable_thinking`（开/关）；小米 MiMo 官方端点**忽略**它（实测下发
-   * `enable_thinking:false` 后 reasoning_tokens 照旧 20），只认 OpenAI 的
-   * `reasoning_effort`（实测 none/low/medium/high 可用，minimal/xhigh/max 直接 400）。
+   * `enable_thinking`；Xiaomi MiMo Chat Completions 官方协议认
+   * `thinking.type: enabled|disabled`；另有网关认 `reasoning_effort`。
    *
    * 发错方言的表现是"配置说关了、实际还在烧思考 token"，既不报错也查不出来，
    * 所以方言由平台显式声明；缺省 `enable_thinking`，现有平台行为不变。
@@ -90,7 +95,10 @@ export interface PlatformOptions {
 }
 
 /** 思考开关字段名（见 PlatformOptions.thinkingParam）。 */
-export type ThinkingParamDialect = "enable_thinking" | "reasoning_effort";
+export type ThinkingParamDialect = "enable_thinking" | "reasoning_effort" | "thinking_type";
+
+/** Output token-limit field selector; endpoints may use the newer completion name. */
+export type MaxTokensParam = NonNullable<PlatformOptions["maxTokensParam"]>;
 
 /** 档位由低到高；"最接近关"的一档取声明 levels 里第一个命中的。 */
 const REASONING_EFFORT_ORDER: ReasoningEffort[] = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
@@ -98,15 +106,19 @@ const REASONING_EFFORT_ORDER: ReasoningEffort[] = ["none", "minimal", "low", "me
 /**
  * 这一发该带哪个思考字段——**方言与档位都由声明驱动**，调用方只说"要不要关"。
  *
- * 与 opencode-go 的 `reasoningField()` 同一套语义：档案 `default` 就是每发下发的
- * 档位；调用显式关思考时取该模型声明档位里最接近关的一档（不接受 none 的模型
- * 落到它自己的最低档）；未声明 reasoning 就不下发，用网关默认。
+ * `reasoning_effort` 方言按档案档位下发；布尔/类型方言只表达开关。调用方只说
+ * "要不要关"，不需要知道请求字段长什么样。
  */
 export function chatThinkingRequestFields(
   options: PlatformOptions | undefined,
   profile: ModelProfile | undefined,
   perCallDisableThinking: boolean,
 ): Record<string, unknown> {
+  if (options?.thinkingParam === "thinking_type") {
+    // MiMo Chat Completions: thinking is enabled by default. Its API exposes an
+    // on/off switch rather than the effort levels accepted by its Responses API.
+    return { thinking: { type: perCallDisableThinking || profile?.reasoning?.default === "none" ? "disabled" : "enabled" } };
+  }
   if (options?.thinkingParam === "reasoning_effort") {
     const levels = profile?.reasoning?.levels;
     if (perCallDisableThinking) {
@@ -146,6 +158,8 @@ export interface ModelReasoningProfile {
  * `vision` 缺省 false——不存在"默认能看图"，识图路由必须显式声明。
  */
 export interface ModelProfile {
+  /** Upstream wire dialect for this model when one platform exposes multiple APIs. */
+  protocol?: AgentModelProtocol;
   /** Temperature support in the selected model/protocol. Omit for legacy always-supported behavior. */
   temperature?: "always" | "reasoning_none_only" | "unsupported";
   /** Responses message phases may arrive after text deltas; hold unclassified text until final payload. */

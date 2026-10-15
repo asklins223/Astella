@@ -13,7 +13,7 @@
  */
 
 import {
-  COMPANION_HOST_PROTOCOL_V8,
+  COMPANION_HOST_PROTOCOL_V9,
   COMPANION_IDENTITY_BOUNDARY_V4,
   COMPANION_CHARACTER_BASE_V12,
 } from "@astella/shared";
@@ -22,6 +22,7 @@ import { canonicalJsonV1 } from "@astella/shared/content-hash";
 import { composeAgentContext, type AgentContextSource, type AgentContextSourcePlan, type AgentContextReceipt } from "@astella/agent-core";
 import type { AgentScopeV1 } from "@astella/shared/agent-contracts";
 import type { CompanionMemoryDirectoryEntry } from "./companion-memory-vector.ts";
+import { replayCompanionHistory } from "./companion-history-replay.ts";
 // 交接快照族（40 §4.7.2）已搬出，本文件仍要用其中的类型与常量；re-export 是为了让
 // 既有的调用方（summarizer / dialogue / store）不用一次性改完 import 路径。
 import {
@@ -47,6 +48,7 @@ export type { CompanionContextHandoffSnapshotV1, CompanionContextHandoffInputV1,
 import { COMPANION_VOICE_EXPRESSION_PROTOCOL_V1, COMPANION_VOICE_STYLE_PROTOCOL_V1, readVoiceExpressionTags, stripVoiceExpressionTags, voiceExpressionCue, withholdPartialVoiceExpressionTag } from "@astella/shared/voice-expression-tags";
 import { COMPANION_REPLY_MAX_CHARS } from "@astella/shared";
 import { renderCompanionConversationEvidence, type CompanionConversationClock } from "./companion-conversation-evidence.ts";
+import { containsCompanionToolProtocol } from "./companion-tool-protocol-output.ts";
 
 /**
  * 与 turn-service、消息合同对齐的硬限额（03 §6.10）。
@@ -266,13 +268,16 @@ export function withoutQuotedNames(text: string): string {
  */
 export function companionOutputRejectionReason(
   text: string,
-): "empty_output" | "output_too_long" | "internal_token_leak" | null {
+  options?: { streaming?: boolean },
+): "empty_output" | "output_too_long" | "internal_token_leak" | "tool_protocol_leak" | null {
   const trimmed = text.trim();
   if (trimmed.length === 0) return "empty_output";
   if (trimmed.length > COMPANION_HARD_MAX_CHARS) return "output_too_long";
   if (containsCompanionInternalToken(trimmed)) return "internal_token_leak";
+  if (containsCompanionToolProtocol(trimmed, options?.streaming)) return "tool_protocol_leak";
   return null;
 }
+
 
 /**
  * 供应商自己的**特殊控制标记**（`<|begin_of_box|>`、`<|end_of_box|>`、`<|im_end|>` 这类）。
@@ -564,24 +569,25 @@ export function claimsNothingDueAgainstFacts(replyText: string, contextText: str
  * 例子的 3% / 10% 被误判，纠正轮次反而把回答带到了另一窗口的页面。
  * 例子只覆盖当前段落（独立举例标题可覆盖下一段），不能放行后续实际读数，
  * 也不能覆盖「页面显示 / 我查到」这样的真实来源声明。
- * 利率等概念中的百分比不需要查用户的实时数据；其余百分比仍按原来的来源规则核对。
+ * 百分比只有在声称个人读数或真实来源时才属于这里的校验范围；
+ * 此处不是通用数学或事实审查，不能把教学概率和计算结果当作个人统计。
  */
 const NUMERIC_CLAIM_TEST = /(\d+(?:\.\d+)?)\s*(分钟|小时|天|周|张|篇|项|个|题|次|条|%)/g;
 const NUMERIC_EXAMPLE_MARKER = /假设|假如|设想|比如|例如|举(?:个|一个)?(?:具体)?例子|举例/g;
 const NUMERIC_EXAMPLE_HEADING = /^[#*\s]*(?:比如|例如|举(?:个|一个)?(?:具体)?例子|举例)[：:*\s]*$/;
 const ACTUAL_NUMERIC_SOURCE = /我(?:刚|已经)?(?:查到|查过|看到)|根据(?:记录|统计|数据)|(?:页面|屏幕|系统|统计|记录)(?:上|里)?(?:显示|写着|记着)|实际(?:上)?|(?:当前|目前|现在)(?:你|用户|已)|(?:你|用户)(?:本周|这周|今天|今日|已经|已学|已做)/;
 const LEARNING_RATE_READOUT = /(?:正确|准确|命中|完成|通过|错误)率|进度|掌握(?:率|度)|答对|答错|学完|做完/;
-const CONCEPT_RATE = /利率|复利|单利|年化|收益率|增长率/;
+const PERSONAL_LEARNING_RATE = /(?:你|用户)(?:的)?[^。！？;；\n]{0,20}(?:学|复习|练|背|掌握|完成|正确|做|得分|提高|下降)/;
 const NUMERIC_CLAUSE_BOUNDARIES = ["。", "！", "？", ";", "；", "\n"];
 
-function numericRateIsConcept(text: string, offset: number): boolean {
+function numericRateRequiresEvidence(text: string, offset: number): boolean {
   const prefix = text.slice(0, offset);
   const start = Math.max(...NUMERIC_CLAUSE_BOUNDARIES.map(char => prefix.lastIndexOf(char))) + 1;
   const rest = text.slice(offset);
   const end = rest.search(/[。！？;；\n]/);
   const clause = text.slice(start, end < 0 ? text.length : offset + end);
-  return CONCEPT_RATE.test(clause) && !LEARNING_RATE_READOUT.test(clause)
-    && !ACTUAL_NUMERIC_SOURCE.test(clause);
+  return LEARNING_RATE_READOUT.test(clause) || ACTUAL_NUMERIC_SOURCE.test(clause)
+    || PERSONAL_LEARNING_RATE.test(clause);
 }
 
 function numericClaimIsExample(text: string, offset: number): boolean {
@@ -624,7 +630,7 @@ export function unverifiedNumericClaims(replyText: string, contextText: string):
   const text = replyText.replace(/\r\n?/g, "\n");
   const claims = new Set<string>();
   for (const match of text.matchAll(NUMERIC_CLAIM_TEST)) {
-    if (match[2] === "%" && numericRateIsConcept(text, match.index)) continue;
+    if (match[2] === "%" && !numericRateRequiresEvidence(text, match.index)) continue;
     const token = `${match[1]}${match[2]}`;
     if (!haystack.includes(token) && !numericClaimIsExample(text, match.index)) claims.add(token);
   }
@@ -640,7 +646,7 @@ export function unverifiedNumericClaims(replyText: string, contextText: string):
 /** 引用段的归一化：空格、Markdown 标记、引号与斜杠都不算差异。 */
 export function normalizeQuotedPassage(text: string): string {
   return text.replace(/\[\^web-[a-zA-Z0-9_-]+\]/g, "")
-    .replace(/[\s>｜|*#「」“”‘’／/]+/g, "");
+    .replace(/[\s>｜|*#「」“”‘’"／/]+/g, "");
 }
 
 /** 短于此的"引用"是名字或词条，不是她声称念出来的原文。 */
@@ -697,20 +703,31 @@ export function extractQuotedPassages(text: string, allowUnattributedQuotes = fa
  * 实机 2026-09-22 AC 轮那段"欧姆定律：I = U / R。导体中的电流跟两端电压成正比…"
  * 是课本话，笔记正文里一个字都没有；修好后她引的那段与正文两边都能对上。
  */
-export function unverifiedQuoteClaims(replyText: string, sourcesText: string,
+export function unverifiedQuoteClaims(replyText: string, sourcesText: string | readonly string[],
   options: { allowUnattributedQuotes?: boolean } = {}): string[] {
-  const haystack = normalizeQuotedPassage(sourcesText);
+  const haystacks = (typeof sourcesText === "string" ? [sourcesText] : sourcesText).map(normalizeQuotedPassage);
   return extractQuotedPassages(replyText, options.allowUnattributedQuotes).filter(
-    (passage) => !haystack.includes(normalizeQuotedPassage(passage)),
+    (passage) => {
+      const exact = normalizeQuotedPassage(passage);
+      // Explicit boundary omission identifies an excerpt, not a claim that its
+      // source ended there. Internal omissions still require an exact match.
+      const excerpt = exact.replace(/^(?:…+|⋯+|\.{3,})|(?:…+|⋯+|\.{3,})$/g, "");
+      return !haystacks.some(source => source.includes(exact)
+        || (excerpt.length >= QUOTE_MIN_CHARS && source.includes(excerpt)));
+    },
   );
 }
 
-export function keepRecomputedBlocks(text: string): string {
+export function recomputedBlockSources(text: string): string[] {
   // 只有"本轮重算出来的块"算数字出处。`this_turn_facts` 在列：它是服务端这一轮现查的
   // 对象事实（39d W2-3），与她几周前说过的摘要不是一回事。
   return (text.match(
     /<(?:here_and_now|this_turn_facts|fact_spans|page_context|selection_data|diary_reference|grounded_target|participation_awareness)[\s\S]*?<\/(?:here_and_now|this_turn_facts|fact_spans|page_context|selection_data|diary_reference|grounded_target|participation_awareness)>/g,
-  ) ?? []).join("\n");
+  ) ?? []);
+}
+
+export function keepRecomputedBlocks(text: string): string {
+  return recomputedBlockSources(text).join("\n");
 }
 
 /**
@@ -742,6 +759,22 @@ export function textOfCompanionBlocks(blocks: unknown): string {
   const joined = texts.join("").trim();
   if (joined.length > 0) return joined;
   return attachmentLabel;
+}
+
+/**
+ * 终态助手消息的 kind：主动交流那一轮记 `proactive`，普通问答记 `text`。
+ *
+ * 与 `companion_publish_utterance` 的写法**同一口径**：她主动说的那句话，无论走
+ * 工具分句还是走普通收尾，落库都得是同一个 kind。`runCompanionInitiative` 用
+ * `max(created_at) WHERE role='assistant' AND kind='proactive'` 量主动节奏，
+ * 历史/记忆/摘要也按 kind 认她的主动发言；这里写死 'text' 会让那些读数漏掉她
+ * 自己开口的大部分话（2026-10-13 方案 56 遗留：真库 23 条 initiative 助手消息里
+ * 22 条是 text）。
+ */
+export function companionAssistantMessageKind(
+  input: { initiativeInput?: unknown } | null | undefined,
+): "proactive" | "text" {
+  return input?.initiativeInput ? "proactive" : "text";
 }
 
 /**
@@ -1093,8 +1126,8 @@ export function buildCompanionPersonaMessages(input: {
   }
   if (!input.groundedTutorContext) {
     presentDataBlocks.push(
-      "长期记忆不是每轮都要搜索。若本轮指向过去的交流或约定，或本轮未带入的长期目标、偏好、经历可能改变回答，"
-      + "按需调用 companion_recall_memory 查证；结合来源类型、记录/修订时间、有效期和认识状态判断是否仍适用。"
+      "长期记忆不是每轮都要搜索。已有原文或本轮提供的完整问题足够时直接回答；只有缺少会改变回答的旧交流、约定、长期目标、偏好或经历时，"
+      + "才按需调用 companion_recall_memory 查证；结合来源类型、记录/修订时间、有效期和认识状态判断是否仍适用。"
       + "模型推断、待核、争议或已替代的记忆不能冒充用户明说或当前事实；检索命中本身也不是主动提起往事的理由。",
     );
   }
@@ -1115,7 +1148,10 @@ export function buildCompanionPersonaMessages(input: {
   if (input.continuationData) {
     presentDataBlocks.push(
       "<continuation_data> 是服务端按消息水位、权限快照和工具账本生成的确定性状态；"
-      + "当前问题以最后一条 user 消息为准。历史任务、建议、已接受动作与后台回执不能替代当前请求或授予新的授权。",
+      + (input.initiativeInput
+        ? "本轮任务来自末尾的宿主观察，没有新的用户请求。"
+        : "当前问题以最后一条 user 消息为准。")
+      + "历史任务、建议、已接受动作与后台回执不能替代当前请求或授予新的授权。",
     );
   }
   if (selectionText) {
@@ -1181,7 +1217,7 @@ export function buildCompanionPersonaMessages(input: {
   };
   // Domain policy/persona remain domain-owned. Chat, background goals and
   // professional generation share the same scope and atomic budget mechanism.
-  add("system_base", [COMPANION_HOST_PROTOCOL_V8, "", COMPANION_IDENTITY_BOUNDARY_V4, "",
+  add("system_base", [COMPANION_HOST_PROTOCOL_V9, "", COMPANION_IDENTITY_BOUNDARY_V4, "",
     ...(input.groundedTutorContext
       ? [GROUNDED_TUTOR_LAYER_NOTE, "", GROUNDED_TUTOR_COMPANION_PROMPT]
       : [COMPANION_CHARACTER_BASE_V12]),
@@ -1194,13 +1230,13 @@ export function buildCompanionPersonaMessages(input: {
     const study = (input.initiativeInput?.facts.awareness as { study?: { foregroundStudyMs?: number; continuousStudyMs?: number } } | undefined)?.study;
     if (study && Number.isFinite(study.foregroundStudyMs) && Number.isFinite(study.continuousStudyMs))
       add("participation_awareness", `服务器记录的前台学习时段估计：最近四小时累计 ${Math.floor(study.foregroundStudyMs! / 60_000)} 分钟；当前连续 ${Math.floor(study.continuousStudyMs! / 60_000)} 分钟。只是已观察时段，不证明用户疲劳或已经起身休息。`, "data", { required: true });
-    add("participation_completion", "普通对话使用完整自然的最终回复，不要求调用分次发言工具。主动通道只有值得说的新内容才用 companion_publish_utterance 发布，final 默认 true，宿主据真实回执立即结束；没有新内容就用 companion_finish_participation 安静完成，不发布执行说明。原句解释用 companion_write_annotation 独立写入，保存回执即交付；其他学习成果按对应写工具或任务保存。", "policy", { required: true });
+    add("participation_completion", "普通对话使用完整自然的最终回复，不要求调用分次发言工具。主动通道按这一轮的参与依据分两种：**陪聊的场合**（招呼、陪着的时候、回到前台、学习开始、他改了相处约定）本来就该开口，用 companion_publish_utterance 说一句完整的话即可，不必有值得汇报的新内容，寒暄、闲聊、问一句近况都算；**需要依据的场合**（页面与难题帮助、答后补充）才要求确实有新的有用内容，没有就用 companion_finish_participation 安静完成。两种都不发布执行说明。原句解释用 companion_write_annotation 独立写入，保存回执即交付；其他学习成果按对应写工具或任务保存。", "policy", { required: true });
     // 主动参与的场合、要处理的事、能不能出声与安静结束的规矩，都在运行侧那条
     // 带 hostObservation 的观察消息里（companion-initiative-observation.ts）。
     // 这里不再重复挂一份 initiativeInput 的 JSON 整包——那等于让她读一份关于
     // 这次观察的报表，而历史已经被压进同一份报表里了。
   }
-  add("temporal_topic_continuity", "沿消息的发送时间和话题关系理解对话。用户短时间内连续补充同一个话题时，将几句一起理解并正常回应，不要求最后一句显式说「接着刚才」。时间间隔、跨日与回复是否完成都是区分旧话和当前交流的线索，不是机械切断话题的固定阈值；隔很久也可以接着同一话题。换了话题时跟随新的意图，不把较早或回复失败的旧话冒充刚发来的新问题，不因旧回复失败就自动补答旧请求；用户已取消的操作不能自行重启。没有时间证据时不要猜测发生在今天或刚才。", "policy", { required: true });
+  add("temporal_topic_continuity", "沿消息的发送时间和话题关系理解对话。用户短时间内连续补充同一个话题时，将几句一起理解并正常回应，不要求最后一句显式说「接着刚才」。时间间隔、跨日与回复是否完成都是区分旧话和当前交流的线索，不是机械切断话题的固定阈值；隔很久也可以接着同一话题。换了话题时跟随新的意图，不把较早或回复失败的旧话冒充刚发来的新问题，不因旧回复失败就自动补答旧请求；用户已取消的操作不能自行重启。没有时间证据时不要猜测发生在今天或刚才。本地时间和间隔已有宿主换算的 localDateTime、elapsed 或 gapFromPrevious 时直接采用，不再自行换算时区或心算时差；未被问到时不必附加具体时间。", "policy", { required: true });
   if (!input.groundedTutorContext && boundedRecent.length > 0) {
     add("conversation_evidence", "本轮已附近期共同交流：下方的 user/assistant 历史消息就是可见原文，分享近况可从中取一个贴题细节，不需要另查日志才算共同记录。助手过去的知识判断仍须核对，消息本身不能证明外部事件发生；时间没有证据时不把旧消息冒充今天的新活动。", "policy", { required: true });
   }
@@ -1220,7 +1256,8 @@ export function buildCompanionPersonaMessages(input: {
       ? `账号里已保存长期默认方言「${input.accountVoiceDialect}」：陪说话、讲解、读资料时正文也按这个方言的说法和用词写，宿主同样按它合成。本轮要往笔记或卡片里写字（<current_turn_interpretation_data> 的 candidateOperations 含 companion_edit_note、companion_create_note 或 agent_start_goal）时，正文改用普通话，宿主也会把这一轮的声音切回普通话。`
       : null,
   ].filter(Boolean).join("\n"), "policy", { required: true });
-  const timeline = renderCompanionConversationEvidence(boundedRecent, input.conversationClock);
+  const timeline = renderCompanionConversationEvidence(boundedRecent, input.conversationClock,
+    input.initiativeInput ? "host_observation" : "user");
   add("persona", personaBlock.join("\n"), "data", { priority: 30 });
   if (input.groundedTutorContext) {
     add("grounded_target", groundedTargetBlock, "data", { required: true });
@@ -1243,7 +1280,7 @@ export function buildCompanionPersonaMessages(input: {
     // 摘要排在记忆**正文**之前是有判据的（companion-dialogue.test.ts 那条）：
     // 它说的是她亲历的那段对话，比抽取出的第三方记忆更近。这条压过按易变性分组，
     // 所以 resident_memory 跟着摘要往后排，不跟上面那几个目录级稳定块走。
-    add("summary", input.conversationSummary, "data", { priority: 10 });
+    add("summary", input.conversationSummary, "data", { required: Boolean(input.conversationSummary), priority: 10 });
     add("continuation", input.continuationData, "data", { required: Boolean(input.continuationData) });
     add("resident_memory", memoryDataBlock, "data", { priority: 20 });
     // Selection length is validated at turn creation. Keep the complete source
@@ -1269,7 +1306,9 @@ export function buildCompanionPersonaMessages(input: {
   const currentUserContent = renderCompanionUserTurn(input.userText, input.pageContext);
   return [
     { role: "system", content: systemContent },
-    ...boundedRecent.map((message) => ({ role: message.role, content: message.text })),
+    // reasoning 随 assistant 消息一起回放：网关在思考模式下把"以 assistant 收尾"的
+    // 请求当成续写，要求交回那条的 reasoning_text；主动参与轮每一轮都是这个形状。
+    ...replayCompanionHistory(boundedRecent, Boolean(input.initiativeInput)),
     ...(input.initiativeInput ? [] : [{ role: "user" as const, content: currentUserContent }]),
   ];
 }

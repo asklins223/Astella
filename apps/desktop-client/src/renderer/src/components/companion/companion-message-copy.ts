@@ -15,6 +15,7 @@ export function companionMessageCopyText(message: CompanionMessageV1): string {
       case "code": return [block.code];
       case "diagram": return [block.title, ...block.steps.map((step, index) => `${index + 1}. ${step.label}${step.detail ? `\n${step.detail}` : ""}`)];
       case "card": return [block.front, ...(block.summary ? [block.summary] : [])];
+      case "recommendation": return [`${block.kindLabel} · ${block.title}${block.updatedLabel ? ` · ${block.updatedLabel}` : ""}${block.reason ? `\n${block.reason}` : ""}`];
       case "nav":
       case "image": return [block.label];
       case "citation": return [block.referenceId && block.target.kind === "external_https"

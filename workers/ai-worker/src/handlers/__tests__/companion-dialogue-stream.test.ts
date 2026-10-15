@@ -10,6 +10,7 @@ import { describe, it } from "node:test";
 import {
   companionVisibleText,
   createCompanionStreamDelivery,
+  restoreCompanionDeliveredDeltas,
   projectCompanionVisible,
   reconcileStreamedText,
   stableVisibleCut,
@@ -27,7 +28,7 @@ const READ_FIXTURE = {
 } as unknown as ReadContext;
 
 function deliveryWithRecorder(
-  options: { flushChars?: number; flushIntervalMs?: number; factSpanValues?: Record<string, string> } = {},
+  options: { flushChars?: number; flushIntervalMs?: number; factSpanValues?: Record<string, string>; initial?: { text: string; count: number } } = {},
 ) {
   const written: string[] = [];
   const delivery = createCompanionStreamDelivery({
@@ -37,6 +38,7 @@ function deliveryWithRecorder(
       requestedBy: READ_FIXTURE.userId,
       leaseToken: "lease-stream-test",
     },
+    initial: options.initial,
     ctx: { workspaceId: "44444444-4444-4444-8444-444444444444" },
     read: READ_FIXTURE,
     expiresAt: new Date(Date.now() + 60_000).toISOString(),
@@ -84,6 +86,19 @@ describe("stableVisibleCut", () => {
     }
     for (const raw of ["**还没闭合", "链接[笔记](https://", "有一个(例子"]) assert.equal(stableVisibleCut(raw), 0);
   });
+});
+
+it("resumes the committed stream prefix without repeating its deltas or resetting append offsets", async () => {
+  const initial = restoreCompanionDeliveredDeltas([{ payload: { appendFrom: 0, textDelta: "already " } },
+    { payload: { appendFrom: 8, textDelta: "shown" } }]);
+  assert.deepEqual(initial, { text: "already shown", count: 2 });
+  const { delivery, written } = deliveryWithRecorder({ initial, flushChars: 1 });
+  assert.equal(delivery.deliveredText(), initial.text);
+  await delivery.onRawDelta("\n\nnew answer");
+  const finished = await delivery.finish();
+  assert.deepEqual(finished, { ok: true, text: "already shown\n\nnew answer" });
+  assert.equal(written.join(""), "\n\nnew answer");
+  assert.throws(() => restoreCompanionDeliveredDeltas([{ payload: { appendFrom: 2, textDelta: "gap" } }]));
 });
 
 it("加粗首句在后续正文生成前已经交付；逐拍保持最终正文前缀", async () => {

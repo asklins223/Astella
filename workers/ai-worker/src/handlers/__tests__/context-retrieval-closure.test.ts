@@ -67,6 +67,7 @@ test("44 §3.2：跨会话找回同时给会话摘要、方法与长期目标", 
     "utf8",
   );
   assert.match(source, /searchPastConversationSummaries\(/);
+  assert.match(source, /searchPastConversationMessages\(/);
   assert.match(source, /listAgentMethods\(/);
   assert.match(source, /listAgentLongGoals\(/);
   const recall = toolDef("companion_recall_past_conversation");

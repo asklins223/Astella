@@ -15,17 +15,22 @@ import type {
   CompanionRunFailureClassV1,
   PetPersonaPresetBoundaries,
   PetProfileActiveness,
+  ProviderReasoningHandle,
 } from "@astella/shared";
 import { sql } from "drizzle-orm";
 import { logger } from "../lib/logger.ts";
 import { withWorkerWorkspaceTransaction, type WorkerTransaction } from "../db.ts";
 import { lockJobLease, type JobLeaseContext } from "../lib/job-lease.ts";
+import { lockCompanionRunForEventWrite } from "@astella/shared/companion-lock-order";
 import { assertCompanionHandoffSourcesCurrent, assertCompanionContextSourcesCurrent } from "./companion-context-sources.ts";
 // 2026-08-25（AI 设计审计修复）：复用 content 模块的同一实现，消除拆分时
 // 复制出的双份 parsePageContext（两份漂移会让编排层与 DB 层对同一
 // page_context 得出不同判定）。content→store 无依赖边，不构成循环。
 import { parsePageContext, renderCompanionUserTurn, textOfCompanionBlocks } from "./companion-dialogue-content.ts";
 import type { CompanionContextHandoffSnapshotV1 } from "./companion-dialogue-content.ts";
+import type { CompanionRecentHistoryMessage } from "./companion-context-handoff.ts";
+import { REPLAY_HISTORY_READ_ROWS } from "./companion-context-handoff.ts";
+import { latestCompanionExchangeStart, type HistorySummaryCoverage } from "./companion-history-projection.ts";
 import type { CompanionMemoryDirectoryEntry } from "./companion-memory-vector.ts";
 import type { PlaybookCandidateEntry, PlaybookCatalogEntry } from "./companion-playbooks.ts";
 import {
@@ -79,6 +84,8 @@ export interface ReadContext {
     status: string;
     safeSummary: string | null;
   }>;
+  /** 按摘要覆盖线收边走掉的那几类条数；渲染成的账本块要把它说出去。 */
+  actionLedgerOmitted?: { completed: number; unresolved: number; notCompleted: number } | null;
   proposals?: CompanionContextHandoffSnapshotV1["proposals"];
   groundedTutorContext: import("./companion-dialogue-content.ts").GroundedTutorContext | null;
   userText: string;
@@ -114,8 +121,13 @@ export interface ReadContext {
   /**
    * `<conversation_summary>` 数据块（方案 29 §11 C1），null = 这个会话还没有摘要。
    * 历史回放带完整的近期消息，更早的对话由摘要与原文补读承接。
+   *
+   * 这一块**在回放窗口裁完才定稿**（`companion-summary-injection.ts`）：「摘要盖到哪儿、
+   * 回放从哪儿起」是同一句话的两半，渲染早了就说不出中间那段两边都不负责的空档。
+   * 下面这一份是渲染它所需的原料，不是第二份摘要。
    */
   conversationSummary: string | null;
+  summaryInjection?: import("./companion-summary-injection.ts").SummaryInjectionInput;
   /** Account persona revision fixed before the first provider call in this run. */
   personaProfileRevision: number;
   personaExamplesRevision: number;
@@ -164,6 +176,7 @@ export interface SummaryChainNode extends Record<string, unknown> {
   coverage_source_hash: string | null;
   /** 1 = 链头（覆盖最靠后），数字越大越早。 */
   depth: number;
+  coverage_manifest?: { uncovered?: Array<{ fromSeq?: number; throughSeq?: number }> } | null;
 }
 
 export interface SummaryChainView {
@@ -217,6 +230,19 @@ export function summarizeSummaryChain(nodes: readonly SummaryChainNode[]): Summa
       effectiveFrom = parent.coverage_from_seq;
     }
   }
+  // A bounded transcript can skip a large message inside its range. The range
+  // endpoints alone never prove that message was read.
+  for (const node of ordered) {
+    for (const span of node.coverage_manifest?.uncovered ?? []) {
+      if (Number.isSafeInteger(span.fromSeq) && Number.isSafeInteger(span.throughSeq)
+        && span.fromSeq! > 0 && span.throughSeq! >= span.fromSeq!
+        && node.coverage_from_seq && node.coverage_through_seq
+        && BigInt(span.fromSeq!) >= BigInt(node.coverage_from_seq)
+        && BigInt(span.throughSeq!) <= BigInt(node.coverage_through_seq)) {
+        gaps.push({ fromSeq: String(span.fromSeq), throughSeq: String(span.throughSeq) });
+      }
+    }
+  }
   return {
     head,
     depth: ordered.length,
@@ -235,6 +261,11 @@ export interface CompanionHistoryRow extends Record<string, unknown> {
   page_context: unknown;
   created_at: string;
   run_status: string | null;
+  /**
+   * 产出这条 assistant 消息时的 provider reasoning item（0435 起随消息落库）。
+   * 网关在思考模式下要求把它交回给"以 assistant 收尾"的请求；user 行恒为 NULL。
+   */
+  reasoning: ProviderReasoningHandle[] | null;
 }
 
 // Preserve user additions, including an interrupted or superseded turn. Their
@@ -256,7 +287,7 @@ export async function readCompanionHistoryRows(
   options: { beforeSeq?: string; fromSeq?: string; limit: number },
 ): Promise<CompanionHistoryRow[]> {
   const rows = await tx.execute<CompanionHistoryRow>(sql`
-    SELECT m.id, m.seq::text AS seq, m.role, m.blocks, m.content_sha256,
+    SELECT m.id, m.seq::text AS seq, m.role, m.blocks, m.content_sha256, m.reasoning,
            to_char(m.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS created_at,
            (SELECT r.status FROM companion_turn_runs r
             WHERE r.user_message_id = m.id AND m.role = 'user'
@@ -271,6 +302,59 @@ export async function readCompanionHistoryRows(
     ORDER BY m.seq DESC LIMIT ${options.limit}
   `);
   return Array.from(rows);
+}
+
+/** Page through the unsummarized suffix and any coverage gaps. The first page
+ * also retains the latest exchange when a manual summary overlaps it. */
+export async function readCompanionReplayHistoryRows(
+  tx: WorkerTransaction,
+  conversationId: string,
+  options: { beforeSeq?: string; coverage?: HistorySummaryCoverage | null; latestExchangeOnly?: boolean },
+): Promise<CompanionHistoryRow[]> {
+  let frontier = 1n;
+  const coverage = options.coverage;
+  try {
+    if (coverage?.sourceSha256 && coverage.fromSeq === "1" && coverage.throughSeq) {
+      frontier = BigInt(coverage.throughSeq) + 1n;
+      for (const gap of coverage.uncovered ?? []) frontier = frontier < BigInt(gap.fromSeq) ? frontier : BigInt(gap.fromSeq);
+    }
+  } catch { frontier = 1n; }
+  const rows: CompanionHistoryRow[] = [];
+  let beforeSeq = options.beforeSeq;
+  for (;;) {
+    const page = await readCompanionHistoryRows(tx, conversationId, { beforeSeq, limit: REPLAY_HISTORY_READ_ROWS });
+    rows.push(...page);
+    if (page.length < REPLAY_HISTORY_READ_ROWS) break;
+    const oldest = page.at(-1)!;
+    // A page beginning in the latest exchange is not a safe history boundary.
+    if ((options.latestExchangeOnly || BigInt(oldest.seq) < frontier)
+      && latestCompanionExchangeStart(companionRecentHistoryFromRows(rows)) > 0) break;
+    beforeSeq = oldest.seq;
+  }
+  return rows;
+}
+
+/**
+ * 历史行 → 回放消息（**正序**）。
+ *
+ * 与 `readCompanionHistoryRows` 同源：行怎么读、消息就怎么排，摘要水位与
+ * 回放窗口都以这份相同的可见尾部为准。
+ *
+ * reasoning 随 assistant 消息一起带回（0435）：网关在思考模式下要求把"以
+ * assistant 收尾"那条的 `reasoning_text` 原样交回；不带回来，主动参与轮
+ * 每一轮都会 400。user 行恒为 NULL。
+ */
+export function companionRecentHistoryFromRows(
+  rows: readonly CompanionHistoryRow[],
+): CompanionRecentHistoryMessage[] {
+  return rows.slice().reverse().map(row => ({
+    seq: row.seq,
+    role: row.role,
+    text: companionHistoryText(row),
+    createdAt: row.created_at,
+    replyStatus: row.run_status,
+    reasoning: row.reasoning ?? null,
+  }));
 }
 
 export async function countCompanionHistoryMessages(
@@ -339,7 +423,6 @@ export async function persistCompanionContextHandoffSnapshot(args: {
         WHERE run_id = ${args.runId}
           AND workspace_id = ${args.workspaceId}
           AND user_id = ${args.userId}
-          AND snapshot_version = 1
       `);
       const row = existing[0];
       if (!row) throw new Error("companion context handoff snapshot was not committed");
@@ -353,21 +436,19 @@ export async function persistCompanionContextHandoffSnapshot(args: {
 }
 
 /**
- * 读取**接续链**：链头是覆盖最靠后的那一份已校验摘要，再沿 `parent_summary_id` 回溯
- * 更早的节点。
+ * 读取实际继承链。只有链头及它读过的父摘要能代表本轮历史；同会话的兄弟摘要
+ * 没有注入正文，不能只凭覆盖区间把它们算成模型已经读过。
  *
  * 为什么不能只取最新一份（44 §5.2）：压缩是分次发生的，只读最新一份就等于把更早
- * 的覆盖索引丢掉——会话看起来「有摘要」，实际上中间那段没人读过。回溯之后调用方
- * 才知道真实覆盖到哪里、哪里有洞。
+ * 的覆盖索引丢掉——会话看起来「有摘要」，实际上中间那段没人读过。
  *
  * 链头**不按「必须早于当前可见尾部」取**（44 §5.2「摘要与回放从同一实际保留边界
  * 派生」）。曾经的写法加了这个锚点，于是注入的摘要与回放窗口在 seq 上一定不相交，
- * 折叠永远折不到东西——而折叠恰恰要靠「覆盖伸进回放」才成立。改成以链的实际覆盖
+ * 折叠永远折不到东西——而折叠恰恰要靠「覆盖伸进回放」才成立。改成以实际覆盖
  * 为准：覆盖伸进窗口时，那段照折，由摘要代表；没伸进来时什么都不折，两种都由调用方
- * 按真实边界算。真正要守的是**有效性**（下面的修订号条件）与覆盖边界本身。
+ * 按真实边界算。真正要守的是**有效性**（下面那条查询里的失效标记）与覆盖边界本身。
  *
- * `MAX_CHAIN_DEPTH` 是硬上限：接续链理论上可以很长，但一次读取最多回溯这么多层，
- * 剩下的更早内容按「需要时再检索」处理，不在每次调用里无限回溯。
+ * 区间失效由触发器连同派生后代传播；消息修订号继续用作提交时的并发围栏。
  */
 export const MAX_SUMMARY_CHAIN_DEPTH = 32;
 
@@ -377,53 +458,29 @@ export async function readConversationSummaryChain(
 ): Promise<SummaryChainView> {
   const rows = await tx.execute<SummaryChainNode>(sql`
     WITH RECURSIVE chain AS (
-      (
-      SELECT s.id, s.revision, s.parent_summary_id, s.summary,
-             s.coverage_from_seq::text AS coverage_from_seq,
-             s.coverage_through_seq::text AS coverage_through_seq,
-             s.coverage_source_hash,
-             1 AS depth
-      FROM conversation_summaries s
-      JOIN companion_conversations c
-        ON c.id = s.conversation_id AND c.workspace_id = s.workspace_id AND c.user_id = s.user_id
-      WHERE s.conversation_id = ${conversationId}
-        AND s.status IN ('candidate', 'confirmed')
-        AND s.coverage_from_seq IS NOT NULL
-        AND s.coverage_through_seq IS NOT NULL
-        AND s.coverage_source_hash IS NOT NULL
-        -- 方案 44 §3.3：读取侧也检查当前有效性。消息被改写或删除后，会话的
-        -- context_revision 会前进，而这份摘要记下的是**它被验证时**的取值——对不上
-        -- 就说明它盖住的那一段已经变了，不能再用它那句「更早那段对话」把已经不存在的
-        -- 内容重新说一遍。没记修订号的旧行按未验证处理，排除。
-        --
-        -- 但「没记修订号」有两种：一种是**真的没法验证**（会话改过，无从判断摘要写在
-        -- 改写之前还是之后），另一种是**能验证而当时没回填**（0384 只加了列，没回填既有
-        -- 行；而 context_revision 默认是 1、只在消息被改写/删除时才 +1，所以停在 1 的
-        -- 会话等于从未改写过，那些摘要其实可证明仍然有效）。
-        -- 后者由迁移 0391 回填掉，所以这里的 NULL 现在只剩前一种。
-        AND s.verified_context_revision = c.context_revision
-      ORDER BY s.coverage_through_seq DESC, s.updated_at DESC
-      LIMIT 1
-      )
+      (SELECT s.id, s.revision, s.parent_summary_id, s.summary,
+              s.coverage_from_seq::text AS coverage_from_seq,
+              s.coverage_through_seq::text AS coverage_through_seq,
+              s.coverage_source_hash, s.coverage_manifest, 1 AS depth
+       FROM conversation_summaries s
+       JOIN companion_conversations c
+         ON c.id = s.conversation_id AND c.workspace_id = s.workspace_id AND c.user_id = s.user_id
+       WHERE s.conversation_id = ${conversationId}
+         AND s.status IN ('candidate', 'confirmed') AND s.invalidated_at IS NULL
+         AND s.coverage_from_seq IS NOT NULL AND s.coverage_through_seq IS NOT NULL
+         AND s.coverage_source_hash IS NOT NULL
+       ORDER BY s.coverage_through_seq DESC, s.updated_at DESC LIMIT 1)
       UNION ALL
-      (
       SELECT p.id, p.revision, p.parent_summary_id, p.summary,
-             p.coverage_from_seq::text AS coverage_from_seq,
-             p.coverage_through_seq::text AS coverage_through_seq,
-             p.coverage_source_hash,
-             c.depth + 1
+             p.coverage_from_seq::text, p.coverage_through_seq::text,
+             p.coverage_source_hash, p.coverage_manifest, child.depth + 1
       FROM conversation_summaries p
-      JOIN chain c ON p.id = c.parent_summary_id
-      JOIN companion_conversations conv
-        ON conv.id = p.conversation_id AND conv.workspace_id = p.workspace_id AND conv.user_id = p.user_id
-      WHERE c.depth < ${MAX_SUMMARY_CHAIN_DEPTH}
-        AND p.status IN ('candidate', 'confirmed')
-        -- 传递来源也要有效：不只检查直接父摘要（44 §3.3）。任一祖先失效，整条链就
-        -- 不成立——链头那份摘要已经把祖先的内容写进自己了。
-          AND p.verified_context_revision = conv.context_revision
-      )
-    )
-    SELECT * FROM chain ORDER BY depth
+      JOIN chain child ON p.id = child.parent_summary_id
+      WHERE p.conversation_id = ${conversationId}
+        AND p.status IN ('candidate', 'confirmed') AND p.invalidated_at IS NULL
+        AND p.coverage_from_seq IS NOT NULL AND p.coverage_through_seq IS NOT NULL
+        AND p.coverage_source_hash IS NOT NULL AND child.depth < ${MAX_SUMMARY_CHAIN_DEPTH}
+    ) SELECT * FROM chain ORDER BY depth
   `);
   return summarizeSummaryChain(rows);
 }
@@ -447,32 +504,40 @@ export async function recordCompanionContextCompactions(args: {
   compactions: readonly NonNullable<CompanionContextHandoffSnapshotV1["compactions"]>[number][];
 }): Promise<boolean> {
   if (args.compactions.length === 0) return false;
-  const next: CompanionContextHandoffSnapshotV1 = {
-    ...args.snapshot,
-    compactions: [...(args.snapshot.compactions ?? []), ...args.compactions],
-  };
-  const nextSha256 = sha256Utf8V1(canonicalJsonV1(next));
+  if (sha256Utf8V1(canonicalJsonV1(args.snapshot)) !== args.sha256) return false;
+  const base = ({ compactions: _compactions, ...snapshot }: CompanionContextHandoffSnapshotV1) => canonicalJsonV1(snapshot);
   return withWorkerWorkspaceTransaction(
     { workspaceId: args.workspaceId, userId: args.userId },
     async (tx) => {
-      const updated = await tx.execute(sql`
-        UPDATE companion_context_handoff_snapshots s
-           SET snapshot = ${JSON.stringify(next)}::jsonb,
-               snapshot_sha256 = ${nextSha256},
-               snapshot_version = s.snapshot_version + 1,
-               created_at = now()
-         FROM companion_turn_runs r
-         WHERE s.run_id = ${args.runId}
-           AND s.workspace_id = ${args.workspaceId} AND s.user_id = ${args.userId}
-           AND r.id = s.run_id
-           AND r.status IN ('accepted', 'running', 'waiting_for_confirmation')
-           AND public.astella_assert_handoff_snapshot_fence(${args.runId}, s.snapshot_version)
-        RETURNING s.snapshot_sha256
-      `);
-      if (updated[0]) return true;
-      logger.warn({ runId: args.runId, compactions: args.compactions.length },
-        "handoff snapshot compaction trace skipped: run ended or snapshot already advanced");
-      return false;
+      let lastRejectedHash: string | null = null;
+      for (;;) {
+        const [current] = await tx.execute<{ snapshot: CompanionContextHandoffSnapshotV1; snapshot_sha256: string }>(sql`
+          SELECT s.snapshot,s.snapshot_sha256 FROM companion_context_handoff_snapshots s
+          JOIN companion_turn_runs r ON r.id=s.run_id AND r.workspace_id=s.workspace_id AND r.user_id=s.user_id
+          WHERE s.run_id=${args.runId} AND s.workspace_id=${args.workspaceId} AND s.user_id=${args.userId}
+            AND r.status IN ('accepted','running','waiting_for_confirmation')`);
+        if (!current || current.snapshot_sha256 === lastRejectedHash
+          || sha256Utf8V1(canonicalJsonV1(current.snapshot)) !== current.snapshot_sha256
+          || base(current.snapshot) !== base(args.snapshot)) return false;
+        const existing = current.snapshot.compactions ?? [];
+        const identities = new Set(existing.map(trace => canonicalJsonV1(trace)));
+        const added = args.compactions.filter(trace => {
+          const identity = canonicalJsonV1(trace);
+          if (identities.has(identity)) return false;
+          identities.add(identity);
+          return true;
+        });
+        if (!added.length) return true;
+        const compactions = [...existing, ...added];
+        const next = { ...current.snapshot, compactions };
+        const [result] = await tx.execute<{ appended: boolean }>(sql`
+          SELECT public.astella_append_handoff_compactions_v1(${args.runId}::uuid,${current.snapshot_sha256},
+            ${JSON.stringify(compactions)}::jsonb,${sha256Utf8V1(canonicalJsonV1(next))}) AS appended`);
+        if (result?.appended) return true;
+        // Retry only after another append actually changed the row. An ended
+        // run, invalid scope or rejected unchanged input cannot spin here.
+        lastRejectedHash = current.snapshot_sha256;
+      }
     },
   );
 }
@@ -486,14 +551,15 @@ export async function readConversationSummary(
   const rows = await tx.execute<ConversationSummaryReadRow>(sql`
     SELECT summary, coverage_from_seq::text AS coverage_from_seq,
            coverage_through_seq::text AS coverage_through_seq, coverage_source_hash
-    FROM conversation_summaries
+    FROM conversation_summaries s
     WHERE conversation_id = ${conversationId}
       AND status IN ('candidate', 'confirmed')
+      AND invalidated_at IS NULL
       AND coverage_from_seq IS NOT NULL
       AND coverage_through_seq IS NOT NULL
       AND coverage_source_hash IS NOT NULL
       AND coverage_through_seq < ${historyStartSeq}::bigint
-    ORDER BY coverage_through_seq DESC NULLS LAST, updated_at DESC
+    ORDER BY s.coverage_through_seq DESC NULLS LAST, s.updated_at DESC
     LIMIT 1
   `);
   return rows[0] ?? null;
@@ -562,6 +628,7 @@ export async function upsertCommittedSummary(
       WHERE x.workspace_id = ${input.workspaceId} AND x.user_id = ${input.userId}
         AND x.conversation_id = ${input.conversationId}
         AND x.status IN ('candidate', 'confirmed')
+        AND x.invalidated_at IS NULL
         AND x.coverage_from_seq = ${input.coverageFromSeq}::bigint
         AND x.coverage_through_seq = ${input.coverageThroughSeq}::bigint
         AND x.coverage_source_hash = ${input.sourceHash}::text
@@ -577,6 +644,8 @@ export async function upsertCommittedSummary(
                   coverage_manifest = EXCLUDED.coverage_manifest,
                   compaction_policy_version = EXCLUDED.compaction_policy_version,
                   verified_context_revision = EXCLUDED.verified_context_revision,
+                  invalidated_at = NULL,
+                  status = EXCLUDED.status,
                   updated_at = now()
     WHERE conversation_summaries.parent_summary_id IS NOT DISTINCT FROM EXCLUDED.parent_summary_id
     RETURNING id
@@ -592,14 +661,102 @@ export async function readParentSummary(
     SELECT id, revision, summary,
            coverage_from_seq::text AS coverage_from_seq,
            coverage_through_seq::text AS coverage_through_seq
-    FROM conversation_summaries
+    FROM conversation_summaries s
     WHERE conversation_id = ${conversationId}
       AND status IN ('candidate', 'confirmed')
+      AND invalidated_at IS NULL
+      AND coverage_from_seq IS NOT NULL
       AND coverage_through_seq IS NOT NULL
-    ORDER BY coverage_through_seq DESC, updated_at DESC
+      AND coverage_source_hash IS NOT NULL
+    ORDER BY s.coverage_through_seq DESC, s.updated_at DESC
     LIMIT 1
   `);
   return rows[0] ?? null;
+}
+
+/**
+ * 动作账本：逐条带走的是**摘要覆盖线之后**的那一段，加上本轮自己的回执。
+ *
+ * 为什么要有这条线（2026-10-14 按真实会话核对）：原来这一份是整个会话历史全量重发，
+ * 565 条的会话每轮带 116 条 `succeeded` 回执（26 次搜笔记、20 次读笔记、几篇早就折进
+ * 摘要的笔记），渲染出来 7,152 字符——占整份 system 的 28.7%，而那一轮真正的新对话
+ * 只有 586 字符。摘要已经说过「笔记《导热与凝固点》创建成功」，逐条回执在那条线之前
+ * 就是重复记账。
+ *
+ * 少了的那几条**照样报出去**（`omitted` 三个类各多少条），不写成 0：「没带走」和
+ * 「从没发生过」在账本上以前是同一个读数。
+ *
+ * 还没了结的那一类不按这条线丢：一条 `requested`／`executing` 属于**别的** run，只有
+ * 那个 run 还在跑才算活着；跑完的 run 留下一条 `requested` 就是没人收的残骸（实测那条
+ * 3 天前的 `companion_search_notes` 每轮都排在最前面，她照着它反复去查同一件事）。
+ */
+export interface CompanionActionLedgerRead {
+  entries: Array<{
+    receiptId: string;
+    toolCallId: string;
+    name: string;
+    status: string;
+    safeSummary: string | null;
+  }>;
+  omitted: { completed: number; unresolved: number; notCompleted: number };
+}
+
+const LEDGER_UNRESOLVED_STATUSES = ["requested", "executing", "waiting_confirmation", "outcome_unknown"];
+const LEDGER_NOT_COMPLETED_STATUSES = ["failed", "blocked", "expired", "not_executed", "unavailable"];
+const LEDGER_ACTIVE_RUN_STATUSES = ["accepted", "running", "waiting_for_confirmation"];
+
+export async function readCompanionActionLedger(
+  tx: WorkerTransaction,
+  args: { conversationId: string; runId: string; coverageThroughSeq: string | null;
+    coverageFromSeq?: string | null; coverageGaps?: readonly { fromSeq: string; throughSeq: string }[] },
+): Promise<CompanionActionLedgerRead> {
+  const rows = await tx.execute<{
+    receipt_id: string; tool_call_id: string; name: string; status: string;
+    result_safe_summary: string | null; from_current_run: boolean;
+    anchor_seq: string; run_status: string;
+  }>(sql`
+    SELECT c.id::text AS receipt_id, c.tool_call_id, c.name, c.status, c.result_safe_summary,
+           (c.run_id = ${args.runId}::uuid) AS from_current_run,
+           COALESCE(um.seq, am.seq, 0)::text AS anchor_seq,
+           r.status AS run_status
+    FROM companion_agent_tool_calls c
+    JOIN companion_turn_runs r ON r.id = c.run_id
+    LEFT JOIN companion_messages um ON um.id = r.user_message_id
+    LEFT JOIN companion_messages am ON am.id = r.assistant_message_id
+    WHERE c.conversation_id = ${args.conversationId}
+    ORDER BY CASE WHEN c.status IN ('requested', 'executing', 'waiting_confirmation', 'outcome_unknown')
+                  THEN 0 ELSE 1 END,
+             c.updated_at DESC, c.id DESC
+  `);
+  const line = BigInt(args.coverageThroughSeq ?? "0");
+  const from = BigInt(args.coverageFromSeq ?? "1");
+  const entries: CompanionActionLedgerRead["entries"] = [];
+  const omitted = { completed: 0, unresolved: 0, notCompleted: 0 };
+  for (const row of rows) {
+    const unresolved = LEDGER_UNRESOLVED_STATUSES.includes(row.status);
+    const notCompleted = LEDGER_NOT_COMPLETED_STATUSES.includes(row.status);
+    const anchor = BigInt(row.anchor_seq);
+    const representedBySummary = anchor >= from && anchor <= line
+      && !(args.coverageGaps ?? []).some(gap => anchor >= BigInt(gap.fromSeq) && anchor <= BigInt(gap.throughSeq));
+    const keep = row.from_current_run
+      || !representedBySummary
+      // 覆盖线之前也留着的那种：别的 run 还没跑完，这件事仍然悬着。
+      || (unresolved && LEDGER_ACTIVE_RUN_STATUSES.includes(row.run_status));
+    if (!keep) {
+      if (unresolved) omitted.unresolved += 1;
+      else if (notCompleted) omitted.notCompleted += 1;
+      else omitted.completed += 1;
+      continue;
+    }
+    entries.push({
+      receiptId: row.receipt_id,
+      toolCallId: row.tool_call_id,
+      name: row.name,
+      status: row.status,
+      safeSummary: row.result_safe_summary ?? null,
+    });
+  }
+  return { entries, omitted };
 }
 
 interface InsertStreamEventArgs {
@@ -1117,20 +1274,28 @@ export async function recoverCompanionRunFailureSpanBestEffort(
 /** run failed + error event（fence：仅 active run 可写终态；cancel/supersede 后零写入）。 */
 export async function markCompanionRunFailed(
   read: Pick<ReadContext, "runId" | "conversationId" | "userId" | "generation" | "accountEpoch" | "initiativeInput">,
-  workspaceId: string,
+  job: JobLeaseContext,
   code: string,
   recoverable: boolean,
   reason: string,
   failureClass: CompanionRunFailureClassV1,
 ): Promise<void> {
+  const { workspaceId } = job;
   try {
     await withWorkerWorkspaceTransaction(
       { workspaceId, userId: read.userId },
       async (tx) => {
+        await lockCompanionRunForEventWrite(tx, read.runId);
+        // A timeout can still record its failure while it owns the lease.
+        // A delayed exception from a replaced worker must leave the run alone.
+        await lockJobLease(tx, { ...job, signal: undefined });
         // A revoked initiative is a quiet stop, not a failed answer to an imaginary user request.
         if (read.initiativeInput && code === "CONTEXT_STALE") {
           const [stopped] = await tx.execute(sql`UPDATE companion_turn_runs SET status='cancelled',error_code=NULL,
-            finished_at=now(),waiting_proposal_id=NULL WHERE id=${read.runId} AND status IN ('accepted','running') RETURNING id`);
+            finished_at=now(),waiting_proposal_id=NULL WHERE id=${read.runId}
+            AND generation=${read.generation} AND account_epoch=${read.accountEpoch}
+            AND (job_id IS NULL OR job_id=${job.id})
+            AND status IN ('accepted','running') RETURNING id`);
           if (!stopped) return;
           const messages = await tx.execute<{ message_id: string }>(sql`SELECT message_id FROM companion_run_utterances WHERE run_id=${read.runId} ORDER BY created_at`);
           const [counter] = await tx.execute<{ seq: string }>(sql`UPDATE companion_conversations SET next_event_seq=next_event_seq+1
@@ -1150,6 +1315,8 @@ export async function markCompanionRunFailed(
           SET status = 'failed', error_code = ${code}, finished_at = now(),
               waiting_proposal_id = NULL
           WHERE id = ${read.runId} AND status IN ('accepted', 'running')
+            AND generation=${read.generation} AND account_epoch=${read.accountEpoch}
+            AND (job_id IS NULL OR job_id=${job.id})
           RETURNING id
         `);
         if (!claimed[0]) return;
@@ -1222,6 +1389,43 @@ export async function markCompanionRunFailed(
 }
 
 import { ERROR_CUE_PAYLOAD_V1 as ERROR_CUE_PAYLOAD } from "./companion-dialogue-content.ts";
+
+/**
+ * 落一条终态 assistant 消息（正文 + 可选 reasoning）。
+ *
+ * 从 `companion-dialogue` 的终态事务里抽出来（那个文件贴着 1500 行的神文件阈值）。
+ * 抽的不只是行数：主动发言那条写法（`companion-participation-tools`）与这里
+ * 写的是同一张表、同一个 kind 判据、同一列 reasoning，两处放一起才看得出
+ * "写 assistant 消息"这件事的全貌。
+ *
+ * reasoning 随消息一起落库（0435）：下一轮若以这条收尾——主动参与轮每一轮都是——
+ * 网关要求把它的 `reasoning_text` 原样交回，只带 encrypted_content 会 400。
+ * 只有 provider 本轮返回了 reasoning item 时才有值；非思考模型恒 NULL。
+ */
+export async function insertCompanionFinalAssistantMessage(
+  tx: WorkerTransaction,
+  args: {
+    messageId: string;
+    workspaceId: string;
+    userId: string;
+    conversationId: string;
+    messageSeq: number;
+    kind: string;
+    blocks: unknown[];
+    runId: string;
+    contentSha256: string;
+    reasoning: ProviderReasoningHandle[] | null;
+  },
+): Promise<void> {
+  await tx.execute(sql`
+    INSERT INTO companion_messages
+      (id, workspace_id, user_id, conversation_id, seq, role, kind, blocks, run_id, content_sha256, reasoning)
+    VALUES (${args.messageId}, ${args.workspaceId}, ${args.userId}, ${args.conversationId},
+            ${args.messageSeq}, 'assistant', ${args.kind}, ${JSON.stringify(args.blocks)}::jsonb,
+            ${args.runId}, ${args.contentSha256},
+            ${args.reasoning && args.reasoning.length > 0 ? JSON.stringify(args.reasoning) : null}::jsonb)
+  `);
+}
 
 /** grounded-tutor 分支的审计元数据（prompt id/hash）。 */
 export const GROUNDED_TUTOR_PROMPT_ID = "companion-grounded-tutor-v1";

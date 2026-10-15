@@ -1,4 +1,4 @@
-import { isWithinQuietHours, proactiveCadenceMs, routineCadenceBlocked } from "@astella/shared/companion-proactive-policy";
+import { COMPANION_QUIET_PRESENCE_MIN_MS, isWithinQuietHours, proactiveCadenceMs, routineCadenceBlocked } from "@astella/shared/companion-proactive-policy";
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { readParticipationPreferences, readCompanionAwareness, listCompanionAttention } from "@astella/agent-host";
@@ -97,41 +97,74 @@ export async function runCompanionInitiative(ctx: CompanionDialogueHandlerContex
     if (observation && ["page.arrived", "help.available", "result.available"].includes(observation.topic)
       && (!observedPage || observedPage.key !== presentPage?.key || observedPage.revision !== presentPage?.revision)) return;
     /**
+     * 「陪着的时候」的安静门槛按账号档位算（shared 的 COMPANION_QUIET_PRESENCE_MIN_MS）。
+     *
+     * 客户端在安静满 90 秒时开始上报，之后按 90 秒一格继续报（`companion-awareness-idle`
+     * 的 tracker）；档位决定哪一格算时机：安静档 10 分钟、适中 3 分钟、活跃 90 秒。
+     * 不到门槛就直接结束，门槛之下的每一格只花一次观察入库与一次 prep，不付模型钱。
+     */
+    if (observation?.topic === "presence.quiet") {
+      const quietLevel = (account.intervention_level ?? "moderate") as import("@astella/shared/companion-proactive-policy").CompanionInterventionLevelV1;
+      const quietForMs = (observation.facts.context as { quietForMs?: unknown } | undefined)?.quietForMs;
+      if (typeof quietForMs !== "number" || !Number.isFinite(quietForMs)
+        || quietForMs < COMPANION_QUIET_PRESENCE_MIN_MS[quietLevel]) return;
+      const episodeId = (observation.facts.context as { quietEpisodeId?: string } | undefined)?.quietEpisodeId;
+      if (episodeId) {
+        // New input ends this spell even when its preparation job is delayed.
+        if ((present?.context as { quietEpisodeId?: string } | undefined)?.quietEpisodeId !== episodeId) return;
+        const [considered] = await tx.execute(sql`SELECT 1 FROM companion_turn_runs
+          WHERE workspace_id=${scope.workspaceId} AND user_id=${scope.userId}
+            AND input_source->>'topic'='presence.quiet'
+            AND input_source->>'deviceSessionId'=${preferredDevice}
+            AND input_source->'facts'->'observation'->'context'->>'quietEpisodeId'=${episodeId}
+            AND status NOT IN ('failed','cancelled','superseded') LIMIT 1`);
+        if (considered) return;
+      }
+    }
+    /**
      * 她自己新起的话题按账号里已声明的介入档位排间隔（节奏的唯一实现在 shared 的
      * proactive-policy）。用户先要过的东西——招呼、答后接续、
      * 刚落在她手上的失败与结果——不进这条闸。
      *
      * 拦在起运行之前，不是拦在她说话之前：一次「翻到一篇笔记」原本要付一整轮 Agent。
+     *
+     * 2026-10-14 改了两处判据（用户判定"第一版还是不太行"）：
+     * 1. **只有真的说了话的那几次算数**。原来把"安静结束的那次考虑"也当一次主动，
+     *    于是每档只能开一次口，而只要有一次选择不说，下一次机会又往后推一整个间隔；
+     *    实测体感就是"她从来不主动"。沉默是成本问题，由每档的安静门槛管
+     *    （门槛之下的每一格都不起运行），不该再从打扰这一侧扣。
+     * 2. **她自己安排到点的关注与记事不进这条闸**：那是她先前答应自己（和用户）
+     *    要回来看一眼的事，次数已经由那条安排的 next_review_at 自己限住；
+     *    被档位再推一次，等于她记下的事不算数。它们仍然计入间隔，
+     *    所以说完之后她自己的新话题照常等下一档。
      */
     const initiativeTopic = observation?.topic ?? (selfNote ? "self_note.due" : "attention.due");
-    if (companionInitiativePushKind(initiativeTopic) === "routine") {
+    const selfArranged = initiativeTopic === "attention.due" || initiativeTopic === "self_note.due";
+    if (companionInitiativePushKind(initiativeTopic) === "routine" && !selfArranged) {
       const level = (account.intervention_level ?? "moderate") as import("@astella/shared/companion-proactive-policy").CompanionInterventionLevelV1;
-      // 上一次「她自己想起要说点什么」：既算她说出口的那一句，也算她安静结束的那一次考虑。
-      // 只按发言计的话，「闲到几分钟→想一想→没什么可说」每次都重新付一整轮模型，
-      // 用户感觉到的就是她隔一会儿就起一次念头，哪怕一句也没说。
+      // 上一次她**真的开口**：任意来源的主动运行，只要产出了 assistant 消息就算一次。
+      // 读运行×消息，不再读 kind='proactive'——那条只在工具发布那一支写过，
+      // 普通收尾写的是 kind='text'，按 kind 数会把她绝大多数主动发言漏掉。
       // 读数按 worker 租约能看到的当前书房计（跨书房的账号级读数要 definer 函数才能穿过 RLS，本轮没加）。
-      const [lastSpoken] = await tx.execute<{ at: Date | string | null }>(sql`SELECT max(created_at) AS at FROM companion_messages
-        WHERE workspace_id=${scope.workspaceId} AND user_id=${scope.userId} AND role='assistant' AND kind='proactive'`);
-      const recentRuns = await tx.execute<{ topic: string | null; at: Date | string }>(sql`
-        SELECT input_source->>'topic' AS topic, created_at AS at FROM companion_turn_runs
-        WHERE workspace_id=${scope.workspaceId} AND user_id=${scope.userId} AND input_source->>'kind'='initiative'
-        ORDER BY created_at DESC LIMIT 20`);
-      const considered = recentRuns.filter(row => typeof row.topic === "string"
-        && companionInitiativePushKind(row.topic) === "routine").map(row => new Date(row.at).getTime());
-      const lastAt = Math.max(considered.length ? Math.max(...considered) : 0,
-        lastSpoken?.at ? new Date(lastSpoken.at).getTime() : 0);
-      const msSince = lastAt > 0 ? Date.now() - lastAt : null;
+      const spoke = await tx.execute<{ at: Date | string }>(sql`
+        SELECT r.created_at AS at FROM companion_turn_runs r
+        WHERE r.workspace_id=${scope.workspaceId} AND r.user_id=${scope.userId} AND r.input_source->>'kind'='initiative'
+          AND EXISTS(SELECT 1 FROM companion_messages m WHERE m.run_id=r.id AND m.role='assistant' AND m.kind<>'error')
+        ORDER BY r.created_at DESC LIMIT 1`);
+      const msSince = spoke[0]?.at ? Date.now() - new Date(spoke[0].at).getTime() : null;
       if (routineCadenceBlocked({ interventionLevel: level, msSinceLastCue: msSince })) {
         // 到点的关注不在这一步被吃掉：等到间隔过去再唤起，她仍然记得自己要回头看什么。
         await deferParticipation(tx, ctx, Math.max(1_000, proactiveCadenceMs(level) - (msSince ?? 0) + 1_000));
         return;
       }
     }
-    const hintedConversation = observation?.conversation_id ?? plan?.conversationId ?? null;
+    const hintedConversation = observation?.conversation_id ?? plan?.conversationId
+      ?? (present?.context as { conversationId?: string | null } | undefined)?.conversationId ?? null;
     let [conversation] = await tx.execute<{ id: string; next_generation: number }>(sql`
       SELECT id,next_generation FROM companion_conversations WHERE workspace_id=${scope.workspaceId}
-        AND user_id=${scope.userId} AND status='active' AND (kind='dialogue' OR id=${hintedConversation}::uuid)
-      ORDER BY (id=${hintedConversation}::uuid) DESC,coalesce(last_message_at,created_at) DESC LIMIT 1 FOR UPDATE`);
+        AND user_id=${scope.userId} AND status='active' AND kind IN ('dialogue','inbox')
+      ORDER BY CASE WHEN id=${hintedConversation}::uuid THEN 0 WHEN kind='inbox' THEN 1 ELSE 2 END,
+        coalesce(last_message_at,created_at) DESC LIMIT 1 FOR UPDATE`);
     if (!conversation) {
       const id = randomUUID();
       await tx.execute(sql`INSERT INTO companion_conversations(id,workspace_id,user_id,kind,title,title_source,status)

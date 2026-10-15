@@ -2997,6 +2997,69 @@
       "when": 1791903000002,
       "tag": "0431_companion_memory_embedding_repair_enqueue",
       "breakpoints": true
+    },
+    {
+      "idx": 428,
+      "version": "7",
+      "when": 1791903000003,
+      "tag": "0432_companion_process_timeline_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 429,
+      "version": "7",
+      "when": 1791903000004,
+      "tag": "0433_conversation_summary_range_scoped_invalidation",
+      "breakpoints": true
+    },
+    {
+      "idx": 430,
+      "version": "7",
+      "when": 1791903000005,
+      "tag": "0434_memory_embedding_time_own_column",
+      "breakpoints": true
+    },
+    {
+      "idx": 431,
+      "version": "7",
+      "when": 1791903000006,
+      "tag": "0435_companion_message_reasoning_plaintext",
+      "breakpoints": true
+    },
+    {
+      "idx": 432,
+      "version": "7",
+      "when": 1791903000007,
+      "tag": "0436_conversation_summary_dependency_invalidation",
+      "breakpoints": true
+    },
+    {
+      "idx": 433,
+      "version": "7",
+      "when": 1792039030764,
+      "tag": "0437_native_companion_awareness",
+      "breakpoints": true
+    },
+    {
+      "idx": 434,
+      "version": "7",
+      "when": 1792060352195,
+      "tag": "0438_handoff_compaction_append",
+      "breakpoints": true
+    },
+    {
+      "idx": 435,
+      "version": "7",
+      "when": 1792068028000,
+      "tag": "0439_companion_compaction_progress",
+      "breakpoints": true
+    },
+    {
+      "idx": 436,
+      "version": "7",
+      "when": 1792069920000,
+      "tag": "0440_companion_runtime_recovery",
+      "breakpoints": true
     }
   ]
 }

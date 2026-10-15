@@ -7,6 +7,8 @@ import {
   assertOutsideWorkspaceTransaction,
   ExternalCallInsideTransactionError,
   registerActiveTransactionReader,
+  retryableTransactionSqlState,
+  runWithTransactionConflictRetry,
   WorkspaceTransactionScope,
   type ActiveWorkspaceTransaction,
   type WorkspaceContextQueryable,
@@ -283,4 +285,67 @@ test("注册式读者：出口对已登记作用域逐个取当前值，任一�
     assert.doesNotThrow(check);
     assert.equal(reported.length, 1);
   });
+});
+
+test("可重试 SQLSTATE 判定：沿 drizzle 包装层的 cause 链下钻，只认 40001/40P01", () => {
+  // drizzle 把语句错误包成 DrizzleQueryError（`Failed query: …`），SQLSTATE 在 cause 上。
+  const drizzleWrapped = Object.assign(new Error("Failed query: INSERT …"), {
+    cause: Object.assign(new Error("deadlock detected"), { code: "40P01" }),
+  });
+  assert.equal(retryableTransactionSqlState(drizzleWrapped), "40P01");
+
+  const serialization = Object.assign(new Error("could not serialize access"), { code: "40001" });
+  assert.equal(retryableTransactionSqlState(serialization), "40001");
+
+  // 权限/约束/超时都不是"重跑就能好"的那一类：42501 要报出去，55P03 要靠锁序收敛。
+  assert.equal(retryableTransactionSqlState(Object.assign(new Error("no"), { code: "42501" })), null);
+  assert.equal(retryableTransactionSqlState(Object.assign(new Error("no"), { code: "55P03" })), null);
+  assert.equal(retryableTransactionSqlState(new Error("plain failure")), null);
+  assert.equal(retryableTransactionSqlState(null), null);
+});
+
+test("事务冲突重试：40P01 整事务重跑并最终成功，非冲突错误一次都不重试", async () => {
+  const retries: { attempt: number; delayMs: number; sqlState: string }[] = [];
+  let calls = 0;
+  const outcome = await runWithTransactionConflictRetry(
+    async () => {
+      calls += 1;
+      if (calls < 3) {
+        throw Object.assign(new Error("Failed query: INSERT INTO companion_stream_events"), {
+          cause: Object.assign(new Error("deadlock detected"), { code: "40P01" }),
+        });
+      }
+      return "committed";
+    },
+    { onRetry: (info) => retries.push(info) },
+  );
+  assert.equal(outcome, "committed");
+  assert.equal(calls, 3);
+  assert.deepEqual(retries.map((r) => r.sqlState), ["40P01", "40P01"]);
+  // 退避必须真实等待（两次重试都 >0），否则牺牲者两侧会立刻撞回同一条死锁。
+  assert.ok(retries.every((r) => r.delayMs > 0));
+
+  // 连续冲突到次数上限：把最后一次失败原样抛出，不再空转。
+  let exhausted = 0;
+  await assert.rejects(
+    runWithTransactionConflictRetry(
+      async () => {
+        exhausted += 1;
+        throw Object.assign(new Error("deadlock detected"), { code: "40P01" });
+      },
+      { attempts: 3 },
+    ),
+  );
+  assert.equal(exhausted, 3);
+
+  // 非冲突错误（例如 42501 权限）必须一次就报出去——重试只会掩盖真正的配置问题。
+  let permissionCalls = 0;
+  await assert.rejects(
+    runWithTransactionConflictRetry(async () => {
+      permissionCalls += 1;
+      throw Object.assign(new Error("permission denied for function"), { code: "42501" });
+    }),
+    /permission denied/,
+  );
+  assert.equal(permissionCalls, 1);
 });

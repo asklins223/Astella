@@ -1,5 +1,6 @@
 import { agentCapabilityLabel } from "@astella/shared/agent-capabilities";
 import type { AgentArtifactRefV1, AgentOperationV1, AgentRunV1 } from "@astella/shared/agent-contracts";
+import { AGENT_ARTIFACT_KIND_LABELS_V1 } from "@astella/shared/agent-contracts";
 import { useRoomStore } from "../../app/room-store";
 import { plainCompanionBubbleText } from "./companion-markdown";
 
@@ -12,7 +13,7 @@ export const operationStatusText: Record<AgentRunV1["operations"][number]["statu
   cancelled: "已停止", outcome_unknown: "结果待核对",
 };
 export function artifactLabel(artifact: AgentArtifactRefV1, run?: AgentRunV1) {
-  const label = { note_mind_map: "思维导图", note_overview: "速看", note_dynamic_artifact: "互动演示", note_expansion: "拓展草稿", card_candidates: "待审核学习卡" }[artifact.kind];
+  const label = AGENT_ARTIFACT_KIND_LABELS_V1[artifact.kind];
   if (!run || new Set(run.inputs.map(input => input.noteId)).size < 2) return label;
   const index = run.inputs.findIndex(input => input.noteId === artifact.noteId && input.noteVersionId === artifact.noteVersionId);
   return index < 0 ? label : `笔记 ${index + 1} 的${label}`;

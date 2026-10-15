@@ -29,12 +29,14 @@ import {
   type CompanionAgentToolDefinitionV1,
 } from "@astella/shared";
 import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
+import { lockCompanionRunForEventWrite } from "@astella/shared/companion-lock-order";
 import { withWorkerWorkspaceTransaction } from "../db.ts";
 import { insertStreamEvent } from "./companion-dialogue-store.ts";
 import type { AgentEventContext } from "./companion-read-tools.ts";
 import { CompanionToolError } from "./companion-tool-result.ts";
 import { readCompanionMemoryWriteSource } from "./companion-memory-write-source.ts";
 import { describeAgentProposal } from "./companion-proposal-copy.ts";
+import { lockJobLease } from "../lib/job-lease.ts";
 
 export async function buildActionPayload(
   event: AgentEventContext,
@@ -142,6 +144,13 @@ export async function createAgentProposal(
   await withWorkerWorkspaceTransaction(
     { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
     async (tx) => {
+      // 锁序规约：先 run 行、后会话计数器（见 @astella/shared/companion-lock-order）。
+      // 本事务先拿计数器、再用围栏 UPDATE 碰 run 行——原来 run 行锁是计数器之后才拿，
+      // 与「先锁 run 再拿计数器」的流式路径并发即 AB-BA
+      // （2026-10-14 dev 库实测两例死锁）。围栏的 status 条件不受影响：
+      // FOR NO KEY UPDATE 只加锁，不改这一行的任何值。
+      await lockCompanionRunForEventWrite(tx, event.read.runId);
+      await lockJobLease(tx, event.ctx);
       if (parsedPayload.data.kind === "save_memory") {
         const memory = parsedPayload.data;
         await readCompanionMemoryWriteSource(tx, event, {
@@ -267,6 +276,14 @@ export async function createAgentProposal(
         SET status = 'waiting_confirmation', proposal_id = ${proposalId}, updated_at = now()
         WHERE run_id = ${event.read.runId} AND tool_call_id = ${call.id}
       `);
+      const recovery = event.prepareConfirmation?.(proposalId);
+      if (recovery) {
+        const [saved] = await tx.execute(sql`UPDATE companion_agent_steps
+          SET status='waiting',runtime_checkpoint=${JSON.stringify(recovery.checkpoint)}::jsonb,
+            checkpoint=NULL,compaction_checkpoint=NULL,finished_at=now()
+          WHERE id=${recovery.stepId} AND run_id=${event.read.runId} AND status='running' RETURNING id`);
+        if (!saved) throw new CompanionToolError("这一步状态已经变化，确认卡没有发布。");
+      }
       await tx.execute(sql`
         SELECT pg_notify('astella_companion_events_v1',
           ${JSON.stringify({ conversationId: event.read.conversationId, maxSeq: eventSeq })})

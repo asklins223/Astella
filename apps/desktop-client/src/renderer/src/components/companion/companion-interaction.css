@@ -360,6 +360,9 @@
 .companion-followups button:disabled { opacity: .5; cursor: default; }
 .companion-reply-attachments__destinations .companion-record__nav { margin: 0 0 8px; }
 .companion-reply-attachments__destinations .companion-record__nav button { width: 100%; min-height: 42px; justify-content: flex-start; padding: 9px 11px; border: 1px solid #c3cdb1; border-radius: 12px 16px 11px 14px; background: #e5ecd8; color: #3d583d; text-align: left; line-height: 1.6; }
+.companion-reply-attachments__recommendations { display: grid; gap: 7px; margin: 2px 0 8px; }
+.companion-reply-attachments__recommendations .companion-record__recommendation { margin: 0; padding: 10px 11px; border-color: #d8cba9; border-radius: 14px 18px 13px 16px; background: linear-gradient(145deg, #fffaf0, #f4f0df); }
+.companion-reply-attachments__recommendations .companion-record__recommendation-open { min-height: 38px; }
 /* 附页与上面的正文用虚线分开；材料内部每一项自己是实线，两种线不重复。 */
 .companion-reply-attachments__materials { margin-top: 2px; padding-top: 6px; border-top: 1px dashed #ddcfab; }
 .companion-reply-attachments summary { display: flex; align-items: center; gap: 7px; min-height: 36px; cursor: pointer; list-style: none; color: #70644f; }

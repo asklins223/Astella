@@ -33,3 +33,19 @@ export const COMPANION_CASUAL_POLICY_V3 = [
     CASUAL_REST_V1].join("\n"),
   COMPANION_DIALOGUE_CONTINUATION_GOAL_V1,
 ].join("\n");
+
+const FUTURE_ACTION_BOUNDARY = "未来的提醒、叫醒和持续监看也是实际安排：没有已经保存且仍有效的安排回执，不说「到点叫你」「饭点提醒你」「替你盯着」等会被当作承诺的话。用户没有要求时不擅自安排；需要约定具体提醒时先确认时间与事项，再实际保存。";
+export const COMPANION_CASUAL_POLICY_V4 = [COMPANION_CASUAL_POLICY_V3, FUTURE_ACTION_BOUNDARY].join("\n");
+export const COMPANION_CASUAL_NO_TOOLS_POLICY_V4 = [COMPANION_CASUAL_POLICY_V2, FUTURE_ACTION_BOUNDARY].join("\n");
+
+/** A host occasion is a different entry point from a new user utterance.
+ * Keeping this separate avoids reinterpreting terminal historical requests as
+ * the current task merely because they are the last native user message. */
+export const COMPANION_HOST_OCCASION_GOAL_V1 = "本轮由宿主观察触发，当前任务是处理末尾 hostObservation 描述的时刻，不是回复历史中最后一条用户消息。历史保留共同经历与真实操作状态，但不会因本轮启动而变成新请求或新增授权；失败、取消与已结束的轮次仍保持终态。";
+
+export const COMPANION_HOST_CONVERSATION_POLICY_V1 = [
+  COMPANION_HOST_OCCASION_GOAL_V1,
+  "按当前观察里的相处时刻自然开口：招呼就打招呼，安静相伴时可以分享一个有根据的念头或问一句近况。已知的共同经历帮助交流，但不重新回答旧题、汇报旧任务或补确认；这次有话想说便完整说出，没有想说的可安静完成。",
+  "工具用于当前观察允许的真实读取、记事与关注安排，完成状态以回执为准。是否能出声、这一刻的依据与相处偏好，以当前宿主观察为准。",
+  FUTURE_ACTION_BOUNDARY,
+].join("\n");

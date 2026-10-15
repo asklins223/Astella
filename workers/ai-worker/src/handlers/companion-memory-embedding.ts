@@ -9,6 +9,7 @@
 import { sql } from "drizzle-orm";
 import { readJobPayloadString } from "@astella/shared";
 import { MEMORY_SEMANTIC_SIMILARITY_THRESHOLD } from "@astella/shared/db-schema/assistant-memory";
+import { sha256Utf8V1 } from "@astella/shared/content-hash";
 import { logger } from "../lib/logger.ts";
 import { createEmbeddingProvider } from "../lib/ai-provider.ts";
 import { resolveProviderCallTimeout } from "../lib/handler-timeout-config.ts";
@@ -52,10 +53,11 @@ export async function runCompanionMemoryEmbeddingRebuild(job: JobPayload): Promi
   const rows = await withJobTransaction(job, async (tx) => {
     const result = await tx.execute<{
       id: string;
+      revision: number;
       content: string;
       embedding_profile_version: string | null;
     }>(sql`
-      SELECT id, content, embedding_profile_version
+      SELECT id, revision, content, embedding_profile_version
       FROM assistant_memory_items
       WHERE workspace_id = ${job.workspaceId}
         AND user_id = ${userId}
@@ -67,7 +69,10 @@ export async function runCompanionMemoryEmbeddingRebuild(job: JobPayload): Promi
           -- （只取 pending/none，且全仓没有 failed→pending 的重置）——一次瞬时
           -- embed 故障就让这条记忆永久没有向量，只能降级关键词检索，且无任何补偿
           -- 路径。这里让失败行按小时级重试：既不丢记忆，也不会形成热点循环。
-          OR (embedding_status = 'failed' AND updated_at < now() - interval '1 hour')
+          -- 0434 起按向量自己的记账时间退避，不再借内容时间（updated_at 是她在排序里
+          -- 用的「这条认识是什么时候的事」，一次重算不该把它推到今天）。
+          OR (embedding_status = 'failed'
+              AND COALESCE(embedding_checked_at, updated_at) < now() - interval '1 hour')
           -- Ready 只表示上一次模型下有向量。模型切换后，向量召回会按当前
           -- model_revision 排除旧空间；手动重建也必须把这类行重新选出来。
           OR (embedding_status = 'ready' AND NOT EXISTS (
@@ -108,7 +113,7 @@ export async function runCompanionMemoryEmbeddingRebuild(job: JobPayload): Promi
         userId,
         taskId: "companion_memory_embedding_rebuild",
         taskVersion: 1,
-        idempotencyKey: `memory-embedding:${job.id}:${row.id}`,
+        idempotencyKey: `memory-embedding:${job.id}:${row.id}:${row.revision}:${sha256Utf8V1(row.content)}`,
         inputSnapshotId: `${row.id}:embedding`,
         text: row.content,
         modelId: provider.embeddingModelId,
@@ -118,55 +123,32 @@ export async function runCompanionMemoryEmbeddingRebuild(job: JobPayload): Promi
         embed: (text, signal) => provider.embed(text, signal),
       });
       if (!vector || vector.length === 0) {
-        await markMemoryEmbeddingStatus(job, userId, row.id, "failed");
+        await markMemoryEmbeddingStatus(job, userId, row, "failed");
         failCount += 1;
         return;
       }
       const queryVec = JSON.stringify(vector);
       const modelRevision = provider.embeddingModelId;
-      await withJobTransaction(job, async (tx) => {
+      const committed = await withJobTransaction(job, async (tx) => {
         // 稳定 P1-1（2026-09-15 审计）：每行提交前重新校验并续租租约。
         // 顺带充当循环期间的心跳（本循环最多 200 次 embed，总时长可达分钟级）。
         // 代价：每行多 2 次 DB 往返（FOR UPDATE + renew），相对 ~300ms 的 embed
         // HTTP 往返约 1%，可接受；换来的是"租约被 reap 后不再落库/重复计费"。
         await lockJobLease(tx, job);
-        await tx.execute(sql`
-          INSERT INTO assistant_memory_embeddings
-            (memory_id, workspace_id, user_id, embedding, model_revision, updated_at)
-          VALUES
-            (${row.id}, ${job.workspaceId}, ${userId}, ${queryVec}::vector, ${modelRevision}, now())
-          ON CONFLICT (memory_id)
-          DO UPDATE SET embedding = EXCLUDED.embedding, model_revision = EXCLUDED.model_revision, updated_at = now()
-        `);
-        await tx.execute(sql`
-          UPDATE assistant_memory_items
-          SET embedding_status = 'ready',
-              embedding_profile_version = ${modelRevision},
-              updated_at = now()
-          WHERE id = ${row.id} AND workspace_id = ${job.workspaceId} AND user_id = ${userId}
-        `);
-
-        // 到这一刻才有两边向量：抽取时那条候选还没 embedding，
-        // 字面判据（pg_trgm）在 `companion-memory-extractor.ts` 已经先跑过一遍，
-        // 这里补的是"换了措辞的同一件事"（doc 34 L14，阈值实测见常量注释）。
-        // 效果与字面孪生同构：这条不再对她说话（dismissed），而不是删掉——
-        // 删掉会让"她忽略过什么"少一条记录。
-        if (await dismissSemanticTwin(tx, {
-          workspaceId: job.workspaceId,
-          userId,
-          memoryId: row.id,
-          embedding: queryVec,
-        })) {
-          semanticDismissedCount += 1;
-        }
+        return commitCompanionMemoryEmbedding(tx, {
+          workspaceId: job.workspaceId, userId, memory: row, embedding: queryVec, modelRevision,
+        });
       });
-      okCount += 1;
+      if (committed !== null) {
+        okCount += 1;
+        if (committed.semanticDismissed) semanticDismissedCount += 1;
+      }
     } catch (err) {
       if (err instanceof JobLeaseLostError || job.signal?.aborted) {
         throw err instanceof JobLeaseLostError ? err : new JobLeaseLostError(job.id, "aborted");
       }
       logger.warn({ jobId: job.id, memoryId: row.id, err }, "memory embedding failed");
-      await markMemoryEmbeddingStatus(job, userId, row.id, "failed");
+      await markMemoryEmbeddingStatus(job, userId, row, "failed");
       failCount += 1;
     }
   };
@@ -199,7 +181,7 @@ export async function runCompanionMemoryEmbeddingRebuild(job: JobPayload): Promi
 async function markMemoryEmbeddingStatus(
   job: JobPayload,
   userId: string,
-  memoryId: string,
+  memory: { id: string; revision: number; content: string },
   status: "ready" | "failed" | "pending",
 ): Promise<void> {
   try {
@@ -207,13 +189,45 @@ async function markMemoryEmbeddingStatus(
       await lockJobLease(tx, job);
       await tx.execute(sql`
         UPDATE assistant_memory_items
-        SET embedding_status = ${status}, updated_at = now()
-        WHERE id = ${memoryId} AND workspace_id = ${job.workspaceId} AND user_id = ${userId}
+        SET embedding_status = ${status}, embedding_checked_at = now()
+        WHERE id = ${memory.id} AND workspace_id = ${job.workspaceId} AND user_id = ${userId}
+          AND revision = ${memory.revision} AND content = ${memory.content} AND deleted_at IS NULL
       `);
     });
   } catch (err) {
-    logger.warn({ jobId: job.id, memoryId, err }, "memory embedding status update failed");
+    logger.warn({ jobId: job.id, memoryId: memory.id, err }, "memory embedding status update failed");
   }
+}
+
+/** The vector and ready flag must describe the exact revision sent to the model. */
+export async function commitCompanionMemoryEmbedding(
+  tx: JobTransaction,
+  input: { workspaceId: string; userId: string; memory: { id: string; revision: number; content: string };
+    embedding: string; modelRevision: string },
+): Promise<{ semanticDismissed: boolean } | null> {
+  const [current] = await tx.execute(sql`
+    SELECT id FROM assistant_memory_items
+    WHERE id = ${input.memory.id} AND workspace_id = ${input.workspaceId} AND user_id = ${input.userId}
+      AND revision = ${input.memory.revision} AND content = ${input.memory.content}
+      AND deleted_at IS NULL AND candidate = false
+    FOR UPDATE
+  `);
+  if (!current) return null;
+  await tx.execute(sql`
+    INSERT INTO assistant_memory_embeddings (memory_id, workspace_id, user_id, embedding, model_revision, updated_at)
+    VALUES (${input.memory.id}, ${input.workspaceId}, ${input.userId}, ${input.embedding}::vector, ${input.modelRevision}, now())
+    ON CONFLICT (memory_id) DO UPDATE
+      SET embedding = EXCLUDED.embedding, model_revision = EXCLUDED.model_revision, updated_at = now()
+  `);
+  await tx.execute(sql`
+    UPDATE assistant_memory_items SET embedding_status = 'ready',
+      embedding_profile_version = ${input.modelRevision}, embedding_checked_at = now()
+    WHERE id = ${input.memory.id}
+  `);
+  const semanticDismissed = await dismissSemanticTwin(tx, {
+    workspaceId: input.workspaceId, userId: input.userId, memoryId: input.memory.id, embedding: input.embedding,
+  });
+  return { semanticDismissed };
 }
 
 /**

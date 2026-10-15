@@ -13,7 +13,7 @@
  */
 
 import type { Capability } from "./provider-capabilities.ts";
-import { resolveDashScopeTextEndpoint } from "./ai-endpoints.ts";
+import { resolveDashScopeTextEndpoint, resolveOpenAIResponsesUrl } from "./ai-endpoints.ts";
 import type { ModelProfile, PlatformOptions } from "./platform-config.ts";
 
 /** 运行时配置（API Key、Base URL、模型与模型能力档案等） */
@@ -121,19 +121,46 @@ export const PROVIDER_METADATA: readonly ProviderDescriptor[] = [
   {
     id: "opencode_go",
     label: "OpenCode Go",
-    // 协议为 OpenAI Responses API（/responses），不是 chat/completions：
-    // OpenCode Go 的 muse-spark-*（含 muse-spark-1.3-contributor，1M 上下文）、
-    // grok-4.6、gpt-5.6-luna 只在 /responses 提供，走 /chat/completions 会稳定 500。
-    // 该端点的 chat/completions 系模型（deepseek-*、glm-*、kimi-* 等）请用
-    // openai_compatible 平台实例指向同一个 baseUrl。
-    // 端点校验与 URL 解析在 worker 侧工厂（providers/opencode-go.ts），与 dashscope 一致。
-    capabilities: ["agent_turn"],
+    // Agent 与文本生成共用 Pi：每个模型由 models[model].protocol 选择
+    // Chat Completions 或 Responses；不能把平台下所有模型强制发到 /responses。
+    // 端点仍限 opencode.ai，session header 与统一安全 HTTP 出口由 worker 适配器负责。
+    capabilities: ["agent_turn", "text_generation"],
     defaults: {
       agent_turn: {
-        baseUrl: "https://opencode.ai/zen/go/v1",
+        baseUrl: "https://opencode.ai/inference/go/v1",
         model: "muse-spark-1.3-contributor",
       },
+      text_generation: {
+        baseUrl: "https://opencode.ai/inference/go/v1",
+        model: "deepseek-v4.1-flash",
+      },
     },
+  },
+  {
+    id: "mimo_responses",
+    label: "Xiaomi MiMo Responses API",
+    capabilities: ["agent_turn", "text_generation"],
+    defaults: {
+      agent_turn: {
+        baseUrl: "https://api.xiaomimimo.com/v1",
+        model: "mimo-v2.6-flash",
+      },
+      text_generation: {
+        baseUrl: "https://api.xiaomimimo.com/v1",
+        model: "mimo-v2.6-flash",
+      },
+    },
+    validateBaseUrl: (baseUrl: string): string | Error => {
+      try {
+        if (new URL(baseUrl).hostname.toLowerCase() !== "api.xiaomimimo.com") {
+          return new Error("MiMo Responses 必须使用 api.xiaomimimo.com 官方域名");
+        }
+        return baseUrl;
+      } catch {
+        return new Error(`Invalid URL: ${baseUrl}`);
+      }
+    },
+    resolveEndpoint: resolveOpenAIResponsesUrl,
   },
 ];
 

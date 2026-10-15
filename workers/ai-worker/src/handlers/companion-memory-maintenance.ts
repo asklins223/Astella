@@ -11,9 +11,10 @@
 import { sql } from "drizzle-orm";
 import { db } from "../db.ts";
 import { logger } from "../lib/logger.ts";
+import { createTickThrottle } from "./tick-throttle.ts";
 
-let lastMaintenanceAt = 0;
 const MAINTENANCE_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const maintenanceThrottle = createTickThrottle(MAINTENANCE_INTERVAL_MS);
 
 /**
  * 下面两个兜底清理的节流间隔。
@@ -44,18 +45,19 @@ let lastCleanupAt = 0;
 export async function tickCompanionMemoryMaintenance(): Promise<void> {
   const now = Date.now();
   // 进程内节流只用于减少查询；数据库日期键才是跨副本的一次性正确性门。
-  // 只有 SQL 成功返回后才推进本地时间戳，DB 故障会在下一轮重试。
-  if (now - lastMaintenanceAt >= MAINTENANCE_INTERVAL_MS) {
+  // 只有 SQL 成功返回后才推进周期，DB 故障会在下一轮重试（连败则退避，见 tick-throttle）。
+  if (maintenanceThrottle.due(now)) {
     try {
       const rows = await db.execute<{ maintained: number }>(sql`
         SELECT public.astella_run_companion_memory_maintenance() AS maintained
       `);
-      lastMaintenanceAt = now;
+      maintenanceThrottle.succeed(now);
       const maintained = Number((Array.isArray(rows) ? rows : [])[0]?.maintained ?? 0);
       if (maintained > 0) {
         logger.info({ maintained }, "companion memory maintenance completed");
       }
     } catch (err) {
+      maintenanceThrottle.fail(now);
       logger.warn(
         { err: err instanceof Error ? err.message : String(err) },
         "companion memory maintenance failed",
@@ -108,6 +110,6 @@ export async function tickCompanionMemoryMaintenance(): Promise<void> {
 
 /** 测试用：重置进程内节流（生产代码不要调用）。 */
 export function resetCompanionMemoryMaintenanceThrottleForTest(): void {
-  lastMaintenanceAt = 0;
+  maintenanceThrottle.reset();
   lastCleanupAt = 0;
 }

@@ -394,6 +394,12 @@ export async function loadHereAndNow(
     workspaceId: string;
     userId: string;
     conversationId?: string | null;
+    /**
+     * 本轮正在回的那一条 user 消息的 seq。给了它，「距上次说话」就只排除**这一句**，
+     * 其余（包括同一会话里几分钟前的那一轮）照算——不然她会看见一块写着「14 小时前」
+     * 的当下状态，而同一份 prompt 的时间线写着上一条是 3 分钟前。
+     */
+    currentRequestSeq?: string | null;
     /** 本轮 Bridge page context（对象或 JSON 字符串）；缺省就没有"当前界面"这一行。 */
     pageContext?: unknown;
     /** 用户当下这句话：只用来识别《某篇》形态，见 `extractNoteTitleReference`。 */
@@ -431,18 +437,22 @@ export async function loadHereAndNow(
   `);
   const petRow = petRows[0];
 
-  // conversationId 为空 = 跨**本空间所有**会话取最近一次说话（主动交流机会需要整体对话间隔）；
-  // 有则排除本轮，避免"距上次说话 0 分钟"这种自指噪音。
+  // conversationId 为空 = 跨**本空间所有**会话取最近一次说话（主动交流机会需要整体对话间隔）。
+  // 给了本轮 seq（对话路径）就只排除**她正在回的这一句**：那才是"0 分钟前"的自指来源。
+  // 以前的写法是把整个当前会话排除掉，于是她一边在同一个会话里几分钟前刚说过话，
+  // 一边读到「距上次和用户说话：14 小时前」——同一份 prompt 里跟回放时间线直接打架。
   // workspace_id 必须在：多空间审查实测到，缺它时 A 空间的发言会改掉 B 空间她说的
   // "你已经 3 天没理我了"——同一句话在两个空间里指向两个事实。
-  const excludeCurrentConversation = scope.conversationId
-    ? sql`AND conversation_id <> ${scope.conversationId}`
-    : sql``;
+  const excludeCurrentTurn = scope.conversationId && scope.currentRequestSeq
+    ? sql`AND NOT (conversation_id = ${scope.conversationId} AND seq >= ${scope.currentRequestSeq}::bigint)`
+    : scope.conversationId
+      ? sql`AND conversation_id <> ${scope.conversationId}`
+      : sql``;
   const seenRows = await tx.execute<{ gap: number | null }>(sql`
     SELECT EXTRACT(EPOCH FROM (now() - max(created_at))) / 60 gap
     FROM companion_messages
     WHERE workspace_id = ${scope.workspaceId}
-      AND user_id = ${scope.userId} ${excludeCurrentConversation}
+      AND user_id = ${scope.userId} ${excludeCurrentTurn}
   `);
   const gapMinutes = seenRows[0]?.gap == null ? null : Math.round(Number(seenRows[0].gap));
 

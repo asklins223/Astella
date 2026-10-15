@@ -27,6 +27,27 @@ import { resolveFactSpans, withholdPartialFactSpanTail, type FactSpanValues } fr
 import type { ReadContext } from "./companion-dialogue-store.ts";
 import { assertCompanionContextSourcesCurrent } from "./companion-context-sources.ts";
 import { stripVoiceExpressionTags, withholdPartialVoiceExpressionTag } from "@astella/shared/voice-expression-tags";
+import { withholdPartialCompanionToolProtocol } from "./companion-tool-protocol-output.ts";
+import { CompanionContextChangedError } from "../lib/non-retryable-errors.ts";
+
+export function restoreCompanionDeliveredDeltas(rows: readonly { payload: unknown }[]): { text: string; count: number } {
+  let text = "";
+  for (const row of rows) {
+    const payload = row.payload as { appendFrom?: unknown; textDelta?: unknown } | null;
+    if (!payload || payload.appendFrom !== text.length || typeof payload.textDelta !== "string") throw new CompanionContextChangedError();
+    text += payload.textDelta;
+  }
+  return { text, count: rows.length };
+}
+export function readCompanionDeliveredPrefix(job: JobLeaseContext, read: ReadContext) {
+  return withWorkerWorkspaceTransaction({ workspaceId: job.workspaceId, userId: read.userId }, async tx => {
+    await lockJobLease(tx, job);
+    const rows = await tx.execute<{ payload: unknown }>(sql`SELECT payload FROM companion_stream_events
+      WHERE run_id=${read.runId} AND conversation_id=${read.conversationId} AND generation=${read.generation}
+        AND account_epoch=${read.accountEpoch} AND type='assistant.delta' ORDER BY seq`);
+    return restoreCompanionDeliveredDeltas(rows);
+  });
+}
 
 /** 行首标记：只有落在行首才参与改写（`- 列表`、`### 标题`、``` 围栏）。 */
 const LINE_START_UNSTABLE_CHARS = "#>-+|";
@@ -113,7 +134,7 @@ export class CompanionStreamStoppedError extends Error {
  * 下一拍再看到它变成数字。
  */
 export function companionVisibleText(raw: string, factSpanValues?: FactSpanValues): string {
-  const trimmed = stripVoiceExpressionTags(withholdPartialVoiceExpressionTag(raw.trimStart()));
+  const trimmed = withholdPartialCompanionToolProtocol(stripVoiceExpressionTags(withholdPartialVoiceExpressionTag(raw.trimStart())));
   const cut = stableVisibleCut(trimmed);
   const sanitized = sanitizeCompanionVisibleText(trimmed.slice(0, cut));
   if (!factSpanValues) return sanitized;
@@ -133,7 +154,7 @@ export type CompanionVisibleProjection =
  * - `visible`：稳定前缀（可能为空串——尾巴还没稳定）。
  */
 export function projectCompanionVisible(raw: string, factSpanValues?: FactSpanValues): CompanionVisibleProjection {
-  const rejection = companionOutputRejectionReason(raw);
+  const rejection = companionOutputRejectionReason(raw, { streaming: true });
   if (rejection) return { kind: "rejected", reason: rejection };
   if (looksLikeEnvelopeHead(raw)) return { kind: "envelope_guarded" };
   // 无头 JSON 残片（2026-09-19 T3）：头部防线只管"带头/完整的信封"，而信封被从
@@ -180,6 +201,7 @@ export interface CompanionStreamDelivery {
 }
 
 interface CompanionDeliveryArgs {
+  initial?: { text: string; count: number };
   job: JobLeaseContext;
   ctx: { workspaceId: string };
   read: ReadContext;
@@ -221,13 +243,13 @@ export function createCompanionStreamDelivery(args: CompanionDeliveryArgs): Comp
   const flushChars = args.flushChars ?? DEFAULT_FLUSH_CHARS;
   const flushIntervalMs = args.flushIntervalMs ?? DEFAULT_FLUSH_INTERVAL_MS;
 
-  let raw = "";
+  let raw = args.initial?.text ?? "";
   /** 信封守卫命中后不再产生任何可见输出（整段留给 finish 兜底）。 */
   let envelopeGuarded = false;
   /** 已下发的可见文本（永远是最终文本的前缀）。 */
-  let delivered = "";
+  let delivered = args.initial?.text ?? "";
   /** 已写入的 delta 条数（与库中行数对账，desync 时 fail closed）。 */
-  let writtenDeltas = 0;
+  let writtenDeltas = args.initial?.count ?? 0;
   let pendingText = "";
   let lastFlushAt = 0;
   let failure: string | null = null;

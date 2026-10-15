@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { companionInitiativeAttentionIntent, renderCompanionInitiativeObservation } from "../companion-initiative-observation.ts";
+import { companionInitiativeAttentionIntent, companionInitiativePushKind, renderCompanionInitiativeObservation } from "../companion-initiative-observation.ts";
 import { companionResponseStrategy } from "../companion-response-strategy.ts";
 import type { CompanionInitiativeInputV1 } from "@astella/shared/companion-initiative-contracts";
 
@@ -43,7 +43,7 @@ test("观察消息说清这是什么时刻，只留她真正要读的事实", ()
   const text = renderCompanionInitiativeObservation(initiative({
     topic: "help.available", intent: "这次资料处理失败了，看能不能给一个可操作的下一步。",
     facts: { canSpeak: true, awareness: { sessions: [] }, attention: [], observation: {
-      facts: { evidence: { domain: "source", entityId: "src-77", revision: "v3", description: "PDF 解析在第 2 页失败" } },
+      evidence: { domain: "source", entityId: "src-77", revision: "v3", description: "PDF 解析在第 2 页失败" },
     } },
   }));
   assert.match(text, /这不是他发来的话/);
@@ -56,20 +56,97 @@ test("观察消息说清这是什么时刻，只留她真正要读的事实", ()
     assert.ok(!text.includes(plumbing), `观察消息不该带宿主内部字段 ${plumbing}`);
 });
 
-test("没有值得说的就不说，这条规矩跟着每一次观察", () => {
-  assert.match(renderCompanionInitiativeObservation(initiative()), /安静结束/);
-  assert.match(renderCompanionInitiativeObservation(initiative()), /不要把「没什么补充」「本轮不发言」当成一句话发出去/);
+test("需要依据的场合仍然「没有值得说的就不说」，且执行收尾不许当对白", () => {
+  // 页面帮助与答后补充这两类要求确实有新的有用内容；这条规矩不能因为陪聊档放开而一起放开。
+  const help = renderCompanionInitiativeObservation(initiative({ topic: "help.available" }));
+  assert.match(help, /没有值得说的就安静结束这一轮/);
+  assert.match(help, /不要把「没什么补充」「本轮不发言」当成一句话发出去/);
+  // 2026-10-13 实测：她 17 条主动成稿里 16 条是「我不吵你，先在这儿待着」这一类——
+  // 既没给他任何东西，又占掉了一次主动开口的机会。旧那句只禁了「没什么补充」，
+  // 这种换了客气说法的同一类东西就从闸缝里过去了。
+  assert.match(help, /「我先不打扰你」「我就在旁边待着」也是同一类/);
+  assert.match(help, /占用了一次她主动开口的机会/);
+});
+
+/**
+ * 陪聊档的口径在 2026-10-14 反过来（用户判定"第一版还是不太行"）。
+ *
+ * 旧口径只写「没有值得说的就安静结束这一轮」，还把「我先不打扰你」当反面例子压在那里；
+ * 实链路复现的后果是：安静在场的机会真的开了门，她 6 秒内就调用
+ * companion_finish_participation 收尾，一句都没说（2026-10-14 14:17）。
+ * 对一个"陪着的时候"的时刻来说，那句收尾把**开口**教成了违规动作。
+ */
+test("陪聊档默认开口：寒暄与问近况都算一次开口，不必等到有值得汇报的事", () => {
+  for (const topic of ["presence.quiet", "app.started", "study.started", "app.foreground"]) {
+    const text = renderCompanionInitiativeObservation(initiative({ topic }));
+    assert.match(text, /这不妨碍你开口/, topic);
+    assert.match(text, /问问他今天怎么样/, topic);
+    assert.match(text, /寒暄和闲聊本身就是相处，不必等到有值得汇报的事/, topic);
+    assert.match(text, /安静是例外，不是默认/, topic);
+    // 事实边界不能被"放开开口"带走：不知道的事仍然只能问，不能说成知道。
+    assert.match(text, /把推测说成知道/, topic);
+    assert.match(text, /想知道就问/, topic);
+    // 她也没有屏幕外的生活。2026-10-14 实链路样本里她真说过「我去吃饭了，你先忙你的」——
+    // 那句在用户那里只能被当成真的，而她没有那些事。
+    assert.match(text, /你自己也没有屏幕外的生活/, topic);
+    assert.match(text, /不要说「我去吃饭了」「我去睡了」「我刚出门回来」/, topic);
+    // 旧那句把开口教成违规的收尾话，不该再出现在陪聊档里。
+    assert.ok(!/没有值得说的就安静结束这一轮/.test(text), topic);
+  }
+});
+
+test("陪聊档里不许把打招呼变成进度单：不汇报待办、不催历史里没办完的事", () => {
+  // 2026-10-14 实链路样本：安静在场开了门，她开口第一句是
+  // 「刚才那篇笔记改不改得成，就等你哪天顺手把它点开」——一次打招呼变成了催办。
+  for (const topic of ["presence.quiet", "app.started"]) {
+    const text = renderCompanionInitiativeObservation(initiative({ topic }));
+    assert.match(text, /不要汇报待办/, topic);
+    assert.match(text, /不要催他去办历史里没办完的事|不要复述卡住的任务/, topic);
+  }
+});
+
+test("启动问候不许变成接着办事：不汇报待办、不接历史里没答完的请求", () => {
+  const text = renderCompanionInitiativeObservation(initiative({ topic: "app.started" }));
+  assert.match(text, /这是打招呼的时刻，不是接着办事的时刻/);
+  assert.match(text, /不要汇报待办/);
+  assert.match(text, /不要回答历史里没答完的请求/);
+  assert.match(text, /不要把这次打开当成他让你继续做某件事/);
+  // 2026-10-14 真实样本：启动问候里夹着"上回那条改笔记的事我这边还卡着"，
+  // 另一次直接在问候里输出了一整段笔记修改答案。这一句是给那种漂移的围栏。
+});
+
+test("安静收尾在陪聊档里也允许，但不能当成一句话发出去", () => {
+  const text = renderCompanionInitiativeObservation(initiative({ topic: "presence.quiet" }));
+  assert.match(text, /安静收尾也可以/);
+  assert.match(text, /不要发「没什么补充」「本轮不发言」「我先不打扰你」「我就在旁边待着」这类执行收尾/);
+  assert.match(text, /它们不是对白/);
+});
+
+/**
+ * 「多久说一次」的闸门只管她自己新起的话题；用户先要过的东西不受管。
+ *
+ * `study.started` 原来在豁免名单里，代价是实测 2026-10-13 13:49–13:52 四分钟内连开四次口。
+ * 一段学习的开始不会连续发生四次，而它也不是他要的"先打过招呼"——所以它回到节奏闸里。
+ */
+test("开始学习不再有免闸权，一次学习不该连说四遍", () => {
+  assert.equal(companionInitiativePushKind("study.started"), "routine");
+  assert.equal(companionInitiativePushKind("presence.quiet"), "routine");
+  assert.equal(companionInitiativePushKind("page.arrived"), "routine");
+  assert.equal(companionInitiativePushKind("attention.due"), "routine");
+  // 这些是他先要过的、或正落在他手上的东西：间隔不该把它们挡掉。
+  for (const topic of ["app.started", "app.foreground", "preference.changed", "help.available",
+    "result.available", "reply.finished"]) assert.equal(companionInitiativePushKind(topic), "triggered", topic);
 });
 
 test("安静机会只报告可观察到的前台停顿，不替用户推断情绪或需求", () => {
   const text = renderCompanionInitiativeObservation(initiative({
     topic: "presence.quiet",
     facts: { canSpeak: true, awareness: { sessions: [] }, attention: [], observation: {
-      facts: { context: { quietForMs: 240_000 }, evidence: null },
+      context: { quietForMs: 240_000 }, evidence: null,
     } },
   }));
   assert.match(text, /前台约 4 分钟没有新的操作/);
-  assert.match(text, /不说明他走神、空闲或需要帮助/);
+  assert.match(text, /不说明他走神、空闲、疲劳或需要帮助/);
 });
 
 test("人不在这台设备前面时，不叫她把话发出去", () => {

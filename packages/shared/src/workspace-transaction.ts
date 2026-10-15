@@ -182,6 +182,93 @@ export class ExternalCallInsideTransactionError extends Error {
 }
 
 /**
+ * 可以整事务重试的 SQLSTATE（2026-10-14 实测开发库死锁后补）。
+ *
+ * PostgreSQL 对这两类冲突的处置就是"整条事务已经回滚，交给应用层重试"
+ * （官方文档 "Tips for Preventing Deadlocks" 与并发更新错误一节）：
+ *
+ *   - `40P01` deadlock_detected——两条事务按相反顺序取行锁，PG 挑一个牺牲者回滚；
+ *   - `40001` serialization_failure——可串行化/可重复读下的写冲突，同样整事务作废。
+ *
+ * 为什么不收 `55P03`（lock_timeout）：那是"锁等满 5 秒"的**产品边界**（本仓
+ * API/worker 两侧连接都显式设了 5s lock_timeout，见 `db/client.ts` 与 `db.ts`），
+ * 重试只会把同样的等待原样再付一遍；它要靠锁序收敛解决，不能靠重试掩盖。
+ *
+ * 背景（2026-10-14 dev 库 `deadlock detected` 两例，postgres 容器原始日志）：
+ * 伴星事件写入天然存在两种取锁顺序——
+ *   A 序：先 `UPDATE companion_conversations` 拿计数器，再 `INSERT companion_stream_events`，
+ *        由 AFTER INSERT 触发器 `companion_archive_process_event` 顺手锁
+ *        `companion_turn_runs` 的行（`agent.tool`/`assistant.status`/`assistant.thinking`）；
+ *   B 序：先 `UPDATE companion_turn_runs` 做活性检查，再回去拿 conversations 的计数器。
+ * A、B 并发即 AB-BA。实测表现是用户发一句话后 turn 直接 `INTERNAL_ERROR`
+ * （`companion tool preparation could not be settled` → run marked failed），
+ * 界面上就是"她没回"。锁序要彻底统一得改十几个写入点（且触发器这层看不见），
+ * 所以先按官方建议在**事务入口**收口：冲突即整事务重跑。
+ */
+const RETRYABLE_TRANSACTION_SQLSTATES: ReadonlySet<string> = new Set(["40001", "40P01"]);
+
+/**
+ * 从错误（含 drizzle 的 `DrizzleQueryError` 包装层）里挖出可重试的 SQLSTATE。
+ *
+ * drizzle 把语句错误包成 `Failed query: …`、SQLSTATE 落在 `.cause`
+ * （postgres.js `PostgresError.code`）上，所以必须沿 `cause` 链往下找；
+ * 深度封顶只防环形 cause，正常 2 层内就到。
+ */
+export function retryableTransactionSqlState(error: unknown): string | null {
+  let cursor: unknown = error;
+  for (let depth = 0; depth < 8; depth += 1) {
+    if (cursor === null || typeof cursor !== "object") return null;
+    const record = cursor as { code?: unknown; cause?: unknown };
+    if (typeof record.code === "string" && RETRYABLE_TRANSACTION_SQLSTATES.has(record.code)) {
+      return record.code;
+    }
+    cursor = record.cause;
+  }
+  return null;
+}
+
+export interface TransactionConflictRetryOptions {
+  /**
+   * 含第一次在内的总尝试次数（默认 3）。
+   *
+   * 这是**瞬时冲突的收敛判据**，不是任务步数/产出上限（见 agent-no-hard-caps 裁决
+   * 允许的"失控收敛判据"一类）：三次同形冲突仍不退让说明锁序有结构性问题，
+   * 那时应当把失败报出去，而不是继续空转。
+   */
+  attempts?: number;
+  onRetry?: (info: { attempt: number; delayMs: number; sqlState: string }) => void;
+}
+
+/**
+ * 只对事务冲突（40001/40P01）重跑的入口包装。
+ *
+ * 可安全重跑的前提由结构保证：**事务体只做数据库工作**——外部 HTTP/模型调用
+ * 落在事务里会被 `assertOutsideRegisteredTransactions` 直接拒绝，`pg_notify`
+ * 随事务回滚，两侧也没有在事务回调里 emit 内存事件的写法。
+ * 嵌套路径不经过这里（作用域复用在各自实现里提前返回），所以重试的永远是
+ * "本函数自己开的那条事务"。
+ */
+export async function runWithTransactionConflictRetry<T>(
+  operation: () => Promise<T>,
+  options: TransactionConflictRetryOptions = {},
+): Promise<T> {
+  const maxAttempts = Math.max(1, options.attempts ?? 3);
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      const sqlState = retryableTransactionSqlState(error);
+      if (sqlState === null || attempt >= maxAttempts) throw error;
+      // 退避带抖动：牺牲者两侧同时重跑仍会撞回同一条死锁，错开几十毫秒即可让
+      // 先到的那位先提交（实测两例的事务都是毫秒级短事务）。
+      const delayMs = 50 * attempt + Math.floor(Math.random() * 50);
+      options.onRetry?.({ attempt, delayMs, sqlState });
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+}
+
+/**
  * 公共外部调用边界（模型／转写／图片解析／对象存储）之前的那道检查（D5 §5.2 第二件）。
  *
  * 判据是「**当前异步作用域有没有活动事务**」，不是「这段代码文本里有没有出现

@@ -97,3 +97,21 @@ test("governed provider enforces sendImageContent for multimodal messages", asyn
     AIDataPolicyDeniedError,
   );
 });
+
+test("governance preserves a prototype streaming capability and host-origin request metadata", async () => {
+  const { provider } = makeProvider();
+  Object.setPrototypeOf(provider, { get chatCompletionStreamToolCalls() { return true; } });
+  let received: unknown;
+  provider.chatCompletionStream = async (_messages, options) => {
+    received = options.nativeAgentRequest;
+    return { content: "welcome back", usage: {} };
+  };
+  const governed = createGovernedProvider(provider, { consentOk: true, policy: policy() }, workspaceId);
+  const request = { role: "companion_agent", systemPrompt: "host occasion policy",
+    messages: [{ role: "user", content: "historical failed question" },
+      { role: "system", content: "app.started", hostObservation: true }],
+    tools: [], temperature: 0.9, maxTokens: 100 } as import("@astella/shared").AgentTurnRequest;
+  assert.equal(governed.chatCompletionStreamToolCalls, true);
+  await governed.chatCompletionStream!([], { nativeAgentRequest: request }, undefined, () => {});
+  assert.deepEqual(received, request, "policy sanitization must preserve origin and message order");
+});

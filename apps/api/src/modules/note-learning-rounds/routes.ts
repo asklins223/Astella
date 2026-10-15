@@ -673,6 +673,12 @@ export async function noteLearningRoundRoutes(app: FastifyInstance, options: {
     });
     if (!generated.ok) {
       await withWorkspaceTransaction(scope, (tx) => finishRoundModelAttempt(tx, scope, frozen.attempt, generated.modelCalls, false));
+      // 503 必须留痕：这一格过去**一个字都不打日志**（2026-10-14 长笔记上实测，
+      // 同一分钟只有两条 `note_teaching_explain success` 的审计行，然后客户端拿到
+      // `teaching_failed`，`docker logs` 里连 WARN 都没有）——事后无从知道是
+      // 结构没解析、输出被截断还是调用数用尽，而这三种的处置完全不同。
+      req.log.error({ scope: "note-round-teaching", roundId, failureClass: generated.class, modelCalls: generated.modelCalls },
+        `讲解这一发没有生成：${generated.message}`);
       const mapped = teachingFailureResponseV1(generated);
       return reply.code(mapped.status).send({ error: mapped.error, message: mapped.message });
     }
@@ -835,6 +841,12 @@ export async function noteLearningRoundRoutes(app: FastifyInstance, options: {
     });
     if (!generated.ok) {
       await withWorkspaceTransaction(scope, (tx) => finishRoundModelAttempt(tx, scope, frozen.attempt, generated.modelCalls, false));
+      // 503 必须留痕：这一格过去**一个字都不打日志**（2026-10-14 长笔记上实测，
+      // 同一分钟只有两条 `note_teaching_explain success` 的审计行，然后客户端拿到
+      // `teaching_failed`，`docker logs` 里连 WARN 都没有）——事后无从知道是
+      // 结构没解析、输出被截断还是调用数用尽，而这三种的处置完全不同。
+      req.log.error({ scope: "note-round-teaching", roundId, failureClass: generated.class, modelCalls: generated.modelCalls },
+        `讲解这一发没有生成：${generated.message}`);
       const mapped = teachingFailureResponseV1(generated);
       return reply.code(mapped.status).send({ error: mapped.error, message: mapped.message });
     }
@@ -864,15 +876,24 @@ export async function noteLearningRoundRoutes(app: FastifyInstance, options: {
     let modelCalls = generated.modelCalls + grounded.modelCalls;
     if (!grounded.report?.teachingSupported) {
       await withWorkspaceTransaction(scope, (tx) => finishRoundModelAttempt(tx, scope, frozen.attempt, modelCalls, false));
+      // 没有结论 ≠ 结论是"没依据"。核查那两发**一次都没回话**（长笔记上实测 2026-10-14：
+      // 冻结快照 2,359 块，独立核查要整篇读一遍，这一轮 1800s 的墙钟此时只剩 44s，
+      // `note_round_target_grounding` 那一发按剩余墙钟被 abort，`report` 是 null，
+      // `ai_audit_log` 记 `cancelled / ABORT_ERR`）——那时照旧回那句"没有依据"，
+      // 用户会照着"换个问法"去试，而真正的下一步是**另起一轮**（墙钟按轮次重发）。
+      if (!grounded.report) {
+        req.log.error({ scope: "note-round-teaching", modelCalls, remainingMs: frozen.attempt.deadlineAt - Date.now() },
+          "讲解的依据核对没有拿到结论：核查那几发没有回话，不当作内容判据使用");
+        return reply.code(422).send({ error: "teaching_grounding_unavailable",
+          message: "这一轮没拿到依据核对的结论，先别当内容问题看——多半是这一轮的生成预算用得差不多了。另起一轮再问，比在同一轮里换问法有用。" });
+      }
       // 核查者**自己写的理由**要进留痕（§16.4）。这一条 422 在界面上只有一句「依据还
       // 没核对通过」；若日志里也只有那一句，事后既不知道是讲解的哪一句没有依据，也不知道
       // 该动提示词、该动材料，还是该换模型——三样对应的处置完全不同。
-      req.log.error({ scope: "note-round-teaching", reason: grounded.report?.teachingReason ?? "no report" },
-        `这次讲解的依据核对没过：${grounded.report?.teachingReason ?? "核查者没有给出理由"}`
-        + (grounded.report
-          ? `｜核不上的段：${grounded.report.teachingSegments.filter((seg) => !seg.supported)
-            .map((seg) => `#${seg.ordinal} ${seg.reason}`).join(" ") || "（核查者说整体不成立，但没点名具体段）"}`
-          : ""));
+      req.log.error({ scope: "note-round-teaching", reason: grounded.report.teachingReason },
+        `这次讲解的依据核对没过：${grounded.report.teachingReason}`
+        + `｜核不上的段：${grounded.report.teachingSegments.filter((seg) => !seg.supported)
+          .map((seg) => `#${seg.ordinal} ${seg.reason}`).join(" ") || "（核查者说整体不成立，但没点名具体段）"}`);
       // 界面上这一句要说清**下一步该做什么**。原来的"可以重试"是在教用户烧预算：
       // 真窗口实测（2026-09-28）连撞两堵墙都只给这一句，用户既不知道是内容没核对过，
       // 也不知道真正管用的是**换一个材料答得上来的问法**。核查者不能替界面断言"是问题

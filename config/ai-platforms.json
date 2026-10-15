@@ -1,40 +1,5 @@
 {
   "platforms": {
-    "morbuke": {
-      "type": "openai_compatible",
-      "apiKey": "${OPENAI_COMPAT_API_KEY}",
-      "baseUrl": "https://cn.morbuke.com/v1",
-      "options": {
-        "disableMaxTokens": true
-      }
-    },
-    "qwen": {
-      "type": "dashscope",
-      "apiKey": "${DASHSCOPE_API_KEY}",
-      "baseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1"
-    },
-    "bigmodel": {
-      "type": "openai_compatible",
-      "apiKey": "${BIGMODEL_API_KEY}",
-      "baseUrl": "https://open.bigmodel.cn/api/paas/v4",
-      "models": {
-        "GLM-4.1V-Thinking-Flash": {
-          "contextWindowTokens": 65536,
-          "maxOutputTokens": 16384,
-          "vision": true,
-          "reasoning": {
-            "levels": [
-              "none",
-              "high"
-            ],
-            "default": "high"
-          }
-        }
-      },
-      "options": {
-        "disableMaxTokens": true
-      }
-    },
     "siliconflow": {
       "type": "siliconflow",
       "apiKey": "${SILICONFLOW_API_KEY}",
@@ -45,92 +10,27 @@
         }
       }
     },
-    "siliconflow-chat": {
-      "type": "openai_compatible",
-      "apiKey": "${SILICONFLOW_API_KEY}",
-      "baseUrl": "https://api.siliconflow.cn/v1",
-      "models": {
-        "THUDM/GLM-4-9B-0414": {
-          "vision": false,
-          "reasoning": {
-            "levels": [
-              "none"
-            ],
-            "default": "none"
-          },
-          "contextWindowTokens": 32768,
-          "maxOutputTokens": 8192
-        }
-      },
-      "options": {
-        "disableMaxTokens": false
-      }
-    },
-    "tokenrhythm": {
-      "type": "openai_compatible",
-      "apiKey": "${TOKENRHYTHM_API_KEY}",
-      "baseUrl": "https://tokenrhythm.studio/v1",
-      "models": {
-        "qwen3.8-flash": {
-          "contextWindowTokens": 1000000,
-          "maxOutputTokens": 131072,
-          "vision": false,
-          "reasoning": {
-            "levels": [
-              "none",
-              "high"
-            ],
-            "default": "high"
-          }
-        }
-      }
-    },
-    "opencode-go": {
-      "type": "opencode_go",
-      "apiKey": "${OPENCODE_GO_API_KEY}",
-      "baseUrl": "https://opencode.ai/zen/go/v1",
-      "models": {
-        "deepseek-v4.1-flash": {
-          "contextWindowTokens": 1000000,
-          "maxOutputTokens": 384000,
-          "temperature": "reasoning_none_only",
-          "vision": true,
-          "reasoning": {
-            "levels": [
-              "none",
-              "minimal",
-              "low",
-              "medium",
-              "high",
-              "xhigh",
-              "max"
-            ],
-            "default": "high"
-          }
-        },
-        "muse-spark-1.3-contributor": {
-          "contextWindowTokens": 1048576,
-          "maxOutputTokens": 131072,
-          "vision": false,
-          "reasoning": {
-            "levels": [
-              "minimal",
-              "low",
-              "medium",
-              "high",
-              "xhigh"
-            ],
-            "default": "high"
-          }
-        }
-      }
-    },
     "mimo": {
       "type": "openai_compatible",
       "apiKey": "${MIMO_API_KEY}",
       "baseUrl": "https://api.xiaomimimo.com/v1",
       "models": {
+        "mimo-v2.5-asr": {}
+      },
+      "options": {
+        "thinkingParam": "thinking_type",
+        "maxTokensParam": "max_completion_tokens"
+      }
+    },
+    "mimo-agent": {
+      "type": "mimo_responses",
+      "apiKey": "${MIMO_API_KEY}",
+      "baseUrl": "https://api.xiaomimimo.com/v1",
+      "models": {
         "mimo-v2.6-flash": {
+          "protocol": "openai-responses",
+          "supportsAssistantPhase": false,
+          "temperature": "reasoning_none_only",
           "contextWindowTokens": 1000000,
           "maxOutputTokens": 131072,
           "vision": true,
@@ -143,11 +43,7 @@
             ],
             "default": "medium"
           }
-        },
-        "mimo-v2.5-asr": {}
-      },
-      "options": {
-        "thinkingParam": "reasoning_effort"
+        }
       }
     },
     "mock": {
@@ -156,15 +52,11 @@
   },
   "capabilities": {
     "agent_turn": {
-      "platform": "opencode-go",
-      "model": "deepseek-v4.1-flash"
-    },
-    "text_generation": {
-      "platform": "mimo",
+      "platform": "mimo-agent",
       "model": "mimo-v2.6-flash"
     },
-    "companion_fallback": {
-      "platform": "mimo",
+    "text_generation": {
+      "platform": "mimo-agent",
       "model": "mimo-v2.6-flash"
     },
     "speech_recognition": {

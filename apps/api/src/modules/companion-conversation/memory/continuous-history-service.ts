@@ -109,6 +109,7 @@ export async function listContinuousHistory(args: {
   userId: string;
   before?: string;
   throughMessageId?: string;
+  runId?: string;
   limit: number;
 }) {
   const cursor = args.before ? verifyCursor(args.before, args) : null;
@@ -137,6 +138,7 @@ export async function listContinuousHistory(args: {
       WHERE m.workspace_id = ${args.workspaceId}
         AND m.user_id = ${args.userId}
         AND c.kind IN ('dialogue', 'inbox')
+        ${args.runId ? sql`AND m.run_id = ${args.runId}::uuid` : sql``}
         ${cursor ? sql`AND (m.created_at, m.id) < (${cursor.createdAt}::timestamptz, ${cursor.id}::uuid)`
           : boundary ? sql`AND (m.created_at, m.id) <= (${boundary.createdAt}::timestamptz, ${boundary.id}::uuid)` : sql``}
       ORDER BY m.created_at DESC, m.id DESC
@@ -214,6 +216,20 @@ export async function searchContinuousHistory(args: {
 }
 
 async function clearConversationRows(tx: ApiTransaction, scope: { workspaceId: string; userId: string }) {
+  // 锁序规约：先 run 行、后会话行（见 @astella/shared/companion-lock-order）。
+  // 这里原本先 `SELECT … FROM companion_conversations … FOR UPDATE`，而本函数末尾
+  // 要 `DELETE FROM companion_turn_runs`——那就是「先会话后 run」的 A 序：与
+  // 「先锁 run 再拿会话行」的事件写入路径并发即 AB-BA（2026-10-14 dev 库实测两例死锁）。
+  // 清理是罕见的批量动作，且它本来就要删掉这些 run 行，所以把该删的 run 行**先**锁住，
+  // 后面的活跃检查与 DELETE 都落在自己已持有的锁上。
+  // 没有 run 行不是空结果的理由：新会话可能一条 run 都还没有，下面仍要删会话本身。
+  await tx.execute(sql`
+    SELECT r.id FROM companion_turn_runs r
+    JOIN companion_conversations c ON c.id = r.conversation_id
+    WHERE r.workspace_id = ${scope.workspaceId} AND r.user_id = ${scope.userId}
+      AND c.kind IN ('dialogue', 'inbox')
+    FOR UPDATE OF r
+  `);
   const conversations = await tx.execute<{ id: string }>(sql`
     SELECT id FROM companion_conversations
     WHERE workspace_id = ${scope.workspaceId}

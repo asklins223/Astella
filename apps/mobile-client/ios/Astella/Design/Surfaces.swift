@@ -3,8 +3,7 @@ import UIKit
 
 struct DawnBackground: View {
     var body: some View {
-        StudyPalette.canvas
-        .ignoresSafeArea()
+        StudyPalette.canvas.ignoresSafeArea().allowsHitTesting(false).accessibilityHidden(true)
     }
 }
 
@@ -41,23 +40,24 @@ struct NoticeSurface<Content: View>: View {
     }
 }
 
+/// Quiet, neutral glass: one blur plane, a uniform edge and a contact shadow.
 struct StudyGlassSurfaceStyle: ViewModifier {
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceTransparency) private var opaque
     var radius: CGFloat
     var interactive = false
-
-    @ViewBuilder
+    var tint: Color? = nil
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
-        if #available(iOS 26.0, *) {
-            if interactive {
-                content.glassEffect(.regular.interactive(), in: shape)
-            } else {
-                content.glassEffect(.regular, in: shape)
+        content
+            .background {
+                ZStack {
+                    if opaque { shape.fill(StudyPalette.paper) }
+                    else { shape.fill(.ultraThinMaterial) }
+                    shape.fill(tint ?? StudyPalette.paper.opacity(scheme == .dark ? 0.12 : 0.23))
+                }
             }
-        } else {
-            content
-                .background(.regularMaterial, in: shape)
-                .overlay { shape.stroke(StudyPalette.paperEdge.opacity(0.42), lineWidth: 0.7) }
-        }
+            .overlay { shape.stroke(tint == nil ? StudyPalette.paperEdge.opacity(0.75) : .white.opacity(0.2), lineWidth: 0.8) }
+            .shadow(color: .black.opacity(scheme == .dark ? 0.08 : interactive ? 0.045 : 0.025), radius: interactive ? 12 : 8, x: 0, y: 4)
     }
 }

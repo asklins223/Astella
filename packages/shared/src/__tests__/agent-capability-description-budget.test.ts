@@ -1,7 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { agentCapabilityCatalog } from "../agent-capability-catalog.ts";
-import { PAST_MESSAGES_MAX_RESULT_CHARS } from "../contracts/companion-conversation-contracts.ts";
 
 /**
  * 工具面说明预算（方案 52 §5）。判据全部取自**声明**（`agentCapabilityCatalog`），
@@ -72,8 +71,8 @@ test("场景指引里点到的工具名，必须在同一个下发面上", () =>
  */
 test("读到超默认上界的格子按自己的契约声明", () => {
   const derived: Record<string, number | null> = {
-    companion_read_history: PAST_MESSAGES_MAX_RESULT_CHARS,
-    companion_recall_past_conversation: PAST_MESSAGES_MAX_RESULT_CHARS,
+    companion_read_history: null,
+    companion_recall_past_conversation: null,
     companion_read_playbook: null,
     companion_read_diary: null,
   };

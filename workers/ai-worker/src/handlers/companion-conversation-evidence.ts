@@ -18,11 +18,9 @@ export function conversationInstant(value: unknown): string | null {
   return Number.isFinite(instant) ? new Date(instant).toISOString() : null;
 }
 
-/** Native messages retain their full text. Metadata refers to their visible positions. */
-export function renderCompanionConversationEvidence(
-  history: readonly CompanionRecentHistoryMessage[], clock?: CompanionConversationClock,
-): string | null {
-  if (!clock && !history.some(message => message.createdAt || message.replyStatus)) return null;
+/** One formatter for replay and retrieved history. The frozen account clock
+ * supplies timezone and observation time; the model need not do date arithmetic. */
+export function companionConversationTimeEvidence(clock?: Pick<CompanionConversationClock, "observedAt" | "timezone">) {
   const observedAt = conversationInstant(clock?.observedAt);
   let timezone: string | null = null;
   if (clock?.timezone) {
@@ -39,11 +37,10 @@ export function renderCompanionConversationEvidence(
     if (seconds < 1) return "不足 1 秒";
     if (minutes < 1) return `${seconds} 秒`;
     if (hours < 1) return `${minutes} 分钟 ${seconds % 60} 秒`;
-    if (hours < 24) return `${hours} 小时 ${minutes % 60} 分钟`;
-    return `${Math.floor(hours / 24)} 天 ${hours % 24} 小时 ${minutes % 60} 分钟`;
+    const tail = seconds % 60 ? ` ${seconds % 60} 秒` : "";
+    if (hours < 24) return `${hours} 小时 ${minutes % 60} 分钟${tail}`;
+    return `${Math.floor(hours / 24)} 天 ${hours % 24} 小时 ${minutes % 60} 分钟${tail}`;
   };
-  const replyStates: Record<string, string> = { succeeded: "已回复", failed: "回复未完成", cancelled: "用户已取消回复",
-    superseded: "回复被后续消息接替", accepted: "等待回复", running: "回复中", waiting_for_confirmation: "等待用户确认" };
   const stamp = (createdAt: unknown, previousCreatedAt?: unknown) => {
     const utteredAt = conversationInstant(createdAt);
     const elapsedMs = gap(utteredAt, observedAt);
@@ -52,14 +49,29 @@ export function renderCompanionConversationEvidence(
       year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }).format(new Date(utteredAt)) : null;
     return { utteredAt, localDateTime, elapsedMs, elapsed: duration(elapsedMs), gapFromPreviousMs, gapFromPrevious: duration(gapFromPreviousMs) };
   };
+  return { observedAt, timezone, stamp };
+}
+
+/** Native messages retain their full text. Metadata refers to their visible positions. */
+export function renderCompanionConversationEvidence(
+  history: readonly CompanionRecentHistoryMessage[], clock?: CompanionConversationClock,
+  currentSource: "user" | "host_observation" = "user",
+): string | null {
+  if (!clock && !history.some(message => message.createdAt || message.replyStatus)) return null;
+  const { observedAt, timezone, stamp } = companionConversationTimeEvidence(clock);
+  const replyStates: Record<string, string> = { succeeded: "已回复", failed: "回复已结束（失败）", cancelled: "用户已取消回复",
+    superseded: "回复被后续消息接替", accepted: "等待回复", running: "回复中", waiting_for_confirmation: "等待用户确认" };
   return [
     "<conversation_timeline>",
     "服务器消息记录：时间指消息发送时间，不代表消息中叙述的外部事件时间。位置只对应下方原样回放的近期消息；窗口不是全部经历，两条消息相隔多久也不证明期间一直在线或一直在做某事。",
     JSON.stringify({ observedAt, timezone,
       history: history.map((message, index) => ({ position: index + 1, speaker: message.role,
         replyState: message.role === "user" ? replyStates[message.replyStatus ?? ""] ?? null : null,
+        replyTerminal: message.role === "user" && message.replyStatus
+          ? ["succeeded", "failed", "cancelled", "superseded"].includes(message.replyStatus) : null,
         ...stamp(message.createdAt, history[index - 1]?.createdAt) })),
-      current: { speaker: "user", ...stamp(clock?.currentMessageCreatedAt, history.at(-1)?.createdAt) },
+      current: { speaker: currentSource === "host_observation" ? "host" : "user",
+        source: currentSource, ...stamp(currentSource === "user" ? clock?.currentMessageCreatedAt : null, history.at(-1)?.createdAt) },
     }),
     "</conversation_timeline>",
   ].join("\n");

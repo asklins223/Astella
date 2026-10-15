@@ -8,3 +8,11 @@ export function isCompanionParticipationClosure(value: unknown): boolean {
     || /^(?:这轮|这一轮|本轮|这次|本次)(?:没有|没|无需|无须|不需要).{0,60}(?:补充|新内容|发言).{0,30}(?:安静|静默|不发言|结束|收尾)[。.!！\s]*$/.test(text)
     || /^提醒已发[，,；;：:。.!！\s]+(?:本轮|本次)(?:无更多内容|没有新内容|结束)/.test(text);
 }
+
+/** Only suppress an exact reply/paragraph replay, never a semantically similar new thought. */
+export function repeatsCompanionParentReply(text: string, parentReplies: readonly string[]): boolean {
+  const normalize = (value: string) => value.trim().replace(/\s+/gu, " ");
+  const candidate = normalize(text);
+  return Boolean(candidate) && parentReplies.some(reply => normalize(reply) === candidate
+    || reply.split(/\n\s*\n/u).some(paragraph => normalize(paragraph) === candidate));
+}

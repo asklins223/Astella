@@ -10,6 +10,7 @@ import * as schema from "@astella/shared/db-schema";
 import {
   WorkspaceTransactionScope,
   registerActiveTransactionReader,
+  runWithTransactionConflictRetry,
   type ActiveWorkspaceTransaction,
   type WorkspaceScopeContext,
 } from "@astella/shared/workspace-transaction";
@@ -137,9 +138,19 @@ export function dbPoolOptionsMax(): number {
 
 // 2026-08-11（可观测性）：包装 transaction——失败时累加 dbTransactionFailuresTotal
 //（此前指标定义后从未 set，空转）。
+//
+// 2026-10-14：同一处再收一层**事务冲突重试**（40P01 死锁 / 40001 序列化失败，
+// 判据与理由见 @astella/shared/workspace-transaction 的 runWithTransactionConflictRetry）。
+// 放这里而不是包在 withWorkspaceTransaction 里，是因为本覆盖层是 API 侧所有
+// `db.transaction` 的必经点——withWorkspaceTransaction、withActorTransaction、
+// image-asset、各服务里的 savepoint 外层事务都从这里过，一处收口才不会漏。
+// 注意重试次数计在指标**之外**：只有真的失败到底才 +1，重试成功的事务不算失败。
 const originalTransaction = db.transaction.bind(db);
 db.transaction = ((...args: Parameters<typeof originalTransaction>) =>
-  originalTransaction(...args).catch((error: unknown) => {
+  runWithTransactionConflictRetry(() => originalTransaction(...args), {
+    onRetry: ({ attempt, delayMs, sqlState }) =>
+      logger.warn({ attempt, delayMs, sqlState }, "workspace transaction conflict; retrying"),
+  }).catch((error: unknown) => {
     // 同步自增（原先经动态 import 异步自增，关停窗口会丢计数）。
     dbTransactionFailuresTotal.inc();
     throw error;

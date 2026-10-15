@@ -6,6 +6,12 @@ import test from "node:test";
 /**
  * P1-11 / P1-19：worker handler 的测试覆盖棘轮。
  *
+ * 2026-10-15: scan both unit and PostgreSQL integration test sources. Private
+ * persistence ports need real database coverage; requiring an additional unit
+ * import just to satisfy this name-reference guard would add no evidence.
+ * References still do not prove that a suite ran or that behavior is covered;
+ * the actual unit and database results must be recorded separately.
+ *
  * ## 先说审计的数字对不上
  *
  * 审计条目写「6 个零测试的 worker handler」与「5 处笔记生成 handler」，
@@ -64,17 +70,11 @@ const BASELINE_UNTESTED: ReadonlySet<string> = new Set([
   // 顺序，抓得到「节流被删掉」「改成成功才推进」，抓不到「SQL 跑起来对不对」。
   // 后者由 `integration-tests/companion-memory-handlers-postgres.integration.ts`
   // 覆盖（它真连 Postgres 调 `tickCompanionMemoryMaintenance`），但那份不是
-  // `.test.ts`，不进本棘轮的 blob——所以这里别把它当成行为覆盖。
+  // `.test.ts`，当时不进本棘轮的 blob。2026-10-15 起扫描也包含这些集成测试；
+  // 这仍只表示存在源码引用，不能代替实际执行 PostgreSQL 套件。
   // 2026-10-14：`companion-memory-embedding` 已被 companion-memory-embedding-jobs.test.ts
   // 引用，覆盖写入事务的幂等入队与 rebuild 的当前模型 revision 判据，故从未测基线移除。
-  "card-generation-v2-handler",
-  "companion-daily-summary-scheduler",
-  "companion-delivery-write",
-  "companion-dialogue-deltas",
-  "companion-note-reads",
-  "companion-proposal-expiry-scheduler",
   "companion-reminder-scheduler",
-  "companion-run-reconcile-scheduler",
   "note-expansion-generate",
 ]);
 
@@ -105,7 +105,7 @@ function testSourceBlob(): string {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const full = join(dir, entry.name);
       if (entry.isDirectory()) walk(full);
-      else if (entry.name.endsWith(".test.ts") && entry.name !== SELF) {
+      else if ((entry.name.endsWith(".test.ts") || entry.name.endsWith(".integration.ts")) && entry.name !== SELF) {
         chunks.push(readFileSync(full, "utf8"));
       }
     }

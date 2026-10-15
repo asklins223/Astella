@@ -273,6 +273,10 @@ export const companionAgentSteps = pgTable(
     resultHash: char("result_hash", { length: 64 }),
     /** 私有、运行态模型步骤恢复点；步骤结束时清空，不进入诊断投影。 */
     checkpoint: jsonb("checkpoint"),
+    /** Private cumulative source-reading progress; never diagnostic/output data. */
+    compactionCheckpoint: jsonb("compaction_checkpoint"),
+    /** Private complete working-state boundary; excluded from diagnostics. */
+    runtimeCheckpoint: jsonb("runtime_checkpoint"),
     errorCode: text("error_code"),
     startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
@@ -303,9 +307,13 @@ export const companionAgentToolCalls = pgTable(
     proposalId: uuid("proposal_id"),
     resultRef: text("result_ref"),
     resultSafeSummary: text("result_safe_summary"),
+    /** Complete private result for interrupted execution; never diagnostic data. */
+    resultPayload: jsonb("result_payload"),
     /**
-     * 该工具调用轮次的 provider 不透明 reasoning 句柄（见 0218 迁移）。
-     * 用于用户确认后的冷启动续跑回放；已剥离明文思维链，NULL = 无句柄。
+     * 该工具调用轮次的 provider 不透明 reasoning item（见 0218 迁移）。
+     * 用于用户确认后的冷启动续跑回放；NULL = 无句柄。
+     * 2026-10-14 起含明文思维链（`content[].reasoning_text`）——网关在思考模式下
+     * 要求交回，只带 encrypted_content 会 400（0435 一并解除"明文不落库"约束）。
      */
     reasoningHandles: jsonb("reasoning_handles").$type<ProviderReasoningHandle[]>(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

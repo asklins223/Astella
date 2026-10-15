@@ -38,13 +38,13 @@ test("44 §5.2：只折被校验过的摘要盖住的那一段，其余原样保
     coverage: coverage("3", "1"),
   });
   assert.ok(folded.receipt);
-  assert.equal(folded.receipt.foldedMessageCount, 3);
+  assert.equal(folded.receipt.foldedMessageCount, 2);
   assert.equal(folded.receipt.foldedFromSeq, "1");
-  assert.equal(folded.receipt.foldedThroughSeq, "3");
-  assert.equal(folded.receipt.remainingFromSeq, "4");
+  assert.equal(folded.receipt.foldedThroughSeq, "2");
+  assert.equal(folded.receipt.remainingFromSeq, "3");
   // 当前请求一条都不能少——静默切掉问题尾巴是不可接受的（44 §4.3）。
   const sent = replayToMessages(folded.replay);
-  assert.deepEqual(sent.map(m => (typeof m.content === "string" ? m.content : "")), ["第四句", "现在这个问题"]);
+  assert.deepEqual(sent.map(m => (typeof m.content === "string" ? m.content : "")), ["第三句", "第四句", "现在这个问题"]);
 });
 
 test("44 §5.2：覆盖没经过校验时一段都不折", () => {
@@ -54,6 +54,16 @@ test("44 §5.2：覆盖没经过校验时一段都不折", () => {
   });
   assert.equal(folded.receipt, null);
   assert.equal(replayToMessages(folded.replay).length, 1);
+});
+
+test("a gap inside one exchange preserves the entire exchange and the latest answered exchange", () => {
+  const tail = [msg("old question"), turn("old answer"), msg("question with gap"), turn("answer after gap"),
+    msg("latest question"), turn("latest answer")].map((message, index) => ({ message, seq: String(index + 1) }));
+  const folded = foldReplayUnderSummaryCoverage({ system: [], trailing: [msg("current request")], tail,
+    coverage: { ...coverage("6"), uncovered: [{ fromSeq: "3", throughSeq: "3" }] } });
+  assert.deepEqual(replayToMessages(folded.replay).map(message => message.content),
+    ["question with gap", "answer after gap", "latest question", "latest answer", "current request"]);
+  assert.equal(folded.receipt?.foldedMessageCount, 2);
 });
 
 test("44 §5.2：没有来源 seq 的条目不折——证明不了被盖住就不能顶替", () => {
@@ -72,14 +82,15 @@ test("44 §5.2：尾部之后的一切原样保留（工具调用与结果是一
   const toolResult = { role: "tool" as const, content: "结果", toolCallId: "c1" };
   const folded = foldReplayUnderSummaryCoverage({
     system: [],
-    tail: [{ message: msg("旧"), seq: "1" }],
+    tail: [{ message: msg("旧"), seq: "1" }, { message: turn("旧回答"), seq: "2" },
+      { message: msg("最近"), seq: "3" }, { message: turn("最近回答"), seq: "4" }],
     trailing: [toolCall, toolResult],
     coverage: coverage("9"),
   });
   const sent = replayToMessages(folded.replay);
-  assert.equal(sent.length, 2);
-  assert.equal(sent[0]?.role, "assistant");
-  assert.equal(sent[1]?.role, "tool");
+  assert.equal(sent.length, 4);
+  assert.equal(sent[2], toolCall);
+  assert.equal(sent[3], toolResult);
 });
 
 test("44 §5.2：摘要起点之前还有一段没人代表时如实记下来", () => {
@@ -87,9 +98,10 @@ test("44 §5.2：摘要起点之前还有一段没人代表时如实记下来", 
     system: [],
     tail: [
       { message: msg("最早"), seq: "1" },
-      { message: msg("第二"), seq: "2" },
+      { message: turn("第二"), seq: "2" },
       { message: msg("第三"), seq: "3" },
-      { message: msg("第四"), seq: "4" },
+      { message: turn("第四"), seq: "4" },
+      { message: msg("第五"), seq: "5" }, { message: turn("第六"), seq: "6" },
     ],
     trailing: [],
     // 摘要只盖 3..4，1..2 谁都没代表。
@@ -97,7 +109,7 @@ test("44 §5.2：摘要起点之前还有一段没人代表时如实记下来", 
   });
   assert.equal(folded.receipt?.foldedFromSeq, "3");
   assert.equal(folded.receipt?.uncoveredBeforeSeq, "1");
-  assert.deepEqual(replayToMessages(folded.replay).map(m => m.content), ["最早", "第二"]);
+  assert.deepEqual(replayToMessages(folded.replay).map(m => m.content), ["最早", "第二", "第五", "第六"]);
 });
 
 test("44 §5.2：覆盖伸进回放窗口时折得动——折的是被摘要盖住的那段前缀", () => {
@@ -116,12 +128,12 @@ test("44 §5.2：覆盖伸进回放窗口时折得动——折的是被摘要盖
   });
   assert.ok(folded.receipt);
   assert.equal(folded.receipt.foldedFromSeq, "5");
-  assert.equal(folded.receipt.foldedThroughSeq, "8");
-  assert.equal(folded.receipt.foldedMessageCount, 4);
-  assert.equal(folded.receipt.remainingFromSeq, "9");
+  assert.equal(folded.receipt.foldedThroughSeq, "6");
+  assert.equal(folded.receipt.foldedMessageCount, 2);
+  assert.equal(folded.receipt.remainingFromSeq, "7");
   assert.equal(folded.receipt.uncoveredBeforeSeq, null, "折的这一段全在覆盖区间内");
   const sent = replayToMessages(folded.replay);
-  assert.deepEqual(sent.map(m => (typeof m.content === "string" ? m.content : "")), ["第九句", "现在这个问题"]);
+  assert.deepEqual(sent.map(m => (typeof m.content === "string" ? m.content : "")), ["第七句", "第八句", "第九句", "现在这个问题"]);
 });
 
 test("44 §5.4：覆盖完全早于回放窗口时折不动——不拿一段没盖住这里的摘要顶替原文", () => {

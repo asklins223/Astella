@@ -8,6 +8,7 @@
  */
 
 import { sql } from "drizzle-orm";
+import { lockCompanionConversationWaitingRuns } from "@astella/shared/companion-lock-order";
 import { getCompanionAccountEpoch } from "../../../companion-contracts/companion-account-epoch.ts";
 
 export type ExpiredProposalRow = {
@@ -64,17 +65,20 @@ async function terminateProposalSideEffects(
 ): Promise<void> {
   if (proposalIds.length === 0) return;
   const ids = sql.join(proposalIds.map((id) => sql`${id}`), sql`, `);
-  await tx.execute(sql`
-    UPDATE companion_agent_tool_calls
-    SET status = 'expired', result_safe_summary = ${safeSummary}, updated_at = now()
-    WHERE proposal_id IN (${ids}) AND status = 'waiting_confirmation'
-  `);
+  // 四表全序（见 @astella/shared/companion-lock-order）：turn_runs 先于
+  // tool_calls。调用方 reclaim 虽已在事务开头锁过这些 run 行（所以现在不会真的
+  // 反序），但函数自身按正序写才经得起换个调用方、或去掉外层预锁。
   await tx.execute(sql`
     UPDATE companion_turn_runs
     SET status = 'failed', error_code = ${errorCode},
         waiting_proposal_id = NULL, finished_at = now(), updated_at = now()
     WHERE waiting_proposal_id IN (${ids})
       AND status = 'waiting_for_confirmation'
+  `);
+  await tx.execute(sql`
+    UPDATE companion_agent_tool_calls
+    SET status = 'expired', result_safe_summary = ${safeSummary}, updated_at = now()
+    WHERE proposal_id IN (${ids}) AND status = 'waiting_confirmation'
   `);
 }
 
@@ -106,6 +110,18 @@ export async function reclaimExpiredCompanionProposals(
   tx: { execute(q: unknown): Promise<unknown[] | unknown> },
   args: { workspaceId: string; userId: string; conversationId: string },
 ): Promise<number> {
+  // 四表全序（见 @astella/shared/companion-lock-order）：
+  //   turn_runs → companion_conversations → action_proposals → agent_tool_calls
+  // 这里原来只锁 run 就直接 UPDATE proposal，会话行要等 appendActionExpiredEventsBatch
+  // 才碰；而 decide / cancel 都是先锁会话行、再锁 proposal 行——同一组"已过期的
+  // pending proposal"上两边次序相反 → AB-BA（cancel 持会话行等 proposal 行，
+  // reclaim 持 proposal 行等会话行）。三条锁都按会话取超集：此刻还不知道哪些
+  // run / proposal 会被终结。调用方若已锁过会话行（createCompanionTurn /
+  // createCompanionProposalInTransaction），这里的重锁是同事务内的 no-op。
+  await lockCompanionConversationWaitingRuns(tx, args.conversationId);
+  await tx.execute(sql`
+    SELECT id FROM companion_conversations WHERE id = ${args.conversationId} FOR NO KEY UPDATE
+  `);
   const expired = await tx.execute(sql`
     UPDATE companion_action_proposals
     SET status = 'expired', updated_at = now()
@@ -160,15 +176,19 @@ export async function invalidateSupersededRunProposals(
   tx: { execute(q: unknown): Promise<unknown[] | unknown> },
   args: { runId: string },
 ): Promise<void> {
+  // 四表全序（见 @astella/shared/companion-lock-order）：proposals 先于
+  // tool_calls。本函数与 cancel.ts 的作废段是同一件事的两种触发路径
+  // （用户取消 vs 新消息 supersede），次序必须一致，否则同一条 run 的
+  // proposal 行与审计行两边取锁相反 → AB-BA。
+  await tx.execute(sql`
+    UPDATE companion_action_proposals
+    SET status = 'expired', updated_at = now()
+    WHERE agent_run_id = ${args.runId} AND status = 'pending'
+  `);
   await tx.execute(sql`
     UPDATE companion_agent_tool_calls
     SET status = 'expired', result_safe_summary = '运行已被新的消息取代', updated_at = now()
     WHERE run_id = ${args.runId}
       AND status IN ('requested', 'executing', 'waiting_confirmation')
-  `);
-  await tx.execute(sql`
-    UPDATE companion_action_proposals
-    SET status = 'expired', updated_at = now()
-    WHERE agent_run_id = ${args.runId} AND status = 'pending'
   `);
 }

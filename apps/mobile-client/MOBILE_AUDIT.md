@@ -1,5 +1,9 @@
 # 原生手机页面多轮审查记录
 
+## Latest authentication update — 2026-10-15
+
+The current implementation uses white backgrounds, ordinary glass controls and the official icon only, with no companion artwork on authentication pages. iOS simulator build and Android Debug APK build passed. The actual window checks and unverified downstream email flows are recorded in [the authentication review](../../docs/testing/mobile-auth-white-glass-2026-10-15.md). Earlier visual descriptions and verification claims below belong to earlier builds.
+
 审查日期：2026-10-15。iOS 是界面、颜色和动效的标尺；Android 保持同样的信息层级、留白、纸面质感和单一系统蓝，再用 Compose 与 Android 控件表达。审查依据是模拟器中的实际窗口和服务端响应，不把源码或构建成功单独当作运行验收。
 
 ## 测试账号与数据

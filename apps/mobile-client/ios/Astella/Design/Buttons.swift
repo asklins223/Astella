@@ -1,73 +1,34 @@
 import SwiftUI
-import UIKit
 
 struct PrimaryActionStyle: ViewModifier {
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if #available(iOS 26.0, *) {
-            content.buttonStyle(.glassProminent).buttonBorderShape(.capsule)
-        } else {
-            content.buttonStyle(LegacyPrimaryActionButtonStyle())
-        }
-    }
+    func body(content: Content) -> some View { content.buttonStyle(AstellaActionStyle(primary: true)) }
 }
-
-private struct LegacyPrimaryActionButtonStyle: ButtonStyle {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.isEnabled) private var isEnabled
-
-    func makeBody(configuration: Configuration) -> some View {
-        let label = configuration.label
-            .font(.body.weight(.semibold))
-            .foregroundStyle(.white.opacity(isEnabled ? 1 : 0.82))
-            .padding(.horizontal, 18)
-            .frame(minHeight: 52)
-            .frame(maxWidth: .infinity)
-            .contentShape(Capsule())
-            .scaleEffect(configuration.isPressed && isEnabled && !reduceMotion ? 0.985 : 1)
-            .animation(Motion.gated(reduceMotion, Motion.press), value: configuration.isPressed)
-        label.background(StudyPalette.accent.opacity(isEnabled ? 1 : 0.42), in: Capsule())
-    }
-}
-
 struct SecondaryActionStyle: ViewModifier {
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if #available(iOS 26.0, *) {
-            content.buttonStyle(.glass).buttonBorderShape(.capsule)
-        } else {
-            content.buttonStyle(LegacySecondaryActionButtonStyle())
-        }
-    }
+    func body(content: Content) -> some View { content.buttonStyle(AstellaActionStyle(primary: false)) }
 }
-
 struct GlassIconActionStyle: ViewModifier {
-    @ViewBuilder
     func body(content: Content) -> some View {
-        if #available(iOS 26.0, *) {
-            content.buttonStyle(.glass).buttonBorderShape(.circle)
-        } else {
-            content.buttonStyle(.plain)
-                .background(.regularMaterial, in: Circle())
-                .overlay { Circle().stroke(StudyPalette.paperEdge.opacity(0.42), lineWidth: 0.7) }
-        }
+        content.buttonStyle(AstellaPressStyle()).background(StudyPalette.paper, in: RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(StudyPalette.paperEdge, lineWidth: 0.7))
     }
 }
-
-private struct LegacySecondaryActionButtonStyle: ButtonStyle {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.isEnabled) private var isEnabled
-
+struct AstellaPressStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduced
+    @Environment(\.isEnabled) private var enabled
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.body.weight(.semibold))
-            .foregroundStyle(StudyPalette.accent.opacity(isEnabled ? 1 : 0.55))
-            .padding(.horizontal, 18)
-            .frame(minHeight: 46)
-            .frame(maxWidth: .infinity)
-            .scaleEffect(configuration.isPressed && isEnabled && !reduceMotion ? 0.99 : 1)
-            .animation(Motion.gated(reduceMotion, Motion.pressSoft), value: configuration.isPressed)
-            .background(.regularMaterial, in: Capsule())
-            .overlay { Capsule().stroke(StudyPalette.paperEdge.opacity(0.42), lineWidth: 0.7) }
+        configuration.label.opacity(enabled ? (configuration.isPressed ? 0.76 : 1) : 0.4)
+            .scaleEffect(configuration.isPressed && !reduced ? 0.97 : 1)
+            .animation(Motion.gated(reduced, Motion.press), value: configuration.isPressed)
+    }
+}
+private struct AstellaActionStyle: ButtonStyle {
+    var primary: Bool
+    @Environment(\.isEnabled) private var enabled
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.font(.system(size: 15, weight: .semibold)).tracking(0.3)
+            .frame(maxWidth: .infinity, minHeight: 52).padding(.horizontal, 18)
+            .foregroundStyle(primary ? StudyPalette.paper : StudyPalette.ink)
+            .background(primary ? StudyPalette.accent : StudyPalette.inset, in: RoundedRectangle(cornerRadius: 16))
+            .opacity(enabled ? (configuration.isPressed ? 0.8 : 1) : 0.4)
     }
 }

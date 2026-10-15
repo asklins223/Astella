@@ -463,6 +463,26 @@ test("批量 Markdown 导入：每个新建笔记都有快照，且投影与解�
   }
 });
 
+test("手机文件导入以文件名保留标题，重试返回相同笔记与版本", async () => {
+  const title = `手机文件名 ${tag}`;
+  const importId = `native-${randomUUID()}`;
+  const prepared = await prepareMarkdownImport({ workspaceId, userId }, [
+    { title, content: "这是正文开头，不应成为文件标题。\n\n第二段内容。" },
+  ]);
+  const first = await withWorkspaceTransaction({ workspaceId, userId }, tx =>
+    importMarkdownNotes(tx, { workspaceId, userId }, { items: prepared, importId }));
+  importedNoteIds.push(...first.response.notes.map(item => item.note.id));
+  assert.equal(first.response.imported, 1);
+  const imported = first.response.notes[0]!;
+  const { doc } = await withWorkspaceTransaction({ workspaceId, userId }, tx =>
+    loadNoteDoc(tx, { workspaceId, noteId: imported.note.id, userId }));
+  try { assert.equal(readNoteTitle(doc), title); } finally { doc.destroy(); }
+  const second = await withWorkspaceTransaction({ workspaceId, userId }, tx =>
+    importMarkdownNotes(tx, { workspaceId, userId }, { items: prepared, importId }));
+  assert.equal(second.response.idempotent, true);
+  assert.deepEqual(second.response.notes, first.response.notes);
+});
+
 /**
  * 恢复历史版本的"文档要跟指针一起走"守卫。
  *

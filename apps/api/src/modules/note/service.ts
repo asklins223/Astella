@@ -357,8 +357,8 @@ async function versionFactsByVersion(
   executor: ApiTransaction,
   workspaceId: string,
   versionIds: string[],
-): Promise<Map<string, { firstImageBlock: string | null; hasBody: boolean }>> {
-  const facts = new Map<string, { firstImageBlock: string | null; hasBody: boolean }>();
+): Promise<Map<string, { firstImageBlock: string | null; hasBody: boolean; snippet: string | null }>> {
+  const facts = new Map<string, { firstImageBlock: string | null; hasBody: boolean; snippet: string | null }>();
   if (versionIds.length === 0) return facts;
   const blocks = await executor
     .select({ versionId: noteBlocks.versionId, content: noteBlocks.content, type: noteBlocks.type })
@@ -369,13 +369,20 @@ async function versionFactsByVersion(
     ))
     .orderBy(asc(noteBlocks.versionId), asc(noteBlocks.ordinal), asc(noteBlocks.id));
   for (const block of blocks) {
-    const entry = facts.get(block.versionId) ?? { firstImageBlock: null, hasBody: false };
+    const entry = facts.get(block.versionId) ?? { firstImageBlock: null, hasBody: false, snippet: null };
     // 封面取第一张图；正文只看"非图片且内容非空"的块——空段落是编辑器光标的落点，
     // 不算正文（与渲染层 `noteParagraphCount` 同一口径，审计 F37）。
     if (block.type === "image") {
       if (entry.firstImageBlock === null) entry.firstImageBlock = block.content;
     } else if (block.content.trim().length > 0) {
       entry.hasBody = true;
+      if (entry.snippet === null && block.type !== "heading") {
+        const compact = block.content.replace(/\s+/g, " ").trim();
+        if (compact) {
+          const characters = Array.from(compact);
+          entry.snippet = characters.length > 150 ? `${characters.slice(0, 149).join("")}…` : compact;
+        }
+      }
     }
     facts.set(block.versionId, entry);
   }
@@ -486,6 +493,7 @@ export async function listNotes(
       shareScope: r.shareScope,
       canShare: r.createdBy === opts.userId,
       firstImageBlock: r.currentVersionId ? factsByVersion.get(r.currentVersionId)?.firstImageBlock ?? null : null,
+      snippet: r.currentVersionId ? factsByVersion.get(r.currentVersionId)?.snippet ?? null : null,
       // 空稿和写过正文的笔记在列表里必须能分开（审计 F37）：没有版本的笔记同样算空稿。
       hasBody: r.currentVersionId ? factsByVersion.get(r.currentVersionId)?.hasBody ?? false : false,
       shelfState: shelfStateByNoteId.get(r.id) ?? null,

@@ -510,7 +510,11 @@ export const cardPlanV2Schema = z
     planVersion: z.number().int().min(1),
     previousPlanRevisionId: z.string().uuid().nullable(),
     result: cardPlanResultV2Schema,
-    atomDecisions: z.array(atomDecisionV2Schema).max(1000),
+    // 长度由正文里到底有几种知识对象决定，不是一笔预算：长笔记（实测 2,359 块的
+    // 长文）原子数超过 1,000 时，这一支以前当场抛 `too_big`，整次制卡被判可重试，
+    // 于是每一轮都在同一个位置红。真正限量的是 `activationHardMax`（上面 superRefine
+    // 那条），这里再设一道按字符数拍的墙只会把"长文不能制卡"变成合同错误。
+    atomDecisions: z.array(atomDecisionV2Schema),
     planHash: z.string().regex(/^[0-9a-f]{64}$/),
   })
   .strict()

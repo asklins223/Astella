@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { readJobPayloadString } from "@astella/shared";
+import { lockCompanionRunForEventWrite } from "@astella/shared/companion-lock-order";
 import { createProvider } from "../lib/ai-provider.ts";
 import {
   createGovernedProvider,
@@ -141,6 +142,11 @@ export async function runCompanionFollowupSuggestions(job: JobPayload): Promise<
   }
   await withJobTransaction(job, async (tx) => {
     await lockJobLease(tx, job);
+    // 锁序规约：先 run 行、后会话计数器（见 @astella/shared/companion-lock-order）。
+    // 本事务末尾要 `UPDATE companion_turn_runs SET last_event_seq`，而计数器在中间；
+    // 原来 run 行锁是最后才拿，与「先锁 run 再拿计数器」的流式路径并发即 AB-BA
+    // （2026-10-14 dev 库实测两例死锁）。
+    await lockCompanionRunForEventWrite(tx, runId);
     const rows = await tx.execute<{ blocks: unknown; follow_up_prompts: unknown; content_sha256: string }>(sql`
       SELECT m.blocks, m.follow_up_prompts, m.content_sha256
       FROM companion_messages m

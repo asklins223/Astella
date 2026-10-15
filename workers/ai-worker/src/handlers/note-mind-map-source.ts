@@ -1,36 +1,12 @@
 export type SourceBlock = { ordinal: number; type: string; content: string };
 
-function compactEvidence(value: string): { text: string; sourceOffsets: number[] } {
-  const chars = Array.from(value);
-  const text: string[] = [];
-  const sourceOffsets: number[] = [];
-  for (let index = 0; index < chars.length; index += 1) {
-    const char = chars[index]!;
-    if (/\s/u.test(char)) continue;
-    // Ignore common Markdown emphasis/code markers while retaining the exact
-    // original offsets for the quotation that will be shown to the reader.
-    if ("*_~`".includes(char)) continue;
-    text.push(char);
-    sourceOffsets.push(index);
-  }
-  return { text: text.join(""), sourceOffsets };
-}
-
-export function exactQuote(blockText: string, candidate: string): string | null {
-  const needle = compactEvidence(candidate).text;
-  if (needle.length < 1) return null;
-  const source = compactEvidence(blockText);
-  const offset = source.text.indexOf(needle);
-  if (offset < 0) return null;
-  const start = Array.from(source.text.slice(0, offset)).length;
-  const from = source.sourceOffsets[start];
-  const to = source.sourceOffsets[start + Array.from(needle).length - 1];
-  if (from === undefined || to === undefined) return null;
-  const quote = Array.from(blockText).slice(from, to + 1).join("").trim();
-  // 引多长由它要支撑的那个知识点决定：原先超过 500 字就判"核不回原文"，
-  // 于是模型引一段长论证时整张图判无效、这一轮全部重跑。
-  return quote.length > 0 ? quote : null;
-}
+/**
+ * 引文核对那一段在这里**不再各写各的**：三条生成链（脑图/速看/拓展）过去各存一份
+ * `compactEvidence` + `exactQuote`，同一类错误要修三次（表格竖线、行首编号，
+ * 2026-10-14 长文实测）。判据的唯一一份在 `note-grounding-source.ts`；
+ * 脑图这一档不设"最短引用"下限（「固定电压」4 个字也是真引用），所以这里原样转出。
+ */
+export { exactQuote } from "./note-grounding-source.ts";
 
 export function imageSafeText(content: string): { text: string; imageCount: number } {
   let imageCount = 0;

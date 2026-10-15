@@ -1,9 +1,10 @@
 // 样式表改由 `styles.ts` 统一按顺序注入（2026-09-29）——见该文件顶部的分层说明。
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { CalendarDays, ChevronLeft, ChevronRight, Copy, CornerDownRight, Quote, Sparkles, UserRound } from "lucide-react";
+import { ArrowUpRight, CalendarDays, ChevronLeft, ChevronRight, Copy, CornerDownRight, Quote, Sparkles, UserRound } from "lucide-react";
 import type { CompanionContentBlockV1, CompanionMessageV1 } from "@astella/shared/companion-conversation-contracts";
 import type { CompanionChatSession } from "../../app/companion-chat-session";
 import { companionMessageText, desktopRouteFromAgentRoute } from "../../app/companion-chat-session";
+import { navigateCompanionHistoryRoute } from "../../app/companion-chat-routing";
 import { gatewayErrorMessage } from "../../app/desktop-client";
 import type { CompanionRunTrace } from "../../app/companion-agent-nodes";
 import { CompanionProposalChoice } from "./CompanionProposalChoice";
@@ -138,6 +139,57 @@ function NavBlockLine({
   );
 }
 
+/** 推荐内容是一张独立的纸卡，点按才前往；它不会像 route 工具结果那样自动换页。 */
+function RecommendationCard({
+  block,
+  chat,
+  onNavigated,
+}: {
+  readonly block: Extract<CompanionContentBlockV1, { type: "recommendation" }>;
+  readonly chat?: CompanionChatSession;
+  readonly onNavigated?: () => void;
+}) {
+  const [failure, setFailure] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const target = desktopRouteFromAgentRoute(block.route);
+  const openLabel = block.route.kind === "learning_artifact"
+    ? `打开${block.kindLabel}`
+    : block.route.kind === "card" ? "打开学习卡" : "打开笔记";
+
+  return (
+    <article className="companion-record__recommendation" data-kind={block.kindLabel}>
+      <header className="companion-record__recommendation-head">
+        <span className="companion-record__recommendation-kind">{block.kindLabel}</span>
+        {block.updatedLabel ? <span className="companion-record__recommendation-updated">{block.updatedLabel}</span> : null}
+      </header>
+      <strong className="companion-record__recommendation-title">{block.title}</strong>
+      {block.reason ? <p className="companion-record__recommendation-reason">{block.reason}</p> : null}
+      {target ? (
+        <button
+          className="companion-record__recommendation-open"
+          type="button"
+          aria-label={`${openLabel}：${block.title}`}
+          disabled={busy}
+          onClick={() => {
+            setBusy(true);
+            setFailure(null);
+            void (chat ? chat.goToRoute(target) : navigateCompanionHistoryRoute(target))
+              .then(() => onNavigated?.())
+              .catch((error) => setFailure(gatewayErrorMessage(error)))
+              .finally(() => setBusy(false));
+          }}
+        >
+          <span>{busy ? "正在打开…" : openLabel}</span>
+          <ArrowUpRight size={15} aria-hidden="true" />
+        </button>
+      ) : (
+        <span className="companion-record__recommendation-unavailable" role="status">当前没有可用的打开入口</span>
+      )}
+      {failure ? <span className="companion-record__recommendation-error" role="status">{failure}</span> : null}
+    </article>
+  );
+}
+
 /**
  * 查阅片段（工具当时返回的截短快照）。
  *
@@ -195,11 +247,13 @@ export function CompanionMessageRichBlocks({
   const sources = companionWebCitations(blocks);
   return <>
     <CompanionWebSources sources={sources} />
-    {blocks.filter(block => !(block.type === "citation" && block.referenceId)).filter((block) => block.type === "nav" || block.type === "quote"
+    {blocks.filter(block => !(block.type === "citation" && block.referenceId)).filter((block) => block.type === "nav" || block.type === "recommendation" || block.type === "quote"
       || block.type === "diagram" || block.type === "card" || block.type === "image" || block.type === "citation" || block.type === "code")
       .map((block, index) => (
         block.type === "nav"
           ? chat ? <NavBlockLine key={`nav-${index}`} block={block} chat={chat} onNavigated={onNavNavigated} /> : <p className="companion-record__nav companion-record__nav--plain" key={`nav-${index}`}><span>{block.label}</span></p>
+          : block.type === "recommendation"
+            ? <RecommendationCard key={`recommendation-${index}`} block={block} chat={chat} onNavigated={onNavNavigated} />
           : block.type === "quote"
             ? <CompanionQuoteBlock key={`quote-${index}`} block={block} />
             : block.type === "diagram"
@@ -244,7 +298,7 @@ export function CompanionChatRecordArticle({
   const followups = message.role === "assistant" && !hasLaterUserMessage
     ? message.followUpPrompts?.length ? message.followUpPrompts : legacyFollowups
     : [];
-  const richBlocks = message.blocks.filter((block) => block.type === "nav" || block.type === "quote"
+  const richBlocks = message.blocks.filter((block) => block.type === "nav" || block.type === "recommendation" || block.type === "quote"
       || block.type === "diagram" || block.type === "card" || block.type === "image" || block.type === "citation" || block.type === "code");
   const trace = message.role === "assistant"
     ? chat.runTraces.find((item) => item.summary.assistantMessageId === message.id

@@ -3,13 +3,15 @@ import { sql } from "drizzle-orm";
 import { readParticipationPreferences, writeParticipationPreferences, readCompanionAwareness,
   listCompanionAttention, arrangeCompanionAttention, enqueueParticipationObservation, AgentStoreError } from "@astella/agent-host";
 import { companionParticipationToolWriteV1Schema, companionAttentionWriteV1Schema,
-  companionPublishUtteranceV1Schema, companionFinishParticipationV1Schema } from "@astella/shared/companion-initiative-contracts";
+  companionPublishUtteranceV1Schema, companionFinishParticipationV1Schema,
+  COMPANION_INITIATIVE_DELIVERY_TTL_HOURS } from "@astella/shared/companion-initiative-contracts";
 import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
+import type { ProviderReasoningHandle } from "@astella/shared";
 import { withWorkerWorkspaceTransaction } from "../db.ts";
 import { lockJobLease } from "../lib/job-lease.ts";
 import { assertCompanionContextSourcesCurrent } from "./companion-context-sources.ts";
-import { isCompanionParticipationClosure } from "./companion-participation-output.ts";
-import { validateCompanionOutput, finalizeCompanionReplyText } from "./companion-dialogue-content.ts";
+import { isCompanionParticipationClosure, repeatsCompanionParentReply } from "./companion-participation-output.ts";
+import { validateCompanionOutput, finalizeCompanionReplyText, companionAssistantMessageKind, textOfCompanionBlocks } from "./companion-dialogue-content.ts";
 import { insertStreamEvent, enqueueCompanionMemoryJobs, type CompanionDialogueHandlerContext, type ReadContext } from "./companion-dialogue-store.ts";
 import { enqueueSystemEventDelivery } from "./companion-delivery-write.ts";
 import type { AgentEventContext } from "./companion-read-tools.ts";
@@ -49,6 +51,8 @@ export async function executeCompanionParticipationTool(event: AgentEventContext
     const validated = validateCompanionOutput(rawText);
     if (!validated.ok) throw new CompanionToolError("这条发言未通过正文校验，请修正后再说。");
     const text = validated.text;
+    if (await companionFollowupRepeatsParent(event.read, scope, text))
+      throw new CompanionToolNotExecutedError("这段内容在刚完成的回答中已经说过。答后考虑只发布新的有用内容，否则安静结束。");
     event.verifyUtterance?.(text);
     const published = await withWorkerWorkspaceTransaction(scope, async tx => {
       await lockJobLease(tx, event.ctx);
@@ -72,9 +76,17 @@ export async function executeCompanionParticipationTool(event: AgentEventContext
       const [counter] = await tx.execute<{ message_seq: string; event_seq: string }>(sql`UPDATE companion_conversations
         SET next_message_seq=next_message_seq+1,next_event_seq=next_event_seq+1,last_message_at=now(),updated_at=now()
         WHERE id=${event.read.conversationId} RETURNING (next_message_seq-1)::text AS message_seq,(next_event_seq-1)::text AS event_seq`);
-      await tx.execute(sql`INSERT INTO companion_messages(id,workspace_id,user_id,conversation_id,seq,role,kind,blocks,run_id,content_sha256)
+      // 主动发言也是 assistant 消息：下一轮若以它收尾（主动轮的常态），网关要求交回
+      // 产出它的那一步的 reasoning_text（0435）。账本在本轮早些时候已按 tool_call_id
+      // 存下句柄，这里原样取回挂到消息上，不另开一条通路。
+      const [utteranceReasoning] = await tx.execute<{ reasoning_handles: ProviderReasoningHandle[] | null }>(sql`
+        SELECT reasoning_handles FROM companion_agent_tool_calls
+        WHERE run_id=${event.read.runId} AND tool_call_id=${toolCallId}`);
+      const utteranceReasoningHandles = utteranceReasoning?.reasoning_handles ?? null;
+      await tx.execute(sql`INSERT INTO companion_messages(id,workspace_id,user_id,conversation_id,seq,role,kind,blocks,run_id,content_sha256,reasoning)
         VALUES(${messageId},${scope.workspaceId},${scope.userId},${event.read.conversationId},${Number(counter!.message_seq)},
-          'assistant',${event.read.initiativeInput ? "proactive" : "text"},${JSON.stringify(blocks)}::jsonb,${event.read.runId},${contentSha256})`);
+          'assistant',${companionAssistantMessageKind(event.read)},${JSON.stringify(blocks)}::jsonb,${event.read.runId},${contentSha256},
+          ${utteranceReasoningHandles && utteranceReasoningHandles.length > 0 ? JSON.stringify(utteranceReasoningHandles) : null}::jsonb)`);
       await tx.execute(sql`INSERT INTO companion_run_utterances(workspace_id,user_id,run_id,tool_call_id,message_id)
         VALUES(${scope.workspaceId},${scope.userId},${event.read.runId},${toolCallId},${messageId})`);
       await insertStreamEvent(tx, { ...scope, conversationId: event.read.conversationId, runId: event.read.runId,
@@ -84,7 +96,7 @@ export async function executeCompanionParticipationTool(event: AgentEventContext
       await tx.execute(sql`UPDATE companion_turn_runs SET last_event_seq=${Number(counter!.event_seq)} WHERE id=${event.read.runId}`);
       await tx.execute(sql`SELECT pg_notify('astella_companion_events_v1',${JSON.stringify({ conversationId: event.read.conversationId, maxSeq: Number(counter!.event_seq) })})`);
       if (event.read.initiativeInput && spoken.length === 0) await enqueueSystemEventDelivery(tx, { ...scope,
-        systemEventId: `initiative:${messageId}`, text, ttlHours: 0.025,
+        systemEventId: `initiative:${messageId}`, text, ttlHours: COMPANION_INITIATIVE_DELIVERY_TTL_HOURS,
         initiative: { conversationId: event.read.conversationId, messageId, runId: event.read.runId, generation: event.read.generation,
           deviceSessionId: event.read.initiativeInput.deviceSessionId } });
       return { messageId, fresh: true };
@@ -115,7 +127,20 @@ export async function executeCompanionParticipationTool(event: AgentEventContext
     if (error instanceof AgentStoreError) throw new CompanionToolNotExecutedError(error.message);
     throw error;
   });
-  return { value, safeSummary: name === "companion_save_participation" ? "已经记住这次明确的相处偏好。" : "关注安排已保存；触发时会结合情境重新考虑。" };
+  return { value, safeSummary: !value.changed
+    ? "已核对：当前状态已经满足，无需变更；版本、依据和原有安排均未改动。"
+    : name === "companion_save_participation" ? "已经记住这次明确的相处偏好。" : "关注安排已保存；触发时会结合情境重新考虑。" };
+}
+
+/** Both explicit utterances and bare final answers share the same follow-up publication boundary. */
+export async function companionFollowupRepeatsParent(read: Pick<ReadContext, "initiativeInput" | "conversationId">,
+  scope: { workspaceId: string; userId: string }, text: string): Promise<boolean> {
+  const input = read.initiativeInput;
+  if (input?.topic !== "reply.finished" || !input.parentRunId) return false;
+  const replies = await withWorkerWorkspaceTransaction(scope, tx => tx.execute<{ blocks: unknown }>(sql`
+    SELECT blocks FROM companion_messages WHERE workspace_id=${scope.workspaceId} AND user_id=${scope.userId}
+      AND conversation_id=${read.conversationId} AND run_id=${input.parentRunId} AND role='assistant' ORDER BY seq`));
+  return repeatsCompanionParentReply(text, replies.map(reply => textOfCompanionBlocks(reply.blocks)));
 }
 
 /** Silence and already-published speech are successful outcomes of a bounded participation. */

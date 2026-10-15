@@ -3,6 +3,7 @@ import { test } from "node:test";
 import type { SQL } from "drizzle-orm";
 import {
   searchPastConversationSummaries,
+  searchPastConversationMessages,
   readPastConversationMessages,
   MAX_PAST_CONVERSATION_HITS,
   MAX_PAST_CONVERSATION_MESSAGES,
@@ -45,6 +46,23 @@ const summaryRow = (over: Record<string, unknown> = {}) => ({
   coverage_source_hash: "a".repeat(64),
   updated_at: "2026-10-01T00:00:00.000Z",
   ...over,
+});
+
+test("unsummarized history returns stable source locators without cutting or replaying a message", async () => {
+  const executor = stubExecutor([{ id: "message-5", conversation_id: "conv-old", seq: "5", from_seq: "3",
+    content_sha256: "b".repeat(64), role: "user", reply_status: "cancelled", title: "old topic",
+    created_at: "2026-10-01T00:00:00Z" }]);
+  const [hit] = await searchPastConversationMessages(executor, scope, { query: "exact source", excludeConversationId: "conv-now" });
+  assert.equal(hit?.sourceKind, "transcript");
+  assert.equal(hit?.fromSeq, "3", "retrieval starts at the exchange's user additions");
+  assert.equal(hit?.matchedSeq, "5");
+  assert.equal(hit?.sourceHash, "b".repeat(64));
+  assert.equal(hit?.replyStatus, "cancelled");
+  assert.equal(hit?.createdAt, "2026-10-01T00:00:00.000Z");
+  assert.equal("text" in hit!, false, "a locator never pretends to be shortened original text");
+  const empty = stubExecutor([]);
+  assert.deepEqual(await searchPastConversationMessages(empty, scope, { query: "  " }), []);
+  assert.equal(empty.calls.length, 0);
 });
 
 test("44 §3.2：检索只在本工作区本人名下，并排除当前会话", async () => {
@@ -121,6 +139,7 @@ test("被上限截断时标 truncated——她必须知道后面还有没读", a
   const excerpt = await readPastConversationMessages(stubExecutor(rows), scope, { conversationId: "conv-old", fromSeq: "1" });
   assert.equal(excerpt.messages.length, MAX_PAST_CONVERSATION_MESSAGES);
   assert.equal(excerpt.truncated, true);
+  assert.equal(excerpt.nextFromSeq, "21");
 });
 
 test("完全读完时 truncated=false，不固定插入「被截断」的声明", async () => {
@@ -129,6 +148,7 @@ test("完全读完时 truncated=false，不固定插入「被截断」的声明"
     scope, { conversationId: "conv-old", fromSeq: "1" },
   );
   assert.equal(excerpt.truncated, false);
+  assert.equal(excerpt.nextFromSeq, null);
   assert.equal(excerpt.messages[0]?.text, "只有一句");
 });
 
@@ -142,13 +162,14 @@ test("命中条数有界，模型不能一次把全部历史拉回来", async ()
 
 // ─── 44 §3.3：跨会话找回也要检查当前有效性 ────────────────────────────────
 
-test("44 §3.3：跨会话检索按会话内容修订号过滤，不只认 status", async () => {
+test("44 §3.3：跨会话检索按区间级失效标记过滤，不只认 status", async () => {
   const executor = stubExecutor([summaryRow()]);
   await searchPastConversationSummaries(executor, scope, { query: "复习" });
   const text = executor.calls[0]!.sql;
-  // status 只挡得住「被遗忘/被纠正」这一类；来源被改写或删除要让修订号前进。
-  assert.match(text, /verified_context_revision/);
-  assert.match(text, /context_revision/);
+  // status 只挡得住「被遗忘/被纠正」这一类；来源区间被改写或删除时由触发器
+  // 盖 invalidated_at（0433），读取侧据此过滤——与链读同一判据，不再用会话级
+  // 修订号等值比较（那会把整个会话的旧摘要一起永久读不到）。
+  assert.match(text, /s\.invalidated_at IS NULL/);
   // 范围校验落在会话上，而不是只落在摘要行上。
   assert.match(text, /JOIN companion_conversations/);
   assert.match(text, /c\.user_id = s\.user_id/);
@@ -164,6 +185,7 @@ test("旧会话的长消息完整取回，尾部纠正与服务器时间不能�
   assert.equal(excerpt.messages[0]?.createdAt, "2026-10-05T03:14:00.000Z");
   assert.equal(excerpt.throughSeq, "1", "后续消息留到下一页，而非截断首条消息正文");
   assert.equal(excerpt.truncated, true);
+  assert.equal(excerpt.nextFromSeq, "2");
   const next = await readPastConversationMessages(stubExecutor([
     {seq:"2",role:"assistant",blocks:[{type:"text",text:"嗯"}],created_at:"2026-10-05T03:14:05Z"},
   ]), scope, {conversationId:"conv-old",fromSeq:"2"});

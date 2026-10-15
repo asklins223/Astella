@@ -307,7 +307,7 @@ export interface KeywordRetrievalOptions {
  * 向量结果与「向量看不见」的补召回结果按 id 去重合并，向量侧优先（相关度更高）。
  * 补召回侧本身已排除掉向量可返回的行，去重只是防止两侧边界条件漂移时重复注入同一条记忆。
  */
-function mergeUniqueMemories(primary: RetrievedMemory[], extra: RetrievedMemory[]): RetrievedMemory[] {
+function mergeUniqueMemories(primary: RetrievedMemory[], extra: RetrievedMemory[], query: string): RetrievedMemory[] {
   const seen = new Set(primary.map((item) => item.memoryId));
   const merged = [...primary];
   for (const item of extra) {
@@ -315,7 +315,19 @@ function mergeUniqueMemories(primary: RetrievedMemory[], extra: RetrievedMemory[
     seen.add(item.memoryId);
     merged.push(item);
   }
-  return merged;
+  // SQL already ranks keyword results by matched terms. Reapply that evidence
+  // across the union before truncating: appending behind a full vector page
+  // makes every newly written pending memory invisible again. Preserve vector
+  // order for equal lexical evidence, including queries with no usable terms.
+  const keywords = extractQueryKeywords(query).map(term => term.toLocaleLowerCase());
+  const matches = (memory: RetrievedMemory) => {
+    const content = memory.content.toLocaleLowerCase();
+    const kind = memory.kind.toLocaleLowerCase();
+    return keywords.filter(term => content.includes(term) || kind === term).length;
+  };
+  return merged.map((memory, index) => ({ memory, index, matched: matches(memory) }))
+    .sort((a, b) => b.matched - a.matched || a.index - b.index)
+    .map(item => item.memory);
 }
 
 /** 关键词降级检索：不依赖 embedding provider。
@@ -539,7 +551,7 @@ export async function retrieveCompanionMemoriesVector(
       taskEntity,
       { onlyMissingEmbeddingForModel: provider.embeddingModelId, budgetTier },
     );
-    const items = mergeUniqueMemories(vectorItems, supplement.items).slice(0, topK);
+    const items = mergeUniqueMemories(vectorItems, supplement.items, query).slice(0, topK);
     return {
       items,
       mode: vectorItems.length > 0 ? "vector" : "keyword_fallback",

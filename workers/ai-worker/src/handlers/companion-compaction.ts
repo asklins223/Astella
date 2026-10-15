@@ -8,16 +8,17 @@ import type { AgentTurnRequest, AgentTurnResult } from "@astella/shared";
  * 工具回合上直接不兼容——而那恰恰是最需要折叠的一步。
  */
 import { AIContextCompactionRequiredError, AIContextOverflowError } from "../lib/context-governor.ts";
+import { projectCompanionHistory } from "./companion-history-projection.ts";
 
 type ReplayMessage = AgentTurnRequest["messages"][number];
 
 /**
  * 方案 44 §5.2／§5.4：压力触发的压缩**执行**。
  *
- * ## 折叠为什么是无损的
+ * ## Recoverable semantic projection
  *
  * 压缩的做法是把「已经被一份经过校验的摘要盖住」的回放尾部折掉，让那段只由摘要代表。
- * 这不是丢内容：
+ * The model's summary is lossy; retained originals make the source recoverable:
  *   - 原始消息一直躺在 `companion_messages`（唯一真源），随时可按 seq 重新读回；
  *   - 摘要先提交、后折叠，且必须带 `sourceSha256` 才允许折；
  *   - 恢复用的交接快照保存的是折叠**之前**的形态，崩溃恢复只会拿到更多上下文，
@@ -26,7 +27,9 @@ type ReplayMessage = AgentTurnRequest["messages"][number];
  *
  * ## 为什么不剪半段
  *
- * 折的单位是**整条消息**，且以 seq 为界。工具调用与结果是一对，剪开就破坏 JSON；
+ * Fold complete older exchanges using the same projection as initial replay.
+ * Keep the latest answered exchange and later user additions verbatim.
+ * 工具调用与结果是一对，剪开就破坏 JSON；
  * 用户纠正与未决事项挂在具体消息上，剪开就变成「她说改主意了」而没有那句原话。
  *
  * ## 至多一次
@@ -40,10 +43,12 @@ export interface SummaryCoverageBound {
   throughSeq: string | null;
   /** 摘要来源哈希。缺它就意味着覆盖没经过校验，不能拿它当「这段我读过」。 */
   sourceSha256: string | null;
+  /** Holes in the inherited summary must retain their original messages. */
+  uncovered?: readonly { fromSeq: string; throughSeq: string }[];
 }
 
 export interface CompactionFoldReceipt {
-  sourceKind?: "active_tool_rounds";
+  sourceKind?: "active_tool_rounds" | "history_exchanges";
   /** 被折掉的那一段（含端点）。 */
   foldedFromSeq: string;
   foldedThroughSeq: string;
@@ -89,7 +94,7 @@ export interface ReplayFoldResult {
  *   - **当前请求永远保留**。静默切掉问题尾巴是不可接受的（44 §4.3）。
  *   - **只认校验过的覆盖**。`sourceSha256` 缺失时一段都不折——宁可多烧窗口，
  *     也不拿一份边界没核实过的摘要去顶替原文。
- *   - **以 seq 为界、整条折**。seq 是会话内的局部序号，折的都是会话**内**的，
+ *   - **以 seq 校验完整交流后再折**。seq 是会话内的局部序号，折的都是会话**内**的，
  *     不跨会话，因此不会与另一个会话的同号桶相撞（44 §8.3）。没有 seq 的条目
  *     一律保留：证明不了它被盖住，就不能拿摘要顶替它。
  */
@@ -115,21 +120,9 @@ export function foldReplayUnderSummaryCoverage(
     return keep();
   }
 
-  const kept: ReplayMessage[] = [];
-  const foldedSeqs: string[] = [];
-  for (const entry of tail) {
-    let covered = false;
-    if (entry.seq) {
-      try {
-        const seq = BigInt(entry.seq);
-        covered = seq >= beginning && seq <= boundary;
-      } catch {
-        covered = false;
-      }
-    }
-    if (covered) foldedSeqs.push(entry.seq!);
-    else kept.push(entry.message);
-  }
+  const projected = projectCompanionHistory(tail.map(entry => ({ ...entry, role: entry.message.role })), coverage);
+  const kept = projected.messages.map(entry => entry.message);
+  const foldedSeqs = projected.folded.map(entry => entry.seq!);
   if (foldedSeqs.length === 0) return keep();
 
   const coverageFrom = coverage?.fromSeq ?? null;
@@ -192,7 +185,7 @@ export interface BoundedCompactionInput<T> {
    * 同时返回折好的消息数组：调用方不必把数组藏在闭包里，回执与实际发送的形状
    * 也因此必然是同一份。
    */
-  compact: () => { messages: ReplayMessage[]; receipt: CompactionFoldReceipt } | null | Promise<{ messages: ReplayMessage[]; receipt: CompactionFoldReceipt } | null>;
+  compact: () => FoldedReplay | null | Promise<FoldedReplay | null>;
   /** 本轮是否还有压缩额度。 */
   hasAttempt: () => boolean;
   /**
@@ -203,7 +196,7 @@ export interface BoundedCompactionInput<T> {
    */
   consumeAttempt: () => void;
   /** 记下这一折（§5.5：折叠也要有回执，不是静默发生）。 */
-  onCompacted?: (receipt: CompactionFoldReceipt) => void;
+  onCompacted?: (receipt: CompactionFoldReceipt, messages: readonly ReplayMessage[], source?: FoldedReplay["source"]) => void | Promise<void>;
   /**
    * 失败冷却。缺省时等价于「永远允许」——那正是早期行为（每轮都可能重折一次），
    * 接上这一层之后才变成 44 §5.4 要的「同一失败输入不每轮重触发」。
@@ -248,7 +241,7 @@ export async function withBoundedContextCompaction<T>(
         await input.cooldown?.record({ at: new Date() });
       }
     }
-    input.onCompacted?.(folded.receipt);
+    await input.onCompacted?.(folded.receipt, folded.messages, folded.source);
     try {
       return await input.send(folded.messages);
     } finally {
@@ -275,6 +268,8 @@ export type { AgentTurnRequest, ReplayMessage };
 export interface FoldedReplay {
   messages: ReplayMessage[];
   receipt: CompactionFoldReceipt;
+  /** Exact private source, separate from receipt/log metadata. */
+  source?: { json: string; sha256: string };
 }
 
 /**
@@ -285,10 +280,13 @@ export interface FoldedReplay {
  */
 export function boundedStepSender(input: {
   beginRequest?: (request: { messages: readonly ReplayMessage[] }) => void;
+  /** A verified complete checkpoint costs no new summarizer call. Reuse it
+   * before the failed-compaction cooldown and govern its actual request again. */
+  restore?: (messages: readonly ReplayMessage[]) => FoldedReplay | null;
   fold?: (messages: readonly ReplayMessage[]) => FoldedReplay | null | Promise<FoldedReplay | null>;
   hasAttempt: () => boolean;
   consumeAttempt: () => void;
-  onCompacted: (receipt: CompactionFoldReceipt) => void;
+  onCompacted: (receipt: CompactionFoldReceipt, messages: readonly ReplayMessage[], source?: FoldedReplay["source"]) => void | Promise<void>;
   cooldown?: CompactionCooldownPorts;
 }) {
   return <TRequest extends { messages: readonly ReplayMessage[] }>(
@@ -296,13 +294,16 @@ export function boundedStepSender(input: {
     send: (request: TRequest) => Promise<AgentTurnResult>,
   ): Promise<AgentTurnResult> => {
     input.beginRequest?.(request);
+    const restored = input.restore?.(request.messages);
+    const effectiveRequest = restored ? applyCompactedMessages(request, restored.messages) : request;
+    if (restored) input.beginRequest?.(effectiveRequest);
     return withBoundedContextCompaction<AgentTurnResult>({
-    send: (messages) => send(applyCompactedMessages(request, messages)),
-    compact: () => input.fold?.(request.messages) ?? null,
+    send: (messages) => send(applyCompactedMessages(effectiveRequest, messages)),
+    compact: () => input.fold?.(effectiveRequest.messages) ?? null,
     hasAttempt: input.hasAttempt,
     consumeAttempt: input.consumeAttempt,
     onCompacted: input.onCompacted,
     ...(input.cooldown ? { cooldown: input.cooldown } : {}),
-    }, request.messages);
+    }, effectiveRequest.messages);
   };
 }

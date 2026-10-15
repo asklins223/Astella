@@ -4,9 +4,9 @@
  * 覆盖「配置 → 注册表 → 工厂 → provider → 真实端点」全链路，而不是只测
  * provider 类的单元行为：
  *   1. config/ai-platforms.json 的 agent_turn 解析到已配置平台
- *      （当前 tokenrhythm / qwen3.8-flash；换平台后直接复用，无需改测试常量）
+ *      （当前 MiMo Responses / mimo-v2.6-flash；换平台后直接复用，无需改测试常量）
  *   2. 工厂产出实例，能力快照按平台 options 生效
- *   3. 端点按平台类型解析（opencode_go → Responses API /responses；
+ *   3. 端点按平台类型解析（opencode_go / mimo_responses → Responses API /responses；
  *      openai_compatible → /chat/completions；走错端点会让整条 agent_turn
  *      链路不可用）
  *   4. 真实 chatCompletion（JSON 模式）
@@ -82,7 +82,7 @@ const { resolveSystemPlatform } = await import("@astella/shared/platform-config-
 const { getProviderById } = await import("@astella/shared");
 const { resolveOpenAIChatCompletionsUrl } = await import("@astella/shared/ai-endpoints");
 const { createProvider } = await import("../lib/ai-provider.ts");
-const { resolveOpenCodeGoEndpoint } = await import("../lib/providers/opencode-go.ts");
+const { resolveMiMoResponsesEndpoint, resolveOpenCodeGoEndpoint } = await import("../lib/providers/opencode-go.ts");
 const { runStreamingAgentStep } = await import("../handlers/companion-agent-streaming-step.ts");
 
 /**
@@ -163,6 +163,11 @@ test("endpoint: 按平台类型解析为正确的 API 端点", () => {
     // 端点校验放在 provider 侧。
     assert.equal(
       resolveOpenCodeGoEndpoint(platform.baseUrl),
+      `${platform.baseUrl.replace(/\/+$/, "")}/responses`,
+    );
+  } else if (platform.type === "mimo_responses") {
+    assert.equal(
+      resolveMiMoResponsesEndpoint(platform.baseUrl),
       `${platform.baseUrl.replace(/\/+$/, "")}/responses`,
     );
   } else {
@@ -311,7 +316,7 @@ test("live: 两轮工具循环（回放第一轮 reasoning 句柄）", { timeout
   assert.deepEqual(second.toolCalls, [], "最终答复不应再产生工具调用");
 });
 
-test("live: reasoning 句柄不含明文推理（隐私回归护栏）", { timeout: CALL_TIMEOUT_MS, skip: LIVE_CALL_GATE }, async () => {
+test("live: Responses reasoning items 被保留供多轮回传", { timeout: CALL_TIMEOUT_MS, skip: LIVE_CALL_GATE }, async () => {
   const { providerName, config } = agentTurnConfig();
   const provider = createProvider(providerName, config);
   const result = await provider.executeAgentTurn!({
@@ -326,9 +331,8 @@ test("live: reasoning 句柄不含明文推理（隐私回归护栏）", { timeo
     maxTokens: 2000,
     temperature: 0.3,
   });
-  for (const handle of result.reasoning ?? []) {
-    assert.equal("content" in handle, false, `reasoning 句柄泄漏了明文推理字段: ${JSON.stringify(handle).slice(0, 200)}`);
-  }
+  assert.ok((result.reasoning?.length ?? 0) > 0, "思考模式未返回可供后续请求回传的 reasoning item");
+  for (const handle of result.reasoning ?? []) assert.equal(handle.type, "reasoning");
 });
 
 test("live: chatCompletionStream 逐增量返回全文", { timeout: CALL_TIMEOUT_MS, skip: LIVE_CALL_GATE }, async () => {
@@ -362,7 +366,8 @@ test("live: 带工具流式语音链路及思考句柄回放", { timeout: CALL_T
     ctxSignal: AbortSignal.timeout(60_000), timeoutMs: 60_000, onProviderDelta: async () => true });
   assert.equal(first.toolCalls.length, 1);
   assert.equal(first.toolCalls[0]?.name, "echo_probe");
-  for (const handle of first.reasoning ?? []) assert.equal("content" in handle, false);
+  assert.ok((first.reasoning?.length ?? 0) > 0, "工具调用没有返回可回放的 reasoning item");
+  for (const handle of first.reasoning ?? []) assert.equal(handle.type, "reasoning");
   const deltas: string[] = [];
   const startedAt = performance.now();
   let firstDeltaMs: number | undefined;
@@ -383,7 +388,9 @@ test("live: /models 列出该模型（凭据对已配置端点有效）", { time
   assert.ok(platform?.apiKey);
   assert.ok(platform.baseUrl);
   const response = await fetch(`${platform.baseUrl.replace(/\/+$/, "")}/models`, {
-    headers: { Authorization: `Bearer ${platform.apiKey}` },
+    headers: platform.type === "mimo_responses"
+      ? { "api-key": platform.apiKey }
+      : { Authorization: `Bearer ${platform.apiKey}` },
   });
   assert.equal(response.status, 200, `GET /models 返回 ${response.status}`);
   const body = await response.json() as { data?: Array<{ id?: string }> };

@@ -6,6 +6,7 @@ import { AI_UNDECLARED_OUTPUT_TOKENS, type ChatMessage } from "@astella/shared";
 import { readNoteExpansionGenerateJobPayload } from "@astella/shared/job-payload-contracts";
 import { loadAgentGenerationContext } from "../agent/generation-context.ts";
 import { noteVisibleSqlText } from "@astella/shared/note-visibility";
+import { exactQuote as quoteFromSource } from "./note-grounding-source.ts";
 import { noteBlockRenderedTextV1 } from "@astella/shared/note-doc-schema";
 import { noteAnchorMatchesV1 } from "@astella/shared/note-annotation-contracts";
 import * as schema from "@astella/shared/db-schema";
@@ -23,6 +24,7 @@ import { resolveProviderCallTimeout } from "../lib/handler-timeout-config.ts";
 import { assertJobLease, lockJobLease, withJobTransaction } from "../lib/job-lease.ts";
 import { logger } from "../lib/logger.ts";
 import { planCoveringChunks } from "../lib/source-coverage.ts";
+import { buildRepairAttempt, repairInstruction } from "../lib/model-repair-attempt.ts";
 import { NoteExpansionOutputError } from "../lib/non-retryable-errors.ts";
 import { runWorkerAiTask } from "./worker-ai-task.ts";
 import { noteLearningSnapshotHash } from "./note-learning-snapshot.ts";
@@ -77,6 +79,14 @@ const generatedResponseSchema = z.strictObject({ drafts: z.array(generatedDraftS
 
 type SourceBlock = NoteExpansionSourceBlock;
 
+/** 把校验问题写成"字段:类型"的小清单：重试提示要靠它指出该改哪一处。 */
+function issueFields(error: { readonly issues: readonly { path: (string | number)[], code: string }[] }): string {
+  return error.issues.slice(0, 4)
+    .map((issue) => `${issue.path.join(".") || "root"}:${issue.code}`).join(", ");
+}
+
+const EXPANSION_REPAIR_FALLBACK = "请重新检查候选结构、关系说明与逐字原文来处。";
+
 function parseResponse(raw: string) {
   let value: unknown;
   try { value = extractJsonFromText(raw, ["drafts"]); } catch {
@@ -84,38 +94,19 @@ function parseResponse(raw: string) {
   }
   const result = generatedResponseSchema.safeParse(value);
   if (!result.success) {
-    const fields = result.error.issues.slice(0, 4)
-      .map((issue) => `${issue.path.join(".") || "root"}:${issue.code}`).join(", ");
-    throw new NoteExpansionOutputError(`拓展草稿输出不符合约定（${fields}）`);
+    throw new NoteExpansionOutputError(`拓展草稿输出不符合约定（${issueFields(result.error)}）`);
   }
   const titles = result.data.drafts.map((draft) => draft.title.trim().toLocaleLowerCase());
   if (new Set(titles).size !== titles.length) throw new NoteExpansionOutputError("拓展草稿出现了重复标题");
   return result.data;
 }
 
-function compactEvidence(value: string) {
-  const chars = Array.from(value);
-  const output: string[] = [];
-  const sourceOffsets: number[] = [];
-  for (let index = 0; index < chars.length; index += 1) {
-    const char = chars[index]!;
-    if (/\s/u.test(char) || "*_~`".includes(char)) continue;
-    output.push(char.toLocaleLowerCase());
-    sourceOffsets.push(index);
-  }
-  return { text: output.join(""), sourceOffsets };
-}
-
-function findExactQuote(blockText: string, candidate: string) {
-  const needle = compactEvidence(candidate).text;
-  if (needle.length < 8) return null;
-  const source = compactEvidence(blockText);
-  const start = source.text.indexOf(needle);
-  if (start < 0) return null;
-  const from = source.sourceOffsets[start];
-  const to = source.sourceOffsets[start + needle.length - 1];
-  if (from === undefined || to === undefined) return null;
-  return Array.from(blockText).slice(from, to + 1).join("").trim();
+/**
+ * 引文核对的唯一一份在 `note-grounding-source.ts`（脑图/速看/拓展共用）；
+ * 拓展这一档保留自己原有的两条：至少 8 个字、按小写比对（素材里英文缩写大小写不稳定）。
+ */
+function findExactQuote(blockText: string, candidate: string): string | null {
+  return quoteFromSource(blockText, candidate, { minNeedleChars: 8, caseInsensitive: true });
 }
 
 function splitAtCodePointLimit(value: string, limit: number): string[] {
@@ -325,6 +316,7 @@ export async function runNoteExpansionGenerate(job: JobPayload): Promise<void> {
       generationParameters,
       messages,
     });
+    let rejected: { readonly output: string; readonly reason: string } | null = null;
     const parsed = await runWorkerAiTask({
       job,
       userId: job.requestedBy!,
@@ -338,21 +330,35 @@ export async function runNoteExpansionGenerate(job: JobPayload): Promise<void> {
       resourceClass: "interactive_ai",
       timeoutMs: resolveProviderCallTimeout("note_expansion_generate"),
       isOutputShapeError: (error) => error instanceof NoteExpansionOutputError,
-      execute: async (request, signal) => {
+      execute: async (request, signal, retryIndex) => {
         await agentContext.reserveModelCall();
-        const response = await provider.chatCompletion(request, generationParameters, signal);
-        let value: unknown;
-        try { value = extractJsonFromText(response.content, ["candidates"]); } catch {
-          throw new NoteExpansionOutputError("拓展候选不是可审核的结构化内容");
+        // 重试带上被拒的那一版：修正指令说"其余保持不变"，可"其余"只在那份输出里。
+        const response = await provider.chatCompletion(
+          retryIndex > 0 && rejected
+            ? buildRepairAttempt(request, rejected.output, repairInstruction(rejected.reason, EXPANSION_REPAIR_FALLBACK))
+            : request,
+          generationParameters, signal);
+        try {
+          let value: unknown;
+          try { value = extractJsonFromText(response.content, ["candidates"]); } catch {
+            throw new NoteExpansionOutputError("拓展候选不是可审核的结构化内容");
+          }
+          const result = expansionCandidateResponseSchema.safeParse(value);
+          if (!result.success) {
+            throw new NoteExpansionOutputError(`拓展候选缺少关系说明或原文来处（${issueFields(result.error)}）`);
+          }
+          return {
+            ok: true,
+            output: result.data,
+            promptTokens: response.usage?.promptTokens ?? undefined,
+            completionTokens: response.usage?.completionTokens ?? undefined,
+          };
+        } catch (error) {
+          if (error instanceof NoteExpansionOutputError) {
+            rejected = { output: response.content, reason: error.message };
+          }
+          throw error;
         }
-        const result = expansionCandidateResponseSchema.safeParse(value);
-        if (!result.success) throw new NoteExpansionOutputError("拓展候选缺少关系说明或原文来处");
-        return {
-          ok: true,
-          output: result.data,
-          promptTokens: response.usage?.promptTokens ?? undefined,
-          completionTokens: response.usage?.completionTokens ?? undefined,
-        };
       },
     });
     const kept: NoteExpansionCandidate[] = [];
@@ -392,6 +398,7 @@ export async function runNoteExpansionGenerate(job: JobPayload): Promise<void> {
     generationParameters,
     messages,
   });
+  let draftRejected: { readonly output: string; readonly reason: string } | null = null;
   const generated = await runWorkerAiTask({
     job,
     userId: job.requestedBy,
@@ -405,17 +412,28 @@ export async function runNoteExpansionGenerate(job: JobPayload): Promise<void> {
     resourceClass: "interactive_ai",
     timeoutMs: resolveProviderCallTimeout("note_expansion_generate"),
     isOutputShapeError: (error) => error instanceof NoteExpansionOutputError,
-    execute: async (request, signal) => {
+    execute: async (request, signal, retryIndex) => {
       // 每次真正调用模型前重新占一次目标预算：模型在事务外跑，目标可能已被
       // 修订或停止，不能靠进入时的判断。
       await agentContext.reserveModelCall();
-      const response = await provider.chatCompletion(request, generationParameters, signal);
-      return {
-        ok: true,
-        output: parseResponse(response.content),
-        promptTokens: response.usage?.promptTokens ?? undefined,
-        completionTokens: response.usage?.completionTokens ?? undefined,
-      };
+      const response = await provider.chatCompletion(
+        retryIndex > 0 && draftRejected
+          ? buildRepairAttempt(request, draftRejected.output, repairInstruction(draftRejected.reason, EXPANSION_REPAIR_FALLBACK))
+          : request,
+        generationParameters, signal);
+      try {
+        return {
+          ok: true,
+          output: parseResponse(response.content),
+          promptTokens: response.usage?.promptTokens ?? undefined,
+          completionTokens: response.usage?.completionTokens ?? undefined,
+        };
+      } catch (error) {
+        if (error instanceof NoteExpansionOutputError) {
+          draftRejected = { output: response.content, reason: error.message };
+        }
+        throw error;
+      }
     },
   });
   const sourceByOrdinal = new Map(source.blocks.map((block) => [block.ordinal, block]));

@@ -14,10 +14,11 @@
 import { z } from "zod";
 import type { FastifyInstance } from "fastify";
 import { requireSession } from "../identity/middleware.ts";
-import { isStorageConfigured, getObject, signObjectDownload } from "../../lib/object-storage.ts";
+import { isStorageConfigured, getObject, signObjectDownload, usesRemoteStorage } from "../../lib/object-storage.ts";
 
+const modelPath = z.string().min(1).max(512).refine(value => !value.startsWith("/") && !value.includes("\\") && value.split("/").every(part => part !== ".." && part !== "." && part.length > 0));
 const companionModelManifestFileSchema = z.object({
-  path: z.string().min(1).max(512),
+  path: modelPath,
   contentType: z.string().min(1).max(128),
   byteLength: z.number().int().positive(),
   sha256: z.string().regex(/^[0-9a-f]{64}$/),
@@ -25,9 +26,9 @@ const companionModelManifestFileSchema = z.object({
 
 const companionModelManifestSchema = z.object({
   schemaVersion: z.literal(1),
-  modelId: z.string().min(1).max(128),
-  version: z.string().min(1).max(128),
-  entry: z.string().min(1).max(512),
+  modelId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
+  version: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
+  entry: modelPath,
   files: z.array(companionModelManifestFileSchema).min(1).max(256),
 });
 
@@ -39,6 +40,18 @@ export function companionModelObjectPrefix(): string {
 }
 
 export async function companionModelRoutes(app: FastifyInstance) {
+  app.get<{ Params: { "*": string } }>("/companion/model/files/*", { preHandler: [requireSession] }, async (req, reply) => {
+    const path = req.params["*"];
+    if (!modelPath.safeParse(path).success) return reply.code(400).send({ error: "invalid_model_path" });
+    try {
+      const stored = await getObject(`${companionModelObjectPrefix()}manifest.json`);
+      const manifest = companionModelManifestSchema.parse(JSON.parse(stored.body.toString("utf8")));
+      const file = manifest.files.find(item => item.path === path);
+      if (!file) return reply.code(404).send({ error: "model_file_not_found" });
+      const object = await getObject(`${companionModelObjectPrefix()}${path}`);
+      return reply.type(file.contentType).header("Cache-Control", "private, max-age=3600").send(object.body);
+    } catch { return reply.code(503).send({ error: "model_file_unavailable", message: "模型文件暂时不可用" }); }
+  });
   app.get("/companion/model/manifest", { preHandler: [requireSession] }, async (req, reply) => {
     if (!isStorageConfigured()) {
       return reply.code(503).send({ error: "object_storage_not_configured", message: "对象存储未配置，模型暂时无法下载" });
@@ -58,9 +71,9 @@ export async function companionModelRoutes(app: FastifyInstance) {
     }
 
     const files = await Promise.all(manifest.files.map(async (file) => {
-      const download = await signObjectDownload(
-        `${companionModelObjectPrefix()}${file.path}`, file.contentType, file.byteLength, file.sha256,
-      );
+      const download = usesRemoteStorage()
+        ? await signObjectDownload(`${companionModelObjectPrefix()}${file.path}`, file.contentType, file.byteLength, file.sha256)
+        : { url: `/companion/model/files/${file.path.split("/").map(encodeURIComponent).join("/")}`, authorization: "session" };
       return { path: file.path, contentType: file.contentType, byteLength: file.byteLength, sha256: file.sha256, download };
     }));
 

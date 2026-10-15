@@ -1,5 +1,7 @@
 package com.astella.mobile.ui.screens
 
+import com.astella.mobile.ui.design.*
+
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -91,7 +93,7 @@ fun MobileSettingsScreen(state: AppUiState, viewModel: AppViewModel, onBack: () 
     ) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回", tint = StudyPalette.ink) }
+                AstellaIconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回", tint = StudyPalette.ink) }
                 PageHeading("设备偏好", "使用设置", "让阅读与交流更合你的习惯。", modifier = Modifier.weight(1f))
             }
         }
@@ -115,7 +117,7 @@ fun MobileSettingsScreen(state: AppUiState, viewModel: AppViewModel, onBack: () 
                         Text("打开时显示交流记录", color = StudyPalette.ink, fontWeight = FontWeight.SemiBold)
                         Text("伴星场景和记录共用同一段交流。", color = StudyPalette.muted, style = MaterialTheme.typography.bodySmall)
                     }
-                    Switch(checked = state.chatShowsRecords, onCheckedChange = viewModel::setChatShowsRecords)
+                    AstellaSwitch(checked = state.chatShowsRecords, onCheckedChange = viewModel::setChatShowsRecords)
                 }
             }
         }
@@ -133,7 +135,7 @@ fun MobileSettingsScreen(state: AppUiState, viewModel: AppViewModel, onBack: () 
                             color = StudyPalette.muted, style = MaterialTheme.typography.bodySmall,
                         )
                     }
-                    Switch(checked = state.localReduceMotion || systemReducedMotion,
+                    AstellaSwitch(checked = state.localReduceMotion || systemReducedMotion,
                         enabled = !systemReducedMotion,
                         onCheckedChange = viewModel::setLocalReduceMotion)
                 }
@@ -205,7 +207,7 @@ private fun ParticipationPreferencesCard(state: AppUiState, viewModel: AppViewMo
     Column(Modifier.fillMaxWidth().padding(top = 5.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("个人约定", color = StudyPalette.ink, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text("默认陪伴能力一直生效；个人约定用来补充你希望她怎样陪你学习。", color = StudyPalette.muted, style = MaterialTheme.typography.bodySmall)
-            OutlinedButton(onClick = { showDefaults = !showDefaults }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(StudyRadius.md)) {
+            AstellaOutlinedButton(onClick = { showDefaults = !showDefaults }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(StudyRadius.md)) {
                 Text(if (showDefaults) "收起默认陪伴方式" else "查看默认陪伴方式")
             }
             if (showDefaults) {
@@ -230,7 +232,7 @@ private fun ParticipationPreferencesCard(state: AppUiState, viewModel: AppViewMo
                     ),
                 )
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Button(
+                    AstellaButton(
                         enabled = !busy && loaded && markdown != savedMarkdown,
                         onClick = { scope.launch { save(enabled) } },
                         modifier = Modifier.fillMaxWidth(),
@@ -238,7 +240,7 @@ private fun ParticipationPreferencesCard(state: AppUiState, viewModel: AppViewMo
                         if (busy) CircularProgressIndicator(Modifier.size(15.dp), color = Color.White, strokeWidth = 2.dp)
                         Text("保存约定", Modifier.padding(start = 6.dp))
                     }
-                    if (markdown.isNotBlank()) TextButton(enabled = !busy, onClick = { scope.launch { save(!enabled) } }) {
+                    if (markdown.isNotBlank()) AstellaTextButton(enabled = !busy, onClick = { scope.launch { save(!enabled) } }) {
                         Text(if (enabled) "暂停" else "恢复")
                     }
                 }
@@ -248,7 +250,7 @@ private fun ParticipationPreferencesCard(state: AppUiState, viewModel: AppViewMo
             error?.let { message ->
                 Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     Text(message, color = StudyPalette.danger, style = MaterialTheme.typography.bodySmall)
-                    TextButton(onClick = { scope.launch { load(preservingDraft = conflictPending) } }, contentPadding = PaddingValues(0.dp)) {
+                    AstellaTextButton(onClick = { scope.launch { load(preservingDraft = conflictPending) } }, contentPadding = PaddingValues(0.dp)) {
                         Text(if (conflictPending) "读取最新版本并保留草稿" else "重新读取约定")
                     }
                 }
@@ -263,7 +265,7 @@ private fun ParticipationPreferencesCard(state: AppUiState, viewModel: AppViewMo
                         Text(latest.ifEmpty { "（云端约定为空）" }, color = StudyPalette.ink, style = MaterialTheme.typography.bodySmall)
                     }
                     Text("上方输入框仍保留你的草稿。合并需要的内容后，保存会以草稿作为最新版本。", color = StudyPalette.muted, style = MaterialTheme.typography.bodySmall)
-                    TextButton(onClick = { markdown = latest; conflictLatestMarkdown = null }, contentPadding = PaddingValues(0.dp)) {
+                    AstellaTextButton(onClick = { markdown = latest; conflictLatestMarkdown = null }, contentPadding = PaddingValues(0.dp)) {
                         Text("用另一台设备的版本替换草稿")
                     }
                 }
@@ -278,7 +280,7 @@ fun CompanionCenterScreen(state: AppUiState, viewModel: AppViewModel, onBack: ()
     val latest = state.streamingText.ifEmpty { state.messages.lastOrNull { it.role == "assistant" }?.displayText.orEmpty() }
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回", tint = StudyPalette.ink) }
+            AstellaIconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回", tint = StudyPalette.ink) }
             Column(Modifier.weight(1f)) {
                 Text("伴星中心", color = StudyPalette.ink, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Text(state.profile?.workspaceName ?: "我的书房", color = StudyPalette.muted, style = MaterialTheme.typography.labelSmall)
@@ -312,10 +314,10 @@ fun CompanionCenterScreen(state: AppUiState, viewModel: AppViewModel, onBack: ()
                     }
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Button(onClick = { onConversation(false) }, modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(StudyRadius.xxl)) {
+                    AstellaButton(onClick = { onConversation(false) }, modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(StudyRadius.xxl)) {
                         Text("回到对话")
                     }
-                    TextButton(onClick = { onConversation(true) }, modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp)) { Text("查看完整记录") }
+                    AstellaTextButton(onClick = { onConversation(true) }, modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp)) { Text("查看完整记录") }
                 }
             }
         }

@@ -1,5 +1,7 @@
 package com.astella.mobile.ui.screens
 
+import com.astella.mobile.ui.design.*
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -80,8 +82,8 @@ fun SessionRecoveryScreen(state: AppUiState, viewModel: AppViewModel) {
             color = StudyPalette.muted, textAlign = TextAlign.Center)
         if (state.isLoading) CircularProgressIndicator(Modifier.padding(top = 22.dp).size(22.dp), color = StudyPalette.accent)
         else Row(Modifier.padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            OutlinedButton(onClick = { viewModel.logout() }) { Text("返回登录") }
-            Button(onClick = { viewModel.restoreSession() }) { Text("重新连接") }
+            AstellaOutlinedButton(onClick = { viewModel.logout() }) { Text("返回登录") }
+            AstellaButton(onClick = { viewModel.restoreSession() }) { Text("重新连接") }
         }
     }
 }
@@ -109,9 +111,9 @@ fun NoteFeatureScreen(
 @Composable
 private fun FeatureHeader(title: String, onBack: () -> Unit, onAccount: () -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回$title", tint = StudyPalette.ink) }
+        AstellaIconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回$title", tint = StudyPalette.ink) }
         Spacer(Modifier.weight(1f))
-        IconButton(onClick = onAccount) { Icon(Icons.Filled.AccountCircle, "我的账户", tint = StudyPalette.accent) }
+        AstellaIconButton(onClick = onAccount) { Icon(Icons.Filled.AccountCircle, "我的账户", tint = StudyPalette.accent) }
     }
 }
 
@@ -142,9 +144,9 @@ private fun FeatureFailure(message: String, retry: () -> Unit, onAccount: (() ->
                 style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
             )
             if ((consentRequired || policyDisabled) && onAccount != null) {
-                TextButton(onClick = onAccount, contentPadding = PaddingValues(horizontal = 0.dp)) { Text("查看 AI 使用设置") }
+                AstellaTextButton(onClick = onAccount, contentPadding = PaddingValues(horizontal = 0.dp)) { Text("查看 AI 使用设置") }
             } else {
-                TextButton(onClick = retry, contentPadding = PaddingValues(horizontal = 0.dp)) { Text("重新读取") }
+                AstellaTextButton(onClick = retry, contentPadding = PaddingValues(horizontal = 0.dp)) { Text("重新读取") }
             }
         }
     }
@@ -292,7 +294,7 @@ private fun FeatureGenerationPrimer(kind: String, document: NoteDocument?, modif
 
 @Composable
 private fun FeatureGenerateButton(label: String, busy: Boolean, enabled: Boolean = true, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    Button(
+    AstellaButton(
         onClick = onClick,
         enabled = enabled && !busy,
         modifier = modifier.fillMaxWidth().height(52.dp),
@@ -335,7 +337,7 @@ private fun NoteVersionsScreen(noteId: String, state: AppUiState, viewModel: App
             title = { Text("恢复到第 ${version.optInt("versionNo", 1)} 版？") },
             text = { Text("当前内容会作为新版本保存，原来的记录仍会保留。") },
             confirmButton = {
-                TextButton(enabled = !busy, onClick = {
+                AstellaTextButton(enabled = !busy, onClick = {
                     scope.launch {
                         val base = state.noteDocument?.versionId ?: return@launch
                         busy = true; error = null
@@ -350,7 +352,7 @@ private fun NoteVersionsScreen(noteId: String, state: AppUiState, viewModel: App
                     }
                 }) { Text("恢复版本") }
             },
-            dismissButton = { TextButton(onClick = { selected = null }) { Text("取消") } },
+            dismissButton = { AstellaTextButton(onClick = { selected = null }) { Text("取消") } },
         )
     }
 
@@ -402,7 +404,7 @@ private fun NoteVersionsScreen(noteId: String, state: AppUiState, viewModel: App
                         Text("第 ${version.optInt("versionNo", 1)} 版", color = StudyPalette.ink, fontWeight = FontWeight.SemiBold)
                         Text(formatFeatureDate(version.optString("createdAt")), Modifier.padding(top = 4.dp), color = StudyPalette.muted, style = androidx.compose.material3.MaterialTheme.typography.bodySmall)
                     }
-                    TextButton(onClick = { selected = version }) { Text("恢复") }
+                    AstellaTextButton(onClick = { selected = version }) { Text("恢复") }
                 }
                 androidx.compose.material3.HorizontalDivider(Modifier.padding(start = 44.dp), color = StudyPalette.paperEdge)
             }

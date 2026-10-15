@@ -13,9 +13,8 @@ import type { ContextBudgetGateOptions } from "../lib/context-governor.ts";
  *
  * 两个槽各有各的理由，混在一个函数里才看得出它们**不是**同一个东西：
  *   - `provider`：交互主链路。闲聊/无工具请求关思考，其余请求采用模型档案默认档。
- *   - `fallbackProvider`：采用正式 companion_fallback 配置。用户已决定固定
- *     DeepSeek v4.1 Flash，备用槽也使用同一模型，不在修复回合悄悄切到 GLM。
- *     旧跨模型尝试的经验不能覆盖当前配置决定；恢复仍遵守原有调用与时限预算。
+ *   - `fallbackProvider`：仅采用正式 companion_fallback 配置；当前单 MiMo 配置
+ *     没有独立备用槽。恢复遵守原有调用与时限预算。
  *
  * 两个都走 `createGovernedProvider`：同意、外发政策、PII 净化、`ai_audit_log` 与
  * 方案 44 的上下文预算闸都在那一个边界上（44 §4.3）。谁绕过它，谁就同时绕过五件事。

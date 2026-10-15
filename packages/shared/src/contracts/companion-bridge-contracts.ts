@@ -49,6 +49,19 @@ export const SETTINGS_SECTION_IDS_V2 = [
 ] as const;
 export type SettingsSectionIdV2 = (typeof SETTINGS_SECTION_IDS_V2)[number];
 
+/**
+ * 笔记学习生成的三种产物，落点种类只在这里列一次。
+ *
+ * 不含 `note_expansion`：它落到翻开草稿那一步，要的是拓展任务的路径而不是产物回执
+ * （桌面 `NoteTargetRef.learningResult.kind` 四种里只有这三种能按 id 精确取回）。
+ */
+export const COMPANION_LEARNING_ARTIFACT_KINDS_V2 = [
+  "note_dynamic_artifact",
+  "note_mind_map",
+  "note_overview",
+] as const;
+export type CompanionLearningArtifactKindV2 = (typeof COMPANION_LEARNING_ARTIFACT_KINDS_V2)[number];
+
 export type AllowedMainRouteV2 =
   | { kind: "home" }
   | { kind: "today" }
@@ -57,6 +70,9 @@ export type AllowedMainRouteV2 =
   | { kind: "note_library" }
   | { kind: "card"; cardId: string; objectiveId: string }
   | { kind: "objective_library" }
+  // 某一份学习产物（互动演示／思维导图／速看）。四个 id 缺一不可：取回执按 noteId+taskId，
+  // artifactId 用来核对拿到的确实是那一份，noteVersionId 是它生成时的那一版正文。
+  | { kind: "learning_artifact"; artifactKind: CompanionLearningArtifactKindV2; artifactId: string; taskId: string; noteId: string; noteVersionId: string }
   | { kind: "review"; scheduleId?: string }
   | { kind: "search" }
   // 方案 16 §18.1：focus_graph_node（lens）与 restore_graph_viewport
@@ -332,6 +348,14 @@ export const allowedMainRouteV2Schema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("note_library") }),
   z.strictObject({ kind: z.literal("card"), cardId: z.string().uuid(), objectiveId: z.string().uuid() }),
   z.strictObject({ kind: z.literal("objective_library") }),
+  z.strictObject({
+    kind: z.literal("learning_artifact"),
+    artifactKind: z.enum(COMPANION_LEARNING_ARTIFACT_KINDS_V2),
+    artifactId: z.string().uuid(),
+    taskId: z.string().uuid(),
+    noteId: z.string().uuid(),
+    noteVersionId: z.string().uuid(),
+  }),
   z.strictObject({ kind: z.literal("review"), scheduleId: z.string().uuid().optional() }),
   z.strictObject({ kind: z.literal("search") }),
   z.strictObject({

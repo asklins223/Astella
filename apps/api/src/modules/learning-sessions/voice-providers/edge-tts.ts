@@ -14,6 +14,7 @@
  */
 
 import { DomainError } from "@astella/shared";
+import { logger } from "../../../lib/logger.ts";
 
 export interface EdgeTtsProviderOptions {
   /** 服务地址（优先于环境变量；宿主缺省使用开发容器的回环端口） */
@@ -239,7 +240,15 @@ async function edgeTtsSynthesizeUngated(
   }
 
   if (!response.ok) {
-    await response.text().catch(() => ""); // 消费 body（内部细节不透出）
+    // 上游错误体此前被读出来直接丢弃，注释里声称的「排查细节应进服务端日志」从未落地——
+    // 实测（2026-10-14）edge 容器对"没有可读字"的文本回 502 + `No audio was received`，
+    // 而库里 52 条 EdgeTtsError 只有类名，零归因。日志只留状态码 + 截断摘要（上游错误
+    // 文本，不含用户内容），不向客户端透出。
+    const body = await response.text().catch(() => "");
+    logger.warn(
+      { status: response.status, body: body.slice(0, 500) },
+      "edge-tts synthesis rejected by upstream",
+    );
     throw new EdgeTtsError(
       "UPSTREAM_ERROR",
       `edge-tts HTTP ${response.status}（内部细节不向用户透出）`,
@@ -340,7 +349,13 @@ async function edgeTtsSynthesizeStreamUngated(
   }
 
   if (!response.ok) {
-    await response.text().catch(() => "");
+    // 同 edgeTtsSynthesizeUngated：把上游 502 的原因留在服务端日志里（截断摘要），
+    // 不再"读到就扔"。
+    const body = await response.text().catch(() => "");
+    logger.warn(
+      { status: response.status, body: body.slice(0, 500) },
+      "edge-tts stream synthesis rejected by upstream",
+    );
     throw new EdgeTtsError(
       "UPSTREAM_ERROR",
       `edge-tts HTTP ${response.status}（内部细节不向用户透出）`,

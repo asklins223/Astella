@@ -1,5 +1,9 @@
 # 拾星书房设计指南
 
+### Mobile authentication: latest decision, 2026-10-15
+
+The user replaced the illustrated glass image direction with direct native implementation: white authentication backgrounds, ordinary neutral glass controls, the official app icon, and **no companion portraits or illustrations on login or any authentication subpage**. Earlier illustrated/iridescent authentication descriptions below are historical and superseded. See [the current mobile specification](apps/mobile-client/DESIGN_SPEC.md) and [implementation review](docs/testing/mobile-auth-white-glass-2026-10-15.md).
+
 **主动交流与用户自定义偏好（2026-10-13 用户确认方向，主动交流基础已实施）：**同一段交流可由几条短发言接续，回答后有实际价值的补充归回原交流，完整正文、附件和工具进展保持可读与可回看。页面中的帮助沿角色或相关纸面就近出现，输入、焦点与当前操作及时接管。用户用一句话表达以后怎样相处，偏好在现有说话风格、伴星偏好附近以自由文本呈现，不做固定规则配置墙。自然分句、答后补充、相关页面／难题帮助、应用启动问候和久学休息提醒是每个账号自带的默认方式，无需先保存偏好；Agent 结合实际观察决定何时参与。发言边界、语音分段与播放状态分别处理，Off 与减少动态保留文字和操作，正式作答保持静默。详见 [56](docs/plans/learning-companion/56-companion-initiative-and-natural-exchange-2026-10-13.md)；实际窗口、协议与模型检查见 [实施记录](docs/testing/companion-initiative-2026-10-13.md)。
 
 这份指南帮助设计判断，提供方向与当前实现入口。产品能力和数据边界见 [PRODUCT.md](PRODUCT.md)，学习流程见 [方案 41](docs/plans/learning-companion/41-note-companion-learning-experience-2026-09-28.md)。具体页面可以随用户目标演进；这里的参数是实现参考，不是创意配额。
@@ -30,7 +34,7 @@ V3.1 HUD 与 Home V2 是目前的设计参考。可以从比例、构图、材�
 
 ### 移动端随身伴星与便携书房
 
-**2026-10-14 原生双端重构：**React 客户端已退出手机产品构建链路，分别由 SwiftUI 和 Kotlin/Jetpack Compose 实现。iOS 作为视觉与动效标尺；Android 复用相同的中性色层级、单一系统蓝强调、伴星优先场景、原生短转场和触控节奏，并适配系统浅色／深色外观。用户之后明确要求移除装饰性多色渐变与撞色。一级导航统一为“对话／手边／手记”，账户从右上角进入。平台分别实现其系统导航、键盘、权限、选图和减少动态行为。细则与跨页面复用方法见 [原生界面与动效规范](apps/mobile-client/DESIGN_SPEC.md) 和[手机端界面设计心得与官方依据](apps/mobile-client/DESIGN_NOTES.md)；代码现状与未迁移能力见 [手机端 README](apps/mobile-client/README.md)。
+**2026-10-15 手机端当前决定：**保留 SwiftUI 与 Kotlin/Compose 双端原生技术，以 iOS 为构图和动效标尺。用户明确要求“简约＋玻璃”，需要独立设计的布局、比例、边缘光和连续动效，不接受系统默认控件堆叠。当前视觉为雾白／冷灰、低饱和冰蓝与分层玻璃；伴星是全局交互核心。iOS 登录注册保留优化，其余页面重建；Android 同步对齐。细则见 [手机端设计规范](apps/mobile-client/DESIGN_SPEC.md)，色值与参数见 [共用参数](apps/mobile-client/DESIGN_TOKENS.md)，实际接线和验证范围见 [手机端 README](apps/mobile-client/README.md)。
 
 **以下 2026-10-10 至 10-12 的移动条目是 React 原型和浏览器客户端的历史记录，不是当前原生 App 的实现规格；如与上方冲突，以 10-14 决定、原生设计规范和代码为准。**
 
