@@ -306,7 +306,7 @@ Agent 能收到应用就绪观察，读取本次有关偏好和当前交流，�
 | `companion_awareness_sessions` | 当前空间、设备、前台／锁屏／输入／播放／页面与可参与状态 | 四十五秒租约；较旧观察不能覆盖新状态 |
 | `companion_awareness_observations` | 有时限的实际启动、前台恢复、页面到达、困难／结果及服务端答后完成观察 | 启动按账号＋宿主＋launchId；困难／结果按领域实体版本；普通观察按 ID 幂等 |
 | `companion_study_spans` | 宿主与服务端确认的前台学习区间 | 单段最多四十五秒；自己的跨空间投影只返回时间，按并集合并 |
-| `companion_attention_plans` | 自由 intent、事件 topics、nextReviewAt、偏好／自己记事版本、原执行 | CAS、过期、来源撤回、最多二十项活跃关注；重评最早十五秒 |
+| `companion_attention_plans` | 自由 intent、事件 topics、nextReviewAt、偏好／自己记事版本、原执行 | CAS、过期、来源撤回；原「最多二十项活跃关注、重评最早十五秒」数字闸 2026-10-13 起作废，以 §12.2 为准（2026-10-15 复核） |
 | `companion_run_utterances` | run／toolCall／实际 message 的不可改写关系 | 同一工具调用只发布一次，消息顺序由会话计数器分配 |
 
 主题描述宿主能观察什么，不是用户规则类型。当前主题是 `app.started`、`app.foreground`、`page.arrived`、`help.available`、`result.available`、`reply.finished`、`preference.changed` 和 `study.started`；周期续租用 `context.updated`，不由续租直接调用模型。原有朗读观察继续独立表达实际播放结果。
@@ -350,6 +350,8 @@ Agent 能收到应用就绪观察，读取本次有关偏好和当前交流，�
 手机鉴权 WS 承载相同的发言与完成事件，未发送新用户消息也能看到主动发言。输入、拍照／语音起步可立即中止正在考虑的内部运行，新用户提交可以接替它；重连按真实消息身份合并历史。
 
 桌面主进程确定本次真实 launchId、窗口可见性、锁屏及时间锚点；页面代码提供已加载材料和语义到达。资料与学习结果的可读状态变化立即续租并撤回旧页面水位，加载过程中不产生到达；同页计数刷新只更新 context。手机浏览器以文档启动、visibility 和已加载笔记观察为准，不能探测操作系统锁屏或保证关页／后台执行。手机流式 ASR／TTS、原生推送与同时在线的真实出声仍见方案 55 的边界。
+
+**2026-10-15 补充：**原生 iOS／Android 双端尚未接入观察端口（旧 React 手机浏览器端随 2026-10-14 移除而失效）；原生宿主需按既有合同调用 `POST /me/companion/awareness`（前台／启动／页面到达／安静），列为原生重构实现待办。服务端接口已有，接入只补宿主侧观察上报，不新增合同。
 
 ## 13. 与旧规则的取舍和迁移
 

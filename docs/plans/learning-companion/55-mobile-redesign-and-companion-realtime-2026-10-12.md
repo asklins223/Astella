@@ -2,6 +2,8 @@
 
 **2026-10-14 原生双端决定：**用户明确取代手机 React 客户端，使用 iOS SwiftUI 与 Android Kotlin/Jetpack Compose 两套原生工程，iOS 视觉与动效作为 Android 的共同标尺。用户之后明确采用 Apple 系统中性色与单一系统蓝，移除多色装饰渐变，并适配深浅色外观。共享 `/companion/inbox/ensure`、`/companion/realtime`、`/voice/transcribe` 和消息合同；图片上传仍由用户发送动作触发。两端已有登录、WebSocket 会话／回执、MiMo 整段转写和手记读取代码。React 描述是 2026-10-12 历史实现状态；桌面仍使用 SSE 与本机 ASR，移动端也没有流式 ASR/TTS。当前工程和未迁移能力见 [`apps/mobile-client/README.md`](../../../apps/mobile-client/README.md) 与 [界面规范](../../../apps/mobile-client/DESIGN_SPEC.md)。
 
+**2026-10-15 修订：**①回合消息合同扩展：turn 输入放宽为「文字＋至多一个附件（图片或文件）」或「仅附件」；新增 file 块，携带客户端本机抽取的 text 摘要与 assetId／name／mime／size；无文字时登记显式「仅附件意图」，不伪造文案。仍按方案 55 既有规则：新增消息类型与合同变更集中在 `packages/shared` 合同并由客户端与 API 共用校验，zod 测试同步更新。②移动端接入 TTS：复用已有 `POST /voice/tts`（返回 audio/mpeg）与 `POST /voice/tts/stream`，承载粒子波动与口型，受 AI 同意＋部署开关双门控（`COMPANION_VOICE_DIALOGUE_V1_ENABLED`／`COMPANION_STREAMING_VOICE_V1_ENABLED` 生产默认关闭，移动端完整语音体验需开启）。③Live2D 模型分发：新增鉴权接口下发版本清单与对象存储临时签名下载 URL（复用 `signObjectDownload` 基建），模型运行时下载、不随安装包分发，加载失败降级静态图。④「流式 ASR 不做」不变，本修订只补 TTS 播放链路，不改变 ASR 仍为 MiMo 整段上传的事实。
+
 日期：2026-10-12。用户要求重新检查已开始实施的手机端，并提出手机语音在服务端执行、伴星改用 WebSocket、桌面共用接口而继续本机 ASR；后续明确手机 ASR 使用小米 MiMo。
 
 首轮分析记录：真实手机交流页的构图调整、独立语音状态示意、接口与迁移建议。以下是后续实现状态（2026-10-12）：手机已有鉴权伴星 WebSocket，负责订阅持久事件和提交文字回合；麦克风录音通过现有 `/voice/transcribe` 上传服务端，由小米 MiMo `mimo-v2.5-asr` 做整段识别，结果回填可编辑草稿。服务端语音开关默认关闭，且需要用户语音识别同意与 MiMo 配置。当前没有流式 ASR、WS 二进制音频、移动端 TTS/播放或桌面 WebSocket 迁移；ASR 容器建议已由用户选择小米 MiMo 的决定取代。
