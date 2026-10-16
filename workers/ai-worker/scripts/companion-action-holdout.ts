@@ -58,15 +58,15 @@ const act = rows.filter(row => row.toolUse === "act");
 const verdict = (onlyWrites: boolean) => {
   const due = act.filter(row => named(row, onlyWrites).length > 0);
   const missed = due.filter(row => row.landed === 0);
-  return { due: due.length, missed: missed.length,
-    rate: due.length === 0 ? "n/a" : (missed.length / due.length).toFixed(3), missed };
+  return { dueCount: due.length, missed,
+    rate: due.length === 0 ? "n/a" : (missed.length / due.length).toFixed(3) };
 };
 const current = verdict(false);
 const tightened = verdict(true);
 
 console.log(`留出集：${rows.length} 轮真实对话（toolUse=act ${act.length} 轮），写类工具 ${writeNames.size} 个`);
-console.log(`改前（点名即算动作）：要求动作 ${current.due} 轮，没有落库回执 ${current.missed.length} 轮 → 误标率 ${current.rate}`);
-console.log(`改后（只认写类点名）：要求动作 ${tightened.due} 轮，没有落库回执 ${tightened.missed.length} 轮 → 误标率 ${tightened.rate}`);
+console.log(`改前（点名即算动作）：要求动作 ${current.dueCount} 轮，没有落库回执 ${current.missed.length} 轮 → 误标率 ${current.rate}`);
+console.log(`改后（只认写类点名）：要求动作 ${tightened.dueCount} 轮，没有落库回执 ${tightened.missed.length} 轮 → 误标率 ${tightened.rate}`);
 
 // 收紧后从"要作废"变成"不该作废"的那一类：只点了读工具，却被当成没做事。
 const readOnly = current.missed.filter(row => named(row, true).length === 0);
