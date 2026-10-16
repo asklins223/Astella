@@ -10,8 +10,8 @@ import { useRoomStore } from "../../app/room-store";
 export const COMPANION_AUDIO_CACHE_CHANGED = "astella:companion-audio-cache-changed";
 
 /** 手记与伴星中心共用的原声入口。本机没留下录音时可以按服务端留档补听。 */
-export function CompanionMessageAudioButton({ runId, conversationId = null, exchange = false }:
-  { runId: string | null; conversationId?: string | null; exchange?: boolean }) {
+export function CompanionMessageAudioButton({ runId, exchange = false }:
+  { runId: string | null; exchange?: boolean }) {
   const scope = useRoomStore(state => state.workspaceScopeRevision);
   const [cached, setCached] = useState<{ runId: string; scope: number; ordinals: number[] } | null>(null);
   const [phase, setPhase] = useState<"idle" | "loading" | "playing">("idle");
@@ -65,18 +65,20 @@ export function CompanionMessageAudioButton({ runId, conversationId = null, exch
    */
   const redrive = async () => {
     const list = window.astella?.companion?.chat?.listRunVoiceSegments;
-    if (!runId || !conversationId || !list) { setFailure("这段暂时取不回来。"); return; }
+    if (!runId || !list) { setFailure("这段暂时取不回来。"); return; }
     setPhase("loading"); setFailure(null);
     try {
       const result = unwrapGatewayResult(await list({
         meta: createRequestMeta(),
-        request: { version: 1, conversationId, runId },
+        request: { version: 1, runId },
       }));
-      // `generation` 为空就是"这一轮没有留下可补的音频"（事件过了 TTL 或从没签发过）。
-      if (result.generation === null || result.items.length === 0) {
+      // 这三个字段同源：都为空就是"这一轮没有留下可补的音频"（事件过了 TTL 或从没签发过）。
+      // 会话身份由服务端随段回来——请求里不带它，因为连续对话历史那一层根本不暴露 conversation。
+      if (result.generation === null || result.conversationId === null || result.items.length === 0) {
         setPhase("idle"); setFailure("这段没有留下语音记录。"); return;
       }
       const generation = result.generation;
+      const conversationId = result.conversationId;
       const session = beginCompanionSpeechLine({ strictSegments: true });
       // 先认领再喂段：`feedSegment` 会立刻开始合成/播放，第一条进度事件可能比这里的
       // 赋值更早到；订阅那条守卫按 `playback.current?.planId` 认领，晚一步赋值就会

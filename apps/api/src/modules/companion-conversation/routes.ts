@@ -434,24 +434,23 @@ userId: req.session.userId,
   // 存在的理由：本机没留下录音时，客户端要能按段身份补取。分段权威在服务端，
   // 客户端照着这份重建合成请求，不自己重新切段。事件按既有 TTL 清理，过了就
   // 回 200 + 空列表（`generation: null`），由客户端如实说"这段没有留下语音记录"。
-  app.get<{ Params: { runId: string }; Querystring: { conversationId?: string } }>(
+  app.get<{ Params: { runId: string } }>(
     "/companion/runs/:runId/voice-segments",
     { preHandler: [requireSession, requireCompanionDialogue] },
     async (req, reply) => {
-      const conversationId = typeof req.query?.conversationId === "string" ? req.query.conversationId : "";
       const runId = req.params.runId;
       const isUuid = (value: string) =>
         /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
-      if (!isUuid(conversationId) || !isUuid(runId)) {
+      if (!isUuid(runId)) {
         return reply.code(400).send({
           version: 1, error: "INVALID_REQUEST",
-          message: "conversationId and runId must be uuids", recoverable: false, requestId: req.id,
+          message: "runId must be a uuid", recoverable: false, requestId: req.id,
         });
       }
       if (!(await rateLimited(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:read`,
         COMPANION_RATE_LIMITS.readQueriesPerMinute.limit, COMPANION_RATE_LIMITS.readQueriesPerMinute.windowMs))) return;
       const result = await listCompanionRunVoiceSegments({
-        ...scopeOfSession(req.session), userId: req.session.userId, conversationId, runId,
+        ...scopeOfSession(req.session), userId: req.session.userId, runId,
       });
       // 「这一轮没有可补的音频」是正常结论，不是错误：回 200 + 空列表，
       // 客户端因此能说清"没有留档"。原来回 404，客户端在解包那一步就抛了，

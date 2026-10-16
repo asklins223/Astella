@@ -858,7 +858,7 @@ export async function listCompanionRunVoiceSegments(t: GatewayTransport,
   ): Promise<CompanionRunVoiceSegmentsResultV1> {
     await t.ensureConnected(requestId);
     const result = await t.request(
-      `/companion/runs/${request.runId}/voice-segments?conversationId=${encodeURIComponent(request.conversationId)}`,
+      `/companion/runs/${request.runId}/voice-segments`,
       { method: "GET" },
       true,
       true,

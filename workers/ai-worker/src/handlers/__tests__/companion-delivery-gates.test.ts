@@ -1,13 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import {
-  COMPANION_STREAM_TRANSPORT_FAILURE,
-  companionSteerCause,
-  companionStreamFallbackText,
-  judgeCompanionDeliveryGate,
-  type CompanionDeliveryGate,
-} from "../companion-delivery-gates.ts";
+import { COMPANION_STREAM_TRANSPORT_FAILURE, companionSteerCause, companionStreamFallbackText, judgeCompanionDeliveryGate, type CompanionDeliveryGate } from "../companion-delivery-gates.ts";
 
 const GATES: CompanionDeliveryGate[] = ["output_truncated", "unverified_quote", "action_not_executed",
   "stream_validation", "stream_reconcile"];

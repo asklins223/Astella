@@ -75,7 +75,8 @@ export type CompanionVoiceSpeakSegmentRequestV2 = z.infer<typeof companionVoiceS
 export const companionRunVoiceSegmentsResultV1Schema = z.strictObject({
   version: z.literal(1),
   runId: z.string().uuid(),
-  conversationId: z.string().uuid(),
+  /** 与 `generation` 同源：这一轮没有留档时两个都是 null。 */
+  conversationId: z.string().uuid().nullable(),
   /** 没有留档时是 null（`items` 也必为空）——"这一轮没有可补的音频"是正常结论，不是错误。 */
   generation: z.number().int().positive().nullable(),
   items: z.array(z.strictObject({
@@ -91,7 +92,9 @@ export type CompanionRunVoiceSegmentsResultV1 = z.infer<typeof companionRunVoice
 
 export const companionRunVoiceSegmentsRequestV1Schema = z.strictObject({
   version: z.literal(1),
-  conversationId: z.string().uuid(),
+  // 只带 runId：会话身份由服务端从这一轮本身取（`companion_stream_events.conversation_id`）。
+  // 原来要求客户端传 conversationId，而**连续对话历史按产品层不暴露 conversation**，
+  // 于是伴星中心与手记那两处根本没有 conversationId 可传——入口给了也永远取不到。
   runId: z.string().uuid(),
 });
 export type CompanionRunVoiceSegmentsRequestV1 = z.infer<typeof companionRunVoiceSegmentsRequestV1Schema>;

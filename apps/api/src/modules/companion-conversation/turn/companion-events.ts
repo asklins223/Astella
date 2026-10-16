@@ -767,23 +767,24 @@ export async function openCompanionEventStream(args: {
 export async function listCompanionRunVoiceSegments(args: {
   workspaceId: string;
   userId: string;
-  conversationId: string;
   runId: string;
 }): Promise<{
-  runId: string; conversationId: string; generation: number | null; items: Array<{
+  runId: string; conversationId: string | null; generation: number | null; items: Array<{
     ordinal: number; segmentId: string; displayText: string;
     displayStart: number; displayEnd: number; cue: unknown }>;
 }> {
   return withWorkspaceTransaction({ workspaceId: args.workspaceId, userId: args.userId }, async (tx) => {
     // 显式带 workspace_id（与上面几处同一口径），不让正确性依赖 RLS 是否真的生效。
+    // 会话身份跟着事件本身回来：请求只带 runId（见 `companionRunVoiceSegmentsRequestV1Schema`），
+    // 不属于这个工作空间的 run 自然一条都取不到。
     const rows = await tx
       .select({
         generation: companionStreamEvents.generation,
+        conversationId: companionStreamEvents.conversationId,
         payload: companionStreamEvents.payload,
       })
       .from(companionStreamEvents)
       .where(and(
-        eq(companionStreamEvents.conversationId, args.conversationId),
         eq(companionStreamEvents.workspaceId, args.workspaceId),
         eq(companionStreamEvents.runId, args.runId),
         eq(companionStreamEvents.type, "voice.segment.ready"),
@@ -791,10 +792,10 @@ export async function listCompanionRunVoiceSegments(args: {
       ))
       .orderBy(companionStreamEvents.seq);
     if (!rows[0]) {
-      return { runId: args.runId, conversationId: args.conversationId, generation: null, items: [] };
+      return { runId: args.runId, conversationId: null, generation: null, items: [] };
     }
     const items = companionVoiceSegmentsFromEventPayloads(rows.map(row => row.payload));
-    return { runId: args.runId, conversationId: args.conversationId,
+    return { runId: args.runId, conversationId: String(rows[0].conversationId),
       generation: items.length === 0 ? null : Number(rows[0].generation), items };
   });
 }

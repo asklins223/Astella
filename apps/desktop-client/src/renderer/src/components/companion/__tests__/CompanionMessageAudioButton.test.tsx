@@ -63,7 +63,7 @@ it("没有本机录音时给补听入口，新录音到了再换成播放", asyn
 /** 补听取不到服务端留档时说实话，不假装还能放。 */
 it("补听取不到留档时说清楚，不静默失败", async () => {
   list.mockResolvedValue(ok({ version: 1, items: [] }));
-  render(<CompanionMessageAudioButton runId={runId} conversationId="33333333-3333-4333-8333-333333333333" />);
+  render(<CompanionMessageAudioButton runId={runId} />);
   fireEvent.click(await screen.findByRole("button", { name: "补听这段" }));
   await waitFor(() => expect(screen.getByRole("status").textContent).toBe("这段暂时取不回来。"));
   expect(play).not.toHaveBeenCalled();
@@ -85,12 +85,40 @@ it("这一轮没有留档时说实话，不进播放态也不假装能放", asyn
     chat: { listRunVoiceSegments },
   } });
   list.mockResolvedValue(ok({ version: 1, items: [] }));
-  render(<CompanionMessageAudioButton runId={runId} conversationId="33333333-3333-4333-8333-333333333333" />);
+  render(<CompanionMessageAudioButton runId={runId} />);
   fireEvent.click(await screen.findByRole("button", { name: "补听这段" }));
   await waitFor(() => expect(listRunVoiceSegments).toHaveBeenCalledOnce());
   await waitFor(() => expect(screen.getByRole("status").textContent).toBe("这段没有留下语音记录。"));
   expect(play).not.toHaveBeenCalled();
   expect(screen.queryByRole("button", { name: "停止播放这条消息的音频" })).toBeNull();
+});
+
+/**
+ * 这一条钉的是 2026-10-16 自查抓到的接线洞：伴星中心的连续对话与手记时间线**根本没有
+ * conversationId**（那一层按产品口径不暴露 conversation），所以原来那个"要 conversationId
+ * 才给补听"的条件在那里永远走不到——入口给了也只会说"暂时取不回来"。
+ * 现在请求只带 runId，会话身份由服务端随段回来。
+ */
+it("只带 runId 也能补听：会话身份用服务端回来的那一份，不靠界面自己知道", async () => {
+  const conversationId = "44444444-4444-4444-8444-444444444444";
+  const listRunVoiceSegments = vi.fn().mockResolvedValue(ok({
+    version: 1, runId, conversationId, generation: 7,
+    items: [{ ordinal: 1, segmentId: "a".repeat(64), displayText: "刚讲完饭锅的故事",
+      displayStart: 0, displayEnd: 8, cue: { emotion: "neutral" } }],
+  }));
+  const synthesizeSegment = vi.fn().mockResolvedValue({ duration: 1 });
+  vi.stubGlobal("astella", { companion: { voice: { cachedList: list }, chat: { listRunVoiceSegments } } });
+  list.mockResolvedValue(ok({ version: 1, items: [] }));
+  setCompanionVoiceHost({ audible: () => true, synthesize: vi.fn(), synthesizeSegment,
+    readCachedSegment: read, play, stop, reportSegmentOutcome: vi.fn() });
+  render(<CompanionMessageAudioButton runId={runId} />);
+  fireEvent.click(await screen.findByRole("button", { name: "补听这段" }));
+  await waitFor(() => expect(listRunVoiceSegments).toHaveBeenCalledOnce());
+  expect(listRunVoiceSegments.mock.calls[0][0].request).toEqual({ version: 1, runId });
+  await waitFor(() => expect(synthesizeSegment).toHaveBeenCalledOnce());
+  expect(synthesizeSegment.mock.calls[0][0]).toMatchObject({
+    version: 2, conversationId, runId, generation: 7, ordinal: 1,
+  });
 });
 
 it("mounts the same player in the journal and companion center and excludes user messages", async () => {
