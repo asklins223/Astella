@@ -34,12 +34,14 @@ const check = (ok, label, detail) => {
   console.log(`${ok ? 'PASS' : 'FAIL'} ${label}${detail === undefined ? '' : ` → ${JSON.stringify(detail)}`}`)
 }
 const clickNamed = async (label) => page.evaluate(label => {
-  const hit = [...document.querySelectorAll('button')].find(el => {
-    const names = `${el.textContent || ''}|${el.getAttribute('aria-label') || ''}|${el.getAttribute('title') || ''}`
-    return names.includes(label) && el.getBoundingClientRect().width > 0 && !el.disabled
-  })
-  if (hit) { hit.click(); return true }
-  return false
+  // 优先点看得见的；HUD 收起时「打开设置中心」这类按钮仍在 DOM 里但宽度为 0，
+  // 那种只能直接派发 click（真窗口实测：hidden-clicked 一样能打开设置中心）。
+  const matches = [...document.querySelectorAll('button, [role="tab"], a')].filter(el =>
+    !el.disabled && `${el.textContent || ''}|${el.getAttribute('aria-label') || ''}|${el.getAttribute('title') || ''}`.includes(label))
+  const hit = matches.find(el => el.getBoundingClientRect().width > 0) ?? matches[0]
+  if (!hit) return null
+  hit.click()
+  return `${hit.getBoundingClientRect().width > 0 ? 'visible' : 'hidden'}:${(hit.textContent || hit.getAttribute('aria-label') || '').trim().slice(0, 24)}`
 }, label)
 
 const FAIL_WORDS = ['没能完成', '没有成功', '这次回复没', '失败了', '中断了', '上次', '之前那几件']
@@ -68,22 +70,27 @@ const waitForFreshReply = async (before, timeoutMs) => {
 }
 
 if (mode === 'update') {
-  const opened = await clickNamed('设置')
-  check(opened, '设置页点得开', { opened })
-  await page.waitForTimeout(1_500)
-  const toUpdate = await page.evaluate(() => {
-    const tab = [...document.querySelectorAll('button, [role="tab"], a')]
-      .find(el => (el.textContent || '').includes('更新') && el.getBoundingClientRect().width > 0)
-    if (tab) { tab.click(); return tab.textContent?.trim() }
-    return null
+  // 设置中心那颗按钮住在 HUD 的快捷面板里，先把 HUD 打开再点（1.8.3 真窗口实测：
+  // 面板收起时那颗按钮不在 DOM 里）。它的 aria-label 在有新版本时会变成
+  // 「打开设置中心（有新版本 x.y.z）」，这一行本身就是更新链路的第一条读数。
+  await page.evaluate(() => {
+    const hud = [...document.querySelectorAll('button')].find(el => (el.getAttribute('aria-label') || '').includes('AI 伴星'))
+    if (hud && !document.querySelector('[aria-label*="打开设置中心"]')) hud.click()
   })
-  check(Boolean(toUpdate), '更新那一页切得过去', { toUpdate })
+  await page.waitForTimeout(1_500)
+  const settings = await clickNamed('打开设置中心')
+  check(Boolean(settings), '设置中心点得开', { settings })
+  await page.waitForTimeout(1_500)
+  const toUpdate = await clickNamed('数据与维护') ?? await clickNamed('更新')
+  check(Boolean(toUpdate), '「数据与维护」那一组切得过去（更新面板在这一组里）', { toUpdate })
   await page.waitForTimeout(1_000)
   check(await clickNamed('检查更新'), '「检查更新」点得动')
-  for (let i = 0; i < 60; i++) {
-    await page.waitForTimeout(2_000)
-    if (await clickNamed('下载更新')) { console.log('note: 需要手点下载'); break }
+  for (let i = 0; i < 180; i++) {
+    await page.waitForTimeout(3_000)
+    if (await clickNamed('下载更新')) { console.log('note: 需要手点下载'); }
     const body = await page.evaluate(() => document.body.innerText)
+    const percent = body.match(/正在下载\s*(\d+)%/)?.[1]
+    if (i % 10 === 0) console.log(`note: 下载中 ${percent ?? '?'}%（${Math.round(i * 3 / 60)} 分钟）`)
     if (/重启并安装/.test(body)) break
   }
   const readyBody = await page.evaluate(() => document.body.innerText.slice(0, 1200))
