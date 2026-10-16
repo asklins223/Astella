@@ -1178,9 +1178,15 @@ export async function runCompanionDialogue(
   // A host occasion may end without speech. Providers can return only voice
   // markers instead of an empty string; that still has no visible
   // content. Do not turn this quiet decision into an unsolicited failure card.
-  // Human replies, delivered prefixes, rich results and other invalid outputs
-  // continue through the ordinary validation/failure path.
-  if (read.initiativeInput && !streamingDelivery.deliveredText().trim() && agentResult.blocks.length === 0) {
+  //
+  // 2026-10-16 生产 run `df40b8a9`：用户只发「哈哈哈」，她回了一个 `[neutral]`。
+  // 这个豁免当时只接在主动轮上，人问那一支往下掉进普通失败路径，被判
+  // `INTERNAL_ERROR` 并留下「这次回复没能完成」——一次没发生的内部错误。
+  // 上面那条 `!agentResult.text.trim()` 早就让人问轮的"真·空回复"安静收尾了，
+  // 只回标记与它是同一个语义，只差一层信封；剥完信封为空不该变成另一种结局。
+  // 退化阶梯本应先接住这种形状（`looksTruncatedReply("")` 返回 true），但它第一道
+  // `canRepair` 要求配了 `companion_fallback`，生产没配，于是整条降级是空的。
+  if (!streamingDelivery.deliveredText().trim() && agentResult.blocks.length === 0) {
     const visible = validateCompanionOutput(ttsRawText);
     if (!visible.ok && visible.reason === "empty_after_markdown_strip") {
       await finishCompanionParticipation(ctx, read, expiresAt);

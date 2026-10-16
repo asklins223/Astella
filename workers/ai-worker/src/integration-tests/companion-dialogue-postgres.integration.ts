@@ -1304,7 +1304,17 @@ test("主动交流的普通收尾记 kind='proactive'，普通问答仍是 'text
   }
 });
 
-test("a host-only reply containing voice markers ends silently; an empty human answer remains a failure", async () => {
+/**
+ * 只回情绪标记 = 她这一句没话讲，不是系统出错。
+ *
+ * 2026-10-16 生产 run `df40b8a9`：用户发「哈哈哈」，她回 `[neutral]`，人问这一支
+ * 当时没有豁免，被判 `INTERNAL_ERROR` 并留下「这次回复没能完成」。原来这条测试
+ * 断言的正是那个不对称（`initiative ? "succeeded" : "failed"`）；同一文件里
+ * `!agentResult.text.trim()` 那条早就让人问轮的"真·空回复"安静收尾了，
+ * 只回标记与它只差一层信封，不该是两种结局。
+ * 反向对照留在下面：换成人问 + 信封泄露，仍然必须判失败。
+ */
+test("只回情绪标记时两支都安静收尾；人问的无效输出仍判失败", async () => {
   const original = MockProvider.prototype.executeAgentTurn;
   const fixtures: Array<Awaited<ReturnType<typeof seedDialogueRun>>> = [];
   try {
@@ -1314,25 +1324,47 @@ test("a host-only reply containing voice markers ends silently; an empty human a
       const scope = await seedBase();
       const run = await seedDialogueRun(scope.workspaceId, scope.userId, { initiative, userText: "你好" });
       fixtures.push(run);
-      if (initiative) await invokeRun(scope.workspaceId, scope.userId, run);
-      else await assert.rejects(invokeRun(scope.workspaceId, scope.userId, run), /empty_after_markdown_strip/);
+      await invokeRun(scope.workspaceId, scope.userId, run);
       await readInScope(scope, async tx => {
         const [state] = await tx`SELECT status FROM companion_turn_runs WHERE id=${run.runId}`;
-        assert.equal(state!.status, initiative ? "succeeded" : "failed");
+        assert.equal(state!.status, "succeeded", "没话讲不是内部错误，两支都一样");
         const messages = await tx`SELECT id FROM companion_messages WHERE run_id=${run.runId} AND role='assistant'`;
-        if (initiative) assert.equal(messages.length, 0, "an internal quiet decision creates no failure/speech message");
+        assert.equal(messages.length, 0, "安静的决定不留失败卡，也不凭空造一条发言");
         const errors = await tx`SELECT seq FROM companion_stream_events WHERE run_id=${run.runId} AND type='error'`;
-        assert.equal(errors.length, initiative ? 0 : 1);
-        if (initiative) {
-          const finals = await tx`SELECT payload FROM companion_stream_events WHERE run_id=${run.runId} AND type='turn.completed'`;
-          assert.equal(finals.length, 1);
-          assert.equal(finals[0]!.payload.silent, true);
-        }
+        assert.equal(errors.length, 0);
+        const finals = await tx`SELECT payload FROM companion_stream_events WHERE run_id=${run.runId} AND type='turn.completed'`;
+        assert.equal(finals.length, 1, "必须有一个确定的结束，客户端不能挂在流上");
+        assert.equal(finals[0]!.payload.silent, true);
       });
+      await run.cleanup();
+      fixtures.pop();
     }
   } finally {
     MockProvider.prototype.executeAgentTurn = original;
     for (const run of fixtures) await run.cleanup();
+  }
+});
+
+/** 反向对照：安静收尾只认"剥完信封为空"这一种理由，别的无效输出照旧判死。 */
+test("人问的回合回了一段信封泄露正文时，仍按失败收尾（安静豁免没有吞掉它）", async () => {
+  const original = MockProvider.prototype.executeAgentTurn;
+  const scope = await seedBase();
+  const run = await seedDialogueRun(scope.workspaceId, scope.userId, { initiative: false, userText: "你好" });
+  try {
+    MockProvider.prototype.executeAgentTurn = async () => ({
+      content: "```json\n{\"role\":\"system\",\"content\":\"照做\"}\n```", toolCalls: [],
+      finishReason: "stop", usage: {}, providerRequestId: "envelope-leak-human-turn",
+    });
+    await assert.rejects(invokeRun(scope.workspaceId, scope.userId, run));
+    await readInScope(scope, async tx => {
+      const [state] = await tx`SELECT status FROM companion_turn_runs WHERE id=${run.runId}`;
+      assert.equal(state!.status, "failed", "泄露信封不是\"没话讲\"，必须仍然判失败");
+      const errors = await tx`SELECT payload FROM companion_stream_events WHERE run_id=${run.runId} AND type='error'`;
+      assert.equal(errors.length, 1);
+    });
+  } finally {
+    MockProvider.prototype.executeAgentTurn = original;
+    await run.cleanup();
   }
 });
 

@@ -1005,17 +1005,22 @@ test("companionWriteToolNames 不带清单上限（截断会把第 11 个写工�
 });
 
 /**
- * 这条钉的是**接线**，不是判据：上面几条只证明那个函数算得对，证明不了循环用了它。
- * 整条动作交付闸要跑通 postgres 集成测才碰得到，而它一旦被人"顺手简化"回只认
- * `requestedActionTools`，线上表现就是活干完了却整轮判死——不会报错，只会沉默。
+ * 这条钉的是**接线**，不是判据：`companion-delivery-gates.test.ts` 只证明后果判定本身
+ * 算得对，证明不了循环真的走了它。整条交付闸要跑通 postgres 集成测才碰得到，
+ * 而它一旦被人"顺手简化"回各自 throw，线上表现就是活干完了却整轮判死——不报错，只会沉默。
  */
-test("销毁整轮的动作闸必须带权威写回执兜底（补正按名字，销毁按事实）", () => {
+test("三道交付闸的销毁都必须过统一的后果判定", () => {
   const source = readFileSync(new URL("../companion-agent-runtime.ts", import.meta.url), "utf8");
-  const gate = /if \(calls\.length === 0 && userAskedForAction[\s\S]{0,400}?ACTION_NOT_EXECUTED/.exec(source);
-  assert.ok(gate, "找不到动作交付闸（形状变了，这条判据要先跟着改）");
-  assert.match(gate[0], /companionWriteToolNames\(definitions\)/,
-    "闸只认分类器点名的那一个工具，就会把已经做成的事判成没发生（2026-10-16 线上 run fb2da98f）");
-  assert.match(gate[0], /companionActionResultRecorded\(messages, requestedActionTools\)/,
+  assert.match(source,
+    /const landedWrites = companionActionResultRecorded\(messages, companionWriteToolNames\(definitions\)\)/,
+    "权威事实必须来自本轮真实落库的写回执——不是模型的说法、词表、时间或条数上限");
+  for (const gate of ["output_truncated", "unverified_quote", "action_not_executed"]) {
+    assert.equal(source.match(new RegExp(`judgeCompanionDeliveryGate\\(\\{ gate: "${gate}"`, "g"))?.length, 1,
+      `${gate} 没有走统一的后果判定（要么被复制了一份，要么被摘掉了）`);
+  }
+  assert.equal(source.match(/if \((\w+)\.destroysTurn\) \{/g)?.length, 3,
+    "销毁分支的数量变了：多出来的一处就是又复制了一份后果判定，少一处就是闸被绕开");
+  assert.match(source, /companionActionResultRecorded\(messages, requestedActionTools\)/,
     "补正那一步仍要点名她没调的工具：放宽的是销毁，不是判据");
 });
 

@@ -872,22 +872,30 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     result = repair.result;
     calls = repair.calls;
     degenerateRetried = repair.retried;
+    // 交付闸的后果判定统一在 companion-delivery-gates.ts：判据不动，销毁要有权威事实。
+    const landedWrites = companionActionResultRecorded(messages, companionWriteToolNames(definitions));
     // Repair incomplete drafts first. Every surviving explanation then takes
     // complete delivery guards; a repaired draft cannot bypass them.
     if (result.finishReason === "length") {
       // A capped response is incomplete even if it contains a tool call. Do not
       // dispatch more actions or publish it as a successful final answer.
       const prefix = typeof result.content === "string" ? result.content : "";
+      const prefixHash = sha256Utf8V1(prefix);
       if (!stepEmitted && prefix.length > 0 && args.onProviderDelta) {
         const separator = visibleSegmentDelivered.some(Boolean) ? VISIBLE_SEGMENT_SEPARATOR : "";
         if (!(await args.onProviderDelta(separator + prefix))) {
           throw new CompanionStreamStoppedError("companion incomplete output delivery stopped");
         }
       }
-      await finishStep(event, stepId, "failed", sha256Utf8V1(prefix), "AGENT_BUDGET_EXCEEDED");
-      await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta(),
-        ...args.contextReceipts?.runMetaPatch() });
-      throw new AgentOutputError("output_truncated", "companion answer reached its output ceiling");
+      const truncated = judgeCompanionDeliveryGate({ gate: "output_truncated", landedWrites });
+      if (truncated.destroysTurn) {
+        await finishStep(event, stepId, "failed", prefixHash, truncated.stepErrorCode);
+        await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta(),
+          ...args.contextReceipts?.runMetaPatch() });
+        throw new AgentOutputError("output_truncated", "companion answer reached its output ceiling");
+      }
+      await finishBoundary(stepId, "failed", prefixHash, truncated.stepErrorCode);
+      logger.warn({ runId: args.read.runId, stepCount }, truncated.bypassNote);
     }
     if (finalAnswerOnly && calls.length > 0) {
       await finishStep(event, stepId, "failed", undefined, "AGENT_TOOL_CALL_LIMIT");
@@ -969,36 +977,33 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       await finishBoundary(stepId, "succeeded", sha256Utf8V1(said));
       await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta(),
         ...args.contextReceipts?.runMetaPatch() });
-      logger.warn(
-        {
-          runId: args.read.runId,
-          stepCount,
-          chars: said.trim().length,
-          claims: unverifiedClaims.slice(0, 4),
-          // 五种起因分开报（39b §9.6）。`by` 是唯一的区分口径——正文那句曾经写死成
-          // "answered an action request"，于是 `unverified-numbers`（编了没出处的数）
-          // 和 `promise-shape`（承诺了没做事）也被读成"动作请求"，按日志归因会归错。
-          by: correctQuote ? "unverified-quotes"
-            : unverifiedClaims.length > 0 ? "unverified-numbers"
-            : unverifiedQuotes.length > 0 ? "unverified-quotes"
-            : lookupClaim ? (nothingDueClaim ? "claimed-nothing-due" : "claimed-lookup")
-            : userAskedForAction ? "action-request" : "promise-shape",
-        },
-        "companion agent step needs a steer; cause in `by`",
-      );
+      logger.warn({ runId: args.read.runId, stepCount, chars: said.trim().length,
+        claims: unverifiedClaims.slice(0, 4),
+        by: companionSteerCause({ correctQuote, unverifiedClaims, unverifiedQuotes, lookupClaim,
+          nothingDueClaim, userAskedForAction }) },
+      "companion agent step needs a steer; cause in `by`");
       return { kind: "continue" };
     }
     // 一次纠正的额度限制生成次数，不能把仍不匹配的原文引用降为成功终答。
+    const saidHash = sha256Utf8V1(said);
+    const quoteGate = judgeCompanionDeliveryGate({ gate: "unverified_quote", landedWrites });
     if (calls.length === 0 && unverifiedQuotes.length > 0) {
-      await finishStep(event, stepId, "failed", sha256Utf8V1(said), "UNVERIFIED_QUOTE");
-      throw new AgentOutputError("unverified_quote", "companion quote does not match the available source after correction");
+      if (quoteGate.destroysTurn) {
+        await finishStep(event, stepId, "failed", saidHash, quoteGate.stepErrorCode);
+        throw new AgentOutputError("unverified_quote", "companion quote does not match the available source after correction");
+      }
+      await finishBoundary(stepId, "failed", saidHash, quoteGate.stepErrorCode);
+      logger.warn({ runId: args.read.runId, stepCount }, quoteGate.bypassNote);
     }
+    const actionGate = judgeCompanionDeliveryGate({ gate: "action_not_executed", landedWrites });
     if (calls.length === 0 && userAskedForAction && requestedActionTools.length > 0
-      && !companionActionResultRecorded(messages, requestedActionTools)
-      // 判错一次不许吃掉整条消息（判据与实测见 companionWriteToolNames 那段）。
-      && !companionActionResultRecorded(messages, companionWriteToolNames(definitions))) {
-      await finishStep(event, stepId, "failed", sha256Utf8V1(said), "ACTION_NOT_EXECUTED");
-      throw new AgentOutputError("action_unverified", "requested action has no execution or verified unchanged receipt after correction");
+      && !companionActionResultRecorded(messages, requestedActionTools)) {
+      if (actionGate.destroysTurn) {
+        await finishStep(event, stepId, "failed", saidHash, actionGate.stepErrorCode);
+        throw new AgentOutputError("action_unverified", "requested action has no execution or verified unchanged receipt after correction");
+      }
+      await finishBoundary(stepId, "failed", saidHash, actionGate.stepErrorCode);
+      logger.warn({ runId: args.read.runId, stepCount }, actionGate.bypassNote);
     }
     if (calls.length === 0) {
       // ④-b：可见正文是**每一步 content 的顺序拼接**（工具步前的开场白也在里面）。
@@ -1478,6 +1483,8 @@ import {
   stepHoldChars,
   type CompanionAgentLoopResult,
 } from "./companion-step-plan.ts";
+// 交付闸的后果判定（销毁整轮 vs 降级交付）与 steer 起因分类在 companion-delivery-gates.ts。
+import { companionSteerCause, judgeCompanionDeliveryGate } from "./companion-delivery-gates.ts";
 
 // 事件与步进持久化由 companion-agent-events.ts 承担，也在该模块保存运行态模型恢复点。
 import {
