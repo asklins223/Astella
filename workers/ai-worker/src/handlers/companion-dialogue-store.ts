@@ -748,12 +748,21 @@ export async function readCompanionActionLedger(
       else omitted.completed += 1;
       continue;
     }
+    // 上面那条 `unresolved` 的闸只挡住了「还没跑完所以悬着」，没挡住已经收尾的那一半：
+    // 一条 `failed`/`not_executed` 只要落在摘要覆盖线之上，就带着 `result_safe_summary`
+    // 逐轮重发。2026-10-16 开发库实测：5 条 `companion_edit_note`（seq 609–615，三条同
+    // 一个 anchor）挂在一条**已经 succeeded** 的 run 上，而摘要线只到 541，于是用户隔了
+    // 两天进来只说「hihihi」，她读回来的仍是那句"唐朝笔记两次没改成"。
+    // 摘掉的是那句报告，不是这件事：status 照旧带走，「failed 不能说成已完成」那道闸靠
+    // 的是 status；要谈那一段她仍可按 anchor seq 用 companion_read_history 取回原文。
+    const settled = notCompleted && !row.from_current_run
+      && !LEDGER_ACTIVE_RUN_STATUSES.includes(row.run_status);
     entries.push({
       receiptId: row.receipt_id,
       toolCallId: row.tool_call_id,
       name: row.name,
       status: row.status,
-      safeSummary: row.result_safe_summary ?? null,
+      safeSummary: settled ? null : row.result_safe_summary ?? null,
     });
   }
   return { entries, omitted };
