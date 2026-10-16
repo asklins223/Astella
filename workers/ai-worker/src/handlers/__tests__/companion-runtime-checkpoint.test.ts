@@ -32,6 +32,22 @@ test("a durable final result is a distinct phase and can finish without a new mo
   assert.throws(() => encodeCompanionRuntimeCheckpoint("same", { ...snapshot, result: undefined }));
 });
 
+/**
+ * 2026-10-16：交付闸要的权威事实（`writesLanded`）要能过检查点。
+ *
+ * 这条红的姿势很难看：CI 的 Worker 作业不跑 postgres 集成测，所以"schemas 少一个字段、
+ * 每一轮都在 `finishBoundary` 抛 `unrecognized_keys`"这件事只有真库跑一遍才看得见。
+ * 反向对照同一条里给：严格对象仍然要挡住没登记的键，否则检查点就成了随便塞东西的口袋。
+ */
+test("settled 结果带着 writesLanded 也要编得进去，未登记的键仍然挡", () => {
+  const snapshot = { phase: "settled" as const, state: state(), result: { status: "completed" as const,
+    text: "已经做成的事要说给你听", blocks: [], memoryRefs: [], writesLanded: true } };
+  assert.deepEqual(decodeCompanionRuntimeCheckpoint(encodeCompanionRuntimeCheckpoint("same", snapshot), "same"), snapshot);
+  // 故意塞一个没登记的键：要的是运行时挡住，所以这里绕过类型检查（TS 先拦就测不到 schema）。
+  const smuggled = { ...snapshot.result, landedSomethingElse: true } as unknown as typeof snapshot.result;
+  assert.throws(() => encodeCompanionRuntimeCheckpoint("same", { ...snapshot, result: smuggled }));
+});
+
 test("a confirmation checkpoint binds the pending proposal and original model call together", () => {
   const snapshot = { phase: "waiting" as const, state: state(),
     proposalId: "11111111-1111-4111-8111-111111111111", pendingCallId: "pending-write" };

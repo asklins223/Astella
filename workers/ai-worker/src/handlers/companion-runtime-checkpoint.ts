@@ -26,6 +26,9 @@ export const companionRuntimeStateSchema = z.object({
 export type CompanionRuntimeState = z.infer<typeof companionRuntimeStateSchema>;
 const completedSchema = z.object({ status: z.literal("completed"), text: z.string(),
   blocks: z.array(companionContentBlockV1Schema), memoryRefs: z.array(z.unknown()),
+  // 交付闸要的权威事实（本轮是否真落下写回执）要跟着终答一起过检查点：
+  // 少这一行，`finishBoundary` 编码快照时 strict() 直接抛 `unrecognized_keys`，每一轮都跑不完。
+  writesLanded: z.boolean().optional(),
   reasoning: agentTurnResultSchema.shape.reasoning,
 }).strict();
 const snapshotSchema = z.object({ phase: z.enum(["input", "continue", "waiting", "settled"]), state: companionRuntimeStateSchema,
