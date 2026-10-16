@@ -1,4 +1,5 @@
 import { stopCompanionSpeech } from "./companion-voice-playback";
+import { queueCompanionVoiceSegment } from "./companion-voice-segment-queue";
 import type { CompanionHistoryItemV1 } from "@astella/shared/companion-memory-desktop-contracts";
 import type { CompanionInitiativeDeliveryRefV1 } from "@astella/shared/companion-initiative-contracts";
 import { prepareCompanionNotePaper, beginNoteAiWork, endNoteAiWork, resetNoteAiWork, noteEditRequestRanges } from "../components/companion/note-companion-editing";
@@ -1503,14 +1504,17 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
             window.dispatchEvent(new CustomEvent("astella:companion-activity-changed"));
           }
           if (streamed.eventType === "voice.segment.ready") {
-            window.dispatchEvent(new CustomEvent("astella:companion-voice-segment-ready", {
-              detail: {
-                conversationId: args.conversationId,
-                runId: streamed.runId,
-                generation: streamed.generation,
-                ...streamed.payload,
-              },
-            }));
+            // 先入队再唤醒：气泡不在场时这一段也不会丢，下一次挂载补听
+            // （判据与队列见 companion-voice-segment-queue.ts）。
+            const queuedSegment = queueCompanionVoiceSegment({
+              conversationId: args.conversationId,
+              runId: streamed.runId,
+              generation: streamed.generation,
+              ...streamed.payload,
+            });
+            if (queuedSegment) {
+              window.dispatchEvent(new CustomEvent("astella:companion-voice-segment-ready"));
+            }
           }
           if (streamed.eventType === "assistant.thinking") {
             // 思考只更新那个尾部窗口：它不是正文，不参与草稿、显现计数与朗读。

@@ -10,6 +10,7 @@ import { useRoomStore } from "../../app/room-store";
 import { ensureAiActionAllowed, guideAiPermissionFailure } from "../../app/ai-action-gate";
 import { useCompanionChat } from "../../app/companion-chat-session";
 import { beginCompanionSpeechLine, stopCompanionSpeech, subscribeCompanionSpeech, type CompanionServerVoiceSegment, type CompanionSpeechSession } from "../../app/companion-voice-playback";
+import { drainCompanionVoiceSegments, type CompanionVoiceSegmentReadyDetail } from "../../app/companion-voice-segment-queue";
 import { COMPANION_REVEAL_TICK_MS, createCompanionRevealDriver, type CompanionRevealDriver } from "../../app/companion-reveal-driver";
 import { subscribeHomeV2VoiceLevel } from "../../app/companion-voice-level";
 import { companionTurnProcessLine, nodeLabel } from "../../app/companion-agent-nodes";
@@ -87,19 +88,8 @@ export interface CompanionHudProps {
 
 type MoreView = "menu" | "actions";
 
-type CompanionVoiceSegmentReadyDetail = Readonly<{
-  version: 2;
-  conversationId: string;
-  runId: string;
-  generation: number;
-  segmentId: string;
-  ordinal: number;
-  displayText: string;
-  displayStart: number;
-  displayEnd: number;
-  synthesisTextSha256: string;
-  cue: CompanionServerVoiceSegment["cue"];
-}>;
+// 段的结构体唯一主人是队列模块本身（companion-voice-segment-queue.ts）：
+// 这里再声明一份，两处就会各自漂移，而它们必须逐字段一致才谈得上"补取"。
 type BubbleStage = "visible" | "leaving";
 
 /**
@@ -521,27 +511,31 @@ export function CompanionHud({
     micRef.current?.style.setProperty("--voice-level", level.toFixed(3));
   }), [voice.subscribeLevel]);
 
+  /**
+   * 段从队列里取，不从事件负载里取。
+   *
+   * 原来这里是 `window` 事件的直接消费者，而事件一发即走：气泡不在场的那几段
+   * 永久丢失（2026-10-16 生产 09:10 那条主动消息，服务端下发了 2 段，本机音频
+   * 缓存里一个字都没有，而"播放音频"按钮要求本机先有缓存 → 永久静音）。
+   * 现在队列在 `companion-voice-segment-queue.ts`，事件只当唤醒信号；挂载这一拍
+   * 也补取一次，所以晚到的气泡仍能听到漏掉的那几句。
+   */
+  const takeQueuedVoiceSegments = useCallback(() => {
+    const fresh = drainCompanionVoiceSegments()
+      .filter(detail => !seenVoiceSegmentIdsRef.current.has(detail.segmentId));
+    for (const detail of fresh) seenVoiceSegmentIdsRef.current.add(detail.segmentId);
+    if (fresh.length === 0) return;
+    pendingVoiceSegmentsRef.current.push(...fresh);
+    setVoiceSegmentRevision((value) => value + 1);
+  }, []);
   useEffect(() => {
-    const onVoiceSegment = (event: Event) => {
-      const detail = (event as CustomEvent<Partial<CompanionVoiceSegmentReadyDetail>>).detail;
-      // V2 合同逐字段校验（主进程已做 shared schema 校验，这里只挡明显残帧）：
-      // displayStart/displayEnd 是干净正文里的字符区间，任一缺失就整个丢弃——
-      // 渲染层绝不猜"这段对应正文的哪里"。
-      if (!detail || detail.version !== 2 || typeof detail.runId !== "string"
-        || typeof detail.segmentId !== "string" || typeof detail.ordinal !== "number"
-        || typeof detail.displayText !== "string" || detail.displayText.length === 0
-        || typeof detail.displayStart !== "number" || typeof detail.displayEnd !== "number"
-        || typeof detail.conversationId !== "string" || typeof detail.generation !== "number") return;
-      if (seenVoiceSegmentIdsRef.current.has(detail.segmentId)) return;
-      seenVoiceSegmentIdsRef.current.add(detail.segmentId);
-      pendingVoiceSegmentsRef.current.push(detail as CompanionVoiceSegmentReadyDetail);
-      setVoiceSegmentRevision((value) => value + 1);
-    };
+    takeQueuedVoiceSegments();
+    const onVoiceSegment = () => takeQueuedVoiceSegments();
     window.addEventListener("astella:companion-voice-segment-ready", onVoiceSegment);
     return () => {
       window.removeEventListener("astella:companion-voice-segment-ready", onVoiceSegment);
     };
-  }, []);
+  }, [takeQueuedVoiceSegments]);
 
   // ── 呼吸角标接真实输出振幅（方案 §4） ─────────────────────────────────
   // 订阅的是**输出**振幅（`subscribeHomeV2VoiceLevel`：HomeV2AudioController 的真
