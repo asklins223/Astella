@@ -96,7 +96,10 @@ async function withCompanionOwnedTransaction<T>(event: AgentEventContext,
     });
   } catch (error) {
     if (error instanceof JobLeaseLostError || error instanceof CompanionContextChangedError) throw error;
-    throw new Error("companion private recovery storage unavailable");
+    // 这句 "private recovery storage unavailable" 原本会把**任何**内部异常都盖成存储坏了
+    // （2026-10-16 本地主动轮全挂，真因是一条校验错误，被这句挡了三轮排查）。
+    // 消息照旧给外面，真凶挂成 cause，别再让人猜。
+    throw new Error("companion private recovery storage unavailable", { cause: error });
   }
 }
 

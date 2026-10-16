@@ -1074,6 +1074,19 @@ export async function runCompanionDialogue(
       handlerStartedAtMs,
     });
   } catch (err) {
+    // 兜底那条 INTERNAL_ERROR 过去只留下「companion agent execution failed」，
+    // 到底是哪一支抛的没人知道（2026-10-16 查本地主动轮全挂时白绕了两圈）。
+    // 只记日志，不改用户看到的那句实话。
+    logger.warn({
+      runId: read.runId,
+      errorName: err instanceof Error ? err.name : typeof err,
+      errorMessage: err instanceof Error ? String(err.message).slice(0, 240) : undefined,
+      // 有一层把什么都盖成「存储不可用」，所以 `cause` 必须一起打出来。
+      causeName: err instanceof Error && err.cause instanceof Error ? err.cause.name : undefined,
+      causeMessage: err instanceof Error && err.cause instanceof Error
+        ? String(err.cause.message).slice(0, 240) : undefined,
+      thrownFrom: err instanceof Error ? err.stack?.split("\n")[1]?.trim().slice(0, 180) : undefined,
+    }, "companion agent failure cause");
     // 预算耗尽（步数/工具数/执行时间）是确定性失败：标记 recoverable=false，
     // 队列侧同时按不可重试处理，避免空转重投（见 isNonRetryableError）。
     const contextOverflow = err instanceof AIContextOverflowError;
