@@ -61,7 +61,13 @@ export function queueCompanionVoiceSegment(detail: unknown): boolean {
   if (existing) {
     if (existing.length < MAX_QUEUED_SEGMENTS_PER_RUN) existing.push(detail);
   } else {
-    while (queued.size >= MAX_QUEUED_RUNS) queued.delete(queued.keys().next().value as string);
+    // 挤出去的那一轮要连 `seenSegmentIds` 一起放手：只删段不删记号，这一帧再到达时
+    // 会被"已经排过了"挡掉——正是本次要根治的那个"错过一次就永久静音"的形状。
+    while (queued.size >= MAX_QUEUED_RUNS) {
+      const oldest = queued.keys().next().value as string;
+      for (const segment of queued.get(oldest) ?? []) seenSegmentIds.delete(segment.segmentId);
+      queued.delete(oldest);
+    }
     queued.set(detail.runId, [detail]);
   }
   return true;

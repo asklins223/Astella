@@ -55,6 +55,23 @@ describe("伴星语音段队列", () => {
   });
 
   /**
+   * 反向对照：上限挤出去的那一轮，"已排过"的记号必须一起放手。
+   * 只删段不删记号时，同一帧再到达会被认成重复而永久丢弃——就是本次根治的
+   * "错过一次就永久静音"形状在队列里重演一遍。
+   */
+  it("被上限挤出去的那一段，重新到达时还能再排进队", () => {
+    for (let run = 0; run < 8; run += 1) {
+      queueCompanionVoiceSegment(segment({ runId: `queue-evict-${run}`, segmentId: `queue-evict-seg-${run}` }));
+    }
+    queueCompanionVoiceSegment(segment({ runId: "queue-evict-8", segmentId: "queue-evict-seg-8" }));
+    expect(companionVoiceSegmentQueueSize()).toBe(8);
+    expect(queueCompanionVoiceSegment(segment({ runId: "queue-evict-0", segmentId: "queue-evict-seg-0" }))).toBe(true);
+    const ids = drainCompanionVoiceSegments().map(item => item.segmentId);
+    expect(ids).toContain("queue-evict-seg-0");
+    expect(ids).not.toContain("queue-evict-seg-1");
+  });
+
+  /**
    * 接线守卫：上面几条只证明队列本身算得对，证明不了生产端真的入队、
    * 气泡真的从队列取。这两头一旦有人"顺手改回"直接读事件负载，
    * 线上表现就是主动消息又只剩文字——不报错，只会安静地没声音。
