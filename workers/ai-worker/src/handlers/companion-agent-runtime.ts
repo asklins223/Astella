@@ -872,7 +872,6 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     result = repair.result;
     calls = repair.calls;
     degenerateRetried = repair.retried;
-    // 交付闸的后果判定统一在 companion-delivery-gates.ts：判据不动，销毁要有权威事实。
     const landedWrites = companionActionResultRecorded(messages, companionWriteToolNames(definitions));
     // Repair incomplete drafts first. Every surviving explanation then takes
     // complete delivery guards; a repaired draft cannot bypass them.
@@ -894,8 +893,11 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
           ...args.contextReceipts?.runMetaPatch() });
         throw new AgentOutputError("output_truncated", "companion answer reached its output ceiling");
       }
-      await finishBoundary(stepId, "failed", prefixHash, truncated.stepErrorCode);
+      // 不销毁必须在这里收步：往下会派发工具（截断的响应不许派发），且前缀已发过会重复。
+      const truncatedResult = { status: "completed" as const, text: prefix, blocks: richBlocks, memoryRefs: [] };
+      await finishBoundary(stepId, "failed", prefixHash, truncated.stepErrorCode, truncatedResult);
       logger.warn({ runId: args.read.runId, stepCount }, truncated.bypassNote);
+      return { kind: "settled", result: truncatedResult };
     }
     if (finalAnswerOnly && calls.length > 0) {
       await finishStep(event, stepId, "failed", undefined, "AGENT_TOOL_CALL_LIMIT");
@@ -1483,7 +1485,6 @@ import {
   stepHoldChars,
   type CompanionAgentLoopResult,
 } from "./companion-step-plan.ts";
-// 交付闸的后果判定（销毁整轮 vs 降级交付）与 steer 起因分类在 companion-delivery-gates.ts。
 import { companionSteerCause, judgeCompanionDeliveryGate } from "./companion-delivery-gates.ts";
 
 // 事件与步进持久化由 companion-agent-events.ts 承担，也在该模块保存运行态模型恢复点。
