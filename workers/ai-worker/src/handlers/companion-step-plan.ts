@@ -128,6 +128,31 @@ export function companionActionResultRecorded(messages: AgentTurnRequest["messag
 }
 
 /**
+ * 本轮工具面上所有"真的会动数据"的工具名。
+ *
+ * 用在交付闸的第二条判据上。2026-10-16 线上（run `fb2da98f`，生产库实测）：用户要
+ * "把这三块整理成笔记"，注意力解释点名 `agent_start_goal`，她实际建成三篇
+ * （`companion_create_note` ×3 `succeeded`，另有 read_note ×8、search_notes ×3）。
+ * 闸只认点名的那一个 → 补两步没换来 → 整轮 `ACTION_NOT_EXECUTED` 判死，
+ * 8 分 22 秒和 12 步的正文一个字都不许发，界面上只剩"这一轮没能说完"，
+ * 而那三篇笔记其实好好躺在库里（失败留档反倒替她把"已保存"说了出来）。
+ *
+ * 口径：**补正按名字来，销毁整条消息按权威事实来。** 补那一步仍然要点名她没调的那个工具
+ * （`requestedActionTools`，见 companion-turn-preamble 那条"只点名本轮解释自己指出的写操作"），
+ * 因为把全部写工具塞进去等于让任意一次写替这次声称作证；但"这一轮到底有没有东西落下"
+ * 是个事实问题，只要有一次真实回执，就不许把已经做成的事说成没发生。
+ *
+ * 与 `steerableToolNames(definitions, "action")` 不是一回事：那份清单的用途是点名让她补，
+ * 所以按 10 个截断（提示不能比正文长）。这里截断就等于把第 11 个写工具做成的事当成没发生
+ * ——判据不能带清单上限。
+ */
+export function companionWriteToolNames(
+  definitions: readonly { name: string; riskClass: string }[],
+): string[] {
+  return definitions.filter(definition => definition.riskClass !== "read").map(definition => definition.name);
+}
+
+/**
  * 这一步要不要补、补的时候花掉哪条额度（纯函数，方案 29 §9.28 双额度的账目）。
  *
  * 单独立出来是因为那条"独立的"额度在实现里并不独立：原来只要触发一次 steer

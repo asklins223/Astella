@@ -994,7 +994,9 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       throw new AgentOutputError("unverified_quote", "companion quote does not match the available source after correction");
     }
     if (calls.length === 0 && userAskedForAction && requestedActionTools.length > 0
-      && !companionActionResultRecorded(messages, requestedActionTools)) {
+      && !companionActionResultRecorded(messages, requestedActionTools)
+      // 判错一次不许吃掉整条消息（判据与实测见 companionWriteToolNames 那段）。
+      && !companionActionResultRecorded(messages, companionWriteToolNames(definitions))) {
       await finishStep(event, stepId, "failed", sha256Utf8V1(said), "ACTION_NOT_EXECUTED");
       throw new AgentOutputError("action_unverified", "requested action has no execution or verified unchanged receipt after correction");
     }
@@ -1471,6 +1473,7 @@ import {
   buildCompanionStepCorrectionInstruction,
   companionActionResultRecorded,
   companionStepCorrectionMessages,
+  companionWriteToolNames,
   reviewCompanionStepCorrection,
   stepHoldChars,
   type CompanionAgentLoopResult,

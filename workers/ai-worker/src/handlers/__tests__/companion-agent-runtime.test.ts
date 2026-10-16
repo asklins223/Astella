@@ -20,6 +20,7 @@ import {
   companionActionResultRecorded,
   actionSteerBudget,
   companionStepCorrectionMessages,
+  companionWriteToolNames,
   partitionPersonaPatch,
   planStepSteer,
   stepHoldChars
@@ -953,6 +954,69 @@ test("planStepSteer：额度用尽后不再重复补同一条", () => {
   assert.equal(planStepSteer({
     ...steerInput, hasUnverifiedClaims: false, lookupClaim: true, lookupClaimSteered: true,
   }).steer, false);
+});
+
+/**
+ * 2026-10-16 线上 run `fb2da98f`：分类器把"把这三块整理成笔记"点名成 `agent_start_goal`，
+ * 她实际建成三篇 `companion_create_note`（succeeded）。交付闸只认点名的那一个，
+ * 于是补正额度用尽后整轮判死，12 步、8 分 22 秒、三篇笔记一个字都不许发。
+ * 口径是"补正按名字来，销毁整条消息按权威事实来"。
+ */
+const productionMisnamedRun = [
+  { role: "assistant" as const, content: "", toolCalls: [{ id: "c1", name: "companion_create_note", arguments: {} }] },
+  { role: "tool" as const, toolCallId: "c1", content: JSON.stringify({ ok: true, summary: "已保存笔记《科举制度专题（隋—清）》" }) },
+];
+const productionToolSurface = [
+  { name: "companion_read_note", riskClass: "read" },
+  { name: "companion_search_notes", riskClass: "read" },
+  { name: "companion_create_note", riskClass: "reversible_low" },
+  { name: "agent_start_goal", riskClass: "reversible_low" },
+];
+
+test("点名的动作没回执、但本轮真有写落下 → 不许判死整轮", () => {
+  assert.equal(companionActionResultRecorded(productionMisnamedRun, ["agent_start_goal"]), false,
+    "补正那一步仍要点名她没调的工具，这条判据没被放宽");
+  assert.equal(
+    companionActionResultRecorded(productionMisnamedRun, companionWriteToolNames(productionToolSurface)),
+    true, "已经落库的写不能被说成没发生");
+});
+
+test("一次写都没落下时，闸照旧判死（放宽的是误判不是谎报）", () => {
+  const narratedOnly = [
+    { role: "assistant" as const, content: "", toolCalls: [{ id: "r1", name: "companion_read_note", arguments: {} }] },
+    { role: "tool" as const, toolCallId: "r1", content: JSON.stringify({ ok: true }) },
+  ];
+  assert.equal(
+    companionActionResultRecorded(narratedOnly, companionWriteToolNames(productionToolSurface)),
+    false, "只读过正文不算做成");
+  assert.equal(
+    companionActionResultRecorded([...productionMisnamedRun,
+      { role: "assistant" as const, content: "", toolCalls: [{ id: "c2", name: "companion_create_note", arguments: {} }] },
+      { role: "tool" as const, toolCallId: "c2", content: JSON.stringify({ ok: false, status: "not_executed" }) }],
+      companionWriteToolNames(productionToolSurface)),
+    true, "同一次调用里有一条真落成的，就仍然算落了东西");
+});
+
+test("companionWriteToolNames 不带清单上限（截断会把第 11 个写工具做成的事当成没发生）", () => {
+  const wide = Array.from({ length: 11 }, (_, i) => ({ name: `write_${i}`, riskClass: "reversible_low" }));
+  assert.equal(companionWriteToolNames(wide).length, 11);
+  assert.equal(steerableToolNames(wide, "action").length, 10,
+    "点名用的那份确实按 10 截断，两份不能互换");
+});
+
+/**
+ * 这条钉的是**接线**，不是判据：上面几条只证明那个函数算得对，证明不了循环用了它。
+ * 整条动作交付闸要跑通 postgres 集成测才碰得到，而它一旦被人"顺手简化"回只认
+ * `requestedActionTools`，线上表现就是活干完了却整轮判死——不会报错，只会沉默。
+ */
+test("销毁整轮的动作闸必须带权威写回执兜底（补正按名字，销毁按事实）", () => {
+  const source = readFileSync(new URL("../companion-agent-runtime.ts", import.meta.url), "utf8");
+  const gate = /if \(calls\.length === 0 && userAskedForAction[\s\S]{0,400}?ACTION_NOT_EXECUTED/.exec(source);
+  assert.ok(gate, "找不到动作交付闸（形状变了，这条判据要先跟着改）");
+  assert.match(gate[0], /companionWriteToolNames\(definitions\)/,
+    "闸只认分类器点名的那一个工具，就会把已经做成的事判成没发生（2026-10-16 线上 run fb2da98f）");
+  assert.match(gate[0], /companionActionResultRecorded\(messages, requestedActionTools\)/,
+    "补正那一步仍要点名她没调的工具：放宽的是销毁，不是判据");
 });
 
 // ─── #8 终答步 provider 违约的两条 fail-open 出口 ────────────────────────
