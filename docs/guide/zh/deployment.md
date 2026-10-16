@@ -24,6 +24,14 @@ GitHub 的 `production` Environment 只允许 `v*` tag，存放 `DEPLOY_HOST`、
 
 首次部署后显式运行 `seed-owner`，使用服务器环境里的 Owner 账号，不自动创建演示账号。运行部署命令和排障日志时不要打印密码或完整环境文件。
 
+### 磁盘维护
+
+2026-10-16：`v1.8.9` 与 `v1.8.10` 的部署都停在拉镜像这一步——`failed to register layer: ... no space left on device`。回滚把上一版应用重新起来（服务没断、数据库备份保留），但新版本上不去。原因是这台机器只增不减：旧镜像、构建缓存和旧 release 目录从来没有清理过，而部署密钥是强制命令（只接受 `deploy <40位SHA>`），机器上没有任何自动入口能先清一次。
+
+- `infra/deploy/deploy.sh` 现在会在拉镜像前检查可用空间（低于 `REQUIRED_FREE_KB`，默认 5 GiB 时）先清"没人用"的东西：未运行容器、未被引用的镜像、构建缓存、以及除 `current` 与最近两个之外的旧 release 目录；清完仍不够则带着明确提示失败，让回滚照常发生。**数据卷、数据库备份、运行中的容器镜像都不动。**
+- 已经堆满的机器需要管理员先跑一次 `infra/ops/prune-host-disk.sh`（root；保留最近 5 个 release 与 10 份备份，可用 `KEEP_RELEASES` / `KEEP_BACKUPS` 调整）。
+- 部署脚本安装在 `/usr/local/lib/astella`，由管理员更新。每个 release 的 bundle 现在都带上这一份 `infra/deploy/`，所以更新就是一条命令：`install -m 0755 /opt/astella/releases/<发布目录>/infra/deploy/deploy.sh /usr/local/lib/astella/deploy.sh`（接收器 `ssh-receive.sh` 与 `extract-bundle.py` 同理）。
+
 正式部署的运维面板已接入 Docker：`docker-compose.deploy.yml` 将宿主机 `/var/run/docker.sock` 挂给 API，并设置 `ADMIN_DOCKER_SOCKET`。将 `stat -c '%g' /var/run/docker.sock` 的结果写为服务器环境文件里的 `ADMIN_DOCKER_GID`（默认 `0`），API 继续以 `node` 用户运行，通过附加组访问 socket。只重建 API 即可应用这项配置，随后重载 Nginx，以更新其记录的 API 容器地址。
 
 面板可读取本 Compose 项目的容器状态、日志、CPU 与内存，并执行启动、停止和重启；所有接口仍需运维令牌，目标服务须属于 API 自己的 Compose 项目。Docker socket 的权限等同于宿主机管理权限，因此只挂给 API，不开放 Docker TCP 端口，也不要公开或复用面板令牌。这里的项目范围检查限制面板操作，并不将原始 socket 变为受限 Docker 凭证。

@@ -128,7 +128,10 @@ jobs:
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$task_ssh_dir/known_hosts"
           chmod 600 "$task_ssh_dir/key" "$task_ssh_dir/known_hosts"
           { printf '%s\n%s\n' "$GHCR_USER" "$GHCR_TOKEN";
-            tar -czf - docker-compose.yml docker-compose.deploy.yml deployment-images.env config infra/postgres infra/deploy/nginx.conf;
+            # 部署脚本随 release 一起落地（`/opt/astella/releases/<sha>-<set>/infra/deploy/`）：
+            # 机器的 `/usr/local/lib/astella/` 由管理员更新，带上这一份，管理员可以就地
+            # `install` 成与这一版一致的脚本，不必再去仓库里取。
+            tar -czf - docker-compose.yml docker-compose.deploy.yml deployment-images.env config infra/postgres infra/deploy;
           } | ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=20 \
             -o UserKnownHostsFile="$task_ssh_dir/known_hosts" -i "$task_ssh_dir/key" \
             -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$DEPLOY_HOST" "deploy $GITHUB_SHA"

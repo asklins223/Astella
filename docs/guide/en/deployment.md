@@ -24,6 +24,14 @@ Each deployment pulls images, validates configuration and base services, and sav
 
 After the first deployment, explicitly run `seed-owner` with the private server environment. Do not create a demo account or print passwords/environment files during deployment or troubleshooting.
 
+### Disk maintenance
+
+2026-10-16: both the `v1.8.9` and `v1.8.10` deployments stopped during image pull with `failed to register layer: ... no space left on device`. The rollback restarted the previous application images (no outage, database backup retained), but the new release could not land. The host only ever grows: old images, build cache and old release directories were never pruned, and the deploy key is a forced command (`deploy <40-character SHA>` only), so nothing on the host could clear space first.
+
+- `infra/deploy/deploy.sh` now checks free space before pulling. Below `REQUIRED_FREE_KB` (5 GiB by default) it prunes what nothing uses - stopped containers, unreferenced images, build cache, and release directories other than `current` and the two most recent - then fails with an explicit message if that was not enough, leaving rollback to run as usual. **Data volumes, database dumps and images of running containers are never touched.**
+- A host that is already full needs one manual run of `infra/ops/prune-host-disk.sh` (root; keeps the five most recent releases and ten most recent backups, adjustable with `KEEP_RELEASES` / `KEEP_BACKUPS`).
+- The deploy scripts live in `/usr/local/lib/astella` and are updated by the administrator. Every release bundle now carries this `infra/deploy/`, so updating is one command: `install -m 0755 /opt/astella/releases/<release-dir>/infra/deploy/deploy.sh /usr/local/lib/astella/deploy.sh` (same for the receiver `ssh-receive.sh` and `extract-bundle.py`).
+
 The production admin panel accesses Docker through `/var/run/docker.sock`, mounted into API by `docker-compose.deploy.yml` with `ADMIN_DOCKER_SOCKET`. Store the socket's group ID from `stat -c '%g' /var/run/docker.sock` as `ADMIN_DOCKER_GID` in the server environment (default `0`). API continues as user `node` through the supplemental group. Recreate API to apply it, then reload Nginx to refresh the API container address.
 
 The panel reads this Compose project's container state, logs, CPU and memory, and can start, stop or restart services. All endpoints require an admin token and targets must belong to API's Compose project. Raw Docker socket access grants host administration powers: mount it only into API, avoid a Docker TCP endpoint and keep panel tokens private. The panel's project checks do not turn the raw socket into a restricted Docker credential.
