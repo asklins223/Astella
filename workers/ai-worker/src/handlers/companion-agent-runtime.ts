@@ -894,7 +894,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
         throw new AgentOutputError("output_truncated", "companion answer reached its output ceiling");
       }
       // 不销毁必须在这里收步：往下会派发工具（截断的响应不许派发），且前缀已发过会重复。
-      const truncatedResult = { status: "completed" as const, text: prefix, blocks: richBlocks, memoryRefs: [] };
+      const truncatedResult = { status: "completed" as const, text: prefix, blocks: richBlocks, memoryRefs: [], writesLanded: landedWrites };
       await finishBoundary(stepId, "failed", prefixHash, truncated.stepErrorCode, truncatedResult);
       logger.warn({ runId: args.read.runId, stepCount }, truncated.bypassNote);
       return { kind: "settled", result: truncatedResult };

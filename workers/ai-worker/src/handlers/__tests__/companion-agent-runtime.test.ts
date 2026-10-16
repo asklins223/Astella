@@ -1022,6 +1022,10 @@ test("三道交付闸的销毁都必须过统一的后果判定", () => {
     "销毁分支的数量变了：多出来的一处就是又复制了一份后果判定，少一处就是闸被绕开");
   assert.match(source, /companionActionResultRecorded\(messages, requestedActionTools\)/,
     "补正那一步仍要点名她没调的工具：放宽的是销毁，不是判据");
+  // 降级交付之后，权威事实要跟着结果一起交回交付层（2026-10-16 补的两道流式闸读它）。
+  // 少一处就意味着那条出口绕过了闸：明明落了库的写，到交付层变成"什么都没过"。
+  assert.equal(source.match(/writesLanded: landedWrites/g)?.length, 3,
+    "有三条 settled 出口（终答步、独立成品步、截断降级步）都要把这份事实交回去");
 });
 
 // ─── #8 终答步 provider 违约的两条 fail-open 出口 ────────────────────────
