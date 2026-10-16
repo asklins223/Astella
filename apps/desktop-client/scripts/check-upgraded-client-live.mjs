@@ -47,24 +47,38 @@ const clickNamed = async (label) => page.evaluate(label => {
 const FAIL_WORDS = ['没能完成', '没有成功', '这次回复没', '失败了', '中断了', '上次', '之前那几件']
 
 const send = async (text) => {
+  if (!await page.locator('textarea[aria-label^="给"]').count()) {
+    await page.locator('button[aria-label*="AI 伴星互动"]').first().click({ timeout: 10_000 })
+  }
   await page.waitForSelector('textarea[aria-label^="给"]', { timeout: 30_000 })
+  await page.locator('textarea[aria-label^="给"]').click()
   await page.locator('textarea[aria-label^="给"]').fill(text)
   await page.keyboard.press('Enter')
 }
 const lastReply = async () => page.evaluate(() => {
-  const bubbles = [...document.querySelectorAll('article, .companion-message, .cc-bubble')]
+  // HUD 的气泡不是 article：真窗口实测（1.8.6 打包版）正文在 `.companion-hud__sr-status`
+  // 与 `.companion-hud` 上，而 `article/.companion-message` 只存在于手记那一层。
+  const sr = document.querySelector('.companion-hud__sr-status')
+  const text = (sr?.textContent || '').trim().replace(/\s+/g, ' ')
+  if (text) return text
+  const nodes = [...document.querySelectorAll('article, .companion-message, .cc-bubble')]
     .filter(el => el.getBoundingClientRect().width > 0)
-  const own = bubbles.map(el => (el.textContent || '').trim())
-  return own[own.length - 1] ?? ''
+    .map(el => (el.textContent || '').trim().replace(/\s+/g, ' ')).filter(Boolean)
+  return nodes.at(-1) ?? ''
 })
 const waitForFreshReply = async (before, timeoutMs) => {
+  // 判据是"这一轮发完了"，不是"文字变了"：同一句请求连着两轮拿到一模一样的回答很常见
+  // （真窗口实测：第二次写笔记的正文与第一次一字不差），只比文本会把真回复判成没回。
+  // 所以先等那一步真的进入发送中（最多 20 秒），再等它落下来——不然会把上一条当成新的。
+  const sending = () => page.evaluate(() => Boolean(document.querySelector('form[data-sending]')))
+  const startedAt = Date.now()
+  while (Date.now() - startedAt < 20_000) { if (await sending()) break; await page.waitForTimeout(700) }
   const started = Date.now()
   let text = ''
   while (Date.now() - started < timeoutMs) {
     await page.waitForTimeout(2_000)
-    const now = await lastReply()
-    if (now && now !== before && now.length > 4) text = now
-    if (text && !/正在想|正在看|正在准备/.test(text)) return text
+    text = await lastReply()
+    if (!await sending() && text && !/正在想|正在看|正在准备|让我想想/.test(text)) return text
   }
   return text
 }
@@ -103,7 +117,13 @@ if (mode === 'update') {
 }
 
 // ── verify ───────────────────────────────────────────────────────────
-await page.waitForFunction(() => document.querySelector('textarea[aria-label^="给"], .desktop-access-gate'), { timeout: 60_000 })
+// 输入框在 HUD 的气泡轻聊面板里，而那一层是**点出来的**：`el.click()` 派发不出它
+// （真窗口实测：只有真鼠标点伴星本体才会把面板打开并挂上 textarea）。
+// 但它是个开关——已经开着时再点一次会关掉，所以只在没有输入框时才点。
+if (!await page.locator('textarea[aria-label^="给"]').count()) {
+  await page.locator('button[aria-label*="AI 伴星互动"]').first().click({ timeout: 15_000 })
+}
+await page.waitForFunction(() => document.querySelector('textarea[aria-label^="给"], .desktop-access-gate'), { timeout: 45_000 })
 const gate = await page.locator('.desktop-access-gate').count()
 check(gate === 0, '升级之后还是登录着的（更新没有把人踢出去）', { gate })
 
@@ -123,7 +143,7 @@ check(recap.length === 0, '打招呼没有复述旧失败', { greeting: greeting
 
 // ② 写笔记：落成了就不许再说"没成功"。
 const beforeNote = await lastReply()
-await send('写一篇三句话的笔记，题目《光子与能级》，写完把标题告诉我。')
+await send('写一篇三句话的笔记，题目《光子与能级（验收样例）》，写完把标题告诉我。')
 const noteReply = await waitForFreshReply(beforeNote, 200_000)
 check(Boolean(noteReply), '写笔记那一条拿到了回复', { noteReply: noteReply.slice(0, 160) })
 const noteFail = FAIL_WORDS.filter(word => noteReply.includes(word))
