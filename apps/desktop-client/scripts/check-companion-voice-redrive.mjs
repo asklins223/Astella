@@ -12,7 +12,7 @@
  *   cd apps/desktop-client
  *   ASTELLA_PROBE_EMAIL=… ASTELLA_PROBE_PASSWORD=… node scripts/check-companion-voice-redrive.mjs
  */
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { mkdtemp } from 'node:fs/promises'
 import { resolve } from 'node:path'
@@ -132,17 +132,73 @@ try {
   // 回到手记再点：上面那段可能已经把界面切走了。
   await open('对话手记')
   await page.waitForTimeout(1_500)
+  // 新 profile 默认可能是静音的：不放开 `masterMuted`，念出来的东西会被投递层直接丢掉，
+  // 于是"点了没声"看起来像功能坏了。先按其它走查的同一步把声音放开。
+  const audioState = await page.evaluate(async () => {
+    const { useRoomStore } = await import('/src/app/room-store.ts')
+    useRoomStore.getState().finishOnboarding?.()
+    useRoomStore.setState({ masterMuted: false })
+    const after = useRoomStore.getState()
+    return { masterMuted: after.masterMuted, accountState: after.accountState?.voiceOff ?? null }
+  })
+  console.log(`note: 声音开关 ${JSON.stringify(audioState)}`)
+
   if (counts.redrive > 0) {
-    // ③ 点下去：dev 库里没有留档的语音事件，所以诚实的答案是"没有留下语音记录"，
-    // 而不是通用报错，也不是假装还能放。
-    await page.evaluate(() => [...document.querySelectorAll('button')]
-      .filter(el => (el.textContent || '').includes('补听这段') && el.getBoundingClientRect().width > 0)[0]?.click())
-    await page.waitForTimeout(2_500)
-    const status = await page.evaluate(() => [...document.querySelectorAll('.companion-message-audio__error')].map(el => (el.textContent || '').trim()))
-    const honest = status.some(text => text.includes('没有留下语音记录'))
-    check(honest, '取不到留档时说实话，不给通用报错', { status })
-    const spinning = await page.evaluate(() => document.querySelectorAll('.companion-hud__spin').length)
-    check(spinning === 0, '失败后退回 idle，不卡在转圈', { spinning })
+    // 给了 ASTELLA_PROBE_PHRASE 就点那句话所在的一条（dev 库里给它种了留档，验"取到段→真出声"那一支）；
+    // 没给就点第一条，验"没有留档→说实话"那一支。
+    // 定位按那句话本身：手记里一颗按钮可能挂在整轮的抬头上，而不是那条消息自己的 article 里。
+    const phrase = process.env.ASTELLA_PROBE_PHRASE ?? null
+    const clicked = await page.evaluate(phrase => {
+      // 只有一条消息的轮次，那颗按钮挂在这轮的抬头行（data-process-run-id）上，不挂在消息自己的 article 里。
+      const scopeFor = (selector) => selector ? document.querySelector(selector) : null
+      const articles = [...document.querySelectorAll('article')].filter(el => el.getBoundingClientRect().width > 0)
+      const owner = phrase
+        ? (scopeFor(`[data-process-run-id="${phrase}"]`)
+          ?? articles.find(el => (el.textContent || '').includes(phrase)))
+        : null
+      const inOwner = [...(owner ?? document.querySelectorAll('body')[0]).querySelectorAll('button')]
+        .find(el => el.getBoundingClientRect().width > 0 && (el.textContent || '').includes('补听这段'))
+      const fallback = [...document.querySelectorAll('button')]
+        .find(el => el.getBoundingClientRect().width > 0 && (el.textContent || '').includes('补听这段'))
+      const button = inOwner ?? (phrase ? null : fallback)
+      if (!button) {
+        return { found: false, articles: articles.length, ownerFound: Boolean(owner),
+          redriveTotal: [...document.querySelectorAll('button')]
+            .filter(el => (el.textContent || '').includes('补听这段') && el.getBoundingClientRect().width > 0).length }
+      }
+      button.click()
+      return { found: true, usedFallback: !owner }
+    }, phrase)
+    if (!clicked.found) console.log(`note: 没点到目标那条 → ${JSON.stringify(clicked)}`)
+    await page.waitForTimeout(phrase ? 15_000 : 2_500)
+
+    if (phrase && clicked.found) {
+      const state = await page.evaluate(phrase => {
+        const scope = [...document.querySelectorAll('article')].find(el => (el.textContent || '').includes(phrase)) ?? document
+        const buttons = [...scope.querySelectorAll('button')].filter(el => el.getBoundingClientRect().width > 0)
+        return {
+          stopping: buttons.some(el => (el.textContent || '').includes('停止')),
+          entry: buttons.some(el => (el.textContent || '').includes('补听这段')),
+          spinning: buttons.some(el => el.querySelector('.companion-hud__spin')),
+          notice: [...scope.querySelectorAll('.companion-message-audio__error')].map(el => el.textContent?.trim()).filter(Boolean),
+        }
+      }, phrase)
+      const cacheFiles = await readdir(resolve(profile, 'companion-message-audio'), { recursive: true })
+        .then(entries => entries.filter(name => String(name).endsWith('.mp3') || String(name).endsWith('record.json')).length)
+        .catch(() => 0)
+      check(state.stopping && !state.spinning, '取到留档后按钮进到"停止"，不是卡在转圈', { state })
+      check(cacheFiles > 0, '补听真的取到了音频字节（本机音频缓存里有了文件）', { cacheFiles })
+    }
+
+    if (!phrase) {
+      // dev 库里没有留档的语音事件，所以诚实的答案是"没有留下语音记录"，
+      // 而不是通用报错，也不是假装还能放。
+      const status = await page.evaluate(() => [...document.querySelectorAll('.companion-message-audio__error')]
+        .map(el => (el.textContent || '').trim()))
+      check(status.some(text => text.includes('没有留下语音记录')), '取不到留档时说实话，不给通用报错', { status })
+      const spinning = await page.evaluate(() => document.querySelectorAll('.companion-hud__spin').length)
+      check(spinning === 0, '失败后退回 idle，不卡在转圈', { spinning })
+    }
   }
 
   const png = await app.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64'))
