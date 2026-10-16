@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { companionInitiativeAttentionIntent, companionInitiativePushKind, renderCompanionInitiativeObservation } from "../companion-initiative-observation.ts";
+import { companionInitiativeAttentionIntent, companionInitiativePushKind, initiativeCadenceApplies, renderCompanionInitiativeObservation } from "../companion-initiative-observation.ts";
 import { companionResponseStrategy } from "../companion-response-strategy.ts";
 import type { CompanionInitiativeInputV1 } from "@astella/shared/companion-initiative-contracts";
 
@@ -60,12 +60,14 @@ test("需要依据的场合仍然「没有值得说的就不说」，且执行�
   // 页面帮助与答后补充这两类要求确实有新的有用内容；这条规矩不能因为陪聊档放开而一起放开。
   const help = renderCompanionInitiativeObservation(initiative({ topic: "help.available" }));
   assert.match(help, /没有值得说的就安静结束这一轮/);
-  assert.match(help, /不要把「没什么补充」「本轮不发言」当成一句话发出去/);
-  // 2026-10-13 实测：她 17 条主动成稿里 16 条是「我不吵你，先在这儿待着」这一类——
-  // 既没给他任何东西，又占掉了一次主动开口的机会。旧那句只禁了「没什么补充」，
-  // 这种换了客气说法的同一类东西就从闸缝里过去了。
-  assert.match(help, /「我先不打扰你」「我就在旁边待着」也是同一类/);
-  assert.match(help, /占用了一次她主动开口的机会/);
+  // 2026-10-16 真栈实测：把要禁的句子逐字写进提示，她会把反面例句抄回来当台词
+  // （连做五次启动问候，第 2 次输出的正是提示里那句「我去吃饭了，你先忙你的。」）。
+  // 所以这里既钉住"这类执行说明不许发"，也钉住"提示里不再逐字复述它们"。
+  assert.match(help, /不要发一句宣布自己安静或没有补充的执行说明/);
+  assert.match(help, /占掉了一次她主动开口的机会/);
+  assert.ok(!help.includes("没什么补充"), "反面例句不能逐字出现在提示里：它会变成一句现成台词");
+  assert.ok(!help.includes("我先不打扰你"));
+  assert.ok(!help.includes("我就在旁边待着"));
 });
 
 /**
@@ -80,16 +82,26 @@ test("陪聊档默认开口：寒暄与问近况都算一次开口，不必等�
   for (const topic of ["presence.quiet", "app.started", "study.started", "app.foreground"]) {
     const text = renderCompanionInitiativeObservation(initiative({ topic }));
     assert.match(text, /这不妨碍你开口/, topic);
-    assert.match(text, /问问他今天怎么样/, topic);
+    // 2026-10-16：举例里原来写死的「问问他今天怎么样」正是她每次落进去、连着复用十几次的
+    // 那句模板，已经从范本里撤掉（问近况这件事本身仍然允许，见下一条断言与反重复那一段）。
+    assert.match(text, /说说你自己刚想到的一点什么/, topic);
+    assert.match(text, /就此刻真想知道的事问一句/, topic);
     assert.match(text, /寒暄和闲聊本身就是相处，不必等到有值得汇报的事/, topic);
     assert.match(text, /安静是例外，不是默认/, topic);
     // 事实边界不能被"放开开口"带走：不知道的事仍然只能问，不能说成知道。
     assert.match(text, /把推测说成知道/, topic);
     assert.match(text, /想知道就问/, topic);
     // 她也没有屏幕外的生活。2026-10-14 实链路样本里她真说过「我去吃饭了，你先忙你的」——
-    // 那句在用户那里只能被当成真的，而她没有那些事。
+    // 那句在用户那里只能被当成真的。**禁止项不再逐字复述**：2026-10-16 实测那种引用会被她
+    // 抄成台词（见上面那条注释），所以这里断言的是"规则在、原话不在"。
     assert.match(text, /你自己也没有屏幕外的生活/, topic);
-    assert.match(text, /不要说「我去吃饭了」「我去睡了」「我刚出门回来」/, topic);
+    assert.match(text, /不要给自己安排离开、吃饭、睡觉、出门、身体活动/, topic);
+    // 2026-10-16 真栈实测：换个由头之后她说出了「你房间里光线偏暗」「你那台灯搁左边还是右边」——
+    // 她看不到那些东西。规则照旧不给可抄的例句。
+    assert.match(text, /你也看不到他的房间、桌面或他周围有什么/, topic);
+    assert.match(text, /不要描述、点评或假设那些东西/, topic);
+    assert.ok(!text.includes("我去吃饭了"), `${topic} 的反面例句不能逐字出现`);
+    assert.ok(!text.includes("你先忙你的"), `${topic} 不能被递一句现成台词`);
     // 旧那句把开口教成违规的收尾话，不该再出现在陪聊档里。
     assert.ok(!/没有值得说的就安静结束这一轮/.test(text), topic);
   }
@@ -118,8 +130,10 @@ test("启动问候不许变成接着办事：不汇报待办、不接历史里�
 test("安静收尾在陪聊档里也允许，但不能当成一句话发出去", () => {
   const text = renderCompanionInitiativeObservation(initiative({ topic: "presence.quiet" }));
   assert.match(text, /安静收尾也可以/);
-  assert.match(text, /不要发「没什么补充」「本轮不发言」「我先不打扰你」「我就在旁边待着」这类执行收尾/);
-  assert.match(text, /它们不是对白/);
+  assert.match(text, /安静收尾是直接结束这一轮，不是写一句宣布自己安静或没有内容可说的执行说明/);
+  assert.match(text, /那不是对白/);
+  for (const leaked of ["没什么补充", "本轮不发言", "我先不打扰你", "我就在旁边待着"])
+    assert.ok(!text.includes(leaked), `反面例句 ${leaked} 不能逐字出现在提示里`);
 });
 
 /**
@@ -164,4 +178,99 @@ test("她要处理的事原样到达，多条关注合起来也不裁尾", () =>
   const second = `第二件：${"他问过但没有答的那个疑问还要接着想。".repeat(200)}`;
   const text = renderCompanionInitiativeObservation(initiative({ topic: "attention.due", intent: `${long}\n${second}` }));
   assert.ok(text.includes(long) && text.includes(second), "关注意图被静默截断等于替她忘掉后半件事");
+});
+
+/**
+ * 反重复（2026-10-16）：实测连续十几次启动问候几乎一模一样（「周五晚上好，又见面了。
+ * 今天过得咋样？」那一族的变体）。历史就在她的上下文里，但没人禁止复用，而观察块里
+ * 那句"问问他今天怎么样"的举例正是她每次落进去的模板。这里把上一句原样摆出来并点名禁止。
+ */
+test("她最近几次开口的原话被摆进观察块，并明确禁止复用那几个由头", () => {
+  const lines = ["周五晚上好，又见面了。今天过得咋样？", "你那篇《晚安》的笔记我还没读完。"];
+  const text = renderCompanionInitiativeObservation(initiative(), { lastOwnLines: lines });
+  for (const line of lines) assert.ok(text.includes(line), "最近几次的原话要被引出来，她不必自己去翻历史");
+  assert.match(text, /你最近几次开口说的是/);
+  assert.match(text, /这次的由头不要落在这几个上/);
+  assert.match(text, /换个说法、换个角度接着说，他照样会觉得你在走流程/);
+  assert.match(text, /真想不出别的，就安静收尾/);
+  // 旧举例里的「问问他今天怎么样」正是被复用的那句模板，不能继续当范本递给她。
+  assert.doesNotMatch(text, /问问他今天怎么样/);
+  // 最多引三条：再多只是把上下文撑长，不增加约束。
+  const many = renderCompanionInitiativeObservation(initiative(), { lastOwnLines: ["1", "2", "3", "4", "5"] });
+  assert.ok(!many.includes("5"), "只引最近三条");
+});
+
+test("没有历史可引时不提反重复，也不塞空引号", () => {
+  const text = renderCompanionInitiativeObservation(initiative(), { lastOwnLines: [] });
+  assert.doesNotMatch(text, /你最近几次开口说的是/);
+  assert.match(text, /说说你自己刚想到的一点什么/);
+});
+
+test("需要依据的场合（页面/结果）不受陪聊档反重复那一段影响", () => {
+  const text = renderCompanionInitiativeObservation(initiative({
+    topic: "help.available",
+    facts: { canSpeak: true, awareness: { sessions: [] }, attention: [], selfNote: null, observation: {
+      evidence: { domain: "source", entityId: "src-9", revision: "v1", description: "解析失败" } } },
+  }), { lastOwnLines: ["周五晚上好，又见面了。今天过得咋样？"] });
+  assert.doesNotMatch(text, /你最近几次开口说的是/);
+  assert.match(text, /src-9/);
+});
+
+/**
+ * 不要求每次挂在学习上（2026-10-16 用户口径：「不用每次都必须要关联到具体学习上面……
+ * 随机的，可以闲聊也可以聊学习」）。40 PRD 也把"一次普通闲聊里强行转回学习"列为反面。
+ */
+test("开口的由头不必落在学习上：闲聊与学习都算，且别每次挑同一类", () => {
+  const text = renderCompanionInitiativeObservation(initiative(), { lastOwnLines: ["你那篇《晚安》的笔记我还没读完。"] });
+  assert.match(text, /开口的由头\*\*不必每次都落在学习上\*\*/);
+  assert.match(text, /闲聊和学习都算，随性一点/);
+  assert.match(text, /别每次都挑同一类，也别每次都回到同一篇笔记、同一个时间点上/);
+  // 反重复要管"类别"而不只是措辞：上一句聊学习，这一句就该换一类。
+  assert.match(text, /上一句聊的是学习，这次就随口聊点别的，反过来也一样/);
+  // 提示里不再放任何可抄的闲聊范本：成句的举例会被她当成台词（见文件里的两段实测注释）。
+  assert.doesNotMatch(text, /今天过得咋样|你今天怎么样|今天怎么样/);
+});
+
+/**
+ * 由头来源的确定性轮换（2026-10-16）。用户口径是「随机的，可以闲聊也可以聊学习」，
+ * 而句面上的"引原话 + 禁止复用"只是软约束（真栈实测同一个玩笑仍连着出现两次）。
+ * 轮换只规定**从哪儿找由头**，不规定说什么，也不给任何例句——给例句就会变成台词。
+ */
+test("由头来源按轮次确定性地轮换，三个角度都覆盖到且不给例句", () => {
+  const angleOf = (id: string) => {
+    const text = renderCompanionInitiativeObservation(initiative({ preparationJobId: id }));
+    return text.split("\n").find(line => line.startsWith("这一次的由头换个来源"));
+  };
+  const seen = new Set<string>();
+  for (let index = 0; index < 60; index += 1) {
+    const line = angleOf(`11111111-1111-4111-8111-${String(index).padStart(12, "0")}`);
+    assert.ok(line, `第 ${index} 个身份要带角度`);
+    seen.add(line!);
+    assert.ok(!/[「」]/.test(line!), "角度里不能出现带引号的成句：那会变成一句现成台词");
+  }
+  assert.equal(seen.size, 3, `三个角度都该出现，实际 ${seen.size} 个`);
+  // 同一轮永远同一角度：重放/重试不该换由头。
+  assert.equal(angleOf("11111111-1111-4111-8111-000000000007"),
+    angleOf("11111111-1111-4111-8111-000000000007"));
+});
+
+/**
+ * 「陪着的时候」不走档位间隔（2026-10-16 用户口径：「开机招呼之后就一直安静」）。
+ *
+ * 真窗口实测（真栈 + 隔离 profile）：一句启动问候之后，六分钟里 `page.arrived` 报上来 2 次、
+ * `presence.quiet` 0 次、产出运行 0 个。原因是招呼（触发式）重置了 routine 档位间隔的读数，
+ * 而 `presence.quiet` 当时还算 routine——于是"开机招呼之后半小时内她一律不开口"。
+ * 这一段安静本来就只开一次门（同一 quietEpisodeId 只考虑一次），门槛又由账号档位定
+ * （安静 10 分／适中 3 分／活跃 90 秒），再叠 30 分钟是双重计数。
+ */
+test("陪着的时候不再走档位间隔，其余 routine 话题照旧", () => {
+  assert.equal(initiativeCadenceApplies("presence.quiet", false), false);
+  assert.equal(initiativeCadenceApplies("page.arrived", false), true);
+  assert.equal(initiativeCadenceApplies("study.started", false), true);
+  // 触发式的本来就不进这条闸。
+  assert.equal(initiativeCadenceApplies("app.started", false), false);
+  assert.equal(initiativeCadenceApplies("help.available", false), false);
+  // 她自己排的关注与记事一直在豁免里（与此前口径一致）。
+  assert.equal(initiativeCadenceApplies("attention.due", true), false);
+  assert.equal(initiativeCadenceApplies("self_note.due", true), false);
 });

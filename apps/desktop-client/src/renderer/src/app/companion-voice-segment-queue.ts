@@ -13,6 +13,12 @@
 
 import type { CompanionServerVoiceSegment } from "./companion-voice-playback";
 
+/**
+ * 唤醒信号的事件名。事件只用来喊"队列里有新段了"，段本身走队列——
+ * 生产端（实时流）与留档补取端共用这一个名字，谁改了名字都不会只改一半。
+ */
+export const COMPANION_VOICE_SEGMENT_READY_EVENT = "astella:companion-voice-segment-ready";
+
 export type CompanionVoiceSegmentReadyDetail = Readonly<{
   version: 2;
   conversationId: string;
@@ -23,7 +29,12 @@ export type CompanionVoiceSegmentReadyDetail = Readonly<{
   displayText: string;
   displayStart: number;
   displayEnd: number;
-  synthesisTextSha256: string;
+  /**
+   * 事件帧里带合成文本的摘要；**服务端留档那一份不带**（`/companion/runs/:id/voice-segments`
+   * 只回分段身份与显示区间）。所以补听路径构造的段没有这个字段——它只用于诊断，
+   * 不是播放判据，缺了不该让整帧被丢掉。
+   */
+  synthesisTextSha256?: string;
   cue: CompanionServerVoiceSegment["cue"];
 }>;
 
@@ -37,6 +48,16 @@ const MAX_QUEUED_SEGMENTS_PER_RUN = 64;
 
 const queued = new Map<string, CompanionVoiceSegmentReadyDetail[]>();
 const seenSegmentIds = new Set<string>();
+/**
+ * 这个窗口**见过**语音段的轮次（入过队就算，取走播放后也不删）。
+ *
+ * 判据是"这一轮的声音有没有自己到场过"：没到场才值得去服务端留档补一次。
+ * 没有它就只能靠"队列里现在还有没有"来判，而队列会被 drain 清空——于是**已经念过**
+ * 的那一轮会被当成"没到场"再补一次，她会把同一句念两遍。上限只防无界增长，
+ * 不是功能闸门。
+ */
+const runsWithQueuedSegments = new Set<string>();
+const MAX_REMEMBERED_RUNS = 64;
 
 /**
  * V2 合同逐字段校验：`displayStart`/`displayEnd` 是干净正文里的字符区间，
@@ -57,6 +78,13 @@ export function isCompanionVoiceSegmentDetail(value: unknown): value is Companio
 export function queueCompanionVoiceSegment(detail: unknown): boolean {
   if (!isCompanionVoiceSegmentDetail(detail) || seenSegmentIds.has(detail.segmentId)) return false;
   seenSegmentIds.add(detail.segmentId);
+  if (!runsWithQueuedSegments.has(detail.runId)) {
+    runsWithQueuedSegments.add(detail.runId);
+    // Set 的插入顺序就是"最早见过的那一轮"：删最早的一个，够用且不引入额外结构。
+    while (runsWithQueuedSegments.size > MAX_REMEMBERED_RUNS) {
+      runsWithQueuedSegments.delete(runsWithQueuedSegments.values().next().value as string);
+    }
+  }
   const existing = queued.get(detail.runId);
   if (existing) {
     if (existing.length < MAX_QUEUED_SEGMENTS_PER_RUN) existing.push(detail);
@@ -71,6 +99,17 @@ export function queueCompanionVoiceSegment(detail: unknown): boolean {
     queued.set(detail.runId, [detail]);
   }
   return true;
+}
+
+/**
+ * 这一轮的声音有没有自己到场过（入过队就算，念完也不撤销）。
+ *
+ * 主动轮那条"从留档补一次"的判据就是它：到场过就别再要一份，否则同一句会念两遍；
+ * 没到场（本轮气泡的文字是从历史/快照读回来的，`voice.segment.ready` 从没经过这个窗口）
+ * 才去 `/companion/runs/:id/voice-segments` 取一次。
+ */
+export function hasCompanionRunVoiceSegments(runId: string): boolean {
+  return runsWithQueuedSegments.has(runId);
 }
 
 /**

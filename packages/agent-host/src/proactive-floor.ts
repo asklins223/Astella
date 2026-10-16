@@ -23,6 +23,15 @@ import { sql, type SQL } from "drizzle-orm";
  * RLS 让这条读数是**当前书房**计的（与 `companion-initiative.ts` 里"最近一次开口"
  * 那条查询同一限制）；worker 在起 run 之前读到的是**上一轮**的值。对一条 2 分钟的
  * 轻地板来说这两点都可以接受——它要挡的是"同一两分钟内连着开口"，不是精确配额。
+ *
+ * ## 为什么排除「已经作废、用户永远看不到」的那些行（2026-10-16）
+ *
+ * 地板量的是"她刚跟用户说过话"，而一条 `suppressed`（被新启动作废的旧问候）或
+ * `expired`（过了投递窗口）的行**永远不会出现在用户眼前**。拿它去压下一句，
+ * 得到的不是"她别太吵"，而是**"一句没人听见的话把她静音了"**：真栈实测，快速重启
+ * 时上一次没被看见的问候把这次启动自己的问候推迟了整整两分钟——用户体感就是
+ * "她问候得很晚"。`queued` / `delivered` 仍然算：那一条随时会被用户看见，
+ * 「刚说完又开口」正是这条闸要挡的。
  */
 export function lastUnpromptedUtteranceAtQuery(scope: {
   workspaceId: string;
@@ -32,6 +41,7 @@ export function lastUnpromptedUtteranceAtQuery(scope: {
     SELECT max(created_at) AS at
     FROM assistant_deliveries
     WHERE workspace_id = ${scope.workspaceId} AND user_id = ${scope.userId}
+      AND state NOT IN ('suppressed', 'expired')
       AND (payload_ref->>'systemEventId' LIKE 'initiative:%'
         OR payload_ref->>'systemEventId' LIKE 'run.completed:%')
   `;

@@ -69,4 +69,7 @@ test("跨话题地板也在入队之前判，且读数不含约定提醒", () =>
   assert.match(floor, /systemEventId' LIKE 'initiative:%'/);
   assert.match(floor, /systemEventId' LIKE 'run\.completed:%'/);
   assert.doesNotMatch(floor, /reminder:/, "约定提醒不进这条读数");
+  // 作废（被新启动作废的旧问候）与过期投递用户永远看不到；拿它们压下一句 = 一句没人
+  // 听见的话把她静音了：真栈实测快速重启时旧问候把这次启动自己的问候推迟了两分钟。
+  assert.match(floor, /state NOT IN \('suppressed', 'expired'\)/);
 });

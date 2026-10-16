@@ -1,5 +1,6 @@
 import { stopCompanionSpeech } from "./companion-voice-playback";
-import { queueCompanionVoiceSegment } from "./companion-voice-segment-queue";
+import { COMPANION_VOICE_SEGMENT_READY_EVENT, queueCompanionVoiceSegment } from "./companion-voice-segment-queue";
+import { redriveCompanionRunVoice } from "./companion-run-voice-redrive";
 import type { CompanionHistoryItemV1 } from "@astella/shared/companion-memory-desktop-contracts";
 import type { CompanionInitiativeDeliveryRefV1 } from "@astella/shared/companion-initiative-contracts";
 import { prepareCompanionNotePaper, beginNoteAiWork, endNoteAiWork, resetNoteAiWork, noteEditRequestRanges } from "../components/companion/note-companion-editing";
@@ -109,6 +110,12 @@ export type CompanionUiMode = "closed" | "conversation" | "actions" | "history";
 /** 刚刚拿到、还没被气泡消费掉的助手回复。 */
 export interface CompanionChatLiveReply {
   readonly messageId: string;
+  /**
+   * 这一句属于哪一轮。气泡按它筛语音段——**不能**用"上一拍草稿的轮次"代替：
+   * 主动开口是从历史/快照读回来的（没有草稿），那个 ref 还停在上一条用户消息上，
+   * 拿它筛就会把刚补回来的段全部跳过，于是又变成"有字没声"。
+   */
+  readonly runId?: string | null;
   readonly text: string;
   readonly hasActionBlocks: boolean;
   readonly webCitations?: readonly CompanionContentBlockV1[];
@@ -1513,7 +1520,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
               ...streamed.payload,
             });
             if (queuedSegment) {
-              window.dispatchEvent(new CustomEvent("astella:companion-voice-segment-ready"));
+              window.dispatchEvent(new CustomEvent(COMPANION_VOICE_SEGMENT_READY_EVENT));
             }
           }
           if (streamed.eventType === "assistant.thinking") {
@@ -1555,7 +1562,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
                 const oldest = utteranceTextRef.current.keys().next().value!;
                 utteranceTextRef.current.delete(oldest); utteranceIdsRef.current.delete(oldest);
               }
-              if (args.background) setLiveReply({ messageId: payload.messageId, text: utterances,
+              if (args.background) setLiveReply({ messageId: payload.messageId, runId: args.runId, text: utterances,
                 webCitations: [], hasActionBlocks: false, proposalIds: [] });
               else setDraft({ runId: args.runId, text: [draftRef.current, utterances].filter(Boolean).join("\n\n") });
               void refreshMessages(args.conversationId, args.epoch).catch(() => undefined);
@@ -1996,6 +2003,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
         const proposalIds = reply.blocks.flatMap((block) => block.type === "action_ref" ? [block.proposalId] : []);
         setLiveReply({
           messageId: reply.id,
+          runId: reply.runId,
           text: runSpeechText({ ...reply, blocks: reply.blocks.filter(block => block.type === "text") }),
           webCitations: reply.blocks.filter(block => block.type === "citation" && block.referenceId),
           hasActionBlocks: proposalIds.length > 0,
@@ -2208,7 +2216,11 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
           : block.type === "code" ? block.code : block.type === "citation" ? block.label : "").filter(Boolean).join("\n"))
         .filter(Boolean).join("\n\n").trim();
       if (!text) return false;
-      setCurrentLiveReply({ messageId: delivery.messageId, text, webCitations: [], hasActionBlocks: false, proposalIds: [] });
+      // 这一句的字是从历史读回来的，声音却只有实时流那一份——先按留档把段排进常驻队列，
+      // 再交给气泡：HUD 的回复 effect 是"先喂段、后封队"，所以顺序必须是**先补后显示**，
+      // 否则会话已经收尾，晚到的段只会被丢掉（有字没声的老形状）。
+      await redriveCompanionRunVoice(delivery.runId);
+      setCurrentLiveReply({ messageId: delivery.messageId, runId: delivery.runId, text, webCitations: [], hasActionBlocks: false, proposalIds: [] });
       return true;
     } catch {
       return false;
@@ -2262,7 +2274,11 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
           eventCursor: 0, epoch, generation, voiceOutput: true, background: true });
         if (generation !== sendGenerationRef.current) return false;
         if (result.kind === "reply") {
-          setCurrentLiveReply({ messageId: result.message.id, text: runSpeechText(result.message),
+          // 这一轮多半是"投递落地时已经跑完"的：实时流可能被判 CURSOR_EXPIRED，
+          // 快照/历史仍把字交出来了，但 `voice.segment.ready` 从没经过这个窗口。
+          // 已经在流里到场过的轮次这里直接返回 false（不会多念一遍）。
+          await redriveCompanionRunVoice(delivery.runId);
+          setCurrentLiveReply({ messageId: result.message.id, runId: result.message.runId, text: runSpeechText(result.message),
             webCitations: [], hasActionBlocks: false, proposalIds: [] });
           rememberShown();
           await refreshMessages(active.id, epoch).catch(() => undefined);

@@ -4,7 +4,7 @@ import { sql } from "drizzle-orm";
 import { readParticipationPreferences, readCompanionAwareness, listCompanionAttention, lastUnpromptedUtteranceAtQuery, msSinceUnpromptedUtterance } from "@astella/agent-host";
 import { companionInitiativeInputV1Schema } from "@astella/shared/companion-initiative-contracts";
 import { isCompanionDefaultParticipationOpportunity } from "@astella/shared/companion-default-participation";
-import { companionInitiativePushKind } from "./companion-initiative-observation.ts";
+import { COMPANION_TRIGGERED_TOPICS, initiativeCadenceApplies } from "./companion-initiative-observation.ts";
 import { sha256Utf8V1 } from "@astella/shared/content-hash";
 import { withWorkerWorkspaceTransaction } from "../db.ts";
 import { resolveAIGovernanceContext } from "../lib/governance.ts";
@@ -154,15 +154,27 @@ export async function runCompanionInitiative(ctx: CompanionDialogueHandlerContex
      */
     const initiativeTopic = observation?.topic ?? (selfNote ? "self_note.due" : "attention.due");
     const selfArranged = initiativeTopic === "attention.due" || initiativeTopic === "self_note.due";
-    if (companionInitiativePushKind(initiativeTopic) === "routine" && !selfArranged) {
+    // 「陪着的时候」不走档位间隔：一段安静只开一次门，门槛由账号档位定（见
+    // `initiativeCadenceApplies` 的注释与 2026-10-16 的实测）。
+    if (initiativeCadenceApplies(initiativeTopic, selfArranged)) {
       const level = (account.intervention_level ?? "moderate") as import("@astella/shared/companion-proactive-policy").CompanionInterventionLevelV1;
       // 上一次她**真的开口**：任意来源的主动运行，只要产出了 assistant 消息就算一次。
       // 读运行×消息，不再读 kind='proactive'——那条只在工具发布那一支写过，
       // 普通收尾写的是 kind='text'，按 kind 数会把她绝大多数主动发言漏掉。
       // 读数按 worker 租约能看到的当前书房计（跨书房的账号级读数要 definer 函数才能穿过 RLS，本轮没加）。
+      /**
+       * 这条读数只数**她自己新起的话题**（2026-10-16）。
+       *
+       * 原来它数"任意一次她开口"，于是触发式（招呼、答后接续、真实结果、页面帮助）也把
+       * 例行间隔的钟按下去：真窗口实测——一次启动问候之后六分钟里 `page.arrived` 报上来 2 次、
+       * 产出运行 0 个；全库对照 `page.arrived` 观察 48 条只换来 1 次运行，而 `app.started`
+       * 一类就产出了 94 次运行。间隔要管的是"她自己新起的话题多久说一次"，那它就该量上一次
+       * **同类**开口，而不是上一次因为任何理由说的话。
+       */
       const spoke = await tx.execute<{ at: Date | string }>(sql`
         SELECT r.created_at AS at FROM companion_turn_runs r
         WHERE r.workspace_id=${scope.workspaceId} AND r.user_id=${scope.userId} AND r.input_source->>'kind'='initiative'
+          AND r.input_source->>'topic' NOT IN (${sql.join(COMPANION_TRIGGERED_TOPICS.map(topic => sql`${topic}`), sql`, `)})
           AND EXISTS(SELECT 1 FROM companion_messages m WHERE m.run_id=r.id AND m.role='assistant' AND m.kind<>'error')
         ORDER BY r.created_at DESC LIMIT 1`);
       const msSince = spoke[0]?.at ? Date.now() - new Date(spoke[0].at).getTime() : null;

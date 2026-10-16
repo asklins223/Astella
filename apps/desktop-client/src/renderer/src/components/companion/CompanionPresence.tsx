@@ -25,6 +25,7 @@ import {
 import { resolveSceneMotionMode } from "../../scene/scene-motion";
 import { useCompanionHomeProjection } from "../../app/companion-home-projection";
 import { companionCelebrationAllowed } from "../../app/companion-celebration-policy";
+import { companionLaunchRegisteredAt, subscribeCompanionLaunchRegistration } from "../../app/companion-launch-gate";
 import { stopCompanionSpeech } from "../../app/companion-voice-playback";
 import { HUD_PAGES } from "../hud/hud-pages";
 import { HOME_V2_CAMERA_FRAME_EVENT } from "../home-v2/home-v2-camera";
@@ -143,6 +144,15 @@ export function CompanionPresence() {
   } = useHomeV2();
   const windowState = useRoomStore((state) => state.windowState);
   const companionProjection = useCompanionHomeProjection();
+  /**
+   * 这次启动登记过宿主了吗（`app.started` 回执）。做成 React 状态订阅，是为了在闸门开启的
+   * 那一刻让下面那条气泡 effect 重新判一次——否则它只在投影变化时重跑，被挡下的气泡要等到
+   * 下一次刷新才可能显示。判据与理由见 `app/companion-launch-gate.ts`。
+   */
+  const [launchRegisteredAt, setLaunchRegisteredAt] = useState(companionLaunchRegisteredAt);
+  useEffect(() => subscribeCompanionLaunchRegistration(
+    () => setLaunchRegisteredAt(companionLaunchRegisteredAt()),
+  ), []);
   const celebrationAllowed = companionCelebrationAllowed({
     masterMuted,
     temporarilyHidden: companionTemporarilyHidden,
@@ -493,6 +503,19 @@ export function CompanionPresence() {
   useEffect(() => {
     const cue = companionProjection.projection?.proactiveCue, delivery = cue?.initiative;
     if (!cue || !delivery || !receiveInitiative || chatPhase === "sending" || replySpeaking || presencePaused || companionSilenced || assessmentMode || guideOpen) return;
+    /**
+     * 展示闸门（2026-10-16）：这份投影必须是**这次启动登记之后**读回来的。
+     *
+     * 真窗口实测：服务端在 12:29:42.539 把上一次启动没被看见的问候作废，客户端仍在
+     * 12:29:43.4 把同一句显示了出来——它手上是作废之前那次投影读取的负载。服务端那份
+     * 收口拦不住已经在路上的字，所以展示这一侧也要判：登记（`app.started` 回执）之前
+     * 到手的投影不用来显示主动气泡；登记会触发一次重读，那时队列已经干净。
+     *
+     * 被这条闸门挡下的气泡**不回执也不丢**：投递仍是 `queued`，重读回来的那一次会照常
+     * 交给它。窗口起在后台时闸门保持关闭（她不该对着没在看的人开口）。
+     */
+    const projectionFetchedAt = companionProjection.projectionFetchedAt;
+    if (launchRegisteredAt === null || projectionFetchedAt === null || projectionFetchedAt < launchRegisteredAt) return;
     let cancelled = false;
     /**
      * 谁在小屋界面谁说这一次，**不再问这一句当初是发给哪台设备的**。
@@ -517,7 +540,7 @@ export function CompanionPresence() {
       } catch { /* 这一次没接住：下一条机会照旧 */ }
     })();
     return () => { cancelled = true; };
-  }, [companionProjection.projection?.proactiveCue, receiveInitiative, chatPhase, replySpeaking, presencePaused, companionSilenced, assessmentMode, guideOpen, cueDeliveryReporter]);
+  }, [companionProjection.projection?.proactiveCue, companionProjection.projectionFetchedAt, launchRegisteredAt, receiveInitiative, chatPhase, replySpeaking, presencePaused, companionSilenced, assessmentMode, guideOpen, cueDeliveryReporter]);
 
   const projectCompanionIntoCamera = useCallback(() => {
     if (!homeMode || dragRef.current) return;

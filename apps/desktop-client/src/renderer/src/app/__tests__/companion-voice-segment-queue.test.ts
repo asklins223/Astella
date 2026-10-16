@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
-  companionVoiceSegmentQueueSize, drainCompanionVoiceSegments, queueCompanionVoiceSegment,
+  companionVoiceSegmentQueueSize, drainCompanionVoiceSegments, hasCompanionRunVoiceSegments,
+  queueCompanionVoiceSegment,
 } from "../companion-voice-segment-queue.ts";
 
 const segment = (over: Record<string, unknown> = {}) => ({
@@ -72,6 +73,21 @@ describe("伴星语音段队列", () => {
   });
 
   /**
+   * 主动轮补声的判据（2026-10-16）："这一轮的声音有没有自己到场过"。
+   *
+   * 必须是**入过队就记住、取走后也不撤销**：拿"队列里现在还有没有"当判据时，
+   * 已经念完并取走的那一轮会被当成"没到场"，补声入口就会把同一句再念一遍。
+   */
+  it("见过语音段的轮次记账不随取走清空，没见过的轮次才需要补声", () => {
+    expect(hasCompanionRunVoiceSegments("queue-arrived")).toBe(false);
+    queueCompanionVoiceSegment(segment({ runId: "queue-arrived", segmentId: "queue-arrived-seg" }));
+    expect(hasCompanionRunVoiceSegments("queue-arrived")).toBe(true);
+    drainCompanionVoiceSegments();
+    expect(hasCompanionRunVoiceSegments("queue-arrived")).toBe(true);
+    expect(hasCompanionRunVoiceSegments("queue-never")).toBe(false);
+  });
+
+  /**
    * 接线守卫：上面几条只证明队列本身算得对，证明不了生产端真的入队、
    * 气泡真的从队列取。这两头一旦有人"顺手改回"直接读事件负载，
    * 线上表现就是主动消息又只剩文字——不报错，只会安静地没声音。
@@ -79,11 +95,37 @@ describe("伴星语音段队列", () => {
   it("生产端先入队、气泡从队列取，谁都不再直接读事件负载", () => {
     const producer = readFileSync(new URL("../companion-chat-session.tsx", import.meta.url), "utf8");
     const hud = readFileSync(new URL("../../components/companion/CompanionHud.tsx", import.meta.url), "utf8");
+    const queue = readFileSync(new URL("../companion-voice-segment-queue.ts", import.meta.url), "utf8");
     // 生产端又变成直接 dispatch 负载，或气泡又只读事件负载 —— 两者都会让
     // "气泡不在场的那一段"永久丢；挂载不补取则晚到的气泡仍然听不到。
     expect(producer).toMatch(/queueCompanionVoiceSegment\(\{/);
-    expect(producer).toMatch(/if \(queuedSegment\)[\s\S]{0,120}companion-voice-segment-ready/);
+    expect(producer).toMatch(/if \(queuedSegment\)[\s\S]{0,140}COMPANION_VOICE_SEGMENT_READY_EVENT/);
     expect(hud).toMatch(/drainCompanionVoiceSegments\(\)/);
     expect(hud).toMatch(/takeQueuedVoiceSegments\(\);\s*\n\s*const onVoiceSegment/);
+    // 事件名只有一处定义，三个端点（实时流生产、补声生产、气泡消费）都用它。
+    expect(queue).toMatch(/export const COMPANION_VOICE_SEGMENT_READY_EVENT = "astella:companion-voice-segment-ready"/);
+    expect(hud).toMatch(/addEventListener\(COMPANION_VOICE_SEGMENT_READY_EVENT/);
+  });
+
+  /**
+   * 主动轮"有字没声"的接线守卫（2026-10-16 真窗口实测）。
+   *
+   * 正文由他路（快照/历史）读回时，语音段只有实时流那一份；补声必须在**把回复交给
+   * 气泡之前**完成——气泡拿到回复就会喂段并封队，晚到的段只会被丢掉。
+   * 顺序写反了不会报错，只会让那一句又变成有字没声。
+   */
+  it("主动轮的留档补声排在把回复交给气泡之前，两处都有", () => {
+    const producer = readFileSync(new URL("../companion-chat-session.tsx", import.meta.url), "utf8");
+    const ordered = producer.match(/redriveCompanionRunVoice\(delivery\.runId\)[\s\S]{0,320}setCurrentLiveReply\(\{/g) ?? [];
+    expect(ordered.length).toBe(2);
+  });
+
+  /**
+   * 气泡按"这条回复自己的轮次"筛段：主动开口没有草稿，`draftRunIdRef` 还停在上一条
+   * 用户消息上——用它筛会把刚补回来的段全部跳过，又变回有字没声。
+   */
+  it("气泡筛段用的是回复自己的 runId，不是上一拍草稿的轮次", () => {
+    const hud = readFileSync(new URL("../../components/companion/CompanionHud.tsx", import.meta.url), "utf8");
+    expect(hud).toMatch(/const runId = reply\.runId \?\? draftRunIdRef\.current;/);
   });
 });

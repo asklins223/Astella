@@ -35,7 +35,50 @@ function evidenceText(evidence: unknown): string | null {
     + String(value.description ?? "");
 }
 
-export function renderCompanionInitiativeObservation(input: CompanionInitiativeInputV1): string {
+/**
+ * 她上一次自己开口说的是什么（2026-10-16）。
+ *
+ * 为什么要把这句**引出来**而不是让她自己翻历史：实测连续十几次启动问候的正文几乎一模一样
+ * （「周五晚上好，又见面了。今天过得咋样？」这一族的变体），而历史就在她的上下文里——
+ * 她能读到，却还是照着上一句再写一遍。把上一句原样摆在观察块里、并点名"这次不要再用
+ * 同样的开头或收尾"，才是一道能执行的约束。这一句由调用方从回放历史里取（见
+ * `companion-agent-runtime.ts`），不额外查库。
+ */
+export interface CompanionInitiativeObservationOptions {
+  /**
+   * 她最近几次开口的原话（由近到远，最多三条），由调用方从回放历史里取
+   * （见 `companion-agent-runtime.ts`），不额外查库。
+   */
+  readonly lastOwnLines?: readonly string[];
+}
+
+/**
+ * 由头来源的三个角度（2026-10-16）。用户口径是「随机的，可以闲聊也可以聊学习」，
+ * 而实测"引原话 + 禁止复用"只是软约束——同一句内部玩笑在连造问候里仍会连着出现两次
+ * （见 docs/testing/companion-greeting-content-variety-2026-10-16.md 第 ④ 轮）。
+ * 所以"变化"这一步改成**确定性的**：按这一轮的身份派生一个角度，连着几次开口不会落在
+ * 同一个来源上。三个角度都**不给例句**：凡是提示里给出的成句，她都会当台词抄（两次独立实测）。
+ */
+const OPENING_ANGLES = [
+  "不引用任何材料：就着一件你此刻真想知道的小事闲聊（不聊他的房间、摆设，也不编排你自己屏幕外的生活）",
+  "从他最近在学的东西里挑一处具体的来说：是你真在意的那一点，不是进度报告",
+  "说一点你自己此刻想到的念头：一个看法、一个没想通的疑问都可以，但不能是离开、吃饭、睡觉这类安排",
+] as const;
+
+/** 稳定散列：同一轮永远得到同一个角度，不同轮之间均匀落在三个角度上。 */
+export function openingAngleFor(seed: string): (typeof OPENING_ANGLES)[number] {
+  let hash = 2166136261;
+  for (let index = 0; index < seed.length; index += 1) {
+    hash ^= seed.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return OPENING_ANGLES[Math.abs(hash) % OPENING_ANGLES.length]!;
+}
+
+export function renderCompanionInitiativeObservation(
+  input: CompanionInitiativeInputV1,
+  options: CompanionInitiativeObservationOptions = {},
+): string {
   const facts = input.facts as {
     observation?: { context?: { quietForMs?: unknown }; evidence?: unknown } | null;
     canSpeak?: boolean;
@@ -75,24 +118,71 @@ export function renderCompanionInitiativeObservation(input: CompanionInitiativeI
       ? "他回来了，不是让你接着办事：不要汇报待办、不要复述卡住的任务、不要回答历史里没答完的请求，也不要把这次打开当成他让你继续做某件事。"
       : "这一刻只是「他在，你也还在」，不是有人派了活给你：不要汇报待办、不要催他去办历史里没办完的事，"
         + "那会把一次打招呼变成一份进度单（实测就是这样：安静在场开了门，她开口先说的是「刚才那篇笔记改不改得成，就等你哪天顺手把它点开」）。");
-    lines.push("这不妨碍你开口：问问他今天怎么样、说说你自己刚想到的一点什么、接着刚才的话题再聊半句、或者提一句你惦记着的事，都算这一次开口；"
+    lines.push("这不妨碍你开口：说说你自己刚想到的一点什么、接着刚才的话题再聊半句、提一句你惦记着的事、或者就此刻真想知道的事问一句，都算这一次开口；"
       + "寒暄和闲聊本身就是相处，不必等到有值得汇报的事，也不必先证明有什么新内容。");
-    lines.push("只有一件事不要做：把推测说成知道——他正在做什么、他的心情、他有没有休息，你都不知道；想知道就问。"
-      + "你自己也没有屏幕外的生活：不要说「我去吃饭了」「我去睡了」「我刚出门回来」这类离开或身体活动的安排，"
-      + "你没有那些事，说了他只能当成真的（实测她真说过「我去吃饭了，你先忙你的」）。要收尾就直接收尾。");
+    /**
+     * 不要求每次挂在学习上（2026-10-16 用户口径：「不用每次都必须要关联到具体学习上面……
+     * 随机的，可以闲聊也可以聊学习」）。这一条与 40 PRD「一次普通闲聊……不要强行转回学习」
+     * 是同一个意思：闲聊是相处本身，不是学习的引子。
+     *
+     * **这里故意不举具体的闲聊范本**：上一版写了「问一句他今天怎么样」，她连着十几次都落在
+     * 同一句上；随后改成"闲聊随性一点"并附一个时间/近况的举例，下一版又变成连着四次
+     * 「周五晚上你没出去玩呀？」。凡是在提示里给出的成句，她都会当成台词抄。所以这里只说
+     * 允许的范围与"别每次挑同一类"，具体由头交给她自己——真正管用的是下面那段**她自己
+     * 最近说过什么**的明文引用（没有任何可抄的句子）。
+     */
+    lines.push("开口的由头**不必每次都落在学习上**：闲聊和学习都算，随性一点；"
+      + "别每次都挑同一类，也别每次都回到同一篇笔记、同一个时间点上。");
+    /**
+     * 角度轮换（确定性）：句面约束拦不住"同一个由头换着说"，所以再给一个按轮次派生的来源。
+     * 它只规定**从哪儿找由头**，不规定说什么——不给例句，避免又变成一句现成台词。
+     */
+    const angleSeed = [input.preparationJobId, input.observationId, input.parentRunId].find((value): value is string =>
+      typeof value === "string" && value.length > 0);
+    if (angleSeed) {
+      lines.push(`这一次的由头换个来源，从这一类来：${openingAngleFor(angleSeed)}。不用解释你在换角度。`);
+    }
+    /**
+     * 反重复（2026-10-16）：实测连续十几次启动问候的正文几乎一样，全是同一句寒暄换时间词
+     * （「周五晚上好，又见面了。今天过得咋样？」那一族）。历史她读得到，但没人禁止她复用，
+     * 而上面那句"问问他今天怎么样"的举例正是她每次落进去的模板。
+     *
+     * 只引**上一句**不够：她换成"换个字"的说法就绕过了——实测引上一句之后连着四次
+     * 「周五晚上你没出去玩呀？」。所以这里把最近三次原话都摆出来，并点名"由头不要落在这几个上"，
+     * 同时要求**换类别**（上一句聊学习、这次就聊点别的，反过来也一样）。说不出别的就安静收尾。
+     */
+    const recent = (options.lastOwnLines ?? []).filter((line) => line.trim().length > 0).slice(0, 3);
+    if (recent.length > 0) {
+      const list = recent.map((line, index) => `${index + 1}.「${line}」`).join("");
+      lines.push(`你最近几次开口说的是：${list}。`
+        + "这次的由头不要落在这几个上——同一个话题换个说法、换个角度接着说，他照样会觉得你在走流程；"
+        + "上一句聊的是学习，这次就随口聊点别的，反过来也一样。"
+        + "真想不出别的，就安静收尾。");
+    }
+    /**
+     * 禁止项**不复述原话**（2026-10-16 真栈实测）。
+     *
+     * 这一段原来把要禁止的句子逐字写进提示（「我去吃饭了」「我去睡了」「我刚出门回来」，
+     * 还附了一句"实测她真说过「我去吃饭了，你先忙你的」"）。连着做五次启动问候，她第 2 次
+     * 输出的正是「我去吃饭了，你先忙你的。」——**反面例句被当成范本抄了回去**。
+     * 禁区只需要说清"哪一类不能做"，逐字引用只会给出一句现成的台词。
+     */
+    lines.push("只有一件事不要做：把推测说成知道——他正在做什么、他的心情、他有没有休息，你都不知道；"
+      + "你也看不到他的房间、桌面或他周围有什么，不要描述、点评或假设那些东西，也别假装见过它们；想知道就问。"
+      + "你自己也没有屏幕外的生活：不要给自己安排离开、吃饭、睡觉、出门、身体活动这类事，"
+      + "你没有那些事，说出来他只能当成真的。要收尾就直接收尾。");
     lines.push(facts.canSpeak
       ? "现在可以把话说到他身边：说一句就好，说完自然收尾，不用连着追问。"
       : "现在不要把话发出去（人不在这台设备的前台，或这一刻不适合出声）；值得留下的写进自己的记事或关注，等合适的时候再说。");
     lines.push("刚刚才说过同一件事、或者这一刻确实不想说，安静收尾也可以——安静是例外，不是默认。"
-      + "安静时不要发「没什么补充」「本轮不发言」「我先不打扰你」「我就在旁边待着」这类执行收尾：它们不是对白。");
+      + "安静收尾是直接结束这一轮，不是写一句宣布自己安静或没有内容可说的执行说明：那不是对白。");
     return lines.join("\n");
   }
   lines.push(facts.canSpeak
     ? "现在可以把话说到他身边。"
     : "现在不要把话发出去（人不在这台设备的前台，或这一刻不适合出声）；值得留下的写进自己的记事或关注，等合适的时候再说。");
-  lines.push("没有值得说的就安静结束这一轮，不要把「没什么补充」「本轮不发言」当成一句话发出去。"
-    + "「我先不打扰你」「我就在旁边待着」也是同一类：它没有给他任何东西，却占用了一次她主动开口的机会"
-    + "（这几天她就是这样连着说了四句一模一样的话）。这一刻没话，就直接收尾。");
+  lines.push("没有值得说的就安静结束这一轮；安静是直接结束，不要发一句宣布自己安静或没有补充的执行说明"
+    + "——它既没给他任何东西，又占掉了一次她主动开口的机会（实测她连着四次都是这一类）。这一刻没话，就直接收尾。");
   return lines.join("\n");
 }
 
@@ -109,11 +199,33 @@ export function renderCompanionInitiativeObservation(input: CompanionInitiativeI
  * 一段学习的开始并不会连续发生四次，而"每次都要露个面"也不是他要的相处方式——
  * 它要的是**有人陪着时她说一句真的**，所以这一类回到节奏闸门里，按档位隔开了说。
  */
-const TRIGGERED_TOPICS = ["app.started", "app.foreground", "preference.changed",
-  "help.available", "result.available", "reply.finished"];
+export const COMPANION_TRIGGERED_TOPICS = ["app.started", "app.foreground", "preference.changed",
+  "help.available", "result.available", "reply.finished"] as const;
 
 export function companionInitiativePushKind(topic: string): "routine" | "triggered" {
-  return TRIGGERED_TOPICS.includes(topic) ? "triggered" : "routine";
+  return (COMPANION_TRIGGERED_TOPICS as readonly string[]).includes(topic) ? "triggered" : "routine";
+}
+
+/**
+ * 这一轮要不要走「她自己新起的话题」那条档位间隔（2026-10-16）。
+ *
+ * `presence.quiet`（陪着的时候）不再走它，理由是真栈读数加上机制本身已经自带两道闸：
+ * - 客户端只在「前台 + 解锁 + 可参与」时累计安静，**一段安静只开一次门**
+ *   （同一个 `quietEpisodeId` 在 worker 里被 `considered` 判过就不再考虑，用户一动就换新一集）；
+ * - 账号档位决定安静多久才算时机（安静 10 分／适中 3 分／活跃 90 秒）。
+ *
+ * 再叠一层 30 分钟（适中档）的例行间隔，得到的不是"她别太吵"，而是**"开机招呼之后
+ * 半小时内她一律不开口"**：招呼是触发式，它重置了档位间隔的读数。真窗口实测（真栈 + 隔离
+ * profile）：一次启动问候之后，六分钟里 `page.arrived` 报上来 2 次、`presence.quiet` 0 次，
+ * 产出运行 0 个（只有那句招呼）。用户口径「开机招呼之后就一直安静」指的正是这个。
+ *
+ * 其余 routine 话题（到页面的搭话、study.started）照旧走间隔——那是用户明确要过的分寸；
+ * 她给自己排的关注/记事（`selfArranged`）一直就在豁免里。
+ */
+export function initiativeCadenceApplies(topic: string, selfArranged: boolean): boolean {
+  if (selfArranged) return false;
+  if (topic === "presence.quiet") return false;
+  return companionInitiativePushKind(topic) === "routine";
 }
 
 /**

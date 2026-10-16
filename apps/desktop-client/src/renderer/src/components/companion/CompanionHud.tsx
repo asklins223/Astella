@@ -10,7 +10,7 @@ import { useRoomStore } from "../../app/room-store";
 import { ensureAiActionAllowed, guideAiPermissionFailure } from "../../app/ai-action-gate";
 import { useCompanionChat } from "../../app/companion-chat-session";
 import { beginCompanionSpeechLine, stopCompanionSpeech, subscribeCompanionSpeech, type CompanionServerVoiceSegment, type CompanionSpeechSession } from "../../app/companion-voice-playback";
-import { drainCompanionVoiceSegments, type CompanionVoiceSegmentReadyDetail } from "../../app/companion-voice-segment-queue";
+import { COMPANION_VOICE_SEGMENT_READY_EVENT, drainCompanionVoiceSegments, type CompanionVoiceSegmentReadyDetail } from "../../app/companion-voice-segment-queue";
 import { COMPANION_REVEAL_TICK_MS, createCompanionRevealDriver, type CompanionRevealDriver } from "../../app/companion-reveal-driver";
 import { subscribeHomeV2VoiceLevel } from "../../app/companion-voice-level";
 import { companionTurnProcessLine, nodeLabel } from "../../app/companion-agent-nodes";
@@ -531,9 +531,9 @@ export function CompanionHud({
   useEffect(() => {
     takeQueuedVoiceSegments();
     const onVoiceSegment = () => takeQueuedVoiceSegments();
-    window.addEventListener("astella:companion-voice-segment-ready", onVoiceSegment);
+    window.addEventListener(COMPANION_VOICE_SEGMENT_READY_EVENT, onVoiceSegment);
     return () => {
-      window.removeEventListener("astella:companion-voice-segment-ready", onVoiceSegment);
+      window.removeEventListener(COMPANION_VOICE_SEGMENT_READY_EVENT, onVoiceSegment);
     };
   }, [takeQueuedVoiceSegments]);
 
@@ -703,9 +703,13 @@ export function CompanionHud({
       } else {
         // 把缓冲里还没喂的服务端段补进会话（走流式时已喂过，segmentId 幂等），
         // 然后封队：迟到的片段不再入队（"本轮不再次突然恢复朗读"）。
+        //
+        // 轮次判据取**这条回复自己的 runId**，取不到才退回草稿的轮次：主动开口是从
+        // 历史/留档补回来的（没有草稿），那个 ref 还停在上一条用户消息上——用它筛会把
+        // 刚补回来的段全跳过，表现就是"主动那一句有字没声"。
         for (const segment of pendingVoiceSegmentsRef.current.sort((a, b) => a.ordinal - b.ordinal)) {
-          const runId = draftRunIdRef.current;
-          if (runId !== null && segment.runId !== runId) continue;
+          const runId = reply.runId ?? draftRunIdRef.current;
+          if (runId !== null && runId !== undefined && segment.runId !== runId) continue;
           session.feedSegment({
             ref: {
               version: 2,

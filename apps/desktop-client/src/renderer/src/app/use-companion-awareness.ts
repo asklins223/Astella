@@ -8,6 +8,7 @@ import { stopCompanionNotificationSpeech } from "../components/companion/compani
 import { isCompanionSpeechActive, subscribeCompanionSpeechActivity } from "./companion-voice-playback";
 import { companionAwarenessPageState } from "./companion-awareness-page";
 import { createCompanionQuietPresenceTracker } from "@astella/shared/companion-awareness-idle";
+import { markCompanionLaunchRegistered } from "./companion-launch-gate";
 
 /** Real lifecycle and semantic arrivals. Heartbeats renew factual leases; they never call a model. */
 export function useCompanionAwareness(conversationId: string | null) {
@@ -77,6 +78,9 @@ export function useCompanionAwareness(conversationId: string | null) {
           if (!started && currentContext.foreground && currentContext.participationAllowed) {
             unwrapGatewayResult(await api.observe({ meta: createRequestMeta(epoch), request: { ...request, id: crypto.randomUUID(), topic: "app.started", elapsedMs: 0 } }));
             started = true;
+            // 这次启动已经登记过宿主：服务端据此收掉上一次没被看见的启动问候，
+            // 主动气泡的展示闸门到这里才开（见 companion-launch-gate.ts）。
+            markCompanionLaunchRegistered();
           }
         } catch { /* Offline observations earn no study time; the next real lease tries again. */ }
       });

@@ -20,6 +20,7 @@ import {
 } from "./desktop-client";
 import { useRoomStore } from "./room-store";
 import { useHomeProjectionInvalidation } from "./home-projection";
+import { subscribeCompanionLaunchRegistration } from "./companion-launch-gate";
 import {
   beginProjectionRefresh,
   failProjectionRefresh,
@@ -39,6 +40,12 @@ type CompanionHomeProjectionState = {
   readonly failure: string | null;
   readonly profileSaving: boolean;
   readonly profileFailure: string | null;
+  /**
+   * 这份投影**到手**的时刻（毫秒）。主动气泡的展示闸门要用它：
+   * 只有这次启动登记（`app.started` 回执）**之后**读回来的投影才允许显示主动气泡——
+   * 登记之前那次读取的负载里可能还带着上一次启动的问候（见 companion-launch-gate.ts）。
+   */
+  readonly projectionFetchedAt: number | null;
   readonly reload: () => void;
   readonly patchRoomProfile: (change: CompanionRoomProfileChange) => Promise<CompanionRoomProfileChangeResult>;
 };
@@ -49,6 +56,7 @@ const CompanionHomeProjectionContext = createContext<CompanionHomeProjectionStat
   failure: null,
   profileSaving: false,
   profileFailure: null,
+  projectionFetchedAt: null,
   reload: () => {},
   patchRoomProfile: async () => ({ ok: false, message: "伴星小屋尚未完成同步。" }),
 });
@@ -68,8 +76,15 @@ export function CompanionHomeProjectionProvider({ children }: { readonly childre
     failure: null,
     profileSaving: false,
     profileFailure: null,
+    projectionFetchedAt: null,
   });
   const reload = useCallback(() => setRevision((value) => value + 1), []);
+  /**
+   * 这次启动一旦登记（`app.started` 回执），立刻重读一次投影：服务端在那一刻已经
+   * 收掉了上一次没被看见的启动问候，重读回来才是干净的队列。展示闸门同时要求
+   * `projectionFetchedAt` 晚于登记时刻，所以在这次重读回来之前，手上的旧负载不会被显示。
+   */
+  useEffect(() => subscribeCompanionLaunchRegistration(() => reload()), [reload]);
 
   const patchRoomProfile = useCallback(async (
     change: CompanionRoomProfileChange,
@@ -150,12 +165,14 @@ export function CompanionHomeProjectionProvider({ children }: { readonly childre
         failure: null,
         profileSaving: false,
         profileFailure: null,
+        projectionFetchedAt: null,
       });
     } else {
       setState((current) => ({
         ...beginProjectionRefresh(current, knownScope),
         profileSaving: current.profileSaving,
         profileFailure: current.profileFailure,
+        projectionFetchedAt: current.projectionFetchedAt,
       }));
     }
 
@@ -182,6 +199,7 @@ export function CompanionHomeProjectionProvider({ children }: { readonly childre
               failure: "请先登录后再读取伴星小屋。",
               profileSaving: false,
               profileFailure: null,
+              projectionFetchedAt: null,
             });
           }
           return;
@@ -201,6 +219,7 @@ export function CompanionHomeProjectionProvider({ children }: { readonly childre
           ...beginProjectionRefresh(current, previousScope, requestScope),
           profileSaving: false,
           profileFailure: null,
+          projectionFetchedAt: current.projectionFetchedAt,
         }));
       } else {
         scopeRef.current = requestScope;
@@ -230,6 +249,8 @@ export function CompanionHomeProjectionProvider({ children }: { readonly childre
           && current.projection.roomProfile.revision > projection.roomProfile.revision
           ? { ...projection, roomProfile: current.projection.roomProfile }
           : projection,
+        // 到手时刻：主动气泡展示闸门按它判"这份负载是不是这次启动登记之后读回来的"。
+        projectionFetchedAt: Date.now(),
         loading: false,
         failure: null,
         profileSaving: profileSavingRef.current,
