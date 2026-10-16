@@ -75,7 +75,7 @@ test("不新写「跳过已派发调用」的分支：靠的是循环已有的�
   const loop = dispatchLoop();
   const branch = loop.indexOf("if (!replayable) {");
   assert.ok(branch > 0, "重放分支不见了 —— 跑过的工具会被再跑一遍");
-  const tail = loop.slice(branch, loop.indexOf("if (record.isNew && budget.maxToolCalls"));
+  const tail = loop.slice(branch, loop.indexOf("if (record.isNew) toolCallCount += 1;"));
   assert.ok(tail.includes("continue;"), "重放分支不再 continue —— 它会往下走到执行");
   assert.ok(tail.includes('role: "tool"'), "重放分支不推 tool 消息 —— 下一次请求会被 provider 拒");
   // 明确不许出现"跳过提前派发过的调用"这种自写分支。

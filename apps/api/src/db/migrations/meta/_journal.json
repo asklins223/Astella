@@ -3060,6 +3060,13 @@
       "when": 1792069920000,
       "tag": "0440_companion_runtime_recovery",
       "breakpoints": true
+    },
+    {
+      "idx": 437,
+      "version": "7",
+      "when": 1792069980000,
+      "tag": "0441_worker_discovery_entry_masking",
+      "breakpoints": true
     }
   ]
 }

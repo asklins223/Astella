@@ -259,14 +259,25 @@ export function companionStepRuntimePolicy(input: {
 }): string {
   const { toolCount, stepBudget, finalAnswerOnly, attentionIntent } = input;
   const hostOccasion = input.requestSource === "host_observation";
+  /**
+   * 终答步那一句必须**每个分支都带**。
+   *
+   * 它原来只挂在「有工具」那条 return 的末尾，而最后一步恰好没有工具（`tools` 为空）——
+   * 于是「给出最终答复、不要把前面说过的话原样再说一遍」这句从来没到过模型，而那正是
+   * 2026-09-19 修分段重复时指望它挡的那种复读。四分之一的状态里有三个分支会丢它：
+   * 陪聊、陪聊＋宿主场合、以及工具面为空。
+   */
+  const withFinalAnswerStep = (policy: string): string => finalAnswerOnly
+    ? [policy, "这是最后一步：不再提供工具，请直接用已有信息给出最终答复。不要把前面步骤已经对用户说过的话原样再说一遍——这里要给出结论或补充新信息。"].filter(Boolean).join("\n\n")
+    : policy;
   if (attentionIntent === "conversation") {
-    if (hostOccasion) return COMPANION_HOST_CONVERSATION_POLICY_V1;
+    if (hostOccasion) return withFinalAnswerStep(COMPANION_HOST_CONVERSATION_POLICY_V1);
     // 投机的第一步与真的空面（read_only 档且受管工具全关）仍按"这一轮没有工具"说；
     // 只要工具发下去了，就得说真话——见 `COMPANION_CASUAL_POLICY_V3`。
-    return toolCount === 0 ? COMPANION_CASUAL_NO_TOOLS_POLICY_V4 : COMPANION_CASUAL_POLICY_V4;
+    return withFinalAnswerStep(toolCount === 0 ? COMPANION_CASUAL_NO_TOOLS_POLICY_V4 : COMPANION_CASUAL_POLICY_V4);
   }
   if (toolCount === 0) {
-    return [
+    return withFinalAnswerStep([
       ...(hostOccasion ? [COMPANION_HOST_OCCASION_GOAL_V1] : []),
       hostOccasion
         ? "本轮没有可调用工具，只基于当前宿主观察和已经提供的事实参与；没有新的操作回执，不声称新增读取、保存或安排。"
@@ -274,10 +285,9 @@ export function companionStepRuntimePolicy(input: {
       "当前材料与共同记录帮助回答眼前这个问题，不续办旧任务。经历或记录类问题只能从这些真实材料取材；材料不足时直接说明不足，不拿知识故事或角色活动补填。",
       hostOccasion ? "按当前人格自然参与这次观察描述的时刻，遵守相处偏好，发言完整就结束。"
         : "按当前人格把这轮问题讲清，尊重用户的篇幅和不追问要求；回答完整就自然结束。",
-    ].join("\n");
+    ].join("\n"));
   }
-  const toolDefinitions = { length: toolCount };
-  return [
+  return withFinalAnswerStep([
     // 技能层不再参与选择，也就没有"本轮你是XX助手"的角色切换——
     // 那句话以前会覆盖用户人格，现在统一由 persona 层承担语气。
     "先判断本轮问题和已有证据；需要补取资料、核对外部状态或执行操作时再使用工具。",
@@ -309,16 +319,14 @@ export function companionStepRuntimePolicy(input: {
     // 这类轮次的答复压成一句引言。
     // 2026-09-20 再收紧：把"就停住"明确限定在**真的调用工具之前**。原文"先用一句
     // 话…就停住"会被模型泛化到不作工具的轮次上，是"回答越来越短"的推手之一。
-    ...(toolDefinitions.length > 0
-      ? ["只有在你确实要调用工具时，调用之前才用一句话说明打算做什么然后停下，把结论留到工具结果回来之后；如果你这一轮不调用工具，就把答复完整说完，不要为了简短而省略该说的内容。"]
-      : []),
+    // 走到这里就一定发下去了工具（上面 `toolCount === 0` 已经 return），所以这句无条件带上。
+    // 旧写法 `toolDefinitions.length > 0 ? [...] : []` 与刚判过的条件是同一个命题，
+    // 留着只会让下一个读代码的人以为这里还有第三种状态。
+    "只有在你确实要调用工具时，调用之前才用一句话说明打算做什么然后停下，把结论留到工具结果回来之后；如果你这一轮不调用工具，就把答复完整说完，不要为了简短而省略该说的内容。",
     AGENT_GOAL_HANDOFF_INSTRUCTIONS,
     "交代目标和后台交付不要求切换页面或开始朗读。",
     Number.isFinite(stepBudget) ? `部署配置允许本次任务最多 ${stepBudget} 步。` : "持续执行当前任务，按实际工具回执核对结果；完成用户要求后自然结束，不因读取或写入次数提前收尾。",
-    ...(finalAnswerOnly
-      ? ["这是最后一步：不再提供工具，请直接用已有信息给出最终答复。不要把前面步骤已经对用户说过的话原样再说一遍——这里要给出结论或补充新信息。"]
-      : []),
-  ].filter(Boolean).join("\n\n");
+  ].filter(Boolean).join("\n\n"));
 }
 
 /**

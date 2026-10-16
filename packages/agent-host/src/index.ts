@@ -17,3 +17,4 @@ export * from "./compaction-state.ts";
 export * from "./self-notes.ts";
 
 export * from "./participation.ts";
+export * from "./proactive-floor.ts";

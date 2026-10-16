@@ -124,25 +124,29 @@ test("A17｜恢复后**不补播**普通消息，不形成消息债务（§8.2�
 });
 
 test("A17｜约定提醒**不**被这条丢弃规则带走", () => {
-  // 按「有没有文案」分：有 text 的是她自己想开口的；没有的是约定提醒/学习完成。
-  // 反过来写就会把用户约好的提醒在下午回来时丢掉。
+  // 2026-10-16 更正：这条判据原来断的是「按有没有 payload.text 分」，而那个分法**是错的**——
+  // 约定提醒（0270 的 `reminder:<id>`）与学习完成（`run.completed:<runId>`）都写了 text，
+  // 于是它们被当成过时招呼丢掉，正是这条用例名字要挡的那件事。原来它绿，是因为它验的是
+  // 「那条分支长什么样」，不是「提醒到底会不会被丢」。
+  // 现在按**投递身份**判：只有 `initiative:<messageId>`（她自己开口说的）才属于过时清理。
   //
-  // 断言的是**那条分支真的把无文案行留下**，而不是"payload.text 这个词出现过"。
-  // 只查词会漏掉 `if (false) return true;` 那种退化——词还在，行为已经反了。
-  // 定界用 `.map(toContract)` 而不是找 `\n}` —— filter 里的 `})` 会先撞上。
+  // 断言分两层，任何一层反了都要红：
+  //   ① 清理只作用于分类器认出的那一类；
+  //   ② 分类器只认 `initiative:` 前缀 —— 提醒与学习完成因此天然不在丢弃范围内。
   const start = delivery.indexOf("function dropStaleAmbientOnResume");
   const end = delivery.indexOf(".map(toContract);", start);
   assert.ok(start > 0 && end > start, "找不到 dropStaleAmbientOnResume 的函数体");
   const body = delivery.slice(start, end);
-  assert.match(body, /payload\.text/);
-  assert.match(body, /if \(!hasText\) return true;/,
-    "无文案的行没有被无条件留下 —— 约定提醒会被一起丢");
-  // 真正要验的是**次序**：`if (!hasText) return true;` 必须在丢弃调用**之前**。
-  // 有文案的那些活不到丢弃判断——只有它们会被丢。
-  const keepIndex = body.indexOf("if (!hasText) return true;");
+  assert.match(body, /if \(!isAmbientProactiveDelivery\(row\)\) return true;/,
+    "不是『她自己开口的那一类』的行必须被无条件留下 —— 否则约定提醒会被一起丢");
+  // 真正要验的是**次序**：留下必须在丢弃调用**之前**。
+  const keepIndex = body.indexOf("if (!isAmbientProactiveDelivery(row)) return true;");
   const dropIndex = body.indexOf("evaluateStaleAfterResume(");
   assert.ok(keepIndex > 0 && dropIndex > keepIndex,
-    "无文案的行没有被提前留下 —— 约定提醒会被一起丢（次序反了或早返回没了）");
+    "留下的分支没有排在丢弃判断之前 —— 约定提醒会被一起丢（次序反了或早返回没了）");
+  const classifier = delivery.slice(delivery.indexOf("function isAmbientProactiveDelivery"));
+  assert.match(classifier, /systemEventId\.startsWith\("initiative:"\)/,
+    "分类判据必须是投递身份：按『有没有文案』分会把带 text 的约定提醒一起丢掉");
 });
 
 // ── A22：关闭伴星功能后学习与已授权安排完整 ─────────────────────────────
@@ -177,9 +181,16 @@ test("【自证】判据认得住「加一条 UPDATE 日记的路径」这个真
 });
 
 test("【自证】判据认得住「约定提醒被一起丢掉」这个更重的退化", () => {
-  // 退化形状：不看有没有文案，一律按过时丢弃。
+  // 退化形状一（2026-10-16 之前的真实现）：按有没有文案分，把带 text 的提醒一起丢。
+  const legacy = "const hasText = typeof payload.text === 'string' && payload.text.length > 0;"
+    + " if (!hasText) return true;";
+  assert.match(legacy, /payload\.text/, "自证样本没造好");
+  assert.doesNotMatch(legacy, /isAmbientProactiveDelivery|initiative:/,
+    "自证：旧判据确实不含投递身份，所以它躲不过 A17 的新断法");
+  // 退化形状二：不看身份，一律按过时丢弃。
   const degraded = "return rows.filter((row) => ageMs(row.createdAt) < STALE).map(toContract);";
   assert.match(degraded, /\.filter\(\(row\)/, "自证样本没造好");
-  // 正控制：真代码先看了 payload.text。
-  assert.match(delivery, /payload\.text/, "自证：当前确实先看文案再决定丢不丢");
+  // 正控制：真代码按 `initiative:` 身份判，且不是"一律丢"。
+  assert.match(delivery, /systemEventId\.startsWith\("initiative:"\)/,
+    "自证：当前确实按投递身份判，而不是按有没有文案");
 });

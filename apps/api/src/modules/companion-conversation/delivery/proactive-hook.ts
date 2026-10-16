@@ -16,7 +16,9 @@ import { resolveAssessmentCriticConfig } from "../../../lib/assessment-critic-co
 import { sql } from "drizzle-orm";
 import {
   evaluateTriggeredPush,
+  globalProactiveFloorBlocked,
 } from "@astella/shared/companion-proactive-policy";
+import { lastUnpromptedUtteranceAtQuery, msSinceUnpromptedUtterance } from "@astella/agent-host";
 import { deliver } from "./delivery-service.ts";
 
 /** §11.5：个性化文案 2s 上界。它同时是内核的 stepTimeout 与 taskDeadline。 */
@@ -327,9 +329,12 @@ export async function hookProactiveOnRunCompleted(
   // 这是**触发式**主动输出：用户刚跑完一个学习运行，"要继续吗"正是他在等的东西。
   // 所以这里不读静默时段、作答状态、24h 计数、最近展示时间、反馈窗口——那五道闸管的
   // 是"她自己想开口"的节奏（用户 2026-09-21 的口径：触发式不进频率限制）。
-  // 只剩两条：账号级总开关，和设备明确不在（气泡进收件箱，人回来照样看得见）。
+  //
+  // **显式开关不在此列**：账号级总开关、空间级静音（0266）、相处偏好里的主动总开关
+  // （04 §9）都要读，设备明确不在时气泡进收件箱（人回来照样看得见）。「触发式不受
+  // 节奏限制」说的是频率档，不是"用户可以关掉主动"这件事本身。
   const { userCompanionAccountState } = await import("@astella/shared/db-schema/companion");
-  const { eq } = await import("drizzle-orm");
+  const { and, eq } = await import("drizzle-orm");
   const accountRows = await tx
     .select({
       presence: userCompanionAccountState.presence,
@@ -344,6 +349,27 @@ export async function hookProactiveOnRunCompleted(
   if (accountRows[0] && accountRows[0].globalEnabled === false) {
     return null; // 全局关闭：不打扰。
   }
+  /**
+   * 空间级静音（0266）。`companion-initiative` 那条路一直读它，这里以前没读——
+   * 于是同一个人把班级空间静音之后，「刚才的学习已完成，要继续吗？」照样出现在那个空间。
+   * 上面那段「触发式不进频率限制」说的是**节奏**（静默时段、24h 计数、最近展示时间），
+   * 而静音是用户对一个空间的显式动作，不是频率档；两者不是一回事。
+   */
+  const { companionRoomProfiles } = await import("@astella/shared/db-schema/companion-home");
+  const roomRows = await tx
+    .select({ proactiveMuted: companionRoomProfiles.proactiveMuted })
+    .from(companionRoomProfiles)
+    .where(and(eq(companionRoomProfiles.workspaceId, scope.workspaceId),
+      eq(companionRoomProfiles.userId, scope.userId)))
+    .limit(1);
+  if (roomRows[0]?.proactiveMuted === true) return null;
+  /**
+   * 相处偏好里的总开关（40 §9「关掉主动通道」）。它表达的是「不要她自行开口」，
+   * 与频率档同样是两件事：触发式可以不受节奏限制，但不能绕过用户关掉主动这件事本身。
+   */
+  const { readParticipationPreferences } = await import("@astella/agent-host");
+  const participation = await readParticipationPreferences(tx, scope);
+  if (!participation.enabled) return null;
   if (!evaluateTriggeredPush({ availability, expired: false }).allow) return null;
 
   /**
@@ -397,6 +423,32 @@ export async function hookProactiveOnRunCompleted(
     } catch {
       topMemories = undefined; // 读取失败不阻塞，后续走模板文案。
     }
+  }
+
+  /**
+   * 跨话题地板（2026-10-16 用户决定：全局主动**不用节流太严重**）。
+   *
+   * 上面每一道闸管的是"这一条该不该发"；这一条管的是"她刚开过口，现在别马上再说"
+   * ——跨话题、也跨进程：读数取 `assistant_deliveries` 里最近一次主动开口
+   * （`initiative:` 或 `run.completed:`；**不含** `reminder:`，约定提醒由它自己那条
+   * 路入队，40 §8.2 说停用也不取消已授权安排）。判据是 2 分钟，比最松的一档
+   * cadence（10 分钟）小一个数量级；读不出来按"从没开过口"放行，不因为一次读失败
+   * 就把她静音。
+   */
+  try {
+    const lastRows = await tx.execute<{ at: Date | string | null }>(
+      lastUnpromptedUtteranceAtQuery(scope));
+    const msSinceAnyCue = msSinceUnpromptedUtterance(lastRows[0]?.at ?? null, now.getTime());
+    if (globalProactiveFloorBlocked({ msSinceAnyCue })) {
+      const { logger } = await import("../../../lib/logger.ts");
+      logger.info({ runId: input.runId, msSinceAnyCue },
+        "proactive run.completed nudge suppressed by the global cross-topic floor");
+      return null;
+    }
+  } catch (error) {
+    const { logger } = await import("../../../lib/logger.ts");
+    logger.warn({ runId: input.runId, error },
+      "could not read the global proactive floor; letting the nudge through");
   }
 
   // 模板文案：作为 fallback 先入队，异步生成成功后覆盖。

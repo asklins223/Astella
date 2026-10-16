@@ -1,7 +1,7 @@
-import { COMPANION_QUIET_PRESENCE_MIN_MS, isWithinQuietHours, proactiveCadenceMs, routineCadenceBlocked } from "@astella/shared/companion-proactive-policy";
+import { COMPANION_GLOBAL_PROACTIVE_FLOOR_MS, COMPANION_QUIET_PRESENCE_MIN_MS, globalProactiveFloorBlocked, isWithinQuietHours, proactiveCadenceMs, routineCadenceBlocked } from "@astella/shared/companion-proactive-policy";
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
-import { readParticipationPreferences, readCompanionAwareness, listCompanionAttention } from "@astella/agent-host";
+import { readParticipationPreferences, readCompanionAwareness, listCompanionAttention, lastUnpromptedUtteranceAtQuery, msSinceUnpromptedUtterance } from "@astella/agent-host";
 import { companionInitiativeInputV1Schema } from "@astella/shared/companion-initiative-contracts";
 import { isCompanionDefaultParticipationOpportunity } from "@astella/shared/companion-default-participation";
 import { companionInitiativePushKind } from "./companion-initiative-observation.ts";
@@ -76,6 +76,20 @@ export async function runCompanionInitiative(ctx: CompanionDialogueHandlerContex
       AND workspace_id=${scope.workspaceId} AND user_id=${scope.userId} AND expires_at>now()`) : [];
     if (ctx.payload.observationId && !observation) return;
     if (!observation && !plan && !selfNote) return;
+    /**
+     * 相处偏好里的**主动总开关**（40 §9「关掉主动通道」）。用户是用一句自然语言设它的
+     * （"以后别主动找我了"），所以它管的正是这一整个任务：默认参与机会（招呼、陪着的时候、
+     * 久学休息、页面帮助）与她给自己排的到点重评，都属于"她自己开口"。
+     *
+     * 这一条原来没接：`builtin` 分支让所有自带机会无视它通过（第 82/84 行），
+     * 自记事与关注唤醒（`selfNote` / `plan`）也从不读它——于是用户关掉主动之后
+     * 招呼照打、安静陪伴照来、自学自评照跑，而 `companion-initiative` 这个任务本身
+     * 就是"主动"的定义域（用户主动提问走的是另一条路，不受这里影响）。
+     *
+     * **约定提醒不在其中**：那是用户自己约的事，40 §8.2 明说不会取消已授权安排；
+     * 提醒由 `astella_fire_due_companion_reminders` 直接入队，本来就不经过这里。
+     */
+    if (!pref.enabled) return;
     const applicable = observation ? plans.filter(p => p.topics.includes(observation.topic as typeof p.topics[number])
       && (p.preferenceRevision === null || (pref.enabled && p.preferenceRevision === pref.revision))) : plan ? [plan] : [];
     // Revalidate pending jobs against preference corrections, rather than trusting their old payload.
@@ -156,6 +170,35 @@ export async function runCompanionInitiative(ctx: CompanionDialogueHandlerContex
         // 到点的关注不在这一步被吃掉：等到间隔过去再唤起，她仍然记得自己要回头看什么。
         await deferParticipation(tx, ctx, Math.max(1_000, proactiveCadenceMs(level) - (msSince ?? 0) + 1_000));
         return;
+      }
+    }
+    /**
+     * 跨话题地板（2026-10-16 用户决定：全局主动**不用节流太严重**）。
+     *
+     * 上面那条档位闸只管 routine 三类话题；六类触发式（招呼、答后接续……）与她自排期
+     * 的关注/记事都不进它。结果是"她刚开过口，紧接着又说"在跨话题上没有任何约束。
+     * 这条地板判的是**事实**：`assistant_deliveries` 里最近一次主动开口距今多久
+     * （`initiative:` 或 API 的 `run.completed:`；不含 `reminder:`——约定提醒由它自己
+     * 那条路入队，40 §8.2 说停用也不取消已授权安排）。2 分钟，比最松的一档 cadence
+     * 小一个数量级：正常使用碰不到它，只有"同一两分钟内连着开口"会被挡住。
+     * 读数失败按"从没开过口"放行——地板只该少挡一次，不该因为一次读失败把她静音。
+     *
+     * **她自己安排到点的关注与记事不进这条地板**（与上面那条档位闸同一个豁免）：
+     * 那是她先前答应自己（和用户）要回来看一眼的事，次数已经由那条安排的
+     * next_review_at 自己限住；再被"她刚说了句话"推一次，就等于她记下的事不算数。
+     */
+    if (!selfArranged) {
+      try {
+        const [recentCue] = await tx.execute<{ at: Date | string | null }>(lastUnpromptedUtteranceAtQuery(scope));
+        const msSinceAnyCue = msSinceUnpromptedUtterance(recentCue?.at ?? null, Date.now());
+        if (globalProactiveFloorBlocked({ msSinceAnyCue })) {
+          // 与档位闸一样：机会不被吃掉，等到地板过去再唤起，她仍然记得要说什么。
+          await deferParticipation(tx, ctx,
+            Math.max(1_000, COMPANION_GLOBAL_PROACTIVE_FLOOR_MS - (msSinceAnyCue ?? 0) + 1_000));
+          return;
+        }
+      } catch {
+        // 放行（理由见上面那段注释的最后一句）。
       }
     }
     const hintedConversation = observation?.conversation_id ?? plan?.conversationId

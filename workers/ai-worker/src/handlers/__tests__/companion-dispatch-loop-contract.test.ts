@@ -72,7 +72,9 @@ test("终态即免执行：`!replayable` 那一支 `continue`，所以跑过的�
   const branch = loop.indexOf("if (!replayable) {");
   assert.ok(branch > 0, "找不到重放分支 —— 提前派发会**把写工具跑两遍**");
   // 这一支里必须 `continue`，否则会顺着往下走到执行。
-  const tail = loop.slice(branch, loop.indexOf("if (record.isNew && budget.maxToolCalls"));
+  // 切片终点取"重放分支之后的第一个稳定执行点"：工具调用计数行。
+  // （2026-10-16 之前这里用的是 `budget.maxToolCalls` 上限分支，该上限已按用户决定移除。）
+  const tail = loop.slice(branch, loop.indexOf("if (record.isNew) toolCallCount += 1;"));
   assert.ok(tail.includes("continue;"),
     "重放分支里没有 continue —— 它会继续往下走到执行，提前派发就会重复执行");
   // 并且它必须推 tool 消息：少了它，下一次 provider 请求会因缺 tool 响应被拒。
@@ -95,6 +97,6 @@ test("【自证】判据认得出「把 continue 删掉」这个真实退化", (
   // 正控制：真代码里有。
   const loop = dispatchLoop();
   const branch = loop.indexOf("if (!replayable) {");
-  const realTail = loop.slice(branch, loop.indexOf("if (record.isNew && budget.maxToolCalls"));
+  const realTail = loop.slice(branch, loop.indexOf("if (record.isNew) toolCallCount += 1;"));
   assert.ok(realTail.includes("continue;"), "自证：当前代码确实有 continue，所以判据今天是绿的");
 });

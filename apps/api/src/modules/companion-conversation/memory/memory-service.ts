@@ -24,7 +24,7 @@ import {
   accountPreferenceWriteDecision,
   type AccountPreferenceWriteRejection,
 } from "@astella/shared/companion-memory-scope";
-import { companionMemoryContentMaxLength } from "@astella/shared/companion-memory-desktop-contracts";
+import { companionMemoryContentMaxLength, companionMemoryRecycleBinDays } from "@astella/shared/companion-memory-desktop-contracts";
 import { logger } from "../../../lib/logger.ts";
 import { closeDeliveriesForMemoryItem } from "../delivery/delivery-service.ts";
 import { maskEntriesForSource, unmaskEntriesForSource } from "../discovery/discovery-service.ts";
@@ -38,8 +38,11 @@ const MEMORY_LIST_LIMIT = 200;
  *
  * 它不是「到期自动消失」——到期之后记忆还在，只是**用户随时可以要求彻底清除，
  * 而不再有版本历史挡路**。这正是合同把「普通删除」与「彻底清除」分成两条路的原因。
+ *
+ * 数值的**唯一声明在 shared**（`companionMemoryRecycleBinDays`）：worker 里模型自己调用的
+ * `companion_forget_memory` 是这份状态迁移的第二条实现，抄一份数就等于给两边各留一个漂移点。
  */
-export const MEMORY_RECYCLE_BIN_DAYS = 30;
+const memoryRecycleBinDays = companionMemoryRecycleBinDays;
 
 export interface MemoryScope {
   workspaceId: string;
@@ -672,7 +675,7 @@ export async function deleteMemory(
   const updated = await executor.update(assistantMemoryItems)
     .set({
       deletedAt: now,
-      purgeAfter: new Date(now.getTime() + MEMORY_RECYCLE_BIN_DAYS * 24 * 60 * 60 * 1000),
+      purgeAfter: new Date(now.getTime() + memoryRecycleBinDays * 24 * 60 * 60 * 1000),
       updatedAt: now,
     })
     .where(and(
@@ -1269,7 +1272,7 @@ export async function clearMemories(
     WHERE workspace_id=${scope.workspaceId} AND user_id=${scope.userId} AND state='active'
       AND (preference_revision IS NULL OR self_note IS NOT NULL AND self_note<>'null'::jsonb)`);
   const updated = await executor.update(assistantMemoryItems)
-    .set({ deletedAt: now, updatedAt: now, purgeAfter: new Date(now.getTime() + MEMORY_RECYCLE_BIN_DAYS * 24 * 60 * 60 * 1000) })
+    .set({ deletedAt: now, updatedAt: now, purgeAfter: new Date(now.getTime() + memoryRecycleBinDays * 24 * 60 * 60 * 1000) })
     .where(and(
       eq(assistantMemoryItems.workspaceId, scope.workspaceId),
       eq(assistantMemoryItems.userId, scope.userId),

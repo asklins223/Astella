@@ -76,6 +76,23 @@ export function withCompanionFailureTransaction<T>(event: AgentEventContext,
   return withCompanionOwnedTransaction(event, run, false);
 }
 
+/**
+ * 已经发生的事实回执（失败**或执行成功后的成功回执**）。
+ *
+ * 与失败事务同形：仍然挡被替换的 job／租约／代际／账号纪元，但不再重新断言
+ * 「运行开始时冻结的上下文还成立」。理由：落一条"这一步已经这样了"的账不是新授权。
+ *
+ * 成功的工具回执也必须走这一支，否则会自锁：`companion_write_self_note` 这类
+ * 「她改自己的记录」写完之后，当前版本天然不同于冻结时的 `revision`；而
+ * `assertCompanionContextSourcesCurrent` 里那条"本轮自己有成功回执"的豁免要读的
+ * 正是这个事务即将写入的 `status='succeeded'`——断言在 UPDATE 之前跑，豁免永远
+ * 来不及成立，于是**写成功反而把自己判成 CONTEXT_STALE**（2026-10-16 实库复现）。
+ */
+export function withCompanionReceiptTransaction<T>(event: AgentEventContext,
+  run: (tx: WorkerTransaction) => Promise<T>): Promise<T> {
+  return withCompanionOwnedTransaction(event, run, false);
+}
+
 async function withCompanionOwnedTransaction<T>(event: AgentEventContext,
   run: (tx: WorkerTransaction) => Promise<T>, requireCurrentContext: boolean): Promise<T> {
   const scope = { workspaceId: event.ctx.workspaceId, userId: event.read.userId };

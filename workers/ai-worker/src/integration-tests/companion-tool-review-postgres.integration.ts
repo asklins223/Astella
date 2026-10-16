@@ -5,6 +5,7 @@ import postgres from "postgres";
 import { getCompanionAgentTool, resolveAllCompanionAgentTools, MAX_PENDING_JOBS_PER_WORKSPACE } from "@astella/shared";
 import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
 import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
+import { companionMemoryRecycleBinDays as MEMORY_RECYCLE_BIN_DAYS } from "@astella/shared/companion-memory-desktop-contracts";
 import { ensureAgentToolCall, loadContinuation } from "../handlers/companion-tool-call-ledger.ts";
 import { runCompanionToolExecution } from "../handlers/companion-tool-execution-run.ts";
 import type { AgentEventContext } from "../handlers/companion-read-tools.ts";
@@ -238,6 +239,48 @@ for (const changed of [false, true]) test(`删除记忆前展示实际内容，$
   const [memory] = await f.mutate(tx => tx`SELECT deleted_at FROM assistant_memory_items WHERE id=${memoryId}`);
   assert.equal(Boolean(memory.deleted_at), !changed);
   assert.equal((await f.proposal(result.proposalId)).status, changed ? "failed" : "succeeded");
+});
+
+/**
+ * 遗忘一条记忆要写下**三样**状态，少一样都不会报错，只会让"她看起来忘了、旧话还从别处回来"
+ * （2026-10-16 审出的分歧：worker 这条路原来只写 `deleted_at`）：
+ *   ① `purge_after` —— 到期清理要求它非空，否则墓碑永远进不了回收区；
+ *   ② 发现簿遮蔽 —— 用户收藏过这条记忆时，簿子里的引文要一起遮掉（40 §7）；
+ *   ③ 整理结论作废 —— 那条 `surface` 是这条记忆的转述，最长会被注入 7 天。
+ * 真库上按最终状态断言，而不是只看 handler 有没有抛错。
+ */
+test("遗忘一条记忆：写回收窗口、遮蔽发现簿引文、作废整理结论", async () => {
+  const f = await fixture("full"), memoryId = randomUUID();
+  await f.mutate(async tx => {
+    await tx`INSERT INTO assistant_memory_items(id,workspace_id,user_id,kind,content,user_stated,user_confirmed)
+      VALUES(${memoryId},${f.scope.workspaceId},${f.scope.userId},'preference','用户收藏过的那条偏好',true,true)`;
+    await tx`INSERT INTO companion_discovery_entries(workspace_id,user_id,kind,source,source_id,author,body)
+      VALUES(${f.scope.workspaceId},${f.scope.userId},'kept_ai_suggestion','memory',${memoryId},'assistant','从这条记忆来的引文')`;
+    await tx`INSERT INTO companion_memory_organization_state(workspace_id,user_id,surface,surface_at)
+      VALUES(${f.scope.workspaceId},${f.scope.userId},'这条记忆的转述结论',now() - interval '8 days')
+      ON CONFLICT (workspace_id,user_id) DO UPDATE SET surface=EXCLUDED.surface,surface_at=EXCLUDED.surface_at`;
+  });
+  const result = await f.prepare("companion_forget_memory", { memoryId });
+  assert.equal(result.kind, "waiting"); if (result.kind !== "waiting") return;
+  await f.decide(result.proposalId, "confirm");
+  await f.resume(result.proposalId);
+
+  const [memory] = await f.mutate(tx => tx`SELECT deleted_at, purge_after FROM assistant_memory_items WHERE id=${memoryId}`);
+  assert.ok(memory.deleted_at, "确认后应当进入软删");
+  assert.ok(memory.purge_after,
+    "只写 deleted_at 的墓碑永远进不了回收区：到期清理要求 purge_after 非空");
+  const windowDays = (new Date(memory.purge_after).getTime() - new Date(memory.deleted_at).getTime()) / 86_400_000;
+  assert.ok(Math.abs(windowDays - MEMORY_RECYCLE_BIN_DAYS) < 0.01,
+    `回收窗口应为 ${MEMORY_RECYCLE_BIN_DAYS} 天，实际 ${windowDays.toFixed(4)} 天`);
+
+  const [entry] = await f.mutate(tx => tx`SELECT masked FROM companion_discovery_entries
+    WHERE workspace_id=${f.scope.workspaceId} AND user_id=${f.scope.userId} AND source='memory' AND source_id=${memoryId}`);
+  assert.equal(entry.masked, true, "40 §7：来源被删掉后，簿子里那条引文不能再显示");
+
+  const [state] = await f.mutate(tx => tx`SELECT surface FROM companion_memory_organization_state
+    WHERE workspace_id=${f.scope.workspaceId} AND user_id=${f.scope.userId}`);
+  assert.equal(state.surface, null,
+    "整理结论是这条记忆的转述，正文删掉后它不能再进 prompt");
 });
 
 

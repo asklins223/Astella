@@ -294,22 +294,38 @@ export async function listInbox(
  * 它有时间语义：一条 09:00 的提醒，用户下午回来仍然该看见。丢掉它等于
  * 「提醒不准」——那是比多弹一条严重得多的错。
  */
-function dropStaleAmbientOnResume(
+export function dropStaleAmbientOnResume(
   rows: (typeof assistantDeliveries.$inferSelect)[],
   now: Date,
 ): AssistantDeliveryV2[] {
   const ageMs = (createdAt: Date): number => now.getTime() - new Date(createdAt).getTime();
-  // delivery 侧不存"这是哪一类主动消息"，所以按**有没有文案**分：
-  // 带 text 的是她"自己想开口"的那一类（普通招呼/过时感想/日记更新），
-  // 不带的是约定提醒与学习完成这类触发式投递。
   return rows
     .filter((row) => {
-      const payload = (row.payloadRef ?? {}) as { text?: unknown };
-      const hasText = typeof payload.text === "string" && payload.text.length > 0;
-      if (!hasText) return true;
+      if (!isAmbientProactiveDelivery(row)) return true;
       return evaluateStaleAfterResume({ kind: "ambient", ageMs: ageMs(row.createdAt), arrangementStillValid: true }).keep;
     })
     .map(toContract);
+}
+
+/**
+ * 判定一条投递是不是「她自己想开口」的那一类（也就是这段过时清理的**唯一**对象）。
+ *
+ * 判据必须是**投递身份**，不能是"payload 里有没有 text"。旧写法按有没有文案分，注释还写着
+ * 「不带 text 的是约定提醒与学习完成这类触发式投递」——而真库里的两种情况恰好相反：
+ * 约定提醒（0270 的 `reminder:<id>`）与学习完成（`run.completed:<runId>`）**都写了 text**
+ * （`assistant_deliveries.payload_ref->>'text'`），于是两类都被当成过时招呼丢掉。
+ * 对提醒来说那不是少弹一条，是「提醒不准」；上面那段「约定提醒不能丢」因此形同虚设
+ * （2026-10-16 审出）。
+ *
+ * 现在按 `systemEventId` 的前缀判，词表只有三种：
+ *   - `initiative:<messageId>` —— 她自己开口说的（问候、随时感想、日记更新）：**可以**按过时丢；
+ *   - `reminder:<id>` —— 用户约好的事：有时间语义，永远不丢；
+ *   - `run.completed:<runId>` —— 刚跑完的学习，用户正在等的下一句：不丢。
+ * proposal / action_result 这些没有 `systemEventId`，与从前一样不受这段影响。
+ */
+function isAmbientProactiveDelivery(row: typeof assistantDeliveries.$inferSelect): boolean {
+  const payload = (row.payloadRef ?? {}) as { systemEventId?: unknown };
+  return typeof payload.systemEventId === "string" && payload.systemEventId.startsWith("initiative:");
 }
 
 /**

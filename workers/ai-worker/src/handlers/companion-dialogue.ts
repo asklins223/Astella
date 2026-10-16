@@ -854,7 +854,21 @@ export async function runCompanionDialogue(
       await notifyCompanionEvent(tx, cueSeq);
       return true;
     },
-  );
+  ).catch(async (error: unknown) => {
+    /**
+     * 这一格是"用户改了相处偏好／设了勿扰／页面换了"最早能被判定的地方，而它跑在
+     * provider 之前、也在下面那个大 try 之外。原来这里抛出的 CONTEXT_STALE 没有任何
+     * 失败收尾，run 就一直停在 accepted——界面上挂着一个永远不会开口的轮次，
+     * 既不取消也不报错（2026-10-16 实库复现：改一次相处偏好即可稳定重现）。
+     *
+     * 走与别处同一条收尾：主动轮 + CONTEXT_STALE 是**静默停**（cancelled，无错误气泡），
+     * 用户轮则记为确定失败。CONTEXT_STALE 本身是不可重试的，所以 recoverable=false。
+     */
+    if (error instanceof CompanionContextChangedError) {
+      await markCompanionRunFailed(read, ctx, error.code, false, error.message, "state");
+    }
+    throw error;
+  });
   if (!claimed) return;
 
   // ── 阶段 2b：统一 Agent loop（每一步真实流式下发） ────────────────────
@@ -1043,7 +1057,12 @@ export async function runCompanionDialogue(
         workspaceId: ctx.workspaceId,
         userId: read.userId,
         conversationId: read.conversationId,
-        sourceHash: () => contextReceipts.currentRequestHash() ?? replaySummaryCoverage?.sourceSha256 ?? null,
+        // 来源版本 = 摘要覆盖的 sourceSha256（`CompactionCooldownContext` 的口径）。
+        // 这里原来把整份请求的哈希放在前面，于是键每轮每步都变、同一个键永远只出现一次，
+        // 跨轮保护名存实亡（44 §5.4「同一失败输入不能每轮重新触发」）。
+        // 「折的是哪一类来源」由折叠侧补进键里（`CompactionCooldownPorts.foldSourceKind`）：
+        // 摘要是跨轮的基座，工具回合是同一轮里的另一份来源，两者不能共键。
+        sourceHash: () => replaySummaryCoverage?.sourceSha256 ?? null,
         latestPressure: () => contextReceipts.latestPressure(),
       }),
       expiresAt,
@@ -1101,8 +1120,12 @@ export async function runCompanionDialogue(
     const outputIncomplete = err instanceof AgentOutputError && err.code === "output_truncated";
     const outputUnverified = err instanceof AgentOutputError && err.code === "unverified_quote";
     const argumentsInvalid = err instanceof AgentOutputError && err.code === "arguments_malformed";
+    // 原地重放（同一个成功调用又被原样要了一次）：agent 里没有预算上限，
+    // 所以这一类的收口必须是这句错误，而不是"步数到了"。见 companion-progress-guard.ts。
+    const noProgress = err instanceof AgentOutputError && err.code === "no_progress";
     const actionUnverified = err instanceof AgentOutputError && err.code === "action_unverified";
     const invalidArgumentsFailureText = "这一步没能执行，已停止重复尝试；已完成的操作仍然保留。";
+    const noProgressFailureText = "这一步反复要同一个操作、没有新的进展，已经停下；已完成的操作仍然保留。";
     let noteEditSaved = false;
     let savedWriteNames: string[] = [];
     if (outputUnverified) {
@@ -1125,16 +1148,16 @@ export async function runCompanionDialogue(
     await markCompanionRunFailed(
       read,
       ctx,
-      contextChanged ? err.code : policyDenied ? "AI_DATA_POLICY_DENIED" : protocolLeak ? "REPLY_FORMAT_INVALID" : actionUnverified ? "ACTION_NOT_EXECUTED" : argumentsInvalid ? "TOOL_ARGUMENTS_INVALID" : outputIncomplete ? "REPLY_LENGTH_LIMIT" : budgetExceeded ? "AGENT_BUDGET_EXCEEDED" : rateLimited ? "RATE_LIMITED" : providerRejected ? "PROVIDER_UNAVAILABLE" : "INTERNAL_ERROR",
-      !policyDenied && !protocolLeak && !budgetExceeded && !contextChanged && !outputIncomplete && !outputUnverified && !actionUnverified && !argumentsInvalid && !streamStopped && !(providerRejected && [401,402,403].includes(err.status)),
-      contextChanged ? err.message : policyDenied ? "请在 AI 数据同意页开启「允许发送到外部模型服务」后继续。" : contextOverflow ? "这次需要带入的内容太多，没法一次读完；可以按段继续。" : protocolLeak ? invalidReplyFailureText : actionUnverified ? "这次没有取得所要求操作的执行或无需变更回执，不能确认完成；已完成的其他操作仍保留。" : outputUnverified ? unverifiedQuoteFailureText : argumentsInvalid ? invalidArgumentsFailureText : outputIncomplete ? "这次答复达到长度上限，已说出的内容保留；可以接着分段讲。" : budgetExceeded
+      contextChanged ? err.code : policyDenied ? "AI_DATA_POLICY_DENIED" : protocolLeak ? "REPLY_FORMAT_INVALID" : actionUnverified ? "ACTION_NOT_EXECUTED" : argumentsInvalid ? "TOOL_ARGUMENTS_INVALID" : noProgress ? "AGENT_NO_PROGRESS" : outputIncomplete ? "REPLY_LENGTH_LIMIT" : budgetExceeded ? "AGENT_BUDGET_EXCEEDED" : rateLimited ? "RATE_LIMITED" : providerRejected ? "PROVIDER_UNAVAILABLE" : "INTERNAL_ERROR",
+      !policyDenied && !protocolLeak && !budgetExceeded && !contextChanged && !outputIncomplete && !outputUnverified && !actionUnverified && !argumentsInvalid && !noProgress && !streamStopped && !(providerRejected && [401,402,403].includes(err.status)),
+      contextChanged ? err.message : policyDenied ? "请在 AI 数据同意页开启「允许发送到外部模型服务」后继续。" : contextOverflow ? "这次需要带入的内容太多，没法一次读完；可以按段继续。" : protocolLeak ? invalidReplyFailureText : actionUnverified ? "这次没有取得所要求操作的执行或无需变更回执，不能确认完成；已完成的其他操作仍保留。" : outputUnverified ? unverifiedQuoteFailureText : argumentsInvalid ? invalidArgumentsFailureText : noProgress ? noProgressFailureText : outputIncomplete ? "这次答复达到长度上限，已说出的内容保留；可以接着分段讲。" : budgetExceeded
         ? "companion agent budget exceeded"
         : streamStopped
           ? `companion stream stopped: ${streamingDelivery.failureReason() ?? "delivery pipeline"}`.slice(0, 240)
           : rateLimited ? "模型服务暂时繁忙，请稍后重试；已经完成的操作仍保留。"
             : providerRejected ? "模型服务暂时无法完成这次请求，已经完成的操作仍保留。"
               : "companion agent execution failed",
-      policyDenied ? "state" : protocolLeak ? "output" : streamStopped ? "delivery" : outputUnverified || actionUnverified || argumentsInvalid ? "output" : budgetExceeded || outputIncomplete || contextChanged ? "execution" : "transport",
+      policyDenied ? "state" : protocolLeak ? "output" : streamStopped ? "delivery" : outputUnverified || actionUnverified || argumentsInvalid || noProgress ? "output" : budgetExceeded || outputIncomplete || contextChanged ? "execution" : "transport",
     );
     // 她已经说出来的那半句不能随失败一起消失（2026-09-19）。
     await persistFailedPartial({
@@ -1143,7 +1166,7 @@ export async function runCompanionDialogue(
       conversationId: read.conversationId,
       runId: read.runId,
       deliveredText: streamingDelivery.deliveredText(),
-      failureText: protocolLeak ? invalidReplyFailureText : outputUnverified ? unverifiedQuoteFailureText : argumentsInvalid ? invalidArgumentsFailureText : undefined,
+      failureText: protocolLeak ? invalidReplyFailureText : outputUnverified ? unverifiedQuoteFailureText : argumentsInvalid ? invalidArgumentsFailureText : noProgress ? noProgressFailureText : undefined,
     });
     throw err;
   } finally {

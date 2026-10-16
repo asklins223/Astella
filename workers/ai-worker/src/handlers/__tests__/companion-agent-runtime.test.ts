@@ -1474,4 +1474,15 @@ test("工具面只由权限档与数据外发政策装配，不再被本轮判�
     + "要不要真写由 riskClass、确认门与执行侧复核决定");
   assert.match(source, /availableDefinitions,\n\s+dialogueHistory,/,
     "运行时不再把那份目录交给装配点 —— 工具面改由别处自己拼了");
+  // 2026-10-16：宿主上下文那几条规则（批注 / 整篇正文 / 主动轮）从内联名字表
+  // 搬进了 shared 的声明层。装配那一句只许调那一层，不许再按能力名现场判。
+  assert.match(source, /companionCapabilityOfferedInHostContext\(definition,/,
+    "成员资格必须走声明的宿主上下文判据");
+  const assemblyStart = source.indexOf("const availableDefinitions = resolveAllCompanionAgentTools(");
+  assert.ok(assemblyStart > 0, "找不到工具面装配那一句");
+  const surfaceExpression = source.slice(assemblyStart, assemblyStart + 400);
+  for (const name of ["companion_write_annotation", "companion_publish_utterance", "companion_finish_participation"]) {
+    assert.ok(!surfaceExpression.includes(`definition.name === "${name}"`),
+      `装配那一句里又出现了按能力名写的成员资格分支（${name}）—— 那是声明层该管的事`);
+  }
 });

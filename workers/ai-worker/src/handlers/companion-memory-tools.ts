@@ -39,6 +39,7 @@ import {
   accountPreferenceWriteDecision,
 } from "@astella/shared/companion-memory-scope";
 import { toTextArrayLiteral } from "@astella/shared/pg-text-array";
+import { companionMemoryRecycleBinDays } from "@astella/shared/companion-memory-desktop-contracts";
 import { withWorkerWorkspaceTransaction } from "../db.ts";
 import { logger } from "../lib/logger.ts";
 import { createEmbeddingProvider } from "../lib/ai-provider.ts";
@@ -830,6 +831,14 @@ export async function executeCompanionMemoryTool(
     case "companion_forget_memory": {
       // 软删（deleted_at）：星图/记忆中心的既有语义就是按 deleted_at 过滤，
       // 硬删会把历史一起抹掉。删除前确认，落库时再核对用户看到的版本。
+      //
+      // 这里必须和 API 那条路径写下**同一组状态**（`memory-service.deleteMemory`）：
+      //   ① `purge_after` —— 到期清理要求 `deleted_at` 与 `purge_after` 都非空；
+      //      只写 `deleted_at` 的墓碑永远进不了回收区（2026-10-16 审出的分歧，
+      //      API 那侧的注释也为同一个坑写过一次）。
+      //   ② 发现簿遮蔽 —— 用户收藏过这条记忆时，簿子里会留一段点不回去的引文（40 §7）。
+      //   ③ 整理结论作废 —— `surface` 是这条记忆的转述，最长会被注入 7 天。
+      // 少了这几步不会报错，只是"她看起来忘了，但旧话还从别处回来"。
       const memoryId = String(args.memoryId);
       const forgotten = await withWorkerWorkspaceTransaction(
         { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
@@ -841,7 +850,9 @@ export async function executeCompanionMemoryTool(
           `);
           const rows = await tx.execute<{ kind: string; sourceEventId: string | null; content: string }>(sql`
             UPDATE assistant_memory_items
-               SET deleted_at = now(), updated_at = now()
+               SET deleted_at = now(),
+                   purge_after = now() + ${companionMemoryRecycleBinDays}::int * interval '1 day',
+                   updated_at = now()
              WHERE id = ${memoryId}::uuid
                AND workspace_id = ${event.ctx.workspaceId}
                AND user_id = ${event.read.userId}
@@ -858,6 +869,24 @@ export async function executeCompanionMemoryTool(
               ON CONFLICT (user_id, kind, source_event_id) DO NOTHING
             `);
           }
+          // 40 §7：撤权或删除后，发现簿里的来源引文同样遮蔽（不删行——"曾经收藏过"这件事
+          // 本身要留着）。worker 对这张表**一个权限都没有**（roles.sql 的 Worker privilege
+          // matrix 就是这么声明的），所以和下面那条 delivery 收尾一样，走一支带
+          // owner/workspace/memory 三重约束的 SECURITY DEFINER 函数（0441）。
+          await tx.execute(sql`
+            SELECT public.astella_mask_companion_memory_discovery_entries(
+              ${event.ctx.workspaceId}::uuid,
+              ${event.read.userId}::uuid,
+              ${memoryId}::uuid
+            )
+          `);
+          // 整理结论是这条记忆的转述：正文删了而它留着，等于被忘掉的话还在进 prompt。
+          await tx.execute(sql`
+            UPDATE companion_memory_organization_state
+               SET surface = NULL, surface_at = NULL, updated_at = now()
+             WHERE workspace_id = ${event.ctx.workspaceId}
+               AND user_id = ${event.read.userId}
+          `);
           await tx.execute(sql`
             SELECT public.astella_close_companion_memory_delivery(
               ${event.ctx.workspaceId}::uuid,

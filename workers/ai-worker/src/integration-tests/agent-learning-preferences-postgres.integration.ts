@@ -36,8 +36,10 @@ const { withWorkspaceTransaction, closeDatabase } = await import("../../../../ap
 const {
   upsertMemory, confirmMemory, correctMemory,
   dismissMemory, archiveMemory, restoreMemory, deleteMemory, restoreDeletedMemory,
-  MEMORY_RECYCLE_BIN_DAYS,
 } = await import("../../../../apps/api/src/modules/companion-conversation/memory/memory-service.ts");
+// 窗口数值的唯一声明在 shared：API 与 worker 两条删除路径都引用它，不各抄一份。
+const { companionMemoryRecycleBinDays: MEMORY_RECYCLE_BIN_DAYS } = await import(
+  "@astella/shared/companion-memory-desktop-contracts");
 
 const workerDb = drizzle(workerClient);
 const workerPorts: AgentStorePorts = {

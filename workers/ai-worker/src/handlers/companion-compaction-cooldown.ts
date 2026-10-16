@@ -39,17 +39,28 @@ export interface CompactionCooldownContext {
  * 而不是折之前有多少。用折前的数字记，等于每次都记「没变小」。
  */
 export function createCompactionCooldownPorts(context: CompactionCooldownContext): CompactionCooldownPorts {
+  /**
+   * 键 = 会话 + **来源版本** + 模型路由。
+   *
+   * 来源版本必须区分折叠的是哪一份来源：一次请求里先后可能折两类——
+   * 历史摘要覆盖（`history_exchanges`）与工具工作状态（`active_tool_rounds`）。
+   * 两类共用一把键时，后一次会读到前一次刚记下的冷却（60 秒）并直接判
+   * `within_cooldown`，于是"这一轮本来折得动"变成 `AIContextOverflowError`
+   * （2026-10-16 实库复现：latest-history-read 模式）。种类由折叠侧在每次有界压缩
+   * 开始前写入 `foldSourceKind`（只有它知道这一次要折哪一份）。
+   */
   const keyFor = (): CompactionStateKey | null => {
     const pressure = context.latestPressure();
     if (!pressure) return null;
     return {
       conversationId: context.conversationId,
-      sourceHash: context.sourceHash() ?? `pressure:${pressure.triggerTokens}`,
+      sourceHash: `${context.sourceHash() ?? `pressure:${pressure.triggerTokens}`}:${ports.foldSourceKind ?? "unknown"}`,
       providerId: pressure.providerId,
       modelId: pressure.modelId,
     };
   };
-  return {
+  const ports: CompactionCooldownPorts = {
+    foldSourceKind: null,
     async decide() {
       const key = keyFor();
       if (!key) return { allowed: true, reason: "not_recorded", retryAfterMs: null };
@@ -91,4 +102,5 @@ export function createCompactionCooldownPorts(context: CompactionCooldownContext
       }
     },
   };
+  return ports;
 }

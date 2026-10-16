@@ -1,9 +1,11 @@
 import type { CompanionAgentBudgetSnapshotV1 } from "@astella/shared";
 import { resolveCompanionAgentBudget } from "../lib/handler-timeout-config.ts";
 
-/** A run ends on completion/cancellation/deadline, not a guessed tool count.
- * Optional operator ceilings are explicit and recorded; historical numeric
- * receipts remain readable without imposing those old ceilings on new runs. */
+/** A run ends on completion, on the wall-clock slice, or on a real error — never
+ * because a count was reached. 2026-10-16: the companion agent enforces no count
+ * ceiling at all, so these optional operator numbers are **recorded** in the run
+ * receipt for diagnostics and are not consulted by the loop; historical numeric
+ * receipts stay readable. */
 export function companionExecutionPolicy(env: NodeJS.ProcessEnv = process.env): CompanionAgentBudgetSnapshotV1 {
   const limit = (key: string): number | null => {
     const value = env[key]?.trim();

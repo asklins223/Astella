@@ -57,7 +57,7 @@ import {
 } from "./companion-tool-result.ts";
 
 export type AgentMessage = AgentTurnRequest["messages"][number];
-import { encodeCompanionToolResult, decodeCompanionToolResult, withCompanionRecoveryTransaction, withCompanionFailureTransaction } from "./companion-runtime-checkpoint.ts";
+import { encodeCompanionToolResult, decodeCompanionToolResult, withCompanionReceiptTransaction, withCompanionRecoveryTransaction, withCompanionFailureTransaction } from "./companion-runtime-checkpoint.ts";
 import { CompanionContextChangedError } from "../lib/non-retryable-errors.ts";
 
 /** SSE contract bounds for provider-supplied tool-call identity. */
@@ -389,8 +389,14 @@ export async function updateToolCall(
   toolCallId: string,
   patch: { status: string; proposalId?: string; resultRef?: string; safeSummary?: string; resultPayload?: AgentToolExecutionResult },
 ): Promise<boolean> {
-  const write = ["failed", "outcome_unknown", "blocked", "not_executed", "unavailable"].includes(patch.status)
-    ? withCompanionFailureTransaction : withCompanionRecoveryTransaction;
+  // 终态回执落的是"已经发生的事实"（**含成功的工具回执**），走事实回执事务：
+  // 仍挡被替换的 job／租约／代际／账号纪元，但不再重新断言运行开始时冻结的上下文。
+  // 成功的回执也必须这样，否则会自锁：她改自己的记录（如 companion_write_self_note）
+  // 之后当前版本天然不同于冻结时的 revision，而"本轮自己有成功回执"那条豁免要读的
+  // 正是这个事务即将写入的 status='succeeded'（断言跑在 UPDATE 之前）。
+  // `executing` 是**在工具跑之前**写的，那时上下文还没被这次调用改变，照旧走恢复事务。
+  const terminal = ["succeeded", "failed", "outcome_unknown", "blocked", "not_executed", "unavailable"].includes(patch.status);
+  const write = terminal ? withCompanionReceiptTransaction : withCompanionRecoveryTransaction;
   return write(event,
     async (tx) => {
       const updated = await tx.execute<{ tool_call_id: string; proposal_id: string | null }>(sql`
@@ -665,7 +671,9 @@ export async function loadContinuation(
     row.result_safe_summary = run.kind === "success" ? run.execution.safeSummary : run.safeSummary;
     row.result_ref = run.kind === "success" ? run.execution.resultRef ?? null : null;
     if (run.kind === "success") execution = run.execution;
-    const finish = run.kind === "failure" ? withCompanionFailureTransaction : withCompanionRecoveryTransaction;
+    // 确认落地之后的收尾同样是"事实回执"：成功那一支不再重新断言冻结上下文
+    // （理由见 updateToolCall；确认的写已经发生，回执必须落得下来）。
+    const finish = run.kind === "failure" ? withCompanionFailureTransaction : withCompanionReceiptTransaction;
     await finish(event, async tx => {
       await tx.execute(sql`UPDATE companion_agent_steps SET status=${run.kind === "success" ? "succeeded" : "failed"},finished_at=now()
         WHERE id=${row.step_id}::uuid AND status='waiting'`);

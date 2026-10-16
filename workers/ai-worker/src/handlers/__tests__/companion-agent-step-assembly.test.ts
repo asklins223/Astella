@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { assembleCompanionStepRequest, companionStepPolicyText, companionStepToolSurface, companionWebSearchAllowedForStep } from "../companion-agent-step-assembly.ts";
 import { companionStepOutputCeiling } from "../companion-dialogue-content.ts";
@@ -104,4 +105,31 @@ test("现算的请求把注意力数据转义进系统提示，输出额度只�
   assert.match(assembled.systemPrompt, /执行政策\n讲解复核/);
   assert.match(assembled.systemPrompt, /current_turn_interpretation_data/);
   assert.ok(!assembled.systemPrompt.includes("<script>"), "分类数据里的尖括号必须转义，不能成为提示结构");
+});
+
+/**
+ * 调用侧那一格：政策文本按「这一步真的发下去几件工具」选分支，不是按权限档算出来的全量清单。
+ *
+ * 2026-10-16 审出来的接线错误：终答步（`finalAnswerOnly`）的 `tools` 已经是空的，而运行时
+ * 传的是 `toolDefinitions.length`，于是 system 里留着「只能调用工具列表中的工具」，工具列表
+ * 却是空的；`companionStepRuntimePolicy` 里那段「本轮没有可调用工具，只依据当前已提供的材料
+ * 回答」也永远不可达。政策函数自己的单测全绿——它只看得见传进来的数字。
+ */
+test("政策文本按这一步真的发下去的工具面判空，不按权限档的全量清单判", () => {
+  const source = readFileSync(new URL("../companion-agent-runtime.ts", import.meta.url), "utf8");
+  const start = source.indexOf("companionStepPolicyText({");
+  assert.notEqual(start, -1, "找不到每步政策的接线点");
+  const wiring = source.slice(start, start + 700);
+  const toolCount = wiring.match(/toolCount:\s*([^,\n]+)/)?.[1]?.trim() ?? "";
+  assert.match(toolCount, /toolsOfferedThisStep\.length/,
+    "要按这一步真的发下去的工具面判空");
+  assert.doesNotMatch(toolCount, /toolDefinitions\.length/,
+    "全量清单在终答步不为 0，用它会让「本轮没有工具」那段永远不可达");
+  // 终答步的组合必须自洽：空工具面 + 「不再提供工具」的那句，且不再是工具用法政策。
+  const finalStep = companionStepPolicyText({ permissionLevel: "full", toolCount: 0, stepBudget: 4,
+    finalAnswerOnly: true, attentionIntent: "question", offeredToolNames: [],
+    writingAnnotation: false, completeNoteReply: false });
+  assert.match(finalStep, /本轮没有可调用工具/);
+  assert.match(finalStep, /这是最后一步：不再提供工具/);
+  assert.doesNotMatch(finalStep, /只能调用工具列表中的工具/);
 });

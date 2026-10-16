@@ -658,7 +658,11 @@ test("a routine opening yields to the account's declared cadence while a greetin
   await prepare(f);
   assert.equal((await admin`SELECT 1 FROM companion_turn_runs WHERE user_id=${f.userId}`).length, 1,
     "到页面的搭话是新起话题，适中档 30 分钟内刚说过就不再起一整轮");
-  // 招呼是用户先要过的相处方式，不进这条节奏。
+  // 招呼是用户先要过的相处方式，不进**档位节奏**（适中档 30 分钟）。
+  // 2026-10-16 用户口径（全局主动不用节流太严重）新增了一条 2 分钟的跨话题地板，
+  // 它也管触发式话题；所以这里把上一次开口挪到地板窗口之外，验的仍然是
+  // "招呼不受档位节奏管"这件事本身。
+  await admin`UPDATE assistant_deliveries SET created_at=now()-interval '10 minutes' WHERE user_id=${f.userId}`;
   await observe(f); await prepare(f);
   assert.equal((await admin`SELECT 1 FROM companion_turn_runs WHERE user_id=${f.userId}`).length, 2);
 });
@@ -712,7 +716,9 @@ test("a quiet chance below the level's threshold is not an occasion, and silence
   await prepare(f);
   assert.equal(await runs(), 3, "刚说过一句之后，适中档 30 分钟内的下一段安静不再起新话题");
 
-  // 招呼仍然不进这条闸：用户先要过的东西不受她自己说话的节奏管。
+  // 招呼仍然不进**档位**这条闸：用户先要过的东西不受她自己说话的节奏管。
+  // 它进的是 2026-10-16 新增的那条 2 分钟跨话题地板，所以先把上一次开口挪出窗口。
+  await admin`UPDATE assistant_deliveries SET created_at=now()-interval '10 minutes' WHERE user_id=${f.userId}`;
   await observe(f); await prepare(f);
   assert.equal((await admin`SELECT 1 FROM companion_turn_runs WHERE user_id=${f.userId} AND input_source->>'topic'='app.started'`).length, 1);
 });

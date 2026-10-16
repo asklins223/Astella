@@ -113,6 +113,34 @@ export function evaluateTriggeredPush(input: {
   return { allow: true, reasonCode: "allowed" };
 }
 
+/**
+ * 跨话题的主动地板（2026-10-16 用户决定：全局主动**不用节流太严重**）。
+ *
+ * 上面的 cadence 只管 routine 三类话题，六类触发式与两条自排期完全不进频率限制；
+ * 于是"她刚说完一句，紧接着又开口"在**跨话题**上没有任何约束（例如学习完成模板
+ * 紧跟着一条招呼）。这条地板补的正是这一格：任意两次主动开口之间至少隔这么久，
+ * 不区分 routine / triggered，也不区分是 API 的模板 nudge 还是 worker 的她自己开口。
+ *
+ * 为什么是 2 分钟、只有这一档：用户口径是"不用节流太严重"。它比最松的一档 cadence
+ * （active 10 分钟）小一个数量级，正常使用永远碰不到；只有"同一两分钟内连着开口"
+ * 这种真正打扰的情形会被它挡住。触发式仍然**不继承** routine 的 cadence。
+ *
+ * 约定提醒（`reminder:`）不在这条地板的读数里：那是用户自己约的事，40 §8.2 说停用
+ * 也不会取消已授权安排；提醒由 `astella_fire_due_companion_reminders` 直接入队，
+ * 本来就不经过这道判定。
+ */
+export const COMPANION_GLOBAL_PROACTIVE_FLOOR_MS = 2 * 60 * 1000;
+
+/**
+ * 跨话题地板判定，API 与 worker 共用这一条。
+ *
+ * `msSinceAnyCue` 是距上一次主动开口的毫秒差；从没开口过时为 null（放行）。
+ * 读数失败也必须按 null 处理：这条闸只该少挡，不该因为读不到就把她静音。
+ */
+export function globalProactiveFloorBlocked(input: { msSinceAnyCue: number | null }): boolean {
+  return input.msSinceAnyCue !== null && input.msSinceAnyCue < COMPANION_GLOBAL_PROACTIVE_FLOOR_MS;
+}
+
 // ─── 静默时段（唯一的实现）────────────────────────────────────────────────
 //
 // 这里曾有两份拷贝，分别在 API 与 worker。**它们已经分叉了**，而且是往危险的方向：

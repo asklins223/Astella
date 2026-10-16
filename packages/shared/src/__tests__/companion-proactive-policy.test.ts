@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  COMPANION_GLOBAL_PROACTIVE_FLOOR_MS,
   COMPANION_QUIET_PRESENCE_MIN_MS,
   evaluateTriggeredPush,
+  globalProactiveFloorBlocked,
   isWithinQuietHours,
   PROACTIVE_CADENCE_MS,
   proactiveCadenceMs,
@@ -46,4 +48,16 @@ test("静默时段按本地钟面处理，坏配置按静默处理", () => {
   assert.equal(isWithinQuietHours({ startLocal: "22:00", endLocal: "07:00", timezone: "Asia/Shanghai" }, new Date("2026-09-18T01:30:00Z")), false);
   assert.equal(isWithinQuietHours({ startLocal: "25:00", endLocal: "07:00", timezone: "UTC" }, utcAfternoon), true);
   assert.equal(isWithinQuietHours({ startLocal: "22:00", endLocal: "07:00", timezone: "Not/AZone" }, utcAfternoon), true);
+});
+
+test("跨话题地板：2 分钟、轻、且读不出来时放行（2026-10-16 用户口径：不用节流太严重）", () => {
+  assert.equal(COMPANION_GLOBAL_PROACTIVE_FLOOR_MS, 120_000);
+  // 读不出来/从没开过口 = 放行。地板只该少挡一次，不该因为一次读失败把她静音。
+  assert.equal(globalProactiveFloorBlocked({ msSinceAnyCue: null }), false);
+  assert.equal(globalProactiveFloorBlocked({ msSinceAnyCue: 119_999 }), true);
+  assert.equal(globalProactiveFloorBlocked({ msSinceAnyCue: 120_000 }), false);
+  // 它必须**明显轻于**最松的一档档位间隔，否则"全局主动"就变成了新的打扰限制，
+  // 与 2026-09-21 的"触发式不进频率限制"直接冲突。
+  assert.ok(COMPANION_GLOBAL_PROACTIVE_FLOOR_MS * 4 <= proactiveCadenceMs("active"),
+    "地板要比最松的一档 cadence 小得多（当前是它的 1/5）");
 });

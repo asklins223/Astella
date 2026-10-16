@@ -174,6 +174,14 @@ export interface CompactionCooldownPorts {
    * 端口自己从最近一次压力判定里取（那是重发真正发生过的读数）。
    */
   record(input: { at: Date }): Promise<void>;
+  /**
+   * 这一次折叠针对的**来源种类**（`history_exchanges` / `active_tool_rounds`）。
+   *
+   * 由折叠侧在每次有界压缩开始前写入，冷却键按它区分来源——两类折叠是两份不同输入，
+   * 共用一把键会让后一次继承前一次的冷却，在同一轮里就被判 `within_cooldown`，
+   * 于是"这一轮本来折得动"直接变成 `AIContextOverflowError`（2026-10-16 实库复现）。
+   */
+  foldSourceKind?: "history_exchanges" | "active_tool_rounds" | null;
 }
 
 export interface BoundedCompactionInput<T> {
@@ -288,12 +296,17 @@ export function boundedStepSender(input: {
   consumeAttempt: () => void;
   onCompacted: (receipt: CompactionFoldReceipt, messages: readonly ReplayMessage[], source?: FoldedReplay["source"]) => void | Promise<void>;
   cooldown?: CompactionCooldownPorts;
+  /** 这一次要折的是哪一份来源；写进冷却键（见 `CompactionCooldownPorts.foldSourceKind`）。 */
+  sourceKind?: () => "history_exchanges" | "active_tool_rounds";
 }) {
   return <TRequest extends { messages: readonly ReplayMessage[] }>(
     request: TRequest,
     send: (request: TRequest) => Promise<AgentTurnResult>,
   ): Promise<AgentTurnResult> => {
     input.beginRequest?.(request);
+    // 冷却判定与"折完记账"都发生在这一次有界压缩里，所以种类在这里写一次就够：
+    // 它同时是"这次要折的"和"这次折了的"那一份来源。
+    if (input.cooldown) input.cooldown.foldSourceKind = input.sourceKind?.() ?? null;
     const restored = input.restore?.(request.messages);
     const effectiveRequest = restored ? applyCompactedMessages(request, restored.messages) : request;
     if (restored) input.beginRequest?.(effectiveRequest);

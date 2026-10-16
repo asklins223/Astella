@@ -1048,6 +1048,11 @@ export const companionPublicErrorCodeV1Schema = z.enum([
   "REPLY_LENGTH_LIMIT",
   "REPLY_FORMAT_INVALID",
   "AGENT_BUDGET_EXCEEDED",
+  // 2026-10-16：agent 里取消了全部预算上限，于是"她转不出来"必须由事实收口——
+  // 同一个工具调用（工具名 + 参数）拿到成功回执后又被原样要了第二次
+  // （判据 `workers/ai-worker/src/handlers/companion-progress-guard.ts`）。
+  // 列进枚举是硬要求：不在枚举里的事件帧会被桌面主进程整帧丢弃。
+  "AGENT_NO_PROGRESS",
   "AI_DATA_POLICY_DENIED",
   // 2026-08-12+（15a-E）：学习快捷方式错误码细分——context 变化/无进行中会话/无候选
   "CONTEXT_STALE",

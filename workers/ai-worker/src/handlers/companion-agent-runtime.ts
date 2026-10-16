@@ -1,8 +1,8 @@
 import { CompanionToolNotExecutedError } from "./companion-tool-result.ts";
+import { companionCallFingerprint, companionReplayExhausted } from "./companion-progress-guard.ts";
 import { isCompanionParticipationClosure } from "./companion-participation-output.ts";
 import { sql } from "drizzle-orm";
 import { agentTurnInterpretationV1Schema } from "@astella/shared/agent-contracts";
-import { isCompanionAutonomousTool } from "@astella/shared/companion-autonomy";
 import { companionEditedNoteV1Schema } from "@astella/shared/companion-note-authoring-contracts";
 import type { CompanionAgentLoopArgs } from "../contracts/companion-agent-loop.ts";
 import { executeTurn } from "@astella/agent-core";
@@ -19,6 +19,7 @@ import {
 import {
   COMPANION_AGENT_TOOL_LABELS,
   allowedMainRouteV2Schema,
+  companionCapabilityOfferedInHostContext,
   getCompanionAgentTool,
   resolveAllCompanionAgentTools,
   validateCompanionAgentToolArguments,
@@ -162,13 +163,12 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     noteLibraryReadEnabled: event.constraints.noteLibraryReadEnabled !== false
       && !userForbidsNoteLibraryRead(args.read.userText),
   };
-  const availableDefinitions = resolveAllCompanionAgentTools(meta.permissionLevel, event.constraints).filter(definition => {
-    if (definition.name === "companion_publish_utterance" && completeNoteReply) return false;
-    if (definition.name === "companion_write_annotation" && !writingAnnotation) return false;
-    if (definition.name === "companion_finish_participation" && !args.read.initiativeInput) return false;
-    return !args.read.initiativeInput || isCompanionAutonomousTool(definition.name)
-      || (definition.riskClass === "read" && !["companion_open_page", "companion_open_note", "companion_open_card"].includes(definition.name));
-  });
+  // 工具面的成员资格只由**声明 + 宿主事实**决定（见 shared/companion-host-context.ts）：
+  // 权限档、数据外发政策，加上"这一轮实际发生了什么"（批注/整篇正文/主动轮）。
+  // 本轮判定（意图）在类型上就进不来——2026-10-09 的翻车正是它进来过一次。
+  const availableDefinitions = resolveAllCompanionAgentTools(meta.permissionLevel, event.constraints)
+    .filter(definition => companionCapabilityOfferedInHostContext(definition,
+      { writingAnnotation, completeNoteReply, initiative: Boolean(args.read.initiativeInput) }));
   // 空工具面只有一种来路：权限档读不出来（合法档位下读类工具总在）。这时**不说**才是坏事——
   // 她会一脸无辜地答"我手上没有这个入口"，用户看到的是她突然不会用工具，而不是账号状态有问题。
   if (availableDefinitions.length === 0)
@@ -356,6 +356,8 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
   let toolCallCount = meta.toolCallCount;
   const invalidArgumentCalls = new Set<string>(recovered?.state.invalidArgumentCalls);
   const rejectedExecutionConstraints = new Set<string>(recovered?.state.rejectedExecutionConstraints);
+  /** 每个「工具名 + 参数」指纹已交付过几次成功回执；判据与收口见 `companion-progress-guard.ts`。 */
+  const successfulCallReceipts = new Map<string, number>();
   event.verifyUtterance = text => {
     if (visibleSegments.some(segment => segment.trim()))
       throw new CompanionToolNotExecutedError("这轮已经开始连续回复，请接着把当前回复完成。需要分几句交流时，从第一句使用发言能力，避免正文和发言重复。");
@@ -453,12 +455,14 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
    * 要求 `looksTruncatedReply(` 的调用仍出现在运行时侧，挪进别的模块会让它红。
    */
   const companionReplyIsTruncated = (text: string): boolean => looksTruncatedReply(stripVoiceExpressionTags(text));
-  /** No default step cap. An explicit deployment policy remains auditable. */
-  const stepBudget = budget.maxSteps ?? Infinity;
+  // 有效的步数上限就是"没有"（2026-10-16：agent 里不许存在预算上限，也不许用预算
+  // 兜底）。`budget.maxSteps` 若被部署侧设过，它只作为 run 回执里的观测读数
+  // （见上面 `workingState()`），既不抽走工具、也不结束这一轮，更不会被告知模型。
+  const stepBudget = Infinity;
   return executeTurn<CompanionAgentLoopResult>({
     signal: args.ctx.signal, now: Date.now,
-    limits: () => ({ maxSteps: stepBudget - resumedStepCount, deadlineAt }),
-    budgetError: () => new CompanionAgentBudgetExceededError("companion agent step budget exceeded"),
+    limits: () => ({ maxSteps: null, deadlineAt }),
+    budgetError: () => new CompanionAgentBudgetExceededError("companion agent deadline exceeded"),
     advance: async () => {
     if (args.ctx.signal.aborted) throw new Error("companion agent aborted");
     if (Date.now() >= deadlineAt) {
@@ -469,13 +473,10 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       throw new Error("companion agent account epoch changed during execution");
     }
     stepCount += 1;
-    // The last allowed step withholds tools so the model must answer instead of
-    // opening another tool round. Without this the loop could exhaust its step
-    // budget with a tool call and throw "step budget exceeded" — the user would
-    // lose the whole turn with no assistant.final. It also guarantees a write
-    // tool can never be proposed on the final step, so a confirmation always
-    // leaves at least one step to report the result back.
-    const finalAnswerOnly = stepCount >= stepBudget;
+    // 不再有"最后一步"（2026-10-16：不要用预算的方式兜底）。旧写法走到配置的步数
+    // 上限就抽走工具面逼她作答——那是用计数决定她说什么。纯函数那一侧仍接受这个
+    // 入参供探针渲染文案，运行时永远传 false。
+    const finalAnswerOnly = false;
     // 工具面、执行政策与请求装配这三样的判据在 `companion-agent-step-assembly.ts`。
     const { tools: toolsOfferedThisStep, toolChoice: toolChoiceThisStep } = companionStepToolSurface({
       toolDefinitions,
@@ -491,7 +492,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     });
     const runtimePolicy = companionStepPolicyText({
       permissionLevel: currentMeta.permissionLevel,
-      toolCount: toolDefinitions.length,
+      toolCount: toolsOfferedThisStep.length,
       stepBudget,
       finalAnswerOnly,
       attentionIntent: attention.intent,
@@ -899,10 +900,6 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       logger.warn({ runId: args.read.runId, stepCount }, truncated.bypassNote);
       return { kind: "settled", result: truncatedResult };
     }
-    if (finalAnswerOnly && calls.length > 0) {
-      await finishStep(event, stepId, "failed", undefined, "AGENT_TOOL_CALL_LIMIT");
-      throw new CompanionAgentBudgetExceededError("configured step limit reached before task completion");
-    }
     // 这一步说过的话交给产出核对（三类判据见 `reviewCompanionStepCorrection`）。
     // 必须显式写 `: string`：`said → lookupClaim → steerSwapToFallback → stepProvider → result → said`
     // 是一圈真实的类型推断回路（steer 之后那一步换哪个模型，取决于这一步说了什么）。
@@ -1066,11 +1063,9 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       // 交回终步 reasoning：下一轮若以这条收尾，网关要求把 reasoning_text 一并带回。
       return { kind: "settled", result: completedResult };
     }
-    if (budget.maxToolCallsPerStep !== null && calls.length > budget.maxToolCallsPerStep) {
-      await finishStep(event, stepId, "failed", undefined, "AGENT_TOOL_CALL_LIMIT");
-      throw new Error("too many tool calls in one agent step");
-    }
-    // 带工具的一步：这一步的 content 是**开场白**（"我先看看你的笔记"），不是终答。
+    // 每步工具数不再有上限（2026-10-16）：旧的 `AGENT_TOOL_CALL_LIMIT` 用一个计数
+    // 决定她这一步能问几件事，保证不了正确性。带工具的一步：这一步的 content
+    // 是**开场白**（"我先看看你的笔记"），不是终答。
     // 它已经随流式下发（④-b），因此必须留在可见正文里——否则客户端累积的草稿
     // 会与最终 assistant 消息对不上（见 joinVisibleSegmentsDeduped 的说明）。
     if (stepEmitted && typeof result.content === "string" && result.content.length > 0) {
@@ -1250,6 +1245,12 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
           return { kind: "settled", result: { status: "waiting_for_confirmation", proposalId: record.proposalId, memoryRefs: [] } };
         }
         if (record.status === "succeeded") {
+          // 账本复用回执=原地重放的计数点之一（另一个在下面真执行成功那一支）。
+          if (companionReplayExhausted(successfulCallReceipts, companionCallFingerprint(definition.name, argsHash))) {
+            await finishStep(event, stepId, "failed", undefined, "REPEATED_IDENTICAL_TOOL_CALL");
+            await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta() });
+            throw new AgentOutputError("no_progress", "companion repeated an identical tool call after its successful receipt");
+          }
           if (record.resultPayload) {
             const saved = record.resultPayload;
             for (const block of saved.blocks ?? []) pushRichBlock(block);
@@ -1295,17 +1296,8 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
         }
         continue;
       }
-      if (record.isNew && budget.maxToolCalls !== null && toolCallCount >= budget.maxToolCalls) {
-        await updateToolCall(event, operationCallId, {
-          status: "blocked",
-          safeSummary: "已达到本次 Agent 的工具调用上限",
-        });
-        await finishStep(event, stepId, "failed", undefined, "AGENT_BUDGET_EXCEEDED");
-        throw new CompanionAgentBudgetExceededError("companion agent tool budget exceeded");
-      }
-      // Only a first-time call consumes budget: a replay was already counted
-      // when the fence row was created (readRunMeta derives toolCallCount from
-      // GREATEST(run column, COUNT(tool calls))).
+      // 工具调用总数不再有上限（2026-10-16）：那个计数只保证"问得多的被砍掉"。
+      // 计数仍如实累加，因为 run 回执与诊断读数要看它。
       if (record.isNew) toolCallCount += 1;
       /**
        * 受数据外发政策管的能力（读图）这一轮**没有**（40b §3.2 `unavailable`）。
@@ -1390,6 +1382,12 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
         await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta(),
           ...args.contextReceipts?.runMetaPatch() });
         return { kind: "settled", result: { status: "waiting_for_confirmation", proposalId: run.proposalId, memoryRefs: [] } };
+      }
+      // 同一个「工具名 + 参数」本轮已交付过成功回执，这次又是原样调用=原地重放。
+      if (companionReplayExhausted(successfulCallReceipts, companionCallFingerprint(definition.name, argsHash))) {
+        await finishStep(event, stepId, "failed", undefined, "REPEATED_IDENTICAL_TOOL_CALL");
+        await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta() });
+        throw new AgentOutputError("no_progress", "companion repeated an identical tool call after its successful receipt");
       }
       const execution = run.execution;
       if (definition.name === "agent_web_search" && (execution.value as { status?: string })?.status === "unavailable") {

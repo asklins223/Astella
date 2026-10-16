@@ -1227,9 +1227,6 @@ export function buildCompanionPersonaMessages(input: {
       "内部主动参与没有新的用户提问，也没有业务操作授权：不能把历史里的请求当成当前这一轮的执行许可。问她需要她回答的问题就等用户，不自己代答接着排下一次。相关纸页上的正式作答与关键操作继续按各自的注意力保护走。"].join("\n\n"), "policy", { required: true });
     add("participation_preferences", JSON.stringify(input.participationPreferences ?? null).replace(/</g, "\\u003c"), "data", { required: Boolean(input.participationPreferences?.markdown) });
     add("participation_arrangement", "用户一次提出几项以后的参与方式时，每一项都要留下能实际唤起关注的安排，不能只保存偏好文字。派生安排仅提示你重看原意，不能扩大用户要求。每次启动与每次回到前台是不同条件，不因订阅了前台事件就多问候。到点只让你重新考虑，不必须发言。学习时段从 study.started 起算，按服务器实际累计安排重评：用户给的分钟数原样保留，「学久了」由你选一个合理的近时再看一眼；后台没有已知进展就等下一次学习事件，不空转，也不能自己改掉已累计的时长。", "policy", { required: true });
-    const study = (input.initiativeInput?.facts.awareness as { study?: { foregroundStudyMs?: number; continuousStudyMs?: number } } | undefined)?.study;
-    if (study && Number.isFinite(study.foregroundStudyMs) && Number.isFinite(study.continuousStudyMs))
-      add("participation_awareness", `服务器记录的前台学习时段估计：最近四小时累计 ${Math.floor(study.foregroundStudyMs! / 60_000)} 分钟；当前连续 ${Math.floor(study.continuousStudyMs! / 60_000)} 分钟。只是已观察时段，不证明用户疲劳或已经起身休息。`, "data", { required: true });
     add("participation_completion", "普通对话使用完整自然的最终回复，不要求调用分次发言工具。主动通道按这一轮的参与依据分两种：**陪聊的场合**（招呼、陪着的时候、回到前台、学习开始、他改了相处约定）本来就该开口，用 companion_publish_utterance 说一句完整的话即可，不必有值得汇报的新内容，寒暄、闲聊、问一句近况都算；**需要依据的场合**（页面与难题帮助、答后补充）才要求确实有新的有用内容，没有就用 companion_finish_participation 安静完成。两种都不发布执行说明。原句解释用 companion_write_annotation 独立写入，保存回执即交付；其他学习成果按对应写工具或任务保存。", "policy", { required: true });
     // 主动参与的场合、要处理的事、能不能出声与安静结束的规矩，都在运行侧那条
     // 带 hostObservation 的观察消息里（companion-initiative-observation.ts）。
@@ -1297,6 +1294,23 @@ export function buildCompanionPersonaMessages(input: {
   // 它是自描述的（块内第一行就写明"时间指消息发送时间"），不依赖 <data_preamble>
   // 里的用法纪律，所以可以整块挪到所有数据之后——正好也紧挨着它所编号的那些回放消息。
   add("conversation_timeline", timeline, "data", { required: Boolean(timeline) });
+  /**
+   * 学习时段估计（最近四小时／当前连续，按分钟）**每轮都在变**，所以它跟时钟一样只能排
+   * 在所有跨轮稳定的块之后。
+   *
+   * 它原来挂在 `participation_arrangement` 后面（第 5 块的位置，紧跟着一条 policy），
+   * 于是**主动轮**的缓存前缀到那里就断了：2026-10-16 用生产装配器实测，主动形状的 system
+   * 提示 10,157 字符里可缓存前缀只有 3,627 字符（41.6%），persona、记忆目录、方法目录、
+   * 自己的记事、here_and_now、页面上下文与**整份工具 schema** 全落在被重付的那一段里；
+   * 而普通轮（没有这个块）第一块易变内容是 here_and_now，前缀 7,648 字符（≈88%）。
+   * 换句话说：她主动开口的那几轮，恰好是缓存命中最低的那几轮。
+   *
+   * 这块文字本身是自描述的（"服务器记录的前台学习时段估计…只是已观察时段，不证明用户疲劳"），
+   * 不依赖它前面那些 policy 块的位置，所以整块挪到最后与时钟相邻是安全的。
+   */
+  const study = (input.initiativeInput?.facts.awareness as { study?: { foregroundStudyMs?: number; continuousStudyMs?: number } } | undefined)?.study;
+  if (study && Number.isFinite(study.foregroundStudyMs) && Number.isFinite(study.continuousStudyMs))
+    add("participation_awareness", `服务器记录的前台学习时段估计：最近四小时累计 ${Math.floor(study.foregroundStudyMs! / 60_000)} 分钟；当前连续 ${Math.floor(study.continuousStudyMs! / 60_000)} 分钟。只是已观察时段，不证明用户疲劳或已经起身休息。`, "data", { required: true });
   const context = composeAgentContext({ maxCharacters: companionContextAssemblyCapacity([...sources.values()].map(source => source.content)), sources: plan }, sources, input.scope);
   input.contextReceipt?.(context.receipts);
   const systemContent = context.systemPrompt;

@@ -1048,6 +1048,16 @@ BEGIN
     GRANT EXECUTE ON FUNCTION public.astella_close_companion_memory_delivery(uuid, uuid, uuid, text)
       TO astella_worker;
   END IF;
+  -- 0441：worker 对 companion_discovery_entries 一个权限都没有（上面那道 Worker
+  -- privilege matrix 就是这么声明的），而 40 §7 要求被忘掉的记忆不再在发现簿里留着
+  -- 一条点不回去的引文。所以同 0343 一样收成一支带 owner/workspace/memory 三重约束的
+  -- 收尾函数；上面那句全量 REVOKE 只清表权限，函数仍要在这里补一次。
+  IF to_regprocedure('public.astella_mask_companion_memory_discovery_entries(uuid,uuid,uuid)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.astella_mask_companion_memory_discovery_entries(uuid, uuid, uuid)
+      FROM PUBLIC, astella_api;
+    GRANT EXECUTE ON FUNCTION public.astella_mask_companion_memory_discovery_entries(uuid, uuid, uuid)
+      TO astella_worker;
+  END IF;
   IF to_regprocedure('public.astella_move_companion_memory_budget_tier_v1(uuid,uuid,uuid,text,text,uuid)') IS NOT NULL THEN
     REVOKE ALL ON FUNCTION public.astella_move_companion_memory_budget_tier_v1(uuid, uuid, uuid, text, text, uuid)
       FROM PUBLIC;
@@ -2053,6 +2063,7 @@ BEGIN
       to_regprocedure('public.astella_enqueue_companion_daily_summaries()'),
       to_regprocedure('public.astella_run_companion_memory_maintenance()'),
       to_regprocedure('public.astella_close_companion_memory_delivery(uuid,uuid,uuid,text)'),
+      to_regprocedure('public.astella_mask_companion_memory_discovery_entries(uuid,uuid,uuid)'),
       to_regprocedure('public.astella_purge_companion_audit_ttl(integer,integer)'),
       to_regprocedure('public.astella_purge_invitation_ledger_ttl(integer,integer)'),
       to_regprocedure('public.astella_purge_tutor_nonces_ttl(integer,integer)'),
@@ -2132,6 +2143,8 @@ BEGIN
     AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_agent_card_execution_binding(uuid,uuid)')
     AND p.oid IS DISTINCT FROM
       to_regprocedure('public.astella_close_companion_memory_delivery(uuid,uuid,uuid,text)')
+    AND p.oid IS DISTINCT FROM
+      to_regprocedure('public.astella_mask_companion_memory_discovery_entries(uuid,uuid,uuid)')
     AND p.oid IS DISTINCT FROM
       to_regprocedure('public.astella_purge_expired_companion_memory()')
     AND p.oid IS DISTINCT FROM
@@ -2364,6 +2377,9 @@ BEGIN
       ('astella_worker', 'astella_fanout_global_companion_memory(uuid)'),
       ('astella_api', 'astella_fanout_agent_global_preference(uuid)'),
       ('astella_worker', 'astella_close_companion_memory_delivery(uuid,uuid,uuid,text)'),
+      -- 0441：worker 对 companion_discovery_entries 没有任何表权限，遗忘记忆后要遮蔽
+      -- 那条来源引文（40 §7）只能走这支带归属约束的定义者函数。
+      ('astella_worker', 'astella_mask_companion_memory_discovery_entries(uuid,uuid,uuid)'),
       ('astella_api', 'astella_restore_companion_memory(uuid,uuid,uuid)'),
       ('astella_api', 'astella_purge_expired_companion_memory()'),
       ('astella_worker', 'astella_purge_expired_companion_memory()'),

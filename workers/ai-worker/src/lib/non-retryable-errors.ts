@@ -84,12 +84,16 @@ const HTTP_401_403_CONTEXT =
  * - `arguments_malformed`：工具调用 arguments 不是合法 JSON（不可静默降级）。
  * - `unverified_quote`：引文纠正额度用完，终答仍与已读取原文不匹配。
  * - `action_unverified`：纠正后仍未取得所要求动作的真实结果，不能交付完成声明。
+ * - `no_progress`：同一个工具调用（工具名 + 参数）拿到成功回执后又被原样要了第二次。
+ *   agent 里没有任何预算上限，所以"她转不出来"由这个事实收口，而不是由步数收口
+ *   （判据见 `handlers/companion-progress-guard.ts`）。它不是计数上限：只有**完全相同**
+ *   的调用才累计，正常推进的每一步都会换调用。
  */
 export class AgentOutputError extends Error {
-  readonly code: "output_truncated" | "arguments_malformed" | "unverified_quote" | "action_unverified" | "tool_protocol_leak";
+  readonly code: "output_truncated" | "arguments_malformed" | "unverified_quote" | "action_unverified" | "tool_protocol_leak" | "no_progress";
 
   constructor(
-    code: "output_truncated" | "arguments_malformed" | "unverified_quote" | "action_unverified" | "tool_protocol_leak",
+    code: "output_truncated" | "arguments_malformed" | "unverified_quote" | "action_unverified" | "tool_protocol_leak" | "no_progress",
     message: string,
   ) {
     super(message);

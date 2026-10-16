@@ -55,6 +55,8 @@ export function createCompanionStepCompaction(deps: CompanionStepCompactionDeps)
     ? createCompanionCompactionProgressStore({ event: deps.event, stepId: compactionStepId, request: compactionRequest,
       provider: compactionProvider, sourceKind }) : undefined;
   const sendWithBoundedCompaction = boundedStepSender({
+    // 历史摘要还没折过 ⇒ 这次折的是它；已经折过 ⇒ 这次折的是工具工作状态。
+    sourceKind: () => deps.getHistoryFoldApplied() ? "active_tool_rounds" : "history_exchanges",
     beginRequest: request => {
       compactionRequest = request as AgentTurnRequest;
       deps.contextReceipts?.beginRequest(auditHash(request));
