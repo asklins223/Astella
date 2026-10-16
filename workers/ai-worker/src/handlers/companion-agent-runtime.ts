@@ -1058,7 +1058,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
           "companion agent repeated an earlier segment in the visible reply",
         );
       }
-      const completedResult = { status: "completed" as const, text, blocks: richBlocks, memoryRefs: [],
+      const completedResult = { status: "completed" as const, text, blocks: richBlocks, memoryRefs: [], writesLanded: landedWrites,
         ...(result.reasoning && result.reasoning.length > 0 ? { reasoning: result.reasoning } : {}) };
       await finishBoundary(stepId, "succeeded", sha256Utf8V1(text), undefined, completedResult);
       await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta(),
@@ -1450,7 +1450,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     });
     if (deliveredAnnotation && calls.every(call => ["companion_write_annotation", "companion_publish_utterance"].includes(call.name))) {
       // The independent artifact is already delivered. Optional speech failure cannot turn it into another generation loop.
-      const completedResult = { status: "completed" as const, text: utterancePublished ? "" : said.trim(), blocks: richBlocks, memoryRefs: [],
+      const completedResult = { status: "completed" as const, text: utterancePublished ? "" : said.trim(), blocks: richBlocks, memoryRefs: [], writesLanded: landedWrites,
         ...(result.reasoning && result.reasoning.length > 0 ? { reasoning: result.reasoning } : {}) };
       await finishBoundary(stepId, "succeeded", auditHash(messages.slice(-calls.length)), undefined, completedResult);
       return { kind: "settled", result: completedResult };

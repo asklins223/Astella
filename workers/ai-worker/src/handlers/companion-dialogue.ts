@@ -54,6 +54,7 @@ import {
   projectCompanionVisible,
   reconcileStreamedText,
 } from "./companion-dialogue-stream.ts";
+import { companionStreamFallbackText } from "./companion-delivery-gates.ts";
 import { createCompanionThinkingDelivery } from "./companion-thinking-stream.ts";
 import { resolveRunPersonaPin } from "./companion-run-persona-pin.ts";
 import {
@@ -1194,32 +1195,57 @@ export async function runCompanionDialogue(
     }
   }
 
-  // 信任边界：流式期间每个 flush 前都已跑过增量校验（长度/泄露），这里收尾；
-  // 校验失败在此终结：已投递的稳定前缀仍在（它是最终文本的前缀），run 按失败收尾。
+  // 信任边界：流式期间每个 flush 前都已跑过增量校验（长度/泄露），这里收尾。
+  //
+  // 2026-10-16：判错之后的后果与三道产出闸收成同一形状（补正按判据、销毁按权威事实）。
+  // 本轮真落下写回执、且**已经下发给客户端的那段稳定前缀**自己站得住时，就把前缀当终答交付：
+  // 用户已经看见它了，再报一次「这次回复没能完成」只会把她做成的事抹掉——那正是
+  // run `fb2da98f` 那类事故的收尾版。只有交付管线真的断了（`delta_stream_lost`，
+  // 此时没有任何文本还发得出去）或前缀也拿不出手时，才按权威事实作废整轮。
+  const landedWrites = agentResult.writesLanded === true;
+  const alreadyDelivered = streamingDelivery.deliveredText();
+  const stablePrefix = validateCompanionOutput(alreadyDelivered);
+  // 降级只能交付**客户端已经看到的那一份**，一字不差：净化若还会剥掉字符，
+  // 存下来的正文就与气泡里的流式内容不等，`assistant.final` 与 delta 会指两种文本。
+  const deliverablePrefix = stablePrefix.ok && stablePrefix.text.length > 0
+    && stablePrefix.text === alreadyDelivered ? alreadyDelivered : "";
+  let deliveredPrefixOnly = false;
+  let finalVisibleText = "";
   const streamed = await streamingDelivery.finish();
   if (!streamed.ok) {
-    await markCompanionRunFailed(read, ctx, "INTERNAL_ERROR", false, streamed.reason, "output");
-    await persistFailedPartial({
-      workspaceId: ctx.workspaceId,
-      userId: read.userId,
-      conversationId: read.conversationId,
-      runId: read.runId,
-      deliveredText: streamingDelivery.deliveredText(),
-    });
-    throw new Error(`companion stream validation failed: ${streamed.reason}`);
+    const fallback = companionStreamFallbackText({ gate: "stream_validation", landedWrites,
+      reason: streamed.reason, deliveredPrefix: deliverablePrefix });
+    if (!fallback.deliver) {
+      await markCompanionRunFailed(read, ctx, "INTERNAL_ERROR", false, streamed.reason, "output");
+      await persistFailedPartial({
+        workspaceId: ctx.workspaceId,
+        userId: read.userId,
+        conversationId: read.conversationId,
+        runId: read.runId,
+        deliveredText: streamingDelivery.deliveredText(),
+      });
+      throw new Error(`companion stream validation failed: ${streamed.reason}`);
+    }
+    logger.warn({ runId: read.runId, reason: streamed.reason }, fallback.note);
+    finalVisibleText = fallback.text;
+    // 交付管线已经判死，尾部再也补不进去；前缀就是本轮要发的全部正文。
+    deliveredPrefixOnly = true;
   }
   // 全文校验（markdown/标签净化、信封拒绝）必须对完整文本成立；已下发的稳定前缀
-  // 必须是最终文本的前缀，否则两条路径漂移——宁可判失败，也不给客户端一个
-  // 前后不一致的回复。
-  const validated = reconcileStreamedText({
-    delivered: streamed.text,
-    validated: validateCompanionOutput(ttsRawText),
-  });
+  // 必须是最终文本的前缀，否则两条路径漂移。漂移本身仍由这里判，但**后果**走同一道闸：
+  // 有落库成果就把已经发出去的那段前缀当终答，不再因为一次判错把整轮作废。
+  const validated: { ok: true; text: string } | { ok: false; reason: string } = streamed.ok
+    ? reconcileStreamedText({
+      delivered: streamed.text,
+      validated: validateCompanionOutput(ttsRawText),
+    })
+    // 上面已经决定交付前缀，不再对账（`finalVisibleText` 就是那份前缀）。
+    : { ok: true as const, text: finalVisibleText };
   if (!validated.ok) {
     // 诊断（2026-09-19）：流式前缀与全文净化不一致时，必须能一眼看出差在哪——
     // 只记长度与首个差异点 + 两小段上下文，不整段落日志。
     if (validated.reason === "stream_full_text_diverged") {
-      const deliveredText = streamed.text;
+      const deliveredText = alreadyDelivered;
       const finalText = validateCompanionOutput(ttsRawText);
       const finalValue = finalText.ok ? finalText.text : "";
       let divergeAt = 0;
@@ -1243,21 +1269,31 @@ export async function runCompanionDialogue(
       );
     }
     const protocolLeak = validated.reason === "tool_protocol_leak";
-    await markCompanionRunFailed(read, ctx, protocolLeak ? "REPLY_FORMAT_INVALID" : "INTERNAL_ERROR", false,
-      protocolLeak ? "这次答复格式异常，已停止输出；已完成的操作仍然保留。" : validated.reason, "output");
-    await persistFailedPartial({
-      workspaceId: ctx.workspaceId,
-      userId: read.userId,
-      conversationId: read.conversationId,
-      runId: read.runId,
-      deliveredText: streamingDelivery.deliveredText(),
-    });
-    if (protocolLeak) throw new AgentOutputError("tool_protocol_leak", "companion returned native tool syntax as prose");
-    throw new Error(`companion output validation failed: ${validated.reason}`);
+    const fallback = companionStreamFallbackText({ gate: "stream_reconcile", landedWrites,
+      reason: validated.reason, deliveredPrefix: deliverablePrefix });
+    if (fallback.deliver) {
+      logger.warn({ runId: read.runId, reason: validated.reason }, fallback.note);
+      finalVisibleText = fallback.text;
+      // 被拒的那段原文不能再驱动语音：它正是这两道闸拦住的内容，念出来等于把判掉的尾巴
+      // 送到外部合成服务；本轮的正文就只有已经下发的那一段。
+      deliveredPrefixOnly = true;
+    } else {
+      await markCompanionRunFailed(read, ctx, protocolLeak ? "REPLY_FORMAT_INVALID" : "INTERNAL_ERROR", false,
+        protocolLeak ? "这次答复格式异常，已停止输出；已完成的操作仍然保留。" : validated.reason, "output");
+      await persistFailedPartial({
+        workspaceId: ctx.workspaceId,
+        userId: read.userId,
+        conversationId: read.conversationId,
+        runId: read.runId,
+        deliveredText: streamingDelivery.deliveredText(),
+      });
+      if (protocolLeak) throw new AgentOutputError("tool_protocol_leak", "companion returned native tool syntax as prose");
+      throw new Error(`companion output validation failed: ${validated.reason}`);
+    }
   }
   // delta 与终态 assistant message 使用同一份净化文本（markdown/标签剥离后），
   // 否则客户端流式渲染的内容与 assistant.final 指向的消息不一致。
-  assistantText = validated.text;
+  assistantText = validated.ok ? validated.text : finalVisibleText;
   if (await companionFollowupRepeatsParent(read, { workspaceId: ctx.workspaceId, userId: read.userId }, assistantText)) {
     await finishCompanionParticipation(ctx, read, expiresAt);
     return;
@@ -1279,8 +1315,9 @@ export async function runCompanionDialogue(
         true, err instanceof CompanionContextChangedError ? err.message : "companion delta write failed", "delivery");
       throw err;
     }
-  } else if (!(await streamingDelivery.writeTail(assistantText, ttsRawText))) {
+  } else if (!deliveredPrefixOnly && !(await streamingDelivery.writeTail(assistantText, ttsRawText))) {
     // 已下发内容与终态文本必须逐字对齐（appendFrom 的基准就是下发长度）。
+    // 这条是**权威事实**（写不进去了），不产生命名上的"判错"，所以不进出料闸。
     await markCompanionRunFailed(read, ctx, "INTERNAL_ERROR", false, "delta_stream_diverged", "delivery");
     await persistFailedPartial({
       workspaceId: ctx.workspaceId,
@@ -1292,7 +1329,9 @@ export async function runCompanionDialogue(
     throw new Error("companion streamed text diverged from validated text");
   }
   // 强制刷新最后一个未闭合句。已经在增量阶段发出的区间由 cursor 保证不会重复。
-  await emitVisibleVoiceSegments(assistantText, true, ttsRawText, undefined, publishedVoiceChars);
+  // 降级交付时模型原文里带着被这两道闸拦下的尾巴，语音只认已经下发的那段正文。
+  await emitVisibleVoiceSegments(assistantText, true,
+    deliveredPrefixOnly ? assistantText : ttsRawText, undefined, publishedVoiceChars);
 
 
   // 阶段 3c（终态事务）搬到 companion-dialogue-finalization.ts：回答收尾自成一域，

@@ -2,9 +2,10 @@
  * 交付闸的后果判定：一道闸判错之后，这一整轮该**作废**还是该**降级交付**。
  *
  * 形状是 2026-10-16 定下来的：**补正按判据，销毁按权威事实。**
- * 判据（这句话是不是半截、引用对不对得上原文、点名的动作有没有回执）一律留在调用方，
- * 一个字不改；这里只回答后果。三处调用点见 `companion-agent-runtime.ts` 的
- * `output_truncated` / `unverified_quote` / `action_not_executed`。
+ * 判据（这句话是不是半截、引用对不对得上原文、点名的动作有没有回执、最终正文与已下发
+ * 前缀对不对得上）一律留在调用方，一个字不改；这里只回答后果。调用点见
+ * `companion-agent-runtime.ts` 的 `output_truncated` / `unverified_quote` /
+ * `action_not_executed`，与 `companion-dialogue.ts` 的 `stream_validation` / `stream_reconcile`。
  *
  * 为什么要有这个模块：这三道闸原来是各自 `throw` 的三份复制品，每加一道就多一处
  * "一次判错吃掉整条消息"。用户口径是「我做的是 agent 不是工作流，要允许 AI 犯错几次」
@@ -20,13 +21,19 @@
  * 也不许换成时间或条数上限——那都是又一次猜测。
  */
 
-export type CompanionDeliveryGate = "output_truncated" | "unverified_quote" | "action_not_executed";
+export type CompanionDeliveryGate = "output_truncated" | "unverified_quote" | "action_not_executed"
+  | "stream_validation" | "stream_reconcile";
+
+/** 流式校验里唯一算**权威事实**的原因：交付管线真的断了，此刻没有任何文本还能发出去。 */
+export const COMPANION_STREAM_TRANSPORT_FAILURE = "delta_stream_lost";
 
 /** 绕过销毁时写进步骤记录里的错误码：痕迹要留在**这一步**，不能整轮一起抹掉。 */
 const GATE_STEP_ERROR_CODE: Record<CompanionDeliveryGate, string> = {
   output_truncated: "AGENT_BUDGET_EXCEEDED",
   unverified_quote: "UNVERIFIED_QUOTE",
   action_not_executed: "ACTION_NOT_EXECUTED",
+  stream_validation: "INTERNAL_ERROR",
+  stream_reconcile: "INTERNAL_ERROR",
 };
 
 /** 绕过销毁时的日志文案。静默放行会让"她这次到底有没有被闸过"无法复盘。 */
@@ -34,6 +41,8 @@ const GATE_BYPASS_NOTE: Record<CompanionDeliveryGate, string> = {
   output_truncated: "companion answer truncated but this run has landed writes; delivering instead of discarding",
   unverified_quote: "companion quote unverified but this run has landed writes; delivering instead of discarding",
   action_not_executed: "requested action has no receipt but this run has landed writes; delivering instead of discarding",
+  stream_validation: "streamed text failed final validation but this run has landed writes; delivering the stable prefix",
+  stream_reconcile: "validated text diverged from the streamed prefix but this run has landed writes; delivering the stable prefix",
 };
 
 export interface CompanionDeliveryGateVerdict {
@@ -49,6 +58,10 @@ export interface CompanionDeliveryGateVerdict {
  *
  * `landedWrites` 必须是权威事实：本轮已经落下写回执。有了它就不销毁——判错的代价
  * 降成"这一步留个 failed 痕迹"，用户仍然能看到她已经做成的事。
+ *
+ * 两道流式闸（`stream_validation` / `stream_reconcile`）由调用方再多要一条事实才能降级：
+ * **已经下发的稳定前缀本身要能作为终答**。前缀都拿不出手（或交付管线断了）时，
+ * 降级就没有对象可交付，那仍然是权威事实，照旧销毁。
  */
 export function judgeCompanionDeliveryGate(input: {
   gate: CompanionDeliveryGate;
@@ -59,6 +72,30 @@ export function judgeCompanionDeliveryGate(input: {
     stepErrorCode: GATE_STEP_ERROR_CODE[input.gate],
     bypassNote: GATE_BYPASS_NOTE[input.gate],
   };
+}
+
+/**
+ * 流式那两道闸的降级交付对象（2026-10-16）。
+ *
+ * 交付层原来把三个条件写在 `if` 里（有没有落库写、已下发的净化前缀站不站得住、
+ * 是不是交付管线真断了），而这三条里只有第一条由 `judgeCompanionDeliveryGate` 回答。
+ * 挪到这里之后，两个方向都能机械地钉住：
+ *   · 有成果 + 前缀拿得出手 + 不是管线断裂 → 交付前缀；
+ *   · 少任何一条 → 仍然作废整轮（那已经是权威事实，不是又一次判错）。
+ */
+export function companionStreamFallbackText(input: {
+  gate: Extract<CompanionDeliveryGate, "stream_validation" | "stream_reconcile">;
+  landedWrites: boolean;
+  /** 这一道闸给出的判据原因；只有 `COMPANION_STREAM_TRANSPORT_FAILURE` 算权威事实。 */
+  reason: string;
+  /** 已经下发给客户端、且再净化一遍一字不差的那段前缀；拿不出手时是空串。 */
+  deliveredPrefix: string;
+}): { deliver: true; text: string; note: string } | { deliver: false } {
+  const verdict = judgeCompanionDeliveryGate({ gate: input.gate, landedWrites: input.landedWrites });
+  if (verdict.destroysTurn) return { deliver: false };
+  if (input.gate === "stream_validation" && input.reason === COMPANION_STREAM_TRANSPORT_FAILURE) return { deliver: false };
+  if (input.deliveredPrefix.length === 0) return { deliver: false };
+  return { deliver: true, text: input.deliveredPrefix, note: verdict.bypassNote };
 }
 
 /**

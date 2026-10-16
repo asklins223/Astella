@@ -231,7 +231,8 @@ export type CompanionAgentLoopResult =
    * `reasoning_text` 原样交回，只带 encrypted_content 也会 400。
    */
   | { status: "completed"; text: string; blocks: CompanionContentBlockV1[]; memoryRefs: unknown[];
-      reasoning?: ProviderReasoningHandle[] }
+      /** 本轮是否真落下写回执（与三道产出闸同一份权威事实，见 `companion-delivery-gates`）。 */
+      writesLanded?: boolean; reasoning?: ProviderReasoningHandle[] }
   | { status: "waiting_for_confirmation"; proposalId: string; memoryRefs: unknown[] };
 
 /**
