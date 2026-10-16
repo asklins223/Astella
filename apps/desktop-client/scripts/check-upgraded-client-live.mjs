@@ -1,0 +1,153 @@
+/**
+ * 升级后的真窗口走查（2026-10-16，⑤）。
+ *
+ * 驱动的是**装在本机的那一份**（/Applications/Astella.app，打的是生产后端），
+ * 不是 dev 构建——所以这一条验的是"更新链路走完之后的用户界面"，不是仓库里的代码。
+ *
+ * 两个模式，因为升级那一步会把应用自己关掉：
+ *   MODE=update  进设置 → 更新 → 检查更新 →（下载更新）→ 重启并安装，然后退出
+ *   MODE=verify  等新版起来之后重连，跑那三条：打招呼不复述旧失败／笔记写完不再报没成功／念出来的话真落了音频
+ *
+ * 先按调试端口把装好的那份起起来（同实例锁：一次只能有一份在跑）：
+ *   /Applications/Astella.app/Contents/MacOS/Astella --remote-debugging-port=9322 &
+ *   MODE=update   ASTELLA_CDP=http://127.0.0.1:9322 node scripts/check-upgraded-client-live.mjs
+ *   # 装完会自己重启；等旧端口没了再用同一个端口重连
+ *   MODE=verify   ASTELLA_CDP=http://127.0.0.1:9322 node scripts/check-upgraded-client-live.mjs
+ */
+import { chromium } from '@playwright/test'
+
+const mode = process.env.MODE ?? 'verify'
+const cdp = process.env.ASTELLA_CDP ?? 'http://127.0.0.1:9322'
+const output = process.env.ASTELLA_PROBE_OUT ?? 'outputs/upgraded-client-20261016'
+const { mkdir, writeFile } = await import('node:fs/promises')
+const { resolve } = await import('node:path')
+await mkdir(resolve(output), { recursive: true })
+
+const browser = await chromium.connectOverCDP(cdp)
+const context = browser.contexts().find(ctx => ctx.pages().length > 0) ?? browser.contexts()[0]
+const page = context.pages().find(p => !p.url().startsWith('devtools://')) ?? await context.newPage()
+await page.bringToFront()
+
+const checks = []
+const check = (ok, label, detail) => {
+  checks.push({ ok: Boolean(ok), label, ...(detail === undefined ? {} : { detail }) })
+  console.log(`${ok ? 'PASS' : 'FAIL'} ${label}${detail === undefined ? '' : ` → ${JSON.stringify(detail)}`}`)
+}
+const clickNamed = async (label) => page.evaluate(label => {
+  const hit = [...document.querySelectorAll('button')].find(el => {
+    const names = `${el.textContent || ''}|${el.getAttribute('aria-label') || ''}|${el.getAttribute('title') || ''}`
+    return names.includes(label) && el.getBoundingClientRect().width > 0 && !el.disabled
+  })
+  if (hit) { hit.click(); return true }
+  return false
+}, label)
+
+const FAIL_WORDS = ['没能完成', '没有成功', '这次回复没', '失败了', '中断了', '上次', '之前那几件']
+
+const send = async (text) => {
+  await page.waitForSelector('textarea[aria-label^="给"]', { timeout: 30_000 })
+  await page.locator('textarea[aria-label^="给"]').fill(text)
+  await page.keyboard.press('Enter')
+}
+const lastReply = async () => page.evaluate(() => {
+  const bubbles = [...document.querySelectorAll('article, .companion-message, .cc-bubble')]
+    .filter(el => el.getBoundingClientRect().width > 0)
+  const own = bubbles.map(el => (el.textContent || '').trim())
+  return own[own.length - 1] ?? ''
+})
+const waitForFreshReply = async (before, timeoutMs) => {
+  const started = Date.now()
+  let text = ''
+  while (Date.now() - started < timeoutMs) {
+    await page.waitForTimeout(2_000)
+    const now = await lastReply()
+    if (now && now !== before && now.length > 4) text = now
+    if (text && !/正在想|正在看|正在准备/.test(text)) return text
+  }
+  return text
+}
+
+if (mode === 'update') {
+  const opened = await clickNamed('设置')
+  check(opened, '设置页点得开', { opened })
+  await page.waitForTimeout(1_500)
+  const toUpdate = await page.evaluate(() => {
+    const tab = [...document.querySelectorAll('button, [role="tab"], a')]
+      .find(el => (el.textContent || '').includes('更新') && el.getBoundingClientRect().width > 0)
+    if (tab) { tab.click(); return tab.textContent?.trim() }
+    return null
+  })
+  check(Boolean(toUpdate), '更新那一页切得过去', { toUpdate })
+  await page.waitForTimeout(1_000)
+  check(await clickNamed('检查更新'), '「检查更新」点得动')
+  for (let i = 0; i < 60; i++) {
+    await page.waitForTimeout(2_000)
+    if (await clickNamed('下载更新')) { console.log('note: 需要手点下载'); break }
+    const body = await page.evaluate(() => document.body.innerText)
+    if (/重启并安装/.test(body)) break
+  }
+  const readyBody = await page.evaluate(() => document.body.innerText.slice(0, 1200))
+  check(/重启并安装/.test(readyBody), '新版下好了，界面上给出「重启并安装」', { excerpt: readyBody.split('\n').filter(Boolean).slice(-6) })
+  await writeFile(resolve(output, 'update-panel.txt'), readyBody)
+  if (await clickNamed('重启并安装')) console.log('note: 已点「重启并安装」，应用会自己退出并装上新版')
+  else check(false, '点不动「重启并安装」')
+  await browser.close()
+  process.exit(checks.some(c => !c.ok) ? 1 : 0)
+}
+
+// ── verify ───────────────────────────────────────────────────────────
+await page.waitForFunction(() => document.querySelector('textarea[aria-label^="给"], .desktop-access-gate'), { timeout: 60_000 })
+const gate = await page.locator('.desktop-access-gate').count()
+check(gate === 0, '升级之后还是登录着的（更新没有把人踢出去）', { gate })
+
+const scene = await page.evaluate(() => ({
+  hasCompanion: Boolean(document.querySelector('.companion-presence')),
+  text: document.body.innerText.replace(/\s+/g, ' ').slice(0, 160),
+}))
+check(scene.hasCompanion, '伴星在场上', scene)
+
+// ① 打招呼：新的一条回复里不许出现旧失败的字样。
+const before = await lastReply()
+await send('你好')
+const greeting = await waitForFreshReply(before, 90_000)
+check(Boolean(greeting), '打招呼拿到了新的回复', { greeting: greeting.slice(0, 120) })
+const recap = FAIL_WORDS.filter(word => greeting.includes(word))
+check(recap.length === 0, '打招呼没有复述旧失败', { greeting: greeting.slice(0, 160), recap })
+
+// ② 写笔记：落成了就不许再说"没成功"。
+const beforeNote = await lastReply()
+await send('写一篇三句话的笔记，题目《光子与能级》，写完把标题告诉我。')
+const noteReply = await waitForFreshReply(beforeNote, 200_000)
+check(Boolean(noteReply), '写笔记那一条拿到了回复', { noteReply: noteReply.slice(0, 160) })
+const noteFail = FAIL_WORDS.filter(word => noteReply.includes(word))
+const mentions = /光子与能级|已保存|写好了|存好了|笔记已经/.test(noteReply)
+check(mentions, '回复里点名了那篇笔记', { mentions, noteReply: noteReply.slice(0, 200) })
+check(noteFail.length === 0, '笔记写完没有报"没成功"', { noteFail, noteReply: noteReply.slice(0, 200) })
+
+// ③ 出声：这一轮的语音段真的落到本机音频缓存里（record.json 就是客户端取到字节的凭据）。
+await page.waitForTimeout(20_000)
+const { homedir } = await import('node:os')
+const { readdir, stat } = await import('node:fs/promises')
+const root = resolve(homedir(), 'Library/Application Support/astella-desktop-client/companion-message-audio')
+const entries = []
+const walk = async (dir, depth) => {
+  for (const name of await readdir(dir).catch(() => [])) {
+    const full = resolve(dir, name)
+    const info = await stat(full).catch(() => null)
+    if (!info) continue
+    if (info.isDirectory() && depth < 3) { await walk(full, depth + 1); continue }
+    if (name === 'record.json' && info.mtimeMs > Date.now() - 10 * 60_000) entries.push({ full, size: info.size })
+  }
+}
+await walk(root, 0)
+check(entries.length > 0, '这十分钟内真有语音落到本机缓存（念出来的话不是只到气泡）', { freshRecords: entries.map(e => e.full.replace(root, '~')).slice(0, 4) })
+
+const png = await page.screenshot({ path: resolve(output, 'upgraded-window.png') })
+await writeFile(resolve(output, 'notes.md'), `# 升级后真窗口走查 2026-10-16（MODE=verify）\n\n`
+  + `- 打招呼：${greeting.slice(0, 160)}\n- 写笔记：${noteReply.slice(0, 200)}\n- 新落缓存的语音：${entries.length} 条\n\n`
+  + checks.map(c => `- ${c.ok ? 'x' : ' '} ${c.label} ${c.detail === undefined ? '' : JSON.stringify(c.detail)}`).join('\n') + '\n')
+void png
+await browser.close()
+const failed = checks.filter(c => !c.ok)
+console.log(`\n${checks.length - failed.length}/${checks.length} checks passed`)
+process.exit(failed.length ? 1 : 0)
