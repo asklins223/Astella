@@ -10,6 +10,7 @@ import {
 import { toTextArrayLiteral } from "@astella/shared/pg-text-array";
 import { isCompanionDefaultParticipationOpportunity, isCompanionDefaultHelpPage } from "@astella/shared/companion-default-participation";
 import { AgentStoreError, queryRows, type AgentSqlExecutor } from "./store.ts";
+import { retireSupersededLaunchGreetings } from "./launch-greeting-supersession.ts";
 
 type Scope = { workspaceId: string; userId: string };
 
@@ -215,6 +216,16 @@ export async function recordCompanionAwareness(tx: AgentSqlExecutor, scope: Scop
       appLaunchId: observation.appLaunchId, context: observation.context, evidence: observation.evidence ?? null },
     ttlMs: observation.topic === "app.started" ? 120_000 : 90_000 });
   if (!accepted) return false;
+  /**
+   * 一次**真实启动**成立时，把上一次还没被看见的启动问候收掉（2026-10-16）。
+   *
+   * 问候生成在启动后十几秒；上次启动若先关了窗口，它下一次才被认领——用户看到的是
+   * 「上一次启动的问候」，而这次启动自己的问候紧接着也会到（真窗口实测两条相差十几秒）。
+   * 只在这一条观察真的入库（`accepted`）时收：同一次启动的重复上报不该动别人的问候。
+   */
+  if (observation.topic === "app.started") {
+    await retireSupersededLaunchGreetings(tx, scope);
+  }
   const recent = previous && Date.now() - new Date(previous.updated_at).getTime() <= AWARENESS_HEARTBEAT_MS;
   const learningNow = isAwarenessLearning;
   if (recent && learningNow(previous.context) && learningNow(observation.context) && observation.elapsedMs > 0) {

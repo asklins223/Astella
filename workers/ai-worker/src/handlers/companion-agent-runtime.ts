@@ -73,7 +73,7 @@ import { CompanionToolPreparation } from "./companion-tool-preparation.ts";
 import { companionExecutionPolicy } from "./companion-execution-policy.ts";
 import { repairDegenerateCompanionAnswer } from "./companion-answer-repair.ts";
 import { assembleCompanionStepRequest, companionStepPolicyText, companionStepToolSurface, companionWebSearchAllowedForStep } from "./companion-agent-step-assembly.ts";
-import { companionInitiativeInterpretationFields, renderCompanionInitiativeObservation } from "./companion-initiative-observation.ts";
+import { companionInitiativeInterpretationFields, recentOwnLines, renderCompanionInitiativeObservation } from "./companion-initiative-observation.ts";
 import { createdNoteToolResult, readCreatedNoteReceipt, userForbidsNoteLibraryRead } from "./companion-note-authoring.ts";
 import {
   EAGER_TOOL_DISPATCH_ENABLED,
@@ -236,20 +236,10 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
    * 来自把上一轮当本轮草稿，不是来自历史本身。
    */
   let messages = [...dialogueHistory];
-  /**
-   * 她最近几次自己开口说了什么：从回放历史里取最后三条她的正文（由近到远，各取尾部
-   * 200 字——要挡住的是"同一句寒暄换个说法"，重复的正是收尾和由头那一截）。
-   * 引一条不够：实测她会换几个字绕过去，所以反重复的判据按最近三条给（见
-   * `companion-initiative-observation.ts`）。
-   */
-  const lastOwnLines = [...dialogueHistory].reverse()
-    .map((message) => message.role === "assistant" && typeof message.content === "string" ? message.content.trim() : "")
-    .filter((line) => line.length > 0)
-    .slice(0, 3)
-    .map((line) => line.slice(-200));
   const initiativeObservation = args.read.initiativeInput
     ? { role: "system" as const, hostObservation: true as const,
-      content: renderCompanionInitiativeObservation(args.read.initiativeInput, { lastOwnLines }) }
+      content: renderCompanionInitiativeObservation(args.read.initiativeInput,
+        { lastOwnLines: recentOwnLines(dialogueHistory) }) }
     : null;
   const currentRequest = initiativeObservation
     ?? [...messages].reverse().find((message) => message.role === "user");

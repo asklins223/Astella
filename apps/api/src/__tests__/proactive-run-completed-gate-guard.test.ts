@@ -73,3 +73,28 @@ test("跨话题地板也在入队之前判，且读数不含约定提醒", () =>
   // 听见的话把她静音了：真栈实测快速重启时旧问候把这次启动自己的问候推迟了两分钟。
   assert.match(floor, /state NOT IN \('suppressed', 'expired'\)/);
 });
+
+/**
+ * 新启动作废旧问候这条判定住在**共用层**（2026-10-16）。
+ *
+ * 它一开始写在 `/me/companion/awareness` 那条路由里，从 companion-shell 去看
+ * companion-conversation 的投递服务——直接踩了 `companion-module-cycle.test.ts`：
+ * 那两侧必须是**零条边**（P1-6 特意拆掉的）。判定的时机是"这次启动真的成立了吗"，
+ * 与观察记账同一个事务，所以它归 `recordCompanionAwareness`；
+ * 投递那几行语句放共用层，边界才继续成立。
+ */
+test("真实启动成立时由共用层作废旧问候，而不是在 shell 路由里回头看 conversation", () => {
+  const participation = readFileSync(
+    new URL("../../../../packages/agent-host/src/participation.ts", import.meta.url), "utf8");
+  const supersession = readFileSync(
+    new URL("../../../../packages/agent-host/src/launch-greeting-supersession.ts", import.meta.url), "utf8");
+  const routes = readFileSync(
+    new URL("../modules/companion-shell/participation-routes.ts", import.meta.url), "utf8");
+  assert.match(participation, /retireSupersededLaunchGreetings\(tx, scope\)/,
+    "启动成立时要收掉上一次没被看见的问候");
+  assert.match(supersession, /state = 'suppressed'/);
+  assert.match(supersession, /input_source->>'topic' = 'app\.started'/,
+    "只动作废 app.started 那一类，别把感想/关注/提醒一起收掉");
+  assert.doesNotMatch(routes, /companion-conversation/,
+    "shell 路由不能回头看 conversation：那条边必须是零");
+});

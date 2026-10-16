@@ -65,6 +65,22 @@ const OPENING_ANGLES = [
   "说一点你自己此刻想到的念头：一个看法、一个没想通的疑问都可以，但不能是离开、吃饭、睡觉这类安排",
 ] as const;
 
+/**
+ * 她最近几次自己开口的原话（由近到远，最多三条，各取尾部 200 字）。
+ *
+ * 从回放历史里取，不额外查库。放在这里而不是 `companion-agent-runtime.ts`：
+ * 那是 1508 行的"神文件"（守卫阈值 1500），反重复这一段与观察块的渲染本来就在一起。
+ */
+export function recentOwnLines(
+  messages: readonly { readonly role: string; readonly content: unknown }[],
+): string[] {
+  return [...messages].reverse()
+    .map((message) => message.role === "assistant" && typeof message.content === "string" ? message.content.trim() : "")
+    .filter((line) => line.length > 0)
+    .slice(0, 3)
+    .map((line) => line.slice(-200));
+}
+
 /** 稳定散列：同一轮永远得到同一个角度，不同轮之间均匀落在三个角度上。 */
 export function openingAngleFor(seed: string): (typeof OPENING_ANGLES)[number] {
   let hash = 2166136261;
