@@ -453,11 +453,9 @@ userId: req.session.userId,
       const result = await listCompanionRunVoiceSegments({
         ...scopeOfSession(req.session), userId: req.session.userId, conversationId, runId,
       });
-      if (!result.ok) {
-        return reply.code(result.statusCode).header("cache-control", "no-store").send({
-          version: 1, error: result.code, message: result.message, recoverable: true, requestId: req.id,
-        });
-      }
+      // 「这一轮没有可补的音频」是正常结论，不是错误：回 200 + 空列表，
+      // 客户端因此能说清"没有留档"。原来回 404，客户端在解包那一步就抛了，
+      // 那句诚实的话永远走不到，用户只会看到一句通用报错。
       return reply.header("cache-control", "no-store").send({ version: 1 as const,
         runId: result.runId, conversationId: result.conversationId,
         generation: result.generation, items: result.items });

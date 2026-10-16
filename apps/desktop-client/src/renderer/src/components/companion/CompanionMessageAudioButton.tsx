@@ -72,19 +72,26 @@ export function CompanionMessageAudioButton({ runId, conversationId = null, exch
         meta: createRequestMeta(),
         request: { version: 1, conversationId, runId },
       }));
-      if (result.items.length === 0) { setPhase("idle"); setFailure("这段没有留下语音记录。"); return; }
+      // `generation` 为空就是"这一轮没有留下可补的音频"（事件过了 TTL 或从没签发过）。
+      if (result.generation === null || result.items.length === 0) {
+        setPhase("idle"); setFailure("这段没有留下语音记录。"); return;
+      }
+      const generation = result.generation;
       const session = beginCompanionSpeechLine({ strictSegments: true });
+      // 先认领再喂段：`feedSegment` 会立刻开始合成/播放，第一条进度事件可能比这里的
+      // 赋值更早到；订阅那条守卫按 `playback.current?.planId` 认领，晚一步赋值就会
+      // 把它丢掉，按钮于是停在转圈、永远不显示"停止"。
+      playback.current = { planId: session.planId, stop: () => session.stop() };
+      setPhase("playing");
       for (const item of result.items) {
         session.feedSegment({
-          ref: { version: 2, conversationId, runId, generation: result.generation,
+          ref: { version: 2, conversationId, runId, generation,
             ordinal: item.ordinal, segmentId: item.segmentId },
           displayText: item.displayText, displayStart: item.displayStart, displayEnd: item.displayEnd,
           cue: item.cue as CompanionServerVoiceSegment["cue"],
         });
       }
       session.finish();
-      playback.current = { planId: session.planId, stop: () => session.stop() };
-      setPhase("playing");
     } catch (error) {
       setPhase("idle");
       setFailure(gatewayErrorMessage(error));

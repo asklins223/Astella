@@ -769,12 +769,11 @@ export async function listCompanionRunVoiceSegments(args: {
   userId: string;
   conversationId: string;
   runId: string;
-}): Promise<
-  | { ok: true; runId: string; conversationId: string; generation: number; items: Array<{
-      ordinal: number; segmentId: string; displayText: string;
-      displayStart: number; displayEnd: number; cue: unknown }> }
-  | { ok: false; statusCode: 404; code: "NOT_FOUND"; message: string }
-> {
+}): Promise<{
+  runId: string; conversationId: string; generation: number | null; items: Array<{
+    ordinal: number; segmentId: string; displayText: string;
+    displayStart: number; displayEnd: number; cue: unknown }>;
+}> {
   return withWorkspaceTransaction({ workspaceId: args.workspaceId, userId: args.userId }, async (tx) => {
     // 显式带 workspace_id（与上面几处同一口径），不让正确性依赖 RLS 是否真的生效。
     const rows = await tx
@@ -792,16 +791,11 @@ export async function listCompanionRunVoiceSegments(args: {
       ))
       .orderBy(companionStreamEvents.seq);
     if (!rows[0]) {
-      return { ok: false as const, statusCode: 404, code: "NOT_FOUND" as const,
-        message: "no voice segments retained for this run" };
+      return { runId: args.runId, conversationId: args.conversationId, generation: null, items: [] };
     }
     const items = companionVoiceSegmentsFromEventPayloads(rows.map(row => row.payload));
-    if (items.length === 0) {
-      return { ok: false as const, statusCode: 404, code: "NOT_FOUND" as const,
-        message: "no voice segments retained for this run" };
-    }
-    return { ok: true as const, runId: args.runId, conversationId: args.conversationId,
-      generation: Number(rows[0].generation), items };
+    return { runId: args.runId, conversationId: args.conversationId,
+      generation: items.length === 0 ? null : Number(rows[0].generation), items };
   });
 }
 

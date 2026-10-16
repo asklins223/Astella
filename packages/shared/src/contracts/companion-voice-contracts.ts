@@ -76,7 +76,8 @@ export const companionRunVoiceSegmentsResultV1Schema = z.strictObject({
   version: z.literal(1),
   runId: z.string().uuid(),
   conversationId: z.string().uuid(),
-  generation: z.number().int().positive(),
+  /** 没有留档时是 null（`items` 也必为空）——"这一轮没有可补的音频"是正常结论，不是错误。 */
+  generation: z.number().int().positive().nullable(),
   items: z.array(z.strictObject({
     ordinal: z.number().int().min(1).max(200),
     segmentId: z.string().regex(/^[a-f0-9]{64}$/),
