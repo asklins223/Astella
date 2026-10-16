@@ -25,29 +25,30 @@ rollback() {
 trap rollback EXIT
 "${compose[@]}" config --quiet
 
-# 拉镜像前先腾地方（2026-10-16）。两次部署（v1.8.9 / v1.8.10）都停在 `pull`：
+# 每次部署、拉镜像前都清一次（2026-10-16）。两次部署（v1.8.9 / v1.8.10）都停在 `pull`：
 # `failed to register layer: ... no space left on device`，回滚把上一版重新拉起来（服务没断），
-# 但新版本上不去。原因不是"这次镜像特别大"，而是这台机器**从来不清**：旧镜像、构建缓存、
-# 旧 release 目录只增不减。部署密钥是强制命令（只接受 `deploy <40位SHA>`），
-# 所以清理这件事如果不放在部署路径里，机器上没有任何自动入口可以做。
+# 但新版本上不去。根因不是"这次镜像特别大"，而是这台机器**从来没清过**——实测清零前
+# 84 个镜像 23.77 GB（其中 22.28 GB 可回收）、40 个旧 release 目录、44 份备份。
+# 部署密钥是强制命令（只接受 `deploy <40位SHA>`），机器上没有别的自动入口，所以清理必须在这里。
 #
-# 只清"没人用"的东西：运行中的容器镜像、数据卷、数据库备份一概不动。
-required_free_kb="${REQUIRED_FREE_KB:-5242880}" # 5 GiB，按过去几十次部署的峰值余量取整
+# 清什么：已停容器、**没有被任何容器引用**的镜像、构建缓存、除 current 与最近两个之外的旧 release。
+# 不清什么：数据卷与运行中容器用的镜像——`image prune -a` 不会碰在用的镜像，所以回滚目标
+# （current 指向、正在运行的那一版）始终完好。放在 **pull 之前**而不是部署成功之后：
+# 事后清会把上一版的镜像也删掉，那时回滚就没得回了。
+required_free_kb="${REQUIRED_FREE_KB:-5242880}" # 5 GiB：低于这个数就拒绝部署并说清原因
 free_kb() { df -Pk / | awk 'NR==2 {print $4}'; }
-if (( "$(free_kb)" < required_free_kb )); then
-  echo "Low disk before pull: $(free_kb) KiB free; pruning unused docker state" >&2
-  docker container prune -f >/dev/null 2>&1 || true
-  docker image prune -af >/dev/null 2>&1 || true
-  docker builder prune -af >/dev/null 2>&1 || true
-  # 旧 release 目录：保留 current 指向的那一个与最近两个（回滚链仍完整）。
-  current_release="$(readlink -f /opt/astella/current 2>/dev/null || true)"
-  while IFS= read -r stale; do
-    [[ -z "$stale" || "$stale" = "$current_release" ]] && continue
-    rm -rf "$stale"
-  done < <(find /opt/astella/releases -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' 2>/dev/null \
-    | sort -rn | tail -n +4 | cut -d' ' -f2-)
-  echo "After pruning: $(free_kb) KiB free" >&2
-fi
+echo "Disk before deploy: $(free_kb) KiB free; pruning unused docker state" >&2
+docker container prune -f >/dev/null 2>&1 || true
+docker image prune -af >/dev/null 2>&1 || true
+docker builder prune -af >/dev/null 2>&1 || true
+# 旧 release 目录：保留 current 指向的那一个与最近两个（回滚链仍完整）。
+current_release="$(readlink -f /opt/astella/current 2>/dev/null || true)"
+while IFS= read -r stale; do
+  [[ -z "$stale" || "$stale" = "$current_release" ]] && continue
+  rm -rf "$stale"
+done < <(find /opt/astella/releases -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' 2>/dev/null \
+  | sort -rn | tail -n +4 | cut -d' ' -f2-)
+echo "Disk after pruning: $(free_kb) KiB free" >&2
 if (( "$(free_kb)" < required_free_kb )); then
   echo "Not enough free space to pull this release ($(free_kb) KiB < ${required_free_kb} KiB)." >&2
   echo "Run infra/ops/prune-host-disk.sh on this host, then deploy again." >&2

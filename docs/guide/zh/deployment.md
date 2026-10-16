@@ -28,7 +28,7 @@ GitHub 的 `production` Environment 只允许 `v*` tag，存放 `DEPLOY_HOST`、
 
 2026-10-16：`v1.8.9` 与 `v1.8.10` 的部署都停在拉镜像这一步——`failed to register layer: ... no space left on device`。回滚把上一版应用重新起来（服务没断、数据库备份保留），但新版本上不去。原因是这台机器只增不减：旧镜像、构建缓存和旧 release 目录从来没有清理过，而部署密钥是强制命令（只接受 `deploy <40位SHA>`），机器上没有任何自动入口能先清一次。
 
-- `infra/deploy/deploy.sh` 现在会在拉镜像前检查可用空间（低于 `REQUIRED_FREE_KB`，默认 5 GiB 时）先清"没人用"的东西：未运行容器、未被引用的镜像、构建缓存、以及除 `current` 与最近两个之外的旧 release 目录；清完仍不够则带着明确提示失败，让回滚照常发生。**数据卷、数据库备份、运行中的容器镜像都不动。**
+- `infra/deploy/deploy.sh` 现在**每次部署、拉镜像前都清一次**：已停容器、没有被任何容器引用的镜像（实测清零前 84 个镜像 23.77 GB，其中 22.28 GB 可回收）、构建缓存、以及除 `current` 与最近两个之外的旧 release 目录；随后校验可用空间，低于 `REQUIRED_FREE_KB`（默认 5 GiB）就带着明确提示拒绝部署，让回滚照常发生。**数据卷与运行中容器用的镜像都不动**，所以回滚目标（`current` 指向、正在运行的那一版）始终完好。清理放在 pull 之前而不是部署成功之后：事后清会把上一版的镜像也删掉，那时回滚就没得回了。
 - 已经堆满的机器需要管理员先跑一次 `infra/ops/prune-host-disk.sh`（root；保留最近 5 个 release 与 10 份备份，可用 `KEEP_RELEASES` / `KEEP_BACKUPS` 调整）。
 - 部署脚本安装在 `/usr/local/lib/astella`，由管理员更新。每个 release 的 bundle 现在都带上这一份 `infra/deploy/`，所以更新就是一条命令：`install -m 0755 /opt/astella/releases/<发布目录>/infra/deploy/deploy.sh /usr/local/lib/astella/deploy.sh`（接收器 `ssh-receive.sh` 与 `extract-bundle.py` 同理）。
 
