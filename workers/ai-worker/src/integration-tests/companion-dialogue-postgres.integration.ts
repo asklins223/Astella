@@ -776,6 +776,51 @@ for (const repaired of [true, false]) test(`动作回执缺失：${repaired ? "�
   }
 });
 
+/**
+ * 2026-10-16 线上 run `fb2da98f` 的形状：注意力点名的是 A，她实际做成的是 B。
+ *
+ * 旧行为：补正两步白烧之后整轮判死——12 步、8 分 22 秒的正文一个字都不许发，
+ * 三篇笔记好好躺在库里，界面上只剩「这一轮没能说完」。
+ * 上面那条"纠正后仍不执行"照旧是 failed（判据没放宽），放宽的只是**销毁**：
+ * 本轮真落过写回执时，不许把已经做成的事说成没发生。
+ */
+test("点名的动作没回执、但本轮真做成了另一件写 → 照常交付", async () => {
+  const scope = await seedBase();
+  const run = await seedDialogueRun(scope.workspaceId, scope.userId, { userText: "只保留前台安静事件，不要设置重评时间。" });
+  const plan = { key: "quiet", expectedRevision: 0, intent: "只关注前台安静事件。", topics: ["presence.quiet"] as "presence.quiet"[],
+    nextReviewAt: null, expiresAt: null, preferenceRevision: null, selfNote: null, state: "active" as const };
+  const saved = await withWorkerWorkspaceTransaction(scope, tx =>
+    arrangeCompanionAttention(tx, scope, plan, { conversationId: run.cid, runId: run.runId }));
+  const originalChat = MockProvider.prototype.chatCompletion, originalExecute = MockProvider.prototype.executeAgentTurn;
+  let calls = 0;
+  try {
+    // 点的是 `companion_save_participation`，而她一次都没调过它（线上对 `agent_start_goal` 正是这个形状）。
+    MockProvider.prototype.chatCompletion = async () => ({ content: JSON.stringify({ intent: "task_control", toolUse: "act",
+      subjects: [], goalRelation: "unrelated", candidateOperations: ["companion_save_participation"], ambiguities: [],
+      voiceStyle: { decision: "none", instruction: null }, pendingOfferIndexes: [] }), usage: {} });
+    MockProvider.prototype.executeAgentTurn = async () => {
+      calls += 1;
+      if (calls === 2) return { content: "", toolCalls: [{ id: "verify-quiet", name: "companion_arrange_attention",
+        arguments: { ...plan, expectedRevision: 1 } }], finishReason: "tool_calls", usage: null, providerRequestId: null };
+      return { content: "实际结果：只保留安静事件，没有定时唤醒。", toolCalls: [], finishReason: "stop",
+        usage: null, providerRequestId: null };
+    };
+    await invokeRun(scope.workspaceId, scope.userId, run);
+    const [state] = await readInScope(scope, tx => tx`SELECT status FROM companion_turn_runs WHERE id=${run.runId}`);
+    assert.equal(state.status, "succeeded", "已经落库的写被当成了没发生");
+    const errors = await readInScope(scope, tx => tx`SELECT payload FROM companion_stream_events WHERE run_id=${run.runId} AND type='error'`);
+    assert.equal(errors.length, 0, "这一轮不该留失败卡");
+    const finals = await readInScope(scope, tx => tx`SELECT payload FROM companion_stream_events WHERE run_id=${run.runId} AND type='assistant.final'`);
+    assert.equal(finals.length, 1, "正文必须真的交付出去，而不是只把写留在库里");
+    const [current] = await readInScope(scope, tx => tx`SELECT revision FROM companion_attention_plans WHERE user_id=${scope.userId}`);
+    assert.equal(current.revision, 1);
+    assert.equal(new Date(saved.attention.updatedAt).getTime() > 0, true);
+  } finally {
+    MockProvider.prototype.chatCompletion = originalChat; MockProvider.prototype.executeAgentTurn = originalExecute;
+    await run.cleanup();
+  }
+});
+
 for (const repaired of [true, false]) test(`本轮禁止时间唤醒：${repaired ? "仅事件的修正可继续保存" : "换个时间也不能绕过禁止"}`, async () => {
   const scope = await seedBase();
   const run = await seedDialogueRun(scope.workspaceId, scope.userId, { userText: "只按安静事件触发，不要设置固定时间。" });
