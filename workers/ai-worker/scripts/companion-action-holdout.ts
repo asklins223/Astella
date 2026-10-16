@@ -29,6 +29,12 @@
  * 错的是把没落库的写当成一句谎。要补的是"诚实的拒绝也要说得出名字"（见
  * `companion-dialogue-failure-retention.ts` 那份点名）。这个脚本留着，是为了下次有人
  * 想动这条判据时能拿同一批样本重算，而不是靠印象。
+ *
+ * 同一份脚本换生产库跑（2026-10-16，50 轮有原文的真实轮次，`toolUse=act` 15 轮）：
+ *   改前 0.400 → 只认写类点名 0.357；唯一那条"只点了读工具"的是
+ *   「打开笔记页面」→ 点名 `companion_open_page`，而导航工具在能力目录里被标成
+ *   `riskClass=read`——这是那条"三个导航工具 riskClass 标错"的旧账（本轮不做），
+ *   不是分类器的错。两边读数同形，所以口径不动。
  */
 import { readFileSync } from "node:fs";
 import { resolveAllCompanionAgentTools } from "@astella/shared";
