@@ -14,7 +14,7 @@ import {
 import { CompanionConversationError, createCompanionTurn } from "./turn/turn-service.ts";
 import { createCompanionLearningRunContextGrantRequestV1Schema, createMenuProposalRequestV1Schema, createToolProposalRequestV1Schema, proposalDecisionRequestV1Schema } from "@astella/shared";
 import { cancelCompanionRun } from "./turn/companion-cancel.ts";
-import { openCompanionEventStream, listCompanionAgentRoutes, listCompanionRunNodes } from "./turn/companion-events.ts";
+import { openCompanionEventStream, listCompanionAgentRoutes, listCompanionRunNodes, listCompanionRunVoiceSegments } from "./turn/companion-events.ts";
 import { companionRunNodesListRequestV1Schema } from "@astella/shared/companion-chat-desktop-contracts";
 import {
   ensureCompanionInbox,
@@ -428,6 +428,40 @@ userId: req.session.userId,
       }
     },
   );
+
+  // GET /companion/runs/:runId/voice-segments — 一轮回复已签发的语音段（2026-10-16）。
+  //
+  // 存在的理由：本机没留下录音时，客户端要能按段身份补取。分段权威在服务端，
+  // 客户端照着这份重建合成请求，不自己重新切段。事件按既有 TTL 清理，
+  // 过期回 404，由客户端如实说"这段没有留下语音记录"。
+  app.get<{ Params: { runId: string }; Querystring: { conversationId?: string } }>(
+    "/companion/runs/:runId/voice-segments",
+    { preHandler: [requireSession, requireCompanionDialogue] },
+    async (req, reply) => {
+      const conversationId = typeof req.query?.conversationId === "string" ? req.query.conversationId : "";
+      const runId = req.params.runId;
+      const isUuid = (value: string) =>
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+      if (!isUuid(conversationId) || !isUuid(runId)) {
+        return reply.code(400).send({
+          version: 1, error: "INVALID_REQUEST",
+          message: "conversationId and runId must be uuids", recoverable: false, requestId: req.id,
+        });
+      }
+      if (!(await rateLimited(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:read`,
+        COMPANION_RATE_LIMITS.readQueriesPerMinute.limit, COMPANION_RATE_LIMITS.readQueriesPerMinute.windowMs))) return;
+      const result = await listCompanionRunVoiceSegments({
+        ...scopeOfSession(req.session), userId: req.session.userId, conversationId, runId,
+      });
+      if (!result.ok) {
+        return reply.code(result.statusCode).header("cache-control", "no-store").send({
+          version: 1, error: result.code, message: result.message, recoverable: true, requestId: req.id,
+        });
+      }
+      return reply.header("cache-control", "no-store").send({ version: 1 as const,
+        runId: result.runId, conversationId: result.conversationId,
+        generation: result.generation, items: result.items });
+    });
 
   // GET /companion/conversations/:id/run-nodes — 2026-09-19 过程留痕只读窗口。
   // 与 agent-routes 同形状（seq 游标 + latestSeq）：节点事件原样透传，由桌面端复用

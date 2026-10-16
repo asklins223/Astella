@@ -86,7 +86,10 @@ it("collecting an older record keeps loaded history and its reading position ins
   const thread = document.querySelector<HTMLDivElement>(".cc-thread")!;
   thread.scrollTop = 37;
   fireEvent.scroll(thread);
-  const olderBookmark = document.getElementById(`companion-message-${OLDER}`)!.querySelector<HTMLButtonElement>("button")!;
+  // 按可访问名选，不取"第一个 button"：2026-10-16 消息头里多了补听入口，
+  // 它排在收藏前面，位置选择器会静默选错人（表现是 aria-pressed 读出 null）。
+  const olderBookmark = document.getElementById(`companion-message-${OLDER}`)!
+    .querySelector<HTMLButtonElement>("button[aria-label*='发现簿']")!;
   olderBookmark.focus();
   fireEvent.click(olderBookmark);
   await waitFor(() => expect(olderBookmark.getAttribute("aria-pressed")).toBe("true"));

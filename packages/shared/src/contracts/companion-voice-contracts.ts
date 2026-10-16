@@ -62,6 +62,39 @@ export const companionVoiceSpeakSegmentRequestV2Schema = z.strictObject({
 });
 export type CompanionVoiceSpeakSegmentRequestV2 = z.infer<typeof companionVoiceSpeakSegmentRequestV2Schema>;
 
+/**
+ * 一轮回复**已经签发过**的语音段（2026-10-16）。
+ *
+ * 补听入口用：本机没留下录音时，客户端拿这一份重建 `CompanionVoiceSpeakSegmentRequestV2`
+ * 去取字节。**分段的权威在服务端**——客户端照着这份重建，不自己重新切段，
+ * 否则切出来的段与当时念的不是同一批，缓存与 playback-outcome 全会对不上。
+ *
+ * 事件本身按 `companion_stream_events` 的既有 TTL 清理：过期后这一轮就真的没有可补的音频了，
+ * 那时如实说"这段没有留下语音记录"，不假装还能放。
+ */
+export const companionRunVoiceSegmentsResultV1Schema = z.strictObject({
+  version: z.literal(1),
+  runId: z.string().uuid(),
+  conversationId: z.string().uuid(),
+  generation: z.number().int().positive(),
+  items: z.array(z.strictObject({
+    ordinal: z.number().int().min(1).max(200),
+    segmentId: z.string().regex(/^[a-f0-9]{64}$/),
+    displayText: z.string().min(1),
+    displayStart: z.number().int().nonnegative(),
+    displayEnd: z.number().int().nonnegative(),
+    cue: z.unknown(),
+  })).max(200),
+});
+export type CompanionRunVoiceSegmentsResultV1 = z.infer<typeof companionRunVoiceSegmentsResultV1Schema>;
+
+export const companionRunVoiceSegmentsRequestV1Schema = z.strictObject({
+  version: z.literal(1),
+  conversationId: z.string().uuid(),
+  runId: z.string().uuid(),
+});
+export type CompanionRunVoiceSegmentsRequestV1 = z.infer<typeof companionRunVoiceSegmentsRequestV1Schema>;
+
 /** 本机原声按回复身份保留，分段不单独占用消息额度，回听不产生合成请求。 */
 export const COMPANION_MESSAGE_AUDIO_LIMIT = 100;
 export const companionCachedVoiceListRequestV1Schema = z.strictObject({

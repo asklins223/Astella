@@ -21,7 +21,7 @@ const companionActivityTimelineWireSchema = z.strictObject({
 
 import type { VoiceAudioProfile } from "./companion-voice-audio-cache";
 import type { MessageAudioScope } from "./companion-message-audio-cache";
-import type { CompanionCachedVoiceListResultV1, CompanionCachedVoiceReadRequestV1 } from "@astella/shared/companion-voice-contracts";
+import type { CompanionCachedVoiceListResultV1, CompanionCachedVoiceReadRequestV1, CompanionRunVoiceSegmentsRequestV1, CompanionRunVoiceSegmentsResultV1 } from "@astella/shared/companion-voice-contracts";
 import { assistantDeliveryV2Schema } from "@astella/shared/companion-bridge-contracts";
 import { z } from "zod";
 import { projectCompanionDelivery } from "./desktop-gateway-companion-bridge";
@@ -165,6 +165,7 @@ import {  COMPANION_VOICE_SPEAK_VOICE,
   companionVoicePlaybackOutcomeResultV1Schema,
   companionGuidanceVoiceProfileV1Schema,
   companionVoiceSpeakResultV1Schema,
+  companionRunVoiceSegmentsResultV1Schema,
 } from "@astella/shared/companion-voice-contracts";
 import {
   companionDiscoveryBookV1Schema,
@@ -847,6 +848,23 @@ export async function listCompanionRunNodes(t: GatewayTransport,
       requestId,
     );
     const parsed = companionRunNodesListResultV1Schema.safeParse(result.body);
+    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+    return parsed.data;
+  }
+
+export async function listCompanionRunVoiceSegments(t: GatewayTransport,
+    request: CompanionRunVoiceSegmentsRequestV1,
+    requestId?: string,
+  ): Promise<CompanionRunVoiceSegmentsResultV1> {
+    await t.ensureConnected(requestId);
+    const result = await t.request(
+      `/companion/runs/${request.runId}/voice-segments?conversationId=${encodeURIComponent(request.conversationId)}`,
+      { method: "GET" },
+      true,
+      true,
+      requestId,
+    );
+    const parsed = companionRunVoiceSegmentsResultV1Schema.safeParse(result.body);
     if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
     return parsed.data;
   }

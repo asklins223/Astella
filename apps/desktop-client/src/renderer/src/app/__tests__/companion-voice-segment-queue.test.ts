@@ -62,13 +62,11 @@ describe("伴星语音段队列", () => {
   it("生产端先入队、气泡从队列取，谁都不再直接读事件负载", () => {
     const producer = readFileSync(new URL("../companion-chat-session.tsx", import.meta.url), "utf8");
     const hud = readFileSync(new URL("../../components/companion/CompanionHud.tsx", import.meta.url), "utf8");
-    expect(producer).toMatch(/queueCompanionVoiceSegment\(\{/,
-      "语音段又变成直接 dispatch 负载了：气泡不在场的那一段会永久丢");
-    expect(producer).toMatch(/if \(queuedSegment\)[\s\S]{0,120}companion-voice-segment-ready/,
-      "唤醒事件不再以\"真的存下了新段\"为条件");
-    expect(hud).toMatch(/drainCompanionVoiceSegments\(\)/,
-      "气泡又只读事件负载了：晚挂载就再也补不回来");
-    expect(hud).toMatch(/takeQueuedVoiceSegments\(\);\s*\n\s*const onVoiceSegment/,
-      "挂载这一拍没有补取：晚到的气泡仍然听不到漏掉的那几句");
+    // 生产端又变成直接 dispatch 负载，或气泡又只读事件负载 —— 两者都会让
+    // "气泡不在场的那一段"永久丢；挂载不补取则晚到的气泡仍然听不到。
+    expect(producer).toMatch(/queueCompanionVoiceSegment\(\{/);
+    expect(producer).toMatch(/if \(queuedSegment\)[\s\S]{0,120}companion-voice-segment-ready/);
+    expect(hud).toMatch(/drainCompanionVoiceSegments\(\)/);
+    expect(hud).toMatch(/takeQueuedVoiceSegments\(\);\s*\n\s*const onVoiceSegment/);
   });
 });

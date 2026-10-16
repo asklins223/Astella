@@ -328,6 +328,7 @@ const desktopApi: AstellaDesktopApiM2 = {
       listAgentRoutes: (input) => invoke(DESKTOP_IPC_CHANNELS.companionChatAgentRoutes, input),
       // 过程节点留痕（2026-09-19）：抽屉里的「过程 N 步 · 调用 M 次工具」。
       listRunNodes: (input) => invoke(DESKTOP_IPC_CHANNELS.companionChatRunNodes, input),
+      listRunVoiceSegments: (input) => invoke(DESKTOP_IPC_CHANNELS.companionChatRunVoiceSegments, input),
       // 停止本轮（2026-09-19）：服务端原子取消 + 已输出文本留档。
       cancelRun: (input) => invoke(DESKTOP_IPC_CHANNELS.companionChatCancelRun, input)
     },

@@ -753,3 +753,76 @@ export async function openCompanionEventStream(args: {
 
   return { statusCode: 200, stream: handle };
 }
+
+// ─── 一轮回复已签发的语音段（2026-10-16，补听入口） ─────────────────────
+//
+// 为什么不复用 `listCompanionRunNodes`：那份读的是 `companion_turn_runs.process_timeline`
+// ——归档列，按 0426 的触发器只收 `assistant.thinking / assistant.status / agent.tool`
+// 三类，`voice.segment.ready` **从没进过那里**。语音事件仍在 `companion_stream_events`，
+// 按既有 TTL 存活；过期之后这一轮就真的没有可补的音频了，如实回空数组，
+// 由调用方说"这段没有留下语音记录"，而不是假装还能放。
+//
+// 分段的权威在服务端：客户端照着这一份重建合成请求，**不自己重新切段**——
+// 自己切出来的段与当时念的不是同一批，本机缓存与 playback-outcome 会全部对不上。
+export async function listCompanionRunVoiceSegments(args: {
+  workspaceId: string;
+  userId: string;
+  conversationId: string;
+  runId: string;
+}): Promise<
+  | { ok: true; runId: string; conversationId: string; generation: number; items: Array<{
+      ordinal: number; segmentId: string; displayText: string;
+      displayStart: number; displayEnd: number; cue: unknown }> }
+  | { ok: false; statusCode: 404; code: "NOT_FOUND"; message: string }
+> {
+  return withWorkspaceTransaction({ workspaceId: args.workspaceId, userId: args.userId }, async (tx) => {
+    // 显式带 workspace_id（与上面几处同一口径），不让正确性依赖 RLS 是否真的生效。
+    const rows = await tx
+      .select({
+        generation: companionStreamEvents.generation,
+        payload: companionStreamEvents.payload,
+      })
+      .from(companionStreamEvents)
+      .where(and(
+        eq(companionStreamEvents.conversationId, args.conversationId),
+        eq(companionStreamEvents.workspaceId, args.workspaceId),
+        eq(companionStreamEvents.runId, args.runId),
+        eq(companionStreamEvents.type, "voice.segment.ready"),
+        gt(companionStreamEvents.expiresAt, new Date()),
+      ))
+      .orderBy(companionStreamEvents.seq);
+    if (!rows[0]) {
+      return { ok: false as const, statusCode: 404, code: "NOT_FOUND" as const,
+        message: "no voice segments retained for this run" };
+    }
+    const items = companionVoiceSegmentsFromEventPayloads(rows.map(row => row.payload));
+    if (items.length === 0) {
+      return { ok: false as const, statusCode: 404, code: "NOT_FOUND" as const,
+        message: "no voice segments retained for this run" };
+    }
+    return { ok: true as const, runId: args.runId, conversationId: args.conversationId,
+      generation: Number(rows[0].generation), items };
+  });
+}
+
+/**
+ * `voice.segment.ready` 的事件 payload → 补听用的段清单（纯函数，判据在这里）。
+ *
+ * 残帧直接丢：`displayStart`/`displayEnd` 是干净正文里的字符区间，缺任一个，
+ * 客户端就只能猜"这段对应正文的哪里"——那是渲染层明确拒绝做的事。
+ * 按 ordinal 排序是**协议要求**：补听要按当时的顺序念，事件 seq 顺序在补听这条路上不可靠。
+ */
+export function companionVoiceSegmentsFromEventPayloads(payloads: readonly unknown[]): Array<{
+  ordinal: number; segmentId: string; displayText: string;
+  displayStart: number; displayEnd: number; cue: unknown }> {
+  return payloads.flatMap((raw) => {
+    const payload = raw as Record<string, unknown> | null;
+    if (!payload || typeof payload !== "object") return [];
+    if (typeof payload.segmentId !== "string" || typeof payload.ordinal !== "number"
+      || typeof payload.displayText !== "string" || payload.displayText.length === 0
+      || typeof payload.displayStart !== "number" || typeof payload.displayEnd !== "number") return [];
+    return [{ ordinal: payload.ordinal, segmentId: payload.segmentId,
+      displayText: payload.displayText, displayStart: payload.displayStart,
+      displayEnd: payload.displayEnd, cue: payload.cue ?? null }];
+  }).sort((left, right) => left.ordinal - right.ordinal);
+}

@@ -248,6 +248,8 @@ import {
   companionCachedVoiceReadRequestV1Schema,
   companionVoicePlaybackOutcomeRequestV1Schema,
   companionVoicePlaybackOutcomeResultV1Schema,
+  companionRunVoiceSegmentsRequestV1Schema,
+  companionRunVoiceSegmentsResultV1Schema,
 } from "@astella/shared/companion-voice-contracts";
 import {
   COMPANION_DISCOVERY_KINDS,
@@ -517,6 +519,10 @@ const companionChatAgentRoutesInputSchema = z.strictObject({
 const companionChatRunNodesInputSchema = z.strictObject({
   ...m1InputBase,
   request: companionRunNodesListRequestV1Schema,
+});
+const companionChatRunVoiceSegmentsInputSchema = z.strictObject({
+  ...m1InputBase,
+  request: companionRunVoiceSegmentsRequestV1Schema,
 });
 const companionChatCancelRunInputSchema = z.strictObject({
   ...m1InputBase,
@@ -873,6 +879,14 @@ channel(DESKTOP_IPC_CHANNELS.companionHomeGetProjection, runtimeInputSchema, asy
     assertEpoch(input.meta, getActiveWorkspaceEpoch());
     return ns_companion.listCompanionRunNodes(gateway.gatewayTransport, input.request, input.meta.requestId);
   }, companionRunNodesListResultV1Schema);
+
+  // 一轮回复已签发的语音段（2026-10-16）：本机没留下录音时的补听入口。
+  // 与 run-nodes 同一路由门控——它是只读的，且读的是服务端留档而不是本机缓存。
+  channel(DESKTOP_IPC_CHANNELS.companionChatRunVoiceSegments, companionChatRunVoiceSegmentsInputSchema, async (_event, _window, input) => {
+    requireM2Route(contract, "room.home");
+    assertEpoch(input.meta, getActiveWorkspaceEpoch());
+    return ns_companion.listCompanionRunVoiceSegments(gateway.gatewayTransport, input.request, input.meta.requestId);
+  }, companionRunVoiceSegmentsResultV1Schema);
 
   // 停止本轮（2026-09-19）：与其余伴星通道同一路由门控。202 / 200 幂等同形状。
   channel(DESKTOP_IPC_CHANNELS.companionChatCancelRun, companionChatCancelRunInputSchema, async (_event, _window, input) => {

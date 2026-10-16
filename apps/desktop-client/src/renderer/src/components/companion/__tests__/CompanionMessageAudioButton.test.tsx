@@ -38,17 +38,35 @@ it("shows only real local recordings and can stop them while preserving keyboard
   expect(read).toHaveBeenCalledOnce();
 });
 
-it("refreshes availability when new audio arrives or an old recording is evicted", async () => {
+/**
+ * 2026-10-16 改判：没有本机录音时**不再直接消失**。
+ *
+ * 原来这里断言 `queryByRole("button")` 为 null——那正是"错过的这一段永久静音、
+ * 连手动补听的入口都没有"的形状（生产 09:10 那条主动消息：服务端下发 2 段、
+ * 本机一个字都没有、按钮不存在）。现在这个位置给的是补听入口。
+ */
+it("没有本机录音时给补听入口，新录音到了再换成播放", async () => {
   list.mockResolvedValue(ok({ version: 1, items: [] }));
   render(<CompanionMessageAudioButton runId={runId} />);
   await waitFor(() => expect(list).toHaveBeenCalledOnce());
-  expect(screen.queryByRole("button")).toBeNull();
+  expect(await screen.findByRole("button", { name: "补听这段" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "播放这条消息的音频" })).toBeNull();
   list.mockResolvedValue(ok({ version: 1, items: [{ runId, ordinals: [1] }] }));
   act(() => window.dispatchEvent(new Event(COMPANION_AUDIO_CACHE_CHANGED)));
   await screen.findByRole("button", { name: "播放这条消息的音频" });
+  expect(screen.queryByRole("button", { name: "补听这段" })).toBeNull();
   list.mockResolvedValue(ok({ version: 1, items: [] }));
   act(() => window.dispatchEvent(new Event(COMPANION_AUDIO_CACHE_CHANGED)));
-  await waitFor(() => expect(screen.queryByRole("button")).toBeNull());
+  await screen.findByRole("button", { name: "补听这段" });
+});
+
+/** 补听取不到服务端留档时说实话，不假装还能放。 */
+it("补听取不到留档时说清楚，不静默失败", async () => {
+  list.mockResolvedValue(ok({ version: 1, items: [] }));
+  render(<CompanionMessageAudioButton runId={runId} conversationId="33333333-3333-4333-8333-333333333333" />);
+  fireEvent.click(await screen.findByRole("button", { name: "补听这段" }));
+  await waitFor(() => expect(screen.getByRole("status").textContent).toBe("这段暂时取不回来。"));
+  expect(play).not.toHaveBeenCalled();
 });
 
 it("mounts the same player in the journal and companion center and excludes user messages", async () => {

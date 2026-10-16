@@ -2,14 +2,16 @@ import { useEffect, useRef, useState } from "react";
 import { Loader2, Square, Volume2 } from "lucide-react";
 import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../app/desktop-client";
 import {
-  CompanionCachedAudioError, playCachedCompanionMessage, subscribeCompanionSpeech,
+  CompanionCachedAudioError, beginCompanionSpeechLine, playCachedCompanionMessage, subscribeCompanionSpeech,
+  type CompanionServerVoiceSegment,
 } from "../../app/companion-voice-playback";
 import { useRoomStore } from "../../app/room-store";
 
 export const COMPANION_AUDIO_CACHE_CHANGED = "astella:companion-audio-cache-changed";
 
-/** 手记与伴星中心共用的原声入口。没有本机录音就不承诺回放。 */
-export function CompanionMessageAudioButton({ runId, exchange = false }: { runId: string | null; exchange?: boolean }) {
+/** 手记与伴星中心共用的原声入口。本机没留下录音时可以按服务端留档补听。 */
+export function CompanionMessageAudioButton({ runId, conversationId = null, exchange = false }:
+  { runId: string | null; conversationId?: string | null; exchange?: boolean }) {
   const scope = useRoomStore(state => state.workspaceScopeRevision);
   const [cached, setCached] = useState<{ runId: string; scope: number; ordinals: number[] } | null>(null);
   const [phase, setPhase] = useState<"idle" | "loading" | "playing">("idle");
@@ -54,7 +56,55 @@ export function CompanionMessageAudioButton({ runId, exchange = false }: { runId
     };
   }, [runId, scope]);
 
-  if (!ordinals) return failure ? <span className="companion-message-audio__error" role="status">{failure}</span> : null;
+  /**
+   * 本机没留下录音时的补听（2026-10-16）。
+   *
+   * 原来这里直接 `return null`：一次错过（气泡不在场、App 没开）就等于这一句永久静音，
+   * 连手动补听的入口都没有。现在按 **服务端留档** 把这一轮的段取回来重新合成——
+   * 段身份仍以服务端为准，客户端不自己重新切段；事件过了 TTL 就如实说没有留档。
+   */
+  const redrive = async () => {
+    const list = window.astella?.companion?.chat?.listRunVoiceSegments;
+    if (!runId || !conversationId || !list) { setFailure("这段暂时取不回来。"); return; }
+    setPhase("loading"); setFailure(null);
+    try {
+      const result = unwrapGatewayResult(await list({
+        meta: createRequestMeta(),
+        request: { version: 1, conversationId, runId },
+      }));
+      if (result.items.length === 0) { setPhase("idle"); setFailure("这段没有留下语音记录。"); return; }
+      const session = beginCompanionSpeechLine({ strictSegments: true });
+      for (const item of result.items) {
+        session.feedSegment({
+          ref: { version: 2, conversationId, runId, generation: result.generation,
+            ordinal: item.ordinal, segmentId: item.segmentId },
+          displayText: item.displayText, displayStart: item.displayStart, displayEnd: item.displayEnd,
+          cue: item.cue as CompanionServerVoiceSegment["cue"],
+        });
+      }
+      session.finish();
+      playback.current = { planId: session.planId, stop: () => session.stop() };
+      setPhase("playing");
+    } catch (error) {
+      setPhase("idle");
+      setFailure(gatewayErrorMessage(error));
+    }
+  };
+
+  if (!ordinals) {
+    // 同一个 run 只在一个地方露这一条（父组件按 ownsRunAudio 已经筛过），
+    // 所以它的密度与有缓存时的那个按钮一致，不是每条消息都挂一个。
+    return <>
+      <button type="button" className="text-action" onClick={() => {
+        if (playback.current) { playback.current.stop(); playback.current = null; setPhase("idle"); return; }
+        void redrive();
+      }}>
+        {phase === "loading" ? <Loader2 size={13} className="companion-hud__spin" aria-hidden="true" /> : <Volume2 size={13} aria-hidden="true" />}
+        <span>{phase === "playing" ? "停止" : "补听这段"}</span>
+      </button>
+      {failure ? <span className="companion-message-audio__error" role="status">{failure}</span> : null}
+    </>;
+  }
   const active = phase !== "idle";
   return <span className="companion-message-audio">
     <button type="button" className="companion-message-audio__button" aria-label={active ? exchange ? "停止播放这段交流的音频" : "停止播放这条消息的音频" : exchange ? "播放这段交流的音频" : "播放这条消息的音频"}

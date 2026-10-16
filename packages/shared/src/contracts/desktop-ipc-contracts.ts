@@ -535,6 +535,7 @@ export const DESKTOP_IPC_CHANNELS = {
   companionChatAgentRoutes: "astella.v1.companion.chat.agentRoutes.list",
   // 过程节点留痕（2026-09-19）：GET /companion/conversations/:id/run-nodes。
   companionChatRunNodes: "astella.v1.companion.chat.runNodes.list",
+  companionChatRunVoiceSegments: "astella.v1.companion.chat.runVoiceSegments.list",
   // 停止本轮（2026-09-19）：POST /companion/runs/:id/cancel。
   companionChatCancelRun: "astella.v1.companion.chat.cancelRun",
   // LearningRun 页面只读上下文 + 一次性 grounded tutor 授权。HTTP 协议不变，
@@ -2849,6 +2850,14 @@ export interface AstellaDesktopApiM2 extends AstellaDesktopApiM1 {
         meta: RequestMetaV1;
         request: import("./companion-chat-desktop-contracts.ts").CompanionRunNodesListRequestV1;
       }): Promise<GatewayResultV1<import("./companion-chat-desktop-contracts.ts").CompanionRunNodesListResultV1>>;
+      /**
+       * 一轮回复已签发的语音段（2026-10-16）：本机没留下录音时的补听入口。
+       * 段身份以服务端为准，客户端照着它重建合成请求。
+       */
+      listRunVoiceSegments(input: {
+        meta: RequestMetaV1;
+        request: import("./companion-voice-contracts.ts").CompanionRunVoiceSegmentsRequestV1;
+      }): Promise<GatewayResultV1<import("./companion-voice-contracts.ts").CompanionRunVoiceSegmentsResultV1>>;
       /**
        * 停止本轮（2026-09-19）：服务端原子取消 + 写 turn.cancelled(reason=user)，
        * worker 在 fence 处把已输出的文本以 kind='cancelled' 留档。
