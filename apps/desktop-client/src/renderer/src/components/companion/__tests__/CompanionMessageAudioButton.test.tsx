@@ -69,6 +69,30 @@ it("补听取不到留档时说清楚，不静默失败", async () => {
   expect(play).not.toHaveBeenCalled();
 });
 
+/**
+ * 这一条钉的是"没有留档"那条话真的能说出来。
+ *
+ * 上面那条只走到"拿不到补听通道"（`listRunVoiceSegments` 缺席）。服务端把
+ * 没有留档从 404 改成 200 + 空列表之后，客户端在解包那一步不再抛，两句实话
+ * 才第一次有分工：取不回来 vs 这一轮确实没留下音频。
+ */
+it("这一轮没有留档时说实话，不进播放态也不假装能放", async () => {
+  const listRunVoiceSegments = vi.fn().mockResolvedValue(ok({
+    version: 1, runId, conversationId: "33333333-3333-4333-8333-333333333333", generation: null, items: [],
+  }));
+  vi.stubGlobal("astella", { companion: {
+    voice: { cachedList: list },
+    chat: { listRunVoiceSegments },
+  } });
+  list.mockResolvedValue(ok({ version: 1, items: [] }));
+  render(<CompanionMessageAudioButton runId={runId} conversationId="33333333-3333-4333-8333-333333333333" />);
+  fireEvent.click(await screen.findByRole("button", { name: "补听这段" }));
+  await waitFor(() => expect(listRunVoiceSegments).toHaveBeenCalledOnce());
+  await waitFor(() => expect(screen.getByRole("status").textContent).toBe("这段没有留下语音记录。"));
+  expect(play).not.toHaveBeenCalled();
+  expect(screen.queryByRole("button", { name: "停止播放这条消息的音频" })).toBeNull();
+});
+
 it("mounts the same player in the journal and companion center and excludes user messages", async () => {
   const message = { id: "22222222-2222-4222-8222-222222222222", role: "assistant", kind: "text", blocks: [{ type: "text", text: "当时她说的原话。" }],
     runId, createdAt: "2026-10-07T00:00:00Z" } as CompanionMessageV1;
