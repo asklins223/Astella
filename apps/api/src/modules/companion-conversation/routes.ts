@@ -432,8 +432,8 @@ userId: req.session.userId,
   // GET /companion/runs/:runId/voice-segments — 一轮回复已签发的语音段（2026-10-16）。
   //
   // 存在的理由：本机没留下录音时，客户端要能按段身份补取。分段权威在服务端，
-  // 客户端照着这份重建合成请求，不自己重新切段。事件按既有 TTL 清理，
-  // 过期回 404，由客户端如实说"这段没有留下语音记录"。
+  // 客户端照着这份重建合成请求，不自己重新切段。事件按既有 TTL 清理，过了就
+  // 回 200 + 空列表（`generation: null`），由客户端如实说"这段没有留下语音记录"。
   app.get<{ Params: { runId: string }; Querystring: { conversationId?: string } }>(
     "/companion/runs/:runId/voice-segments",
     { preHandler: [requireSession, requireCompanionDialogue] },
