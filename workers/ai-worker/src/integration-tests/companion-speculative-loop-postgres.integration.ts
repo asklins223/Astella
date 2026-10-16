@@ -397,3 +397,64 @@ test("检索工具返回完整存量记忆，已展开记录按ID避重而非比
     assert.equal((management.value as { memories: Array<{ content: string }> }).memories[0]?.content, content);
   } finally { await f.cleanup(); }
 });
+
+/**
+ * 「换模型重说」那条降级链的**接线**（2026-10-16）。
+ *
+ * 判据本身早就有（`planCompanionStepAfterAnswer` 的 `swapToFallback`，单测钉在
+ * `companion-agent-runtime.test.ts:926`），但生产没配 `companion_fallback` 槽，
+ * `args.fallbackProvider` 恒为 undefined —— 于是运行时那句"这一步换兜底档"落到
+ * `stepProvider = args.provider`，同档把同一句谎再说一遍。这两条盯的是**这一步真的换了 provider**，
+ * 而反面对照盯的是"没配兜底槽时仍回主档"，这样判据不会因为缺槽而假绿。
+ */
+function actionNarrationStub(modelId: string, served: string[], text: string): AIProvider {
+  return {
+    id: "openai_compatible", modelId,
+    chatCompletion: async () => ({ content: JSON.stringify({ intent: "task", toolUse: "act",
+      subjects: [], goalRelation: "unrelated", candidateOperations: ["companion_save_participation"],
+      ambiguities: [], voiceStyle: { decision: "none", instruction: null }, pendingOfferIndexes: [] }), usage: {} }),
+    executeAgentTurn: async () => { served.push(modelId);
+      return { content: text, toolCalls: [], finishReason: "stop", usage: null, providerRequestId: null }; },
+  } as unknown as AIProvider;
+}
+
+async function runActionRequestTurn(fallbackConfigured: boolean) {
+  const f = await fixture();
+  const served: string[] = [];
+  try {
+    const primary = actionNarrationStub("primary-model", served, "好，我把参与度调成安静些了。");
+    const fallback = actionNarrationStub("fallback-model", served, "参与度这次没有改动，我先按原样留着。");
+    let status = "";
+    try {
+      const result = await runCompanionAgentLoop({ ctx: f.event.ctx,
+        read: { ...readContext(f), userText: "把参与度改成安静。" }, provider: primary,
+        ...(fallbackConfigured ? { fallbackProvider: fallback } : {}),
+        toolConstraints: { visionEnabled: false },
+        baseMessages: [{ role: "system", content: "按要求执行。" }, { role: "user", content: "把参与度改成安静。" }],
+        expiresAt: new Date(Date.now() + 60_000).toISOString() });
+      status = result.status;
+    } catch (error) {
+      // 补的那一步仍然没有落库回执 → 交付闸照旧作废整轮（`destroysTurn = !landedWrites`）。
+      // 这条用例盯的是"补的那一步由哪个模型作答"，不是这道闸的取舍。
+      if (!(error instanceof AgentOutputError) || error.code !== "action_unverified") throw error;
+      status = `action_unverified:${(error as AgentOutputError).code}`;
+    }
+    return { status, served };
+  } finally { await f.cleanup(); }
+}
+
+test("判据要求换兜底模型的那一步真的由兜底档作答，不再让主档把同一句话重说一遍", async () => {
+  const { status, served } = await runActionRequestTurn(true);
+  assert.equal(status, "action_unverified:action_unverified");
+  assert.ok(served.length > 1, `补步没跑起来：${JSON.stringify(served)}`);
+  assert.equal(served[0], "primary-model", "第一步是主档");
+  assert.deepEqual([...new Set(served.slice(1))], ["fallback-model"],
+    `说而不做之后补的每一步都必须在兜底档上：${JSON.stringify(served)}`);
+});
+
+test("没配兜底槽时那一步仍回主档：反面对照，证明上一条盯的是换档而不是重跑", async () => {
+  const { served } = await runActionRequestTurn(false);
+  assert.ok(served.length > 1, `补步没跑起来：${JSON.stringify(served)}`);
+  assert.deepEqual([...new Set(served)], ["primary-model"],
+    "没有兜底档时补步只能重问同一个模型——这正是 2026-10-16 之前的实际形态");
+});

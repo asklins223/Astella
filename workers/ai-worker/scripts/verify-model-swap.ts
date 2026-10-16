@@ -21,7 +21,9 @@ const expect: Record<string, { platform: string; type: string; model: string }> 
   text_generation: { platform: "mimo-agent", type: "mimo_responses", model: "mimo-v2.6-flash" },
 };
 let failed = false;
-if (resolveSystemPlatform("companion_fallback")) throw new Error("MiMo-only configuration must not contain a fallback slot");
+// 2026-10-16：兜底槽从"不许存在"改判为"必须存在"——生产此前没配 `companion_fallback`，
+// 于是"换模型重说"那条降级链整条是死的。真机验收改用 companion-fallback-chain-probe.ts。
+if (!resolveSystemPlatform("companion_fallback")) throw new Error("配置里必须有 companion_fallback 槽，否则降级链空转");
 
 // ── ① 解析层 ─────────────────────────────────────────────────────────
 for (const [cap, want] of Object.entries(expect)) {
