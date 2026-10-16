@@ -206,3 +206,69 @@ test("失败留档：run 的终态不是 failed（取消/被接替/仍在跑）�
     }
   }
 });
+
+/**
+ * 2026-10-16：失败留档原来只认 `companion_create_note`（笔记能挂卡片），
+ * 别的写类工具做成的事就这样被"这条回复没完成"盖掉了。现在按同一份权威事实
+ * （本轮 succeeded 且 risk_class<>'read' 的落库回执）点名。
+ */
+async function seedSucceededCall(ws: string, uid: string, cid: string, runId: string,
+  name: string, riskClass: string): Promise<() => Promise<void>> {
+  const stepId = randomUUID();
+  await sql.begin(async (tx) => {
+    await tx`SELECT set_config('app.workspace_id', ${ws}, true)`;
+    await tx`SELECT set_config('app.user_id', ${uid}, true)`;
+    await tx`INSERT INTO companion_agent_steps (id, workspace_id, user_id, conversation_id, run_id,
+              step_no, kind, status, request_hash, started_at, finished_at)
+            VALUES (${stepId}, ${ws}, ${uid}, ${cid}, ${runId}, 1, 'model', 'succeeded',
+                    ${"c".repeat(64)}, now(), now())`;
+    await tx`INSERT INTO companion_agent_tool_calls (id, workspace_id, user_id, conversation_id, run_id,
+              step_id, tool_call_id, name, tool_version, arguments, arguments_sha256, risk_class, status)
+            VALUES (${randomUUID()}, ${ws}, ${uid}, ${cid}, ${runId}, ${stepId}, 'call-1',
+                    ${name}, 'v1', ${tx.json({})}, ${"0".repeat(64)}, ${riskClass}, 'succeeded')`;
+  });
+  return async () => {
+    await sql.begin(async (tx) => {
+      await tx`SELECT set_config('app.workspace_id', ${ws}, true)`;
+      await tx`SELECT set_config('app.user_id', ${uid}, true)`;
+      await tx`DELETE FROM companion_agent_tool_calls WHERE run_id = ${runId}`;
+      await tx`DELETE FROM companion_agent_steps WHERE run_id = ${runId}`;
+    });
+  };
+}
+
+test("失败留档：本轮真落库过的非笔记写也要点名，不漏成「什么都没做」", async () => {
+  const { workspaceId, userId } = await seedBase();
+  const s = await seedRun(workspaceId, userId, "failed");
+  const drop = await seedSucceededCall(workspaceId, userId, s.cid, s.runId,
+    "companion_save_participation", "reversible_low");
+  try {
+    assert.equal(await persistFailedPartial({ workspaceId, userId, conversationId: s.cid,
+      runId: s.runId, deliveredText: DELIVERED }), true);
+    const text = (await readPartial(workspaceId, userId, s.cid, s.runId)).messages[0].text;
+    assert.ok(text.startsWith(DELIVERED), "用户看过的那段字仍然在");
+    assert.match(text, /已经做成的操作仍然保留/, "点了名的落库操作必须出现在留档里");
+    assert.match(text, /正在记住我们的相处方式|companion_save_participation/,
+      "点名的必须是本轮真做成那件事（用界面同一份标签），不是泛泛一句「有操作」");
+  } finally {
+    await drop();
+    await s.cleanup();
+  }
+});
+
+/** 反向对照：只读不算做成。放宽的是点名，不是让她能认领没做过的事。 */
+test("失败留档：只有读操作时不点名任何成果", async () => {
+  const { workspaceId, userId } = await seedBase();
+  const s = await seedRun(workspaceId, userId, "failed");
+  const drop = await seedSucceededCall(workspaceId, userId, s.cid, s.runId,
+    "companion_read_note", "read");
+  try {
+    assert.equal(await persistFailedPartial({ workspaceId, userId, conversationId: s.cid,
+      runId: s.runId, deliveredText: DELIVERED }), true);
+    const text = (await readPartial(workspaceId, userId, s.cid, s.runId)).messages[0].text;
+    assert.equal(text, DELIVERED, "只读过一篇笔记不等于做成了一件事");
+  } finally {
+    await drop();
+    await s.cleanup();
+  }
+});

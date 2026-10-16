@@ -13,6 +13,7 @@ import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
 import { withWorkerWorkspaceTransaction } from "../db.ts";
 import { logger } from "../lib/logger.ts";
 import type { CompanionContentBlockV1 } from "@astella/shared";
+import { COMPANION_AGENT_TOOL_LABELS } from "@astella/shared";
 import { createdNoteToolResult, readCreatedNoteReceipt } from "./companion-note-authoring.ts";
 
 /**
@@ -117,6 +118,23 @@ export async function persistFailedPartial(args: {
         }
         if (savedLines.length) blocks[0] = { type: "text", text: delivered.length >= COMPANION_FAILED_PARTIAL_MIN_CHARS
           ? `${text}\n\n${savedLines.join("\n")}` : savedLines.join("\n"), emotion: "neutral" };
+        // 上面那条只认笔记，因为笔记能挂出一张真能打开的卡片。别的写类工具
+        // （保存参与偏好、安排注意力、改目标…）没有卡片可挂，但**同样不该被当成没发生**
+        // ——2026-10-16 用户口径：她做成过的事必须说得出名字。这里按同一份权威事实
+        // （本轮 `status='succeeded'` 且 `risk_class<>'read'` 的落库回执）补一行点名。
+        const others = await tx.execute<{ name: string; done: string }>(sql`
+          SELECT name, count(*)::text AS done FROM companion_agent_tool_calls
+          WHERE run_id=${args.runId} AND workspace_id=${args.workspaceId} AND user_id=${args.userId}
+            AND status='succeeded' AND risk_class <> 'read' AND name <> 'companion_create_note'
+          GROUP BY name ORDER BY name`);
+        if (others[0]) {
+          const named = others.map(row => `${COMPANION_AGENT_TOOL_LABELS[row.name] ?? row.name}`
+            + (Number(row.done) > 1 ? ` ×${row.done}` : "")).join("、");
+          const line = `这一轮已经做成的操作仍然保留：${named}。`;
+          const current = String((blocks[0] as { text?: string }).text ?? text);
+          blocks[0] = { type: "text", text: current.includes(line) ? current : `${current}\n\n${line}`,
+            emotion: "neutral" };
+        }
         const contentSha256 = sha256Utf8V1(canonicalJsonV1(blocks));
         const counters = await tx.execute<{ next_message_seq: string }>(sql`
           UPDATE companion_conversations
