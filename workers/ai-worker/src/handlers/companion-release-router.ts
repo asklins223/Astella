@@ -57,7 +57,21 @@ export interface CompanionReleaseThresholds {
 export const COMPANION_RELEASE_THRESHOLD_DEFAULTS: CompanionReleaseThresholds = Object.freeze({
   safeProbability: 0.85,
   toolNoneProbability: 0.9,
-  topSimilarity: 0.9,
+  /**
+   * OOD 近邻下限（2026-10-17 按真实分布重设）。
+   *
+   * 原来是 0.90，按「同一句话换个说法算同一类」的直觉定的。实测不成立：
+   * BGE-M3 上两条自然问句（"我接下来该先做什么" vs "我最近学了多久"）余弦只有
+   * 0.56，连毫不相干的两句也有 0.53 —— 0.90 在这套向量里几乎只对**逐字相同**
+   * 成立，于是 L1 在生产上从来没放过一轮（近七天真值：`reason` 全是 gated/
+   * similarity，`waitedMs` 每轮 4.9–5.7 秒全白等）。
+   *
+   * 0.62 取在"真实同义改写"与"毫不相干"之间：实测同义改写 0.75–0.88、
+   * 无关问句 0.50–0.60。仍然配 `safeProbability` 与 `toolNoneProbability`
+   * 两道概率门，以及 `anaphora/pendingOffer/short` 三道状态门——近邻只是
+   * "见没见过这类说法"，不是"这句话安全"。
+   */
+  topSimilarity: 0.62,
   neighbors: 8,
   minSamples: 8,
   maxSamples: 256,
@@ -86,13 +100,25 @@ export function resolveCompanionReleaseThresholds(
   };
 }
 
-/** 指代/接续词：出现即弃权（保守方向，只损失覆盖率）。 */
-const ANAPHORA_PATTERN = /(这个|那个|这些|那些|它们|它|刚才|刚刚|之前|上面|继续|接下来|第二个|第三个|上一个|下一个|前面那)/u;
+/**
+ * 指代词：出现即弃权（保守方向，只损失覆盖率）。
+ *
+ * 2026-10-17 生产实测收窄：原来的清单把「继续」「接下来」「之前」「上面」也算作指代，
+ * 于是「我接下来该先做什么」这种本来就没有所指的问句被判成有歧义，L1 整轮弃权、
+ * 白等一次 4.5 秒的分类。真正需要弃权的是**指向具体对象的词**（这个/那个/它/刚才），
+ * 它们可能指上一轮她说过的话；而「接下来/继续」是时间与话轮的连接词，
+ * 本身不带对象，L2 也从没因为它们把 toolUse 判成非 none。
+ */
+const ANAPHORA_PATTERN = /(这个|那个|这些|那些|它们|它|刚才|刚刚|第二个|第三个|上一个|下一个|前面那)/u;
 /**
  * 她的追问/邀请的收尾形态：问号收尾就是"还在等回应"的最强信号；
  * 其余是省略问号的邀请句（"我随时接""需要我展开就说一声"）。
+ *
+ * 2026-10-17 生产实测补了两类漏判：`回我一句「继续」`、`说一声` 这种把球明确踢回去的
+ * 收尾。L1 若把它们当成普通陈述放行，L2 回填的 `pendingOfferIndexes` 就会让正式步
+ * 重写历史——而提前开闸时文字已经发出去了，重写必然变成两个答案。
  */
-const OFFER_TAIL_PATTERN = /(?:[？?]\s*$)|(?:(?:吗|好不好|要不要|需要我|我随时|等你|告诉我|怎么样|可以吗|要我|想听)[。.！!…\s]*$)/u;
+const OFFER_TAIL_PATTERN = /(?:[？?]\s*$)|(?:(?:吗|好不好|要不要|需要我|我随时|等你|告诉我|怎么样|可以吗|要我|想听|回我|回一句|说一声|说一声就行)[。.！!…\s」』"']*$)/u;
 
 export interface CompanionReleaseGates {
   readonly pendingOffer: boolean;

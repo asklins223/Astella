@@ -73,6 +73,13 @@ test("状态门：她的追问收尾、短句、指代一律弃权", () => {
   }).pendingOffer, true);
   assert.equal(companionReleaseGates({ text: "先暂停一下" }).short, true);
   assert.equal(companionReleaseGates({ text: "那篇笔记里刚才那个公式再讲一遍" }).anaphora, true);
+  // 2026-10-17 生产实测：「接下来」是话轮连接词，不指向任何具体对象。把它当指代，
+  // 「我接下来该先做什么」就会整轮弃权、白等一次 4.5 秒的分类。
+  assert.equal(companionReleaseGates({
+    text: "今天先把最要紧的一件事说清楚：我接下来该先做什么？",
+  }).anaphora, false, "「接下来」不是指代，不该让 L1 弃权");
+  assert.equal(companionReleaseGates({ text: "继续讲刚才那段" }).anaphora, true,
+    "「刚才」指向具体对象，仍然弃权");
   const open = companionReleaseGates({
     text: "今天好累，想随便聊聊最近的事",
     recentMessages: [{ role: "assistant", text: "好呀，我在呢。" }],
@@ -105,7 +112,7 @@ test("相似度与概率都过线才放行，并给出意图猜测", async () =>
   });
   assert.equal(verdict.decision, "release");
   assert.equal(verdict.reason, "released");
-  assert.ok((verdict.topSimilarity ?? 0) > 0.9);
+  assert.ok((verdict.topSimilarity ?? 0) >= 0.62, "过的是新的 OOD 下限");
   assert.ok((verdict.safeProbability ?? 0) >= 0.85);
   assert.ok(verdict.intentGuess === "conversation" || verdict.intentGuess === "question");
 });

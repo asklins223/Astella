@@ -94,6 +94,7 @@ export {
 
 import { readCompanionWebSearchReceipts, readWebSearchReceipt, webSearchCitationBlocks, webSearchServiceAvailable } from "../agent/web-search.ts";
 import { prefetchCompanionNote } from "./companion-note-prefetch.ts";
+import { companionClassifierCapabilities } from "./companion-classifier-surface.ts";
 import { companionProviderFitsRequest } from "./companion-provider-fit.ts";
 import { judgeCompanionStepClosing, waitingConfirmationReceipts } from "./companion-step-closing.ts";
 import { companionRecoveryIdentity, openCompanionTurn } from "./companion-turn-opening.ts";
@@ -138,17 +139,14 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
   const budget = configuredBudget;
   const contractDeadlineAt = attemptStartedAt + (budget.deadlineMs ?? Infinity) - meta.elapsedMs;
   let deadlineAt = Math.min(handlerDeadlineAt, contractDeadlineAt);
-  if (deadlineAt <= attemptStartedAt) {
-    throw new CompanionAgentBudgetExceededError("companion agent execution budget exhausted");
-  }
+  if (deadlineAt <= attemptStartedAt) throw new CompanionAgentBudgetExceededError("companion agent execution budget exhausted");
   let flushedMs = 0;
   /** 本次尝试自上次落库以来新消耗的执行时间（累加到 agent_elapsed_ms）。 */
   const elapsedDelta = (): number => {
     const total = Date.now() - attemptStartedAt;
     const delta = total - flushedMs;
     if (delta <= 0) return 0;
-    flushedMs = total;
-    return delta;
+    flushedMs = total; return delta;
   };
   // 扁平工具面（方案 29 §4.1）：**不再选技能**。
   //
@@ -158,10 +156,8 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
   // 每轮给出权限档允许的全部工具，直到当前任务完成。
   // Latest-turn attention is independent of durable goals and historical actions.
   const attentionRequestHash = sha256Utf8V1(args.read.userText);
-  const notePage = (args.read.pageContext as { context?: {
-    pageKind?: string; replyPurpose?: string; annotationTarget?: unknown;
-    noteId?: unknown; noteVersionId?: unknown;
-  }; selection?: unknown } | null);
+  const notePage = (args.read.pageContext as { context?: { pageKind?: string; replyPurpose?: string; annotationTarget?: unknown;
+    noteId?: unknown; noteVersionId?: unknown }; selection?: unknown } | null);
   const writingAnnotation = Boolean(notePage?.context?.annotationTarget);
   const completeNoteReply = !writingAnnotation && Boolean(notePage?.context?.replyPurpose
     || (notePage?.context?.pageKind === "note" && notePage.selection));
@@ -188,12 +184,14 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
    * 最大的一块就是这次串行往返，实测 1.9–2.4s，而且不产出任何可见内容）。
    */
   const routeRecorder = createCompanionRouteRecorder({ scopeKey: `${args.ctx.workspaceId}:${args.read.userId}`, userText: args.read.userText, recentMessages: args.read.recentMessages, embedText: args.embedText, activeLearningTask: args.read.groundedTutorContext !== null || args.read.formalAnswerInProgress });
+  const classifierCapabilities = companionClassifierCapabilities({ availableToolNames: availableDefinitions.map(d => d.name),
+    pageKind: (args.read.pageContext as { context?: { pageKind?: string } } | null)?.context?.pageKind });
   const attentionResult = cachedInterpretation
     ? Promise.resolve(cachedInterpretation)
     : interpretCompanionTurn(args.provider, args.baseMessages, {
       requestHash: attentionRequestHash,
       objects: companionAttentionObjects(args.read, meta.relatedGoals),
-      capabilities: availableDefinitions.map(definition => definition.name),
+      capabilities: classifierCapabilities,
       recentMessages: args.read.recentMessages,
       conversationClock: args.read.conversationClock,
       job: args.ctx,
