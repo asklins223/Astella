@@ -4,13 +4,19 @@
 FROM node:22.11.0-alpine3.20 AS base
 WORKDIR /app
 
-# 国内 apk 镜像（清华 USTC），加速 alpine 包安装
+# 国内 apk 镜像（清华 USTC），加速 alpine 包安装。
+# 但构建发生在 GitHub runner 上：USTC 偶发不可用时 `apk add` 会以 exit 73 直接打挂
+# 发布镜像（2026-10-17 两次）。所以没装成就回退 Alpine 官方 CDN 再试一次——
+# 镜像加速是优化项，不该成为发布单点。
 RUN sed -i 's|dl-cdn.alpinelinux.org|mirrors.ustc.edu.cn|g' /etc/apk/repositories
 
 # P3 前置（Owner 2026-08-11 批准）：Alpine ffmpeg/ffprobe 用于音频时长探测/转码。
 # 供应链影响：apk 包来自 Alpine 官方仓库（经 USTC 镜像），ffmpeg 为 LGPL/GPL 组合许可；
 # 体积影响见 phase-report（记录于 P2 收尾）。
-RUN apk add --no-cache ffmpeg
+RUN apk add --no-cache ffmpeg \
+  || (sed -i 's|mirrors.ustc.edu.cn|dl-cdn.alpinelinux.org|g' /etc/apk/repositories \
+      && apk update \
+      && apk add --no-cache ffmpeg)
 
 # F-027: 使用 npm ci + lockfile 确保可复现构建
 FROM base AS deps
