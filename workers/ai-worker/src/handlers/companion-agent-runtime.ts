@@ -6,7 +6,6 @@ import { agentTurnInterpretationV1Schema } from "@astella/shared/agent-contracts
 import { companionEditedNoteV1Schema } from "@astella/shared/companion-note-authoring-contracts";
 import type { CompanionAgentLoopArgs } from "../contracts/companion-agent-loop.ts";
 import { executeTurn } from "@astella/agent-core";
-import { measureAgentTurnRequest, resolveContextBudget } from "@astella/agent-core";
 import {
   auditHash,
   boundedToolCallIdentity,
@@ -24,8 +23,6 @@ import {
   getCompanionAgentTool,
   resolveAllCompanionAgentTools,
   resolveCompanionInitialToolNames,
-  resolveCompanionToolGroupNames,
-  validateCompanionAgentToolArguments,
   type CompanionAgentToolStatus,
   type CompanionContentBlockV1,
   type AgentTurnRequest,
@@ -48,10 +45,9 @@ import {
   joinVisibleSegmentsDeduped,
   VISIBLE_SEGMENT_SEPARATOR,
 } from "./companion-visible-segments.ts";
-import { restoreCompactionCheckpoint } from "./companion-compaction-checkpoint.ts";
 import { encodeCompanionRuntimeCheckpoint, loadCompanionRuntimeCheckpoint, saveCompanionRuntimeInput,
   type CompanionRuntimeState } from "./companion-runtime-checkpoint.ts";
-import { companionAgentModelInputHash, createCompanionModelStepRunner } from "./companion-agent-task.ts";
+import { createCompanionModelStepRunner } from "./companion-agent-task.ts";
 import { logger } from "../lib/logger.ts";
 import { runWithAbortBudget } from "../lib/handler-timeout.ts";
 import {
@@ -68,16 +64,14 @@ import {
 } from "./companion-dialogue-store.ts";
 import { settleCompanionTurnPreamble } from "./companion-turn-preamble.ts";
 import { createCompanionStepCompaction } from "./companion-step-compaction.ts";
-import { looksTruncatedReply, companionStepOutputCeiling, sanitizeCompanionVisibleText } from "./companion-dialogue-content.ts";
-import { unavailableCompanionToolSummary } from "./companion-tool-outcome.ts";
+import { looksTruncatedReply, companionStepOutputCeiling } from "./companion-dialogue-content.ts";
 import { companionNumericEvidenceContext } from "./companion-context-evidence.ts";
-import { companionToolFailureFaces } from "./companion-tool-failure-faces.ts";
 import { runCompanionToolExecution } from "./companion-tool-execution-run.ts";
 import { CompanionToolPreparation } from "./companion-tool-preparation.ts";
 import { companionExecutionPolicy } from "./companion-execution-policy.ts";
 import { repairDegenerateCompanionAnswer } from "./companion-answer-repair.ts";
 import { assembleCompanionStepRequest, companionStepPolicyText, companionStepToolSurface, companionWebSearchAllowedForStep } from "./companion-agent-step-assembly.ts";
-import { companionInitiativeInterpretationFields, recentOwnLines, renderCompanionInitiativeObservation } from "./companion-initiative-observation.ts";
+import { companionInitiativeInterpretationFields } from "./companion-initiative-observation.ts";
 import { createdNoteToolResult, readCreatedNoteReceipt, userForbidsNoteLibraryRead } from "./companion-note-authoring.ts";
 import {
   EAGER_TOOL_DISPATCH_ENABLED,
@@ -99,33 +93,15 @@ export {
 } from "./companion-tool-outcome.ts";
 
 import { readCompanionWebSearchReceipts, readWebSearchReceipt, webSearchCitationBlocks, webSearchServiceAvailable } from "../agent/web-search.ts";
-import { loadNoteReadPage } from "./companion-read-tools.ts";
+import { prefetchCompanionNote } from "./companion-note-prefetch.ts";
+import { companionProviderFitsRequest } from "./companion-provider-fit.ts";
+import { judgeCompanionStepClosing, waitingConfirmationReceipts } from "./companion-step-closing.ts";
+import { companionRecoveryIdentity, openCompanionTurn } from "./companion-turn-opening.ts";
+import { judgeCompanionUnavailableTool } from "./companion-unavailable-tool.ts";
+import { resumeCompanionInterruptedInput } from "./companion-resume-input.ts";
+import { companionToolAuditLabel, rejectUnknownCompanionTool, unofferedToolReceipt, validateCompanionToolCall } from "./companion-tool-call-validation.ts";
+import { applyCompanionToolLoad, createCompanionToolSurface } from "./companion-tool-surface.ts";
 
-type AgentMessage = AgentTurnRequest["messages"][number];
-
-/**
- * Whether a provider's declared context window can take this request.
- * `measureAgentTurnRequest` counts the full serialized request (system,
- * messages and tool schemas) in the same units as the governor.
- */
-async function providerFitsRequest(provider: NonNullable<CompanionAgentLoopArgs["fallbackProvider"]>,
-  request: AgentTurnRequest): Promise<boolean> {
-  const capability = provider.getCapabilities?.();
-  if (!capability || !Number.isSafeInteger(capability.contextWindowTokens) || capability.contextWindowTokens <= 0) {
-    return true; // Unknown window: keep the previous behaviour rather than refuse.
-  }
-  try {
-    const measured = await measureAgentTurnRequest(request);
-    const budget = resolveContextBudget({
-      capability,
-      requestedOutputTokens: provider.resolveOutputTokenLimit?.() ?? request.maxTokens ?? null,
-      outputLimitEnforced: capability.outputLimitEnforced,
-    });
-    return measured.inputTokens <= budget.hardInputTokens;
-  } catch {
-    return true;
-  }
-}
 
 export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promise<CompanionAgentLoopResult> {
   if (typeof args.provider.executeAgentTurn !== "function") {
@@ -182,7 +158,10 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
   // 每轮给出权限档允许的全部工具，直到当前任务完成。
   // Latest-turn attention is independent of durable goals and historical actions.
   const attentionRequestHash = sha256Utf8V1(args.read.userText);
-  const notePage = (args.read.pageContext as { context?: { pageKind?: string; replyPurpose?: string; annotationTarget?: unknown }; selection?: unknown } | null);
+  const notePage = (args.read.pageContext as { context?: {
+    pageKind?: string; replyPurpose?: string; annotationTarget?: unknown;
+    noteId?: unknown; noteVersionId?: unknown;
+  }; selection?: unknown } | null);
   const writingAnnotation = Boolean(notePage?.context?.annotationTarget);
   const completeNoteReply = !writingAnnotation && Boolean(notePage?.context?.replyPurpose
     || (notePage?.context?.pageKind === "note" && notePage.selection));
@@ -232,50 +211,16 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     return voicePreferenceWrite ? { ...attention, voicePreferenceWrite } : attention;
   }));
 
-  // Preserve host-origin historical records through the same path as completed
-  // native exchanges. They close no fabricated assistant turn and create no new
-  // human request; their original source remains in the handoff and database.
-  // reasoning 随 assistant 历史一起带回去：网关在思考模式下把"以 assistant 收尾"的
-  // 请求当成续写，要求交回那条的 reasoning_text。主动参与轮每一轮都是这个形状，
-  // 剥掉它就等于每一轮 400（0435；实测只带 encrypted_content 也不行）。
-  const dialogueHistory = args.baseMessages
-    .filter((message) => message.role !== "system" || message.hostObservation)
-    .map((message) => ({
-      role: message.role,
-      content: message.content,
-      ...(message.hostObservation ? { hostObservation: true } : {}),
-      ...(message.reasoning && message.reasoning.length > 0 ? { reasoning: message.reasoning } : {}),
-    } as AgentMessage));
-  /**
-   * 主动参与按**对话**装配（2026-10-13）：历史就是真实的 user/assistant 回合，宿主报告的时刻
-   * 是一条带 hostObservation 的 system 观察消息，排在历史之后。原来这两样被压成一个 JSON 块、
-   * 历史塞进 `recentDialogue` 字段，她读到的是"关于这段聊天的材料"，接不出上一句是谁说的、
-   * 隔了多久——那正是"像个人一样接着聊"最需要的两层。
-   *
-   * 回放的是 role+content 两份纯文本（`companion-context-handoff.ts:312` 已经把工具与思考句柄
-   * 剥掉），不带上一轮运行的句柄。**观察消息压在末尾并不能豁免"以 assistant 收尾"的
-   * provider 要求**——2026-10-14 实测证伪了这条旧断言：观察消息就在末尾，思考开且带工具的
-   * 主动轮仍然 400「reasoning_text must be passed back」。该形状现在由 provider 侧的
-   * `endsWithAssistantTurn` 守卫兜住（降级为关思考，见 opencode-go）。跨运行句柄的旧错误
-   * 来自把上一轮当本轮草稿，不是来自历史本身。
-   */
-  let messages = [...dialogueHistory];
-  const initiativeObservation = args.read.initiativeInput
-    ? { role: "system" as const, hostObservation: true as const,
-      content: renderCompanionInitiativeObservation(args.read.initiativeInput,
-        { lastOwnLines: recentOwnLines(dialogueHistory) }) }
-    : null;
-  const currentRequest = initiativeObservation
-    ?? [...messages].reverse().find((message) => message.role === "user");
-  if (!currentRequest) throw new Error("companion turn is missing its current user request");
-  if (initiativeObservation) messages.push(initiativeObservation);
-  const recoveryIdentity = { version: 1, runId: args.read.runId, conversationId: args.read.conversationId,
-    baseMessages: args.baseMessages, currentRequest, permissionLevel: meta.permissionLevel,
-    definitions: availableDefinitions.map(({ name, toolVersion, parameters }) => ({ name, toolVersion, parameters })),
-    provider: { id: args.provider.id, modelId: args.provider.modelId, promptVersion: args.provider.promptVersion,
-      capability: args.provider.getCapabilities?.() ?? null },
-    fallback: args.fallbackProvider ? { id: args.fallbackProvider.id, modelId: args.fallbackProvider.modelId,
-      promptVersion: args.fallbackProvider.promptVersion } : null };
+  const opening = openCompanionTurn(args);
+  const dialogueHistory = opening.dialogueHistory;
+  const currentRequest = opening.currentRequest;
+  let messages = opening.messages;
+  const recoveryIdentity = companionRecoveryIdentity({
+    args, currentRequest, permissionLevel: meta.permissionLevel,
+    definitions: availableDefinitions,
+    primary: args.provider,
+    fallback: args.fallbackProvider ?? null,
+  });
   const recovered = meta.stepCount > 0
     ? await loadCompanionRuntimeCheckpoint(event, recoveryIdentity) : null;
   if (recovered) {
@@ -317,86 +262,30 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
   if (definitions.length === 0)
     throw new Error(`companion tool surface resolved empty for permission "${String(meta.permissionLevel)}"`);
   /**
-   * Host pre-read for the current note.
-   *
-   * MiMo's Responses adapter rewrites tool_choice=required to auto, so "the
-   * interpreter said read" did not guarantee a read: the model could answer
-   * from history and still say it had just read the note. The host now reads
-   * the first page before generation when the interpreter named
-   * companion_read_note and the page context carries a real note id. The model
-   * answers from that block; continuation still uses the normal read tool.
+   * Host pre-read for the current note: see companion-note-prefetch.ts for why
+   * the host reads before generation and which interpretations trigger it.
    */
-  let notePrefetched = false;
-  // Either current-page read operation means "the answer lives in this note".
-  // The interpreter picks companion_read_current_page for "这一页" phrasings; if
-  // only companion_read_note counted, the note stayed out of context and the
-  // model answered from a note it had read earlier in the conversation.
-  const readsCurrentNote = attention.candidateOperations.includes("companion_read_note")
-    || attention.candidateOperations.includes("companion_read_current_page");
-  logger.info({
-    runId: args.read.runId, recovered: Boolean(recovered), toolUse: attention.toolUse,
-    readsCurrentNote, notePrefetchContext: notePage?.context ?? null,
-  }, "companion note prefetch decision inputs");
-  if (!recovered && (attention.toolUse === "read" || attention.toolUse === "uncertain")
-    && readsCurrentNote) {
-    const noteId = (notePage?.context as { noteId?: unknown } | undefined)?.noteId;
-    const noteVersionId = (notePage?.context as { noteVersionId?: unknown } | undefined)?.noteVersionId;
-    if (typeof noteId === "string" && /^[0-9a-f-]{36}$/i.test(noteId)) {
-      try {
-        const note = await withWorkerWorkspaceTransaction(
-          { workspaceId: args.ctx.workspaceId, userId: args.read.userId },
-          tx => loadNoteReadPage(tx, {
-            workspaceId: args.ctx.workspaceId,
-            userId: args.read.userId,
-            noteId,
-            ...(typeof noteVersionId === "string" ? { noteVersionId } : {}),
-            startOrdinal: 1,
-            startOffset: 0,
-            maxChars: 3_000,
-          }),
-        );
-        if (note && note.page.body.trim().length > 0) {
-          notePrefetched = true;
-          const truncated = note.truncated
-            ? `（第 1–${note.page.endOrdinal} 块，共 ${note.totalBlocks} 块；后面还没读）`
-            : `（共 ${note.totalBlocks} 块）`;
-          messages.push({
-            role: "system",
-            hostObservation: true,
-            content: [
-              "<prefetched_note>",
-              `《${note.title}》${truncated}`,
-              note.page.body,
-              "</prefetched_note>",
-              "这是宿主在你开口前读到的当前笔记正文。直接据此回答，不要描述读取过程，也不要说没读到。"
-              + "需要续读时再用 companion_read_note（同版本、按 nextStartOrdinal 继续）。",
-            ].join("\n"),
-          });
-          logger.info({ runId: args.read.runId, noteId, chars: note.page.body.length, truncated: note.truncated },
-            "companion note prefetched by host before generation");
-        }
-      } catch (error) {
-        logger.warn({ runId: args.read.runId, noteId, err: error }, "companion note prefetch failed; leaving the read to the model");
-      }
-    }
-  }
-  /**
-   * The model sees a small core + the groups declared for this page. It can
-   * expand the surface itself with companion_load_tools; candidate operations
-   * may only add groups, never remove one. The full catalog still drives
-   * authorization and execution checks.
-   */
-  let loadedToolNames = new Set<string>(recovered?.state.loadedToolNames ?? []);
-  const initialToolNames = resolveCompanionInitialToolNames({
-    availableToolNames: definitions.map(definition => definition.name),
+  const notePrefetch = await prefetchCompanionNote({
+    workspaceId: args.ctx.workspaceId,
+    userId: args.read.userId,
+    runId: args.read.runId,
+    recovered: Boolean(recovered),
+    toolUse: attention.toolUse,
+    candidateOperations: attention.candidateOperations,
+    noteId: notePage?.context?.noteId,
+    noteVersionId: notePage?.context?.noteVersionId,
+  });
+  const notePrefetched = notePrefetch.prefetched;
+  if (notePrefetch.message) messages.push(notePrefetch.message);
+  const toolSurface = createCompanionToolSurface({
+    definitions,
     pageKind: notePage?.context?.pageKind ?? null,
     candidateOperations: attention.candidateOperations,
+    loadedToolNames: recovered?.state.loadedToolNames ?? [],
   });
-  // The loader itself may be absent when permissions shrink; then the surface is
-  // exactly the core + page groups and there is nothing to expand.
-  const offeredToolDefinitions = () => definitions
-    .filter(definition => initialToolNames.has(definition.name) || loadedToolNames.has(definition.name))
-    .map(({ name, description, parameters }) => ({ name, description, parameters }));
+  const offeredToolDefinitions = toolSurface.offered;
+  /** Persisted with the checkpoint so a resumed turn keeps what it loaded. */
+  const loadedToolNames = toolSurface.loadedToolNames;
   let prefetchedFirstStep = preamble.prefetchedFirstStep;
   routeRecorder.record(event, handlerStartedAtMs);
 
@@ -543,16 +432,11 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     errorCode?: string, result?: Extract<CompanionAgentLoopResult, { status: "completed" }>) => finishStep(event, stepId, status, hash,
       errorCode, encodeCompanionRuntimeCheckpoint(recoveryIdentity, { phase: result ? "settled" : "continue",
         state: workingState(), ...(result ? { result } : {}) }));
-  const waitingReceipts = (proposalId: string, calls: AgentTurnResult["toolCalls"], index: number): AgentMessage[] =>
-    calls.slice(index).map((call, offset) => ({ role: "tool", toolCallId: call.id,
-      content: JSON.stringify(offset === 0 ? { ok: false, status: "waiting_confirmation", proposalId }
-        : { ok: false, status: "not_executed", deferredByProposalId: proposalId,
-          summary: "前一项正在等待用户确认，这一项尚未执行。决定到达后按当前目标与真实回执继续，不把它当成已完成。" }) }));
   const waitForConfirmation = (proposalId: string, calls: AgentTurnResult["toolCalls"], index: number) => {
     // Close every declared call honestly before a future model request. Later
     // calls remain in the transcript with their original arguments and an
     // explicit non-execution receipt; the Agent can replan after the decision.
-    messages.push(...waitingReceipts(proposalId, calls, index));
+    messages.push(...waitingConfirmationReceipts(proposalId, calls, index));
   };
   /**
    * "这句话在语法上说完了吗"——**只看结构，不看长度**（40 §4.4.2）。
@@ -661,7 +545,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     const pendingSteer = steerSwapToFallback;
     let stepProvider = args.provider;
     if (steerSwapToFallback && typeof args.fallbackProvider?.executeAgentTurn === "function") {
-      const fallbackFits = await providerFitsRequest(args.fallbackProvider, stepRequest);
+      const fallbackFits = await companionProviderFitsRequest(args.fallbackProvider, stepRequest);
       if (fallbackFits) stepProvider = args.fallbackProvider;
       else logger.warn({ runId: args.read.runId, stepCount, fallbackModelId: args.fallbackProvider.modelId },
         "companion steer kept on primary provider: fallback context window cannot fit this request");
@@ -681,24 +565,19 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     if (prefetched) stepEmitted = prefetched.emitted;
     const resumingInput = recovered?.phase === "input" && stepCount === resumedStepCount + 1;
     if (resumingInput) {
-      const displayed = args.initialVisibleText ?? "";
-      const prior = sanitizeCompanionVisibleText(visibleSegments.join(VISIBLE_SEGMENT_SEPARATOR));
-      if (displayed.length > prior.length && displayed.startsWith(prior)) {
-        const folded = restoreCompactionCheckpoint({ runId: args.read.runId, conversationId: args.read.conversationId,
-          request: stepRequest, traces: args.compactionCheckpoints ?? [] });
-        const actualRequest = folded ? { ...stepRequest, messages: folded.messages } : stepRequest;
-        const stored = await createCompanionAgentStepCheckpointPort(event, stepId).load({ taskId: "companion_agent_model_step", taskVersion: 1,
-          inputSnapshotHash: companionAgentModelInputHash({ request: actualRequest, provider: stepProvider, permissionLevel: meta.permissionLevel }),
-          workspaceId: args.ctx.workspaceId, userId: args.read.userId });
-        if (stored) stepEmitted = true; // Reuse the whole model result, keeping its already delivered prefix once.
-        else {
-          const suffix = displayed.slice(prior.length).replace(/^\n\n/, "");
-          visibleSegments.push(suffix); visibleSegmentDelivered.push(true);
-          messages.push({ role: "assistant", content: suffix }, ...companionStepCorrectionMessages({ currentRequest,
-            alreadyDisplayed: true, instruction: "执行进程中断，前面这段文字已经显示；它没有新的工具执行回执。保留已确认结果，接着完成当前问题，不从头重说这段前缀。" }));
-          stepRequest = { ...stepRequest, messages: [...messages] };
-        }
-      }
+      const resumed = await resumeCompanionInterruptedInput({
+        event, stepId, stepRequest, stepProvider,
+        permissionLevel: meta.permissionLevel,
+        workspaceId: args.ctx.workspaceId, userId: args.read.userId,
+        runId: args.read.runId, conversationId: args.read.conversationId,
+        initialVisibleText: args.initialVisibleText,
+        visibleSegments, visibleSegmentDelivered, messages, currentRequest,
+        compactionCheckpoints: args.compactionCheckpoints,
+        separator: VISIBLE_SEGMENT_SEPARATOR,
+      });
+      stepRequest = resumed.stepRequest;
+      // Reuse the whole stored model result, keeping its already delivered prefix once.
+      if (resumed.reuseStoredResult) stepEmitted = true;
     }
     await saveCompanionRuntimeInput(event, stepId, encodeCompanionRuntimeCheckpoint(recoveryIdentity,
       { phase: "input", state: { ...workingState(stepCount - 1), steerSwapToFallback: pendingSteer } }));
@@ -1240,7 +1119,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       event.prepareConfirmation = proposalId => ({ stepId,
         checkpoint: encodeCompanionRuntimeCheckpoint(recoveryIdentity, { phase: "waiting", proposalId,
           pendingCallId: call.id, state: { ...workingState(), messages: [...messages,
-            ...waitingReceipts(proposalId, calls, callIndex)] } }) });
+            ...waitingConfirmationReceipts(proposalId, calls, callIndex)] } }) });
       const identity = boundedToolCallIdentity(call);
       if (!identity) {
         // The provider returned a tool-call id/name outside the SSE contract
@@ -1270,57 +1149,37 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
         const offered = toolsOfferedThisStep.map(tool => tool.name);
         await recordRejectedToolCall(event, stepId, identity, safeArgumentsHash(call.arguments),
           getCompanionAgentTool(identity.name), "not_executed", "这个工具组还没有装载");
-        messages.push({
-          role: "tool",
-          toolCallId: call.id,
-          content: JSON.stringify({
-            ok: false,
-            status: "not_executed",
-            error: `工具 ${identity.name} 不在本步已装载的工具面里。先调用 companion_load_tools 装载对应组；当前可用：${offered.slice(0, 20).join("、")}`,
-          }),
-        });
+        messages.push({ role: "tool", toolCallId: call.id,
+          content: unofferedToolReceipt(identity.name, offered) });
         continue;
       }
       const definition = getCompanionAgentTool(identity.name);
       // 唯一的归属边界是"这个工具注册过吗"+ 上面的权限档过滤。
       // 原先还要求它属于本轮选中的那个技能，那正是能力被静默关掉的地方。
       if (!definition) {
-        await recordRejectedToolCall(
-          event, stepId, identity, safeArgumentsHash(call.arguments),
-          null, "blocked", "未注册的工具，操作已阻止",
-        );
-        await appendAgentEvent(event, "agent.tool", {
-          tool: {
-            toolCallId: identity.id,
-            name: identity.name,
-            toolVersion: "unknown",
-            // An unresolvable tool is treated as maximally risky in the audit
-            // trail rather than understating it as a read.
-            riskClass: "irreversible",
-            status: "blocked",
-            safeLabel: "未注册工具，操作已阻止",
-          },
+        await rejectUnknownCompanionTool({
+          identity,
+          recordRejected: reason => recordRejectedToolCall(event, stepId, identity,
+            safeArgumentsHash(call.arguments), null, "blocked", reason),
+          appendEvent: tool => appendAgentEvent(event, "agent.tool", { tool }),
+          pushReceipt: content => messages.push({ role: "tool", toolCallId: identity.id, content }),
         });
-        messages.push({ role: "tool", toolCallId: identity.id, content: JSON.stringify({ ok: false, status: "blocked", error: "unknown or disallowed tool" }) });
         continue;
       }
-      const parsedArgs = validateCompanionAgentToolArguments(identity.name, call.arguments);
-      if (!parsedArgs.success) {
-        const invalidIdentity = `${identity.name}:${safeArgumentsHash(call.arguments)}`;
-        const repeatedInvalid = invalidArgumentCalls.has(invalidIdentity);
+      const invalidIdentity = `${identity.name}:${safeArgumentsHash(call.arguments)}`;
+      const validated = validateCompanionToolCall({ name: identity.name, arguments: call.arguments,
+        alreadyRejected: invalidArgumentCalls, identity: invalidIdentity });
+      if (validated.rejection) {
         invalidArgumentCalls.add(invalidIdentity);
-        const schemaFields = new Set(Object.keys(definition.parameters.properties ?? {}));
-        logger.warn({ runId: args.read.runId, toolName: identity.name, repeatedInvalid,
-          issues: parsedArgs.issues.map(issue => ({
-            field: schemaFields.has(issue.path[0] ?? "") ? issue.path[0] : "$input", code: issue.code,
-          })) }, "companion tool arguments rejected; schema field metadata only");
+        logger.warn({ runId: args.read.runId, toolName: identity.name,
+          repeatedInvalid: validated.rejection.repeatedInvalid, ...validated.logFields },
+        "companion tool arguments rejected; schema field metadata only");
         // 40b §3.2：`not_executed` 就是「参数无效」这一格。它据此知道
         // **改参数重来是有意义的**，而 "failed" 会让它以为这个工具本身坏了，
         // 转头去编一个答案。账本与模型现在说的是同一个词。
-        const rejected = companionToolFailureFaces({ status: "not_executed", safeSummary: parsedArgs.reason });
         await recordRejectedToolCall(
           event, stepId, identity, safeArgumentsHash(call.arguments),
-          definition, "not_executed", parsedArgs.reason,
+          definition, "not_executed", validated.rejection.reason,
         );
         await appendAgentEvent(event, "agent.tool", {
           tool: {
@@ -1328,46 +1187,30 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
             name: identity.name,
             toolVersion: definition.toolVersion,
             riskClass: definition.riskClass,
-            status: rejected.ledgerStatus,
-            safeLabel: COMPANION_AGENT_TOOL_LABELS[definition.name] ?? definition.description.slice(0, 240),
-            safeSummary: parsedArgs.reason,
+            status: "not_executed",
+            safeLabel: companionToolAuditLabel(definition.name, definition.description),
+            safeSummary: validated.rejection.reason,
           },
         });
-        messages.push({
-          role: "tool",
-          toolCallId: identity.id,
-          content: JSON.stringify({ ok: false, status: rejected.modelStatus, error: parsedArgs.reason,
-            code: "invalid_arguments", validationIssues: parsedArgs.issues,
-            parameters: definition.parameters,
-            instruction: "按 validationIssues 修正参数，不重复提交相同无效参数；已经成功的操作不必重做。" }),
-        });
-        // Validation is pure: the identical invalid input cannot become valid
-        // by waiting or spending another model call. This is a no-progress
-        // failure, not a step/tool quota; changed arguments remain retryable.
-        if (repeatedInvalid) {
+        messages.push({ role: "tool", toolCallId: identity.id, content: validated.rejection.content });
+        if (validated.rejection.repeatedInvalid) {
           await finishStep(event, stepId, "failed", undefined, "REPEATED_INVALID_TOOL_ARGUMENTS");
           await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta() });
           throw new AgentOutputError("arguments_malformed", "companion repeated identical invalid tool arguments after validation feedback");
         }
         continue;
       }
+      const parsedArgs = { data: validated.accepted!.arguments };
       const serializedArgs = canonicalJsonV1(parsedArgs.data);
       const argsHash = sha256Utf8V1(serializedArgs);
       if (identity.name === "companion_load_tools") {
         const groups = (parsedArgs.data as { groups?: string[] }).groups ?? [];
-        const wanted = resolveCompanionToolGroupNames(groups);
-        const loaded = definitions.filter(item => wanted.has(item.name)).map(item => item.name);
-        for (const name of loaded) loadedToolNames.add(name);
-        messages.push({ role: "tool", toolCallId: call.id, content: JSON.stringify({
-          ok: true,
-          data: { loadedGroups: groups, tools: loaded },
-          summary: `已装载 ${loaded.length} 个工具`,
-        }) });
-        await appendAgentEvent(event, "agent.tool", { tool: {
-          toolCallId: call.id, name: identity.name, toolVersion: definition.toolVersion,
-          riskClass: "read", status: "succeeded", safeLabel: "已装载更多能力",
-          safeSummary: `已装载 ${loaded.length} 个工具`,
-        } });
+        await applyCompanionToolLoad({
+          surface: toolSurface, groups, definitions,
+          callId: call.id, toolName: identity.name, toolVersion: definition.toolVersion,
+          pushReceipt: content => messages.push({ role: "tool", toolCallId: call.id, content }),
+          recordAudit: tool => appendAgentEvent(event, "agent.tool", { tool }),
+        });
         continue;
       }
       const restriction = companionTimeWakeupConstraint(attention, identity.name, parsedArgs.data);
@@ -1495,14 +1338,13 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
        * `ensureAgentToolCall` 建好了——doctor 那边要看的正是"她答应过、结果没发生"——
        * 所以直接把它终结成 `blocked`，精确词只给模型。
        */
-      const searchLimitReached = identity.name === "agent_web_search"
-        && budget.maxWebSearchCalls != null && webSearchCalls >= budget.maxWebSearchCalls;
-      const unavailableSummary = unavailableCompanionToolSummary(identity.name, event.constraints, { searchLimitReached });
-      if (unavailableSummary) {
-        const unavailable = companionToolFailureFaces({
-          status: searchLimitReached && event.constraints.webSearchEnabled === true ? "not_executed" : "unavailable",
-          safeSummary: unavailableSummary,
-        });
+      const unavailable = judgeCompanionUnavailableTool({
+        toolName: identity.name,
+        constraints: event.constraints,
+        searchLimitReached: identity.name === "agent_web_search"
+          && budget.maxWebSearchCalls != null && webSearchCalls >= budget.maxWebSearchCalls,
+      });
+      if (unavailable) {
         await updateToolCall(event, operationCallId, {
           status: unavailable.ledgerStatus,
           safeSummary: unavailable.safeSummary,
@@ -1518,15 +1360,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
             safeSummary: unavailable.safeSummary,
           },
         });
-        messages.push({
-          role: "tool",
-          toolCallId: call.id,
-          content: JSON.stringify({
-            ok: false,
-            status: unavailable.modelStatus,
-            error: unavailable.safeSummary,
-          }),
-        });
+        messages.push({ role: "tool", toolCallId: call.id, content: unavailable.receipt });
         continue;
       }
       /**
@@ -1612,31 +1446,17 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
         content: JSON.stringify({ ok: true, data: execution.value, summary: execution.safeSummary }),
       });
     }
-    const closingCall = calls.at(-1);
-    const closesSilently = args.read.initiativeInput && closingCall?.name === "companion_finish_participation";
-    const closesSpeech = closingCall?.name === "companion_publish_utterance"
-      && (closingCall.arguments as { final?: boolean } | null)?.final !== false
-      && calls.every(call => ["companion_publish_utterance", "companion_write_annotation"].includes(call.name));
-    // A committed publication or explicit silent decision is the result itself.
-    // Do not spend another model round trip merely to confirm execution ended.
-    const succeededCalls = calls.every(call => {
-      const receipt = [...messages].reverse().find(message => message.role === "tool" && message.toolCallId === call.id);
-      if (!receipt || typeof receipt.content !== "string") return false;
-      try { return JSON.parse(receipt.content).ok === true; } catch { return false; }
+    const closing = judgeCompanionStepClosing({
+      calls, messages, initiative: Boolean(args.read.initiativeInput), writingAnnotation,
     });
-    const deliveredAnnotation = writingAnnotation && calls.some(call => {
-      if (call.name !== "companion_write_annotation" || (call.arguments as { final?: boolean } | null)?.final === false) return false;
-      const receipt = [...messages].reverse().find(message => message.role === "tool" && message.toolCallId === call.id);
-      try { return receipt && JSON.parse(String(receipt.content)).ok === true; } catch { return false; }
-    });
-    if (deliveredAnnotation && calls.every(call => ["companion_write_annotation", "companion_publish_utterance"].includes(call.name))) {
+    if (closing.settleAs === "annotation") {
       // The independent artifact is already delivered. Optional speech failure cannot turn it into another generation loop.
       const completedResult = { status: "completed" as const, text: utterancePublished ? "" : said.trim(), blocks: richBlocks, memoryRefs: [], writesLanded: landedWrites,
         ...(result.reasoning && result.reasoning.length > 0 ? { reasoning: result.reasoning } : {}) };
       await finishBoundary(stepId, "succeeded", auditHash(messages.slice(-calls.length)), undefined, completedResult);
       return { kind: "settled", result: completedResult };
     }
-    if ((closesSilently || closesSpeech) && succeededCalls) {
+    if (closing.settleAs === "silent") {
       const completedResult = { status: "completed" as const, text: "", blocks: richBlocks, memoryRefs: [] };
       await finishBoundary(stepId, "succeeded", auditHash(messages.slice(-calls.length)), undefined, completedResult);
       return { kind: "settled", result: completedResult };
@@ -1670,7 +1490,6 @@ import { companionSteerCause, judgeCompanionDeliveryGate } from "./companion-del
 
 // 事件与步进持久化由 companion-agent-events.ts 承担，也在该模块保存运行态模型恢复点。
 import {
-  createCompanionAgentStepCheckpointPort,
   appendAgentEvent,
   finishStep,
   persistStep,

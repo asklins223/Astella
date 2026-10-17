@@ -134,7 +134,7 @@ export const companionCapabilityManifest: readonly AgentCapabilityDeclaration[] 
   // 分页续读（39d W6-2 / 39b C5）：正文按块分页，`startOrdinal` 是续读的起点
   // （上一页返回的 nextStartOrdinal）。不再"截前 3000 字假装读过"——返回体带
   // 块序号、总块数与下一页起点，读不到结尾时按它续，不谎称已读全文。
-  tool("companion_read_note", "读笔记正文；默认只返回 body 与页码。全文编辑传 includeBlocks=true，拿 blocks 的完整原文与 1 起算序号；未读完按 startOrdinal/startOffset 续读；页面给 noteVersionId 就原样传。", "read", false, z.object({ noteId: uuid, noteVersionId: uuid.optional().describe("页面上下文给出的固定笔记版本；读取用户正在看的旧版本时必须传入"), startOrdinal: z.number().int().min(1).optional().describe("续读传 nextStartOrdinal，同版要靠 noteVersionId"), startOffset: z.number().int().nonnegative().optional().describe("续读传 nextStartOffset，缺省0"), maxChars: z.number().int().min(3_000).max(20_000).optional().describe("全文编辑用20000；一般阅读默认3000"), includeBlocks: z.boolean().optional().describe("全文编辑用 true：返回 blocks 完整原文；普通阅读不要传，避免正文重复") }).strict(), { label: "正在读那篇笔记" }, { maxOutputChars: 60_000 },
+  tool("companion_read_note", "读笔记正文；全文编辑传 includeBlocks=true；未读完按 startOrdinal 续读。", "read", false, z.object({ noteId: uuid, noteVersionId: uuid.optional().describe("页面上下文给出的固定笔记版本；读取用户正在看的旧版本时必须传入"), startOrdinal: z.number().int().min(1).optional().describe("续读传 nextStartOrdinal，同版要靠 noteVersionId"), startOffset: z.number().int().nonnegative().optional().describe("续读传 nextStartOffset，缺省0"), maxChars: z.number().int().min(3_000).max(20_000).optional().describe("全文编辑用20000，一般阅读默认3000"), includeBlocks: z.boolean().optional().describe("全文编辑用 true 返回 blocks 完整原文；普通阅读不要传") }).strict(), { label: "正在读那篇笔记" }, { maxOutputChars: 60_000 },
     { shared: ["当前页面是 note 且 page_context 给了 noteId/noteVersionId 时，读正文直接用 companion_read_note，并把这两个 id 原样传入；companion_read_current_page 只给页面摘要，不能替代笔记正文。"] }),
   // 来源正文读取（39d W6-2 / 39b C5："当前工具表没有来源正文读取工具"）：
   // 分页形状与 read_note 相同；来源没解析好（draft/processing/failed）时如实说明，
@@ -356,7 +356,7 @@ export const companionCapabilityManifest: readonly AgentCapabilityDeclaration[] 
     { shared: [IMAGE_SCENE_GUIDANCE] }),
   // 工具面装载器：默认只给核心+当前页面声明的能力组，其余按需由她自己装载。
   // 工具仍然全部在目录里声明，装载只是展开视图，不按意图摘除任何能力。
-  tool("companion_load_tools", "装载更多工具组。默认工具面只含核心与当前页面相关组；需要其他能力时先调用本工具，参数给组 id。组：notes=笔记与来源；learning=学习运行；memory=长期记忆与手册；persona=她自己的表达与边界；attention=提醒与参与；goals=后台目标；web=联网；visual=看图与画图；stats=统计与当前页面；navigation=带路。", "read", false,
-    z.object({ groups: z.array(z.enum(COMPANION_TOOL_GROUP_IDS)).min(1).max(6) }).strict(),
-    { label: "正在打开更多能力", discovery: "按需打开笔记、学习、目标、联网、看图等工具组。" }, { maxOutputChars: null }),
+  tool("companion_load_tools", "装载更多工具组：默认只给核心与当前页组，要别的能力先调本工具给 id。", "read", false,
+    z.object({ groups: z.array(z.enum(COMPANION_TOOL_GROUP_IDS)).min(1).max(6).describe("组 id：notes、learning、memory、persona、attention、goals、web、visual、stats、navigation") }).strict(),
+    { label: "正在打开更多能力" }, { maxOutputChars: null }),
 ];
