@@ -12,12 +12,13 @@ import { resumeCompanionInterruptedInput } from "../companion-resume-input.ts";
  * or lose the already-shown prefix.
  */
 
+const tool = (name: string) => ({ name, description: "", parameters: {}, toolVersion: "1" });
 const definitions = [
-  { name: "companion_read_context", description: "", parameters: {} },
-  { name: "companion_read_note", description: "", parameters: {} },
-  { name: "companion_search_notes", description: "", parameters: {} },
-  { name: "agent_web_search", description: "", parameters: {} },
-  { name: "companion_list_recent_activity", description: "", parameters: {} },
+  tool("companion_read_context"),
+  tool("companion_read_note"),
+  tool("companion_search_notes"),
+  tool("agent_web_search"),
+  tool("companion_list_recent_activity"),
 ];
 
 test("工具面：核心+当前页组先给，装载后只增不减", () => {

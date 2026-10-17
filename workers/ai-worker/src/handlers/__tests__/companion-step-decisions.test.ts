@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { AgentTurnRequest } from "@astella/shared";
 import { judgeCompanionStepClosing, waitingConfirmationReceipts } from "../companion-step-closing.ts";
 import { judgeCompanionUnavailableTool } from "../companion-unavailable-tool.ts";
 import { companionProviderFitsRequest } from "../companion-provider-fit.ts";
@@ -85,7 +86,7 @@ test("不可用工具：说清缺的是哪个开关，额度用尽与能力关�
 test("兜底 provider 装不下时不出主槽：能装下才切，窗口未知则放行", async () => {
   const request = { role: "companion_agent", systemPrompt: "x".repeat(400), messages: [
     { role: "user", content: "y".repeat(400) },
-  ], tools: [] } as never;
+  ], tools: [] } as unknown as AgentTurnRequest;
   // 与 config/ai-platforms.json 里 DeepSeek 槽的真实声明一致（64k 窗口、8k 输出）。
   const deepSeek = {
     getCapabilities: () => ({ contextWindowTokens: 65_536, maxOutputTokens: 8_192, outputLimitEnforced: true }),
@@ -93,7 +94,7 @@ test("兜底 provider 装不下时不出主槽：能装下才切，窗口未知�
   };
   assert.equal(await companionProviderFitsRequest(deepSeek, request), true, "小请求应当装得下 64k 窗口");
   // 同一个窗口塞进一个明显超长的历史时必须拒绝：整轮改判超预算比留在主槽更糟。
-  const huge = { ...request, messages: [{ role: "user", content: "z".repeat(400_000) }] } as never;
+  const huge: AgentTurnRequest = { ...request, messages: [{ role: "user", content: "z".repeat(400_000) }] };
   assert.equal(await companionProviderFitsRequest(deepSeek, huge), false, "装不下时不能切过去");
   assert.equal(await companionProviderFitsRequest({
     getCapabilities: () => ({ contextWindowTokens: 0 }),
