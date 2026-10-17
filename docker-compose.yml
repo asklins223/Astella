@@ -150,6 +150,11 @@ services:
         condition: service_completed_successfully
     environment:
       DATABASE_URL_API: ${DATABASE_URL_API:?Set DATABASE_URL_API in .env before starting the production stack}
+      # 结构题评估在 api 这一侧读 `learning_task_private_solutions`，而这张表的 SELECT
+      # 只在 `astella_worker` 手上（api 角色从未被授权）。少了这一条，api 会回落到自己的
+      # 连接并 fail closed：评估永远返回 not_assessable，界面上只是"这次没评出来"。
+      # 与 worker 那一档同样用 `:?`——缺了就别起来，不要静默降级。
+      DATABASE_URL_WORKER: ${DATABASE_URL_WORKER:?Set DATABASE_URL_WORKER in .env before starting the production stack}
       NODE_ENV: production
       PORT: 4000
       # The container may listen on all interfaces internally, but the host
