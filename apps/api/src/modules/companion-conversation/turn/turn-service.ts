@@ -487,14 +487,32 @@ export async function createCompanionTurn(args: {  workspaceId: string;
       await invalidateSupersededRunProposals(tx, { runId: activeRun.id });
       supersededRunId = activeRun.id;
     } else if (request.supersedesGeneration !== undefined) {
+      /**
+       * 没有活动 run 时，`supersedesGeneration` 只是个**过期的接替号**：没有东西可接替，
+       * 也没有任何副作用会被它触发。早先这里返回 409 STALE_GENERATION，把一件
+       * 「直接当没带号发出去就好」的事变成了死循环（2026-10-17 线上）：
+       * 客户端握着一个已经结束的 run 号，每发一条都被拒；而 409 在桌面端只投影成
+       * `conflict`，客户端认不出是哪条 run 挡着，于是界面上挂着一句"上一条还挂着"，
+       * 实际上一条也没挂着——重新加载会话之前，每一句都发不出去。
+       *
+       * 因此这里只核对、不拒绝：号对得上就是正常接替（下面 generation 照常 +1），
+       * 对不上就按普通新消息处理，并留一条 warn 让客户端侧的号漂移仍然可见。
+       */
       const latestRun = await tx
         .select({ generation: companionTurnRuns.generation })
         .from(companionTurnRuns)
         .where(eq(companionTurnRuns.conversationId, args.conversationId))
         .orderBy(sql`${companionTurnRuns.generation} DESC`)
         .limit(1);
-      if (request.supersedesGeneration !== (latestRun[0]?.generation ?? 0)) {
-        throw new CompanionConversationError("STALE_GENERATION", 409, "supersedesGeneration mismatch");
+      const latestGeneration = latestRun[0]?.generation ?? 0;
+      if (request.supersedesGeneration !== latestGeneration) {
+        console.warn(JSON.stringify({
+          event: "companion_turn_supersede_generation_stale",
+          conversationId: args.conversationId,
+          clientGeneration: request.supersedesGeneration,
+          latestGeneration,
+          action: "accepted_without_supersede",
+        }));
       }
     }
 

@@ -450,6 +450,29 @@ it("接替重试又撞 409 时空手再发一次：那条 run 刚好没了不该
 });
 
 
+it("409 只是本地接替号过期时，空手重发一次就发出去，不再挂「上一条还挂着」", async () => {
+  const conflictResult = { version: 1 as const, ok: false as const,
+    error: { version: 1 as const, code: "conflict" as const, retry: "never" as const,
+      safeMessageKey: "上一条还挂着", requestId: "conflict-2" },
+    requestId: "conflict-2", correlationId: "conflict-2", schemaRevision: "desktop-ipc-v1" };
+  const sendTurn = vi.mocked(window.astella.companion.chat.sendTurn);
+  sendTurn.mockReset();
+  sendTurn.mockResolvedValueOnce(conflictResult as never);
+  sendTurn.mockResolvedValue(ok({ version: 1, status: "accepted", conversationId: id(5), runId: id(6),
+    generation: 44, eventCursor: 0, clientMessageId: id(70), userMessageId: id(71) }));
+  // 409 时服务端没有任何活动 run：只是本地握着一个过期的接替号。
+  listRunNodes.mockResolvedValue(ok({ items: [], runs: [] }));
+  await openHistory();
+  const { sending } = await startSend();
+  await waitFor(() => expect(sendTurn).toHaveBeenCalledTimes(2));
+  const bodies = sendTurn.mock.calls.map(call => call[0].request.turn);
+  expect(bodies[0]).not.toHaveProperty("supersedesGeneration");
+  expect(bodies[1]).not.toHaveProperty("supersedesGeneration");
+  expect(chat.blockedByRun).toBeNull();
+  addReply();
+  await act(async () => { expect(await sending).toBe(true); });
+});
+
 it("two minutes of silent SSE stay below the shared read quota and still recover the final reply", async () => {
   cleanup();
   vi.useFakeTimers();

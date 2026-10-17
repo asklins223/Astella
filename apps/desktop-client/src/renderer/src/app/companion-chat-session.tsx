@@ -1900,23 +1900,41 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
       } catch (error) {
         if (generation !== sendGenerationRef.current) return pendingSend.cancelled;
         if (!isCompanionRunConflict(error)) throw error;
-        // 撞上活动 run 而本地不知道它的 generation（应用重启、或先前那一轮是在别的
-        // 入口发起的）：从 run 摘要取回那条 run，接替它重发一次。
+        // 409 在桌面端只投影成 `conflict`，分不清「真有一条活动 run」还是「本地那个
+        // 接替号过期了」（她自主动的那几轮也会推进 generation）。本地的号一旦过期，
+        // 每发一次都拿它去接替，只会在服务端反复撞同一个 409——2026-10-17 线上那句
+        // 「上一条还挂着」就是这么挂住的：实际一条都没挂着。先把它清掉再按下面的
+        // 顺序重试；真有一条活动 run 时，下面的 resolve 会把它接回来。
+        activeTurnRef.current = null;
+        setProcessRunId(null);
         const recovered = await resolveActiveRunGeneration(active.id, epoch);
         // 记下来也为了给用户一个真能按的出口：认不出那条 run 时，界面上不许再
         // 出现一句指向不存在的「停止」。
         setBlockedByRun(recovered);
-        if (recovered === null || generation !== sendGenerationRef.current) throw error;
-        try {
-          sent = await postTurn(recovered.generation);
-        } catch (retryError) {
-          if (!isCompanionRunConflict(retryError)) throw retryError;
-          // 接替又撞 409：最可能是那条 run 在我们读到号的这一刻刚好没了（回收器
-          // 收掉它、或别的端替掉它）——带着旧号发会被服务端判 STALE_GENERATION，
-          // 那也是一次 409。空手再发一次：真还有活动 run 就仍旧被挡，那时屏幕上
-          // 已经有「停掉上一条」；没了就正常发出去。
-          setBlockedByRun(await resolveActiveRunGeneration(active.id, epoch));
-          sent = await postTurn(null);
+        if (generation !== sendGenerationRef.current) throw error;
+        if (recovered !== null) {
+          try {
+            sent = await postTurn(recovered.generation);
+          } catch (retryError) {
+            if (!isCompanionRunConflict(retryError)) throw retryError;
+            // 接替又撞 409：最可能是那条 run 在我们读到号的这一刻刚好没了（回收器
+            // 收掉它、或别的端替掉它）——带着旧号发会被服务端判 STALE_GENERATION，
+            // 那也是一次 409。空手再发一次：真还有活动 run 就仍旧被挡，那时屏幕上
+            // 已经有「停掉上一条」；没了就正常发出去。
+            setBlockedByRun(await resolveActiveRunGeneration(active.id, epoch));
+            sent = await postTurn(null);
+          }
+        } else {
+          // 没有可接替的活动 run：多半只是本地号过期而已。空手重发一次；真还有一条
+          // 读不到的活动 run（限流之类）就仍旧被挡，那一轮会带着可识别状态进外层的
+          // 失败文案，而不是继续拿一个死号重试。
+          try {
+            sent = await postTurn(null);
+          } catch (retryError) {
+            if (!isCompanionRunConflict(retryError)) throw retryError;
+            setBlockedByRun(await resolveActiveRunGeneration(active.id, epoch));
+            throw retryError;
+          }
         }
       }
       if (generation !== sendGenerationRef.current) return pendingSend.cancelled;

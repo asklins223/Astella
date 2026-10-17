@@ -71,6 +71,31 @@ async function seedActiveRun(args: {
   return { runId, generation: 1 };
 }
 
+async function seedFinishedRun(args: {
+  workspaceId: string; userId: string; conversationId: string;
+}): Promise<{ runId: string; generation: number }> {
+  const runId = randomUUID();
+  const messageId = randomUUID();
+  await sql.begin(async (tx) => {
+    await tx`SELECT set_config('app.workspace_id', ${args.workspaceId}, true)`;
+    await tx`SELECT set_config('app.user_id', ${args.userId}, true)`;
+    await tx`INSERT INTO companion_messages
+               (id, conversation_id, workspace_id, user_id, role, seq, kind, blocks, content_sha256)
+             VALUES (${messageId}, ${args.conversationId}, ${args.workspaceId}, ${args.userId},
+                     'user', 1, 'text', ${tx.json([{ type: "text", text: "已经结束的一轮" }])},
+                     ${"0".repeat(64)})`;
+    await tx`INSERT INTO companion_turn_runs
+               (id, conversation_id, workspace_id, user_id, user_message_id, generation, status,
+                idempotency_key_hash, request_body_hash, finished_at)
+             VALUES (${runId}, ${args.conversationId}, ${args.workspaceId}, ${args.userId},
+                     ${messageId}, 1, 'succeeded', ${"a".repeat(64)}, ${"b".repeat(64)}, now())`;
+    await tx`UPDATE companion_conversations
+             SET next_message_seq = 2, next_event_seq = 1, next_generation = 2
+             WHERE id = ${args.conversationId}`;
+  });
+  return { runId, generation: 1 };
+}
+
 async function collectCompanionExport(args: { workspaceId: string; userId: string }) {
   const ndjson: string[] = [];
   const result = await exportCompanionDataStream(args, (line) => {
@@ -309,6 +334,30 @@ const secondGen = (second.body as { generation: number }).generation;
     assert.equal(rows.oldRun[0].status, "superseded");
     assert.equal(rows.cancelled.length, 1);
     assert.equal(rows.activeRuns[0].n, 1, "active run 至多一条");
+  } finally {
+    await cleanup();
+  }
+});
+
+test("P2 过期的接替号 + 没有活动 run：按普通新消息放行，不再 409 把用户挡死", async () => {
+  const { workspaceId, userId, conversationId, cleanup } = await seedConversation();
+  try {
+    await seedFinishedRun({ workspaceId, userId, conversationId });
+    // 2026-10-17 线上：客户端握着一个已经结束的 run 号，服务端每次 409 STALE_GENERATION，
+    // 桌面端把 409 投影成 conflict 又认不出是哪条 run，于是每句都发不出去。
+    const created = await createCompanionTurn({
+      workspaceId, userId, conversationId, idempotencyKey: randomUUID(),
+      body: { ...turnBody(randomUUID()), supersedesGeneration: 99 },
+    });
+    assert.equal(created.statusCode, 202);
+    const runs = await sql.begin(async (tx) => {
+      await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
+      await tx`SELECT set_config('app.user_id', ${userId}, true)`;
+      return tx`SELECT generation, status FROM companion_turn_runs
+                WHERE conversation_id = ${conversationId} ORDER BY generation`;
+    });
+    assert.equal(runs.length, 2, "旧 run 保留，新 run 照常落库");
+    assert.equal(runs[1].status, "accepted");
   } finally {
     await cleanup();
   }

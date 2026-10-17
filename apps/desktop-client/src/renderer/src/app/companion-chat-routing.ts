@@ -268,7 +268,11 @@ export function companionTurnErrorMessage(error: unknown, blockedRunIdentified =
     // 会在几十秒内把它收掉，说清这件事才是真话。
     return blockedRunIdentified
       ? "上一条还挂着。按「停掉上一条」，这句就能立刻发出去。"
-      : "上一条还挂着，系统几十秒内会自动收掉它。这句还在你手里，稍等一下再发。";
+      // 认不出是哪条 run 时，旧文案说「系统几十秒内会自动收掉它」——线上（2026-10-17）
+      // 实际是本地接替号过期，一条 run 也没挂着，用户照着等只会一直发不出去。
+      // 现在客户端会先清掉旧号、空手重发一次；走到这句说明确实还有一条读不到的活动
+      // run，那就只陈述能确认的事实。
+      : "这句还没发出去：上一轮的状态暂时对不上，稍等一下再发一次。";
   }
   return gatewayErrorMessage(error);
 }

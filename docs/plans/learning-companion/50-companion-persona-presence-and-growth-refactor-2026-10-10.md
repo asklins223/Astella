@@ -484,3 +484,5 @@ flowchart TD
 **验证：**ai-worker 全量单测 1931 条、api 3018 条（1 skip）、shared 951 条全绿；四包 typecheck 通过；`god-file-ratchet`（runtime 保持 1499 行）、向量出口归属守卫、migration journal 与 0442/0443 迁移守卫均绿。
 
 **边界：**enforce 是部署默认（用户 2026-10-17 裁决，不做灰度）；L1 先开闸而 L2 后判不一致时只记 `route.l1.agreement=misrelease`、不撤回已出的字——异常就回退 `shadow`；索引以在线生长 + 最近 256 条持久样本为主，重启后靠 24 条历史补；TTS 侧本轮未改。
+
+**2026-10-17 补丁（「上一条还挂着」409 死循环）：**线上实测客户端握着一个已经结束的 run 号，每发一条都被 `STALE_GENERATION` 拒绝；桌面端把 409 只投影成 `conflict`、认不出是哪条 run，于是界面挂着一句「上一条还挂着，系统几十秒内会自动收掉它。这句还在你手里」，而实际一条也没挂着——重新加载会话之前每一句都发不出去（api 日志里 24 秒内 16 次 409、无任何新 run 落库即为此形状）。两处收口：① 服务端在没有活动 run 时不再拒绝过期的 `supersedesGeneration`，按普通新消息放行并留一条 `companion_turn_supersede_generation_stale` warn；② 桌面端撞 409 后先清掉本地过期的接替号，再按「读到活动 run 就接替、读不到就空手重发一次」恢复，认不出活动 run 时的新文案不再声称系统会自动收掉它。
