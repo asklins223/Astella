@@ -253,6 +253,7 @@ export const CAPABILITY_KIND_LABELS: Record<string, string> = {
   text_generation: "文字生成",
   vision: "看图",
   agent_turn: "智能体作答",
+  note_generation: "笔记生成",
   companion_fallback: "伴星备用",
   embedding: "向量检索",
   rerank: "结果重排",

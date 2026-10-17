@@ -49,6 +49,12 @@ export type AITaskType =
  * - text_generation（轻量槽，GLM-4-9B 小模型）：
  *   **仅限用户不可见的内部辅助任务**（如日志/元数据分类）；质量不足以
  *   面向用户，当前无任务分配至此。
+ * - note_generation（笔记产物槽，2026-10-16 线上实测后拆出）：速看／脑图／
+ *   原句讲解／拓展草稿。同样是用户可见、同样要专业模型，但它们要的是**结构化
+ *   抽取**（要点＋逐字引文）而不是开放思考。共用 agent_turn 时只能继承对话模型的
+ *   思考档：线上一次速看在 mimo-v2.6-flash/medium 上单发 completion 9,411 token、
+ *   242 s。拆槽后档位由 `capabilities.note_generation.reasoningEffort` 声明，
+ *   默认 `low`——保留一段思考，但不让速看等四分钟。
  * - vision / embedding / rerank：各自专用能力。
  */
 const TASK_CAPABILITY_MAP: Record<AITaskType, Capability> = {
@@ -58,11 +64,13 @@ const TASK_CAPABILITY_MAP: Record<AITaskType, Capability> = {
   grounding_critic:    "agent_turn",
   repair:              "agent_turn",
   companion_agent:     "agent_turn",
-  note_learning_overview: "agent_turn",
-  note_learning_mind_map: "agent_turn",
-  note_annotation_explain: "agent_turn",
+  note_learning_overview: "note_generation",
+  note_learning_mind_map: "note_generation",
+  note_annotation_explain: "note_generation",
+  // 互动演示是整页 HTML/SVG 的自主创作，有自己的完成判据与预算（round-artifact
+  // 那条链按 none 档直发），不跟着这一槽降档。
   note_dynamic_artifact: "agent_turn",
-  note_expansion_draft: "agent_turn",
+  note_expansion_draft: "note_generation",
   // 读图不是一条独立能力（2026-10-12「不再单独配识图模型」）：它走副模型的
   // 普通 chat completion（消息里带 image_url），谁的眼睛由模型档案 vision 决定。
   analyze_image:       "text_generation",

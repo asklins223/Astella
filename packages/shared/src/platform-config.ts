@@ -101,7 +101,7 @@ export type ThinkingParamDialect = "enable_thinking" | "reasoning_effort" | "thi
 export type MaxTokensParam = NonNullable<PlatformOptions["maxTokensParam"]>;
 
 /** 档位由低到高；"最接近关"的一档取声明 levels 里第一个命中的。 */
-const REASONING_EFFORT_ORDER: ReasoningEffort[] = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
+export const REASONING_EFFORT_ORDER: ReasoningEffort[] = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
 
 /**
  * 这一发该带哪个思考字段——**方言与档位都由声明驱动**，调用方只说"要不要关"。
@@ -199,6 +199,20 @@ export interface CapabilityMapping {
   platform: string;
   /** Model to use for this capability. */
   model: string;
+  /**
+   * 这一槽相对模型档案的**思考档位覆盖**（2026-10-16）。
+   *
+   * 为什么挂在能力上而不是再抄一份平台/模型：同一台模型可以同时服务"要深思"和
+   * "只要结构化抽取"的两种用途（伴星对话 vs 速看/脑图）。差异是**用途**的属性，
+   * 不是模型的属性，而用途正是 capability。写在这里就不必复制一份模型档案
+   * （复制品一定会在下一次改上下文/输出上限时漂移）。
+   *
+   * 约束：值必须 ∈ 该模型档案声明的 `reasoning.levels`。不在档位表里时
+   * `resolveSystemPlatform` **丢弃覆盖并告警一次**（照档案默认下发）——设成上游
+   * 不认的值会直接 400，比"没生效"更难查。配置面板对同一条做阻断校验。
+   * 模型档案未声明 `reasoning` 时该字段无效（没有可覆盖的档位）。
+   */
+  reasoningEffort?: ReasoningEffort;
 }
 
 /**

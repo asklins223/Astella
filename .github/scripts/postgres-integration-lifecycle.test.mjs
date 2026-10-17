@@ -49,6 +49,11 @@ describe("PostgreSQL integration test lifecycle", () => {
           if (!line.includes("${JSON.stringify(")) continue;
           // `::jsonb` casts are explicit JSON storage and are safe.
           if (line.includes("::jsonb")) continue;
+          // `::vector` 同理，而且它比 jsonb 更没有别的路：pgvector 的文本形式本来就
+          // 是 `[1,0,2]` 这样一个方括号数字串，postgres.js 没有对应的 JS 参数类型，
+          // 序列化后显式转 cast 正是写入这一列的唯一路径。这条守卫要拦的是
+          // "把 JSON 当字符串塞进 jsonb 列"，不是一个显式转好的向量字面量。
+          if (line.includes("::vector")) continue;
           // `${...}` 里是 **JS 表达式，不是 SQL**。挖掉插值再找 SQL 关键字——
           //
           // 2026-10-05 实测的误报：下面这行是一个纯 throw，被判成了 INSERT

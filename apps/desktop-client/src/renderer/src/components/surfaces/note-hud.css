@@ -1287,6 +1287,8 @@
 .hud-surface .task-slip__body { flex: 1; min-width: 0; }
 .hud-surface .task-slip__lead { display: block; font-size: 13px; line-height: 1.5; }
 .hud-surface .task-slip__note { margin: 3px 0 0; color: var(--hud-soft); font-size: 12px; line-height: 1.65; }
+/* 「已等 N 秒」：每秒重写一次，tabular-nums 保证数字宽度固定、不左右抖。 */
+.hud-surface .task-slip__elapsed { margin: 2px 0 0; color: var(--hud-soft); font-size: 11px; line-height: 1.5; font-variant-numeric: tabular-nums; }
 .hud-surface .task-slip__action {
   flex: none;
   min-height: 36px;

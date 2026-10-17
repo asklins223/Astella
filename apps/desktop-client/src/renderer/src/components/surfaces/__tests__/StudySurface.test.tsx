@@ -609,8 +609,13 @@ describe("all-spaces scope", () => {
       items: [roundRecordItem({ roundId: c3 })],
       shownCount: 1, totalCount: 3, hasMore: false, nextCursor: null,
     })));
-    (screen.getByRole("button", { name: "看更早的几轮" } as never)).click();
-    await waitFor(() => expect(within(list).queryAllByRole("listitem")).toHaveLength(3));
+    // 走 fireEvent 而不是节点上的 .click()：后者把这次更新留在 act 队列外面，
+    // 全量并行时那一页就翻不出来了（v1.8.11 的发布 CI 红在这里，本地与 main 同 commit 都绿）。
+    fireEvent.click(screen.getByRole("button", { name: "看更早的几轮" }));
+    // 重新查这一份清单，而不是攥着翻页前那个节点：清单是被条件渲染出来的，
+    // 攥着的引用会跟着旧的 <ol> 一起留在文档外面。
+    await waitFor(() => expect(within(screen.getByRole("list", { name: "我的学习轮次记录" }))
+      .queryAllByRole("listitem")).toHaveLength(3));
     expect(rounds).toHaveBeenCalledTimes(2);
     expect(screen.queryByRole("button", { name: "看更早的几轮" })).toBeNull();
     expect(screen.getByText("我开过 3 轮，都在上面了。")).toBeTruthy();

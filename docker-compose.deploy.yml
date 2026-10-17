@@ -37,6 +37,17 @@ services:
   nginx:
     image: nginx:1.28-alpine
     restart: unless-stopped
+    # 2026-10-16 线上实证：nginx 没设 stop_grace_period，走 Docker 默认 10s，被
+    # SIGKILL（exit 137）。当天 11:22:47 的 journald 就是这条（"failed to exit within
+    # 10s of signal 15 - using the force"）——api(20s)/worker(60s) 各有宽限时间，只有
+    # nginx 没有，被杀的就是它。
+    # 为什么它退得慢：官方镜像的 STOPSIGNAL 是 SIGQUIT（优雅退出），而这里代理着
+    # SSE（proxy_buffering off + proxy_read_timeout 300s）与笔记文档的 WebSocket，
+    # 优雅退出会**等这些长连接结束**。30s 让"下游 API 先关连接、nginx 跟着退完"这条
+    # 路走得通，不再 10s 就硬断；真正的硬性收尾上限（worker_shutdown_timeout）只能在
+    # nginx 的 main context 里设，那需要换一份 /etc/nginx/nginx.conf 并同步 CI 的
+    # bundle 文件清单（.github/workflows/server-deploy.yml 的 tar 列表），留作后续。
+    stop_grace_period: 30s
     ports: ['80:80', '443:443']
     volumes:
       - ./infra/deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro

@@ -24,6 +24,7 @@ import type { NoteOverviewTaskV1, NoteOverviewV1 } from "@astella/shared/note-ov
 import type { NoteDetailV1 } from "@astella/shared/note-projection-contracts";
 import { createRequestMeta, unwrapGatewayResult, gatewayErrorMessage } from "../../../app/desktop-client";
 import { prepareNotebookTaskNotification } from "./notebook-task-notifications";
+import { NOTE_TASK_STALL_MS } from "./task-slip";
 
 export function useNotebookOverview(input: {
   readonly note: NoteDetailV1 | null;
@@ -96,8 +97,17 @@ export function useNotebookOverview(input: {
   }, [note?.noteId, note?.currentVersionId]);
 
   const startNoteOverviewTask = useCallback(async (hasUnsavedChanges: boolean) => {
+    // 在跑的任务挡住重复发起，但**久到不像还在正常干活**的任务不再挡（2026-10-16：
+    // 线上一次速看单发 242 s，纸面只写「正在整理」、用户没有出路）。判据取任务自己
+    // 的 createdAt，切页回来仍然成立；阈值与纸签的「这次等得太久了」同一档。
+    // 旧任务不取消也不丢弃：真回来了结果照常上屏，只是这一次的"最新任务"换成新的。
+    const runningTask = overviewTask && (overviewTask.status === "queued" || overviewTask.status === "running")
+      ? overviewTask
+      : null;
+    const runningSince = runningTask ? Date.parse(runningTask.createdAt) : Number.NaN;
+    const stalled = Number.isFinite(runningSince) && Date.now() - runningSince >= NOTE_TASK_STALL_MS;
     if (!note || !note.currentVersionId || hasUnsavedChanges || startingRef.current
-      || overviewTask?.status === "queued" || overviewTask?.status === "running") return;
+      || (runningTask !== null && !stalled)) return;
     const api = typeof window === "undefined" ? undefined : window.astella;
     if (!api?.noteOverview) {
       setOverviewTaskError("速看任务暂不可用");
@@ -122,7 +132,7 @@ export function useNotebookOverview(input: {
     } finally {
       if (request === overviewTaskRequestRef.current) { startingRef.current = false; setOverviewTaskStarting(false); }
     }
-  }, [note?.noteId, note?.currentVersionId, overviewTask?.status]);
+  }, [note?.noteId, note?.currentVersionId, overviewTask?.status, overviewTask?.createdAt]);
 
   useEffect(() => {
     ++overviewTaskRequestRef.current; startingRef.current = false;

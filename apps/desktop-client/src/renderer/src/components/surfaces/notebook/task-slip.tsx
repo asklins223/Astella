@@ -17,10 +17,25 @@
  2. **不用等**——正文照常能读，离开这页也不取消；
  3. **没做成时怎么办**——重试，或者去开 AI 权限（那是另一件事，重试没有用）。
  */
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 export type TaskSlipKind = "overview" | "annotation" | "expansion" | "artifact";
 export type TaskSlipStatus = "queued" | "running" | "ready" | "failed";
+
+/**
+ * 等待的两档口径（2026-10-16 线上实证）。
+ *
+ * 起因：一次速看卡在模型的长思考里，单发 242 s；客户端每 1.6 s 轮询、纸面从头到尾
+ * 只写「正在整理整篇笔记」，用户看不出是在走还是死了，也没有任何出路。
+ *
+ * - {@link NOTE_TASK_SLOW_MS}：正常一发 10–30 s，超过它就直说「这次比平时久」，
+ *   只给判断，不改动作；
+ * - {@link NOTE_TASK_STALL_MS}：超过它就不再拦着用户重来一份——
+ *   `use-notebook-overview` 用同一个值判断"这次已经不算在跑了"。它不是超时失败：
+ *   轮询继续，旧任务真回来了结果照常上屏。
+ */
+export const NOTE_TASK_SLOW_MS = 45_000;
+export const NOTE_TASK_STALL_MS = 180_000;
 
 /** 每个动作的「正在做什么」。人话，不是内部词。 */
 const WORKING: Record<TaskSlipKind, { queued: string; running: string }> = {
@@ -47,15 +62,48 @@ const FAILED: Record<TaskSlipKind, string> = {
  */
 const KEEP_READING = "可以继续读或离开，回来仍能在这里查看结果。";
 
+/** 比平时久：说实话，但不催用户做任何事。 */
+const SLOW_NOTE = "这次比平时久。可以继续读或离开，结果出来仍会留在这里。";
+
+/** 久到不像还在正常干活了：给一条出路。 */
+const STALL_NOTE = "这次等得太久了。正文没有受影响，可以重新整理一份。";
+
+function formatWait(seconds: number): string {
+  if (seconds < 60) return `${seconds} 秒`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return rest === 0 ? `${minutes} 分钟` : `${minutes} 分 ${rest} 秒`;
+}
+
 export function TaskSlip(props: {
   readonly kind: TaskSlipKind;
   readonly status: TaskSlipStatus | null | undefined;
   readonly failureReason?: string | null;
+  /**
+   * 这次生成是什么时候开始的（任务的 `createdAt`）。给了就在纸签上走「已等 N 秒」，
+   * 并按上面的两档改文案。计时器住在这个叶子组件里：纸面（NotebookSurface）一秒
+   * 重渲一次是不可接受的。
+   */
+  readonly runningSince?: string | number | null;
   readonly onRetry?: () => void;
   readonly onOpenSettings?: () => void;
   readonly children?: ReactNode;
 }) {
   const { kind, status, failureReason, onRetry, onOpenSettings } = props;
+  const working = status === "queued" || status === "running";
+  const since = props.runningSince ?? null;
+  const [waitedMs, setWaitedMs] = useState(0);
+
+  useEffect(() => {
+    if (!working || since === null) { setWaitedMs(0); return; }
+    const startedAt = typeof since === "number" ? since : Date.parse(since);
+    if (!Number.isFinite(startedAt)) { setWaitedMs(0); return; }
+    const tick = () => setWaitedMs(Math.max(0, Date.now() - startedAt));
+    tick();
+    const timer = window.setInterval(tick, 1_000);
+    return () => window.clearInterval(timer);
+  }, [working, since]);
+
   // `ready` 交给结果纸；`null` 表示压根没在做事。两种都不画。
   if (!status || status === "ready") return null;
 
@@ -92,6 +140,9 @@ export function TaskSlip(props: {
   // `--failed`。此前这里还挂着一个 `task-slip--working`，而 `note-hud.css` 只定义了
   // `--failed` —— 给"默认态"另起一个名字，代价是同一种纸有两个写法、其中一份没人接。
   // 状态由下面的 `data-task-state` 说，样子由基类给。
+  const waitedSeconds = Math.floor(waitedMs / 1000);
+  const slow = since !== null && waitedMs >= NOTE_TASK_SLOW_MS;
+  const stalled = since !== null && waitedMs >= NOTE_TASK_STALL_MS;
   return (
     <div
       className="task-slip"
@@ -104,8 +155,16 @@ export function TaskSlip(props: {
       <span className="task-slip__mark" aria-hidden="true" />
       <div className="task-slip__body">
         <strong className="task-slip__lead">{WORKING[kind][status]}</strong>
-        <p className="task-slip__note">{KEEP_READING}</p>
+        <p className="task-slip__note">{stalled ? STALL_NOTE : slow ? SLOW_NOTE : KEEP_READING}</p>
+        {since !== null ? (
+          // 每秒都在变，不能进 aria-live（读屏会每 1 秒念一次）；上面的文案变化
+          // 只有两次，由它负责让读屏知道"慢了／太久了"。
+          <p className="task-slip__elapsed" aria-hidden="true">已等 {formatWait(waitedSeconds)}</p>
+        ) : null}
       </div>
+      {/* 重来一份只在"这次已经不算在跑了"之后给：还在跑时服务端会挡下重复发起，
+          现在就放一个按钮等于做一个按不动的按钮。 */}
+      {stalled && onRetry ? <button type="button" className="task-slip__action" onClick={onRetry}>重新整理</button> : null}
       {props.children}
     </div>
   );

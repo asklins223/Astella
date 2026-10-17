@@ -39,6 +39,48 @@ const warnedUnmappedCapabilities = new Set<string>();
 /** 已就"模型未声明能力档案"告警过的 (platform, model)，避免每次解析都刷日志。 */
 const warnedUndeclaredModels = new Set<string>();
 
+/** 已就"能力级思考档位覆盖被丢弃"告警过的 (capability, effort)，避免每次解析都刷日志。 */
+const warnedIgnoredReasoningOverrides = new Set<string>();
+
+/**
+ * 能力级思考档位覆盖（`capabilities.<cap>.reasoningEffort`，2026-10-16）。
+ *
+ * 覆盖的是**下发默认档**，不是"这个模型能接受哪些档"：档位表仍以模型档案为准。
+ * 值不在档位表里时丢弃并告警一次——上游对不认的档位直接 400，静默下发比不生效
+ * 更难排查；而告警去重是因为这里在每次解析时都会被调用。
+ */
+function applyCapabilityReasoningOverride(
+  cap: Capability,
+  mapping: { reasoningEffort?: string },
+  declared: import("./platform-config.ts").ModelProfile | undefined,
+): import("./platform-config.ts").ModelProfile | undefined {
+  const override = mapping.reasoningEffort;
+  if (!override) return declared;
+  if (!declared?.reasoning) {
+    warnReasoningOverrideOnce(`${cap}:${override}:nodeclared`,
+      `[ai-platforms] capability "${cap}" 声明了 reasoningEffort "${override}"，`
+      + "但引用的模型档案没有声明 reasoning 档位；覆盖无效，继续使用 provider 缺省。");
+    return declared;
+  }
+  if (!declared.reasoning.levels.includes(override as never)) {
+    warnReasoningOverrideOnce(`${cap}:${override}:notdeclared`,
+      `[ai-platforms] capability "${cap}" 的 reasoningEffort "${override}" 不在模型档案声明的 `
+      + `档位（${declared.reasoning.levels.join(" / ")}）里；已丢弃该覆盖，按档案默认 `
+      + `"${declared.reasoning.default}" 下发。设成上游不认的档位会直接 400。`);
+    return declared;
+  }
+  return {
+    ...declared,
+    reasoning: { ...declared.reasoning, default: override as import("./platform-config.ts").ReasoningEffort },
+  };
+}
+
+function warnReasoningOverrideOnce(key: string, message: string): void {
+  if (warnedIgnoredReasoningOverrides.has(key)) return;
+  warnedIgnoredReasoningOverrides.add(key);
+  console.warn(message);
+}
+
 /**
  * Interpolate ${ENV_VAR} references in a string.
  * Returns the env var value if the reference exists, otherwise returns
@@ -189,8 +231,8 @@ export function resolveSystemPlatform(cap: Capability): ResolvedPlatform | null 
       // 缺省值，但每个 (平台, 模型) 只提醒一次——上下文/输出猜错会表现成预算
       // 误算或上游 400，识图按不可用处理（不存在"默认能看图"）。mock 平台豁免
       //（开发替身没有真实能力可声明）。
-      const modelProfile = platform.models?.[capMapping.model];
-      if (!modelProfile && platform.type.toLowerCase() !== "mock") {
+      const declaredProfile = platform.models?.[capMapping.model];
+      if (!declaredProfile && platform.type.toLowerCase() !== "mock") {
         const key = `${capMapping.platform}/${capMapping.model}`;
         if (!warnedUndeclaredModels.has(key)) {
           warnedUndeclaredModels.add(key);
@@ -201,6 +243,8 @@ export function resolveSystemPlatform(cap: Capability): ResolvedPlatform | null 
           );
         }
       }
+      // 能力级思考档位覆盖：逐用途下调/上调默认档（见 CapabilityMapping.reasoningEffort）。
+      const modelProfile = applyCapabilityReasoningOverride(cap, capMapping, declaredProfile);
 
       return {
         type: platform.type,

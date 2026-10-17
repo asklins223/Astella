@@ -304,6 +304,82 @@ test("合并：apiKey 换成环境变量引用后生效；capabilities 映射整
   assert.deepEqual(onDisk.capabilities.agent_turn, { platform: "b", model: "new-model" });
 });
 
+/* ── 能力级思考档位覆盖（2026-10-16：线上速看单发 242 s 后拆出的笔记产物槽）── */
+
+type EffortConfig = {
+  platforms: Record<string, unknown>;
+  capabilities: Record<string, { platform: string; model: string; reasoningEffort?: unknown }>;
+};
+
+/** 一台声明了档位的模型 + 一个带覆盖的能力。 */
+function configWithReasoningEffort(effort: unknown, declareReasoning = true): EffortConfig {
+  return {
+    platforms: {
+      demo: {
+        type: "openai_compatible",
+        apiKey: "${DEMO_KEY}",
+        baseUrl: "https://example.invalid/v1",
+        models: {
+          "demo-model": {
+            contextWindowTokens: 128_000,
+            maxOutputTokens: 8_192,
+            ...(declareReasoning
+              ? { reasoning: { levels: ["none", "low", "medium", "high"], default: "medium" } }
+              : {}),
+          },
+        },
+      },
+    },
+    capabilities: {
+      note_generation: { platform: "demo", model: "demo-model", reasoningEffort: effort },
+    },
+  };
+}
+
+test("校验：档位覆盖必须落在模型声明的档位里", () => {
+  assert.deepEqual(validateConfig(configWithReasoningEffort("low")).filter((i) => i.blocking), []);
+
+  for (const bad of ["xhigh", "very-high", 3, null]) {
+    const issues = validateConfig(configWithReasoningEffort(bad));
+    assert.ok(
+      issues.some((i) => i.blocking && i.path === "capabilities.note_generation.reasoningEffort"),
+      `"${String(bad)}" 应被阻断`,
+    );
+  }
+
+  // 模型没声明 reasoning：没有可覆盖的档位，只提示（运行时按 provider 缺省，不下发）。
+  const noDeclared = validateConfig(configWithReasoningEffort("low", false));
+  assert.equal(noDeclared.filter((i) => i.blocking).length, 0);
+  assert.ok(noDeclared.some((i) => !i.blocking && i.path === "capabilities.note_generation.reasoningEffort"));
+});
+
+test("快照把档位覆盖带给面板：有则给字符串，没有则为 null", async () => {
+  const findEffort = (snapshot: Awaited<ReturnType<typeof readConfigSnapshot>>) =>
+    snapshot.capabilities.find((c) => c.capability === "note_generation")?.reasoningEffort;
+
+  await withTempConfig(configWithReasoningEffort("low"));
+  assert.equal(findEffort(await readConfigSnapshot()), "low");
+
+  const without = configWithReasoningEffort("low");
+  delete without.capabilities.note_generation!.reasoningEffort;
+  await withTempConfig(without);
+  assert.equal(findEffort(await readConfigSnapshot()), null);
+});
+
+test("写回：能力映射是整体替换，所以带了覆盖才保得住（面板草稿必须带着它往返）", async () => {
+  await withTempConfig(configWithReasoningEffort("low"));
+
+  await writeConfig({ capabilities: { note_generation: { platform: "demo", model: "demo-model", reasoningEffort: "low" } } });
+  const kept = JSON.parse(await readFile(resolveConfigPath(), "utf8"));
+  assert.equal(kept.capabilities.note_generation.reasoningEffort, "low");
+
+  // 反面对照（旧的面板草稿行为）：漏掉它就会在改一次服务商时被整体替换掉。
+  // static/views/config.js 的草稿与导出因此必须带着 reasoningEffort。
+  await writeConfig({ capabilities: { note_generation: { platform: "demo", model: "demo-model" } } });
+  const dropped = JSON.parse(await readFile(resolveConfigPath(), "utf8"));
+  assert.equal("reasoningEffort" in dropped.capabilities.note_generation, false);
+});
+
 test("合并：tts 整体替换，null 删除；未提到的平台保持原样", async () => {
   await withTempConfig({
     ...VALID,

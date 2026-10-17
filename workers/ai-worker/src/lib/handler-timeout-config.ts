@@ -3,9 +3,14 @@
  *
  * Timeouts are configurable via environment variables:
  *   WORKER_MODEL_TIMEOUT_MS              — global default (fallback)
- *   WORKER_TIMEOUT_PARSE_SOURCE_MS       — parse_source override
+ *   WORKER_TIMEOUT_<TYPE>_MS             — per-job handler budget
  *   WORKER_PROVIDER_TIMEOUT_MS           — nested provider-call default
  *   WORKER_PROVIDER_TIMEOUT_<TYPE>_MS    — nested provider-call override
+ *
+ * Note-learning products (overview / mind map / line explanation / expansion draft)
+ * also carry a built-in per-type provider contract (DEFAULT_PROVIDER_TIMEOUTS) so a
+ * single stalled model call fails in minutes instead of the global 15-minute default.
+ * An explicitly set env still wins.
  *
  * Running jobs renew their lease. Lease duration controls crash recovery,
  * while handler/provider deadlines control execution time independently.
@@ -42,6 +47,34 @@ const DEFAULT_TIMEOUTS: Record<string, number> = {
 const GLOBAL_DEFAULT_MS = DEFAULT_AI_TASK_TIMEOUT_MS;
 const PROVIDER_SAFETY_MARGIN_MS = 15_000;
 const DEFAULT_PROVIDER_TIMEOUT_MS = DEFAULT_AI_PROVIDER_TIMEOUT_MS;
+
+/**
+ * 笔记学习产物的**单次模型调用**预算（毫秒）。
+ *
+ * 与 handler 时限分开的理由：handler 回答的是"这个任务总共能跑多久"（默认 30 min，
+ * 长笔记要多段并行），这里回答的是"**一发** provider 请求最多等多久"。此前派生预算
+ * 只受 `WORKER_PROVIDER_TIMEOUT_MS`（部署默认 15 min）约束，于是模型一旦陷入长思考，
+ * 用户看到的是十几分钟的转圈：2026-10-16 线上一次速看单发 242 s（mimo-v2.6-flash
+ * 在 medium 档产出 9,411 completion token），而客户端 1.6 s 轮询从不放弃、纸面也没有
+ * 任何进度。这里给结构化笔记任务一个明确契约：超时就失败、纸面给重试，而不是无限等。
+ *
+ * 数字只写"正常量级已经远远够用"的值（正常一次 10–30 s）：它不是省钱的闸门，
+ * 是"这一发已经不正常了"的判据。长笔记不受影响——分段是并行的，每段各有一份预算。
+ *
+ * 优先级与 {@link resolveHandlerTimeout} 一致：
+ *   per-type env > WORKER_PROVIDER_TIMEOUT_MS > 这里的内置值 > 全局内置。
+ * 也就是说部署仍可用 `WORKER_PROVIDER_TIMEOUT_<TYPE>_MS` 覆盖任何一个值。
+ */
+const DEFAULT_PROVIDER_TIMEOUTS: Record<string, number> = {
+  // 速看：整篇一次读，正常十几秒。
+  note_overview_generate: 120_000,
+  // 脑图：结构化节点更多，但也不该按分钟等。
+  note_mind_map_generate: 150_000,
+  // 原句讲解：一句话的讲解，最短的一发。
+  note_annotation_explain: 90_000,
+  // 拓展草稿：多篇候选。
+  note_expansion_generate: 150_000,
+};
 
 function parsePositiveInt(value: string | undefined): number | undefined {
   if (value === undefined || value === "") return undefined;
@@ -94,12 +127,16 @@ export function resolveHandlerTimeout(jobType: string): number {
 /**
  * Resolve a nested provider-call budget that leaves time for the handler's
  * deterministic fallback or retry-state persistence.
+ *
+ * Priority: per-type env > WORKER_PROVIDER_TIMEOUT_MS > per-type task contract
+ * (DEFAULT_PROVIDER_TIMEOUTS) > global built-in default.
  */
 export function resolveProviderCallTimeout(jobType: string): number {
   const handlerTimeout = resolveHandlerTimeout(jobType);
   const requested =
     parsePositiveInt(process.env[providerEnvKeyForType(jobType)])
     ?? parsePositiveInt(process.env.WORKER_PROVIDER_TIMEOUT_MS)
+    ?? DEFAULT_PROVIDER_TIMEOUTS[jobType]
     ?? DEFAULT_PROVIDER_TIMEOUT_MS;
   const available = handlerTimeout > PROVIDER_SAFETY_MARGIN_MS
     ? handlerTimeout - PROVIDER_SAFETY_MARGIN_MS
@@ -158,6 +195,7 @@ export const RESOLVED_TIMEOUT_INFO = {
   leaseTimeoutMs: LEASE_TIMEOUT_MS,
   maxAllowedTimeoutMs: MAX_ALLOWED_TIMEOUT_MS,
   defaultTimeouts: { ...DEFAULT_TIMEOUTS },
+  defaultProviderTimeouts: { ...DEFAULT_PROVIDER_TIMEOUTS },
   globalDefaultMs: GLOBAL_DEFAULT_MS,
   defaultProviderTimeoutMs: DEFAULT_PROVIDER_TIMEOUT_MS,
   providerSafetyMarginMs: PROVIDER_SAFETY_MARGIN_MS,

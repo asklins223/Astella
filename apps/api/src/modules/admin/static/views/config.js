@@ -57,6 +57,10 @@ function snapshotToDraft(snapshot) {
       label: capability.label ?? null,
       platform: capability.platform,
       model: capability.model,
+      // 能力级思考档位覆盖（2026-10-16）：面板不改它，但**必须带着它往返**。
+      // 保存是整体替换该能力的映射；草稿里丢掉这一项 = 改一次服务商就把速看的
+      // 低思考档悄悄改回档案默认（也正是 242 s 那件事的成因）。
+      reasoningEffort: capability.reasoningEffort ?? null,
       resolvable: capability.resolvable,
       problem: capability.problem,
       original: { platform: capability.platform, model: capability.model },
@@ -84,6 +88,8 @@ function draftToPatch(current) {
   const capabilities = {};
   for (const [name, capability] of Object.entries(current.capabilities)) {
     const mapping = { platform: capability.platform, model: capability.model };
+    // 整体替换该能力的映射，所以要显式带上不能被面板编辑的思考档覆盖。
+    if (capability.reasoningEffort) mapping.reasoningEffort = capability.reasoningEffort;
     const changed = capability.platform !== capability.original.platform
       || capability.model !== capability.original.model;
     if (changed) capabilities[name] = mapping;
@@ -356,7 +362,13 @@ async function loadConfig(ctx) {
                 capability.label ? el("div", { class: "dim", style: "font-size:11px" }, codeTag(name)) : null,
               ),
               el("td", { style: "min-width:170px" }, selectEl),
-              el("td", { style: "min-width:220px" }, modelInput),
+              el("td", { style: "min-width:220px" },
+                modelInput,
+                // 思考档是"同一个模型为什么这条链要等四分钟"的答案；不显示就只能看模型名猜。
+                capability.reasoningEffort
+                  ? el("div", { class: "dim", style: "font-size:11px;margin-top:4px", text: `思考档：${capability.reasoningEffort}` })
+                  : null,
+              ),
               el("td", {},
                 badge(blockingIssue ? "配置待修复" : capability.resolvable ? "映射已解析" : "使用兜底", blockingIssue ? "bad" : capability.resolvable ? "ok" : "warn"),
                 (blockingIssue || capability.problem) ? el("div", { class: "dim", style: "font-size:11px;margin-top:4px", text: blockingIssue?.message ?? capability.problem }) : null,
@@ -415,6 +427,8 @@ async function exportConfig(snapshot) {
       (snapshot.capabilities ?? []).map((c) => [c.capability, {
         platform: c.platform,
         model: c.model,
+        // 导出的是"能直接落回服务器的配置"：漏掉思考档覆盖就等于导出后降档。
+        ...(c.reasoningEffort ? { reasoningEffort: c.reasoningEffort } : {}),
       }]),
     ),
     ...(snapshot.tts ? { tts: snapshot.tts } : {}),

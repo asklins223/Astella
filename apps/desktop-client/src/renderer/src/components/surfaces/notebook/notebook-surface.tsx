@@ -3402,6 +3402,7 @@ const noteDocLive = useNoteDocLiveView(
       ) : null}
       {latestNoteOverview && learningView === "overview" && !brainActive && (overviewTaskStarting || taskForCurrentVersion?.status === "queued" || taskForCurrentVersion?.status === "running" || taskForCurrentVersion?.status === "failed" || overviewTaskError) ? <aside className="notebook-regeneration" aria-label="新速看的进度">
         <TaskSlip kind="overview" status={overviewTaskStarting ? "queued" : taskForCurrentVersion?.status}
+          runningSince={taskForCurrentVersion?.status === "queued" || taskForCurrentVersion?.status === "running" ? taskForCurrentVersion.createdAt : null}
           failureReason={taskForCurrentVersion?.failureReason} onRetry={() => learningEntry.prepare("overview", true)} onOpenSettings={openAiConsentSettings} />
         {overviewTaskError ? <p role="alert">{overviewTaskError}</p> : null}
         <small>之前的速看仍可阅读，所有结果都留在学习记录里。</small>

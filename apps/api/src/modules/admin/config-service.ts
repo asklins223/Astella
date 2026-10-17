@@ -43,6 +43,7 @@ import { constants as fsConstants } from "node:fs";
 import { access, mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, resolve } from "node:path";
 import type { AIPlatformConfig, PlatformDefinition } from "@astella/shared";
+import { REASONING_EFFORT_ORDER } from "@astella/shared";
 import {
   loadPlatformConfig,
   resetPlatformConfigCache,
@@ -58,6 +59,7 @@ const ENV_REF_PATTERN = /^\$\{([A-Z_][A-Z0-9_]*)\}$/;
 const KNOWN_CAPABILITIES = [
   "text_generation",
   "agent_turn",
+  "note_generation",
   "companion_fallback",
   "embedding",
   "rerank",
@@ -134,6 +136,13 @@ export interface CapabilityView {
   /** 该映射现在能不能真的用（平台存在 + key 已注入）。 */
   resolvable: boolean;
   problem: string | null;
+  /**
+   * 这一槽声明的思考档位覆盖（2026-10-16）。null = 跟随模型档案默认档。
+   *
+   * 放在面板上是因为它正是「同一个模型为什么这条链要等四分钟、那条不用」的答案：
+   * 只写模型名看不出这件事。
+   */
+  reasoningEffort: string | null;
 }
 
 export interface ConfigSnapshot {
@@ -387,6 +396,37 @@ export function validateConfig(raw: unknown): ConfigIssue[] {
         });
       }
     }
+
+    // 能力级思考档位覆盖（2026-10-16）：只在模型档案声明了档位时才有意义，值必须
+    // ∈ levels。运行时对非法值的选择是"丢弃 + 告警一次"，面板这里直接拦住——
+    // 写进了配置却没生效，比拒绝保存更难查（上游对不认的档位会 400）。
+    const override = (mapping as { reasoningEffort?: unknown }).reasoningEffort;
+    if (override !== undefined) {
+      if (typeof override !== "string"
+        || !(REASONING_EFFORT_ORDER as readonly string[]).includes(override)) {
+        issues.push({
+          path: `capabilities.${capability}.reasoningEffort`,
+          message: `reasoningEffort 必须是 ${REASONING_EFFORT_ORDER.join(" / ")} 之一`,
+          blocking: true,
+        });
+      } else {
+        const profile = platformDefinition?.models?.[mapping.model];
+        const levels = profile?.reasoning?.levels;
+        if (!levels || levels.length === 0) {
+          issues.push({
+            path: `capabilities.${capability}.reasoningEffort`,
+            message: `模型 "${mapping.model}" 未声明 reasoning 档位，这条覆盖不会下发（按 provider 缺省）`,
+            blocking: false,
+          });
+        } else if (!(levels as readonly string[]).includes(override)) {
+          issues.push({
+            path: `capabilities.${capability}.reasoningEffort`,
+            message: `reasoningEffort "${override}" 不在模型声明的档位（${levels.join(" / ")}）里`,
+            blocking: true,
+          });
+        }
+      }
+    }
   }
 
   return issues;
@@ -516,6 +556,9 @@ export async function readConfigSnapshot(): Promise<ConfigSnapshot> {
       capability,
       platform: platformId,
       model: mapping?.model ?? "",
+      reasoningEffort: typeof (mapping as { reasoningEffort?: unknown })?.reasoningEffort === "string"
+        ? (mapping as { reasoningEffort: string }).reasoningEffort
+        : null,
       // 与 platform-config-node 的 §2.3 缺 key 判定同口径：返回 null 即回退 mock。
       resolvable: Boolean(platform) && keyUsable,
       problem: problem ?? (keyUsable ? null : "平台 key 不可用，该能力会回退 mock"),

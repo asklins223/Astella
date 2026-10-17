@@ -67,6 +67,11 @@
       "platform": "mimo-agent",
       "model": "mimo-v2.6-flash"
     },
+    "note_generation": {
+      "platform": "mimo-agent",
+      "model": "mimo-v2.6-flash",
+      "reasoningEffort": "low"
+    },
     "text_generation": {
       "platform": "mimo-agent",
       "model": "mimo-v2.6-flash"

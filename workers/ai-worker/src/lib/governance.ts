@@ -104,6 +104,11 @@ export interface AIGovernanceContext {
  *      textProviderConfig if set (enables cheaper models for lightweight tasks
  *      like validation/rubric/question generation). Falls back to main provider.
  *   2. If the task requires "agent_turn", use the main providerName/providerConfig.
+ *   2b. If the task requires "note_generation" (note-learning products: overview /
+ *      mind map / line explanation / expansion draft), resolve that capability from
+ *      config/ai-platforms.json; it may share the main platform+model with a
+ *      lower thinking level declared per capability. Falls back to the main provider
+ *      when the capability is not mapped.
  *   3. If the task requires "embedding", the governance context does not hold
  *      an embedding slot — callers should use createEmbeddingProvider() directly.
  *      This function returns the text provider as a fallback.
@@ -129,6 +134,22 @@ export function resolveProviderForTask(
 
   // Agent turn uses the main text provider slot
   if (cap === "agent_turn") {
+    return { providerName: ctx.providerName, providerConfig: ctx.providerConfig };
+  }
+
+  // 笔记产物槽（note_generation，2026-10-16）：速看／脑图／讲解／拓展。
+  // 它不占 AIGovernanceContext 的字段——这一槽与主对话槽**可能指向同一台模型**，
+  // 差别只在能力级思考档位覆盖（capabilities.note_generation.reasoningEffort），
+  // 而那已经落在 ResolvedPlatform.modelProfile 里，所以按能力直接解析系统配置即可，
+  // 不必给治理上下文再加一份会在两处维护的副本。
+  // 未配置（旧配置文件没有这个键、手写配置缺 key）时回落主对话模型：宁可慢一点，
+  // 也不能因为少一行配置让速看整条不可用；AI_REQUIRE_CONFIGURED_PROVIDER 的
+  // fail-closed 判定仍由主槽在 resolveAIGovernanceContext 里承担。
+  if (cap === "note_generation") {
+    const notePlatform = resolveSystemPlatform("note_generation");
+    if (notePlatform) {
+      return { providerName: notePlatform.type, providerConfig: runtimeConfigFromResolved(notePlatform) };
+    }
     return { providerName: ctx.providerName, providerConfig: ctx.providerConfig };
   }
 

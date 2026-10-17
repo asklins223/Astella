@@ -14,6 +14,10 @@ const ENV_KEYS = [
   "WORKER_TIMEOUT_PARSE_SOURCE_MS",
   "WORKER_TIMEOUT_COMPANION_AGENT_MS",
   "WORKER_PROVIDER_TIMEOUT_MS",
+  "WORKER_PROVIDER_TIMEOUT_NOTE_OVERVIEW_GENERATE_MS",
+  "WORKER_PROVIDER_TIMEOUT_NOTE_MIND_MAP_GENERATE_MS",
+  "WORKER_PROVIDER_TIMEOUT_NOTE_ANNOTATION_EXPLAIN_MS",
+  "WORKER_PROVIDER_TIMEOUT_NOTE_EXPANSION_GENERATE_MS",
   "WORKER_TIMEOUT_NOTE_DYNAMIC_ARTIFACT_GENERATE_MS",
 ];
 
@@ -39,8 +43,41 @@ test("resolveHandlerTimeout returns active built-in defaults", () => {
   for (const type of ["companion_memory_extract", "companion_summarizer", "companion_daily_summary",
     "note_overview_generate", "note_annotation_explain", "note_expansion_generate", "note_dynamic_artifact_generate"]) {
     assert.equal(resolveHandlerTimeout(type), DEFAULT_AI_TASK_TIMEOUT_MS);
+  }
+  // 没有任务契约的类型仍跟随嵌套 provider 的全局默认。
+  for (const type of ["companion_memory_extract", "companion_summarizer", "companion_daily_summary",
+    "note_dynamic_artifact_generate"]) {
     assert.equal(resolveProviderCallTimeout(type), DEFAULT_AI_PROVIDER_TIMEOUT_MS);
   }
+});
+
+/**
+ * 2026-10-16 线上：一次速看单发 242 s（mimo-v2.6-flash/medium 产出 9,411 completion
+ * token），客户端 1.6 s 轮询、纸面从头到尾只写「正在整理」。这几条断言钉住的是
+ * "笔记产物有单发预算、超时后有出路"，不是某个具体数字的审美。
+ */
+test("笔记学习产物有单发预算契约，且部署的显式值仍可覆盖", () => {
+  assert.equal(resolveProviderCallTimeout("note_overview_generate"), 120_000);
+  assert.equal(resolveProviderCallTimeout("note_mind_map_generate"), 150_000);
+  assert.equal(resolveProviderCallTimeout("note_annotation_explain"), 90_000);
+  assert.equal(resolveProviderCallTimeout("note_expansion_generate"), 150_000);
+  for (const type of ["note_overview_generate", "note_mind_map_generate", "note_annotation_explain", "note_expansion_generate"]) {
+    assert.ok(
+      resolveProviderCallTimeout(type) < resolveHandlerTimeout(type),
+      `${type} 的单发预算必须短于 handler，否则 handler 的持久化余量没有意义`,
+    );
+  }
+
+  // 优先级：per-type env > WORKER_PROVIDER_TIMEOUT_MS > 内置契约。
+  process.env.WORKER_PROVIDER_TIMEOUT_NOTE_OVERVIEW_GENERATE_MS = "200000";
+  assert.equal(resolveProviderCallTimeout("note_overview_generate"), 200_000);
+
+  // 全局值优先于内置契约——这正是 compose 必须为这几个任务显式声明 per-type 值的原因。
+  delete process.env.WORKER_PROVIDER_TIMEOUT_NOTE_OVERVIEW_GENERATE_MS;
+  process.env.WORKER_PROVIDER_TIMEOUT_MS = "900000";
+  assert.equal(resolveProviderCallTimeout("note_overview_generate"), 900_000);
+
+  assert.equal(RESOLVED_TIMEOUT_INFO.defaultProviderTimeouts.note_overview_generate, 120_000);
 });
 
 test("resolveHandlerTimeout falls back to global default for unknown types", () => {
