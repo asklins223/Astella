@@ -457,3 +457,44 @@ test("用户取消与超时分别记录，不因为取消重发分类请求", as
   assert.equal(receipts[0]?.outcome, "cancelled");
   assert.equal(receipts[0]?.failureClass, "cancelled");
 });
+
+/**
+ * 分类器是投机首步的放行闸：它不回来，已经生成好的开口就发不出去。
+ * 2026-10-17 之前它借的是通用模型上限（15 分钟），等于"挂死也不放手"。
+ * 这条守卫钉住"它是分类器自己的、分钟级以下的有界上限"，不是通用模型超时。
+ */
+test("分类器的等待上限是有界的分类器专属值，不再借通用模型超时", async () => {
+  const { COMPANION_TOOL_INTENT_TIMEOUT_MS } = await import("../companion-tool-intent.ts");
+  assert.ok(Number.isInteger(COMPANION_TOOL_INTENT_TIMEOUT_MS));
+  assert.ok(COMPANION_TOOL_INTENT_TIMEOUT_MS >= 10_000, "低于实测尾部会把正常慢请求误判成挂死");
+  assert.ok(COMPANION_TOOL_INTENT_TIMEOUT_MS <= 60_000, "分钟级以上等于把整轮钉在放行闸后面");
+});
+
+/**
+ * 对冲上线后的分类器形状（2026-10-17）：同一条请求并发两份、先到先用，
+ * receipt 必须把"真的发了两条"记下来。默认关闭，只有运维显式打开时才这样。
+ */
+test("对冲开启时并发两条相同分类请求，并在 receipt 标记 hedged", async () => {
+  const previous = process.env.COMPANION_TOOL_INTENT_HEDGE_MS;
+  process.env.COMPANION_TOOL_INTENT_HEDGE_MS = "0";
+  try {
+    const receipts: CompanionToolIntentReceipt[] = [];
+    let calls = 0;
+    const model = { ...provider(() => false), chatCompletion: async () => {
+      calls += 1;
+      return { content: JSON.stringify(proposal(false)), usage: {} };
+    } } as AIProvider;
+    const result = await interpretCompanionTurn(model, [{ role: "user", content: "今天有点累，随便聊聊" }], {
+      ...taskContext(), onReceipt: receipt => receipts.push(receipt),
+    });
+    assert.equal(calls, 2, "两条相同的上游请求都应发出");
+    assert.equal(result.intent, "conversation");
+    assert.equal(result.toolUse, "none");
+    assert.equal(receipts.length, 1);
+    assert.equal(receipts[0]?.outcome, "committed");
+    assert.equal(receipts[0]?.hedged, true);
+  } finally {
+    if (previous === undefined) delete process.env.COMPANION_TOOL_INTENT_HEDGE_MS;
+    else process.env.COMPANION_TOOL_INTENT_HEDGE_MS = previous;
+  }
+});

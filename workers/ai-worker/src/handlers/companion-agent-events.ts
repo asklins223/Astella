@@ -316,6 +316,8 @@ export async function updateRunMeta(
     contextAssemblyReceipt?: unknown;
     /** 完整请求的预算读数与判定（44 §4）。 */
     contextPressure?: unknown;
+    /** 每轮放行闸的路由读数（迁移 0442；形状见 companion-route-record.ts）。 */
+    route?: unknown;
     stepCount?: number;
     toolCallCount?: number;
     elapsedMsDelta?: number;
@@ -331,6 +333,7 @@ export async function updateRunMeta(
     patch.providerCapabilityFingerprint === undefined ? null : sql`provider_capability_fingerprint = ${patch.providerCapabilityFingerprint}`,
     patch.contextAssemblyReceipt === undefined ? null : sql`context_assembly_receipt = ${JSON.stringify(patch.contextAssemblyReceipt)}::jsonb`,
     patch.contextPressure === undefined ? null : sql`context_pressure = ${JSON.stringify(patch.contextPressure)}::jsonb`,
+    patch.route === undefined ? null : sql`route = ${JSON.stringify(patch.route)}::jsonb`,
     patch.stepCount === undefined ? null : sql`step_count = ${patch.stepCount}`,
     patch.toolCallCount === undefined ? null : sql`tool_call_count = ${patch.toolCallCount}`,
     // 累加而非覆盖：同一次 run 跨确认续跑共享 120s 执行预算（见 readRunMeta）。

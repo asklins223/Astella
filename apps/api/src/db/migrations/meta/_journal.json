@@ -3067,6 +3067,20 @@
       "when": 1792069980000,
       "tag": "0441_worker_discovery_entry_masking",
       "breakpoints": true
+    },
+    {
+      "idx": 438,
+      "version": "7",
+      "when": 1792212810136,
+      "tag": "0442_companion_turn_route",
+      "breakpoints": true
+    },
+    {
+      "idx": 439,
+      "version": "7",
+      "when": 1792215341676,
+      "tag": "0443_companion_release_router_samples",
+      "breakpoints": true
     }
   ]
 }

@@ -15,8 +15,9 @@ import {
 import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
 import { currentWorkerWorkspaceTransaction } from "../db.ts";
 import { JobLeaseLostError, type JobLeaseContext } from "../lib/job-lease.ts";
+import { resolveClassifierHedgeDelayMs, runHedgedCall } from "../lib/hedged-call.ts";
 import type { AIProvider } from "../lib/ai-provider.ts";
-import { DEFAULT_AI_PROVIDER_TIMEOUT_MS, getCompanionAgentTool,
+import { getCompanionAgentTool,
   COMPANION_AGENT_TOOL_LABELS, COMPANION_AGENT_TOOL_DISCOVERY } from "@astella/shared";
 import { boundCompanionRecentHistory, type CompanionRecentHistoryMessage } from "./companion-context-handoff.ts";
 import { conversationInstant, type CompanionConversationClock } from "./companion-conversation-evidence.ts";
@@ -24,11 +25,19 @@ import { conversationInstant, type CompanionConversationClock } from "./companio
 const TASK_ID = "companion_tool_intent";
 const TASK_VERSION = 22;
 /**
- * 分类器关闭思考、单次调用且不自行重试。调用等待使用公共模型上限；
- * 超时仍保留 uncertain，不能据此把可能需要读取资料的请求当作闲聊。
- * 调用方的剩余整轮预算会进一步收紧这个上限。
+ * 分类器等待上限（2026-10-17）。
+ *
+ * 它原来直接借 `DEFAULT_AI_PROVIDER_TIMEOUT_MS`（**15 分钟**）——那是通用模型调用的
+ * 上限，对一个只回一小段 JSON 的分类步骤没有任何意义。分类器同时是投机首步的
+ * **放行闸**：它不回来，已经生成好的开口一个字都发不出去，用户对着空气泡干等。
+ *
+ * 这里的数不是"慢"的判据，是"真的挂死"的判据：实测分类器往返 2.2–11 s（今天的
+ * 真实分类器请求），20 s 已越过观测到的尾部。超时后 `resolveAgentTurnInterpretation(null)`
+ * 退回 `toolUse=uncertain`，**工具面不因意图收窄**（consequential 仍走确认门），
+ * 所以漏放的代价是保守而不是误执行。生产 p99 从审计库拉出来之后按 p99×2–3 重新定，
+ * 不在这里拍最终值；调用方剩余的整轮预算仍会进一步收紧它。
  */
-export const COMPANION_TOOL_INTENT_TIMEOUT_MS = DEFAULT_AI_PROVIDER_TIMEOUT_MS;
+export const COMPANION_TOOL_INTENT_TIMEOUT_MS = 20_000;
 
 /** Only execution metadata may leave this step; no input, output or error prose. */
 export interface CompanionToolIntentReceipt {
@@ -37,6 +46,8 @@ export interface CompanionToolIntentReceipt {
   interpretationStatus: AgentTurnInterpretationV1["status"] | null;
   elapsedMs: number;
   modelCalls: number;
+  /** 这次分类是否真的并发了两条上游请求（对冲）。只有 hedged 时才有这个键。 */
+  hedged?: boolean;
 }
 
 export interface CompanionToolIntentTaskContext {
@@ -201,6 +212,9 @@ export async function interpretCompanionTurn(
     messages: requestMessages,
   }));
   const stepTimeoutMs = Math.min(requestedStepTimeoutMs, COMPANION_TOOL_INTENT_TIMEOUT_MS);
+  /** 分类器对冲：默认关（测试契约不变），生产由 compose 的 COMPANION_TOOL_INTENT_HEDGE_MS 开启。 */
+  const hedgeDelayMs = resolveClassifierHedgeDelayMs();
+  let hedged = false;
   const definition: AiTaskDefinition<{ messages: ChatMessage[] }, AgentTurnInterpretationV1> = {
     id: TASK_ID,
     version: TASK_VERSION,
@@ -232,14 +246,22 @@ export async function interpretCompanionTurn(
       return { messages: requestMessages };
     },
     execute: async (input, env) => {
-      const answer = await provider.chatCompletion(input.messages, {
-        // 天花板只认档案声明：这一发的上限由 provider 按模型档案给，
-        // handler 报的数字早就不是这一发的真实上界了。
-        // 关思考仍由 disableThinking 决定——它是档位判据，不是砍话的那把刀。
-        temperature: 0,
-        responseFormat: "json_object",
-        disableThinking: true,
-      }, env.signal);
+      // 对冲：同一路由、逐字相同的请求再发一份，先回来的那份留下、另一份 abort。
+      // 分类器 temperature=0 且输出是受约束 JSON，副本不改变语义（零质量风险）；
+      // 实测副本之间延迟几乎不相关（r=-0.12），所以这是纯尾部收益，不碰主步与工具。
+      const call = await runHedgedCall(
+        (signal) => provider.chatCompletion(input.messages, {
+          // 天花板只认档案声明：这一发的上限由 provider 按模型档案给，
+          // handler 报的数字早就不是这一发的真实上界了。
+          // 关思考仍由 disableThinking 决定——它是档位判据，不是砍话的那把刀。
+          temperature: 0,
+          responseFormat: "json_object",
+          disableThinking: true,
+        }, signal),
+        { signal: env.signal, hedgeDelayMs, onHedge: () => { hedged = true; } },
+      );
+      hedged ||= call.hedged;
+      const answer = call.value;
       let parsed: unknown;
       try {
         parsed = JSON.parse(answer.content);
@@ -299,6 +321,7 @@ export async function interpretCompanionTurn(
     interpretationStatus: receipt.output?.status ?? null,
     elapsedMs: receipt.usage.elapsedMs,
     modelCalls: receipt.modelCalls,
+    ...(hedged ? { hedged: true } : {}),
   });
 
   if (receipt.outcome === "committed" || receipt.outcome === "resumed_and_committed") {

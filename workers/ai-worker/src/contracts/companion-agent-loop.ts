@@ -80,4 +80,14 @@ export interface CompanionAgentLoopArgs {
    * 无 job 包装的调用方不需要它。用于把 run 预算夹在 handler abort 之内。
    */
   handlerStartedAtMs?: number;
+  /**
+   * L1 影子路由的 embedding 出口（治理门之后那一层；失败返回 null = 弃权）。
+   * 只有 `COMPANION_RELEASE_ROUTER=shadow` 时 handler 才提供；缺省 = 不计算影子。
+   */
+  embedText?: (text: string) => Promise<readonly number[] | null>;
+  /**
+   * L1 放行路由端口（`COMPANION_RELEASE_ROUTER=enforce` 时才提供）。
+   * 只影响投机首步的**放行时机**，不改变 L2 解释、工具面与后续步骤。
+   */
+  releaseRouter?: import("../handlers/companion-release-router.ts").CompanionReleaseRouterPort;
 }

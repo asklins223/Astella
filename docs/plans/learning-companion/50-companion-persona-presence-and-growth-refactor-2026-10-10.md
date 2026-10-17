@@ -460,3 +460,27 @@ flowchart TD
 - **页面**：伴星中心 → 记忆 → 「她的记事」（目录、详情 Markdown、纠正、停用/恢复、版本历史、关键词筛选、空态）；人格页「她写给自己的文档」为自由篇章，编辑区一次整块，事后可纠正。
 
 **验收边界：**机械闭环的用例、类型检查与真实窗口走查见[验证记录](../../testing/companion-autonomy-self-notes-2026-10-10.md)。本轮只有 3 次合成样本的真实模型调用与单账号单窗口走查，**不能据此宣称长期成长或自然度已验收**；阶段 4 的连续身体表达、对外主动台词、以及跨日的行为样本仍缺。
+
+## 2026-10-17 首字延迟：分类器对冲、放行闸读数与 L1 路由
+
+**用户判断（当日）：**首字慢的账要拆成"文字模型首 token"与"放行闸"两段；TTS 只是被文字拖累，不在这一轮改；不换模型/平台，按方案 50 §74 的推理链在代码层收口，质量优先、速度并取。
+
+**实测（本机直连生产路由）：**主步首 token 1.2–6.4 s（关思考）/6.0–11.8 s（开思考），与输入 0–20K 字符、输出上限 512/8K/131K、缓存命中**都无关**——网关抖动。分类器整次往返 2.3 / 3.5 / 7.1 s。分类器副本之间延迟相关系数 **−0.12**（单请求随机），min-of-two p90 3591→2869 ms。TTS 首字节 250–380 ms、整段 0.5–1.9 s。
+
+**已实施（2026-10-17 用户裁决：测试证实有效即直接开，不做影子期灰度——L1 enforce 为部署默认）：**
+
+- **分类器延迟对冲**（`lib/hedged-call.ts`）：同路由、逐字相同的请求并发两份，先到先用、输的 abort；`COMPANION_TOOL_INTENT_HEDGE_MS`（compose 默认 `0`，off 关闭）。分类器 `temperature=0`，副本不改变语义 → 零质量风险。
+- **分类器超时收口**：`COMPANION_TOOL_INTENT_TIMEOUT_MS` 从通用模型上限（15 min）改为分类器专属 **20 s**；超时仍走 `toolUse=uncertain` 的 fail-open（工具面不收窄、consequential 仍走确认门）。
+- **每轮路由读数**（迁移 `0442_companion_turn_route`，`companion_turn_runs.route` 开放 JSONB）：`{version, classifier:{source,elapsedMs,hedged}, release:{waitedMs}, l1?}`；不 await、写失败只 warn。
+- **L1 放行路由**（`handlers/companion-release-router.ts`，`COMPANION_RELEASE_ROUTER=off|shadow|enforce`，compose 默认 shadow）：
+  - L1 只回答"这轮是不是 `intent∈{conversation,question}` 且 `toolUse=none` 的安全轮"；
+  - 状态门在 L2 之前弃权：她的追问收尾、≤8 字、指代/接续、进行中/暂停的学习任务或正式作答；
+  - 判据：bge-m3 向量 top-8 相似度加权票，`τ_safe 0.85 / τ_tool 0.9 / τ_sim 0.9 / minSamples 8`（`COMPANION_RELEASE_TAU_*` 可覆盖），top1 当 OOD 弃权信号（不用 margin）；
+  - 索引在线生长（每条 L2 成功后入索引，按账号有界 256、同句去重、在飞 ≤2）；**持久样本表 `companion_release_router_samples`（迁移 0443，worker 独占 RLS）**按原话 sha256 + 标签 + 向量落一行，重启直接零 embedding 读回最近 256 条（每账号保留 512 条），仍不够再用最近 24 条历史轮次补；不存原话正文；
+  - embedding 出口走 `resolveAIGovernanceContext`（同意 + 数据外发政策）与审计（`companion_release_router_embedding`、`user_answer`、真实 `job_id`）。
+  - **shadow**：每轮计算并写 `route.l1`（decision/reason/intentGuess/概率/相似度/样本数/gates/actual/agreement），不改变放行；**enforce**：L1 命中即提前打开对应投机航班的放行闸，未命中仍等 L2（L2 的 `shouldKeep` 一字未改）。
+- 对照脚本：`scripts/companion-latency-baseline.sql` 第 ③ 段读 `route` 拆首字、第 ⑤ 段算 L1 覆盖率/漏放率/弃权原因。
+
+**验证：**ai-worker 全量单测 1931 条、api 3018 条（1 skip）、shared 951 条全绿；四包 typecheck 通过；`god-file-ratchet`（runtime 保持 1499 行）、向量出口归属守卫、migration journal 与 0442/0443 迁移守卫均绿。
+
+**边界：**enforce 是部署默认（用户 2026-10-17 裁决，不做灰度）；L1 先开闸而 L2 后判不一致时只记 `route.l1.agreement=misrelease`、不撤回已出的字——异常就回退 `shadow`；索引以在线生长 + 最近 256 条持久样本为主，重启后靠 24 条历史补；TTS 侧本轮未改。

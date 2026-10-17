@@ -486,6 +486,8 @@ BEGIN
     'companion_persona_profiles',
     'companion_persona_profile_versions',
     'companion_context_handoff_snapshots',
+    -- 0443：L1 放行路由的持久样本（原话摘要 + L2 标签 + 向量，不含正文）。
+    'companion_release_router_samples',
     'companion_stream_events',
     'companion_action_proposals',
     -- Agent 方案：worker 读取 run 元数据（epoch/permission/settings）与审计面。
@@ -615,6 +617,11 @@ BEGIN
   IF to_regclass('public.companion_context_handoff_snapshots') IS NOT NULL THEN
     GRANT INSERT ON TABLE public.companion_context_handoff_snapshots TO astella_worker;
     REVOKE UPDATE, DELETE, TRUNCATE ON TABLE public.companion_context_handoff_snapshots FROM astella_worker;
+  END IF;
+  IF to_regclass('public.companion_release_router_samples') IS NOT NULL THEN
+    -- L1 路由样本：worker 读回索引、写新样本、按上限清理（只删自己的旧行）。
+    GRANT INSERT, UPDATE, DELETE ON TABLE public.companion_release_router_samples TO astella_worker;
+    GRANT ALL PRIVILEGES ON TABLE public.companion_release_router_samples TO astella_migrator;
   END IF;
   IF to_regclass('public.companion_run_failure_spans') IS NOT NULL THEN
     GRANT INSERT, UPDATE ON TABLE public.companion_run_failure_spans TO astella_worker;
@@ -1552,6 +1559,8 @@ BEGIN
       'note_mind_map_stages',
       'companion_diary_generation_checkpoints',
       'companion_context_handoff_snapshots',
+      -- 0443：L1 路由样本是 worker 独占表，API 故意没有任何权限。
+      'companion_release_router_samples',
       'companion_run_failure_spans',
       'assistant_memory_item_revisions',
       'companion_method_revisions',
@@ -1819,6 +1828,8 @@ BEGIN
       ('companion_run_failure_spans', true, true, true, false),
       -- Exact model inputs are worker-only, append-only snapshots.
       ('companion_context_handoff_snapshots', true, true, false, false),
+      -- 0443：L1 路由样本由 worker 独占读写（含按上限清理）。
+      ('companion_release_router_samples', true, true, true, true),
       -- Agent run 元数据（epoch / permission / agent_settings）只读。
       ('user_companion_account_state', true, false, false, false),
       -- 0238：到点提醒。读（"下一条提醒"进 `<here_and_now>`）+ 写 + 改状态，不删行。

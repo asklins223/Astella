@@ -336,6 +336,16 @@ services:
       # Handler budgets are independent of the 120s crash-recovery lease; active jobs renew it.
       WORKER_MODEL_TIMEOUT_MS: ${WORKER_MODEL_TIMEOUT_MS:-}
       WORKER_PROVIDER_TIMEOUT_MS: ${WORKER_PROVIDER_TIMEOUT_MS:-900000}
+      # 伴星分类器的延迟对冲（2026-10-17）：同一条分类请求并发两份、先到先用。
+      # 实测副本之间延迟不相关（r=-0.12），min-of-two 把 p90 压掉约 0.7 s、吃掉 10 s 级长尾；
+      # 分类器 temperature=0，副本不改变语义。0 = 立即并发，正数 = 延迟触发，off = 关闭。
+      # 默认显式开启（测试环境不设这个变量，所以单测里仍是单发）。
+      COMPANION_TOOL_INTENT_HEDGE_MS: ${COMPANION_TOOL_INTENT_HEDGE_MS:-0}
+      # L1 放行路由的影子模式（2026-10-17）：对 100% 流量计算 L1 判断但不改变放行，
+      # 结果只写进 companion_turn_runs.route.l1，和同一轮 L2 解释比对，出覆盖率—漏放率曲线。
+      # off = 完全不算；shadow = 只记录不生效；enforce = L1 真的可提前打开投机首步的放行闸（默认开）。
+      # 2026-10-17 用户裁决：测试通过即开，不做影子期灰度；异常时回退 shadow/off。embedding 走同意/外发政策门。
+      COMPANION_RELEASE_ROUTER: ${COMPANION_RELEASE_ROUTER:-enforce}
       # 笔记学习产物的**单发** provider 预算（2026-10-16：线上一次速看单发 242 s，
       # 客户端一直转圈）。必须写在这里：上面那个 900000 的全局值优先于代码内置的
       # 任务契约，不显式声明就等于没修。正常一发 10–30 s，长笔记分段是并行的，

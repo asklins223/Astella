@@ -70,6 +70,7 @@ export async function settleCompanionTurnPreamble(deps: CompanionTurnPreambleDep
     webSearchAllowed: deps.meta.webSearchEnabled === true && event.constraints.webSearchEnabled === true
       && (deps.budget.maxWebSearchCalls == null || deps.budget.maxWebSearchCalls > 0) && webSearchServiceAvailable(),
     toolCallCount: deps.meta.toolCallCount,
+    releaseRouter: deps.loopArgs.releaseRouter,
   });
   const attention = await deps.attentionPromise;
   /**

@@ -195,6 +195,11 @@ export const companionTurnRuns = pgTable(
      * 「窗口放大后触发变少」与「预算从来没接上」在日志里长得一样；落库之后才分得开。
      */
     contextPressure: jsonb("context_pressure"),
+    /**
+     * 每轮放行闸的路由读数（迁移 0442）。开放 JSONB：分类器 source/耗时/是否对冲，
+     * 以及首步被放行前等了多久。只记读数，不含任何对话文本；L1 的字段以后加进同一对象。
+     */
+    route: jsonb("route"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -437,5 +442,31 @@ export const companionActionProposals = pgTable(
     workspaceIdx: index("companion_action_proposals_workspace_idx").on(t.workspaceId, t.userId),
     // 2026-08-12（generate 对齐）：0106 定义单列 (conversation_id)
     conversationIdx: index("companion_action_proposals_conversation_idx").on(t.conversationId),
+  }),
+);
+
+// ─── 7.8 companion_release_router_samples（迁移 0443）──────────────────────
+// L1 放行路由的持久样本：只存原话摘要、L2 标签与向量，不存正文。
+// 重启后直接读回索引，不再重算 embedding；worker 独占（RLS + 仅 worker 授权）。
+
+export const companionReleaseRouterSamples = pgTable(
+  "companion_release_router_samples",
+  {
+    id: uuid("id").primaryKey(),
+    workspaceId: uuid("workspace_id").notNull(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    /** 规范化原话的 sha256；与 (intent, tool_use) 一起构成去重键。 */
+    textSha256: char("text_sha256", { length: 64 }).notNull(),
+    intent: text("intent").notNull(),
+    toolUse: text("tool_use").notNull(),
+    embedding: jsonb("embedding").$type<number[]>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    keyUnique: uniqueIndex("companion_release_router_samples_key_idx")
+      .on(t.workspaceId, t.userId, t.textSha256, t.intent, t.toolUse),
+    scopeIdx: index("companion_release_router_samples_scope_idx")
+      .on(t.workspaceId, t.userId, sql`${t.updatedAt} DESC`),
   }),
 );

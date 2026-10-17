@@ -64,6 +64,8 @@ import {
   resolveVisionReader,
 } from "../lib/governance.ts";
 import { createCompanionContextReceipts } from "./companion-context-receipts.ts";
+import { createCompanionReleaseEmbeddingPort, createCompanionReleaseRouterPort,
+  resolveCompanionReleaseRouterMode } from "./companion-release-router.ts";
 import {
   createCompactionTraceRecorder,
   resolveRouteInputTokens,
@@ -1005,6 +1007,17 @@ export async function runCompanionDialogue(
   let ttsRawText: string | null = null;
   let agentResult;
   try {
+    // L1 路由（默认关）：只有显式开启时才建 embedding 出口，且它走治理门（同意 + 外发政策）。
+    const releaseRouterMode = resolveCompanionReleaseRouterMode();
+    const releaseRouterEmbed = releaseRouterMode === "off" ? undefined
+      : createCompanionReleaseEmbeddingPort({ workspaceId: ctx.workspaceId, userId: read.userId, job: ctx });
+    const releaseRouter = releaseRouterMode !== "enforce" || !releaseRouterEmbed ? undefined
+      : createCompanionReleaseRouterPort({
+        mode: releaseRouterMode, scopeKey: `${ctx.workspaceId}:${read.userId}`, text: read.userText,
+        recentMessages: read.recentMessages,
+        activeLearningTask: read.groundedTutorContext !== null || read.formalAnswerInProgress,
+        embed: releaseRouterEmbed, workspaceId: ctx.workspaceId, userId: read.userId,
+      });
     agentResult = await runCompanionAgentLoop({
       ctx,
       read,
@@ -1018,6 +1031,8 @@ export async function runCompanionDialogue(
       toolConstraints: {
         visionEnabled: govCtx.policy.sendImageContent === true && resolveVisionReader(govCtx) !== null,
       },
+      ...(releaseRouterEmbed ? { embedText: releaseRouterEmbed } : {}),
+      ...(releaseRouter ? { releaseRouter } : {}),
       baseMessages: committedMessages,
       initialVisibleText: initialDelivery.text,
       onVisibleCheckpoint: async modelText => {

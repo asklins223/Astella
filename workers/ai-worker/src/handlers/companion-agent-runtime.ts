@@ -32,6 +32,7 @@ import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
 import { stripVoiceExpressionTags } from "@astella/shared/voice-expression-tags";
 
 import { COMPANION_TOOL_INTENT_TIMEOUT_MS, interpretCompanionTurn } from "./companion-tool-intent.ts";
+import { createCompanionRouteRecorder } from "./companion-route-record.ts";
 import { companionAttentionObjects } from "./companion-attention.ts";
 import { companionTurnThinking } from "./companion-turn-thinking.ts";
 import { companionActionProgressLabel } from "./companion-action-progress.ts";
@@ -183,6 +184,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
    * 分类器**不等**——它和"闲聊版第一步"并行跑（2026-10-07 用户决定：首字延迟里
    * 最大的一块就是这次串行往返，实测 1.9–2.4s，而且不产出任何可见内容）。
    */
+  const routeRecorder = createCompanionRouteRecorder({ scopeKey: `${args.ctx.workspaceId}:${args.read.userId}`, userText: args.read.userText, recentMessages: args.read.recentMessages, embedText: args.embedText, activeLearningTask: args.read.groundedTutorContext !== null || args.read.formalAnswerInProgress });
   const attentionResult = cachedInterpretation
     ? Promise.resolve(cachedInterpretation)
     : interpretCompanionTurn(args.provider, args.baseMessages, {
@@ -198,15 +200,13 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       stepTimeoutMs: Math.min(COMPANION_TOOL_INTENT_TIMEOUT_MS, deadlineAt - Date.now()),
       currentActiveTransaction: currentWorkerWorkspaceTransaction,
       verifyAttempt: (attempt) => isJobLeaseActive({ ...args.ctx, leaseToken: attempt.leaseToken }),
-      onReceipt: (receipt) => logger.info({ runId: args.read.runId,
-        providerId: args.provider.id, modelId: args.provider.modelId, ...receipt },
-      "companion interpretation settled; failure metadata contains no conversation or provider text"),
+      onReceipt: (receipt) => routeRecorder.onReceipt(receipt, { runId: args.read.runId, providerId: args.provider.id, modelId: args.provider.modelId }),
     });
-  const attentionPromise = attentionResult.then(async (attention) => {
+  const attentionPromise = routeRecorder.track(attentionResult.then(async (attention) => {
     // Persist any explicit account preference before the speculative stream's release gate opens.
     const voicePreferenceWrite = await args.onTurnInterpretation?.(attention);
     return voicePreferenceWrite ? { ...attention, voicePreferenceWrite } : attention;
-  });
+  }));
 
   // Preserve host-origin historical records through the same path as completed
   // native exchanges. They close no fabricated assistant turn and create no new
@@ -291,6 +291,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     steerableReadTools, steerableActionTools, requestedActionTools,
   } = preamble;
   let prefetchedFirstStep = preamble.prefetchedFirstStep;
+  routeRecorder.record(event, handlerStartedAtMs);
 
 
   /**

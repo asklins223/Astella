@@ -31,6 +31,10 @@ import {
   shouldKeepSpeculativeFirstStep,
   shouldKeepSpeculativeQuestionStep,
 } from "./companion-speculative-first-step.ts";
+import {
+  companionReleaseGateFor,
+  type CompanionReleaseRouterPort,
+} from "./companion-release-router.ts";
 
 type AgentMessage = AgentTurnRequest["messages"][number];
 
@@ -74,11 +78,22 @@ export function startCompanionSpeculativeFirstSteps(args: {
   webSearchAllowed: boolean;
   /** 本轮已有的工具回执数：非 0 就不投提问版（续跑的第一步工具面不一样）。 */
   toolCallCount: number;
+  /**
+   * L1 放行端口（只有 `COMPANION_RELEASE_ROUTER=enforce` 才有）。
+   * 给了就两架航班各按自己的意图猜测量一次：命中即可先开闸，未命中仍等 L2。
+   */
+  releaseRouter?: CompanionReleaseRouterPort;
 }): CompanionSpeculativeFlightsV1 {
   const eligible = args.cachedInterpretation === null
     && typeof args.provider.chatCompletionStream === "function"
     && Boolean(args.onProviderDelta);
   const maxTokens = companionStepOutputCeiling(args.provider);
+  /** 一次 L1 判断，两架航班共用（memoized 在端口里）。 */
+  const releaseVerdict = args.releaseRouter?.evaluate() ?? Promise.resolve(null);
+  const casualReleaseGate = companionReleaseGateFor(
+    releaseVerdict, "conversation", () => args.attention.then(shouldKeepSpeculativeFirstStep));
+  const questionReleaseGate = companionReleaseGateFor(
+    releaseVerdict, "question", () => args.attention.then(shouldKeepSpeculativeQuestionStep));
   const timeoutMs = Math.min(resolveProviderCallTimeout("companion_agent"),
     Math.max(1, args.deadlineAt - Date.now()));
   const holdUntilChars = stepHoldChars({ userAskedForAction: false });
@@ -108,7 +123,7 @@ export function startCompanionSpeculativeFirstSteps(args: {
       separatorBefore: "",
       holdUntilChars,
       onTextEmitted: () => { casual.emitted = true; },
-      releaseGate: () => args.attention.then(shouldKeepSpeculativeFirstStep),
+      releaseGate: casualReleaseGate,
     })
     : null;
   // 作废是这条飞地的正常出口之一：先接住，免得没人处理的 rejection 冒出来。
@@ -140,7 +155,7 @@ export function startCompanionSpeculativeFirstSteps(args: {
       // 保留条件是 question + toolUse none，真实第一步也就是这一条阈值。
       holdUntilChars,
       onTextEmitted: () => { question.emitted = true; },
-      releaseGate: () => args.attention.then(shouldKeepSpeculativeQuestionStep),
+      releaseGate: questionReleaseGate,
     })
     : null;
   questionFlight?.catch(() => undefined);
