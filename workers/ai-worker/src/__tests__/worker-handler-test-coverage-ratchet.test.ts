@@ -82,10 +82,23 @@ const WORKER_SRC = new URL("..", import.meta.url).pathname;
 const HANDLERS_DIR = join(WORKER_SRC, "handlers");
 
 function handlerModules(): string[] {
-  return readdirSync(HANDLERS_DIR)
-    .filter((f) => f.endsWith(".ts") && !f.endsWith(".test.ts"))
-    .map((f) => f.slice(0, -3))
-    .sort();
+  // handlers 按职责分子目录之后（agent / turn / tools / …），只读一层会把
+  // 目录本身当成文件、一个 handler 都收不到——收集器必须跟着源码结构走。
+  const out: string[] = [];
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name !== "__tests__") walk(full);
+        continue;
+      }
+      if (entry.name.endsWith(".ts") && !entry.name.endsWith(".test.ts")) {
+        out.push(entry.name.slice(0, -3));
+      }
+    }
+  };
+  walk(HANDLERS_DIR);
+  return out.sort();
 }
 
 const SELF = "worker-handler-test-coverage-ratchet.test.ts";

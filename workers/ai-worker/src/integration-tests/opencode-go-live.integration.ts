@@ -83,7 +83,7 @@ const { getProviderById } = await import("@astella/shared");
 const { resolveOpenAIChatCompletionsUrl } = await import("@astella/shared/ai-endpoints");
 const { createProvider } = await import("../lib/ai-provider.ts");
 const { resolveMiMoResponsesEndpoint, resolveOpenCodeGoEndpoint } = await import("../lib/providers/opencode-go.ts");
-const { runStreamingAgentStep } = await import("../handlers/companion-agent-streaming-step.ts");
+const { runStreamingAgentStep } = await import("../handlers/agent/companion-agent-streaming-step.ts");
 
 /**
  * 期望模型来自 config/ai-platforms.json 的 capabilities.agent_turn。

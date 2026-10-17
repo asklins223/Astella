@@ -2,8 +2,8 @@
 
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NoteLibrarySurface } from "../notebook/note-library-surface.tsx";
-import { useRoomStore } from "../../../app/room-store.ts";
+import { NoteLibrarySurface } from "../notebook/library/note-library-surface.tsx";
+import { useRoomStore } from "../../../app/home/room-store.ts";
 
 /**
  * 书皮上那两行读数必须自洽（审计 F35）。

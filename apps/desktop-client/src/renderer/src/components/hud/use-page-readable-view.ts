@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { pageReadableV1Schema, type PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
-import { useRoomStore } from "../../app/room-store";
+import { useRoomStore } from "../../app/home/room-store";
 
 /**
  * 把「这一页此刻显示给用户什么」登记进房间 store，供伴星通用读取（doc 37）。

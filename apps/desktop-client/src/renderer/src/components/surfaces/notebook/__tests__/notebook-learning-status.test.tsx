@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import { NotebookCardEntry } from "../notebook-card-entry";
-import { NotebookLearningPage } from "../notebook-learning-page";
+import { NotebookCardEntry } from "../generation/notebook-card-entry.tsx";
+import { NotebookLearningPage } from "../learning/notebook-learning-page.tsx";
 
 afterEach(cleanup);
 /**

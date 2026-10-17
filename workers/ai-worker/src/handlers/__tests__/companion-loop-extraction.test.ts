@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyCompanionToolLoad, createCompanionToolSurface } from "../companion-tool-surface.ts";
-import { rejectUnknownCompanionTool, unofferedToolReceipt, validateCompanionToolCall } from "../companion-tool-call-validation.ts";
-import { companionRecoveryIdentity, openCompanionTurn } from "../companion-turn-opening.ts";
-import { resumeCompanionInterruptedInput } from "../companion-resume-input.ts";
+import { applyCompanionToolLoad, createCompanionToolSurface } from "../tools/companion-tool-surface.ts";
+import { rejectUnknownCompanionTool, unofferedToolReceipt, validateCompanionToolCall } from "../tools/companion-tool-call-validation.ts";
+import { companionRecoveryIdentity, openCompanionTurn } from "../turn/companion-turn-opening.ts";
+import { resumeCompanionInterruptedInput } from "../agent/companion-resume-input.ts";
 
 /**
  * The surface, validation, opening and resume helpers extracted from the agent

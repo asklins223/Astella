@@ -2,7 +2,7 @@
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { CardGenerationRunSnapshotV1 } from "@astella/shared/card-generation-desktop-contracts";
-import { useRoomStore } from "../../../../app/room-store";
+import { useRoomStore } from "../../../../app/home/room-store";
 import { useCardGenerationData } from "../use-card-generation-data";
 
 const RUN = "11111111-1111-4111-8111-111111111111";

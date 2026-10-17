@@ -4,10 +4,10 @@ import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { GatewayResultV1, SessionContextV1 } from "@astella/shared/desktop-ipc-contracts";
 import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
-import { CompanionChatProvider, useCompanionChat } from "../companion-chat-session.tsx";
-import { useRoomStore } from "../room-store.ts";
-import { feedNoteIntentToCompanion } from "../../components/companion/companion-feed.ts";
-import { registerCompanionNotePaper, useNoteAiWork } from "../../components/companion/note-companion-editing";
+import { CompanionChatProvider, useCompanionChat } from "../companion-session/companion-chat-session.tsx";
+import { useRoomStore } from "../home/room-store.ts";
+import { feedNoteIntentToCompanion } from "../../components/companion/hud/companion-feed.ts";
+import { registerCompanionNotePaper, useNoteAiWork } from "../../components/companion/content/note-companion-editing";
 
 /**
  * 页面可读视图 → bridge context 的那一段（doc 37 根因第 2 条）。

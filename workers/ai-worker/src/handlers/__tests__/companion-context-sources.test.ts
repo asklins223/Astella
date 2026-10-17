@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { assertCompanionHandoffSourcesCurrent } from "../companion-context-sources.ts";
+import { assertCompanionHandoffSourcesCurrent } from "../context/companion-context-sources.ts";
 import { CompanionContextChangedError, isNonRetryableError } from "../../lib/non-retryable-errors.ts";
 import { type AgentSqlExecutor } from "@astella/agent-host";
 

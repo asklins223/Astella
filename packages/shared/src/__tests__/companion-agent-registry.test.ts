@@ -1,11 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { allowedMainRouteV2Schema } from "../contracts/companion-bridge-contracts.ts";
+import { allowedMainRouteV2Schema } from "../contracts/companion/companion-bridge-contracts.ts";
 import {
   COMPANION_AGENT_TOOL_DEFINITIONS,
   COMPANION_AGENT_TOOL_NAMES,
   validateCompanionAgentToolArguments,
-} from "../companion-agent-registry.ts";
+} from "../agent/companion-agent-registry.ts";
 
 test("提醒与导航工具的参数边界：时刻只收挂钟，页面只收白名单", () => {
   assert.equal(validateCompanionAgentToolArguments("companion_schedule_reminder", {

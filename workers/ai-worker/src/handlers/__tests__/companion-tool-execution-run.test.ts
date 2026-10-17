@@ -20,9 +20,9 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
-import { companionToolFailureFaces } from "../companion-tool-failure-faces.ts";
+import { companionToolFailureFaces } from "../tools/companion-tool-failure-faces.ts";
 
-const source = readFileSync(resolve(import.meta.dirname, "..", "companion-tool-execution-run.ts"), "utf8");
+const source = readFileSync(resolve(import.meta.dirname, "..", "tools", "companion-tool-execution-run.ts"), "utf8");
 
 test("失败**不抛**出去：它已经落进账本了，调用方要的是 tool 消息", () => {
   // 循环原来那一段是 try/catch + continue；搬出来之后如果还抛，

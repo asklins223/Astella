@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { COMPANION_AGENT_TOOL_DEFINITIONS } from "@astella/shared/companion-agent-registry";
-import { renderConversationSummary } from "../companion-summarizer.ts";
+import { renderConversationSummary } from "../context/companion-summarizer.ts";
 
 /**
  * 方案 44 §5.5：取回入口闭合回路。
@@ -53,7 +53,7 @@ test("44 §5.5：会话内取回复用 read_history，跨会话取回复用 reca
 
 test("44 §5.5：取回路径真的连到会话范围校验，而不是上下文里的转述", () => {
   const source = readFileSync(
-    new URL("../companion-tool-execution.ts", import.meta.url),
+    new URL("../tools/companion-tool-execution.ts", import.meta.url),
     "utf8",
   );
   assert.match(source, /readPastConversationMessages\(/);
@@ -63,7 +63,7 @@ test("44 §5.5：取回路径真的连到会话范围校验，而不是上下文
 
 test("44 §3.2：跨会话找回同时给会话摘要、方法与长期目标", () => {
   const source = readFileSync(
-    new URL("../companion-tool-execution.ts", import.meta.url),
+    new URL("../tools/companion-tool-execution.ts", import.meta.url),
     "utf8",
   );
   assert.match(source, /searchPastConversationSummaries\(/);

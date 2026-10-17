@@ -2,11 +2,11 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Pause, Play, Volume2, VolumeX, X } from "lucide-react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
-import { useRoomStore } from "../app/room-store";
-import { useHomeProjection } from "../app/home-projection";
-import { useCompanionHomeProjection } from "../app/companion-home-projection";
-import { companionCelebrationAllowed } from "../app/companion-celebration-policy";
-import { homePresentation } from "../app/home-presentation";
+import { useRoomStore } from "../app/home/room-store";
+import { useHomeProjection } from "../app/home/home-projection";
+import { useCompanionHomeProjection } from "../app/companion-pages/companion-home-projection";
+import { companionCelebrationAllowed } from "../app/companion-session/companion-celebration-policy";
+import { homePresentation } from "../app/home/home-presentation";
 import {
   mediaAssetUrl,
   useLearningRoomManifest,

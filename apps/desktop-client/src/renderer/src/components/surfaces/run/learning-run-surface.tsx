@@ -50,12 +50,12 @@ import {
   gatewayErrorMessage,
   RendererGatewayError,
   unwrapGatewayResult,
-} from "../../../app/desktop-client";
+} from "../../../app/client/desktop-client";
 import { AssessmentDisputeStrip } from "../review/assessment-dispute-strip.tsx";
-import { useRoomStore } from "../../../app/room-store";
-import { useCompanionHomeProjection } from "../../../app/companion-home-projection";
-import { useCompanionHelpOpportunity } from "../../../app/companion-help-opportunity";
-import { speakCompanionLine, type CompanionSpeechHandle } from "../../../app/companion-voice-playback";
+import { useRoomStore } from "../../../app/home/room-store";
+import { useCompanionHomeProjection } from "../../../app/companion-pages/companion-home-projection";
+import { useCompanionHelpOpportunity } from "../../../app/companion-pages/companion-help-opportunity";
+import { speakCompanionLine, type CompanionSpeechHandle } from "../../../app/companion-session/companion-voice-playback";
 import { HudPage } from "../../hud/HudPage";
 import { useHudPage } from "../../hud/use-hud-page";
 import { usePageReadableView } from "../../hud/use-page-readable-view";
@@ -86,7 +86,7 @@ import {
   isActivityLeaseEligible,
   type ActivityLeaseWindow,
 } from "../../learning-run-activity-lease";
-import { SurfaceDataState } from "../notebook/surface-data.tsx";
+import { SurfaceDataState } from "../notebook/shell/surface-data.tsx";
 import { formatObjectiveDay } from "./objective-state-copy.ts";
 import { ObjectiveProgressBand } from "./ObjectiveProgressBand.tsx";
 import { progressSegmentForOutcome } from "./objective-progress-band.ts";
@@ -136,7 +136,7 @@ import { RunConfirmations } from "./run-confirmations.tsx";
 import { LearningRunDiscovery } from "./learning-run-discovery.tsx";
 import { LearningRunHint } from "./learning-run-hint.tsx";
 import { LearningRunNextStep, LearningRunResultRubric } from "./learning-run-result-tail.tsx";
-import { NoteRunReceipt } from "../notebook/note-run-receipt.tsx";
+import { NoteRunReceipt } from "../notebook/learning/note-run-receipt.tsx";
 import { LearningRunArrival, LearningRunArrivalEvidence } from "./learning-run-arrival.tsx";
 import { LearningRunEvidenceBand } from "./learning-run-evidence-band.tsx";
 import { useTactileSurface } from "../../motion/use-tactile-surface";

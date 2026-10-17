@@ -22,7 +22,7 @@ import { startNoteExpansionTask } from "../../../../apps/api/src/modules/note-ex
 import { createGenerationRunV2 } from "../../../../apps/api/src/modules/card-generation-v2/generation-run-service.ts";
 import { assertFixtureWipeClean, wipeCardGenerationFixtures } from "./card-generation-fixture-cleanup.ts";
 import { runAgentAdvance } from "../agent/advance.ts";
-import { runNoteOverviewGenerate } from "../handlers/note-overview-generate.ts";
+import { runNoteOverviewGenerate } from "../handlers/note/note-overview-generate.ts";
 
 const admin = postgres(testDatabaseUrl("DATABASE_URL_MIGRATOR"), { max: 2 });
 const apiClient = postgres(testDatabaseUrl("DATABASE_URL_API"), { max: 2 });

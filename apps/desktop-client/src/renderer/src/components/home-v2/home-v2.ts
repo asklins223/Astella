@@ -1,4 +1,4 @@
-import type { MotionMode } from "../../app/room-machine";
+import type { MotionMode } from "../../app/home/room-machine";
 import { LIGHTHOUSE_HOME_SCENE_PROFILE } from "./home-scene-profile";
 
 export type HomeV2Zone = "wide" | "desk" | "shelf" | "window" | "rest";

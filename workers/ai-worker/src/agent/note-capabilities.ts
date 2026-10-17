@@ -3,7 +3,7 @@ import {
 } from "@astella/agent-host";
 import { noteAgentCapabilityManifest } from "@astella/shared/agent-capabilities";
 import { agentInputRefV1Schema } from "@astella/shared/agent-contracts";
-import { loadNoteReadPage } from "../handlers/companion-read-tools.ts";
+import { loadNoteReadPage } from "../handlers/tools/companion-read-tools.ts";
 import { readExpansionDrafts } from "./expansion-reading.ts";
 import type { AgentWorkerAdvanceStore } from "./store.ts";
 

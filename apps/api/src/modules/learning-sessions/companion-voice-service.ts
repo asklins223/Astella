@@ -249,64 +249,9 @@ export async function synthesizeCompanionTtsSegment(args: {
     });
   };
   // 第一阶段：事务内只做只读校验并取回文本（快路径，不持有长事务）。
-  const staged = await withWorkspaceTransaction(
+  const staged = await resolveCompanionSegmentText(
     { workspaceId: args.workspaceId, userId: args.userId },
-    async (tx): Promise<{ text: string; instruction?: string } | { statusCode: number; error: { code: string; message: string } }> => {
-      const events = await tx.execute<{ payload: unknown }>(
-        sql`
-          SELECT payload
-          FROM companion_stream_events
-          WHERE conversation_id = ${args.ref.conversationId}
-            AND run_id = ${args.ref.runId}
-            AND generation = ${args.ref.generation}
-            AND type = 'voice.segment.ready'
-            AND payload->>'ordinal' = ${String(args.ref.ordinal)}
-          LIMIT 1
-        `,
-      );
-      const event = events[0];
-      if (!event) {
-        return {
-          statusCode: 404,
-          error: { code: "NOT_FOUND", message: "voice segment not found" },
-        };
-      }
-      const parsedPayload = companionVoiceSegmentReadyPayloadV2Schema.safeParse(event.payload);
-      if (!parsedPayload.success) {
-        return {
-          statusCode: 409,
-          error: { code: "UNSUPPORTED_CONTRACT", message: "voice segment contract is invalid" },
-        };
-      }
-      if (parsedPayload.data.segmentId !== args.ref.segmentId) {
-        return {
-          statusCode: 400,
-          error: { code: "INVALID_REQUEST", message: "segmentId mismatch" },
-        };
-      }
-      if (sha256Utf8V1(parsedPayload.data.synthesisText) !== parsedPayload.data.synthesisTextSha256) {
-        return {
-          statusCode: 409,
-          error: { code: "UNSUPPORTED_CONTRACT", message: "voice segment digest mismatch" },
-        };
-      }
-      const runs = await tx.execute<{ status: string }>(
-        sql`SELECT status FROM companion_turn_runs WHERE id = ${args.ref.runId}`,
-      );
-      const status = runs[0]?.status;
-      // running/succeeded 之外（含 cancel_requested/cancelled/superseded/failed）一律拒绝
-      if (status !== "running" && status !== "succeeded") {
-        return {
-          statusCode: 409,
-          error: { code: "TURN_CANCELLED", message: "run is not playable" },
-        };
-      }
-      // 合同层已校验长度与单位预算；这里再 trim 一次防库里存了带首尾空白的值。
-      const instruction = parsedPayload.data.instruction?.trim();
-      return instruction
-        ? { text: parsedPayload.data.synthesisText, instruction }
-        : { text: parsedPayload.data.synthesisText };
-    },
+    args.ref,
   );
   if ("error" in staged) {
     await recordOutcome("rejected", { errorCode: staged.error.code });
@@ -405,4 +350,58 @@ export async function recordCompanionTtsPlaybackOutcome(args: {
       "companion playback outcome could not be recorded; speech path unaffected",
     );
   }
+}
+
+/**
+ * 按引用取回一段已签发语音的正文（含这一轮是否还可播的校验）。
+ *
+ * 从 `synthesizeCompanionTtsSegment` 里抽出来的：合成那条路与流式那条路
+ * 必须**用同一套校验**，否则同一段可以走两条口径（比如流式那条漏了
+ * segmentId/digest 校验，就等于允许客户端指定任意跑题的字节）。
+ *
+ * 只读、不持有长事务；返回 error 时调用方自己决定记不记账。
+ */
+export async function resolveCompanionSegmentText(
+  scope: { workspaceId: string; userId: string },
+  ref: CompanionTtsSegmentRef,
+): Promise<{ text: string; instruction?: string } | { statusCode: number; error: { code: string; message: string } }> {
+  return withWorkspaceTransaction(scope, async (tx) => {
+    const events = await tx.execute<{ payload: unknown }>(
+      sql`
+        SELECT payload
+        FROM companion_stream_events
+        WHERE conversation_id = ${ref.conversationId}
+          AND run_id = ${ref.runId}
+          AND generation = ${ref.generation}
+          AND type = 'voice.segment.ready'
+          AND payload->>'ordinal' = ${String(ref.ordinal)}
+        LIMIT 1
+      `,
+    );
+    const event = events[0];
+    if (!event) return { statusCode: 404, error: { code: "NOT_FOUND", message: "voice segment not found" } };
+    const parsedPayload = companionVoiceSegmentReadyPayloadV2Schema.safeParse(event.payload);
+    if (!parsedPayload.success) {
+      return { statusCode: 409, error: { code: "UNSUPPORTED_CONTRACT", message: "voice segment contract is invalid" } };
+    }
+    if (parsedPayload.data.segmentId !== ref.segmentId) {
+      return { statusCode: 400, error: { code: "INVALID_REQUEST", message: "segmentId mismatch" } };
+    }
+    if (sha256Utf8V1(parsedPayload.data.synthesisText) !== parsedPayload.data.synthesisTextSha256) {
+      return { statusCode: 409, error: { code: "UNSUPPORTED_CONTRACT", message: "voice segment digest mismatch" } };
+    }
+    const runs = await tx.execute<{ status: string }>(
+      sql`SELECT status FROM companion_turn_runs WHERE id = ${ref.runId}`,
+    );
+    const status = runs[0]?.status;
+    // running/succeeded 之外（含 cancel_requested/cancelled/superseded/failed）一律拒绝
+    if (status !== "running" && status !== "succeeded") {
+      return { statusCode: 409, error: { code: "TURN_CANCELLED", message: "run is not playable" } };
+    }
+    // 合同层已校验长度与单位预算；这里再 trim 一次防库里存了带首尾空白的值。
+    const instruction = parsedPayload.data.instruction?.trim();
+    return instruction
+      ? { text: parsedPayload.data.synthesisText, instruction }
+      : { text: parsedPayload.data.synthesisText };
+  });
 }

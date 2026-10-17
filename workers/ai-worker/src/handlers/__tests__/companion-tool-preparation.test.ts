@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { getCompanionAgentTool } from "@astella/shared";
-import { CompanionToolPreparation } from "../companion-tool-preparation.ts";
-import { companionToolExecutionTimeout } from "../companion-tool-execution-run.ts";
+import { CompanionToolPreparation } from "../tools/companion-tool-preparation.ts";
+import { companionToolExecutionTimeout } from "../tools/companion-tool-execution-run.ts";
 
 test("writes appear while arguments are still generating; one call advances one node", async () => {
   const events: string[] = [];

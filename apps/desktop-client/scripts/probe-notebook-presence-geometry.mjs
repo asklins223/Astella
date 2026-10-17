@@ -26,7 +26,7 @@ const rendererRoot = join(appRoot, 'src/renderer/src');
 const evidence = resolve(appRoot, 'outputs/notebook-presence-geometry');
 mkdirSync(evidence, { recursive: true });
 
-const presencePath = join(rendererRoot, 'components/surfaces/notebook/notebook-presence.tsx');
+const presencePath = join(rendererRoot, 'components/surfaces/notebook/shell/notebook-presence.tsx');
 
 function entryFor(view) {
   return `

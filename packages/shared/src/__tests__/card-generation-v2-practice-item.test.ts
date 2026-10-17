@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import {
   derivePracticeItemFromCanonicalAnswer,
   practiceItemCrossRefError,
-} from "../contracts/card-generation-v2-contracts.ts";
+} from "../contracts/learning/card-generation-v2-contracts.ts";
 
 /**
  * v23 D6：作者没交练习件时的**零模型派生**。

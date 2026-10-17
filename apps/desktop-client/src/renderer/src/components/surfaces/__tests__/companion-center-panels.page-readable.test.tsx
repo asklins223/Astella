@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryPanel } from "../companion/companion-center-panels.tsx";
 import type { CompanionMemoryBudgetStatusV1, CompanionMemoryItemV1 } from "@astella/shared/companion-memory-desktop-contracts";
-import { useRoomStore } from "../../../app/room-store.ts";
+import { useRoomStore } from "../../../app/home/room-store.ts";
 import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 
 /**

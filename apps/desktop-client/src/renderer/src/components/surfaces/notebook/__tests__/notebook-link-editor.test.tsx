@@ -4,9 +4,9 @@ import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react
 import { afterEach, expect, it } from "vitest";
 import * as Y from "yjs";
 import { EditorView } from "@codemirror/view";
-import { NoteDocumentEditor } from "../note-document-editor";
-import type { NoteMarkdownEditorHandle } from "../note-markdown-editor";
-import { notebookLinkHref, useNotebookLinkEditor } from "../notebook-link-editor";
+import { NoteDocumentEditor } from "../document/note-document-editor.tsx";
+import type { NoteMarkdownEditorHandle } from "../document/note-markdown-editor.tsx";
+import { notebookLinkHref, useNotebookLinkEditor } from "../document/notebook-link-editor.tsx";
 import { seedBlocksUpdate } from "../../../../test-support/note-doc-fixtures";
 
 const docs: Y.Doc[] = [];

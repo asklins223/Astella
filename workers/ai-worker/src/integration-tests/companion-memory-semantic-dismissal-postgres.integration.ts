@@ -20,8 +20,8 @@ const ADMIN = testDatabaseUrl("DATABASE_URL_MIGRATOR");
 const sql = postgres(ADMIN, { max: 2 });
 
 const { withWorkerWorkspaceTransaction } = await import("../db.ts");
-const { dismissSemanticTwin } = await import("../handlers/companion-memory-embedding.ts");
-const { hasDismissedMemoryTwin } = await import("../handlers/companion-memory-extractor.ts");
+const { dismissSemanticTwin } = await import("../handlers/memory/companion-memory-embedding.ts");
+const { hasDismissedMemoryTwin } = await import("../handlers/memory/companion-memory-extractor.ts");
 
 const workspaceId = randomUUID();
 const userId = randomUUID();

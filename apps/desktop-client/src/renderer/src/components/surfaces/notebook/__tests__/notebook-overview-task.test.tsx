@@ -4,8 +4,8 @@ import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { noteDetailV1Schema } from "@astella/shared/note-projection-contracts";
 import { noteOverviewTaskV1Schema, type NoteOverviewV1 } from "@astella/shared/note-overview-contracts";
-import { useNotebookOverview } from "../use-notebook-overview";
-import { useNotebookLearningView } from "../use-notebook-learning-view";
+import { useNotebookOverview } from "../generation/use-notebook-overview.ts";
+import { useNotebookLearningView } from "../learning/use-notebook-learning-view.ts";
 
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 

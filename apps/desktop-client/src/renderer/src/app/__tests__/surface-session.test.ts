@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
 import type { SessionContextV1 } from "@astella/shared/desktop-ipc-contracts";
-import { readAuthenticatedSession, setAuthenticatedSurfaceSession } from "../surface-session";
-import { setCurrentWorkspaceEpoch } from "../desktop-client";
-import { publishGateInvalidation } from "../gate-invalidation";
+import { readAuthenticatedSession, setAuthenticatedSurfaceSession } from "../home/surface-session";
+import { setCurrentWorkspaceEpoch } from "../client/desktop-client";
+import { publishGateInvalidation } from "../gate/gate-invalidation";
 
 const session = (epoch = 7) => ({ version: 1, status: "authenticated", workspaceEpoch: epoch,
   workspace: { workspaceId: "workspace", workspaceEpoch: epoch }, user: { userId: "user" } }) as SessionContextV1;

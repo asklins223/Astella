@@ -21,7 +21,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import test from "node:test";
 
-import { runStreamingAgentStep } from "../companion-agent-streaming-step.ts";
+import { runStreamingAgentStep } from "../agent/companion-agent-streaming-step.ts";
 import type { AIProvider } from "../../lib/ai-provider.ts";
 
 // 形状取自 companion-agent-runtime.test.ts 里那份（它已经跑通了这条链）。
@@ -105,7 +105,7 @@ test("不传这个回调时，流照常跑完（默认关闭的姿态）", async
 
 /** 读步骤源码并**剥掉注释**——否则这条判据会读到自己写的说明。 */
 function stepSourceWithoutComments(): string {
-  return readFileSync(resolve(import.meta.dirname, "..", "companion-agent-streaming-step.ts"), "utf8")
+  return readFileSync(resolve(import.meta.dirname, "..", "agent", "companion-agent-streaming-step.ts"), "utf8")
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/\/\/[^\n]*/g, "");
 }

@@ -109,10 +109,10 @@ const repoFile = (rel: string): string =>
  * 改这个列表时连带确认：新加的文件里确实有 `sql` 模板，别放进来当摆设。
  */
 const SOURCE_FILES = [
-  "workers/ai-worker/src/handlers/companion-dialogue-store.ts",
-  "workers/ai-worker/src/handlers/companion-summary-retrieval.ts",
-  "workers/ai-worker/src/handlers/companion-summarizer.ts",
-  "workers/ai-worker/src/handlers/companion-tool-execution.ts",
+  "workers/ai-worker/src/handlers/turn/companion-dialogue-store.ts",
+  "workers/ai-worker/src/handlers/context/companion-summary-retrieval.ts",
+  "workers/ai-worker/src/handlers/context/companion-summarizer.ts",
+  "workers/ai-worker/src/handlers/tools/companion-tool-execution.ts",
   "packages/agent-host/src/methods.ts",
   "packages/agent-host/src/compaction-state.ts",
 ] as const;
@@ -129,9 +129,9 @@ const SOURCE_FILES = [
  * 但会让「新增文件」变成一件需要判断的事，所以从紧。
  */
 const FRAGMENT_DEFINITION_FILES = [
-  "workers/ai-worker/src/handlers/companion-here-and-now.ts",
-  "packages/shared/src/note-visibility.ts",
-  "packages/shared/src/review-consumable-target.ts",
+  "workers/ai-worker/src/handlers/proactive/companion-here-and-now.ts",
+  "packages/shared/src/note/note-visibility.ts",
+  "packages/shared/src/review/review-consumable-target.ts",
 ] as const;
 
 /** 函数定义与 `const` 片段都要跨文件找，所以统一成一张语料表。 */
@@ -1422,7 +1422,7 @@ test("自证：读摘要接续链那条语句一旦引用不存在的列，守�
   // 平读，不再沿父指针递归——判据换成了「这条查询在真 parser 上过得了，且它引用的列真存在」，
   // 因为历史数据已经证明：父指针那条路走不通时，报错的形态恰恰是**静默少读**，不是语法错。
   const fixed = extractFromSource(
-    "workers/ai-worker/src/handlers/companion-dialogue-store.ts",
+    "workers/ai-worker/src/handlers/turn/companion-dialogue-store.ts",
     (text) => /FROM conversation_summaries s/.test(text) && /invalidated_at IS NULL/.test(text),
   );
   const broken = fixed.replace(
@@ -1442,7 +1442,7 @@ test("自证：读摘要接续链那条语句一旦引用不存在的列，守�
 
 test("自证：引用一张表上并不存在的列，守卫必须报 column … does not exist", async () => {
   const fixed = extractFromSource(
-    "workers/ai-worker/src/handlers/companion-summary-retrieval.ts",
+    "workers/ai-worker/src/handlers/context/companion-summary-retrieval.ts",
     (text) => /FROM companion_messages m/.test(text),
   );
   // 缺陷形态＝把 page_context 直接从 companion_messages 上取（它只在 companion_turn_runs 上）。

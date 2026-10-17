@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NoteRecallPaper } from "../notebook-recall-paper";
-import type { NoteRecallCardV1 } from "../notebook-recall-contract";
-import { recallQuestionText } from "../recall-question-text";
+import { NoteRecallPaper } from "../learning/notebook-recall-paper.tsx";
+import type { NoteRecallCardV1 } from "../learning/notebook-recall-contract.ts";
+import { recallQuestionText } from "../learning/recall-question-text.ts";
 
 const recall: NoteRecallCardV1 = { question: "好，那我不给答案，先问一个：**IndexTTS 2.5 为什么要做 2.5 这个版本？", versionState: "current", noteVersionNumber: 3, sectionOrdinal: 1, selfReport: null };
 const actions = { onCollapse: vi.fn(), onAct: vi.fn(async () => undefined), onReflectionChange: vi.fn(), onLocateSection: vi.fn() };

@@ -7,8 +7,8 @@ import {
   resolveSummarizerInputTokens,
   conversationSummaryOutputSchema,
   renderConversationSummary,
-} from "../companion-summarizer.ts";
-import { summarizerJobKey } from "../companion-dialogue-store.ts";
+} from "../context/companion-summarizer.ts";
+import { summarizerJobKey } from "../turn/companion-dialogue-store.ts";
 
 test("summarizer messages: 包含系统提示与对话正文", () => {
   const messages = buildSummarizerMessages({ conversationText: "用户：你好\n桌宠：你好呀" });
@@ -206,7 +206,7 @@ test("conversation_summary 块: 没有可用内容就不注入", () => {
 
 // 2026-08-24：summarizer 复用 memory-extractor 的容错解析——
 // ```json fence 包裹与前后赘述不再丢摘要。
-import { parseMemoryExtractJson } from "../companion-memory-extractor.ts";
+import { parseMemoryExtractJson } from "../memory/companion-memory-extractor.ts";
 
 test("summarizer 解析链: fence 包裹的摘要 JSON 可容错解析", () => {
   const raw = '```json\n{"title":"测试","topics":[],"userGoals":[],"keyEvents":[],"userPreferences":[],"followUps":[],"emotionalState":"neutral"}\n```';

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { AgentRole, type AgentTurnRequest } from "@astella/shared";
-import { activeCompactionMaterial, compactActiveToolContext, createWorkingStateSummarizer } from "../companion-active-context-compaction.ts";
+import { activeCompactionMaterial, compactActiveToolContext, createWorkingStateSummarizer } from "../context/companion-active-context-compaction.ts";
 import { MockProvider } from "../../lib/providers/mock.ts";
 
 const round = (id: string, name = "companion_read_note"): AgentTurnRequest["messages"] => [

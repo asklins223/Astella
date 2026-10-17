@@ -4,7 +4,7 @@ import {
   committedDiaryTask,
   diaryTaskAttempt,
   diaryTaskContext,
-} from "../companion-daily-summary-task.ts";
+} from "../journal/companion-daily-summary-task.ts";
 
 test("daily diary task context freezes owner, workspace, task snapshot, and permission", () => {
   const jobSignal = new AbortController().signal;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { zoomShortcutFactor } from "../window-zoom";
+import { zoomShortcutFactor } from "../window/window-zoom";
 
 const command = { type: "keyDown", key: "=", control: false, meta: true, alt: false, isComposing: false };
 describe("native page zoom", () => {

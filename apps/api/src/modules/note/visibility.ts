@@ -14,7 +14,7 @@ import {
   type NoteShareScope,
 } from "@astella/shared/note-visibility";
 // 判据的 drizzle 版本。2026-10-04：这一支从本文件搬到
-// `packages/shared/src/note-visibility-condition.ts`（制卡领域服务要在自己的创建
+// `packages/shared/src/note/note-visibility-condition.ts`（制卡领域服务要在自己的创建
 // 事务里用同一句判据，它不能反向 import API 的模块）。本文件继续 import 并转出
 // 它，所以 API 侧三十余处 `../note/visibility.ts` 的调用点一行都不用改，
 // 而判据在全仓仍然只有一份。

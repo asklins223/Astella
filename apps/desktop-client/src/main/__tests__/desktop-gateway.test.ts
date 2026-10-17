@@ -1,4 +1,4 @@
-import * as ns_source from "../desktop-gateway-ns-source";
+import * as ns_source from "../gateway/desktop-gateway-ns-source";
 import { noteModuleMock, noteStub } from "./ns-note-stubs";
 
 // 2026-09-30：笔记这一族已变成**自由函数**（`desktop-gateway-ns-note.ts`），
@@ -7,7 +7,7 @@ import { noteModuleMock, noteStub } from "./ns-note-stubs";
 // **用 `importOriginal()` 部分 mock**而不是写死转发清单：desktop-ipc 里有 60+ 个
 // `ns_note.*` 调用点，清单漏一个，vitest 就在运行时抛「没有这个导出」，
 // 而它被 `safe_internal_error` 吞掉——症状离真因隔了三层。**部分 mock 不会过时。**
-vi.mock("../desktop-gateway-ns-note", async (importOriginal) => {
+vi.mock("../gateway/desktop-gateway-ns-note", async (importOriginal) => {
   // **部分 mock**：只覆盖用 noteStub() 登记过的方法，其余走真实现。
   // 写死转发清单一定会过时——实测 desktop-ipc 里有 60+ 个 ns_note 调用点，漏一个
   // vitest 就在运行时抛「没有这个导出」，而它被 safe_internal_error 吞掉。
@@ -17,16 +17,16 @@ vi.mock("../desktop-gateway-ns-note", async (importOriginal) => {
   //    ——所以 noteModuleMock 也在工厂内部 import；
   // ② `importOriginal()` **不能与别的 import 并发**（实测 `Promise.all` 会让
   //    mock 提前返回半成品，症状是「桩登记了但一次都没被调用」）。
-  const real = await importOriginal<typeof import("../desktop-gateway-ns-note")>();
+  const real = await importOriginal<typeof import("../gateway/desktop-gateway-ns-note")>();
   const { noteModuleMock } = await import("./ns-note-stubs");
   return noteModuleMock(real);
 });
-import * as ns_note from "../desktop-gateway-ns-note";
-import * as ns_companion from "../desktop-gateway-ns-companion";
-import * as ns_learning from "../desktop-gateway-ns-learning";
-import * as ns_workspace from "../desktop-gateway-ns-workspace";
-import * as ns_auth from "../desktop-gateway-ns-auth";
-import * as ns_runtime from "../desktop-gateway-ns-runtime";
+import * as ns_note from "../gateway/desktop-gateway-ns-note";
+import * as ns_companion from "../gateway/desktop-gateway-ns-companion";
+import * as ns_learning from "../gateway/desktop-gateway-ns-learning";
+import * as ns_workspace from "../gateway/desktop-gateway-ns-workspace";
+import * as ns_auth from "../gateway/desktop-gateway-ns-auth";
+import * as ns_runtime from "../gateway/desktop-gateway-ns-runtime";
 import { createHmac } from "node:crypto";
 import * as Y from "yjs";
 import {
@@ -79,18 +79,18 @@ import {
   cardActivationReceiptV2Schema,
   cardPlanV2Schema,
 } from "@astella/shared/card-generation-v2-contracts";
-import { DesktopGatewayFailure } from "../desktop-gateway-failure";
-import * as ns_assessment from "../desktop-gateway-ns-assessment";
-import * as ns_search from "../desktop-gateway-ns-search";
-import * as ns_invite from "../desktop-gateway-ns-invite";
-import * as ns_home from "../desktop-gateway-ns-home";
-import * as ns_artifact from "../desktop-gateway-ns-artifact";
+import { DesktopGatewayFailure } from "../gateway/desktop-gateway-failure";
+import * as ns_assessment from "../gateway/desktop-gateway-ns-assessment";
+import * as ns_search from "../gateway/desktop-gateway-ns-search";
+import * as ns_invite from "../gateway/desktop-gateway-ns-invite";
+import * as ns_home from "../gateway/desktop-gateway-ns-home";
+import * as ns_artifact from "../gateway/desktop-gateway-ns-artifact";
 import {
   DesktopGateway,
   parseCompanionAccountSseFrame,
   parseCompanionInboxSseFrame,
   parseCompanionSseFrame,
-} from "../desktop-gateway";
+} from "../gateway/desktop-gateway";
 
 const pairingSecret = Buffer.alloc(32, 9);
 const pairingSecretEncoded = pairingSecret.toString("base64url");

@@ -29,7 +29,7 @@ const exists = (...parts: string[]) => {
 const delivery = read("apps", "api", "src", "modules", "companion-conversation", "delivery", "delivery-service.ts");
 const proactiveHook = read("apps", "api", "src", "modules", "companion-conversation", "delivery", "proactive-hook.ts");
 const shell = read("apps", "api", "src", "modules", "companion-shell", "service.ts");
-const dailySummary = read("workers", "ai-worker", "src", "handlers", "companion-daily-summary.ts");
+const dailySummary = read("workers", "ai-worker", "src", "handlers", "journal", "companion-daily-summary.ts");
 
 // ── A19：换人格后看旧日记，新表达只影响新产物 ────────────────────────────
 
@@ -63,7 +63,7 @@ test("A19｜**全仓没有**改写已生成日记的路径", () => {
   const sources = [
     ["apps", "api", "src", "modules", "companion-conversation", "daily-summary-routes.ts"],
     ["apps", "api", "src", "modules", "companion-conversation", "turn"],
-    ["workers", "ai-worker", "src", "handlers", "companion-daily-summary.ts"],
+    ["workers", "ai-worker", "src", "handlers", "journal", "companion-daily-summary.ts"],
   ];
   for (const parts of sources) {
     const target = parts[parts.length - 1];
@@ -95,7 +95,7 @@ test("A19｜已发布成稿受保护：后台重跑不能替换（§5.5）", () 
 // ── A15：正式作答期间，提醒持久、日记安静更新、形象可见 ──────────────────
 
 test("A15｜正式作答期间**不弹**普通招呼（安静规则生效）", () => {
-  const initiative = read("workers", "ai-worker", "src", "handlers", "companion-initiative.ts");
+  const initiative = read("workers", "ai-worker", "src", "handlers", "proactive", "companion-initiative.ts");
   assert.match(initiative, /findFormalAnswerTarget\(tx, scope\)/,
     "主动交流准备没有读正式作答状态 —— 作答中途她会插话");
   assert.match(initiative, /deferParticipation\(tx,\s*ctx,\s*60_000\)/,

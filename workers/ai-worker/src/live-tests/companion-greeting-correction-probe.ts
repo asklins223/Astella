@@ -2,13 +2,13 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { resolveAllCompanionAgentTools } from "@astella/shared";
-import type { CompanionRecentHistoryMessage } from "../handlers/companion-context-handoff.ts";
-import { buildCompanionPersonaMessages, sanitizeCompanionVisibleText } from "../handlers/companion-dialogue-content.ts";
-import { resolveCompanionPersonaContext } from "../handlers/companion-identity-context.ts";
-import { renderHereAndNow, type HereAndNowSnapshot } from "../handlers/companion-here-and-now.ts";
-import { buildCasualFirstStepRequest } from "../handlers/companion-speculative-first-step.ts";
-import { runStreamingAgentStep } from "../handlers/companion-agent-streaming-step.ts";
-import { interpretCompanionTurn } from "../handlers/companion-tool-intent.ts";
+import type { CompanionRecentHistoryMessage } from "../handlers/context/companion-context-handoff.ts";
+import { buildCompanionPersonaMessages, sanitizeCompanionVisibleText } from "../handlers/turn/companion-dialogue-content.ts";
+import { resolveCompanionPersonaContext } from "../handlers/memory/companion-identity-context.ts";
+import { renderHereAndNow, type HereAndNowSnapshot } from "../handlers/proactive/companion-here-and-now.ts";
+import { buildCasualFirstStepRequest } from "../handlers/agent/companion-speculative-first-step.ts";
+import { runStreamingAgentStep } from "../handlers/agent/companion-agent-streaming-step.ts";
+import { interpretCompanionTurn } from "../handlers/tools/companion-tool-intent.ts";
 import { closeDatabase } from "../db.ts";
 import { platform, observedProvider, root, safeFailure, type WireReceipt } from "./acceptance-common.ts";
 

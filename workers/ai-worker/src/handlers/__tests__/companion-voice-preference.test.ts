@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mergePersistentDialectPreference } from "../companion-voice-preference.ts";
+import { mergePersistentDialectPreference } from "../turn/companion-voice-preference.ts";
 
 // 账号那一行 jsonb 里住着别人的偏好：音色/语速描述（tts_instruction）、引擎与音色选择、
 // 作答模态。方言只是其中一个键，所以这里的判据是「只动 tts_dialect，别的一概不碰」。

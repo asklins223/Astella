@@ -3,7 +3,7 @@
  * 候选行↔对象互转、事件与候选/binding plan/修复修订的批量落库，以及三个 prompt 规模上限。
  *
  * 39d W7-7 刀二·内核搬家第三块砖。前两块是 `outbox-queue.ts`（队列与租约）与
- * `retry-classification.ts`（错误可重试分类）。搬完这三块，`handlers/card-generation-v2-handler.ts`
+ * `retry-classification.ts`（错误可重试分类）。搬完这三块，`handlers/note/card-generation-v2-handler.ts`
  * 里剩下的就只是四阶段链体本身，可以整文件删除。
  *
  * 为什么这些算"共用"：简化链（`card-generation-v3/`）此刻就在 import 它们——同一张

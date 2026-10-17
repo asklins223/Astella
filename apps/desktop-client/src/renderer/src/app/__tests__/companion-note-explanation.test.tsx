@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { CompanionChatProvider, useCompanionChat, type CompanionChatSession } from "../companion-chat-session";
-import { useRoomStore } from "../room-store";
-import { beginNoteExplanation, resetNoteExplanations, readNoteExplanation, useNoteCompanionExplanations } from "../../components/companion/note-companion-explanation";
+import { CompanionChatProvider, useCompanionChat, type CompanionChatSession } from "../companion-session/companion-chat-session";
+import { useRoomStore } from "../home/room-store";
+import { beginNoteExplanation, resetNoteExplanations, readNoteExplanation, useNoteCompanionExplanations } from "../../components/companion/content/note-companion-explanation";
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const target = { noteId: id(1), anchor: { noteVersionId: id(2), startBlockOrdinal: 0, endBlockOrdinal: 0, startOffset: 0, endOffset: 4, excerpt: "利息复利", prefix: "", suffix: "" } };

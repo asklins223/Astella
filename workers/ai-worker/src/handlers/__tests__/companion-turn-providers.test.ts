@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { resolveCompanionTurnProviders } from "../companion-turn-providers.ts";
+import { resolveCompanionTurnProviders } from "../turn/companion-turn-providers.ts";
 import { AIContextCompactionRequiredError } from "../../lib/context-governor.ts";
 import type { AIGovernanceContext } from "../../lib/governance.ts";
 import { registerFactory } from "../../lib/provider-factory.ts";

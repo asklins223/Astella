@@ -9,7 +9,7 @@ import {
   companionOfferCandidates,
   interpretCompanionTurn,
   type CompanionToolIntentReceipt,
-} from "../companion-tool-intent.ts";
+} from "../tools/companion-tool-intent.ts";
 
 function taskContext(signal = new AbortController().signal) {
   return {
@@ -462,7 +462,7 @@ test("用户取消与超时分别记录，不因为取消重发分类请求", as
  * 这条守卫钉住"它是分类器自己的、分钟级以下的有界上限"，不是通用模型超时。
  */
 test("分类器的等待上限是有界的分类器专属值，不再借通用模型超时", async () => {
-  const { COMPANION_TOOL_INTENT_TIMEOUT_MS } = await import("../companion-tool-intent.ts");
+  const { COMPANION_TOOL_INTENT_TIMEOUT_MS } = await import("../tools/companion-tool-intent.ts");
   assert.ok(Number.isInteger(COMPANION_TOOL_INTENT_TIMEOUT_MS));
   assert.ok(COMPANION_TOOL_INTENT_TIMEOUT_MS >= 10_000, "低于实测尾部会把正常慢请求误判成挂死");
   assert.ok(COMPANION_TOOL_INTENT_TIMEOUT_MS <= 60_000, "分钟级以上等于把整轮钉在放行闸后面");

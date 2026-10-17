@@ -37,14 +37,14 @@ import type {
   ObjectiveListItemV3,
   ObjectiveListPageV3,
 } from "@astella/shared/learning-objective-surface-contracts";
-import { useRoomStore } from "../../../app/room-store";
+import { useRoomStore } from "../../../app/home/room-store";
 import {
   createCommandId,
   createRequestMeta,
   gatewayErrorMessage,
   RendererGatewayError,
   unwrapGatewayResult,
-} from "../../../app/desktop-client";
+} from "../../../app/client/desktop-client";
 import { useCardTactile } from "../../motion/use-card-tactile";
 import { CardCollection } from "./card-collection";
 import { cardStrategyPresentation } from "../review/card-strategy-presentation";

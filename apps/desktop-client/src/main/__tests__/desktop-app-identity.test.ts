@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { configureDesktopAppIdentity } from "../desktop-app-identity";
+import { configureDesktopAppIdentity } from "../window/desktop-app-identity";
 
 describe("desktop app Keychain identity", () => {
   it("gives the installed app its own name before ready while retaining the existing profile", () => {

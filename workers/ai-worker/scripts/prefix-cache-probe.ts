@@ -77,7 +77,7 @@ const CLOCK_FIRST_LAYOUT = (at: number) => `${clock(at)}\n${STATIC_HEAD}\n${STAT
  * 这正是相邻两轮真实会发生的事。
  */
 async function productionLayoutReadings(send: (g: string, l: string, p: string, u?: string) => Promise<void>): Promise<void> {
-  const { buildCompanionPersonaMessages } = await import("../src/handlers/companion-dialogue-content.ts");
+  const { buildCompanionPersonaMessages } = await import("../src/handlers/turn/companion-dialogue-content.ts");
   const base = Date.parse("2026-10-11T00:20:00.000Z");
   const history = Array.from({ length: 8 }, (_, i) => ({
     role: (i % 2 === 0 ? "user" : "assistant") as "user" | "assistant",

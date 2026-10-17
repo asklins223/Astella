@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { act, renderHook } from "@testing-library/react";
-import { useNoteDocLiveView } from "../notebook/use-note-doc-live-view.ts";
+import { useNoteDocLiveView } from "../notebook/document/use-note-doc-live-view.ts";
 
 const NOTE_ID = "44444444-4444-4444-8444-444444444444";
 const OTHER_ID = "55555555-5555-5555-8555-555555555555";

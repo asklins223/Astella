@@ -4,7 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import type { GatewayResultV1, SessionContextV1 } from "@astella/shared/desktop-ipc-contracts";
 import type { DesktopSearchItem } from "@astella/shared/desktop-surface-contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useRoomStore } from "../../../app/room-store.ts";
+import { useRoomStore } from "../../../app/home/room-store.ts";
 import { SearchSurface } from "../study/search-surface.tsx";
 
 /**

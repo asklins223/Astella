@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Download, LoaderCircle, Mic, Square } from "lucide-react";
-import { CompanionVoiceRecorder } from "../../companion/voice-recorder";
-import { isAsrModelMissing, isLocalAsrReady, transcribeRecording } from "../../companion/local-speech-recognition";
-import { openVoiceModelSettings } from "../../companion/open-voice-model-settings";
-import { guideVoiceModelDownload } from "../../companion/voice-model-notifications";
-import { holdCompanionMicrophone } from "../../companion/companion-notification-voice";
-import { stopCompanionSpeech } from "../../../app/companion-voice-playback";
+import { CompanionVoiceRecorder } from "../../companion/voice/voice-recorder";
+import { isAsrModelMissing, isLocalAsrReady, transcribeRecording } from "../../companion/voice/local-speech-recognition";
+import { openVoiceModelSettings } from "../../companion/voice/open-voice-model-settings";
+import { guideVoiceModelDownload } from "../../companion/voice/voice-model-notifications";
+import { holdCompanionMicrophone } from "../../companion/voice/companion-notification-voice";
+import { stopCompanionSpeech } from "../../../app/companion-session/companion-voice-playback";
 import { microphoneAvailabilityCopy, probeMicrophone, type MicrophoneAvailability } from "../../voice-capability";
 
 const MAX_RECORDING_SECONDS = 60;

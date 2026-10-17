@@ -21,7 +21,7 @@ import {
   renderPlaybookCatalog,
   retrievePlaybookViews,
   type PlaybookCatalogEntry,
-} from "../companion-playbooks.ts";
+} from "../memory/companion-playbooks.ts";
 
 const entry = (over: Partial<PlaybookCatalogEntry> = {}): PlaybookCatalogEntry => ({
   playbookId: "11111111-1111-1111-1111-111111111111",
@@ -178,7 +178,7 @@ test("依据站得住的方法按当前版本能展开正文，并带上它的�
     "拿着旧版本读到了当前正文：「她读的是哪一版」就永远答不出来");
 });
 test("候选渲染写明「还没核对」，并带上别用的情形，正文步骤不进来了", async () => {
-  const { renderPlaybookCandidates } = await import("../companion-playbooks.ts");
+  const { renderPlaybookCandidates } = await import("../memory/companion-playbooks.ts");
   const rendered = renderPlaybookCandidates([
     { playbookId: "m1", playbookKey: "greet-only", title: "打招呼时就只打招呼",
       triggerCondition: "对方只发来一个招呼", version: 2, epistemicStatus: "tentative",

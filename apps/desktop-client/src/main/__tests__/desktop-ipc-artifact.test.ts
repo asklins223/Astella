@@ -17,11 +17,11 @@ import {
   type GatewayResultV1,
   type RequestMetaV1,
 } from "@astella/shared/desktop-ipc-contracts";
-import { type DesktopGateway } from "../desktop-gateway";
+import { type DesktopGateway } from "../gateway/desktop-gateway";
 import { registerAuthStub } from "./ns-auth-stubs";
-import * as ns_auth from "../desktop-gateway-ns-auth";
+import * as ns_auth from "../gateway/desktop-gateway-ns-auth";
 
-vi.mock("../desktop-gateway-ns-auth", async () => {
+vi.mock("../gateway/desktop-gateway-ns-auth", async () => {
   const { authModuleMock } = await import("./ns-auth-stubs");
   return authModuleMock();
 });
@@ -64,7 +64,7 @@ vi.mock("electron", () => ({
 // 在 typecheck 里报「不存在」——**测试因此不能 typecheck 通过**，那等于没做。
 /** 每个键是一个 `vi.fn()` 桩：既能调（转发用），也能断言（`.mock.calls` / `.mockRejectedValueOnce`）。 */
 const artifactStubs: Record<string, ReturnType<typeof vi.fn<(...args: never[]) => unknown>>> = {};
-vi.mock("../desktop-gateway-ns-artifact", () => ({
+vi.mock("../gateway/desktop-gateway-ns-artifact", () => ({
   getNoteLearningArtifactHtml: (...args: never[]) => artifactStubs.getNoteLearningArtifactHtml?.(...args),
   getNoteLearningRoundArtifactHtml: (...args: never[]) => artifactStubs.getNoteLearningRoundArtifactHtml?.(...args),
 }));
@@ -119,13 +119,13 @@ function stubGateway(overrides: Partial<DesktopGateway> = {}): DesktopGateway {
 async function register(gateway: DesktopGateway, injectUserDataDir = true) {
   vi.resetModules();
   const [{ registerM1DesktopIpc }, gatewayModule, failureModule] = await Promise.all([
-    import("../desktop-ipc"),
-    import("../desktop-gateway"),
+    import("../ipc/desktop-ipc"),
+    import("../gateway/desktop-gateway"),
     // 2026-09-30：失败类搬到了 `../desktop-gateway-failure`（它原先和网关类同文件，
     // 而每个方法抛的都是它）。**必须从这一份模块图里取**——`vi.resetModules()` 之后
     // 静态 import 的那个是另一份实例，拿它造的错误 `instanceof` 过不了 `mapFailure`，
     // 会假红成别的错误码。从旧模块取则更隐蔽：拿到 undefined，报「not a constructor」。
-    import("../desktop-gateway-failure"),
+    import("../gateway/desktop-gateway-failure"),
   ]);
   registerM1DesktopIpc({
     gateway,

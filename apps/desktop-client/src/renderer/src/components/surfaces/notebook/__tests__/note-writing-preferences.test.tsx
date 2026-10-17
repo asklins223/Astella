@@ -9,7 +9,7 @@ import {
   updateWritingPreferences,
   useWritingPreferences,
   writingPreferenceAttributes,
-} from "../note-writing-preferences";
+} from "../document/note-writing-preferences.ts";
 
 /**
  * 写作偏好此前由编辑工具栏里的组件命令式写回 workspace，而这块 DOM 在阅读／编辑／源码
@@ -45,7 +45,7 @@ describe("写作偏好属于书桌，不属于某个视图", () => {
     });
   });
 
-  it.each(["notebook-surface.tsx", "notebook-local-files.tsx"])("%s 的书桌节点自己带上偏好，不再等编辑工具栏挂载", (file) => {
+  it.each(["shell/notebook-surface.tsx", "document/notebook-local-files.tsx"])("%s 的书桌节点自己带上偏好，不再等编辑工具栏挂载", (file) => {
     const source = readFileSync(join(resolve(import.meta.dirname, ".."), file), "utf8");
     expect(source).toContain("writingPreferenceAttributes(");
   });

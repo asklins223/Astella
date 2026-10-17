@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { activeCompanionHostContexts, COMPANION_NAVIGATION_TOOL_NAMES, companionCapabilityOfferedInHostContext } from "../companion-host-context.ts";
+import { activeCompanionHostContexts, COMPANION_NAVIGATION_TOOL_NAMES, companionCapabilityOfferedInHostContext } from "../companion/companion-host-context.ts";
 
 const read = (name: string) => ({
   name,
@@ -53,7 +53,7 @@ test("判据在类型上就拿不到本轮意图（2026-10-09 那次翻车的入
   // 源码级判据：这一层只允许吃宿主事实。它一旦读起注意力判定，就会重演
   // 「分类器的一次猜测成了能力总闸」——那次一个做不到的请求（共享笔记）把
   // `act` 降成 `uncertain`，于是 `companion_create_note` 整批被摘。
-  const source = readFileSync(new URL("../companion-host-context.ts", import.meta.url), "utf8")
+  const source = readFileSync(new URL("../companion/companion-host-context.ts", import.meta.url), "utf8")
     // 注释里会引用那些字段名（说明它们被有意排除），只看真代码。
     .replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
   for (const forbidden of ["toolUse", "attention", "candidateOperations", "interpretation"]) {

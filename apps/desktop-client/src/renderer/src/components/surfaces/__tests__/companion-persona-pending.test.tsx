@@ -29,7 +29,7 @@ import {
   type CompanionPersonaPendingV1,
   type CompanionPersonaProfileVersionV1,
 } from "@astella/shared/companion-memory-desktop-contracts";
-import { useRoomStore } from "../../../app/room-store.ts";
+import { useRoomStore } from "../../../app/home/room-store.ts";
 import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
@@ -263,8 +263,8 @@ describe("桌面端这三条通道接齐了", () => {
   const read = (...parts: string[]) => readFileSync(join(CLIENT, ...parts), "utf8");
 
   it("契约 / 主进程 / preload 三处都有 pending / stage / activate", () => {
-    const contracts = read("..", "..", "packages", "shared", "src", "contracts", "desktop-ipc-contracts.ts");
-    const ipc = read("src", "main", "desktop-ipc-companion.ts");
+    const contracts = read("..", "..", "packages", "shared", "src", "contracts", "desktop", "desktop-ipc-contracts.ts");
+    const ipc = read("src", "main", "ipc", "desktop-ipc-companion.ts");
     const preload = read("src", "preload", "index.ts");
     for (const channel of ["companionPersonaPending", "companionPersonaStage", "companionPersonaActivate"]) {
       expect(contracts, `契约里少了 ${channel}`).toContain(channel);

@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { COMPANION_DEFAULT_PARTICIPATION } from "@astella/shared";
 import type { CompanionParticipationPreferencesV1 } from "@astella/shared/companion-initiative-contracts";
-import { createRequestMeta, gatewayErrorMessage, requireWorkspaceEpoch, unwrapGatewayResult } from "../../../app/desktop-client";
-import { useRoomStore } from "../../../app/room-store";
-import { renderCompanionMarkdown } from "../../companion/companion-markdown";
+import { createRequestMeta, gatewayErrorMessage, requireWorkspaceEpoch, unwrapGatewayResult } from "../../../app/client/desktop-client";
+import { useRoomStore } from "../../../app/home/room-store";
+import { renderCompanionMarkdown } from "../../companion/content/companion-markdown";
 
 export function CompanionParticipationPreferences() {
   const scope = useRoomStore(s => s.workspaceScopeRevision);

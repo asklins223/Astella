@@ -1,0 +1,321 @@
+import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode, type RefObject } from "react";
+import { BookOpen, Code2, Eye, History, Maximize2, Lightbulb, ListTree, MoreHorizontal, Paperclip, PencilLine, Pin, PinOff, ScanText, Sprout, StickyNote, X } from "lucide-react";
+import { NOTE_BODY_MODES, type NoteBodyMode } from "../document/note-document-mode.ts";
+import type { NoteOutlineEntry } from "../document/note-outline.ts";
+import { useNotebookPageTurn, useNotebookPaperMotion, useNotebookPaperPresence } from "./use-notebook-paper-motion.ts";
+import { useNotebookTouch } from "../document/use-notebook-touch.ts";
+import { useNotebookFullscreenControls } from "./use-notebook-fullscreen-controls.ts";
+import { NotebookFullscreenRibbon } from "./notebook-fullscreen-ribbon.tsx";
+
+const modeIcons = { preview: Eye, "live-preview": PencilLine, source: Code2 };
+const attachmentFaces = {
+  annotation: { Icon: StickyNote, detail: "想法留在原句旁" },
+  source: { Icon: Paperclip, detail: "和这篇笔记一起收好" },
+  history: { Icon: History, detail: "留住每一次理解" },
+};
+const learningTabs = [
+  { kind: "overview", label: "速看", detail: "读懂重点", Icon: ScanText },
+  { kind: "recall", label: "回想", detail: "想起一点", Icon: Lightbulb },
+  { kind: "expansion", label: "往外学", detail: "发现关联", Icon: Sprout },
+] as const;
+export type NotebookLearningView = "body" | "overview" | "recall" | "artifact";
+export type NotebookSidePage = {
+  readonly kind: "source" | "history" | "annotation";
+  readonly title: string;
+  readonly closeLabel: string;
+  readonly onClose: () => void;
+  readonly content: ReactNode;
+};
+
+type Props = {
+  readonly noteId: string;
+  readonly mindMapActive?: boolean;
+  readonly noteTitle: string;
+  readonly version: number;
+  readonly mode: NoteBodyMode;
+  readonly canEdit: boolean;
+  readonly pendingMode: NoteBodyMode | null;
+  readonly onMode: (mode: NoteBodyMode) => void;
+  readonly articleHeader: ReactNode;
+  readonly outline: readonly NoteOutlineEntry[];
+  readonly onLocate: (block: number) => void;
+  readonly onOpenDirectory: () => void;
+  readonly learningView: NotebookLearningView | "expansion" | "history" | "learning";
+  readonly onLearning: (kind: "overview" | "recall" | "expansion") => void;
+  readonly onBody: () => void;
+  readonly onHistory?: () => void;
+  readonly tools: ReactNode;
+  /** 速看的「要点／脑图」开关：挂在纸面框上，不在会翻页的页内容里（见 notebook-overview-switch.tsx）。 */
+  readonly overviewSwitch?: ReactNode;
+  readonly primaryAction: ReactNode;
+  readonly taskActions: ReactNode;
+  readonly sourceAction: ReactNode;
+  readonly generationAction?: ReactNode;
+  readonly extraActions: ReactNode;
+  readonly status: ReactNode;
+  /**
+   * 「谁开着这一篇」那一排。平时挂在纸面顶上那条常驻工具条上（不随正文滚，
+   * 见 `.notebook-desk__presence`）；全屏时那条 chrome 会右侧化成工具页，
+   * 于是这一排改挂到常驻纸签上——同一个句子，换一个还在屏上的位置。
+   */
+  readonly presence?: ReactNode;
+  readonly saveError?: string | null;
+  readonly scrollRef: RefObject<HTMLDivElement | null>;
+  readonly children: ReactNode;
+  readonly sidePage: NotebookSidePage | null;
+};
+/** A single binding holds the index, current page and one opened attachment. */
+export function NotebookDesk(props: Props) {
+  const [directoryOpen, setDirectoryOpen] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  const [compactLayout, setCompact] = useState(true);
+  const spreadRef = useRef<HTMLDivElement | null>(null);
+  const deskRef = useRef<HTMLDivElement | null>(null);
+  const ribbonRef = useRef<HTMLDivElement | null>(null);
+  useNotebookTouch(deskRef);
+  const [currentBlock, setCurrentBlock] = useState(0);
+  const drawerRef = useRef<HTMLDetailsElement>(null);
+  const sideTriggerRef = useRef<HTMLElement | null>(null);
+  const directoryTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const directoryWasOpen = useRef(false);
+  const sideWasOpen = useRef(false);
+  const sideClosedFromBody = useRef(false);
+  const bodyPressPoint = useRef<{ x: number; y: number } | null>(null);
+  const focus = useNotebookFullscreenControls(props.noteId, props.scrollRef, () => {
+    setDirectoryOpen(false); setPinned(false); props.sidePage?.onClose();
+    if (drawerRef.current) drawerRef.current.open = false;
+  });
+  const compact = focus.fullscreen || compactLayout;
+  const showDirectory = props.learningView === "body" && directoryOpen && !props.sidePage;
+  const play = useNotebookPaperMotion();
+  const showChrome = !focus.fullscreen || focus.toolsOpen;
+  const chromePaper = useNotebookPaperPresence(showChrome ? true : null, "tools", "fold", play);
+  const indexPaper = useNotebookPaperPresence(showDirectory ? true : null, "index", "index", play);
+  const sidePaper = useNotebookPaperPresence(props.sidePage, props.sidePage?.kind ?? "", "side", play);
+  const attachmentFace = sidePaper.value ? attachmentFaces[sidePaper.value.kind] : null;
+  const pageRef = useRef<HTMLDivElement | null>(null);
+  useNotebookPageTurn(pageRef, `${props.noteId}:${props.learningView}:${props.mode}`, play);
+  const editingBody = props.learningView === "body" && props.mode !== "preview";
+  const context = props.learningView === "body"
+    ? props.mode === "preview" ? "正在阅读" : props.mode === "source" ? "Markdown 源码" : "正在编辑"
+    : { overview: "这篇的速看", recall: "回想这篇", expansion: "往外学", artifact: "互动演示", history: "学习记录", learning: "这一轮学习" }[props.learningView];
+  /** 全屏折签上的短标签：正文说模式，子页面说自己是谁——避免在速看里写「阅读」。 */
+  const focusViewLabel = props.learningView === "body" ? undefined
+    : { overview: "速看", recall: "回想", expansion: "往外学", artifact: "互动演示", history: "记录", learning: "这一轮学习" }[props.learningView];
+
+  useLayoutEffect(() => {
+    const ribbon = ribbonRef.current, desk = deskRef.current;
+    if (!focus.fullscreen || !ribbon || !desk) return;
+    const measure = () => {
+      const ribbonWidth = ribbon.getBoundingClientRect().width;
+      desk.style.setProperty("--notebook-focus-ribbon-width", `${ribbonWidth}px`);
+      // Below this capacity even the compact toolbar needs its own line. The document yields the same space.
+      desk.toggleAttribute("data-tools-row", desk.clientWidth - ribbonWidth - 152 < 520);
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure); observer.observe(ribbon); observer.observe(desk);
+    return () => { observer.disconnect(); desk.removeAttribute("data-tools-row"); };
+  }, [focus.fullscreen]);
+
+  useEffect(() => {
+    setDirectoryOpen(false);
+    setPinned(false);
+    setCurrentBlock(0);
+  }, [props.noteId]);
+
+  useEffect(() => {
+    const spread = spreadRef.current;
+    if (!spread || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(([entry]) => setCompact(entry.contentRect.width <= 1050));
+    observer.observe(spread);
+    return () => observer.disconnect();
+  }, []);
+
+  const restoreFocus = (trigger: HTMLElement | null) => {
+    const target = trigger?.isConnected && !trigger.closest("[hidden], [inert]") ? trigger : focus.fullscreen ? focus.toolTriggerRef.current : props.scrollRef.current;
+    if (target && !target.closest("[hidden], [inert]")) target.focus({ preventScroll: true });
+  };
+  useLayoutEffect(() => {
+    if (showDirectory && (!directoryWasOpen.current || document.activeElement?.closest("[hidden], [inert]"))) {
+      indexPaper.ref.current?.querySelector<HTMLElement>('[aria-current="location"]')?.focus({ preventScroll: true });
+      directoryWasOpen.current = true;
+    } else if (!showDirectory && directoryWasOpen.current) {
+      if (!props.sidePage) restoreFocus(directoryTriggerRef.current);
+      directoryWasOpen.current = false;
+    }
+  }, [showDirectory, Boolean(indexPaper.value), Boolean(sidePaper.value), compact]);
+  useLayoutEffect(() => {
+    if (props.sidePage) {
+      if (!sideWasOpen.current && document.activeElement instanceof HTMLElement) sideTriggerRef.current = document.activeElement;
+      sideWasOpen.current = true;
+      if (focus.fullscreen) focus.setToolsOpen(false);
+      sidePaper.ref.current?.focus({ preventScroll: true });
+    } else if (!props.sidePage && sideWasOpen.current) {
+      // Clicking back into the paper expresses a new reading/editing position.
+      // Returning to the old annotation trigger would reopen its short preview.
+      if (sideClosedFromBody.current) {
+        if (!props.scrollRef.current?.contains(document.activeElement)) restoreFocus(props.scrollRef.current);
+      } else restoreFocus(sideTriggerRef.current);
+      sideClosedFromBody.current = false;
+      sideTriggerRef.current = null; sideWasOpen.current = false;
+    }
+  }, [Boolean(props.sidePage), Boolean(sidePaper.value), props.sidePage?.kind, props.sidePage?.title, compact]);
+
+  useEffect(() => {
+    const scroll = props.scrollRef.current;
+    if (!scroll || props.learningView !== "body" || props.mode === "source") return;
+    const update = () => {
+      const top = scroll.getBoundingClientRect().top + 28;
+      let block = 0;
+      const editorChildren = scroll.querySelector(".ProseMirror")?.children;
+      for (const entry of props.outline) {
+        const target = props.mode === "preview" ? scroll.querySelector(`[data-block-ordinal="${entry.block}"]`) : editorChildren?.[entry.block];
+        if (target && target.getBoundingClientRect().top <= top) block = entry.block;
+      }
+      setCurrentBlock(block);
+    };
+    scroll.addEventListener("scroll", update, { passive: true });
+    return () => scroll.removeEventListener("scroll", update);
+  }, [props.outline, props.mode, props.learningView, props.scrollRef]);
+
+  const locate = (block: number) => {
+    setCurrentBlock(block);
+    props.onLocate(block);
+    if (!pinned || compact) setDirectoryOpen(false);
+  };
+
+  const closeSideFromBody = () => {
+    if (!props.sidePage) return;
+    sideClosedFromBody.current = props.sidePage.kind === "annotation";
+    props.sidePage.onClose();
+  };
+  const dismissAnnotationFromBody = (event: MouseEvent<HTMLDivElement>) => {
+    const press = bodyPressPoint.current;
+    bodyPressPoint.current = null;
+    if (props.learningView !== "body" || props.sidePage?.kind !== "annotation") return;
+    if (event.target instanceof Element && event.target.closest("[data-note-annotation-id], [data-annotation-id]")) return;
+    if (event.detail > 0 && press && Math.hypot(event.clientX - press.x, event.clientY - press.y) > 4) return;
+    const selection = window.getSelection();
+    if (selection && !selection.isCollapsed && selection.rangeCount > 0 && selection.getRangeAt(0).intersectsNode(event.currentTarget)) return;
+    closeSideFromBody();
+  };
+
+  const bookmarks = <nav className="notebook-volume__bookmarks" aria-label="笔记学习">
+    <button type="button" className="text-action notebook-volume__bookmark" data-learning="body" aria-pressed={props.learningView === "body"} onClick={props.onBody}>
+      <BookOpen size={18} aria-hidden="true" /><span>正文</span>
+    </button>
+    {learningTabs.map(({ kind, label, detail, Icon }) => <button key={kind} type="button" className="text-action notebook-volume__bookmark"
+      data-learning={kind} aria-label={label} title={`${label} · ${detail}`} aria-pressed={props.learningView === kind} onClick={() => props.onLearning(kind)}>
+      <Icon size={18} aria-hidden="true" /><span>{label}<small aria-hidden="true">{detail}</small></span>
+    </button>)}
+    {props.onHistory ? <button type="button" className="text-action notebook-volume__bookmark" data-learning="history" aria-label="学习记录" aria-pressed={props.learningView === "history"} onClick={props.onHistory}>
+      <History size={18} aria-hidden="true" /><span>记录</span>
+    </button> : null}
+  </nav>;
+
+  const coveringPage = compact && Boolean(showDirectory || props.sidePage);
+  return <div className="notebook-desk" ref={deskRef} data-editing={editingBody || undefined} data-fullscreen={focus.fullscreen || undefined} data-mind-map={props.mindMapActive || undefined} data-mode={props.mode} data-view={props.learningView} data-compact={compact} data-margin-open={indexPaper.value ? "directory" : sidePaper.value ? "side" : undefined}>
+      {focus.fullscreen ? <NotebookFullscreenRibbon containerRef={ribbonRef} status={editingBody ? props.status : null} mode={props.mode} viewLabel={focusViewLabel} presence={props.presence} toolsOpen={focus.toolsOpen} toolTriggerRef={focus.toolTriggerRef}
+        onToggleTools={() => { if (focus.toolsOpen) focus.closeTools(); else focus.setToolsOpen(true); }} onExit={focus.toggleFullscreen} /> : null}
+      {/* 全屏编辑时编辑工具常驻顶部这条纸签（用户裁决的「灵动岛」），不折进右侧工具页、不随页面滚动。 */}
+      {focus.fullscreen && props.tools ? <div className="notebook-volume__tools notebook-desk__tool-island">{props.tools}</div> : null}
+      {focus.fullscreen && props.saveError ? <p className="notebook-focus-save-error" role="alert">{props.saveError}<button type="button" className="text-action" onClick={() => focus.setToolsOpen(true)}>查看保存</button></p> : null}
+
+    {!focus.fullscreen ? bookmarks : null}
+    <section className="notebook-volume" aria-label="笔记册页">
+      <div className="notebook-desk__spread" ref={spreadRef}>
+        {coveringPage ? <button type="button" className="notebook-desk__veil" aria-label="合起旁页，回到正文" tabIndex={-1}
+          onClick={() => { if (props.sidePage) closeSideFromBody(); else setDirectoryOpen(false); }} /> : null}
+        {indexPaper.value ? <aside id="notebook-directory" className="notebook-desk__index" aria-label="笔记目录" ref={indexPaper.ref} tabIndex={-1} inert={indexPaper.closing} aria-hidden={indexPaper.closing || undefined}
+          onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setDirectoryOpen(false); } }}>
+          <header className="notebook-desk__index-head">
+            <h2>这一篇</h2>
+            <button type="button" className="text-action" disabled={compact} aria-pressed={pinned && !compact} aria-label={pinned ? "取消固定目录" : "固定目录"} title={compact ? "纸面较窄，点目录条目后回到正文" : undefined} onClick={() => setPinned(!pinned)}>
+              {pinned ? <Pin size={15} aria-hidden="true" /> : <PinOff size={15} aria-hidden="true" />}
+            </button>
+            <button type="button" className="text-action" aria-label="收起目录" onClick={() => setDirectoryOpen(false)}><X size={17} aria-hidden="true" /></button>
+          </header>
+          <nav className="notebook-desk__index-scroll" aria-label="大小标题">
+            <button type="button" className="text-action" aria-current={currentBlock === 0 ? "location" : undefined} onClick={() => locate(0)}>开篇</button>
+            {props.outline.length ? <ol>{props.outline.map((entry) => <li key={entry.block} data-heading-level={entry.level}>
+              <button type="button" className="text-action" aria-current={entry.block === currentBlock ? "location" : undefined} onClick={() => locate(entry.block)}>{entry.title}</button>
+            </li>)}</ol> : <p>这篇还没有小节标题。</p>}
+          </nav>
+          <div className="notebook-desk__index-foot">笔记 v{props.version}<span>{props.outline.find((entry) => entry.block === currentBlock)?.title ?? "正在读 · 开篇"}</span></div>
+        </aside> : null}
+
+        <div className="notebook-volume__leaf" inert={coveringPage} aria-hidden={coveringPage || undefined}>
+          <div id="notebook-tool-page" className="notebook-desk__chrome" hidden={!chromePaper.value} inert={!showChrome} aria-hidden={!showChrome || undefined}
+            ref={element => { focus.chromeRef.current = element; chromePaper.ref.current = element; }}>
+            {focus.fullscreen ? <header className="notebook-focus-tools__head"><span>手边的工具</span><small>笔记 v{props.version}</small></header> : null}
+            {focus.fullscreen ? bookmarks : null}
+            <nav className="notebook-desk__rack" aria-label="笔记工具">
+              {props.learningView === "body" ? <div className="notebook-desk__modes" role="group" aria-label="正文视图">
+                <button type="button" className="text-action notebook-desk__directory-toggle" ref={directoryTriggerRef} aria-label="目录" title="目录" aria-expanded={showDirectory} aria-controls="notebook-directory"
+                  onClick={() => { if (!showDirectory) props.onOpenDirectory(); setDirectoryOpen(!showDirectory); if (focus.fullscreen) focus.setToolsOpen(false); }}><ListTree size={18} aria-hidden="true" /></button>
+                <div className="notebook-desk__mode-switch" data-mode={props.mode}>
+                {NOTE_BODY_MODES.map(({ id, label }) => {
+                  const Icon = modeIcons[id];
+                  // 审计 F12：只读身份下编辑/源码以前是 disabled——禁用按钮悬停多半不给
+                  // tooltip，解释等于没写。改成 aria-disabled：留在键盘序里，点不动但
+                  // 悬停与读屏都能读到理由。
+                  const readOnlyMode = id !== "preview" && !props.canEdit;
+                  return <button key={id} type="button" className="text-action notebook-desk__mode" aria-pressed={props.mode === id}
+                    aria-disabled={readOnlyMode || undefined} title={readOnlyMode ? "当前身份只能阅读这篇笔记" : label}
+                    onMouseDown={(event) => event.preventDefault()} onClick={() => { if (!readOnlyMode) props.onMode(id); }}><Icon size={15} aria-hidden="true" /><span>{label}</span></button>;
+                })}
+                </div>
+                {!props.canEdit ? <p className="small" role="note">当前身份只能阅读这篇笔记，编辑与源码视图不可用。</p> : null}
+              </div> : <div className="notebook-volume__trail">
+                <span title={props.noteTitle}>{props.noteTitle}</span>
+              </div>}
+              {/* 在场那一排挂在工具条上：这一条不随正文滚，四种正文视图与三个学习页都在。
+                  全屏时整条 chrome 会变成右侧的工具页，那时它改挂常驻纸签（见上面 Ribbon）。 */}
+              <div className="notebook-desk__utilities">
+                {!focus.fullscreen && props.presence ? <div className="notebook-desk__presence">{props.presence}</div> : null}
+                {!focus.fullscreen && !props.mindMapActive ? <button type="button" className="text-action" ref={focus.enterRef} aria-label="全屏笔记" title={props.learningView === "body" ? "全屏阅读与编辑 · ⌘/Ctrl+Shift+F" : "全屏看这一页 · ⌘/Ctrl+Shift+F"}
+                  onMouseDown={event => event.preventDefault()} onClick={focus.toggleFullscreen}><Maximize2 size={17} aria-hidden="true" /><span>全屏</span></button> : null}
+                {props.generationAction}
+                {props.sourceAction}
+                <details className="notebook-desk__drawer" ref={drawerRef}
+                  onKeyDown={(event) => { if (event.key === "Escape" && event.currentTarget.open) { event.preventDefault(); event.stopPropagation(); event.currentTarget.open = false; event.currentTarget.querySelector("summary")?.focus(); } }}
+                  onBlur={(event) => { if (event.relatedTarget instanceof Node && !event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false; }}>
+                  <summary className="text-action" aria-label="更多笔记操作" title="更多"><MoreHorizontal size={20} aria-hidden="true" /></summary>
+                  <div className="notebook-desk__drawer-paper" onClick={(event) => { if ((event.target as Element).closest("button")) drawerRef.current!.open = false; }}>{props.extraActions}</div>
+                </details>
+              </div>
+            </nav>
+
+            {!focus.fullscreen && props.tools ? <div className="notebook-volume__tools">{props.tools}</div> : null}
+            {props.pendingMode ? <p className="notebook-volume__pending" role="status">输入法确认后会切换正文视图。</p> : null}
+            {(editingBody || focus.fullscreen) ? <footer className="notebook-desk__save-tray">
+              {!(focus.fullscreen && editingBody) ? <div className="notebook-desk__status" role="status" aria-live="polite">{props.status}</div> : null}{props.primaryAction}
+            </footer> : null}
+            {focus.fullscreen ? <p className="notebook-focus-tools__hint">点回纸面就收起 · Esc 收起工具，再按退出</p> : null}
+          </div>
+          {/* 开关是纸面框上的控件，与滚动页平级：页内容入场动画的 transform 会改掉
+              绝对定位的包含块，放在页里就会先落在页上、动画一停再跳回纸面左上。 */}
+          {props.overviewSwitch}
+          <div className="notebook-desk__scroll" ref={props.scrollRef} tabIndex={0} aria-label={context}
+            onPointerDownCapture={event => { bodyPressPoint.current = { x: event.clientX, y: event.clientY }; }}
+            onPointerCancelCapture={() => { bodyPressPoint.current = null; }} onClick={dismissAnnotationFromBody}>
+            <div className="notebook-desk__page" ref={pageRef}>{props.articleHeader}{props.children}</div>
+          </div>
+
+          {props.taskActions ? <footer className="notebook-desk__save-tray">{props.taskActions}</footer> : null}
+        </div>
+
+        {sidePaper.value ? <aside className="notebook-desk__side-page" data-kind={sidePaper.value.kind} aria-label="笔记旁页" ref={sidePaper.ref} tabIndex={-1} inert={sidePaper.closing} aria-hidden={sidePaper.closing || undefined}
+          onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); sidePaper.value?.onClose(); } }}>
+          <header className="notebook-desk__side-head">
+            {attachmentFace ? <span className="notebook-desk__side-mark" aria-hidden="true"><attachmentFace.Icon size={21} /></span> : null}
+            <div className="notebook-desk__side-title"><h2>{sidePaper.value.title}</h2><small>{attachmentFace?.detail}</small></div>
+            <button type="button" className="text-action" aria-label={sidePaper.value.closeLabel} onClick={sidePaper.value.onClose}><X size={18} aria-hidden="true" /></button>
+          </header>
+          <div className="notebook-desk__side-scroll">{sidePaper.value.content}</div>
+        </aside> : null}
+      </div>
+    </section>
+  </div>;
+}

@@ -1,13 +1,13 @@
 // @vitest-environment jsdom
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { useVoiceModelNotifications } from "../use-voice-model-notifications";
-import type { VoiceAsrModelSnapshotV1 } from "../voice-asr-model";
+import { useVoiceModelNotifications } from "../voice/use-voice-model-notifications";
+import type { VoiceAsrModelSnapshotV1 } from "../voice/voice-asr-model";
 const read = vi.hoisted(() => vi.fn());
 const settled = vi.hoisted(() => vi.fn());
 const progress = vi.hoisted(() => vi.fn());
-vi.mock("../voice-asr-model", () => ({ readVoiceAsrModel: read }));
-vi.mock("../voice-model-notifications", () => ({ VOICE_MODEL_DOWNLOAD_STARTED: "astella:voice-model-download-started", notifyVoiceModelSettled: settled, notifyVoiceModelDownloading: progress }));
+vi.mock("../voice/voice-asr-model", () => ({ readVoiceAsrModel: read }));
+vi.mock("../voice/voice-model-notifications", () => ({ VOICE_MODEL_DOWNLOAD_STARTED: "astella:voice-model-download-started", notifyVoiceModelSettled: settled, notifyVoiceModelDownloading: progress }));
 const snapshot = (status: string) => ({ status }) as VoiceAsrModelSnapshotV1;
 beforeEach(() => { vi.useFakeTimers(); read.mockReset().mockResolvedValue(snapshot("absent")); settled.mockReset(); progress.mockReset(); });
 afterEach(() => { cleanup(); vi.useRealTimers(); });

@@ -41,7 +41,7 @@ test("两份文件都真的调了那一份判据（守卫自己先要读到东�
   }
   // 阳性对照：那两个档名确实住在唯一那一份实现里，不是"哪里都没有"。
   const contract = stripComments(source(
-    "../../../../packages/shared/src/contracts/learning-objective-surface-contracts.ts",
+    "../../../../packages/shared/src/contracts/learning/learning-objective-surface-contracts.ts",
   ));
   for (const literal of FORBIDDEN) {
     assert.ok(contract.includes(literal), `唯一那份实现里应当有 ${literal}`);

@@ -48,30 +48,30 @@ import {
   type AuthenticatedDesktopSession,
   type ReadyDesktopSession,
   type ReauthenticationDesktopSession,
-} from "../app/desktop-gate";
+} from "../app/gate/desktop-gate";
 import {
   createRequestMeta,
   RendererGatewayError,
   setCurrentWorkspaceEpoch,
   unwrapGatewayResult,
-} from "../app/desktop-client";
+} from "../app/client/desktop-client";
 import {
   clearAccountSignOutNotice,
   peekAccountSignOutNotice,
   signOutCurrentAccount,
-} from "../app/account-signout";
+} from "../app/gate/account-signout";
 import {
   subscribeGateInvalidation,
   type GateInvalidationCode,
-} from "../app/gate-invalidation";
+} from "../app/gate/gate-invalidation";
 import {
   establishRequiredRuntimeSubscription,
   type RequiredRuntimeSubscription,
-} from "../app/runtime-gate-subscription";
+} from "../app/home/runtime-gate-subscription";
 import { mediaAssetUrl, useLearningRoomManifest } from "../media/learning-room-manifest";
 import { sceneMotionDuration, type SceneMotionMode } from "../scene/scene-motion";
-import { useRoomStore } from "../app/room-store";
-import { setAuthenticatedSurfaceSession } from "../app/surface-session";
+import { useRoomStore } from "../app/home/room-store";
+import { setAuthenticatedSurfaceSession } from "../app/home/surface-session";
 import { HudFirstSpaceScene } from "./hud/HudFirstSpace";
 import { requestSpaceMenuRefresh } from "./hud/space-menu-events";
 /**

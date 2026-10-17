@@ -2,7 +2,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import type { NoteDetailV1 } from "@astella/shared/note-projection-contracts";
-import { useNotebookVersions } from "../use-notebook-versions";
+import { useNotebookVersions } from "../library/use-notebook-versions.ts";
 
 it("恢复回执到达后列表立即标出目标版本，不沿用回读前的当前版本", async () => {
   const versions = vi.fn(async ({ currentVersionId }: { currentVersionId: string }) => ({

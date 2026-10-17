@@ -3,11 +3,11 @@ import { useRef, useState } from "react";
 import { act, cleanup, fireEvent, render, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { NoteAnnotationV1 } from "@astella/shared/note-annotation-contracts";
-import { useRoomStore } from "../../../../app/room-store";
-import { NotebookDesk } from "../notebook-desk";
-import { NoteAnnotationMark } from "../note-annotation-mark";
-import type { NoteBodyMode } from "../note-document-mode";
-import { useNotebookSidePage } from "../use-notebook-side-page";
+import { useRoomStore } from "../../../../app/home/room-store";
+import { NotebookDesk } from "../shell/notebook-desk.tsx";
+import { NoteAnnotationMark } from "../annotation/note-annotation-mark.tsx";
+import type { NoteBodyMode } from "../document/note-document-mode.ts";
+import { useNotebookSidePage } from "../annotation/use-notebook-side-page.ts";
 
 const annotation: NoteAnnotationV1 = { annotationId: "first", noteId: "note", explanation: "自己的批注", sourceMessageId: null,
   generationJobId: null, revision: 1, versionState: "current", createdAt: "2026-10-08T00:00:00Z", updatedAt: "2026-10-08T00:00:00Z",

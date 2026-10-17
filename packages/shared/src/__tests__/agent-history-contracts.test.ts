@@ -4,7 +4,7 @@ import {
   AGENT_RUN_HISTORY_MAX_LIMIT, AGENT_RUN_LIST_DEFAULT_LIMIT, AGENT_RUN_LIST_MAX_LIMIT,
   agentRunHistoryQueryV1Schema, agentRunHistoryV1Schema, agentRunListCursorV1Schema,
   agentRunListQueryV1Schema, agentRunListV1Schema, agentRunRevisionV1Schema,
-} from "../contracts/agent-contracts.ts";
+} from "../contracts/agent/agent-contracts.ts";
 
 const WORKSPACE = "11111111-1111-4111-8111-111111111111";
 const USER = "22222222-2222-4222-8222-222222222222";

@@ -8,7 +8,7 @@ import { test } from "node:test";
 import {
   companionVoicePreferencePatchV1Schema,
   companionVoicePreferenceV1Schema,
-} from "../contracts/companion-shell-contracts.ts";
+} from "../contracts/companion/companion-shell-contracts.ts";
 
 test("写入：引擎与音色配对的组合才收", () => {
   const ok = companionVoicePreferencePatchV1Schema.safeParse({

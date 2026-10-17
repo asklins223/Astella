@@ -26,18 +26,18 @@ import {
   computeCandidateEvidenceBindingPlanHashV2,
   computeEvidenceEligibilityVectorHashV2,
   computeCandidateEvidenceSetHashV2,
-} from "../card-generation-v2-hashing.ts";
+} from "../review/card-generation-v2-hashing.ts";
 import type {
   LearningCardCandidateRevisionV2,
   CanonicalAnswerV2,
-} from "../contracts/card-generation-v2-contracts.ts";
+} from "../contracts/learning/card-generation-v2-contracts.ts";
 import type {
   GroundingCriticReportV2,
   CandidateEvidenceBindingPlanV2,
   EvidenceBindingTargetUnitV2,
   EvidenceBindingRelationV2,
   EvidenceSupportStrengthV2,
-} from "../contracts/card-quality-v2-contracts.ts";
+} from "../contracts/learning/card-quality-v2-contracts.ts";
 import type { SealedEvidenceEntryV2 } from "./evidence-seal-core.ts";
 import { CardGenerationPipelineErrorV2 } from "./evidence-seal-core.ts";
 

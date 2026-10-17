@@ -16,7 +16,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { decideHomeSuggestionV2, type NextStepCandidateV2 } from "../home-suggestion-v2.ts";
+import { decideHomeSuggestionV2, type NextStepCandidateV2 } from "../review/home-suggestion-v2.ts";
 
 const NOW = new Date("2026-09-27T09:00:00.000Z");
 const ago = (d: number) => new Date(NOW.getTime() - d * 86_400_000);

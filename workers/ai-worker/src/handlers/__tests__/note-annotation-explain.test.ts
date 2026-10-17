@@ -10,7 +10,7 @@
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseExplanation } from "../note-annotation-explain.ts";
+import { parseExplanation } from "../note/note-annotation-explain.ts";
 import { NoteAnnotationOutputError } from "../../lib/non-retryable-errors.ts";
 
 const SHORT = "这句话解释了选中片段的意思。";

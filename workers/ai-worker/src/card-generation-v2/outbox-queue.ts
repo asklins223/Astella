@@ -3,7 +3,7 @@
  * 以及本进程的在途表。（39d W7-7 刀二·内核搬家第二块砖；第一块是 `retry-classification.ts`。）
  *
  * 为什么单独一个文件：这套东西是**两条链共用**的——简化链与旧四阶段链走同一张 outbox、
- * 同一份租约纪律，而旧链的阶段代码此刻还留在 `handlers/card-generation-v2-handler.ts` 里等删。
+ * 同一份租约纪律，而旧链的阶段代码此刻还留在 `handlers/note/card-generation-v2-handler.ts` 里等删。
  * 混在一起时"删旧链"＝在四千行文件里做外科手术；搬开之后就是一次整文件删除。
  *
  * 两条纪律原样跟着搬，不顺手改：

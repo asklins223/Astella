@@ -7,7 +7,7 @@ import {
   evaluateStaleAfterResume,
   learningNudgeSuppressed,
   localDateIn,
-} from "../companion-proactive-quota.ts";
+} from "../companion/companion-proactive-quota.ts";
 
 test("学习建议只在用户选择的本地日暂停", () => {
   assert.equal(learningNudgeSuppressed({ suppressedLocalDate: "2026-10-02", todayLocalDate: "2026-10-02" }), true);

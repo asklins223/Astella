@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import { useNoteImageUploads } from "../note-image-uploads";
-import type { NoteMarkdownEditorHandle } from "../note-markdown-editor";
+import { useNoteImageUploads } from "../document/note-image-uploads.tsx";
+import type { NoteMarkdownEditorHandle } from "../document/note-markdown-editor.tsx";
 
-vi.mock("../../../../app/read-file-base64", () => ({ readFileAsBase64: async () => "aW1hZ2U=" }));
+vi.mock("../../../../app/source/read-file-base64", () => ({ readFileAsBase64: async () => "aW1hZ2U=" }));
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 it("切换笔记后旧上传结果不会写入新正文，新笔记仍可以正常上传", async () => {

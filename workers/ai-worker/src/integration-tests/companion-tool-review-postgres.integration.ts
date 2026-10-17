@@ -6,9 +6,9 @@ import { getCompanionAgentTool, resolveAllCompanionAgentTools, MAX_PENDING_JOBS_
 import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
 import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 import { companionMemoryRecycleBinDays as MEMORY_RECYCLE_BIN_DAYS } from "@astella/shared/companion-memory-desktop-contracts";
-import { ensureAgentToolCall, loadContinuation } from "../handlers/companion-tool-call-ledger.ts";
-import { runCompanionToolExecution } from "../handlers/companion-tool-execution-run.ts";
-import type { AgentEventContext } from "../handlers/companion-read-tools.ts";
+import { ensureAgentToolCall, loadContinuation } from "../handlers/tools/companion-tool-call-ledger.ts";
+import { runCompanionToolExecution } from "../handlers/tools/companion-tool-execution-run.ts";
+import type { AgentEventContext } from "../handlers/tools/companion-read-tools.ts";
 import { closeDatabase } from "../db.ts";
 import { withWorkspaceTransaction, closeDatabase as closeApiDatabase } from "../../../../apps/api/src/db/client.ts";
 import { createNote, getNoteWithVersion } from "../../../../apps/api/src/modules/note/service.ts";

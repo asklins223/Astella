@@ -45,7 +45,19 @@ interface CallSite { file: string; args: string }
 
 function embeddingCallSites(): CallSite[] {
   const sites: CallSite[] = [];
-  for (const file of readdirSync(HANDLERS_DIR).filter((f) => f.endsWith(".ts") && !f.endsWith(".test.ts"))) {
+  // handlers 按职责分了子目录：递归收，file 记相对 handlers/ 的路径。
+  const files: string[] = [];
+  const collect = (d: string, prefix: string): void => {
+    for (const entry of readdirSync(d, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        if (entry.name !== "__tests__") collect(join(d, entry.name), `${prefix}${entry.name}/`);
+        continue;
+      }
+      if (entry.name.endsWith(".ts") && !entry.name.endsWith(".test.ts")) files.push(`${prefix}${entry.name}`);
+    }
+  };
+  collect(HANDLERS_DIR, "");
+  for (const file of files) {
     const code = withoutComments(readFileSync(join(HANDLERS_DIR, file), "utf8"));
     for (const hit of code.matchAll(/createGovernedEmbeddingProvider\(/g)) {
       sites.push({ file, args: argumentsOf(code, hit.index) });

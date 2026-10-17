@@ -15,8 +15,8 @@ import process from "node:process";
 import { AgentRole, type AgentTurnRequest } from "@astella/shared";
 import { resolveAllCompanionAgentTools } from "@astella/shared/companion-agent-registry";
 import { resolveSystemPlatform } from "@astella/shared/platform-config-node";
-import { buildCompanionPersonaMessages } from "../src/handlers/companion-dialogue-content.ts";
-import { FACT_SPAN_KEYS, renderFactSpansBlock, resolveFactSpans } from "../src/handlers/companion-fact-spans.ts";
+import { buildCompanionPersonaMessages } from "../src/handlers/turn/companion-dialogue-content.ts";
+import { FACT_SPAN_KEYS, renderFactSpansBlock, resolveFactSpans } from "../src/handlers/turn/companion-fact-spans.ts";
 import { createProvider } from "../src/lib/ai-provider.ts";
 
 export function observeFactSpanMarkers(

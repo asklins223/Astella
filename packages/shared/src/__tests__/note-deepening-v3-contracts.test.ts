@@ -31,7 +31,7 @@ import {
   type NoteDeepeningInputV3,
   type NoteDeepeningObjectiveV3,
   type NoteDeepeningRecordV3,
-} from "../contracts/note-deepening-v3-contracts.ts";
+} from "../contracts/note/note-deepening-v3-contracts.ts";
 
 const NOTE_ID = "11111111-1111-4111-8111-111111111111";
 const OBJECTIVE_A = "22222222-2222-4222-8222-222222222222";

@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { companionAwarenessContextV1Schema } from "../contracts/companion-initiative-contracts.ts";
+import { companionAwarenessContextV1Schema } from "../contracts/companion/companion-initiative-contracts.ts";
 import {
   COMPANION_QUIET_PRESENCE_AFTER_MS,
   createCompanionQuietPresenceTracker,
-} from "../companion-awareness-idle.ts";
+} from "../companion/companion-awareness-idle.ts";
 
 // 「闲下来」= 停止输入 + 页面稳定（判据与为什么改见 companion-awareness-idle.ts 的注释：
 // 旧口径要求前台连续 3 分钟零鼠标，两天只开过一次这道门）。

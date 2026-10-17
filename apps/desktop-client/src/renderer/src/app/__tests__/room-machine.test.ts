@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nextMotionMode, resolveRoomIntent } from "../room-machine.ts";
+import { nextMotionMode, resolveRoomIntent } from "../home/room-machine.ts";
 
 describe("room intent mapping", () => {
   it("keeps every domain action on a deterministic 2D view preset", () => {

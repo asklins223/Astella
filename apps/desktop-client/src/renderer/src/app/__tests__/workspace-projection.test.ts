@@ -4,7 +4,7 @@ import {
   failProjectionRefresh,
   projectionResponseIsCurrent,
   sameProjectionScope,
-} from "../workspace-projection.ts";
+} from "../home/workspace-projection.ts";
 
 const workspaceA = {
   workspaceId: "11111111-1111-4111-8111-111111111111",

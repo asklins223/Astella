@@ -1,11 +1,11 @@
 import type { GatewayResultV1,RequestMetaV1 } from "@astella/shared/desktop-ipc-contracts";
 import { useCallback,useEffect } from "react";
-import { createRequestMeta } from "../../../app/desktop-client";
-import { useRoomStore } from "../../../app/room-store";
-import { COMPANION_RECORDS_CHANGED } from "../../companion/companion-events";
-import { useSurfaceProjection } from "../notebook/surface-data";
+import { createRequestMeta } from "../../../app/client/desktop-client";
+import { useRoomStore } from "../../../app/home/room-store";
+import { COMPANION_RECORDS_CHANGED } from "../../companion/content/companion-events";
+import { useSurfaceProjection } from "../notebook/shell/surface-data.tsx";
 import { readSection } from "./companion-center-model";
-export { COMPANION_ACCOUNT_CHANGED,COMPANION_RECORDS_CHANGED,publishCompanionAccountChanged,publishCompanionRecordsChanged } from "../../companion/companion-events";
+export { COMPANION_ACCOUNT_CHANGED,COMPANION_RECORDS_CHANGED,publishCompanionAccountChanged,publishCompanionRecordsChanged } from "../../companion/content/companion-events";
 
 /** Each page owns its request and failure; one unavailable capability never blanks the directory. */
 export function useCompanionResource<T>(read: (meta: RequestMetaV1) => Promise<GatewayResultV1<T>>, deps: readonly unknown[] = [], enabled = true) {

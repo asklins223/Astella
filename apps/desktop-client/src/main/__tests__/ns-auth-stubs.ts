@@ -67,7 +67,7 @@ export function authStub(name: NsAuthMethod): Stub {
   return stub;
 }
 
-/** `vi.mock("../desktop-gateway-ns-auth", () => authModuleMock())` 里那个工厂。 */
+/** `vi.mock("../gateway/desktop-gateway-ns-auth", () => authModuleMock())` 里那个工厂。 */
 export function authModuleMock(): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const name of NS_AUTH_METHODS) {

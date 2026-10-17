@@ -8,7 +8,7 @@
  * 写不进去。
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-type GatewayTransportLike = import("../desktop-gateway-transport").GatewayTransport;
+type GatewayTransportLike = import("../gateway/desktop-gateway-transport").GatewayTransport;
 import { noteModuleMock, noteStub } from "./ns-note-stubs";
 
 // 2026-09-30：笔记这一族已变成**自由函数**（`desktop-gateway-ns-note.ts`），
@@ -17,7 +17,7 @@ import { noteModuleMock, noteStub } from "./ns-note-stubs";
 // **用 `importOriginal()` 部分 mock**而不是写死转发清单：desktop-ipc 里有 60+ 个
 // `ns_note.*` 调用点，清单漏一个，vitest 就在运行时抛「没有这个导出」，
 // 而它被 `safe_internal_error` 吞掉——症状离真因隔了三层。**部分 mock 不会过时。**
-vi.mock("../desktop-gateway-ns-note", async (importOriginal) => {
+vi.mock("../gateway/desktop-gateway-ns-note", async (importOriginal) => {
   // **部分 mock**：只覆盖用 noteStub() 登记过的方法，其余走真实现。
   // 写死转发清单一定会过时——实测 desktop-ipc 里有 60+ 个 ns_note 调用点，漏一个
   // vitest 就在运行时抛「没有这个导出」，而它被 safe_internal_error 吞掉。
@@ -27,7 +27,7 @@ vi.mock("../desktop-gateway-ns-note", async (importOriginal) => {
   //    ——所以 noteModuleMock 也在工厂内部 import；
   // ② `importOriginal()` **不能与别的 import 并发**（实测 `Promise.all` 会让
   //    mock 提前返回半成品，症状是「桩登记了但一次都没被调用」）。
-  const real = await importOriginal<typeof import("../desktop-gateway-ns-note")>();
+  const real = await importOriginal<typeof import("../gateway/desktop-gateway-ns-note")>();
   const { noteModuleMock } = await import("./ns-note-stubs");
   return noteModuleMock(real);
 });
@@ -45,16 +45,16 @@ import {
   type GatewayResultV1,
   type RequestMetaV1,
 } from "@astella/shared/desktop-ipc-contracts";
-import type { DesktopGateway } from "../desktop-gateway";
+import type { DesktopGateway } from "../gateway/desktop-gateway";
 import {
   MemoryNoteDocCacheStore,
   type NoteDocCacheEntryV1,
   type NoteDocCacheStore,
-} from "../note-doc-cache-store.ts";
+} from "../note-doc/note-doc-cache-store.ts";
 import { registerAuthStub } from "./ns-auth-stubs";
-import * as ns_auth from "../desktop-gateway-ns-auth";
+import * as ns_auth from "../gateway/desktop-gateway-ns-auth";
 
-vi.mock("../desktop-gateway-ns-auth", async () => {
+vi.mock("../gateway/desktop-gateway-ns-auth", async () => {
   const { authModuleMock } = await import("./ns-auth-stubs");
   return authModuleMock();
 });
@@ -135,8 +135,8 @@ async function setup(session: {
   // `registerM1DesktopIpc` 一个模块实例只准注册一次（重复注册会抛错，这是有意的），
   // 所以每个用例换一个干净的模块实例，而不是共享同一张订阅表。
   vi.resetModules();
-  const { registerM1DesktopIpc } = await import("../desktop-ipc");
-  const actualNoteModule = await vi.importActual<typeof import("../desktop-gateway-ns-note")>("../desktop-gateway-ns-note");
+  const { registerM1DesktopIpc } = await import("../ipc/desktop-ipc");
+  const actualNoteModule = await vi.importActual<typeof import("../gateway/desktop-gateway-ns-note")>("../gateway/desktop-gateway-ns-note");
   const seed = bodyUpdate();
   const noteDocCache = session.noteDocCache ?? new MemoryNoteDocCacheStore();
   let releaseStream: () => void = () => undefined;

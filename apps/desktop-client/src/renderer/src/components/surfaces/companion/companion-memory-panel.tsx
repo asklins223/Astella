@@ -4,7 +4,7 @@ import { Archive,Pencil,Pin,Plus,Trash2 } from "lucide-react";
 import { useEffect,useMemo,useRef,type KeyboardEvent } from "react";
 import { HUD_PAGES } from "../../hud/hud-pages";
 import { usePageReadableView } from "../../hud/use-page-readable-view";
-import { formatRelative } from "../notebook/surface-data";
+import { formatRelative } from "../notebook/shell/surface-data.tsx";
 import type { Section } from "./companion-center-model";
 import { MEMORY_KIND_LABEL,MEMORY_KIND_OPTIONS,MEMORY_SCOPE_LABEL,MEMORY_STATE_LABEL,memoryState } from "./companion-center-model";
 import { CenterFeedback,CenterSearch,SectionState } from "./companion-center-primitives";

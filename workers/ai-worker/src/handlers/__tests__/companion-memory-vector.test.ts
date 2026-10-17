@@ -10,7 +10,7 @@ import {
   retrieveCompanionMemories,
   toTextArrayLiteral,
   type EmbeddingProviderLike,
-} from "../companion-memory-vector.ts";
+} from "../memory/companion-memory-vector.ts";
 
 function fakeTx(rows: unknown[]) {
   return {

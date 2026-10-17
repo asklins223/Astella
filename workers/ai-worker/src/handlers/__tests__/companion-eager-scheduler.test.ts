@@ -17,8 +17,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { EagerDispatchScheduler } from "../companion-eager-scheduler.ts";
-import type { StreamToolCallSlot } from "../companion-eager-dispatch.ts";
+import { EagerDispatchScheduler } from "../schedulers/companion-eager-scheduler.ts";
+import type { StreamToolCallSlot } from "../agent/companion-eager-dispatch.ts";
 
 const READ = new Set(["companion_read_note", "companion_read_context"]);
 const WRITE = "companion_save_memory";

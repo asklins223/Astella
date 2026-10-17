@@ -16,7 +16,7 @@ import test from "node:test";
  * 源码层；集成测试只覆盖它跑的那一条。真库那一侧的覆盖在
  * `agent-learning-preferences-postgres.integration.ts`（回收窗口断言）。
  */
-const workerForget = readFileSync(new URL("../companion-memory-tools.ts", import.meta.url), "utf8");
+const workerForget = readFileSync(new URL("../tools/companion-memory-tools.ts", import.meta.url), "utf8");
 const apiForgot = readFileSync(
   new URL("../../../../../apps/api/src/modules/companion-conversation/memory/memory-service.ts", import.meta.url),
   "utf8",

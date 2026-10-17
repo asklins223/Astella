@@ -23,7 +23,7 @@ import {
   MICRO_NOTE_MAX_CARDS,
   type SourceBlockInput,
 } from "../index.ts";
-import { cardPlanV2Schema } from "../../contracts/card-generation-v2-contracts.ts";
+import { cardPlanV2Schema } from "../../contracts/learning/card-generation-v2-contracts.ts";
 import type { ExtractedKnowledgeAtom } from "../planner-service.ts";
 
 function blocks(content: string): SourceBlockInput[] {

@@ -122,12 +122,12 @@ export const companionTurnRuns = pgTable(
     userId: uuid("user_id").notNull(),
     conversationId: uuid("conversation_id").notNull().references(() => companionConversations.id, { onDelete: "cascade" }),
     userMessageId: uuid("user_message_id").references(() => companionMessages.id),
-    inputSource: jsonb("input_source").$type<import("../contracts/companion-initiative-contracts.ts").CompanionInitiativeInputV1>(),
+    inputSource: jsonb("input_source").$type<import("../contracts/companion/companion-initiative-contracts.ts").CompanionInitiativeInputV1>(),
     assistantMessageId: uuid("assistant_message_id").references(() => companionMessages.id),
     /** 思考记录的独立留档，不混进 assistant 消息正文或语音文本。 */
     thinkingText: text("thinking_text"),
     /** 手记过程档案与消息同寿命，实时事件仍按原 TTL 清理。 */
-    processTimeline: jsonb("process_timeline").$type<import("../contracts/companion-chat-desktop-contracts.ts").CompanionRunNodeEventV1[]>().notNull().default(sql`'[]'::jsonb`),
+    processTimeline: jsonb("process_timeline").$type<import("../contracts/companion/companion-chat-desktop-contracts.ts").CompanionRunNodeEventV1[]>().notNull().default(sql`'[]'::jsonb`),
     jobId: uuid("job_id"),
     generation: integer("generation").notNull(),
     status: text("status").$type<"accepted" | "running" | "waiting_for_confirmation" | "succeeded" | "cancel_requested" | "cancelled" | "failed" | "superseded">().notNull(),

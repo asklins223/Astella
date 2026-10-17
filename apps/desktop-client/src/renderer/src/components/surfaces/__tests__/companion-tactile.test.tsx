@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { useRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useRoomStore } from "../../../app/room-store";
+import { useRoomStore } from "../../../app/home/room-store";
 import { companionSpring, useCompanionTactile } from "../companion/use-companion-tactile";
 
 let time = 0, sequence = 0;

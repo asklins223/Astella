@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildMindMapRepairAttempt } from "../note-mind-map-output.ts";
+import { buildMindMapRepairAttempt } from "../note/note-mind-map-output.ts";
 
 const base = [
   { role: "system" as const, content: "只依据用户笔记整理。" },

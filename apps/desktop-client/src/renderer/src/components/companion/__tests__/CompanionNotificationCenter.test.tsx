@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { CompanionNotificationCenter } from "../CompanionNotificationCenter";
-import { notifyCompanion, useCompanionNotifications, type CompanionNotificationInput } from "../companion-notifications";
-import { setCompanionNotificationVoiceHost } from "../companion-notification-voice";
-import { useRoomStore } from "../../../app/room-store";
-vi.mock("../use-companion-notification-sources", () => ({ useCompanionNotificationSources: () => {} }));
+import { CompanionNotificationCenter } from "../notify/CompanionNotificationCenter";
+import { notifyCompanion, useCompanionNotifications, type CompanionNotificationInput } from "../notify/companion-notifications";
+import { setCompanionNotificationVoiceHost } from "../voice/companion-notification-voice";
+import { useRoomStore } from "../../../app/home/room-store";
+vi.mock("../notify/use-companion-notification-sources", () => ({ useCompanionNotificationSources: () => {} }));
 vi.mock("../../motion/use-tactile-surface", () => ({ useTactileSurface: () => {} }));
 
 const props = { replyBusy: false, blocked: false, muted: false, passiveMuted: false };

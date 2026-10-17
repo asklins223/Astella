@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { markSpaceUsed, readSpaceRecents } from "../space-recents.ts";
+import { markSpaceUsed, readSpaceRecents } from "../home/space-recents.ts";
 
 function memoryStorage(): Storage {
   const data = new Map<string, string>();

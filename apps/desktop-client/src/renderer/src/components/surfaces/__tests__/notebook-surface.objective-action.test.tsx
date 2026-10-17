@@ -1,15 +1,15 @@
 // @vitest-environment jsdom
 
 import { noteDocResult, seedUpdate, seedBlocksUpdate } from "../../../test-support/note-doc-fixtures.ts";
-import { ROUND_COPY, roundPracticeStateLabelV1 } from "../notebook/notebook-round-copy.ts";
+import { ROUND_COPY, roundPracticeStateLabelV1 } from "../notebook/learning/notebook-round-copy.ts";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { objectiveListItemV3Schema, type ObjectiveListItemV3 } from "@astella/shared/learning-objective-surface-contracts";
 import type { NoteBlockProjectionV1 } from "@astella/shared/note-projection-contracts";
 import type { RoundNextStepV1 } from "@astella/shared/note-learning-round-contracts";
-import { NotebookSurface } from "../notebook/notebook-surface.tsx";
-import { ROUND_PRESETS_V1, STRUCTURE_QUESTION_LABEL_MAX_V1, STRUCTURE_QUESTION_LIMIT_V1, notebookReadingSectionsV1, structureQuestionCandidatesV1 } from "../notebook/notebook-surface.tsx";
-import { useRoomStore } from "../../../app/room-store.ts";
+import { NotebookSurface } from "../notebook/shell/notebook-surface.tsx";
+import { ROUND_PRESETS_V1, STRUCTURE_QUESTION_LABEL_MAX_V1, STRUCTURE_QUESTION_LIMIT_V1, notebookReadingSectionsV1, structureQuestionCandidatesV1 } from "../notebook/shell/notebook-surface.tsx";
+import { useRoomStore } from "../../../app/home/room-store.ts";
 
 /**
  * 笔记页的那一颗主要动作（39d W4-2 第三刀）。

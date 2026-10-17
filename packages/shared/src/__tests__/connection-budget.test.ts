@@ -11,7 +11,7 @@ import {
   connectionBudget,
   describeConnectionBudget,
   workerPoolMax,
-} from "../connection-budget.ts";
+} from "../platform/connection-budget.ts";
 
 /**
  * P3-11：多副本部署前**必须**核一次连接预算。
@@ -20,7 +20,7 @@ import {
  *
  * 不是"配置对不对"，是**两侧的池大小与 shared 里的预算模型是否一致**。
  *
- * 预算模型在 `packages/shared/src/connection-budget.ts`（纯函数，不连库），
+ * 预算模型在 `packages/shared/src/platform/connection-budget.ts`（纯函数，不连库），
  * 而**真正的池大小在两个进程各自的 `db.ts` 里**。它们必须同源：
  * 模型算出 25、代码里其实是 30，那这份预算表就是假的。
  *

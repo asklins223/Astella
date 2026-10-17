@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import type { GatewayResultV1 } from "@astella/shared/desktop-ipc-contracts";
-import { unwrapGatewayResult } from "../desktop-client.ts";
+import { unwrapGatewayResult } from "../client/desktop-client.ts";
 import {
   asGateInvalidationCode,
   publishGateInvalidation,
   subscribeGateInvalidation,
-} from "../gate-invalidation.ts";
+} from "../gate/gate-invalidation.ts";
 
 function failure(code: "auth_required" | "reauth_required" | "stale_workspace" | "api_unavailable" | "api_untrusted" | "configuration_error" | "unsupported_contract" | "forbidden"): GatewayResultV1<never> {
   return {

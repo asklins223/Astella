@@ -1,6 +1,6 @@
 import type { AgentTurnRequest } from "@astella/shared";
 import { COMPANION_CASUAL_POLICY_BASE_V1, COMPANION_CASUAL_POLICY_V2,
-  COMPANION_DIALOGUE_CONTINUATION_GOAL_V1 } from "../handlers/companion-conversation-policy.ts";
+  COMPANION_DIALOGUE_CONTINUATION_GOAL_V1 } from "../handlers/turn/companion-conversation-policy.ts";
 
 /** Same text enabled by the user after this historical diagnostic. */
 export const dialogueContinuationGoal = COMPANION_DIALOGUE_CONTINUATION_GOAL_V1;

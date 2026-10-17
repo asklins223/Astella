@@ -1,6 +1,6 @@
 import type { AgentTurnRequest } from "@astella/shared";
-import { companionStepRuntimePolicy } from "../handlers/companion-step-plan.ts";
-import { COMPANION_CASUAL_POLICY_BASE_V1 } from "../handlers/companion-conversation-policy.ts";
+import { companionStepRuntimePolicy } from "../handlers/turn/companion-step-plan.ts";
+import { COMPANION_CASUAL_POLICY_BASE_V1 } from "../handlers/turn/companion-conversation-policy.ts";
 
 export type DialogueMovePrototype = "share" | "correction" | "pushback";
 const moves: Record<DialogueMovePrototype, string> = {

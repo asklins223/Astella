@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DesktopRouteV1 } from "@astella/shared/desktop-ipc-contracts";
-import { useRoomStore } from "../../../app/room-store";
+import { useRoomStore } from "../../../app/home/room-store";
 import { ValidationSurface } from "../run/validation-surface";
 
 const RUN_ID = "11111111-1111-4111-8111-111111111111";

@@ -2,9 +2,9 @@
 
 import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NotebookSurface } from "../notebook/notebook-surface.tsx";
-import { useNotebookFullscreenState } from "../notebook/notebook-fullscreen-state.ts";
-import { useRoomStore } from "../../../app/room-store.ts";
+import { NotebookSurface } from "../notebook/shell/notebook-surface.tsx";
+import { useNotebookFullscreenState } from "../notebook/shell/notebook-fullscreen-state.ts";
+import { useRoomStore } from "../../../app/home/room-store.ts";
 
 /**
  * 在场那一排要真的长在笔记页上（共享空间的在场）。

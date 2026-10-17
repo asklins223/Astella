@@ -16,12 +16,12 @@ import assert from "node:assert/strict";
 import {
   resetCompanionProposalExpiryThrottleForTest,
   tickCompanionProposalExpiry,
-} from "../handlers/companion-proposal-expiry-scheduler.ts";
+} from "../handlers/schedulers/companion-proposal-expiry-scheduler.ts";
 import {
   resetCompanionRunReconcileThrottleForTest,
   tickCompanionRunReconcile,
-} from "../handlers/companion-run-reconcile-scheduler.ts";
-import { tickCompanionDailySummaryScheduler } from "../handlers/companion-daily-summary-scheduler.ts";
+} from "../handlers/schedulers/companion-run-reconcile-scheduler.ts";
+import { tickCompanionDailySummaryScheduler } from "../handlers/schedulers/companion-daily-summary-scheduler.ts";
 import { closeDatabase } from "../db.ts";
 
 after(async () => {

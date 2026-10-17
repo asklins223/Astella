@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
-import { scheduleCompanionPoll } from "../companion-poll";
+import { scheduleCompanionPoll } from "../companion-session/companion-poll";
 
 afterEach(() => { vi.useRealTimers(); });
 

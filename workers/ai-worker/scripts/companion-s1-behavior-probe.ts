@@ -60,10 +60,10 @@ import {
   assessAnswerExposure,
   isFormalAnswerLivePage,
   type AnswerExposure,
-} from "../src/handlers/companion-answer-exposure.ts";
-import { buildCompanionPersonaMessages } from "../src/handlers/companion-dialogue-content.ts";
-import { companionStepToolShape } from "../src/handlers/companion-tool-call-ledger.ts";
-import { renderFactSpansBlock, resolveFactSpans } from "../src/handlers/companion-fact-spans.ts";
+} from "../src/handlers/agent/companion-answer-exposure.ts";
+import { buildCompanionPersonaMessages } from "../src/handlers/turn/companion-dialogue-content.ts";
+import { companionStepToolShape } from "../src/handlers/tools/companion-tool-call-ledger.ts";
+import { renderFactSpansBlock, resolveFactSpans } from "../src/handlers/turn/companion-fact-spans.ts";
 import { createProvider } from "../src/lib/ai-provider.ts";
 
 // ─── 读数形状 ─────────────────────────────────────────────────────────────

@@ -4,7 +4,7 @@ import type { AgentContextReceipt } from "@astella/agent-core";
 import {
   createCompanionContextReceipts,
   companionContextAssemblyCapacity,
-} from "../companion-context-receipts.ts";
+} from "../context/companion-context-receipts.ts";
 
 const receipt = (id: string, status: AgentContextReceipt["status"], characters = 10): AgentContextReceipt => ({
   id, authority: "data", characters, status,

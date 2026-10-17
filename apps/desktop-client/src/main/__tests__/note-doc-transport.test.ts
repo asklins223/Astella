@@ -35,7 +35,7 @@ vi.mock("@hocuspocus/provider", () => ({
   },
 }));
 
-const { createHocuspocusNoteDocTransport } = await import("../note-doc-transport.ts");
+const { createHocuspocusNoteDocTransport } = await import("../note-doc/note-doc-transport.ts");
 
 const open = (documentName: string) => createHocuspocusNoteDocTransport()({
   url: "ws://127.0.0.1:4000/note-doc",

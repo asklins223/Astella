@@ -7,9 +7,9 @@
  */
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
-import { getCapabilityForTask } from "../task-router.ts";
-import type { AIPlatformConfig } from "../platform-config.ts";
-import { resetPlatformConfigCache, resolveSystemPlatform, setPlatformConfig } from "../platform-config-node.ts";
+import { getCapabilityForTask } from "../platform/task-router.ts";
+import type { AIPlatformConfig } from "../platform/platform-config.ts";
+import { resetPlatformConfigCache, resolveSystemPlatform, setPlatformConfig } from "../platform/platform-config-node.ts";
 
 afterEach(() => resetPlatformConfigCache());
 

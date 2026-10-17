@@ -3,9 +3,9 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
-import { NotebookSurface } from "../notebook/notebook-surface.tsx";
-import * as liveDocument from "../notebook/use-note-doc-live-view.ts";
-import { useRoomStore } from "../../../app/room-store.ts";
+import { NotebookSurface } from "../notebook/shell/notebook-surface.tsx";
+import * as liveDocument from "../notebook/document/use-note-doc-live-view.ts";
+import { useRoomStore } from "../../../app/home/room-store.ts";
 
 /**
  * 生成入口的两条合同：

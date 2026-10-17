@@ -1,4 +1,4 @@
-import type { RoomIntent, RoomSurface } from "../app/room-machine";
+import type { RoomIntent, RoomSurface } from "../app/home/room-machine";
 
 export type SceneMotionMode = "full" | "lite" | "off";
 export type SceneMotionPhase = "idle" | "focusing" | "task" | "returning";

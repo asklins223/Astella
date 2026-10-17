@@ -26,7 +26,7 @@
  * 这比「直接删干净」更重要：删完之后这条守卫守住的是一个**上限**，而不是一片空白。
  */
 import { describe, expect, it } from "vitest";
-import { buildIndex, shortPath, type CssRule } from "../renderer-class-index";
+import { buildIndex, shortPath, type CssRule } from "../artifact/renderer-class-index";
 
 /**
  * 明确豁免的类名 → 理由。

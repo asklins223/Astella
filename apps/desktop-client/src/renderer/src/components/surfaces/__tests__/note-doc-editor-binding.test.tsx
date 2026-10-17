@@ -20,8 +20,8 @@ import {
   yXmlFragmentToProseMirrorRootNode,
 } from "y-prosemirror";
 import { noteBlocksToPmNodes, noteDocSchemaSpec } from "@astella/shared/note-doc-schema";
-import { noteWritingSchemas } from "../notebook/note-writing-extensions";
-import { noteRichStyleMark } from "../notebook/note-format-brush";
+import { noteWritingSchemas } from "../notebook/document/note-writing-extensions.ts";
+import { noteRichStyleMark } from "../notebook/document/note-format-brush.ts";
 
 /**
  * 批次 C2 的门槛用例：**编辑器的 schema 带不带得住我们的块属性**。

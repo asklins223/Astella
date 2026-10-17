@@ -3,7 +3,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ResumableSurface } from "../library/ResumableSurface.tsx";
-import { useRoomStore } from "../../../app/room-store.ts";
+import { useRoomStore } from "../../../app/home/room-store.ts";
 
 /**
  * 「未完成的学习」这一页（审计 F24）。

@@ -2,8 +2,8 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CompanionContentBlockV1, CompanionMessageV1 } from "@astella/shared/companion-conversation-contracts";
-import { CompanionReplyPapers } from "../CompanionReplyPapers";
-import { CompanionChatRecordArticle } from "../CompanionChatRecord";
+import { CompanionReplyPapers } from "../journal/CompanionReplyPapers";
+import { CompanionChatRecordArticle } from "../hud/CompanionChatRecord";
 import { interactionProposal, interactionSession } from "./companion-interaction-fixtures";
 
 vi.mock("../../surfaces/source/source-image", async importOriginal => {

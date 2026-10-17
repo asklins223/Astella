@@ -5,7 +5,7 @@ import {
   companionVadStep,
   type CompanionVadState,
   type CompanionVadVerdict,
-} from "../companion-voice-vad";
+} from "../voice/companion-voice-vad";
 
 const TICK_MS = 50;
 

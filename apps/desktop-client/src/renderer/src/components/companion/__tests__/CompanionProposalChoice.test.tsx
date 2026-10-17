@@ -2,8 +2,8 @@
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { CompanionProposalUiState } from "../../../app/companion-chat-session.tsx";
-import { CompanionProposalChoice, companionProposalExpired } from "../CompanionProposalChoice.tsx";
+import type { CompanionProposalUiState } from "../../../app/companion-session/companion-chat-session.tsx";
+import { CompanionProposalChoice, companionProposalExpired } from "../journal/CompanionProposalChoice.tsx";
 
 // 夹具的有效期必须**相对当下**：上一版写死 2026-09-21，于是日历一过，这张卡在
 // 新判据（`companionProposalExpired`）眼里就是过期卡，"待选择"那两条用例红得毫无道理。

@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { COMPANION_HOST_PROTOCOL_V7, COMPANION_PERSONA_V11, COMPANION_PERSONA_V11_SHA256 } from "../companion-persona.ts";
+import { COMPANION_HOST_PROTOCOL_V7, COMPANION_PERSONA_V11, COMPANION_PERSONA_V11_SHA256 } from "../companion/companion-persona.ts";
 import {
   VOICE_EMOTION_TAGS,
   VOICE_RICH_TAGS,
@@ -13,7 +13,7 @@ import {
   readVoiceStyleInstruction,
   readVoiceExpressionTags, voiceExpressionCue, prepareQwenVoiceExpressionText, withholdPartialVoiceExpressionTag,
   voiceStyleInstructionUnits,
-} from "../voice-expression-tags.ts";
+} from "../companion/voice-expression-tags.ts";
 
 test("current host protocol admits scoped speech metadata and has a reproducible audit hash", () => {
   assert.match(COMPANION_HOST_PROTOCOL_V7, /本轮声音表达协议明确允许/);
@@ -118,7 +118,7 @@ test("emotion 解析：取段内最后一个控制类标签（小写）", () => 
 
 // 2026-08-24（AI 设计审查 §4.2）：未知标签防御——模型自造的 ASCII 标签
 // 形态 token 不再漏进展示/TTS 文本；中文正文方括号与单字符标记不受影响。
-import { stripUnknownVoiceExpressionTags } from "../voice-expression-tags.ts";
+import { stripUnknownVoiceExpressionTags } from "../companion/voice-expression-tags.ts";
 
 test("未知标签防御：ASCII 标签形态的模型自造标签被剥离", () => {
   // 展示管线：已知 + 未知全部剥掉

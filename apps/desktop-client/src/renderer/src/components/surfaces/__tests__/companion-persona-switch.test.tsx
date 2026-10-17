@@ -14,7 +14,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { PersonaPanel } from "../companion/companion-center-panels.tsx";
 import { companionPersonaV1Schema } from "@astella/shared/companion-memory-desktop-contracts";
 import type { PersonaSwitchOption } from "@astella/shared/pet-persona-merge";
-import { useRoomStore } from "../../../app/room-store.ts";
+import { useRoomStore } from "../../../app/home/room-store.ts";
 import { PET_PERSONA_PRESETS, getPresetById } from "@astella/shared/pet-persona-presets";
 
 const noop = () => undefined;

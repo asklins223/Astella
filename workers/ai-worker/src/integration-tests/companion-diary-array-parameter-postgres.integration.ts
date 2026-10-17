@@ -43,7 +43,7 @@ after(async () => {
   await closeDatabase();
 });
 
-const { diarySummaryUpsertSql } = await import("../handlers/companion-daily-summary.ts");
+const { diarySummaryUpsertSql } = await import("../handlers/journal/companion-daily-summary.ts");
 const { db } = await import("../db.ts");
 
 const ZERO_FACTS = {

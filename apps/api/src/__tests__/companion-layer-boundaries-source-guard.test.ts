@@ -4,7 +4,7 @@
  * ## 它守的是什么
  *
  * 40b §2.4 第 1 条：「人格、记忆目录、表达手册与声音在领域侧；公共层只装配有身份和版本的
- * 任务输入，**不携带具体角色常量**。」`packages/shared/src/ai-task-kernel.ts` 就是那句
+ * 任务输入，**不携带具体角色常量**。」`packages/shared/src/agent/ai-task-kernel.ts` 就是那句
  * "公共层"——它管一次任务能否可靠、可控地执行（身份、预算、超时、检查点、提交）。
  * 它**不该**知道伴星是谁、记忆目录长什么样、日记选材怎么做。
  *
@@ -53,7 +53,7 @@ function findRepoRootFrom(startDir: string): string {
   let dir = startDir;
   for (let hop = 0; hop < 12; hop += 1) {
     if (
-      existsSync(join(dir, "packages/shared/src/ai-task-kernel.ts"))
+      existsSync(join(dir, "packages/shared/src/agent/ai-task-kernel.ts"))
       && existsSync(join(dir, "apps/api/src/modules"))
       && existsSync(join(dir, "workers/ai-worker/src/handlers"))
     ) return dir;
@@ -62,30 +62,30 @@ function findRepoRootFrom(startDir: string): string {
     dir = parent;
   }
   throw new Error(
-    "定位仓库根失败：向上 12 层都没同时看到 packages/shared/src/ai-task-kernel.ts、"
+    "定位仓库根失败：向上 12 层都没同时看到 packages/shared/src/agent/ai-task-kernel.ts、"
     + "apps/api/src/modules 与 workers/ai-worker/src/handlers。"
     + "找不到就返回空闭包的话，下面三条判据会永远绿。",
   );
 }
 
 const ROOT = findRepoRootFrom(dirname(fileURLToPath(import.meta.url)));
-const PUBLIC_LAYER_ENTRY = join(ROOT, "packages/shared/src/ai-task-kernel.ts");
+const PUBLIC_LAYER_ENTRY = join(ROOT, "packages/shared/src/agent/ai-task-kernel.ts");
 
 /** 公共层**不得** import 的人格 / 领域写入口（仓库相对路径）。 */
 const FORBIDDEN_EXACT: ReadonlySet<string> = new Set([
   // 人格、目录与声音
-  "packages/shared/src/companion-persona.ts",
-  "packages/shared/src/pet-persona-presets.ts",
+  "packages/shared/src/companion/companion-persona.ts",
+  "packages/shared/src/companion/pet-persona-presets.ts",
   // 领域装配：工具面、主动策略、闸与记忆载荷
-  "packages/shared/src/companion-agent-registry.ts",
-  "packages/shared/src/companion-capability-manifest.ts",
-  "packages/shared/src/agent-capability-catalog.ts",
-  "packages/shared/src/agent-capability-manifests.ts",
-  "packages/shared/src/companion-proactive-policy.ts",
-  "packages/shared/src/companion-proactive-quota.ts",
-  "packages/shared/src/companion-leak-gates.ts",
-  "packages/shared/src/companion-memory-job-payload.ts",
-  "packages/shared/src/companion-memory-temporal.ts",
+  "packages/shared/src/agent/companion-agent-registry.ts",
+  "packages/shared/src/agent/companion-capability-manifest.ts",
+  "packages/shared/src/agent/agent-capability-catalog.ts",
+  "packages/shared/src/agent/agent-capability-manifests.ts",
+  "packages/shared/src/companion/companion-proactive-policy.ts",
+  "packages/shared/src/companion/companion-proactive-quota.ts",
+  "packages/shared/src/companion/companion-leak-gates.ts",
+  "packages/shared/src/companion/companion-memory-job-payload.ts",
+  "packages/shared/src/companion/companion-memory-temporal.ts",
 ]);
 
 /** 领域写入口的目录：表结构与后端模块。 */
@@ -164,7 +164,14 @@ function resolveSpecifier(fromFile: string, spec: string): string | null {
     candidates.push(join(ROOT, "packages/shared/src/index.ts"));
   } else if (spec.startsWith("@astella/shared/")) {
     const rest = spec.slice("@astella/shared/".length);
+    // shared/src 按域分了子目录（agent / companion / note / review / platform / content），
+    // contracts 同理；候选表要跟着 tsconfig 的 `@astella/shared/*` 一起走，
+    // 否则判据在"文件明明存在"时会判成解析不到，正样本当场假绿。
+    const SHARED_GROUPS = ["agent", "companion", "note", "review", "platform", "content"];
+    const CONTRACT_GROUPS = ["agent", "companion", "note", "learning", "desktop"];
     candidates.push(
+      ...CONTRACT_GROUPS.map((g) => join(ROOT, "packages/shared/src/contracts", g, `${rest}.ts`)),
+      ...SHARED_GROUPS.map((g) => join(ROOT, "packages/shared/src", g, `${rest}.ts`)),
       join(ROOT, "packages/shared/src/contracts", `${rest}.ts`),
       join(ROOT, "packages/shared/src", `${rest}.ts`),
       join(ROOT, "packages/shared/src", rest, "index.ts"),
@@ -307,13 +314,13 @@ test("② 公共层导出的名字里没有人格/领域写入口", () => {
 test("③ 人格、目录与文风仍住在领域侧，且真的被领域侧装配（反向断言）", async () => {
   // 反向断言的价值：防止有人"顺手清理"把人格搬进 shared 根部、让公共层自带角色常量。
   // 上面两条守的是"不许进公共层"，这一条守的是"还在原地"——搬走了就等于 ① ② 一起失效。
-  const persona = await import(pathToFileURL(join(ROOT, "packages/shared/src/companion-persona.ts")).href) as Record<string, unknown>;
+  const persona = await import(pathToFileURL(join(ROOT, "packages/shared/src/companion/companion-persona.ts")).href) as Record<string, unknown>;
   for (const name of ["COMPANION_HOST_PROTOCOL_V8", "COMPANION_IDENTITY_BOUNDARY_V4", "COMPANION_CHARACTER_BASE_V12"]) {
     assert.equal(typeof persona[name], "string",
       `companion-persona.ts 不再导出 ${name}：人格被搬走了或者被删了。`
       + "这一条红的时候，① ② 两条的「还成立」已经没有意义了——它们守的公共层已经空了。");
   }
-  const presets = await import(pathToFileURL(join(ROOT, "packages/shared/src/pet-persona-presets.ts")).href) as Record<string, unknown>;
+  const presets = await import(pathToFileURL(join(ROOT, "packages/shared/src/companion/pet-persona-presets.ts")).href) as Record<string, unknown>;
   assert.ok(Array.isArray(presets.PET_PERSONA_PRESETS) && presets.PET_PERSONA_PRESETS.length > 0,
     "pet-persona-presets 不再提供人格预设：桌宠人格档案的目录侧也没了");
 
@@ -343,10 +350,10 @@ test("③ 人格、目录与文风仍住在领域侧，且真的被领域侧装�
 
   // 非空断言：只定义不装配，等于没有装配。
   //
-  // 领域侧**不是**从 `packages/shared/src/companion-persona.ts` 这个子路径 import 的——
+  // 领域侧**不是**从 `packages/shared/src/companion/companion-persona.ts` 这个子路径 import 的——
   // 它 import 的是 `@astella/shared` 桶。所以判据要认「从人格模块**或**桶 import」，
   // 再加上「这个文件真的点名了某个人格常量」两个条件。只认子路径的话，这条会恒假。
-  const personaModule = "packages/shared/src/companion-persona.ts";
+  const personaModule = "packages/shared/src/companion/companion-persona.ts";
   const sharedBarrel = "packages/shared/src/index.ts";
   const assemblers: string[] = [];
   for (const dir of DOMAIN_ASSEMBLY_ROOTS) collectPersonaAssemblers(join(ROOT, dir), personaModule, sharedBarrel, assemblers);
@@ -399,10 +406,10 @@ test("【正样本 A】以 index.ts 为入口时，判据必须抓到真实的�
   const violations = files.flatMap((file) => findForbiddenImports(file));
   const targets = new Set(violations.map((v) => v.target));
   for (const expected of [
-    "packages/shared/src/companion-persona.ts",
-    "packages/shared/src/companion-agent-registry.ts",
-    "packages/shared/src/pet-persona-presets.ts",
-    "packages/shared/src/companion-proactive-policy.ts",
+    "packages/shared/src/companion/companion-persona.ts",
+    "packages/shared/src/agent/companion-agent-registry.ts",
+    "packages/shared/src/companion/pet-persona-presets.ts",
+    "packages/shared/src/companion/companion-proactive-policy.ts",
   ]) {
     assert.ok(targets.has(expected),
       `解析 index.ts 的闭包时没认出 ${expected}：要么解析器坏了，要么 forbidden 词表漏了它。`
@@ -421,7 +428,7 @@ test("【正样本 B】临时造的违规文件被判违规，合法的同形文
   try {
     const violating = join(fixtureDir, "public-layer-with-persona.ts");
     writeFileSync(violating, [
-      'import { COMPANION_CHARACTER_BASE_V12 } from "../packages/shared/src/companion-persona.ts";',
+      'import { COMPANION_CHARACTER_BASE_V12 } from "../packages/shared/src/companion/companion-persona.ts";',
       'import { companionTurnRuns } from "../packages/shared/src/db-schema/companion-conversations.ts";',
       'import { resolveAllCompanionAgentTools } from "@astella/shared/companion-agent-registry";',
       "export const companionPersonaProtocol = COMPANION_CHARACTER_BASE_V12;",
@@ -448,7 +455,7 @@ test("【正样本 B】临时造的违规文件被判违规，合法的同形文
     // 反过来：同形但不违规的文件必须干净。正负样本只做一半，判据就是在测自己。
     const legal = join(fixtureDir, "public-layer-legal.ts");
     writeFileSync(legal, [
-      'import { assertOutsideWorkspaceTransaction } from "../packages/shared/src/workspace-transaction.ts";',
+      'import { assertOutsideWorkspaceTransaction } from "../packages/shared/src/platform/workspace-transaction.ts";',
       "import { z } from \"zod\";",
       "export const outsideTransactionGuard = assertOutsideWorkspaceTransaction;",
       "export const schema = z.object({});",
@@ -473,7 +480,7 @@ test("【负样本】真实的公共层当前通过全部三条判据（不是�
     `公共层闭包只有 ${files.length} 个文件：ai-task-kernel 与它 import 的东西没被算进来，`
     + "三条判据都退化成空跑");
   assert.ok(existsSync(files[0]!));
-  assert.equal(repoRelative(files[0]!), "packages/shared/src/ai-task-kernel.ts");
+  assert.equal(repoRelative(files[0]!), "packages/shared/src/agent/ai-task-kernel.ts");
   // 至少有一条 import 边被真正解析过（而不是"一个 import 都没找到"）。
   const totalEdges = files.reduce((sum, file) => sum + readImportSpecifiers(file).length, 0);
   assert.ok(totalEdges >= 2, `公共层只数到 ${totalEdges} 条 import：判据多半没在读文件`);

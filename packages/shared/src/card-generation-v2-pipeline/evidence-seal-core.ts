@@ -23,10 +23,10 @@
 import { randomUUID } from "node:crypto";
 import {
   computeEvidenceSnapshotHashV2,
-} from "../card-generation-v2-hashing.ts";
-import { hashCanonicalV2 } from "../hash-canonical-v2.ts";
-import type { SourceScopeV2 } from "../contracts/card-generation-v2-contracts.ts";
-import { DomainError } from "../domain-error.ts";
+} from "../review/card-generation-v2-hashing.ts";
+import { hashCanonicalV2 } from "../content/hash-canonical-v2.ts";
+import type { SourceScopeV2 } from "../contracts/learning/card-generation-v2-contracts.ts";
+import { DomainError } from "../platform/domain-error.ts";
 
 // ─── 类型 ───────────────────────────────────────────────────────────────
 

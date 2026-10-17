@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { COMPANION_HOST_PROTOCOL_V8, COMPANION_IDENTITY_BOUNDARY_V4 } from "@astella/shared";
-import { buildCasualFirstStepRequest } from "../../handlers/companion-speculative-first-step.ts";
+import { buildCasualFirstStepRequest } from "../../handlers/agent/companion-speculative-first-step.ts";
 import { buildCompanionKnowledgeReview, parseCompanionKnowledgeReview, companionDraftSpans } from "../diagnostics/companion-knowledge-review.ts";
 import { CompanionKnowledgeReviewError } from "../diagnostics/companion-review-errors.ts";
 

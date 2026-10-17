@@ -3,7 +3,7 @@ import {
   COMPANION_BUBBLE_FRAME_INSET,
   COMPANION_BUBBLE_RAIL_GAP,
   companionBubbleClearance,
-} from "../companion-bubble-clearance.ts";
+} from "../bubble/companion-bubble-clearance.ts";
 
 const FRAME_1440 = { left: 0, right: 1440, top: 0, bottom: 810 };
 /** 实测值（2026-09-19，1440×810 复习队列页）：目录栏展开态的一整列。 */

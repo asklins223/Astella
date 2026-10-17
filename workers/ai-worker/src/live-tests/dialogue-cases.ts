@@ -1,4 +1,4 @@
-import type { CompanionRecentHistoryMessage } from "../handlers/companion-context-handoff.ts";
+import type { CompanionRecentHistoryMessage } from "../handlers/context/companion-context-handoff.ts";
 
 export interface DialogueGenerationFixture {
   id: string;

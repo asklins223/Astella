@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { sourceImageObjectKeyFromUrl } from "@astella/shared/source-image-contracts";
-import { createRequestMeta, getCurrentWorkspaceEpoch, unwrapGatewayResult } from "../../../app/desktop-client";
-import { useRoomStore } from "../../../app/room-store";
-import { subscribeGateInvalidation } from "../../../app/gate-invalidation";
+import { createRequestMeta, getCurrentWorkspaceEpoch, unwrapGatewayResult } from "../../../app/client/desktop-client";
+import { useRoomStore } from "../../../app/home/room-store";
+import { subscribeGateInvalidation } from "../../../app/gate/gate-invalidation";
 
 /**
  * 一张图片在渲染层可能的归宿。

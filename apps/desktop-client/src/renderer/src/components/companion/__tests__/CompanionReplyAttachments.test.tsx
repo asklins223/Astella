@@ -3,14 +3,14 @@ import { useState } from "react";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CompanionContentBlockV1 } from "@astella/shared/companion-conversation-contracts";
-import { desktopRouteFromAgentRoute } from "../../../app/companion-chat-session";
-import { CompanionReplyAttachments } from "../CompanionReplyAttachments";
+import { desktopRouteFromAgentRoute } from "../../../app/companion-session/companion-chat-session";
+import { CompanionReplyAttachments } from "../journal/CompanionReplyAttachments";
 import { interactionSession } from "./companion-interaction-fixtures";
 import { useSourceImage } from "../../surfaces/source/source-image";
-import { copyText } from "../../../app/clipboard";
+import { copyText } from "../../../app/client/clipboard";
 
 vi.mock("../../surfaces/source/source-image", () => ({ useSourceImage: vi.fn() }));
-vi.mock("../../../app/clipboard", () => ({ copyText: vi.fn() }));
+vi.mock("../../../app/client/clipboard", () => ({ copyText: vi.fn() }));
 
 const note: CompanionContentBlockV1 = { type: "quote", label: "《中国朝代历程总揽》· 7 小时前", text: "# 先秦\n\n| 朝代 | 年代 |\n| --- | --- |\n| 夏 | 约前2070年 |" };
 const other: CompanionContentBlockV1 = { type: "quote", label: "《中国近代史总揽》", text: "从鸦片战争到新中国成立。" };

@@ -2,11 +2,11 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProp
 import { createPortal } from "react-dom";
 import { ArrowRight, Pause, Play, RotateCcw, X } from "lucide-react";
 import gsap from "gsap";
-import { useRoomStore } from "../../../app/room-store";
+import { useRoomStore } from "../../../app/home/room-store";
 import { useHomeV2 } from "../../home-v2/HomeV2Experience";
 import { resolveSceneMotionMode } from "../../../scene/scene-motion";
 import { useTactileSurface } from "../../motion/use-tactile-surface";
-import { feedSelectionToCompanion } from "../companion-feed";
+import { feedSelectionToCompanion } from "../hud/companion-feed";
 import { GUIDE_JOURNEY_LABELS, GUIDE_STEPS, GUIDE_TOPICS, WELCOME_TITLES, guideFeatureAvailable } from "./guide-definitions";
 import { GuidanceScene } from "./GuidanceScene";
 import { GuidanceNarration } from "./GuidanceNarration";

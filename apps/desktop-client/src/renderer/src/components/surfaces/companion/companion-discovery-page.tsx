@@ -1,6 +1,6 @@
 import { useEffect,useRef,useState } from "react";
 import type { CompanionDiscoveryEntryV1 } from "@astella/shared/desktop-ipc-contracts";
-import { gatewayErrorMessage,unwrapGatewayResult } from "../../../app/desktop-client";
+import { gatewayErrorMessage,unwrapGatewayResult } from "../../../app/client/desktop-client";
 import { SectionState } from "./companion-center-primitives";
 import { DiscoveryPanel } from "./companion-discovery-panel";
 import { publishCompanionRecordsChanged,useCompanionRecordsRefresh,useCompanionResource } from "./use-companion-resource";

@@ -2,9 +2,9 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CompanionAccountPatch, CompanionAccountStateV1 } from "@astella/shared/companion-shell-contracts";
-import { CompanionAgentPermissionMenu } from "../companion-agent-permission";
-import { COMPANION_ACCOUNT_CHANGED } from "../companion-events";
-import { setCurrentWorkspaceEpoch } from "../../../app/desktop-client";
+import { CompanionAgentPermissionMenu } from "../hud/companion-agent-permission";
+import { COMPANION_ACCOUNT_CHANGED } from "../content/companion-events";
+import { setCurrentWorkspaceEpoch } from "../../../app/client/desktop-client";
 
 let account = { revision: 5, globalEnabled: true, diaryEnabled: true, agentSettings: { permissionLevel: "guided" } } as CompanionAccountStateV1;
 const patches: CompanionAccountPatch[] = [];

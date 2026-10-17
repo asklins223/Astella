@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { measureChatRequest } from "@astella/agent-core";
 import type { ChatMessage } from "@astella/shared";
-import { summarizeCompleteCompanionSource, type CompanionSourcePart } from "../companion-semantic-chunks.ts";
+import { summarizeCompleteCompanionSource, type CompanionSourcePart } from "../context/companion-semantic-chunks.ts";
 import { stableStringify, sha256Utf8V1 } from "@astella/shared/content-hash";
-import type { CompanionSemanticCheckpoint } from "../companion-semantic-checkpoint.ts";
+import type { CompanionSemanticCheckpoint } from "../context/companion-semantic-checkpoint.ts";
 
 const counting = { countTokens: (text: string) => text.length };
 const options = { maxTokens: 40 };

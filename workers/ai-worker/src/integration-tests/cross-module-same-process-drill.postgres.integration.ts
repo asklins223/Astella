@@ -145,9 +145,9 @@ test("§0 · 四个环节的入口在**同一个进程**里都装得上（全文
   const { fileURLToPath } = await import("node:url");
   const handlersDir = new URL("../handlers/", import.meta.url);
   const entries = await Promise.all([
-    import("../handlers/companion-dialogue.ts").then((m) => ["伴星对话", typeof m.runCompanionDialogue] as const),
-    import("../handlers/companion-delivery-write.ts").then((m) => ["主动消息投递", typeof m.enqueueSystemEventDelivery] as const),
-    import("../handlers/companion-daily-summary.ts").then((m) => ["日记成稿", typeof m.runCompanionDailySummary] as const),
+    import("../handlers/turn/companion-dialogue.ts").then((m) => ["伴星对话", typeof m.runCompanionDialogue] as const),
+    import("../handlers/agent/companion-delivery-write.ts").then((m) => ["主动消息投递", typeof m.enqueueSystemEventDelivery] as const),
+    import("../handlers/journal/companion-daily-summary.ts").then((m) => ["日记成稿", typeof m.runCompanionDailySummary] as const),
   ]);
   for (const [name, kind] of entries) {
     assert.equal(kind, "function", `${name} 那一个入口不是可调用的函数：链条在这一环断掉`);
@@ -157,13 +157,13 @@ test("§0 · 四个环节的入口在**同一个进程**里都装得上（全文
   const files = readdirSync(fileURLToPath(handlersDir));
   const hasMemoryEntry = files.some((f) => /memory.*(extract|write|job)/i.test(f));
   assert.ok(hasMemoryEntry, "handlers/ 下没有记忆抽取/写入那一族的文件：§2 这一环在链条上是空的");
-  assert.ok(readFileSync(fileURLToPath(new URL("../handlers/companion-daily-summary.ts", import.meta.url)), "utf8")
+  assert.ok(readFileSync(fileURLToPath(new URL("../handlers/journal/companion-daily-summary.ts", import.meta.url)), "utf8")
     .includes("export async function runCompanionDailySummary"),
     "日记那一段的导出形状变了：外部无法驱动它，也就无法验收它");
 });
 
 test("§1 · 学习事件投递：走**投递面**入队，并念得出它是什么（不是空白行）", async () => {
-  const { enqueueSystemEventDelivery } = await import("../handlers/companion-delivery-write.ts");
+  const { enqueueSystemEventDelivery } = await import("../handlers/agent/companion-delivery-write.ts");
   const { db } = await import("../db.ts");
   const systemEventId = `drill-${randomUUID()}`;
 
@@ -199,7 +199,7 @@ test("§1 · 学习事件投递：走**投递面**入队，并念得出它是什
 });
 
 test("§1b · 投递是**幂等**的：同一 systemEventId 重复投递不产生第二条（重复提醒的闸）", async () => {
-  const { enqueueSystemEventDelivery } = await import("../handlers/companion-delivery-write.ts");
+  const { enqueueSystemEventDelivery } = await import("../handlers/agent/companion-delivery-write.ts");
   const { db } = await import("../db.ts");
   const systemEventId = `drill-dedupe-${randomUUID()}`;
   const payload = { workspaceId, userId, systemEventId, text: "同一条", ttlHours: 24 };
@@ -259,7 +259,7 @@ test("§2 · 记忆写入与召回：跨空间的那一档是**显式**的，且
 });
 
 test("§3 · 失败可见：投递面**不校验正文**，所以空正文会落一行 —— 那一行是本刀量到的真实缺口", async () => {
-  const { enqueueSystemEventDelivery } = await import("../handlers/companion-delivery-write.ts");
+  const { enqueueSystemEventDelivery } = await import("../handlers/agent/companion-delivery-write.ts");
   const { db } = await import("../db.ts");
   const systemEventId = `drill-empty-${randomUUID()}`;
 
@@ -298,7 +298,7 @@ test("§3 · 失败可见：投递面**不校验正文**，所以空正文会落
  * 自己造一份的话要复刻十几张表的形状，而复刻错的那一格正好是本条要量的那一格。
  */
 test("§4 · 伴星对话在**这个进程**里跑出声，并落到曝光账（§16.21）", async () => {
-  const { runCompanionDialogue } = await import("../handlers/companion-dialogue.ts");
+  const { runCompanionDialogue } = await import("../handlers/turn/companion-dialogue.ts");
   const { seedFormalAnswerRun } = await import("./helpers/formal-answer-fixture.ts");
 
   // 夹具用同族那份 `seedFormalAnswerRun`：会话与 run 的形状自己造要复刻十几张表，
@@ -439,7 +439,7 @@ test("§4 · 伴星对话在**这个进程**里跑出声，并落到曝光账（
  * Only the model is replaced; persona and source material use their real readers.
  */
 test("daily diary generation runs through the leased job and reports failures", async () => {
-  const { runCompanionDailySummary } = await import("../handlers/companion-daily-summary.ts");
+  const { runCompanionDailySummary } = await import("../handlers/journal/companion-daily-summary.ts");
   const jobId = randomUUID();
   const leaseToken = `drill-lease-${randomUUID()}`;
   const conversationId = randomUUID();
@@ -522,7 +522,7 @@ test("daily diary generation runs through the leased job and reports failures", 
 });
 
 test("§6c · 选材与成稿检查点：发布写入失败后复用两步产物，不重复调用模型", async () => {
-  const { runCompanionDailySummary } = await import("../handlers/companion-daily-summary.ts");
+  const { runCompanionDailySummary } = await import("../handlers/journal/companion-daily-summary.ts");
   const jobId = randomUUID();
   const leaseToken = `diary-checkpoint-${randomUUID()}`;
   const conversationId = randomUUID();
@@ -631,7 +631,7 @@ test("§6c · 选材与成稿检查点：发布写入失败后复用两步产物
 });
 
 test("§6b · 租约对不上时，失败**在入口就说得出**，不是跑了一半才炸", async () => {
-  const { runCompanionDailySummary } = await import("../handlers/companion-daily-summary.ts");
+  const { runCompanionDailySummary } = await import("../handlers/journal/companion-daily-summary.ts");
   // 租约 token 是错的——生产里那是"一个旧 worker 迟到了"（39 §15.3-2、§16.34）。
   // 正确行为是**入口就拒**：一个迟到的 worker 绝不能覆盖已经跑完的那一次。
   let thrown: string | null = null;
@@ -664,7 +664,7 @@ test("变异自证：投递面不幂等 ⇒ §1b 红（不是 §1）", async () 
   // §1 量的是"写进去了且念得出"；§1b 量的是"重复不产生第二条"。把幂等去掉
   // 应当只让后者红——如果 §1 也跟着红，那说明两条量的是同一件事。
   const ids = new Set<string>();
-  const { enqueueSystemEventDelivery } = await import("../handlers/companion-delivery-write.ts");
+  const { enqueueSystemEventDelivery } = await import("../handlers/agent/companion-delivery-write.ts");
   const { db } = await import("../db.ts");
   const systemEventId = `drill-mut-idem-${randomUUID()}`;
   for (let i = 0; i < 2; i++) {
@@ -680,7 +680,7 @@ test("变异自证：投递面不幂等 ⇒ §1b 红（不是 §1）", async () 
 test("变异自证：租约检查被摘掉 ⇒ §6b 红（不是 §6）", async () => {
   // §6 量的是「真的跑一遍并留下可读原因」；§6b 量的是「租约对不上时入口就拒」。
   // §6 在没有任务行的情况下**本来也该失败**，所以两者的分离点是 §6b 那一格。
-  const { runCompanionDailySummary } = await import("../handlers/companion-daily-summary.ts");
+  const { runCompanionDailySummary } = await import("../handlers/journal/companion-daily-summary.ts");
   let thrown: string | null = null;
   try {
     await runCompanionDailySummary({

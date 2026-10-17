@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DesktopSearchItem, DesktopSearchPage } from "@astella/shared/desktop-surface-contracts";
-import { useRoomStore } from "../../../app/room-store";
-import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../../app/desktop-client";
-import { readAuthenticatedSession } from "../../../app/surface-session";
+import { useRoomStore } from "../../../app/home/room-store";
+import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../../app/client/desktop-client";
+import { readAuthenticatedSession } from "../../../app/home/surface-session";
 import { objectKey, PAGE_SIZE, readSearchContent, type SearchContent, type SearchPreview } from "./search-presenter";
 
 const WEAK_STATES = new Set(["unvalidated", "fragile", "needs_repair"]);

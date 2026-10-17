@@ -2,7 +2,7 @@
 /// <reference types="node" />
 import { runInNewContext } from "node:vm";
 import { afterEach, expect, test, vi } from "vitest";
-import { assembleArtifactDocument } from "../../../../../main/artifact-surface";
+import { assembleArtifactDocument } from "../../../../../main/artifact/artifact-surface";
 
 afterEach(() => { document.body.innerHTML = ""; document.documentElement.removeAttribute("data-artifact-motion"); });
 

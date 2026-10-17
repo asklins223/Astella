@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ObjectiveLibrarySurface } from "../library/WorkspaceLibrarySurface.tsx";
 import { retargetObjectiveLibraryView } from "../run/objective-library-view-state.ts";
-import { useRoomStore } from "../../../app/room-store.ts";
+import { useRoomStore } from "../../../app/home/room-store.ts";
 
 /** 收藏册呈现一篇笔记的多个要点，打开、查找与返回都不启动学习运行。 */
 

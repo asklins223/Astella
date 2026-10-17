@@ -33,9 +33,9 @@
  * 收不下的仍然是：任何**声称实测**的话（`hasMeasurementClaimV1`），以及数字读数字段
  * ——读数由服务端从材料里算，模型写不进来。
  */
-import { AI_UNDECLARED_OUTPUT_TOKENS } from "../ai-execution-budgets.ts";
+import { AI_UNDECLARED_OUTPUT_TOKENS } from "../agent/ai-execution-budgets.ts";
 import { randomUUID } from "node:crypto";
-import { DEFAULT_AI_PROVIDER_TIMEOUT_MS, DEFAULT_AI_TASK_TIMEOUT_MS } from "../ai-execution-budgets.ts";
+import { DEFAULT_AI_PROVIDER_TIMEOUT_MS, DEFAULT_AI_TASK_TIMEOUT_MS } from "../agent/ai-execution-budgets.ts";
 import { z } from "zod";
 import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
 import type { PublicJsonRequester } from "@astella/shared/public-json-http";

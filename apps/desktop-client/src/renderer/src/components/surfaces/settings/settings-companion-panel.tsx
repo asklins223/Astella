@@ -1,9 +1,9 @@
 import type { CompanionAccountPatch } from "@astella/shared/companion-shell-contracts";
 import { ArrowUpRight,BookOpen } from "lucide-react";
 import { Activity,useEffect,useRef,useState,type ReactNode } from "react";
-import { useRoomStore } from "../../../app/room-store";
-import { SETTINGS_ATTENTION_VOICE_MODEL } from "../../companion/open-voice-model-settings";
-import { COMPANION_AGENT_PERMISSION_DETAIL,COMPANION_AGENT_PERMISSION_OPTIONS,COMPANION_INTERVENTION_OPTIONS,COMPANION_PRESENCE_OPTIONS,companionInterventionHint,quietHoursPatch,quietHoursWithBoundary } from "../../companion/companion-account-presence";
+import { useRoomStore } from "../../../app/home/room-store";
+import { SETTINGS_ATTENTION_VOICE_MODEL } from "../../companion/voice/open-voice-model-settings";
+import { COMPANION_AGENT_PERMISSION_DETAIL,COMPANION_AGENT_PERMISSION_OPTIONS,COMPANION_INTERVENTION_OPTIONS,COMPANION_PRESENCE_OPTIONS,companionInterventionHint,quietHoursPatch,quietHoursWithBoundary } from "../../companion/bubble/companion-account-presence";
 import { HudSegmented,HudSwitch } from "../../hud/HudControls";
 import { SettingsCompanionData } from "./settings-companion-data";
 import { CompanionTimePicker } from "./settings-companion-time";

@@ -18,6 +18,17 @@
     "paths": {
       "@astella/shared": ["../../packages/shared/src/index.ts"],
       "@astella/shared/*": [
+        "../../packages/shared/src/contracts/agent/*.ts",
+        "../../packages/shared/src/contracts/companion/*.ts",
+        "../../packages/shared/src/contracts/note/*.ts",
+        "../../packages/shared/src/contracts/learning/*.ts",
+        "../../packages/shared/src/contracts/desktop/*.ts",
+        "../../packages/shared/src/agent/*.ts",
+        "../../packages/shared/src/companion/*.ts",
+        "../../packages/shared/src/note/*.ts",
+        "../../packages/shared/src/review/*.ts",
+        "../../packages/shared/src/platform/*.ts",
+        "../../packages/shared/src/content/*.ts",
         "../../packages/shared/src/contracts/*.ts",
         "../../packages/shared/src/*.ts",
         "../../packages/shared/src/*/index.ts"

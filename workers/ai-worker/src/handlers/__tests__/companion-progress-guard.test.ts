@@ -4,7 +4,7 @@ import {
   COMPANION_IDENTICAL_CALL_REPLAYS_ALLOWED,
   companionCallFingerprint,
   companionReplayExhausted,
-} from "../companion-progress-guard.ts";
+} from "../agent/companion-progress-guard.ts";
 import { COMPANION_AGENT_MAX_STEPS, COMPANION_AGENT_MAX_TOOL_CALLS } from "@astella/shared";
 
 /**

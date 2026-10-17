@@ -4,7 +4,7 @@ import { cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { learningObjectiveSurfaceV3Schema } from "@astella/shared/learning-objective-surface-contracts";
 import { ObjectiveDetailSurface } from "../library/WorkspaceLibrarySurface.tsx";
-import { useRoomStore } from "../../../app/room-store.ts";
+import { useRoomStore } from "../../../app/home/room-store.ts";
 
 /**
  * 详情页右栏（31 号文档 P17，批次 B8）。

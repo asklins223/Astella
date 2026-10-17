@@ -207,6 +207,9 @@ export function exposedWorldsOutsideMainFrameGuard(source: string): string[] {
 
 describe("preload 不在子 frame 暴露 IPC 桥（D4 §5.1）", () => {
   it("每一条 exposeInMainWorld 都在 process.isMainFrame 真分支里", () => {
+    // 桥是在 preload 里暴露的（`contextBridge` 只能在 preload 用），
+    // 不是主进程的 `index.ts`。这条守卫一直读错了文件，于是"0 条 expose"
+    // 的阳性对照恒红——2026-10-17 一并指向真正的源。
     const source = readFileSync("src/preload/index.ts", "utf8");
     // 阳性对照的第一半：这份源码里**本来就有** expose 调用，且至少有两条。
     const exposeCount = (stripComments(source).match(/contextBridge\.exposeInMainWorld\s*\(/g) ?? []).length;

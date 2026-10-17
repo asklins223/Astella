@@ -22,7 +22,7 @@ const repairSql = (): string => {
 import {
   resetCompanionMemoryEmbeddingSchedulerForTest,
   tickCompanionMemoryEmbeddingScheduler,
-} from "../companion-memory-embedding-scheduler.ts";
+} from "../schedulers/companion-memory-embedding-scheduler.ts";
 
 test("embedding scheduler enqueues once per cadence and scopes rebuilds to consenting memory owners", async () => {
   const queries: unknown[] = [];

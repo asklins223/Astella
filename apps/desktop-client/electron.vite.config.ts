@@ -16,7 +16,7 @@ import { voiceAsrModelDirectory } from './src/shared/voice-asr-model-path.ts'
 import {
   VOICE_ASR_MODEL_FILES,
   VOICE_ASR_MODEL_ROUTE_PREFIX,
-} from '../../packages/shared/src/contracts/voice-asr-model-contracts.ts'
+} from '../../packages/shared/src/contracts/desktop/voice-asr-model-contracts.ts'
 
 // Keep local desktop development aligned with the root Compose .env. The
 // values are consumed by the privileged main process only; they are not
@@ -114,7 +114,7 @@ export default defineConfig({
         // 根本不会启动。
         input: {
           index: resolve(__dirname, 'src/main/index.ts'),
-          'voice-asr-host': resolve(__dirname, 'src/main/voice-asr-host.ts'),
+          'voice-asr-host': resolve(__dirname, 'src/main/voice/voice-asr-host.ts'),
         },
 
         // `ws` 的两个可选原生加速依赖（笔记协同通道带进来的）。它们**故意不装**：

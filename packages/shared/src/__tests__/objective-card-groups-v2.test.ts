@@ -22,7 +22,7 @@ import {
   isDueV2,
   isNeedsNoteCheckV2,
   type ObjectiveListItemV2Input,
-} from "../objective-card-groups-v2.ts";
+} from "../review/objective-card-groups-v2.ts";
 
 const NOTE_A = "11111111-1111-4111-8111-111111111111";
 const NOTE_B = "22222222-2222-4222-8222-222222222222";

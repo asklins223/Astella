@@ -5,7 +5,7 @@ import { DomainError } from "@astella/shared";
 import * as schema from "@astella/shared/db-schema";
 // 稳定 P0-4（2026-09-15 审计）：事务内 workspace/user 上下文（UUID 校验、
 // 嵌套兼容性断言、set_config 回读校验、AsyncLocalStorage）的唯一实现已下沉到
-// packages/shared/src/workspace-transaction.ts，与 worker 共用。此处只保留
+// packages/shared/src/platform/workspace-transaction.ts，与 worker 共用。此处只保留
 // API 侧的角色差异（必须带已认证 actor）与连接策略（隔离级别、慢事务日志）。
 import {
   WorkspaceTransactionScope,

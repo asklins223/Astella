@@ -25,7 +25,7 @@ import {
   type FetchUrlDependencies,
   type PinnedAddress,
   type PinnedRequester,
-} from "../handlers/parse-source.ts";
+} from "../handlers/note/parse-source.ts";
 import { SourceStatus } from "@astella/shared";
 
 function mockDeps(

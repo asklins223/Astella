@@ -2,8 +2,8 @@
 import { useRef } from "react";
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useRoomStore } from "../../../../app/room-store";
-import { stepTouchSpring, useNotebookTouch } from "../use-notebook-touch";
+import { useRoomStore } from "../../../../app/home/room-store";
+import { stepTouchSpring, useNotebookTouch } from "../document/use-notebook-touch.ts";
 
 let time = 0, nextFrame = 0;
 const frames = new Map<number, FrameRequestCallback>();

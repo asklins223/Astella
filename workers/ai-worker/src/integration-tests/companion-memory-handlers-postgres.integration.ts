@@ -16,11 +16,11 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 import { getCompanionAgentTool } from "@astella/shared";
-import { runCompanionMemoryEmbeddingRebuild } from "../handlers/companion-memory-embedding.ts";
-import { executeDirectTool, executeReadTool } from "../handlers/companion-tool-execution.ts";
-import { CompanionToolError } from "../handlers/companion-tool-result.ts";
-import { retrieveActiveCompanionMemoryDirectory } from "../handlers/companion-memory-vector.ts";
-import { tickCompanionMemoryMaintenance } from "../handlers/companion-memory-maintenance.ts";
+import { runCompanionMemoryEmbeddingRebuild } from "../handlers/memory/companion-memory-embedding.ts";
+import { executeDirectTool, executeReadTool } from "../handlers/tools/companion-tool-execution.ts";
+import { CompanionToolError } from "../handlers/tools/companion-tool-result.ts";
+import { retrieveActiveCompanionMemoryDirectory } from "../handlers/memory/companion-memory-vector.ts";
+import { tickCompanionMemoryMaintenance } from "../handlers/memory/companion-memory-maintenance.ts";
 import { closeDatabase, withWorkerWorkspaceTransaction } from "../db.ts";
 
 const MIGRATOR_URL = process.env.DATABASE_URL_MIGRATOR ?? process.env.DATABASE_URL;

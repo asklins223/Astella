@@ -6,12 +6,12 @@ import {
   type Expression3File,
   type Model3File,
   type Motion3File,
-} from "../live2d-performance-catalog.ts";
+} from "../live2d/live2d-performance-catalog.ts";
 import {
   WINDOW_LIVE2D_MODEL_REGISTRY,
   isFaceLayerLive2DParameter,
   type WindowLive2DModelId,
-} from "../window-live2d-contract.ts";
+} from "../live2d/window-live2d-contract.ts";
 
 /**
  * 用仓库里的**真资产**核对"每个形态接入了多少动作和表情"。

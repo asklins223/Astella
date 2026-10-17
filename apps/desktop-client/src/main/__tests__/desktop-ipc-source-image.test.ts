@@ -10,7 +10,7 @@ import { describe, expect, it, vi } from "vitest";
  * （`desktop-ipc-artifact.test.ts` / `search-global-ipc.test.ts` 已按同法改过。）
  */
 const sourceStubs: Record<string, ReturnType<typeof vi.fn<(...args: never[]) => unknown>>> = {};
-vi.mock("../desktop-gateway-ns-source", () => ({
+vi.mock("../gateway/desktop-gateway-ns-source", () => ({
   getSourceImage: (...args: never[]) => sourceStubs.getSourceImage?.(...args),
   getCapabilities: (...args: never[]) => sourceStubs.getCapabilities?.(...args),
 }));
@@ -21,7 +21,7 @@ import {
   type RequestMetaV1,
 } from "@astella/shared/desktop-ipc-contracts";
 import { sourceImageGetResultV1Schema } from "@astella/shared/source-image-contracts";
-import type { DesktopGateway } from "../desktop-gateway";
+import type { DesktopGateway } from "../gateway/desktop-gateway";
 
 type InvokeHandler = (
   event: { readonly sender: unknown; readonly senderFrame?: { readonly url: string } },
@@ -43,11 +43,11 @@ vi.mock("electron", () => ({
   ipcMain: { handle: electronMock.handle, on: vi.fn() },
 }));
 
-import { registerM1DesktopIpc } from "../desktop-ipc";
+import { registerM1DesktopIpc } from "../ipc/desktop-ipc";
 import { registerAuthStub } from "./ns-auth-stubs";
-import * as ns_auth from "../desktop-gateway-ns-auth";
+import * as ns_auth from "../gateway/desktop-gateway-ns-auth";
 
-vi.mock("../desktop-gateway-ns-auth", async () => {
+vi.mock("../gateway/desktop-gateway-ns-auth", async () => {
   const { authModuleMock } = await import("./ns-auth-stubs");
   return authModuleMock();
 });

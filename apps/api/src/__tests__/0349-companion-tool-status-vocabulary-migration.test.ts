@@ -11,15 +11,15 @@ const journal = JSON.parse(readFileSync(
   "utf8",
 )) as { entries: Array<{ tag: string }> };
 const contracts = readFileSync(
-  new URL("../../../../packages/shared/src/contracts/companion-agent-contracts.ts", import.meta.url),
+  new URL("../../../../packages/shared/src/contracts/companion/companion-agent-contracts.ts", import.meta.url),
   "utf8",
 );
 const nodes = readFileSync(
-  new URL("../../../../apps/desktop-client/src/renderer/src/app/companion-agent-nodes.ts", import.meta.url),
+  new URL("../../../desktop-client/src/renderer/src/app/companion-session/companion-agent-nodes.ts", import.meta.url),
   "utf8",
 );
 const traceView = readFileSync(
-  new URL("../../../../apps/desktop-client/src/renderer/src/components/companion/CompanionRunTraceView.tsx", import.meta.url),
+  new URL("../../../../apps/desktop-client/src/renderer/src/components/companion/journal/CompanionRunTraceView.tsx", import.meta.url),
   "utf8",
 );
 

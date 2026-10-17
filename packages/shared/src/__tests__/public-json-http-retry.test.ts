@@ -13,8 +13,8 @@ import {
   isRetryUnsafeError,
   runWithEgressRetry,
   sleepWithSignal,
-} from "../public-json-http.ts";
-import { CircuitOpenError } from "../circuit-breaker.ts";
+} from "../platform/public-json-http.ts";
+import { CircuitOpenError } from "../platform/circuit-breaker.ts";
 
 test("可重试状态：只认限流与 5xx/网关错，其余 4xx 是请求本身的问题", () => {
   for (const status of [429, 500, 502, 503, 504]) {

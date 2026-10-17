@@ -2,7 +2,7 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, expect, it } from 'vitest';
-import { desktopDeploymentEnvironment } from '../desktop-deployment';
+import { desktopDeploymentEnvironment } from '../window/desktop-deployment';
 const directories: string[] = [];
 function fixture(data: unknown): string {
   const directory = mkdtempSync(join(tmpdir(), 'astella-deployment-'));

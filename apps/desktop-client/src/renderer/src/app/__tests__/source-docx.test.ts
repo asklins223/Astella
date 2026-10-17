@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { htmlToMarkdown } from "../source-docx";
+import { htmlToMarkdown } from "../source/source-docx";
 
 /**
  * 喂的是 mammoth 在真件 .docx 上产出的那一段 HTML（样式名→语义标签由 mammoth 负责，

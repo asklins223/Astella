@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { JobLeaseLostError } from "../../lib/job-lease.ts";
-import { runWorkerAiTask, runWorkerEmbeddingTask } from "../worker-ai-task.ts";
+import { runWorkerAiTask, runWorkerEmbeddingTask } from "../note/worker-ai-task.ts";
 
 function taskOptions() {
   return {

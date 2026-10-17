@@ -12,8 +12,8 @@ import type {
   StatsOverviewV1,
 } from "@astella/shared/stats-overview-contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SETTINGS_ATTENTION_AI_CONSENT } from "../../../app/companion-consent-gate.ts";
-import { useRoomStore } from "../../../app/room-store.ts";
+import { SETTINGS_ATTENTION_AI_CONSENT } from "../../../app/companion-pages/companion-consent-gate.ts";
+import { useRoomStore } from "../../../app/home/room-store.ts";
 import { StudySurface } from "../study/StudySurface.tsx";
 
 /**

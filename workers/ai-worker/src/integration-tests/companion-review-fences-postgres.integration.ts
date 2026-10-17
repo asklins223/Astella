@@ -7,12 +7,12 @@ import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 const admin = postgres(testDatabaseUrl("DATABASE_URL_MIGRATOR"), { max: 2 });
 process.env.DATABASE_URL = testDatabaseUrl("DATABASE_URL_WORKER");
 const { withWorkerWorkspaceTransaction: transaction, closeDatabase } = await import("../db.ts");
-const { readConversationSummaryChain, readParentSummary, upsertCommittedSummary } = await import("../handlers/companion-dialogue-store.ts");
-const { readCompanionReplayHistoryRows, companionRecentHistoryFromRows } = await import("../handlers/companion-dialogue-store.ts");
-const { selectCompanionInteractiveReplayWindow } = await import("../handlers/companion-context-handoff.ts");
-const { resolveCompanionSummarizerTailAnchor } = await import("../handlers/companion-summarizer.ts");
-const { commitCompanionMemoryEmbedding } = await import("../handlers/companion-memory-embedding.ts");
-const { retrieveCompanionMemoriesVector } = await import("../handlers/companion-memory-vector.ts");
+const { readConversationSummaryChain, readParentSummary, upsertCommittedSummary } = await import("../handlers/turn/companion-dialogue-store.ts");
+const { readCompanionReplayHistoryRows, companionRecentHistoryFromRows } = await import("../handlers/turn/companion-dialogue-store.ts");
+const { selectCompanionInteractiveReplayWindow } = await import("../handlers/context/companion-context-handoff.ts");
+const { resolveCompanionSummarizerTailAnchor } = await import("../handlers/context/companion-summarizer.ts");
+const { commitCompanionMemoryEmbedding } = await import("../handlers/memory/companion-memory-embedding.ts");
+const { retrieveCompanionMemoriesVector } = await import("../handlers/memory/companion-memory-vector.ts");
 after(async () => { await admin.end({ timeout: 2 }); await closeDatabase(); });
 
 async function fixture() {

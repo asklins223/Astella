@@ -6,7 +6,7 @@ import {
   markCompanionLaunchRegistered,
   resetCompanionLaunchRegistrationForTests,
   subscribeCompanionLaunchRegistration,
-} from "../companion-launch-gate.ts";
+} from "../companion-pages/companion-launch-gate.ts";
 
 /**
  * 展示闸门的存在理由（2026-10-16 真窗口实测）：
@@ -56,9 +56,9 @@ describe("主动气泡的展示闸门", () => {
    * 表现都是"上一次启动的问候又冒充这次的问候"。
    */
   it("登记、重读、展示三个端点都接在同一条闸门上", () => {
-    const awareness = readFileSync(new URL("../use-companion-awareness.ts", import.meta.url), "utf8");
-    const projection = readFileSync(new URL("../companion-home-projection.tsx", import.meta.url), "utf8");
-    const presence = readFileSync(new URL("../../components/companion/CompanionPresence.tsx", import.meta.url), "utf8");
+    const awareness = readFileSync(new URL("../companion-pages/use-companion-awareness.ts", import.meta.url), "utf8");
+    const projection = readFileSync(new URL("../companion-pages/companion-home-projection.tsx", import.meta.url), "utf8");
+    const presence = readFileSync(new URL("../../components/companion/bubble/CompanionPresence.tsx", import.meta.url), "utf8");
     // ① 这次启动的 app.started 拿到回执之后才登记。
     expect(awareness).toMatch(/topic: "app\.started"[\s\S]{0,240}markCompanionLaunchRegistered\(\)/);
     // ② 投影提供方在登记时重读一次，并给每份负载打上到手时刻。

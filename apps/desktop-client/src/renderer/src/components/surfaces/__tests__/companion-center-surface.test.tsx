@@ -22,10 +22,10 @@ import {
   CompanionChatProvider,
   useCompanionChat,
   type CompanionUiMode,
-} from "../../../app/companion-chat-session.tsx";
-import { useRoomStore } from "../../../app/room-store.ts";
+} from "../../../app/companion-session/companion-chat-session.tsx";
+import { useRoomStore } from "../../../app/home/room-store.ts";
 import { CompanionCenterSurface } from "../companion/companion-center-surface.tsx";
-import { RendererGatewayError } from "../../../app/desktop-client.ts";
+import { RendererGatewayError } from "../../../app/client/desktop-client.ts";
 import { accountPreferenceRejectionMessage } from "@astella/shared/companion-memory-scope";
 
 /**

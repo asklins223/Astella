@@ -41,7 +41,7 @@ vi.mock("gsap", async (importOriginal) => {
 });
 
 import { TaskSurface } from "../TaskSurface.tsx";
-import { useRoomStore } from "../../app/room-store.ts";
+import { useRoomStore } from "../../app/home/room-store.ts";
 
 const RUN_ID = "00000000-0000-4000-8000-000000000001";
 

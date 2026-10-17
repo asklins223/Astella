@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { AIProvider } from "../../lib/ai-provider.ts";
-import { generateCompanionFollowupPrompts } from "../companion-followup-suggestions.ts";
+import { generateCompanionFollowupPrompts } from "../proactive/companion-followup-suggestions.ts";
 
 function providerReturning(result: string | (() => Promise<string>)) {
   const calls: { messages: unknown; options: unknown }[] = [];

@@ -4,18 +4,18 @@ import { Readable } from "node:stream";
 import {
   resolveDashScopeTextEndpoint,
   resolveOpenAIChatCompletionsUrl,
-} from "../ai-endpoints.ts";
+} from "../platform/ai-endpoints.ts";
 import {
   isNonPublicAIEndpointAddress,
   onSseBodyProgress,
   postSseToPublicEndpoint,
   postJsonToPublicEndpoint,
-} from "../public-json-http.ts";
+} from "../platform/public-json-http.ts";
 import {
   imageInsightOutputSchema,
   learningCardOutputSchema,
-} from "../schemas.ts";
-import { parseContent } from "../markdown-parser.ts";
+} from "../platform/schemas.ts";
+import { parseContent } from "../note/markdown-parser.ts";
 
 describe("AI endpoint resolution", () => {
   it("adds terminal provider paths only once", () => {

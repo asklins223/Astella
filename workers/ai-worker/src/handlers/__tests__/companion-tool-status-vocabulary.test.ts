@@ -21,7 +21,7 @@
  *    而不只是词表里多两个词——这一条要有**正控制**，否则"声明了但没人用"同样是绿的。
  */
 import assert from "node:assert/strict";
-import * as toolOutcome from "../companion-tool-outcome.ts";
+import * as toolOutcome from "../tools/companion-tool-outcome.ts";
 import test from "node:test";
 
 import {
@@ -31,20 +31,20 @@ import {
   TOOL_UNAVAILABLE_SAFE_SUMMARY,
   VISION_EGRESS_UNAVAILABLE_SAFE_SUMMARY,
   type CompanionToolFailureStatus,
-} from "../companion-tool-outcome.ts";
+} from "../tools/companion-tool-outcome.ts";
 import {
   CompanionToolError,
   CompanionToolBlockedError,
   CompanionToolNotExecutedError,
   CompanionToolOutcomeUnknownError,
   CompanionToolUnavailableError,
-} from "../companion-tool-result.ts";
+} from "../tools/companion-tool-result.ts";
 import {
   companionAgentToolStatusSchema,
   companionToolReportedStatusSchema,
   resolveAllCompanionAgentTools,
 } from "@astella/shared";
-import { VISION_EGRESS_DENIED_MESSAGE } from "../companion-read-tools.ts";
+import { VISION_EGRESS_DENIED_MESSAGE } from "../tools/companion-read-tools.ts";
 
 test("每一档都由明确的条件产生，且两档新状态**不再落进 failed**", () => {
   const cases: ReadonlyArray<{

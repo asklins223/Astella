@@ -18,7 +18,7 @@ import test from "node:test";
 import {
   limitMemoryExtractionsToIndependentFacts,
   memoryAdmissionDecision,
-} from "../companion-memory-extractor.ts";
+} from "../memory/companion-memory-extractor.ts";
 
 const fact = (kind: string, sourceQuote: string, content = "内容") => ({ kind, sourceQuote, content });
 

@@ -2,7 +2,7 @@
 
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useRoomStore } from "../../app/room-store.ts";
+import { useRoomStore } from "../../app/home/room-store.ts";
 import { DirectoryRail, DIRECTORY_RAIL_MODE_KEY } from "../DirectoryRail.tsx";
 
 /** Directory motion: stable icon layout, one spring and immediate controls. */

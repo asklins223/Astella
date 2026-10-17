@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from "react";
-import { useRoomStore } from "../../../app/room-store";
+import { useRoomStore } from "../../../app/home/room-store";
 
 export type StudyTab = "today" | "rounds" | "spaces";
 type Position = { scope: number; tab: StudyTab; scroll: Record<StudyTab, number>; roundsShown: number };

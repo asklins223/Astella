@@ -8,7 +8,7 @@ const electron = vi.hoisted(() => ({
 }));
 vi.mock("electron", () => electron);
 
-import { createSessionCredentialStore } from "../session-credential-store";
+import { createSessionCredentialStore } from "../store/session-credential-store";
 
 const filename = "session-credential-local-v1.txt";
 

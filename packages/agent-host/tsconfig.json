@@ -6,7 +6,22 @@
     "paths": {
       "@astella/agent-core": ["../agent-core/src/index.ts"],
       "@astella/shared/agent-contracts": ["../shared/src/contracts/agent-contracts.ts"],
-      "@astella/shared/*": ["../shared/src/contracts/*.ts", "../shared/src/*.ts", "../shared/src/*/index.ts"],
+      "@astella/shared/*": [
+        "../shared/src/contracts/agent/*.ts",
+        "../shared/src/contracts/companion/*.ts",
+        "../shared/src/contracts/note/*.ts",
+        "../shared/src/contracts/learning/*.ts",
+        "../shared/src/contracts/desktop/*.ts",
+        "../shared/src/agent/*.ts",
+        "../shared/src/companion/*.ts",
+        "../shared/src/note/*.ts",
+        "../shared/src/review/*.ts",
+        "../shared/src/platform/*.ts",
+        "../shared/src/content/*.ts",
+        "../shared/src/contracts/*.ts",
+        "../shared/src/*.ts",
+        "../shared/src/*/index.ts"
+      ],
       "drizzle-orm": ["./node_modules/drizzle-orm/index.d.ts"],
       "drizzle-orm/*": ["./node_modules/drizzle-orm/*/index.d.ts", "./node_modules/drizzle-orm/*.d.ts"]
     }

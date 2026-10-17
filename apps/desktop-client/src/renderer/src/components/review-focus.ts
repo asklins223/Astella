@@ -1,6 +1,6 @@
 import type { ReviewQueueV2 } from "@astella/shared/review-queue-v2-contracts";
 import type { LearningRunReturnContractV2 } from "@astella/shared/learning-run-v2-contracts";
-import type { ReviewTargetRef } from "../app/room-store";
+import type { ReviewTargetRef } from "../app/home/room-store";
 
 type ReviewQueueItem = ReviewQueueV2["items"][number];
 

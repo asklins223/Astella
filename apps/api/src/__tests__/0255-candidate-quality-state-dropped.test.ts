@@ -40,8 +40,8 @@ describe(`Migration ${TAG} — 候选 dropped 终态`, () => {
    */
   it("每个会读 qualityState 的地方都认识这个新值", () => {
     const readSites = [
-      ["packages/shared/src/contracts/card-generation-v2-contracts.ts", /CandidateQualityStateValuesV2[\s\S]{0,400}"dropped",/],
-      ["packages/shared/src/contracts/card-generation-desktop-contracts.ts", /qualityState: z\.enum\(\[[^\]]*"dropped"/],
+      ["packages/shared/src/contracts/learning/card-generation-v2-contracts.ts", /CandidateQualityStateValuesV2[\s\S]{0,400}"dropped",/],
+      ["packages/shared/src/contracts/learning/card-generation-desktop-contracts.ts", /qualityState: z\.enum\(\[[^\]]*"dropped"/],
       // 2026-10-05：审核台重构后这一档的读点搬到了 review 的 model 里，
       // `CardGenerationSurface.tsx` 只剩摆位、不再读 qualityState。指针跟着走——
       // 判据仍然是"每个读 qualityState 的地方都得认识 dropped"，一个没少。
@@ -72,8 +72,8 @@ describe(`Migration ${TAG} — 候选 dropped 终态`, () => {
    */
   it("每个会读 qualityState 的地方都认识这个新值", () => {
     const readSites = [
-      ["packages/shared/src/contracts/card-generation-v2-contracts.ts", /CandidateQualityStateValuesV2[\s\S]{0,400}"dropped",/],
-      ["packages/shared/src/contracts/card-generation-desktop-contracts.ts", /qualityState: z\.enum\(\[[^\]]*"dropped"/],
+      ["packages/shared/src/contracts/learning/card-generation-v2-contracts.ts", /CandidateQualityStateValuesV2[\s\S]{0,400}"dropped",/],
+      ["packages/shared/src/contracts/learning/card-generation-desktop-contracts.ts", /qualityState: z\.enum\(\[[^\]]*"dropped"/],
       // 2026-10-05：审核台重构后这一档的读点搬到了 review 的 model 里，
       // `CardGenerationSurface.tsx` 只剩摆位、不再读 qualityState。指针跟着走——
       // 判据仍然是"每个读 qualityState 的地方都得认识 dropped"，一个没少。
@@ -103,8 +103,8 @@ describe(`Migration ${TAG} — 候选 dropped 终态`, () => {
    */
   it("每个会读 qualityState 的地方都认识这个新值", () => {
     const readSites = [
-      ["packages/shared/src/contracts/card-generation-v2-contracts.ts", /CandidateQualityStateValuesV2[\s\S]{0,400}"dropped",/],
-      ["packages/shared/src/contracts/card-generation-desktop-contracts.ts", /qualityState: z\.enum\(\[[^\]]*"dropped"/],
+      ["packages/shared/src/contracts/learning/card-generation-v2-contracts.ts", /CandidateQualityStateValuesV2[\s\S]{0,400}"dropped",/],
+      ["packages/shared/src/contracts/learning/card-generation-desktop-contracts.ts", /qualityState: z\.enum\(\[[^\]]*"dropped"/],
       // 2026-10-05：审核台重构后这一档的读点搬到了 review 的 model 里，
       // `CardGenerationSurface.tsx` 只剩摆位、不再读 qualityState。指针跟着走——
       // 判据仍然是"每个读 qualityState 的地方都得认识 dropped"，一个没少。

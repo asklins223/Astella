@@ -1,10 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Loader2, MessageCircle, Sparkles, Volume2, VolumeX } from "lucide-react";
-import { useRoomStore } from "../../../app/room-store";
+import { useRoomStore } from "../../../app/home/room-store";
 import { HUD_PAGES } from "../../hud/hud-pages";
-import { companionLayoutBounds } from "../companion-visible-bounds";
-import { placeCompanionNotification } from "../notification-placement";
-import { speakCompanionNotification, stopCompanionNotificationSpeech, pauseCompanionNotificationSpeech, resumeCompanionNotificationSpeech, type NotificationVoicePhase } from "../companion-notification-voice";
+import { companionLayoutBounds } from "../bubble/companion-visible-bounds";
+import { placeCompanionNotification } from "../notify/notification-placement";
+import { speakCompanionNotification, stopCompanionNotificationSpeech, pauseCompanionNotificationSpeech, resumeCompanionNotificationSpeech, type NotificationVoicePhase } from "../voice/companion-notification-voice";
 import type { GuideRect } from "./guide-layout";
 
 /** Uses the resident's audio graph, priority rules and mouth amplitude. */

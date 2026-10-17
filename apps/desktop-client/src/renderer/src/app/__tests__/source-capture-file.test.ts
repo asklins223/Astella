@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { MAX_CAPTURE_BYTES, MAX_DOCUMENT_BYTES, formatCaptureSize } from "../source-intake";
-import { readCaptureFile, readCaptureFiles } from "../source-batch-capture";
+import { MAX_CAPTURE_BYTES, MAX_DOCUMENT_BYTES, formatCaptureSize } from "../source/source-intake";
+import { readCaptureFile, readCaptureFiles } from "../source/source-batch-capture";
 
 /** 解析器换成假的：这一份用例只管**门**（能收什么、上限报什么数、失败的那一句怎么说）。 */
 const doubles = vi.hoisted(() => ({ pdf: vi.fn(), docx: vi.fn() }));
-vi.mock("../source-pdf", () => ({ extractPdfMarkdown: doubles.pdf }));
-vi.mock("../source-docx", () => ({ extractDocxMarkdown: doubles.docx }));
+vi.mock("../source/source-pdf", () => ({ extractPdfMarkdown: doubles.pdf }));
+vi.mock("../source/source-docx", () => ({ extractDocxMarkdown: doubles.docx }));
 
 const file = (name: string, body = "内容", size?: number) => {
   const created = new File([body], name);

@@ -2,10 +2,10 @@
 import { readFileSync } from "node:fs";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { WindowLive2D } from "../WindowLive2D";
+import { WindowLive2D } from "../live2d/WindowLive2D";
 
 let graphicsFailure: (() => void) | undefined;
-vi.mock("../WindowLive2DDriver", () => ({
+vi.mock("../live2d/WindowLive2DDriver", () => ({
   WindowLive2DDriver: class {
     constructor(private options: { onStatus: (status: string) => void; onGraphicsFailure?: () => void }) { graphicsFailure = options.onGraphicsFailure; }
     async init() { this.options.onStatus("ready"); }
@@ -18,7 +18,7 @@ vi.mock("../WindowLive2DDriver", () => ({
     pushEmotion() {}
   },
 }));
-vi.mock("../../../app/companion-voice-level", () => ({ subscribeHomeV2VoiceLevel: () => () => {} }));
+vi.mock("../../../app/companion-session/companion-voice-level", () => ({ subscribeHomeV2VoiceLevel: () => () => {} }));
 
 let styles: HTMLStyleElement;
 beforeEach(() => {

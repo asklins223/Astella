@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Live2DEmotionController } from "../live2d-emotion.ts";
+import { Live2DEmotionController } from "../live2d/live2d-emotion.ts";
 
 describe("Live2D emotion controller", () => {
   it("smooths a new emotion and keeps the emotion name during decay", () => {

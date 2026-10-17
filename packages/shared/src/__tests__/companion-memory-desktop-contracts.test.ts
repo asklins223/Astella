@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { companionMemoryStarMapV2Schema } from "../contracts/companion-memory-desktop-contracts.ts";
+import { companionMemoryStarMapV2Schema } from "../contracts/companion/companion-memory-desktop-contracts.ts";
 
 const MEMORY_ID = "11111111-1111-4111-8111-111111111111";
 const NOTE_ID = "22222222-2222-4222-8222-222222222222";

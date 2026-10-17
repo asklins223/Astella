@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { supplementAssessmentDispute } from "../desktop-gateway-ns-assessment";
-import type { GatewayTransport } from "../desktop-gateway-transport";
+import { supplementAssessmentDispute } from "../gateway/desktop-gateway-ns-assessment";
+import type { GatewayTransport } from "../gateway/desktop-gateway-transport";
 
 const assessmentId = "bffcad7b-ce6f-4159-8483-8eccc8a87dcd";
 const disputeId = "11111111-1111-4111-8111-111111111111";

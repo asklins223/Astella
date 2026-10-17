@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { isCompanionReplyBlockedByMicrophone, holdCompanionMicrophone, isCompanionNotificationSpeechActive, setCompanionNotificationVoiceHost, speakCompanionNotification, stopCompanionNotificationSpeech, pauseCompanionNotificationSpeech, resumeCompanionNotificationSpeech, type NotificationVoiceHost } from "../companion-notification-voice";
-import { beginCompanionSpeechLine, setCompanionVoiceHost } from "../../../app/companion-voice-playback";
+import { isCompanionReplyBlockedByMicrophone, holdCompanionMicrophone, isCompanionNotificationSpeechActive, setCompanionNotificationVoiceHost, speakCompanionNotification, stopCompanionNotificationSpeech, pauseCompanionNotificationSpeech, resumeCompanionNotificationSpeech, type NotificationVoiceHost } from "../voice/companion-notification-voice";
+import { beginCompanionSpeechLine, setCompanionVoiceHost } from "../../../app/companion-session/companion-voice-playback";
 
 const buffer = { duration: .1 } as AudioBuffer;
 let host: { -readonly [K in keyof NotificationVoiceHost]: NotificationVoiceHost[K] };

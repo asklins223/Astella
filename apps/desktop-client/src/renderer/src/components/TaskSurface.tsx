@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import gsap from "gsap";
-import { useRoomStore } from "../app/room-store";
+import { useRoomStore } from "../app/home/room-store";
 import { CardGenerationSurface } from "./CardGenerationSurface";
 import { GraphSurface } from "./surfaces/space/graph-surface.tsx";
 import { ReviewSurface } from "./surfaces/review/ReviewSurface.tsx";
@@ -13,8 +13,8 @@ import {
 } from "./surfaces/library/WorkspaceLibrarySurface.tsx";
 import { CompanionCenterSurface } from "./surfaces/companion/companion-center-surface.tsx";
 import { RenderErrorBoundary } from "./RenderErrorBoundary";
-import { NoteLibrarySurface } from "./surfaces/notebook/note-library-surface.tsx";
-import { NotebookSurface } from "./surfaces/notebook/notebook-surface.tsx";
+import { NoteLibrarySurface } from "./surfaces/notebook/library/note-library-surface.tsx";
+import { NotebookSurface } from "./surfaces/notebook/shell/notebook-surface.tsx";
 import { SearchSurface } from "./surfaces/study/search-surface.tsx";
 import { SettingsSurface } from "./surfaces/settings/settings-surface.tsx";
 import { SourceDetailSurface } from "./surfaces/source/source-detail-surface.tsx";

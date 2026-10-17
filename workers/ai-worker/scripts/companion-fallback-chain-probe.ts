@@ -20,8 +20,8 @@ import { resolveSystemPlatform } from "@astella/shared/platform-config-node";
 import type { AgentTurnRequest, AgentTurnResult } from "@astella/shared";
 import { createProvider } from "../src/lib/ai-provider.ts";
 import { resolveAIGovernanceContext, resolveProviderForTask } from "../src/lib/governance.ts";
-import { repairDegenerateCompanionAnswer } from "../src/handlers/companion-answer-repair.ts";
-import { looksTruncatedReply } from "../src/handlers/companion-dialogue-content.ts";
+import { repairDegenerateCompanionAnswer } from "../src/handlers/agent/companion-answer-repair.ts";
+import { looksTruncatedReply } from "../src/handlers/turn/companion-dialogue-content.ts";
 import type { AIProvider } from "../src/lib/ai-provider.ts";
 
 const [workspaceId, userId] = process.argv.slice(2);

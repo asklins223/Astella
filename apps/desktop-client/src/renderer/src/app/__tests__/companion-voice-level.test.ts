@@ -3,7 +3,7 @@ import {
   resetHomeV2VoiceLevel,
   setHomeV2VoiceLevel,
   subscribeHomeV2VoiceLevel,
-} from "../companion-voice-level.ts";
+} from "../companion-session/companion-voice-level.ts";
 
 afterEach(resetHomeV2VoiceLevel);
 

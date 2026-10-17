@@ -11,7 +11,7 @@ const journal = JSON.parse(readFileSync(
   "utf8",
 )) as { entries: Array<{ tag: string }> };
 const org = readFileSync(
-  new URL("../../../../workers/ai-worker/src/handlers/companion-memory-organization.ts", import.meta.url),
+  new URL("../../../../workers/ai-worker/src/handlers/memory/companion-memory-organization.ts", import.meta.url),
   "utf8",
 );
 

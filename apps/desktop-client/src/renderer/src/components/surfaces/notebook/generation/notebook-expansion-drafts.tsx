@@ -1,0 +1,197 @@
+import { useEffect, useLayoutEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { ArrowLeft, ArrowRight, BookOpen, Check, Code2, Eye, PencilLine } from "lucide-react";
+import * as Y from "yjs";
+import type { NoteExpansionDraftV1, NoteExpansionTaskV1 } from "@astella/shared/note-expansion-contracts";
+import { Schema } from "@milkdown/kit/prose/model";
+import { prosemirrorJSONToYXmlFragment, yXmlFragmentToProsemirrorJSON } from "y-prosemirror";
+import { noteBlocksToPmNodes, noteDocSchemaSpec, pmNodesToNoteBlocks } from "@astella/shared/note-doc-schema";
+import { NoteDocumentEditor } from "../document/note-document-editor.tsx";
+import { NOTE_BODY_MODES } from "../document/note-document-mode.ts";
+import type { NoteMarkdownEditorHandle } from "../document/note-markdown-editor.tsx";
+import { ReadingBlock } from "../reading/notebook-reading-block.tsx";
+import { useNotebookBodyMode } from "../document/use-notebook-body-mode.ts";
+import { useNotebookPageTurn, useNotebookPaperMotion } from "../shell/use-notebook-paper-motion.ts";
+
+const icons = { preview: Eye, "live-preview": PencilLine, source: Code2 };
+
+type Props = {
+  readonly task: NoteExpansionTaskV1;
+  readonly saving: boolean;
+  readonly locateTeachingReference?: (ordinal: number) => void;
+  readonly setExpansionTask: Dispatch<SetStateAction<NoteExpansionTaskV1 | null>>;
+  readonly persistNoteExpansionReview: (drafts: NoteExpansionDraftV1[]) => Promise<void>;
+};
+
+/** Covers choose what to read; only the opened draft occupies the reading page. */
+export function NoteExpansionDrafts(props: Props) {
+  const [opened, setOpened] = useState<string | null>(null);
+  const [visited, setVisited] = useState<readonly string[]>([]);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const booksRef = useRef<HTMLDivElement | null>(null);
+  const savedRef = useRef<HTMLParagraphElement | null>(null);
+  const confirmed = useRef(props.task.confirmedCandidateIds?.length ?? 0);
+  const play = useNotebookPaperMotion();
+  const positions = useRef(new Map<string, number>());
+  const lastOpenedRef = useRef<string | null>(null);
+  useNotebookPageTurn(booksRef, opened === null ? "covers" : "opened", play);
+  useLayoutEffect(() => {
+    const saved = props.task.confirmedCandidateIds?.length ?? 0;
+    if (saved > confirmed.current) play(savedRef.current, "stamp");
+    confirmed.current = saved;
+  }, [props.task.confirmedCandidateIds?.length, play]);
+  const latest = useRef(props);
+  latest.current = props;
+  const locked = props.saving || props.task.status !== "ready";
+  const index = props.task.drafts.findIndex((draft) => draft.candidateId === opened);
+  const open = (id: string | null) => {
+    const scroller = rootRef.current?.closest<HTMLDivElement>(".notebook-desk__scroll");
+    if (scroller) positions.current.set(opened ?? "covers", scroller.scrollTop);
+    if (opened) void props.persistNoteExpansionReview(latest.current.task.drafts);
+    if (id) lastOpenedRef.current = id;
+    if (id && !visited.includes(id)) setVisited([...visited, id]);
+    setOpened(id);
+  };
+  useLayoutEffect(() => {
+    // A late task receipt can mount this page while the reader is elsewhere.
+    // Hidden pages keep their state but do not own the shared reading position.
+    const root = rootRef.current;
+    if (!root || root.closest("[hidden], [inert]")) return;
+    const scroller = root.closest<HTMLDivElement>(".notebook-desk__scroll");
+    const saved = positions.current.get(opened ?? "covers");
+    if (scroller) scroller.scrollTop = saved ?? 0;
+    if (opened) {
+      if (saved && saved > 0) {
+        scroller?.focus({ preventScroll: true });
+        return;
+      }
+      const title = [...root.querySelectorAll<HTMLElement>(".note-expansion-draft__title")]
+        .find((node) => !node.closest("[hidden], [inert]"));
+      title?.focus({ preventScroll: true });
+      if (title && scroller) {
+        const viewport = scroller.getBoundingClientRect();
+        const bounds = title.getBoundingClientRect();
+        // Large text can put the selected title below the intro and controls.
+        // Show it immediately; previously visited drafts keep their own position.
+        if (bounds.top < viewport.top || bounds.bottom > viewport.bottom) {
+          scroller.scrollTop += bounds.top - viewport.top - 12;
+        }
+      }
+    } else if (lastOpenedRef.current) {
+      const cover = [...root.querySelectorAll<HTMLElement>("[data-candidate-id]")]
+        .find((node) => node.dataset.candidateId === lastOpenedRef.current);
+      cover?.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: true });
+    }
+  }, [opened]);
+  const update = (id: string, changes: Partial<Pick<NoteExpansionDraftV1, "title" | "blocks" | "selected">>, persist = false) => {
+    if (locked || props.task.confirmedCandidateIds?.includes(id)) return;
+    const drafts = latest.current.task.drafts.map((draft) => draft.candidateId === id ? { ...draft, ...changes } : draft);
+    props.setExpansionTask((current) => current ? { ...current, drafts } : current);
+    // Blur can follow a keystroke before React renders the new task.
+    latest.current = { ...latest.current, task: { ...latest.current.task, drafts } };
+    if (persist) void props.persistNoteExpansionReview(drafts);
+  };
+  useEffect(() => {
+    setOpened(null);
+    setVisited([]);
+    positions.current.clear();
+    lastOpenedRef.current = null;
+  }, [props.task.taskId]);
+
+  return <div className="note-expansion-drafts" ref={rootRef}>
+    {props.task.confirmedCandidateIds?.length ? <p className="note-expansion-drafts__saved" role="status" ref={savedRef}><Check size={16} aria-hidden="true" />已收下 {props.task.confirmedCandidateIds.length} 篇 · {props.task.status === "confirmed" ? "可在往外学页再次打开" : "其余草稿还可以继续读、修改和收下"}</p> : null}
+    <div className="note-expansion-drafts__books" hidden={opened !== null} ref={booksRef}>
+      {props.task.drafts.map((draft, position) => {
+        const saved = props.task.confirmedCandidateIds?.includes(draft.candidateId) ?? false;
+        return <article className="note-expansion-draft" key={draft.candidateId} data-candidate-id={draft.candidateId} data-cover={position % 3} data-selected={draft.selected}>
+          <span className="note-expansion-draft__state">{saved ? "已收下" : visited.includes(draft.candidateId) ? "已读草稿" : "未读草稿"}</span>
+          <h2 title={draft.title}>{draft.title}</h2><p className="note-expansion-draft__relationship">{draft.relationship}</p>
+          <button type="button" className="text-action" onClick={() => open(draft.candidateId)}><BookOpen size={16} aria-hidden="true" />翻开看看</button>
+          <DraftSelection draft={draft} saved={saved} locked={locked} onChange={selected => update(draft.candidateId, { selected }, true)} />
+        </article>;
+      })}
+    </div>
+    {opened ? <nav className="note-expansion-drafts__navigation" aria-label="拓展草稿导航">
+      <button type="button" className="text-action" onClick={() => open(null)}><ArrowLeft size={15} aria-hidden="true" />所有草稿</button>
+      <div><button type="button" className="text-action" aria-label="上一篇草稿" disabled={index <= 0} onClick={() => open(props.task.drafts[index - 1]!.candidateId)}><ArrowLeft size={17} aria-hidden="true" /></button>
+        <span>{index + 1} / {props.task.drafts.length}</span>
+        <button type="button" className="text-action" aria-label="下一篇草稿" disabled={index >= props.task.drafts.length - 1} onClick={() => open(props.task.drafts[index + 1]!.candidateId)}><ArrowRight size={17} aria-hidden="true" /></button></div>
+    </nav> : null}
+    {props.task.drafts.filter((draft) => visited.includes(draft.candidateId)).map((draft) => <div key={draft.candidateId} hidden={opened !== draft.candidateId}>
+      <ExpansionDraftPage draft={draft} active={opened === draft.candidateId} saved={props.task.confirmedCandidateIds?.includes(draft.candidateId) ?? false} index={props.task.drafts.indexOf(draft)} locked={locked || Boolean(props.task.confirmedCandidateIds?.includes(draft.candidateId))} canEdit={props.task.status === "ready" && !props.task.confirmedCandidateIds?.includes(draft.candidateId)}
+        onUpdate={(changes) => update(draft.candidateId, changes)}
+        onPersist={() => { if (!locked) void props.persistNoteExpansionReview(latest.current.task.drafts); }}
+        onLocate={props.locateTeachingReference} />
+    </div>)}
+  </div>;
+}
+
+function DraftSelection(props: { draft: NoteExpansionDraftV1; locked: boolean; saved?: boolean; onChange: (selected: boolean) => void }) {
+  return <label className="note-expansion-draft__select" data-selected={props.draft.selected}>
+    {props.saved ? <><Check size={16} aria-hidden="true" />已收下</> : <>
+      <input type="checkbox" checked={props.draft.selected} disabled={props.locked} aria-label={`选择收下 ${props.draft.title}`} onChange={event => props.onChange(event.currentTarget.checked)} />
+      <span className="note-expansion-draft__stamp" aria-hidden="true"><Check size={17} /></span>
+      <span>{props.draft.selected ? "已选 · 再点取消" : "选择收下"}</span>
+    </>}
+  </label>;
+}
+
+/** Every visited candidate keeps its own document and mode until this task is replaced. */
+function ExpansionDraftPage(props: {
+  readonly draft: NoteExpansionDraftV1;
+  readonly active: boolean;
+  readonly saved: boolean;
+  readonly index: number;
+  readonly locked: boolean;
+  readonly canEdit: boolean;
+  readonly onUpdate: (changes: Partial<Pick<NoteExpansionDraftV1, "title" | "blocks" | "selected">>) => void;
+  readonly onPersist: () => void;
+  readonly onLocate?: (block: number) => void;
+}) {
+  const [document] = useState(() => {
+    const doc = new Y.Doc();
+    // Seed structured blocks directly. Joining their text loses headings, lists and code.
+    prosemirrorJSONToYXmlFragment(new Schema(noteDocSchemaSpec as never),
+      { type: "doc", content: noteBlocksToPmNodes(props.draft.blocks) }, doc.getXmlFragment("draft"));
+    return doc;
+  });
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const editorRef = useRef<NoteMarkdownEditorHandle | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const { mode, changeMode, pendingMode } = useNotebookBodyMode({ noteId: props.draft.candidateId, initialMode: "preview", canEdit: props.canEdit, editorRef, scrollRef, readingRoot: rootRef, onChange: () => undefined });
+  const play = useNotebookPaperMotion();
+  const shown = useRef(false);
+  useLayoutEffect(() => {
+    if (props.active && !shown.current) {
+      play(rootRef.current, "page");
+    }
+    shown.current = props.active;
+  }, [props.active, play]);
+  useLayoutEffect(() => { scrollRef.current = rootRef.current?.closest<HTMLDivElement>(".notebook-desk__scroll") ?? null; }, []);
+  useEffect(() => () => document.destroy(), [document]);
+  return <div className="note-expansion-draft__page" ref={rootRef} onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) props.onPersist(); }}>
+    <div className="note-expansion-draft__modes" role="group" aria-label="草稿正文视图">
+      {NOTE_BODY_MODES.map(({ id, label }) => { const Icon = icons[id]; return <button key={id} type="button" className="text-action" aria-pressed={mode === id} disabled={props.locked && id !== "preview"}
+        onMouseDown={(event) => event.preventDefault()} onClick={() => changeMode(id)}><Icon size={15} aria-hidden="true" />{label}</button>; })}
+      <DraftSelection draft={props.draft} saved={props.saved} locked={props.locked} onChange={selected => { props.onUpdate({ selected }); props.onPersist(); }} />
+    </div>
+    {mode === "preview" ? <h2 className="note-expansion-draft__title" tabIndex={-1}>{props.draft.title}</h2> : <textarea className="note-expansion-draft__title" aria-label={`拓展草稿 ${props.index + 1} 标题`} rows={1} maxLength={200} value={props.draft.title} disabled={props.locked} onChange={(event) => props.onUpdate({ title: event.currentTarget.value.replace(/\r?\n/g, " ") })} />}
+    <p className="note-expansion-draft__relationship">{props.draft.relationship}</p>
+    <details className="note-expansion-draft__sources"><summary>这篇草稿从哪里接出来</summary>{props.draft.sourceReferences.map((reference) => props.onLocate
+      ? <button key={`${reference.blockOrdinal}:${reference.quote}`} type="button" className="text-action" onClick={() => props.onLocate?.(reference.blockOrdinal)}><q>{reference.quote}</q>回原文</button>
+      : <blockquote key={`${reference.blockOrdinal}:${reference.quote}`}>{reference.quote}<small>原版本第 {reference.blockOrdinal} 段</small></blockquote>)}</details>
+    {pendingMode ? <p role="status">输入法确认后会切换草稿视图。</p> : null}
+    <div className="note-transcript" hidden={mode !== "preview"}>{props.draft.blocks.map((block, ordinal) => <ReadingBlock key={ordinal} block={{ ...block, ordinal }} mark={null} />)}</div>
+    <div className="note-draft" hidden={mode === "preview"}>
+      <NoteDocumentEditor fragment={document.getXmlFragment("draft")} initialMarkdown="" mode={mode} ref={editorRef} disabled={props.locked}
+        onChange={() => {
+          if (mode === "preview" || props.locked) return;
+          const json = yXmlFragmentToProsemirrorJSON(document.getXmlFragment("draft")) as { content?: Parameters<typeof pmNodesToNoteBlocks>[0] };
+          const blocks = pmNodesToNoteBlocks(json.content ?? []).map((block): NoteExpansionDraftV1["blocks"][number] => ({
+            type: block.type === "heading" || block.type === "code" || block.type === "list" || block.type === "quote" ? block.type : "paragraph",
+            content: block.content,
+          }));
+          props.onUpdate({ blocks });
+        }} />
+    </div>
+  </div>;
+}

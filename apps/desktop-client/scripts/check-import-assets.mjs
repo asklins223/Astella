@@ -45,7 +45,7 @@ const shot = async name => {
   await writeFile(resolve(output, `${name}.png`), Buffer.from(png, 'base64'))
 }
 const room = fn => page.evaluate(async source => {
-  const { useRoomStore } = await import('/src/app/room-store.ts')
+  const { useRoomStore } = await import('/app/home/room-store.ts')
   return (new Function('room', source))(useRoomStore)
 }, fn)
 /**
@@ -60,7 +60,7 @@ const dropFile = async path => {
   await page.setInputFiles('input.source-file-input', path)
 }
 const titles = () => page.evaluate(async () => {
-  const { createRequestMeta, unwrapGatewayResult } = await import('/src/app/desktop-client.ts')
+  const { createRequestMeta, unwrapGatewayResult } = await import('/app/client/desktop-client.ts')
   const list = unwrapGatewayResult(await window.astella.source.list({ meta: createRequestMeta(), limit: 50 }))
   return list.items.map(item => ({ id: item.id, title: item.title, status: item.status }))
 }
@@ -80,7 +80,7 @@ await page.waitForFunction(() => document.querySelector('.capture-strip'), { tim
 
 const createdSources = [], createdNotes = [], stamp = Date.now()
 const ipc = (method, args = {}) => page.evaluate(async ({ method, args }) => {
-  const { createRequestMeta, unwrapGatewayResult } = await import('/src/app/desktop-client.ts')
+  const { createRequestMeta, unwrapGatewayResult } = await import('/app/client/desktop-client.ts')
   const [namespace, member] = method.split('.')
   return unwrapGatewayResult(await window.astella[namespace][member]({ meta: createRequestMeta(), ...args }))
 }, { method, args })
@@ -113,7 +113,7 @@ try {
   check(wordText.includes('/api/uploads/') && !wordText.includes('data:image'), 'Word 图片以站内地址进入来源', wordText)
   const wordKeys = [...wordText.matchAll(/\/api\/uploads\/([^\s)"<>|]+)/g)].map(match => match[1])
   check(wordKeys.length === 2 && new Set(wordKeys).size === 1, 'Word 段落和表格图片保留，重复图只上传一次')
-  await page.evaluate(async id => { const { useRoomStore } = await import('/src/app/room-store.ts'); useRoomStore.getState().setActiveSourceId(id); useRoomStore.getState().invoke('open-source') }, word.source.id)
+  await page.evaluate(async id => { const { useRoomStore } = await import('/app/home/room-store.ts'); useRoomStore.getState().setActiveSourceId(id); useRoomStore.getState().invoke('open-source') }, word.source.id)
   await page.waitForFunction(() => document.querySelectorAll('.source-table img').length > 0 && [...document.querySelectorAll('.source-table img')].every(img => img.complete && img.naturalWidth > 0), { timeout: 30_000 })
   check(await page.locator('.source-table img').count() > 0, 'Word 表格内图片在真实来源页显示'); await shot('word-source')
   const pdfTitle = `导入回归-PDF-${stamp}`, pdfPath = resolve(profile, `${pdfTitle}.pdf`)
@@ -175,7 +175,7 @@ try {
   check(importedText.includes('/api/uploads/') && !/!\[[^\]]*\]\(\.\.\/assets\//.test(importedText), '点击收下完成 Markdown 文件夹图片上传')
   check(importedText.includes('width="240"') && !importedText.includes('src="../'), 'HTML 图片转换保留尺寸')
   check(!importedText.includes('[图]:'), '图片引用转换后清除已无用途的路径定义')
-  await page.evaluate(async id => { const { useRoomStore } = await import('/src/app/room-store.ts'); useRoomStore.getState().setActiveSourceId(id); useRoomStore.getState().invoke('open-source') }, bundled.source.id)
+  await page.evaluate(async id => { const { useRoomStore } = await import('/app/home/room-store.ts'); useRoomStore.getState().setActiveSourceId(id); useRoomStore.getState().invoke('open-source') }, bundled.source.id)
   await page.locator('.source-reading-paper').evaluate(async el => { el.scrollTop = el.scrollHeight })
   await page.waitForFunction(() => [...document.querySelectorAll('.source-reader img')].some(img => img.alt === '带尺寸' && img.complete && img.naturalWidth > 0))
   const sourceImage = await page.getByAltText('带尺寸', { exact: true }).boundingBox()
@@ -187,7 +187,7 @@ try {
   check(zi.uploaded === 1 && zi.issues.length === 0, 'ZIP 包通过同一导入链路')
   const note = await ipc('source.createNote', { sourceId: bundled.source.id }); const noteId = note.noteId ?? note.note?.id
   if (!noteId) throw new Error(`Missing note id ${JSON.stringify(note)}`); createdNotes.push(noteId)
-  await page.evaluate(async noteId => { const { useRoomStore } = await import('/src/app/room-store.ts'); useRoomStore.getState().setActiveNoteRef({ noteId, noteVersionId: null, mode: "preview" }); useRoomStore.getState().invoke('open-notebook') }, noteId)
+  await page.evaluate(async noteId => { const { useRoomStore } = await import('/app/home/room-store.ts'); useRoomStore.getState().setActiveNoteRef({ noteId, noteVersionId: null, mode: "preview" }); useRoomStore.getState().invoke('open-notebook') }, noteId)
   await page.waitForFunction(() => [...document.querySelectorAll('.note-html-image img, .note-image-node img')].some(img => img.complete && img.naturalWidth > 0), { timeout: 30_000 }); await shot('markdown-note')
   const naturalImage = page.locator('.note-transcript img[alt="内联"]'), sizedImage = page.locator('.note-transcript img[alt="带尺寸"]')
   const natural = await naturalImage.boundingBox()

@@ -4,7 +4,7 @@ import {
   allocateMarkdownFileName,
   exportNotesAsMarkdown,
   markdownFileStem,
-} from "../note-markdown-export";
+} from "../note-doc/note-markdown-export";
 
 const NOTE = (id: string, title: string) => ({
   id,

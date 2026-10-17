@@ -4,12 +4,12 @@ import { platform, observedProvider, save, type WireReceipt } from "./acceptance
 import { fixture, readContext, closeFixtureDatabase } from "./runtime-fixture.ts";
 import { withWorkspaceTransaction, closeDatabase as closeApiDatabase } from "../../../../apps/api/src/db/client.ts";
 import { createNote } from "../../../../apps/api/src/modules/note/service.ts";
-import { buildCompanionPersonaMessages } from "../handlers/companion-dialogue-content.ts";
-import { runCompanionAgentLoop } from "../handlers/companion-agent-runtime.ts";
+import { buildCompanionPersonaMessages } from "../handlers/turn/companion-dialogue-content.ts";
+import { runCompanionAgentLoop } from "../handlers/agent/companion-agent-runtime.ts";
 import { createGovernedProvider } from "../lib/governance.ts";
-import { createCompanionContextReceipts } from "../handlers/companion-context-receipts.ts";
-import { reserveCompanionProviderCall } from "../handlers/companion-agent-events.ts";
-import { createCompanionStreamDelivery } from "../handlers/companion-dialogue-stream.ts";
+import { createCompanionContextReceipts } from "../handlers/context/companion-context-receipts.ts";
+import { reserveCompanionProviderCall } from "../handlers/agent/companion-agent-events.ts";
+import { createCompanionStreamDelivery } from "../handlers/turn/companion-dialogue-stream.ts";
 
 // Full real model/tool loop with synthetic knowledge and a scoped disposable
 // account. HTTP queue/UI evidence is recorded separately.

@@ -10,7 +10,7 @@ import {
   type NoteDocCacheEntryV1,
   type NoteDocCacheKey,
   type NoteDocDraftV1,
-} from "../note-doc-cache-store.ts";
+} from "../note-doc/note-doc-cache-store.ts";
 
 const SUBJECT = randomUUID();
 const WORKSPACE = randomUUID();

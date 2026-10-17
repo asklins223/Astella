@@ -16,9 +16,9 @@ import {
   answerModePreferenceV1Schema,
   answerModeToResponsePreference,
   answerModeToResponsePreferenceTable,
-} from "../contracts/companion-shell-contracts.ts";
-import { learningObjectivePrimaryActionV3Schema } from "../contracts/learning-objective-surface-contracts.ts";
-import { createLearningRunRequestSchema } from "../contracts/learning-run-contracts.ts";
+} from "../contracts/companion/companion-shell-contracts.ts";
+import { learningObjectivePrimaryActionV3Schema } from "../contracts/learning/learning-objective-surface-contracts.ts";
+import { createLearningRunRequestSchema } from "../contracts/learning/learning-run-contracts.ts";
 
 const OBJ = "11111111-1111-4111-8111-111111111111";
 const CARD = "22222222-2222-4222-8222-222222222222";

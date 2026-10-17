@@ -5,7 +5,7 @@ import postgres from "postgres";
 import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 import { MockProvider } from "../lib/providers/mock.ts";
 import { closeDatabase } from "../db.ts";
-import { runCompanionDailySummary } from "../handlers/companion-daily-summary.ts";
+import { runCompanionDailySummary } from "../handlers/journal/companion-daily-summary.ts";
 import { DailyDiaryOutputError } from "../lib/non-retryable-errors.ts";
 
 process.env.AI_PLATFORMS_CONFIG = "/nonexistent/diary-writing-model-fixture.json";

@@ -2,8 +2,8 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { AgentRunV1 } from "@astella/shared/agent-contracts";
-import { CompanionGoalControls } from "../CompanionGoalControls";
-import type { AgentGoalsController } from "../use-agent-goals";
+import { CompanionGoalControls } from "../goals/CompanionGoalControls";
+import type { AgentGoalsController } from "../goals/use-agent-goals";
 
 const resource = vi.hoisted(() => ({ latest: {ref:{memoryId:"memory",revision:2},content:"当前目标"} }));
 vi.mock("../../surfaces/companion/use-companion-resource", () => ({ useCompanionResource: () => ({

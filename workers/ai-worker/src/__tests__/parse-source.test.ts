@@ -13,7 +13,7 @@ import {
   fetchUrlContent,
   type PinnedAddress,
   type FetchUrlDependencies,
-} from "../handlers/parse-source.ts";
+} from "../handlers/note/parse-source.ts";
 
 // ─── canAdvanceSourceParse ───────────────────────────────────────────────
 

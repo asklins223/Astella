@@ -23,7 +23,7 @@ import {
   type AssessmentCorrectionKindV2,
   type AssessmentDisputeKindV2,
   type AssessmentDisputeRecheckOutcomeV2,
-} from "../assessment-dispute-rules-v2.ts";
+} from "../review/assessment-dispute-rules-v2.ts";
 
 const REPO_ROOT = resolve(import.meta.dirname, "..", "..", "..", "..");
 /**

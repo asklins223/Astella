@@ -16,8 +16,8 @@ import {
   learningObjectiveTopologyEventV2Schema,
   findPrivatePayloadLeaks,
   objectiveSurfaceFreshnessV1,
-} from "../contracts/learning-objective-surface-contracts.ts";
-import { publicLearningCardV2Schema } from "../contracts/learning-card-v2-contracts.ts";
+} from "../contracts/learning/learning-objective-surface-contracts.ts";
+import { publicLearningCardV2Schema } from "../contracts/learning/learning-card-v2-contracts.ts";
 
 const OBJ = "11111111-1111-4111-8111-111111111111";
 const CARD = "22222222-2222-4222-8222-222222222222";

@@ -14,8 +14,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
-const moduleSource = readFileSync(join(import.meta.dirname, "../companion-step-compaction.ts"), "utf8");
-const runtimeSource = readFileSync(join(import.meta.dirname, "../companion-agent-runtime.ts"), "utf8");
+const moduleSource = readFileSync(join(import.meta.dirname, "../context/companion-step-compaction.ts"), "utf8");
+const runtimeSource = readFileSync(join(import.meta.dirname, "../agent/companion-agent-runtime.ts"), "utf8");
 
 test("发出口只通过访问器读写运行时持有的 messages 与折叠标记", () => {
   assert.match(moduleSource, /if \(folded\) deps\.setMessages\(\[\.\.\.folded\.messages\]\);/);

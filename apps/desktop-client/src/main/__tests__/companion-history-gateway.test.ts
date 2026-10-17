@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
-import { listCompanionHistory } from "../desktop-gateway-ns-companion";
-import type { GatewayTransport } from "../desktop-gateway-transport";
+import { listCompanionHistory } from "../gateway/desktop-gateway-ns-companion";
+import type { GatewayTransport } from "../gateway/desktop-gateway-transport";
 
 it("preserves the scoped initiative run filter through the main-process gateway", async () => {
   const request = vi.fn(async (..._args: unknown[]) => ({ status: 200,

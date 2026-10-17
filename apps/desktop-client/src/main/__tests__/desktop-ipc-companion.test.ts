@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 // 2026-09-30：伴星这一族已变成**自由函数**（`desktop-gateway-ns-companion.ts`），
 // `desktop-ipc.ts` 静态引用那个模块——**在网关实例上挂的桩不再被调用**。
-vi.mock("../desktop-gateway-ns-companion", async (importOriginal) => {
+vi.mock("../gateway/desktop-gateway-ns-companion", async (importOriginal) => {
   // **部分 mock**（见 `ns-companion-stubs.ts` 头）：这个模块有 52 个导出，
   // 枚举式工厂只认清单里写出来的那几个——**其余在运行时抛**
   // `No "xxx" export is defined on the mock`，再被 `mapFailure` 吞成
@@ -12,7 +12,7 @@ vi.mock("../desktop-gateway-ns-companion", async (importOriginal) => {
   // ⚠️ 这里用**共享 registry**，不用本文件的局部对象——本文件静态 import 了
   // `../desktop-ipc`，mock 工厂会在任何顶层 `const` 初始化**之前**跑。
   // ⚠️ 工厂里不能引用顶层 `import`（vi.mock 被提升）；`importOriginal()` 不能并发。
-  const real = await importOriginal<typeof import("../desktop-gateway-ns-companion")>();
+  const real = await importOriginal<typeof import("../gateway/desktop-gateway-ns-companion")>();
   const { companionModuleMock } = await import("./ns-companion-stubs");
   return companionModuleMock(real);
 });
@@ -33,7 +33,7 @@ import {
   companionAccountStateV1Schema,
   companionOverviewSchema,
 } from "@astella/shared/companion-shell-contracts";
-import type { DesktopGateway } from "../desktop-gateway";
+import type { DesktopGateway } from "../gateway/desktop-gateway";
 
 type InvokeHandler = (
   event: { readonly sender: unknown; readonly senderFrame?: { readonly url: string } },
@@ -57,11 +57,11 @@ vi.mock("electron", () => ({
   shell: { openExternal: electronMock.openExternal },
 }));
 
-import { registerM1DesktopIpc } from "../desktop-ipc";
+import { registerM1DesktopIpc } from "../ipc/desktop-ipc";
 import { registerAuthStub } from "./ns-auth-stubs";
-import * as ns_auth from "../desktop-gateway-ns-auth";
+import * as ns_auth from "../gateway/desktop-gateway-ns-auth";
 
-vi.mock("../desktop-gateway-ns-auth", async () => {
+vi.mock("../gateway/desktop-gateway-ns-auth", async () => {
   const { authModuleMock } = await import("./ns-auth-stubs");
   return authModuleMock();
 });

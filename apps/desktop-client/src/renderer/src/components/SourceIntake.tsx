@@ -3,10 +3,10 @@ import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 import { ArrowRight, Check, CircleAlert, FileText, Link2, X } from "lucide-react";
 import { extractCandidateLinks } from "@astella/shared/desktop-ipc-contracts";
-import { useRoomStore } from "../app/room-store";
-import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../app/desktop-client";
+import { useRoomStore } from "../app/home/room-store";
+import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../app/client/desktop-client";
 import { resolveSceneMotionMode } from "../scene/scene-motion";
-import { formatRelative } from "./surfaces/notebook/surface-data.tsx";
+import { formatRelative } from "./surfaces/notebook/shell/surface-data.tsx";
 import { useSourceMotion } from "./surfaces/source/use-source-motion";
 import {
   dispatchSourceCaptured,
@@ -14,7 +14,7 @@ import {
   isOwnedDropTarget,
   markLinkSeen,
   readSeenLinks,
-} from "../app/source-intake";
+} from "../app/source/source-intake";
 import {
   MAX_BATCH_CAPTURE_FILES,
   beginCaptureRun,
@@ -24,7 +24,7 @@ import {
   readCaptureFiles,
   type BatchCaptureOutcome,
   type CaptureTask,
-} from "../app/source-batch-capture";
+} from "../app/source/source-batch-capture";
 
 gsap.registerPlugin(useGSAP);
 

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { sendCompanionTurn } from "../desktop-gateway-ns-companion";
+import { sendCompanionTurn } from "../gateway/desktop-gateway-ns-companion";
 
 const CONVERSATION_ID = "22222222-2222-4222-8222-222222222222";
 const TURN_RESULT = {

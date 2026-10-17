@@ -13,14 +13,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { UpdateStateV1 } from "@astella/shared/desktop-ipc-contracts";
 
 const openSettings = vi.fn();
-vi.mock("../open-voice-model-settings", () => ({ openVoiceModelSettings: vi.fn() }));
-vi.mock("../../../app/room-store", () => ({
+vi.mock("../voice/open-voice-model-settings", () => ({ openVoiceModelSettings: vi.fn() }));
+vi.mock("../../../app/home/room-store", () => ({
   useRoomStore: { getState: () => ({ setSettingsSection: vi.fn(), setSettingsAttention: vi.fn(), invoke: openSettings }) },
 }));
-vi.mock("../../../app/update-status", () => ({ useUpdateStatus: { getState: () => ({ install: vi.fn() }) } }));
+vi.mock("../../../app/gate/update-status", () => ({ useUpdateStatus: { getState: () => ({ install: vi.fn() }) } }));
 
-import { useCompanionNotifications } from "../companion-notifications";
-import { notifyUpdateAvailable, notifyUpdateDownloading, notifyUpdateFailed, notifyUpdateReady, notifyUpdateInstalled } from "../update-notifications";
+import { useCompanionNotifications } from "../notify/companion-notifications";
+import { notifyUpdateAvailable, notifyUpdateDownloading, notifyUpdateFailed, notifyUpdateReady, notifyUpdateInstalled } from "../notify/update-notifications";
 
 function state(patch: Partial<UpdateStateV1>): UpdateStateV1 {
   return {

@@ -10,8 +10,8 @@ import { closeDatabase, withWorkerWorkspaceTransaction } from "../db.ts";
 import { closeDatabase as closeApiDatabase, withWorkspaceTransaction } from "../../../../apps/api/src/db/client.ts";
 import { createNote } from "../../../../apps/api/src/modules/note/service.ts";
 import { listNoteAnnotations, changeNoteAnnotation } from "../../../../apps/api/src/modules/note-annotations/service.ts";
-import { executeCompanionWriteAnnotation } from "../handlers/companion-annotation-authoring.ts";
-import type { AgentEventContext } from "../handlers/companion-read-tools.ts";
+import { executeCompanionWriteAnnotation } from "../handlers/note/companion-annotation-authoring.ts";
+import type { AgentEventContext } from "../handlers/tools/companion-read-tools.ts";
 
 const url = testDatabaseUrl("DATABASE_URL_MIGRATOR");
 if (!new URL(url).pathname.startsWith("/astella_initiative_")) throw new Error("Use an isolated astella_initiative_* database");
@@ -123,7 +123,7 @@ test("完整写入就是终态，附带的无效发言不再产生额外模型�
   process.env.COMPANION_DIALOGUE_V1_ENABLED = "true";
   delete process.env.AI_PLATFORMS_PATH;
   const { MockProvider } = await import("../lib/providers/mock.ts");
-  const { runCompanionDialogue } = await import("../handlers/companion-dialogue.ts");
+  const { runCompanionDialogue } = await import("../handlers/turn/companion-dialogue.ts");
   const original = MockProvider.prototype.executeAgentTurn;
   const stream = Object.getOwnPropertyDescriptor(MockProvider.prototype, "chatCompletionStream")!;
   let calls = 0;

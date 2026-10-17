@@ -1,7 +1,7 @@
 import type { CompanionMemoryItemV1,CompanionMemoryKindV1 } from "@astella/shared/companion-memory-desktop-contracts";
 import { ArrowLeft,ExternalLink } from "lucide-react";
 import { useMemo,useRef,useState } from "react";
-import { useRoomStore } from "../../../app/room-store";
+import { useRoomStore } from "../../../app/home/room-store";
 import { usePageReadableView } from "../../hud/use-page-readable-view";
 import { UnderstandingUniverse,type UnderstandingUniverseHandle } from "../space/understanding-universe";
 import { MEMORY_KIND_OPTIONS,MEMORY_STATE_LABEL } from "./companion-center-model";

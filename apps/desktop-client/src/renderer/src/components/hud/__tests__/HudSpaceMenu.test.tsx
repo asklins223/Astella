@@ -12,9 +12,9 @@ import { HudSpaceMenu, SPACE_SEARCH_MINIMUM } from "../HudSpaceMenu.tsx";
 import {
   SPACE_MENU_REFRESH_EVENT,
 } from "../space-menu-events.ts";
-import { subscribeGateInvalidation } from "../../../app/gate-invalidation.ts";
-import { useRoomStore } from "../../../app/room-store.ts";
-import { markSpaceUsed, readSpaceRecents } from "../../../app/space-recents.ts";
+import { subscribeGateInvalidation } from "../../../app/gate/gate-invalidation.ts";
+import { useRoomStore } from "../../../app/home/room-store.ts";
+import { markSpaceUsed, readSpaceRecents } from "../../../app/home/space-recents.ts";
 
 /** 组件通过监听器广播门禁失效，测试订阅一份来断言"创建即进入"真的重验了。 */
 const gateInvalidations: string[] = [];

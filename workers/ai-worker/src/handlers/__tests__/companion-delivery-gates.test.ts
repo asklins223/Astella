@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { COMPANION_STREAM_TRANSPORT_FAILURE, companionSteerCause, companionStreamFallbackText, judgeCompanionDeliveryGate, type CompanionDeliveryGate } from "../companion-delivery-gates.ts";
+import { COMPANION_STREAM_TRANSPORT_FAILURE, companionSteerCause, companionStreamFallbackText, judgeCompanionDeliveryGate, type CompanionDeliveryGate } from "../agent/companion-delivery-gates.ts";
 
 const GATES: CompanionDeliveryGate[] = ["output_truncated", "unverified_quote", "action_not_executed",
   "stream_validation", "stream_reconcile"];
@@ -50,8 +50,8 @@ test("绕过销毁时错误码与留痕都按闸各自说清，不共用一个",
  * 所以直接读那两个真正交付的文件，钉住它们各自问过这道闸。
  */
 test("产出闸的降级判定真的接在交付路径上，不是只住在模块里", () => {
-  const runtime = readFileSync(new URL("../companion-agent-runtime.ts", import.meta.url), "utf8");
-  const dialogue = readFileSync(new URL("../companion-dialogue.ts", import.meta.url), "utf8");
+  const runtime = readFileSync(new URL("../agent/companion-agent-runtime.ts", import.meta.url), "utf8");
+  const dialogue = readFileSync(new URL("../turn/companion-dialogue.ts", import.meta.url), "utf8");
   for (const gate of ["output_truncated", "unverified_quote", "action_not_executed"] as const) {
     assert.match(runtime, new RegExp(`gate: "${gate}"`), `${gate} 不再问闸了：它又会一次判错作废整轮`);
   }

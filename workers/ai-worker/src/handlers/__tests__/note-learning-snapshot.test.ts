@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { noteLearningSnapshotHash } from "../note-learning-snapshot.ts";
+import { noteLearningSnapshotHash } from "../note/note-learning-snapshot.ts";
 
 const snapshot = {
   taskVersion: 1, noteVersionId: "note-version", heading: "小节", selectedText: "框选的原句",

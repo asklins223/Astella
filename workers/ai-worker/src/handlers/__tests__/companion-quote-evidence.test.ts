@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { companionQuoteSourceTexts } from "../companion-quote-evidence.ts";
-import { unverifiedQuoteClaims } from "../companion-dialogue-content.ts";
-import { shouldCorrectCompanionQuote, reviewCompanionStepCorrection } from "../companion-step-plan.ts";
-import { compactionSourceMessages } from "../companion-compaction-checkpoint.ts";
+import { companionQuoteSourceTexts } from "../context/companion-quote-evidence.ts";
+import { unverifiedQuoteClaims } from "../turn/companion-dialogue-content.ts";
+import { shouldCorrectCompanionQuote, reviewCompanionStepCorrection } from "../turn/companion-step-plan.ts";
+import { compactionSourceMessages } from "../context/companion-compaction-checkpoint.ts";
 import { sha256Utf8V1 } from "@astella/shared/content-hash";
-import { unavailableCompanionToolSummary } from "../companion-tool-outcome.ts";
+import { unavailableCompanionToolSummary } from "../tools/companion-tool-outcome.ts";
 
 test("quotes match actual JSON-decoded tool text and a following citation badge", () => {
   const original = '第一行是实际返回的原文。\n第二行包含 "exact source" 的解释。';

@@ -107,9 +107,25 @@ const snake = (value: string) => value.replace(/Id$/, "").replace(/[A-Z]/g, (c) 
  */
 const HANDLERS_DIR = new URL("../handlers/", import.meta.url).pathname;
 const HOST_DIR = resolve(import.meta.dirname, "../../../../packages/agent-host/src");
-const runtimeSource = [HANDLERS_DIR, resolve(HANDLERS_DIR, "../agent"), HOST_DIR].flatMap(dir => readdirSync(dir)
+
+/** handlers 按职责分了子目录：扫描范围跟着源码结构走，仍然是整个目录的并集。 */
+function handlerSources(dir: string): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = resolve(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name !== "__tests__") out.push(...handlerSources(full));
+      continue;
+    }
+    if (entry.name.endsWith(".ts") && !entry.name.endsWith(".test.ts")) out.push(full);
+  }
+  return out;
+}
+
+const runtimeSource = [handlerSources(HANDLERS_DIR), readdirSync(HOST_DIR)
   .filter(n => n.endsWith(".ts") && !n.endsWith(".test.ts"))
-  .map(n => resolve(dir, n)))
+  .map(n => resolve(HOST_DIR, n))]
+  .flat()
   .map(path => readFileSync(path, "utf8"))
   .join("\n");
 

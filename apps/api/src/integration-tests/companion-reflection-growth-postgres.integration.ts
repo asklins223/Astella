@@ -18,11 +18,11 @@ import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 import { MockProvider } from "../../../../workers/ai-worker/src/lib/providers/mock.ts";
 import { loadCompanionRunDoctorV1 } from "../modules/companion-conversation/run-doctor.ts";
 import { runCompanionReflectionJob, companionReflectionDedupeKey }
-  from "../../../../workers/ai-worker/src/handlers/companion-reflection.ts";
+  from "../../../../workers/ai-worker/src/handlers/journal/companion-reflection.ts";
 import { applyAssistantPersonaEdit }
-  from "../../../../workers/ai-worker/src/handlers/companion-persona-self-edit.ts";
+  from "../../../../workers/ai-worker/src/handlers/memory/companion-persona-self-edit.ts";
 import { retrievePlaybookViews }
-  from "../../../../workers/ai-worker/src/handlers/companion-playbooks.ts";
+  from "../../../../workers/ai-worker/src/handlers/memory/companion-playbooks.ts";
 import { createHash } from "node:crypto";
 import { upsertAgentMethodCandidate, adoptPendingPersonaForNewTurn, pendingPersonaProposalSources,
   createAgentMethodStore, readAgentMethod, writeCompanionSelfNote, listCompanionSelfNotes, controlCompanionSelfNote,

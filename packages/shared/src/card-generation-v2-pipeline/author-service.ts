@@ -31,11 +31,11 @@ import type {
   CardStrategyV2,
   CardHintPairV2,
   TeachingTransformationV2,
-} from "../contracts/card-generation-v2-contracts.ts";
+} from "../contracts/learning/card-generation-v2-contracts.ts";
 import {
   computeRubricHashV2,
-} from "../card-generation-v2-hashing.ts";
-import { hashCanonicalV2 } from "../hash-canonical-v2.ts";
+} from "../review/card-generation-v2-hashing.ts";
+import { hashCanonicalV2 } from "../content/hash-canonical-v2.ts";
 import { deriveConceptLabel } from "./concept-label.ts";
 import { taskIntentsForStrategy } from "./planner-service.ts";
 

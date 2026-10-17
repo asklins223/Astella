@@ -3,7 +3,7 @@ import {
   createAssetResponsePlan,
   mimeTypeForPath,
   parseSingleByteRange
-} from '../asset-response'
+} from '../artifact/asset-response'
 
 describe('single byte range parsing', () => {
   it('parses bounded, open-ended, and suffix byte ranges', () => {

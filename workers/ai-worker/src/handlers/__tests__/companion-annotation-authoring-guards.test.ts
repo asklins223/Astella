@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { executeCompanionWriteAnnotation } from "../companion-annotation-authoring.ts";
-import { CompanionToolNotExecutedError } from "../companion-tool-result.ts";
-import type { AgentEventContext } from "../companion-read-tools.ts";
+import { executeCompanionWriteAnnotation } from "../note/companion-annotation-authoring.ts";
+import { CompanionToolNotExecutedError } from "../tools/companion-tool-result.ts";
+import type { AgentEventContext } from "../tools/companion-read-tools.ts";
 
 /**
  * 批注写入的两条前置闸：没有可写入的原句就不写，主动参与那一轮更不写。

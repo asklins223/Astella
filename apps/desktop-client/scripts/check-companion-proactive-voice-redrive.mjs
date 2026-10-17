@@ -104,7 +104,7 @@ try {
     await page.waitForTimeout(250)
   }
   await page.evaluate(async () => {
-    try { const { useRoomStore } = await import('/src/app/room-store.ts'); useRoomStore.getState().finishOnboarding?.(); useRoomStore.setState({ masterMuted: false }) } catch { /* 发行包没有 /src，默认即未静音 */ }
+    try { const { useRoomStore } = await import('/app/home/room-store.ts'); useRoomStore.getState().finishOnboarding?.(); useRoomStore.setState({ masterMuted: false }) } catch { /* 发行包没有 /src，默认即未静音 */ }
   })
   // 起播桩：`AudioBufferSourceNode.prototype.start` 是真实声音的唯一出口。
   await page.evaluate(() => {

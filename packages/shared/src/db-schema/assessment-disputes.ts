@@ -40,7 +40,7 @@ import type {
   AssessmentDisputeStatusV2,
   AssessmentDisputeRecheckOutcomeV2,
   AssessmentCorrectionKindV2,
-} from "../assessment-dispute-rules-v2.ts";
+} from "../review/assessment-dispute-rules-v2.ts";
 
 // ─── assessment_disputes_v2（争议本体，一个判定至多一份）───────────────────
 

@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SessionContextV1, WorkspaceSummaryV1 } from "@astella/shared/desktop-ipc-contracts";
-import { createRequestMeta, gatewayErrorMessage, isJoinCommittedWithoutSession, joinFailureTone, unwrapGatewayResult } from "../../app/desktop-client";
-import { useRoomStore } from "../../app/room-store";
-import { markSpaceUsed, readSpaceRecents } from "../../app/space-recents";
-import { readAuthenticatedSession } from "../../app/surface-session";
-import { publishGateInvalidation } from "../../app/gate-invalidation";
+import { createRequestMeta, gatewayErrorMessage, isJoinCommittedWithoutSession, joinFailureTone, unwrapGatewayResult } from "../../app/client/desktop-client";
+import { useRoomStore } from "../../app/home/room-store";
+import { markSpaceUsed, readSpaceRecents } from "../../app/home/space-recents";
+import { readAuthenticatedSession } from "../../app/home/surface-session";
+import { publishGateInvalidation } from "../../app/gate/gate-invalidation";
 import { SPACE_MENU_REFRESH_EVENT } from "./space-menu-events";
 
 type SpaceState = {

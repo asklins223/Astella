@@ -6,7 +6,7 @@ import type {
   UnderstandingEdgeProjectionV3,
   UnderstandingNodeProjectionV3,
 } from "@astella/shared/note-deepening-contracts";
-import { useRoomStore } from "../../../app/room-store.ts";
+import { useRoomStore } from "../../../app/home/room-store.ts";
 import { GraphSurface } from "../space/graph-surface.tsx";
 import { clearGraphJourneys } from "../space/graph-journey";
 import { HudReturn } from "../../hud/HudPage";

@@ -2,12 +2,12 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VoiceTeachbackEditor } from "../run-voice-input";
-import { isCompanionMicrophoneActive } from "../../../companion/companion-notification-voice";
+import { isCompanionMicrophoneActive } from "../../../companion/voice/companion-notification-voice";
 
 const mock = vi.hoisted(() => ({ ready: vi.fn(), probe: vi.fn(), start: vi.fn(), stop: vi.fn(), transcribe: vi.fn(), guide: vi.fn() }));
-vi.mock("../../../companion/voice-recorder", () => ({ CompanionVoiceRecorder: class { start = mock.start; stop = mock.stop; } }));
-vi.mock("../../../companion/local-speech-recognition", () => ({ isLocalAsrReady: mock.ready, transcribeRecording: mock.transcribe, isAsrModelMissing: () => false }));
-vi.mock("../../../companion/voice-model-notifications", () => ({ guideVoiceModelDownload: mock.guide }));
+vi.mock("../../../companion/voice/voice-recorder", () => ({ CompanionVoiceRecorder: class { start = mock.start; stop = mock.stop; } }));
+vi.mock("../../../companion/voice/local-speech-recognition", () => ({ isLocalAsrReady: mock.ready, transcribeRecording: mock.transcribe, isAsrModelMissing: () => false }));
+vi.mock("../../../companion/voice/voice-model-notifications", () => ({ guideVoiceModelDownload: mock.guide }));
 vi.mock("../../../voice-capability", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../../voice-capability")>()),
   probeMicrophone: mock.probe,

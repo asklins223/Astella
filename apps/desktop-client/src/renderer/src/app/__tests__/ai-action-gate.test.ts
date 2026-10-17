@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 import { beforeEach, expect, it, vi } from "vitest";
-import { useRoomStore } from "../room-store";
-import { ensureAiActionAllowed, guideAiPermissionFailure } from "../ai-action-gate";
-import { notifyCompanion } from "../../components/companion/companion-notifications";
+import { useRoomStore } from "../home/room-store";
+import { ensureAiActionAllowed, guideAiPermissionFailure } from "../gate/ai-action-gate";
+import { notifyCompanion } from "../../components/companion/notify/companion-notifications";
 
-vi.mock("../../components/companion/companion-notifications", () => ({ notifyCompanion: vi.fn() }));
+vi.mock("../../components/companion/notify/companion-notifications", () => ({ notifyCompanion: vi.fn() }));
 const read = vi.fn(), invoke = vi.fn();
 const allowed = { requiresConsent: true, consentVersion: "signed", dataPolicy: { sendToExternal: true } };
 beforeEach(() => {

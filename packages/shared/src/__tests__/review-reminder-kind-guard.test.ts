@@ -16,7 +16,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { ReviewReminderKindValues } from "../db-schema/evidence.ts";
-import { reviewReminderKindV2Schema } from "../contracts/review-reminder-contracts.ts";
+import { reviewReminderKindV2Schema } from "../contracts/learning/review-reminder-contracts.ts";
 
 const REPO_ROOT = join(import.meta.dirname, "..", "..", "..", "..");
 const SCHEMA_FILE = join(REPO_ROOT, "packages/shared/src/db-schema/evidence.ts");

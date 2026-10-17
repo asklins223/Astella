@@ -17,7 +17,7 @@ import {
   markLinkSeen,
   readSeenLinks,
   titleFromFileName,
-} from "../source-intake.ts";
+} from "../source/source-intake.ts";
 
 function memoryStorage(): Storage {
   const data = new Map<string, string>();

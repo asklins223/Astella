@@ -66,7 +66,7 @@ export class ReviewSubscriptionNoteNotFoundV2 extends Error {
 
 /**
  * 2026-09-29（P1-16）：这一份曾经在这里**重新定义**了一遍和
- * `packages/shared/src/contracts/review-queue-v2-contracts.ts:189` 同名同形状的 schema，
+ * `packages/shared/src/contracts/learning/review-queue-v2-contracts.ts:189` 同名同形状的 schema，
  * 连 `source` 枚举都是把 `reviewAuthorizationSourceV2Schema` 的值内联重抄了一次。
  *
  * 后果不是"重复"而是**契约分叉**：api 用这份校验请求体，desktop-client 用 shared

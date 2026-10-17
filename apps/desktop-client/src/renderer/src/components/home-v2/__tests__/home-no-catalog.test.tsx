@@ -12,14 +12,14 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../../../app/home-projection", () => ({
+vi.mock("../../../app/home/home-projection", () => ({
   useHomeProjection: () => ({ projection: null, loading: false, failure: null, reload: () => {} }),
   useHomeProjectionInvalidation: () => ({ workspaceEpoch: 1 }),
 }));
 
 import { HomeV2Provider } from "../HomeV2Experience";
 import { HomeV2ObjectLayer } from "../HomeV2ObjectLayer";
-import { useRoomStore } from "../../../app/room-store";
+import { useRoomStore } from "../../../app/home/room-store";
 
 beforeEach(() => {
   useRoomStore.setState({ surface: null, onboardingOpen: false, viewPreset: "room" });

@@ -14,7 +14,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { decideTodayBatchOptionV2 } from "../today-batch-options-v2.ts";
+import { decideTodayBatchOptionV2 } from "../review/today-batch-options-v2.ts";
 
 const base = { lockedLength: 5, remaining: 2, paused: false };
 

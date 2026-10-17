@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { resolveAllCompanionAgentTools } from "../companion-agent-registry.ts";
-import { companionAgentSettingsV1Schema } from "../contracts/companion-agent-contracts.ts";
-import { companionAccountPatchSchema } from "../contracts/companion-shell-contracts.ts";
-import { companionContentBlockV1Schema } from "../contracts/companion-conversation-contracts.ts";
+import { resolveAllCompanionAgentTools } from "../agent/companion-agent-registry.ts";
+import { companionAgentSettingsV1Schema } from "../contracts/companion/companion-agent-contracts.ts";
+import { companionAccountPatchSchema } from "../contracts/companion/companion-shell-contracts.ts";
+import { companionContentBlockV1Schema } from "../contracts/companion/companion-conversation-contracts.ts";
 
 test("web search defaults off in old accounts and requires explicit exposure", () => {
   assert.notEqual(companionAgentSettingsV1Schema.parse({ version: 1, permissionLevel: "guided" }).webSearchEnabled, true);

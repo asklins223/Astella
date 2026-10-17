@@ -41,13 +41,13 @@ const migration = read("apps/api/src/db/migrations/0400_companion_persona_reflec
 test("① handler 注册进 job 映射表 —— 没注册就等于这条链不存在", () => {
   assert.match(indexSource, /companion_reflection:\s*runCompanionReflectionJob/,
     "worker 的 HANDLERS 必须认识 companion_reflection；否则 job 投了也没人跑");
-  assert.match(indexSource, /from "\.\/handlers\/companion-reflection\.ts"/);
+  assert.match(indexSource, /from "\.\/handlers\/journal\/companion-reflection\.ts"/);
 });
 
 test("② 调度 tick 被 index.ts 导入并在 claim 之前调用", () => {
   assert.match(indexSource, /tickCompanionReflectionScheduler/,
     "0400 那个 SECURITY DEFINER 函数没人叫醒就永不入队");
-  assert.match(indexSource, /from "\.\/handlers\/companion-reflection-scheduler\.ts"/);
+  assert.match(indexSource, /from "\.\/handlers\/schedulers\/companion-reflection-scheduler\.ts"/);
   const tickCall = indexSource.indexOf("await tickCompanionReflectionScheduler()");
   const claimCall = indexSource.indexOf("await claimJobs(");
   assert.ok(tickCall >= 0 && claimCall >= 0 && tickCall < claimCall,
@@ -63,7 +63,7 @@ test("③ job 类型在 worker 自入队白名单里 —— 不在就插不进�
 test("④ 超时与资源车道都登记过（后台任务不能挤占前台交互）", () => {
   const timeouts = read("workers/ai-worker/src/lib/handler-timeout-config.ts");
   assert.match(timeouts, /companion_reflection:\s*DEFAULT_AI_TASK_TIMEOUT_MS/);
-  const scheduler = read("workers/ai-worker/src/handlers/companion-reflection-scheduler.ts");
+  const scheduler = read("workers/ai-worker/src/handlers/schedulers/companion-reflection-scheduler.ts");
   assert.match(scheduler, /astella_enqueue_companion_reflection\(\)/);
 });
 
@@ -82,7 +82,7 @@ test("⑤ 入队门槛的数字与 TS 判据一致（两处各写一遍必漂）
 });
 
 test("⑥ 幂等键与 worker 侧的 dedupe key 同一个形状（两边各算一次就要对上）", () => {
-  const handler = read("workers/ai-worker/src/handlers/companion-reflection.ts");
+  const handler = read("workers/ai-worker/src/handlers/journal/companion-reflection.ts");
   assert.match(handler, /companion-reflection:\$\{conversationId\}:\$\{toSeq\}/,
     "worker 的 dedupe key 形状与迁移里的 idempotency_key 不一致时，同一段会留下两条反思");
   assert.match(migration, /'companion-reflection:' \|\| v_row\.conversation_id::text \|\| ':' \|\| v_row\.to_seq::text/);
@@ -91,7 +91,7 @@ test("⑥ 幂等键与 worker 侧的 dedupe key 同一个形状（两边各算�
 test("⑦ 策略版本进幂等判据：换策略能重新回顾同一段，不冒充「已经看过」", () => {
   assert.match(migration, /strategy_version text NOT NULL/);
   assert.equal(COMPANION_REFLECTION_STRATEGY_VERSION, "reflection-v1");
-  const content = read("workers/ai-worker/src/handlers/companion-reflection-content.ts");
+  const content = read("workers/ai-worker/src/handlers/journal/companion-reflection-content.ts");
   assert.match(content, /COMPANION_REFLECTION_PROMPT_VERSION/);
   assert.match(content, /strategyVersion/);
 });
@@ -116,7 +116,7 @@ test("⑧ 自主方法进入读取目录，认识状态与来源独立于采用"
   assert.match(hostMethods, /WHEN p\.method_state='candidate' AND p\.epistemic_status <> 'disputed' THEN 'candidate'/,
     "候选那条按生命周期读，且排除依据已被纠正的");
 
-  const playbooks = read("workers/ai-worker/src/handlers/companion-playbooks.ts");
+  const playbooks = read("workers/ai-worker/src/handlers/memory/companion-playbooks.ts");
   assert.match(playbooks, /retrievePlaybookViews/);
   assert.match(playbooks, /renderPlaybookCandidates/);
   assert.match(playbooks, /PLAYBOOK_CANDIDATE_LIMIT/,
@@ -124,12 +124,12 @@ test("⑧ 自主方法进入读取目录，认识状态与来源独立于采用"
   assert.match(playbooks, /candidateLimit: PLAYBOOK_CANDIDATE_LIMIT/,
     "两个上限分别作用在各自的桶上，不能互相挤占");
 
-  const orchestrator = read("workers/ai-worker/src/handlers/companion-context-orchestrator.ts");
+  const orchestrator = read("workers/ai-worker/src/handlers/context/companion-context-orchestrator.ts");
   assert.match(orchestrator, /await retrievePlaybookViews\(tx, scope\)/);
-  const dialogue = read("workers/ai-worker/src/handlers/companion-dialogue.ts");
+  const dialogue = read("workers/ai-worker/src/handlers/turn/companion-dialogue.ts");
   assert.match(dialogue, /methodCandidates: read\.groundedTutorContext \? "" : renderPlaybookCandidates/,
     "正式作答那一档不带候选：讲解只按材料与题面来");
-  const content = read("workers/ai-worker/src/handlers/companion-dialogue-content.ts");
+  const content = read("workers/ai-worker/src/handlers/turn/companion-dialogue-content.ts");
   assert.match(content, /add\("method_candidates", input\.methodCandidates/,
     "候选要作为自己的一个来源进 44 的来源计划，否则预算回执里看不见它");
 });

@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { test } from "node:test";
-import { buildCompanionPersonaMessages, buildFinalCuePayload, sanitizeCompanionVisibleText } from "../companion-dialogue-content.ts";
-import { companionVisibleText, createCompanionStreamDelivery } from "../companion-dialogue-stream.ts";
-import { companionVoiceExpressionBoundaries, companionVoiceSegmentExpression, projectCompanionVoiceExpression } from "../companion-voice-expression.ts";
+import { buildCompanionPersonaMessages, buildFinalCuePayload, sanitizeCompanionVisibleText } from "../turn/companion-dialogue-content.ts";
+import { companionVisibleText, createCompanionStreamDelivery } from "../turn/companion-dialogue-stream.ts";
+import { companionVoiceExpressionBoundaries, companionVoiceSegmentExpression, projectCompanionVoiceExpression } from "../turn/companion-voice-expression.ts";
 import { splitCommittedDisplaySegments } from "../../lib/tts-segments.ts";
-import type { ReadContext } from "../companion-dialogue-store.ts";
-import { resolveCompanionPersonaContext } from "../companion-identity-context.ts";
+import type { ReadContext } from "../turn/companion-dialogue-store.ts";
+import { resolveCompanionPersonaContext } from "../memory/companion-identity-context.ts";
 
 const speak = (raw: string, enabled = true) => {
   const expression = projectCompanionVoiceExpression(raw);

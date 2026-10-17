@@ -19,11 +19,11 @@ import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import test from "node:test";
 
-import { companionSuggestionPauseSchema } from "../contracts/companion-shell-contracts.ts";
+import { companionSuggestionPauseSchema } from "../contracts/companion/companion-shell-contracts.ts";
 
 const REPO = resolve(import.meta.dirname, "..", "..", "..", "..");
 const executor = readFileSync(
-  join(REPO, "workers", "ai-worker", "src", "handlers", "companion-tool-execution.ts"), "utf8",
+  join(REPO, "workers", "ai-worker", "src", "handlers", "tools", "companion-tool-execution.ts"), "utf8",
 );
 
 const PAUSE_PREFIX = "user_asked:";

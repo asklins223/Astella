@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { companionTurnThinking } from "../companion-turn-thinking.ts";
+import { companionTurnThinking } from "../turn/companion-turn-thinking.ts";
 
 /**
  * 判据来自本轮的注意力解释（`intent` + `toolUse`），2026-10-06 用户决定：

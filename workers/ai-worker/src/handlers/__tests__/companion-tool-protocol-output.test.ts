@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { projectCompanionVisible } from "../companion-dialogue-stream.ts";
-import { validateCompanionOutput } from "../companion-dialogue-content.ts";
-import { containsCompanionToolProtocol, withholdPartialCompanionToolProtocol } from "../companion-tool-protocol-output.ts";
+import { projectCompanionVisible } from "../turn/companion-dialogue-stream.ts";
+import { validateCompanionOutput } from "../turn/companion-dialogue-content.ts";
+import { containsCompanionToolProtocol, withholdPartialCompanionToolProtocol } from "../tools/companion-tool-protocol-output.ts";
 
 test("an incomplete control prefix is withheld while complete Markdown examples remain readable", () => {
   assert.equal(withholdPartialCompanionToolProtocol("解释。<tool_ca"), "解释。");

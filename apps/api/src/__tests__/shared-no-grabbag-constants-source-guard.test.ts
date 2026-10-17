@@ -75,7 +75,7 @@ test("shared 里不再有『只放常量大杂烩』的短文件", () => {
 });
 
 test("活下来的那个常量确实住在名字对得上的地方", () => {
-  const limits = readFileSync(join(SHARED_SRC, "job-queue-limits.ts"), "utf8");
+  const limits = readFileSync(join(SHARED_SRC, "platform", "job-queue-limits.ts"), "utf8");
   assert.ok(
     /MAX_PENDING_JOBS_PER_WORKSPACE\s*=\s*\d+/.test(limits),
     "job-queue-limits.ts 里应当有那个跨模块的作业上限",
@@ -113,7 +113,7 @@ test("【自证】判据会红：造一个 constants.ts 出来必须被抓", () 
     !GENERIC_RE.test("job-queue-limits.ts"),
     "自证样本没造好：具体命名的文件不该被算进违规",
   );
-  assert.ok(existsSync(join(SHARED_SRC, "job-queue-limits.ts")),
+  assert.ok(existsSync(join(SHARED_SRC, "platform", "job-queue-limits.ts")),
     "自证：磁盘上的文件不该被动过");
 });
 

@@ -5,10 +5,10 @@ import { randomUUID } from "node:crypto";
 import { getCompanionAgentTool, companionContentBlockV1Schema } from "@astella/shared";
 import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 import { seedFormalAnswerRun } from "./helpers/formal-answer-fixture.ts";
-import { executeReadTool } from "../handlers/companion-tool-execution.ts";
+import { executeReadTool } from "../handlers/tools/companion-tool-execution.ts";
 import { closeDatabase } from "../db.ts";
-import type { ReadContext } from "../handlers/companion-dialogue-store.ts";
-import type { AgentEventContext } from "../handlers/companion-read-tools.ts";
+import type { ReadContext } from "../handlers/turn/companion-dialogue-store.ts";
+import type { AgentEventContext } from "../handlers/tools/companion-read-tools.ts";
 
 const admin = postgres(testDatabaseUrl("DATABASE_URL_MIGRATOR"), { max: 2 });
 after(async () => { await admin.end({ timeout: 2 }); await closeDatabase(); });

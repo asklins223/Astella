@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { companionVoiceSegmentExpression, projectCompanionVoiceExpression } from "../companion-voice-expression.ts";
+import { companionVoiceSegmentExpression, projectCompanionVoiceExpression } from "../turn/companion-voice-expression.ts";
 import {
   COMPANION_HOST_PROTOCOL_V5,
   COMPANION_IDENTITY_BOUNDARY_V4,
@@ -38,10 +38,10 @@ import {
   validateCompanionOutput,
   textOfCompanionBlocks,
   unwrapCompanionJsonEnvelope,
-} from "../companion-dialogue-content.ts";
-import { isGroundedTutorRequestedPageContext } from "../companion-dialogue.ts";
-import { selectCompanionReplayWindow } from "../companion-context-handoff.ts";
-import { pickCompanionFailureFallbackLine } from "../companion-dialogue-failure-retention.ts";
+} from "../turn/companion-dialogue-content.ts";
+import { isGroundedTutorRequestedPageContext } from "../turn/companion-dialogue.ts";
+import { selectCompanionReplayWindow } from "../context/companion-context-handoff.ts";
+import { pickCompanionFailureFallbackLine } from "../turn/companion-dialogue-failure-retention.ts";
 
 test("grounded tutor：LearningRun 页面必须请求受限模式", () => {
   assert.equal(isGroundedTutorRequestedPageContext({

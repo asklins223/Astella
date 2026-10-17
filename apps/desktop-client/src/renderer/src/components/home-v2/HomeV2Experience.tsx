@@ -11,11 +11,11 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useCompanionHomeProjection } from "../../app/companion-home-projection";
-import { useHomeProjection } from "../../app/home-projection";
+import { useCompanionHomeProjection } from "../../app/companion-pages/companion-home-projection";
+import { useHomeProjection } from "../../app/home/home-projection";
 import { useHomeNextStepProjection } from "../surfaces/library/home-next-step-projection.ts";
-import { homePresentation } from "../../app/home-presentation";
-import { useRoomStore } from "../../app/room-store";
+import { homePresentation } from "../../app/home/home-presentation";
+import { useRoomStore } from "../../app/home/room-store";
 import { resolveSceneMotionMode } from "../../scene/scene-motion";
 import { HOME_V2_CAMERA_PRESETS, type HomeV2Zone } from "./home-v2";
 import {

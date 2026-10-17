@@ -6,10 +6,10 @@ CompanionHistoryPageV1,
 } from "@astella/shared/companion-memory-desktop-contracts";
 import { ArrowRight,BookOpen,MessageCircle,Sparkles } from "lucide-react";
 import { useMemo, useState } from "react";
-import { plainCompanionBubbleText } from "../../companion/companion-markdown";
+import { plainCompanionBubbleText } from "../../companion/content/companion-markdown";
 import { HUD_PAGES } from "../../hud/hud-pages";
 import { usePageReadableView } from "../../hud/use-page-readable-view";
-import { formatDate,formatRelative } from "../notebook/surface-data.tsx";
+import { formatDate,formatRelative } from "../notebook/shell/surface-data.tsx";
 
 import { needsDeliveryResponse,type Section } from "./companion-center-model";
 import { CompanionCapabilityGuide, companionDiscoverableCapabilities } from "./companion-capability-guide";

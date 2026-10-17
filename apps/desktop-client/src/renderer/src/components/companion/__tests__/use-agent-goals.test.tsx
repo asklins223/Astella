@@ -2,18 +2,18 @@
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { AgentRunV1 } from "@astella/shared/agent-contracts";
-import { useAgentGoals } from "../use-agent-goals";
-import { publishCompanionRecordsChanged } from "../companion-events";
+import { useAgentGoals } from "../goals/use-agent-goals";
+import { publishCompanionRecordsChanged } from "../content/companion-events";
 
 const state = vi.hoisted(() => ({ scope: 1 }));
 const notify = vi.hoisted(() => vi.fn());
-vi.mock("../../../app/room-store", () => ({ useRoomStore: Object.assign(
+vi.mock("../../../app/home/room-store", () => ({ useRoomStore: Object.assign(
   (select: (value: { workspaceScopeRevision: number }) => unknown) => select({ workspaceScopeRevision: state.scope }),
   { getState: () => ({ workspaceScopeRevision: state.scope }) },
 ) }));
-vi.mock("../../../app/desktop-client", () => ({ createRequestMeta: () => ({}),
+vi.mock("../../../app/client/desktop-client", () => ({ createRequestMeta: () => ({}),
   unwrapGatewayResult: (value: unknown) => value, gatewayErrorMessage: (error: Error) => error.message }));
-vi.mock("../companion-notifications", () => ({ notifyCompanion: notify }));
+vi.mock("../notify/companion-notifications", () => ({ notifyCompanion: notify }));
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (error: Error) => void;

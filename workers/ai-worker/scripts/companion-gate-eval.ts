@@ -49,15 +49,15 @@ import {
   unverifiedNumericClaims,
   unverifiedQuoteClaims,
   validateCompanionOutput,
-} from "../src/handlers/companion-dialogue-content.ts";
-import { FACT_SPAN_KEYS } from "../src/handlers/companion-fact-spans.ts";
+} from "../src/handlers/turn/companion-dialogue-content.ts";
+import { FACT_SPAN_KEYS } from "../src/handlers/turn/companion-fact-spans.ts";
 import {
   loadHereAndNow,
   readLearningStats,
   renderHereAndNow,
   type HereAndNowSnapshot,
-} from "../src/handlers/companion-here-and-now.ts";
-import { loadThisTurnFacts } from "../src/handlers/companion-this-turn-facts.ts";
+} from "../src/handlers/proactive/companion-here-and-now.ts";
+import { loadThisTurnFacts } from "../src/handlers/turn/companion-this-turn-facts.ts";
 import { withWorkerWorkspaceTransaction } from "../src/db.ts";
 import { COMPANION_LEAK_GATES_V1, companionLeakGateVersionV1 } from "@astella/shared/companion-leak-gates";
 

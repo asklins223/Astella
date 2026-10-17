@@ -15,7 +15,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { decideSourceAuthorizationV2 } from "../review-authorization-rules-v2.ts";
+import { decideSourceAuthorizationV2 } from "../review/review-authorization-rules-v2.ts";
 
 test("W7-8 刀三：还有活的来源 ⇒ 该排（停一个来源不误删另一个）", () => {
   const decided = decideSourceAuthorizationV2({

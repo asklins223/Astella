@@ -110,7 +110,7 @@ test("正控：受限角色不设上下文时，这一行来源对 worker 不可
 });
 
 test("runParseSource 把文本来源解析成 ready，而不是 dead 在“找不到来源”", async () => {
-  const { runParseSource } = await import("../handlers/parse-source.ts");
+  const { runParseSource } = await import("../handlers/note/parse-source.ts");
 
   await runParseSource({
     id: JOB_ID,
@@ -144,7 +144,7 @@ for (const titleSource of ["manual", "auto"] as const) {
           ${`source-title:${jobId}`}, ${USER_ID}, ${token}, 1, now())`;
     });
     try {
-      const { runParseSource } = await import("../handlers/parse-source.ts");
+      const { runParseSource } = await import("../handlers/note/parse-source.ts");
       await runParseSource({ id: jobId, workspaceId: WORKSPACE_ID, requestedBy: USER_ID, payload: { sourceId: id }, leaseToken: token });
       const [source] = await admin`SELECT title, status FROM sources WHERE id = ${id}`;
       const [search] = await admin`SELECT title FROM search_documents WHERE object_id = ${id} AND object_type = 'source'`;
@@ -169,7 +169,7 @@ for (const titleSource of ["manual", "auto"] as const) {
  * 只放行带 `app.workspace_id` 的事务——收尾漏设上下文时它会静默 0 行（超管库里永远绿）。
  */
 test("F32：job 判死时把来源置为 failed，带原因；ready 的那条不动", async () => {
-  const { markSourceParseFailed } = await import("../handlers/parse-source.ts");
+  const { markSourceParseFailed } = await import("../handlers/note/parse-source.ts");
 
   await markSourceParseFailed(
     {

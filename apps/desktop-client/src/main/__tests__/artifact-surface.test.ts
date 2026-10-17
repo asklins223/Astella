@@ -5,8 +5,8 @@ import {
   isAllowedSubFrameNavigation,
   rejectAllContentSecurityPolicy,
   assembleArtifactDocument
-} from '../artifact-surface'
-import { ARTIFACT_TEMPLATE_PLACEHOLDER } from '../artifact-template'
+} from '../artifact/artifact-surface'
+import { ARTIFACT_TEMPLATE_PLACEHOLDER } from '../artifact/artifact-template'
 
 const ID = '3f1a2b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b'
 const ARTIFACT_URL = `astella-app://artifact/${ID}`

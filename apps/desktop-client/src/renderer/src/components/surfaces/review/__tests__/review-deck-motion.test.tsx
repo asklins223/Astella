@@ -2,7 +2,7 @@
 import { StrictMode, useRef } from "react";
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useRoomStore } from "../../../../app/room-store";
+import { useRoomStore } from "../../../../app/home/room-store";
 import { useReviewDeckMotion } from "../use-review-deck-motion";
 
 let time = 0, id = 0;

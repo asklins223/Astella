@@ -6,14 +6,14 @@ import type { CapabilityImpl } from "@astella/shared";
 import { fixture, readContext, closeFixtureDatabase } from "./runtime-fixture.ts";
 import { readParticipationPreferences, listCompanionAttention, recordCompanionAwareness } from "@astella/agent-host";
 import { randomUUID } from "node:crypto";
-import { runCompanionInitiative } from "../handlers/companion-initiative.ts";
-import { runCompanionDialogue } from "../handlers/companion-dialogue.ts";
+import { runCompanionInitiative } from "../handlers/proactive/companion-initiative.ts";
+import { runCompanionDialogue } from "../handlers/turn/companion-dialogue.ts";
 import { withWorkerWorkspaceTransaction } from "../db.ts";
-import { buildCompanionPersonaMessages } from "../handlers/companion-dialogue-content.ts";
-import { runCompanionAgentLoop } from "../handlers/companion-agent-runtime.ts";
+import { buildCompanionPersonaMessages } from "../handlers/turn/companion-dialogue-content.ts";
+import { runCompanionAgentLoop } from "../handlers/agent/companion-agent-runtime.ts";
 import { createGovernedProvider } from "../lib/governance.ts";
-import { createCompanionContextReceipts } from "../handlers/companion-context-receipts.ts";
-import { reserveCompanionProviderCall } from "../handlers/companion-agent-events.ts";
+import { createCompanionContextReceipts } from "../handlers/context/companion-context-receipts.ts";
+import { reserveCompanionProviderCall } from "../handlers/agent/companion-agent-events.ts";
 import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
 
 if (!new URL(process.env.DATABASE_URL_MIGRATOR!).pathname.startsWith("/astella_initiative_"))

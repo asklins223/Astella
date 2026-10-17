@@ -16,7 +16,7 @@ import {
   subscribeCompanionSpeech,
   type CompanionSpeechProgress,
   type CompanionVoiceHost,
-} from "../companion-voice-playback.ts";
+} from "../companion-session/companion-voice-playback.ts";
 
 /** 三段、每段 61 字：刚好越过 120 字上限，切成三段。 */
 const THREE_LINE = ["甲".repeat(60), "乙".repeat(60), "丙".repeat(60)].map((part) => `${part}。`).join("");

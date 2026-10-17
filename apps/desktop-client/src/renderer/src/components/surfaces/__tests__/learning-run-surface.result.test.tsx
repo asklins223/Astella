@@ -9,7 +9,7 @@ import {
 } from "@astella/shared/learning-run-v2-contracts";
 import { LearningRunSurface } from "../run/learning-run-surface.tsx";
 import { LEARNING_RUN_CEREMONY_LITE_DURATION_MS } from "../run/LearningRunCeremony.tsx";
-import { useRoomStore } from "../../../app/room-store.ts";
+import { useRoomStore } from "../../../app/home/room-store.ts";
 
 /**
  * 结算页的结构回归（31-objective-flow-ui-review P5）。

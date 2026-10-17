@@ -7,7 +7,7 @@
  */
 import { expect, it } from "vitest";
 import { learningObjectiveSurfaceV3Schema, type LearningObjectiveSurfaceV3 } from "@astella/shared/learning-objective-surface-contracts";
-import { recallWaitingCueV1, recallWaitingLineV1, recallRevealReceiptLineV1 } from "../notebook/recall-waiting-presenter.ts";
+import { recallWaitingCueV1, recallWaitingLineV1, recallRevealReceiptLineV1 } from "../notebook/learning/recall-waiting-presenter.ts";
 
 const surface = (over: Partial<Record<string, unknown>> = {}): LearningObjectiveSurfaceV3 =>
   learningObjectiveSurfaceV3Schema.parse({

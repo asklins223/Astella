@@ -22,7 +22,7 @@ import type { CompanionDiscoveryEntryV1 } from "@astella/shared/desktop-ipc-cont
 import { usePageReadableView } from "../../hud/use-page-readable-view";
 import { CenterFeedback,CenterSearch,SectionState } from "./companion-center-primitives";
 import { discoverySourceTarget } from "./companion-discovery-targets";
-import { plainCompanionBubbleText, renderCompanionMarkdown } from "../../companion/companion-markdown";
+import { plainCompanionBubbleText, renderCompanionMarkdown } from "../../companion/content/companion-markdown";
 
 const KIND_LABEL: Record<string, string> = {
   user_utterance: "你说过的",

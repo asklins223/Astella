@@ -24,9 +24,9 @@ import {
   type SubscriptionTopicM2,
 } from "@astella/shared/desktop-ipc-contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { clearAccountSignOutNotice } from "../../app/account-signout.ts";
-import { publishGateInvalidation } from "../../app/gate-invalidation.ts";
-import { useRoomStore } from "../../app/room-store.ts";
+import { clearAccountSignOutNotice } from "../../app/gate/account-signout.ts";
+import { publishGateInvalidation } from "../../app/gate/gate-invalidation.ts";
+import { useRoomStore } from "../../app/home/room-store.ts";
 import { DesktopAccessGate } from "../DesktopAccessGate.tsx";
 
 // 登录页那张氛围画布是 pixi 画的，和这条判据无关；测试里不把它拉进来。

@@ -26,7 +26,7 @@ import test from "node:test";
  *    不过 schema 的话，坏字段会一路到渲染才炸，而那时已落库、回滚不了。
  */
 
-const PROPOSAL = join(import.meta.dirname, "../companion-agent-proposal.ts");
+const PROPOSAL = join(import.meta.dirname, "../agent/companion-agent-proposal.ts");
 const source = readFileSync(PROPOSAL, "utf8");
 
 /**

@@ -1,15 +1,15 @@
 // @vitest-environment jsdom
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { NoteTargetRef } from "../../../../app/room-store";
-import { useNotebookGoalResult } from "../use-notebook-goal-result";
+import type { NoteTargetRef } from "../../../../app/home/room-store";
+import { useNotebookGoalResult } from "../learning/use-notebook-goal-result.ts";
 
 const state = vi.hoisted(() => ({ scope: 1 }));
-vi.mock("../../../../app/room-store", () => ({ useRoomStore: Object.assign(
+vi.mock("../../../../app/home/room-store", () => ({ useRoomStore: Object.assign(
   (select: (value: { workspaceScopeRevision: number }) => unknown) => select({ workspaceScopeRevision: state.scope }),
   { getState: () => ({ workspaceScopeRevision: state.scope }) },
 ) }));
-vi.mock("../../../../app/desktop-client", () => ({ createRequestMeta: () => ({}),
+vi.mock("../../../../app/client/desktop-client", () => ({ createRequestMeta: () => ({}),
   unwrapGatewayResult: (value: unknown) => value, gatewayErrorMessage: (error: Error) => error.message }));
 
 const getMindMap = vi.fn();

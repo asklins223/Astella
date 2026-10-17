@@ -8,7 +8,7 @@ import {
   noteShelfStateV1Schema,
   type NoteShelfLearningFactsV1,
   type NoteShelfStageV1,
-} from "../contracts/note-shelf-state-contracts.ts";
+} from "../contracts/note/note-shelf-state-contracts.ts";
 
 const NO_FACTS: NoteShelfLearningFactsV1 = {
   overviewCount: 0,

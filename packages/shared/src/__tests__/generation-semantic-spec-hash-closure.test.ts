@@ -21,7 +21,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { hashCanonicalV2 } from "../hash-canonical-v2.ts";
+import { hashCanonicalV2 } from "../content/hash-canonical-v2.ts";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -78,12 +78,12 @@ test("§7.5 第四格前置：两次量**必须用同一个域标签**（否则�
   // 域标签是哈希空间的名字。换一个标签算出来的两个数，**不构成**「改前 vs 改后」——
   // 它们是两个毫不相干的东西。这一点值得单独钉：量闭包这件事最常见的错就是
   // 「一处在生成时算、一处在脚本里算」，而脚本那处手写了域标签。
-  // ⚠️ 域标签在 **`packages/shared/src/card-generation-v2-hashing.ts`** 里
+  // ⚠️ 域标签在 **`packages/shared/src/review/card-generation-v2-hashing.ts`** 里
   // （`computeGenerationSemanticSpecHashV2` 那一行），**不在** api 那个 service 里——
   // 第一版我读的是 service，当场红了。**域标签只有一个地方写着**，而那正是"两个数能不能
   // 放一起比"的唯一判据。
   const hashing = readFileSync(
-    join(import.meta.dirname, "..", "card-generation-v2-hashing.ts"),
+    join(import.meta.dirname, "..", "review", "card-generation-v2-hashing.ts"),
     "utf8",
   );
   assert.match(hashing, /hashCanonicalV2\("card-generation-v2\/semantic-spec"/,

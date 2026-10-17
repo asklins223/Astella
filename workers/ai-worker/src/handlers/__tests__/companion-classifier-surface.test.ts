@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { companionClassifierCapabilities } from "../companion-classifier-surface.ts";
-import { buildCompanionTurnInterpretationMessages } from "../companion-tool-intent.ts";
+import { companionClassifierCapabilities } from "../turn/companion-classifier-surface.ts";
+import { buildCompanionTurnInterpretationMessages } from "../tools/companion-tool-intent.ts";
 import { resolveAllCompanionAgentTools } from "@astella/shared";
 
 /**

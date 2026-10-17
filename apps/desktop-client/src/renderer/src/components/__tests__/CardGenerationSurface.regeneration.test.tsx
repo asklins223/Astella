@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CardGenerationSurface } from "../CardGenerationSurface";
-import { useRoomStore } from "../../app/room-store";
+import { useRoomStore } from "../../app/home/room-store";
 
 const NOTE = "11111111-1111-4111-8111-111111111111", OLD_VERSION = "22222222-2222-4222-8222-222222222222";
 const NEW_VERSION = "33333333-3333-4333-8333-333333333333", OLD_RUN = "aaaaaaaa-1111-4111-8111-111111111111", NEW_RUN = "bbbbbbbb-2222-4222-8222-222222222222";

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RoomProjectionV1 } from "@astella/shared/room-projection-contracts";
-import { homePresentation } from "../home-presentation.ts";
+import { homePresentation } from "../home/home-presentation.ts";
 
 function projection(overrides: Partial<RoomProjectionV1> = {}): RoomProjectionV1 {
   return {

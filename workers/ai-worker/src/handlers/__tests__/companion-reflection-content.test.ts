@@ -11,7 +11,7 @@ import {
   buildReflectionMessages, buildReflectionPrompt, companionReflectionOutputV1Schema, normalizeReflectionPayload,
   reflectionInputFingerprint, verifyReflectionOutput, boundReflectionSnapshot,
   type ReflectionInputSnapshotV1,
-} from "../companion-reflection-content.ts";
+} from "../journal/companion-reflection-content.ts";
 
 const userOne = "5f0c1a44-0000-4000-8000-000000000001";
 const assistantOne = "5f0c1a44-0000-4000-8000-000000000002";

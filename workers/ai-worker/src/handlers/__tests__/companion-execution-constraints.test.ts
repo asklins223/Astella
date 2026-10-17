@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { companionTimeWakeupConstraint } from "../companion-execution-constraints.ts";
-import { shouldKeepSpeculativeFirstStep, shouldKeepSpeculativeQuestionStep } from "../companion-speculative-first-step.ts";
+import { companionTimeWakeupConstraint } from "../agent/companion-execution-constraints.ts";
+import { shouldKeepSpeculativeFirstStep, shouldKeepSpeculativeQuestionStep } from "../agent/companion-speculative-first-step.ts";
 import { resolveAgentTurnInterpretation } from "@astella/agent-core";
 
 const prohibited = { executionConstraints: { timeBasedWakeups: "forbid" as const } };

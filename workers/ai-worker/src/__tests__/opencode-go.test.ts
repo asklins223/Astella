@@ -29,7 +29,7 @@ import type { AgentTurnRequest, ChatMessage } from "@astella/shared";
 import { AgentRole } from "@astella/shared";
 import { ProviderRequestError, ProviderStreamError } from "../lib/provider-request-error.ts";
 import { AgentOutputError } from "../lib/non-retryable-errors.ts";
-import { runStreamingAgentStep } from "../handlers/companion-agent-streaming-step.ts";
+import { runStreamingAgentStep } from "../handlers/agent/companion-agent-streaming-step.ts";
 import { createGovernedProvider } from "../lib/governance.ts";
 
 interface CapturedRequest {

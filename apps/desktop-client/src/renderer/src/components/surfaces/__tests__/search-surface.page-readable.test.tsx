@@ -6,7 +6,7 @@ import type { GatewayResultV1 } from "@astella/shared/desktop-ipc-contracts";
 import type { DesktopSearchItem } from "@astella/shared/desktop-surface-contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SearchSurface } from "../study/search-surface.tsx";
-import { useRoomStore } from "../../../app/room-store.ts";
+import { useRoomStore } from "../../../app/home/room-store.ts";
 import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 
 /**

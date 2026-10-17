@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { COMPANION_AUTONOMOUS_TOOLS } from "../companion-autonomy.ts";
+import { COMPANION_AUTONOMOUS_TOOLS } from "../companion/companion-autonomy.ts";
 import test from "node:test";
 import {
   companionToolConfirmationStage,
@@ -7,13 +7,13 @@ import {
   COMPANION_PROPOSAL_EXECUTED_TOOLS,
   companionAgentToolEventV1Schema,
   isVisionGatedCompanionTool,
-} from "../contracts/companion-agent-contracts.ts";
+} from "../contracts/companion/companion-agent-contracts.ts";
 import {
   COMPANION_AGENT_TOOL_DEFINITIONS,
   getCompanionAgentTool,
   resolveAllCompanionAgentTools,
   validateCompanionAgentToolArguments,
-} from "../companion-agent-registry.ts";
+} from "../agent/companion-agent-registry.ts";
 
 test("Agent permission levels keep hard confirmation boundaries", () => {
   const read = { name: "synthetic_read", riskClass: "read" as const, requiresConfirmation: false };

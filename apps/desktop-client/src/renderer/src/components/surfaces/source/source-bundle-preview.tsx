@@ -1,6 +1,6 @@
 import { ArrowRight, FileArchive, FolderOpen, Image, FileText } from "lucide-react";
 import type { MarkdownBundleKind, MarkdownBundlePreviewV1 } from "@astella/shared/desktop-ipc-contracts";
-import { formatCaptureSize } from "../../../app/source-intake";
+import { formatCaptureSize } from "../../../app/source/source-intake";
 
 export function SourceBundlePreview({ preview, reading, onPick, onCommit, onClear }: {
   readonly preview: MarkdownBundlePreviewV1 | null;

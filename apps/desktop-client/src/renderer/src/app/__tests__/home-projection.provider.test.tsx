@@ -9,8 +9,8 @@ import type {
 } from "@astella/shared/desktop-ipc-contracts";
 import type { RoomProjectionV1 } from "@astella/shared/room-projection-contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useRoomStore } from "../room-store.ts";
-import { HomeProjectionProvider, useHomeProjection } from "../home-projection.tsx";
+import { useRoomStore } from "../home/room-store.ts";
+import { HomeProjectionProvider, useHomeProjection } from "../home/home-projection.tsx";
 
 type Deferred<T> = {
   readonly promise: Promise<T>;

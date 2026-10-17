@@ -46,7 +46,7 @@ test("共享包里不再有一个名不副实的 feature-flags.ts", () => {
 });
 
 test("正名后的文件仍然提供那两个函数（改名不能把东西改没）", () => {
-  const source = readFileSync(join(SHARED_SRC, "provider-prompt-cache.ts"), "utf8");
+  const source = readFileSync(join(SHARED_SRC, "platform", "provider-prompt-cache.ts"), "utf8");
   for (const name of ["getPromptCacheProviders", "shouldUsePromptCache"]) {
     assert.ok(
       new RegExp(`export function ${name}\\b`).test(source),

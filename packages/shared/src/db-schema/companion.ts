@@ -26,7 +26,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { users, workspaces } from "./identity.ts";
-import type { CompanionAgentSettingsV1 } from "../contracts/companion-agent-contracts.ts";
+import type { CompanionAgentSettingsV1 } from "../contracts/companion/companion-agent-contracts.ts";
 
 // ─── CompanionOnboardingStateV1 形状（02-3 冻结）───────────────────────────
 
@@ -39,7 +39,7 @@ export type CompanionOnboardingActiveRun = {
   entryMode: CompanionOnboardingEntryMode;
   runStatus: "in_progress" | "paused";
   stepId: string;
-  topicId?: typeof import("../contracts/companion-shell-contracts.ts").COMPANION_GUIDE_TOPIC_IDS[number];
+  topicId?: typeof import("../contracts/companion/companion-shell-contracts.ts").COMPANION_GUIDE_TOPIC_IDS[number];
   resumeTokenRef: string;
   resumeWorkspaceRef?: string;
   expiresAt: string;

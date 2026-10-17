@@ -14,7 +14,7 @@ import {
   parameterValuesForWindowLive2D,
   presentationForCharacterCueIntent,
   propParameterValuesForWindowLive2D,
-} from "../window-live2d-contract.ts";
+} from "../live2d/window-live2d-contract.ts";
 
 /** 读一个参数，省掉每个用例都写一遍 find。 */
 function parameterValue(

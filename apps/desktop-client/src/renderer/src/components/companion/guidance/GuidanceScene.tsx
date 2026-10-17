@@ -1,5 +1,5 @@
 import { BookOpen, Check, Compass, FileText, Gauge, MessageCircle, Moon, Sparkles, UserRound, Volume2 } from "lucide-react";
-import { spaceRoleLabel } from "../../../app/space-identity";
+import { spaceRoleLabel } from "../../../app/home/space-identity";
 import type { CompanionGuideController } from "./use-companion-guide";
 import type { GuideStep } from "./guide-definitions";
 

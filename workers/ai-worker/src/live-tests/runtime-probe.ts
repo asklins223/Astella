@@ -1,11 +1,11 @@
 import { observedProvider, platform, save, safeFailure, type WireReceipt } from "./acceptance-common.ts";
 import { fixture, readContext, closeFixtureDatabase } from "./runtime-fixture.ts";
-import { runCompanionAgentLoop } from "../handlers/companion-agent-runtime.ts";
+import { runCompanionAgentLoop } from "../handlers/agent/companion-agent-runtime.ts";
 import { createGovernedProvider } from "../lib/governance.ts";
-import { createCompanionContextReceipts } from "../handlers/companion-context-receipts.ts";
-import { buildCompanionPersonaMessages, finalizeCompanionReplyText, validateCompanionOutput } from "../handlers/companion-dialogue-content.ts";
-import { resolveCompanionPersonaContext } from "../handlers/companion-identity-context.ts";
-import { createCompanionStreamDelivery, reconcileStreamedText } from "../handlers/companion-dialogue-stream.ts";
+import { createCompanionContextReceipts } from "../handlers/context/companion-context-receipts.ts";
+import { buildCompanionPersonaMessages, finalizeCompanionReplyText, validateCompanionOutput } from "../handlers/turn/companion-dialogue-content.ts";
+import { resolveCompanionPersonaContext } from "../handlers/memory/companion-identity-context.ts";
+import { createCompanionStreamDelivery, reconcileStreamedText } from "../handlers/turn/companion-dialogue-stream.ts";
 import { assertProductionProbeConfiguration } from "./production-preflight.ts";
 
 assertProductionProbeConfiguration(process.env);

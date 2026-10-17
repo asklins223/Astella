@@ -5,7 +5,7 @@ import * as Y from "yjs";
 import { yXmlFragmentToProsemirrorJSON } from "y-prosemirror";
 import { NOTE_DOC_CONFORMANCE } from "@astella/shared/note-doc-conformance";
 import { pmNodesToNoteBlocks } from "@astella/shared/note-doc-schema";
-import { projectBlocks } from "../notebook/use-note-doc-live-view.ts";
+import { projectBlocks } from "../notebook/document/use-note-doc-live-view.ts";
 
 /**
  * 跨进程向量的**编辑器这一侧**：同一串字节（由服务端那份内核产出）必须由渲染层的解码

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { nextCompanionNotification, notificationKey, notifyCompanion, useCompanionNotifications, type CompanionNotificationInput } from "../companion-notifications";
-import { placeCompanionNotification } from "../notification-placement";
+import { nextCompanionNotification, notificationKey, notifyCompanion, useCompanionNotifications, type CompanionNotificationInput } from "../notify/companion-notifications";
+import { placeCompanionNotification } from "../notify/notification-placement";
 
 const notice = (id: string, patch: Partial<CompanionNotificationInput> = {}): CompanionNotificationInput => ({ id, kind: "task", scope: 3, title: "任务完成", body: "已保存", ...patch });
 beforeEach(() => useCompanionNotifications.setState({ items: [] }));

@@ -34,7 +34,7 @@ const read = (relative: string): string => readFileSync(join(REPO_ROOT, relative
 // 调用关系仍可复核：`CardGenerationSurface.tsx` 第 8 行导入、第 23 行调用本 hook。
 const REVIEW_SURFACE = "apps/desktop-client/src/renderer/src/components/surfaces/review/use-card-generation-session.ts";
 const ACTIVATION_SERVICE = "apps/api/src/modules/card-generation-v2/activation-service.ts";
-const V2_CONTRACTS = "packages/shared/src/contracts/card-generation-v2-contracts.ts";
+const V2_CONTRACTS = "packages/shared/src/contracts/learning/card-generation-v2-contracts.ts";
 const PLAN_ASSEMBLY = "workers/ai-worker/src/card-generation-v3/plan-assembly.ts";
 
 /** 复用的四件：产出信号 → 计划里的既有动作 → 客户端意图 → 闸看得见。 */

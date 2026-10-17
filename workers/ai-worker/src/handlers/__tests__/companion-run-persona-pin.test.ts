@@ -18,7 +18,7 @@ import test from "node:test";
 
 // 判据本体在 companion-run-persona-pin.ts（纯函数，不查库）；handler 侧的
 // "必须把决策交给它"由下面那条源码判据盯住。
-import { resolveRunPersonaPin } from "../companion-run-persona-pin.ts";
+import { resolveRunPersonaPin } from "../memory/companion-run-persona-pin.ts";
 
 const PRESET_VERSION = "pet-persona-presets-v1";
 
@@ -94,7 +94,7 @@ test("从未设置过账号人格（revision 0）时内容为 null，用当前�
 
 // ─── 源码守卫：把上面两条规则钉在真正执行的那段代码上 ────────────────────
 
-const source = readFileSync(join(import.meta.dirname, "../companion-dialogue.ts"), "utf8");
+const source = readFileSync(join(import.meta.dirname, "../turn/companion-dialogue.ts"), "utf8");
 
 /** 取"人格固定"注释到正文装配之间的那一段，避免扫到文件里别处的同名字样。 */
 function pinBlock(): string {

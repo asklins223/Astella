@@ -87,7 +87,7 @@ try {
 
   // 声音放开：新 profile 默认可能静音，那样"没声"就测不出是链路的锅还是开关的锅。
   const audio = await page.evaluate(async () => {
-    const { useRoomStore } = await import('/src/app/room-store.ts')
+    const { useRoomStore } = await import('/app/home/room-store.ts')
     useRoomStore.getState().finishOnboarding?.()
     useRoomStore.setState({ masterMuted: false })
     return { masterMuted: useRoomStore.getState().masterMuted }

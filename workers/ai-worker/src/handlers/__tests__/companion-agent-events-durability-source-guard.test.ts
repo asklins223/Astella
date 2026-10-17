@@ -22,7 +22,7 @@ import test from "node:test";
  * 搬文件（B2 把这一族拆出来）不会让这里红，因为读的是**搬完之后的新家**。
  */
 
-const EVENTS = join(import.meta.dirname, "../companion-agent-events.ts");
+const EVENTS = join(import.meta.dirname, "../agent/companion-agent-events.ts");
 const source = readFileSync(EVENTS, "utf8");
 
 function bodyOf(fn: string): string {

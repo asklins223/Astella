@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CardGenerationCandidateV1, CardGenerationPracticeQuotaV1, CardGenerationRunSnapshotV1 } from "@astella/shared/card-generation-desktop-contracts";
-import { useRoomStore } from "../../../app/room-store";
-import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../../app/desktop-client";
+import { useRoomStore } from "../../../app/home/room-store";
+import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../../app/client/desktop-client";
 import { isCardGenerationInFlight, isCardGenerationReviewStage, isLandedCandidate } from "./card-generation-status";
 import { isActionableUndecidedCandidate } from "./candidate-review-model";
 

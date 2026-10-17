@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   LIVE2D_EMOTION_PARAMETERS,
   parameterRequestsForLive2DEmotion,
-} from "../live2d-emotion-map.ts";
+} from "../live2d/live2d-emotion-map.ts";
 
 describe("Live2D emotion parameter map", () => {
   it("covers the bounded cue emotions and common voice labels", () => {

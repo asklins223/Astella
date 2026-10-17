@@ -2,9 +2,9 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { AgentMethodV1 } from "@astella/shared/agent-growth-contracts";
-import { useRoomStore } from "../../../app/room-store";
+import { useRoomStore } from "../../../app/home/room-store";
 import { CompanionGoalsAndMethodsPage } from "../companion/companion-goals-and-methods-page";
-import { COMPANION_GOAL_JOURNAL_OPEN } from "../../companion/companion-events";
+import { COMPANION_GOAL_JOURNAL_OPEN } from "../../companion/content/companion-events";
 
 const memoryId="11111111-1111-4111-8111-111111111111",noteId="22222222-2222-4222-8222-222222222222",noteVersionId="33333333-3333-4333-8333-333333333333",runId="44444444-4444-4444-8444-444444444444";
 const goal={ref:{memoryId,revision:2},content:"**理解电路**，按自己的节奏慢慢学。",appliesWhen:null,updatedAt:"2026-10-04T12:00:00.000Z",taskCount:0,tasks:[]};

@@ -3,11 +3,11 @@ import { test } from "node:test";
 import {
   agentCapabilityCatalog, collectAgentCapabilitySceneGuidance, getAgentCapability,
   validateAgentCapabilityArguments,
-} from "../agent-capability-catalog.ts";
-import { agentGoalExecutionManifest } from "../agent-capabilities.ts";
+} from "../agent/agent-capability-catalog.ts";
+import { agentGoalExecutionManifest } from "../agent/agent-capabilities.ts";
 import { COMPANION_AGENT_TOOL_DEFINITIONS, COMPANION_DOCUMENT_AUTHORING_TOOLS,
-  companionTurnWritesDocumentContent, getCompanionAgentTool } from "../companion-agent-registry.ts";
-import { agentToolParameters } from "../agent-tool-parameters.ts";
+  companionTurnWritesDocumentContent, getCompanionAgentTool } from "../agent/companion-agent-registry.ts";
+import { agentToolParameters } from "../agent/agent-tool-parameters.ts";
 
 test("every surface resolves the same unique capability, validator, model schema and executor metadata", () => {
   assert.ok(agentCapabilityCatalog.length > 35);

@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { VoiceAsrModelStore, voiceAsrModelDirectory, voiceAsrModelSources } from "../voice-asr-model-store";
+import { VoiceAsrModelStore, voiceAsrModelDirectory, voiceAsrModelSources } from "../voice/voice-asr-model-store";
 
 /** 名字照合同那两份，只把字节数换成用例写得动的量级。 */
 const FILES = [

@@ -16,9 +16,9 @@ import {
   navigationCommandEnvelopeV2Schema,
   PAGE_READABLE_TOTAL_CHAR_BUDGET,
   pageReadableV1Schema,
-} from "../contracts/companion-bridge-contracts.ts";
-import { computeContextRevisionV2 } from "../companion-bridge-revision.ts";
-import { desktopRouteSchema } from "../contracts/desktop-ipc-contracts.ts";
+} from "../contracts/companion/companion-bridge-contracts.ts";
+import { computeContextRevisionV2 } from "../companion/companion-bridge-revision.ts";
+import { desktopRouteSchema } from "../contracts/desktop/desktop-ipc-contracts.ts";
 
 const uuid = () => crypto.randomUUID();
 

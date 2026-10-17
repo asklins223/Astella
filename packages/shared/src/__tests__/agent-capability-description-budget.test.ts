@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { agentCapabilityCatalog } from "../agent-capability-catalog.ts";
+import { agentCapabilityCatalog } from "../agent/agent-capability-catalog.ts";
 
 /**
  * 工具面说明预算（方案 52 §5）。判据全部取自**声明**（`agentCapabilityCatalog`），

@@ -1,5 +1,5 @@
 import { useLayoutEffect, type RefObject } from "react";
-import { useRoomStore } from "../../app/room-store";
+import { useRoomStore } from "../../app/home/room-store";
 import { cardSpringAtRest, stepCardSpring, type CardSpring } from "./card-spring";
 
 type Press = CardSpring & { target: number };

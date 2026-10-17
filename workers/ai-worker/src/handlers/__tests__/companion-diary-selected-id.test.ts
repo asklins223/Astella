@@ -17,11 +17,11 @@ import {
   diarySelectionProvenance,
   diarySummaryUpsertSql,
   type DiaryPersistenceGuard,
-} from "../companion-daily-summary.ts";
-import { buildDiaryCandidates, validateDiarySelection } from "../companion-diary-candidates.ts";
-import type { DayScope } from "../companion-daily-summary-eligibility.ts";
-import type { DiaryDraft, DiaryMaterial, DiaryPiece } from "../companion-diary-content.ts";
-import { pickDiarySubject } from "../companion-diary-content.ts";
+} from "../journal/companion-daily-summary.ts";
+import { buildDiaryCandidates, validateDiarySelection } from "../journal/companion-diary-candidates.ts";
+import type { DayScope } from "../journal/companion-daily-summary-eligibility.ts";
+import type { DiaryDraft, DiaryMaterial, DiaryPiece } from "../journal/companion-diary-content.ts";
+import { pickDiarySubject } from "../journal/companion-diary-content.ts";
 
 const scope: DayScope = {
   workspaceId: "11111111-1111-4111-8111-111111111111",

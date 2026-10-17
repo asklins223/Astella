@@ -7,11 +7,11 @@ import {
   dayStart,
   diaryMaterialStartIsCurrent,
   hasDiaryWorthyMaterial,
-} from "../companion-daily-summary-eligibility.ts";
+} from "../journal/companion-daily-summary-eligibility.ts";
 import {
   classifyDiaryFailure,
-} from "../companion-daily-summary.ts";
-import { pickImageToRead } from "../companion-daily-summary-image.ts";
+} from "../journal/companion-daily-summary.ts";
+import { pickImageToRead } from "../journal/companion-daily-summary-image.ts";
 import {
   buildDiaryPrompt,
   captionEchoIn,
@@ -40,15 +40,15 @@ import {
   type DiaryMaterial,
   type DiaryPersona,
   type DiaryPiece,
-} from "../companion-diary-content.ts";
+} from "../journal/companion-diary-content.ts";
 import {
   buildDiaryCandidates,
   buildDiarySelectionMessages,
   companionDiarySelectionSchema,
   validateDiarySelection,
-} from "../companion-diary-candidates.ts";
-import { createDiaryCheckpointPort } from "../companion-diary-checkpoints.ts";
-import { sanitizePersonaField } from "../companion-dialogue-content.ts";
+} from "../journal/companion-diary-candidates.ts";
+import { createDiaryCheckpointPort } from "../journal/companion-diary-checkpoints.ts";
+import { sanitizePersonaField } from "../turn/companion-dialogue-content.ts";
 import { AIConsentRequiredError, AIDataPolicyDeniedError, AIProviderNotConfiguredError } from "../../lib/governance.ts";
 import { DailyDiaryOutputError } from "../../lib/non-retryable-errors.ts";
 

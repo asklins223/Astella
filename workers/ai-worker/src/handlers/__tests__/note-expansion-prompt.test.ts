@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buildNoteExpansionPrompt } from "../note-expansion-prompt.ts";
+import { buildNoteExpansionPrompt } from "../note/note-expansion-prompt.ts";
 
 test("拓展引用使用真实块号和读到的文字，不把行内语法当成依据", () => {
   const prompt = buildNoteExpansionPrompt([

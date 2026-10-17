@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { AgentRole, type AgentTurnRequest } from "@astella/shared";
-import { createCompactionCheckpoint, restoreCompactionCheckpoint } from "../companion-compaction-checkpoint.ts";
-import type { CompactionTraceV1 } from "../companion-context-handoff.ts";
-import { boundedStepSender } from "../companion-compaction.ts";
+import { createCompactionCheckpoint, restoreCompactionCheckpoint } from "../context/companion-compaction-checkpoint.ts";
+import type { CompactionTraceV1 } from "../context/companion-context-handoff.ts";
+import { boundedStepSender } from "../context/companion-compaction.ts";
 import { AIContextCompactionRequiredError } from "../../lib/context-governor.ts";
 import { canonicalJsonV1 } from "@astella/shared/content-hash";
 

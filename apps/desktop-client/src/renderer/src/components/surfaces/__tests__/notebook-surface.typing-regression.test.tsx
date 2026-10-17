@@ -3,8 +3,8 @@
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import { noteDocResult } from "../../../test-support/note-doc-fixtures.ts";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NotebookSurface } from "../notebook/notebook-surface.tsx";
-import { useRoomStore } from "../../../app/room-store.ts";
+import { NotebookSurface } from "../notebook/shell/notebook-surface.tsx";
+import { useRoomStore } from "../../../app/home/room-store.ts";
 
 /**
  * 编辑器的输入回归：编辑模式挂出的必须是真编辑器（Milkdown/ProseMirror），

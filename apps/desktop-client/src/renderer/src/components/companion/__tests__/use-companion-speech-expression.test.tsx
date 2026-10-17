@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import type { CompanionSpeechProgress } from "../../../app/companion-voice-playback";
-import { useCompanionSpeechExpression } from "../use-companion-speech-expression";
+import type { CompanionSpeechProgress } from "../../../app/companion-session/companion-voice-playback";
+import { useCompanionSpeechExpression } from "../voice/use-companion-speech-expression";
 
 const state = vi.hoisted(() => ({ listener: null as ((progress: CompanionSpeechProgress) => void) | null }));
-vi.mock("../../../app/companion-voice-playback", () => ({ subscribeCompanionSpeech: (listener: typeof state.listener) => {
+vi.mock("../../../app/companion-session/companion-voice-playback", () => ({ subscribeCompanionSpeech: (listener: typeof state.listener) => {
   state.listener = listener; return () => { state.listener = null; };
 } }));
 afterEach(() => { state.listener = null; });

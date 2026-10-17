@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useRoomStore } from "../../../app/room-store";
-import { useCompanionNotifications } from "../companion-notifications";
-import { useCompanionNotificationSources } from "../use-companion-notification-sources";
+import { useRoomStore } from "../../../app/home/room-store";
+import { useCompanionNotifications } from "../notify/companion-notifications";
+import { useCompanionNotificationSources } from "../notify/use-companion-notification-sources";
 
 const source = vi.hoisted(() => ({
   home: null as null | { sanitizedReviewSummary: { state: string; data: { dueCount: number } } },
@@ -11,12 +11,12 @@ const source = vi.hoisted(() => ({
   invalidationRevision: 0,
   reload: vi.fn(), timeline: vi.fn(), present: vi.fn(), ack: vi.fn(),
 }));
-vi.mock("../../../app/home-projection", () => ({
+vi.mock("../../../app/home/home-projection", () => ({
   useHomeProjection: () => ({ projection: source.home, reload: source.reload }),
   useHomeProjectionInvalidation: () => ({ revision: source.invalidationRevision, workspaceEpoch: 1 }),
 }));
-vi.mock("../../../app/companion-home-projection", () => ({ useCompanionHomeProjection: () => ({ projection: source.companion }) }));
-vi.mock("../use-voice-model-notifications", () => ({ useVoiceModelNotifications: () => {} }));
+vi.mock("../../../app/companion-pages/companion-home-projection", () => ({ useCompanionHomeProjection: () => ({ projection: source.companion }) }));
+vi.mock("../voice/use-voice-model-notifications", () => ({ useVoiceModelNotifications: () => {} }));
 
 const ok = <T,>(data: T) => ({ ok: true, data });
 beforeEach(() => {

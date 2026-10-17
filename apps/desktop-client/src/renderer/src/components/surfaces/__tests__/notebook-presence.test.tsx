@@ -2,8 +2,8 @@
 
 import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { useRoomStore } from "../../../app/room-store";
-import { NotebookPresence, NotebookPresenceReaders } from "../notebook/notebook-presence.tsx";
+import { useRoomStore } from "../../../app/home/room-store";
+import { NotebookPresence, NotebookPresenceReaders } from "../notebook/shell/notebook-presence.tsx";
 
 /**
  * 「谁开着这一篇」那一排印章（共享空间的在场）。

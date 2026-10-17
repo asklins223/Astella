@@ -3,12 +3,12 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { CompanionFeedMenu } from "../CompanionFeedMenu.tsx";
+import { CompanionFeedMenu } from "../hud/CompanionFeedMenu.tsx";
 import {
   COMPANION_FEED_MAX_CHARS,
   feedNoteIntentToCompanion,
   subscribeCompanionFeed,
-} from "../companion-feed.ts";
+} from "../hud/companion-feed.ts";
 
 beforeEach(() => {
   document.body.insertAdjacentHTML("beforeend", '<div class="companion-hud"></div>');

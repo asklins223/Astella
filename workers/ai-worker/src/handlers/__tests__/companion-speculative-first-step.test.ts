@@ -7,7 +7,7 @@ import {
   buildQuestionFirstStepRequest,
   shouldKeepSpeculativeFirstStep,
   shouldKeepSpeculativeQuestionStep,
-} from "../companion-speculative-first-step.ts";
+} from "../agent/companion-speculative-first-step.ts";
 
 /**
  * 保留投机结果的条件（2026-10-07）：投机的提示词里没有注意力块，所以只有真实解释

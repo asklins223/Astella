@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { readCompanionActionLedger } from "../companion-dialogue-store.ts";
+import { readCompanionActionLedger } from "../turn/companion-dialogue-store.ts";
 
 type LedgerRow = {
   receipt_id: string; tool_call_id: string; name: string; status: string;

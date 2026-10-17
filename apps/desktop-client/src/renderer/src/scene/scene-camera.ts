@@ -1,4 +1,4 @@
-import type { ViewPresetId } from "../app/room-machine";
+import type { ViewPresetId } from "../app/home/room-machine";
 import { SCENE_WORLD, type ScenePoint, type SceneSize } from "./scene-geometry";
 
 export type SceneCameraPreset = {

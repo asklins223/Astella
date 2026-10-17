@@ -2,9 +2,9 @@
 import { webcrypto } from "node:crypto";
 import { beforeEach, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({ epoch: 9, upload: vi.fn() }));
-vi.mock("../desktop-client", () => ({ createRequestMeta: () => ({ workspaceEpoch: state.epoch }), getCurrentWorkspaceEpoch: () => state.epoch,
+vi.mock("../client/desktop-client", () => ({ createRequestMeta: () => ({ workspaceEpoch: state.epoch }), getCurrentWorkspaceEpoch: () => state.epoch,
   unwrapGatewayResult: (result: { data: unknown; ok: boolean }) => { if (!result.ok) throw new Error("upload failed"); return result.data; }, gatewayErrorMessage: (error: Error) => error.message }));
-import { createDocumentImageImporter } from "../source-document-images";
+import { createDocumentImageImporter } from "../source/source-document-images";
 beforeEach(() => { state.epoch = 9; state.upload.mockReset().mockResolvedValue({ ok: true, data: { url: "/api/uploads/confirmed" } });
   vi.stubGlobal("crypto", webcrypto); window.astella = { source: { uploadImage: state.upload } } as unknown as typeof window.astella; });
 it("identical embedded images upload once and only confirmed URLs enter the document", async () => {

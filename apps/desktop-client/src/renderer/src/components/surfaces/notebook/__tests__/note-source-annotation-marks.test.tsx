@@ -12,9 +12,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render } from "@testing-library/react";
 import { createRef } from "react";
-import { NoteSourceEditor, type NoteSourceEditorHandle } from "../note-source-editor";
-import type { NoteMarkdownEditorHandle } from "../note-markdown-editor";
-import type { AnnotationPlacement } from "../note-annotation-placement";
+import { NoteSourceEditor, type NoteSourceEditorHandle } from "../document/note-source-editor.tsx";
+import type { NoteMarkdownEditorHandle } from "../document/note-markdown-editor.tsx";
+import type { AnnotationPlacement } from "../annotation/note-annotation-placement.ts";
 
 const SOURCE = [
   "# 提取练习",

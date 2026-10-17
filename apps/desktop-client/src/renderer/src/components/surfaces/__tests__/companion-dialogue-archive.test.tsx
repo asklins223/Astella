@@ -3,8 +3,8 @@ import type { CompanionHistoryItemV1 } from "@astella/shared/companion-memory-de
 import type { CompanionDiscoveryEntryV1 } from "@astella/shared/desktop-ipc-contracts";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { useRoomStore } from "../../../app/room-store";
-import { publishCompanionHistoryChanged, publishCompanionRecordsChanged } from "../../companion/companion-events";
+import { useRoomStore } from "../../../app/home/room-store";
+import { publishCompanionHistoryChanged, publishCompanionRecordsChanged } from "../../companion/content/companion-events";
 import { CompanionDialoguePage } from "../companion/companion-dialogue-page";
 
 const LATEST = "11111111-1111-4111-8111-111111111111";

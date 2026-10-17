@@ -5,7 +5,7 @@
  * 这里量的是它**画在哪、画不画**。两条都不该省。
  */
 import { describe, expect, it } from "vitest";
-import { annotationPlacements, chronologicalAnnotations, placementsByBlock, type PlacementBlock } from "../note-annotation-placement.ts";
+import { annotationPlacements, chronologicalAnnotations, placementsByBlock, type PlacementBlock } from "../annotation/note-annotation-placement.ts";
 import type { NoteAnnotationV1 } from "@astella/shared/note-annotation-contracts";
 
 const BLOCK0 = "提取练习让大脑重新构建记忆痕迹。";

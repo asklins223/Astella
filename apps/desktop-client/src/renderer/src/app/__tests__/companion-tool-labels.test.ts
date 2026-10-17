@@ -12,7 +12,7 @@
 import { COMPANION_AGENT_TOOL_NAMES } from "@astella/shared/companion-agent-registry";
 import { describe, expect, it } from "vitest";
 
-import { TOOL_LABELS } from "../companion-agent-nodes.ts";
+import { TOOL_LABELS } from "../companion-session/companion-agent-nodes.ts";
 
 describe("工具标签表与注册表集合相等（W2-1）", () => {
   it("每个注册工具都有一句中文说明，且表里没有多余条目", () => {

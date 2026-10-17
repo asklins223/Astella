@@ -14,7 +14,7 @@ import test from "node:test";
  * | --- | --- | --- |
  * | `card-generation-v2/activation-service.ts` | 2461 | 拆了（→ `reuse-resolver.ts`，89 行 0 import） |
  * | `learning-runs/run-service.ts` | 3505 | **没拆**：缝不干净，见审计文档 P2-2 记录 |
- * | `handlers/companion-agent-runtime.ts` | 3950 | 没拆（它属 B2「worker handlers 分子域」） |
+ * | `handlers/agent/companion-agent-runtime.ts` | 3950 | 没拆（它属 B2「worker handlers 分子域」） |
  * | `learning-runs/processing/run-processing-tick.ts` | 2729 | 上一轮已迁到 worker（P1-2），仍大 |
  *
  * 这几个文件每一行都是**活代码**，不是死代码。硬拆的代价不是"改坏"，
@@ -85,6 +85,10 @@ function godFiles(): { rel: string; lines: number }[] {
  * 这样"还欠多少"始终是文件里的一个真数，而不是一次性的印象。
  */
 const BASELINE: Readonly<Record<string, number>> = {
+  // 2026-10-17：`workers/ai-worker/src/handlers` 按职责分了子目录
+  // （agent / turn / tools / context / memory / proactive / journal / note /
+  // schedulers，index.ts 留根）。下面历史记录里的 `handlers/<name>.ts` 是
+  // 搬迁前的真实位置，保持原样可追溯，不随目录调整改写。
   // 2026-10-01（伴星日记）：companion-daily-summary 拆出 diary-content（素材/篇章规则）
   // 与 diary-candidates（有来源的候选筛选），编排文件 2260 → 1473，低于 1500 阈值。
   // 同日将图像读取与任务检查点拆到独立模块后，编排文件现为 1331 行。
@@ -108,7 +112,7 @@ const BASELINE: Readonly<Record<string, number>> = {
   "apps/api/src/modules/learning-runs/run-service.ts": 3505,
   "apps/api/src/modules/learning-runs/processing/run-processing-tick.ts": 2729,
   "apps/api/src/modules/card-generation-v2/activation-service.ts": 2461,
-  // 2026-10-05：`workers/ai-worker/src/handlers/parse-source.ts` 1878 → 1485，
+  // 2026-10-05：`workers/ai-worker/src/handlers/note/parse-source.ts` 1878 → 1485，
   // 从基线里**删掉**这一条。HTML → 正文/标题的提取（`removeElementsByClass`、
   // 三张 class 模式表、`decodeFormulaAlt`、`imgReplacement`、`extractTextFromHtml`、
   // `decodeHtmlEntities`、`extractHtmlTitle`，约 430 行）整体移入新建的
@@ -125,7 +129,7 @@ const BASELINE: Readonly<Record<string, number>> = {
   // 文件推到 1912 行，触发「清单不增」。棘轮不接受调大基线，所以拆。
   //
   // 2026-10-05（方案 44 §3.3）：装配回执与预算读数移入新建的
-  // `workers/ai-worker/src/handlers/companion-context-receipts.ts`（84 行），
+  // `workers/ai-worker/src/handlers/context/companion-context-receipts.ts`（84 行），
   // companion-agent-runtime 1541 → 1499、companion-dialogue 1512 → 1495；
   // 两者都**不在**基线里（是新增就超阈值的），所以这里只留记录、不加条目。
   // 判据同样是**域**：装配回执回答「这一轮实际装进了什么」，编排文件回答
@@ -133,13 +137,13 @@ const BASELINE: Readonly<Record<string, number>> = {
   // 都只会让它多背一份职责。
   //
   // 2026-10-07（输出预算改按档案声明）：多步正文的分段拼接与复读观测移入新建的
-  // `workers/ai-worker/src/handlers/companion-visible-segments.ts`（90 行），
+  // `workers/ai-worker/src/handlers/turn/companion-visible-segments.ts`（90 行），
   // companion-agent-runtime 1504 → 1411。同样**不在**基线里（它一直贴着阈值）。
   // 判据是**域**：分段拼接只管"各步说过的话怎么拼成最终正文、什么段该丢"，
   // 与"这一轮怎么读进来、这些步怎么走"没有耦合，零外部依赖。
   //
   // 2026-10-06（输入框传图）：失败留档与兜底话术移入新建的
-  // `workers/ai-worker/src/handlers/companion-dialogue-failure-retention.ts`（124 行），
+  // `workers/ai-worker/src/handlers/turn/companion-dialogue-failure-retention.ts`（124 行），
   // companion-dialogue 1525 → 1420。它同样**不在**基线里（HEAD 时 1499 行，贴着阈值，
   // 谁动这个文件都会红——所以这次一次拆够，给后续改动留出余量）。
   // 判据仍是**域**：留档回答「这一轮没成，用户看过的字怎么留住、没字可留时说哪句」，

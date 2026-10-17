@@ -7,7 +7,7 @@ import { DialoguePanel } from "../companion/companion-dialogue-panel";
 import { DiscoveryKeepAction, DiscoveryKeepFeedback, clipDiscoveryBody, type DiscoveryKeepProps } from "../companion/companion-discovery-offer";
 import { dialogueDiscoveryRequest } from "../companion/companion-discovery-targets";
 import { useDiscoveryBookmarks } from "../companion/use-discovery-bookmarks";
-import { useRoomStore } from "../../../app/room-store";
+import { useRoomStore } from "../../../app/home/room-store";
 import { CompanionDiscoveryPage } from "../companion/companion-discovery-page";
 
 const ID = "22222222-2222-4222-8222-222222222222";

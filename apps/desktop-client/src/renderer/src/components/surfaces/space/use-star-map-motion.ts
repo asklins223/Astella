@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, type RefObject } from "react";
-import { useRoomStore } from "../../../app/room-store";
+import { useRoomStore } from "../../../app/home/room-store";
 import { stepStarSpring, type StarSpring } from "./star-map-motion";
 
 type Track = { kind: "press" | "panel" | "page" | "cushion"; values: StarSpring[]; target: number[] };

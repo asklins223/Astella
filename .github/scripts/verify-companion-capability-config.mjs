@@ -52,6 +52,12 @@ const CAPABILITY_FLAGS = {
     COMPANION_MEMORY_VECTOR_V1: { dev: true, prod: true },
     COMPANION_SUMMARIZER_V1: { dev: true, prod: true },
     COMPANION_DAILY_SUMMARY_V1: { dev: true, prod: true },
+    // 2026-10-17：`lib/hedged-call.ts` 与 `handlers/agent/companion-release-router.ts`
+    // 的读取方。这两个开关从 v1.8.18 起就随分类器对冲与 L1 放行路由进了 compose，
+    // 但本表没跟着登记，`make verify` 于是把它们当成死开关报红（CI 不跑这条脚本，
+    // 所以只有本地基线看得见）。
+    COMPANION_TOOL_INTENT_HEDGE_MS: { dev: "0", prod: "0" },
+    COMPANION_RELEASE_ROUTER: { dev: "enforce", prod: "enforce" },
   },
 };
 

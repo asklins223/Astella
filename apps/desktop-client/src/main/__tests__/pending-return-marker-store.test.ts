@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { FilePendingReturnMarkerStore, MemoryPendingReturnMarkerStore } from "../pending-return-marker-store";
+import { FilePendingReturnMarkerStore, MemoryPendingReturnMarkerStore } from "../store/pending-return-marker-store";
 
 const subjectId = "00000000-0000-4000-8000-000000000001";
 const workspaceId = "00000000-0000-4000-8000-000000000002";

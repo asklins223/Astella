@@ -1,0 +1,31 @@
+/**
+ * §14.2 canonical context revision（Electron broker 与服务端共用）。
+ *
+ * node:crypto 依赖 → 只经子路径 import（@astella/shared/companion-bridge-revision），
+ * 不进 index 全量导出（客户端 bundle 会触发 node: 缺失崩溃）。
+ * Electron broker 与 API hydration 使用同一公式，保证 revision 两端一致。
+ */
+
+import { sha256Hex } from "../content/content-hash.ts";
+import type { MainPageContextInput } from ".././contracts/companion/companion-bridge-contracts.ts";
+
+export function computeContextRevisionV2(input: MainPageContextInput): string {
+  const canonical = JSON.stringify({
+    routeRef: input.routeRef,
+    pageKind: input.pageKind,
+    entityRefs: [...input.entityRefs]
+      // Serialize each entity once and sort the canonical strings — avoids
+      // re-serialising the same entities O(n log n) times inside the comparator.
+      .map((entity) => JSON.stringify(entity))
+      .sort()
+      .map((json) => JSON.parse(json) as typeof input.entityRefs[number]),
+    interactionState: input.interactionState,
+    graph: input.graph ?? null,
+    capabilityHints: [...input.capabilityHints].sort(),
+    sensitivity: input.sensitivity,
+    // 可读视图必须进摘要：视图变了就是 context 变了，否则 renew 的 CAS 与
+    // "同一个 publish 重试"的判定都会把内容变化当成重复请求吞掉。
+    readableView: input.readableView ?? null,
+  });
+  return sha256Hex(canonical);
+}

@@ -16,7 +16,7 @@ import {
   learningDoesNotReleaseHoldV2,
   skipAffectsOnlyThisDisplayV2,
   type ObjectiveHoldV2,
-} from "../review-authorization-rules-v2.ts";
+} from "../review/review-authorization-rules-v2.ts";
 
 const HOLD: ObjectiveHoldV2 = { objectiveId: "obj-1", reasonCode: "user_deferred_objective" };
 

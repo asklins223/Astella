@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { getCompanionAgentTool } from "@astella/shared";
-import { executeReadTool } from "../companion-tool-execution.ts";
-import type { AgentEventContext } from "../companion-read-tools.ts";
+import { executeReadTool } from "../tools/companion-tool-execution.ts";
+import type { AgentEventContext } from "../tools/companion-read-tools.ts";
 
 test("读近期历史交付完整原文、序号、来源时间；不把旧记录当成刚才", async () => {
   const text = "前文🫧\r\n".repeat(1800) + "尾部更正：咖啡是十月五号聊的。";

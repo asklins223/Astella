@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
-import { companionShareStepResult } from "../companion-note-share.ts";
-import { CompanionToolNotExecutedError } from "../companion-tool-result.ts";
+import { companionShareStepResult } from "../note/companion-note-share.ts";
+import { CompanionToolNotExecutedError } from "../tools/companion-tool-result.ts";
 
 const noteId = randomUUID();
 const receipt = (shareScope: "private" | "shared", changed: boolean) => ({

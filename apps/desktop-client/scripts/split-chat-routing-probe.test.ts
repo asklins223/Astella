@@ -6,7 +6,7 @@ import * as ts from "typescript";
 // 一次把 JSDoc 的 `/**` 留在原文件，一次把区间短成「只有那段 JSDoc」。
 // `node.getStart()` / `node.getEnd()` 不会。
 it("spans", () => {
-  const P = "src/renderer/src/app/companion-chat-session.tsx";
+  const P = "src/renderer/src/app/companion-session/companion-chat-session.tsx";
   const src = readFileSync(P, "utf8");
   const sf = ts.createSourceFile("i.tsx", src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const MOVE = new Set([

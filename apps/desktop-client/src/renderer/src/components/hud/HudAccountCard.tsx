@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowRight, LogOut, UserRound } from "lucide-react";
-import { NO_AVATAR_SRC, useRoomStore, type AccountIdentity } from "../../app/room-store";
-import { createRequestMeta, unwrapGatewayResult } from "../../app/desktop-client";
-import { signOutCurrentAccount } from "../../app/account-signout";
+import { NO_AVATAR_SRC, useRoomStore, type AccountIdentity } from "../../app/home/room-store";
+import { createRequestMeta, unwrapGatewayResult } from "../../app/client/desktop-client";
+import { signOutCurrentAccount } from "../../app/gate/account-signout";
 import { HudBubbleConfirmation, HudBubbleHeader } from "./HudBubbleParts";
 import { useTactileSurface } from "../motion/use-tactile-surface";
 

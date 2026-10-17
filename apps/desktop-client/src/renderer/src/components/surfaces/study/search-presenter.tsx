@@ -2,8 +2,8 @@ import type { ReactNode } from "react";
 import type { DesktopSearchItem, DesktopSourceDetail } from "@astella/shared/desktop-surface-contracts";
 import type { LearningObjectiveSurfaceV3 } from "@astella/shared/learning-objective-surface-contracts";
 import type { NoteDetailV1, NoteBlockProjectionV1 } from "@astella/shared/note-projection-contracts";
-import type { SearchTypeFilter } from "../../../app/room-store";
-import { createRequestMeta, unwrapGatewayResult } from "../../../app/desktop-client";
+import type { SearchTypeFilter } from "../../../app/home/room-store";
+import { createRequestMeta, unwrapGatewayResult } from "../../../app/client/desktop-client";
 import { freshnessLabel } from "../run/objective-state-copy";
 
 export const PAGE_SIZE = 24;

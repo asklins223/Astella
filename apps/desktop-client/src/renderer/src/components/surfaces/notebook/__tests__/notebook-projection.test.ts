@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import type { AstellaDesktopApiM2 } from "@astella/shared/desktop-ipc-contracts";
-import { readNotebookProjection } from "../notebook-projection";
+import { readNotebookProjection } from "../shell/notebook-projection.ts";
 
 afterEach(() => vi.useRealTimers());
 it("reads a selected note and its independent state in two network rounds", async () => {

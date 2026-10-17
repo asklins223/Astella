@@ -21,18 +21,18 @@ const migration = read("apps/api/src/db/migrations/0420_companion_followup_sugge
 const journal = read("apps/api/src/db/migrations/meta/_journal.json");
 const indexSource = read("workers/ai-worker/src/index.ts");
 const timeoutConfig = read("workers/ai-worker/src/lib/handler-timeout-config.ts");
-const dialogueSource = read("workers/ai-worker/src/handlers/companion-dialogue.ts");
+const dialogueSource = read("workers/ai-worker/src/handlers/turn/companion-dialogue.ts");
 // 2026-10-16（神文件棘轮）：终态事务从编排文件抽进 companion-dialogue-finalization.ts，
 // 追问排队与回复落库同属那一笔事务，判据跟着真实位置走。
-const finalizationSource = read("workers/ai-worker/src/handlers/companion-dialogue-finalization.ts");
-const storeSource = read("workers/ai-worker/src/handlers/companion-dialogue-store.ts");
-const jobSource = read("workers/ai-worker/src/handlers/companion-followup-suggestions-job.ts");
-const contractsSource = read("packages/shared/src/contracts/companion-conversation-contracts.ts");
+const finalizationSource = read("workers/ai-worker/src/handlers/turn/companion-dialogue-finalization.ts");
+const storeSource = read("workers/ai-worker/src/handlers/turn/companion-dialogue-store.ts");
+const jobSource = read("workers/ai-worker/src/handlers/schedulers/companion-followup-suggestions-job.ts");
+const contractsSource = read("packages/shared/src/contracts/companion/companion-conversation-contracts.ts");
 const messageSchemaSource = read("packages/shared/src/db-schema/companion-conversations.ts");
 const apiMessagesSource = read("apps/api/src/modules/companion-conversation/turn/companion-conversations-service.ts");
 const replaySource = read("apps/api/src/modules/companion-conversation/run-turn-replay.ts");
 const bundleSource = read("apps/api/src/modules/companion-conversation/run-issue-bundle.ts");
-const diagnosticsSource = read("packages/shared/src/contracts/companion-run-diagnostics.ts");
+const diagnosticsSource = read("packages/shared/src/contracts/companion/companion-run-diagnostics.ts");
 const roleGrants = read("infra/postgres/roles.sql");
 
 test("① 任务真的会被执行：声明、注册、限时三处都在", () => {

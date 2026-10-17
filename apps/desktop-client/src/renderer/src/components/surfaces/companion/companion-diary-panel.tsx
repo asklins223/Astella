@@ -2,11 +2,11 @@ import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts"
 import type { CompanionDailyFailureReasonV1,CompanionDailySummaryV1 } from "@astella/shared/companion-memory-desktop-contracts";
 import { CalendarDays,ChevronDown,ChevronLeft,ChevronRight } from "lucide-react";
 import { useEffect,useMemo,useRef,useState } from "react";
-import { useRoomStore } from "../../../app/room-store";
-import { CompanionQuoteBlock,CompanionRecordImage,MonthCalendar } from "../../companion/CompanionChatRecord";
+import { useRoomStore } from "../../../app/home/room-store";
+import { CompanionQuoteBlock,CompanionRecordImage,MonthCalendar } from "../../companion/hud/CompanionChatRecord";
 import { HUD_PAGES } from "../../hud/hud-pages";
 import { usePageReadableView } from "../../hud/use-page-readable-view";
-import { formatDate } from "../notebook/surface-data";
+import { formatDate } from "../notebook/shell/surface-data.tsx";
 import type { Section } from "./companion-center-model";
 import { CenterFeedback,SectionState } from "./companion-center-primitives";
 import { diaryDayLabel,shiftIsoDate,todayIsoDate } from "./companion-diary-day";

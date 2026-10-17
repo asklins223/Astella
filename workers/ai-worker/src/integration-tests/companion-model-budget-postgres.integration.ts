@@ -3,11 +3,11 @@ import { randomUUID } from "node:crypto";
 import { after, test } from "node:test";
 import postgres from "postgres";
 import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
-import { readRunMeta, reserveCompanionProviderCall } from "../handlers/companion-agent-events.ts";
+import { readRunMeta, reserveCompanionProviderCall } from "../handlers/agent/companion-agent-events.ts";
 import { resolveAgentTurnInterpretation } from "@astella/agent-core";
 import { closeDatabase, withWorkerWorkspaceTransaction } from "../db.ts";
-import { memorySourceHasActionProposal } from "../handlers/companion-memory-extractor.ts";
-import { writeBatchedDeltas } from "../handlers/companion-dialogue-deltas.ts";
+import { memorySourceHasActionProposal } from "../handlers/memory/companion-memory-extractor.ts";
+import { writeBatchedDeltas } from "../handlers/turn/companion-dialogue-deltas.ts";
 import { CompanionContextChangedError } from "../lib/non-retryable-errors.ts";
 import { createHash } from "node:crypto";
 

@@ -4,18 +4,18 @@ import type { ActivityTargetV1, TodayActivityV1 } from "@astella/shared/activity
 import type { AllWorkspacesStatsOverviewV1 } from "@astella/shared/stats-overview-contracts";
 import type { NoteLearningRoundPersonalHistoryItemV1 } from "@astella/shared/note-learning-round-contracts";
 import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
-import { SETTINGS_ATTENTION_AI_CONSENT, SETTINGS_SECTION_AI_CONSENT } from "../../../app/companion-consent-gate";
-import { useRoomStore } from "../../../app/room-store";
-import { createRequestMeta, unwrapGatewayResult } from "../../../app/desktop-client";
+import { SETTINGS_ATTENTION_AI_CONSENT, SETTINGS_SECTION_AI_CONSENT } from "../../../app/companion-pages/companion-consent-gate";
+import { useRoomStore } from "../../../app/home/room-store";
+import { createRequestMeta, unwrapGatewayResult } from "../../../app/client/desktop-client";
 import { HudPage } from "../../hud/HudPage";
 import { useHudPage } from "../../hud/use-hud-page";
 import { usePageReadableView } from "../../hud/use-page-readable-view";
 import { useTactileSurface } from "../../motion/use-tactile-surface";
-import { SurfaceDataState, useDayAnchor, useSurfaceProjection } from "../notebook/surface-data.tsx";
+import { SurfaceDataState, useDayAnchor, useSurfaceProjection } from "../notebook/shell/surface-data.tsx";
 import { buildAllSpacesSummary, type AllSpacesSummary } from "../library/all-spaces-summary.ts";
 import { buildTodayAnomalyGroups, buildTodayLogRows, buildTodayVerdict, sharedAnomalyStep, sortAnomalyGroups,
   todayAnomalyTruncationNote, todayLogTruncationNote, type TodayAnomalyGroup, type TodayLogRow } from "../library/today-log.ts";
-import { ROUND_RECORD_COPY_V1, roundHistoryStateLabelV1 } from "../notebook/round-record-copy.ts";
+import { ROUND_RECORD_COPY_V1, roundHistoryStateLabelV1 } from "../notebook/learning/round-record-copy.ts";
 import { AllSpacesPanel, AnomalyTriage, CompanionRail, DayVerdict, LogStream, RoundRecordStream } from "./study-log-sections";
 import { useStudyRoundRecords } from "./use-study-round-records";
 import { useStudyJournalPosition, type StudyTab } from "./use-study-journal-position";

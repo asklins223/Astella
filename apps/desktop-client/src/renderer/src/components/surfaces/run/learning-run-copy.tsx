@@ -32,7 +32,7 @@ import { ArrowLeft, Lightbulb, Pause, Play, RotateCcw } from "lucide-react";
 import { ArtifactPayload, LearningDraftPayload, LearningRendererDraftState, LearningTaskPublic, StructuredPartAnswerV1, StructuredPartPublicV1 } from "@astella/shared/learning-run-contracts";
 import { GetLearningRunResultResponseV2, LearningRunAllowedActionV2, LearningRunPublicSnapshotV2, LearningRunTargetRevealV2 } from "@astella/shared/learning-run-v2-contracts";
 import { DesktopLearningRunActionRequestV2, DesktopRouteV1 } from "@astella/shared/desktop-ipc-contracts";
-import { createRequestMeta, RendererGatewayError, unwrapGatewayResult } from "../../../app/desktop-client";
+import { createRequestMeta, RendererGatewayError, unwrapGatewayResult } from "../../../app/client/desktop-client";
 import { formatObjectiveDay } from "./objective-state-copy.ts";
 import { learningRunFeedback } from "./objective-quest-presentation.ts";
 

@@ -2,11 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { DesktopNoteListItem } from "@astella/shared/desktop-surface-contracts";
 import type { CompanionAccountStateV1 } from "@astella/shared/companion-shell-contracts";
 import { AI_CONSENT_VERSION } from "@astella/shared/desktop-ipc-contracts";
-import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../../app/desktop-client";
-import { companionConsentGate, SETTINGS_ATTENTION_AI_CONSENT, SETTINGS_SECTION_AI_CONSENT } from "../../../app/companion-consent-gate";
-import { useRoomStore } from "../../../app/room-store";
-import { notifyCompanion, useCompanionNotifications } from "../companion-notifications";
-import { subscribeCompanionAccountChanged } from "../companion-events";
+import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../../app/client/desktop-client";
+import { companionConsentGate, SETTINGS_ATTENTION_AI_CONSENT, SETTINGS_SECTION_AI_CONSENT } from "../../../app/companion-pages/companion-consent-gate";
+import { useRoomStore } from "../../../app/home/room-store";
+import { notifyCompanion, useCompanionNotifications } from "../notify/companion-notifications";
+import { subscribeCompanionAccountChanged } from "../content/companion-events";
 import { GUIDE_STEPS, GUIDE_TOPICS, openCompanionGuide, topicForStep, type GuideTopicId } from "./guide-definitions";
 import { GuideProgressClient, resumableGuide, verifiedGuideIdentity, type GuideScope } from "./guide-progress";
 

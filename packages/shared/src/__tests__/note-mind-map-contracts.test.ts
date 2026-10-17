@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mindMapContentV1Schema, type MindMapContentV1 } from "../contracts/note-mind-map-contracts.ts";
+import { mindMapContentV1Schema, type MindMapContentV1 } from "../contracts/note/note-mind-map-contracts.ts";
 const valid: MindMapContentV1 = {schemaVersion:1,rootId:"root",nodes:[
   {id:"root",parentId:null,kind:"root",label:"电功率",explanation:null,references:[]},
   {id:"a",parentId:"root",kind:"concept",label:"固定电压",explanation:"P=U²/R",references:[{blockOrdinal:1,quote:"固定电压"}]}]};

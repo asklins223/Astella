@@ -21,12 +21,12 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
-import { ANSWER_BEARING_EXPOSURE_KINDS_V2, EXPOSURE_KINDS_V2 } from "../contracts/learning-card-v2-contracts.ts";
+import { ANSWER_BEARING_EXPOSURE_KINDS_V2, EXPOSURE_KINDS_V2 } from "../contracts/learning/learning-card-v2-contracts.ts";
 
 const REPO_ROOT = resolve(import.meta.dirname, "..", "..", "..", "..");
 // 2026-09-29（P2-3）：contracts/ 重组后这份定义换了位置。
 // 判据的对象是「这份成员表的唯一定义处」，不是某个文件名——所以跟着搬。
-const DEFINITION_FILE = "packages/shared/src/contracts/learning-card-v2-contracts.ts";
+const DEFINITION_FILE = "packages/shared/src/contracts/learning/learning-card-v2-contracts.ts";
 const MIGRATION_DIR = "apps/api/src/db/migrations";
 const RUNTIME_DIRS = ["apps/api/src", "workers/ai-worker/src", "apps/desktop-client/src", "packages/shared/src"];
 

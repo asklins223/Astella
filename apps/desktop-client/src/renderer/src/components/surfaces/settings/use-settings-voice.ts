@@ -1,7 +1,7 @@
 /** Account voice preferences and a device-local preview player. */
 import type { CompanionVoicePreferenceV1,TtsEngineV1,TtsVoiceOptionV1 } from "@astella/shared";
 import { useEffect,useRef,useState } from "react";
-import { createRequestMeta,gatewayErrorMessage,unwrapGatewayResult } from "../../../app/desktop-client";
+import { createRequestMeta,gatewayErrorMessage,unwrapGatewayResult } from "../../../app/client/desktop-client";
 
 export function useSettingsVoice(input: {
   readonly epochRef: { current: number | undefined };

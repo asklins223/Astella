@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CompanionParticipationPreferences } from "../companion/companion-participation-preferences";
-import { useRoomStore } from "../../../app/room-store";
+import { useRoomStore } from "../../../app/home/room-store";
 import type { CompanionParticipationPreferencesV1 } from "@astella/shared/companion-initiative-contracts";
 
 const ok = <T,>(data: T) => ({ version: 1, ok: true, data, requestId: "participation", correlationId: "participation", schemaRevision: "desktop-ipc-v1" });

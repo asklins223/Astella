@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { companionControlsBounds, live2DHeadDrawableIndices, projectVisibleLive2DBounds } from "../companion-visible-bounds";
+import { companionControlsBounds, live2DHeadDrawableIndices, projectVisibleLive2DBounds } from "../bubble/companion-visible-bounds";
 
 describe("visible model geometry", () => {
   it("projects y-down drawable pixels and includes props beyond the body", () => {

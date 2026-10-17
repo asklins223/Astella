@@ -16,7 +16,7 @@ import {
   discreteV2FirstDueAt,
   DiscreteV2PolicyError,
   type DiscreteV2Input,
-} from "../scheduling-policy-v2.ts";
+} from "../review/scheduling-policy-v2.ts";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
 

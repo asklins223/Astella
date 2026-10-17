@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { resolveRoomIntent, type RoomIntent } from "../../renderer/src/app/room-machine";
+import { resolveRoomIntent, type RoomIntent } from "../../renderer/src/app/home/room-machine";
 import { parseLearningRoomManifest } from "../../renderer/src/media/learning-room-manifest";
 import sourceManifest from "../../renderer/public/assets/learning-room/v1/manifest.json";
 

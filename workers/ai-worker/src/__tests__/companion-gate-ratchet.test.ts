@@ -28,15 +28,15 @@ const GATE_BASELINE = 9;
  * 重排会让 review 看不出"到底删的是哪一道"。
  */
 const GATE_JUDGES: ReadonlyArray<{ id: string; fn: string; file: string }> = [
-  { id: "G1", fn: "unverifiedNumericClaims", file: "../handlers/companion-dialogue-content.ts" },
-  { id: "G2", fn: "claimsNothingDueAgainstFacts", file: "../handlers/companion-dialogue-content.ts" },
-  { id: "G3", fn: "claimsLookupThatNeverRan", file: "../handlers/companion-dialogue-content.ts" },
-  { id: "G4", fn: "looksLikeUnfulfilledActionNarration", file: "../handlers/companion-dialogue-content.ts" },
-  { id: "G5", fn: "looksTruncatedReply", file: "../handlers/companion-dialogue-content.ts" },
-  { id: "G6", fn: "unverifiedQuoteClaims", file: "../handlers/companion-dialogue-content.ts" },
-  { id: "G7", fn: "containsCompanionInternalToken", file: "../handlers/companion-dialogue-content.ts" },
-  { id: "G8", fn: "looksLikeJsonEnvelope", file: "../handlers/companion-dialogue-content.ts" },
-  { id: "G9", fn: "looksLikeJsonFragment", file: "../handlers/companion-dialogue-content.ts" },
+  { id: "G1", fn: "unverifiedNumericClaims", file: "../handlers/turn/companion-dialogue-content.ts" },
+  { id: "G2", fn: "claimsNothingDueAgainstFacts", file: "../handlers/turn/companion-dialogue-content.ts" },
+  { id: "G3", fn: "claimsLookupThatNeverRan", file: "../handlers/turn/companion-dialogue-content.ts" },
+  { id: "G4", fn: "looksLikeUnfulfilledActionNarration", file: "../handlers/turn/companion-dialogue-content.ts" },
+  { id: "G5", fn: "looksTruncatedReply", file: "../handlers/turn/companion-dialogue-content.ts" },
+  { id: "G6", fn: "unverifiedQuoteClaims", file: "../handlers/turn/companion-dialogue-content.ts" },
+  { id: "G7", fn: "containsCompanionInternalToken", file: "../handlers/turn/companion-dialogue-content.ts" },
+  { id: "G8", fn: "looksLikeJsonEnvelope", file: "../handlers/turn/companion-dialogue-content.ts" },
+  { id: "G9", fn: "looksLikeJsonFragment", file: "../handlers/turn/companion-dialogue-content.ts" },
 ];
 
 /**
@@ -47,10 +47,10 @@ const GATE_JUDGES: ReadonlyArray<{ id: string; fn: string; file: string }> = [
  * 调用点走。G5 的包装层则特意留在 companion-agent-runtime.ts 里（见那里的注释）。
  */
 const RUNTIME_FILES = [
-  "../handlers/companion-agent-runtime.ts",
-  "../handlers/companion-dialogue-stream.ts",
-  "../handlers/companion-step-plan.ts",
-  "../handlers/companion-dialogue-content.ts",
+  "../handlers/agent/companion-agent-runtime.ts",
+  "../handlers/turn/companion-dialogue-stream.ts",
+  "../handlers/turn/companion-step-plan.ts",
+  "../handlers/turn/companion-dialogue-content.ts",
 ];
 
 function read(relative: string): string {

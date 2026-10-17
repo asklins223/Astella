@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   arbitrateLive2DParameters,
   LIVE2D_PARAMETER_LAYER_PRIORITY,
-} from "../live2d-parameter-priority.ts";
+} from "../live2d/live2d-parameter-priority.ts";
 
 describe("Live2D parameter arbitration", () => {
   it("lets lipsync win over FACS, and FACS win over blink", () => {

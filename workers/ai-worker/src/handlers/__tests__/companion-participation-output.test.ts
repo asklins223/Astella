@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { isCompanionParticipationClosure, repeatsCompanionParentReply } from "../companion-participation-output.ts";
+import { isCompanionParticipationClosure, repeatsCompanionParentReply } from "../proactive/companion-participation-output.ts";
 
 test("a spelled-out quiet decision is execution closure", () => {
   for (const text of ["（安静结束，本轮不发言。）", "(静默结束。)", "本轮无更多内容。", "（提醒已发，本轮无更多内容）", "（这轮没有需要补充的新内容，安静收尾。）"])

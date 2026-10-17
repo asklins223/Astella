@@ -12,7 +12,7 @@ import { test } from "node:test";
 import {
   agentTurnRequestSchema,
   agentTurnResultSchema,
-} from "../contracts/card-agent-contracts.ts";
+} from "../contracts/agent/card-agent-contracts.ts";
 
 const HANDLE = {
   id: "rs_1",

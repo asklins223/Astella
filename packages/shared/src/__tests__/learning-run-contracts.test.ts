@@ -23,7 +23,7 @@ import {
   submitTaskArtifactReceiptSchema,
   learningTaskPublicSchema,
   taskInteractionSchema,
-} from "../contracts/learning-run-contracts.ts";
+} from "../contracts/learning/learning-run-contracts.ts";
 
 const uuid = () => crypto.randomUUID();
 

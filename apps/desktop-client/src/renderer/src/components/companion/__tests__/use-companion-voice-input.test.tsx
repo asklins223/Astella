@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useCompanionVoiceInput } from "../use-companion-voice-input";
-import { useRoomStore } from "../../../app/room-store";
-import { useCompanionNotifications } from "../companion-notifications";
-import { SETTINGS_ATTENTION_VOICE_MODEL } from "../open-voice-model-settings";
-import { isCompanionMicrophoneActive } from "../companion-notification-voice";
-import { COMPANION_VAD_TUNING } from "../companion-voice-vad";
+import { useCompanionVoiceInput } from "../voice/use-companion-voice-input";
+import { useRoomStore } from "../../../app/home/room-store";
+import { useCompanionNotifications } from "../notify/companion-notifications";
+import { SETTINGS_ATTENTION_VOICE_MODEL } from "../voice/open-voice-model-settings";
+import { isCompanionMicrophoneActive } from "../voice/companion-notification-voice";
+import { COMPANION_VAD_TUNING } from "../voice/companion-voice-vad";
 
 /**
  * 录音器在这里是一台**手摇的**：测试自己推帧、推电平，VAD 与分段才有确定的时间轴。
@@ -26,24 +26,24 @@ const transcribe = vi.hoisted(() => vi.fn());
 const asrReady = vi.hoisted(() => vi.fn());
 const playback = vi.hoisted(() => ({ active: false, stops: 0, listeners: new Set<() => void>() }));
 
-vi.mock("../voice-recorder", () => ({ CompanionVoiceRecorder: class {
+vi.mock("../voice/voice-recorder", () => ({ CompanionVoiceRecorder: class {
   static isSupported() { return true; }
   constructor(options: NonNullable<typeof recorder.options>) { recorder.options = options; }
   start = recorder.start;
   stop = recorder.stop;
 } }));
-vi.mock("../local-speech-recognition", () => ({
+vi.mock("../voice/local-speech-recognition", () => ({
   transcribeRecording: transcribe,
   isLocalAsrReady: asrReady,
   isAsrModelMissing: (error: unknown) => error instanceof Error && error.name === "AsrModelMissingError",
 }));
-vi.mock("../voice-asr-model", async importOriginal => ({ ...await importOriginal<typeof import("../voice-asr-model")>(), readVoiceAsrModel: vi.fn() }));
-vi.mock("../../../app/desktop-client", async importOriginal => {
-  const actual = await importOriginal<typeof import("../../../app/desktop-client")>();
+vi.mock("../voice/voice-asr-model", async importOriginal => ({ ...await importOriginal<typeof import("../voice/voice-asr-model")>(), readVoiceAsrModel: vi.fn() }));
+vi.mock("../../../app/client/desktop-client", async importOriginal => {
+  const actual = await importOriginal<typeof import("../../../app/client/desktop-client")>();
   return { ...actual, requireWorkspaceEpoch: async () => "epoch" };
 });
-vi.mock("../../../app/companion-voice-playback", async importOriginal => {
-  const actual = await importOriginal<typeof import("../../../app/companion-voice-playback")>();
+vi.mock("../../../app/companion-session/companion-voice-playback", async importOriginal => {
+  const actual = await importOriginal<typeof import("../../../app/companion-session/companion-voice-playback")>();
   return {
     ...actual,
     stopCompanionSpeech: () => {

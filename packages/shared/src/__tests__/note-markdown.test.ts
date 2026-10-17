@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { noteBlockMarkdown, noteMarkdownText, noteMarkdownTree, noteLinkHref, noteLinkTarget, noteImageMarkdown, noteImageHtmlAttrs } from "../note-markdown.ts";
-import { noteBlocksToPmNodes, pmNodesToNoteBlocks, noteBlockRenderedTextV1 } from "../note-doc-schema.ts";
-import { markdownToBlocks } from "../markdown-parser.ts";
+import { noteBlockMarkdown, noteMarkdownText, noteMarkdownTree, noteLinkHref, noteLinkTarget, noteImageMarkdown, noteImageHtmlAttrs } from "../note/note-markdown.ts";
+import { noteBlocksToPmNodes, pmNodesToNoteBlocks, noteBlockRenderedTextV1 } from "../note/note-doc-schema.ts";
+import { markdownToBlocks } from "../note/markdown-parser.ts";
 
 test("富文本排版经服务端分块重建保留脚注、行内公式和字体", () => {
   const content = '<p style="text-align:center;line-height:2.4"><span style="color:#a44b3b;font-size:24px">彩色</span> H<sub>2</sub>O $x^2$ 参考<sup data-note-ref="n">[n]</sup></p>';

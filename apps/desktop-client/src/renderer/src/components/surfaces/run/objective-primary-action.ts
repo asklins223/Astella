@@ -1,5 +1,5 @@
 import type { LearningObjectivePrimaryActionV3 } from "@astella/shared/learning-objective-surface-contracts";
-import { createCommandId, createRequestMeta, unwrapGatewayResult } from "../../../app/desktop-client";
+import { createCommandId, createRequestMeta, unwrapGatewayResult } from "../../../app/client/desktop-client";
 
 export type ObjectiveActionDeps = {
   readonly epochRef: { current: number | undefined };

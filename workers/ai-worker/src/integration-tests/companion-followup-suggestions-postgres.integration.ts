@@ -36,7 +36,7 @@ after(async () => {
   await closeDatabase().catch(() => {});
 });
 
-const { runCompanionFollowupSuggestions } = await import("../handlers/companion-followup-suggestions-job.ts");
+const { runCompanionFollowupSuggestions } = await import("../handlers/schedulers/companion-followup-suggestions-job.ts");
 
 const HASH_A = "a".repeat(64);
 const HASH_B = "b".repeat(64);

@@ -9,14 +9,14 @@
  * 轮询只在 `downloading` 时开：装好了就停，退到「等用户再点一次」而不是后台空转。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { gatewayErrorMessage } from "../../../app/desktop-client";
+import { gatewayErrorMessage } from "../../../app/client/desktop-client";
 import {
   cancelVoiceAsrModel,
   downloadVoiceAsrModel,
   readVoiceAsrModel,
   removeVoiceAsrModel,
   type VoiceAsrModelSnapshotV1,
-} from "../../companion/voice-asr-model";
+} from "../../companion/voice/voice-asr-model";
 
 /** 400ms 一次：足够让进度条看起来是连续的，又不至于把一条通道问成轮询风暴。 */
 const POLL_INTERVAL_MS = 400;

@@ -59,49 +59,49 @@ type LockOrderSite = {
 const SITES: LockOrderSite[] = [
   // ─── worker ───────────────────────────────────────────────────────────────
   {
-    file: "workers/ai-worker/src/handlers/companion-agent-events.ts",
+    file: "workers/ai-worker/src/handlers/agent/companion-agent-events.ts",
     runLock: /lockCompanionRunForEventWrite\(/,
     conversationLock: /UPDATE\s+companion_conversations/,
     why: "appendAgentEvent 写的是 agent.tool（会触发器），必须先锁 run 行",
   },
   {
-    file: "workers/ai-worker/src/handlers/companion-agent-proposal.ts",
+    file: "workers/ai-worker/src/handlers/agent/companion-agent-proposal.ts",
     runLock: /lockCompanionRunForEventWrite\(/,
     conversationLock: /UPDATE\s+companion_conversations/,
     why: "建言事务先锁 run，围栏 UPDATE 与计数器都在其后",
   },
   {
-    file: "workers/ai-worker/src/handlers/companion-followup-suggestions-job.ts",
+    file: "workers/ai-worker/src/handlers/schedulers/companion-followup-suggestions-job.ts",
     runLock: /lockCompanionRunForEventWrite\(/,
     conversationLock: /UPDATE\s+companion_conversations/,
     why: "追问建议先锁 run；末尾还要写 last_event_seq",
   },
   {
-    file: "workers/ai-worker/src/handlers/companion-dialogue-deltas.ts",
+    file: "workers/ai-worker/src/handlers/turn/companion-dialogue-deltas.ts",
     runLock: /UPDATE\s+companion_turn_runs/,
     conversationLock: /UPDATE\s+companion_conversations/,
     why: "流式增量本就先做活性检查再分配 seq",
   },
   {
-    file: "workers/ai-worker/src/handlers/companion-dialogue-stream.ts",
+    file: "workers/ai-worker/src/handlers/turn/companion-dialogue-stream.ts",
     runLock: /UPDATE\s+companion_turn_runs/,
     conversationLock: /UPDATE\s+companion_conversations/,
     why: "整段流式收尾同样先锁 run",
   },
   {
-    file: "workers/ai-worker/src/handlers/companion-thinking-stream.ts",
+    file: "workers/ai-worker/src/handlers/turn/companion-thinking-stream.ts",
     runLock: /UPDATE\s+companion_turn_runs/,
     conversationLock: /UPDATE\s+companion_conversations/,
     why: "思考流写 assistant.thinking（会触发器），先锁 run",
   },
   {
-    file: "workers/ai-worker/src/handlers/companion-dialogue-store.ts",
+    file: "workers/ai-worker/src/handlers/turn/companion-dialogue-store.ts",
     runLock: /UPDATE\s+companion_turn_runs/,
     conversationLock: /UPDATE\s+companion_conversations/,
     why: "状态帧/取消/失败收尾几个事务都是先锁 run 再分配 seq",
   },
   {
-    file: "workers/ai-worker/src/handlers/companion-dialogue.ts",
+    file: "workers/ai-worker/src/handlers/turn/companion-dialogue.ts",
     runLock: /UPDATE\s+companion_turn_runs/,
     conversationLock: /UPDATE\s+companion_conversations/,
     why: "轮次收尾先锁 run 再写会话",
@@ -109,31 +109,31 @@ const SITES: LockOrderSite[] = [
   {
     // 2026-10-16（神文件棘轮）：终态事务从 companion-dialogue.ts 分出。它第一句就是
     // run 行锁（lockCompanionRunForEventWrite），做完状态/世代栅栏才分配会话计数器。
-    file: "workers/ai-worker/src/handlers/companion-dialogue-finalization.ts",
+    file: "workers/ai-worker/src/handlers/turn/companion-dialogue-finalization.ts",
     runLock: /lockCompanionRunForEventWrite\(/,
     conversationLock: /UPDATE\s+companion_conversations/,
     why: "终态事务先锁 run 行再做状态/世代栅栏，最后才拿会话 seq",
   },
   {
-    file: "workers/ai-worker/src/handlers/companion-participation-tools.ts",
+    file: "workers/ai-worker/src/handlers/tools/companion-participation-tools.ts",
     runLock: /UPDATE\s+companion_turn_runs/,
     conversationLock: /UPDATE\s+companion_conversations/,
     why: "相处偏好写入先确认 run 活着再分配 seq",
   },
   {
-    file: "workers/ai-worker/src/handlers/companion-dialogue-failure-retention.ts",
+    file: "workers/ai-worker/src/handlers/turn/companion-dialogue-failure-retention.ts",
     runLock: /SELECT id FROM companion_turn_runs[\s\S]{0,400}?FOR UPDATE/,
     conversationLock: /UPDATE\s+companion_conversations/,
     why: "失败留档第一句就是 run 行的 SELECT … FOR UPDATE（行号看着 conv 在前，事务顺序不是）",
   },
   {
-    file: "workers/ai-worker/src/handlers/companion-initiative.ts",
+    file: "workers/ai-worker/src/handlers/proactive/companion-initiative.ts",
     runLock: /INSERT\s+INTO\s+companion_turn_runs/,
     conversationLock: /UPDATE\s+companion_conversations/,
     why: "主动交流新建的是**新** run 行，不锁任何已存在的 run 行，构不成 AB-BA",
   },
   {
-    file: "workers/ai-worker/src/handlers/companion-summarizer.ts",
+    file: "workers/ai-worker/src/handlers/context/companion-summarizer.ts",
     conversationsOnly: true,
     conversationLock: /SELECT id FROM companion_conversations[\s\S]{0,240}?FOR UPDATE/,
     why: "摘要提交只锁会话行（父围栏要串行化读链头→插入），从不碰 run 行，故无对可成环",
@@ -313,7 +313,7 @@ test("turn-service 建轮路径在锁会话行之前先锁 run 行（drizzle .fo
 });
 
 test("run 锁 helper 与它挡的事故留在同一处声明", () => {
-  const source = readFileSync(join(REPO_ROOT, "packages/shared/src/companion-lock-order.ts"), "utf8");
+  const source = readFileSync(join(REPO_ROOT, "packages/shared/src/companion/companion-lock-order.ts"), "utf8");
   // 规约本体不能被悄悄挪走：helper、事故日期、两种序的名字都要在。
   assert.match(source, /lockCompanionRunForEventWrite/);
   assert.match(source, /lockCompanionConversationWaitingRuns/);

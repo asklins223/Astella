@@ -67,7 +67,7 @@ test("不变量②：排期主体是目标 id，不是卡 id（D2 §3.1 的存�
 test("不变量②的另一半：排的是读者本人那一行（user_id 来自会话，不来自请求体）", () => {
   assert.match(body, /userId: scope\.userId/,
     "排期的 user 不是会话里的那个人 ⇒ 读者能给别人排安排");
-  const contract = readFileSync(join(REPO_ROOT, "packages/shared/src/contracts/review-reminder-contracts.ts"), "utf8");
+  const contract = readFileSync(join(REPO_ROOT, "packages/shared/src/contracts/learning/review-reminder-contracts.ts"), "utf8");
   assert.match(contract, /startSharedCardPersonalReviewV2Schema = z\.strictObject\(\{\s*\n\s*cardId: z\.string\(\)\.uuid\(\)/,
     "请求体第一格不是 cardId，或多了别的字段");
   // 请求体不许带 userId / workspaceId

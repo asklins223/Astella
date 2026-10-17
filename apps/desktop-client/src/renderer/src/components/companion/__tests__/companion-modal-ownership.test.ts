@@ -4,7 +4,7 @@ import {
   hasForeignModal,
   isCompanionOwnedModal,
   isModalElement,
-} from "../companion-modal-ownership.ts";
+} from "../content/companion-modal-ownership.ts";
 
 /**
  * 实机撞到的那条形状，一比一搬进 jsdom：

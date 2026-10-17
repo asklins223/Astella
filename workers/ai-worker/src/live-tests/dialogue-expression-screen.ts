@@ -4,7 +4,7 @@ import type { AgentTurnRequest } from "@astella/shared";
 import { observedProvider, loadPlatformConfig, outputDir, safeFailure, save, type WireReceipt } from "./acceptance-common.ts";
 import { resolveDialogueCandidate } from "./dialogue-candidate.ts";
 import { hashDialogueValue, snapshotDialogueRequest, snapshotDialogueWireBody } from "./dialogue-experiment.ts";
-import { finalizeCompanionReplyText, sanitizeCompanionVisibleText, validateCompanionOutput } from "../handlers/companion-dialogue-content.ts";
+import { finalizeCompanionReplyText, sanitizeCompanionVisibleText, validateCompanionOutput } from "../handlers/turn/companion-dialogue-content.ts";
 
 const suffix = process.env.LIVE_EXPRESSION_SCREEN_SUFFIX;
 if (!suffix || !/^[a-z0-9-]{1,40}$/.test(suffix)) throw new Error("Explicit unique screen suffix required");

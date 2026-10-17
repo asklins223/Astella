@@ -28,7 +28,7 @@ import {
   type AssessmentDisputeViewV2,
   type CloseAssessmentDisputeResultV2,
 } from "@astella/shared/assessment-dispute-rules-v2";
-import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../../app/desktop-client.ts";
+import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../../app/client/desktop-client.ts";
 
 /**
  * 四种异议（`AssessmentDisputeKindV2`）在界面上的说法。

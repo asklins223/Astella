@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { executeTurn } from "@astella/agent-core";
 import { companionAgentBudgetSnapshotV1Schema } from "@astella/shared";
-import { companionExecutionPolicy } from "../companion-execution-policy.ts";
-import { companionStepRuntimePolicy } from "../companion-step-plan.ts";
+import { companionExecutionPolicy } from "../agent/companion-execution-policy.ts";
+import { companionStepRuntimePolicy } from "../turn/companion-step-plan.ts";
 
 test("default agent completes a task beyond the old step and call ceilings", async () => {
   const policy = companionExecutionPolicy({});

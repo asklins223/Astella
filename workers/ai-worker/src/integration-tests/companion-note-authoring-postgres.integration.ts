@@ -6,15 +6,15 @@ import { getCompanionAgentTool, resolveAllCompanionAgentTools } from "@astella/s
 import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 import { createPrivateNoteRecords } from "@astella/agent-host";
 import { executeCompanionCreateNote, companionCreatedNoteId, userForbidsNoteLibraryRead,
-  type CompanionNoteAuthoringEvent } from "../handlers/companion-note-authoring.ts";
-import { executeReadTool } from "../handlers/companion-tool-execution.ts";
-import type { AgentEventContext } from "../handlers/companion-read-tools.ts";
+  type CompanionNoteAuthoringEvent } from "../handlers/note/companion-note-authoring.ts";
+import { executeReadTool } from "../handlers/tools/companion-tool-execution.ts";
+import type { AgentEventContext } from "../handlers/tools/companion-read-tools.ts";
 import { closeDatabase, withWorkerWorkspaceTransaction } from "../db.ts";
 import { withWorkspaceTransaction, closeDatabase as closeApiDatabase } from "../../../../apps/api/src/db/client.ts";
 import { createNote, getNoteWithVersion } from "../../../../apps/api/src/modules/note/service.ts";
 import { loadNoteDoc, applyNoteDocUpdate } from "../../../../apps/api/src/modules/note/document-state.ts";
 import { projectFragmentBlocks, writeFragmentBlocks } from "../../../../apps/api/src/modules/note/doc-fragment.ts";
-import { persistFailedPartial } from "../handlers/companion-dialogue-failure-retention.ts";
+import { persistFailedPartial } from "../handlers/turn/companion-dialogue-failure-retention.ts";
 
 const dbUrl = testDatabaseUrl("DATABASE_URL_MIGRATOR");
 if (!new URL(dbUrl).pathname.startsWith("/astella_note_authoring_")) throw new Error("Use an isolated astella_note_authoring_* database");

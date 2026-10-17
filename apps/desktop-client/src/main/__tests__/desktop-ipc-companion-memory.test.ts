@@ -6,7 +6,7 @@ import { join } from "node:path";
 // 2026-09-30：伴星这一族已变成**自由函数**（`desktop-gateway-ns-companion.ts`），
 // `desktop-ipc.ts` 静态引用那个模块——**在网关实例上挂的桩不再被调用**。
 const companionStubs: Record<string, ReturnType<typeof vi.fn<(...args: never[]) => unknown>>> = {};
-vi.mock("../desktop-gateway-ns-companion", async (importOriginal) => {
+vi.mock("../gateway/desktop-gateway-ns-companion", async (importOriginal) => {
   // **部分 mock**（见 `ns-companion-stubs.ts` 头）：这个模块有 52 个导出，
   // 枚举式工厂只认清单里写出来的那几个——**其余在运行时抛**
   // `No "xxx" export is defined on the mock`，而那个异常被 `desktop-ipc.ts` 的
@@ -18,7 +18,7 @@ vi.mock("../desktop-gateway-ns-companion", async (importOriginal) => {
   //
   // ⚠️ 工厂里不能引用顶层 `import`（vi.mock 被提升）——所以辅助在工厂内部 import。
   //    `importOriginal()` 不能与别的 import 并发。
-  const real = await importOriginal<typeof import("../desktop-gateway-ns-companion")>();
+  const real = await importOriginal<typeof import("../gateway/desktop-gateway-ns-companion")>();
   const { companionModuleMock } = await import("./ns-companion-stubs");
   return companionModuleMock(real, companionStubs);
 });
@@ -36,11 +36,11 @@ import {
   companionMemoryStarMapV2Schema,
   companionPersonaV1Schema,
 } from "@astella/shared/companion-memory-desktop-contracts";
-import type { DesktopGateway } from "../desktop-gateway";
+import type { DesktopGateway } from "../gateway/desktop-gateway";
 import { registerAuthStub } from "./ns-auth-stubs";
-import * as ns_auth from "../desktop-gateway-ns-auth";
+import * as ns_auth from "../gateway/desktop-gateway-ns-auth";
 
-vi.mock("../desktop-gateway-ns-auth", async () => {
+vi.mock("../gateway/desktop-gateway-ns-auth", async () => {
   const { authModuleMock } = await import("./ns-auth-stubs");
   return authModuleMock();
 });
@@ -202,7 +202,7 @@ function requiredHandler(channel: string): InvokeHandler {
  */
 async function register(gateway: DesktopGateway) {
   vi.resetModules();
-  const { registerM1DesktopIpc } = await import("../desktop-ipc");
+  const { registerM1DesktopIpc } = await import("../ipc/desktop-ipc");
   registerM1DesktopIpc({
     gateway,
     env: { ASTELLA_DOMAIN_SCHEMA_REVISION: "domain-v2-test" },

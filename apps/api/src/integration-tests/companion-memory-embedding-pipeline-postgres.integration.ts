@@ -48,11 +48,11 @@ process.env.COMPANION_MEMORY_VECTOR_V1 = "true";
 const { closeDatabase: closeWorkerDatabase, withWorkerWorkspaceTransaction } =
   await import("../../../../workers/ai-worker/src/db.ts");
 const { tickCompanionMemoryEmbeddingScheduler, resetCompanionMemoryEmbeddingSchedulerForTest } =
-  await import("../../../../workers/ai-worker/src/handlers/companion-memory-embedding-scheduler.ts");
+  await import("../../../../workers/ai-worker/src/handlers/schedulers/companion-memory-embedding-scheduler.ts");
 const { runCompanionMemoryEmbeddingRebuild } =
-  await import("../../../../workers/ai-worker/src/handlers/companion-memory-embedding.ts");
+  await import("../../../../workers/ai-worker/src/handlers/memory/companion-memory-embedding.ts");
 const { retrieveCompanionMemories } =
-  await import("../../../../workers/ai-worker/src/handlers/companion-memory-vector.ts");
+  await import("../../../../workers/ai-worker/src/handlers/memory/companion-memory-vector.ts");
 const { registerFactory } = await import("../../../../workers/ai-worker/src/lib/provider-factory.ts");
 
 const EMBEDDING_MODEL_REVISION = "it-mock-memory-embedding-v1";

@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { AgentRole, type AgentTurnRequest } from "@astella/shared";
 import { sha256Utf8V1 } from "@astella/shared/content-hash";
-import { bindHistoryForCompaction, compactUncoveredHistory } from "../companion-history-pressure-compaction.ts";
-import { boundedStepSender } from "../companion-compaction.ts";
-import { createCompanionContextReceipts } from "../companion-context-receipts.ts";
+import { bindHistoryForCompaction, compactUncoveredHistory } from "../context/companion-history-pressure-compaction.ts";
+import { boundedStepSender } from "../context/companion-compaction.ts";
+import { createCompanionContextReceipts } from "../context/companion-context-receipts.ts";
 import { MockProvider } from "../../lib/providers/mock.ts";
 import { createGovernedProvider, type AIGovernanceContext } from "../../lib/governance.ts";
 

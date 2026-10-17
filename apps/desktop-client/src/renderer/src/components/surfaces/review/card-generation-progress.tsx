@@ -5,13 +5,13 @@ import { useCardVisibleArrival } from "../../motion/card-object-spring";
 import { CardPackArt } from "../library/card-pack-object";
 import { useCardPackMotion } from "../library/use-card-pack-motion";
 import { cardGenerationRecoveryReasonLabel, cardGenerationStatusLabel, cardGenerationSyncReportText, isCardGenerationInFlight, isCardGenerationStopped } from "./card-generation-status";
-import { formatRelative } from "../notebook/surface-data";
+import { formatRelative } from "../notebook/shell/surface-data.tsx";
 import { cardStrategyPresentation } from "./card-strategy-presentation";
 import { CandidateText } from "./candidate-text";
 import { CardGenerationRecoveryActions } from "./card-generation-recovery-actions";
 import type { CardGenerationSession } from "./use-card-generation-session";
 import { cardGenerationDiagnostic } from "./card-generation-diagnostics";
-import { guideToAiSettings } from "../../../app/ai-action-gate";
+import { guideToAiSettings } from "../../../app/gate/ai-action-gate";
 
 function WrittenCard({ candidate, index, working }: { candidate: CardGenerationCandidateV1; index: number; working: boolean }) {
   const paperRef = useRef<HTMLLIElement>(null);

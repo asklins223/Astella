@@ -4,8 +4,8 @@ import { noteDocResult, peerUpdate, seedUpdate } from "../../../test-support/not
 
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NotebookSurface } from "../notebook/notebook-surface.tsx";
-import { useRoomStore } from "../../../app/room-store.ts";
+import { NotebookSurface } from "../notebook/shell/notebook-surface.tsx";
+import { useRoomStore } from "../../../app/home/room-store.ts";
 
 /**
  * 别人改了这一篇，我这屏该画什么（批次 4.4 的实窗结论，批次 C2 换成文档之后重写）。

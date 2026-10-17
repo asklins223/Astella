@@ -75,10 +75,10 @@ const electronMock: ElectronMock = {
 vi.mock("electron", () => electronMock);
 
 // 启动链上其余模块在真正走到它们之前就被打断，这里只需要"存在即可"。
-vi.mock("../desktop-update", () => ({ primeUpdateStateFromCache: vi.fn() }));
-vi.mock("../desktop-ipc", () => ({ registerM1DesktopIpc: vi.fn() }));
-vi.mock("../desktop-ipc-rest", () => ({ registerRestChannels: vi.fn() }));
-vi.mock("../artifact-surface", () => ({
+vi.mock("../update/desktop-update", () => ({ primeUpdateStateFromCache: vi.fn() }));
+vi.mock("../ipc/desktop-ipc", () => ({ registerM1DesktopIpc: vi.fn() }));
+vi.mock("../ipc/desktop-ipc-rest", () => ({ registerRestChannels: vi.fn() }));
+vi.mock("../artifact/artifact-surface", () => ({
   artifactDocumentContentSecurityPolicy: vi.fn(),
   artifactFrameOrigin: "astella-artifact://frame",
   assembleArtifactDocument: vi.fn(),
@@ -86,11 +86,11 @@ vi.mock("../artifact-surface", () => ({
   isAllowedSubFrameNavigation: vi.fn(),
   rejectAllContentSecurityPolicy: "default-src 'none'",
 }));
-vi.mock("../asset-response", () => ({ createAssetResponsePlan: vi.fn(), mimeTypeForPath: vi.fn() }));
-vi.mock("../voice-asr-model-route", () => ({ createVoiceAsrModelResponder: vi.fn() }));
-vi.mock("../window-chrome", () => ({ nativeWindowChrome: vi.fn(() => ({})), titleBarOverlayForTheme: vi.fn(() => ({})) }));
-vi.mock("../window-zoom", () => ({ installWindowZoomShortcuts: vi.fn() }));
-vi.mock("../renderer-class-index", () => ({ registerRendererSecurityPolicy: vi.fn() }));
+vi.mock("../artifact/asset-response", () => ({ createAssetResponsePlan: vi.fn(), mimeTypeForPath: vi.fn() }));
+vi.mock("../voice/voice-asr-model-route", () => ({ createVoiceAsrModelResponder: vi.fn() }));
+vi.mock("../window/window-chrome", () => ({ nativeWindowChrome: vi.fn(() => ({})), titleBarOverlayForTheme: vi.fn(() => ({})) }));
+vi.mock("../window/window-zoom", () => ({ installWindowZoomShortcuts: vi.fn() }));
+vi.mock("../artifact/renderer-class-index", () => ({ registerRendererSecurityPolicy: vi.fn() }));
 
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { roomProjectionV1Schema } from "../contracts/room-projection-contracts.ts";
+import { roomProjectionV1Schema } from "../contracts/desktop/room-projection-contracts.ts";
 
 const projection = {
   version: 1 as const,

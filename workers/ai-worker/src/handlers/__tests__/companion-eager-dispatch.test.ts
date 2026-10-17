@@ -25,7 +25,7 @@ import {
   interruptedEagerCallStatus,
   type EagerDispatchOptions,
   type StreamToolCallSlot,
-} from "../companion-eager-dispatch.ts";
+} from "../agent/companion-eager-dispatch.ts";
 
 const READ = new Set(["companion_read_memory", "companion_read_context"]);
 

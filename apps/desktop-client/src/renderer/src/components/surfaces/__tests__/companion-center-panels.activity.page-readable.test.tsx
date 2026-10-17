@@ -16,7 +16,7 @@ import {
   companionLearningContextV1Schema,
   type CompanionLearningContextV1,
 } from "@astella/shared/companion-conversation-contracts";
-import { useRoomStore } from "../../../app/room-store.ts";
+import { useRoomStore } from "../../../app/home/room-store.ts";
 import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 
 /**

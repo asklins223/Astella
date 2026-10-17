@@ -5,7 +5,7 @@ import {
   COMPANION_REVEAL_LEAD_CHARS,
   createCompanionRevealDriver,
   type CompanionRevealDriver,
-} from "../companion-reveal-driver.ts";
+} from "../companion-session/companion-reveal-driver.ts";
 
 /** 假时钟：所有推进都由测试显式 `advance`，不依赖真实定时器。 */
 function harness(): { driver: CompanionRevealDriver; advance: (ms: number) => void; revealed: number[] } {
@@ -105,18 +105,26 @@ describe("companion-reveal-driver", () => {
     driver.noteSession("voice");
     driver.noteArrived(400);
     driver.tick();
-    expect(driver.revealed).toBe(COMPANION_REVEAL_LEAD_CHARS);   // 看门狗没到：只放行提前量
-    advance(COMPANION_REVEAL_FIRST_AUDIO_SILENCE_MS);
-    driver.tick();                                                // 看门狗到点，但音频仍算"在路上"
-    advance(1_500);
-    driver.tick();
-    expect(driver.revealed).toBe(COMPANION_REVEAL_LEAD_CHARS);    // 一个字都不多推
-    // 等满两倍看门狗：认定这一轮不会出声，放行给阅读钟——否则气泡再也收不了尾。
-    advance(COMPANION_REVEAL_FIRST_AUDIO_SILENCE_MS);
-    driver.tick();                                                // 钟在这一拍起算，不补时间
+    // 2026-10-17 改判：第一段音频合成期间，文字按阅读钟先走，不再冻在 6 个字上。
+    // 真窗口实测原来会卡 4.4 秒一个字不动，比"字略早于声音"难看得多。
+    expect(driver.revealed).toBe(COMPANION_REVEAL_LEAD_CHARS);
     advance(600);
     driver.tick();
-    expect(driver.revealed).toBe(COMPANION_REVEAL_LEAD_CHARS + 10);
+    // 起算那一拍已用提前量抬过基准，钟再走 600ms 只加 10 字是相对**起算后**的下限。
+    expect(driver.revealed).toBeGreaterThan(COMPANION_REVEAL_LEAD_CHARS);
+    // 看门狗到点（音频仍算"在路上"）：这时冻住，不让字独自跑完。
+    advance(COMPANION_REVEAL_FIRST_AUDIO_SILENCE_MS);
+    driver.tick();
+    const frozen = driver.revealed;
+    advance(500);
+    driver.tick();
+    expect(driver.revealed).toBe(frozen);
+    // 等满两倍看门狗：认定这一轮不会出声，放行给阅读钟——否则气泡再也收不了尾。
+    advance(COMPANION_REVEAL_FIRST_AUDIO_SILENCE_MS);
+    driver.tick();
+    advance(600);
+    driver.tick();
+    expect(driver.revealed).toBeGreaterThan(frozen);
   });
 
   it("音频真的没了（被停/念完）：阅读钟把剩下的字走完", () => {

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useRoomStore } from "../../../../app/room-store";
+import { useRoomStore } from "../../../../app/home/room-store";
 import { SourceLibrarySurface } from "../source-library-surface";
 import { SourceDetailSurface } from "../source-detail-surface";
 import { CaptureStrip } from "../source-capture";
@@ -9,7 +9,7 @@ import { CaptureStrip } from "../source-capture";
 const ok = <T,>(data: T) => ({ ok: true as const, workspaceEpoch: 1, data });
 /** PDF 解析换成假的：这一屏要验的是「先说在解析、收的是正文」，不是 pdf.js 本身。 */
 const pdfExtract = vi.hoisted(() => vi.fn());
-vi.mock("../../../../app/source-pdf", () => ({ extractPdfMarkdown: pdfExtract }));
+vi.mock("../../../../app/source/source-pdf", () => ({ extractPdfMarkdown: pdfExtract }));
 /** jsdom 的 File 既没有 text() 也没有 arrayBuffer()；采集通道逐份读字节，测试里的文件得自己带上。 */
 const fileBytes = (text: string) => new TextEncoder().encode(text).buffer;
 const mdFile = (name: string, body: string) => {
@@ -240,7 +240,7 @@ describe("少一步的材料录入", () => {
     // 第二份撞上解析队列上限：它必须自己算失败，而不是把整批拖成一条红。
     api.source.create
       .mockResolvedValueOnce(ok({ source: sources[0], segments, duplicateOf: null }))
-      .mockRejectedValueOnce(new (await import("../../../../app/desktop-client")).RendererGatewayError(
+      .mockRejectedValueOnce(new (await import("../../../../app/client/desktop-client")).RendererGatewayError(
         { code: "rate_limited", safeMessageKey: "rate_limited", retry: "safe_retry" } as never))
       .mockResolvedValueOnce(ok({ source: sources[1], segments, duplicateOf: null }));
     const onBatchCaptured = vi.fn();

@@ -11,12 +11,12 @@ import { createNote } from "../modules/note/service.ts";
 import { processCompanionNoteEdit } from "../modules/note/companion-edit-dispatch.ts";
 import { createCompanionTurn } from "../modules/companion-conversation/turn/turn-service.ts";
 import { closeNoteCollaboration } from "../modules/note/collaboration.ts";
-import { executeCompanionNoteEdit } from "../../../../workers/ai-worker/src/handlers/companion-note-edit.ts";
+import { executeCompanionNoteEdit } from "../../../../workers/ai-worker/src/handlers/note/companion-note-edit.ts";
 import { closeDatabase as closeWorkerDatabase } from "../../../../workers/ai-worker/src/db.ts";
 import { withWorkerWorkspaceTransaction } from "../../../../workers/ai-worker/src/db.ts";
-import { loadNoteReadPage } from "../../../../workers/ai-worker/src/handlers/companion-read-tools.ts";
-import { runCompanionToolExecution } from "../../../../workers/ai-worker/src/handlers/companion-tool-execution-run.ts";
-import type { AgentEventContext } from "../../../../workers/ai-worker/src/handlers/companion-read-tools.ts";
+import { loadNoteReadPage } from "../../../../workers/ai-worker/src/handlers/tools/companion-read-tools.ts";
+import { runCompanionToolExecution } from "../../../../workers/ai-worker/src/handlers/tools/companion-tool-execution-run.ts";
+import type { AgentEventContext } from "../../../../workers/ai-worker/src/handlers/tools/companion-read-tools.ts";
 
 const url = testDatabaseUrl("DATABASE_URL_MIGRATOR");
 if (!new URL(url).pathname.startsWith("/astella_note_edit_")) throw new Error("Use an isolated astella_note_edit_* database");

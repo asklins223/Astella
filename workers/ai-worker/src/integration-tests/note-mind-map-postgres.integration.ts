@@ -6,7 +6,7 @@ import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 import type { ChatMessage, ChatOptions } from "@astella/shared";
 import type { MindMapContentV1 } from "@astella/shared/note-mind-map-contracts";
 import { MockProvider } from "../lib/providers/mock.ts";
-import { runNoteMindMapGenerate } from "../handlers/note-mind-map-generate.ts";
+import { runNoteMindMapGenerate } from "../handlers/note/note-mind-map-generate.ts";
 import { closeDatabase as closeWorker } from "../db.ts";
 import { closeDatabase as closeApi, withWorkspaceTransaction } from "../../../../apps/api/src/db/client.ts";
 import { startNoteMindMapTask, getNoteMindMapTask, getNoteMindMapSource, listNoteMindMaps } from "../../../../apps/api/src/modules/note-mind-maps/service.ts";

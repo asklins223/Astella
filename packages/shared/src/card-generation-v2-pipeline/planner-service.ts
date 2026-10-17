@@ -41,12 +41,12 @@ import type {
   KnowledgeFormV2,
   CardStrategyV2,
   PracticeItemFormV2,
-} from "../contracts/card-generation-v2-contracts.ts";
-import { practiceFormsForKnowledgeForm } from "../contracts/card-generation-v2-contracts.ts";
-import type { TaskIntentV1 } from "../contracts/learning-run-contracts.ts";
+} from "../contracts/learning/card-generation-v2-contracts.ts";
+import { practiceFormsForKnowledgeForm } from "../contracts/learning/card-generation-v2-contracts.ts";
+import type { TaskIntentV1 } from "../contracts/learning/learning-run-contracts.ts";
 import {
   computeCardPlanHashV2,
-} from "../card-generation-v2-hashing.ts";
+} from "../review/card-generation-v2-hashing.ts";
 
 // ─── 服务端 Policy Cap ───────────────────────────────────────────────────
 

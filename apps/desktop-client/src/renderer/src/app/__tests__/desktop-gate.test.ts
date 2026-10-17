@@ -4,14 +4,14 @@ import type {
   GatewayErrorV1,
   SessionContextV1,
 } from "@astella/shared/desktop-ipc-contracts";
-import { RendererGatewayError } from "../desktop-client.ts";
+import { RendererGatewayError } from "../client/desktop-client.ts";
 import {
   decideBootstrapGatewayFailure,
   decideRuntimeGate,
   decideSessionGate,
   gateErrorPolicy,
   inspectDesktopContract,
-} from "../desktop-gate.ts";
+} from "../gate/desktop-gate.ts";
 
 const contract: DesktopContractSnapshotV1 = {
   version: 1,

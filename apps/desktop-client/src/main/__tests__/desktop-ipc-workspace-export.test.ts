@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import * as ns_workspace from "../desktop-gateway-ns-workspace";
+import * as ns_workspace from "../gateway/desktop-gateway-ns-workspace";
 
 // 2026-09-30：`fetchWorkspaceExport` 已变成自由函数（`desktop-gateway-ns-workspace.ts`），
 // `desktop-ipc.ts` 静态引用那个模块——**在网关实例上挂的桩不再被调用**。
 const workspaceStubs: Record<string, ReturnType<typeof vi.fn<(...args: never[]) => unknown>>> = {};
-vi.mock("../desktop-gateway-ns-workspace", async () => {
+vi.mock("../gateway/desktop-gateway-ns-workspace", async () => {
   const stubs = workspaceStubs;
   return {
     fetchWorkspaceExport: (...args: never[]) => stubs.fetchWorkspaceExport?.(...args),
@@ -23,11 +23,11 @@ import {
   type GatewayResultV1,
   type RequestMetaV1,
 } from "@astella/shared/desktop-ipc-contracts";
-import type { DesktopGateway } from "../desktop-gateway";
+import type { DesktopGateway } from "../gateway/desktop-gateway";
 import { registerAuthStub } from "./ns-auth-stubs";
-import * as ns_auth from "../desktop-gateway-ns-auth";
+import * as ns_auth from "../gateway/desktop-gateway-ns-auth";
 
-vi.mock("../desktop-gateway-ns-auth", async () => {
+vi.mock("../gateway/desktop-gateway-ns-auth", async () => {
   const { authModuleMock } = await import("./ns-auth-stubs");
   return authModuleMock();
 });
@@ -106,7 +106,7 @@ const event = { sender: {}, senderFrame: { url: "astella://renderer/" } };
 
 async function register(gateway: DesktopGateway) {
   vi.resetModules();
-  const { registerM1DesktopIpc } = await import("../desktop-ipc");
+  const { registerM1DesktopIpc } = await import("../ipc/desktop-ipc");
   registerM1DesktopIpc({
     gateway,
     env: { ASTELLA_DOMAIN_SCHEMA_REVISION: "domain-v2-test" },

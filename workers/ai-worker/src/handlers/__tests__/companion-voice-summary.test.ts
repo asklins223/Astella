@@ -4,7 +4,7 @@ import {
   COMPANION_VOICE_SUMMARY_DEFAULT_CHARS,
   isVoiceSegmentWithinSummary,
   resolveCompanionVoiceSummaryMaxChars,
-} from "../companion-voice-summary.ts";
+} from "../turn/companion-voice-summary.ts";
 
 test("语音摘要预算默认有界，显式 0 表示整篇朗读", () => {
   assert.equal(resolveCompanionVoiceSummaryMaxChars(undefined), COMPANION_VOICE_SUMMARY_DEFAULT_CHARS);

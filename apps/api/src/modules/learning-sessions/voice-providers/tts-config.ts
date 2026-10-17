@@ -54,7 +54,7 @@ let cached: TtsEngineConfig | null = null;
 export function loadTtsEngineConfig(): TtsEngineConfig {
   if (cached) return cached;
   // 设计 P1-7（2026-09-15 审计）：`tts` 节点此前不在共享契约内，这里只能自行 cast。
-  // 现在它已是 AIPlatformConfig 的一部分（见 packages/shared/src/platform-config.ts
+  // 现在它已是 AIPlatformConfig 的一部分（见 packages/shared/src/platform/platform-config.ts
   // 的 TtsEngineSettings），读取按契约类型进行，字段改名由编译器兜住。
   //
   // 读取路径保持不变（3 个候选路径探测：dev 容器 /app、宿主 apps/api 的 ../..、

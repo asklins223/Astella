@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { beginNoteReplySaveAttempt, isReadyNoteReplyForSave, resolveNoteReplySaveTarget } from "../note-reply-save.ts";
+import { beginNoteReplySaveAttempt, isReadyNoteReplyForSave, resolveNoteReplySaveTarget } from "../content/note-reply-save.ts";
 
 const anchor = {
   noteId: "11111111-1111-4111-8111-111111111111",

@@ -22,8 +22,8 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowRight, Leaf } from "lucide-react";
-import { createRequestMeta, unwrapGatewayResult } from "../../../app/desktop-client";
-import { useRoomStore } from "../../../app/room-store";
+import { createRequestMeta, unwrapGatewayResult } from "../../../app/client/desktop-client";
+import { useRoomStore } from "../../../app/home/room-store";
 import { TodayBatchOptions } from "./HomeSuggestionCard.tsx";
 
 type BatchItem = { objectiveId: string; reason: "due_now" | "rotation_stale" | "user_asked_more"; reasonLine: string };

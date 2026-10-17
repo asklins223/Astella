@@ -3,7 +3,7 @@ import {
   COMPANION_BUBBLE_FOLLOW_SLACK_PX,
   companionBubbleAtBottom,
   createCompanionBubbleFollow,
-} from "../companion-bubble-follow.ts";
+} from "../bubble/companion-bubble-follow.ts";
 
 /** 一个装满了的正文容器：3 行内容、2 行可视，钉底时 scrollTop = 26。 */
 const overflow = { scrollHeight: 78, clientHeight: 52 };

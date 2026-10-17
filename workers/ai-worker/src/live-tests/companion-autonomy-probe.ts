@@ -3,11 +3,11 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { resolveAllCompanionAgentTools, isCompanionAutonomousTool, renderCompanionSelfNotes } from "@astella/shared";
 import { buildReflectionMessages, companionReflectionOutputV1Schema, normalizeReflectionPayload,
-  verifyReflectionOutput, type ReflectionInputSnapshotV1 } from "../handlers/companion-reflection-content.ts";
-import { buildCompanionPersonaMessages } from "../handlers/companion-dialogue-content.ts";
-import { resolveCompanionPersonaContext } from "../handlers/companion-identity-context.ts";
-import { buildCasualFirstStepRequest } from "../handlers/companion-speculative-first-step.ts";
-import { parseMemoryExtractJson } from "../handlers/companion-memory-extractor.ts";
+  verifyReflectionOutput, type ReflectionInputSnapshotV1 } from "../handlers/journal/companion-reflection-content.ts";
+import { buildCompanionPersonaMessages } from "../handlers/turn/companion-dialogue-content.ts";
+import { resolveCompanionPersonaContext } from "../handlers/memory/companion-identity-context.ts";
+import { buildCasualFirstStepRequest } from "../handlers/agent/companion-speculative-first-step.ts";
+import { parseMemoryExtractJson } from "../handlers/memory/companion-memory-extractor.ts";
 import { platform, observedProvider, root, safeFailure, type WireReceipt } from "./acceptance-common.ts";
 
 const directory = `${root}outputs/companion-autonomy-20261010`;

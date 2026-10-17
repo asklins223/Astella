@@ -3,7 +3,7 @@ import { useRef } from "react";
 import { createPortal } from "react-dom";
 import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { useCompanionPaperPlacement } from "../use-companion-paper-placement";
+import { useCompanionPaperPlacement } from "../bubble/use-companion-paper-placement";
 
 let roleBox = { left: 100, right: 390, top: 530, bottom: 790, width: 290, height: 260 };
 let animatedRoleBox: typeof roleBox | null = null;

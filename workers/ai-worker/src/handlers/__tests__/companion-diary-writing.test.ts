@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { COMPANION_VOICE_STYLE_LINES_V2 } from "@astella/shared";
-import { buildDiaryCandidates } from "../companion-diary-candidates.ts";
-import { buildDiaryRevisionPrompt, diaryRevisionDraft } from "../companion-diary-revision.ts";
+import { buildDiaryCandidates } from "../journal/companion-diary-candidates.ts";
+import { buildDiaryRevisionPrompt, diaryRevisionDraft } from "../journal/companion-diary-revision.ts";
 import {
   buildDiaryPrompt, diaryLengthShortfall, diaryWritingSize, focusDiaryMaterial,
   pickDiarySubject, renderMaterial, resolveDiaryBlocks,
   type DiaryEmbed, type DiaryMaterial, type DiaryPersona, type DiaryPiece,
-} from "../companion-diary-content.ts";
+} from "../journal/companion-diary-content.ts";
 
 const persona: DiaryPersona = {
   name: "爱吃白饭的大肥鱼", personalityTags: ["慵懒", "贪吃"],

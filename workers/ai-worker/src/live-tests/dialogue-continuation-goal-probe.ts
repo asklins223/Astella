@@ -4,7 +4,7 @@ import type { AgentTurnRequest } from "@astella/shared";
 import { observedProvider, platform, outputDir, save, safeFailure, type WireReceipt } from "./acceptance-common.ts";
 import { snapshotDialogueRequest, snapshotDialogueWireBody, hashDialogueValue } from "./dialogue-experiment.ts";
 import { continuationGoalRequest, dialogueContinuationGoal } from "./dialogue-continuation-goal.ts";
-import { finalizeCompanionReplyText, sanitizeCompanionVisibleText, validateCompanionOutput } from "../handlers/companion-dialogue-content.ts";
+import { finalizeCompanionReplyText, sanitizeCompanionVisibleText, validateCompanionOutput } from "../handlers/turn/companion-dialogue-content.ts";
 
 const suffix = process.env.LIVE_CONTINUATION_GOAL_SUFFIX;
 if (!suffix || !/^[a-z0-9-]{1,40}$/.test(suffix)) throw new Error("Unique diagnostic suffix required");

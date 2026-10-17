@@ -12,7 +12,7 @@ import {
   WorkspaceTransactionScope,
   type ActiveWorkspaceTransaction,
   type WorkspaceContextQueryable,
-} from "../workspace-transaction.ts";
+} from "../platform/workspace-transaction.ts";
 
 const WORKSPACE_ID = "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA";
 const USER_ID = "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB";

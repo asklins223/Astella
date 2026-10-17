@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { SessionContextV1, WorkspaceArrivalV1 } from "@astella/shared/desktop-ipc-contracts";
-import type { SpaceIdentity } from "../../app/room-store";
+import type { SpaceIdentity } from "../../app/home/room-store";
 
 export type VerifiedSpaceArrival = WorkspaceArrivalV1 & { readonly name: string; readonly role: "owner" | "member"; readonly isPersonal: boolean; readonly generation: number };
 const delivered = new Set<string>();

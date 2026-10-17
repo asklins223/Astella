@@ -23,12 +23,12 @@ import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import test from "node:test";
 
-import { getCompanionAgentTool } from "../companion-agent-registry.ts";
-import { localDateIn } from "../companion-proactive-quota.ts";
+import { getCompanionAgentTool } from "../agent/companion-agent-registry.ts";
+import { localDateIn } from "../companion/companion-proactive-quota.ts";
 
 const REPO = resolve(import.meta.dirname, "..", "..", "..", "..");
 const executor = readFileSync(
-  join(REPO, "workers", "ai-worker", "src", "handlers", "companion-tool-execution.ts"), "utf8",
+  join(REPO, "workers", "ai-worker", "src", "handlers", "tools", "companion-tool-execution.ts"), "utf8",
 );
 const delivery = readFileSync(
   join(REPO, "apps", "api", "src", "modules", "companion-conversation", "delivery", "delivery-service.ts"), "utf8",

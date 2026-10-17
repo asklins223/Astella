@@ -10,7 +10,7 @@ vi.mock('electron', () => ({ app: {
   getAppPath: () => join(fixture.target, 'Contents/Resources/app.asar'),
   getPath: () => fixture.userData, getVersion: () => '1.0.0',
 } }))
-import { prepareMacosArchiveInstall, verifyMacosInstallLocation, macosExecutableSupportsArchitecture } from '../macos-update-install'
+import { prepareMacosArchiveInstall, verifyMacosInstallLocation, macosExecutableSupportsArchitecture } from '../update/macos-update-install'
 
 const roots: string[] = []
 afterEach(() => roots.splice(0).forEach(root => rmSync(root, { recursive: true, force: true })))

@@ -3,14 +3,14 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, expect, it, vi } from "vitest";
 import { useState } from "react";
 import type { AgentRunV1 } from "@astella/shared/agent-contracts";
-import { CompanionGoalBubble } from "../CompanionGoalBubble";
-import { CompanionGoalJournal } from "../CompanionGoalJournal";
-import type { AgentGoalsController } from "../use-agent-goals";
-import { openAgentArtifact } from "../agent-goal-presentation";
+import { CompanionGoalBubble } from "../goals/CompanionGoalBubble";
+import { CompanionGoalJournal } from "../goals/CompanionGoalJournal";
+import type { AgentGoalsController } from "../goals/use-agent-goals";
+import { openAgentArtifact } from "../goals/agent-goal-presentation";
 
-vi.mock("../use-companion-floating-placement", () => ({ useCompanionFloatingPlacement: () => ({ side: "left" }) }));
+vi.mock("../bubble/use-companion-floating-placement", () => ({ useCompanionFloatingPlacement: () => ({ side: "left" }) }));
 const room = vi.hoisted(() => ({ workspaceScopeRevision: 1, setActiveNoteRef: vi.fn(), setActiveCardGenerationRunId: vi.fn(), invoke: vi.fn() }));
-vi.mock("../../../app/room-store", () => ({ useRoomStore: Object.assign((select: (state: typeof room) => unknown) => select(room), { getState: () => room }) }));
+vi.mock("../../../app/home/room-store", () => ({ useRoomStore: Object.assign((select: (state: typeof room) => unknown) => select(room), { getState: () => room }) }));
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 const artifact = { kind: "note_overview" as const, id: "saved", jobId: "job", noteId: "note", noteVersionId: "version" };
 const run: AgentRunV1 = { version: 1, runId: "run", revision: 2, identityId: "identity",

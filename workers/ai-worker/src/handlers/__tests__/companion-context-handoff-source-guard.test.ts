@@ -28,7 +28,7 @@ test("决定窗口的地方只有一处：链上不许有第二个按条数切�
   // 旧形状是「对话链与摘要链各写一个 20」——改一处不改另一处就静默重叠或静默留空档。
   // 现在窗口只有一个主人，所以判据落在「只有一个地方做这个决定」上，
   // 而不是「两处数字相等」（相等也能各写一遍）。
-  const source = readFileSync(new URL("../companion-context-handoff.ts", import.meta.url), "utf8");
+  const source = readFileSync(new URL("../context/companion-context-handoff.ts", import.meta.url), "utf8");
   const boundBody = bodyOfExportedFn(source, "boundCompanionRecentHistory");
   assert.match(boundBody, /selectCompanionReplayWindow\(/,
     "boundCompanionRecentHistory 不再把取舍转给同一个选择器——窗口就有了第二个主人");
@@ -38,15 +38,15 @@ test("决定窗口的地方只有一处：链上不许有第二个按条数切�
     "收边函数又拿条数常量当覆盖边界");
 
   const chain = [
-    "companion-context-handoff.ts",
-    "companion-dialogue.ts",
-    "companion-dialogue-content.ts",
-    "companion-summarizer.ts",
-    "companion-tool-intent.ts",
+    "context/companion-context-handoff.ts",
+    "turn/companion-dialogue.ts",
+    "turn/companion-dialogue-content.ts",
+    "context/companion-summarizer.ts",
+    "tools/companion-tool-intent.ts",
   ];
   for (const file of chain) {
     const text = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
-    if (file !== "companion-context-handoff.ts") {
+    if (file !== "context/companion-context-handoff.ts") {
       // 交互预算那一层（`selectCompanionInteractiveReplayWindow`）也是同一个主人家的：
       // 它只是把「本轮声明的容量」夹成 min(路由, 回放预算) 再转给同一个选择器。
       // 摘要器现在经它取锚点——两侧必须是同一个裁剪决定，否则就会出现

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Sparkles } from "lucide-react";
-import { useRoomStore } from "../../../app/room-store";
+import { useRoomStore } from "../../../app/home/room-store";
 
 export const LEARNING_RUN_CEREMONY_LITE_DURATION_MS = 700;
 /** 彩纸只在这段窗口里继续生成；演出不再自动收场，所以生成必须先停。 */

@@ -3,14 +3,14 @@
 import { noteDocResult, seedBlocksUpdate } from "../../../test-support/note-doc-fixtures.ts";
 import { act, cleanup, fireEvent, render, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NotebookSurface } from "../notebook/notebook-surface.tsx";
-import { useRoomStore } from "../../../app/room-store.ts";
+import { NotebookSurface } from "../notebook/shell/notebook-surface.tsx";
+import { useRoomStore } from "../../../app/home/room-store.ts";
 import { noteBlockRenderedTextV1 } from "@astella/shared/note-doc-schema";
 import { noteAnnotationV1Schema } from "@astella/shared/note-annotation-contracts";
 import { noteRecallRecordV1Schema } from "@astella/shared/note-recall-contracts";
-import { beginNoteExplanation, completeNoteExplanation, interruptNoteExplanation, progressNoteExplanation, resetNoteExplanations, useNoteCompanionExplanations } from "../../companion/note-companion-explanation";
-import { textRangeAtOffsets } from "../notebook/notebook-reading-block";
-import { noteReadingText } from "../notebook/note-reading-text";
+import { beginNoteExplanation, completeNoteExplanation, interruptNoteExplanation, progressNoteExplanation, resetNoteExplanations, useNoteCompanionExplanations } from "../../companion/content/note-companion-explanation";
+import { textRangeAtOffsets } from "../notebook/reading/notebook-reading-block.tsx";
+import { noteReadingText } from "../notebook/reading/note-reading-text.ts";
 
 /**
  * 阅读页画出来的是不是编辑器里那一份（2026-09-24 对拍量出来的七类）。

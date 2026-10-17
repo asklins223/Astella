@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { ArrowRight, Check, House, Leaf, Plus, Search, Settings2, Ticket, UsersRound, X } from "lucide-react";
 import type { WorkspaceSummaryV1 } from "@astella/shared/desktop-ipc-contracts";
-import { spaceRoleLabel } from "../../app/space-identity";
+import { spaceRoleLabel } from "../../app/home/space-identity";
 import { HudBubbleConfirmation, HudBubbleHeader } from "./HudBubbleParts";
 import { useHudSpaces } from "./use-hud-spaces";
 import { useTactileSurface } from "../motion/use-tactile-surface";

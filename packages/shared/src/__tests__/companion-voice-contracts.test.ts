@@ -5,7 +5,7 @@ import {
   companionRunVoiceSegmentsResultV1Schema,
   companionVoiceSpeakRequestV1Schema,
   companionVoiceSpeakResultV1Schema,
-} from "../contracts/companion-voice-contracts.ts";
+} from "../contracts/companion/companion-voice-contracts.ts";
 
 const request = {
   version: 1 as const,

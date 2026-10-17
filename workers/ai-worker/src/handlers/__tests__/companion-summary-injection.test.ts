@@ -3,7 +3,7 @@ import { test } from "node:test";
 import {
   renderSummaryInjection,
   type SummaryInjectionInput,
-} from "../companion-summary-injection.ts";
+} from "../context/companion-summary-injection.ts";
 
 const input = (over: Partial<SummaryInjectionInput> = {}): SummaryInjectionInput => ({
   source: { title: "一段方言笑话", keyEvents: ["讲过两回笑话"] },

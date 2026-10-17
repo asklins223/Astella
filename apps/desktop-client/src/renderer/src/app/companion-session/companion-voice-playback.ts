@@ -1,0 +1,990 @@
+import { gatewayErrorMessage } from "../client/desktop-client";
+import { stopCompanionNotificationSpeech } from "../../components/companion/voice/companion-notification-voice";
+import type {
+  CompanionVoicePlaybackOutcomeRequestV1,
+  CompanionVoiceSpeakSegmentRequestV2,
+  CompanionCachedVoiceReadRequestV1,
+} from "@astella/shared/companion-voice-contracts";
+import type { CharacterCuePayloadV1 } from "@astella/shared/companion-conversation-contracts";
+import {
+  COMPANION_SPEECH_FEED_INITIAL,
+  splitForSpeech,
+  splitForSpeechIncremental,
+  type CompanionSpeechFeedState,
+  type CompanionSpeechSegment,
+} from "./companion-speech-segments";
+
+/**
+ * 伴星台词播放服务（2026-09-18）。
+ *
+ * 回复要"边念边现字"，所以文本显现与语音播放必须共用同一条时间线。这里的做法
+ * 是把一段回复切段（见 companion-speech-segments）、逐段合成、逐段播放，并在每
+ * 段开口时广播一次进度；气泡只是订阅进度，不自己猜节奏。
+ *
+ * 本模块不碰音频硬件：解码与播放由音频宿主（HomeV2AudioController）注入。这样
+ * 全应用仍然只有一个 AudioContext 和一条振幅通道——两路同时写嘴型参数会让口型
+ * 抖动。
+ */
+
+export interface CompanionVoiceHost {
+  /** 现在能不能出声（未解锁 / 静音 / 窗口不可见时为 false）。 */
+  readonly audible: () => boolean;
+  /** 合成一段文本并解码成可播放的 buffer；失败时抛错。 */
+  readonly synthesize: (text: string, signal?: AbortSignal) => Promise<AudioBuffer>;
+  /** Agent 正文通过服务端签发的片段引用合成；renderer 不提交正文。 */
+  readonly synthesizeSegment: (ref: CompanionVoiceSpeakSegmentRequestV2, signal?: AbortSignal) => Promise<AudioBuffer>;
+  /**
+   * 边收边播的片段（2026-10-17，可选）：拿到第一块音频就开始出声。
+   *
+   * 返回 `true` 表示**播放器已接管**（已排上音频），调用方不要再合成一次；
+   * 返回 `false` 表示这条路没走通且一声没响，调用方退回 `synthesizeSegment`。
+   * 不实现这个能力的宿主（测试替身、旧主进程）走的就是原来那条整段路径。
+   */
+  readonly playSegmentStream?: (
+    ref: CompanionVoiceSpeakSegmentRequestV2,
+    onProgress: (fraction: number) => void,
+    signal?: AbortSignal,
+  ) => Promise<boolean>;
+  /** 历史回放只读本机录音，通过同一音频宿主解码和播放。 */
+  readonly readCachedSegment?: (ref: CompanionCachedVoiceReadRequestV1) => Promise<AudioBuffer>;
+  /**
+   * 播放到结束；期间按播放进度回调 0..1（调用方会自行节流）。播完 resolve，
+   * 被 stop() 打断时也 resolve——打断由 generation 判定，不靠异常。
+   *
+   * resolve 的值是**这一段到底响没响**：闸门关着时宿主不会播，直接给 false。
+   * 这个区分不能让调用方自己猜——猜错的旧行为是"没出声也当播完了"，于是窗口被
+   * 盖住的那一瞬间，剩下每一段都被记成一次成功播放，文字安静地冲到结尾
+   * （2026-10-09）。
+   */
+  readonly play: (buffer: AudioBuffer, onProgress: (fraction: number) => void) => Promise<boolean>;
+  /**
+   * 此刻的播放位置 0..1；没有在播返回 null（方案 29 §14.11 修复 ⑤）。
+   *
+   * 与 `play` 的进度回调是两件事：回调是**采样**（每 ~80ms 一次，窗口不可见时还会
+   * 被 rAF 节流拖住），这个是**现算**——字幕要的是"现在念到哪了"，只有一个时钟
+   * （音频时钟）能回答，采样加第二个时钟必然漂移。
+   */
+  readonly progress?: () => number | null;
+  /** 立刻停掉当前播放。 */
+  readonly stop: () => void;
+  /**
+   * 回报一段音频的结局（0247）。**同步且自吞异常**：这一段播没播成不该有任何方式
+   * 影响下一段，所以宿主负责把网络失败咽下去，这里只负责在每一段的结局确定时喊一声。
+   */
+  readonly reportSegmentOutcome: (report: CompanionVoicePlaybackOutcomeRequestV1) => void;
+}
+
+export type CompanionSpeechPhase = "speaking" | "finished" | "stopped" | "failed" | "text_only";
+
+export interface CompanionSpeechProgress {
+  readonly planId: string;
+  readonly phase: CompanionSpeechPhase;
+  readonly segmentIndex: number;
+  readonly segmentCount: number;
+  /**
+   * 气泡此刻应露出的字数（映射回原文）。音频按播放进度推进这个数字，所以文字是
+   * 真的跟着她在说，而不是整段弹出——短回复只有一两句，按段跳会看不出流式。
+   */
+  readonly visibleChars: number;
+  readonly failure?: string;
+  readonly cue?: CharacterCuePayloadV1;
+}
+
+export interface CompanionSpeechHandle {
+  readonly planId: string;
+  /**
+   * `voice` = 音频驱动；`silent` = 播不了，由调用方按阅读节奏自行推进。
+   * 两者不会同时发生，任何时刻只有一个地方在推进文本。
+   */
+  readonly mode: "voice" | "silent";
+  readonly segments: readonly CompanionSpeechSegment[];
+  readonly segmentCount: number;
+  stop(): void;
+}
+
+let host: CompanionVoiceHost | null = null;
+let generation = 0;
+let sequence = 0;
+let activePlanId: string | null = null;
+let synthesisController: AbortController | null = null;
+const listeners = new Set<(progress: CompanionSpeechProgress) => void>();
+const activityListeners = new Set<() => void>();
+
+function setActiveSpeechPlan(next: string | null): void {
+  if (activePlanId === next) return;
+  synthesisController?.abort();
+  synthesisController = next === null ? null : new AbortController();
+  activePlanId = next;
+  for (const listener of activityListeners) listener();
+}
+
+export function subscribeCompanionSpeechActivity(listener: () => void): () => void {
+  activityListeners.add(listener);
+  return () => { activityListeners.delete(listener); };
+}
+
+/** 播放进度的广播节流：逐帧广播会带着 React 一起 60Hz 重渲气泡。 */
+const PROGRESS_INTERVAL_MS = 80;
+/**
+ * 单段音频的等待上限（方案 29 §4.9，抱怨 #4「输出了但语音根本不读」）。
+ *
+ * 原来是 1600ms / 1200ms。这两个数字对一条**网络合成**链路太紧了：qwen-tts 与
+ * edge-tts 都要一次完整往返，实测 edge-tts 容器还带着 15 次 500 和 BrokenPipeError。
+ * 命中截止的旧行为是 `generation += 1` 把**整轮**音频作废——而文字早就流完了，
+ * 于是用户看到的是"她说了话但没声音"，且这一轮之后再也恢复不了。
+ *
+ * 放宽的代价几乎为零：语音是对已显示文字的**渐进增强**，晚几秒开始念远好于不念。
+ * 现在超时只跳过那一段（见 runQueuedSpeech），整轮一段都没播出来才降级。
+ *
+ * ── 2026-10-02 重测：4000ms 落在**并发分布的中间**，所以它一直在误杀 ──
+ *
+ * 上一版那句注释引的是 2026-09-22 的**单发**测量（qwen p95 3071ms）。但客户端
+ * 是流水线：几段一起要，5 路并发才是真实形状。实测（真容器、真引擎、真会话）：
+ *
+ * | 形状 | p50 | p90 | max |
+ * | --- | --- | --- | --- |
+ * | 单发 V2 分段 | — | — | 1676ms |
+ * | 5 路并发（两批） | 1980 / 2845 | 2037 / 2862 | **3690 / 5132** |
+ *
+ * 4000ms 正好切在中间：慢的那一条必然越过截止。更糟的是**越过之后会重试**，
+ * 而重试恰好发生在服务器最忙的时候——等于在慢的时候再加压，把尾部推得更高。
+ * 那一段被跳过之后如果它是**首段**，`playedCount === 0`，整轮就降级成
+ * 「语音合成超时」，用户看到的是她一句话都不说。
+ *
+ * 8000 的依据是观测 max 5132 再留余量。这不是"拍脑袋放宽"：产品自己的判断写在
+ * 上面那段注释里——**跳过一句比晚几秒开口难得多**。截止的作用是挡住**真的**
+ * 挂死的请求，不是挡住慢的请求。
+ */
+export const COMPANION_SPEECH_FIRST_AUDIO_DEADLINE_MS = 8_000;
+/**
+ * 段间截止。同样按 5 路并发的实测尾部定：它比首段宽松一点，因为段与段之间
+ * 上一句已经在播，用户此刻有声音可听，耐心更高。
+ */
+export const COMPANION_SPEECH_GAP_DEADLINE_MS = 6_000;
+/** 合成失败后的重试间隔与次数（原来是**零退避**盲重试一次，且丢掉原始异常）。 */
+const SYNTH_RETRY_DELAY_MS = 250;
+const SYNTH_MAX_ATTEMPTS = 3;
+
+/**
+ * 永久拒绝：重试第二次不会改变答案，只会多要一次外部合成配额。
+ *
+ * 403 由网关按状态码翻成 `forbidden`；服务端在 403 上带 `error` token 时翻成专用码
+ * （`desktop-gateway.ts` 的 `mapResponseError`）。"还没签 AI 使用同意"就是这种
+ * （`apps/api/src/modules/identity/ai-consent-gate.ts`，doc 34 L13）。
+ * `api_untrusted` / `unsupported_contract` 同族：契约对不上时再打十次也是错。
+ */
+const PERMANENT_VOICE_REJECTIONS = new Set([
+  "forbidden",
+  // 2026-09-23 起"没签同意"从 `forbidden` 里分了出来（专用码 `ai_consent_required`）；
+  // 它同样永久，且**必须跟着进这张表**——否则那次拆分正好把"不再重试"这件事弄丢。
+  "ai_consent_required",
+  "ai_data_policy_denied",
+  "api_untrusted",
+  "unsupported_contract",
+]);
+
+function isPermanentVoiceRejection(error: unknown): boolean {
+  const code = (error as { readonly code?: unknown } | null | undefined)?.code;
+  return typeof code === "string" && PERMANENT_VOICE_REJECTIONS.has(code);
+}
+/**
+ * 一段音频"播完"的额外容忍量：等待上限 = 这段音频自身的时长 + 这个数。
+ *
+ * 命中即按"没听见"处理（dropped）并放开整轮，见 runQueuedSpeech 里那条注释。
+ * 导出只为让测试跟着这个数走，不写死 5000。
+ */
+export const COMPANION_SPEECH_PLAY_STALL_MS = 5_000;
+
+function emit(progress: CompanionSpeechProgress): void {
+  for (const listener of listeners) listener(progress);
+}
+
+export function setCompanionVoiceHost(next: CompanionVoiceHost | null): void {
+  if (host !== next) { stopCompanionSpeech(); stopCompanionNotificationSpeech(); }
+  host = next;
+}
+
+export function subscribeCompanionSpeech(listener: (progress: CompanionSpeechProgress) => void): () => void {
+  listeners.add(listener);
+  return () => { listeners.delete(listener); };
+}
+
+export function stopCompanionSpeech(): void {
+  const planId = activePlanId;
+  if (planId === null) return;
+  setActiveSpeechPlan(null);
+  generation += 1;
+  host?.stop();
+  emit({ planId, phase: "stopped", segmentIndex: -1, segmentCount: 0, visibleChars: 0 });
+}
+
+/**
+ * 伴星台词播放服务现在是否正在念一句（2026-09-19）。
+ *
+ * 主动提示音（`astella:home-v2-speak`）用它让路：用户主动问出来的回复是他要的反馈，
+ * 提示音是背景——背景抢掉正在念的回复，听感上就是"气泡里没发音"。
+ */
+export function isCompanionSpeechActive(): boolean {
+  return activePlanId !== null;
+}
+
+export class CompanionCachedAudioError extends Error {}
+
+/** 当时生成的分段原声。连续切换、停止和宿主关闭都沿同一 generation 失效。 */
+export function playCachedCompanionMessage(runId: string, ordinals: readonly number[]): { planId: string; stop: () => void } {
+  const activeHost = host;
+  if (!activeHost?.audible()) throw new CompanionCachedAudioError("请先开启声音，结束录音后再播放。");
+  const read = activeHost.readCachedSegment;
+  if (!read || ordinals.length === 0) throw new CompanionCachedAudioError("这条消息的本机音频已不可用。");
+  stopCompanionNotificationSpeech();
+  stopCompanionSpeech();
+  const planId = `cached-speech-${sequence += 1}`;
+  const runGeneration = generation;
+  setActiveSpeechPlan(planId);
+  const current = () => generation === runGeneration && host === activeHost && activeHost.audible();
+  void (async () => {
+    try {
+      const ordered = [...new Set(ordinals)].sort((a, b) => a - b);
+      for (let index = 0; index < ordered.length; index++) {
+        if (!current()) return;
+        const buffer = await withDeadline(read({ runId, ordinal: ordered[index] }), COMPANION_SPEECH_FIRST_AUDIO_DEADLINE_MS);
+        if (!current()) return;
+        emit({ planId, phase: "speaking", segmentIndex: index, segmentCount: ordered.length, visibleChars: 0 });
+        // 没出声的一趟交给 finally 收（stopCompanionSpeech 会给这一轮一个 stopped 终态），
+        // 不能让它继续往下一个 ordinal 走——那等于把整条录音"安静地放完"。
+        const heard = await withDeadline(activeHost.play(buffer, () => undefined),
+          (Number.isFinite(buffer.duration) ? buffer.duration : 0) * 1000 + COMPANION_SPEECH_PLAY_STALL_MS);
+        if (!current() || !heard) return;
+      }
+      setActiveSpeechPlan(null);
+      emit({ planId, phase: "finished", segmentIndex: ordinals.length - 1, segmentCount: ordinals.length, visibleChars: 0 });
+    } catch (error) {
+      if (generation !== runGeneration) return;
+      activeHost.stop();
+      setActiveSpeechPlan(null);
+      emit({ planId, phase: "failed", segmentIndex: -1, segmentCount: ordinals.length, visibleChars: 0,
+        failure: error instanceof CompanionCachedAudioError ? error.message : "本机音频暂时无法播放，请重试。" });
+    } finally {
+      if (activePlanId === planId) stopCompanionSpeech();
+    }
+  })();
+  return { planId, stop: () => { if (activePlanId === planId) stopCompanionSpeech(); } };
+}
+
+interface SpeechRun {
+  readonly planId: string;
+  readonly runGeneration: number;
+  readonly host: CompanionVoiceHost;
+  readonly segments: readonly CompanionSpeechSegment[];
+  readonly totalChars: number;
+  readonly signal: AbortSignal;
+}
+
+/** 一条已发起、可能还没到手的预取（`delivered` 决定它能不能被记成 dropped）。 */
+interface PrefetchedSegment {
+  key: string;
+  startedAtMs: number;
+  delivered: boolean;
+  buffer: Promise<AudioBuffer>;
+}
+
+async function runSpeech(run: SpeechRun): Promise<void> {
+  const { segments } = run;
+  let pendingIndex = -1;
+  let pending: Promise<AudioBuffer> | null = null;
+
+  const synthesize = (index: number): Promise<AudioBuffer> => {
+    const promise = run.host.synthesize(segments[index].text, run.signal);
+    // 预取失败会在用到它的那一轮被 await 到；先挂个空 handler 免得变成未处理拒绝。
+    promise.catch(() => undefined);
+    return promise;
+  };
+
+  try {
+    for (let index = 0; index < segments.length; index += 1) {
+      if (run.runGeneration !== generation) return;
+
+      const prefetched = pendingIndex === index ? pending : null;
+      pending = null;
+      pendingIndex = -1;
+
+      const current = prefetched ?? synthesize(index);
+      // 当前段已经发出去了，紧接着把下一段也发出去：合成有网络往返，串行等会在段间留空档。
+      if (index + 1 < segments.length) {
+        pendingIndex = index + 1;
+        pending = synthesize(index + 1);
+      }
+
+      let buffer: AudioBuffer;
+      try {
+        buffer = await current;
+      } catch {
+        if (run.signal.aborted || run.runGeneration !== generation) return;
+        // 预取失败或即时失败都即时重发一次；再失败就**跳过这一段继续后面的**
+        // （2026-09-19 用户实测"只读第一句甚至前几个字"的残余：单段合成抖动/
+        // 限流曾把整轮语音直接判死）。文字显现靠阅读钟接管被跳过的段。
+        try {
+          buffer = await synthesize(index);
+        } catch {
+          continue;
+        }
+      }
+      if (run.runGeneration !== generation) return;
+
+      const visibleAt = (index: number, fraction: number): number => {
+        const start = index === 0 ? 0 : segments[index - 1].endIndex;
+        const span = segments[index].endIndex - start;
+        const clamped = Math.min(1, Math.max(0, fraction));
+        // 至少露一个字：气泡要立刻有内容，空节点不会渲染，用户会觉得她没说话。
+        return Math.min(segments[index].endIndex, start + Math.max(1, Math.floor(clamped * span)));
+      };
+
+      emit({
+        planId: run.planId,
+        phase: "speaking",
+        segmentIndex: index,
+        segmentCount: segments.length,
+        visibleChars: visibleAt(index, 0),
+      });
+      let lastProgressAt = 0;
+      const heard = await run.host.play(buffer, (fraction) => {
+        if (run.runGeneration !== generation) return;
+        const now = Date.now();
+        // 逐帧回调会带着 React 一起 60Hz 重渲；80ms 的步进看起来依然是连续打字的。
+        if (now - lastProgressAt < PROGRESS_INTERVAL_MS) return;
+        lastProgressAt = now;
+        emit({
+          planId: run.planId,
+          phase: "speaking",
+          segmentIndex: index,
+          segmentCount: segments.length,
+          visibleChars: visibleAt(index, fraction),
+        });
+      });
+      if (run.runGeneration !== generation) return;
+      // 一个音节都没响就别把这一段算成念过，后面的段也不能接着被"瞬间播完"。
+      if (!heard) {
+        stopCompanionSpeech();
+        return;
+      }
+    }
+    setActiveSpeechPlan(null);
+    emit({
+      planId: run.planId,
+      phase: "finished",
+      segmentIndex: segments.length - 1,
+      segmentCount: segments.length,
+      visibleChars: run.totalChars,
+    });
+  } catch (error) {
+    if (run.runGeneration !== generation) return;
+    setActiveSpeechPlan(null);
+    emit({
+      planId: run.planId,
+      phase: "failed",
+      segmentIndex: -1,
+      segmentCount: segments.length,
+      visibleChars: 0,
+      failure: gatewayErrorMessage(error),
+    });
+  }
+}
+
+/**
+ * 流式台词的播放会话（2026-09-19）：文本边生成边喂进来，完整句一到就开念。
+ *
+ * 与 `speakCompanionLine` 的区别只在"什么时候有文本"：会话先建、文本后到，
+ * 因此不能像固定数组那样一次性切段，而是用增量切段保持"已合成/已播出的段不再
+ * 重切"。计划一旦被新的台词/停止打断，循环按 generation 退出。
+ */
+export interface CompanionSpeechSession {
+  readonly planId: string;
+  /** voice = 有音频在推；silent = 播不了，调用方自己推进文本。 */
+  readonly mode: "voice" | "silent";
+  /**
+   * 增量文本（这一拍**新到的部分**，2026-09-19 修正）：会话内部累积成全量后交给
+   * 切段器。切段器的 `pendingStart` 是累积文本里的绝对下标——直接把增量串交给它，
+   * 第二拍起 `slice(pendingStart)` 切出空串，第一句之后的句子永远排不进队列
+   * （用户实测症状：只念第一句）。
+   */
+  feed(text: string): void;
+  /** Worker 已签发的真实片段；显示区间直接对应干净正文。 */
+  feedSegment(segment: CompanionServerVoiceSegment): void;
+  /** 生成结束：把最后一段增量拼上、尾巴强制成段并收尾。 */
+  finish(text?: string): void;
+  stop(): void;
+  /**
+   * 此刻该露出到第几个字——**从音频时钟现算**，没有在播时返回 null。
+   *
+   * 显现层每个心跳问一次这个值，而不是拿进度回调的最后一次采样去外推：外推就是
+   * 第二个时钟，两个时钟的速率差会一路累积成"前面差一点、后面完全对不上"。
+   */
+  currentVisibleChars(): number | null;
+}
+
+export interface CompanionServerVoiceSegment {
+  readonly ref: CompanionVoiceSpeakSegmentRequestV2;
+  readonly displayText: string;
+  readonly displayStart: number;
+  readonly displayEnd: number;
+  readonly cue: CharacterCuePayloadV1;
+}
+
+interface CompanionSpeechQueue {
+  readonly segments: CompanionQueuedSpeechSegment[];
+  finished: boolean;
+  wake: (() => void) | null;
+  /**
+   * 队列里**新到一段**时的回调（方案 29 §14.11 修复 ①）。
+   *
+   * 预取原来只有一个触发点：某一段**出队之后**。于是第 1 段到达时队列里只有它，
+   * 预取无事可做；第 2…N 段在第 1 段**播放期间**到达，却没人开始它们的合成——
+   * 等第 1 段播完、第 2 段出队才开始合成，整段合成时间变成静音（实测 48 小时内
+   * 82% 的"第 2 段"切换有可听静音，中位 0.58s、最长 2.15s）。
+   * 挂上这个回调，段一到就开始合成，合成在上一段的播放时间里跑完。
+   */
+  onSegmentQueued: (() => void) | null;
+  /**
+   * "此刻念到第几个字"的读数（方案 29 §14.11 修复 ⑤）。由 `runQueuedSpeech` 装上：
+   * 它手里有当前段与它在正文里的绝对区间；没有在播时返回 null。
+   */
+  positionProvider: (() => number | null) | null;
+}
+
+interface CompanionQueuedSpeechSegment {
+  readonly key: string;
+  readonly text: string;
+  readonly startIndex: number;
+  readonly endIndex: number;
+  readonly ref?: CompanionVoiceSpeakSegmentRequestV2;
+  readonly cue?: CharacterCuePayloadV1;
+}
+
+function withDeadline<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  // 用全局 setTimeout 而不是 window.setTimeout：这个模块会被 node 环境的
+  // vitest 直接加载（该测试文件没声明 jsdom），那里没有 `window`——同步抛出的
+  // ReferenceError 会把整段播放判死（实测：所有排队段一个都不播）。
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("VOICE_SEGMENT_DEADLINE")), timeoutMs);
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (error) => { clearTimeout(timer); reject(error); },
+    );
+  });
+}
+
+async function runQueuedSpeech(args: {
+  planId: string;
+  runGeneration: number;
+  host: CompanionVoiceHost;
+  queue: CompanionSpeechQueue;
+  signal: AbortSignal;
+}): Promise<void> {
+  const { queue } = args;
+  let playedCount = 0;
+  let previousEnd = 0;
+  let hasStartedAudio = false;
+  /** 被跳过（超时/合成失败）的段数与最后一次的原因，供收尾降级判定。 */
+  let missedSegments = 0;
+  let lastMissReason: "deadline" | "synth_failed" = "deadline";
+  /**
+   * 预取队列（深度 2，2026-09-19 段间衔接优化）：当前段在播时，后面两段已经在
+   * 合成路上。深度 1 时段间仍会露出一个合成往返的空档（qwen/edge 都有网络
+   * 往返），实测听感就是"句与句之间卡一下"；深度 2 让下一段几乎总是就绪。
+   */
+  const prefetched: PrefetchedSegment[] = [];
+  /**
+   * 字节已经到手、还没写终态的那一段（方案 29 §12 C5 的判据：
+   * 「取段成功但没有 playback 行的段，必须有一个明确的 reason 上报」）。
+   *
+   * 这条不变量不能靠"每条 return 前都记得报一次"来维持——那正是它以前漏的原因：
+   * 外层 catch 那条出口就没报。改成把"当前在飞的段"存下来，`reportAbandoned()`
+   * 统一收口，所有出口只调它。
+   */
+  let inFlight: { segment: CompanionQueuedSpeechSegment; startedAtMs: number } | null = null;
+  /**
+   * 一段的结局要回到服务端才算得清"没声音"是谁的锅（0247）。
+   * 只有带 ref 的段可报——本地文本路径没有 run/segment 身份，没有可归因的对象。
+   */
+  const report = (
+    segment: CompanionQueuedSpeechSegment,
+    reason: CompanionVoicePlaybackOutcomeRequestV1["reason"],
+    startedAtMs: number,
+  ): void => {
+    const ref = segment.ref;
+    if (!ref) return;
+    args.host.reportSegmentOutcome({
+      version: 1,
+      conversationId: ref.conversationId,
+      runId: ref.runId,
+      generation: ref.generation,
+      ordinal: ref.ordinal,
+      segmentId: ref.segmentId,
+      reason,
+      durationMs: Math.max(0, Date.now() - startedAtMs),
+    });
+  };
+  const pendingControllers = new Map<CompanionQueuedSpeechSegment, AbortController>();
+  const abortPending = (): void => {
+    for (const controller of pendingControllers.values()) controller.abort();
+    const wake = queue.wake; queue.wake = null; wake?.();
+  };
+  args.signal.addEventListener("abort", abortPending, { once: true });
+  const synthesize = (segment: CompanionQueuedSpeechSegment, signal: AbortSignal): Promise<AudioBuffer> => segment.ref
+    ? args.host.synthesizeSegment(segment.ref, signal)
+    : args.host.synthesize(segment.text, signal);
+  /**
+   * 被 `withDeadline` 放弃的那些合成，**必须停下来**。
+   *
+   * `withDeadline` 只是不再等它，并不会取消它——所以超时之后重试循环还在跑，
+   * 一次又一次打向正在变慢的合成服务。那不是"多试几次说不定就成了"，
+   * 那是**在服务器最慢的时刻给它加压**，把尾部推得更高，于是下一段更容易超时。
+   *
+   * 实测（2026-10-02，5 路并发）已经能看见这个形态：max 5132ms，而截止当时是
+   * 4000ms —— 越过截止的那些请求并没有消失，它们在后台继续排。
+   */
+  const abandoned = new WeakSet<CompanionQueuedSpeechSegment>();
+  const synthesizeWithRetry = async (segment: CompanionQueuedSpeechSegment): Promise<AudioBuffer> => {
+    const controller = new AbortController();
+    pendingControllers.set(segment, controller);
+    // 原来只重试一次、无退避、且 `catch {}` 把原始异常整个丢掉——上游 500 之后
+    // 立刻再打一次只会撞上同一个错误。现在带退避多试一次，并保留**最后一次的异常**
+    // 交给调用方（超时/失败的分类要靠它）。
+    let lastError: unknown = null;
+    try {
+      for (let attempt = 0; attempt < SYNTH_MAX_ATTEMPTS; attempt += 1) {
+        // 上一轮等待已经超时：这一次不必再发出去。
+        if (abandoned.has(segment) || args.signal.aborted || controller.signal.aborted || args.runGeneration !== generation) break;
+        try {
+          return await synthesize(segment, controller.signal);
+        } catch (error) {
+          lastError = error;
+          // 权限类拒绝是**永久**的：没签 AI 同意时服务端直接 403
+          // （`identity/ai-consent-gate.ts`，doc 34 L13），退避再打三次只是把同一个
+          // 答案要三遍，还会多要三份外部合成配额。当场放弃，让调用方按"没出声"走文字降级。
+          if (isPermanentVoiceRejection(error) || args.signal.aborted || controller.signal.aborted || args.runGeneration !== generation) break;
+          if (attempt < SYNTH_MAX_ATTEMPTS - 1) {
+            await new Promise((resolve) => { setTimeout(resolve, SYNTH_RETRY_DELAY_MS * (attempt + 1)); });
+          }
+        }
+      }
+      throw lastError instanceof Error ? lastError : new Error("VOICE_SEGMENT_SYNTH_FAILED");
+    } finally {
+      pendingControllers.delete(segment);
+    }
+  };
+  const takePrefetched = (key: string): { buffer: Promise<AudioBuffer>; startedAtMs: number } | null => {
+    const index = prefetched.findIndex((entry) => entry.key === key);
+    if (index < 0) return null;
+    const [entry] = prefetched.splice(index, 1);
+    return entry ? { buffer: entry.buffer, startedAtMs: entry.startedAtMs } : null;
+  };
+  const prefetchUpcoming = (): void => {
+    for (const upcoming of queue.segments.slice(0, 2)) {
+      if (prefetched.length >= 2) break;
+      if (prefetched.some((entry) => entry.key === upcoming.key)) continue;
+      // startedAtMs 记在**发起合成**的那一刻，不是取用的那一刻：预取的段在队列里
+      // 等着的时候等待时间也在走，而那正是"首字等了多久"的真相。
+      const startedAtMs = Date.now();
+      const entry: PrefetchedSegment = {
+        key: upcoming.key, startedAtMs, delivered: false, buffer: null as unknown as Promise<AudioBuffer>,
+      };
+      entry.buffer = synthesizeWithRetry(upcoming).then((value) => {
+        // "字节到手"这件事只有这一处事实来源：dropped 的口径是"给了音频却没响"，
+        // 一条还在路上的合成不能算进去（那会替"没响"编出一条它没有的证据）。
+        entry.delivered = true;
+        return value;
+      });
+      // 预取失败会在用到它的那一轮被 await 到；先挂个空 handler 免得变成未处理拒绝。
+      entry.buffer.catch(() => undefined);
+      prefetched.push(entry);
+    }
+  };
+  /**
+   * 段一到就预取（方案 29 §14.11 修复 ①）。
+   *
+   * 循环退出后（整轮念完 / 被打断）不再预取：那时队列里剩下的段不会再被播，
+   * 提前合成只会白烧一次 TTS。
+   */
+  let loopActive = true;
+  queue.onSegmentQueued = () => {
+    if (!loopActive) return;
+    prefetchUpcoming();
+  };
+  /**
+   * "现在念到第几个字"：当前段的绝对区间 + 音频时钟现算出来的比例（§14.11 ⑤）。
+   *
+   * 只认**正在播**的那一段：段间那一小段空档返回 null，让显现层原地等——字幕跟着
+   * 声音走，声音没有就不动。这里绝不用"上一段的最后位置 + 时间 × 语速"去外推，
+   * 那就是第二个时钟。
+   */
+  let playingSegment: CompanionQueuedSpeechSegment | null = null;
+  queue.positionProvider = () => {
+    const current = playingSegment;
+    if (!current) return null;
+    const fraction = args.host.progress?.() ?? null;
+    if (fraction === null) return null;
+    return visibleAt(current, fraction);
+  };
+  /**
+   * 预取已经发起、却没轮到播的段：被打断或宿主卸载时给它们一个终态。
+   *
+   * 不报的话这些段在服务端只剩一条 `stage='synth'` 的成功行，于是"给了音频却没响"
+   * 与"客户端根本没在线"两种完全不同的病在同一张表里长得一模一样（实测只能靠
+   * 能力上线时刻切窗口把它们分开，见方案 29 §12 C4）。
+   */
+  const reportAbandoned = (current?: { segment: CompanionQueuedSpeechSegment; startedAtMs: number }): void => {
+    // 缺省收口"当前在飞的那一段"：调用点不必自己记住它，出口也就漏不掉。
+    const active = current ?? inFlight ?? undefined;
+    inFlight = null;
+    if (active) report(active.segment, "dropped", active.startedAtMs);
+    for (const entry of prefetched) {
+      if (!entry.delivered) continue;
+      const segment = queue.segments.find((item) => item.key === entry.key);
+      if (segment) report(segment, "dropped", entry.startedAtMs);
+    }
+    prefetched.length = 0;
+  };
+  const visibleAt = (segment: CompanionQueuedSpeechSegment, fraction: number): number => {
+    const start = Math.max(previousEnd, segment.startIndex);
+    const span = Math.max(1, segment.endIndex - start);
+    const clamped = Math.min(1, Math.max(0, fraction));
+    return Math.min(segment.endIndex, start + Math.max(1, Math.floor(clamped * span)));
+  };
+  try {
+    for (;;) {
+      if (args.runGeneration !== generation) {
+        reportAbandoned();
+        return;
+      }
+      const segment = queue.segments.shift();
+      if (!segment) {
+        if (queue.finished) break;
+        await new Promise<void>((resolve) => { queue.wake = resolve; });
+        continue;
+      }
+      /**
+       * 流式优先（2026-10-17）：拿第一块就开口，不等整段。
+       *
+       * 只对**带引用**的段生效（伴星正文；普通朗读没有服务端签发的段引用）。
+       * 返回 true 表示这一段已经由增量播放器念完，循环直接进下一段；返回 false
+       * 表示一声没响过，继续走下面那条整段路径——两条路的**结局上报**因此只会有
+       * 一份，不会一段记两次。
+       */
+      if (segment.ref && args.host.playSegmentStream) {
+        const streamStartedAt = Date.now();
+        playingSegment = segment;
+        emit({
+          planId: args.planId,
+          phase: "speaking",
+          segmentIndex: playedCount,
+          segmentCount: playedCount + 1 + queue.segments.length,
+          visibleChars: visibleAt(segment, 0),
+          ...(segment.cue ? { cue: segment.cue } : {}),
+        });
+        const streamed = await args.host.playSegmentStream(segment.ref, (fraction) => {
+          if (args.runGeneration !== generation) return;
+          emit({
+            planId: args.planId,
+            phase: "speaking",
+            segmentIndex: playedCount,
+            segmentCount: playedCount + 1 + queue.segments.length,
+            visibleChars: visibleAt(segment, fraction),
+          });
+        }, args.signal).catch(() => false);
+        if (args.runGeneration !== generation) return;
+        if (streamed) {
+          playingSegment = null;
+          hasStartedAudio = true;
+          playedCount += 1;
+          previousEnd = segment.endIndex;
+          report(segment, "played", streamStartedAt);
+          prefetchUpcoming();
+          continue;
+        }
+        playingSegment = null;
+      }
+
+      const pending = takePrefetched(segment.key)
+        ?? { buffer: synthesizeWithRetry(segment), startedAtMs: Date.now() };
+      prefetchUpcoming();
+      let buffer: AudioBuffer;
+      try {
+        buffer = await withDeadline(
+          pending.buffer,
+          hasStartedAudio ? COMPANION_SPEECH_GAP_DEADLINE_MS : COMPANION_SPEECH_FIRST_AUDIO_DEADLINE_MS,
+        );
+      } catch (error) {
+        if (args.runGeneration !== generation) {
+          // 只报预取那几段：本段的字节没到手（这正是它进 catch 的原因），报 dropped
+          // 就是替"没响"编一条它没有的证据。
+          reportAbandoned();
+          return;
+        }
+        // **一段出问题只丢那一段**（方案 29 §4.9）。旧行为是首段/段间截止一到就
+        // `generation += 1` + `host.stop()`，把整轮音频连同后面已经合成好的段一起
+        // 作废——而文字早已流完，用户只看到"她说话但没声音"，且当轮不可恢复。
+        // 现在超时与合成失败同路：跳过这段继续后面。整轮一段都没播出来时，
+        // 才在收尾处降级为 text_only（见循环结束后那段）。
+        const deadlineHit = error instanceof Error && error.message === "VOICE_SEGMENT_DEADLINE";
+        if (deadlineHit) {
+          abandoned.add(segment);
+          pendingControllers.get(segment)?.abort();
+        }
+        missedSegments += 1;
+        lastMissReason = deadlineHit ? "deadline" : "synth_failed";
+        report(segment, deadlineHit ? "deadline" : "synth_failed", pending.startedAtMs);
+        continue;
+      }
+      if (args.runGeneration !== generation) {
+        reportAbandoned({ segment, startedAtMs: pending.startedAtMs });
+        return;
+      }
+      // 字节到手了：从这里开始，无论走哪条出口都必须有终态。
+      inFlight = { segment, startedAtMs: pending.startedAtMs };
+
+      // 记下"正在播的是哪一段"：位置读数要用它把 0..1 映射回绝对字数。
+      playingSegment = segment;
+      emit({
+        planId: args.planId,
+        phase: "speaking",
+        segmentIndex: playedCount,
+        segmentCount: playedCount + 1 + queue.segments.length,
+        visibleChars: visibleAt(segment, 0),
+        ...(segment.cue ? { cue: segment.cue } : {}),
+      });
+      hasStartedAudio = true;
+      let lastProgressAt = 0;
+      /**
+       * 播放这一等也必须封顶。`host.play()` 要等 AudioContext 真的走完，而实机
+       * 2026-09-22 03:59 出现过整条音频钟停住（14/15/16 三段的 `played` 挤在同一秒里
+       * 补吐出来），循环就此停在 `await` 上——那一轮之后再也没有 generation 检查，
+       * 预取到手的段一条结局都报不出（服务端留着三条 `synth ok`、playback 零行）。
+       * 上限按这段音频自己的时长给，再加固定余量，正常长句不会被误杀。
+       */
+      let stalled = false;
+      let heard = false;
+      try {
+        heard = await withDeadline(
+          args.host.play(buffer, (fraction) => {
+            if (args.runGeneration !== generation) return;
+            const now = Date.now();
+            if (now - lastProgressAt < PROGRESS_INTERVAL_MS) return;
+            lastProgressAt = now;
+            emit({
+              planId: args.planId,
+              phase: "speaking",
+              segmentIndex: playedCount,
+              segmentCount: playedCount + 1 + queue.segments.length,
+              visibleChars: visibleAt(segment, fraction),
+            });
+          }),
+          (Number.isFinite(buffer.duration) ? buffer.duration : 0) * 1_000
+            + COMPANION_SPEECH_PLAY_STALL_MS,
+        );
+      } catch {
+        stalled = true;
+      }
+      if (stalled || !heard || args.runGeneration !== generation) {
+        // play() 被 stop() 提前 resolve、没走完、或宿主闸门关着根本没播，
+        // "到底听没听见"都是否——所以这里报 dropped 而不是 played：
+        // played 继续只由正常路径写。
+        reportAbandoned();
+        // 新的那一轮已经接管通道（generation 变了），这里不能再替它喊停。
+        if ((stalled || !heard) && args.runGeneration === generation) {
+          // 卡住或没出声的这一轮要把界面和 `activePlanId` 一起放开，否则她永远"在说话"，
+          // 主动提示音会一直给这条不存在的朗读让路（见 isCompanionSpeechActive）。
+          stopCompanionSpeech();
+        }
+        return;
+      }
+      playingSegment = null;
+      previousEnd = segment.endIndex;
+      playedCount += 1;
+      // 走到这里才算"播成了"：`play()` 被打断时同样 resolve，所以必须排在上面那道
+      // generation 检查之后——否则"用户三秒后打断"会被记成一次成功播放。
+      inFlight = null;
+      report(segment, "played", pending.startedAtMs);
+    }
+    setActiveSpeechPlan(null);
+    // 降级只发生在"**一段都没播出来**且确实尝试过"的整轮上——这才是
+    // "她说话但没声音"的真实场景。播出了任何一段就正常收尾，个别段被跳过
+    // 不打断朗读、也不向用户报"语音不可用"。
+    if (playedCount === 0 && missedSegments > 0) {
+      emit({
+        planId: args.planId,
+        phase: "text_only",
+        segmentIndex: 0,
+        segmentCount: missedSegments,
+        visibleChars: previousEnd,
+        failure: lastMissReason === "deadline"
+          ? "语音合成超时，已继续显示文字"
+          : "语音合成失败，已继续显示文字",
+      });
+      return;
+    }
+    emit({
+      planId: args.planId,
+      phase: "finished",
+      segmentIndex: playedCount - 1,
+      segmentCount: playedCount,
+      visibleChars: previousEnd,
+    });
+  } catch (error) {
+    if (args.runGeneration !== generation) {
+      reportAbandoned();
+      return;
+    }
+    // 意外异常（不是段级截止）同样不能把已经到手的字节留在没有结局的状态里：
+    // 这条出口以前只 emit 失败，于是服务端只剩 synth ok 行，"给了音频却没响"
+    // 与"客户端根本没在线"又变得一样（§12 C5）。
+    reportAbandoned();
+    setActiveSpeechPlan(null);
+    emit({
+      planId: args.planId,
+      phase: "failed",
+      segmentIndex: -1,
+      segmentCount: playedCount,
+      visibleChars: previousEnd,
+      failure: gatewayErrorMessage(error),
+    });
+  } finally {
+    args.signal.removeEventListener("abort", abortPending);
+    abortPending();
+    // 循环真的退出了（念完 / 被打断 / 异常）：此后新到的段不再预取，也不再报位置。
+    loopActive = false;
+    playingSegment = null;
+    queue.positionProvider = null;
+  }
+}
+
+/** 开始一句流式台词。Agent 正文使用 strictSegments，只接受服务端签发的片段引用。 */
+export function beginCompanionSpeechLine(options: { readonly strictSegments?: boolean } = {}): CompanionSpeechSession {
+  stopCompanionNotificationSpeech();
+  stopCompanionSpeech();
+  const planId = `speech-${(sequence += 1)}`;
+  const activeHost = host;
+  const mode: "voice" | "silent" = activeHost && activeHost.audible() ? "voice" : "silent";
+  const queue: CompanionSpeechQueue = { segments: [], finished: false, wake: null, onSegmentQueued: null, positionProvider: null };
+  let feedState: CompanionSpeechFeedState = COMPANION_SPEECH_FEED_INITIAL;
+  /** 调用方喂进来的累积文本（feed/finish 收增量，这里拼成切段器要的全量）。 */
+  let accumulated = "";
+  let stopped = false;
+
+  const push = (text: string, isFinal: boolean): void => {
+    if (stopped) return;
+    const split = splitForSpeechIncremental(text, feedState, isFinal);
+    feedState = split.next;
+    if (split.segments.length === 0) return;
+    queue.segments.push(...split.segments.map((segment, index) => ({
+      key: `local:${segment.endIndex}:${index}`,
+      text: segment.text,
+      startIndex: Math.max(0, segment.endIndex - segment.text.length),
+      endIndex: segment.endIndex,
+    })));
+    const wake = queue.wake;
+    queue.wake = null;
+    wake?.();
+    // 新段一到就预取（本地文本路径同样受益：句与句之间不再各等一次合成）。
+    queue.onSegmentQueued?.();
+  };
+
+  if (mode === "voice" && activeHost) {
+    setActiveSpeechPlan(planId);
+    void runQueuedSpeech({ planId, runGeneration: generation, host: activeHost, queue, signal: synthesisController!.signal });
+  }
+
+  return {
+    planId,
+    mode,
+    currentVisibleChars: () => queue.positionProvider?.() ?? null,
+    feed(text: string): void {
+      if (options.strictSegments) return;
+      if (text.length === 0) return;
+      accumulated += text;
+      push(accumulated, false);
+    },
+    feedSegment(segment: CompanionServerVoiceSegment): void {
+      if (stopped || !options.strictSegments) return;
+      if (queue.segments.some((item) => item.key === segment.ref.segmentId)) return;
+      queue.segments.push({
+        key: segment.ref.segmentId,
+        text: segment.displayText,
+        startIndex: segment.displayStart,
+        endIndex: segment.displayEnd,
+        ref: segment.ref,
+        cue: segment.cue,
+      });
+      queue.segments.sort((left, right) => left.startIndex - right.startIndex);
+      const wake = queue.wake;
+      queue.wake = null;
+      wake?.();
+      // 服务端每签发一段，这里立刻把它的合成发出去——**不等它被轮到**。
+      // 这是第 1 段与第 2 段之间那 0.4–2.2 秒静音的根因修复。
+      queue.onSegmentQueued?.();
+    },
+    finish(text = ""): void {
+      if (options.strictSegments) {
+        queue.finished = true;
+        const wake = queue.wake;
+        queue.wake = null;
+        wake?.();
+        return;
+      }
+      accumulated += text;
+      push(accumulated, true);
+      queue.finished = true;
+      const wake = queue.wake;
+      queue.wake = null;
+      wake?.();
+    },
+    stop(): void {
+      stopped = true;
+      queue.finished = true;
+      const wake = queue.wake;
+      queue.wake = null;
+      wake?.();
+      if (activePlanId === planId) stopCompanionSpeech();
+    },
+  };
+}
+
+/**
+ * 念一句伴星台词。返回 null 表示没有可念的内容。新的台词会取代正在念的那句——
+ * 语音是提示，不是队列。
+ */
+export function speakCompanionLine(text: string): CompanionSpeechHandle | null {
+  const segments = splitForSpeech(text);
+  if (segments.length === 0) return null;
+  stopCompanionNotificationSpeech();
+  const totalChars = text.trim().length;
+  const planId = `speech-${(sequence += 1)}`;
+
+  stopCompanionSpeech();
+
+  const activeHost = host;
+  if (!activeHost || !activeHost.audible()) {
+    return { planId, mode: "silent", segments, segmentCount: segments.length, stop: () => undefined };
+  }
+
+  setActiveSpeechPlan(planId);
+  const runGeneration = generation;
+  void runSpeech({ planId, runGeneration, host: activeHost, segments, totalChars, signal: synthesisController!.signal });
+  return {
+    planId,
+    mode: "voice",
+    segments,
+    segmentCount: segments.length,
+    stop: () => {
+      if (activePlanId === planId) stopCompanionSpeech();
+    },
+  };
+}
+
+/** 测试用：清掉宿主、订阅者与在途计划。 */
+export function resetCompanionVoicePlayback(): void {
+  setActiveSpeechPlan(null);
+  generation += 1;
+  host = null;
+  listeners.clear();
+}

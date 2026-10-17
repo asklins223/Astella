@@ -16,7 +16,7 @@ import {
   resolveDiaryBlocks,
   type DiaryBlock,
   type DiaryEmbed,
-} from "../companion-diary-content.ts";
+} from "../journal/companion-diary-content.ts";
 
 function image(ref: string, noteId = `note-${ref}`): Extract<DiaryEmbed, { kind: "image" }> {
   return {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createNoteDynamicArtifactTaskV1Schema, noteLearningArtifactV1Schema } from "../contracts/note-learning-artifact-contracts.ts";
+import { createNoteDynamicArtifactTaskV1Schema, noteLearningArtifactV1Schema } from "../contracts/note/note-learning-artifact-contracts.ts";
 
 const noteVersionId = "11111111-1111-4111-8111-111111111111";
 const requestId = "22222222-2222-4222-8222-222222222222";

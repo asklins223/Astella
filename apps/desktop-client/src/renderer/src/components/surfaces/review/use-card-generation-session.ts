@@ -1,11 +1,11 @@
-import { ensureAiActionAllowed, guideAiPermissionFailure } from "../../../app/ai-action-gate";
+import { ensureAiActionAllowed, guideAiPermissionFailure } from "../../../app/gate/ai-action-gate";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CardActivationReceiptDesktopV1, CardGenerationCandidateV1, CardGenerationExposureEligibilityV1, DesktopCandidateRevealV2, DesktopCardRejectReasonV2 } from "@astella/shared/card-generation-desktop-contracts";
-import { useRoomStore } from "../../../app/room-store";
-import { createCommandId, createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../../app/desktop-client";
+import { useRoomStore } from "../../../app/home/room-store";
+import { createCommandId, createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../../app/client/desktop-client";
 import { resetObjectiveLibraryView } from "../run/objective-library-view-state";
 import { cardGenerationObservedProgress, cardGenerationProgressView, isCardGenerationInFlight, isCardGenerationReviewOpen, isCardGenerationReviewStage, practiceQuotaLabel, reviewSchedulingNotice, saveOnlyReceiptNotice } from "./card-generation-status";
-import { persistedGenerationOptions } from "../notebook/notebook-generation-options";
+import { persistedGenerationOptions } from "../notebook/generation/notebook-generation-options.ts";
 import { isActionableUndecidedCandidate, isActivatableCandidate } from "./candidate-review-model";
 import { useCardGenerationData } from "./use-card-generation-data";
 

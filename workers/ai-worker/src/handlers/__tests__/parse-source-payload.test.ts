@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { JobPayloadContractError } from "@astella/shared/job-payload-contracts";
 import { JobType } from "@astella/shared";
-import { runParseSource } from "../parse-source.ts";
+import { runParseSource } from "../note/parse-source.ts";
 import type { JobPayload } from "../index.ts";
 import { isNonRetryableError } from "../../lib/non-retryable-errors.ts";
 

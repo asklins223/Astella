@@ -1,4 +1,4 @@
-import { useCompanionHelpOpportunity } from "../../../app/companion-help-opportunity";
+import { useCompanionHelpOpportunity } from "../../../app/companion-pages/companion-help-opportunity";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Archive, ArrowRight, BookOpen, Check, FileText, List, LoaderCircle, Pencil, RotateCcw, X } from "lucide-react";
 import type {
@@ -8,9 +8,9 @@ import type {
 } from "@astella/shared/desktop-surface-contracts";
 import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 import { parseMarkdownTable } from "@astella/shared/note-doc-schema";
-import { useRoomStore } from "../../../app/room-store";
-import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult, RendererGatewayError } from "../../../app/desktop-client";
-import { stashLibraryReceipt } from "../../../app/source-batch-capture";
+import { useRoomStore } from "../../../app/home/room-store";
+import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult, RendererGatewayError } from "../../../app/client/desktop-client";
+import { stashLibraryReceipt } from "../../../app/source/source-batch-capture";
 import { HudPage } from "../../hud/HudPage";
 import { useHudPage } from "../../hud/use-hud-page";
 import { usePageReadableView } from "../../hud/use-page-readable-view";
@@ -22,7 +22,7 @@ import {
   formatSourceKindLabel,
   formatSourceStatus,
   useSurfaceProjection,
-} from "../notebook/surface-data.tsx";
+} from "../notebook/shell/surface-data.tsx";
 import {
   SOURCE_STATUS_POLL_MAX_ATTEMPTS,
   SOURCE_STATUS_POLL_MS,
@@ -40,8 +40,8 @@ import {
   segmentText,
 } from "./source-segments.ts";
 import { useSourceMotion, useSourceSheetMotion } from "./use-source-motion";
-import { renderNoteInline } from "../notebook/note-reading-inline";
-import { NoteMarkdownReading } from "../notebook/note-markdown-reading";
+import { renderNoteInline } from "../notebook/reading/note-reading-inline.tsx";
+import { NoteMarkdownReading } from "../notebook/reading/note-markdown-reading.tsx";
 
 const readingPositions = new Map<string, number>();
 

@@ -2,9 +2,9 @@
 import { useState } from "react";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { CompanionChatSession } from "../../../app/companion-chat-session";
-import type { CompanionVoiceCaption, CompanionVoiceInputOptions, CompanionVoicePhase } from "../use-companion-voice-input";
-import { CompanionHud } from "../CompanionHud";
+import type { CompanionChatSession } from "../../../app/companion-session/companion-chat-session";
+import type { CompanionVoiceCaption, CompanionVoiceInputOptions, CompanionVoicePhase } from "../voice/use-companion-voice-input";
+import { CompanionHud } from "../hud/CompanionHud";
 import { interactionProposal, interactionSession, interactionSettings } from "./companion-interaction-fixtures";
 import { COMPANION_SELECTION_MAX_CHARS, COMPANION_P2_LIMITS } from "@astella/shared/companion-conversation-contracts";
 
@@ -18,12 +18,12 @@ const state = vi.hoisted(() => ({
 }));
 const voiceToggle = vi.hoisted(() => vi.fn());
 const voiceCancel = vi.hoisted(() => vi.fn());
-vi.mock("../../../app/companion-chat-session", async importOriginal => {
-  const actual = await importOriginal<typeof import("../../../app/companion-chat-session")>();
+vi.mock("../../../app/companion-session/companion-chat-session", async importOriginal => {
+  const actual = await importOriginal<typeof import("../../../app/companion-session/companion-chat-session")>();
   return { ...actual, useCompanionChat: () => state.chat };
 });
-vi.mock("../use-companion-voice-input", async importOriginal => {
-  const actual = await importOriginal<typeof import("../use-companion-voice-input")>();
+vi.mock("../voice/use-companion-voice-input", async importOriginal => {
+  const actual = await importOriginal<typeof import("../voice/use-companion-voice-input")>();
   return { ...actual, useCompanionVoiceInput: (options: CompanionVoiceInputOptions) => {
     state.voiceOptions = options;
     // toggle 就是"进入／退出对话"：退出时通知会话结束，但不碰 cancel（那是"丢掉这一轮"）。
@@ -44,14 +44,14 @@ vi.mock("../use-companion-voice-input", async importOriginal => {
       dismissNote: vi.fn(), subscribeLevel: () => () => undefined, modelMissing: false };
   } };
 });
-vi.mock("../../../app/companion-voice-playback", async importOriginal => {
-  const actual = await importOriginal<typeof import("../../../app/companion-voice-playback")>();
+vi.mock("../../../app/companion-session/companion-voice-playback", async importOriginal => {
+  const actual = await importOriginal<typeof import("../../../app/companion-session/companion-voice-playback")>();
   return { ...actual, stopCompanionSpeech: vi.fn(), subscribeCompanionSpeech: () => () => undefined,
     beginCompanionSpeechLine: (...args: Parameters<typeof actual.beginCompanionSpeechLine>) =>
       state.speechSession ?? actual.beginCompanionSpeechLine(...args) };
 });
-vi.mock("../../../app/companion-voice-level", async importOriginal => {
-  const actual = await importOriginal<typeof import("../../../app/companion-voice-level")>();
+vi.mock("../../../app/companion-session/companion-voice-level", async importOriginal => {
+  const actual = await importOriginal<typeof import("../../../app/companion-session/companion-voice-level")>();
   return { ...actual, subscribeHomeV2VoiceLevel: () => () => undefined };
 });
 

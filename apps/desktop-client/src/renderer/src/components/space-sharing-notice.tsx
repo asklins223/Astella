@@ -1,4 +1,4 @@
-import { useRoomStore } from "../app/room-store";
+import { useRoomStore } from "../app/home/room-store";
 
 /**
  * 「放进共享空间即视为可外发」这句明示，放在放入的那一步，而不是只写在设置页。

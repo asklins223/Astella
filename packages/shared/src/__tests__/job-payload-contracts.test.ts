@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { JobType } from "../enums.ts";
+import { JobType } from "../platform/enums.ts";
 import {
   JobPayloadContractError,
   PARSE_SOURCE_JOB_PAYLOAD_FIELDS,
@@ -8,7 +8,7 @@ import {
   readNoteDynamicArtifactGenerateJobPayload,
   readNoteExpansionGenerateJobPayload,
   readParseSourceJobPayload,
-} from "../contracts/job-payload-contracts.ts";
+} from "../contracts/agent/job-payload-contracts.ts";
 
 // 稳定 P1（2026-09-15 审计）：jobs.payload 在非 companion 类型上的精确契约。
 // 读取器必须 fail closed——坏载荷要是被"宽容地"读成 undefined，问题会晚到

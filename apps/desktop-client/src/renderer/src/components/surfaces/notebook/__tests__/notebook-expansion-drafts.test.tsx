@@ -4,7 +4,7 @@ import { act, cleanup, fireEvent, render, waitFor, within } from "@testing-libra
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { EditorView } from "@codemirror/view";
 import type { NoteExpansionDraftV1, NoteExpansionTaskV1 } from "@astella/shared/note-expansion-contracts";
-import { NoteExpansionDrafts } from "../notebook-expansion-drafts";
+import { NoteExpansionDrafts } from "../generation/notebook-expansion-drafts.tsx";
 
 const persist = vi.fn(async (_drafts: NoteExpansionDraftV1[]) => undefined);
 function task(): NoteExpansionTaskV1 {

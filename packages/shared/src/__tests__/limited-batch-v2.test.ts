@@ -17,7 +17,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { planLimitedBatchV2, type BatchCandidateV2 } from "../limited-batch-v2.ts";
+import { planLimitedBatchV2, type BatchCandidateV2 } from "../review/limited-batch-v2.ts";
 
 const NOW = new Date("2026-09-27T09:00:00.000Z");
 const DAY = 86_400_000;

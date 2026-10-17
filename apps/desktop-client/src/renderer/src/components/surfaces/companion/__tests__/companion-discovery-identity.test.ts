@@ -22,9 +22,9 @@ import { expect, test } from "vitest";
 const CLIENT = resolve(import.meta.dirname, "..", "..", "..", "..", "..", "..", "..");
 const read = (...parts: string[]) => readFileSync(join(CLIENT, ...parts), "utf8");
 
-const nsCompanion = read("src", "main", "desktop-gateway-ns-companion.ts");
-const ipcCompanion = read("src", "main", "desktop-ipc-companion.ts");
-const contracts = read("..", "..", "packages", "shared", "src", "contracts", "desktop-ipc-contracts.ts");
+const nsCompanion = read("src", "main", "gateway", "desktop-gateway-ns-companion.ts");
+const ipcCompanion = read("src", "main", "ipc", "desktop-ipc-companion.ts");
+const contracts = read("..", "..", "packages", "shared", "src", "contracts", "desktop", "desktop-ipc-contracts.ts");
 
 test("取消收藏走的是 `/uncollect`，**不是** DELETE", () => {
   // §7「取消收藏不删除原始回答或日记」。叫 delete 的后果，是下一次有人

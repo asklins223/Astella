@@ -24,21 +24,21 @@ import {
   CompanionToolOutcomeUnknownError as OutcomeUnknown,
   CompanionToolNotExecutedError as NotExecutedFromResult,
   CompanionToolUnavailableError as UnavailableFromResult,
-} from "../companion-tool-result.ts";
+} from "../tools/companion-tool-result.ts";
 import {
   CompanionToolError as FromOutcome,
   CompanionToolBlockedError as BlockedFromOutcome,
   CompanionToolNotExecutedError as NotExecutedFromOutcome,
   CompanionToolUnavailableError as UnavailableFromOutcome,
-} from "../companion-tool-outcome.ts";
+} from "../tools/companion-tool-outcome.ts";
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import {
   classifyCompanionToolFailure,
   TOOL_OUTCOME_UNKNOWN_SAFE_SUMMARY,
-} from "../companion-tool-outcome.ts";
-import { executeCompanionMemoryTool } from "../companion-memory-tools.ts";
+} from "../tools/companion-tool-outcome.ts";
+import { executeCompanionMemoryTool } from "../tools/companion-memory-tools.ts";
 
 test("失败分类器与叶子模块拿到的是**同一个构造器**，不是各写一份", () => {
   // 这条断言的全部意义：只要有人「顺手复制一份类」，这里当场红。
@@ -104,7 +104,7 @@ test("【源码守卫】账本写不下来的那一刻不许把结果当成功�
   // ⚠️ 必须**先剥掉行注释**再匹配：解释这次修复的那段注释里，正文就写着
   // `if (!recorded) return result;` 这七个字。不剥的话判据会读到自己的注释，
   // 于是「已经修好了」也判红——这正是 AGENTS.md 记的「扫源码的守卫会撞上注释」。
-  const raw = readFileSync(join(resolve(import.meta.dirname, ".."), "companion-tool-call-ledger.ts"), "utf8");
+  const raw = readFileSync(join(resolve(import.meta.dirname, ".."), "tools", "companion-tool-call-ledger.ts"), "utf8");
   const code = raw.replace(/\/\/.*$/gm, "");
   const idx = code.indexOf("if (!recorded)");
   assert.ok(idx >= 0, "账本里找不到 `if (!recorded)`——这段被改动过，先核对再改判据");
@@ -161,7 +161,8 @@ test("子步骤预算的 signal 被**向下传进**执行器（40b §4.1-2「向
    * 而那不是它要抓的东西。
    */
   const dir = resolve(import.meta.dirname, "..");
-  const candidate = ["companion-tool-execution-run.ts", "companion-agent-runtime.ts"];
+  // handlers 按职责分了子目录：候选按位置写全，扫描范围才跟得上真实文件。
+  const candidate = ["tools/companion-tool-execution-run.ts", "agent/companion-agent-runtime.ts"];
   const holder = candidate.map((name) => [name, readFileSync(join(dir, name), "utf8")])
     .find(([, source]) => source.includes("executeTool("));
   assert.ok(holder, `工具执行段不在任何一个候选文件里：${candidate.join(" / ")}`);
@@ -178,7 +179,7 @@ test("子步骤预算的 signal 被**向下传进**执行器（40b §4.1-2「向
   assert.ok(!/runWithAbortBudget\(\s*\(\)\s*=>/.test(runtime),
     "又变回 `() =>` 了：signal 在这里被丢掉");
 
-  const ledger = readFileSync(join(resolve(import.meta.dirname, ".."), "companion-tool-call-ledger.ts"), "utf8");
+  const ledger = readFileSync(join(resolve(import.meta.dirname, ".."), "tools", "companion-tool-call-ledger.ts"), "utf8");
   const idx = ledger.indexOf("if (!recorded) throw new CompanionToolOutcomeUnknownError");
   assert.ok(idx >= 0, "账本里找不到 `!recorded` 那一支");
   const successEvent = ledger.indexOf('await appendAgentEvent(event, "agent.tool"', idx);

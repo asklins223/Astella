@@ -15,7 +15,7 @@ import {
   helpConditionNeedsCooldownV2,
   unreconcilableDispositionV2,
   type HelpConditionV2,
-} from "../help-condition-rules-v2.ts";
+} from "../review/help-condition-rules-v2.ts";
 
 const LOCK = new Date("2026-09-27T10:00:00.000Z");
 const at = (iso: string) => new Date(iso);

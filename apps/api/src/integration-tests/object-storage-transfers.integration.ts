@@ -22,7 +22,7 @@ const { sourceRoutes } = await import("../modules/source/routes.ts");
 const { exportRoutes } = await import("../modules/export/routes.ts");
 const { companionExportRoutes } = await import("../modules/companion-conversation/routes.ts");
 const { closeDatabase } = await import("../db/client.ts");
-const { runParseSource } = await import("../../../../workers/ai-worker/src/handlers/parse-source.ts");
+const { runParseSource } = await import("../../../../workers/ai-worker/src/handlers/note/parse-source.ts");
 const workerDb = await import("../../../../workers/ai-worker/src/db.ts");
 const fixtures = Array.from({ length: 2 }, () => ({ userId: randomUUID(), workspaceId: randomUUID(), token: `storage-test-${randomUUID()}` }));
 const app = Fastify({ logger: false });

@@ -3,7 +3,7 @@ import test from "node:test";
 import type { AgentTurnRequest, AgentTurnResult } from "@astella/shared";
 import type { AIProvider } from "../../lib/ai-provider.ts";
 import { JobLeaseLostError } from "../../lib/job-lease.ts";
-import { runCompanionAgentModelStep } from "../companion-agent-task.ts";
+import { runCompanionAgentModelStep } from "../agent/companion-agent-task.ts";
 
 function taskContext(signal = new AbortController().signal) {
   return {

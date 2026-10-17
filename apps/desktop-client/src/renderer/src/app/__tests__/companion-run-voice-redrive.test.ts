@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   redriveCompanionRunVoice,
   resetCompanionRunVoiceRedrive,
-} from "../companion-run-voice-redrive.ts";
+} from "../companion-session/companion-run-voice-redrive.ts";
 
 /**
  * 真窗口实测（装机版生产包 + 本地栈）：开机后她主动开口那一句，气泡有字、**没有声音**，

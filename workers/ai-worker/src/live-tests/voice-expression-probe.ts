@@ -1,10 +1,10 @@
 /** Synthetic speech-expression samples; no account history, private materials, or extra classifier. */
 import { randomUUID } from "node:crypto";
 import { readVoiceExpressionTags } from "@astella/shared/voice-expression-tags";
-import { buildCompanionPersonaMessages, sanitizeCompanionVisibleText } from "../handlers/companion-dialogue-content.ts";
-import { resolveCompanionPersonaContext } from "../handlers/companion-identity-context.ts";
-import { buildCasualFirstStepRequest } from "../handlers/companion-speculative-first-step.ts";
-import { runStreamingAgentStep } from "../handlers/companion-agent-streaming-step.ts";
+import { buildCompanionPersonaMessages, sanitizeCompanionVisibleText } from "../handlers/turn/companion-dialogue-content.ts";
+import { resolveCompanionPersonaContext } from "../handlers/memory/companion-identity-context.ts";
+import { buildCasualFirstStepRequest } from "../handlers/agent/companion-speculative-first-step.ts";
+import { runStreamingAgentStep } from "../handlers/agent/companion-agent-streaming-step.ts";
 import { platform, observedProvider, save, safeFailure, type WireReceipt } from "./acceptance-common.ts";
 
 const route = platform("agent_turn"), wire: WireReceipt[] = [], results: Array<Record<string, unknown>> = [];

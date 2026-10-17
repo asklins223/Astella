@@ -3,7 +3,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import * as schema from "@astella/shared/db-schema";
 // 稳定 P0-4（2026-09-15 审计）：事务内 workspace/user 上下文（UUID 校验、
 // 嵌套兼容性断言、set_config 回读校验、AsyncLocalStorage）的唯一实现已下沉到
-// packages/shared/src/workspace-transaction.ts，与 API 共用——此前两侧各有一份
+// packages/shared/src/platform/workspace-transaction.ts，与 API 共用——此前两侧各有一份
 // 逐字拷贝，且 NULL vs 空串的 set_config 坑只在 worker 侧被修过。
 import {
   WorkspaceTransactionScope,
@@ -153,7 +153,7 @@ export function assertWorkerWorkspaceTransactionContextCompatible(
  * `userId === null` 必须设 NULL 而非空串：RLS 策略中 `user_id = ''::uuid`
  * 是计划期常量转换，空串会直接抛 "invalid input syntax for type uuid: """，
  * 与 OR 短路无关（0138 审查修复后验证到的真实故障）。该不变量现在由
- * packages/shared/src/workspace-transaction.ts 统一实现。
+ * packages/shared/src/platform/workspace-transaction.ts 统一实现。
  */
 export async function setWorkerTransactionContext(
   transaction: WorkerTransaction,

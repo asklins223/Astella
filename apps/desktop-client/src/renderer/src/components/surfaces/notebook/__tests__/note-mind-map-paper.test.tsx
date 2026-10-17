@@ -2,8 +2,8 @@
 import { cleanup, fireEvent, render, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { NoteMindMapV1 } from "@astella/shared/note-mind-map-contracts";
-import { NoteMindMapPaper } from "../note-mind-map-paper";
-vi.mock("../../../../app/room-store", () => ({ useRoomStore: Object.assign((select: (state: { workspaceScopeRevision: number }) => unknown) => select({ workspaceScopeRevision: 1 }), { getState: () => ({ workspaceScopeRevision: 1 }) }) }));
+import { NoteMindMapPaper } from "../generation/note-mind-map-paper.tsx";
+vi.mock("../../../../app/home/room-store", () => ({ useRoomStore: Object.assign((select: (state: { workspaceScopeRevision: number }) => unknown) => select({ workspaceScopeRevision: 1 }), { getState: () => ({ workspaceScopeRevision: 1 }) }) }));
 vi.mock("../notebook-fullscreen-state", () => ({ useNotebookFullscreenActive: () => false, useNotebookFullscreenState: { setState: vi.fn() } }));
 const fixture: NoteMindMapV1 = {
   mindMapId: "fixture", noteId: "note", noteVersionId: "version", noteVersionNumber: 1,

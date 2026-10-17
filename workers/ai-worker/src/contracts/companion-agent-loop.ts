@@ -1,10 +1,10 @@
 import type { AgentTurnRequest, ChatMessage, CompanionAgentToolExecutionConstraints } from "@astella/shared";
 import type { AgentTurnInterpretationV1, AgentVoicePreferenceWriteStatusV1 } from "@astella/shared/agent-contracts";
 import type { AIProvider } from "../lib/ai-provider.ts";
-import type { CompanionDialogueHandlerContext, ReadContext } from "../handlers/companion-dialogue-store.ts";
-import type { CompanionContextReceipts } from "../handlers/companion-context-receipts.ts";
-import type { FoldedReplay, CompactionCooldownPorts } from "../handlers/companion-compaction.ts";
-import type { CompactionTraceRecorder } from "../handlers/companion-context-handoff.ts";
+import type { CompanionDialogueHandlerContext, ReadContext } from "../handlers/turn/companion-dialogue-store.ts";
+import type { CompanionContextReceipts } from "../handlers/context/companion-context-receipts.ts";
+import type { FoldedReplay, CompactionCooldownPorts } from "../handlers/context/companion-compaction.ts";
+import type { CompactionTraceRecorder } from "../handlers/context/companion-context-handoff.ts";
 type AgentMessage = AgentTurnRequest["messages"][number];
 
 /** Inputs shared by the dialogue handler and the agent loop. */
@@ -40,8 +40,8 @@ export interface CompanionAgentLoopArgs {
   /** Commit complete, validated visible step text before pausing or resuming. */
   onVisibleCheckpoint?: (modelText: string) => Promise<boolean>;
   /** Source identities from this run's committed snapshot, never a fresh read. */
-  historyForCompaction?: import("../handlers/companion-history-pressure-compaction.ts").HistoryCompactionSource;
-  compactionCheckpoints?: readonly import("../handlers/companion-context-handoff.ts").CompactionTraceV1[];
+  historyForCompaction?: import("../handlers/context/companion-history-pressure-compaction.ts").HistoryCompactionSource;
+  compactionCheckpoints?: readonly import("../handlers/context/companion-context-handoff.ts").CompactionTraceV1[];
   persistCompactionTraces?: () => Promise<void>;
   contextReceipts?: CompanionContextReceipts;
   /** 把一次请求的回放尾部折成「已被校验摘要盖住」的形态（44 §5.2）。只有组装回放
@@ -89,5 +89,5 @@ export interface CompanionAgentLoopArgs {
    * L1 放行路由端口（`COMPANION_RELEASE_ROUTER=enforce` 时才提供）。
    * 只影响投机首步的**放行时机**，不改变 L2 解释、工具面与后续步骤。
    */
-  releaseRouter?: import("../handlers/companion-release-router.ts").CompanionReleaseRouterPort;
+  releaseRouter?: import("../handlers/agent/companion-release-router.ts").CompanionReleaseRouterPort;
 }

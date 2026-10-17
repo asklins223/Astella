@@ -9,7 +9,7 @@ import {
   PROACTIVE_CADENCE_MS,
   proactiveCadenceMs,
   routineCadenceBlocked,
-} from "../companion-proactive-policy.ts";
+} from "../companion/companion-proactive-policy.ts";
 
 test("例行主动间隔按账号参与档位判定", () => {
   // 2026-10-14：3 小时 / 90 分 / 30 分收到 90 分 / 30 分 / 10 分。

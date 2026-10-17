@@ -14,8 +14,8 @@ import {
   projectCardGenerationRunSnapshotV1,
   projectCardGenerationRunFailureV1,
   isCardGenerationReviewOpen,
-} from "../contracts/card-generation-desktop-contracts.ts";
-import { cardActivationReceiptV2Schema } from "../contracts/card-generation-v2-contracts.ts";
+} from "../contracts/learning/card-generation-desktop-contracts.ts";
+import { cardActivationReceiptV2Schema } from "../contracts/learning/card-generation-v2-contracts.ts";
 
 const RUN_ID = "11111111-1111-4111-8111-111111111111";
 const NOTE_ID = "22222222-2222-4222-8222-222222222222";

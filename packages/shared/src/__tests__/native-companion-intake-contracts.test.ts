@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { companionFileBlockV1Schema, companionFileExtensionForMimeType } from '../contracts/companion-file-contracts.ts';
-import { createCompanionTurnRequestV1Schema } from '../contracts/companion-conversation-contracts.ts';
-import { companionAwarenessObservationV1Schema } from '../contracts/companion-initiative-contracts.ts';
+import { companionFileBlockV1Schema, companionFileExtensionForMimeType } from '../contracts/companion/companion-file-contracts.ts';
+import { createCompanionTurnRequestV1Schema } from '../contracts/companion/companion-conversation-contracts.ts';
+import { companionAwarenessObservationV1Schema } from '../contracts/companion/companion-initiative-contracts.ts';
 const id = '01234567-89ab-4cde-8fab-0123456789ab';
 const file = {type:'file',url:`/api/uploads/${id}/companion-files/${id}/test.docx`,name:'试验.docx',mime:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',byteLength:300,text:'本机抽取的原文。'};
 test('native DOCX uses the standard MIME sent by both platform document pickers',()=> {

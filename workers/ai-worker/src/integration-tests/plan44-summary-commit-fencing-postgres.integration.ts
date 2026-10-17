@@ -23,7 +23,7 @@ import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 import { upsertCommittedSummary, readParentSummary, readConversationSummary, readConversationSummaryChain,
-  type CommittedSummaryUpsert } from "../handlers/companion-dialogue-store.ts";
+  type CommittedSummaryUpsert } from "../handlers/turn/companion-dialogue-store.ts";
 import { withWorkerWorkspaceTransaction, type WorkerTransaction } from "../db.ts";
 
 process.env.DATABASE_URL_API = testDatabaseUrl("DATABASE_URL_API");

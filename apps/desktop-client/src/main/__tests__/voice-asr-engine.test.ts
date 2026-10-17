@@ -73,7 +73,7 @@ const PATHS = {
 };
 
 function loadModule() {
-  return import("../voice-asr-engine");
+  return import("../voice/voice-asr-engine");
 }
 
 describe("VoiceAsrEngine", () => {

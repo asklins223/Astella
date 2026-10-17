@@ -1,5 +1,5 @@
 import { Leaf } from "lucide-react";
-import { useRoomStore } from "../../../app/room-store";
+import { useRoomStore } from "../../../app/home/room-store";
 
 export function SettingsMotionPreview() {
   const motion = useRoomStore(state => state.motionMode);

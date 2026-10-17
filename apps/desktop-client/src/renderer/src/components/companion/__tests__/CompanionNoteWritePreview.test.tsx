@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen, cleanup } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import type { CompanionProposalUiState } from "../../../app/companion-chat-session";
-import { CompanionNoteWritePreview } from "../CompanionNoteWritePreview";
+import type { CompanionProposalUiState } from "../../../app/companion-session/companion-chat-session";
+import { CompanionNoteWritePreview } from "../journal/CompanionNoteWritePreview";
 
 const mock = vi.hoisted(() => ({ chat: null as any }));
-vi.mock("../../../app/companion-chat-session", () => ({ useOptionalCompanionChat: () => mock.chat }));
+vi.mock("../../../app/companion-session/companion-chat-session", () => ({ useOptionalCompanionChat: () => mock.chat }));
 afterEach(cleanup);
 
 it("预览和取消不会卸载编辑器或覆盖用户在等待期间的编辑", () => {

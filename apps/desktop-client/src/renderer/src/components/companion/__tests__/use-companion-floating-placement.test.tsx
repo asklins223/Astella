@@ -3,8 +3,8 @@ import { useRef } from "react";
 import { createPortal } from "react-dom";
 import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { useCompanionFloatingPlacement } from "../use-companion-floating-placement";
-import { useCompanionSeatBudget } from "../use-companion-seat-budget";
+import { useCompanionFloatingPlacement } from "../bubble/use-companion-floating-placement";
+import { useCompanionSeatBudget } from "../bubble/use-companion-seat-budget";
 
 let roleBox = { left: 1150, right: 1410, top: 420, bottom: 780, width: 260, height: 360 };
 let animatedRoleBox: typeof roleBox | null = null;

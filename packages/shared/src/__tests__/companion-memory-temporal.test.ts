@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { resolveCompanionMemoryTemporalMetadata } from "../companion-memory-temporal.ts";
+import { resolveCompanionMemoryTemporalMetadata } from "../companion/companion-memory-temporal.ts";
 
 test("memory temporal metadata keeps only values grounded in the user's source", () => {
   const sourceText = "复习数据库索引时先看例子，并在 2026-10-15T17:00:00+08:00 前完成。";

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { nativeWindowChrome, titleBarOverlayForTheme } from '../window-chrome'
+import { nativeWindowChrome, titleBarOverlayForTheme } from '../window/window-chrome'
 
 describe('native window chrome', () => {
   it('keeps the macOS traffic lights over full-size content', () => {

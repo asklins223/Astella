@@ -1,6 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { DESKTOP_IPC_CHANNELS, DESKTOP_IPC_CONTRACT_VERSION, type RequestMetaV1 } from "@astella/shared/desktop-ipc-contracts";
-import { registerAgentChannels } from "../desktop-ipc-agent";
+import { registerAgentChannels } from "../ipc/desktop-ipc-agent";
 
 const runId = "11111111-1111-4111-8111-111111111111";
 const meta: RequestMetaV1 = { version: 1, contractVersion: DESKTOP_IPC_CONTRACT_VERSION,

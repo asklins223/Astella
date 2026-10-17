@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { plainCompanionBubbleText, renderCompanionMarkdown } from "../companion-markdown.tsx";
+import { plainCompanionBubbleText, renderCompanionMarkdown } from "../content/companion-markdown.tsx";
 
 /** 打开通道换成记账替身：这个文件只验"点了有没有把地址交出去、交的是哪一条"。 */
 const { opened } = vi.hoisted(() => ({ opened: [] as string[] }));
-vi.mock("../../../app/external-link", () => ({
+vi.mock("../../../app/client/external-link", () => ({
   openExternalLink: (url: string) => { opened.push(url); return Promise.resolve(true); },
 }));
 

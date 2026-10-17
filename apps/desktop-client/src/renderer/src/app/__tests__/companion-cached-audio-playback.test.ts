@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import {
   playCachedCompanionMessage, resetCompanionVoicePlayback, setCompanionVoiceHost,
   stopCompanionSpeech, subscribeCompanionSpeech, type CompanionVoiceHost,
-} from "../companion-voice-playback";
+} from "../companion-session/companion-voice-playback";
 const runId = "11111111-1111-4111-8111-111111111111";
 const clip = { duration: 1 } as AudioBuffer;
 afterEach(() => resetCompanionVoicePlayback());

@@ -4,8 +4,8 @@ import { noteBlockRenderedTextV1 } from "@astella/shared/note-doc-schema";
 import { applyCompanionNoteEdit } from "../../../../apps/api/src/modules/note/companion-edit-document.ts";
 import { emptyFragmentNoteDoc, projectFragmentBlocks, writeFragmentBlocks } from "../../../../apps/api/src/modules/note/doc-fragment.ts";
 import { companionEditNoteV1Schema } from "@astella/shared/companion-note-authoring-contracts";
-import { paginateReadBlocks } from "../handlers/companion-read-tools.ts";
-import { companionStepRuntimePolicy } from "../handlers/companion-step-plan.ts";
+import { paginateReadBlocks } from "../handlers/tools/companion-read-tools.ts";
+import { companionStepRuntimePolicy } from "../handlers/turn/companion-step-plan.ts";
 import { platform, observedProvider, save, type WireReceipt } from "./acceptance-common.ts";
 
 // Real model + real edit domain on a synthetic Y.Doc. No production notes, HTTP queue, or database persistence.

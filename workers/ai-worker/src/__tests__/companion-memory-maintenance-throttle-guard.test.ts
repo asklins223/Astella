@@ -28,7 +28,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 const source = readFileSync(
-  new URL("../handlers/companion-memory-maintenance.ts", import.meta.url),
+  new URL("../handlers/memory/companion-memory-maintenance.ts", import.meta.url),
   "utf8",
 );
 

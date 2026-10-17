@@ -32,7 +32,7 @@ const AGENT_TURNS = Number(process.env.PROBE_ROUNDS ?? 3);
 const { resolveAIGovernanceContext, resolveProviderForTask } = await import("./src/lib/governance.ts");
 const { createProvider } = await import("./src/lib/ai-provider.ts");
 const { createGovernedProvider } = await import("./src/lib/governance.ts");
-const { looksTruncatedReply } = await import("./src/handlers/companion-dialogue-content.ts");
+const { looksTruncatedReply } = await import("workers/ai-worker/src/handlers/turn/companion-dialogue-content.ts");
 
 /** 生产里"活跃档"的退化线（字数），探针不必重读 pet_profiles：健康度看的是最坏情况。 */
 const DEGENERATE_UNDER_CHARS = 6;

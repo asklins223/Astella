@@ -15,7 +15,7 @@ const dbSchema = readFileSync(
   "utf8",
 );
 const desktopContracts = readFileSync(
-  new URL("../../../../packages/shared/src/contracts/companion-memory-desktop-contracts.ts", import.meta.url),
+  new URL("../../../../packages/shared/src/contracts/companion/companion-memory-desktop-contracts.ts", import.meta.url),
   "utf8",
 );
 

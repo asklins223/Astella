@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, type RefObject } from "react";
-import { useRoomStore } from "../../../app/room-store";
+import { useRoomStore } from "../../../app/home/room-store";
 import { stepUiSpring, type UiMotionMode, type UiSpring } from "../../hud/ui-spring";
 
 type Track = {

@@ -1,7 +1,7 @@
 import { BookOpen,CircleUserRound,HeartHandshake,Library,MessageCircle,NotebookPen,RefreshCw,Settings2,Sparkles } from "lucide-react";
 import { Activity,useEffect,useRef,useState,type KeyboardEvent } from "react";
-import { useCompanionChat } from "../../../app/companion-chat-session";
-import { useRoomStore } from "../../../app/room-store";
+import { useCompanionChat } from "../../../app/companion-session/companion-chat-session";
+import { useRoomStore } from "../../../app/home/room-store";
 import { HudPage } from "../../hud/HudPage";
 import { useHudPage } from "../../hud/use-hud-page";
 import { CompanionActivityPage } from "./companion-activity-page";

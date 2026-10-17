@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { companionCreateNoteV1Schema } from "@astella/shared/companion-note-authoring-contracts";
 import { assertGeneratedNoteLinks, companionCreatedNoteId, createdNoteToolResult, readCreatedNoteReceipt,
-  userForbidsNoteLibraryRead } from "../companion-note-authoring.ts";
+  userForbidsNoteLibraryRead } from "../note/companion-note-authoring.ts";
 
 const NOTE = "11111111-1111-4111-8111-111111111111";
 const VERSION = "22222222-2222-4222-8222-222222222222";

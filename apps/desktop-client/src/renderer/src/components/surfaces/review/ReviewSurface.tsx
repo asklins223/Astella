@@ -13,14 +13,14 @@ import type { LearningObjectiveSurfaceV3 } from "@astella/shared/learning-object
 import type { ReviewQueueV2 } from "@astella/shared/review-queue-v2-contracts";
 import type { AnswerModePreferenceV1 } from "@astella/shared/companion-shell-contracts";
 import { answerModeToResponsePreference } from "@astella/shared/companion-shell-contracts";
-import { useRoomStore } from "../../../app/room-store";
+import { useRoomStore } from "../../../app/home/room-store";
 import {
   createCommandId,
   createRequestMeta,
   gatewayErrorMessage,
   RendererGatewayError,
   unwrapGatewayResult,
-} from "../../../app/desktop-client";
+} from "../../../app/client/desktop-client";
 import { HudPage } from "../../hud/HudPage";
 import { useHudPage } from "../../hud/use-hud-page";
 import { usePageReadableView } from "../../hud/use-page-readable-view";
@@ -32,9 +32,9 @@ import {
   recallRevealReceiptLineV1,
   recallWaitingCueV1,
   recallWaitingLineV1,
-} from "../notebook/recall-waiting-presenter.ts";
+} from "../notebook/learning/recall-waiting-presenter.ts";
 import { RECALL_REVEAL_COPY_V1, type RecallWaitingKindV1 } from "@astella/shared/recall-waiting-v2-contracts";
-import { SurfaceDataState, useDayAnchor } from "../notebook/surface-data.tsx";
+import { SurfaceDataState, useDayAnchor } from "../notebook/shell/surface-data.tsx";
 import {DECK_DRAG_SLOP, REVIEW_WINDOW_SIZE, deckDragOutcome, deckDragShift, reviewDeckPosition, reviewDeckRound, reviewOverdueLabel, reviewReasonFacts, reviewReasonSentence, reviewReasonTag, reviewSequenceAfter, reviewStartabilityLabel, reviewFormalValidationBlockedLabel, reviewWindowStart, sameReviewSubjectAsEarlierLabel, uniqueReviewItems, type ReviewItem} from "./review-deck.ts";
 import type { LoadedReviewQueue, ReviewFailure } from "./review-types";
 import { useReviewQueueSelection } from "./use-review-queue-selection";

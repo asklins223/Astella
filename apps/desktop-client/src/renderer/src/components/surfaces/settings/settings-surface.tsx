@@ -6,7 +6,7 @@ import { SettingsAccountPanel, type AvatarUploadOutcome } from "./settings-accou
 import { SettingsExportGroup } from "./settings-export-group.tsx";
 import { SettingsUpdateGroup, UpdateBadge } from "./settings-update-panel.tsx";
 import { SettingsRenderingGroup } from "./settings-rendering-panel";
-import { useUpdateStatus } from "../../../app/update-status";
+import { useUpdateStatus } from "../../../app/gate/update-status";
 import { SettingsThemePicker, themeLabel } from "./settings-theme-picker.tsx";
 import { SettingsInviteJoinField } from "./settings-invite-join-field.tsx";
 import { SettingsMotionPreview } from "./settings-motion-preview";
@@ -29,7 +29,7 @@ import {
   type DissolvePreviewState,
 } from "./settings-workspace-group.tsx";
 import { AUDIT_CATEGORY_LABELS, AUDIT_STATUS_LABELS, DATA_POLICY_FIELDS, spaceRoleTypeLine, spaceTypeLabel, THEME_PLATES } from "./settings-data-tables.ts";
-import { copyText } from "../../../app/clipboard";
+import { copyText } from "../../../app/client/clipboard";
 
 /**
  * 一个分区自己报给伴星读的那份事实（39d W2-7）。字段含义在这一页里**全页统一**，
@@ -91,16 +91,16 @@ import {
 } from "@astella/shared/desktop-ipc-contracts";
 import type { DesktopAiAuditItemV1, DesktopAiAuditPageV1 } from "@astella/shared/desktop-surface-contracts";
 import { formatObjectiveDateTime } from "../run/objective-state-copy.ts";
-import type { MotionMode } from "../../../app/room-machine";
+import type { MotionMode } from "../../../app/home/room-machine";
 import {
   NO_AVATAR_SRC,
   useRoomStore,
   type Live2dStatus,
-} from "../../../app/room-store";
-import { createRequestMeta, gatewayErrorMessage, isJoinCommittedWithoutSession, joinFailureTone, unwrapGatewayResult } from "../../../app/desktop-client";
-import { signOutCurrentAccount } from "../../../app/account-signout";
-import { companionConsentGate, COMPANION_CONSENT_REQUIRED_LINE, COMPANION_EXTERNAL_DISABLED_LINE, SETTINGS_ATTENTION_AI_CONSENT, SETTINGS_SECTION_AI_CONSENT } from "../../../app/companion-consent-gate";
-import { publishGateInvalidation } from "../../../app/gate-invalidation";
+} from "../../../app/home/room-store";
+import { createRequestMeta, gatewayErrorMessage, isJoinCommittedWithoutSession, joinFailureTone, unwrapGatewayResult } from "../../../app/client/desktop-client";
+import { signOutCurrentAccount } from "../../../app/gate/account-signout";
+import { companionConsentGate, COMPANION_CONSENT_REQUIRED_LINE, COMPANION_EXTERNAL_DISABLED_LINE, SETTINGS_ATTENTION_AI_CONSENT, SETTINGS_SECTION_AI_CONSENT } from "../../../app/companion-pages/companion-consent-gate";
+import { publishGateInvalidation } from "../../../app/gate/gate-invalidation";
 import {
   DIRECTORY_RAIL_MODE_EVENT,
   DIRECTORY_RAIL_MODE_KEY,
@@ -114,7 +114,7 @@ import { HudPicker, HudSegmented } from "../../hud/HudControls";
 import { useHudPage } from "../../hud/use-hud-page";
 import { usePageReadableView } from "../../hud/use-page-readable-view";
 import { HUD_PAGES } from "../../hud/hud-pages";
-import { SurfaceDataState, readAuthenticatedSession } from "../notebook/surface-data.tsx";
+import { SurfaceDataState, readAuthenticatedSession } from "../notebook/shell/surface-data.tsx";
 
 const SECTIONS = SETTINGS_SECTIONS.map(({ id, label }) => [id, label] as const);
 const SECTION_IDS: readonly string[] = SECTIONS.map(([id]) => id);

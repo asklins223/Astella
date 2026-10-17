@@ -3,7 +3,7 @@ import { check, foreignKey, index, jsonb, pgTable, text, timestamp, uniqueIndex,
 import { jobs } from "./job.ts";
 import { noteVersions, notes } from "./note.ts";
 import { users, workspaces } from "./identity.ts";
-import type { NoteAnnotationAnchorV1 } from "../contracts/note-annotation-contracts.ts";
+import type { NoteAnnotationAnchorV1 } from "../contracts/note/note-annotation-contracts.ts";
 
 export const noteLearningArtifacts = pgTable("note_learning_artifacts", {
   id: uuid("id").primaryKey().defaultRandom(),

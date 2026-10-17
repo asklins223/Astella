@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events'
 import { describe, expect, it } from 'vitest'
-import { guardProcessOutputStreams } from '../output-stream-guard'
+import { guardProcessOutputStreams } from '../artifact/output-stream-guard'
 
 /**
  * 这条弹窗的复现路径：stdout 的读端消失（终端关掉、管道被回收）之后，

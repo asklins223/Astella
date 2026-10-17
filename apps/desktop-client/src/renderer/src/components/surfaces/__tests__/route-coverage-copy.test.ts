@@ -5,7 +5,7 @@
  * 把实现改坏，确认红在**这一条**上，而不是红在渲染错误上。
  */
 import { expect, it } from "vitest";
-import { ROUTE_QUESTION_STATE_COPY_V1, routeVerdictCopyV1 } from "../notebook/route-coverage-copy.ts";
+import { ROUTE_QUESTION_STATE_COPY_V1, routeVerdictCopyV1 } from "../notebook/learning/route-coverage-copy.ts";
 
 it("§4.4：借助完成的那一次**单独报数**，屏上不说「全部会用」", () => {
   const copy = routeVerdictCopyV1({

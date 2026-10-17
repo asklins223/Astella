@@ -2,12 +2,12 @@ import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type Keyb
 import { ArrowDown, ArrowLeft, ArrowRight, BookOpen, ChevronRight, FileText, Layers3, Leaf, Search, Sprout, X } from "lucide-react";
 import type { DesktopSearchItem } from "@astella/shared/desktop-surface-contracts";
 import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
-import { useRoomStore } from "../../../app/room-store";
+import { useRoomStore } from "../../../app/home/room-store";
 import { HudPage } from "../../hud/HudPage";
 import { useHudPage } from "../../hud/use-hud-page";
 import { usePageReadableView } from "../../hud/use-page-readable-view";
 import { HUD_PAGES } from "../../hud/hud-pages";
-import { SurfaceDataState, formatRelative } from "../notebook/surface-data";
+import { SurfaceDataState, formatRelative } from "../notebook/shell/surface-data.tsx";
 import { containsQuery, markQuery, noResultEmpty, NO_QUERY_EMPTY, objectKey, openLabel, previewGap, previewParagraphs, PREVIEW_EMPTY, SEARCH_STATE_LINES, stripHighlight, TYPE_FILTERS, typeFilterLabel, typeLabel } from "./search-presenter";
 import { useSearchDesk } from "./use-search-desk";
 import { useSearchMotion } from "./use-search-motion";

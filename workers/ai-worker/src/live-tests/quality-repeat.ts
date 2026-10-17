@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { observedProvider, outputDir, platform, save, safeFailure, type WireReceipt } from "./acceptance-common.ts";
-import { buildCompanionPersonaMessages } from "../handlers/companion-dialogue-content.ts";
-import { resolveCompanionPersonaContext } from "../handlers/companion-identity-context.ts";
+import { buildCompanionPersonaMessages } from "../handlers/turn/companion-dialogue-content.ts";
+import { resolveCompanionPersonaContext } from "../handlers/memory/companion-identity-context.ts";
 
 const wire:WireReceipt[]=[],results:Array<Record<string,unknown>>=[];
 async function run(name:string,fn:()=>Promise<Record<string,unknown>>) {

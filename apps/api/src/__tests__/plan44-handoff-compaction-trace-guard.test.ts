@@ -21,23 +21,23 @@ const appendMigration = readFileSync(
   "utf8",
 );
 const dialogueStore = readFileSync(
-  new URL("../../../../workers/ai-worker/src/handlers/companion-dialogue-store.ts", import.meta.url),
+  new URL("../../../../workers/ai-worker/src/handlers/turn/companion-dialogue-store.ts", import.meta.url),
   "utf8",
 );
 const runtime = readFileSync(
-  new URL("../../../../workers/ai-worker/src/handlers/companion-agent-runtime.ts", import.meta.url),
+  new URL("../../../../workers/ai-worker/src/handlers/agent/companion-agent-runtime.ts", import.meta.url),
   "utf8",
 );
 const dialogue = readFileSync(
-  new URL("../../../../workers/ai-worker/src/handlers/companion-dialogue.ts", import.meta.url),
+  new URL("../../../../workers/ai-worker/src/handlers/turn/companion-dialogue.ts", import.meta.url),
   "utf8",
 );
 const stepCompaction = readFileSync(
-  new URL("../../../../workers/ai-worker/src/handlers/companion-step-compaction.ts", import.meta.url),
+  new URL("../../../../workers/ai-worker/src/handlers/context/companion-step-compaction.ts", import.meta.url),
   "utf8",
 );
 const traceModule = readFileSync(
-  new URL("../../../../workers/ai-worker/src/handlers/companion-compaction-trace.ts", import.meta.url),
+  new URL("../../../../workers/ai-worker/src/handlers/context/companion-compaction-trace.ts", import.meta.url),
   "utf8",
 );
 
@@ -59,7 +59,7 @@ test("44 §5.3：快照推进到下一版是有围栏的，迟到结果不许覆
 test("44 §3.3：折叠只记区间与水位，不记正文", () => {
   // 轨迹里没有任何正文字段——只记范围、顶替它的摘要哈希与那一轮的判定。
   const trace = readFileSync(
-    new URL("../../../../workers/ai-worker/src/handlers/companion-context-handoff.ts", import.meta.url),
+    new URL("../../../../workers/ai-worker/src/handlers/context/companion-context-handoff.ts", import.meta.url),
     "utf8",
   );
   // 只取这个 interface 本身：切片到它的收尾为止，别把后面的接口也扫进来。
@@ -75,7 +75,7 @@ test("44 §3.3：折叠只记区间与水位，不记正文", () => {
 
 test("44 §5.4：`modelMessages` 保持折叠前的内容——恢复时多给上下文更安全", () => {
   const trace = readFileSync(
-    new URL("../../../../workers/ai-worker/src/handlers/companion-context-handoff.ts", import.meta.url),
+    new URL("../../../../workers/ai-worker/src/handlers/context/companion-context-handoff.ts", import.meta.url),
     "utf8",
   );
   const snapshotAt = trace.indexOf("export interface CompanionContextHandoffSnapshotV1");

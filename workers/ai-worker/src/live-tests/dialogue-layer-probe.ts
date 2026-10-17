@@ -6,8 +6,8 @@ import { observedProvider, platform, outputDir, save, safeFailure, type WireRece
 import { dialogueCases, dialogueGenerationFixture } from "./dialogue-cases.ts";
 import { buildDialogueExperimentRequest, hashDialogueValue, snapshotDialogueRequest, snapshotDialogueWireBody } from "./dialogue-experiment.ts";
 import { buildDialogueLayerRequests, dialogueLayerConditions } from "./dialogue-layer-diagnostic.ts";
-import { finalizeCompanionReplyText, validateCompanionOutput, sanitizeCompanionVisibleText } from "../handlers/companion-dialogue-content.ts";
-import { buildCasualFirstStepRequest } from "../handlers/companion-speculative-first-step.ts";
+import { finalizeCompanionReplyText, validateCompanionOutput, sanitizeCompanionVisibleText } from "../handlers/turn/companion-dialogue-content.ts";
+import { buildCasualFirstStepRequest } from "../handlers/agent/companion-speculative-first-step.ts";
 
 const suffix = process.env.LIVE_DIALOGUE_LAYER_SUFFIX;
 if (!suffix || !/^[a-z0-9-]{1,40}$/.test(suffix)) throw new Error("Unique diagnostic suffix required");

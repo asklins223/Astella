@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
-import { companionAssistantMessageKind } from "../companion-dialogue-content.ts";
+import { companionAssistantMessageKind } from "../turn/companion-dialogue-content.ts";
 
 /**
  * 她主动说的那句话，无论走 `companion_publish_utterance` 分句还是走普通收尾，
@@ -32,9 +32,9 @@ test("普通问答的终态消息记 text", () => {
   assert.equal(companionAssistantMessageKind(undefined), "text");
 });
 
-const FINALIZATION = join(import.meta.dirname, "../companion-dialogue-finalization.ts");
+const FINALIZATION = join(import.meta.dirname, "../turn/companion-dialogue-finalization.ts");
 const finalizationSource = readFileSync(FINALIZATION, "utf8");
-const STORE = join(import.meta.dirname, "../companion-dialogue-store.ts");
+const STORE = join(import.meta.dirname, "../turn/companion-dialogue-store.ts");
 const storeSource = readFileSync(STORE, "utf8");
 
 /**

@@ -22,7 +22,7 @@ import {
   PUBLIC_DOCUMENT_MAX_TITLE,
   readAgentPublicDocument,
 } from "../public-document.ts";
-import { fetchUrlContentOnce, type FetchUrlDependencies } from "../../handlers/parse-source.ts";
+import { fetchUrlContentOnce, type FetchUrlDependencies } from "../../handlers/note/parse-source.ts";
 
 const PUBLIC_IP = { address: "93.184.216.34", family: 4 as const };
 

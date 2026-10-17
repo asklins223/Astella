@@ -9,7 +9,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { MindMapContentV1 } from "@astella/shared/note-mind-map-contracts";
-import { foldDuplicateConcepts, orderMindMapBySource } from "../note-mind-map-structure.ts";
+import { foldDuplicateConcepts, orderMindMapBySource } from "../note/note-mind-map-structure.ts";
 
 function concept(id: string, parentId: string, label: string, ordinal: number, explanation: string | null = null) {
   return { id, parentId, kind: "concept" as const, label, explanation, references: [{ blockOrdinal: ordinal, quote: `第${ordinal}段的原话` }] };

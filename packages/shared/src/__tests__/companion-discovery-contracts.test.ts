@@ -15,7 +15,7 @@ import {
   onSourceLost,
   sameCollectionIdentity,
   uncollectEffect,
-} from "../contracts/companion-discovery-contracts.ts";
+} from "../contracts/companion/companion-discovery-contracts.ts";
 
 const base = {
   ownerId: "u1", actorId: "u1", studyVisibleCount: 0, wantStudyVisible: false,

@@ -1,6 +1,6 @@
-import { createRequestMeta, unwrapGatewayResult } from "../../../app/desktop-client";
+import { createRequestMeta, unwrapGatewayResult } from "../../../app/client/desktop-client";
 import type { HomeSuggestionWireV2 } from "@astella/shared/review-queue-v2-contracts";
-import { useSurfaceProjection } from "../notebook/surface-data.tsx";
+import { useSurfaceProjection } from "../notebook/shell/surface-data.tsx";
 
 /**
  * 首页「只推一件」的读侧，四档而不是两档。

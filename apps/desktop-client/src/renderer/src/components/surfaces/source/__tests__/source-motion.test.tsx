@@ -2,7 +2,7 @@
 import { useRef } from "react";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useRoomStore } from "../../../../app/room-store";
+import { useRoomStore } from "../../../../app/home/room-store";
 import { useSourceMotion, useSourceSheetMotion } from "../use-source-motion";
 
 let time = 0, nextFrame = 0;

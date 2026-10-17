@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { gatewayErrorMessage, unwrapGatewayResult } from "../../../app/desktop-client";
-import { useRoomStore } from "../../../app/room-store";
+import { gatewayErrorMessage, unwrapGatewayResult } from "../../../app/client/desktop-client";
+import { useRoomStore } from "../../../app/home/room-store";
 import { discoveryIdentityKey, type DiscoveryKeepProps, type DiscoveryKeepRequest } from "./companion-discovery-offer";
 import { publishCompanionRecordsChanged, useCompanionRecordsRefresh, useCompanionResource } from "./use-companion-resource";
 

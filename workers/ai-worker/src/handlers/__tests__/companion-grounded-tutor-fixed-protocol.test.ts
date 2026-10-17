@@ -36,7 +36,7 @@ import {
 import {
   buildCompanionPersonaMessages,
   GROUNDED_TUTOR_COMPANION_PROMPT,
-} from "../companion-dialogue-content.ts";
+} from "../turn/companion-dialogue-content.ts";
 
 const PET = {
   name: "爱吃白饭的大肥鱼",

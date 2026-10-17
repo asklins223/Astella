@@ -44,8 +44,8 @@ const sharedAliasEntries = (): { find: string; replacement: string }[] =>
 describe("桌面测试与构建解析同一份 @astella/shared", () => {
   it("main/preload 和 renderer 的类型检查也解析到实时合同，不能退回安装期快照", () => {
     for (const [configName, entry] of [
-      ["tsconfig.node.json", "src/main/desktop-ipc.ts"],
-      ["tsconfig.web.json", "src/renderer/src/app/clipboard.ts"],
+      ["tsconfig.node.json", "src/main/ipc/desktop-ipc.ts"],
+      ["tsconfig.web.json", "src/renderer/src/app/client/clipboard.ts"],
     ]) {
       const configPath = resolve(here, configName);
       const config = ts.readConfigFile(configPath, ts.sys.readFile);
@@ -53,7 +53,12 @@ describe("桌面测试与构建解析同一份 @astella/shared", () => {
       const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, here);
       for (const contract of ["desktop-ipc-contracts", "companion-conversation-contracts", "companion-memory-desktop-contracts"]) {
         const resolved = ts.resolveModuleName(`@astella/shared/${contract}`, resolve(here, entry), parsed.options, ts.sys);
-        expect(resolved.resolvedModule?.resolvedFileName).toBe(resolve(here, `../../packages/shared/src/contracts/${contract}.ts`));
+        const file = resolved.resolvedModule?.resolvedFileName ?? "";
+        // 判据是「落在 packages/shared/src 的活源码里」，不是「落在某一层子目录」：
+        // 合同按域分子目录之后，写死 `contracts/<name>.ts` 会让这条在别名完全正确时红。
+        expect(file.startsWith(resolve(here, "../../packages/shared/src/"))).toBe(true);
+        expect(file.endsWith(`/${contract}.ts`)).toBe(true);
+        expect(ts.sys.fileExists(file)).toBe(true);
       }
     }
   });

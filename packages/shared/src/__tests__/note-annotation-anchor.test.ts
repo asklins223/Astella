@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { noteAnchorBlockRangeV1, noteAnchorMatchesV1, noteAnnotationAnchorV1Schema, readNoteAnchorTextV1 } from "../contracts/note-annotation-contracts.ts";
+import { noteAnchorBlockRangeV1, noteAnchorMatchesV1, noteAnnotationAnchorV1Schema, readNoteAnchorTextV1 } from "../contracts/note/note-annotation-contracts.ts";
 
 const blocks = [
   { ordinal: 0, type: "paragraph", content: "利息加入**本金**后，下一轮继续生息。" },

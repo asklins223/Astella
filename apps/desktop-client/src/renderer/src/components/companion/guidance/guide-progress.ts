@@ -1,6 +1,6 @@
 import { COMPANION_GUIDE_VERSION, companionOnboardingStateV1Schema, type CompanionOnboardingStateV1, type OnboardingTransitionRequest, type CompanionOverview } from "@astella/shared/companion-shell-contracts";
-import { createRequestMeta, unwrapGatewayResult } from "../../../app/desktop-client";
-import type { SpaceIdentity } from "../../../app/room-store";
+import { createRequestMeta, unwrapGatewayResult } from "../../../app/client/desktop-client";
+import type { SpaceIdentity } from "../../../app/home/room-store";
 
 export type GuideScope = "account" | "space";
 export type GuideIdentity = SpaceIdentity & { workspaceId: string; workspaceEpoch: number; userId: string; deploymentRef: string };

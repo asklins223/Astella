@@ -2,8 +2,8 @@
 import { createRef } from "react";
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
-import { useRoomStore } from "../../../../app/room-store";
-import { useNotebookLearningView } from "../use-notebook-learning-view";
+import { useRoomStore } from "../../../../app/home/room-store";
+import { useNotebookLearningView } from "../learning/use-notebook-learning-view.ts";
 
 afterEach(() => { cleanup(); document.body.innerHTML = ""; });
 let noteSequence = 0;

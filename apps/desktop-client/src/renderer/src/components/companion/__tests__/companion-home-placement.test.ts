@@ -12,7 +12,7 @@ import {
   companionViewportCorrection,
   companionWorldAnchorFromProjectedFoot,
   shouldCommitCompanionDrag,
-} from "../companion-home-placement.ts";
+} from "../bubble/companion-home-placement.ts";
 
 describe("Home V2 companion placement", () => {
   it("corrects a transformed companion into the zoomed viewport safe area", () => {

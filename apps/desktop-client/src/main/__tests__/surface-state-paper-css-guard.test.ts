@@ -30,7 +30,7 @@ const read = (relative: string) => {
 const stripComments = (css: string) => css.replace(/\/\*[\s\S]*?\*\//g, "");
 
 const CSS_RELATIVE = "src/renderer/src/components/hud/hud-surface.css";
-const NOTE_LIBRARY = "src/renderer/src/components/surfaces/notebook/note-library-surface.tsx";
+const NOTE_LIBRARY = "src/renderer/src/components/surfaces/notebook/library/note-library-surface.tsx";
 
 describe("状态纸面只在真有纸可落的时候才剥", () => {
   const css = stripComments(read(CSS_RELATIVE));

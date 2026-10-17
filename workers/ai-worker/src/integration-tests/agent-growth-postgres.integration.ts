@@ -83,9 +83,9 @@ const {
   deleteMemory, dismissMemory, archiveMemory, eraseMemory,
 } = memoryService;
 const { upsertPlaybook, readPlaybookById, retrievePlaybookViews } =
-  await import("../handlers/companion-playbooks.ts");
+  await import("../handlers/memory/companion-playbooks.ts");
 const { runCompanionMemoryOrganize } =
-  await import("../handlers/companion-memory-organize.ts");
+  await import("../handlers/memory/companion-memory-organize.ts");
 const { loadAgentLearningContext } =
   await import("../agent/learning-context.ts");
 const { createAgentMethodStore, readAgentMethod, listAgentMethods, upsertAgentMethodCandidate } =

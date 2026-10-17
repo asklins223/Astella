@@ -21,8 +21,8 @@ import {
   type AiTaskDefinition,
   type AiTaskFailureClass,
   type AiTaskReceipt,
-} from "../ai-task-kernel.ts";
-import { ExternalCallInsideTransactionError } from "../workspace-transaction.ts";
+} from "../agent/ai-task-kernel.ts";
+import { ExternalCallInsideTransactionError } from "../platform/workspace-transaction.ts";
 
 /** 纯函数层的"我现在不在任何事务里"。真实接线见集测那份（读的是 worker 的 AsyncLocalStorage）。 */
 const NO_TX = () => undefined;

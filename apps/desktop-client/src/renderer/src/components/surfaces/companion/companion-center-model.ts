@@ -1,6 +1,6 @@
 import type { CompanionActivityDeliveryV1,CompanionHistoryItemV1,CompanionMemoryItemV1,CompanionMemoryKindV1,CompanionMemoryScopeV1 } from "@astella/shared/companion-memory-desktop-contracts";
 import type { GatewayResultV1 } from "@astella/shared/desktop-ipc-contracts";
-import { gatewayErrorMessage,unwrapGatewayResult } from "../../../app/desktop-client";
+import { gatewayErrorMessage,unwrapGatewayResult } from "../../../app/client/desktop-client";
 
 export type Section<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly message: string };
 export type CompanionCenterTab = "overview" | "dialogue" | "diary" | "memory" | "discovery" | "activity" | "persona";

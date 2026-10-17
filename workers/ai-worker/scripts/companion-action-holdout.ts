@@ -38,7 +38,7 @@
  */
 import { readFileSync } from "node:fs";
 import { resolveAllCompanionAgentTools } from "@astella/shared";
-import { companionWriteToolNames } from "../src/handlers/companion-step-plan.ts";
+import { companionWriteToolNames } from "../src/handlers/turn/companion-step-plan.ts";
 
 type Row = {
   readonly run: string; readonly at: string; readonly status: string; readonly err: string;

@@ -92,7 +92,7 @@ describe("判据只有一份", () => {
   });
 
   it("语音投递那条路上确实问了这条判据（不是只写了没人调）", () => {
-    const dialogue = readFileSync(join(WORKER_ROOT, "src", "handlers", "companion-dialogue.ts"), "utf8");
+    const dialogue = readFileSync(join(WORKER_ROOT, "src", "handlers", "turn", "companion-dialogue.ts"), "utf8");
     // 判据函数改名成"取身份"（`findFormalAnswerTarget`）：静音与暴露记账共用同一次
     // 读取，boolean 只是它的非空判断。这条断言盯的还是"语音那条路问了这道判据"。
     assert.match(dialogue, /findFormalAnswerTarget\(tx,/);

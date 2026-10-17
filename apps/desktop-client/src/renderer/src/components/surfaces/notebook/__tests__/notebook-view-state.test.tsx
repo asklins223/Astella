@@ -2,9 +2,9 @@
 import { createRef } from "react";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { useNotebookBodyMode } from "../use-notebook-body-mode";
-import { useNotebookLearningEntry } from "../use-notebook-learning-entry";
-import type { NoteMarkdownEditorHandle } from "../note-markdown-editor";
+import { useNotebookBodyMode } from "../document/use-notebook-body-mode.ts";
+import { useNotebookLearningEntry } from "../learning/use-notebook-learning-entry.ts";
+import type { NoteMarkdownEditorHandle } from "../document/note-markdown-editor.tsx";
 
 afterEach(cleanup);
 describe("正文视图与学习任务的边界", () => {

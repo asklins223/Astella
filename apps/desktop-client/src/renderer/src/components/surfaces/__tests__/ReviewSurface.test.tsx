@@ -2,7 +2,7 @@
 
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { useRoomStore } from "../../../app/room-store.ts";
+import { useRoomStore } from "../../../app/home/room-store.ts";
 import { ReviewSurface } from "../review/ReviewSurface.tsx";
 import type { ReviewItem } from "../review/review-deck.ts";
 import type { ObjectiveNoteChangeImpactV1 } from "@astella/shared/learning-objective-surface-contracts";

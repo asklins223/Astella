@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { companionFloatingPlacement, companionHistoryPlacement } from "../companion-interaction-placement";
-import type { Rect } from "../companion-home-placement";
+import { companionFloatingPlacement, companionHistoryPlacement } from "../bubble/companion-interaction-placement";
+import type { Rect } from "../bubble/companion-home-placement";
 
 const overlaps = (a: Rect, b: Rect) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
 

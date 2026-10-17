@@ -26,7 +26,7 @@ import {
   roundTeachingViewV1Schema,
   roundPrerequisiteViewV1Schema,
   noteRoundContentMovedV1,
-} from "../contracts/note-learning-round-contracts.ts";
+} from "../contracts/note/note-learning-round-contracts.ts";
 
 const NOTE_ID = "11111111-1111-4111-8111-111111111111";
 const ROUND_ID = "22222222-2222-4222-8222-222222222222";

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { CompanionVoiceRecorder } from "../voice-recorder";
+import { CompanionVoiceRecorder } from "../voice/voice-recorder";
 
 let getUserMedia: ReturnType<typeof vi.fn>;
 let track: { stop: ReturnType<typeof vi.fn>; onended: (() => void) | null };

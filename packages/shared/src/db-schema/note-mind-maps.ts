@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { check, foreignKey, index, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
-import type { MindMapContentV1 } from "../contracts/note-mind-map-contracts.ts";
+import type { MindMapContentV1 } from "../contracts/note/note-mind-map-contracts.ts";
 import { noteVersions, notes } from "./note.ts";
 import { jobs } from "./job.ts";
 import { users, workspaces } from "./identity.ts";

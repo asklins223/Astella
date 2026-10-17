@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, within } from "@testing-library/react";
 import { noteLearningArtifactV1Schema } from "@astella/shared/note-learning-artifact-contracts";
 import { noteBlockProjectionV1Schema } from "@astella/shared/note-projection-contracts";
-import { NotebookLearningArtifactPaper } from "../notebook-learning-artifact-paper";
+import { NotebookLearningArtifactPaper } from "../learning/notebook-learning-artifact-paper.tsx";
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const artifact = noteLearningArtifactV1Schema.parse({

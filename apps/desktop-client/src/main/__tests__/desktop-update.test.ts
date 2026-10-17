@@ -63,14 +63,14 @@ vi.mock("node:fs", () => ({
 }));
 
 const receipts = vi.hoisted(() => ({ value: null as { fromVersion: string; version: string; status: string } | null }));
-vi.mock("../update-install-receipt", () => ({ UpdateInstallReceiptStore: class {
+vi.mock("../update/update-install-receipt", () => ({ UpdateInstallReceiptStore: class {
   read() { return receipts.value; }
   write(value: typeof receipts.value) { receipts.value = value; }
   reconcile() { return receipts.value?.status === "acknowledged" ? null : receipts.value; }
   acknowledge() { if (receipts.value) receipts.value.status = "acknowledged"; }
 } }));
-vi.mock("../macos-archive-updater", () => ({ MacosArchiveUpdater: class { constructor() { return updater; } } }));
-vi.mock("../windows-installer-updater", () => ({ WindowsInstallerUpdater: class { constructor() { return updater; } } }));
+vi.mock("../update/macos-archive-updater", () => ({ MacosArchiveUpdater: class { constructor() { return updater; } } }));
+vi.mock("../update/windows-installer-updater", () => ({ WindowsInstallerUpdater: class { constructor() { return updater; } } }));
 
 vi.mock("electron-updater", () => ({ autoUpdater: updater }));
 
@@ -92,7 +92,7 @@ beforeEach(async () => {
   windows.length = 0;
   windows.push({ isDestroyed: () => false, webContents: { send } });
   send.mockReset();
-  const module = await import("../desktop-update");
+  const module = await import("../update/desktop-update");
   module.resetUpdateModuleForTests();
 });
 
@@ -101,7 +101,7 @@ describe("自家更新清单（服务端下发信息与地址）", () => {
   it("清单拿得到就把更新源指过去，地址按服务端给的 base 来", async () => {
     process.env.DESKTOP_API_ORIGIN = "http://update-stub.test/";
     vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, text: async () => "version: 0.2.0" })) as unknown as typeof fetch);
-    const module = await import("../desktop-update");
+    const module = await import("../update/desktop-update");
     await module.checkForUpdates({ userInitiated: true });
     expect(updater.setFeedURL).toHaveBeenCalledWith({ provider: "generic", url: "http://update-stub.test/updates/desktop/" });
   });
@@ -109,7 +109,7 @@ describe("自家更新清单（服务端下发信息与地址）", () => {
   it("清单探不通就不动更新源——保留打包配置里那份 GitHub 更新源", async () => {
     process.env.DESKTOP_API_ORIGIN = "http://update-stub.test/";
     vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("ECONNREFUSED"); }) as unknown as typeof fetch);
-    const module = await import("../desktop-update");
+    const module = await import("../update/desktop-update");
     await module.checkForUpdates({ userInitiated: true });
     expect(updater.setFeedURL).not.toHaveBeenCalled();
   });
@@ -117,14 +117,14 @@ describe("自家更新清单（服务端下发信息与地址）", () => {
   it("探到的不是 2xx 也不切换，不让一个 404 的清单把更新带走", async () => {
     process.env.DESKTOP_API_ORIGIN = "http://update-stub.test/";
     vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 502, text: async () => "" })) as unknown as typeof fetch);
-    const module = await import("../desktop-update");
+    const module = await import("../update/desktop-update");
     await module.checkForUpdates({ userInitiated: true });
     expect(updater.setFeedURL).not.toHaveBeenCalled();
   });
 });
 
   it("更新后丢弃旧版本缓存，以真实运行版本确认成功，展示后不会再报", async () => {
-    const module = await import("../desktop-update");
+    const module = await import("../update/desktop-update");
     await module.checkForUpdates({ userInitiated: true });
     updater.emit("update-available", { version: "0.2.0" });
     runtime.cached = JSON.stringify({ checkedAt: Date.now(), state: module.getUpdateState() });
@@ -140,7 +140,7 @@ describe("自家更新清单（服务端下发信息与地址）", () => {
   });
 
   it("已有可安装包时检查不会把它改回可下载，重复安装也不启动第二个替换进程", async () => {
-    const module = await import("../desktop-update");
+    const module = await import("../update/desktop-update");
     await module.checkForUpdates({ userInitiated: true });
     updater.emit("update-downloaded", { version: "0.2.0" });
     updater.checkForUpdates.mockClear();
@@ -152,7 +152,7 @@ describe("自家更新清单（服务端下发信息与地址）", () => {
 
   it("Windows 先启动独立安装器，再退出应用并保存成功回执", async () => {
     Object.defineProperty(process, "platform", { value: "win32", configurable: true });
-    const module = await import("../desktop-update");
+    const module = await import("../update/desktop-update");
     await module.checkForUpdates({ userInitiated: true });
     updater.emit("update-downloaded", { version: "0.2.0" });
     await module.installUpdate();
@@ -166,7 +166,7 @@ describe("自家更新清单（服务端下发信息与地址）", () => {
   it("开发模式下如实说不检查，而不是去查一个装不上的版本", async () => {
     const { app } = await import("electron");
     (app as unknown as { isPackaged: boolean }).isPackaged = false;
-    const { checkForUpdates, getUpdateState } = await import("../desktop-update");
+    const { checkForUpdates, getUpdateState } = await import("../update/desktop-update");
     const state = await checkForUpdates({ userInitiated: true });
     expect(state.phase).toBe("upToDate");
     expect(state.message).toContain("开发模式");
@@ -175,7 +175,7 @@ describe("自家更新清单（服务端下发信息与地址）", () => {
   });
 
   it("检查阶段的失败落到 unreachable，而不是 failed", async () => {
-    const { checkForUpdates } = await import("../desktop-update");
+    const { checkForUpdates } = await import("../update/desktop-update");
     updater.checkForUpdates.mockRejectedValue(new Error("net::ERR_INTERNET_DISCONNECTED"));
     const state = await checkForUpdates({ userInitiated: true });
     // "没问到"和"更新坏了"是两句话，不能混。
@@ -185,7 +185,7 @@ describe("自家更新清单（服务端下发信息与地址）", () => {
   });
 
   it("error 事件发生在检查期间时也判成 unreachable（GitHub 限额走的是这条）", async () => {
-    const { checkForUpdates } = await import("../desktop-update");
+    const { checkForUpdates } = await import("../update/desktop-update");
     updater.checkForUpdates.mockImplementation(async () => {
       updater.emit("error", new Error("API rate limit exceeded"));
       throw new Error("API rate limit exceeded");
@@ -205,7 +205,7 @@ describe("自家更新清单（服务端下发信息与地址）", () => {
    * 所以必须断言整条相位序列里**一次都没出现过** failed。
    */
   it("检查失败时整条相位序列里不出现过 failed（否则用户会收到一条假失败通知）", async () => {
-    const { checkForUpdates } = await import("../desktop-update");
+    const { checkForUpdates } = await import("../update/desktop-update");
     send.mockClear();
     updater.checkForUpdates.mockImplementation(async () => {
       updater.emit("error", new Error("API rate limit exceeded"));
@@ -218,7 +218,7 @@ describe("自家更新清单（服务端下发信息与地址）", () => {
   });
 
   it("下载阶段的失败才是 failed", async () => {
-    const { checkForUpdates, downloadUpdate } = await import("../desktop-update");
+    const { checkForUpdates, downloadUpdate } = await import("../update/desktop-update");
     await checkForUpdates({ userInitiated: true });
     updater.downloadUpdate.mockRejectedValue(new Error("ENOSPC: no space left on device"));
     const state = await downloadUpdate();
@@ -227,7 +227,7 @@ describe("自家更新清单（服务端下发信息与地址）", () => {
   });
 
   it("缺少打包更新配置时说明真实原因，不显示本机路径或误报断网", async () => {
-    const { checkForUpdates } = await import("../desktop-update");
+    const { checkForUpdates } = await import("../update/desktop-update");
     updater.checkForUpdates.mockRejectedValue(new Error("ENOENT: no such file, open '/private/test.app/Contents/Resources/app-update.yml'"));
     const state = await checkForUpdates({ userInitiated: true });
     expect(state.phase).toBe("unreachable");
@@ -236,7 +236,7 @@ describe("自家更新清单（服务端下发信息与地址）", () => {
   });
 
   it("无证书也可下载和安装，带上 release 页地址", async () => {
-    const { checkForUpdates } = await import("../desktop-update");
+    const { checkForUpdates } = await import("../update/desktop-update");
     updater.checkForUpdates.mockImplementation(async () => {
       updater.emit("update-available", { version: "0.2.0", releaseNotes: "加了什么" });
       return { updateInfo: { version: "0.2.0" } };
@@ -255,7 +255,7 @@ describe("自家更新清单（服务端下发信息与地址）", () => {
    * 用户读到的就是 `<p>Astella v1.3.2</p>` 和一排 `<li>`（2026-10-09 真实截图）。
    */
   it("release 正文是 HTML 时洗成纯文本，通知里不再露出标签", async () => {
-    const { checkForUpdates } = await import("../desktop-update");
+    const { checkForUpdates } = await import("../update/desktop-update");
     const html = [
       "<p>Astella v0.2.0</p>",
       "<ul>",
@@ -283,7 +283,7 @@ describe("自家更新清单（服务端下发信息与地址）", () => {
    * 否则后半句会被当成另一段、在通知里凭空消失。
    */
   it("一条笔记在正文里换行时仍是一项，不会被拆成两行", async () => {
-    const { checkForUpdates } = await import("../desktop-update");
+    const { checkForUpdates } = await import("../update/desktop-update");
     updater.checkForUpdates.mockImplementation(async () => {
       updater.emit("update-available", {
         version: "0.2.0",
@@ -299,7 +299,7 @@ describe("自家更新清单（服务端下发信息与地址）", () => {
   });
 
   it("正文里的实体与行内标签还原成文字，行内空格不丢", async () => {
-    const { checkForUpdates } = await import("../desktop-update");
+    const { checkForUpdates } = await import("../update/desktop-update");
     updater.checkForUpdates.mockImplementation(async () => {
       updater.emit("update-available", {
         version: "0.2.0",
@@ -315,7 +315,7 @@ describe("自家更新清单（服务端下发信息与地址）", () => {
 
   it("macOS 安装先暂存、写入重启回执，再退出，不调用 ShipIt", async () => {
     const { app } = await import("electron");
-    const { checkForUpdates, installUpdate } = await import("../desktop-update");
+    const { checkForUpdates, installUpdate } = await import("../update/desktop-update");
     await checkForUpdates({ userInitiated: true });
     updater.emit("update-downloaded", { version: "0.2.0" });
     await installUpdate();
@@ -326,7 +326,7 @@ describe("自家更新清单（服务端下发信息与地址）", () => {
   });
 
   it("安装前校验或权限失败时留在旧书房，不写成功回执", async () => {
-    const { checkForUpdates, installUpdate } = await import("../desktop-update");
+    const { checkForUpdates, installUpdate } = await import("../update/desktop-update");
     await checkForUpdates({ userInitiated: true });
     updater.emit("update-downloaded", { version: "0.2.0" });
     updater.prepareInstall.mockRejectedValue(new Error("MAC_UPDATE_PERMISSION: 当前应用位置不能写入。"));
@@ -337,7 +337,7 @@ describe("自家更新清单（服务端下发信息与地址）", () => {
   });
 
   it("同一个 phase 不重复推——通知是按 phase 变化触发的", async () => {
-    const { checkForUpdates } = await import("../desktop-update");
+    const { checkForUpdates } = await import("../update/desktop-update");
     send.mockClear();
     await checkForUpdates({ userInitiated: true });
     await checkForUpdates({ userInitiated: true });
@@ -348,14 +348,14 @@ describe("自家更新清单（服务端下发信息与地址）", () => {
   });
 
   it("未下载完成不能安装或退出", async () => {
-    const { installUpdate } = await import("../desktop-update");
+    const { installUpdate } = await import("../update/desktop-update");
     await installUpdate();
     expect(updater.prepareInstall).not.toHaveBeenCalled();
     expect(updater.quitAndInstall).not.toHaveBeenCalled();
   });
 
   it("下载中报的是真实字节数，不是只在动百分比", async () => {
-    const { checkForUpdates, downloadUpdate } = await import("../desktop-update");
+    const { checkForUpdates, downloadUpdate } = await import("../update/desktop-update");
     await checkForUpdates({ userInitiated: true });
     updater.downloadUpdate.mockImplementation(async () => {
       // 慢连接下 percent 长时间为 0，这是最容易让界面"像卡住了"的形态。

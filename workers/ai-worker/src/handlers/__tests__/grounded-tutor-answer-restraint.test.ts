@@ -20,7 +20,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { GROUNDED_TUTOR_COMPANION_PROMPT } from "../companion-dialogue-content.ts";
+import { GROUNDED_TUTOR_COMPANION_PROMPT } from "../turn/companion-dialogue-content.ts";
 
 const PROMPT = GROUNDED_TUTOR_COMPANION_PROMPT;
 

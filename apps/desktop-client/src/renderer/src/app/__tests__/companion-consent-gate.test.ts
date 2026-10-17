@@ -12,7 +12,7 @@ import {
   COMPANION_RUN_ERROR_AI_DATA_POLICY_DENIED,
   companionConsentGate,
   isCompanionConsentFailure,
-} from "../companion-consent-gate.ts";
+} from "../companion-pages/companion-consent-gate.ts";
 
 describe("companionConsentGate", () => {
   it("需要签署且尚未签署 → 引导（consent_required）", () => {

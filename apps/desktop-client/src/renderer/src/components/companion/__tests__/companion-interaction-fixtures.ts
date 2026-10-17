@@ -1,6 +1,6 @@
 import { vi } from "vitest";
-import type { CompanionChatSession, CompanionProposalUiState } from "../../../app/companion-chat-session";
-import type { CompanionHudSettings } from "../CompanionHud";
+import type { CompanionChatSession, CompanionProposalUiState } from "../../../app/companion-session/companion-chat-session";
+import type { CompanionHudSettings } from "../hud/CompanionHud";
 
 export function interactionSession(overrides: Partial<CompanionChatSession> = {}): CompanionChatSession {
   return {

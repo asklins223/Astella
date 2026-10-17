@@ -13,7 +13,7 @@ import {
   accountPreferenceWriteDecision,
   memoryLooksWorkspaceBound,
   memoryScopeForKind,
-} from "../companion-memory-scope.ts";
+} from "../companion/companion-memory-scope.ts";
 
 test("抽取侧：只有 preference 可能跨空间，其余留在原空间", () => {
   // 正向：偏好——关于"怎么学、怎么相处"——跟人走。

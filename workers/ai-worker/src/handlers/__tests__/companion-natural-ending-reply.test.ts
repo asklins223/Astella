@@ -27,7 +27,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { looksTruncatedReply } from "../companion-dialogue-content.ts";
+import { looksTruncatedReply } from "../turn/companion-dialogue-content.ts";
 
 test("短**不**再是被拦的理由——用户说「ok，今天先这样」，她答「好」是正确收尾", () => {
   // 40 §4.8.1 第 1 条：「"好""嗯"等在确认/结束语境可以成立」；

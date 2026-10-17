@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeRadicalCodepoints, pdfItemsToMarkdown, pdfPagesToMarkdown, type PdfTextItem } from "../source-pdf-text";
+import { normalizeRadicalCodepoints, pdfItemsToMarkdown, pdfPagesToMarkdown, type PdfTextItem } from "../source/source-pdf-text";
 
 /**
  * 合成一份「带坐标的片段」：12pt 的行，行距 12，段距 28。

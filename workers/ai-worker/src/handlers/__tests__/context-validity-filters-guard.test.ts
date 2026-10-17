@@ -14,11 +14,11 @@ test("44 §3.3：会话内的接续链与跨会话检索用同一套有效性判
   const { readFileSync } = await import("node:fs");
   const { fileURLToPath } = await import("node:url");
   const chain = readFileSync(
-    fileURLToPath(new URL("../companion-dialogue-store.ts", import.meta.url)),
+    fileURLToPath(new URL("../turn/companion-dialogue-store.ts", import.meta.url)),
     "utf8",
   );
   const crossSession = readFileSync(
-    fileURLToPath(new URL("../companion-summary-retrieval.ts", import.meta.url)),
+    fileURLToPath(new URL("../context/companion-summary-retrieval.ts", import.meta.url)),
     "utf8",
   );
   // 同一个判据，两处读路径；只在一头生效等于「已经接上治理」这句话说半截。

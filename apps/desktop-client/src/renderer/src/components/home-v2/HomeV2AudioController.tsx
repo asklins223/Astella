@@ -1,31 +1,32 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRoomStore } from "../../app/room-store";
+import { useRoomStore } from "../../app/home/room-store";
 import {
   createRequestMeta,
   gatewayErrorMessage,
   unwrapGatewayResult,
-} from "../../app/desktop-client";
-import { useHomeProjectionInvalidation } from "../../app/home-projection";
+} from "../../app/client/desktop-client";
+import { useHomeProjectionInvalidation } from "../../app/home/home-projection";
 import { shouldPlayCompanionReplyVoice, shouldPlayHomeV2Feedback } from "./home-v2";
-import { setHomeV2VoiceLevel } from "../../app/companion-voice-level";
-import { requestCompanionVoiceAudio } from "../../app/companion-voice-request";
+import { setHomeV2VoiceLevel } from "../../app/companion-session/companion-voice-level";
+import { requestCompanionVoiceAudio } from "../../app/companion-session/companion-voice-request";
+import { hasStreamingSegmentChannel, playSegmentFromStream as playSegmentFromStreamAudio } from "../../app/companion-session/companion-voice-stream-playback";
 import {
   isCompanionMicrophoneActive, isCompanionNotificationSpeechActive,
   isCompanionReplyBlockedByMicrophone,
   setCompanionNotificationVoiceHost, stopCompanionNotificationSpeech, subscribeCompanionAudioPriority, isPausedCompanionGuidanceSpeech,
   type NotificationVoicePurpose,
-} from "../companion/companion-notification-voice";
-import type { CompanionNotificationAudio } from "../companion/companion-notifications";
+} from "../companion/voice/companion-notification-voice";
+import type { CompanionNotificationAudio } from "../companion/notify/companion-notifications";
 import {
   isCompanionSpeechActive,
   setCompanionVoiceHost,
   CompanionCachedAudioError,
   stopCompanionSpeech,
-} from "../../app/companion-voice-playback";
+} from "../../app/companion-session/companion-voice-playback";
 import {
   companionMouthTarget,
   smoothCompanionMouthLevel,
-} from "../../app/companion-mouth-meter";
+} from "../../app/companion-session/companion-mouth-meter";
 import type {
   CompanionVoicePlaybackOutcomeRequestV1,
   CompanionVoiceSpeakSegmentRequestV2,
@@ -244,6 +245,8 @@ export function HomeV2AudioController() {
   const [unlocked, setUnlocked] = useState(false);
   const graphRef = useRef<HomeV2AudioGraph | null>(null);
   const voiceRef = useRef<VoicePlayback | null>(null);
+  /** 流式播放器的停止句柄：它不经 voiceRef，所以停止链要单独记一份。 */
+  const streamStopRef = useRef<(() => void) | null>(null);
   const mouthLevelRef = useRef(0);
   const mouthReleaseFrameRef = useRef(0);
   const masterMuted = useRoomStore((state) => state.masterMuted);
@@ -258,6 +261,8 @@ export function HomeV2AudioController() {
   const notificationAudioCache = useRef(new Map<CompanionNotificationAudio, Promise<AudioBuffer>>());
 
   const stopVoicePlayback = useCallback((immediate = true, heard = false) => {
+    streamStopRef.current?.();
+    streamStopRef.current = null;
     const playback = voiceRef.current;
     voiceRef.current = null;
     activePlaybackRef.current = null;
@@ -526,6 +531,45 @@ export function HomeV2AudioController() {
     return decodeBase64Audio(graph.context, result.audioBase64);
   }, [ensureGraph]);
 
+  /**
+   * 边收边播（2026-10-17）：拿第一块就开口。
+   *
+   * 返回 true 表示这一段已经由增量播放器念完；返回 false 表示这条路没走通、
+   * 一声没响，调用方会退回 `synthesizeVoiceSegment` 那条整段路径。
+   * 静音/窗口不可见由 `replyAudibleRef` 判定，和整段那条同一道闸。
+   */
+  const playSegmentFromStream = useCallback(async (
+    request: CompanionVoiceSpeakSegmentRequestV2,
+    onProgress: (fraction: number) => void,
+    signal?: AbortSignal,
+  ): Promise<boolean> => {
+    if (!replyAudibleRef.current || isCompanionReplyBlockedByMicrophone()) return false;
+    if (!hasStreamingSegmentChannel()) return false;
+    const graph = ensureGraph();
+    await graph.context.resume().catch(() => undefined);
+    if (graphRef.current !== graph) return false;
+    stopVoicePlayback();
+    let duration = 0;
+    const startedAt = graph.context.currentTime;
+    const ok = await playSegmentFromStreamAudio({
+      request,
+      workspaceEpoch: workspaceEpochRef.current ?? undefined,
+      context: graph.context,
+      destination: graph.context.destination,
+      audible: () => replyAudibleRef.current && !isCompanionReplyBlockedByMicrophone(),
+      signal,
+      registerStop: (stop) => { streamStopRef.current = stop },
+      onProgress: (seconds) => {
+        duration = Math.max(duration, seconds);
+        const elapsed = Math.max(0, graph.context.currentTime - startedAt);
+        // 已解码多少还不知道时按已播时长报，宁可慢一点也不要让字幕停在 0。
+        onProgress(duration > 0 ? Math.min(1, elapsed / duration) : 0);
+      },
+    });
+    if (ok) window.dispatchEvent(new Event("astella:companion-audio-cache-changed"));
+    return ok;
+  }, [ensureGraph, stopVoicePlayback]);
+
   const readCachedVoiceSegment = useCallback(async (request: CompanionCachedVoiceReadRequestV1): Promise<AudioBuffer> => {
     const readApi = window.astella?.companion?.voice?.cachedRead;
     if (!readApi) throw new CompanionCachedAudioError("本机音频读取通道还没准备好。");
@@ -595,6 +639,7 @@ export function HomeV2AudioController() {
       audible: () => replyAudibleRef.current && !isCompanionReplyBlockedByMicrophone(),
       synthesize: synthesizeVoice,
       synthesizeSegment: synthesizeVoiceSegment,
+      playSegmentStream: playSegmentFromStream,
       readCachedSegment: readCachedVoiceSegment,
       play: playVoiceBuffer,
       progress: voiceProgress,

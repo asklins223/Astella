@@ -4,8 +4,8 @@ import { dialogueCases, dialogueGenerationFixture } from "./dialogue-cases.ts";
 import { buildDialogueExperimentRequest, buildDialogueIdentityDiagnostic, buildDialogueThinkingDiagnostic, snapshotDialogueRequest, snapshotDialogueWireBody } from "./dialogue-experiment.ts";
 import { observedProvider, platform, loadPlatformConfig, save, safeFailure, outputDir, type WireReceipt } from "./acceptance-common.ts";
 import { resolveDialogueCandidate } from "./dialogue-candidate.ts";
-import { runStreamingAgentStep } from "../handlers/companion-agent-streaming-step.ts";
-import { finalizeCompanionReplyText, validateCompanionOutput, sanitizeCompanionVisibleText } from "../handlers/companion-dialogue-content.ts";
+import { runStreamingAgentStep } from "../handlers/agent/companion-agent-streaming-step.ts";
+import { finalizeCompanionReplyText, validateCompanionOutput, sanitizeCompanionVisibleText } from "../handlers/turn/companion-dialogue-content.ts";
 
 const suffix = process.env.LIVE_DIALOGUE_ABLATION_SUFFIX;
 if (!suffix || !/^[a-z0-9-]{1,40}$/.test(suffix)) throw new Error("Explicit unique ablation suffix required");

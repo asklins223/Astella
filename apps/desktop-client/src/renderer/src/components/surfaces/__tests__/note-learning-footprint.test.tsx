@@ -2,7 +2,7 @@
 
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NoteLearningFootprint } from "../notebook/note-learning-footprint.tsx";
+import { NoteLearningFootprint } from "../notebook/learning/note-learning-footprint.tsx";
 import type { NoteAnnotationV1 } from "@astella/shared/note-annotation-contracts";
 import type { NoteLearningArtifactV1 } from "@astella/shared/note-learning-artifact-contracts";
 import type { NoteExpansionLinkV1 } from "@astella/shared/note-expansion-contracts";

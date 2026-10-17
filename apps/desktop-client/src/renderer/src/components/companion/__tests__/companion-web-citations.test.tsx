@@ -1,15 +1,15 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import { renderCompanionMarkdown } from "../companion-markdown";
-import { companionWebCitations, CompanionWebSources } from "../companion-web-citations";
-import { companionMessageCopyText } from "../companion-message-copy";
-import { companionMessageText } from "../../../app/companion-chat-routing";
-import { companionBubblePreviewText } from "../companion-bubble-reveal";
+import { renderCompanionMarkdown } from "../content/companion-markdown";
+import { companionWebCitations, CompanionWebSources } from "../content/companion-web-citations";
+import { companionMessageCopyText } from "../journal/companion-message-copy";
+import { companionMessageText } from "../../../app/companion-session/companion-chat-routing";
+import { companionBubblePreviewText } from "../bubble/companion-bubble-reveal";
 
 const { copied, opened } = vi.hoisted(() => ({ copied: vi.fn(async () => true), opened: vi.fn(async () => true) }));
-vi.mock("../../../app/clipboard", () => ({ copyText: copied }));
-vi.mock("../../../app/external-link", () => ({ openExternalLink: opened }));
+vi.mock("../../../app/client/clipboard", () => ({ copyText: copied }));
+vi.mock("../../../app/client/external-link", () => ({ openExternalLink: opened }));
 const source = { type: "citation" as const, referenceId: "web-1234567890abcdef", label: "官方说明", media: "示例网站",
   target: { kind: "external_https" as const, href: "https://example.com/docs?chapter=2" }, publishDate: "2026-10-08" };
 afterEach(() => { cleanup(); vi.clearAllMocks(); });

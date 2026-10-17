@@ -9,7 +9,7 @@ import {
   renderFactSpansBlock,
   resolveFactSpans,
   withholdPartialFactSpanTail,
-} from "../companion-fact-spans.ts";
+} from "../turn/companion-fact-spans.ts";
 
 test("后果那一格恒真：它不吃问句，也不许被写成一句抄来的话", async () => {
   const { learningRunAssistanceConsequenceV1 } = await import(
@@ -20,7 +20,7 @@ test("后果那一格恒真：它不吃问句，也不许被写成一句抄来�
       `纯陈述句/空输入下后果键应当仍在（askable 恒真，39d W2-4 #14）：${String(text)}`);
   }
   // ③ 同源：worker 这边不许再抄一份措辞。
-  const spansSource = readFileSync(resolve(import.meta.dirname, "..", "companion-fact-spans.ts"), "utf8");
+  const spansSource = readFileSync(resolve(import.meta.dirname, "..", "turn", "companion-fact-spans.ts"), "utf8");
   assert.ok(!spansSource.includes("只算练习"), "后果那句话被抄进了 worker，改策略时不会跟着变");
   // ④ 没有活动任务时这一格不进目录（值缺失＝这一轮没有可降级的对象）。
   assert.deepEqual(

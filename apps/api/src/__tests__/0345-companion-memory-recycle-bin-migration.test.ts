@@ -41,7 +41,7 @@ test("回收区窗口只有一个数：迁移与两条删除路径都指向同�
   assert.doesNotMatch(service, /MEMORY_RECYCLE_BIN_DAYS\s*=\s*30/,
     "本地再写一个 30 就是第二个漂移点");
   const shared = readFileSync(
-    new URL("../../../../packages/shared/src/contracts/companion-memory-desktop-contracts.ts", import.meta.url),
+    new URL("../../../../packages/shared/src/contracts/companion/companion-memory-desktop-contracts.ts", import.meta.url),
     "utf8",
   );
   assert.match(shared, /export const companionMemoryRecycleBinDays = 30;/,

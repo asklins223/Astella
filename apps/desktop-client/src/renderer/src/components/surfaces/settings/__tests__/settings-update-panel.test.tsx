@@ -13,7 +13,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { UpdateStateV1 } from "@astella/shared/desktop-ipc-contracts";
 
 const openExternal = vi.fn();
-vi.mock("../../../../../app/desktop-client", () => ({
+vi.mock("../../../../app/client/desktop-client", () => ({
   createRequestMeta: () => ({ requestId: "r", correlationId: "c" }),
 }));
 

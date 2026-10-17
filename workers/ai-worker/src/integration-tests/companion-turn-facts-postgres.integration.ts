@@ -16,7 +16,7 @@ import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
-import type { LivePageView } from "../handlers/companion-live-view.ts";
+import type { LivePageView } from "../handlers/turn/companion-live-view.ts";
 import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 const ADMIN_CONN = testDatabaseUrl("DATABASE_URL_MIGRATOR");
@@ -25,9 +25,9 @@ process.env.DATABASE_URL_WORKER ??= testDatabaseUrl("DATABASE_URL_WORKER");
 
 const sql = postgres(ADMIN_CONN, { max: 2 });
 
-const { loadThisTurnFacts } = await import("../handlers/companion-this-turn-facts.ts");
-const { findNearestNoteTitle } = await import("../handlers/companion-note-reads.ts");
-const { loadHereAndNow, renderHereAndNow } = await import("../handlers/companion-here-and-now.ts");
+const { loadThisTurnFacts } = await import("../handlers/turn/companion-this-turn-facts.ts");
+const { findNearestNoteTitle } = await import("../handlers/note/companion-note-reads.ts");
+const { loadHereAndNow, renderHereAndNow } = await import("../handlers/proactive/companion-here-and-now.ts");
 const { withWorkerWorkspaceTransaction } = await import("../db.ts");
 
 // 清理与收池只用一个 after：两个 hook 的注册顺序就是执行顺序，先关池会让清理

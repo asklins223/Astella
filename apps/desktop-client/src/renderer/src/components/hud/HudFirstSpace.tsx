@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { SessionContextV1, WorkspaceSummaryV1 } from "@astella/shared/desktop-ipc-contracts";
-import { createRequestMeta, gatewayErrorMessage, isJoinCommittedWithoutSession, joinFailureTone, unwrapGatewayResult } from "../../app/desktop-client";
-import { useRoomStore } from "../../app/room-store";
+import { createRequestMeta, gatewayErrorMessage, isJoinCommittedWithoutSession, joinFailureTone, unwrapGatewayResult } from "../../app/client/desktop-client";
+import { useRoomStore } from "../../app/home/room-store";
 import { mediaAssetUrl, useLearningRoomManifest } from "../../media/learning-room-manifest";
-import { CompanionPresence } from "../companion/CompanionPresence";
+import { CompanionPresence } from "../companion/bubble/CompanionPresence";
 import { DirectoryRail } from "../DirectoryRail";
 import { HudRoomControl } from "./HudRoomControl";
 import { useHudPage } from "./use-hud-page";

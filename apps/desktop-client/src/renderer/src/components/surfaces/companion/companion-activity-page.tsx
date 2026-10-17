@@ -1,11 +1,11 @@
 import type { CompanionJourneyAction } from "@astella/shared/companion-journey-contracts";
 import type { CompanionActivityDeliveryV1 } from "@astella/shared/companion-memory-desktop-contracts";
 import { useCallback,useEffect,useRef,useState } from "react";
-import { useCompanionChat } from "../../../app/companion-chat-session";
-import { journalProposalNeedsDecision } from "../../../components/companion/companion-journal-model";
-import { gatewayErrorMessage,unwrapGatewayResult } from "../../../app/desktop-client";
-import { useRoomStore } from "../../../app/room-store";
-import { readAuthenticatedSession } from "../../../app/surface-session";
+import { useCompanionChat } from "../../../app/companion-session/companion-chat-session";
+import { journalProposalNeedsDecision } from "../../companion/journal/companion-journal-model";
+import { gatewayErrorMessage,unwrapGatewayResult } from "../../../app/client/desktop-client";
+import { useRoomStore } from "../../../app/home/room-store";
+import { readAuthenticatedSession } from "../../../app/home/surface-session";
 import { ActivityPanel } from "./companion-activity-panel";
 import { publishCompanionRecordsChanged,useCompanionRecordsRefresh,useCompanionResource } from "./use-companion-resource";
 

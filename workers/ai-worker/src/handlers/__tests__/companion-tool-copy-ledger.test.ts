@@ -107,12 +107,30 @@ function resolveInOneSource(source: string, token: string): string[] {
  * 判据的对象是「抛给用户的那句话是什么」，不是「它和定义在不在同一个文件」，
  * 所以 const 与 function 两种形状都要在同目录任何一个 handler 里找得到。
  */
+/** handlers 下所有源文件的绝对路径（递归，跳过测试目录）。 */
+function allHandlerFiles(): string[] {
+  const root = resolve(import.meta.dirname, "..");
+  const out: string[] = [];
+  const scan = (d: string): void => {
+    for (const name of readdirSync(d)) {
+      const full = resolve(d, name);
+      if (statSync(full).isDirectory()) {
+        if (name !== "__tests__") scan(full);
+        continue;
+      }
+      if (name.endsWith(".ts") && !name.endsWith(".test.ts")) out.push(full);
+    }
+  };
+  scan(root);
+  return out;
+}
+
 function resolvedFrom(source: string, token: string): string[] {
   const local = resolveInOneSource(source, token);
   if (local.length > 0) return local;
-  for (const sibling of readdirSync(resolve(import.meta.dirname, ".."))) {
-    if (!sibling.endsWith(".ts") || sibling.endsWith(".test.ts")) continue;
-    const other = readFileSync(resolve(import.meta.dirname, "..", sibling), "utf8");
+  // handlers 按职责分了子目录：同目录兜底要递归，否则拆出去的兄弟看不见。
+  for (const sibling of allHandlerFiles()) {
+    const other = readFileSync(sibling, "utf8");
     if (other === source) continue;
     const hit = resolveInOneSource(other, token);
     if (hit.length > 0) return hit;
@@ -137,7 +155,8 @@ function thrownMessages(): string[] {
 test("正控制：三种抛出形状都真读到了（读不到时「零违规」就是假绿）", () => {
   const files = filesWithThrows();
   assert.ok(files.length >= 3, `只发现 ${files.length} 个抛错的 handler：${files.join(", ")}——拆文件之后这里不能再钉死某一个文件名`);
-  assert.ok(files.includes("companion-tool-execution.ts"), "执行体那份（抛错最多）不在名单里");
+  assert.ok(files.some((file) => file.endsWith("/companion-tool-execution.ts") || file === "companion-tool-execution.ts"),
+    "执行体那份（抛错最多）不在名单里");
   const messages = thrownMessages();
   assert.ok(messages.length >= 12, `只读到 ${messages.length} 条，抛出形状或文件名变了`);
   assert.ok(messages.some((message) => message.includes("这一步我这边还做不了")), "①字面量那条没读到");

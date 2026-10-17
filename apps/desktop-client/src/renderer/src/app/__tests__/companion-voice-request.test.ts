@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
 import type { GatewayResultV1, RequestMetaV1 } from "@astella/shared/desktop-ipc-contracts";
-import { requestCompanionVoiceAudio } from "../companion-voice-request.ts";
+import { requestCompanionVoiceAudio } from "../companion-session/companion-voice-request.ts";
 
 afterEach(() => { Reflect.deleteProperty(window, "astella"); });
 

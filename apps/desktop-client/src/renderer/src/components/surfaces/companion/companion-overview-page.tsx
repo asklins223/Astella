@@ -1,8 +1,8 @@
 import { useEffect } from "react";
-import { useCompanionChat } from "../../../app/companion-chat-session";
-import { createRequestMeta } from "../../../app/desktop-client";
-import { companionDisplayName,publishCompanionDisplayName } from "../../companion/companion-display-name";
-import { useSurfaceProjection } from "../notebook/surface-data";
+import { useCompanionChat } from "../../../app/companion-session/companion-chat-session";
+import { createRequestMeta } from "../../../app/client/desktop-client";
+import { companionDisplayName,publishCompanionDisplayName } from "../../companion/bubble/companion-display-name";
+import { useSurfaceProjection } from "../notebook/shell/surface-data.tsx";
 import { readSection,type CompanionCenterTab } from "./companion-center-model";
 import { CompanionCenterOverview } from "./companion-center-overview";
 import { SectionState } from "./companion-center-primitives";

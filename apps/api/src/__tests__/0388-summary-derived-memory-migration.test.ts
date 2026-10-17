@@ -26,7 +26,7 @@ test("0388 marks the summary stale — it stops being injected, rather than bein
   // stale 不在读取侧认领的两个状态里（见 companion-dialogue-store 的链读取），
   // 所以它**立刻**不再出现在对话上下文里。
   const readPath = readFileSync(
-    new URL("../../../../workers/ai-worker/src/handlers/companion-dialogue-store.ts", import.meta.url),
+    new URL("../../../../workers/ai-worker/src/handlers/turn/companion-dialogue-store.ts", import.meta.url),
     "utf8",
   );
   assert.match(readPath, /status IN \('candidate', 'confirmed'\)/);
@@ -53,7 +53,7 @@ test("0388 scopes the invalidation to the same workspace and user", () => {
 
 test("摘要器写入反向引用——只有列没有写入方，等于没做", () => {
   const source = readFileSync(
-    new URL("../../../../workers/ai-worker/src/handlers/companion-summarizer.ts", import.meta.url),
+    new URL("../../../../workers/ai-worker/src/handlers/context/companion-summarizer.ts", import.meta.url),
     "utf8",
   );
   assert.match(source, /derived_memory_id/);
@@ -63,11 +63,11 @@ test("摘要器写入反向引用——只有列没有写入方，等于没做",
 test("0388 的 status 取值集合是从事实凑出来的，不是猜的", () => {
   // 集合 = 「代码里真的写过的」 ∪ 「读取侧真的认领的」。
   const summarizer = readFileSync(
-    new URL("../../../../workers/ai-worker/src/handlers/companion-summarizer.ts", import.meta.url),
+    new URL("../../../../workers/ai-worker/src/handlers/context/companion-summarizer.ts", import.meta.url),
     "utf8",
   );
   const store = readFileSync(
-    new URL("../../../../workers/ai-worker/src/handlers/companion-dialogue-store.ts", import.meta.url),
+    new URL("../../../../workers/ai-worker/src/handlers/turn/companion-dialogue-store.ts", import.meta.url),
     "utf8",
   );
   const allowed = new Set(["candidate", "confirmed", "rejected", "stale"]);
@@ -98,7 +98,7 @@ test("0388 的 status 取值集合是从事实凑出来的，不是猜的", () =
     }
   }
   const retrieval = readFileSync(
-    new URL("../../../../workers/ai-worker/src/handlers/companion-summary-retrieval.ts", import.meta.url),
+    new URL("../../../../workers/ai-worker/src/handlers/context/companion-summary-retrieval.ts", import.meta.url),
     "utf8",
   );
   for (const value of retrieval.match(/\bs\.status IN \(([^)]*)\)/)?.[1]?.matchAll(/'([a-z_]+)'/g) ?? []) {

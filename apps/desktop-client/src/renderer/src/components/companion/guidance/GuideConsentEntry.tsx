@@ -2,11 +2,11 @@ import { useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ArrowRight, Check, Loader2, Sparkles, X } from "lucide-react";
 import { AI_CONSENT_VERSION } from "@astella/shared/desktop-ipc-contracts";
-import { useRoomStore } from "../../../app/room-store";
+import { useRoomStore } from "../../../app/home/room-store";
 import { resolveSceneMotionMode } from "../../../scene/scene-motion";
 import { useTactileSurface } from "../../motion/use-tactile-surface";
 import { AiConsentTerms } from "../../ai-consent-terms";
-import { companionLayoutBounds } from "../companion-visible-bounds";
+import { companionLayoutBounds } from "../bubble/companion-visible-bounds";
 import { guideWindowMask, placeGuideChapter } from "./guide-layout";
 import type { CompanionGuideController } from "./use-companion-guide";
 

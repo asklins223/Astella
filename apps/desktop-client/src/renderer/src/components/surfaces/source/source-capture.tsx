@@ -2,12 +2,12 @@ import { useEffect, useLayoutEffect, useRef, useState, type MutableRefObject, ty
 import { ArrowRight, Check, FilePlus2, FileText, FolderOpen, Link2, LoaderCircle, Upload, X } from "lucide-react";
 import type { DesktopSourceCreateRequest, DesktopSourceDuplicateV1 } from "@astella/shared/desktop-surface-contracts";
 import type { MarkdownBundleKind, MarkdownBundlePreviewV1 } from "@astella/shared/desktop-ipc-contracts";
-import { createRequestMeta, gatewayErrorMessage, getCurrentWorkspaceEpoch, unwrapGatewayResult } from "../../../app/desktop-client";
-import { DOCUMENT_FILE_PATTERN, MAX_CAPTURE_BYTES, captureBytes, formatCaptureSize, hasOpenModal, isEditableTarget } from "../../../app/source-intake";
-import { MAX_BATCH_CAPTURE_FILES, beginCaptureRun, captureSourceTasks, consumeBatchReceipt, readCaptureFile, readCaptureFiles, type BatchCaptureOutcome, type CaptureTask } from "../../../app/source-batch-capture";
-import { inspectMarkdownBundle, localizeMarkdownBundle } from "../../../app/source-bundle-capture";
+import { createRequestMeta, gatewayErrorMessage, getCurrentWorkspaceEpoch, unwrapGatewayResult } from "../../../app/client/desktop-client";
+import { DOCUMENT_FILE_PATTERN, MAX_CAPTURE_BYTES, captureBytes, formatCaptureSize, hasOpenModal, isEditableTarget } from "../../../app/source/source-intake";
+import { MAX_BATCH_CAPTURE_FILES, beginCaptureRun, captureSourceTasks, consumeBatchReceipt, readCaptureFile, readCaptureFiles, type BatchCaptureOutcome, type CaptureTask } from "../../../app/source/source-batch-capture";
+import { inspectMarkdownBundle, localizeMarkdownBundle } from "../../../app/source/source-bundle-capture";
 import { SpaceSharingNotice } from "../../space-sharing-notice";
-import { formatRelative } from "../notebook/surface-data";
+import { formatRelative } from "../notebook/shell/surface-data.tsx";
 import { useSourceSheetMotion } from "./use-source-motion";
 import { SourceBundlePreview } from "./source-bundle-preview";
 

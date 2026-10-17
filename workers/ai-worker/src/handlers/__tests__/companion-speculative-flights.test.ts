@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { AgentTurnInterpretationV1 } from "@astella/shared/agent-contracts";
 import type { AIProvider } from "../../lib/ai-provider.ts";
-import { startCompanionSpeculativeFirstSteps } from "../companion-speculative-flights.ts";
+import { startCompanionSpeculativeFirstSteps } from "../agent/companion-speculative-flights.ts";
 import { AIContextCompactionRequiredError, AIContextOverflowError } from "../../lib/context-governor.ts";
 
 const interpretation = (overrides: Record<string, unknown>): AgentTurnInterpretationV1 => ({

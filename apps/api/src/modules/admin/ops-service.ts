@@ -25,7 +25,7 @@ import { logger } from "../../lib/logger.ts";
 import { JOB_TYPE_LABELS } from "./labels.ts";
 
 /**
- * 与 `packages/shared/src/safe-error.ts` 的 `SAFE_ERROR_MESSAGE_PATTERN` 同形。
+ * 与 `packages/shared/src/platform/safe-error.ts` 的 `SAFE_ERROR_MESSAGE_PATTERN` 同形。
  *
  * 刻意**不复用**那边的常量：那个正则没有导出，而把它导出就得把整个
  * safe-error 模块拉进面板的依赖面。这里保持同形并在两处各自写清理由——

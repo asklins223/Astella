@@ -3,8 +3,8 @@ import { char, check, foreignKey, index, jsonb, pgTable, timestamp, uniqueIndex,
 import { noteVersions, notes } from "./note.ts";
 import { jobs } from "./job.ts";
 import { users, workspaces } from "./identity.ts";
-import type { NoteAnnotationAnchorV1 } from "../contracts/note-annotation-contracts.ts";
-import type { NoteExpansionDraftV1 } from "../contracts/note-expansion-contracts.ts";
+import type { NoteAnnotationAnchorV1 } from "../contracts/note/note-annotation-contracts.ts";
+import type { NoteExpansionDraftV1 } from "../contracts/note/note-expansion-contracts.ts";
 
 export const noteExpansionTasks = pgTable("note_expansion_tasks", {
   id: uuid("id").primaryKey(),

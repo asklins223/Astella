@@ -2,11 +2,11 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CompanionMessageV1 } from "@astella/shared/companion-conversation-contracts";
-import type { CompanionChatSession } from "../../../app/companion-chat-session.tsx";
-import type { CompanionRunTrace } from "../../../app/companion-agent-nodes";
+import type { CompanionChatSession } from "../../../app/companion-session/companion-chat-session.tsx";
+import type { CompanionRunTrace } from "../../../app/companion-session/companion-agent-nodes";
 import { useSourceImage } from "../../surfaces/source/source-image.ts";
-import { hasForeignModal } from "../companion-modal-ownership.ts";
-import { CompanionChatRecordArticle, MonthCalendar } from "../CompanionChatRecord.tsx";
+import { hasForeignModal } from "../content/companion-modal-ownership.ts";
+import { CompanionChatRecordArticle, MonthCalendar } from "../hud/CompanionChatRecord.tsx";
 import { interactionProposal, interactionSession } from "./companion-interaction-fixtures";
 
 // 站内图字节通道整模块换掉：这三态是渲染分支的契约，不该靠真 fetch 去凑。

@@ -15,7 +15,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { extractHtmlTitle, extractTextFromHtml } from "../handlers/parse-source-html.ts";
+import { extractHtmlTitle, extractTextFromHtml } from "../handlers/note/parse-source-html.ts";
 
 test("extractHtmlTitle：og:title 优先于 <title>", () => {
   const html = `<html><head>

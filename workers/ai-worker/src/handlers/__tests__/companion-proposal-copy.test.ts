@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { getCompanionAgentTool, proposedLearningActionPayloadV1Schema } from "@astella/shared";
-import { describeAgentProposal } from "../companion-proposal-copy.ts";
+import { describeAgentProposal } from "../agent/companion-proposal-copy.ts";
 
 /**
  * 提案卡三行文案的判据（2026-10-05）。

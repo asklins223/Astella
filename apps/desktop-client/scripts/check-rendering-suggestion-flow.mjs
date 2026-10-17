@@ -77,7 +77,7 @@ async function openRenderingSettings(page) {
   await page.waitForTimeout(1500)
   // 直接落到「数据与维护」这一册：点条目要先展开书本导航，脆且与本次要验的东西无关。
   await page.evaluate(async () => {
-    const { useRoomStore } = await import('/src/app/room-store.ts')
+    const { useRoomStore } = await import('/app/home/room-store.ts')
     useRoomStore.getState().setSettingsSection('management')
   }).catch(() => {})
   await page.waitForTimeout(1200)

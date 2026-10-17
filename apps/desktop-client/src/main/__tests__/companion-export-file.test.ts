@@ -2,8 +2,8 @@ import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { saveCompanionExportFile } from "../companion-export-file";
-import { DesktopGatewayFailure } from "../desktop-gateway-failure";
+import { saveCompanionExportFile } from "../store/companion-export-file";
+import { DesktopGatewayFailure } from "../gateway/desktop-gateway-failure";
 
 let downloadsPath: string;
 const directory = () => join(downloadsPath, "Astella", "伴星");

@@ -2,9 +2,9 @@ import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { CompanionVoiceAudioCache, type VoiceAudioScope } from "../companion-voice-audio-cache";
-import { DesktopGateway } from "../desktop-gateway";
-import { speakCompanionVoice } from "../desktop-gateway-ns-companion";
+import { CompanionVoiceAudioCache, type VoiceAudioScope } from "../voice/companion-voice-audio-cache";
+import { DesktopGateway } from "../gateway/desktop-gateway";
+import { speakCompanionVoice } from "../gateway/desktop-gateway-ns-companion";
 import type { CompanionGuidanceVoiceProfileV1, CompanionVoiceSpeakResultV1 } from "@astella/shared/companion-voice-contracts";
 
 let directory: string;

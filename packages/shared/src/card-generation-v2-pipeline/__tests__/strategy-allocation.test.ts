@@ -19,7 +19,7 @@ import {
   summarizePracticeQuotaV2,
   type DeliveredPracticeV2,
 } from "../index.ts";
-import type { CardStrategyV2, KnowledgeFormV2 } from "../../contracts/card-generation-v2-contracts.ts";
+import type { CardStrategyV2, KnowledgeFormV2 } from "../../contracts/learning/card-generation-v2-contracts.ts";
 
 const strategiesOf = (
   forms: KnowledgeFormV2[],

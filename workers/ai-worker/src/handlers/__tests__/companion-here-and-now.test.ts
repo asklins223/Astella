@@ -10,7 +10,7 @@ import {
   summarizeLearningStats,
   weekdayLabel,
   type HereAndNowSnapshot,
-} from "../companion-here-and-now.ts";
+} from "../proactive/companion-here-and-now.ts";
 
 function snapshot(overrides: Partial<HereAndNowSnapshot> = {}): HereAndNowSnapshot {
   return {

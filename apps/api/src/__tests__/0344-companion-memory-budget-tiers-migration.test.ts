@@ -18,7 +18,7 @@ const memoryService = readFileSync(
 );
 // 注入侧（伴星提示词组装）声明常驻容量的那两处常数：写侧闸门必须等于它算出来的数。
 const orchestrator = readFileSync(
-  new URL("../../../../workers/ai-worker/src/handlers/companion-context-orchestrator.ts", import.meta.url),
+  new URL("../../../../workers/ai-worker/src/handlers/context/companion-context-orchestrator.ts", import.meta.url),
   "utf8",
 );
 const roleGrants = readFileSync(

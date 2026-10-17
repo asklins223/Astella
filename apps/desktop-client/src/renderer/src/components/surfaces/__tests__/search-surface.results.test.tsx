@@ -18,7 +18,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import type { GatewayResultV1, SessionContextV1 } from "@astella/shared/desktop-ipc-contracts";
 import { learningObjectiveSurfaceV3Schema } from "@astella/shared/learning-objective-surface-contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useRoomStore } from "../../../app/room-store.ts";
+import { useRoomStore } from "../../../app/home/room-store.ts";
 import { SearchSurface } from "../study/search-surface.tsx";
 
 const TITLES = ["阿里云百炼", "IndexTTS 语音合成", "TTS 笔记", "TTS 对比", "理解 TTS"];

@@ -17,8 +17,8 @@
  *
  * 用法：
  * ```ts
- * vi.mock("../desktop-gateway-ns-companion", async (importOriginal) => {
- *   const real = await importOriginal<typeof import("../desktop-gateway-ns-companion")>();
+ * vi.mock("../gateway/desktop-gateway-ns-companion", async (importOriginal) => {
+ *   const real = await importOriginal<typeof import("../gateway/desktop-gateway-ns-companion")>();
  *   const { companionModuleMock } = await import("./ns-companion-stubs");
  *   return companionModuleMock(real);
  * });

@@ -2,7 +2,7 @@
 
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { NoteShelfTag, noteShelfTagText } from "../notebook/note-shelf-tag.tsx";
+import { NoteShelfTag, noteShelfTagText } from "../notebook/library/note-shelf-tag.tsx";
 import type { NoteShelfStateV1 } from "@astella/shared/note-shelf-state-contracts";
 
 /**

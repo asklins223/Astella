@@ -10,7 +10,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { AgentRunV1 } from "@astella/shared/agent-contracts";
-import type { AgentEventContext } from "../../handlers/companion-read-tools.ts";
+import type { AgentEventContext } from "../../handlers/tools/companion-read-tools.ts";
 import {
   executeAgentGoalTool, goalRequestFromUserTurn,
   type AgentGoalToolStore,

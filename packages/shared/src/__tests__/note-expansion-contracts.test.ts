@@ -7,7 +7,7 @@ import {
   noteExpansionLinkV1Schema,
   noteExpansionListQueryV1Schema,
   noteExpansionReviewV1Schema,
-} from "../contracts/note-expansion-contracts.ts";
+} from "../contracts/note/note-expansion-contracts.ts";
 
 const ids = {
   noteId: "11111111-1111-4111-8111-111111111111",

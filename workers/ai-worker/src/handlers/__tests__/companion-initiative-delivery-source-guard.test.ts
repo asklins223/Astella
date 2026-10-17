@@ -16,7 +16,8 @@ import { COMPANION_INITIATIVE_DELIVERY_TTL_HOURS } from "@astella/shared/compani
  * 2026-10-16（神文件棘轮）：普通收尾那一路随终态事务搬进
  * `companion-dialogue-finalization.ts`，扫描名单跟着真实位置走。
  */
-const HANDLERS = ["companion-dialogue-finalization.ts", "companion-participation-tools.ts"];
+// 值的形状是「子目录/文件名」：handlers 按职责分组后，扫描名单跟着真实位置走。
+const HANDLERS = ["turn/companion-dialogue-finalization.ts", "tools/companion-participation-tools.ts"];
 
 for (const file of HANDLERS) {
   test(`${file} 的主动投递用声明窗口，不再自己写秒数`, () => {

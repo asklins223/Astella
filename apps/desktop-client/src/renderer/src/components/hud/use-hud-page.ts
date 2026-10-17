@@ -1,5 +1,5 @@
 import { useLayoutEffect } from "react";
-import { useRoomStore } from "../../app/room-store";
+import { useRoomStore } from "../../app/home/room-store";
 import { HUD_PAGES, type HudPageId } from "./hud-pages";
 
 /**

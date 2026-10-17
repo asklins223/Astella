@@ -20,7 +20,7 @@ import test from "node:test";
  * 只会让每一轮悄悄多付一次整份工具面的钱。
  */
 const source = readFileSync(
-  new URL("../companion-dialogue-content.ts", import.meta.url),
+  new URL("../turn/companion-dialogue-content.ts", import.meta.url),
   "utf8",
 );
 

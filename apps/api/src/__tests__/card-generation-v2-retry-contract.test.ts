@@ -31,7 +31,7 @@ const apiRetryServiceSource = readFileSync(
   "utf8",
 );
 const workerHandlerSource = readFileSync(
-  join(WORKSPACE_ROOT, "workers/ai-worker/src/handlers/card-generation-v2-handler.ts"),
+  join(WORKSPACE_ROOT, "workers/ai-worker/src/handlers/note/card-generation-v2-handler.ts"),
   "utf8",
 );
 /** 39d W7-7 刀一之后，"重排"这一档的状态门闩住在简化链的处理函数里。 */

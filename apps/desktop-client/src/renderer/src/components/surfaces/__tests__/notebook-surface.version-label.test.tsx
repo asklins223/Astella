@@ -3,8 +3,8 @@
 import { noteDocResult, seedUpdate } from "../../../test-support/note-doc-fixtures.ts";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NotebookSurface } from "../notebook/notebook-surface.tsx";
-import { useRoomStore } from "../../../app/room-store.ts";
+import { NotebookSurface } from "../notebook/shell/notebook-surface.tsx";
+import { useRoomStore } from "../../../app/home/room-store.ts";
 
 /**
  * 阅读屏上的版本标签必须跟着**真正渲染的那一份**（审计 F35）。

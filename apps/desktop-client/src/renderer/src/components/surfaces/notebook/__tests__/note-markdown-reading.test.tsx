@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import { ReadingBlock } from "../notebook-reading-block";
-import { noteReadingText } from "../note-reading-text";
+import { ReadingBlock } from "../reading/notebook-reading-block.tsx";
+import { noteReadingText } from "../reading/note-reading-text.ts";
 import { noteBlockRenderedTextV1 } from "@astella/shared/note-doc-schema";
 import { noteLinkHref } from "@astella/shared/note-markdown";
-import { useRoomStore } from "../../../../app/room-store";
+import { useRoomStore } from "../../../../app/home/room-store";
 
 const diagram = vi.hoisted(() => ({ initialize: vi.fn(), render: vi.fn(async () => ({ svg: '<svg xmlns="http://www.w3.org/2000/svg" width="100%" viewBox="0 0 856 251"><text>图</text></svg>' })) }));
 vi.mock("mermaid", () => ({ default: diagram }));

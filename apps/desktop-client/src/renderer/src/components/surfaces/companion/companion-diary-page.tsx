@@ -1,5 +1,5 @@
 import { useEffect,useMemo,useState } from "react";
-import { feedDiaryReferenceToCompanion } from "../../companion/companion-feed";
+import { feedDiaryReferenceToCompanion } from "../../companion/hud/companion-feed";
 import { useCompanionDiaryActions } from "./companion-diary-actions";
 import { todayIsoDate } from "./companion-diary-day";
 import { DiaryPanel } from "./companion-diary-panel";

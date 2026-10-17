@@ -14,7 +14,7 @@ import {
   bindingLinkWritesOnlyLinkV2,
   decideBindingLinkV2,
   type BindingLinkCandidateV2,
-} from "../personal-binding-link-rules-v2.ts";
+} from "../review/personal-binding-link-rules-v2.ts";
 
 const NOTE = "3b0f1a52-0000-4000-8000-0000000000aa";
 const VERSION = "3b0f1a52-0000-4000-8000-0000000000bb";

@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { AgentRole, COMPANION_AGENT_TOOL_DEFINITIONS, validateCompanionAgentToolArguments,
   type AgentTurnRequest } from "@astella/shared";
-import { companionStepRuntimePolicy } from "../handlers/companion-step-plan.ts";
+import { companionStepRuntimePolicy } from "../handlers/turn/companion-step-plan.ts";
 import { platform, observedProvider, save, type WireReceipt } from "./acceptance-common.ts";
 import { fileURLToPath } from "node:url";
 
@@ -19,7 +19,7 @@ const root = fileURLToPath(new URL("../../../../", import.meta.url));
  * `git show HEAD:` 里按 `tool("name", "…")` 的字面量取，取不满 57 条就当场失败。
  */
 function headToolDescriptions(): Record<string, string> {
-  const files = ["packages/shared/src/companion-capability-manifest.ts", "packages/shared/src/agent-capability-manifests.ts"];
+  const files = ["packages/shared/src/agent/companion-capability-manifest.ts", "packages/shared/src/agent/agent-capability-manifests.ts"];
   const out: Record<string, string> = {};
   for (const file of files) {
     const source = execFileSync("git", ["show", `HEAD:${file}`], { encoding: "utf8", cwd: root });

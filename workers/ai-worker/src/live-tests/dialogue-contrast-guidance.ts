@@ -1,6 +1,6 @@
 import type { AgentTurnRequest } from "@astella/shared";
-import { companionStepRuntimePolicy } from "../handlers/companion-step-plan.ts";
-import { COMPANION_CASUAL_POLICY_BASE_V1 } from "../handlers/companion-conversation-policy.ts";
+import { companionStepRuntimePolicy } from "../handlers/turn/companion-step-plan.ts";
+import { COMPANION_CASUAL_POLICY_BASE_V1 } from "../handlers/turn/companion-conversation-policy.ts";
 
 /** Offline candidate. Examples are deliberately outside the evaluation topics. */
 export const dialogueContrastGuidance = `本轮和用户聊天，回应当前用户的话。共同记录用于理解当前话题；这一轮没有工具，读取、保存和操作仍以已有回执为准。

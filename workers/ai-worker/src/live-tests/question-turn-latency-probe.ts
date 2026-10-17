@@ -28,10 +28,10 @@ import { composeAgentContext } from "@astella/agent-core";
 import type { ChatMessage } from "@astella/shared";
 import { buildAgentTurnMessages } from "../lib/providers/json-response.ts";
 import { observedProvider, platform, safeFailure, save, type WireReceipt } from "./acceptance-common.ts";
-import { buildCompanionPersonaMessages } from "../handlers/companion-dialogue-content.ts";
-import { companionStepRuntimePolicy } from "../handlers/companion-step-plan.ts";
-import { companionResponseStrategy } from "../handlers/companion-response-strategy.ts";
-import { companionContextAssemblyCapacity } from "../handlers/companion-context-receipts.ts";
+import { buildCompanionPersonaMessages } from "../handlers/turn/companion-dialogue-content.ts";
+import { companionStepRuntimePolicy } from "../handlers/turn/companion-step-plan.ts";
+import { companionResponseStrategy } from "../handlers/turn/companion-response-strategy.ts";
+import { companionContextAssemblyCapacity } from "../handlers/context/companion-context-receipts.ts";
 
 const name = process.env.LIVE_QTL_NAME;
 if (!name || !/^[a-z0-9-]{1,72}$/.test(name)) throw new Error("Explicit unique LIVE_QTL_NAME required");

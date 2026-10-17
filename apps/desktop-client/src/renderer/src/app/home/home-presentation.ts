@@ -1,0 +1,208 @@
+import type {
+  RoomProjectionV1,
+  RoomSectionStatusV1,
+} from "@astella/shared/room-projection-contracts";
+// 动作的词只有一份（列表／详情／笔记页也读它）：这里不再自己写一份。
+import { primaryActionLabel as surfacePrimaryActionLabel } from "../../components/surfaces/run/objective-state-copy.ts";
+import type { RoomIntent } from "./room-machine";
+
+type NoteRef = { readonly noteId: string; readonly noteVersionId: string; readonly title: string };
+type HomeProjectionSectionKey = keyof RoomProjectionV1["sectionStates"];
+type HomeProjectionSectionStates = Readonly<Record<HomeProjectionSectionKey, RoomSectionStatusV1 | null>>;
+
+const HOME_PRESENTED_SECTION_KEYS = [
+  "primaryFocus",
+  "queueSummary",
+  "sanitizedReviewSummary",
+  "activeRunSummary",
+  "activeGenerationSummary",
+  "recentObjectiveSummary",
+] as const satisfies readonly HomeProjectionSectionKey[];
+
+function roomIntent(value: RoomIntent | null): RoomIntent | null {
+  return value;
+}
+
+/**
+ * 房间主按钮上的动词。
+ *
+ * **词从服务端签发的那一份读**（`objective-state-copy.primaryActionLabel`，它把
+ * `create_run`／`create_review_run`／`practice_only` 直接还给服务端写在动作里的
+ * `label`）——这里原先自己写了一份「继续学习／开始今日复习／开始学习」，于是
+ * 同一个动作在首页与列表／详情／笔记页各说一个词（39d W4-2 收口：那处欠账就是它）。
+ * 本函数只保留**这一面自己的判断**：哪些 kind 在这块屏上算"可以点着往前走"，
+ * 其余一律不在这里造句，回落到「查看当前目标」。
+ */
+function primaryActionLabel(projection: RoomProjectionV1 | null): string | null {
+  if (projection?.primaryFocus.state !== "data") return null;
+  const action = projection.primaryFocus.data.action;
+  if (action.availability !== "available") return "查看当前目标";
+  switch (action.action.kind) {
+    case "resume_run":
+    case "create_review_run":
+    case "create_run":
+      return surfacePrimaryActionLabel(action.action);
+    default: return "查看当前目标";
+  }
+}
+
+function homeNote(projection: RoomProjectionV1 | null): NoteRef | null {
+  if (projection?.primaryFocus.state === "data") {
+    const note = projection.primaryFocus.data.objective.sources.primaryNote;
+    if (note) return note;
+  }
+  return null;
+}
+
+function projectionSectionStates(projection: RoomProjectionV1 | null): HomeProjectionSectionStates {
+  return {
+    primaryFocus: projection?.primaryFocus?.state ?? null,
+    queueSummary: projection?.queueSummary?.state ?? null,
+    sanitizedReviewSummary: projection?.sanitizedReviewSummary?.state ?? null,
+    activeRunSummary: projection?.activeRunSummary?.state ?? null,
+    activeGenerationSummary: projection?.activeGenerationSummary?.state ?? null,
+    recentObjectiveSummary: projection?.recentObjectiveSummary?.state ?? null,
+    recentActivitySummary: projection?.recentActivitySummary?.state ?? null,
+  };
+}
+
+/** Home copy and counts are derived only from explicit projection section states. */
+export function homePresentation(projection: RoomProjectionV1 | null, loading: boolean, failure: string | null) {
+  const blockingLoading = loading && !projection;
+  const focus = projection?.primaryFocus;
+  const sectionStates = projectionSectionStates(projection);
+  const sectionLoading = HOME_PRESENTED_SECTION_KEYS.some((key) => sectionStates[key] === "loading");
+  const sectionError = HOME_PRESENTED_SECTION_KEYS.some((key) => sectionStates[key] === "error");
+  const refreshing = Boolean(projection && (loading || sectionLoading));
+  const focusData = focus?.state === "data" ? focus.data : null;
+  const focusTitle = focusData?.objective.content.conceptLabel
+    || focusData?.objective.sources.primaryNote?.title
+    || null;
+  const note = homeNote(projection);
+  const actionAvailability = focusData?.action.availability ?? null;
+  const actionAvailable = actionAvailability === null ? null : actionAvailability === "available";
+  const primaryLoading = blockingLoading || focus?.state === "loading";
+  const focusError = focus?.state === "error" ? focus : null;
+  const primaryFailed = Boolean((failure && !projection) || focusError);
+  const retry = Boolean((failure && !projection) || focusError?.retryable);
+
+  let title: string;
+  let detail: string;
+  let primaryLabel: string;
+  let primaryIntent: RoomIntent | null;
+  if (primaryLoading) {
+    title = "正在整理今天的书桌…";
+    detail = "学习空间正在读取你的学习位置";
+    primaryLabel = "正在准备";
+    primaryIntent = null;
+  } else if (primaryFailed) {
+    title = "学习记录暂未送达";
+    detail = failure || "当前学习卡暂时无法读取";
+    primaryLabel = retry ? "重新读取" : "看看今天";
+    primaryIntent = null;
+  } else if (focusTitle) {
+    title = focusTitle;
+    detail = actionAvailable ? "服务端已确认下一步，可以从这里继续" : "当前目标可以查看，下一步暂不可执行";
+    primaryLabel = primaryActionLabel(projection) ?? "查看当前目标";
+    primaryIntent = actionAvailable ? "continue" : "open-objective";
+  } else {
+    // 没有主目标时主按钮**留在房间里**：镜头走到书桌，那里本来就摆着今日下一步、
+    // 今日复习与当前学习目标。（2026-10-05 用户决定：原来这里把人带去魔法目录，
+    // 那张重复的全屏清单整页删除。）
+    title = "从一份真正想弄懂的材料开始";
+    detail = "今天还没有定下主目标，书桌上有今天真正停下的位置";
+    primaryLabel = "看看今天";
+    primaryIntent = null;
+  }
+
+  const review = projection?.sanitizedReviewSummary;
+  const activeRuns = projection?.activeRunSummary;
+  const queue = projection?.queueSummary;
+  const recent = projection?.recentObjectiveSummary;
+  const dueCount = review?.state === "data"
+    ? review.data.dueCount
+    : review?.state === "empty"
+      ? 0
+      : null;
+  const activeRunCount = activeRuns?.state === "data" ? activeRuns.data.activeCount : activeRuns?.state === "empty" ? 0 : null;
+  /**
+   * 首页那句「N 项可恢复」要落到具体的那一件事上（审计 F24）：
+   * 恰好一条时主操作直接进那条 run；两条以上时进「未完成的学习」清单；
+   * 读不到 items（老投影/投影报错）就不猜，退回原来的"去今日学习"。
+   */
+  const activeRunItems = activeRuns?.state === "data" ? activeRuns.data.items : [];
+  // RoomProjectionV1 intentionally does not expose full library totals. Keep
+  // them unknown instead of inferring a false zero from bounded samples.
+  const noteCount = null;
+  const notebookState: "syncing" | "attention" | "active" | "ready" | "empty" = primaryLoading
+    ? "syncing"
+    : primaryFailed
+      ? "attention"
+      : (activeRunCount ?? 0) > 0
+        ? "active"
+        : focusData || note
+          ? "ready"
+          : activeRuns?.state === "loading"
+            ? "syncing"
+            : activeRuns?.state === "error"
+              ? "attention"
+              : "empty";
+  const reviewState: "syncing" | "unknown" | "due" | "clear" = blockingLoading || review?.state === "loading"
+    ? "syncing"
+    : dueCount === null
+      ? "unknown"
+    : dueCount > 0
+      ? "due"
+      : "clear";
+  const shelfState: "syncing" | "unknown" | "filled" = primaryLoading
+    ? "syncing"
+    : note
+      ? "filled"
+      : "unknown";
+
+  return {
+    title,
+    detail,
+    primaryLabel,
+    primaryIntent: roomIntent(primaryIntent),
+    retry,
+    blockingLoading,
+    primaryLoading,
+    refreshing,
+    sectionLoading,
+    sectionError,
+    sectionStates,
+    note,
+    hasFocus: Boolean(focusData),
+    actionAvailable,
+    dueCount,
+    reviewLabel: review?.state === "loading"
+      ? "正在同步今日复习"
+      : review?.state === "error"
+        ? "今日复习暂时无法读取"
+        : dueCount !== null
+          ? dueCount > 0 ? `${dueCount} 项待复习` : "今天的复习已清空"
+          : "今日复习",
+    activeRunCount,
+    /** 恰好一条可恢复时主操作要直达的那条；其余情况下为 null（走清单/空态）。 */
+    soleActiveRun: activeRunCount === 1 && activeRunItems.length === 1
+      ? { runId: activeRunItems[0]!.runId }
+      : null,
+    queueCount: queue?.state === "data" ? queue.data.total : queue?.state === "empty" ? 0 : null,
+    noteCount,
+    objectiveCount: null,
+    repairCount: null,
+    recentObjectiveCount: recent?.state === "data" ? recent.data.total : recent?.state === "empty" ? 0 : null,
+    generationActive: projection?.activeGenerationSummary.state === "data"
+      ? true
+      : projection?.activeGenerationSummary.state === "empty"
+        ? false
+        : null,
+    captureState: projection?.captureCapability.state ?? "unavailable",
+    snapshotAt: projection?.snapshotAt ?? null,
+    degraded: Boolean(projection?.degradation || (projection && failure) || sectionError),
+    notebookState,
+    reviewState,
+    shelfState,
+  };
+}

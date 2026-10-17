@@ -31,6 +31,7 @@ import { synthesizeTtsBytes } from "./voice-providers/tts-engine.ts";
 import { createGovernedMediaCall } from "../../lib/ai-governance.ts";
 import { productionAiGovernancePorts } from "../../governance/ai-governance-runtime.ts";
 import { takeWarmCompanionSegment, warmCompanionSegment } from "./companion-tts-warm.ts";
+import { resolveCompanionSegmentText } from "./companion-voice-service.ts";
 import { resolveTtsSelection, type ResolvedTtsSelection } from "./voice-providers/tts-preference.ts";
 import {
   getStoredVoicePreference,
@@ -297,15 +298,54 @@ export async function voiceRoutes(app: FastifyInstance) {
     const aborted = responseAbortController(reply);
     if (rejectDisabledCompanionVoice(reply, "COMPANION_STREAMING_VOICE_V1_ENABLED")) return;
     if (!(await rateLimitVoice(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:tts`, COMPANION_RATE_LIMITS.ttsPerMinute.limit, COMPANION_RATE_LIMITS.ttsPerMinute.windowMs))) return;
-    const parsed = companionTtsStreamRequestV1Schema.safeParse(req.body ?? {});
-    if (!parsed.success) {
+    /**
+     * 两种请求形状共用这一条流（2026-10-17）：带 `conversationId` 的是伴星段的
+     * **引用**（V2，客户端手里没有正文），其余仍按 V1 的 `text` 直接合成。
+     *
+     * 以前这里只认 V1，而 V1 要求 `text` 必填——桌面端把段引用发过来时每一段
+     * 都在校验里被拒成 400 `validation`，增量播放一条字节都收不到，只能
+     * 退回整段（2026-10-18 真窗口实测抓到的就是这一条）。
+     */
+    const raw = (req.body ?? {}) as Record<string, unknown>;
+    const referenceInput = "conversationId" in raw
+      ? companionVoiceSpeakSegmentRequestV2Schema.safeParse(raw)
+      : null;
+    const textInput = referenceInput ? null : companionTtsStreamRequestV1Schema.safeParse(raw);
+    const invalid = referenceInput && !referenceInput.success
+      ? referenceInput.error
+      : textInput && !textInput.success ? textInput.error : null;
+    if (invalid) {
       return reply.code(400).send({
         error: "INVALID_REQUEST", code: "INVALID_REQUEST",
-        message: parsed.error.issues.map((i) => i.path.join(".")).join(","),
+        message: invalid.issues.map((i) => i.path.join(".")).join(","),
       });
     }
+    const reference = referenceInput?.success ? referenceInput.data : null;
+    const text = textInput?.success ? textInput.data : null;
+    /**
+     * 正文来源（2026-10-17）：带引用时按**段引用**取，其余照旧用请求里的 text。
+     *
+     * 桌面端手里只有引用，正文在服务端；这条流式接口原来是给"客户端自己持有正文"的
+     * 调用方准备的。要让它服务伴星，必须先按同一套校验（segmentId / digest / 轮次状态）
+     * 解出正文，否则流式这条就成了绕过校验的第二条口径。
+     */
+    let ttsText = text?.text ?? "";
+    if (reference) {
+      const resolved = await resolveCompanionSegmentText(
+        { workspaceId: req.session.workspaceId, userId: req.session.userId },
+        {
+          conversationId: reference.conversationId,
+          runId: reference.runId,
+          generation: reference.generation,
+          ordinal: reference.ordinal,
+          segmentId: reference.segmentId,
+        },
+      );
+      if ("error" in resolved) return reply.code(resolved.statusCode).send(resolved.error);
+      ttsText = resolved.text;
+    }
     try {
-      assertSafeTtsInput(parsed.data.text, DEFAULT_VOICE_PROFILE);
+      assertSafeTtsInput(ttsText, DEFAULT_VOICE_PROFILE);
     } catch {
       return reply.code(400).send({
         error: "INVALID_REQUEST", code: "INVALID_REQUEST",
@@ -314,7 +354,7 @@ export async function voiceRoutes(app: FastifyInstance) {
     }
     try {
       // 15b：TTS 引擎选择——请求显式 engine 优先，缺省用 config tts.engine（默认 qwen）。
-      const engine = parsed.data.engine ?? loadTtsEngineConfig().engine;
+      const engine = text?.engine ?? loadTtsEngineConfig().engine;
       if (engine === "qwen") {
         const cfg = loadTtsEngineConfig().qwen;
         if (!cfg.workspaceId) {
@@ -330,7 +370,7 @@ export async function voiceRoutes(app: FastifyInstance) {
               ["text_content"],
               productionAiGovernancePorts,
             );
-            const spoken = call.prepareText(parsed.data.text, "qwen");
+            const spoken = call.prepareText(ttsText, "qwen");
             // openStream：成功只代表拿到了上游连接。审计挂在流上，读到 EOF 才算成功，
             // 中途出错或被客户端打断都按真实结局记。
             const tracked = await call.openStream({ provider: "qwen", modelId: cfg.model }, async () => {
@@ -377,15 +417,15 @@ export async function voiceRoutes(app: FastifyInstance) {
         productionAiGovernancePorts,
       );
       // 净化后的文本才是真送出去的那份；edge 合成前还要剥掉 qwen 专属的语气标签。
-      const edgeText = stripVoiceExpressionTags(edgeCall.prepareText(parsed.data.text, "edge"));
+      const edgeText = stripVoiceExpressionTags(edgeCall.prepareText(ttsText, "edge"));
       const tracked = await edgeCall.openStream({ provider: "edge", modelId: "edge-tts" }, async () => {
         const result = await edgeTtsSynthesizeStream(
           edgeText,
-          parsed.data.voice ?? "",
+          text?.voice ?? "",
           {
             baseUrl: process.env.EDGE_TTS_BASE_URL,
             // 2026-08-12（伴星语音设置）：语速随请求下发（服务端有默认）。
-            ...(parsed.data.rate ? { rate: parsed.data.rate } : {}),
+            ...(text?.rate ? { rate: text.rate } : {}),
             signal: aborted.signal,
           },
         );

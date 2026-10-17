@@ -5,7 +5,7 @@ import postgres from "postgres";
 import { enqueueParticipationObservation } from "@astella/agent-host";
 import { sql } from "drizzle-orm";
 import type { AgentTurnRequest, AgentTurnResult } from "@astella/shared";
-import { assertCompanionContextSourcesCurrent } from "../handlers/companion-context-sources.ts";
+import { assertCompanionContextSourcesCurrent } from "../handlers/context/companion-context-sources.ts";
 import { CompanionContextChangedError } from "../lib/non-retryable-errors.ts";
 import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 import { recordCompanionAwareness, readParticipationPreferences, writeParticipationPreferences,
@@ -18,8 +18,8 @@ delete process.env.TOKENRHYTHM_API_KEY;
 process.env.COMPANION_DIALOGUE_V1_ENABLED = "true";
 process.env.COMPANION_VOICE_DIALOGUE_V1_ENABLED = "true";
 const { withWorkerWorkspaceTransaction: transaction, closeDatabase } = await import("../db.ts");
-const { runCompanionInitiative } = await import("../handlers/companion-initiative.ts");
-const { runCompanionDialogue } = await import("../handlers/companion-dialogue.ts");
+const { runCompanionInitiative } = await import("../handlers/proactive/companion-initiative.ts");
+const { runCompanionDialogue } = await import("../handlers/turn/companion-dialogue.ts");
 const { MockProvider } = await import("../lib/providers/mock.ts");
 after(async () => { await admin.end({ timeout: 2 }); await closeDatabase(); });
 

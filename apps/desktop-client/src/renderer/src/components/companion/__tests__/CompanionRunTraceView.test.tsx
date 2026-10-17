@@ -2,8 +2,8 @@
 
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import type { CompanionRunTrace } from "../../../app/companion-agent-nodes.ts";
-import { CompanionRunTraceView } from "../CompanionRunTraceView.tsx";
+import type { CompanionRunTrace } from "../../../app/companion-session/companion-agent-nodes.ts";
+import { CompanionRunTraceView } from "../journal/CompanionRunTraceView.tsx";
 
 afterEach(cleanup);
 

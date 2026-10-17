@@ -27,7 +27,7 @@ import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 // `permission denied for function`。名字不等于角色，这一族已经踩过不止一次。）
 const ADMIN = testDatabaseUrl("DATABASE_URL_MIGRATOR");
 const sql = postgres(ADMIN, { max: 2 });
-/** 生产里真正调这个函数的是 worker（`handlers/companion-memory-extractor.ts:534`），
+/** 生产里真正调这个函数的是 worker（`handlers/memory/companion-memory-extractor.ts:534`），
  *  所以"能不能调"必须由 worker 池来验，不许由夹具池代跑。 */
 const workerSql = postgres(testDatabaseUrl("DATABASE_URL_WORKER"), { max: 2 });
 

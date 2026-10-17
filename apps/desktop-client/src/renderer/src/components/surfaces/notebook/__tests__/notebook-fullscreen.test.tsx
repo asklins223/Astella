@@ -2,13 +2,13 @@
 import { useRef, useState, type ReactNode } from "react";
 import { act, cleanup, fireEvent, render, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { useRoomStore, type NoteTargetRef } from "../../../../app/room-store";
-import { NotebookDesk, type NotebookSidePage } from "../notebook-desk";
-import { useNotebookFullscreenActive, useNotebookFullscreenSession, useNotebookFullscreenState } from "../notebook-fullscreen-state";
-import { NotebookFullscreenRibbon } from "../notebook-fullscreen-ribbon";
-import { openLibraryNoteLink } from "../note-library-links";
+import { useRoomStore, type NoteTargetRef } from "../../../../app/home/room-store";
+import { NotebookDesk, type NotebookSidePage } from "../shell/notebook-desk.tsx";
+import { useNotebookFullscreenActive, useNotebookFullscreenSession, useNotebookFullscreenState } from "../shell/notebook-fullscreen-state.ts";
+import { NotebookFullscreenRibbon } from "../shell/notebook-fullscreen-ribbon.tsx";
+import { openLibraryNoteLink } from "../library/note-library-links.tsx";
 import { noteLinkHref } from "@astella/shared/note-markdown";
-import type { NoteBodyMode } from "../note-document-mode";
+import type { NoteBodyMode } from "../document/note-document-mode.ts";
 
 function Desk({ noteId = "note", canEdit = true, view = "body", saveError = null }: { noteId?: string; canEdit?: boolean; view?: "body" | "overview" | "recall" | "artifact" | "expansion" | "history" | "learning"; saveError?: string | null }) {
   const scrollRef = useRef<HTMLDivElement | null>(null);

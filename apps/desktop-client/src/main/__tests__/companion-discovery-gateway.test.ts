@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
-import { annotateCompanionDiscovery, collectCompanionDiscovery, uncollectCompanionDiscovery } from "../desktop-gateway-ns-companion";
-import type { GatewayTransport } from "../desktop-gateway-transport";
+import { annotateCompanionDiscovery, collectCompanionDiscovery, uncollectCompanionDiscovery } from "../gateway/desktop-gateway-ns-companion";
+import type { GatewayTransport } from "../gateway/desktop-gateway-transport";
 
 it("all discovery mutations keep the HTTP metadata envelope, including calls without a request id", async () => {
   const request = vi.fn(async (_path: string, _init: RequestInit) => ({ status: 200, body: {} }));

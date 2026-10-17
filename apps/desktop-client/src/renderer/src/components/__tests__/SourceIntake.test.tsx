@@ -7,8 +7,8 @@ import {
   NOTE_PAPER_IMAGE_DROP_ATTR,
   SOURCE_CAPTURED_EVENT,
   type SourceCapturedDetail,
-} from "../../app/source-intake.ts";
-import { useRoomStore } from "../../app/room-store.ts";
+} from "../../app/source/source-intake.ts";
+import { useRoomStore } from "../../app/home/room-store.ts";
 
 /**
  * 跨页面收录的合同：

@@ -54,7 +54,7 @@ const MIGRATION_FILE = join(REPO_ROOT, "apps/api/src/db/migrations/0298_note_lea
  */
 const MIGRATION_0304_FILE = join(REPO_ROOT, "apps/api/src/db/migrations/0304_note_round_dynamic_artifact_generation.sql");
 const SCHEMA_FILE = join(REPO_ROOT, "packages/shared/src/db-schema/note-learning-rounds.ts");
-const CONTRACTS_FILE = join(REPO_ROOT, "packages/shared/src/contracts/note-learning-round-contracts.ts");
+const CONTRACTS_FILE = join(REPO_ROOT, "packages/shared/src/contracts/note/note-learning-round-contracts.ts");
 
 /** 剥掉注释：源码形状判据要判的是代码，注释里的话是给人读的。 */
 function codeOnly(text: string): string {

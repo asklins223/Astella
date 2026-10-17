@@ -14,7 +14,7 @@ import {
   type GatewayResultV1,
   type RequestMetaV1,
 } from "@astella/shared/desktop-ipc-contracts";
-import type { DesktopGateway } from "../desktop-gateway";
+import type { DesktopGateway } from "../gateway/desktop-gateway";
 
 type InvokeHandler = (
   event: { readonly sender: unknown; readonly senderFrame?: { readonly url: string } },
@@ -36,11 +36,11 @@ vi.mock("electron", () => ({
   ipcMain: { handle: electronMock.handle, on: vi.fn() },
 }));
 
-import { registerM1DesktopIpc } from "../desktop-ipc";
+import { registerM1DesktopIpc } from "../ipc/desktop-ipc";
 import { registerAuthStub } from "./ns-auth-stubs";
-import * as ns_auth from "../desktop-gateway-ns-auth";
+import * as ns_auth from "../gateway/desktop-gateway-ns-auth";
 
-vi.mock("../desktop-gateway-ns-auth", async () => {
+vi.mock("../gateway/desktop-gateway-ns-auth", async () => {
   const { authModuleMock } = await import("./ns-auth-stubs");
   return authModuleMock();
 });
@@ -110,7 +110,7 @@ const searchGlobal = vi.fn();
  *
  * 这一条对之后每一族命名空间都成立：**搬成自由函数之后，测试要 mock 模块，不能 mock 实例。**
  */
-vi.mock("../desktop-gateway-ns-search", () => ({
+vi.mock("../gateway/desktop-gateway-ns-search", () => ({
   searchGlobal: (...args: unknown[]) => searchGlobal(...args),
   getSearchDrift: vi.fn(),
   reindexSearch: vi.fn(),

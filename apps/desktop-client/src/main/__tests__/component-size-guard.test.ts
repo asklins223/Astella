@@ -143,12 +143,12 @@ const soft = size.filter(
  * **这张表就是那个第三种状态：已经达标，不需要再登记。**
  */
 const SIZE_DONE: Readonly<Record<string, string>> = {
-  "main/desktop-gateway.ts":
+  "main/gateway/desktop-gateway.ts":
     "2026-09-30 达标。6379 → 1738 行（-77%）。拆法：传输层八刀 + `CompanionBridge` + "
     + "十一个命名空间变自由函数（`desktop-gateway-ns-*.ts`）。"
     + "**纪律**：命名空间要等它依赖的私有状态先有落脚点——先搬状态（传输层 / 伴星桥），"
     + "后搬方法；顺序反过来只能把耦合复制一份到每个文件里。",
-  "main/desktop-ipc.ts":
+  "main/ipc/desktop-ipc.ts":
     "2026-09-30 达标。3973 → 1904 行（-52%）。拆法：① 148 份重复的通道样板收进闭包版 "
     + "`channel()`；② 按命名空间把通道**与它专属的 schema 一起**搬进七个文件"
     + "（`desktop-ipc-{companion,note,workspace,auth,learning,source,rest}.ts`）。"
@@ -350,13 +350,13 @@ const SIZE_DEBT: Readonly<Record<string, string>> = {
   //   （`setNoteDocDeps` / `resetNoteDocDeps`）——形状同 `desktop-gateway.ts` 的 `options`。
   // · `vi.mock` 一律 `importOriginal()` **部分 mock**（`ns-note-stubs.ts`）。
 
-  "components/surfaces/notebook/notebook-surface.tsx":
+  "components/surfaces/notebook/shell/notebook-surface.tsx":
     "4471 行 / 49 hook，目标的点名项。2026-09-29 已收走 review / subscription / teaching / versions / "
     + "generation 反馈五簇、整个速看簇、回看轮次簇、练一道那一发的在途，以及保存 / 回想 / 这一轮 / 拓展 / 互动演示 / 批注六簇的 state（16 个 state 已搬出）（7 个 state + 读 + 发起 + 三个派生），并抽出阅读块（350 行，含三个纯 "
     + "函数）、这一轮左栏（237）、生成设置（149）、速看纸（65）、轮回看（29）、版本历史（45）、小节目录（40）"
     + "等十一块。下一步：剩 250 行的 journey 头部（79 个外部符号）——它要先按域把剩下的 state 收进 hook。",
 
-  "components/companion/CompanionHud.tsx":
+  "components/companion/hud/CompanionHud.tsx":
     "3167 行 / 61 hook，hook 数第二多的一个。下一步：聊天记录、观星房间、运行时告警三块分开。",
   "components/surfaces/space/understanding-universe.tsx":
     "2618 行 / 40 hook。下一步：星图那一层与「这一格是什么」的解释分开。",
@@ -514,12 +514,12 @@ const SIZE_DEBT: Readonly<Record<string, string>> = {
   // 搜出来的清单自然是残的，于是少 import 两个，tsc 报
   // `declares locally, but it is not exported`。要以「搬走的那份清单」为准重算。
   //
-  "app/companion-chat-session.tsx":
+  "app/companion-session/companion-chat-session.tsx":
     "2125 行 / 41 hook。下一步：消息归并与持久化分开。",
   "components/surfaces/run/learning-run-surface.tsx":
     "1822 行 / 39 hook。2026-09-29 已拆成 12 个模块（文案表 / 顶栏 / 题面 / 求助 / 发现卡 / 四档等待 / "
     + "证据带 / 判定表 / 收据 / 动作条 / 两个确认框）。下一步：作答区里 `InteractionEditor` 那一支。",
-  "components/companion/CompanionPresence.tsx":
+  "components/companion/bubble/CompanionPresence.tsx":
     "1746 行 / 29 hook。**这一块不许随便拆**——座位预算是 `DESIGN.md` 的硬约束，"
     + "拆的时候必须保证 `--companion-seat-*` 的发布与读取仍在同一处。下一步：先补注释再拆。",
   // ── 2026-09-30：**块 B 也成了**（26 hook），另修掉一处**别人留下的语法错** ──
@@ -718,7 +718,7 @@ describe("组件体量：红线之上判死，软线之上要登记", () => {
    */
   it("扫描范围包含主进程与 preload（那 6379 行曾经不在视野里）", () => {
     const names = size.map((s) => s.file);
-    expect(names, "主进程没进扫描范围").toContain("main/desktop-gateway.ts");
+    expect(names, "主进程没进扫描范围").toContain("main/gateway/desktop-gateway.ts");
     expect(names, "preload 没进扫描范围").toContain("preload/index.ts");
     // 主进程那两个文件**要么在台账里（还有下一步），要么在 SIZE_DONE 里（已达标）**——
     // 两种状态都算「有人负责」。
@@ -727,10 +727,10 @@ describe("组件体量：红线之上判死，软线之上要登记", () => {
     // 而 `desktop-gateway.ts` 2026-09-30 拆到 1738 行之后**两条同时为真**——
     // 它不该再出现在 `SIZE_DEBT`（台账是「待办」），却也不能从守卫视野里消失。
     const owned = new Set([...Object.keys(SIZE_DEBT), ...Object.keys(SIZE_DONE)]);
-    expect(owned.has("main/desktop-gateway.ts"),
-      "main/desktop-gateway.ts 既不在台账也不在已达标表里").toBe(true);
-    expect(owned.has("main/desktop-ipc.ts"),
-      "main/desktop-ipc.ts 既不在台账也不在已达标表里").toBe(true);
+    expect(owned.has("main/gateway/desktop-gateway.ts"),
+      "main/gateway/desktop-gateway.ts 既不在台账也不在已达标表里").toBe(true);
+    expect(owned.has("main/ipc/desktop-ipc.ts"),
+      "main/ipc/desktop-ipc.ts 既不在台账也不在已达标表里").toBe(true);
   });
 
   it("读到了东西（否则这条守卫是空的）", () => {

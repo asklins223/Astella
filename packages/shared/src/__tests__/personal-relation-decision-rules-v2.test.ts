@@ -9,7 +9,7 @@ import {
   personalRelationDecisionV2Schema,
   personalRelationKindV2Schema,
   relationsWritesNothingSharedV2,
-} from "../personal-relation-decision-rules-v2.ts";
+} from "../review/personal-relation-decision-rules-v2.ts";
 
 test("两端都读得到 + 合法表态 ⇒ 成立", () => {
   assert.deepEqual(

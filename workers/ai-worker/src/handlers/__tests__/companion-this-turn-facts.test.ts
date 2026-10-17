@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { extractTurnReferences, TURN_REFERENCE_MAX } from "../companion-this-turn-facts.ts";
-import type { LivePageView } from "../companion-live-view.ts";
+import { extractTurnReferences, TURN_REFERENCE_MAX } from "../turn/companion-this-turn-facts.ts";
+import type { LivePageView } from "../turn/companion-live-view.ts";
 
 function view(overrides: Partial<LivePageView> = {}): LivePageView {
   return {

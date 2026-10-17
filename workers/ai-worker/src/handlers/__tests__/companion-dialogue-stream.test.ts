@@ -14,9 +14,9 @@ import {
   projectCompanionVisible,
   reconcileStreamedText,
   stableVisibleCut,
-} from "../companion-dialogue-stream.ts";
-import { COMPANION_HARD_MAX_CHARS, sanitizeCompanionVisibleText } from "../companion-dialogue-content.ts";
-import type { ReadContext } from "../companion-dialogue-store.ts";
+} from "../turn/companion-dialogue-stream.ts";
+import { COMPANION_HARD_MAX_CHARS, sanitizeCompanionVisibleText } from "../turn/companion-dialogue-content.ts";
+import type { ReadContext } from "../turn/companion-dialogue-store.ts";
 
 /** 只用到 runId/generation/conversationId 等字段；注入写入口后不碰数据库。 */
 const READ_FIXTURE = {

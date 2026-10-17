@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { NoteLearningRoundPersonalHistoryV1 } from "@astella/shared/note-learning-round-contracts";
-import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../../app/desktop-client";
-import { useRoomStore } from "../../../app/room-store";
-import { useSurfaceProjection } from "../notebook/surface-data.tsx";
+import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../../app/client/desktop-client";
+import { useRoomStore } from "../../../app/home/room-store";
+import { useSurfaceProjection } from "../notebook/shell/surface-data.tsx";
 import { studyRoundReadingDepth } from "./use-study-journal-position";
 
 /** First-page refresh and older pages belong to the same history snapshot. */

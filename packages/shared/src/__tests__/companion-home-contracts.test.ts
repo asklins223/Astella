@@ -4,7 +4,7 @@ import {
   companionHomeProjectionV1Schema,
   companionRoomProfilePatchV1Schema,
   companionRoomProfileV1Schema,
-} from "../contracts/companion-home-contracts.ts";
+} from "../contracts/companion/companion-home-contracts.ts";
 
 const roomProfile = {
   version: 1 as const,

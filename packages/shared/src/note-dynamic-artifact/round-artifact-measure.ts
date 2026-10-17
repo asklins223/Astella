@@ -33,7 +33,7 @@
  * 是常事，为此判它编造是误伤。**逐字顺序不放松**——字符必须仍按原顺序出现在那一块里。
  */
 
-import { noteBlockRenderedTextV1 } from "../note-doc-schema.ts";
+import { noteBlockRenderedTextV1 } from "../note/note-doc-schema.ts";
 
 /** 冻结快照里的一块正文。这里只声明核对真正用到的字段，所以能直接吃教学那侧的块。 */
 export interface ArtifactEvidenceBlockV1 {

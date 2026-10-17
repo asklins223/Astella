@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { COMPANION_DEFAULT_PARTICIPATION, COMPANION_DEFAULT_PARTICIPATION_POLICY_V1,
-  companionParticipationRegister, isCompanionDefaultHelpPage, isCompanionDefaultParticipationOpportunity } from "../companion-default-participation.ts";
+  companionParticipationRegister, isCompanionDefaultHelpPage, isCompanionDefaultParticipationOpportunity } from "../companion/companion-default-participation.ts";
 
 test("the shared default behaviour is explicit for every new account", () => {
   assert.deepEqual(COMPANION_DEFAULT_PARTICIPATION.map(item => item.id),

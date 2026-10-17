@@ -29,19 +29,19 @@ const {
   readConversationSummaryChain,
   companionHistoryText,
   countCompanionHistoryMessages,
-} = await import("../../../../workers/ai-worker/src/handlers/companion-dialogue-store.ts");
+} = await import("../../../../workers/ai-worker/src/handlers/turn/companion-dialogue-store.ts");
 const {
   boundCompanionRecentHistory,
   selectCompanionInteractiveReplayWindow,
   resolveRouteInputTokens,
   REPLAY_HISTORY_READ_ROWS,
-} = await import("../../../../workers/ai-worker/src/handlers/companion-context-handoff.ts");
+} = await import("../../../../workers/ai-worker/src/handlers/context/companion-context-handoff.ts");
 const {
   buildSummarizerSnapshot,
   resolveSummarizerInputTokens,
   resolveCompanionSummarizerTailAnchor,
   readSummarizerSourceRows,
-} = await import("../../../../workers/ai-worker/src/handlers/companion-summarizer.ts");
+} = await import("../../../../workers/ai-worker/src/handlers/context/companion-summarizer.ts");
 const { closeDatabase: closeWorkerDatabase, withWorkerWorkspaceTransaction } =
   await import("../../../../workers/ai-worker/src/db.ts");
 

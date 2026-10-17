@@ -1,7 +1,7 @@
 /**
  * 候选的**确定性预检**与**离线 grounding**（39d W7-1 刀a）。
  *
- * 这两个函数原先住在 `workers/ai-worker/src/handlers/card-generation-v2-handler.ts`。
+ * 这两个函数原先住在 `workers/ai-worker/src/handlers/note/card-generation-v2-handler.ts`。
  * 简化链（V3）要用同一套判据，而它不能去 import 一份 4 000 行的 V2 处理器——那等于
  * 逼 V3 复制或另写一份程序校验。设计件 `39d-w71` §2 明写"复用，不写第二份"，
  * 所以把它们上移到这个纯逻辑目录（本目录边界：不做网络、不做 DB I/O，见 index.ts）。
@@ -16,20 +16,20 @@ import { randomUUID } from "node:crypto";
 import type {
   CanonicalAnswerV2,
   LearningCardCandidateRevisionV2,
-} from "../contracts/card-generation-v2-contracts.ts";
-import { computeCandidateEvidenceSetHashV2 } from "../card-generation-v2-hashing.ts";
-import { hashCanonicalV2 } from "../hash-canonical-v2.ts";
+} from "../contracts/learning/card-generation-v2-contracts.ts";
+import { computeCandidateEvidenceSetHashV2 } from "../review/card-generation-v2-hashing.ts";
+import { hashCanonicalV2 } from "../content/hash-canonical-v2.ts";
 import type {
   GroundingCriticReportV2,
   QualityIssue,
-} from "../contracts/card-quality-v2-contracts.ts";
+} from "../contracts/learning/card-quality-v2-contracts.ts";
 import { enumerateCandidateTargetUnits } from "./binding-plan-core.ts";
 import type { AssemblerEvidenceManifest } from "./binding-plan-core.ts";
 
 // `QualityIssue` 是两份 precheck 与门禁共同的结论形状，住在质量合同里（四阶段 Critic
 // 删除后不再有"critic 服务"这一层）；这里原样转出去，`@astella/shared/card-generation-v2-pipeline`
 // 那把 barrel 的读法不变。
-export type { QualityIssue } from "../contracts/card-quality-v2-contracts.ts";
+export type { QualityIssue } from "../contracts/learning/card-quality-v2-contracts.ts";
 import { runCandidateDeterministicGatesV2 } from "./deterministic-gates.ts";
 
 export interface CandidatePrecheckV2 {

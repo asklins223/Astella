@@ -10,7 +10,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { getPresetById } from "../pet-persona-presets.ts";
+import { getPresetById } from "../companion/pet-persona-presets.ts";
 import {
   applyPersonaSwitch,
   personaCustomFields,
@@ -20,7 +20,7 @@ import {
   withAssistantEditedField,
   withUserEditedField,
   type SwitchableField,
-} from "../pet-persona-merge.ts";
+} from "../companion/pet-persona-merge.ts";
 import type { CompanionPersonaProfileContent } from "../db-schema/companion-memory.ts";
 
 const FISH = getPresetById("hungry-fish")!;

@@ -6,7 +6,7 @@ import {
   reconcileRunStreams,
   stopRunStreams,
   type RunStreamPorts,
-} from "../desktop-ipc-run-streams";
+} from "../ipc/desktop-ipc-run-streams";
 
 /**
  * 订阅表是这条长连接的**唯一**账本。

@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { DoorOpen, X } from "lucide-react";
 import gsap from "gsap";
-import { useRoomStore } from "../../app/room-store";
-import { spaceRoleLabel } from "../../app/space-identity";
+import { useRoomStore } from "../../app/home/room-store";
+import { spaceRoleLabel } from "../../app/home/space-identity";
 import { clearSpaceArrival, useSpaceArrival } from "./space-arrival";
 
 /** A nameplate and a local page edge share one cancelable arrival beat. Input never waits. */

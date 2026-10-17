@@ -11,7 +11,7 @@ import { test } from "node:test";
 import {
   companionPersonaPatchFromContent,
   companionPersonaProfileV1Schema,
-} from "../contracts/companion-memory-desktop-contracts.ts";
+} from "../contracts/companion/companion-memory-desktop-contracts.ts";
 import {
   PERSONA_FIELD_CAPACITY,
   applyPersonaSwitch,
@@ -19,8 +19,8 @@ import {
   personaOriginOf,
   withAssistantEditedField,
   withUserEditedField,
-} from "../pet-persona-merge.ts";
-import { getDefaultPersonaPreset, PET_PERSONA_PRESETS } from "../pet-persona-presets.ts";
+} from "../companion/pet-persona-merge.ts";
+import { getDefaultPersonaPreset, PET_PERSONA_PRESETS } from "../companion/pet-persona-presets.ts";
 
 const base = personaFromDefaultPreset(getDefaultPersonaPreset());
 

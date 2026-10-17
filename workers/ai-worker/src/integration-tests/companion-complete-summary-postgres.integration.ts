@@ -13,9 +13,9 @@ delete process.env.AI_PLATFORMS_CONFIG;
 process.env.MOCK_CONTEXT_WINDOW_TOKENS = "16384";
 const admin = postgres(testDatabaseUrl("DATABASE_URL_MIGRATOR"), { max: 1 });
 const { MockProvider } = await import("../lib/providers/mock.ts");
-const { runCompanionSummarizer, buildSummarizerSnapshot, toSummarizerSnapshotRows } = await import("../handlers/companion-summarizer.ts");
+const { runCompanionSummarizer, buildSummarizerSnapshot, toSummarizerSnapshotRows } = await import("../handlers/context/companion-summarizer.ts");
 const { withWorkerWorkspaceTransaction, closeDatabase } = await import("../db.ts");
-const { readCompanionHistoryRows } = await import("../handlers/companion-dialogue-store.ts");
+const { readCompanionHistoryRows } = await import("../handlers/turn/companion-dialogue-store.ts");
 const originalCompletion = MockProvider.prototype.chatCompletion;
 after(async () => { MockProvider.prototype.chatCompletion = originalCompletion; await admin.end({ timeout: 2 }); await closeDatabase(); });
 

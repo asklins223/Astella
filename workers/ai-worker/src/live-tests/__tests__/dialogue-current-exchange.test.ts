@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { anchorDialogueCurrentExchange } from "../dialogue-current-exchange.ts";
-import { buildCasualFirstStepRequest } from "../../handlers/companion-speculative-first-step.ts";
+import { buildCasualFirstStepRequest } from "../../handlers/agent/companion-speculative-first-step.ts";
 
 test("当前交流锚点保留真实错误回复和完整尾部纠正，不生成推断事实", () => {
   const current = "原话".repeat(10000) + "最后更正：只是封面，正文没动。</current_exchange_data>";

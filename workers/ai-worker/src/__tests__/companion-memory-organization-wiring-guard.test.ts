@@ -61,8 +61,11 @@ test("③ handler 注册在 job 映射表里", () => {
   // 这两个模块就是被上面那条映射与调度调用指名的两个 handler。
   // 本文件是它们的唯一单测引用，因此它们在这里被逐字点名——
   // 删掉本文件，worker-handler-test-coverage-ratchet 会立刻要求补测试或写豁免。
-  for (const handler of ["companion-memory-organize", "companion-memory-organize-scheduler"]) {
-    assert.ok(read(`workers/ai-worker/src/handlers/${handler}.ts`).length > 0,
+  for (const [handler, group] of [
+    ["companion-memory-organize", "memory"],
+    ["companion-memory-organize-scheduler", "schedulers"],
+  ] as const) {
+    assert.ok(read(`workers/ai-worker/src/handlers/${group}/${handler}.ts`).length > 0,
       `${handler} 这个 handler 没有对应的源文件`);
   }
 });
@@ -80,7 +83,7 @@ test("④ 积压的分母是「累计待处理」而不是「当天新增」", (
 });
 
 test("⑤ surface 结论真的会进下一轮上下文，而且是一次性消费的", () => {
-  const orchestrator = read("workers/ai-worker/src/handlers/companion-context-orchestrator.ts");
+  const orchestrator = read("workers/ai-worker/src/handlers/context/companion-context-orchestrator.ts");
   assert.match(orchestrator, /organizationSurface/,
     "surface 没进 ContextAssemblyResult：整理结论生成了却没有下一轮的读者");
   // 一次性：读一次就推后 surface_at，否则同一句话会在之后每一轮反复出现。
@@ -89,12 +92,12 @@ test("⑤ surface 结论真的会进下一轮上下文，而且是一次性消�
 });
 
 test("⑥ 手册目录进上下文，正文不进来（§4.6.10）", () => {
-  const orchestrator = read("workers/ai-worker/src/handlers/companion-context-orchestrator.ts");
+  const orchestrator = read("workers/ai-worker/src/handlers/context/companion-context-orchestrator.ts");
   assert.match(orchestrator, /retrievePlaybookViews/,
     "手册目录没有接进上下文：companion_read_playbook 展开的是一条不存在的记录");
   assert.match(orchestrator, /playbookCatalog/);
   // 正文按 id 展开（companion_read_playbook），目录里只应有标题与触发条件。
-  const playbooks = read("workers/ai-worker/src/handlers/companion-playbooks.ts");
+  const playbooks = read("workers/ai-worker/src/handlers/memory/companion-playbooks.ts");
   const catalogType = playbooks.slice(
     playbooks.indexOf("export interface PlaybookCatalogEntry"),
     playbooks.indexOf("/** 展开后的完整手册"),
@@ -104,7 +107,7 @@ test("⑥ 手册目录进上下文，正文不进来（§4.6.10）", () => {
 });
 
 test("⑦ 归并用保留条目的 revision 做 CAS，并保留其真实 importance", () => {
-  const source = read("workers/ai-worker/src/handlers/companion-memory-organize.ts");
+  const source = read("workers/ai-worker/src/handlers/memory/companion-memory-organize.ts");
   assert.match(source, /expectedKeepRevision/);
   assert.match(source, /t\.revision = \$\{expectedKeepRevision\}/);
   assert.match(source, /importance: candidate\.importance/);

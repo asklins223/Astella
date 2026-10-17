@@ -18,7 +18,7 @@
  */
 import { useEffect } from "react";
 import { Download, RefreshCw } from "lucide-react";
-import { hasActionableUpdate, useUpdateStatus } from "../app/update-status";
+import { hasActionableUpdate, useUpdateStatus } from "../app/gate/update-status";
 
 export function GateUpdateRow() {
   const { state, checking, downloading, installing, check, download, install } = useUpdateStatus();

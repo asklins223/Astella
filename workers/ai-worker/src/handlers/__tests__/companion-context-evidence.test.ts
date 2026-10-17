@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { companionNumericEvidenceContext } from "../companion-context-evidence.ts";
-import { unverifiedNumericClaims } from "../companion-dialogue-content.ts";
+import { companionNumericEvidenceContext } from "../context/companion-context-evidence.ts";
+import { unverifiedNumericClaims } from "../turn/companion-dialogue-content.ts";
 
 test("assistant history and remembered claims cannot validate invented study time", () => {
   const evidence = companionNumericEvidenceContext([

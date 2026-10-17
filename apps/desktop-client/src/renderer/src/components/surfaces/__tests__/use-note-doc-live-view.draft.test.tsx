@@ -4,7 +4,7 @@ import { act, cleanup, render } from "@testing-library/react";
 import * as Y from "yjs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { noteDocResult, peerUpdate, seedUpdate } from "../../../test-support/note-doc-fixtures.ts";
-import { useNoteDocLiveView, type NoteDocLiveView } from "../notebook/use-note-doc-live-view.ts";
+import { useNoteDocLiveView, type NoteDocLiveView } from "../notebook/document/use-note-doc-live-view.ts";
 
 /**
  * 本机草稿：刷新/崩溃/切篇不该丢掉"刚敲、还没交出去"的那几个字。

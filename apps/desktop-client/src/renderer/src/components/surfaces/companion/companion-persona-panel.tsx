@@ -2,12 +2,12 @@ import { CompanionParticipationPreferences } from "./companion-participation-pre
 import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 import type { CompanionPersonaPendingRevisionV1,CompanionPersonaPendingV1,CompanionPersonaPresetV1,CompanionPersonaProfileV1,CompanionPersonaProfileVersionV1,CompanionPersonaV1 } from "@astella/shared/companion-memory-desktop-contracts";
 import { PERSONA_FIELD_CAPACITY, personaOriginOf, type PersonaSwitchOption, type SwitchableField } from "@astella/shared/pet-persona-merge";
-import { renderCompanionMarkdown } from "../../companion/companion-markdown";
+import { renderCompanionMarkdown } from "../../companion/content/companion-markdown";
 import { useEffect,useId,useLayoutEffect,useMemo,useRef,useState } from "react";
 import type { ReactNode } from "react";
 import { HUD_PAGES } from "../../hud/hud-pages";
 import { usePageReadableView } from "../../hud/use-page-readable-view";
-import { formatDate } from "../notebook/surface-data";
+import { formatDate } from "../notebook/shell/surface-data.tsx";
 import type { Section } from "./companion-center-model";
 import { CenterFeedback,CenterSection,SectionState } from "./companion-center-primitives";
 

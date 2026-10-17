@@ -14,7 +14,7 @@
  */
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useRoomStore } from "../../../../app/room-store";
+import { useRoomStore } from "../../../../app/home/room-store";
 import { SettingsAccountPanel, type AvatarUploadOutcome } from "../settings-account-panel";
 
 const SOURCE_BITMAP = { width: 800, height: 600, close: vi.fn() };

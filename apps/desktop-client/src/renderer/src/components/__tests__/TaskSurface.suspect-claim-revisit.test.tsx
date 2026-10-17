@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RoundTeachingViewV1 } from "@astella/shared/note-learning-round-contracts";
 import { TaskSurface } from "../TaskSurface.tsx";
-import { useRoomStore } from "../../app/room-store.ts";
+import { useRoomStore } from "../../app/home/room-store.ts";
 
 const NOTE_ID = "11111111-1111-4111-8111-111111111111";
 const VERSION_ID = "22222222-2222-4222-8222-222222222222";

@@ -19,7 +19,7 @@ import {
   QWEN_TTS_DIALECT_VOICE_BY_DIALECT,
   QWEN_TTS_GENERAL_DIALECT_VOICE,
   ttsVoiceOptionsFor,
-} from "../tts-voice-catalog.ts";
+} from "../companion/tts-voice-catalog.ts";
 
 test("目录内 voice 不重复，且每条的 engine 与所在列表一致", () => {
   for (const [engine, options] of [

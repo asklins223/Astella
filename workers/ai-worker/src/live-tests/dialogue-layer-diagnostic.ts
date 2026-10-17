@@ -1,6 +1,6 @@
 import { COMPANION_HOST_PROTOCOL_V8, COMPANION_IDENTITY_BOUNDARY_V4, type AgentTurnRequest } from "@astella/shared";
 import { COMPANION_VOICE_EXPRESSION_PROTOCOL_V1 } from "@astella/shared/voice-expression-tags";
-import { companionStepRuntimePolicy } from "../handlers/companion-step-plan.ts";
+import { companionStepRuntimePolicy } from "../handlers/turn/companion-step-plan.ts";
 
 export const dialogueLayerConditions = ["bare", "protocol", "full"] as const;
 export type DialogueLayerCondition = typeof dialogueLayerConditions[number];

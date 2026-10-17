@@ -31,7 +31,7 @@ after(async () => {
 });
 
 const { persistFailedPartial, pickCompanionFailureFallbackLine } =
-  await import("../handlers/companion-dialogue-failure-retention.ts");
+  await import("../handlers/turn/companion-dialogue-failure-retention.ts");
 
 async function seedBase(): Promise<{ workspaceId: string; userId: string }> {
   const ws = randomUUID();

@@ -8,7 +8,7 @@ import {
   boundedStepSender,
   applyCompactedMessages,
   type CompactionFoldReceipt,
-} from "../companion-compaction.ts";
+} from "../context/companion-compaction.ts";
 import { AIContextCompactionRequiredError, type ContextGateReceipt } from "../../lib/context-governor.ts";
 
 /**

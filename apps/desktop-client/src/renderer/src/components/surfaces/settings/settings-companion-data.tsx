@@ -2,11 +2,11 @@ import type { CompanionExportKindV1 } from "@astella/shared/companion-memory-des
 import type { RequestMetaV1 } from "@astella/shared/desktop-ipc-contracts";
 import { Download,Trash2 } from "lucide-react";
 import { useEffect,useRef,useState } from "react";
-import { gatewayErrorMessage,unwrapGatewayResult } from "../../../app/desktop-client";
-import { useRoomStore } from "../../../app/room-store";
-import { publishCompanionConversationInvalidated, publishCompanionRecordsChanged } from "../../companion/companion-events";
+import { gatewayErrorMessage,unwrapGatewayResult } from "../../../app/client/desktop-client";
+import { useRoomStore } from "../../../app/home/room-store";
+import { publishCompanionConversationInvalidated, publishCompanionRecordsChanged } from "../../companion/content/companion-events";
 import { SettingsInlineState,type SettingsReadable } from "./settings-primitives";
-import { SETTINGS_SECTION_AI_CONSENT } from "../../../app/companion-consent-gate";
+import { SETTINGS_SECTION_AI_CONSENT } from "../../../app/companion-pages/companion-consent-gate";
 
 const EXPORTS = [
   { kind: "all", title: "全部伴星数据", detail: "记忆、对话、人格与操作记录的副本" },

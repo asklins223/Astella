@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import { CompanionVoiceConversation } from "../CompanionVoiceConversation";
-import type { CompanionVoiceInput } from "../use-companion-voice-input";
-import { useRoomStore } from "../../../app/room-store";
+import { CompanionVoiceConversation } from "../voice/CompanionVoiceConversation";
+import type { CompanionVoiceInput } from "../voice/use-companion-voice-input";
+import { useRoomStore } from "../../../app/home/room-store";
 const makeVoice = (patch: Partial<CompanionVoiceInput> = {}): CompanionVoiceInput => ({
   phase: "open", activity: "listening", caption: null, lastTurn: null, note: null, noteRevision: 0, supported: true, modelMissing: false,
   toggle: vi.fn(), cancel: vi.fn(), pause: vi.fn(), resume: vi.fn(), interrupt: vi.fn(), sendNow: vi.fn(), dismissNote: vi.fn(), subscribeLevel: () => () => {}, ...patch,

@@ -4,7 +4,7 @@ import {
   createCueDeliveryReporter,
   findCueDelivery,
   type CueDeliveryRef,
-} from "../companion-cue-delivery.ts";
+} from "../voice/companion-cue-delivery.ts";
 
 function delivery(overrides: Partial<CompanionActivityDeliveryV1> = {}): CompanionActivityDeliveryV1 {
   return {

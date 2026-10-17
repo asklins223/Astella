@@ -10,7 +10,7 @@ import {
   resolveStorageConfig,
   resolveStorageCredentials,
   resolveStorageRequestTimeoutMs,
-} from "../storage-config.ts";
+} from "../platform/storage-config.ts";
 
 test("remote storage never falls back to local MinIO credentials", () => {
   const local = { MINIO_ROOT_USER: "local", MINIO_ROOT_PASSWORD: "local-secret" };
@@ -198,7 +198,7 @@ test("【结构】isStorageConfigured 必须复用凭证解析，不另写一份
   // 修完之后两边一致了，于是**行为上再也测不出分叉**——分叉的代价恰恰在
   // 将来某次只改一边的时候才显形。所以这里只能盯形状。
   const source = readFileSync(
-    join(import.meta.dirname, "..", "storage-config.ts"),
+    join(import.meta.dirname, "..", "platform", "storage-config.ts"),
     "utf8",
   );
   const body = source.match(

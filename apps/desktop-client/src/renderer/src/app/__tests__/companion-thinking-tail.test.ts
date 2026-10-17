@@ -6,7 +6,7 @@ import {
   revealCompanionThinking,
   COMPANION_THINKING_TAIL_CHARS,
   type CompanionThinkingView,
-} from "../companion-thinking-tail";
+} from "../companion-session/companion-thinking-tail";
 
 /** 收一块（画是心跳的事），与界面拿到事件后做的事一致。 */
 const receive = (index: number, text: string, current: CompanionThinkingView | null = null, runId = "run-1") =>

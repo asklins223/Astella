@@ -3,7 +3,7 @@ import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { noteDetailV1Schema } from "@astella/shared/note-projection-contracts";
 import { noteExpansionTaskV1Schema, noteExpansionLinkV1Schema, type NoteExpansionTaskV1 } from "@astella/shared/note-expansion-contracts";
-import { useNotebookExpansionTask } from "../use-notebook-expansion-task";
+import { useNotebookExpansionTask } from "../generation/use-notebook-expansion-task.ts";
 
 const id = (n: number) => `${String(n).padStart(8, "0")}-4111-8111-8111-${String(n).padStart(12, "0")}`;
 const date = "2026-10-01T00:00:00.000Z";

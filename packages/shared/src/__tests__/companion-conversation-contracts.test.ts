@@ -20,8 +20,8 @@ import {
   COMPANION_SELECTION_MAX_CHARS,
   companionSelectionV1Schema,
   type CompanionStreamEventV1,
-} from "../contracts/companion-conversation-contracts.ts";
-import { canonicalJsonV1, sha256Utf8V1, sha256Hex } from "../content-hash.ts";
+} from "../contracts/companion/companion-conversation-contracts.ts";
+import { canonicalJsonV1, sha256Utf8V1, sha256Hex } from "../content/content-hash.ts";
 
 const UUID = "123e4567-e89b-12d3-a456-426614174000";
 const UUID2 = "223e4567-e89b-12d3-a456-426614174001";

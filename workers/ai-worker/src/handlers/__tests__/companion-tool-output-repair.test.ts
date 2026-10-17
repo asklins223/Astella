@@ -3,9 +3,9 @@ import test from "node:test";
 import { AgentRole, type AgentTurnRequest } from "@astella/shared";
 import type { AIProvider } from "../../lib/ai-provider.ts";
 import { AgentOutputError } from "../../lib/non-retryable-errors.ts";
-import { runStreamingAgentStep } from "../companion-agent-streaming-step.ts";
-import { CompanionStreamStoppedError } from "../companion-dialogue-stream.ts";
-import { CompanionToolOutputRepairError } from "../companion-tool-output-repair.ts";
+import { runStreamingAgentStep } from "../agent/companion-agent-streaming-step.ts";
+import { CompanionStreamStoppedError } from "../turn/companion-dialogue-stream.ts";
+import { CompanionToolOutputRepairError } from "../tools/companion-tool-output-repair.ts";
 
 const request: AgentTurnRequest = { role: AgentRole.COMPANION_AGENT, systemPrompt: "policy",
   messages: [{ role: "user", content: "current question" }], tools: [], maxTokens: 1_000, temperature: 0.9 };

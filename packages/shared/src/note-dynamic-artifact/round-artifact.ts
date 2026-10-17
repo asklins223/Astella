@@ -18,7 +18,7 @@
  *
  * 成品完整保存，正文规模不设本地字符配额。
  */
-import type { RoundTeachingContentV1 } from "../contracts/note-learning-round-contracts.ts";
+import type { RoundTeachingContentV1 } from "../contracts/note/note-learning-round-contracts.ts";
 
 /** 今天只有这一档（与 0285 的 `nlra_kind_chk`、线上合同的 enum 同宽）。 */
 export const ROUND_ARTIFACT_KIND_V1 = "dynamic_explanation" as const;

@@ -3,8 +3,8 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { act } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { CompanionAgentNode, CompanionAgentNodes } from "../../../app/companion-agent-nodes.ts";
-import { CompanionAgentRail } from "../companion-agent-rail.tsx";
+import type { CompanionAgentNode, CompanionAgentNodes } from "../../../app/companion-session/companion-agent-nodes.ts";
+import { CompanionAgentRail } from "../hud/companion-agent-rail.tsx";
 
 afterEach(cleanup);
 

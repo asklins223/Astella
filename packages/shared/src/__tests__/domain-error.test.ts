@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DomainError } from "../domain-error.ts";
+import { DomainError } from "../platform/domain-error.ts";
 
 test("DomainError sets name, code, message, statusCode", () => {
   class MyError extends DomainError {

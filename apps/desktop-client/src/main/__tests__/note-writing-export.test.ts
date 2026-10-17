@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { inflateRawSync } from "node:zlib";
-import { noteExportHtml, noteExportDocx } from "../note-writing-export";
+import { noteExportHtml, noteExportDocx } from "../note-doc/note-writing-export";
 
 function zipEntry(zip: Buffer, name: string): string {
   let offset = zip.indexOf(Buffer.from("PK\x01\x02"));

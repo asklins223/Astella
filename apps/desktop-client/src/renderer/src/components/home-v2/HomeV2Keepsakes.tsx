@@ -2,7 +2,7 @@ import type {
   CompanionDecorIdV1,
   CompanionRoomSlotV1,
 } from "@astella/shared/companion-home-contracts";
-import { useCompanionHomeProjection } from "../../app/companion-home-projection";
+import { useCompanionHomeProjection } from "../../app/companion-pages/companion-home-projection";
 
 const SLOT_TRANSFORMS: Readonly<Record<CompanionRoomSlotV1, string>> = Object.freeze({
   desk: "translate(770 306) scale(.82)",

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { learningRunPublicSnapshotV2Schema } from "@astella/shared/learning-run-v2-contracts";
-import { FormalAssessmentGuard, companionDeliveryKindValues } from "../formal-assessment-guard";
+import { FormalAssessmentGuard, companionDeliveryKindValues } from "../store/formal-assessment-guard";
 
 const snapshot = (overrides: Record<string, unknown> = {}) => learningRunPublicSnapshotV2Schema.parse({
   version: 2,

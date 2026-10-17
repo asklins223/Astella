@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, type RefObject } from "react";
-import { useRoomStore } from "../../app/room-store";
+import { useRoomStore } from "../../app/home/room-store";
 
 type Spring = { position: number; velocity: number };
 type Track = { kind: "press" | "page" | "tab"; values: Spring[]; target: number[] };

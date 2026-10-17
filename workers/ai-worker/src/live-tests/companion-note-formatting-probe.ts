@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { resolveAllCompanionAgentTools } from "@astella/shared";
-import { interpretCompanionTurn } from "../handlers/companion-tool-intent.ts";
+import { interpretCompanionTurn } from "../handlers/tools/companion-tool-intent.ts";
 import { closeDatabase } from "../db.ts";
 import { platform, observedProvider, save, type WireReceipt } from "./acceptance-common.ts";
 

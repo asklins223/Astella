@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildCompanionRouteRecordV1, createCompanionRouteRecorder } from "../companion-route-record.ts";
+import { buildCompanionRouteRecordV1, createCompanionRouteRecorder } from "../agent/companion-route-record.ts";
 
 test("正常分类：记录真实耗时与放行等待", () => {
   const record = buildCompanionRouteRecordV1({
@@ -91,7 +91,7 @@ test("录制器：run meta 写失败只咽掉，不影响本轮调用方", async
 const SAFE_SHADOW_VEC = [1, 0, 0, 0] as const;
 
 async function seedShadowIndex(scopeKey: string, embed: (text: string) => Promise<readonly number[] | null>): Promise<void> {
-  const { rememberCompanionReleaseSample, resetCompanionReleaseRouterForTests } = await import("../companion-release-router.ts");
+  const { rememberCompanionReleaseSample, resetCompanionReleaseRouterForTests } = await import("../agent/companion-release-router.ts");
   resetCompanionReleaseRouterForTests();
   for (let index = 0; index < 8; index += 1) {
     await rememberCompanionReleaseSample({

@@ -1,6 +1,6 @@
 {
   "name": "@astella/shared",
-  "version": "1.8.18",
+  "version": "1.8.19",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
@@ -12,49 +12,49 @@
       "default": "./src/index.ts"
     },
     "./activity-surface-contracts": {
-      "types": "./src/contracts/activity-surface-contracts.ts",
-      "import": "./src/contracts/activity-surface-contracts.ts",
-      "default": "./src/contracts/activity-surface-contracts.ts"
+      "types": "./src/contracts/desktop/activity-surface-contracts.ts",
+      "import": "./src/contracts/desktop/activity-surface-contracts.ts",
+      "default": "./src/contracts/desktop/activity-surface-contracts.ts"
     },
     "./ai-endpoints": {
-      "types": "./src/ai-endpoints.ts",
-      "import": "./src/ai-endpoints.ts",
-      "default": "./src/ai-endpoints.ts"
+      "types": "./src/platform/ai-endpoints.ts",
+      "import": "./src/platform/ai-endpoints.ts",
+      "default": "./src/platform/ai-endpoints.ts"
     },
     "./agent-growth-contracts": {
-      "types": "./src/contracts/agent-growth-contracts.ts",
-      "import": "./src/contracts/agent-growth-contracts.ts",
-      "default": "./src/contracts/agent-growth-contracts.ts"
+      "types": "./src/contracts/agent/agent-growth-contracts.ts",
+      "import": "./src/contracts/agent/agent-growth-contracts.ts",
+      "default": "./src/contracts/agent/agent-growth-contracts.ts"
     },
     "./ai-task-kernel": {
-      "types": "./src/ai-task-kernel.ts",
-      "import": "./src/ai-task-kernel.ts",
-      "default": "./src/ai-task-kernel.ts"
+      "types": "./src/agent/ai-task-kernel.ts",
+      "import": "./src/agent/ai-task-kernel.ts",
+      "default": "./src/agent/ai-task-kernel.ts"
     },
     "./context-budget-contracts": {
-      "types": "./src/contracts/context-budget-contracts.ts",
-      "import": "./src/contracts/context-budget-contracts.ts",
-      "default": "./src/contracts/context-budget-contracts.ts"
+      "types": "./src/contracts/agent/context-budget-contracts.ts",
+      "import": "./src/contracts/agent/context-budget-contracts.ts",
+      "default": "./src/contracts/agent/context-budget-contracts.ts"
     },
     "./assessment-dispute-rules-v2": {
-      "types": "./src/assessment-dispute-rules-v2.ts",
-      "import": "./src/assessment-dispute-rules-v2.ts",
-      "default": "./src/assessment-dispute-rules-v2.ts"
+      "types": "./src/review/assessment-dispute-rules-v2.ts",
+      "import": "./src/review/assessment-dispute-rules-v2.ts",
+      "default": "./src/review/assessment-dispute-rules-v2.ts"
     },
     "./card-generation-desktop-contracts": {
-      "types": "./src/contracts/card-generation-desktop-contracts.ts",
-      "import": "./src/contracts/card-generation-desktop-contracts.ts",
-      "default": "./src/contracts/card-generation-desktop-contracts.ts"
+      "types": "./src/contracts/learning/card-generation-desktop-contracts.ts",
+      "import": "./src/contracts/learning/card-generation-desktop-contracts.ts",
+      "default": "./src/contracts/learning/card-generation-desktop-contracts.ts"
     },
     "./card-generation-v2-contracts": {
-      "types": "./src/contracts/card-generation-v2-contracts.ts",
-      "import": "./src/contracts/card-generation-v2-contracts.ts",
-      "default": "./src/contracts/card-generation-v2-contracts.ts"
+      "types": "./src/contracts/learning/card-generation-v2-contracts.ts",
+      "import": "./src/contracts/learning/card-generation-v2-contracts.ts",
+      "default": "./src/contracts/learning/card-generation-v2-contracts.ts"
     },
     "./card-generation-v2-hashing": {
-      "types": "./src/card-generation-v2-hashing.ts",
-      "import": "./src/card-generation-v2-hashing.ts",
-      "default": "./src/card-generation-v2-hashing.ts"
+      "types": "./src/review/card-generation-v2-hashing.ts",
+      "import": "./src/review/card-generation-v2-hashing.ts",
+      "default": "./src/review/card-generation-v2-hashing.ts"
     },
     "./card-generation-v2-pipeline": {
       "types": "./src/card-generation-v2-pipeline/index.ts",
@@ -62,130 +62,130 @@
       "default": "./src/card-generation-v2-pipeline/index.ts"
     },
     "./card-generation-v3-contracts": {
-      "types": "./src/contracts/card-generation-v3-contracts.ts",
-      "import": "./src/contracts/card-generation-v3-contracts.ts",
-      "default": "./src/contracts/card-generation-v3-contracts.ts"
+      "types": "./src/contracts/learning/card-generation-v3-contracts.ts",
+      "import": "./src/contracts/learning/card-generation-v3-contracts.ts",
+      "default": "./src/contracts/learning/card-generation-v3-contracts.ts"
     },
     "./card-quality-v2-contracts": {
-      "types": "./src/contracts/card-quality-v2-contracts.ts",
-      "import": "./src/contracts/card-quality-v2-contracts.ts",
-      "default": "./src/contracts/card-quality-v2-contracts.ts"
+      "types": "./src/contracts/learning/card-quality-v2-contracts.ts",
+      "import": "./src/contracts/learning/card-quality-v2-contracts.ts",
+      "default": "./src/contracts/learning/card-quality-v2-contracts.ts"
     },
     "./circuit-breaker": {
-      "types": "./src/circuit-breaker.ts",
-      "import": "./src/circuit-breaker.ts",
-      "default": "./src/circuit-breaker.ts"
+      "types": "./src/platform/circuit-breaker.ts",
+      "import": "./src/platform/circuit-breaker.ts",
+      "default": "./src/platform/circuit-breaker.ts"
     },
     "./companion-agent-contracts": {
-      "types": "./src/contracts/companion-agent-contracts.ts",
-      "import": "./src/contracts/companion-agent-contracts.ts",
-      "default": "./src/contracts/companion-agent-contracts.ts"
+      "types": "./src/contracts/companion/companion-agent-contracts.ts",
+      "import": "./src/contracts/companion/companion-agent-contracts.ts",
+      "default": "./src/contracts/companion/companion-agent-contracts.ts"
     },
     "./companion-agent-registry": {
-      "types": "./src/companion-agent-registry.ts",
-      "import": "./src/companion-agent-registry.ts",
-      "default": "./src/companion-agent-registry.ts"
+      "types": "./src/agent/companion-agent-registry.ts",
+      "import": "./src/agent/companion-agent-registry.ts",
+      "default": "./src/agent/companion-agent-registry.ts"
     },
     "./companion-autonomy": {
-      "types": "./src/companion-autonomy.ts",
-      "import": "./src/companion-autonomy.ts",
-      "default": "./src/companion-autonomy.ts"
+      "types": "./src/companion/companion-autonomy.ts",
+      "import": "./src/companion/companion-autonomy.ts",
+      "default": "./src/companion/companion-autonomy.ts"
     },
     "./companion-bridge-contracts": {
-      "types": "./src/contracts/companion-bridge-contracts.ts",
-      "import": "./src/contracts/companion-bridge-contracts.ts",
-      "default": "./src/contracts/companion-bridge-contracts.ts"
+      "types": "./src/contracts/companion/companion-bridge-contracts.ts",
+      "import": "./src/contracts/companion/companion-bridge-contracts.ts",
+      "default": "./src/contracts/companion/companion-bridge-contracts.ts"
     },
     "./companion-bridge-revision": {
-      "types": "./src/companion-bridge-revision.ts",
-      "import": "./src/companion-bridge-revision.ts",
-      "default": "./src/companion-bridge-revision.ts"
+      "types": "./src/companion/companion-bridge-revision.ts",
+      "import": "./src/companion/companion-bridge-revision.ts",
+      "default": "./src/companion/companion-bridge-revision.ts"
     },
     "./companion-character-contracts": {
-      "types": "./src/contracts/companion-character-contracts.ts",
-      "import": "./src/contracts/companion-character-contracts.ts",
-      "default": "./src/contracts/companion-character-contracts.ts"
+      "types": "./src/contracts/companion/companion-character-contracts.ts",
+      "import": "./src/contracts/companion/companion-character-contracts.ts",
+      "default": "./src/contracts/companion/companion-character-contracts.ts"
     },
     "./companion-chat-desktop-contracts": {
-      "types": "./src/contracts/companion-chat-desktop-contracts.ts",
-      "import": "./src/contracts/companion-chat-desktop-contracts.ts",
-      "default": "./src/contracts/companion-chat-desktop-contracts.ts"
+      "types": "./src/contracts/companion/companion-chat-desktop-contracts.ts",
+      "import": "./src/contracts/companion/companion-chat-desktop-contracts.ts",
+      "default": "./src/contracts/companion/companion-chat-desktop-contracts.ts"
     },
     "./companion-conversation-contracts": {
-      "types": "./src/contracts/companion-conversation-contracts.ts",
-      "import": "./src/contracts/companion-conversation-contracts.ts",
-      "default": "./src/contracts/companion-conversation-contracts.ts"
+      "types": "./src/contracts/companion/companion-conversation-contracts.ts",
+      "import": "./src/contracts/companion/companion-conversation-contracts.ts",
+      "default": "./src/contracts/companion/companion-conversation-contracts.ts"
     },
     "./companion-file-contracts": {
-      "types": "./src/contracts/companion-file-contracts.ts",
-      "import": "./src/contracts/companion-file-contracts.ts",
-      "default": "./src/contracts/companion-file-contracts.ts"
+      "types": "./src/contracts/companion/companion-file-contracts.ts",
+      "import": "./src/contracts/companion/companion-file-contracts.ts",
+      "default": "./src/contracts/companion/companion-file-contracts.ts"
     },
     "./companion-realtime-contracts": {
-      "types": "./src/contracts/companion-realtime-contracts.ts",
-      "import": "./src/contracts/companion-realtime-contracts.ts",
-      "default": "./src/contracts/companion-realtime-contracts.ts"
+      "types": "./src/contracts/companion/companion-realtime-contracts.ts",
+      "import": "./src/contracts/companion/companion-realtime-contracts.ts",
+      "default": "./src/contracts/companion/companion-realtime-contracts.ts"
     },
     "./companion-home-contracts": {
-      "types": "./src/contracts/companion-home-contracts.ts",
-      "import": "./src/contracts/companion-home-contracts.ts",
-      "default": "./src/contracts/companion-home-contracts.ts"
+      "types": "./src/contracts/companion/companion-home-contracts.ts",
+      "import": "./src/contracts/companion/companion-home-contracts.ts",
+      "default": "./src/contracts/companion/companion-home-contracts.ts"
     },
     "./companion-journey-contracts": {
-      "types": "./src/contracts/companion-journey-contracts.ts",
-      "import": "./src/contracts/companion-journey-contracts.ts",
-      "default": "./src/contracts/companion-journey-contracts.ts"
+      "types": "./src/contracts/companion/companion-journey-contracts.ts",
+      "import": "./src/contracts/companion/companion-journey-contracts.ts",
+      "default": "./src/contracts/companion/companion-journey-contracts.ts"
     },
     "./companion-leak-gates": {
-      "types": "./src/companion-leak-gates.ts",
-      "import": "./src/companion-leak-gates.ts",
-      "default": "./src/companion-leak-gates.ts"
+      "types": "./src/companion/companion-leak-gates.ts",
+      "import": "./src/companion/companion-leak-gates.ts",
+      "default": "./src/companion/companion-leak-gates.ts"
     },
     "./companion-lock-order": {
-      "types": "./src/companion-lock-order.ts",
-      "import": "./src/companion-lock-order.ts",
-      "default": "./src/companion-lock-order.ts"
+      "types": "./src/companion/companion-lock-order.ts",
+      "import": "./src/companion/companion-lock-order.ts",
+      "default": "./src/companion/companion-lock-order.ts"
     },
     "./companion-memory-desktop-contracts": {
-      "types": "./src/contracts/companion-memory-desktop-contracts.ts",
-      "import": "./src/contracts/companion-memory-desktop-contracts.ts",
-      "default": "./src/contracts/companion-memory-desktop-contracts.ts"
+      "types": "./src/contracts/companion/companion-memory-desktop-contracts.ts",
+      "import": "./src/contracts/companion/companion-memory-desktop-contracts.ts",
+      "default": "./src/contracts/companion/companion-memory-desktop-contracts.ts"
     },
     "./companion-memory-scope": {
-      "types": "./src/companion-memory-scope.ts",
-      "import": "./src/companion-memory-scope.ts",
-      "default": "./src/companion-memory-scope.ts"
+      "types": "./src/companion/companion-memory-scope.ts",
+      "import": "./src/companion/companion-memory-scope.ts",
+      "default": "./src/companion/companion-memory-scope.ts"
     },
     "./companion-discovery-contracts": {
-      "types": "./src/contracts/companion-discovery-contracts.ts",
-      "import": "./src/contracts/companion-discovery-contracts.ts",
-      "default": "./src/contracts/companion-discovery-contracts.ts"
+      "types": "./src/contracts/companion/companion-discovery-contracts.ts",
+      "import": "./src/contracts/companion/companion-discovery-contracts.ts",
+      "default": "./src/contracts/companion/companion-discovery-contracts.ts"
     },
     "./companion-proactive-quota": {
-      "types": "./src/companion-proactive-quota.ts",
-      "import": "./src/companion-proactive-quota.ts",
-      "default": "./src/companion-proactive-quota.ts"
+      "types": "./src/companion/companion-proactive-quota.ts",
+      "import": "./src/companion/companion-proactive-quota.ts",
+      "default": "./src/companion/companion-proactive-quota.ts"
     },
     "./companion-proactive-policy": {
-      "types": "./src/companion-proactive-policy.ts",
-      "import": "./src/companion-proactive-policy.ts",
-      "default": "./src/companion-proactive-policy.ts"
+      "types": "./src/companion/companion-proactive-policy.ts",
+      "import": "./src/companion/companion-proactive-policy.ts",
+      "default": "./src/companion/companion-proactive-policy.ts"
     },
     "./companion-shell-contracts": {
-      "types": "./src/contracts/companion-shell-contracts.ts",
-      "import": "./src/contracts/companion-shell-contracts.ts",
-      "default": "./src/contracts/companion-shell-contracts.ts"
+      "types": "./src/contracts/companion/companion-shell-contracts.ts",
+      "import": "./src/contracts/companion/companion-shell-contracts.ts",
+      "default": "./src/contracts/companion/companion-shell-contracts.ts"
     },
     "./companion-voice-contracts": {
-      "types": "./src/contracts/companion-voice-contracts.ts",
-      "import": "./src/contracts/companion-voice-contracts.ts",
-      "default": "./src/contracts/companion-voice-contracts.ts"
+      "types": "./src/contracts/companion/companion-voice-contracts.ts",
+      "import": "./src/contracts/companion/companion-voice-contracts.ts",
+      "default": "./src/contracts/companion/companion-voice-contracts.ts"
     },
-    "./connection-budget": "./src/connection-budget.ts",
+    "./connection-budget": "./src/platform/connection-budget.ts",
     "./content-hash": {
-      "types": "./src/content-hash.ts",
-      "import": "./src/content-hash.ts",
-      "default": "./src/content-hash.ts"
+      "types": "./src/content/content-hash.ts",
+      "import": "./src/content/content-hash.ts",
+      "default": "./src/content/content-hash.ts"
     },
     "./db-schema": {
       "types": "./src/db-schema/index.ts",
@@ -253,9 +253,9 @@
       "default": "./src/db-schema/companion-sandbox.ts"
     },
     "./db-schema/enums": {
-      "types": "./src/db-schema/enums.ts",
-      "import": "./src/db-schema/enums.ts",
-      "default": "./src/db-schema/enums.ts"
+      "types": "./src/platform/enums.ts",
+      "import": "./src/platform/enums.ts",
+      "default": "./src/platform/enums.ts"
     },
     "./db-schema/evidence": {
       "types": "./src/db-schema/evidence.ts",
@@ -353,112 +353,112 @@
       "default": "./src/db-schema/validation-v2.ts"
     },
     "./desktop-ipc-contracts": {
-      "types": "./src/contracts/desktop-ipc-contracts.ts",
-      "import": "./src/contracts/desktop-ipc-contracts.ts",
-      "default": "./src/contracts/desktop-ipc-contracts.ts"
+      "types": "./src/contracts/desktop/desktop-ipc-contracts.ts",
+      "import": "./src/contracts/desktop/desktop-ipc-contracts.ts",
+      "default": "./src/contracts/desktop/desktop-ipc-contracts.ts"
     },
     "./desktop-surface-contracts": {
-      "types": "./src/contracts/desktop-surface-contracts.ts",
-      "import": "./src/contracts/desktop-surface-contracts.ts",
-      "default": "./src/contracts/desktop-surface-contracts.ts"
+      "types": "./src/contracts/desktop/desktop-surface-contracts.ts",
+      "import": "./src/contracts/desktop/desktop-surface-contracts.ts",
+      "default": "./src/contracts/desktop/desktop-surface-contracts.ts"
     },
     "./enums": {
-      "types": "./src/enums.ts",
-      "import": "./src/enums.ts",
-      "default": "./src/enums.ts"
+      "types": "./src/platform/enums.ts",
+      "import": "./src/platform/enums.ts",
+      "default": "./src/platform/enums.ts"
     },
     "./formal-assessment-guard-contracts": {
-      "types": "./src/contracts/formal-assessment-guard-contracts.ts",
-      "import": "./src/contracts/formal-assessment-guard-contracts.ts",
-      "default": "./src/contracts/formal-assessment-guard-contracts.ts"
+      "types": "./src/contracts/agent/formal-assessment-guard-contracts.ts",
+      "import": "./src/contracts/agent/formal-assessment-guard-contracts.ts",
+      "default": "./src/contracts/agent/formal-assessment-guard-contracts.ts"
     },
     "./hash-canonical-v2": {
-      "types": "./src/hash-canonical-v2.ts",
-      "import": "./src/hash-canonical-v2.ts",
-      "default": "./src/hash-canonical-v2.ts"
+      "types": "./src/content/hash-canonical-v2.ts",
+      "import": "./src/content/hash-canonical-v2.ts",
+      "default": "./src/content/hash-canonical-v2.ts"
     },
     "./help-condition-rules-v2": {
-      "types": "./src/help-condition-rules-v2.ts",
-      "import": "./src/help-condition-rules-v2.ts",
-      "default": "./src/help-condition-rules-v2.ts"
+      "types": "./src/review/help-condition-rules-v2.ts",
+      "import": "./src/review/help-condition-rules-v2.ts",
+      "default": "./src/review/help-condition-rules-v2.ts"
     },
     "./home-suggestion-v2": {
-      "types": "./src/home-suggestion-v2.ts",
-      "import": "./src/home-suggestion-v2.ts",
-      "default": "./src/home-suggestion-v2.ts"
+      "types": "./src/review/home-suggestion-v2.ts",
+      "import": "./src/review/home-suggestion-v2.ts",
+      "default": "./src/review/home-suggestion-v2.ts"
     },
     "./integration-test-db-env": {
-      "types": "./src/integration-test-db-env.ts",
-      "import": "./src/integration-test-db-env.ts",
-      "default": "./src/integration-test-db-env.ts"
+      "types": "./src/platform/integration-test-db-env.ts",
+      "import": "./src/platform/integration-test-db-env.ts",
+      "default": "./src/platform/integration-test-db-env.ts"
     },
     "./job-payload-contracts": {
-      "types": "./src/contracts/job-payload-contracts.ts",
-      "import": "./src/contracts/job-payload-contracts.ts",
-      "default": "./src/contracts/job-payload-contracts.ts"
+      "types": "./src/contracts/agent/job-payload-contracts.ts",
+      "import": "./src/contracts/agent/job-payload-contracts.ts",
+      "default": "./src/contracts/agent/job-payload-contracts.ts"
     },
-    "./job-queue-limits": "./src/job-queue-limits.ts",
+    "./job-queue-limits": "./src/platform/job-queue-limits.ts",
     "./learning-card-v2-contracts": {
-      "types": "./src/contracts/learning-card-v2-contracts.ts",
-      "import": "./src/contracts/learning-card-v2-contracts.ts",
-      "default": "./src/contracts/learning-card-v2-contracts.ts"
+      "types": "./src/contracts/learning/learning-card-v2-contracts.ts",
+      "import": "./src/contracts/learning/learning-card-v2-contracts.ts",
+      "default": "./src/contracts/learning/learning-card-v2-contracts.ts"
     },
     "./learning-objective-surface-contracts": {
-      "types": "./src/contracts/learning-objective-surface-contracts.ts",
-      "import": "./src/contracts/learning-objective-surface-contracts.ts",
-      "default": "./src/contracts/learning-objective-surface-contracts.ts"
+      "types": "./src/contracts/learning/learning-objective-surface-contracts.ts",
+      "import": "./src/contracts/learning/learning-objective-surface-contracts.ts",
+      "default": "./src/contracts/learning/learning-objective-surface-contracts.ts"
     },
     "./learning-run-contracts": {
-      "types": "./src/contracts/learning-run-contracts.ts",
-      "import": "./src/contracts/learning-run-contracts.ts",
-      "default": "./src/contracts/learning-run-contracts.ts"
+      "types": "./src/contracts/learning/learning-run-contracts.ts",
+      "import": "./src/contracts/learning/learning-run-contracts.ts",
+      "default": "./src/contracts/learning/learning-run-contracts.ts"
     },
     "./learning-run-v2-contracts": {
-      "types": "./src/contracts/learning-run-v2-contracts.ts",
-      "import": "./src/contracts/learning-run-v2-contracts.ts",
-      "default": "./src/contracts/learning-run-v2-contracts.ts"
+      "types": "./src/contracts/learning/learning-run-v2-contracts.ts",
+      "import": "./src/contracts/learning/learning-run-v2-contracts.ts",
+      "default": "./src/contracts/learning/learning-run-v2-contracts.ts"
     },
     "./learning-target-v2-contracts": {
-      "types": "./src/contracts/learning-target-v2-contracts.ts",
-      "import": "./src/contracts/learning-target-v2-contracts.ts",
-      "default": "./src/contracts/learning-target-v2-contracts.ts"
+      "types": "./src/contracts/learning/learning-target-v2-contracts.ts",
+      "import": "./src/contracts/learning/learning-target-v2-contracts.ts",
+      "default": "./src/contracts/learning/learning-target-v2-contracts.ts"
     },
     "./limited-batch-v2": {
-      "types": "./src/limited-batch-v2.ts",
-      "import": "./src/limited-batch-v2.ts",
-      "default": "./src/limited-batch-v2.ts"
+      "types": "./src/review/limited-batch-v2.ts",
+      "import": "./src/review/limited-batch-v2.ts",
+      "default": "./src/review/limited-batch-v2.ts"
     },
     "./markdown-parser": {
-      "types": "./src/markdown-parser.ts",
-      "import": "./src/markdown-parser.ts",
-      "default": "./src/markdown-parser.ts"
+      "types": "./src/note/markdown-parser.ts",
+      "import": "./src/note/markdown-parser.ts",
+      "default": "./src/note/markdown-parser.ts"
     },
     "./metrics-definitions": {
-      "types": "./src/metrics-definitions.ts",
-      "import": "./src/metrics-definitions.ts",
-      "default": "./src/metrics-definitions.ts"
+      "types": "./src/platform/metrics-definitions.ts",
+      "import": "./src/platform/metrics-definitions.ts",
+      "default": "./src/platform/metrics-definitions.ts"
     },
     "./note-annotation-contracts": {
-      "types": "./src/contracts/note-annotation-contracts.ts",
-      "import": "./src/contracts/note-annotation-contracts.ts",
-      "default": "./src/contracts/note-annotation-contracts.ts"
+      "types": "./src/contracts/note/note-annotation-contracts.ts",
+      "import": "./src/contracts/note/note-annotation-contracts.ts",
+      "default": "./src/contracts/note/note-annotation-contracts.ts"
     },
-    "./note-deepening-contracts": "./src/contracts/note-deepening-contracts.ts",
+    "./note-deepening-contracts": "./src/contracts/note/note-deepening-contracts.ts",
     "./note-deepening-v3-contracts": {
-      "types": "./src/contracts/note-deepening-v3-contracts.ts",
-      "import": "./src/contracts/note-deepening-v3-contracts.ts",
-      "default": "./src/contracts/note-deepening-v3-contracts.ts"
+      "types": "./src/contracts/note/note-deepening-v3-contracts.ts",
+      "import": "./src/contracts/note/note-deepening-v3-contracts.ts",
+      "default": "./src/contracts/note/note-deepening-v3-contracts.ts"
     },
     "./note-doc-conformance": {
-      "types": "./src/note-doc-conformance.ts",
-      "import": "./src/note-doc-conformance.ts",
-      "default": "./src/note-doc-conformance.ts"
+      "types": "./src/note/note-doc-conformance.ts",
+      "import": "./src/note/note-doc-conformance.ts",
+      "default": "./src/note/note-doc-conformance.ts"
     },
-    "./note-markdown": "./src/note-markdown.ts",
+    "./note-markdown": "./src/note/note-markdown.ts",
     "./note-doc-schema": {
-      "types": "./src/note-doc-schema.ts",
-      "import": "./src/note-doc-schema.ts",
-      "default": "./src/note-doc-schema.ts"
+      "types": "./src/note/note-doc-schema.ts",
+      "import": "./src/note/note-doc-schema.ts",
+      "default": "./src/note/note-doc-schema.ts"
     },
     "./note-dynamic-artifact/round-artifact": {
       "types": "./src/note-dynamic-artifact/round-artifact.ts",
@@ -486,254 +486,254 @@
       "default": "./src/note-dynamic-artifact/round-artifact-render.ts"
     },
     "./note-expansion-contracts": {
-      "types": "./src/contracts/note-expansion-contracts.ts",
-      "import": "./src/contracts/note-expansion-contracts.ts",
-      "default": "./src/contracts/note-expansion-contracts.ts"
+      "types": "./src/contracts/note/note-expansion-contracts.ts",
+      "import": "./src/contracts/note/note-expansion-contracts.ts",
+      "default": "./src/contracts/note/note-expansion-contracts.ts"
     },
     "./note-image-upload-contracts": {
-      "types": "./src/contracts/note-image-upload-contracts.ts",
-      "import": "./src/contracts/note-image-upload-contracts.ts",
-      "default": "./src/contracts/note-image-upload-contracts.ts"
+      "types": "./src/contracts/note/note-image-upload-contracts.ts",
+      "import": "./src/contracts/note/note-image-upload-contracts.ts",
+      "default": "./src/contracts/note/note-image-upload-contracts.ts"
     },
     "./note-learning-artifact-contracts": {
-      "types": "./src/contracts/note-learning-artifact-contracts.ts",
-      "import": "./src/contracts/note-learning-artifact-contracts.ts",
-      "default": "./src/contracts/note-learning-artifact-contracts.ts"
+      "types": "./src/contracts/note/note-learning-artifact-contracts.ts",
+      "import": "./src/contracts/note/note-learning-artifact-contracts.ts",
+      "default": "./src/contracts/note/note-learning-artifact-contracts.ts"
     },
     "./note-learning-reflection-contracts": {
-      "types": "./src/contracts/note-learning-reflection-contracts.ts",
-      "import": "./src/contracts/note-learning-reflection-contracts.ts",
-      "default": "./src/contracts/note-learning-reflection-contracts.ts"
+      "types": "./src/contracts/note/note-learning-reflection-contracts.ts",
+      "import": "./src/contracts/note/note-learning-reflection-contracts.ts",
+      "default": "./src/contracts/note/note-learning-reflection-contracts.ts"
     },
     "./note-learning-round-contracts": {
-      "types": "./src/contracts/note-learning-round-contracts.ts",
-      "import": "./src/contracts/note-learning-round-contracts.ts",
-      "default": "./src/contracts/note-learning-round-contracts.ts"
+      "types": "./src/contracts/note/note-learning-round-contracts.ts",
+      "import": "./src/contracts/note/note-learning-round-contracts.ts",
+      "default": "./src/contracts/note/note-learning-round-contracts.ts"
     },
     "./note-overview-contracts": {
-      "types": "./src/contracts/note-overview-contracts.ts",
-      "import": "./src/contracts/note-overview-contracts.ts",
-      "default": "./src/contracts/note-overview-contracts.ts"
+      "types": "./src/contracts/note/note-overview-contracts.ts",
+      "import": "./src/contracts/note/note-overview-contracts.ts",
+      "default": "./src/contracts/note/note-overview-contracts.ts"
     },
     "./note-projection-contracts": {
-      "types": "./src/contracts/note-projection-contracts.ts",
-      "import": "./src/contracts/note-projection-contracts.ts",
-      "default": "./src/contracts/note-projection-contracts.ts"
+      "types": "./src/contracts/note/note-projection-contracts.ts",
+      "import": "./src/contracts/note/note-projection-contracts.ts",
+      "default": "./src/contracts/note/note-projection-contracts.ts"
     },
     "./note-presence-contracts": {
-      "types": "./src/contracts/note-presence-contracts.ts",
-      "import": "./src/contracts/note-presence-contracts.ts",
-      "default": "./src/contracts/note-presence-contracts.ts"
+      "types": "./src/contracts/note/note-presence-contracts.ts",
+      "import": "./src/contracts/note/note-presence-contracts.ts",
+      "default": "./src/contracts/note/note-presence-contracts.ts"
     },
     "./note-recall-contracts": {
-      "types": "./src/contracts/note-recall-contracts.ts",
-      "import": "./src/contracts/note-recall-contracts.ts",
-      "default": "./src/contracts/note-recall-contracts.ts"
+      "types": "./src/contracts/note/note-recall-contracts.ts",
+      "import": "./src/contracts/note/note-recall-contracts.ts",
+      "default": "./src/contracts/note/note-recall-contracts.ts"
     },
     "./note-route-coverage-v2": {
-      "types": "./src/note-route-coverage-v2.ts",
-      "import": "./src/note-route-coverage-v2.ts",
-      "default": "./src/note-route-coverage-v2.ts"
+      "types": "./src/note/note-route-coverage-v2.ts",
+      "import": "./src/note/note-route-coverage-v2.ts",
+      "default": "./src/note/note-route-coverage-v2.ts"
     },
     "./note-save-contracts": {
-      "types": "./src/contracts/note-save-contracts.ts",
-      "import": "./src/contracts/note-save-contracts.ts",
-      "default": "./src/contracts/note-save-contracts.ts"
+      "types": "./src/contracts/note/note-save-contracts.ts",
+      "import": "./src/contracts/note/note-save-contracts.ts",
+      "default": "./src/contracts/note/note-save-contracts.ts"
     },
     "./note-share-contracts": {
-      "types": "./src/contracts/note-share-contracts.ts",
-      "import": "./src/contracts/note-share-contracts.ts",
-      "default": "./src/contracts/note-share-contracts.ts"
+      "types": "./src/contracts/note/note-share-contracts.ts",
+      "import": "./src/contracts/note/note-share-contracts.ts",
+      "default": "./src/contracts/note/note-share-contracts.ts"
     },
     "./note-shelf-state-contracts": {
-      "types": "./src/contracts/note-shelf-state-contracts.ts",
-      "import": "./src/contracts/note-shelf-state-contracts.ts",
-      "default": "./src/contracts/note-shelf-state-contracts.ts"
+      "types": "./src/contracts/note/note-shelf-state-contracts.ts",
+      "import": "./src/contracts/note/note-shelf-state-contracts.ts",
+      "default": "./src/contracts/note/note-shelf-state-contracts.ts"
     },
     "./note-visibility": {
-      "types": "./src/note-visibility.ts",
-      "import": "./src/note-visibility.ts",
-      "default": "./src/note-visibility.ts"
+      "types": "./src/note/note-visibility.ts",
+      "import": "./src/note/note-visibility.ts",
+      "default": "./src/note/note-visibility.ts"
     },
     "./note-visibility-condition": {
-      "types": "./src/note-visibility-condition.ts",
-      "import": "./src/note-visibility-condition.ts",
-      "default": "./src/note-visibility-condition.ts"
+      "types": "./src/note/note-visibility-condition.ts",
+      "import": "./src/note/note-visibility-condition.ts",
+      "default": "./src/note/note-visibility-condition.ts"
     },
     "./objective-card-groups-v2": {
-      "types": "./src/objective-card-groups-v2.ts",
-      "import": "./src/objective-card-groups-v2.ts",
-      "default": "./src/objective-card-groups-v2.ts"
+      "types": "./src/review/objective-card-groups-v2.ts",
+      "import": "./src/review/objective-card-groups-v2.ts",
+      "default": "./src/review/objective-card-groups-v2.ts"
     },
     "./objective-reuse-rules-v2": {
-      "types": "./src/objective-reuse-rules-v2.ts",
-      "import": "./src/objective-reuse-rules-v2.ts",
-      "default": "./src/objective-reuse-rules-v2.ts"
+      "types": "./src/review/objective-reuse-rules-v2.ts",
+      "import": "./src/review/objective-reuse-rules-v2.ts",
+      "default": "./src/review/objective-reuse-rules-v2.ts"
     },
     "./personal-binding-link-rules-v2": {
-      "types": "./src/personal-binding-link-rules-v2.ts",
-      "import": "./src/personal-binding-link-rules-v2.ts",
-      "default": "./src/personal-binding-link-rules-v2.ts"
+      "types": "./src/review/personal-binding-link-rules-v2.ts",
+      "import": "./src/review/personal-binding-link-rules-v2.ts",
+      "default": "./src/review/personal-binding-link-rules-v2.ts"
     },
     "./personal-relation-decision-rules-v2": {
-      "types": "./src/personal-relation-decision-rules-v2.ts",
-      "import": "./src/personal-relation-decision-rules-v2.ts",
-      "default": "./src/personal-relation-decision-rules-v2.ts"
+      "types": "./src/review/personal-relation-decision-rules-v2.ts",
+      "import": "./src/review/personal-relation-decision-rules-v2.ts",
+      "default": "./src/review/personal-relation-decision-rules-v2.ts"
     },
     "./pet-persona-merge": {
-      "types": "./src/pet-persona-merge.ts",
-      "import": "./src/pet-persona-merge.ts",
-      "default": "./src/pet-persona-merge.ts"
+      "types": "./src/companion/pet-persona-merge.ts",
+      "import": "./src/companion/pet-persona-merge.ts",
+      "default": "./src/companion/pet-persona-merge.ts"
     },
     "./pet-persona-presets": {
-      "types": "./src/pet-persona-presets.ts",
-      "import": "./src/pet-persona-presets.ts",
-      "default": "./src/pet-persona-presets.ts"
+      "types": "./src/companion/pet-persona-presets.ts",
+      "import": "./src/companion/pet-persona-presets.ts",
+      "default": "./src/companion/pet-persona-presets.ts"
     },
     "./pg-text-array": {
-      "types": "./src/pg-text-array.ts",
-      "import": "./src/pg-text-array.ts",
-      "default": "./src/pg-text-array.ts"
+      "types": "./src/platform/pg-text-array.ts",
+      "import": "./src/platform/pg-text-array.ts",
+      "default": "./src/platform/pg-text-array.ts"
     },
     "./platform-config": {
-      "types": "./src/platform-config.ts",
-      "import": "./src/platform-config.ts",
-      "default": "./src/platform-config.ts"
+      "types": "./src/platform/platform-config.ts",
+      "import": "./src/platform/platform-config.ts",
+      "default": "./src/platform/platform-config.ts"
     },
     "./platform-config-node": {
-      "types": "./src/platform-config-node.ts",
-      "import": "./src/platform-config-node.ts",
-      "default": "./src/platform-config-node.ts"
+      "types": "./src/platform/platform-config-node.ts",
+      "import": "./src/platform/platform-config-node.ts",
+      "default": "./src/platform/platform-config-node.ts"
     },
     "./public-json-http": {
-      "types": "./src/public-json-http.ts",
-      "import": "./src/public-json-http.ts",
-      "default": "./src/public-json-http.ts"
+      "types": "./src/platform/public-json-http.ts",
+      "import": "./src/platform/public-json-http.ts",
+      "default": "./src/platform/public-json-http.ts"
     },
     "./quality-evidence-contracts": {
-      "types": "./src/contracts/quality-evidence-contracts.ts",
-      "import": "./src/contracts/quality-evidence-contracts.ts",
-      "default": "./src/contracts/quality-evidence-contracts.ts"
+      "types": "./src/contracts/agent/quality-evidence-contracts.ts",
+      "import": "./src/contracts/agent/quality-evidence-contracts.ts",
+      "default": "./src/contracts/agent/quality-evidence-contracts.ts"
     },
     "./recall-waiting-v2-contracts": {
-      "types": "./src/contracts/recall-waiting-v2-contracts.ts",
-      "import": "./src/contracts/recall-waiting-v2-contracts.ts",
-      "default": "./src/contracts/recall-waiting-v2-contracts.ts"
+      "types": "./src/contracts/learning/recall-waiting-v2-contracts.ts",
+      "import": "./src/contracts/learning/recall-waiting-v2-contracts.ts",
+      "default": "./src/contracts/learning/recall-waiting-v2-contracts.ts"
     },
     "./review-action-copy": {
-      "types": "./src/review-action-copy.ts",
-      "import": "./src/review-action-copy.ts",
-      "default": "./src/review-action-copy.ts"
+      "types": "./src/review/review-action-copy.ts",
+      "import": "./src/review/review-action-copy.ts",
+      "default": "./src/review/review-action-copy.ts"
     },
     "./review-authorization-rules-v2": {
-      "types": "./src/review-authorization-rules-v2.ts",
-      "import": "./src/review-authorization-rules-v2.ts",
-      "default": "./src/review-authorization-rules-v2.ts"
+      "types": "./src/review/review-authorization-rules-v2.ts",
+      "import": "./src/review/review-authorization-rules-v2.ts",
+      "default": "./src/review/review-authorization-rules-v2.ts"
     },
     "./review-consumable-target": {
-      "types": "./src/review-consumable-target.ts",
-      "import": "./src/review-consumable-target.ts",
-      "default": "./src/review-consumable-target.ts"
+      "types": "./src/review/review-consumable-target.ts",
+      "import": "./src/review/review-consumable-target.ts",
+      "default": "./src/review/review-consumable-target.ts"
     },
     "./review-dimension-v2": {
-      "types": "./src/review-dimension-v2.ts",
-      "import": "./src/review-dimension-v2.ts",
-      "default": "./src/review-dimension-v2.ts"
+      "types": "./src/review/review-dimension-v2.ts",
+      "import": "./src/review/review-dimension-v2.ts",
+      "default": "./src/review/review-dimension-v2.ts"
     },
     "./review-manual-date-constraint-v2": {
-      "types": "./src/review-manual-date-constraint-v2.ts",
-      "import": "./src/review-manual-date-constraint-v2.ts",
-      "default": "./src/review-manual-date-constraint-v2.ts"
+      "types": "./src/review/review-manual-date-constraint-v2.ts",
+      "import": "./src/review/review-manual-date-constraint-v2.ts",
+      "default": "./src/review/review-manual-date-constraint-v2.ts"
     },
     "./review-queue-v2-contracts": {
-      "types": "./src/contracts/review-queue-v2-contracts.ts",
-      "import": "./src/contracts/review-queue-v2-contracts.ts",
-      "default": "./src/contracts/review-queue-v2-contracts.ts"
+      "types": "./src/contracts/learning/review-queue-v2-contracts.ts",
+      "import": "./src/contracts/learning/review-queue-v2-contracts.ts",
+      "default": "./src/contracts/learning/review-queue-v2-contracts.ts"
     },
     "./review-reminder-contracts": {
-      "types": "./src/contracts/review-reminder-contracts.ts",
-      "import": "./src/contracts/review-reminder-contracts.ts",
-      "default": "./src/contracts/review-reminder-contracts.ts"
+      "types": "./src/contracts/learning/review-reminder-contracts.ts",
+      "import": "./src/contracts/learning/review-reminder-contracts.ts",
+      "default": "./src/contracts/learning/review-reminder-contracts.ts"
     },
     "./room-projection-contracts": {
-      "types": "./src/contracts/room-projection-contracts.ts",
-      "import": "./src/contracts/room-projection-contracts.ts",
-      "default": "./src/contracts/room-projection-contracts.ts"
+      "types": "./src/contracts/desktop/room-projection-contracts.ts",
+      "import": "./src/contracts/desktop/room-projection-contracts.ts",
+      "default": "./src/contracts/desktop/room-projection-contracts.ts"
     },
     "./scheduling-policy-v2": {
-      "types": "./src/scheduling-policy-v2.ts",
-      "import": "./src/scheduling-policy-v2.ts",
-      "default": "./src/scheduling-policy-v2.ts"
+      "types": "./src/review/scheduling-policy-v2.ts",
+      "import": "./src/review/scheduling-policy-v2.ts",
+      "default": "./src/review/scheduling-policy-v2.ts"
     },
     "./source-image-contracts": {
-      "types": "./src/contracts/source-image-contracts.ts",
-      "import": "./src/contracts/source-image-contracts.ts",
-      "default": "./src/contracts/source-image-contracts.ts"
+      "types": "./src/contracts/desktop/source-image-contracts.ts",
+      "import": "./src/contracts/desktop/source-image-contracts.ts",
+      "default": "./src/contracts/desktop/source-image-contracts.ts"
     },
     "./stats-overview-contracts": {
-      "types": "./src/contracts/stats-overview-contracts.ts",
-      "import": "./src/contracts/stats-overview-contracts.ts",
-      "default": "./src/contracts/stats-overview-contracts.ts"
+      "types": "./src/contracts/desktop/stats-overview-contracts.ts",
+      "import": "./src/contracts/desktop/stats-overview-contracts.ts",
+      "default": "./src/contracts/desktop/stats-overview-contracts.ts"
     },
-    "./storage-config": "./src/storage-config.ts",
+    "./storage-config": "./src/platform/storage-config.ts",
     "./task-router": {
-      "types": "./src/task-router.ts",
-      "import": "./src/task-router.ts",
-      "default": "./src/task-router.ts"
+      "types": "./src/platform/task-router.ts",
+      "import": "./src/platform/task-router.ts",
+      "default": "./src/platform/task-router.ts"
     },
     "./today-batch-options-v2": {
-      "types": "./src/today-batch-options-v2.ts",
-      "import": "./src/today-batch-options-v2.ts",
-      "default": "./src/today-batch-options-v2.ts"
+      "types": "./src/review/today-batch-options-v2.ts",
+      "import": "./src/review/today-batch-options-v2.ts",
+      "default": "./src/review/today-batch-options-v2.ts"
     },
     "./tts-voice-catalog": {
-      "types": "./src/tts-voice-catalog.ts",
-      "import": "./src/tts-voice-catalog.ts",
-      "default": "./src/tts-voice-catalog.ts"
+      "types": "./src/companion/tts-voice-catalog.ts",
+      "import": "./src/companion/tts-voice-catalog.ts",
+      "default": "./src/companion/tts-voice-catalog.ts"
     },
     "./voice-asr-model-contracts": {
-      "types": "./src/contracts/voice-asr-model-contracts.ts",
-      "import": "./src/contracts/voice-asr-model-contracts.ts",
-      "default": "./src/contracts/voice-asr-model-contracts.ts"
+      "types": "./src/contracts/desktop/voice-asr-model-contracts.ts",
+      "import": "./src/contracts/desktop/voice-asr-model-contracts.ts",
+      "default": "./src/contracts/desktop/voice-asr-model-contracts.ts"
     },
     "./voice-expression-tags": {
-      "types": "./src/voice-expression-tags.ts",
-      "import": "./src/voice-expression-tags.ts",
-      "default": "./src/voice-expression-tags.ts"
+      "types": "./src/companion/voice-expression-tags.ts",
+      "import": "./src/companion/voice-expression-tags.ts",
+      "default": "./src/companion/voice-expression-tags.ts"
     },
     "./workspace-transaction": {
-      "types": "./src/workspace-transaction.ts",
-      "import": "./src/workspace-transaction.ts",
-      "default": "./src/workspace-transaction.ts"
+      "types": "./src/platform/workspace-transaction.ts",
+      "import": "./src/platform/workspace-transaction.ts",
+      "default": "./src/platform/workspace-transaction.ts"
     },
-    "./agent-contracts": "./src/contracts/agent-contracts.ts",
-    "./companion-note-authoring-contracts": "./src/contracts/companion-note-authoring-contracts.ts",
-    "./agent-capabilities": "./src/agent-capabilities.ts",
-    "./agent-long-goal-contracts": "./src/contracts/agent-long-goal-contracts.ts",
+    "./agent-contracts": "./src/contracts/agent/agent-contracts.ts",
+    "./companion-note-authoring-contracts": "./src/contracts/companion/companion-note-authoring-contracts.ts",
+    "./agent-capabilities": "./src/agent/agent-capabilities.ts",
+    "./agent-long-goal-contracts": "./src/contracts/agent/agent-long-goal-contracts.ts",
     "./agent-capability-catalog": {
-      "types": "./src/agent-capability-catalog.ts",
-      "import": "./src/agent-capability-catalog.ts",
-      "default": "./src/agent-capability-catalog.ts"
+      "types": "./src/agent/agent-capability-catalog.ts",
+      "import": "./src/agent/agent-capability-catalog.ts",
+      "default": "./src/agent/agent-capability-catalog.ts"
     },
     "./agent-request-contracts": {
-      "types": "./src/contracts/agent-request-contracts.ts",
-      "import": "./src/contracts/agent-request-contracts.ts",
-      "default": "./src/contracts/agent-request-contracts.ts"
+      "types": "./src/contracts/agent/agent-request-contracts.ts",
+      "import": "./src/contracts/agent/agent-request-contracts.ts",
+      "default": "./src/contracts/agent/agent-request-contracts.ts"
     },
     "./object-transfer-contracts": {
-      "types": "./src/contracts/object-transfer-contracts.ts",
-      "import": "./src/contracts/object-transfer-contracts.ts",
-      "default": "./src/contracts/object-transfer-contracts.ts"
+      "types": "./src/contracts/desktop/object-transfer-contracts.ts",
+      "import": "./src/contracts/desktop/object-transfer-contracts.ts",
+      "default": "./src/contracts/desktop/object-transfer-contracts.ts"
     },
     "./note-mind-map-contracts": {
-      "types": "./src/contracts/note-mind-map-contracts.ts",
-      "import": "./src/contracts/note-mind-map-contracts.ts",
-      "default": "./src/contracts/note-mind-map-contracts.ts"
+      "types": "./src/contracts/note/note-mind-map-contracts.ts",
+      "import": "./src/contracts/note/note-mind-map-contracts.ts",
+      "default": "./src/contracts/note/note-mind-map-contracts.ts"
     },
     "./note-mind-map-layout": {
-      "types": "./src/note-mind-map-layout.ts",
-      "import": "./src/note-mind-map-layout.ts",
-      "default": "./src/note-mind-map-layout.ts"
+      "types": "./src/note/note-mind-map-layout.ts",
+      "import": "./src/note/note-mind-map-layout.ts",
+      "default": "./src/note/note-mind-map-layout.ts"
     },
     "./db-schema/note-mind-maps": {
       "types": "./src/db-schema/note-mind-maps.ts",
@@ -741,24 +741,24 @@
       "default": "./src/db-schema/note-mind-maps.ts"
     },
     "./note-companion-transform": {
-      "types": "./src/note-companion-transform.ts",
-      "import": "./src/note-companion-transform.ts",
-      "default": "./src/note-companion-transform.ts"
+      "types": "./src/note/note-companion-transform.ts",
+      "import": "./src/note/note-companion-transform.ts",
+      "default": "./src/note/note-companion-transform.ts"
     },
     "./companion-initiative-contracts": {
-      "types": "./src/contracts/companion-initiative-contracts.ts",
-      "import": "./src/contracts/companion-initiative-contracts.ts",
-      "default": "./src/contracts/companion-initiative-contracts.ts"
+      "types": "./src/contracts/companion/companion-initiative-contracts.ts",
+      "import": "./src/contracts/companion/companion-initiative-contracts.ts",
+      "default": "./src/contracts/companion/companion-initiative-contracts.ts"
     },
     "./companion-default-participation": {
-      "types": "./src/companion-default-participation.ts",
-      "import": "./src/companion-default-participation.ts",
-      "default": "./src/companion-default-participation.ts"
+      "types": "./src/companion/companion-default-participation.ts",
+      "import": "./src/companion/companion-default-participation.ts",
+      "default": "./src/companion/companion-default-participation.ts"
     },
     "./companion-awareness-idle": {
-      "types": "./src/companion-awareness-idle.ts",
-      "import": "./src/companion-awareness-idle.ts",
-      "default": "./src/companion-awareness-idle.ts"
+      "types": "./src/companion/companion-awareness-idle.ts",
+      "import": "./src/companion/companion-awareness-idle.ts",
+      "default": "./src/companion/companion-awareness-idle.ts"
     }
   },
   "dependencies": {

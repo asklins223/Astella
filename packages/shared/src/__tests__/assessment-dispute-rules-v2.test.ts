@@ -21,7 +21,7 @@ import {
   assessmentDisputeSurfaceCopyV2,
   type AssessmentDisputeViewV2,
   type AssessmentCorrectionKindV2,
-} from "../assessment-dispute-rules-v2.ts";
+} from "../review/assessment-dispute-rules-v2.ts";
 
 // ─── 规则一：一次重新检查（§16.22 争议不形成死循环）──────────────────────
 

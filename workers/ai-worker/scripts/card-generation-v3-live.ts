@@ -127,7 +127,7 @@ async function main(): Promise<number> {
     return 3;
   }
 
-  const { processV2OutboxJob } = await import("../src/handlers/card-generation-v2-handler.ts");
+  const { processV2OutboxJob } = await import("../src/handlers/note/card-generation-v2-handler.ts");
   const startedAt = Date.now();
   let jobError: string | null = null;
   try {

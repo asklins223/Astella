@@ -4,8 +4,8 @@ import type { CardGenerationRunFailureV1 } from "@astella/shared/card-generation
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CardGenerationSurface } from "../CardGenerationSurface.tsx";
-import { useRoomStore } from "../../app/room-store.ts";
-import { formatDate } from "../surfaces/notebook/surface-data.tsx";
+import { useRoomStore } from "../../app/home/room-store.ts";
+import { formatDate } from "../surfaces/notebook/shell/surface-data.tsx";
 
 /**
  * 候选审核页的合同：

@@ -4,7 +4,7 @@ import { act, cleanup, render, waitFor } from "@testing-library/react";
 import type { GatewayResultV1, SessionContextV1 } from "@astella/shared/desktop-ipc-contracts";
 import type { NoteBlockProjectionV1 } from "@astella/shared/note-projection-contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { useSurfaceProjection, formatRelative, formatSourceStamp, noteBodyText, parseImageBlock, type SurfaceProjectionOptions } from "../notebook/surface-data.tsx";
+import { useSurfaceProjection, formatRelative, formatSourceStamp, noteBodyText, parseImageBlock, type SurfaceProjectionOptions } from "../notebook/shell/surface-data.tsx";
 
 function session(workspaceEpoch: number): SessionContextV1 {
   return {

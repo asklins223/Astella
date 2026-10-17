@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { clearCompanionTaskWatches, watchCompanionTask } from "../companion-notification-tasks";
-import { useCompanionNotifications } from "../companion-notifications";
-import { useRoomStore } from "../../../app/room-store";
+import { clearCompanionTaskWatches, watchCompanionTask } from "../notify/companion-notification-tasks";
+import { useCompanionNotifications } from "../notify/companion-notifications";
+import { useRoomStore } from "../../../app/home/room-store";
 beforeEach(() => { vi.useFakeTimers(); useRoomStore.setState({ workspaceScopeRevision: 3 }); useCompanionNotifications.setState({ items: [] }); });
 afterEach(() => { clearCompanionTaskWatches(); vi.useRealTimers(); });
 it("hands off a view's task and notifies once when the saved result becomes ready", async () => {

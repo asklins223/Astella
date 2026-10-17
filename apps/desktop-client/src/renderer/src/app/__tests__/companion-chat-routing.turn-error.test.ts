@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { RendererGatewayError } from "../desktop-client";
-import { companionTurnErrorMessage } from "../companion-chat-routing";
+import { RendererGatewayError } from "../client/desktop-client";
+import { companionTurnErrorMessage } from "../companion-session/companion-chat-routing";
 
 const failure = (code: "conflict" | "api_unavailable") => new RendererGatewayError({
   code, retry: "never", safeMessageKey: `error.${code}`,

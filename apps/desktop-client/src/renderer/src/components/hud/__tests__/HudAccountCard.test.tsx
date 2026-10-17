@@ -4,7 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GatewayResultV1, RequestMetaV1 } from "@astella/shared/desktop-ipc-contracts";
 import { HudAccountCard } from "../HudAccountCard.tsx";
-import { useRoomStore } from "../../../app/room-store.ts";
+import { useRoomStore } from "../../../app/home/room-store.ts";
 
 /**
  * 顶栏那个小框要回答两件事：这台设备登录的是谁，以及要换人时怎么退出。

@@ -3,7 +3,7 @@ import { mkdtemp, writeFile, readFile, symlink, stat, utimes, rm, realpath } fro
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DESKTOP_IPC_CHANNELS } from "@astella/shared/desktop-ipc-contracts";
-import { registerNoteWritingChannels, rewriteNoteImagePaths } from "../note-writing-files";
+import { registerNoteWritingChannels, rewriteNoteImagePaths } from "../note-doc/note-writing-files";
 const mocks = vi.hoisted(() => ({ open: vi.fn(), save: vi.fn(), clipboard: vi.fn() }));
 vi.mock("electron", () => ({ app: { getAppPath: () => process.cwd() }, BrowserWindow: class {}, ClipboardItem: class { constructor(readonly data: Record<string, string>) {} }, clipboard: { write: mocks.clipboard }, dialog: { showOpenDialog: mocks.open, showSaveDialog: mocks.save }, nativeImage: {} }));
 const directories: string[] = []; let id = 1000;

@@ -12,15 +12,15 @@ import { appendFileSync, createReadStream, mkdirSync, writeFileSync } from 'node
 import { readFile, realpath, rm, stat } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { Readable } from 'node:stream'
-import { createAssetResponsePlan, mimeTypeForPath } from './asset-response'
-import { VoiceAsrModelStore, voiceAsrModelSources } from './voice-asr-model-store'
-import { CompanionVoiceAudioCache } from './companion-voice-audio-cache'
-import { CompanionMessageAudioCache } from './companion-message-audio-cache'
-import { primeUpdateStateFromCache } from './desktop-update'
+import { createAssetResponsePlan, mimeTypeForPath } from './artifact/asset-response'
+import { VoiceAsrModelStore, voiceAsrModelSources } from './voice/voice-asr-model-store'
+import { CompanionVoiceAudioCache } from './voice/companion-voice-audio-cache'
+import { CompanionMessageAudioCache } from './voice/companion-message-audio-cache'
+import { primeUpdateStateFromCache } from './update/desktop-update'
 import { voiceAsrModelDirectory } from '../shared/voice-asr-model-path'
-import { createVoiceAsrModelResponder } from './voice-asr-model-route'
-import { createAvatarImageStore } from './avatar-image-store'
-import { createNoteImageStore } from './note-image-store'
+import { createVoiceAsrModelResponder } from './voice/voice-asr-model-route'
+import { createAvatarImageStore } from './store/avatar-image-store'
+import { createNoteImageStore } from './note-doc/note-image-store'
 import { VOICE_ASR_MODEL_ROUTE_PREFIX } from '@astella/shared/voice-asr-model-contracts'
 import { ARTIFACT_HOST, isArtifactFrameUrl, isArtifactId } from '../shared/artifact-frame'
 import {
@@ -30,9 +30,9 @@ import {
   classifyFramePolicySubject,
   isAllowedSubFrameNavigation,
   rejectAllContentSecurityPolicy
-} from './artifact-surface'
-import { nativeWindowChrome, titleBarOverlayForTheme } from './window-chrome'
-import { installWindowZoomShortcuts } from './window-zoom'
+} from './artifact/artifact-surface'
+import { nativeWindowChrome, titleBarOverlayForTheme } from './window/window-chrome'
+import { installWindowZoomShortcuts } from './window/window-zoom'
 import {
   WINDOW_STATE_CHANNEL,
   WINDOW_STATE_SNAPSHOT_CHANNEL,
@@ -54,13 +54,13 @@ import {
   HOME_WINDOW_INITIAL_CONTENT_SIZE,
   HOME_WINDOW_MINIMUM_SIZE
 } from '../shared/window-geometry'
-import { registerM1DesktopIpc } from './desktop-ipc'
-import { desktopDeploymentEnvironment } from './desktop-deployment'
-import { FilePendingReturnMarkerStore } from './pending-return-marker-store'
-import { FileNoteDocCacheStore } from './note-doc-cache-store'
-import { guardProcessOutputStreams } from './output-stream-guard'
-import { configureDesktopAppIdentity } from './desktop-app-identity'
-import { DesktopRenderingPreferences, registerDesktopRenderingHealthMonitor, registerDesktopRenderingIpc } from './desktop-rendering'
+import { registerM1DesktopIpc } from './ipc/desktop-ipc'
+import { desktopDeploymentEnvironment } from './window/desktop-deployment'
+import { FilePendingReturnMarkerStore } from './store/pending-return-marker-store'
+import { FileNoteDocCacheStore } from './note-doc/note-doc-cache-store'
+import { guardProcessOutputStreams } from './artifact/output-stream-guard'
+import { configureDesktopAppIdentity } from './window/desktop-app-identity'
+import { DesktopRenderingPreferences, registerDesktopRenderingHealthMonitor, registerDesktopRenderingIpc } from './window/desktop-rendering'
 import { DESKTOP_RENDERING_STATE_CHANNEL } from '../shared/desktop-rendering'
 
 // 主进程的第一件事：stdout/stderr 的写失败（终端关掉后的 EIO/EPIPE）不能再升级成

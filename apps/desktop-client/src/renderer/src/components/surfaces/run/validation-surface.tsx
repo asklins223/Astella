@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DesktopRouteV1 } from "@astella/shared/desktop-ipc-contracts";
-import type { RoomIntent } from "../../../app/room-machine";
-import { useRoomStore } from "../../../app/room-store";
-import { createRequestMeta, unwrapGatewayResult } from "../../../app/desktop-client";
+import type { RoomIntent } from "../../../app/home/room-machine";
+import { useRoomStore } from "../../../app/home/room-store";
+import { createRequestMeta, unwrapGatewayResult } from "../../../app/client/desktop-client";
 import { LearningRunSurface } from "./learning-run-surface";
 import { routeForReturnTarget } from "./learning-run-copy";
 

@@ -25,7 +25,7 @@ const source = (relative: string) => readFileSync(path.resolve(import.meta.dirna
 
 describe("派给别的设备那一句，桌面照样接", () => {
   it("认领不再按设备会话严格相等把人静音，但这句话确实被接走", () => {
-    const text = source("../CompanionPresence.tsx");
+    const text = source("../bubble/CompanionPresence.tsx");
     expect(text).not.toMatch(/deviceSessionId\s*[!=]==\s*identity\.deviceSessionId/);
     expect(text).toMatch(/await receiveInitiative\(delivery\)/);
   });
@@ -33,7 +33,7 @@ describe("派给别的设备那一句，桌面照样接", () => {
 
 describe("「闲下来」按停止输入＋页面稳定判", () => {
   it("裸的鼠标移动不再清零——飘一下不算他还在做事", () => {
-    const text = source("../../../app/use-companion-awareness.ts");
+    const text = source("../../../app/companion-pages/use-companion-awareness.ts");
     expect(text).not.toMatch(/addEventListener\("pointermove"/);
     expect(text).toMatch(/addEventListener\("pointerdown", activity/);
     expect(text).toMatch(/addEventListener\("wheel", activity/);

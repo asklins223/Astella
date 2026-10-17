@@ -2,13 +2,13 @@
 import { act, cleanup, render, waitFor } from "@testing-library/react";
 import type { CompanionOnboardingStateV1 } from "@astella/shared/companion-shell-contracts";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { useRoomStore } from "../../../../app/room-store";
+import { useRoomStore } from "../../../../app/home/room-store";
 import { AI_CONSENT_VERSION } from "@astella/shared/desktop-ipc-contracts";
-import { notifyCompanion } from "../../companion-notifications";
+import { notifyCompanion } from "../../notify/companion-notifications";
 import { useCompanionGuide, type CompanionGuideController } from "../use-companion-guide";
 
 const mockNotify = vi.mocked(notifyCompanion);
-vi.mock("../../companion-notifications", () => ({
+vi.mock("../../notify/companion-notifications", () => ({
   notifyCompanion: vi.fn(),
   useCompanionNotifications: Object.assign(() => null, { getState: () => ({ remove: vi.fn() }) }),
 }));

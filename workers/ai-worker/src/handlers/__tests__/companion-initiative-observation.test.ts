@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { companionInitiativeAttentionIntent, companionInitiativePushKind, initiativeCadenceApplies, renderCompanionInitiativeObservation } from "../companion-initiative-observation.ts";
-import { companionResponseStrategy } from "../companion-response-strategy.ts";
+import { companionInitiativeAttentionIntent, companionInitiativePushKind, initiativeCadenceApplies, renderCompanionInitiativeObservation } from "../proactive/companion-initiative-observation.ts";
+import { companionResponseStrategy } from "../turn/companion-response-strategy.ts";
 import type { CompanionInitiativeInputV1 } from "@astella/shared/companion-initiative-contracts";
 
 function initiative(over: Partial<CompanionInitiativeInputV1> = {}): CompanionInitiativeInputV1 {

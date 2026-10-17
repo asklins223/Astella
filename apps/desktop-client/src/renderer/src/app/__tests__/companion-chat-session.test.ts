@@ -4,15 +4,15 @@ import type { CompanionMessageV1 } from "@astella/shared/companion-conversation-
 import type { CompanionAgentRouteEventV1 } from "@astella/shared/companion-chat-desktop-contracts";
 import type { DesktopRouteV1 } from "@astella/shared/desktop-ipc-contracts";
 import { allowedMainRouteV2Schema } from "@astella/shared/companion-bridge-contracts";
-import type { RoomIntent } from "../room-machine.ts";
-import { useRoomStore } from "../room-store.ts";
+import type { RoomIntent } from "../home/room-machine.ts";
+import { useRoomStore } from "../home/room-store.ts";
 import {
   applyRouteToRoom,
   desktopRouteFromAgentRoute,
   navChipsStillOutsideMessages,
   readCompleteCompanionHistory,
   type CompanionNavChip,
-} from "../companion-chat-session.tsx";
+} from "../companion-session/companion-chat-session.tsx";
 
 describe("完整历史搜索池", () => {
   it("翻过 1200 条旧上限直到开头，仍能找到最早的消息", async () => {

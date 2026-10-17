@@ -8,7 +8,7 @@
  */
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import { NOTE_TASK_SLOW_MS, NOTE_TASK_STALL_MS, TaskSlip } from "../task-slip";
+import { NOTE_TASK_SLOW_MS, NOTE_TASK_STALL_MS, TaskSlip } from "../generation/task-slip.tsx";
 
 const START = "2026-10-16T11:32:06.000Z";
 

@@ -3,7 +3,7 @@ import { StrictMode, useRef } from "react";
 import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useHudPopoverMotion, type HudMenuKind } from "../use-hud-popover-motion";
-import { useRoomStore } from "../../../app/room-store";
+import { useRoomStore } from "../../../app/home/room-store";
 
 let now = 0, id = 0;
 const frames = new Map<number, FrameRequestCallback>();

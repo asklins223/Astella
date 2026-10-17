@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import { CompanionVoiceSegmenter } from "../companion-voice-segmenter";
+import { CompanionVoiceSegmenter } from "../voice/companion-voice-segmenter";
 
 const RATE = 16_000;
 /** 一帧 50ms（800 样本），与录音器 worklet 的节拍同一量纲。 */

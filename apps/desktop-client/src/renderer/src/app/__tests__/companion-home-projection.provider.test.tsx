@@ -13,14 +13,14 @@ import {
 } from "@astella/shared/companion-home-contracts";
 import type { RoomProjectionV1 } from "@astella/shared/room-projection-contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useRoomStore } from "../room-store.ts";
-import { HomeProjectionProvider } from "../home-projection.tsx";
+import { useRoomStore } from "../home/room-store.ts";
+import { HomeProjectionProvider } from "../home/home-projection.tsx";
 import {
   CompanionHomeProjectionProvider,
   useCompanionHomeProjection,
-} from "../companion-home-projection.tsx";
-import { useCompanionNotificationSources } from "../../components/companion/use-companion-notification-sources.ts";
-import { useCompanionNotifications } from "../../components/companion/companion-notifications.ts";
+} from "../companion-pages/companion-home-projection.tsx";
+import { useCompanionNotificationSources } from "../../components/companion/notify/use-companion-notification-sources.ts";
+import { useCompanionNotifications } from "../../components/companion/notify/companion-notifications.ts";
 
 type Deferred<T> = {
   readonly promise: Promise<T>;

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, fireEvent, render, screen, cleanup } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useCompanionTransient } from "../use-companion-transient";
+import { useCompanionTransient } from "../notify/use-companion-transient";
 
 function Paper({ identity, hold = 1_000, paused = false }: { identity: string | null; hold?: number; paused?: boolean }) {
   const life = useCompanionTransient(identity, hold, paused);

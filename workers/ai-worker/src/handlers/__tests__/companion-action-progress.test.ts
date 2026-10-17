@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AgentTurnInterpretationV1 } from "@astella/shared/agent-contracts";
-import { companionActionProgressLabel } from "../companion-action-progress.ts";
+import { companionActionProgressLabel } from "../agent/companion-action-progress.ts";
 
 type ProgressInput = Pick<AgentTurnInterpretationV1, "toolUse" | "ambiguities"> & {
   readonly candidateOperations: readonly string[];

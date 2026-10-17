@@ -2,18 +2,18 @@
 import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi, type Mock, type MockInstance } from "vitest";
 
-vi.mock("../../../app/home-projection", () => ({ useHomeProjectionInvalidation: () => ({ workspaceEpoch: 1 }) }));
-vi.mock("../../../app/companion-voice-playback", () => ({
+vi.mock("../../../app/home/home-projection", () => ({ useHomeProjectionInvalidation: () => ({ workspaceEpoch: 1 }) }));
+vi.mock("../../../app/companion-session/companion-voice-playback", () => ({
   isCompanionSpeechActive: vi.fn(() => false),
   setCompanionVoiceHost: vi.fn(),
   stopCompanionSpeech: vi.fn(),
 }));
 
 import { HomeV2AudioController } from "../HomeV2AudioController";
-import { isCompanionSpeechActive, setCompanionVoiceHost } from "../../../app/companion-voice-playback";
-import { useRoomStore } from "../../../app/room-store";
-import { UNKNOWN_UPDATE_STATE, useUpdateStatus } from "../../../app/update-status";
-import { holdCompanionMicrophone } from "../../companion/companion-notification-voice";
+import { isCompanionSpeechActive, setCompanionVoiceHost } from "../../../app/companion-session/companion-voice-playback";
+import { useRoomStore } from "../../../app/home/room-store";
+import { UNKNOWN_UPDATE_STATE, useUpdateStatus } from "../../../app/gate/update-status";
+import { holdCompanionMicrophone } from "../../companion/voice/companion-notification-voice";
 
 let warm: () => void;
 let construct: Mock<() => void>;
@@ -109,7 +109,7 @@ it("prepares foreground startup speech in idle time without a gesture or startin
 it.each([false, true])("plays a server-issued startup greeting without a gesture (idle prepared: %s)", async prepared => {
   const speakSegment = vi.fn(async () => ({ version: 1, ok: true, data: { audioBase64: "AA==" } }));
   Object.defineProperty(window, "astella", { configurable: true, value: { companion: { voice: { speakSegment } } } });
-  const playback = await vi.importActual<typeof import("../../../app/companion-voice-playback")>("../../../app/companion-voice-playback");
+  const playback = await vi.importActual<typeof import("../../../app/companion-session/companion-voice-playback")>("../../../app/companion-session/companion-voice-playback");
   const view = render(<HomeV2AudioController />);
   try {
     if (prepared) await act(async () => { warm(); });

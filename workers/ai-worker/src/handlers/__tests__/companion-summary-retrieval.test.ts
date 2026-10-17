@@ -8,7 +8,7 @@ import {
   MAX_PAST_CONVERSATION_HITS,
   MAX_PAST_CONVERSATION_MESSAGES,
   type PastConversationScope,
-} from "../companion-summary-retrieval.ts";
+} from "../context/companion-summary-retrieval.ts";
 
 /**
  * 方案 44 §3.2／§8.3：跨会话找回。

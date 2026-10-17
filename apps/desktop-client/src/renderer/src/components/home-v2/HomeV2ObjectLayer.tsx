@@ -11,9 +11,9 @@ import {
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useHomeProjection } from "../../app/home-projection";
-import { homePresentation } from "../../app/home-presentation";
-import { useRoomStore } from "../../app/room-store";
+import { useHomeProjection } from "../../app/home/home-projection";
+import { homePresentation } from "../../app/home/home-presentation";
+import { useRoomStore } from "../../app/home/room-store";
 import { resolveSceneMotionMode } from "../../scene/scene-motion";
 import { useHomeV2 } from "./HomeV2Experience";
 import { useHudPage } from "../hud/use-hud-page";

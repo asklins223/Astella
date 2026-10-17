@@ -8,7 +8,7 @@ import {
   companionBubblePreviewText,
   companionBubbleText,
   estimateCompanionReadDurationMs,
-} from "../companion-bubble-reveal.ts";
+} from "../bubble/companion-bubble-reveal.ts";
 
 describe("companionBubbleText", () => {
   it("shows nothing before the first character lands", () => {

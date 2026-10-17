@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { CompanionMessageAudioButton, COMPANION_AUDIO_CACHE_CHANGED } from "../CompanionMessageAudioButton";
-import { CompanionChatRecordArticle } from "../CompanionChatRecord";
+import { CompanionMessageAudioButton, COMPANION_AUDIO_CACHE_CHANGED } from "../voice/CompanionMessageAudioButton";
+import { CompanionChatRecordArticle } from "../hud/CompanionChatRecord";
 import { DialoguePanel } from "../../surfaces/companion/companion-dialogue-panel";
 import { interactionSession } from "./companion-interaction-fixtures";
-import { resetCompanionVoicePlayback, setCompanionVoiceHost } from "../../../app/companion-voice-playback";
-import { useRoomStore } from "../../../app/room-store";
+import { resetCompanionVoicePlayback, setCompanionVoiceHost } from "../../../app/companion-session/companion-voice-playback";
+import { useRoomStore } from "../../../app/home/room-store";
 import type { CompanionMessageV1 } from "@astella/shared/companion-conversation-contracts";
 const runId = "11111111-1111-4111-8111-111111111111";
 const ok = <T,>(data: T) => ({ ok: true as const, data, workspaceEpoch: 1, requestId: "audio-test" });

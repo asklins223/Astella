@@ -21,7 +21,7 @@
  */
 import { useCallback,useEffect,useRef,useState } from "react";
 
-import { createRequestMeta,gatewayErrorMessage,unwrapGatewayResult } from "../../../app/desktop-client";
+import { createRequestMeta,gatewayErrorMessage,unwrapGatewayResult } from "../../../app/client/desktop-client";
 
 export type DiaryWriteAction = "hide" | "unhide" | "delete";
 

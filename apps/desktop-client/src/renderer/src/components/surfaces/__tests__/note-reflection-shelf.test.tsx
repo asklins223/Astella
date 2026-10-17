@@ -2,8 +2,8 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
-import { NoteReflectionShelf } from "../notebook/note-reflection-shelf.tsx";
-import { appendReflectionToDocument, PendingReflectionAppendError, reflectionDocumentLines, stageReflectionAppend } from "../notebook/note-reflection-document.ts";
+import { NoteReflectionShelf } from "../notebook/reading/note-reflection-shelf.tsx";
+import { appendReflectionToDocument, PendingReflectionAppendError, reflectionDocumentLines, stageReflectionAppend } from "../notebook/reading/note-reflection-document.ts";
 import type { ReflectionSourceV1 } from "@astella/shared/note-learning-reflection-contracts";
 
 const source: ReflectionSourceV1 = { ref: { kind: "teaching", id: "11111111-1111-4111-8111-111111111111" },

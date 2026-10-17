@@ -15,7 +15,7 @@ import {
   type CandidateEvidenceBindingPlanV2,
   type EvidenceEligibilityStateV2,
   type EvidenceBindingV2,
-} from "../contracts/card-quality-v2-contracts.ts";
+} from "../contracts/learning/card-quality-v2-contracts.ts";
 
 const FAKE_HASH = "0".repeat(64);
 const FAKE_UUID = "00000000-0000-4000-8000-000000000001";

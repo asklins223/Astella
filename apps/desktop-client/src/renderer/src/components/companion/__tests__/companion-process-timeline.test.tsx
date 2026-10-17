@@ -2,12 +2,12 @@
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CompanionMessageV1 } from "@astella/shared/companion-conversation-contracts";
-import { buildCompanionRunTraces, mergeCompanionRunTraces, recordCompanionRunEvent, type CompanionRunTrace } from "../../../app/companion-agent-nodes";
-import { companionProcessRows } from "../../../app/companion-process-timeline";
-import { CompanionJournalTimeline } from "../CompanionJournalTimeline";
+import { buildCompanionRunTraces, mergeCompanionRunTraces, recordCompanionRunEvent, type CompanionRunTrace } from "../../../app/companion-session/companion-agent-nodes";
+import { companionProcessRows } from "../../../app/companion-session/companion-process-timeline";
+import { CompanionJournalTimeline } from "../journal/CompanionJournalTimeline";
 import { interactionSession } from "./companion-interaction-fixtures";
 
-vi.mock("../CompanionMessageAudioButton", () => ({ CompanionMessageAudioButton: () => null }));
+vi.mock("../voice/CompanionMessageAudioButton", () => ({ CompanionMessageAudioButton: () => null }));
 afterEach(cleanup);
 const runId = "11111111-1111-4111-8111-111111111111";
 const messageId = "22222222-2222-4222-8222-222222222222";

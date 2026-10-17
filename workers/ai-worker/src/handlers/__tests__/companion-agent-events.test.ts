@@ -4,7 +4,7 @@ import type { AiCheckpointKey } from "@astella/shared/ai-task-kernel";
 import {
   decodeCompanionAgentStepCheckpoint,
   resolveAgentStepCountForResume,
-} from "../companion-agent-events.ts";
+} from "../agent/companion-agent-events.ts";
 
 const key: AiCheckpointKey = {
   taskId: "companion_agent_model_step",

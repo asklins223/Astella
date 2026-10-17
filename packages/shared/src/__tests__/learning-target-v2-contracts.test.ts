@@ -4,7 +4,7 @@
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { computeLearningTargetSnapshotHashV2 } from "../card-generation-v2-hashing.ts";
+import { computeLearningTargetSnapshotHashV2 } from "../review/card-generation-v2-hashing.ts";
 import {
   learningRunOriginV2Schema,
   learningRunReturnTargetV2Schema,
@@ -16,7 +16,7 @@ import {
   type LearningTargetSnapshotV2,
   type LearningRunOriginV2,
   type LearningRunTargetPublicV2,
-} from "../contracts/learning-target-v2-contracts.ts";
+} from "../contracts/learning/learning-target-v2-contracts.ts";
 
 const FAKE_HASH = "0".repeat(64);
 const FAKE_UUID = "00000000-0000-4000-8000-000000000001";

@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { useCompanionHistoryScroll } from "../use-companion-history-scroll";
+import { useCompanionHistoryScroll } from "../hud/use-companion-history-scroll";
 import { interactionSession } from "./companion-interaction-fixtures";
 
 const loadOlder = vi.fn(async () => undefined);

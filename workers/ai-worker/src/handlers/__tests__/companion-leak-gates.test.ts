@@ -12,7 +12,7 @@ import { COMPANION_LEAK_GATES_V1, COMPANION_LEAK_GATE_IDS_V1, companionLeakGateV
 
 /** 代号 → worker 里的真文件。shared 那张表只写代号，路径住在这里。 */
 const MODULE_FILES: Record<string, string> = {
-  "companion-dialogue-content": "../companion-dialogue-content.ts",
+  "companion-dialogue-content": "../turn/companion-dialogue-content.ts",
 };
 
 test("每一道闸的判据都是那个模块真导出的函数", async () => {

@@ -5,7 +5,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { learningRunPublicSnapshotV2Schema } from "@astella/shared/learning-run-v2-contracts";
 import { LearningRunSurface } from "../run/learning-run-surface.tsx";
-import { useRoomStore } from "../../../app/room-store.ts";
+import { useRoomStore } from "../../../app/home/room-store.ts";
 
 /**
  * 作答界面的动作区回归（2026-09-20 实走复盘 #11 / #12）。

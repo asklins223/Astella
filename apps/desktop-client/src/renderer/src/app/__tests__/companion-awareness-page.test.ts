@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { companionAwarenessPageState } from "../companion-awareness-page";
+import { companionAwarenessPageState } from "../companion-pages/companion-awareness-page";
 
 const base = { hudPage: "home" as const, activeNoteId: null, activeNoteVersionId: null,
   activeSourceId: null, activeRunId: null, pageReadableView: null };

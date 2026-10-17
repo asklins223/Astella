@@ -22,7 +22,7 @@ process.env.DATABASE_URL_WORKER ??= testDatabaseUrl("DATABASE_URL_WORKER");
 const sql = postgres(API_CONN, { max: 2 });
 
 const { findFormalAnswerTarget } = await import("../lib/formal-answer-signal.ts");
-const { recordCompanionAnswerExposure } = await import("../handlers/companion-answer-exposure.ts");
+const { recordCompanionAnswerExposure } = await import("../handlers/agent/companion-answer-exposure.ts");
 const { seedFormalAnswerRun } = await import("./helpers/formal-answer-fixture.ts");
 const { withWorkerWorkspaceTransaction } = await import("../db.ts");
 

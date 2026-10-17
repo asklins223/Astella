@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { companionAgentBudgetSnapshotV1Schema, COMPANION_AGENT_DEADLINE_MS } from "../contracts/companion-agent-contracts.ts";
+import { companionAgentBudgetSnapshotV1Schema, COMPANION_AGENT_DEADLINE_MS } from "../contracts/companion/companion-agent-contracts.ts";
 
 test("raising the current execution budget keeps historical receipts readable", () => {
   for (const deadlineMs of [120000, COMPANION_AGENT_DEADLINE_MS]) {

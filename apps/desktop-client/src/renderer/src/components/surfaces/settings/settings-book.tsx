@@ -1,8 +1,8 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Check, CircleAlert, CircleHelp, ChevronDown, House, Leaf, Settings2, ShieldCheck, Sparkles, Users, Archive, X } from "lucide-react";
-import { useRoomStore } from "../../../app/room-store";
+import { useRoomStore } from "../../../app/home/room-store";
 import { HudPage } from "../../hud/HudPage";
-import { SurfaceDataState } from "../notebook/surface-data";
+import { SurfaceDataState } from "../notebook/shell/surface-data.tsx";
 import { useSettingsTactile } from "./use-settings-tactile";
 
 export const SETTINGS_SECTIONS = [

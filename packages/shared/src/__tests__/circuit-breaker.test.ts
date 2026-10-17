@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { CircuitBreaker, CircuitOpenError } from "../circuit-breaker.ts";
+import { CircuitBreaker, CircuitOpenError } from "../platform/circuit-breaker.ts";
 
 /** 手动推进的时钟：熔断的时间行为必须在测试里可复现，不能靠真等。 */
 function fakeClock(start = 1_000) {

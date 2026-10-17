@@ -66,7 +66,7 @@ describe("local speech recognition routing", () => {
 
   it("refuses to recognise without an installed model and never starts the engine", async () => {
     const call = stubRuntime("absent");
-    const { transcribeRecording, isAsrModelMissing } = await import("../local-speech-recognition");
+    const { transcribeRecording, isAsrModelMissing } = await import("../voice/local-speech-recognition");
     const started = Date.now();
 
     await expect(transcribeRecording(args())).rejects.toSatisfy((error: unknown) => isAsrModelMissing(error));
@@ -78,7 +78,7 @@ describe("local speech recognition routing", () => {
   it("treats a half-finished or failed download as \"not installed\" too", async () => {
     for (const status of ["downloading", "error"] as const) {
       const call = stubRuntime(status);
-      const { transcribeRecording, isAsrModelMissing } = await import("../local-speech-recognition");
+      const { transcribeRecording, isAsrModelMissing } = await import("../voice/local-speech-recognition");
       await expect(transcribeRecording(args())).rejects.toSatisfy((error: unknown) => isAsrModelMissing(error));
       expect(call).not.toHaveBeenCalled();
     }
@@ -90,7 +90,7 @@ describe("local speech recognition routing", () => {
       seen = input.request;
       return { ok: true, data: { text: "本机引擎认出来的字" }, meta: {} };
     });
-    const { transcribeRecording } = await import("../local-speech-recognition");
+    const { transcribeRecording } = await import("../voice/local-speech-recognition");
 
     const result = await transcribeRecording({
       sampleRate: 16_000,
@@ -116,7 +116,7 @@ describe("local speech recognition routing", () => {
       },
       meta: {},
     }));
-    const { transcribeRecording } = await import("../local-speech-recognition");
+    const { transcribeRecording } = await import("../voice/local-speech-recognition");
 
     const failure = await transcribeRecording(args()).catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(Error);
@@ -125,7 +125,7 @@ describe("local speech recognition routing", () => {
 
   it("isLocalAsrReady only reports whether the model is installed", async () => {
     const call = stubRuntime("ready");
-    const { isLocalAsrReady } = await import("../local-speech-recognition");
+    const { isLocalAsrReady } = await import("../voice/local-speech-recognition");
     await expect(isLocalAsrReady()).resolves.toBe(true);
     expect(call).not.toHaveBeenCalled();
   });

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { createRequestMeta, unwrapGatewayResult } from "../../../app/desktop-client";
+import { createRequestMeta, unwrapGatewayResult } from "../../../app/client/desktop-client";
 
 /**
  * 今日复习那三颗动作（39d W7-4 刀十三；§12 表「今日复习」行）。

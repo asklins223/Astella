@@ -25,7 +25,7 @@ import {
   selectCompanionReplayWindow,
   type CompanionContextHandoffInputV1,
   type CompanionRecentHistoryMessage,
-} from "../companion-context-handoff.ts";
+} from "../context/companion-context-handoff.ts";
 
 const msg = (role: "user" | "assistant", text: string, seq?: string): CompanionRecentHistoryMessage => ({
   role,

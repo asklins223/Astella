@@ -8,7 +8,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 const runtime = vi.hoisted(() => ({ exe: '', userData: '', spawn: vi.fn() }))
 vi.mock('electron', () => ({ app: { getPath: (name: string) => name === 'exe' ? runtime.exe : runtime.userData, getVersion: () => '1.0.0' } }))
 vi.mock('node:child_process', () => ({ spawn: runtime.spawn }))
-import { prepareWindowsInstaller } from '../windows-update-install'
+import { prepareWindowsInstaller } from '../update/windows-update-install'
 
 const roots: string[] = []
 afterEach(() => { roots.splice(0).forEach(root => rmSync(root, { recursive: true, force: true })); runtime.spawn.mockReset() })

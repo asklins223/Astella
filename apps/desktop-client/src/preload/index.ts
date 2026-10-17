@@ -17,6 +17,10 @@ import {
   type GatewayEventV1
 } from '@astella/shared/desktop-ipc-contracts'
 import {
+  companionVoiceSpeakChunkEventV1Schema,
+  type CompanionVoiceSpeakChunkEventV1,
+} from '@astella/shared/companion-voice-contracts'
+import {
   WINDOW_STATE_CHANNEL,
   WINDOW_STATE_SNAPSHOT_CHANNEL,
   isWindowStateSnapshot,
@@ -294,6 +298,29 @@ const desktopApi: AstellaDesktopApiM2 = {
       cachedRead: (input) => invoke(DESKTOP_IPC_CHANNELS.companionVoiceCachedRead, input),
       speak: (input) => invoke(DESKTOP_IPC_CHANNELS.companionVoiceSpeak, input),
       speakSegment: (input) => invoke(DESKTOP_IPC_CHANNELS.companionVoiceSpeakSegment, input),
+      /**
+       * 同一段语音的**流式**取法（2026-10-17）：调用先返回接收凭据，字节随后
+       * 通过 `onSegmentChunk` 一条条到。
+       *
+       * 分成"调用 + 订阅"两半是因为 invoke 的应答天然是"一次给完整结果"；
+       * 要边到边用就只能走事件通道。两条路共用同一套引用与校验，缓存也都由
+       * 主进程负责，渲染层只是更早拿到字节。
+       */
+      speakSegmentStream: (input) => invoke(DESKTOP_IPC_CHANNELS.companionVoiceSpeakSegmentStream, input),
+      onSegmentChunk: (listener) => {
+        let active = true
+        const handle = (_event: Electron.IpcRendererEvent, raw: unknown): void => {
+          if (!active) return
+          const parsed = companionVoiceSpeakChunkEventV1Schema.safeParse(raw)
+          if (!parsed.success) return
+          listener(parsed.data as CompanionVoiceSpeakChunkEventV1)
+        }
+        ipcRenderer.on(DESKTOP_IPC_CHANNELS.companionVoiceSpeakSegmentChunk, handle)
+        return () => {
+          active = false
+          ipcRenderer.removeListener(DESKTOP_IPC_CHANNELS.companionVoiceSpeakSegmentChunk, handle)
+        }
+      },
       // 一段音频播没播成（0247）：只有渲染进程知道，所以由它回报。
       reportPlaybackOutcome: (input) => invoke(DESKTOP_IPC_CHANNELS.companionVoicePlaybackOutcome, input),
       /**

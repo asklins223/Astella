@@ -1,9 +1,9 @@
 import type { CompanionMemoryItemV1 } from "@astella/shared/companion-memory-desktop-contracts";
 import { ArrowLeft,RotateCcw } from "lucide-react";
 import { useEffect,useRef,useState } from "react";
-import { gatewayErrorMessage,unwrapGatewayResult } from "../../../app/desktop-client";
+import { gatewayErrorMessage,unwrapGatewayResult } from "../../../app/client/desktop-client";
 import { usePageReadableView } from "../../hud/use-page-readable-view";
-import { formatDate } from "../notebook/surface-data";
+import { formatDate } from "../notebook/shell/surface-data.tsx";
 import { MEMORY_KIND_LABEL } from "./companion-center-model";
 import { CenterFeedback,SectionState } from "./companion-center-primitives";
 import { publishCompanionRecordsChanged,useCompanionResource } from "./use-companion-resource";

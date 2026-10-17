@@ -4,7 +4,7 @@ import {
   safeErrorMessage,
   safeErrorSerializer,
   sanitizeOperationalError,
-} from "../safe-error.ts";
+} from "../platform/safe-error.ts";
 
 /**
  * 在指定 NODE_ENV 下执行，并**原样恢复**。

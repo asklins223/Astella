@@ -3,7 +3,7 @@ import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { noteDetailV1Schema } from "@astella/shared/note-projection-contracts";
 import { noteRecallRecordV1Schema, type NoteRecallRecordV1 } from "@astella/shared/note-recall-contracts";
-import { useNotebookRecallState } from "../use-notebook-recall-state";
+import { useNotebookRecallState } from "../learning/use-notebook-recall-state.ts";
 
 const noteId = "11111111-4111-4111-8111-111111111111";
 const versionId = "22222222-4222-4222-8222-222222222222";

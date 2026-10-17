@@ -17,14 +17,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // 2026-09-30：伴星这一族已变成**自由函数**（`desktop-gateway-ns-companion.ts`），
 // `desktop-ipc.ts` 静态引用那个模块——**在网关实例上挂的桩不再被调用**。
 const companionStubs: Record<string, ReturnType<typeof vi.fn<(...args: never[]) => unknown>>> = {};
-vi.mock("../desktop-gateway-ns-companion", async (importOriginal) => {
+vi.mock("../gateway/desktop-gateway-ns-companion", async (importOriginal) => {
   // **部分 mock**（见 `ns-companion-stubs.ts` 头）：这个模块有 52 个导出，
   // 枚举式工厂只认清单里写出来的那几个——**其余在运行时抛**
   // `No "xxx" export is defined on the mock`，再被 `mapFailure` 吞成
   // `safe_internal_error`，症状是「桩一次都没被调用」。**沿用本文件的 `companionStubs`。**
   //
   // ⚠️ 工厂里不能引用顶层 `import`（vi.mock 被提升）；`importOriginal()` 不能并发。
-  const real = await importOriginal<typeof import("../desktop-gateway-ns-companion")>();
+  const real = await importOriginal<typeof import("../gateway/desktop-gateway-ns-companion")>();
   const { companionModuleMock } = await import("./ns-companion-stubs");
   return companionModuleMock(real, companionStubs);
 });
@@ -36,7 +36,7 @@ import {
   type RequestMetaV1,
 } from "@astella/shared/desktop-ipc-contracts";
 import { companionOverviewSchema } from "@astella/shared/companion-shell-contracts";
-import type { DesktopGateway } from "../desktop-gateway";
+import type { DesktopGateway } from "../gateway/desktop-gateway";
 
 type InvokeHandler = (
   event: { readonly sender: unknown; readonly senderFrame?: { readonly url: string } },
@@ -68,13 +68,13 @@ vi.mock("electron", () => ({
 }));
 
 import { registerAuthStub } from "./ns-auth-stubs";
-import { registerM1DesktopIpc } from "../desktop-ipc";
+import { registerM1DesktopIpc } from "../ipc/desktop-ipc";
 
 // 2026-09-30：`getSession` 已变成自由函数（`desktop-gateway-ns-auth.ts`），
 // `desktop-ipc.ts` 静态引用那个模块——**实例上挂的桩不再被调用**。
 // 这个文件原来没有 `getSession` 桩（它走的是真实现，于是会去发请求并失败）。
 // 现在必须显式登记一个，否则 `authGetState` 那条链会走到真的网络上去。
-vi.mock("../desktop-gateway-ns-auth", async () => {
+vi.mock("../gateway/desktop-gateway-ns-auth", async () => {
   const { authModuleMock } = await import("./ns-auth-stubs");
   return authModuleMock();
 });
@@ -248,7 +248,7 @@ async function setup(options: { fakeTimers?: boolean; disabledCompanion?: boolea
     },
   }) as unknown as DesktopGateway;
 
-  const { registerM1DesktopIpc: register } = await import("../desktop-ipc");
+  const { registerM1DesktopIpc: register } = await import("../ipc/desktop-ipc");
   register({
     gateway,
     env: { ASTELLA_DOMAIN_SCHEMA_REVISION: "domain-v2-test" },

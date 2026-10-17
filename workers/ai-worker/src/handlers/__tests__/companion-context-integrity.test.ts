@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { renderCompanionUserTurn } from "../companion-dialogue-content.ts";
-import { paginateReadBlocks } from "../companion-read-tools.ts";
+import { renderCompanionUserTurn } from "../turn/companion-dialogue-content.ts";
+import { paginateReadBlocks } from "../tools/companion-read-tools.ts";
 
 test("全文编辑可以完整取得八千字及精确块边界，过长单块保留可续读位置", () => {
   const blocks = Array.from({ length: 55 }, (_, i) => ({ ordinal: i + 1, content: `第${i + 1}块\n` + "正文".repeat(75) }));
@@ -17,9 +17,9 @@ test("全文编辑可以完整取得八千字及精确块边界，过长单块�
   const later = paginateReadBlocks(blocks.slice(20), 3000);
   assert.equal(later.blocks[0]?.blockIndex, 20, "editing coordinates must not restart at each read page");
 });
-import { boundCompanionRecentHistory } from "../companion-context-handoff.ts";
-import { foldReplayUnderSummaryCoverage, replayToMessages } from "../companion-compaction.ts";
-import { companionClassifierRecent } from "../companion-tool-intent.ts";
+import { boundCompanionRecentHistory } from "../context/companion-context-handoff.ts";
+import { foldReplayUnderSummaryCoverage, replayToMessages } from "../context/companion-compaction.ts";
+import { companionClassifierRecent } from "../tools/companion-tool-intent.ts";
 
 test("服务端接受的长问题完整进入模型，末尾约束不丢", () => {
   const text = "正文".repeat(9000) + "\n关键要求：不要删除原稿。";

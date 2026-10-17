@@ -1,8 +1,8 @@
 import type { CompanionHistoryPageV1 } from "@astella/shared/companion-memory-desktop-contracts";
 import { useEffect,useLayoutEffect,useRef,useState } from "react";
-import { gatewayErrorMessage,unwrapGatewayResult } from "../../../app/desktop-client";
-import { useRoomStore } from "../../../app/room-store";
-import { COMPANION_HISTORY_CHANGED } from "../../companion/companion-events";
+import { gatewayErrorMessage,unwrapGatewayResult } from "../../../app/client/desktop-client";
+import { useRoomStore } from "../../../app/home/room-store";
+import { COMPANION_HISTORY_CHANGED } from "../../companion/content/companion-events";
 import { dialogueDiscoveryRequest } from "./companion-discovery-targets";
 import { DialoguePanel } from "./companion-dialogue-panel";
 import { useCompanionResource } from "./use-companion-resource";

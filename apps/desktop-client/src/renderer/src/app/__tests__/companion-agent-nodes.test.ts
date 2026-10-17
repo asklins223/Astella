@@ -7,7 +7,7 @@ import {
   countAgentToolCalls,
   reconcileCompanionAgentNodes,
   type CompanionAgentNodes,
-} from "../companion-agent-nodes.ts";
+} from "../companion-session/companion-agent-nodes.ts";
 
 /**
  * 这些用例固定的是"轨道不会越长越长"这条契约：同一个工具调用/技能/状态迁移只能占一行。

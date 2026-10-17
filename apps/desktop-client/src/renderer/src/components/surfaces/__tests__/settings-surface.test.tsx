@@ -7,13 +7,13 @@ import type { DesktopAiAuditItemV1 } from "@astella/shared/desktop-surface-contr
 import { AI_CONSENT_VERSION } from "@astella/shared/desktop-ipc-contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QWEN_TTS_VOICE_OPTIONS } from "@astella/shared/tts-voice-catalog";
-import { useRoomStore } from "../../../app/room-store.ts";
-import { COMPANION_CONSENT_REQUIRED_LINE, COMPANION_EXTERNAL_DISABLED_LINE, SETTINGS_ATTENTION_AI_CONSENT } from "../../../app/companion-consent-gate.ts";
+import { useRoomStore } from "../../../app/home/room-store.ts";
+import { COMPANION_CONSENT_REQUIRED_LINE, COMPANION_EXTERNAL_DISABLED_LINE, SETTINGS_ATTENTION_AI_CONSENT } from "../../../app/companion-pages/companion-consent-gate.ts";
 import { SETTINGS_ATTENTION_MS, SettingsSurface, summaryOfDissolveCounts } from "../settings/settings-surface.tsx";
-import { subscribeGateInvalidation } from "../../../app/gate-invalidation.ts";
-import { clearAccountSignOutNotice, peekAccountSignOutNotice } from "../../../app/account-signout.ts";
-import { openVoiceModelSettings } from "../../companion/open-voice-model-settings";
-import { COMPANION_CONVERSATION_INVALIDATED } from "../../companion/companion-events";
+import { subscribeGateInvalidation } from "../../../app/gate/gate-invalidation.ts";
+import { clearAccountSignOutNotice, peekAccountSignOutNotice } from "../../../app/gate/account-signout.ts";
+import { openVoiceModelSettings } from "../../companion/voice/open-voice-model-settings";
+import { COMPANION_CONVERSATION_INVALIDATED } from "../../companion/content/companion-events";
 
 /**
  * The settings centre's regressions all had the same shape: a value the reader

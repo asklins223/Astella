@@ -4,7 +4,7 @@ import { test } from "node:test";
 import {
   canonicalizeV2,
   normalizeCanonicalStringV2,
-} from "../hash-canonical-v2.ts";
+} from "../content/hash-canonical-v2.ts";
 
 /**
  * P2-9：hash 热路径上的两处快路径。

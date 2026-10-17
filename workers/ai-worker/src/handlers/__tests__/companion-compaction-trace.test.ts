@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { recordTurnCompactionTrace } from "../companion-compaction-trace.ts";
-import type { CompanionContextHandoffSnapshotV1 } from "../companion-context-handoff.ts";
+import { recordTurnCompactionTrace } from "../context/companion-compaction-trace.ts";
+import type { CompanionContextHandoffSnapshotV1 } from "../context/companion-context-handoff.ts";
 
 /**
  * 方案 44 §5.4：折叠轨迹落不进快照时，**交付不受影响**。

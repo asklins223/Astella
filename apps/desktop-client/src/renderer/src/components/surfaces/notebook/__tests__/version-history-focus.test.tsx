@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { DesktopNoteVersionItem } from "@astella/shared/desktop-surface-contracts";
-import { VersionHistory } from "../version-history";
+import { VersionHistory } from "../library/version-history.tsx";
 
 afterEach(cleanup);
 

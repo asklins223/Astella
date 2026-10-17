@@ -17,7 +17,7 @@ import {
   type NoteRouteAttemptFactsV1,
   type NoteRouteExposureFactsV1,
   type NoteRouteQuestionV1,
-} from "../note-route-coverage-v2.ts";
+} from "../note/note-route-coverage-v2.ts";
 
 const RUN_A = "11111111-1111-4111-8111-111111111111";
 const RUN_B = "22222222-2222-4222-8222-222222222222";

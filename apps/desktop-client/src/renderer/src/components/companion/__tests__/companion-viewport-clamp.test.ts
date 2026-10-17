@@ -32,7 +32,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // `import.meta.url` 是「这个测试文件自己在哪儿」，它跟着文件一起下沉了，
 // 而 `CompanionPresence.tsx` 仍留在上一层——**测试读源码**这种用法与 import 不同，
 // 打包器不会替你改 `resolve(HERE, …)`，它就是原样跑的。
-const SOURCE_PATH = resolve(HERE, "..", "CompanionPresence.tsx");
+const SOURCE_PATH = resolve(HERE, "..", "bubble", "CompanionPresence.tsx");
 const SOURCE = readFileSync(SOURCE_PATH, "utf8");
 
 function parse() {

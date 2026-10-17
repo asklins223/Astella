@@ -7,7 +7,7 @@
  * 3. 直连失败才回头走镜像；镜像也失败时抛**直连那次的错**，它才带着可读的原因。
  */
 import { describe, expect, it } from "vitest";
-import { downloadDirectThenMirrored, mirrorUrl } from "../update-mirror";
+import { downloadDirectThenMirrored, mirrorUrl } from "../update/update-mirror";
 
 const asset = new URL("https://github.com/asklins223/Astella/releases/download/v1.6.0/astella-1.6.0-mac-arm64.zip");
 

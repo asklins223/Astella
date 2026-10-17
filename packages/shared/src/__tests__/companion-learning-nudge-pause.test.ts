@@ -26,8 +26,8 @@ import {
   evaluateLearningNudgePause,
   evaluateLearningSuggestion,
   localDateIn,
-} from "../companion-proactive-quota.ts";
-import { companionSuggestionPauseSchema } from "../contracts/companion-shell-contracts.ts";
+} from "../companion/companion-proactive-quota.ts";
+import { companionSuggestionPauseSchema } from "../contracts/companion/companion-shell-contracts.ts";
 
 // 本文件在 packages/shared/src/__tests__/ 下：往上一级 src、两级 shared、
 // 三级 packages、四级才是仓库根。

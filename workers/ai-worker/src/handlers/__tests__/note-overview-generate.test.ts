@@ -13,7 +13,7 @@ import {
   orderOverviewPoints,
   parseOverviewChunk,
   resolveOverviewPoints,
-} from "../note-overview-generate.ts";
+} from "../note/note-overview-generate.ts";
 import { NoteOverviewOutputError } from "../../lib/non-retryable-errors.ts";
 
 const SOURCE = "把复习安排在快要忘记的时候，比反复重读同一段材料更有效。间隔越长，回忆越费力，记住的也越牢。";

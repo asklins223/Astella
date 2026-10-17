@@ -28,7 +28,7 @@ import {
   check,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import { EXPOSURE_KINDS_V2 } from "../contracts/learning-card-v2-contracts.ts";
+import { EXPOSURE_KINDS_V2 } from "../contracts/learning/learning-card-v2-contracts.ts";
 import { users } from "./identity.ts";
 import { notes, noteVersions } from "./note.ts";
 import { learningRuns } from "./learning-runs.ts";

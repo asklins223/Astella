@@ -9,8 +9,8 @@ import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ArtifactStoreFailure, ensureArtifactStored, type ArtifactStoreDeps } from "../artifact-store";
-import { DesktopGatewayFailure } from "../desktop-gateway-failure";
+import { ArtifactStoreFailure, ensureArtifactStored, type ArtifactStoreDeps } from "../artifact/artifact-store";
+import { DesktopGatewayFailure } from "../gateway/desktop-gateway-failure";
 
 let userDataDir: string;
 let artifactId: string;

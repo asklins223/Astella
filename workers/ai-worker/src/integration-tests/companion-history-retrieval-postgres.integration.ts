@@ -5,14 +5,14 @@ import postgres from "postgres";
 import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 import { sha256Utf8V1 } from "@astella/shared/content-hash";
 import { getCompanionAgentTool } from "@astella/shared";
-import type { AgentEventContext } from "../handlers/companion-read-tools.ts";
+import type { AgentEventContext } from "../handlers/tools/companion-read-tools.ts";
 
 const admin = postgres(testDatabaseUrl("DATABASE_URL_MIGRATOR"), { max: 2 });
 process.env.DATABASE_URL_WORKER ??= testDatabaseUrl("DATABASE_URL_WORKER");
 const { withWorkerWorkspaceTransaction, closeDatabase } = await import("../db.ts");
 const { searchPastConversationMessages, searchPastConversationSummaries, readPastConversationMessages } =
-  await import("../handlers/companion-summary-retrieval.ts");
-const { executeReadTool } = await import("../handlers/companion-tool-execution.ts");
+  await import("../handlers/context/companion-summary-retrieval.ts");
+const { executeReadTool } = await import("../handlers/tools/companion-tool-execution.ts");
 const scope = { workspaceId: randomUUID(), userId: randomUUID() };
 const peerId = randomUUID(), otherWorkspaceId = randomUUID();
 const ids = { current: randomUUID(), old: randomUUID(), summarized: randomUUID(), peer: randomUUID(), other: randomUUID(),

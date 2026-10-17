@@ -7,7 +7,7 @@ import {
   parseInlineMarkdown,
   pmNodesToNoteBlocks,
   type NoteDocBlockSpec,
-} from "../note-doc-schema.ts";
+} from "../note/note-doc-schema.ts";
 
 /**
  * 块 ↔ ProseMirror 节点的双向换算（CRDT 批次 C 的那半"内容保真"）。

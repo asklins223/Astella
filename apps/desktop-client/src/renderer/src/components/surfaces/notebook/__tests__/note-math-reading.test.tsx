@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { act, cleanup, render, renderHook } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
-import { ReadingBlock } from "../notebook-reading-block";
-import { noteReadingText } from "../note-reading-text";
-import { useNotebookSelection } from "../use-notebook-selection";
+import { ReadingBlock } from "../reading/notebook-reading-block.tsx";
+import { noteReadingText } from "../reading/note-reading-text.ts";
+import { useNotebookSelection } from "../document/use-notebook-selection.ts";
 import { noteBlockRenderedTextV1, noteBlocksToPmNodes, pmNodesToNoteBlocks } from "@astella/shared/note-doc-schema";
 import { noteAnchorMatchesV1 } from "@astella/shared/note-annotation-contracts";
 import type { NoteDetailV1 } from "@astella/shared/note-projection-contracts";

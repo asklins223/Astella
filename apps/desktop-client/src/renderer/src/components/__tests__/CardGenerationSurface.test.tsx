@@ -3,7 +3,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CardGenerationSurface } from "../CardGenerationSurface.tsx";
-import { useRoomStore } from "../../app/room-store.ts";
+import { useRoomStore } from "../../app/home/room-store.ts";
 
 /**
  * 工作台两条主线的回归：

@@ -13,8 +13,8 @@ import * as Y from "yjs";
 import { Schema } from "prosemirror-model";
 import { prosemirrorJSONToYXmlFragment } from "y-prosemirror";
 import { noteDocSchemaSpec } from "@astella/shared/note-doc-schema";
-import { NoteMarkdownEditor } from "../note-markdown-editor";
-import type { AnnotationPlacement } from "../note-annotation-placement";
+import { NoteMarkdownEditor } from "../document/note-markdown-editor.tsx";
+import type { AnnotationPlacement } from "../annotation/note-annotation-placement.ts";
 
 const FRAGMENT_KEY = "prosemirror";
 

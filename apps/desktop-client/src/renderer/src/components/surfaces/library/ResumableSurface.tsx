@@ -1,14 +1,14 @@
 import { useMemo, useRef } from "react";
 import { ArrowRight, Bookmark, Leaf } from "lucide-react";
 import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
-import { useRoomStore } from "../../../app/room-store";
-import { createRequestMeta, unwrapGatewayResult } from "../../../app/desktop-client";
+import { useRoomStore } from "../../../app/home/room-store";
+import { createRequestMeta, unwrapGatewayResult } from "../../../app/client/desktop-client";
 import { HudPage } from "../../hud/HudPage";
 import { useHudPage } from "../../hud/use-hud-page";
 import { usePageReadableView } from "../../hud/use-page-readable-view";
 import { learningPhaseLabel } from "../run/learning-run-surface.tsx";
 import { TodayBatchSurface } from "./TodayBatchSurface.tsx";
-import { SurfaceDataState, formatRelative, useSurfaceProjection } from "../notebook/surface-data.tsx";
+import { SurfaceDataState, formatRelative, useSurfaceProjection } from "../notebook/shell/surface-data.tsx";
 import { useTactileSurface } from "../../motion/use-tactile-surface";
 
 /**

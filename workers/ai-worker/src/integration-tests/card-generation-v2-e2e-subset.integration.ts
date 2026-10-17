@@ -186,7 +186,7 @@ async function createRun(versionId: string, clientRequestId: string, idempotency
 }
 
 async function runPipelineOnce() {
-  const { pollV2Outbox } = await import("../handlers/card-generation-v2-handler.ts");
+  const { pollV2Outbox } = await import("../handlers/note/card-generation-v2-handler.ts");
   const processed = await pollV2Outbox(20);
   assert.ok(processed >= 1, `worker must process outbox jobs (got ${processed})`);
   await processPendingAgentAdvances();

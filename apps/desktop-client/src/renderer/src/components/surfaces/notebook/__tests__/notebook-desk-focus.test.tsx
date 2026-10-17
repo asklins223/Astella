@@ -2,8 +2,8 @@
 import { useRef, useState, type ComponentProps } from "react";
 import { cleanup, fireEvent, render, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { useRoomStore } from "../../../../app/room-store";
-import { NotebookDesk, type NotebookSidePage } from "../notebook-desk";
+import { useRoomStore } from "../../../../app/home/room-store";
+import { NotebookDesk, type NotebookSidePage } from "../shell/notebook-desk.tsx";
 
 function Desk() {
   const scrollRef = useRef<HTMLDivElement | null>(null);

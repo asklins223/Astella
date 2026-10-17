@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { createTickThrottle } from "../tick-throttle.ts";
+import { createTickThrottle } from "../schedulers/tick-throttle.ts";
 
 /** 调度器拿的是 `Date.now()`，节流初值 0 意味着「第一次调用必然放行」，模拟也要用真实量级。 */
 const T0 = 1_700_000_000_000;

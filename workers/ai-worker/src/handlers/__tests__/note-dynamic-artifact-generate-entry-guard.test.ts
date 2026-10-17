@@ -27,7 +27,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { runNoteDynamicArtifactGenerate } from "../note-dynamic-artifact-generate.ts";
+import { runNoteDynamicArtifactGenerate } from "../note/note-dynamic-artifact-generate.ts";
 
 const baseJob = {
   id: "11111111-1111-1111-1111-111111111111",

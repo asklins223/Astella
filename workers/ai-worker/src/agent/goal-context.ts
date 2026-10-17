@@ -2,8 +2,8 @@ import { createAgentAdvanceStore, projectRun, requireAgentLongGoal, type AgentRu
 import { budgetAgentContextRecords, composeAgentContext, projectAgentGoalEvidence, type AgentContextSource } from "@astella/agent-core";
 import { resolveAgentGoalExecutionManifest } from "@astella/shared/agent-capabilities";
 import { AI_UNDECLARED_OUTPUT_TOKENS, COMPANION_CHARACTER_IDENTITY_V1, COMPANION_DEFAULT_VOICE_V1, COMPANION_IDENTITY_BOUNDARY_V2, AgentRole, type AgentTurnRequest } from "@astella/shared";
-import { buildCompanionPersonaData, sanitizePersonaField } from "../handlers/companion-identity-context.ts";
-import { companionContextAssemblyCapacity } from "../handlers/companion-context-receipts.ts";
+import { buildCompanionPersonaData, sanitizePersonaField } from "../handlers/memory/companion-identity-context.ts";
+import { companionContextAssemblyCapacity } from "../handlers/context/companion-context-receipts.ts";
 import { withWorkerWorkspaceTransaction } from "../db.ts";
 import { loadAgentLearningContext } from "./learning-context.ts";
 import { logger } from "../lib/logger.ts";

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import { RoundNotice } from "../notebook/round-notice.tsx";
+import { RoundNotice } from "../notebook/learning/round-notice.tsx";
 
 /**
  * 这一组盯的是 39 §13.3／§13.4 那一刀：**等待、失败、被挡是三件事**。

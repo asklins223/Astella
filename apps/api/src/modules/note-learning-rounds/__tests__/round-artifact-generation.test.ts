@@ -80,7 +80,7 @@ const MODEL_FILE = join(REPO_ROOT, "packages/shared/src/note-dynamic-artifact/ro
 const RENDER_FILE = join(REPO_ROOT, "packages/shared/src/note-dynamic-artifact/round-artifact-render.ts");
 const ROUTES_FILE = join(REPO_ROOT, "apps/api/src/modules/note-learning-rounds/routes.ts");
 const DOC_FILE = join(REPO_ROOT, "packages/shared/src/note-dynamic-artifact/round-artifact-doc.ts");
-const KERNEL_FILE = join(REPO_ROOT, "packages/shared/src/ai-task-kernel.ts");
+const KERNEL_FILE = join(REPO_ROOT, "packages/shared/src/agent/ai-task-kernel.ts");
 
 /** 源码形状判据要判的是代码，注释里的话是给人读的。 */
 function codeOnly(text: string): string {

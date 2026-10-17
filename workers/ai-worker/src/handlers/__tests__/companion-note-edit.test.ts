@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { companionNoteEditTarget } from "../companion-note-edit.ts";
+import { companionNoteEditTarget } from "../note/companion-note-edit.ts";
 
 const noteId = "11111111-1111-4111-8111-111111111111";
 const noteVersionId = "22222222-2222-4222-8222-222222222222";

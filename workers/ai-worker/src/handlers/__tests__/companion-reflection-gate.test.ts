@@ -6,8 +6,8 @@
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { companionReflectionGate, reflectionSnapshotSufficient, reflectionTailWindow } from "../companion-reflection-gate.ts";
-import type { ReflectionInputSnapshotV1 } from "../companion-reflection-content.ts";
+import { companionReflectionGate, reflectionSnapshotSufficient, reflectionTailWindow } from "../journal/companion-reflection-gate.ts";
+import type { ReflectionInputSnapshotV1 } from "../journal/companion-reflection-content.ts";
 
 const now = new Date("2026-10-10T08:00:00+08:00");
 const hoursBefore = (hours: number) => new Date(now.getTime() - hours * 60 * 60 * 1000);

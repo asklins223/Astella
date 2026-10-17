@@ -4,9 +4,9 @@ import type { CompanionMemoryItemV1 } from "@astella/shared/companion-memory-des
 import type { CompanionSelfNoteV1 } from "@astella/shared";
 import { usePageReadableView } from "../../hud/use-page-readable-view";
 import { HUD_PAGES } from "../../hud/hud-pages";
-import { gatewayErrorMessage, unwrapGatewayResult } from "../../../app/desktop-client";
-import { useRoomStore } from "../../../app/room-store";
-import { renderCompanionMarkdown } from "../../companion/companion-markdown";
+import { gatewayErrorMessage, unwrapGatewayResult } from "../../../app/client/desktop-client";
+import { useRoomStore } from "../../../app/home/room-store";
+import { renderCompanionMarkdown } from "../../companion/content/companion-markdown";
 import { CenterFeedback, CenterSearch, SectionState } from "./companion-center-primitives";
 import { CompanionSelect, type CompanionSelectOption } from "./companion-select";
 import { memoryState } from "./companion-center-model";

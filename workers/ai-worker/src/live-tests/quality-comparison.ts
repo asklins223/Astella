@@ -2,12 +2,12 @@ import { randomUUID } from "node:crypto";
 import { createHash } from "node:crypto";
 import { AgentRole, COMPANION_CHARACTER_BASE_V8, COMPANION_CHARACTER_BASE_V12,
   COMPANION_IDENTITY_BOUNDARY_V3, COMPANION_IDENTITY_BOUNDARY_V4 } from "@astella/shared";
-import { buildCompanionPersonaMessages } from "../handlers/companion-dialogue-content.ts";
-import { resolveCompanionPersonaContext } from "../handlers/companion-identity-context.ts";
-import { companionResponseStrategy, isCompanionExplanation } from "../handlers/companion-response-strategy.ts";
+import { buildCompanionPersonaMessages } from "../handlers/turn/companion-dialogue-content.ts";
+import { resolveCompanionPersonaContext } from "../handlers/memory/companion-identity-context.ts";
+import { companionResponseStrategy, isCompanionExplanation } from "../handlers/turn/companion-response-strategy.ts";
 import { buildCompanionKnowledgeReview, parseCompanionKnowledgeReview } from "./diagnostics/companion-knowledge-review.ts";
 import { CompanionKnowledgeReviewError } from "./diagnostics/companion-review-errors.ts";
-import { companionStepRuntimePolicy } from "../handlers/companion-step-plan.ts";
+import { companionStepRuntimePolicy } from "../handlers/turn/companion-step-plan.ts";
 import { observedProvider, platform, save, safeFailure, type WireReceipt } from "./acceptance-common.ts";
 import { qualityCases, parseQualityVerdicts } from "./quality-cases.ts";
 

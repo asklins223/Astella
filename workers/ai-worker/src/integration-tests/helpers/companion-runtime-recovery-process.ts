@@ -1,6 +1,6 @@
 /** A genuinely separate worker process for SIGKILL recovery integration cases. */
 import { MockProvider } from "../../lib/providers/mock.ts";
-import { runCompanionDialogue } from "../../handlers/companion-dialogue.ts";
+import { runCompanionDialogue } from "../../handlers/turn/companion-dialogue.ts";
 
 const fixture = JSON.parse(process.argv[2]!) as { runId: string; jobId: string; workspaceId: string; userId: string; mode: string };
 Object.defineProperty(MockProvider.prototype, "chatCompletionStream", { configurable: true, value: undefined });

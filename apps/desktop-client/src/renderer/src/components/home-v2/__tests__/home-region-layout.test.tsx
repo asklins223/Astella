@@ -3,7 +3,7 @@
 import { cleanup, render } from "@testing-library/react";
 import { existsSync, readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { useRoomStore } from "../../../app/room-store";
+import { useRoomStore } from "../../../app/home/room-store";
 import { SceneReferenceFrame } from "../../../scene/SceneReferenceFrame";
 import { HomeV2ObjectLayer } from "../HomeV2ObjectLayer";
 import { LIGHTHOUSE_HOME_SCENE_PROFILE } from "../home-scene-profile";

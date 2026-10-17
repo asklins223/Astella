@@ -28,11 +28,11 @@ const prefix = userId.slice(0, 8);
 const { closeDatabase: closeWorkerDatabase, withWorkerWorkspaceTransaction } =
   await import("../../../../workers/ai-worker/src/db.ts");
 const { executeCompanionMemoryTool } =
-  await import("../../../../workers/ai-worker/src/handlers/companion-memory-tools.ts");
+  await import("../../../../workers/ai-worker/src/handlers/tools/companion-memory-tools.ts");
 const { retrieveCompanionMemoriesKeyword } =
-  await import("../../../../workers/ai-worker/src/handlers/companion-memory-vector.ts");
+  await import("../../../../workers/ai-worker/src/handlers/memory/companion-memory-vector.ts");
 const { assembleCompanionContext } =
-  await import("../../../../workers/ai-worker/src/handlers/companion-context-orchestrator.ts");
+  await import("../../../../workers/ai-worker/src/handlers/context/companion-context-orchestrator.ts");
 
 /** 一条长期记忆：两周里陆续攒下来的样子。 */
 type Fixture = {

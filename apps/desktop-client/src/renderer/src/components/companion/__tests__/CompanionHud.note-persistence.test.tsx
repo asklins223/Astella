@@ -2,29 +2,29 @@
 
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { CompanionChatSession } from "../../../app/companion-chat-session.tsx";
+import type { CompanionChatSession } from "../../../app/companion-session/companion-chat-session.tsx";
 import type { GatewayResultV1 } from "@astella/shared/desktop-ipc-contracts";
 import type { NoteAnnotationAnchorV1, NoteAnnotationV1 } from "@astella/shared/note-annotation-contracts";
-import { CompanionHud, type CompanionHudSettings } from "../CompanionHud.tsx";
-import { DEFAULT_WINDOW_LIVE2D_MODEL_ID } from "../window-live2d-contract.ts";
-import { beginNoteExplanation, completeNoteExplanation, interruptNoteExplanation, progressNoteExplanation, resetNoteExplanations, readNoteExplanation, useNoteCompanionExplanations } from "../note-companion-explanation";
+import { CompanionHud, type CompanionHudSettings } from "../hud/CompanionHud.tsx";
+import { DEFAULT_WINDOW_LIVE2D_MODEL_ID } from "../live2d/window-live2d-contract.ts";
+import { beginNoteExplanation, completeNoteExplanation, interruptNoteExplanation, progressNoteExplanation, resetNoteExplanations, readNoteExplanation, useNoteCompanionExplanations } from "../content/note-companion-explanation";
 
 const { chatState } = vi.hoisted(() => ({ chatState: { current: null as unknown } }));
 
-vi.mock("../../../app/companion-chat-session", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../../app/companion-chat-session")>();
+vi.mock("../../../app/companion-session/companion-chat-session", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../app/companion-session/companion-chat-session")>();
   return { ...actual, useCompanionChat: () => chatState.current };
 });
 
-vi.mock("../../../app/companion-voice-playback", () => ({
+vi.mock("../../../app/companion-session/companion-voice-playback", () => ({
   beginCompanionSpeechLine: vi.fn(),
   stopCompanionSpeech: vi.fn(),
   subscribeCompanionSpeech: () => () => undefined,
 }));
 
-vi.mock("../../../app/companion-voice-level", () => ({ subscribeHomeV2VoiceLevel: () => () => undefined }));
+vi.mock("../../../app/companion-session/companion-voice-level", () => ({ subscribeHomeV2VoiceLevel: () => () => undefined }));
 
-vi.mock("../use-companion-voice-input", () => ({
+vi.mock("../voice/use-companion-voice-input", () => ({
   useCompanionVoiceInput: () => ({
     phase: "idle",
     note: null,
@@ -37,9 +37,9 @@ vi.mock("../use-companion-voice-input", () => ({
   }),
 }));
 
-vi.mock("../companion-agent-rail", () => ({ CompanionAgentRail: () => null, companionAgentRailVisible: () => false }));
-vi.mock("../CompanionProposalChoice", () => ({ CompanionProposalChoice: () => null }));
-vi.mock("../CompanionRunTraceView", () => ({ CompanionRunTraceView: () => null }));
+vi.mock("../hud/companion-agent-rail", () => ({ CompanionAgentRail: () => null, companionAgentRailVisible: () => false }));
+vi.mock("../journal/CompanionProposalChoice", () => ({ CompanionProposalChoice: () => null }));
+vi.mock("../journal/CompanionRunTraceView", () => ({ CompanionRunTraceView: () => null }));
 
 const NOTE_ID = "11111111-1111-4111-8111-111111111111";
 const NOTE_VERSION_ID = "22222222-2222-4222-8222-222222222222";

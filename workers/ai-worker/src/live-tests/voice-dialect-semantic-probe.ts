@@ -4,8 +4,8 @@ import { agentTurnInterpretationProposalV1Schema } from "@astella/shared/agent-c
 import { qwenDialectForInstruction } from "@astella/shared/tts-voice-catalog";
 import { sha256Utf8V1 } from "@astella/shared/content-hash";
 import { resolveAgentTurnInterpretation } from "@astella/agent-core";
-import { buildCompanionTurnInterpretationMessages } from "../handlers/companion-tool-intent.ts";
-import { resolveCompanionVoiceInstruction } from "../handlers/companion-voice-request-style.ts";
+import { buildCompanionTurnInterpretationMessages } from "../handlers/tools/companion-tool-intent.ts";
+import { resolveCompanionVoiceInstruction } from "../handlers/turn/companion-voice-request-style.ts";
 import type { AIProvider } from "../lib/ai-provider.ts";
 import { platform, observedProvider, save, safeFailure, type WireReceipt } from "./acceptance-common.ts";
 

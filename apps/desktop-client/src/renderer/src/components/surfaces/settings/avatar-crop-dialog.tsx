@@ -27,7 +27,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { LoaderCircle, RotateCcw, RotateCw, ZoomIn, ZoomOut } from "lucide-react";
-import { useRoomStore } from "../../../app/room-store.ts";
+import { useRoomStore } from "../../../app/home/room-store.ts";
 import {
   CROP_MAX_WORKING_EDGE,
   CROP_MAX_ZOOM,

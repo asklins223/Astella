@@ -2,8 +2,8 @@
 import { StrictMode, useRef } from "react";
 import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { useRoomStore } from "../../../app/room-store";
-import { useCompanionJournalMotion } from "../use-companion-journal-motion";
+import { useRoomStore } from "../../../app/home/room-store";
+import { useCompanionJournalMotion } from "../journal/use-companion-journal-motion";
 
 let now = 0, id = 0;
 const frames = new Map<number, FrameRequestCallback>();

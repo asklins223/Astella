@@ -10,7 +10,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createCompanionThinkingDelivery } from "../companion-thinking-stream.ts";
+import { createCompanionThinkingDelivery } from "../turn/companion-thinking-stream.ts";
 
 const read = { userId: "u1", runId: "r1", conversationId: "c1", generation: 1, accountEpoch: 0 };
 

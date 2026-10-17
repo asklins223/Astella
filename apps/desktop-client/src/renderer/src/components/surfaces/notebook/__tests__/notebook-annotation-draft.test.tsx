@@ -2,7 +2,7 @@
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { noteAnnotationV1Schema, type NoteAnnotationAnchorV1 } from "@astella/shared/note-annotation-contracts";
-import { useNotebookAnnotationDraft } from "../use-notebook-annotation-draft";
+import { useNotebookAnnotationDraft } from "../annotation/use-notebook-annotation-draft.ts";
 
 const id = (n: number) => `${String(n).padStart(8, "0")}-4111-8111-8111-${String(n).padStart(12, "0")}`;
 const anchor: NoteAnnotationAnchorV1 = { noteVersionId: id(2), startBlockOrdinal: 0, endBlockOrdinal: 0,

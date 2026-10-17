@@ -10,7 +10,7 @@ import {
   parseMemoryExtractJson,
   resolveMemoryExtractSource,
   isMemorySourceSuppressed,
-} from "../companion-memory-extractor.ts";
+} from "../memory/companion-memory-extractor.ts";
 // 范围判据住在共享层（42 阶段 1 E）。抽取器只调用它，不自带一份。
 import { memoryScopeForKind } from "@astella/shared/companion-memory-scope";
 import {
@@ -385,19 +385,33 @@ test("伴星思考档：对话按本轮意图选择，其余后台按各自预�
   // 扫的是 handlers 目录本体（`..`），不是 __tests__ ——旧版本用的 `.` 会把自己
   // 所在的测试目录当扫描面，`.test.` 过滤又把里面的文件全排除，等于空转。
   const dir = new URL("..", import.meta.url);
-  const offenders = readdirSync(dir)
-    .filter((name) => name.startsWith("companion-") && name.endsWith(".ts") && !name.includes(".test."))
-    .filter((name) => !thinkingSanctioned.has(name))
-    .filter((name) => {
-      const text = readFileSync(new URL(name, dir), "utf8");
+  // handlers 按职责分了子目录：递归收，豁免名单仍按文件名匹配（组只影响位置）。
+  const files: Array<{ name: string; url: URL }> = [];
+  const collect = (base: URL): void => {
+    for (const entry of readdirSync(base, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        if (entry.name !== "__tests__") collect(new URL(`${entry.name}/`, base));
+        continue;
+      }
+      if (entry.name.startsWith("companion-") && entry.name.endsWith(".ts") && !entry.name.includes(".test.")) {
+        files.push({ name: entry.name, url: new URL(entry.name, base) });
+      }
+    }
+  };
+  collect(new URL("", dir));
+  const offenders = files
+    .filter(({ name }) => !thinkingSanctioned.has(name))
+    .filter(({ url }) => {
+      const text = readFileSync(url, "utf8");
       // 两条历史路径都算：包 provider 的 withThinkingDisabled、每次调用写死的
       // disableThinking: true（走策略函数算出来的布尔值不在此列）。
       return text.includes("withThinkingDisabled(") || text.includes("disableThinking: true");
-    });
+    })
+    .map(({ name }) => name);
   assert.deepEqual(offenders, [], `这些 handler 绕开本轮意图判据把思考关死了：${offenders.join(", ")}`);
 
   // 正向：对话主链路确实经过策略函数，而不是各自决定。
-  const runtime = readFileSync(new URL("companion-agent-runtime.ts", dir), "utf8");
+  const runtime = readFileSync(new URL("agent/companion-agent-runtime.ts", dir), "utf8");
   assert.match(runtime, /companionTurnThinking\(attention\)/,
     "Agent 运行时不再经过 companionTurnThinking，闲聊/提问两档就会散成各处硬编码");
   assert.match(runtime, /disableThinking: turnThinking\.disableThinking/,
@@ -471,7 +485,7 @@ test("跨空间判据：非跨空间种类仍尊重模型给的 task 细分", ()
 test("范围判据只有一份：抽取器调用共享层，不自带正则或第二套判定", () => {
   // 判据一旦在抽取器和写入端各有一份，漂移的方向通常是写入端那份更松——那正是
   // 42 阶段 1 E 要补的洞。所以这里守的是"只有一处定义"，而不只是"值对不对"。
-  const source = readFileSync(new URL("../companion-memory-extractor.ts", import.meta.url), "utf8");
+  const source = readFileSync(new URL("../memory/companion-memory-extractor.ts", import.meta.url), "utf8");
   assert.match(source, /from "@astella\/shared\/companion-memory-scope"/,
     "抽取器没有走共享判据：写入端与抽取端可能已经各判各的");
   for (const duplicated of ["LOCAL_REFERENCE_PATTERN", "SUBJECT_OR_EXAM_PATTERN", "CROSS_SPACE_KINDS"]) {

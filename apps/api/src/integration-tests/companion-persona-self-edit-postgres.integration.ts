@@ -9,7 +9,7 @@ import { personaFromDefaultPreset } from "@astella/shared/pet-persona-merge";
 import { closeDatabase, withWorkspaceTransaction } from "../db/client.ts";
 import { getPetProfileState, stagePetProfileRevision, upsertPetProfile } from "../modules/companion-conversation/pet-profile-service.ts";
 import { createCompanionTurn } from "../modules/companion-conversation/turn/turn-service.ts";
-import { applyAssistantPersonaEdit } from "../../../../workers/ai-worker/src/handlers/companion-persona-self-edit.ts";
+import { applyAssistantPersonaEdit } from "../../../../workers/ai-worker/src/handlers/memory/companion-persona-self-edit.ts";
 import { closeDatabase as closeWorkerDatabase, withWorkerWorkspaceTransaction } from "../../../../workers/ai-worker/src/db.ts";
 
 const admin = postgres(testDatabaseUrl("DATABASE_URL_TEST_ADMIN"), { max: 2 });

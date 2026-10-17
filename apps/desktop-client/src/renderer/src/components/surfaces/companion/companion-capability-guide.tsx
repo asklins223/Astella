@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { ArrowRight, Sparkles } from "lucide-react";
 import { agentCapabilityCatalog } from "@astella/shared/agent-capability-catalog";
-import { companionConsentGate, SETTINGS_ATTENTION_AI_CONSENT, SETTINGS_SECTION_AI_CONSENT } from "../../../app/companion-consent-gate";
-import { useRoomStore } from "../../../app/room-store";
+import { companionConsentGate, SETTINGS_ATTENTION_AI_CONSENT, SETTINGS_SECTION_AI_CONSENT } from "../../../app/companion-pages/companion-consent-gate";
+import { useRoomStore } from "../../../app/home/room-store";
 import { useCompanionResource } from "./use-companion-resource";
 
 // Display metadata lives beside the actual executable capability, never in a second tool directory.

@@ -1,7 +1,7 @@
 import type { CompanionAccountPatch,CompanionAccountStateV1 } from "@astella/shared/companion-shell-contracts";
 import { useEffect,useRef,useState } from "react";
-import { gatewayErrorMessage,unwrapGatewayResult } from "../../../app/desktop-client";
-import { publishCompanionAccountChanged,subscribeCompanionAccountChanged } from "../../companion/companion-events";
+import { gatewayErrorMessage,unwrapGatewayResult } from "../../../app/client/desktop-client";
+import { publishCompanionAccountChanged,subscribeCompanionAccountChanged } from "../../companion/content/companion-events";
 import { useCompanionResource } from "../companion/use-companion-resource";
 
 export function useCompanionAccountSettings() {

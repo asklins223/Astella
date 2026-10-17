@@ -3,13 +3,13 @@ import { act, cleanup, fireEvent, render, renderHook, within } from "@testing-li
 import { afterEach, expect, it, vi } from "vitest";
 import { noteDetailV1Schema } from "@astella/shared/note-projection-contracts";
 import { noteAnnotationAnchorV1Schema, noteAnchorMatchesV1, noteAnnotationV1Schema } from "@astella/shared/note-annotation-contracts";
-import { renderNoteInline } from "../note-reading-inline";
-import { useNotebookSelection } from "../use-notebook-selection";
-import { NotebookSelectionActions } from "../notebook-selection-actions";
-import { ReadingBlock, ReadingBlockContent } from "../notebook-reading-block";
+import { renderNoteInline } from "../reading/note-reading-inline.tsx";
+import { useNotebookSelection } from "../document/use-notebook-selection.ts";
+import { NotebookSelectionActions } from "../shell/notebook-selection-actions.tsx";
+import { ReadingBlock, ReadingBlockContent } from "../reading/notebook-reading-block.tsx";
 import { readNoteAnchorTextV1 } from "@astella/shared/note-annotation-contracts";
 import { noteBlockRenderedTextV1 } from "@astella/shared/note-doc-schema";
-import { noteReadingText } from "../note-reading-text";
+import { noteReadingText } from "../reading/note-reading-text.ts";
 
 const id = (n: number) => `${String(n).padStart(8, "0")}-4111-8111-8111-${String(n).padStart(12, "0")}`;
 const date = "2026-10-01T00:00:00.000Z";

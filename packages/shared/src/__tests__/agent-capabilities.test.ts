@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { z } from "zod";
-import { agentGoalToolManifest, noteAgentCapabilityManifest, agentGoalExecutionManifest, resolveAgentGoalExecutionManifest } from "../agent-capabilities.ts";
-import { agentToolParameters } from "../agent-tool-parameters.ts";
-import { createAgentRunV1Schema } from "../contracts/agent-contracts.ts";
-import { getCompanionAgentTool, validateCompanionAgentToolArguments } from "../companion-agent-registry.ts";
+import { agentGoalToolManifest, noteAgentCapabilityManifest, agentGoalExecutionManifest, resolveAgentGoalExecutionManifest } from "../agent/agent-capabilities.ts";
+import { agentToolParameters } from "../agent/agent-tool-parameters.ts";
+import { createAgentRunV1Schema } from "../contracts/agent/agent-contracts.ts";
+import { getCompanionAgentTool, validateCompanionAgentToolArguments } from "../agent/companion-agent-registry.ts";
 
 test("invalid tool arguments expose repair fields without echoing submitted values", () => {
   const result = validateCompanionAgentToolArguments("companion_arrange_attention", {

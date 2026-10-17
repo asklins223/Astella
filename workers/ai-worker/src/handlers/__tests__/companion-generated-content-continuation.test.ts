@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { getCompanionAgentTool, companionContentBlockV1Schema } from "@astella/shared";
-import { diaryBlockDraftSchema } from "../companion-diary-content.ts";
-import { companionDiaryRevisionCheckpointV1Schema, diaryRevisionDraft } from "../companion-diary-revision.ts";
-import { prepareCompanionToolReview } from "../companion-tool-review.ts";
-import { reviewedTargetMatches } from "../companion-reviewed-target.ts";
-import { executeReadTool } from "../companion-tool-execution.ts";
+import { diaryBlockDraftSchema } from "../journal/companion-diary-content.ts";
+import { companionDiaryRevisionCheckpointV1Schema, diaryRevisionDraft } from "../journal/companion-diary-revision.ts";
+import { prepareCompanionToolReview } from "../tools/companion-tool-review.ts";
+import { reviewedTargetMatches } from "../agent/companion-reviewed-target.ts";
+import { executeReadTool } from "../tools/companion-tool-execution.ts";
 import { PgDialect } from "drizzle-orm/pg-core";
 
 test("长日记的成稿、校订输入与检查点保留所有段落和末尾", () => {

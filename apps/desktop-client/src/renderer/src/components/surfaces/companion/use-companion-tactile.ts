@@ -1,5 +1,5 @@
 import { useLayoutEffect,useRef,type RefObject } from "react";
-import { useRoomStore } from "../../../app/room-store";
+import { useRoomStore } from "../../../app/home/room-store";
 
 import { stepUiSpring as companionSpring, type UiSpring as Spring, type UiMotionMode as Mode } from "../../hud/ui-spring";
 export { companionSpring };

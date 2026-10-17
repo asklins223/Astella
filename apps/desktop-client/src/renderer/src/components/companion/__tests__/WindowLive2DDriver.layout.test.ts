@@ -2,11 +2,11 @@
 import { readFileSync } from "node:fs";
 import { URL as NodeURL } from "node:url";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { WindowLive2DDriver } from "../WindowLive2DDriver";
-import { WINDOW_LIVE2D_ASSETS } from "../window-live2d-contract";
+import { WindowLive2DDriver } from "../live2d/WindowLive2DDriver";
+import { WINDOW_LIVE2D_ASSETS } from "../live2d/window-live2d-contract";
 
-vi.mock("../live2d-performance-catalog", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../live2d-performance-catalog")>();
+vi.mock("../live2d/live2d-performance-catalog", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../live2d/live2d-performance-catalog")>();
   return { ...actual, loadWindowLive2DCatalog: vi.fn(async () => actual.EMPTY_WINDOW_LIVE2D_CATALOG) };
 });
 

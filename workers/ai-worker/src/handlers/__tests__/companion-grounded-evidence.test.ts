@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { hashCanonicalV2 } from "@astella/shared/hash-canonical-v2";
-import { materializeGroundedTutorEvidence } from "../companion-grounded-evidence.ts";
+import { materializeGroundedTutorEvidence } from "../context/companion-grounded-evidence.ts";
 
 test("sealed evidence 校验后的长引文保留末尾适用条件", () => {
   const quote = "证据正文".repeat(400) + "末尾条件：仅在恒温时适用。";

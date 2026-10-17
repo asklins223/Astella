@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AgentTurnRequest } from "@astella/shared";
-import { judgeCompanionStepClosing, waitingConfirmationReceipts } from "../companion-step-closing.ts";
-import { judgeCompanionUnavailableTool } from "../companion-unavailable-tool.ts";
-import { companionProviderFitsRequest } from "../companion-provider-fit.ts";
-import { namesCurrentNoteRead } from "../companion-note-prefetch.ts";
+import { judgeCompanionStepClosing, waitingConfirmationReceipts } from "../turn/companion-step-closing.ts";
+import { judgeCompanionUnavailableTool } from "../tools/companion-unavailable-tool.ts";
+import { companionProviderFitsRequest } from "../agent/companion-provider-fit.ts";
+import { namesCurrentNoteRead } from "../note/companion-note-prefetch.ts";
 
 /**
  * Behaviour of the decision helpers extracted out of the agent loop on

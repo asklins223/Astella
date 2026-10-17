@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { CompanionSelfNoteV1 } from "@astella/shared";
-import { useRoomStore } from "../../../app/room-store";
+import { useRoomStore } from "../../../app/home/room-store";
 import { CompanionHerNotesPage } from "../companion/companion-her-notes-page";
 
 const note: CompanionSelfNoteV1 = { key: "counterexample", revision: 2, title: "我在想的反例",

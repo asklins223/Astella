@@ -2,10 +2,10 @@
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { NoteDetailV1 } from "@astella/shared/note-projection-contracts";
-import { useNotebookMindMap } from "../use-notebook-mind-map";
+import { useNotebookMindMap } from "../generation/use-notebook-mind-map.ts";
 const state=vi.hoisted(()=>({scope:1}));
-vi.mock("../../../../app/room-store",()=>({useRoomStore:Object.assign((select:(value:{workspaceScopeRevision:number})=>unknown)=>select({workspaceScopeRevision:state.scope}),{getState:()=>({workspaceScopeRevision:state.scope})})}));
-vi.mock("../../../../app/desktop-client",()=>({createRequestMeta:()=>({}),unwrapGatewayResult:(value:unknown)=>value,gatewayErrorMessage:(error:Error)=>error.message}));
+vi.mock("../../../../app/home/room-store",()=>({useRoomStore:Object.assign((select:(value:{workspaceScopeRevision:number})=>unknown)=>select({workspaceScopeRevision:state.scope}),{getState:()=>({workspaceScopeRevision:state.scope})})}));
+vi.mock("../../../../app/client/desktop-client",()=>({createRequestMeta:()=>({}),unwrapGatewayResult:(value:unknown)=>value,gatewayErrorMessage:(error:Error)=>error.message}));
 vi.mock("../notebook-task-notifications",()=>({prepareNotebookTaskNotification:()=>()=>{}}));
 const list=vi.fn(),latestTask=vi.fn(),startTask=vi.fn(),getTask=vi.fn();
 const note={noteId:"note",title:"笔记",currentVersionId:"version"} as NoteDetailV1;

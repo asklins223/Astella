@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { pdfImageRgba, pdfPageMarkdown } from "../source-pdf-images";
+import { pdfImageRgba, pdfPageMarkdown } from "../source/source-pdf-images";
 it("PDF RGB and packed monochrome rows become opaque RGBA pixels", () => {
   expect([...pdfImageRgba({ width: 1, height: 1, kind: 2, data: new Uint8Array([20, 30, 40]) })]).toEqual([20, 30, 40, 255]);
   const pixels = pdfImageRgba({ width: 3, height: 2, kind: 1, data: new Uint8Array([0b10100000, 0b01000000]) });

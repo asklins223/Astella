@@ -13,7 +13,7 @@ import {
   executeCompanionAgentTurnWithToolChoiceFallback,
   steerableToolNames,
   safeArgumentsHash
-} from "../companion-tool-call-ledger.ts";
+} from "../tools/companion-tool-call-ledger.ts";
 
 import {
   FINAL_ANSWER_HOLD_CHARS,
@@ -24,7 +24,7 @@ import {
   partitionPersonaPatch,
   planStepSteer,
   stepHoldChars
-} from "../companion-step-plan.ts";
+} from "../turn/companion-step-plan.ts";
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -42,30 +42,30 @@ import {
   CompanionToolError as RuntimeCompanionToolError,
   CompanionToolNotExecutedError as RuntimeCompanionToolNotExecutedError,
   CompanionToolUnavailableError as RuntimeCompanionToolUnavailableError,
-} from "../companion-agent-runtime.ts";
-import { joinVisibleSegmentsDeduped } from "../companion-visible-segments.ts";
+} from "../agent/companion-agent-runtime.ts";
+import { joinVisibleSegmentsDeduped } from "../turn/companion-visible-segments.ts";
 import {
   canRetryCompanionStream,
   CompanionSpeculativeStepDiscardedError,
   runStreamingAgentStep,
-} from "../companion-agent-streaming-step.ts";
-import { classifyCompanionToolFailure } from "../companion-tool-outcome.ts";
-import { CompanionToolUnavailableError } from "../companion-tool-result.ts";
+} from "../agent/companion-agent-streaming-step.ts";
+import { classifyCompanionToolFailure } from "../tools/companion-tool-outcome.ts";
+import { CompanionToolUnavailableError } from "../tools/companion-tool-result.ts";
 import {
   CompanionToolBlockedError as ExecutorCompanionToolBlockedError,
   CompanionToolError as ExecutorCompanionToolError,
   CompanionToolNotExecutedError as ExecutorCompanionToolNotExecutedError,
   CompanionToolUnavailableError as ExecutorCompanionToolUnavailableError,
-} from "../companion-tool-result.ts";
+} from "../tools/companion-tool-result.ts";
 // 读工具族已搬到 companion-read-tools.ts（B2）。测试跟着搬——
 // 继续从 runtime 那个 re-export 取，会让「哪个文件有测试」这件事说不清。
-import { taskQueueToolResult, currentPageToolResult } from "../companion-read-tools.ts";
-import { NOTE_SEARCH_MAX_TERMS, noteSearchTerms } from "../companion-dialogue-content.ts";
-import { interpretCompanionTurn } from "../companion-tool-intent.ts";
+import { taskQueueToolResult, currentPageToolResult } from "../tools/companion-read-tools.ts";
+import { NOTE_SEARCH_MAX_TERMS, noteSearchTerms } from "../turn/companion-dialogue-content.ts";
+import { interpretCompanionTurn } from "../tools/companion-tool-intent.ts";
 import { MockProvider } from "../../lib/providers/mock.ts";
 import { ProviderRequestError } from "../../lib/provider-request-error.ts";
 import { AgentOutputError } from "../../lib/non-retryable-errors.ts";
-import { CompanionStreamStoppedError } from "../companion-dialogue-stream.ts";
+import { CompanionStreamStoppedError } from "../turn/companion-dialogue-stream.ts";
 import type { AIProvider } from "../../lib/ai-provider.ts";
 import type { AgentTurnRequest, AgentTurnResult } from "@astella/shared";
 import { AGENT_GOAL_HANDOFF_INSTRUCTIONS } from "../../agent/goal-handoff-instructions.ts";
@@ -1010,7 +1010,7 @@ test("companionWriteToolNames 不带清单上限（截断会把第 11 个写工�
  * 而它一旦被人"顺手简化"回各自 throw，线上表现就是活干完了却整轮判死——不报错，只会沉默。
  */
 test("三道交付闸的销毁都必须过统一的后果判定", () => {
-  const source = readFileSync(new URL("../companion-agent-runtime.ts", import.meta.url), "utf8");
+  const source = readFileSync(new URL("../agent/companion-agent-runtime.ts", import.meta.url), "utf8");
   assert.match(source,
     /const landedWrites = companionActionResultRecorded\(messages, companionWriteToolNames\(definitions\)\)/,
     "权威事实必须来自本轮真实落库的写回执——不是模型的说法、词表、时间或条数上限");
@@ -1460,13 +1460,13 @@ test("mock 守 provider 合同：required 必回工具调用，工具面为空�
  * 单测跑不到整条循环（循环归 postgres 集成测）。
  */
 test("工具面只由权限档与数据外发政策装配，不再被本轮判定摘除", () => {
-  const source = readFileSync(new URL("../companion-agent-runtime.ts", import.meta.url), "utf8");
+  const source = readFileSync(new URL("../agent/companion-agent-runtime.ts", import.meta.url), "utf8");
   assert.match(source,
     /const availableDefinitions = resolveAllCompanionAgentTools\(meta\.permissionLevel, event\.constraints\)/,
     "工具面必须来自那份按声明过滤的目录，不是另起一处清单");
   // 2026-10-16（神文件棘轮）：装配那一句随回合前段搬进 companion-turn-preamble.ts，
   // 判据跟着真实位置走——目录仍在运行时装配，装配点仍不许再加一道筛选。
-  const preamble = readFileSync(new URL("../companion-turn-preamble.ts", import.meta.url), "utf8");
+  const preamble = readFileSync(new URL("../turn/companion-turn-preamble.ts", import.meta.url), "utf8");
   const assembly = /^  const definitions = ([^;]+);$|^\s+definitions: ([^,]+),$/m.exec(preamble);
   assert.ok(assembly, "找不到工具面装配那一句（形状变了，这条判据要先跟着改）");
   assert.match((assembly[1] ?? assembly[2]).trim(), /^(deps\.)?availableDefinitions$/,

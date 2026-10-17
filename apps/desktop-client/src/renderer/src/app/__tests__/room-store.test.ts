@@ -27,7 +27,7 @@ import {
   MIN_COMPANION_SCALE,
   normalizePersistedCompanionPlacement,
   useRoomStore,
-} from "../room-store.ts";
+} from "../home/room-store.ts";
 
 describe("room navigation guard", () => {
   beforeEach(() => {

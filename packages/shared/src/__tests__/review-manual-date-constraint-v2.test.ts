@@ -15,7 +15,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { decideNextReviewAtWithManualDateV2 } from "../review-manual-date-constraint-v2.ts";
+import { decideNextReviewAtWithManualDateV2 } from "../review/review-manual-date-constraint-v2.ts";
 
 const DAY = 86_400_000;
 const base = new Date("2026-09-27T09:00:00.000Z");

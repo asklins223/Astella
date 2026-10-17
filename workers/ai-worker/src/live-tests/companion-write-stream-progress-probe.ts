@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { AgentRole, getCompanionAgentTool } from "@astella/shared";
-import { runStreamingAgentStep } from "../handlers/companion-agent-streaming-step.ts";
+import { runStreamingAgentStep } from "../handlers/agent/companion-agent-streaming-step.ts";
 import { platform, observedProvider, save, type WireReceipt } from "./acceptance-common.ts";
 
 // Real configured provider, synthetic content, no executor and no note writes.

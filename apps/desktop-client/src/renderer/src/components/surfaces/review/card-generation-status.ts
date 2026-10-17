@@ -6,7 +6,7 @@ import type {
   CardActivationSchedulingV1,
 } from "@astella/shared/card-generation-desktop-contracts";
 import { isCardGenerationReviewOpen } from "@astella/shared/card-generation-desktop-contracts";
-import { formatDate } from "../notebook/surface-data.tsx";
+import { formatDate } from "../notebook/shell/surface-data.tsx";
 
 export { isCardGenerationReviewOpen };
 

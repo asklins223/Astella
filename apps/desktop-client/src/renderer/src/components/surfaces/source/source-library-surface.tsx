@@ -2,13 +2,13 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { ArrowRight, BookOpen, Code2, FileText, Globe2, LoaderCircle, Search, X } from "lucide-react";
 import type { DesktopSourceListItem } from "@astella/shared/desktop-surface-contracts";
 import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
-import { useRoomStore } from "../../../app/room-store";
-import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../../app/desktop-client";
-import { consumeBatchReceipt, consumeLibraryReceipt, peekBatchReceipt, peekLibraryReceipt } from "../../../app/source-batch-capture";
+import { useRoomStore } from "../../../app/home/room-store";
+import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../../app/client/desktop-client";
+import { consumeBatchReceipt, consumeLibraryReceipt, peekBatchReceipt, peekLibraryReceipt } from "../../../app/source/source-batch-capture";
 import {
   SOURCE_CAPTURED_EVENT,
   type SourceCapturedDetail,
-} from "../../../app/source-intake";
+} from "../../../app/source/source-intake";
 import { HudPage } from "../../hud/HudPage";
 import { useHudPage } from "../../hud/use-hud-page";
 import { usePageReadableView } from "../../hud/use-page-readable-view";
@@ -22,7 +22,7 @@ import {
   formatSourceStatus,
   sourceStatusTone,
   useSurfaceProjection,
-} from "../notebook/surface-data.tsx";
+} from "../notebook/shell/surface-data.tsx";
 import {
   SOURCE_PAGE_LIMIT,
   SOURCE_PAGE_MAX,

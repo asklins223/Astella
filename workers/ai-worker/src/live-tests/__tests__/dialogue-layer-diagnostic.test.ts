@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { buildDialogueLayerRequests } from "../dialogue-layer-diagnostic.ts";
-import { buildCasualFirstStepRequest } from "../../handlers/companion-speculative-first-step.ts";
+import { buildCasualFirstStepRequest } from "../../handlers/agent/companion-speculative-first-step.ts";
 
 const runtime = { permissionLevel: "guided", stepBudget: 4 };
 

@@ -9,7 +9,7 @@ import {
   spriteLicenseV1Schema,
   spriteManifestV1Schema,
   validateSpriteManifestShape,
-} from "../contracts/companion-character-contracts.js";
+} from "../contracts/companion/companion-character-contracts.js";
 
 const SOURCE_SHA = "159f23153339db24815fcd9f8ed700907f55652ac15e859957c05e9b85dba2e5";
 

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { CircuitBreaker, CircuitOpenError } from "../circuit-breaker.ts";
-import { decodePublicJsonResponse } from "../public-json-http.ts";
+import { CircuitBreaker, CircuitOpenError } from "../platform/circuit-breaker.ts";
+import { decodePublicJsonResponse } from "../platform/public-json-http.ts";
 
 test("HTML gateway timeout retains status and contributes to the circuit breaker", () => {
   const breaker = new CircuitBreaker({ failureThreshold: 2 });

@@ -29,7 +29,7 @@ import '/src/styles.ts';
 import { HomeV2AudioController } from '/src/components/home-v2/HomeV2AudioController.tsx';
 import { CompanionNotificationCenter } from '/src/components/companion/CompanionNotificationCenter.tsx';
 import { WindowLive2D } from '/src/components/companion/WindowLive2D.tsx';
-import { useRoomStore } from '/src/app/room-store.ts';
+import { useRoomStore } from '/app/home/room-store.ts';
 useRoomStore.setState({ masterMuted: false, surface: null, windowState: 'visible' });
 function Probe() {
   const [blocked, setBlocked] = useState(false);
@@ -67,7 +67,7 @@ try {
   const next = await app.firstWindow()
   await next.waitForFunction(() => Boolean(window.astella?.update))
   const state = await next.evaluate(async () => {
-    const { createRequestMeta } = await import('/src/app/desktop-client.ts')
+    const { createRequestMeta } = await import('/app/client/desktop-client.ts')
     return (await window.astella.update.getState({ meta: createRequestMeta() })).data.state
   })
   if (state.installedUpdate) throw new Error('Success was repeated after a second startup')

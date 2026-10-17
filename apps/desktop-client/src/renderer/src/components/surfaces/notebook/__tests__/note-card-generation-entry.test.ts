@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { noteCardGenerationEntry } from "../note-card-generation-entry";
+import { noteCardGenerationEntry } from "../generation/note-card-generation-entry.ts";
 
 const NOTE = "4a1f0000-0000-4000-8000-000000000001";
 const NEXT = "4a1f0000-0000-4000-8000-000000000002";

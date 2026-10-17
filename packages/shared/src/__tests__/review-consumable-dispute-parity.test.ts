@@ -27,10 +27,10 @@ import { test } from "node:test";
 import {
   decideDisputedObservationV2,
   type AssessmentDisputeRecheckOutcomeV2,
-} from "../assessment-dispute-rules-v2.ts";
+} from "../review/assessment-dispute-rules-v2.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const source = readFileSync(resolve(HERE, "..", "review-consumable-target.ts"), "utf8");
+const source = readFileSync(resolve(HERE, "..", "review", "review-consumable-target.ts"), "utf8");
 
 /** 那一段争议子查询的原文。 */
 function disputeClause(): string {

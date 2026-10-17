@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { repairDegenerateCompanionAnswer, type CompanionAnswerRepairInput } from "../companion-answer-repair.ts";
+import { repairDegenerateCompanionAnswer, type CompanionAnswerRepairInput } from "../agent/companion-answer-repair.ts";
 import type { AgentTurnRequest, AgentTurnResult } from "@astella/shared";
 
 const HALF = "今天已经学了1";           // 说了一半的句子：结构上没说完

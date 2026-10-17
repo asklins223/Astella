@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { MindMapContentV1 } from "@astella/shared/note-mind-map-contracts";
-import { parseMindMap, reconcileMergedMindMap } from "../note-mind-map-output.ts";
-import { buildChunks, exactQuote, imageSafeText } from "../note-mind-map-source.ts";
+import { parseMindMap, reconcileMergedMindMap } from "../note/note-mind-map-output.ts";
+import { buildChunks, exactQuote, imageSafeText } from "../note/note-mind-map-source.ts";
 const map: MindMapContentV1 = { schemaVersion:1,rootId:"root",nodes:[
   {id:"root",parentId:null,kind:"root",label:"功率",explanation:null,references:[]},
   {id:"c0_a",parentId:"root",kind:"concept",label:"固定电压",explanation:"保持电压不变才能使用这个比较。",references:[{blockOrdinal:1,quote:"固定电压"}]}] };

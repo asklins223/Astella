@@ -11,8 +11,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { randomUUID } from "node:crypto";
-import { noteAgentCapabilityManifest } from "../agent-capabilities.ts";
-import { agentArtifactRefV1Schema } from "../contracts/agent-contracts.ts";
+import { noteAgentCapabilityManifest } from "../agent/agent-capabilities.ts";
+import { agentArtifactRefV1Schema } from "../contracts/agent/agent-contracts.ts";
 
 const EXPANSION = "note_expansion_generate";
 

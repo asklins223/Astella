@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { COMPANION_TRIGGERED_TOPICS, initiativeCadenceApplies } from "../companion-initiative-observation.ts";
+import { COMPANION_TRIGGERED_TOPICS, initiativeCadenceApplies } from "../proactive/companion-initiative-observation.ts";
 
 /**
  * 档位间隔的**钟**只数她自己新起的话题（2026-10-16）。
@@ -13,7 +13,7 @@ import { COMPANION_TRIGGERED_TOPICS, initiativeCadenceApplies } from "../compani
  * 这条守卫读真代码：钟的 SQL 必须把触发式话题排除掉，否则"该开口的时候不开口"会原样回来。
  */
 test("档位间隔的钟把触发式话题排除在外", () => {
-  const source = readFileSync(new URL("../companion-initiative.ts", import.meta.url), "utf8");
+  const source = readFileSync(new URL("../proactive/companion-initiative.ts", import.meta.url), "utf8");
   const clock = source.slice(source.indexOf("SELECT r.created_at AS at FROM companion_turn_runs"),
     source.indexOf("const msSince = spoke"));
   assert.ok(clock.length > 0, "找不到档位间隔的读数 SQL");

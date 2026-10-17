@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buildCompanionPersonaMessages, validateCompanionOutput } from "../companion-dialogue-content.ts";
-import { companionConversationTimeEvidence, conversationInstant, renderCompanionConversationEvidence } from "../companion-conversation-evidence.ts";
+import { buildCompanionPersonaMessages, validateCompanionOutput } from "../turn/companion-dialogue-content.ts";
+import { companionConversationTimeEvidence, conversationInstant, renderCompanionConversationEvidence } from "../turn/companion-conversation-evidence.ts";
 
 const clock = { observedAt: "2026-10-07T16:01:00Z", timezone: "Asia/Shanghai", currentMessageCreatedAt: "2026-10-07T16:00:59Z" };
 

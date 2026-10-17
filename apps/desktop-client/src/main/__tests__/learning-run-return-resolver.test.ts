@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { MemoryPendingReturnMarkerStore } from "../pending-return-marker-store";
-import { matchesLearningRunReturnRoute, recoverPendingReturnMarker, resolveLearningRunReturn, routeForLearningRunReturn } from "../learning-run-return-resolver";
+import { MemoryPendingReturnMarkerStore } from "../store/pending-return-marker-store";
+import { matchesLearningRunReturnRoute, recoverPendingReturnMarker, resolveLearningRunReturn, routeForLearningRunReturn } from "../store/learning-run-return-resolver";
 
 const common = {
   version: 2 as const,

@@ -29,7 +29,7 @@
 
 import { createHash } from "node:crypto";
 
-import { fetchUrlContentOnce } from "../handlers/parse-source.ts";
+import { fetchUrlContentOnce } from "../handlers/note/parse-source.ts";
 
 /** 单次交回的正文窗口宽度；读到底靠 `offset` 续读，不是"只许看前这么多"。 */
 export const PUBLIC_DOCUMENT_MAX_TEXT = 6000;

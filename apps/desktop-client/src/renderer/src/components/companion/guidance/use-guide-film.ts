@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { useRoomStore } from "../../../app/room-store";
+import { useRoomStore } from "../../../app/home/room-store";
 import type { GuideStepId } from "./guide-definitions";
-import type { NotificationVoicePhase } from "../companion-notification-voice";
+import type { NotificationVoicePhase } from "../voice/companion-notification-voice";
 
 /** 静音时约一分钟。朗读仍在进行时保留本幕结尾，不截断旁白来赶进度。 */
 export const GUIDE_FILM_SECONDS: Record<GuideStepId, number> = {

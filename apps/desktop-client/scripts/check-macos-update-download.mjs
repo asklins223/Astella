@@ -37,7 +37,7 @@ try {
 import { app, autoUpdater as nativeUpdater } from 'electron';
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
-import { MacosArchiveUpdater } from ${JSON.stringify(resolve(appRoot, 'src/main/macos-archive-updater.ts'))};
+import { MacosArchiveUpdater } from ${JSON.stringify(resolve(appRoot, 'src/main/update/macos-archive-updater.ts'))};
 async function probe() {
 app.setPath('userData', ${JSON.stringify(join(root, 'profile'))});
 app.setPath('cache', ${JSON.stringify(root)});

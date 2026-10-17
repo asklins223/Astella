@@ -13,8 +13,8 @@
 import { noteDocResult, seedUpdate } from "../../../test-support/note-doc-fixtures.ts";
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NotebookSurface } from "../notebook/notebook-surface.tsx";
-import { useRoomStore } from "../../../app/room-store.ts";
+import { NotebookSurface } from "../notebook/shell/notebook-surface.tsx";
+import { useRoomStore } from "../../../app/home/room-store.ts";
 
 const NOTE_ID = "11111111-1111-4111-8111-111111111111";
 const VERSION_ID = "22222222-4222-4222-8222-222222222222";

@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { highlightCodeBlock, type CodeHighlight } from "./code-tokens";
-import { copyText } from "../../app/clipboard";
+import { copyText } from "../../app/client/clipboard";
 
 /**
  * 代码纸：语言与复制留在纸沿，正文只有颜色变化。

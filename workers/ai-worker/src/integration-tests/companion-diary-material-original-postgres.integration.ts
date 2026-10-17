@@ -4,8 +4,8 @@ import { after, test } from "node:test";
 import postgres from "postgres";
 import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 import { withWorkerWorkspaceTransaction, closeDatabase } from "../db.ts";
-import { collectDiaryMaterial } from "../handlers/companion-daily-summary.ts";
-import { buildDiaryCandidates, buildDiarySelectionMessages } from "../handlers/companion-diary-candidates.ts";
+import { collectDiaryMaterial } from "../handlers/journal/companion-daily-summary.ts";
+import { buildDiaryCandidates, buildDiarySelectionMessages } from "../handlers/journal/companion-diary-candidates.ts";
 
 const fixtureDb = postgres(testDatabaseUrl("DATABASE_URL_API"), { max: 2 });
 after(async () => { await fixtureDb.end({ timeout: 2 }); await closeDatabase(); });

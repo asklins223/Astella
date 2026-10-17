@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { qualityEvidenceManifestV1Schema } from "../contracts/quality-evidence-contracts.ts";
-import type { QualityEvidenceManifestV1 } from "../contracts/quality-evidence-contracts.ts";
+import { qualityEvidenceManifestV1Schema } from "../contracts/agent/quality-evidence-contracts.ts";
+import type { QualityEvidenceManifestV1 } from "../contracts/agent/quality-evidence-contracts.ts";
 
 const DIGEST = "a".repeat(64);
 

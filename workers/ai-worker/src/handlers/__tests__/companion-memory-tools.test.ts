@@ -25,11 +25,11 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 import { COMPANION_AGENT_TOOL_DEFINITIONS } from "@astella/shared/companion-agent-registry";
 
-import { executeCompanionMemoryTool } from "../companion-memory-tools.ts";
-import { CompanionToolError } from "../companion-tool-result.ts";
+import { executeCompanionMemoryTool } from "../tools/companion-memory-tools.ts";
+import { CompanionToolError } from "../tools/companion-tool-result.ts";
 
 const HANDLERS = resolve(import.meta.dirname, "..");
-const EXECUTION_SOURCE = readFileSync(join(HANDLERS, "companion-tool-execution.ts"), "utf8");
+const EXECUTION_SOURCE = readFileSync(join(HANDLERS, "tools", "companion-tool-execution.ts"), "utf8");
 
 /** 这六个工具构成"记忆族"。改动这一族的成员时，两处都要跟着改。 */
 const MEMORY_TOOLS = [
@@ -119,7 +119,7 @@ test("转交的那一行真的指向本模块（标签留着但忘了转交＝�
 });
 
 test("按 ID 展开与召回工具都返回认识状态及不可当作事实复述的提示", () => {
-  const source = readFileSync(join(HANDLERS, "companion-memory-tools.ts"), "utf8");
+  const source = readFileSync(join(HANDLERS, "tools", "companion-memory-tools.ts"), "utf8");
   assert.match(source, /epistemicStatus: memory\.epistemicStatus/);
   assert.match(source, /epistemicNotice: memoryEpistemicNotice\(memory\.epistemicStatus\)/);
   assert.match(source, /epistemicStatus: item\.epistemicStatus/);
@@ -151,7 +151,7 @@ test("full 档修订也走共享的账号级范围判据（42 阶段 1 E 复审�
   // `full` 档是裸 SQL，不经 API 的 `correctMemory`；它自己那一份判据必须是**共享的**。
   // 两处各写一份正则时，漂移的方向通常是直执行那份更松——而 `full` 档恰恰是用户
   // 不需要确认的那一条路，守卫松在它上面等于没有守卫。
-  const source = readFileSync(join(HANDLERS, "companion-memory-tools.ts"), "utf8");
+  const source = readFileSync(join(HANDLERS, "tools", "companion-memory-tools.ts"), "utf8");
   assert.match(source, /accountPreferenceWriteDecision\(/,
     "直执行修订没有过账号级范围判据");
   assert.ok(!/LOCAL_REFERENCE_PATTERN|SUBJECT_OR_EXAM_PATTERN|CROSS_SPACE_KINDS/.test(source),
@@ -171,7 +171,7 @@ test("记忆召回的查询向量要走治理出口，不能裸建 provider", ()
   // embedding provider 构造：不查 `user_ai_settings` 的同意、不查数据外发政策、
   // 不过 PII 净化。于是治理口径按调用族分裂成两半，且这半边在 `ai_audit_log`
   // 里一行都留不下（向量重建那条路一直有审计行）。
-  const source = withoutComments(readFileSync(join(HANDLERS, "companion-memory-tools.ts"), "utf8"));
+  const source = withoutComments(readFileSync(join(HANDLERS, "tools", "companion-memory-tools.ts"), "utf8"));
 
   assert.ok(!/createEmbeddingProvider\(\s*\)/.test(source),
     "还有一处不带治理上下文的 createEmbeddingProvider()：召回查询向量绕过同意与外发政策");

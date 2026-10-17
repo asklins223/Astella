@@ -97,7 +97,7 @@ try {
   // 早先请求要求带 conversationId，于是这里的入口点了只会说"暂时取不回来"。这条就是钉那个洞。
   // HUD 收起时那颗按钮不在 DOM 里，所以按界面自己走的那两步开：写 target + 派发 open 动作。
   const centreOpened = await page.evaluate(async () => {
-    const { useRoomStore } = await import('/src/app/room-store.ts')
+    const { useRoomStore } = await import('/app/home/room-store.ts')
     const room = useRoomStore.getState()
     room.setCompanionCenterTarget({ tab: "overview" })
     room.invoke?.("open-companion-center")
@@ -135,7 +135,7 @@ try {
   // 新 profile 默认可能是静音的：不放开 `masterMuted`，念出来的东西会被投递层直接丢掉，
   // 于是"点了没声"看起来像功能坏了。先按其它走查的同一步把声音放开。
   const audioState = await page.evaluate(async () => {
-    const { useRoomStore } = await import('/src/app/room-store.ts')
+    const { useRoomStore } = await import('/app/home/room-store.ts')
     useRoomStore.getState().finishOnboarding?.()
     useRoomStore.setState({ masterMuted: false })
     const after = useRoomStore.getState()

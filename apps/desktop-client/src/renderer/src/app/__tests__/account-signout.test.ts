@@ -2,13 +2,13 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GatewayResultV1, RequestMetaV1 } from "@astella/shared/desktop-ipc-contracts";
-import { setCurrentWorkspaceEpoch } from "../desktop-client.ts";
-import { subscribeGateInvalidation } from "../gate-invalidation.ts";
+import { setCurrentWorkspaceEpoch } from "../client/desktop-client.ts";
+import { subscribeGateInvalidation } from "../gate/gate-invalidation.ts";
 import {
   clearAccountSignOutNotice,
   peekAccountSignOutNotice,
   signOutCurrentAccount,
-} from "../account-signout.ts";
+} from "../gate/account-signout.ts";
 
 /**
  * 退出登录只有两种值得区分的结局：这台设备和学习服务**都**干净了，以及这台设备

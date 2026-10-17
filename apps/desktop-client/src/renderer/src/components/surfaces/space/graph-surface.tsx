@@ -27,8 +27,8 @@ import type {
   UnderstandingEdgeProjectionV3,
   UnderstandingNodeProjectionV3,
 } from "@astella/shared/note-deepening-contracts";
-import { createRequestMeta, unwrapGatewayResult } from "../../../app/desktop-client";
-import { useRoomStore } from "../../../app/room-store";
+import { createRequestMeta, unwrapGatewayResult } from "../../../app/client/desktop-client";
+import { useRoomStore } from "../../../app/home/room-store";
 import { NoteOverviewLayer, NoteLocalLayer, NoteRecordLayer } from "./graph-note-pages";
 import { rememberGraphJourney, takeGraphJourney } from "./graph-journey";
 import { useStarMapMotion } from "./use-star-map-motion";
@@ -36,7 +36,7 @@ import { HudPage } from "../../hud/HudPage";
 import { useHudPage } from "../../hud/use-hud-page";
 import { usePageReadableView } from "../../hud/use-page-readable-view";
 import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
-import { useSurfaceProjection } from "../notebook/surface-data.tsx";
+import { useSurfaceProjection } from "../notebook/shell/surface-data.tsx";
 import {
   edgeEndpointKey,
   graphEdgeKindLabel,

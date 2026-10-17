@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useRoomStore } from "../../../../app/room-store";
-import { useNotebookPaperMotion, useNotebookPaperPresence } from "../use-notebook-paper-motion";
+import { useRoomStore } from "../../../../app/home/room-store";
+import { useNotebookPaperMotion, useNotebookPaperPresence } from "../shell/use-notebook-paper-motion.ts";
 
 const active: { animation: Animation; complete: () => void }[] = [];
 const animate = vi.fn((_frames: Keyframe[], _options: KeyframeAnimationOptions) => {

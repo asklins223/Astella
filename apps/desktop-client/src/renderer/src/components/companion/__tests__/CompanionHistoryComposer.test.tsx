@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { CompanionHistoryComposer } from "../CompanionHistoryComposer";
-import type { CompanionVoiceInput } from "../use-companion-voice-input";
+import { CompanionHistoryComposer } from "../hud/CompanionHistoryComposer";
+import type { CompanionVoiceInput } from "../voice/use-companion-voice-input";
 
 const voice: CompanionVoiceInput = {
   phase: "idle", activity: "idle", lastTurn: null, pause: () => {}, resume: () => {}, interrupt: () => {}, sendNow: () => {}, note: null, noteRevision: 0, supported: true,

@@ -22,7 +22,7 @@ import {
   subscribeCompanionFeed,
   type CompanionFeedSelection,
   type CompanionNoteIntent,
-} from "../companion-feed";
+} from "../hud/companion-feed";
 
 function captureFeed(): { events: CompanionFeedSelection[]; opens: number } {
   const events: CompanionFeedSelection[] = [];

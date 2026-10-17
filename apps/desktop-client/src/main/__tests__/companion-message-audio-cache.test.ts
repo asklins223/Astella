@@ -3,9 +3,9 @@ import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { CompanionMessageAudioCache, type MessageAudioScope } from "../companion-message-audio-cache";
-import { DesktopGateway } from "../desktop-gateway";
-import { clearCompanionHistory, listCachedCompanionVoice, readCachedCompanionVoice, speakCompanionVoiceSegment } from "../desktop-gateway-ns-companion";
+import { CompanionMessageAudioCache, type MessageAudioScope } from "../voice/companion-message-audio-cache";
+import { DesktopGateway } from "../gateway/desktop-gateway";
+import { clearCompanionHistory, listCachedCompanionVoice, readCachedCompanionVoice, speakCompanionVoiceSegment } from "../gateway/desktop-gateway-ns-companion";
 import type { CompanionVoiceSpeakResultV1, CompanionVoiceSpeakSegmentRequestV2 } from "@astella/shared/companion-voice-contracts";
 
 let directory: string;

@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useRoomStore } from "../app/room-store";
-import type { RoomIntent } from "../app/room-machine";
+import { useRoomStore } from "../app/home/room-store";
+import type { RoomIntent } from "../app/home/room-machine";
 import { resolveSceneMotionMode } from "../scene/scene-motion";
 import { createDirectoryRailMotion, directoryBox } from "./directory-rail-motion";
 

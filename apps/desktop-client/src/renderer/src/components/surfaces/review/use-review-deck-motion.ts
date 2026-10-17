@@ -1,5 +1,5 @@
 import { useCallback, useLayoutEffect, useRef, type RefObject } from "react";
-import { useRoomStore } from "../../../app/room-store";
+import { useRoomStore } from "../../../app/home/room-store";
 import { paperSpringAtRest, stepPaperSpring, type PaperSpring } from "../../motion/paper-spring";
 
 type Pose = [number, number, number, number, number];

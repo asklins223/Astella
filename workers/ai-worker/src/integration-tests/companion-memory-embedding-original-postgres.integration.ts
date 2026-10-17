@@ -14,7 +14,7 @@ writeFileSync(process.env.AI_PLATFORMS_CONFIG, JSON.stringify({
   platforms: { fixture: { type: "mock", models: { embedding: { contextWindowTokens: 32768, maxOutputTokens: 8192 } } } },
   capabilities: { embedding: { platform: "fixture", model: "embedding" } },
 }));
-const { runCompanionMemoryEmbeddingRebuild } = await import("../handlers/companion-memory-embedding.ts");
+const { runCompanionMemoryEmbeddingRebuild } = await import("../handlers/memory/companion-memory-embedding.ts");
 const { registerFactory } = await import("../lib/provider-factory.ts");
 const { closeDatabase } = await import("../db.ts");
 const received: string[] = [];

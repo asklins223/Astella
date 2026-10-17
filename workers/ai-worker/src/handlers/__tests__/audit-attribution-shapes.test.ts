@@ -43,7 +43,7 @@ test("制卡审计不把 outbox / generation run 的 id 写进 job_id", () => {
 });
 
 test("看图的审计行声明 image_content", () => {
-  const code = withoutComments(readFileSync(join(WORKER_SRC, "handlers", "companion-tool-execution.ts"), "utf8"));
+  const code = withoutComments(readFileSync(join(WORKER_SRC, "handlers", "tools", "companion-tool-execution.ts"), "utf8"));
   const at = code.indexOf('operation: "companion_read_image"');
   assert.ok(at > 0, "没找到看图那次的 operation");
   // 审计上下文的对象字面量在 operation **之前**开括号，所以往回找最近的 `{`，

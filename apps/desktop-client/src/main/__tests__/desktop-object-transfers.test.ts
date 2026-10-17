@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { createHash } from "node:crypto";
-import { fetchObjectDownload, uploadRemoteObject, validateObjectUrl } from "../desktop-object-transfers";
-import type { GatewayTransport } from "../desktop-gateway-transport";
+import { fetchObjectDownload, uploadRemoteObject, validateObjectUrl } from "../store/desktop-object-transfers";
+import type { GatewayTransport } from "../gateway/desktop-gateway-transport";
 
 afterEach(() => vi.unstubAllGlobals());
 const profile = { version: 1, mode: "remote", origins: ["https://objects.example.test"] };

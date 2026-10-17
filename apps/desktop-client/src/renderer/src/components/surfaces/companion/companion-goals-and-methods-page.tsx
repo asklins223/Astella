@@ -5,12 +5,12 @@ import type { AgentLongGoalV1 } from "@astella/shared/agent-long-goal-contracts"
 import { companionMemoryContentMaxLength } from "@astella/shared/companion-memory-desktop-contracts";
 import type { CreateAgentRunV1 } from "@astella/shared/agent-contracts";
 import type { RequestMetaV1 } from "@astella/shared/desktop-ipc-contracts";
-import { gatewayErrorMessage, unwrapGatewayResult } from "../../../app/desktop-client";
-import { useRoomStore } from "../../../app/room-store";
-import { ensureAiActionAllowed, guideAiPermissionFailure } from "../../../app/ai-action-gate";
-import { goalStatusText } from "../../companion/agent-goal-presentation";
-import { openCompanionGoalJournal } from "../../companion/companion-events";
-import { plainCompanionBubbleText, renderCompanionMarkdown } from "../../companion/companion-markdown";
+import { gatewayErrorMessage, unwrapGatewayResult } from "../../../app/client/desktop-client";
+import { useRoomStore } from "../../../app/home/room-store";
+import { ensureAiActionAllowed, guideAiPermissionFailure } from "../../../app/gate/ai-action-gate";
+import { goalStatusText } from "../../companion/goals/agent-goal-presentation";
+import { openCompanionGoalJournal } from "../../companion/content/companion-events";
+import { plainCompanionBubbleText, renderCompanionMarkdown } from "../../companion/content/companion-markdown";
 import { HUD_PAGES } from "../../hud/hud-pages";
 import { usePageReadableView } from "../../hud/use-page-readable-view";
 import { CenterFeedback, CenterSearch, SectionState } from "./companion-center-primitives";

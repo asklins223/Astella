@@ -4,10 +4,10 @@ import { afterEach, expect, it, vi } from "vitest";
 import type { ComponentProps } from "react";
 import { noteAnnotationV1Schema } from "@astella/shared/note-annotation-contracts";
 import type { NoteLearningArtifactV1 } from "@astella/shared/note-learning-artifact-contracts";
-import { NoteAnnotationMark } from "../note-annotation-mark";
-import { NoteAnnotationSidePage } from "../note-annotation-side-page";
-import { ReadingBlockContent } from "../notebook-reading-block";
-import { noteInlineDisplayText } from "../note-reading-inline";
+import { NoteAnnotationMark } from "../annotation/note-annotation-mark.tsx";
+import { NoteAnnotationSidePage } from "../annotation/note-annotation-side-page.tsx";
+import { ReadingBlockContent } from "../reading/notebook-reading-block.tsx";
+import { noteInlineDisplayText } from "../reading/note-reading-inline.tsx";
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const date = "2026-10-02T00:00:00.000Z";

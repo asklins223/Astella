@@ -42,7 +42,7 @@ after(async () => {
 });
 
 const { tickCompanionRunReconcile, resetCompanionRunReconcileThrottleForTest } =
-  await import("../handlers/companion-run-reconcile-scheduler.ts");
+  await import("../handlers/schedulers/companion-run-reconcile-scheduler.ts");
 
 interface StuckTurn { workspaceId: string; userId: string; conversationId: string; runId: string; jobId: string }
 

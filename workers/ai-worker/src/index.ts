@@ -1,36 +1,36 @@
-import { runCompanionInitiative } from "./handlers/companion-initiative.ts";
+import { runCompanionInitiative } from "./handlers/proactive/companion-initiative.ts";
 import { runAgentAdvance, tickAgentRecovery, markAgentAdvanceFailed } from "./agent/advance.ts";
 import { sql } from "drizzle-orm";
 import { logger } from "./lib/logger.ts";
 import postgres from "postgres";
 import { closeDatabase, db, resolveWorkerStatementTimeoutMs, resolveWorkerDatabaseUrl } from "./db.ts";
 import { NOTIFY_CHANNEL } from "./lib/job-notify.ts";
-import { markSourceParseFailed, runParseSource } from "./handlers/parse-source.ts";
-import { runCompanionDialogue } from "./handlers/companion-dialogue.ts";
-import { runCompanionFollowupSuggestions } from "./handlers/companion-followup-suggestions-job.ts";
-import { runCompanionMemoryExtract } from "./handlers/companion-memory-extractor.ts";
-import { runCompanionMemoryOrganizeJob } from "./handlers/companion-memory-organize.ts";
-import { tickCompanionMemoryOrganizeScheduler } from "./handlers/companion-memory-organize-scheduler.ts";
-import { tickCompanionMemoryEmbeddingScheduler } from "./handlers/companion-memory-embedding-scheduler.ts";
-import { runCompanionReflectionJob } from "./handlers/companion-reflection.ts";
-import { tickCompanionReflectionScheduler } from "./handlers/companion-reflection-scheduler.ts";
-import { runCompanionSummarizer } from "./handlers/companion-summarizer.ts";
-import { runCompanionMemoryEmbeddingRebuild } from "./handlers/companion-memory-embedding.ts";
-import { runCompanionDailySummary } from "./handlers/companion-daily-summary.ts";
-import { runNoteMindMapGenerate } from "./handlers/note-mind-map-generate.ts";
-import { runNoteOverviewGenerate } from "./handlers/note-overview-generate.ts";
-import { runNoteAnnotationExplain } from "./handlers/note-annotation-explain.ts";
-import { runNoteDynamicArtifactGenerate } from "./handlers/note-dynamic-artifact-generate.ts";
-import { runNoteExpansionGenerate } from "./handlers/note-expansion-generate.ts";
-import { tickCompanionDailySummaryScheduler } from "./handlers/companion-daily-summary-scheduler.ts";
-import { tickCompanionMemoryMaintenance } from "./handlers/companion-memory-maintenance.ts";
-import { tickCompanionProposalExpiry } from "./handlers/companion-proposal-expiry-scheduler.ts";
-import { tickCompanionRunReconcile } from "./handlers/companion-run-reconcile-scheduler.ts";
-import { tickCompanionReminderDelivery } from "./handlers/companion-reminder-scheduler.ts";
+import { markSourceParseFailed, runParseSource } from "./handlers/note/parse-source.ts";
+import { runCompanionDialogue } from "./handlers/turn/companion-dialogue.ts";
+import { runCompanionFollowupSuggestions } from "./handlers/schedulers/companion-followup-suggestions-job.ts";
+import { runCompanionMemoryExtract } from "./handlers/memory/companion-memory-extractor.ts";
+import { runCompanionMemoryOrganizeJob } from "./handlers/memory/companion-memory-organize.ts";
+import { tickCompanionMemoryOrganizeScheduler } from "./handlers/schedulers/companion-memory-organize-scheduler.ts";
+import { tickCompanionMemoryEmbeddingScheduler } from "./handlers/schedulers/companion-memory-embedding-scheduler.ts";
+import { runCompanionReflectionJob } from "./handlers/journal/companion-reflection.ts";
+import { tickCompanionReflectionScheduler } from "./handlers/schedulers/companion-reflection-scheduler.ts";
+import { runCompanionSummarizer } from "./handlers/context/companion-summarizer.ts";
+import { runCompanionMemoryEmbeddingRebuild } from "./handlers/memory/companion-memory-embedding.ts";
+import { runCompanionDailySummary } from "./handlers/journal/companion-daily-summary.ts";
+import { runNoteMindMapGenerate } from "./handlers/note/note-mind-map-generate.ts";
+import { runNoteOverviewGenerate } from "./handlers/note/note-overview-generate.ts";
+import { runNoteAnnotationExplain } from "./handlers/note/note-annotation-explain.ts";
+import { runNoteDynamicArtifactGenerate } from "./handlers/note/note-dynamic-artifact-generate.ts";
+import { runNoteExpansionGenerate } from "./handlers/note/note-expansion-generate.ts";
+import { tickCompanionDailySummaryScheduler } from "./handlers/schedulers/companion-daily-summary-scheduler.ts";
+import { tickCompanionMemoryMaintenance } from "./handlers/memory/companion-memory-maintenance.ts";
+import { tickCompanionProposalExpiry } from "./handlers/schedulers/companion-proposal-expiry-scheduler.ts";
+import { tickCompanionRunReconcile } from "./handlers/schedulers/companion-run-reconcile-scheduler.ts";
+import { tickCompanionReminderDelivery } from "./handlers/schedulers/companion-reminder-scheduler.ts";
 import {
   pollV2Outbox,
   V2_POLL_TICK_BUDGET_MS,
-} from "./handlers/card-generation-v2-handler.ts";
+} from "./handlers/note/card-generation-v2-handler.ts";
 // 队列与租约在 39d W7-7 刀二里搬进 `card-generation-v2/outbox-queue.ts`：
 // 在途计数、排空等待、关停时交还租约都归那一处，worker 入口不再绕道旧 handler 拿。
 import {

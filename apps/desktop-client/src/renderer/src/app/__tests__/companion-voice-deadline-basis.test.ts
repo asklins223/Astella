@@ -22,7 +22,7 @@ import { expect, test } from "vitest";
 import {
   COMPANION_SPEECH_FIRST_AUDIO_DEADLINE_MS,
   COMPANION_SPEECH_GAP_DEADLINE_MS,
-} from "../companion-voice-playback.ts";
+} from "../companion-session/companion-voice-playback.ts";
 
 /** 2026-10-02 真容器 / 真引擎 / 真会话，5 路并发的两批观测值（ms）。 */
 const MEASURED_5X_CONCURRENT = {
@@ -43,7 +43,7 @@ test("段间截止也不低于观测最大值", () => {
 });
 
 test("截止的**注释里带着这次实测**，不是上一次的单发数字", () => {
-  const source = readFileSync(join(resolve(import.meta.dirname, ".."), "companion-voice-playback.ts"), "utf8");
+  const source = readFileSync(join(resolve(import.meta.dirname, ".."), "companion-session", "companion-voice-playback.ts"), "utf8");
   // 2026-09-22 那次量的是单发 p95 3071；正是它让人以为 4000 够用。
   // 注释里必须同时留着"并发"与"max"这两个词，否则下一个���会拿旧数字改回去。
   // 说明写在赋值的**上方**，所以从赋值处往回看。
@@ -55,7 +55,7 @@ test("截止的**注释里带着这次实测**，不是上一次的单发数字"
 });
 
 test("被放弃的重试会**停下**，不在后台继续压服务", () => {
-  const source = readFileSync(join(resolve(import.meta.dirname, ".."), "companion-voice-playback.ts"), "utf8");
+  const source = readFileSync(join(resolve(import.meta.dirname, ".."), "companion-session", "companion-voice-playback.ts"), "utf8");
   // `withDeadline` 只是不再等，不会取消。所以重试循环必须自己看"是否已被放弃"。
   expect(source).toMatch(/abandoned\.has\(segment\)/);
   expect(source).toMatch(/abandoned\.add\(segment\)/);

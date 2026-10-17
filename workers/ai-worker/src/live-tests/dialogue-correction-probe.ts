@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, writeFileSync } from "node:fs";
-import type { CompanionRecentHistoryMessage } from "../handlers/companion-context-handoff.ts";
+import type { CompanionRecentHistoryMessage } from "../handlers/context/companion-context-handoff.ts";
 import { observedProvider, platform, outputDir, save, safeFailure, type WireReceipt } from "./acceptance-common.ts";
 import { buildDialogueExperimentRequest, hashDialogueValue, snapshotDialogueRequest, snapshotDialogueWireBody } from "./dialogue-experiment.ts";
 import { correctionDialogueGuidance, dialogueCorrectionGuidance } from "./dialogue-correction-guidance.ts";
-import { finalizeCompanionReplyText, sanitizeCompanionVisibleText, validateCompanionOutput } from "../handlers/companion-dialogue-content.ts";
+import { finalizeCompanionReplyText, sanitizeCompanionVisibleText, validateCompanionOutput } from "../handlers/turn/companion-dialogue-content.ts";
 
 const suffix = process.env.LIVE_DIALOGUE_CORRECTION_SUFFIX;
 if (!suffix || !/^[a-z0-9-]{1,40}$/.test(suffix)) throw new Error("Unique diagnostic suffix required");

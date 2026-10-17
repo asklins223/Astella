@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { encodeCompanionRuntimeCheckpoint, decodeCompanionRuntimeCheckpoint, encodeCompanionToolResult,
-  decodeCompanionToolResult, type CompanionRuntimeState } from "../companion-runtime-checkpoint.ts";
+  decodeCompanionToolResult, type CompanionRuntimeState } from "../agent/companion-runtime-checkpoint.ts";
 import { CompanionContextChangedError } from "../../lib/non-retryable-errors.ts";
 import { sha256Utf8V1, stableStringify } from "@astella/shared/content-hash";
 

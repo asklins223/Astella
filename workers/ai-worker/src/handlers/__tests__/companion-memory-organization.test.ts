@@ -22,7 +22,7 @@ import {
   memoryOrganizationSurface,
   memoryOrganizationGate,
   type MemoryOrganizationCandidate,
-} from "../companion-memory-organization.ts";
+} from "../memory/companion-memory-organization.ts";
 
 const NOW = new Date("2026-10-05T00:00:00Z");
 const daysAgo = (n: number) => new Date(NOW.getTime() - n * 24 * 60 * 60 * 1000);

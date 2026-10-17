@@ -5,8 +5,8 @@ import {
   EXPOSURE_OVERLAP_MIN_CHARS,
   isFormalAnswerLivePage,
   longestOverlap,
-} from "../companion-answer-exposure.ts";
-import type { LivePageView } from "../companion-live-view.ts";
+} from "../agent/companion-answer-exposure.ts";
+import type { LivePageView } from "../turn/companion-live-view.ts";
 
 /** 实时那一屏（`readLivePageView` 的输出形状）。作答页由渲染层报成 learning_run + formal_answer。 */
 function livePage(overrides: Partial<LivePageView> = {}): LivePageView {

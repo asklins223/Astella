@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { createCompactionCooldownPorts } from "../companion-compaction-cooldown.ts";
+import { createCompactionCooldownPorts } from "../context/companion-compaction-cooldown.ts";
 
 /**
  * 方案 44 §5.4 后半：冷却是**跨轮次**的记忆，所以它必须活在数据库里。
@@ -26,7 +26,7 @@ test("44 §5.4：没有压力读数时既不判定也不写状态（不凭空造
 
 test("44 §5.4：记录用的是重发之后的读数，不是调用方猜的数字", async () => {
   const source = readFileSync(
-    new URL("../companion-compaction-cooldown.ts", import.meta.url),
+    new URL("../context/companion-compaction-cooldown.ts", import.meta.url),
     "utf8",
   );
   // 「有没有进展」按重发之后还剩多少判；让调用方传一个数字进来，就会有人在折前取值，
@@ -37,7 +37,7 @@ test("44 §5.4：记录用的是重发之后的读数，不是调用方猜的数
 
 test("44 §5.4：键由会话、来源版本与模型路由共同构成", async () => {
   const source = readFileSync(
-    new URL("../companion-compaction-cooldown.ts", import.meta.url),
+    new URL("../context/companion-compaction-cooldown.ts", import.meta.url),
     "utf8",
   );
   // 三样缺一不可：换会话、来源重算、换模型都让上一次失败不再适用。
@@ -51,7 +51,7 @@ test("44 §5.4：键由会话、来源版本与模型路由共同构成", async 
 
 test("44 §5.4：读与写都走工作区事务（RLS 作用域由事务设置）", async () => {
   const source = readFileSync(
-    new URL("../companion-compaction-cooldown.ts", import.meta.url),
+    new URL("../context/companion-compaction-cooldown.ts", import.meta.url),
     "utf8",
   );
   const transactions = source.match(/withWorkerWorkspaceTransaction\(/g) ?? [];
@@ -69,7 +69,7 @@ test("44 §5.4：读与写都走工作区事务（RLS 作用域由事务设置�
  */
 test("44 §5.4：调用侧喂的是摘要覆盖的来源版本，不是整份请求的哈希", () => {
   const source = readFileSync(
-    new URL("../companion-dialogue.ts", import.meta.url),
+    new URL("../turn/companion-dialogue.ts", import.meta.url),
     "utf8",
   );
   const start = source.indexOf("createCompactionCooldownPorts({");
@@ -99,17 +99,17 @@ test("44 §5.4：调用侧喂的是摘要覆盖的来源版本，不是整份请
  */
 test("44 §5.4：冷却键按折叠的来源区分，历史摘要与工具回合不共键", () => {
   const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8");
-  const ports = read("../companion-compaction.ts");
+  const ports = read("../context/companion-compaction.ts");
   assert.match(ports, /foldSourceKind\?: "history_exchanges" \| "active_tool_rounds" \| null;/,
     "端口必须带来源种类字段，否则键分不开两类折叠");
   assert.match(ports, /input\.cooldown\.foldSourceKind = input\.sourceKind\?\.\(\) \?\? null;/,
     "有界发送方必须在冷却判定之前写入这一次的来源种类");
 
-  const cooldown = read("../companion-compaction-cooldown.ts");
+  const cooldown = read("../context/companion-compaction-cooldown.ts");
   assert.match(cooldown, /sourceHash: [^\n]*\$\{ports\.foldSourceKind/,
     "键必须把来源种类并进 sourceHash");
 
-  const step = read("../companion-step-compaction.ts");
+  const step = read("../context/companion-step-compaction.ts");
   assert.match(step, /sourceKind: \(\) => deps\.getHistoryFoldApplied\(\) \? "active_tool_rounds" : "history_exchanges"/,
     "折叠侧要按『历史折过没有』给出这一次的来源种类");
 });

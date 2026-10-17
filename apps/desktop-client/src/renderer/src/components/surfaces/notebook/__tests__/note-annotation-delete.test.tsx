@@ -11,8 +11,8 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render } from "@testing-library/react";
-import { NoteAnnotationSidePage } from "../note-annotation-side-page";
-import { AnnotationDeleteControl, useAnnotationDeleteConfirm } from "../annotation-delete-control";
+import { NoteAnnotationSidePage } from "../annotation/note-annotation-side-page.tsx";
+import { AnnotationDeleteControl, useAnnotationDeleteConfirm } from "../annotation/annotation-delete-control.tsx";
 import { renderHook, act } from "@testing-library/react";
 import type { NoteAnnotationV1 } from "@astella/shared/note-annotation-contracts";
 import type { NoteLearningArtifactTaskV1 } from "@astella/shared/note-learning-artifact-contracts";

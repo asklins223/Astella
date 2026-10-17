@@ -3,11 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AVATAR_MAX_BYTES, avatarGetResultV1Schema } from "@astella/shared/desktop-ipc-contracts";
-import { createAvatarImageStore, AvatarImageStore } from "../avatar-image-store";
-import { getAvatar, uploadAvatar } from "../desktop-gateway-ns-auth";
-import type { GatewayTransport } from "../desktop-gateway-transport";
+import { createAvatarImageStore, AvatarImageStore } from "../store/avatar-image-store";
+import { getAvatar, uploadAvatar } from "../gateway/desktop-gateway-ns-auth";
+import type { GatewayTransport } from "../gateway/desktop-gateway-transport";
 
-vi.mock("../desktop-object-transfers", () => ({ uploadRemoteObject: vi.fn(async () => null) }));
+vi.mock("../store/desktop-object-transfers", () => ({ uploadRemoteObject: vi.fn(async () => null) }));
 const userId = "11111111-1111-4111-8111-111111111111";
 const objectKey = `avatars/${userId}/22222222-2222-4222-8222-222222222222.png`;
 const directories: string[] = [];

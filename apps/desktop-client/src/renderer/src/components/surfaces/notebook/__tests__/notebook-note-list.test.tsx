@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useRoomStore } from "../../../../app/room-store";
-import { NotebookNoteList } from "../notebook-note-list";
-import { openNotebookListNote } from "../notebook-note-navigation";
-import { useNotebookFullscreenSession, useNotebookFullscreenState } from "../notebook-fullscreen-state";
-import { NotebookFullscreenRibbon } from "../notebook-fullscreen-ribbon";
+import { useRoomStore } from "../../../../app/home/room-store";
+import { NotebookNoteList } from "../library/notebook-note-list.tsx";
+import { openNotebookListNote } from "../library/notebook-note-navigation.ts";
+import { useNotebookFullscreenSession, useNotebookFullscreenState } from "../shell/notebook-fullscreen-state.ts";
+import { NotebookFullscreenRibbon } from "../shell/notebook-fullscreen-ribbon.tsx";
 
 const ok = (data: unknown) => ({ ok: true, data, workspaceEpoch: 1 });
 const item = (id: string, title: string) => ({ id, title, updatedAt: "2026-10-08T01:00:00Z" });

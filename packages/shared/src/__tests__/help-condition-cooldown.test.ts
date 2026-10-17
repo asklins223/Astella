@@ -24,7 +24,7 @@ import {
   helpConditionNeedsCooldownV2,
   unreconcilableDispositionV2,
   type HelpConditionV2,
-} from "../help-condition-rules-v2.ts";
+} from "../review/help-condition-rules-v2.ts";
 
 const AT = new Date("2026-09-27T12:00:00.000Z");
 const DAY = 24 * 60 * 60 * 1000;

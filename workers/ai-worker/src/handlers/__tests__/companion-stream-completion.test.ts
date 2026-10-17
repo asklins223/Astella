@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { OpenCodeGoProvider } from "../../lib/providers/opencode-go.ts";
 import { ProviderStreamError } from "../../lib/provider-request-error.ts";
 import { AgentOutputError } from "../../lib/non-retryable-errors.ts";
-import { canRetryCompanionStream, runStreamingAgentStep } from "../companion-agent-streaming-step.ts";
+import { canRetryCompanionStream, runStreamingAgentStep } from "../agent/companion-agent-streaming-step.ts";
 import type { AgentTurnRequest } from "@astella/shared";
 
 const request: AgentTurnRequest = { role: "companion_agent", systemPrompt: "答复眼前的话。",

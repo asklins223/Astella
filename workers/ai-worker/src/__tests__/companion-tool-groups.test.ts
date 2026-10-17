@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   COMPANION_CORE_TOOL_NAMES,
+  COMPANION_TOOL_GROUP_IDS,
   COMPANION_TOOL_GROUPS,
   companionPageToolGroups,
+  companionToolGroupCatalog,
   companionToolGroupFor,
   resolveCompanionInitialToolNames,
   resolveCompanionToolGroupNames,
@@ -56,4 +58,23 @@ test("装载组解析与页面组声明是同一份", () => {
   assert.equal(companionToolGroupFor("companion_read_note"), "notes");
   assert.ok(companionPageToolGroups("note").includes("notes"));
   assert.deepEqual(companionPageToolGroups("unknown-page"), companionPageToolGroups("other"));
+});
+
+/**
+ * 「装载要不要 notes 才能搜学习卡」这件事，模型只能从装载回执里读。
+ * 组用途**不能**放工具描述：那里单条上限 150 字符、总量 4000 且只剩几字符余量
+ * （`agent-capability-description-budget.test.ts`），十组说明会直接顶穿。
+ * 所以判据盯的是回执：每一组的用途都要到，且取自同一份组声明。
+ */
+test("装载回执逐组写明用途，取自同一份组声明", () => {
+  const catalog = companionToolGroupCatalog(COMPANION_TOOL_GROUP_IDS);
+  assert.equal(catalog.length, COMPANION_TOOL_GROUP_IDS.length);
+  for (const entry of catalog) {
+    const declared = COMPANION_TOOL_GROUPS[entry.id as keyof typeof COMPANION_TOOL_GROUPS];
+    assert.equal(entry.label, declared.label, `${entry.id} 的标签与声明不一致`);
+    assert.equal(entry.description, declared.description, `${entry.id} 的用途与声明不一致`);
+  }
+  // 模型传进来的组名按声明顺序去重；不认识的组被丢掉而不是原样回显。
+  assert.deepEqual(companionToolGroupCatalog(["web", "notes", "web", "missing"]).map(e => e.id),
+    ["web", "notes"]);
 });

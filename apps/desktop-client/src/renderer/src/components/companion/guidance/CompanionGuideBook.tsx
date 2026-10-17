@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef } from "react";
 import { ArrowRight, Compass, Pause, X } from "lucide-react";
-import { spaceRoleLabel } from "../../../app/space-identity";
+import { spaceRoleLabel } from "../../../app/home/space-identity";
 import { GUIDE_TOPICS, type GuideTopicId } from "./guide-definitions";
 import type { CompanionGuideController } from "./use-companion-guide";
 

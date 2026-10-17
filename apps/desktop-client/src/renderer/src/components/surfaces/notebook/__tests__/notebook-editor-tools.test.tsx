@@ -2,8 +2,8 @@
 import { createRef } from "react";
 import { cleanup, fireEvent, render, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import { NotebookEditorTools } from "../notebook-editor-tools";
-import type { NoteMarkdownEditorHandle } from "../note-markdown-editor";
+import { NotebookEditorTools } from "../document/notebook-editor-tools.tsx";
+import type { NoteMarkdownEditorHandle } from "../document/note-markdown-editor.tsx";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 

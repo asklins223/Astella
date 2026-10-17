@@ -98,7 +98,7 @@ async function createRun(versionId: string) {
 }
 
 async function runPipelineOnce() {
-  const { pollV2Outbox } = await import("../handlers/card-generation-v2-handler.ts");
+  const { pollV2Outbox } = await import("../handlers/note/card-generation-v2-handler.ts");
   const processed = await pollV2Outbox(20);
   assert.ok(processed >= 1, `worker must process outbox jobs (got ${processed})`);
   return processed;
@@ -176,7 +176,7 @@ async function activate(versionId: string, intent: { kind: "create_new" } | {
   //（"aaaa…"/"bbbb…" 等全同字符），按服务端同一逻辑重算，否则 409 mismatch。
   if (intent.kind === "target_equivalent_update" && /^([a-f0-9])\1{63}$/.test(intent.equivalenceReportHash)) {
     const { hashCanonicalV2 } = await import(
-      "../../../../packages/shared/src/hash-canonical-v2.ts"
+      "../../../../packages/shared/src/content/hash-canonical-v2.ts"
     );
     const {
       computeCanonicalAnswerHashV2,
@@ -247,7 +247,7 @@ async function activate(versionId: string, intent: { kind: "create_new" } | {
     "../../../../apps/api/src/modules/card-generation-v2/activation-service.ts"
   );
   const { computeClientReviewHashV2 } = await import(
-    "../../../../packages/shared/src/card-generation-v2-hashing.ts"
+    "../../../../packages/shared/src/review/card-generation-v2-hashing.ts"
   );
   const clientReviewHash = computeClientReviewHashV2({
     runId,

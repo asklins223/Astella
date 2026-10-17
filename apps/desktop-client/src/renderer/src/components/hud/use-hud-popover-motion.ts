@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState, type RefObject } from "react";
-import { useRoomStore } from "../../app/room-store";
+import { useRoomStore } from "../../app/home/room-store";
 import { paperSpringAtRest, stepPaperSpring, type PaperSpring } from "../motion/paper-spring";
 
 export type HudMenuKind = "space" | "account" | "guide";

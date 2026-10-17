@@ -29,7 +29,7 @@ const tag = randomUUID();
 const admin = postgres(testDatabaseUrl("DATABASE_URL_MIGRATOR"), { max: 2 });
 
 const { withWorkerWorkspaceTransaction, closeDatabase: closeWorkerDatabase } = await import("../db.ts");
-const { persistCompanionDialectPreference, readCompanionDialectPreference } = await import("../handlers/companion-voice-preference.ts");
+const { persistCompanionDialectPreference, readCompanionDialectPreference } = await import("../handlers/turn/companion-voice-preference.ts");
 const { closeDatabase: closeApiDatabase } = await import("../../../../apps/api/src/db/client.ts");
 const { getStoredVoicePreference, setVoicePreference } = await import("../../../../apps/api/src/modules/companion-shell/service.ts");
 const { resolveTtsSelection } = await import("../../../../apps/api/src/modules/learning-sessions/voice-providers/tts-preference.ts");

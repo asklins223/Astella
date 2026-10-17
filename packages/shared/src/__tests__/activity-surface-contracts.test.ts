@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { activityTargetV1Schema } from "../contracts/activity-surface-contracts.ts";
+import { activityTargetV1Schema } from "../contracts/desktop/activity-surface-contracts.ts";
 
 const RUN_ID = "22222222-2222-4222-8222-222222222222";
 

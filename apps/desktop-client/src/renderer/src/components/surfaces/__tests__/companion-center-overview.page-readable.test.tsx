@@ -8,7 +8,7 @@ import {
   companionDailySummaryV1Schema,
   companionHistoryPageV1Schema,
 } from "@astella/shared/companion-memory-desktop-contracts";
-import { useRoomStore } from "../../../app/room-store.ts";
+import { useRoomStore } from "../../../app/home/room-store.ts";
 import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 
 /**

@@ -1,11 +1,11 @@
 import { useEffect,useState } from "react";
-import { gatewayErrorMessage,unwrapGatewayResult } from "../../../app/desktop-client";
-import { DEFAULT_COMPANION_SCALE,MAX_COMPANION_SCALE,MIN_COMPANION_SCALE,useRoomStore } from "../../../app/room-store";
-import { WINDOW_LIVE2D_MODEL_REGISTRY,type WindowLive2DModelId } from "../../companion/window-live2d-contract";
+import { gatewayErrorMessage,unwrapGatewayResult } from "../../../app/client/desktop-client";
+import { DEFAULT_COMPANION_SCALE,MAX_COMPANION_SCALE,MIN_COMPANION_SCALE,useRoomStore } from "../../../app/home/room-store";
+import { WINDOW_LIVE2D_MODEL_REGISTRY,type WindowLive2DModelId } from "../../companion/live2d/window-live2d-contract";
 import { HudSegmented,HudSlider,HudSwitch } from "../../hud/HudControls";
 import { useCompanionResource } from "../companion/use-companion-resource";
 import { SettingsAnswerModeRow } from "./settings-answer-mode-row";
-import { VOICE_ASR_MODEL_SIZE_LINE,voiceAsrModelPercent,voiceAsrModelStatusLine } from "../../companion/voice-asr-model";
+import { VOICE_ASR_MODEL_SIZE_LINE,voiceAsrModelPercent,voiceAsrModelStatusLine } from "../../companion/voice/voice-asr-model";
 import { ANSWER_MODE_OPTIONS,TTS_ENGINE_OPTIONS,pendingReadLine,percentLine,voicePlayerLine,voicesForEngine } from "./settings-data-tables";
 import { SettingRow,SettingsInlineState,type SettingsReadable } from "./settings-primitives";
 import { SettingsVoiceModelCard } from "./settings-voice-model";

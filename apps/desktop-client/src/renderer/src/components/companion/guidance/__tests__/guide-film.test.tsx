@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { useRoomStore } from "../../../../app/room-store";
+import { useRoomStore } from "../../../../app/home/room-store";
 import { filmClockStep, useGuideFilm } from "../use-guide-film";
 
 beforeEach(() => useRoomStore.setState({ windowState: "visible" }));

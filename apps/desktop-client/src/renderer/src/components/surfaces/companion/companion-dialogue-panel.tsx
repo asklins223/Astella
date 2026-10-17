@@ -1,13 +1,13 @@
 import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 import type { CompanionHistoryItemV1 } from "@astella/shared/companion-memory-desktop-contracts";
 import { useLayoutEffect,useMemo,useRef } from "react";
-import { companionWebCitations } from "../../companion/companion-web-citations";
-import { plainCompanionBubbleText,renderCompanionMarkdown } from "../../companion/companion-markdown";
-import { CompanionMessageRichBlocks,CompanionQuoteBlock,messageDayKey,messageDayLabel } from "../../companion/CompanionChatRecord";
-import { CompanionMessageAudioButton } from "../../companion/CompanionMessageAudioButton";
+import { companionWebCitations } from "../../companion/content/companion-web-citations";
+import { plainCompanionBubbleText,renderCompanionMarkdown } from "../../companion/content/companion-markdown";
+import { CompanionMessageRichBlocks,CompanionQuoteBlock,messageDayKey,messageDayLabel } from "../../companion/hud/CompanionChatRecord";
+import { CompanionMessageAudioButton } from "../../companion/voice/CompanionMessageAudioButton";
 import { HUD_PAGES } from "../../hud/hud-pages";
 import { usePageReadableView } from "../../hud/use-page-readable-view";
-import { formatRelative } from "../notebook/surface-data";
+import { formatRelative } from "../notebook/shell/surface-data.tsx";
 import type { Section } from "./companion-center-model";
 import { messageText } from "./companion-center-model";
 import { CenterFeedback,CenterSearch,SectionState } from "./companion-center-primitives";

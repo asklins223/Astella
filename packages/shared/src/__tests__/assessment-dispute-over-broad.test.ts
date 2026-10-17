@@ -29,7 +29,7 @@ import {
   decideRecheckOutcomeV2,
   decideRecheckVerdictDiffV2,
   assessmentDisputeRecheckOutcomeV2Schema,
-} from "../assessment-dispute-rules-v2.ts";
+} from "../review/assessment-dispute-rules-v2.ts";
 
 type Pair = { rubricItemId: string; verdict: string };
 
@@ -161,7 +161,7 @@ test("模型自述与逐条之差对不上时，仍记「仍无法判断」—�
  * 行为判据在那种改法下依然自洽，只有**断言那一档还存在于源码里**才抓得住。
  */
 test("变异自证：把第四档从源码删掉，这几处判据必须同时失效", () => {
-  const source = readFileSync(new URL("../assessment-dispute-rules-v2.ts", import.meta.url), "utf8");
+  const source = readFileSync(new URL("../review/assessment-dispute-rules-v2.ts", import.meta.url), "utf8");
 
   // 正控制：三处都在
   assert.match(source, /derivation: "over_broad"/, "正控制失败：之差推导里没有第四档");

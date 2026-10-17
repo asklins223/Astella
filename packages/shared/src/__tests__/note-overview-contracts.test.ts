@@ -3,7 +3,7 @@ import { test } from "node:test";
 import {
   createNoteOverviewTaskV1Schema,
   noteOverviewV1Schema,
-} from "../contracts/note-overview-contracts.ts";
+} from "../contracts/note/note-overview-contracts.ts";
 
 const noteId = "11111111-1111-4111-8111-111111111111";
 const versionId = "22222222-2222-4222-8222-222222222222";

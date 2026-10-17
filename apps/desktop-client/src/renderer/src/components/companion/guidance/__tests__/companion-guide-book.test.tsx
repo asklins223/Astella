@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { useRoomStore } from "../../../../app/room-store";
+import { useRoomStore } from "../../../../app/home/room-store";
 import { CompanionGuideBook } from "../CompanionGuideBook";
 import { CompanionGuidanceStage } from "../CompanionGuidanceStage";
-import { hasForeignModal } from "../../companion-modal-ownership";
+import { hasForeignModal } from "../../content/companion-modal-ownership";
 import type { CompanionGuideController } from "../use-companion-guide";
 const runFeature = vi.fn();
 vi.mock("../../../home-v2/HomeV2Experience", () => ({ useHomeV2: () => ({ runFeature }) }));

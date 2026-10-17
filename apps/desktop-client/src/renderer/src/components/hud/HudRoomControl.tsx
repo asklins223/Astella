@@ -4,10 +4,10 @@ import { GUIDE_OPEN_EVENT, GUIDE_TOPICS, type GuideTopicId } from "../companion/
 import { SpaceArrival } from "./SpaceArrival";
 import { useEffect, useId, useRef, useState } from "react";
 import { ChevronsRight, Compass, Gauge, House, Moon, Settings2, Sun, Volume2, VolumeX } from "lucide-react";
-import { useRoomStore } from "../../app/room-store";
-import { hasActionableUpdate, useUpdateStatus } from "../../app/update-status";
-import { spaceRoleLabel } from "../../app/space-identity";
-import { publishGateInvalidation } from "../../app/gate-invalidation";
+import { useRoomStore } from "../../app/home/room-store";
+import { hasActionableUpdate, useUpdateStatus } from "../../app/gate/update-status";
+import { spaceRoleLabel } from "../../app/home/space-identity";
+import { publishGateInvalidation } from "../../app/gate/gate-invalidation";
 import { resolveSceneMotionMode } from "../../scene/scene-motion";
 import { accountInitial, useAccountAvatar } from "./HudAccountCard";
 import { HudControlPopover } from "./HudControlPopover";

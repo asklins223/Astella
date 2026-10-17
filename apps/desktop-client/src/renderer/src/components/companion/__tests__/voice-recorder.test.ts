@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { companionVoiceLevel } from "../voice-recorder.ts";
-import { COMPANION_VAD_TUNING } from "../companion-voice-vad.ts";
+import { companionVoiceLevel } from "../voice/voice-recorder.ts";
+import { COMPANION_VAD_TUNING } from "../voice/companion-voice-vad.ts";
 
 function constant(value: number, length: number): Float32Array {
   return Float32Array.from({ length }, () => value);

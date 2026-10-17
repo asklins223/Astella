@@ -3,8 +3,8 @@ import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CompanionMessageV1 } from "@astella/shared/companion-conversation-contracts";
 import type { GatewayEventV1 } from "@astella/shared/desktop-ipc-contracts";
-import { CompanionChatProvider, useCompanionChat, type CompanionChatSession } from "../companion-chat-session";
-import { useRoomStore } from "../room-store";
+import { CompanionChatProvider, useCompanionChat, type CompanionChatSession } from "../companion-session/companion-chat-session";
+import { useRoomStore } from "../home/room-store";
 
 /**
  * 追问是**迟到**的：assistant.final 先落，后台任务在一到几秒后才补一条

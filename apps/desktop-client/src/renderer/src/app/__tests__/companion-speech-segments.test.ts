@@ -4,7 +4,7 @@ import {
   COMPANION_SPEECH_MAX_SEGMENT_CHARS,
   splitForSpeech,
   splitForSpeechIncremental,
-} from "../companion-speech-segments.ts";
+} from "../companion-session/companion-speech-segments.ts";
 
 function expectUsableSegments(segments: readonly { text: string; endIndex: number }[], limit: number, source: string) {
   expect(segments.length).toBeGreaterThan(0);

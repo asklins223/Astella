@@ -27,15 +27,15 @@ const shot = async name => {
   await writeFile(resolve(output, `${name}.png`), Buffer.from(png, 'base64'))
 }
 const room = fn => page.evaluate(async source => {
-  const { useRoomStore } = await import('/src/app/room-store.ts')
+  const { useRoomStore } = await import('/app/home/room-store.ts')
   return (new Function('room', source))(useRoomStore)
 }, fn)
 const publish = input => page.evaluate(async input => {
-  const { notifyCompanion } = await import('/src/components/companion/companion-notifications.ts')
+  const { notifyCompanion } = await import('/companion-notifications.ts')
   notifyCompanion(input)
 }, input)
 const reset = () => page.evaluate(async () => {
-  const { useCompanionNotifications } = await import('/src/components/companion/companion-notifications.ts')
+  const { useCompanionNotifications } = await import('/companion-notifications.ts')
   useCompanionNotifications.setState({ items: [] })
 })
 try {
@@ -59,7 +59,7 @@ try {
   await page.waitForFunction(() => document.querySelector('.window-live2d')?.dataset.companionStatus === 'ready', { timeout: 30_000 })
   await reset()
   const state = await page.evaluate(async () => {
-    const { createRequestMeta, unwrapGatewayResult } = await import('/src/app/desktop-client.ts')
+    const { createRequestMeta, unwrapGatewayResult } = await import('/app/client/desktop-client.ts')
     return unwrapGatewayResult(await window.astella.companion.voice.asrModel.getState({ meta: createRequestMeta() }))
   })
   if (!state?.status || !state.expectedBytes) throw new Error('QA model snapshot unavailable')
@@ -88,7 +88,7 @@ try {
   await page.getByRole('button', { name: '语音输入', exact: true }).click()
   await page.waitForTimeout(300)
   const repeated = await page.evaluate(async () => {
-    const { useCompanionNotifications } = await import('/src/components/companion/companion-notifications.ts')
+    const { useCompanionNotifications } = await import('/companion-notifications.ts')
     return useCompanionNotifications.getState().items.filter(item => item.id === 'voice-model-needed').map(item => item.revision)
   })
   check(repeated.length === 1 && repeated[0] === 2, 'repeated missing-model clicks update one notice')
@@ -113,7 +113,7 @@ try {
   await page.getByRole('button', { name: '知道了', exact: true }).click()
   await reset()
   await page.evaluate(async () => {
-    const { beginCompanionSpeechLine } = await import('/src/app/companion-voice-playback.ts')
+    const { beginCompanionSpeechLine } = await import('/app/companion-session/companion-voice-playback.ts')
     window.notificationQaReply = beginCompanionSpeechLine()
   })
   await publish({ id: 'qa-background', kind: 'task', scope: 'device', title: '后台任务准备好了', body: '这是一条通过通知入口投递的后台完成消息。', audio: { clip: 'task-ready', text: '后台任务完成了' } })
@@ -172,7 +172,7 @@ try {
   })
   check(audio.length === 6 && audio.every(clip => clip.duration > 1), 'all six Edge TTS clips decode in Electron', audio)
   const dynamicAudio = await page.evaluate(async () => {
-    const { createRequestMeta, unwrapGatewayResult } = await import('/src/app/desktop-client.ts')
+    const { createRequestMeta, unwrapGatewayResult } = await import('/app/client/desktop-client.ts')
     const response = unwrapGatewayResult(await window.astella.companion.voice.speak({ meta: createRequestMeta(), request: { version: 1, text: '这是一条通知语音，方便的时候可以打开看看。', purpose: 'notification' } }))
     const context = new AudioContext()
     const bytes = Uint8Array.from(atob(response.audioBase64), letter => letter.charCodeAt(0))

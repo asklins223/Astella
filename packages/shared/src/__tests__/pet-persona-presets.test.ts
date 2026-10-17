@@ -9,14 +9,14 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { companionPersonaPresetV1Schema } from "../contracts/companion-memory-desktop-contracts.ts";
+import { companionPersonaPresetV1Schema } from "../contracts/companion/companion-memory-desktop-contracts.ts";
 import {
   DEFAULT_PERSONA_PRESET_ID,
   getDefaultPersonaPreset,
   getPresetById,
   PET_PERSONA_PRESETS,
   resolveCompanionPersonaProfile,
-} from "../pet-persona-presets.ts";
+} from "../companion/pet-persona-presets.ts";
 
 /** 一套预设里所有会原样进 prompt / 进接口的用户可见文字。 */
 function visibleText(presetId: string): string {

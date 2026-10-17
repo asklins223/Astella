@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ObjectiveLibrarySurface } from "../library/WorkspaceLibrarySurface.tsx";
 import { resetObjectiveLibraryView, retargetObjectiveLibraryView, writeObjectiveLibraryView } from "../run/objective-library-view-state.ts";
-import { useRoomStore } from "../../../app/room-store.ts";
+import { useRoomStore } from "../../../app/home/room-store.ts";
 import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 
 /** 当前展开的纸卡与查找抽屉分开登记，隐藏卡片不冒充可见内容。 */

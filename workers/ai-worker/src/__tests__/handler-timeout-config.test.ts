@@ -135,7 +135,7 @@ test("dynamic artifact generation finishes inside the handler and follows its ov
 /** The renewable lease is a recovery window; execution budgets still reserve persistence time. */
 test("续租独立于执行预算，handler > run > 单次模型调用", async () => {
   const { LEASE_TIMEOUT_MS } = await import("../queue.ts");
-  const { READ_IMAGE_TOOL_TIMEOUT_MS } = await import("../handlers/companion-read-tools.ts");
+  const { READ_IMAGE_TOOL_TIMEOUT_MS } = await import("../handlers/tools/companion-read-tools.ts");
   const {
     COMPANION_AGENT_PERSISTENCE_MARGIN_MS,
     resolveCompanionAgentBudget,

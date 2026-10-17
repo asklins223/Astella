@@ -13,7 +13,7 @@ import {
   understandingNodeProjectionV3Schema,
   understandingEdgeProjectionV3Schema,
   type NoteDeepeningSnapshotV1,
-} from "../contracts/note-deepening-contracts.ts";
+} from "../contracts/note/note-deepening-contracts.ts";
 
 const OBJ_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const OBJ_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";

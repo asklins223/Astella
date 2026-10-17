@@ -14,9 +14,9 @@ const admin = postgres(testDatabaseUrl("DATABASE_URL_MIGRATOR"), { max: 2 });
 const { closeDatabase, withWorkerWorkspaceTransaction } = await import("../db.ts");
 const { MockProvider } = await import("../lib/providers/mock.ts");
 const { registerFactory } = await import("../lib/provider-factory.ts");
-const { runCompanionMemoryExtract } = await import("../handlers/companion-memory-extractor.ts");
-const { runCompanionSummarizer } = await import("../handlers/companion-summarizer.ts");
-const { readCompanionHistoryRows, countCompanionHistoryMessages, companionHistoryText } = await import("../handlers/companion-dialogue-store.ts");
+const { runCompanionMemoryExtract } = await import("../handlers/memory/companion-memory-extractor.ts");
+const { runCompanionSummarizer } = await import("../handlers/context/companion-summarizer.ts");
+const { readCompanionHistoryRows, countCompanionHistoryMessages, companionHistoryText } = await import("../handlers/turn/companion-dialogue-store.ts");
 
 const userId = randomUUID(), workspaceId = randomUUID(), conversationId = randomUUID();
 const orphanWorkspaceId = randomUUID(), departedWorkspaceId = randomUUID();

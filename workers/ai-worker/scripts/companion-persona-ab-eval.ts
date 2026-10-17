@@ -20,7 +20,7 @@ import {
   COMPANION_PERSONA_V7_PROMPT_ID,
   COMPANION_PERSONA_V7_SHA256,
 } from "@astella/shared";
-import { buildCompanionPersonaMessages } from "../src/handlers/companion-dialogue-content.ts";
+import { buildCompanionPersonaMessages } from "../src/handlers/turn/companion-dialogue-content.ts";
 import { resolveEvalProvider } from "../src/integration-tests/eval-provider.ts";
 
 type EvalCategory =

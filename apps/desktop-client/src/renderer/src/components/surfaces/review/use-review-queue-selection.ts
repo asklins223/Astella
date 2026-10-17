@@ -46,7 +46,7 @@ import {
   type MutableRefObject,
   type SetStateAction,
 } from "react";
-import { gatewayErrorMessage } from "../../../app/desktop-client";
+import { gatewayErrorMessage } from "../../../app/client/desktop-client";
 import { REVIEW_WINDOW_SIZE, reviewWindowStart, uniqueReviewItems } from "./review-deck";
 import type { LoadedReviewQueue, ReviewFailure, ReviewItem } from "./review-types";
 

@@ -8,7 +8,7 @@
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { createCompanionEnvelopeDecoder } from "../companion-dialogue-envelope.ts";
+import { createCompanionEnvelopeDecoder } from "../turn/companion-dialogue-envelope.ts";
 
 function decodeAll(deltas: readonly string[]): { text: string; completed: boolean; unrecognized: boolean } {
   const decoder = createCompanionEnvelopeDecoder();

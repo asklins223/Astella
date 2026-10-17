@@ -30,7 +30,7 @@ const REPO_ROOT = join(import.meta.dirname, "..", "..", "..", "..");
  */
 const RUNTIME_ROOTS = ["apps/api/src", "packages/card-generation/src"];
 const V3_TASKS_FILE = "workers/ai-worker/src/card-generation-v3/tasks.ts";
-const DISPATCHER_FILE = "workers/ai-worker/src/handlers/card-generation-v2-handler.ts";
+const DISPATCHER_FILE = "workers/ai-worker/src/handlers/note/card-generation-v2-handler.ts";
 
 /** 简化链的两种 job（整批／逐候选）。六个入口只能投这两个。 */
 const SIMPLIFIED_JOB_TYPES = ["card_generation_simplified_v1", "card_candidate_refine_v3"];

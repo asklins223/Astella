@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { companionParticipationPreferencesWriteV1Schema, companionAttentionWriteV1Schema,
   companionAwarenessObservationV1Schema, companionInitiativeInputV1Schema,
-  COMPANION_INITIATIVE_DELIVERY_TTL_HOURS } from "../contracts/companion-initiative-contracts.ts";
-import { companionStreamEventV1Schema } from "../contracts/companion-conversation-contracts.ts";
-import { getCompanionAgentTool, validateCompanionAgentToolArguments } from "../companion-agent-registry.ts";
+  COMPANION_INITIATIVE_DELIVERY_TTL_HOURS } from "../contracts/companion/companion-initiative-contracts.ts";
+import { companionStreamEventV1Schema } from "../contracts/companion/companion-conversation-contracts.ts";
+import { getCompanionAgentTool, validateCompanionAgentToolArguments } from "../agent/companion-agent-registry.ts";
 
 test("participation retains unseen user prose and open timing without a fixed rule type", () => {
   for (const markdown of ["学久了提醒我走走", "每学五十分钟提醒一次", "我重新打开上次没弄懂的笔记时，先帮我回忆一下", "晚上聊轻松一点，先歇会儿时不要接着讲题"]) {

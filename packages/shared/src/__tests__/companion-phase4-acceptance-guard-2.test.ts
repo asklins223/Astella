@@ -19,8 +19,8 @@ import test from "node:test";
 
 const REPO = resolve(import.meta.dirname, "..", "..", "..", "..");
 const read = (...parts: string[]) => readFileSync(join(REPO, ...parts), "utf8");
-const initiative = read("workers", "ai-worker", "src", "handlers", "companion-initiative.ts");
-const stepPlan = read("workers", "ai-worker", "src", "handlers", "companion-step-plan.ts");
+const initiative = read("workers", "ai-worker", "src", "handlers", "proactive", "companion-initiative.ts");
+const stepPlan = read("workers", "ai-worker", "src", "handlers", "turn", "companion-step-plan.ts");
 const assessment = read("apps", "api", "src", "modules", "learning-runs", "processing", "run-processing-assessment.ts");
 const dbSchema = read("packages", "shared", "src", "db-schema", "companion-memory.ts");
 const gapHelp = read("apps", "api", "src", "modules", "learning-runs", "gap-help", "gap-help-service.ts");

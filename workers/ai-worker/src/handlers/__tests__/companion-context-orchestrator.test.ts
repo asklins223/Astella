@@ -7,10 +7,10 @@ import {
   assembleCompanionContext,
   budgetCompanionMemoryDirectory,
   COMPANION_MEMORY_CONTEXT_ESTIMATE_BUDGET,
-} from "../companion-context-orchestrator.ts";
-import { resolveRouteInputTokens } from "../companion-context-handoff.ts";
-import { taskEntityFromPersistedPageContext } from "../companion-task-memory.ts";
-import type { CompanionMemoryDirectoryEntry } from "../companion-memory-vector.ts";
+} from "../context/companion-context-orchestrator.ts";
+import { resolveRouteInputTokens } from "../context/companion-context-handoff.ts";
+import { taskEntityFromPersistedPageContext } from "../memory/companion-task-memory.ts";
+import type { CompanionMemoryDirectoryEntry } from "../memory/companion-memory-vector.ts";
 
 function memoryId(index: number): string {
   return `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`;

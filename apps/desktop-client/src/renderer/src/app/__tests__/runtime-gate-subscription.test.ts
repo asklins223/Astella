@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AstellaDesktopApiM2, RequestMetaV1 } from "@astella/shared/desktop-ipc-contracts";
-import { establishRequiredRuntimeSubscription } from "../runtime-gate-subscription.ts";
+import { establishRequiredRuntimeSubscription } from "../home/runtime-gate-subscription.ts";
 
 const meta: RequestMetaV1 = {
   version: 1,

@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { NoteAnnotationV1 } from "@astella/shared/note-annotation-contracts";
-import { feedSelectionToCompanion } from "../companion-feed";
-import { beginNoteExplanation, completeNoteExplanation, interruptNoteExplanation, openNoteExplanation, pendingNoteExplanation, progressNoteExplanation, resetNoteExplanations, readNoteExplanation, useNoteCompanionExplanations } from "../note-companion-explanation";
-import { useRoomStore } from "../../../app/room-store";
+import { feedSelectionToCompanion } from "../hud/companion-feed";
+import { beginNoteExplanation, completeNoteExplanation, interruptNoteExplanation, openNoteExplanation, pendingNoteExplanation, progressNoteExplanation, resetNoteExplanations, readNoteExplanation, useNoteCompanionExplanations } from "../content/note-companion-explanation";
+import { useRoomStore } from "../../../app/home/room-store";
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const target = { noteId: id(1), anchor: { noteVersionId: id(2), startBlockOrdinal: 0, endBlockOrdinal: 0, startOffset: 2, endOffset: 9, excerpt: "利息加入本金后", prefix: "当", suffix: "，" } };

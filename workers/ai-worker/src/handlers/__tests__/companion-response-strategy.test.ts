@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buildCasualFirstStepRequest } from "../companion-speculative-first-step.ts";
-import { companionResponseStrategy, COMPANION_KNOWLEDGE_REVIEW_V1, isCompanionExplanation } from "../companion-response-strategy.ts";
-import { companionTurnThinking } from "../companion-turn-thinking.ts";
-import { companionStepRuntimePolicy } from "../companion-step-plan.ts";
-import { COMPANION_DIALOGUE_CONTINUATION_GOAL_V1 } from "../companion-conversation-policy.ts";
+import { buildCasualFirstStepRequest } from "../agent/companion-speculative-first-step.ts";
+import { companionResponseStrategy, COMPANION_KNOWLEDGE_REVIEW_V1, isCompanionExplanation } from "../turn/companion-response-strategy.ts";
+import { companionTurnThinking } from "../turn/companion-turn-thinking.ts";
+import { companionStepRuntimePolicy } from "../turn/companion-step-plan.ts";
+import { COMPANION_DIALOGUE_CONTINUATION_GOAL_V1 } from "../turn/companion-conversation-policy.ts";
 
 test("解释、混合与分类失败使用稳定参数，内部检查不冒充独立验证", () => {
   for (const attention of [{ intent: "question", toolUse: "none" },

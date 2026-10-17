@@ -2,7 +2,7 @@ import {readFileSync} from "node:fs";
 import {randomUUID} from "node:crypto";
 import {COMPANION_HOST_PROTOCOL_V8,COMPANION_IDENTITY_BOUNDARY_V4} from "@astella/shared";
 import {companionDraftSpans} from "./diagnostics/companion-knowledge-review.ts";
-import {finalizeCompanionReplyText,validateCompanionOutput} from "../handlers/companion-dialogue-content.ts";
+import {finalizeCompanionReplyText,validateCompanionOutput} from "../handlers/turn/companion-dialogue-content.ts";
 import {observedProvider,platform,save,safeFailure,outputDir,type WireReceipt} from "./acceptance-common.ts";
 
 // Diagnostic only: recorded synthetic conversation drafts, one review call.

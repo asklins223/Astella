@@ -23,7 +23,7 @@ import {
   openAssessmentDisputeResultV2Schema,
   type AssessmentDisputeRecheckOutcomeV2,
   type OpenAssessmentDisputeRecheckReceiptV2,
-} from "../assessment-dispute-rules-v2.ts";
+} from "../review/assessment-dispute-rules-v2.ts";
 
 const DECIDED_AT = "2026-09-27T12:00:00.000Z";
 

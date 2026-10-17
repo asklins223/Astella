@@ -8,12 +8,12 @@ import {
 import {
   RendererGatewayError,
   gatewayErrorMessage,
-} from "../../../app/desktop-client";
-import { formatComposerImageLabel, useCompanionImageAttachment } from "../companion-composer-image";
+} from "../../../app/client/desktop-client";
+import { formatComposerImageLabel, useCompanionImageAttachment } from "../content/companion-composer-image";
 
 const uploadImage = vi.hoisted(() => vi.fn());
-vi.mock("../../../app/desktop-client", async importOriginal => ({
-  ...(await importOriginal<typeof import("../../../app/desktop-client")>()),
+vi.mock("../../../app/client/desktop-client", async importOriginal => ({
+  ...(await importOriginal<typeof import("../../../app/client/desktop-client")>()),
   requireWorkspaceEpoch: async () => 7,
   createRequestMeta: () => ({}),
   unwrapGatewayResult: (value: unknown) => value,

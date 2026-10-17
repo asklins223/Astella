@@ -2,10 +2,10 @@
 
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NOTE_PAPER_IMAGE_DROP_ATTR } from "../../../app/source-intake.ts";
+import { NOTE_PAPER_IMAGE_DROP_ATTR } from "../../../app/source/source-intake.ts";
 import { noteDocResult } from "../../../test-support/note-doc-fixtures.ts";
-import { useRoomStore } from "../../../app/room-store.ts";
-import { NotebookSurface } from "../notebook/notebook-surface.tsx";
+import { useRoomStore } from "../../../app/home/room-store.ts";
+import { NotebookSurface } from "../notebook/shell/notebook-surface.tsx";
 
 /**
  * 往笔记里插图片这条拖放路的归属。

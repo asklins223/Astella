@@ -8,7 +8,7 @@ import {
   voiceAsrModelPercent,
   voiceAsrModelSourceLine,
   voiceAsrModelStatusLine,
-} from "../../companion/voice-asr-model";
+} from "../../companion/voice/voice-asr-model";
 import type { VoiceAsrModelController } from "./use-voice-asr-model";
 
 /** 可选的本机模型：状态、实际传输与下一步操作放在同一张纸面上。 */

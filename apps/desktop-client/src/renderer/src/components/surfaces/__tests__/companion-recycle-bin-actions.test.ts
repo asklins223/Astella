@@ -24,11 +24,11 @@ const read = (...parts: string[]) => readFileSync(join(CLIENT, ...parts), "utf8"
 
 const panels = read("src", "renderer", "src", "components", "surfaces", "companion", "companion-memory-panel.tsx");
 const surface = read("src", "renderer", "src", "components", "surfaces", "companion", "companion-center-surface.tsx");
-const ipcCompanion = read("src", "main", "desktop-ipc-companion.ts");
+const ipcCompanion = read("src", "main", "ipc", "desktop-ipc-companion.ts");
 const preload = read("src", "preload", "index.ts");
-const nsCompanion = read("src", "main", "desktop-gateway-ns-companion.ts");
+const nsCompanion = read("src", "main", "gateway", "desktop-gateway-ns-companion.ts");
 const contracts = readFileSync(
-  resolve(CLIENT, "..", "..", "packages", "shared", "src", "contracts", "desktop-ipc-contracts.ts"), "utf8",
+  resolve(CLIENT, "..", "..", "packages", "shared", "src", "contracts", "desktop", "desktop-ipc-contracts.ts"), "utf8",
 );
 
 test("彻底清除是**独立的一颗按钮**，不是删除的结果之一", () => {

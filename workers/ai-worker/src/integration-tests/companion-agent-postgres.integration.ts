@@ -45,8 +45,8 @@ after(async () => {
   await closeDatabase();
 });
 
-const { runCompanionDialogue } = await import("../handlers/companion-dialogue.ts");
-const { ensureAgentToolCall, loadContinuation, safeArgumentsHash, updateToolCall } = await import("../handlers/companion-tool-call-ledger.ts");
+const { runCompanionDialogue } = await import("../handlers/turn/companion-dialogue.ts");
+const { ensureAgentToolCall, loadContinuation, safeArgumentsHash, updateToolCall } = await import("../handlers/tools/companion-tool-call-ledger.ts");
 const { companionStreamEventV1Schema, getCompanionAgentTool } = await import("@astella/shared");
 
 async function seedBase(): Promise<{ workspaceId: string; userId: string }> {
@@ -235,7 +235,7 @@ test("§16.39(a)：闲聊那一圈不许留下任何正式学习记录的行", a
    * 覆盖面是半边的——它管的是"服务端没有偷偷写库"，管不了"模型将来是否会提议
    * 一条写工具"。后者要真正解决，得在工具面按本轮性质收窄
    * （`resolveAllCompanionAgentTools` 加一个 turnKind 入参），那要动
-   * `packages/shared/src/companion-agent-registry.ts` 与
+   * `packages/shared/src/agent/companion-agent-registry.ts` 与
    * `companion-agent-runtime.ts`——两个文件当时都在别的会话里在途，故不在此刀。
    */
   const LEARNING_TABLES = [
@@ -936,7 +936,7 @@ test("读页面：worker 绕过 RLS，但 workspace/user 两个条件仍然把�
 
   const { withWorkerWorkspaceTransaction } = await import("../db.ts");
   const { readLatestPageContextRow, currentPageToolResult } = await import(
-    "../handlers/companion-read-tools.ts"
+    "../handlers/tools/companion-read-tools.ts"
   );
   const read = (ws: string, uid: string) => withWorkerWorkspaceTransaction(
     { workspaceId: ws, userId: uid },
@@ -968,7 +968,7 @@ test("读页面：同一账号同时两行活着时，认的是最新那一屏�
   // 于是"早发出去、租约还长"这一行会长期存在（dev 实测 14 天内 1 470 个瞬间同时有多行）。
   // 读侧唯一的凭据就是 `ORDER BY issued_at DESC`——改成按剩余租约排就会说错屏。
   const { withWorkerWorkspaceTransaction } = await import("../db.ts");
-  const { readLatestPageContextRow } = await import("../handlers/companion-read-tools.ts");
+  const { readLatestPageContextRow } = await import("../handlers/tools/companion-read-tools.ts");
   const read = (ws: string, uid: string) => withWorkerWorkspaceTransaction(
     { workspaceId: ws, userId: uid },
     (tx) => readLatestPageContextRow(tx, { workspaceId: ws, userId: uid }),

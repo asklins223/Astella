@@ -2,11 +2,11 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { AgentRunHistoryV1, AgentRunV1 } from "@astella/shared/agent-contracts";
-import { CompanionGoalRevisions } from "../CompanionGoalRevisions";
+import { CompanionGoalRevisions } from "../goals/CompanionGoalRevisions";
 
 const room = vi.hoisted(() => ({ workspaceScopeRevision: 1, setActiveNoteRef: vi.fn(), setActiveCardGenerationRunId: vi.fn(), invoke: vi.fn() }));
-vi.mock("../../../app/room-store", () => ({ useRoomStore: { getState: () => room } }));
-vi.mock("../../../app/desktop-client", () => ({ createRequestMeta: () => ({}),
+vi.mock("../../../app/home/room-store", () => ({ useRoomStore: { getState: () => room } }));
+vi.mock("../../../app/client/desktop-client", () => ({ createRequestMeta: () => ({}),
   unwrapGatewayResult: (value: unknown) => value, gatewayErrorMessage: (error: Error) => error.message }));
 const getRunHistory = vi.fn();
 const run: AgentRunV1 = { version: 1, runId: "goal", identityId: "identity", revision: 3, status: "completed",

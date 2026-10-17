@@ -32,7 +32,7 @@ import type {
   UnderstandingNodeProjectionV3,
 } from "@astella/shared/note-deepening-contracts";
 import type { NoteDeepeningV3 } from "@astella/shared/note-deepening-v3-contracts";
-import { useRoomStore } from "../../../app/room-store.ts";
+import { useRoomStore } from "../../../app/home/room-store.ts";
 import { GraphSurface } from "../space/graph-surface.tsx";
 import { RELATION_ROW_LIMIT } from "../space/graph-surface-types";
 import { clearGraphJourneys } from "../space/graph-journey";

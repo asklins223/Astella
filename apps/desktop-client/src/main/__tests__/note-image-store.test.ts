@@ -2,7 +2,7 @@ import { mkdtemp, readFile, readdir, rm, utimes, writeFile } from "node:fs/promi
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
-import { NoteImageStore } from "../note-image-store";
+import { NoteImageStore } from "../note-doc/note-image-store";
 const directories: string[] = [];
 afterEach(async () => { await Promise.all(directories.splice(0).map(path => rm(path, { recursive: true, force: true }))); });
 async function directory() { const path = await mkdtemp(join(tmpdir(), "note-image-cache-test-")); directories.push(path); return path; }

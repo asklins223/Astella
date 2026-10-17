@@ -9,8 +9,8 @@
  */
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cardPlanV2Schema } from "../contracts/card-generation-v2-contracts.ts";
-import { computeCardPlanHashV2 } from "../card-generation-v2-hashing.ts";
+import { cardPlanV2Schema } from "../contracts/learning/card-generation-v2-contracts.ts";
+import { computeCardPlanHashV2 } from "../review/card-generation-v2-hashing.ts";
 
 const RUN_ID = "11111111-1111-4111-8111-111111111111";
 const PLAN_REVISION_ID = "22222222-2222-4222-8222-222222222222";

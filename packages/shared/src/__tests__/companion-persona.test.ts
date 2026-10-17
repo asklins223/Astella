@@ -41,7 +41,7 @@ import {
   COMPANION_PERSONA_V14_SHA256,
   COMPANION_VOICE_STYLE_LINES_V1,
   COMPANION_VOICE_STYLE_LINES_V2,
-} from "../companion-persona.ts";
+} from "../companion/companion-persona.ts";
 
 test("v12 默认表达具有可复现的版本身份", () => {
   assert.equal(COMPANION_PERSONA_V12_PROMPT_ID, "companion-persona-v12");

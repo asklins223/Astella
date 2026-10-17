@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DESKTOP_IPC_CHANNELS, DESKTOP_IPC_CONTRACT_VERSION } from "@astella/shared/desktop-ipc-contracts";
-import type { DesktopGateway } from "../desktop-gateway";
+import type { DesktopGateway } from "../gateway/desktop-gateway";
 
 const electronMock = vi.hoisted(() => ({
   handlers: new Map<string, (event: unknown, input: unknown) => Promise<unknown>>(),
@@ -26,7 +26,7 @@ const meta = {
 
 async function register(trusted = true, readLinks = false) {
   vi.resetModules();
-  const { registerM1DesktopIpc } = await import("../desktop-ipc");
+  const { registerM1DesktopIpc } = await import("../ipc/desktop-ipc");
   registerM1DesktopIpc({
     gateway: { getDeploymentConfig: () => undefined } as unknown as DesktopGateway,
     env: { ASTELLA_DOMAIN_SCHEMA_REVISION: "domain-v2-test" },

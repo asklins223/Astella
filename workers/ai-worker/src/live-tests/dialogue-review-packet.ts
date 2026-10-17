@@ -1,6 +1,6 @@
 import { randomInt } from "node:crypto";
 import { dialogueCases } from "./dialogue-cases.ts";
-import { validateCompanionOutput } from "../handlers/companion-dialogue-content.ts";
+import { validateCompanionOutput } from "../handlers/turn/companion-dialogue-content.ts";
 
 export interface DialogueReviewSample {
   caseId: string; repeat: number; condition: string; answer: string; structuralOk: boolean;

@@ -301,7 +301,7 @@ async function claimOutboxOfType(runId: string, jobType: string) {
 /** 真跑一次 V3 简化链：确定性 provider（`CARD_GENERATION_V3_PROVIDER` 不设即离线档）。 */
 async function runSimplifiedChain(runId: string) {
   const job = await claimInitialOutbox(runId);
-  const { processV2OutboxJob } = await import("../handlers/card-generation-v2-handler.ts");
+  const { processV2OutboxJob } = await import("../handlers/note/card-generation-v2-handler.ts");
   await processV2OutboxJob(job);
   return job;
 }
@@ -792,7 +792,7 @@ test("既有无父目标批次不记其他 Agent 的账；Agent 完成之后审�
 
   // 认领并真跑它：父围栏没绑它，已 completed 的目标不该拦住它。
   const reviewJob = await claimOutboxOfType(child.execution.id, "card_candidate_refine_v3");
-  const { processV2OutboxJob } = await import("../handlers/card-generation-v2-handler.ts");
+  const { processV2OutboxJob } = await import("../handlers/note/card-generation-v2-handler.ts");
   // 走分发点而不是直接调 handler：只有分发点会把 outbox 结成 completed，
   // 而"分发点把失败咽掉"正是这一格要防的（分发点静默失败过一次）。
   await processV2OutboxJob(reviewJob);
@@ -1161,7 +1161,7 @@ test("已失去初始 outbox 租约时不请求 provider、不增加父 model_ca
     WHERE id=${stale.id} AND lease_token=${stale.leaseToken}`;
   assert.equal(stillOurs!.n, 0, "前置条件：这一发的租约已经易主，夹具没造成这个结果就要在这里红");
 
-  const { processV2OutboxJob } = await import("../handlers/card-generation-v2-handler.ts");
+  const { processV2OutboxJob } = await import("../handlers/note/card-generation-v2-handler.ts");
   await processV2OutboxJob(stale);
 
   assert.equal(await parentModelCalls(run.runId), budgetBefore,

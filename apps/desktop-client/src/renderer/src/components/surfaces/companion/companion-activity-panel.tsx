@@ -6,7 +6,7 @@ import { Sparkles } from "lucide-react";
 import { useEffect,useMemo,useRef,useState } from "react";
 import { HUD_PAGES } from "../../hud/hud-pages";
 import { usePageReadableView } from "../../hud/use-page-readable-view";
-import { formatRelative } from "../notebook/surface-data";
+import { formatRelative } from "../notebook/shell/surface-data.tsx";
 import { RESUME_RUN_ACTION_LABEL } from "../run/objective-state-copy";
 import type { Section } from "./companion-center-model";
 import { isPendingDelivery,needsDeliveryResponse } from "./companion-center-model";

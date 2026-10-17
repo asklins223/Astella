@@ -25,8 +25,8 @@ const COPY_SOURCES = [
   // 2026-09-30：本文件移进 `src/main/__tests__/` 之后，**这条路径要再上一层**。
   // `__dirname` / `import.meta.dirname` 是「这个文件自己在哪儿」，它跟着文件一起下沉，
   // 而被读的东西都留在上面——这类「按路径读文件」的写法打包器不会替你改。
-  "../../renderer/src/app/desktop-client.ts",
-  "../../renderer/src/app/desktop-gate.ts",
+  "../../renderer/src/app/client/desktop-client.ts",
+  "../../renderer/src/app/gate/desktop-gate.ts",
 ].map((relative) => {
   const source = readFileSync(resolve(__dirname, relative), "utf8");
   expect(source.length, `${relative} 读出来是空的，这条门禁就成了假绿`).toBeGreaterThan(200);

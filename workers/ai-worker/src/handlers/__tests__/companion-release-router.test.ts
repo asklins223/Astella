@@ -17,7 +17,7 @@ import {
   resolveCompanionReleaseThresholds,
   seedCompanionReleaseIndex,
   type CompanionReleaseThresholds,
-} from "../companion-release-router.ts";
+} from "../agent/companion-release-router.ts";
 
 const SAFE_VEC = [1, 0.05, 0, 0] as const;
 const QUESTION_VEC = [0.05, 1, 0, 0] as const;

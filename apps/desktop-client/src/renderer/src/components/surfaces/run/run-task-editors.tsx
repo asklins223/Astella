@@ -31,7 +31,7 @@ import type {
   StructuredPartPublicV1,
 } from "@astella/shared/learning-run-contracts";
 import type { DesktopRouteV1 } from "@astella/shared/desktop-ipc-contracts";
-import { createRequestMeta, unwrapGatewayResult } from "../../../app/desktop-client";
+import { createRequestMeta, unwrapGatewayResult } from "../../../app/client/desktop-client";
 import { VoiceTeachbackEditor } from "./run-voice-input.tsx";
 import { indexedPublicLabel } from "../../learning-run-labels";
 

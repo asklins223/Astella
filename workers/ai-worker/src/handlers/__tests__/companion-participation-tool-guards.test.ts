@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { executeCompanionParticipationTool } from "../companion-participation-tools.ts";
-import { CompanionToolBlockedError, CompanionToolError, CompanionToolNotExecutedError } from "../companion-tool-result.ts";
-import type { AgentEventContext } from "../companion-read-tools.ts";
+import { executeCompanionParticipationTool } from "../tools/companion-participation-tools.ts";
+import { CompanionToolBlockedError, CompanionToolError, CompanionToolNotExecutedError } from "../tools/companion-tool-result.ts";
+import type { AgentEventContext } from "../tools/companion-read-tools.ts";
 
 /**
  * 发言发布之前的这几道闸都在任何写入之前退回，所以要钉的是「她没有把半截东西落库」。

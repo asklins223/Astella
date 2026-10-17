@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { companionVoiceRequestStyle, resolveCompanionVoiceInstruction } from "../companion-voice-request-style.ts";
+import { companionVoiceRequestStyle, resolveCompanionVoiceInstruction } from "../turn/companion-voice-request-style.ts";
 import { QWEN_TTS_STANDARD_MANDARIN_INSTRUCTION } from "@astella/shared/tts-voice-catalog";
 
 const noStyle = { decision: "none", instruction: null } as const;

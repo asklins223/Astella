@@ -24,12 +24,22 @@
  * 它守的是"老路还没被动过"，而装配之后老路就**该**被共用。
  */
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import test from "node:test";
 
 const HANDLERS = resolve(import.meta.dirname, "..");
-const read = (name: string) => readFileSync(join(HANDLERS, name), "utf8");
+// handlers 按职责分了子目录：按名字读取时先在根找，再在子目录里找。
+const read = (name: string): string => {
+  const direct = join(HANDLERS, name);
+  if (existsSync(direct)) return readFileSync(direct, "utf8");
+  for (const entry of readdirSync(HANDLERS, { withFileTypes: true })) {
+    if (!entry.isDirectory() || entry.name === "__tests__") continue;
+    const nested = join(HANDLERS, entry.name, name);
+    if (existsSync(nested)) return readFileSync(nested, "utf8");
+  }
+  throw new Error(`handler 模块不存在: ${name}`);
+};
 const runtime = read("companion-agent-runtime.ts");
 /**
  * 「落账本 → 执行 → 写终态」这段在 2026-10-01 从循环体搬进了

@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { EventEmitter } from 'node:events'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { App, IpcMain, IpcMainInvokeEvent } from 'electron'
-import { DesktopRenderingPreferences, registerDesktopRenderingHealthMonitor, registerDesktopRenderingIpc } from '../desktop-rendering'
+import { DesktopRenderingPreferences, registerDesktopRenderingHealthMonitor, registerDesktopRenderingIpc } from '../window/desktop-rendering'
 import { DESKTOP_RENDERING_GET_CHANNEL, DESKTOP_RENDERING_SET_CHANNEL, DESKTOP_RENDERING_REPORT_FAILURE_CHANNEL } from '../../shared/desktop-rendering'
 
 let directory: string

@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { assembleCompanionStepRequest, companionStepPolicyText, companionStepToolSurface, companionWebSearchAllowedForStep } from "../companion-agent-step-assembly.ts";
-import { companionStepOutputCeiling } from "../companion-dialogue-content.ts";
+import { assembleCompanionStepRequest, companionStepPolicyText, companionStepToolSurface, companionWebSearchAllowedForStep } from "../agent/companion-agent-step-assembly.ts";
+import { companionStepOutputCeiling } from "../turn/companion-dialogue-content.ts";
 import type { AgentTurnRequest } from "@astella/shared";
-import { companionStepCorrectionMessages } from "../companion-step-plan.ts";
+import { companionStepCorrectionMessages } from "../turn/companion-step-plan.ts";
 
 const READ_TOOL = { name: "companion_read_note", description: "读笔记", parameters: {} };
 const WEB_TOOL = { name: "agent_web_search", description: "联网", parameters: {} };
@@ -116,7 +116,7 @@ test("现算的请求把注意力数据转义进系统提示，输出额度只�
  * 回答」也永远不可达。政策函数自己的单测全绿——它只看得见传进来的数字。
  */
 test("政策文本按这一步真的发下去的工具面判空，不按权限档的全量清单判", () => {
-  const source = readFileSync(new URL("../companion-agent-runtime.ts", import.meta.url), "utf8");
+  const source = readFileSync(new URL("../agent/companion-agent-runtime.ts", import.meta.url), "utf8");
   const start = source.indexOf("companionStepPolicyText({");
   assert.notEqual(start, -1, "找不到每步政策的接线点");
   const wiring = source.slice(start, start + 700);

@@ -16,8 +16,8 @@
  *
  * 用法（每个测试文件里）：
  * ```ts
- * vi.mock("../desktop-gateway-ns-note", async (importOriginal) => {
- *   const real = await importOriginal<typeof import("../desktop-gateway-ns-note")>();
+ * vi.mock("../gateway/desktop-gateway-ns-note", async (importOriginal) => {
+ *   const real = await importOriginal<typeof import("../gateway/desktop-gateway-ns-note")>();
  *   return noteModuleMock(real);
  * });
  * // 用例里：noteStub("syncNoteDocUpdate", vi.fn(...))
@@ -84,7 +84,7 @@ export function noteModuleMock<T extends Record<string, unknown>>(real: T): T {
  * **生产代码里它是默认实现，没有任何测试专用分支。**
  */
 export async function installNoteDocDeps(
-  real: typeof import("../desktop-gateway-ns-note"),
+  real: typeof import("../gateway/desktop-gateway-ns-note"),
   overrides: Record<string, unknown>,
 ): Promise<void> {
   real.setNoteDocDeps(overrides as never);
@@ -94,7 +94,7 @@ export async function installNoteDocDeps(
 
 /** 恢复默认实现。 */
 export async function resetNoteDocDeps(
-  real: typeof import("../desktop-gateway-ns-note"),
+  real: typeof import("../gateway/desktop-gateway-ns-note"),
 ): Promise<void> {
   real.resetNoteDocDeps();
 }

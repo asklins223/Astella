@@ -12,7 +12,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { randomUUID } from "node:crypto";
-import { noteAgentCapabilityManifest } from "../agent-capabilities.ts";
+import { noteAgentCapabilityManifest } from "../agent/agent-capabilities.ts";
 
 const READ = "note_expansion_read";
 

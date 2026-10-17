@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /// <reference types="node" />
 import { afterEach, expect, it, vi } from "vitest";
-import { artifactDocumentTemplate } from "../../../../../main/artifact-template";
+import { artifactDocumentTemplate } from "../../../../../main/artifact/artifact-template";
 import { runInNewContext } from "node:vm";
 
 afterEach(() => { document.body.replaceChildren(); document.body.style.removeProperty("margin-bottom"); vi.restoreAllMocks(); vi.useRealTimers(); });

@@ -234,7 +234,7 @@ test("W7-9 刀三 正对照：复习那条路**不读**伴星那张表（两处�
 
 test("W7-9 刀三 正对照：伴星的投递仍走那个 SECURITY DEFINER 函数（0238 的形状没变）", () => {
   const scheduler = readFileSync(
-    join(REPO, "workers/ai-worker/src/handlers/companion-reminder-scheduler.ts"),
+    join(REPO, "workers/ai-worker/src/handlers/schedulers/companion-reminder-scheduler.ts"),
     "utf8",
   );
   // 它必须**不能**被改成一条普通的 SELECT：那一句的注释里写着为什么（生产 worker 非
@@ -250,7 +250,7 @@ test("W7-9 刀三 正对照：伴星的投递仍走那个 SECURITY DEFINER 函�
  * ## 成立在哪
  *
  * 伴星报的那些学习数字（到期数、任务队列、这一轮做到哪）**都出自一个共用的读器**
- * `readLearningStats`（`workers/ai-worker/src/handlers/companion-here-and-now.ts`）：
+ * `readLearningStats`（`workers/ai-worker/src/handlers/proactive/companion-here-and-now.ts`）：
  * 她答话的口径与"用户问到学习数据时先注入的真值"是**同一个数**。
  *
  * 那个读器的到期数**直接数 `review_schedules`**（`status='pending' AND
@@ -268,10 +268,23 @@ test("W7-9 刀四：伴星的学习数字出自**一个共用读器**（两处�
   // 2026-09-30（B2）：工具执行族已拆进 `companion-tool-execution.ts`，
   // 那一支随之搬走了。判据的对象是「伴星的学习数字出自**一个**共用读器」，
   // 不是「它在 companion-agent-runtime.ts 里」——所以读 handlers/ 整个目录。
-  const runtime = readdirSync(join(REPO, "workers/ai-worker/src/handlers"))
-    .filter((n) => n.endsWith(".ts") && !n.endsWith(".test.ts"))
-    .map((n) => readFileSync(join(REPO, "workers/ai-worker/src/handlers", n), "utf8"))
-    .join("\n");
+  // 2026-10-17：handlers 按职责分了子目录，扫描要递归下去。
+  const handlersDir = join(REPO, "workers/ai-worker/src/handlers");
+  const readAll = (dir: string): string[] => {
+    const out: string[] = [];
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name !== "__tests__") out.push(...readAll(full));
+        continue;
+      }
+      if (entry.name.endsWith(".ts") && !entry.name.endsWith(".test.ts")) {
+        out.push(readFileSync(full, "utf8"));
+      }
+    }
+    return out;
+  };
+  const runtime = readAll(handlersDir).join("\n");
   // 工具那一支必须调 `readLearningStats`，不许自己再查一遍。
   const branchStart = runtime.indexOf('case "companion_get_learning_stats"');
   assert.ok(branchStart > 0, "那一支不见了：这一格要按新形状重写");
@@ -283,7 +296,7 @@ test("W7-9 刀四：伴星的学习数字出自**一个共用读器**（两处�
 
 test("W7-9 刀四 正对照：那个读器的到期数**直接数 `review_schedules`**", () => {
   const reader = readFileSync(
-    join(REPO, "workers/ai-worker/src/handlers/companion-here-and-now.ts"),
+    join(REPO, "workers/ai-worker/src/handlers/proactive/companion-here-and-now.ts"),
     "utf8",
   );
   // 直接数排期表，而不是从任务队列或伴星自己的提醒推。
@@ -306,7 +319,7 @@ test("W7-9 刀四 正对照：伴星**不把自己的提醒**算进「待复习�
   // 所以这一格要断言的是**那两件事不许混**：数到期的那几条查询里不许出现它，
   // 而它自己那一条必须是**独立语句 + LIMIT 1**（"念一条"而不是"数一遍"）。
   const reader = readFileSync(
-    join(REPO, "workers/ai-worker/src/handlers/companion-here-and-now.ts"),
+    join(REPO, "workers/ai-worker/src/handlers/proactive/companion-here-and-now.ts"),
     "utf8",
   );
   // ① 数到期的那几条（`FROM review_schedules s`）里不许有它。

@@ -3,7 +3,7 @@ import { test } from "node:test";
 import type { AgentTurnRequest } from "@astella/shared";
 import { createGovernedProvider, type AIGovernanceContext } from "../../lib/governance.ts";
 import { createProvider } from "../../lib/ai-provider.ts";
-import { boundedStepSender, foldReplayUnderSummaryCoverage, replayToMessages } from "../companion-compaction.ts";
+import { boundedStepSender, foldReplayUnderSummaryCoverage, replayToMessages } from "../context/companion-compaction.ts";
 
 /**
  * 方案 44 §4.3／§5.4：把**真的闸**与**真的折叠**串起来跑一次。

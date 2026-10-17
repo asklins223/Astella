@@ -48,7 +48,7 @@ const shot = async name => {
   await writeFile(resolve(output, `${name}.png`), Buffer.from(png, 'base64'))
 }
 const room = fn => page.evaluate(async source => {
-  const { useRoomStore } = await import('/src/app/room-store.ts')
+  const { useRoomStore } = await import('/app/home/room-store.ts')
   return (new Function('room', source))(useRoomStore)
 }, fn)
 /**
@@ -63,7 +63,7 @@ const dropFile = async path => {
   await page.setInputFiles('input.source-file-input', path)
 }
 const titles = () => page.evaluate(async () => {
-  const { createRequestMeta, unwrapGatewayResult } = await import('/src/app/desktop-client.ts')
+  const { createRequestMeta, unwrapGatewayResult } = await import('/app/client/desktop-client.ts')
   const list = unwrapGatewayResult(await window.astella.source.list({ meta: createRequestMeta(), limit: 50 }))
   return list.items.map(item => ({ id: item.id, title: item.title, status: item.status }))
 }
@@ -81,7 +81,7 @@ const waitForNewSource = async (before, seconds = 90) => {
     const created = now.find(item => !before.some(previous => previous.id === item.id))
     if (created) {
       const detail = await page.evaluate(async sourceId => {
-        const { createRequestMeta, unwrapGatewayResult } = await import('/src/app/desktop-client.ts')
+        const { createRequestMeta, unwrapGatewayResult } = await import('/app/client/desktop-client.ts')
         const loaded = unwrapGatewayResult(await window.astella.source.get({ meta: createRequestMeta(), sourceId }))
         return { status: loaded.source.status, text: (loaded.segments ?? []).map(segment => segment.text).join('\n\n') }
       }, created.id)
@@ -184,7 +184,7 @@ try {
   // 读的那一屏：GFM 表格要落成真的表格，不然这一版选 GFM 就只是字符串好看。
   if (docx) {
     await page.evaluate(async sourceId => {
-      const { useRoomStore } = await import('/src/app/room-store.ts')
+      const { useRoomStore } = await import('/app/home/room-store.ts')
       useRoomStore.getState().setActiveSourceId(sourceId)
       useRoomStore.getState().invoke('open-source')
     }, docx.id)

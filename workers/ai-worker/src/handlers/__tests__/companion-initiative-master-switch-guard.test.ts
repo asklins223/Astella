@@ -14,7 +14,7 @@ import test from "node:test";
  * 守卫按**次序**判，而不是只查那个词是否出现：`if (!pref.enabled) return;` 必须在
  * `builtin` 与 `applicable` 之前，否则自带机会仍然绕得过去。
  */
-const source = readFileSync(new URL("../companion-initiative.ts", import.meta.url), "utf8");
+const source = readFileSync(new URL("../proactive/companion-initiative.ts", import.meta.url), "utf8");
 
 function initiativeBody(): string {
   const start = source.indexOf("export async function runCompanionInitiative");

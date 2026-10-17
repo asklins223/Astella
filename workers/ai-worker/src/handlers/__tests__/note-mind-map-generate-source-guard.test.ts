@@ -13,7 +13,7 @@ import test from "node:test";
  * `runNoteMindMapGenerate`），但那份不是 `.test.ts`，不进
  * `worker-handler-test-coverage-ratchet` 读的 blob——所以这里按名盯住这几道门。
  */
-const HANDLER = join(import.meta.dirname, "../note-mind-map-generate.ts");
+const HANDLER = join(import.meta.dirname, "../note/note-mind-map-generate.ts");
 const source = readFileSync(HANDLER, "utf8");
 
 test("外发之前先过同意门：没同意就抛 AIConsentRequiredError", () => {

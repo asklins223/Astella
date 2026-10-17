@@ -4,7 +4,7 @@ import type {
   ObjectivePersonalStateV3,
 } from "@astella/shared/learning-objective-surface-contracts";
 import type { LearningRunResultV2 } from "@astella/shared/learning-run-v2-contracts";
-export { companionCelebrationAllowed as companionResultFeedbackAllowed } from "../../../app/companion-celebration-policy";
+export { companionCelebrationAllowed as companionResultFeedbackAllowed } from "../../../app/companion-session/companion-celebration-policy";
 
 export type ObjectiveQuestRegion = "ready" | "active" | "mastered";
 

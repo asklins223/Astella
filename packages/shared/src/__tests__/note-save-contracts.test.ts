@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { noteSaveReceiptV1Schema, noteSaveRequestV1Schema } from "../contracts/note-save-contracts.ts";
+import { noteSaveReceiptV1Schema, noteSaveRequestV1Schema } from "../contracts/note/note-save-contracts.ts";
 
 const NOTE_ID = "11111111-1111-4111-8111-111111111111";
 const WORKSPACE_ID = "22222222-2222-4222-8222-222222222222";

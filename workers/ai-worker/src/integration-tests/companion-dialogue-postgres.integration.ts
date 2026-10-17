@@ -31,16 +31,16 @@ import {
 import { arrangeCompanionAttention } from "@astella/agent-host";
 import { canonicalJsonV1, sha256Utf8V1, stableStringify } from "@astella/shared/content-hash";
 import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
-import type { CompanionContextHandoffSnapshotV1 } from "../handlers/companion-dialogue-content.ts";
+import type { CompanionContextHandoffSnapshotV1 } from "../handlers/turn/companion-dialogue-content.ts";
 import { OpenCodeGoProvider } from "../lib/providers/opencode-go.ts";
 import { ProviderStreamError } from "../lib/provider-request-error.ts";
 import { AgentOutputError, CompanionContextChangedError } from "../lib/non-retryable-errors.ts";
 import { JobLeaseLostError } from "../lib/job-lease.ts";
 import { AIContextOverflowError } from "../lib/context-governor.ts";
-import { createCompanionCompactionProgressStore } from "../handlers/companion-compaction-progress.ts";
-import { summarizeCompleteCompanionSource } from "../handlers/companion-semantic-chunks.ts";
-import type { CompanionSemanticCheckpoint } from "../handlers/companion-semantic-checkpoint.ts";
-import { decodeCompanionToolResult } from "../handlers/companion-runtime-checkpoint.ts";
+import { createCompanionCompactionProgressStore } from "../handlers/context/companion-compaction-progress.ts";
+import { summarizeCompleteCompanionSource } from "../handlers/context/companion-semantic-chunks.ts";
+import type { CompanionSemanticCheckpoint } from "../handlers/context/companion-semantic-checkpoint.ts";
+import { decodeCompanionToolResult } from "../handlers/agent/companion-runtime-checkpoint.ts";
 import { agentTurnInterpretationV1Schema } from "@astella/shared/agent-contracts";
 
 const CONN = testDatabaseUrl("DATABASE_URL_API");
@@ -60,7 +60,7 @@ after(async () => {
   await closeDatabase();
 });
 
-const { runCompanionDialogue } = await import("../handlers/companion-dialogue.ts");
+const { runCompanionDialogue } = await import("../handlers/turn/companion-dialogue.ts");
 // These cases script executeAgentTurn and check DB finalization. The generic
 // mock chat stream does not execute those scripts. Streaming/first-step reuse
 // is covered separately by companion-speculative-loop-postgres.integration.ts.
@@ -75,8 +75,8 @@ const {
   readCompanionHistoryRows,
   companionRecentHistoryFromRows,
   recordCompanionContextCompactions,
-} = await import("../handlers/companion-dialogue-store.ts");
-const { buildCompanionPersonaMessages } = await import("../handlers/companion-dialogue-content.ts");
+} = await import("../handlers/turn/companion-dialogue-store.ts");
+const { buildCompanionPersonaMessages } = await import("../handlers/turn/companion-dialogue-content.ts");
 const { withWorkerWorkspaceTransaction } = await import("../db.ts");
 const { seedFormalAnswerRun } = await import("./helpers/formal-answer-fixture.ts");
 
@@ -343,7 +343,7 @@ for (const decision of ["confirm", "reject"] as const) test(`confirmation retain
       WHERE id=${run.runId}`;
     // A quick decision may arrive while the original job still holds its own
     // valid lease. Its late bookkeeping cannot restore the old waiting state.
-    const events = await import("../handlers/companion-agent-events.ts");
+    const events = await import("../handlers/agent/companion-agent-events.ts");
     const oldEvent = { ctx: { id: run.jobId, payload: { runId: run.runId }, workspaceId: scope.workspaceId,
       requestedBy: scope.userId, leaseToken: "fixture-lease", signal: new AbortController().signal },
     read: { runId: run.runId, conversationId: run.cid, userId: scope.userId, generation: 1, accountEpoch: 0 },
@@ -432,7 +432,7 @@ test("a late failed attempt cannot close a step or fail the run after another wo
     assert.equal(before.step!.status, "running");
     assert.ok(before.step!.runtime_checkpoint);
     assert.equal(before.errors.length, 0, "the old worker cannot publish a failure for the new owner");
-    const events = await import("../handlers/companion-agent-events.ts");
+    const events = await import("../handlers/agent/companion-agent-events.ts");
     const event = { ctx: { id: run.jobId, payload: { runId: run.runId }, workspaceId: scope.workspaceId,
       requestedBy: scope.userId, leaseToken: "fixture-lease", signal: new AbortController().signal },
     read: { runId: run.runId, conversationId: run.cid, userId: scope.userId, generation: 1, accountEpoch: 0 },
@@ -441,7 +441,7 @@ test("a late failed attempt cannot close a step or fail the run after another wo
     await assert.rejects(events.updateRunMeta(event, { stepCount: 99, status: "waiting_for_confirmation" }), JobLeaseLostError);
     await assert.rejects(events.appendAgentEvent(event, "agent.tool", { tool: { name: "old-worker" } }), JobLeaseLostError);
     await assert.rejects(events.finishStep(event, before.step!.id, "failed"), JobLeaseLostError);
-    const ledger = await import("../handlers/companion-tool-call-ledger.ts");
+    const ledger = await import("../handlers/tools/companion-tool-call-ledger.ts");
     const { getCompanionAgentTool } = await import("@astella/shared");
     const definition = getCompanionAgentTool("companion_read_history")!;
     const args = { conversationId: run.cid, fromSeq: 1, toSeq: 1 };
@@ -1417,7 +1417,7 @@ test("fail-open §4.9：一个字都没下发时落兜底话术，界面不得�
   const { workspaceId, userId } = await seedBase();
   const seeded = await seedDialogueRun(workspaceId, userId, { runStatus: "failed" });
   try {
-    const { persistFailedPartial } = await import("../handlers/companion-dialogue-failure-retention.ts");
+    const { persistFailedPartial } = await import("../handlers/turn/companion-dialogue-failure-retention.ts");
     const wrote = await persistFailedPartial({
       workspaceId,
       userId,
@@ -1458,7 +1458,7 @@ test("fail-open §4.9：已有半句可保留时优先保留原文，不覆盖�
   const { workspaceId, userId } = await seedBase();
   const seeded = await seedDialogueRun(workspaceId, userId, { runStatus: "failed" });
   try {
-    const { persistFailedPartial } = await import("../handlers/companion-dialogue-failure-retention.ts");
+    const { persistFailedPartial } = await import("../handlers/turn/companion-dialogue-failure-retention.ts");
     const partial = "我先把这道题的思路说清楚，然后再给你举一个例子";
     await persistFailedPartial({
       workspaceId, userId, conversationId: seeded.cid, runId: seeded.runId, deliveredText: partial,
@@ -1692,7 +1692,7 @@ test("真实读取保留每条消息的时间和来源；重试不更新首次�
     const [message] = await readInScope({workspaceId,userId}, tx => tx`SELECT created_at FROM companion_messages WHERE id=${s.userMessageId}`);
     assert.equal(timeline.current.utteredAt, new Date(message!.created_at).toISOString());
     assert.ok(timeline.history[0].elapsedMs > 0);
-    const { readPastConversationMessages } = await import("../handlers/companion-summary-retrieval.ts");
+    const { readPastConversationMessages } = await import("../handlers/context/companion-summary-retrieval.ts");
     const page = await withWorkerWorkspaceTransaction({workspaceId,userId}, tx =>
       readPastConversationMessages(tx, {workspaceId,userId}, {conversationId:s.cid,fromSeq:"1"}));
     assert.equal(page.messages[0]?.text, oldText, "实库原文取回不能静默截断尾部纠正");
@@ -2030,7 +2030,7 @@ test("eager precommit rejects an asynchronously replaced job lease", async () =>
   const scope = await seedBase();
   const run = await seedDialogueRun(scope.workspaceId, scope.userId);
   const admin = postgres(testDatabaseUrl("DATABASE_URL_MIGRATOR"), { max: 1 });
-  const { assertCompanionEagerCommitCurrent } = await import("../handlers/companion-eager-dispatch-config.ts");
+  const { assertCompanionEagerCommitCurrent } = await import("../handlers/agent/companion-eager-dispatch-config.ts");
   const event = { ctx: { id: run.jobId, payload: { runId: run.runId }, workspaceId: scope.workspaceId,
     requestedBy: scope.userId, leaseToken: "fixture-lease", signal: new AbortController().signal },
     read: { runId: run.runId, conversationId: run.cid, userId: scope.userId, generation: 1, accountEpoch: 0 },
@@ -2046,7 +2046,7 @@ test("eager precommit rejects an asynchronously replaced job lease", async () =>
 });
 
 test("a cancelled, superseded or already finalized turn cannot count another interaction", async () => {
-  const { finalizeCompanionDialogueTurn } = await import("../handlers/companion-dialogue-finalization.ts");
+  const { finalizeCompanionDialogueTurn } = await import("../handlers/turn/companion-dialogue-finalization.ts");
   for (const runStatus of ["cancelled", "superseded", "succeeded"]) {
     const scope = await seedBase();
     const run = await seedDialogueRun(scope.workspaceId, scope.userId, { runStatus });

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { reviewCompanionStepCorrection } from "../companion-step-plan.ts";
-import { unverifiedNumericClaims } from "../companion-dialogue-content.ts";
+import { reviewCompanionStepCorrection } from "../turn/companion-step-plan.ts";
+import { unverifiedNumericClaims } from "../turn/companion-dialogue-content.ts";
 
 const calculation = [
   { role: "assistant" as const, content: "", toolCalls: [{ id: "calc", name: "agent_calculate", arguments: { expression: "1/6" } }] },

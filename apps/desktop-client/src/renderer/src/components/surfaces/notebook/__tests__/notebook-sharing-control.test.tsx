@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import { NotebookSharingControl } from "../notebook-sharing-control";
+import { NotebookSharingControl } from "../library/notebook-sharing-control.tsx";
 
 afterEach(cleanup);
 const props = { shareScope: "shared" as const, canShare: true, busy: false, onShare: vi.fn(),

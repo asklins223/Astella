@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   companionVoiceSegmentQueueSize, drainCompanionVoiceSegments, hasCompanionRunVoiceSegments,
   queueCompanionVoiceSegment,
-} from "../companion-voice-segment-queue.ts";
+} from "../companion-session/companion-voice-segment-queue.ts";
 
 const segment = (over: Record<string, unknown> = {}) => ({
   version: 2, conversationId: "c1", runId: "r1", generation: 1, segmentId: "s1", ordinal: 1,
@@ -93,9 +93,9 @@ describe("伴星语音段队列", () => {
    * 线上表现就是主动消息又只剩文字——不报错，只会安静地没声音。
    */
   it("生产端先入队、气泡从队列取，谁都不再直接读事件负载", () => {
-    const producer = readFileSync(new URL("../companion-chat-session.tsx", import.meta.url), "utf8");
-    const hud = readFileSync(new URL("../../components/companion/CompanionHud.tsx", import.meta.url), "utf8");
-    const queue = readFileSync(new URL("../companion-voice-segment-queue.ts", import.meta.url), "utf8");
+    const producer = readFileSync(new URL("../companion-session/companion-chat-session.tsx", import.meta.url), "utf8");
+    const hud = readFileSync(new URL("../../components/companion/hud/CompanionHud.tsx", import.meta.url), "utf8");
+    const queue = readFileSync(new URL("../companion-session/companion-voice-segment-queue.ts", import.meta.url), "utf8");
     // 生产端又变成直接 dispatch 负载，或气泡又只读事件负载 —— 两者都会让
     // "气泡不在场的那一段"永久丢；挂载不补取则晚到的气泡仍然听不到。
     expect(producer).toMatch(/queueCompanionVoiceSegment\(\{/);
@@ -115,7 +115,7 @@ describe("伴星语音段队列", () => {
    * 顺序写反了不会报错，只会让那一句又变成有字没声。
    */
   it("主动轮的留档补声排在把回复交给气泡之前，两处都有", () => {
-    const producer = readFileSync(new URL("../companion-chat-session.tsx", import.meta.url), "utf8");
+    const producer = readFileSync(new URL("../companion-session/companion-chat-session.tsx", import.meta.url), "utf8");
     const ordered = producer.match(/redriveCompanionRunVoice\(delivery\.runId\)[\s\S]{0,320}setCurrentLiveReply\(\{/g) ?? [];
     expect(ordered.length).toBe(2);
   });
@@ -125,7 +125,7 @@ describe("伴星语音段队列", () => {
    * 用户消息上——用它筛会把刚补回来的段全部跳过，又变回有字没声。
    */
   it("气泡筛段用的是回复自己的 runId，不是上一拍草稿的轮次", () => {
-    const hud = readFileSync(new URL("../../components/companion/CompanionHud.tsx", import.meta.url), "utf8");
+    const hud = readFileSync(new URL("../../components/companion/hud/CompanionHud.tsx", import.meta.url), "utf8");
     expect(hud).toMatch(/const runId = reply\.runId \?\? draftRunIdRef\.current;/);
   });
 });

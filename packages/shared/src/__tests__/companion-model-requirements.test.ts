@@ -22,7 +22,7 @@ import {
   MODEL_REQUIREMENT_TASKS,
   ModelRequirementResolutionError,
   type ModelRequirement,
-} from "../companion-model-requirements.ts";
+} from "../agent/companion-model-requirements.ts";
 
 /** 拿一条真的当模板，只覆盖要弄坏的那一个字段。 */
 function mutate(base: ModelRequirement, patch: Partial<ModelRequirement>): ModelRequirement {

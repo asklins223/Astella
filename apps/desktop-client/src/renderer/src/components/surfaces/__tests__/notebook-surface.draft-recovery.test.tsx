@@ -3,8 +3,8 @@
 import { cleanup, render } from "@testing-library/react";
 import { peerUpdate, seedUpdate } from "../../../test-support/note-doc-fixtures.ts";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NotebookSurface } from "../notebook/notebook-surface.tsx";
-import { useRoomStore } from "../../../app/room-store.ts";
+import { NotebookSurface } from "../notebook/shell/notebook-surface.tsx";
+import { useRoomStore } from "../../../app/home/room-store.ts";
 
 /**
  * 刷新/崩溃之后本机草稿接回来的那一屏。

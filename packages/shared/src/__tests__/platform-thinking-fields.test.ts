@@ -7,7 +7,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { chatThinkingRequestFields, type ModelProfile, type PlatformOptions } from "../platform-config.ts";
+import { chatThinkingRequestFields, type ModelProfile, type PlatformOptions } from "../platform/platform-config.ts";
 
 const profile: ModelProfile = { reasoning: { levels: ["none", "low", "medium", "high"], default: "medium" } };
 const noNone: ModelProfile = { reasoning: { levels: ["low", "medium", "high"], default: "high" } };

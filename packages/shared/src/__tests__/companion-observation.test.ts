@@ -10,8 +10,8 @@ import { test } from "node:test";
 import {
   companionObservationSetV1Schema,
   COMPANION_OBSERVATION_MAX_PER_TURN,
-} from "../contracts/companion-observation-contracts.ts";
-import { renderCompanionDeliveryObservation } from "../companion-observation-render.ts";
+} from "../contracts/companion/companion-observation-contracts.ts";
+import { renderCompanionDeliveryObservation } from "../companion/companion-observation-render.ts";
 
 const base = {
   version: 1 as const,

@@ -16,7 +16,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { decideObjectiveReuseV2, objectiveReuseClaimHashV2, type ObjectiveReuseCandidateV2 } from "../objective-reuse-rules-v2.ts";
+import { decideObjectiveReuseV2, objectiveReuseClaimHashV2, type ObjectiveReuseCandidateV2 } from "../review/objective-reuse-rules-v2.ts";
 
 const BLOCK_A = "b-1";
 const BLOCK_B = "b-2";

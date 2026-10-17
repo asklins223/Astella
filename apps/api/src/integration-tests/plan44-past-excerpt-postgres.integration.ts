@@ -28,7 +28,7 @@ const userMessageId = randomUUID();
 const email = `plan44x-${userId.slice(0, 8)}@example.test`;
 
 const { readPastConversationMessages } = await import(
-  "../../../../workers/ai-worker/src/handlers/companion-summary-retrieval.ts"
+  "../../../../workers/ai-worker/src/handlers/context/companion-summary-retrieval.ts"
 );
 
 const { PgDialect } = await import("drizzle-orm/pg-core");

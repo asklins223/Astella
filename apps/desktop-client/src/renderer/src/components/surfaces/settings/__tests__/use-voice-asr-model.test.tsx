@@ -4,10 +4,10 @@ import { act, cleanup, render, renderHook, waitFor } from "@testing-library/reac
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VOICE_ASR_MODEL_FILES, type VoiceAsrModelSnapshotV1 } from "@astella/shared/voice-asr-model-contracts";
 import { useVoiceAsrModel, type VoiceAsrModelController } from "../use-voice-asr-model";
-import { readVoiceAsrModel, downloadVoiceAsrModel, removeVoiceAsrModel } from "../../../companion/voice-asr-model";
+import { readVoiceAsrModel, downloadVoiceAsrModel, removeVoiceAsrModel } from "../../../companion/voice/voice-asr-model";
 
-vi.mock("../../../companion/voice-asr-model", () => ({ readVoiceAsrModel: vi.fn(), downloadVoiceAsrModel: vi.fn(), cancelVoiceAsrModel: vi.fn(), removeVoiceAsrModel: vi.fn() }));
-vi.mock("../../../../app/desktop-client", () => ({ gatewayErrorMessage: (error: unknown) => error instanceof Error ? error.message : "失败" }));
+vi.mock("../../../companion/voice/voice-asr-model", () => ({ readVoiceAsrModel: vi.fn(), downloadVoiceAsrModel: vi.fn(), cancelVoiceAsrModel: vi.fn(), removeVoiceAsrModel: vi.fn() }));
+vi.mock("../../../../app/client/desktop-client", () => ({ gatewayErrorMessage: (error: unknown) => error instanceof Error ? error.message : "失败" }));
 
 const snapshot = (status: VoiceAsrModelSnapshotV1["status"]): VoiceAsrModelSnapshotV1 => ({
   version: 1, modelId: "sensevoice-int8-zh-en-ja-ko-yue", mountUrl: "astella-app://bundle/device/asr/",

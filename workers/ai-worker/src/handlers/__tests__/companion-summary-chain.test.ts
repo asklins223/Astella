@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { summarizeSummaryChain, type SummaryChainNode } from "../companion-dialogue-store.ts";
+import { summarizeSummaryChain, type SummaryChainNode } from "../turn/companion-dialogue-store.ts";
 import {
   renderConversationSummary,
-} from "../companion-summarizer.ts";
+} from "../context/companion-summarizer.ts";
 
 /**
  * 方案 44 §5.2：只取最新一份摘要会把更早的覆盖索引丢掉。
@@ -158,7 +158,7 @@ test("44 §3.3：读取侧按区间级失效标记，不再拿会话修订号做
   const { readFileSync } = await import("node:fs");
   const { fileURLToPath } = await import("node:url");
   const source = readFileSync(
-    fileURLToPath(new URL("../companion-dialogue-store.ts", import.meta.url)),
+    fileURLToPath(new URL("../turn/companion-dialogue-store.ts", import.meta.url)),
     "utf8",
   );
   // 会话级等值比较（0384）把「改过任意一条消息」当成「所有旧摘要都不作数」：
@@ -194,11 +194,11 @@ test("44 §3.3：写入侧在同一事务里记录并复核修订号", async () 
   const { readFileSync } = await import("node:fs");
   const { fileURLToPath } = await import("node:url");
   const summarizer = readFileSync(
-    fileURLToPath(new URL("../companion-summarizer.ts", import.meta.url)),
+    fileURLToPath(new URL("../context/companion-summarizer.ts", import.meta.url)),
     "utf8",
   );
   const store = readFileSync(
-    fileURLToPath(new URL("../companion-dialogue-store.ts", import.meta.url)),
+    fileURLToPath(new URL("../turn/companion-dialogue-store.ts", import.meta.url)),
     "utf8",
   );
   // 读来源到提交之间若有人改写消息，这份覆盖已经不成立。锁是 FOR UPDATE：

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { replayCompanionHistory } from "../companion-history-replay.ts";
-import { projectCompanionHistory } from "../companion-history-projection.ts";
+import { replayCompanionHistory } from "../turn/companion-history-replay.ts";
+import { projectCompanionHistory } from "../context/companion-history-projection.ts";
 
 test("a segmented answer and later user additions survive a summary boundary inside that answer", () => {
   const history = ["user", "assistant", "user", "user", "assistant", "assistant", "user"]

@@ -202,12 +202,22 @@ export async function companionRealtimeRoutes(app: FastifyInstance): Promise<voi
           return;
         }
         if (message.requestId !== message.body.clientMessageId) {
+          // The request id doubles as the turn's idempotency key, so a mismatch
+          // is a broken client, not a user-level failure. It used to answer
+          // `turn.result` and nothing else: a client that only listens for
+          // `event` frames saw a successful submit and then silence, which
+          // looks exactly like a dead realtime channel (2026-10-17 diagnosis).
           send(socket, {
             version: 1,
             type: "turn.result",
             requestId: message.requestId,
             ok: false,
-            error: { code: "INVALID_REQUEST", message: "消息编号无效，请重试。", recoverable: false, statusCode: 400 },
+            error: {
+              code: "INVALID_REQUEST",
+              message: "消息编号必须与本次请求编号一致。",
+              recoverable: false,
+              statusCode: 400,
+            },
           });
           return;
         }

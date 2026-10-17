@@ -17,7 +17,7 @@ import test from "node:test";
 import {
   EAGER_DISPATCH_ELIGIBLE_TOOLS,
   EAGER_TOOL_DISPATCH_ENABLED,
-} from "../companion-eager-dispatch-config.ts";
+} from "../agent/companion-eager-dispatch-config.ts";
 import { getCompanionAgentTool } from "@astella/shared";
 
 test("默认关闭 —— 收益没实测之前它不许自己开始跑", () => {

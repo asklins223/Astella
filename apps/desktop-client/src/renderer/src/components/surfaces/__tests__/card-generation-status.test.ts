@@ -167,7 +167,7 @@ it("截断说明用的是服务端那两个数，且不是笼统的'有点长'",
  */
 it("复习那句只报最早的那一天，不替今天没有生产者的那一格编说法", async () => {
   const { reviewSchedulingNotice } = await import("../review/card-generation-status");
-  const { formatDate } = await import("../notebook/surface-data");
+  const { formatDate } = await import("../notebook/shell/surface-data.tsx");
   expect(reviewSchedulingNotice([
     { objectiveId: "o1", nextReviewAt: "2026-10-05T12:00:00.000Z", created: true },
     { objectiveId: "o2", nextReviewAt: "2026-09-27T12:00:00.000Z", created: true },
@@ -191,7 +191,7 @@ it("复习那句只报最早的那一天，不替今天没有生产者的那一�
  */
 it("被「暂不安排」挡住的那几条不进日期，但要单独数给本人看", async () => {
   const { reviewSchedulingNotice } = await import("../review/card-generation-status");
-  const { formatDate } = await import("../notebook/surface-data");
+  const { formatDate } = await import("../notebook/shell/surface-data.tsx");
   expect(reviewSchedulingNotice([
     { objectiveId: "o1", nextReviewAt: "2026-09-27T12:00:00.000Z", created: true, held: false },
     { objectiveId: "o2", created: false, held: true },

@@ -39,8 +39,8 @@ import type { ReactElement } from "react";
 import { CalendarClock, Download, HardDrive, RefreshCw, Sparkles } from "lucide-react";
 
 import { SettingRow } from "./settings-primitives.tsx";
-import { createRequestMeta } from "../../../app/desktop-client";
-import { hasActionableUpdate } from "../../../app/update-status";
+import { createRequestMeta } from "../../../app/client/desktop-client";
+import { hasActionableUpdate } from "../../../app/gate/update-status";
 import type { UpdateStateV1 } from "@astella/shared/desktop-ipc-contracts";
 
 function megabytes(bytes: number): string {

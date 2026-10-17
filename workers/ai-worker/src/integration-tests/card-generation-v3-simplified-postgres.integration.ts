@@ -429,7 +429,7 @@ test("入口排出去的就是简化链那一发（库里读得出 jobType）", 
 
 test("端到端：两发语义调用走到 review_ready，候选带着 binding plan hash 能被保留", async () => {
   const job = await claimSimplifiedJob(simplifiedRunId);
-  const { processV2OutboxJob } = await import("../handlers/card-generation-v2-handler.ts");
+  const { processV2OutboxJob } = await import("../handlers/note/card-generation-v2-handler.ts");
   await processV2OutboxJob(job);
 
   const diagnosed = async (label: string) => {
@@ -580,7 +580,7 @@ test("重放防护（自旧链改接）：重投整批那一发不新增计划�
   ` as unknown as Array<{ id: string; workspace_id: string; run_id: string;
     job_type: string; payload: Record<string, unknown> }>;
   assert.equal(claimed.length, 1, "本 run 该有一条已完成的整批 job（上一条用例跑的就是它）");
-  const { processV2OutboxJob } = await import("../handlers/card-generation-v2-handler.ts");
+  const { processV2OutboxJob } = await import("../handlers/note/card-generation-v2-handler.ts");
   await processV2OutboxJob({
     id: claimed[0]!.id, workspaceId: claimed[0]!.workspace_id, runId: claimed[0]!.run_id,
     jobType: claimed[0]!.job_type, payload: claimed[0]!.payload, leaseToken: freshToken,
@@ -961,7 +961,7 @@ test("检查失败不重跑生成：计划与首稿留着，重投从段 4 接�
 
 test("零候选是正常结果：只付一次生成，run 落在 no_cards_recommended", async () => {
   const job = await claimSimplifiedJob(zeroCandidateRunId);
-  const { processV2OutboxJob } = await import("../handlers/card-generation-v2-handler.ts");
+  const { processV2OutboxJob } = await import("../handlers/note/card-generation-v2-handler.ts");
   await processV2OutboxJob(job);
 
   assert.equal(await runStatus(zeroCandidateRunId), "no_cards_recommended");
@@ -1415,7 +1415,7 @@ test("检查那一发两次都不合合同：生成那一发不重付，首稿�
 });
 
 test("翻到真模型那一档但平台/同意没配好：一次都不外发，且当场终结不重投（走真分发点）", async () => {
-  const { processV2OutboxJob } = await import("../handlers/card-generation-v2-handler.ts");
+  const { processV2OutboxJob } = await import("../handlers/note/card-generation-v2-handler.ts");
   const runId = (await createRun(notes.deadend.versionId, `v3-llm-refuse-${randomUUID()}`,
     { workspaceId: FAIL_SHAPE_WORKSPACE_ID, userId: FAIL_SHAPE_USER_ID })).runId;
   const job = await claimSimplifiedJob(runId);
@@ -1458,7 +1458,7 @@ test("翻到真模型那一档但平台/同意没配好：一次都不外发，�
 });
 
 test("不可重试那一类经真分发点落库＝一次终结（上一条负向读数的对照格）", async () => {
-  const { processV2OutboxJob } = await import("../handlers/card-generation-v2-handler.ts");
+  const { processV2OutboxJob } = await import("../handlers/note/card-generation-v2-handler.ts");
   const runId = (await createRun(notes.deadend.versionId, `v3-deadend-${randomUUID()}`,
     { workspaceId: FAIL_SHAPE_WORKSPACE_ID, userId: FAIL_SHAPE_USER_ID })).runId;
   const job = await claimSimplifiedJob(runId);
@@ -1573,7 +1573,7 @@ async function countCompletedReceipts(runId: string): Promise<number> {
 
 test("简化链先把这一 run 推到 review_ready（后面三档都要一个有可审核候选的 run）", async () => {
   const job = await claimSimplifiedJob(refineRunId);
-  const { processV2OutboxJob } = await import("../handlers/card-generation-v2-handler.ts");
+  const { processV2OutboxJob } = await import("../handlers/note/card-generation-v2-handler.ts");
   await processV2OutboxJob(job);
   await assertJobCompleted(job.id);
   assert.equal(await runStatus(refineRunId), "review_ready");
@@ -1600,7 +1600,7 @@ test("逐候选那一发·重检：只重过检查这条腿，内容一字不动
     mode: "recheck",
   });
   const job = await claimSimplifiedJob(refineRunId, { jobType: "card_candidate_refine_v3" });
-  const { processV2OutboxJob } = await import("../handlers/card-generation-v2-handler.ts");
+  const { processV2OutboxJob } = await import("../handlers/note/card-generation-v2-handler.ts");
   await processV2OutboxJob(job);
   await assertJobCompleted(job.id);
 
@@ -1648,7 +1648,7 @@ test("逐候选那一发·按反馈重生成：出新修订、旧的标 supersed
     feedbackReasonCodes: ["too_shallow"],
   });
   const job = await claimSimplifiedJob(refineRunId, { jobType: "card_candidate_refine_v3" });
-  const { processV2OutboxJob } = await import("../handlers/card-generation-v2-handler.ts");
+  const { processV2OutboxJob } = await import("../handlers/note/card-generation-v2-handler.ts");
   await processV2OutboxJob(job);
   await assertJobCompleted(job.id);
 
@@ -1700,7 +1700,7 @@ test("整批重排那一档：同一 run 再开一版计划，上一版没激活
       ${admin.json({ runId: refineRunId, workspaceId: REFINE_WORKSPACE_ID, mode: "replan" })}, 'pending')
   `;
   const job = await claimSimplifiedJob(refineRunId);
-  const { processV2OutboxJob } = await import("../handlers/card-generation-v2-handler.ts");
+  const { processV2OutboxJob } = await import("../handlers/note/card-generation-v2-handler.ts");
   await processV2OutboxJob(job);
   await assertJobCompleted(job.id);
 
@@ -1733,7 +1733,7 @@ test("整批重排那一档：同一 run 再开一版计划，上一版没激活
 // 同一时刻发生同一件事）。反例要判的是两件：终态不被改回去，完成回执也不许补写。
 test("用户取消之后在途的重检：迟到结果不许把 run 改回来、也不许补写回执", async () => {
   const setupJob = await claimSimplifiedJob(cancelRefineRunId);
-  const { processV2OutboxJob } = await import("../handlers/card-generation-v2-handler.ts");
+  const { processV2OutboxJob } = await import("../handlers/note/card-generation-v2-handler.ts");
   await processV2OutboxJob(setupJob);
   await assertJobCompleted(setupJob.id);
   assert.equal(await runStatus(cancelRefineRunId), "review_ready",
@@ -1854,7 +1854,7 @@ async function reviewablePassedCandidates(runId: string) {
  */
 test("重检这一张没过、台上还有别的可保留候选：终态仍 review_ready，且不挂质量失败", async () => {
   const setupJob = await claimSimplifiedJob(settleSiblingRunId);
-  const { processV2OutboxJob } = await import("../handlers/card-generation-v2-handler.ts");
+  const { processV2OutboxJob } = await import("../handlers/note/card-generation-v2-handler.ts");
   await processV2OutboxJob(setupJob);
   await assertJobCompleted(setupJob.id);
   assert.equal(await runStatus(settleSiblingRunId), "review_ready");
@@ -1928,7 +1928,7 @@ test("重检这一张没过、台上还有别的可保留候选：终态仍 revi
 /** 重检这一张没过，台上再无可保留候选 ⇒ needs_attention，且失败码要挂上。 */
 test("重检这一张没过、台上再无可保留候选：终态 needs_attention 并带 quality_gate_failed", async () => {
   const setupJob = await claimSimplifiedJob(settleLastPassRunId);
-  const { processV2OutboxJob } = await import("../handlers/card-generation-v2-handler.ts");
+  const { processV2OutboxJob } = await import("../handlers/note/card-generation-v2-handler.ts");
   await processV2OutboxJob(setupJob);
   await assertJobCompleted(setupJob.id);
   assert.equal(await runStatus(settleLastPassRunId), "review_ready");
@@ -1993,7 +1993,7 @@ test("重检这一张没过、台上再无可保留候选：终态 needs_attenti
 // 而 `gateRejected` 里明明写着是哪两道门挡的——原因拿在手里被丢掉。
 test("每句都被内容门禁挡下的那一发：终态要带得上那两道门的名字", async () => {
   const job = await claimSimplifiedJob(allGatedRunId);
-  const { processV2OutboxJob } = await import("../handlers/card-generation-v2-handler.ts");
+  const { processV2OutboxJob } = await import("../handlers/note/card-generation-v2-handler.ts");
   await processV2OutboxJob(job);
 
   assert.equal(await runStatus(allGatedRunId), "no_cards_recommended",

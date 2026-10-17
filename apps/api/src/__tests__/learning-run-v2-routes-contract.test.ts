@@ -27,14 +27,28 @@ const reviewRoutesSource = readFileSync(
  * 不是「它在 desktop-gateway.ts 里」——所以读整个 `src/main` 下的
  * gateway 家族（主文件 + 各命名空间文件）。
  */
-const gatewaySource = readdirSync(
-  resolve(import.meta.dirname, "../../../desktop-client/src/main"),
-)
-  .filter((n) => /^desktop-gateway.*\.ts$/.test(n) && !n.endsWith(".test.ts"))
-  .map((n) => readFileSync(
-    resolve(import.meta.dirname, "../../../desktop-client/src/main", n), "utf8",
-  ))
-  .join("\n");
+const MAIN_DIR = resolve(import.meta.dirname, "../../../desktop-client/src/main");
+
+/** main 按职责分了子目录：家族扫描要递归，否则一个文件都收不到。 */
+function mainFamily(pattern: RegExp): string {
+  const out: string[] = [];
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = resolve(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name !== "__tests__" && entry.name !== "test-support") walk(full);
+        continue;
+      }
+      if (pattern.test(entry.name) && !entry.name.endsWith(".test.ts")) {
+        out.push(readFileSync(full, "utf8"));
+      }
+    }
+  };
+  walk(MAIN_DIR);
+  return out.join("\n");
+}
+
+const gatewaySource = mainFamily(/^desktop-gateway.*\.ts$/);
 /**
  * desktop-ipc 家族（主文件 + 各命名空间文件）——与上面的 `gatewaySource` 同一个形状。
  *
@@ -43,14 +57,7 @@ const gatewaySource = readdirSync(
  * 判据的对象是「这十条通道在 V2 上都注册了、都走严格 schema」，
  * 不是它写在哪个文件里——所以读整个家族，不改回代码（AGENTS.md 同一条纪律）。
  */
-const desktopIpcSource = readdirSync(
-  resolve(import.meta.dirname, "../../../desktop-client/src/main"),
-)
-  .filter((n) => /^desktop-ipc.*\.ts$/.test(n) && !n.endsWith(".test.ts"))
-  .map((n) => readFileSync(
-    resolve(import.meta.dirname, "../../../desktop-client/src/main", n), "utf8",
-  ))
-  .join("\n");
+const desktopIpcSource = mainFamily(/^desktop-ipc.*\.ts$/);
 const preloadSource = readFileSync(
   resolve(import.meta.dirname, "../../../desktop-client/src/preload/index.ts"),
   "utf8",
