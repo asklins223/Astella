@@ -91,3 +91,33 @@ test("search round limit is distinct from an account toggle or service failure",
   assert.match(unavailableCompanionToolSummary("agent_web_search", { webSearchEnabled: false }, { searchLimitReached: true })!, /关闭/);
   assert.equal(unavailableCompanionToolSummary("agent_web_search", { webSearchEnabled: true }), null);
 });
+
+test("只读了她的手册时，讲解正文里「」举的例子不算编造引文；读了用户材料仍严格", () => {
+  // 2026-10-17 线上（gen 70）：重发同一条问题 → 读手册 → 讲解里用「」举例 →
+  // 引文核对切严格档、纠正一次仍不匹配 → 整轮 INTERNAL_ERROR。手册不是原文材料。
+  const said = "先说结论：判断「用户这句话要我干什么」，再把它翻译成可执行目标。比如「查一下昨天的笔记，挑重点存成一篇摘要」就是三步。";
+  const base = {
+    said, contextText: "", turnToolUse: "none", pageContext: null, groundedTutorContext: null,
+    stepCalls: 0, toolCallCount: 1, finalAnswerOnly: false, stepCount: 1, stepBudget: 10,
+    nowMs: 1, deadlineAt: 1000, userAskedForAction: false, requestedActionTools: [],
+    actionSteerAttempts: 0, lookupClaimSteered: false, quoteCorrectionUsed: false,
+  };
+  const playbookRead = {
+    ...base,
+    messages: [
+      { role: "assistant" as const, content: "", toolCalls: [{ id: "call-playbook", name: "companion_read_playbook", arguments: { playbookId: "p1" } }] },
+      { role: "tool" as const, toolCallId: "call-playbook", content: JSON.stringify({ value: { steps: ["先当重做/验收对待"] } }) },
+    ],
+  };
+  assert.deepEqual(reviewCompanionStepCorrection(playbookRead).unverifiedQuotes, [],
+    "读自己的手册不该把修辞引号当成编造引文");
+  const materialRead = {
+    ...base,
+    messages: [
+      { role: "assistant" as const, content: "", toolCalls: [{ id: "call-note", name: "companion_read_note", arguments: {} }] },
+      { role: "tool" as const, toolCallId: "call-note", content: JSON.stringify({ body: "笔记正文里没有这些字。" }) },
+    ],
+  };
+  assert.equal(reviewCompanionStepCorrection(materialRead).unverifiedQuotes.length, 1,
+    "读了用户材料时仍然严格核对");
+});

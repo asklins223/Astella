@@ -330,6 +330,20 @@ export function companionStepRuntimePolicy(input: {
 }
 
 /**
+ * 读这些工具得到的是**她自己的方法、身份与记事**，不是"用户要她读的材料"。
+ *
+ * 2026-10-17 线上（run `2c57edda`，gen 70）：用户重发同一条问题时她读了手册
+ * `重复的任务请求按验收处理`，然后在讲解正文里用「」举了几个例子——引文核对
+ * 因为"这轮读过工具"切到严格档，把这些修辞引号当成编造原文，纠正一次仍不匹配，
+ * 整轮 `INTERNAL_ERROR`。手册不是原文材料，读它不该把核对切成严格档。
+ */
+const SELF_INSTRUCTION_READ_TOOLS = new Set([
+  "companion_read_playbook",
+  "companion_read_identity",
+  "companion_read_self_notes",
+]);
+
+/**
  * 这一步的**产出核对**：拿这一步说过的话，判它要不要被纠正、按哪一类纠正。
  *
  * 三类都不能当终答交付（方案 29 §4.3，实机 2026-09-21）：
@@ -380,12 +394,17 @@ export function reviewCompanionStepCorrection(input: {
   // this exception cannot apply to a merely planned calculation.
   const calculationIds = new Set(evidenceMessages.flatMap(message => message.role === "assistant"
     ? (message.toolCalls ?? []).filter(call => call.name === "agent_calculate").map(call => call.id) : []));
+  // 她自己的手册/身份/记事不算"读过的材料"（见 SELF_INSTRUCTION_READ_TOOLS 的注释）：
+  // 它们在不在回执里，都不该决定引文核对用哪一档。
+  const selfInstructionIds = new Set(evidenceMessages.flatMap(message => message.role === "assistant"
+    ? (message.toolCalls ?? []).filter(call => SELF_INSTRUCTION_READ_TOOLS.has(call.name)).map(call => call.id) : []));
   const toolMessages = evidenceMessages.filter(message => message.role === "tool");
-  const onlyCalculations = toolMessages.length > 0
-    && toolMessages.every(message => calculationIds.has(message.toolCallId ?? ""));
+  const materialToolMessages = toolMessages.filter(message => !selfInstructionIds.has(message.toolCallId ?? ""));
+  const onlyCalculations = materialToolMessages.length > 0
+    && materialToolMessages.every(message => calculationIds.has(message.toolCallId ?? ""));
   const unverifiedQuotes = unverifiedQuoteClaims(input.said, quoteSources, {
     allowUnattributedQuotes: !input.groundedTutorContext && !companionSelectionText(input.pageContext)
-      && (onlyCalculations || (input.turnToolUse === "none" && toolMessages.length === 0)),
+      && (onlyCalculations || (input.turnToolUse === "none" && materialToolMessages.length === 0)),
   });
   // "到期列表现在是空的"不报任何数字，上面那条看不见；它是一句可证伪的假阴性，
   // 直接对着环境块里服务端算出的那个数判（同一个 steer 额度、同一条 nudge：

@@ -34,7 +34,7 @@ export interface CompanionRouteClassifierFacts {
 }
 
 export interface CompanionReleaseShadowFacts {
-  readonly mode: "shadow";
+  readonly mode: "shadow" | "enforce";
   readonly decision: "release" | "wait";
   readonly reason: string;
   readonly intentGuess: "conversation" | "question" | null;
@@ -122,13 +122,14 @@ export type CompanionRouteMetaWriter = (
 function releaseShadowFacts(
   verdict: Awaited<ReturnType<typeof evaluateCompanionRelease>>,
   actual: { intent: string; toolUse: string; safe: boolean } | null,
+  mode: "shadow" | "enforce",
 ): CompanionReleaseShadowFacts {
   const agreement = actual === null
     ? "unknown" as const
     : verdict.decision === "release"
       ? (actual.safe ? "aligned" as const : "misrelease" as const)
       : (actual.safe ? "conservative" as const : "aligned" as const);
-  return { mode: "shadow", ...verdict, actual, agreement };
+  return { mode, ...verdict, actual, agreement };
 }
 
 export function createCompanionRouteRecorder(
@@ -182,7 +183,7 @@ export function createCompanionRouteRecorder(
             scopeKey: scopeKey!, text: userText!, recentMessages,
             activeLearningTask: options.activeLearningTask, embed: embedText!,
           });
-          l1 = releaseShadowFacts(verdict, actual);
+          l1 = releaseShadowFacts(verdict, actual, mode === "enforce" ? "enforce" : "shadow");
           // 本轮的标签只喂给**后面**的轮次：先算 L1 再入库，否则这条样本会污染自己的判定。
           if (actual) {
             void rememberCompanionReleaseSample({
