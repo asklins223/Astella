@@ -407,8 +407,6 @@ services:
       EMBEDDING_MAX_CHARS: ${EMBEDDING_MAX_CHARS:-1500}
       EMBEDDING_BATCH_SIZE: ${EMBEDDING_BATCH_SIZE:-8}
       HF_HOME: /data/hf
-      TRANSFORMERS_CACHE: /data/hf
-      SENTENCE_TRANSFORMERS_HOME: /data/hf
     volumes:
       - embedding_model_cache:/data/hf
     healthcheck:

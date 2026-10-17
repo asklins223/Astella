@@ -462,8 +462,6 @@ services:
       EMBEDDING_MAX_CHARS: ${EMBEDDING_MAX_CHARS:-1500}
       EMBEDDING_BATCH_SIZE: ${EMBEDDING_BATCH_SIZE:-8}
       HF_HOME: /data/hf
-      TRANSFORMERS_CACHE: /data/hf
-      SENTENCE_TRANSFORMERS_HOME: /data/hf
     ports:
       - "127.0.0.1:${EMBEDDING_PORT:-8090}:80"
     volumes:
