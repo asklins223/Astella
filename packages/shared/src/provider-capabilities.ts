@@ -48,6 +48,12 @@ export type Capability =
    */
   | "note_generation"       // 笔记学习产物的结构化生成（速看/脑图/讲解/拓展）
   | "embedding"             // 向量嵌入
+  /**
+   * 嵌入的本地兜底槽（2026-10-17）。SiliconFlow 不可用或并发打满时切到本地
+   * BGE-M3 容器；模型 id 必须与主槽一致，否则已落库向量的 model_revision
+   * 对不上，检索会静默退回关键词。
+   */
+  | "embedding_fallback"
   | "rerank"                // 重排序
   // ── 未来扩展 ──
   | "speech_recognition"    // 语音识别

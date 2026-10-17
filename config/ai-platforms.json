@@ -49,6 +49,16 @@
     "mock": {
       "type": "mock"
     },
+    "embedding-local": {
+      "type": "local_embedding",
+      "apiKey": "local",
+      "baseUrl": "http://embedding:80/v1",
+      "models": {
+        "BAAI/bge-m3": {
+          "contextWindowTokens": 8192
+        }
+      }
+    },
     "siliconflow-chat": {
       "type": "openai_compatible",
       "apiKey": "${SILICONFLOW_API_KEY}",
@@ -82,6 +92,10 @@
     },
     "embedding": {
       "platform": "siliconflow",
+      "model": "BAAI/bge-m3"
+    },
+    "embedding_fallback": {
+      "platform": "embedding-local",
       "model": "BAAI/bge-m3"
     },
     "companion_fallback": {

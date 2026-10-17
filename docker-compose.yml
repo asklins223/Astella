@@ -391,12 +391,44 @@ services:
     networks:
       - astella_net
 
+  # Local BGE-M3 embedding fallback (OpenAI-compatible /v1/embeddings).
+  # SiliconFlow remains primary; the worker routes here when the primary is
+  # unavailable or its in-flight concurrency is saturated. Production uses the
+  # CI-built digest from docker-compose.deploy.yml; this build block is for the
+  # single-host compose path.
+  embedding:
+    build:
+      context: .
+      dockerfile: infra/embedding/Dockerfile
+    restart: unless-stopped
+    environment:
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-BAAI/bge-m3}
+      EMBEDDING_DEVICE: cpu
+      EMBEDDING_MAX_CHARS: ${EMBEDDING_MAX_CHARS:-1500}
+      EMBEDDING_BATCH_SIZE: ${EMBEDDING_BATCH_SIZE:-8}
+      HF_HOME: /data/hf
+      TRANSFORMERS_CACHE: /data/hf
+      SENTENCE_TRANSFORMERS_HOME: /data/hf
+    volumes:
+      - embedding_model_cache:/data/hf
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:80/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      start_period: 2700s
+      retries: 5
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - astella_net
+
 # SEC-18 备注：PostgreSQL / 对象存储凭据目前经环境变量注入，`docker inspect` 可见。
 # 单机部署风险可接受；迁到共享主机时应改用 Docker Secrets，并同步让应用代码支持
 # 从 /run/secrets/<name> 读取——只加 secrets: 配置而不改代码不会生效。
 
 volumes:
   postgres_data:
+  embedding_model_cache:
 
 networks:
   astella_net:

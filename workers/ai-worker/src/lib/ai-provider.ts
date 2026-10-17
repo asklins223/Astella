@@ -115,7 +115,9 @@ import "./providers/openai-compatible.ts";
 import "./providers/siliconflow.ts";
 import "./providers/opencode-go.ts";
 import "./providers/pi-agent.ts";
+import "./providers/local-embedding.ts";
 import { createCapabilityProvider } from "./provider-factory.ts";
+import { logger } from "./logger.ts";
 import type { ProviderRuntimeConfig as SharedRuntimeConfig } from "@astella/shared";
 import { resolveSystemPlatform } from "@astella/shared/platform-config-node";
 import type { PlatformOptions } from "@astella/shared";
@@ -234,52 +236,177 @@ export interface EmbeddingProviderLike {
   embed(text: string, signal?: AbortSignal): Promise<number[] | null>;
 }
 
+function positiveEnv(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+async function embedWithTimeout(
+  provider: EmbeddingProviderLike,
+  text: string,
+  signal: AbortSignal | undefined,
+  timeoutMs: number,
+): Promise<number[] | null> {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      provider.embed(text, signal).catch(() => null),
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer !== null) clearTimeout(timer);
+  }
+}
+
 /**
- * Create a standalone embedding provider.
+ * SiliconFlow primary + local BGE-M3 fallback.
  *
- * R2: Delegates to createCapabilityProvider(id, "embedding", config),
- * removing the duplicate if-else chain. The factory returns null when
- * the provider doesn't support embedding or config is missing, which
- * covers the previous `typeof embed === "function"` runtime check.
- *
- * Resolution order (first match wins):
- *   1. Cached governance context's embedding slot (if provided)
- *   2. System-level embedding platform from config/ai-platforms.json
- *   3. Returns null — callers should fall back to the main provider's embed()
- *
- * @param cachedGovCtx Optional governance context with pre-resolved embedding config.
+ * The fallback is used when the primary returns null/throws, exceeds the
+ * per-call timeout, is already handling `maxInflight` calls, or its circuit is
+ * open. The model id must match: pgvector rows are keyed by
+ * `model_revision = provider.embeddingModelId`; a different local model would
+ * silently invalidate every stored vector.
  */
-export async function createEmbeddingProvider(
-  cachedGovCtx?: { embeddingProviderName: string | null; embeddingProviderConfig: AIProviderRuntimeConfig | null } | null,
-): Promise<EmbeddingProviderLike | null> {
-    // 1. Use cached governance context if available (avoids redundant DB query)
-  if (cachedGovCtx?.embeddingProviderName && cachedGovCtx?.embeddingProviderConfig) {
-    const providerId = cachedGovCtx.embeddingProviderName;
-    const impl = createCapabilityProvider(providerId, "embedding", {
-      apiKey: cachedGovCtx.embeddingProviderConfig.apiKey,
-      baseUrl: cachedGovCtx.embeddingProviderConfig.baseUrl,
-      model: cachedGovCtx.embeddingProviderConfig.model,
-      modelProfile: cachedGovCtx.embeddingProviderConfig.modelProfile,
-      ...(cachedGovCtx.embeddingProviderConfig.options ? { options: cachedGovCtx.embeddingProviderConfig.options } : {}),
-    } as SharedRuntimeConfig);
-    if (impl) {
-      return impl as unknown as EmbeddingProviderLike;
+export class FallbackEmbeddingProvider implements EmbeddingProviderLike {
+  readonly id: string;
+  readonly embeddingModelId: string;
+  private readonly primaryTimeoutMs: number;
+  private readonly maxInflight: number;
+  private readonly failureThreshold: number;
+  private readonly cooldownMs: number;
+  private inflight = 0;
+  private consecutiveFailures = 0;
+  private openUntil = 0;
+
+  constructor(
+    private readonly primary: EmbeddingProviderLike,
+    private readonly fallback: EmbeddingProviderLike,
+    env: NodeJS.ProcessEnv = process.env,
+  ) {
+    this.id = primary.id;
+    this.embeddingModelId = primary.embeddingModelId;
+    this.primaryTimeoutMs = positiveEnv(env.EMBEDDING_PRIMARY_TIMEOUT_MS, 8_000);
+    this.maxInflight = positiveEnv(env.EMBEDDING_PRIMARY_MAX_INFLIGHT, 4);
+    this.failureThreshold = positiveEnv(env.EMBEDDING_CIRCUIT_FAILURES, 3);
+    this.cooldownMs = positiveEnv(env.EMBEDDING_CIRCUIT_COOLDOWN_MS, 60_000);
+  }
+
+  private recordFailure(reason: "timeout" | "empty" | "error" | "concurrency"): void {
+    this.consecutiveFailures += 1;
+    if (this.consecutiveFailures >= this.failureThreshold) {
+      this.openUntil = Date.now() + this.cooldownMs;
+      logger.warn({
+        primary: this.primary.id,
+        fallback: this.fallback.id,
+        failures: this.consecutiveFailures,
+        cooldownMs: this.cooldownMs,
+        reason,
+      }, "embedding primary circuit opened; local fallback takes over");
     }
   }
 
-  // 2. System-level config from the platform config file
-  const platform = resolveSystemPlatform("embedding");
-  if (!platform) return null;
-
-  const providerId = platform.type;
-  const impl = createCapabilityProvider(providerId, "embedding", {
-    apiKey: platform.apiKey,
-    baseUrl: platform.baseUrl,
-    model: platform.model,
-    ...(platform.options ? { options: platform.options } : {}),
-  } as SharedRuntimeConfig);
-  if (impl) {
-    return impl as unknown as EmbeddingProviderLike;
+  async embed(text: string, signal?: AbortSignal): Promise<number[] | null> {
+    const now = Date.now();
+    const circuitOpen = now < this.openUntil;
+    const saturated = this.inflight >= this.maxInflight;
+    if (!circuitOpen && !saturated) {
+      this.inflight += 1;
+      try {
+        const vector = await embedWithTimeout(this.primary, text, signal, this.primaryTimeoutMs);
+        if (vector && vector.length > 0) {
+          this.consecutiveFailures = 0;
+          this.openUntil = 0;
+          return vector;
+        }
+        this.recordFailure("empty");
+      } catch {
+        this.recordFailure("error");
+      } finally {
+        this.inflight -= 1;
+      }
+    } else if (saturated && !circuitOpen) {
+      this.recordFailure("concurrency");
+    }
+    return this.fallback.embed(text, signal).catch(() => null);
   }
-  return null;
+}
+
+function embeddingFromResolved(resolved: {
+  type: string;
+  apiKey?: string;
+  baseUrl?: string;
+  model: string;
+  modelProfile?: import("@astella/shared").ModelProfile;
+  options?: import("@astella/shared").PlatformOptions;
+}): EmbeddingProviderLike | null {
+  const impl = createCapabilityProvider(resolved.type, "embedding", {
+    apiKey: resolved.apiKey,
+    baseUrl: resolved.baseUrl,
+    model: resolved.model,
+    ...(resolved.modelProfile ? { modelProfile: resolved.modelProfile } : {}),
+    ...(resolved.options ? { options: resolved.options } : {}),
+  } as SharedRuntimeConfig);
+  return impl ? impl as unknown as EmbeddingProviderLike : null;
+}
+
+/**
+ * Create a standalone embedding provider.
+ *
+ * Resolution order (first match wins):
+ *   1. Cached governance context's embedding slot + optional local fallback
+ *   2. System-level embedding platform (and embedding_fallback) from config
+ *   3. Returns null — callers should fall back to lexical/sequential retrieval
+ */
+export async function createEmbeddingProvider(
+  cachedGovCtx?: {
+    embeddingProviderName: string | null;
+    embeddingProviderConfig: AIProviderRuntimeConfig | null;
+    embeddingFallbackProviderName?: string | null;
+    embeddingFallbackProviderConfig?: AIProviderRuntimeConfig | null;
+  } | null,
+): Promise<EmbeddingProviderLike | null> {
+  const fallback = cachedGovCtx?.embeddingFallbackProviderName && cachedGovCtx.embeddingFallbackProviderConfig
+    ? embeddingFromResolved({
+      type: cachedGovCtx.embeddingFallbackProviderName,
+      apiKey: cachedGovCtx.embeddingFallbackProviderConfig.apiKey ?? undefined,
+      baseUrl: cachedGovCtx.embeddingFallbackProviderConfig.baseUrl ?? undefined,
+      model: cachedGovCtx.embeddingFallbackProviderConfig.model ?? "",
+      modelProfile: cachedGovCtx.embeddingFallbackProviderConfig.modelProfile,
+      options: cachedGovCtx.embeddingFallbackProviderConfig.options,
+    })
+    : (() => {
+      const platform = resolveSystemPlatform("embedding_fallback");
+      return platform ? embeddingFromResolved(platform) : null;
+    })();
+  const primary = cachedGovCtx !== undefined
+    ? (cachedGovCtx?.embeddingProviderName && cachedGovCtx.embeddingProviderConfig
+      ? embeddingFromResolved({
+        type: cachedGovCtx.embeddingProviderName,
+        apiKey: cachedGovCtx.embeddingProviderConfig.apiKey ?? undefined,
+        baseUrl: cachedGovCtx.embeddingProviderConfig.baseUrl ?? undefined,
+        model: cachedGovCtx.embeddingProviderConfig.model ?? "",
+        modelProfile: cachedGovCtx.embeddingProviderConfig.modelProfile,
+        options: cachedGovCtx.embeddingProviderConfig.options,
+      })
+      : null)
+    : (() => {
+      const platform = resolveSystemPlatform("embedding");
+      return platform ? embeddingFromResolved(platform) : null;
+    })();
+  // A caller may supply a governance context with no primary slot; the local
+  // fallback is still a valid embedding source (e.g. during a key rotation).
+  if (!primary) return fallback;
+  if (!fallback) return primary;
+  if (fallback.embeddingModelId !== primary.embeddingModelId) {
+    logger.warn({
+      primary: primary.id,
+      primaryModel: primary.embeddingModelId,
+      fallback: fallback.id,
+      fallbackModel: fallback.embeddingModelId,
+    }, "embedding fallback model id differs from primary; local fallback disabled to keep model_revision consistent");
+    return primary;
+  }
+  return new FallbackEmbeddingProvider(primary, fallback);
 }

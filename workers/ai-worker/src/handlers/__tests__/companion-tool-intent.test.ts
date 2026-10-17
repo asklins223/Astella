@@ -49,7 +49,6 @@ test("structured attention interprets dialect intent from current wording and re
   assert.match(String(promptMessages[0]?.content), /不能靠关键词或固定词序猜/);
   assert.match(String(promptMessages[0]?.content), /只提到地区、讲自己想家、询问方言词义[^。]*都不等于切换声音/);
   assert.match(String(promptMessages[0]?.content), /只有用户明确说“以后\/今后\/之后都默认\/一直用某具体方言”这类持续要求时才 set/);
-  assert.match(String(promptMessages[0]?.content), /recent/);
   const model = { ...provider(() => false), chatCompletion: async () => ({
     content: JSON.stringify({ ...proposal(false), voiceStyle: {
       decision: "apply", instruction: "请用河南话表达，语气自然温暖",
@@ -88,9 +87,9 @@ test("全文格式调整提供明确编辑协议，保留只分析与不改的�
     const instruction = String(messages[0]?.content);
     assert.match(instruction, /‘改一下’与‘调整一下’含义相同/);
     assert.match(instruction, /无需选区或光标/);
-    assert.match(instruction, /只给建议\/先别改时才按question\/read/);
+    assert.match(instruction, /只问有哪些问题、怎么调整、先别改时按 question\/read/);
     assert.match(instruction, /不要求用户额外说保存/);
-    return { content: JSON.stringify({ ...proposal(true), goalRelation: "unrelated", candidateOperations: ["companion_edit_note"] }), usage: {} };
+    return { content: JSON.stringify({ ...proposal(true), goalRelation: "unrelated", candidateOperations: ["companion_edit_note"], ambiguities: [] }), usage: {} };
   } } as AIProvider;
   const result = await interpretCompanionTurn(model, [{ role: "user", content: "调整下这篇笔记的格式规范，例如代码的要转成代码块，标题的要转标题" }],
     { ...taskContext(), capabilities: ["companion_edit_note", "companion_read_note"] });
@@ -238,7 +237,7 @@ test("普通称呼的分类协议不预填对象索引，不把缺少业务身�
   }} as AIProvider;
   const result=await interpretCompanionTurn(model,[{role:"user",content:"小鱼"}],taskContext());
   assert.match(instruction,/称呼伴星、随口招呼/);
-  assert.match(instruction,/不因为话题名词或昵称没对应 object 就制造歧义/);
+  assert.match(instruction,/话题名词或昵称没有对应 object 不构成歧义/);
   assert.doesNotMatch(instruction,/"objectIndex":0|"goalObjectIndex":0/);
   assert.deepEqual(result.subjects,[]);
   assert.deepEqual(result.ambiguities,[]);
@@ -284,8 +283,7 @@ test("待收的账只认宿主给过的索引，越界的直接丢", async () =>
   assert.match(sent, /"index":5/, "模型必须真的看见它被允许引用的那个编号");
   assert.match(contract, /"pendingOfferIndexes":\[\]/,
     "字段没写进输出合同就会被 strict 解析判成非法输出，整轮解释退化成 uncertain");
-  assert.match(contract, /只引用 recent 给过的 index/, "不发明身份——这条和 objects 用的是同一套约束");
-});
+  assert.match(contract, /只引用 recent 给过的 index/, "不发明身份——这条和 objects 用的是同一套约束");});
 
 test("租约在模型调用前失效时不发请求，并把失效交给任务运行时", async () => {
   let calls = 0;

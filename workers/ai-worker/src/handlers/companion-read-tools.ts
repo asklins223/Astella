@@ -80,6 +80,57 @@ export interface ReadPage {
 }
 
 /**
+ * 在字符预算内找一个不会把公式、表格行或代码围栏切开的落点。
+ *
+ * 只往回退（不越过硬上限）：退到数学公式的开头、表格行首、代码围栏行首。
+ * 单块本身比预算还长时仍只能硬切，但调用方会把 blockTextTruncated 标出来，
+ * 模型据此续读，不会把半句公式当成完整结论。
+ */
+function safeReadCut(content: string, start: number, hardTake: number): number {
+  const hardEnd = Math.min(content.length, start + hardTake);
+  if (hardEnd >= content.length) return hardEnd;
+  // A structural unit may exceed the nominal page budget by a little; a
+  // half formula / half table row is worse than a slightly larger page.
+  const overflowLimit = hardEnd + 512;
+  let cut = hardEnd;
+  const lastNewline = content.lastIndexOf("\n", cut - 1);
+  const lineStart = lastNewline + 1;
+  const nextNewline = content.indexOf("\n", cut);
+  const line = content.slice(lineStart, nextNewline < 0 ? content.length : nextNewline);
+  // A table row is one line; never stop in the middle of it.
+  if (/^\s*\|/.test(line)) {
+    if (nextNewline >= 0 && nextNewline + 1 <= overflowLimit) return nextNewline + 1;
+    if (lastNewline >= start) cut = lastNewline;
+  }
+  // Inside an open fenced code block: stop at the previous line boundary, or
+  // include the closing fence when it is close enough.
+  const fences = (content.slice(start, cut).match(/```/g) ?? []).length;
+  if (fences % 2 === 1) {
+    const closingFence = content.indexOf("```", cut);
+    if (closingFence >= 0 && closingFence + 3 <= overflowLimit) return closingFence + 3;
+    if (lastNewline >= start) cut = lastNewline;
+  }
+  // Inside an inline $...$ span: include the closing delimiter when close,
+  // otherwise stop before its opening delimiter.
+  const dollars = (content.slice(start, cut).match(/(?<!\\)\$/g) ?? []).length;
+  if (dollars % 2 === 1) {
+    const closingDollar = content.indexOf("$", cut);
+    if (closingDollar >= 0 && closingDollar + 1 <= overflowLimit) return closingDollar + 1;
+    const opening = content.lastIndexOf("$", cut - 1);
+    if (opening >= start) cut = opening;
+  }
+  // Inside inline `...` code: same rule.
+  const ticks = (content.slice(start, cut).match(/`/g) ?? []).length;
+  if (ticks % 2 === 1) {
+    const closingTick = content.indexOf("`", cut);
+    if (closingTick >= 0 && closingTick + 1 <= overflowLimit) return closingTick + 1;
+    const opening = content.lastIndexOf("`", cut - 1);
+    if (opening >= start) cut = opening;
+  }
+  return cut > start ? cut : hardEnd;
+}
+
+/**
  * 把块序列装进一页字符预算（39d W6-2 / 39b C5 的分页读取）。
  *
  * 装到预算为止就停；**至少装一块**——单块超预算时切那一块的文本并标
@@ -106,17 +157,20 @@ export function paginateReadBlocks(blocks: readonly ReadPageBlock[], maxChars: n
     // 整块装不下且**不是本页第一块** → 留给下一页。只有第一块才允许切：
     // 否则每块都被切成半句拼进本页，用户读到的是被碎块化的正文。
     if (remaining.length > room && parts.length > 0) break;
-    let take = Math.min(remaining.length, room);
+    const take = remaining.length > room
+      ? safeReadCut(remaining, 0, room)
+      : remaining.length;
     // UTF-16 offset agrees with JS/string contracts, but never splits a surrogate pair.
-    if (take < remaining.length && /[\uD800-\uDBFF]/.test(remaining.charAt(take - 1))) take--;
-    const text = remaining.slice(0, take);
-    pageBlocks.push({ ordinal: block.ordinal, blockIndex: block.ordinal - 1, content: text, startOffset: offset, complete: offset === 0 && take === block.content.length });
+    const safeTake = take < remaining.length && /[\uD800-\uDBFF]/.test(remaining.charAt(take - 1))
+      ? take - 1 : take;
+    const text = remaining.slice(0, safeTake);
+    pageBlocks.push({ ordinal: block.ordinal, blockIndex: block.ordinal - 1, content: text, startOffset: offset, complete: offset === 0 && safeTake === block.content.length });
     parts.push(separator + text);
     used += separator.length + text.length;
     endOrdinal = block.ordinal;
-    if (text.length < remaining.length) {
+    if (safeTake < remaining.length) {
       blockTextTruncated = true;
-      nextStartOffset = offset + text.length;
+      nextStartOffset = offset + safeTake;
       break;
     }
   }

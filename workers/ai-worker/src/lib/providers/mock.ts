@@ -372,6 +372,9 @@ fingerprint: `mock:${this.modelId}:${this.visionModelId}:native_tools`,
         || userContent.includes("【mock:wants-memory】");
       const decided = JSON.stringify({ intent: action || readTask ? "task" : "conversation", toolUse: readTask ? "read" : action ? "act" : "none",
         subjects: [], goalRelation: action ? "new" : "unrelated", candidateOperations: [], ambiguities: [],
+        // `pendingOfferIndexes` is required by the proposal contract; omitting it
+        // left the mock chain in the "uncertain" cell and hid wiring mistakes.
+        pendingOfferIndexes: [],
         // 结构合同里 voiceStyle 是必填项：缺它会让整条 mock 链停在"读不到"那一格。
         voiceStyle: { decision: "none", instruction: null, persistentPreference: { action: "keep", dialect: null } } });
       return { content: decided, usage: this.estimateUsage(userContent, decided) };

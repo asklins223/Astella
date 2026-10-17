@@ -61,15 +61,25 @@ export function renderCompanionConversationEvidence(
   const { observedAt, timezone, stamp } = companionConversationTimeEvidence(clock);
   const replyStates: Record<string, string> = { succeeded: "已回复", failed: "回复已结束（失败）", cancelled: "用户已取消回复",
     superseded: "回复被后续消息接替", accepted: "等待回复", running: "回复中", waiting_for_confirmation: "等待用户确认" };
+  // Full per-message time evidence only for the recent window. Older positions
+  // stay visible as a range: the model needs their order, not a second copy of
+  // their timestamps. A 69-message history used to spend ~18k characters here.
+  const detailedFrom = Math.max(0, history.length - 8);
+  const earlier = history.slice(0, detailedFrom);
   return [
     "<conversation_timeline>",
     "服务器消息记录：时间指消息发送时间，不代表消息中叙述的外部事件时间。位置只对应下方原样回放的近期消息；窗口不是全部经历，两条消息相隔多久也不证明期间一直在线或一直在做某事。",
     JSON.stringify({ observedAt, timezone,
-      history: history.map((message, index) => ({ position: index + 1, speaker: message.role,
+      earlier: earlier.length > 0 ? {
+        positions: [1, earlier.length],
+        count: earlier.length,
+        note: "更早的回放消息只保留位置范围；需要具体原话或时间时用 companion_read_history 按 seq 取回。",
+      } : null,
+      history: history.slice(detailedFrom).map((message, index) => ({ position: detailedFrom + index + 1, speaker: message.role,
         replyState: message.role === "user" ? replyStates[message.replyStatus ?? ""] ?? null : null,
         replyTerminal: message.role === "user" && message.replyStatus
           ? ["succeeded", "failed", "cancelled", "superseded"].includes(message.replyStatus) : null,
-        ...stamp(message.createdAt, history[index - 1]?.createdAt) })),
+        ...stamp(message.createdAt, history[detailedFrom + index - 1]?.createdAt) })),
       current: { speaker: currentSource === "host_observation" ? "host" : "user",
         source: currentSource, ...stamp(currentSource === "user" ? clock?.currentMessageCreatedAt : null, history.at(-1)?.createdAt) },
     }),

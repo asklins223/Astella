@@ -118,6 +118,9 @@ test("只读了她的手册时，讲解正文里「」举的例子不算编造�
       { role: "tool" as const, toolCallId: "call-note", content: JSON.stringify({ body: "笔记正文里没有这些字。" }) },
     ],
   };
-  assert.equal(reviewCompanionStepCorrection(materialRead).unverifiedQuotes.length, 1,
-    "读了用户材料时仍然严格核对");
+  assert.deepEqual(reviewCompanionStepCorrection(materialRead).unverifiedQuotes, [],
+    "读了用户材料时，没有来源归属的「」仍按强调/概括处理");
+  assert.equal(reviewCompanionStepCorrection({ ...materialRead,
+    said: "笔记原文写着：「这是一段来源中并不存在的知识原文」。" }).unverifiedQuotes.length, 1,
+  "明确归属原文的引用仍逐字核对");
 });

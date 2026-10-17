@@ -8,7 +8,7 @@ import tarfile
 destination = sys.argv[1]
 archive = tarfile.open(fileobj=getattr(sys.stdin, 'buffer', sys.stdin), mode="r|gz")
 allowed_files = {"docker-compose.yml", "docker-compose.deploy.yml", "deployment-images.env"}
-allowed_prefixes = ("config/", "infra/postgres/", "infra/deploy/")
+allowed_prefixes = ("config/", "infra/postgres/", "infra/deploy/", "infra/embedding/")
 for member in archive:
     path = member.name
     parts = path.split("/")
@@ -16,7 +16,7 @@ for member in archive:
         raise ValueError("Unsafe deployment path")
     if not (member.isfile() or member.isdir()):
         raise ValueError("Deployment links and special files are forbidden")
-    if not (path in allowed_files or path.startswith(allowed_prefixes) or path in ("config", "infra", "infra/postgres", "infra/deploy")):
+    if not (path in allowed_files or path.startswith(allowed_prefixes) or path in ("config", "infra", "infra/postgres", "infra/deploy", "infra/embedding")):
         raise ValueError("Unexpected deployment file")
     if member.size > 5 * 1024 * 1024:
         raise ValueError("Deployment file exceeds size limit")

@@ -3,6 +3,7 @@ import {
   COMPANION_AGENT_CONTRACT_VERSION,
   companionAgentCapabilitySnapshotV1Schema,
   resolveAllCompanionAgentTools,
+  resolveCompanionInitialToolNames,
   type AgentTurnRequest,
 } from "@astella/shared";
 import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
@@ -47,6 +48,20 @@ export async function settleCompanionTurnPreamble(deps: CompanionTurnPreambleDep
     provider, ctx, onProviderDelta, onReasoningDelta, baseMessages, read, contextReceipts, historyForCompaction,
   } = deps.loopArgs;
   const { event } = deps;
+  const pageKind = (read.pageContext as { context?: { pageKind?: string } } | null)?.context?.pageKind ?? null;
+  /**
+   * Speculation must use the same reduced surface as the formal first step.
+   * It starts before the classifier lands, so it cannot see candidate groups;
+   * core + page groups is the honest superset for a clean turn. A prefetched
+   * tool call from a candidate group is admitted by the runtime afterwards.
+   */
+  const speculativeNames = resolveCompanionInitialToolNames({
+    availableToolNames: deps.availableDefinitions.map(definition => definition.name),
+    pageKind,
+  });
+  const speculativeTools = deps.availableDefinitions
+    .filter(definition => speculativeNames.has(definition.name))
+    .map(({ name, description, parameters }) => ({ name, description, parameters }));
 
   /**
    * 两条投机（闲聊形状 + 提问形状）现在就出发，分类器不等。发与收的细节、
@@ -65,8 +80,7 @@ export async function settleCompanionTurnPreamble(deps: CompanionTurnPreambleDep
     stepBudget: deps.budget.maxSteps ?? Infinity,
     messages: deps.getMessages(),
     deadlineAt: deps.deadlineAt,
-    availableTools: deps.availableDefinitions
-      .map(({ name, description, parameters }) => ({ name, description, parameters })),
+    availableTools: speculativeTools,
     webSearchAllowed: deps.meta.webSearchEnabled === true && event.constraints.webSearchEnabled === true
       && (deps.budget.maxWebSearchCalls == null || deps.budget.maxWebSearchCalls > 0) && webSearchServiceAvailable(),
     toolCallCount: deps.meta.toolCallCount,

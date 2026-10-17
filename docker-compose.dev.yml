@@ -448,6 +448,37 @@ services:
     networks:
       - astella_net
 
+  # Local BGE-M3 embedding fallback (OpenAI-compatible /v1/embeddings).
+  # SiliconFlow remains primary; the worker routes to this service when the
+  # primary is unavailable or its in-flight concurrency is saturated.
+  embedding:
+    build:
+      context: .
+      dockerfile: infra/embedding/Dockerfile
+    restart: unless-stopped
+    environment:
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-BAAI/bge-m3}
+      EMBEDDING_DEVICE: cpu
+      EMBEDDING_MAX_CHARS: ${EMBEDDING_MAX_CHARS:-1500}
+      EMBEDDING_BATCH_SIZE: ${EMBEDDING_BATCH_SIZE:-8}
+      HF_HOME: /data/hf
+      TRANSFORMERS_CACHE: /data/hf
+      SENTENCE_TRANSFORMERS_HOME: /data/hf
+    ports:
+      - "127.0.0.1:${EMBEDDING_PORT:-8090}:80"
+    volumes:
+      - embedding_model_cache:/data/hf
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:80/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      start_period: 2700s
+      retries: 5
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - astella_net
+
 volumes:
   # Keep PostgreSQL outside the Compose lifecycle so even `down -v` cannot
   # remove it accidentally. `make up` creates it; only the confirmed
@@ -456,6 +487,7 @@ volumes:
     name: astella-dev_dev_postgres_data
     external: true
   dev_minio_data:
+  embedding_model_cache:
 
 networks:
   astella_net:

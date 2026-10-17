@@ -119,6 +119,14 @@ export const PROVIDER_METADATA: readonly ProviderDescriptor[] = [
     },
   },
   {
+    id: "local_embedding",
+    label: "本地向量模型（OpenAI 兼容）",
+    capabilities: ["embedding"],
+    defaults: {
+      embedding: { baseUrl: "http://embedding:80/v1", model: "BAAI/bge-m3" },
+    },
+  },
+  {
     id: "opencode_go",
     label: "OpenCode Go",
     // Agent 与文本生成共用 Pi：每个模型由 models[model].protocol 选择

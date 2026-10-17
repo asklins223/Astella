@@ -89,6 +89,9 @@ export interface AIGovernanceContext {
    * 当未配置时为 null,调用方应回退到主 provider 的 embed() 方法。 */
   embeddingProviderName: string | null;
   embeddingProviderConfig: import("./ai-provider.ts").AIProviderRuntimeConfig | null;
+  /** 本地嵌入兜底槽（embedding_fallback）；主槽不可用/并发打满时使用。 */
+  embeddingFallbackProviderName?: string | null;
+  embeddingFallbackProviderConfig?: import("./ai-provider.ts").AIProviderRuntimeConfig | null;
   consentOk: boolean;
   policy: WorkspaceAIPolicy;
 }
@@ -333,15 +336,27 @@ export async function resolveAIGovernanceContext(
     embeddingProviderName = embeddingPlatform.type;
     embeddingProviderConfig = runtimeConfigFromResolved(embeddingPlatform);
   }
+  let embeddingFallbackProviderName: string | null = null;
+  let embeddingFallbackProviderConfig: import("./ai-provider.ts").AIProviderRuntimeConfig | null = null;
+  const embeddingFallbackPlatform = resolveSystemPlatform("embedding_fallback");
+  if (embeddingFallbackPlatform) {
+    embeddingFallbackProviderName = embeddingFallbackPlatform.type;
+    embeddingFallbackProviderConfig = runtimeConfigFromResolved(embeddingFallbackPlatform);
+  }
 
   let policy: WorkspaceAIPolicy = createDefaultAIPolicy();
   let consentOk = true;
 
   // Check consent for any non-mock external provider (agent / text_gen / embedding).
+  // `local_embedding` runs inside the compose network and sends nothing out, so
+  // it must not raise the consent bar by itself.
+  const isExternal = (name: string | null | undefined) => name != null
+    && name.toLowerCase() !== "mock" && name.toLowerCase() !== "local_embedding";
   const anyExternalNonMock =
-    providerName.toLowerCase() !== "mock" ||
-    (textProviderName != null && textProviderName.toLowerCase() !== "mock") ||
-    (embeddingProviderName != null && embeddingProviderName.toLowerCase() !== "mock");
+    isExternal(providerName) ||
+    isExternal(textProviderName) ||
+    isExternal(embeddingProviderName) ||
+    isExternal(embeddingFallbackProviderName);
 
   // 0237：AI 使用同意与数据外发政策从工作区级迁到**账号级**——同意管的是
   // "我的内容能不能送出去"，授权范围只能是本人（挂在空间上等于由别人的
@@ -365,7 +380,7 @@ export async function resolveAIGovernanceContext(
     }
   }
 
-  return { providerName, providerConfig, textProviderName, textProviderConfig, companionFallbackProviderName, companionFallbackProviderConfig, embeddingProviderName, embeddingProviderConfig, consentOk, policy };
+  return { providerName, providerConfig, textProviderName, textProviderConfig, companionFallbackProviderName, companionFallbackProviderConfig, embeddingProviderName, embeddingProviderConfig, embeddingFallbackProviderName, embeddingFallbackProviderConfig, consentOk, policy };
 }
 
 

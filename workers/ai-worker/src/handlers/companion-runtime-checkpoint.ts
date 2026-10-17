@@ -22,6 +22,8 @@ export const companionRuntimeStateSchema = z.object({
   degenerateRetried: z.boolean(), outputRepairToolCount: count.nullable(),
   actionSteerAttempts: count, quoteCorrectionUsed: z.boolean(), lookupClaimSteered: z.boolean(),
   steerSwapToFallback: z.boolean(), utterancePublished: z.boolean(),
+  /** Extra tools the model expanded via companion_load_tools. Default keeps old checkpoints readable. */
+  loadedToolNames: z.array(z.string()).default([]),
 }).strict().refine(state => state.visibleSegments.length === state.visibleSegmentDelivered.length);
 export type CompanionRuntimeState = z.infer<typeof companionRuntimeStateSchema>;
 const completedSchema = z.object({ status: z.literal("completed"), text: z.string(),

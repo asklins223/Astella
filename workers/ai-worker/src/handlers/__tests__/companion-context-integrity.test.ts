@@ -78,3 +78,40 @@ test("一个超长笔记块可在块内续读，拼接后没有遗漏或重复",
   } while (true);
   assert.equal(parts.join(""), content);
 });
+
+test("分页不会把表格行切成两半，续读拼回原文", () => {
+  const content = "前言\n| 项目 | 数值 | 说明 |\n| --- | --- | --- |\n| 速度 | 5 m/s | 匀速 |\n| 时间 | 2 s | 总时长 |\n结尾";
+  let offset = 0;
+  const parts: string[] = [];
+  do {
+    const page = paginateReadBlocks([{ ordinal: 1, content }], 24, offset);
+    parts.push(page.body);
+    if (page.nextStartOffset === null) break;
+    assert.ok(page.nextStartOffset > offset);
+    offset = page.nextStartOffset;
+    assert.ok(parts.length < 20, "分页必须推进，不能卡在同一处");
+  } while (true);
+  assert.equal(parts.join(""), content);
+  for (const part of parts) {
+    for (const line of part.split("\n")) {
+      if (/^\s*\|/.test(line)) assert.ok(line.trimEnd().endsWith("|"), `表格行被切坏：${line}`);
+    }
+  }
+});
+
+test("分页不会切断行内公式，续读拼回原文", () => {
+  const content = "先看公式 $E_k=\\frac{1}{2}mv^2$，再看下一段。";
+  let offset = 0;
+  const parts: string[] = [];
+  do {
+    const page = paginateReadBlocks([{ ordinal: 1, content }], 18, offset);
+    parts.push(page.body);
+    if (page.nextStartOffset === null) break;
+    assert.ok(page.nextStartOffset > offset);
+    offset = page.nextStartOffset;
+  } while (true);
+  assert.equal(parts.join(""), content);
+  for (const part of parts) {
+    assert.equal((part.match(/(?<!\\)\$/g) ?? []).length % 2, 0, `公式被切开：${part}`);
+  }
+});

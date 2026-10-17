@@ -34,6 +34,8 @@ services:
       S3_REGION: ${S3_REGION:-us-east-1}
   edge-tts:
     image: ${EDGE_TTS_IMAGE:?CI must provide EDGE_TTS_IMAGE}
+  embedding:
+    image: ${EMBEDDING_IMAGE:?CI must provide EMBEDDING_IMAGE}
   nginx:
     image: nginx:1.28-alpine
     restart: unless-stopped

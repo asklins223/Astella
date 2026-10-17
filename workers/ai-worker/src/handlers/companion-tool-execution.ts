@@ -177,6 +177,12 @@ export async function executeReadTool(
       const result=executeBasicCapability({name:definition.name,arguments:args});
       return {value:result,safeSummary:`计算结果：${result.value}`};
     }
+    case "companion_load_tools":
+      // Surface expansion is stateful and owned by the agent loop; if this
+      // branch is ever reached outside it, return an honest no-op instead of
+      // falling through to "no direct executor".
+      return { value: { groups: [], note: "工具组装载由当前回合的 agent 运行时处理" },
+        safeSummary: "工具组装载由运行时处理" };
     case "companion_read_context": {
       const page = parsePageContext(event.read.pageContext);
       const result = await withWorkerWorkspaceTransaction(
@@ -556,6 +562,7 @@ export async function executeReadTool(
       if (!note) throw new CompanionToolError("这个空间里没有这篇笔记");
       const page = note.page;
       const { truncated, nextStartOrdinal, nextStartOffset } = note;
+      const includeBlocks = args.includeBlocks === true;
       // 原文由服务端带出，不让模型转抄：她复述一遍就成了"引用"，而用户没法知道
       // 哪几个字是她改写的。这一块就是她读到的那几行，标题与时间跟着走。
       const quoted = page.body.slice(0, 1_200);
@@ -584,8 +591,9 @@ export async function executeReadTool(
           truncated,
           ...(nextStartOrdinal !== null ? { nextStartOrdinal, nextStartOffset: nextStartOffset ?? 0 } : {}),
           ...(page.blockTextTruncated ? { blockTextTruncated: true } : {}),
-          body: page.body,
-          blocks: page.blocks,
+          // Normal reading needs one copy of the text. Full editing needs the
+          // semantic blocks; returning both doubled a 20k-character read.
+          ...(includeBlocks ? { blocks: page.blocks } : { body: page.body }),
         },
         resultRef: JSON.stringify({ kind: "note_read", noteId, noteVersionId: note.versionId }),
         blocks: quoted.length > 0

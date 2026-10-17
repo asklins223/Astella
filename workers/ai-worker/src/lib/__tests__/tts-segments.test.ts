@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   purifyVoiceText,
+  spokenFormula,
   splitCompanionTtsSegments,
   splitCompanionTtsSegmentsIncremental,
   companionSegmentId,
@@ -38,6 +39,54 @@ test("净化：有序列表标记不进朗读文本（实机落过一段单独�
   // `1.5 米` 这类正文不能被误伤：数字后必须紧跟 `.`/`)` 且再接空白才算列表项
   assert.ok(purifyVoiceText("绳子长 1.5 米。").includes("1.5 米"), "小数保留");
   assert.ok(purifyVoiceText("2026 年计划。").includes("2026 年计划"), "年份保留");
+});
+
+test("净化：公式与表格转成可朗读的中文，不把 LaTeX/竖线送去 TTS", () => {
+  const inline = purifyVoiceText("根据公式 $E = mc^2$，能量等于质量乘以光速的平方。");
+  assert.ok(inline.includes("E 等于 mc 的平方"), inline);
+  assert.equal(/[$\\^_{}]/.test(inline), false, "不残留 LaTeX 符号");
+
+  const fraction = purifyVoiceText("这个式子 $\\frac{a}{b} + \\sqrt{x}$ 表示比值。");
+  assert.ok(fraction.includes("b 分之 a"), fraction);
+  assert.ok(fraction.includes("根号 x"), fraction);
+  assert.equal(/\\/.test(fraction), false, "不念反斜杠命令");
+
+  const table = purifyVoiceText("| 项目 | 数值 |\n| --- | --- |\n| 速度 | 5 m/s |\n| 时间 | 2 s |");
+  assert.ok(table.includes("表格，列有：项目、数值"), table);
+  assert.ok(table.includes("第 1 行"), table);
+  assert.ok(table.includes("5 米每秒"), table);
+  assert.equal(/[|]/.test(table), false, "不念表格竖线");
+  assert.equal(table.includes("---"), false, "不念表格分隔线");
+
+  const matrix = purifyVoiceText("矩阵 \\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix} 表示变换。");
+  assert.ok(matrix.includes("矩阵 这个公式 表示变换"), matrix);
+  assert.equal(/[\\&]/.test(matrix), false, "矩阵不念原始语法");
+});
+
+test("spokenFormula：常见结构转口语，未知环境明确退回占位语", () => {
+  assert.equal(spokenFormula("E=mc^2"), "E 等于 mc 的平方");
+  assert.equal(spokenFormula("\\frac{1}{2}mv^2"), "2 分之 1 mv 的平方");
+  assert.equal(spokenFormula("\\sqrt[3]{x}"), "3 次根号 x");
+  assert.equal(spokenFormula("\\begin{cases} a & b \\end{cases}"), "这个公式");
+  assert.equal(spokenFormula("50\\%"), "百分之50");
+});
+
+test("净化：讲解里的裸公式（没有 $ 定界）也转成口语，不逐字符念符号", () => {
+  // 2026-10-17 真实回合：模型写的是 `P = U²/R`，旧净化只认 $…$/LaTeX，
+  // 于是 TTS 原样念"P 等于 U 平方斜杠 R"这种谁也听不懂的串。
+  const power = purifyVoiceText("电压固定时：P = U²/R。");
+  assert.ok(power.includes("P 等于 U 的平方 除以 R"), power);
+  assert.equal(/[=/²∝]/.test(power), false, "不把运算符和上标送去 TTS");
+
+  const current = purifyVoiceText("电流固定时：P = I²R。");
+  assert.ok(current.includes("I 的平方 乘 R"), current);
+
+  const proportional = purifyVoiceText("P ∝ 1/R，所以电阻越大功率越小。");
+  assert.ok(proportional.includes("P 正比于 R 分之一"), proportional);
+
+  // 不是公式的斜杠与连字符必须原样保留（"和/或"、日期）。
+  const prose = purifyVoiceText("这和/或那种写法无关，日期 2026-10-17 也不动。");
+  assert.equal(prose, "这和/或那种写法无关，日期 2026-10-17 也不动。");
 });
 
 test("切句：按。！？切分后贪心合并相邻句，ordinal 递增，textSha256 64 hex", () => {

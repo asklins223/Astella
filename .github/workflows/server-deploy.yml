@@ -23,6 +23,7 @@ jobs:
       api: ${{ steps.api.outputs.digest }}
       worker: ${{ steps.worker.outputs.digest }}
       edge_tts: ${{ steps.edge_tts.outputs.digest }}
+      embedding: ${{ steps.embedding.outputs.digest }}
       image_prefix: ${{ steps.names.outputs.prefix }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -87,6 +88,18 @@ jobs:
           labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
           cache-from: type=gha,scope=edge-tts
           cache-to: type=gha,mode=max,scope=edge-tts
+      - name: Build local embedding image
+        id: embedding
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: infra/embedding/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.names.outputs.prefix }}-embedding:sha-${{ github.sha }}
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          cache-from: type=gha,scope=embedding
+          cache-to: type=gha,mode=max,scope=embedding
 
   deploy:
     needs: images
@@ -106,9 +119,10 @@ jobs:
           API_DIGEST: ${{ needs.images.outputs.api }}
           WORKER_DIGEST: ${{ needs.images.outputs.worker }}
           TTS_DIGEST: ${{ needs.images.outputs.edge_tts }}
+          EMBEDDING_DIGEST: ${{ needs.images.outputs.embedding }}
         run: |
-          printf 'API_IMAGE=%s-api@%s\nWORKER_IMAGE=%s-worker@%s\nEDGE_TTS_IMAGE=%s-edge-tts@%s\n' \
-            "$PREFIX" "$API_DIGEST" "$PREFIX" "$WORKER_DIGEST" "$PREFIX" "$TTS_DIGEST" > deployment-images.env
+          printf 'API_IMAGE=%s-api@%s\nWORKER_IMAGE=%s-worker@%s\nEDGE_TTS_IMAGE=%s-edge-tts@%s\nEMBEDDING_IMAGE=%s-embedding@%s\n' \
+            "$PREFIX" "$API_DIGEST" "$PREFIX" "$WORKER_DIGEST" "$PREFIX" "$TTS_DIGEST" "$PREFIX" "$EMBEDDING_DIGEST" > deployment-images.env
       - name: Deploy exact commit over verified SSH
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
@@ -131,7 +145,7 @@ jobs:
             # 部署脚本随 release 一起落地（`/opt/astella/releases/<sha>-<set>/infra/deploy/`）：
             # 机器的 `/usr/local/lib/astella/` 由管理员更新，带上这一份，管理员可以就地
             # `install` 成与这一版一致的脚本，不必再去仓库里取。
-            tar -czf - docker-compose.yml docker-compose.deploy.yml deployment-images.env config infra/postgres infra/deploy;
+            tar -czf - docker-compose.yml docker-compose.deploy.yml deployment-images.env config infra/postgres infra/deploy infra/embedding;
           } | ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=20 \
             -o UserKnownHostsFile="$task_ssh_dir/known_hosts" -i "$task_ssh_dir/key" \
             -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$DEPLOY_HOST" "deploy $GITHUB_SHA"

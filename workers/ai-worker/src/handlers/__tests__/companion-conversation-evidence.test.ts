@@ -23,6 +23,7 @@ function payload(text: string | null) {
   return JSON.parse(text.split("\n")[2]!) as {
     observedAt: string | null; timezone: string | null;
     history: Array<{ position: number; speaker: string; utteredAt: string | null; elapsedMs: number | null; localDateTime: string | null; replyState: string | null; gapFromPreviousMs: number | null; gapFromPrevious: string | null }>;
+    earlier: { positions: [number, number]; count: number; note: string } | null;
     current: { speaker: string; source: string; utteredAt: string | null; elapsedMs: number | null; gapFromPreviousMs: number | null; gapFromPrevious: string | null };
   };
 }
@@ -76,9 +77,12 @@ test("消息序号决定回放位置；隔几天的记录不被压成连续的�
   const messages = buildCompanionPersonaMessages({ userText: "你今天有什么有意思的事？", recentMessages: history, pageContext: null, conversationClock: clock });
   const system = String(messages[0]!.content);
   const data = payload(system.slice(system.indexOf("<conversation_timeline>")));
-  // 条数不再决定覆盖（窗口由本次路由声明的输入预算决定，这一轮没碰到那条线）：
-  // 22 条整条进来，位置仍由 seq 顺序给出，跨天的间隔也仍然算得出来。
-  assert.equal(data.history.length, 22);
+  // 22 条整条进来，位置仍由 seq 顺序给出；时间明细只给窗口内最近 8 条，
+  // 更早的只保留位置范围，避免 69 条历史把 system 撑到 1.8 万字符。
+  assert.equal(data.history.length, 8);
+  assert.ok(data.earlier);
+  assert.equal(data.earlier.count, 14);
+  assert.deepEqual(data.earlier.positions, [1, 14]);
   assert.equal(messages[1]?.content, "记录1");
   assert.equal(data.history.at(-1)?.position, 22);
   assert.equal(data.history.at(-1)?.elapsedMs, 60_000);

@@ -766,11 +766,18 @@ async function diaryPermissionSnapshotIsCurrent(
   const settings = (Array.isArray(rows) ? rows : [])[0];
   const currentPolicy = normalizeWorkspaceAIPolicy(settings?.data_policy);
   const samePolicy = JSON.stringify(currentPolicy) === JSON.stringify(govCtx.policy);
+  // `local_embedding` is an in-compose service: it sends nothing out, so it does
+  // not require a consent record on its own (same rule as resolveAIGovernanceContext).
+  const isExternal = (name: string) => {
+    const normalized = name.toLowerCase();
+    return normalized !== "mock" && normalized !== "local_embedding";
+  };
   const requiresConsent = [
     govCtx.providerName,
     govCtx.textProviderName,
     govCtx.embeddingProviderName,
-  ].some((name) => name !== null && name.toLowerCase() !== "mock");
+    govCtx.embeddingFallbackProviderName,
+  ].some((name) => name != null && isExternal(name));
   const consentPresent = settings?.consent_version !== null && settings?.consent_version !== undefined
     && settings?.consent_at !== null && settings?.consent_at !== undefined;
   if (!samePolicy || !govCtx.consentOk) return false;

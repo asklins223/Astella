@@ -82,15 +82,298 @@ const MARKDOWN_EMPHASIS_PATTERN = /\*\*|__|~~/g;
 
 /** 净化可见文本：去掉代码块/行内代码、URL、markdown 语法后压缩空白。 */
 export function purifyVoiceText(text: string): string {
-  return text
+  let out = text
     .replace(/\[\^web-[a-zA-Z0-9_-]+\]/g, "")
     .replace(MARKDOWN_BLOCK_PATTERN, " ")
     .replace(URL_PATTERN, " ")
-    .replace(MARKDOWN_LINK_PATTERN, "$1")
+    .replace(MARKDOWN_LINK_PATTERN, "$1");
+  // Tables and math are display-native; reading their source syntax aloud is
+  // never intelligible. Project them before markdown whitespace is collapsed.
+  out = replaceTablesForSpeech(out);
+  out = replaceMathForSpeech(out);
+  out = replaceBareFormulasForSpeech(out);
+  return out
     .replace(MARKDOWN_LINE_MARKERS, " ")
     .replace(MARKDOWN_EMPHASIS_PATTERN, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+const GREEK_SPEECH: Record<string, string> = {
+  alpha: "阿尔法", beta: "贝塔", gamma: "伽马", delta: "德尔塔", Delta: "德尔塔",
+  epsilon: "艾普西龙", varepsilon: "艾普西龙", zeta: "泽塔", eta: "伊塔", theta: "西塔",
+  Theta: "西塔", iota: "约塔", kappa: "卡帕", lambda: "兰姆达", Lambda: "兰姆达",
+  mu: "缪", nu: "纽", xi: "克西", Xi: "克西", pi: "派", Pi: "派", rho: "柔",
+  sigma: "西格玛", Sigma: "西格玛", tau: "陶", upsilon: "宇普西龙", phi: "斐",
+  varphi: "斐", Phi: "斐", chi: "卡", psi: "普西", Psi: "普西", omega: "欧米伽",
+  Omega: "欧米伽", partial: "偏", nabla: "梯度", infty: "无穷",
+};
+const UNIT_SPEECH: Array<[RegExp, string]> = [
+  [/m\/s\^?2/g, "米每二次方秒"], [/m\/s/g, "米每秒"], [/N\/m/g, "牛每米"],
+  [/kg\b/g, "千克"], [/km\/h/g, "千米每小时"],
+  [/(?<=\d)\s*s\b/g, " 秒"],
+  [/(?<=\d)\s*N\b/g, "牛"], [/(?<=\d)\s*J\b/g, "焦"],
+  [/(?<=\d)\s*W\b/g, "瓦"], [/(?<=\d)\s*V\b/g, "伏"], [/(?<=\d)\s*A\b/g, "安"],
+  [/(?<=\d)\s*Pa\b/g, "帕"], [/(?<=\d)\s*Hz\b/g, "赫兹"], [/(?<=\d)\s*mol\b/g, "摩尔"],
+];
+const OPERATOR_SPEECH: Array<[RegExp, string]> = [
+  [/\\times|\\cdot/g, " 乘 "], [/\\div/g, " 除以 "], [/\\pm/g, " 正负 "],
+  [/\\leq?|≤/g, " 小于等于 "], [/\\geq?|≥/g, " 大于等于 "], [/\\neq?|≠/g, " 不等于 "],
+  [/\\approx/g, " 约等于 "], [/\\rightarrow|\\to/g, " 趋于 "], [/\\infty/g, " 无穷 "],
+  [/\\sum/g, " 求和 "], [/\\int/g, " 积分 "], [/\\partial/g, " 偏 "],
+];
+
+/**
+ * 裸公式（没有 `$…$`/LaTeX 定界）的朗读投影。
+ *
+ * 讲解里最常见的写法就是 `P = U²/R`、`P ∝ 1/R` 这种纯文本式子；只处理带 `=` 或
+ * `∝` 的连续片段，正文里的斜杠（"和/或"、日期）不碰。
+ */
+const SUPerscript_SPEECH: Array<[RegExp, string]> = [
+  [/²/g, " 的平方"], [/³/g, " 的立方"], [/⁻¹/g, " 的负一次方"],
+];
+const BARE_FORMULA_SPAN = /[A-Za-z0-9α-ωΑ-Ω²³⁻¹∝=+\-*/×·≤≥≈^_().%\s]{3,40}/gu;
+
+function speakBareFormulaSpan(span: string): string {
+  if (!/[=∝]/.test(span) || !/[A-Za-z]/u.test(span)) return span;
+  let out = span;
+  for (const [pattern, replacement] of SUPerscript_SPEECH) out = out.replace(pattern, replacement);
+  // `I²R` multiplies by juxtaposition.
+  out = out.replace(/(平方|立方|负一次方)\s*([A-Za-z])/g, "$1 乘 $2");
+  // Run the operator pass here too: this helper both projects bare spans and
+  // finishes spans already spoken by the `$…$` path (`U 的平方/R`).
+  out = out.replace(/\b1\s*\/\s*([A-Za-z][A-Za-z0-9]*)/g, "$1 分之一");
+  out = out.replace(/\s*∝\s*/g, " 正比于 ");
+  out = out.replace(/\s*[×·]\s*/g, " 乘 ");
+  out = out.replace(/\s*\/\s*/g, " 除以 ");
+  out = out.replace(/\s*=\s*/g, " 等于 ");
+  out = out.replace(/\s*\+\s*/g, " 加 ");
+  out = out.replace(/\s*-\s*/g, " 减 ");
+  return out;
+}
+
+function replaceBareFormulasForSpeech(text: string): string {
+  // The `$…$` path already spoke `U^2` into "U 的平方"; finish the division it left.
+  const spoken = text.replace(/(的平方|的立方|的负一次方)\s*\/\s*([A-Za-z0-9])/g, "$1 除以 $2");
+  const formulas = spoken.replace(BARE_FORMULA_SPAN, (span) => (span.includes("=") || span.includes("∝")
+    ? speakBareFormulaSpan(span)
+    : span));
+  // Standalone powers outside a formula (`U² 也是常数`, `3 m²`) read as words too.
+  return formulas.replace(/([A-Za-z0-9])\s*([²³])/g, (_all, base: string, mark: string) => (
+    mark === "²" ? `${base} 平方` : `${base} 立方`
+  ));
+}
+
+function readBraceGroup(text: string, start: number): { content: string; end: number } | null {
+  if (text[start] !== "{") return null;
+  let depth = 0;
+  for (let index = start; index < text.length; index += 1) {
+    const char = text[index];
+    if (char === "{") depth += 1;
+    else if (char === "}") {
+      depth -= 1;
+      if (depth === 0) return { content: text.slice(start + 1, index), end: index + 1 };
+    }
+  }
+  return null;
+}
+
+function skipSpaces(text: string, start: number): number {
+  let index = start;
+  while (index < text.length && /\s/.test(text[index] ?? "")) index += 1;
+  return index;
+}
+
+function replaceBraceCommands(text: string, pattern: RegExp, render: (args: string[]) => string): string {
+  let out = text;
+  for (let guard = 0; guard < 32; guard += 1) {
+    const match = pattern.exec(out);
+    if (!match || match.index === undefined) break;
+    let cursor = match.index + match[0].length;
+    const groups: string[] = [];
+    let failed = false;
+    for (let group = 0; group < 2; group += 1) {
+      cursor = skipSpaces(out, cursor);
+      const parsed = readBraceGroup(out, cursor);
+      if (!parsed) { failed = true; break; }
+      groups.push(parsed.content);
+      cursor = parsed.end;
+    }
+    if (failed) {
+      out = out.slice(0, match.index) + "分数" + out.slice(cursor);
+      continue;
+    }
+    out = out.slice(0, match.index) + render(groups) + out.slice(cursor);
+  }
+  return out;
+}
+
+function replaceSqrtCommands(text: string): string {
+  let out = text;
+  for (let guard = 0; guard < 16; guard += 1) {
+    const match = /\\sqrt\b/.exec(out);
+    if (!match || match.index === undefined) break;
+    let cursor = match.index + match[0].length;
+    let degree = "";
+    if (out[cursor] === "[") {
+      const close = out.indexOf("]", cursor + 1);
+      if (close < 0) break;
+      degree = out.slice(cursor + 1, close).trim();
+      cursor = close + 1;
+    }
+    const parsed = readBraceGroup(out, skipSpaces(out, cursor));
+    if (!parsed) {
+      out = out.slice(0, match.index) + "根号" + out.slice(cursor);
+      continue;
+    }
+    const body = spokenFormula(parsed.content);
+    out = out.slice(0, match.index) + (degree ? `${spokenFormula(degree)} 次根号 ${body}` : `根号 ${body}`) + out.slice(parsed.end);
+  }
+  return out;
+}
+
+function replaceScripts(text: string): string {
+  return text
+    .replace(/([A-Za-z0-9)\]}])_\{([^{}]*)\}/g, (_all, base: string, sub: string) => `${base} 下标 ${spokenFormula(sub)}`)
+    .replace(/([A-Za-z0-9)\]}])_([A-Za-z0-9]+)/g, (_all, base: string, sub: string) => `${base} 下标 ${sub}`)
+    .replace(/([A-Za-z0-9)\]}])\^\{([^{}]*)\}/g, (_all, base: string, exp: string) => `${base} 的${spokenExponent(exp)}`)
+    .replace(/([A-Za-z0-9)\]}])\^([A-Za-z0-9+-]+)/g, (_all, base: string, exp: string) => `${base} 的${spokenExponent(exp)}`);
+}
+
+function spokenExponent(raw: string): string {
+  const exp = spokenFormula(raw).trim();
+  if (exp === "2") return "平方";
+  if (exp === "3") return "立方";
+  if (exp === "-1") return "负一次方";
+  return `${exp} 次方`;
+}
+
+/** Convert a single formula (already stripped of delimiters) to spoken Chinese. */
+export function spokenFormula(raw: string): string {
+  let out = raw.trim();
+  if (/\\(?:begin|end)\b/.test(out) || /&/.test(out) || /\\\\/.test(out)) return "这个公式";
+  // Unwrap size/style wrappers first; their braces are not semantic.
+  out = out.replace(/\\(?:text|mathrm|mathbf|mathit|operatorname)\s*\{([^{}]*)\}/g, "$1");
+  out = out.replace(/\\ /g, " ")
+    .replace(/\\(?:left|right)\b/g, " ")
+    .replace(/\\[,;!]/g, " ")
+    .replace(/\\(?:quad|qquad)\b/g, " ");
+  out = out.replace(/\\(?:vec|hat|bar|tilde)\s*\{([^{}]*)\}/g, "$1");
+  out = replaceBraceCommands(out, /\\(?:d|t)?frac\b/g, ([numerator, denominator]) =>
+    `${spokenFormula(denominator)} 分之 ${spokenFormula(numerator)} `);
+  out = replaceSqrtCommands(out);
+  for (const [pattern, replacement] of UNIT_SPEECH) out = out.replace(pattern, replacement);
+  out = replaceScripts(out);
+  out = out.replace(/(\d+(?:\.\d+)?)\s*\\?%/g, (_all, value: string) => `百分之${value}`);
+  for (const [pattern, replacement] of OPERATOR_SPEECH) out = out.replace(pattern, replacement);
+  out = out.replace(/\\([A-Za-z]+)/g, (_all, name: string) => GREEK_SPEECH[name] ?? " ");
+  out = out.replace(/[{}]/g, " ")
+    .replace(/&/g, " ")
+    .replace(/\\\\/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  // Matrices/environments and partial formulas have no reliable spoken form.
+  if (/\\|\b(?:begin|end|pmatrix|bmatrix|matrix|cases)\b/.test(out)) return "这个公式";
+  if (!out) return "这个公式";
+  return out
+    .replace(/([=+])/g, " $1 ")
+    .replace(/(?<=\S)-(?=\S)/g, " 减 ")
+    .replace(/= ?/g, "等于 ")
+    .replace(/\+ ?/g, "加 ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function spotMathDelimiters(text: string): string {
+  const convert = (formula: string): string => spokenFormula(formula);
+  return text
+    .replace(/\$\$([\s\S]*?)\$\$/g, (_all, formula: string) => convert(formula))
+    .replace(/\\\[([\s\S]*?)\\\]/g, (_all, formula: string) => convert(formula))
+    .replace(/\\\(([\s\S]*?)\\\)/g, (_all, formula: string) => convert(formula))
+    .replace(/\$([^$\n]+)\$/g, (_all, formula: string) => convert(formula));
+}
+
+function replaceMathForSpeech(text: string): string {
+  let out = spotMathDelimiters(text);
+  // A bare environment (matrix/cases) has no reliable spoken form.
+  out = out.replace(/\\begin\{[^{}]+\}[\s\S]*?\\end\{[^{}]+\}/g, "这个公式");
+  out = out.replace(/\\(?:text|mathrm|mathbf|mathit|operatorname)\s*\{([^{}]*)\}/g, "$1");
+  out = out.replace(/\\ /g, " ").replace(/\\(?:left|right)\b/g, " ")
+    .replace(/\\[,;!]/g, " ").replace(/\\(?:quad|qquad)\b/g, " ");
+  // Also handle bare commands after a segmenter cut through a formula.
+  out = replaceBraceCommands(out, /\\(?:d|t)?frac\b/g, ([numerator, denominator]) =>
+    `${spokenFormula(denominator)} 分之 ${spokenFormula(numerator)} `);
+  out = replaceSqrtCommands(out);
+  for (const [pattern, replacement] of UNIT_SPEECH) out = out.replace(pattern, replacement);
+  out = replaceScripts(out);
+  out = out.replace(/(\d+(?:\.\d+)?)\s*\\?%/g, (_all, value: string) => `百分之${value}`);
+  for (const [pattern, replacement] of OPERATOR_SPEECH) out = out.replace(pattern, replacement);
+  out = out.replace(/\\([A-Za-z]+)/g, (_all, name: string) => GREEK_SPEECH[name] ?? " ");
+  // Never send a raw backslash/brace tail to TTS.
+  return out.replace(/\\[A-Za-z]*/g, " ").replace(/[{}]/g, " ");
+}
+
+function tableCells(line: string): string[] {
+  const trimmed = line.trim().replace(/^\|/, "").replace(/\|$/, "");
+  return trimmed.split(/(?<!\\)\|/).map(cell => cell.replace(/\\\|/g, "|").trim());
+}
+
+function isTableSeparator(cells: readonly string[]): boolean {
+  return cells.length > 0 && cells.every(cell => /^:?-{3,}:?$/.test(cell));
+}
+
+function spokenTableCell(cell: string): string {
+  const spoken = spokenFormula(cell);
+  return spoken === "这个公式" && /[\\$^_{}]/.test(cell) ? "这个公式" : spoken;
+}
+
+function renderTableForSpeech(rows: readonly string[]): string {
+  const parsed = rows.map(tableCells);
+  const separatorIndex = parsed.findIndex(isTableSeparator);
+  const header = separatorIndex > 0 ? parsed[0]! : null;
+  const data = parsed.filter((_cells, index) => index !== separatorIndex && (header === null || index !== 0));
+  if (data.length === 0) {
+    return header ? `表格，列有：${header.map(spokenTableCell).join("、")}。` : "";
+  }
+  const lines: string[] = [];
+  if (header) {
+    lines.push(`表格，列有：${header.map(spokenTableCell).join("、")}。`);
+  }
+  const limit = Math.min(data.length, 4);
+  for (let index = 0; index < limit; index += 1) {
+    const cells = data[index]!;
+    if (header) {
+      const pairs = cells.map((cell, column) => {
+        const key = header[column] ?? `第${column + 1}列`;
+        return `${spokenTableCell(key)} 是 ${spokenTableCell(cell) || "空"}`;
+      });
+      lines.push(`第 ${index + 1} 行，${pairs.join("，")}。`);
+    } else {
+      lines.push(`第 ${index + 1} 行：${cells.map(spokenTableCell).join("，")}。`);
+    }
+  }
+  if (data.length > limit) lines.push(`其余 ${data.length - limit} 行见屏幕。`);
+  return lines.join("");
+}
+
+function replaceTablesForSpeech(text: string): string {
+  const lines = text.split("\n");
+  const out: string[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    if (!/^\s*\|.*\|\s*$/.test(line)) {
+      out.push(line);
+      continue;
+    }
+    const rows: string[] = [];
+    while (index < lines.length && /^\s*\|.*\|\s*$/.test(lines[index] ?? "")) {
+      rows.push(lines[index]!);
+      index += 1;
+    }
+    index -= 1;
+    out.push(renderTableForSpeech(rows));
+  }
+  return out.join("\n");
 }
 
 /**

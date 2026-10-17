@@ -6,6 +6,7 @@ import { agentTurnInterpretationV1Schema } from "@astella/shared/agent-contracts
 import { companionEditedNoteV1Schema } from "@astella/shared/companion-note-authoring-contracts";
 import type { CompanionAgentLoopArgs } from "../contracts/companion-agent-loop.ts";
 import { executeTurn } from "@astella/agent-core";
+import { measureAgentTurnRequest, resolveContextBudget } from "@astella/agent-core";
 import {
   auditHash,
   boundedToolCallIdentity,
@@ -22,6 +23,8 @@ import {
   companionCapabilityOfferedInHostContext,
   getCompanionAgentTool,
   resolveAllCompanionAgentTools,
+  resolveCompanionInitialToolNames,
+  resolveCompanionToolGroupNames,
   validateCompanionAgentToolArguments,
   type CompanionAgentToolStatus,
   type CompanionContentBlockV1,
@@ -96,8 +99,33 @@ export {
 } from "./companion-tool-outcome.ts";
 
 import { readCompanionWebSearchReceipts, readWebSearchReceipt, webSearchCitationBlocks, webSearchServiceAvailable } from "../agent/web-search.ts";
+import { loadNoteReadPage } from "./companion-read-tools.ts";
 
 type AgentMessage = AgentTurnRequest["messages"][number];
+
+/**
+ * Whether a provider's declared context window can take this request.
+ * `measureAgentTurnRequest` counts the full serialized request (system,
+ * messages and tool schemas) in the same units as the governor.
+ */
+async function providerFitsRequest(provider: NonNullable<CompanionAgentLoopArgs["fallbackProvider"]>,
+  request: AgentTurnRequest): Promise<boolean> {
+  const capability = provider.getCapabilities?.();
+  if (!capability || !Number.isSafeInteger(capability.contextWindowTokens) || capability.contextWindowTokens <= 0) {
+    return true; // Unknown window: keep the previous behaviour rather than refuse.
+  }
+  try {
+    const measured = await measureAgentTurnRequest(request);
+    const budget = resolveContextBudget({
+      capability,
+      requestedOutputTokens: provider.resolveOutputTokenLimit?.() ?? request.maxTokens ?? null,
+      outputLimitEnforced: capability.outputLimitEnforced,
+    });
+    return measured.inputTokens <= budget.hardInputTokens;
+  } catch {
+    return true;
+  }
+}
 
 export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promise<CompanionAgentLoopResult> {
   if (typeof args.provider.executeAgentTurn !== "function") {
@@ -170,10 +198,6 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
   const availableDefinitions = resolveAllCompanionAgentTools(meta.permissionLevel, event.constraints)
     .filter(definition => companionCapabilityOfferedInHostContext(definition,
       { writingAnnotation, completeNoteReply, initiative: Boolean(args.read.initiativeInput) }));
-  // 空工具面只有一种来路：权限档读不出来（合法档位下读类工具总在）。这时**不说**才是坏事——
-  // 她会一脸无辜地答"我手上没有这个入口"，用户看到的是她突然不会用工具，而不是账号状态有问题。
-  if (availableDefinitions.length === 0)
-    throw new Error(`companion tool surface resolved empty for permission "${String(meta.permissionLevel)}"`);
   const cachedInterpretation = args.read.initiativeInput ? agentTurnInterpretationV1Schema.parse(
     companionInitiativeInterpretationFields({ requestHash: attentionRequestHash, topic: args.read.initiativeInput.topic }))
     : writingAnnotation ? agentTurnInterpretationV1Schema.parse({
@@ -287,9 +311,92 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     setMessages: (next) => { messages = next; },
   });
   const {
-    attention, historyBinding, userRequiresTool, userAskedForAction, definitions, toolDefinitions,
+    attention, historyBinding, userRequiresTool, userAskedForAction, definitions,
     steerableReadTools, steerableActionTools, requestedActionTools,
   } = preamble;
+  if (definitions.length === 0)
+    throw new Error(`companion tool surface resolved empty for permission "${String(meta.permissionLevel)}"`);
+  /**
+   * Host pre-read for the current note.
+   *
+   * MiMo's Responses adapter rewrites tool_choice=required to auto, so "the
+   * interpreter said read" did not guarantee a read: the model could answer
+   * from history and still say it had just read the note. The host now reads
+   * the first page before generation when the interpreter named
+   * companion_read_note and the page context carries a real note id. The model
+   * answers from that block; continuation still uses the normal read tool.
+   */
+  let notePrefetched = false;
+  // Either current-page read operation means "the answer lives in this note".
+  // The interpreter picks companion_read_current_page for "这一页" phrasings; if
+  // only companion_read_note counted, the note stayed out of context and the
+  // model answered from a note it had read earlier in the conversation.
+  const readsCurrentNote = attention.candidateOperations.includes("companion_read_note")
+    || attention.candidateOperations.includes("companion_read_current_page");
+  logger.info({
+    runId: args.read.runId, recovered: Boolean(recovered), toolUse: attention.toolUse,
+    readsCurrentNote, notePrefetchContext: notePage?.context ?? null,
+  }, "companion note prefetch decision inputs");
+  if (!recovered && (attention.toolUse === "read" || attention.toolUse === "uncertain")
+    && readsCurrentNote) {
+    const noteId = (notePage?.context as { noteId?: unknown } | undefined)?.noteId;
+    const noteVersionId = (notePage?.context as { noteVersionId?: unknown } | undefined)?.noteVersionId;
+    if (typeof noteId === "string" && /^[0-9a-f-]{36}$/i.test(noteId)) {
+      try {
+        const note = await withWorkerWorkspaceTransaction(
+          { workspaceId: args.ctx.workspaceId, userId: args.read.userId },
+          tx => loadNoteReadPage(tx, {
+            workspaceId: args.ctx.workspaceId,
+            userId: args.read.userId,
+            noteId,
+            ...(typeof noteVersionId === "string" ? { noteVersionId } : {}),
+            startOrdinal: 1,
+            startOffset: 0,
+            maxChars: 3_000,
+          }),
+        );
+        if (note && note.page.body.trim().length > 0) {
+          notePrefetched = true;
+          const truncated = note.truncated
+            ? `（第 1–${note.page.endOrdinal} 块，共 ${note.totalBlocks} 块；后面还没读）`
+            : `（共 ${note.totalBlocks} 块）`;
+          messages.push({
+            role: "system",
+            hostObservation: true,
+            content: [
+              "<prefetched_note>",
+              `《${note.title}》${truncated}`,
+              note.page.body,
+              "</prefetched_note>",
+              "这是宿主在你开口前读到的当前笔记正文。直接据此回答，不要描述读取过程，也不要说没读到。"
+              + "需要续读时再用 companion_read_note（同版本、按 nextStartOrdinal 继续）。",
+            ].join("\n"),
+          });
+          logger.info({ runId: args.read.runId, noteId, chars: note.page.body.length, truncated: note.truncated },
+            "companion note prefetched by host before generation");
+        }
+      } catch (error) {
+        logger.warn({ runId: args.read.runId, noteId, err: error }, "companion note prefetch failed; leaving the read to the model");
+      }
+    }
+  }
+  /**
+   * The model sees a small core + the groups declared for this page. It can
+   * expand the surface itself with companion_load_tools; candidate operations
+   * may only add groups, never remove one. The full catalog still drives
+   * authorization and execution checks.
+   */
+  let loadedToolNames = new Set<string>(recovered?.state.loadedToolNames ?? []);
+  const initialToolNames = resolveCompanionInitialToolNames({
+    availableToolNames: definitions.map(definition => definition.name),
+    pageKind: notePage?.context?.pageKind ?? null,
+    candidateOperations: attention.candidateOperations,
+  });
+  // The loader itself may be absent when permissions shrink; then the surface is
+  // exactly the core + page groups and there is nothing to expand.
+  const offeredToolDefinitions = () => definitions
+    .filter(definition => initialToolNames.has(definition.name) || loadedToolNames.has(definition.name))
+    .map(({ name, description, parameters }) => ({ name, description, parameters }));
   let prefetchedFirstStep = preamble.prefetchedFirstStep;
   routeRecorder.record(event, handlerStartedAtMs);
 
@@ -430,6 +537,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     webSearchCalls, historyFoldApplied, invalidArgumentCalls: [...invalidArgumentCalls],
     rejectedExecutionConstraints: [...rejectedExecutionConstraints], degenerateRetried, outputRepairToolCount,
     actionSteerAttempts, quoteCorrectionUsed, lookupClaimSteered, steerSwapToFallback, utterancePublished,
+    loadedToolNames: [...loadedToolNames],
   });
   const finishBoundary = (stepId: string, status: "succeeded" | "failed", hash: string | undefined,
     errorCode?: string, result?: Extract<CompanionAgentLoopResult, { status: "completed" }>) => finishStep(event, stepId, status, hash,
@@ -481,7 +589,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     const finalAnswerOnly = false;
     // 工具面、执行政策与请求装配这三样的判据在 `companion-agent-step-assembly.ts`。
     const { tools: toolsOfferedThisStep, toolChoice: toolChoiceThisStep } = companionStepToolSurface({
-      toolDefinitions,
+      toolDefinitions: offeredToolDefinitions(),
       webSearchAllowedForStep: companionWebSearchAllowedForStep({
         accountEnabled: currentMeta.webSearchEnabled === true,
         constraintsEnabled: event.constraints.webSearchEnabled === true,
@@ -504,6 +612,18 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       completeNoteReply,
     });
     /**
+     * A required read tool is a routing decision, not a knowledge answer:
+     * spending the full thinking budget before calling `companion_read_note`
+     * made the first visible word wait ~20s on MiMo (2026-10-17). The final
+     * answer step still uses the turn's declared thinking level.
+     */
+    const readOnlyRequiredStep = toolChoiceThisStep === "required"
+      && !userAskedForAction && stepCount === resumedStepCount + 1;
+    if (readOnlyRequiredStep) {
+      logger.info({ runId: args.read.runId, stepCount, basis: "read-required-first-step" },
+        "companion read-only required step uses the lowest declared thinking level");
+    }
+    /**
      * 第一步可能已经有现成的：投机的闲聊版（见上面的 speculative）。
      * 分类器确认没有需要改写历史或补入注意力对象的内容，才复用这版闲聊请求。
      */
@@ -517,7 +637,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       messages,
       tools: toolsOfferedThisStep,
       toolChoice: toolChoiceThisStep,
-      disableThinking: turnThinking.disableThinking,
+      disableThinking: turnThinking.disableThinking || readOnlyRequiredStep,
       provider: args.provider,
       temperature: responseStrategy.temperature,
       prefetchedRequest: prefetched?.request ?? null,
@@ -536,12 +656,16 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       } });
     });
     // 这一步默认走主档；需要恢复时采用正式 companion_fallback 槽。
-    // 当前用户要求主/备用均固定 DeepSeek，选择备用槽不再意味着换成另一种模型。
+    // 备用槽可能只有 64k 窗口，装不下时切过去会把一次可恢复的 steering
+    // 变成整轮 AGENT_BUDGET_EXCEEDED。装不下就留在主槽重试。
     const pendingSteer = steerSwapToFallback;
-    let stepProvider = steerSwapToFallback
-      && typeof args.fallbackProvider?.executeAgentTurn === "function"
-      ? args.fallbackProvider
-      : args.provider;
+    let stepProvider = args.provider;
+    if (steerSwapToFallback && typeof args.fallbackProvider?.executeAgentTurn === "function") {
+      const fallbackFits = await providerFitsRequest(args.fallbackProvider, stepRequest);
+      if (fallbackFits) stepProvider = args.fallbackProvider;
+      else logger.warn({ runId: args.read.runId, stepCount, fallbackModelId: args.fallbackProvider.modelId },
+        "companion steer kept on primary provider: fallback context window cannot fit this request");
+    }
     steerSwapToFallback = false;
     if (stepProvider !== args.provider) {
       // 记录实际备用槽模型；同型号恢复也保持可观测。
@@ -674,8 +798,10 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
               onProviderDelta: args.onProviderDelta!,
               ...(args.onReasoningDelta ? { onReasoningDelta: args.onReasoningDelta } : {}),
               separatorBefore: visibleSegmentDelivered.includes(true) ? VISIBLE_SEGMENT_SEPARATOR : "",
-              // Action steps stream tool progress while keeping prose private
-              // until the completed call and its actual outcome are known.
+              // Action and required-read steps buffer prose until the step's
+              // tool outcome is known. Streaming them looked faster, but a
+              // required-read step that then gets steered produced two full
+              // answers in one bubble (2026-10-17 `today` turn).
               deferPublication: stepRequest.toolChoice === "required",
               onToolCallStarted: preparation.observe,
               // 不给回调时 provider 与这一步**完全不做额外的事**（少传一个键）。
@@ -889,7 +1015,8 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
           throw new CompanionStreamStoppedError("companion incomplete output delivery stopped");
         }
       }
-      const truncated = judgeCompanionDeliveryGate({ gate: "output_truncated", landedWrites });
+      const truncated = judgeCompanionDeliveryGate({ gate: "output_truncated", landedWrites,
+        hasDeliverablePrefix: prefix.trim().length > 0 });
       if (truncated.destroysTurn) {
         await finishStep(event, stepId, "failed", prefixHash, truncated.stepErrorCode);
         await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta(),
@@ -926,6 +1053,11 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       deadlineAt,
       userAskedForAction,
       requestedActionTools,
+      // A required surface (tool_choice=required) that came back with no call
+      // is a provider contract miss, not a valid answer. Only enforce on the
+      // first step; later steps may legitimately settle after a tool receipt.
+      requiresReadReceipt: !notePrefetched && stepCount === resumedStepCount + 1
+        && attention.toolUse === "read" && calls.length === 0 && toolCallCount === 0,
       actionSteerAttempts,
       lookupClaimSteered,
       quoteCorrectionUsed,
@@ -933,6 +1065,15 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     if (steerPlan.steer || correctQuote) {
       if (correctQuote) quoteCorrectionUsed = true;
       if (steerPlan.consumeAction) actionSteerAttempts += 1;
+      // The correction step may need a tool from a group the first step did not
+      // load. Expand the surface for this steer rather than naming a tool the
+      // model cannot call.
+      const steerNames = resolveCompanionInitialToolNames({
+        availableToolNames: definitions.map(definition => definition.name),
+        pageKind: notePage?.context?.pageKind ?? null,
+        candidateOperations: [...requestedActionTools, ...steerableActionTools, ...steerableReadTools],
+      });
+      for (const name of steerNames) loadedToolNames.add(name);
       // 只花**这一次真正为它补的那条额度**。此前这里无条件把 `lookupClaimSteered`
       // 置真，于是第 1 步的形状问题会把"说查过而没查"那条独立额度一起吃掉——
       // 实机 2026-09-22 真人轮量到：第 1 步因数字无出处被 steer，第 2 步她说出
@@ -987,7 +1128,10 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     }
     // 一次纠正的额度限制生成次数，不能把仍不匹配的原文引用降为成功终答。
     const saidHash = sha256Utf8V1(said);
-    const quoteGate = judgeCompanionDeliveryGate({ gate: "unverified_quote", landedWrites });
+    const quoteGate = judgeCompanionDeliveryGate({ gate: "unverified_quote", landedWrites,
+      // A verified quote mismatch must not erase an otherwise complete explanation.
+      // The correction step already ran; keep the text and leave a failed trace.
+      hasDeliverablePrefix: said.trim().length > 0 });
     if (calls.length === 0 && unverifiedQuotes.length > 0) {
       if (quoteGate.destroysTurn) {
         await finishStep(event, stepId, "failed", saidHash, quoteGate.stepErrorCode);
@@ -1117,6 +1261,26 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
         messages.push({ role: "tool", toolCallId: call.id, content: JSON.stringify({ ok: false, status: "blocked", error: "invalid tool call identity" }) });
         continue;
       }
+      // The reduced surface is a declaration, not a suggestion. A tool that
+      // was not offered this step must be loaded first; otherwise the model
+      // could silently use the full catalog and the prompt savings would be
+      // cosmetic. `load_tools` itself must be callable even before loading.
+      if (identity.name !== "companion_load_tools"
+        && !toolsOfferedThisStep.some(tool => tool.name === identity.name)) {
+        const offered = toolsOfferedThisStep.map(tool => tool.name);
+        await recordRejectedToolCall(event, stepId, identity, safeArgumentsHash(call.arguments),
+          getCompanionAgentTool(identity.name), "not_executed", "这个工具组还没有装载");
+        messages.push({
+          role: "tool",
+          toolCallId: call.id,
+          content: JSON.stringify({
+            ok: false,
+            status: "not_executed",
+            error: `工具 ${identity.name} 不在本步已装载的工具面里。先调用 companion_load_tools 装载对应组；当前可用：${offered.slice(0, 20).join("、")}`,
+          }),
+        });
+        continue;
+      }
       const definition = getCompanionAgentTool(identity.name);
       // 唯一的归属边界是"这个工具注册过吗"+ 上面的权限档过滤。
       // 原先还要求它属于本轮选中的那个技能，那正是能力被静默关掉的地方。
@@ -1189,6 +1353,23 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       }
       const serializedArgs = canonicalJsonV1(parsedArgs.data);
       const argsHash = sha256Utf8V1(serializedArgs);
+      if (identity.name === "companion_load_tools") {
+        const groups = (parsedArgs.data as { groups?: string[] }).groups ?? [];
+        const wanted = resolveCompanionToolGroupNames(groups);
+        const loaded = definitions.filter(item => wanted.has(item.name)).map(item => item.name);
+        for (const name of loaded) loadedToolNames.add(name);
+        messages.push({ role: "tool", toolCallId: call.id, content: JSON.stringify({
+          ok: true,
+          data: { loadedGroups: groups, tools: loaded },
+          summary: `已装载 ${loaded.length} 个工具`,
+        }) });
+        await appendAgentEvent(event, "agent.tool", { tool: {
+          toolCallId: call.id, name: identity.name, toolVersion: definition.toolVersion,
+          riskClass: "read", status: "succeeded", safeLabel: "已装载更多能力",
+          safeSummary: `已装载 ${loaded.length} 个工具`,
+        } });
+        continue;
+      }
       const restriction = companionTimeWakeupConstraint(attention, identity.name, parsedArgs.data);
       if (restriction) {
         await recordRejectedToolCall(event, stepId, identity, argsHash, definition, "not_executed", restriction.instruction);

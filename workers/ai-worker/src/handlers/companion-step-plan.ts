@@ -375,6 +375,8 @@ export function reviewCompanionStepCorrection(input: {
   actionSteerAttempts: number;
   lookupClaimSteered: boolean;
   quoteCorrectionUsed: boolean;
+  /** The interpreter named a material read and this step returned no tool call. */
+  requiresReadReceipt?: boolean;
 }): {
   unverifiedClaims: string[];
   unverifiedQuotes: string[];
@@ -384,6 +386,11 @@ export function reviewCompanionStepCorrection(input: {
   correctQuote: boolean;
 } {
   const unverifiedClaims = unverifiedNumericClaims(input.said, input.contextText);
+  // MiMo's Responses adapter rewrites tool_choice=required to auto. When the
+  // interpreter named a material read and the model answered without one,
+  // steer once before accepting an ungrounded answer. The step is buffered,
+  // so the discarded draft never reaches the user.
+  const requiredRead = input.requiresReadReceipt === true;
   // 引文的出处比数字宽：本轮的工具结果也算（她真的 read_note 过，引文就该在里面）。
   // 仍然**不含她自己说过的话**——和数字那条同一个理由：历史里的编造不能自我洗白。
   const evidenceMessages = [...(input.compactedEvidence ?? []), ...input.messages];
@@ -410,7 +417,7 @@ export function reviewCompanionStepCorrection(input: {
   // 直接对着环境块里服务端算出的那个数判（同一个 steer 额度、同一条 nudge：
   // 指出该调哪个工具，比指责她没调有用）。
   const nothingDueClaim = claimsNothingDueAgainstFacts(input.said, input.contextText);
-  const lookupClaim = claimsLookupThatNeverRan(input.said) || nothingDueClaim;
+  const lookupClaim = claimsLookupThatNeverRan(input.said) || nothingDueClaim || requiredRead;
   const withinBudget = input.stepCount < input.stepBudget && input.nowMs < input.deadlineAt;
   // 两条**独立**的一次性额度（实机 2026-09-21 连着三轮 V 场景）：共用一条时，
   // 额度被第 1 步那句引言（"我换个词再搜一次"，命中 action-request）先花掉，

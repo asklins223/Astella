@@ -26,11 +26,12 @@ test("计算不豁免明确归属原文的引用，也不豁免资料读取与�
   const source = [{ role: "assistant" as const, content: "", toolCalls: [{ id: "read", name: "companion_read_note", arguments: {} }] },
     { role: "tool" as const, toolCallId: "read", content: "原文只有这句话。" }];
   assert.equal(reviewCompanionStepCorrection({ ...base, messages: [...calculation, ...source],
-    said: "「这是一段来源中并不存在的知识原文」。" }).unverifiedQuotes.length, 1);
+    said: "笔记原文写着：「这是一段来源中并不存在的知识原文」。" }).unverifiedQuotes.length, 1);
   assert.equal(reviewCompanionStepCorrection({ ...base, messages: [],
-    said: "「这是一段来源中并不存在的知识原文」。" }).unverifiedQuotes.length, 1);
+    said: "「这是一段来源中并不存在的知识原文」。" }).unverifiedQuotes.length, 0,
+  "没有来源归属的「」是强调或概括，不按逐字原文判");
   assert.equal(reviewCompanionStepCorrection({ ...base, pageContext: { selection: { text: "真实页面原文。" } },
-    said: "「这是一段来源中并不存在的知识原文」。" }).unverifiedQuotes.length, 1);
+    said: "你刚划选的原文是：「这是一段来源中并不存在的知识原文」。" }).unverifiedQuotes.length, 1);
 });
 
 test("教学示例的百分比不触发个人读数纠正，真实读数和来源声明仍核对", () => {

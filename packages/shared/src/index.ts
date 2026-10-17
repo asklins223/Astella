@@ -64,6 +64,7 @@ export * from "./contracts/companion-agent-contracts.ts";
 export * from "./contracts/companion-run-diagnostics.ts";
 export * from "./companion-agent-registry.ts";
 export * from "./companion-host-context.ts";
+export * from "./companion-tool-groups.ts";
 export * from "./companion-persona.ts";
 export * from "./pet-persona-presets.ts";
 // 2026-10-02：40b §1.4 第 1 条「登记每条要求」的可检验清单。纯数据 + 惰性

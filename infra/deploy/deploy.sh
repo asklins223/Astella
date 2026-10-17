@@ -58,9 +58,18 @@ fi
 # Root-only local preflight can use images transferred with docker save/load.
 # The forced SSH receiver always uses the registry path.
 if [[ ${2:-} != --local-images ]]; then
-  "${compose[@]}" pull --quiet postgres role-bootstrap role-grants api migrate worker edge-tts nginx
+  "${compose[@]}" pull --quiet postgres role-bootstrap role-grants api migrate worker edge-tts embedding nginx
 fi
-"${compose[@]}" up -d --no-build --pull never --wait --wait-timeout 120 postgres edge-tts
+"${compose[@]}" up -d --no-build --pull never --wait --wait-timeout 300 postgres edge-tts
+
+# Embedding is a fallback, not a dependency: its first start downloads BGE-M3
+# (~2.3 GB). Gating the whole deploy on that would turn a slow mirror into a
+# failed release, so it starts in the background and reports its own readiness
+# through /health. Until the model loads, the worker keeps using SiliconFlow.
+"${compose[@]}" up -d --no-build --pull never embedding
+if ! "${compose[@]}" ps --format '{{.Name}} {{.Health}}' embedding 2>/dev/null | grep -q ' healthy'; then
+  echo 'Embedding fallback is warming up (model download on first start); the deploy continues on SiliconFlow.' >&2
+fi
 
 # A logical backup precedes every migration, including the first empty database.
 mkdir -p /opt/astella/backups

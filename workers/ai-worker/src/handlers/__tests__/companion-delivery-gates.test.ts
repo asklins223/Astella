@@ -18,12 +18,22 @@ test("本轮有已落库的写回执时，五道交付闸都不许作废整轮",
   }
 });
 
-/** 反向控制：放宽的是误判的代价，不是谎报。什么都没落时判据照旧生效。 */
-test("本轮一个写都没落下时，五道闸照旧作废整轮", () => {
+/** 反向控制：放宽的是误判的代价，不是谎报。什么都没落、也没正文时判据照旧生效。 */
+test("本轮一个写都没落下、也没有可交付正文时，五道闸照旧作废整轮", () => {
   for (const gate of GATES) {
-    assert.equal(judgeCompanionDeliveryGate({ gate, landedWrites: false }).destroysTurn, true,
+    assert.equal(judgeCompanionDeliveryGate({ gate, landedWrites: false, hasDeliverablePrefix: false }).destroysTurn, true,
       `${gate} 不再销毁了：她可以说一件根本没做过的事`);
   }
+});
+
+test("没有写回执但已有可交付正文时，讲解类闸降级；动作闸仍不许替她认领没做的事", () => {
+  for (const gate of GATES.filter(gate => gate !== "action_not_executed")) {
+    assert.equal(judgeCompanionDeliveryGate({ gate, landedWrites: false, hasDeliverablePrefix: true }).destroysTurn, false,
+      `${gate} 因一次判错吃掉了整段已经可交付的讲解`);
+  }
+  assert.equal(judgeCompanionDeliveryGate({ gate: "action_not_executed", landedWrites: false,
+    hasDeliverablePrefix: true }).destroysTurn, true,
+  "没有执行回执时，动作闸仍不能把「我已经做了」交付出去");
 });
 
 test("绕过销毁时错误码与留痕都按闸各自说清，不共用一个", () => {
@@ -76,10 +86,10 @@ test("companionStreamFallbackText：只在三个事实同时成立时才降级�
     reason: "tool_protocol_leak", deliveredPrefix: prefix };
   assert.deepEqual(companionStreamFallbackText(base), { deliver: true, text: prefix,
     note: judgeCompanionDeliveryGate({ gate: "stream_validation", landedWrites: true }).bypassNote });
-  // 少一个写回执：正文还没落地，此时交付等于替她认下一件没做过的事。
-  assert.equal(companionStreamFallbackText({ ...base, landedWrites: false }).deliver, false);
+  // 少一个写回执但已有稳定前缀：讲解轮不再因一次判错被整轮作废。
+  assert.equal(companionStreamFallbackText({ ...base, landedWrites: false }).deliver, true);
   // 客户端一个字都没见过：没有可交付的对象。
-  assert.equal(companionStreamFallbackText({ ...base, deliveredPrefix: "" }).deliver, false);
+  assert.equal(companionStreamFallbackText({ ...base, landedWrites: false, deliveredPrefix: "" }).deliver, false);
   // 交付管线断了是权威事实，不是判错——这时候照旧作废整轮。
   assert.equal(companionStreamFallbackText({ ...base, reason: COMPANION_STREAM_TRANSPORT_FAILURE }).deliver, false);
   // 对账那道闸与"管线断裂"这个原因无关（它的 reason 来自正文比对）。

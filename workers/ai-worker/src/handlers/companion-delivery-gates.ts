@@ -56,19 +56,24 @@ export interface CompanionDeliveryGateVerdict {
 /**
  * 这道闸要不要把整条消息作废。
  *
- * `landedWrites` 必须是权威事实：本轮已经落下写回执。有了它就不销毁——判错的代价
- * 降成"这一步留个 failed 痕迹"，用户仍然能看到她已经做成的事。
+ * `landedWrites` 是权威事实：本轮已经落下写回执。`hasDeliverablePrefix` 是另一条
+ * 已经成立的事实：已经有一段用户看得见的正文（或这一步有完整正文）可以交付。
  *
- * 两道流式闸（`stream_validation` / `stream_reconcile`）由调用方再多要一条事实才能降级：
- * **已经下发的稳定前缀本身要能作为终答**。前缀都拿不出手（或交付管线断了）时，
- * 降级就没有对象可交付，那仍然是权威事实，照旧销毁。
+ * 2026-10-17：纯讲解轮没有写回执，一次引文/截断/流式判错仍会把整轮吃掉。
+ * 这违反用户 2026-10-16 的裁决「一次判错只能降级不能作废整轮」。现在这四类闸
+ * 只要有一段可交付的正文就降级；`action_not_executed` 不放宽——没有写回执时
+ * 把「我已经做了」交付出去就是替她把没做的事说成做了。
  */
 export function judgeCompanionDeliveryGate(input: {
   gate: CompanionDeliveryGate;
   landedWrites: boolean;
+  /** 是否有一段能作为终答交付的正文（已下发的稳定前缀，或这一步的完整正文）。 */
+  hasDeliverablePrefix?: boolean;
 }): CompanionDeliveryGateVerdict {
+  const prefixSafe = input.gate !== "action_not_executed";
   return {
-    destroysTurn: !input.landedWrites,
+    destroysTurn: !input.landedWrites
+      && !(prefixSafe && input.hasDeliverablePrefix === true),
     stepErrorCode: GATE_STEP_ERROR_CODE[input.gate],
     bypassNote: GATE_BYPASS_NOTE[input.gate],
   };
@@ -91,7 +96,8 @@ export function companionStreamFallbackText(input: {
   /** 已经下发给客户端、且再净化一遍一字不差的那段前缀；拿不出手时是空串。 */
   deliveredPrefix: string;
 }): { deliver: true; text: string; note: string } | { deliver: false } {
-  const verdict = judgeCompanionDeliveryGate({ gate: input.gate, landedWrites: input.landedWrites });
+  const verdict = judgeCompanionDeliveryGate({ gate: input.gate, landedWrites: input.landedWrites,
+    hasDeliverablePrefix: input.deliveredPrefix.length > 0 });
   if (verdict.destroysTurn) return { deliver: false };
   if (input.gate === "stream_validation" && input.reason === COMPANION_STREAM_TRANSPORT_FAILURE) return { deliver: false };
   if (input.deliveredPrefix.length === 0) return { deliver: false };
