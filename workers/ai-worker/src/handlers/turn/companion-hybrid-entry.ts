@@ -71,12 +71,21 @@ export function companionHybridReplyInterpretation(requestHash: string) {
  */
 export const COMPANION_HYBRID_OFFER_REPLY_CHARS = 12;
 
+/**
+ * 短句本身在提新问题时不走这道门（2026-10-18 线上实测的反例）：
+ * 她上一句以问号收尾后，用户紧接着问「我今天一共学了多久了？」（11 字），
+ * 被这道门当成接受邀请交了任务链。它确实是安全的（只是慢），但没必要的慢。
+ * 判据只看形态：以问号收尾，或带疑问词，就当作独立问题交给快速入口自己判。
+ */
+const OFFER_REPLY_QUESTION = /[？?]\s*$|吗|什么|多少|多久|怎么|为什么|哪|几|是不是|有没有|能不能|可不可以/u;
+
 export function companionHybridAwaitingOffer(
   messages: readonly { readonly role: string; readonly content: unknown }[],
   latestUserText: string,
 ): boolean {
   const text = latestUserText.trim();
   if (text.length === 0 || text.length > COMPANION_HYBRID_OFFER_REPLY_CHARS) return false;
+  if (OFFER_REPLY_QUESTION.test(text)) return false;
   const recent = messages
     .filter(message => message.role !== 'system')
     .map(message => ({ role: message.role, text: messageText(message.content) }));

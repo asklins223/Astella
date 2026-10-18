@@ -137,3 +137,13 @@ test('a short reply with no pending offer keeps the fast path', async () => {
   assert.equal(result.facts.decision, 'reply');
   assert.equal(result.facts.requestedModelCalls, 1);
 });
+
+test('a short new question after her question is not mistaken for accepting the offer', async () => {
+  const result = await runWith([
+    { role: 'assistant', content: '今天是累在身上，还是脑子转不动那种？' },
+    { role: 'user', content: '我今天一共学了多久了？' },
+  ], provider([JSON.stringify({ reply })], []));
+  assert.equal(result.facts.decision, 'reply');
+  assert.equal(result.facts.basis, undefined);
+  assert.equal(result.facts.requestedModelCalls, 1);
+});
