@@ -247,6 +247,13 @@ export function HomeV2AudioController() {
   const voiceRef = useRef<VoicePlayback | null>(null);
   /** 流式播放器的停止句柄：它不经 voiceRef，所以停止链要单独记一份。 */
   const streamStopRef = useRef<(() => void) | null>(null);
+  /**
+   * 流式播放器**现算**的位置读数（0..1，没有在播时 null）。
+   *
+   * 与 `activePlaybackRef` 分开：那个描述的是"一条 source 播 duration 秒"，
+   * 流式是许多 source 首尾相接。两个都写会让停止/进度各读到半份状态。
+   */
+  const streamProgressRef = useRef<(() => number | null) | null>(null);
   const mouthLevelRef = useRef(0);
   const mouthReleaseFrameRef = useRef(0);
   const masterMuted = useRoomStore((state) => state.masterMuted);
@@ -263,6 +270,7 @@ export function HomeV2AudioController() {
   const stopVoicePlayback = useCallback((immediate = true, heard = false) => {
     streamStopRef.current?.();
     streamStopRef.current = null;
+    streamProgressRef.current = null;
     const playback = voiceRef.current;
     voiceRef.current = null;
     activePlaybackRef.current = null;
@@ -559,6 +567,16 @@ export function HomeV2AudioController() {
       audible: () => replyAudibleRef.current && !isCompanionReplyBlockedByMicrophone(),
       signal,
       registerStop: (stop) => { streamStopRef.current = stop },
+      /**
+       * 字幕读数（2026-10-18）：气泡问"现在念到哪"走的是 `voiceProgress()`，
+       * 那里只读 `activePlaybackRef`——整段那条会写它，流式这条不写，于是字幕
+       * 永远拿到 null、退回阅读钟，文字与声音脱开。
+       *
+       * 这里把增量播放器的音频时钟挂到同一个读数上。注意**不写 `activePlaybackRef`**：
+       * 那个字段的语义是"一条 AudioBufferSourceNode 从 startedAt 播 duration 秒"，
+       * 流式是许多个 source 首尾相接，形状不同；混写会让 `stopVoicePlayback` 收错尾。
+       */
+      registerProgress: (read) => { streamProgressRef.current = read },
       onProgress: (seconds) => {
         duration = Math.max(duration, seconds);
         const elapsed = Math.max(0, graph.context.currentTime - startedAt);
@@ -625,6 +643,12 @@ export function HomeV2AudioController() {
    * 从音频时钟现算（不是缓存上一次 rAF 的值）：这是"字幕跟着声音走"的唯一可靠来源。
    */
   const voiceProgress = useCallback((): number | null => {
+    // 流式那条自己算：许多 source 首尾相接，分母是已排播的总时长。
+    const streamed = streamProgressRef.current;
+    if (streamed) {
+      const value = streamed();
+      if (value !== null) return value;
+    }
     const active = activePlaybackRef.current;
     if (!active || !(active.duration > 0)) return null;
     const elapsed = active.context.currentTime - active.startedAt;

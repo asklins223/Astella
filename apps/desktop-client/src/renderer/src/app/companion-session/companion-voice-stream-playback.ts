@@ -27,6 +27,20 @@ export interface StreamingSegmentPlaybackArgs {
    * 否则停止朗读对这条路不生效（它不经过 `host.play`）。
    */
   readonly registerStop?: (stop: () => void) => void
+  /**
+   * 把**现算的播放位置**（0..1，没有在播时 null）交给宿主（2026-10-18）。
+   *
+   * 字幕只认音频时钟现算的位置。整段那条由 `playVoiceBuffer` 写 `activePlaybackRef`
+   * 供 `host.progress()` 读取；流式这条路不经过它，位置就永远是 null，气泡退回
+   * 阅读钟——文字与声音脱开。这里把增量播放器自己的时钟交出去，宿主挂到同一个
+   * 读数上即可。播完/停止时回调 null，表示"没有声音了"。
+   */
+  readonly registerProgress?: (read: (() => number | null) | null) => void
+  /**
+   * 测试接缝：jsdom / node 里没有 `AudioDecoder`，注入整块解码让接线测试能跑。
+   * 生产**不传**。
+   */
+  readonly decodeAllForTest?: (bytes: Uint8Array) => Promise<AudioBuffer | null>
 }
 
 /** 主进程是否提供了这条通道（旧版主进程没有）。 */
@@ -60,24 +74,20 @@ export async function playSegmentFromStream(
   let wake: (() => void) | null = null
   const wakeUp = (): void => { const resume = wake; wake = null; resume?.(); }
 
+  /**
+   * 播放器自己用 WebCodecs 的 `AudioDecoder` 连续解码（见 `companion-incremental-mp3`）。
+   *
+   * 这里不再提供 `decode`：把每块字节交给 `decodeAudioData` 会把每块当成完整文件
+   * ——预滚静音、逐块重采样的边缘失真（滋滋声）、完成顺序乱，三个问题都来自它。
+   */
   const player = new IncrementalAudioPlayer({
     context: decodeContext,
     destination: args.destination,
     audible: args.audible,
     onProgress: args.onProgress,
     onDone: () => { drained = true; wakeUp() },
-    decode: async (bytes: Uint8Array) => {
-      // 一段解码失败只丢这一段，不把整段判死：坏帧跳过比整轮静音好。
-      try {
-        // decodeAudioData 会「吃掉」传入的 buffer，复制一份避免帧解析那边复用同一块内存。
-        const copy = bytes.slice().buffer
-        return await decodeContext.decodeAudioData(copy)
-      } catch {
-        return null
-      }
-    },
+    ...(args.decodeAllForTest ? { decodeAllForTest: args.decodeAllForTest } : {}),
   })
-
   const unsubscribe = api.onSegmentChunk((event) => {
     if (requestId === null || event.requestId !== requestId) return
     if (event.kind === 'chunk') {
@@ -100,6 +110,8 @@ export async function playSegmentFromStream(
   const onAbort = (): void => player.stop()
   args.signal?.addEventListener('abort', onAbort, { once: true })
   args.registerStop?.(() => player.stop())
+  // 字幕位置：把播放器自己的音频时钟交出去（见 `registerProgress` 的注释）。
+  args.registerProgress?.(() => player.playedFraction())
 
   try {
     const accepted = await requestCompanionVoiceAudio(
@@ -128,14 +140,19 @@ export async function playSegmentFromStream(
       const drainDeadline = Date.now() + 120_000
       while (!drained && !failure && player.isLive && Date.now() < drainDeadline) {
         if (args.signal?.aborted) break
+        // 解码器坏了就立刻收手：让调用方退回整段合成，而不是空等到 120 秒。
+        if (player.failed) break
         await new Promise<void>((resolve) => { wake = resolve; setTimeout(wakeUp, 25) })
       }
     }
-    return started && !failure
+    // 解码器不可用时这一段**一声没响**：返回 false，调用方走整段那条兜底。
+    return started && !failure && !player.failed
   } catch {
     return false
   } finally {
     // 播完之后事件已经没有意义；中途失败同理（这一段判死，交给整段那条兜底）。
+    // 位置读数也要撤掉：否则字幕会一直读一个已经停住的时钟。
+    args.registerProgress?.(null)
     unsubscribe()
   }
 }

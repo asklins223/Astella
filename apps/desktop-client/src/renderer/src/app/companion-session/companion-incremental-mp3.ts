@@ -1,41 +1,54 @@
 /**
- * 增量音频排播（2026-10-17）。
+ * 增量音频排播（2026-10-17；2026-10-18 改用 WebCodecs 流式解码）。
  *
  * 原来一段语音必须**整段到齐**才能 `decodeAudioData` 再播：HTTP 那条路把 MP3 收完
  * 才返回，客户端拿到的是一个完整 buffer。服务端其实早就在流式合成（千问 WS 逐块
  * 吐字节），被客户端这一侧"收齐再解"抹平了——本地实测首段可播相差 0.6–1.2 秒。
  *
- * 这里把播放拆成"按 MP3 帧切 → 逐段解码 → 在音频时钟上首尾相接排播"：
+ * ── 为什么最终不用 `decodeAudioData` 分包 ──────────────────────────────────
  *
- * - 只要**第一个解码单元**到手就能开口，其余单元在播的时候继续解；
- * - 所有单元都排在同一个 AudioContext 时钟上，不用每段重开一个 source，
- *   段间不会有调度缝隙（那正是"一顿一顿"的来源）；
- * - 进度按"已播时长 / 已知总时长"折算，未知时按已解码部分折算，避免字幕停在 0；
- * - 取消时把后面的单元全部撤下（已排的 source.stop()）。
+ * 它把每次调用当成**一个完整的音频文件**：新开解码器、自带预滚、自己定重采样。
+ * 拿它去解一段从流中间切出来的字节，三处都会出问题：
  *
- * 帧解析是纯函数，单独可测（见 `__tests__/companion-incremental-mp3.test.ts`）。
+ * 1. 单元开头是一段 30–35ms 静音（解码器预滚），内容整体后移；
+ * 2. 补前文再裁掉能修 ①，但 qwen 出 22050Hz、播放上下文是 48000Hz，
+ *    2.176:1 不是整数倍，重采样滤波器逐块截断，每 0.2 秒吃一次失真——
+ *    听感是持续的电流"滋滋"声（实测分段拼接误差 0.0529，整段 0.000011）；
+ * 3. 每次调用都是一次独立解码，完成顺序不可信，按完成顺序排播会把音频拼乱。
+ *
+ * `AudioDecoder`（WebCodecs）是**有状态**的流式解码器：同一个实例逐帧喂进去，
+ * 它跨帧保持解码器内部状态（bit reservoir、预滚、重采样相位），输出的 PCM 与
+ * "把整段文件一次解码"逐样本完全一致（实测 173 帧喂入，差值恰为 0）。
+ * 所以这里直接用它：不切单元、不补前文、不裁切。
+ *
+ * 帧解析仍然只做一件事：**切出完整帧的边界**，保证喂给解码器的是整帧。
  */
 
-/** 一个可独立解码的单元：连续若干完整 MP3 帧。 */
+/** 一段可独立喂给 `AudioDecoder` 的连续完整 MP3 帧。 */
 export interface Mp3FrameUnit {
   readonly bytes: Uint8Array;
   /** 该单元在整条流里的起始字节位置（诊断用）。 */
   readonly offset: number;
 }
 
-/**
- * MPEG Layer III 帧长。
- * 返回 -1 表示这里不是可信的帧头；返回 0 表示"字节还不够判断，等更多数据"。
- */
-export function mp3FrameLength(bytes: Uint8Array, offset: number): number {
-  if (offset + 4 > bytes.length) return 0;
-  if (bytes[offset] !== 0xff || (bytes[offset + 1]! & 0xe0) !== 0xe0) return -1;
+interface Mp3FrameInfo {
+  /** -1 = 不是可信帧头；0 = 字节不够，等更多数据。 */
+  readonly length: number;
+  readonly samplesPerFrame: number;
+  readonly sampleRate: number;
+}
+
+/** MPEG Layer III 帧头解析。 */
+function mp3FrameInfo(bytes: Uint8Array, offset: number): Mp3FrameInfo {
+  const none = { length: 0, samplesPerFrame: 0, sampleRate: 0 } as const;
+  if (offset + 4 > bytes.length) return none;
+  if (bytes[offset] !== 0xff || (bytes[offset + 1]! & 0xe0) !== 0xe0) return { ...none, length: -1 };
   const versionBits = (bytes[offset + 1]! >> 3) & 0x03; // 3=MPEG1, 2=MPEG2, 0=MPEG2.5
   const layerBits = (bytes[offset + 1]! >> 1) & 0x03; // 1 = Layer III
-  if (layerBits !== 1) return -1;
+  if (layerBits !== 1) return { ...none, length: -1 };
   const bitrateIndex = (bytes[offset + 2]! >> 4) & 0x0f;
   const rateIndex = (bytes[offset + 2]! >> 2) & 0x03;
-  if (bitrateIndex === 0 || bitrateIndex === 15 || rateIndex === 3) return -1;
+  if (bitrateIndex === 0 || bitrateIndex === 15 || rateIndex === 3) return { ...none, length: -1 };
   const padding = (bytes[offset + 2]! >> 1) & 0x01;
   const sampleRate = versionBits === 3
     ? [44100, 48000, 32000][rateIndex]
@@ -45,11 +58,41 @@ export function mp3FrameLength(bytes: Uint8Array, offset: number): number {
   const bitrate = (versionBits === 3
     ? [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0][bitrateIndex]
     : [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0][bitrateIndex])! * 1000;
-  if (!sampleRate || !bitrate) return -1;
+  if (!sampleRate || !bitrate) return { ...none, length: -1 };
   const length = versionBits === 3
     ? Math.floor((144 * bitrate) / sampleRate) + padding
     : Math.floor((72 * bitrate) / sampleRate) + padding;
-  return length > 4 ? length : -1;
+  if (length <= 4) return { ...none, length: -1 };
+  return { length, samplesPerFrame: versionBits === 3 ? 1152 : 576, sampleRate };
+}
+
+/**
+ * MPEG Layer III 帧长。
+ * 返回 -1 表示这里不是可信的帧头；返回 0 表示"字节还不够判断，等更多数据"。
+ */
+export function mp3FrameLength(bytes: Uint8Array, offset: number): number {
+  return mp3FrameInfo(bytes, offset).length;
+}
+
+/** 一帧的样本数（MPEG1 = 1152，MPEG2/2.5 = 576）。 */
+function frameSamplesAt(bytes: Uint8Array, offset = 0): number {
+  return mp3FrameInfo(bytes, offset).samplesPerFrame;
+}
+
+/**
+ * 这片 MP3 字节的源采样率（第一个可信帧头），认不出返回 null。
+ * `AudioDecoder` 需要它来配置解码器。
+ */
+export function mp3SourceSampleRate(bytes: Uint8Array): number | null {
+  let cursor = skipId3v2(bytes);
+  const end = Math.min(bytes.length, cursor + 4096);
+  while (cursor < end) {
+    const info = mp3FrameInfo(bytes, cursor);
+    if (info.length === 0) return null;
+    if (info.length > 0 && info.sampleRate > 0) return info.sampleRate;
+    cursor += 1;
+  }
+  return null;
 }
 
 /** 跳过 ID3v2 标签，返回第一个可能的帧起点。 */
@@ -63,10 +106,10 @@ export function skipId3v2(bytes: Uint8Array): number {
 }
 
 /**
- * 把不断到达的字节切成解码单元。
+ * 把不断到达的字节切成**连续完整帧**。
  *
- * `targetFrames` 是每个单元包含的帧数：8 帧约 0.2 秒（44.1kHz、128kbps），
- * 小到足够早开口，大到不会让每个单元都短到解码开销反超。
+ * 解码器有状态，所以这里不再关心"多少帧一批"——攒到有整帧就交出去，批次大小只
+ * 影响"多早能开始出声"。默认 8 帧（约 0.2 秒）是首响与开销的折中。
  */
 export class Mp3FrameAssembler {
   private readonly chunks: Uint8Array[] = [];
@@ -77,11 +120,10 @@ export class Mp3FrameAssembler {
   private framesInUnit = 0;
   private unitStart = 0;
   private unitBytes: Uint8Array[] = [];
-  private unitSize = 0;
 
   constructor(private readonly targetFrames = 8) {}
 
-  /** 压入新到的字节，返回本次凑满的解码单元。 */
+  /** 压入新到的字节，返回本次凑满的整帧批次。 */
   push(chunk: Uint8Array): Mp3FrameUnit[] {
     this.chunks.push(chunk);
     this.buffered += chunk.length;
@@ -115,23 +157,20 @@ export class Mp3FrameAssembler {
     const out: Mp3FrameUnit[] = [];
     let cursor = Math.max(this.frameStart, this.consumed);
     while (cursor < bytes.length) {
-      const length = mp3FrameLength(bytes, cursor);
-      if (length === 0) break;                       // 头还没收全，等下一块
-      if (length < 0) {
+      const info = mp3FrameInfo(bytes, cursor);
+      if (info.length === 0) break;                       // 头还没收全，等下一块
+      if (info.length < 0) {
         // 不是帧头：可能中间夹了标签或有损坏，往后挪一个字节重新对齐。
         cursor += 1;
         continue;
       }
-      if (cursor + length > bytes.length) break;     // 这一帧还没收全
+      if (cursor + info.length > bytes.length) break;     // 这一帧还没收全
       if (this.framesInUnit === 0) this.unitStart = cursor;
-      this.unitBytes.push(bytes.subarray(cursor, cursor + length));
-      this.unitSize += length;
+      // 复制一份：下面的缓冲马上会被丢掉，视图会失效。
+      this.unitBytes.push(bytes.slice(cursor, cursor + info.length));
       this.framesInUnit += 1;
-      cursor += length;
-      if (this.framesInUnit >= this.targetFrames) {
-        out.push({ bytes: this.mergeUnit(), offset: this.unitStart });
-        this.resetUnit();
-      }
+      cursor += info.length;
+      if (this.framesInUnit >= this.targetFrames) out.push(this.takeUnit());
     }
     this.frameStart = cursor;
     // 丢掉已经交出去的字节，避免越攒越大。
@@ -142,8 +181,7 @@ export class Mp3FrameAssembler {
       this.consumed = 0;
     }
     if (ending) {
-      if (this.framesInUnit > 0) out.push({ bytes: this.mergeUnit(), offset: this.unitStart });
-      this.resetUnit();
+      if (this.framesInUnit > 0) out.push(this.takeUnit());
       this.chunks.length = 0;
       this.buffered = 0;
       this.frameStart = 0;
@@ -151,50 +189,63 @@ export class Mp3FrameAssembler {
     return out;
   }
 
-  private mergeUnit(): Uint8Array {
-    const merged = new Uint8Array(this.unitSize);
+  private takeUnit(): Mp3FrameUnit {
+    const size = this.unitBytes.reduce((sum, frame) => sum + frame.length, 0);
+    const merged = new Uint8Array(size);
     let at = 0;
     for (const frame of this.unitBytes) { merged.set(frame, at); at += frame.length; }
-    return merged;
-  }
-
-  private resetUnit(): void {
+    const unit: Mp3FrameUnit = { bytes: merged, offset: this.unitStart };
     this.unitBytes = [];
-    this.unitSize = 0;
     this.framesInUnit = 0;
+    return unit;
   }
 }
 
 export interface IncrementalPlaybackOptions {
   readonly context: AudioContext;
   readonly destination: AudioNode;
-  /** 解码一个单元；失败返回 null（坏单元跳过，不影响后面的）。 */
-  readonly decode: (bytes: Uint8Array) => Promise<AudioBuffer | null>;
   /** 已播秒数变化（用于进度与口型）。 */
   readonly onProgress?: (seconds: number) => void;
   /** 整条流结束且全部播完。 */
   readonly onDone?: () => void;
   /** 是否还能出声（静音/窗口不可见时直接停）。 */
   readonly audible?: () => boolean;
+  /**
+   * 测试接缝：注入"整块解码"代替 WebCodecs（纯 node / jsdom 单测里没有 `AudioDecoder`）。
+   * 生产**不传**——那条路一律走下面的 `AudioDecoder`。
+   */
+  readonly decodeAllForTest?: (bytes: Uint8Array) => Promise<AudioBuffer | null>;
 }
 
 /**
- * 在同一个 AudioContext 时钟上把陆续解码出来的单元首尾相接。
+ * 用 WebCodecs 的 `AudioDecoder` 把陆续到达的 MP3 帧解成 PCM，
+ * 再按 PCM 的**实际时长**在 AudioContext 时钟上首尾相接。
  *
- * 关键在 `nextStartAt`：每个单元都排在"上一个单元的结束时刻"，而不是
- * "现在 + 一点延迟"。后者会在每段之间引入一次小的空档，听感是"一顿一顿"。
+ * 与上一版的区别是根本性的：上一版每次都调 `decodeAudioData`（把一块当完整文件），
+ * 这一版全程只有**一个**解码器实例，跨帧保持状态——所以既没有单元开头的预滚静音，
+ * 也没有逐块重采样的边缘失真，更没有"完成顺序乱"的问题（输出天然有序）。
  */
 export class IncrementalAudioPlayer {
   private readonly context: AudioContext;
   private readonly assembler = new Mp3FrameAssembler();
   private readonly sources: AudioBufferSourceNode[] = [];
-  private readonly queued: Promise<void>[] = [];
-  /** 下一个单元的起播时刻；null 表示还没排过。 */
+  private decoder: AudioDecoder | null = null;
+  private decoderError: string | null = null;
+  /** 已交给解码器、还没收到输出的帧数（用于收尾判定）。 */
+  private queuedFrames = 0;
+  /** 兜底路径在途的整块解码数（只有测试接缝会用到）。 */
+  private pendingFallbacks = 0;
+  private fedFrames = 0;
+  private sourceSampleRate = 0;
+  private samplesPerFrame = 0;
+  /** 下一个音频片段的起播时刻；null 表示还没排过。 */
   private nextStartAt: number | null = null;
   private decodedSeconds = 0;
   private startedAt: number | null = null;
+  private reportedFraction = 0;
   private live = true;
   private finished = false;
+  private flushing = false;
   private frame = 0;
 
   constructor(private readonly options: IncrementalPlaybackOptions) {
@@ -203,14 +254,22 @@ export class IncrementalAudioPlayer {
 
   push(chunk: Uint8Array): void {
     if (!this.live) return;
-    for (const unit of this.assembler.push(chunk)) void this.enqueue(unit);
+    for (const unit of this.assembler.push(chunk)) this.feed(unit);
   }
 
   finish(): void {
     if (!this.live) return;
-    for (const unit of this.assembler.flush()) void this.enqueue(unit);
+    for (const unit of this.assembler.flush()) this.feed(unit);
     this.finished = true;
-    void Promise.all(this.queued).then(() => this.maybeComplete());
+    const decoder = this.decoder;
+    if (decoder) {
+      // 让解码器把内部残留吐出来；吐完才算整段结束。
+      this.flushing = true;
+      void decoder.flush()
+        .catch(() => undefined)
+        .then(() => { this.flushing = false; this.maybeComplete(); });
+    }
+    this.maybeComplete();
   }
 
   stop(): void {
@@ -221,46 +280,170 @@ export class IncrementalAudioPlayer {
       try { source.stop(); } catch { /* 已经自然结束 */ }
     }
     this.sources.length = 0;
+    try { this.decoder?.close(); } catch { /* 已经关了 */ }
+    this.decoder = null;
   }
 
   get isLive(): boolean {
     return this.live;
   }
 
-  private async enqueue(unit: Mp3FrameUnit): Promise<void> {
-    const task = (async () => {
-      if (!this.live) return;
-      const buffer = await this.options.decode(unit.bytes);
-      if (!buffer || !this.live) return;
-      if (this.options.audible && !this.options.audible()) { this.stop(); return; }
-      const source = this.context.createBufferSource();
-      source.buffer = buffer;
-      source.connect(this.options.destination);
-      const startAt = this.nextStartAt === null
-        ? this.context.currentTime + 0.02   // 第一个单元：留一点调度余量
-        : Math.max(this.nextStartAt, this.context.currentTime + 0.005);
-      this.nextStartAt = startAt + buffer.duration;
-      this.sources.push(source);
-      const first = this.startedAt === null;
-      if (first) this.startedAt = startAt;
-      this.decodedSeconds = Math.max(this.decodedSeconds, this.nextStartAt - this.startedAt!);
-      // 先真的开播再启动进度循环：进度循环在纯 node 环境没有 rAF 会抛，
-      // 抛在 start() 之前就等于这一段根本没响（单测抓到的正是这个顺序）。
-      source.start(startAt);
-      if (first) this.tick();
-      await new Promise<void>((resolve) => {
-        source.onended = () => {
-          const index = this.sources.indexOf(source);
-          if (index >= 0) this.sources.splice(index, 1);
-          resolve();
-        };
+  /**
+   * 解码器是否已经彻底不可用（建不起来 / 报了错）。
+   *
+   * 调用方据此**尽早**放弃这一段并退回整段合成，而不是干等到排空截止：
+   * 没有这段读数时，"解码器一声不响地坏了"与"音频正在播"在外部长得一模一样。
+   */
+  get failed(): boolean {
+    return this.decoderError !== null;
+  }
+
+  /**
+   * 这一条流**此刻播到几成**（0..1），没有在播返回 null。
+   *
+   * 单调：分母是"已排播的总时长"，边合成边播时它会随新块变大；逐块重算会让
+   * 比例忽大忽小，字幕就会往回跳。
+   */
+  playedFraction(): number | null {
+    if (!this.live || this.startedAt === null || this.decodedSeconds <= 0) return null;
+    const elapsed = this.context.currentTime - this.startedAt;
+    if (!Number.isFinite(elapsed)) return null;
+    const next = Math.min(1, Math.max(0, elapsed / this.decodedSeconds));
+    this.reportedFraction = Math.max(this.reportedFraction, next);
+    return this.reportedFraction;
+  }
+
+  /** 建解码器（按第一帧的真实采样率配置），只建一次。 */
+  private ensureDecoder(bytes: Uint8Array): boolean {
+    if (this.decoder) return true;
+    if (this.decoderError) return false;
+    const rate = mp3SourceSampleRate(bytes);
+    if (rate === null) {
+      this.decoderError = "unknown-sample-rate";
+      return false;
+    }
+    const first = mp3FrameInfo(bytes, skipId3v2(bytes));
+    this.sourceSampleRate = rate;
+    this.samplesPerFrame = first.samplesPerFrame > 0 ? first.samplesPerFrame : 576;
+    if (typeof AudioDecoder === "undefined") {
+      this.decoderError = "webcodecs-unavailable";
+      return false;
+    }
+    try {
+      const decoder = new AudioDecoder({
+        output: (data) => this.publish(data),
+        error: (error) => {
+          this.decoderError = String(error);
+          // 解码器坏了：后面的帧都解不出来，别让整段挂在"等输出"上。
+          this.queuedFrames = 0;
+          this.maybeComplete();
+        },
       });
+      decoder.configure({ codec: "mp3", sampleRate: rate, numberOfChannels: 1 });
+      this.decoder = decoder;
+      return true;
+    } catch (error) {
+      this.decoderError = String(error);
+      return false;
+    }
+  }
+
+  private feed(unit: Mp3FrameUnit): void {
+    if (!this.live) return;
+    // 测试接缝：没有 WebCodecs 的环境走整块解码（生产不走这条）。
+    if (this.options.decodeAllForTest) { void this.feedViaFallback(unit, this.options.decodeAllForTest); return; }
+    if (!this.ensureDecoder(unit.bytes)) return;
+    const decoder = this.decoder;
+    if (!decoder) return;
+    let cursor = 0;
+    while (cursor < unit.bytes.length) {
+      const length = mp3FrameLength(unit.bytes, cursor);
+      if (length <= 0) break;
+      if (cursor + length > unit.bytes.length) break;
+      const frameBytes = unit.bytes.subarray(cursor, cursor + length);
+      const samplesPerFrame = this.samplesPerFrame || frameSamplesAt(frameBytes) || 576;
+      const timestampSec = (this.fedFrames * samplesPerFrame) / this.sourceSampleRate;
+      try {
+        decoder.decode(new EncodedAudioChunk({
+          // MP3 每帧自带完整信息，按关键帧喂即可。
+          type: "key",
+          timestamp: Math.round(timestampSec * 1_000_000),
+          data: frameBytes,
+        }));
+      } catch (error) {
+        this.decoderError = String(error);
+        break;
+      }
+      this.fedFrames += 1;
+      this.queuedFrames += 1;
+      cursor += length;
+    }
+  }
+
+  /** 兜底 / 测试接缝：整块解码后整体排播。 */
+  private async feedViaFallback(
+    unit: Mp3FrameUnit,
+    decode: (bytes: Uint8Array) => Promise<AudioBuffer | null>,
+  ): Promise<void> {
+    this.pendingFallbacks += 1;
+    try {
+      const buffer = await decode(unit.bytes);
+      if (!buffer || !this.live) return;
+      this.schedule(buffer);
+    } finally {
+      // 在途计数要跟着收尾判定走：字节还在路上时不能判"整段播完"，
+      // 否则 `finish()` 会先把播放器关掉，这一块就永远排不上（实测踩到）。
+      this.pendingFallbacks -= 1;
       this.maybeComplete();
-    })();
-    this.queued.push(task);
-    // 不 await 自己：`enqueue` 是 fire-and-forget 的排播，等它会把下一块
-    // 的解码推迟到这一段播完之后（实测只排上第一段）。
-    task.catch(() => undefined);
+    }
+  }
+
+  /** 解码器吐出一段 PCM：排到播放时钟上。 */
+  private publish(data: AudioData): void {
+    if (!this.live) { data.close(); return; }
+    this.queuedFrames = Math.max(0, this.queuedFrames - 1);
+    const frames = data.numberOfFrames;
+    const rate = data.sampleRate;
+    if (frames <= 0 || rate <= 0) { data.close(); this.maybeComplete(); return; }
+    const pcm = new Float32Array(frames);
+    try {
+      data.copyTo(pcm, { planeIndex: 0, format: "f32-planar" });
+    } catch {
+      data.close();
+      this.maybeComplete();
+      return;
+    }
+    data.close();
+    const buffer = this.context.createBuffer(1, frames, rate);
+    buffer.copyToChannel(pcm, 0);
+    this.schedule(buffer);
+    this.maybeComplete();
+  }
+
+  private schedule(buffer: AudioBuffer): void {
+    if (!this.live) return;
+    if (this.options.audible && !this.options.audible()) { this.stop(); return; }
+    if (!(buffer.duration > 0)) return;
+    const source = this.context.createBufferSource();
+    source.buffer = buffer;
+    source.connect(this.options.destination);
+    const startAt = this.nextStartAt === null
+      ? this.context.currentTime + 0.02   // 第一段：留一点调度余量
+      : Math.max(this.nextStartAt, this.context.currentTime + 0.005);
+    this.nextStartAt = startAt + buffer.duration;
+    this.sources.push(source);
+    const first = this.startedAt === null;
+    if (first) this.startedAt = startAt;
+    this.decodedSeconds = Math.max(this.decodedSeconds, this.nextStartAt - this.startedAt!);
+    source.onended = () => {
+      const index = this.sources.indexOf(source);
+      if (index >= 0) this.sources.splice(index, 1);
+      this.maybeComplete();
+    };
+    // 先真的开播再启动进度循环：进度循环在纯 node 环境没有 rAF 会抛，
+    // 抛在 start() 之前就等于这一段根本没响（单测抓到的正是这个顺序）。
+    source.start(startAt);
+    if (first) this.tick();
   }
 
   /** 没有 rAF 的环境（纯 node 单测）只播不报进度。 */
@@ -273,14 +456,15 @@ export class IncrementalAudioPlayer {
     const report = this.options.onProgress;
     if (report && this.startedAt !== null) {
       const played = Math.max(0, this.context.currentTime - this.startedAt);
-      // 已解码的总时长还可能是 0（第一个单元刚排上），此时报 0 即可。
       report(Math.min(played, this.decodedSeconds));
     }
     this.scheduleFrame();
   };
 
+  /** 收尾：流结束、解码器吐完、所有已排的 source 播完。 */
   private maybeComplete(): void {
-    if (!this.finished || !this.live || this.sources.length > 0) return;
+    if (!this.finished || !this.live) return;
+    if (this.queuedFrames > 0 || this.flushing || this.pendingFallbacks > 0 || this.sources.length > 0) return;
     this.live = false;
     if (typeof cancelAnimationFrame === "function") cancelAnimationFrame(this.frame);
     this.options.onDone?.();

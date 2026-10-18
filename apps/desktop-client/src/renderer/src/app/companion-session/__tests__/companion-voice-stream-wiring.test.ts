@@ -70,7 +70,9 @@ describe('流式朗读的 IPC 往返', () => {
     const player = new IncrementalAudioPlayer({
       context: context as unknown as AudioContext,
       destination: {} as AudioNode,
-      decode: async () => ({ duration: 0.2 } as AudioBuffer),
+      decodeAllForTest: async () => ({
+        duration: 0.2, length: 9600, sampleRate: 48000, copyToChannel() {},
+      } as unknown as AudioBuffer),
     })
     player.push(unitOf(8, 1))
     player.push(unitOf(8, 2))
@@ -87,6 +89,9 @@ describe('流式朗读的 IPC 往返', () => {
     const context = {
       currentTime: 0,
       decodeAudioData: vi.fn(async () => ({ duration: 0.2 })),
+      createBuffer: (_c: number, length: number, sampleRate: number) => ({
+        duration: length / sampleRate, length, sampleRate, copyToChannel() {},
+      }),
       createBufferSource: () => ({
         buffer: null as unknown, onended: null as (() => void) | null,
         connect(node: unknown) { return node },
@@ -125,6 +130,9 @@ describe('流式朗读的 IPC 往返', () => {
     const context = {
       currentTime: 0,
       decodeAudioData: vi.fn(async () => ({ duration: 0.2 })),
+      createBuffer: (_c: number, length: number, sampleRate: number) => ({
+        duration: length / sampleRate, length, sampleRate, copyToChannel() {},
+      }),
       createBufferSource: () => ({
         buffer: null as unknown, onended: null as (() => void) | null,
         connect(node: unknown) { return node },
@@ -173,6 +181,10 @@ describe('流式朗读的 IPC 往返', () => {
         destination: {} as AudioNode,
         audible: () => true,
         onProgress: () => undefined,
+        // jsdom 里没有 AudioDecoder：注入整块解码，只为跑通接线。
+        decodeAllForTest: async () => ({
+          duration: 0.2, length: 9600, sampleRate: 48000, copyToChannel() {},
+        } as unknown as AudioBuffer),
       })
       expect(played).toBe(true)
       expect(pushedIds).toHaveLength(1)

@@ -10,7 +10,7 @@
 
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { and, desc, eq, gte, isNull, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lte, min, sql } from "drizzle-orm";
 import { requireSession } from "../identity/middleware.ts";
 import { scopeOfSession, withWorkspaceTransaction, type ApiTransaction } from "../../db/client.ts";
 import { companionDailySummaries } from "@astella/shared/db-schema/companion-memory";
@@ -388,28 +388,43 @@ export async function dailySummaryRoutes(app: FastifyInstance) {
       }
       const { from, to } = monthRange(parsed.data);
       const scope = scopeOfSession(req.session);
-      const rows = await withWorkspaceTransaction(scope, async (tx) => tx
-        .select({
-          date: companionDailySummaries.date,
-          written: sql<boolean>`bool_or(${companionDailySummaries.status} = 'generated')`,
-        })
-        .from(companionDailySummaries)
-        .where(and(
-          eq(companionDailySummaries.workspaceId, scope.workspaceId),
-          eq(companionDailySummaries.userId, scope.userId),
-          // 已删除的那天不算「写过」：月历标记是给她这一天的存在感的，
-          // 用户已经把作品删掉之后再显示一个绿点，是在提示一个不存在的东西。
-          isNull(companionDailySummaries.deletedAt),
-          gte(companionDailySummaries.date, from),
-          lte(companionDailySummaries.date, to),
-        ))
-        .groupBy(companionDailySummaries.date)
-        .orderBy(companionDailySummaries.date));
+      const result = await withWorkspaceTransaction(scope, async (tx) => {
+        const rows = await tx
+          .select({
+            date: companionDailySummaries.date,
+            written: sql<boolean>`bool_or(${companionDailySummaries.status} = 'generated')`,
+          })
+          .from(companionDailySummaries)
+          .where(and(
+            eq(companionDailySummaries.workspaceId, scope.workspaceId),
+            eq(companionDailySummaries.userId, scope.userId),
+            // 已删除的那天不算「写过」：月历标记是给她这一天的存在感的，
+            // 用户已经把作品删掉之后再显示一个绿点，是在提示一个不存在的东西。
+            isNull(companionDailySummaries.deletedAt),
+            gte(companionDailySummaries.date, from),
+            lte(companionDailySummaries.date, to),
+          ))
+          .groupBy(companionDailySummaries.date)
+          .orderBy(companionDailySummaries.date);
+        const [firstDiary] = await tx
+          .select({ date: min(companionDailySummaries.date) })
+          .from(companionDailySummaries)
+          .where(and(
+            eq(companionDailySummaries.workspaceId, scope.workspaceId),
+            eq(companionDailySummaries.userId, scope.userId),
+            eq(companionDailySummaries.status, "generated"),
+            isNull(companionDailySummaries.deletedAt),
+          ));
+        return {
+          days: rows.map((row) => ({ date: row.date, status: row.written ? "generated" as const : "failed" as const })),
+          firstGeneratedDate: firstDiary?.date ?? null,
+        };
+      });
 
       return reply.header("Cache-Control", "no-store").send({
         version: 1,
         month: parsed.data,
-        days: rows.map((row) => ({ date: row.date, status: row.written ? "generated" as const : "failed" as const })),
+        ...result,
       });
     },
   );

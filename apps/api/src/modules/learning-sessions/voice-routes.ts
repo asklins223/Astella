@@ -24,6 +24,7 @@ import { setCompanionSegmentWarmHook } from "../companion-conversation/turn/comp
 import { assertSafeTtsInput, DEFAULT_VOICE_PROFILE } from "./voice-tts-policy.ts";
 import { edgeTtsSynthesizeStream, EdgeTtsError } from "./voice-providers/edge-tts.ts";
 import { stripVoiceExpressionTags } from "@astella/shared/voice-expression-tags";
+import { qwenVoiceForInstruction } from "@astella/shared/tts-voice-catalog";
 import { qwenTtsSynthesizeStreamForUser, QwenTtsError, warmQwenTtsConnection } from "./voice-providers/qwen-tts.ts";
 import { loadTtsEngineConfig } from "./voice-providers/tts-config.ts";
 import { guidanceVoiceProfile } from "./voice-providers/guidance-voice-profile.ts";
@@ -330,6 +331,8 @@ export async function voiceRoutes(app: FastifyInstance) {
      * 解出正文，否则流式这条就成了绕过校验的第二条口径。
      */
     let ttsText = text?.text ?? "";
+    /** 这一轮的说话风格指令（含方言），来自段事件；缺省才回落 config。 */
+    let ttsInstruction: string | undefined;
     if (reference) {
       const resolved = await resolveCompanionSegmentText(
         { workspaceId: req.session.workspaceId, userId: req.session.userId },
@@ -343,6 +346,15 @@ export async function voiceRoutes(app: FastifyInstance) {
       );
       if ("error" in resolved) return reply.code(resolved.statusCode).send(resolved.error);
       ttsText = resolved.text;
+      /**
+       * 沿用段事件带来的那一轮指令（2026-10-18）。
+       *
+       * 以前这条流式路直接拿 `cfg.instruction`，把 `resolved.instruction` 丢了。
+       * 于是同一句回复里，命中预热缓存的段带着方言（预热走的是
+       * `resolveSelectionForSynthesis` + 段指令），回退到流式现合成的段说普通话
+       * ——用户听到的就是"一会儿方言、一会儿普通话"。
+       */
+      ttsInstruction = resolved.instruction;
     }
     try {
       assertSafeTtsInput(ttsText, DEFAULT_VOICE_PROFILE);
@@ -351,6 +363,50 @@ export async function voiceRoutes(app: FastifyInstance) {
         error: "INVALID_REQUEST", code: "INVALID_REQUEST",
         message: "unsafe tts input",
       });
+    }
+    /**
+     * 预热命中（2026-10-18）：预热在段事件推给客户端**之前**就发起合成
+     * （见本文件的 `setCompanionSegmentWarmHook`）。整段那条 `/voice/tts` 一直会来取
+     * 这份缓存，流式这条以前不取——结果是同一段被合成两遍（预热跑一次、这里再流式
+     * 合成一次），而两条路共用同一条按用户串行的 qwen 队列，白跑的那次还会把流式
+     * 请求堵在身后。真窗口实测：每次两段回复都留下两条整段合成记录（1.0–3.4s）。
+     *
+     * 命中时回的是**已经完整的字节**：它比"边合成边播"更早可播，只是不再分块。
+     * 还在飞的时候 `takeWarmCompanionSegment` 会 join 同一个 promise——这正是
+     * "同一段只合成一次"的落点，绕过它另起一次流式合成等于把问题换个位置重演。
+     *
+     * 必须在 `resolveCompanionSegmentText` **之后**：缓存按 segmentId 存，先取缓存
+     * 就跳过了"这一段属于这个用户这一轮"的校验，猜中的 id 会把别人的音频读出来。
+     */
+    if (reference) {
+      const warmed = await takeWarmCompanionSegment(reference.segmentId);
+      if (warmed && warmed.statusCode === 200 && warmed.audio) {
+        // 与整段那条同口径：预热当时没人要，不算"字节交给了客户端"；现在真的来取了，
+        // 才补一条 `stage='synth'`，读数（耗时/引擎/字节数）从缓存带回来。
+        await recordCompanionTtsSynthOutcome({
+          ...scopeOfSession(req.session),
+          userId: req.session.userId,
+          ref: {
+            conversationId: reference.conversationId,
+            runId: reference.runId,
+            generation: reference.generation,
+            ordinal: reference.ordinal,
+            segmentId: reference.segmentId,
+          },
+          outcome: "ok",
+          durationMs: warmed.deferred?.durationMs ?? 0,
+          engine: warmed.deferred?.engine,
+          bytes: warmed.deferred?.bytes,
+        });
+        req.log.info(
+          { segmentId: reference.segmentId, ordinal: reference.ordinal, bytes: warmed.audio.byteLength },
+          "companion tts stream served from warm cache",
+        );
+        return reply
+          .type("audio/mpeg")
+          .header("Cache-Control", "no-store")
+          .send(Buffer.from(warmed.audio));
+      }
     }
     try {
       // 15b：TTS 引擎选择——请求显式 engine 优先，缺省用 config tts.engine（默认 qwen）。
@@ -371,6 +427,17 @@ export async function voiceRoutes(app: FastifyInstance) {
               productionAiGovernancePorts,
             );
             const spoken = call.prepareText(ttsText, "qwen");
+            /**
+             * 音色与指令按**这一轮的指令**解析，和预热/整段那条用同一套
+             * （2026-10-18）。以前这里固定 `cfg.voice`，方言轮不会换成会说该方言的
+             * 系统女声——而命中预热缓存的段是换过的，于是同一轮回复里口音来回跳。
+             */
+            const streamInstruction = ttsInstruction ?? cfg.instruction;
+            const streamVoice = qwenVoiceForInstruction(
+              cfg.voice,
+              streamInstruction,
+              cfg.model,
+            );
             // openStream：成功只代表拿到了上游连接。审计挂在流上，读到 EOF 才算成功，
             // 中途出错或被客户端打断都按真实结局记。
             const tracked = await call.openStream({ provider: "qwen", modelId: cfg.model }, async () => {
@@ -381,12 +448,12 @@ export async function voiceRoutes(app: FastifyInstance) {
                   workspaceId: cfg.workspaceId,
                   apiKey: process.env.DASHSCOPE_API_KEY ?? "",
                   model: cfg.model,
-                  // qwen 音色固定走 config（前端 voice 是 edge 音色，不混用）。
-                  voice: cfg.voice,
+                  voice: streamVoice,
                   format: cfg.format,
                   sampleRate: cfg.sampleRate,
                   // 15b 二期：指令控制（高质量声音描述，config tts.qwen.instruction）
-                  instruction: cfg.instruction,
+                  // 段事件带了这一轮的指令（含方言）就用它——见上面 `ttsInstruction`。
+                  instruction: streamInstruction,
                   signal: aborted.signal,
                 },
               );

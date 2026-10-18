@@ -580,9 +580,22 @@ async function runQueuedSpeech(args: {
     return entry ? { buffer: entry.buffer, startedAtMs: entry.startedAtMs } : null;
   };
   const prefetchUpcoming = (): void => {
+    /**
+     * 流式能接管的段**不要预取整段**（2026-10-18）。
+     *
+     * 两条路在服务端共用同一条按用户串行的 qwen 队列（`queueKey` 都是
+     * `workspaceId:userId`）。多预取一次整段，就等于把下一段的流式请求排在它身后：
+     * 用户听到的是"这一句念完、等一下、下一句才开口"——和单元内的断口一样是卡。
+     * 实测（真窗口探针 + `companion_tts_outcomes`）：每次两段回复都会留下两条
+     * 整段合成行，耗时 1.0–3.4s，而音频一个字都没用上。
+     *
+     * 只有没有流式能力的宿主（测试替身、旧主进程）才继续靠预取。
+     */
+    const streamAvailable = Boolean(args.host.playSegmentStream);
     for (const upcoming of queue.segments.slice(0, 2)) {
       if (prefetched.length >= 2) break;
       if (prefetched.some((entry) => entry.key === upcoming.key)) continue;
+      if (streamAvailable && upcoming.ref) continue;
       // startedAtMs 记在**发起合成**的那一刻，不是取用的那一刻：预取的段在队列里
       // 等着的时候等待时间也在走，而那正是"首字等了多久"的真相。
       const startedAtMs = Date.now();

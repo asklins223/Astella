@@ -150,9 +150,19 @@ test("预热命中不再合成一次：缓存不制造第二条审计", async ()
   // 预热的那一次合成已经在它自己那条链上记过了。客户端真来取时若在这里再建一次
   // 治理出口 / 再合成一次，就会造出"同一段语音被外发两次"的假账——而它一次都没发生。
   const source = readFileSync(join(import.meta.dirname, "..", "voice-routes.ts"), "utf8");
-  const warmBranch = source.slice(source.indexOf("const warmed = await takeWarmCompanionSegment("));
-  assert.ok(warmBranch.length > 0, "没找到预热命中的分支");
-  const warmHit = warmBranch.slice(0, warmBranch.indexOf("const selection = await resolveSelectionForSynthesis(session, req.log);"));
+  /**
+   * 定位必须锚在 `/voice/tts` **这一条**处理器上（2026-10-18）。
+   *
+   * 以前用 `indexOf("const warmed = await takeWarmCompanionSegment(")` 找第一次出现；
+   * 流式端点也接了预热缓存之后，第一次出现落在 `/voice/tts/stream` 里，切片会一路
+   * 扫过流式那段自己的 `createGovernedMediaCall`，把一条本来正确的代码判红。
+   */
+  const routeAt = source.indexOf('app.post("/voice/tts"');
+  assert.ok(routeAt > 0, "没找到 /voice/tts");
+  const route = source.slice(routeAt);
+  const warmAt = route.indexOf("const warmed = await takeWarmCompanionSegment(");
+  assert.ok(warmAt > 0, "没找到预热命中的分支");
+  const warmHit = route.slice(warmAt, route.indexOf("const selection = await resolveSelectionForSynthesis(session, req.log);"));
   assert.doesNotMatch(warmHit, /synthesizeTtsBytes\(/,
     "预热命中后又合成了一遍：同一段音频被外发两次，审计也会记两次");
   assert.doesNotMatch(warmHit, /createGovernedMediaCall\(/,
@@ -160,6 +170,36 @@ test("预热命中不再合成一次：缓存不制造第二条审计", async ()
   // 补记的是**送达/播放**那件领域事实（synth outcome），它与"模型被调用了几次"是两件事。
   assert.match(warmHit, /recordCompanionTtsSynthOutcome\(/,
     "预热命中时该补记领域 outcome，否则客户端真来取时这一段的引擎与耗时读数会丢");
+});
+
+test("流式端点命中预热缓存：不再二次合成、不建第二条治理出口", async () => {
+  /**
+   * 2026-10-18：预热在段事件推给客户端之前就把合成发出去了，而流式端点以前不取
+   * 这份缓存——同一段被合成两遍（预热一次、流式一次），两次又共用同一条按用户
+   * 串行的 qwen 队列，白跑的那次把流式请求堵在身后。
+   */
+  const source = readFileSync(join(import.meta.dirname, "..", "voice-routes.ts"), "utf8");
+  const streamAt = source.indexOf('app.post("/voice/tts/stream"');
+  assert.ok(streamAt > 0, "没找到 /voice/tts/stream");
+  const nextRoute = source.indexOf("app.post(", streamAt + 1);
+  const stream = source.slice(streamAt, nextRoute > 0 ? nextRoute : source.length);
+
+  const warmAt = stream.indexOf("takeWarmCompanionSegment(");
+  assert.ok(warmAt > 0, "流式端点没有取预热缓存：预热白跑，同一段会被合成两遍");
+  // 校验先行：缓存按 segmentId 存，先取缓存就跳过了"这一段属于这个用户这一轮"，
+  // 猜中的 id 会把别人的音频读出来。
+  const resolveAt = stream.indexOf("resolveCompanionSegmentText(");
+  assert.ok(resolveAt > 0, "流式端点没有解出段正文");
+  assert.ok(warmAt > resolveAt, "取预热缓存必须排在段引用校验之后，否则可越权读到别人的音频");
+
+  const warmHit = stream.slice(warmAt, stream.indexOf("if (engine === \"qwen\")", warmAt));
+  assert.ok(warmHit.length > 0, "预热命中分支的形状变了；先解释再改这条判据");
+  assert.doesNotMatch(warmHit, /qwenTtsSynthesizeStreamForUser\(/,
+    "命中缓存后又流式合成了一遍：同一段音频被外发两次，审计也会记两次");
+  assert.doesNotMatch(warmHit, /createGovernedMediaCall\(/,
+    "命中缓存时新建了治理出口：那一段音频没有新的外发，不该有第二条审计");
+  assert.match(warmHit, /recordCompanionTtsSynthOutcome\(/,
+    "命中缓存时应补记领域 outcome，否则这一段的引擎与耗时读数会丢");
 });
 
 test("模型调用与领域 outcome 是两件事：播放上报不建治理出口", async () => {

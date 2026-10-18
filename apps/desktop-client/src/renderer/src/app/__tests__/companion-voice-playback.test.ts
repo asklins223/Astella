@@ -689,6 +689,36 @@ describe("逐段播放结局上报", () => {
     expect(host.reports[0].durationMs).toBeGreaterThanOrEqual(0);
   });
 
+  /**
+   * 流式能接管时**不许再预取整段**（2026-10-18）。
+   *
+   * 两条路在服务端共用同一条按用户串行的 qwen 队列：多预取一次整段，下一段的
+   * 流式请求就排在它身后，用户听到的是"这句念完、等一下、下句才开口"。
+   * 真窗口实测每次两段回复都会多出整段合成行（1.0–3.4s），音频一个字没用上。
+   */
+  it("流式可用时，带引用的段不再发起整段合成预取", async () => {
+    const host = new FakeHost();
+    // 宿主声明自己有流式通道，并且流式立刻"念完"这一段。
+    const streamed: number[] = [];
+    const streamHost: CompanionVoiceHost = Object.assign(host, {
+      playSegmentStream: async (ref: CompanionVoiceSpeakSegmentRequestV2) => {
+        streamed.push(ref.ordinal);
+        return true;
+      },
+    });
+    setCompanionVoiceHost(streamHost);
+    const session = beginCompanionSpeechLine({ strictSegments: true });
+
+    session.feedSegment(refSegment(1, "第一句。"));
+    session.feedSegment(refSegment(2, "第二句。"));
+    session.finish("");
+    await waitUntil(() => streamed.length === 2);
+
+    // 整段合成一次都不该发：两段都由流式念完。
+    expect(host.synthesized).toEqual([]);
+    expect(host.played).toEqual([]);
+  });
+
   it("等到超时的段上报 deadline，而不是悄悄丢掉", async () => {
     vi.useFakeTimers();
     try {
