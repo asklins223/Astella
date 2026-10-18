@@ -3081,6 +3081,13 @@
       "when": 1792215341676,
       "tag": "0443_companion_release_router_samples",
       "breakpoints": true
+    },
+    {
+      "idx": 440,
+      "version": "7",
+      "when": 1792300000000,
+      "tag": "0444_companion_gate_corpus",
+      "breakpoints": true
     }
   ]
 }

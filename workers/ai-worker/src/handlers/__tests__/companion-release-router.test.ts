@@ -71,7 +71,6 @@ test("状态门：她的追问收尾、短句、指代一律弃权", () => {
     text: "那我们今天就轻松一点，先说说哪里最累？".slice(0, 5),
     recentMessages: [{ role: "assistant", text: "要不要接着往下讲？" }],
   }).pendingOffer, true);
-  assert.equal(companionReleaseGates({ text: "先暂停一下" }).short, true);
   assert.equal(companionReleaseGates({ text: "那篇笔记里刚才那个公式再讲一遍" }).anaphora, true);
   // 2026-10-17 生产实测：「接下来」是话轮连接词，不指向任何具体对象。把它当指代，
   // 「我接下来该先做什么」就会整轮弃权、白等一次 4.5 秒的分类。
@@ -84,7 +83,7 @@ test("状态门：她的追问收尾、短句、指代一律弃权", () => {
     text: "今天好累，想随便聊聊最近的事",
     recentMessages: [{ role: "assistant", text: "好呀，我在呢。" }],
   });
-  assert.deepEqual(open, { pendingOffer: false, anaphora: false, short: false, learningTask: false });
+  assert.deepEqual(open, { pendingOffer: false, anaphora: false, learningTask: false });
 });
 
 test("门关着或索引没热时不调用 embedding", async () => {
@@ -191,7 +190,7 @@ test("放行闸合成：L1 说这一版可放就立即开；不适用时只等 L
   const releaseConversation = Promise.resolve<never>({
     decision: "release", reason: "released", intentGuess: "conversation",
     safeProbability: 0.95, toolNoneProbability: 0.95, topSimilarity: 0.97, samples: 12,
-    gates: { pendingOffer: false, anaphora: false, short: false, learningTask: false },
+    gates: { pendingOffer: false, anaphora: false, learningTask: false },
   } as never);
   let fallbackResolved = false;
   const fallback = (): Promise<boolean> => { fallbackResolved = true; return new Promise<boolean>(() => undefined); };
@@ -208,7 +207,7 @@ test("放行闸合成：L1 说这一版可放就立即开；不适用时只等 L
   const waitVerdict = Promise.resolve<never>({
     decision: "wait", reason: "probability", intentGuess: null,
     safeProbability: 0.5, toolNoneProbability: 0.5, topSimilarity: 0.95, samples: 12,
-    gates: { pendingOffer: false, anaphora: false, short: false, learningTask: false },
+    gates: { pendingOffer: false, anaphora: false, learningTask: false },
   } as never);
   const keepByL2 = companionReleaseGateFor(waitVerdict, "question", async () => true);
   assert.equal(await keepByL2(), true);
@@ -303,4 +302,41 @@ test("remember 的持久化钩子：只落规范化原话 + 标签 + 向量", as
   });
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.deepEqual(writes, [{ text: "今天 好累", intent: "conversation", toolUse: "none", embedding: [...SAFE_VEC] }]);
+});
+
+test("共享去标识语料能独立支撑索引：新账号没有自己的历史也能放行", async () => {
+  resetCompanionReleaseRouterForTests();
+  resetCompanionReleaseSeedingForTests();
+  // 账号自己一条样本都没有；共享语料给足 8 条安全样本。
+  const shared = Array.from({ length: 8 }, (_, index) => ({ textSha256: `${index}`.padStart(64, "a"), intent: "conversation", toolUse: "none", embedding: SAFE_VEC }));
+  await seedCompanionReleaseIndex({
+    scopeKey: "fresh-account", workspaceId: "w", userId: "u",
+    embed: async () => QUERY_VEC, load: async () => [], loadStored: async () => [],
+    loadShared: async () => shared,
+    thresholds: thresholds(),
+  });
+  const verdict = await evaluateCompanionRelease({
+    scopeKey: "fresh-account", text: "今天好累，想随便聊聊最近的事",
+    embed: async () => QUERY_VEC, thresholds: thresholds(),
+  });
+  assert.equal(verdict.decision, "release", "共享语料把冷启动变成了可放行");
+  assert.ok((verdict.samples ?? 0) >= 8);
+
+  // 共享语料里有 act 样本时，同样的输入不能放行——概率门要真的起作用。
+  resetCompanionReleaseRouterForTests();
+  resetCompanionReleaseSeedingForTests();
+  const mixed = [
+    ...Array.from({ length: 4 }, (_, index) => ({ textSha256: `safe${index}`.padEnd(64, "b"), intent: "conversation", toolUse: "none", embedding: QUERY_VEC })),
+    ...Array.from({ length: 4 }, (_, index) => ({ textSha256: `act${index}`.padEnd(64, "c"), intent: "task", toolUse: "act", embedding: QUERY_VEC })),
+  ];
+  await seedCompanionReleaseIndex({
+    scopeKey: "fresh-account-mixed", workspaceId: "w", userId: "u",
+    embed: async () => QUERY_VEC, load: async () => [], loadStored: async () => [],
+    loadShared: async () => mixed, thresholds: thresholds(),
+  });
+  const blocked = await evaluateCompanionRelease({
+    scopeKey: "fresh-account-mixed", text: "今天好累，想随便聊聊最近的事",
+    embed: async () => QUERY_VEC, thresholds: thresholds(),
+  });
+  assert.equal(blocked.decision, "wait", "近邻对半时不得放行");
 });

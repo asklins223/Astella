@@ -470,3 +470,25 @@ export const companionReleaseRouterSamples = pgTable(
       .on(t.workspaceId, t.userId, sql`${t.updatedAt} DESC`),
   }),
 );
+
+// ─── 7.9 companion_gate_corpus（迁移 0444）────────────────────────────────
+// 去标识的意图语料：只存摘要、标签与向量，**不与任何账号绑定**。
+// 用途只有一个——"这句话要不要读用户自己的东西"这一判定的样本底座。
+
+export const companionGateCorpus = pgTable(
+  "companion_gate_corpus",
+  {
+    id: uuid("id").primaryKey(),
+    /** 规范化原话的 sha256；与 (intent, tool_use) 一起构成去重键。 */
+    textSha256: char("text_sha256", { length: 64 }).notNull(),
+    intent: text("intent").notNull(),
+    toolUse: text("tool_use").notNull(),
+    /** synthetic = 生成后由权威解释器打标；observed = 用户同意后投喂的真实轮次副本。 */
+    source: text("source").notNull(),
+    embedding: jsonb("embedding").$type<number[]>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    keyUnique: uniqueIndex("companion_gate_corpus_key_idx").on(t.textSha256, t.intent, t.toolUse),
+  }),
+);

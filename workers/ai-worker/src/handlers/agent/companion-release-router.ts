@@ -55,10 +55,23 @@ export interface CompanionReleaseThresholds {
 }
 
 export const COMPANION_RELEASE_THRESHOLD_DEFAULTS: CompanionReleaseThresholds = Object.freeze({
-  safeProbability: 0.85,
+  /**
+   * 安全概率下限（2026-10-18 按共享语料池重标定）。
+   *
+   * 手定的 0.85 在真实 259 轮上实测：整套门只覆盖 14.3%，而**放出去的 18.9% 是错的**，
+   * 其中 5 条落在硬错面（act/task/mixed）。共享去标识语料进池后（AUC 0.882→0.944），
+   * 同一套分数扫阈值的表是：
+   *
+   *   τ_safe 0.70 → 覆盖 29.7%，硬错 6；0.80 → 27.8%，硬错 4；
+   *   **0.90 → 19.7%，硬错 0，软错 1**（占全部轮次）。
+   *
+   * 取 0.90：宁可少放（每轮多等一次分类器），也不能在"该写入"的轮次上先说出来。
+   * 软错面（read/uncertain）1 条属降级不属作废，符合"一次判错只能降级"的裁决。
+   */
+  safeProbability: 0.9,
   toolNoneProbability: 0.9,
   /**
-   * OOD 近邻下限（2026-10-17 按真实分布重设）。
+   * OOD 近邻下限（2026-10-18 按真实分布重设）。
    *
    * 原来是 0.90，按「同一句话换个说法算同一类」的直觉定的。实测不成立：
    * BGE-M3 上两条自然问句（"我接下来该先做什么" vs "我最近学了多久"）余弦只有
@@ -68,8 +81,11 @@ export const COMPANION_RELEASE_THRESHOLD_DEFAULTS: CompanionReleaseThresholds = 
    *
    * 0.62 取在"真实同义改写"与"毫不相干"之间：实测同义改写 0.75–0.88、
    * 无关问句 0.50–0.60。仍然配 `safeProbability` 与 `toolNoneProbability`
-   * 两道概率门，以及 `anaphora/pendingOffer/short` 三道状态门——近邻只是
+   * 两道概率门，以及 `anaphora/pendingOffer` 两道状态门——近邻只是
    * "见没见过这类说法"，不是"这句话安全"。
+   *
+   * 2026-10-18 复测：0.55 与 0.62 在零硬错那一档给出同样的覆盖（19.7%），
+   * 说明这一档已经不是相似度在挡；保留 0.62 作为"确实见过同类说法"的最低证据。
    */
   topSimilarity: 0.62,
   neighbors: 8,
@@ -123,7 +139,6 @@ const OFFER_TAIL_PATTERN = /(?:[？?]\s*$)|(?:(?:吗|好不好|要不要|需要�
 export interface CompanionReleaseGates {
   readonly pendingOffer: boolean;
   readonly anaphora: boolean;
-  readonly short: boolean;
   /** 进行中/暂停的学习任务或正式作答：这类轮次不该由 L1 放行。 */
   readonly learningTask: boolean;
 }
@@ -141,6 +156,12 @@ export interface CompanionReleaseGateInput {
  * 影子期只按"上一句是不是她的追问/邀请"+"本轮短/带指代"这两个可判的事实弃权，
  * 其余交还 L2。等影子曲线出来再决定要不要把学习任务态也接进来。
  */
+/**
+ * 短句（≤8 字）以前是第四道门，一律弃权。2026-10-18 去掉：
+ * 真实 259 轮里 ≤8 字有 79 条、56 条本就安全，而共享去标识语料进索引后，
+ * 短句的近邻安全概率 p90=1.0，τ=0.85 能放行 23/79 且硬错面 0、软错面 0。
+ * 短句真正的风险是"她上一句在等你接话"，那条仍由 pendingOffer 与 anaphora 挡住。
+ */
 export function companionReleaseGates(input: CompanionReleaseGateInput): CompanionReleaseGates {
   const text = input.text.trim();
   const lastAssistant = [...(input.recentMessages ?? [])].reverse().find((message) => message.role === "assistant");
@@ -148,8 +169,6 @@ export function companionReleaseGates(input: CompanionReleaseGateInput): Compani
   return {
     pendingOffer,
     anaphora: ANAPHORA_PATTERN.test(text),
-    // 8 字以内的话（"嗯""好呀""先暂停一下"）单看文本没有判别力，交还 L2。
-    short: text.length <= 8,
     learningTask: input.activeLearningTask === true,
   };
 }
@@ -262,7 +281,7 @@ export async function evaluateCompanionRelease(
     decision: "wait", reason, intentGuess: null,
     safeProbability: null, toolNoneProbability: null, topSimilarity: null, samples, gates,
   });
-  if (gates.pendingOffer || gates.anaphora || gates.short || gates.learningTask) {
+  if (gates.pendingOffer || gates.anaphora || gates.learningTask) {
     return wait("gated", scopeIndex(input.scopeKey).samples.length);
   }
   const index = scopeIndex(input.scopeKey);
@@ -389,8 +408,10 @@ export function createCompanionReleaseRouterPort(args: {
 }): CompanionReleaseRouterPort {
   let verdict: Promise<CompanionReleaseVerdict | null> | null = null;
   if (args.workspaceId && args.userId) {
+    // 生产路径：共享去标识语料一起打底，并按模型 id 每进程只读一次。
     void seedCompanionReleaseIndex({
       scopeKey: args.scopeKey, workspaceId: args.workspaceId, userId: args.userId, embed: args.embed,
+      withSharedCorpus: true,
     }).catch(() => undefined);
   }
   return {
@@ -457,6 +478,14 @@ export async function seedCompanionReleaseIndex(args: {
   readonly load?: () => Promise<CompanionReleaseSeedRow[]>;
   /** 测试注入：读持久样本（缺省查库）。 */
   readonly loadStored?: () => Promise<CompanionReleaseStoredSample[]>;
+  /** 测试注入：读共享语料（缺省读全局表）。 */
+  readonly loadShared?: () => Promise<CompanionGateCorpusSample[]>;
+  /**
+   * 是否装共享语料。缺省 `false`：只有真正要放行的路径才去读它。
+   * 这样单测里的 `seedCompanionReleaseIndex` 不会因为读全局表而拉起数据库连接池
+   * （那会让测试进程挂着不退）。
+   */
+  readonly withSharedCorpus?: boolean;
 }): Promise<void> {
   if (seededScopes.has(args.scopeKey)) return;
   const thresholds = args.thresholds ?? resolveCompanionReleaseThresholds();
@@ -464,6 +493,24 @@ export async function seedCompanionReleaseIndex(args: {
   if (index.samples.length >= thresholds.minSamples) { seededScopes.add(args.scopeKey); return; }
   seededScopes.add(args.scopeKey);
   try {
+    /**
+     * 共享语料先装：它让"第一次说话的账号"也有近邻可查。
+     * 放前、账号自己的样本放后——`indexStoredCompanionReleaseSamples` 超上限时从头部
+     * `shift()`，于是账号自己的样本天然排在更靠后、更晚被挤掉的位置。
+     */
+    const wantShared = args.withSharedCorpus === true || args.loadShared !== undefined;
+    const shared = wantShared
+      ? args.loadShared
+        ? await args.loadShared().catch(() => [])
+        : await loadCompanionGateCorpus().catch(() => [])
+      : [];
+    for (const row of shared) {
+      if (row.embedding.length === 0) continue;
+      const key = `shared:${row.textSha256}:${row.intent}:${row.toolUse}`;
+      if (index.seen.has(key)) continue;
+      index.seen.add(key);
+      index.samples.push({ vec: row.embedding, intent: row.intent, toolUse: row.toolUse });
+    }
     // 先装"已带向量"的持久样本（零 embedding 成本），不够再拿历史轮次补。
     const stored = args.loadStored
       ? await args.loadStored()
@@ -501,6 +548,51 @@ export interface CompanionReleaseStoredSample {
   readonly intent: string;
   readonly toolUse: string;
   readonly embedding: readonly number[];
+}
+
+/**
+ * 共享去标识语料的样本（迁移 0444）：只带向量与标签，不与账号绑定。
+ * 用它给每个账号的索引打底——否则新装用户 0 条样本，L1 永远冷启动、永远不放行。
+ */
+export interface CompanionGateCorpusSample {
+  readonly textSha256: string;
+  readonly intent: string;
+  readonly toolUse: string;
+  readonly embedding: readonly number[];
+}
+
+const sharedCorpusLoads = new Map<string, Promise<CompanionGateCorpusSample[]>>();
+
+/**
+ * 共享语料**每进程只读一次**（按 embedding 模型 id 分缓存）。
+ * 它不随账号变化，按账号缓存只会把同一份几百行重复拉 N 遍。
+ */
+export function loadCompanionGateCorpusOnce(modelKey: string): Promise<CompanionGateCorpusSample[]> {
+  const cached = sharedCorpusLoads.get(modelKey);
+  if (cached) return cached;
+  const pending = loadCompanionGateCorpus().catch(() => [] as CompanionGateCorpusSample[]);
+  sharedCorpusLoads.set(modelKey, pending);
+  return pending;
+}
+
+/** 测试用：清空共享语料缓存。 */
+export function resetCompanionGateCorpusForTests(): void {
+  sharedCorpusLoads.clear();
+}
+
+export async function loadCompanionGateCorpus(limit = 2_000): Promise<CompanionGateCorpusSample[]> {
+  const [{ sql }, { db }] = await Promise.all([import("drizzle-orm"), import("../../db.ts")]);
+  // 语料是**全局表**（无 workspace 绑定），所以不走带作用域的事务。
+  const rows = await db.execute<{ text_sha256: string; intent: string; tool_use: string; embedding: unknown }>(sql`
+    SELECT text_sha256, intent, tool_use, embedding
+    FROM public.companion_gate_corpus
+    ORDER BY created_at DESC
+    LIMIT ${limit}
+  `);
+  return rows
+    .map((row) => ({ textSha256: String(row.text_sha256), intent: String(row.intent),
+      toolUse: String(row.tool_use), embedding: asVector(row.embedding) ?? [] }))
+    .filter((row) => row.embedding.length > 0);
 }
 
 /** jsonb → number[]：pg 驱动可能给数组也可能给字符串，两种都认。 */
