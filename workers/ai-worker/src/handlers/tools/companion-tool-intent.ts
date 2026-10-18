@@ -101,6 +101,10 @@ export function companionOfferCandidates(messages: readonly ChatMessage[]): numb
  * 整份 description：2026-10-11 实测这份载荷 4,480 → 1,456 token，每一轮都付。
  * 同批 30 条对照里，编造面外名字 0 条、写候选 0.37→0.43 且从不重复，
  * 「声称 act 却没点名任何工具」由 2 条降到 0（见方案 52 §4.5）。
+ *
+ * 2026-10-18 又试了"连 label 也去掉、只留 name"：载荷 8,800→4,393 字符、
+ * p50 3,174→2,973ms（网关抖动下 p90 不可比），**放行判定 20/20 完全一致**。
+ * 只省 200ms，不动了——分类器的成本在网关排队，不在载荷。
  */
 function companionIntentCapabilityEntry(name: string): Record<string, unknown> {
   const definition = getCompanionAgentTool(name);
