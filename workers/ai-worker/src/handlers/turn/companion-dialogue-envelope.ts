@@ -27,6 +27,21 @@ const ENVELOPE_STREAM_KEYS = ["response", "text", "content", "message", "reply",
  */
 const ENVELOPE_KEY_PATTERN = new RegExp(`^\\s*\\[?\\s*\\{\\s*"(${ENVELOPE_STREAM_KEYS.join("|")})"\\s*:\\s*"`);
 
+/** A closing quote only ends the incremental field; the complete provider
+ * result must still be valid JSON containing exactly that decoded body. */
+export function companionEnvelopeMatchesBody(wire: string, decoded: string): boolean {
+  const match = ENVELOPE_KEY_PATTERN.exec(wire);
+  if (!match) return false;
+  try {
+    const parsed: unknown = JSON.parse(wire);
+    const object: unknown = Array.isArray(parsed) ? parsed[0] : parsed;
+    return object !== null && typeof object === "object"
+      && (object as Record<string, unknown>)[match[1]!] === decoded;
+  } catch {
+    return false;
+  }
+}
+
 /** 信封头（键 + 冒号 + 开引号）的最大长度：超出说明不是我们认识的形状。 */
 const ENVELOPE_HEAD_MAX_CHARS = 512;
 

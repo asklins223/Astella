@@ -3,9 +3,9 @@ import type { AIProvider } from "../../lib/ai-provider.ts";
 import { runWithAbortBudget } from "../../lib/handler-timeout.ts";
 import { logger } from "../../lib/logger.ts";
 import { buildAgentTurnMessages } from "../../lib/providers/json-response.ts";
-import { createCompanionEnvelopeDecoder } from "../turn/companion-dialogue-envelope.ts";
+import { companionEnvelopeMatchesBody, createCompanionEnvelopeDecoder } from "../turn/companion-dialogue-envelope.ts";
 import { CompanionStreamStoppedError } from "../turn/companion-dialogue-stream.ts";
-import { ProviderRequestError } from "../../lib/provider-request-error.ts";
+import { ProviderRequestError, ProviderStreamError } from "../../lib/provider-request-error.ts";
 import { AgentOutputError, isNonRetryableError } from "../../lib/non-retryable-errors.ts";
 import { stripVoiceExpressionTags, withholdPartialVoiceExpressionTag } from "@astella/shared/voice-expression-tags";
 import { containsCompanionToolProtocol,
@@ -393,6 +393,12 @@ export async function runStreamingAgentStep(args: {
     // 前缀，下游 `reconcileStreamedText` 要求"最终正文以已下发内容开头"，
     // 返回原始 JSON 会把这个不变量交给 unwrap 的运气去赌。
     const decoded = envelopeDecoder.text();
+    if (decoded.length > 0 && !companionEnvelopeMatchesBody(content, decoded)) {
+      // An unescaped story quote used to end decoding early while the rest of
+      // the answer disappeared. Preserve any delivered prefix as interrupted
+      // output; never commit that prefix as a successful complete reply.
+      throw new ProviderStreamError(args.provider.id, "stream_content_mismatch");
+    }
     if (invalidToolProtocol || containsCompanionToolProtocol(decoded.length > 0 ? decoded : content))
       throw new CompanionToolOutputRepairError(publishedText, draftText || content);
     return {

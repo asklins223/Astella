@@ -497,3 +497,83 @@ it("two minutes of silent SSE stay below the shared read quota and still recover
   await act(async () => { expect(await sending).toBe(true); });
   expect(chat.liveReply?.text).toBe("流丢失后取回的真实终答。");
 });
+
+it("a failed history read after assistant.final keeps waiting for the persisted answer", async () => {
+  cleanup(); vi.useFakeTimers();
+  render(<CompanionChatProvider><Capture /></CompanionChatProvider>);
+  await act(async () => { chat.setMode("history"); });
+  let sending!: Promise<boolean>;
+  await act(async () => { sending = chat.send({ text: "把这个故事完整讲完" }); });
+  listMessages.mockRejectedValueOnce(new Error("temporary history read failure"));
+  emit("assistant.delta", { appendFrom: 0, textDelta: "小狐狸来到河边。" });
+  emit("assistant.final", { messageId: id(9) });
+  emit("character.cue");
+  await act(async () => { await vi.advanceTimersByTimeAsync(250); });
+  expect(chat.phase).toBe("sending");
+  expect(chat.draft?.text).toBe("小狐狸来到河边。");
+  items = [{ ...userMessage(id(5)), id: id(9), role: "assistant", runId: id(6), seq: 2,
+    blocks: [{ type: "text", text: "小狐狸来到河边，最后和乌龟一起平安回家。" }] }];
+  listRunNodes.mockResolvedValue(ok({ items: [], runs: [{ runId: id(6), status: "succeeded", assistantMessageId: id(9) }] }));
+  await act(async () => { await vi.advanceTimersByTimeAsync(6_000); expect(await sending).toBe(true); });
+  expect(chat.liveReply?.text).toBe("小狐狸来到河边，最后和乌龟一起平安回家。");
+});
+
+it("polling rechecks history after observing success instead of declaring a missed answer silent", async () => {
+  cleanup(); vi.useFakeTimers();
+  render(<CompanionChatProvider><Capture /></CompanionChatProvider>);
+  await act(async () => { chat.setMode("history"); });
+  let sending!: Promise<boolean>;
+  await act(async () => { sending = chat.send({ text: "继续讲故事" }); });
+  let historyReads = 0;
+  listMessages.mockImplementation(async () => {
+    const snapshot = page();
+    if (++historyReads === 3) {
+      // The reply commits after the third history snapshot, before status.
+      items = [{ ...userMessage(id(5)), id: id(9), role: "assistant", runId: id(6), seq: 2,
+        blocks: [{ type: "text", text: "这是刚刚提交的完整故事。" }] }];
+    }
+    return snapshot;
+  });
+  listRunNodes.mockResolvedValue(ok({ items: [], runs: [{ runId: id(6), status: "succeeded", assistantMessageId: id(9) }] }));
+  await act(async () => { await vi.advanceTimersByTimeAsync(15_000); expect(await sending).toBe(true); });
+  expect(chat.liveReply?.text).toBe("这是刚刚提交的完整故事。");
+});
+
+it.each(["completed stream", "unavailable stream"])("stopping while recovering a %s settles the send", async transport => {
+  cleanup(); vi.useFakeTimers();
+  if (transport === "unavailable stream") {
+    vi.mocked(window.astella.subscriptions.subscribe).mockRejectedValueOnce(new Error("stream unavailable"));
+  }
+  render(<CompanionChatProvider><Capture /></CompanionChatProvider>);
+  await act(async () => { chat.setMode("history"); });
+  let sending!: Promise<boolean>;
+  await act(async () => { sending = chat.send({ text: "请接着讲" }); });
+  if (transport === "completed stream") {
+    listMessages.mockRejectedValueOnce(new Error("temporary history read failure"));
+    emit("assistant.final", { messageId: id(9) }); emit("character.cue");
+  }
+  await act(async () => { await vi.advanceTimersByTimeAsync(250); });
+  expect(chat.phase).toBe("sending");
+  let settled = false;
+  void sending.then(() => { settled = true; });
+  await act(async () => { expect(await chat.cancel()).toBe(true); });
+  expect(settled).toBe(true);
+  expect(chat.phase).toBe("ready");
+  expect(chat.failure).toBeNull();
+});
+
+it("an older history response cannot erase a newly completed reply", async () => {
+  await openHistory();
+  await act(async () => chat.setMode("conversation"));
+  const stalePage = page();
+  const oldRead = deferred<ReturnType<typeof page>>();
+  listMessages.mockReturnValueOnce(oldRead.promise);
+  await openHistory();
+  const { sending } = await startSend();
+  addReply();
+  await act(async () => { expect(await sending).toBe(true); });
+  expect(chat.messages.some(message => message.id === id(9))).toBe(true);
+  await act(async () => { oldRead.resolve(stalePage); });
+  expect(chat.messages.some(message => message.id === id(9))).toBe(true);
+  expect(chat.liveReply?.text).toBe("蓝光更容易被空气分子散射。");
+});

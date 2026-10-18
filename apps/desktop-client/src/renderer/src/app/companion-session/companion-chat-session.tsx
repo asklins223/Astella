@@ -402,7 +402,7 @@ export interface CompanionChatSession {
 
 /** SSE 认领回合的结果（`failed` 带错误码，用于区分"缺同意"这类可引导的失败）。 */
 type CompanionReplyStreamOutcome =
-  | { kind: "final" }
+  | { kind: "final"; silent?: boolean }
   | { kind: "unavailable" }
   | { kind: "failed"; code: string | null; message: string }
   /** 用户按了停止（`turn.cancelled` reason='user'）。**不是失败**，不提示重试。 */
@@ -530,6 +530,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
   const historyRecentOldestSeqRef = useRef<number | null>(null);
   const historyBaselineReadyRef = useRef(false);
   const recentMessagesRef = useRef<CompanionMessageV1[]>([]);
+  const messageRefreshOrderRef = useRef({ issued: 0, committed: 0 });
   const historyLoadingRef = useRef(false);
   const historyLoadTokenRef = useRef(0);
   const historyAllRef = useRef<{ scopeRevision: number; revision: number; items: CompanionMessageV1[] } | null>(null);
@@ -791,6 +792,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
 
   const refreshMessages = useCallback(async (conversationId: string, epoch: number) => {
     const scopeRevision = useRoomStore.getState().workspaceScopeRevision;
+    const readOrder = ++messageRefreshOrderRef.current.issued;
     const result = unwrapGatewayResult(await window.astella.companion.chat.listMessages({
       meta: createRequestMeta(epoch),
       request: { version: 1, conversationId, limit: 50 },
@@ -798,6 +800,10 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     if (useRoomStore.getState().workspaceScopeRevision !== scopeRevision || conversationRef.current?.id !== conversationId) {
       throw new Error("工作空间已切换，请在当前空间重新读取对话。");
     }
+    // Reopening history and reply recovery may read concurrently. A delayed
+    // older snapshot must not erase an answer already fetched by a newer read.
+    if (readOrder < messageRefreshOrderRef.current.committed) return recentMessagesRef.current;
+    messageRefreshOrderRef.current.committed = readOrder;
     const changed = !historyBaselineReadyRef.current
       || JSON.stringify(result.items) !== JSON.stringify(recentMessagesRef.current);
     if (changed) {
@@ -1118,7 +1124,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     conversationId: string,
     epoch: number,
     runId: string,
-  ): Promise<CompanionReplyWaitOutcome | null> => {
+  ): Promise<CompanionReplyWaitOutcome | { kind: "succeeded"; messageId: string | null } | null> => {
     const result = unwrapGatewayResult(await window.astella.companion.chat.listRunNodes({
       meta: createRequestMeta(epoch),
       request: { version: 1, conversationId },
@@ -1130,7 +1136,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
       return { kind: "failed", code: null, message: companionReplyFailureMessage(null, false) };
     }
     if (run.status === "cancelled") return { kind: "cancelled" };
-    if (run.status === "succeeded") return { kind: "silent" };
+    if (run.status === "succeeded") return { kind: "succeeded", messageId: run.assistantMessageId };
     return null;
   }, []);
 
@@ -1191,14 +1197,26 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
         }
         const items = await refreshMessages(args.conversationId, args.epoch);
         if (cancelled) return true;
-        const match = items.filter((item) => item.role === "assistant" && item.runId === args.runId && item.kind !== "action").at(-1);
+        let match = items.filter((item) => item.role === "assistant" && item.runId === args.runId && item.kind !== "action").at(-1);
         ticks += 1;
         if (match || ticks % REPLY_RUN_STATUS_EVERY_N_TICKS === 0) {
           const terminal = await readRunTerminal(args.conversationId, args.epoch, args.runId);
           if (cancelled) return true;
+          if (terminal?.kind === "succeeded") {
+            // The final transaction can commit between the history and status
+            // reads. Only a read after that success can establish silence.
+            if (!match) {
+              const committed = await refreshMessages(args.conversationId, args.epoch);
+              if (cancelled) return true;
+              match = committed.filter(item => item.role === "assistant" && item.runId === args.runId && item.kind !== "action").at(-1);
+            }
+            if (match) resolve({ kind: "reply", message: match });
+            else if (terminal.messageId === null) resolve({ kind: "silent" });
+            else return false;
+            return true;
+          }
           if (terminal) {
-            resolve(match && terminal.kind === "silent" ? { kind: "reply", message: match }
-              : match && terminal.kind === "cancelled" ? { kind: "cancelled", text: companionMessageText(match) } : terminal);
+            resolve(match && terminal.kind === "cancelled" ? { kind: "cancelled", text: companionMessageText(match) } : terminal);
             return true;
           }
         }
@@ -1569,7 +1587,9 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
             }
             return;
           }
-          if (streamed.eventType === "turn.completed") { settle({ kind: "final" }); return; }
+          if (streamed.eventType === "turn.completed") {
+            settle({ kind: "final", silent: (streamed.payload as { silent?: unknown }).silent === true }); return;
+          }
           if (streamed.eventType === "assistant.final") {
             finalSeen = true;
             const payload = streamed.payload as { messageId?: unknown };
@@ -1673,7 +1693,10 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
         // 拿不到（读取抖动）也不能让气泡停在"想一想"——回给兜底赛道继续等。
         const items = await refreshMessages(args.conversationId, args.epoch).catch(() => null);
         const match = items?.filter((item) => item.role === "assistant" && item.runId === args.runId && item.kind !== "action").at(-1) ?? null;
-        return match ? { kind: "reply", message: match } : { kind: "silent" };
+        if (match) return { kind: "reply", message: match };
+        if (winner.outcome.silent === true) return { kind: "silent" };
+        backstop.accelerate();
+        return await Promise.race([backstop.promise, stopped]);
       }
       if (winner.outcome.kind === "failed") {
         return { kind: "failed", code: winner.outcome.code, message: winner.outcome.message };
@@ -1684,7 +1707,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
       }
       if (winner.outcome.kind === "unavailable") {
         // 订阅不可用（老 API / 网关拒绝）：交给轮询等完剩余时间。
-        return await backstop.promise;
+        return await Promise.race([backstop.promise, stopped]);
       }
       return { kind: "timeout" };
     } finally {
