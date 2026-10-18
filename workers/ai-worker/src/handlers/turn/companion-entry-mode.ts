@@ -11,7 +11,10 @@ import { runCompanionHybridEntry, companionHybridReplyInterpretation, type Compa
 export type CompanionEntryMode = 'classified' | 'direct_fast' | 'direct_thinking' | 'hybrid';
 export const usesCompanionDirectControls = (mode: CompanionEntryMode) => mode === 'direct_fast' || mode === 'direct_thinking';
 export const DIRECT_ENTRY_TOOLS: ReadonlySet<string> = new Set(COMPANION_DIRECT_ENTRY_TOOL_NAMES);
-/** Opt-in until the request experiment and integrated behavior checks pass. */
+/**
+ * 2026-10-18 用户裁决：hybrid 为默认入口。未知取值仍退回 classified——
+ * 配错一个值不该把整条链路切成未验证的入口。
+ */
 export function resolveCompanionEntryMode(raw = process.env.COMPANION_AGENT_ENTRY_MODE): CompanionEntryMode {
     if (raw === 'direct_fast' || raw === 'direct_thinking' || raw === 'hybrid')
         return raw;

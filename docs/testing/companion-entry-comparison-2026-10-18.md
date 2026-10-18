@@ -1,6 +1,6 @@
 # Companion entry comparison — 2026-10-18
 
-The three entry paths are implemented, but the experiment does **not** justify an unconditional replacement of the classified default. Fast native tool choice omitted required note reads and fabricated their contents. Always-on reasoning reduced request count but still produced a wrong logical answer, an empty response and an invalid tool protocol. `COMPANION_AGENT_ENTRY_MODE=classified` remains the current implementation default; this is not evidence that every conversational turn should wait for classification.
+The three entry paths are implemented, but the experiment does **not** justify an unconditional replacement of the classified default. Fast native tool choice omitted required note reads and fabricated their contents. Always-on reasoning reduced request count but still produced a wrong logical answer, an empty response and an invalid tool protocol. `COMPANION_AGENT_ENTRY_MODE=hybrid` became the default on 2026-10-18 by user decision, after the hybrid entry passed the note-prefetch and write verification below; `classified` remains the fallback and an unknown value still resolves to it.
 
 ## Interpretation correction: conversational latency
 
@@ -16,7 +16,7 @@ Four observations per arm do not establish stable speed or quality. Direct fast 
 
 Direct paths use an explicit unclassified host placeholder rather than pretending the model already decided `none`. They preserve original history and retain existing execution checks. Native `companion_configure_turn` applies current voice settings, persists an explicitly requested account dialect through the existing preference writer, and can narrow time-based wakeup constraints. Its source quote must occur in the current user message. These account voice controls retain the prior interpreter's preference semantics and do not authorize note edits or goal execution.
 
-The direct paths are experimental: execution permissions do not independently detect every omitted tool or every unsupported factual assertion. This limitation was reproduced in a real database turn and is why the default remains classified.
+The direct paths are experimental: execution permissions do not independently detect every omitted tool or every unsupported factual assertion. This limitation was reproduced in a real database turn and is why the default is the hybrid entry (one fast generation, then the classified task chain) rather than a direct path.
 
 Route metadata records `entryMode` and `classifier.source=direct`. Direct placeholders are excluded from L1 history seeding, so they cannot become teacher labels after switching modes. Checkpoints retain the entry mode and deepening state; a resumed run cannot silently change entry modes.
 
@@ -40,7 +40,7 @@ The 32-trial controlled comparison completed with 16/16 automatic checks in each
 
 After host prefetch, real database probes separately answered **72** and an unseen **93** from the actual note rows, each with one generation and no classifier. The existing voice path saved the durable Henan preference and applied Sichuan for the current turn. A real edit changed 72 to 75, preserved 61 and obtained the canonical API writer's successful receipt. The first edit-only attempt timed out because the disposable worker had no API note-edit consumer; that setup failure is retained, not reported as architecture latency. The successful repeat used `apps/api/scripts/companion-hybrid-note-dispatch.ts` against the same disposable database and the persisted page context. The helper invokes `processCompanionNoteEdit`; it contains no alternative writer and accepts only an explicit synthetic flag plus an `astella_hybrid_*` database.
 
-Hybrid delivery verification: worker **1,992/1,992**, focused protocol/control tests **43/43**, and four hybrid PostgreSQL cases pass; worker and API type checks pass. The API reproduction helper starts and closes successfully against the disposable database. The local development worker was switched to `hybrid` only after the queue was idle, then recreated and verified healthy with `/ready` and `/metrics` returning 200. Repository fallback remains classified; no production deployment was performed. The disposable hybrid database was removed after its connections closed. Long-note context still takes the conservative classified path, and strict-proof automatic escalation remains unqualified.
+Hybrid delivery verification: worker **1,992/1,992**, focused protocol/control tests **43/43**, and four hybrid PostgreSQL cases pass; worker and API type checks pass. The API reproduction helper starts and closes successfully against the disposable database. The local development worker was switched to `hybrid` only after the queue was idle, then recreated and verified healthy with `/ready` and `/metrics` returning 200. Repository default was switched to hybrid after this verification; `classified` remains the fallback value. The disposable hybrid database was removed after its connections closed. Long-note context still takes the conservative classified path, and strict-proof automatic escalation remains unqualified.
 
 ## Request experiment
 
@@ -104,6 +104,10 @@ For database tests, create a disposable database with `scripts/dev-disposable-db
 
 The optional real-model database probe additionally requires `ENTRY_LIVE_REAL=1`, `ENTRY_LIVE_OUT`, and `--test-name-pattern 'live direct entries'`. Its synthetic account records explicit consent and an external-data policy; it never borrows a real user's data or modifies their preferences.
 
-To try a direct path locally, set `COMPANION_AGENT_ENTRY_MODE=direct_fast` or `direct_thinking` and recreate the development worker. Leave `classified` for the baseline. Compose and `.env.example` expose all three values; no production deployment or default switch is part of this change.
+To try a direct path locally, set `COMPANION_AGENT_ENTRY_MODE=direct_fast` or `direct_thinking` and recreate the development worker. Leave `classified` for the baseline. Compose and `.env.example` expose all values; hybrid is the default since 2026-10-18 and classified remains available.
 
 The default tool-description and serialized catalog budgets remain 4,000 and 30,000 characters. The two opt-in internal controls have a separate 100-character description and 1,800-character schema allowance. Their cost is explicit rather than silently increasing the default allowance.
+
+## Local verification caveat (2026-10-18, v1.8.20)
+
+`make verify` on this change passed shared 952, api 3021, worker 1996 and the script gates, but the desktop suite reported 14 timeouts in `notebook-surface.reading-shape.test.tsx` while running the full 424-file suite; the same file passes in isolation (`Test Files 1 passed`), and it was last modified in v1.8.19. No desktop renderer file is part of this release, so this is the known full-suite load flake rather than a regression from the hybrid entry. CI retries once; if CI still fails on that file, treat it as pre-existing and fix it separately rather than re-cutting the tag.

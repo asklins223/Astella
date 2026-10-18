@@ -58,6 +58,10 @@ const CAPABILITY_FLAGS = {
     // 所以只有本地基线看得见）。
     COMPANION_TOOL_INTENT_HEDGE_MS: { dev: "0", prod: "0" },
     COMPANION_RELEASE_ROUTER: { dev: "enforce", prod: "enforce" },
+    // 2026-10-18：混合入口开关，读取方是
+    // `handlers/turn/companion-entry-mode.ts` 的 `resolveCompanionEntryMode`。
+    // 2026-10-18 用户裁决：hybrid 作为默认入口（此前是 classified）。
+    COMPANION_AGENT_ENTRY_MODE: { dev: "hybrid", prod: "hybrid" },
   },
 };
 

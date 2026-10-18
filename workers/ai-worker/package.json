@@ -1,6 +1,6 @@
 {
   "name": "@astella/ai-worker",
-  "version": "1.8.19",
+  "version": "1.8.20",
   "private": true,
   "type": "module",
   "main": "src/index.ts",
