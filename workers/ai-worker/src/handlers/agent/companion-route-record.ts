@@ -17,6 +17,7 @@
 import { logger } from "../../lib/logger.ts";
 import { updateRunMeta } from "./companion-agent-events.ts";
 import type { AgentEventContext } from "../tools/companion-read-tools.ts";
+import type { CompanionHybridFacts } from "../turn/companion-hybrid-entry.ts";
 import {
   evaluateCompanionRelease,
   rememberCompanionReleaseSample,
@@ -27,7 +28,7 @@ import {
 
 export interface CompanionRouteClassifierFacts {
   /** `l2` = 正常分类调用；`timeout` = 分类失败/超时退回 uncertain；`cached` = 复用已存解释。 */
-  readonly source: "l2" | "timeout" | "cached";
+  readonly source: "l2" | "timeout" | "cached" | "direct";
   readonly elapsedMs: number | null;
   /** 这次分类是否真的并发了两条上游请求（延迟对冲）。 */
   readonly hedged: boolean;
@@ -50,6 +51,8 @@ export interface CompanionReleaseShadowFacts {
 
 export interface CompanionRouteRecordV1 {
   readonly version: 1;
+  readonly entryMode?: "classified" | "direct_fast" | "direct_thinking" | "hybrid";
+  readonly hybrid?: CompanionHybridFacts;
   readonly classifier: CompanionRouteClassifierFacts;
   readonly release: {
     /** 从 handler 开始到投机首步被放行之间等了多久。 */
@@ -86,6 +89,7 @@ export function buildCompanionRouteRecordV1(input: {
 }
 
 export interface CompanionRouteRecorderOptions {
+  readonly entryMode?: "classified" | "direct_fast" | "direct_thinking" | "hybrid";
   /** 账号索引键（`workspaceId:userId`）；影子模式必需。 */
   readonly scopeKey?: string;
   /** 本轮用户原话；影子模式必需。 */
@@ -111,7 +115,7 @@ export interface CompanionRouteRecorder {
   /** 给 `attentionPromise` 套一层：它落定 = 放行闸打开的那一刻。 */
   track<T>(promise: Promise<T>): Promise<T>;
   /** 每轮一次：把 route 写进 run meta。不 await、失败只 warn，绝不影响这一轮。 */
-  record(event: AgentEventContext, handlerStartedAtMs: number): void;
+  record(event: AgentEventContext, handlerStartedAtMs: number, hybrid?: CompanionHybridFacts): void;
 }
 
 export type CompanionRouteMetaWriter = (
@@ -136,7 +140,8 @@ export function createCompanionRouteRecorder(
   options: CompanionRouteRecorderOptions = {},
   writeMeta: CompanionRouteMetaWriter = (event, patch) => updateRunMeta(event, patch),
 ): CompanionRouteRecorder {
-  const mode = options.releaseRouterMode ?? resolveCompanionReleaseRouterMode();
+  const direct = options.entryMode !== undefined && options.entryMode !== "classified";
+  const mode = direct ? "off" : options.releaseRouterMode ?? resolveCompanionReleaseRouterMode();
   const { scopeKey, userText, recentMessages, embedText } = options;
   const shadowEnabled = mode !== "off" && Boolean(scopeKey && userText && embedText);
   let receipt: CompanionRouteClassifierReceipt | null = null;
@@ -163,7 +168,7 @@ export function createCompanionRouteRecorder(
         return value;
       });
     },
-    record(event, handlerStartedAtMs) {
+    record(event, handlerStartedAtMs, hybrid) {
       const write = (route: CompanionRouteRecordV1): void => {
         void writeMeta(event, { route }).catch((err: unknown) => {
           logger.warn({ runId: event.read.runId, err: err instanceof Error ? err.message : String(err) },
@@ -174,6 +179,9 @@ export function createCompanionRouteRecorder(
         ...buildCompanionRouteRecordV1({
           classifier: receipt, releasedAtMs: settledAtMs ?? Date.now(), handlerStartedAtMs,
         }),
+        ...(options.entryMode ? { entryMode: options.entryMode } : {}),
+        ...(direct && !(options.entryMode === "hybrid" && receipt) ? { classifier: { source: "direct", elapsedMs: null, hedged: false } } : {}),
+        ...(hybrid ? { hybrid } : {}),
       });
       if (!shadowEnabled) { write(base()); return; }
       void (async () => {

@@ -24,6 +24,8 @@ export const companionRuntimeStateSchema = z.object({
   steerSwapToFallback: z.boolean(), utterancePublished: z.boolean(),
   /** Extra tools the model expanded via companion_load_tools. Default keeps old checkpoints readable. */
   loadedToolNames: z.array(z.string()).default([]),
+  entryMode: z.enum(["classified", "direct_fast", "direct_thinking", "hybrid"]).default("classified"),
+  deepened: z.boolean().default(false),
 }).strict().refine(state => state.visibleSegments.length === state.visibleSegmentDelivered.length);
 export type CompanionRuntimeState = z.infer<typeof companionRuntimeStateSchema>;
 const completedSchema = z.object({ status: z.literal("completed"), text: z.string(),

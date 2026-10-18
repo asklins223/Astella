@@ -70,7 +70,7 @@ function functionBody(name: string): string {
 
 function handledTools(): Set<string> {
   const arms = new Set<string>();
-  for (const fn of ["executeReadTool", "executeDirectTool", "executeAgentGoalTool"]) {
+  for (const fn of ["executeReadTool", "executeDirectTool", "executeAgentGoalTool", "executeCompanionEntryControl"]) {
     for (const match of functionBody(fn).matchAll(/case "((?:companion_|agent_)[a-z_]+)"/g)) arms.add(match[1]);
   }
   return arms;

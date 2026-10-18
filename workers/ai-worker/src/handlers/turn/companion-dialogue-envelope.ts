@@ -93,6 +93,12 @@ export function createCompanionEnvelopeDecoder(): CompanionEnvelopeDecoder {
 
     while (index < rest.length) {
       if (pendingEscape.length > 0) {
+        // A chunk may end immediately after the backslash. Learn whether the
+        // next byte starts a Unicode escape before choosing its total length.
+        if (pendingEscape === "\\" && rest[index] === "u") {
+          pendingEscape += "u";
+          index += 1;
+        }
         const need = pendingEscape.startsWith("\\u") ? 6 : 2;
         const take = Math.min(need - pendingEscape.length, rest.length - index);
         pendingEscape += rest.slice(index, index + take);

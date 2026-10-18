@@ -369,6 +369,9 @@ const thinkingSanctioned = new Set([
   // 投机的"闲聊版第一步"（2026-10-07）：它按定义就是不开思考的那一版，且只有
   // 分类器确认本轮解释为空时结果才会被保留（见 shouldKeepSpeculativeFirstStep）。
   "companion-speculative-first-step.ts",
+  // Opt-in hybrid entry answers conversation in the fast request itself;
+  // native task handoff returns to companionTurnThinking in the main loop.
+  "companion-hybrid-entry.ts",
   // 2026-10-11：压缩用的**工作状态摘要**。产出是给她自己接续工作的内部件，不是讲给
   // 用户的回复，而这次调用发生在已经紧张的那一次请求里面、卡在 deadlineAt 上——
   // 开高档等于在她回话的路上再加十几秒。判据与分类器、投机闲聊版同一档。
@@ -414,8 +417,8 @@ test("伴星思考档：对话按本轮意图选择，其余后台按各自预�
   const runtime = readFileSync(new URL("agent/companion-agent-runtime.ts", dir), "utf8");
   assert.match(runtime, /companionTurnThinking\(attention\)/,
     "Agent 运行时不再经过 companionTurnThinking，闲聊/提问两档就会散成各处硬编码");
-  assert.match(runtime, /disableThinking: turnThinking\.disableThinking/,
-    "本轮的思考档没有下发到 stepRequest");
+  assert.match(runtime, /disableThinking: !directEntry \? turnThinking\.disableThinking \|\| readOnlyRequiredStep : directControls\.disableThinking\(\)/,
+    "Classified turns must retain their intent policy; direct turns must use their explicit entry/deepening policy");
 });
 
 // ─── 跨空间记忆的判据（2026-09-22 裁决 + 收紧）──────────────────────────

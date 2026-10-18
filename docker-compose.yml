@@ -341,6 +341,7 @@ services:
       # 分类器 temperature=0，副本不改变语义。0 = 立即并发，正数 = 延迟触发，off = 关闭。
       # 默认显式开启（测试环境不设这个变量，所以单测里仍是单发）。
       COMPANION_TOOL_INTENT_HEDGE_MS: ${COMPANION_TOOL_INTENT_HEDGE_MS:-0}
+      COMPANION_AGENT_ENTRY_MODE: ${COMPANION_AGENT_ENTRY_MODE:-classified}
       # L1 放行路由的影子模式（2026-10-17）：对 100% 流量计算 L1 判断但不改变放行，
       # 结果只写进 companion_turn_runs.route.l1，和同一轮 L2 解释比对，出覆盖率—漏放率曲线。
       # off = 完全不算；shadow = 只记录不生效；enforce = L1 真的可提前打开投机首步的放行闸（默认开）。

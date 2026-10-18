@@ -15,6 +15,7 @@ import {
   companionRecommendLearningV1Schema,
 } from ".././contracts/companion/companion-conversation-contracts.ts";
 import { COMPANION_TOOL_GROUP_IDS } from "./companion-tool-groups.ts";
+import { agentVoiceStyleDecisionV1Schema } from "../contracts/agent/agent-contracts.ts";
 
 const emptyArguments = z.object({}).strict();
 const uuid = z.string().uuid();
@@ -366,4 +367,10 @@ export const companionCapabilityManifest: readonly AgentCapabilityDeclaration[] 
     z.object({ groups: z.array(z.enum(COMPANION_TOOL_GROUP_IDS)).min(1).max(6)
       .describe("组 id：notes、learning、memory、persona、attention、goals、web、visual、stats、navigation") }).strict(),
     { label: "正在打开更多能力" }, { maxOutputChars: null }),
+  tool("companion_deepen", "快速档不足以完成严谨推理时调用，切换本轮后续为深度思考。", "read", false,
+    emptyArguments, { label: "正在深入推理" }),
+  tool("companion_configure_turn", "先设置本轮声音或明确的禁止定时要求，再回答。长期声音偏好须有当前原话。", "reversible_low", false,
+    z.object({ voiceStyle: agentVoiceStyleDecisionV1Schema.optional(),
+      sourceQuote: z.string().min(1).max(2000),
+      forbidTimeBasedWakeups: z.boolean().optional() }).strict(), { label: "正在设置本轮表达" }),
 ];

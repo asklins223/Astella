@@ -553,6 +553,11 @@ export interface CompanionReleaseStoredSample {
 /**
  * 共享去标识语料的样本（迁移 0444）：只带向量与标签，不与账号绑定。
  * 用它给每个账号的索引打底——否则新装用户 0 条样本，L1 永远冷启动、永远不放行。
+ *
+ * **别把它当"加数据能提准"的证据**（2026-10-18 实测，训练折留一互查口径）：
+ * 合成语料 0 / 80 / 160 / 240 / 320 条对应的零硬错覆盖是
+ * 35.2% / 34.4% / 34.0% / 34.4% / 34.4%——**平的**。它买到的是冷启动，
+ * 不是精度；kNN 在几百条量级已经饱和。想再往上只能换判据，不是加样本。
  */
 export interface CompanionGateCorpusSample {
   readonly textSha256: string;
@@ -713,6 +718,7 @@ async function loadCompanionReleaseSeedRows(workspaceId: string, userId: string)
       WHERE r.workspace_id = ${workspaceId} AND r.user_id = ${userId}
         AND r.turn_interpretation IS NOT NULL
         AND r.status = 'succeeded'
+        AND coalesce(r.route->'classifier'->>'source', '') <> 'direct'
       ORDER BY r.created_at DESC
       LIMIT 24
     `);

@@ -148,7 +148,9 @@ test("低权限保留写能力供预览，实际业务写入必须等待确认",
     for (const definition of tools) {
       const auth = canUseCompanionAgentTool(permission, definition);
       assert.equal(auth.allowed, true);
-      assert.equal(auth.requiresConfirmation, definition.riskClass !== "read" && !(isCompanionAutonomousTool(definition.name) || ["companion_save_participation", "companion_write_annotation"].includes(definition.name)));
+      // Voice settings already applied directly through the interpreter;
+      // native entry preserves that account preference behavior.
+      assert.equal(auth.requiresConfirmation, definition.riskClass !== "read" && !(isCompanionAutonomousTool(definition.name) || ["companion_save_participation", "companion_write_annotation", "companion_configure_turn"].includes(definition.name)));
     }
   }
 });
@@ -162,7 +164,7 @@ test("工具解析：guided 的业务写操作都确认，读取与自主记录�
     // 读取永不确认；约定类写入（提醒）是用户亲口要过的、可逆且不改学习状态，
     // guided 下也直接执行；其余写操作一律先出提案。
     const autoExecutes = definition.riskClass === "read"
-      || (isCompanionAutonomousTool(definition.name) || ["companion_save_participation", "companion_write_annotation"].includes(definition.name));
+      || (isCompanionAutonomousTool(definition.name) || ["companion_save_participation", "companion_write_annotation", "companion_configure_turn"].includes(definition.name));
     assert.equal(
       auth.requiresConfirmation,
       !autoExecutes,

@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { agentCapabilityCatalog } from "../agent/agent-capability-catalog.ts";
+import { COMPANION_DIRECT_ENTRY_TOOL_NAMES } from "../agent/companion-tool-groups.ts";
 
 /**
  * 工具面说明预算（方案 52 §5）。判据全部取自**声明**（`agentCapabilityCatalog`），
@@ -16,6 +17,11 @@ import { agentCapabilityCatalog } from "../agent/agent-capability-catalog.ts";
  *   - 工具**条数**从来没有上限（旧断言只有 `length > 35`），6 天里从 44 条长到 57 条。
  */
 const conversation = agentCapabilityCatalog.filter(entry => entry.surfaces.includes("conversation"));
+const directNames:ReadonlySet<string> = new Set(COMPANION_DIRECT_ENTRY_TOOL_NAMES);
+// Classified entry does not offer the two native turn controls. Keep its
+// existing budget unchanged; account for the opt-in direct-entry extension
+// separately, instead of silently increasing every entry's allowance.
+const defaultConversation = conversation.filter(entry => !directNames.has(entry.definition.name));
 const PER_TOOL_LIMIT = 150;
 const TOTAL_LIMIT = 4000;
 /**
@@ -64,7 +70,7 @@ test(`单条工具说明不超过 ${PER_TOOL_LIMIT} 字符`, () => {
 });
 
 test(`聊天面说明总量不超过 ${TOTAL_LIMIT} 字符`, () => {
-  const total = conversation.reduce((sum, entry) => sum + entry.definition.description.length, 0);
+  const total = defaultConversation.reduce((sum, entry) => sum + entry.definition.description.length, 0);
   assert.ok(total <= TOTAL_LIMIT, `description 合计 ${total} 字符，超过预算 ${TOTAL_LIMIT}`);
 });
 
@@ -75,12 +81,21 @@ test(`聊天面说明总量不超过 ${TOTAL_LIMIT} 字符`, () => {
  * 这条守卫才是「工具面别长大」真正的那道闸；要抬上限，先给出这一面哪里变大了、为什么值得。
  */
 test(`聊天面线上体积不超过 ${WIRE_CHAR_LIMIT} 字符（name + description + parameters）`, () => {
-  const total = conversation.reduce((sum, entry) => sum + wireChars(entry), 0);
-  const params = conversation.reduce((sum, entry) => sum + JSON.stringify(entry.definition.parameters).length, 0);
-  const descriptions = conversation.reduce((sum, entry) => sum + entry.definition.description.length, 0);
+  const total = defaultConversation.reduce((sum, entry) => sum + wireChars(entry), 0);
+  const params = defaultConversation.reduce((sum, entry) => sum + JSON.stringify(entry.definition.parameters).length, 0);
+  const descriptions = defaultConversation.reduce((sum, entry) => sum + entry.definition.description.length, 0);
   assert.ok(total <= WIRE_CHAR_LIMIT,
     `聊天面线上体积 ${total} 字符（parameters ${params} / description ${descriptions} / 其余为 name），`
     + `超过预算 ${WIRE_CHAR_LIMIT}。这一面每步都随请求付一次，加内容前先说明它值多少。`);
+});
+
+test("opt-in direct-entry controls have a separate bounded schema cost", () => {
+  const controls = conversation.filter(entry => directNames.has(entry.definition.name));
+  assert.equal(controls.length, COMPANION_DIRECT_ENTRY_TOOL_NAMES.length);
+  const wire = controls.reduce((sum, entry) => sum + wireChars(entry), 0);
+  const descriptions = controls.reduce((sum, entry) => sum + entry.definition.description.length, 0);
+  assert.ok(wire <= 1800, `Direct-entry controls cost ${wire} serialized characters; budget 1800`);
+  assert.ok(descriptions <= 100, `Direct-entry descriptions cost ${descriptions} characters; budget 100`);
 });
 
 /**

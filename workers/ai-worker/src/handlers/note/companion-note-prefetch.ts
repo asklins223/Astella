@@ -33,6 +33,8 @@ export interface CompanionNotePrefetchInput {
 export interface CompanionNotePrefetchResult {
   /** True when the note was read and pushed, so the step does not need a read receipt. */
   prefetched: boolean;
+  /** The fast entry must not treat a bounded first page as the whole note. */
+  truncated?: boolean;
   /** The observation to append to the request, when there is one. */
   message: AgentTurnRequest["messages"][number] | null;
 }
@@ -83,6 +85,7 @@ export async function prefetchCompanionNote(
       "companion note prefetched by host before generation");
     return {
       prefetched: true,
+      truncated: note.truncated,
       message: {
         role: "system",
         hostObservation: true,

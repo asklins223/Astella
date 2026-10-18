@@ -54,6 +54,14 @@ describe("createCompanionEnvelopeDecoder", () => {
     // 非法 \u 序列按字面量吐出，不能吞掉后续正文。
     assert.equal(decodeAll(['{"reply": "x\\u12zz尾"}']).text, "x\\u12zz尾");
   });
+  it("Unicode escapes split after the backslash or at every byte preserve the same text", () => {
+    const envelope = '{"reply":"\\u4f60\\u597d \\ud83d\\ude42"}';
+    const expected = JSON.parse(envelope).reply;
+    for (let split = 1; split < envelope.length; split++) {
+      assert.equal(decodeAll([envelope.slice(0, split), envelope.slice(split)]).text, expected, `split=${split}`);
+    }
+    assert.equal(decodeAll([...envelope]).text, expected);
+  });
 
   it("收尾引号之后的内容一律忽略（信封可能还带别的字段）", () => {
     const result = decodeAll(['{"reply": "你好", "emotion": "happy"}']);

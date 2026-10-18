@@ -21,7 +21,10 @@ export const COMPANION_TOOL_GROUP_IDS = [
 ] as const;
 export type CompanionToolGroupId = (typeof COMPANION_TOOL_GROUP_IDS)[number];
 
+export const COMPANION_DIRECT_ENTRY_TOOL_NAMES = ["companion_deepen", "companion_configure_turn"] as const;
+
 export const COMPANION_CORE_TOOL_NAMES: readonly string[] = Object.freeze([
+  ...COMPANION_DIRECT_ENTRY_TOOL_NAMES,
   "companion_read_context",
   "companion_read_history",
   "companion_search_notes",

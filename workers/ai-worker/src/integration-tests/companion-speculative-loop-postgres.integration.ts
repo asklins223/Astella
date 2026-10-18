@@ -13,6 +13,7 @@ import { createCompanionContextReceipts } from "../handlers/context/companion-co
 import { AgentOutputError } from "../lib/non-retryable-errors.ts";
 import { sha256Utf8V1 } from "@astella/shared/content-hash";
 import { getCompanionAgentTool } from "@astella/shared";
+import { writeFileSync } from "node:fs";
 import { executeCompanionMemoryTool } from "../handlers/tools/companion-memory-tools.ts";
 
 const originalReviewFlag = process.env.COMPANION_EXPLANATION_REVIEW_V1;
@@ -457,4 +458,290 @@ test("没配兜底槽时那一步仍回主档：反面对照，证明上一条�
   assert.ok(served.length > 1, `补步没跑起来：${JSON.stringify(served)}`);
   assert.deepEqual([...new Set(served)], ["primary-model"],
     "没有兜底档时补步只能重问同一个模型——这正是 2026-10-16 之前的实际形态");
+});
+
+test("direct entries keep the original history and complete without classification or speculative drafts", async () => {
+  const previous=process.env.COMPANION_AGENT_ENTRY_MODE;
+  try {
+    for(const mode of ['direct_fast','direct_thinking'] as const){
+      process.env.COMPANION_AGENT_ENTRY_MODE=mode;
+      const f=await fixture();
+      try{
+        const provider=new MockProvider();let classifications=0,steps=0;
+        provider.chatCompletion=async()=>{classifications++;throw new Error('classifier must not run');};
+        const invitation='故事说到两个朋友来到河边。要继续听吗？';
+        provider.executeAgentTurn=async request=>{
+          steps++;assert.equal(request.disableThinking,mode==='direct_fast');
+          assert.ok(request.messages.some(m=>m.role==='assistant'&&m.content===invitation));
+          assert.equal(request.toolChoice,'auto');
+          return {content:'两个朋友看见一条小船停在岸边，于是坐下来等船夫回来。',toolCalls:[],finishReason:'stop',usage:null,providerRequestId:null};
+        };
+        const result=await runCompanionAgentLoop({ctx:f.event.ctx,read:{...readContext(f),userText:'继续讲。'},provider,
+          toolConstraints:{visionEnabled:false},baseMessages:[{role:'system',content:'接着用户正在听的故事自然回应。'},
+            {role:'assistant',content:invitation},{role:'user',content:'继续讲。'}],expiresAt:new Date(Date.now()+60_000).toISOString()});
+        assert.equal(result.status,'completed');assert.equal(steps,1);assert.equal(classifications,0);
+      } finally{await f.cleanup();}
+    }
+  } finally{if(previous===undefined)delete process.env.COMPANION_AGENT_ENTRY_MODE;else process.env.COMPANION_AGENT_ENTRY_MODE=previous;}
+});
+
+test("direct native voice control persists the durable dialect before the next spoken response", async () => {
+  const previous=process.env.COMPANION_AGENT_ENTRY_MODE;process.env.COMPANION_AGENT_ENTRY_MODE='direct_thinking';
+  const f=await fixture();
+  try{
+    const {persistCompanionDialectPreference,readCompanionDialectPreference}=await import('../handlers/turn/companion-voice-preference.ts');
+    const {resolveCompanionVoiceInstruction}=await import('../handlers/turn/companion-voice-request-style.ts');
+    const provider=new MockProvider();let steps=0;let instruction:string|null=null;
+    const userText='以后默认河南话，但这句用四川话。';
+    provider.chatCompletion=async()=>{throw new Error('classifier must not run');};
+    provider.executeAgentTurn=async request=>{
+      steps++;assert.equal(request.disableThinking,false);
+      if(steps===1){
+        assert.ok(request.tools.some(t=>t.name==='companion_configure_turn'));
+        return {content:null,toolCalls:[{id:'voice-control',name:'companion_configure_turn',arguments:{sourceQuote:userText,
+          voiceStyle:{decision:'apply',instruction:'请用四川话表达。',persistentPreference:{action:'set',dialect:'河南话'}}}}],finishReason:'tool_calls',usage:null,providerRequestId:null};
+      }
+      assert.match(instruction??'',/四川话/);
+      assert.equal(await readCompanionDialectPreference({workspaceId:f.event.ctx.workspaceId,userId:f.event.read.userId}),'河南话');
+      return {content:'好，这一句用四川话，以后默认河南话。',toolCalls:[],finishReason:'stop',usage:null,providerRequestId:null};
+    };
+    const result=await runCompanionAgentLoop({ctx:f.event.ctx,read:{...readContext(f),userText},provider,
+      toolConstraints:{visionEnabled:false},baseMessages:[{role:'system',content:'按当前用户的声音要求表达。'},{role:'user',content:userText}],
+      onTurnInterpretation:async attention=>{
+        instruction=resolveCompanionVoiceInstruction(userText,attention.voiceStyle).instruction;
+        return persistCompanionDialectPreference({workspaceId:f.event.ctx.workspaceId,userId:f.event.read.userId,change:attention.voiceStyle.persistentPreference});
+      },expiresAt:new Date(Date.now()+60_000).toISOString()});
+    assert.equal(result.status,'completed');assert.equal(steps,2);
+  }finally{await f.cleanup();if(previous===undefined)delete process.env.COMPANION_AGENT_ENTRY_MODE;else process.env.COMPANION_AGENT_ENTRY_MODE=previous;}
+});
+
+test("direct fast entry honors native deepening and saves the reasoning mode in its checkpoint", async () => {
+  const previous=process.env.COMPANION_AGENT_ENTRY_MODE;process.env.COMPANION_AGENT_ENTRY_MODE='direct_fast';
+  const f=await fixture();
+  try{
+    const provider=new MockProvider();const modes:boolean[]=[];
+    provider.chatCompletion=async()=>{throw new Error('classifier must not run');};
+    provider.executeAgentTurn=async request=>{
+      modes.push(request.disableThinking===true);
+      if(modes.length===1)return {content:null,toolCalls:[{id:'deepen-control',name:'companion_deepen',arguments:{}}],finishReason:'tool_calls',usage:null,providerRequestId:null};
+      assert.equal(request.tools.some(t=>t.name==='companion_deepen'),false);
+      return {content:'先检查所有条件，再逐一排除不满足条件的情况，可以得到唯一符合要求的结论。',toolCalls:[],finishReason:'stop',usage:null,providerRequestId:null};
+    };
+    const result=await runCompanionAgentLoop({ctx:f.event.ctx,read:{...readContext(f),userText:'请严谨分析这个问题。'},provider,
+      toolConstraints:{visionEnabled:false},baseMessages:[{role:'system',content:'必要时先深入推理。'},{role:'user',content:'请严谨分析这个问题。'}],expiresAt:new Date(Date.now()+60_000).toISOString()});
+    assert.equal(result.status,'completed');assert.deepEqual(modes,[true,false]);
+    const [stored]=await f.mutate(tx=>tx`SELECT runtime_checkpoint FROM companion_agent_steps WHERE run_id=${f.event.read.runId} AND runtime_checkpoint IS NOT NULL ORDER BY step_no DESC LIMIT 1`);
+    const state=JSON.parse(stored.runtime_checkpoint.stateJson).state;
+    assert.equal(state.entryMode,'direct_fast');assert.equal(state.deepened,true);
+  }finally{await f.cleanup();if(previous===undefined)delete process.env.COMPANION_AGENT_ENTRY_MODE;else process.env.COMPANION_AGENT_ENTRY_MODE=previous;}
+});
+
+test("hybrid conversation streams once without classifying, and settled recovery does not regenerate", async () => {
+  const previous=process.env.COMPANION_AGENT_ENTRY_MODE;process.env.COMPANION_AGENT_ENTRY_MODE='hybrid';
+  const f=await fixture();
+  try{
+    const provider:AIProvider=new MockProvider();let streams=0,classifiers=0;const deltas:string[]=[];
+    provider.chatCompletionStreamToolCalls=true;
+    provider.chatCompletion=async()=>{classifiers++;throw new Error('conversation must not classify');};
+    provider.executeAgentTurn=async()=>{throw new Error('prefetched reply must not regenerate');};
+    const answer='今天想先歇一歇也很好，我就在这里陪着你，想说点什么都可以。';
+    provider.chatCompletionStream=async(_messages,options,_signal,onDelta)=>{
+      streams++;assert.equal(options.disableThinking,true);assert.equal(options.tools?.length,0);
+      onDelta(JSON.stringify({reply:answer}));
+      return {content:JSON.stringify({reply:answer}),toolCalls:[],finishReason:'stop',usage:{}};
+    };
+    const args={ctx:f.event.ctx,read:{...readContext(f),userText:'先别整理笔记，陪我聊聊。'},provider,
+      toolConstraints:{visionEnabled:false},baseMessages:[{role:'system' as const,content:'自然回应用户。'},
+        {role:'user' as const,content:'先别整理笔记，陪我聊聊。'}],
+      onProviderDelta:async(text:string)=>{deltas.push(text);return true;},expiresAt:new Date(Date.now()+60_000).toISOString()};
+    const result=await runCompanionAgentLoop(args);
+    assert.equal(result.status,'completed');if(result.status==='completed')assert.equal(result.text,answer);
+    assert.equal(deltas.join(''),answer);assert.equal(streams,1);assert.equal(classifiers,0);
+    const again=await runCompanionAgentLoop(args);assert.deepEqual(again,result);assert.equal(streams,1);
+    const [meta]=await f.mutate(tx=>tx`SELECT route FROM companion_turn_runs WHERE id=${f.event.read.runId}`);
+    assert.equal(meta.route.entryMode,'hybrid');assert.equal(meta.route.hybrid.decision,'reply');assert.equal(meta.route.classifier.source,'direct');
+  }finally{await f.cleanup();if(previous===undefined)delete process.env.COMPANION_AGENT_ENTRY_MODE;else process.env.COMPANION_AGENT_ENTRY_MODE=previous;}
+});
+
+test("hybrid handoff classifies lazily and the host reads actual note facts before answering", async () => {
+  const previous=process.env.COMPANION_AGENT_ENTRY_MODE;process.env.COMPANION_AGENT_ENTRY_MODE='hybrid';
+  const f=await fixture(),noteId=randomUUID(),versionId=randomUUID();
+  try{
+    await f.mutate(async tx=>{
+      await tx`INSERT INTO notes(id,workspace_id,title,created_by) VALUES(${noteId},${f.event.ctx.workspaceId},'混合入口实测',${f.event.read.userId})`;
+      await tx`INSERT INTO note_versions(id,note_id,workspace_id,version_no,content_json,content_hash,created_by)
+        VALUES(${versionId},${noteId},${f.event.ctx.workspaceId},1,'{}',${'e'.repeat(64)},${f.event.read.userId})`;
+      await tx`UPDATE notes SET current_version_id=${versionId} WHERE id=${noteId}`;
+      await tx`INSERT INTO note_blocks(workspace_id,version_id,ordinal,type,content)
+        VALUES(${f.event.ctx.workspaceId},${versionId},1,'paragraph','实验组得分72分，对照组61分。')`;
+    });
+    const provider:AIProvider=new MockProvider();const order:string[]=[];
+    provider.chatCompletionStreamToolCalls=true;
+    provider.chatCompletion=async()=>{
+      order.push('classify');return {content:JSON.stringify({intent:'question',toolUse:'read',subjects:[],goalRelation:'unrelated',
+        candidateOperations:['companion_read_note'],ambiguities:[],voiceStyle:{decision:'none',instruction:null,persistentPreference:{action:'keep',dialect:null}},pendingOfferIndexes:[]}),usage:{}};
+    };
+    provider.chatCompletionStream=async(messages,options,_signal,onDelta)=>{
+      if(order.length===0){order.push('handoff');assert.equal(options.disableThinking,true);
+        onDelta('{"task":true}');return {content:'{"task":true}',toolCalls:[],finishReason:'stop',usage:{}};}
+      order.push('answer');assert.ok(order.includes('classify'));
+      assert.ok(messages.some(m=>typeof m.content==='string'&&m.content.includes('<prefetched_note>')&&m.content.includes('72')));
+      onDelta('实验组得分72分。');return {content:'实验组得分72分。',toolCalls:[],finishReason:'stop',usage:{}};
+    };
+    const result=await runCompanionAgentLoop({ctx:f.event.ctx,read:{...readContext(f),userText:'读一下这篇笔记，告诉我实验组得分。',
+      pageContext:{version:1,context:{pageKind:'note',noteId,noteVersionId:versionId}}},provider,toolConstraints:{visionEnabled:false},
+      baseMessages:[{role:'system',content:'从真实材料作答。'},{role:'user',content:'读一下这篇笔记，告诉我实验组得分。'}],onProviderDelta:async()=>true,expiresAt:new Date(Date.now()+60_000).toISOString()});
+    assert.equal(result.status,'completed');if(result.status==='completed')assert.match(result.text,/72/);
+    assert.equal(order[0],'handoff');assert.equal(order.at(-1),'answer');
+    const [meta]=await f.mutate(tx=>tx`SELECT route FROM companion_turn_runs WHERE id=${f.event.read.runId}`);
+    assert.equal(meta.route.hybrid.decision,'task');assert.equal(meta.route.classifier.source,'l2');
+  }finally{await f.cleanup();if(previous===undefined)delete process.env.COMPANION_AGENT_ENTRY_MODE;else process.env.COMPANION_AGENT_ENTRY_MODE=previous;}
+});
+
+test("hybrid grounds the first reply in the visible note and honors an explicit no-read constraint", async () => {
+  const previous=process.env.COMPANION_AGENT_ENTRY_MODE;process.env.COMPANION_AGENT_ENTRY_MODE='hybrid';
+  try{
+    for(const allowed of [true,false]){
+      const f=await fixture(),noteId=randomUUID(),versionId=randomUUID();
+      try{
+        await f.mutate(async tx=>{
+          await tx`INSERT INTO notes(id,workspace_id,title,created_by) VALUES(${noteId},${f.event.ctx.workspaceId},'当前材料',${f.event.read.userId})`;
+          await tx`INSERT INTO note_versions(id,note_id,workspace_id,version_no,content_json,content_hash,created_by)
+            VALUES(${versionId},${noteId},${f.event.ctx.workspaceId},1,'{}',${'f'.repeat(64)},${f.event.read.userId})`;
+          await tx`UPDATE notes SET current_version_id=${versionId} WHERE id=${noteId}`;
+          await tx`INSERT INTO note_blocks(workspace_id,version_id,ordinal,type,content) VALUES(${f.event.ctx.workspaceId},${versionId},1,'paragraph','实验组得分72分。')`;
+        });
+        const provider:AIProvider=new MockProvider();let calls=0;
+        provider.chatCompletion=async()=>{throw new Error('grounded reply must not classify');};
+        provider.chatCompletionStream=async(messages,_options,_signal,onDelta)=>{
+          calls++;const loaded=messages.some(m=>typeof m.content==='string'&&m.content.includes('<prefetched_note>')&&m.content.includes('72'));
+          assert.equal(loaded,allowed);
+          const content=JSON.stringify({reply:allowed?'实验组得分72分。':'那我们先不读笔记，聊聊天吧。'});
+          onDelta(content);return {content,toolCalls:[],finishReason:'stop',usage:{}};
+        };
+        const result=await runCompanionAgentLoop({ctx:f.event.ctx,read:{...readContext(f),userText:allowed?'实验组得了多少分？':'先不要读取笔记，陪我聊聊天。',
+          pageContext:{version:1,context:{pageKind:'note',noteId,noteVersionId:versionId}}},provider,
+          toolConstraints:{visionEnabled:false,noteLibraryReadEnabled:allowed},baseMessages:[{role:'system',content:'按真实材料回答，尊重不读的要求。'},
+            {role:'user',content:allowed?'实验组得了多少分？':'先不要读取笔记，陪我聊聊天。'}],onProviderDelta:async()=>true,expiresAt:new Date(Date.now()+60_000).toISOString()});
+        assert.equal(result.status,'completed');assert.equal(calls,1);
+      }finally{await f.cleanup();}
+    }
+  }finally{if(previous===undefined)delete process.env.COMPANION_AGENT_ENTRY_MODE;else process.env.COMPANION_AGENT_ENTRY_MODE=previous;}
+});
+
+test("hybrid partial note context returns to the classified path before fast publication", async () => {
+  const previous=process.env.COMPANION_AGENT_ENTRY_MODE;process.env.COMPANION_AGENT_ENTRY_MODE='hybrid';
+  const f=await fixture(),noteId=randomUUID(),versionId=randomUUID();
+  try{
+    await f.mutate(async tx=>{
+      await tx`INSERT INTO notes(id,workspace_id,title,created_by) VALUES(${noteId},${f.event.ctx.workspaceId},'长笔记',${f.event.read.userId})`;
+      await tx`INSERT INTO note_versions(id,note_id,workspace_id,version_no,content_json,content_hash,created_by)
+        VALUES(${versionId},${noteId},${f.event.ctx.workspaceId},1,'{}',${'a'.repeat(64)},${f.event.read.userId})`;
+      await tx`UPDATE notes SET current_version_id=${versionId} WHERE id=${noteId}`;
+      await tx`INSERT INTO note_blocks(workspace_id,version_id,ordinal,type,content) VALUES(${f.event.ctx.workspaceId},${versionId},1,'paragraph',${'背景材料'.repeat(1000)+'实验组得分72分。'})`;
+    });
+    const provider:AIProvider=new MockProvider();let classified=false;
+    provider.chatCompletion=async()=>{classified=true;return {content:JSON.stringify({intent:'conversation',toolUse:'none',subjects:[],goalRelation:'unrelated',candidateOperations:[],ambiguities:[],pendingOfferIndexes:[]}),usage:{}};};
+    provider.chatCompletionStream=async(_messages,options,_signal,onDelta)=>{
+      assert.equal(classified,true);assert.equal(options.responseFormat,'text');
+      const content='好，笔记先放一边，我们轻松聊聊天。';onDelta(content);return {content,toolCalls:[],finishReason:'stop',usage:{}};
+    };
+    const result=await runCompanionAgentLoop({ctx:f.event.ctx,read:{...readContext(f),userText:'今天有点累，轻松聊聊。',
+      pageContext:{version:1,context:{pageKind:'note',noteId,noteVersionId:versionId}}},provider,toolConstraints:{visionEnabled:false},
+      baseMessages:[{role:'system',content:'按当前请求回应。'},{role:'user',content:'今天有点累，轻松聊聊。'}],onProviderDelta:async()=>true,expiresAt:new Date(Date.now()+60_000).toISOString()});
+    assert.equal(result.status,'completed');assert.equal(classified,true);
+  }finally{await f.cleanup();if(previous===undefined)delete process.env.COMPANION_AGENT_ENTRY_MODE;else process.env.COMPANION_AGENT_ENTRY_MODE=previous;}
+});
+
+test("live direct entries use governed real models with isolated database tools", { skip:process.env.ENTRY_LIVE_REAL!=='1' },async t=>{
+  const previous=process.env.COMPANION_AGENT_ENTRY_MODE;
+  const observations:Record<string,unknown>[]=[];
+  const {resolveAIGovernanceContext,resolveProviderForTask}=await import('../lib/governance.ts');
+  const {createProvider}=await import('../lib/ai-provider.ts');
+  const {buildCompanionPersonaMessages}=await import('../handlers/turn/companion-dialogue-content.ts');
+  const {persistCompanionDialectPreference,readCompanionDialectPreference}=await import('../handlers/turn/companion-voice-preference.ts');
+  const {resolveCompanionVoiceInstruction}=await import('../handlers/turn/companion-voice-request-style.ts');
+  const {traceProvider}=await import('../../scripts/companion-entry/harness.ts');
+  const cases=[
+    {name:'thinking-read',mode:'direct_thinking',text:'读取当前笔记，告诉我实验组复习测验的得分。只回答一句话。',read:true},
+    {name:'fast-read',mode:'direct_fast',text:'读取当前笔记，告诉我实验组复习测验的得分。只回答一句话。',read:true},
+    {name:'thinking-voice',mode:'direct_thinking',text:'以后默认河南话，但这句用四川话，只回一句早安问候。',voice:true},
+    {name:'fast-deepening',mode:'direct_fast',text:'请先进入深度推理，再证明：从1到20选5个互不相邻的整数，且总和为偶数，共有多少种选法？请给出严谨的计数理由。',deep:true},
+    {name:'hybrid-casual',mode:'hybrid',text:'今天有点累，不想做任务，陪我聊两句就好。',casual:true},
+    {name:'hybrid-read',mode:'hybrid',text:'对了，这篇里的实验组到底考了多少分呀？看完告诉我就好，不要改。',read:true},
+    {name:'hybrid-read-unseen',mode:'hybrid',text:'这篇记录中的实验组测验得分是多少？只告诉我实际记载的得分。',read:93},
+    {name:'hybrid-write',mode:'hybrid',text:'把当前笔记中“实验组复习测验得分72分”改为“实验组复习测验得分75分”，其他内容保持原样，保存后简单告诉我。',read:true,edit:true},
+    {name:'hybrid-voice',mode:'hybrid',text:'以后默认河南话，但这句用四川话，只回一句早安问候。',voice:true},
+  ] as const;
+  try{
+    for(const scenario of cases.filter(c=>!process.env.ENTRY_LIVE_CASES||process.env.ENTRY_LIVE_CASES.split(',').includes(c.name)))await t.test(`live direct ${scenario.name}`,async()=>{
+      process.env.COMPANION_AGENT_ENTRY_MODE=scenario.mode;
+      const f=await fixture(),noteId=randomUUID(),versionId=randomUUID();const started=performance.now();
+      const traces:Parameters<typeof traceProvider>[2]=[];
+      const controller=new AbortController();
+      const timeout=setTimeout(()=>controller.abort(new Error('Live entry scenario exceeded 180 seconds')),180_000);
+      let instruction:string|null=null,firstPublished:number|null=null,earlyVoice=false,prefetched=false;
+      try{
+        await f.mutate(async tx=>{
+          await tx`INSERT INTO user_ai_settings(user_id,consent_version,consent_at,data_policy)
+            VALUES(${f.event.read.userId},'entry-synthetic-test',now(),${tx.json({sendToExternal:true,sendImageContent:false,piiDetection:false,auditLogging:true})})`;
+          if('read' in scenario){
+            if('edit' in scenario)await tx`UPDATE companion_turn_runs SET permission_level='full' WHERE id=${f.event.read.runId}`;
+            await tx`INSERT INTO notes(id,workspace_id,title,created_by) VALUES(${noteId},${f.event.ctx.workspaceId},'间隔复习实验',${f.event.read.userId})`;
+            await tx`INSERT INTO note_versions(id,note_id,workspace_id,version_no,content_json,content_hash,created_by)
+              VALUES(${versionId},${noteId},${f.event.ctx.workspaceId},1,'{}',${'d'.repeat(64)},${f.event.read.userId})`;
+            await tx`UPDATE notes SET current_version_id=${versionId} WHERE id=${noteId}`;
+            await tx`INSERT INTO note_blocks(workspace_id,version_id,ordinal,type,content)
+              VALUES(${f.event.ctx.workspaceId},${versionId},1,'paragraph',${`实验组复习测验得分${typeof scenario.read==='number'?scenario.read:72}分，对照组得分61分。`})`;
+          }
+        });
+        const pageContext='read' in scenario?{version:1,context:{pageKind:'note',noteId,noteVersionId:versionId,contextRevision:'entry-live-test'}}:null;
+        if(pageContext)await f.mutate(tx=>tx`UPDATE companion_turn_runs SET page_context=${tx.json(pageContext)} WHERE id=${f.event.read.runId}`);
+        const gov=await resolveAIGovernanceContext(f.event.ctx.workspaceId,f.event.read.userId);
+        assert.equal(gov.consentOk,true);
+        const slot=resolveProviderForTask(gov,'companion_agent');assert.notEqual(slot.providerName,'mock');
+        const governed=createGovernedProvider(createProvider(slot.providerName,{...slot.providerConfig,sessionId:`entry-live-${f.event.read.runId}`}),gov,f.event.ctx.workspaceId,
+          {userId:f.event.read.userId,jobId:f.event.ctx.id,operation:'companion_entry_live',dataCategories:['user_answer']});
+        const traced=traceProvider(governed,started,traces);
+        const provider=new Proxy(traced,{get(target,key){
+          if(key==='chatCompletionStream')return async(...args:Parameters<NonNullable<AIProvider['chatCompletionStream']>>)=>{
+            prefetched ||= args[0].some(m=>typeof m.content==='string'&&m.content.includes('<prefetched_note>'));
+            return target.chatCompletionStream!(...args);
+          };
+          const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
+        }});
+        const result=await runCompanionAgentLoop({ctx:{...f.event.ctx,signal:controller.signal},read:{...readContext(f),userText:scenario.text,pageContext},provider,
+          toolConstraints:{visionEnabled:false},baseMessages:buildCompanionPersonaMessages({userText:scenario.text,recentMessages:[],pageContext}),
+          onProviderDelta:async text=>{if(text.trim()){
+            firstPublished??=performance.now()-started;
+            if('voice' in scenario&&!instruction?.includes('四川话'))earlyVoice=true;
+          }return true;},
+          onTurnInterpretation:async attention=>{
+            instruction=resolveCompanionVoiceInstruction(scenario.text,attention.voiceStyle).instruction;
+            return persistCompanionDialectPreference({workspaceId:f.event.ctx.workspaceId,userId:f.event.read.userId,change:attention.voiceStyle.persistentPreference});
+          },expiresAt:new Date(Date.now()+180_000).toISOString()});
+        const calls=await f.mutate(tx=>tx`SELECT name,status FROM companion_agent_tool_calls WHERE run_id=${f.event.read.runId}`);
+        const [meta]=await f.mutate(tx=>tx`SELECT route,model_call_count,turn_interpretation FROM companion_turn_runs WHERE id=${f.event.read.runId}`);
+        observations.push({case:scenario.name,status:result.status,text:result.status==='completed'?result.text:null,firstPublished,elapsedMs:performance.now()-started,calls,route:meta.route,modelCalls:meta.model_call_count,traces,instruction,earlyVoice,prefetched});
+        assert.equal(result.status,'completed');
+        if(scenario.mode!=='hybrid'){assert.equal(meta.route.classifier.source,'direct');assert.equal(traces.filter(c=>c.kind==='classifier').length,0);}
+        if('casual' in scenario){assert.equal(meta.route.hybrid.decision,'reply');assert.equal(traces.filter(c=>c.kind==='classifier').length,0);assert.equal(traces.length,1);}
+        if('read' in scenario){
+          assert.ok(calls.some(c=>c.name==='companion_read_note'&&c.status==='succeeded')||(scenario.mode==='hybrid'&&prefetched));
+          if(result.status==='completed')assert.match(result.text,'edit' in scenario?/75|七十五/:typeof scenario.read==='number'?/93|九十三/:/72|七十二/);
+          if('edit' in scenario){
+            assert.ok(calls.some(c=>c.name==='companion_edit_note'&&c.status==='succeeded'));
+            const blocks=await f.mutate(tx=>tx`SELECT b.content FROM note_blocks b JOIN notes n ON n.current_version_id=b.version_id WHERE n.id=${noteId} ORDER BY b.ordinal`);
+            const saved=blocks.map(b=>b.content).join('\n');assert.match(saved,/75/);assert.match(saved,/61/);assert.doesNotMatch(saved,/72/);
+          }
+        }
+        if('voice' in scenario){
+          assert.match(instruction??'',/四川话/);assert.equal(earlyVoice,false);
+          assert.equal(await readCompanionDialectPreference({workspaceId:f.event.ctx.workspaceId,userId:f.event.read.userId}),'河南话');
+        }
+        if('deep' in scenario)assert.ok(traces.some(c=>c.kind==='generation'&&c.disableThinking===false));
+      }catch(err){observations.push({case:scenario.name,error:err instanceof Error?err.message:'unknown',traces,elapsedMs:performance.now()-started});throw err;}
+      finally{clearTimeout(timeout);controller.abort();await f.cleanup();if(process.env.ENTRY_LIVE_OUT)writeFileSync(process.env.ENTRY_LIVE_OUT,JSON.stringify(observations,null,2));}
+    });
+  }finally{if(previous===undefined)delete process.env.COMPANION_AGENT_ENTRY_MODE;else process.env.COMPANION_AGENT_ENTRY_MODE=previous;}
 });

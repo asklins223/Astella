@@ -68,6 +68,10 @@ export async function runStreamingAgentStep(args: {
   ctxSignal: AbortSignal;
   timeoutMs: number;
   onProviderDelta: (delta: string) => Promise<boolean>;
+  /** Internal entry protocol observation, before the existing envelope decoder. */
+  onRawTextDelta?: (delta: string) => void;
+  /** Opt-in protocol for an entry that streams an envelope reply. */
+  responseFormat?: "text" | "json_object";
   /**
    * 流中**已完整**的工具调用（40b §4.1-1 / R7）。provider 每判定一格确定完整就调一次。
    *
@@ -348,7 +352,7 @@ export async function runStreamingAgentStep(args: {
           //
           // 改成纯文本后增量本身就是正文：不需要解码器、不存在认错键名的退化，
           // 且下游仍有两道防线（projectCompanionVisible 的信封守卫 + 全文校验）。
-          responseFormat: "text",
+          responseFormat: args.responseFormat ?? "text",
           nativeAgentRequest: args.stepRequest,
           // ④-b：带工具的一步也必须把工具列表发出去，否则模型永远不返回 tool_calls。
           // 与 executeAgentTurn 的 body 完全同形（那里同样是 tools + tool_choice=auto、
@@ -368,6 +372,7 @@ export async function runStreamingAgentStep(args: {
         signal,
         (delta) => {
           if (stopped || delta.length === 0) return;
+          args.onRawTextDelta?.(delta);
           consume(delta);
         },
         );

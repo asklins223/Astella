@@ -259,7 +259,10 @@ export function canUseCompanionAgentTool(
   if (!companionAgentPermissionLevelSchema.safeParse(permission).success)
     return { allowed: false, requiresConfirmation: false, reason: "权限状态暂时无法确认，这次操作没有执行。" };
   if (definition.riskClass === "read" || isCompanionAutonomousTool(definition.name)
-    || ["companion_save_participation", "companion_write_annotation"].includes(definition.name)) {
+    // Turn voice controls keep the interpreter's account-scoped preference
+    // semantics. Their handler requires current user wording and cannot write
+    // notes, launch goals or grant any business capability.
+    || ["companion_save_participation", "companion_write_annotation", "companion_configure_turn"].includes(definition.name)) {
     return { allowed: true, requiresConfirmation: false };
   }
   if (definition.confirmationStage === "before_execute" || definition.riskClass === "irreversible"

@@ -31,9 +31,9 @@ import {
 import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
 import { stripVoiceExpressionTags } from "@astella/shared/voice-expression-tags";
 
-import { COMPANION_TOOL_INTENT_TIMEOUT_MS, interpretCompanionTurn } from "../tools/companion-tool-intent.ts";
 import { createCompanionRouteRecorder } from "./companion-route-record.ts";
-import { companionAttentionObjects } from "../proactive/companion-attention.ts";
+import { resolveCompanionEntryMode, usesCompanionDirectControls, DIRECT_ENTRY_TOOLS, startCompanionEntry,
+  createCompanionDirectControls, companionDirectGuidance } from "../turn/companion-entry-mode.ts";
 import { companionTurnThinking } from "../turn/companion-turn-thinking.ts";
 import { companionActionProgressLabel } from "./companion-action-progress.ts";
 import { companionResponseStrategy } from "../turn/companion-response-strategy.ts";
@@ -56,8 +56,7 @@ import {
 } from "../../lib/handler-timeout-config.ts";
 import { AgentOutputError, CompanionAgentBudgetExceededError, CompanionContextChangedError } from "../../lib/non-retryable-errors.ts";
 import { ProviderRequestError } from "../../lib/provider-request-error.ts";
-import { currentWorkerWorkspaceTransaction, withWorkerWorkspaceTransaction } from "../../db.ts";
-import { isJobLeaseActive } from "../../lib/job-lease.ts";
+import { withWorkerWorkspaceTransaction } from "../../db.ts";
 import {
   emitCompanionAssistantStatus,
   recoverCompanionRunFailureSpanBestEffort,
@@ -94,7 +93,6 @@ export {
 
 import { readCompanionWebSearchReceipts, readWebSearchReceipt, webSearchCitationBlocks, webSearchServiceAvailable } from "../../agent/web-search.ts";
 import { prefetchCompanionNote } from "../note/companion-note-prefetch.ts";
-import { companionClassifierCapabilities } from "../turn/companion-classifier-surface.ts";
 import { companionProviderFitsRequest } from "./companion-provider-fit.ts";
 import { judgeCompanionStepClosing, waitingConfirmationReceipts } from "../turn/companion-step-closing.ts";
 import { companionRecoveryIdentity, openCompanionTurn } from "../turn/companion-turn-opening.ts";
@@ -170,7 +168,10 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
   // 工具面的成员资格只由**声明 + 宿主事实**决定（见 shared/companion-host-context.ts）：
   // 权限档、数据外发政策，加上"这一轮实际发生了什么"（批注/整篇正文/主动轮）。
   // 本轮判定（意图）在类型上就进不来——2026-10-09 的翻车正是它进来过一次。
+  const entryMode = resolveCompanionEntryMode();
+  const directEntry = usesCompanionDirectControls(entryMode);
   const availableDefinitions = resolveAllCompanionAgentTools(meta.permissionLevel, event.constraints)
+    .filter(definition => directEntry || !DIRECT_ENTRY_TOOLS.has(definition.name))
     .filter(definition => companionCapabilityOfferedInHostContext(definition,
       { writingAnnotation, completeNoteReply, initiative: Boolean(args.read.initiativeInput) }));
   const cachedInterpretation = args.read.initiativeInput ? agentTurnInterpretationV1Schema.parse(
@@ -183,32 +184,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
    * 分类器**不等**——它和"闲聊版第一步"并行跑（2026-10-07 用户决定：首字延迟里
    * 最大的一块就是这次串行往返，实测 1.9–2.4s，而且不产出任何可见内容）。
    */
-  const routeRecorder = createCompanionRouteRecorder({ scopeKey: `${args.ctx.workspaceId}:${args.read.userId}`, userText: args.read.userText, recentMessages: args.read.recentMessages, embedText: args.embedText, activeLearningTask: args.read.groundedTutorContext !== null || args.read.formalAnswerInProgress });
-  const classifierCapabilities = companionClassifierCapabilities({ availableToolNames: availableDefinitions.map(d => d.name),
-    pageKind: (args.read.pageContext as { context?: { pageKind?: string } } | null)?.context?.pageKind });
-  const attentionResult = cachedInterpretation
-    ? Promise.resolve(cachedInterpretation)
-    : interpretCompanionTurn(args.provider, args.baseMessages, {
-      requestHash: attentionRequestHash,
-      objects: companionAttentionObjects(args.read, meta.relatedGoals),
-      capabilities: classifierCapabilities,
-      recentMessages: args.read.recentMessages,
-      conversationClock: args.read.conversationClock,
-      job: args.ctx,
-      runId: args.read.runId,
-      userId: args.read.userId,
-      permissionLevel: meta.permissionLevel,
-      stepTimeoutMs: Math.min(COMPANION_TOOL_INTENT_TIMEOUT_MS, deadlineAt - Date.now()),
-      currentActiveTransaction: currentWorkerWorkspaceTransaction,
-      verifyAttempt: (attempt) => isJobLeaseActive({ ...args.ctx, leaseToken: attempt.leaseToken }),
-      onReceipt: (receipt) => routeRecorder.onReceipt(receipt, { runId: args.read.runId, providerId: args.provider.id, modelId: args.provider.modelId }),
-    });
-  const attentionPromise = routeRecorder.track(attentionResult.then(async (attention) => {
-    // Persist any explicit account preference before the speculative stream's release gate opens.
-    const voicePreferenceWrite = await args.onTurnInterpretation?.(attention);
-    return voicePreferenceWrite ? { ...attention, voicePreferenceWrite } : attention;
-  }));
-
+  const routeRecorder = createCompanionRouteRecorder({ entryMode, scopeKey: `${args.ctx.workspaceId}:${args.read.userId}`, userText: args.read.userText, recentMessages: args.read.recentMessages, embedText: args.embedText, activeLearningTask: args.read.groundedTutorContext !== null || args.read.formalAnswerInProgress });
   const opening = openCompanionTurn(args);
   const dialogueHistory = opening.dialogueHistory;
   const currentRequest = opening.currentRequest;
@@ -221,6 +197,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
   });
   const recovered = meta.stepCount > 0
     ? await loadCompanionRuntimeCheckpoint(event, recoveryIdentity) : null;
+  if (recovered && recovered.state.entryMode !== entryMode) throw new CompanionContextChangedError();
   if (recovered) {
     if (recovered.phase === "waiting" && recovered.proposalId !== args.continuationProposalId)
       throw new CompanionContextChangedError();
@@ -234,19 +211,29 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       stepCount: recovered.state.stepCount }, "restored private Agent working-state checkpoint");
     if (recovered.phase === "settled") return recovered.result!;
   }
-
+  const noteInput = { workspaceId: args.ctx.workspaceId, userId: args.read.userId, runId: args.read.runId,
+    recovered: Boolean(recovered), noteId: notePage?.context?.noteId, noteVersionId: notePage?.context?.noteVersionId };
+  const hybridNoteAllowed = event.constraints.noteLibraryReadEnabled !== false;
+  const earlyNote = entryMode === "hybrid" && !cachedInterpretation && hybridNoteAllowed && notePage?.context?.pageKind === "note"
+    ? await prefetchCompanionNote({ ...noteInput, toolUse: "read", candidateOperations: ["companion_read_note"] }) : null;
+  if (earlyNote?.message) messages.push(earlyNote.message);
+  const entry = startCompanionEntry({ args, mode: entryMode, requestHash: attentionRequestHash,
+    cached: cachedInterpretation, relatedGoals: meta.relatedGoals,
+    names: availableDefinitions.map(d => d.name), pageKind: notePage?.context?.pageKind,
+    permissionLevel: meta.permissionLevel, deadlineAt, recorder: routeRecorder, messages,
+    skipHybrid: Boolean(recovered) || (earlyNote !== null && (!earlyNote.prefetched || earlyNote.truncated)) });
   // 回合前段（投机器、注意力落定、历史绑定、工具面与能力快照）整段搬到
   // companion-turn-preamble.ts；messages 仍归运行时所有，用访问器接进去。
   const preamble = await settleCompanionTurnPreamble({
-    loopArgs: args,
+    loopArgs: { ...args, releaseRouter: entryMode === "classified" ? args.releaseRouter : undefined },
     event,
     meta,
     budget,
     availableDefinitions,
     dialogueHistory,
     recovered,
-    attentionPromise,
-    cachedInterpretation,
+    attentionPromise: entry.promise,
+    cachedInterpretation: entry.cached,
     handlerStartedAtMs,
     deadlineAt,
     elapsedMsDelta: elapsedDelta(),
@@ -257,24 +244,18 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     attention, historyBinding, userRequiresTool, userAskedForAction, definitions,
     steerableReadTools, steerableActionTools, requestedActionTools,
   } = preamble;
+  const directControls = createCompanionDirectControls({ mode: directEntry ? entryMode : "classified", attention,
+    userText: args.read.userText, deepened: recovered?.state.deepened, onInterpretation: args.onTurnInterpretation });
   if (definitions.length === 0)
     throw new Error(`companion tool surface resolved empty for permission "${String(meta.permissionLevel)}"`);
   /**
    * Host pre-read for the current note: see companion-note-prefetch.ts for why
    * the host reads before generation and which interpretations trigger it.
    */
-  const notePrefetch = await prefetchCompanionNote({
-    workspaceId: args.ctx.workspaceId,
-    userId: args.read.userId,
-    runId: args.read.runId,
-    recovered: Boolean(recovered),
-    toolUse: attention.toolUse,
-    candidateOperations: attention.candidateOperations,
-    noteId: notePage?.context?.noteId,
-    noteVersionId: notePage?.context?.noteVersionId,
-  });
+  const notePrefetch = earlyNote ?? (entryMode === "hybrid" && !hybridNoteAllowed ? { prefetched: false, message: null }
+    : await prefetchCompanionNote({ ...noteInput, toolUse: attention.toolUse, candidateOperations: attention.candidateOperations }));
   const notePrefetched = notePrefetch.prefetched;
-  if (notePrefetch.message) messages.push(notePrefetch.message);
+  if (!earlyNote && notePrefetch.message) messages.push(notePrefetch.message);
   const toolSurface = createCompanionToolSurface({
     definitions,
     pageKind: notePage?.context?.pageKind ?? null,
@@ -284,8 +265,9 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
   const offeredToolDefinitions = toolSurface.offered;
   /** Persisted with the checkpoint so a resumed turn keeps what it loaded. */
   const loadedToolNames = toolSurface.loadedToolNames;
-  let prefetchedFirstStep = preamble.prefetchedFirstStep;
-  routeRecorder.record(event, handlerStartedAtMs);
+  let prefetchedFirstStep = entry.hybrid()?.prefetched ?? preamble.prefetchedFirstStep;
+  routeRecorder.record(event, handlerStartedAtMs, entry.hybrid()
+    ? { ...entry.hybrid()!.facts, hostNotePrefetched: earlyNote?.prefetched === true } : undefined);
 
 
   /**
@@ -295,7 +277,8 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
    * 主动参与不再按事件名另开一档：招呼与陪着说话是 conversation 语域，走的正是
    * 「闲聊关思考」这条现役规则；答后再看一眼和页面帮助是提问档，该开就开。
    */
-  const turnThinking = companionTurnThinking(attention);
+  const turnThinking = !directEntry ? companionTurnThinking(attention)
+    : { disableThinking: directControls.disableThinking(), basis: `entry:${entryMode}` };
   const responseStrategy = companionResponseStrategy(attention);
   // 这是调用意图，不是上游实际消耗：不支持 none 的模型仍使用最低思考档。
   logger.info({ runId: args.read.runId, requestedDisableThinking: turnThinking.disableThinking,
@@ -425,6 +408,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     rejectedExecutionConstraints: [...rejectedExecutionConstraints], degenerateRetried, outputRepairToolCount,
     actionSteerAttempts, quoteCorrectionUsed, lookupClaimSteered, steerSwapToFallback, utterancePublished,
     loadedToolNames: [...loadedToolNames],
+    entryMode, deepened: directControls.deepened(),
   });
   const finishBoundary = (stepId: string, status: "succeeded" | "failed", hash: string | undefined,
     errorCode?: string, result?: Extract<CompanionAgentLoopResult, { status: "completed" }>) => finishStep(event, stepId, status, hash,
@@ -471,7 +455,8 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     const finalAnswerOnly = false;
     // 工具面、执行政策与请求装配这三样的判据在 `companion-agent-step-assembly.ts`。
     const { tools: toolsOfferedThisStep, toolChoice: toolChoiceThisStep } = companionStepToolSurface({
-      toolDefinitions: offeredToolDefinitions(),
+      toolDefinitions: offeredToolDefinitions().filter(tool => tool.name !== "companion_deepen"
+        || (entryMode === "direct_fast" && !directControls.deepened())),
       webSearchAllowedForStep: companionWebSearchAllowedForStep({
         accountEnabled: currentMeta.webSearchEnabled === true,
         constraintsEnabled: event.constraints.webSearchEnabled === true,
@@ -514,12 +499,12 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     let stepRequest: AgentTurnRequest = assembleCompanionStepRequest({
       turnPolicy: typeof args.baseMessages[0]?.content === "string" ? args.baseMessages[0].content : "",
       runtimePolicy,
-      executionGuidance: [responseStrategy.guidance, companionExecutionConstraintGuidance(attention)].filter(Boolean).join("\n"),
+      executionGuidance: [responseStrategy.guidance, companionExecutionConstraintGuidance(attention), companionDirectGuidance(entryMode)].filter(Boolean).join("\n"),
       attention,
       messages,
       tools: toolsOfferedThisStep,
       toolChoice: toolChoiceThisStep,
-      disableThinking: turnThinking.disableThinking || readOnlyRequiredStep,
+      disableThinking: !directEntry ? turnThinking.disableThinking || readOnlyRequiredStep : directControls.disableThinking(),
       provider: args.provider,
       temperature: responseStrategy.temperature,
       prefetchedRequest: prefetched?.request ?? null,
@@ -1201,6 +1186,16 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       const parsedArgs = { data: validated.accepted!.arguments };
       const serializedArgs = canonicalJsonV1(parsedArgs.data);
       const argsHash = sha256Utf8V1(serializedArgs);
+      const control = await directControls.apply(identity.name, parsedArgs.data);
+      if (control) {
+        messages.push({ role: "tool", toolCallId: call.id, content: JSON.stringify(control) });
+        await updateRunMeta(event, { turnInterpretation: attention });
+        await appendAgentEvent(event, "agent.tool", { tool: { toolCallId: identity.id, name: identity.name,
+          toolVersion: definition.toolVersion, riskClass: definition.riskClass,
+          status: control.ok ? "succeeded" : "not_executed", safeLabel: control.summary } });
+        continue;
+      }
+      await directControls.observeDocumentWork([identity.name]);
       if (identity.name === "companion_load_tools") {
         const groups = (parsedArgs.data as { groups?: string[] }).groups ?? [];
         await applyCompanionToolLoad({

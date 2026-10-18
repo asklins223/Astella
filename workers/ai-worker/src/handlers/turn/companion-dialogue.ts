@@ -90,6 +90,7 @@ import {
   type CompanionDisplaySegmentState,
 } from "../../lib/tts-segments.ts";
 import { resolveCompanionVoiceInstruction } from "./companion-voice-request-style.ts";
+import { resolveCompanionEntryMode } from "./companion-entry-mode.ts";
 import { persistCompanionDialectPreference, readCompanionDialectPreference } from "./companion-voice-preference.ts";
 import { qwenDialectForInstruction } from "@astella/shared/tts-voice-catalog";
 import { companionVoiceExpressionBoundaries, companionVoiceSegmentExpression, projectCompanionVoiceExpression } from "./companion-voice-expression.ts";
@@ -1016,7 +1017,7 @@ export async function runCompanionDialogue(
   let agentResult;
   try {
     // L1 路由（默认关）：只有显式开启时才建 embedding 出口，且它走治理门（同意 + 外发政策）。
-    const releaseRouterMode = resolveCompanionReleaseRouterMode();
+    const releaseRouterMode = resolveCompanionEntryMode() === "classified" ? resolveCompanionReleaseRouterMode() : "off";
     const releaseRouterEmbed = releaseRouterMode === "off" ? undefined
       : createCompanionReleaseEmbeddingPort({ workspaceId: ctx.workspaceId, userId: read.userId, job: ctx });
     const releaseRouter = releaseRouterMode !== "enforce" || !releaseRouterEmbed ? undefined

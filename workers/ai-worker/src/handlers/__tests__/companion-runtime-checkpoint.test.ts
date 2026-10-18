@@ -12,7 +12,8 @@ const state = (): CompanionRuntimeState => ({ messages: [{ role: "user", content
   visibleSegmentDelivered: [true], richBlocks: [], webSearchCalls: 0, historyFoldApplied: false,
   invalidArgumentCalls: ["unchanged bad args"], rejectedExecutionConstraints: ["forbidden time arrangement"],
   degenerateRetried: false, outputRepairToolCount: 1, actionSteerAttempts: 1, quoteCorrectionUsed: true,
-  lookupClaimSteered: true, steerSwapToFallback: true, utterancePublished: false, loadedToolNames: [] });
+  lookupClaimSteered: true, steerSwapToFallback: true, utterancePublished: false, loadedToolNames: [],
+  entryMode: "classified", deepened: false });
 
 test("private runtime state preserves full tool evidence and no-progress correction state", () => {
   const original = { phase: "continue" as const, state: state() };
