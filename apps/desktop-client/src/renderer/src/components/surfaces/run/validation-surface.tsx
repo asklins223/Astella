@@ -29,12 +29,20 @@ export function ValidationSurface() {
   const setNavigationGuard = useRoomStore((state) => state.setNavigationGuard);
   const pendingExit = useRef<PendingExit | null>(null);
   const mounted = useRef(true);
+  const [runActivity, setRunActivity] = useState<{ runId: string; active: boolean | null } | null>(null);
   /**
    * 审计 F3：作答中按 Esc 或点目录栏会被 navigationGuard 接管后立刻释放本轮——
    * 页内出口明明有一张「要现在停下来吗」的确认纸，这两个入口却一句话不说就把人
    * 传回首页。现在接管时先落进这张同样口径的确认纸：确认才走，取消就继续作答。
    */
   const [navExit, setNavExit] = useState<{ intent?: RoomIntent } | null>(null);
+
+  const reportRunActivity = useCallback((runId: string, active: boolean | null) => {
+    setRunActivity((current) => {
+      if (active === null) return current?.runId === runId ? null : current;
+      return { runId, active };
+    });
+  }, []);
 
   useEffect(() => {
     mounted.current = true;
@@ -94,13 +102,27 @@ export function ValidationSurface() {
       if (!pendingExit.current) setNavigationGuard(null);
       return;
     }
+    const activeRunStatus = runActivity?.runId === activeRunId ? runActivity.active : null;
+    if (activeRunStatus === false) {
+      // History reuses `activeRunId`; leave terminal results without asking to stop, but still
+      // release the main-process assessment guard after the Player unmounts.
+      setNavigationGuard((intent) => {
+        if (pendingExit.current) { pendingExit.current.intent = intent; return; }
+        void handleRunExit(activeRunId, undefined, intent);
+      });
+      if (navExit?.intent) {
+        setNavExit(null);
+        void handleRunExit(activeRunId, undefined, navExit.intent);
+      }
+      return () => { if (!pendingExit.current) setNavigationGuard(null); };
+    }
     setNavigationGuard((intent) => {
       // 释放已经在路上时，后续点击只更新落点（沿用旧行为），不再多弹一次确认纸。
       if (pendingExit.current) { pendingExit.current.intent = intent; return; }
       setNavExit({ intent });
     });
     return () => { if (!pendingExit.current) setNavigationGuard(null); };
-  }, [activeRunId, handleRunExit, setNavigationGuard]);
+  }, [activeRunId, handleRunExit, navExit, runActivity, setNavigationGuard]);
 
   const confirmNavExit = useCallback(() => {
     const intent = navExit?.intent;
@@ -109,7 +131,10 @@ export function ValidationSurface() {
   }, [activeRunId, handleRunExit, navExit]);
 
   return <>
-    <LearningRunSurface onExit={activeRunId ? (request) => { void handleRunExit(activeRunId, request); } : undefined} />
+    <LearningRunSurface
+      onExit={activeRunId ? (request) => { void handleRunExit(activeRunId, request); } : undefined}
+      onRunActivityChange={reportRunActivity}
+    />
     {navExit ? (
       <div className="run-confirmation-backdrop">
         <div className="run-confirmation" role="alertdialog" aria-modal="true" aria-labelledby="learning-run-nav-confirmation-title" aria-describedby="learning-run-nav-confirmation-description"

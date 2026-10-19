@@ -13,7 +13,7 @@ import type { AgentTurnRequest } from "@astella/shared";
 import { createCompanionAgentStepCheckpointPort } from "./companion-agent-events.ts";
 import { companionAgentModelInputHash } from "./companion-agent-task.ts";
 import { restoreCompactionCheckpoint } from "../context/companion-compaction-checkpoint.ts";
-import { companionStepCorrectionMessages } from "../turn/companion-step-plan.ts";
+import { companionStepCorrectionMessages, dropCompanionInternalCorrections } from "../turn/companion-step-plan.ts";
 import { sanitizeCompanionVisibleText } from "../turn/companion-dialogue-content.ts";
 import type { AgentEventContext } from "../tools/companion-read-tools.ts";
 import type { AIProvider } from "../../lib/ai-provider.ts";
@@ -70,6 +70,8 @@ export async function resumeCompanionInterruptedInput(
   const suffix = displayed.slice(prior.length).replace(/^\n\n/, "");
   deps.visibleSegments.push(suffix);
   deps.visibleSegmentDelivered.push(true);
+  const withoutPriorRepairCarriers = dropCompanionInternalCorrections(deps.messages);
+  deps.messages.splice(0, deps.messages.length, ...withoutPriorRepairCarriers);
   deps.messages.push(
     { role: "assistant", content: suffix },
     ...companionStepCorrectionMessages({

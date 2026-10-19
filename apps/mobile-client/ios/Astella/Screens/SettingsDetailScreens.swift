@@ -1,4 +1,5 @@
 import AVFoundation
+import Foundation
 import SwiftUI
 import UIKit
 import UserNotifications
@@ -9,85 +10,125 @@ struct DevicePermissionsScreen: View {
     @State private var microphoneStatus = "正在读取"
     @State private var notificationsStatus = "正在读取"
     @State private var isRequestingMicrophone = false
+    @State private var isRequestingNotifications = false
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 17) {
+            VStack(alignment: .leading, spacing: 0) {
                 Text("系统权限只在对应功能需要时才会请求。照片和文件通过 iOS 选择器按次授权，不会读取整个图库或文件夹。")
-                    .font(.footnote).lineSpacing(4).foregroundStyle(StudyPalette.muted)
-                    .padding(.horizontal, 3)
+                    .font(.system(size: 14))
+                    .lineSpacing(4)
+                    .foregroundStyle(StudyPalette.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 2)
+                    .padding(.bottom, 17)
 
-                VStack(alignment: .leading, spacing: 9) {
-                    HStack(spacing: 9) {
-                        AstellaGlyph(kind: .shield, tint: StudyPalette.accent).frame(width: 19, height: 19)
-                        Text("由你决定何时开启").font(.system(size: 15, weight: .semibold)).foregroundStyle(StudyPalette.ink)
-                    }
-                    Text("语音需要麦克风；图片与文档只会访问你主动选择的项目。关闭权限时，键盘、共享书房和粘贴文字仍可继续使用。")
-                        .font(.footnote).lineSpacing(4).foregroundStyle(StudyPalette.muted)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(16)
-                .background(StudyPalette.sky.opacity(0.7), in: RoundedRectangle(cornerRadius: 17, style: .continuous))
+                CompanionBubbleRow(text: "我需要其中几项才能陪你读书。关掉时，我会说明原因，也会给你别的办法。")
+                    .padding(.bottom, 24)
 
-                VStack(alignment: .leading, spacing: 0) {
+                sectionLabel("权限")
+                    .padding(.bottom, 11)
+
+                VStack(spacing: 0) {
                     permissionRow(
+                        icon: .mic,
                         title: "麦克风",
-                        detail: "语音交流时录音；不会自动开始。",
+                        detail: "语音随记时录音",
                         status: microphoneStatus,
                         actionTitle: microphoneActionTitle,
                         action: microphoneAction
                     )
                     permissionDivider
                     permissionRow(
-                        title: "照片",
-                        detail: "使用系统照片选择器，按次读取你选中的图片。",
+                        icon: .photo,
+                        title: "相册",
+                        detail: "选择图片作为材料",
                         status: "系统按次授权",
                         actionTitle: nil,
                         action: nil
                     )
                     permissionDivider
                     permissionRow(
+                        icon: .camera,
                         title: "相机",
-                        detail: "当前版本没有拍摄入口，因此不会请求相机权限。",
+                        detail: "当前版本没有拍摄入口",
                         status: "未使用",
                         actionTitle: nil,
                         action: nil
                     )
                     permissionDivider
                     permissionRow(
+                        icon: .document,
                         title: "文件",
-                        detail: "通过系统文件选择器访问你挑选的文档。",
+                        detail: "通过选择器导入 PDF 与文档",
                         status: "系统按次授权",
                         actionTitle: nil,
                         action: nil
                     )
                     permissionDivider
                     permissionRow(
+                        icon: .info,
                         title: "通知",
-                        detail: "仅用于系统推送；应用内内容不依赖通知权限。",
+                        detail: "复习与陪伴提醒",
                         status: notificationsStatus,
-                        actionTitle: nil,
-                        action: nil
+                        actionTitle: notificationActionTitle,
+                        action: notificationAction
                     )
                 }
-                .padding(.horizontal, 15)
-                .background(StudyPalette.paper.opacity(0.88), in: RoundedRectangle(cornerRadius: 19, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 19, style: .continuous).stroke(StudyPalette.paperEdge.opacity(0.62), lineWidth: 0.8))
+                .padding(.horizontal, 18)
+                .padding(.vertical, 6)
+                .modifier(StudyGlassSurfaceStyle(radius: 24, interactive: false))
 
-                VStack(alignment: .leading, spacing: 9) {
-                    Text("伴星操作范围").font(.system(size: 11, weight: .semibold)).foregroundStyle(StudyPalette.muted)
+                sectionLabel("被拒绝时怎么办")
+                    .padding(.top, 28)
+                    .padding(.bottom, 11)
+
+                VStack(spacing: 0) {
+                    guidanceRow(title: "相机", detail: "可以先用文件选择器选图片，之后再补拍。")
+                    permissionDivider
+                    guidanceRow(title: "通知", detail: "仍会在应用内显示提醒，只是没有系统推送。")
+                }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 6)
+                .modifier(StudyGlassSurfaceStyle(radius: 24, interactive: false))
+
+                VStack(alignment: .leading, spacing: 7) {
+                    SectionEyebrow(text: "伴星操作范围")
                     Text(companionPermissionTitle)
-                        .font(.system(size: 15, weight: .semibold)).foregroundStyle(StudyPalette.ink)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(StudyPalette.ink)
                     Text(companionPermissionDetail)
-                        .font(.footnote).lineSpacing(4).foregroundStyle(StudyPalette.muted)
+                        .font(.system(size: 12))
+                        .lineSpacing(4)
+                        .foregroundStyle(StudyPalette.muted)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(16)
-                .background(StudyPalette.paper, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 17, style: .continuous).stroke(StudyPalette.paperEdge.opacity(0.62), lineWidth: 0.8))
+                .padding(18)
+                .background(StudyPalette.paper.opacity(0.78), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(StudyPalette.paperEdge.opacity(0.5), lineWidth: 0.7))
+                .padding(.top, 26)
+
+                Button {
+                    Task { await refreshPermissionStatus() }
+                } label: {
+                    HStack(spacing: 9) {
+                        AstellaGlyph(kind: .refresh, tint: StudyPalette.accent).frame(width: 16, height: 16)
+                        Text("刷新权限状态").font(.system(size: 15, weight: .medium))
+                    }
+                    .foregroundStyle(StudyPalette.ink)
+                    .padding(.horizontal, 18)
+                    .frame(minHeight: 46)
+                    .modifier(StudyGlassSurfaceStyle(radius: 23, interactive: true))
+                }
+                .buttonStyle(AstellaPressStyle())
+                .padding(.top, 26)
             }
-            .padding(.horizontal, 22).padding(.top, 20).padding(.bottom, 32)
-            .frame(maxWidth: 620).frame(maxWidth: .infinity)
+            .padding(.horizontal, 22)
+            .padding(.top, 18)
+            .padding(.bottom, 40)
+            .frame(maxWidth: 620)
+            .frame(maxWidth: .infinity)
         }
         .scrollIndicators(.hidden)
         .background(DawnBackground())
@@ -96,21 +137,46 @@ struct DevicePermissionsScreen: View {
         .task { await refreshPermissionStatus() }
     }
 
+    private func sectionLabel(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 12.5, weight: .medium))
+            .tracking(0.6)
+            .foregroundStyle(StudyPalette.muted)
+            .padding(.leading, 2)
+    }
+
     private var microphoneActionTitle: String? {
         switch AVAudioApplication.shared.recordPermission {
-        case .granted: nil
+        case .granted: "撤销"
         case .denied: "去系统设置"
-        case .undetermined: isRequestingMicrophone ? "正在请求…" : "允许麦克风"
+        case .undetermined: isRequestingMicrophone ? "正在请求…" : "允许"
         @unknown default: nil
         }
     }
 
     private var microphoneAction: (() -> Void)? {
         switch AVAudioApplication.shared.recordPermission {
-        case .granted: nil
+        case .granted: { openApplicationSettings() }
         case .denied: { openApplicationSettings() }
         case .undetermined: { requestMicrophone() }
         @unknown default: nil
+        }
+    }
+
+    private var notificationActionTitle: String? {
+        switch notificationsStatus {
+        case "已允许": "撤销"
+        case "已拒绝": "去系统设置"
+        case "未请求": isRequestingNotifications ? "正在请求…" : "允许"
+        default: nil
+        }
+    }
+
+    private var notificationAction: (() -> Void)? {
+        switch notificationsStatus {
+        case "已允许", "已拒绝": { openApplicationSettings() }
+        case "未请求": { requestNotifications() }
+        default: nil
         }
     }
 
@@ -133,28 +199,53 @@ struct DevicePermissionsScreen: View {
     }
 
     private var permissionDivider: some View {
-        Rectangle().fill(StudyPalette.paperEdge.opacity(0.55)).frame(height: 0.7).padding(.leading, 45)
+        Rectangle()
+            .fill(StudyPalette.paperEdge.opacity(0.55))
+            .frame(height: 0.7)
+            .padding(.leading, 68)
     }
 
-    private func permissionRow(title: String, detail: String, status: String, actionTitle: String?, action: (() -> Void)?) -> some View {
-        HStack(alignment: .center, spacing: 11) {
-            AstellaGlyph(kind: title == "麦克风" ? .mic : title == "通知" ? .info : title == "照片" ? .photo : .document, tint: StudyPalette.accent)
-                .frame(width: 18, height: 18).frame(width: 34, height: 42)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.system(size: 13, weight: .medium)).foregroundStyle(StudyPalette.ink)
-                Text(detail).font(.system(size: 10)).lineSpacing(2).foregroundStyle(StudyPalette.muted)
+    private func permissionRow(icon: AstellaGlyphKind, title: String, detail: String, status: String, actionTitle: String?, action: (() -> Void)?) -> some View {
+        HStack(alignment: .center, spacing: 13) {
+            AstellaGlyph(kind: icon, tint: StudyPalette.accent)
+                .frame(width: 17, height: 17)
+                .frame(width: 36, height: 36)
+                .background(StudyPalette.sky.opacity(0.78), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(.system(size: 16, weight: .semibold)).foregroundStyle(StudyPalette.ink)
+                Text(detail).font(.system(size: 11)).foregroundStyle(StudyPalette.muted)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            Spacer(minLength: 5)
-            VStack(alignment: .trailing, spacing: 5) {
-                Text(status).font(.system(size: 10, weight: .medium)).foregroundStyle(permissionColor(status))
+            Spacer(minLength: 6)
+            HStack(spacing: 8) {
+                SettingsStatusPill(text: status, color: permissionColor(status))
                 if let actionTitle, let action {
-                    Button(actionTitle, action: action)
-                        .font(.system(size: 10, weight: .semibold)).foregroundStyle(StudyPalette.accent)
-                        .disabled(isRequestingMicrophone)
+                    Button(action: action) {
+                        Text(actionTitle)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(StudyPalette.ink)
+                            .padding(.horizontal, 11)
+                            .frame(minHeight: 28)
+                            .background(StudyPalette.paper.opacity(0.9), in: Capsule())
+                            .overlay(Capsule().stroke(StudyPalette.paperEdge.opacity(0.7), lineWidth: 0.7))
+                    }
+                    .buttonStyle(AstellaPressStyle())
+                    .disabled(isRequestingMicrophone || isRequestingNotifications)
                 }
             }
         }
-        .frame(minHeight: 69)
+        .padding(.vertical, 12)
+        .frame(minHeight: 62)
+    }
+
+    private func guidanceRow(title: String, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.system(size: 15, weight: .semibold)).foregroundStyle(StudyPalette.ink)
+            Text(detail).font(.system(size: 11)).foregroundStyle(StudyPalette.muted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 12)
     }
 
     private func permissionColor(_ status: String) -> Color {
@@ -177,6 +268,12 @@ struct DevicePermissionsScreen: View {
         case .notDetermined: notificationsStatus = "未请求"
         @unknown default: notificationsStatus = "状态未知"
         }
+        #if DEBUG
+        if store.uiReviewMode != nil {
+            if store.companionPermissionLevel == nil { store.companionPermissionLevel = "guided" }
+            return
+        }
+        #endif
         if store.companionPermissionLevel == nil { await store.loadAccountSettings() }
     }
 
@@ -191,6 +288,16 @@ struct DevicePermissionsScreen: View {
         }
     }
 
+    private func requestNotifications() {
+        guard !isRequestingNotifications else { return }
+        isRequestingNotifications = true
+        Task { @MainActor in
+            _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound])
+            await refreshPermissionStatus()
+            isRequestingNotifications = false
+        }
+    }
+
     private func openApplicationSettings() {
         guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
         openURL(url)
@@ -202,100 +309,189 @@ struct AIDataAuthorizationScreen: View {
     @State private var policy = AIDataPolicy(sendToExternal: false, sendImageContent: false, piiDetection: true, auditLogging: true)
     @State private var consentAccepted = false
     @State private var isLoading = false
+    @State private var isExporting = false
+    @State private var exportFileURL: URL?
+    @State private var showExportSheet = false
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 17) {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack(spacing: 8) {
-                        AstellaGlyph(kind: .companion, tint: StudyPalette.accent).frame(width: 17, height: 17)
-                        Text("AI 使用范围由你决定").font(.system(size: 15, weight: .semibold)).foregroundStyle(StudyPalette.ink)
-                    }
-                    Text("阅读和手记不需要 AI 授权。需要外部 AI 的功能只有在账号授权和对应数据开关都允许后才会发送内容。")
-                        .font(.footnote).lineSpacing(4).foregroundStyle(StudyPalette.muted)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading).padding(16)
-                .background(StudyPalette.sky.opacity(0.70), in: RoundedRectangle(cornerRadius: 17, style: .continuous))
+            VStack(alignment: .leading, spacing: 0) {
+                CompanionBubbleRow(text: "你的手记只在你允许时才会交给我。下面每一项都可以单独关掉。")
+                    .padding(.bottom, 22)
 
                 consentStatus
+
                 if let settings = store.aiSettings, settings.requiresConsent && settings.consentVersion == nil {
-                    consentForm
+                    consentForm.padding(.top, 18)
                 }
 
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("数据授权项").font(.system(size: 11, weight: .semibold)).foregroundStyle(StudyPalette.muted).padding(.bottom, 7)
-                    policyToggle("允许使用外部 AI 服务", detail: "关闭后，阅读与手记仍可使用；需要外部 AI 的功能会停止发送内容。", keyPath: \.sendToExternal,
-                                 disabled: store.aiSettings?.requiresConsent == true && store.aiSettings?.consentVersion == nil)
+                sectionLabel("授权项")
+                    .padding(.top, 26)
+                    .padding(.bottom, 11)
+
+                VStack(spacing: 0) {
+                    policyRow(icon: .lock, title: "把选中的手记外发给模型",
+                              detail: "关闭后伴星读不到手记内容；阅读与手记不受影响",
+                              keyPath: \.sendToExternal,
+                              disabled: store.aiSettings?.requiresConsent == true && store.aiSettings?.consentVersion == nil)
                     policyDivider
-                    policyToggle("允许发送图片内容", detail: "图片只会随你主动发起的 AI 请求发送。", keyPath: \.sendImageContent)
+                    policyRow(icon: .photo, title: "外发内容可包含图片",
+                              detail: "关闭后图片只在本地处理，不进入模型",
+                              keyPath: \.sendImageContent)
                     policyDivider
-                    policyToggle("启用个人信息识别", detail: "在请求处理中按服务策略识别可能的个人信息。", keyPath: \.piiDetection)
+                    policyRow(icon: .shield, title: "外发前做个人信息检测",
+                              detail: "命中时先提醒，可撤回再发送",
+                              keyPath: \.piiDetection)
                     policyDivider
-                    policyToggle("记录 AI 调用审计", detail: "保留服务调用的审计记录，供你了解数据使用情况。", keyPath: \.auditLogging)
+                    policyRow(icon: .document, title: "记录 AI 调用审计日志",
+                              detail: "供你自查调用记录",
+                              keyPath: \.auditLogging)
                 }
-                .padding(.horizontal, 15).padding(.vertical, 13)
-                .background(StudyPalette.paper, in: RoundedRectangle(cornerRadius: 19, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 19, style: .continuous).stroke(StudyPalette.paperEdge.opacity(0.62), lineWidth: 0.8))
+                .padding(.horizontal, 18)
+                .padding(.vertical, 6)
+                .modifier(StudyGlassSurfaceStyle(radius: 24, interactive: false))
 
                 Button(isLoading || store.isAccountBusy ? "正在保存…" : "保存数据偏好") {
                     Task { await store.saveAIDataPolicy(policy) }
                 }
-                .font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
-                .frame(maxWidth: .infinity, minHeight: 47)
-                .background(StudyPalette.accent, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
-                .buttonStyle(AstellaPressStyle()).disabled(isLoading || store.isAccountBusy)
-                .padding(.trailing, 74)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(StudyPalette.accentLabel)
+                .frame(maxWidth: .infinity, minHeight: 50)
+                .background(
+                    LinearGradient(colors: [StudyPalette.actionFill, StudyPalette.accent], startPoint: .topLeading, endPoint: .bottomTrailing),
+                    in: RoundedRectangle(cornerRadius: 15, style: .continuous)
+                )
+                .buttonStyle(AstellaPressStyle())
+                .disabled(isLoading || store.isAccountBusy)
+                .opacity(isLoading || store.isAccountBusy ? 0.65 : 1)
+                .padding(.top, 20)
 
-                if let message = store.accountError { OrbitDetailMessage(text: message, isError: true) }
-                else if let message = store.accountNotice { OrbitDetailMessage(text: message, isError: false) }
+                if let message = store.accountError { OrbitDetailMessage(text: message, isError: true).padding(.top, 14) }
+                else if let message = store.accountNotice { OrbitDetailMessage(text: message, isError: false).padding(.top, 14) }
+                if let message = exportError { OrbitDetailMessage(text: message, isError: true).padding(.top, 14) }
+
+                sectionLabel("数据与记录")
+                    .padding(.top, 30)
+                    .padding(.bottom, 11)
+
+                VStack(spacing: 0) {
+                    infoRow(icon: .book, title: "对话记录保存", detail: "本地保留时长跟随服务策略", value: "跟随服务")
+                    policyDivider
+                    Button {
+                        Task { await prepareExport() }
+                    } label: {
+                        infoRow(icon: .document, title: "导出我的数据", detail: "手记、批注与记忆导出为 JSON", value: isExporting ? "正在整理…" : nil, showsChevron: true)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isExporting)
+                }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 6)
+                .modifier(StudyGlassSurfaceStyle(radius: 24, interactive: false))
+
+                Text("以上为你的账号设置。阅读和手记不需要 AI 授权；关闭外发后，伴星回应会使用本地可用内容。")
+                    .font(.system(size: 11.5))
+                    .lineSpacing(4)
+                    .foregroundStyle(StudyPalette.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 2)
+                    .padding(.top, 24)
+                    .padding(.bottom, 8)
             }
-            .padding(.horizontal, 22).padding(.top, 20).padding(.bottom, 32)
-            .frame(maxWidth: 620).frame(maxWidth: .infinity)
+            .padding(.horizontal, 22)
+            .padding(.top, 18)
+            .padding(.bottom, 40)
+            .frame(maxWidth: 620)
+            .frame(maxWidth: .infinity)
         }
-        .scrollIndicators(.hidden).background(DawnBackground())
+        .scrollIndicators(.hidden)
+        .background(DawnBackground())
         .toolbar(.hidden, for: .navigationBar)
-        .safeAreaInset(edge: .top, spacing: 0) { AstellaDetailHeader(title: "AI 授权与数据") }
+        .safeAreaInset(edge: .top, spacing: 0) { AstellaDetailHeader(title: "AI 使用授权与数据") }
         .task(id: store.profile?.userId) { await load() }
         .onChange(of: store.aiSettings) { _, settings in
             if let settings { policy = settings.dataPolicy }
         }
+        .sheet(isPresented: $showExportSheet) {
+            NavigationStack {
+                VStack(spacing: 18) {
+                    AstellaGlyph(kind: .download, tint: StudyPalette.accent)
+                        .frame(width: 28, height: 28)
+                        .frame(width: 62, height: 62)
+                        .background(StudyPalette.sky, in: Circle())
+                    Text("书房数据已整理成 JSON 文件").font(.headline.weight(.semibold)).foregroundStyle(StudyPalette.ink)
+                    Text("你可以存到文件，或分享到别的设备。")
+                        .font(.footnote).foregroundStyle(StudyPalette.muted)
+                    if let exportFileURL {
+                        ShareLink(item: exportFileURL) {
+                            Text("分享或存储文件").modifier(PrimaryActionStyle())
+                        }
+                    }
+                }
+                .padding(28)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                .background(DawnBackground())
+                .navigationTitle("导出我的数据")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("完成") { showExportSheet = false } } }
+            }
+            .presentationDetents([.medium])
+        }
+    }
+
+    @State private var exportError: String?
+
+    private func sectionLabel(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 12.5, weight: .medium))
+            .tracking(0.6)
+            .foregroundStyle(StudyPalette.muted)
+            .padding(.leading, 2)
     }
 
     @ViewBuilder private var consentStatus: some View {
         if let settings = store.aiSettings, let version = settings.consentVersion {
-            VStack(alignment: .leading, spacing: 7) {
-                HStack(spacing: 8) {
-                    AstellaGlyph(kind: .check, tint: StudyPalette.success).frame(width: 17, height: 17)
+            VStack(alignment: .leading, spacing: 9) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text("已签署 AI 使用授权").font(.system(size: 14, weight: .semibold)).foregroundStyle(StudyPalette.ink)
-                    Spacer(minLength: 5)
-                    Text(version).font(.caption2).foregroundStyle(StudyPalette.muted)
+                    Spacer(minLength: 4)
+                    Text(consentStamp(version: version, date: settings.consentAt))
+                        .font(.system(size: 10))
+                        .foregroundStyle(StudyPalette.muted)
+                        .lineLimit(1)
                 }
-                if let date = settings.consentAt, !date.isEmpty {
-                    Text("签署时间：\(String(date.prefix(10)))").font(.caption).foregroundStyle(StudyPalette.muted)
-                }
+                Text("读取你选择的手记，用于生成回应与摘要")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(StudyPalette.ink)
                 if !settings.dataPolicy.sendToExternal {
                     Text("授权仍有效，但外部 AI 已关闭；需要外部服务的功能不会发送内容。")
-                        .font(.caption).lineSpacing(3).foregroundStyle(StudyPalette.muted).padding(.top, 3)
+                        .font(.system(size: 11)).lineSpacing(3).foregroundStyle(StudyPalette.muted)
                 }
             }
-            .padding(15).background(StudyPalette.paper, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 17, style: .continuous).stroke(StudyPalette.paperEdge.opacity(0.62), lineWidth: 0.8))
+            .padding(17)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(StudyPalette.sky.opacity(0.62), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(StudyPalette.sky, lineWidth: 0.8))
         } else if store.aiSettings?.requiresConsent == true {
             VStack(alignment: .leading, spacing: 7) {
                 Text("尚未签署 AI 使用授权").font(.system(size: 14, weight: .semibold)).foregroundStyle(StudyPalette.ink)
                 Text("未确认前，需要授权的外部 AI 调用不会执行。阅读与手记仍然可用。")
-                    .font(.footnote).lineSpacing(4).foregroundStyle(StudyPalette.muted)
+                    .font(.system(size: 12)).lineSpacing(4).foregroundStyle(StudyPalette.muted)
             }
-            .padding(15).background(StudyPalette.paper, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 17, style: .continuous).stroke(StudyPalette.paperEdge.opacity(0.62), lineWidth: 0.8))
+            .padding(17)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(StudyPalette.paper.opacity(0.85), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(StudyPalette.paperEdge.opacity(0.55), lineWidth: 0.8))
         } else if store.aiSettings != nil {
             VStack(alignment: .leading, spacing: 6) {
                 Text("当前服务不要求签署").font(.system(size: 14, weight: .semibold)).foregroundStyle(StudyPalette.ink)
                 Text("你仍可在下方管理数据偏好。服务关闭外部 AI 时，这些开关不会触发外发。")
-                    .font(.footnote).lineSpacing(4).foregroundStyle(StudyPalette.muted)
+                    .font(.system(size: 12)).lineSpacing(4).foregroundStyle(StudyPalette.muted)
             }
-            .padding(15).background(StudyPalette.paper, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 17, style: .continuous).stroke(StudyPalette.paperEdge.opacity(0.62), lineWidth: 0.8))
+            .padding(17)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(StudyPalette.paper.opacity(0.85), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(StudyPalette.paperEdge.opacity(0.55), lineWidth: 0.8))
         } else if isLoading {
             OrbitLoadingRow()
         } else {
@@ -303,46 +499,112 @@ struct AIDataAuthorizationScreen: View {
         }
     }
 
+    private func consentStamp(version: String, date: String?) -> String {
+        guard let date, !date.isEmpty else { return version }
+        return "\(version) · \(String(date.prefix(10)))"
+    }
+
     private var consentForm: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("授权前请了解").font(.system(size: 11, weight: .semibold)).foregroundStyle(StudyPalette.muted)
+            Text("授权前请了解").font(.system(size: 12, weight: .semibold)).foregroundStyle(StudyPalette.muted)
             Text("你主动发起需要 AI 的任务时，任务所需的手记、对话或图片可能会发送给模型服务；语音讲解会把讲解文字发送给语音服务。外部调用遵循下方的数据偏好。")
-                .font(.footnote).lineSpacing(4).foregroundStyle(StudyPalette.ink)
+                .font(.system(size: 12)).lineSpacing(4).foregroundStyle(StudyPalette.ink)
+                .fixedSize(horizontal: false, vertical: true)
             Toggle("我已阅读并同意《AI 使用协议》", isOn: $consentAccepted)
-                .font(.footnote.weight(.medium)).tint(StudyPalette.accent).disabled(store.isAccountBusy)
+                .font(.system(size: 13, weight: .medium)).tint(StudyPalette.accent).disabled(store.isAccountBusy)
             Button(store.isAccountBusy ? "正在保存…" : "同意并开启外部 AI") {
                 Task { await store.acceptAIConsent() }
             }
-            .font(.footnote.weight(.semibold)).foregroundStyle(.white)
-            .frame(maxWidth: .infinity, minHeight: 43)
-            .background(StudyPalette.accent, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+            .font(.system(size: 14, weight: .semibold)).foregroundStyle(StudyPalette.accentLabel)
+            .frame(maxWidth: .infinity, minHeight: 46)
+            .background(StudyPalette.accent, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .buttonStyle(AstellaPressStyle()).disabled(store.isAccountBusy || !consentAccepted)
         }
-        .padding(15).background(StudyPalette.paper.opacity(0.9), in: RoundedRectangle(cornerRadius: 17, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 17, style: .continuous).stroke(StudyPalette.paperEdge.opacity(0.62), lineWidth: 0.8))
+        .padding(17)
+        .background(StudyPalette.paper.opacity(0.9), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(StudyPalette.paperEdge.opacity(0.55), lineWidth: 0.8))
     }
 
     private var policyDivider: some View {
-        Rectangle().fill(StudyPalette.paperEdge.opacity(0.55)).frame(height: 0.7).padding(.leading, 3)
+        Rectangle()
+            .fill(StudyPalette.paperEdge.opacity(0.55))
+            .frame(height: 0.7)
+            .padding(.leading, 68)
     }
 
-    private func policyToggle(_ title: String, detail: String, keyPath: WritableKeyPath<AIDataPolicy, Bool>, disabled: Bool = false) -> some View {
+    private func policyRow(icon: AstellaGlyphKind, title: String, detail: String, keyPath: WritableKeyPath<AIDataPolicy, Bool>, disabled: Bool = false) -> some View {
         Toggle(isOn: Binding(get: { policy[keyPath: keyPath] }, set: { policy[keyPath: keyPath] = $0 })) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title).font(.system(size: 13, weight: .medium)).foregroundStyle(StudyPalette.ink)
-                Text(detail).font(.system(size: 10)).lineSpacing(3).foregroundStyle(StudyPalette.muted).fixedSize(horizontal: false, vertical: true)
+            HStack(alignment: .center, spacing: 13) {
+                AstellaGlyph(kind: icon, tint: StudyPalette.accent)
+                    .frame(width: 17, height: 17)
+                    .frame(width: 36, height: 36)
+                    .background(StudyPalette.sky.opacity(0.78), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title).font(.system(size: 16, weight: .semibold)).foregroundStyle(StudyPalette.ink)
+                    Text(detail).font(.system(size: 11)).lineSpacing(2).foregroundStyle(StudyPalette.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
-        .tint(StudyPalette.accent).disabled(store.isAccountBusy || disabled)
-        .padding(.vertical, 8)
+        .tint(StudyPalette.accent)
+        .disabled(store.isAccountBusy || disabled)
+        .padding(.vertical, 11)
+        .frame(minHeight: 60)
+    }
+
+    private func infoRow(icon: AstellaGlyphKind, title: String, detail: String, value: String?, showsChevron: Bool = false) -> some View {
+        HStack(alignment: .center, spacing: 13) {
+            AstellaGlyph(kind: icon, tint: StudyPalette.accent)
+                .frame(width: 17, height: 17)
+                .frame(width: 36, height: 36)
+                .background(StudyPalette.sky.opacity(0.78), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(.system(size: 16, weight: .semibold)).foregroundStyle(StudyPalette.ink)
+                Text(detail).font(.system(size: 11)).foregroundStyle(StudyPalette.muted)
+            }
+            Spacer(minLength: 6)
+            if let value {
+                Text(value).font(.system(size: 12)).foregroundStyle(StudyPalette.muted)
+            }
+            if showsChevron {
+                AstellaGlyph(kind: .chevron, tint: StudyPalette.muted.opacity(0.8)).frame(width: 15, height: 15)
+            }
+        }
+        .padding(.vertical, 12)
+        .frame(minHeight: 62)
+        .contentShape(Rectangle())
     }
 
     private func load() async {
         guard !isLoading else { return }
+        #if DEBUG
+        if store.uiReviewMode != nil {
+            if let settings = store.aiSettings { policy = settings.dataPolicy }
+            return
+        }
+        #endif
         isLoading = true
         defer { isLoading = false }
         if store.aiSettings == nil { await store.loadAccountSettings() }
         if let settings = store.aiSettings { policy = settings.dataPolicy }
+    }
+
+    private func prepareExport() async {
+        guard !isExporting else { return }
+        isExporting = true
+        exportError = nil
+        defer { isExporting = false }
+        do {
+            let payload = try await store.api.request("/export/workspace")
+            let data = try JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys])
+            let safeName = (store.profile?.workspaceName ?? "Astella").replacingOccurrences(of: "/", with: "-")
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(safeName)-数据导出.json")
+            try data.write(to: url, options: .atomic)
+            exportFileURL = url
+            showExportSheet = true
+        } catch {
+            exportError = mobilePageError(error, fallback: "数据导出没有完成，请稍后重试。")
+        }
     }
 }
 
@@ -366,57 +628,89 @@ struct ServiceAddressScreen: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 17) {
+            VStack(alignment: .leading, spacing: 0) {
                 Text("仅在连接自建或私有部署时修改。保存后会退出当前会话，需要用新地址重新登录。")
-                    .font(.footnote).lineSpacing(4).foregroundStyle(StudyPalette.muted).padding(.horizontal, 3)
+                    .font(.system(size: 14))
+                    .lineSpacing(4)
+                    .foregroundStyle(StudyPalette.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 2)
+                    .padding(.bottom, 18)
 
-                VStack(alignment: .leading, spacing: 9) {
-                    Text("服务地址").font(.system(size: 11, weight: .semibold)).foregroundStyle(StudyPalette.muted)
-                    TextField("https://study.example.com", text: $address)
-                        .font(.system(size: 14)).textInputAutocapitalization(.never).keyboardType(.URL)
-                        .autocorrectionDisabled().focused($isAddressFocused)
-                        .padding(.horizontal, 14).frame(minHeight: 48)
-                        .background(StudyPalette.inset, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        .onChange(of: address) { _, _ in connectionState = .idle }
-                    Text("当前生效：\(store.api.baseURL)")
-                        .font(.caption).lineLimit(2).foregroundStyle(StudyPalette.muted)
-                    Text("公网服务建议使用 HTTPS。本地开发或可信内网可使用 HTTP。")
-                        .font(.caption2).lineSpacing(3).foregroundStyle(StudyPalette.muted)
-                }
-                .padding(16).background(StudyPalette.paper, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(StudyPalette.paperEdge.opacity(0.62), lineWidth: 0.8))
+                Text("服务地址")
+                    .font(.system(size: 12.5, weight: .medium))
+                    .tracking(0.6)
+                    .foregroundStyle(StudyPalette.muted)
+                    .padding(.leading, 2)
+                    .padding(.bottom, 8)
+
+                TextField("https://study.example.com", text: $address)
+                    .font(.system(size: 16))
+                    .textInputAutocapitalization(.never)
+                    .keyboardType(.URL)
+                    .autocorrectionDisabled()
+                    .focused($isAddressFocused)
+                    .padding(.horizontal, 16)
+                    .frame(minHeight: 52)
+                    .modifier(StudyGlassSurfaceStyle(radius: 16, interactive: true))
+                    .onChange(of: address) { _, _ in connectionState = .idle }
 
                 connectionFeedback
+                    .padding(.top, 12)
 
-                HStack(spacing: 10) {
+                HStack(spacing: 12) {
                     Button(connectionState.isTesting ? "正在测试…" : "测试连接") { Task { await testConnection() } }
-                        .font(.footnote.weight(.semibold)).foregroundStyle(StudyPalette.accent)
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                        .background(StudyPalette.sky, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-                        .buttonStyle(AstellaPressStyle()).disabled(connectionState.isTesting || validatedHealthURL() == nil)
-                    Button("恢复默认地址") { address = store.api.defaultBaseURL; connectionState = .idle }
-                        .font(.footnote.weight(.medium)).foregroundStyle(StudyPalette.ink)
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                        .background(StudyPalette.paper, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                        .font(.system(size: 14, weight: .semibold)).foregroundStyle(StudyPalette.ink)
+                        .frame(maxWidth: .infinity, minHeight: 48)
+                        .background(StudyPalette.paper.opacity(0.9), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous).stroke(StudyPalette.paperEdge.opacity(0.6), lineWidth: 0.7))
                         .buttonStyle(AstellaPressStyle())
-                }
+                        .disabled(connectionState.isTesting || validatedHealthURL() == nil)
 
-                Button("保存并重新登录") {
-                    guard let normalized = normalizedAddress() else {
-                        connectionState = .failed("请输入有效的 http 或 https 服务地址。")
-                        return
+                    Button("保存并重新登录") {
+                        guard let normalized = normalizedAddress() else {
+                            connectionState = .failed("请输入有效的 http 或 https 服务地址。")
+                            return
+                        }
+                        isAddressFocused = false
+                        store.setServiceAddress(normalized)
+                        store.logout()
                     }
-                    isAddressFocused = false
-                    store.setServiceAddress(normalized)
-                    store.logout()
+                    .font(.system(size: 14, weight: .semibold)).foregroundStyle(StudyPalette.accentLabel)
+                    .frame(maxWidth: .infinity, minHeight: 48)
+                    .background(
+                        LinearGradient(colors: [StudyPalette.actionFill, StudyPalette.accent], startPoint: .topLeading, endPoint: .bottomTrailing),
+                        in: RoundedRectangle(cornerRadius: 15, style: .continuous)
+                    )
+                    .buttonStyle(AstellaPressStyle())
+                    .disabled(normalizedAddress() == nil)
                 }
-                .font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
-                .frame(maxWidth: .infinity, minHeight: 48)
-                .background(StudyPalette.accent, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
-                .buttonStyle(AstellaPressStyle()).disabled(normalizedAddress() == nil)
+                .padding(.top, 14)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("保存后需要重新登录才会生效。输入会作为草稿保留，出错不会丢失。")
+                    Text("当前生效：\(store.api.baseURL)")
+                    Text("公网服务建议使用 HTTPS。本地开发或可信内网可使用 HTTP。")
+                    Button("恢复默认地址") {
+                        address = store.api.defaultBaseURL
+                        connectionState = .idle
+                    }
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(StudyPalette.accent)
+                    .padding(.top, 4)
+                }
+                .font(.system(size: 12))
+                .lineSpacing(3)
+                .foregroundStyle(StudyPalette.muted)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 2)
+                .padding(.top, 16)
             }
-            .padding(.horizontal, 22).padding(.top, 20).padding(.bottom, 32)
-            .frame(maxWidth: 620).frame(maxWidth: .infinity)
+            .padding(.horizontal, 22)
+            .padding(.top, 18)
+            .padding(.bottom, 40)
+            .frame(maxWidth: 620)
+            .frame(maxWidth: .infinity)
         }
         .scrollIndicators(.hidden).scrollDismissesKeyboard(.interactively).background(DawnBackground())
         .toolbar(.hidden, for: .navigationBar)
@@ -528,7 +822,7 @@ struct ChangePasswordScreen: View {
                     Task { _ = await store.changePassword(currentPassword: currentPassword, newPassword: newPassword) }
                 }
                 .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(StudyPalette.accentLabel)
                 .frame(maxWidth: .infinity, minHeight: 50)
                 .background(
                     LinearGradient(colors: [StudyPalette.actionFill, StudyPalette.accent], startPoint: .topLeading, endPoint: .bottomTrailing),

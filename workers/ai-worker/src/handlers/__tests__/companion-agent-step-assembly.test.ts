@@ -27,7 +27,11 @@ test("host occasions do not inherit the user-dialogue continuation task", () => 
   assert.match(userPolicy, /把最后一条消息作为对方向你说的话来接/);
   const currentRequest = { role: "system" as const, hostObservation: true as const, content: "app.started: current occasion" };
   const correction = companionStepCorrectionMessages({ currentRequest, instruction: "核对当前时刻", alreadyDisplayed: false });
-  assert.deepEqual(correction.at(-1), currentRequest, "repair keeps host authority and the exact observation");
+  const carried = correction.at(-1)!;
+  assert.equal(carried.role, "system", "repair keeps host authority");
+  assert.equal((carried as { hostObservation?: boolean }).hostObservation, true);
+  assert.ok(String(carried.content).includes(currentRequest.content), "the exact observation stays verbatim after the marker");
+  assert.match(String(carried.content), /用户没有再说一遍/);
   assert.match(String(correction[0]?.content), /当前宿主观察/);
   assert.doesNotMatch(String(correction[0]?.content), /完整回答当前问题/);
 });

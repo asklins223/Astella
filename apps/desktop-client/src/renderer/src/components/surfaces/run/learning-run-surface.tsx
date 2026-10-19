@@ -17,15 +17,16 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import type {
-  ArtifactPayload,
-  LearningDraftPayload,
-  LearningRendererDraftState,
-  LearningTaskPublic,
-  RelationEdgeKindV1,
-  RepairOperationV1,
-  StructuredPartAnswerV1,
-  StructuredPartPublicV1,
+import {
+  isActiveLearningRunPhase,
+  type ArtifactPayload,
+  type LearningDraftPayload,
+  type LearningRendererDraftState,
+  type LearningTaskPublic,
+  type RelationEdgeKindV1,
+  type RepairOperationV1,
+  type StructuredPartAnswerV1,
+  type StructuredPartPublicV1,
 } from "@astella/shared/learning-run-contracts";
 import {
   ChoiceEditor,
@@ -166,6 +167,7 @@ type LearningRunBodyProps = {
   readonly runId: string;
   readonly onExit: (request?: { route: DesktopRouteV1; objectiveId?: string; reflectionRoundId?: string }) => void;
   readonly onPageChange: (page: "assessment" | "result") => void;
+  readonly onRunActivityChange?: (runId: string, active: boolean | null) => void;
 };
 
   /**
@@ -185,7 +187,7 @@ type LearningRunBodyProps = {
    * 18 行 / 13 符号就是当前最少的一个）。
    */
 
-export function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBodyProps) {
+export function LearningRunBody({ runId, onExit, onPageChange, onRunActivityChange }: LearningRunBodyProps) {
   const setActiveReviewTarget = useRoomStore((state) => state.setActiveReviewTarget);
   const setCompanionMoment = useRoomStore((state) => state.setCompanionMoment);
   const masterMuted = useRoomStore((state) => state.masterMuted);
@@ -349,6 +351,13 @@ export function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBody
   useEffect(() => {
     onPageChange(showResult ? "result" : "assessment");
   }, [onPageChange, showResult]);
+
+  useEffect(() => {
+    if (!onRunActivityChange) return;
+    const active = snapshot?.runId === runId ? isActiveLearningRunPhase(snapshot.phase) : null;
+    onRunActivityChange(runId, active);
+    return () => onRunActivityChange(runId, null);
+  }, [onRunActivityChange, runId, snapshot?.phase]);
 
   useEffect(() => {
     setDiscoveryRevealed(false);
@@ -1794,10 +1803,12 @@ type LearningRunSurfaceProps = {
    * resolver); when absent this surface resolves the same route itself.
    */
   readonly onExit?: (request?: { route: DesktopRouteV1; objectiveId?: string; reflectionRoundId?: string }) => void;
+  /** Lets the room shell guard only an assessment that is still in progress. */
+  readonly onRunActivityChange?: (runId: string, active: boolean | null) => void;
 };
 
 /** Pages 16/17 — one multi-format LearningRun workbench and its evidence report. */
-export function LearningRunSurface({ onExit }: LearningRunSurfaceProps = {}) {
+export function LearningRunSurface({ onExit, onRunActivityChange }: LearningRunSurfaceProps = {}) {
   const activeRunId = useRoomStore((state) => state.activeRunId);
   const setActiveRunId = useRoomStore((state) => state.setActiveRunId);
   const setActiveObjectiveId = useRoomStore((state) => state.setActiveObjectiveId);
@@ -1839,7 +1850,7 @@ export function LearningRunSurface({ onExit }: LearningRunSurfaceProps = {}) {
     <HudPage page={page} showTitle={page !== "result"}>
       <div className="card-run card-experience">
       {activeRunId ? (
-        <LearningRunBody runId={activeRunId} onExit={(request) => { void exitRun(request); }} onPageChange={setPage} />
+        <LearningRunBody runId={activeRunId} onExit={(request) => { void exitRun(request); }} onPageChange={setPage} onRunActivityChange={onRunActivityChange} />
       ) : (
         <SurfaceDataState
           kind="empty"

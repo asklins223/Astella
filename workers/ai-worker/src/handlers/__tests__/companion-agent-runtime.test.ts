@@ -20,6 +20,8 @@ import {
   companionActionResultRecorded,
   actionSteerBudget,
   companionStepCorrectionMessages,
+  dropCompanionInternalCorrections,
+  isCompanionInternalCorrection,
   companionWriteToolNames,
   partitionPersonaPatch,
   planStepSteer,
@@ -817,9 +819,27 @@ test("内部纠正重附当前选区与问题，不能变成最新用户的另�
     const messages = companionStepCorrectionMessages({ currentRequest, instruction: "核对引文。", alreadyDisplayed });
     assert.equal(messages[0].role, "system");
     assert.match(String(messages[0].content), /不是新的用户请求/);
-    assert.deepEqual(messages.at(-1), currentRequest);
+    const carried = messages.at(-1)!;
+    assert.equal(carried.role, "user");
+    assert.ok(isCompanionInternalCorrection(carried), "the re-attached request carries the internal marker");
+    assert.match(String(carried.content), /用户没有再说一遍/);
+    assert.ok(String(carried.content).endsWith(String(currentRequest.content)), "the original text stays verbatim after the marker");
     assert.equal(messages.filter((message) => message.role === "user").length, 1);
   }
+});
+
+test("多次内部纠正只留一份重附的当前请求：她不能把重附件数成用户连喊了几遍", () => {
+  // 实机 2026-10-19 生产 run 0fe67407：4 轮纠正各追加一条同样的用户消息，模型的推理里
+  // 出现 5 次 "The user repeated ..."，最后对用户说"你连喊三遍我听见了"。
+  const currentRequest = { role: "user" as const, content: "给我生成几个历史的笔记" };
+  let messages: Parameters<typeof dropCompanionInternalCorrections>[0] = [currentRequest];
+  for (let index = 0; index < 4; index += 1) {
+    messages = dropCompanionInternalCorrections(messages);
+    messages.push(...companionStepCorrectionMessages({ currentRequest, instruction: `核对 ${index}`, alreadyDisplayed: index > 0 }));
+  }
+  assert.equal(messages.filter(message => message.role === "user").length, 2,
+    "the original user turn plus exactly one repair carrier");
+  assert.equal(messages.filter(isCompanionInternalCorrection).length, 1);
 });
 
 /**

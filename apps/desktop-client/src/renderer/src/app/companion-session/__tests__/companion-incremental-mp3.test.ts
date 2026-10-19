@@ -235,3 +235,97 @@ describe('增量排播', () => {
     player.stop()
   })
 })
+
+describe('抖动缓冲（2026-10-19）', () => {
+  function fakeContextWithClock() {
+    const starts: number[] = []
+    const sources: Array<{ onended: (() => void) | null; started: boolean }> = []
+    const endAll = () => { for (const source of sources) if (source.started) source.onended?.() }
+    const context = {
+      currentTime: 0,
+      createBufferSource: () => {
+        const source = {
+          onended: null as (() => void) | null,
+          started: false,
+          connect(node: unknown) { return node },
+          start(at: number) { source.started = true; starts.push(at) },
+          stop() { source.onended?.() },
+        }
+        sources.push(source)
+        return source
+      },
+      createBuffer: (_channels: number, length: number, sampleRate: number) => ({
+        duration: length / sampleRate, length, sampleRate, copyToChannel() {},
+      }),
+    }
+    return { context, starts, endAll }
+  }
+  const pushUnit = (player: IncrementalAudioPlayer, byte: number) =>
+    player.push(concat(Array.from({ length: 8 }, (_, i) => frame(byte + i))))
+
+  it('首播先攒够预缓冲再开口，攒够后连续排播', async () => {
+    const { context, starts } = fakeContextWithClock()
+    const player = new IncrementalAudioPlayer({
+      context: context as unknown as AudioContext,
+      destination: {} as AudioNode,
+      decodeAllForTest: async () => fakeBuffer(0.2),
+      prebufferSeconds: 0.35,
+    })
+    pushUnit(player, 1)
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(starts).toHaveLength(0)
+    pushUnit(player, 9)
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(starts).toHaveLength(2)
+    expect(starts[0]).toBeCloseTo(0.02, 3)
+    expect(starts[1]).toBeCloseTo(0.22, 3)
+    player.stop()
+  })
+
+  it('欠载后重新攒，续播从"现在"开始，不把缺口排进过去', async () => {
+    const { context, starts } = fakeContextWithClock()
+    const player = new IncrementalAudioPlayer({
+      context: context as unknown as AudioContext,
+      destination: {} as AudioNode,
+      decodeAllForTest: async () => fakeBuffer(0.2),
+      prebufferSeconds: 0.35,
+    })
+    pushUnit(player, 1)
+    pushUnit(player, 9)
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(starts).toHaveLength(2)
+    // 播放到 0.5s：两块（0.4s）早已播完 → 欠载。
+    context.currentTime = 0.5
+    pushUnit(player, 17)
+    await new Promise(resolve => setTimeout(resolve, 10))
+    // 重新攒到 0.5s 之前不排播，也不把起点排到过去。
+    expect(starts).toHaveLength(2)
+    pushUnit(player, 25)
+    pushUnit(player, 33)
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(starts.length).toBeGreaterThanOrEqual(3)
+    expect(starts[2]).toBeCloseTo(0.52, 3)
+    expect(Math.min(...starts.slice(2))).toBeGreaterThanOrEqual(0.5)
+    player.stop()
+  })
+
+  it('流在预缓冲中途结束也必须收尾（回归：缓冲不能挡住 onDone）', async () => {
+    const { context, endAll } = fakeContextWithClock()
+    let done = false
+    const player = new IncrementalAudioPlayer({
+      context: context as unknown as AudioContext,
+      destination: {} as AudioNode,
+      decodeAllForTest: async () => fakeBuffer(0.2),
+      prebufferSeconds: 0.35,
+      onDone: () => { done = true },
+    })
+    pushUnit(player, 1)
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(done).toBe(false)
+    player.finish()
+    await new Promise(resolve => setTimeout(resolve, 10))
+    endAll()
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(done).toBe(true)
+  })
+})

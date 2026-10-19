@@ -41,6 +41,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -109,6 +110,30 @@ private fun FeatureHeader(title: String, onBack: () -> Unit, onAccount: () -> Un
         AstellaIconButton(onClick = onAccount, modifier = Modifier.semantics { contentDescription = "我的账户" }) {
             AstellaGlyph(AstellaGlyphKind.Person, Modifier.size(19.dp), tint = StudyPalette.accent)
         }
+    }
+}
+
+@Composable
+private fun FeaturePageHeader(title: String, subtitle: String, onBack: () -> Unit, onAccount: () -> Unit) {
+    Column(Modifier.fillMaxWidth()) {
+        SettingsPageHeader(
+            title = title,
+            onBack = onBack,
+            trailing = {
+                GlassCircleButton(onClick = onAccount, size = 40.dp) {
+                    AstellaGlyph(AstellaGlyphKind.Person, Modifier.size(18.dp), tint = StudyPalette.accent)
+                }
+            },
+        )
+        Text(
+            subtitle,
+            Modifier.padding(horizontal = 22.dp).padding(bottom = 6.dp),
+            color = StudyPalette.muted,
+            fontSize = 12.sp,
+            lineHeight = 18.sp,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -352,8 +377,7 @@ private fun NoteVersionsScreen(noteId: String, state: AppUiState, viewModel: App
 
     Box(Modifier.fillMaxSize()) {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item { FeatureHeader("版本记录", onBack, onAccount) }
-        item { PageHeading("保存轨迹", "版本记录", "恢复会另存为新版本，原来的内容仍会保留。") }
+        item { FeaturePageHeader("版本记录", "恢复会另存为新版本，原来的内容仍会保留。", onBack, onAccount) }
         if (error != null) item { FeatureFailure(error!!, retry = { scope.launch { load() } }, onAccount = onAccount) }
         if (loading && versions.isEmpty()) item { FeatureLoading("正在读取版本…") }
         if (!loading && versions.isEmpty() && error == null) item {
@@ -487,17 +511,12 @@ private fun NoteOverviewScreen(noteId: String, state: AppUiState, viewModel: App
 
     LaunchedEffect(noteId, document?.versionId) { load() }
     Column(Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            FeatureHeader("速览", onBack, onAccount)
-            PageHeading("围绕当前手记", "速览", document?.title ?: "当前手记")
-        }
+        FeaturePageHeader("速览", document?.title ?: "当前手记", onBack, onAccount)
         when {
             overview == null && (loading || busy) -> Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 FeatureLoading(if (busy) "正在整理这篇手记…" else "正在读取速览…")
             }
-            overview == null -> Box(
-                Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center,
-            ) {
+            overview == null -> Box(Modifier.weight(1f).fillMaxWidth()) {
                 Column(
                     Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
                         .padding(horizontal = 20.dp, vertical = 14.dp),
@@ -613,17 +632,12 @@ private fun NoteMindMapScreen(noteId: String, state: AppUiState, viewModel: AppV
 
     LaunchedEffect(noteId, document?.versionId) { load() }
     Column(Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            FeatureHeader("脑图", onBack, onAccount)
-            PageHeading("从主题看见关系", "脑图", document?.title ?: "当前手记")
-        }
+        FeaturePageHeader("脑图", document?.title ?: "当前手记", onBack, onAccount)
         when {
             map == null && (loading || busy) -> Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 FeatureLoading(if (busy) "正在整理思路…" else "正在读取脑图…")
             }
-            map == null -> Box(
-                Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center,
-            ) {
+            map == null -> Box(Modifier.weight(1f).fillMaxWidth()) {
                 Column(
                     Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
                         .padding(horizontal = 20.dp, vertical = 14.dp),
@@ -739,17 +753,12 @@ private fun NoteExplainScreen(noteId: String, state: AppUiState, viewModel: AppV
 
     LaunchedEffect(noteId, document?.versionId) { load() }
     Column(Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            FeatureHeader("讲解", onBack, onAccount)
-            PageHeading("围绕原文逐步展开", "讲解", document?.title ?: "当前手记")
-        }
+        FeaturePageHeader("讲解", document?.title ?: "当前手记", onBack, onAccount)
         when {
             artifact == null && (loading || busy) -> Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 FeatureLoading(if (busy) "正在准备讲解…" else "正在读取讲解…")
             }
-            artifact == null -> Box(
-                Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center,
-            ) {
+            artifact == null -> Box(Modifier.weight(1f).fillMaxWidth()) {
                 Column(
                     Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
                         .padding(horizontal = 20.dp, vertical = 14.dp),

@@ -18,7 +18,7 @@ const startGoalArgs = createAgentRunV1Schema.omit({ requestId: true, conversatio
 
 /** The same capability entry supplies the model description and its argument validator. */
 export const agentGoalToolManifest = [
-  manifest("agent_start_goal", "把用户本轮明确交代的目标交给后台处理，可生成速看、脑图、演示、拓展稿或待审卡。闲聊/提问不启动；回执只代表接受，卡片需用户审核。", "reversible_low", startGoalArgs, { label: "交给伴星" }),
+  manifest("agent_start_goal", "把用户本轮明确交代的目标交给后台处理，可对已有笔记生成速看、脑图、演示、拓展稿或待审卡。闲聊/提问不启动；新建笔记用 companion_create_note，不走这里（后台目标不能新建笔记）；回执只代表接受，卡片需用户审核。", "reversible_low", startGoalArgs, { label: "交给伴星" }),
   manifest("agent_list_goals", "读取当前空间持续任务的简短目录。问进度或回到上次任务时先核对，不凭旧历史猜 runId；nextCursor 不为空时用 cursor 续读。", "read", z.object({cursor:z.string().max(512).optional(),longGoalMemoryId:z.string().uuid().optional()}).strict(), { label: "查看交代的事" }),
   manifest("agent_list_long_goals", "读取已确认的长期目标目录与任务数。接续时先核对，再用目录身份/版本调用 agent_start_goal；不主动开无关任务。交付不等于掌握或完成目标。", "read", agentLongGoalsQueryV1Schema.omit({limit:true}), { label: "查看长期目标" }),
   manifest("agent_revise_goal", "用户明确修改某个持续目标时更新要求；旧版本未完成操体会停止，已有产物保留。先核对 runId 与 revision；闲聊或一句「好」不算修改。显式 null 解绑长期目标。", "reversible_low", reviseAgentRunV1Schema.extend({ runId: z.string().uuid() }).strict(), { label: "修改要求" }),

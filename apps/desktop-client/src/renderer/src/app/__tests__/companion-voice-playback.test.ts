@@ -696,7 +696,7 @@ describe("逐段播放结局上报", () => {
    * 流式请求就排在它身后，用户听到的是"这句念完、等一下、下句才开口"。
    * 真窗口实测每次两段回复都会多出整段合成行（1.0–3.4s），音频一个字没用上。
    */
-  it("流式可用时，带引用的段不再发起整段合成预取", async () => {
+  it("流式只负责第一段的首字，后续段改播预取好的整段音频（句间不再等）", async () => {
     const host = new FakeHost();
     // 宿主声明自己有流式通道，并且流式立刻"念完"这一段。
     const streamed: number[] = [];
@@ -714,11 +714,13 @@ describe("逐段播放结局上报", () => {
     session.feedSegment({ ...first, cue: { ...first.cue, emotion: "happy" } });
     session.feedSegment(refSegment(2, "第二句。"));
     session.finish("");
-    await waitUntil(() => streamed.length === 2);
+    await waitUntil(() => streamed.length >= 1 && host.played.length >= 1);
 
-    // 整段合成一次都不该发：两段都由流式念完。
-    expect(host.synthesized).toEqual([]);
-    expect(host.played).toEqual([]);
+    // 第一段由流式念完（首字快）；第二段用队列里预取好的整段音频，
+    // 段尾不用再等一次串行合成——这正是"句间长空档"的修法。
+    expect(streamed).toEqual([1]);
+    expect(host.synthesized.length).toBeGreaterThan(0);
+    expect(host.played.length).toBeGreaterThan(0);
     expect(events.find(event => event.phase === "speaking")?.cue).toMatchObject({ emotion: "happy", intensity: 0.5 });
   });
 

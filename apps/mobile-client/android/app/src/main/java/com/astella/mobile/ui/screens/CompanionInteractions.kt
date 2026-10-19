@@ -67,7 +67,7 @@ fun CompanionSelectableText(
     fontSize: Float,
     serif: Boolean = false,
     color: androidx.compose.ui.graphics.Color = StudyPalette.ink,
-    lineSpacingMultiplier: Float = if (serif) 1.86f else 1.4f,
+    lineSpacingMultiplier: Float = if (serif) 1.72f else 1.4f,
     letterSpacing: Float = if (serif) .02f else 0f,
     onSelection: (String, Boolean) -> Unit,
 ) {

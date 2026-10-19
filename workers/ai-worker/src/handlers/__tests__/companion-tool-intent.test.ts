@@ -7,7 +7,9 @@ import {
   buildCompanionTurnInterpretationMessages,
   companionClassifierRecent,
   companionOfferCandidates,
+  explicitCompanionProductRequest,
   interpretCompanionTurn,
+  reconcileCompanionInterpretation,
   type CompanionToolIntentReceipt,
 } from "../tools/companion-tool-intent.ts";
 
@@ -495,4 +497,49 @@ test("对冲开启时并发两条相同分类请求，并在 receipt 标记 hedg
     if (previous === undefined) delete process.env.COMPANION_TOOL_INTENT_HEDGE_MS;
     else process.env.COMPANION_TOOL_INTENT_HEDGE_MS = previous;
   }
+});
+
+/**
+ * 显式产物请求的确定性兜底（2026-10-19）。分类器候选决定工具面：实测同一句
+ * "给我生成这篇笔记的速看吧" 两次分别被判成 read / none，生产里"生成几个历史的笔记"
+ * 还被判成 save_memory —— agent_start_goal / companion_create_note 因此没进工具面。
+ */
+test("显式产物请求与新建笔记请求有确定性判据，闲聊和'聊天里概括'不算", () => {
+  const cases: Array<[string, { artifact: boolean; newNote: boolean }]> = [
+    ["给我生成这篇笔记的速看吧", { artifact: true, newNote: false }],
+    ["从这篇往外学，先生成草稿我挑，不要制卡", { artifact: true, newNote: false }],
+    ["把这篇笔记整理成速看", { artifact: true, newNote: false }],
+    ["给我生成几个历史的笔记", { artifact: false, newNote: true }],
+    ["把刚才聊的电功率写成一篇笔记", { artifact: false, newNote: true }],
+    ["整理这篇笔记的格式", { artifact: false, newNote: false }],
+    ["帮我速看一下，在聊天里概括就好，不生成任何东西", { artifact: false, newNote: false }],
+    ["往外学是什么意思？", { artifact: false, newNote: false }],
+    ["今天不想学习", { artifact: false, newNote: false }],
+  ];
+  for (const [text, expected] of cases) assert.deepEqual(explicitCompanionProductRequest(text), expected, text);
+});
+
+test("分类器把产物请求判成 none/unrelated 时补回候选并改成 act", () => {
+  const interpretation = {
+    version: 1 as const, requestHash: "a".repeat(64), intent: "question" as const, toolUse: "none" as const,
+    subjects: [], goalRelation: "unrelated" as const, goalReference: null, candidateOperations: [] as string[],
+    ambiguities: [], status: "interpreted" as const, pendingOfferIndexes: [] as number[],
+    voicePreferenceWrite: "not_requested" as const,
+    voiceStyle: { decision: "none" as const, instruction: null,
+      persistentPreference: { action: "keep" as const, dialect: null } },
+  } as never;
+  const capabilities = ["agent_start_goal", "companion_create_note", "companion_read_note"];
+  const artifact = reconcileCompanionInterpretation(interpretation, "给我生成这篇笔记的速看吧", capabilities);
+  assert.deepEqual(artifact.candidateOperations, ["agent_start_goal"]);
+  assert.equal(artifact.toolUse, "act");
+  assert.equal(artifact.intent, "task");
+  assert.equal(artifact.goalRelation, "new");
+  const newNote = reconcileCompanionInterpretation(interpretation, "给我生成几个历史的笔记", capabilities);
+  assert.deepEqual(newNote.candidateOperations, ["companion_create_note"]);
+  assert.equal(newNote.toolUse, "act");
+  const unrelated = reconcileCompanionInterpretation(interpretation, "今天不想学习", capabilities);
+  assert.deepEqual(unrelated.candidateOperations, []);
+  assert.equal(unrelated.toolUse, "none");
+  const unavailable = reconcileCompanionInterpretation(interpretation, "给我生成这篇笔记的速看吧", ["companion_read_note"]);
+  assert.deepEqual(unavailable.candidateOperations, []);
 });

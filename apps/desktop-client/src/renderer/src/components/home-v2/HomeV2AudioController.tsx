@@ -48,7 +48,13 @@ type HomeV2SoundKind = "page" | "footstep" | "magic" | "success";
  * 一层不会自己结束的底噪是噪音，不是氛围。2026-10-06 用户裁决删掉它，声音只跟
  * 着事情发生。
  */
-export const HOME_V2_AUDIO_TUNING = Object.freeze({
+export /**
+ * 流式分段播放开关（2026-10-19 恢复）。抖动缓冲在增量播放器内部实现；
+ * 第一段走流式拿首字，后续段播预取好的整段音频，句间不再等串行合成。
+ */
+const COMPANION_VOICE_STREAM_SEGMENTS = true;
+
+const HOME_V2_AUDIO_TUNING = Object.freeze({
   page: Object.freeze({ highpassHz: 650, gain: 0.032, seconds: 0.11 }),
   footstep: Object.freeze({
     tapHz: 1_150,
@@ -564,6 +570,7 @@ export function HomeV2AudioController() {
     onProgress: (fraction: number) => void,
     signal?: AbortSignal,
   ): Promise<boolean> => {
+    if (!COMPANION_VOICE_STREAM_SEGMENTS) return false;
     if (!replyAudibleRef.current || isCompanionReplyBlockedByMicrophone()) return false;
     if (!hasStreamingSegmentChannel()) return false;
     const graph = ensureGraph();

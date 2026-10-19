@@ -299,12 +299,12 @@ fun GlassSegment(
                 )
                 .background(
                     Brush.linearGradient(
-                        listOf(Color.White.copy(alpha = .88f), Color.White.copy(alpha = .26f)),
+                        listOf(Color.White.copy(alpha = .98f), Color.White.copy(alpha = .55f), Color.White.copy(alpha = .32f)),
                         start = Offset(0f, 0f), end = Offset(0f, 600f),
                     ),
                     lensShape,
                 )
-                .border(.7.dp, Color.White.copy(alpha = .82f), lensShape),
+                .border(.8.dp, Color.White.copy(alpha = .95f), lensShape),
         )
         Row(Modifier.fillMaxSize().padding(horizontal = pad)) {
             options.forEachIndexed { index, label ->

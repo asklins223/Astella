@@ -189,6 +189,39 @@ function artifactCandidatePrompt(
   ].join("\n");
 }
 
+/**
+ * 两段式：先用思考把"讲哪几步、这些步骤之间是什么关系"定下来（输出小），
+ * 再用不带思考的一发把整页 HTML 写出来（输出大）。
+ *
+ * 为什么不是单发关思考：2026-10-19 真实模型实测单发整页在默认思考档要 668 s，
+ * 有一次 900 s 直接超时；整发关思考只要 232 s，但独立评审（DeepSeek-V3）在同一篇
+ * 笔记上给出 teaching 4 分，而带思考那版是 5 分——差别正好落在"把关系讲清楚"，
+ * 也就是这一步真正需要推理的地方。把推理放回规划、把长文书写留给渲染，可以同时
+ * 拿到"讲得对"和"等得起"：规划那一发的输出只有几百 token，整页书写仍然关思考。
+ */
+function artifactPlanPrompt(input: { drivingQuestion: string; blocks: readonly ArtifactEvidenceBlockV1[]; explanation: string }): string {
+  return [
+    `围绕这个问题，为这篇笔记策划一份互动演示：${input.drivingQuestion}`,
+    "只依据下面的原文块，不要添加原文没有的事实；动画里的计算与读数只能写成教学模拟或示意值。",
+    "先决定演示要讲哪几步（2-6 步，按理解顺序推进），每一步都要能指回一个原文块，并在 narration 里说清这一步和前后步骤的关系（因果、条件或对比），不要复述原句。",
+    "只返回 JSON：title（1-40 字）、subject（1-60 字）、caution（1-120 字，说明哪些是示意值或边界）、outline 数组，每条只含 title（1-24 字且互不相同）、narration（1-200 字）、evidenceOrdinal（数字，逐字复制 blocks[].ordinal）、evidenceQuote（该块里 1-160 字的逐字原句）。",
+    JSON.stringify({ drivingQuestion: input.drivingQuestion, explanation: input.explanation,
+      blocks: input.blocks.map((block) => ({ ordinal: block.ordinal, type: block.type, text: plainTextForGroundingV1(block.text) })) }),
+  ].join("\n");
+}
+
+function artifactDocumentPrompt(input: { drivingQuestion: string; blocks: readonly ArtifactEvidenceBlockV1[]; explanation: string }, planned: unknown): string {
+  return [
+    `按已经核定的演示大纲，为这篇笔记写一份可在笔记里直接展示的交互讲解页面：${input.drivingQuestion}`,
+    "只依据下面的原文与大纲，不添加原文没有的事实，也不要改动大纲的步骤顺序与含义；读数只能写成教学模拟或示意值。",
+    "document 是一段自包含的 HTML 片段（不要 <html>/<head>/<body> 外壳）：用内联 <style> 定义样式，使用 var(--lesson-*) 主题色；可含 <svg> 与内联 <script>；交互要能用鼠标/触屏点按，支持 prefers-reduced-motion；不要外部资源、不要 fetch、不要 eval。",
+    "只返回 JSON：{document: string}。",
+    JSON.stringify({ drivingQuestion: input.drivingQuestion, explanation: input.explanation,
+      blocks: input.blocks.map((block) => ({ ordinal: block.ordinal, type: block.type, text: plainTextForGroundingV1(block.text) })),
+      plannedOutline: planned }),
+  ].join("\n");
+}
+
 function jsonArtifactProvider(
   provider: ReturnType<typeof createGovernedProvider>,
   job: JobPayload,
@@ -203,23 +236,48 @@ function jsonArtifactProvider(
       if (!(await isJobLeaseActive(job))) {
         return { ok: false, class: "lease_lost", message: "动态演示 worker 已失去任务租约" };
       }
+      // 第一发：规划（沿用这一档的思考设置）。输出只有大纲，思考成本小。
       await context.reserveModelCall();
-      const result = await provider.chatCompletion(
-        [{ role: "system", content: context.instructions }, { role: "user", content: session.prompt(input) }],
-        { temperature: 0.4, maxTokens: maxOutputTokens, responseFormat: "json_object" },
+      const plannedResult = await provider.chatCompletion(
+        [{ role: "system", content: context.instructions }, { role: "user", content: artifactPlanPrompt(input) }],
+        { temperature: 0.4, maxTokens: Math.min(maxOutputTokens, 6_000), responseFormat: "json_object" },
         step.signal,
       );
-      let parsed: unknown;
-      try { parsed = extractJsonFromText(result.content, ["title", "subject", "caution", "document", "outline"]); } catch {
-        return { ok: false, class: "output_shape", message: "动态页面返回的 JSON 不完整" };
+      let plannedRaw: unknown;
+      try { plannedRaw = extractJsonFromText(plannedResult.content, ["title", "subject", "caution", "outline"]); } catch {
+        return { ok: false, class: "output_shape", message: "动态页面大纲返回的 JSON 不完整" };
       }
-      const accepted = session.accept(parsed, input);
+      // 只取合同允许的字段：模型多写的键会让整份页面在验收时变成 unrecognized_keys，
+      // 而那已经是第二发之后了——在这里就按大纲合同收口，别把多余的键带下去。
+      const plannedParsed = dynamicArtifactDocV1Schema.omit({ document: true }).safeParse(plannedRaw);
+      if (!plannedParsed.success) {
+        return { ok: false, class: "output_shape",
+          message: `动态页面大纲不符合约定（${plannedParsed.error.issues.slice(0, 3).map(issue => `${issue.path.join(".") || "root"}:${issue.code}`).join(", ")}）` };
+      }
+      const planned = plannedParsed.data;
+      // 第二发：整页书写（关思考）。长文输出不再等待推理。
+      await context.reserveModelCall();
+      const documentResult = await provider.chatCompletion(
+        [{ role: "system", content: context.instructions }, { role: "user", content: artifactDocumentPrompt(input, planned) }],
+        { temperature: 0.4, maxTokens: maxOutputTokens, responseFormat: "json_object", disableThinking: true },
+        step.signal,
+      );
+      let page: unknown;
+      try { page = extractJsonFromText(documentResult.content, ["document"]); } catch {
+        return { ok: false, class: "output_shape", message: "动态页面正文返回的 JSON 不完整" };
+      }
+      const document = (page as { document?: unknown }).document;
+      const merged = { ...planned, document };
+      // 仍然走生产会话的验收：字段合同、原文回查、页面安全检查都在这里，不因拆成两发而放宽。
+      const accepted = session.accept(merged, input);
       if (!accepted.ok) return accepted;
+      const promptTokens = (plannedResult.usage?.promptTokens ?? 0) + (documentResult.usage?.promptTokens ?? 0);
+      const completionTokens = (plannedResult.usage?.completionTokens ?? 0) + (documentResult.usage?.completionTokens ?? 0);
       return {
         ok: true,
         output: accepted.output,
-        promptTokens: result.usage?.promptTokens ?? undefined,
-        completionTokens: result.usage?.completionTokens ?? undefined,
+        promptTokens: promptTokens || undefined,
+        completionTokens: completionTokens || undefined,
       };
     } catch (error) {
       // 网关把"写到一半没了"作为异常抛出。按 transport 记账会让人以为是被网络打断；

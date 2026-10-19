@@ -44,6 +44,12 @@ struct MainTabShell: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .animation(Motion.gated(reducedMotion || store.localReduceMotion, Motion.segment), value: store.selectedTab)
         .onAppear { queueReviewRouteIfNeeded() }
+        .onChange(of: store.pendingNoteReferenceID) { _, noteId in
+            guard let noteId else { return }
+            store.selectedTab = .library
+            libraryPath.append(noteId)
+            store.pendingNoteReferenceID = nil
+        }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if store.selectedTab != .conversation {
                 if activeNavigationPath.isEmpty {
@@ -55,7 +61,6 @@ struct MainTabShell: View {
                     .padding(.horizontal, 22)
                     .padding(.top, 8)
                     .padding(.bottom, 4)
-                    .offset(y: 16)
                 } else {
                     HStack {
                         Spacer()
@@ -64,7 +69,6 @@ struct MainTabShell: View {
                     .padding(.trailing, 22)
                     .padding(.top, 5)
                     .padding(.bottom, 6)
-                    .offset(y: 22)
                 }
             }
         }
@@ -204,8 +208,8 @@ struct AstellaMainDock: View {
                     ZStack {
                         if selected {
                             RoundedRectangle(cornerRadius: 17, style: .continuous)
-                                .fill(Color.white.opacity(0.82))
-                                .overlay(RoundedRectangle(cornerRadius: 17, style: .continuous).stroke(.white.opacity(0.8), lineWidth: 0.8))
+                                .fill(StudyPalette.sky)
+                                .overlay(RoundedRectangle(cornerRadius: 17, style: .continuous).stroke(StudyPalette.paperEdge.opacity(0.72), lineWidth: 0.8))
                                 .shadow(color: StudyPalette.ink.opacity(0.035), radius: 5, x: 0, y: 2)
                                 .matchedGeometryEffect(id: "dock-selection-lens", in: selectionLens)
                                 .padding(.horizontal, 3)

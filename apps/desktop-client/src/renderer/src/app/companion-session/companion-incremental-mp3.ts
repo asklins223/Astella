@@ -218,6 +218,11 @@ export interface IncrementalPlaybackOptions {
    * 生产**不传**——那条路一律走下面的 `AudioDecoder`。
    */
   readonly decodeAllForTest?: (bytes: Uint8Array) => Promise<AudioBuffer | null>;
+  /**
+   * 首播前预缓冲的秒数（默认 0.35）。测试可显式给 0 或别的值；
+   * 注入解码器的旧用例不传就等于 0，保持原断言形状。
+   */
+  readonly prebufferSeconds?: number;
 }
 
 /**
@@ -244,6 +249,21 @@ export class IncrementalAudioPlayer {
   private samplesPerFrame = 0;
   /** 设备样本时钟上的下一个起点；整样本排播避免逐块小数取整的缝隙。 */
   private nextStartFrame: number | null = null;
+  /** 已排播音频结束于设备时钟的哪一秒（欠载判定用；不依赖 context.sampleRate）。 */
+  private scheduledEndAt: number | null = null;
+  /**
+   * 抖动缓冲（2026-10-19）。流式音频到达不匀速：过去每块到了直接排
+   * `currentTime + 5ms`，晚到多久就插多长的静音缝；突发到达又截掉上一块尾巴。
+   * 现在先攒一小段再开口，欠载时暂停排播、重新攒够再续，不留缝。
+   * 注意：**缓冲状态不参与"说完"判定**——`finished` 之后一律排空并收尾，
+   * 否则流会卡在第一段（2026-10-19 实机回归）。
+   */
+  private static readonly REBUFFER_SECONDS = 0.5;
+  private pendingBuffers: AudioBuffer[] = [];
+  private pendingSeconds = 0;
+  private buffering = true;
+  /** 缓冲重排之前已经播掉的秒数：续播后进度继续往上走，字幕不回跳。 */
+  private playedOffset = 0;
   private decodedSeconds = 0;
   private startedAt: number | null = null;
   private reportedFraction = 0;
@@ -265,6 +285,8 @@ export class IncrementalAudioPlayer {
     if (!this.live) return;
     for (const unit of this.assembler.flush()) this.feed(unit);
     this.finished = true;
+    // 结束态立即排空一次：这是"流在半缓冲处结束"也能收尾的关键（实机卡壳回归）。
+    this.pump();
     const decoder = this.decoder;
     if (decoder) {
       // 让解码器把内部残留吐出来；吐完才算整段结束。
@@ -274,6 +296,7 @@ export class IncrementalAudioPlayer {
         .then(() => {
           if (this.live && this.resampler) this.schedulePcm(this.resampler.flush());
           this.flushing = false;
+          this.pump();
           this.maybeComplete();
         });
     }
@@ -288,6 +311,8 @@ export class IncrementalAudioPlayer {
       try { source.stop(); } catch { /* 已经自然结束 */ }
     }
     this.sources.length = 0;
+    this.pendingBuffers.length = 0;
+    this.pendingSeconds = 0;
     try { this.decoder?.close(); } catch { /* 已经关了 */ }
     this.decoder = null;
     this.resampler = null;
@@ -315,7 +340,8 @@ export class IncrementalAudioPlayer {
    */
   playedFraction(): number | null {
     if (!this.live || this.startedAt === null || this.decodedSeconds <= 0) return null;
-    const elapsed = this.context.currentTime - this.startedAt;
+    // 缓冲期间不把等待算成播放进度，字幕停在已播位置。
+    const elapsed = this.buffering ? this.playedOffset : this.context.currentTime - this.startedAt;
     if (!Number.isFinite(elapsed)) return null;
     const next = Math.min(1, Math.max(0, elapsed / this.decodedSeconds));
     this.reportedFraction = Math.max(this.reportedFraction, next);
@@ -398,7 +424,7 @@ export class IncrementalAudioPlayer {
     try {
       const buffer = await decode(unit.bytes);
       if (!buffer || !this.live) return;
-      this.schedule(buffer);
+      this.enqueue(buffer);
     } finally {
       // 在途计数要跟着收尾判定走：字节还在路上时不能判"整段播完"，
       // 否则 `finish()` 会先把播放器关掉，这一块就永远排不上（实测踩到）。
@@ -437,10 +463,50 @@ export class IncrementalAudioPlayer {
     if (!pcm.length) return;
     const buffer = this.context.createBuffer(1, pcm.length, this.context.sampleRate);
     buffer.getChannelData(0).set(pcm);
-    this.schedule(buffer);
+    this.enqueue(buffer);
   }
 
-  private schedule(buffer: AudioBuffer): void {
+  private prebufferSeconds(): number {
+    return this.options.prebufferSeconds ?? (this.options.decodeAllForTest ? 0 : 0.35);
+  }
+
+  /** 解码后的音频先进抖动缓冲，攒够阈值再排播。 */
+  private enqueue(buffer: AudioBuffer): void {
+    if (!this.live) return;
+    if (this.options.audible && !this.options.audible()) { this.stop(); return; }
+    if (!(buffer.duration > 0)) return;
+    this.pendingBuffers.push(buffer);
+    this.pendingSeconds += buffer.duration;
+    this.pump();
+  }
+
+  private pump(): void {
+    if (!this.live) return;
+    // 流已经结束：无条件排空，缓冲状态不再拦收尾（实机卡壳回归）。
+    if (this.finished) this.buffering = false;
+    const now = this.context.currentTime;
+    if (!this.buffering && this.scheduledEndAt !== null && now > this.scheduledEndAt + 0.02) {
+      // 欠载：结账已播秒数，暂停排播重新攒，而不是在当前位置插一个缝。
+      this.playedOffset += Math.max(0, this.scheduledEndAt - (this.startedAt ?? now));
+      this.startedAt = null;
+      this.nextStartFrame = null;
+      this.scheduledEndAt = null;
+      this.buffering = true;
+    }
+    const target = this.finished ? 0
+      : this.buffering ? (this.playedOffset > 0 ? IncrementalAudioPlayer.REBUFFER_SECONDS : this.prebufferSeconds())
+        : 0;
+    if (this.buffering && this.pendingSeconds < target) { this.maybeComplete(); return; }
+    if (this.buffering) { this.buffering = false; this.nextStartFrame = null; }
+    while (this.pendingBuffers.length > 0) {
+      const next = this.pendingBuffers.shift()!;
+      this.pendingSeconds = Math.max(0, this.pendingSeconds - next.duration);
+      this.scheduleAt(next);
+    }
+    this.maybeComplete();
+  }
+
+  private scheduleAt(buffer: AudioBuffer): void {
     if (!this.live) return;
     if (this.options.audible && !this.options.audible()) { this.stop(); return; }
     if (!(buffer.duration > 0)) return;
@@ -453,9 +519,10 @@ export class IncrementalAudioPlayer {
       : Math.max(this.nextStartFrame, Math.ceil((this.context.currentTime + 0.005) * rate));
     const startAt = startFrame / rate;
     this.nextStartFrame = startFrame + buffer.length;
+    this.scheduledEndAt = (startFrame + buffer.length) / rate;
     this.sources.push(source);
     const first = this.startedAt === null;
-    if (first) this.startedAt = startAt;
+    if (first) this.startedAt = startAt - this.playedOffset;
     this.decodedSeconds = Math.max(this.decodedSeconds, this.nextStartFrame / rate - this.startedAt!);
     source.onended = () => {
       const index = this.sources.indexOf(source);
@@ -486,7 +553,8 @@ export class IncrementalAudioPlayer {
   /** 收尾：流结束、解码器吐完、所有已排的 source 播完。 */
   private maybeComplete(): void {
     if (!this.finished || !this.live) return;
-    if (this.queuedFrames > 0 || this.flushing || this.pendingFallbacks > 0 || this.sources.length > 0) return;
+    if (this.queuedFrames > 0 || this.flushing || this.pendingFallbacks > 0 || this.sources.length > 0
+      || this.pendingBuffers.length > 0 || this.pendingSeconds > 0) return;
     this.live = false;
     if (typeof cancelAnimationFrame === "function") cancelAnimationFrame(this.frame);
     this.options.onDone?.();

@@ -44,6 +44,49 @@ import {
 } from "./companion-dialogue-content.ts";
 import { companionQuoteSourceTexts } from "../context/companion-quote-evidence.ts";
 
+/**
+ * 内部核对消息的正文标记。
+ *
+ * 实机 2026-10-19（生产 run 0fe67407）：一次回答触发 4 轮内部纠正，每轮都把用户原话
+ * 原样追加成一条 `user` 消息。她的推理里因此出现 5 次 "The user repeated ..."，最后
+ * 对用户说"你连喊三遍我听见了"——而用户只说过一遍。system 里那句"不是新的用户请求"
+ * 挡不住这条形状：模型数的是 `user` 轮的数量。所以重附必须**写在正文里**标明身份，
+ * 并且只保留一份（旧的重附件由 `dropCompanionInternalCorrections` 摘掉）。
+ */
+export const COMPANION_INTERNAL_CORRECTION_MARKER = "【内部核对，不是用户的新消息】";
+
+function markInternalCorrection(
+  request: AgentTurnRequest["messages"][number],
+  hostOccasion: boolean,
+): AgentTurnRequest["messages"][number] {
+  const note = `${COMPANION_INTERNAL_CORRECTION_MARKER}\n`
+    + (hostOccasion
+      ? "下面重附的是本轮宿主观察，用户没有再说一遍；不要据此声称用户重复、连喊、催促或统计次数。\n\n"
+      : "下面重附的是本轮用户原问题，用户没有再说一遍；不要据此声称用户重复、连喊、催促或统计次数。\n\n");
+  const content = request.content;
+  if (typeof content === "string") return { ...request, content: note + content };
+  if (Array.isArray(content)) {
+    return { ...request, content: [{ type: "text" as const, text: note }, ...content] };
+  }
+  return request;
+}
+
+/** True when a message only carries the current request back for internal repair. */
+export function isCompanionInternalCorrection(message: AgentTurnRequest["messages"][number]): boolean {
+  const content = message.content;
+  const text = typeof content === "string"
+    ? content
+    : Array.isArray(content) ? content.find((part) => part.type === "text")?.text ?? "" : "";
+  return text.startsWith(COMPANION_INTERNAL_CORRECTION_MARKER);
+}
+
+/** At most one repair copy of the current request stays in a step's message list. */
+export function dropCompanionInternalCorrections(
+  messages: AgentTurnRequest["messages"],
+): AgentTurnRequest["messages"] {
+  return messages.filter((message) => !isCompanionInternalCorrection(message));
+}
+
 /** Internal repair cannot take the place of the user's current request. */
 export function companionStepCorrectionMessages(input: {
   currentRequest: AgentTurnRequest["messages"][number];
@@ -56,8 +99,8 @@ export function companionStepCorrectionMessages(input: {
       role: "system",
       content: [
         hostOccasion
-          ? "这是本轮的内部核对，不是新的用户请求。继续处理下方原样重附的当前宿主观察；历史用户消息不是本轮待办，也不重新启动已结束的请求。"
-          : "这是本轮的内部核对，不是新的用户请求。继续处理下方原样重附的当前问题与选区；历史问题不需要重新回答，实时页面也不能替换用户已经选定的原文。",
+          ? "这是本轮的内部核对，不是新的用户请求。继续处理下方重附的当前宿主观察；历史用户消息不是本轮待办，也不重新启动已结束的请求。"
+          : "这是本轮的内部核对，不是新的用户请求。继续处理下方重附的当前问题与选区；历史问题不需要重新回答，实时页面也不能替换用户已经选定的原文。",
         input.instruction,
         hostOccasion
           ? "保持当前观察的参与范围；已经发布的内容不重复，未发布的草稿可修正后再交付。"
@@ -66,7 +109,10 @@ export function companionStepCorrectionMessages(input: {
           : "上一段尚未显示，可以修正后完整回答当前问题。",
       ].join("\n"),
     },
-    { ...input.currentRequest, role: input.currentRequest.role === "system" ? "system" : "user" },
+    markInternalCorrection(
+      { ...input.currentRequest, role: input.currentRequest.role === "system" ? "system" : "user" },
+      hostOccasion,
+    ),
   ];
 }
 

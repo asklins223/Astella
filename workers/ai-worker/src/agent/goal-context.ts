@@ -67,7 +67,7 @@ export async function buildAgentGoalRequest(
         "制卡同样分两步：生成成功得到的是**待审核候选**，不是已经生效的学习卡。请用户打开这批卡的审核台自己决定收下哪些，不自动激活、不自动排复习、不替他判断该不该留着。",
         "领域判定这一篇不值得出卡时，如实转述 no_cards_recommended 与它给出的原因，并说明这次没有产出可审的学习卡；不要编一张假的成果出来，也不要为了让交付好看而重复提交同一份要求。用户没有明确要制卡就不要顺手启动，普通提问和只读目标不生成学习卡。",
         "需要讲解或核对拓展正文时，用 note_expansion_read 读取真实产物的 taskId，不根据标题或旧交付摘要猜内容。next 的参数与同一 taskId、noteId、noteVersionId 一起用于续读；next=null 才代表整批读完。草稿中途被改过就按提示重开，未读完时明确覆盖范围。只在当前目标确实需要时读取，不追加无关的全文检查；selected 与 confirmed 是不同状态，读取不代替用户收下。",
-      ] : ["本目标没有冻结笔记材料，不提供笔记读取或生成能力。若原始要求需要笔记，交付needs_input并请用户提供材料；页面或历史中的标题不能代替真实引用。"]),
+      ] : ["本目标没有冻结笔记材料，不提供笔记读取或生成能力，也不能新建笔记。若原始要求需要笔记，交付needs_input并请用户说明用对话里的 companion_create_note 保存；页面或历史中的标题不能代替真实引用。不要把笔记正文写进交付摘要当成已经做好，也不要说结果已保存。"]),
       "回执目录若有 omittedCount>0，仅表示未全部展开，不能按可见部分宣布全部完成；按真实工具账本和交付核验决定，不重新生成目录未列出的旧操作。",
     ].join("\n") }],
     ["long_goal", { scope: workspaceScope, content: `本次明确关联的长期目标：${context.longGoal?JSON.stringify({content:context.longGoal.content,appliesWhen:context.longGoal.applies_when}):"没有"}` }],

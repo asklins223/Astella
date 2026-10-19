@@ -257,9 +257,11 @@ fun NotesScreen(
                                 fontSize = 10.sp, color = StudyPalette.muted,
                             )
                         }
-                        Text(if (state.workspaces.size > 1) "切换" else "书房", fontSize = 11.sp, color = StudyPalette.muted)
-                        Spacer(Modifier.width(3.dp))
-                        AstellaGlyph(AstellaGlyphKind.Chevron, Modifier.size(11.dp), tint = StudyPalette.muted)
+                        if (state.workspaces.size > 1) {
+                            Text("切换", fontSize = 11.sp, color = StudyPalette.muted)
+                            Spacer(Modifier.width(3.dp))
+                            AstellaGlyph(AstellaGlyphKind.Chevron, Modifier.size(11.dp), tint = StudyPalette.muted)
+                        }
                     }
                 }
                 androidx.compose.material3.DropdownMenu(
@@ -357,7 +359,7 @@ fun NotesScreen(
                     Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(if (query.isBlank()) state.profile?.workspaceName ?: "我的书房" else "搜索结果",
+                    Text(if (query.isBlank()) "全部手记" else "搜索结果",
                         Modifier.weight(1f), color = StudyPalette.ink,
                         fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -378,13 +380,13 @@ fun NotesScreen(
                     ) {
                         NoteCover(note.title, Modifier.size(36.dp, 49.dp), note.id, rotate = 0f, textSize = 11.sp)
                         Column(Modifier.weight(1f).padding(start = 15.dp)) {
-                            note.snippet?.takeIf(String::isNotBlank)?.let { snippet ->
-                                Text(snippet, color = StudyPalette.muted, fontSize = 11.sp, lineHeight = 17.sp,
-                                    maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Spacer(Modifier.height(5.dp))
-                            }
                             Text(note.title, color = StudyPalette.ink, fontSize = 15.sp, lineHeight = 20.sp,
                                 fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            note.snippet?.takeIf(String::isNotBlank)?.let { snippet ->
+                                Spacer(Modifier.height(5.dp))
+                                Text(snippet, color = StudyPalette.muted, fontSize = 11.sp, lineHeight = 17.sp,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
                             Spacer(Modifier.height(6.dp))
                             val status = if (note.id == recentNoteId && query.isBlank()) "继续阅读" else "最近更新"
                             Text("$status · ${formatDate(note.updatedAt)}", color = StudyPalette.muted,
@@ -577,7 +579,7 @@ fun NoteDetailScreen(
                                 (if (heading) 22f else 19f) * state.readingScale,
                                 serif = true,
                                 color = StudyPalette.readerInk,
-                                lineSpacingMultiplier = if (heading) 1.5f else 1.92f,
+                                lineSpacingMultiplier = if (heading) 1.4f else 1.72f,
                             ) { selected, rewrite ->
                                 selectionOriginal = selected
                                 selectionBaseline = state.messages.map { it.id }.toSet()
@@ -1270,7 +1272,7 @@ fun AccountScreen(
             Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
                 SectionLabel("阅读")
                 SettingsGroup {
-                    SettingsRow(AstellaGlyphKind.Number, "阅读字号", readingSizeLabel, onClick = { onSubpage("readSettings") })
+                    SettingsRow(null, "阅读字号", readingSizeLabel, letter = "T", onClick = { onSubpage("readSettings") })
                     SettingsDivider()
                     SettingsRow(
                         AstellaGlyphKind.Eye, "默认打开",

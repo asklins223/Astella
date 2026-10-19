@@ -16,6 +16,10 @@ const cases = [
   { text: "给我生成这篇笔记的速看吧", toolUse: "act", handoff: true },
   { text: "生成拓展笔记", toolUse: "act", handoff: true },
   { text: "从这篇往外学，先生成草稿我挑，不要制卡", toolUse: "act", handoff: true },
+  // 2026-10-19 线上：这句被交给后台目标，目标只能出速看/脑图/演示/拓展/制卡，
+  // 结果交付摘要里写了"笔记"，库里一篇都没有。新建笔记必须在聊天轮里保存。
+  { text: "给我生成几个历史的笔记", toolUse: "act", handoff: false, createNote: true },
+  { text: "把刚才聊的电功率写成一篇笔记", toolUse: "act", handoff: false, createNote: true },
   { text: "帮我速看一下，在聊天里概括就好，不生成任何东西", toolUse: "read", handoff: false },
   { text: "往外学是什么意思？", toolUse: "none", handoff: false },
   { text: "今天不想学习", toolUse: "none", handoff: false },
@@ -34,7 +38,8 @@ try {
       permissionLevel: "full", objects: [note], capabilities: resolveAllCompanionAgentTools("full").map(tool => tool.name),
       currentActiveTransaction: () => undefined, verifyAttempt: async () => true,
     });
-    const ok = result.toolUse === item.toolUse && result.candidateOperations.includes("agent_start_goal") === item.handoff;
+    const ok = result.toolUse === item.toolUse && result.candidateOperations.includes("agent_start_goal") === item.handoff
+      && (!("createNote" in item) || result.candidateOperations.includes("companion_create_note"));
     results.push({ ...item, ok, result, elapsedMs: Date.now() - start });
     save("note-generation-routing-20261008", { model: route.model, results, wire });
     console.log(JSON.stringify({ text: item.text, ok, toolUse: result.toolUse, operations: result.candidateOperations }));

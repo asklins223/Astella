@@ -179,6 +179,9 @@ fun AstellaRoot(
     }
     BackHandler(accountSubpage != null || selectedNoteId != null || selectedNoteFeature != null) {
         when {
+            accountSubpage in setOf("readSettings", "permissions", "aiAuth", "serverAddr") -> accountSubpage = "settings"
+            accountSubpage == "settings" -> accountSubpage = null
+            accountSubpage == "conventions" || accountSubpage == "profile" -> accountSubpage = "companion"
             accountSubpage != null -> accountSubpage = null
             selectedNoteFeature != null -> selectedNoteFeature = null
             selectedNoteId != null -> selectedNoteId = null
@@ -358,7 +361,7 @@ fun AstellaRoot(
                         }
                     }
                     // 设计稿：阅读、设置等子页仍保留右下角伴星圆形入口。
-                    if (inSubpage && accountSubpage == null) {
+                    if (inSubpage && accountSubpage == null && selectedNoteFeature == null) {
                         Box(
                             Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 18.dp, bottom = 14.dp),
                         ) {

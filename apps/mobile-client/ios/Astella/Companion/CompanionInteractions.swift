@@ -335,12 +335,57 @@ struct CompanionTextStyle: Equatable {
     var color: UIColor = .label
 }
 
+func companionMarkdown(_ text: String) -> AttributedString {
+    let normalizedLists = text
+        .replacingOccurrences(of: "\r\n", with: "\n")
+        .components(separatedBy: "\n")
+        .map { line -> String in
+            let trimmed = line.drop(while: { $0 == " " || $0 == "\t" })
+            let indentation = String(line.prefix(line.count - trimmed.count))
+            if trimmed.hasPrefix("- ") || trimmed.hasPrefix("* ") {
+                return indentation + "• " + String(trimmed.dropFirst(2))
+            }
+            return line
+        }
+        .joined(separator: "\n")
+    return (try? AttributedString(
+        markdown: normalizedLists,
+        options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+    )) ?? AttributedString(normalizedLists)
+}
+
+private func noteReferenceAttributedText(
+    _ text: String,
+    baseAttributes: [NSAttributedString.Key: Any],
+    linkColor: UIColor
+) -> NSAttributedString {
+    let result = NSMutableAttributedString(string: text, attributes: baseAttributes)
+    guard let regex = try? NSRegularExpression(pattern: #"\[([^\]]+)\]\(astella-note:([^\s)]+)\)"#) else {
+        return result
+    }
+    let source = text as NSString
+    for match in regex.matches(in: text, range: NSRange(location: 0, length: source.length)).reversed() {
+        guard match.numberOfRanges == 3 else { continue }
+        let label = source.substring(with: match.range(at: 1))
+        let noteId = source.substring(with: match.range(at: 2))
+        guard let escapedID = noteId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+              let url = URL(string: "astella-note://note/\(escapedID)") else { continue }
+        var linkAttributes = baseAttributes
+        linkAttributes[.link] = url
+        linkAttributes[.foregroundColor] = linkColor
+        linkAttributes[.underlineStyle] = NSUnderlineStyle.single.rawValue
+        result.replaceCharacters(in: match.range, with: NSAttributedString(string: label, attributes: linkAttributes))
+    }
+    return result
+}
+
 /// Native text selection with actions attached to the actual range, not a
 /// whole-block context menu. UITextView keeps platform handles and copy behavior.
 struct CompanionSelectableText: UIViewRepresentable {
     let text: String
     let fontSize: CGFloat
     var style: CompanionTextStyle?
+    var onOpenNote: ((String) -> Void)? = nil
     var onSelection: (String, Bool) -> Void
     func makeUIView(context: Context) -> SelectionTextView {
         let view = SelectionTextView()
@@ -359,17 +404,19 @@ struct CompanionSelectableText: UIViewRepresentable {
             paragraph.firstLineHeadIndent = style.firstLineIndent
             paragraph.headIndent = 0
             paragraph.lineBreakMode = .byWordWrapping
-            view.attributedText = NSAttributedString(string: text, attributes: [
+            let attributes: [NSAttributedString.Key: Any] = [
                 .font: StudySerif.uiFont(size: style.fontSize, serif: style.serif),
                 .foregroundColor: style.color,
                 .paragraphStyle: paragraph,
-            ])
+            ]
+            view.attributedText = noteReferenceAttributedText(text, baseAttributes: attributes, linkColor: UIColor(StudyPalette.accent))
         } else {
             if view.text != text { view.text = text }
             view.font = UIFont.systemFont(ofSize: fontSize)
             view.textColor = .label
         }
         view.onSelection = onSelection
+        view.onOpenNote = onOpenNote
     }
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: SelectionTextView, context: Context) -> CGSize? {
         guard let width = proposal.width else { return nil }
@@ -379,6 +426,17 @@ struct CompanionSelectableText: UIViewRepresentable {
 
 final class SelectionTextView: UITextView, UITextViewDelegate {
     var onSelection: ((String, Bool) -> Void)?
+    var onOpenNote: ((String) -> Void)?
+
+    func textView(_ textView: UITextView, primaryActionFor textItem: UITextItem, defaultAction: UIAction) -> UIAction? {
+        guard case let .link(URL) = textItem.content, URL.scheme == "astella-note" else { return defaultAction }
+        let noteId = URL.pathComponents.last ?? ""
+        guard !noteId.isEmpty, noteId != "note" else { return nil }
+        return UIAction(title: "打开引用笔记", image: UIImage(systemName: "book")) { [weak self] _ in
+            self?.onOpenNote?(noteId.removingPercentEncoding ?? noteId)
+        }
+    }
+
     func textView(_ textView: UITextView, editMenuForTextIn range: NSRange, suggestedActions: [UIMenuElement]) -> UIMenu? {
         guard range.length > 0, range.location + range.length <= (text as NSString).length else { return nil }
         let selected = (text as NSString).substring(with: range)

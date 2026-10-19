@@ -9,6 +9,20 @@ private enum OrbitSection: String, CaseIterable {
     case hand = "手边"
 }
 
+private enum OrbitMemoryGroup: String, CaseIterable {
+    case aboutYou = "关于你的"
+    case herNotes = "她的记事"
+    case goals = "目标与方法"
+}
+
+private enum OrbitMemoryFilter: String, CaseIterable {
+    case active = "正在使用"
+    case candidate = "待确认"
+    case resident = "固定"
+    case disputed = "有争议"
+    case archived = "已归档"
+}
+
 private struct OrbitDay: Identifiable {
     var date: String
     var status: String
@@ -35,6 +49,8 @@ struct OrbitScreen: View {
     @State private var loading = true
     @State private var diaryError: String?
     @State private var memoryError: String?
+    @State private var memoryGroup: OrbitMemoryGroup = .aboutYou
+    @State private var memoryFilter: OrbitMemoryFilter = .active
 
     private var recentDays: [OrbitDay] {
         let cutoff = Calendar.current.date(byAdding: .day, value: -13, to: Calendar.current.startOfDay(for: Date())) ?? .distantPast
@@ -55,7 +71,7 @@ struct OrbitScreen: View {
                         .frame(maxWidth: .infinity)
                     Button {
                         withAnimation(Motion.gated(reduceMotion || store.localReduceMotion, Motion.routePush)) {
-                            store.selectedTab = .conversation
+                            store.beginDiaryCapture()
                         }
                     } label: {
                         AstellaGlyph(kind: .edit, tint: StudyPalette.ink)
@@ -64,7 +80,8 @@ struct OrbitScreen: View {
                             .modifier(StudyGlassSurfaceStyle(radius: 22, interactive: true))
                     }
                     .buttonStyle(AstellaPressStyle())
-                    .accessibilityLabel("在相伴里记下今天")
+                    .accessibilityLabel("告诉伴星今天想记下的事")
+                    .accessibilityHint("打开对话并聚焦输入框，发送前可以继续编辑")
                 }
                 .padding(.horizontal, 2)
                 .padding(.top, 21)
@@ -84,7 +101,10 @@ struct OrbitScreen: View {
         .background(DawnBackground())
         .task {
             #if DEBUG
-            if store.uiReviewMode == "orbit" {
+            if ["orbit", "orbit-memory", "orbit-tasks"].contains(store.uiReviewMode ?? "") {
+                if store.orbitRootSection == "memory" { section = .memory }
+                else if store.orbitRootSection == "hand" { section = .hand }
+                else { section = .diary }
                 days = [
                     OrbitDay(date: "2026-10-16", status: "generated", hasImage: true),
                     OrbitDay(date: "2026-10-15", status: "generated"),
@@ -94,6 +114,13 @@ struct OrbitScreen: View {
                     "2026-10-16": "今晚把《赤壁赋》读到了「惟江上之清风，与山间之明月」，她说这句话最像我们现在的样子。",
                     "2026-10-15": "第一次做完一整套回想题，第三题卡了很久，翻开对照之后才想起来。",
                     "2026-10-13": "把那篇英语长难句存进了书房，她提醒我这周还有 4 条批注没看。",
+                ]
+                memories = [
+                    OrbitMemory(id: "memory-preference", content: "你偏好先读原文，再看注解", kind: "preference", tier: "active", candidate: false),
+                    OrbitMemory(id: "memory-attention", content: "你不太喜欢被一次问太多问题", kind: "interaction_note", tier: "resident", candidate: false),
+                    OrbitMemory(id: "memory-rhythm", content: "你更喜欢先安静读十分钟，再开口讨论", kind: "preference", tier: "active", candidate: false),
+                    OrbitMemory(id: "memory-candidate", content: "最近常在晚上九点后读书", kind: "preference", tier: "active", candidate: true),
+                    OrbitMemory(id: "memory-goal", content: "这学期想把《古文观止》读完", kind: "goal", tier: "active", candidate: false),
                 ]
                 firstGeneratedDate = Calendar.current.date(byAdding: .day, value: -6, to: Date())
                 loading = false
@@ -231,34 +258,179 @@ struct OrbitScreen: View {
     }
 
     private var memoryContent: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 0) {
+            memoryGroupPicker
+                .padding(.bottom, 14)
+
+            memoryFilterChips
+                .padding(.bottom, 16)
+
+            Text("她从相处里记住的、关于你的事实。可核对、修订或收回。")
+                .font(.system(size: 12))
+                .lineSpacing(3)
+                .foregroundStyle(StudyPalette.muted)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 2)
+                .padding(.bottom, 18)
+
+            if loading { OrbitLoadingRow() }
+            else if let memoryError { OrbitEmptyCard(title: "记忆暂时不可用", detail: memoryError, glyph: .companion) }
+            else if visibleMemories.isEmpty {
+                OrbitEmptyCard(title: memoryEmptyTitle, detail: memoryEmptyDetail, glyph: .companion)
+            } else {
+                ForEach(visibleMemories) { memory in
+                    NavigationLink(value: OrbitNavigationRoute.memory(memory.id)) {
+                        memoryCard(memory)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.bottom, 14)
+                }
+            }
+
             NavigationLink(value: OrbitNavigationRoute.memoryRecycle) {
                 settingDestinationRow(title: "记忆回收站", detail: "恢复最近删除的记忆", glyph: .history)
             }
             .buttonStyle(.plain)
-            orbitSectionTitle("伴星记忆", "可以查看她记住的事，也可以随时修正")
-            if loading { OrbitLoadingRow() }
-            else if let memoryError { OrbitEmptyCard(title: "记忆暂时不可用", detail: memoryError, glyph: .companion) }
-            else if memories.isEmpty { OrbitEmptyCard(title: "还没有保存的记忆", detail: "当伴星记住与你长期有关的内容时，会在这里说明来源。", glyph: .companion) }
-            else {
-                ForEach(memories) { memory in
-                    NavigationLink(value: OrbitNavigationRoute.memory(memory.id)) {
-                        PaperSurface(padding: 17, radius: 18) {
-                            VStack(alignment: .leading, spacing: 9) {
-                                HStack {
-                                    Text(memoryKindLabel(memory.kind)).font(.caption.weight(.medium)).foregroundStyle(StudyPalette.accent)
-                                    Spacer()
-                                    if memory.candidate { Text("待确认").font(.caption).foregroundStyle(StudyPalette.danger) }
-                                    AstellaGlyph(kind: .chevron, tint: StudyPalette.muted).frame(width: 14, height: 14)
-                                }
-                                Text(memory.content).font(.subheadline).foregroundStyle(StudyPalette.ink).lineSpacing(4)
-                                Text(memory.tier == "resident" ? "常驻记忆" : "按需记忆").font(.caption).foregroundStyle(StudyPalette.muted)
-                            }
-                        }
+            .padding(.top, 4)
+        }
+    }
+
+    private var memoryGroupPicker: some View {
+        HStack(spacing: 2) {
+            ForEach(OrbitMemoryGroup.allCases, id: \.self) { group in
+                let selected = group == memoryGroup
+                Button {
+                    withAnimation(Motion.gated(reduceMotion || store.localReduceMotion, Motion.segment)) {
+                        memoryGroup = group
+                        memoryFilter = .active
                     }
-                    .buttonStyle(.plain)
+                } label: {
+                    Text(group.rawValue)
+                        .font(.system(size: 12, weight: selected ? .semibold : .regular))
+                        .foregroundStyle(selected ? StudyPalette.ink : StudyPalette.muted)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 34)
+                        .background(selected ? StudyPalette.paper.opacity(0.92) : .clear,
+                                    in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                }
+                .buttonStyle(AstellaPressStyle())
+                .accessibilityAddTraits(selected ? [.isSelected] : [])
+            }
+        }
+        .padding(4)
+        .modifier(StudyGlassSurfaceStyle(radius: 18, interactive: true))
+    }
+
+    private var memoryFilterChips: some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: 8) {
+                ForEach(OrbitMemoryFilter.allCases, id: \.self) { filter in
+                    let selected = filter == memoryFilter
+                    Button {
+                        withAnimation(Motion.gated(reduceMotion || store.localReduceMotion, Motion.press)) {
+                            memoryFilter = filter
+                        }
+                    } label: {
+                        Text(filter.rawValue)
+                            .font(.system(size: 12, weight: selected ? .semibold : .regular))
+                            .foregroundStyle(selected ? StudyPalette.accentLabel : StudyPalette.ink)
+                            .padding(.horizontal, 15)
+                            .frame(minHeight: 33)
+                            .background(selected ? StudyPalette.accent : StudyPalette.paper.opacity(0.58), in: Capsule())
+                            .overlay(Capsule().stroke(selected ? Color.clear : .white.opacity(0.6), lineWidth: 0.8))
+                    }
+                    .buttonStyle(AstellaPressStyle())
+                    .accessibilityAddTraits(selected ? [.isSelected] : [])
                 }
             }
+            .padding(.horizontal, 2)
+        }
+        .scrollIndicators(.hidden)
+    }
+
+    private func memoryCard(_ memory: OrbitMemory) -> some View {
+        VStack(alignment: .leading, spacing: 13) {
+            HStack(spacing: 8) {
+                Text(memoryKindLabel(memory.kind))
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(StudyPalette.accent)
+                    .padding(.horizontal, 9)
+                    .frame(minHeight: 24)
+                    .background(StudyPalette.sky.opacity(0.82), in: Capsule())
+                Spacer(minLength: 8)
+                Text(memoryStatusLabel(memory))
+                    .font(.system(size: 11))
+                    .foregroundStyle(StudyPalette.muted)
+            }
+            Text(memory.content)
+                .font(.system(size: 17, weight: .semibold))
+                .lineSpacing(4)
+                .foregroundStyle(StudyPalette.ink)
+                .fixedSize(horizontal: false, vertical: true)
+            Rectangle().fill(StudyPalette.paperEdge.opacity(0.55)).frame(height: 0.7)
+            HStack(spacing: 7) {
+                AstellaGlyph(kind: .library, tint: StudyPalette.muted).frame(width: 12, height: 12)
+                Text("相处里记下的").font(.system(size: 11)).foregroundStyle(StudyPalette.muted)
+                Spacer(minLength: 8)
+                SettingsStatusPill(
+                    text: memory.candidate ? "待确认" : "有依据",
+                    color: memory.candidate ? StudyPalette.danger : StudyPalette.success
+                )
+            }
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .modifier(StudyGlassSurfaceStyle(radius: 22, interactive: true))
+    }
+
+    private var visibleMemories: [OrbitMemory] {
+        memories.filter { memory in
+            memoryGroupMatches(memory) && memoryFilterMatches(memory)
+        }
+    }
+
+    private func memoryGroupMatches(_ memory: OrbitMemory) -> Bool {
+        switch memoryGroup {
+        case .aboutYou: return ["preference", "learning_context", "judgment", "interaction_note"].contains(memory.kind)
+        case .herNotes: return ["episodic"].contains(memory.kind) || memory.kind.isEmpty
+        case .goals: return memory.kind == "goal"
+        }
+    }
+
+    private func memoryFilterMatches(_ memory: OrbitMemory) -> Bool {
+        switch memoryFilter {
+        case .active: return !memory.candidate && memory.tier != "resident" && memory.tier != "archived"
+        case .candidate: return memory.candidate
+        case .resident: return memory.tier == "resident"
+        case .disputed: return false
+        case .archived: return memory.tier == "archived"
+        }
+    }
+
+    private func memoryStatusLabel(_ memory: OrbitMemory) -> String {
+        if memory.candidate { return "待确认 · 相处里记下" }
+        switch memory.tier {
+        case "resident": return "固定 · 长期保留"
+        case "archived": return "已归档"
+        default: return "已确认 · 相处里记下"
+        }
+    }
+
+    private var memoryEmptyTitle: String {
+        switch memoryFilter {
+        case .disputed: return "还没有有争议的记忆"
+        case .archived: return "没有归档的记忆"
+        case .candidate: return "没有待确认的记忆"
+        default: return "这部分还没有记忆"
+        }
+    }
+
+    private var memoryEmptyDetail: String {
+        switch memoryFilter {
+        case .disputed: return "如果某条记忆与你的理解不同，可以在详情里提出异议。"
+        case .archived: return "收回的记忆会先放进回收站，再从这里彻底归档。"
+        case .candidate: return "伴星刚记下的事会先等你确认，再进入长期记忆。"
+        default: return "当伴星记住与你长期有关的内容时，会在这里说明来源。"
         }
     }
 
@@ -685,7 +857,7 @@ struct AccountScreen: View {
                     NavigationLink(value: AccountScreenRoute.companionCenter) {
                         Text("进入伴星中心")
                             .font(.system(size: 12.5, weight: .semibold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(StudyPalette.accentLabel)
                             .padding(.horizontal, 16)
                             .frame(minHeight: 36)
                             .background(LinearGradient(colors: [StudyPalette.actionFill, StudyPalette.accent], startPoint: .topLeading, endPoint: .bottomTrailing), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -789,8 +961,8 @@ struct AccountScreen: View {
                         set: { store.setLocalReduceMotion($0) }
                     )) {
                         VStack(alignment: .leading, spacing: 3) {
-                            Text("轻柔动效").font(.system(size: 14, weight: .medium)).foregroundStyle(StudyPalette.ink)
-                            Text("减少位移，留下安静的状态反馈").font(.system(size: 10)).foregroundStyle(StudyPalette.muted)
+                            Text("轻柔动效").font(.system(size: 17, weight: .semibold)).foregroundStyle(StudyPalette.ink)
+                            Text("减少位移，留下安静的状态反馈").font(.system(size: 11)).foregroundStyle(StudyPalette.muted)
                         }
                     }
                     .frame(minHeight: 58)
@@ -799,20 +971,22 @@ struct AccountScreen: View {
             }
 
             AccountSection("隐私与高级") {
-                NavigationLink(value: AccountScreenRoute.aiAuthorization) {
-                    accountLink(
-                        title: "AI 使用授权与数据偏好",
-                        detail: aiAuthorizationSummary,
-                        glyph: .lock
-                    )
-                }
-                accountRowDivider
-                NavigationLink(value: AccountScreenRoute.changePassword) {
-                    accountLink(title: "修改密码", detail: "更换登录密码", glyph: .key)
-                }
-                accountRowDivider
-                NavigationLink(value: AccountScreenRoute.serverAddress) {
-                    accountLink(title: "服务地址", detail: serviceAddressSummary, glyph: .document)
+                VStack(spacing: 0) {
+                    NavigationLink(value: AccountScreenRoute.aiAuthorization) {
+                        accountLink(
+                            title: "AI 使用授权与数据偏好",
+                            detail: aiAuthorizationSummary,
+                            glyph: .lock
+                        )
+                    }
+                    accountRowDivider
+                    NavigationLink(value: AccountScreenRoute.changePassword) {
+                        accountLink(title: "修改密码", detail: "更换登录密码", glyph: .key)
+                    }
+                    accountRowDivider
+                    NavigationLink(value: AccountScreenRoute.serverAddress) {
+                        accountLink(title: "服务地址", detail: serviceAddressSummary, glyph: .document)
+                    }
                 }
             }
 
@@ -1043,7 +1217,7 @@ struct AccountProfileScreen: View {
                                 if store.isAccountBusy { ProgressView().tint(.white) }
                                 else { Text("保存").font(.system(size: 13, weight: .semibold)) }
                             }
-                            .foregroundStyle(.white)
+                            .foregroundStyle(StudyPalette.accentLabel)
                             .frame(width: 54, height: 38)
                             .background(StudyPalette.accent, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                             .buttonStyle(AstellaPressStyle())
@@ -1270,7 +1444,7 @@ struct MobileSettingsScreen: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background {
                     if selected {
-                        RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.white.opacity(0.78))
+                        RoundedRectangle(cornerRadius: 14, style: .continuous).fill(StudyPalette.sky)
                     }
                 }
                 .contentShape(Rectangle())
@@ -1307,9 +1481,9 @@ struct MobileSettingsScreen: View {
                             }
                         )) {
                             VStack(alignment: .leading, spacing: 3) {
-                                Text("轻柔动效").font(.system(size: 14, weight: .medium)).foregroundStyle(StudyPalette.ink)
+                                Text("轻柔动效").font(.system(size: 17, weight: .semibold)).foregroundStyle(StudyPalette.ink)
                                 Text(systemReduceMotion ? "系统辅助功能已要求减少动效。" : "减少位移，留下安静的状态反馈")
-                                    .font(.system(size: 10)).foregroundStyle(StudyPalette.muted)
+                                    .font(.system(size: 11)).foregroundStyle(StudyPalette.muted)
                             }
                         }
                         .frame(minHeight: 58)
@@ -1439,7 +1613,7 @@ struct ReadingSettingsScreen: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background {
                     if selected {
-                        RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white.opacity(0.85))
+                        RoundedRectangle(cornerRadius: 16, style: .continuous).fill(StudyPalette.sky)
                             .shadow(color: StudyPalette.ink.opacity(0.06), radius: 6, x: 0, y: 3)
                     }
                 }
@@ -1451,8 +1625,8 @@ struct ReadingSettingsScreen: View {
 
     private func sectionLabel(_ title: String, bottom: CGFloat = 13) -> some View {
         Text(title)
-            .font(.system(size: 10, weight: .medium))
-            .tracking(1)
+            .font(.system(size: 12.5, weight: .medium))
+            .tracking(0.6)
             .foregroundStyle(StudyPalette.muted)
             .padding(.bottom, bottom)
     }
@@ -1475,7 +1649,7 @@ struct ReadingSettingsScreen: View {
                     .padding(.bottom, 12)
 
                 Text("清风徐来，水波不兴。举酒属客，诵明月之诗，歌窈窕之章。")
-                    .font(.system(size: textSize, design: .serif))
+                    .font(StudySerif.font(size: textSize))
                     .lineSpacing(textSize * 0.8)
                     .foregroundStyle(StudyPalette.ink)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1554,9 +1728,9 @@ struct ReadingSettingsScreen: View {
                         }
                     )) {
                         VStack(alignment: .leading, spacing: 3) {
-                            Text("减少动效").font(.system(size: 14, weight: .medium)).foregroundStyle(StudyPalette.ink)
+                            Text("减少动效").font(.system(size: 17, weight: .semibold)).foregroundStyle(StudyPalette.ink)
                             Text("模型保持静止，粒子改为静态音量条")
-                                .font(.system(size: 10)).foregroundStyle(StudyPalette.muted)
+                                .font(.system(size: 11)).foregroundStyle(StudyPalette.muted)
                         }
                     }
                     .frame(minHeight: 58)
@@ -1605,8 +1779,8 @@ struct ReadingSettingsScreen: View {
                     .frame(width: 36, height: 36)
                     .background(StudyPalette.sky.opacity(0.78), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(title).font(.system(size: 13, weight: .medium)).foregroundStyle(StudyPalette.ink)
-                    Text(detail).font(.system(size: 10)).lineLimit(1).foregroundStyle(StudyPalette.muted)
+                    Text(title).font(.system(size: 17, weight: .semibold)).foregroundStyle(StudyPalette.ink)
+                    Text(detail).font(.system(size: 11)).lineLimit(1).foregroundStyle(StudyPalette.muted)
                 }
                 Spacer()
                         if selected { AstellaGlyph(kind: .checkmark, tint: StudyPalette.accent).frame(width: 15, height: 15) }
@@ -1622,15 +1796,14 @@ struct ReadingSettingsScreen: View {
 struct PersonalConventionsScreen: View {
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 15) {
-                Text("个人约定用来补充你希望伴星怎样陪你学习。默认陪伴能力一直生效。")
-                    .font(.subheadline).lineSpacing(4).foregroundStyle(StudyPalette.muted)
-                    .padding(.horizontal, 3)
-                AccountSection("我们的节奏") { ParticipationPreferencesEditor() }
+            VStack(alignment: .leading, spacing: 0) {
+                CompanionBubbleRow(text: "这是我们之间的约定，我会在每次对话做记录。")
+                    .padding(.bottom, 22)
+                ParticipationPreferencesEditor()
             }
             .padding(.horizontal, 22)
-            .padding(.top, 22)
-            .padding(.bottom, 28)
+            .padding(.top, 16)
+            .padding(.bottom, 40)
         }
         .scrollIndicators(.hidden)
         .background(DawnBackground())
@@ -1653,69 +1826,251 @@ private struct ParticipationPreferencesEditor: View {
     @State private var conflictLatestMarkdown: String?
     @State private var showDefaults = false
     @State private var loaded = false
+    @State private var isAdding = false
+    @State private var newConvention = ""
+
+    private var conventions: [String] {
+        markdown.split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-                Text("默认陪伴能力一直生效；个人约定用于补充你希望她怎样陪你学习。")
-                    .font(.footnote).foregroundStyle(StudyPalette.muted)
-                DisclosureGroup("默认陪伴方式", isExpanded: $showDefaults) {
-                    Text("页面帮助、自然分句、主动问候与久学休息会根据你实际在看的内容和相处偏好判断是否出现。")
-                        .font(.footnote).foregroundStyle(StudyPalette.muted).padding(.top, 7)
+        VStack(alignment: .leading, spacing: 0) {
+            if isLoading && !loaded {
+                ProgressView("正在读取个人约定…")
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 24)
+            } else {
+                Toggle(isOn: Binding(
+                    get: { enabled },
+                    set: { value in
+                        enabled = value
+                        Task { await save(enabled: value) }
+                    }
+                )) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("让约定生效")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(StudyPalette.ink)
+                        Text("暂停后这些约定不会影响伴星的回应")
+                            .font(.system(size: 11))
+                            .foregroundStyle(StudyPalette.muted)
+                    }
                 }
-                .font(.subheadline.weight(.medium)).tint(StudyPalette.accent)
-                if isLoading && !loaded { ProgressView("正在读取个人约定…") }
-                else {
-                    TextField("写下你希望她怎样陪你学习", text: $markdown, axis: .vertical)
-                        .lineLimit(2...5)
-                        .padding(10)
-                        .background(StudyPalette.inset, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        .disabled(isSaving)
-                    HStack {
-                        Button(isSaving ? "正在保存…" : "保存约定") { Task { await save(enabled: enabled) } }
-                            .modifier(SecondaryActionStyle()).disabled(isSaving || !loaded || markdown == savedMarkdown)
-                        if !markdown.isEmpty {
-                            Button(enabled ? "暂停" : "恢复") { Task { await save(enabled: !enabled) } }
-                                .font(.subheadline.weight(.medium)).foregroundStyle(StudyPalette.accent).disabled(isSaving)
+                .tint(StudyPalette.accent)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 12)
+                .modifier(StudyGlassSurfaceStyle(radius: 20, interactive: false))
+                .disabled(isSaving)
+
+                Text("我的约定")
+                    .font(.system(size: 12.5, weight: .medium))
+                    .tracking(0.6)
+                    .foregroundStyle(StudyPalette.muted)
+                    .padding(.leading, 2)
+                    .padding(.top, 26)
+                    .padding(.bottom, 11)
+
+                VStack(spacing: 0) {
+                    if conventions.isEmpty {
+                        Text("还没有个人约定。添加一条，或继续使用默认陪伴方式。")
+                            .font(.system(size: 13))
+                            .foregroundStyle(StudyPalette.muted)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 16)
+                    } else {
+                        ForEach(Array(conventions.enumerated()), id: \.offset) { index, convention in
+                            HStack(alignment: .center, spacing: 12) {
+                                Text(convention)
+                                    .font(.system(size: 15))
+                                    .foregroundStyle(StudyPalette.ink)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Spacer(minLength: 8)
+                                Button {
+                                    removeConvention(convention)
+                                } label: {
+                                    AstellaGlyph(kind: .close, tint: StudyPalette.muted)
+                                        .frame(width: 12, height: 12)
+                                        .frame(width: 30, height: 30)
+                                        .background(StudyPalette.inset.opacity(0.9), in: Circle())
+                                }
+                                .buttonStyle(AstellaPressStyle())
+                                .disabled(isSaving || !enabled)
+                                .accessibilityLabel("删除这条约定：\(convention)")
+                            }
+                            .padding(.vertical, 13)
+                            if index < conventions.count - 1 {
+                                Rectangle().fill(StudyPalette.paperEdge.opacity(0.55)).frame(height: 0.7)
+                            }
                         }
                     }
-                    Text(markdown.isEmpty ? "尚未添加个人约定，默认陪伴方式会照常生效。" : enabled ? "个人约定正在生效。" : "个人约定已暂停，默认陪伴方式仍会生效。")
-                        .font(.caption).foregroundStyle(StudyPalette.muted)
                 }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 5)
+                .modifier(StudyGlassSurfaceStyle(radius: 24, interactive: false))
+
+                if isAdding {
+                    VStack(alignment: .leading, spacing: 11) {
+                        TextField("写下你希望她怎样陪你学习", text: $newConvention, axis: .vertical)
+                            .font(.system(size: 15))
+                            .lineLimit(2...4)
+                            .padding(13)
+                            .background(StudyPalette.paper.opacity(0.86), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous).stroke(StudyPalette.paperEdge.opacity(0.6), lineWidth: 0.7))
+                            .disabled(isSaving)
+                        HStack(spacing: 12) {
+                            Button {
+                                isAdding = false
+                                newConvention = ""
+                            } label: {
+                                Text("取消")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundStyle(StudyPalette.ink)
+                                    .frame(maxWidth: .infinity, minHeight: 44)
+                                    .background(StudyPalette.paper.opacity(0.9), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            }
+                            .buttonStyle(AstellaPressStyle())
+                            Button {
+                                addConvention()
+                            } label: {
+                                Text("保存这条约定")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundStyle(StudyPalette.accentLabel)
+                                    .frame(maxWidth: .infinity, minHeight: 44)
+                                    .background(
+                                        LinearGradient(colors: [StudyPalette.actionFill, StudyPalette.accent], startPoint: .topLeading, endPoint: .bottomTrailing),
+                                        in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    )
+                            }
+                            .buttonStyle(AstellaPressStyle())
+                            .disabled(isSaving || newConvention.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        }
+                    }
+                    .padding(.top, 14)
+                }
+
+                HStack(spacing: 12) {
+                    Button {
+                        restoreDefaults()
+                    } label: {
+                        Text("恢复默认")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(StudyPalette.ink)
+                            .frame(maxWidth: .infinity, minHeight: 46)
+                            .background(StudyPalette.paper.opacity(0.86), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous).stroke(StudyPalette.paperEdge.opacity(0.6), lineWidth: 0.7))
+                    }
+                    .buttonStyle(AstellaPressStyle())
+                    .disabled(isSaving || !loaded)
+                    Button {
+                        isAdding = true
+                    } label: {
+                        Text("添加约定")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(StudyPalette.accentLabel)
+                            .frame(maxWidth: .infinity, minHeight: 46)
+                            .background(
+                                LinearGradient(colors: [StudyPalette.actionFill, StudyPalette.accent], startPoint: .topLeading, endPoint: .bottomTrailing),
+                                in: RoundedRectangle(cornerRadius: 15, style: .continuous)
+                            )
+                    }
+                    .buttonStyle(AstellaPressStyle())
+                    .disabled(isSaving || !loaded || !enabled)
+                }
+                .padding(.top, 16)
+
+                Text(conventions.isEmpty
+                     ? "尚未添加个人约定，默认陪伴方式会照常生效。"
+                     : enabled ? "个人约定正在生效。" : "个人约定已暂停，默认陪伴方式仍会生效。")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(StudyPalette.muted)
+                    .padding(.horizontal, 2)
+                    .padding(.top, 12)
+
+                DisclosureGroup("默认陪伴方式", isExpanded: $showDefaults) {
+                    Text("页面帮助、自然分句、主动问候与久学休息会根据你实际在看的内容和相处偏好判断是否出现。")
+                        .font(.system(size: 12))
+                        .foregroundStyle(StudyPalette.muted)
+                        .padding(.top, 7)
+                        .padding(.horizontal, 2)
+                }
+                .font(.system(size: 13, weight: .medium))
+                .tint(StudyPalette.accent)
+                .padding(.horizontal, 2)
+                .padding(.top, 22)
+
                 if let error {
                     featureAccountMessage(error, isError: true, retry: {
                         Task { await load(preservingDraft: error.contains("另一台设备刚改过约定")) }
                     })
+                    .padding(.top, 14)
                 }
-                if let notice { featureAccountMessage(notice, isError: false, retry: nil) }
+                if let notice { featureAccountMessage(notice, isError: false, retry: nil).padding(.top, 14) }
                 if let conflictLatestMarkdown {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("另一台设备保存的版本")
-                            .font(.caption.weight(.semibold))
+                            .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(StudyPalette.muted)
                         Text(conflictLatestMarkdown.isEmpty ? "（云端约定为空）" : conflictLatestMarkdown)
-                            .font(.footnote)
+                            .font(.system(size: 12))
                             .foregroundStyle(StudyPalette.ink)
                             .textSelection(.enabled)
                             .fixedSize(horizontal: false, vertical: true)
-                        Text("上方输入框仍保留你的草稿。合并需要的内容后，保存会以草稿作为最新版本。")
-                            .font(.caption)
+                        Text("上方列表仍保留你的草稿。合并需要的内容后，保存会以草稿作为最新版本。")
+                            .font(.system(size: 11))
                             .foregroundStyle(StudyPalette.muted)
                         Button("用另一台设备的版本替换草稿") {
                             markdown = conflictLatestMarkdown
                             self.conflictLatestMarkdown = nil
                         }
-                        .font(.footnote.weight(.medium))
+                        .font(.system(size: 12, weight: .medium))
                     }
-                    .padding(12)
+                    .padding(14)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(StudyPalette.inset, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                    .background(StudyPalette.inset, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .padding(.top, 14)
                 }
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .task(id: store.profile?.userId) { await load() }
     }
 
+    private func removeConvention(_ convention: String) {
+        var items = conventions
+        items.removeAll { $0 == convention }
+        markdown = items.joined(separator: "\n")
+        Task { await save(enabled: enabled) }
+    }
+
+    private func addConvention() {
+        let text = newConvention.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        var items = conventions
+        items.append(text)
+        markdown = items.joined(separator: "\n")
+        newConvention = ""
+        isAdding = false
+        Task { await save(enabled: enabled) }
+    }
+
+    private func restoreDefaults() {
+        markdown = ""
+        Task { await save(enabled: enabled) }
+    }
+
     private func load(preservingDraft: Bool = false) async {
+        #if DEBUG
+        if store.uiReviewMode != nil {
+            revision = 3
+            enabled = true
+            markdown = "称呼我为「夏」\n讲解时先给结论，再举例\n每天 21:30 提醒我复习"
+            savedMarkdown = markdown
+            loaded = true
+            return
+        }
+        #endif
         let localDraft = markdown
         isLoading = true; error = nil
         defer { isLoading = false }
@@ -1760,72 +2115,83 @@ struct CompanionCenterScreen: View {
         store.streamingText.isEmpty ? store.messages.last(where: { $0.role == "assistant" })?.displayText ?? "还没有新的回复，回去告诉她你想聊什么。" : store.streamingText
     }
 
+    private var isResponding: Bool { !store.streamingText.isEmpty || store.isSending }
+
     var body: some View {
-        GeometryReader { proxy in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    HStack(alignment: .center, spacing: 12) {
-                        CompanionPortrait().frame(width: 118, height: 136)
-                        VStack(alignment: .leading, spacing: 6) {
-                            SectionEyebrow(text: "拾星 · ASTELLA")
-                            Text("伴星")
-                                .font(.system(.title, weight: .semibold))
-                                .foregroundStyle(StudyPalette.ink)
-                            Text(store.profile?.workspaceName ?? "我的书房")
-                                .font(.subheadline)
-                                .foregroundStyle(StudyPalette.muted)
-                            HStack(spacing: 6) {
-                                Circle().fill(store.realtimeStatus == "已连接" ? StudyPalette.success : StudyPalette.muted)
-                                    .frame(width: 7, height: 7)
-                                Text(store.realtimeStatus)
-                                    .font(.caption)
-                                    .foregroundStyle(StudyPalette.muted)
-                            }
-                        }
-                        Spacer(minLength: 0)
-                    }
-
-                    Divider().overlay(StudyPalette.paperEdge)
-                    VStack(alignment: .leading, spacing: 8) {
-                        SectionEyebrow(text: "最近一次回应")
-                        Text(latest)
-                            .font(.subheadline)
-                            .lineSpacing(3)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                HStack(spacing: 13) {
+                    Image("CompanionAvatar")
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 62, height: 62)
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(.white.opacity(0.86), lineWidth: 1))
+                    VStack(alignment: .leading, spacing: 5) {
+                        SectionEyebrow(text: "拾星 · ASTELLA")
+                        Text("伴星")
+                            .font(.system(size: 25, weight: .semibold))
                             .foregroundStyle(StudyPalette.ink)
-                            .lineLimit(5)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    NavigationLink(value: AccountScreenRoute.companionSettings) {
-                        settingDestinationRow(title: "伴星配置", detail: "调整交流方式与记忆偏好", glyph: .companion)
-                    }
-                    .buttonStyle(.plain)
-
-                    VStack(spacing: 3) {
-                        Button {
-                            store.returnToConversation(records: false)
-                        } label: {
-                            astellaLabel("回到伴星身边", glyph: .chat)
-                                .frame(maxWidth: .infinity)
+                        HStack(spacing: 6) {
+                            Circle().fill(store.realtimeStatus == "已连接" ? StudyPalette.success : StudyPalette.muted)
+                                .frame(width: 7, height: 7)
+                            Text(store.realtimeStatus == "已连接" ? "实时交流已连接" : store.realtimeStatus)
+                                .font(.caption)
+                                .foregroundStyle(StudyPalette.muted)
                         }
-                        .modifier(PrimaryActionStyle())
-                        Button {
-                            store.returnToConversation(records: true)
-                        } label: {
-                            astellaLabel("查看完整记录", glyph: .book)
-                        }
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(StudyPalette.accent)
-                        .frame(minHeight: 44)
                     }
-                    .padding(.top, 3)
+                    Spacer(minLength: 0)
                 }
-                .padding(.horizontal, 22)
-                .padding(.vertical, 16)
-                .frame(maxWidth: .infinity, minHeight: proxy.size.height, alignment: .center)
+                .padding(.top, 2)
+
+                VStack(alignment: .leading, spacing: 11) {
+                    HStack {
+                        SectionEyebrow(text: isResponding ? "正在回应" : "最近一次回应")
+                        Spacer()
+                        if isResponding { ProgressView().controlSize(.small) }
+                    }
+                    Text(companionMarkdown(latest))
+                        .font(.system(size: 16))
+                        .lineSpacing(5)
+                        .foregroundStyle(StudyPalette.ink)
+                        .lineLimit(8)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                }
+                .padding(18)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(StudyPalette.paper.opacity(0.72), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(StudyPalette.paperEdge.opacity(0.58), lineWidth: 0.8))
+
+                NavigationLink(value: AccountScreenRoute.companionSettings) {
+                    settingDestinationRow(title: "伴星配置", detail: "调整交流方式与记忆偏好", glyph: .companion)
+                }
+                .buttonStyle(.plain)
+
+                VStack(spacing: 4) {
+                    Button {
+                        store.returnToConversation(records: false)
+                    } label: {
+                        astellaLabel("回到伴星身边", glyph: .chat)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .modifier(PrimaryActionStyle())
+                    Button {
+                        store.returnToConversation(records: true)
+                    } label: {
+                        astellaLabel("查看完整记录", glyph: .book)
+                    }
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(StudyPalette.accent)
+                    .frame(minHeight: 44)
+                }
             }
-            .scrollIndicators(.hidden)
+            .padding(.horizontal, 22)
+            .padding(.top, 4)
+            .padding(.bottom, 28)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
+        .scrollIndicators(.hidden)
         .background(DawnBackground()).toolbar(.hidden, for: .navigationBar)
         .safeAreaInset(edge: .top, spacing: 0) { AstellaDetailHeader(title: "伴星中心") }
     }

@@ -1,5 +1,7 @@
 # 拾星书房设计指南
 
+**Agent 整改要求（2026-10-19 用户最终明确）：速度、质量、稳定性。速度同时包括实际耗时和感知等待，进度展示是必要能力，与执行提速一起交付和验收。** 当前步骤、可读工作说明、失败、待确认事项及已保存成果应直接可读，替代过程与思考一律默认折叠；更新、完成及重开时保留用户阅读选择。先前“工具详情按需展开”只适用于次级技术参数。当前代码仍存在两层默认折叠；[方案58](docs/plans/learning-companion/58-agent-experience-diagnosis-and-recovery-2026-10-19.md)记录实测问题与三项整改方案，尚未实施。
+
 ### Mobile authentication: latest decision, 2026-10-15
 
 The user replaced the illustrated glass image direction with direct native implementation: white authentication backgrounds, ordinary neutral glass controls, the official app icon, and **no companion portraits or illustrations on login or any authentication subpage**. Earlier illustrated/iridescent authentication descriptions below are historical and superseded. See [the current mobile specification](apps/mobile-client/DESIGN_SPEC.md) and [implementation review](docs/testing/mobile-auth-white-glass-2026-10-15.md).

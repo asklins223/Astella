@@ -1,0 +1,546 @@
+{
+  "runs": [
+    {
+      "model": null,
+      "runId": "b89f998b-a8c1-4b58-a357-30e108774eb3",
+      "steps": [
+        {
+          "step": 1,
+          "status": "succeeded",
+          "errorCode": null,
+          "durationMs": 18798
+        },
+        {
+          "step": 2,
+          "status": "failed",
+          "errorCode": "REPLY_FORMAT_INVALID",
+          "durationMs": 8435
+        },
+        {
+          "step": 3,
+          "status": "failed",
+          "errorCode": "REPLY_FORMAT_INVALID",
+          "durationMs": 13647
+        }
+      ],
+      "events": [
+        {
+          "type": "turn.accepted",
+          "count": 1,
+          "last_ms": -36,
+          "first_ms": -36
+        },
+        {
+          "type": "assistant.status",
+          "count": 2,
+          "last_ms": 5468,
+          "first_ms": 132
+        },
+        {
+          "type": "character.cue",
+          "count": 2,
+          "last_ms": 46422,
+          "first_ms": 132
+        },
+        {
+          "type": "assistant.thinking",
+          "count": 47,
+          "last_ms": 45630,
+          "first_ms": 21163
+        },
+        {
+          "type": "agent.tool",
+          "count": 3,
+          "last_ms": 24270,
+          "first_ms": 24237
+        },
+        {
+          "type": "error",
+          "count": 1,
+          "last_ms": 46422,
+          "first_ms": 46422
+        }
+      ],
+      "hybrid": {
+        "decision": "task",
+        "elapsedMs": 2543,
+        "hostNotePrefetched": false,
+        "requestedModelCalls": 1
+      },
+      "status": "failed",
+      "wallMs": 46422,
+      "request": "生成几篇中国历史的笔记吧",
+      "provider": null,
+      "createdAt": "2026-10-19T13:53:45.363+00:00",
+      "entryMode": "hybrid",
+      "errorCode": "REPLY_FORMAT_INVALID",
+      "classifier": {
+        "hedged": true,
+        "source": "l2",
+        "elapsedMs": 2735
+      },
+      "modelAudit": [
+        {
+          "status": "success",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 2542,
+          "errorClass": null,
+          "inputTokens": 23217,
+          "outputTokens": 6
+        },
+        {
+          "status": "success",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 2677,
+          "errorClass": null,
+          "inputTokens": 2171,
+          "outputTokens": 84
+        },
+        {
+          "status": "error",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 2684,
+          "errorClass": "operational_error:aborted:Error",
+          "inputTokens": null,
+          "outputTokens": null
+        },
+        {
+          "status": "success",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 18664,
+          "errorClass": null,
+          "inputTokens": 27355,
+          "outputTokens": 155
+        },
+        {
+          "status": "success",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 8384,
+          "errorClass": null,
+          "inputTokens": 27537,
+          "outputTokens": 117
+        },
+        {
+          "status": "success",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 13618,
+          "errorClass": null,
+          "inputTokens": 27720,
+          "outputTokens": 215
+        }
+      ],
+      "toolLedger": [
+        {
+          "name": "companion_search_notes",
+          "status": "succeeded",
+          "summary": "没有找到与「中国历史 历史 朝代」相关的笔记",
+          "ledgerMs": 39,
+          "createdAt": "2026-10-19T13:54:09.587913+00:00"
+        }
+      ],
+      "interpretation": {
+        "intent": "task",
+        "toolUse": "act",
+        "candidateOperations": []
+      },
+      "persistedCounters": {
+        "steps": 2,
+        "tools": 1,
+        "models": 6
+      },
+      "answerTextCharacters": 26
+    },
+    {
+      "model": "mimo-v2.6-flash",
+      "runId": "31cfbf06-0d67-45ad-8c93-636f577ff0cc",
+      "steps": [
+        {
+          "step": 1,
+          "status": "failed",
+          "errorCode": "REPLY_FORMAT_INVALID",
+          "durationMs": 61340
+        },
+        {
+          "step": 2,
+          "status": "succeeded",
+          "errorCode": null,
+          "durationMs": 8371
+        },
+        {
+          "step": 3,
+          "status": "succeeded",
+          "errorCode": null,
+          "durationMs": 78883
+        },
+        {
+          "step": 4,
+          "status": "succeeded",
+          "errorCode": null,
+          "durationMs": 4787
+        },
+        {
+          "step": 5,
+          "status": "succeeded",
+          "errorCode": null,
+          "durationMs": 42398
+        },
+        {
+          "step": 6,
+          "status": "succeeded",
+          "errorCode": null,
+          "durationMs": 8520
+        },
+        {
+          "step": 7,
+          "status": "succeeded",
+          "errorCode": null,
+          "durationMs": 11949
+        },
+        {
+          "step": 8,
+          "status": "succeeded",
+          "errorCode": null,
+          "durationMs": 33211
+        }
+      ],
+      "events": [
+        {
+          "type": "turn.accepted",
+          "count": 1,
+          "last_ms": -123,
+          "first_ms": -123
+        },
+        {
+          "type": "assistant.status",
+          "count": 2,
+          "last_ms": 14028,
+          "first_ms": 225
+        },
+        {
+          "type": "character.cue",
+          "count": 2,
+          "last_ms": 263820,
+          "first_ms": 225
+        },
+        {
+          "type": "assistant.thinking",
+          "count": 344,
+          "last_ms": 263076,
+          "first_ms": 65903
+        },
+        {
+          "type": "agent.tool",
+          "count": 16,
+          "last_ms": 210003,
+          "first_ms": 83744
+        },
+        {
+          "type": "assistant.delta",
+          "count": 1,
+          "last_ms": 263806,
+          "first_ms": 263806
+        },
+        {
+          "type": "voice.segment.ready",
+          "count": 1,
+          "last_ms": 263812,
+          "first_ms": 263812
+        },
+        {
+          "type": "assistant.final",
+          "count": 1,
+          "last_ms": 263820,
+          "first_ms": 263820
+        },
+        {
+          "type": "assistant.followups.ready",
+          "count": 1,
+          "last_ms": 266991,
+          "first_ms": 266991
+        }
+      ],
+      "hybrid": {
+        "decision": "task",
+        "elapsedMs": 5883,
+        "hostNotePrefetched": false,
+        "requestedModelCalls": 1
+      },
+      "status": "succeeded",
+      "wallMs": 263820,
+      "request": "生成几篇历史笔记给我",
+      "provider": "mimo_responses",
+      "createdAt": "2026-10-19T14:03:27.176+00:00",
+      "entryMode": "hybrid",
+      "errorCode": null,
+      "classifier": {
+        "hedged": true,
+        "source": "l2",
+        "elapsedMs": 7877
+      },
+      "modelAudit": [
+        {
+          "status": "success",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 5882,
+          "errorClass": null,
+          "inputTokens": 23241,
+          "outputTokens": 6
+        },
+        {
+          "status": "success",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 7852,
+          "errorClass": null,
+          "inputTokens": 2176,
+          "outputTokens": 87
+        },
+        {
+          "status": "error",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 7857,
+          "errorClass": "operational_error:aborted:Error",
+          "inputTokens": null,
+          "outputTokens": null
+        },
+        {
+          "status": "error",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 61277,
+          "errorClass": "operational_error:validation:Error",
+          "inputTokens": null,
+          "outputTokens": null
+        },
+        {
+          "status": "success",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 8229,
+          "errorClass": null,
+          "inputTokens": 27566,
+          "outputTokens": 232
+        },
+        {
+          "status": "success",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 78694,
+          "errorClass": null,
+          "inputTokens": 27816,
+          "outputTokens": 2341
+        },
+        {
+          "status": "success",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 4546,
+          "errorClass": null,
+          "inputTokens": 30556,
+          "outputTokens": 48
+        },
+        {
+          "status": "success",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 41314,
+          "errorClass": null,
+          "inputTokens": 32493,
+          "outputTokens": 1710
+        },
+        {
+          "status": "success",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 8397,
+          "errorClass": null,
+          "inputTokens": 34621,
+          "outputTokens": 176
+        },
+        {
+          "status": "success",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 11875,
+          "errorClass": null,
+          "inputTokens": 38308,
+          "outputTokens": 269
+        },
+        {
+          "status": "success",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 33167,
+          "errorClass": null,
+          "inputTokens": 38533,
+          "outputTokens": 409
+        }
+      ],
+      "toolLedger": [
+        {
+          "name": "companion_search_notes",
+          "status": "succeeded",
+          "summary": "没有找到与「中国历史 朝代 历史」相关的笔记",
+          "ledgerMs": 33,
+          "createdAt": "2026-10-19T14:04:50.910709+00:00"
+        },
+        {
+          "name": "companion_create_note",
+          "status": "not_executed",
+          "summary": "这个工具组还没有装载",
+          "ledgerMs": 0,
+          "createdAt": "2026-10-19T14:06:09.812532+00:00"
+        },
+        {
+          "name": "companion_create_note",
+          "status": "not_executed",
+          "summary": "这个工具组还没有装载",
+          "ledgerMs": 0,
+          "createdAt": "2026-10-19T14:06:09.841218+00:00"
+        },
+        {
+          "name": "companion_create_note",
+          "status": "not_executed",
+          "summary": "这个工具组还没有装载",
+          "ledgerMs": 0,
+          "createdAt": "2026-10-19T14:06:09.860239+00:00"
+        },
+        {
+          "name": "companion_create_note",
+          "status": "succeeded",
+          "summary": "已保存笔记《秦朝统一与中央集权制度》，含 0 个库内链接，可打开继续编辑",
+          "ledgerMs": 177,
+          "createdAt": "2026-10-19T14:06:56.362046+00:00"
+        },
+        {
+          "name": "companion_create_note",
+          "status": "succeeded",
+          "summary": "已保存笔记《唐朝的繁荣与由盛转衰》，含 0 个库内链接，可打开继续编辑",
+          "ledgerMs": 321,
+          "createdAt": "2026-10-19T14:06:56.557603+00:00"
+        },
+        {
+          "name": "companion_create_note",
+          "status": "succeeded",
+          "summary": "已保存笔记《宋朝的经济与社会变迁》，含 0 个库内链接，可打开继续编辑",
+          "ledgerMs": 254,
+          "createdAt": "2026-10-19T14:06:56.910267+00:00"
+        }
+      ],
+      "interpretation": {
+        "intent": "task",
+        "toolUse": "act",
+        "candidateOperations": []
+      },
+      "persistedCounters": {
+        "steps": 8,
+        "tools": 4,
+        "models": 12
+      },
+      "answerTextCharacters": 16
+    },
+    {
+      "model": "mimo-v2.6-flash",
+      "runId": "0a62eb2d-60fa-49f7-9067-66b5fcb9dcc1",
+      "steps": [
+        {
+          "step": 1,
+          "status": "succeeded",
+          "errorCode": null,
+          "durationMs": 33
+        }
+      ],
+      "events": [
+        {
+          "type": "turn.accepted",
+          "count": 1,
+          "last_ms": -93,
+          "first_ms": -93
+        },
+        {
+          "type": "assistant.status",
+          "count": 1,
+          "last_ms": 221,
+          "first_ms": 221
+        },
+        {
+          "type": "character.cue",
+          "count": 2,
+          "last_ms": 12334,
+          "first_ms": 221
+        },
+        {
+          "type": "assistant.delta",
+          "count": 32,
+          "last_ms": 12311,
+          "first_ms": 6689
+        },
+        {
+          "type": "voice.segment.ready",
+          "count": 5,
+          "last_ms": 12320,
+          "first_ms": 7103
+        },
+        {
+          "type": "assistant.final",
+          "count": 1,
+          "last_ms": 12334,
+          "first_ms": 12334
+        },
+        {
+          "type": "assistant.followups.ready",
+          "count": 1,
+          "last_ms": 15415,
+          "first_ms": 15415
+        }
+      ],
+      "hybrid": {
+        "decision": "reply",
+        "elapsedMs": 11960,
+        "hostNotePrefetched": true,
+        "requestedModelCalls": 1
+      },
+      "status": "succeeded",
+      "wallMs": 12334,
+      "request": "讲个400字左右的温馨睡前小故事给我吧",
+      "provider": "mimo_responses",
+      "createdAt": "2026-10-19T14:11:12.645+00:00",
+      "entryMode": "hybrid",
+      "errorCode": null,
+      "classifier": {
+        "hedged": false,
+        "source": "direct",
+        "elapsedMs": null
+      },
+      "modelAudit": [
+        {
+          "status": "success",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 11958,
+          "errorClass": null,
+          "inputTokens": 24431,
+          "outputTokens": 98
+        }
+      ],
+      "toolLedger": null,
+      "interpretation": {
+        "intent": "conversation",
+        "toolUse": "none",
+        "candidateOperations": []
+      },
+      "persistedCounters": {
+        "steps": 1,
+        "tools": 0,
+        "models": 2
+      },
+      "answerTextCharacters": 114
+    }
+  ],
+  "scope": "Three selected existing runs; not a random sample or production failure-rate estimate. No new model requests were submitted for this audit.",
+  "capturedAt": "2026-10-19T14:16:24.081875+00:00",
+  "environment": "Local development: astella-dev-postgres-1, astella-dev-worker-1, Electron localhost:5173",
+  "workerConfigurationObserved": {
+    "COMPANION_AGENT_ENTRY_MODE": "hybrid",
+    "WORKER_PROVIDER_TIMEOUT_MS": 900000,
+    "WORKER_PROVIDER_TIMEOUT_COMPANION_AGENT_MS": null,
+    "WORKER_TIMEOUT_COMPANION_AGENT_MS": null
+  },
+  "limits": [
+    "Timestamps describe server persistence, not pixel rendering or human audio perception.",
+    "Ledger durations describe create-to-last-update, not an isolated database benchmark.",
+    "Run counters, audit rows, model steps and tool events have different meanings and do not all reconcile.",
+    "Files on the container filesystem matched the working tree at inspection; this does not prove which modules had been loaded when each recorded run executed.",
+    "No credentials, tool arguments, raw model reasoning, or full conversation history are included."
+  ]
+}

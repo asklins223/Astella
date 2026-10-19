@@ -377,9 +377,6 @@ private fun OrbitDiaryCard(day: OrbitDay, summary: String?, selected: Boolean, o
                     overflow = TextOverflow.Ellipsis,
                     fontFamily = if (generated) FontFamily.Serif else FontFamily.Default,
                 )
-                if (selected && summary != null) {
-                    Box(Modifier.padding(top = 2.dp).width(38.dp).height(1.dp).background(StudyPalette.paperEdge))
-                }
             }
         }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

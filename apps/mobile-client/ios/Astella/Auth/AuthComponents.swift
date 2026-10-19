@@ -72,7 +72,7 @@ struct AuthPrimaryButtonStyle: ButtonStyle {
         let active = enabled || busy
         configuration.label
             .font(.body.weight(.semibold))
-            .foregroundStyle(active ? Color.white : StudyPalette.muted)
+            .foregroundStyle(active ? StudyPalette.accentLabel : StudyPalette.muted)
             .padding(.horizontal, 22)
             .frame(minHeight: minHeight)
             .frame(maxWidth: .infinity)
@@ -89,18 +89,52 @@ struct AuthPrimaryButtonStyle: ButtonStyle {
     }
 }
 
+/// Compact brand mark for the multi-step auth pages, matching the mockup's
+/// icon + wordmark row above the page title.
+struct AuthCompactBrandRow: View {
+    var compact = false
+    var body: some View {
+        HStack(spacing: 11) {
+            Image("AuthAppIcon")
+                .resizable()
+                .scaledToFill()
+                .frame(width: compact ? 40 : 46, height: compact ? 40 : 46)
+                .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+                .shadow(color: StudyPalette.ink.opacity(0.08), radius: 8, x: 0, y: 4)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("拾星笔记")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(StudyPalette.ink)
+                Text("ASTELLA")
+                    .font(.system(size: 8, weight: .semibold))
+                    .tracking(2.4)
+                    .foregroundStyle(StudyPalette.muted)
+            }
+            Spacer(minLength: 0)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
 struct AuthStepProgress: View {
     let title: String
     let current: Int
     let total: Int
 
     var body: some View {
-        HStack(spacing: 8) {
-            ForEach(0..<max(total, 0), id: \.self) { index in
-                Capsule(style: .continuous)
-                    .fill(index < current ? StudyPalette.accent : StudyPalette.paperEdge)
-                    .frame(width: 28, height: 4)
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 8) {
+                ForEach(0..<max(total, 0), id: \.self) { index in
+                    Capsule(style: .continuous)
+                        .fill(index < current ? StudyPalette.accent : StudyPalette.paperEdge)
+                        .frame(width: 28, height: 4)
+                }
             }
+            Text("\(title) · \(current)/\(total)")
+                .font(.system(size: 11, weight: .medium))
+                .tracking(0.4)
+                .foregroundStyle(StudyPalette.muted)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(title)，第 \(current) 步，共 \(total) 步")

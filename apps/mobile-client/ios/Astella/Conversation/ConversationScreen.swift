@@ -20,6 +20,7 @@ struct ConversationScreen: View {
     @State private var flightOrigin: CGPoint?
     @State private var dragOffset = CGSize.zero
     @State private var attachmentTask: Task<Void, Never>?
+    @State private var lastHandledComposerFocusRequestID = 0
     private var reduced: Bool { systemReduceMotion || store.localReduceMotion }
     private var canSend: Bool {
         store.conversationId != nil && !store.isSending && !voiceCapture.isRecording && !voiceCapture.isTranscribing &&
@@ -99,7 +100,11 @@ struct ConversationScreen: View {
             if case .failure(let error) = result { store.errorMessage = error.localizedDescription }
         }
         .sheet(isPresented: $showNotes) { notePicker }
-        .task { if store.conversationId == nil { await store.loadConversation() } }
+        .task {
+            if store.conversationId == nil { await store.loadConversation() }
+            honorComposerFocusRequest()
+        }
+        .onAppear { honorComposerFocusRequest() }
         .onChange(of: photoItem) { _, item in
             attachmentTask?.cancel()
             attachmentTask = Task {
@@ -114,6 +119,7 @@ struct ConversationScreen: View {
             store.composerHasFocus = focused
             if focused { closeMenu() }
         }
+        .onChange(of: store.composerFocusRequestID) { _, _ in honorComposerFocusRequest() }
         .onChange(of: reduced) { _, disabled in if disabled { flight = nil } }
         .onChange(of: store.draft) { _, value in if value != voiceCapture.transcript { store.voiceArtifactId = nil } }
         .onChange(of: scenePhase) { _, phase in if phase != .active { voiceCapture.cancel(); store.voicePlayback.stop() } }
@@ -215,6 +221,17 @@ struct ConversationScreen: View {
         .animation(Motion.gated(reduced, Motion.segment), value: store.selectedImage != nil || store.selectedFile != nil)
     }
 
+    private func honorComposerFocusRequest() {
+        let requestID = store.composerFocusRequestID
+        guard requestID != lastHandledComposerFocusRequestID else { return }
+        lastHandledComposerFocusRequestID = requestID
+        Task { @MainActor in
+            await Task.yield()
+            guard store.selectedTab == .conversation, store.composerFocusRequestID == requestID else { return }
+            composerFocused = true
+        }
+    }
+
     private var attachmentMenu: some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack { Text("交给伴星").font(.system(size: 11, weight: .medium)).tracking(2); Spacer(); AstellaStar().fill(StudyPalette.accent).frame(width: 11, height: 15) }
@@ -290,7 +307,7 @@ private struct ConversationTopBar: View {
     var body: some View {
         GeometryReader { geometry in
             let compact = geometry.size.width < 410
-            let modeWidth = compact ? min(132, geometry.size.width * 0.34) : 142
+            let modeWidth = compact ? min(112, geometry.size.width * 0.30) : 118
             let workspaceWidth = max(104, geometry.size.width - modeWidth - 102)
 
             HStack(spacing: 7) {
@@ -316,7 +333,6 @@ private struct ConversationTopBar: View {
                             .lineLimit(1)
                             .truncationMode(.tail)
                             .foregroundStyle(StudyPalette.ink)
-                            .frame(maxWidth: .infinity, alignment: .leading)
                         AstellaGlyph(kind: .chevron, tint: StudyPalette.muted).frame(width: 9, height: 9).rotationEffect(.degrees(90))
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -331,7 +347,7 @@ private struct ConversationTopBar: View {
                     modeButton(title: "伴星", records: false)
                     modeButton(title: "记录", records: true)
                 }
-                .frame(width: modeWidth, height: 38)
+                .frame(width: modeWidth, height: 36)
                 .modifier(StudyGlassSurfaceStyle(radius: 20, interactive: true))
                 .accessibilityElement(children: .contain)
                 Spacer(minLength: 2)
@@ -369,7 +385,7 @@ private struct ConversationTopBar: View {
             ZStack {
                 if selected {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Color.white.opacity(0.82))
+                        .fill(StudyPalette.sky)
                         .matchedGeometryEffect(id: "conversation-mode-lens", in: modeLens)
                         .padding(3)
                 }

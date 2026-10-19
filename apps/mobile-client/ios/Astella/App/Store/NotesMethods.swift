@@ -3,6 +3,26 @@ import Foundation
 // MARK: - Notes（列表、详情与批注）
 
 extension AppStore {
+    func requestNoteReference(_ noteId: String) {
+        let trimmed = noteId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != noteDocument?.id else { return }
+        #if DEBUG
+        if uiReviewMode == "read", trimmed == "e1199b07-2a56-44fc-bba2-ae8d66af33cf" {
+            noteDocument = NoteDocument([
+                "noteId": trimmed,
+                "title": "无标题笔记",
+                "currentVersion": [
+                    "versionId": "open-design-linked-note-v1",
+                    "versionNo": 1,
+                    "blocks": [["ordinal": 1, "type": "paragraph", "content": "这篇手记通过正文中的引用链接打开。"]],
+                ],
+            ])
+            noteAnnotations = []
+        }
+        #endif
+        pendingNoteReferenceID = trimmed
+    }
+
     func loadNotes(query: String = "") async {
         let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
         notesRequestGeneration += 1

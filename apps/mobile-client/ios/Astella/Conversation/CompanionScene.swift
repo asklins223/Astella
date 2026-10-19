@@ -174,13 +174,13 @@ struct CompanionScene: View {
     private var replySurface: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(streamingText.isEmpty ? (audioActive ? "此刻，听见彼此。" : "阿星轻轻说") : "正在回应")
-                .font(.system(size: 10, weight: .medium))
+                .font(.system(size: 11.5, weight: .medium))
                 .tracking(0.5)
                 .foregroundStyle(StudyPalette.muted)
 
-            Text(replyText)
-                .font(.system(size: 14, weight: .regular))
-                .lineSpacing(5)
+            Text(companionMarkdown(replyText))
+                .font(.system(size: 15, weight: .regular))
+                .lineSpacing(6)
                 .lineLimit(3)
                 .foregroundStyle(StudyPalette.ink)
                 .textSelection(.enabled)
@@ -200,12 +200,12 @@ struct CompanionScene: View {
 
     private var modelFailureCard: some View {
         VStack(spacing: 8) {
-            Text("伴星模型没能加载出来")
+            Text("伴星形象暂时无法显示")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Color(red: 0.72, green: 0.40, blue: 0.33))
                 .lineLimit(1)
                 .minimumScaleFactor(0.82)
-            Text("Texture loading error")
+            Text("文字交流仍可继续，你也可以稍后重试。")
                 .font(.system(size: 11))
                 .foregroundStyle(StudyPalette.muted)
             Button {
@@ -213,7 +213,7 @@ struct CompanionScene: View {
             } label: {
                 Text("重试加载")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(StudyPalette.accentLabel)
                     .frame(width: 80, height: 38)
                     .background(LinearGradient(colors: [StudyPalette.actionFill, StudyPalette.accent], startPoint: .topLeading, endPoint: .bottomTrailing), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
             }
@@ -223,9 +223,9 @@ struct CompanionScene: View {
             } label: {
                 Text("用文字模式继续")
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(StudyPalette.muted)
+                    .foregroundStyle(StudyPalette.ink)
                     .frame(width: 124, height: 38)
-                    .background(.white.opacity(0.52), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .background(StudyPalette.sky, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(StudyPalette.paperEdge.opacity(0.46), lineWidth: 0.8))
             }
             .buttonStyle(AstellaPressStyle())

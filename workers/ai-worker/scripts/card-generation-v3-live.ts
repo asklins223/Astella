@@ -47,9 +47,9 @@ async function seed(): Promise<void> {
     // 同意是账号级的（0237），且外发政策默认 false ⇒ 没有这一行，非 mock 调用出不了网。
     await tx`INSERT INTO user_ai_settings (user_id, consent_version, consent_at, data_policy)
       VALUES (${userId}, 'v3-live-consent', now(),
-              ${JSON.stringify({
+              ${tx.json({
                 sendToExternal: true, sendImageContent: false, piiDetection: true, auditLogging: true,
-              })}::jsonb)`;
+              })})`;
     await tx`INSERT INTO notes (id, workspace_id, title, created_by)
       VALUES (${noteId}, ${workspaceId}, '网络与加密的六句话', ${userId})`;
     await tx`INSERT INTO note_versions (id, note_id, workspace_id, version_no, content_json, content_hash, created_by)

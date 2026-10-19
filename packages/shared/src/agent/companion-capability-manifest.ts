@@ -118,7 +118,7 @@ export const companionCapabilityManifest: readonly AgentCapabilityDeclaration[] 
   // 描述统一写成"什么时候该调"，因为工具描述是她唯一能看到的用法说明。
   tool("companion_search_notes", "按关键词搜索当前空间可见笔记。指定笔记用 match=all，找关联内容用 any。候选需读正文核对；不能只凭标题建链接。", "read", false, z.object({ query: z.string().min(1).max(120), limit: z.number().int().min(1).max(10).optional(), match: z.enum(["all", "any"]).optional() }).strict(), { label: "正在翻你的笔记" }),
   tool("companion_search_cards", "按关键词搜索当前空间可见的学习卡，返回真实 cardId、题面和摘要。用户让你找或推荐学习卡时调用；要推荐时挑出本轮结果里的 id，再交给 companion_recommend_learning 做成可点卡片。", "read", false, z.object({ query: z.string().min(1).max(120), limit: z.number().int().min(1).max(8).optional(), match: z.enum(["all", "any"]).optional() }).strict(), { label: "正在翻你的学习卡" }, { maxOutputChars: 8_000 }),
-  tool("companion_create_note", "用户要把讨论写成笔记时调用。允许联网则先搜读再选 links；禁止时独立保存、links 留空。速看/拓展用 agent_start_goal；回执才代表接受。", "reversible_low", false, companionCreateNoteV1Schema,
+  tool("companion_create_note", "用户要把讨论写成笔记、或点名主题要新建一到几篇笔记时调用（一次保存一篇）。允许联网则先搜读再选 links；禁止时独立保存、links 留空。速看/拓展等已有笔记的产物用 agent_start_goal；回执才代表接受。", "reversible_low", false, companionCreateNoteV1Schema,
     { label: "正在写成笔记", discovery: "把聊清楚的知识点写成一篇可编辑笔记；经用户允许时可链接库内相关内容。" }, { maxInputChars: null, maxOutputChars: null }),
   // 「开启共享」这一句她以前只能回"没那个按钮"，而且这回她说的是真的：工具面里没有共享，
   // 页面词表里也没有协作空间，连跳过去自己点都跳不了（2026-10-09 线上）。补的是这个真缺口。

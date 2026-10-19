@@ -3,6 +3,17 @@ import Foundation
 // MARK: - Conversation（会话、消息、run 与 WS 事件）
 
 extension AppStore {
+    /// Opens the conversation with a reviewable prompt for a diary moment.
+    /// The user decides whether to send it; opening this action never saves a diary.
+    func beginDiaryCapture() {
+        if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            draft = "今天我想记下："
+        }
+        setChatShowsRecords(false)
+        composerFocusRequestID &+= 1
+        selectedTab = .conversation
+    }
+
     func loadConversation() async {
         errorMessage = nil
         do {

@@ -1,3 +1,25 @@
+## iOS design-reference pass — 2026-10-19
+
+Same reference project and the same rendered route captures (`/tmp/ref-shots`). iOS keeps SwiftUI-native glass materials, `NavigationStack`, matched geometry and springs, while layout, hierarchy, copy and geometry follow the mockup.
+
+- Reader rebuilt around the mockup: floating 44pt back glass circle, centered "第 N 版 · 一起读", floating T/tools glass pill, book-glyph metadata eyebrow, 39pt Songti title with 3pt tracking, glass version row, Songti body at the chosen point size with two-character first-line indent, wider paragraph gaps, and no full-width bottom CTA (the shell companion orb remains). Selection offsets are unchanged; the T and grid actions preserve 阅读与显示 / 速览 / 脑图 / 讲解 / 版本 routes.
+- Library: faint 资料与处理状态 footer with a truthful local status sheet; covers resized to 35×49. Home: header segment narrowed to the mockup proportion with the chevron hugging the workspace label; stage-card label/reply typography enlarged.
+- Me/Settings stack: shared 44pt back-circle + 32pt title header, 17/11 typographic rows, 36pt icon tiles, 68pt divider inset, unclipped companion-card art, 修改密码 row and a real `POST /auth/change-password` screen, settings wordmark. 设备权限, AI 使用授权与数据, 服务地址, 个人约定, 阅读与显示 and 伴星配置 rebuilt to the mockup's page model while keeping real permission, consent, participation, export and attendance endpoints.
+- Orbit memory now has the mockup's sub-segments (关于你的/她的记事/目标与方法) and filter chips; auth gained the login channel label and the subpage brand row/step caption; the companion-center blank gap was removed.
+- `xcodebuild` Debug build for iPhone 18 Pro Max / iOS 27 succeeded (`CODE_SIGNING_ALLOWED=NO`, exit 0; remaining warnings are the existing Cubism SDK/linker-version warnings). `git diff --check -- apps/mobile-client/ios` passed. Fresh route captures: `/tmp/ios-final-*` and contact sheets `/tmp/ios-final-home-library-contact.png`, `/tmp/ios-final-orbit-me-contact.png`, `/tmp/ios-final-settings-contact.png`, `/tmp/ios-final-auth-contact.png`.
+- Limits: no Simulator.app on this host, so no touch/keyboard/VoiceOver session; signed-in captures used DEBUG-only review fixtures (`ASTELLA_UI_REVIEW`, no effect on Release) rather than a logged-in API session. Real Dynamic Type extremes, Reduce Motion/Transparency rendering, the export share sheet, password change submission, TTS and physical-device feel were not exercised. Data-dependent copy (workspace name, note metadata, reader subtitle) still differs from the mockup because the product API does not carry author/category/version in list rows.
+
+## Android design-reference pass — 2026-10-19
+
+This pass follows the same OpenDesign mockup (`/Users/asklins/Library/Application Support/Open Design/namespaces/release-stable/data/projects/astella-3df6/index.html`); rendered reference screens for every route were captured at `/tmp/ref-shots/*.png` at 390×844@2x. User decision for this round: iOS may keep native system glass and animations, while Android must follow the mockup's own glass/segmented/cover language rather than Material defaults.
+
+- **Glass foundation.** Rewrote the shared glass material as background blur + a 142° white-to-pale-blue sheen + a white-to-grey-blue hairline edge + a soft neutral shadow (with a solid fallback below API 31). Added the mockup's segmented control with a sliding near-white lens, glass dock and lens, glass circular buttons, section labels/page eyebrows at 11/600/1.6 tracking, the 37–39px page title scale, vertical serif book covers in five stable paper colours, and a custom A—A reading-size slider without M3 tick marks or bar thumbs.
+- **Pages brought to reference structure.** Companion and record home (stage reply card radius 24/7, 继续一起读 reading object with rotated cover and 上次停下的那一页, record-mode 阿星 header, composer + dock in one glass plate with divider); 书房 (page heading, circular export/import actions, space bar with 切换, continuous note rows with hairline dividers and 资料与处理状态); 阅读 (floating back circle, centred version label, floating T/grid pill, metadata eyebrow, 39pt serif title, light-blue version plate, Songti-equivalent body with 2-em first-line indent and 25pt paragraph gaps, companion orb instead of the old full-width CTA); 星轨 (real 14-day star hero, glass segment with lens + refresh action, diary cards with day/month tiles and real daily summaries, memory filter chips and evidence badges, 手边 run and proposal cards); 我的 (glass avatar header with settings grid + 编辑 pill, light-blue companion card, 和伴星相处/阅读/隐私与高级 groups with 36dp icon tiles, T tile for reading size).
+- **New settings stack in the mockup's page model.** 设置 (appearance segment 银白/深空/随日夜, 阅读设置, 轻柔动效, 伴星与隐私, 资料与连接, 关于), 阅读与显示, 设备权限 (real runtime microphone state; photo/file picker and unused camera/notification rows stated honestly), AI 使用授权与数据 (real consent/policy endpoints), 服务地址, 个人约定 (real `/me/companion/participation` with revision conflict handling), 个人资料, 修改密码 and 伴星配置. Inline account expansions were replaced by these routes.
+- **Navigation corrections.** Every tab/subpage action now clears sibling subroutes (feature → account, note → account, account → tab); system back returns 阅读与显示/设备权限/AI 授权/服务地址 to 设置 and 个人约定/个人资料 to 伴星配置 instead of jumping straight to 我的; the reader's companion orb continues with the current note version. The 设置 subpage header back controls carry accessibility labels.
+- **Verification.** `JAVA_HOME=/opt/homebrew/opt/openjdk@17 ./gradlew --offline assembleDebug --console=plain` succeeded; the APK was installed on the Pixel 8 / API 36 emulator. Captured and inspected home (companion), record, 书房, 阅读, reader action sheet, 速览, 星轨 日记/伴星记忆/手边, 我的, 设置, 阅读与显示, 设备权限, AI 使用授权与数据, 服务地址, 个人资料, 个人约定, 伴星配置 and 登录; also logged out and re-logged in with the isolated QA account to confirm the auth path and session restore. `git diff --check -- apps/mobile-client/android` passed.
+- **Limits.** Emulator only, no physical Android device; no automated tests added or run. The QA account still has not signed the AI agreement, so generated overview/mindmap/explanation results and TTS were not exercised. The Live2D manifest still returns 502, so the companion remains the static fallback. Dark theme, narrow width, large font, IME rapid open/close and real scrolling performance were not re-verified this round; the iOS part of the same reference pass is recorded separately.
+
 ## Android bookshelf and reader pass — 2026-10-19
 
 This pass follows the local OpenDesign project at `/Users/asklins/Library/Application Support/Open Design/namespaces/release-stable/data/projects/astella-3df6/index.html` and the prior implementation review in the “Implement the mobile app design” conversation. The useful practice carried forward was to compare the reference and the live native app at the same viewport, retain real application state and routes, and use a prototype only to understand hierarchy and visual intent.
@@ -250,3 +272,31 @@ The current implementation uses white backgrounds, ordinary glass controls and t
 - 同轮完成 16 条方案审阅修订，依据优先于旧文档。
 
 后续双端重构以本轮裁决、`DESIGN_SPEC.md` 2026-10-15 修订段与 `DESIGN_TOKENS.md` 双端参数表为准；本文件此前各轮返工与修正记录仅作问题追溯，不再作为新重构的验收基线。裁决落地情况按重构进度在后续章节续记。
+
+## 2026-10-19 iOS annotated issue pass and route sweep
+
+Reviewed the supplied screenshots as reports of UI defects and the supplied Open Design prototype as the visual reference. I read its `index.html`, README, and companion styling sources. The browser tool rejected the local `file://` URL, so a rendered side-by-side comparison of the prototype was not available; the simulator checks below are direct captures of the native app.
+
+### Fixes in this pass
+
+- Removed the duplicate “用注册邮箱登录” action from the password form; the existing email-code login entry remains available.
+- Expanded the launch composition and its web view across the full screen bounds to remove the left edge strip.
+- Replaced the Live2D loader's raw English texture error with Chinese recovery guidance, and made the text-only action readable in both appearance modes.
+- Aligned the note-derived preview pages to the top, simplified the single-version history state, and removed the reader's zoom navigation transition that produced a narrow dark loading strip.
+- Rendered internal note citations as tappable links and routed them to the referenced note.
+- Connected the orbit pencil to a user-editable conversation draft and input focus; it does not fabricate a diary record.
+- Reworked the companion center summary and kept account/settings row separators inside their owning groups.
+- Fixed dark-mode selected-state and action-label contrast across the shared palette, navigation dock, conversation mode selector, memory filters, appearance selectors, and accent buttons.
+
+### Coverage and evidence
+
+- Captured all 27 DEBUG review routes on iPhone 18 Pro Max / iOS 27: nine authentication routes; conversation, records, library, reader, orbit, memory and hand; account, profile, settings, companion settings, reading settings, device permissions, AI authorization, server address, conventions, companion center, and password change.
+- After the final palette and text-mode button changes, captured and reviewed light-mode screenshots for login, conversation, orbit memory, settings, and reading settings. The corresponding dark-mode screens were also reviewed after the shared palette changes, before the last text-mode button adjustment.
+- Latest iOS simulator Debug build succeeded with `CODE_SIGNING_ALLOWED=NO`. The linker still warns that the prebuilt Live2D core objects target simulator 26.2 while this project links against iOS 18.0; these are existing SDK warnings.
+- `git diff --check -- apps/mobile-client/ios/Astella` passed. No tests were added or run.
+
+### Remaining verification limits
+
+- This review used DEBUG route fixtures and simulator screenshots. It did not exercise taps, keyboard behavior, VoiceOver, Reduce Motion transitions, or a physical device.
+- The companion model still cannot load in the current environment: the model manifest request returned HTTP 502 (`model_manifest_missing`). This pass improves the failure state but does not repair the model service or establish asset redistribution rights.
+- The local Open Design prototype could not be rendered in the browser due to the local-file URL policy; prototype review was limited to its source and the screenshots supplied by the user.

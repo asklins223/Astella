@@ -7,11 +7,15 @@ import android.net.Uri
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -23,6 +27,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -51,6 +56,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -101,7 +110,11 @@ fun SettingsPageHeader(
         Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        GlassCircleButton(onClick = onBack, size = 44.dp) {
+        GlassCircleButton(
+            onClick = onBack,
+            size = 44.dp,
+            modifier = Modifier.semantics { contentDescription = "返回" },
+        ) {
             AstellaGlyph(AstellaGlyphKind.Back, Modifier.size(20.dp), tint = StudyPalette.ink)
         }
         Spacer(Modifier.width(14.dp))
@@ -134,6 +147,7 @@ fun SettingsRow(
     icon: AstellaGlyphKind?,
     title: String,
     subtitle: String? = null,
+    letter: String? = null,
     value: String? = null,
     valueTint: Color = StudyPalette.muted,
     showChevron: Boolean = true,
@@ -146,7 +160,16 @@ fun SettingsRow(
             .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (icon != null) {
+        if (letter != null) {
+            Box(
+                Modifier.size(36.dp).background(StudyPalette.sky, RoundedCornerShape(12.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(letter, color = StudyPalette.accent, fontSize = 20.sp,
+                    fontWeight = FontWeight.SemiBold, fontFamily = FontFamily.Serif)
+            }
+            Spacer(Modifier.width(13.dp))
+        } else if (icon != null) {
             GlassIconTile(icon, size = 36.dp)
             Spacer(Modifier.width(13.dp))
         }
@@ -172,7 +195,14 @@ fun SettingsRow(
             }
         }
         if (value != null) {
-            Text(value, color = valueTint, fontSize = 13.sp, maxLines = 1)
+            Text(
+                value,
+                color = valueTint,
+                fontSize = 13.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.widthIn(max = 168.dp),
+            )
             Spacer(Modifier.width(4.dp))
         }
         if (trailing != null) trailing()
@@ -233,7 +263,7 @@ fun SettingsScreen(
                     onSelect = { onThemeMode(listOf("light", "dark", "system")[it]) },
                 )
                 SettingsGroup {
-                    SettingsRow(AstellaGlyphKind.Number, "阅读设置", "字号、默认打开与动效", onClick = onReadSettings)
+                    SettingsRow(null, "阅读设置", "字号、默认打开与动效", letter = "T", onClick = onReadSettings)
                     SettingsDivider()
                     Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -330,8 +360,9 @@ fun ReadSettingsScreen(
             }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("A", color = StudyPalette.muted, fontSize = 13.sp)
-                Slider(
+                ReadingSizeSlider(
                     value = sizeValue,
+                    modifier = Modifier.weight(1f).padding(horizontal = 10.dp),
                     onValueChange = { value ->
                         val scale = when {
                             value <= 16.5f -> 1f
@@ -340,14 +371,6 @@ fun ReadSettingsScreen(
                         }
                         viewModel.setReadingScale(scale)
                     },
-                    valueRange = 15f..25f,
-                    steps = 9,
-                    modifier = Modifier.weight(1f).padding(horizontal = 10.dp),
-                    colors = SliderDefaults.colors(
-                        thumbColor = StudyPalette.accent,
-                        activeTrackColor = StudyPalette.accent.copy(alpha = .65f),
-                        inactiveTrackColor = StudyPalette.paperEdge,
-                    ),
                 )
                 Text("A", color = StudyPalette.muted, fontSize = 20.sp)
             }
@@ -389,9 +412,10 @@ fun ReadSettingsScreen(
                     )
                     SettingsDivider()
                     SettingsRow(
-                        AstellaGlyphKind.Number,
+                        null,
                         "记录场景",
                         "打开就到对话记录",
+                        letter = "T",
                         showChevron = false,
                         onClick = { viewModel.setChatShowsRecords(true) },
                         trailing = {
@@ -1107,6 +1131,45 @@ fun CompanionCenterScreen(
             }
             AstellaButton(onClick = { onConversation(false) }, modifier = Modifier.fillMaxWidth()) { Text("回到对话") }
             AstellaTextButton(onClick = { onConversation(true) }, modifier = Modifier.fillMaxWidth()) { Text("查看完整记录") }
+        }
+    }
+}
+
+/** 设计稿字号滑杆：细轨 + 白色圆钮，不使用 M3 的刻度点与竖条拇指。 */
+@Composable
+private fun ReadingSizeSlider(value: Float, modifier: Modifier = Modifier, onValueChange: (Float) -> Unit) {
+    val min = 15f
+    val max = 25f
+    BoxWithConstraints(modifier.height(40.dp)) {
+        val inset = 12.dp
+        val density = LocalDensity.current
+        val insetPx = with(density) { inset.toPx() }
+        val usablePx = with(density) { (maxWidth - inset * 2).toPx() }
+        val fraction = ((value - min) / (max - min)).coerceIn(0f, 1f)
+        val edgeColor = StudyPalette.paperEdge
+        val accentColor = StudyPalette.accent
+        val update: (Float) -> Unit = { x ->
+            val ratio = ((x - insetPx) / usablePx.coerceAtLeast(1f)).coerceIn(0f, 1f)
+            onValueChange(min + ratio * (max - min))
+        }
+        Canvas(
+            Modifier.fillMaxSize()
+                .pointerInput(usablePx) {
+                    detectTapGestures { offset -> update(offset.x) }
+                }
+                .pointerInput(usablePx) {
+                    detectHorizontalDragGestures { change, _ -> update(change.position.x); change.consume() }
+                },
+        ) {
+            val centerY = size.height / 2f
+            val stroke = 4.dp.toPx()
+            val start = insetPx
+            val end = size.width - insetPx
+            drawLine(edgeColor, androidx.compose.ui.geometry.Offset(start, centerY), androidx.compose.ui.geometry.Offset(end, centerY), stroke, StrokeCap.Round)
+            val activeEnd = start + (end - start) * fraction
+            drawLine(accentColor.copy(alpha = .72f), androidx.compose.ui.geometry.Offset(start, centerY), androidx.compose.ui.geometry.Offset(activeEnd, centerY), stroke, StrokeCap.Round)
+            drawCircle(Color.White, radius = 10.dp.toPx(), center = androidx.compose.ui.geometry.Offset(activeEnd, centerY))
+            drawCircle(Color.White.copy(alpha = .9f), radius = 10.dp.toPx(), center = androidx.compose.ui.geometry.Offset(activeEnd, centerY), style = Stroke(1.dp.toPx()))
         }
     }
 }

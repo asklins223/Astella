@@ -239,7 +239,7 @@ struct OrbitDiaryDetailScreen: View {
                     AstellaGlyph(kind: .chat, tint: .white).frame(width: 17, height: 17)
                     Text("聊聊这篇")
                 }
-                .font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                .font(.system(size: 14, weight: .semibold)).foregroundStyle(StudyPalette.accentLabel)
                 .frame(maxWidth: .infinity, minHeight: 48)
                 .background(StudyPalette.accent, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
@@ -516,8 +516,8 @@ struct OrbitMemoryDetailScreen: View {
                         if isEditing { correctionForm(memory) }
                         else {
                             Button { beginEditing(memory) } label: {
-                                HStack(spacing: 8) { AstellaGlyph(kind: .edit, tint: .white).frame(width: 16, height: 16); Text("修订这条记忆") }
-                                    .font(.footnote.weight(.semibold)).foregroundStyle(.white).frame(maxWidth: .infinity, minHeight: 45)
+                                HStack(spacing: 8) { AstellaGlyph(kind: .edit, tint: StudyPalette.accentLabel).frame(width: 16, height: 16); Text("修订这条记忆") }
+                                    .font(.footnote.weight(.semibold)).foregroundStyle(StudyPalette.accentLabel).frame(maxWidth: .infinity, minHeight: 45)
                                     .background(StudyPalette.accent, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
                             }.buttonStyle(AstellaPressStyle()).disabled(memory.archived)
                         }
@@ -625,7 +625,7 @@ struct OrbitMemoryDetailScreen: View {
                     .font(.footnote.weight(.medium)).foregroundStyle(StudyPalette.ink).frame(maxWidth: .infinity, minHeight: 43)
                     .background(StudyPalette.paper, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
                 Button(isWorking ? "正在保存…" : "保存修订") { Task { await correctMemory(item) } }
-                    .font(.footnote.weight(.semibold)).foregroundStyle(.white).frame(maxWidth: .infinity, minHeight: 43)
+                    .font(.footnote.weight(.semibold)).foregroundStyle(StudyPalette.accentLabel).frame(maxWidth: .infinity, minHeight: 43)
                     .background(StudyPalette.accent, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
                     .disabled(isWorking || contentDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || contentDraft == item.content && (appliesWhenDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : appliesWhenDraft.trimmingCharacters(in: .whitespacesAndNewlines)) == item.appliesWhen)
             }

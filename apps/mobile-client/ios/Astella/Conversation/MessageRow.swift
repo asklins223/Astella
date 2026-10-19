@@ -35,7 +35,7 @@ struct MessageRow: View {
                         ScrollView(.horizontal) { Text(code).font(.system(.footnote, design: .monospaced)).textSelection(.enabled).padding(12) }
                     }
                     if block.type != "file", let text = block.text, !text.isEmpty {
-                        Text(text)
+                        Text(isUser ? AttributedString(text) : companionMarkdown(text))
                             .font(.system(size: bodyPointSize))
                             .lineSpacing(8)
                             .foregroundStyle(isUser ? .white : StudyPalette.ink)

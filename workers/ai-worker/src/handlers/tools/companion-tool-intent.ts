@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { ChatMessage } from "@astella/shared";
-import { agentTurnInterpretationProposalV1Schema, type AgentTurnInterpretationV1, type AgentAttentionObjectV1 } from "@astella/shared/agent-contracts";
+import { agentTurnInterpretationProposalV1Schema, agentTurnInterpretationV1Schema, type AgentTurnInterpretationV1, type AgentAttentionObjectV1 } from "@astella/shared/agent-contracts";
 import { QWEN_TTS_STANDARD_MANDARIN_INSTRUCTION, QWEN_TTS_SUPPORTED_DIALECTS } from "@astella/shared/tts-voice-catalog";
 import { resolveAgentTurnInterpretation } from "@astella/agent-core";
 import {
@@ -148,6 +148,7 @@ export function buildCompanionTurnInterpretationMessages(
         "称呼伴星、随口招呼、情绪表达和角色口味是对话内容；话题名词或昵称没有对应 object 不构成歧义。",
         "用户明确要求调整/整理/规范/优化当前笔记格式/排版，或插入/删除/替换正文、转表格/流程图时，是 task/act，候选 companion_edit_note；‘改一下’与‘调整一下’含义相同；明确说全文/整篇且没有局部限制时范围是整篇，无需选区或光标；只问有哪些问题、怎么调整、先别改时按 question/read；不要求用户额外说保存。",
         "用户要求生成速看、脑图、互动演示、拓展稿或学习卡时是 task/act、goalRelation=new，用 agent_start_goal；不要求用户再说‘保存’或指定保存位置。历史助手说过能力没接上、不能保存，不是当前能力事实。",
+        "用户要求新建一到几篇笔记（‘写/生成/整理成笔记’，包括点名主题、不基于已有笔记）时是 task/act，候选 companion_create_note；要几篇就一篇一次保存。不要用 agent_start_goal：后台目标只能在已有笔记上出速看、脑图、演示、拓展稿或学习卡，不能新建笔记。",
         "用户明确禁止搜索或读取资料时，仍独立创建新笔记，不发起资料读取或添加库内链接。",
         "candidateOperations 只填 capabilities 里的 name，是候选不是授权；subjects 讨论对象只在 objects 有真实对应时给 objectIndex，否则只写 description；只有指向 objects 里真实后台目标时才加 goalObjectIndex（0 起算），否则省略；goalRelation 只对真实 agent_run 用 continue/revise/control/discuss，其他用 unrelated；没有对象、代词未消解或修改范围不明放入 ambiguities。",
         `voiceStyle：当前句明确要求改变口音/方言/语速/音色/场景语气→apply 并给 ≤50 字 instruction；结合完整语义和近期对话理解省略与指代，不能靠关键词或固定词序猜。只有用户明确说“以后/今后/之后都默认/一直用某具体方言”这类持续要求时才 set 并填规范名称；说过“以后默认河南话，但这句用四川话”要 set 河南话、本轮 apply 四川话；明确要求以后普通话或停止固定方言→clear、dialect=null；普通轮次和临时切换→none/keep；单轮点名其他地区不改默认；要求讲方言但没说哪种→clarify。只提到地区、讲自己想家、询问方言词义、讲故事/笑话都不等于切换声音。支持方言：${QWEN_TTS_SUPPORTED_DIALECTS.join("、")}。本轮明确要求普通话时 apply ${QWEN_TTS_STANDARD_MANDARIN_INSTRUCTION}。`,
@@ -179,6 +180,88 @@ function committedIntentTask<T>(output: T): AiTaskReceipt<T> {
  * single structured AI step; the specialized multi-step tool loop stays in
  * companion-agent-runtime and owns tool execution and business receipts.
  */
+/**
+ * 显式产物请求的确定性兜底。
+ *
+ * 分类器是小模型，而它的候选操作直接决定工具面：`createCompanionToolSurface` 会把
+ * `candidateOperations` 对应的组装进初始工具面。实测同一句"给我生成这篇笔记的速看吧"
+ * 两次运行分别被判成 `read` 和 `none`；生产里"给我生成几个历史的笔记"被判成
+ * `companion_save_memory`。`agent_start_goal` / `companion_create_note` 因此没进工具面，
+ * 用户要的产物只能等她自己 `companion_load_tools`，或者根本做不成。
+ *
+ * 这里只补**候选**：当当前话语本身明确点名了产物、或明确要新建笔记时，把对应操作放回
+ * 候选里。候选不是授权——执行侧仍按权限、风险等级和真实材料复核，补候选不改变她能做什么，
+ * 只是把已经存在的入口重新放回她面前。否定句、"聊天里概括"和编辑当前笔记不加。
+ */
+const COMPANION_CHAT_ONLY_REQUEST = /(?:聊天里|直接在聊天|只)(?:概括|说说|讲讲|回答)|不生成任何|别生成|不要生成|不用生成|不生成东西/;
+// 产物请求：动词在前（生成这篇的速看）或名词在前（速看生成一下）都算。
+const COMPANION_ARTIFACT_REQUEST = /(?:生成|做|来|准备|出|搞|整理|写|要|画)[^。！？]{0,8}(?:速看|脑图|思维导图|互动演示|动态讲解|演示|拓展稿|拓展笔记|往外学|学习卡|复习卡|草稿)|(?:速看|脑图|思维导图|互动演示|动态讲解|拓展稿|学习卡|复习卡)[^。！？]{0,6}(?:生成|做|来|出|准备)/;
+const COMPANION_ARTIFACT_BARE = /(?:速看|脑图|思维导图|互动演示|动态讲解|拓展笔记|复习卡)(?:吧|一下|一份|一个)/;
+const COMPANION_NEW_NOTE_REQUEST = /(?:写|生成|整理|做成|保存|记)(?:成|出|到|为)?[^。！？]{0,10}(?:笔记|一篇|几篇)/;
+const COMPANION_CURRENT_NOTE_EDIT = /(?:这|那|当前|该|本)(?:篇)?笔记/;
+const COMPANION_EDIT_REQUEST = /(?:整理|调整|规范|优化|修改|改|排版|格式化|转换成|变成)(?:一下|成|为)?[^。！？]{0,10}(?:这篇|当前|这段|这一篇|这个)?(?:笔记|正文|排版|格式|表格|列表|标题|段落)|把(?:选中|这[一篇段])[^。！？]{0,10}(?:改成|变成|换成)|(?:这|那|当前|该)(?:篇|段|个)?[^。！？]{0,10}(?:笔记|正文|排版|格式)[^。！？]{0,6}(?:整理|调整|规范|优化|修改|排版|格式化)/;
+const COMPANION_READ_SUMMARY = /(?:聊天里|直接|只)[^。！？]{0,6}(?:概括|说说|讲讲|回答)|帮我(?:速|读|看)[^。！？]{0,6}(?:一下|看看|概括)/;
+const COMPANION_TERM_QUESTION = /(?:是什么意思|什么意思|啥意思|怎么理解|是什么概念)[？?]?\s*$/;
+const COMPANION_GOAL_CONTROL = /(?:刚才|那件|这件事|这个任务|跑着的事)[^。！？]{0,8}(?:停|暂停|继续|恢复|取消|终止)|(?:停|暂停|停止|取消|终止)(?:一下|掉)?[^。！？]{0,6}(?:那件事|刚才|这个任务|这件事)/;
+
+/** What the current utterance explicitly asks for, independent of the classifier. */
+export function explicitCompanionProductRequest(text: string | null | undefined): {
+  artifact: boolean; newNote: boolean;
+} {
+  const normalized = text?.normalize("NFKC") ?? "";
+  if (!normalized || COMPANION_CHAT_ONLY_REQUEST.test(normalized)) return { artifact: false, newNote: false };
+  const artifact = COMPANION_ARTIFACT_REQUEST.test(normalized) || COMPANION_ARTIFACT_BARE.test(normalized);
+  // 产物词汇优先：'生成拓展笔记' 是产物请求，不是新建一篇普通笔记。
+  const newNote = !artifact && COMPANION_NEW_NOTE_REQUEST.test(normalized)
+    && !COMPANION_CURRENT_NOTE_EDIT.test(normalized);
+  return { artifact, newNote };
+}
+
+/**
+ * 显式请求的确定性兜底：分类器是小模型，ambiguities 会把 act 降成 uncertain，
+ * 候选也可能漏。这里只处理"话语本身已经明确"的几类，且不越过权限档。
+ */
+export function reconcileCompanionInterpretation(
+  interpretation: AgentTurnInterpretationV1,
+  current: string,
+  capabilities: readonly string[],
+  permissionLevel?: string,
+): AgentTurnInterpretationV1 {
+  // 只读档不该因为一句话就获得写类候选：这是权限档，不是分类猜测。
+  if (permissionLevel === "read_only") return interpretation;
+  const text = current?.normalize("NFKC") ?? "";
+  if (!text) return interpretation;
+  const add = (list: string[], name: string) => {
+    if (capabilities.includes(name) && !list.includes(name)) list.push(name);
+    return list;
+  };
+  const request = explicitCompanionProductRequest(text);
+  const wantsEdit = COMPANION_EDIT_REQUEST.test(text) && !request.artifact && !request.newNote;
+  const wantsRead = !request.artifact && !request.newNote && !wantsEdit && COMPANION_READ_SUMMARY.test(text);
+  const termQuestion = !request.artifact && !request.newNote && !wantsEdit && !wantsRead && COMPANION_TERM_QUESTION.test(text);
+  const goalControl = !request.artifact && !request.newNote && !wantsEdit && !wantsRead && !termQuestion
+    && COMPANION_GOAL_CONTROL.test(text);
+  const candidates = [...interpretation.candidateOperations];
+  if (request.artifact) add(candidates, "agent_start_goal");
+  if (request.newNote) add(candidates, "companion_create_note");
+  if (wantsEdit) add(candidates, "companion_edit_note");
+  if (wantsRead) add(candidates, "companion_read_note");
+  const explicitAction = request.artifact || request.newNote || wantsEdit || goalControl;
+  const toolUse: AgentTurnInterpretationV1["toolUse"] = explicitAction ? "act"
+    : wantsRead ? "read" : termQuestion ? "none" : interpretation.toolUse;
+  const clearedCandidates = termQuestion ? [] : candidates;
+  const intent = explicitAction && (interpretation.intent === "conversation" || interpretation.intent === "question")
+    ? "task" : interpretation.intent;
+  const goalRelation = request.artifact && ["unrelated", "unclear"].includes(interpretation.goalRelation)
+    ? "new" : interpretation.goalRelation;
+  if (clearedCandidates.length === interpretation.candidateOperations.length
+    && intent === interpretation.intent && toolUse === interpretation.toolUse
+    && goalRelation === interpretation.goalRelation) return interpretation;
+  return agentTurnInterpretationV1Schema.parse({
+    ...interpretation, candidateOperations: clearedCandidates, intent, toolUse, goalRelation,
+  });
+}
+
 export async function interpretCompanionTurn(
   provider: AIProvider,
   messages: readonly ChatMessage[],
@@ -190,7 +273,8 @@ export async function interpretCompanionTurn(
   const binding = { requestHash: taskContext.requestHash ?? sha256Utf8V1(current),
     objects: taskContext.objects ?? [], capabilities: taskContext.capabilities ?? [],
     offerCandidates: companionOfferCandidates(messages), currentUserText: current };
-  const unknown = () => resolveAgentTurnInterpretation(null, binding);
+  const finalize = (value: AgentTurnInterpretationV1) => reconcileCompanionInterpretation(value, current, binding.capabilities, taskContext.permissionLevel);
+  const unknown = () => finalize(resolveAgentTurnInterpretation(null, binding));
   const requestMessages = buildCompanionTurnInterpretationMessages(messages, taskContext);
   if (!requestMessages) return unknown();
   const requestedStepTimeoutMs = taskContext.stepTimeoutMs ?? COMPANION_TOOL_INTENT_TIMEOUT_MS;
@@ -264,7 +348,7 @@ export async function interpretCompanionTurn(
       if (!proposal.success) return { ok: false, class: "output_shape", message: "本轮注意力解释不符合结构合同" };
       return {
         ok: true,
-        output: resolveAgentTurnInterpretation(proposal.data, binding),
+        output: finalize(resolveAgentTurnInterpretation(proposal.data, binding)),
         promptTokens: answer.usage?.promptTokens ?? undefined,
         completionTokens: answer.usage?.completionTokens ?? undefined,
       };
@@ -317,7 +401,7 @@ export async function interpretCompanionTurn(
   });
 
   if (receipt.outcome === "committed" || receipt.outcome === "resumed_and_committed") {
-    return receipt.output ?? unknown();
+    return receipt.output ? finalize(receipt.output) : unknown();
   }
   if (receipt.failure?.class === "cancelled" || taskContext.job.signal?.aborted) return unknown();
   if (receipt.failure?.class === "lease_lost") {

@@ -166,14 +166,18 @@ struct LoginScreen: View {
                     } else if page == .emailLogin {
                         emailLoginHero(compact: compact)
                     } else {
+                        AuthCompactBrandRow(compact: compact)
+                            .padding(.top, 10)
+                            .padding(.bottom, 2)
+                            .transition(contentTransition)
                         if let step = progress(for: page) {
                             AuthStepProgress(title: flowName(for: page), current: step.current, total: step.total)
-                                .padding(.top, 14)
+                                .padding(.top, 12)
                                 .transition(contentTransition)
                         }
                         AuthHeading(title: title(for: page), detail: detail(for: page), compact: compact, transition: contentTransition)
                             .transaction { if reducedMotion { $0.animation = Motion.authFade } }
-                            .padding(.top, 20)
+                            .padding(.top, 18)
                             .padding(.bottom, 11)
                     }
                     authForm(compact: compact, route: page)

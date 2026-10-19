@@ -769,6 +769,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
           visibleSegments.push(outputRepair.publishedText);
           visibleSegmentDelivered.push(true);
         }
+        messages = dropCompanionInternalCorrections(messages);
         messages.push(...companionStepCorrectionMessages({ currentRequest,
           alreadyDisplayed: outputRepair.publishedText.length > 0,
           instruction: [outputRepair.code === "arguments_malformed"
@@ -965,6 +966,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
         }
         messages.push({ role: "assistant", content: said });
       }
+      messages = dropCompanionInternalCorrections(messages);
       messages.push(...companionStepCorrectionMessages({
         currentRequest,
         alreadyDisplayed: stepEmitted,
@@ -1474,6 +1476,7 @@ import {
   buildCompanionStepCorrectionInstruction,
   companionActionResultRecorded,
   companionStepCorrectionMessages,
+  dropCompanionInternalCorrections,
   companionWriteToolNames,
   reviewCompanionStepCorrection,
   stepHoldChars,

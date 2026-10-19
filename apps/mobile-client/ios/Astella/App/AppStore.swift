@@ -63,6 +63,8 @@ final class AppStore {
     var lastObservation = ProcessInfo.processInfo.systemUptime
     var visibleNoteId: String?
     var composerHasFocus = false
+    var composerFocusRequestID = 0
+    var pendingNoteReferenceID: String?
     var draft = ""
     var selectedFile: CompanionFile?
     var attachmentRevision = UUID()
@@ -136,7 +138,24 @@ final class AppStore {
                     createdAt: reviewTime.string(from: Date().addingTimeInterval(-8))
                 ),
             ]
+            if uiReviewMode == "companion-center", let latestIndex = messages.indices.last {
+                messages[latestIndex].blocks = [CompanionBlock(
+                    type: "text",
+                    text: "搜到了，标题念给你：\n- **瑞利散射的适用条件**\n- **瑞利散射与天空的颜色**\n- **AI 延迟验证：瑞利散射**"
+                )]
+            }
             companionModel.state = .failed
+            aiSettings = AISettings([
+                "requiresConsent": false,
+                "consentVersion": "v2.3",
+                "consentAt": "2026-10-12T21:16:00Z",
+                "dataPolicy": [
+                    "sendToExternal": true,
+                    "sendImageContent": true,
+                    "piiDetection": true,
+                    "auditLogging": false,
+                ],
+            ])
             switch uiReviewMode {
             case "records": chatShowsRecords = true
             case "library": selectedTab = .library
@@ -149,6 +168,14 @@ final class AppStore {
             default: break
             }
             if uiReviewMode == "read" {
+                if let linkedNote = NoteSummary(
+                    id: "e1199b07-2a56-44fc-bba2-ae8d66af33cf",
+                    title: "无标题笔记",
+                    updatedAt: "2026-10-18",
+                    snippet: "另一篇手记，供引用链接预览。"
+                ) {
+                    notes.append(linkedNote)
+                }
                 noteDocument = NoteDocument([
                     "noteId": "open-design-redwall",
                     "title": "赤壁赋",
@@ -164,7 +191,7 @@ final class AppStore {
                             [
                                 "ordinal": 2,
                                 "type": "paragraph",
-                                "content": "于是饮酒乐甚，扣舷而歌之。歌曰：“桂棹兮兰桨，击空明兮溯流光。渺渺兮予怀，望美人兮天一方。”客有吹洞箫者，倚歌而和之。其声呜呜然，如怨如慕，如泣如诉，余音袅袅，不绝如缕。舞幽壑之潜蛟，泣孤舟之嫠妇。",
+                                "content": "于是饮酒乐甚，扣舷而歌之。歌曰：“桂棹兮兰桨，击空明兮溯流光。渺渺兮予怀，望美人兮天一方。”客有吹洞箫者，倚歌而和之。其声呜呜然，如怨如慕，如泣如诉，余音袅袅，不绝如缕。舞幽壑之潜蛟，泣孤舟之嫠妇。引用另一篇：[无标题笔记](astella-note:e1199b07-2a56-44fc-bba2-ae8d66af33cf)。",
                             ],
                             [
                                 "ordinal": 3,

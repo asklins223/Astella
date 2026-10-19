@@ -12,7 +12,7 @@ struct NotesScreen: View {
     @State private var exportError: String?
     @State private var showExportError = false
     @State private var isPreparingExport = false
-    @Namespace private var noteNamespace
+    @State private var showProcessingStatus = false
 
     var body: some View {
         ScrollView {
@@ -177,7 +177,6 @@ struct NotesScreen: View {
                                 NoteShelfRow(note: note, paletteIndex: index)
                             }
                             .buttonStyle(.plain)
-                            .matchedTransitionSource(id: note.id, in: noteNamespace)
                             .onAppear {
                                 if store.notes.suffix(3).contains(where: { $0.id == note.id }) {
                                     Task { await store.loadMoreNotes(query: query) }
@@ -191,6 +190,19 @@ struct NotesScreen: View {
                             ProgressView().frame(maxWidth: .infinity).padding(.vertical, 14)
                         }
                     }
+
+                    Button { showProcessingStatus = true } label: {
+                        HStack(spacing: 8) {
+                            AstellaGlyph(kind: .info, tint: StudyPalette.muted).frame(width: 13, height: 13)
+                            Text("资料与处理状态").font(.system(size: 12, weight: .medium))
+                        }
+                        .foregroundStyle(StudyPalette.muted.opacity(0.85))
+                        .frame(maxWidth: .infinity, minHeight: 46)
+                        .background(StudyPalette.paper.opacity(0.42), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(.white.opacity(0.55), lineWidth: 0.8))
+                    }
+                    .buttonStyle(AstellaPressStyle())
+                    .padding(.top, 22)
                 }
             }
             .padding(.horizontal, 20)
@@ -226,10 +238,14 @@ struct NotesScreen: View {
         }
         .navigationDestination(for: String.self) { id in
             NoteDetailScreen(noteId: id)
-                .navigationTransition(.zoom(sourceID: id, in: noteNamespace))
         }
         .navigationDestination(for: NoteFeatureRoute.self) { route in
             NoteFeatureScreen(route: route)
+        }
+        .sheet(isPresented: $showProcessingStatus) {
+            ProcessingStatusSheet()
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
         }
         .task(id: query) {
             #if DEBUG
@@ -347,7 +363,7 @@ struct NoteShelfRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 15) {
             NoteCover(title: note.title, seed: note.id, paletteIndex: paletteIndex)
-                .frame(width: 38, height: 53)
+                .frame(width: 35, height: 49)
                 .offset(y: -3)
             VStack(alignment: .leading, spacing: 5) {
                 Text("手记")
@@ -546,7 +562,7 @@ struct NoteDetailScreen: View {
                 .padding(.top, 60)
             } else {
                 ProgressView("正在打开手记…")
-                    .padding(.top, 80)
+                    .frame(maxWidth: .infinity, minHeight: 240)
             }
         }
         .scrollIndicators(.hidden)
@@ -802,7 +818,8 @@ struct NoteDetailScreen: View {
                     lineSpacing: bodySize * 0.58,
                     paragraphSpacing: 0,
                     color: mutedColor
-                )
+                ),
+                onOpenNote: { store.requestNoteReference($0) }
             ) { selected, rewrite in
                 beginSelection(selected, rewrite: rewrite, document: document)
             }
@@ -823,7 +840,8 @@ struct NoteDetailScreen: View {
                     lineSpacing: bodySize * 0.58,
                     paragraphSpacing: 0,
                     color: inkColor
-                )
+                ),
+                onOpenNote: { store.requestNoteReference($0) }
             ) { selected, rewrite in
                 beginSelection(selected, rewrite: rewrite, document: document)
             }
@@ -1201,29 +1219,6 @@ struct NoteFeatureRoute: Hashable {
     var kind: NoteFeatureKind
 }
 
-private struct NoteFeatureLinks: View {
-    var noteId: String
-
-    var body: some View {
-        HStack(spacing: 0) {
-            ForEach(NoteFeatureKind.allCases, id: \.self) { kind in
-                NavigationLink(value: NoteFeatureRoute(noteId: noteId, kind: kind)) {
-                    VStack(spacing: 5) {
-                        AstellaGlyph(kind: kind.glyph, tint: StudyPalette.accent).frame(width: 18, height: 18)
-                        Text(kind.title)
-                            .font(.caption.weight(.medium))
-                    }
-                    .foregroundStyle(StudyPalette.accent)
-                    .frame(maxWidth: .infinity, minHeight: 54)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .modifier(StudyGlassSurfaceStyle(radius: StudyRadius.lg, interactive: true))
-    }
-}
-
 private struct NoteFeatureScreen: View {
     var route: NoteFeatureRoute
 
@@ -1268,11 +1263,25 @@ private struct NoteVersionsScreen: View {
                         versionRow(version)
                     }
                     if items.count == 1 {
-                        Text("后续保存会继续接在这条轨迹里。")
-                            .font(.footnote)
-                            .foregroundStyle(StudyPalette.muted)
-                            .padding(.leading, 45)
-                            .padding(.top, 3)
+                        HStack(alignment: .top, spacing: 13) {
+                            VStack(spacing: 0) {
+                                Circle().fill(StudyPalette.paperEdge).frame(width: 9, height: 9)
+                                Rectangle().fill(StudyPalette.paperEdge.opacity(0.75)).frame(width: 1, height: 34)
+                            }
+                            .padding(.leading, StudySpacing.lg + 7)
+                            .padding(.top, 5)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("接下来的保存")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(StudyPalette.ink)
+                                Text("新版本会沿着这条轨迹追加，原来的内容仍会保留。")
+                                    .font(.footnote)
+                                    .lineSpacing(3)
+                                    .foregroundStyle(StudyPalette.muted)
+                            }
+                            .padding(.top, 1)
+                        }
+                        .padding(.top, 1)
                     }
                 }
             }
@@ -1423,7 +1432,7 @@ private struct NoteOverviewScreen: View {
                         }
                     }
                     .padding(.horizontal, 24).padding(.vertical, 16)
-                    .frame(maxWidth: .infinity, minHeight: proxy.size.height, alignment: .center)
+                    .frame(maxWidth: .infinity, minHeight: proxy.size.height, alignment: .topLeading)
                 }
                 .scrollIndicators(.hidden)
             }
@@ -1561,7 +1570,7 @@ private struct NoteMindMapScreen: View {
                 }
                     }
                     .padding(.horizontal, 24).padding(.vertical, 16)
-                    .frame(maxWidth: .infinity, minHeight: proxy.size.height, alignment: .center)
+                    .frame(maxWidth: .infinity, minHeight: proxy.size.height, alignment: .topLeading)
                 }
                 .scrollIndicators(.hidden)
             }
@@ -1670,7 +1679,7 @@ private struct NoteExplainScreen: View {
                             HStack(alignment: .center, spacing: 11) {
                                 Text(String(format: "%02d", index + 1))
                                     .font(.caption.monospacedDigit().weight(.semibold))
-                                    .foregroundStyle(.white)
+                                    .foregroundStyle(StudyPalette.accentLabel)
                                     .frame(width: 29, height: 29)
                                     .background(StudyPalette.accent, in: Circle())
                                 Text(item["title"] as? String ?? "")
@@ -1689,7 +1698,7 @@ private struct NoteExplainScreen: View {
                 }
                     }
                     .padding(.horizontal, 24).padding(.vertical, 16)
-                    .frame(maxWidth: .infinity, minHeight: proxy.size.height, alignment: .center)
+                    .frame(maxWidth: .infinity, minHeight: proxy.size.height, alignment: .topLeading)
                 }
                 .scrollIndicators(.hidden)
             }
@@ -2030,3 +2039,94 @@ private func orderedNodes(nodes: [[String: Any]], byId: [String: [String: Any]],
     return output
 }
 
+/// The mockup closes the library with a faint “资料与处理状态” entry. There is no
+/// per-file processing API on mobile, so this sheet reports what the client
+/// actually knows locally (workspace, note count, sync time) and links to the
+/// system permission surface instead of inventing job states.
+private struct ProcessingStatusSheet: View {
+    @Environment(AppStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    Text("书房里的资料来源、解析结果与处理状态都保存在这台设备上。")
+                        .font(.system(size: 13))
+                        .lineSpacing(4)
+                        .foregroundStyle(StudyPalette.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    VStack(alignment: .leading, spacing: 0) {
+                        statusRow(
+                            title: "当前书房",
+                            detail: store.profile?.workspaceName ?? "我的书房",
+                            value: "\(store.notes.count) 篇手记"
+                        )
+                        divider
+                        statusRow(
+                            title: "导入来源",
+                            detail: "文件选择器、相册与伴星整理",
+                            value: "仅本机"
+                        )
+                        divider
+                        statusRow(
+                            title: "解析状态",
+                            detail: "手记正文与批注按需读取",
+                            value: "已连接"
+                        )
+                        divider
+                        Button {
+                            if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+                        } label: {
+                            HStack(spacing: 13) {
+                                AstellaGlyph(kind: .shield, tint: StudyPalette.accent)
+                                    .frame(width: 17, height: 17)
+                                    .frame(width: 36, height: 36)
+                                    .background(StudyPalette.sky.opacity(0.78), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("设备权限").font(.system(size: 16, weight: .semibold)).foregroundStyle(StudyPalette.ink)
+                                    Text("麦克风、相册、相机、文件与通知").font(.system(size: 11)).foregroundStyle(StudyPalette.muted)
+                                }
+                                Spacer(minLength: 6)
+                                AstellaGlyph(kind: .chevron, tint: StudyPalette.muted.opacity(0.8)).frame(width: 15, height: 15)
+                            }
+                            .padding(.vertical, 12)
+                            .frame(minHeight: 62)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 6)
+                    .modifier(StudyGlassSurfaceStyle(radius: 24, interactive: false))
+                }
+                .padding(.horizontal, 22)
+                .padding(.top, 16)
+                .padding(.bottom, 30)
+            }
+            .scrollIndicators(.hidden)
+            .background(DawnBackground())
+            .navigationTitle("资料与处理状态")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("完成") { dismiss() } } }
+        }
+    }
+
+    private func statusRow(title: String, detail: String, value: String) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(.system(size: 16, weight: .semibold)).foregroundStyle(StudyPalette.ink)
+                Text(detail).font(.system(size: 11)).foregroundStyle(StudyPalette.muted)
+            }
+            Spacer(minLength: 6)
+            Text(value).font(.system(size: 12)).foregroundStyle(StudyPalette.muted)
+        }
+        .padding(.vertical, 13)
+    }
+
+    private var divider: some View {
+        Rectangle().fill(StudyPalette.paperEdge.opacity(0.55)).frame(height: 0.7)
+    }
+}

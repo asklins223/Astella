@@ -10,6 +10,7 @@ import { createGovernedProvider } from "../lib/governance.ts";
 import { createCompanionContextReceipts } from "../handlers/context/companion-context-receipts.ts";
 import { reserveCompanionProviderCall } from "../handlers/agent/companion-agent-events.ts";
 import { createCompanionStreamDelivery } from "../handlers/turn/companion-dialogue-stream.ts";
+import { stripVoiceExpressionTags } from "@astella/shared/voice-expression-tags";
 
 // Full real model/tool loop with synthetic knowledge and a scoped disposable
 // account. HTTP queue/UI evidence is recorded separately.
@@ -66,12 +67,17 @@ try {
     }});
   assert.equal(reply.status,"completed");
   if (reply.status!=="completed") throw new Error("unexpected confirmation");
-  await delivery.writeTail(reply.text);
+  // Production flushes the *sanitized* final text (validated.text), not the raw model
+  // text: raw text may still carry the leading voice-expression tag, and writeTail
+  // rejects a fullText that does not start with what deltas already delivered.
+  const visibleReply = stripVoiceExpressionTags(reply.text);
+  await delivery.writeTail(visibleReply, reply.text);
   if(firstPersistedVisibleTextMs===null&&delivery.deliveredChars()>0)
     firstPersistedVisibleTextMs=Math.round(performance.now()-started);
   const streamed = await delivery.finish();
   assert.ok(streamed.ok);
-  assert.equal(delivery.deliveredText(),reply.text);
+  // The visible text carries no voice-expression tags; reply.text still has the raw cue.
+  assert.equal(delivery.deliveredText(),visibleReply);
   const [created] = await f.mutate(tx=>tx`SELECT n.id,n.title,n.current_version_id,
     string_agg(b.content,E'\n\n' ORDER BY b.ordinal) AS body FROM notes n JOIN note_blocks b ON b.version_id=n.current_version_id
     WHERE n.id IN (SELECT (result_ref::jsonb->>'noteId')::uuid FROM companion_agent_tool_calls WHERE run_id=${read.runId} AND name='companion_create_note' AND status='succeeded') AND n.workspace_id=${scope.workspaceId} GROUP BY n.id`);

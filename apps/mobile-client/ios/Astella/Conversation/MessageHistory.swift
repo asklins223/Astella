@@ -43,7 +43,7 @@ struct MessageHistory: View {
                             }
                             if !streamingText.isEmpty {
                                 HStack {
-                                    Text(streamingText)
+                                    Text(companionMarkdown(streamingText))
                                         .font(.system(size: bodyPointSize))
                                         .lineSpacing(4)
                                         .foregroundStyle(StudyPalette.ink)

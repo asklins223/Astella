@@ -33,6 +33,8 @@ import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.*
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -111,8 +113,10 @@ fun ConversationScreen(
                         else (fadeIn(spring()) + slideInHorizontally(MotionTokens.segment()) { if (targetState) it / 12 else -it / 12 }) togetherWith
                             (fadeOut(spring()) + slideOutHorizontally(MotionTokens.segment()) { if (targetState) -it / 12 else it / 12 })
                     }, label = "companion-records") { records ->
-                    if (records) MessageHistory(state, viewModel, reduced)
-                    else CompanionMeeting(state, viewModel, reduced, onOpenNote)
+                    if (records) Column(Modifier.fillMaxSize()) {
+                        RecordChatHeader(state, reduced) { viewModel.setChatShowsRecords(false) }
+                        Box(Modifier.weight(1f)) { MessageHistory(state, viewModel, reduced) }
+                    } else CompanionMeeting(state, viewModel, reduced, onOpenNote)
                 }
             }
             state.error?.let { ConnectionFailureNotice("连接暂时中断", it, "重新连接", onRetry = { viewModel.loadConversation() }) }
@@ -210,11 +214,21 @@ fun ConversationScreen(
                             )
                         }
                     }
-                if (!composerFocused) MainNavigationDock(
+                if (!composerFocused) {
+                    Box(
+                        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 3.dp).height(1.dp)
+                            .background(
+                                Brush.horizontalGradient(
+                                    listOf(Color.Transparent, Color(0xFF678BBC).copy(alpha = .16f), Color.Transparent),
+                                ),
+                            ),
+                    )
+                    MainNavigationDock(
                     selectedTab = selectedTab,
                     onSelect = onSelectTab,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 1.dp),
                 )
+                }
             }
         }
         if (menuOpen) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .08f)).clickable { menuOpen = false })
@@ -420,6 +434,31 @@ private fun CompanionStage(state: AppUiState, reduced: Boolean, modifier: Modifi
             onRelease = { it.dispose(); it.onPause() },
         )
     } else Image(painterResource(R.drawable.companion_stage), "伴星在这里", stageModifier.graphicsLayer { scaleX = pulse.value; scaleY = pulse.value }, contentScale = androidx.compose.ui.layout.ContentScale.Fit)
+}
+
+@Composable
+private fun RecordChatHeader(state: AppUiState, reduced: Boolean, onBackToCompanion: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(start = 26.dp, end = 22.dp, top = 6.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Image(
+            painterResource(R.drawable.companion_avatar), null,
+            Modifier.size(38.dp).clip(CircleShape),
+            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+        )
+        Column(Modifier.weight(1f).padding(start = 11.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("阿星", color = StudyPalette.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-.3).sp)
+            Text("同一段相伴，慢慢聊下去。", color = StudyPalette.muted, fontSize = 10.sp, letterSpacing = .5.sp)
+        }
+        AstellaTap(
+            onClick = onBackToCompanion,
+            modifier = Modifier.size(38.dp).astellaGlass(19.dp, interactive = true)
+                .semantics { contentDescription = "回到伴星场景" },
+        ) {
+            AstellaGlyph(AstellaGlyphKind.More, Modifier.align(Alignment.Center).size(18.dp), tint = StudyPalette.ink)
+        }
+    }
 }
 
 @Composable

@@ -6,6 +6,8 @@
 
 `companion-note-generation-routing-probe.ts` 核对速看、拓展草稿与纯聊天请求的分类边界，使用合成当前笔记与旧能力拒绝回复。以 `REAL_MODEL_BATCH=1` 显式运行，输出 `note-generation-routing-20261008.json`；它仅测试分类，不创建任务或读取真实账号数据。真实窗口生成与保存回执另见 `docs/testing/companion-note-generation-routing-2026-10-08.md`。
 
+`learning-artifacts-live-probe.ts` 覆盖 worker 侧五条学习产物生成链：速看、脑图、动态讲解、拓展草稿、段落解析。它用生产 API 服务建任务、按真实 job 行租约、跑生产 handler（由治理层解析真实模型）、再按队列口径收口并读回产物，逐条断言产物已落库且不为空，同时记录每步耗时。需要一次性库名以 `astella_note_authoring_` 开头（`scripts/dev-disposable-db.sh` 可建），显式 `REAL_MODEL_BATCH=1` 运行；结果写 `outputs/audits/2026-10-07-live/artifacts-live-<suffix>.json`。它不经过 HTTP/队列派发/Electron 窗口，动态讲解这类长任务也不带外层 handler 超时，读数需与真机区分。
+
 `companion-note-authoring-probe.ts` 使用 `astella_note_authoring_*` 一次性库、合成知识讨论和一篇相关笔记，走真实模型的搜索、阅读、创建笔记与最终流式交付。显式设置 `REAL_MODEL_BATCH=1` 及受限 API/worker 连接后运行；夹具自动清理，结果写入 `note-authoring-live-20261008.json`。这是生产工具循环与持久化/交付管线验证，不包括 HTTP 提交、队列派发或 Electron 操作；真实窗口与失败样本另见 `docs/testing/companion-note-authoring-2026-10-08.md`。
 
 从 `workers/ai-worker` 运行，必须设 `REAL_MODEL_BATCH=1`：

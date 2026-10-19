@@ -45,6 +45,7 @@ struct LaunchMotionView: View {
             LaunchMotionWebView(dark: dark, reduced: reduced, active: active, ready: ready,
                                 target: target, onPreparing: { preparing = true },
                                 onRendered: { rendered = true }, onFinished: onFinished)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .ignoresSafeArea()
                 .accessibilityHidden(true)
                 .allowsHitTesting(false)
@@ -68,6 +69,8 @@ struct LaunchMotionView: View {
                 }
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .ignoresSafeArea()
         .task(id: "\(active)-\(preparing)") {
             guard active else { return }
             do { try await Task.sleep(for: .seconds(8)) } catch { return }

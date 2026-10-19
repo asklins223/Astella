@@ -591,11 +591,11 @@ async function runQueuedSpeech(args: {
      *
      * 只有没有流式能力的宿主（测试替身、旧主进程）才继续靠预取。
      */
-    const streamAvailable = Boolean(args.host.playSegmentStream);
+    // 2026-10-19：后续段恢复预取。流式只负责第一段的首字；第二段起播预取好的
+    // 整段音频，段与段之间不再等一次串行合成（用户听到的"句间长空档"）。
     for (const upcoming of queue.segments.slice(0, 2)) {
       if (prefetched.length >= 2) break;
       if (prefetched.some((entry) => entry.key === upcoming.key)) continue;
-      if (streamAvailable && upcoming.ref) continue;
       // startedAtMs 记在**发起合成**的那一刻，不是取用的那一刻：预取的段在队列里
       // 等着的时候等待时间也在走，而那正是"首字等了多久"的真相。
       const startedAtMs = Date.now();
@@ -684,7 +684,8 @@ async function runQueuedSpeech(args: {
        * 表示一声没响过，继续走下面那条整段路径——两条路的**结局上报**因此只会有
        * 一份，不会一段记两次。
        */
-      if (segment.ref && args.host.playSegmentStream) {
+      // 只有第一段走流式（首字快）；后续段用预取好的整段音频，避免句间空档。
+      if (!hasStartedAudio && segment.ref && args.host.playSegmentStream) {
         const streamStartedAt = Date.now();
         playingSegment = segment;
         emit({
