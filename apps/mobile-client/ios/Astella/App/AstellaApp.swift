@@ -16,9 +16,61 @@ struct AstellaApp: App {
 struct RootView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.colorScheme) private var systemColorScheme
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    @AppStorage("study.appearance.dark") private var darkMode = false
+    @AppStorage("study.appearance.mode") private var appearanceMode = "light"
+    @State private var launchFinished = false
+    @State private var companionFrame: CGRect = .zero
+
+    private var showsArrival: Bool {
+        return !launchFinished && (store.startupLoadState == .loading || store.startupLoadState == .ready)
+    }
+
+    private var wantsCompanionLanding: Bool {
+        store.selectedTab == .conversation && !store.chatShowsRecords
+    }
+
+    private var reviewAuthRoute: AuthRoute? {
+        #if DEBUG
+        switch store.uiReviewMode {
+        case "auth-login": .login
+        case "auth-register": .register
+        case "auth-register-password": .registerPassword
+        case "auth-register-code": .registerCode
+        case "auth-forgot": .forgot
+        case "auth-reset": .reset
+        case "auth-reset-password": .resetPassword
+        case "auth-email-login": .emailLogin
+        case "auth-email-login-code": .emailLoginCode
+        default: nil
+        }
+        #else
+        nil
+        #endif
+    }
 
     var body: some View {
-        applicationRoot
+        ZStack {
+            applicationRoot
+                .environment(\.launchHidesCompanion, showsArrival)
+            if showsArrival {
+                LaunchMotionView(
+                    dark: appearanceMode == "dark" || (appearanceMode == "system" && systemColorScheme == .dark),
+                    reduced: systemReduceMotion || store.localReduceMotion,
+                    active: scenePhase == .active,
+                    ready: store.startupLoadState == .ready && (!wantsCompanionLanding || !companionFrame.isEmpty),
+                    target: wantsCompanionLanding && !companionFrame.isEmpty ? companionFrame : nil,
+                    onFinished: { launchFinished = true }
+                )
+                .zIndex(100)
+            }
+        }
+            .onPreferenceChange(LaunchCompanionFrameKey.self) { companionFrame = $0 }
+            .onChange(of: store.startupLoadState) { _, state in
+                if state == .loading { launchFinished = false; companionFrame = .zero }
+            }
+            .preferredColorScheme(colorScheme)
             .simultaneousGesture(TapGesture().onEnded { store.lastInteraction = ProcessInfo.processInfo.systemUptime })
             .onChange(of: store.draft) { _, _ in store.lastInteraction = ProcessInfo.processInfo.systemUptime }
             .onChange(of: store.selectedTab) { _, _ in
@@ -41,10 +93,20 @@ struct RootView: View {
             }
     }
 
+    private var colorScheme: ColorScheme? {
+        switch appearanceMode {
+        case "light": .light
+        case "dark": .dark
+        default: nil
+        }
+    }
+
     @ViewBuilder
     private var applicationRoot: some View {
         Group {
-            if store.profile != nil {
+            if let reviewAuthRoute {
+                LoginScreen(initialRoute: reviewAuthRoute, reviewSample: true)
+            } else if store.profile != nil {
                 MainTabShell()
             } else if store.isAuthenticated {
                 SessionRecoveryScreen()

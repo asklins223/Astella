@@ -147,3 +147,25 @@ test('a short new question after her question is not mistaken for accepting the 
   assert.equal(result.facts.basis, undefined);
   assert.equal(result.facts.requestedModelCalls, 1);
 });
+
+test('a new greeting or name after a casual question streams without a classifier handoff', async () => {
+  for (const content of ['小猪', '早上好', '你好呀', 'Hello']) {
+    const result = await runWith([
+      { role: 'assistant', content: '回来啦，今天过得怎么样？' },
+      { role: 'user', content },
+    ], provider([JSON.stringify({ reply })]));
+    assert.equal(result.facts.decision, 'reply', content);
+    assert.equal(result.facts.requestedModelCalls, 1, content);
+  }
+});
+
+test('offer acceptances, refusals and object references retain the task handoff', async () => {
+  for (const content of ['好啊', '不用了', '可以', '就这样', '第二个', '两张', 'yes']) {
+    const result = await runWith([
+      { role: 'assistant', content: '要不要我把这段整理成卡片？' },
+      { role: 'user', content },
+    ], uncallable);
+    assert.equal(result.facts.basis, 'pending-offer', content);
+    assert.equal(result.facts.requestedModelCalls, 0, content);
+  }
+});

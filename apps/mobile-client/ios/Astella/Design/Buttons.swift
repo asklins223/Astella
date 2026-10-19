@@ -13,12 +13,16 @@ struct GlassIconActionStyle: ViewModifier {
     }
 }
 struct AstellaPressStyle: ButtonStyle {
+    @Environment(AppStore.self) private var store
     @Environment(\.accessibilityReduceMotion) private var reduced
     @Environment(\.isEnabled) private var enabled
+
+    private var motionDisabled: Bool { reduced || store.localReduceMotion }
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label.opacity(enabled ? (configuration.isPressed ? 0.76 : 1) : 0.4)
-            .scaleEffect(configuration.isPressed && !reduced ? 0.97 : 1)
-            .animation(Motion.gated(reduced, Motion.press), value: configuration.isPressed)
+            .scaleEffect(configuration.isPressed && !motionDisabled ? 0.97 : 1)
+            .animation(Motion.gated(motionDisabled, Motion.press), value: configuration.isPressed)
     }
 }
 private struct AstellaActionStyle: ButtonStyle {

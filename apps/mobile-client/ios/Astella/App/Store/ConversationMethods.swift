@@ -79,12 +79,16 @@ extension AppStore {
         guard let conversationId, !isSending, !text.isEmpty || image != nil || file != nil else { return nil }
         let session = api.token
         let sendingContext = context ?? pendingNoteContext
+        let sendingDiaryReference = pendingDiaryReference
         let sendingVoiceId = isSelection ? nil : voiceArtifactId
         let revision = attachmentRevision
         let signature = try? JSONSerialization.data(withJSONObject: [
             "conversation": conversationId, "text": text, "attachment": isSelection ? "" : revision.uuidString,
             "selection": selection ?? "", "note": sendingContext?.noteId ?? "",
-            "version": sendingContext?.versionId ?? "", "voice": sendingVoiceId ?? ""
+            "version": sendingContext?.versionId ?? "",
+            "diaryDate": sendingDiaryReference?.date ?? "",
+            "diaryVersion": sendingDiaryReference?.version ?? 0,
+            "voice": sendingVoiceId ?? ""
         ], options: .sortedKeys)
         isSending = true
         errorMessage = nil
@@ -118,6 +122,9 @@ extension AppStore {
                 if let context = sendingContext {
                     request["context"] = ["pageKind": "note", "sharing": "page_registered", "noteId": context.noteId, "noteVersionId": context.versionId]
                 }
+                if let reference = sendingDiaryReference {
+                    request["diaryReference"] = ["date": reference.date, "version": reference.version]
+                }
                 guard session == api.token, self.conversationId == conversationId else { return nil }
                 pendingTurnRequest = request
             }
@@ -137,6 +144,7 @@ extension AppStore {
                 if attachmentRevision == revision { selectedImage = nil; selectedFile = nil }
                 voiceArtifactId = nil
                 if pendingNoteContext == sendingContext { pendingNoteContext = nil }
+                if pendingDiaryReference == sendingDiaryReference { pendingDiaryReference = nil }
             }
             emitCompanion(.thinking)
             await refreshMessages()

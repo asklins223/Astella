@@ -1,0 +1,4 @@
+# Bundled Three.js shaders contain literal multiline GLSL whitespace. Keep the
+# generated runtime bytes intact and review their sources in mobile launch-motion.
+apps/mobile-client/ios/Astella/LaunchMotion/motion.js -whitespace linguist-generated=true
+apps/mobile-client/android/app/src/main/assets/launch-motion/motion.js -whitespace linguist-generated=true

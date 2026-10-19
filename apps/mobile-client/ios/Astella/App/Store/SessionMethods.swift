@@ -151,12 +151,20 @@ extension AppStore {
     }
 
     func restoreSession() async {
+        let arriving = profile == nil
+        if arriving { startupLoadState = .loading }
         isLoading = true
-        defer { isLoading = false }
+        defer {
+            isLoading = false
+            if arriving, isAuthenticated {
+                startupLoadState = profile == nil ? .failed : .ready
+            }
+        }
         do {
             let raw = try await api.request("/auth/me") as? [String: Any] ?? [:]
             profile = UserProfile(raw)
             loadDevicePreferences(for: profile?.userId ?? "")
+            loadRecentNotePreference()
             await loadConversation()
             await loadNotes()
             // 会话恢复成功后，后台校验/下载伴星 Live2D 模型（失败走 PNG 降级）。
@@ -171,6 +179,7 @@ extension AppStore {
     }
 
     func logout() {
+        startupLoadState = .idle
         voicePlayback.stop()
         intakeGeneration += 1
         draft = ""
@@ -186,6 +195,7 @@ extension AppStore {
         conversationId = nil
         messages = []
         notes = []
+        recentNoteId = nil
         runs = []
         pendingNoteContext = nil
         workspaces = []
@@ -202,8 +212,8 @@ extension AppStore {
     private func loadDevicePreferences(for userId: String) {
         guard !userId.isEmpty else { return }
         chatShowsRecords = UserDefaults.standard.bool(forKey: mobilePreferenceKey(userId, "showRecords"))
-        let savedScale = UserDefaults.standard.object(forKey: mobilePreferenceKey(userId, "textScale")) as? Double ?? 1
-        readingScale = [1.0, 1.2, 1.4].contains(savedScale) ? savedScale : 1
+        let savedScale = UserDefaults.standard.object(forKey: mobilePreferenceKey(userId, "textScale")) as? Double ?? (19.0 / 16.0)
+        readingScale = savedScale.isFinite && (15.0 / 16.0...25.0 / 16.0).contains(savedScale) ? savedScale : 1
         localReduceMotion = UserDefaults.standard.bool(forKey: mobilePreferenceKey(userId, "reduceMotion"))
     }
 }

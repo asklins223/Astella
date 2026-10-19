@@ -1,0 +1,12 @@
+{
+  "images" : [
+    {
+      "filename" : "companion-stage.png",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}

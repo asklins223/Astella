@@ -1,8 +1,7 @@
 import SwiftUI
 
-/// 动效 token。与 DESIGN_TOKENS.md §三 同步——改动先改参数表，再改两端代码。
-/// 一切状态变化默认弹性、可中断、可反转；`gated` 统一做 reduceMotion 门控
-/// （返回 nil = 直接就位，不残留动画）。
+/// SwiftUI motion tokens. Platform behavior stays native and interruptible;
+/// `gated` removes movement when the system or local Reduce Motion setting is on.
 enum Motion {
     /// 主按钮按压缩放。
     static let press = Animation.spring(duration: 0.22, bounce: 0.06)
@@ -12,8 +11,11 @@ enum Motion {
     static let routePush = Animation.spring(duration: 0.32, bounce: 0.06)
     static let authRoute = Animation.timingCurve(0.23, 1, 0.32, 1, duration: 0.26)
     static let authFade = Animation.timingCurve(0.23, 1, 0.32, 1, duration: 0.16)
-    /// 分段/页签切换。
-    static let segment = Animation.spring(duration: 0.38, bounce: 0.08)
+    /// Selection and segmented-control movement. Use SwiftUI's native snappy
+    /// spring so the indicator can be retargeted when the user taps again.
+    static let segment = Animation.snappy(duration: 0.32, extraBounce: 0.03)
+    /// The companion dock makes room for its lightweight shortcut.
+    static let companionDock = Animation.spring(duration: 0.34, bounce: 0.04)
     /// 菜单项散开间隔（Telegram 式 + 菜单）。
     static let messageSend = Animation.spring(duration: 0.32, bounce: 0.12)
     static let sheetRise = Animation.spring(duration: 0.38, bounce: 0.08)

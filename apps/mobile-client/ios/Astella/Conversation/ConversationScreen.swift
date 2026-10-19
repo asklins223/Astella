@@ -3,6 +3,8 @@ import PhotosUI
 import UniformTypeIdentifiers
 
 struct ConversationScreen: View {
+    var selectionLens: Namespace.ID
+    var onOpenNote: (String) -> Void
     @Environment(AppStore.self) private var store
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     @Environment(\.scenePhase) private var scenePhase
@@ -11,6 +13,7 @@ struct ConversationScreen: View {
     @State private var showPhotos = false
     @State private var showFiles = false
     @State private var showNotes = false
+    @State private var showHistoryActions = false
     @State private var menuOpen = false
     @State private var voiceCapture = VoiceCapture()
     @State private var flight: CompanionFlight?
@@ -28,17 +31,20 @@ struct ConversationScreen: View {
         GeometryReader { geometry in
             ZStack(alignment: .bottomLeading) {
                 VStack(spacing: 0) {
+                    ConversationTopBar()
                     ZStack {
                         if store.chatShowsRecords {
-                            MessageHistory(messages: store.messages, streamingText: store.streamingText)
+                            MessageHistory(
+                                messages: store.messages,
+                                streamingText: store.streamingText,
+                                onMore: { showHistoryActions = true }
+                            )
                                 .transition(reduced ? .opacity : .offset(x: 24).combined(with: .opacity))
                         } else {
                             CompanionScene(message: store.messages.last(where: { $0.role == "assistant" }),
                                            streamingText: store.streamingText,
-                                           audioLevel: voiceCapture.isRecording ? voiceCapture.level : store.voicePlayback.level,
-                                           audioActive: voiceCapture.isRecording || store.voicePlayback.isPlaying) { prompt in
-                                store.draft = prompt; composerFocused = true
-                            }
+                                           audioActive: voiceCapture.isRecording || store.voicePlayback.isPlaying,
+                                           onOpenNote: { onOpenNote($0) })
                             .transition(reduced ? .opacity : .offset(x: -24).combined(with: .opacity))
                         }
                     }
@@ -49,7 +55,6 @@ struct ConversationScreen: View {
                     }
                     if voiceCapture.isRecording || voiceCapture.isTranscribing { recordingBar }
                     if store.voicePlayback.isPlaying || store.voicePlayback.isPaused || store.voicePlayback.isLoading { playbackBar }
-                    composer
                 }
                 Color.black.opacity(menuOpen ? 0.08 : 0).ignoresSafeArea()
                     .onTapGesture { closeMenu() }.allowsHitTesting(menuOpen).accessibilityHidden(true)
@@ -71,6 +76,23 @@ struct ConversationScreen: View {
         }
         .background(DawnBackground())
         .toolbar(.hidden, for: .tabBar)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            VStack(spacing: 0) {
+                composer
+                if !store.composerHasFocus {
+                    AstellaMainDock(selectionLens: selectionLens, integrated: true)
+                }
+            }
+            .padding(.horizontal, 7).padding(.top, 10).padding(.bottom, 7)
+            .modifier(StudyGlassSurfaceStyle(radius: 30, interactive: true))
+            .padding(.horizontal, 23).padding(.bottom, 4)
+            .offset(y: 14)
+        }
+        .confirmationDialog("对话操作", isPresented: $showHistoryActions, titleVisibility: .visible) {
+            Button("递一份材料") { withAnimation(Motion.gated(reduced, Motion.segment)) { menuOpen = true } }
+            Button("回到伴星") { withAnimation(Motion.gated(reduced, Motion.segment)) { store.chatShowsRecords = false } }
+            Button("取消", role: .cancel) {}
+        }
         .photosPicker(isPresented: $showPhotos, selection: $photoItem, matching: .images)
         .fileImporter(isPresented: $showFiles, allowedContentTypes: [.pdf, .plainText, .init(filenameExtension: "md") ?? .plainText, .init(filenameExtension: "docx") ?? .data]) { result in
             if case .success(let url) = result { Task { await store.prepareFile(url) } }
@@ -119,7 +141,7 @@ struct ConversationScreen: View {
                     Group {
                         if let data = store.selectedImage, let image = UIImage(data: data) {
                             Image(uiImage: image).resizable().scaledToFill()
-                        } else { Image(systemName: "doc.text.fill").foregroundStyle(StudyPalette.accent) }
+                        } else { AstellaGlyph(kind: .document, tint: StudyPalette.accent) }
                     }.frame(width: 40, height: 40).clipShape(RoundedRectangle(cornerRadius: 10))
                         .offset(dragOffset)
                         .gesture(DragGesture(coordinateSpace: .named("conversation"))
@@ -136,15 +158,24 @@ struct ConversationScreen: View {
                     if store.selectedFile != nil {
                         Button("存为手记") { Task { await store.importPreparedFile() } }.font(.caption.weight(.semibold)).disabled(store.isSending)
                     }
-                    Button { store.selectedImage = nil; store.selectedFile = nil } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(StudyPalette.muted) }
+                    Button { store.selectedImage = nil; store.selectedFile = nil } label: { AstellaGlyph(kind: .close, tint: StudyPalette.muted).frame(width: 17, height: 17) }
                         .frame(width: 44, height: 44).accessibilityLabel("移除附件")
                 }.padding(.leading, 12).background(StudyPalette.inset, in: RoundedRectangle(cornerRadius: 16))
             }
             if let context = store.pendingNoteContext {
                 HStack {
-                    Label(context.title, systemImage: "book.closed").font(.caption).lineLimit(1)
+                    HStack(spacing: 7) { AstellaGlyph(kind: .book, tint: StudyPalette.accent).frame(width: 15, height: 15); Text(context.title) }.font(.caption).lineLimit(1)
                     Spacer()
-                    Button { store.clearPendingNoteContext() } label: { Image(systemName: "xmark.circle.fill") }.accessibilityLabel("移除引用")
+                    Button { store.clearPendingNoteContext() } label: { AstellaGlyph(kind: .close, tint: StudyPalette.muted).frame(width: 15, height: 15) }.accessibilityLabel("移除引用")
+                }.padding(12).background(StudyPalette.sky, in: RoundedRectangle(cornerRadius: 14))
+            } else if let reference = store.pendingDiaryReference {
+                HStack {
+                    HStack(spacing: 7) {
+                        AstellaGlyph(kind: .orbit, tint: StudyPalette.accent).frame(width: 15, height: 15)
+                        Text("日记 · \(reference.date) · 第 \(reference.version) 版")
+                    }.font(.caption).lineLimit(1)
+                    Spacer()
+                    Button { store.clearPendingDiaryReference() } label: { AstellaGlyph(kind: .close, tint: StudyPalette.muted).frame(width: 15, height: 15) }.accessibilityLabel("移除日记引用")
                 }.padding(12).background(StudyPalette.sky, in: RoundedRectangle(cornerRadius: 14))
             }
             HStack(alignment: .bottom, spacing: 2) {
@@ -152,34 +183,35 @@ struct ConversationScreen: View {
                     composerFocused = false
                     withAnimation(Motion.gated(reduced, Motion.segment)) { menuOpen.toggle() }
                 } label: {
-                    Image(systemName: "plus").rotationEffect(.degrees(menuOpen ? 45 : 0)).font(.system(size: 20, weight: .light)).frame(width: 40, height: 40)
-                        .foregroundStyle(StudyPalette.paper).background(StudyPalette.accent.opacity(0.92), in: RoundedRectangle(cornerRadius: 14))
+                        AstellaGlyph(kind: .add, tint: StudyPalette.muted).rotationEffect(.degrees(menuOpen ? 45 : 0)).frame(width: 25, height: 25)
+                            .frame(width: 42, height: 42)
                 }.accessibilityLabel("添加图片或文件")
-                TextField("和伴星说说…", text: $store.draft, axis: .vertical)
-                    .font(.system(size: 14)).lineLimit(1...5).focused($composerFocused).padding(.vertical, 12).padding(.horizontal, 6)
+                TextField("说给伴星听…", text: $store.draft, axis: .vertical)
+                    .font(.system(size: 16)).lineLimit(1...5).focused($composerFocused).padding(.vertical, 9).padding(.horizontal, 6)
+                let voiceAction = store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && store.selectedImage == nil && store.selectedFile == nil
                 Button {
                     composerFocused = false
-                    if voiceCapture.isRecording { Task { if let text = await voiceCapture.finish(store: store) { store.draft = text } } }
-                    else { voiceCapture.start(store: store) }
-                } label: {
-                    Image(systemName: voiceCapture.isRecording ? "stop.fill" : "mic").font(.system(size: 20)).frame(width: 44, height: 46)
-                }.disabled(voiceCapture.isTranscribing || store.isSending)
-                    .foregroundStyle(voiceCapture.isRecording ? StudyPalette.danger : StudyPalette.accent)
-                    .accessibilityLabel(voiceCapture.isRecording ? "完成录音" : "语音输入")
-                Button {
-                    let text = store.draft
-                    Task {
-                        await store.submit(text: text)
-                        if store.errorMessage == nil && store.draft == text { store.draft = "" }
+                    if voiceCapture.isRecording {
+                        Task { if let text = await voiceCapture.finish(store: store) { store.draft = text } }
+                    } else if voiceAction {
+                        voiceCapture.start(store: store)
+                    } else {
+                        let text = store.draft
+                        Task {
+                            await store.submit(text: text)
+                            if store.errorMessage == nil && store.draft == text { store.draft = "" }
+                        }
                     }
                 } label: {
-                    Image(systemName: store.isSending ? "ellipsis" : "arrow.up").font(.system(size: 17, weight: .semibold))
-                        .frame(width: 40, height: 40).foregroundStyle(canSend ? .white : StudyPalette.muted)
-                        .background(canSend ? StudyPalette.accent : StudyPalette.inset, in: RoundedRectangle(cornerRadius: 13)).padding(3)
-                }.disabled(!canSend).accessibilityLabel("发送")
-            }.padding(8).modifier(StudyGlassSurfaceStyle(radius: 22, interactive: true))
+                    let glyph: AstellaGlyphKind = voiceCapture.isRecording ? .stop : (voiceAction ? .mic : (store.isSending ? .more : .send))
+                    AstellaGlyph(kind: glyph, tint: voiceCapture.isRecording ? StudyPalette.danger : (!voiceAction && canSend ? .white : StudyPalette.accent))
+                        .frame(width: 21, height: 21).frame(width: 42, height: 42)
+                        .background(!voiceAction && canSend ? StudyPalette.accent : StudyPalette.sky, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
+                }.disabled(voiceCapture.isTranscribing || store.isSending || (!voiceAction && !canSend))
+                    .buttonStyle(AstellaPressStyle())
+                    .accessibilityLabel(voiceCapture.isRecording ? "完成录音" : (voiceAction ? "语音输入" : "发送"))
+            }.padding(6)
         }
-        .padding(.horizontal, 22).padding(.top, 10).padding(.bottom, 14)
         .animation(Motion.gated(reduced, Motion.segment), value: store.selectedImage != nil || store.selectedFile != nil)
     }
 
@@ -187,21 +219,21 @@ struct ConversationScreen: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack { Text("交给伴星").font(.system(size: 11, weight: .medium)).tracking(2); Spacer(); AstellaStar().fill(StudyPalette.accent).frame(width: 11, height: 15) }
                 .foregroundStyle(StudyPalette.muted).padding(.horizontal, 14).padding(.top, 12).padding(.bottom, 9)
-            menuItem("加图片", detail: "一起看见细节", icon: "photo", index: 2) { showPhotos = true }
-            menuItem("加文件", detail: "PDF · Word · 文本", icon: "doc.text", index: 1) { showFiles = true }
-            menuItem("引用手记", detail: "接着已有的思路", icon: "book.closed", index: 0) { showNotes = true }
+            menuItem("加图片", detail: "一起看见细节", icon: .photo, index: 2) { showPhotos = true }
+            menuItem("加文件", detail: "PDF · Word · 文本", icon: .document, index: 1) { showFiles = true }
+            menuItem("引用手记", detail: "接着已有的思路", icon: .book, index: 0) { showNotes = true }
         }.padding(8).frame(width: 252).modifier(StudyGlassSurfaceStyle(radius: 24, interactive: true))
     }
-    private func menuItem(_ label: String, detail: String, icon: String, index: Int, action: @escaping () -> Void) -> some View {
+    private func menuItem(_ label: String, detail: String, icon: AstellaGlyphKind, index: Int, action: @escaping () -> Void) -> some View {
         Button { closeMenu(); action() } label: {
             HStack(spacing: 13) {
-                Image(systemName: icon).font(.system(size: 19, weight: .light)).frame(width: 42, height: 42).background(StudyPalette.sky, in: RoundedRectangle(cornerRadius: 13))
+                AstellaGlyph(kind: icon, tint: StudyPalette.accent).frame(width: 21, height: 21).frame(width: 42, height: 42).background(StudyPalette.sky, in: RoundedRectangle(cornerRadius: 13))
                 VStack(alignment: .leading, spacing: 4) {
                     Text(label).font(.system(size: 14, weight: .medium))
                     Text(detail).font(.system(size: 10)).foregroundStyle(StudyPalette.muted)
                 }
                 Spacer()
-                Image(systemName: "arrow.up.right").font(.system(size: 11)).foregroundStyle(StudyPalette.muted)
+                AstellaGlyph(kind: .chevron, tint: StudyPalette.muted).frame(width: 11, height: 11)
             }.foregroundStyle(StudyPalette.ink).frame(minHeight: 58).padding(.horizontal, 12)
         }.buttonStyle(AstellaPressStyle()).offset(y: menuOpen || reduced ? 0 : CGFloat(14 * index))
         .opacity(menuOpen ? 1 : 0)
@@ -210,7 +242,7 @@ struct ConversationScreen: View {
     private func closeMenu() { withAnimation(Motion.gated(reduced, Motion.press)) { menuOpen = false } }
     private func animateAbsorption() {
         guard !reduced else { return }
-        flight = CompanionFlight(origin: flightOrigin, icon: store.selectedFile == nil ? "photo.fill" : "doc.text.fill")
+        flight = CompanionFlight(origin: flightOrigin, icon: store.selectedFile == nil ? .photo : .document)
         flightOrigin = nil
     }
     private var recordingBar: some View {
@@ -226,9 +258,9 @@ struct ConversationScreen: View {
             Text(store.voicePlayback.isLoading ? "正在接回声音…" : "伴星的声音").font(.caption)
             Spacer()
             if !store.voicePlayback.isLoading {
-                Button { store.voicePlayback.togglePause() } label: { Image(systemName: store.voicePlayback.isPaused ? "play.fill" : "pause.fill") }.frame(width: 44, height: 40)
+                Button { store.voicePlayback.togglePause() } label: { AstellaGlyph(kind: store.voicePlayback.isPaused ? .play : .pause).frame(width: 18, height: 18) }.frame(width: 44, height: 40)
             }
-            Button { store.voicePlayback.stop() } label: { Image(systemName: "stop.fill") }.frame(width: 44, height: 40).accessibilityLabel("停止朗读")
+            Button { store.voicePlayback.stop() } label: { AstellaGlyph(kind: .stop).frame(width: 16, height: 16) }.frame(width: 44, height: 40).accessibilityLabel("停止朗读")
         }.padding(.horizontal, 24)
     }
     private var notePicker: some View {
@@ -239,12 +271,120 @@ struct ConversationScreen: View {
                         await store.loadNote(note.id)
                         if let document = store.noteDocument { store.continueWithNote(document); showNotes = false }
                     }
-                } label: { Label(note.title, systemImage: "doc.text") }
+                } label: { HStack(spacing: 10) { AstellaGlyph(kind: .book, tint: StudyPalette.accent).frame(width: 18, height: 18); Text(note.title) } }
             }.navigationTitle("引用手记")
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("完成") { showNotes = false } } }
                 .task { await store.loadNotes() }
         }.presentationDetents([.medium, .large])
     }
+}
+
+private struct ConversationTopBar: View {
+    @Environment(AppStore.self) private var store
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
+    @AppStorage("study.appearance.dark") private var darkMode = false
+    @AppStorage("study.appearance.mode") private var appearanceMode = "light"
+    private var isDark: Bool { appearanceMode == "dark" || (appearanceMode == "system" && colorScheme == .dark) }
+
+    var body: some View {
+        GeometryReader { geometry in
+            let compact = geometry.size.width < 410
+            let modeWidth = compact ? min(132, geometry.size.width * 0.34) : 142
+            let workspaceWidth = max(104, geometry.size.width - modeWidth - 102)
+
+            HStack(spacing: 7) {
+                Menu {
+                    ForEach(store.workspaces) { workspace in
+                        Button {
+                            Task { await store.switchWorkspace(workspace) }
+                        } label: {
+                            Label {
+                                Text(workspace.name)
+                            } icon: {
+                                if workspace.id == store.profile?.workspaceId {
+                                    AstellaGlyph(kind: .check, tint: StudyPalette.accent).frame(width: 15, height: 15)
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Circle().fill(StudyPalette.actionFill).frame(width: 5, height: 5)
+                        Text(store.profile?.workspaceName ?? "我的书房")
+                            .font(.system(size: 12, weight: .semibold))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .foregroundStyle(StudyPalette.ink)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        AstellaGlyph(kind: .chevron, tint: StudyPalette.muted).frame(width: 9, height: 9).rotationEffect(.degrees(90))
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .frame(width: workspaceWidth, alignment: .leading)
+                .disabled(store.workspaces.count < 2 || store.isAccountBusy)
+                .accessibilityLabel("切换书房")
+
+                Spacer(minLength: 2)
+                HStack(spacing: 0) {
+                    modeButton(title: "伴星", records: false)
+                    modeButton(title: "记录", records: true)
+                }
+                .frame(width: modeWidth, height: 38)
+                .modifier(StudyGlassSurfaceStyle(radius: 20, interactive: true))
+                .accessibilityElement(children: .contain)
+                Spacer(minLength: 2)
+
+                Button {
+                    let next = !isDark
+                    withAnimation(Motion.gated(reduceMotion || store.localReduceMotion, Motion.segment)) {
+                        darkMode = next
+                        appearanceMode = next ? "dark" : "light"
+                    }
+                } label: {
+                    AstellaGlyph(kind: isDark ? .sun : .moon, tint: StudyPalette.ink)
+                        .frame(width: 24, height: 24)
+                        .frame(width: 40, height: 40)
+                        .modifier(StudyGlassSurfaceStyle(radius: 20, interactive: true))
+                }
+                .buttonStyle(AstellaPressStyle())
+                .accessibilityLabel(isDark ? "切换到浅色外观" : "切换到深色外观")
+            }
+            .padding(.horizontal, 22)
+            .padding(.top, 0)
+            .padding(.bottom, 6)
+        }
+        .frame(height: 62)
+        .sensoryFeedback(.selection, trigger: store.chatShowsRecords)
+    }
+
+    private func modeButton(title: String, records: Bool) -> some View {
+        let selected = store.chatShowsRecords == records
+        return Button {
+            withAnimation(Motion.gated(reduceMotion || store.localReduceMotion, Motion.segment)) {
+                store.chatShowsRecords = records
+            }
+        } label: {
+            ZStack {
+                if selected {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color.white.opacity(0.82))
+                        .matchedGeometryEffect(id: "conversation-mode-lens", in: modeLens)
+                        .padding(3)
+                }
+                Text(title)
+                    .font(.system(size: 12, weight: selected ? .semibold : .regular))
+                    .foregroundStyle(selected ? StudyPalette.ink : StudyPalette.muted)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .contentShape(Rectangle())
+            }
+        }
+        .buttonStyle(AstellaPressStyle())
+        .accessibilityAddTraits(selected ? [.isSelected] : [])
+    }
+
+    @Namespace private var modeLens
 }
 
 private struct CompanionAbsorptionFlight: AnimatableModifier {
@@ -265,7 +405,7 @@ private struct CompanionAbsorptionFlight: AnimatableModifier {
 private struct CompanionFlight: Identifiable {
     let id = UUID()
     let origin: CGPoint?
-    let icon: String
+    let icon: AstellaGlyphKind
 }
 private struct CompanionFlightView: View {
     let flight: CompanionFlight
@@ -274,7 +414,7 @@ private struct CompanionFlightView: View {
     let completion: () -> Void
     @State private var progress: CGFloat = 0
     var body: some View {
-        Image(systemName: flight.icon).font(.title2).foregroundStyle(StudyPalette.accent)
+        AstellaGlyph(kind: flight.icon, tint: StudyPalette.accent).frame(width: 22, height: 22)
             .padding(16).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
             .modifier(CompanionAbsorptionFlight(progress: progress, origin: origin, target: target))
             .task {

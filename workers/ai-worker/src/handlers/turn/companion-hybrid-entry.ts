@@ -80,6 +80,11 @@ export const COMPANION_HYBRID_OFFER_REPLY_CHARS = 12;
  */
 const OFFER_REPLY_QUESTION = /[？?]\s*$|吗|什么|多少|多久|怎么|为什么|哪|几|是不是|有没有|能不能|可不可以/u;
 
+// A previous question alone does not make a new greeting/name an acceptance.
+// Keep acknowledgements, choices and references on the authoritative task path;
+// let the hybrid request decide other new messages with the full conversation.
+const OFFER_REPLY_CONTINUATION = /^(?:(?:好(?:的|啊|呀|吧|哇)?|行(?:的|啊|吧)?|嗯+|恩+|对(?:的|啊)?|是(?:的|啊)?)(?:[\s，,。.!！～~]|$)|要|不用|不要|不必|不需要|不行|别|算了|可以|没问题|继续|接着|展开|就|按|照|用|选|第|再|[零一二两三四五六七八九十百\d])|^(?:ok(?:ay)?|yes|no|sure|please|go ahead|do it)\b/iu;
+
 export function companionHybridAwaitingOffer(
   messages: readonly { readonly role: string; readonly content: unknown }[],
   latestUserText: string,
@@ -90,7 +95,8 @@ export function companionHybridAwaitingOffer(
   const recent = messages
     .filter(message => message.role !== 'system')
     .map(message => ({ role: message.role, text: messageText(message.content) }));
-  return companionReleaseGates({ text, recentMessages: recent }).pendingOffer;
+  const gates = companionReleaseGates({ text, recentMessages: recent });
+  return gates.pendingOffer && (gates.anaphora || OFFER_REPLY_CONTINUATION.test(text));
 }
 
 function messageText(content: unknown): string {

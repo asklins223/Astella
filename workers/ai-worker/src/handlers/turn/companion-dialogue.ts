@@ -94,7 +94,6 @@ import { resolveCompanionEntryMode } from "./companion-entry-mode.ts";
 import { persistCompanionDialectPreference, readCompanionDialectPreference } from "./companion-voice-preference.ts";
 import { qwenDialectForInstruction } from "@astella/shared/tts-voice-catalog";
 import { companionVoiceExpressionBoundaries, companionVoiceSegmentExpression, projectCompanionVoiceExpression } from "./companion-voice-expression.ts";
-import { isVoiceSegmentWithinSummary, resolveCompanionVoiceSummaryMaxChars } from "./companion-voice-summary.ts";
 import {
   assembleCompanionContext,
   recordCompanionMemoryContextExposure,
@@ -906,7 +905,6 @@ export async function runCompanionDialogue(
     // 可以在一轮中途被关掉，而正式作答是整轮都不念。
     if (!voiceSegmentsEnabled) return;
     if (voiceDeliveryDecision !== "delivered") return;
-    const voiceSummaryMaxChars = resolveCompanionVoiceSummaryMaxChars();
     const expression = projectCompanionVoiceExpression(modelText, read.factSpans?.values ?? {});
     const expressionEnabled = voiceExpressionEnabled;
     // Whole-turn voice style is a user-directed semantic choice and remains available
@@ -933,17 +931,13 @@ export async function runCompanionDialogue(
     });
     voiceSegmentState = split.next;
     if (split.segments.length === 0) return;
-    // Display carries the full formatting; speech reads a sentence-safe prefix.
-    // The rest stays visible and is revealed by the reading clock after audio ends.
-    const spokenSegments = voiceSummaryMaxChars > 0
-      ? split.segments.filter(segment => isVoiceSegmentWithinSummary(segment.displayStart, 0, voiceSummaryMaxChars))
-      : split.segments;
-    if (spokenSegments.length === 0) return;
     // turn 级风格指令直接来自并行结构化注意力解释器；显式请求识别只在解释没有
     // 声音变化时兜底，不覆盖 apply/clarify 的语义结果。它独立于句内情绪/拟声标签开关。
     // 随每段下发，服务端合成时从事件重读。
     const instruction = voiceInstruction.instruction;
-    const segments = spokenSegments.flatMap((segment) => {
+    // Every speakable segment belongs to the delivery, including a long reply's
+    // final sentence. Segment size bounds synthesis requests, never the reply.
+    const segments = split.segments.flatMap((segment) => {
       const synthesis = companionVoiceSegmentExpression(expression, segment, expressionEnabled);
       if (!synthesis.text) return [];
       const synthesisText = synthesis.text;

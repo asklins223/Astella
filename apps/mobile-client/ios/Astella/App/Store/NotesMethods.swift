@@ -214,11 +214,51 @@ extension AppStore {
             return
         }
         pendingNoteContext = PendingNoteContext(noteId: document.id, versionId: document.versionId, title: document.title)
+        pendingDiaryReference = nil
+        selectedTab = .conversation
+    }
+
+    func loadRecentNotePreference() {
+        recentNoteId = notePreferenceKey("recentNoteId").flatMap { UserDefaults.standard.string(forKey: $0) }
+    }
+
+    func recordNoteOpened(_ noteId: String) {
+        guard !noteId.isEmpty else { return }
+        recentNoteId = noteId
+        if let key = notePreferenceKey("recentNoteId") {
+            UserDefaults.standard.set(noteId, forKey: key)
+        }
+    }
+
+    func savedNoteReadingBlock(noteId: String) -> Int? {
+        guard let key = notePreferenceKey("readingBlock.\(noteId)") else { return nil }
+        return UserDefaults.standard.object(forKey: key) as? Int
+    }
+
+    func saveNoteReadingBlock(_ blockId: Int, noteId: String) {
+        guard let key = notePreferenceKey("readingBlock.\(noteId)") else { return }
+        UserDefaults.standard.set(blockId, forKey: key)
+    }
+
+    private func notePreferenceKey(_ name: String) -> String? {
+        guard let profile, !profile.userId.isEmpty, !profile.workspaceId.isEmpty else { return nil }
+        return mobilePreferenceKey(profile.userId, "workspace.\(profile.workspaceId).\(name)")
+    }
+
+    /// Opens the conversation with a stable diary reference attached; it never sends a turn.
+    func continueWithDiary(date: String, version: Int) {
+        guard version > 0 else { return }
+        pendingNoteContext = nil
+        pendingDiaryReference = PendingDiaryReference(date: date, version: version)
         selectedTab = .conversation
     }
 
     func clearPendingNoteContext() {
         pendingNoteContext = nil
+    }
+
+    func clearPendingDiaryReference() {
+        pendingDiaryReference = nil
     }
 }
 

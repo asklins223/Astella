@@ -16,8 +16,6 @@ import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.shape.*
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -29,11 +27,15 @@ import androidx.compose.ui.graphics.drawscope.rotate
 import dev.chrisbanes.haze.rememberHazeState
 import dev.chrisbanes.haze.hazeSource
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.*
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.*
@@ -43,16 +45,28 @@ import kotlin.math.min
 import com.astella.mobile.data.*
 import com.astella.mobile.R
 import com.astella.mobile.ui.design.*
+import com.astella.mobile.ui.MainNavigationDock
+import com.astella.mobile.ui.launch.LocalLaunchLanding
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ConversationScreen(state: AppUiState, viewModel: AppViewModel, onAccount: () -> Unit) {
+fun ConversationScreen(
+    state: AppUiState,
+    viewModel: AppViewModel,
+    onAccount: () -> Unit,
+    selectedTab: MainTab,
+    onSelectTab: (MainTab) -> Unit,
+    onOpenNote: (String) -> Unit,
+    darkTheme: Boolean,
+    onToggleTheme: () -> Unit,
+) {
     val reduced = state.localReduceMotion || rememberSystemReducedMotion()
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
     val focus = LocalFocusManager.current
     var menuOpen by remember { mutableStateOf(false) }
     var showNotes by remember { mutableStateOf(false) }
+    var composerFocused by remember { mutableStateOf(false) }
     var flightOrigin by remember { mutableStateOf<Offset?>(null) }
     val flight = remember { Animatable(1f) }
     val scope = rememberCoroutineScope()
@@ -70,13 +84,26 @@ fun ConversationScreen(state: AppUiState, viewModel: AppViewModel, onAccount: ()
     LaunchedEffect(state.attachmentRevision) {
         if (state.attachmentRevision.isNotEmpty() && !reduced) { flight.snapTo(0f); flight.animateTo(1f, tween(520, easing = CubicBezierEasing(.2f, .7f, .15f, 1f))) }
     }
+    LaunchedEffect(reduced) {
+        if (reduced) flight.snapTo(1f)
+    }
     BoxWithConstraints(Modifier.fillMaxSize().imePadding()) {
         val height = maxHeight
         val density = LocalDensity.current
         val widthPx = with(density) { maxWidth.toPx() }
         val heightPx = with(density) { maxHeight.toPx() }
         Column(Modifier.fillMaxSize().hazeSource(menuHaze)) {
-            AstellaAppHeader(state.profile?.workspaceName ?: "随身书房",state.profile?.displayName?.ifBlank { state.profile.email } ?: "我",onAccount,state.chatShowsRecords,viewModel::setChatShowsRecords)
+            AstellaAppHeader(
+                workspace = state.profile?.workspaceName ?: "随身书房",
+                initial = state.profile?.displayName?.ifBlank { state.profile.email } ?: "我",
+                onAccount = onAccount,
+                records = state.chatShowsRecords,
+                onRecords = viewModel::setChatShowsRecords,
+                workspaces = state.workspaces,
+                onWorkspace = viewModel::switchWorkspace,
+                darkTheme = darkTheme,
+                onThemeToggle = onToggleTheme,
+            )
             Box(Modifier.weight(1f)) {
                 AnimatedContent(targetState = state.chatShowsRecords,
                     transitionSpec = {
@@ -85,7 +112,7 @@ fun ConversationScreen(state: AppUiState, viewModel: AppViewModel, onAccount: ()
                             (fadeOut(spring()) + slideOutHorizontally(MotionTokens.segment()) { if (targetState) -it / 12 else it / 12 })
                     }, label = "companion-records") { records ->
                     if (records) MessageHistory(state, viewModel, reduced)
-                    else CompanionMeeting(state, viewModel, reduced)
+                    else CompanionMeeting(state, viewModel, reduced, onOpenNote)
                 }
             }
             state.error?.let { ConnectionFailureNotice("连接暂时中断", it, "重新连接", onRetry = { viewModel.loadConversation() }) }
@@ -95,62 +122,99 @@ fun ConversationScreen(state: AppUiState, viewModel: AppViewModel, onAccount: ()
             }
             if (state.isPlaying || state.isPaused || state.isVoiceLoading) Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(if (state.isVoiceLoading) "正在接回声音…" else "伴星的声音", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = StudyPalette.muted)
-                if (!state.isVoiceLoading) AstellaIconButton(onClick = viewModel::toggleVoicePause) { Icon(if (state.isPaused) Icons.Default.PlayArrow else Icons.Default.Pause, "暂停或继续") }
-                AstellaIconButton(onClick = viewModel::stopVoice) { Icon(Icons.Default.Stop, "停止朗读") }
+                if (!state.isVoiceLoading) AstellaIconButton(onClick = viewModel::toggleVoicePause) { AstellaGlyph(if (state.isPaused) AstellaGlyphKind.Play else AstellaGlyphKind.Pause, Modifier.size(17.dp), tint = StudyPalette.accent) }
+                AstellaIconButton(onClick = viewModel::stopVoice) { AstellaGlyph(AstellaGlyphKind.Stop, Modifier.size(15.dp), tint = StudyPalette.muted) }
             }
-            Column(Modifier.padding(start = 22.dp,end = 22.dp,top = 10.dp,bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.padding(start = 15.dp,end = 15.dp,top = 8.dp,bottom = 8.dp).astellaGlass(30.dp, interactive = true), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 if (state.selectedImage != null || state.selectedFile != null) Surface(shape = RoundedCornerShape(16.dp), color = StudyPalette.inset) {
                     Row(Modifier.fillMaxWidth().padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(40.dp).pointerInput(Unit) {
+                        Box(Modifier.size(40.dp).pointerInput(reduced) {
                             var delta = Offset.Zero
                             detectDragGestures(onDragStart = { delta = Offset.Zero }, onDrag = { change, amount -> change.consume(); delta += amount }, onDragEnd = {
-                                if (delta.y < -40) scope.launch { flightOrigin = Offset(54.dp.toPx(), heightPx - 110.dp.toPx()) + delta; flight.snapTo(0f); flight.animateTo(1f, tween(520)) }
+                                if (delta.y < -40 && !reduced) scope.launch { flightOrigin = Offset(54.dp.toPx(), heightPx - 110.dp.toPx()) + delta; flight.snapTo(0f); flight.animateTo(1f, tween(520)) }
                             })
                         }, contentAlignment = Alignment.Center) {
                             if (state.selectedImage != null) LocalImage(state.selectedImage, Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)))
-                            else Icon(Icons.Default.Description, null, tint = StudyPalette.accent)
+                            else AstellaGlyph(AstellaGlyphKind.Document, Modifier.size(20.dp), tint = StudyPalette.accent)
                         }
                         Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
                             Text(state.selectedFile?.name ?: "已添加图片", style = MaterialTheme.typography.bodySmall, maxLines = 1)
                             Text("发送时交给伴星", style = MaterialTheme.typography.labelSmall, color = StudyPalette.muted)
                         }
                         if (state.selectedFile != null) AstellaTextButton(onClick = { viewModel.importPreparedFile() }, enabled = !state.isSending) { Text("存为手记", style = MaterialTheme.typography.labelMedium) }
-                        AstellaIconButton(onClick = viewModel::clearAttachment) { Icon(Icons.Default.Cancel, "移除附件", tint = StudyPalette.muted) }
+                        AstellaIconButton(onClick = viewModel::clearAttachment) { AstellaGlyph(AstellaGlyphKind.Close, Modifier.size(18.dp), tint = StudyPalette.muted) }
                     }
                 }
                 state.pendingNoteContext?.let { note ->
                     Surface(shape = RoundedCornerShape(14.dp), color = StudyPalette.sky) {
                         Row(Modifier.fillMaxWidth().padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Book, null, Modifier.size(16.dp), tint = StudyPalette.accent)
+                            AstellaGlyph(AstellaGlyphKind.Book, Modifier.size(16.dp), tint = StudyPalette.accent)
                             Text(note.title, Modifier.weight(1f).padding(8.dp), style = MaterialTheme.typography.labelMedium, maxLines = 1)
-                            AstellaIconButton(onClick = viewModel::clearPendingNoteContext) { Icon(Icons.Default.Cancel, "移除引用", tint = StudyPalette.muted) }
+                            AstellaIconButton(onClick = viewModel::clearPendingNoteContext) { AstellaGlyph(AstellaGlyphKind.Close, Modifier.size(16.dp), tint = StudyPalette.muted) }
                         }
                     }
                 }
-                Surface(modifier = Modifier.astellaGlass(22.dp,interactive = true),color = Color.Transparent) {
-                    Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.Bottom) {
-                        val rotation by animateFloatAsState(if (menuOpen) 45f else 0f, MotionTokens.segment(), label = "plus-menu")
-                        AstellaTap({ focus.clearFocus(); menuOpen = !menuOpen },Modifier.size(40.dp).background(StudyPalette.accent,RoundedCornerShape(14.dp))) { Icon(Icons.Default.Add,"添加图片或文件",Modifier.align(Alignment.Center).rotate(rotation).size(20.dp),tint = StudyPalette.paper) }
-                        BasicTextField(state.draft, viewModel::draftChanged, Modifier.weight(1f).padding(horizontal = 6.dp, vertical = 13.dp),
-                            textStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp,color = StudyPalette.ink), maxLines = 5,
-                            cursorBrush = SolidColor(StudyPalette.accent), decorationBox = { inner ->
-                                if (state.draft.isEmpty()) Text("和伴星说说…", color = StudyPalette.muted,fontSize = 14.sp)
+                Row(Modifier.fillMaxWidth().padding(horizontal = 7.dp, vertical = 6.dp), verticalAlignment = Alignment.Bottom) {
+                        val rotation by animateFloatAsState(
+                            targetValue = if (menuOpen) 45f else 0f,
+                            animationSpec = if (reduced) snap() else MotionTokens.segment(),
+                            label = "plus-menu",
+                        )
+                        AstellaTap(
+                            { focus.clearFocus(); menuOpen = !menuOpen },
+                            Modifier.size(44.dp),
+                        ) { AstellaGlyph(AstellaGlyphKind.Add, Modifier.align(Alignment.Center).rotate(rotation).size(21.dp), tint = Color(0xFF7B91AE)) }
+                        BasicTextField(
+                            state.draft, viewModel::draftChanged,
+                            Modifier.weight(1f).padding(horizontal = 2.dp, vertical = 14.dp).onFocusChanged { composerFocused = it.isFocused },
+                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 16.sp, lineHeight = 23.sp, color = StudyPalette.ink), maxLines = 5,
+                            cursorBrush = SolidColor(StudyPalette.accent),
+                            decorationBox = { inner ->
+                                if (state.draft.isEmpty()) Text("说给伴星听…", color = Color(0xFF9AA8BB), fontSize = 16.sp)
                                 inner()
-                            })
-                        AstellaIconButton(onClick = {
-                            focus.clearFocus()
-                            if (state.isRecording) viewModel.stopAndTranscribe()
-                            else if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) viewModel.startRecording()
-                            else permission.launch(Manifest.permission.RECORD_AUDIO)
-                        }, enabled = !state.isTranscribing && !state.isSending) {
-                            Icon(if (state.isRecording) Icons.Default.Stop else Icons.Default.Mic, if (state.isRecording) "完成录音" else "语音输入", tint = if (state.isRecording) StudyPalette.danger else StudyPalette.accent)
-                        }
+                            },
+                        )
                         val canSend = state.conversationId != null && !state.isSending && !state.isRecording && !state.isTranscribing && (state.draft.isNotBlank() || state.selectedImage != null || state.selectedFile != null)
-                        AstellaIconButton(onClick = { viewModel.submit(state.draft) }, enabled = canSend, modifier = Modifier.padding(3.dp).size(40.dp).background(if (canSend) StudyPalette.accent else StudyPalette.inset, RoundedCornerShape(13.dp))) {
-                            Icon(if (state.isSending) Icons.Default.MoreHoriz else Icons.Default.ArrowUpward, "发送", tint = if (canSend) Color.White else StudyPalette.muted)
+                        val voiceAction = state.draft.isBlank() && state.selectedImage == null && state.selectedFile == null
+                        AstellaTap(
+                            onClick = {
+                                focus.clearFocus()
+                                when {
+                                    state.isRecording -> viewModel.stopAndTranscribe()
+                                    voiceAction -> if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) viewModel.startRecording() else permission.launch(Manifest.permission.RECORD_AUDIO)
+                                    else -> viewModel.submit(state.draft)
+                                }
+                            },
+                            modifier = Modifier.size(44.dp).background(
+                                if (!voiceAction && canSend) StudyPalette.accent
+                                else if (state.isRecording) StudyPalette.danger.copy(alpha = .14f)
+                                else Color.White.copy(alpha = .55f),
+                                RoundedCornerShape(18.dp),
+                            ),
+                            enabled = if (voiceAction) !state.isTranscribing && !state.isSending else canSend,
+                        ) {
+                            val glyph = when {
+                                state.isRecording -> AstellaGlyphKind.Stop
+                                voiceAction -> AstellaGlyphKind.Mic
+                                state.isSending -> AstellaGlyphKind.More
+                                else -> AstellaGlyphKind.Send
+                            }
+                            AstellaGlyph(
+                                glyph,
+                                Modifier.align(Alignment.Center).size(21.dp),
+                                tint = when {
+                                    state.isRecording -> StudyPalette.danger
+                                    !voiceAction && canSend -> Color.White
+                                    else -> Color(0xFF7B91AE)
+                                },
+                            )
                         }
                     }
-                }
+                if (!composerFocused) MainNavigationDock(
+                    selectedTab = selectedTab,
+                    onSelect = onSelectTab,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 1.dp),
+                )
             }
         }
         if (menuOpen) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .08f)).clickable { menuOpen = false })
@@ -159,7 +223,7 @@ fun ConversationScreen(state: AppUiState, viewModel: AppViewModel, onAccount: ()
             exit = if (reduced) fadeOut(tween(120)) else fadeOut(spring()) + scaleOut(MotionTokens.press(), targetScale = .94f, transformOrigin = TransformOrigin(0f, 1f))) {
             Surface(modifier = Modifier.astellaGlass(24.dp,haze = menuHaze,interactive = true),color = Color.Transparent) {
                 Column(Modifier.padding(8.dp)) {
-                    listOf("加图片" to Icons.Default.Photo, "加文件" to Icons.Default.NoteAdd, "引用手记" to Icons.Default.Book).forEachIndexed { index, (label, icon) ->
+            listOf("加图片" to AstellaGlyphKind.Companion, "加文件" to AstellaGlyphKind.Document, "引用手记" to AstellaGlyphKind.Book).forEachIndexed { index, (label, icon) ->
                         AstellaTextButton(onClick = {
                             menuOpen = false
                             when (index) {
@@ -168,7 +232,7 @@ fun ConversationScreen(state: AppUiState, viewModel: AppViewModel, onAccount: ()
                                 else -> showNotes = true
                             }
                         }, modifier = Modifier.widthIn(min = 190.dp).heightIn(min = 48.dp)) {
-                            Icon(icon, null, Modifier.size(22.dp)); Spacer(Modifier.width(16.dp)); Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+                            AstellaGlyph(icon, Modifier.size(22.dp), tint = StudyPalette.accent); Spacer(Modifier.width(16.dp)); Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
                         }
                     }
                 }
@@ -181,7 +245,7 @@ fun ConversationScreen(state: AppUiState, viewModel: AppViewModel, onAccount: ()
             val control = Offset(target.x + with(density) { 90.dp.toPx() }, from.y - with(density) { 180.dp.toPx() })
             val position = from * (u * u) + control * (2 * u * t) + target * (t * t)
             Surface(Modifier.graphicsLayer { translationX = position.x - 28.dp.toPx(); translationY = position.y - 28.dp.toPx(); scaleX = 1 - t * .86f; scaleY = scaleX; rotationZ = -24 * t; alpha = min(1f, (1 - t) * 6) }.size(56.dp), shape = RoundedCornerShape(18.dp), color = StudyPalette.paper, shadowElevation = 8.dp) {
-                Box(contentAlignment = Alignment.Center) { Icon(if (state.selectedFile == null) Icons.Default.Photo else Icons.Default.Description, null, tint = StudyPalette.accent) }
+                Box(contentAlignment = Alignment.Center) { AstellaGlyph(if (state.selectedFile == null) AstellaGlyphKind.Companion else AstellaGlyphKind.Document, Modifier.size(20.dp), tint = StudyPalette.accent) }
             }
         }
     }
@@ -190,7 +254,7 @@ fun ConversationScreen(state: AppUiState, viewModel: AppViewModel, onAccount: ()
         LaunchedEffect(Unit) { viewModel.loadNotes("") }
         LazyColumn(Modifier.fillMaxWidth().heightIn(max = 500.dp)) {
             items(state.notes, key = { it.id }) { note ->
-                ListItem(headlineContent = { Text(note.title) }, leadingContent = { Icon(Icons.Default.Book, null, tint = StudyPalette.accent) },
+                ListItem(headlineContent = { Text(note.title) }, leadingContent = { AstellaGlyph(AstellaGlyphKind.Book, Modifier.size(20.dp), tint = StudyPalette.accent) },
                     modifier = Modifier.clickable { viewModel.referenceNote(note.id); showNotes = false })
             }
         }
@@ -198,40 +262,112 @@ fun ConversationScreen(state: AppUiState, viewModel: AppViewModel, onAccount: ()
 }
 
 @Composable
-private fun CompanionMeeting(state: AppUiState, viewModel: AppViewModel, reduced: Boolean) {
+private fun CompanionMeeting(state: AppUiState, viewModel: AppViewModel, reduced: Boolean, onOpenNote: (String) -> Unit) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val height = maxHeight
         val latest = state.messages.lastOrNull { it.role == "assistant" }
         val hasReply = latest != null || state.streamingText.isNotEmpty()
-        val stageHeight = if (hasReply) 190.dp else minOf(340.dp,maxOf(250.dp,height*.61f))
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 28.dp).padding(bottom = 18.dp)) {
-            if (!hasReply) Column(Modifier.padding(top = 18.dp),verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                Text(if (state.isRecording || state.isPlaying) "此刻，听见彼此。" else "我在，慢慢说。",fontSize = 29.sp,fontWeight = FontWeight.SemiBold,color = StudyPalette.ink)
-                Text("一点好奇，一个想法，都可以。",fontSize = 13.sp,color = StudyPalette.muted)
+        val stageHeight = if (hasReply) 230.dp else minOf(300.dp,maxOf(240.dp,height*.46f))
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 18.dp)) {
+            if (!hasReply) Column(
+                Modifier.fillMaxWidth().padding(top = 12.dp)
+                    .astellaGlass(24.dp)
+                    .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomEnd = 24.dp, bottomStart = 7.dp))
+                    .padding(horizontal = 18.dp, vertical = 15.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    if (state.isRecording || state.isPlaying) "此刻，听见彼此。" else "阿星轻轻说",
+                    fontSize = 10.sp, letterSpacing = 0.7.sp, fontWeight = FontWeight.Medium, color = StudyPalette.muted,
+                )
+                Text(
+                    "我在这里。刚读到的、想到的，都可以慢慢说给我听。",
+                    fontSize = 14.sp, lineHeight = 25.sp, color = StudyPalette.ink,
+                )
+            }
+            if (hasReply) {
+                Column(
+                    Modifier.fillMaxWidth().padding(top = 8.dp)
+                        .astellaGlass(24.dp)
+                        .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomEnd = 24.dp, bottomStart = 7.dp))
+                        .padding(horizontal = 18.dp, vertical = 15.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        if (state.streamingText.isEmpty()) "阿星轻轻说" else "正在回应",
+                        fontSize = 10.sp, letterSpacing = 0.7.sp, color = StudyPalette.muted, fontWeight = FontWeight.Medium,
+                    )
+                    if (state.streamingText.isNotEmpty()) {
+                        Text(state.streamingText, fontSize = 14.sp, lineHeight = 25.sp, color = StudyPalette.ink)
+                    } else if (latest != null) {
+                        Text(
+                            latest.displayText,
+                            fontSize = 14.sp,
+                            lineHeight = 25.sp,
+                            color = StudyPalette.ink,
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        AstellaTextButton(
+                            onClick = { viewModel.setChatShowsRecords(true) },
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 0.dp),
+                        ) { Text("在记录里继续看", fontSize = 11.sp) }
+                    }
+                }
             }
             BoxWithConstraints(Modifier.fillMaxWidth().height(stageHeight),contentAlignment = Alignment.Center) {
                 val accent = StudyPalette.accent; val ice = StudyPalette.pollen
                 Canvas(Modifier.fillMaxSize()) {
-                    drawCircle(Brush.radialGradient(listOf(accent.copy(alpha = if (state.isRecording || state.isPlaying) .18f else .09f),ice.copy(alpha = .16f),Color.Transparent),center = center,radius = size.width*.47f),radius = size.width*.49f,center = center)
-                    rotate(-17f,pivot = Offset(size.width*.5f,size.height*.64f)) {
-                        drawOval(accent.copy(alpha = .12f),topLeft = Offset(size.width*.04f,size.height*.45f),size = androidx.compose.ui.geometry.Size(size.width*.92f,size.height*.38f),style = androidx.compose.ui.graphics.drawscope.Stroke(.6.dp.toPx()))
-                    }
+                    drawCircle(
+                        Brush.radialGradient(
+                            listOf(accent.copy(alpha = if (state.isRecording || state.isPlaying) .12f else .055f), ice.copy(alpha = .10f), Color.Transparent),
+                            center = center,
+                            radius = size.width * .32f,
+                        ),
+                        radius = size.width * .34f,
+                        center = center,
+                    )
                 }
-                CompanionParticles(state.audioLevel,state.isRecording || state.isPlaying,reduced,Modifier.fillMaxSize())
-                CompanionStage(state,reduced,Modifier.fillMaxSize().padding(horizontal = 24.dp,vertical = 7.dp))
+                CompanionStage(state,reduced,Modifier.fillMaxSize().padding(horizontal = 12.dp,vertical = 5.dp))
             }
-            if (hasReply) {
-                Column(Modifier.fillMaxWidth().astellaGlass(25.dp).padding(20.dp),verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        AstellaStar(Modifier.size(10.dp,14.dp)); Text(if (state.streamingText.isEmpty()) "给你的回应" else "正在回应",Modifier.padding(start = 8.dp),fontSize = 11.sp,color = StudyPalette.accent)
+            if (!hasReply) {
+                Spacer(Modifier.height((height * .16f).coerceIn(40.dp, 110.dp)))
+                val recentNoteId = viewModel.recentNoteId()
+                (state.notes.firstOrNull { it.id == recentNoteId } ?: state.notes.firstOrNull())?.let { note ->
+                    val hasReadingHistory = note.id == recentNoteId
+                    AstellaTap(
+                        { onOpenNote(note.id) },
+                        Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp),
+                    ) {
+                        Row(Modifier.fillMaxWidth().heightIn(min = 72.dp), verticalAlignment = Alignment.CenterVertically) {
+                            NoteCover(
+                                note.title,
+                                Modifier.padding(start = 3.dp).size(46.dp, 64.dp),
+                                note.id,
+                                rotate = -8f,
+                                textSize = 15.sp,
+                            )
+                            Column(Modifier.weight(1f).padding(start = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(
+                                    if (hasReadingHistory) "继续一起读" else "最近留下的手记",
+                                    fontSize = 9.sp, letterSpacing = 1.sp, color = StudyPalette.muted,
+                                )
+                                Text(
+                                    note.title.substringBefore('·').trim(),
+                                    fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.Medium,
+                                    color = StudyPalette.ink, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        if (hasReadingHistory) "上次停下的那一页" else "最近更新 · 随时回来读",
+                                        fontSize = 11.sp, color = StudyPalette.muted,
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Box(Modifier.width(28.dp).height(1.dp).background(Color(0xFFA8BDEA)))
+                                }
+                            }
+                        }
                     }
-                    if (state.streamingText.isNotEmpty()) Text(state.streamingText,fontSize = 16.sp,lineHeight = 26.sp,color = StudyPalette.ink)
-                    else if (latest != null) MobileMessageRow(latest,viewModel)
-                }
-            } else {
-                Row(Modifier.padding(top = 8.dp),horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    CompanionPrompt(Icons.Default.Notes,"读懂一段",Modifier.weight(1f)) { viewModel.draftChanged("帮我一起读懂今天在学的内容") }
-                    CompanionPrompt(Icons.Default.AutoAwesome,"展开想法",Modifier.weight(1f)) { viewModel.draftChanged("我有些思路想和你一起整理") }
                 }
             }
             if (state.runs.isNotEmpty()) Row(Modifier.fillMaxWidth().padding(top = 14.dp),verticalAlignment = Alignment.CenterVertically) {
@@ -244,21 +380,16 @@ private fun CompanionMeeting(state: AppUiState, viewModel: AppViewModel, reduced
 }
 
 @Composable
-private fun CompanionPrompt(icon: androidx.compose.ui.graphics.vector.ImageVector,title: String,modifier: Modifier,onClick: () -> Unit) {
-    AstellaTap(onClick,modifier.astellaGlass(18.dp)) {
-        Row(Modifier.fillMaxWidth().heightIn(min = 51.dp).padding(horizontal = 15.dp),verticalAlignment = Alignment.CenterVertically,horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Icon(icon,null,Modifier.size(15.dp),tint = StudyPalette.accent)
-            Text(title,Modifier.weight(1f),fontSize = 13.sp,fontWeight = FontWeight.Medium,color = StudyPalette.ink)
-            Icon(Icons.Default.NorthEast,null,Modifier.size(10.dp),tint = StudyPalette.muted)
-        }
-    }
-}
-
-@Composable
 private fun CompanionStage(state: AppUiState, reduced: Boolean, modifier: Modifier) {
+    val landing = LocalLaunchLanding.current
+    val stageModifier = modifier.onGloballyPositioned { landing.onBounds(it.boundsInWindow()) }
+        .graphicsLayer { alpha = if (landing.hideCompanion) 0f else 1f }
     val pulse = remember { Animatable(1f) }
     LaunchedEffect(state.attachmentRevision) {
         if (state.attachmentRevision.isNotEmpty() && !reduced) { pulse.animateTo(.97f, spring()); pulse.animateTo(1.03f, spring(dampingRatio = .8f)); pulse.animateTo(1f, spring()) }
+    }
+    LaunchedEffect(reduced) {
+        if (reduced) pulse.snapTo(1f)
     }
     var failed by remember(state.companionModel) { mutableStateOf(false) }
     val model = state.companionModel
@@ -280,7 +411,7 @@ private fun CompanionStage(state: AppUiState, reduced: Boolean, modifier: Modifi
     if (model != null && !failed) {
         androidx.compose.ui.viewinterop.AndroidView(
             factory = { context -> com.astella.mobile.companion.CompanionSurface(context, model) { failed = true }.also { surface = it } },
-            modifier = modifier.clickable { surface?.event = 4; surface?.requestRender() },
+            modifier = stageModifier.clickable { surface?.event = 4; surface?.requestRender() },
             update = { view ->
                 view.mouth = if (state.isPlaying) state.audioLevel else 0f
                 view.reduced = reduced
@@ -288,7 +419,7 @@ private fun CompanionStage(state: AppUiState, reduced: Boolean, modifier: Modifi
             },
             onRelease = { it.dispose(); it.onPause() },
         )
-    } else Image(painterResource(R.drawable.companion), "伴星在这里", modifier.graphicsLayer { scaleX = pulse.value; scaleY = pulse.value }, contentScale = androidx.compose.ui.layout.ContentScale.Fit)
+    } else Image(painterResource(R.drawable.companion_stage), "伴星在这里", stageModifier.graphicsLayer { scaleX = pulse.value; scaleY = pulse.value }, contentScale = androidx.compose.ui.layout.ContentScale.Fit)
 }
 
 @Composable
@@ -375,7 +506,7 @@ fun MobileMessageRow(message: CompanionMessage, viewModel: AppViewModel) {
                     }
                 }
                 if (!user && message.displayText.isNotBlank()) AstellaTextButton(onClick = { viewModel.playVoice(message.displayText) }) {
-                    Icon(Icons.Default.VolumeUp, null, Modifier.size(16.dp)); Spacer(Modifier.width(6.dp)); Text("朗读", style = MaterialTheme.typography.labelMedium)
+                    AstellaGlyph(AstellaGlyphKind.Wave, Modifier.size(16.dp), tint = StudyPalette.accent); Spacer(Modifier.width(6.dp)); Text("朗读", style = MaterialTheme.typography.labelMedium)
                 }
             }
         }

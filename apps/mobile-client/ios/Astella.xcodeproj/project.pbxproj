@@ -40,6 +40,8 @@
 		A10000000000000000000007 /* VoiceCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000007 /* VoiceCapture.swift */; };
 		A10000000000000000000009 /* NotesScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000009 /* NotesScreen.swift */; };
 		A10000000000000000000010 /* HandAndAccountScreens.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000010 /* HandAndAccountScreens.swift */; };
+		F10000000000000000000001 /* OrbitDetailScreens.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000001 /* OrbitDetailScreens.swift */; };
+		F10000000000000000000002 /* SettingsDetailScreens.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000002 /* SettingsDetailScreens.swift */; };
 		A10000000000000000000011 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000011 /* Assets.xcassets */; };
 		A10000000000000000000037 /* CubismCdiJson.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000039 /* CubismCdiJson.cpp */; };
 		A10000000000000000000038 /* CubismDefaultParameterId.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000041 /* CubismDefaultParameterId.cpp */; };
@@ -105,6 +107,9 @@
 		A10000000000000000000098 /* LAppTextureManager.mm in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000179 /* LAppTextureManager.mm */; };
 		A10000000000000000000099 /* Live2DRenderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000180 /* Live2DRenderView.swift */; };
 		D11000000000000000000001 /* CompanionInteractions.swift in Sources */ = {isa = PBXBuildFile; fileRef = D12000000000000000000001 /* CompanionInteractions.swift */; };
+		E10000000000000000000001 /* LaunchMotionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000001 /* LaunchMotionView.swift */; };
+		E10000000000000000000002 /* LaunchMotionWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000002 /* LaunchMotionWebView.swift */; };
+		E10000000000000000000003 /* LaunchMotion in Resources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000003 /* LaunchMotion */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -141,6 +146,8 @@
 		A20000000000000000000038 /* CompanionModelMethods.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionModelMethods.swift; sourceTree = "<group>"; };
 		A20000000000000000000009 /* NotesScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesScreen.swift; sourceTree = "<group>"; };
 		A20000000000000000000010 /* HandAndAccountScreens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandAndAccountScreens.swift; sourceTree = "<group>"; };
+		F20000000000000000000001 /* OrbitDetailScreens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbitDetailScreens.swift; sourceTree = "<group>"; };
+		F20000000000000000000002 /* SettingsDetailScreens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsDetailScreens.swift; sourceTree = "<group>"; };
 		A20000000000000000000011 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A20000000000000000000012 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A20000000000000000000013 /* Astella.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Astella.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -288,6 +295,9 @@
 		A20000000000000000000180 /* Live2DRenderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Live2DRenderView.swift; sourceTree = "<group>"; };
 		A20000000000000000000181 /* Astella-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = Astella-Bridging-Header.h; sourceTree = "<group>"; };
 		D12000000000000000000001 /* CompanionInteractions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionInteractions.swift; sourceTree = "<group>"; };
+		E20000000000000000000001 /* LaunchMotionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchMotionView.swift; sourceTree = "<group>"; };
+		E20000000000000000000002 /* LaunchMotionWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchMotionWebView.swift; sourceTree = "<group>"; };
+		E20000000000000000000003 /* LaunchMotion */ = {isa = PBXFileReference; lastKnownFileType = folder; path = LaunchMotion; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -343,6 +353,8 @@
 			children = (
 				A20000000000000000000009 /* NotesScreen.swift */,
 				A20000000000000000000010 /* HandAndAccountScreens.swift */,
+				F20000000000000000000001 /* OrbitDetailScreens.swift */,
+				F20000000000000000000002 /* SettingsDetailScreens.swift */,
 			);
 			path = Screens;
 			sourceTree = "<group>";
@@ -360,6 +372,8 @@
 			isa = PBXGroup;
 			children = (
 				A20000000000000000000022 /* MainTabShell.swift */,
+				E20000000000000000000002 /* LaunchMotionWebView.swift */,
+				E20000000000000000000001 /* LaunchMotionView.swift */,
 				A20000000000000000000023 /* SessionRecoveryScreen.swift */,
 			);
 			path = Shell;
@@ -413,6 +427,7 @@
 				A30000000000000000000005 /* Design */,
 				A30000000000000000000002 /* Screens */,
 				A20000000000000000000011 /* Assets.xcassets */,
+				E20000000000000000000003 /* LaunchMotion */,
 				A20000000000000000000012 /* Info.plist */,
 			);
 			path = Astella;
@@ -652,6 +667,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10000000000000000000011 /* Assets.xcassets in Resources */,
+				E10000000000000000000003 /* LaunchMotion in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -697,6 +713,8 @@
 				A10000000000000000000018 /* AuthScreen.swift in Sources */,
 				A10000000000000000000019 /* AuthComponents.swift in Sources */,
 				A10000000000000000000020 /* MainTabShell.swift in Sources */,
+				E10000000000000000000002 /* LaunchMotionWebView.swift in Sources */,
+				E10000000000000000000001 /* LaunchMotionView.swift in Sources */,
 				A10000000000000000000021 /* SessionRecoveryScreen.swift in Sources */,
 				A10000000000000000000022 /* ConversationScreen.swift in Sources */,
 				A10000000000000000000023 /* CompanionScene.swift in Sources */,
@@ -715,6 +733,8 @@
 				A10000000000000000000036 /* CompanionModelMethods.swift in Sources */,
 				A10000000000000000000009 /* NotesScreen.swift in Sources */,
 				A10000000000000000000010 /* HandAndAccountScreens.swift in Sources */,
+				F10000000000000000000001 /* OrbitDetailScreens.swift in Sources */,
+				F10000000000000000000002 /* SettingsDetailScreens.swift in Sources */,
 				A10000000000000000000037 /* CubismCdiJson.cpp in Sources */,
 				A10000000000000000000038 /* CubismDefaultParameterId.cpp in Sources */,
 				A10000000000000000000039 /* CubismFramework.cpp in Sources */,

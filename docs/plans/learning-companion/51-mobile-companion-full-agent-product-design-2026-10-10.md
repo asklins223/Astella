@@ -1,5 +1,7 @@
 # 51 · 拾星笔记 App：随身伴星与便携书房
 
+> **2026-10-18 原生双端实施状态：**当前 iOS SwiftUI 与 Android Kotlin/Compose 工程已经接入共享会话与手记链路、设备本机文件抽取、TTS 播放、Live2D 运行时下载／缓存／原生渲染、选段提案与确认写回、原生前台观察。此状态更正 §12–15 中早于原生重构的移动端缺口；不能仅凭源码宣称真实体验已验收。构建和模拟器／窗口证据以 [手机端 README](../../../apps/mobile-client/README.md) 和[多轮审查记录](../../../apps/mobile-client/MOBILE_AUDIT.md) 为准。多设备同轮流式接续、局部撤回、区域引用和小程序仍属方案明确延后的第二批范围。
+
 > **2026-10-15 最新实施裁决**：视觉采用简约、冰蓝与玻璃，独立重构页面与控件外观；iOS 登录注册保留优化，其他页面与 Android 同步重构。下文历史段落中的系统默认外观、强制 AI 同意才能进入、文件原件不上传、运行时下载规避分发授权，以及“尚无原生客户端／TTS／文件接线”不再代表现状。当前设计、数据流和验证事实分别以 [DESIGN_SPEC](../../../apps/mobile-client/DESIGN_SPEC.md)、[README](../../../apps/mobile-client/README.md) 和 [MOBILE_AUDIT](../../../apps/mobile-client/MOBILE_AUDIT.md) 为准。历史动画愿景不等于已经实现或验收。
 
 **2026-10-14 用户决定与原生实现补充（优先于下列历史状态）：**手机端拆为 iOS SwiftUI 与 Android Kotlin/Jetpack Compose 两个独立原生 App，旧 React 客户端不再使用且生产源已移除。双端使用相同业务语义、页面名称和视觉层级；iOS 原生层级与动效作为共同标尺，Android 通过原生控件实现。用户补充配色采用克制中性色与单一系统蓝，并适配浅色／深色外观；不使用装饰性多色渐变或撞色。一级页为“对话／手边／手记”，账户由页头进入。当前代码与未迁移能力见 [`apps/mobile-client/README.md`](../../../apps/mobile-client/README.md)、[设计规范](../../../apps/mobile-client/DESIGN_SPEC.md)。已经接入邮箱登录、共享 inbox/消息、伴星 WebSocket、图片上传、MiMo 整段转写、手记搜索与只读详情、活动 run。工程构建和设备视觉检查状态见 README；真机动效与权限仍待验收。本文中“React 浏览器客户端”“尚无原生客户端”等陈述仅代表相应日期基线。

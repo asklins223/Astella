@@ -29,17 +29,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Key
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material.icons.filled.WarningAmber
-import androidx.compose.material.icons.outlined.Email
-import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -256,24 +246,11 @@ private fun AuthenticationScreen(state: AppUiState, viewModel: AppViewModel) {
                 Modifier.align(Alignment.TopCenter).widthIn(max = 480.dp).fillMaxSize()
                     .padding(horizontal = 24.dp).padding(top = if (compact) 8.dp else 12.dp, bottom = 16.dp),
             ) {
-                val brandOffset by animateDpAsState(
-                    if (route == MobileAuthRoute.Login) 0.dp else 56.dp,
-                    if (reduceMotion) snap() else MotionTokens.authRoute(), label = "auth-brand-position",
-                )
-                val brandScale by animateFloatAsState(
-                    if (route == MobileAuthRoute.Login) 1f else .94f,
-                    if (reduceMotion) snap() else MotionTokens.authRoute(), label = "auth-brand-scale",
-                )
-                Box(Modifier.fillMaxWidth().height(44.dp), contentAlignment = Alignment.CenterStart) {
-                    AuthBrandHeader(compact, Modifier.graphicsLayer {
-                        translationX = brandOffset.toPx()
-                        scaleX = brandScale; scaleY = brandScale
-                        transformOrigin = TransformOrigin(0f, .5f)
-                    })
-                    androidx.compose.animation.AnimatedVisibility(visible = route != MobileAuthRoute.Login,
-                        enter = fadeIn(MotionTokens.authFade()), exit = fadeOut(MotionTokens.authFade())) {
+                Box(Modifier.fillMaxWidth().height(if (route == MobileAuthRoute.Login) 0.dp else 44.dp), contentAlignment = Alignment.CenterStart) {
+                    if (route != MobileAuthRoute.Login) {
+                        AuthBrandHeader(compact)
                         AstellaTap({ goBack() }, Modifier.size(44.dp).astellaGlass(22.dp, interactive = true), enabled = !state.isLoading) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回上一步", Modifier.align(Alignment.Center).size(18.dp), tint = StudyPalette.ink)
+                            AstellaGlyph(AstellaGlyphKind.Back, Modifier.align(Alignment.Center).size(18.dp), tint = StudyPalette.ink)
                         }
                     }
                 }
@@ -285,15 +262,17 @@ private fun AuthenticationScreen(state: AppUiState, viewModel: AppViewModel) {
                         MobileAuthRoute.Forgot, MobileAuthRoute.EmailLogin -> listOf(MobileAuthInput.Email)
                         else -> emptyList()
                     }
-                    val headingGap by animateDpAsState(
-                        if (compact) 18.dp else if (route == MobileAuthRoute.Login) 52.dp else 34.dp,
-                        if (reduceMotion) snap() else MotionTokens.authRoute(), label = "auth-heading-position",
-                    )
+                    val headingGap = if (compact) 14.dp else if (route == MobileAuthRoute.Login) 22.dp else 28.dp
                     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).heightIn(min = maxHeight),
                         verticalArrangement = Arrangement.SpaceBetween) {
                         Column {
-                            Spacer(Modifier.height(headingGap))
-                            AuthHeading(title(route), detail(route), compact, navigatingBack, reduceMotion)
+                            if (route == MobileAuthRoute.Login) {
+                                AuthLoginBrandHero(compact)
+                                Spacer(Modifier.height(headingGap))
+                            } else {
+                                Spacer(Modifier.height(headingGap))
+                                AuthHeading(title(route), detail(route), compact, navigatingBack, reduceMotion)
+                            }
                             androidx.compose.animation.AnimatedVisibility(visible = progress(route) != null,
                                 enter = fadeIn(MotionTokens.authFade()) + expandVertically(if (reduceMotion) snap() else MotionTokens.authRoute()),
                                 exit = fadeOut(MotionTokens.authFade()) + shrinkVertically(if (reduceMotion) snap() else MotionTokens.authRoute())) {
@@ -396,11 +375,13 @@ private fun AuthenticationScreen(state: AppUiState, viewModel: AppViewModel) {
                                 }
                                 // One submit control follows the changing form height instead of entering with each page.
                                 AuthPrimaryButton(actionTitle(route), state.isLoading, canContinue(route) && !state.isLoading) { submit(route) }
-                                androidx.compose.animation.AnimatedVisibility(visible = route == MobileAuthRoute.Login,
-                                    enter = fadeIn(MotionTokens.authFade()) + expandVertically(if (reduceMotion) snap() else MotionTokens.authRoute()),
-                                    exit = fadeOut(MotionTokens.authFade()) + shrinkVertically(if (reduceMotion) snap() else MotionTokens.authRoute())) {
-                                    AstellaTextButton(onClick = { navigate(MobileAuthRoute.EmailLogin) }, modifier = Modifier.fillMaxWidth(), enabled = !state.isLoading) {
-                                        Text("邮箱验证码登录", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                                if (route == MobileAuthRoute.Login) {
+                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                                        AstellaTextButton(onClick = { navigate(MobileAuthRoute.EmailLogin) }, enabled = !state.isLoading,
+                                            contentPadding = PaddingValues(horizontal = 4.dp)) { Text("邮箱验证码登录", fontSize = 13.sp) }
+                                        Text("·", color = StudyPalette.muted, fontSize = 13.sp)
+                                        AstellaTextButton(onClick = { navigate(MobileAuthRoute.Register) }, enabled = !state.isLoading,
+                                            contentPadding = PaddingValues(horizontal = 4.dp)) { Text("注册新账号", fontSize = 13.sp) }
                                     }
                                 }
                             }
@@ -409,10 +390,12 @@ private fun AuthenticationScreen(state: AppUiState, viewModel: AppViewModel) {
                                 Row(Modifier.fillMaxWidth().heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
                                     when (page) {
                                         MobileAuthRoute.Login, MobileAuthRoute.Register -> {
-                                            Text(if (page == MobileAuthRoute.Login) "还没有账号？" else "已有账号？", color = StudyPalette.muted, fontSize = 13.sp)
-                                            AstellaTextButton(onClick = { navigate(if (page == MobileAuthRoute.Login) MobileAuthRoute.Register else MobileAuthRoute.Login) }, enabled = !state.isLoading,
-                                                contentPadding = PaddingValues(horizontal = 5.dp)) {
-                                                Text(if (page == MobileAuthRoute.Login) "创建账号" else "返回登录", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                            if (page == MobileAuthRoute.Register) {
+                                                Text("已有账号？", color = StudyPalette.muted, fontSize = 13.sp)
+                                                AstellaTextButton(onClick = { navigate(MobileAuthRoute.Login) }, enabled = !state.isLoading,
+                                                    contentPadding = PaddingValues(horizontal = 5.dp)) {
+                                                    Text("返回登录", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                                }
                                             }
                                         }
                                         MobileAuthRoute.RegisterCode -> Text("完成验证后，将自动登录。", color = StudyPalette.muted, fontSize = 13.sp)
@@ -432,8 +415,12 @@ private fun AuthenticationScreen(state: AppUiState, viewModel: AppViewModel) {
                                 }
                             }
                         }
-                        if (!compact) Text("你的手记与对话，会在各端同步", color = StudyPalette.muted, fontSize = 12.sp,
-                            modifier = Modifier.fillMaxWidth().padding(top = 44.dp), textAlign = TextAlign.Center)
+                        if (route == MobileAuthRoute.Login) Text(
+                            "登录即表示同意《服务协议》与《隐私政策》。阅读与手记不需要 AI 授权。",
+                            color = StudyPalette.muted, fontSize = 11.sp, lineHeight = 17.sp,
+                            modifier = Modifier.fillMaxWidth().padding(top = if (compact) 16.dp else 30.dp), textAlign = TextAlign.Center,
+                        ) else if (!compact) Text("你的手记与对话，会在各端同步", color = StudyPalette.muted, fontSize = 12.sp,
+                            modifier = Modifier.fillMaxWidth().padding(top = 30.dp), textAlign = TextAlign.Center)
                     }
                 }
             }
@@ -471,8 +458,7 @@ private fun AuthFieldGroup(
 @Composable
 private fun AuthFieldError(message: String) {
     Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-        Icon(Icons.Filled.WarningAmber, contentDescription = null,
-            modifier = Modifier.padding(top = 1.dp).size(15.dp), tint = StudyPalette.danger)
+        AstellaGlyph(AstellaGlyphKind.Alert, Modifier.padding(top = 1.dp).size(15.dp), tint = StudyPalette.danger)
         Text(message, color = StudyPalette.danger,
             style = androidx.compose.material3.MaterialTheme.typography.bodySmall, lineHeight = 19.sp)
     }
@@ -581,11 +567,11 @@ private fun AuthInputField(
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
     val shape = RoundedCornerShape(26.dp)
-    val icon = when {
-        password -> Icons.Outlined.Lock
-        keyboardType == KeyboardType.Email -> Icons.Outlined.Email
-        label.contains("邀请码") -> Icons.Filled.Key
-        else -> Icons.Outlined.Person
+    val glyph = when {
+        password -> AstellaGlyphKind.Lock
+        keyboardType == KeyboardType.Email -> AstellaGlyphKind.Mail
+        label.contains("邀请码") -> AstellaGlyphKind.Key
+        else -> AstellaGlyphKind.Person
     }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(7.dp)) {
         Text(label, color = StudyPalette.ink.copy(alpha = .82f), fontSize = 14.sp, fontWeight = FontWeight.Medium)
@@ -604,14 +590,14 @@ private fun AuthInputField(
             decorationBox = { inner ->
                 Row(Modifier.heightIn(min = 56.dp).padding(start = 19.dp, end = if (password) 8.dp else 19.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Icon(icon, null, Modifier.size(20.dp), tint = StudyPalette.muted)
+                    AstellaGlyph(glyph, Modifier.size(20.dp), tint = StudyPalette.muted)
                     Box(Modifier.weight(1f).padding(vertical = 14.dp)) {
                         if (value.isEmpty()) Text(placeholder, color = StudyPalette.muted, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         inner()
                     }
                     if (password) AstellaIconButton(onClick = { revealed = !revealed }, enabled = enabled) {
-                        Icon(if (revealed) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
-                            if (revealed) "隐藏密码" else "显示密码", Modifier.size(19.dp), tint = StudyPalette.muted)
+                        AstellaGlyph(if (revealed) AstellaGlyphKind.EyeSlash else AstellaGlyphKind.Eye,
+                            Modifier.size(19.dp), tint = StudyPalette.muted)
                     }
                 }
             },
@@ -627,6 +613,24 @@ private fun AuthBrandHeader(compact: Boolean, modifier: Modifier = Modifier) {
             Text("拾星笔记", color = StudyPalette.ink, fontSize = if (compact) 16.sp else 18.sp, fontWeight = FontWeight.SemiBold)
             Text("ASTELLA", color = StudyPalette.muted, fontSize = 9.sp, letterSpacing = 2.5.sp, fontWeight = FontWeight.Medium)
         }
+    }
+}
+
+@Composable
+private fun AuthLoginBrandHero(compact: Boolean) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(if (compact) 5.dp else 8.dp)) {
+        Image(
+            painterResource(R.drawable.astella_app_icon),
+            contentDescription = null,
+            modifier = Modifier.size(if (compact) 72.dp else 84.dp)
+                .clip(RoundedCornerShape(22.dp))
+                .border(1.dp, Color.White.copy(alpha = .82f), RoundedCornerShape(22.dp)),
+            contentScale = ContentScale.Crop,
+        )
+        Spacer(Modifier.height(if (compact) 3.dp else 8.dp))
+        Text("拾星笔记", color = StudyPalette.ink, fontSize = if (compact) 25.sp else 29.sp,
+            lineHeight = if (compact) 32.sp else 36.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-.8).sp)
+        Text("把读到的、想到的，慢慢拾成星光", color = StudyPalette.muted, fontSize = 13.sp, lineHeight = 21.sp)
     }
 }
 
@@ -656,13 +660,14 @@ private fun AuthHeading(title: String, detail: String, compact: Boolean, backwar
 @Composable
 private fun AuthPrimaryButton(title: String, busy: Boolean, enabled: Boolean, onClick: () -> Unit) {
     val active = enabled || busy
-    AstellaTap(onClick, Modifier.fillMaxWidth().heightIn(min = 56.dp)
-        .astellaGlass(28.dp, interactive = true, tint = if (active) StudyPalette.actionFill.copy(alpha = .82f) else Color.Transparent)
-        .graphicsLayer { alpha = if (active) 1f else .6f }, enabled) {
+    AstellaTap(onClick, Modifier.fillMaxWidth().heightIn(min = 54.dp)
+        .clip(RoundedCornerShape(16.dp))
+        .background(if (active) StudyPalette.accent else StudyPalette.inset)
+        .graphicsLayer { alpha = if (active) 1f else .66f }, enabled) {
         Row(Modifier.align(Alignment.Center).padding(horizontal = 22.dp, vertical = 16.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (busy) CircularProgressIndicator(Modifier.size(17.dp), color = StudyPalette.ink, strokeWidth = 2.dp)
-            Text(title, color = if (active) StudyPalette.ink else StudyPalette.muted, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
+            if (busy) CircularProgressIndicator(Modifier.size(17.dp), color = Color.White, strokeWidth = 2.dp)
+            Text(title, color = if (active) Color.White else StudyPalette.muted, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
         }
     }
 }

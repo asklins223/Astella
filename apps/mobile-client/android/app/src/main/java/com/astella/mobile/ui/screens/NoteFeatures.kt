@@ -22,20 +22,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.AccountCircle
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -48,6 +37,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -75,7 +66,7 @@ fun SessionRecoveryScreen(state: AppUiState, viewModel: AppViewModel) {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Icon(Icons.Filled.Refresh, null, Modifier.size(36.dp), tint = StudyPalette.accent)
+        AstellaGlyph(AstellaGlyphKind.Refresh, Modifier.size(36.dp), tint = StudyPalette.accent)
         Text("正在接回你的书房", Modifier.padding(top = 17.dp), color = StudyPalette.ink,
             fontSize = 25.sp, fontWeight = FontWeight.SemiBold)
         Text(state.error ?: "正在恢复登录状态与学习记录。", Modifier.padding(top = 8.dp),
@@ -111,9 +102,13 @@ fun NoteFeatureScreen(
 @Composable
 private fun FeatureHeader(title: String, onBack: () -> Unit, onAccount: () -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        AstellaIconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回$title", tint = StudyPalette.ink) }
+        AstellaIconButton(onClick = onBack, modifier = Modifier.semantics { contentDescription = "返回$title" }) {
+            AstellaGlyph(AstellaGlyphKind.Back, Modifier.size(20.dp), tint = StudyPalette.ink)
+        }
         Spacer(Modifier.weight(1f))
-        AstellaIconButton(onClick = onAccount) { Icon(Icons.Filled.AccountCircle, "我的账户", tint = StudyPalette.accent) }
+        AstellaIconButton(onClick = onAccount, modifier = Modifier.semantics { contentDescription = "我的账户" }) {
+            AstellaGlyph(AstellaGlyphKind.Person, Modifier.size(19.dp), tint = StudyPalette.accent)
+        }
     }
 }
 
@@ -123,9 +118,8 @@ private fun FeatureFailure(message: String, retry: () -> Unit, onAccount: (() ->
         message.contains("ai_consent_required", ignoreCase = true)
     val policyDisabled = requiresAiDataPolicy(message)
     Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.Top) {
-        Icon(
-            if (consentRequired) Icons.Filled.Lock else Icons.Filled.WifiOff,
-            contentDescription = null,
+        AstellaGlyph(
+            if (consentRequired) AstellaGlyphKind.Lock else AstellaGlyphKind.Alert,
             modifier = Modifier.padding(top = 2.dp).size(19.dp),
             tint = if (consentRequired) StudyPalette.accent else StudyPalette.danger,
         )
@@ -307,7 +301,7 @@ private fun FeatureGenerateButton(label: String, busy: Boolean, enabled: Boolean
         ),
     ) {
         if (busy) CircularProgressIndicator(Modifier.size(17.dp), color = androidx.compose.ui.graphics.Color.White, strokeWidth = 2.dp)
-        else Icon(Icons.Filled.AutoAwesome, null, Modifier.size(17.dp))
+        else AstellaGlyph(AstellaGlyphKind.Companion, Modifier.size(17.dp))
         Text(label, Modifier.padding(start = 8.dp))
     }
 }
@@ -376,7 +370,7 @@ private fun NoteVersionsScreen(noteId: String, state: AppUiState, viewModel: App
                             androidx.compose.foundation.layout.Box(
                                 Modifier.size(38.dp).background(StudyPalette.sky, androidx.compose.foundation.shape.CircleShape),
                                 contentAlignment = Alignment.Center,
-                            ) { Icon(Icons.Filled.CheckCircle, null, Modifier.size(21.dp), tint = StudyPalette.accent) }
+                            ) { AstellaGlyph(AstellaGlyphKind.Check, Modifier.size(21.dp), tint = StudyPalette.accent) }
                             Column(Modifier.weight(1f).padding(start = 12.dp)) {
                                 Text("第 ${version.optInt("versionNo", 1)} 版", color = StudyPalette.ink,
                                     style = androidx.compose.material3.MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
@@ -399,7 +393,7 @@ private fun NoteVersionsScreen(noteId: String, state: AppUiState, viewModel: App
                     androidx.compose.foundation.layout.Box(
                         Modifier.size(32.dp).background(StudyPalette.inset, androidx.compose.foundation.shape.CircleShape),
                         contentAlignment = Alignment.Center,
-                    ) { Icon(Icons.Filled.History, null, Modifier.size(16.dp), tint = StudyPalette.muted) }
+                    ) { AstellaGlyph(AstellaGlyphKind.History, Modifier.size(16.dp), tint = StudyPalette.muted) }
                     Column(Modifier.weight(1f).padding(start = 12.dp)) {
                         Text("第 ${version.optInt("versionNo", 1)} 版", color = StudyPalette.ink, fontWeight = FontWeight.SemiBold)
                         Text(formatFeatureDate(version.optString("createdAt")), Modifier.padding(top = 4.dp), color = StudyPalette.muted, style = androidx.compose.material3.MaterialTheme.typography.bodySmall)
@@ -811,7 +805,7 @@ private fun NoteExplainScreen(noteId: String, state: AppUiState, viewModel: AppV
 private fun FeatureNotice(text: String) {
     NoticeSurface(Modifier.fillMaxWidth(), padding = StudySpacing.md) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.History, null, Modifier.size(16.dp), tint = StudyPalette.muted)
+            AstellaGlyph(AstellaGlyphKind.History, Modifier.size(16.dp), tint = StudyPalette.muted)
             Text(text, Modifier.padding(start = 8.dp), color = StudyPalette.muted, style = androidx.compose.material3.MaterialTheme.typography.bodySmall)
         }
     }

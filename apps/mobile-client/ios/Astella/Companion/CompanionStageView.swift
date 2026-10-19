@@ -18,6 +18,7 @@ struct CompanionStageView: View {
     /// 口型预留：本阶段恒 0。Phase 5 由 TTS 播放进度驱动（Live2D ParamMouthOpenY）。
     @Binding var mouthOpen: Double
     @State private var reaction = CompanionReactionState()
+    @State private var reactionTask: Task<Void, Never>?
     /// 事件 → Live2D 桥的控制通道（引用类型，react 在视图值副本间共享）。
     @State private var stage = Live2DStageController()
 
@@ -47,19 +48,26 @@ struct CompanionStageView: View {
                 )
             } else {
                 // idle / downloading / failed 一视同仁：PNG 降级（不打扰地等待或失败）。
-                Image("Companion").resizable().scaledToFit()
+                Image("CompanionStage").resizable().scaledToFit()
             }
         }
-        .scaleEffect(reaction.scale)
+        .scaleEffect(reaction.scale * reaction.breathing)
         .rotationEffect(.degrees(reaction.tilt))
         .opacity(reaction.opacity)
         .task { stage.apply(event: .idle) }
         .onChange(of: store.companionEventRevision) { _, _ in react(to: store.companionEvent) }
+        .onChange(of: motionDisabled) { _, disabled in
+            if disabled { settleFallbackReaction() }
+        }
+        .onDisappear { reactionTask?.cancel() }
     }
 
     /// 外部事件入口（回合状态、文件吸收、TTS 播放等）。
     /// 可从任意持有本视图值的调用方触发：反应状态由引用类型承载，跨视图副本共享。
     func react(to event: CompanionEvent) {
+        reactionTask?.cancel()
+        reactionTask = nil
+
         // ready（Live2D 实渲染）：事件走 EventMap → 桥（expression / motion /
         // attention 视线）；reduceMotion 的 motion 抑制与静帧在桥内处理。
         // 不做 PNG 微反应（Live2D 路径下 reduceMotion 也只保留静止帧 + 表情置位）。
@@ -71,54 +79,79 @@ struct CompanionStageView: View {
         let entry = CompanionEventMap.binding(for: event)
 
         // PNG 降级微反应：reduceMotion 时全部关掉（直接就位，不留残余动画）。
-        guard !motionDisabled, entry.fallbackPulse else { return }
+        guard !motionDisabled else {
+            settleFallbackReaction()
+            return
+        }
+        withAnimation(Motion.gated(motionDisabled, .easeOut(duration: 0.18))) {
+            reaction.scale = 1
+            reaction.tilt = 0
+            reaction.opacity = 1
+            reaction.breathing = 1
+        }
+        guard entry.fallbackPulse else { return }
 
         switch event {
         case .absorb(success: true):
             // 轻 scale 脉冲 0.97 → 1.03 → 1（Motion token 弹性）。
-            withAnimation(Motion.gated(false, .spring(duration: 0.16, bounce: 0.08))) {
+            withAnimation(Motion.gated(motionDisabled, .spring(duration: 0.16, bounce: 0.08))) {
                 reaction.scale = 0.97
             }
-            Task { @MainActor in
+            reactionTask = Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(170))
-                withAnimation(Motion.gated(false, .spring(duration: 0.34, bounce: 0.32))) {
+                guard !Task.isCancelled, !motionDisabled else { return }
+                withAnimation(Motion.gated(motionDisabled, .spring(duration: 0.34, bounce: 0.32))) {
                     reaction.scale = 1.03
                 }
                 try? await Task.sleep(for: .milliseconds(120))
-                withAnimation(Motion.gated(false, .spring(duration: 0.3, bounce: 0.2))) {
+                guard !Task.isCancelled, !motionDisabled else { return }
+                withAnimation(Motion.gated(motionDisabled, .spring(duration: 0.3, bounce: 0.2))) {
                     reaction.scale = 1
                 }
             }
         case .absorb(success: false), .fail:
             // 轻微歪头 rotation(-2° → 0)。
-            withAnimation(Motion.gated(false, .spring(duration: 0.2, bounce: 0.14))) {
+            withAnimation(Motion.gated(motionDisabled, .spring(duration: 0.2, bounce: 0.14))) {
                 reaction.tilt = -2
             }
-            Task { @MainActor in
+            reactionTask = Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(260))
-                withAnimation(Motion.gated(false, .spring(duration: 0.3, bounce: 0.18))) {
+                guard !Task.isCancelled, !motionDisabled else { return }
+                withAnimation(Motion.gated(motionDisabled, .spring(duration: 0.3, bounce: 0.18))) {
                     reaction.tilt = 0
                 }
             }
         case .thinking:
             // 透明度 1 → 0.85 → 1，单次。
-            withAnimation(.easeInOut(duration: 0.22)) { reaction.opacity = 0.85 }
-            Task { @MainActor in
+            withAnimation(Motion.gated(motionDisabled, .easeInOut(duration: 0.22))) { reaction.opacity = 0.85 }
+            reactionTask = Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(240))
-                withAnimation(.easeInOut(duration: 0.26)) { reaction.opacity = 1 }
+                guard !Task.isCancelled, !motionDisabled else { return }
+                withAnimation(Motion.gated(motionDisabled, .easeInOut(duration: 0.26))) { reaction.opacity = 1 }
             }
         case .speaking(let start):
             // 0.6s 呼吸节奏开关（降级下近似「在说话」的生命感；真口型在 mouthOpen / Live2D）。
             if start {
-                withAnimation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true)) {
+                withAnimation(Motion.gated(motionDisabled, .easeInOut(duration: 0.6).repeatForever(autoreverses: true))) {
                     reaction.breathing = 1.015
                 }
             } else {
-                withAnimation(.easeOut(duration: 0.24)) { reaction.breathing = 1 }
+                withAnimation(Motion.gated(motionDisabled, .easeOut(duration: 0.24))) { reaction.breathing = 1 }
             }
         case .idle, .attention:
             // 降级形态下无独立微反应；attention 的视线跟随属 Live2D 层（阶段 4b）。
             break
+        }
+    }
+
+    private func settleFallbackReaction() {
+        reactionTask?.cancel()
+        reactionTask = nil
+        withAnimation(nil) {
+            reaction.scale = 1
+            reaction.tilt = 0
+            reaction.opacity = 1
+            reaction.breathing = 1
         }
     }
 }

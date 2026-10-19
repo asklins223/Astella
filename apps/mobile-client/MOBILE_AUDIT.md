@@ -1,4 +1,98 @@
+## Android bookshelf and reader pass — 2026-10-19
+
+This pass follows the local OpenDesign project at `/Users/asklins/Library/Application Support/Open Design/namespaces/release-stable/data/projects/astella-3df6/index.html` and the prior implementation review in the “Implement the mobile app design” conversation. The useful practice carried forward was to compare the reference and the live native app at the same viewport, retain real application state and routes, and use a prototype only to understand hierarchy and visual intent.
+
+- Reworked the Android bookshelf into a continuous list and order it by the actual last-opened note when available. The companion shortcut uses the same recent note, with an honest recently-updated fallback when there is no reading history.
+- The reader now uses a compact floating toolbar, a lighter current-version row, and serif title/body typography while retaining native text selection, real note blocks, and the existing question and feature routes. Reader-size choices persist locally. The app also saves a visible block ordinal scoped to the signed-in user and workspace, then restores that anchor when reopening a note.
+- Built with `JAVA_HOME=/opt/homebrew/opt/openjdk@17 ./gradlew --offline assembleDebug --console=plain` from `apps/mobile-client/android`; build succeeded. `git diff --check -- apps/mobile-client/android` passed. Installed and inspected the build in the Pixel 8 / API 36 Android Preview window: companion home, bookshelf ordering, note reader, reader-size sheet and size change, Orbit's real empty state, and the profile page. No automated tests were run.
+- The available QA note fit within the viewport, so the saved reading-anchor restoration after a real scroll and reopen remains unverified. Other Android routes still need their own design-reference pass. The build reports an existing unnecessary safe-call warning in `LibraryScreens.kt` and Gradle deprecation warnings.
+
 # 原生手机页面多轮审查记录
+
+## iOS full-page visual pass — 2026-10-19
+
+The current reference is the local OpenDesign project at `/Users/asklins/Library/Application Support/Open Design/namespaces/release-stable/data/projects/astella-3df6/index.html`, including its `v3.js` and `v3.css`. This pass captured and inspected 33 iOS routes: nine authentication states and 24 signed-in page states. All signed-in routes were captured on iPhone 18 Pro Max / iOS 27; the four root tabs plus login and registration verification were also checked at the smaller iPhone 17e size.
+
+- Fixed a narrow-width overflow in the conversation header. Long workspace names now truncate within the available width, and the mode switch, appearance control, and model fallback card stay within the screen bounds.
+- Matched the reference's 128-point scroll clearance at the bottom of the Library, Orbit, and Account root pages so long lists can scroll clear of the floating dock.
+- Applied both the app-level and system “Reduce Motion” settings to shared button press feedback, authentication primary-button feedback, custom toggles, and the appearance selector's moving selection lens.
+- Verified the root navigation has four items (`相伴 / 书房 / 星轨 / 我的`), with `手边` inside Orbit; detail pages use their own header and companion shortcut.
+- Captured route contact sheets at `/private/tmp/study-ios-audit-auth-contact.png`, `/private/tmp/study-ios-audit-reading-contact.png`, `/private/tmp/study-ios-audit-orbit-account-contact.png`, and `/private/tmp/study-ios-audit-settings-contact.png`. The narrow-width conversation fix is `/private/tmp/study-ios-audit-small-conversation-fixed.png`.
+- Removed the temporary Debug route and token-injection code after capture. The standard iOS Simulator Debug build succeeded; the rebuilt app installed and launched on iPhone 18 Pro Max / iOS 27, with a clean login screenshot at `/private/tmp/study-ios-audit-final-clean-login-after-build.png`. `git diff --check -- apps/mobile-client/ios/Astella apps/mobile-client/MOBILE_AUDIT.md` passed. No automated tests were added or run. The existing Cubism archive emits a warning that its simulator objects were built for iOS 26.2 while the app links for iOS 18.0.
+
+**Remaining evidence limits:** this Xcode installation has no `Simulator.app`, so screenshots came from `simctl`; there was no manual touch, keyboard, VoiceOver, or accessibility-tree walkthrough, and no physical iPhone test. Screenshots used an isolated `.test` QA account. The companion model manifest returned 502, so the UI correctly shows its static fallback/error card; the QA account has no generated diary, so diary detail remains a real empty state. AI consent is unsigned, so successful AI-generation screens were not exercised. These states are not counted as successful service or interaction tests.
+
+## 2026-10-19 iOS reading continuity repair
+
+The “last page” claim on the companion screen was not backed by reader state: opening it always showed the start of the note, and the library's featured-note view existed but was not connected. iOS now stores the last opened note and the visible paragraph ordinal in local preferences scoped to the signed-in user and workspace. Opening a note restores its last visible paragraph, including when returning from the selection sheet. The library now presents the last opened note when available and labels the first-use fallback as the most recently updated note; the companion shortcut follows the same recent-note choice.
+
+- The reading anchor is a note block ordinal rather than a pixel offset, so changing text size returns to the same paragraph. The position remains local to this device, consistent with Plan 51's first-release boundary; shared cross-device reading handoff remains future work.
+- iOS Simulator Debug build succeeded and the clean app launched on iPhone 18 Pro Max / iOS 27. The captured current-window screenshot is `/tmp/study-ios-reading-resume-final-stable.png`; it shows the unauthenticated login screen. The host's Xcode installation has no `Simulator.app`, so `simctl` can install, launch, and capture the app, but this change has not yet received logged-in scrolling/reopen touch verification.
+- No automated tests were run. The latest build still emits the existing Cubism archive warning that its simulator objects were built for iOS 26.2 while the app deployment target is iOS 18.0.
+
+## 2026-10-18 iOS 优先收口 — Android 暂停
+
+用户已把当前阶段切换为先完成 iOS，Android 暂停。本节仅记录本轮 iOS 变更，不代表所有 iOS 页面已完成窗口验收。
+
+- 主 Shell 在四个根页面共用品牌／工作区页眉。非相伴根页面底部为「相伴／书房／星轨／我的」四栏，右侧单独显示伴星头像；从阅读或设置子页仅保留伴星入口，不重复显示根导航。头像入口返回相伴场景。
+- 我的账户入口使用真实昵称或邮箱首字母。设置、伴星中心和从 AI 错误提示进入账户的导航都改为路径式路由，使 Shell 能正确识别根页面与子页面，避免子页重复页眉或 Dock。
+- 页面窗口复核发现共享页眉曾与书房／星轨／我的页面内容重叠；已把页眉放入 Shell 的纵向布局，单独占据高度。
+- iOS 手记页按手机验收图重新整理为「留住你的思路／手记／篇数／搜索／继续阅读／其他手记」层级；移除封面缩略图与重复的空间卡片。工作区继续由共享页眉切换，导入与刷新保留在手记操作菜单中。
+- 登录页保留单一的邮箱验证码与注册入口；之前发现的重复验证码入口已移除。
+- 四个根页面截图已由 iPhone 18 Pro Max / iOS 27 模拟器渲染：`/tmp/study-ios-conversation-fixed.png`、`/tmp/study-ios-library-fixed.png`、`/tmp/study-ios-orbit-fixed.png`、`/tmp/study-ios-me-fixed.png`。为绕过尚无登录会话的限制，截图时临时使用 Debug 本地样例资料；样例启动代码已在截图后移除，因此这些截图确认页面布局，不代表真实账户数据、服务端状态或登录后触控流程。
+- 清理截图夹具后的 iOS Simulator Debug `xcodebuild` 通过；`git diff --check -- apps/mobile-client/ios/Astella` 与本记录的格式检查通过。没有运行自动化测试。
+- 该 Xcode 安装没有 Simulator 桌面应用；`simctl` 可安装、启动和截图但无法手动点按。清理夹具后的当前登录页截图为 `/tmp/study-ios-login-final-clean.png`。Cubism 静态库仍报告按 Simulator 26.2 构建、当前链接目标为 iOS 18.0 的版本警告。
+
+## 2026-10-18 按最新 OpenDesign 手机稿纠正导航与页面 — 当前基线
+
+本节以 `/Users/asklins/Library/Application Support/Open Design/namespaces/release-stable/data/projects/astella-3df6/index.html`、其同目录说明文件和用户最新明确指正为准。此前把「手边」当作主导航，是错误理解；稿件对应的底部四栏为「相伴／书房／星轨／我的」，「手边」只作为星轨内的次级内容。登录页与所有内页也必须按各自设计内容逐页实现，不能只换图标或沿用旧布局。
+
+- 双端主 Shell 已调整为四栏，移除「手边」根 Tab；书房、星轨和我的分别承接手记列表、日记／伴星记忆／手边，以及账户设置等真实产品能力。星轨首页以真实日记数据计算相伴天数和点亮星数，不把原型样例文字当成用户数据。
+- 相伴页按稿件重排为工作区／伴星与记录切换／主题入口、对话气泡、角色舞台、可续读手记和底部输入器；已移除稿件里不存在的建议动作卡和独立发送键。保留真实发送、录音、手记续读等产品行为。
+- 书房和星轨使用稿件的栏目层级、标题、说明和页面职责；我的页显示真实相伴天数及今日记录数量，并保留通往真实设置、伴星中心的入口。登录页按稿件的品牌标题、副标题、字段标签、找回密码、登录／注册与法律说明逐项对照；最终 iOS 窗口复核还发现并移除了重复出现的验证码登录入口。
+- 通用系统图标已在相关自定义页面替换为 Astella glyph。iOS 以 SwiftUI 系统材质与原生弹簧完成触感；Android 以 Compose／Material 3 和单一系统蓝表达相同层级。原生键盘、文档选择器和文本选择菜单继续使用平台控件。
+- 星轨所需的首条已生成日记日期由 `GET /companion/daily/month` 提供；我的页统计调用日记月汇总和今日列表接口。服务端若无日记或接口失败，页面给出空态／不可用状态，不虚构数字。
+- 本节覆盖的源码已通过 Android `assembleDebug`、iOS Simulator Debug `xcodebuild` 与 API `npm run typecheck`；没有运行测试套件。模拟器检查以本节补记的最终构建截图为准。Android SDK 与 AVD 在 `/Volumes/asklins/Android`。
+
+### 最终构建窗口复核 — 2026-10-18
+
+- Android 最终 Debug APK 通过 `JAVA_HOME=/opt/homebrew/opt/openjdk@17 ./gradlew --offline assembleDebug --console=plain`，已安装到外置盘 Pixel 8 / API 36 AVD。模拟器安装期间曾遇到系统启动未完成与 Package Manager 服务不可用；保留 AVD 数据重启后服务恢复，最终安装和启动成功。未清除用户数据。
+- Android 窗口截图：`/tmp/study-android-final-home-now.png`（相伴）、`/tmp/study-android-final-library.png`（书房）、`/tmp/study-android-final-orbit.png`（星轨，内部分段可见「日记／伴星记忆／手边」）、`/tmp/study-android-final-account.png`（我的）、`/tmp/study-android-final-settings.png`（阅读与个人约定设置）、`/tmp/study-android-final-companion-center.png`（伴星中心）和 `/tmp/study-android-final-note-detail.png`（手记详情）。实际画面确认底部四栏与「手边」只在星轨内。我的页、设置和伴星中心显示 `10.0.2.2:4000` 连接错误／重连态，日记统计接口不可用，因此只确认这些降级画面，没有确认真实统计和服务端内容成功态。手记详情显示的是已缓存的本机 TXT 导入手记。
+- iOS 最新 SwiftUI 构建通过 `xcodebuild -quiet -project apps/mobile-client/ios/Astella.xcodeproj -scheme Astella -configuration Debug -sdk iphonesimulator -destination 'id=D7787BF2-9BDA-4135-A3DF-74678E45ACD4' -derivedDataPath /tmp/study-ios-design-derived CODE_SIGNING_ALLOWED=NO build`，安装并启动于 iPhone 18 Pro Max / iOS 27。窗口截图 `/tmp/study-ios-final-login.png` 确认品牌、邮箱／密码字段、找回密码、登录按钮和验证码／注册链接；删掉了原先重复展示的验证码登录按钮。iOS 当前能截图但没有图形触控会话，本轮没有把登录后页面记作交互验收通过。
+- API `npm run typecheck`（`apps/api`）通过。`git diff --check -- apps/mobile-client apps/api/src/modules/companion-conversation/daily-summary-routes.ts` 通过；没有运行自动化测试。
+
+**验收边界：** 本轮实际检查了 Android 四个主页面及设置、伴星中心、手记详情和 iOS 登录页，不等于整套双端逐页验收；Android 服务端在线时的真实统计态、iOS 登录后内页与触控、两端其余流程、真机权限／音频／持续帧率仍待后续检查。模拟器结果不外推为实体机表现。
+
+## 历史记录（旧导航决策；已由上面的四栏设计基线替代）
+
+## 原生导航第二轮与真实登录态复核 — 2026-10-18
+
+本轮接着上一节完成 Android 登录态核验，并重建／安装了当前双端 Debug 包。Android SDK 与 Pixel 8 AVD 均从 `/Volumes/asklins/Android` 运行；`emulator-5554` 为 Pixel 8 / API 36，系统动画比例和字体比例在结束时均恢复为 `1.0`。JDK 17 位于 `/opt/homebrew/opt/openjdk@17`，当前 shell 需显式设置 `JAVA_HOME` 才能启动 Gradle。
+
+- **测试身份与数据：** 使用一次性本地开发验证码记录，通过正式 `/auth/register-v2` 流程建立隔离的 `.test` 账号，并通过真实 `/notes` API 创建一篇包含标题、正文、引用、列表与代码的手记。没有发送邮件、签署 AI 协议或请求模型生成；密码仅保存在权限为 0600 的 `/tmp/study-mobile-qa-credentials.json`，不进仓库。
+- **Android 主流程：** 使用已安装原生 App 的真实登录态读取会话；查看对话、手边、手记列表、手记详情、速览和账户／使用设置。Accessibility 树与截图确认列表标题、手记正文、引用、列表、代码块及版本信息来自本地服务端；详情页收起主 Dock，返回后 Dock 恢复。手记操作菜单能打开速览、脑图、讲解与版本记录；脑图与讲解显示引用当前手记的真实正文片段和未生成预览，生成按钮都因未同意 AI 而禁用；版本记录显示真实第 1 版且标记为当前。没有发起生成。
+- **续读与轻入口：** 在手边的手记卡片打开会话，确认输入区带有当前手记标题；手记详情的“在对话里继续提问”使用同一条真实路径。手边／手记页右侧伴星入口可回到对话。Android 主 Dock 连续切换“伴星／手边／手记”后停在正确页面；系统动画比例临时设为 `0` 时页面仍可切换，随后恢复 `1.0`。设置里的本机减弱动效开关也切换过后恢复关闭。
+- **原生选区：** 在手记正文长按，出现 Android 文本选区和系统操作浮层，并显示“伴星解释／伴星改写”。本轮只确认选区和按钮，未点击会请求 AI 的动作，也没有保存批注。
+- **本机 TXT 导入：** 在 Android 系统文档选择器从 `Download` 选取测试文件；文件名与正文在客户端显示，随后用“存为手记”调用真实 `/import/markdown`，在手记列表读回 `study-mobile-import` 与对应正文。正文没有上传对话附件，没有发送消息或调用模型；列表截图为 `/tmp/study-android-import-note.png`。
+- **减弱动效边界修正：** 代码复核发现静态伴星降级动画有几处绕过 iOS「减少动态效果」，Android 附件吸收与伴星脉冲在动效中途切换偏好时也不会立刻停下，输入器「＋」在 Reduce Motion 下仍旋转。现已把系统／本机偏好贯穿到 iOS 降级角色脉冲、歪头、呼吸与透明度动画；偏好开启会取消延迟回调并立即回到静止状态，呼吸幅度接入实际视图。Android 对应动画在偏好开启时立即 snap 回静止值、不会关闭后重放；输入器图标直接切换。最新双端构建通过。Android 最新包在系统动画时长缩放为 `0` 时打开输入器菜单，三个动作仍可用，截图为 `/tmp/study-android-plus-menu-reduced-final.png`；结束后系统动画及字体比例都恢复为 `1.0`。iOS 该路径尚未能在窗口里手动点按。
+- **窗口证据：** 当前安装包的代表截图为 `/tmp/study-android-current.png`、`/tmp/study-android-hand2.png`、`/tmp/study-android-notes2.png`、`/tmp/study-android-detail2.png`、`/tmp/study-android-overview2.png`、`/tmp/study-android-mindmap-final.png`、`/tmp/study-android-explain-final.png`、`/tmp/study-android-versions-final.png`、`/tmp/study-android-selection-detail-final.png` 和 `/tmp/study-android-import-note.png`。Reduce Motion 系统比例 `0` 下的最新输入菜单截图为 `/tmp/study-android-plus-menu-reduced-final.png`；主 Dock 动画取样见 `/tmp/study-android-motioncheck.png`；连续导航后的手记列表状态稳定。模拟器日志未发现 Astella FATAL 崩溃；过程中一次额外系统返回退出到桌面，重新打开后登录态与数据正常恢复。
+- **当前模型服务状态：** 用隔离账号调用只读 `GET /companion/model/manifest` 返回 `502 model_manifest_missing`；对话显示静态伴星图是当前服务配置的降级结果，不代表 Live2D 已在运行时渲染。仓库说明现有模型资源不具备发行／商业分发许可，因此不把它重新上传到模型桶。已验证静态降级可用；动态模型需有获批模型资产并发布清单后才能验收。
+- **双端构建与安装：** iOS `xcodebuild -project apps/mobile-client/ios/Astella.xcodeproj -scheme Astella -destination 'generic/platform=iOS Simulator' -derivedDataPath /tmp/astella-ios-derived CODE_SIGNING_ALLOWED=NO build` 成功，并安装／启动于 iPhone 18 Pro Max / iOS 27；Android `JAVA_HOME=/opt/homebrew/opt/openjdk@17 ./gradlew --offline assembleDebug` 成功，APK 已重新安装并启动在 Pixel 8 AVD。`git diff --check -- apps/mobile-client` 通过。Android Gradle 仍报告 Gradle 10 弃用警告。
+- **iOS 交互范围：** 当前 Xcode 安装没有 `Simulator.app` 图形应用。最新 iOS App 已重新安装并启动，冷启动截图 `/tmp/study-ios-motion-fix-final.png` 显示白色登录表单；`simctl` 能截图和查看进程日志，但不提供点按／输入操作，所以本轮没有把 iOS 登录后页面记为已触控验收。之前“无登录会话、需用户输入”的状态只适用于上一节，当前 Android 已有本地隔离测试登录态。
+- **仍需完成：** iOS 逐页交互与导航、iOS 文件选择及本机抽取、Android 选区工具条／批注／版本记录／脑图和讲解空态的窗口逐项复核、授权后的录音与 TTS 正向播放、设备权限与实体机运动表现仍未在本轮完成。模型动态渲染受合规模型资产缺失阻塞；邮箱有效验证码仍因 `.test` 无收件箱不能走通。未运行自动化测试，也不将模拟器结果外推成实体机帧率。
+
+## 原生导航与 Android 模拟器首轮验收 — 2026-10-18
+
+依据 OpenDesign Cloud 手机稿核对原生入口时，按实际产品能力保留“相伴、手边、手记”三标签和页头账户入口。主 Dock 增加移动选中面；非相伴一级页提供轻量伴星快捷入口。iOS 在当前手记可见时沿用现有继续阅读流程并传递不可变版本；Android 保留手记详情原有的上下文入口，避免重复控件。原型中的四标签、演示日记和模拟分享／语音动作没有接入产品导航。
+
+iOS 使用 SwiftUI 匹配几何、原生弹簧、按钮按压样式与选择触感反馈，保留 `NavigationStack`、系统返回手势和手记进入时的原生缩放。页头与唯一 Dock 固定在 Shell 的 safe-area inset 中；共享几何命名空间保持稳定，跨标签切换时只替换内容栈。Android 使用独立调校的 Compose 弹簧，并把系统动画时长缩放与本机减弱动效偏好合并为动效门控。
+
+- **构建：** iOS `xcodebuild ... CODE_SIGNING_ALLOWED=NO build` 成功；Android 使用拓展盘 SDK 执行 `./gradlew --offline assembleDebug` 成功；`git diff --check -- apps/mobile-client` 通过。未新增或运行自动化测试。
+- **Android 模拟器：** Android Emulator 37.2.12、Android 16 / API 36 ARM64 系统镜像、Pixel 8 配置的 AVD 数据均位于 `/Volumes/asklins/Android`。SDK 根目录为 `/Volumes/asklins/Android/sdk`；复用的内部 platform-tools／build-tools／platforms／CMake／NDK 包通过符号链接接入，避免重复占用空间。`/Volumes/asklins/Android/launch-astella-pixel-8.command` 可启动设备。Pixel 8 模拟器已完成启动，Debug APK 已安装并实际打开。
+- **Android 触控：** 手动走过注册第一步、邮箱输入、无效邮箱提示、输入法弹出与页面避让、继续到密码步骤、系统返回注册与登录页，以及验证码登录入口。150% 字号下，登录和注册的主要操作仍可达；注册键盘遮挡提交按钮时，表单可滚动把提交和“返回登录”露出。系统动画时长缩放设为 0 后，认证路由和系统返回立即切换。没有触发验证码发送；未见 FATAL 崩溃。验收后恢复字体和动画比例至 1.0，清除本轮模拟器输入，保留干净登录页。
+- **iOS 模拟器：** 最新 Debug 包安装并启动于 iPhone 18 Pro Max / iOS 27，截图为 `/tmp/astella-ios-20261018.png`。冷启动最初截图尚未完成首帧；等待后登录页正常显示。当前 Xcode 安装未包含 Simulator 桌面应用，`simctl` 截图可用但无法在该宿主窗口中手动触控。模拟器没有已登录会话，因此本轮尚未看到真实三标签 Dock。
+- **设计核对边界：** OpenDesign Cloud 的设计源文件已读取。其本地预览文件被浏览器安全策略拒绝打开，因此本轮是源文件级核对，没有声称与原型截图完成视觉并排比较。
+- **待完成：** 需要已登录会话才能逐页检查会话、手边、手记、阅读详情、账户与伴星入口，并实际反复切换标签、验证减少动态效果及手记版本续读。TTS 正向播放、Live2D 真实资源渲染和授权账号的服务端流程也尚未在模拟器完成运行验收。不得把构建或未登录的首屏当作这些能力的视觉验收。
 
 ## Latest authentication update — 2026-10-15
 
@@ -42,9 +136,9 @@ The current implementation uses white backgrounds, ordinary glass controls and t
 - AI 生成页已核对空态与入口；因为账号明确未同意外部 AI，未发起速览、脑图或讲解生成。这是账号权限边界，不记作生成调用通过。
 - 实体设备上的相机／麦克风授权、录音质量、TTS、不同机型触感、刷新率与持续帧率仍未实测；不据模拟器构建承诺稳定 60/120 fps。
 
-## 既有能力限制
+## 当前能力限制 — 2026-10-18
 
-移动端尚无流式 ASR、TTS 播放和手记正文编辑。整段语音识别、只读正文与服务端派生学习内容由原生页面直接接入；批注锚点冲突时保留原文并显示服务端状态。更多产品能力边界见 [README](README.md#当前限制)。
+移动端语音识别仍为 MiMo 整段 ASR；没有流式识别或流式播放。手记正文不提供本地编辑器，只有伴星提出改写、用户查看前后对照并确认写回；锚点冲突时保留原文并显示服务端状态。TTS 客户端链路已接通，但生产可用性受 AI 同意与服务端开关约束。PDF 扫描件、加密或损坏文档、复杂 DOCX 版式不承诺完整抽取。Live2D 可用性取决于部署的模型 manifest 与分发授权，失败时回退静态图。实体设备录音、系统音频中断、后台长期运行和硬件刷新率仍需真机验收。其余产品边界见 [README](README.md#当前限制)。
 
 ## 2026-10-15 视觉重构后的复核
 

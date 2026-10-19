@@ -1,6 +1,10 @@
 import Foundation
 import Observation
 
+enum StartupLoadState: Equatable {
+    case idle, loading, ready, failed
+}
+
 /// 主声明：全部存储属性与根初始化留在本文件。
 /// 各域方法按 extension 拆在 Store/ 下——SessionMethods、ConversationMethods、
 /// NotesMethods、HandMethods、AccountMethods；属性不再用 private，供跨文件扩展访问。
@@ -16,6 +20,7 @@ final class AppStore {
     var conversationId: String?
     var messages: [CompanionMessage] = []
     var notes: [NoteSummary] = []
+    var recentNoteId: String?
     var notesNextCursor: String?
     var notesQuery = ""
     var notesRequestGeneration = 0
@@ -30,11 +35,13 @@ final class AppStore {
     var annotationOperationGeneration = 0
     var runs: [ActiveRun] = []
     var selectedTab: MainTab = .conversation
+    var orbitRootSection = "diary"
     var conversationRootRevision = 0
     var chatShowsRecords = false
-    var readingScale = 1.0
+    var readingScale = 19.0 / 16.0
     var localReduceMotion = false
     var pendingNoteContext: PendingNoteContext?
+    var pendingDiaryReference: PendingDiaryReference?
     var workspaces: [WorkspaceSummary] = []
     var aiSettings: AISettings?
     var companionPermissionLevel: String?
@@ -44,6 +51,7 @@ final class AppStore {
     var streamingText = ""
     var realtimeStatus = "尚未连接"
     var isLoading = false
+    var startupLoadState: StartupLoadState = .idle
     var isSending = false
     var errorMessage: String?
     var notesErrorMessage: String?
@@ -73,13 +81,109 @@ final class AppStore {
     var selectedImageName = "手机照片.jpg"
     var voiceArtifactId: String?
 
+    #if DEBUG
+    var uiReviewMode: String?
+    #endif
+
     var isAuthenticated: Bool { api.token != nil }
 
     init() {
         companionModel = ModelDownloadManager(api: api)
         realtime.onEvent = { [weak self] event in self?.consume(event) }
         realtime.onState = { [weak self] state in self?.realtimeStatus = state }
-        if api.token != nil {
+        #if DEBUG
+        let uiReviewMode = ProcessInfo.processInfo.environment["ASTELLA_UI_REVIEW"]
+            ?? CommandLine.arguments.first(where: { $0.hasPrefix("--ui-review=") })?.replacingOccurrences(of: "--ui-review=", with: "")
+        if ["auth-login", "auth-register", "auth-register-password", "auth-register-code", "auth-forgot", "auth-reset", "auth-reset-password", "auth-email-login", "auth-email-login-code"].contains(uiReviewMode ?? "") {
+            self.uiReviewMode = uiReviewMode
+        } else if ["conversation", "records", "library", "orbit", "orbit-memory", "orbit-tasks", "read", "me", "settings", "profile", "companion-settings", "reading-settings", "device-permissions", "ai-authorization", "server-address", "conventions", "companion-center", "change-password"].contains(uiReviewMode ?? "") {
+            let reviewTime = ISO8601DateFormatter()
+            self.uiReviewMode = uiReviewMode
+            profile = UserProfile([
+                "userId": "open-design-review",
+                "displayName": "林夏",
+                "email": "lin.xia@mail.com",
+                "workspaceName": "高二语文",
+                "workspaceId": "open-design-review",
+                "workspaceType": "personal",
+                "isPersonal": true,
+            ])
+            conversationId = "open-design-review"
+            if let note = NoteSummary(id: "open-design-redwall", title: "赤壁赋", updatedAt: "2026-10-19", snippet: "先把改写放在这里。你确认后我才写回原文。") {
+                notes = [note]
+                recentNoteId = note.id
+            }
+            messages = [
+                CompanionMessage(
+                    id: "open-design-first-greeting",
+                    seq: 1,
+                    role: "assistant",
+                    blocks: [CompanionBlock(type: "text", text: "你来啦。今天想聊聊，还是接着读昨天那一页？")],
+                    createdAt: reviewTime.string(from: Date().addingTimeInterval(-40))
+                ),
+                CompanionMessage(
+                    id: "open-design-reading-prompt",
+                    seq: 2,
+                    role: "user",
+                    blocks: [CompanionBlock(type: "text", text: "一起读吧。那句「水波不兴」，我还想再听你说说。")],
+                    createdAt: reviewTime.string(from: Date().addingTimeInterval(-24))
+                ),
+                CompanionMessage(
+                    id: "open-design-greeting",
+                    seq: 3,
+                    role: "assistant",
+                    blocks: [CompanionBlock(type: "text", text: "风很轻，水面安静得没有波纹。我们就从这份安静里，慢慢读下去。")],
+                    createdAt: reviewTime.string(from: Date().addingTimeInterval(-8))
+                ),
+            ]
+            companionModel.state = .failed
+            switch uiReviewMode {
+            case "records": chatShowsRecords = true
+            case "library": selectedTab = .library
+            case "orbit": selectedTab = .orbit
+            case "orbit-memory": selectedTab = .orbit; orbitRootSection = "memory"
+            case "orbit-tasks": selectedTab = .orbit; orbitRootSection = "hand"
+            case "read": selectedTab = .library
+            case "me": selectedTab = .me
+            case "settings", "profile", "companion-settings", "reading-settings", "device-permissions", "ai-authorization", "server-address", "conventions", "companion-center", "change-password": selectedTab = .me
+            default: break
+            }
+            if uiReviewMode == "read" {
+                noteDocument = NoteDocument([
+                    "noteId": "open-design-redwall",
+                    "title": "赤壁赋",
+                    "currentVersion": [
+                        "versionId": "open-design-redwall-v2",
+                        "versionNo": 2,
+                        "blocks": [
+                            [
+                                "ordinal": 1,
+                                "type": "paragraph",
+                                "content": "壬戌之秋，七月既望，苏子与客泛舟游于赤壁之下。清风徐来，水波不兴。举酒属客，诵明月之诗，歌窈窕之章。少焉，月出于东山之上，徘徊于斗牛之间。白露横江，水光接天。纵一苇之所如，凌万顷之茫然。浩浩乎如冯虚御风，而不知其所止；飘飘乎如遗世独立，羽化而登仙。",
+                            ],
+                            [
+                                "ordinal": 2,
+                                "type": "paragraph",
+                                "content": "于是饮酒乐甚，扣舷而歌之。歌曰：“桂棹兮兰桨，击空明兮溯流光。渺渺兮予怀，望美人兮天一方。”客有吹洞箫者，倚歌而和之。其声呜呜然，如怨如慕，如泣如诉，余音袅袅，不绝如缕。舞幽壑之潜蛟，泣孤舟之嫠妇。",
+                            ],
+                            [
+                                "ordinal": 3,
+                                "type": "paragraph",
+                                "content": "苏子愀然，正襟危坐而问客曰：“何为其然也？”客曰：“‘月明星稀，乌鹊南飞’，此非曹孟德之诗乎？西望夏口，东望武昌，山川相缪，郁乎苍苍，此非孟德之困于周郎者乎？方其破荆州，下江陵，顺流而东也，舳舻千里，旌旗蔽空，酾酒临江，横槊赋诗，固一世之雄也，而今安在哉？”",
+                            ],
+                        ],
+                    ],
+                ])
+            }
+        }
+        #endif
+#if DEBUG
+        let shouldRestoreSession = self.uiReviewMode == nil && api.token != nil
+#else
+        let shouldRestoreSession = api.token != nil
+#endif
+        if shouldRestoreSession {
+            startupLoadState = .loading
             Task { await restoreSession() }
         }
     }

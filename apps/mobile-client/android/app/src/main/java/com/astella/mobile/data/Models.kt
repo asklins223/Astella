@@ -289,9 +289,10 @@ data class ActiveRun(
 }
 
 enum class MainTab(val label: String, val icon: String) {
-    Conversation("对话", "chat"),
-    Hand("手边", "tray"),
-    Notes("手记", "book"),
+    Conversation("相伴", "companion"),
+    Library("书房", "library"),
+    Orbit("星轨", "orbit"),
+    Me("我的", "person"),
 }
 
 internal fun JSONArray?.objects(): List<JSONObject> = if (this == null) emptyList() else (0 until length()).mapNotNull { optJSONObject(it) }

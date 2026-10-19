@@ -12,6 +12,17 @@ final class MobileAPI {
     var baseURL: String {
         didSet { UserDefaults.standard.set(baseURL, forKey: "api.baseURL") }
     }
+    var defaultBaseURL: String {
+        #if DEBUG
+        let debugOrigin = ProcessInfo.processInfo.environment["ASTELLA_API_ORIGIN"]
+        #else
+        let debugOrigin: String? = nil
+        #endif
+        let configured = debugOrigin
+            ?? Bundle.main.object(forInfoDictionaryKey: "API_BASE_URL") as? String
+            ?? "http://127.0.0.1:4000"
+        return configured.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    }
     var token: String?
 
     init() {

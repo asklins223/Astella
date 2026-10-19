@@ -7,6 +7,11 @@ import com.astella.mobile.data.AppViewModel
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
 import com.astella.mobile.ui.AstellaRoot
 import com.astella.mobile.ui.design.StudyTheme
 
@@ -34,7 +39,27 @@ class MainActivity : ComponentActivity() {
             }
         }
         setContent {
-            StudyTheme { AstellaRoot(appViewModel) }
+            val appearance = remember { getSharedPreferences("astella.appearance", MODE_PRIVATE) }
+            var themeMode by rememberSaveable {
+                mutableStateOf(appearance.getString("theme_mode", if (appearance.getBoolean("dark_mode", false)) "dark" else "light") ?: "light")
+            }
+            val systemDark = androidx.compose.foundation.isSystemInDarkTheme()
+            val darkMode = when (themeMode) { "dark" -> true; "system" -> systemDark; else -> false }
+            StudyTheme(darkTheme = darkMode) {
+                AstellaRoot(
+                    appViewModel,
+                    darkTheme = darkMode,
+                    onToggleTheme = {
+                        themeMode = if (darkMode) "light" else "dark"
+                        appearance.edit().putString("theme_mode", themeMode).putBoolean("dark_mode", themeMode == "dark").apply()
+                    },
+                    themeMode = themeMode,
+                    onThemeMode = { next ->
+                        themeMode = next
+                        appearance.edit().putString("theme_mode", next).putBoolean("dark_mode", next == "dark").apply()
+                    },
+                )
+            }
         }
     }
 }

@@ -17,6 +17,7 @@ extension AppStore {
             let agent = account["agentSettings"] as? [String: Any] ?? [:]
             companionPermissionLevel = agent["permissionLevel"] as? String
         } catch {
+            guard !Task.isCancelled else { return }
             accountError = mobilePageError(error, fallback: "账户设置暂时无法读取，请稍后重新加载。")
         }
     }
@@ -142,7 +143,7 @@ extension AppStore {
     }
 
     func setReadingScale(_ value: Double) {
-        guard [1.0, 1.2, 1.4].contains(value) else { return }
+        guard value.isFinite, (15.0 / 16.0...25.0 / 16.0).contains(value) else { return }
         readingScale = value
         guard let userId = profile?.userId, !userId.isEmpty else { return }
         UserDefaults.standard.set(value, forKey: mobilePreferenceKey(userId, "textScale"))
@@ -152,5 +153,26 @@ extension AppStore {
         localReduceMotion = value
         guard let userId = profile?.userId, !userId.isEmpty else { return }
         UserDefaults.standard.set(value, forKey: mobilePreferenceKey(userId, "reduceMotion"))
+    }
+
+    /// 修改密码：服务端会撤销全部会话（含当前设备），因此成功后回到登录页并给出提示。
+    func changePassword(currentPassword: String, newPassword: String) async -> Bool {
+        guard !isAccountBusy else { return false }
+        isAccountBusy = true
+        accountError = nil
+        accountNotice = nil
+        defer { isAccountBusy = false }
+        do {
+            _ = try await api.request("/auth/change-password", method: "POST", body: [
+                "currentPassword": currentPassword,
+                "newPassword": newPassword,
+            ])
+            authNoticeMessage = "密码已更新，请用新密码登录。"
+            logout()
+            return true
+        } catch {
+            accountError = mobilePageError(error, fallback: "密码没有更新，请核对当前密码后重试。")
+            return false
+        }
     }
 }

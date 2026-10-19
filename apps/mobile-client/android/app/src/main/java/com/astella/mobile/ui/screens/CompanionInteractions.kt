@@ -13,8 +13,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.*
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -64,14 +62,22 @@ fun CompanionParticles(level: Float, active: Boolean, reduced: Boolean, modifier
 }
 
 @Composable
-fun CompanionSelectableText(text: String, fontSize: Float, onSelection: (String, Boolean) -> Unit) {
-    val ink = StudyPalette.ink
+fun CompanionSelectableText(
+    text: String,
+    fontSize: Float,
+    serif: Boolean = false,
+    color: androidx.compose.ui.graphics.Color = StudyPalette.ink,
+    lineSpacingMultiplier: Float = if (serif) 1.86f else 1.4f,
+    letterSpacing: Float = if (serif) .02f else 0f,
+    onSelection: (String, Boolean) -> Unit,
+) {
+    val ink = color
     val latestSelection by rememberUpdatedState(onSelection)
     AndroidView(
         factory = { context ->
             TextView(context).apply {
                 setTextIsSelectable(true); setPadding(0, 0, 0, 0)
-                setLineSpacing(5 * resources.displayMetrics.density, 1f)
+                includeFontPadding = false
                 customSelectionActionModeCallback = object : ActionMode.Callback {
                     override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
                         menu.add(0, 701, 0, "伴星解释")
@@ -93,6 +99,10 @@ fun CompanionSelectableText(text: String, fontSize: Float, onSelection: (String,
         update = { view ->
             if (view.text.toString() != text) view.text = text
             view.textSize = fontSize
+            view.setLineSpacing(0f, lineSpacingMultiplier)
+            view.letterSpacing = letterSpacing
+            view.typeface = if (serif) android.graphics.Typeface.create("serif", android.graphics.Typeface.NORMAL)
+                else android.graphics.Typeface.DEFAULT
             view.setTextColor(android.graphics.Color.argb((ink.alpha * 255).toInt(), (ink.red * 255).toInt(), (ink.green * 255).toInt(), (ink.blue * 255).toInt()))
         },
         modifier = Modifier.fillMaxWidth(),

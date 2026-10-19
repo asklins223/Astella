@@ -1,6 +1,21 @@
 # 手机端共用视觉与动效参数
 
-2026-10-15。iOS 为构图与动效标尺，Android 保持同一语义和比例；不使用系统默认控件外观作为设计完成的依据。
+## Current platform motion direction — 2026-10-18
+
+Keep shared meaning and visual hierarchy, while using each platform's own animation model. iOS uses SwiftUI-native navigation, matched geometry, springs and sensory feedback. Android uses Compose springs tuned for Android distances and its interaction model. These values are platform starting points, not a conversion table; judge the feel in a running app and retune when needed.
+
+| Use | iOS | Android | Reduced motion |
+| --- | --- | --- | --- |
+| Press | Native SwiftUI button feedback with a short spring | Compose spring (`damping .94`, `stiffness 255`) | Keep the action; remove scale motion |
+| Page navigation | `NavigationStack` and native note zoom transition | Compose route spring (`.92`, `260`) with directional slide | Snap or brief opacity only |
+| Dock selection | SwiftUI snappy spring (`.32s`, `extraBounce .03`) and matched selection surface | Compose spring (`.88`, `380`) on a shared selection surface | Place selection immediately |
+| Companion shortcut | SwiftUI spring and opacity/scale transition | Compose spring with restrained expand, scale and opacity | Place or remove immediately |
+
+Fast retargeting, reversals, canceled gestures and backgrounding still need checks in real application windows. Numeric values describe the current implementation; they do not establish a frame-rate guarantee.
+
+## Historical shared visual decisions — 2026-10-15
+
+The prior design treated iOS as the numeric motion ruler for Android. That cross-platform coupling is superseded by the 2026-10-18 platform-specific direction above. Shared color, typography, glass and layout tokens below remain current unless a later product decision changes them.
 
 ## 色彩
 
@@ -17,19 +32,9 @@
 
 玻璃采用自定连续形状，模糊约 22pt/dp，低透明染色、0.8pt/dp 均匀中性细描边；禁用噪点纹理。输入区圆角 22、快捷动作 18、菜单 24、导航 29。文字优先使用清楚的无衬线字阶，不用装饰性英文编号和衬线大标题。基础正文 16–17，辅助说明 12–13，主标题 29–30。系统字体缩放与阅读缩放仍需独立验证。
 
-## 动效
+## 动效验收
 
-| 用途 | iOS | Android | 减少动态 |
-| --- | --- | --- | --- |
-| 按压 | press spring 0.22s / bounce .06，轻缩放 | damping .94 / stiffness 255；自绘短按 130ms | 透明度反馈 |
-| 页面进退 | spring .32s / bounce .06 | damping .94 / stiffness 120 | 短淡入 |
-| 模式与菜单 | spring .38s / bounce .08 | damping .92 / stiffness 85 | 淡入就位 |
-| 菜单逐项间隔 | 24ms | 24ms | 无延迟 |
-| 资料飞入伴星 | 520ms 曲线飞行 | 520ms 曲线飞行 | 无位移 |
-| 音频电平采样 | 40ms | 40ms | 静态波形 |
-| 粒子 | 144 个确定性粒子，约 30fps | 144 个确定性粒子，跟随帧时钟 | 无粒子循环 |
-
-时序表示实现参数，不代表已经达到 60/120fps。快速反向、重复输入、取消和后台切换必须按实际运行检查。不要把原型中“选区飞抵／逐字替换／全套共享元素”的目标文案当作当前已实现证据。
+上方的平台动效矩阵是当前参数来源；本节不再把旧版“iOS 参数直接映射到 Android”的表格当成实现合同。真实窗口验收覆盖快速反向、重复输入、拖动取消、键盘开合、系统返回、后台切换与减少动态；焦点与操作不等待动画结束。若动画没有提供空间或状态信息，就保持即时变化。时间参数不代表已经达到 60/120 fps，设备帧率仍需在目标真机测量。
 
 ## Authentication override — 2026-10-15
 

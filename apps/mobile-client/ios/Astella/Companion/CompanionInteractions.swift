@@ -270,7 +270,7 @@ extension AppStore {
             if selectedFile?.id == file.id { selectedFile = nil }
             emitCompanion(.absorb(success: true))
             await loadNotes()
-            selectedTab = .notes
+            selectedTab = .library
         } catch { errorMessage = mobilePageError(error, fallback: "手记没有导入，文件仍保留在这里。") }
     }
     func askAboutSelection(_ text: String, document: NoteDocument, rewrite: Bool) async {
@@ -323,11 +323,24 @@ struct CompanionParticleField: View {
     }
 }
 
+/// Reader typography for selectable body text. Paragraph metrics are supplied by
+/// the caller so the reader can use Songti with a two-character first-line indent
+/// without changing the selected range (indent is a paragraph style, not spaces).
+struct CompanionTextStyle: Equatable {
+    var fontSize: CGFloat
+    var serif = false
+    var firstLineIndent: CGFloat = 0
+    var lineSpacing: CGFloat = 0
+    var paragraphSpacing: CGFloat = 0
+    var color: UIColor = .label
+}
+
 /// Native text selection with actions attached to the actual range, not a
 /// whole-block context menu. UITextView keeps platform handles and copy behavior.
 struct CompanionSelectableText: UIViewRepresentable {
     let text: String
     let fontSize: CGFloat
+    var style: CompanionTextStyle?
     var onSelection: (String, Bool) -> Void
     func makeUIView(context: Context) -> SelectionTextView {
         let view = SelectionTextView()
@@ -339,9 +352,23 @@ struct CompanionSelectableText: UIViewRepresentable {
         return view
     }
     func updateUIView(_ view: SelectionTextView, context: Context) {
-        if view.text != text { view.text = text }
-        view.font = UIFont.systemFont(ofSize: fontSize)
-        view.textColor = .label
+        if let style {
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.lineSpacing = style.lineSpacing
+            paragraph.paragraphSpacing = style.paragraphSpacing
+            paragraph.firstLineHeadIndent = style.firstLineIndent
+            paragraph.headIndent = 0
+            paragraph.lineBreakMode = .byWordWrapping
+            view.attributedText = NSAttributedString(string: text, attributes: [
+                .font: StudySerif.uiFont(size: style.fontSize, serif: style.serif),
+                .foregroundColor: style.color,
+                .paragraphStyle: paragraph,
+            ])
+        } else {
+            if view.text != text { view.text = text }
+            view.font = UIFont.systemFont(ofSize: fontSize)
+            view.textColor = .label
+        }
         view.onSelection = onSelection
     }
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: SelectionTextView, context: Context) -> CGSize? {
@@ -480,7 +507,7 @@ extension AppStore {
         lastObservation = now
         let quiet = min(86_400_000, max(0, Int((now - lastInteraction) * 1000)))
         let typing = foreground && now - lastInteraction < 3 && !draft.isEmpty
-        let pageLabel = visibleNoteId != nil ? "阅读手记" : selectedTab == .notes ? "手记" : selectedTab == .hand ? "手边" : "与伴星交流"
+        let pageLabel = visibleNoteId != nil ? "阅读手记" : selectedTab == .library ? "书房" : selectedTab == .orbit ? "星轨" : selectedTab == .me ? "我的" : "与伴星交流"
         var context: [String: Any] = [
             "foreground": foreground, "unlocked": foreground, "typing": typing,
             "learning": visibleNoteId != nil, "speaking": voicePlayback.isPlaying,

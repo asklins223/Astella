@@ -63,6 +63,14 @@
 | POST | /v2/notes/:id/doc-update | 手机会话 403（`requireNoteContentWrites`，产品规则「手机上人不改正文，伴星改」）；改写走伴星通道 |
 | GET/PUT | /me/companion/participation | ✅ 409 保稿 |
 
+## 星轨 / 日记与伴星记忆
+
+| 方法 | 路径 | 用途 | 备注 |
+| --- | --- | --- | --- |
+| GET | /companion/daily/month?month=YYYY-MM | 星轨近 14 天星点 | ✅ `days` 按日期聚合；`firstGeneratedDate` 为当前书房最早一篇未删除且成功生成的日记日期，没有时为 `null`，用于显示真实相伴天数 |
+| GET | /companion/daily?date=YYYY-MM-DD | 打开某日的日记正文 | ✅ 按当前书房和用户隔离；删除或撤权内容不返回 |
+| GET | /companion/memory?includeCandidates=true&includeArchived=false | 星轨中的伴星记忆 | ✅ 展示真实记忆与待确认候选 |
+
 ## 模型分发（2026-10-15 扩展 E）
 
 | 方法 | 路径 | 用途 | 备注 |

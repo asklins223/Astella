@@ -6,9 +6,8 @@ struct ConversationFailurePanel: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: "wifi.exclamationmark")
-                .font(.system(size: 17, weight: .medium))
-                .foregroundStyle(StudyPalette.danger)
+            AstellaGlyph(kind: .alert, tint: StudyPalette.danger)
+                .frame(width: 17, height: 17)
                 .frame(width: 30, height: 30)
                 .background(StudyPalette.danger.opacity(0.08), in: Circle())
             VStack(alignment: .leading, spacing: 2) {

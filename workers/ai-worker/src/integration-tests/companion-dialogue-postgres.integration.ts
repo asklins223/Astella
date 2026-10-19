@@ -280,6 +280,49 @@ function invokeRun(
   });
 }
 
+for (const streaming of [false, true]) test(`long replies issue voice segments through the final sentence / ${streaming ? "streamed" : "buffered"}`, async () => {
+  const scope = await seedBase();
+  const run = await seedDialogueRun(scope.workspaceId, scope.userId, { userText: "给我讲一个完整的睡前故事。" });
+  const answer = "小狐狸沿着河岸寻找回家的路，月光落在水面上，远处的小屋亮着温暖的灯。".repeat(18)
+    + "后来它终于回到了家，和朋友们道过晚安，安心地睡着了。";
+  const previousChat = MockProvider.prototype.chatCompletion;
+  const previousExecute = MockProvider.prototype.executeAgentTurn;
+  const previousStream = Object.getOwnPropertyDescriptor(MockProvider.prototype, "chatCompletionStream")!;
+  const previousVoiceFlag = process.env.COMPANION_VOICE_DIALOGUE_V1_ENABLED;
+  process.env.COMPANION_VOICE_DIALOGUE_V1_ENABLED = "true";
+  try {
+    MockProvider.prototype.chatCompletion = async () => ({ content: JSON.stringify({
+      intent: "conversation", toolUse: "none", subjects: [], goalRelation: "unrelated",
+      candidateOperations: [], ambiguities: [], voiceStyle: { decision: "none", instruction: null },
+      pendingOfferIndexes: [],
+    }), usage: {} });
+    MockProvider.prototype.executeAgentTurn = async () => ({ content: answer, toolCalls: [], finishReason: "stop", usage: {},
+      providerRequestId: "long-voice-reply-fixture" });
+    if (streaming) Object.defineProperty(MockProvider.prototype, "chatCompletionStream", { ...previousStream,
+      value: async (_messages: unknown, _options: unknown, _signal: AbortSignal, onDelta: (text: string) => void) => {
+        for (let start = 0; start < answer.length; start += 32) {
+          onDelta(answer.slice(start, start + 32));
+          await new Promise(resolve => setImmediate(resolve));
+        }
+        return { content: answer, toolCalls: [], finishReason: "stop", providerRequestId: "streamed-long-voice-fixture" };
+      } });
+    await invokeRun(scope.workspaceId, scope.userId, run);
+    const events = await readInScope(scope, tx => tx`SELECT payload FROM companion_stream_events
+      WHERE run_id=${run.runId} AND type='voice.segment.ready' ORDER BY seq`);
+    assert.ok(events.length > 0);
+    assert.equal(events.map(event => event.payload.displayText).join(""), answer);
+    assert.equal(events.at(-1)!.payload.displayEnd, answer.length, "speech must include the story ending");
+    assert.ok(events.some(event => event.payload.displayStart > 200), "later sentences must be synthesized too");
+  } finally {
+    MockProvider.prototype.chatCompletion = previousChat;
+    MockProvider.prototype.executeAgentTurn = previousExecute;
+    Object.defineProperty(MockProvider.prototype, "chatCompletionStream", previousStream);
+    if (previousVoiceFlag === undefined) delete process.env.COMPANION_VOICE_DIALOGUE_V1_ENABLED;
+    else process.env.COMPANION_VOICE_DIALOGUE_V1_ENABLED = previousVoiceFlag;
+    await run.cleanup();
+  }
+});
+
 for (const decision of ["confirm", "reject"] as const) test(`confirmation retains earlier reads and every unexecuted call / ${decision}`, async () => {
   const scope = await seedBase();
   const userText = "先核对原始记录，写一篇本轮测试笔记，不要读取笔记库，再读取当前上下文。";

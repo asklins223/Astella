@@ -5,9 +5,8 @@ struct SessionRecoveryScreen: View {
 
     var body: some View {
         VStack(spacing: 14) {
-            Image(systemName: "books.vertical")
-                .font(.system(size: 30, weight: .medium))
-                .foregroundStyle(StudyPalette.accent)
+            AstellaGlyph(kind: .book, tint: StudyPalette.accent)
+                .frame(width: 28, height: 28)
                 .frame(width: 64, height: 64)
                 .background(StudyPalette.sky, in: Circle())
             Text("正在接回你的书房")

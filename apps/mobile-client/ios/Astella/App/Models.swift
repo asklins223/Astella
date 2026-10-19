@@ -242,6 +242,11 @@ struct PendingNoteContext: Equatable {
     var title: String
 }
 
+struct PendingDiaryReference: Equatable {
+    var date: String
+    var version: Int
+}
+
 struct WorkspaceSummary: Identifiable, Equatable {
     var id: String
     var name: String
@@ -340,7 +345,8 @@ struct ActiveRun: Identifiable, Hashable {
 }
 
 enum MainTab: String, CaseIterable {
-    case conversation = "对话"
-    case hand = "手边"
-    case notes = "手记"
+    case conversation = "相伴"
+    case library = "书房"
+    case orbit = "星轨"
+    case me = "我的"
 }

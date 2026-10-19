@@ -1,27 +1,34 @@
 import SwiftUI
 import UIKit
 
-struct AuthBrandHeader: View {
+struct AuthLoginBrandHero: View {
     var compact = false
 
     var body: some View {
-        HStack(spacing: 11) {
-            Image("BrandMark")
-                .resizable().scaledToFit()
-                .frame(width: compact ? 36 : 44, height: compact ? 36 : 44)
+        VStack(alignment: .leading, spacing: 0) {
+            Image("AuthAppIcon")
+                .resizable().scaledToFill()
+                .frame(width: compact ? 72 : 84, height: compact ? 72 : 84)
+                .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .stroke(.white.opacity(0.82), lineWidth: 0.8)
+                }
+                .shadow(color: StudyPalette.ink.opacity(0.1), radius: 13, x: 0, y: 8)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 3) {
-                Text("拾星笔记")
-                    .font(.system(size: compact ? 16 : 18, weight: .semibold))
-                    .foregroundStyle(StudyPalette.ink)
-                Text("ASTELLA")
-                    .font(.system(size: 9, weight: .medium))
-                    .tracking(2.5)
-                    .foregroundStyle(StudyPalette.muted)
-            }
+                .padding(.bottom, compact ? 8 : 22)
+            Text("拾星笔记")
+                .font(.system(size: compact ? 26 : 29, weight: .medium))
+                .tracking(-1)
+                .foregroundStyle(StudyPalette.ink)
+                .padding(.bottom, compact ? 6 : 11)
+            Text("把读到的、想到的，慢慢拾成星光")
+                .font(.system(size: 13))
+                .lineSpacing(3)
+                .foregroundStyle(StudyPalette.muted)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("拾星笔记，Astella")
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -34,8 +41,8 @@ struct AuthHeading: View {
     var body: some View {
         VStack(alignment: .leading, spacing: compact ? 4 : 10) {
             Text(title)
-                .font(compact ? .title2.weight(.semibold) : .largeTitle.weight(.semibold))
-                .tracking(-0.8)
+                .font(.system(size: compact ? 25 : 29, weight: .medium))
+                .tracking(-1)
                 .foregroundStyle(StudyPalette.ink)
                 .id(title)
                 .transition(transition)
@@ -54,22 +61,31 @@ struct AuthHeading: View {
 
 struct AuthPrimaryButtonStyle: ButtonStyle {
     var busy = false
+    var minHeight: CGFloat = 48
+    @Environment(AppStore.self) private var store
     @Environment(\.isEnabled) private var enabled
     @Environment(\.accessibilityReduceMotion) private var reduced
+
+    private var motionDisabled: Bool { reduced || store.localReduceMotion }
 
     func makeBody(configuration: Configuration) -> some View {
         let active = enabled || busy
         configuration.label
             .font(.body.weight(.semibold))
-            .foregroundStyle(active ? StudyPalette.ink : StudyPalette.muted)
+            .foregroundStyle(active ? Color.white : StudyPalette.muted)
             .padding(.horizontal, 22)
-            .frame(minHeight: 56)
-            .modifier(StudyGlassSurfaceStyle(radius: 28, interactive: true,
-                                           tint: active ? StudyPalette.actionFill.opacity(0.82) : nil))
-            .contentShape(Capsule())
+            .frame(minHeight: minHeight)
+            .frame(maxWidth: .infinity)
+            .background(active ? StudyPalette.accent : StudyPalette.inset,
+                        in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(active ? .white.opacity(0.14) : StudyPalette.paperEdge.opacity(0.5), lineWidth: 0.8)
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .opacity(active ? (configuration.isPressed ? 0.76 : 1) : 0.6)
-            .scaleEffect(configuration.isPressed && !reduced ? 0.98 : 1)
-            .animation(Motion.gated(reduced, Motion.press), value: configuration.isPressed)
+            .scaleEffect(configuration.isPressed && !motionDisabled ? 0.98 : 1)
+            .animation(Motion.gated(motionDisabled, Motion.press), value: configuration.isPressed)
     }
 }
 
@@ -79,11 +95,15 @@ struct AuthStepProgress: View {
     let total: Int
 
     var body: some View {
-        Text("\(title) · \(current) / \(total)")
-            .font(.footnote.weight(.medium).monospacedDigit())
-            .foregroundStyle(StudyPalette.muted)
+        HStack(spacing: 8) {
+            ForEach(0..<max(total, 0), id: \.self) { index in
+                Capsule(style: .continuous)
+                    .fill(index < current ? StudyPalette.accent : StudyPalette.paperEdge)
+                    .frame(width: 28, height: 4)
+            }
+        }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("第 \(current) 步，共 \(total) 步")
+        .accessibilityLabel("\(title)，第 \(current) 步，共 \(total) 步")
     }
 }
 
@@ -113,19 +133,16 @@ struct AuthFeedbackBanner: View {
         }
     }
 
-    private var symbol: String {
+    private var glyph: AstellaGlyphKind {
         switch kind {
-        case .error: "exclamationmark.circle.fill"
-        case .success: "checkmark.circle.fill"
+        case .error: .alert
+        case .success: .check
         }
     }
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: symbol)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(tint)
-                .padding(.top, 1)
+            AstellaGlyph(kind: glyph, tint: tint).frame(width: 16, height: 16).padding(.top, 1)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.footnote.weight(.semibold))
@@ -152,7 +169,7 @@ struct AuthFeedbackBanner: View {
 
 struct AuthInputSurface: ViewModifier {
     func body(content: Content) -> some View {
-        content.modifier(StudyGlassSurfaceStyle(radius: 26, interactive: true))
+        content.modifier(StudyGlassSurfaceStyle(radius: 16, interactive: true))
     }
 }
 
@@ -163,6 +180,7 @@ struct AuthTextField: View {
     var keyboardType: UIKeyboardType = .default
     var contentType: UITextContentType? = nil
     var secure = false
+    var showGlyph = true
     @FocusState.Binding var focusedInput: AuthInput?
     let field: AuthInput
     let submitLabel: SubmitLabel
@@ -170,16 +188,17 @@ struct AuthTextField: View {
     @State private var revealsSecureText = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: showGlyph ? 6 : 9) {
             Text(label)
-                .font(.subheadline.weight(.medium))
+                .font(.system(size: 11, weight: .medium))
+                .tracking(0.25)
                 .foregroundStyle(StudyPalette.ink.opacity(0.82))
             HStack(spacing: 12) {
-                Image(systemName: symbol)
-                    .font(.system(size: 18, weight: .regular))
-                    .foregroundStyle(StudyPalette.muted)
-                    .frame(width: 21)
-                    .accessibilityHidden(true)
+                if showGlyph {
+                    AstellaGlyph(kind: glyph, tint: StudyPalette.muted)
+                        .frame(width: 20, height: 20)
+                        .accessibilityHidden(true)
+                }
                 Group {
                     if secure && !revealsSecureText {
                         SecureField("", text: $text, prompt: Text(placeholder).foregroundStyle(StudyPalette.muted))
@@ -191,7 +210,7 @@ struct AuthTextField: View {
                 .keyboardType(keyboardType)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
-                .font(.body)
+                .font(.system(size: 16))
                 .foregroundStyle(StudyPalette.ink)
                 .focused($focusedInput, equals: field)
                 .submitLabel(submitLabel)
@@ -200,9 +219,8 @@ struct AuthTextField: View {
 
                 if secure {
                     Button { revealsSecureText.toggle() } label: {
-                        Image(systemName: revealsSecureText ? "eye.slash" : "eye")
-                            .font(.system(size: 15, weight: .regular))
-                            .foregroundStyle(StudyPalette.muted)
+                        AstellaGlyph(kind: revealsSecureText ? .eyeSlash : .eye, tint: StudyPalette.muted)
+                            .frame(width: 18, height: 18)
                             .frame(width: 36, height: 44)
                             .contentShape(Rectangle())
                     }
@@ -210,12 +228,12 @@ struct AuthTextField: View {
                     .accessibilityLabel(revealsSecureText ? "隐藏密码" : "显示密码")
                 }
             }
-            .padding(.leading, 19)
-            .padding(.trailing, secure ? 8 : 19)
-            .frame(minHeight: 56)
+            .padding(.leading, 16)
+            .padding(.trailing, secure ? 7 : 16)
+            .frame(minHeight: 52)
             .modifier(AuthInputSurface())
             .overlay {
-                RoundedRectangle(cornerRadius: 26, style: .continuous)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .stroke(focusedInput == field ? StudyPalette.accent.opacity(0.5) : .clear, lineWidth: 1)
                     .allowsHitTesting(false)
             }
@@ -224,13 +242,13 @@ struct AuthTextField: View {
         .onChange(of: contentType) { _, _ in revealsSecureText = false }
     }
 
-    private var symbol: String {
+    private var glyph: AstellaGlyphKind {
         switch field {
-        case .email: "envelope"
-        case .displayName: "person"
-        case .inviteToken: "gift"
-        case .password, .confirmPassword: "lock"
-        case .code: "number"
+        case .email: .mail
+        case .displayName: .person
+        case .inviteToken: .key
+        case .password, .confirmPassword: .lock
+        case .code: .number
         }
     }
 }

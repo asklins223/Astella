@@ -13,6 +13,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
 
+enum class StartupLoadState { Idle, Loading, Ready, Failed }
+
 data class AppUiState(
     val profile: UserProfile? = null,
     val chatShowsRecords: Boolean = false,
@@ -38,6 +40,7 @@ data class AppUiState(
     val selectionRunId: String? = null,
     val realtimeStatus: String = "尚未连接",
     val isLoading: Boolean = false,
+    val startupLoadState: StartupLoadState = StartupLoadState.Idle,
     val isSending: Boolean = false,
     val isRecording: Boolean = false,
     val isTranscribing: Boolean = false,
@@ -69,7 +72,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val devicePreferences = application.getSharedPreferences("astella.device-preferences", Application.MODE_PRIVATE)
     private val recorder = VoiceRecorder()
     private val _state = kotlinx.coroutines.flow.MutableStateFlow(
-        AppUiState(serviceAddress = api.baseUrl),
+        AppUiState(serviceAddress = api.baseUrl, startupLoadState = if (api.token != null) StartupLoadState.Loading else StartupLoadState.Idle),
     )
     val state = _state
     private var realtime: CompanionRealtime? = null
@@ -231,6 +234,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun restoreSession() = viewModelScope.launch {
+        val arriving = _state.value.profile == null
+        if (arriving) _state.value = _state.value.copy(startupLoadState = StartupLoadState.Loading)
         patch(isLoading = true, error = null)
         try {
             val me = withContext(Dispatchers.IO) { api.request("/auth/me") }
@@ -247,11 +252,19 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 localReduceMotion = devicePreferences.getBoolean(devicePreferenceKey(key, "reduceMotion"), false),
                 isLoading = false,
             )
-            loadConversation()
-            loadNotes("")
+            val conversation = loadConversation()
+            val notes = loadNotes("")
+            conversation.join()
+            notes.join()
+            if (arriving && _state.value.profile?.userId == profile.userId) {
+                _state.value = _state.value.copy(startupLoadState = StartupLoadState.Ready)
+            }
         } catch (error: Throwable) {
             if ((error as? ApiFailure)?.status == 401) logout()
-            else patch(isLoading = false, error = pageMessage(error, "暂时接不上你的书房，请检查网络后重试。"))
+            else {
+                patch(isLoading = false, error = pageMessage(error, "暂时接不上你的书房，请检查网络后重试。"))
+                if (arriving) _state.value = _state.value.copy(startupLoadState = StartupLoadState.Failed)
+            }
         }
     }
 
@@ -261,8 +274,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             val inbox = withContext(Dispatchers.IO) { api.request("/companion/inbox/ensure", "POST", JSONObject()) }
             val id = inbox.optString("id").takeIf(String::isNotBlank) ?: error("没有找到伴星对话。")
             _state.value = _state.value.copy(conversationId = id)
-            refreshMessages()
-            refreshRuns()
+            val messages = refreshMessages()
+            val runs = refreshRuns()
+            messages.join()
+            runs.join()
             val snapshot = withContext(Dispatchers.IO) {
                 api.request("/companion/conversations/$id/run-nodes?after=0")
             }
@@ -531,6 +546,32 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             devicePreferences.edit().putFloat(devicePreferenceKey(it, "readingScale"), value).apply()
         }
         _state.value = _state.value.copy(readingScale = value)
+    }
+
+    fun recentNoteId(): String? {
+        val profile = _state.value.profile ?: return null
+        return devicePreferences.getString(notePreferenceKey(profile.userId, profile.workspaceId, "recent"), null)
+    }
+
+    fun recordNoteOpened(noteId: String) {
+        val profile = _state.value.profile ?: return
+        devicePreferences.edit()
+            .putString(notePreferenceKey(profile.userId, profile.workspaceId, "recent"), noteId)
+            .apply()
+    }
+
+    fun savedNoteReadingBlock(noteId: String): Int? {
+        val profile = _state.value.profile ?: return null
+        val key = notePreferenceKey(profile.userId, profile.workspaceId, "block.$noteId")
+        return devicePreferences.getInt(key, -1).takeIf { it >= 0 }
+    }
+
+    fun saveNoteReadingBlock(noteId: String, ordinal: Int) {
+        val profile = _state.value.profile ?: return
+        if (ordinal < 0) return
+        devicePreferences.edit()
+            .putInt(notePreferenceKey(profile.userId, profile.workspaceId, "block.$noteId"), ordinal)
+            .apply()
     }
 
     fun setLocalReduceMotion(value: Boolean) {
@@ -1037,3 +1078,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 }
 
 private fun devicePreferenceKey(userId: String, name: String): String = "astella.mobile.$userId.$name"
+
+private fun notePreferenceKey(userId: String, workspaceId: String, name: String): String =
+    "astella.mobile.note-location.$userId.$workspaceId.$name"

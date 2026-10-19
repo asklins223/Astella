@@ -32,6 +32,8 @@
 
 **伴星实时语音（2026-10-07 体验修复）：**开麦后按自然停顿自动送出，短停顿只推进本机识别字幕，完整一轮与最新说过的话在伴星身边可读。识别、等待回复、伴星说话和暂停分别呈现；回复期间收音让路，播放结束后自动恢复，插话由「我想说」立即停止旧回复并接续新一句，避免音量阈值把扬声器回声误判成用户。可以「说好了」提前送出、暂停并继续收音、改用文字；关闭与再次点麦克风均立即结束，不自动发送未完成的内容。隐藏窗口暂停收音，正式作答或语音不可用时结束会话。实时会话压住背景播报但允许回复发声，普通单段录音仍独占音频。尚未完成真人麦克风与扬声器的连续多轮听感验收。
 
+**Complete speech delivery (2026-10-19 user decision):** when reply speech is enabled, issue every speakable segment through the reply's ending. The former 200-character spoken-prefix budget and its environment override have been removed. Segment length bounds individual synthesis requests, never the amount of the reply read aloud. Existing formal-answer, voice, cancellation and participation controls still apply. A new greeting or name after a companion question can use the hybrid conversation path; acknowledgements, refusals and references that continue a pending offer retain the task handoff. Verification: [startup latency and complete speech](docs/testing/desktop-startup-latency-and-complete-speech-2026-10-19.md).
+
 **历史消息的本机原声（2026-10-07 用户决定）：**伴星实时回复生成的 MP3 分段按同一条回复保存到客户端 `userData/companion-message-audio`，按部署与账号隔离，空间与回复身份使用哈希。每个账号在本机合计最多保留最近 100 条有音频的回复，一条回复的多段音频只占一条额度；回听不延长保留顺序。手记与伴星中心的对话历史在录音存在时显示「播放音频」，按原顺序播放当时生成的声音，不重新合成；缺失、未生成或超出额度的消息保留文字。停止、切换消息和离开页面释放播放，清除当前空间的对话同时删除该空间的缓存，并阻止清除前的迟到请求写回。引导旁白的既有缓存独立保留。
 
 ## Platform

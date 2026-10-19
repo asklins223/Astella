@@ -10,6 +10,7 @@ import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.snap
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
@@ -25,17 +26,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 
-/**
- * 动效 token（DESIGN_TOKENS §三）。一切状态变化默认弹性、可中断、可反转。
- *
- * iOS `spring(duration:bounce:)` → Android `spring(dampingRatio, stiffness)` 换算：
- * dampingRatio = 1 − bounce；ω0 ≈ 3.5 / duration_seconds；stiffness = ω0² 取整到 5 的倍数。
- * | token | iOS | Android |
- * | press | 0.22s bounce .06 | damping .94 / stiffness 255 |
- * | pressSoft | 0.2s bounce .04 | damping .96 / stiffness 305 |
- * | routePush | 0.32s bounce .06 | damping .94 / stiffness 120 |
- * | segment | 0.38s bounce .08 | damping .92 / stiffness 85 |
- */
+/** Android motion tokens are tuned for Compose springs and Android screen distances. */
 object MotionTokens {
     private val authEase = CubicBezierEasing(.23f, 1f, .32f, 1f)
     fun <T> authRoute(): TweenSpec<T> = tween(durationMillis = 260, easing = authEase)
@@ -46,11 +37,11 @@ object MotionTokens {
     /** 次级按钮按压缩放（scale 0.99，更收敛）。 */
     fun <T> pressSoft(): SpringSpec<T> = spring(dampingRatio = 0.96f, stiffness = 305f)
 
-    /** 页面路由推入/退出（阶段 9 替换现有 tween 转场时接入）。 */
-    fun <T> routePush(): SpringSpec<T> = spring(dampingRatio = 0.94f, stiffness = 120f)
+    /** Screen navigation: quick to follow a tap, with a restrained settle. */
+    fun <T> routePush(): SpringSpec<T> = spring(dampingRatio = 0.92f, stiffness = 260f)
 
-    /** 分段/页签切换。 */
-    fun <T> segment(): SpringSpec<T> = spring(dampingRatio = 0.92f, stiffness = 85f)
+    /** Dock selection and short-range control changes. */
+    fun <T> segment(): SpringSpec<T> = spring(dampingRatio = 0.88f, stiffness = 380f)
 
     /** 「+」二级菜单逐项散开间隔（reduceMotion 时 0ms，整组淡入）。 */
     const val menuStaggerMillis: Int = 24
@@ -96,9 +87,8 @@ fun rememberSystemReducedMotion(): Boolean {
 fun enabledMotion(): Boolean = !LocalReduceMotion.current && !rememberSystemReducedMotion()
 
 /**
- * 按压缩放反馈：按压 0.985（[soft] 次级 0.99）× 对应 spring，松手弹回。
- * reduceMotion（[enabledMotion] 为 false）或 [enabled] 为 false 时无缩放，仅保留原交互。
- * 阶段 9 把它接到主/次级按钮上；此处只提供 token 化工具。
+ * Press scale feedback: 0.985 (0.99 for [soft]) with a spring, returning on release.
+ * Reduced motion or [enabled] = false keeps the control functional without scaling.
  */
 @Composable
 fun Modifier.pressScale(soft: Boolean = false, enabled: Boolean = true): Modifier {
@@ -113,7 +103,7 @@ fun Modifier.pressScale(soft: Boolean = false, enabled: Boolean = true): Modifie
     }
     val scale by animateFloatAsState(
         targetValue = target,
-        animationSpec = if (soft) MotionTokens.pressSoft() else MotionTokens.press(),
+        animationSpec = if (!motionOn) snap() else if (soft) MotionTokens.pressSoft() else MotionTokens.press(),
         label = "pressScale",
     )
     return this
