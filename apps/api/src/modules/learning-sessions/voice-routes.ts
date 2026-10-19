@@ -24,7 +24,7 @@ import { setCompanionSegmentWarmHook } from "../companion-conversation/turn/comp
 import { assertSafeTtsInput, DEFAULT_VOICE_PROFILE } from "./voice-tts-policy.ts";
 import { edgeTtsSynthesizeStream, EdgeTtsError } from "./voice-providers/edge-tts.ts";
 import { stripVoiceExpressionTags } from "@astella/shared/voice-expression-tags";
-import { qwenVoiceForInstruction } from "@astella/shared/tts-voice-catalog";
+import { resolveTtsSynthesisProfile } from "./voice-providers/tts-synthesis-profile.ts";
 import { qwenTtsSynthesizeStreamForUser, QwenTtsError, warmQwenTtsConnection } from "./voice-providers/qwen-tts.ts";
 import { loadTtsEngineConfig } from "./voice-providers/tts-config.ts";
 import { guidanceVoiceProfile } from "./voice-providers/guidance-voice-profile.ts";
@@ -331,7 +331,7 @@ export async function voiceRoutes(app: FastifyInstance) {
      * 解出正文，否则流式这条就成了绕过校验的第二条口径。
      */
     let ttsText = text?.text ?? "";
-    /** 这一轮的说话风格指令（含方言），来自段事件；缺省才回落 config。 */
+    /** 段事件的本轮表达要求，与账号基础音色/方言合并后用于合成。 */
     let ttsInstruction: string | undefined;
     if (reference) {
       const resolved = await resolveCompanionSegmentText(
@@ -409,10 +409,18 @@ export async function voiceRoutes(app: FastifyInstance) {
       }
     }
     try {
-      // 15b：TTS 引擎选择——请求显式 engine 优先，缺省用 config tts.engine（默认 qwen）。
-      const engine = text?.engine ?? loadTtsEngineConfig().engine;
+      const config = loadTtsEngineConfig();
+      const selection = reference
+        ? await resolveSelectionForSynthesis(req.session, req.log)
+        : resolveTtsSelection(null, config);
+      // 段引用沿用账号选择；V1 文本接口保留请求参数优先、配置兜底的约定。
+      if (text?.engine) selection.engine = text.engine;
+      const profile = resolveTtsSynthesisProfile(config, selection, ttsInstruction);
+      const engine = profile.engine;
+      req.log.info({ engine, voice: engine === "qwen" ? profile.qwenVoice : selection.edgeVoice,
+        instructionSource: profile.instructionSource }, "companion tts stream profile resolved");
       if (engine === "qwen") {
-        const cfg = loadTtsEngineConfig().qwen;
+        const cfg = config.qwen;
         if (!cfg.workspaceId) {
           // 未配置业务空间 ID：不再直接 502，降级 edge（qwen 缺配置不该让语音消失）。
           req.log.warn("qwen tts workspaceId missing; falling back to edge-tts");
@@ -427,17 +435,7 @@ export async function voiceRoutes(app: FastifyInstance) {
               productionAiGovernancePorts,
             );
             const spoken = call.prepareText(ttsText, "qwen");
-            /**
-             * 音色与指令按**这一轮的指令**解析，和预热/整段那条用同一套
-             * （2026-10-18）。以前这里固定 `cfg.voice`，方言轮不会换成会说该方言的
-             * 系统女声——而命中预热缓存的段是换过的，于是同一轮回复里口音来回跳。
-             */
-            const streamInstruction = ttsInstruction ?? cfg.instruction;
-            const streamVoice = qwenVoiceForInstruction(
-              cfg.voice,
-              streamInstruction,
-              cfg.model,
-            );
+            // 与预热/整段共用解析：本轮语气不能覆盖掉账号的基础音色。
             // openStream：成功只代表拿到了上游连接。审计挂在流上，读到 EOF 才算成功，
             // 中途出错或被客户端打断都按真实结局记。
             const tracked = await call.openStream({ provider: "qwen", modelId: cfg.model }, async () => {
@@ -448,12 +446,10 @@ export async function voiceRoutes(app: FastifyInstance) {
                   workspaceId: cfg.workspaceId,
                   apiKey: process.env.DASHSCOPE_API_KEY ?? "",
                   model: cfg.model,
-                  voice: streamVoice,
+                  voice: profile.qwenVoice,
                   format: cfg.format,
                   sampleRate: cfg.sampleRate,
-                  // 15b 二期：指令控制（高质量声音描述，config tts.qwen.instruction）
-                  // 段事件带了这一轮的指令（含方言）就用它——见上面 `ttsInstruction`。
-                  instruction: streamInstruction,
+                  instruction: profile.instruction,
                   signal: aborted.signal,
                 },
               );
@@ -488,11 +484,11 @@ export async function voiceRoutes(app: FastifyInstance) {
       const tracked = await edgeCall.openStream({ provider: "edge", modelId: "edge-tts" }, async () => {
         const result = await edgeTtsSynthesizeStream(
           edgeText,
-          text?.voice ?? "",
+          text?.voice ?? selection.edgeVoice,
           {
             baseUrl: process.env.EDGE_TTS_BASE_URL,
             // 2026-08-12（伴星语音设置）：语速随请求下发（服务端有默认）。
-            ...(text?.rate ? { rate: text.rate } : {}),
+            rate: text?.rate ?? config.edge.rate,
             signal: aborted.signal,
           },
         );

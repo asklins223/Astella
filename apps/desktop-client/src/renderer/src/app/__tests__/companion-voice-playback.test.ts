@@ -707,9 +707,11 @@ describe("逐段播放结局上报", () => {
       },
     });
     setCompanionVoiceHost(streamHost);
+    const events = collect();
     const session = beginCompanionSpeechLine({ strictSegments: true });
 
-    session.feedSegment(refSegment(1, "第一句。"));
+    const first = refSegment(1, "第一句。");
+    session.feedSegment({ ...first, cue: { ...first.cue, emotion: "happy" } });
     session.feedSegment(refSegment(2, "第二句。"));
     session.finish("");
     await waitUntil(() => streamed.length === 2);
@@ -717,6 +719,7 @@ describe("逐段播放结局上报", () => {
     // 整段合成一次都不该发：两段都由流式念完。
     expect(host.synthesized).toEqual([]);
     expect(host.played).toEqual([]);
+    expect(events.find(event => event.phase === "speaking")?.cue).toMatchObject({ emotion: "happy", intensity: 0.5 });
   });
 
   it("等到超时的段上报 deadline，而不是悄悄丢掉", async () => {

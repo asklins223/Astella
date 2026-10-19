@@ -8,9 +8,15 @@ vi.mock("../../../app/companion-session/companion-voice-playback", () => ({
   setCompanionVoiceHost: vi.fn(),
   stopCompanionSpeech: vi.fn(),
 }));
+vi.mock("../../../app/companion-session/companion-voice-stream-playback", () => ({
+  hasStreamingSegmentChannel: vi.fn(() => false),
+  playSegmentFromStream: vi.fn(),
+}));
 
 import { HomeV2AudioController } from "../HomeV2AudioController";
 import { isCompanionSpeechActive, setCompanionVoiceHost } from "../../../app/companion-session/companion-voice-playback";
+import { hasStreamingSegmentChannel, playSegmentFromStream } from "../../../app/companion-session/companion-voice-stream-playback";
+import { resetHomeV2VoiceLevel, subscribeHomeV2VoiceLevel } from "../../../app/companion-session/companion-voice-level";
 import { useRoomStore } from "../../../app/home/room-store";
 import { UNKNOWN_UPDATE_STATE, useUpdateStatus } from "../../../app/gate/update-status";
 import { holdCompanionMicrophone } from "../../companion/voice/companion-notification-voice";
@@ -23,6 +29,10 @@ let close: Mock<() => Promise<void>>;
 let listeners: MockInstance<typeof window.addEventListener>;
 /** 每个被 start() 的节点；空数组 = 这一轮没有任何音源自己跑起来。 */
 let started: string[];
+let analysers: Array<{ connect: Mock; disconnect: Mock; getFloatTimeDomainData: Mock }>;
+let destinationNode: unknown;
+let frames: Map<number, FrameRequestCallback>;
+let nextFrameId: number;
 
 beforeEach(() => {
   vi.mocked(isCompanionSpeechActive).mockReturnValue(false);
@@ -31,11 +41,15 @@ beforeEach(() => {
   resume = vi.fn(async () => undefined);
   close = vi.fn(async () => undefined);
   started = [];
+  analysers = [];
+  frames = new Map();
+  nextFrameId = 1;
+  resetHomeV2VoiceLevel();
   listeners = vi.spyOn(window, "addEventListener");
   vi.stubGlobal("requestIdleCallback", vi.fn((callback: () => void) => { warm = callback; return 1; }));
   vi.stubGlobal("cancelIdleCallback", vi.fn());
   const node = (kind: string) => ({
-    connect() { return this; },
+    connect: vi.fn(function (this: unknown) { return this; }),
     disconnect: vi.fn(),
     start: vi.fn(() => { started.push(kind); }),
     stop: vi.fn(),
@@ -46,7 +60,7 @@ beforeEach(() => {
     state = "running";
     sampleRate = 16;
     currentTime = 0;
-    destination = node("destination");
+    destination = (destinationNode = node("destination")) as unknown as AudioNode;
     suspend = suspend;
     resume = resume;
     close = close;
@@ -55,14 +69,29 @@ beforeEach(() => {
     createBufferSource = () => node("bufferSource");
     createBiquadFilter = () => node("biquadFilter");
     createGain = () => node("gain");
-    createAnalyser = () => ({ ...node("analyser"), fftSize: 32, getFloatTimeDomainData: vi.fn() });
+    createAnalyser = () => {
+      const analyserNode = {
+        ...node("analyser"), fftSize: 32, smoothingTimeConstant: 0,
+        getFloatTimeDomainData: vi.fn((samples: Float32Array) => samples.fill(0.1)),
+      };
+      analysers.push(analyserNode);
+      return analyserNode;
+    };
     createOscillator = () => node("oscillator");
     decodeAudioData = vi.fn(async () => ({ duration: 1 } as AudioBuffer));
   });
+  vi.stubGlobal("requestAnimationFrame", vi.fn((callback: FrameRequestCallback) => {
+    const id = nextFrameId++;
+    frames.set(id, callback);
+    return id;
+  }));
+  vi.stubGlobal("cancelAnimationFrame", vi.fn((id: number) => { frames.delete(id); }));
+  vi.mocked(hasStreamingSegmentChannel).mockReturnValue(false);
+  vi.mocked(playSegmentFromStream).mockReset();
   useRoomStore.setState({ masterMuted: false, surface: null, windowState: "visible" });
   useUpdateStatus.setState({ state: UNKNOWN_UPDATE_STATE });
 });
-afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.clearAllMocks(); });
+afterEach(() => { cleanup(); resetHomeV2VoiceLevel(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.clearAllMocks(); });
 
 function interact(trusted = true) {
   const handler = listeners.mock.calls.find(([type]) => type === "pointerdown")?.[1];
@@ -193,6 +222,48 @@ it("实时会话开麦后回复仍能真正启动音源，单段录音仍会挡�
   expect(audible()).toBe(false);
   releaseRecording();
   expect(audible()).toBe(true);
+  view.unmount();
+});
+
+it("流式伴星语音经过输出分析器并驱动 Live2D 共用嘴型振幅", async () => {
+  vi.mocked(hasStreamingSegmentChannel).mockReturnValue(true);
+  let finishStream!: (played: boolean) => void;
+  vi.mocked(playSegmentFromStream).mockImplementation(async args => {
+    args.registerStop?.(() => undefined);
+    args.registerProgress?.(() => 0.25);
+    return new Promise<boolean>(resolve => { finishStream = resolve; });
+  });
+
+  const view = render(<HomeV2AudioController />);
+  await act(async () => { warm(); interact(); });
+  const voiceHost = vi.mocked(setCompanionVoiceHost).mock.calls.at(-1)![0]!;
+  const levels: number[] = [];
+  const unsubscribe = subscribeHomeV2VoiceLevel(level => levels.push(level));
+  const request = {
+    version: 2 as const,
+    conversationId: "00000000-0000-4000-8000-000000000001",
+    runId: "00000000-0000-4000-8000-000000000002",
+    generation: 1,
+    ordinal: 1,
+    segmentId: "a".repeat(64),
+  };
+  let playing!: Promise<boolean>;
+  await act(async () => {
+    playing = voiceHost.playSegmentStream!(request, () => undefined);
+    await Promise.resolve();
+  });
+
+  expect(playSegmentFromStream).toHaveBeenCalledOnce();
+  expect(vi.mocked(playSegmentFromStream).mock.calls[0]![0].destination).toBe(analysers[0]);
+  expect(analysers[0]!.connect).toHaveBeenCalledWith(destinationNode);
+  const [frameId, sample] = [...frames.entries()][0]!;
+  frames.delete(frameId);
+  await act(async () => { sample(performance.now() + 100); });
+  expect(levels.some(level => level > 0.1)).toBe(true);
+
+  await act(async () => { finishStream(true); await playing; });
+  expect(analysers[0]!.disconnect).toHaveBeenCalledOnce();
+  unsubscribe();
   view.unmount();
 });
 

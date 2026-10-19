@@ -17,12 +17,15 @@
  * 3. 每次调用都是一次独立解码，完成顺序不可信，按完成顺序排播会把音频拼乱。
  *
  * `AudioDecoder`（WebCodecs）是**有状态**的流式解码器：同一个实例逐帧喂进去，
- * 它跨帧保持解码器内部状态（bit reservoir、预滚、重采样相位），输出的 PCM 与
+ * 它跨帧保持解码器内部状态（bit reservoir、预滚），输出的源采样率 PCM 与
  * "把整段文件一次解码"逐样本完全一致（实测 173 帧喂入，差值恰为 0）。
- * 所以这里直接用它：不切单元、不补前文、不裁切。
+ * 解码之后还要连续重采样到设备采样率：逐帧新建 AudioBufferSourceNode 会重置
+ * 播放插值状态，且不做抗镜像滤波，气音/齿音仍会变成刺耳的呲滋声。
  *
  * 帧解析仍然只做一件事：**切出完整帧的边界**，保证喂给解码器的是整帧。
  */
+
+import { StreamingPcmResampler } from './companion-pcm-resampler.ts';
 
 /** 一段可独立喂给 `AudioDecoder` 的连续完整 MP3 帧。 */
 export interface Mp3FrameUnit {
@@ -222,14 +225,15 @@ export interface IncrementalPlaybackOptions {
  * 再按 PCM 的**实际时长**在 AudioContext 时钟上首尾相接。
  *
  * 与上一版的区别是根本性的：上一版每次都调 `decodeAudioData`（把一块当完整文件），
- * 这一版全程只有**一个**解码器实例，跨帧保持状态——所以既没有单元开头的预滚静音，
- * 也没有逐块重采样的边缘失真，更没有"完成顺序乱"的问题（输出天然有序）。
+ * 全程共用一个解码器和一个重采样器；两层都保留跨帧状态。
+ * 交给 AudioContext 的 buffer 已是设备采样率，播放器无需再逐块插值。
  */
 export class IncrementalAudioPlayer {
   private readonly context: AudioContext;
   private readonly assembler = new Mp3FrameAssembler();
   private readonly sources: AudioBufferSourceNode[] = [];
   private decoder: AudioDecoder | null = null;
+  private resampler: StreamingPcmResampler | null = null;
   private decoderError: string | null = null;
   /** 已交给解码器、还没收到输出的帧数（用于收尾判定）。 */
   private queuedFrames = 0;
@@ -238,8 +242,8 @@ export class IncrementalAudioPlayer {
   private fedFrames = 0;
   private sourceSampleRate = 0;
   private samplesPerFrame = 0;
-  /** 下一个音频片段的起播时刻；null 表示还没排过。 */
-  private nextStartAt: number | null = null;
+  /** 设备样本时钟上的下一个起点；整样本排播避免逐块小数取整的缝隙。 */
+  private nextStartFrame: number | null = null;
   private decodedSeconds = 0;
   private startedAt: number | null = null;
   private reportedFraction = 0;
@@ -267,7 +271,11 @@ export class IncrementalAudioPlayer {
       this.flushing = true;
       void decoder.flush()
         .catch(() => undefined)
-        .then(() => { this.flushing = false; this.maybeComplete(); });
+        .then(() => {
+          if (this.live && this.resampler) this.schedulePcm(this.resampler.flush());
+          this.flushing = false;
+          this.maybeComplete();
+        });
     }
     this.maybeComplete();
   }
@@ -282,6 +290,7 @@ export class IncrementalAudioPlayer {
     this.sources.length = 0;
     try { this.decoder?.close(); } catch { /* 已经关了 */ }
     this.decoder = null;
+    this.resampler = null;
   }
 
   get isLive(): boolean {
@@ -414,10 +423,21 @@ export class IncrementalAudioPlayer {
       return;
     }
     data.close();
-    const buffer = this.context.createBuffer(1, frames, rate);
-    buffer.copyToChannel(pcm, 0);
-    this.schedule(buffer);
+    this.resampler ??= new StreamingPcmResampler(rate, this.context.sampleRate);
+    if (rate !== this.resampler.sourceRate) {
+      this.decoderError = 'sample-rate-changed';
+      this.maybeComplete();
+      return;
+    }
+    this.schedulePcm(this.resampler.push(pcm));
     this.maybeComplete();
+  }
+
+  private schedulePcm(pcm: Float32Array): void {
+    if (!pcm.length) return;
+    const buffer = this.context.createBuffer(1, pcm.length, this.context.sampleRate);
+    buffer.getChannelData(0).set(pcm);
+    this.schedule(buffer);
   }
 
   private schedule(buffer: AudioBuffer): void {
@@ -427,14 +447,16 @@ export class IncrementalAudioPlayer {
     const source = this.context.createBufferSource();
     source.buffer = buffer;
     source.connect(this.options.destination);
-    const startAt = this.nextStartAt === null
-      ? this.context.currentTime + 0.02   // 第一段：留一点调度余量
-      : Math.max(this.nextStartAt, this.context.currentTime + 0.005);
-    this.nextStartAt = startAt + buffer.duration;
+    const rate = buffer.sampleRate;
+    const startFrame = this.nextStartFrame === null
+      ? Math.ceil((this.context.currentTime + 0.02) * rate)
+      : Math.max(this.nextStartFrame, Math.ceil((this.context.currentTime + 0.005) * rate));
+    const startAt = startFrame / rate;
+    this.nextStartFrame = startFrame + buffer.length;
     this.sources.push(source);
     const first = this.startedAt === null;
     if (first) this.startedAt = startAt;
-    this.decodedSeconds = Math.max(this.decodedSeconds, this.nextStartAt - this.startedAt!);
+    this.decodedSeconds = Math.max(this.decodedSeconds, this.nextStartFrame / rate - this.startedAt!);
     source.onended = () => {
       const index = this.sources.indexOf(source);
       if (index >= 0) this.sources.splice(index, 1);

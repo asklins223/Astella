@@ -92,6 +92,12 @@ type VoicePlayback = {
   readonly settle: (heard: boolean) => void;
 };
 
+type StreamVoiceMeter = {
+  readonly analyser: AnalyserNode;
+  readonly samples: Float32Array<ArrayBuffer>;
+  frame: number;
+};
+
 function whiteNoise(context: AudioContext, seconds: number): AudioBuffer {
   const buffer = context.createBuffer(1, Math.max(1, Math.round(context.sampleRate * seconds)), context.sampleRate);
   const channel = buffer.getChannelData(0);
@@ -245,6 +251,8 @@ export function HomeV2AudioController() {
   const [unlocked, setUnlocked] = useState(false);
   const graphRef = useRef<HomeV2AudioGraph | null>(null);
   const voiceRef = useRef<VoicePlayback | null>(null);
+  /** 流式播放由多个 AudioBufferSourceNode 组成，单独保留它共用的输出分析器。 */
+  const streamMeterRef = useRef<StreamVoiceMeter | null>(null);
   /** 流式播放器的停止句柄：它不经 voiceRef，所以停止链要单独记一份。 */
   const streamStopRef = useRef<(() => void) | null>(null);
   /**
@@ -267,50 +275,55 @@ export function HomeV2AudioController() {
   const audibleRef = useRef(false);
   const notificationAudioCache = useRef(new Map<CompanionNotificationAudio, Promise<AudioBuffer>>());
 
+  const releaseMouthLevel = useCallback((immediate: boolean) => {
+    window.cancelAnimationFrame(mouthReleaseFrameRef.current);
+    if (immediate) {
+      mouthLevelRef.current = 0;
+      setHomeV2VoiceLevel(0);
+      return;
+    }
+    let previousAt = performance.now();
+    const release = (at: number) => {
+      const next = smoothCompanionMouthLevel(mouthLevelRef.current, 0, at - previousAt);
+      previousAt = at;
+      mouthLevelRef.current = next;
+      setHomeV2VoiceLevel(next);
+      if (next > 0.01) mouthReleaseFrameRef.current = window.requestAnimationFrame(release);
+      else {
+        mouthLevelRef.current = 0;
+        setHomeV2VoiceLevel(0);
+      }
+    };
+    mouthReleaseFrameRef.current = window.requestAnimationFrame(release);
+  }, []);
+
   const stopVoicePlayback = useCallback((immediate = true, heard = false) => {
     streamStopRef.current?.();
     streamStopRef.current = null;
     streamProgressRef.current = null;
+    const streamMeter = streamMeterRef.current;
+    streamMeterRef.current = null;
+    if (streamMeter) {
+      window.cancelAnimationFrame(streamMeter.frame);
+      streamMeter.analyser.disconnect();
+    }
     const playback = voiceRef.current;
     voiceRef.current = null;
     activePlaybackRef.current = null;
-    window.cancelAnimationFrame(mouthReleaseFrameRef.current);
-    if (!playback) {
-      if (immediate) {
-        mouthLevelRef.current = 0;
-        setHomeV2VoiceLevel(0);
+    if (playback) {
+      cancelAnimationFrame(playback.frame);
+      try {
+        playback.source.stop();
+      } catch {
+        // Already stopped: nothing to release.
       }
-      return;
+      playback.source.disconnect();
+      playback.analyser.disconnect();
     }
-    cancelAnimationFrame(playback.frame);
-    try {
-      playback.source.stop();
-    } catch {
-      // Already stopped: nothing to release.
-    }
-    playback.source.disconnect();
-    playback.analyser.disconnect();
-    if (immediate) {
-      mouthLevelRef.current = 0;
-      setHomeV2VoiceLevel(0);
-    } else {
-      let previousAt = performance.now();
-      const release = (at: number) => {
-        const next = smoothCompanionMouthLevel(mouthLevelRef.current, 0, at - previousAt);
-        previousAt = at;
-        mouthLevelRef.current = next;
-        setHomeV2VoiceLevel(next);
-        if (next > 0.01) mouthReleaseFrameRef.current = window.requestAnimationFrame(release);
-        else {
-          mouthLevelRef.current = 0;
-          setHomeV2VoiceLevel(0);
-        }
-      };
-      mouthReleaseFrameRef.current = window.requestAnimationFrame(release);
-    }
+    releaseMouthLevel(immediate);
     // 等待这次播放的人必须拿到结果，否则它会一直以为自己还在播。
-    playback.settle(heard);
-  }, []);
+    playback?.settle(heard);
+  }, [releaseMouthLevel]);
 
   /**
    * 播一段已经解码好的语音，按帧回报进度。
@@ -557,36 +570,67 @@ export function HomeV2AudioController() {
     await graph.context.resume().catch(() => undefined);
     if (graphRef.current !== graph) return false;
     stopVoicePlayback();
+    const analyser = graph.context.createAnalyser();
+    const tuning = HOME_V2_AUDIO_TUNING.voice;
+    analyser.fftSize = tuning.analyserFftSize;
+    analyser.smoothingTimeConstant = tuning.analyserSmoothing;
+    analyser.connect(graph.context.destination);
+    const meter: StreamVoiceMeter = { analyser, samples: new Float32Array(analyser.fftSize), frame: 0 };
+    streamMeterRef.current = meter;
+    let previousMeterAt = performance.now();
+    const sampleStreamOutput = (at: number) => {
+      if (streamMeterRef.current !== meter) return;
+      analyser.getFloatTimeDomainData(meter.samples);
+      const target = companionMouthTarget(meter.samples);
+      const level = smoothCompanionMouthLevel(mouthLevelRef.current, target, at - previousMeterAt);
+      previousMeterAt = at;
+      mouthLevelRef.current = level;
+      setHomeV2VoiceLevel(level);
+      meter.frame = window.requestAnimationFrame(sampleStreamOutput);
+    };
+    meter.frame = window.requestAnimationFrame(sampleStreamOutput);
     let duration = 0;
     const startedAt = graph.context.currentTime;
-    const ok = await playSegmentFromStreamAudio({
-      request,
-      workspaceEpoch: workspaceEpochRef.current ?? undefined,
-      context: graph.context,
-      destination: graph.context.destination,
-      audible: () => replyAudibleRef.current && !isCompanionReplyBlockedByMicrophone(),
-      signal,
-      registerStop: (stop) => { streamStopRef.current = stop },
-      /**
-       * 字幕读数（2026-10-18）：气泡问"现在念到哪"走的是 `voiceProgress()`，
-       * 那里只读 `activePlaybackRef`——整段那条会写它，流式这条不写，于是字幕
-       * 永远拿到 null、退回阅读钟，文字与声音脱开。
-       *
-       * 这里把增量播放器的音频时钟挂到同一个读数上。注意**不写 `activePlaybackRef`**：
-       * 那个字段的语义是"一条 AudioBufferSourceNode 从 startedAt 播 duration 秒"，
-       * 流式是许多个 source 首尾相接，形状不同；混写会让 `stopVoicePlayback` 收错尾。
-       */
-      registerProgress: (read) => { streamProgressRef.current = read },
-      onProgress: (seconds) => {
-        duration = Math.max(duration, seconds);
-        const elapsed = Math.max(0, graph.context.currentTime - startedAt);
-        // 已解码多少还不知道时按已播时长报，宁可慢一点也不要让字幕停在 0。
-        onProgress(duration > 0 ? Math.min(1, elapsed / duration) : 0);
-      },
-    });
+    let streamStop: (() => void) | null = null;
+    let ok = false;
+    try {
+      ok = await playSegmentFromStreamAudio({
+        request,
+        workspaceEpoch: workspaceEpochRef.current ?? undefined,
+        context: graph.context,
+        destination: analyser,
+        audible: () => replyAudibleRef.current && !isCompanionReplyBlockedByMicrophone(),
+        signal,
+        registerStop: (stop) => { streamStop = stop; streamStopRef.current = stop },
+        /**
+         * 字幕读数（2026-10-18）：气泡问"现在念到哪"走的是 `voiceProgress()`，
+         * 那里只读 `activePlaybackRef`——整段那条会写它，流式这条不写，于是字幕
+         * 永远拿到 null、退回阅读钟，文字与声音脱开。
+         *
+         * 这里把增量播放器的音频时钟挂到同一个读数上。注意**不写 `activePlaybackRef`**：
+         * 那个字段的语义是"一条 AudioBufferSourceNode 从 startedAt 播 duration 秒"，
+         * 流式是许多个 source 首尾相接，形状不同；混写会让 `stopVoicePlayback` 收错尾。
+         */
+        registerProgress: (read) => { streamProgressRef.current = read },
+        onProgress: (seconds) => {
+          duration = Math.max(duration, seconds);
+          const elapsed = Math.max(0, graph.context.currentTime - startedAt);
+          // 已解码多少还不知道时按已播时长报，宁可慢一点也不要让字幕停在 0。
+          onProgress(duration > 0 ? Math.min(1, elapsed / duration) : 0);
+        },
+      });
+    } finally {
+      if (streamStopRef.current === streamStop) streamStopRef.current = null;
+      if (streamMeterRef.current === meter) {
+        streamMeterRef.current = null;
+        window.cancelAnimationFrame(meter.frame);
+        analyser.disconnect();
+        releaseMouthLevel(!ok);
+      }
+    }
     if (ok) window.dispatchEvent(new Event("astella:companion-audio-cache-changed"));
     return ok;
-  }, [ensureGraph, stopVoicePlayback]);
+  }, [ensureGraph, stopVoicePlayback, releaseMouthLevel]);
 
   const readCachedVoiceSegment = useCallback(async (request: CompanionCachedVoiceReadRequestV1): Promise<AudioBuffer> => {
     const readApi = window.astella?.companion?.voice?.cachedRead;

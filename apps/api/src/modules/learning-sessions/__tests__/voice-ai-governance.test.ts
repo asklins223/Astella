@@ -202,6 +202,19 @@ test("流式端点命中预热缓存：不再二次合成、不建第二条治�
     "命中缓存时应补记领域 outcome，否则这一段的引擎与耗时读数会丢");
 });
 
+test("流式缓存未命中时也读取账号音色，并与预热/整段共用合成指令解析", () => {
+  const source = readFileSync(join(import.meta.dirname, "..", "voice-routes.ts"), "utf8");
+  const from = source.indexOf('app.post("/voice/tts/stream"');
+  const through = source.indexOf('app.get("/voice/guidance-profile"', from);
+  const stream = source.slice(from, through);
+  assert.match(stream, /resolveSelectionForSynthesis\(req\.session, req\.log\)/,
+    "冷流式合成忽略了账号的引擎、音色和声音偏好");
+  assert.match(stream, /resolveTtsSynthesisProfile\(config, selection, ttsInstruction\)/,
+    "冷流式与整段合成必须共用基础音色/本轮语气/方言的解析");
+  assert.doesNotMatch(stream, /ttsInstruction\s*\?\?\s*cfg\.instruction/,
+    "不能让本轮语气整条替换基础音色指令");
+});
+
 test("模型调用与领域 outcome 是两件事：播放上报不建治理出口", async () => {
   const source = readFileSync(join(import.meta.dirname, "..", "voice-routes.ts"), "utf8");
   const from = source.indexOf('app.post("/voice/tts/playback-outcome"');
