@@ -15,7 +15,7 @@ A desktop study room for personal learning. Turn material into notes, understand
 
 [中文](README.md) · [English](README.en.md) · [User and developer guide](docs/guide/README.md)
 
-Repository version: `v1.8.24` (shared by the server and desktop client)
+Repository version: `v1.8.25` (shared by the server and desktop client)
 
 </div>
 
