@@ -1240,6 +1240,10 @@
   animation: desktop-room-reveal 340ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+.desktop-connection-notice { position: fixed; z-index: 260; left: 50%; top: 14px; display: flex; align-items: center; flex-wrap: wrap; justify-content: center; gap: 8px 14px; width: max-content; max-width: calc(100vw - 32px); padding: 11px 15px; border: 1px solid #d9cfb6; border-radius: 13px; background: #fff8e7; color: #65543b; box-shadow: 0 6px 24px #382d2024; transform: translateX(-50%); font: 12px/1.65 "Noto Sans SC Variable", sans-serif; }
+.desktop-connection-notice button { min-height: 32px; padding: 4px 10px; border: 1px solid #cbd6bd; border-radius: 8px; background: #e8eedc; color: #4d6544; font: inherit; font-weight: 600; cursor: pointer; }
+.desktop-connection-notice button:focus-visible { outline: 2px solid #63845a; outline-offset: 3px; }
+
 @media (max-width: 1080px) {
   .desktop-access-gate {
     grid-template-columns: minmax(350px, 420px) minmax(0, 1fr);

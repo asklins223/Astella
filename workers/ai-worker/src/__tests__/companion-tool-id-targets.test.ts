@@ -54,41 +54,20 @@ const PARAM_TARGETS: Readonly<Record<string, Readonly<Record<string, IdTarget>>>
   // 共享改的是 `notes.share_scope` 那一列，身份仍是笔记主键；判据是 `created_by`，
   // 所以这一条走的是与 `setNoteShareScope` 同一个 id-space，没有另起一套。
   companion_share_note: { noteId: { table: "notes", column: "id" } },
-  companion_open_card: { cardId: { table: "learning_cards_v2", column: "card_id" } },
-  companion_focus_graph: { objectiveId: { table: "learning_objectives_v2", column: "objective_id" } },
-  // 可选参数（39d W2-1 的裁定）：给了就按那篇笔记收窄查找范围，所以目标仍是 notes。
-  companion_start_learning: { noteId: { table: "notes", column: "id" } },
-  companion_resume_learning: { runId: { table: "learning_runs", column: "id" } },
-  companion_pause_learning: { runId: { table: "learning_runs", column: "id" } },
-  companion_request_hint: {
-    runId: { table: "learning_runs", column: "id" },
-    taskId: { table: "learning_tasks", column: "id" },
-  },
-  companion_switch_task_variant: {
-    runId: { table: "learning_runs", column: "id" },
-    taskId: { table: "learning_tasks", column: "id" },
-    // 不是表列：它是本题候选里某个变体的描述符 id，随 `switch_variant` 动作交给 LearningRun。
-    alternativeId: { opaque: true, note: "任务候选变体的描述符 id，随 switch_variant 动作传递，不落列" },
-  },
-  companion_defer_review: { scheduleId: { table: "review_schedules", column: "id" } },
-  companion_schedule_reminder: { noteId: { table: "notes", column: "id" } },
-  companion_cancel_reminder: { reminderId: { table: "companion_reminders", column: "id" } },
-  // 跨会话找回（方案 44 §3.2／§8.3）：指向会话主键，**不是**任何消息的 id。
-  // 登记在这里本身就是一次复核——它提醒读者 seq 是会话内的局部序号，
-  // 只给 seq 会读到另一个会话的同号消息。
-  companion_recall_past_conversation: { conversationId: { table: "companion_conversations", column: "id" } },
-  companion_read_memory: { memoryId: { table: "assistant_memory_items", column: "id" } },
-  companion_forget_memory: { memoryId: { table: "assistant_memory_items", column: "id" } },
-  companion_move_memory: { memoryId: { table: "assistant_memory_items", column: "id" } },
-  companion_revise_memory: { memoryId: { table: "assistant_memory_items", column: "id" } },
-  // 手册展开（40 §4.6.10）：playbookId 是**手册表**的主键，不是记忆 id——
-  // 名字与目标必须对得上，否则读代码的人会以为它能读任意一条记忆。
-  companion_read_playbook: { playbookId: { table: "companion_procedural_playbooks", column: "id" } },
-  companion_read_image: {
+  companion_open_card: { cardId: { table: "note_learning_cards", column: "id" } },
+  companion_show_image: {
     noteId: { table: "notes", column: "id" },
     assetId: { table: "note_image_assets", column: "id" },
   },
-  companion_show_image: {
+  companion_schedule_reminder: { noteId: { table: "notes", column: "id" } },
+  companion_cancel_reminder: { reminderId: { table: "companion_reminders", column: "id" } },
+  companion_read_memory: { memoryId: { table: "assistant_memory_items", column: "id" } },
+  companion_recall_past_conversation: { conversationId: { table: "companion_conversations", column: "id" } },
+  companion_move_memory: { memoryId: { table: "assistant_memory_items", column: "id" } },
+  companion_read_playbook: { playbookId: { table: "companion_procedural_playbooks", column: "id" } },
+  companion_forget_memory: { memoryId: { table: "assistant_memory_items", column: "id" } },
+  companion_revise_memory: { memoryId: { table: "assistant_memory_items", column: "id" } },
+  companion_read_image: {
     noteId: { table: "notes", column: "id" },
     assetId: { table: "note_image_assets", column: "id" },
   },

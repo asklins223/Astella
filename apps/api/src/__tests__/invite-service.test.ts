@@ -40,14 +40,15 @@ describe("invite-service: ConsumeInviteError", () => {
 });
 
 describe("invite-service: ONBOARDING_STEPS", () => {
-  it("contains exactly 5 steps in expected order", () => {
-    assert.equal(ONBOARDING_STEPS.length, 5);
+  it("contains exactly 4 steps in expected order", () => {
+    // 2026-10-20：方案 57 把学习卡并进笔记，`evidence_review`（旧复习/证据复核）
+    // 随那条链一起删掉了。四步是新链路的实际入口，不能为了凑旧断言把它加回来。
+    assert.equal(ONBOARDING_STEPS.length, 4);
     assert.deepEqual([...ONBOARDING_STEPS], [
       "ai_consent",
       "first_content",
       "first_note",
       "first_card",
-      "evidence_review",
     ]);
   });
 

@@ -70,7 +70,7 @@ struct RootView: View {
             .onChange(of: store.startupLoadState) { _, state in
                 if state == .loading { launchFinished = false; companionFrame = .zero }
             }
-            .preferredColorScheme(colorScheme)
+            .preferredColorScheme(rootColorScheme)
             .simultaneousGesture(TapGesture().onEnded { store.lastInteraction = ProcessInfo.processInfo.systemUptime })
             .onChange(of: store.draft) { _, _ in store.lastInteraction = ProcessInfo.processInfo.systemUptime }
             .onChange(of: store.selectedTab) { _, _ in
@@ -99,6 +99,13 @@ struct RootView: View {
         case "dark": .dark
         default: nil
         }
+    }
+
+    private var rootColorScheme: ColorScheme? {
+        // Authentication keeps its designed light surface. A saved in-app
+        // appearance preference applies after the user enters the study room.
+        if reviewAuthRoute != nil || (store.profile == nil && !store.isAuthenticated) { return .light }
+        return colorScheme
     }
 
     @ViewBuilder

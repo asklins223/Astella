@@ -8,21 +8,17 @@ import {
   commandReceiptSchema,
   deploymentConfigSchema,
   desktopContractSnapshotSchema,
-  desktopCreateLearningRunV2RequestSchema,
   desktopNamespaceM2Values,
-  desktopRecordLearningRunActivityLeaseRequestV2Schema,
   desktopRouteKindM2Values,
   desktopTrustChallengeRequestSchema,
   extractCandidateLinks,
   gatewayEventSchema,
-  gatewayEventPayloadM2Schema,
   gatewayResultSchema,
   localApiTrustSchema,
   learningRoomManifestSchema,
   navigationEntrySchema,
   sessionContextSchema,
   staticAssetPathSchema,
-  subscriptionTopicM2Schema,
   workspaceContextSchema,
 } from "../contracts/desktop/desktop-ipc-contracts.ts";
 
@@ -104,7 +100,7 @@ test("authenticated member accepts a collaborative projection of an owner person
   assert.equal(session.workspace?.isPersonal, false);
 });
 
-test("M2 roster is explicitly gated and renderer cannot inject replay/device secrets", () => {
+test("M2 roster is explicitly gated", () => {
   const contract = desktopContractSnapshotSchema.parse({
     version: 1 as const,
     contractVersion: DESKTOP_IPC_CONTRACT_VERSION,
@@ -113,86 +109,10 @@ test("M2 roster is explicitly gated and renderer cannot inject replay/device sec
     namespaces: [...desktopNamespaceM2Values],
     enabledRoutes: [...desktopRouteKindM2Values],
   });
-  assert.equal(contract.enabledRoutes.includes("review.queue"), true);
-  assert.equal(contract.enabledRoutes.includes("learningRun.detail"), true);
   assert.equal(contract.enabledRoutes.includes("room.home"), true);
-  assert.throws(() => desktopCreateLearningRunV2RequestSchema.parse({
-    version: 2,
-    originV2: { kind: "card", cardId: USER_ID, objectiveId: WORKSPACE_ID },
-    goal: "clarify",
-    idempotencyKey: "renderer-must-not-send",
-  }));
-  assert.throws(() => desktopRecordLearningRunActivityLeaseRequestV2Schema.parse({
-    version: 2,
-    snapshotId: WORKSPACE_ID,
-    runRevision: 1,
-    runtimeEpoch: 1,
-    deviceSessionId: "renderer-must-not-send",
-    startedAt: "2026-08-23T00:00:00.000Z",
-    endedAt: "2026-08-23T00:00:01.000Z",
-  }));
-  assert.throws(() => desktopRecordLearningRunActivityLeaseRequestV2Schema.parse({
-    version: 2,
-    snapshotId: WORKSPACE_ID,
-    runRevision: 1,
-    runtimeEpoch: 1,
-    startedAt: "2026-08-23T00:00:00.000Z",
-    endedAt: "2026-08-23T00:00:01.000Z",
-    idempotencyKey: "renderer-must-not-send",
-  }));
 });
 
-test("M2 subscription wire only exposes safe learning-run and card-generation invalidations", () => {
-  assert.deepEqual(subscriptionTopicM2Schema.parse({ kind: "learningRun", runId: WORKSPACE_ID, cursor: "cursor-1" }), {
-    kind: "learningRun",
-    runId: WORKSPACE_ID,
-    cursor: "cursor-1",
-  });
-  assert.deepEqual(subscriptionTopicM2Schema.parse({ kind: "cardGeneration", runId: WORKSPACE_ID }), {
-    kind: "cardGeneration",
-    runId: WORKSPACE_ID,
-  });
-  assert.throws(() => subscriptionTopicM2Schema.parse({ kind: "cardGeneration" }));
-  assert.deepEqual(gatewayEventPayloadM2Schema.parse({
-    kind: "learning_run_changed",
-    runId: WORKSPACE_ID,
-    revision: 3,
-  }), {
-    kind: "learning_run_changed",
-    runId: WORKSPACE_ID,
-    revision: 3,
-  });
-  assert.deepEqual(gatewayEventPayloadM2Schema.parse({
-    kind: "card_generation_changed",
-    runId: WORKSPACE_ID,
-    eventCursor: 7,
-    revision: 4,
-  }), {
-    kind: "card_generation_changed",
-    runId: WORKSPACE_ID,
-    eventCursor: 7,
-    revision: 4,
-  });
-  assert.throws(() => gatewayEventPayloadM2Schema.parse({
-    kind: "learning_run_changed",
-    runId: WORKSPACE_ID,
-    revision: 3,
-    snapshot: { secret: "must-not-cross-ipc" },
-  }));
-  assert.throws(() => gatewayEventPayloadM2Schema.parse({
-    kind: "card_generation_changed",
-    runId: WORKSPACE_ID,
-    eventCursor: 7,
-    revision: 4,
-    candidate: { answer: "must-not-cross-ipc" },
-  }));
-  assert.throws(() => subscriptionTopicM2Schema.parse({
-    kind: "cardGeneration",
-    runId: WORKSPACE_ID,
-    cursor: "cursor-1",
-    answer: "must-not-cross-ipc",
-  }));
-});
+
 
 test("navigation scope is fail-closed", () => {
   const gate = {

@@ -96,6 +96,7 @@ export async function redriveCompanionRunVoice(
         displayText: item.displayText,
         displayStart: item.displayStart,
         displayEnd: item.displayEnd,
+        ...(item.messageId ? { messageId: item.messageId } : {}),
         cue: item.cue,
       });
       if (accepted) queued += 1;

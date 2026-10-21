@@ -78,7 +78,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.useRealTimers();
   useRoomStore.setState({
-    activeRunId: null, activeObjectiveId: null, surface: null, returnTarget: null,
+    surface: null, returnTarget: null,
     scenePhase: "idle", motionMode: "full", reducedMotion: false,
   });
 });
@@ -94,7 +94,7 @@ describe("任务区过渡（审计 F26）", () => {
     expect(transition()).toBe("entering");
     await act(async () => { useRoomStore.setState({ surface: null }); });
     expect(transition()).toBe("leaving");
-    await act(async () => { useRoomStore.setState({ surface: "review" }); });
+    await act(async () => { useRoomStore.setState({ surface: "note-library" }); });
     await act(async () => { useRoomStore.setState({ surface: "search" }); });
     expect(document.querySelector(".task-surface")?.getAttribute("data-surface")).toBe("search");
     expect(document.querySelector(".task-surface")?.hasAttribute("inert")).toBe(false);
@@ -121,8 +121,7 @@ describe("任务区过渡（审计 F26）", () => {
     render(<TaskSurface />);
 
     act(() => {
-      useRoomStore.getState().setActiveRunId(RUN_ID);
-      useRoomStore.getState().invoke("validate");
+      useRoomStore.getState().invoke("open-notes");
     });
     // 进场时间线起来了但永远走不完：状态必须停在 entering。
     expect(transition()).toBe("entering");
@@ -142,16 +141,15 @@ describe("任务区过渡（审计 F26）", () => {
     render(<TaskSurface />);
 
     await act(async () => {
-      useRoomStore.getState().setActiveRunId(RUN_ID);
-      useRoomStore.getState().invoke("validate");
+      useRoomStore.getState().invoke("open-notes");
     });
     await act(async () => { await vi.advanceTimersByTimeAsync(6_000); });
     expect(transition()).toBe("entered");
 
     // 换成另一个面：目标当次提交就可用。直接改状态——`invoke` 在作答中会先过导航守卫
     // （那是 F38b 那条链），这里要测的是过渡本身。
-    await act(async () => { useRoomStore.setState({ surface: "review" }); });
-    expect(document.querySelector(".task-surface")?.getAttribute("data-surface")).toBe("review");
+    await act(async () => { useRoomStore.setState({ surface: "search" }); });
+    expect(document.querySelector(".task-surface")?.getAttribute("data-surface")).toBe("search");
     expect(transition()).toBe("entering");
     expect(document.querySelector(".task-surface")?.hasAttribute("inert")).toBe(false);
 

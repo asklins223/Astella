@@ -16,6 +16,7 @@
 		A10000000000000000000013 /* Motion.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000015 /* Motion.swift */; };
 		A10000000000000000000014 /* Surfaces.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000016 /* Surfaces.swift */; };
 		A10000000000000000000015 /* Buttons.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000017 /* Buttons.swift */; };
+		A10000000000000000000AA1 /* LiquidGlass.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000AA1 /* LiquidGlass.swift */; };
 		A10000000000000000000016 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000018 /* Components.swift */; };
 		A10000000000000000000017 /* AstellaApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000019 /* AstellaApp.swift */; };
 		A10000000000000000000018 /* AuthScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000020 /* AuthScreen.swift */; };
@@ -110,6 +111,8 @@
 		E10000000000000000000001 /* LaunchMotionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000001 /* LaunchMotionView.swift */; };
 		E10000000000000000000002 /* LaunchMotionWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000002 /* LaunchMotionWebView.swift */; };
 		E10000000000000000000003 /* LaunchMotion in Resources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000003 /* LaunchMotion */; };
+		E580000000000000000000011 /* CompanionProcess.swift in Sources */ = {isa = PBXBuildFile; fileRef = E580000000000000000000012 /* CompanionProcess.swift */; };
+		E580000000000000000000021 /* CompanionProcessView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E580000000000000000000022 /* CompanionProcessView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -123,6 +126,7 @@
 		A20000000000000000000015 /* Motion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Motion.swift; sourceTree = "<group>"; };
 		A20000000000000000000016 /* Surfaces.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Surfaces.swift; sourceTree = "<group>"; };
 		A20000000000000000000017 /* Buttons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Buttons.swift; sourceTree = "<group>"; };
+		A20000000000000000000AA1 /* LiquidGlass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiquidGlass.swift; sourceTree = "<group>"; };
 		A20000000000000000000018 /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
 		A20000000000000000000019 /* AstellaApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AstellaApp.swift; sourceTree = "<group>"; };
 		A20000000000000000000020 /* AuthScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthScreen.swift; sourceTree = "<group>"; };
@@ -298,6 +302,8 @@
 		E20000000000000000000001 /* LaunchMotionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchMotionView.swift; sourceTree = "<group>"; };
 		E20000000000000000000002 /* LaunchMotionWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchMotionWebView.swift; sourceTree = "<group>"; };
 		E20000000000000000000003 /* LaunchMotion */ = {isa = PBXFileReference; lastKnownFileType = folder; path = LaunchMotion; sourceTree = "<group>"; };
+		E580000000000000000000012 /* CompanionProcess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Astella/App/CompanionProcess.swift; sourceTree = SOURCE_ROOT; };
+		E580000000000000000000022 /* CompanionProcessView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Astella/Conversation/CompanionProcessView.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -383,6 +389,8 @@
 			isa = PBXGroup;
 			children = (
 				A20000000000000000000024 /* ConversationScreen.swift */,
+				E580000000000000000000022 /* CompanionProcessView.swift */,
+				E580000000000000000000012 /* CompanionProcess.swift */,
 				A20000000000000000000025 /* CompanionScene.swift */,
 				A20000000000000000000026 /* MessageHistory.swift */,
 				A20000000000000000000027 /* MessageRow.swift */,
@@ -398,6 +406,7 @@
 				A20000000000000000000015 /* Motion.swift */,
 				A20000000000000000000016 /* Surfaces.swift */,
 				A20000000000000000000017 /* Buttons.swift */,
+				A20000000000000000000AA1 /* LiquidGlass.swift */,
 				A20000000000000000000018 /* Components.swift */,
 			);
 			path = Design;
@@ -707,6 +716,7 @@
 				A10000000000000000000013 /* Motion.swift in Sources */,
 				A10000000000000000000014 /* Surfaces.swift in Sources */,
 				A10000000000000000000015 /* Buttons.swift in Sources */,
+				A10000000000000000000AA1 /* LiquidGlass.swift in Sources */,
 				A10000000000000000000016 /* Components.swift in Sources */,
 				A10000000000000000000007 /* VoiceCapture.swift in Sources */,
 				A10000000000000000000017 /* AstellaApp.swift in Sources */,
@@ -717,6 +727,8 @@
 				E10000000000000000000001 /* LaunchMotionView.swift in Sources */,
 				A10000000000000000000021 /* SessionRecoveryScreen.swift in Sources */,
 				A10000000000000000000022 /* ConversationScreen.swift in Sources */,
+				E580000000000000000000021 /* CompanionProcessView.swift in Sources */,
+				E580000000000000000000011 /* CompanionProcess.swift in Sources */,
 				A10000000000000000000023 /* CompanionScene.swift in Sources */,
 				A10000000000000000000024 /* MessageHistory.swift in Sources */,
 				A10000000000000000000025 /* MessageRow.swift in Sources */,

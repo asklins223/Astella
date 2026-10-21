@@ -61,7 +61,7 @@ import {
 } from "../tools/companion-tool-result.ts";
 // 读工具族已搬到 companion-read-tools.ts（B2）。测试跟着搬——
 // 继续从 runtime 那个 re-export 取，会让「哪个文件有测试」这件事说不清。
-import { taskQueueToolResult, currentPageToolResult } from "../tools/companion-read-tools.ts";
+import { currentPageToolResult } from "../tools/companion-read-tools.ts";
 import { NOTE_SEARCH_MAX_TERMS, noteSearchTerms } from "../turn/companion-dialogue-content.ts";
 import { interpretCompanionTurn } from "../tools/companion-tool-intent.ts";
 import { MockProvider } from "../../lib/providers/mock.ts";
@@ -173,8 +173,7 @@ test("工具解析：guided 的业务写操作都确认，读取与自主记录�
       `${definition.name}（${definition.riskClass}）在 guided 下的确认要求不符`,
     );
   }
-  // 图谱聚焦与提醒的建/撤是 planner+navigation 里的免确认可逆低风险工具
-  for (const name of ["companion_focus_graph", "companion_schedule_reminder", "companion_cancel_reminder"]) {
+  for (const name of ["companion_schedule_reminder", "companion_cancel_reminder"]) {
     const definition = getCompanionAgentTool(name);
     assert.ok(definition, `${name} 必须存在`);
     assert.equal(canUseCompanionAgentTool("guided", definition).requiresConfirmation, true, name);
@@ -184,36 +183,7 @@ test("工具解析：guided 的业务写操作都确认，读取与自主记录�
   assert.ok(getCompanionAgentTool("companion_list_reminders")?.riskClass === "read");
 });
 
-test("工具解析：full 权限 = 用户预授权，但命令住在提案那条路的工具不因此失去执行处", () => {
-  // 2026-09-19 对齐权限分级原设计：full 是用户的事前授权，consequential 不再
-  // 逐步确认（自动跳转/自动设置）；irreversible 仍是安全底线。
-  //
-  // 2026-09-25 改了一条判据（#16 量的那面墙）：`companion_start_learning` 这类工具
-  // **worker 侧没有直执行器**，命令本体只在 API 的提案确认里执行。full 档原先把它判成
-  // "预授权 ⇒ 直执行"，于是走到 switch 的 default 抛「这一步我这边还做不了」——
-  // **guided 档出提案卡能用，full 档反而失败**，权限越高越差。现在 full 档对这些工具
-  // 同样出提案（免确认那一步仍欠，见 §19 那行的说明）。
-  const start = getCompanionAgentTool("companion_start_learning");
-  assert.ok(start);
-  assert.equal(start.requiresConfirmation, true);
-  assert.deepEqual(canUseCompanionAgentTool("full", start), {
-    allowed: true,
-    requiresConfirmation: true,
-  });
-  // guided 档维持逐次确认（默认档必须保守）。
-  assert.deepEqual(canUseCompanionAgentTool("guided", start), {
-    allowed: true,
-    requiresConfirmation: true,
-  });
-  // 控制端点：full 档**仍然**是预授权档——worker 能自己执行的可逆低风险工具不许被
-  // 顺手拖回确认档（否则这条改动就把 full 档整个抹平成 guided，而那不是要修的东西）。
-  const activeness = getCompanionAgentTool("companion_set_activeness");
-  assert.ok(activeness);
-  assert.equal(canUseCompanionAgentTool("full", activeness).requiresConfirmation, false,
-    "full 档的直执行能力被误伤：可逆低风险工具应当仍然免确认");
-  const irreversible = { name: "synthetic_irreversible", riskClass: "irreversible" as const, requiresConfirmation: false };
-  assert.equal(canUseCompanionAgentTool("full", irreversible).requiresConfirmation, true);
-});
+
 
 test("工具参数：未知工具、未知字段、类型错误全部失败关闭", () => {
   assert.equal(validateCompanionAgentToolArguments("does_not_exist", {}).success, false);
@@ -726,7 +696,7 @@ test("扁平工具面：guided/full 档下写工具与读工具同时在列，�
   const guided = resolveAllCompanionAgentTools("guided").map(tool => tool.name);
   const full = resolveAllCompanionAgentTools("full").map(tool => tool.name);
   // 曾经这些只存在于特定技能里：不选中的技能 = 拿不到的能力。
-  for (const name of ["companion_save_memory", "companion_open_page", "companion_start_learning"]) {
+  for (const name of ["companion_save_memory", "companion_open_page", "companion_read_note"]) {
     assert.ok(guided.includes(name), `guided 必须能看到 ${name}`);
     assert.ok(full.includes(name), `full 必须能看到 ${name}`);
   }
@@ -736,7 +706,7 @@ test("扁平工具面：guided/full 档下写工具与读工具同时在列，�
   // 抱怨 #5/#6 的那一面：看笔记、看数据、看队列、跳到页面，任何一轮都在。
   for (const name of [
     "companion_search_notes", "companion_read_note", "companion_open_note", "companion_open_page",
-    "companion_get_learning_stats", "companion_list_task_queue", "companion_list_due_reviews",
+    "companion_get_learning_stats",
     "companion_schedule_reminder", "companion_list_reminders", "companion_cancel_reminder",
   ]) {
     assert.ok(guided.includes(name), `guided 必须能看到 ${name}`);
@@ -820,11 +790,12 @@ test("内部纠正重附当前选区与问题，不能变成最新用户的另�
     assert.equal(messages[0].role, "system");
     assert.match(String(messages[0].content), /不是新的用户请求/);
     const carried = messages.at(-1)!;
-    assert.equal(carried.role, "user");
+    assert.equal(carried.role, "system");
+    assert.equal(carried.hostObservation, true);
     assert.ok(isCompanionInternalCorrection(carried), "the re-attached request carries the internal marker");
     assert.match(String(carried.content), /用户没有再说一遍/);
     assert.ok(String(carried.content).endsWith(String(currentRequest.content)), "the original text stays verbatim after the marker");
-    assert.equal(messages.filter((message) => message.role === "user").length, 1);
+    assert.equal(messages.filter((message) => message.role === "user").length, 0);
   }
 });
 
@@ -837,8 +808,8 @@ test("多次内部纠正只留一份重附的当前请求：她不能把重附�
     messages = dropCompanionInternalCorrections(messages);
     messages.push(...companionStepCorrectionMessages({ currentRequest, instruction: `核对 ${index}`, alreadyDisplayed: index > 0 }));
   }
-  assert.equal(messages.filter(message => message.role === "user").length, 2,
-    "the original user turn plus exactly one repair carrier");
+  assert.equal(messages.filter(message => message.role === "user").length, 1,
+    "only the original human turn is a user message; repairs retain host identity");
   assert.equal(messages.filter(isCompanionInternalCorrection).length, 1);
 });
 
@@ -893,30 +864,6 @@ test("partitionPersonaPatch：与当前值相同的项不算改动", () => {
     partitionPersonaPatch({}, { catchphrase: "就这么定了" }),
     { changed: { catchphrase: "就这么定了" }, unchangedKeys: [] },
   );
-});
-
-// 实机 2026-09-22 真人轮「我接下来的任务队列里都排着什么？」：她把清单念完了，
-// 但 `list_task_queue` 此前只回文字——既不给 route，`open_page` 白名单里也没有
-// "任务队列"这一页，用户想点开看一眼无路可走。队列属于某一次学习运行，
-// 所以"打开那轮运行"就是它该落到的地方。
-test("taskQueueToolResult：有待办时带出这一轮运行页的 route", () => {
-  const runId = "3f2e1369-7595-466c-af76-6cea5ee7440f";
-  const result = taskQueueToolResult([
-    { task_id: "t1", sequence: 2, status: "pending", label: "过一遍公式", run_phase: "active", run_id: runId },
-    { task_id: "t2", sequence: 3, status: "pending", label: "错题回看", run_phase: "active", run_id: runId },
-  ]);
-  assert.deepEqual(result.route, { kind: "learning_run", runId });
-  assert.equal(result.safeSummary, "队列里有 2 个待办任务");
-  assert.deepEqual((result.value.tasks as { taskId: string }[]).map((t) => t.taskId), ["t1", "t2"]);
-});
-
-test("taskQueueToolResult：没有待办 / 拿不到 run 时不硬造 route", () => {
-  assert.equal(taskQueueToolResult([]).route, undefined);
-  assert.equal(taskQueueToolResult([]).safeSummary, "当前没有排着的任务");
-  assert.equal(
-    taskQueueToolResult([{ task_id: "t1", sequence: 1, status: "pending",
-                           label: "x", run_phase: "active", run_id: null }]).route, undefined,
-    "run_id 为空就不能拼出一个跳转");
 });
 
 // ─── §9.28 双额度的账目（方案 29 §12 C1 的实机回归）───────────────────────

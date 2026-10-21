@@ -99,9 +99,12 @@ export async function noteRoutes(app: FastifyInstance) {
 
   // Desktop NOTE-READ-PROJECTION-01: the desktop adapter consumes this strict
   // public DTO.
-  app.get<{ Params: { id: string } }>("/v2/notes/:id", async (req, reply) => {
+  app.get<{ Params: { id: string }; Querystring: { noteVersionId?: string } }>("/v2/notes/:id", async (req, reply) => {
     const params = uuidParamSchema.safeParse(req.params);
     if (!params.success) return reply.code(400).send({ error: "invalid_id_format", message: "无效的 id 格式" });
+    const versionQuery = uuidParamSchema.safeParse({ id: req.query.noteVersionId });
+    if (req.query.noteVersionId !== undefined && !versionQuery.success)
+      return reply.code(400).send({ error: "invalid_id_format", message: "无效的版本格式" });
     const result = await withWorkspaceTransaction(
       scopeOfSession(req.session),
       (transaction) => getNoteWithVersion(
@@ -109,6 +112,7 @@ export async function noteRoutes(app: FastifyInstance) {
         req.params.id,
         req.session.workspaceId,
         req.session.userId,
+        versionQuery.success ? versionQuery.data.id : undefined,
       ),
     );
     if (!result) return reply.code(404).send({ error: "not_found", message: "资源不存在" });

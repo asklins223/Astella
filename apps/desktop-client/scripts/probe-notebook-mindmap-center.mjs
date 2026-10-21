@@ -27,7 +27,7 @@ const expandRail = async () => {
 }
 const hasMap = () => page.locator('.note-mind-map').count()
 const openMindMap = async () => {
-  await page.getByRole('button', { name: '速看' }).first().click().catch(() => undefined)
+  await page.getByRole('tab', { name: '速看' }).first().click().catch(() => undefined)
   await page.waitForTimeout(900)
   await page.getByRole('button', { name: '脑图' }).first().click().catch(() => undefined)
   await page.waitForTimeout(1600)

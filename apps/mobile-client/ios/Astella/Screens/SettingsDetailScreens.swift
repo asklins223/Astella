@@ -16,8 +16,8 @@ struct DevicePermissionsScreen: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 Text("系统权限只在对应功能需要时才会请求。照片和文件通过 iOS 选择器按次授权，不会读取整个图库或文件夹。")
-                    .font(.system(size: 14))
-                    .lineSpacing(4)
+                    .font(.system(size: 12.5))
+                    .lineSpacing(3)
                     .foregroundStyle(StudyPalette.muted)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 2)
@@ -75,9 +75,13 @@ struct DevicePermissionsScreen: View {
                         action: notificationAction
                     )
                 }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 6)
-                .modifier(StudyGlassSurfaceStyle(radius: 24, interactive: false))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 2)
+                .background(StudyPalette.paper.opacity(0.82), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(StudyPalette.paperEdge.opacity(0.42), lineWidth: 0.8)
+                }
 
                 sectionLabel("被拒绝时怎么办")
                     .padding(.top, 28)
@@ -88,9 +92,13 @@ struct DevicePermissionsScreen: View {
                     permissionDivider
                     guidanceRow(title: "通知", detail: "仍会在应用内显示提醒，只是没有系统推送。")
                 }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 6)
-                .modifier(StudyGlassSurfaceStyle(radius: 24, interactive: false))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 2)
+                .background(StudyPalette.paper.opacity(0.82), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(StudyPalette.paperEdge.opacity(0.42), lineWidth: 0.8)
+                }
 
                 VStack(alignment: .leading, spacing: 7) {
                     SectionEyebrow(text: "伴星操作范围")
@@ -125,7 +133,7 @@ struct DevicePermissionsScreen: View {
                 .padding(.top, 26)
             }
             .padding(.horizontal, 22)
-            .padding(.top, 18)
+            .padding(.top, 6)
             .padding(.bottom, 40)
             .frame(maxWidth: 620)
             .frame(maxWidth: .infinity)
@@ -139,8 +147,8 @@ struct DevicePermissionsScreen: View {
 
     private func sectionLabel(_ title: String) -> some View {
         Text(title)
-            .font(.system(size: 12.5, weight: .medium))
-            .tracking(0.6)
+            .font(.system(size: 12, weight: .semibold))
+            .tracking(0.7)
             .foregroundStyle(StudyPalette.muted)
             .padding(.leading, 2)
     }
@@ -200,20 +208,20 @@ struct DevicePermissionsScreen: View {
 
     private var permissionDivider: some View {
         Rectangle()
-            .fill(StudyPalette.paperEdge.opacity(0.55))
+            .fill(StudyPalette.paperEdge.opacity(0.45))
             .frame(height: 0.7)
-            .padding(.leading, 68)
+            .padding(.leading, 58)
     }
 
     private func permissionRow(icon: AstellaGlyphKind, title: String, detail: String, status: String, actionTitle: String?, action: (() -> Void)?) -> some View {
         HStack(alignment: .center, spacing: 13) {
             AstellaGlyph(kind: icon, tint: StudyPalette.accent)
                 .frame(width: 17, height: 17)
-                .frame(width: 36, height: 36)
-                .background(StudyPalette.sky.opacity(0.78), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .frame(width: 34, height: 34)
+                .background(StudyPalette.sky.opacity(0.75), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
             VStack(alignment: .leading, spacing: 4) {
-                Text(title).font(.system(size: 16, weight: .semibold)).foregroundStyle(StudyPalette.ink)
-                Text(detail).font(.system(size: 11)).foregroundStyle(StudyPalette.muted)
+                Text(title).font(.system(size: 15.5, weight: .medium)).foregroundStyle(StudyPalette.ink)
+                Text(detail).font(.system(size: 11.5)).foregroundStyle(StudyPalette.muted)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 6)
@@ -235,13 +243,13 @@ struct DevicePermissionsScreen: View {
             }
         }
         .padding(.vertical, 12)
-        .frame(minHeight: 62)
+        .frame(minHeight: 56)
     }
 
     private func guidanceRow(title: String, detail: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title).font(.system(size: 15, weight: .semibold)).foregroundStyle(StudyPalette.ink)
-            Text(detail).font(.system(size: 11)).foregroundStyle(StudyPalette.muted)
+            Text(detail).font(.system(size: 11.5)).foregroundStyle(StudyPalette.muted)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -321,7 +329,7 @@ struct AIDataAuthorizationScreen: View {
 
                 consentStatus
 
-                if let settings = store.aiSettings, settings.requiresConsent && settings.consentVersion == nil {
+                if let settings = store.aiSettings, settings.needsSigning {
                     consentForm.padding(.top, 18)
                 }
 
@@ -333,7 +341,7 @@ struct AIDataAuthorizationScreen: View {
                     policyRow(icon: .lock, title: "把选中的手记外发给模型",
                               detail: "关闭后伴星读不到手记内容；阅读与手记不受影响",
                               keyPath: \.sendToExternal,
-                              disabled: store.aiSettings?.requiresConsent == true && store.aiSettings?.consentVersion == nil)
+                              disabled: store.aiSettings?.needsSigning == true)
                     policyDivider
                     policyRow(icon: .photo, title: "外发内容可包含图片",
                               detail: "关闭后图片只在本地处理，不进入模型",
@@ -347,9 +355,13 @@ struct AIDataAuthorizationScreen: View {
                               detail: "供你自查调用记录",
                               keyPath: \.auditLogging)
                 }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 6)
-                .modifier(StudyGlassSurfaceStyle(radius: 24, interactive: false))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 2)
+                .background(StudyPalette.paper.opacity(0.82), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(StudyPalette.paperEdge.opacity(0.42), lineWidth: 0.8)
+                }
 
                 Button(isLoading || store.isAccountBusy ? "正在保存…" : "保存数据偏好") {
                     Task { await store.saveAIDataPolicy(policy) }
@@ -385,9 +397,13 @@ struct AIDataAuthorizationScreen: View {
                     .buttonStyle(.plain)
                     .disabled(isExporting)
                 }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 6)
-                .modifier(StudyGlassSurfaceStyle(radius: 24, interactive: false))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 2)
+                .background(StudyPalette.paper.opacity(0.82), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(StudyPalette.paperEdge.opacity(0.42), lineWidth: 0.8)
+                }
 
                 Text("以上为你的账号设置。阅读和手记不需要 AI 授权；关闭外发后，伴星回应会使用本地可用内容。")
                     .font(.system(size: 11.5))
@@ -399,7 +415,7 @@ struct AIDataAuthorizationScreen: View {
                     .padding(.bottom, 8)
             }
             .padding(.horizontal, 22)
-            .padding(.top, 18)
+            .padding(.top, 6)
             .padding(.bottom, 40)
             .frame(maxWidth: 620)
             .frame(maxWidth: .infinity)
@@ -443,8 +459,8 @@ struct AIDataAuthorizationScreen: View {
 
     private func sectionLabel(_ title: String) -> some View {
         Text(title)
-            .font(.system(size: 12.5, weight: .medium))
-            .tracking(0.6)
+            .font(.system(size: 12, weight: .semibold))
+            .tracking(0.7)
             .foregroundStyle(StudyPalette.muted)
             .padding(.leading, 2)
     }
@@ -472,7 +488,7 @@ struct AIDataAuthorizationScreen: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(StudyPalette.sky.opacity(0.62), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(StudyPalette.sky, lineWidth: 0.8))
-        } else if store.aiSettings?.requiresConsent == true {
+        } else if store.aiSettings?.needsSigning == true {
             VStack(alignment: .leading, spacing: 7) {
                 Text("尚未签署 AI 使用授权").font(.system(size: 14, weight: .semibold)).foregroundStyle(StudyPalette.ink)
                 Text("未确认前，需要授权的外部 AI 调用不会执行。阅读与手记仍然可用。")
@@ -527,9 +543,9 @@ struct AIDataAuthorizationScreen: View {
 
     private var policyDivider: some View {
         Rectangle()
-            .fill(StudyPalette.paperEdge.opacity(0.55))
+            .fill(StudyPalette.paperEdge.opacity(0.45))
             .frame(height: 0.7)
-            .padding(.leading, 68)
+            .padding(.leading, 58)
     }
 
     private func policyRow(icon: AstellaGlyphKind, title: String, detail: String, keyPath: WritableKeyPath<AIDataPolicy, Bool>, disabled: Bool = false) -> some View {
@@ -537,11 +553,11 @@ struct AIDataAuthorizationScreen: View {
             HStack(alignment: .center, spacing: 13) {
                 AstellaGlyph(kind: icon, tint: StudyPalette.accent)
                     .frame(width: 17, height: 17)
-                    .frame(width: 36, height: 36)
-                    .background(StudyPalette.sky.opacity(0.78), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .frame(width: 34, height: 34)
+                    .background(StudyPalette.sky.opacity(0.75), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(title).font(.system(size: 16, weight: .semibold)).foregroundStyle(StudyPalette.ink)
-                    Text(detail).font(.system(size: 11)).lineSpacing(2).foregroundStyle(StudyPalette.muted)
+                    Text(title).font(.system(size: 15.5, weight: .medium)).foregroundStyle(StudyPalette.ink)
+                    Text(detail).font(.system(size: 11.5)).lineSpacing(2).foregroundStyle(StudyPalette.muted)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -549,18 +565,18 @@ struct AIDataAuthorizationScreen: View {
         .tint(StudyPalette.accent)
         .disabled(store.isAccountBusy || disabled)
         .padding(.vertical, 11)
-        .frame(minHeight: 60)
+        .frame(minHeight: 56)
     }
 
     private func infoRow(icon: AstellaGlyphKind, title: String, detail: String, value: String?, showsChevron: Bool = false) -> some View {
         HStack(alignment: .center, spacing: 13) {
             AstellaGlyph(kind: icon, tint: StudyPalette.accent)
                 .frame(width: 17, height: 17)
-                .frame(width: 36, height: 36)
-                .background(StudyPalette.sky.opacity(0.78), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .frame(width: 34, height: 34)
+                .background(StudyPalette.sky.opacity(0.75), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
             VStack(alignment: .leading, spacing: 4) {
-                Text(title).font(.system(size: 16, weight: .semibold)).foregroundStyle(StudyPalette.ink)
-                Text(detail).font(.system(size: 11)).foregroundStyle(StudyPalette.muted)
+                Text(title).font(.system(size: 15.5, weight: .medium)).foregroundStyle(StudyPalette.ink)
+                Text(detail).font(.system(size: 11.5)).foregroundStyle(StudyPalette.muted)
             }
             Spacer(minLength: 6)
             if let value {
@@ -571,7 +587,7 @@ struct AIDataAuthorizationScreen: View {
             }
         }
         .padding(.vertical, 12)
-        .frame(minHeight: 62)
+        .frame(minHeight: 56)
         .contentShape(Rectangle())
     }
 
@@ -630,8 +646,8 @@ struct ServiceAddressScreen: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 Text("仅在连接自建或私有部署时修改。保存后会退出当前会话，需要用新地址重新登录。")
-                    .font(.system(size: 14))
-                    .lineSpacing(4)
+                    .font(.system(size: 12.5))
+                    .lineSpacing(3)
                     .foregroundStyle(StudyPalette.muted)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 2)
@@ -707,7 +723,7 @@ struct ServiceAddressScreen: View {
                 .padding(.top, 16)
             }
             .padding(.horizontal, 22)
-            .padding(.top, 18)
+            .padding(.top, 6)
             .padding(.bottom, 40)
             .frame(maxWidth: 620)
             .frame(maxWidth: .infinity)
@@ -813,9 +829,13 @@ struct ChangePasswordScreen: View {
                     passwordDivider
                     passwordField(index: 2, label: "确认新密码", placeholder: "再输入一次", text: $confirmPassword)
                 }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 8)
-                .modifier(StudyGlassSurfaceStyle(radius: 24, interactive: false))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 2)
+                .background(StudyPalette.paper.opacity(0.82), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(StudyPalette.paperEdge.opacity(0.42), lineWidth: 0.8)
+                }
 
                 Button(store.isAccountBusy ? "正在保存…" : "保存新密码") {
                     guard canSubmit else { return }
@@ -841,7 +861,7 @@ struct ChangePasswordScreen: View {
                     OrbitDetailMessage(text: message, isError: true)
                 }
             }
-            .padding(.horizontal, 24).padding(.top, 18).padding(.bottom, 32)
+            .padding(.horizontal, 22).padding(.top, 6).padding(.bottom, 32)
             .frame(maxWidth: 620).frame(maxWidth: .infinity)
         }
         .scrollIndicators(.hidden)

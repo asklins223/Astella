@@ -330,7 +330,7 @@ export async function previewWorkspaceDissolve(
   workspaceId: string,
   actorUserId: string,
 ): Promise<
-  | { ok: true; counts: { notes: number; sources: number; cards: number; schedules: number } }
+  | { ok: true; counts: { notes: number; sources: number } }
   | { ok: false; error: "workspace_not_found" | "actor_is_not_active_owner" | "cannot_dissolve_personal_workspace" }
 > {
   return withWorkspaceTransaction({ workspaceId, userId: actorUserId }, async (tx) => {
@@ -356,17 +356,15 @@ export async function previewWorkspaceDissolve(
       return { ok: false, error: "actor_is_not_active_owner" };
     }
 
-    // 四张表一起数：`notes`/`sources` 连外键都靠 workspace_id 判，RLS 下必须带上下文，
+    // 两张表一起数：连外键都靠 workspace_id 判，RLS 下必须带上下文，
     // 否则受限角色读到 0 行——那会让确认文案说"这里什么都没有"。
     const [row] = await tx.execute(sql`
         SELECT
           (SELECT count(*) FROM notes WHERE workspace_id = ${workspaceId}::uuid)::int AS notes,
-          (SELECT count(*) FROM sources WHERE workspace_id = ${workspaceId}::uuid)::int AS sources,
-          (SELECT count(*) FROM learning_cards_v2 WHERE workspace_id = ${workspaceId}::uuid)::int AS cards,
-          (SELECT count(*) FROM review_schedules WHERE workspace_id = ${workspaceId}::uuid)::int AS schedules
+          (SELECT count(*) FROM sources WHERE workspace_id = ${workspaceId}::uuid)::int AS sources
       `);
     const counts = (Array.isArray(row) ? row[0] : row) as {
-      notes: number; sources: number; cards: number; schedules: number;
+      notes: number; sources: number;
     };
     return { ok: true, counts };
   });

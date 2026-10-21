@@ -28,11 +28,27 @@ struct AstellaPressStyle: ButtonStyle {
 private struct AstellaActionStyle: ButtonStyle {
     var primary: Bool
     @Environment(\.isEnabled) private var enabled
+    @Environment(\.accessibilityReduceTransparency) private var opaque
+
+    @ViewBuilder
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label.font(.system(size: 15, weight: .semibold)).tracking(0.3)
+        let label = configuration.label.font(.system(size: 15, weight: .semibold)).tracking(0.3)
             .frame(maxWidth: .infinity, minHeight: 52).padding(.horizontal, 18)
-            .foregroundStyle(primary ? StudyPalette.paper : StudyPalette.ink)
-            .background(primary ? StudyPalette.accent : StudyPalette.inset, in: RoundedRectangle(cornerRadius: 16))
-            .opacity(enabled ? (configuration.isPressed ? 0.8 : 1) : 0.4)
+        if primary {
+            label
+                .foregroundStyle(StudyPalette.paper)
+                .background(StudyPalette.accent, in: RoundedRectangle(cornerRadius: 16))
+                .opacity(enabled ? (configuration.isPressed ? 0.8 : 1) : 0.4)
+        } else if #available(iOS 26.0, *), !opaque {
+            label
+                .foregroundStyle(StudyPalette.ink)
+                .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .opacity(enabled ? 1 : 0.45)
+        } else {
+            label
+                .foregroundStyle(StudyPalette.ink)
+                .background(StudyPalette.inset, in: RoundedRectangle(cornerRadius: 16))
+                .opacity(enabled ? (configuration.isPressed ? 0.8 : 1) : 0.4)
+        }
     }
 }

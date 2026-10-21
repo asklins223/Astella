@@ -4,7 +4,7 @@
  * 覆盖：invitation CAS（offer 语义经 ensure 缺省 → defer → skip；start_journey
  * 创建 active journey + accepted；同账号第二 active journey conflict）→
  * journey 动作 CAS（pause/resume/dismiss/skip；branch_locked）→ 领域事件
- * 推进（learning_run.completed + created schedule → completed real_first_loop）
+ * 推进（note_learning_card.completed → completed real_first_loop）
  * → 事件幂等（同 domainEventId 不重复推进）→ replay 新旅程。
  *
  * 运行：DATABASE_URL_API="postgres://astella:astella_dev@127.0.0.1:5432/astella"
@@ -168,27 +168,27 @@ test("P6 纵切：invitation CAS → start_journey → 事件推进完成 → �
     );
     assert.equal(resumed.status, "active");
 
-    // 5) 领域事件推进：learning_run.completed + created schedule → completed。
+    // 5) 领域事件推进：完成第一张笔记学习卡 → completed。
     const completed = (await withWorkspaceTransaction(scope, (tx) =>
       applyJourneyDomainEvent(tx, scope, {
         journeyId,
-        domainEventId: "run.completed:r1",
-        eventType: "learning_run.completed",
-        payload: { runId: "r1", result: { outcome: "demonstrated", scheduleImpact: { kind: "created" } } },
+        domainEventId: "card.completed:card-1",
+        eventType: "note_learning_card.completed",
+        payload: { cardId: "card-1" },
       }, now),
     ))!;
     assert.equal(completed.status, "completed");
     assert.equal(completed.currentStep, "closing");
     assert.equal(completed.completionKind, "real_first_loop");
-    assert.equal(completed.refs.runId, "r1");
+    assert.equal(completed.refs.cardId, "card-1");
 
     // 6) 事件幂等：同 domainEventId 不重复推进。
     const again = (await withWorkspaceTransaction(scope, (tx) =>
       applyJourneyDomainEvent(tx, scope, {
         journeyId,
-        domainEventId: "run.completed:r1",
-        eventType: "learning_run.completed",
-        payload: { runId: "r1", result: { outcome: "demonstrated", scheduleImpact: { kind: "created" } } },
+        domainEventId: "card.completed:card-1",
+        eventType: "note_learning_card.completed",
+        payload: { cardId: "card-1" },
       }, now),
     ))!;
     assert.equal(again.revision, completed.revision, "idempotent replay");
@@ -383,9 +383,9 @@ test("P6 skip：终态 skip 不伪造里程碑；branch_locked 拒绝切换", as
     await withWorkspaceTransaction(scope, (tx) =>
       applyJourneyDomainEvent(tx, scope, {
         journeyId,
-        domainEventId: "run.completed:r-skip",
-        eventType: "learning_run.completed",
-        payload: { runId: "r-skip", result: { outcome: "demonstrated", scheduleImpact: { kind: "none" } } },
+        domainEventId: "card.completed:card-skip",
+        eventType: "note_learning_card.completed",
+        payload: { cardId: "card-skip" },
       }, now),
     );
     const afterEvent = await withWorkspaceTransaction(scope, (tx) => bootstrapJourney(tx, scope, now));

@@ -196,8 +196,30 @@ export const companionRunSummaryV1Schema = z.strictObject({
    * 本轮可读的状态与工具事件条数，包括持久档案。旧轮次可能未留存详情。
    */
   nodeCount: z.number().int().nonnegative(),
+  createdAt: z.string().datetime({ offset: true }).optional(),
+  updatedAt: z.string().datetime({ offset: true }).optional(),
+  errorCode: z.string().nullable().optional(),
+  eventCursor: z.number().int().nonnegative().optional(),
 });
 export type CompanionRunSummaryV1 = z.infer<typeof companionRunSummaryV1Schema>;
+
+/** A retry resumes this run's checkpoint; a new topic remains a new turn. */
+export function canResumeCompanionRun(run: { status: string; errorCode?: string | null }): boolean {
+  return run.status === "failed" && ["PROVIDER_UNAVAILABLE", "PROVIDER_TIMEOUT",
+    "PROVIDER_FIRST_OUTPUT_TIMEOUT", "PROVIDER_IDLE_TIMEOUT", "RATE_LIMITED", "JOB_DEAD", "JOB_MISSING"]
+    .includes(run.errorCode ?? "");
+}
+
+export const companionChatResumeRunRequestV1Schema = z.strictObject({
+  version: z.literal(1), runId: z.string().uuid(), generation: z.number().int().positive(),
+  expectedEventCursor: z.number().int().nonnegative(),
+  reconcileOnly: z.boolean().optional(),
+});
+export type CompanionChatResumeRunRequestV1 = z.infer<typeof companionChatResumeRunRequestV1Schema>;
+export const companionChatResumeRunResultV1Schema = cancelCompanionRunResponseV1Schema.extend({
+  reconciledCount: z.number().int().nonnegative().optional(), unresolvedCount: z.number().int().nonnegative().optional(),
+});
+export type CompanionChatResumeRunResultV1 = z.infer<typeof companionChatResumeRunResultV1Schema>;
 
 export const companionRunNodesListRequestV1Schema = z.strictObject({
   version: z.literal(1),

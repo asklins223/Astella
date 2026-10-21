@@ -51,8 +51,10 @@ export async function executeCompanionParticipationTool(event: AgentEventContext
     const validated = validateCompanionOutput(rawText);
     if (!validated.ok) throw new CompanionToolError("这条发言未通过正文校验，请修正后再说。");
     const text = validated.text;
-    if (await companionFollowupRepeatsParent(event.read, scope, text))
-      throw new CompanionToolNotExecutedError("这段内容在刚完成的回答中已经说过。答后考虑只发布新的有用内容，否则安静结束。");
+    if (await companionInitiativeRepeatsSpeech(event.read, scope, text))
+      throw new CompanionToolNotExecutedError("这段内容已经说过。请换一个实际想说的新内容，或者用 companion_finish_participation 安静结束。");
+    const review = await event.reviewInitiativeSpeech?.(text);
+    if (review) throw new CompanionToolNotExecutedError(`这条主动发言没有发布：${review}。请换一个有实际新增内容的话题，或安静结束。`);
     event.verifyUtterance?.(text);
     const published = await withWorkerWorkspaceTransaction(scope, async tx => {
       await lockJobLease(tx, event.ctx);
@@ -132,14 +134,28 @@ export async function executeCompanionParticipationTool(event: AgentEventContext
     : name === "companion_save_participation" ? "已经记住这次明确的相处偏好。" : "关注安排已保存；触发时会结合情境重新考虑。" };
 }
 
-/** Both explicit utterances and bare final answers share the same follow-up publication boundary. */
-export async function companionFollowupRepeatsParent(read: Pick<ReadContext, "initiativeInput" | "conversationId">,
+/** Both publication channels check the persisted exchange, including speech outside the replay window. */
+export async function companionInitiativeRepeatsSpeech(read: Pick<ReadContext, "initiativeInput" | "conversationId" | "runId">,
   scope: { workspaceId: string; userId: string }, text: string): Promise<boolean> {
   const input = read.initiativeInput;
-  if (input?.topic !== "reply.finished" || !input.parentRunId) return false;
+  // A fresh greeting may legitimately repeat a short salutation. Explicit user
+  // replies (including requests to repeat something) never use this boundary.
+  if (!input || input.topic === "app.started" || input.topic === "app.foreground") return false;
+  const parentRunId = input.topic === "reply.finished" ? input.parentRunId : null;
+  // New user messages do not make an old spontaneous thought new again.
+  // Filter matching historical text in SQL rather than loading the whole chat.
+  const spontaneous = input.topic === "presence.quiet" || input.topic === "study.started";
+  const normalizedText = text.trim().replace(/\s+/gu, " ");
   const replies = await withWorkerWorkspaceTransaction(scope, tx => tx.execute<{ blocks: unknown }>(sql`
-    SELECT blocks FROM companion_messages WHERE workspace_id=${scope.workspaceId} AND user_id=${scope.userId}
-      AND conversation_id=${read.conversationId} AND run_id=${input.parentRunId} AND role='assistant' ORDER BY seq`));
+    SELECT m.blocks FROM companion_messages m WHERE m.workspace_id=${scope.workspaceId} AND m.user_id=${scope.userId}
+      AND m.conversation_id=${read.conversationId} AND m.role='assistant' AND m.kind<>'error'
+      AND m.run_id IS DISTINCT FROM ${read.runId}::uuid
+      AND (m.run_id=${parentRunId}::uuid OR m.seq>COALESCE((SELECT max(u.seq) FROM companion_messages u
+        WHERE u.workspace_id=${scope.workspaceId} AND u.user_id=${scope.userId}
+          AND u.conversation_id=${read.conversationId} AND u.role='user'),0)
+        OR (${spontaneous} AND m.kind='proactive' AND EXISTS (
+          SELECT 1 FROM jsonb_array_elements(m.blocks) b WHERE b->>'type'='text'
+            AND btrim(regexp_replace(b->>'text','[[:space:]]+',' ','g'))=${normalizedText}))) ORDER BY m.seq`));
   return repeatsCompanionParentReply(text, replies.map(reply => textOfCompanionBlocks(reply.blocks)));
 }
 

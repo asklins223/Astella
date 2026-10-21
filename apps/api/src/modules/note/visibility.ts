@@ -1,8 +1,3 @@
-import { exists, isNull, or, sql, type SQL, type SQLWrapper } from "drizzle-orm";
-import { notes, noteVersions } from "@astella/shared/db-schema/note";
-// 目标那一层的判据要经卡才能回到笔记（见 `visibleObjectivesCondition` 的说明），
-// 所以这一句确实需要知道 `learning_cards_v2` 存在。仍然只有这一个文件说这句话。
-import { learningCardsV2, learningObjectiveOriginsV2 } from "@astella/shared/db-schema/card-generation-v2";
 // 判据文本的唯一来源。API 与 Worker 两个包共用同一段 SQL——伴星读正文那条路
 // 在 worker 里，此前它按 workspace 直接查 notes，把同空间别人的私有笔记一起读了
 // 出来（`companion_read_note` / here-and-now 快照）。
@@ -76,120 +71,12 @@ export function noteVisibleSqlText(alias: string, viewerExpr: string): string {
  * 返回的片段假设外层已经把查看者放进了一个 `v(viewer)` 的 CROSS JOIN。
  */
 export function searchDocumentsVisibleSql(): string {
-  return `(search_document.object_type NOT IN ('note', 'objective')
-    OR (search_document.object_type = 'note' AND EXISTS (
+  return `(search_document.object_type <> 'note'
+    OR EXISTS (
       SELECT 1 FROM public.notes visible_note
       WHERE visible_note.id = search_document.object_id
         AND visible_note.workspace_id = search_document.workspace_id
         AND visible_note.deleted_at IS NULL
         AND ${noteVisibleSqlText("visible_note", "v.viewer")}
-    ))
-    OR (search_document.object_type = 'objective' AND (
-      -- 与 visibleObjectivesCondition 一致：无卡的轮次目标仍可能带私有笔记来源。
-      (NOT EXISTS (SELECT 1 FROM public.learning_cards_v2 objective_card
-                  WHERE objective_card.objective_id = search_document.object_id
-                    AND objective_card.note_version_id IS NOT NULL)
-       AND NOT EXISTS (SELECT 1 FROM public.learning_objective_origins_v2 objective_origin
-                       WHERE objective_origin.objective_id = search_document.object_id
-                         AND objective_origin.origin_kind = 'note'
-                         AND objective_origin.note_id IS NOT NULL))
-      OR EXISTS (SELECT 1 FROM public.learning_cards_v2 objective_card
-                 JOIN public.note_versions objective_version ON objective_version.id = objective_card.note_version_id
-                 JOIN public.notes objective_note ON objective_note.id = objective_version.note_id
-                 WHERE objective_card.objective_id = search_document.object_id
-                   AND objective_note.deleted_at IS NULL
-                   AND ${noteVisibleSqlText("objective_note", "v.viewer")})
-      OR EXISTS (SELECT 1 FROM public.learning_objective_origins_v2 objective_origin
-                 JOIN public.notes origin_note ON origin_note.id = objective_origin.note_id
-                 WHERE objective_origin.objective_id = search_document.object_id
-                   AND objective_origin.origin_kind = 'note'
-                   AND origin_note.workspace_id = search_document.workspace_id
-                   AND origin_note.deleted_at IS NULL
-                   AND ${noteVisibleSqlText("origin_note", "v.viewer")})
-    )))`;
-}
-
-/**
- * 卡片的可见性跟着它的**来源笔记**走（批次 4.5）。
- *
- * 一条学习卡是从某篇笔记的某个版本抽出来的正文摘录。空间规则说"只共享学习资料"，
- * 所以一篇没拿出去的笔记，从它生成的卡也没理由被全空间看见——否则"仅自己可见"
- * 只是把笔记本体藏起来，正文照样从卡片那一侧漏出去。
- *
- * 没有来源笔记的卡（手动建立的目标卡等，`note_version_id IS NULL`）不受这条约束：
- * 它没有可追溯的私有来源。
- *
- * **来源笔记在回收站里，等于这条派生关系断了**（L16）：软删的笔记不该继续被
- * 它的卡服务，所以这里除了可见性还判 `deleted_at IS NULL`。判据写成派生的、
- * 不给卡写状态，是因为恢复只有 30 天窗口内一条路——把卡"归档"再放回需要第二套状态机，
- * 而那套状态机一旦漏写，卡就永久丢了。派生判据自愈：笔记恢复，卡跟着回来。
- *
- * 判据仍然只写一次：这里是把上面那句 `visibleNotesCondition` 原样嵌进相关子查询，
- * 所以"笔记可见性规则"改了这里自动跟上，不存在第二套会互相矛盾的口径。
- *
- * 参数是**列**而不是表名：调用方各自持有的那张卡的引用不一样（有的按 `cardId` 查，
- * 有的按 `objectiveId` 查），而 `learning_cards_v2` 属于卡片那一层的 schema，
- * 判据文件不该反过来依赖它。
- */
-export function visibleCardsCondition(
-  userId: string,
-  cardNoteVersionId: SQLWrapper,
-): SQL {
-  return or(
-    isNull(cardNoteVersionId),
-    exists(
-      sql`(SELECT 1 FROM ${noteVersions} JOIN ${notes} ON ${notes.id} = ${noteVersions.noteId}
-           WHERE ${noteVersions.id} = ${cardNoteVersionId}
-             AND ${notes.deletedAt} IS NULL
-             AND ${visibleNotesCondition(userId)})`,
-    ),
-  ) as SQL;
-}
-
-/**
- * 目标（objective）的可见性跟着它的**卡**走，因为卡跟着笔记走（批次 4.5 收尾）。
- *
- * 为什么这里不直接 join `learning_objective_origins_v2`：那是"目标从哪篇笔记来"的
- * 正规记录，但 2026-09-21 在 dev 真实数据上量过——214 条 active 目标里只有 43 条有
- * origin 行，**171 条（80%）一条都没有**。按那条路判等于给 80% 的目标发"没有私有来源"
- * 的通行证，而"没登记就当可见"正是本轮审查反复撞到的那类失败。
- * 反过来，同一份数据里 214/214 条 active 目标都有卡、且卡都带 `note_version_id`
- * （目标是随卡一起激活出来的，那条链是这批对象的生成路径本身写的）。
- *
- * 无卡笔记轮次现在会直接建立带 note origin 的目标；这一档必须跟着来源笔记
- * 判权限。只有卡和 origin 都没有笔记来源的老目标才允许沿用无来源规则。
- * 判据仍然只有一句——里面复用的还是 `visibleNotesCondition`。
- */
-export function visibleObjectivesCondition(
-  userId: string,
-  objectiveId: SQLWrapper,
-): SQL {
-
-  return or(
-    // 第一支：卡和目标 origin 都没有笔记来源。无卡目标有 note origin 时
-    // 不能落进这条旧捷径，否则协作空间成员可读取别人的私有笔记目标。
-    sql`NOT EXISTS (SELECT 1 FROM ${learningCardsV2}
-                    WHERE ${learningCardsV2.objectiveId} = ${objectiveId}
-                      AND ${learningCardsV2.noteVersionId} IS NOT NULL)
-        AND NOT EXISTS (SELECT 1 FROM ${learningObjectiveOriginsV2}
-                        WHERE ${learningObjectiveOriginsV2.objectiveId} = ${objectiveId}
-                          AND ${learningObjectiveOriginsV2.originKind} = 'note'
-                          AND ${learningObjectiveOriginsV2.noteId} IS NOT NULL)`,
-    exists(
-      sql`(SELECT 1 FROM ${learningCardsV2}
-           JOIN ${noteVersions} ON ${noteVersions.id} = ${learningCardsV2.noteVersionId}
-           JOIN ${notes} ON ${notes.id} = ${noteVersions.noteId}
-           WHERE ${learningCardsV2.objectiveId} = ${objectiveId}
-             AND ${notes.deletedAt} IS NULL
-             AND ${visibleNotesCondition(userId)})`,
-    ),
-    exists(
-      sql`(SELECT 1 FROM ${learningObjectiveOriginsV2}
-           JOIN ${notes} ON ${notes.id} = ${learningObjectiveOriginsV2.noteId}
-           WHERE ${learningObjectiveOriginsV2.objectiveId} = ${objectiveId}
-             AND ${learningObjectiveOriginsV2.originKind} = 'note'
-             AND ${notes.deletedAt} IS NULL
-             AND ${visibleNotesCondition(userId)})`,
-    ),
-  ) as SQL;
+    ))`;
 }

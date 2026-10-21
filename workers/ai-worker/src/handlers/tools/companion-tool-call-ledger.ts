@@ -23,6 +23,7 @@ import { isCompanionAutonomousTool } from "@astella/shared/companion-autonomy";
  */
 
 import { randomUUID } from "node:crypto";
+import { reconcileCompanionSavedNotes } from "@astella/agent-host";
 import { companionEditedNoteV1Schema, companionWrittenAnnotationV1Schema } from "@astella/shared/companion-note-authoring-contracts";
 import type { AgentTurnRequest, AgentTurnResult } from "@astella/shared";
 import { sql } from "drizzle-orm";
@@ -45,6 +46,7 @@ import { prepareCompanionToolReview } from "./companion-tool-review.ts";
 import { TOOL_OUTCOME_UNKNOWN_SAFE_SUMMARY } from "./companion-tool-outcome.ts";
 import type { AgentEventContext } from "./companion-read-tools.ts";
 import { companionNoteEditTarget } from "../note/companion-note-edit.ts";
+import { readCreatedNoteReceipt } from "../note/companion-note-authoring.ts";
 import {
   executeDirectTool,
   executeReadTool,
@@ -365,6 +367,7 @@ export async function executeTool(
   // 客户端应直接执行，不再等「前往」。授权判定只在服务端做，客户端只服从标志。
   const permissionLevel = (await readRunMeta(event)).permissionLevel;
   const autoExecute = result.route !== undefined && permissionLevel === "full";
+  const noteCreated = definition.name === "companion_create_note" ? readCreatedNoteReceipt(result.resultRef ?? null) : null;
   await appendAgentEvent(event, "agent.tool", {
     tool: {
       toolCallId: call.id,
@@ -377,6 +380,8 @@ export async function executeTool(
       ...(definition.name === "companion_write_annotation" && result.resultRef ? { noteAnnotation: companionWrittenAnnotationV1Schema.parse(JSON.parse(result.resultRef)) } : {}),
       safeLabel: COMPANION_AGENT_TOOL_LABELS[definition.name] ?? definition.description.slice(0, 240),
       safeSummary: result.safeSummary,
+      occurredAt: new Date().toISOString(),
+      ...(noteCreated ? { noteCreated } : {}),
       ...(result.route ? { route: result.route } : {}),
       ...(autoExecute ? { autoExecute: true } : {}),
     },
@@ -527,6 +532,14 @@ export async function ensureAgentToolCall(
         let row = source;
         if (row.arguments_sha256 !== argsHash || row.name !== definition.name) {
           return blockedRecord();
+        }
+        if (["companion_create_note", "companion_edit_note"].includes(definition.name) && ["executing", "outcome_unknown"].includes(row.status)) {
+          const checked = await reconcileCompanionSavedNotes(tx, { workspaceId: event.ctx.workspaceId,
+            userId: event.read.userId, runId: event.read.runId }, row.tool_call_id);
+          if (checked.resolved.length) {
+            const [saved] = await readByCallId(row.tool_call_id);
+            if (saved) row = saved;
+          }
         }
         // A process can die after a write entered execution. On recovery the
         // old transaction may have committed, so preserve uncertainty instead

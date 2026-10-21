@@ -8,7 +8,6 @@
  * active 正文仍由显式检索或按 ID 读取工具展开。目录曝光不刷新 last_used_at，
  * 避免把“列出线索”误记为实际使用。
  *
- * grounded_tutor 分支不注入任何长期记忆/人格闲聊内容，防止污染正式学习。
  */
 
 import { sql } from "drizzle-orm";
@@ -158,16 +157,9 @@ export async function assembleCompanionContext(
   scope: { workspaceId: string; userId: string },
   input: {
     runId: string;
-    groundedTutorContext?: unknown;
     /** Bridge page context（对象或 JSON 字符串），用于推导 currentScope。 */
     pageContext?: unknown;
-    /**
-     * 关掉手册目录与整理结论。
-     *
-     * 正式学习（grounded_tutor）与测试会走这条：**证据不足时宁可没有**
-     * （§16「事实内容与自然度需要语义评阅」，以及 §11.1「正式学习不注入
-     * 记忆/人格」——手册与整理结论属于同一类"陪伴层上下文"）。
-     */
+    /** Disable playbook views for callers that do not need this context. */
     playbooksDisabled?: boolean;
     /**
      * 本次实际路由的模型能力快照。记忆正文与目录的取舍容量由它声明的窗口解析（44 §4.1），
@@ -179,27 +171,6 @@ export async function assembleCompanionContext(
     requestedOutputTokens?: number | null;
   },
 ): Promise<ContextAssemblyResult> {
-  // 正式学习 grounded_tutor 不注入记忆/人格（§11.1）。
-  if (input.groundedTutorContext) {
-    return {
-      residentMemories: [],
-      memoryDirectory: [],
-      playbookCatalog: [],
-      playbookCandidates: [],
-      organizationSurface: null,
-      memoryRefs: [],
-      retrievalMode: "disabled",
-      usedMemoryIds: [],
-      residentMemoryIds: [],
-      residentTokenEstimate: 0,
-      residentByteCount: 0,
-      directoryTokenEstimate: 0,
-      residentOmittedCount: 0,
-      directoryOmittedCount: 0,
-      residentOmittedCharacters: 0,
-      directoryOmittedCharacters: 0,
-    };
-  }
 
   // resident 与目录共用一个小预算，不各拿一份完整模型窗口。active 剩余正文仍可由
   // companion_recall_memory / companion_read_memory 按需读取。

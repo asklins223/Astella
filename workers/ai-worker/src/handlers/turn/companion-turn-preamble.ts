@@ -17,6 +17,8 @@ import { companionExecutionPolicy } from "../agent/companion-execution-policy.ts
 import { webSearchServiceAvailable } from "../../agent/web-search.ts";
 import type { AgentEventContext } from "../tools/companion-read-tools.ts";
 import type { CompanionAgentLoopArgs } from "../../contracts/companion-agent-loop.ts";
+import { explicitCompanionProductRequest, explicitlyRequestsUtterances } from "../tools/companion-tool-intent.ts";
+import { companionRequestRequirements } from "./companion-request-requirements.ts";
 
 /**
  * 回合前段：投机器出发、注意力落定、历史绑定、工具面与能力快照（44 §3.3 装配回执）。
@@ -69,6 +71,9 @@ export async function settleCompanionTurnPreamble(deps: CompanionTurnPreambleDep
    * 攒住/作废由 `runStreamingAgentStep` 的 `releaseGate` 执行，留哪一版在下面定。
    */
   const speculativeFlights = startCompanionSpeculativeFirstSteps({
+    allowSpeculation: !explicitCompanionProductRequest(read.userText).newNote
+      && !explicitCompanionProductRequest(read.userText).artifact && !companionRequestRequirements(read.userText).characters
+      && !explicitlyRequestsUtterances(read.userText),
     provider: provider,
     ctxSignal: ctx.signal,
     onProviderDelta: deps.recovered ? undefined : onProviderDelta,

@@ -17,23 +17,14 @@ import { companionInitiativeDeliveryRefV1Schema, type CompanionInitiativeDeliver
 
 import { z } from "zod";
 import type { DesktopRouteV1 } from "../desktop/desktop-ipc-contracts.ts";
-import { understandingLensSchema, projectionCheckpointSchema } from "../learning/learning-run-contracts.ts";
 
 // ─── §14.2 Entity、Route 与 Context 合同 ─────────────────────────────────
 
 export type EntityRefV2 =
   | { kind: "source"; sourceId: string }
   | { kind: "note"; noteId: string; noteVersionId?: string }
-  | { kind: "card"; cardId: string }
-  | { kind: "key_point"; keyPointId: string }
-  | { kind: "evidence"; evidenceId: string }
-  | { kind: "review_schedule"; scheduleId: string }
-  | { kind: "learning_run"; runId: string }
-  | { kind: "learning_task"; runId: string; taskId: string }
   | { kind: "companion_journey"; journeyId: string }
-  | { kind: "assistant_session"; assistantSessionId: string }
-  | { kind: "route_plan"; routePlanId: string }
-  | { kind: "change_set"; changeSetId: string };
+  | { kind: "assistant_session"; assistantSessionId: string };
 
 /**
  * 设置页真实存在的六个分区 id（与设置表面左侧目录同一份，不是另一套说法）。
@@ -64,30 +55,22 @@ export type CompanionLearningArtifactKindV2 = (typeof COMPANION_LEARNING_ARTIFAC
 
 export type AllowedMainRouteV2 =
   | { kind: "home" }
-  | { kind: "today" }
   | { kind: "source"; sourceId?: string }
   | { kind: "note"; noteId: string }
   | { kind: "note_library" }
-  | { kind: "card"; cardId: string; objectiveId: string }
-  | { kind: "objective_library" }
   // 某一份学习产物（互动演示／思维导图／速看）。四个 id 缺一不可：取回执按 noteId+taskId，
   // artifactId 用来核对拿到的确实是那一份，noteVersionId 是它生成时的那一版正文。
   | { kind: "learning_artifact"; artifactKind: CompanionLearningArtifactKindV2; artifactId: string; taskId: string; noteId: string; noteVersionId: string }
-  | { kind: "review"; scheduleId?: string }
   | { kind: "search" }
   // 方案 16 §18.1：focus_graph_node（lens）与 restore_graph_viewport
   // （restoreRun）复用 star_map 路由（graph 页按参数聚焦/恢复）。
   | { kind: "star_map"; keyPointId?: string; lens?: "current_target" | "evidence" | "provenance" | "issues"; restoreRun?: string }
-  | { kind: "learning_run"; runId: string }
   | { kind: "conversation" }
   | { kind: "settings"; section?: SettingsSectionIdV2 };
 
 export type UiTargetRefV2 =
   | { kind: "quick_capture" }
-  | { kind: "source_generate_note"; sourceId: string }
-  | { kind: "note_generate_cards"; noteId: string }
-  | { kind: "card_evidence"; cardId: string; keyPointId?: string }
-  | { kind: "run_current_task"; runId: string; taskId: string };
+  | { kind: "source_generate_note"; sourceId: string };
 
 export type MainCommandKindV2 =
   | "open_route"
@@ -109,31 +92,14 @@ export type AssistantContextSnapshotV2 = {
   revision: string; // canonical hash，不与 Run revision 混用
   routeRef: AllowedMainRouteV2;
   pageKind:
-    | "today"
     | "source"
     | "note"
-    | "card"
-    | "objective"
-    | "review"
     | "star_map"
-    | "learning_run"
     | "conversation"
     | "settings"
     | "other";
   entityRefs: EntityRefV2[];
   interactionState: "idle" | "editing" | "formal_answer" | "processing";
-  graph?: {
-    lens: "current_target" | "evidence" | "provenance" | "issues";
-    selectedKeyPointId: string | null;
-    activeRoutePlanId: string | null;
-    checkpoint: {
-      version: 1;
-      workspaceId: string;
-      userId: string;
-      token: string;
-      capturedAt: string;
-    };
-  };
   capabilityHints: MainCommandKindV2[]; // 仅提示，不是授权
   sensitivity: "normal" | "formal_assessment" | "credential_surface";
   readableView?: PageReadableV1;
@@ -146,7 +112,7 @@ export type MainPageContextV2 = AssistantContextSnapshotV2;
 /** Main renderer 可提交的 context 输入（安全字段由 broker 覆盖，§14.2）。 */
 export type MainPageContextInputV2 = Pick<
   AssistantContextSnapshotV2,
-  "routeRef" | "pageKind" | "entityRefs" | "interactionState" | "graph" | "capabilityHints" | "sensitivity" | "readableView"
+  "routeRef" | "pageKind" | "entityRefs" | "interactionState" | "capabilityHints" | "sensitivity" | "readableView"
 >;
 
 // ─── §14.3 UI Event、Domain Event 与 Delivery ────────────────────────────
@@ -173,34 +139,23 @@ export type MainUiEventV2 = {
 };
 
 export type CompanionSystemEventTypeV2 =
-  | "learning_run.created"
-  | "learning_run.resumable"
-  | "learning_run.completed"
-  | "learning_run.recoverable_error"
-  | "projection.ready"
   | "journey.step_changed"
   | "journey.completed"
   | "generation_job.completed"
-  | "generation_job.failed"
-  | "review.due";
+  | "generation_job.failed";
 
 export type CompanionSystemPayloadRefV2 =
-  | { kind: "learning_run"; runId: string; eventCursor: number }
-  | { kind: "projection_change"; changeSetId: string; checkpointToken: string }
   | { kind: "journey"; journeyId: string; stepRevision: number }
-  | { kind: "generation_job"; jobId: string; sourceId?: string; noteId?: string }
-  | { kind: "review_schedule"; scheduleId: string; scheduleGeneration: number };
+  | { kind: "generation_job"; jobId: string; sourceId?: string; noteId?: string };
 
 export type CompanionSystemEventV2 = {
   version: 2;
   eventId: string;
   sequence: number;
-  source: "learning_run" | "projection" | "journey" | "generation_job" | "review";
+  source: "journey" | "generation_job";
   workspaceId: string;
   userId: string;
-  runId?: string;
   commandId?: string;
-  checkpoint?: { version: 1; workspaceId: string; userId: string; token: string; capturedAt: string };
   eventType: CompanionSystemEventTypeV2;
   occurredAt: string;
   payloadRef: CompanionSystemPayloadRefV2;
@@ -328,26 +283,15 @@ export type MainCommandResultV2 = {
 export const entityRefV2Schema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("source"), sourceId: z.string().uuid() }),
   z.strictObject({ kind: z.literal("note"), noteId: z.string().uuid(), noteVersionId: z.string().uuid().optional() }),
-  z.strictObject({ kind: z.literal("card"), cardId: z.string().uuid() }),
-  z.strictObject({ kind: z.literal("key_point"), keyPointId: z.string().uuid() }),
-  z.strictObject({ kind: z.literal("evidence"), evidenceId: z.string().uuid() }),
-  z.strictObject({ kind: z.literal("review_schedule"), scheduleId: z.string().uuid() }),
-  z.strictObject({ kind: z.literal("learning_run"), runId: z.string().uuid() }),
-  z.strictObject({ kind: z.literal("learning_task"), runId: z.string().uuid(), taskId: z.string().uuid() }),
   z.strictObject({ kind: z.literal("companion_journey"), journeyId: z.string().uuid() }),
   z.strictObject({ kind: z.literal("assistant_session"), assistantSessionId: z.string().uuid() }),
-  z.strictObject({ kind: z.literal("route_plan"), routePlanId: z.string().uuid() }),
-  z.strictObject({ kind: z.literal("change_set"), changeSetId: z.string().min(1) }),
 ]);
 
 export const allowedMainRouteV2Schema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("home") }),
-  z.strictObject({ kind: z.literal("today") }),
   z.strictObject({ kind: z.literal("source"), sourceId: z.string().uuid().optional() }),
-  z.strictObject({ kind: z.literal("note"), noteId: z.string().uuid() }),
+  z.strictObject({ kind: z.literal("note"), noteId: z.string().uuid(), noteVersionId: z.string().uuid().optional() }),
   z.strictObject({ kind: z.literal("note_library") }),
-  z.strictObject({ kind: z.literal("card"), cardId: z.string().uuid(), objectiveId: z.string().uuid() }),
-  z.strictObject({ kind: z.literal("objective_library") }),
   z.strictObject({
     kind: z.literal("learning_artifact"),
     artifactKind: z.enum(COMPANION_LEARNING_ARTIFACT_KINDS_V2),
@@ -356,15 +300,8 @@ export const allowedMainRouteV2Schema = z.discriminatedUnion("kind", [
     noteId: z.string().uuid(),
     noteVersionId: z.string().uuid(),
   }),
-  z.strictObject({ kind: z.literal("review"), scheduleId: z.string().uuid().optional() }),
   z.strictObject({ kind: z.literal("search") }),
-  z.strictObject({
-    kind: z.literal("star_map"),
-    keyPointId: z.string().uuid().optional(),
-    lens: z.enum(["current_target", "evidence", "provenance", "issues"]).optional(),
-    restoreRun: z.string().uuid().optional(),
-  }),
-  z.strictObject({ kind: z.literal("learning_run"), runId: z.string().uuid() }),
+  z.strictObject({ kind: z.literal("star_map") }),
   z.strictObject({ kind: z.literal("conversation") }),
   z.strictObject({
     kind: z.literal("settings"),
@@ -385,12 +322,9 @@ export const allowedMainRouteV2Schema = z.discriminatedUnion("kind", [
  */
 export const COMPANION_PAGE_DESTINATIONS_V2 = [
   { kind: "home", label: "首页", aliases: ["房间"], route: { kind: "room.home" } },
-  { kind: "today", label: "今日学习", aliases: ["今天", "学习"], route: { kind: "room.today" } },
   { kind: "source", label: "来源库", aliases: ["书架", "资料库"], route: { kind: "source.library" } },
   { kind: "note_library", label: "笔记库", aliases: ["笔记"], route: { kind: "note.library" } },
-  { kind: "objective_library", label: "学习卡", aliases: ["卡片", "理解目标", "理解地图"], route: { kind: "objective.library" } },
   { kind: "star_map", label: "理解星图", aliases: ["星图", "知识图谱"], route: { kind: "understanding.graph" } },
-  { kind: "review", label: "复习队列", aliases: ["待复习"], route: { kind: "review.queue" } },
   { kind: "search", label: "全局搜索", aliases: ["搜索"], route: { kind: "search.global" } },
   {
     kind: "conversation",
@@ -431,9 +365,6 @@ export function companionPageLabelV2(kind: string): string {
 export const uiTargetRefV2Schema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("quick_capture") }),
   z.strictObject({ kind: z.literal("source_generate_note"), sourceId: z.string().uuid() }),
-  z.strictObject({ kind: z.literal("note_generate_cards"), noteId: z.string().uuid() }),
-  z.strictObject({ kind: z.literal("card_evidence"), cardId: z.string().uuid(), keyPointId: z.string().uuid().optional() }),
-  z.strictObject({ kind: z.literal("run_current_task"), runId: z.string().uuid(), taskId: z.string().uuid() }),
 ]);
 
 /**
@@ -504,19 +435,10 @@ export type PageReadableMetricV1 = z.infer<typeof pageReadableMetricV1Schema>;
 export const mainPageContextInputV2Schema = z.strictObject({
   routeRef: allowedMainRouteV2Schema,
   pageKind: z.enum([
-    "today", "source", "note", "card", "objective", "review", "star_map",
-    "learning_run", "conversation", "settings", "other",
+    "source", "note", "star_map", "conversation", "settings", "other",
   ]),
   entityRefs: z.array(entityRefV2Schema).max(64),
   interactionState: z.enum(["idle", "editing", "formal_answer", "processing"]),
-  graph: z
-    .strictObject({
-      lens: understandingLensSchema,
-      selectedKeyPointId: z.string().uuid().nullable(),
-      activeRoutePlanId: z.string().uuid().nullable(),
-      checkpoint: projectionCheckpointSchema,
-    })
-    .optional(),
   capabilityHints: z
     .array(z.enum([
       "open_route", "focus_ui_target", "graph.focus", "graph.present_route",
@@ -581,25 +503,18 @@ export const companionSystemEventV2Schema = z.strictObject({
   version: z.literal(2),
   eventId: z.string().min(1),
   sequence: z.number().int().min(0),
-  source: z.enum(["learning_run", "projection", "journey", "generation_job", "review"]),
+  source: z.enum(["journey", "generation_job"]),
   workspaceId: z.string().uuid(),
   userId: z.string().uuid(),
-  runId: z.string().uuid().optional(),
   commandId: z.string().min(1).optional(),
-  checkpoint: projectionCheckpointSchema.optional(),
   eventType: z.enum([
-    "learning_run.created", "learning_run.resumable", "learning_run.completed",
-    "learning_run.recoverable_error", "projection.ready", "journey.step_changed",
-    "journey.completed", "generation_job.completed", "generation_job.failed",
-    "review.due",
+    "journey.step_changed", "journey.completed",
+    "generation_job.completed", "generation_job.failed",
   ]),
   occurredAt: z.string().min(1),
   payloadRef: z.discriminatedUnion("kind", [
-    z.strictObject({ kind: z.literal("learning_run"), runId: z.string().uuid(), eventCursor: z.number().int().min(0) }),
-    z.strictObject({ kind: z.literal("projection_change"), changeSetId: z.string().min(1), checkpointToken: z.string().min(1) }),
     z.strictObject({ kind: z.literal("journey"), journeyId: z.string().uuid(), stepRevision: z.number().int().min(0) }),
     z.strictObject({ kind: z.literal("generation_job"), jobId: z.string().uuid(), sourceId: z.string().uuid().optional(), noteId: z.string().uuid().optional() }),
-    z.strictObject({ kind: z.literal("review_schedule"), scheduleId: z.string().uuid(), scheduleGeneration: z.number().int().min(0) }),
   ]),
 });
 
@@ -650,11 +565,9 @@ export const petMainCommandV2Schema = z.discriminatedUnion("kind", [
   z.strictObject({
     kind: z.literal("graph.focus"),
     keyPointId: z.string().uuid(),
-    lens: understandingLensSchema.optional(),
   }),
   z.strictObject({ kind: z.literal("graph.present_route"), routePlanId: z.string().uuid(), revision: z.string().min(1) }),
   z.strictObject({ kind: z.literal("graph.advance_route"), routePlanId: z.string().uuid(), ordinal: z.number().int().min(0) }),
-  z.strictObject({ kind: z.literal("graph.restore"), runId: z.string().uuid() }),
   z.strictObject({ kind: z.literal("graph.reveal_delta"), changeSetId: z.string().min(1) }),
 ]);
 

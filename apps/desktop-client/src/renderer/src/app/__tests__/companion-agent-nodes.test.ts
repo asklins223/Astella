@@ -6,6 +6,9 @@ import {
   companionTurnProcessLine,
   countAgentToolCalls,
   reconcileCompanionAgentNodes,
+  recordCompanionRunEvent,
+  mergeCompanionRunTraces,
+  savedCompanionNote,
   type CompanionAgentNodes,
 } from "../companion-session/companion-agent-nodes.ts";
 
@@ -32,6 +35,32 @@ const tool = (status: string, extra: Record<string, unknown> = {}) => ({
 });
 
 describe("实时工具帧与本轮快照接续", () => {
+  it("a reconciled edit exposes its saved version and keeps the large CRDT update out of UI state", () => {
+    const noteId = "11111111-1111-4111-8111-111111111111", noteVersionId = "22222222-2222-4222-8222-222222222222";
+    const receipt = { kind: "edited_note", noteId, noteVersionId, operation: "append", summary: "已追加到笔记末尾", update: "encoded-update" };
+    const node = fold([tool("succeeded", { name: "companion_edit_note", noteEdit: receipt })])[0];
+    expect(savedCompanionNote(node)).toEqual({ noteId, noteVersionId, title: "修改后的笔记" });
+    expect(node.noteEdited).not.toHaveProperty("update");
+    const recovered = reconcileCompanionAgentNodes(fold([tool("succeeded", { name: "companion_edit_note" })]), [node]);
+    expect(recovered[0].noteEdited).toEqual(node.noteEdited);
+    expect(savedCompanionNote(fold([tool("outcome_unknown", { noteEdit: receipt })])[0])).toBeNull();
+    expect(savedCompanionNote(fold([tool("succeeded", { noteEdit: { ...receipt, noteVersionId: "missing" } })])[0])).toBeNull();
+  });
+  it("同一任务恢复后，旧终态和旧轮询不能覆盖新的进度", () => {
+    const event = (seq: number, eventType: string, payload: unknown = {}) => ({ runId: "recover-run", generation: 1, seq, eventType, payload });
+    const failed = recordCompanionRunEvent([], event(5, "error", { code: "PROVIDER_IDLE_TIMEOUT" }));
+    const resumed = recordCompanionRunEvent(failed, event(6, "turn.accepted", { resumed: true }));
+    expect(resumed[0].summary.status).toBe("accepted");
+    expect(resumed[0].summary.errorCode).toBeNull();
+    expect(recordCompanionRunEvent(resumed, event(5, "error", { code: "PROVIDER_IDLE_TIMEOUT" }))).toBe(resumed);
+    const polled = mergeCompanionRunTraces(resumed, failed);
+    expect(polled[0].summary.status).toBe("accepted");
+    expect(polled[0].summary.errorCode).toBeNull();
+    expect(polled[0].summary.eventCursor).toBe(6);
+    const completed = recordCompanionRunEvent(polled, event(8, "turn.completed"));
+    expect(recordCompanionRunEvent(completed, event(6, "turn.accepted"))).toBe(completed);
+    expect(mergeCompanionRunTraces(completed, resumed)[0].summary.status).toBe("succeeded");
+  });
   it("快照补回漏接的工具，按真实顺序展示且不重复计数", () => {
     const live = fold([tool("executing", { toolCallId: "second" })]);
     const snapshot = fold([tool("succeeded"), tool("requested", { toolCallId: "second" })]);

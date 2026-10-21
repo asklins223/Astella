@@ -127,7 +127,7 @@ it("速看、回想、往外学、记录与这一轮学习都留在同一张整�
     expect(useNotebookFullscreenState.getState().active).toBe(true);
     expect(screen.getByRole("button", { name: "退出全屏笔记" })).toBeTruthy();
     for (const tab of ["正文", "速看", "回想", "往外学", "学习记录"]) {
-      expect(screen.getByRole("button", { name: tab })).toBeTruthy();
+      expect(screen.getByRole("tab", { name: tab })).toBeTruthy();
     }
   }
   fireEvent.click(screen.getByRole("button", { name: "收起笔记工具" }));

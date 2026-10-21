@@ -32,14 +32,14 @@ describe("Home V2 shortcut registry routing", () => {
   const plain = { metaKey: false, ctrlKey: false, altKey: false };
 
   it("maps each shortcut to its specific feature instead of a generic notice", () => {
-    expect(homeV2ShortcutFeature({ ...plain, key: "Enter", metaKey: true })).toBe("continue");
     expect(homeV2ShortcutFeature({ ...plain, key: "k", ctrlKey: true })).toBe("global-search");
-    expect(homeV2ShortcutFeature({ ...plain, key: "r" })).toBe("today-review");
     expect(homeV2ShortcutFeature({ ...plain, key: "g" })).toBe("understanding-graph");
+    // Plan 57：复习/今日两屏连同它们的快捷键一起退役，按 r 不再带走任何一屏。
+    expect(homeV2ShortcutFeature({ ...plain, key: "r" })).toBeNull();
   });
 
   it("does not claim unrelated or modified room keys", () => {
     expect(homeV2ShortcutFeature({ ...plain, key: "x" })).toBeNull();
-    expect(homeV2ShortcutFeature({ ...plain, key: "r", altKey: true })).toBeNull();
+    expect(homeV2ShortcutFeature({ ...plain, key: "g", altKey: true })).toBeNull();
   });
 });

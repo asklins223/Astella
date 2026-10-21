@@ -1,5 +1,5 @@
 /**
- * API 侧六个现役文本外发点的治理出口判据。
+ * API 侧现役文本外发点的治理出口判据。
  *
  * 每一处都有**两个**出口：显式注入的 `requester`（可信宿主端口，测试用）与
  * 生产默认。生产默认必须是**绑定真实 workspace/user 的治理出口**——
@@ -9,7 +9,7 @@
  * `postJsonToPublicEndpoint` 只带 SSRF 守卫，不带同意、不带政策、不写审计行，
  * 而且它长得完全合理——能跑通、能过测试、只是"治理那一层不见了"。
  *
- * 按这六个文件判而不是扫全目录：本次交付范围就是这六处，提前宣判别的包
+ * 按这两个文件判而不是扫全目录：它们仍在现役链上，提前宣判别的包
  * 的账不在这条判据的职责里。
  */
 import assert from "node:assert/strict";
@@ -27,10 +27,6 @@ function withoutComments(source: string): string {
 }
 
 const SITES = [
-  ["modules/note-learning-rounds/teaching/teaching-llm.ts", "note_teaching_explain"],
-  ["modules/note-learning-rounds/target-grounding.ts", "note_round_target_grounding"],
-  ["modules/learning-runs/planning/run-critic.ts", "assessment_critic"],
-  ["modules/learning-runs/disputes/dispute-recheck.ts", "dispute_recheck"],
   ["modules/companion-conversation/delivery/proactive-generator.ts", "companion_memory_candidate"],
   ["modules/companion-conversation/delivery/proactive-hook.ts", "companion_personalized_proactive_text"],
 ] as const;
@@ -53,7 +49,7 @@ function firstArgument(code: string, callIndex: number): string {
   throw new Error("实参括号没配平");
 }
 
-test("六个外发点的生产默认出口都是治理出口，不是裸 transport", () => {
+test("现役外发点的生产默认出口都是治理出口，不是裸 transport", () => {
   for (const [file] of SITES) {
     const code = read(file);
     assert.match(code, /createGovernedApiRequester\(/,

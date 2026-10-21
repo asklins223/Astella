@@ -24,6 +24,16 @@ struct UserProfile: Equatable {
     }
 }
 
+struct CompanionDiagramStep: Hashable, Decodable { var label: String; var detail: String? }
+struct CompanionCitationTarget: Hashable, Decodable { var kind: String; var href: String?; var entityRef: String? }
+struct CompanionQuoteSource: Hashable, Decodable {
+    var kind: String; var noteId: String?; var noteVersionId: String?; var blockOrdinal: Int?; var sourceId: String?; var segmentOrdinal: Int?
+    init?(value: [String: Any]?) {
+        guard let value, let kind = value["kind"] as? String, ["note", "source"].contains(kind) else { return nil }
+        self.kind = kind; noteId = value["noteId"] as? String; noteVersionId = value["noteVersionId"] as? String
+        blockOrdinal = value["blockOrdinal"] as? Int; sourceId = value["sourceId"] as? String; segmentOrdinal = value["segmentOrdinal"] as? Int
+    }
+}
 struct CompanionBlock: Hashable {
     var type: String
     var text: String?
@@ -33,6 +43,13 @@ struct CompanionBlock: Hashable {
     var name: String? = nil
     var proposalId: String? = nil
     var code: String? = nil
+    var noteTarget: CompanionNoteTarget? = nil
+    var title: String? = nil
+    var steps: [CompanionDiagramStep] = []
+    var front: String? = nil
+    var summary: String? = nil
+    var citation: CompanionCitationTarget? = nil
+    var sourceRef: CompanionQuoteSource? = nil
 }
 
 struct CompanionMessage: Identifiable, Hashable {
@@ -75,7 +92,19 @@ struct CompanionMessage: Identifiable, Hashable {
                 alt: $0["alt"] as? String,
                 name: $0["name"] as? String,
                 proposalId: $0["proposalId"] as? String,
-                code: $0["code"] as? String
+                code: $0["code"] as? String,
+                noteTarget: CompanionNoteTarget(route: $0["route"] as? [String: Any], title: $0["label"] as? String),
+                title: $0["title"] as? String,
+                steps: ($0["steps"] as? [[String: Any]] ?? []).compactMap { step in
+                    guard let label = step["label"] as? String else { return nil }
+                    return CompanionDiagramStep(label: label, detail: step["detail"] as? String)
+                },
+                front: $0["front"] as? String, summary: $0["summary"] as? String,
+                citation: ($0["target"] as? [String: Any]).flatMap { target in
+                    guard let kind = target["kind"] as? String else { return nil }
+                    return CompanionCitationTarget(kind: kind, href: target["href"] as? String, entityRef: target["entityRef"] as? String)
+                },
+                sourceRef: CompanionQuoteSource(value: $0["sourceRef"] as? [String: Any])
             )
         }
     }
@@ -186,6 +215,7 @@ struct NoteAnnotation: Identifiable, Equatable {
     var revision: Int
     var versionState: String
     var sourceMessageId: String?
+    var generationJobId: String?
 
     init?(_ value: [String: Any]) {
         guard let id = value["annotationId"] as? String,
@@ -207,10 +237,11 @@ struct NoteAnnotation: Identifiable, Equatable {
         revision = value["revision"] as? Int ?? 1
         versionState = value["versionState"] as? String ?? "current"
         sourceMessageId = value["sourceMessageId"] as? String
+        generationJobId = value["generationJobId"] as? String
     }
 }
 
-private func renderedNoteBlockText(_ block: NoteBlock) -> String? {
+func renderedNoteBlockText(_ block: NoteBlock) -> String? {
     var text = block.content
     switch block.type {
     case "image", "table": return nil
@@ -234,6 +265,39 @@ private func renderedNoteBlockText(_ block: NoteBlock) -> String? {
         text = text.replacingOccurrences(of: entity, with: character)
     }
     return text
+}
+
+func noteAnnotationAnchorMatches(_ anchor: NoteAnnotationAnchor, blocks: [NoteBlock]) -> Bool {
+    guard anchor.endBlockOrdinal >= anchor.startBlockOrdinal else { return false }
+    let selected = blocks
+        .filter { $0.id >= anchor.startBlockOrdinal && $0.id <= anchor.endBlockOrdinal }
+        .sorted { $0.id < $1.id }
+    guard selected.count == anchor.endBlockOrdinal - anchor.startBlockOrdinal + 1,
+          let firstBlock = selected.first,
+          let lastBlock = selected.last,
+          let firstText = renderedNoteBlockText(firstBlock),
+          let lastText = renderedNoteBlockText(lastBlock) else { return false }
+
+    let rendered = selected.compactMap(renderedNoteBlockText)
+    guard rendered.count == selected.count else { return false }
+    let first = firstText as NSString
+    let last = lastText as NSString
+    guard anchor.startOffset >= 0, anchor.startOffset <= first.length,
+          anchor.endOffset >= 0, anchor.endOffset <= last.length,
+          selected.count > 1 || anchor.endOffset > anchor.startOffset else { return false }
+
+    let excerpt = rendered.enumerated().map { index, text -> String in
+        let value = text as NSString
+        let start = index == 0 ? anchor.startOffset : 0
+        let end = index == rendered.count - 1 ? anchor.endOffset : value.length
+        guard start <= end, end <= value.length else { return "" }
+        return value.substring(with: NSRange(location: start, length: end - start))
+    }.joined(separator: "\n\n")
+    let prefixStart = max(0, anchor.startOffset - 120)
+    let prefix = first.substring(with: NSRange(location: prefixStart, length: anchor.startOffset - prefixStart))
+    let suffixLength = min(120, last.length - anchor.endOffset)
+    let suffix = last.substring(with: NSRange(location: anchor.endOffset, length: suffixLength))
+    return excerpt == anchor.excerpt && prefix == anchor.prefix && suffix == anchor.suffix
 }
 
 struct PendingNoteContext: Equatable {
@@ -304,6 +368,16 @@ struct AISettings: Equatable {
         consentAt = value["consentAt"] as? String
         dataPolicy = AIDataPolicy(value["dataPolicy"] as? [String: Any] ?? [:])
     }
+
+    /// `requiresConsent` is the deployment capability flag: it says this server
+    /// uses external AI and therefore needs a signature, and stays true for
+    /// every account. The account's own signature is `consentVersion`/`consentAt`.
+    var isSigned: Bool { consentVersion != nil || consentAt != nil }
+    /// The account still has to read and sign the agreement before generating.
+    var needsSigning: Bool { requiresConsent && !isSigned }
+    /// One predicate for every AI-generation gate: signed (when required) and
+    /// the data policy allows sending content to external AI.
+    var canUseExternalAI: Bool { !needsSigning && dataPolicy.sendToExternal }
 }
 
 struct ActiveRun: Identifiable, Hashable {
@@ -312,6 +386,26 @@ struct ActiveRun: Identifiable, Hashable {
     var stepCount: Int
     var toolCallCount: Int
     var thinkingText: String?
+    var generation: Int = 0
+    var userMessageId: String?
+    var assistantMessageId: String?
+    var createdAt: String?
+    var updatedAt: String?
+    var nodes: [CompanionProcessNode] = []
+    var nodeCount: Int = 0
+    var errorCode: String?
+    var eventCursor: Int = 0
+    var canResume: Bool { status == "failed" && ["PROVIDER_UNAVAILABLE", "PROVIDER_TIMEOUT", "PROVIDER_FIRST_OUTPUT_TIMEOUT", "PROVIDER_IDLE_TIMEOUT", "RATE_LIMITED", "JOB_DEAD", "JOB_MISSING"].contains(errorCode ?? "") }
+    var progressLabel: String { isActive ? nodes.max(by: { $0.seq < $1.seq })?.label ?? statusLabel : statusLabel }
+    var failureDescription: String {
+        switch errorCode {
+        case "PROVIDER_FIRST_OUTPUT_TIMEOUT": "模型尚未返回首段输出，等待已超时。已保存的成果仍然保留。"
+        case "PROVIDER_IDLE_TIMEOUT": "模型输出中断，等待新的进展已超时。已有内容仍然保留。"
+        case "RATE_LIMITED": "当前服务繁忙，请稍后从中断处继续。"
+        case "CONTEXT_STALE": "资料或授权已经变化，请核对当前内容后重新发起请求。"
+        default: "这次任务未能完成，原记录和已保存的成果仍然保留。"
+        }
+    }
 
     init(id: String, status: String, stepCount: Int, toolCallCount: Int, thinkingText: String?) {
         self.id = id
@@ -328,6 +422,14 @@ struct ActiveRun: Identifiable, Hashable {
         stepCount = value["stepCount"] as? Int ?? 0
         toolCallCount = value["toolCallCount"] as? Int ?? 0
         thinkingText = value["thinkingText"] as? String
+        generation = value["generation"] as? Int ?? 0
+        userMessageId = value["userMessageId"] as? String
+        assistantMessageId = value["assistantMessageId"] as? String
+        createdAt = value["createdAt"] as? String
+        updatedAt = value["updatedAt"] as? String
+        errorCode = value["errorCode"] as? String
+        eventCursor = value["eventCursor"] as? Int ?? 0
+        nodeCount = value["nodeCount"] as? Int ?? 0
     }
 
     var isActive: Bool {
@@ -339,6 +441,9 @@ struct ActiveRun: Identifiable, Hashable {
         case "accepted": return "准备开始"
         case "waiting_for_confirmation": return "等你确认"
         case "cancel_requested": return "正在收尾"
+        case "succeeded", "completed": return "已完成"
+        case "failed": return "未完成"
+        case "cancelled": return "已停止"
         default: return "进行中"
         }
     }

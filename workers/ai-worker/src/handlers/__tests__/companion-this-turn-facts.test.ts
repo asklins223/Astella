@@ -5,9 +5,8 @@ import type { LivePageView } from "../turn/companion-live-view.ts";
 
 function view(overrides: Partial<LivePageView> = {}): LivePageView {
   return {
-    pageKind: "review",
+    pageKind: "note",
     interactionState: "idle",
-    learningRunId: null,
     title: null,
     statusLine: null,
     items: [
@@ -26,8 +25,8 @@ test("序数指代落在当前这一屏的 items[].ordinal 上，取到的是屏
   assert.equal(ordinal.ordinal, 4);
   assert.equal(ordinal.text, "第四张卡的名字", "取的应当是屏上那一项的名字");
   assert.equal(ordinal.resolvable, true);
-  // 「第四张」在卡片/复习页上指学习卡；页型认不出来时按卡处理（review → card）。
-  assert.equal(ordinal.entity, "card");
+  // 当前这一屏是笔记页，序数指代落在屏幕项上，实体跟页面一致。
+  assert.equal(ordinal.entity, "note");
 });
 
 test("中文序数也认，且屏上没有那一项时**不解析**（给出的是没解析出来的回执）", () => {

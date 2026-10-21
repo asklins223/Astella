@@ -228,6 +228,14 @@ function NoteLibraryContent({ scope }: { readonly scope: number }) {
     const rest = loaded.filter((note) => note.id !== featured?.id);
     return rest.slice(0, COVER_CAPACITY);
   }, [featured?.id, loaded]);
+  /**
+   * The featured card prints this count and the preview uses the same prose
+   * contract (a leading `# <title>` heading is not a paragraph of body text).
+   * Computed once here so the card does not parse the same version repeatedly.
+   */
+  const featuredParagraphCount = data?.featured
+    ? noteParagraphCount(data.featured.currentVersion.blocks, { title: data.featured.title })
+    : null;
   const indexed = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase("zh-CN");
     return loaded.filter((note) => withinTab(note.updatedAt, tab)
@@ -712,15 +720,15 @@ function NoteLibraryContent({ scope }: { readonly scope: number }) {
                   data?.featured
                     ? `版本 v${data.featured.currentVersion.versionNo}`
                     : featured?.currentVersionId ? "已有版本" : "等待第一个版本",
-                  data?.featured
-                    ? noteParagraphCount(data.featured.currentVersion.blocks) > 0
-                      ? `${noteParagraphCount(data.featured.currentVersion.blocks)} 段正文`
+                  featuredParagraphCount !== null
+                    ? featuredParagraphCount > 0
+                      ? `${featuredParagraphCount} 段正文`
                       : "还没有正文段落"
                     : null,
                 ].filter(Boolean).join(" · ")}
               </p>
               <div className="rule" />
-              <p className="serif">{previewOf(data?.featured ?? null, Boolean(featured))}</p>
+              <p className="serif">{previewOf(data?.featured ?? null, Boolean(featured), featuredParagraphCount)}</p>
               {featured?.shelfState ? <p className="current-note__records">{noteShelfStageDetailV1(featured.shelfState.facts).join(" · ")}</p> : null}
               <div className="small">
                 {[
@@ -985,12 +993,17 @@ function NoteCoverPhoto({ markdown, workspaceEpoch }: {
  * The one line of real prose the shelf shows before a note is opened. A list
  * row without a detail is a failed read, not a versionless note — the two get
  * different lines so the shelf never blames the reader for a fetch failure.
+ *
+ * The prose contract is shared with the reading view and the card's paragraph
+ * count: the shelf heading already prints the title, so a leading `# <title>`
+ * heading is skipped instead of being repeated at the start of the preview.
  */
-function previewOf(note: NoteDetailV1 | null, listed: boolean): string {
+function previewOf(note: NoteDetailV1 | null, listed: boolean, paragraphCount: number | null): string {
   if (!note) return listed ? "暂时读不到这篇笔记的详情，稍后会自动重试。" : "这篇笔记还没有存过版本，进入编辑写下第一段。";
+  const prose = { title: note.title };
   // 判据与卡片上那行段数同一处（审计 F35）：不能一边说"1 段正文"一边说"还没有正文段落"。
-  if (noteParagraphCount(note.currentVersion.blocks) === 0) return "这一版还没有正文段落，进入编辑继续写。";
-  const text = noteBodyText(note.currentVersion.blocks);
+  if (paragraphCount === 0) return "这一版还没有正文段落，进入编辑继续写。";
+  const text = noteBodyText(note.currentVersion.blocks, prose);
   if (!text) return "这一版还没有正文段落，进入编辑继续写。";
   return text.length > 96 ? `${text.slice(0, 96)}……` : text;
 }

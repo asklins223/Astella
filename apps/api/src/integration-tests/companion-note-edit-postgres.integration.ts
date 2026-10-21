@@ -17,9 +17,10 @@ import { withWorkerWorkspaceTransaction } from "../../../../workers/ai-worker/sr
 import { loadNoteReadPage } from "../../../../workers/ai-worker/src/handlers/tools/companion-read-tools.ts";
 import { runCompanionToolExecution } from "../../../../workers/ai-worker/src/handlers/tools/companion-tool-execution-run.ts";
 import type { AgentEventContext } from "../../../../workers/ai-worker/src/handlers/tools/companion-read-tools.ts";
+import { resumeCompanionRun } from "../modules/companion-conversation/turn/companion-resume.ts";
 
 const url = testDatabaseUrl("DATABASE_URL_MIGRATOR");
-if (!new URL(url).pathname.startsWith("/astella_note_edit_")) throw new Error("Use an isolated astella_note_edit_* database");
+if (!/^\/astella_note_(?:edit|authoring)_/.test(new URL(url).pathname)) throw new Error("Use an isolated astella_note_edit_* or astella_note_authoring_* database");
 const admin = postgres(url, { max: 3 });
 after(async () => { await closeNoteCollaboration(); await closeDatabase(); await closeWorkerDatabase(); await admin.end(); });
 
@@ -101,6 +102,30 @@ test("受限 API 修改活文档、落盘与搜索投影，worker 等真实保�
   await f.mutate(tx => tx`UPDATE companion_agent_tool_calls SET result_ref=NULL WHERE id=${f.callId}`);
   await processCompanionNoteEdit(f.scope, f.callId); assert.equal((await f.content()).filter(text => text === "已保存的新内容").length, 1);
 });
+
+test("修改已落盘但外层状态未知时，只核对精确版本并交付预览，不再次修改", async () => {
+  const f = await fixture(); await processCompanionNoteEdit(f.scope, f.callId);
+  const receipt = JSON.parse(await f.receipt());
+  await f.mutate(async tx => {
+    await tx`UPDATE companion_agent_tool_calls SET status='outcome_unknown' WHERE id=${f.callId}`;
+    await tx`UPDATE companion_turn_runs SET status='failed',error_code='PROVIDER_IDLE_TIMEOUT' WHERE id=${f.runId}`;
+  });
+  const request = { ...f.scope, runId: f.runId, body: { version: 1, generation: 1, expectedEventCursor: 0, reconcileOnly: true } };
+  const result = await resumeCompanionRun(request);
+  assert.equal(result.body.reconciledCount, 1); assert.equal(result.body.unresolvedCount, 0);
+  assert.equal((await resumeCompanionRun(request)).body.reconciledCount, 0);
+  assert.deepEqual(await f.content(), ["甲乙丙丁", "保留段落", "已保存的新内容"]);
+  const events = await f.mutate(tx => tx`SELECT payload FROM companion_stream_events WHERE run_id=${f.runId} AND type='agent.tool'`);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].payload.tool.name, "companion_edit_note");
+  assert.equal(events[0].payload.tool.noteEdit.noteVersionId, receipt.noteVersionId);
+  assert.equal(events[0].payload.tool.noteCreated, undefined);
+  await f.mutate(tx => tx`UPDATE companion_agent_tool_calls SET status='outcome_unknown',
+    result_ref=${JSON.stringify({ ...receipt, noteVersionId: randomUUID() })} WHERE id=${f.callId}`);
+  const unknown = await resumeCompanionRun(request);
+  assert.equal(unknown.body.reconciledCount, 0); assert.equal(unknown.body.unresolvedCount, 1);
+  assert.deepEqual(await f.content(), ["甲乙丙丁", "保留段落", "已保存的新内容"]);
+});
 test("光标插入与段落删除经同一保存路径实际生效", async () => {
   const f = await fixture("insert_at_cursor"); await processCompanionNoteEdit(f.scope, f.callId);
   assert.deepEqual(await f.content(), ["甲乙已保存的新内容丙丁", "保留段落"]);
@@ -149,9 +174,9 @@ test("旧表格读取给出的原文和 blockIndex 能直接编辑，不因编�
 
 test("写入等候超过十秒的真实 API 保存仍成功，工具不会被快速读取预算中断", async () => {
   const f = await fixture();
-  const event = { ctx: { id: f.jobId, workspaceId: f.workspaceId, signal: new AbortController().signal },
-    read: { userId: f.userId, runId: f.runId, conversationId: f.conversationId, accountEpoch: 0, generation: 1 },
-    expiresAt: new Date(Date.now() + 60_000).toISOString() } as AgentEventContext;
+  const event = { ctx: { id: f.jobId, workspaceId: f.workspaceId, requestedBy: f.userId, leaseToken: "edit-lease", payload: { runId: f.runId }, signal: new AbortController().signal },
+    read: { userId: f.userId, runId: f.runId, conversationId: f.conversationId, accountEpoch: 0, generation: 1 } as AgentEventContext["read"],
+    expiresAt: new Date(Date.now() + 60_000).toISOString(), constraints: { visionEnabled: false } } as AgentEventContext;
   const execution = runCompanionToolExecution({ event, definition: getCompanionAgentTool("companion_edit_note")!,
     operationCallId: f.toolCallId, toolCallId: f.toolCallId,
     arguments: { noteId: f.noteId, noteVersionId: f.noteVersionId, operation: "append", markdown: "已保存的新内容" },

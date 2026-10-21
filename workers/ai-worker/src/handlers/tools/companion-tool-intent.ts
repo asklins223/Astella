@@ -197,23 +197,52 @@ const COMPANION_CHAT_ONLY_REQUEST = /(?:聊天里|直接在聊天|只)(?:概括|
 // 产物请求：动词在前（生成这篇的速看）或名词在前（速看生成一下）都算。
 const COMPANION_ARTIFACT_REQUEST = /(?:生成|做|来|准备|出|搞|整理|写|要|画)[^。！？]{0,8}(?:速看|脑图|思维导图|互动演示|动态讲解|演示|拓展稿|拓展笔记|往外学|学习卡|复习卡|草稿)|(?:速看|脑图|思维导图|互动演示|动态讲解|拓展稿|学习卡|复习卡)[^。！？]{0,6}(?:生成|做|来|出|准备)/;
 const COMPANION_ARTIFACT_BARE = /(?:速看|脑图|思维导图|互动演示|动态讲解|拓展笔记|复习卡)(?:吧|一下|一份|一个)/;
-const COMPANION_NEW_NOTE_REQUEST = /(?:写|生成|整理|做成|保存|记)(?:成|出|到|为)?[^。！？]{0,10}(?:笔记|一篇|几篇)/;
+const COMPANION_NEW_NOTE_REQUEST = /(?:写|生成|新建|创建|整理|做成|保存|记)(?:成|出|到|为)?[^。！？；;\n]*?笔记/;
 const COMPANION_CURRENT_NOTE_EDIT = /(?:这|那|当前|该|本)(?:篇)?笔记/;
 const COMPANION_EDIT_REQUEST = /(?:整理|调整|规范|优化|修改|改|排版|格式化|转换成|变成)(?:一下|成|为)?[^。！？]{0,10}(?:这篇|当前|这段|这一篇|这个)?(?:笔记|正文|排版|格式|表格|列表|标题|段落)|把(?:选中|这[一篇段])[^。！？]{0,10}(?:改成|变成|换成)|(?:这|那|当前|该)(?:篇|段|个)?[^。！？]{0,10}(?:笔记|正文|排版|格式)[^。！？]{0,6}(?:整理|调整|规范|优化|修改|排版|格式化)/;
 const COMPANION_READ_SUMMARY = /(?:聊天里|直接|只)[^。！？]{0,6}(?:概括|说说|讲讲|回答)|帮我(?:速|读|看)[^。！？]{0,6}(?:一下|看看|概括)/;
 const COMPANION_TERM_QUESTION = /(?:是什么意思|什么意思|啥意思|怎么理解|是什么概念)[？?]?\s*$/;
 const COMPANION_GOAL_CONTROL = /(?:刚才|那件|这件事|这个任务|跑着的事)[^。！？]{0,8}(?:停|暂停|继续|恢复|取消|终止)|(?:停|暂停|停止|取消|终止)(?:一下|掉)?[^。！？]{0,6}(?:那件事|刚才|这个任务|这件事)/;
 
+function affirmativeOperationMatches(text: string, pattern: RegExp) {
+  const matches = [...text.matchAll(/[^，,。！？；;\n]+/gu)].flatMap(clause =>
+    [...clause[0].matchAll(new RegExp(pattern.source, "gu"))].map(match => { match.index += clause.index; return match; }));
+  return matches.filter(match => {
+    const prefix = text.slice(0, match.index).split(/[，,。！？；;\n]|但是|而是|但请|但要/u).at(-1) ?? "";
+    // A negative may govern several coordinated verbs, e.g. 不要创建或修改笔记.
+    // Bare 不 also covers a match starting at 要 inside 不要做脑图.
+    return !/(?:不要|别|不用|无需|无须|不必|请勿|不需要|不再|不(?:创建|生成|新建|修改|改写|保存|编辑))[^，,。！？；;\n]*$|(?:不|勿)\s*$/u.test(prefix);
+  });
+}
+
+export function explicitlyRequestsCalculationTool(text: string): boolean {
+  return /(?:用|使用|调用|通过)[^，,。！？\n]{0,8}(?:计算工具|计算器)|(?:计算工具|计算器)[^，,。！？\n]{0,8}(?:核对|验证|计算)/u.test(text)
+    && !/(?:不要|不用|无需|别)[^，,。！？\n]{0,8}(?:计算工具|计算器)/u.test(text);
+}
+
+/** Explicit message delivery, rather than paragraphs inside one reply. */
+export function explicitlyRequestsUtterances(text: string | null | undefined): boolean {
+  const current = text?.normalize("NFKC").replace(/[“「『‘"]([^”」』’"]*)[”」』’"]/gu, "") ?? "";
+  if (COMPANION_TERM_QUESTION.test(current)) return false;
+  return affirmativeOperationMatches(current, /(?:调用|使用|用)[^，,。！？；;\n]{0,12}companion_publish_utterance|(?:分|拆成|拆为)[^，,。！？；;\n]{0,6}(?:条|句)(?:消息|发言)?[^，,。！？；;\n]{0,8}(?:说|发)|(?:分次|逐条|逐句)[^，,。！？；;\n]{0,8}(?:说|发)/u).length > 0;
+}
+
 /** What the current utterance explicitly asks for, independent of the classifier. */
 export function explicitCompanionProductRequest(text: string | null | undefined): {
   artifact: boolean; newNote: boolean;
 } {
-  const normalized = text?.normalize("NFKC") ?? "";
-  if (!normalized || COMPANION_CHAT_ONLY_REQUEST.test(normalized)) return { artifact: false, newNote: false };
-  const artifact = COMPANION_ARTIFACT_REQUEST.test(normalized) || COMPANION_ARTIFACT_BARE.test(normalized);
+  const normalized = text?.normalize("NFKC").replace(/[“「『‘"]([^”」』’"]*)[”」』’"]/gu, "") ?? "";
+  if (!normalized || COMPANION_CHAT_ONLY_REQUEST.test(normalized) || COMPANION_TERM_QUESTION.test(normalized)) return { artifact: false, newNote: false };
+  const artifact = affirmativeOperationMatches(normalized, COMPANION_ARTIFACT_REQUEST).length > 0 || affirmativeOperationMatches(normalized, COMPANION_ARTIFACT_BARE).length > 0;
   // 产物词汇优先：'生成拓展笔记' 是产物请求，不是新建一篇普通笔记。
-  const newNote = !artifact && COMPANION_NEW_NOTE_REQUEST.test(normalized)
-    && !COMPANION_CURRENT_NOTE_EDIT.test(normalized);
+  const newNote = !artifact && affirmativeOperationMatches(normalized, COMPANION_NEW_NOTE_REQUEST).some(match => {
+    const prefix = normalized.slice(0, match.index).split(/[，,。！？；;\n]/u).at(-1) ?? "";
+    return !/(?:不要|别|不用|无需|不必|请勿)[^，,。！？；;\n]*$/u.test(prefix)
+      && !/(?:已|已经|曾|曾经|早已)\s*$/u.test(prefix)
+      && !/^(?:写|生成|新建|创建|整理|保存)(?:过|了)?的/u.test(match[0])
+      && !(/(?:刚才|之前|先前|上次|已经|此前)[^，,。！？；;\n]{0,8}$/u.test(prefix) && /^(?:写|生成|新建|创建|整理|保存)(?:过|了)/u.test(match[0]))
+      && !COMPANION_CURRENT_NOTE_EDIT.test(match[0]);
+  });
   return { artifact, newNote };
 }
 
@@ -227,29 +256,40 @@ export function reconcileCompanionInterpretation(
   capabilities: readonly string[],
   permissionLevel?: string,
 ): AgentTurnInterpretationV1 {
-  // 只读档不该因为一句话就获得写类候选：这是权限档，不是分类猜测。
-  if (permissionLevel === "read_only") return interpretation;
-  const text = current?.normalize("NFKC") ?? "";
+  const text = current?.normalize("NFKC").replace(/[“「『‘"]([^”」』’"]*)[”」』’"]/gu, "") ?? "";
   if (!text) return interpretation;
+  const wantsUtterances = explicitlyRequestsUtterances(current) && capabilities.includes("companion_publish_utterance");
+  // Calculation is a read capability, including in read-only mode. Never use
+  // that request to add any of the write candidates reconciled below.
+  if (permissionLevel === "read_only") {
+    if (wantsUtterances) return agentTurnInterpretationV1Schema.parse({ ...interpretation, toolUse: "act",
+      candidateOperations: [...new Set([...interpretation.candidateOperations, "companion_publish_utterance"])] });
+    if (!explicitlyRequestsCalculationTool(text) || !capabilities.includes("agent_calculate")) return interpretation;
+    return agentTurnInterpretationV1Schema.parse({ ...interpretation, toolUse: "read",
+      candidateOperations: [...new Set([...interpretation.candidateOperations, "agent_calculate"])] });
+  }
   const add = (list: string[], name: string) => {
     if (capabilities.includes(name) && !list.includes(name)) list.push(name);
     return list;
   };
   const request = explicitCompanionProductRequest(text);
-  const wantsEdit = COMPANION_EDIT_REQUEST.test(text) && !request.artifact && !request.newNote;
+  const wantsEdit = affirmativeOperationMatches(text, COMPANION_EDIT_REQUEST).length > 0 && !request.artifact && !request.newNote;
   const wantsRead = !request.artifact && !request.newNote && !wantsEdit && COMPANION_READ_SUMMARY.test(text);
   const termQuestion = !request.artifact && !request.newNote && !wantsEdit && !wantsRead && COMPANION_TERM_QUESTION.test(text);
   const goalControl = !request.artifact && !request.newNote && !wantsEdit && !wantsRead && !termQuestion
     && COMPANION_GOAL_CONTROL.test(text);
   const candidates = [...interpretation.candidateOperations];
+  if (wantsUtterances) add(candidates, "companion_publish_utterance");
+  const wantsCalculation = explicitlyRequestsCalculationTool(text) && capabilities.includes("agent_calculate");
+  if (wantsCalculation) add(candidates, "agent_calculate");
   if (request.artifact) add(candidates, "agent_start_goal");
   if (request.newNote) add(candidates, "companion_create_note");
   if (wantsEdit) add(candidates, "companion_edit_note");
   if (wantsRead) add(candidates, "companion_read_note");
-  const explicitAction = request.artifact || request.newNote || wantsEdit || goalControl;
+  const explicitAction = request.artifact || request.newNote || wantsEdit || goalControl || wantsUtterances;
   const toolUse: AgentTurnInterpretationV1["toolUse"] = explicitAction ? "act"
-    : wantsRead ? "read" : termQuestion ? "none" : interpretation.toolUse;
-  const clearedCandidates = termQuestion ? [] : candidates;
+    : wantsRead || wantsCalculation ? "read" : termQuestion ? "none" : interpretation.toolUse;
+  const clearedCandidates = termQuestion && !wantsCalculation && !wantsUtterances ? [] : candidates;
   const intent = explicitAction && (interpretation.intent === "conversation" || interpretation.intent === "question")
     ? "task" : interpretation.intent;
   const goalRelation = request.artifact && ["unrelated", "unclear"].includes(interpretation.goalRelation)

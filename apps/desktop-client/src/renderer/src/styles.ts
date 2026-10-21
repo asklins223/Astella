@@ -54,7 +54,6 @@ import "./components/source-intake.css";
    `objective-flow.css` 排在 `hud-surface.css` 之后是被单独钉着的契约
    （`objective-flow-css-guard.test.ts` 的「修正层的加载顺序」）——它覆盖的正是
    `hud-surface.css` 自己更早处的规则。 */
-import "./components/objective-flow.css";
 import "./components/card-generation-flow.css";
 import "./components/surfaces/companion-center.css";
 import "./components/surfaces/settings/settings-companion.css";
@@ -62,6 +61,7 @@ import "./components/surfaces/settings/settings-book.css";
 import "./components/surfaces/settings/settings-voice-model.css";
 import "./components/surfaces/settings/settings-update.css";
 import "./components/companion/companion-notifications.css";
+import "./components/companion/companion-result-preview.css";
 
 /* ── 4b. 功能层：各页面自己的版式 ───────────────────────────────────────── */
 import "./components/surfaces/note-hud.css";
@@ -74,16 +74,8 @@ import "./components/surfaces/source/source-experience.css";
 import "./components/surfaces/understanding-universe.css";
 import "./components/surfaces/study-surface.css";
 import "./components/surfaces/study/search-desk.css";
-import "./components/surfaces/review/card-experience.css";
 import "./components/surfaces/library/card-packs.css";
 import "./components/surfaces/library/card-detail.css";
-import "./components/surfaces/review/card-making-workshop.css";
-/* The review desk refines collection controls after their shared defaults. */
-import "./components/surfaces/review/candidate-review.css";
-import "./components/surfaces/review/review-queue.css";
-import "./components/surfaces/run/learning-run-experience.css";
-import "./components/surfaces/run/learning-run-room.css";
-import "./components/surfaces/run/card-learning-room.css";
 import "./components/surfaces/library/card-study-scene.css";
 import "./components/home-v2/home-v2.css";
 import "./components/desktop-access-gate.css";
@@ -124,3 +116,5 @@ import "./components/surfaces/notebook/notebook-format-controls.css";
 import "./components/surfaces/notebook/notebook-editing-experience.css";
 
 import "./components/surfaces/notebook/note-mind-map.css";
+
+import "./components/surfaces/notebook/learning/card/learning-card.css";

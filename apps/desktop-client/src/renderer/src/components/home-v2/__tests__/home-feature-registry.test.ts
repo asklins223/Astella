@@ -32,12 +32,10 @@ describe("HomeFeatureRegistryV1", () => {
     expect(getHomeFeature("companion-center").availability).toBe("native");
     expect(HOME_FEATURE_REGISTRY_V1.filter((feature) => feature.availability === "native").map((feature) => feature.id)).toEqual([
       "continue",
-      "today-review",
       "current-notebook",
       "all-notes",
       "sources",
       "global-search",
-      "current-target",
       "understanding-graph",
       "companion-center",
       "settings",

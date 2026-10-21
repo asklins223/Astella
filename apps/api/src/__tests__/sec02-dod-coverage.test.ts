@@ -37,7 +37,6 @@ import {
   type RemoveMemberError,
   type RevokeInviteError,
   type CreateInviteError,
-  type UpdateStepError,
 } from "../modules/identity/invite-service.ts";
 
 const NOW = new Date("2026-07-18T08:00:00.000Z");
@@ -209,14 +208,14 @@ describe("SEC-02 DoD: ADR-0009 软退出机制", () => {
 // ─── 4. Owner 与 member 两条 onboarding 分支 ──────────────────────────────
 
 describe("SEC-02 DoD: Onboarding 分支与状态转换", () => {
-  it("ONBOARDING_STEPS 包含 5 个步骤", () => {
-    assert.equal(ONBOARDING_STEPS.length, 5);
+  // 2026-10-20：方案 57 把学习卡并进笔记，evidence_review 随旧复习链删除（5 → 4）。
+  it("ONBOARDING_STEPS 包含 4 个步骤", () => {
+    assert.equal(ONBOARDING_STEPS.length, 4);
     assert.deepEqual([...ONBOARDING_STEPS], [
       "ai_consent",
       "first_content",
       "first_note",
       "first_card",
-      "evidence_review",
     ]);
   });
 
@@ -270,12 +269,6 @@ describe("SEC-02 DoD: Onboarding 分支与状态转换", () => {
     assert.ok(serverDriven, "onboarding 状态应为 server-driven");
   });
 
-  it("UpdateStepError 覆盖步骤更新失败场景", () => {
-    const errors: UpdateStepError[] = ["invalid_step", "not_found"];
-    for (const error of errors) {
-      assert.ok(typeof error === "string");
-    }
-  });
 
   it("无效步骤名称被拒绝", () => {
     // markOnboardingStep 在 step 不在 ONBOARDING_STEPS 中时返回 invalid_step

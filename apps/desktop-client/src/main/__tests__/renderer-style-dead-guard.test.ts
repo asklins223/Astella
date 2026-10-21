@@ -190,7 +190,7 @@ describe("死 CSS：接了没人发", () => {
       `这些类名在样式表里有规则，但全仓没有任何 tsx 会发出它们。\n`
       + `要删就删干净并把 ${"KNOWN_DEAD"} 里对应条目一并删掉；\n`
       + `要留就在 ${"EXEMPT"} 里写清「它为什么还会被发出」的理由。\n${detail}`,
-    ).toEqual(Object.keys(KNOWN_DEAD).sort());
+    ).toEqual(Object.keys(KNOWN_DEAD).sort((a, b) => a.localeCompare(b)));
   });
 
   it("自检：凭空多一个死类，判据必须报出来", () => {

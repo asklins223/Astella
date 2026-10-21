@@ -92,3 +92,28 @@ describe("书皮上的版本读数（审计 F35）", () => {
     expect(screen.queryByText(/还没有正文段落/)).toBeNull();
   });
 });
+
+describe("书皮上的预览按 Markdown 读，不重复标题", () => {
+  it("AI 笔记以 `# 标题` 起头时，预览从第二块开始且不漏标记", async () => {
+    installApi([
+      { ordinal: 0, type: "heading", content: "# 轨道周期" },
+      { ordinal: 1, type: "heading", content: "## 一句定义" },
+      { ordinal: 2, type: "list", content: "- 公转一周约 **365 天**\n- 见[资料](https://example.com/orbit)" },
+    ]);
+    render(<NoteLibrarySurface />);
+
+    await screen.findByText("轨道周期");
+    const preview = await waitFor(() => {
+      const text = document.querySelector(".current-note .serif")?.textContent ?? "";
+      expect(text.length).toBeGreaterThan(0);
+      return text;
+    });
+    // 同标题的 heading 已由卡片 h2 承担，预览从下一块的真实内容开始。
+    expect(document.querySelector(".current-note h2")?.textContent).toBe("轨道周期");
+    expect(preview).toBe("一句定义 公转一周约 365 天 见资料");
+    for (const marker of ["#", "**", "](", "- "]) expect(preview).not.toContain(marker);
+    expect(preview.startsWith("轨道周期")).toBe(false);
+    // 判据与段数同源：重复的标题不算正文段落（剩两块有字）。
+    await waitFor(() => expect(screen.getAllByText(/2 段正文/).length).toBeGreaterThan(0));
+  });
+});

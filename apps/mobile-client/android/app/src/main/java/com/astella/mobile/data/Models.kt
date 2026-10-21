@@ -29,6 +29,14 @@ data class UserProfile(
     }
 }
 
+data class CompanionDiagramStep(val label: String, val detail: String?)
+data class CompanionCitationTarget(val kind: String, val href: String?, val entityRef: String?)
+data class CompanionQuoteSource(val kind: String, val noteId: String?, val noteVersionId: String?, val blockOrdinal: Int?, val sourceId: String?, val segmentOrdinal: Int?) {
+    companion object { fun from(value: JSONObject?): CompanionQuoteSource? = value?.let {
+        CompanionQuoteSource(it.optString("kind"), it.optNullableString("noteId"), it.optNullableString("noteVersionId"),
+            if (it.has("blockOrdinal")) it.optInt("blockOrdinal") else null, it.optNullableString("sourceId"), if (it.has("segmentOrdinal")) it.optInt("segmentOrdinal") else null)
+    } }
+}
 data class CompanionBlock(
     val type: String,
     val text: String? = null,
@@ -38,6 +46,13 @@ data class CompanionBlock(
     val name: String? = null,
     val proposalId: String? = null,
     val code: String? = null,
+    val noteTarget: CompanionNoteTarget? = null,
+    val title: String? = null,
+    val steps: List<CompanionDiagramStep> = emptyList(),
+    val front: String? = null,
+    val summary: String? = null,
+    val citation: CompanionCitationTarget? = null,
+    val sourceRef: CompanionQuoteSource? = null,
 )
 
 data class CompanionMessage(
@@ -65,6 +80,12 @@ data class CompanionMessage(
                     name = block.optNullableString("name"),
                     proposalId = block.optNullableString("proposalId"),
                     code = block.optNullableString("code"),
+                    noteTarget = CompanionNoteTarget.from(block.optJSONObject("route"), block.optNullableString("label")),
+                    title = block.optNullableString("title"),
+                    steps = block.optJSONArray("steps").objects().map { CompanionDiagramStep(it.optString("label"), it.optNullableString("detail")) },
+                    front = block.optNullableString("front"), summary = block.optNullableString("summary"),
+                    citation = block.optJSONObject("target")?.let { CompanionCitationTarget(it.optString("kind"), it.optNullableString("href"), it.optNullableString("entityRef")) },
+                    sourceRef = CompanionQuoteSource.from(block.optJSONObject("sourceRef")),
                 )
             },
             createdAt = value.optString("createdAt"),
@@ -205,6 +226,8 @@ data class NoteAnnotation(
 
 data class PendingNoteContext(val noteId: String, val versionId: String, val title: String)
 
+data class PendingDiaryReference(val date: String, val version: Int)
+
 data class WorkspaceSummary(
     val id: String,
     val name: String,
@@ -251,6 +274,12 @@ data class AISettings(
     val consentAt: String?,
     val dataPolicy: AIDataPolicy,
 ) {
+    /** 服务端 `requiresConsent` 表示系统启用了外部 AI；真正代表用户签署的是同意版本与时间。 */
+    val signed: Boolean get() = consentVersion != null && consentAt != null
+
+    /** 只有「系统要求授权但用户尚未签署」才需要先去签协议。 */
+    val needsSigning: Boolean get() = requiresConsent && !signed
+
     companion object {
         fun from(value: JSONObject) = AISettings(
             requiresConsent = value.optBoolean("requiresConsent"),
@@ -267,13 +296,33 @@ data class ActiveRun(
     val stepCount: Int,
     val toolCallCount: Int,
     val thinkingText: String?,
+    val generation: Int = 0,
+    val userMessageId: String? = null,
+    val assistantMessageId: String? = null,
+    val createdAt: String? = null,
+    val updatedAt: String? = null,
+    val nodes: List<CompanionProcessNode> = emptyList(),
+    val errorCode: String? = null,
+    val eventCursor: Long = 0,
 ) {
     val isActive get() = status.lowercase() in setOf("running", "accepted", "waiting_for_confirmation", "cancel_requested")
+    val canResume get() = status == "failed" && errorCode in setOf("PROVIDER_UNAVAILABLE", "PROVIDER_TIMEOUT", "PROVIDER_FIRST_OUTPUT_TIMEOUT", "PROVIDER_IDLE_TIMEOUT", "RATE_LIMITED", "JOB_DEAD", "JOB_MISSING")
+    val progressLabel get() = if (isActive) nodes.maxByOrNull { it.seq }?.label ?: statusLabel else statusLabel
+    val failureDescription get() = when (errorCode) {
+        "PROVIDER_FIRST_OUTPUT_TIMEOUT" -> "模型尚未返回首段输出，等待已超时。已保存的成果仍然保留。"
+        "PROVIDER_IDLE_TIMEOUT" -> "模型输出中断，等待新的进展已超时。已有内容仍然保留。"
+        "RATE_LIMITED" -> "当前服务繁忙，请稍后从中断处继续。"
+        "CONTEXT_STALE" -> "资料或授权已经变化，请核对当前内容后重新发起请求。"
+        else -> "这次任务未能完成，原记录和已保存的成果仍然保留。"
+    }
 
     val statusLabel get() = when (status.lowercase()) {
         "accepted" -> "准备开始"
         "waiting_for_confirmation" -> "等你确认"
         "cancel_requested" -> "正在收尾"
+        "succeeded", "completed" -> "已完成"
+        "failed" -> "未完成"
+        "cancelled" -> "已停止"
         else -> "进行中"
     }
 
@@ -284,6 +333,13 @@ data class ActiveRun(
             stepCount = value.optInt("stepCount"),
             toolCallCount = value.optInt("toolCallCount"),
             thinkingText = value.optNullableString("thinkingText"),
+            generation = value.optInt("generation"),
+            userMessageId = value.optNullableString("userMessageId"),
+            assistantMessageId = value.optNullableString("assistantMessageId"),
+            createdAt = value.optNullableString("createdAt"),
+            updatedAt = value.optNullableString("updatedAt"),
+            errorCode = value.optNullableString("errorCode"),
+            eventCursor = value.optLong("eventCursor"),
         )
     }
 }

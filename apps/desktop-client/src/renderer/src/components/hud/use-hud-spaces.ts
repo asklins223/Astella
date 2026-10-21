@@ -30,7 +30,7 @@ export function useHudSpaces(onSwitched?: (name: string) => void) {
   const [confirmation, setConfirmation] = useState<SpaceConfirmation | null>(null);
   const [recents, setRecents] = useState(() => readSpaceRecents());
   const [joinedId, setJoinedId] = useState<string | null>(null);
-  const activeRunId = useRoomStore(store => store.activeRunId);
+  const hasNavigationGuard = useRoomStore(store => Boolean(store.navigationGuard));
 
   const load = useCallback(async () => {
     if (lock.current) { refreshPending.current = true; return; }
@@ -80,7 +80,7 @@ export function useHudSpaces(onSwitched?: (name: string) => void) {
 
   const enter = async (workspace: WorkspaceSummaryV1, confirmed = false) => {
     if (lock.current || workspace.workspaceId === state.session?.workspace?.workspaceId) return;
-    if (activeRunId && !confirmed) { setConfirmation({ kind: "switch", workspace }); return; }
+    if (hasNavigationGuard && !confirmed) { setConfirmation({ kind: "switch", workspace }); return; }
     if (!start(workspace.workspaceId)) return;
     try {
       const response = await window.astella.workspace.switch({ meta: createRequestMeta(epochRef.current), workspaceId: workspace.workspaceId });
@@ -95,7 +95,7 @@ export function useHudSpaces(onSwitched?: (name: string) => void) {
   const create = async (rawName: string, confirmed = false) => {
     const name = rawName.trim();
     if (!name || lock.current) return;
-    if (activeRunId && !confirmed) { setConfirmation({ kind: "create", name }); return; }
+    if (hasNavigationGuard && !confirmed) { setConfirmation({ kind: "create", name }); return; }
     if (!start("create")) return;
     try {
       const response = await window.astella.workspace.create({ meta: createRequestMeta(epochRef.current), name });

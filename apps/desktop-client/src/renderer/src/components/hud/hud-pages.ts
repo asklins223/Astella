@@ -15,27 +15,30 @@ export type HudPageId =
   | "note-read"
   | "note-edit"
   | "note-learning"
+  | "note-card"
   | "note-history"
-  | "goals"
-  | "goal-detail"
-  | "generating"
-  | "candidate"
-  | "today"
-  | "queue"
-  | "assessment"
-  | "result"
+
+
+
+
+
+
+
+
+
+
+
+
   | "search"
   | "graph"
   | "companion"
   | "settings"
-  | "resumable";
+;
 
 export type HudPlate =
   | "home"
   | "library"
   | "writing"
-  | "workshop"
-  | "review"
   | "system"
   | "observatory";
 
@@ -56,8 +59,8 @@ export type CompanionSurfacePolicy = Readonly<{
 /**
  * 每一屏**能不能被她带过去**（39b §9.6 / 39d W2-1 的对账表）。
  *
- * 四套词表收一的最后一块：`HudPageId`（桌面端真有哪几屏，22）↔
- * `COMPANION_PAGE_DESTINATIONS_V2`（她能跳回去哪几屏，10）。两者对不上的地方
+ * 四套词表收一的最后一块：`HudPageId`（桌面端真有哪几屏，9）↔
+ * `COMPANION_PAGE_DESTINATIONS_V2`（她能跳回去哪几屏，7）。两者对不上的地方
  * **必须显式写出来并给理由**，不能靠"反正没有"——那正是「她读得到 `generating`
  * 却跳不回去」这个缺陷长期没人看见的原因。
  *
@@ -78,20 +81,12 @@ export const HUD_PAGE_DESTINATIONS: Readonly<Record<HudPageId, string | null>> =
   "note-read": null,
   "note-edit": null,
   "note-learning": null,
+  "note-card": null,
   "note-history": null,
-  goals: "objective_library",
-  "goal-detail": null,
-  generating: null,
-  candidate: null,
-  today: "today",
-  queue: "review",
-  assessment: null,
-  result: null,
   search: "search",
   graph: "star_map",
   companion: "conversation",
   settings: "settings",
-  resumable: null,
 };
 
 export type HudPageDefinition = {
@@ -110,13 +105,13 @@ export const HUD_PAGES: Readonly<Record<HudPageId, HudPageDefinition>> = {
     id: "home",
     number: "01",
     title: "首页",
-    subtitle: "沿用当前 Home V2，只校准固定半身伴星与今日下一步",
+    subtitle: "沿用当前 Home V2，只校准固定半身伴星与阅读起点",
     plate: "home",
     companion: {
       mode: "home", seat: "right", framing: "full", interaction: "on-demand", proactive: "allow", draggable: true,
     // "今天先完成 6 张到期复习" was a hard-coded count that had no relation to the
     // workspace it was spoken in.
-      starter: "今天的学习从到期复习开始。",
+      starter: "今天的学习从打开一篇笔记开始。",
     },
   },
 
@@ -195,6 +190,16 @@ export const HUD_PAGES: Readonly<Record<HudPageId, HudPageDefinition>> = {
       starter: "我先保持安静，你专心写。",
     },
   },
+  "note-card": {
+    id: "note-card",
+    number: "08",
+    title: "学习卡",
+    subtitle: "这篇笔记的配套练习",
+    plate: "writing",
+    companion: {
+      mode: "ambient", seat: "right", framing: "bust", interaction: "on-demand", proactive: "silent", draggable: false,
+    },
+  },
   "note-learning": {
     id: "note-learning",
     number: "08",
@@ -214,98 +219,6 @@ export const HUD_PAGES: Readonly<Record<HudPageId, HudPageDefinition>> = {
     companion: {
       mode: "ambient", seat: "left", framing: "bust", interaction: "on-demand", proactive: "silent", draggable: false,
     },
-  },
-  goals: {
-    id: "goals",
-    number: "10",
-    title: "学习卡",
-    subtitle: "目标不是列表，而是一张正在推进的理解路线",
-    plate: "workshop",
-    companion: {
-      mode: "ambient", seat: "right", framing: "bust", interaction: "on-demand", proactive: "silent", draggable: false,
-    },
-  },
-  "goal-detail": {
-    id: "goal-detail",
-    number: "11",
-    title: "学习卡详情",
-    subtitle: "围绕一个主张查看证据、出处、版本和验证入口",
-    plate: "workshop",
-    companion: {
-      mode: "ambient", seat: "right", framing: "bust", interaction: "on-demand", proactive: "silent", draggable: false,
-    },
-  },
-  generating: {
-    id: "generating",
-    number: "12",
-    title: "学习卡生成中",
-    subtitle: "来源到候选卡的真实阶段与恢复点",
-    plate: "workshop",
-    companion: {
-      mode: "ambient", seat: "right", framing: "bust", interaction: "on-demand", proactive: "silent", draggable: false,
-      starter: "每一步都是已经确认的阶段，离开本页不会中断。",
-    },
-  },
-  candidate: {
-    id: "candidate",
-    number: "13",
-    title: "候选卡审核",
-    subtitle: "一次只判断一张卡；答案与来源证据按需展开",
-    plate: "workshop",
-    companion: {
-      mode: "ambient", seat: "right", framing: "bust", interaction: "on-demand", proactive: "silent", draggable: false,
-      starter: "保留与否由你确认；需要时先看答案和来源证据。",
-    },
-  },
-  today: {
-    id: "today",
-    number: "14",
-    title: "今日学习",
-    subtitle: "接着上次学，也把今天的小小积累收进手账",
-    plate: "review",
-    companion: {
-      mode: "ambient", seat: "right", framing: "bust", interaction: "on-demand", proactive: "silent", draggable: false,
-    // 这一页已经在 2026-09-18 从"三张票的推荐位"改成操作日志流，文案跟着走：
-    // 不再提"三件事"（页面上没有票了），也不再承诺按认知负荷排序（服务端
-    // 不发布时长）。气泡只说这一页真正兑现的事：记真实发生的操作 + 可追溯。
-      starter: "这一页记的是你今天真实做过的事；有卡住的事务，点它就跳回现场。",
-    },
-  },
-  queue: {
-    id: "queue",
-    number: "15",
-    title: "复习队列",
-    subtitle: "到期的小卡片排好了，慢慢把学过的想起来",
-    plate: "review",
-    companion: {
-      mode: "ambient", seat: "left", framing: "bust", interaction: "on-demand", proactive: "silent", draggable: false,
-    // 队列按 nextReviewAt 升序，也就是最逾期的在最前；「遗忘风险最高」是一个
-    // 系统里不存在的模型，「影响更多目标」也不是排序依据。
-      starter: "到期的小卡片已经排好了；卡盒旁能看接下来的顺序，也能翻开这一张的提醒。",
-    },
-  },
-  assessment: {
-    id: "assessment",
-    number: "16",
-    title: "理解练习",
-    subtitle: "问题怎么问，桌面就提供怎样的作答工具",
-    plate: "review",
-    companion: {
-      mode: "assessment", seat: "right", framing: "bust", interaction: "none", proactive: "silent", draggable: false,
-    },
-    wide: true,
-  },
-  result: {
-    id: "result",
-    number: "17",
-    title: "练习结果",
-    subtitle: "把已证明的理解、仍有缺口和下一步放在一起",
-    plate: "review",
-    companion: {
-      mode: "assessment", seat: "right", framing: "bust", interaction: "on-demand", proactive: "silent", draggable: false,
-      starter: "可以选中结果里的内容，我陪你看懂这次反馈。",
-    },
-    wide: true,
   },
   search: {
     id: "search",
@@ -350,14 +263,6 @@ export const HUD_PAGES: Readonly<Record<HudPageId, HudPageDefinition>> = {
       mode: "ambient", seat: "right", framing: "bust", interaction: "on-demand", proactive: "silent", draggable: false,
       starter: "这里没有虚构的模型选择或 BYOK 选项。",
     },
-  },
-  resumable: {
-    id: "resumable",
-    number: "22",
-    title: "未完成的学习",
-    subtitle: "把在途的那几条摊开，挑一条接着走；已经发生的留在今日学习里",
-    plate: "library",
-    companion: { mode: "ambient", seat: "right", framing: "bust", interaction: "on-demand", proactive: "silent", draggable: false },
   },
 };
 

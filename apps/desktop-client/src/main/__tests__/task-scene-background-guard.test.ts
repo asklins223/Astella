@@ -22,10 +22,7 @@ const style = document.createElement("style");
 // Load task background declarations in their real renderer order. Shared card
 // styles must not erase the collection, queue, or either dedicated making desk.
 const cardStyles = new Set([
-  "./components/surfaces/review/card-experience.css",
   "./components/surfaces/library/card-study-scene.css",
-  "./components/surfaces/review/card-making-workshop.css",
-  "./components/surfaces/review/candidate-review.css",
 ]);
 const orderedCardBackgrounds = [...readFileSync("src/renderer/src/styles.ts", "utf8").matchAll(/import "([^"]+\.css)"/g)]
   .map(match => match[1]).filter(path => cardStyles.has(path))
@@ -40,20 +37,13 @@ const withCardBackgrounds = (check: () => void) => {
   try { check(); } finally { cardStyle.remove(); }
 };
 
-// 独立固定的审查基准，不从被验的 CSS 反推期望值。覆盖全部十五种任务路由。
+// 独立固定的审查基准，不从被验的 CSS 反推期望值。覆盖现役任务路由。
 const scenes: readonly (readonly [RoomIntent, keyof typeof manifest.taskPosters, string])[] = [
   ["open-sources", "library", "library"],
   ["open-source", "library", "library"],
   ["search", "library", "library"],
   ["open-notes", "writing", "writing"],
   ["open-notebook", "writing", "writing"],
-  ["continue", "workshop", "workshop"],
-  ["open-resumable", "workshop", "workshop"],
-  ["open-card-generation", "workshop", "workshop"],
-  ["open-objectives", "workshop", "workshop"],
-  ["open-objective", "workshop", "workshop"],
-  ["review", "review", "review"],
-  ["validate", "review", "review"],
   ["graph", "observatory", "observatory-night-open-v3"],
   ["open-companion-center", "observatory", "observatory-night-open-v3"],
   ["open-settings", "system", "companion-system"],
@@ -79,13 +69,7 @@ describe("task scene background regression", () => {
       host.className = `task-surface task-surface--spatial task-surface--${surface}`;
       // These are the rendered page roots: a bare host misses the :has()
       // override that exposed the homepage behind both populated pages.
-      if (surface === "objective-library" || surface === "review") {
-        const content = document.createElement("div");
-        content.className = surface === "objective-library"
-          ? "approved-surface approved-surface--workshop task-artifact card-library card-experience"
-          : "queue-desk review-queue card-experience";
-        host.append(content);
-      }
+
       root.append(host);
       document.body.append(root);
 
@@ -121,27 +105,4 @@ describe("task scene background regression", () => {
     expect(manifest.homeV2Posters.night.path).toBe("posters/home-v2/lighthouse/lighthouse-night-poster-v1.png");
   });
 
-  it.each(["day", "night"] as const)("the review desk keeps its tabletop after collection styles load in %s mode", theme => withCardBackgrounds(() => {
-    const root = document.createElement("div"); root.className = "desktop-app hud-surface"; root.dataset.theme = theme;
-    const host = document.createElement("section"); host.className = "task-surface task-surface--card-generation";
-    const desk = document.createElement("div"); desk.className = "candidate-review-table card-experience";
-    host.append(desk); root.append(host); document.body.append(root);
-    expect(host.isConnected).toBe(true);
-    expect(getComputedStyle(host).backgroundImage).toContain("candidate-card-table-day-v2.png");
-    expect(manifest.normalized.assets[`taskPosters.candidateReview.${theme}`]).toBe("posters/task-scenes/candidate-card-table-day-v2.png");
-    desk.remove();
-    expect(getComputedStyle(host).backgroundImage).toContain(`workshop-${theme}-v1.png`);
-  }));
-
-  it.each(["day", "night"] as const)("card generation has its own %s drafting mat and switches to the review desk", theme => withCardBackgrounds(() => {
-    const root = document.createElement("div"); root.className = "desktop-app hud-surface"; root.dataset.theme = theme;
-    const host = document.createElement("section"); host.className = "task-surface task-surface--card-generation";
-    const desk = document.createElement("div"); desk.className = "card-generating card-experience";
-    host.append(desk); root.append(host); document.body.append(root);
-    const expectedPath = `posters/task-scenes/card-making-atelier-${theme}-v1.png`;
-    expect(getComputedStyle(host).backgroundImage).toBe(`url("${manifest.basePath}/${expectedPath}")`);
-    expect(manifest.normalized.assets[`taskPosters.cardMaking.${theme}`]).toBe(expectedPath);
-    desk.className = "candidate-review-table card-experience";
-    expect(getComputedStyle(host).backgroundImage).toContain("candidate-card-table-day-v2.png");
-  }));
 });

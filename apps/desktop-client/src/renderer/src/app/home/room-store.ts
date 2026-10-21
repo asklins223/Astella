@@ -30,7 +30,7 @@ export type CompanionPosition = { readonly x: number; readonly y: number };
 export type CompanionNormalizedAnchor = { readonly x: number; readonly y: number };
 export type CompanionPlacementOwner = "semantic" | "user";
 /** 全局搜索的类型筛选，与 `astella.search.global` 的 type 参数同集合。 */
-export type SearchTypeFilter = "all" | "note" | "source" | "objective";
+export type SearchTypeFilter = "all" | "note" | "source";
 /** Live2D 在渲染层的真实状态，与 WindowLive2D 的 onStatus 同集合。 */
 export type Live2dStatus = "loading" | "ready" | "unavailable";
 export type PendingHomeCompletion = { readonly id: string };
@@ -98,9 +98,7 @@ export type NoteTargetRef = {
   readonly noteVersionId: string | null;
   readonly mode?: NoteBodyMode;
   /** Explicit result-page handoff to this round's voluntary reflection tuck. */
-  readonly learningRoundId?: string;
 };
-export type ReviewTargetRef = { readonly scheduleId: string; readonly objectiveId: string };
 /** 顶栏空间胶囊要说的三件事：在哪个空间、什么身份、是不是自己的空间。 */
 export type SpaceIdentity = {
   readonly workspaceId?: string;
@@ -162,8 +160,6 @@ type RoomStore = {
   reducedMotion: boolean;
   windowState: WindowState;
   inputFocused: boolean;
-  activeRunId: string | null;
-  activeCardGenerationRunId: string | null;
   activeNoteRef: NoteTargetRef | null;
   /**
    * The last note the reader opened, kept across navigation. `activeNoteRef` is
@@ -173,7 +169,6 @@ type RoomStore = {
    */
   recentNoteId: string | null;
   activeSourceId: string | null;
-  activeObjectiveId: string | null;
   companionCenterTarget: CompanionCenterTarget | null;
   companionComposerDraft: string;
   settingsSection: string;
@@ -185,7 +180,6 @@ type RoomStore = {
    * 不是常驻状态，因此不持久化。
    */
   settingsAttention: string | null;
-  activeReviewTarget: ReviewTargetRef | null;
   /** 当前页面在 desktop-pages-v3 mockup 中的编号，由页面自身发布。 */
   hudPage: HudPageId;
   /**
@@ -261,7 +255,6 @@ type RoomStore = {
    */
   searchQuery: string;
   searchTypeFilter: SearchTypeFilter;
-  searchWeakOnly: boolean;
   /** Only a reading position, never cached workspace records. Cleared on scope change. */
   searchResume: {
     readonly identity: string;
@@ -269,17 +262,6 @@ type RoomStore = {
     readonly loadedCount: number;
     readonly indexScrollTop: number;
     readonly previewScrollTop: number;
-  } | null;
-  /**
-   * 复习队列的阅读位置，理由和上面的搜索状态完全一样：surface 会被整体重挂载。
-   * 这里只存位置（选中卡 id + 序号），页数由页面按位置重新读到，所以恢复出来
-   * 的永远是服务端当前的真实队列，而不是一份可能已经过期的缓存。
-   * `workspaceEpoch` 用来辨认这个位置还属不属于当前工作区。
-   */
-  reviewQueueResume: {
-    readonly workspaceEpoch: number | null;
-    readonly selectedReviewId: string | null;
-    readonly selectedIndex: number;
   } | null;
   /**
    * Live2D 在渲染层的**真实**加载结果。半身形象是伴星唯一形态，而模型能否
@@ -312,21 +294,12 @@ type RoomStore = {
   setWindowState: (windowState: WindowState) => void;
   setInputFocused: (inputFocused: boolean) => void;
   setScenePhase: (scenePhase: SceneMotionPhase) => void;
-  setActiveRunId: (runId: string | null) => void;
-  setActiveCardGenerationRunId: (runId: string | null) => void;
   setActiveNoteRef: (ref: NoteTargetRef | null) => void;
   setActiveSourceId: (sourceId: string | null) => void;
-  setActiveObjectiveId: (objectiveId: string | null) => void;
   setCompanionCenterTarget: (target: CompanionCenterTarget | null) => void;
   setCompanionComposerDraft: (draft: string | ((current: string) => string)) => void;
   setSettingsSection: (section: string) => void;
   setSettingsAttention: (target: string | null) => void;
-  setActiveReviewTarget: (target: ReviewTargetRef | null) => void;
-  setReviewQueueResume: (resume: {
-    readonly workspaceEpoch: number | null;
-    readonly selectedReviewId: string | null;
-    readonly selectedIndex: number;
-  } | null) => void;
   setHudPage: (page: HudPageId, spaceEntry?: "first" | "returning") => void;
   /** 发布/撤销本页的可读视图；token 不匹配时不动槽位（见 `pageReadableView`）。 */
   publishPageReadableView: (token: string, view: PageReadableV1) => void;
@@ -364,7 +337,6 @@ type RoomStore = {
   setSourceIndexTab: (tab: SourceStatusTab) => void;
   setSearchQuery: (query: string) => void;
   setSearchTypeFilter: (filter: SearchTypeFilter) => void;
-  setSearchWeakOnly: (weakOnly: boolean) => void;
   setSearchResume: (resume: RoomStore["searchResume"]) => void;
   setLive2dStatus: (status: Live2dStatus) => void;
 };
@@ -383,17 +355,13 @@ export const useRoomStore = create<RoomStore>()(
       reducedMotion: false,
       windowState: "visible",
       inputFocused: false,
-      activeRunId: null,
-      activeCardGenerationRunId: null,
       activeNoteRef: null,
       recentNoteId: null,
       activeSourceId: null,
-      activeObjectiveId: null,
       companionCenterTarget: null,
       companionComposerDraft: "",
       settingsSection: "account",
       settingsAttention: null,
-      activeReviewTarget: null,
       hudPage: "home",
       hudSpaceEntry: null,
       pageReadableView: null,
@@ -424,9 +392,7 @@ export const useRoomStore = create<RoomStore>()(
       sourceIndexTab: "all",
       searchQuery: "",
       searchTypeFilter: "all",
-      searchWeakOnly: false,
       searchResume: null,
-      reviewQueueResume: null,
       live2dStatus: "loading",
       workspaceScopeRevision: 0,
       /**
@@ -451,17 +417,13 @@ export const useRoomStore = create<RoomStore>()(
         phase: "booting",
         mediaMessage: null,
         inputFocused: false,
-        activeRunId: null,
-        activeCardGenerationRunId: null,
         activeNoteRef: null,
         recentNoteId: null,
         activeSourceId: null,
-        activeObjectiveId: null,
         companionCenterTarget: null,
         companionComposerDraft: "",
         settingsSection: "account",
         settingsAttention: null,
-        activeReviewTarget: null,
         hudPage: "home",
         hudSpaceEntry: null,
         pageReadableView: null,
@@ -482,11 +444,9 @@ export const useRoomStore = create<RoomStore>()(
         // 搜索范围与工作区绑定：换空间后上一空间的查询词不能再留在这里。
         searchQuery: "",
         searchTypeFilter: "all",
-        searchWeakOnly: false,
-        searchResume: null,
+          searchResume: null,
         // 阅读位置属于当前工作区的队列：换空间后不能把上一空间的第 40 张
         // 当成这一空间的第 40 张。
-        reviewQueueResume: null,
         workspaceScopeRevision: state.workspaceScopeRevision + 1,
       })),
       invoke: (intent, options) => {
@@ -503,15 +463,13 @@ export const useRoomStore = create<RoomStore>()(
         set({
           ...next,
           scenePhase: scenePhaseForIntent(intent, state.surface),
-          // 学习卡生成工作台是笔记主线的一站：进入它不算离开这篇笔记，
-          // 返回研究册时仍落回同一条 activeNoteRef。
-          activeNoteRef: intent === "open-notebook" || intent === "open-card-generation"
+          // The independent card page and the notebook share a note identity,
+          // while each destination owns its own component and layout.
+          activeNoteRef: intent === "open-notebook" || intent === "open-note-card"
             ? get().activeNoteRef
             : null,
           activeSourceId: intent === "open-source" ? get().activeSourceId : null,
-          activeObjectiveId: intent === "open-objective" ? get().activeObjectiveId : null,
           companionCenterTarget: intent === "open-companion-center" ? get().companionCenterTarget : null,
-          activeReviewTarget: intent === "review" ? get().activeReviewTarget : null,
           inputFocused: false,
           // 目标页自身不登记返回目标，所以「从星图跳进来」这一跳由调用方随
           // 导航一起带上；其余情况一律清空，避免旧父级链接残留。
@@ -529,9 +487,7 @@ export const useRoomStore = create<RoomStore>()(
         // was last in stays the note "继续写作" points at.
         recentNoteId: state.recentNoteId,
         activeSourceId: null,
-        activeObjectiveId: null,
         companionCenterTarget: null,
-        activeReviewTarget: null,
         inputFocused: false,
       })),
       toggleTheme: () => set((state) => ({
@@ -567,8 +523,6 @@ export const useRoomStore = create<RoomStore>()(
       setWindowState: (windowState) => set({ windowState }),
       setInputFocused: (inputFocused) => set({ inputFocused }),
       setScenePhase: (scenePhase) => set({ scenePhase }),
-      setActiveRunId: (activeRunId) => set({ activeRunId }),
-      setActiveCardGenerationRunId: (activeCardGenerationRunId) => set({ activeCardGenerationRunId }),
       setActiveNoteRef: (activeNoteRef) => set((state) => ({
         activeNoteRef,
         // Opening a note is what makes it the note to continue; leaving the note
@@ -576,13 +530,10 @@ export const useRoomStore = create<RoomStore>()(
         recentNoteId: activeNoteRef?.noteId ?? state.recentNoteId,
       })),
       setActiveSourceId: (activeSourceId) => set({ activeSourceId }),
-      setActiveObjectiveId: (activeObjectiveId) => set({ activeObjectiveId }),
       setCompanionCenterTarget: (companionCenterTarget) => set({ companionCenterTarget }),
       setCompanionComposerDraft: (draft) => set((state) => ({ companionComposerDraft: typeof draft === "function" ? draft(state.companionComposerDraft) : draft })),
       setSettingsSection: (settingsSection) => set({ settingsSection }),
       setSettingsAttention: (settingsAttention) => set({ settingsAttention }),
-      setActiveReviewTarget: (activeReviewTarget) => set({ activeReviewTarget }),
-      setReviewQueueResume: (reviewQueueResume) => set({ reviewQueueResume }),
       setHudPage: (hudPage, hudSpaceEntry) => set({
         hudPage,
         hudSpaceEntry: hudPage === "space" ? hudSpaceEntry ?? null : null,
@@ -720,8 +671,7 @@ export const useRoomStore = create<RoomStore>()(
       setNoteReturnTo: (noteReturnTo) => set({ noteReturnTo }),
       setSourceIndexTab: (sourceIndexTab) => set({ sourceIndexTab }),
       setSearchQuery: (searchQuery) => set((state) => ({ searchQuery, ...(state.searchQuery.trim() !== searchQuery.trim() ? { searchResume: null } : {}) })),
-      setSearchTypeFilter: (searchTypeFilter) => set({ searchTypeFilter, ...(searchTypeFilter !== "objective" ? { searchWeakOnly: false } : {}), searchResume: null }),
-      setSearchWeakOnly: (searchWeakOnly) => set({ searchWeakOnly, ...(searchWeakOnly ? { searchTypeFilter: "objective" } : {}), searchResume: null }),
+      setSearchTypeFilter: (searchTypeFilter) => set({ searchTypeFilter, searchResume: null }),
       setSearchResume: (searchResume) => set({ searchResume }),
       setLive2dStatus: (live2dStatus) => set({ live2dStatus }),
     }),

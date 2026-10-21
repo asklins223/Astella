@@ -24,14 +24,14 @@ const uuid = () => crypto.randomUUID();
 
 test("mainPageContextInputV2Schema：renderer 只提交非安全字段，安全字段被拒绝", () => {
   const ok = {
-    routeRef: { kind: "card", cardId: uuid(), objectiveId: uuid() },
-    pageKind: "card",
-    entityRefs: [{ kind: "card", cardId: uuid() }, { kind: "key_point", keyPointId: uuid() }],
+    routeRef: { kind: "note", noteId: uuid() },
+    pageKind: "note",
+    entityRefs: [{ kind: "note", noteId: uuid() }],
     interactionState: "idle",
     capabilityHints: ["open_route"],
     sensitivity: "normal",
   };
-  assert.equal(mainPageContextInputV2Schema.parse(ok).pageKind, "card");
+  assert.equal(mainPageContextInputV2Schema.parse(ok).pageKind, "note");
   // renderer 不得自报 account/workspace/user/pageInstance（broker 覆盖）。
   assert.equal(
     mainPageContextInputV2Schema.safeParse({
@@ -49,53 +49,20 @@ test("mainPageContextInputV2Schema：renderer 只提交非安全字段，安全�
   assert.equal(mainPageContextInputV2Schema.safeParse({ ...ok, interactionState: "typing" }).success, false);
 });
 
-test("mainPageContextInputV2Schema：graph checkpoint 使用 opaque token（opaque 传输校验）", () => {
-  const ok = {
-    routeRef: { kind: "star_map" },
-    pageKind: "star_map",
-    entityRefs: [],
-    interactionState: "idle",
-    graph: {
-      lens: "current_target",
-      selectedKeyPointId: uuid(),
-      activeRoutePlanId: null,
-      checkpoint: {
-        version: 1,
-        workspaceId: uuid(),
-        userId: uuid(),
-        token: "opaque-token",
-        capturedAt: new Date().toISOString(),
-      },
-    },
-    capabilityHints: ["graph.focus"],
-    sensitivity: "normal",
-  };
-  const parsed = mainPageContextInputV2Schema.parse(ok);
-  assert.equal(parsed.graph?.checkpoint.token, "opaque-token");
-});
-
 test("companionSystemEventV2Schema：事件 source/eventType/payloadRef 严格判别", () => {
   const ok = {
     version: 2,
     eventId: "e1",
     sequence: 1,
-    source: "learning_run",
+    source: "journey",
     workspaceId: uuid(),
     userId: uuid(),
-    eventType: "learning_run.completed",
+    eventType: "journey.completed",
     occurredAt: new Date().toISOString(),
-    payloadRef: { kind: "learning_run", runId: uuid(), eventCursor: 4 },
+    payloadRef: { kind: "journey", journeyId: uuid(), stepRevision: 1 },
   };
-  assert.equal(companionSystemEventV2Schema.parse(ok).eventType, "learning_run.completed");
+  assert.equal(companionSystemEventV2Schema.parse(ok).eventType, "journey.completed");
   assert.equal(companionSystemEventV2Schema.safeParse({ ...ok, source: "chat" }).success, false);
-  assert.equal(
-    companionSystemEventV2Schema.safeParse({
-      ...ok,
-      eventType: "review.due",
-      payloadRef: { kind: "learning_run", runId: uuid(), eventCursor: 1 },
-    }).success,
-    true, // payloadRef 与 eventType 的语义绑定由 Orchestrator 校验，schema 只保证形状
-  );
 });
 
 test("assistantDeliveryV2Schema：display lease 唯一性形状、状态枚举严格", () => {
@@ -131,7 +98,7 @@ test("navigationCommandEnvelopeV2Schema：navigation 只允许 open_route", () =
     scope: "navigation",
     commandId: "c1",
     expiresAt: new Date().toISOString(),
-    command: { kind: "open_route", route: { kind: "review" } },
+    command: { kind: "open_route", route: { kind: "note_library" } },
   };
   assert.equal(navigationCommandEnvelopeV2Schema.parse(ok).command.kind, "open_route");
   assert.equal(
@@ -161,7 +128,7 @@ test("inPageCommandEnvelopeV2Schema：页内命令强制 freshness 字段，且�
   assert.equal(
     inPageCommandEnvelopeV2Schema.safeParse({
       ...ok,
-      command: { kind: "open_route", route: { kind: "today" } },
+      command: { kind: "open_route", route: { kind: "note_library" } },
     }).success,
     false,
   );
@@ -172,7 +139,7 @@ test("mainCommandResultV2Schema：reasonCode 枚举与 resultRefs 严格", () =>
     version: 2,
     commandId: "c1",
     status: "completed",
-    resultRefs: [{ kind: "card", cardId: uuid() }],
+    resultRefs: [{ kind: "note", noteId: uuid() }],
     occurredAt: new Date().toISOString(),
   };
   assert.equal(mainCommandResultV2Schema.parse(ok).status, "completed");
@@ -282,7 +249,7 @@ test("页面词表：每一页都过得了路由白名单，也都带一个桌�
     assert.ok(label.length > 0 && label !== kind, `${kind} 的中文页名不能就是内部名字`);
   }
   // 正控制：表读到东西了，而不是循环空跑。
-  assert.equal(COMPANION_PAGE_DESTINATIONS_V2.length, 10);
+  assert.equal(COMPANION_PAGE_DESTINATIONS_V2.length, 7);
 });
 
 test("renew 的响应合同就是那两个字段，多一字段少一字段都不算", () => {

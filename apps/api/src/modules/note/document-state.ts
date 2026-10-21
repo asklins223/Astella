@@ -4,7 +4,6 @@ import type { ApiTransaction } from "../../db/client.ts";
 import { noteBlocks, noteDocumentStates, noteVersions, notes } from "@astella/shared/db-schema/note";
 import { computeContentHash } from "./content-hash.ts";
 import { upsertSearchDocument } from "./search-projection.ts";
-import { refreshNoteObjectiveSearchProjections } from "../learning-objectives/search-projection.ts";
 import {
   deriveNoteTitle,
   docFromSnapshot,
@@ -235,10 +234,6 @@ export async function persistNoteDoc(
   const title = titleSource === "manual"
     ? (meta?.title?.trim() || "无标题笔记")
     : deriveNoteTitle(plain);
-  const previous = await tx.query.notes.findFirst({
-    where: and(eq(notes.id, noteId), eq(notes.workspaceId, workspaceId)),
-    columns: { title: true },
-  });
   await tx
     .update(notes)
     .set({ title, titleSource, updatedAt: sql`now()` })
@@ -251,7 +246,6 @@ export async function persistNoteDoc(
     title,
     body: plain.filter((block) => block.type !== "image").map((block) => block.content).join("\n"),
   });
-  if (previous && previous.title !== title) await refreshNoteObjectiveSearchProjections(tx, workspaceId, noteId);
 
   return { blocks, versionId };
 }

@@ -60,6 +60,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
@@ -143,9 +144,10 @@ fun SectionLabel(text: String, modifier: Modifier = Modifier) {
         text,
         modifier,
         color = StudyPalette.muted,
-        fontSize = 12.sp,
-        lineHeight = 16.sp,
-        fontWeight = FontWeight.SemiBold,
+        fontSize = 12.5.sp,
+        lineHeight = 17.sp,
+        fontWeight = FontWeight.Medium,
+        letterSpacing = .6.sp,
     )
 }
 
@@ -277,9 +279,12 @@ fun GlassSegment(
     modifier: Modifier = Modifier,
     height: Dp = 38.dp,
     radius: Dp = height / 2,
+    selectedFill: Color? = null,
     onSelect: (Int) -> Unit,
 ) {
     val reduce = LocalReduceMotion.current
+    val dark = StudyPalette.paper.luminance() < .5f
+    val lens = if (dark) StudyPalette.inset else Color.White
     BoxWithConstraints(modifier.height(height).astellaGlass(radius)) {
         val pad = 3.dp
         val itemWidth = (maxWidth - pad * 2) / options.size
@@ -298,13 +303,14 @@ fun GlassSegment(
                     spotColor = Color(0xFF314E78).copy(alpha = .12f),
                 )
                 .background(
-                    Brush.linearGradient(
-                        listOf(Color.White.copy(alpha = .98f), Color.White.copy(alpha = .55f), Color.White.copy(alpha = .32f)),
+                    if (selectedFill != null) SolidColor(selectedFill) else Brush.linearGradient(
+                        if (dark) listOf(lens.copy(alpha = .98f), lens.copy(alpha = .94f), lens.copy(alpha = .88f))
+                        else listOf(lens.copy(alpha = .98f), lens.copy(alpha = .55f), lens.copy(alpha = .32f)),
                         start = Offset(0f, 0f), end = Offset(0f, 600f),
                     ),
                     lensShape,
                 )
-                .border(.8.dp, Color.White.copy(alpha = .95f), lensShape),
+                .border(.8.dp, Color.White.copy(alpha = if (dark) .16f else if (selectedFill != null) .62f else .95f), lensShape),
         )
         Row(Modifier.fillMaxSize().padding(horizontal = pad)) {
             options.forEachIndexed { index, label ->

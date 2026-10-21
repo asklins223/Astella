@@ -8,9 +8,10 @@ import { useRoomStore } from "../../../app/home/room-store";
 import { isCompanionSpeechActive, subscribeCompanionSpeechActivity } from "../../../app/companion-session/companion-voice-playback";
 import { useTactileSurface } from "../../motion/use-tactile-surface";
 import { useCompanionNotificationSources } from "./use-companion-notification-sources";
-import { notificationKey, nextCompanionNotification, useCompanionNotifications, type CompanionNotification, type CompanionNotificationAction } from "./companion-notifications";
+import { notificationIdentity, notificationKey, nextCompanionNotification, useCompanionNotifications, type CompanionNotification, type CompanionNotificationAction } from "./companion-notifications";
 import { isCompanionMicrophoneActive, speakCompanionNotification, stopCompanionNotificationSpeech, subscribeCompanionAudioPriority, type NotificationVoicePhase } from "../voice/companion-notification-voice";
 import { placeCompanionNotification } from "./notification-placement";
+import { rememberSeenNotice, seenNotices } from "./companion-notice-seen";
 import { companionLayoutBounds } from "../bubble/companion-visible-bounds";
 
 const ICONS = { model: Download, task: Sparkles, review: Clock3, reminder: Bell, help: MessageCircle };
@@ -37,7 +38,11 @@ export function CompanionNotificationCenter(props: {
   const quiet = Boolean(props.quietHours && isWithinQuietHours(props.quietHours, new Date(clock)));
   const rootRef = useRef<HTMLDivElement>(null);
   const badgeRef = useRef<HTMLButtonElement>(null);
-  const seen = useRef(new Set<string>());
+  // 已经露过一次的提示不再自动展开。此前这份记录只活在本组件的 ref 里，
+  // 重启后清空，于是每次启动右下角都会重新冒出同一张纸（用户报的那个弹窗）。
+  const noticeOwner = useRoomStore(state => state.accountIdentity?.email?.toLowerCase() ?? null);
+  const seen = useRef<Set<string>>(seenNotices(noticeOwner));
+  useEffect(() => { seen.current = seenNotices(noticeOwner); }, [noticeOwner]);
   const autoVoice = useRef<string | null>(null);
   const actionLock = useRef<string | null>(null);
   const selected = items.find(item => item.id === selectedId) ?? null;
@@ -62,18 +67,23 @@ export function CompanionNotificationCenter(props: {
   const show = useCallback((notice: CompanionNotification, automatic = false) => {
     const nextKey = notificationKey(notice);
     seen.current.add(nextKey);
+    // 直接指引（delivery: immediate）是"这一步需要你现在处理"，重启后仍应再露一次；
+    // 只有后台捎来的消息才记住"已经看过"，别在下次启动时重放。
+    if (notice.delivery !== "immediate") rememberSeenNotice(noticeOwner, notificationIdentity(notice));
     autoVoice.current = automatic ? nextKey : null;
     setVoicePhase("silent"); setError(null); setSelectedId(notice.id); setInboxOpen(false);
     setDeliveryRevision(value => value + 1);
     if (notice.state === "unread") void Promise.resolve().then(notice.onShown).catch(() => undefined);
-  }, []);
+  }, [noticeOwner]);
 
   useEffect(() => {
     if (selectedId && !selected) setSelectedId(null);
     if (props.blocked || inboxOpen || actionLock.current) return;
     // An explicitly scheduled reminder still arrives during quiet hours.
     const eligible = quiet ? items.filter(item => item.kind === "reminder" || item.delivery === "immediate") : items;
-    const next = nextCompanionNotification(eligible, seen.current, busy || props.passiveMuted);
+    // 后台提示若在本机已经读过，就只留在收件箱里：它不该在每次启动后重放一次。
+    const fresh = eligible.filter(item => item.delivery === "immediate" || !seen.current.has(notificationIdentity(item)));
+    const next = nextCompanionNotification(fresh, seen.current, busy || props.passiveMuted);
     if (!next) return;
     if (selected && next.delivery !== "immediate") return;
     // Background delivery leaves a little space after the reply ends. Direct guidance is immediate.

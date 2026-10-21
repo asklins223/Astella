@@ -119,28 +119,6 @@ test("带 statusCode 的错误类都被 asDomainError 认得出来", () => {
  * 这是**运行时 import 后**比引用，不是 `readFileSync` 里找类名——所以判据落在
  * "现在真的会坏"的那件事上。
  */
-test("搬出扫描范围的制卡错误类：错误边界认得它，helpers 与领域包是同一个 class", async () => {
-  const helpers = await import("../modules/card-generation-v2/helpers.ts");
-  const domain = await import("@astella/card-generation");
-  const helpersError = helpers.CardGenerationV2ServiceError;
-
-  const err = new helpersError("stale_run_status", 409, "运行状态已被并发修改，请刷新");
-  assert.ok(err instanceof DomainError,
-    "继承链断在 DomainError 之前 ⇒ asDomainError 会把它当普通 Error，statusCode 变装饰");
-  assert.equal(asDomainError(err), err,
-    "错误边界认不出这个类 ⇒ 制卡失败会走 Fastify 的兜底，成 500 且不留痕");
-  // 破坏样本：判据不能因为放宽而恒真——非领域错误仍然必须被拒。
-  assert.equal(asDomainError(new Error("boom")), null);
-  assert.equal(asDomainError({ code: "x", statusCode: 409 }), null);
-  // 边界这一格真的把状态码与错误码送出去（现役 routes 就是这么调的）。
-  assert.deepEqual(buildSimpleErrorBody(err),
-    { error: "stale_run_status", message: "运行状态已被并发修改，请刷新" });
-  assert.equal(buildSimpleErrorBody(err).statusCode, undefined, "信封里不该凭空多个 statusCode");
-  // helpers 只是转出：现役错误边界认的必须是领域包里那一个 class。
-  assert.equal(helpersError, domain.CardGenerationV2ServiceError,
-    "helpers 转出的不是领域包里那一个 class ⇒ 两处 instanceof 会各认各的，转出就断了");
-});
-
 test("Agent 错误沿用领域基类，错误码与信封保持一致", () => {
   const error = new AgentStoreError(409, "advance_obsolete", "当前执行已经停止。");
   assert.ok(error instanceof DomainError);
@@ -249,14 +227,14 @@ test("每个 DomainError 子类都显式给了 statusCode（否则静默变 500�
  * 基线是 2026-09-29 的实测值。**只允许往下走**（把某个类从"静默 500"改成显式状态
  * 会减少未分类数）；新增错误类时同步更新这里的数字并说明理由。
  */
+// 2026-10-20：方案 57 删掉制卡/复习/学习轮次那批路由后，随它们一起消失的错误类
+// 有 10 个（409 少 1、404 少 2、500 少 3、502 少 1、503 少 1、透传少 2）。这是删链
+// 的结果，不是语义漂移；新链路若再增删错误类，仍要回来同步这份清单。
 const STATUS_INVENTORY = {
-  "500": 8,        // 内部/上游错误
+  "500": 5,
   "400": 4,
-  "409": 3,
-  "404": 2,
-  "502": 1,
-  "503": 1,
-  "透传（形参）": 8,
+  "409": 2,
+  "透传（形参）": 6,
 } as const;
 
 test("code→status 分布没有漂移（快照 ratchet）", () => {
@@ -275,8 +253,8 @@ test("code→status 分布没有漂移（快照 ratchet）", () => {
       else counts["透传（形参）"] = (counts["透传（形参）"] ?? 0) + 1;
     }
   }
-  assert.equal(checked, 27,
-    `DomainError 子类数从 27 变成了 ${checked}——增删了错误类。`
+  assert.equal(checked, 17,
+    `DomainError 子类数从 17 变成了 ${checked}——增删了错误类。`
     + "这是好事，但要同步更新 STATUS_INVENTORY 并写明为什么。");
   assert.deepEqual(counts, STATUS_INVENTORY,
     "各 statusCode 的类数变了。常见原因是某个错误被改成了另一种语义，"

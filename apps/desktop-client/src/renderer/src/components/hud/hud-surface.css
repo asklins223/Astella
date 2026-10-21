@@ -156,13 +156,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .hud-surface .surface-data-state__spin { animation: none; }
-}.desktop-app.hud-surface .content .source-index,
-.desktop-app.hud-surface .content .current-note,
-.desktop-app.hud-surface .content .card-press,
-.desktop-app.hud-surface .content .day-route,
-.desktop-app.hud-surface .content .card-deck,
-.desktop-app.hud-surface .content .queue-reason,
-.desktop-app.hud-surface .content .preview-page{
+}.desktop-app.hud-surface .content .source-index, .desktop-app.hud-surface .content .current-note, .desktop-app.hud-surface .content .card-press, .desktop-app.hud-surface .content .card-deck, .desktop-app.hud-surface .content .preview-page{
   scrollbar-color: rgba(79, 57, 39, 0.42) transparent;
   scrollbar-width: thin;
 }
@@ -214,16 +208,6 @@
 .desktop-app.hud-surface.nav-collapsed.comp-left:not(.companion-absent):not(.page-19):not(.page-20) .content {
   left: var(--companion-seat-left-collapsed, 335px);
 }
-
-.desktop-app.hud-surface:not(.companion-absent):not(.comp-left) .approved-surface__content {
-  right: var(--companion-seat-right, 245px);
-}
-.desktop-app.hud-surface.comp-left:not(.companion-absent) .approved-surface__content {
-  left: var(--companion-seat-left, 365px);
-}
-.desktop-app.hud-surface[data-directory-rail="collapsed"].comp-left:not(.companion-absent) .approved-surface__content {
-  left: var(--companion-seat-left-collapsed, 335px);
-}
 /* 左侧座位页（11 目标详情 / 15 复习队列）缺席：撤销 365px 左预留，回到 V3.1
    基线 128px（hud-pages.css 的 `.hud-surface .content{left:128px}`）。
    :not(.page-19):not(.page-20)：星图是全出血版心，座位让位走它自己的 seat-gutter。 */
@@ -244,15 +228,6 @@
   .desktop-app.hud-surface.nav-collapsed.comp-left:not(.companion-absent):not(.page-19):not(.page-20) .content {
     left: var(--companion-seat-left-collapsed-compact, 178px);
   }
-  .desktop-app.hud-surface:not(.companion-absent):not(.comp-left) .approved-surface__content {
-    right: var(--companion-seat-right-compact, 124px);
-  }
-  .desktop-app.hud-surface.comp-left:not(.companion-absent) .approved-surface__content {
-    left: var(--companion-seat-left-compact, 194px);
-  }
-  .desktop-app.hud-surface[data-directory-rail="collapsed"].comp-left:not(.companion-absent) .approved-surface__content {
-    left: var(--companion-seat-left-collapsed-compact, 178px);
-  }
   .desktop-app.hud-surface.comp-left.companion-absent:not(.page-19):not(.page-20) .content {
     left: 64px;
   }
@@ -265,26 +240,11 @@
    壳，同一动态机制、同一注册表座位；注意这套壳的「无伴星」基线与 `.content`
    不同：默认 right:88 / left:88，折叠左座 22px，窄窗 44/64px。壳自带 560ms
    过渡，无需另加。 */
-.desktop-app.hud-surface.companion-absent .approved-surface__content {
-  right: 88px;
-}
-.desktop-app.hud-surface.comp-left.companion-absent .approved-surface__content {
-  left: 88px;
-}
-.desktop-app.hud-surface[data-directory-rail="collapsed"].comp-left.companion-absent .approved-surface__content {
-  left: 22px;
-}
-@media (max-width: 760px) {
-  .desktop-app.hud-surface.companion-absent .approved-surface__content { right: 44px; }
-  .desktop-app.hud-surface.comp-left.companion-absent .approved-surface__content { left: 64px; }
-  .desktop-app.hud-surface[data-directory-rail="collapsed"].comp-left.companion-absent .approved-surface__content { left: 11px; }
-}
 
 /* 页面标题是唯一一件浮在房间底图上、而不是落在纸上的 `task-artifact`：基类那条
    `color: var(--ink)`（styles.css:463）是给纸面正文准备的，今天全靠加载顺序才被
    `.approved-surface__heading` 压过去。把「标题件读浅色墨」这条事实钉在它自己的
    修饰符上——基类以后改纸面色，也不会把浮在照片上的标题一起带走。 */
-.hud-surface .task-artifact--header { color: var(--hud-paper-light); }
 
 /* Wide 版心页（16 理解练习 / 17 练习结果）：注册表给它们的座位在右侧，但
    `.content.full` 只有 55px 边距，半身 Mao 会直接压住右下角的作答卡与操作坞。
@@ -945,7 +905,6 @@
   .hud-surface .note-links button:active { transform: none; }
 }
 
-.hud-surface .day-route,
 .hud-surface .card-press { min-height: 0; overflow: auto; }
 
 
@@ -2140,406 +2099,21 @@
 
 /* Shared run/editor primitives. The focus scene and result composition live
    in objective-flow.css; this file keeps only still-used editor controls. */
-.hud-surface .learning-run-result-board {
-  width: 100%;
-  height: 100%;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-  border: 4px solid rgba(255, 252, 235, 0.88);
-  border-radius: 38px 31px 42px 34px / 34px 43px 32px 40px;
-  background: var(--hud-cream);
-  box-shadow: var(--hud-shadow);
-}
-.hud-surface .learning-run-primary-content { width: 100%; height: 100%; min-width: 0; min-height: 0; }
-.hud-surface .learning-run-hint {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 8px;
-  margin-top: 18px;
-  padding-top: 15px;
-  color: rgba(255, 248, 232, 0.72);
-  border-top: 1px solid rgba(255, 248, 232, 0.2);
-  font-size: 9px;
-  line-height: 1.55;
-}
-.hud-surface .learning-run-hint--shown {
-  margin-right: -5px;
-  margin-left: -5px;
-  padding: 13px 12px;
-  color: #4b392a;
-  border: 0;
-  border-radius: 16px 20px 15px 18px;
-  background: var(--hud-butter);
-  transform: rotate(-0.35deg);
-}
 
 /* 提示正文的容器：图标之外的**所有**内容都装在这里，网格因此恒定两个子项。
    2026-09-21 实机截图：此前提示层与「只计练习分」那句各是一个网格项，后者被自动
    放进第二行第一列，`auto` 列按它的 max-content 撑满面板 → 提示被挤成竖排单字。 */
-.hud-surface .learning-run-hint__body {
-  display: grid;
-  gap: 6px;
-  min-width: 0;
-}
 
 /* 两级提示同框按序展示（复盘 #11：第二级不再另起一个按钮）。 */
-.hud-surface .learning-run-hint__levels {
-  min-width: 0;
-  margin: 0;
-  padding-left: 16px;
-  display: grid;
-  gap: 5px;
-}
 
 /* 评估等待面板（复盘 #6）：已等待时长与"你交上去的回答"都要在屏上。 */
-.hud-surface .learning-run-assessing__wait {
-  margin-left: auto;
-  font-size: 9px;
-  font-weight: 750;
-  white-space: nowrap;
-}
-.hud-surface .learning-run-assessing__answer {
-  display: grid;
-  gap: 5px;
-  margin: 11px 0 0;
-  padding: 11px 13px;
-  color: rgba(255, 248, 232, 0.86);
-  border: 1px solid rgba(255, 248, 232, 0.22);
-  border-radius: 13px 16px 12px 15px;
-  background: rgba(255, 248, 232, 0.06);
-  font-size: 10px;
-  line-height: 1.6;
-  overflow-wrap: anywhere;
-}
-.hud-surface .learning-run-assessing__answer .meta { font-size: 9px; }
 
 /* 没有可用麦克风时，切换按钮保留但禁用，原因写在旁边（复盘 #8）。 */
-.hud-surface .learning-run-switch-note {
-  flex-basis: 100%;
-  margin: 0;
-  color: rgba(255, 248, 232, 0.7);
-  font-size: 9px;
-  line-height: 1.55;
-}
 
 /* 语音复述作答（复盘 #8：这个交互此前根本没有输入组件）。 */
-.hud-surface .run-voice-input {
-  display: grid;
-  min-height: 0;
-  height: 100%;
-  grid-template-rows: auto auto minmax(0, 1fr);
-  gap: 9px;
-}
-.hud-surface .run-voice-input__controls {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  flex-wrap: wrap;
-}
-.hud-surface .run-voice-input__controls .meta { font-size: 9px; }
-.hud-surface .run-voice-input__block,
-.hud-surface .run-voice-input__note {
-  margin: 0;
-  padding: 8px 10px;
-  border-radius: 11px 14px 10px 13px;
-  font-size: 9px;
-  line-height: 1.55;
-}
-.hud-surface .run-voice-input__block {
-  color: #6a2f24;
-  border: 1px solid rgba(159, 60, 40, 0.4);
-  background: rgba(214, 122, 92, 0.16);
-}
-.hud-surface .run-voice-input__note {
-  color: rgba(255, 248, 232, 0.8);
-  border: 1px solid rgba(255, 248, 232, 0.2);
-  background: rgba(255, 248, 232, 0.06);
-}
-.hud-surface .run-voice-input__transcript {
-  display: block;
-  min-height: 0;
-  height: 100%;
-}
-.hud-surface .run-voice-input__transcript textarea {
-  width: 100%;
-  height: 100%;
-  resize: none;
-}
-
-.hud-surface .learning-run-response {
-  min-width: 0;
-  min-height: 0;
-  flex: 1 1 auto;
-  padding: 22px 3px 18px;
-  overflow-x: hidden;
-  overflow-y: auto;
-  color: var(--hud-ink);
-  scrollbar-color: rgba(79, 57, 39, 0.35) transparent;
-  scrollbar-width: thin;
-}
-.hud-surface .learning-run-response > [role="status"],
-.hud-surface .learning-run-response > [role="alert"] {
-  display: grid;
-  min-height: 100%;
-  place-content: center;
-  justify-items: center;
-  gap: 7px;
-  text-align: center;
-}
 
 /* Text can use ruled paper; every structured interaction gets an open work
    surface made from rows, controls and dividers rather than more colour cards. */
-.hud-surface .learning-run-response .run-text-editor {
-  display: grid !important;
-  min-height: 100%;
-  grid-template-rows: minmax(190px, 1fr) auto;
-}
-.hud-surface .learning-run-response .run-text-editor textarea {
-  display: block;
-  width: 100%;
-  min-height: 100%;
-  padding: 1px 6px 12px;
-  color: var(--hud-ink);
-  border: 0;
-  outline: 0;
-  background: repeating-linear-gradient(transparent 0 31px, rgba(76, 100, 86, 0.13) 31px 32px);
-  font: 500 14px/32px "Noto Serif SC Variable", "Songti SC", serif;
-  resize: none;
-}
-.hud-surface .learning-run-response .run-text-editor textarea::placeholder { color: rgba(89, 72, 57, 0.52); }
-.hud-surface .learning-run-response .run-text-editor textarea:focus { background-color: rgba(255, 255, 255, 0.18); }
-.hud-surface .learning-run-response .run-text-editor small { justify-self: end; }
-
-.hud-surface :is(.run-order-list, .run-relation-list) { margin: 0; padding: 0; list-style: none; }
-.hud-surface .run-order-list li,
-.hud-surface .run-relation-list li,
-.hud-surface .run-repair-row {
-  min-width: 0;
-  border-bottom: 1px solid var(--hud-line);
-}
-.hud-surface .run-order-list li {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
-  padding: 13px 7px;
-}
-.hud-surface .run-order-list li > svg { color: rgba(89, 72, 57, 0.42); }
-.hud-surface .run-order-controls { display: flex; gap: 5px; }
-.hud-surface .run-icon-button {
-  display: inline-grid;
-  width: 30px;
-  height: 30px;
-  place-items: center;
-  padding: 0;
-  color: var(--hud-ink);
-  border: 1px solid var(--hud-line);
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.28);
-  cursor: pointer;
-}
-.hud-surface .run-icon-button:hover:not(:disabled) { background: var(--hud-butter); }
-.hud-surface .run-icon-button:disabled { cursor: not-allowed; opacity: 0.35; }
-.hud-surface .run-part-editor { display: grid; gap: 13px; }
-.hud-surface .run-relation-controls {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(92px, 0.55fr) minmax(0, 1fr) auto;
-  gap: 8px;
-  align-items: center;
-}
-.hud-surface .run-relation-list li {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 11px 4px;
-}
-.hud-surface .run-repair-row {
-  display: grid;
-  grid-template-columns: minmax(150px, 1fr) minmax(130px, 0.7fr) minmax(130px, 0.7fr);
-  align-items: center;
-  gap: 10px;
-  padding: 11px 4px;
-}
-.hud-surface :is(.run-relation-controls, .run-repair-row) select {
-  width: 100%;
-  min-width: 0;
-  min-height: 36px;
-  padding: 0 28px 0 10px;
-  color: var(--hud-ink);
-  border: 1px solid var(--hud-line-strong);
-  border-radius: 13px 17px 12px 15px;
-  background: rgba(255, 250, 238, 0.58);
-  font: inherit;
-}
-.hud-surface .run-bundle-editor { display: grid; gap: 23px; }
-.hud-surface .run-bundle-part + .run-bundle-part { padding-top: 22px; border-top: 2px dashed rgba(73, 47, 29, 0.2); }
-.hud-surface .run-bundle-part h4 {
-  margin: 0 0 12px;
-  color: #5a735c;
-  font: 800 10px "Noto Sans SC Variable", sans-serif;
-  letter-spacing: 0.05em;
-}
-.hud-surface .run-inline-error { color: #8a4936; }
-
-.hud-surface .learning-run-dock {
-  position: relative;
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  padding-top: 16px;
-  border-top: 1px solid var(--hud-line);
-}
-.hud-surface .learning-run-dock__status {
-  max-width: 220px;
-  color: var(--hud-soft);
-  font-size: 9px;
-  line-height: 1.45;
-}
-.hud-surface .learning-run-dock > .actions { flex-wrap: wrap; justify-content: flex-end; }
-.hud-surface .learning-run-more { position: relative; }
-.hud-surface .learning-run-more > summary {
-  display: inline-flex;
-  min-height: 38px;
-  align-items: center;
-  padding: 0 14px;
-  color: var(--hud-ink);
-  border: 2px solid var(--hud-line-strong);
-  border-radius: 17px 21px 16px 19px;
-  background: var(--hud-cream);
-  box-shadow: 0 5px 11px rgba(67, 43, 27, 0.16);
-  font-size: 11px;
-  font-weight: 700;
-  list-style: none;
-  cursor: pointer;
-}
-.hud-surface .learning-run-more > summary::-webkit-details-marker { display: none; }
-.hud-surface .learning-run-more[open] > summary { background: var(--hud-butter); }
-.hud-surface .learning-run-more__menu {
-  position: absolute;
-  z-index: 20;
-  right: 0;
-  bottom: calc(100% + 9px);
-  display: grid;
-  width: 210px;
-  max-height: min(420px, calc(100vh - 180px));
-  overflow-x: hidden;
-  overflow-y: auto;
-  padding: 7px;
-  border: 3px solid rgba(255, 252, 235, 0.92);
-  border-radius: 19px 24px 17px 22px;
-  background: var(--hud-cream);
-  box-shadow: var(--hud-shadow-small);
-}
-.hud-surface .learning-run-more__menu button {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 34px;
-  padding: 7px 10px;
-  color: var(--hud-ink);
-  border: 0;
-  border-radius: 11px 14px 10px 13px;
-  background: transparent;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.hud-surface .learning-run-more__menu button:hover:not(:disabled) { background: rgba(185, 211, 173, 0.42); }
-.hud-surface .learning-run-more__menu button:disabled { cursor: not-allowed; opacity: 0.45; }
-
-.hud-surface .learning-run-result-report {
-  display: flex;
-  min-width: 0;
-  min-height: 0;
-  flex-direction: column;
-  padding: 31px 34px 24px;
-  overflow: auto;
-}
-.hud-surface .learning-run-result-report header > span {
-  color: #5a735c;
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: 0.05em;
-}
-.hud-surface .learning-run-result-report h2 {
-  max-width: 34ch;
-  margin: 10px 0 0;
-  font: 680 clamp(22px, 2.4vw, 32px)/1.42 "Noto Serif SC Variable", "Songti SC", serif;
-}
-.hud-surface .learning-run-result-evidence { margin-top: 24px; border-top: 1px solid var(--hud-line); }
-.hud-surface .learning-run-result-evidence > div,
-.hud-surface .learning-run-result-evidence--single {
-  display: grid;
-  grid-template-columns: 110px minmax(0, 1fr);
-  gap: 22px;
-  padding: 15px 2px;
-  border-bottom: 1px solid var(--hud-line);
-}
-.hud-surface .learning-run-result-evidence b { font-size: 10px; }
-.hud-surface .learning-run-result-evidence p { margin: 0; color: var(--hud-soft); font-size: 10px; line-height: 1.65; }
-.hud-surface .learning-run-result-rubric { margin-top: 6px; border-top: 1px solid var(--hud-line); }
-.hud-surface .learning-run-result-rubric > b { display: block; padding: 13px 2px 4px; font-size: 10px; }
-.hud-surface .learning-run-result-rubric ul { list-style: none; margin: 0; padding: 0; }
-.hud-surface .learning-run-result-rubric li { padding: 9px 2px; border-bottom: 1px solid var(--hud-line); }
-.hud-surface .learning-run-result-rubric li:last-child { border-bottom: none; }
-.hud-surface .learning-run-result-rubric__head { display: block; font-weight: 800; font-size: 10px; color: var(--hud-ink); }
-.hud-surface .learning-run-result-rubric li[data-verdict="covered"] .learning-run-result-rubric__head { color: var(--hud-green); }
-.hud-surface .learning-run-result-rubric li[data-verdict="missing"] .learning-run-result-rubric__head,
-.hud-surface .learning-run-result-rubric li[data-verdict="contradicted"] .learning-run-result-rubric__head { color: var(--hud-clay); }
-.hud-surface .learning-run-result-rubric li p { margin: 3px 0 0; color: var(--hud-soft); font-size: 10px; line-height: 1.6; }
-.hud-surface .learning-run-result-reveal { margin-top: 14px; }
-.hud-surface .learning-run-result-reveal__body {
-  margin-top: 10px;
-  padding: 14px 16px;
-  border: 1px solid var(--hud-line);
-  border-radius: 14px 17px 13px 16px;
-  background: var(--hud-cream);
-}
-.hud-surface .learning-run-result-reveal__body h3 { margin: 0 0 6px; }
-.hud-surface .learning-run-result-reveal__answer { margin: 0 0 8px; font-weight: 800; font-size: 11px; line-height: 1.6; color: var(--hud-ink); }
-.hud-surface .learning-run-result-reveal__body p { margin: 0 0 6px; color: var(--hud-soft); font-size: 10px; line-height: 1.65; }
-.hud-surface .learning-run-result-reveal__body p:last-child { margin-bottom: 0; }
-.hud-surface .learning-run-next-step {
-  display: grid;
-  grid-template-columns: 74px minmax(0, 0.8fr) minmax(180px, 1.2fr);
-  align-items: center;
-  gap: 16px;
-  margin-top: 20px;
-  padding: 15px 18px;
-  border-radius: 19px 24px 17px 22px;
-  background: var(--hud-butter);
-  transform: rotate(-0.18deg);
-}
-.hud-surface .learning-run-next-step span { font-size: 9px; font-weight: 800; }
-.hud-surface .learning-run-next-step strong { font: 680 13px/1.45 "Noto Serif SC Variable", "Songti SC", serif; }
-.hud-surface .learning-run-next-step p { margin: 0; color: #6b523b; font-size: 9px; line-height: 1.55; }
-.hud-surface .learning-run-result-actions { margin-top: auto; padding-top: 20px; flex-wrap: wrap; }
-
-.hud-surface .run-confirmation-backdrop {
-  position: absolute;
-  z-index: 59;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  background: rgba(37, 26, 19, 0.38);
-  backdrop-filter: blur(2px);
-}
-.hud-surface .run-confirmation {
-  width: min(430px, 100%);
-  padding: 22px;
-  border: 3px solid rgba(255, 252, 235, 0.88);
-  border-radius: 23px 29px 20px 27px / 27px 21px 29px 22px;
-  background: var(--hud-cream);
-  box-shadow: var(--hud-shadow);
-}
-.hud-surface .run-confirmation h2 { font: 680 19px/1.4 "Noto Serif SC Variable", "Songti SC", serif; }
-.hud-surface .run-confirmation p { color: var(--hud-soft); font-size: 10px; line-height: 1.6; }
-.hud-surface .run-confirmation .actions { flex-wrap: wrap; }
 
 @media (max-width: 760px) {
   .hud-surface .card-generation-board__header { gap: 10px; }
@@ -2549,48 +2123,6 @@
   .hud-surface .card-generation-hud-state { gap: 4px; padding: 14px; }
   .hud-surface .card-generation-hud-state strong { font-size: 9px; }
   .hud-surface .card-generation-hud-state p { font-size: 5px; }
-  .hud-surface .learning-run-result-board { border-width: 2px; border-radius: 19px 16px 21px 17px / 17px 22px 16px 20px; }
-  .hud-surface .learning-run-hint { gap: 4px; margin-top: 9px; padding-top: 7px; font-size: 9px; }
-  .hud-surface .learning-run-hint svg { width: 12px; height: 12px; }
-  .hud-surface .learning-run-hint--shown { margin-right: -2px; margin-left: -2px; padding: 6px; border-radius: 8px 10px 7px 9px; }
-  .hud-surface .learning-run-response { padding: 10px 2px 8px; }
-  .hud-surface .learning-run-response .run-text-editor { grid-template-rows: minmax(95px, 1fr) auto; }
-  .hud-surface .learning-run-response .run-text-editor textarea { padding: 0 3px 6px; background-size: auto 16px; font-size: 9px; line-height: 16px; }
-  .hud-surface .run-order-list li { gap: 6px; padding: 6px 3px; font-size: 9px; }
-  .hud-surface .run-order-list li > svg { width: 12px; height: 12px; }
-  .hud-surface .run-order-controls { gap: 3px; }
-  .hud-surface .run-icon-button { width: 24px; height: 24px; }
-  .hud-surface .run-icon-button svg { width: 12px; height: 12px; }
-  .hud-surface .run-part-editor { gap: 6px; }
-  .hud-surface .run-relation-controls { grid-template-columns: minmax(0, 1fr) minmax(52px, 0.55fr) minmax(0, 1fr) auto; gap: 4px; }
-  .hud-surface .run-relation-list li { gap: 6px; padding: 5px 2px; font-size: 9px; }
-  .hud-surface .run-repair-row { grid-template-columns: minmax(75px, 1fr) minmax(65px, 0.7fr) minmax(65px, 0.7fr); gap: 5px; padding: 5px 2px; font-size: 9px; }
-  .hud-surface :is(.run-relation-controls, .run-repair-row) select { min-height: 24px; padding: 0 18px 0 8px; border-radius: 6px 8px 6px 7px; font-size: 9px; }
-  .hud-surface .run-bundle-editor { gap: 11px; }
-  .hud-surface .run-bundle-part + .run-bundle-part { padding-top: 11px; }
-  .hud-surface .run-bundle-part h4 { margin-bottom: 6px; font-size: 9px; }
-  .hud-surface .learning-run-dock { gap: 9px; padding-top: 8px; }
-  .hud-surface .learning-run-dock__status { max-width: 160px; font-size: 9px; }
-  .hud-surface .learning-run-more > summary { min-height: 24px; padding: 0 9px; border-width: 1px; border-radius: 8px 10px 8px 9px; font-size: 9px; }
-  .hud-surface .learning-run-more__menu { bottom: calc(100% + 4px); width: 150px; padding: 4px; border-width: 2px; border-radius: 10px 12px 9px 11px; }
-  .hud-surface .learning-run-more__menu button { gap: 4px; min-height: 24px; padding: 3px 6px; border-radius: 6px 7px 5px 6px; font-size: 9px; }
-  .hud-surface .learning-run-result-report { padding: 15px 17px 12px; }
-  .hud-surface .learning-run-result-report header > span { font-size: 9px; }
-  .hud-surface .learning-run-result-report h2 { margin-top: 5px; font-size: 16px; }
-  .hud-surface .learning-run-result-evidence { margin-top: 12px; }
-  .hud-surface .learning-run-result-evidence > div,
-  .hud-surface .learning-run-result-evidence--single { grid-template-columns: 64px minmax(0, 1fr); gap: 11px; padding: 7px 1px; }
-  .hud-surface .learning-run-result-evidence b,
-  .hud-surface .learning-run-result-evidence p { font-size: 9px; }
-  .hud-surface .learning-run-next-step { grid-template-columns: 44px minmax(0, 0.8fr) minmax(90px, 1.2fr); gap: 8px; margin-top: 10px; padding: 7px 9px; border-radius: 9px 12px 8px 11px; }
-  .hud-surface .learning-run-next-step span,
-  .hud-surface .learning-run-next-step p { font-size: 9px; }
-  .hud-surface .learning-run-next-step strong { font-size: 10px; }
-  .hud-surface .learning-run-result-actions { padding-top: 10px; }
-  .hud-surface .run-confirmation-backdrop { padding: 12px; }
-  .hud-surface .run-confirmation { width: min(300px, 100%); padding: 11px; border-width: 2px; }
-  .hud-surface .run-confirmation h2 { font-size: 10px; }
-  .hud-surface .run-confirmation p { font-size: 5px; }
 }
 
 /* ---------------------------------------------------------------------------
@@ -2698,93 +2230,14 @@
    appears only after the reviewer asks for it, so it may be dense: it is the
    material the keep/reject decision is actually about. */
 
-.hud-surface .reveal-slip {
-  margin: 18px 0 0;
-  padding: 16px 18px;
-  border: 2px dashed var(--hud-line-strong);
-  border-radius: 15px 19px 14px 17px;
-  background: rgba(255, 250, 237, 0.72);
-}
-
-.hud-surface .reveal-slip h3 {
-  margin: 0 0 8px;
-  font: 650 15px/1.4 "Noto Serif SC Variable", "Songti SC", serif;
-}
-
-.hud-surface .reveal-slip h3 + .small { margin-top: 0; }
-.hud-surface .reveal-slip > .small { margin: 8px 0 0; color: var(--hud-soft); line-height: 1.7; }
-
-.hud-surface .reveal-answer__text {
-  margin: 0 0 8px;
-  font: 620 13px/1.7 "Noto Serif SC Variable", "Songti SC", serif;
-}
-
-.hud-surface .reveal-answer__list {
-  margin: 0 0 8px;
-  padding-left: 20px;
-  font-size: 11.5px;
-  line-height: 1.75;
-}
-
-.hud-surface .reveal-answer__pairs { margin: 0 0 8px; }
-.hud-surface .reveal-answer__pairs > div {
-  display: grid;
-  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
-  gap: 10px;
-  padding: 5px 0;
-  border-bottom: 1px solid var(--hud-line);
-  font-size: 11.5px;
-}
-.hud-surface .reveal-answer__pairs dt { color: var(--hud-soft); }
-.hud-surface .reveal-answer__pairs dd { margin: 0; }
-
-.hud-surface .reveal-answer__table { font-size: 11px; }
-.hud-surface .reveal-answer__formula {
-  margin: 0 0 8px;
-  font: 13px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace;
-  overflow-wrap: anywhere;
-}
-
-.hud-surface .reveal-evidence {
-  display: grid;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.hud-surface .reveal-evidence li {
-  display: grid;
-  gap: 3px;
-  padding: 9px 11px;
-  border-radius: 11px 14px 10px 13px;
-  background: var(--hud-butter);
-  font-size: 10.5px;
-  line-height: 1.65;
-}
-
-.hud-surface .reveal-evidence b { font-size: 9px; letter-spacing: 0.06em; }
-
 /* 「当初那段」：同一张 butter 纸条上的**旧**引文。它和上面那一行当前引文必须
    一眼分得开——上面那行是这张卡现在站着的依据，这行只是"当初是这么写的"，
    两者同色同号排在一起会被当成同一段话重复印了两遍。压成 soft 墨并加一条
    奶油的引线，是纸面上「引的是旧文」最小的一档说法。 */
-.hud-surface .reveal-evidence__original {
-  margin-top: 2px;
-  padding-left: 7px;
-  border-left: 2px solid rgba(255, 252, 235, 0.72);
-  color: var(--hud-soft);
-  font-size: 9.5px;
-  line-height: 1.6;
-}
 
 .hud-surface .card-generation-board__failure {
   margin: 12px 0 0;
   color: #f6c3b2;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .hud-surface .reveal-slip { transition: none; }
 }
 
 /* A note longer than the reading window says so on the paper instead of

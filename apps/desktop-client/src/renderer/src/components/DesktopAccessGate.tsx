@@ -472,6 +472,14 @@ export function DesktopAccessGate({
     section: ReturnType<typeof useRoomStore.getState>["settingsSection"];
   } | null>(null);
   const viewPhaseRef = useRef<GateView["phase"]>(initialView.phase);
+  const [connectionInterrupted, setConnectionInterrupted] = useState(false);
+  const connectionInterruptedRef = useRef(false);
+  const retainReadyRoom = useCallback(() => {
+    if (viewPhaseRef.current !== "ready" || !lastTrustedSessionRef.current) return false;
+    connectionInterruptedRef.current = true;
+    setConnectionInterrupted(true);
+    return true;
+  }, []);
   const systemScene = resolveAuthSceneFromDate(systemNow);
   const requestedScene = resolveAuthScene(scenePreference, systemNow);
   const systemTimeLabel = formatAuthSceneClock(systemNow);
@@ -573,10 +581,11 @@ export function DesktopAccessGate({
       requestBootstrap(false, true);
       return;
     }
-    // 服务短暂离线没有证明身份或工作区改变。隐藏内容并复核，保留原任务落点；
-    // 若复核真的换了边界，apply(ready) 仍会清空旧领域状态。
+    // A temporary outage does not change the verified account boundary.
+    // Keep mounted readers; a successful recheck still enforces a changed scope.
     if (code === "api_unavailable") {
-      requestBootstrap(false);
+      retainReadyRoom();
+      requestBootstrap(false, true);
       return;
     }
     const previous = lastTrustedSessionRef.current;
@@ -590,7 +599,7 @@ export function DesktopAccessGate({
       lastTrustedSessionRef.current = null;
     }
     requestBootstrap(false);
-  }, [onWorkspaceBoundaryReset, requestBootstrap]);
+  }, [onWorkspaceBoundaryReset, requestBootstrap, retainReadyRoom]);
 
   useEffect(() => subscribeGateInvalidation((code) => invalidateReadyGate(code)), [invalidateReadyGate]);
 
@@ -620,6 +629,10 @@ export function DesktopAccessGate({
       // 静默复核只报结论、不报过程：房间还在屏幕上，不该因为后台复核走到了哪一步
       // 就闪一次 spinner。
       if (silentReverify && next.phase === "loading" && viewPhaseRef.current === "ready") return;
+      if (next.phase === "ready" || next.phase === "auth" || next.phase === "reauth") {
+        connectionInterruptedRef.current = false;
+        setConnectionInterrupted(false);
+      }
       if (next.phase === "ready") {
         const nextBoundary = [
           next.session.user.userId,
@@ -723,9 +736,13 @@ export function DesktopAccessGate({
             if (event.data.kind === "connection_changed") {
               // 连接恢复（ready）不是会话失效：房间已经在跑，再校验一次不会让任何
               // 东西变新，只会白拆一次页面。
-              if (event.data.state.kind === "ready") return;
+              if (event.data.state.kind === "ready") {
+                if (connectionInterruptedRef.current) requestBootstrap(false, true);
+                return;
+              }
               const decision = decideRuntimeGate(event.data.state);
               if (decision.kind === "blocked") {
+                if (decision.connection.kind === "api_unavailable" && retainReadyRoom()) return;
                 if (decision.connection.kind !== "api_unavailable") {
                   onWorkspaceBoundaryReset?.();
                   readyBoundaryRef.current = null;
@@ -762,6 +779,7 @@ export function DesktopAccessGate({
           runtimeSubscription = subscription;
         } catch (error) {
           if (!isCurrent()) return;
+          if (error instanceof RendererGatewayError && ["api_unavailable", "network_timeout"].includes(error.code) && retainReadyRoom()) return;
           const blocked = blockedFromError(error, "应用状态暂时无法更新");
           if (error instanceof RendererGatewayError && error.code === "configuration_error") {
             apply({ phase: "auth", mode: "login", serviceNotice: blocked.detail });
@@ -804,6 +822,7 @@ export function DesktopAccessGate({
         }
 
         if (runtimeDecision.kind === "blocked") {
+          if (runtimeDecision.connection.kind === "api_unavailable" && retainReadyRoom()) return;
           if (isConfigurationBoundary(runtimeDecision.connection)) {
             apply({ phase: "auth", mode: "login", serviceNotice: runtimeDecision.detail });
             return;
@@ -852,6 +871,7 @@ export function DesktopAccessGate({
             apply({ phase: "reauth", session: sessionDecision.session });
             return;
           case "blocked":
+            if (sessionDecision.reason === "api_unavailable" && retainReadyRoom()) return;
             apply({
               phase: "blocked",
               title: sessionDecision.reason === "api_untrusted" ? "无法安全登录" : "登录服务暂时不可用",
@@ -895,6 +915,7 @@ export function DesktopAccessGate({
         }
       } catch (error) {
         if (!isCurrent()) return;
+        if (error instanceof RendererGatewayError && ["api_unavailable", "network_timeout"].includes(error.code) && retainReadyRoom()) return;
         const failureDecision = decideBootstrapGatewayFailure(error);
         switch (failureDecision.kind) {
           case "authenticate":
@@ -941,7 +962,7 @@ export function DesktopAccessGate({
       window.clearTimeout(deadlineTimer);
       runtimeSubscription?.close();
     };
-  }, [connectOnce, invalidateReadyGate, onWorkspaceBoundaryReset, refreshRevision, requestBootstrap]);
+  }, [connectOnce, invalidateReadyGate, onWorkspaceBoundaryReset, refreshRevision, requestBootstrap, retainReadyRoom]);
 
   useEffect(() => {
     if (view.phase !== "ready") return;
@@ -1232,6 +1253,10 @@ export function DesktopAccessGate({
     return (
       <div className="desktop-access-gate__room-content" data-room-revealed={roomRevealed}>
         {children}
+        {connectionInterrupted ? <aside className="desktop-connection-notice" role="status">
+          <span>连接暂时中断，已打开的内容和阅读位置保留。</span>
+          <button type="button" onClick={() => requestBootstrap(true, true)}>重新连接</button>
+        </aside> : null}
       </div>
     );
   }

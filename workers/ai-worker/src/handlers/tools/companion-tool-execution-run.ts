@@ -159,8 +159,12 @@ export async function runCompanionToolExecution(args: ToolExecutionRunArgs): Pro
     const failure = companionToolFailureFaces(
       classifyCompanionToolFailure(error, definition.riskClass, executionStarted),
     );
+    // Repair instructions belong to the model receipt. They are not a progress
+    // message for the person reading the journal, including after reconnect.
+    const publicSummary = definition.name === "companion_publish_utterance" && failure.modelStatus === "not_executed"
+      ? "这次分条发送没有执行。" : failure.safeSummary;
     // 账本与 SSE 走映射后的既有词，模型拿精确词——理由见 companionToolFailureFaces。
-    await updateToolCall(event, operationCallId, { status: failure.ledgerStatus, safeSummary: failure.safeSummary });
+    await updateToolCall(event, operationCallId, { status: failure.ledgerStatus, safeSummary: publicSummary });
     await appendAgentEvent(event, "agent.tool", {
       tool: {
         toolCallId: operationCallId,
@@ -170,7 +174,7 @@ export async function runCompanionToolExecution(args: ToolExecutionRunArgs): Pro
         riskClass: definition.riskClass,
         status: failure.ledgerStatus,
         safeLabel: COMPANION_AGENT_TOOL_LABELS[definition.name] ?? definition.description.slice(0, 240),
-        safeSummary: failure.safeSummary,
+        safeSummary: publicSummary,
       },
     });
     await recordCompanionRunFailureSpanBestEffort({

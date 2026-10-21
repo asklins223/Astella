@@ -2,8 +2,8 @@ import { useEffect, useRef } from "react";
 import type { CompanionHomeProjectionV1 } from "@astella/shared/companion-home-contracts";
 import type { CompanionActivityDeliveryV1 } from "@astella/shared/companion-memory-desktop-contracts";
 import { createRequestMeta, unwrapGatewayResult } from "../../../app/client/desktop-client";
-import { useHomeProjection, useHomeProjectionInvalidation } from "../../../app/home/home-projection";
 import { useCompanionHomeProjection } from "../../../app/companion-pages/companion-home-projection";
+import { useHomeProjectionInvalidation } from "../../../app/home/home-projection";
 import { useRoomStore } from "../../../app/home/room-store";
 import { notifyCompanion, useCompanionNotifications } from "./companion-notifications";
 import { clearCompanionTaskWatches } from "./companion-notification-tasks";
@@ -60,7 +60,8 @@ export function useCompanionNotificationSources(): void {
   // 更新同理：设备级、有窗口级生命周期，所以挂在通知中心而不是设置页里。
   useUpdateNotifications();
   const scope = useRoomStore(state => state.workspaceScopeRevision);
-  const { projection, reload } = useHomeProjection();
+  const scopeRef = useRef(scope);
+  scopeRef.current = scope;
   const invalidation = useHomeProjectionInvalidation();
   const companion = useCompanionHomeProjection();
   const projectionScopes = useRef(new WeakMap<object, number>());
@@ -69,9 +70,7 @@ export function useCompanionNotificationSources(): void {
     if (!projectionScopes.current.has(value)) projectionScopes.current.set(value, scope);
     return projectionScopes.current.get(value) === scope;
   };
-  const homeCurrent = belongsHere(projection);
   const companionCurrent = belongsHere(companion.projection);
-  const surface = useRoomStore(state => state.surface);
   const windowState = useRoomStore(state => state.windowState);
   useEffect(() => {
     useCompanionNotifications.getState().clearWorkspace(scope);
@@ -81,26 +80,6 @@ export function useCompanionNotificationSources(): void {
     const timer = window.setInterval(() => useCompanionNotifications.getState().tick(Date.now()), 15_000);
     return () => { window.clearInterval(timer); clearCompanionTaskWatches(); };
   }, []);
-  // Due dates can cross while the room stays open. Reuse the authenticated room read.
-  useEffect(() => {
-    if (surface || windowState !== "visible") return;
-    const timer = window.setInterval(reload, 60_000);
-    return () => window.clearInterval(timer);
-  }, [surface, windowState, reload]);
-  const summary = projection?.sanitizedReviewSummary;
-  const due = summary?.state === "data" ? summary.data.dueCount : 0;
-  useEffect(() => {
-    if (!due || !projection || !homeCurrent || surface) return;
-    const date = new Date().toLocaleDateString("en-CA");
-    notifyCompanion({
-      id: `review:${scope}:${date}`, kind: "review", scope, source: "今日复习", title: `${due} 项知识等你温习`,
-      body: "有些学过的内容到了回想的时间。趁现在还熟悉，花一点时间把它们巩固下来吧。",
-      expiresAt: new Date(new Date().setHours(24, 0, 0, 0)).getTime(), snoozable: true,
-      audio: { clip: "review-due", text: "今天有学过的知识到了复习时间。方便的时候，和我一起温习一下吧。" },
-      actions: [{ id: "review", label: "去温习", kind: "navigate", run: () => useRoomStore.getState().invoke("review") },
-        { id: "later", label: "今天先不提醒", kind: "cancel" }],
-    });
-  }, [due, projection, homeCurrent, scope, surface]);
   const cue = companion.projection?.proactiveCue;
   useEffect(() => {
     if (companionCurrent) deliverActivityCue(cue ?? null, scope);
@@ -134,6 +113,7 @@ export function useCompanionNotificationSources(): void {
         if (missed === 0) return;
         const id = `initiative-missed:${scope}`;
         const body = `你不在的时候她开了 ${missed} 次口，原话都留在对话里，还没有念给你听。`;
+        if (readScope !== scopeRef.current) return;
         const store = useCompanionNotifications.getState();
         if (store.items.some(item => item.id === id)) { store.update(id, { body }); return; }
         notifyCompanion({

@@ -13,7 +13,7 @@ vi.mock("../../../../app/client/desktop-client", () => ({ createRequestMeta: () 
   unwrapGatewayResult: (value: unknown) => value, gatewayErrorMessage: (error: Error) => error.message }));
 
 const getMindMap = vi.fn();
-const getOverview = vi.fn(), getArtifact = vi.fn(), startTask = vi.fn();
+const getOverview = vi.fn(), getArtifact = vi.fn(), getExpansion = vi.fn(), startTask = vi.fn();
 const target: NonNullable<NoteTargetRef["learningResult"]> = { kind: "note_overview", artifactId: "saved", taskId: "job" };
 const receipt = (id = "saved") => ({ taskId: "job", noteId: "note", overview: { overviewId: id, body: "已保存的内容" } });
 function deferred<T>() {
@@ -27,7 +27,17 @@ beforeEach(() => {
   Object.defineProperty(window, "astella", { configurable: true, value: {
     noteMindMap: { getTask: getMindMap, startTask },
     noteOverview: { getTask: getOverview, startTask }, noteLearningArtifact: { getTask: getArtifact, startTask },
+    noteExpansion: { getTask: getExpansion, startTask },
   } });
+});
+
+it("reads only the selected expansion receipt and refuses a mismatched saved version", async () => {
+  getExpansion.mockResolvedValue({ taskId: "expansion", noteId: "note", noteVersionId: "v1", drafts: [] });
+  const view = renderHook(({ version }) => useNotebookGoalResult("note", { kind: "note_expansion", artifactId: "expansion", taskId: "expansion", noteVersionId: version }, { current: 4 }), { initialProps: { version: "v1" } });
+  await waitFor(() => expect(view.result.current.result?.kind).toBe("note_expansion"));
+  view.rerender({ version: "v2" });
+  await waitFor(() => expect(view.result.current.error).toContain("保存版本与这份成果不一致"));
+  expect(getExpansion).toHaveBeenCalledTimes(2); expect(startTask).not.toHaveBeenCalled();
 });
 afterEach(cleanup);
 

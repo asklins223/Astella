@@ -1,27 +1,34 @@
 package com.astella.mobile.ui.screens
 
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -41,7 +48,6 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -56,29 +62,52 @@ import com.astella.mobile.ui.design.AstellaGlyphKind
 import com.astella.mobile.ui.design.AstellaTap
 import com.astella.mobile.ui.design.AstellaTextButton
 import com.astella.mobile.ui.design.GlassSegment
-import com.astella.mobile.ui.design.SectionLabel
+import com.astella.mobile.ui.design.LocalReduceMotion
+import com.astella.mobile.ui.design.MotionTokens
 import com.astella.mobile.ui.design.StudyPalette
-import com.astella.mobile.ui.design.astellaGlass
+import com.astella.mobile.ui.design.StudyRadius
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
+import kotlin.math.sin
 
 private enum class OrbitSection(val label: String) {
     Diary("日记"), Memory("伴星记忆"), Hand("手边")
 }
 
+private enum class OrbitMemoryGroup(val label: String, val kinds: Set<String>) {
+    AboutYou("关于你的", setOf("preference", "learning_context", "judgment", "interaction_note")),
+    HerNotes("她的记事", setOf("episodic", "")),
+    Goals("目标与方法", setOf("goal")),
+}
+
+private enum class OrbitMemoryFilter(val label: String) {
+    Active("正在使用"), Candidate("待确认"), Resident("固定"), Disputed("有争议"), Archived("已归档"),
+}
+
 private data class OrbitDay(val date: String, val status: String)
 private data class OrbitMemory(val id: String, val content: String, val kind: String, val tier: String, val candidate: Boolean)
 
+/** 星轨页骨架：深色星图头 → 分段透镜 → 分节标题 → 稳定纸面分组，一个重心逐级下沉。 */
 @Composable
 fun OrbitScreen(
     state: AppUiState,
     viewModel: AppViewModel,
     onConversation: () -> Unit,
+    onDiaryDay: (String) -> Unit,
 ) {
     var section by rememberSaveable { mutableStateOf(OrbitSection.Diary) }
+    LaunchedEffect(state.orbitSectionRequest) {
+        when (state.orbitSectionRequest) {
+            "hand" -> section = OrbitSection.Hand
+            "memory" -> section = OrbitSection.Memory
+            "diary" -> section = OrbitSection.Diary
+            null -> return@LaunchedEffect
+        }
+        viewModel.consumeOrbitSectionRequest()
+    }
     var days by remember { mutableStateOf<List<OrbitDay>>(emptyList()) }
     var firstGeneratedDate by remember { mutableStateOf<LocalDate?>(null) }
     var memories by remember { mutableStateOf<List<OrbitMemory>>(emptyList()) }
@@ -86,9 +115,11 @@ fun OrbitScreen(
     var loading by remember { mutableStateOf(true) }
     var diaryError by remember { mutableStateOf<String?>(null) }
     var memoryError by remember { mutableStateOf<String?>(null) }
-    var selectedDate by rememberSaveable { mutableStateOf<String?>(null) }
     var reload by remember { mutableStateOf(0) }
-    var memoryFilter by rememberSaveable { mutableStateOf(0) }
+    var memoryGroup by rememberSaveable { mutableStateOf(OrbitMemoryGroup.AboutYou) }
+    var memoryStatusFilter by rememberSaveable { mutableStateOf(OrbitMemoryFilter.Active) }
+    var selectedMemoryId by remember { mutableStateOf<String?>(null) }
+    var showRecycleBin by remember { mutableStateOf(false) }
     val month = remember { LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM")) }
     val recentDays = remember(days) {
         val cutoff = LocalDate.now().minusDays(13)
@@ -149,316 +180,520 @@ fun OrbitScreen(
                     (0 until blocks.length()).mapNotNull { index -> blocks.optJSONObject(index)?.optString("text") }
                         .filter(String::isNotBlank).joinToString(" ")
                 }.orEmpty()
-                if (text.isNotBlank()) summaries = summaries + (day.date to text)
+                if (text.isNotBlank()) summaries = summaries + (day.date to text.take(140))
             } catch (_: Throwable) {
                 // 单天失败不阻断整页。
             }
         }
     }
 
-    LaunchedEffect(selectedDate) {
-        val date = selectedDate ?: return@LaunchedEffect
-        if (summaries[date] != null) return@LaunchedEffect
-        try {
-            val response = withContext(Dispatchers.IO) { viewModel.requestApi("/companion/daily?date=$date") }
-            val text = response.optJSONArray("blocks")?.let { blocks ->
-                (0 until blocks.length()).mapNotNull { index -> blocks.optJSONObject(index)?.optString("text") }
-                    .filter(String::isNotBlank).joinToString("\n\n")
-            }.orEmpty().ifBlank { if (response.optString("status") == "generated") "这一天的日记暂时没有正文。" else "这一天还没有生成日记。" }
-            summaries = summaries + (date to text)
-        } catch (_: Throwable) {
-            summaries = summaries + (date to "这篇日记暂时没有打开，请稍后重试。")
-        }
-    }
+    val generatedDays = recentDays.filter { it.status == "generated" }.sortedByDescending { it.date }
+    val visibleMemories = memories.filter { memoryGroupMatches(it, memoryGroup) && memoryFilterMatches(it, memoryStatusFilter) }
+    val proposals = state.messages.flatMap { it.blocks }.mapNotNull { it.proposalId }.distinct()
 
     LazyColumn(
         Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 24.dp),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 30.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
-        item { OrbitHero(recentDays = recentDays, writtenDates = writtenDates, companionDays = companionDays) }
-        item {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        item(key = "hero") {
+            StaggerReveal(0) {
+                OrbitHero(recentDays = recentDays, writtenDates = writtenDates, companionDays = companionDays)
+            }
+        }
+        item(key = "lens") {
+            StaggerReveal(1) {
                 GlassSegment(
                     options = OrbitSection.entries.map { it.label },
                     selectedIndex = OrbitSection.entries.indexOf(section),
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.fillMaxWidth(),
                     height = 44.dp,
                     radius = 22.dp,
                     onSelect = { section = OrbitSection.entries[it] },
                 )
-                Spacer(Modifier.width(10.dp))
-                AstellaTap(
-                    onClick = { reload += 1 },
-                    modifier = Modifier.size(44.dp).astellaGlass(22.dp, interactive = true),
-                ) {
-                    AstellaGlyph(AstellaGlyphKind.Refresh, Modifier.align(Alignment.Center).size(18.dp), tint = StudyPalette.ink)
-                }
             }
         }
         when (section) {
             OrbitSection.Diary -> {
-                item {
-                    Text(
-                        "这是她替你写下的一天。列表只给摘要，点开看当日全文。",
-                        color = StudyPalette.muted, fontSize = 11.sp, lineHeight = 18.sp,
-                    )
-                }
-                if (loading) item { OrbitLoadingRow() }
-                else if (diaryError != null) item { OrbitEmptyCard("暂时看不到星迹", diaryError.orEmpty(), AstellaGlyphKind.Orbit) }
-                else if (recentDays.isEmpty()) item { OrbitEmptyCard("星轨还很安静", "等伴星写下第一篇日记，这里就会亮起一颗星。", AstellaGlyphKind.Orbit) }
-                else {
-                    items(recentDays.sortedByDescending { it.date }, key = { it.date }) { day ->
-                        OrbitDiaryCard(
-                            day = day,
-                            summary = summaries[day.date],
-                            selected = selectedDate == day.date,
-                            onClick = { selectedDate = if (selectedDate == day.date) null else day.date },
-                        )
+                item(key = "diary-head") {
+                    StaggerReveal(2) {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            ShellSectionHeader(
+                                "星迹 · 日记",
+                                meta = if (generatedDays.isEmpty()) null else "共 ${generatedDays.size} 篇",
+                                action = {
+                                    QuietTextAction(
+                                        "写今天",
+                                        onClick = { viewModel.beginDiaryCapture() },
+                                        glyph = AstellaGlyphKind.Edit,
+                                    )
+                                },
+                            )
+                            when {
+                                loading -> OrbitDiarySkeleton()
+                                diaryError != null -> OrbitEmptyCard("暂时看不到星迹", diaryError.orEmpty(), AstellaGlyphKind.Orbit)
+                                generatedDays.isEmpty() -> OrbitEmptyCard(
+                                    "星轨还很安静",
+                                    "等伴星写下第一篇日记，这里就会亮起一颗星。",
+                                    AstellaGlyphKind.Orbit,
+                                )
+                                else -> SettingsGroup {
+                                    generatedDays.forEachIndexed { index, day ->
+                                        if (index > 0) SettingsDivider()
+                                        OrbitDiaryRow(
+                                            day = day,
+                                            summary = summaries[day.date],
+                                            onClick = { onDiaryDay(day.date) },
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
             OrbitSection.Memory -> {
-                item {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf("全部", "待确认", "常驻记忆").forEachIndexed { index, label ->
-                            val selected = memoryFilter == index
-                            AstellaTap(
-                                onClick = { memoryFilter = index },
-                                modifier = Modifier.height(32.dp)
-                                    .background(
-                                        if (selected) StudyPalette.accent else Color.White.copy(alpha = .55f),
-                                        RoundedCornerShape(16.dp),
-                                    )
-                                    .then(
-                                        if (!selected) Modifier.border(.8.dp, Color.White.copy(alpha = .8f), RoundedCornerShape(16.dp))
-                                        else Modifier,
-                                    )
-                                    .padding(horizontal = 13.dp),
+                item(key = "memory-controls") {
+                    StaggerReveal(2) {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            UnderlineTabs(
+                                options = OrbitMemoryGroup.entries.map { it.label },
+                                selectedIndex = OrbitMemoryGroup.entries.indexOf(memoryGroup),
+                                onSelect = {
+                                    memoryGroup = OrbitMemoryGroup.entries[it]
+                                    memoryStatusFilter = OrbitMemoryFilter.Active
+                                },
+                            )
+                            Row(
+                                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
+                                OrbitMemoryFilter.entries.forEach { filter ->
+                                    OrbitFilterChip(
+                                        label = filter.label,
+                                        selected = filter == memoryStatusFilter,
+                                        onClick = { memoryStatusFilter = filter },
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                item(key = "memory-list") {
+                    StaggerReveal(3) {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            ShellSectionHeader(
+                                "伴星记忆",
+                                meta = if (visibleMemories.isEmpty()) null else "${visibleMemories.size} 条 · 可核对与修订",
+                                action = {
+                                    QuietTextAction(
+                                        "回收站",
+                                        onClick = { showRecycleBin = true },
+                                        glyph = AstellaGlyphKind.History,
+                                    )
+                                },
+                            )
+                            when {
+                                loading -> OrbitDiarySkeleton()
+                                memoryError != null -> OrbitEmptyCard("记忆暂时不可用", memoryError.orEmpty(), AstellaGlyphKind.Companion)
+                                visibleMemories.isEmpty() -> OrbitEmptyCard(
+                                    memoryEmptyTitle(memoryStatusFilter),
+                                    memoryEmptyDetail(memoryStatusFilter),
+                                    AstellaGlyphKind.Companion,
+                                )
+                                else -> SettingsGroup {
+                                    visibleMemories.forEachIndexed { index, memory ->
+                                        if (index > 0) SettingsDivider()
+                                        OrbitMemoryRow(memory, onClick = { selectedMemoryId = memory.id })
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            OrbitSection.Hand -> {
+                item(key = "hand-head") {
+                    StaggerReveal(2) {
+                        ShellSectionHeader(
+                            "手边",
+                            meta = when {
+                                state.runs.isNotEmpty() -> "${state.runs.size} 项正在进行"
+                                proposals.isNotEmpty() -> "${proposals.size} 条待确认"
+                                else -> "交给伴星的事"
+                            },
+                        )
+                    }
+                }
+                if (state.runs.isEmpty() && proposals.isEmpty()) item(key = "hand-empty") {
+                    StaggerReveal(3) {
+                        OrbitEmptyCard(
+                            "没有等待处理的事",
+                            "你可以安心读一会儿；需要继续时，再从相伴页把内容交给伴星。",
+                            AstellaGlyphKind.Hand,
+                        )
+                    }
+                }
+                items(state.runs.size, key = { "run-${state.runs[it].id}" }) { index ->
+                    StaggerReveal(3 + index) {
+                        OrbitRunCard(state.runs[index], onConversation, viewModel)
+                    }
+                }
+                items(proposals.size, key = { "proposal-${proposals[it]}" }) { index ->
+                    StaggerReveal(3 + state.runs.size + index) {
+                        CompanionProposalCard(proposals[index], viewModel)
+                    }
+                }
+                item(key = "hand-note") {
+                    state.notes.firstOrNull()?.let { note ->
+                        StaggerReveal(3) {
+                            Column(
+                                Modifier.fillMaxWidth()
+                                    .clip(RoundedCornerShape(StudyRadius.xl))
+                                    .background(StudyPalette.sky.copy(alpha = .55f))
+                                    .padding(horizontal = 17.dp, vertical = 16.dp),
+                                verticalArrangement = Arrangement.spacedBy(7.dp),
+                            ) {
+                                Text("继续上次的思路", color = StudyPalette.accent, fontSize = 11.sp, fontWeight = FontWeight.Medium)
                                 Text(
-                                    label,
-                                    Modifier.align(Alignment.Center),
-                                    color = if (selected) Color.White else StudyPalette.muted,
-                                    fontSize = 11.sp,
-                                    fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
+                                    note.title,
+                                    color = StudyPalette.ink,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 17.sp,
+                                    lineHeight = 23.sp,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                note.snippet?.takeIf(String::isNotBlank)?.let {
+                                    Text(
+                                        it,
+                                        color = StudyPalette.muted,
+                                        fontSize = 12.5.sp,
+                                        lineHeight = 19.sp,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                                QuietTextAction(
+                                    "带着这篇手记继续聊",
+                                    onClick = { viewModel.referenceNote(note.id); onConversation() },
+                                    glyph = AstellaGlyphKind.Chat,
                                 )
                             }
                         }
                     }
                 }
-                val visible = memories.filter {
-                    when (memoryFilter) {
-                        1 -> it.candidate
-                        2 -> it.tier == "resident"
-                        else -> true
+                if (state.runs.isNotEmpty() || proposals.isNotEmpty()) item(key = "hand-conversation") {
+                    StaggerReveal(9) {
+                        AstellaTextButton(
+                            onClick = onConversation,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("回到对话看完整过程", fontSize = 13.sp) }
                     }
-                }
-                if (loading) item { OrbitLoadingRow() }
-                else if (memoryError != null) item { OrbitEmptyCard("记忆暂时不可用", memoryError.orEmpty(), AstellaGlyphKind.Companion) }
-                else if (visible.isEmpty()) item { OrbitEmptyCard("这个分组还没有记忆", "等你和伴星相处得更久，这里会慢慢记下与你有关的事。", AstellaGlyphKind.Companion) }
-                else items(visible, key = { it.id }) { memory -> OrbitMemoryCard(memory) }
-            }
-            OrbitSection.Hand -> {
-                item { SectionLabel("现在交给伴星的") }
-                if (state.runs.isEmpty()) item { OrbitEmptyCard("没有等待处理的事", "你可以安心读一会儿；需要继续时，再从相伴页把内容交给伴星。", AstellaGlyphKind.Hand) }
-                items(state.runs, key = { it.id }) { run -> OrbitRunCard(run, onConversation, viewModel) }
-                val proposals = state.messages.flatMap { it.blocks }.mapNotNull { it.proposalId }.distinct()
-                items(proposals, key = { it }) { id -> CompanionProposalCard(id, viewModel) }
-                state.notes.firstOrNull()?.let { note ->
-                    item {
-                        Column(
-                            Modifier.fillMaxWidth().astellaGlass(22.dp).padding(17.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Text("继续上次的思路", color = StudyPalette.muted, fontSize = 11.sp)
-                            Text(note.title, color = StudyPalette.ink, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            note.snippet?.takeIf(String::isNotBlank)?.let {
-                                Text(it, color = StudyPalette.muted, fontSize = 12.sp, lineHeight = 19.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            }
-                            AstellaTextButton(
-                                onClick = { viewModel.referenceNote(note.id); onConversation() },
-                                contentPadding = PaddingValues(horizontal = 0.dp),
-                            ) { Text("带着这篇手记继续聊") }
-                        }
-                    }
-                }
-                item {
-                    AstellaTextButton(onClick = onConversation, modifier = Modifier.fillMaxWidth()) { Text("回到对话看完整过程") }
                 }
             }
         }
     }
+    selectedMemoryId?.let { id ->
+        OrbitMemoryDetailSheet(
+            memoryId = id,
+            viewModel = viewModel,
+            onDismiss = { selectedMemoryId = null },
+            onChanged = { reload += 1 },
+        )
+    }
+    if (showRecycleBin) OrbitMemoryRecycleSheet(
+        viewModel = viewModel,
+        onDismiss = { showRecycleBin = false },
+        onChanged = { reload += 1 },
+    )
 }
 
+/** 星图头：页眉 + 相伴天数（焦点）+ 14 天星点；高度收敛到 200dp 以内。 */
 @Composable
 private fun OrbitHero(recentDays: List<OrbitDay>, writtenDates: Set<String>, companionDays: Long) {
     val active = recentDays.count { it.status == "generated" }
     Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(28.dp))
-            .background(Brush.linearGradient(listOf(Color(0xFF2C4266), Color(0xFF3B577F), Color(0xFF456899))))
-            .padding(horizontal = 22.dp, vertical = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(StudyRadius.xxl))
+            .background(Brush.linearGradient(listOf(Color(0xFF2B4064), Color(0xFF3B577F), Color(0xFF47699A))))
+            .padding(horizontal = 20.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Box(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(end = 68.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("OUR CONSTELLATION", color = Color.White.copy(alpha = .62f), fontSize = 10.sp, letterSpacing = 1.6.sp, fontWeight = FontWeight.Medium)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                Text(
+                    "OUR CONSTELLATION",
+                    color = Color.White.copy(alpha = .58f), fontSize = 9.5.sp,
+                    letterSpacing = 1.7.sp, fontWeight = FontWeight.SemiBold,
+                )
                 Text(
                     if (companionDays > 0) "相伴 $companionDays 天" else "从第一颗星开始",
-                    color = Color.White, fontSize = 25.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-.4).sp,
+                    color = Color.White, fontSize = 25.sp, lineHeight = 31.sp,
+                    fontWeight = FontWeight.SemiBold, letterSpacing = (-.4).sp,
                 )
-                Text("我们一起走过的日子，都成了星光。", color = Color.White.copy(alpha = .78f), fontSize = 12.sp)
             }
             Image(
                 painter = painterResource(R.drawable.companion_avatar),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.align(Alignment.TopEnd).size(58.dp).clip(CircleShape)
-                    .background(Color.White.copy(alpha = .12f), CircleShape)
-                    .border(1.dp, Color.White.copy(alpha = .20f), CircleShape),
+                modifier = Modifier.size(42.dp).clip(CircleShape)
+                    .background(Color.White.copy(alpha = .10f), CircleShape)
+                    .border(1.dp, Color.White.copy(alpha = .18f), CircleShape),
             )
         }
-        Canvas(Modifier.fillMaxWidth().height(78.dp).padding(top = 6.dp)) {
+        Text("我们一起走过的日子，都成了星光。", color = Color.White.copy(alpha = .70f), fontSize = 11.5.sp)
+        Canvas(Modifier.fillMaxWidth().height(52.dp).padding(top = 8.dp)) {
             val points = (0 until 14).map { i ->
-                val x = size.width * (.04f + i * .071f)
-                val y = size.height * (.55f - .3f * kotlin.math.sin(i * .52f) - i * .008f)
+                val x = size.width * (i / 13f)
+                val y = size.height * (.66f - .30f * sin(i * .52f).toFloat() - i * .006f)
                 Offset(x, y)
             }
-            val path = Path().apply { points.forEachIndexed { index, p -> if (index == 0) moveTo(p.x, p.y) else lineTo(p.x, p.y) } }
-            drawPath(path, Color.White.copy(alpha = .25f), style = Stroke(1.4.dp.toPx(), cap = StrokeCap.Round))
+            val path = Path().apply {
+                points.forEachIndexed { index, p -> if (index == 0) moveTo(p.x, p.y) else lineTo(p.x, p.y) }
+            }
+            drawPath(path, Color.White.copy(alpha = .20f), style = Stroke(1.2.dp.toPx(), cap = StrokeCap.Round))
             val today = LocalDate.now()
             points.forEachIndexed { index, p ->
                 val date = today.minusDays((13 - index).toLong()).toString()
                 val lit = date in writtenDates
-                drawCircle(if (lit) Color(0xFFB8D7FF) else Color.White.copy(alpha = .42f), radius = if (lit) 4.8.dp.toPx() else 2.4.dp.toPx(), center = p)
-                if (lit) drawCircle(Color(0xFFB8D7FF).copy(alpha = .2f), radius = 8.dp.toPx(), center = p)
+                if (lit) {
+                    drawCircle(Color(0xFFBBD9FF).copy(alpha = .18f), radius = 7.5.dp.toPx(), center = p)
+                    drawCircle(Color(0xFFBBD9FF), radius = 4.2.dp.toPx(), center = p)
+                } else {
+                    drawCircle(Color.White.copy(alpha = .34f), radius = 2.dp.toPx(), center = p)
+                }
             }
         }
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("最近 14 天", color = Color.White.copy(alpha = .66f), fontSize = 11.sp, modifier = Modifier.weight(1f))
+        Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("最近 14 天", color = Color.White.copy(alpha = .55f), fontSize = 10.sp, modifier = Modifier.weight(1f))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                AstellaGlyph(AstellaGlyphKind.Orbit, Modifier.size(13.dp), tint = Color.White)
-                Text("点亮 $active 颗星", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                AstellaGlyph(AstellaGlyphKind.Orbit, Modifier.size(12.dp), tint = Color.White.copy(alpha = .9f))
+                Text("点亮 $active 颗星", color = Color.White, fontSize = 10.5.sp, fontWeight = FontWeight.Medium)
             }
         }
     }
 }
 
+/** 分组内切换：文字标签 + 滑动短横，比第二层玻璃分段更安静。 */
 @Composable
-private fun OrbitDiaryCard(day: OrbitDay, summary: String?, selected: Boolean, onClick: () -> Unit) {
+private fun UnderlineTabs(options: List<String>, selectedIndex: Int, onSelect: (Int) -> Unit) {
+    val reduce = LocalReduceMotion.current
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val tabWidth = maxWidth / options.size
+        val underline = tabWidth * .32f
+        val offsetX by animateDpAsState(
+            tabWidth * selectedIndex + (tabWidth - underline) / 2,
+            if (reduce) snap() else MotionTokens.segment(),
+            label = "orbit-group-tab",
+        )
+        Column {
+            Row(Modifier.fillMaxWidth().height(34.dp)) {
+                options.forEachIndexed { index, label ->
+                    val selected = index == selectedIndex
+                    Box(
+                        Modifier.weight(1f).fillMaxHeight()
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                            ) { onSelect(index) },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            label,
+                            color = if (selected) StudyPalette.ink else StudyPalette.muted,
+                            fontSize = 13.sp,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                        )
+                    }
+                }
+            }
+            Box(Modifier.fillMaxWidth().height(2.dp)) {
+                Box(
+                    Modifier.fillMaxWidth().height(.7.dp).align(Alignment.TopCenter)
+                        .background(StudyPalette.paperEdge.copy(alpha = .5f)),
+                )
+                Box(
+                    Modifier.offset(x = offsetX).width(underline).height(2.dp)
+                        .clip(CircleShape).background(StudyPalette.accent),
+                )
+            }
+        }
+    }
+}
+
+/** 状态筛选：选中给浅蓝底，未选中只留文字，横向可滚动。 */
+@Composable
+private fun OrbitFilterChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    AstellaTap(
+        onClick = onClick,
+        modifier = Modifier.height(32.dp)
+            .clip(CircleShape)
+            .background(if (selected) StudyPalette.sky.copy(alpha = .85f) else Color.Transparent)
+            .then(
+                if (selected) Modifier
+                else Modifier.border(.7.dp, StudyPalette.paperEdge.copy(alpha = .42f), CircleShape),
+            )
+            .padding(horizontal = 13.dp),
+    ) {
+        Text(
+            label,
+            Modifier.align(Alignment.Center),
+            color = if (selected) StudyPalette.accent else StudyPalette.muted,
+            fontSize = 12.sp,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+        )
+    }
+}
+
+/** 日记行：日期栏（日 / 月）+ 摘要两级；点整行读全文。 */
+@Composable
+private fun OrbitDiaryRow(day: OrbitDay, summary: String?, onClick: () -> Unit) {
     val date = runCatching { LocalDate.parse(day.date) }.getOrNull()
     val dayNumber = date?.dayOfMonth?.toString() ?: "—"
     val monthLabel = date?.format(DateTimeFormatter.ofPattern("M 月")) ?: day.date
-    val generated = day.status == "generated"
-    Column(
-        Modifier.fillMaxWidth().astellaGlass(22.dp).clickable(onClick = onClick).padding(15.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+    val isToday = date == LocalDate.now()
+    Row(
+        Modifier.fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(start = 16.dp, end = 13.dp, top = 14.dp, bottom = 14.dp),
+        verticalAlignment = Alignment.Top,
     ) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-            Column(
-                Modifier.size(56.dp).clip(RoundedCornerShape(16.dp)).background(StudyPalette.sky.copy(alpha = .72f)),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-            ) {
-                Text(dayNumber, color = StudyPalette.accent, fontSize = 21.sp, fontWeight = FontWeight.SemiBold, lineHeight = 24.sp)
-                Text(monthLabel, color = StudyPalette.muted, fontSize = 9.sp)
-            }
-            Column(Modifier.weight(1f).padding(start = 14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(
+            Modifier.width(42.dp).padding(top = 1.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(1.dp),
+        ) {
+            Text(
+                dayNumber,
+                color = if (isToday) StudyPalette.accent else StudyPalette.ink,
+                fontSize = 21.sp, lineHeight = 23.sp, fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                monthLabel,
+                color = StudyPalette.muted.copy(alpha = .85f),
+                fontSize = 9.sp, lineHeight = 12.sp, fontWeight = FontWeight.Medium, letterSpacing = .3.sp,
+            )
+        }
+        Spacer(Modifier.width(13.dp))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (isToday) {
                 Text(
-                    when {
-                        summary != null -> summary
-                        generated -> "这一天的日记已经写下，点开看看她记了什么。"
-                        else -> "这一天没有生成日记"
-                    },
-                    color = if (generated) StudyPalette.ink else StudyPalette.muted,
-                    fontSize = 14.sp,
-                    lineHeight = 24.sp,
-                    maxLines = if (selected) 30 else 2,
-                    overflow = TextOverflow.Ellipsis,
-                    fontFamily = if (generated) FontFamily.Serif else FontFamily.Default,
+                    "今天",
+                    Modifier.clip(RoundedCornerShape(6.dp)).background(StudyPalette.sky)
+                        .padding(horizontal = 7.dp, vertical = 2.dp),
+                    color = StudyPalette.accent, fontSize = 9.5.sp, fontWeight = FontWeight.SemiBold,
                 )
             }
-        }
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            if (generated) {
-                Row(
-                    Modifier.height(24.dp).background(StudyPalette.inset, RoundedCornerShape(8.dp)).padding(horizontal = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    AstellaGlyph(AstellaGlyphKind.Photo, Modifier.size(12.dp), tint = StudyPalette.muted)
-                    Spacer(Modifier.width(4.dp))
-                    Text("日记", color = StudyPalette.muted, fontSize = 9.sp)
-                }
-            }
-            Spacer(Modifier.weight(1f))
             Text(
-                if (selected) "收起" else if (generated) "看全文" else "查看",
-                color = if (generated) StudyPalette.accent else StudyPalette.muted,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Medium,
+                summary ?: "日记已写下。点开查看那一天的完整记录。",
+                color = StudyPalette.ink,
+                fontSize = 14.5.sp,
+                lineHeight = 22.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
             )
-            AstellaGlyph(AstellaGlyphKind.Chevron, Modifier.padding(start = 4.dp).size(11.dp), tint = if (generated) StudyPalette.accent else StudyPalette.muted)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text("读全文", color = StudyPalette.accent, fontSize = 11.5.sp, fontWeight = FontWeight.Medium)
+                AstellaGlyph(AstellaGlyphKind.Chevron, Modifier.size(10.dp), tint = StudyPalette.accent)
+            }
         }
     }
 }
 
+/** 记忆行：类型 + 状态一行讲完，正文是唯一重心，不再重复来源。 */
 @Composable
-private fun OrbitMemoryCard(memory: OrbitMemory) {
-    Column(
-        Modifier.fillMaxWidth().astellaGlass(22.dp).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+private fun OrbitMemoryRow(memory: OrbitMemory, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(start = 16.dp, end = 13.dp, top = 13.dp, bottom = 13.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier.height(22.dp).background(StudyPalette.sky, RoundedCornerShape(7.dp)).padding(horizontal = 8.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(memoryKindLabel(memory.kind), color = StudyPalette.accent, fontSize = 9.sp, fontWeight = FontWeight.Medium)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    memoryKindLabel(memory.kind),
+                    Modifier.clip(RoundedCornerShape(6.dp)).background(StudyPalette.sky.copy(alpha = .8f))
+                        .padding(horizontal = 7.dp, vertical = 2.dp),
+                    color = StudyPalette.accent, fontSize = 9.5.sp, fontWeight = FontWeight.SemiBold,
+                )
+                Spacer(Modifier.weight(1f))
+                Text(memoryStatusLabel(memory), color = StudyPalette.muted, fontSize = 10.5.sp, maxLines = 1)
             }
-            Spacer(Modifier.weight(1f))
             Text(
-                if (memory.candidate) "待确认 · 新记住" else if (memory.tier == "resident") "已确认 · 常驻" else "已确认",
-                color = StudyPalette.muted, fontSize = 9.sp,
+                memory.content,
+                color = StudyPalette.ink,
+                fontSize = 14.5.sp,
+                lineHeight = 22.sp,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
             )
         }
-        Text(memory.content, color = StudyPalette.ink, fontSize = 16.sp, lineHeight = 25.sp, fontWeight = FontWeight.Medium)
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            AstellaGlyph(AstellaGlyphKind.Library, Modifier.size(11.dp), tint = StudyPalette.muted)
-            Spacer(Modifier.width(5.dp))
-            Text("所有书房", color = StudyPalette.muted, fontSize = 10.sp)
-            Spacer(Modifier.weight(1f))
-            Box(
-                Modifier.height(22.dp).background(
-                    if (memory.candidate) Color(0xFFF7E3DF) else Color(0xFFD8F5E2),
-                    RoundedCornerShape(8.dp),
-                ).padding(horizontal = 8.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    if (memory.candidate) "有依据 · 待确认" else "有依据",
-                    color = if (memory.candidate) Color(0xFFB76752) else Color(0xFF0A5B2E),
-                    fontSize = 9.sp, fontWeight = FontWeight.Medium,
-                )
-            }
-        }
+        Spacer(Modifier.width(8.dp))
+        AstellaGlyph(AstellaGlyphKind.Chevron, Modifier.size(12.dp), tint = StudyPalette.muted.copy(alpha = .6f))
     }
+}
+
+private fun memoryGroupMatches(memory: OrbitMemory, group: OrbitMemoryGroup): Boolean =
+    memory.kind in group.kinds
+
+private fun memoryFilterMatches(memory: OrbitMemory, filter: OrbitMemoryFilter): Boolean = when (filter) {
+    OrbitMemoryFilter.Active -> !memory.candidate && memory.tier != "resident" && memory.tier != "archived"
+    OrbitMemoryFilter.Candidate -> memory.candidate
+    OrbitMemoryFilter.Resident -> memory.tier == "resident"
+    OrbitMemoryFilter.Disputed -> false
+    OrbitMemoryFilter.Archived -> memory.tier == "archived"
+}
+
+private fun memoryStatusLabel(memory: OrbitMemory): String = when {
+    memory.candidate -> "待确认"
+    memory.tier == "resident" -> "固定 · 长期保留"
+    memory.tier == "archived" -> "已归档"
+    else -> "已确认"
+}
+
+private fun memoryEmptyTitle(filter: OrbitMemoryFilter): String = when (filter) {
+    OrbitMemoryFilter.Disputed -> "还没有有争议的记忆"
+    OrbitMemoryFilter.Archived -> "没有归档的记忆"
+    OrbitMemoryFilter.Candidate -> "没有待确认的记忆"
+    else -> "这部分还没有记忆"
+}
+
+private fun memoryEmptyDetail(filter: OrbitMemoryFilter): String = when (filter) {
+    OrbitMemoryFilter.Disputed -> "如果某条记忆与你的理解不同，可以在详情里提出异议。"
+    OrbitMemoryFilter.Archived -> "收回的记忆会先放进回收站，再从这里彻底归档。"
+    OrbitMemoryFilter.Candidate -> "伴星刚记下的事会先等你确认，再进入长期记忆。"
+    else -> "等你和伴星相处得更久，这里会慢慢记下与你有关的事。"
 }
 
 @Composable
 private fun OrbitRunCard(run: ActiveRun, onConversation: () -> Unit, viewModel: AppViewModel) {
     Column(
-        Modifier.fillMaxWidth().astellaGlass(22.dp).padding(17.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(StudyRadius.xl))
+            .background(StudyPalette.paper)
+            .border(.7.dp, StudyPalette.paperEdge.copy(alpha = .46f), RoundedCornerShape(StudyRadius.xl))
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(9.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            AstellaGlyph(AstellaGlyphKind.Hand, Modifier.size(19.dp), tint = StudyPalette.accent)
-            Text(run.statusLabel, Modifier.weight(1f).padding(start = 9.dp), color = StudyPalette.ink, fontWeight = FontWeight.SemiBold)
             Box(Modifier.size(7.dp).background(if (run.isActive) StudyPalette.accent else StudyPalette.muted, CircleShape))
+            Text(
+                run.statusLabel,
+                Modifier.weight(1f).padding(start = 8.dp),
+                color = StudyPalette.ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+            )
+            Text(if (run.isActive) "进行中" else "已结束", color = StudyPalette.muted, fontSize = 10.5.sp)
         }
-        Text(run.thinkingText?.takeIf(String::isNotBlank) ?: "整理完成后，会回到你们的对话里。", color = StudyPalette.muted, fontSize = 13.sp, lineHeight = 21.sp)
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            AstellaTextButton(onClick = onConversation, contentPadding = PaddingValues(horizontal = 0.dp)) { Text("查看对话") }
-            if (run.isActive) AstellaTextButton(onClick = { viewModel.cancelActiveRuns() }, contentPadding = PaddingValues(horizontal = 0.dp)) { Text("停止") }
+        Text(
+            run.thinkingText?.takeIf(String::isNotBlank) ?: "整理完成后，会回到你们的对话里。",
+            color = StudyPalette.muted, fontSize = 12.5.sp, lineHeight = 20.sp, maxLines = 3,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            QuietTextAction("查看对话", onClick = onConversation, glyph = AstellaGlyphKind.Chat)
+            if (run.isActive) QuietTextAction("停止", onClick = { viewModel.cancelActiveRuns() })
         }
     }
 }
@@ -466,20 +701,42 @@ private fun OrbitRunCard(run: ActiveRun, onConversation: () -> Unit, viewModel: 
 @Composable
 private fun OrbitEmptyCard(title: String, detail: String, glyph: AstellaGlyphKind) {
     Column(
-        Modifier.fillMaxWidth().astellaGlass(22.dp).padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(9.dp),
+        Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(StudyRadius.xl))
+            .background(StudyPalette.paper)
+            .border(.7.dp, StudyPalette.paperEdge.copy(alpha = .46f), RoundedCornerShape(StudyRadius.xl))
+            .padding(horizontal = 18.dp, vertical = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        AstellaGlyph(glyph, Modifier.size(25.dp), tint = StudyPalette.accent)
-        Text(title, color = StudyPalette.ink, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-        Text(detail, color = StudyPalette.muted, fontSize = 13.sp, lineHeight = 21.sp)
+        Box(
+            Modifier.size(36.dp).background(StudyPalette.sky.copy(alpha = .8f), RoundedCornerShape(11.dp)),
+            contentAlignment = Alignment.Center,
+        ) { AstellaGlyph(glyph, Modifier.size(18.dp), tint = StudyPalette.accent) }
+        Text(title, color = StudyPalette.ink, fontSize = 15.5.sp, fontWeight = FontWeight.SemiBold)
+        Text(detail, color = StudyPalette.muted, fontSize = 12.5.sp, lineHeight = 20.sp)
     }
 }
 
+/** 载入骨架：三行占位，避免整页只剩一个转圈。 */
 @Composable
-private fun OrbitLoadingRow() {
-    Row(Modifier.fillMaxWidth().padding(vertical = 20.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-        CircularProgressIndicator(Modifier.size(20.dp), color = StudyPalette.accent, strokeWidth = 2.dp)
-        Text("正在接回你的星轨…", Modifier.padding(start = 10.dp), color = StudyPalette.muted, fontSize = 12.sp)
+private fun OrbitDiarySkeleton() {
+    Column(
+        Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(StudyRadius.xl))
+            .background(StudyPalette.paper)
+            .border(.7.dp, StudyPalette.paperEdge.copy(alpha = .4f), RoundedCornerShape(StudyRadius.xl)),
+    ) {
+        repeat(3) { index ->
+            if (index > 0) SettingsDivider()
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 15.dp), verticalAlignment = Alignment.Top) {
+                Box(Modifier.size(width = 34.dp, height = 38.dp).clip(RoundedCornerShape(9.dp)).background(StudyPalette.inset))
+                Spacer(Modifier.width(13.dp))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Box(Modifier.fillMaxWidth(.92f).height(10.dp).clip(RoundedCornerShape(5.dp)).background(StudyPalette.inset))
+                    Box(Modifier.fillMaxWidth(.7f).height(10.dp).clip(RoundedCornerShape(5.dp)).background(StudyPalette.inset.copy(alpha = .7f)))
+                }
+            }
+        }
     }
 }
 

@@ -24,7 +24,6 @@ import {
   listMembers,
   removeMember,
   ensureOnboardingState,
-  markOnboardingStep,
 } from "./invite-service.ts";
 import {
   createRateLimitStoreFromEnv,
@@ -634,32 +633,6 @@ export async function authRoutes(app: FastifyInstance, options: AuthRoutesOption
     },
   );
 
-  const markStepSchema = z.object({
-    step: z.literal("evidence_review"),
-    completed: z.literal(true).optional().default(true),
-    evidenceId: z.string().uuid(),
-  });
-
-  app.post(
-    "/onboarding/steps",
-    { preHandler: [requireSession] },
-    async (req, reply) => {
-      const body = parseBody(app, markStepSchema, req.body);
-      const result = await markOnboardingStep(
-        req.session.workspaceId,
-        req.session.userId,
-        body.step,
-        body.completed,
-        body.evidenceId,
-      );
-      if (!result.ok) {
-        return reply
-          .code(result.error === "business_fact_missing" ? 409 : 400)
-          .send({ error: result.error });
-      }
-      return reply.code(204).send();
-    },
-  );
 
   // ─── SEC-02 / ALPHA-01: v0.5 邀请注册（hash token）────────────
 

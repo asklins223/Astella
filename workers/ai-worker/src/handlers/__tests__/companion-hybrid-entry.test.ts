@@ -1,12 +1,26 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { AIProvider } from '../../lib/ai-provider.ts';
-import { runCompanionHybridEntry } from '../turn/companion-hybrid-entry.ts';
+import { buildCompanionHybridRequest, runCompanionHybridEntry } from '../turn/companion-hybrid-entry.ts';
+import { CompanionOutputTimeoutError } from '../agent/companion-output-watchdog.ts';
 
 const reply = '今天累了就先慢下来吧，你愿意说说发生了什么，我就在这里陪你听着。';
-function provider(chunks: string[], calls: unknown[] = [], ending?: () => Promise<void>): AIProvider {
+test('explicit separate messages hand off without a model preamble', async () => {
+  const result = await runCompanionHybridEntry({ provider: {} as AIProvider, turnPolicy: '',
+    messages: [{ role: 'user', content: '分两条跟我说，第一条只问好，第二条问我今天想做什么。' }],
+    signal: new AbortController().signal, deadlineAt: Date.now() + 1000 });
+  assert.equal(result.facts.decision, 'task'); assert.equal(result.facts.basis, 'utterances'); assert.equal(result.facts.requestedModelCalls, 0);
+});
+test('the first hybrid generation receives the same explicit length rules as final validation', () => {
+  const request = buildCompanionHybridRequest({ provider: {} as AIProvider, turnPolicy: '',
+    messages: [{ role: 'user', content: '写一个约400字的完整童话故事。' }] });
+  assert.match(request.systemPrompt, /340–460 字/);
+  assert.match(request.systemPrompt, /标题与标点不能充当正文字数/);
+});
+function provider(chunks: string[], calls: unknown[] = [], ending?: () => Promise<void>, reasoning?: string): AIProvider {
   return { id: 'mock', modelId: 'mock', chatCompletionStreamToolCalls: true,
     chatCompletionStream: async (_messages: unknown, _options: unknown, _signal: AbortSignal, delta: (text: string) => void) => {
+      if (reasoning) (_options as { onReasoningDelta?: (text: string) => void }).onReasoningDelta?.(reasoning);
       for (const chunk of chunks) { delta(chunk); await new Promise(resolve => setImmediate(resolve)); }
       await ending?.();
       return { content: chunks.join(''), toolCalls: calls, finishReason: calls.length ? 'tool_calls' : 'stop' };
@@ -32,6 +46,14 @@ test('short valid replies retain the existing hold policy for final publication'
   const result = await run(provider(['{"reply":"早安呀。"}']), async text => { chunks.push(text); return true; });
   assert.equal(result.facts.decision, 'reply'); assert.equal(result.prefetched?.emitted, false);
   assert.equal(result.prefetched?.result.content, '早安呀。'); assert.deepEqual(chunks, []);
+});
+test('hybrid forwards actual provider progress separately from the reply body', async () => {
+  const progress: string[] = [];
+  const result = await runCompanionHybridEntry({ provider: provider(['{"reply":"早安呀。"}'], [], undefined, '正在整理故事的结尾'),
+    turnPolicy: '', messages: [{ role: 'user', content: '接着讲。' }], signal: new AbortController().signal,
+    deadlineAt: Date.now() + 2000, onReasoningDelta: text => progress.push(text) });
+  assert.deepEqual(progress, ['正在整理故事的结尾']);
+  assert.equal(result.prefetched?.result.content, '早安呀。');
 });
 test('structured handoff stays private and never executes business tools', async () => {
   const chunks: string[] = [];
@@ -62,6 +84,29 @@ test('a late native handoff cannot turn an already published reply into a second
 test('providers without streaming skip the hybrid request', async () => {
   const raw = {} as AIProvider;
   assert.equal((await run(raw)).facts.decision, 'fallback');
+});
+test('a hybrid first-output timeout uses the declared fitting fallback exactly once before publication', async () => {
+  let primaryCalls = 0, recoveries = 0;
+  const raw = provider([], [], async () => { primaryCalls++; throw new CompanionOutputTimeoutError('provider_first_output_timeout'); });
+  const fallback = provider([JSON.stringify({ reply })]);
+  const chunks: string[] = [];
+  const result = await runCompanionHybridEntry({ provider: raw, fallbackProvider: fallback, turnPolicy: '',
+    messages: [{ role: 'user', content: '今天有点累。' }], signal: new AbortController().signal, deadlineAt: Date.now() + 2000,
+    onRecovery: async () => { recoveries++; }, onProviderDelta: async delta => { chunks.push(delta); return true; } });
+  assert.equal(primaryCalls, 1); assert.equal(recoveries, 1); assert.equal(result.facts.usedFallback, true);
+  assert.equal(result.facts.requestedModelCalls, 2); assert.equal(result.prefetched!.result.content, reply); assert.equal(chunks.join(''), reply);
+});
+test('hybrid recovery preserves post-publication failure, cancellation and an incompatible fallback boundary', async () => {
+  let fallbackCalls = 0;
+  const fallback = provider([], [], async () => { fallbackCalls++; });
+  const failure = async () => { throw new CompanionOutputTimeoutError('provider_idle_timeout'); };
+  const invoke = (raw: AIProvider, onProviderDelta?: (text: string) => Promise<boolean>, alternate = fallback) => runCompanionHybridEntry({
+    provider: raw, fallbackProvider: alternate, turnPolicy: '', messages: [{ role: 'user', content: '今天有点累。' }],
+    signal: new AbortController().signal, deadlineAt: Date.now() + 2000, onProviderDelta });
+  await assert.rejects(invoke(provider([JSON.stringify({ reply })], [], failure), async () => true), CompanionOutputTimeoutError);
+  const tooSmall = { ...fallback, getCapabilities: () => ({ contextWindowTokens: 40, outputLimitEnforced: true }), resolveOutputTokenLimit: () => 20 } as unknown as AIProvider;
+  await assert.rejects(invoke(provider([], [], failure), undefined, tooSmall), CompanionOutputTimeoutError);
+  assert.equal(fallbackCalls, 0);
 });
 test('expression-only replies cannot be accepted as conversational content', async () => {
   let deltas = 0;

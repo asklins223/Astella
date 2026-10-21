@@ -30,11 +30,6 @@ export interface LivePageView {
    * pageKind/sharing/revision 三个审计字段，多写一个键就会被持久化合同的 `.strict()` 拒掉。
    */
   interactionState: string;
-  /**
-   * 这一屏是哪一轮学习（`entity_refs` 里 `kind === "learning_run"` 的那条），没有则 null。
-   * 暴露账目要记到"用户当时在答的那一题"，不能记到服务端最近一轮上。
-   */
-  learningRunId: string | null;
   title: string | null;
   statusLine: string | null;
   items: LivePageItem[];
@@ -53,15 +48,6 @@ function parseItems(view: Record<string, unknown>): LivePageItem[] {
   return out;
 }
 
-function parseLearningRunId(entityRefs: unknown): string | null {
-  if (!Array.isArray(entityRefs)) return null;
-  for (const ref of entityRefs) {
-    if (!ref || typeof ref !== "object") continue;
-    const record = ref as Record<string, unknown>;
-    if (record.kind === "learning_run" && typeof record.runId === "string") return record.runId;
-  }
-  return null;
-}
 
 export async function readLivePageView(
   tx: WorkerTransaction,
@@ -100,7 +86,6 @@ export async function readLivePageView(
   return {
     pageKind,
     interactionState: String(row.interaction_state ?? ""),
-    learningRunId: parseLearningRunId(row.entity_refs),
     title: typeof view.title === "string" ? view.title : null,
     statusLine: typeof view.statusLine === "string" ? view.statusLine : null,
     items: parseItems(view),

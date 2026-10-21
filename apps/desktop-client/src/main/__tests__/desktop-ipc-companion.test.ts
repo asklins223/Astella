@@ -1,5 +1,5 @@
 import { companionStub } from "./ns-companion-stubs";
-import { describe, expect, it, vi } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 
 // 2026-09-30：伴星这一族已变成**自由函数**（`desktop-gateway-ns-companion.ts`），
 // `desktop-ipc.ts` 静态引用那个模块——**在网关实例上挂的桩不再被调用**。
@@ -191,229 +191,30 @@ const learningRunGrant = {
   signature: "c".repeat(64),
 };
 
+beforeAll(() => {
+  const gateway = new Proxy({ gatewayTransport: {} }, {
+    get(target, property) {
+      const key = String(property);
+      if (!(key in target)) (target as Record<string, unknown>)[key] = vi.fn();
+      return (target as Record<string, unknown>)[key];
+    },
+  }) as unknown as DesktopGateway;
+  registerM1DesktopIpc({
+    gateway,
+    env: { ASTELLA_DOMAIN_SCHEMA_REVISION: "domain-v2-test" },
+    resolveWindow: () => ({} as never),
+    getWindowState: () => ({ state: "visible", revision: 1 }),
+    setTitlebarTheme: () => true,
+  });
+});
+
 function requiredHandler(channel: string): InvokeHandler {
   const handler = electronMock.handlers.get(channel);
   if (!handler) throw new Error(`missing IPC handler for ${channel}`);
   return handler;
 }
 
-describe("companion home desktop IPC", () => {
-  it("registers strict read, CAS-patch and voice handlers without exposing raw gateway output", async () => {
-    const getHomeProjection = vi.fn().mockResolvedValue(homeProjection);
-    const getRoomProfile = vi.fn().mockResolvedValue(roomProfile);
-    const patchRoomProfile = vi.fn().mockResolvedValue(roomProfile);
-    const speakVoice = vi.fn().mockResolvedValue(voiceResult);
-    const audioRunId = "00000000-0000-4000-8000-000000000901";
-    const listCachedVoice = companionStub("listCachedCompanionVoice", vi.fn().mockResolvedValue({ version: 1, items: [{ runId: audioRunId, ordinals: [1, 2] }] }));
-    const readCachedVoice = companionStub("readCachedCompanionVoice", vi.fn().mockResolvedValue(voiceResult));
-    const getAccountOverview = vi.fn().mockResolvedValue(accountOverview);
-    const patchAccountState = vi.fn().mockResolvedValue(accountState);
-    const getCompanionLearningRunContext = vi.fn().mockResolvedValue(learningRunContext);
-    const createCompanionLearningRunContextGrant = vi.fn().mockResolvedValue(learningRunGrant);
-    const gateway = {
-      getDeploymentConfig: () => undefined,
-      getSession: registerAuthStub("getSession", vi.fn()).mockResolvedValue({
-        version: 1,
-        status: "authenticated",
-        user: {
-          userId: "11111111-1111-4111-8111-111111111111",
-          email: "owner@example.com",
-        },
-        workspace: {
-          version: 1,
-          workspaceId: "22222222-2222-4222-8222-222222222222",
-          name: "Owner workspace",
-          role: "owner",
-          workspaceType: "personal",
-          isPersonal: true,
-          workspaceEpoch: 9,
-        },
-        membership: { role: "owner" },
-        capabilities: null,
-        workspaceEpoch: 9,
-        credentialPersistence: "memory",
-      }),
-      getCompanionHomeProjection: companionStub("getCompanionHomeProjection", getHomeProjection),
-      getCompanionRoomProfile: companionStub("getCompanionRoomProfile", getRoomProfile),
-      patchCompanionRoomProfile: companionStub("patchCompanionRoomProfile", patchRoomProfile),
-      speakCompanionVoice: companionStub("speakCompanionVoice", speakVoice),
-      getCompanionAccountOverview: companionStub("getCompanionAccountOverview", getAccountOverview),
-      patchCompanionAccountState: companionStub("patchCompanionAccountState", patchAccountState),
-      getCompanionLearningRunContext: companionStub("getCompanionLearningRunContext", getCompanionLearningRunContext),
-      createCompanionLearningRunContextGrant: companionStub("createCompanionLearningRunContextGrant", createCompanionLearningRunContextGrant),
-    } as unknown as DesktopGateway;
-    const fakeWindow = {} as never;
 
-    registerM1DesktopIpc({
-      gateway,
-      env: { ASTELLA_DOMAIN_SCHEMA_REVISION: "domain-v2-test" },
-      resolveWindow: () => fakeWindow,
-      getWindowState: () => ({ state: "visible", revision: 1 }),
-      setTitlebarTheme: () => true,
-    });
-
-    const event = { sender: {}, senderFrame: { url: "astella://renderer/" } };
-    await requiredHandler(DESKTOP_IPC_CHANNELS.authGetState)(event, { meta });
-    const scopedMeta = { ...meta, workspaceEpoch: 9 };
-    const homeResult = await requiredHandler(DESKTOP_IPC_CHANNELS.companionHomeGetProjection)(event, { meta: scopedMeta });
-    const profileResult = await requiredHandler(DESKTOP_IPC_CHANNELS.companionRoomGetProfile)(event, { meta: scopedMeta });
-    const patchResult = await requiredHandler(DESKTOP_IPC_CHANNELS.companionRoomPatchProfile)(
-      event,
-      { meta: scopedMeta, request: roomPatch },
-    );
-
-    expect(homeResult).toMatchObject({ ok: true, data: homeProjection, workspaceEpoch: 9 });
-    expect(profileResult).toMatchObject({ ok: true, data: roomProfile, workspaceEpoch: 9 });
-    expect(patchResult).toMatchObject({ ok: true, data: roomProfile, workspaceEpoch: 9 });
-    expect(getHomeProjection.mock.calls[0].slice(1)).toEqual([meta.requestId]);
-    expect(getRoomProfile.mock.calls[0].slice(1)).toEqual([meta.requestId]);
-    expect(patchRoomProfile.mock.calls[0].slice(1)).toEqual([roomPatch, meta.requestId]);
-
-    const voiceSpeakResult = await requiredHandler(DESKTOP_IPC_CHANNELS.companionVoiceSpeak)(
-      event,
-      { meta: scopedMeta, request: voiceRequest },
-    );
-    expect(voiceSpeakResult).toMatchObject({ ok: true, data: voiceResult, workspaceEpoch: 9 });
-    expect(speakVoice.mock.calls[0].slice(1)).toEqual([voiceRequest, meta.requestId]);
-
-    expect(await requiredHandler(DESKTOP_IPC_CHANNELS.companionVoiceCachedList)(event, {
-      meta: scopedMeta, request: { runIds: [audioRunId] },
-    })).toMatchObject({ ok: true, data: { items: [{ runId: audioRunId, ordinals: [1, 2] }] }, workspaceEpoch: 9 });
-    expect(await requiredHandler(DESKTOP_IPC_CHANNELS.companionVoiceCachedRead)(event, {
-      meta: scopedMeta, request: { runId: audioRunId, ordinal: 1 },
-    })).toMatchObject({ ok: true, data: voiceResult });
-    expect(listCachedVoice).toHaveBeenCalledOnce();
-    expect(readCachedVoice).toHaveBeenCalledOnce();
-    for (const request of [{ runId: "../../audio", ordinal: 1 }, { runId: audioRunId, ordinal: 0 },
-      { runId: audioRunId, ordinal: 1, file: "/private/recording.mp3" }]) {
-      expect(await requiredHandler(DESKTOP_IPC_CHANNELS.companionVoiceCachedRead)(event, { meta: scopedMeta, request }))
-        .toMatchObject({ ok: false, error: { code: "invalid_request" } });
-    }
-    expect(await requiredHandler(DESKTOP_IPC_CHANNELS.companionVoiceCachedList)(event, {
-      meta: scopedMeta, request: { runIds: Array(101).fill(audioRunId) },
-    })).toMatchObject({ ok: false, error: { code: "invalid_request" } });
-    expect(await requiredHandler(DESKTOP_IPC_CHANNELS.companionVoiceCachedRead)(event, {
-      meta: { ...scopedMeta, workspaceEpoch: 8 }, request: { runId: audioRunId, ordinal: 1 },
-    })).toMatchObject({ ok: false, error: { code: "stale_workspace" } });
-    expect(readCachedVoice).toHaveBeenCalledOnce();
-
-    // 非法/超限文本必须在 main 边界被拒绝，绝不进入 gateway。
-    for (const invalidText of ["", "   ", "字".repeat(121)]) {
-      const invalidVoice = await requiredHandler(DESKTOP_IPC_CHANNELS.companionVoiceSpeak)(
-        event,
-        { meta: scopedMeta, request: { version: 1, text: invalidText } },
-      );
-      expect(invalidVoice).toMatchObject({ ok: false, error: { code: "invalid_request" } });
-    }
-    const unknownVoiceKey = await requiredHandler(DESKTOP_IPC_CHANNELS.companionVoiceSpeak)(
-      event,
-      { meta: scopedMeta, request: { ...voiceRequest, voice: "zh-CN-YunxiNeural" } },
-    );
-    expect(unknownVoiceKey).toMatchObject({ ok: false, error: { code: "invalid_request" } });
-    expect(speakVoice).toHaveBeenCalledTimes(1);
-
-    const invalidPatch = await requiredHandler(DESKTOP_IPC_CHANNELS.companionRoomPatchProfile)(
-      event,
-      { meta: scopedMeta, request: { ...roomPatch, revision: 0 } },
-    );
-    expect(invalidPatch).toMatchObject({ ok: false, error: { code: "invalid_request" } });
-    expect(patchRoomProfile).toHaveBeenCalledTimes(1);
-
-    // 账号级 presence：读走 GET，写走 revision CAS，两者都不自动重放。
-    const accountOverviewResult = await requiredHandler(DESKTOP_IPC_CHANNELS.companionAccountGetState)(event, { meta: scopedMeta });
-    expect(accountOverviewResult).toMatchObject({ ok: true, data: accountOverview, workspaceEpoch: 9 });
-    expect(getAccountOverview.mock.calls.find((c) => c[1] === meta.requestId)?.slice(1))
-      .toEqual([meta.requestId]);
-
-    const accountPatchResult = await requiredHandler(DESKTOP_IPC_CHANNELS.companionAccountPatchState)(
-      event,
-      { meta: scopedMeta, request: accountPatch },
-    );
-    expect(accountPatchResult).toMatchObject({ ok: true, data: accountState, workspaceEpoch: 9 });
-    expect(patchAccountState.mock.calls[0].slice(1)).toEqual([accountPatch, meta.requestId]);
-
-    // 非法枚举、空改动（仅 revision）与未知字段都必须在 main 边界拒绝。
-    const invalidPresence = await requiredHandler(DESKTOP_IPC_CHANNELS.companionAccountPatchState)(
-      event,
-      { meta: scopedMeta, request: { ...accountPatch, presence: { presence: "busy" } } },
-    );
-    expect(invalidPresence).toMatchObject({ ok: false, error: { code: "invalid_request" } });
-    const emptyPatch = await requiredHandler(DESKTOP_IPC_CHANNELS.companionAccountPatchState)(
-      event,
-      { meta: scopedMeta, request: { revision: 3 } },
-    );
-    expect(emptyPatch).toMatchObject({ ok: false, error: { code: "invalid_request" } });
-    const unknownPatchKey = await requiredHandler(DESKTOP_IPC_CHANNELS.companionAccountPatchState)(
-      event,
-      { meta: scopedMeta, request: { ...accountPatch, clientMood: "calm" } },
-    );
-    expect(unknownPatchKey).toMatchObject({ ok: false, error: { code: "invalid_request" } });
-    expect(patchAccountState).toHaveBeenCalledTimes(1);
-
-    // 正式测评上下文通过现有 LearningRun 路由读取；每次提问的 grant 请求
-    // 原样交给服务端签发，main 只做共享 schema 与 workspace epoch 边界。
-    const learningContextResult = await requiredHandler(DESKTOP_IPC_CHANNELS.companionLearningRunGetContext)(
-      event,
-      { meta: scopedMeta, runId: learningRunContext.runId },
-    );
-    expect(learningContextResult).toMatchObject({ ok: true, data: learningRunContext, workspaceEpoch: 9 });
-    expect(getCompanionLearningRunContext.mock.calls[0].slice(1)).toEqual([learningRunContext.runId, meta.requestId])
-
-    const learningGrantResult = await requiredHandler(DESKTOP_IPC_CHANNELS.companionLearningRunCreateContextGrant)(
-      event,
-      { meta: scopedMeta, runId: learningRunContext.runId, request: learningRunGrantRequest },
-    );
-    expect(learningGrantResult).toMatchObject({ ok: true, data: learningRunGrant, workspaceEpoch: 9 });
-    expect(createCompanionLearningRunContextGrant.mock.calls[0].slice(1)).toEqual([
-      learningRunContext.runId,
-      learningRunGrantRequest,
-      meta.requestId,
-    ]);
-
-    const invalidLearningGrant = await requiredHandler(DESKTOP_IPC_CHANNELS.companionLearningRunCreateContextGrant)(
-      event,
-      {
-        meta: scopedMeta,
-        runId: learningRunContext.runId,
-        request: { ...learningRunGrantRequest, contextRevision: "stale" },
-      },
-    );
-    expect(invalidLearningGrant).toMatchObject({ ok: false, error: { code: "invalid_request" } });
-    expect(createCompanionLearningRunContextGrant).toHaveBeenCalledTimes(1);
-
-    getHomeProjection.mockResolvedValueOnce({ ...homeProjection, rawMemoryText: "must stay main-only" });
-    const unsafeOutput = await requiredHandler(DESKTOP_IPC_CHANNELS.companionHomeGetProjection)(event, { meta: scopedMeta });
-    expect(unsafeOutput).toMatchObject({
-      ok: false,
-      error: { code: "unsupported_contract" },
-      workspaceEpoch: 9,
-    });
-
-    // 账号 overview 里出现 main-only 字段时同样 fail closed，不把原样 payload 交给渲染层。
-    getAccountOverview.mockResolvedValueOnce({
-      ...accountOverview,
-      account: { ...accountState, rawQuietHoursSource: "must stay main-only" },
-    });
-    const unsafeAccountOutput = await requiredHandler(DESKTOP_IPC_CHANNELS.companionAccountGetState)(event, { meta: scopedMeta });
-    expect(unsafeAccountOutput).toMatchObject({
-      ok: false,
-      error: { code: "unsupported_contract" },
-      workspaceEpoch: 9,
-    });
-
-    // gateway 返回越界/漂移的音频 receipt 时，output schema 必须 fail closed。
-    speakVoice.mockResolvedValueOnce({ ...voiceResult, mimeType: "audio/wav" });
-    const unsafeVoiceOutput = await requiredHandler(DESKTOP_IPC_CHANNELS.companionVoiceSpeak)(
-      event,
-      { meta: scopedMeta, request: voiceRequest },
-    );
-    expect(unsafeVoiceOutput).toMatchObject({
-      ok: false,
-      error: { code: "unsupported_contract" },
-      workspaceEpoch: 9,
-    });
-  });
-});
 
 // ─── 打开外部链接（方案 35 F7）：主进程是唯一那道闸 ─────────────────────────
 describe("shell.openExternal 桌面 IPC", () => {

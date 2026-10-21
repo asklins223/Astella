@@ -1,5 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { ArrowDown, ArrowLeft, ArrowRight, BookOpen, ChevronRight, FileText, Layers3, Leaf, Search, Sprout, X } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowRight, BookOpen, ChevronRight, FileText, Layers3, Leaf, Search, X } from "lucide-react";
 import type { DesktopSearchItem } from "@astella/shared/desktop-surface-contracts";
 import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 import { useRoomStore } from "../../../app/home/room-store";
@@ -12,15 +12,14 @@ import { containsQuery, markQuery, noResultEmpty, NO_QUERY_EMPTY, objectKey, ope
 import { useSearchDesk } from "./use-search-desk";
 import { useSearchMotion } from "./use-search-motion";
 
-const TYPE_ICONS = { all: Layers3, note: BookOpen, source: FileText, objective: Sprout };
-const TYPE_NAMES = { all: "全部", note: "笔记", source: "来源", objective: "学习卡" };
+const TYPE_ICONS = { all: Layers3, note: BookOpen, source: FileText };
+const TYPE_NAMES = { all: "全部", note: "笔记", source: "来源" };
 
 export function SearchSurface() {
   const [composing, setComposing] = useState(false);
   const desk = useSearchDesk(composing);
   const setQuery = useRoomStore(state => state.setSearchQuery);
   const setType = useRoomStore(state => state.setSearchTypeFilter);
-  const setWeakOnly = useRoomStore(state => state.setSearchWeakOnly);
   const root = useRef<HTMLElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const index = useRef<HTMLDivElement>(null);
@@ -143,29 +142,28 @@ export function SearchSurface() {
     }
   };
 
-  const empty = noResultEmpty(desk.weakOnly, desk.query, Boolean(desk.nextCursor));
-  const progressLabel = desk.weakOnly ? `${desk.items.length} / ${desk.total} 张 · 证据不足 ${desk.visible.length} 张` : `${desk.items.length} / ${desk.total} 条`;
-  const depthLine = desk.weakOnly ? `已查 ${desk.items.length} 张命中的学习卡；只保留还没验证、有些生疏或需要重学的内容。` : `共 ${desk.total} 条，按最近更新排列。`;
+  const empty = noResultEmpty(desk.query);
+  const progressLabel = `${desk.items.length} / ${desk.total} 条`;
+  const depthLine = `共 ${desk.total} 条，按最近更新排列。`;
   const tailLine = desk.nextCursor ? null : desk.items.length < desk.total
     ? `已到读取上限（前 ${desk.items.length} 条），请缩小关键词或筛选范围` : "已到末尾";
   const indexStateLine = !desk.sessionReady && !desk.sessionFailure ? SEARCH_STATE_LINES.confirmingSession
     : desk.sessionFailure ? SEARCH_STATE_LINES.sessionUnavailable : !hasQuery ? NO_QUERY_EMPTY.message
       : listBusy ? composing ? "写好关键词就会开始查找" : desk.filterBusy ? "正在看看哪些需要巩固" : SEARCH_STATE_LINES.searchingList
-        : desk.filterFailure ? SEARCH_STATE_LINES.cannotCheckStates : desk.searchFailure && !desk.items.length ? SEARCH_STATE_LINES.listUnavailable
+        : desk.searchFailure && !desk.items.length ? SEARCH_STATE_LINES.listUnavailable
           : !desk.visible.length ? empty.message : null;
   const notice = desk.sessionFailure ? `${SEARCH_STATE_LINES.sessionUnavailable}：${desk.sessionFailure}`
     : !hasQuery ? `${NO_QUERY_EMPTY.message}：${NO_QUERY_EMPTY.detail}`
       : listBusy ? indexStateLine
-        : desk.filterFailure ? `${SEARCH_STATE_LINES.cannotCheckStates}：${desk.filterFailure}`
           : desk.searchFailure ? `${SEARCH_STATE_LINES.listUnavailable}：${desk.searchFailure}`
             : !desk.visible.length ? `${empty.message}：${empty.detail}` : tailLine;
   const readable = useMemo<PageReadableV1 | null>(() => !desk.sessionReady && !desk.sessionFailure ? null : {
     pageId: "search", title: HUD_PAGES.search.title, statusLine: indexStateLine ?? progressLabel,
     metrics: hasQuery ? [{ label: "结果", value: progressLabel.slice(0, 40) }, { label: "查找范围", value: depthLine.slice(0, 40) }] : [],
-    filters: [{ label: "类型", value: typeFilterLabel(desk.filter) }, ...(hasQuery ? [{ label: "关键词", value: desk.value.slice(0, 40) }] : []), ...(desk.weakOnly ? [{ label: "证据不足筛选", value: "证据不足" }] : [])],
+    filters: [{ label: "类型", value: typeFilterLabel(desk.filter) }, ...(hasQuery ? [{ label: "关键词", value: desk.value.slice(0, 40) }] : [])],
     ...(desk.visible.length ? { items: desk.visible.slice(0, 12).map((item, i) => ({ ordinal: i + 1, label: (item.title || "未命名内容").slice(0, 120), state: typeLabel(item.objectType) })) } : {}),
     ...(notice ? { notice: notice.slice(0, 200) } : {}),
-  }, [desk.sessionReady, desk.sessionFailure, desk.filter, desk.value, desk.weakOnly, desk.visible, hasQuery, progressLabel, depthLine, notice, indexStateLine]);
+  }, [desk.sessionReady, desk.sessionFailure, desk.filter, desk.value, desk.visible, hasQuery, progressLabel, depthLine, notice, indexStateLine]);
   usePageReadableView(readable);
 
   return <HudPage page="search">
@@ -186,7 +184,7 @@ export function SearchSurface() {
       <div className="search-tools" inert={compact && previewOpen || undefined}>
         <div className="search-command">
           <span className="search-command__icon" aria-hidden="true"><Search size={23} strokeWidth={2.5} /></span>
-          <label className="sr-only" htmlFor={queryId}>搜索来源、笔记与学习卡</label>
+          <label className="sr-only" htmlFor={queryId}>搜索来源与笔记</label>
           <input id={queryId} ref={input} data-search-query="true" type="search" maxLength={500} value={desk.query} aria-controls={hasQuery ? listId : undefined} aria-activedescendant={selected ? `${listId}-${objectKey(selected)}` : undefined}
             placeholder="想找什么？写下一个关键词…" onChange={event => { setClearedQuery(null); setQuery(event.currentTarget.value); }} onCompositionStart={() => setComposing(true)} onCompositionEnd={() => setComposing(false)} onKeyDown={event => keys(event, true)} />
           {desk.query ? <button type="button" className="search-command__clear" aria-label="清空搜索关键词" onClick={() => { setQuery(""); input.current?.focus(); }}><X size={17} aria-hidden="true" /></button> : null}
@@ -198,7 +196,7 @@ export function SearchSurface() {
             <span className="search-types__cushion" aria-hidden="true" />
             {TYPE_FILTERS.map(type => { const Icon = TYPE_ICONS[type]; return <button type="button" key={type} aria-pressed={desk.filter === type} aria-label={`结果类型：${typeFilterLabel(type)}`} onClick={() => setType(type)}><Icon size={16} aria-hidden="true" /><span>{TYPE_NAMES[type]}</span></button>; })}
           </nav>
-          {desk.filter === "objective" ? <button type="button" className="search-weak" aria-pressed={desk.weakOnly} title="只看还没验证、有些生疏或需要重学的学习卡" onClick={() => setWeakOnly(!desk.weakOnly)}><Sprout size={15} aria-hidden="true" />证据不足<span className="search-weak__switch" aria-hidden="true" /></button> : <span className="search-scope"><Leaf size={14} aria-hidden="true" />这个学习空间</span>}
+          <span className="search-scope"><Leaf size={14} aria-hidden="true" />这个学习空间</span>
         </div>
       </div>
       <p className="sr-only" role="status" aria-live="polite">{desk.sessionReady && hasQuery ? listBusy ? indexStateLine : !desk.searchFailure && !desk.filterFailure ? progressLabel : "" : ""}</p>
@@ -210,12 +208,11 @@ export function SearchSurface() {
             : <><p className="search-welcome__eyebrow">把那一点灵感找回来</p><h2>{NO_QUERY_EMPTY.message}</h2><p>{NO_QUERY_EMPTY.detail}</p><div className="search-shortcuts"><span><kbd>↑</kbd><kbd>↓</kbd>挑选纸签</span><span><kbd>Enter</kbd>打开完整内容</span><span><kbd>Esc</kbd>清空关键词</span></div></>}
       </div> : <div className="search-layout">
         <div className="search-results" inert={compact && previewOpen || undefined}>
-          <header className="search-index__heading"><span>找到的纸签</span><small>{listBusy ? indexStateLine : `${desk.total} ${desk.filter === "objective" ? "张" : "条"}命中`}</small></header>
+          <header className="search-index__heading"><span>找到的纸签</span><small>{listBusy ? indexStateLine : `${desk.total} 条命中`}</small></header>
           <div className="search-index" ref={index} onScroll={remember}>
             {!desk.sessionReady && !desk.sessionFailure ? <SurfaceDataState kind="loading" message={SEARCH_STATE_LINES.confirmingSession} detail="正在准备这个学习空间的内容。" /> : null}
             {desk.sessionFailure ? <SurfaceDataState kind="error" message={SEARCH_STATE_LINES.sessionUnavailable} detail={desk.sessionFailure} onRetry={desk.retry} /> : null}
             {desk.sessionReady && listBusy && !desk.visible.length ? <SurfaceDataState kind="loading" message={indexStateLine!} detail={composing ? "输入法确认后，纸签就会来。" : "纸签马上就来。"} /> : null}
-            {desk.sessionReady && !listBusy && desk.filterFailure ? <SurfaceDataState kind="error" message={SEARCH_STATE_LINES.cannotCheckStates} detail={desk.filterFailure} onRetry={desk.retryFilter} /> : null}
             {desk.sessionReady && !listBusy && desk.searchFailure && !desk.items.length ? <SurfaceDataState kind="error" message={SEARCH_STATE_LINES.listUnavailable} detail={desk.searchFailure} onRetry={desk.retry} /> : null}
             {desk.sessionReady && !listBusy && !desk.filterFailure && !desk.searchFailure && !desk.visible.length ? <SurfaceDataState kind="empty" message={empty.message} detail={empty.detail} /> : null}
             <div id={listId} role="listbox" aria-label="搜索结果" aria-busy={listBusy || undefined}>
@@ -255,7 +252,6 @@ export function SearchSurface() {
                 {preview?.kind === "error" ? <div className="search-preview__error" role="alert"><p>{preview.message}</p><button type="button" className="button" onClick={desk.retryPreview}>重新读取预览</button></div> : null}
                 {previewBody.map((text, i) => <p key={`${readyPreview?.key}-${i}`}>{markQuery(text, desk.value)}</p>)}
                 {gap ? <div className="margin-note"><b>阅读提示</b><p>{gap}</p></div> : null}
-                {readyPreview?.kind === "objective" ? <p className="search-preview__origin">{readyPreview.detail.sources.primaryNote ? `来自笔记《${readyPreview.detail.sources.primaryNote.title}》` : "这张学习卡还没有主来源笔记"}</p> : null}
               </>}
             </div>
             {selected ? <footer className="search-preview__foot">

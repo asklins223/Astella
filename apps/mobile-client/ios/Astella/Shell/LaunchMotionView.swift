@@ -31,7 +31,10 @@ struct LaunchMotionView: View {
     @State private var preparing = false
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
+        // Keep the full-screen artwork centered in the window. Aligning the
+        // entire stack to top-trailing shifted the safe-area-sized artwork to
+        // the right and exposed a vertical strip of the backdrop on iPhone.
+        ZStack(alignment: .center) {
             Color(red: dark ? 0.063 : 0.953, green: dark ? 0.110 : 0.965, blue: dark ? 0.212 : 0.996)
                 .opacity(rendered ? 0 : 1)
                 .ignoresSafeArea()
@@ -70,7 +73,6 @@ struct LaunchMotionView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .ignoresSafeArea()
         .task(id: "\(active)-\(preparing)") {
             guard active else { return }
             do { try await Task.sleep(for: .seconds(8)) } catch { return }

@@ -27,8 +27,6 @@ import { z } from "zod";
 import { projectCompanionDelivery } from "./desktop-gateway-companion-bridge";
 import {  DesktopGatewayFailure,
 } from "./desktop-gateway-failure";
-import {  GatewayTransport as GatewayTransportContract,
-} from "./desktop-gateway-transport";
 import {  safeUuid,
 } from "./desktop-gateway-uuid";
 import {  CompanionAgentRoutesListRequestV1,
@@ -49,6 +47,8 @@ import {  CompanionAgentRoutesListRequestV1,
   CompanionRunNodesListResultV1,
   companionAgentRoutesListResultV1Schema,
   companionChatCancelRunResultV1Schema,
+  companionChatResumeRunResultV1Schema,
+  type CompanionChatResumeRunRequestV1,
   companionChatEnsureResultV1Schema,
   companionChatListMessagesResultV1Schema,
   companionChatProposalDecideResultV1Schema,
@@ -61,16 +61,7 @@ import {
   noteImageUploadResultV1Schema,
   type NoteImageUploadRequestV1,
   type NoteImageUploadResultV1,
-} from "@astella/shared/note-image-upload-contracts";
-import {  CompanionGroundedTutorGrantV1,
-  CompanionLearningContextV1,
-  CompanionLearningRunContextV1,
-  CreateCompanionLearningRunContextGrantRequestV1,
-  companionConversationV1Schema,
-  companionGroundedTutorGrantV1Schema,
-  companionLearningContextV1Schema,
-  companionLearningRunContextV1Schema,
-} from "@astella/shared/companion-conversation-contracts";
+} from "@astella/shared/note-image-upload-contracts";import { companionConversationV1Schema } from "@astella/shared/companion-conversation-contracts";
 import {  CompanionHomeProjectionV1,
   CompanionRoomProfilePatchV1,
   CompanionRoomProfileV1,
@@ -234,6 +225,16 @@ export async function cancelCompanionChatRun(t: GatewayTransport,
     return parsed.data;
   }
 
+export async function resumeCompanionChatRun(t: GatewayTransport, request: CompanionChatResumeRunRequestV1, requestId?: string) {
+  await t.ensureConnected(requestId);
+  const { runId, ...body } = request;
+  const result = await t.request(`/companion/runs/${runId}/resume`,
+    { method: "POST", body: JSON.stringify(body) }, true, true, requestId);
+  const parsed = companionChatResumeRunResultV1Schema.safeParse(result.body);
+  if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+  return parsed.data;
+}
+
 export async function clearCompanionHistory(t: GatewayTransport, requestId?: string): Promise<CompanionHistoryClearResultV1> {
     await t.ensureConnected(requestId);
     const scope = messageAudioScope(t);
@@ -294,25 +295,6 @@ export async function readCompanionMemoryRevisions(
       requestId,
     );
     const parsed = companionMemoryRevisionListV1Schema.safeParse(result.body);
-    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
-    return parsed.data;
-  }
-
-export async function createCompanionLearningRunContextGrant(t: GatewayTransport, 
-    runId: string,
-    request: CreateCompanionLearningRunContextGrantRequestV1,
-    requestId?: string,
-  ): Promise<CompanionGroundedTutorGrantV1> {
-    await t.ensureConnected(requestId);
-    const safeRunId = uuidSchema.parse(runId);
-    const result = await t.request(
-      `/learning-runs/${safeRunId}/companion-context-grants`,
-      { method: "POST", body: JSON.stringify(request) },
-      true,
-      true,
-      requestId,
-    );
-    const parsed = companionGroundedTutorGrantV1Schema.safeParse(result.body);
     if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
     return parsed.data;
   }
@@ -573,37 +555,9 @@ export async function getCompanionJourneyBootstrap(t: GatewayTransport, requestI
     return parsed.data;
   }
 
-export async function getCompanionLearningContext(t: GatewayTransport, requestId?: string): Promise<CompanionLearningContextV1> {
-    await t.ensureConnected(requestId);
-    const result = await t.request(
-      "/companion/learning-context",
-      { method: "GET" },
-      true,
-      true,
-      requestId,
-    );
-    const parsed = companionLearningContextV1Schema.safeParse(result.body);
-    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
-    return parsed.data;
-  }
 
-export async function getCompanionLearningRunContext(t: GatewayTransport, 
-    runId: string,
-    requestId?: string,
-  ): Promise<CompanionLearningRunContextV1> {
-    await t.ensureConnected(requestId);
-    const safeRunId = uuidSchema.parse(runId);
-    const result = await t.request(
-      `/learning-runs/${safeRunId}/companion-context`,
-      { method: "GET" },
-      true,
-      true,
-      requestId,
-    );
-    const parsed = companionLearningRunContextV1Schema.safeParse(result.body);
-    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
-    return parsed.data;
-  }
+
+
 
 export async function getCompanionMemoryStarMap(t: GatewayTransport, requestId?: string): Promise<CompanionMemoryStarMapV2> {
     await t.ensureConnected(requestId);

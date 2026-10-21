@@ -1,6 +1,6 @@
 {
   "name": "astella-desktop-client",
-  "version": "1.8.27",
+  "version": "1.8.28",
   "description": "Astella 拾星笔记 immersive desktop study room",
   "private": true,
   "main": "./out/main/index.js",
@@ -59,7 +59,6 @@
     "react-dom": "^19.2.0",
     "remark-frontmatter": "^5.0.0",
     "remark-math": "^6.0.0",
-    "three": "^0.186.1",
     "turndown": "^7.2.2",
     "ws": "^8.21.3",
     "xml-js": "^1.6.11",
@@ -74,7 +73,6 @@
     "@types/node": "^24.0.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
-    "@types/three": "^0.186.0",
     "@types/turndown": "^5.0.6",
     "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^5.0.0",

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CompanionChatSession } from "../../../app/companion-session/companion-chat-session";
 import { messageDayKey, messageDayLabel } from "./CompanionChatRecord";
+import { useRoomStore } from "../../../app/home/room-store";
 
 
 
@@ -13,7 +14,7 @@ import { messageDayKey, messageDayLabel } from "./CompanionChatRecord";
  * 遮挡因此完全不可见、也不可自救。收紧到几个像素，只用来吸收亚像素舍入。
  */
 const AT_BOTTOM_SLACK_PX = 4;
-export function useCompanionHistoryScroll({ chat, open, mounted, recordOpen }: { chat: CompanionChatSession; open: boolean; mounted: boolean; recordOpen: boolean }) {
+export function useCompanionHistoryScroll({ chat, open, mounted, recordOpen, target }: { chat: CompanionChatSession; open: boolean; mounted: boolean; recordOpen: boolean; target?: { runId: string; visit: number } | null }) {
 
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -29,6 +30,11 @@ export function useCompanionHistoryScroll({ chat, open, mounted, recordOpen }: {
    * 置回 true —— 否则新消息流式增长会把人从正在读的那条上硬拽回底部。
    */
   const stickToBottomRef = useRef(true);
+  const retainedPosition = useRef<{ top: number; latest: boolean } | null>(null);
+  const conversationRef = useRef(chat.conversationId);
+  if (conversationRef.current !== chat.conversationId) {
+    conversationRef.current = chat.conversationId; retainedPosition.current = null;
+  }
 
   /** 触摸起始/上一点的 Y，用来判断手指是在「往下拖看历史」还是「往上拖看新消息」。 */
   const touchAnchorRef = useRef<number | null>(null);
@@ -64,7 +70,8 @@ export function useCompanionHistoryScroll({ chat, open, mounted, recordOpen }: {
     stickToBottomRef.current = true;
     setAtLatest(true);
     const list = listRef.current;
-    if (list) list.scrollTo({ top: list.scrollHeight, behavior: "smooth" });
+    const preferences = useRoomStore.getState();
+    if (list) list.scrollTo({ top: list.scrollHeight, behavior: preferences.motionMode === "off" || preferences.reducedMotion ? "auto" : "smooth" });
   }, []);
 
 
@@ -72,6 +79,7 @@ export function useCompanionHistoryScroll({ chat, open, mounted, recordOpen }: {
     const list = listRef.current;
     if (!list || recordOpen || pendingJumpRef.current) return;
     const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight <= AT_BOTTOM_SLACK_PX;
+    retainedPosition.current = { top: list.scrollTop, latest: atBottom && stickToBottomRef.current };
     setAtLatest(atBottom);
     // 这里**只负责恢复**贴底意图，绝不关闭它。关闭只由用户输入判定（见 releaseStick）：
     // 用 scroll 事件反推会被程序化滚动误伤——打开抽屉时先贴底，内容随后还在长高
@@ -120,7 +128,14 @@ export function useCompanionHistoryScroll({ chat, open, mounted, recordOpen }: {
   // 聊天记录页只负责「找」：搜索框、日历、结果列表。用户选中搜索命中或日期后，
   // **关闭聊天记录页、回到历史会话根页面**，由根页面滚动定位到那条消息 /
   // 那一天的第一条消息。时间线永远只存在于根页面，不出现第二个消息窗口。
-  const pendingJumpRef = useRef<{ messageId?: string; dateKey?: string } | null>(null);
+  const pendingJumpRef = useRef<{ messageId?: string; dateKey?: string; runId?: string } | null>(null);
+  const appliedTargetRef = useRef<string | null>(null);
+  const targetKey = target ? `${chat.conversationId}:${target.runId}:${target.visit}` : null;
+  if (open && target && targetKey !== appliedTargetRef.current) {
+    appliedTargetRef.current = targetKey;
+    pendingJumpRef.current = { runId: target.runId };
+    stickToBottomRef.current = false;
+  }
 
   const chatRef = useRef(chat);
 
@@ -175,14 +190,39 @@ export function useCompanionHistoryScroll({ chat, open, mounted, recordOpen }: {
     if (!pending) return;
     let cancelled = false;
     void (async () => {
+      if (pending.runId) {
+        const trace = await chatRef.current.loadRunTrace(pending.runId);
+        if (cancelled) return;
+        if (!trace) { pendingJumpRef.current = null; setJumpNotice("这次记录已不可用，当前位置已保留。"); return; }
+        const present = () => messagesRef.current.some(message => message.runId === pending.runId
+          || message.id === trace?.summary.userMessageId || message.id === trace?.summary.assistantMessageId);
+        while (!present() && chatRef.current.historyHasMore) {
+          const oldest = messagesRef.current[0]?.id;
+          await chatRef.current.loadOlderMessages(); await nextFrame();
+          if (cancelled) return;
+          if (oldest === messagesRef.current[0]?.id) break;
+        }
+        await nextFrame(); await nextFrame();
+        if (cancelled) return;
+        const list = listRef.current;
+        const element = list?.querySelector<HTMLElement>(`[data-process-run-id="${pending.runId}"]`);
+        if (list && element) {
+          stickToBottomRef.current = false;
+          list.scrollTop += element.getBoundingClientRect().top - list.getBoundingClientRect().top - 12;
+          element.setAttribute("data-flash", "true");
+          window.setTimeout(() => element.removeAttribute("data-flash"), 1600);
+        } else setJumpNotice("这次记录暂时未加载，请在聊天记录中查找。");
+        pendingJumpRef.current = null;
+        return;
+      }
       if (pending.messageId) {
-        let guard = 0;
         const present = () => messagesRef.current.some((message) => message.id === pending.messageId);
-        while (!present() && chatRef.current.historyHasMore && guard < 30) {
-          guard += 1;
+        while (!present() && chatRef.current.historyHasMore) {
+          const oldest = messagesRef.current[0]?.id;
           await chatRef.current.loadOlderMessages();
           await nextFrame();
           if (cancelled) return;
+          if (oldest === messagesRef.current[0]?.id) break;
         }
         if (cancelled) return;
         if (!present()) {
@@ -197,13 +237,13 @@ export function useCompanionHistoryScroll({ chat, open, mounted, recordOpen }: {
         return;
       }
       if (pending.dateKey) {
-        let guard = 0;
         const oldestDay = () => (messagesRef.current[0] ? messageDayKey(messagesRef.current[0].createdAt) : "9999-99-99");
-        while (guard < 40 && chatRef.current.historyHasMore && oldestDay() > pending.dateKey) {
-          guard += 1;
+        while (chatRef.current.historyHasMore && oldestDay() > pending.dateKey) {
+          const oldest = messagesRef.current[0]?.id;
           await chatRef.current.loadOlderMessages();
           await nextFrame();
           if (cancelled) return;
+          if (oldest === messagesRef.current[0]?.id) break;
         }
         if (cancelled) return;
         const first = messagesRef.current.find((message) => messageDayKey(message.createdAt) === pending.dateKey);
@@ -217,9 +257,11 @@ export function useCompanionHistoryScroll({ chat, open, mounted, recordOpen }: {
         pendingJumpRef.current = null;
         if (!located) setJumpNotice("没有定位到那天的消息，请重试按日期查找");
       }
-    })();
+    })().catch(() => {
+      if (!cancelled) { pendingJumpRef.current = null; setJumpNotice("这次记录暂时读不到，当前位置已保留，可以重试。"); }
+    });
     return () => { cancelled = true; };
-  }, [open, mounted, recordOpen, flashMessage, nextFrame]);
+  }, [open, mounted, recordOpen, flashMessage, nextFrame, targetKey]);
 
 
   // ── 贴底跟随（方案 §3.8）───────────────────────────────────────────────
@@ -259,13 +301,18 @@ export function useCompanionHistoryScroll({ chat, open, mounted, recordOpen }: {
   }, [open, mounted, recordOpen, pinToLatest]);
 
 
-  // Conversation opens at the latest message; record/task pages open at their heading.
+  // Reopening resumes reading. New events do not take over an older position.
   useEffect(() => {
     if (!open || !mounted) return;
     if (pendingJumpRef.current) return;
     if (recordOpen) { stickToBottomRef.current = false; if (listRef.current) listRef.current.scrollTop = 0; return; }
-    stickToBottomRef.current = true;
-    const frame = window.requestAnimationFrame(pinToLatest);
+    const retained = retainedPosition.current;
+    stickToBottomRef.current = retained?.latest ?? true;
+    const frame = window.requestAnimationFrame(() => {
+      if (pendingJumpRef.current) return;
+      if (retained && !retained.latest) { if (listRef.current) listRef.current.scrollTop = retained.top; }
+      else pinToLatest();
+    });
     return () => window.cancelAnimationFrame(frame);
   }, [open, mounted, recordOpen, pinToLatest]);
 return { listRef, contentRef, atLatest, prevScrollHeightRef, stickToBottomRef, scrollToLatest, handleListScroll, releaseStick, handleListWheel, handleListTouchMove, handleListTouchStart, pendingJumpRef, jumpNotice, setJumpNotice };

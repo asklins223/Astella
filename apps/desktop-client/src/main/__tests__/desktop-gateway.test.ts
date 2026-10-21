@@ -1,5 +1,4 @@
-import * as ns_source from "../gateway/desktop-gateway-ns-source";
-import { noteModuleMock, noteStub } from "./ns-note-stubs";
+import * as ns_source from "../gateway/desktop-gateway-ns-source";import { noteModuleMock } from "./ns-note-stubs";
 
 // 2026-09-30：笔记这一族已变成**自由函数**（`desktop-gateway-ns-note.ts`），
 // `desktop-ipc.ts` 静态引用那个模块——**实例上挂的桩不再被调用**，桩要挂模块。
@@ -23,7 +22,6 @@ vi.mock("../gateway/desktop-gateway-ns-note", async (importOriginal) => {
 });
 import * as ns_note from "../gateway/desktop-gateway-ns-note";
 import * as ns_companion from "../gateway/desktop-gateway-ns-companion";
-import * as ns_learning from "../gateway/desktop-gateway-ns-learning";
 import * as ns_workspace from "../gateway/desktop-gateway-ns-workspace";
 import * as ns_auth from "../gateway/desktop-gateway-ns-auth";
 import * as ns_runtime from "../gateway/desktop-gateway-ns-runtime";
@@ -46,16 +44,8 @@ import {
   desktopTrustSignatureMessage,
   featureNameValues,
 } from "@astella/shared/desktop-ipc-contracts";
-import { learningDashboardV2Schema } from "@astella/shared";
-import {
-  learningRunActionResponseV2Schema,
-  learningRunPublicSnapshotV2Schema,
-  learningTaskDraftWriteReceiptV2Schema,
-  submitTaskArtifactReceiptV2Schema,
-} from "@astella/shared/learning-run-v2-contracts";
 import { noteDetailV1Schema } from "@astella/shared/note-projection-contracts";
 import { noteSaveReceiptV1Schema } from "@astella/shared/note-save-contracts";
-import { cardGenerationActiveSummaryListV1Schema } from "@astella/shared/card-generation-desktop-contracts";
 import {
   companionHomeProjectionV1Schema,
   companionRoomProfilePatchV1Schema,
@@ -71,19 +61,9 @@ import {
   sourceImageGetResultV1Schema,
 } from "@astella/shared/source-image-contracts";
 import type { GatewayErrorCode } from "@astella/shared/desktop-ipc-contracts";
-import {
-  cardGenerationRunServerViewV2Schema,
-  cardGenerationExposureEligibilityV1Schema,
-} from "@astella/shared/card-generation-desktop-contracts";
-import {
-  cardActivationReceiptV2Schema,
-  cardPlanV2Schema,
-} from "@astella/shared/card-generation-v2-contracts";
 import { DesktopGatewayFailure } from "../gateway/desktop-gateway-failure";
-import * as ns_assessment from "../gateway/desktop-gateway-ns-assessment";
 import * as ns_search from "../gateway/desktop-gateway-ns-search";
 import * as ns_invite from "../gateway/desktop-gateway-ns-invite";
-import * as ns_home from "../gateway/desktop-gateway-ns-home";
 import * as ns_artifact from "../gateway/desktop-gateway-ns-artifact";
 import {
   DesktopGateway,
@@ -132,124 +112,12 @@ function healthResponse(): Response {
   }), { status: 200 });
 }
 
-const V2_SNAPSHOT = learningRunPublicSnapshotV2Schema.parse({
-  version: 2,
-  runId: "00000000-0000-4000-8000-000000000001",
-  snapshotId: "00000000-0000-4000-8000-000000000002",
-  originV2: {
-    kind: "card",
-    cardId: "00000000-0000-4000-8000-000000000003",
-    objectiveId: "00000000-0000-4000-8000-000000000004",
-  },
-  target: {
-    objectiveId: "00000000-0000-4000-8000-000000000004",
-    objectiveRevision: 1,
-    cardId: "00000000-0000-4000-8000-000000000003",
-    publicationRevision: 1,
-    cardRevision: 1,
-    publicPayloadHash: "a".repeat(64),
-    publicSummary: "Public summary",
-    semanticTargetFingerprint: "b".repeat(64),
-    targetRevisionHash: "c".repeat(64),
-  },
-  returnTargetV2: {
-    kind: "card",
-    cardId: "00000000-0000-4000-8000-000000000003",
-    objectiveId: "00000000-0000-4000-8000-000000000004",
-  },
-  phase: "preparing",
-  runRevision: 1,
-  runtimeEpoch: 1,
-  activeSecondsUsed: 0,
-  timeBudgetSeconds: 180,
-  activeTask: null,
-  allowedActions: [{ version: 2, kind: "end", abandonLockedEvidence: false, confirmationRequired: true }],
-  publishedTargetEligibility: "eligible",
-});
-
-const MUTATION_TASK_ID = "00000000-0000-4000-8000-000000000201";
-const MUTATION_DRAFT_REQUEST = {
-  version: 2 as const,
-  snapshotId: V2_SNAPSHOT.snapshotId,
-  variantId: "variant-1",
-  variantRevision: 1,
-  taskRevision: 1,
-  expectedDraftRevision: null,
-  payload: { kind: "text" as const, text: "draft evidence" },
-  rendererState: { kind: "text" as const, selectionStart: 13, selectionEnd: 13 },
-};
-const MUTATION_SUBMIT_REQUEST = {
-  version: 2 as const,
-  snapshotId: V2_SNAPSHOT.snapshotId,
-  variantId: "variant-1",
-  variantRevision: 1,
-  runRevision: 1,
-  taskRevision: 1,
-  inputSchemaHash: "input-schema-v1",
-  payload: { kind: "text" as const, text: "trusted evidence" },
-};
-const MUTATION_ACTION_REQUEST = {
-  version: 2 as const,
-  snapshotId: V2_SNAPSHOT.snapshotId,
-  runRevision: 1,
-  runtimeEpoch: 1,
-  action: { version: 2 as const, kind: "end" as const, abandonLockedEvidence: false, confirmationRequired: true as const },
-};
-const MUTATION_DRAFT_RECEIPT = learningTaskDraftWriteReceiptV2Schema.parse({
-  version: 2,
-  runId: V2_SNAPSHOT.runId,
-  snapshotId: V2_SNAPSHOT.snapshotId,
-  taskId: MUTATION_TASK_ID,
-  variantId: MUTATION_DRAFT_REQUEST.variantId,
-  runRevision: 1,
-  taskRevision: 1,
-  draftRevision: 1,
-  savedAt: "2026-08-23T00:00:01.000Z",
-  expiresAt: "2026-08-23T00:05:01.000Z",
-});
-const MUTATION_SUBMIT_RECEIPT = submitTaskArtifactReceiptV2Schema.parse({
-  version: 2,
-  runId: V2_SNAPSHOT.runId,
-  snapshotId: V2_SNAPSHOT.snapshotId,
-  taskId: MUTATION_TASK_ID,
-  artifactId: "00000000-0000-4000-8000-000000000202",
-  artifactRevision: 1,
-  artifactStatus: "locked",
-  assessment: { assessmentId: "00000000-0000-4000-8000-000000000203", status: "queued" },
-  runRevision: 1,
-  taskRevision: 1,
-  eventCursor: 1,
-});
-const MUTATION_ACTION_RESPONSE = learningRunActionResponseV2Schema.parse({
-  version: 2,
-  runId: V2_SNAPSHOT.runId,
-  snapshotId: V2_SNAPSHOT.snapshotId,
-  originV2: V2_SNAPSHOT.originV2,
-  acceptedActionId: "action-1",
-  actionResult: { kind: "state_changed" },
-  snapshot: V2_SNAPSHOT,
-});
-
-const ROOM_DASHBOARD = learningDashboardV2Schema.parse({
-  version: 2,
-  snapshotAt: "2026-08-23T00:00:00.000Z",
-  dashboardRevision: "dashboard-rev-1",
-  counts: { notes: 0, activeObjectives: 0, activeRuns: 0, reviewsDue: 0, needsRepair: 0 },
-  activeRuns: [],
-  mode: "first_use",
-  primaryFocus: null,
-  queue: [],
-  recentObjectives: [],
-  suggestedNote: null,
-  degradation: null,
-});
-
 const ROOM_CAPABILITY = capabilityProjectionSchema.parse({
   version: 1,
   revision: "desktop-capability-v1:test",
   workspaceEpoch: 1,
-  actionCapabilities: Object.fromEntries(actionCapabilityValues.map((key) => [key, key === "learning_run.start" ? "allowed" : "denied"])),
-  featureAvailability: Object.fromEntries(featureNameValues.map((key) => [key, key === "learning_run_v2" ? { state: "enabled" } : { state: "disabled", reason: "error.feature_disabled" }])),
+  actionCapabilities: Object.fromEntries(actionCapabilityValues.map((key) => [key, key === "note.save" ? "allowed" : "denied"])),
+  featureAvailability: Object.fromEntries(featureNameValues.map((key) => [key, key === "companion_dialogue_v1" ? { state: "enabled" } : { state: "disabled", reason: "error.feature_disabled" }])),
   nativeCapabilities: {
     filePicker: "unavailable",
     clipboard: "unavailable",
@@ -258,35 +126,6 @@ const ROOM_CAPABILITY = capabilityProjectionSchema.parse({
     updates: "unavailable",
     live2d: "unavailable",
   },
-});
-
-const OWNER_ROOM_CAPABILITY = capabilityProjectionSchema.parse({
-  ...ROOM_CAPABILITY,
-  actionCapabilities: {
-    ...ROOM_CAPABILITY.actionCapabilities,
-    "card_generation.start": "allowed",
-  },
-  featureAvailability: {
-    ...ROOM_CAPABILITY.featureAvailability,
-    card_generation_v2: { state: "enabled" },
-  },
-});
-
-const ACTIVE_GENERATION_SUMMARIES = cardGenerationActiveSummaryListV1Schema.parse({
-  version: 1,
-  items: [{
-    version: 1,
-    runId: "00000000-0000-4000-8000-000000000020",
-    noteId: "00000000-0000-4000-8000-000000000010",
-    noteVersionId: "00000000-0000-4000-8000-000000000012",
-    status: "planning",
-    currentPlanVersion: 0,
-    reviewDraftRevision: 1,
-    updatedAt: "2026-08-23T00:00:01.000Z",
-    recovery: null,
-      sourceCapped: null,
-    route: { kind: "note.cardGeneration", cardGenerationRunId: "00000000-0000-4000-8000-000000000020" },
-  }],
 });
 
 const NOTE_DETAIL = noteDetailV1Schema.parse({
@@ -909,385 +748,25 @@ describe("DesktopGateway", () => {
       .rejects.toMatchObject({ code: "invite_consumed" });
   });
 
-  it("uses only strict V2 paths and keeps main-owned idempotency stable per command", async () => {
-    const requestedIdempotencyKeys: string[] = [];
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-      const url = String(input);
-      if (url.endsWith("/challenge")) return trustResponse(JSON.parse(String(init?.body)) as Record<string, unknown>);
-      if (url.endsWith("/health")) return healthResponse();
-      if (url.includes("/v2/reviews/queue")) {
-        return new Response(JSON.stringify({ version: 2, items: [], total: 0, nextCursor: null }), { status: 200 });
-      }
-      if (url.endsWith("/learning-runs")) {
-        const body = JSON.parse(String(init?.body)) as { idempotencyKey: string };
-        requestedIdempotencyKeys.push(body.idempotencyKey);
-        return new Response(JSON.stringify(V2_SNAPSHOT), { status: 201 });
-      }
-      if (url.endsWith("/v2/learning-runs/00000000-0000-4000-8000-000000000001")) {
-        return new Response(JSON.stringify(V2_SNAPSHOT), { status: 200 });
-      }
-      throw new Error(`unexpected URL ${url}`);
-    });
+  
 
-    const gateway = new DesktopGateway(environment());
-    await gateway.connect();
-    await expect(gateway.getReviewQueue()).resolves.toEqual({ version: 2, items: [], total: 0, nextCursor: null });
-    await expect(ns_learning.getLearningRun(gateway.gatewayTransport, V2_SNAPSHOT.runId)).resolves.toEqual(V2_SNAPSHOT);
-    const request = {
-      version: 2 as const,
-      originV2: V2_SNAPSHOT.originV2,
-      goal: "clarify" as const,
-    };
-    await ns_learning.startLearningRun(gateway.gatewayTransport, request, "command-1");
-    await ns_learning.startLearningRun(gateway.gatewayTransport, request, "command-1");
-    expect(requestedIdempotencyKeys).toHaveLength(2);
-    expect(requestedIdempotencyKeys[0]).toBe(requestedIdempotencyKeys[1]);
-  });
+  
 
-  it("maps LearningRun mutation response loss to resync_first without an internal replay", async () => {
-    const mutationAttempts = new Map<string, number>();
-    const mutationKeys = new Map<string, string[]>();
-    const mutationResponse = (kind: string, init: RequestInit, body: unknown): Response => {
-      const attempt = (mutationAttempts.get(kind) ?? 0) + 1;
-      mutationAttempts.set(kind, attempt);
-      const requestBody = JSON.parse(String(init.body)) as { idempotencyKey: string };
-      mutationKeys.set(kind, [...(mutationKeys.get(kind) ?? []), requestBody.idempotencyKey]);
-      if (attempt === 1) throw new TypeError(`${kind} connection closed after write`);
-      return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
-    };
+  
 
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-      const url = String(input);
-      if (url.endsWith("/challenge")) return trustResponse(JSON.parse(String(init?.body)) as Record<string, unknown>);
-      if (url.endsWith("/health")) return healthResponse();
-      if (url.endsWith(`/v2/learning-runs/${V2_SNAPSHOT.runId}/tasks/${MUTATION_TASK_ID}/draft`)) {
-        return mutationResponse("draft", init ?? {}, MUTATION_DRAFT_RECEIPT);
-      }
-      if (url.endsWith(`/v2/learning-runs/${V2_SNAPSHOT.runId}/tasks/${MUTATION_TASK_ID}/submissions`)) {
-        return mutationResponse("submit", init ?? {}, MUTATION_SUBMIT_RECEIPT);
-      }
-      if (url.endsWith(`/v2/learning-runs/${V2_SNAPSHOT.runId}/actions`)) {
-        return mutationResponse("action", init ?? {}, MUTATION_ACTION_RESPONSE);
-      }
-      throw new Error(`unexpected URL ${url}`);
-    });
+  
 
-    const gateway = new DesktopGateway(environment());
-    await gateway.connect();
+  
 
-    await expect(ns_learning.saveLearningRunDraft(gateway.gatewayTransport, V2_SNAPSHOT.runId, MUTATION_TASK_ID, MUTATION_DRAFT_REQUEST, "command-draft"))
-      .rejects.toMatchObject({ code: "result_unknown", retry: "resync_first" });
-    await expect(ns_learning.saveLearningRunDraft(gateway.gatewayTransport, V2_SNAPSHOT.runId, MUTATION_TASK_ID, MUTATION_DRAFT_REQUEST, "command-draft"))
-      .resolves.toEqual(MUTATION_DRAFT_RECEIPT);
+  
 
-    await expect(ns_learning.submitLearningRunArtifact(gateway.gatewayTransport, V2_SNAPSHOT.runId, MUTATION_TASK_ID, MUTATION_SUBMIT_REQUEST, "command-submit"))
-      .rejects.toMatchObject({ code: "result_unknown", retry: "resync_first" });
-    await expect(ns_learning.submitLearningRunArtifact(gateway.gatewayTransport, V2_SNAPSHOT.runId, MUTATION_TASK_ID, MUTATION_SUBMIT_REQUEST, "command-submit"))
-      .resolves.toEqual(MUTATION_SUBMIT_RECEIPT);
+  
 
-    await expect(ns_learning.applyLearningRunAction(gateway.gatewayTransport, V2_SNAPSHOT.runId, MUTATION_ACTION_REQUEST, "command-action"))
-      .rejects.toMatchObject({ code: "result_unknown", retry: "resync_first" });
-    await expect(ns_learning.applyLearningRunAction(gateway.gatewayTransport, V2_SNAPSHOT.runId, MUTATION_ACTION_REQUEST, "command-action"))
-      .resolves.toEqual(MUTATION_ACTION_RESPONSE);
+  
 
-    expect(mutationAttempts).toEqual(new Map([["draft", 2], ["submit", 2], ["action", 2]]));
-    for (const keys of mutationKeys.values()) {
-      expect(keys).toHaveLength(2);
-      expect(keys[0]).toBe(keys[1]);
-    }
-  });
+  
 
-  it("rejects a V1 learning run response at the gateway boundary", async () => {
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-      const url = String(input);
-      if (url.endsWith("/challenge")) return trustResponse(JSON.parse(String(init?.body)) as Record<string, unknown>);
-      if (url.endsWith("/health")) return healthResponse();
-      return new Response(JSON.stringify({ version: 1, runId: V2_SNAPSHOT.runId }), { status: 200 });
-    });
-    const gateway = new DesktopGateway(environment());
-    await gateway.connect();
-    await expect(ns_learning.getLearningRun(gateway.gatewayTransport, V2_SNAPSHOT.runId)).rejects.toMatchObject({ code: "unsupported_contract" });
-  });
-
-  it("keeps activity lease telemetry main-owned and treats only HTTP 204 as recorded", async () => {
-    let leaseBody: Record<string, unknown> | undefined;
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-      const url = String(input);
-      if (url.endsWith("/challenge")) return trustResponse(JSON.parse(String(init?.body)) as Record<string, unknown>);
-      if (url.endsWith("/health")) return healthResponse();
-      if (url.endsWith(`/v2/learning-runs/${V2_SNAPSHOT.runId}/activity-lease`)) {
-        leaseBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
-        return new Response(null, { status: 204 });
-      }
-      throw new Error(`unexpected URL ${url}`);
-    });
-
-    const gateway = new DesktopGateway(environment());
-    await gateway.connect();
-    await expect(ns_learning.recordLearningRunActivityLease(gateway.gatewayTransport, V2_SNAPSHOT.runId, {
-      version: 2,
-      snapshotId: V2_SNAPSHOT.snapshotId,
-      runRevision: 1,
-      runtimeEpoch: 1,
-      startedAt: "2026-08-23T00:00:00.000Z",
-      endedAt: "2026-08-23T00:00:01.000Z",
-    }, "lease-request")).resolves.toEqual({ recorded: true });
-    expect(leaseBody).toMatchObject({
-      version: 2,
-      snapshotId: V2_SNAPSHOT.snapshotId,
-      deviceSessionId: expect.any(String),
-    });
-    expect(leaseBody).not.toHaveProperty("idempotencyKey");
-  });
-
-  it("maps only draft_not_found to a nullable draft and preserves other 404s", async () => {
-    const taskId = "00000000-0000-4000-8000-000000000201";
-    const missingRunId = "00000000-0000-4000-8000-000000000202";
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-      const url = String(input);
-      if (url.endsWith("/challenge")) return trustResponse(JSON.parse(String(init?.body)) as Record<string, unknown>);
-      if (url.endsWith("/health")) return healthResponse();
-      if (url.endsWith(`/v2/learning-runs/${V2_SNAPSHOT.runId}/tasks/${taskId}/draft`)) {
-        return new Response(JSON.stringify({ error: "draft_not_found", message: "没有已保存的草稿" }), { status: 404 });
-      }
-      if (url.endsWith(`/v2/learning-runs/${missingRunId}/tasks/${taskId}/draft`)) {
-        return new Response(JSON.stringify({ error: "not_found", message: "运行不存在" }), { status: 404 });
-      }
-      throw new Error(`unexpected URL ${url}`);
-    });
-
-    const gateway = new DesktopGateway(environment());
-    await gateway.connect();
-    await expect(ns_learning.getLearningRunDraft(gateway.gatewayTransport, V2_SNAPSHOT.runId, taskId)).resolves.toBeNull();
-    await expect(ns_learning.getLearningRunDraft(gateway.gatewayTransport, missingRunId, taskId)).rejects.toMatchObject({ code: "not_found", httpStatus: 404 });
-  });
-
-  it("rejects valid-looking V2 responses whose route, origin, task, or snapshot binding drifts", async () => {
-    const otherRunId = "00000000-0000-4000-8000-000000000101";
-    const otherSnapshotId = "00000000-0000-4000-8000-000000000102";
-    const otherTaskId = "00000000-0000-4000-8000-000000000103";
-    const expectedTaskId = "00000000-0000-4000-8000-000000000105";
-    const wrongOriginSnapshot = {
-      ...V2_SNAPSHOT,
-      originV2: {
-        kind: "card" as const,
-        cardId: "00000000-0000-4000-8000-000000000104",
-        objectiveId: V2_SNAPSHOT.originV2.objectiveId,
-      },
-    };
-    const wrongActionSnapshot = { ...V2_SNAPSHOT, snapshotId: otherSnapshotId };
-    const draftRequest = {
-      version: 2 as const,
-      snapshotId: V2_SNAPSHOT.snapshotId,
-      variantId: "variant-1",
-      variantRevision: 1,
-      taskRevision: 1,
-      expectedDraftRevision: null,
-      payload: null,
-      rendererState: { kind: "text" as const, selectionStart: 0, selectionEnd: 0 },
-    };
-    const actionRequest = {
-      version: 2 as const,
-      snapshotId: V2_SNAPSHOT.snapshotId,
-      runRevision: 1,
-      runtimeEpoch: 1,
-      action: { version: 2 as const, kind: "end" as const, abandonLockedEvidence: false, confirmationRequired: true as const },
-    };
-
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-      const url = String(input);
-      if (url.endsWith("/challenge")) return trustResponse(JSON.parse(String(init?.body)) as Record<string, unknown>);
-      if (url.endsWith("/health")) return healthResponse();
-      if (url.endsWith("/learning-runs")) {
-        return new Response(JSON.stringify(wrongOriginSnapshot), { status: 201 });
-      }
-      if (url.endsWith(`/v2/learning-runs/${V2_SNAPSHOT.runId}`)) {
-        return new Response(JSON.stringify({ ...V2_SNAPSHOT, runId: otherRunId, snapshotId: otherSnapshotId }), { status: 200 });
-      }
-      if (url.endsWith(`/v2/learning-runs/${V2_SNAPSHOT.runId}/result`)) {
-        return new Response(JSON.stringify({
-          version: 2,
-          runId: otherRunId,
-          snapshotId: otherSnapshotId,
-          originV2: V2_SNAPSHOT.originV2,
-          returnTargetV2: V2_SNAPSHOT.returnTargetV2,
-          status: "pending",
-          httpStatus: 202,
-          phase: "assessing",
-          runRevision: 1,
-        }), { status: 202 });
-      }
-      // 故意**不钉 taskId**：这个 mock 要覆盖“任意 task 的 draft 请求都返回一份
-      // binding 对不上的响应”，钉死 ID 就只剩一条路径被覆盖了。路径风格仍写死。
-      if (url.includes(`/v2/learning-runs/${V2_SNAPSHOT.runId}/tasks/`) && url.endsWith("/draft")) {
-        return new Response(JSON.stringify({
-          version: 2,
-          runId: V2_SNAPSHOT.runId,
-          snapshotId: V2_SNAPSHOT.snapshotId,
-          taskId: otherTaskId,
-          variantId: draftRequest.variantId,
-          runRevision: 1,
-          taskRevision: 1,
-          draftRevision: 1,
-          savedAt: "2026-08-23T00:00:01.000Z",
-          expiresAt: "2026-08-23T00:05:01.000Z",
-        }), { status: 200 });
-      }
-      if (url.endsWith(`/v2/learning-runs/${V2_SNAPSHOT.runId}/actions`)) {
-        return new Response(JSON.stringify({
-          version: 2,
-          runId: V2_SNAPSHOT.runId,
-          snapshotId: otherSnapshotId,
-          originV2: V2_SNAPSHOT.originV2,
-          acceptedActionId: "action-1",
-          actionResult: { kind: "state_changed" },
-          snapshot: wrongActionSnapshot,
-        }), { status: 200 });
-      }
-      throw new Error(`unexpected URL ${url}`);
-    });
-
-    const gateway = new DesktopGateway(environment());
-    await gateway.connect();
-    await expect(ns_learning.startLearningRun(gateway.gatewayTransport, { version: 2, originV2: V2_SNAPSHOT.originV2, goal: "clarify" }, "command-start"))
-      .rejects.toMatchObject({ code: "unsupported_contract" });
-    await expect(ns_learning.getLearningRun(gateway.gatewayTransport, V2_SNAPSHOT.runId)).rejects.toMatchObject({ code: "unsupported_contract" });
-    await expect(ns_learning.getLearningRunResult(gateway.gatewayTransport, V2_SNAPSHOT.runId)).rejects.toMatchObject({ code: "unsupported_contract" });
-    await expect(ns_learning.saveLearningRunDraft(gateway.gatewayTransport, V2_SNAPSHOT.runId, expectedTaskId, draftRequest, "command-draft"))
-      .rejects.toMatchObject({ code: "unsupported_contract" });
-    await expect(ns_learning.applyLearningRunAction(gateway.gatewayTransport, V2_SNAPSHOT.runId, actionRequest, "command-action"))
-      .rejects.toMatchObject({ code: "unsupported_contract" });
-  });
-
-  it("projects the real dashboard and reuses a matching ETag without crossing workspace epochs", async () => {
-    let dashboardRequests = 0;
-    let secondRequestIfNoneMatch: string | null = null;
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-      const url = String(input);
-      if (url.endsWith("/challenge")) return trustResponse(JSON.parse(String(init?.body)) as Record<string, unknown>);
-      if (url.endsWith("/health")) return healthResponse();
-      if (url.endsWith("/v1/auth/capabilities")) {
-        return new Response(JSON.stringify(ROOM_CAPABILITY), { status: 200 });
-      }
-      if (url.endsWith("/v2/learning-dashboard")) {
-        dashboardRequests += 1;
-        if (dashboardRequests === 2) {
-          secondRequestIfNoneMatch = new Headers(init?.headers).get("If-None-Match");
-          return new Response(null, { status: 304, headers: { ETag: '"dashboard-rev-1"' } });
-        }
-        return new Response(JSON.stringify(ROOM_DASHBOARD), {
-          status: 200,
-          headers: { ETag: '"dashboard-rev-1"' },
-        });
-      }
-      throw new Error(`unexpected URL ${url}`);
-    });
-
-    const gateway = new DesktopGateway(environment());
-    await gateway.connect();
-    const first = await gateway.getRoomProjection();
-    const second = await gateway.getRoomProjection();
-    expect(first).toEqual(second);
-    expect(first.dashboardRevision).toBe("dashboard-rev-1");
-    expect(first.recentActivitySummary).toMatchObject({ state: "error" });
-    expect("librarySummary" in first).toBe(false);
-    expect("suggestedNoteSummary" in first).toBe(false);
-    expect(first.captureCapability).toMatchObject({ state: "disabled", reason: "capability_denied" });
-    expect(secondRequestIfNoneMatch).toBe('"dashboard-rev-1"');
-  });
-
-  it("keeps confirmed dashboard content when the capability projection is degraded", async () => {
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-      const url = String(input);
-      if (url.endsWith("/challenge")) return trustResponse(JSON.parse(String(init?.body)) as Record<string, unknown>);
-      if (url.endsWith("/health")) return healthResponse();
-      if (url.endsWith("/v1/auth/capabilities")) return new Response(null, { status: 503 });
-      if (url.endsWith("/v2/learning-dashboard")) {
-        return new Response(JSON.stringify(ROOM_DASHBOARD), { status: 200, headers: { ETag: '"dashboard-rev-1"' } });
-      }
-      throw new Error(`unexpected URL ${url}`);
-    });
-
-    const gateway = new DesktopGateway(environment());
-    await gateway.connect();
-    const projection = await gateway.getRoomProjection();
-    expect(projection.dashboardRevision).toBe("dashboard-rev-1");
-    expect(projection.captureCapability).toEqual({ state: "unavailable", reason: "projection_unavailable" });
-    expect(projection.primaryFocus).toEqual({ state: "empty" });
-  });
-
-  it("reprojects cached dashboard content when capabilities recover behind a 304", async () => {
-    let capabilityRequests = 0;
-    let dashboardRequests = 0;
-    const recoveredCapability = capabilityProjectionSchema.parse({
-      ...ROOM_CAPABILITY,
-      actionCapabilities: { ...ROOM_CAPABILITY.actionCapabilities, "source.create": "allowed" },
-    });
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-      const url = String(input);
-      if (url.endsWith("/challenge")) return trustResponse(JSON.parse(String(init?.body)) as Record<string, unknown>);
-      if (url.endsWith("/health")) return healthResponse();
-      if (url.endsWith("/v1/auth/capabilities")) {
-        capabilityRequests += 1;
-        return capabilityRequests === 1
-          ? new Response(null, { status: 503 })
-          : new Response(JSON.stringify(recoveredCapability), { status: 200 });
-      }
-      if (url.endsWith("/v2/learning-dashboard")) {
-        dashboardRequests += 1;
-        return dashboardRequests === 1
-          ? new Response(JSON.stringify(ROOM_DASHBOARD), { status: 200, headers: { ETag: '"dashboard-rev-1"' } })
-          : new Response(null, { status: 304, headers: { ETag: '"dashboard-rev-1"' } });
-      }
-      throw new Error(`unexpected URL ${url}`);
-    });
-
-    const gateway = new DesktopGateway(environment());
-    await gateway.connect();
-    const degraded = await gateway.getRoomProjection();
-    const recovered = await gateway.getRoomProjection();
-    expect(degraded.captureCapability).toEqual({ state: "unavailable", reason: "projection_unavailable" });
-    expect(recovered.captureCapability).toEqual({ state: "enabled" });
-    expect(recovered.dashboardRevision).toBe(degraded.dashboardRevision);
-  });
-
-  it("queries the Owner-only active generation summary and keeps it on dashboard 304", async () => {
-    let activeRequests = 0;
-    let activeAuthorization: string | null = null;
-    let dashboardRequests = 0;
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-      const url = String(input);
-      if (url.endsWith("/challenge")) return trustResponse(JSON.parse(String(init?.body)) as Record<string, unknown>);
-      if (url.endsWith("/health")) return healthResponse();
-      if (url.endsWith("/v1/auth/capabilities")) {
-        return new Response(JSON.stringify(OWNER_ROOM_CAPABILITY), { status: 200 });
-      }
-      if (url.endsWith("/v2/card-generation-runs/active")) {
-        activeRequests += 1;
-        activeAuthorization = new Headers(init?.headers).get("Authorization");
-        return new Response(JSON.stringify(ACTIVE_GENERATION_SUMMARIES), { status: 200 });
-      }
-      if (url.endsWith("/v2/learning-dashboard")) {
-        dashboardRequests += 1;
-        if (dashboardRequests === 2) return new Response(null, { status: 304, headers: { ETag: '"dashboard-rev-1"' } });
-        return new Response(JSON.stringify(ROOM_DASHBOARD), { status: 200, headers: { ETag: '"dashboard-rev-1"' } });
-      }
-      throw new Error(`unexpected URL ${url}`);
-    });
-
-    const gateway = new DesktopGateway(environment());
-    await gateway.connect();
-    // 2026-09-30：token 已搬进 `GatewayTransport`（见 `desktop-gateway-transport.ts`）。
-    // 原来这里 `Object.defineProperty(gateway, "token", …)` 给**实例**加了一个属性，
-    // 而发请求读的是 `this.transport.token` —— 于是头悄悄没了，报错却指向「请求头不对」。
-(gateway as unknown as { transport: { token: string | null } }).transport.token = "test-owner-token";
-    const first = await gateway.getRoomProjection();
-    const second = await gateway.getRoomProjection();
-    expect(activeRequests).toBe(2);
-    expect(activeAuthorization).toBe("Bearer test-owner-token");
-    expect(first.activeGenerationSummary).toEqual({ state: "data", data: ACTIVE_GENERATION_SUMMARIES.items });
-    expect(second.activeGenerationSummary).toEqual(first.activeGenerationSummary);
-  });
+  
 
   /**
    * 「保存并开启复习」这一档从主进程走到 HTTP 的那一段（39d W7-2 两颗按钮）。
@@ -1298,126 +777,72 @@ describe("DesktopGateway", () => {
    * 而库里一条安排都不会有。两发一起量：要排期的带着 `true`，没说的**连键都不出现**
    * （传输层不替用户补一个"不要"）。
    */
-  it("激活那一发把那一档带到请求体上，没说的那一发不带这一格", async () => {
-    const runId = "55555555-5555-4555-8555-555555555555";
-    const objectiveId = "66666666-6666-4666-8666-666666666666";
-    const candidateId = "77777777-7777-4777-8777-777777777777";
-    const candidateRevisionId = "f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0";
-    const noteId = "12121212-1212-4121-8121-121212121212";
-    const serverView = cardGenerationRunServerViewV2Schema.parse({
-      runId,
-      noteId,
-      noteVersionId: "88888888-8888-4888-8888-888888888888",
-      status: "review_ready",
-      cardContentEpoch: 1,
-      sourceSnapshotHash: "a".repeat(64),
-      semanticSpecHash: "b".repeat(64),
-      inputSnapshotHash: "c".repeat(64),
-      generationFingerprint: "d".repeat(64),
-      currentPlanVersion: 1,
-      reviewDraftRevision: 1,
-      sourceOutdated: false,
-      sourceCapped: null,
-      progress: { plannedCards: 1, authored: 1, gatePassed: 1, gateFailed: 0 },
-      recovery: null,
-      error: null,
-      createdAt: "2026-09-26T00:00:00.000Z",
-      updatedAt: "2026-09-26T00:00:01.000Z",
-    });
-    const plan = cardPlanV2Schema.parse({
-      version: 2,
-      planRevisionId: "99999999-9999-4999-8999-999999999999",
-      runId,
-      inputSnapshotHash: "c".repeat(64),
-      cardContentEpoch: 1,
-      planVersion: 1,
-      previousPlanRevisionId: null,
-      // 计划内容与这一发无关（网关只读那一张三元组），所以走合同里最小的那一支。
-      result: { kind: "no_cards_recommended", reasonCodes: ["no_learnable_objective"] },
-      atomDecisions: [],
-      planHash: "e".repeat(64),
-    });
-    const eligibility = cardGenerationExposureEligibilityV1Schema.parse({
-      version: 1,
-      runId,
-      candidateId,
-      candidateRevisionId,
-      revision: 1,
-      exposureStatus: "not_exposed",
-      initialValidationPolicyEffect: "eligible",
-      lastExposedAt: null,
-    });
-    const receipt = cardActivationReceiptV2Schema.parse({
-      version: 2,
-      receiptId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-      workspaceId: noteId,
-      userId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-      runId,
-      idempotencyKey: "activate-key-1",
-      requestHash: "f".repeat(64),
-      mappings: [{
-        candidateRevisionId,
-        candidateEvidenceBindingPlanId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
-        candidateEvidenceBindingPlanHash: "1".repeat(64),
-        cardId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-        objectiveId,
-        objectiveRevisionId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
-        publicationRevision: 1,
-        resultingEvidenceBindingSetHash: "2".repeat(64),
-      }],
-      lifecycleResults: [],
-      scheduling: [{
-        objectiveId,
-        scheduleId: "33333333-3333-4333-8333-333333333333",
-        nextReviewAt: "2026-09-27T12:00:00.000Z",
-        created: true,
-      }],
-      responseHash: "4".repeat(64),
-      committedAt: "2026-09-26T04:00:00.000Z",
-    });
+  
 
-    const bodies: Record<string, unknown>[] = [];
+
+  it("builds the room projection from note and source lists and never reads the retired dashboard", async () => {
+    const urls: string[] = [];
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-      const pathname = new URL(String(input)).pathname;
-      if (pathname.endsWith("/challenge")) return trustResponse(JSON.parse(String(init?.body)) as Record<string, unknown>);
-      if (pathname.endsWith("/health")) return healthResponse();
-      if (pathname === `/v2/card-generation-runs/${runId}`) return new Response(JSON.stringify(serverView), { status: 200 });
-      if (pathname === `/v2/card-generation-runs/${runId}/plan`) return new Response(JSON.stringify(plan), { status: 200 });
-      if (pathname.endsWith("/exposure")) return new Response(JSON.stringify(eligibility), { status: 200 });
-      if (pathname === `/v2/card-generation-runs/${runId}/activate`) {
-        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-        bodies.push(body);
-        return new Response(JSON.stringify(receipt), { status: 200 });
+      const url = String(input);
+      urls.push(url);
+      if (url.endsWith("/challenge")) return trustResponse(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      if (url.endsWith("/health")) return healthResponse();
+      if (url.endsWith("/v1/auth/capabilities")) {
+        return new Response(JSON.stringify(ROOM_CAPABILITY), { status: 200 });
       }
-      throw new Error(`unexpected URL ${pathname}`);
+      if (url.includes("/notes?")) {
+        return new Response(JSON.stringify({
+          items: [{
+            id: "11111111-1111-4111-8111-111111111111",
+            title: "秦朝统一与中央集权制度",
+            titleSource: "user",
+            currentVersionId: null,
+            createdAt: "2026-10-19T00:00:00.000Z",
+            updatedAt: "2026-10-19T01:00:00.000Z",
+            firstImageBlock: null,
+            hasBody: true,
+            shelfState: null,
+          }],
+          nextCursor: null,
+          total: 1,
+        }), { status: 200 });
+      }
+      if (url.includes("/sources?")) {
+        return new Response(JSON.stringify({ items: [], nextCursor: null, total: 3 }), { status: 200 });
+      }
+      throw new Error(`unexpected URL ${url}`);
     });
 
     const gateway = new DesktopGateway(environment());
     await gateway.connect();
-    const selection = (extra: Record<string, unknown> = {}) => ({
-      version: 1 as const,
-      runId,
-      selectedCandidates: [{
-        candidateRevisionId,
-        candidateId,
-        revision: 1,
-        revisionHash: "5".repeat(64),
-        candidateEvidenceBindingPlanHash: "1".repeat(64),
-        intent: { kind: "create_new" as const },
-      }],
-      existingLifecycleActions: [],
-      expectedReviewDraftRevision: 1,
-      ...extra,
+    const projection = await gateway.getRoomProjection();
+
+    expect(projection.dashboardRevision).toBe("room-1-3-11111111-1111-4111-8111-111111111111");
+    expect(projection.mode).toBe("notes");
+    expect(projection.recentActivitySummary).toMatchObject({
+      state: "data",
+      data: { items: [{ activityId: "11111111-1111-4111-8111-111111111111", kind: "note.updated", occurredAt: "2026-10-19T01:00:00.000Z" }] },
+    });
+    expect(projection.captureCapability).toEqual({ state: "enabled" });
+    expect(urls.some((url) => url.includes("/v2/learning-dashboard"))).toBe(false);
+  });
+
+  it("reports an unavailable room projection when notes cannot be read", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/challenge")) return trustResponse(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      if (url.endsWith("/health")) return healthResponse();
+      if (url.endsWith("/v1/auth/capabilities")) {
+        return new Response(JSON.stringify(ROOM_CAPABILITY), { status: 200 });
+      }
+      if (url.includes("/notes?")) return new Response(null, { status: 503 });
+      if (url.includes("/sources?")) return new Response(JSON.stringify({ items: [], nextCursor: null, total: 0 }), { status: 200 });
+      throw new Error(`unexpected URL ${url}`);
     });
 
-    const scheduled = await ns_note.activateCardGeneration(gateway.gatewayTransport, runId, selection({ startReviewScheduling: true }), "cmd-scheduled");
-    expect(bodies[0]).toMatchObject({ startReviewScheduling: true });
-    // 回执那一格投影到桌面（`scheduleId` 不外传）。
-    expect(scheduled.scheduling).toEqual([{ objectiveId, nextReviewAt: "2026-09-27T12:00:00.000Z", created: true }]);
-
-    await ns_note.activateCardGeneration(gateway.gatewayTransport, runId, selection(), "cmd-plain");
-    expect("startReviewScheduling" in bodies[1]).toBe(false);
-    expect("startReviewScheduling" in bodies[0]).toBe(true);
+    const gateway = new DesktopGateway(environment());
+    await gateway.connect();
+    await expect(gateway.getRoomProjection()).rejects.toMatchObject({ code: "safe_internal_error" });
   });
 
   it("bridges companion home reads and room-profile CAS updates through strict API contracts", async () => {
@@ -1529,30 +954,7 @@ describe("DesktopGateway", () => {
     expect(requested).toEqual(["?limit=50", "?limit=50&before=42"]);
   });
 
-  it("reads the strict, side-effect-free companion learning context", async () => {
-    const requested: string[] = [];
-    const context = {
-      version: 1,
-      contextRevision: "a".repeat(64),
-      learningRunResumeCandidate: null,
-      learningRunStartCandidate: null,
-    } as const;
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-      const url = new URL(String(input));
-      if (url.pathname.endsWith("/challenge")) return trustResponse(JSON.parse(String(init?.body)) as Record<string, unknown>);
-      if (url.pathname.endsWith("/health")) return healthResponse();
-      if (url.pathname === "/companion/learning-context") {
-        requested.push(init?.method ?? "GET");
-        return new Response(JSON.stringify(context), { status: 200 });
-      }
-      throw new Error(`unexpected URL ${url}`);
-    });
-
-    const gateway = new DesktopGateway(environment());
-    await gateway.connect();
-    await expect(ns_companion.getCompanionLearningContext(gateway.gatewayTransport, )).resolves.toEqual(context);
-    expect(requested).toEqual(["GET"]);
-  });
+  
 
   it("speaks companion cues through POST /voice/tts with raw audio-only wire rules", async () => {
     const ttsRequests: Array<{
@@ -1806,97 +1208,9 @@ describe("DesktopGateway", () => {
       .rejects.toMatchObject({ code: "not_found", retry: "never", httpStatus: 404 });
   });
 
-  it.each([
-    [422, "teaching_grounding_failed", "teaching_grounding_failed"],
-    [503, "teaching_model_unconfigured", "teaching_model_unconfigured"],
-    [409, "teaching_in_progress", "teaching_in_progress"],
-    [409, "round_budget_exhausted", "round_budget_exhausted"],
-    [400, "teaching_grounding_failed", "validation"],
-  ])("keeps teaching failure %i/%s actionable without forwarding server prose", async (status, token, code) => {
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-      const url = new URL(String(input));
-      if (url.pathname.endsWith("/challenge")) return trustResponse(JSON.parse(String(init?.body)) as Record<string, unknown>);
-      if (url.pathname.endsWith("/health")) return healthResponse();
-      return new Response(JSON.stringify({ error: token, message: "private provider detail must not cross IPC" }), { status: Number(status) });
-    });
-    const gateway = new DesktopGateway(environment()); await gateway.connect();
-    // 2026-09-30：token 已搬进 `GatewayTransport`（见 `desktop-gateway-transport.ts`）。
-    // 原来这里 `Object.defineProperty(gateway, "token", …)` 给**实例**加了一个属性，
-    // 而发请求读的是 `this.transport.token` —— 于是头悄悄没了，报错却指向「请求头不对」。
-(gateway as unknown as { transport: { token: string | null } }).transport.token = "test-token";
-    const failure = await ns_note.explainNoteLearningRoundTeaching(gateway.gatewayTransport, { roundId: "44444444-4444-4444-8444-444444444444", expectedRevision: 2 })
-      .catch((error: unknown) => error);
-    expect(failure).toMatchObject({ code, httpStatus: status });
-    expect((failure as Error).message).not.toContain("private provider detail");
-  });
+  
 
-  it("reads a note-learning-round artifact as the whole text/html body, with no JSON envelope", async () => {
-    const artifactId = "44444444-4444-4444-8444-444444444444";
-    const artifactRequests: Array<{
-      readonly path: string;
-      readonly accept: string | null;
-      readonly authorization: string | null;
-    }> = [];
-    // 非 ASCII 一律原样：服务端回的是整份 HTML 本体，网关只解码不改写。
-    const html = "<html><body><p>动态讲解 · 第一步</p></body></html>";
-    let artifactResponse = (): Response => new Response(html, {
-      status: 200,
-      headers: { "Content-Type": "text/html; charset=utf-8" },
-    });
-
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-      const url = new URL(String(input));
-      if (url.pathname.endsWith("/challenge")) {
-        return trustResponse(JSON.parse(String(init?.body)) as Record<string, unknown>);
-      }
-      if (url.pathname.endsWith("/health")) return healthResponse();
-      if (url.pathname.startsWith("/v2/note-learning-round-artifacts/")) {
-        const headers = new Headers(init?.headers);
-        artifactRequests.push({
-          path: url.pathname,
-          accept: headers.get("Accept"),
-          authorization: headers.get("Authorization"),
-        });
-        return artifactResponse();
-      }
-      throw new Error(`unexpected URL ${url}`);
-    });
-
-    const gateway = new DesktopGateway(environment());
-    await gateway.connect();
-    // 2026-09-30：token 已搬进 `GatewayTransport`（见 `desktop-gateway-transport.ts`）。
-    // 原来这里 `Object.defineProperty(gateway, "token", …)` 给**实例**加了一个属性，
-    // 而发请求读的是 `this.transport.token` —— 于是头悄悄没了，报错却指向「请求头不对」。
-(gateway as unknown as { transport: { token: string | null } }).transport.token = "test-artifact-token";
-
-    await expect(ns_artifact.getNoteLearningRoundArtifactHtml(gateway.gatewayTransport, artifactId, "request-artifact-html")).resolves.toBe(html);
-    expect(artifactRequests).toEqual([{
-      path: `/v2/note-learning-round-artifacts/${artifactId}`,
-      accept: "text/html",
-      authorization: "Bearer test-artifact-token",
-    }]);
-
-    // 服务端失败体（JSON）仍在网关被拒，不能当成 HTML 保存。
-    artifactResponse = () => new Response(JSON.stringify({ error: "not_found" }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
-    await expect(ns_artifact.getNoteLearningRoundArtifactHtml(gateway.gatewayTransport, artifactId, "request-artifact-json"))
-      .rejects.toMatchObject({ code: "unsupported_contract", retry: "user_action" });
-
-    const longHtml = `<main>${"完整讲解".repeat(160_000)}页面末尾</main>`;
-    artifactResponse = () => new Response(longHtml, { status: 200, headers: { "Content-Type": "text/html" } });
-    await expect(ns_artifact.getNoteLearningRoundArtifactHtml(gateway.gatewayTransport, artifactId, "request-artifact-long"))
-      .resolves.toBe(longHtml);
-
-    // 找不到／不可见：服务端 404，如实透传（与取图那条同形）。
-    artifactResponse = () => new Response(JSON.stringify({ error: "not_found" }), {
-      status: 404,
-      headers: { "Content-Type": "application/json" },
-    });
-    await expect(ns_artifact.getNoteLearningRoundArtifactHtml(gateway.gatewayTransport, artifactId, "request-artifact-missing"))
-      .rejects.toMatchObject({ code: "not_found", retry: "never", httpStatus: 404 });
-  });
+  
 
   it("reads only the strict V2 Note projection and rejects a legacy response", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
@@ -1960,68 +1274,9 @@ describe("DesktopGateway", () => {
     expect(patchCalls).toBe(2);
   });
 
-  it("consumes only SSE sequence ids and never exposes the event payload", async () => {
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-      const url = String(input);
-      if (url.endsWith("/challenge")) return trustResponse(JSON.parse(String(init?.body)) as Record<string, unknown>);
-      if (url.endsWith("/health")) return healthResponse();
-      if (url.endsWith("/v2/learning-runs/00000000-0000-4000-8000-000000000001")) {
-        return new Response(JSON.stringify(V2_SNAPSHOT), { status: 200, headers: { "Content-Type": "application/json" } });
-      }
-      if (url.includes("/learning-runs/00000000-0000-4000-8000-000000000001/events?snapshotId=00000000-0000-4000-8000-000000000002")) {
-        const body = new ReadableStream<Uint8Array>({
-          start(controller) {
-            controller.enqueue(new TextEncoder().encode("id: 4\nevent: learning_assessment.queued\ndata: {\"answer\":\"must-not-cross-ipc\"}\n\n"));
-            controller.close();
-          },
-        });
-        return new Response(body, { status: 200, headers: { "Content-Type": "text/event-stream" } });
-      }
-      throw new Error(`unexpected URL ${url}`);
-    });
+  
 
-    const gateway = new DesktopGateway(environment());
-    await gateway.connect();
-    let stop: (() => void) | undefined;
-    let resolveReceived!: (sequence: number) => void;
-    const received = new Promise<number>((resolve) => { resolveReceived = resolve; });
-    stop = await gateway.watchLearningRunEvents(V2_SNAPSHOT.runId, (sequence) => {
-      resolveReceived(sequence);
-      stop?.();
-    });
-    await expect(received).resolves.toBe(4);
-    stop?.();
-  });
-
-  it("watches Card Generation SSE through the main-only stream endpoint", async () => {
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-      const url = String(input);
-      if (url.endsWith("/challenge")) return trustResponse(JSON.parse(String(init?.body)) as Record<string, unknown>);
-      if (url.endsWith("/health")) return healthResponse();
-      if (url.endsWith("/v2/card-generation-runs/00000000-0000-4000-8000-000000000001/events/stream")) {
-        const body = new ReadableStream<Uint8Array>({
-          start(controller) {
-            controller.enqueue(new TextEncoder().encode("id: 9\nevent: generation.progress\ndata: {\"candidate\":\"must-not-cross-ipc\"}\n\n"));
-            controller.close();
-          },
-        });
-        return new Response(body, { status: 200, headers: { "Content-Type": "text/event-stream" } });
-      }
-      throw new Error(`unexpected URL ${url}`);
-    });
-
-    const gateway = new DesktopGateway(environment());
-    await gateway.connect();
-    let stop: (() => void) | undefined;
-    let resolveReceived!: (sequence: number) => void;
-    const received = new Promise<number>((resolve) => { resolveReceived = resolve; });
-    stop = await gateway.watchCardGenerationEvents(V2_SNAPSHOT.runId, (sequence) => {
-      resolveReceived(sequence);
-      stop?.();
-    });
-    await expect(received).resolves.toBe(9);
-    stop?.();
-  });
+  
 
   describe("source capture", () => {
     const WORKSPACE_ID = "00000000-0000-4000-8000-0000000000a1";
@@ -2193,91 +1448,7 @@ describe("DesktopGateway", () => {
     });
   });
 
-  describe("companion learning-run context bridge", () => {
-    const runId = "00000000-0000-4000-8000-000000000301";
-    const snapshotId = "00000000-0000-4000-8000-000000000302";
-    const taskId = "00000000-0000-4000-8000-000000000303";
-    const pageInstanceId = "00000000-0000-4000-8000-000000000304";
-    const contextRevision = "a".repeat(64);
-    const context = {
-      version: 1,
-      pageKind: "learning_run",
-      sharing: "page_registered",
-      runId,
-      snapshotId,
-      taskId,
-      requestedCapability: "none",
-      contextRevision,
-      groundedTutorGrant: null,
-    } as const;
-    const grant = {
-      version: 1,
-      grantId: "00000000-0000-4000-8000-000000000305",
-      userId: "00000000-0000-4000-8000-000000000306",
-      workspaceId: "00000000-0000-4000-8000-000000000307",
-      pageInstanceId,
-      pageKind: "learning_run",
-      capability: "grounded_tutor",
-      runId,
-      snapshotId,
-      taskId,
-      contextRevision,
-      permissionSnapshotHash: "b".repeat(64),
-      issuedAt: "2026-09-18T08:00:00.000Z",
-      expiresAt: "2026-09-18T08:05:00.000Z",
-      signature: "c".repeat(64),
-    } as const;
-
-    it("reuses the existing context and single-use grant HTTP routes without changing their bodies", async () => {
-      const calls: Array<{ url: string; method: string; body?: unknown }> = [];
-      vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-        const url = String(input);
-        if (url.endsWith("/challenge")) return trustResponse(JSON.parse(String(init?.body)) as Record<string, unknown>);
-        if (url.endsWith("/health")) return healthResponse();
-        if (url.endsWith(`/learning-runs/${runId}/companion-context`)) {
-          calls.push({ url, method: init?.method ?? "GET" });
-          return new Response(JSON.stringify(context), { status: 200 });
-        }
-        if (url.endsWith(`/learning-runs/${runId}/companion-context-grants`)) {
-          calls.push({ url, method: init?.method ?? "GET", body: JSON.parse(String(init?.body)) });
-          return new Response(JSON.stringify(grant), { status: 200 });
-        }
-        throw new Error(`unexpected URL ${url}`);
-      });
-
-      const gateway = new DesktopGateway(environment());
-      await gateway.connect();
-      await expect(ns_companion.getCompanionLearningRunContext(gateway.gatewayTransport, runId)).resolves.toEqual(context);
-      await expect(ns_companion.createCompanionLearningRunContextGrant(gateway.gatewayTransport, runId, {
-        version: 1,
-        pageInstanceId,
-        taskId,
-        contextRevision,
-      })).resolves.toEqual(grant);
-      expect(calls).toEqual([
-        { url: `http://127.0.0.1:4000/learning-runs/${runId}/companion-context`, method: "GET" },
-        {
-          url: `http://127.0.0.1:4000/learning-runs/${runId}/companion-context-grants`,
-          method: "POST",
-          body: { version: 1, pageInstanceId, taskId, contextRevision },
-        },
-      ]);
-    });
-
-    it("fails closed when a context response does not match the shared schema", async () => {
-      vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-        const url = String(input);
-        if (url.endsWith("/challenge")) return trustResponse(JSON.parse(String(init?.body)) as Record<string, unknown>);
-        if (url.endsWith("/health")) return healthResponse();
-        return new Response(JSON.stringify({ ...context, requestedCapability: "grounded_tutor" }), { status: 200 });
-      });
-
-      const gateway = new DesktopGateway(environment());
-      await gateway.connect();
-      await expect(ns_companion.getCompanionLearningRunContext(gateway.gatewayTransport, runId))
-        .rejects.toMatchObject({ code: "unsupported_contract" } satisfies Partial<DesktopGatewayFailure>);
-    });
-  });
+  
 });
 
 /**
@@ -2987,7 +2158,7 @@ describe("DesktopGateway · 伴星「这一页」的租约每 10 秒要真续上
   const CONTEXT_ID = "55555555-5555-4555-8555-555555555555";
   const PAGE = {
     routeRef: { kind: "home" },
-    pageKind: "today",
+    pageKind: "other",
     entityRefs: [],
     interactionState: "idle",
     capabilityHints: [],

@@ -11,7 +11,7 @@
 
 import { z } from "zod";
 import { isCompanionAutonomousTool } from "../../companion/companion-autonomy.ts";
-import { companionEditedNoteV1Schema, companionWrittenAnnotationV1Schema } from "./companion-note-authoring-contracts.ts";
+import { companionCreatedNoteV1Schema, companionEditedNoteV1Schema, companionWrittenAnnotationV1Schema } from "./companion-note-authoring-contracts.ts";
 
 export const COMPANION_AGENT_CONTRACT_VERSION = 1 as const;
 // Counts are observations, not task-completion rules. Null means no default
@@ -185,6 +185,9 @@ export const companionAgentToolEventV1Schema = z.object({
   safeLabel: z.string().min(1).max(240),
   proposalId: z.string().uuid().optional(),
   safeSummary: z.string().max(240).optional(),
+  /** A durable receipt, published as soon as the save commits, before the final reply. */
+  noteCreated: companionCreatedNoteV1Schema.optional(),
+  occurredAt: z.string().datetime({ offset: true }).optional(),
   noteEdit: companionEditedNoteV1Schema.optional(),
   noteAnnotation: companionWrittenAnnotationV1Schema.optional(),
   noteEditTarget: z.object({ noteId: z.string().uuid(), startBlock: z.number().int().nonnegative(), endBlock: z.number().int().nonnegative() }).strict().optional(),
@@ -242,14 +245,7 @@ export type CompanionAgentCapabilitySnapshotV1 = z.infer<
  * （它是 39d #16 剩下的那半步，要 API 侧在自己进程里确认同一份提案，不能拿"我权限高"
  * 去绕开唯一的那个执行处）。
  */
-export const COMPANION_PROPOSAL_EXECUTED_TOOLS: ReadonlySet<string> = new Set([
-  "companion_start_learning",
-  "companion_resume_learning",
-  "companion_pause_learning",
-  "companion_switch_task_variant",
-  "companion_request_hint",
-  "companion_defer_review",
-]);
+export const COMPANION_PROPOSAL_EXECUTED_TOOLS: ReadonlySet<string> = new Set([]);
 
 export function canUseCompanionAgentTool(
   permission: CompanionAgentPermissionLevel,

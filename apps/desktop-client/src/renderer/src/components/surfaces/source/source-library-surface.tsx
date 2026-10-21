@@ -589,19 +589,14 @@ function SourceLibraryContent({ scope }: { readonly scope: number }) {
                   <span className={source.noteCount > 0 ? "tag green" : "tag"}>
                     <BookOpen size={13} aria-hidden="true" />{source.noteCount > 0 ? `已生成 ${source.noteCount} 篇笔记` : "还没生成笔记"}
                   </span>
-                  {/* 「笔记已出卡」（复盘 #18 后半）：服务端按 sourceId 聚合出批次与
-                      正式目标数，界面不猜。三档互斥，一眼能分清"还没出笔记""笔记出了但
-                      还没出卡""已经有卡可以答"。 */}
+                  {/* 「笔记已出卡」：服务端按 sourceId 聚合活卡数，界面不猜。
+                      两档互斥，一眼能分清"笔记出了但还没出卡""已经有卡可以答"。 */}
                   {source.noteCount > 0 ? (
-                    <>
-                      <span className={source.cardProgress.activeObjectives > 0 ? "tag green" : "tag"}>
-                        {source.cardProgress.activeObjectives > 0
-                          ? `已出 ${source.cardProgress.activeObjectives} 张学习卡`
-                          : source.cardProgress.pendingReviewRuns > 0
-                            ? `${source.cardProgress.pendingReviewRuns} 批学习卡待审核`
-                            : "还没出学习卡"}
-                      </span>
-                    </>
+                    <span className={source.cardProgress.activeCards > 0 ? "tag green" : "tag"}>
+                      {source.cardProgress.activeCards > 0
+                        ? `已出 ${source.cardProgress.activeCards} 张学习卡`
+                        : "还没出学习卡"}
+                    </span>
                   ) : null}
                   <time dateTime={source.updatedAt} title={formatSourceStamp(source.updatedAt)}>{formatRelative(source.updatedAt)}</time>
                 </span>

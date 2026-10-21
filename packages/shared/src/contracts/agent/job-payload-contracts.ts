@@ -84,6 +84,22 @@ export type NoteExpansionGenerateJobPayload = {
   conversationId?: string;
 };
 
+/** Plan 57: one note version → one learning card, 4–8 fixed-type questions. */
+export type NoteLearningCardGenerateJobPayload = {
+  cardId: string;
+  noteId: string;
+  noteVersionId: string;
+  cardGenerationId: string;
+  questionCount?: 4 | 6 | 8;
+};
+
+/** Plan 57: companion grading for subjective/operation answers + the whole-card summary. */
+export type NoteLearningCardGradeJobPayload = {
+  cardId: string;
+  attemptId: string;
+  summaryOnly?: boolean;
+};
+
 /** 已强类型化的作业类型 → payload 契约映射（目前只有非 companion 的 parse_source）。 */
 export type TypedJobPayloadByType = {
   [JobType.PARSE_SOURCE]: ParseSourceJobPayload;
@@ -92,6 +108,8 @@ export type TypedJobPayloadByType = {
   [JobType.NOTE_ANNOTATION_EXPLAIN]: NoteAnnotationExplainJobPayload;
   [JobType.NOTE_DYNAMIC_ARTIFACT_GENERATE]: NoteDynamicArtifactGenerateJobPayload;
   [JobType.NOTE_EXPANSION_GENERATE]: NoteExpansionGenerateJobPayload;
+  [JobType.NOTE_LEARNING_CARD_GENERATE]: NoteLearningCardGenerateJobPayload;
+  [JobType.NOTE_LEARNING_CARD_GRADE]: NoteLearningCardGradeJobPayload;
 };
 
 export type TypedJobType = keyof TypedJobPayloadByType;
@@ -179,6 +197,43 @@ export function readNoteMindMapGenerateJobPayload(
     return value;
   };
   return { noteId: readUuid("noteId"), noteVersionId: readUuid("noteVersionId"), requestId: readUuid("requestId") };
+}
+
+export function readNoteLearningCardGenerateJobPayload(
+  payload: Record<string, unknown> | null | undefined,
+): NoteLearningCardGenerateJobPayload {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new JobPayloadContractError(JobType.NOTE_LEARNING_CARD_GENERATE, "payload must be a JSON object");
+  }
+  const uuid = (key: keyof NoteLearningCardGenerateJobPayload) => {
+    const value = payload[key];
+    if (typeof value !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
+      throw new JobPayloadContractError(JobType.NOTE_LEARNING_CARD_GENERATE, `payload.${key} must be a UUID`);
+    }
+    return value;
+  };
+  const questionCount = payload.questionCount ?? 6;
+  if (questionCount !== 4 && questionCount !== 6 && questionCount !== 8) {
+    throw new JobPayloadContractError(JobType.NOTE_LEARNING_CARD_GENERATE, "payload.questionCount must be 4, 6 or 8");
+  }
+  return { cardId: uuid("cardId"), noteId: uuid("noteId"), noteVersionId: uuid("noteVersionId"), cardGenerationId: uuid("cardGenerationId"), questionCount };
+}
+
+export function readNoteLearningCardGradeJobPayload(
+  payload: Record<string, unknown> | null | undefined,
+): NoteLearningCardGradeJobPayload {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new JobPayloadContractError(JobType.NOTE_LEARNING_CARD_GRADE, "payload must be a JSON object");
+  }
+  const uuid = (key: "cardId" | "attemptId") => {
+    const value = payload[key];
+    if (typeof value !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
+      throw new JobPayloadContractError(JobType.NOTE_LEARNING_CARD_GRADE, `payload.${key} must be a UUID`);
+    }
+    return value;
+  };
+  if (payload.summaryOnly !== undefined && typeof payload.summaryOnly !== "boolean") throw new JobPayloadContractError(JobType.NOTE_LEARNING_CARD_GRADE, "payload.summaryOnly must be a boolean");
+  return { cardId: uuid("cardId"), attemptId: uuid("attemptId"), ...(payload.summaryOnly === true ? { summaryOnly: true } : {}) };
 }
 
 export function readNoteAnnotationExplainJobPayload(

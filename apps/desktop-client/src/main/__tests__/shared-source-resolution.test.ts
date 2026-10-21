@@ -83,7 +83,7 @@ describe("桌面测试与构建解析同一份 @astella/shared", () => {
     // barrel 与子路径各至少一条
     // barrel：`@astella/shared` 本身；子路径：`@astella/shared/<name>`
     expect(sharedAlias.some((a) => a.find.test("@astella/shared"))).toBe(true);
-    expect(sharedAlias.some((a) => a.find.test("@astella/shared/learning-run-v2-contracts"))).toBe(true);
+    expect(sharedAlias.some((a) => a.find.test("@astella/shared/note-learning-card-contracts"))).toBe(true);
     // 通配那条已被逐条精确匹配取代：带 '/' 的子路径（./db-schema/note）在通配下会拼错
     expect(sharedAlias.every((a) => !a.find.source.includes("(.*)"))).toBe(true);
     // 全部落在 packages/shared/src 之下，且**文件真实存在**

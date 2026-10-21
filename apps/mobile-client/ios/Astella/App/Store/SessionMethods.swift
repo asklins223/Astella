@@ -151,25 +151,34 @@ extension AppStore {
     }
 
     func restoreSession() async {
+        guard let session = api.token else { return }
+        sessionRestoreGeneration += 1
+        let restoreGeneration = sessionRestoreGeneration
         let arriving = profile == nil
         if arriving { startupLoadState = .loading }
         isLoading = true
         defer {
-            isLoading = false
-            if arriving, isAuthenticated {
-                startupLoadState = profile == nil ? .failed : .ready
+            if restoreGeneration == sessionRestoreGeneration, session == api.token {
+                isLoading = false
+                if arriving, isAuthenticated {
+                    startupLoadState = profile == nil ? .failed : .ready
+                }
             }
         }
         do {
             let raw = try await api.request("/auth/me") as? [String: Any] ?? [:]
+            guard restoreGeneration == sessionRestoreGeneration, session == api.token else { return }
             profile = UserProfile(raw)
             loadDevicePreferences(for: profile?.userId ?? "")
             loadRecentNotePreference()
             await loadConversation()
+            guard restoreGeneration == sessionRestoreGeneration, session == api.token else { return }
             await loadNotes()
+            guard restoreGeneration == sessionRestoreGeneration, session == api.token else { return }
             // 会话恢复成功后，后台校验/下载伴星 Live2D 模型（失败走 PNG 降级）。
             startCompanionModelDownload()
         } catch {
+            guard restoreGeneration == sessionRestoreGeneration, session == api.token else { return }
             if (error as? MobileAPIError)?.status == 401 {
                 logout()
             } else {
@@ -179,7 +188,17 @@ extension AppStore {
     }
 
     func logout() {
+        sessionRestoreGeneration += 1
+        accountSettingsGeneration += 1
+        conversationLoadGeneration += 1
+        messageRequestGeneration += 1
+        notesRequestGeneration += 1
+        noteRequestGeneration += 1
+        annotationRequestGeneration += 1
+        annotationOperationGeneration += 1
         startupLoadState = .idle
+        isLoading = false
+        isAccountBusy = false
         voicePlayback.stop()
         intakeGeneration += 1
         draft = ""
@@ -188,6 +207,7 @@ extension AppStore {
         selectionRunId = nil; streamingRunId = nil
         pendingSelection = nil
         selectionRequestTitle = nil
+        isSending = false
         realtime.stop()
         KeychainTokenStore.delete()
         api.token = nil
@@ -195,9 +215,21 @@ extension AppStore {
         conversationId = nil
         messages = []
         notes = []
+        notesNextCursor = nil
+        notesQuery = ""
+        notesErrorMessage = nil
+        noteDocument = nil
+        noteAnnotations = []
+        noteErrorMessage = nil
+        annotationErrorMessage = nil
+        annotationStatus = nil
+        isAnnotationBusy = false
         recentNoteId = nil
-        runs = []
+        resetProcessPresentation()
         pendingNoteContext = nil
+        pendingDiaryReference = nil
+        pendingNoteReferenceID = nil
+        visibleNoteId = nil
         workspaces = []
         aiSettings = nil
         companionPermissionLevel = nil
@@ -205,6 +237,7 @@ extension AppStore {
         accountNotice = nil
         streamingText = ""
         selectedImage = nil
+        attachmentRevision = UUID()
         voiceArtifactId = nil
         errorMessage = nil
     }

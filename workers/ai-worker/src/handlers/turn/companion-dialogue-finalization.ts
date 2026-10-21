@@ -10,9 +10,8 @@ import { withWorkerWorkspaceTransaction } from "../../db.ts";
 import { CompanionContextChangedError } from "../../lib/non-retryable-errors.ts";
 import { lockJobLease } from "../../lib/job-lease.ts";
 import { assertCompanionContextSourcesCurrent } from "../context/companion-context-sources.ts";
-import { assessAnswerExposure, isFormalAnswerLivePage, recordCompanionAnswerExposure } from "../agent/companion-answer-exposure.ts";
 import { enqueueSystemEventDelivery } from "../agent/companion-delivery-write.ts";
-import { buildFinalCuePayload, companionAssistantMessageKind, GROUNDED_TUTOR_COMPANION_PROMPT } from "./companion-dialogue-content.ts";
+import { buildFinalCuePayload, companionAssistantMessageKind, } from "./companion-dialogue-content.ts";
 import { persistFailedPartial } from "./companion-dialogue-failure-retention.ts";
 import {
   insertStreamEvent,
@@ -21,15 +20,11 @@ import {
   enqueueCompanionMemoryJobs,
   enqueueCompanionFollowupSuggestions,
   insertCompanionFinalAssistantMessage,
-  GROUNDED_TUTOR_PROMPT_ID,
-  computeGroundedTutorPromptSha256,
   type CompanionDialogueHandlerContext,
   type ReadContext,
 } from "./companion-dialogue-store.ts";
 import type { ContextAssemblyResult } from "../context/companion-context-orchestrator.ts";
 import type { CompanionAgentLoopResult } from "./companion-step-plan.ts";
-
-const groundedTutorPromptSha256 = computeGroundedTutorPromptSha256(GROUNDED_TUTOR_COMPANION_PROMPT);
 
 /**
  * 阶段 3c：终态事务——assistant 消息落库、assistant.final/character.cue 事件、run 终态、
@@ -187,8 +182,8 @@ export async function finalizeCompanionDialogueTurn(args: {
               waiting_proposal_id = NULL,
               provider_id = ${provider.id},
               model_id = ${provider.modelId},
-              prompt_version = ${read.groundedTutorContext ? GROUNDED_TUTOR_PROMPT_ID : COMPANION_PERSONA_V14_PROMPT_ID},
-              prompt_hash = ${read.groundedTutorContext ? groundedTutorPromptSha256 : COMPANION_PERSONA_V14_SHA256},
+              prompt_version = ${COMPANION_PERSONA_V14_PROMPT_ID},
+              prompt_hash = ${COMPANION_PERSONA_V14_SHA256},
               finished_at = now()
           WHERE id = ${read.runId}
             AND status IN ('accepted', 'running')
@@ -217,39 +212,6 @@ export async function finalizeCompanionDialogueTurn(args: {
         await recoverCompanionRunFailureSpanInTransaction(tx, failureSpanScope, "state");
         if (voiceSegmentsWritten) {
           await recoverCompanionRunFailureSpanInTransaction(tx, failureSpanScope, "tts");
-        }
-
-        // P5（39b §9.7 / 39d W2-6）：**她自己是泄露源时由服务端记账**。写入门不在她嘴里
-        // （她没有一个"我泄露了"的工具），判据是她这句话与本题题面/答案的连续重合，
-        // 幂等用现成唯一键 `companion-turn:<本轮 runId>`——job 重试不会记成两次。
-        // 两个条件都要：①服务端确有正式题目在进行（拿到冻结的那一版身份）；
-        // ②这一轮问的时候人在作答页（实时那一行的 interaction_state）。
-        if (read.formalAnswerTarget
-          && isFormalAnswerLivePage(read.livePageView, read.formalAnswerTarget.runId)) {
-          const exposure = assessAnswerExposure({
-            replyText: assistantText,
-            taskPrompt: read.formalAnswerTarget.taskPrompt,
-            publicSummary: read.formalAnswerTarget.publicSummary,
-            canonicalAnswer: read.formalAnswerTarget.canonicalAnswer,
-          });
-          if (exposure) {
-            const recorded = await recordCompanionAnswerExposure(tx, {
-              workspaceId: ctx.workspaceId,
-              userId: read.userId,
-              companionRunId: read.runId,
-              target: read.formalAnswerTarget,
-              kind: exposure.kind,
-            });
-            // 记不上（撞幂等键）与记上了一样要留痕：这条读数是"绕过有没有真的被堵住"的唯一证据。
-            logger.info(
-              {
-                runId: read.runId, kind: exposure.kind,
-                overlapChars: exposure.overlapChars, promptCoverage: Number(exposure.promptCoverage.toFixed(2)),
-                recorded,
-              },
-              "companion answer exposure ledger",
-            );
-          }
         }
 
         const [publishedBeforeFinal] = read.initiativeInput ? await tx.execute(sql`SELECT 1 FROM companion_run_utterances WHERE run_id=${read.runId} LIMIT 1`) : [];

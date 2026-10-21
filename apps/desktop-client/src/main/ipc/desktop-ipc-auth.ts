@@ -1,354 +1,15 @@
-import {
-  setPersonalRelationDecisionV2ResultSchema,
-  setPersonalRelationDecisionV2Schema,
-} from "@astella/shared/personal-relation-decision-rules-v2";
-import * as ns_source from "../gateway/desktop-gateway-ns-source";
-import { registerWorkspaceChannels, authUpdateProfileInputSchema, authAvatarUploadInputSchema, authAvatarGetInputSchema, authLeaveWorkspaceInputSchema, inviteCreateInputSchema, inviteRevokeInputSchema, memberRemoveInputSchema, revokeOutputSchema, memberRemoveOutputSchema } from "./desktop-ipc-workspace";
+import * as ns_source from "../gateway/desktop-gateway-ns-source";import { authUpdateProfileInputSchema, authAvatarUploadInputSchema, authAvatarGetInputSchema, authLeaveWorkspaceInputSchema } from "./desktop-ipc-workspace";
 import * as ns_note from "../gateway/desktop-gateway-ns-note";
 import * as ns_companion from "../gateway/desktop-gateway-ns-companion";
-import * as ns_learning from "../gateway/desktop-gateway-ns-learning";
 import * as ns_workspace from "../gateway/desktop-gateway-ns-workspace";
 import * as ns_auth from "../gateway/desktop-gateway-ns-auth";
-import * as ns_runtime from "../gateway/desktop-gateway-ns-runtime";
-import { noteReflectionPageV1Schema, noteReflectionCommandV1Schema, noteReflectionWriteResultV1Schema } from "@astella/shared/note-learning-reflection-contracts";
-import { noteAnnotationPageV1Schema, noteAnnotationCommandV1Schema, noteAnnotationWriteResultV1Schema, createNoteAnnotationTaskV1Schema, noteAnnotationLatestTaskQueryV1Schema, noteAnnotationLatestTaskV1Schema, noteAnnotationTaskV1Schema } from "@astella/shared/note-annotation-contracts";
-import {
-  createNoteOverviewTaskV1Schema,
-  noteOverviewLatestTaskQueryV1Schema,
-  noteOverviewLatestTaskV1Schema,
-  noteOverviewPageV1Schema,
-  noteOverviewTaskV1Schema,
-} from "@astella/shared/note-overview-contracts";
-import { noteRecallActionV1Schema, noteRecallActionResultV1Schema, noteRecallPageV1Schema, noteRecallStartInputV1Schema, noteRecallStartResultV1Schema } from "@astella/shared/note-recall-contracts";
-import {
-  createNoteExpansionTaskV1Schema,
-  confirmNoteExpansionTaskV1Schema,
-  noteExpansionBatchWriteResultV1Schema,
-  noteExpansionLatestTaskQueryV1Schema,
-  noteExpansionLatestTaskV1Schema,
-  noteExpansionListQueryV1Schema,
-  noteExpansionPageV1Schema,
-  noteExpansionReviewV1Schema,
-  noteExpansionTaskV1Schema,
-} from "@astella/shared/note-expansion-contracts";
-import {
-  createNoteDynamicArtifactTaskV1Schema,
-  noteLearningArtifactPageV1Schema,
-  noteLearningArtifactTaskListQueryV1Schema,
-  noteLearningArtifactTaskPageV1Schema,
-  noteLearningArtifactTaskV1Schema,
-} from "@astella/shared/note-learning-artifact-contracts";
-import { BrowserWindow, clipboard, dialog, ipcMain, shell, type IpcMainInvokeEvent, type WebContents } from "electron";
-import { randomBytes } from "node:crypto";
-import { createWriteStream } from "node:fs";
-import { rename, rm, stat, writeFile } from "node:fs/promises";
-import { basename } from "node:path";
-import { Readable } from "node:stream";
-import { pipeline } from "node:stream/promises";
-import { z } from "zod";
-import {
-  DESKTOP_API_SERVICE_ID,
-  DESKTOP_IPC_CHANNELS,
-  DESKTOP_IPC_CONTRACT_VERSION,
-  DESKTOP_IPC_SCHEMA_REVISION,
-  type ActionCapability,
-  apiHealthSnapshotSchema,
-  apiConnectionStateSchema,
-  authSurfaceManifestResultV1Schema,
-  capabilityProjectionSchema,
-  companionBridgeStateV1Schema,
-  clipboardReadLinksResultSchema,
-  isWebLinkUrl,
-  shellOpenExternalRequestV1Schema,
-  shellOpenExternalResultV1Schema,
-  desktopContractSnapshotSchema,
-  desktopNamespaceM2Values,
-  desktopRouteKindM2Values,
-  desktopRouteSchema,
-  extractCandidateLinks,
-  gatewayEventSchema,
-  navigationSnapshotSchema,
-  sessionContextSchema,
-  workspaceContextSchema,
-  workspaceSummarySchema,
-  type AstellaDesktopApiM2,
-  type ApiHealthSnapshotV1,
-  type DesktopContractSnapshotV1,
-  type DesktopRouteV1,
-  type GatewayErrorCode,
-  type GatewayEventPayloadM2,
-  type GatewayEventV1,
-  type GatewayResultV1,
-  type NavigationEntryV1,
-  type NavigationSnapshotV1,
-  type RequestMetaV1,
-  type SessionContextV1,
-  type SubscriptionTopicM2,
-  type WindowStateSnapshotV1,
-  desktopCreateLearningRunV2RequestSchema,
-  desktopCreateCardGenerationRunRequestV2Schema,
-  desktopCandidateReviewRequestV2Schema,
-  desktopRevealCandidateRequestV2Schema,
-  desktopCardGenerationActivationSelectionV1Schema,
-  desktopLearningRunAbandonRequestV2Schema,
-  desktopLearningRunActionRequestV2Schema,
-  desktopPutLearningTaskDraftV2RequestSchema,
-  desktopRecordLearningRunActivityLeaseRequestV2Schema,
-  recordLearningRunActivityLeaseOutputV2Schema,
-  desktopSubmitTaskArtifactV2Schema,
-  desktopNoteSaveRequestV1Schema,
-  commandIdSchema,
-  emailSchema,
-  gatewayErrorSchema,
-  inviteTokenSchema,
-  isoTimestampSchema,
-  navigationReasonSchema,
-  newPasswordSchema,
-  requestIdSchema,
-  requestMetaSchema,
-  runtimeSnapshotSchema,
-  secretInputSchema,
-  subscriptionIdSchema,
-  subscriptionTopicM2Schema,
-  positiveIntSchema,
-  uuidSchema,
-  windowStateSnapshotV1Schema,
-  aiDataPolicyV1Schema,
-  workspaceAiSettingsV1Schema,
-  workspaceExportResultV1Schema,
-  // 旧版设置页回补（2026-09-18）。
-  AVATAR_MAX_BYTES,
-  authProfileResultV1Schema,
-  avatarObjectKeySchema,
-  avatarUploadResultV1Schema,
-  avatarGetResultV1Schema,
-  inviteCreatedV1Schema,
-  inviteListResultV1Schema,
-  memberListResultV1Schema,
-  NOTE_DOC_BLOCKS_MAX_COUNT,
-  noteDocStateResultV1Schema,
-  noteDocWriteResultV1Schema,
-  noteDocPresenceResultV1Schema,
-  noteDocDraftSaveResultV1Schema,
-  noteDocDraftGetResultV1Schema,
-  noteDocDraftClearResultV1Schema,
-  type NoteDocDraftSaveResultV1,
-  type NoteDocDraftGetResultV1,
-  type NoteDocDraftClearResultV1,
-  type NoteDocWriteResultV1,
-  renameWorkspaceResultV1Schema,
-  dissolvePreviewResultV1Schema,
-  dissolveWorkspaceResultV1Schema,
-  transferWorkspaceOwnershipResultV1Schema,
-  createWorkspaceResultV1Schema,
-  searchDriftResultV1Schema,
-  searchReindexResultV1Schema,
-  type DesktopRouteKindM2,
-  NOTE_DOC_UPDATE_MAX_CHARS,
-} from "@astella/shared/desktop-ipc-contracts";
-import {
-  NOTE_DOC_PRESENCE_MAX_CHARS,
-  type NoteDocWatchHandle,
-} from "../note-doc/note-doc-transport.ts";
-import { mainPageContextInputV2Schema } from "@astella/shared/companion-bridge-contracts";
-import {
-  desktopSourceListPageSchema,
-  desktopSourceCreateRequestSchema,
-  desktopSourceDetailSchema,
-  desktopSourceNotesPageSchema,
-  desktopSourceUpdateRequestSchema,
-  desktopSourceNoteResultSchema,
-  desktopSourceCreateResultV1Schema,
-  desktopSourceArchiveResultSchema,
-  desktopSourceRestoreResultSchema,
-  desktopSourceReparseResultSchema,
-  desktopAiAuditPageV1Schema,
-  desktopNoteListPageSchema,
-  desktopNoteCreateRequestSchema,
-  desktopNoteMutationResultSchema,
-  desktopNoteVersionListSchema,
-  desktopSearchPageSchema,
-} from "@astella/shared/desktop-surface-contracts";
-import { objectiveListPageV3Schema, learningObjectiveSurfaceV3Schema } from "@astella/shared/learning-objective-surface-contracts";
-import {
-  noteLearningRoundHistoryPageV1Schema,
-  noteLearningRoundPersonalHistoryPageV1Schema,
-  noteLearningRoundV1Schema,
-  noteLearningRoundViewV1Schema,
-  ROUND_HISTORY_MAX_LIMIT_V1,
-  roundDrivingQuestionSourceV1Schema,
-  roundTeachingViewV1Schema,
-} from "@astella/shared/note-learning-round-contracts";
-import { noteRouteCoverageV1Schema } from "@astella/shared/note-route-coverage-v2";
-import {
-  recordRecallSourceRevealRequestV1Schema,
-  recordRecallSourceRevealResultV1Schema,
-} from "@astella/shared/recall-waiting-v2-contracts";
-import { understandingTopologySnapshotV3Schema } from "@astella/shared/note-deepening-contracts";
-import { noteDeepeningV3Schema } from "@astella/shared/note-deepening-v3-contracts";
-import { todayActivityV1Schema } from "@astella/shared/activity-surface-contracts";
-import { allWorkspacesStatsOverviewSchema } from "@astella/shared/stats-overview-contracts";
-import {
-  getLearningRunResultResponseV2Schema,
-  learningRunTargetRevealV2Schema,
-  learningRunActionResponseV2Schema,
-  learningRunPublicSnapshotV2Schema,
-  learningRunReturnContractV2Schema,
-  learningTaskDraftV2Schema,
-  learningTaskDraftWriteReceiptV2Schema,
-  submitTaskArtifactReceiptV2Schema,
-} from "@astella/shared/learning-run-v2-contracts";
-import { reviewDeferRequestV2Schema, reviewDeferResultV2Schema, reviewQueueV2Schema } from "@astella/shared/review-queue-v2-contracts";
-import {
-  noteReviewSubscriptionsV2Schema,
-  homeSuggestionWireV2Schema,
-  homeSuggestionActionCommandV2Schema,
-  homeSuggestionActionResultV2Schema,
-  todayBatchOptionCommandV2Schema,
-  todayBatchOptionResultV2Schema,
-  objectiveHoldCommandV2Schema,
-  objectiveHoldResultV2Schema,
-  objectiveResumeCommandV2Schema,
-  objectiveResumeResultV2Schema,
-  reviewSubscriptionCommandV2Schema,
-  reviewSubscriptionResultV2Schema,
-} from "@astella/shared/review-queue-v2-contracts";
-import {
-  openAssessmentDisputeCommandV2Schema,
-  openAssessmentDisputeResultV2Schema,
-  closeAssessmentDisputeCommandV2Schema,
-  closeAssessmentDisputeResultV2Schema,
-  supplementAssessmentDisputeCommandV2Schema,
-  assessmentDisputeEnvelopeV2Schema,
-} from "@astella/shared/assessment-dispute-rules-v2";
-import { roomProjectionV1Schema } from "@astella/shared/room-projection-contracts";
-import {
-  companionAccountPatchSchema,
-  companionAccountStateV1Schema,
-  companionAnswerModePreferenceV1Schema,
-  companionVoicePreferenceV1Schema,
-  companionOverviewSchema,
-  onboardingTransitionRequestSchema,
-  onboardingTransitionResponseSchema,
-} from "@astella/shared/companion-shell-contracts";
-import { ttsEngineV1Schema } from "@astella/shared/tts-voice-catalog";
-import {
-  companionHomeProjectionV1Schema,
-  companionRoomProfilePatchV1Schema,
-  companionRoomProfileV1Schema,
-} from "@astella/shared/companion-home-contracts";
-import {
-  companionVoiceSpeakRequestV1Schema,
-  companionVoiceSpeakResultV1Schema,
-  companionVoiceSpeakSegmentRequestV2Schema,
-  companionVoicePlaybackOutcomeRequestV1Schema,
-  companionVoicePlaybackOutcomeResultV1Schema,
-} from "@astella/shared/companion-voice-contracts";
-import {
-  companionChatEnsureRequestV1Schema,
-  companionChatEnsureResultV1Schema,
-  companionChatListMessagesRequestV1Schema,
-  companionChatListMessagesResultV1Schema,
-  companionChatSendTurnRequestV1Schema,
-  companionChatSendTurnResultV1Schema,
-  companionChatProposalGetRequestV1Schema,
-  companionChatProposalGetResultV1Schema,
-  companionChatProposalDecideRequestV1Schema,
-  companionChatProposalDecideResultV1Schema,
-  companionAgentRoutesListRequestV1Schema,
-  companionAgentRoutesListResultV1Schema,
-  companionChatCancelRunRequestV1Schema,
-  companionChatCancelRunResultV1Schema,
-  companionRunNodesListRequestV1Schema,
-  companionRunNodesListResultV1Schema,
-} from "@astella/shared/companion-chat-desktop-contracts";
-import {
-  companionGroundedTutorGrantV1Schema,
-  companionLearningContextV1Schema,
-  companionLearningRunContextV1Schema,
-  createCompanionLearningRunContextGrantRequestV1Schema,
-} from "@astella/shared/companion-conversation-contracts";
-import {
-  sourceImageGetRequestV1Schema,
-} from "@astella/shared/source-image-contracts";
-import {
-  noteImageUploadRequestV1Schema,
-  noteImageUploadResultV1Schema,
-} from "@astella/shared/note-image-upload-contracts";
-import {
-  companionDailyDateV1Schema,
-  companionDailyMonthValueV1Schema,
-  companionDailySummaryV1Schema,
-  companionDailyMonthV1Schema,
-  companionActivityAckRequestV1Schema,
-  companionActivityDeliveryV1Schema,
-  companionActivityTimelineV1Schema,
-  companionAuditDeleteResultV1Schema,
-  companionExportKindV1Schema,
-  companionExportResultV1Schema,
-  companionHistoryClearResultV1Schema,
-  companionHistoryPageV1Schema,
-  companionHistoryQueryV1Schema,
-  companionHistorySearchQueryV1Schema,
-  companionHistorySearchV1Schema,
-  companionMemoryItemV1Schema,
-  companionMemoryClearResultV1Schema,
-  companionMemoryConflictListV1Schema,
-  companionMemoryConflictResolveResultV1Schema,
-  companionMemoryCreateInputV1Schema,
-  companionMemoryCorrectInputV1Schema,
-  companionMemoryListQuerySchema,
-  companionMemoryListV1Schema,
-  companionMemoryQueueResultV1Schema,
-  companionMemoryStarMapV2Schema,
-  companionPersonaMutationV1Schema,
-  companionPersonaPatchV1Schema,
-  companionPersonaResetV1Schema,
-  companionPersonaV1Schema,
-} from "@astella/shared/companion-memory-desktop-contracts";
-import {
-  companionInvitationActionRequestSchema,
-  companionInvitationSchema,
-  companionJourneyActionRequestSchema,
-  companionJourneyBootstrapSchema,
-  companionJourneySchema,
-} from "@astella/shared/companion-journey-contracts";
-import { noteDetailV1Schema } from "@astella/shared/note-projection-contracts";
-import { noteSaveReceiptV1Schema } from "@astella/shared/note-save-contracts";
-import { noteShareScopeReceiptV1Schema, noteShareScopeValuesV1, type NoteShareScopeReceiptV1 } from "@astella/shared/note-share-contracts";
-import {
-  cardActivationReceiptDesktopV1Schema,
-  cardGenerationCandidateListV1Schema,
-  cardGenerationCancelResultV1Schema,
-  cardGenerationRetryResultV1Schema,
-  cardGenerationCloseResultV1Schema,
-  cardGenerationExposureEligibilityV1Schema,
-  cardGenerationJobAcceptedV1Schema,
-  cardGenerationReviewResultV1Schema,
-  cardGenerationRunSnapshotV1Schema,
-} from "@astella/shared/card-generation-desktop-contracts";
-import { candidateRevealV2Schema } from "@astella/shared/card-generation-v2-contracts";
+import * as ns_runtime from "../gateway/desktop-gateway-ns-runtime";import { BrowserWindow, type IpcMainInvokeEvent } from "electron";
+import { z } from "zod";import { DESKTOP_IPC_CHANNELS, authSurfaceManifestResultV1Schema, sessionContextSchema, type RequestMetaV1, type SessionContextV1, commandIdSchema, emailSchema, inviteTokenSchema, newPasswordSchema, requestMetaSchema, secretInputSchema, authProfileResultV1Schema, avatarUploadResultV1Schema, avatarGetResultV1Schema } from "@astella/shared/desktop-ipc-contracts";
 import { DesktopGateway } from "../gateway/desktop-gateway";
-import * as ns_assessment from "../gateway/desktop-gateway-ns-assessment";
 import * as ns_search from "../gateway/desktop-gateway-ns-search";
 import * as ns_invite from "../gateway/desktop-gateway-ns-invite";
-import * as ns_home from "../gateway/desktop-gateway-ns-home";
-import * as ns_artifact from "../gateway/desktop-gateway-ns-artifact";
-import type { SessionCredentialStore } from "../gateway/desktop-gateway-credentials";
-import { DesktopGatewayFailure } from "../gateway/desktop-gateway-failure";
-import { createSessionCredentialStore } from "../store/session-credential-store";
-import { FormalAssessmentGuard, type CompanionDeliveryKind } from "../store/formal-assessment-guard";
-import { matchesLearningRunReturnRoute, recoverPendingReturnMarker, resolveLearningRunReturn, routeForLearningRunReturn } from "../store/learning-run-return-resolver";
-import { MemoryPendingReturnMarkerStore, type PendingReturnMarkerStore } from "../store/pending-return-marker-store";
-import {
-  MemoryNoteDocCacheStore,
-  type NoteDocCacheEntryV1,
-  type NoteDocCacheKey,
-  type NoteDocCacheStore,
-} from "../note-doc/note-doc-cache-store.ts";
-import { ensureArtifactStored } from "../artifact/artifact-store";
-import type { WindowStateSnapshot } from "../../shared/window-state";
-import type { GatewayTransport } from "../gateway/desktop-gateway-transport";
+
+import * as ns_artifact from "../gateway/desktop-gateway-ns-artifact";import { type NoteDocCacheStore } from "../note-doc/note-doc-cache-store.ts";
 import { runtimeInputSchema } from "./desktop-ipc-companion";
 import type { InputSchema, ParsedMeta } from "./desktop-ipc";
 /**
@@ -401,18 +62,11 @@ export type AuthChannelDeps = {
   setActiveWorkspaceEpoch: (value: number) => void;
   assertEpochBoundaryExempt: (meta: RequestMetaV1, activeWorkspaceEpoch: number) => void;
   safeWorkspaceEpoch: (value: unknown) => number | undefined;
-  formalAssessmentGuard: FormalAssessmentGuard;
-  pendingReturnMarkerStore: PendingReturnMarkerStore;
   noteDocCache: NoteDocCacheStore;
-  recoverPersistedReturnMarker: (requestId?: string) => Promise<unknown>;
   rememberSession: (session: SessionContextV1) => void;
   startCompanionLifecycle: (workspaceEpoch: number) => Promise<void>;
   stopCompanionLifecycle: () => void;
   stopCompanionChatStreams: () => void;
-  stopLearningRunStreams: () => void;
-  stopCardGenerationStreams: () => void;
-  trackedLearningRunIds: Set<string>;
-  trackedCardGenerationRunIds: Set<string>;
   clearSubscriptionsForWindow: (window: BrowserWindow) => void;
 };
 
@@ -476,18 +130,15 @@ export function registerAuthChannels(deps: AuthChannelDeps): void {
     contract, getActiveWorkspaceEpoch, ns_auth, gateway, options, emit,
     getActiveSubjectId, setActiveSubjectId, getActiveWorkspaceId, setActiveWorkspaceId,
     setActiveWorkspaceEpoch,
-    assertEpochBoundaryExempt, safeWorkspaceEpoch, formalAssessmentGuard,
-    pendingReturnMarkerStore, noteDocCache, recoverPersistedReturnMarker, rememberSession,
+    assertEpochBoundaryExempt, safeWorkspaceEpoch, noteDocCache, rememberSession,
     startCompanionLifecycle, stopCompanionLifecycle, stopCompanionChatStreams,
-    stopLearningRunStreams, stopCardGenerationStreams, trackedLearningRunIds,
-    trackedCardGenerationRunIds, clearSubscriptionsForWindow,
+    clearSubscriptionsForWindow,
   } = deps;
 
 installHandler(DESKTOP_IPC_CHANNELS.authGetState, runtimeInputSchema, options, async (_event, _window, input) => {
     const session = await ns_auth.getSession(gateway.gatewayTransport, input.meta.requestId);
     setActiveWorkspaceEpoch(session.status === "authenticated" || session.status === "reauth_required" ? session.workspaceEpoch : 0);
     rememberSession(session);
-    await recoverPersistedReturnMarker(input.meta.requestId);
     if (session.status === "authenticated") void startCompanionLifecycle(session.workspaceEpoch);
     else stopCompanionLifecycle();
     return session;
@@ -498,22 +149,18 @@ installHandler(DESKTOP_IPC_CHANNELS.authGetState, runtimeInputSchema, options, a
   }, undefined, authSurfaceManifestResultV1Schema);
 
   installHandler(DESKTOP_IPC_CHANNELS.authLogin, authLoginInputSchema, options, async (_event, _window, input) => {
-    formalAssessmentGuard.failClosed("disconnected");
     const session = await ns_auth.login(gateway.gatewayTransport, gateway.companionBridge, input.email, input.password, input.meta.requestId, input.remember);
     setActiveWorkspaceEpoch(session.workspaceEpoch);
     rememberSession(session);
-    await recoverPersistedReturnMarker(input.meta.requestId);
     void startCompanionLifecycle(session.workspaceEpoch);
     emit("runtime", { kind: "snapshot_invalidated", scope: "runtime" }, getActiveWorkspaceEpoch());
     return session;
   }, (output) => safeWorkspaceEpoch(output), sessionContextSchema);
 
   installHandler(DESKTOP_IPC_CHANNELS.authRegister, authRegisterInputSchema, options, async (_event, _window, input) => {
-    formalAssessmentGuard.failClosed("disconnected");
     const session = await ns_auth.register(gateway.gatewayTransport, gateway.companionBridge, input.email, input.password, input.inviteToken, input.displayName, input.meta.requestId, input.remember, input.emailCode);
     setActiveWorkspaceEpoch(session.workspaceEpoch);
     rememberSession(session);
-    await recoverPersistedReturnMarker(input.meta.requestId);
     void startCompanionLifecycle(session.workspaceEpoch);
     return session;
   }, (output) => safeWorkspaceEpoch(output), sessionContextSchema);
@@ -525,11 +172,9 @@ installHandler(DESKTOP_IPC_CHANNELS.authGetState, runtimeInputSchema, options, a
   }, undefined, sendEmailCodeOutputSchema);
 
   installHandler(DESKTOP_IPC_CHANNELS.authLoginWithCode, authLoginWithCodeInputSchema, options, async (_event, _window, input) => {
-    formalAssessmentGuard.failClosed("disconnected");
     const session = await ns_auth.loginWithCode(gateway.gatewayTransport, gateway.companionBridge, input.email, input.code, input.meta.requestId, input.remember);
     setActiveWorkspaceEpoch(session.workspaceEpoch);
     rememberSession(session);
-    await recoverPersistedReturnMarker(input.meta.requestId);
     void startCompanionLifecycle(session.workspaceEpoch);
     return session;
   }, (output) => safeWorkspaceEpoch(output), sessionContextSchema);
@@ -548,13 +193,8 @@ installHandler(DESKTOP_IPC_CHANNELS.authGetState, runtimeInputSchema, options, a
   }, (output) => safeWorkspaceEpoch(output), sessionContextSchema);
 
   installHandler(DESKTOP_IPC_CHANNELS.authLogout, runtimeInputSchema, options, async (_event, window, input) => {
-    formalAssessmentGuard.failClosed("disconnected");
     try {
       const result = await ns_auth.logout(gateway.gatewayTransport, gateway.companionBridge, input.meta.requestId);
-      stopLearningRunStreams();
-      trackedLearningRunIds.clear();
-      stopCardGenerationStreams();
-      trackedCardGenerationRunIds.clear();
       stopCompanionChatStreams();
       stopCompanionLifecycle();
       setActiveWorkspaceEpoch(0);
@@ -564,7 +204,6 @@ installHandler(DESKTOP_IPC_CHANNELS.authGetState, runtimeInputSchema, options, a
       // 提到局部变量——getter 每次调用都重算，TS 不跨调用保持可空收窄。
       const leavingSubjectId = getActiveSubjectId();
       if (leavingSubjectId) {
-        await pendingReturnMarkerStore.clearSubject(leavingSubjectId);
         await noteDocCache.clearSubject(leavingSubjectId);
       }
       setActiveSubjectId(null);
@@ -575,14 +214,8 @@ installHandler(DESKTOP_IPC_CHANNELS.authGetState, runtimeInputSchema, options, a
       // logout clears main-owned credentials before attempting the remote revoke;
       // local subscriptions must follow that fact even when the API is offline.
       setActiveWorkspaceEpoch(0);
-      stopLearningRunStreams();
-      trackedLearningRunIds.clear();
-      stopCardGenerationStreams();
-      trackedCardGenerationRunIds.clear();
       stopCompanionChatStreams();
       stopCompanionLifecycle();
-      const subjectId = getActiveSubjectId();
-      if (subjectId) await pendingReturnMarkerStore.clearSubject(subjectId);
       // 退登要连本机那份正文一起清掉：它存的是笔记内容，不是可以留给下一个登录者的
       // 元数据。缓存键里的 subjectId 挡住了别人读到，但账号换到人这一侧也要主动删。
       const sid = getActiveSubjectId();
@@ -593,18 +226,15 @@ installHandler(DESKTOP_IPC_CHANNELS.authGetState, runtimeInputSchema, options, a
   }, undefined, logoutOutputSchema);
 
   installHandler(DESKTOP_IPC_CHANNELS.authReauthenticate, authReauthenticateInputSchema, options, async (_event, _window, input) => {
-    formalAssessmentGuard.failClosed("disconnected");
     const session = await ns_auth.reauthenticate(gateway.gatewayTransport, gateway.companionBridge, input.password, input.meta.requestId);
     setActiveWorkspaceEpoch(session.workspaceEpoch);
     rememberSession(session);
-    await recoverPersistedReturnMarker(input.meta.requestId);
     void startCompanionLifecycle(session.workspaceEpoch);
     return session;
   }, (output) => safeWorkspaceEpoch(output), sessionContextSchema);
 
   installHandler(DESKTOP_IPC_CHANNELS.authChangePassword, authChangePasswordInputSchema, options, async (_event, _window, input) => {
     assertEpochBoundaryExempt(input.meta, getActiveWorkspaceEpoch());
-    formalAssessmentGuard.failClosed("disconnected");
     const result = await ns_auth.changePassword(gateway.gatewayTransport, gateway.companionBridge, input.currentPassword, input.newPassword, input.meta.requestId);
     stopCompanionLifecycle();
     setActiveWorkspaceEpoch(0);

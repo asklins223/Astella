@@ -122,6 +122,9 @@ function jobScheduling(type: JobType): { priority: number; resourceClass: string
       return { priority: 75, resourceClass: JobResourceClass.CARD_FOREGROUND };
     case JobType.NOTE_EXPANSION_GENERATE:
       return { priority: 75, resourceClass: JobResourceClass.CARD_FOREGROUND };
+    case JobType.NOTE_LEARNING_CARD_GENERATE:
+    case JobType.NOTE_LEARNING_CARD_GRADE:
+      return { priority: 80, resourceClass: JobResourceClass.CARD_FOREGROUND };
     case JobType.COMPANION_MEMORY_EXTRACT:
     case JobType.COMPANION_SUMMARIZER:
     case JobType.COMPANION_DAILY_SUMMARY:

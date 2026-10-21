@@ -86,7 +86,7 @@
 .hud-surface .notebook-desk[data-fullscreen] .notebook-volume__bookmark { flex: 1; flex-direction: column; gap: 5px; min-width: 0; min-height: 58px; padding: 8px 4px; border: 0; border-radius: 13px; background: transparent; box-shadow: none; font-size: 12px; }
 .hud-surface .notebook-desk[data-fullscreen] .notebook-volume__bookmark span { text-align: center; }
 .hud-surface .notebook-desk[data-fullscreen] .notebook-volume__bookmark small { display: none; }
-.hud-surface .notebook-desk[data-fullscreen] .notebook-volume__bookmark[aria-pressed="true"] { background: #e0eccf; }
+.hud-surface .notebook-desk[data-fullscreen] .notebook-volume__bookmark[aria-selected="true"] { background: #e0eccf; }
 .hud-surface .notebook-desk[data-fullscreen] .notebook-desk__rack { display: flex; flex-direction: column; align-items: stretch; gap: 14px; padding: 16px 0; min-height: 0; }
 .hud-surface .notebook-desk[data-fullscreen] .notebook-desk__modes { justify-content: space-between; }
 .hud-surface .notebook-desk[data-fullscreen] .notebook-desk__mode-switch { flex: 1; }

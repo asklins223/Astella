@@ -81,7 +81,7 @@ function serverPage() {
     { objectType: "source", title: "IndexTTS 语音合成", objectId: "33333333-3333-4333-8333-333333333332" },
     { objectType: "note", title: "TTS 笔记", objectId: "33333333-3333-4333-8333-333333333333" },
     { objectType: "note", title: "TTS 对比", objectId: "33333333-3333-4333-8333-333333333334" },
-    { objectType: "objective", title: "理解 TTS", objectId: "33333333-3333-4333-8333-333333333335" },
+    { objectType: "note", title: "理解 TTS", objectId: "33333333-3333-4333-8333-333333333335" },
   ].map((row) => ({
     objectType: row.objectType,
     objectId: row.objectId,

@@ -127,7 +127,7 @@ async function taskForJob(tx: ApiTransaction, scope: NoteMindMapScopeV1, note: {
     : null;
   return noteMindMapTaskV1Schema.parse({
     taskId: job.id,
-    agentRunId: await agentRunForDomainExecution(tx, scope, "job", job.id),
+    agentRunId: await agentRunForDomainExecution(tx, scope, job.id),
     noteId,
     noteVersionId,
     status,

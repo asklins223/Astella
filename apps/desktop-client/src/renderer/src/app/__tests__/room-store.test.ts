@@ -31,37 +31,36 @@ import {
 
 describe("room navigation guard", () => {
   beforeEach(() => {
-    useRoomStore.setState({ activeRunId: null, navigationGuard: null });
+    useRoomStore.setState({ navigationGuard: null });
   });
 
-  it("routes every room intent through the active LearningRun exit guard", () => {
+  it("routes every room intent through the active page navigation guard", () => {
     const exit = vi.fn();
-    useRoomStore.setState({ activeRunId: "run-1", navigationGuard: exit });
+    useRoomStore.setState({ navigationGuard: exit });
 
     useRoomStore.getState().invoke("home");
-    useRoomStore.getState().invoke("review");
+    useRoomStore.getState().invoke("open-notes");
     useRoomStore.getState().invoke("search");
 
     expect(exit).toHaveBeenCalledTimes(3);
     expect(useRoomStore.getState().surface).not.toBe("review");
   });
 
-  it("allows the resolved return intent after the active run is cleared", () => {
-    useRoomStore.setState({ activeRunId: "run-1", navigationGuard: () => undefined });
-    useRoomStore.getState().setActiveRunId(null);
+  it("allows the resolved return intent after the active guard is cleared", () => {
+    useRoomStore.setState({ navigationGuard: () => undefined });
     useRoomStore.getState().setNavigationGuard(null);
 
-    useRoomStore.getState().invoke("review");
+    useRoomStore.getState().invoke("search");
 
-    expect(useRoomStore.getState().surface).toBe("review");
+    expect(useRoomStore.getState().surface).toBe("search");
   });
 
   it("honors a surface-owned guard even when there is no active run", () => {
     const guard = vi.fn();
     useRoomStore.setState({
-      destination: "review",
-      viewPreset: "review",
-      surface: "review",
+      destination: "search",
+      viewPreset: "search",
+      surface: "search",
       navigationGuard: guard,
     });
 
@@ -87,16 +86,14 @@ describe("workspace boundary reset", () => {
       themeMode: "manual",
       motionMode: "lite",
       masterMuted: false,
-      destination: "review",
-      viewPreset: "review",
-      surface: "review",
+      destination: "note-library",
+      viewPreset: "note-library",
+      surface: "note-library",
       phase: "media-ready",
       mediaMessage: "ready",
       inputFocused: true,
-      activeRunId: "run-1",
-      activeCardGenerationRunId: "generation-1",
+
       activeNoteRef: { noteId: "note-1", noteVersionId: "note-version-1" },
-      activeReviewTarget: { scheduleId: "schedule-1", objectiveId: "objective-1" },
       onboardingOpen: true,
       companionMoment: "confirm",
       pendingHomeCompletion: { id: "learning-result:run-1:snapshot-1:demonstrated" },
@@ -124,10 +121,8 @@ describe("workspace boundary reset", () => {
       phase: "booting",
       mediaMessage: null,
       inputFocused: false,
-      activeRunId: null,
-      activeCardGenerationRunId: null,
+
       activeNoteRef: null,
-      activeReviewTarget: null,
       onboardingOpen: false,
       companionMoment: "idle",
       pendingHomeCompletion: null,
@@ -287,31 +282,31 @@ describe("scene intent transaction", () => {
       viewPreset: "room",
       surface: null,
       scenePhase: "idle",
-      activeRunId: null,
+
       navigationGuard: null,
     });
   });
 
   it("treats a repeated same-target intent as a no-op", () => {
-    useRoomStore.getState().invoke("continue");
+    useRoomStore.getState().invoke("open-notes");
     const focusingState = useRoomStore.getState();
 
-    useRoomStore.getState().invoke("continue");
+    useRoomStore.getState().invoke("open-notes");
 
     expect(useRoomStore.getState()).toBe(focusingState);
-    expect(useRoomStore.getState()).toMatchObject({ surface: "study", scenePhase: "focusing" });
+    expect(useRoomStore.getState()).toMatchObject({ surface: "note-library", scenePhase: "focusing" });
   });
 
   it("does not restart an already settled surface from its own shortcut", () => {
     useRoomStore.setState({
-      destination: "study",
-      viewPreset: "study",
-      surface: "study",
+      destination: "note-library",
+      viewPreset: "note-library",
+      surface: "note-library",
       scenePhase: "task",
     });
 
     const settledState = useRoomStore.getState();
-    useRoomStore.getState().invoke("continue");
+    useRoomStore.getState().invoke("open-notes");
 
     expect(useRoomStore.getState()).toBe(settledState);
     expect(useRoomStore.getState().scenePhase).toBe("task");
@@ -337,9 +332,9 @@ describe("pending home completion", () => {
     const id = "learning-result:run-1:snapshot-1:demonstrated";
     useRoomStore.getState().queueHomeCompletion(id);
     useRoomStore.setState({
-      destination: "validation",
-      viewPreset: "validation",
-      surface: "validation",
+      destination: "note-library",
+      viewPreset: "note-library",
+      surface: "note-library",
       scenePhase: "task",
     });
 
@@ -400,7 +395,7 @@ describe("pending home completion", () => {
     useRoomStore.getState().queueHomeCompletion(id);
     useRoomStore.getState().beginPendingHomeCompletion(id);
     useRoomStore.getState().markHomeCompletionStarted(id);
-    useRoomStore.getState().invoke("continue");
+    useRoomStore.getState().invoke("open-notes");
 
     expect(useRoomStore.getState()).toMatchObject({
       scenePhase: "focusing",
@@ -545,7 +540,6 @@ describe("设置页与搜索页的会话级状态", () => {
       masterMuted: false,
       searchQuery: "",
       searchTypeFilter: "all",
-      searchWeakOnly: false,
       live2dStatus: "loading",
     });
   });
@@ -559,31 +553,27 @@ describe("设置页与搜索页的会话级状态", () => {
 
   it("搜索查询状态在 surface 重挂载之间保留，但不写盘", () => {
     useRoomStore.getState().setSearchQuery("Needle");
-    useRoomStore.getState().setSearchTypeFilter("objective");
-    useRoomStore.getState().setSearchWeakOnly(true);
+    useRoomStore.getState().setSearchTypeFilter("source");
 
     const state = useRoomStore.getState();
     expect(state.searchQuery).toBe("Needle");
-    expect(state.searchTypeFilter).toBe("objective");
-    expect(state.searchWeakOnly).toBe(true);
+    expect(state.searchTypeFilter).toBe("source");
 
     const raw = persistedStorage.entries.get("astella.desktop-room.v2");
     const payload = JSON.parse(raw as string) as { state: Record<string, unknown> };
     expect(payload.state).not.toHaveProperty("searchQuery");
     expect(payload.state).not.toHaveProperty("searchTypeFilter");
-    expect(payload.state).not.toHaveProperty("searchWeakOnly");
   });
 
   it("换工作区会清掉上一空间的查询与筛选", () => {
     useRoomStore.getState().setSearchQuery("Needle");
-    useRoomStore.getState().setSearchWeakOnly(true);
+    useRoomStore.getState().setSearchTypeFilter("note");
 
     useRoomStore.getState().resetWorkspaceScope();
 
     const state = useRoomStore.getState();
     expect(state.searchQuery).toBe("");
     expect(state.searchTypeFilter).toBe("all");
-    expect(state.searchWeakOnly).toBe(false);
   });
 
   it("Live2D 状态由渲染层上报，且不进入持久化白名单", () => {

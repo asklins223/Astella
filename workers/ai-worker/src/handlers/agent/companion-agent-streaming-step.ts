@@ -11,10 +11,12 @@ import { stripVoiceExpressionTags, withholdPartialVoiceExpressionTag } from "@as
 import { containsCompanionToolProtocol,
   withholdPartialCompanionToolProtocol } from "../tools/companion-tool-protocol-output.ts";
 import { CompanionToolOutputRepairError } from "../tools/companion-tool-output-repair.ts";
+import { watchCompanionOutput, CompanionOutputTimeoutError } from "./companion-output-watchdog.ts";
 
 /** A different response transport cannot repair an account or rate rejection. */
 export function canRetryCompanionStream(error: unknown, state: { emitted: boolean; now: number; deadline: number }): boolean {
   return !state.emitted && state.now < state.deadline && !isNonRetryableError(error) && !(error instanceof CompanionStreamStoppedError)
+    && !(error instanceof CompanionOutputTimeoutError)
     && !(error instanceof ProviderRequestError && [401, 402, 403, 429].includes(error.status));
 }
 
@@ -333,7 +335,7 @@ export async function runStreamingAgentStep(args: {
   try {
     const { content, toolCalls, finishReason, phase, reasoning, usage, providerRequestId } = await runWithAbortBudget(
       async (signal) => {
-        const result = await args.provider.chatCompletionStream!(
+        const result = await watchCompanionOutput((outputSignal, outputActivity) => args.provider.chatCompletionStream!(
         messages,
         {
           maxTokens: args.stepRequest.maxTokens,
@@ -359,6 +361,7 @@ export async function runStreamingAgentStep(args: {
           // 不传 response_format）。终答步的 tools 已在 stepRequest 里被清空。
           tools: args.stepRequest.tools,
           toolChoice: args.stepRequest.toolChoice,
+          onOutputActivity: outputActivity,
           // 只在调用方要了的时候才挂：不挂就是 undefined，provider 不做任何额外工作。
           ...(args.onToolCallStarted ? { onToolCallStarted: args.onToolCallStarted } : {}),
           ...(args.onToolCallSettled
@@ -369,13 +372,14 @@ export async function runStreamingAgentStep(args: {
           // 只在调用方要了的时候才挂：不挂时 provider 一个字都不多做。
           ...(args.onReasoningDelta ? { onReasoningDelta: emitReasoning } : {}),
         },
-        signal,
+        outputSignal,
         (delta) => {
           if (stopped || delta.length === 0) return;
+          outputActivity();
           args.onRawTextDelta?.(delta);
           consume(delta);
         },
-        );
+        ), signal);
         // A fast provider may finish before classification. Keep this step alive
         // until the gate has released/discarded its held text, under the same
         // abort/deadline budget, then drain delivery before returning its result.

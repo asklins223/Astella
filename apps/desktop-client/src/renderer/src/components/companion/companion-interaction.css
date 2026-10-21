@@ -1,4 +1,4 @@
-/* The accepted companion Demo is the visual source for the production interaction layer. */
+/* The study room owns the visual language; prototypes inform interaction only. */
 .companion-hud,
 .companion-hud--floating,
 .companion-history,
@@ -44,6 +44,7 @@
 }
 .companion-hud__head:empty { display: none; }
 .companion-hud__head::-webkit-scrollbar { display: none; }
+.companion-hud__exchange { display: flex; flex: 0 0 auto; flex-direction: column; gap: 12px; min-width: 0; pointer-events: none; }
 .companion-hud__head > * { flex: 0 0 auto; }
 .companion-hud--floating .companion-hud__output,
 .companion-hud--floating .companion-hud__panel {
@@ -56,11 +57,11 @@
   min-height: 0;
   max-height: none;
   margin: 0;
-  padding: 10px 15px 12px;
+  padding: 14px 17px 13px;
   display: block;
   overflow: visible;
-  border: 4px solid var(--hud-paper-light);
-  border-radius: 26px 33px 23px 29px;
+  border: 2px solid var(--hud-paper-light);
+  border-radius: 22px 25px 20px 23px;
   background: var(--hud-cream);
   box-shadow: var(--hud-shadow-small);
   transform: none;
@@ -85,6 +86,8 @@
 }
 .companion-hud--floating .companion-hud__composer { background: var(--hud-paper-light); border-color: var(--hud-cream); }
 .companion-hud--floating .companion-hud__composer::after { border-color: var(--hud-cream); }
+/* 回复气泡的顶留白收窄：名牌和关闭钮贴着纸沿，不再像悬在半空。 */
+.companion-hud--floating .companion-hud__output { padding-top: 5px; }
 .companion-hud--floating[data-head-dock="left"] :is(.companion-hud__output, .companion-hud__composer)::after { top: calc(50% - 10px); right: -11px; bottom: auto; transform: rotate(-45deg); }
 .companion-hud--floating[data-head-dock="right"] :is(.companion-hud__output, .companion-hud__composer)::after { top: calc(50% - 10px); left: -11px; right: auto; bottom: auto; transform: rotate(135deg); }
 .companion-hud--floating[data-head-dock="below"] :is(.companion-hud__output, .companion-hud__composer)::after { top: -11px; bottom: auto; transform: rotate(225deg); }
@@ -101,6 +104,27 @@
   gap: 8px;
   margin: 0 0 3px;
 }
+.companion-hud__reply-meta { display: flex; align-items: center; gap: 4px; flex: none; margin-left: auto; }
+/* The heading now also carries the clock, so the name chip may shrink but still
+   hugs its own text instead of stretching into a full-width band. */
+.companion-hud__reply-heading > strong { flex: 0 1 auto; max-width: none; }
+/* Elapsed time is metadata, not a control: plain muted text beside her name so
+   waiting stays visible without a second coloured chip competing with the name. */
+.companion-run-clock {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+  padding: 0;
+  color: #66735c;
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1.6;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.companion-run-clock[data-delayed] { color: #8a6634; }
+.companion-run-delay { margin: 7px 0 0; color: #82653b; font-size: 10.5px; line-height: 1.6; }
 .companion-hud__reply-heading strong,
 .companion-hud--floating .companion-hud__panel > header strong {
   display: inline-flex;
@@ -161,14 +185,23 @@
 /* 思考（2026-10-13）：等待里终于有真的内容可看，但它读起来不能像她的回答——
    纸色比状态条更冷一档、字更小更淡，正文第一个字一到整块让位。 */
 .companion-hud--floating .companion-hud__output[data-tone="thinking"] { background: #e6ebe0; }
+/* 气泡里的思考只占一行：`chat.thinking` 是尾部窗口，HUD 再取末段，
+   新字从右边刷进来；完整的思考在运行轨迹里，不在这里长高。 */
 .companion-hud--floating .companion-hud__output[data-tone="thinking"] .companion-hud__output-body {
   color: var(--companion-muted, var(--hud-soft, #705d4d));
   font: 12.5px/1.75 "Noto Sans SC Variable", sans-serif;
+  max-height: none;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
+.companion-hud--floating .companion-hud__output[data-tone="thinking"] .companion-hud__output-body::after {
+  content: ""; display: inline-block; width: 1px; height: 11px; margin-left: 2px;
+  background: #9aac8c; animation: companion-hud-thinking-caret 1s steps(1) infinite;
+  vertical-align: -1px;
+}
+@keyframes companion-hud-thinking-caret { 50% { opacity: 0; } }
 .companion-hud__output-retry { margin-top: 5px; min-height: 32px; padding: 3px 0; }
-.companion-hud__reply-foot { display: flex; align-items: center; justify-content: space-between; gap: 7px; margin-top: 6px; font-size: 11px; color: var(--hud-soft); }
-.companion-hud__reply-foot .text-action { display: inline-flex; gap: 4px; align-items: center; min-height: 36px; padding: 3px 0; background: transparent; border: 0; font-size: 11px; color: inherit; }
-.companion-hud__reply-foot svg { transform: rotate(180deg); }
 .companion-hud--floating .companion-hud__output-stop { position: static; display: inline-flex; align-items: center; gap: 5px; min-height: 32px; margin: 5px 0 0; font-size: 11px; }
 .companion-hud--floating .companion-hud__composer form { display: block; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 .companion-hud--floating .companion-hud__composer form:focus-within { outline: none; box-shadow: none; }
@@ -231,11 +264,11 @@
 .companion-hud--floating button:focus-visible,
 .companion-history button:focus-visible { outline: 2px solid var(--hud-green); outline-offset: 2px; }
 .companion-hud--floating .companion-hud__rail {
-  position: relative; inset: auto; align-self: center; width: calc(100% - 12px); max-width: none;
-  margin: 0; padding: 9px 12px 12px; border: 2px solid #f5f8e9;
-  border-radius: 18px 24px 17px 22px; background: #e4ecd8;
-  box-shadow: 0 6px 14px #30231a24; color: #405540; transform: none;
-  pointer-events: auto; animation: companion-interaction-pop 400ms var(--hud-ease-out) both;
+  position: relative; inset: auto; align-self: stretch; width: 100%; max-width: none;
+  margin: 0; padding: 15px 17px 14px; border: 1px solid #dce4cd;
+  border-radius: 20px; background: #f4f7e9;
+  box-shadow: 0 9px 24px #30231a20; color: #405540; transform: none;
+  pointer-events: auto; animation: companion-reply-arrive 200ms var(--hud-ease-out) both;
 }
 .companion-hud--floating .companion-hud__rail::after {
   content: ""; position: absolute; right: 28px; bottom: -6px; width: 9px; height: 9px;
@@ -243,40 +276,69 @@
   border-bottom: 2px solid #f5f8e9; border-radius: 0 0 3px 0; pointer-events: none;
 }
 .companion-hud__rail-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.companion-hud__rail-heading strong { display: inline-flex; align-items: center; gap: 5px; color: #6a7d62; font-size: 11px; font-weight: 600; }
+.companion-hud__rail-heading strong { display: inline-flex; align-items: center; gap: 6px; color: #5f7357; font-size: 12px; font-weight: 600; }
 .companion-hud__rail-heading button { display: inline-flex; align-items: center; gap: 4px; flex: none; min-height: 28px; padding: 3px 0 3px 5px; color: #61725a; font-size: 10.5px; }
 .companion-hud__rail-heading button[aria-expanded] svg { transition: transform 160ms var(--hud-ease-out); }
 .companion-hud__rail-heading button[aria-expanded="true"] svg { transform: rotate(180deg); }
 .companion-hud__rail-actions { display: flex; align-items: center; gap: 8px; }
 .companion-hud__rail-heading .companion-hud__rail-dismiss { width: 22px; padding: 2px; justify-content: center; }
-.companion-hud__rail-current { display: flex; align-items: center; gap: 9px; margin-top: 3px; }
+/* 工具在跑时，气泡的思考仍是同一行尾巴，压在“本次进展”下面；完整记录在手记。 */
+.companion-hud__rail-thinking {
+  display: flex; align-items: center; gap: 7px; min-width: 0;
+  margin-top: 8px; padding-bottom: 7px; border-bottom: 1px solid #dde5d3;
+  color: #6f7a65; font-size: 11px; line-height: 1.55;
+}
+.companion-hud__rail-thinking > span { flex: none; color: #9aa48f; font-size: 9.5px; letter-spacing: .05em; }
+.companion-hud__rail-thinking > p { flex: 1; min-width: 0; margin: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.companion-hud__rail-thinking > p::after {
+  content: ""; display: inline-block; width: 1px; height: 10px; margin-left: 2px;
+  background: #9aac8c; animation: companion-hud-thinking-caret 1s steps(1) infinite;
+  vertical-align: -1px;
+}
+.companion-hud__rail-current { display: flex; align-items: center; gap: 11px; margin-top: 11px; }
 .companion-hud__rail-current > div { min-width: 0; }
-.companion-hud__rail-current p { margin: 0 0 2px; font-size: 13px; line-height: 1.55; font-weight: 650; overflow-wrap: anywhere; }
-.companion-hud__rail-current > div > span { color: #6a7d62; font-size: 10.5px; line-height: 1.5; font-variant-numeric: tabular-nums; }
+.companion-hud__rail-current p { margin: 0 0 3px; font-size: 16px; line-height: 1.55; font-weight: 650; overflow-wrap: anywhere; }
+.companion-hud__rail-current > div > span { color: #5b7053; font-size: 10.5px; line-height: 1.5; font-variant-numeric: tabular-nums; }
 .companion-hud__rail-current-icon { position: relative; display: grid; place-items: center; flex: 0 0 32px; width: 32px; height: 32px; border-radius: 11px 13px 10px 12px; background: #f4f7e9; color: #4f7953; }
 .companion-hud__rail[data-state="running"] .companion-hud__rail-current-icon::after { content: ""; position: absolute; right: -2px; bottom: -1px; width: 7px; height: 7px; border: 2px solid #e4ecd8; border-radius: 50%; background: #6f9868; animation: companion-hud-rail-breathe 1.8s ease-in-out infinite; }
 .companion-hud__rail[data-state="cancelled"] .companion-hud__rail-current-icon { color: #7a7b6d; }
 .companion-hud__rail[data-state="failed"] { background: #f1e1d3; color: #854e3d; }
-.companion-hud__rail:is([data-state="outcome_unknown"], [data-state="waiting_confirmation"], [data-state="not_executed"], [data-state="unavailable"]) { background: #f0e8d0; color: #82653b; }
+.companion-hud__rail:is([data-state="outcome_unknown"], [data-state="waiting_confirmation"], [data-state="not_executed"], [data-state="unavailable"]) { background: #f0e8d0; color: #6f5530; }
 .companion-hud__rail:not([data-state="succeeded"]):not([data-state="running"]) .companion-hud__rail-current-icon { color: inherit; }
+
+/* A failed or held run repaints the paper, so its own labels must follow the
+   state color. Keeping the green metadata on the clay/amber paper read as a
+   mixed message and dropped the 10.5px sub-line to 3.48:1 (2026-10-21 probe). */
+.companion-hud__rail:is([data-state="failed"], [data-state="outcome_unknown"], [data-state="waiting_confirmation"], [data-state="not_executed"], [data-state="unavailable"]) :is(
+  .companion-hud__rail-heading strong,
+  .companion-hud__rail-current > div > span,
+  .companion-hud__rail-label small,
+  .companion-hud__rail-results-heading,
+  .companion-hud__rail-results-heading > span,
+  .companion-hud__rail-results button,
+  .companion-hud__rail-results button span
+) { color: inherit; }
 .companion-hud__rail-details { margin-top: 10px; padding-top: 7px; border-top: 1px solid #b9c7a670; }
-.companion-hud--floating .companion-hud__rail-steps { display: grid; gap: 0; max-height: min(210px, 28dvh); margin: 0; padding: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; list-style: none; scrollbar-width: thin; scrollbar-color: #a9b99c transparent; }
+.companion-hud--floating .companion-hud__rail-steps { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
 .companion-hud--floating .companion-hud__rail-steps::before { content: none; }
 .companion-hud--floating .companion-hud__rail-steps li { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; align-items: start; gap: 7px; height: auto; min-height: 32px; padding: 6px 0; white-space: normal; animation: none; }
 .companion-hud__rail-steps li + li { border-top: 1px solid #b9c7a632; }
 .companion-hud--floating .companion-hud__rail-label { min-width: 0; display: grid; gap: 3px; overflow: visible; font-size: 11.5px; line-height: 1.55; overflow-wrap: anywhere; }
-.companion-hud__rail-label small { color: #6a7d62; font-size: 10.5px; line-height: 1.6; }
+.companion-hud__rail-label small { color: #5b7053; font-size: 10.5px; line-height: 1.6; }
 .companion-hud--floating .companion-hud__rail-mark { display: flex; align-items: center; gap: 3px; margin-top: 1px; font-size: 10px; white-space: nowrap; }
 .companion-hud--floating .companion-hud__rail-steps li .companion-hud__rail-mark { animation: none; }
 .companion-hud--floating .companion-hud__rail-steps li[data-state="running"] .companion-hud__rail-mark svg { animation: companion-hud-rail-breathe 1.8s ease-in-out infinite; }
-.companion-hud--floating .companion-hud__rail-summary { margin: 6px 0 0; padding: 0; color: #6a7d62; font-size: 10px; line-height: 1.6; }
 .companion-hud--floating[data-motion="off"] .companion-hud__rail-current-icon::after,
 .companion-hud--floating[data-motion="off"] .companion-hud__rail-mark svg { animation: none; }
+.companion-hud--floating[data-motion="off"] .companion-hud__rail-thinking > p::after,
+.companion-hud--floating[data-motion="off"] .companion-hud__output[data-tone="thinking"] .companion-hud__output-body::after { animation: none; }
 .companion-hud--floating[data-motion="off"] .companion-hud__rail-heading button[aria-expanded] svg { transition: none; }
 @media (prefers-reduced-motion: reduce) {
   .companion-hud--floating .companion-hud__rail-current-icon::after,
   .companion-hud--floating .companion-hud__rail-mark svg { animation: none; }
   .companion-hud__rail-heading button[aria-expanded] svg { transition: none; }
+  .companion-hud__rail-thinking > p::after,
+  .companion-hud__output[data-tone="thinking"] .companion-hud__output-body::after { animation: none; }
 }
 /* Extra results face the content, above it rather than inside its layout. */
 .companion-hud__papers { position: fixed; left: calc(var(--companion-papers-x, 20vw) - 32px); top: calc(var(--companion-papers-y, 58px) - 44px); width: calc(var(--companion-papers-w, 430px) + 64px); max-height: calc(var(--companion-papers-max-h, calc(100dvh - 72px)) + 62px); display: flex; flex-direction: column; gap: 15px; padding: 44px 32px 18px; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scroll-padding-block: 44px 18px; scrollbar-width: thin; scrollbar-color: #b69b77 transparent; pointer-events: auto; }
@@ -438,17 +500,18 @@
 .companion-hud--floating .companion-hud__output[data-stage="leaving"],
 .companion-hud__paper[data-stage="leaving"] { animation: companion-interaction-leave 280ms var(--hud-ease-out) both; pointer-events: none; }
 @keyframes companion-interaction-pop { 0% { opacity: 0; transform: translateY(42px) scale(.78) rotate(-3deg); } 52% { opacity: 1; transform: translateY(-7px) scale(1.07) rotate(1.1deg); } 78% { transform: translateY(3px) scale(.985) rotate(-.35deg); } to { opacity: 1; transform: none; } }
+@keyframes companion-reply-arrive { from { opacity: 0; transform: translateY(8px) scale(.985); } to { opacity: 1; transform: none; } }
 @keyframes companion-interaction-leave { to { opacity: 0; transform: translateY(22px) scale(.86) rotate(2deg); } }
 @keyframes companion-interaction-book { from { opacity: 0; transform: translateY(56px) scale(.88) rotate(-2deg); } 65% { opacity: 1; transform: translateY(-6px) scale(1.015) rotate(.4deg); } to { opacity: 1; transform: none; } }
 .companion-hud--floating[data-motion="lite"] .companion-hud__output,
 .companion-hud--floating[data-motion="lite"] .companion-hud__panel,
 .companion-hud--floating[data-motion="lite"] .companion-hud__paper,
-.companion-hud--floating[data-motion="lite"] .companion-hud__rail { animation: companion-interaction-lite 280ms var(--hud-ease-out) both; }
+.companion-hud--floating[data-motion="lite"] .companion-hud__rail { animation: companion-interaction-lite 140ms ease-out both; }
 .companion-hud__edge-panel[data-motion="lite"] { animation: companion-interaction-lite 280ms var(--hud-ease-out) both; }
 .companion-hud--floating[data-motion="lite"] .companion-hud__paper[data-stage="leaving"] { animation: companion-paper-fade-out 150ms ease-out both; }
 @keyframes companion-paper-fade-out { to { opacity: 0; } }
 .companion-hud--floating[data-motion="off"] .companion-hud__paper[data-stage="leaving"] { display: none; }
-@keyframes companion-interaction-lite { from { opacity: 0; transform: translateY(18px) scale(.94); } to { opacity: 1; transform: none; } }
+@keyframes companion-interaction-lite { from { opacity: 0; } to { opacity: 1; } }
 .companion-hud--floating[data-motion="off"] *,
 .companion-history[data-motion="off"],
 .companion-history[data-motion="off"] *,

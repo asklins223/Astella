@@ -6,6 +6,7 @@ import type {
 import {
   COMPANION_SPEECH_FIRST_AUDIO_DEADLINE_MS,
   COMPANION_SPEECH_GAP_DEADLINE_MS,
+  COMPANION_SPEECH_MESSAGE_GAP_MS,
   COMPANION_SPEECH_PLAY_STALL_MS,
   beginCompanionSpeechLine,
   isCompanionSpeechActive,
@@ -666,6 +667,38 @@ describe("逐段播放结局上报", () => {
     expect(host.synthesized[1]).toBe(segmentIdFor(2));
 
     session.finish("");
+  });
+
+  it("同一条消息内的段连续播，换消息时留一个短停顿", async () => {
+    vi.useFakeTimers();
+    try {
+      const host = new FakeHost();
+      setCompanionVoiceHost(host);
+      const session = beginCompanionSpeechLine({ strictSegments: true });
+      const firstMessage = "11111111-1111-4111-8111-111111111111";
+      const secondMessage = "22222222-2222-4222-8222-222222222222";
+      session.feedSegment({ ...refSegment(1, "第一句。"), messageId: firstMessage });
+      session.feedSegment({ ...refSegment(2, "第二句。"), messageId: firstMessage });
+      session.feedSegment({ ...refSegment(3, "第三句。"), messageId: secondMessage });
+      session.finish("");
+
+      await vi.advanceTimersByTimeAsync(0);
+      expect(host.played).toEqual([segmentIdFor(1)]);
+      host.finishSegment();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(host.played).toEqual([segmentIdFor(1), segmentIdFor(2)]);
+
+      host.finishSegment();
+      await vi.advanceTimersByTimeAsync(COMPANION_SPEECH_MESSAGE_GAP_MS - 1);
+      expect(host.played).toHaveLength(2);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(host.played).toEqual([segmentIdFor(1), segmentIdFor(2), segmentIdFor(3)]);
+
+      host.finishSegment();
+      await vi.advanceTimersByTimeAsync(0);
+      session.stop();
+      await vi.runAllTimersAsync();
+    } finally { vi.useRealTimers(); }
   });
 
   it("播完的段上报 played，并带上这段的身份", async () => {

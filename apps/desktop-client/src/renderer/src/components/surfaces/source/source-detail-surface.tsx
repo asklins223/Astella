@@ -9,6 +9,7 @@ import type {
 import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 import { parseMarkdownTable } from "@astella/shared/note-doc-schema";
 import { useRoomStore } from "../../../app/home/room-store";
+import { useCompanionResultPreview } from "../../companion/journal/companion-result-preview";
 import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult, RendererGatewayError } from "../../../app/client/desktop-client";
 import { stashLibraryReceipt } from "../../../app/source/source-batch-capture";
 import { HudPage } from "../../hud/HudPage";
@@ -633,6 +634,16 @@ function SourceDetailContent({ scope, activeSourceId }: { readonly scope: number
     target?.scrollIntoView({ block: "start", behavior: "instant" });
     target?.focus({ preventScroll: true });
   };
+
+  const companionLocation = useCompanionResultPreview(state => state.sourceLocation);
+  useLayoutEffect(() => {
+    if (!companionLocation || companionLocation.scope !== scope || companionLocation.sourceId !== activeSourceId || !data?.detail || !articleRef.current
+      || readerRef.current?.closest("[hidden], [inert]")) return;
+    const segment = segments.find(item => item.ordinal === companionLocation.segmentOrdinal);
+    if (segment) jumpToSegment(segment);
+    else if (companionLocation.segmentOrdinal !== undefined) setNotice({ tone: "info", text: "原段落位置暂时不可用，已打开当前来源全文。" });
+    useCompanionResultPreview.setState({ sourceLocation: null });
+  }, [companionLocation, activeSourceId, scope, data?.detail]);
 
   return (
     <HudPage page="source-detail">

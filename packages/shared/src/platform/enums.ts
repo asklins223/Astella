@@ -78,6 +78,10 @@ export const JobType = {
   NOTE_DYNAMIC_ARTIFACT_GENERATE: "note_dynamic_artifact_generate",
   // 笔记页发起的拓展方向与可审核草稿生成任务。
   NOTE_EXPANSION_GENERATE: "note_expansion_generate",
+  // Plan 57：一篇笔记一张学习卡；题目固定题型并带原文/拓展依据。
+  NOTE_LEARNING_CARD_GENERATE: "note_learning_card_generate",
+  // Plan 57：伴星批改主观题/操作题，并生成整卷总评。
+  NOTE_LEARNING_CARD_GRADE: "note_learning_card_grade",
 } as const;
 export type JobType = (typeof JobType)[keyof typeof JobType];
 

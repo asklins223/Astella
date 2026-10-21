@@ -174,11 +174,6 @@
 .guidance-scene__artifact b { font-size: 16px; }
 .guidance-scene__artifact small { font-size: 9px; }
 .guidance-scene__artifact i { font-style: normal; color: #9cae87; font-size: 9px; }
-.guidance-scene__review-box { position: absolute; left: 19%; top: 44%; width: 62%; height: 42%; background: #b5cda3; border-radius: 22px; transform: rotate(-5deg); box-shadow: 0 7px 0 #98b086; }
-.guidance-scene__review-box i { position: absolute; width: 94%; height: 100%; top: -27px; left: 3%; border-radius: 10px; background: #dae6c8; box-shadow: 0 -3px 0 #bfceaa; }
-.guidance-scene__review-box i:nth-child(2) { top: -18px; background: #c8dcb6; }
-.guidance-scene__review-box i:nth-child(3) { top: -9px; background: #bfd3ab; }
-.guidance-scene__review-box > span { position: absolute; right: 17px; bottom: 8px; color: #759062; font-size: 10px; }
 .guidance-scene[data-kind="review"] .guidance-scene__folio { left: 21%; top: 9%; width: 64%; transform: rotate(3deg); }
 .guidance-scene[data-kind="return"] .guidance-scene__folio { left: 5%; top: 17%; width: 75%; transform: rotate(-2deg); }
 .guidance-scene__finish { display: flex; align-items: center; gap: 9px; padding-top: 10px; border-top: 1px dashed #d2dcc0; color: #829f6d; font-size: 12px; }

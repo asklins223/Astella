@@ -29,7 +29,7 @@ function source(id: string, title: string, status: string, noteCount: number) {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     noteCount,
-    cardProgress: { pendingReviewRuns: 0, activeObjectives: 0 },
+    cardProgress: { activeCards: 0 },
   };
 }
 

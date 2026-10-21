@@ -7,8 +7,7 @@ import { parseQuery } from "../../lib/pagination.ts";
 
 const searchQuerySchema = z.object({
   q: z.string().optional(),
-  // Plan 23 CS-03：objective 类型（conceptLabel/说明/来源可搜；answer/rubric 不进索引）
-  type: z.enum(["note", "source", "objective"]).optional(),
+  type: z.enum(["note", "source"]).optional(),
   limit: z.coerce.number().int().min(1).max(50).optional(),
   // keyset 游标（见 service.ts 的 SearchCursor）：上一页最后一行的排序键。
   // 不透明；解不开就 400，绝不悄悄回退到第一页。

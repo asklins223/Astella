@@ -4,10 +4,6 @@
  * topology contract — no layout, no geometry, no invented records.
  */
 
-import {
-  formatObjectiveState,
-  objectiveStateNeedsAttention,
-} from "../run/objective-state-copy.ts";
 import type {
   UnderstandingEdgeProjectionV3,
   UnderstandingNodeProjectionV3,
@@ -19,8 +15,7 @@ function nodeRefId(node: UnderstandingNodeProjectionV3): string {
   const ref = node.nodeRef;
   return ref.kind === "source" ? ref.sourceId
     : ref.kind === "note" ? ref.noteId
-      : ref.kind === "objective" ? ref.objectiveId
-        : ref.evidenceSnapshotId;
+      : ref.questionId;
 }
 
 export function graphNodeKey(node: UnderstandingNodeProjectionV3): string {
@@ -36,8 +31,7 @@ export function edgeEndpointKey(ref: UnderstandingEdgeProjectionV3["from"]): str
 const KIND_LABEL: Record<GraphNodeKind, string> = {
   source: "来源",
   note: "笔记",
-  objective: "学习目标",
-  evidence: "证据",
+  card_question: "学习卡题目",
 };
 
 export function graphNodeKindLabel(kind: GraphNodeKind): string {
@@ -45,11 +39,8 @@ export function graphNodeKindLabel(kind: GraphNodeKind): string {
 }
 
 export const EDGE_KIND_LABEL = {
-  relates_to: "语义关联",
-  supersedes: "替代版本",
-  supported_by: "证据支撑",
-  sourced_from: "来源材料",
   contains_note: "收录笔记",
+  contains_question: "配套题目",
   references: "正文引用",
 } as const satisfies Record<UnderstandingEdgeProjectionV3["kind"], string>;
 
@@ -57,20 +48,9 @@ export function graphEdgeKindLabel(kind: UnderstandingEdgeProjectionV3["kind"]):
   return EDGE_KIND_LABEL[kind] ?? kind;
 }
 
-export function graphObjectiveStateLabel(state: string): string {
-  return formatObjectiveState(state);
-}
-
-/** States that mean "this claim needs the learner" — they earn the bigger star. */
-export function objectiveNeedsAttention(state: string): boolean {
-  return objectiveStateNeedsAttention(state);
-}
-
 /** The 来源库 writes the same four words in `formatSourceKindLabel`; that
  *  helper lives in a React module this pure layout file must not import, so
- *  the graph keeps its own table for kinds, edges and source modality.
- *  Objective states no longer need one — the wording moved to
- *  `objective-state-copy.ts`, which is pure and shared by every surface. */
+ *  the graph keeps its own table for kinds, edges and source modality. */
 const SOURCE_MODALITY_LABEL: Record<string, string> = {
   url: "网页",
   web: "网页",
@@ -87,22 +67,15 @@ export function graphSourceModalityLabel(modality: string): string {
  * The contract is a plain `z.union`, not a discriminated one: the
  * discriminant (`kind`) sits inside `nodeRef`, so a `nodeRef.kind` check
  * narrows the ref but never the node, and every variant has to be recognised
- * by a property of its own. The four node schemas are `strictObject`s, so
+ * by a property of its own. The node schemas are `strictObject`s, so
  * these keys are exact hit tests on exactly one kind:
  *
- *   source → modality · note → currentVersionId · objective → personal ·
- *   evidence → supportSummary
- *
- * `freshness` used to stand in for "note", and it was false: objectives carry
- * `freshness` too, so every objective matched the note branch first and the
- * objective summary below was unreachable. Keying each guard on a key only one
- * kind owns removes that class of bug outright.
+ *   source → modality · note → currentVersionId · card_question → bestStars
  */
 
 export type SourceNodeV3 = Extract<UnderstandingNodeProjectionV3, { nodeRef: { kind: "source" } }>;
 export type NoteNodeV3 = Extract<UnderstandingNodeProjectionV3, { nodeRef: { kind: "note" } }>;
-export type ObjectiveNodeV3 = Extract<UnderstandingNodeProjectionV3, { nodeRef: { kind: "objective" } }>;
-export type EvidenceNodeV3 = Extract<UnderstandingNodeProjectionV3, { nodeRef: { kind: "evidence" } }>;
+export type CardQuestionNodeV3 = Extract<UnderstandingNodeProjectionV3, { nodeRef: { kind: "card_question" } }>;
 
 export function isSourceNode(node: UnderstandingNodeProjectionV3): node is SourceNodeV3 {
   return "modality" in node;
@@ -112,12 +85,8 @@ export function isNoteNode(node: UnderstandingNodeProjectionV3): node is NoteNod
   return "currentVersionId" in node;
 }
 
-export function isObjectiveNode(node: UnderstandingNodeProjectionV3): node is ObjectiveNodeV3 {
-  return "personal" in node;
-}
-
-export function isEvidenceNode(node: UnderstandingNodeProjectionV3): node is EvidenceNodeV3 {
-  return "supportSummary" in node;
+export function isCardQuestionNode(node: UnderstandingNodeProjectionV3): node is CardQuestionNodeV3 {
+  return "bestStars" in node;
 }
 
 /** One line the detail drawer shows under the label — a second fact, never a
@@ -125,26 +94,19 @@ export function isEvidenceNode(node: UnderstandingNodeProjectionV3): node is Evi
  *  mutually exclusive, so the order here is a readability choice, not a
  *  correctness one. */
 export function graphNodeSummary(node: UnderstandingNodeProjectionV3): string {
-  if (isObjectiveNode(node)) {
-    // The detail header and facts grid already name the personal state. Keep
-    // the summary focused on the objective itself so the opening hierarchy
-    // does not repeat “到期复习” or “学习中” three times.
-    return node.publicSummary;
-  }
+  if ("bestStars" in node) return node.bestStars === null ? "还没有练过" : `最佳 ${node.bestStars} 星`;
   if (isSourceNode(node)) return `${graphSourceModalityLabel(node.modality)}来源`;
   // The server has no basis to compute a note's freshness (it records no
   // per-source content revision), so the note reports the one link it does
   // know: whether a source stands behind it.
-  if (isNoteNode(node)) return node.hasSource ? "已关联来源" : "手写笔记";
-  return node.restricted ? "证据受限，仅显示元数据。" : node.supportSummary;
+  return node.hasSource ? "已关联来源" : "手写笔记";
 }
 
 /** The cosmos labels stay short; the detail drawer carries the full summary. */
 export const GRAPH_CAPTION_MAX_LENGTH = 48;
 
 export function graphNodeLabel(node: UnderstandingNodeProjectionV3): string {
-  const raw = isEvidenceNode(node) ? (node.sourceLabel ?? node.supportSummary) : node.label;
-  const trimmed = raw.trim().replace(/\s+/g, " ");
+  const trimmed = node.label.trim().replace(/\s+/g, " ");
   return trimmed.length > GRAPH_CAPTION_MAX_LENGTH
     ? trimmed.slice(0, GRAPH_CAPTION_MAX_LENGTH)
     : trimmed;

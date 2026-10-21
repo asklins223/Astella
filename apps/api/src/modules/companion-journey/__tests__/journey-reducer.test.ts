@@ -12,35 +12,28 @@ import {
   JourneyActionError,
 } from "../journey-reducer.ts";
 
-test("classifyJourneyEvent：run completed + created schedule → advance completed(real_first_loop)", () => {
+test("classifyJourneyEvent：完成第一张笔记学习卡 → advance completed(real_first_loop)", () => {
   const command = classifyJourneyEvent({
-    domainEventId: "e1",
-    eventType: "learning_run.completed",
-    payload: {
-      runId: "run-1",
-      result: { outcome: "demonstrated", scheduleImpact: { kind: "created" } },
-    },
+    domainEventId: "card.completed:card-1",
+    eventType: "note_learning_card.completed",
+    payload: { cardId: "card-1" },
   });
   assert.deepEqual(command, {
     kind: "advance",
     toStep: "closing",
-    refs: { runId: "run-1" },
+    refs: { cardId: "card-1" },
     completionKind: "real_first_loop",
     terminalStatus: "completed",
   });
 });
 
-test("classifyJourneyEvent：run completed 无 schedule → first_schedule（不越级完成）", () => {
+test("classifyJourneyEvent：已退役的 learning_run.completed 不再推进旅程", () => {
   const command = classifyJourneyEvent({
     domainEventId: "e2",
     eventType: "learning_run.completed",
-    payload: { runId: "run-2", result: { outcome: "practice_completed", scheduleImpact: { kind: "none" } } },
+    payload: { runId: "run-2", result: { outcome: "practice_completed", scheduleImpact: { kind: "created" } } },
   });
-  assert.equal(command.kind, "advance");
-  if (command.kind === "advance") {
-    assert.equal(command.toStep, "first_schedule");
-    assert.equal(command.terminalStatus, undefined);
-  }
+  assert.equal(command.kind, "noop");
 });
 
 test("classifyJourneyEvent：未知事件 noop（不越级推进）", () => {
@@ -55,28 +48,28 @@ test("classifyJourneyEvent：未知事件 noop（不越级推进）", () => {
 test("applyJourneyEvent：advance 推进 step/refs/lastDomainEventId 且状态不变", () => {
   const state = initialJourneyState("own_material");
   const next = applyJourneyEvent(state, {
-    domainEventId: "e1",
-    eventType: "learning_run.completed",
-    payload: { runId: "run-1", result: { outcome: "demonstrated", scheduleImpact: { kind: "created" } } },
+    domainEventId: "card.completed:card-1",
+    eventType: "note_learning_card.completed",
+    payload: { cardId: "card-1" },
   });
   assert.equal(next.status, "completed");
   assert.equal(next.currentStep, "closing");
-  assert.equal(next.refs.runId, "run-1");
-  assert.equal(next.lastDomainEventId, "e1");
+  assert.equal(next.refs.cardId, "card-1");
+  assert.equal(next.lastDomainEventId, "card.completed:card-1");
   assert.equal(next.completionKind, "real_first_loop");
   assert.equal(next.stepRevision, state.stepRevision + 1);
 });
 
 test("applyJourneyEvent：终端态不接受推进（幂等）", () => {
   const completed = applyJourneyEvent(initialJourneyState("own_material"), {
-    domainEventId: "e1",
-    eventType: "learning_run.completed",
-    payload: { runId: "run-1", result: { outcome: "demonstrated", scheduleImpact: { kind: "created" } } },
+    domainEventId: "card.completed:card-1",
+    eventType: "note_learning_card.completed",
+    payload: { cardId: "card-1" },
   });
   const again = applyJourneyEvent(completed, {
-    domainEventId: "e2",
-    eventType: "learning_run.completed",
-    payload: { runId: "run-2", result: { outcome: "demonstrated", scheduleImpact: { kind: "created" } } },
+    domainEventId: "card.completed:card-2",
+    eventType: "note_learning_card.completed",
+    payload: { cardId: "card-2" },
   });
   assert.equal(again.stepRevision, completed.stepRevision, "terminal state not advanced");
   assert.equal(again.currentStep, "closing");

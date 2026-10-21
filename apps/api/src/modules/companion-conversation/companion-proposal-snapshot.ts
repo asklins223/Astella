@@ -122,33 +122,15 @@ export async function getCompanionProposalSnapshot(args: {
   );
 }
 
-function navigationRouteFor(kind: string, payload: Record<string, unknown>): {
+function navigationRouteFor(kind: string, _payload: Record<string, unknown>): {
   route: { kind: string; [k: string]: unknown };
   safeSummary: string;
 } | null {
   switch (kind) {
-    case "open_review":
-      return { route: { kind: "review" }, safeSummary: "打开复习页" };
-    case "open_card":
-      return typeof payload.cardId === "string" && typeof payload.objectiveId === "string"
-        ? {
-            route: {
-              kind: "card",
-              cardId: payload.cardId,
-              objectiveId: payload.objectiveId,
-            },
-            safeSummary: "打开卡片",
-          }
-        : null;
     case "open_star_map":
-      return { route: { kind: "star_map", keyPointId: payload.keyPointId ?? undefined }, safeSummary: "打开星图" };
+      return { route: { kind: "star_map" }, safeSummary: "打开星图" };
     case "focus_graph_node":
-      return {
-        route: { kind: "star_map", keyPointId: payload.keyPointId, lens: payload.lens },
-        safeSummary: "聚焦知识节点",
-      };
-    case "restore_graph_viewport":
-      return { route: { kind: "star_map", restoreRun: payload.runId }, safeSummary: "恢复星图视口" };
+      return { route: { kind: "star_map" }, safeSummary: "打开星图" };
     case "open_conversation_history":
       return {
         route: { kind: "conversation" },
@@ -169,16 +151,16 @@ export async function resolveNavigationRouteFor(
   if (typeof payload.cardId !== "string") {
     throw new CompanionConversationError("INVALID_REQUEST", 400, "cardId is required");
   }
-  const rows = await tx.execute<{ objective_id: string }>(sql`
-    SELECT objective_id
-    FROM learning_cards_v2
+  const rows = await tx.execute<{ note_id: string }>(sql`
+    SELECT note_id
+    FROM note_learning_cards
     WHERE workspace_id = ${workspaceId}
       AND id = ${payload.cardId}
     LIMIT 1
   `);
-  const objectiveId = rows[0]?.objective_id;
-  if (!objectiveId) {
+  const noteId = rows[0]?.note_id;
+  if (!noteId) {
     throw new CompanionConversationError("NOT_FOUND", 404, "card target no longer exists");
   }
-  return navigationRouteFor(kind, { ...payload, objectiveId });
+  return { route: { kind: "note", noteId }, safeSummary: "打开这篇笔记的学习卡" };
 }

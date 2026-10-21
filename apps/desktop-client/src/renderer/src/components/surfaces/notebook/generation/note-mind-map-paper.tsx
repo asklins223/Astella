@@ -12,7 +12,7 @@ type View = { x: number; y: number; scale: number };
 // Per-visit viewport survives switching 要点 / 脑图; workspace scope is part of the key.
 const views = new Map<string, { view: View; collapsed: string[]; selected: string | null }>();
 export function NoteMindMapPaper({ map, currentVersionId, unversioned, regenerating, onRegenerate, epoch, notice }: {
-  map: NoteMindMapV1; currentVersionId: string | null; unversioned: boolean; regenerating: boolean; onRegenerate: () => void; epoch: number | undefined; notice?: ReactNode;
+  map: NoteMindMapV1; currentVersionId: string | null; unversioned: boolean; regenerating: boolean; onRegenerate?: () => void; epoch: number | undefined; notice?: ReactNode;
 }) {
   const scope = useRoomStore(state => state.workspaceScopeRevision), fullscreen = useNotebookFullscreenActive();
   const key = `${scope}:${map.mindMapId}`;
@@ -215,7 +215,7 @@ export function NoteMindMapPaper({ map, currentVersionId, unversioned, regenerat
           <h3>{root.label}</h3><p>基于笔记 v{map.noteVersionNumber} · 已读取全部文字</p>
           {old ? <p>这是旧版脑图，可重新整理当前版本。</p> : unversioned ? <p>正文还有未存成版本的改动，重新生成前可以选择使用的版本。</p> : null}
           {map.coverage.imageBlocksNotRead ? <p>{map.coverage.imageBlocksNotRead} 处图片未读取。</p> : null}
-          <button type="button" className="note-mind-map__pane-action" disabled={regenerating} onClick={onRegenerate}>{regenerating ? "正在重新整理…" : "重新生成脑图"}</button>
+          {onRegenerate ? <button type="button" className="note-mind-map__pane-action" disabled={regenerating} onClick={onRegenerate}>{regenerating ? "正在重新整理…" : "重新生成脑图"}</button> : null}
           <p className="small">重新生成会保留旧图，可在学习记录里回看。</p>
         </div> : null}
         {panel === "branches" ? <div className="note-mind-map__branch-actions">

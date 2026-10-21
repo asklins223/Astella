@@ -22,8 +22,6 @@ const FLAG_HOME = "config/learning-companion-flags.ts";
 
 /** 这些开关已经有收口的读取函数，模块代码里不该再直接读 env。 */
 const KNOWN_FLAGS = [
-  "LEARNING_RUN_ENABLED",
-  "CARD_GENERATION_V2_ENABLED",
   "COMPANION_DIALOGUE_V1_ENABLED",
   "COMPANION_VOICE_DIALOGUE_V1_ENABLED",
   "COMPANION_JOURNEY_V2",

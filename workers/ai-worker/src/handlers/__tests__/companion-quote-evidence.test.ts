@@ -31,7 +31,7 @@ test("compaction retains exact quote evidence privately without treating summary
   const json = JSON.stringify([{ role: "tool", toolCallId: "history", content: JSON.stringify({ messages: [{ text: original }] }) }]);
   const compactedEvidence = compactionSourceMessages({ json, sha256: sha256Utf8V1(json) });
   const input = { contextText: "", compactedEvidence, messages: [{ role: "assistant" as const, content: invented }],
-    turnToolUse: "read", pageContext: null, groundedTutorContext: null, stepCalls: 0, toolCallCount: 1,
+    turnToolUse: "read", pageContext: null, stepCalls: 0, toolCallCount: 1,
     finalAnswerOnly: false, stepCount: 2, stepBudget: 10, nowMs: 1, deadlineAt: 1000, userAskedForAction: false,
     requestedActionTools: [], actionSteerAttempts: 0, lookupClaimSteered: false, quoteCorrectionUsed: false };
   assert.deepEqual(reviewCompanionStepCorrection({ ...input, said: `原文：「${original}」。` }).unverifiedQuotes, []);
@@ -97,7 +97,7 @@ test("只读了她的手册时，讲解正文里「」举的例子不算编造�
   // 引文核对切严格档、纠正一次仍不匹配 → 整轮 INTERNAL_ERROR。手册不是原文材料。
   const said = "先说结论：判断「用户这句话要我干什么」，再把它翻译成可执行目标。比如「查一下昨天的笔记，挑重点存成一篇摘要」就是三步。";
   const base = {
-    said, contextText: "", turnToolUse: "none", pageContext: null, groundedTutorContext: null,
+    said, contextText: "", turnToolUse: "none", pageContext: null,
     stepCalls: 0, toolCallCount: 1, finalAnswerOnly: false, stepCount: 1, stepBudget: 10,
     nowMs: 1, deadlineAt: 1000, userAskedForAction: false, requestedActionTools: [],
     actionSteerAttempts: 0, lookupClaimSteered: false, quoteCorrectionUsed: false,

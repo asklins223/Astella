@@ -73,7 +73,7 @@ export function RoomStage() {
   const home = homePresentation(projection, homeLoading, homeFailure);
   const { manifest, error } = useLearningRoomManifest();
   useTaskScenePreload(manifest, theme);
-  const { notebookState, reviewState, shelfState } = home;
+  const { notebookState, shelfState } = home;
   // 首启引导由 v2 首页的入场序列负责（`HomeV2Experience`），房间这边不再自己排队
   // 弹它——原先那是 v1 首页的路径，留着就是两个地方都想开同一个模态。
 
@@ -249,7 +249,6 @@ export function RoomStage() {
       data-scene-depth-bands={SCENE_DEPTH_BANDS.map((band) => band.id).join(",")}
       data-scene-room-layer-count={0}
       data-home-notebook-state={notebookState}
-      data-home-review-state={reviewState}
       data-home-shelf-state={shelfState}
     >
       <div ref={cameraRef} className="room-camera-rig">

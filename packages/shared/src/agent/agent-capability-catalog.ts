@@ -1,11 +1,11 @@
-import { agentGoalToolManifest, noteAgentCapabilityManifest, cardAgentCapabilityManifest,
+import { agentGoalToolManifest, noteAgentCapabilityManifest,
   methodAgentCapabilityManifest, basicAgentCapabilityManifest, externalAgentCapabilityManifest,
   agentGoalDeliveryManifest } from "./agent-capability-manifests.ts";
 import { companionCapabilityManifest } from "./companion-capability-manifest.ts";
 import type { AgentCapabilityDeclaration } from "./agent-capability-definition.ts";
 
 export type AgentCapabilitySurface = "conversation" | "goal";
-export type AgentCapabilityExecutor = "companion" | "goal_control" | "note" | "card" | "method" | "basic" | "external" | "delivery";
+export type AgentCapabilityExecutor = "companion" | "goal_control" | "note" | "method" | "basic" | "external" | "delivery";
 export interface AgentCapabilityEntry extends AgentCapabilityDeclaration {
   readonly executor: AgentCapabilityExecutor;
   readonly surfaces: readonly AgentCapabilitySurface[];
@@ -19,7 +19,6 @@ const groups: readonly { entries: readonly AgentCapabilityDeclaration[]; executo
   { entries: externalAgentCapabilityManifest, executor: "external", surfaces: ["conversation", "goal"], requires: null },
   { entries: companionCapabilityManifest, executor: "companion", surfaces: ["conversation"], requires: null },
   { entries: noteAgentCapabilityManifest, executor: "note", surfaces: ["goal"], requires: "frozenNote" },
-  { entries: cardAgentCapabilityManifest, executor: "card", surfaces: ["goal"], requires: "frozenNote" },
   { entries: methodAgentCapabilityManifest, executor: "method", surfaces: ["goal"], requires: "confirmedMethod" },
   { entries: [agentGoalDeliveryManifest], executor: "delivery", surfaces: ["goal"], requires: null },
 ];

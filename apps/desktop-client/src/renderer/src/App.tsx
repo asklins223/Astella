@@ -49,9 +49,7 @@ export function homeV2ShortcutFeature(input: {
   readonly altKey: boolean;
 }): HomeFeatureId | null {
   const command = input.metaKey || input.ctrlKey;
-  if (command && input.key === "Enter") return "continue";
   if (command && input.key.toLowerCase() === "k") return "global-search";
-  if (!command && !input.altKey && input.key.toLowerCase() === "r") return "today-review";
   if (!command && !input.altKey && input.key.toLowerCase() === "g") return "understanding-graph";
   return null;
 }
@@ -108,7 +106,7 @@ export const RoomExperience = memo(function RoomExperience() {
       // 跟着 v1 首页一起删掉了；它的 9 个 tile 与这套快捷键是同一个入口的两份实现。）
       const featureId = homeV2ShortcutFeature(event);
       if (!featureId) return;
-      // 审计 F9：r / g 是无修饰单键，只在书桌上生效——任务页里误按一下会把人
+      // 审计 F9：g 是无修饰单键，只在书桌上生效——任务页里误按一下会把人
       // 瞬间带离正在做的事，而且还会清掉 activeNoteRef。组合键照旧全局可用。
       if (!event.metaKey && !event.ctrlKey && surface) return;
       event.preventDefault();
@@ -133,7 +131,7 @@ export const RoomExperience = memo(function RoomExperience() {
       <div className="room-chrome" hidden={notebookFullscreen} inert={notebookFullscreen}>
         <DirectoryRail />
         <HudRoomControl />
-        {surface
+        {surface && surface !== "note-card"
           ? <HudReturn label={returnTarget?.label ?? "返回书房"} onReturn={returnTarget?.run ?? (() => invoke("home"))} />
           : null}
       </div>

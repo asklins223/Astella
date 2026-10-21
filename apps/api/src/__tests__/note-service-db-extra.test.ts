@@ -54,6 +54,7 @@ interface MockConfig {
   noteVersionsFindFirstQueue?: any[];
   noteVersionsFindMany?: any[];
   noteBlocksFindMany?: any[];
+  noteBlocksFindManyQueue?: any[][];
   // count query
   countResult?: number;
   // 是否在 upsertSearchDocument 中抛错
@@ -65,6 +66,7 @@ function createMockExecutor(config: MockConfig = {}): any {
   let selectIdx = 0;
   let notesFindFirstIdx = 0;
   let noteVersionsFindFirstIdx = 0;
+  let noteBlocksFindManyIdx = 0;
   let createdNote: { id: string; versionId: string } | undefined;
 
   const insertReturning = config.insertReturning ?? [];
@@ -136,7 +138,7 @@ function createMockExecutor(config: MockConfig = {}): any {
         findMany: async () => config.noteVersionsFindMany ?? [],
       },
       noteBlocks: {
-        findMany: async () => config.noteBlocksFindMany ?? [],
+        findMany: async () => config.noteBlocksFindManyQueue?.[noteBlocksFindManyIdx++] ?? config.noteBlocksFindMany ?? [],
       },
       // 正文的事实源已经是 Y.Doc（批次 4.1/4.3），自动保存也要先读快照再补齐。
       // 这里一律报"没有快照"，让 loadNoteDoc 走上方的 noteBlocks 补齐路：这些用例
@@ -287,6 +289,27 @@ describe("note/service createNote", () => {
 // ─── getNoteWithVersion ────────────────────────────────────────────────
 
 describe("note/service getNoteWithVersion", () => {
+  it("指定旧版本时同时保留当前指针和旧正文，不以最新版冒充已保存成果", async () => {
+    const oldId = "33333333-3333-4333-8333-333333333333";
+    const mock = createMockExecutor({
+      notesFindFirst: { id: NOTE_ID, currentVersionId: VERSION_ID, workspaceId: WS_ID },
+      noteVersionsFindFirstQueue: [{ id: VERSION_ID, versionNo: 2 }, { id: oldId, versionNo: 1, noteId: NOTE_ID }],
+      noteBlocksFindManyQueue: [[{ ordinal: 0, type: "paragraph", content: "新版" }], [{ ordinal: 0, type: "paragraph", content: "保存时的正文" }]],
+    });
+    const result = await getNoteWithVersion(mock, NOTE_ID, WS_ID, USER_ID, oldId);
+    assert.equal(result?.version.id, VERSION_ID);
+    assert.equal(result?.blocks[0]?.content, "新版");
+    assert.equal(result?.requestedVersion?.id, oldId);
+    assert.equal(result?.requestedVersion?.blocks[0]?.content, "保存时的正文");
+  });
+  it("指定版本不存在或笔记不可见时不回退到最新正文", async () => {
+    const mock = createMockExecutor({
+      notesFindFirst: { id: NOTE_ID, currentVersionId: VERSION_ID, workspaceId: WS_ID },
+      noteVersionsFindFirstQueue: [{ id: VERSION_ID, versionNo: 2 }, undefined],
+    });
+    assert.equal(await getNoteWithVersion(mock, NOTE_ID, WS_ID, USER_ID, "missing"), null);
+    assert.equal(await getNoteWithVersion(createMockExecutor({}), NOTE_ID, WS_ID, USER_ID, VERSION_ID), null);
+  });
   it("笔记不存在时返回 null", async () => {
     const mock = createMockExecutor({
       notesFindFirst: undefined,

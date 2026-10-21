@@ -3,6 +3,7 @@ import type { AgentArtifactRefV1, AgentOperationV1, AgentRunV1 } from "@astella/
 import { AGENT_ARTIFACT_KIND_LABELS_V1 } from "@astella/shared/agent-contracts";
 import { useRoomStore } from "../../../app/home/room-store";
 import { plainCompanionBubbleText } from "../content/companion-markdown";
+import { previewCompanionNote } from "../journal/companion-result-preview";
 
 export const goalStatusText: Record<AgentRunV1["status"], string> = {
   queued: "等待开始", running: "进行中", waiting: "等待生成结果", paused: "已暂停",
@@ -34,43 +35,65 @@ export function goalTitle(run: AgentRunV1) {
   const text = plainCompanionBubbleText(run.goal).replace(/\s+/g, " ");
   return text.length > 42 ? `${text.slice(0,42)}…` : text;
 }
-export function goalHeadline(run: AgentRunV1) {
-  if (run.status === "failed") return run.artifacts.length ? "做好的先留给你" : "这次还没做成";
-  if (run.status === "completed") return "交给我的事做好了";
-  if (run.status === "paused") return "等你想继续的时候";
-  if (run.status === "cancelled") return "这件事先停在这里";
-  if (run.artifacts.length) return "已经有成果了";
-  return run.status === "waiting" ? "正在等待生成结果" : run.status === "queued" ? "这件事已接下" : "这件事正在进行";
-}
 export function goalNextHint(run: AgentRunV1) {
   if (run.operations.some(operation => operation.status === "outcome_unknown")) return "暂时无法确认操作结果，先查看完整记录，避免重复生成。";
-  if (run.status === "failed") return run.operations.some(operation => operation.execution.kind === "card_generation")
-    ? "这批学习卡的生成或核对没有完成。可以打开本次任务查看草稿、原因和重试方式；进入任务页面不代表候选已通过核对。"
-    : "可以调整要求再继续，已经做好的内容会保留。";
+  if (run.status === "failed") return "可以调整要求再继续，已经做好的内容会保留。";
   if (run.status === "paused") return "不再推进新步骤，已经启动的生成会收回结果。";
   if (run.status === "cancelled") return "未完成的生成已停止，之前的成果仍能打开。";
   if (run.status === "completed") {
-    if (run.operations.some(operation => operation.status === "succeeded" && operation.result?.kind === "artifact" && operation.result.artifact.kind === "card_candidates"))
-      return "候选卡已准备好，打开审核台挑选；你决定收下哪些，再保存到卡组。";
     if (run.operations.some(operation => operation.status === "succeeded" && operation.result?.kind === "artifact" && operation.result.artifact.kind === "note_expansion"))
       return "拓展草稿已留好，翻开后可以修改、挑选，再决定收下哪些。";
-    if (run.operations.some(operation => operation.status === "succeeded" && operation.result?.kind === "no_cards_recommended"))
-      return "这次没有推荐生成学习卡，原因已留在手记里。可以调整要求再聊。";
     if (run.summary && !run.operations.some(operation => operation.result?.kind === "artifact"))
       return run.artifacts.length ? "这次的答复留在手记里，之前的成果也保留着。" : "这次的答复留在手记里，可以接着和我聊。";
     return "方便时再看，也可以接着和我聊。";
   }
   return "你可以继续读书或聊天，我会把进展留在这里。";
 }
+
+/**
+ * 气泡/列表/任务页共用的“现在到哪一步”。只讲事实：正在哪个能力、已经留下几份成果，
+ * 或这个任务为什么停在这里；不替她发明新的进度措辞。
+ */
+export function goalProgressLine(run: AgentRunV1) {
+  const results = latestGoalArtifacts(run).length;
+  const active = run.operations.find(operation => operation.status === "running")
+    ?? run.operations.find(operation => operation.status === "accepted");
+  if (["running", "queued", "waiting"].includes(run.status)) {
+    if (active) return `${operationLabel(active.capability)}${results ? ` · 已做好 ${results} 份` : ""}`;
+    const waiting = run.status === "queued" ? "等待开始" : "等待生成结果";
+    return results ? `${waiting} · 已做好 ${results} 份` : waiting;
+  }
+  if (run.status === "completed") return results ? `${results} 份成果已保留` : "答复已留下";
+  if (run.status === "failed") return results ? `已保留 ${results} 份成果` : "没有留下成果";
+  if (run.status === "paused") return results ? `已暂停 · 已保留 ${results} 份` : "已暂停";
+  if (run.status === "cancelled") return results ? `已停止 · 已保留 ${results} 份` : "已停止";
+  return goalStatusText[run.status];
+}
+
+export function goalUpdatedLabel(run: AgentRunV1) {
+  const date = new Date(run.updatedAt);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+/**
+ * 任务页是否真的有一个“下一步”要说。
+ * 已完成且只有普通成果时，结果和交付说明已经回答了；再用一句泛化提示占一块，
+ * 反而把成果压下去。只有待处理、特殊候选/草稿、或纯答复没有成果时才保留。
+ */
+export function goalHasNextStep(run: AgentRunV1) {
+  if (["queued", "running", "waiting", "failed", "paused", "cancelled"].includes(run.status)) return true;
+  if (run.operations.some(operation => {
+    if (operation.status !== "succeeded" || !operation.result) return false;
+    return operation.result.kind === "artifact"
+      && ["note_expansion"].includes(operation.result.artifact.kind);
+  })) return true;
+  return Boolean(run.summary && !run.operations.some(operation => operation.result?.kind === "artifact"));
+}
+
 export function openAgentArtifact(artifact: AgentArtifactRefV1, scope: number) {
   const room = useRoomStore.getState();
   if (room.workspaceScopeRevision !== scope) return false;
-  if (artifact.kind === "card_candidates") {
-    room.setActiveNoteRef({ noteId: artifact.noteId, noteVersionId: artifact.noteVersionId });
-    room.setActiveCardGenerationRunId(artifact.id);
-    room.invoke("open-card-generation");
-    return true;
-  }
   room.setActiveNoteRef({ noteId: artifact.noteId, noteVersionId: artifact.noteVersionId,
     learningView: (artifact.kind === "note_overview" || artifact.kind === "note_mind_map") ? "overview" : artifact.kind === "note_expansion" ? "expansion" : "artifact",
     learningResult: { kind: artifact.kind, artifactId: artifact.id, taskId: artifact.jobId, noteVersionId: artifact.noteVersionId } });
@@ -78,15 +101,12 @@ export function openAgentArtifact(artifact: AgentArtifactRefV1, scope: number) {
   return true;
 }
 
-export function operationLabel(capability: string) {
-  return agentCapabilityLabel(capability) ?? "处理学习内容";
+export function previewAgentArtifact(artifact: AgentArtifactRefV1, scope: number, goalRunId: string, title: string, origin?: HTMLElement) {
+  if (useRoomStore.getState().workspaceScopeRevision !== scope) return false;
+  previewCompanionNote({ noteId: artifact.noteId, noteVersionId: artifact.noteVersionId, title, artifact, goalRunId }, origin);
+  return false;
 }
 
-/** Execution references remain navigable before there is a deliverable artifact. */
-export function openAgentCardOperation(operation: AgentOperationV1, scope: number) {
-  const room = useRoomStore.getState();
-  if (room.workspaceScopeRevision !== scope || operation.execution.kind !== "card_generation") return false;
-  room.setActiveCardGenerationRunId(operation.execution.id);
-  room.invoke("open-card-generation");
-  return true;
+export function operationLabel(capability: string) {
+  return agentCapabilityLabel(capability) ?? "处理学习内容";
 }

@@ -15,6 +15,7 @@ import { sha256Utf8V1 } from "@astella/shared/content-hash";
 import { getCompanionAgentTool } from "@astella/shared";
 import { writeFileSync } from "node:fs";
 import { executeCompanionMemoryTool } from "../handlers/tools/companion-memory-tools.ts";
+import { CompanionOutputTimeoutError } from "../handlers/agent/companion-output-watchdog.ts";
 
 const originalReviewFlag = process.env.COMPANION_EXPLANATION_REVIEW_V1;
 before(()=>{process.env.COMPANION_EXPLANATION_REVIEW_V1="true";});
@@ -132,13 +133,71 @@ test("真实工具循环保留完整JSON，并按块内游标读到长段落的�
 
 function readContext(f: Awaited<ReturnType<typeof fixture>>): ReadContext {
   return { ...f.event.read, conversationId: f.conversationId, userMessageId: f.messageId,
-    runStatus: "running", formalAnswerInProgress: false, formalAnswerTarget: null,
-    livePageView: null, pageContext: null, groundedTutorContext: null, userText: "你好",
+    runStatus: "running",
+    livePageView: null, pageContext: null, userText: "你好",
     recentMessages: [], residentMemories: [], memoryDirectory: [], playbookCatalog: [], playbookCandidates: [], deliveryObservation: null,
     organizationSurface: null, memoryRefs: [], hereAndNow: null, thisTurnFacts: null,
     factSpans: null, conversationSummary: null, personaProfileRevision: 0,
     personaExamplesRevision: 0, defaultExpressionVersion: "test", petProfile: null,
     nextMessageSeq: 2, nextEventSeq: 1 };
+}
+
+for (const failure of ["provider_first_output_timeout", "provider_idle_timeout", "unsaved-prose"] as const) {
+  test(`note request resumes on the configured fallback after ${failure}, without publishing an unverified save`, async () => {
+    const f = await fixture();
+    const text = "新建一篇关于秦朝的笔记，并保存成笔记。";
+    const served: string[] = [], delivered: string[] = [];
+    let searched = false;
+    try {
+      await f.mutate(tx => tx`UPDATE user_companion_account_state
+        SET agent_settings=jsonb_set(agent_settings,'{permissionLevel}','"full"'::jsonb)
+        WHERE user_id=${f.event.read.userId}`);
+      const fallback: AIProvider = {
+        id: "openai_compatible", modelId: "fallback-note-test", visionModelId: "", promptVersion: "test",
+        chatCompletion: async () => { throw new Error("a clear note creation must not classify"); },
+        executeAgentTurn: async request => {
+          served.push("fallback");
+          assert.equal(request.messages.filter(message => message.role === "user").length, 1);
+          assert.equal(request.messages.find(message => message.role === "user")?.content, text);
+          if (!searched) {
+            searched = true;
+            return { content: null, toolCalls: [{ id: "grounding", name: "companion_search_notes",
+              arguments: { query: "秦朝", match: "any" } }], finishReason: "tool_calls", usage: null, providerRequestId: null };
+          }
+          return { content: null, toolCalls: [{ id: "saved-note", name: "companion_create_note",
+            arguments: { title: "秦朝", markdown: "秦始皇于公元前221年完成统一，建立秦朝。郡县制加强了中央对地方的管理，统一文字和度量衡促进了交流。沉重的徭役和政治危机又加快了秦朝的衰亡。秦朝虽短暂，仍对后世制度产生了深远影响。", links: [] } }],
+            finishReason: "tool_calls", usage: null, providerRequestId: null };
+        },
+      } as AIProvider;
+      const primary: AIProvider = { ...fallback, modelId: "primary-note-test",
+        executeAgentTurn: async () => { served.push("primary");
+          if (failure === "unsaved-prose") return { content: "秦朝笔记已经保存好了。", toolCalls: [], finishReason: "stop", usage: null, providerRequestId: null };
+          throw new CompanionOutputTimeoutError(failure);
+        },
+      };
+      if (failure === "unsaved-prose") {
+        primary.chatCompletionStreamToolCalls = true;
+        primary.chatCompletionStream = async (_messages, _options, _signal, onDelta) => {
+          served.push("primary"); onDelta("秦朝笔记已经保存好了。");
+          return { content: "秦朝笔记已经保存好了。", toolCalls: [], finishReason: "stop" };
+        };
+      }
+      const result = await runCompanionAgentLoop({ ctx: f.event.ctx,
+        read: { ...readContext(f), userText: text }, provider: primary, fallbackProvider: fallback,
+        toolConstraints: { visionEnabled: false }, baseMessages: [{ role: "system", content: "完成保存，以真实回执为准。" }, { role: "user", content: text }],
+        onProviderDelta: async delta => { delivered.push(delta); return true; }, expiresAt: new Date(Date.now() + 60_000).toISOString() });
+      assert.equal(result.status, "completed");
+      assert.deepEqual(served, ["primary", "fallback", "fallback"], "the fallback remains selected and receipts close the request without another model call");
+      assert.ok(!delivered.join("").includes("秦朝笔记已经保存好了"), "unverified save prose must never become visible");
+      const rows = await f.mutate(tx => tx`SELECT name,status,result_ref FROM companion_agent_tool_calls WHERE run_id=${f.event.read.runId} ORDER BY created_at`);
+      assert.equal(rows.filter(row => row.name === "companion_create_note" && row.status === "succeeded").length, 1);
+      const notes = await f.mutate(tx => tx`SELECT id FROM notes WHERE workspace_id=${f.event.ctx.workspaceId}`);
+      assert.equal(notes.length, 1, "recovery must not duplicate a business write");
+      const [checkpoint] = await f.mutate(tx => tx`SELECT runtime_checkpoint FROM companion_agent_steps WHERE run_id=${f.event.read.runId} AND runtime_checkpoint IS NOT NULL ORDER BY step_no DESC LIMIT 1`);
+      assert.equal(JSON.parse(checkpoint.runtime_checkpoint.stateJson).state.protocolFallback, true);
+      if (result.status === "completed") assert.ok(result.text.includes("已保存 1 篇笔记"));
+    } finally { await f.cleanup(); }
+  });
 }
 
 test("命中输出上限时保留已流出的正文，但不会把半截答案结为成功", async () => {

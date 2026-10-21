@@ -1,17 +1,19 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useState } from "react";
 import type { AgentRunV1 } from "@astella/shared/agent-contracts";
 import { CompanionGoalBubble } from "../goals/CompanionGoalBubble";
 import { CompanionGoalJournal } from "../goals/CompanionGoalJournal";
 import type { AgentGoalsController } from "../goals/use-agent-goals";
-import { openAgentArtifact } from "../goals/agent-goal-presentation";
+import { goalProgressLine, goalTitle, openAgentArtifact } from "../goals/agent-goal-presentation";
+import { useCompanionResultPreview } from "../journal/companion-result-preview";
 
 vi.mock("../bubble/use-companion-floating-placement", () => ({ useCompanionFloatingPlacement: () => ({ side: "left" }) }));
-const room = vi.hoisted(() => ({ workspaceScopeRevision: 1, setActiveNoteRef: vi.fn(), setActiveCardGenerationRunId: vi.fn(), invoke: vi.fn() }));
-vi.mock("../../../app/home/room-store", () => ({ useRoomStore: Object.assign((select: (state: typeof room) => unknown) => select(room), { getState: () => room }) }));
+const room = vi.hoisted(() => ({ workspaceScopeRevision: 1, setActiveNoteRef: vi.fn(), setActiveCardGenerationRunId: vi.fn(), invoke: vi.fn(), subscribe: vi.fn(() => () => {}) }));
+vi.mock("../../../app/home/room-store", () => ({ useRoomStore: Object.assign((select: (state: typeof room) => unknown) => select(room), { getState: () => room, subscribe: room.subscribe }) }));
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
+beforeEach(() => useCompanionResultPreview.setState({ target: null }));
 const artifact = { kind: "note_overview" as const, id: "saved", jobId: "job", noteId: "note", noteVersionId: "version" };
 const run: AgentRunV1 = { version: 1, runId: "run", revision: 2, identityId: "identity",
   goal: "把欧姆定律整理成速看，并做互动演示。", status: "waiting", conversationId: null, inputs: [], operations: [],
@@ -24,6 +26,36 @@ function bubble(goals = controller()) {
   return <CompanionGoalBubble anchorRef={{ current: null }} motionMode="off" blocked={false} open selectedId="run" goals={goals}
     onOpen={vi.fn()} onClose={vi.fn()} onSelect={vi.fn()} onDetails={vi.fn()} onChat={vi.fn()} />;
 }
+it("shows the task title, current progress, and opens the exact task page from the bubble", () => {
+  const onDetails = vi.fn();
+  render(<CompanionGoalBubble anchorRef={{ current: null }} motionMode="off" blocked={false} open selectedId="run" goals={controller()}
+    onOpen={vi.fn()} onClose={vi.fn()} onSelect={vi.fn()} onDetails={onDetails} onChat={vi.fn()} />);
+  expect(screen.getByRole("heading", { name: goalTitle(run) })).toBeTruthy();
+  expect(screen.getByText(goalProgressLine(run))).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: /打开任务页/ }));
+  expect(onDetails).toHaveBeenCalledWith("run");
+});
+it("lets an open modal handle Escape before the task bubble", () => {
+  const onClose = vi.fn();
+  render(<CompanionGoalBubble anchorRef={{ current: null }} motionMode="off" blocked={false} open selectedId="run" goals={controller()}
+    onOpen={vi.fn()} onClose={onClose} onSelect={vi.fn()} onDetails={vi.fn()} onChat={vi.fn()} />);
+  const preview = document.createElement("dialog"); preview.open = true;
+  const escape = vi.fn(); preview.addEventListener("keydown", escape); document.body.append(preview);
+  fireEvent.keyDown(preview, { key: "Escape" });
+  expect(escape).toHaveBeenCalledOnce(); expect(onClose).not.toHaveBeenCalled();
+  preview.remove(); fireEvent.keyDown(document.body, { key: "Escape" });
+  expect(onClose).toHaveBeenCalledOnce();
+});
+
+it("进行中的任务页先给正在做的记录，泛化下一步和控件退后", () => {
+  render(<CompanionGoalJournal goals={controller()} targetId="run" onArtifactOpen={vi.fn()} />);
+  expect(screen.getAllByText(run.goal)).toHaveLength(1);
+  const process = screen.getByText("生成记录 · 0 项").closest("details") as HTMLDetailsElement;
+  expect(process.open).toBe(true);
+  expect(screen.queryByRole("heading", { name: "下一步" })).toBeNull();
+  expect(screen.getByText("调整这件事")).toBeTruthy();
+});
+
 it("初次加载和读取失败不显示空任务邀请，已读取的成果在刷新期间保留", () => {
   const goals = controller();
   const view = render(bubble({ ...goals, items: [], loading: true }));
@@ -47,7 +79,10 @@ it("keeps detailed Markdown in the journal and exposes only the latest compatibl
   expect(screen.queryByText("速看已做好")).toBeNull();
   expect(screen.getAllByRole("button", { name: "速看" })).toHaveLength(1);
   fireEvent.click(screen.getByRole("button", { name: "速看" }));
-  expect(room.setActiveNoteRef).toHaveBeenCalledWith(expect.objectContaining({ learningResult: { kind: "note_overview", artifactId: "saved", taskId: "job", noteVersionId: "version" } }));
+  expect(useCompanionResultPreview.getState().target).toMatchObject({
+    noteId: "note", noteVersionId: "version", goalRunId: "run",
+    artifact: { kind: "note_overview", id: "saved", jobId: "job" },
+  });
   view.unmount();
   render(<CompanionGoalJournal goals={controller()} targetId="run" onArtifactOpen={vi.fn()} />);
   expect(screen.getByText("速看已做好").tagName).toBe("STRONG");
@@ -107,74 +142,11 @@ it("opens expansion as the exact saved draft batch and labels it as a choice to 
     capability: "note_expansion_generate", execution: { kind: "job", id: "job" }, status: "succeeded", lastEventSeq: 1, result: { kind: "artifact", artifact: expansion }, error: null,
   }] }] }));
   fireEvent.click(screen.getByRole("button", { name: "拓展草稿" }));
-  expect(room.setActiveNoteRef).toHaveBeenCalledWith(expect.objectContaining({ learningView: "expansion",
-    learningResult: { kind: "note_expansion", artifactId: "job", taskId: "job", noteVersionId: "version" } }));
+  expect(useCompanionResultPreview.getState().target).toMatchObject({
+    noteId: "note", noteVersionId: "version", goalRunId: "run",
+    artifact: { kind: "note_expansion", id: "job" },
+  });
   expect(screen.getByText(/翻开后可以修改、挑选/)).toBeTruthy();
-});
-it("opens the exact card run for user review from both the light bubble and journal", () => {
-  const cards = { kind: "card_candidates" as const, id: "card-run", noteId: "note", noteVersionId: "version" };
-  const ready: AgentRunV1 = { ...run, status: "completed", artifacts: [cards], operations: [{
-    operationId: "card-operation", runId: run.runId, revision: run.revision,
-    scope: { workspaceId: "workspace", userId: "user" }, capability: "card_generation_generate",
-    execution: { kind: "card_generation", id: cards.id }, status: "succeeded", lastEventSeq: 2,
-    result: { kind: "artifact", artifact: cards }, error: null,
-  }] };
-  const view = render(bubble(controller(ready)));
-  expect(screen.getByText(/你决定收下哪些，再保存到卡组/)).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "待审核学习卡" }));
-  expect(room.setActiveNoteRef).toHaveBeenCalledWith({ noteId: "note", noteVersionId: "version" });
-  expect(room.setActiveCardGenerationRunId).toHaveBeenCalledWith("card-run");
-  expect(room.invoke).toHaveBeenCalledWith("open-card-generation");
-  expect(room.setActiveCardGenerationRunId.mock.invocationCallOrder[0]).toBeLessThan(room.invoke.mock.invocationCallOrder[0]);
-  view.unmount(); vi.clearAllMocks();
-  const onArtifactOpen = vi.fn();
-  render(<CompanionGoalJournal goals={controller(ready)} targetId="run" onArtifactOpen={onArtifactOpen} />);
-  fireEvent.click(screen.getByRole("button", { name: /待审核学习卡.*由你审核与保存/ }));
-  expect(room.setActiveCardGenerationRunId).toHaveBeenCalledWith("card-run");
-  expect(onArtifactOpen).toHaveBeenCalledOnce();
-  vi.clearAllMocks();
-  expect(openAgentArtifact(cards, 2)).toBe(false);
-  expect(room.setActiveCardGenerationRunId).not.toHaveBeenCalled();
-  expect(room.invoke).not.toHaveBeenCalled();
-});
-it("treats no card recommendation as an answer without inventing an artifact or an error", () => {
-  const answer: AgentRunV1 = { ...run, status: "completed", artifacts: [], summary: "**这段更适合阅读理解**\n\n- 先理清概念，再决定是否练习。", operations: [{
-    operationId: "card-operation", runId: run.runId, revision: run.revision,
-    scope: { workspaceId: "workspace", userId: "user" }, capability: "card_generation_generate",
-    execution: { kind: "card_generation", id: "card-run" }, status: "succeeded", lastEventSeq: 2,
-    result: { kind: "no_cards_recommended", reasonCodes: ["insufficient_content"] }, error: null,
-  }] };
-  const view = render(bubble(controller(answer)));
-  expect(screen.getByText(/这次没有推荐生成学习卡/)).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "待审核学习卡" })).toBeNull();
-  expect(screen.queryByRole("alert")).toBeNull();
-  expect(screen.queryByText("这段更适合阅读理解")).toBeNull();
-  view.unmount();
-  render(<CompanionGoalJournal goals={controller(answer)} targetId="run" onArtifactOpen={vi.fn()} />);
-  expect(screen.getByText("这段更适合阅读理解").tagName).toBe("STRONG");
-  expect(screen.getByText("这次不建议制卡")).toBeTruthy();
-  expect(screen.queryByRole("region", { name: "做好的成果" })).toBeNull();
-  expect(room.setActiveCardGenerationRunId).not.toHaveBeenCalled();
-});
-it("opens running and failed card tasks without claiming there is a finished artifact", () => {
-  for (const status of ["running", "failed"] as const) {
-    const item: AgentRunV1 = { ...run, status, artifacts: [], operations: [{
-      operationId: "card-operation", runId: run.runId, revision: run.revision,
-      scope: { workspaceId: "workspace", userId: "user" }, capability: "card_generation_generate",
-      execution: { kind: "card_generation", id: "exact-card-run" }, status, lastEventSeq: 1, result: null, error: null,
-    }] };
-    const label = status === "running" ? "查看学习卡生成进度" : "查看学习卡生成任务";
-    const view = render(bubble(controller(item)));
-    fireEvent.click(screen.getByRole("button", { name: label }));
-    expect(room.setActiveCardGenerationRunId).toHaveBeenLastCalledWith("exact-card-run");
-    expect(room.invoke).toHaveBeenLastCalledWith("open-card-generation");
-    expect(screen.queryByRole("button", { name: "待审核学习卡" })).toBeNull();
-    view.unmount();
-    const journal = render(<CompanionGoalJournal goals={controller(item)} targetId="run" onArtifactOpen={vi.fn()} />);
-    fireEvent.click(screen.getByRole("button", { name: label }));
-    expect(room.setActiveCardGenerationRunId).toHaveBeenLastCalledWith("exact-card-run");
-    journal.unmount();
-  }
 });
 it("puts a later read-only answer ahead of retained artifacts without claiming a new generation", () => {
   const reading = { ...run, revision: 3, status: "completed" as const, goal: "核对上一批修改后的拓展草稿",
@@ -184,20 +156,16 @@ it("puts a later read-only answer ahead of retained artifacts without claiming a
   expect(screen.getByText("这次的答复留在手记里，之前的成果也保留着。")).toBeTruthy();
   expect(screen.queryByText(/拓展草稿已留好/)).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "拓展草稿" }));
-  expect(room.setActiveNoteRef).toHaveBeenCalledWith(expect.objectContaining({ learningView: "expansion" }));
+  expect(useCompanionResultPreview.getState().target).toMatchObject({ goalRunId: "run", artifact: { kind: "note_expansion", id: "saved" } });
   view.unmount();
   render(<CompanionGoalJournal goals={controller(reading)} targetId="run" onArtifactOpen={vi.fn()} />);
   const answer = screen.getByText("已核对修改后的正文"), retained = screen.getByRole("region", { name: "做好的成果" });
   expect(answer.compareDocumentPosition(retained) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: /拓展草稿 · 第 1 批/ }));
-  expect(room.setActiveNoteRef).toHaveBeenLastCalledWith(expect.objectContaining({
-    learningResult: { kind: "note_expansion", artifactId: "earlier", taskId: "earlier-job", noteVersionId: "version" },
-  }));
+  expect(useCompanionResultPreview.getState().target).toMatchObject({ goalRunId: "run", artifact: { kind: "note_expansion", id: "earlier" } });
   fireEvent.click(screen.getByRole("button", { name: /拓展草稿 · 第 2 批/ }));
-  expect(room.setActiveNoteRef).toHaveBeenLastCalledWith(expect.objectContaining({
-    learningResult: { kind: "note_expansion", artifactId: "saved", taskId: "job", noteVersionId: "version" },
-  }));
-  fireEvent.click(screen.getByText("查看生成记录 · 0 项"));
+  expect(useCompanionResultPreview.getState().target).toMatchObject({ goalRunId: "run", artifact: { kind: "note_expansion", id: "saved" } });
+  fireEvent.click(screen.getByText("生成记录 · 0 项"));
   expect(screen.getByText("这次没有启动生成。")).toBeTruthy();
 });
 it("keeps additional notes' results reachable through progressive disclosure in the bubble", () => {
@@ -207,7 +175,7 @@ it("keeps additional notes' results reachable through progressive disclosure in 
   expect(screen.queryByRole("button", { name: "笔记 4 的速看" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "其余 1 份成果" }));
   fireEvent.click(screen.getByRole("button", { name: "笔记 4 的速看" }));
-  expect(room.setActiveNoteRef).toHaveBeenCalledWith(expect.objectContaining({ noteId: "note-4", learningResult: expect.objectContaining({ artifactId: "saved-3" }) }));
+  expect(useCompanionResultPreview.getState().target).toMatchObject({ noteId: "note-4", goalRunId: "run", artifact: { id: "saved-3" } });
 });
 it("keeps the opened task visible when it finishes and another task is still running", () => {
   function View({ items }: { items: AgentRunV1[] }) {
@@ -218,7 +186,7 @@ it("keeps the opened task visible when it finishes and another task is still run
   const other = { ...run, runId: "other", goal: "另一个仍在处理的目标" };
   const view = render(<View items={[run, other]} />);
   view.rerender(<View items={[{ ...run, status: "completed" }, other]} />);
-  expect(screen.getByRole("heading", { name: "交给我的事做好了" })).toBeTruthy();
+  expect(screen.getByRole("heading", { name: run.goal })).toBeTruthy();
   expect(screen.queryByText("另一个仍在处理的目标")).toBeNull();
 });
 it("owns Escape after an action releases focus, folds controls first, and leaves the room in place", () => {

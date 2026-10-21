@@ -131,7 +131,6 @@ const SOURCE_FILES = [
 const FRAGMENT_DEFINITION_FILES = [
   "workers/ai-worker/src/handlers/proactive/companion-here-and-now.ts",
   "packages/shared/src/note/note-visibility.ts",
-  "packages/shared/src/review/review-consumable-target.ts",
 ] as const;
 
 /** 函数定义与 `const` 片段都要跨文件找，所以统一成一张语料表。 */
@@ -302,10 +301,7 @@ const NAME_KINDS: Array<[RegExp, SlotKind]> = [
 const KNOWN_SQL_FRAGMENT_FUNCTIONS = new Set([
   "companionHistoryCondition",
   "tzSubquery",
-  "visibleCompanionDueReviewCondition",
-  "visibleCompanionCardSourceCondition",
   "noteVisibleSqlText",
-  "reviewScheduleTargetsConsumableCardPredicate",
 ]);
 
 /** 声明成这些标量返回类型的函数返回的是**值**，占位即可，不必内联。 */

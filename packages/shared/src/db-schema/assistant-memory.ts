@@ -43,6 +43,16 @@ export const MEMORY_CONTENT_SIMILARITY_THRESHOLD = 0.85;
  */
 export const MEMORY_SEMANTIC_SIMILARITY_THRESHOLD = 0.8;
 
+/**
+ * 主动发言发布前的「相近旧话」检索阈值（pg_trgm `similarity`）。
+ *
+ * 用途只是**挑选待核对的材料**，不是重复判据：0.18 是宽口径取回门槛，
+ * 一条旧话像不像、算不算复读由随后的独立核对决定（方案 56/58）。所以它和
+ * `MEMORY_CONTENT_SIMILARITY_THRESHOLD`（0.85，记忆冲突分组）判的不是同一件事，
+ * 不能合并；但同样只准有这一个数，别在 SQL 里再写一遍。
+ */
+export const COMPANION_SPEECH_REPEAT_CANDIDATE_SIMILARITY = 0.18;
+
 export type CompanionMemoryBudgetTier = "resident" | "active" | "archived";
 
 /**

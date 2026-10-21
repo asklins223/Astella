@@ -7,8 +7,7 @@ const calculation = [
   { role: "assistant" as const, content: "", toolCalls: [{ id: "calc", name: "agent_calculate", arguments: { expression: "1/6" } }] },
   { role: "tool" as const, toolCallId: "calc", content: '{"value":0.16666666666666666}' },
 ];
-const base = { contextText: "", messages: calculation, turnToolUse: "read", pageContext: null,
-  groundedTutorContext: null, stepCalls: 0, toolCallCount: 1, finalAnswerOnly: false,
+const base = { contextText: "", messages: calculation, turnToolUse: "read", pageContext: null, stepCalls: 0, toolCallCount: 1, finalAnswerOnly: false,
   stepCount: 2, stepBudget: 8, nowMs: 100, deadlineAt: 1000, userAskedForAction: false,
   requestedActionTools: [], actionSteerAttempts: 0, lookupClaimSteered: false, quoteCorrectionUsed: false };
 

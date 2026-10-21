@@ -27,6 +27,8 @@ const state = (patch: {
     annotationCount: 0,
     artifactCount: 0,
     expansionCount: 0,
+    hasCard: false,
+    bestCardStars: null,
     latestVersionNumber: null,
     latestAt: null,
     ...(patch.facts ?? {}),

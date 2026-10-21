@@ -115,16 +115,7 @@ test("解释留下提问版时返回的是那条请求，工具面按这一轮�
   assert.equal(blocked.sent.filter(step => step.disableThinking === false)[0]!.tools.includes("agent_web_search"), false);
 });
 
-test("解释带来指称或歧义时两版都不留，正式第一步照原路径重打", async () => {
-  const { provider, sent } = recordingProvider({ streamToolCalls: true });
-  const flights = start(baseArgs(provider, interpretation({})));
-  const settled = await flights.settle({
-    attention: interpretation({ intent: "question", subjects: [{ description: "那篇笔记", objectIndex: 0 }] }),
-    runId: "r1", deadlineAt: Date.now() + 60_000, handlerStartedAtMs: Date.now(),
-  });
-  assert.equal(settled, null);
-  assert.equal(sent.length, 2, "两条都发过、也都没留下");
-});
+
 
 test("speculative input pressure with no delivered text yields to the formal compaction path", async () => {
   const receipt = { decision: { detail: "source needs compaction" }, measurement: { inputTokens: 80000 }, budget: { hardInputTokens: 60000 } } as never;

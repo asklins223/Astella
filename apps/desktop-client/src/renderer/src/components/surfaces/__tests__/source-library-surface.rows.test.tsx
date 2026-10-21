@@ -15,7 +15,7 @@ const SOURCE = (
   id: string,
   title: string,
   noteCount: number,
-  cardProgress: { pendingReviewRuns: number; activeObjectives: number } = { pendingReviewRuns: 0, activeObjectives: 0 },
+  cardProgress: { activeCards: number } = { activeCards: 0 },
 ) => ({
   id,
   title,
@@ -76,9 +76,9 @@ describe("来源目录的行", () => {
   it("笔记出没出卡在状态列上是三档互斥的，没笔记的不显示这一行", async () => {
     installApi();
     const listed = { items: [
-      SOURCE("s-1", "已有卡", 1, { pendingReviewRuns: 0, activeObjectives: 3 }),
-      SOURCE("s-2", "等审核", 1, { pendingReviewRuns: 2, activeObjectives: 0 }),
-      SOURCE("s-3", "出了笔记没出卡", 1, { pendingReviewRuns: 0, activeObjectives: 0 }),
+      SOURCE("s-1", "已有卡", 1, { activeCards: 3 }),
+      SOURCE("s-2", "有卡没练", 1, { activeCards: 1 }),
+      SOURCE("s-3", "出了笔记没出卡", 1, { activeCards: 0 }),
       SOURCE("s-4", "还没笔记", 0),
     ], total: 4, nextCursor: null };
     const gateway = installApi();
@@ -88,7 +88,7 @@ describe("来源目录的行", () => {
     await waitFor(() => expect(document.querySelectorAll(".source-sheet").length).toBe(4));
     const states = [...document.querySelectorAll(".source-sheet")].map((el) => el.querySelector(".source-state")?.textContent ?? "");
     expect(states[0]).toContain("已出 3 张学习卡");
-    expect(states[1]).toContain("2 批学习卡待审核");
+    expect(states[1]).toContain("已出 1 张学习卡");
     expect(states[2]).toContain("还没出学习卡");
     expect(states[3]).toContain("还没生成笔记");
     expect(states[3]).not.toContain("学习卡");

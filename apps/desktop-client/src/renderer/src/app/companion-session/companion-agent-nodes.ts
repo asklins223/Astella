@@ -20,6 +20,7 @@
  */
 
 import { COMPANION_AGENT_TOOL_LABELS } from "@astella/shared/companion-agent-registry";
+import { companionCreatedNoteV1Schema, companionEditedNoteV1Schema, type CompanionCreatedNoteV1, type CompanionEditedNoteV1 } from "@astella/shared/companion-note-authoring-contracts";
 
 import type {
   CompanionRunNodeEventV1,
@@ -72,10 +73,18 @@ export interface CompanionAgentNode {
    * 选择卡放回触发它的那一步，而不是在整条 assistant 消息末尾猜位置。
    */
   readonly proposalId: string | null;
+  readonly noteCreated?: CompanionCreatedNoteV1;
+  readonly noteEdited?: Pick<CompanionEditedNoteV1, "noteId" | "noteVersionId" | "summary">;
+  readonly occurredAt?: string;
 }
 
 /** 只读快照，避免渲染层拿到可变数组。 */
 export type CompanionAgentNodes = readonly CompanionAgentNode[];
+
+export function savedCompanionNote(node: CompanionAgentNode) {
+  return node.noteCreated ?? (node.noteEdited ? { noteId: node.noteEdited.noteId,
+    noteVersionId: node.noteEdited.noteVersionId, title: "修改后的笔记" } : null);
+}
 
 /** Display labels are projected from the registered capabilities. */
 export const TOOL_LABELS = COMPANION_AGENT_TOOL_LABELS;
@@ -157,7 +166,7 @@ function appendStatusNode(nodes: CompanionAgentNodes, payload: unknown): Compani
 
 function appendToolNode(nodes: CompanionAgentNodes, payload: unknown): CompanionAgentNodes {
   const tool = (payload as { tool?: unknown })?.tool as
-    | { toolCallId?: unknown; preparationToolCallId?: unknown; name?: unknown; status?: unknown; safeLabel?: unknown; safeSummary?: unknown; proposalId?: unknown }
+    | { toolCallId?: unknown; preparationToolCallId?: unknown; name?: unknown; status?: unknown; safeLabel?: unknown; safeSummary?: unknown; proposalId?: unknown; noteCreated?: unknown; noteEdit?: unknown; occurredAt?: unknown }
     | undefined;
   if (!tool) return nodes;
   if (typeof tool.toolCallId !== "string" || tool.toolCallId.length === 0) return nodes;
@@ -186,16 +195,24 @@ function appendToolNode(nodes: CompanionAgentNodes, payload: unknown): Companion
     : UNRECOGNIZED_TOOL_STATUS_SUMMARY;
   const proposalId = typeof tool.proposalId === "string" && tool.proposalId.length > 0 ? tool.proposalId : null;
   const key = `tool:${tool.toolCallId}`;
+  const receipt = state === "succeeded" ? companionCreatedNoteV1Schema.safeParse(tool.noteCreated) : null;
+  const edit = state === "succeeded" ? companionEditedNoteV1Schema.safeParse(tool.noteEdit) : null;
+  const extra = { ...(receipt?.success ? { noteCreated: receipt.data } : {}),
+    ...(edit?.success ? { noteEdited: { noteId: edit.data.noteId, noteVersionId: edit.data.noteVersionId, summary: edit.data.summary } } : {}),
+    ...(typeof tool.occurredAt === "string" && Number.isFinite(Date.parse(tool.occurredAt)) ? { occurredAt: tool.occurredAt } : {}) };
   const index = nodes.findIndex((node) => node.key === key);
   if (index >= 0) {
     const existing = nodes[index];
+    // Reconnect/replayed preparation cannot revive a settled operation.
+    if (existing.state !== "running" && existing.state !== "waiting_confirmation" && state === "running") return nodes;
+    if (existing.occurredAt && extra.occurredAt && Date.parse(extra.occurredAt) < Date.parse(existing.occurredAt)) return nodes;
     if (existing.state === state && existing.label === tool.safeLabel && existing.summary === summary
-      && existing.proposalId === proposalId) return nodes;
+      && existing.proposalId === proposalId && !receipt?.success && !edit?.success && !extra.occurredAt) return nodes;
     return nodes.map((node, at) => (at === index
-      ? { ...node, state, label: tool.safeLabel as string, toolName: name, summary, proposalId }
+      ? { ...node, state, label: tool.safeLabel as string, toolName: name, summary, proposalId, ...extra }
       : node));
   }
-  return [...nodes, { key, kind: "tool", label: tool.safeLabel, state, toolName: name, summary, proposalId }];
+  return [...nodes, { key, kind: "tool", label: tool.safeLabel, state, toolName: name, summary, proposalId, ...extra }];
 }
 
 /**
@@ -219,6 +236,12 @@ export function reconcileCompanionAgentNodes(live: CompanionAgentNodes, snapshot
     if ((node.state === "running" || node.state === "waiting_confirmation") && saved.state !== "running" && saved.state !== node.state) {
       changed = true;
       return saved;
+    }
+    if (node.state === saved.state && ((!node.noteCreated && saved.noteCreated) || (!node.noteEdited && saved.noteEdited) || (!node.occurredAt && saved.occurredAt))) {
+      changed = true;
+      return { ...node, ...(!node.noteCreated && saved.noteCreated ? { noteCreated: saved.noteCreated } : {}),
+        ...(!node.noteEdited && saved.noteEdited ? { noteEdited: saved.noteEdited } : {}),
+        ...(!node.occurredAt && saved.occurredAt ? { occurredAt: saved.occurredAt } : {}) };
     }
     return node;
   });
@@ -284,10 +307,16 @@ export function mergeCompanionRunTraces(current: readonly CompanionRunTrace[], i
     const events = mergeProcessEvents(previous.events ?? [], trace.events ?? []);
     const previousTerminal = ["succeeded", "failed", "cancelled", "superseded"].includes(previous.summary.status);
     const incomingActive = ["accepted", "running", "waiting_for_confirmation"].includes(trace.summary.status);
+    const older = (trace.summary.eventCursor ?? 0) < (previous.summary.eventCursor ?? 0);
+    const preserveStatus = older || (previousTerminal && incomingActive
+      && (trace.summary.eventCursor ?? 0) === (previous.summary.eventCursor ?? 0));
     result.set(trace.summary.runId, {
       summary: { ...trace.summary,
-        status: previousTerminal && incomingActive ? previous.summary.status : trace.summary.status,
-        assistantMessageId: trace.summary.assistantMessageId ?? previous.summary.assistantMessageId,
+        status: preserveStatus ? previous.summary.status : trace.summary.status,
+        errorCode: preserveStatus ? previous.summary.errorCode : trace.summary.errorCode,
+        eventCursor: Math.max(trace.summary.eventCursor ?? 0, previous.summary.eventCursor ?? 0),
+        assistantMessageId: older ? previous.summary.assistantMessageId ?? trace.summary.assistantMessageId
+          : trace.summary.assistantMessageId ?? previous.summary.assistantMessageId,
         thinkingText: (trace.summary.thinkingText?.length ?? 0) >= (previous.summary.thinkingText?.length ?? 0)
           ? trace.summary.thinkingText : previous.summary.thinkingText,
         processTimeline: trace.summary.processTimeline ?? previous.summary.processTimeline,
@@ -307,9 +336,13 @@ export function recordCompanionRunEvent(current: readonly CompanionRunTrace[], e
 }): readonly CompanionRunTrace[] {
   const process = ["assistant.status", "assistant.thinking", "agent.tool"].includes(event.eventType);
   const terminal = ["assistant.final", "turn.completed", "turn.cancelled", "error"].includes(event.eventType);
-  if (!process && !terminal) return current;
+  const accepted = event.eventType === "turn.accepted";
+  if (!process && !terminal && !accepted) return current;
   const previous = current.find(trace => trace.summary.runId === event.runId);
-  const payload = event.payload as { messageId?: unknown; text?: unknown };
+  if (previous && event.generation < previous.summary.generation) return current;
+  const newest = event.seq >= (previous?.summary.eventCursor ?? 0);
+  if (!process && !newest) return current;
+  const payload = event.payload as { messageId?: unknown; text?: unknown; code?: string; userMessageId?: string };
   const events = process ? mergeProcessEvents(previous?.events ?? [], [{ version: 1, seq: event.seq,
     runId: event.runId, type: event.eventType, payload: event.payload }]) : previous?.events ?? [];
   const nodes = processNodes(events);
@@ -318,10 +351,13 @@ export function recordCompanionRunEvent(current: readonly CompanionRunTrace[], e
   const summary: CompanionRunSummaryV1 = { version: 1, runId: event.runId, generation: event.generation,
     status: "running", stepCount: 0, toolCallCount: 0, maxSteps: null, maxToolCalls: null,
     assistantMessageId: null, nodeCount: nodes.length, ...previous?.summary,
+    eventCursor: Math.max(previous?.summary.eventCursor ?? 0, event.seq),
+    ...(accepted && newest ? { status: "accepted" as const, errorCode: null, userMessageId: payload.userMessageId ?? previous?.summary.userMessageId } : {}),
+    ...(event.eventType === "error" && newest ? { errorCode: payload.code ?? null } : {}),
     ...(thinkingText ? { thinkingText: thinkingText.length >= (previous?.summary.thinkingText?.length ?? 0)
       ? thinkingText : previous?.summary.thinkingText } : {}),
-    ...(terminal ? { status: event.eventType === "error" ? "failed" : event.eventType === "turn.cancelled" ? "cancelled" : "succeeded" } : {}),
-    ...(typeof payload.messageId === "string" ? { assistantMessageId: payload.messageId } : {}),
+    ...(terminal && newest ? { status: event.eventType === "error" ? "failed" : event.eventType === "turn.cancelled" ? "cancelled" : "succeeded" } : {}),
+    ...(typeof payload.messageId === "string" && newest ? { assistantMessageId: payload.messageId } : {}),
   };
   summary.toolCallCount = Math.max(summary.toolCallCount, countAgentToolCalls(nodes));
   const trace = { summary, nodes: reconcileCompanionAgentNodes(previous?.nodes ?? [], nodes), events };

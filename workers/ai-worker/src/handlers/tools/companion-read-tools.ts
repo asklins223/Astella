@@ -52,6 +52,7 @@ export interface AgentEventContext {
    */
   constraints: CompanionAgentToolExecutionConstraints;
   verifyUtterance?: (text: string) => void;
+  reviewInitiativeSpeech?: (text: string) => Promise<string | null>;
   onUtterancePublished?: (messageId: string, text: string, rawText: string) => Promise<void>;
   /** Freeze the whole pending batch in the proposal's publication transaction. */
   prepareConfirmation?: (proposalId: string) => {
@@ -453,72 +454,10 @@ export function missingImageMessage(assetId: string | null): string {
     : "那篇笔记里没有这张图（可能已经删了，也可能当初只是把图片地址写进了正文）";
 }
 
-export interface TaskQueueRow extends Record<string, unknown> {
-  task_id: string;
-  sequence: number;
-  status: string;
-  label: string | null;
-  run_phase: string;
-  run_id: string | null;
-}
-
-/**
- * `companion_list_task_queue` 的结果（纯函数，便于测）。
- *
- * 带 route 的理由（实机 2026-09-22 真人轮「我接下来的任务队列里都排着什么？」）：
- * 这个工具此前只回文字清单，**既不给 route 也不出块**，而 `open_page` 的白名单里
- * 又没有一个"任务队列"页可跳——她把清单念完了，用户想点开看一眼却无路可走。
- * 队列本来就属于某一次学习运行，所以跳到那一轮的运行页就是它该去的地方。
- */
-export function taskQueueToolResult(rows: TaskQueueRow[]): {
-  value: Record<string, unknown>;
-  safeSummary: string;
-  route?: Record<string, unknown>;
-  routeLabel?: string;
-} {
-  const tasks = rows.map((row) => ({
-    taskId: row.task_id,
-    step: Number(row.sequence),
-    status: row.status,
-    label: String(row.label ?? "").slice(0, 80),
-  }));
-  if (tasks.length === 0) {
-    return { value: { tasks }, safeSummary: "当前没有排着的任务" };
-  }
-  // 行是按 `r.updated_at DESC, t.sequence` 排的，第一条就是"下一个要做的"，
-  // 它所属的那轮运行也就是用户点进去最该落到的地方。
-  const firstRunId = rows[0].run_id;
-  return {
-    value: { tasks },
-    safeSummary: `队列里有 ${tasks.length} 个待办任务`,
-    ...(firstRunId
-      ? {
-        route: { kind: "learning_run", runId: firstRunId },
-        routeLabel: "打开这轮学习，看完整任务队列",
-      }
-      : {}),
-  };
-}
-
 export interface ActivityRow extends Record<string, unknown> {
   kind: string;
   label: string | null;
   age_minutes: number;
-}
-
-export interface DueReviewRow extends Record<string, unknown> {
-  schedule_id: string;
-  /**
-   * `review_schedules.subject_id`。名字骗人：这张表的 `subject_type` 被 CHECK 成 'card'，
-   * 但按方案 20 §29.4 的别名规则，**列里存的是 objectiveId**（实测量：23 个 subject_id
-   * 里 19 个命中 `learning_cards_v2.objective_id`，只有 4 个是 card_id）。
-   * `companion_open_card` 两个键都认，所以它可以往下传这个。
-   */
-  objective_id: string;
-  /** 该目标当前那张 active 卡；没有就是 null（她得能说"这条还没有卡"）。 */
-  card_id: string | null;
-  title: string;
-  overdue_hours: number;
 }
 
 /**
@@ -618,7 +557,7 @@ function recommendationRoute(
   kind: "note" | "card" | "artifact", row: RecommendedLearningRow,
 ): CompanionRecommendationBlockV1["route"] | null {
   if (kind === "note") return { kind: "note", noteId: String(row.id) };
-  if (kind === "card") return { kind: "card", cardId: String(row.card_id), objectiveId: String(row.objective_id) };
+  if (kind === "card") return row.note_id ? { kind: "note", noteId: String(row.note_id) } : null;
   const artifactKind = row.artifact_kind as CompanionLearningArtifactKindV2 | undefined;
   if (!artifactKind || !COMPANION_LEARNING_ARTIFACT_KINDS_V2.includes(artifactKind)) return null;
   if (!row.task_id || !row.note_id || !row.note_version_id || !row.id) return null;

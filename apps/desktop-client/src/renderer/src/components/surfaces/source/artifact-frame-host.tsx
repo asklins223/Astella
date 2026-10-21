@@ -25,6 +25,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { LoaderCircle } from "lucide-react";
 import {
+  ARTIFACT_FRAME_CHANNEL,
   ARTIFACT_FRAME_SANDBOX,
   ARTIFACT_FRAME_TARGET_ORIGIN,
   artifactFrameMotionMessage,
@@ -93,6 +94,11 @@ export interface ArtifactFrameHostProps {
   readonly isTrustedFrameSource?: (source: MessageEventSource | null) => boolean;
   /** 测试接缝：心跳看门预算（生产默认 4 拍）。 */
   readonly watchdogMs?: number;
+  /** Plan 57 操作题：模板回传用户操作状态（不是分数），宿主再按期望状态判分。 */
+  readonly onAnswer?: (answer: unknown) => void;
+  /** Restore a previously saved operation state once after frame ready. */
+  readonly initialAnswer?: unknown;
+  readonly readOnly?: boolean;
 }
 
 export function ArtifactFrameHost({
@@ -102,6 +108,9 @@ export function ArtifactFrameHost({
   contentOnly = false,
   isTrustedFrameSource,
   watchdogMs = HEARTBEAT_WATCHDOG_MS,
+  onAnswer,
+  initialAnswer,
+  readOnly = false,
 }: ArtifactFrameHostProps) {
   const [phase, setPhase] = useState<HostPhase>({ kind: "waiting" });
   /** 第几次加载（iframe 用它当 key：重建 = 换一个全新的 frame）。 */
@@ -116,6 +125,8 @@ export function ArtifactFrameHost({
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const lastBeatRef = useRef<number>(Date.now());
   /** 最新相位与动作，让 message 监听器只绑一次（D5 的判据：监听器不是状态）。 */
+  const initialAnswerRef = useRef(initialAnswer);
+  initialAnswerRef.current = initialAnswer;
   const phaseRef = useRef(phase);
   phaseRef.current = phase;
 
@@ -135,6 +146,13 @@ export function ArtifactFrameHost({
     if (event.phase === "scroll") {
       scrollReadingPage(iframeRef.current, event);
       return;
+    }
+    if (event.phase === "answer") {
+      if (!readOnly) onAnswer?.(event.answer);
+      return;
+    }
+    if (event.phase === "ready" && (initialAnswerRef.current !== undefined || readOnly)) {
+      iframeRef.current?.contentWindow?.postMessage({ channel: ARTIFACT_FRAME_CHANNEL, direction: "host->frame", command: "restore-answer", answer: initialAnswerRef.current, ...(readOnly ? { readOnly: true } : {}) }, ARTIFACT_FRAME_TARGET_ORIGIN);
     }
     lastBeatRef.current = Date.now();
     // 高度先于阶段处理：任何一条消息（ready／heartbeat）都可能带新的高度，

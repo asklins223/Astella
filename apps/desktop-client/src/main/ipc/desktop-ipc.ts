@@ -1,17 +1,9 @@
 import { registerNoteWritingChannels } from "../note-doc/note-writing-files";
 import { registerMarkdownBundleChannels } from "../note-doc/markdown-bundle-import";
-import {
-  setPersonalRelationDecisionV2ResultSchema,
-  setPersonalRelationDecisionV2Schema,
-} from "@astella/shared/personal-relation-decision-rules-v2";
 import * as ns_source from "../gateway/desktop-gateway-ns-source";
-import { registerRestChannels } from "./desktop-ipc-rest";
-import { registerSourceChannels, noteListInputSchema, noteCreateInputSchema, noteGetInputSchema, noteVersionsInputSchema, noteVersionRestoreInputSchema, noteImageUploadInputSchema } from "./desktop-ipc-source";
-import { registerLearningChannels, shellOpenExternalInputSchema, windowThemeInputSchema, subscribeInputSchema, unsubscribeInputSchema, titlebarThemeOutputSchema, focusOutputSchema, subscriptionOutputSchema, closedSubscriptionOutputSchema, activityGetTodayInputSchema, statsGetOverviewAllInputSchema, assessmentDisputeGetInputSchema, assessmentDisputeOpenInputSchema, assessmentDisputeSupplementInputSchema, assessmentDisputeCloseInputSchema, assessmentDisputeSupplementResultV2Schema, noteIdInputSchema, noteLearningRoundOpenInputSchema, noteLearningRoundCreateInputSchema, noteLearningRoundReviseInputSchema, noteLearningRoundPersonalHistoryInputSchema, noteLearningRoundHistoryInputSchema, noteLearningRoundRouteInputSchema, noteLearningRoundTeachingInputSchema, noteLearningRoundPreparePracticeInputSchema, noteLearningRoundExplainInputSchema, artifactEnsureInputSchema, artifactEnsureResultSchema, noteLearningRoundCloseInputSchema, noteLearningRoundReopenInputSchema, noteLearningRoundResumeInputSchema, setPersonalRelationDecisionInputSchema, noteDeepeningInputSchema, searchGlobalInputSchema, noteSaveInputSchema, noteDocStateInputSchema, noteDocSyncUpdateInputSchema, noteDocSyncTitleInputSchema, noteSetShareInputSchema, noteDocPresenceInputSchema, noteDocDraftSaveInputSchema, noteDocDraftNoteInputSchema, cardGenerationStartInputSchema, cardGenerationGetRunInputSchema, cardGenerationGetCandidatesInputSchema, cardGenerationReviewInputSchema, cardGenerationRevealInputSchema, cardGenerationExposureInputSchema, cardGenerationActivateInputSchema, cardGenerationCancelInputSchema, cardGenerationRetryInputSchema, cardGenerationCloseInputSchema } from "./desktop-ipc-learning";
-import { registerAuthChannels } from "./desktop-ipc-auth";
-import { createRunStreamLedger, reconcileRunStreams, stopRunStreams, type RunStreamPorts } from "./desktop-ipc-run-streams";
-import { registerWorkspaceChannels, authUpdateProfileInputSchema, authAvatarUploadInputSchema, authAvatarGetInputSchema, authLeaveWorkspaceInputSchema, inviteCreateInputSchema, inviteRevokeInputSchema, memberRemoveInputSchema, revokeOutputSchema, memberRemoveOutputSchema } from "./desktop-ipc-workspace";
-import { registerCompanionChannels, runtimeInputSchema, companionMemoryIdInputSchema, sourceListInputSchema, sourceCreateInputSchema, sourceGetInputSchema, sourceNotesInputSchema, sourceUpdateInputSchema, sourceCreateNoteInputSchema, sourceArchiveInputSchema, sourceReparseInputSchema, sourceRestoreInputSchema, sourceImageGetInputSchema } from "./desktop-ipc-companion";
+import { registerRestChannels } from "./desktop-ipc-rest";import { registerSourceChannels } from "./desktop-ipc-source";
+import { closedSubscriptionOutputSchema, focusOutputSchema, shellOpenExternalInputSchema, subscribeInputSchema, subscriptionOutputSchema, titlebarThemeOutputSchema, unsubscribeInputSchema, windowThemeInputSchema } from "./desktop-ipc-input-schemas";
+import { registerAuthChannels } from "./desktop-ipc-auth";import { registerWorkspaceChannels } from "./desktop-ipc-workspace";import { registerCompanionChannels, runtimeInputSchema, companionMemoryIdInputSchema } from "./desktop-ipc-companion";
 import * as ns_note from "../gateway/desktop-gateway-ns-note";
 import * as ns_companion from "../gateway/desktop-gateway-ns-companion";
 import {
@@ -21,371 +13,22 @@ import {
   installUpdate,
   acknowledgeInstalledUpdate,
 } from "../update/desktop-update";
-import * as ns_learning from "../gateway/desktop-gateway-ns-learning";
 import * as ns_workspace from "../gateway/desktop-gateway-ns-workspace";
 import * as ns_auth from "../gateway/desktop-gateway-ns-auth";
-import * as ns_runtime from "../gateway/desktop-gateway-ns-runtime";
-import { noteReflectionPageV1Schema, noteReflectionCommandV1Schema, noteReflectionWriteResultV1Schema } from "@astella/shared/note-learning-reflection-contracts";
-import { noteAnnotationPageV1Schema, noteAnnotationCommandV1Schema, noteAnnotationWriteResultV1Schema, createNoteAnnotationTaskV1Schema, noteAnnotationLatestTaskQueryV1Schema, noteAnnotationLatestTaskV1Schema, noteAnnotationTaskV1Schema } from "@astella/shared/note-annotation-contracts";
-import {
-  createNoteOverviewTaskV1Schema,
-  noteOverviewLatestTaskQueryV1Schema,
-  noteOverviewLatestTaskV1Schema,
-  noteOverviewPageV1Schema,
-  noteOverviewTaskV1Schema,
-} from "@astella/shared/note-overview-contracts";
-import { noteRecallActionV1Schema, noteRecallActionResultV1Schema, noteRecallPageV1Schema, noteRecallStartInputV1Schema, noteRecallStartResultV1Schema } from "@astella/shared/note-recall-contracts";
-import {
-  createNoteExpansionTaskV1Schema,
-  confirmNoteExpansionTaskV1Schema,
-  noteExpansionBatchWriteResultV1Schema,
-  noteExpansionLatestTaskQueryV1Schema,
-  noteExpansionLatestTaskV1Schema,
-  noteExpansionListQueryV1Schema,
-  noteExpansionPageV1Schema,
-  noteExpansionReviewV1Schema,
-  noteExpansionTaskV1Schema,
-} from "@astella/shared/note-expansion-contracts";
-import {
-  createNoteDynamicArtifactTaskV1Schema,
-  noteLearningArtifactPageV1Schema,
-  noteLearningArtifactTaskListQueryV1Schema,
-  noteLearningArtifactTaskPageV1Schema,
-  noteLearningArtifactTaskV1Schema,
-} from "@astella/shared/note-learning-artifact-contracts";
-import { BrowserWindow, clipboard, dialog, ipcMain, shell, type IpcMainInvokeEvent, type WebContents } from "electron";
+import * as ns_runtime from "../gateway/desktop-gateway-ns-runtime";import { BrowserWindow, clipboard, ipcMain, shell, type IpcMainInvokeEvent, type WebContents } from "electron";
 import { randomBytes } from "node:crypto";
-import { createWriteStream } from "node:fs";
-import { rename, rm, stat, writeFile } from "node:fs/promises";
-import { basename } from "node:path";
-import { Readable } from "node:stream";
-import { pipeline } from "node:stream/promises";
-import { z } from "zod";
-import {
-  DESKTOP_API_SERVICE_ID,
-  DESKTOP_IPC_CHANNELS,
-  DESKTOP_IPC_CONTRACT_VERSION,
-  DESKTOP_IPC_SCHEMA_REVISION,
-  type ActionCapability,
-  apiHealthSnapshotSchema,
-  apiConnectionStateSchema,
-  authSurfaceManifestResultV1Schema,
-  capabilityProjectionSchema,
-  companionBridgeStateV1Schema,
-  clipboardReadLinksResultSchema,
-  clipboardWriteTextRequestV1Schema,
-  clipboardWriteTextResultV1Schema,
-  isWebLinkUrl,
-  shellOpenExternalRequestV1Schema,
-  shellOpenExternalResultV1Schema,
-  updateGetStateInputV1Schema,
-  updateAcknowledgeInstalledInputV1Schema,
-  updateGetStateResultV1Schema,
-  updateCheckInputV1Schema,
-  updateDownloadInputV1Schema,
-  updateInstallInputV1Schema,
-  updateStateV1Schema,
-  desktopContractSnapshotSchema,
-  desktopNamespaceM2Values,
-  desktopRouteKindM2Values,
-  desktopRouteSchema,
-  extractCandidateLinks,
-  gatewayEventSchema,
-  navigationSnapshotSchema,
-  sessionContextSchema,
-  workspaceContextSchema,
-  workspaceSummarySchema,
-  type AstellaDesktopApiM2,
-  type ApiHealthSnapshotV1,
-  type DesktopContractSnapshotV1,
-  type DesktopRouteV1,
-  type GatewayErrorCode,
-  type GatewayEventPayloadM2,
-  type GatewayEventV1,
-  type GatewayResultV1,
-  type NavigationEntryV1,
-  type NavigationSnapshotV1,
-  type RequestMetaV1,
-  type SessionContextV1,
-  type SubscriptionTopicM2,
-  type WindowStateSnapshotV1,
-  desktopCreateLearningRunV2RequestSchema,
-  desktopCreateCardGenerationRunRequestV2Schema,
-  desktopCandidateReviewRequestV2Schema,
-  desktopRevealCandidateRequestV2Schema,
-  desktopCardGenerationActivationSelectionV1Schema,
-  desktopLearningRunAbandonRequestV2Schema,
-  desktopLearningRunActionRequestV2Schema,
-  desktopPutLearningTaskDraftV2RequestSchema,
-  desktopRecordLearningRunActivityLeaseRequestV2Schema,
-  recordLearningRunActivityLeaseOutputV2Schema,
-  desktopSubmitTaskArtifactV2Schema,
-  desktopNoteSaveRequestV1Schema,
-  companionVoiceTranscribeRequestV1Schema,
-  companionVoiceTranscribeResultV1Schema,
-  commandIdSchema,
-  emailSchema,
-  gatewayErrorSchema,
-  inviteTokenSchema,
-  isoTimestampSchema,
-  navigationReasonSchema,
-  newPasswordSchema,
-  requestIdSchema,
-  requestMetaSchema,
-  runtimeSnapshotSchema,
-  secretInputSchema,
-  subscriptionIdSchema,
-  subscriptionTopicM2Schema,
-  positiveIntSchema,
-  uuidSchema,
-  windowStateSnapshotV1Schema,
-  aiDataPolicyV1Schema,
-  workspaceAiSettingsV1Schema,
-  workspaceExportResultV1Schema,
-  // 旧版设置页回补（2026-09-18）。
-  AVATAR_MAX_BYTES,
-  authProfileResultV1Schema,
-  avatarObjectKeySchema,
-  avatarUploadResultV1Schema,
-  inviteCreatedV1Schema,
-  inviteListResultV1Schema,
-  memberListResultV1Schema,
-  NOTE_DOC_BLOCKS_MAX_COUNT,
-  noteDocStateResultV1Schema,
-  noteDocWriteResultV1Schema,
-  noteDocPresenceResultV1Schema,
-  noteDocDraftSaveResultV1Schema,
-  noteDocDraftGetResultV1Schema,
-  noteDocDraftClearResultV1Schema,
-  type NoteDocDraftSaveResultV1,
-  type NoteDocDraftGetResultV1,
-  type NoteDocDraftClearResultV1,
-  type NoteDocWriteResultV1,
-  renameWorkspaceResultV1Schema,
-  dissolvePreviewResultV1Schema,
-  dissolveWorkspaceResultV1Schema,
-  transferWorkspaceOwnershipResultV1Schema,
-  createWorkspaceResultV1Schema,
-  searchDriftResultV1Schema,
-  searchReindexResultV1Schema,
-  type DesktopRouteKindM2,
-  NOTE_DOC_UPDATE_MAX_CHARS,
-} from "@astella/shared/desktop-ipc-contracts";
-import {
-  NOTE_DOC_PRESENCE_MAX_CHARS,
-  type NoteDocWatchHandle,
-} from "../note-doc/note-doc-transport.ts";
-import { mainPageContextInputV2Schema } from "@astella/shared/companion-bridge-contracts";
-import {
-  desktopSourceListPageSchema,
-  desktopSourceCreateRequestSchema,
-  desktopSourceDetailSchema,
-  desktopSourceNotesPageSchema,
-  desktopSourceUpdateRequestSchema,
-  desktopSourceNoteResultSchema,
-  desktopSourceCreateResultV1Schema,
-  desktopSourceArchiveResultSchema,
-  desktopSourceRestoreResultSchema,
-  desktopSourceReparseResultSchema,
-  desktopAiAuditPageV1Schema,
-  desktopNoteListPageSchema,
-  desktopNoteCreateRequestSchema,
-  desktopNoteMutationResultSchema,
-  desktopNoteVersionListSchema,
-  desktopSearchPageSchema,
-} from "@astella/shared/desktop-surface-contracts";
-import { objectiveListPageV3Schema, learningObjectiveSurfaceV3Schema } from "@astella/shared/learning-objective-surface-contracts";
-import {
-  noteLearningRoundHistoryPageV1Schema,
-  noteLearningRoundPersonalHistoryPageV1Schema,
-  noteLearningRoundV1Schema,
-  noteLearningRoundViewV1Schema,
-  ROUND_HISTORY_MAX_LIMIT_V1,
-  roundDrivingQuestionSourceV1Schema,
-  roundTeachingViewV1Schema,
-} from "@astella/shared/note-learning-round-contracts";
-import { noteRouteCoverageV1Schema } from "@astella/shared/note-route-coverage-v2";
-import {
-  recordRecallSourceRevealRequestV1Schema,
-  recordRecallSourceRevealResultV1Schema,
-} from "@astella/shared/recall-waiting-v2-contracts";
-import { understandingTopologySnapshotV3Schema } from "@astella/shared/note-deepening-contracts";
-import { noteDeepeningV3Schema } from "@astella/shared/note-deepening-v3-contracts";
-import { todayActivityV1Schema } from "@astella/shared/activity-surface-contracts";
-// 跨空间统计合同：输出校验器与网关共用同一份形状，渲染层不另抄一遍。
-import { allWorkspacesStatsOverviewSchema } from "@astella/shared/stats-overview-contracts";
-import {
-  getLearningRunResultResponseV2Schema,
-  learningRunTargetRevealV2Schema,
-  learningRunActionResponseV2Schema,
-  learningRunPublicSnapshotV2Schema,
-  learningRunReturnContractV2Schema,
-  learningTaskDraftV2Schema,
-  learningTaskDraftWriteReceiptV2Schema,
-  submitTaskArtifactReceiptV2Schema,
-} from "@astella/shared/learning-run-v2-contracts";
-import { reviewDeferRequestV2Schema, reviewDeferResultV2Schema, reviewQueueV2Schema } from "@astella/shared/review-queue-v2-contracts";
-import {
-  noteReviewSubscriptionsV2Schema,
-  homeSuggestionWireV2Schema,
-  homeSuggestionActionCommandV2Schema,
-  homeSuggestionActionResultV2Schema,
-  todayBatchOptionCommandV2Schema,
-  todayBatchOptionResultV2Schema,
-  objectiveHoldCommandV2Schema,
-  objectiveHoldResultV2Schema,
-  objectiveResumeCommandV2Schema,
-  objectiveResumeResultV2Schema,
-  reviewSubscriptionCommandV2Schema,
-  reviewSubscriptionResultV2Schema,
-} from "@astella/shared/review-queue-v2-contracts";
-import {
-  openAssessmentDisputeCommandV2Schema,
-  openAssessmentDisputeResultV2Schema,
-  closeAssessmentDisputeCommandV2Schema,
-  closeAssessmentDisputeResultV2Schema,
-  supplementAssessmentDisputeCommandV2Schema,
-  assessmentDisputeEnvelopeV2Schema,
-} from "@astella/shared/assessment-dispute-rules-v2";
-import { roomProjectionV1Schema } from "@astella/shared/room-projection-contracts";
-import {
-  companionAccountPatchSchema,
-  companionAccountStateV1Schema,
-  companionAnswerModePreferenceV1Schema,
-  companionVoicePreferenceV1Schema,
-  companionOverviewSchema,
-  onboardingTransitionRequestSchema,
-  onboardingTransitionResponseSchema,
-} from "@astella/shared/companion-shell-contracts";
-import { ttsEngineV1Schema } from "@astella/shared/tts-voice-catalog";
-import {
-  companionHomeProjectionV1Schema,
-  companionRoomProfilePatchV1Schema,
-  companionRoomProfileV1Schema,
-} from "@astella/shared/companion-home-contracts";
-import {
-  companionVoiceSpeakRequestV1Schema,
-  companionVoiceSpeakResultV1Schema,
-  companionVoiceSpeakSegmentRequestV2Schema,
-  companionVoicePlaybackOutcomeRequestV1Schema,
-  companionVoicePlaybackOutcomeResultV1Schema,
-} from "@astella/shared/companion-voice-contracts";
-// 伴星聊天发送链路（2026-09-18）：建/复用 dialogue、发 turn、拉消息。
-import {
-  companionChatEnsureRequestV1Schema,
-  companionChatEnsureResultV1Schema,
-  companionChatListMessagesRequestV1Schema,
-  companionChatListMessagesResultV1Schema,
-  companionChatSendTurnRequestV1Schema,
-  companionChatSendTurnResultV1Schema,
-  companionChatProposalGetRequestV1Schema,
-  companionChatProposalGetResultV1Schema,
-  companionChatProposalDecideRequestV1Schema,
-  companionChatProposalDecideResultV1Schema,
-  companionAgentRoutesListRequestV1Schema,
-  companionAgentRoutesListResultV1Schema,
-  companionChatCancelRunRequestV1Schema,
-  companionChatCancelRunResultV1Schema,
-  companionRunNodesListRequestV1Schema,
-  companionRunNodesListResultV1Schema,
-} from "@astella/shared/companion-chat-desktop-contracts";
-import {
-  companionGroundedTutorGrantV1Schema,
-  companionLearningContextV1Schema,
-  companionLearningRunContextV1Schema,
-  createCompanionLearningRunContextGrantRequestV1Schema,
-} from "@astella/shared/companion-conversation-contracts";
-// 站内图片字节通道：来源正文里的 `/api/uploads/…` 由 main 代取，
-// 渲染层只拿 base64 转 blob URL（它的 origin 够不到 API 源）。
-import {
-  sourceImageGetRequestV1Schema,
-  sourceImageGetResultV1Schema,
-} from "@astella/shared/source-image-contracts";
-// 笔记图片写入通道：编辑器里的图由 main 送到 `POST /uploads/images`，渲染层拿回
-// 站内地址写进正文；读取那一半仍走上面的字节通道。
-import {
-  noteImageUploadRequestV1Schema,
-  noteImageUploadResultV1Schema,
-} from "@astella/shared/note-image-upload-contracts";
-import {
-  companionDailyDateV1Schema,
-  companionDailyMonthValueV1Schema,
-  companionDailySummaryV1Schema,
-  companionDailyMonthV1Schema,
-  companionActivityAckRequestV1Schema,
-  companionActivityDeliveryV1Schema,
-  companionActivityTimelineV1Schema,
-  companionAuditDeleteResultV1Schema,
-  companionExportKindV1Schema,
-  companionExportResultV1Schema,
-  companionHistoryClearResultV1Schema,
-  companionHistoryPageV1Schema,
-  companionHistoryQueryV1Schema,
-  companionHistorySearchQueryV1Schema,
-  companionHistorySearchV1Schema,
-  companionMemoryItemV1Schema,
-  companionMemoryClearResultV1Schema,
-  companionMemoryConflictListV1Schema,
-  companionMemoryConflictResolveResultV1Schema,
-  companionMemoryCreateInputV1Schema,
-  companionMemoryCorrectInputV1Schema,
-  companionMemoryListQuerySchema,
-  companionMemoryListV1Schema,
-  companionMemoryQueueResultV1Schema,
-  companionMemoryStarMapV2Schema,
-  companionPersonaMutationV1Schema,
-  companionPersonaPatchV1Schema,
-  companionPersonaResetV1Schema,
-  companionPersonaV1Schema,
-} from "@astella/shared/companion-memory-desktop-contracts";
-import {
-  companionInvitationActionRequestSchema,
-  companionInvitationSchema,
-  companionJourneyActionRequestSchema,
-  companionJourneyBootstrapSchema,
-  companionJourneySchema,
-} from "@astella/shared/companion-journey-contracts";
-import { noteDetailV1Schema } from "@astella/shared/note-projection-contracts";
-import { noteSaveReceiptV1Schema } from "@astella/shared/note-save-contracts";
-import { noteShareScopeReceiptV1Schema, noteShareScopeValuesV1, type NoteShareScopeReceiptV1 } from "@astella/shared/note-share-contracts";
-import {
-  cardActivationReceiptDesktopV1Schema,
-  cardGenerationCandidateListV1Schema,
-  cardGenerationCancelResultV1Schema,
-  cardGenerationRetryResultV1Schema,
-  cardGenerationCloseResultV1Schema,
-  cardGenerationExposureEligibilityV1Schema,
-  cardGenerationJobAcceptedV1Schema,
-  cardGenerationReviewResultV1Schema,
-  cardGenerationRunSnapshotV1Schema,
-} from "@astella/shared/card-generation-desktop-contracts";
-import { candidateRevealV2Schema } from "@astella/shared/card-generation-v2-contracts";
+import { z } from "zod";import { DESKTOP_API_SERVICE_ID, DESKTOP_IPC_CHANNELS, DESKTOP_IPC_CONTRACT_VERSION, DESKTOP_IPC_SCHEMA_REVISION, apiHealthSnapshotSchema, apiConnectionStateSchema, capabilityProjectionSchema, clipboardReadLinksResultSchema, clipboardWriteTextRequestV1Schema, clipboardWriteTextResultV1Schema, isWebLinkUrl, shellOpenExternalResultV1Schema, updateGetStateInputV1Schema, updateAcknowledgeInstalledInputV1Schema, updateGetStateResultV1Schema, updateCheckInputV1Schema, updateDownloadInputV1Schema, updateInstallInputV1Schema, updateStateV1Schema, desktopContractSnapshotSchema, desktopNamespaceM2Values, desktopRouteKindM2Values, desktopRouteSchema, extractCandidateLinks, gatewayEventSchema, navigationSnapshotSchema, type AstellaDesktopApiM2, type ApiHealthSnapshotV1, type DesktopContractSnapshotV1, type DesktopRouteV1, type GatewayErrorCode, type GatewayEventPayloadM2, type GatewayEventV1, type GatewayResultV1, type NavigationEntryV1, type NavigationSnapshotV1, type RequestMetaV1, type SessionContextV1, type SubscriptionTopicM2, type WindowStateSnapshotV1, gatewayErrorSchema, navigationReasonSchema, requestIdSchema, requestMetaSchema, runtimeSnapshotSchema, windowStateSnapshotV1Schema, type DesktopRouteKindM2 } from "@astella/shared/desktop-ipc-contracts";import { type NoteDocWatchHandle } from "../note-doc/note-doc-transport.ts";
+import { roomProjectionV1Schema } from "@astella/shared/room-projection-contracts";import { companionMemoryItemV1Schema } from "@astella/shared/companion-memory-desktop-contracts";
 import { DesktopGateway } from "../gateway/desktop-gateway";
-import * as ns_assessment from "../gateway/desktop-gateway-ns-assessment";
 import * as ns_search from "../gateway/desktop-gateway-ns-search";
 import * as ns_invite from "../gateway/desktop-gateway-ns-invite";
-import * as ns_home from "../gateway/desktop-gateway-ns-home";
 import * as ns_artifact from "../gateway/desktop-gateway-ns-artifact";
 import type { SessionCredentialStore } from "../gateway/desktop-gateway-credentials";
 import { DesktopGatewayFailure } from "../gateway/desktop-gateway-failure";
-import { createSessionCredentialStore } from "../store/session-credential-store";
-import { FormalAssessmentGuard, type CompanionDeliveryKind } from "../store/formal-assessment-guard";
-export { FormalAssessmentGuard };
-import { matchesLearningRunReturnRoute, recoverPendingReturnMarker, resolveLearningRunReturn, routeForLearningRunReturn } from "../store/learning-run-return-resolver";
-import { MemoryPendingReturnMarkerStore, type PendingReturnMarkerStore } from "../store/pending-return-marker-store";
-export type { PendingReturnMarkerStore };
-import {
-  MemoryNoteDocCacheStore,
-  type NoteDocCacheEntryV1,
-  type NoteDocCacheKey,
-  type NoteDocCacheStore,
-} from "../note-doc/note-doc-cache-store.ts";
+import { createSessionCredentialStore } from "../store/session-credential-store";import { MemoryNoteDocCacheStore, type NoteDocCacheKey, type NoteDocCacheStore } from "../note-doc/note-doc-cache-store.ts";
 export type { NoteDocCacheStore };
-import { ensureArtifactStored } from "../artifact/artifact-store";
 import { VoiceAsrModelStore } from "../voice/voice-asr-model-store";
 import { registerVoiceAsrChannels } from "./desktop-ipc-voice-asr";
-import { voiceAsrModelMountUrl } from "../voice/voice-asr-model-route";
-import { voiceAsrModelSnapshotV1Schema } from "@astella/shared/voice-asr-model-contracts";
 import type { WindowStateSnapshot } from "../../shared/window-state";
 
 type WindowResolver = (contents: WebContents, sourceUrl: string) => BrowserWindow | null;
@@ -400,8 +43,6 @@ export type DesktopIpcRegistrationOptions = {
   readonly gateway?: DesktopGateway;
   readonly credentials?: SessionCredentialStore;
   readonly env?: NodeJS.ProcessEnv;
-  readonly formalAssessmentGuard?: FormalAssessmentGuard;
-  readonly pendingReturnMarkerStore?: PendingReturnMarkerStore;
   /** 本机那份笔记文档的落盘口（决定 7：断网可编辑要能跨过重启）。 */
   readonly noteDocCache?: NoteDocCacheStore;
   /**
@@ -425,12 +66,11 @@ export type DesktopIpcRegistrationOptions = {
 
 const m1InputBase = { meta: requestMetaSchema };
 const cancelInputSchema = z.strictObject({ ...m1InputBase, requestId: requestIdSchema });
-const navigationResolveInputSchema = z.strictObject({ ...m1InputBase, route: desktopRouteSchema, learningRunId: uuidSchema.optional() });
+const navigationResolveInputSchema = z.strictObject({ ...m1InputBase, route: desktopRouteSchema });
 const navigationGoInputSchema = z.strictObject({
   ...m1InputBase,
   route: desktopRouteSchema,
   entryKind: navigationReasonSchema,
-  learningRunId: uuidSchema.optional(),
 });
 const cancelOutputSchema = z.strictObject({ cancelled: z.literal(true) });
 /** 一条笔记的活连接；`workspaceEpoch` 用来在切空间时识别"这条已经不作数"。 */
@@ -737,41 +377,6 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): As
   ): void => installHandler(name, schema, options, operation as (
     event: IpcMainInvokeEvent, window: BrowserWindow, input: TInput,
   ) => Promise<TOutput>, currentWorkspaceEpoch, outputSchema);
-  const formalAssessmentGuard = options.formalAssessmentGuard ?? new FormalAssessmentGuard();
-  const packagedLearningRunResponseLossOperations = new Set<"draft" | "submit" | "action">();
-  for (const operation of (env.ASTELLA_PACKAGED_LEARNING_RUN_RESPONSE_LOSS ?? "").split(",").map((value) => value.trim())) {
-    if (operation === "draft" || operation === "submit" || operation === "action") packagedLearningRunResponseLossOperations.add(operation);
-  }
-  const packagedLearningRunResponseLossInjected = new Set<"draft" | "submit" | "action">();
-  const maybeInjectPackagedLearningRunResponseLoss = (operation: "draft" | "submit" | "action"): void => {
-    if (
-      env.ASTELLA_PACKAGED_EVIDENCE !== "1"
-      || !packagedLearningRunResponseLossOperations.has(operation)
-      || packagedLearningRunResponseLossInjected.has(operation)
-    ) return;
-    packagedLearningRunResponseLossInjected.add(operation);
-    // Evidence-only seam: the server mutation has already completed and the
-    // main process has synchronized its guard/stream state, but the renderer
-    // receives the same typed result-unknown contract as a lost IPC response.
-    // It is never exposed through preload and is disabled for normal builds.
-    throw new DesktopGatewayFailure("result_unknown", "resync_first");
-  };
-  if (env.ASTELLA_PACKAGED_EVIDENCE === "1") {
-    // This is a main-process-only observation seam for the packaged evidence
-    // harness. It is intentionally absent from preload and renderer APIs so
-    // formal sensitivity cannot be queried or influenced by page code.
-    const evidenceGlobal = globalThis as typeof globalThis & {
-      __astellaFormalAssessmentGuardEvidence?: {
-        getSnapshot: () => ReturnType<FormalAssessmentGuard["getSnapshot"]>;
-        authorizeCompanionDelivery: (kind: CompanionDeliveryKind) => ReturnType<FormalAssessmentGuard["authorizeCompanionDelivery"]>;
-      };
-    };
-    evidenceGlobal.__astellaFormalAssessmentGuardEvidence = {
-      getSnapshot: () => formalAssessmentGuard.getSnapshot(),
-      authorizeCompanionDelivery: (kind) => formalAssessmentGuard.authorizeCompanionDelivery(kind),
-    };
-  }
-  const pendingReturnMarkerStore = options.pendingReturnMarkerStore ?? new MemoryPendingReturnMarkerStore();
   const noteDocCache = options.noteDocCache ?? new MemoryNoteDocCacheStore();
   /**
    * 本机那份文档的键。身份不全时返回 null，调用方一律"不读也不写"——
@@ -802,9 +407,6 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): As
   let activeWorkspaceId: string | null = null;
   let eventRevision = 0;
   const subscriptions = new Map<string, SubscriptionRecord>();
-  // run 事件流的账本与规矩在 `desktop-ipc-run-streams.ts`；这里只把它接到闭包上。
-  const learningRunStreams = createRunStreamLedger();
-  const cardGenerationStreams = createRunStreamLedger();
   /** 伴星会话事件流：conversationId → 停止函数（每个会话至多一条）。 */
   const companionChatStreams = new Map<string, () => void>();
   /** 异步建连完成前也占位；否则并发订阅会各自开一条 SSE，直到服务端三条上限。 */
@@ -864,41 +466,6 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): As
       if (subscription.window === window) subscriptions.delete(subscriptionId);
     }
   };
-
-  const hasLearningRunSubscription = (): boolean => {
-    for (const subscription of subscriptions.values()) {
-      if (subscription.topic.kind === "learningRun") return true;
-    }
-    return false;
-  };
-
-  /**
-   * 此刻**真的有订阅方**的 run id（L9）。
-   *
-   * `trackedLearningRunIds` / `trackedCardGenerationRunIds` 以前只加不减（只有退出
-   * 登录 / 切空间那几处 `clear()`），而每一次 `subscriptions.subscribe` 都会对集合里
-   * **每一个** id 开一条 SSE。于是"这一趟运行里看过多少个 run"直接等于"对本地 API 挂
-   * 多少条常连接"，而且其中绝大部分已经没有任何人在看了。改成以订阅表为准：
-   * 没订阅者的 run 既不再开流，也已开出的流就地停掉。
-   */
-  const subscribedRunIds = (kind: "learningRun" | "cardGeneration"): Set<string> => {
-    const runIds = new Set<string>();
-    for (const subscription of subscriptions.values()) {
-      if (subscription.topic.kind === kind) runIds.add(subscription.topic.runId);
-    }
-    return runIds;
-  };
-
-  const stopLearningRunStreams = (): void => stopRunStreams(learningRunStreams);
-
-  const hasCardGenerationSubscription = (): boolean => {
-    for (const subscription of subscriptions.values()) {
-      if (subscription.topic.kind === "cardGeneration") return true;
-    }
-    return false;
-  };
-
-  const stopCardGenerationStreams = (): void => stopRunStreams(cardGenerationStreams);
 
   const hasCompanionChatSubscription = (conversationId?: string): boolean => {
     for (const subscription of subscriptions.values()) {
@@ -1086,13 +653,7 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): As
   };
 
   const releaseSubscriptionsForWindow = (window: BrowserWindow): void => {
-    // Window destruction is a hard sensitivity boundary. Do not let a
-    // main-owned formal-assessment state survive the renderer that held the
-    // task DOM, input, or Companion context.
-    formalAssessmentGuard.failClosed("disconnected");
     clearSubscriptionsForWindow(window);
-    if (!hasLearningRunSubscription()) stopLearningRunStreams();
-    if (!hasCardGenerationSubscription()) stopCardGenerationStreams();
     if (!hasCompanionChatSubscription()) stopCompanionChatStreams();
     reconcileNoteDocStreams();
     stopCompanionLifecycle();
@@ -1112,8 +673,6 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): As
     window.webContents.on("did-start-navigation", (_event, _url, _isInPlace, isMainFrame) => {
       if (!isMainFrame) return;
       clearSubscriptionsForWindow(window);
-      if (!hasLearningRunSubscription()) stopLearningRunStreams(); else ensureTrackedLearningRunStreams();
-      if (!hasCardGenerationSubscription()) stopCardGenerationStreams(); else ensureTrackedCardGenerationStreams();
     });
     // M16：窗口进出前台立刻收/放伴星那两条常连接。fence 心跳里还有同一道兜底，
     // 所以漏一次事件（例如窗口在本模块注册之后才创建）最坏只到 60 秒。
@@ -1123,77 +682,6 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): As
     window.on("hide", onVisibilityChange);
     window.on("minimize", onVisibilityChange);
   };
-
-  const refreshLearningRunSubscription = async (runId: string): Promise<void> => {
-    try {
-      const snapshot = await ns_learning.getLearningRun(gateway.gatewayTransport, runId);
-      syncFormalGuard(snapshot);
-      emit("learningRun", { kind: "learning_run_changed", runId: snapshot.runId, revision: snapshot.runRevision }, activeWorkspaceEpoch);
-    } catch {
-      formalAssessmentGuard.failClosed("disconnected");
-      // A later GET through the normal renderer path remains the source of
-      // truth. Stream failures never forward raw SSE data or private errors.
-    }
-  };
-
-  const refreshCardGenerationSubscription = async (runId: string, eventCursor: number): Promise<void> => {
-    try {
-      const snapshot = await ns_note.getCardGenerationRun(gateway.gatewayTransport, runId);
-      emit("cardGeneration", {
-        kind: "card_generation_changed",
-        runId: snapshot.runId,
-        eventCursor,
-        revision: snapshot.reviewDraftRevision,
-      }, activeWorkspaceEpoch);
-    } catch {
-      // The renderer must re-query the strict run snapshot itself after a
-      // stream gap. Raw SSE payloads and provider/candidate details stay main-only.
-    }
-  };
-
-  /**
-   * 两族流的端口：账本只问这四件事，闭包里的东西全靠它们进来。
-   *
-   * `subscribed()` 是**唯一**的"谁在看"来源，而订阅表的每一次增删都调一次
-   * `reconcile` —— 账本因此不可能与订阅表分叉。这正是原来漏掉的那一条：连接只会
-   * 越攒越多，直到服务端的每用户 SSE 上限把它们全数顶回（详见
-   * `desktop-ipc-run-streams.ts` 开头那段实测）。
-   */
-  const learningRunStreamPorts: RunStreamPorts = {
-    watch: (runId, onSequence) => gateway.watchLearningRunEvents(runId, onSequence),
-    refresh: async (runId) => { await refreshLearningRunSubscription(runId); },
-    subscribed: () => subscribedRunIds("learningRun"),
-    workspaceEpoch: () => activeWorkspaceEpoch,
-    onLost: () => formalAssessmentGuard.failClosed("disconnected"),
-  };
-
-  const cardGenerationStreamPorts: RunStreamPorts = {
-    watch: (runId, onSequence) => gateway.watchCardGenerationEvents(runId, onSequence),
-    refresh: refreshCardGenerationSubscription,
-    subscribed: () => subscribedRunIds("cardGeneration"),
-    workspaceEpoch: () => activeWorkspaceEpoch,
-    // 建不上就留给渲染层自己的重读路径；这里不伪造事件。
-  };
-
-  const ensureTrackedLearningRunStreams = (): void => reconcileRunStreams(learningRunStreams, learningRunStreamPorts);
-
-  /** 与 `trackCardGenerationRun` 同一条纪律：写侧只登记，开流交给订阅侧。 */
-  const trackLearningRun = (runId: string): void => {
-    learningRunStreams.tracked.add(runId);
-  };
-
-  /**
-   * 记下"有这么一条 run"，**不在这里开流**。
-   *
-   * 写侧（开始生成／审核／翻面／保存／停止／重试／收尾）知道 runId，可它不知道有谁
-   * 在看。以前这一发顺手就开流，于是每一次写都可能在没人订阅的情况下占一条长连接。
-   * 现在写侧只登记，开流交给订阅侧，两边对上了才连。
-   */
-  const trackCardGenerationRun = (runId: string): void => {
-    cardGenerationStreams.tracked.add(runId);
-  };
-
-  const ensureTrackedCardGenerationStreams = (): void => reconcileRunStreams(cardGenerationStreams, cardGenerationStreamPorts);
 
   /**
    * 伴星会话 SSE（§5.3）：每个会话维持一条流，事件逐帧转发给订阅方。
@@ -1324,8 +812,6 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): As
 
   const subscriptionMatchesPayload = (topic: SubscriptionTopicM2, topicKind: SubscriptionTopicM2["kind"], payload: M2SubscriptionEvent): boolean => {
     if (topic.kind !== topicKind) return false;
-    if (topic.kind === "learningRun") return payload.kind === "learning_run_changed" && topic.runId === payload.runId;
-    if (topic.kind === "cardGeneration") return payload.kind === "card_generation_changed" && topic.runId === payload.runId;
     if (topic.kind === "companionChat") return payload.kind === "companion_chat_event" && topic.conversationId === payload.conversationId;
     if (topic.kind === "noteDoc") return payload.kind === "note_doc_event" && topic.noteId === payload.noteId;
     return true;
@@ -1350,7 +836,6 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): As
 
   const rememberSession = (session: SessionContextV1): void => {
     if (session.status !== "authenticated" || !session.user || !session.workspace) {
-      formalAssessmentGuard.failClosed("disconnected");
       activeSubjectId = null;
       activeWorkspaceId = null;
       activeWorkspaceKind = null;
@@ -1373,82 +858,6 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): As
     if (kindChanged) stopNoteDocStreams();
   };
 
-  const syncFormalGuard = (snapshot: unknown): void => {
-    formalAssessmentGuard.syncFromSnapshot(snapshot, gateway.getConnectionState().kind === "ready");
-  };
-
-  const syncFormalGuardFromResult = (value: unknown): void => {
-    if (typeof value === "object" && value !== null && "snapshot" in value) {
-      syncFormalGuard(value.snapshot);
-      return;
-    }
-    formalAssessmentGuard.failClosed("unknown");
-  };
-
-  const requireActionCapability = async (
-    // 从共享常量派生而不是就地再列一遍：此前这里手写了 6 个字面量，新增能力时
-    // 必须在两处同步（漏改一处就是"共享层有、客户端永远拒绝"的静默 403）。
-    capability: Extract<ActionCapability, `card_generation.${string}`>,
-    requestId?: string,
-  ): Promise<void> => {
-    const projection = await ns_source.getCapabilities(gateway.gatewayTransport, requestId);
-    if (projection.actionCapabilities[capability] !== "allowed") {
-      throw new DesktopGatewayFailure("forbidden", "never");
-    }
-  };
-
-  const resolveReturnContract = async (contractValue: unknown): Promise<void> => {
-    const resolution = resolveLearningRunReturn(contractValue, { enabledRoutes: contract.enabledRoutes });
-    if (!activeSubjectId || !activeWorkspaceId) return;
-    if (resolution.kind === "pending") {
-      await pendingReturnMarkerStore.set(activeSubjectId, activeWorkspaceId, resolution.marker);
-    } else {
-      await pendingReturnMarkerStore.clear(activeSubjectId, activeWorkspaceId);
-    }
-  };
-
-  const completeFormalReleaseAfterRendererCleanup = (runId?: string): void => {
-    const state = formalAssessmentGuard.getSnapshot();
-    if (state.state !== "releasing" || !state.runId || state.runtimeEpoch === null) return;
-    if (runId && state.runId !== runId) return;
-    // A plain room.home navigation is also exposed to the shell. It is not
-    // itself proof that the LearningRun Player has unmounted, so only allow
-    // this fallback form after the main-owned run subscription has gone away.
-    if (!runId && hasLearningRunSubscription()) return;
-    formalAssessmentGuard.completeRelease({ runId: state.runId, runtimeEpoch: state.runtimeEpoch }, true);
-  };
-
-  const resolveLearningRunNavigation = async (
-    runId: string,
-    requestedRoute: DesktopRouteV1,
-    requestId?: string,
-  ): Promise<void> => {
-    const contractValue = await ns_learning.getLearningRunReturnContract(gateway.gatewayTransport, runId, requestId);
-    await resolveReturnContract(contractValue);
-    const resolvedRoute = routeForLearningRunReturn(contractValue);
-    if (!resolvedRoute || !matchesLearningRunReturnRoute(resolvedRoute, requestedRoute)) {
-      throw new DesktopGatewayFailure("invalid_navigation", "user_action");
-    }
-    // The API's V2 return contract already authorizes and resolves the
-    // schedule/objective target in the current subject/workspace scope. A
-    // review item may legitimately stop being due immediately after a result
-    // commits, so re-reading the due-only queue here would incorrectly turn a
-    // safe review return into a room fallback.
-  };
-
-  const recoverPersistedReturnMarker = async (requestId?: string): Promise<void> => {
-    if (!activeSubjectId || !activeWorkspaceId) return;
-    await recoverPendingReturnMarker({
-      markerStore: pendingReturnMarkerStore,
-      subjectId: activeSubjectId,
-      workspaceId: activeWorkspaceId,
-      enabledRoutes: contract.enabledRoutes,
-      query: (runId) => ns_learning.getLearningRunReturnContract(gateway.gatewayTransport, runId, requestId),
-      clearOnError: (error) => error instanceof DesktopGatewayFailure
-        && ["not_found", "forbidden", "unsupported_contract"].includes(error.code),
-    });
-  };
-
   const navigationEntryForContract = (
     route: DesktopRouteV1,
     meta: RequestMetaV1,
@@ -1461,7 +870,7 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): As
     if (!activeWorkspaceId || activeWorkspaceEpoch < 1) {
       throw new DesktopGatewayFailure("auth_required", "user_action");
     }
-    const level = route.kind === "room.home" ? "L0" : route.kind === "review.queue" ? "L1" : "L2";
+    const level = route.kind === "room.home" ? "L0" : "L2";
     return {
       version: 1,
       scope: "workspace",
@@ -1527,12 +936,9 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): As
     getActiveWorkspaceId: () => activeWorkspaceId,
     setActiveWorkspaceId: (value: string | null) => { activeWorkspaceId = value; },
     setActiveWorkspaceEpoch: (value: number) => { activeWorkspaceEpoch = value; },
-    assertEpochBoundaryExempt, safeWorkspaceEpoch, formalAssessmentGuard,
-    pendingReturnMarkerStore, noteDocCache,
-    recoverPersistedReturnMarker, rememberSession,
+    assertEpochBoundaryExempt, safeWorkspaceEpoch, noteDocCache,
+    rememberSession,
     startCompanionLifecycle, stopCompanionLifecycle, stopCompanionChatStreams,
-    stopLearningRunStreams, stopCardGenerationStreams,
-    trackedLearningRunIds: learningRunStreams.tracked, trackedCardGenerationRunIds: cardGenerationStreams.tracked,
   });
 
 
@@ -1555,45 +961,10 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): As
     getActiveWorkspaceId: () => activeWorkspaceId,
     setActiveWorkspaceId: (value: string | null) => { activeWorkspaceId = value; },
     setActiveWorkspaceEpoch: (value: number) => { activeWorkspaceEpoch = value; },
-    assertEpochBoundaryExempt, safeWorkspaceEpoch, formalAssessmentGuard,
-    pendingReturnMarkerStore, noteDocCache, recoverPersistedReturnMarker, rememberSession,
+    assertEpochBoundaryExempt, safeWorkspaceEpoch, noteDocCache,
+    rememberSession,
     startCompanionLifecycle, stopCompanionLifecycle, stopCompanionChatStreams,
-    stopLearningRunStreams, stopCardGenerationStreams,
-    trackedLearningRunIds: learningRunStreams.tracked, trackedCardGenerationRunIds: cardGenerationStreams.tracked,
     clearSubscriptionsForWindow,
-  });
-
-
-  // 2026-09-30（第②步）：「空间」这一族搬去 `desktop-ipc-learning.ts`。
-  // 纪元按 **getter** 传；宽松签名的那几个**真类型在本文件里断言**——传的就是同一个函数。
-  registerLearningChannels({
-    channel: channel as never,
-    installHandler: installHandler as never,
-    requireM2Route: requireM2Route as never,
-    requireAnyM2Route: requireAnyM2Route as never,
-    assertEpoch: assertEpoch as never,
-    emit: emit as never,
-    contract,
-    getActiveWorkspaceEpoch: () => activeWorkspaceEpoch,
-    ns_learning,
-    gateway: gateway as never,
-    options,
-    getActiveSubjectId: () => activeSubjectId,
-    setActiveSubjectId: (value: string | null) => { activeSubjectId = value; },
-    getActiveWorkspaceId: () => activeWorkspaceId,
-    setActiveWorkspaceId: (value: string | null) => { activeWorkspaceId = value; },
-    setActiveWorkspaceEpoch: (value: number) => { activeWorkspaceEpoch = value; },
-    assertEpochBoundaryExempt, safeWorkspaceEpoch, formalAssessmentGuard,
-    pendingReturnMarkerStore, noteDocCache, recoverPersistedReturnMarker, rememberSession,
-    startCompanionLifecycle, stopCompanionLifecycle, stopCompanionChatStreams,
-    stopLearningRunStreams, stopCardGenerationStreams,
-    trackedLearningRunIds: learningRunStreams.tracked, trackedCardGenerationRunIds: cardGenerationStreams.tracked,
-    clearSubscriptionsForWindow,
-    trackLearningRun: trackLearningRun as never,
-    maybeInjectPackagedLearningRunResponseLoss: maybeInjectPackagedLearningRunResponseLoss as never,
-    resolveReturnContract: resolveReturnContract as never,
-    syncFormalGuard: syncFormalGuard as never,
-    syncFormalGuardFromResult: syncFormalGuardFromResult as never,
   });
 
 
@@ -1646,8 +1017,6 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): As
     setActiveWorkspaceEpoch: (value: number) => { activeWorkspaceEpoch = value; },
     noteDocCacheKey, persistNoteDocLocal, noteDocStreams, noteDocPresenceToReplay,
     noteDocCache,
-    trackCardGenerationRun: trackCardGenerationRun as never,
-    requireActionCapability: requireActionCapability as never,
   });
 
 
@@ -1663,11 +1032,9 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): As
     try {
       const state = await ns_runtime.retryConnection(gateway.gatewayTransport, input.meta.requestId);
       const parsed = apiConnectionStateSchema.parse(state);
-      if (parsed.kind !== "ready") formalAssessmentGuard.failClosed("disconnected");
       emit("runtime", { kind: "connection_changed", state: parsed }, activeWorkspaceEpoch);
       return parsed;
     } catch (error) {
-      formalAssessmentGuard.failClosed("disconnected");
       throw error;
     }
   }, undefined, apiConnectionStateSchema);
@@ -1692,19 +1059,15 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): As
   }, undefined, cancelOutputSchema);
 
   installHandler(DESKTOP_IPC_CHANNELS.navigationResolve, navigationResolveInputSchema, options, async (_event, window, input) => {
-    if (input.learningRunId) await resolveLearningRunNavigation(input.learningRunId, input.route, input.meta.requestId);
     const state = navigationState(window, input.meta);
     const entry = navigationEntryForContract(input.route, input.meta, "user");
-    if (input.learningRunId || input.route.kind === "room.home") completeFormalReleaseAfterRendererCleanup(input.learningRunId);
     return { version: 1, current: entry, stackRevision: state.revision, canBack: state.entries.length > 1 } satisfies NavigationSnapshotV1;
   }, undefined, navigationSnapshotSchema);
 
   installHandler(DESKTOP_IPC_CHANNELS.navigationGo, navigationGoInputSchema, options, async (_event, window, input) => {
-    if (input.learningRunId) await resolveLearningRunNavigation(input.learningRunId, input.route, input.meta.requestId);
     const state = navigationState(window, input.meta);
     state.entries.push(navigationEntryForContract(input.route, input.meta, input.entryKind));
     state.revision += 1;
-    if (input.learningRunId || input.route.kind === "room.home") completeFormalReleaseAfterRendererCleanup(input.learningRunId);
     return navigationSnapshot(state);
   }, undefined, navigationSnapshotSchema);
 
@@ -1849,8 +1212,6 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): As
     bindWindowLifecycle(window);
     subscriptions.set(subscriptionId, { window, topic: input.topic });
     // 订阅表就是"谁在看"的唯一事实：增删两端都只调 reconcile，由它对着表开流/收流。
-    if (input.topic.kind === "learningRun") ensureTrackedLearningRunStreams();
-    if (input.topic.kind === "cardGeneration") ensureTrackedCardGenerationStreams();
     if (input.topic.kind === "companionChat") {
       // eventCursor 缺省 0（无回合游标的降级路径）：主进程从头重放，渲染层
       // 按 runId/generation 过滤，不会把历史帧渲染成本轮回复。
@@ -1866,11 +1227,6 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): As
     const subscription = subscriptions.get(input.subscriptionId);
     if (!subscription || subscription.window !== window) throw new DesktopGatewayFailure("not_found", "never");
     subscriptions.delete(input.subscriptionId);
-    // 退订也要对齐账本：**按 run 逐条**对，而不是"一个都不剩就全关"。
-    // 只在归零时全关的话，"笔记页还订着 A、工作台退订了 B"这种切换会把 B 的流留着，
-    // 而 B 已经没人看了——长连接就是这么一点点攒到服务端的每用户上限的。
-    if (hasLearningRunSubscription()) ensureTrackedLearningRunStreams(); else stopLearningRunStreams();
-    if (hasCardGenerationSubscription()) ensureTrackedCardGenerationStreams(); else stopCardGenerationStreams();
     // 一篇笔记可能被多个窗口同时订阅，所以不能"有一条退订就关连接"。
     reconcileNoteDocStreams();
     if (subscription.topic.kind === "companionChat" && !hasCompanionChatSubscription(subscription.topic.conversationId)) {
@@ -1878,113 +1234,6 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): As
     }
     return { closed: true as const };
   }, undefined, closedSubscriptionOutputSchema);
-
-  ;
-
-  // ─── 首页「只推一件」（39d W7-4 刀七；39 §12.1）────────────────────────
-  //
-  // 两条都挂 `note.library` 的 M2 路线门槛：首页那件读的是**目标与轮次**，与笔记屏
-  // 同属"学习空间"这一族，而把它挂到一个更宽的门槛上就等于让它在未初始化时先露头。
-  installHandler(DESKTOP_IPC_CHANNELS.homeSuggestionRead, z.strictObject({
-    ...m1InputBase,
-    timeZone: z.string().min(1),
-  }), options, async (_event, _window, input) => {
-    requireM2Route(contract, "note.library");
-    assertEpoch(input.meta, activeWorkspaceEpoch);
-    return ns_home.readHomeSuggestion(gateway.gatewayTransport, input.timeZone, input.meta.requestId);
-  }, undefined, homeSuggestionWireV2Schema);
-
-  installHandler(DESKTOP_IPC_CHANNELS.todayBatchOption, z.strictObject({
-    ...m1InputBase,
-    request: todayBatchOptionCommandV2Schema,
-  }), options, async (_event, _window, input) => {
-    requireM2Route(contract, "note.library");
-    assertEpoch(input.meta, activeWorkspaceEpoch);
-    return gateway.actOnTodayBatch(input.request, input.meta.requestId);
-  }, undefined, todayBatchOptionResultV2Schema);
-
-  /**
-   * 今日复习那一批的读侧（39d W7-4 刀十四）。
-   *
-   * ⚠️ 2026-09-30 补上：`desktop-ipc-channel-coverage` 一直红在这条通道上——
-   * 「契约里声明了、主进程却没注册 handler」。补上之后「今天这一批」才真的能读出来，
-   * 之前真窗口里它永远落进 `TodayBatchSurface` 的失败分支（见 `desktop-gateway.ts`
-   * 里那个 `readTodayBatch` 的注释）。
-   *
-   * `timeZone` 按 preload/共享接口放在 `meta` 旁边；它决定服务端算「今天」的时区。
-   */
-  installHandler(DESKTOP_IPC_CHANNELS.todayBatchRead, z.strictObject({
-    ...m1InputBase,
-    timeZone: z.string().min(1).max(80),
-  }), options, async (_event, _window, input) => {
-    requireM2Route(contract, "note.library");
-    assertEpoch(input.meta, activeWorkspaceEpoch);
-    return gateway.readTodayBatch(input.timeZone, input.meta.requestId);
-  });
-
-  installHandler(DESKTOP_IPC_CHANNELS.homeSuggestionAct, z.strictObject({
-    ...m1InputBase,
-    request: homeSuggestionActionCommandV2Schema,
-  }), options, async (_event, _window, input) => {
-    requireM2Route(contract, "note.library");
-    assertEpoch(input.meta, activeWorkspaceEpoch);
-    return ns_home.actOnHomeSuggestion(gateway.gatewayTransport, input.request, input.meta.requestId);
-  }, undefined, homeSuggestionActionResultV2Schema);
-
-  // ─── 判定的争议（39 §14.2、§16.11、§16.25）────────────────────────────────
-  //
-  // 一整组此前在客户端**不存在**，而结果页已经印着"也可以现在结束争议、把这一项
-  // 暂不安排"——那句话承诺了一个点不到的入口（§16.11／16.22／16.25 三条验收
-  // 都要求用户能提出或查看异议，按现状它们都无法验收）。
-  //
-  // 面只认 `learningRun.detail`：争议是**一次判定的**个人数据，挂在别的面上等于
-  // 让它在没有那条判定的上下文里也能被提交。三条写都走 `assertEpoch`（fail closed）：
-  // 切空间之后带着旧 epoch 回来开一份争议，等于在**新**空间里对一条不存在的判定申诉。
-  //
-  // 刻意只有这四条：`recheck` 与 `correction` 的写入方是系统而不是人
-  // （§14.2「系统基于原题、原回答和依据进行一次重新检查」），挂上来就是把一次复核
-  // 变成一个能被重复按下的按钮，而 §16.22 的验收原话是"争议不形成死循环"。
-
-  installHandler(DESKTOP_IPC_CHANNELS.assessmentDisputeGet, assessmentDisputeGetInputSchema, options, async (_event, _window, input) => {
-    requireM2Route(contract, "learningRun.detail");
-    assertEpoch(input.meta, activeWorkspaceEpoch);
-    return ns_assessment.getAssessmentDispute(gateway.gatewayTransport, input.assessmentId, input.meta.requestId);
-  }, undefined, assessmentDisputeEnvelopeV2Schema);
-
-  installHandler(DESKTOP_IPC_CHANNELS.assessmentDisputeOpen, assessmentDisputeOpenInputSchema, options, async (_event, _window, input) => {
-    requireM2Route(contract, "learningRun.detail");
-    assertEpoch(input.meta, activeWorkspaceEpoch);
-    return ns_assessment.openAssessmentDispute(gateway.gatewayTransport, input.request, input.meta.requestId);
-  }, undefined, openAssessmentDisputeResultV2Schema);
-
-  installHandler(DESKTOP_IPC_CHANNELS.assessmentDisputeSupplement, assessmentDisputeSupplementInputSchema, options, async (_event, _window, input) => {
-    requireM2Route(contract, "learningRun.detail");
-    assertEpoch(input.meta, activeWorkspaceEpoch);
-    return ns_assessment.supplementAssessmentDispute(gateway.gatewayTransport, input.request, input.meta.requestId);
-  }, undefined, assessmentDisputeSupplementResultV2Schema);
-
-  installHandler(DESKTOP_IPC_CHANNELS.assessmentDisputeClose, assessmentDisputeCloseInputSchema, options, async (_event, _window, input) => {
-    requireM2Route(contract, "learningRun.detail");
-    assertEpoch(input.meta, activeWorkspaceEpoch);
-    return ns_assessment.closeAssessmentDispute(gateway.gatewayTransport, input.request, input.meta.requestId);
-  }, undefined, closeAssessmentDisputeResultV2Schema);
-
-  installHandler(DESKTOP_IPC_CHANNELS.activityGetToday, activityGetTodayInputSchema, options, async (_event, _window, input) => {
-    requireM2Route(contract, "room.home");
-    assertEpoch(input.meta, activeWorkspaceEpoch);
-    return gateway.getTodayActivity(input.from, input.to, input.meta.requestId);
-  }, undefined, todayActivityV1Schema);
-
-  // 「全部空间」统计与今日日志同页。它是**读**通道，所以走 assertEpoch（fail
-  // closed）：切空间后带着旧 epoch 回来的读数必须被拒，不能把上一个空间的合计
-  // 落到新空间的界面上。
-  installHandler(DESKTOP_IPC_CHANNELS.statsGetOverviewAll, statsGetOverviewAllInputSchema, options, async (_event, _window, input) => {
-    requireM2Route(contract, "room.home");
-    assertEpoch(input.meta, activeWorkspaceEpoch);
-    return gateway.getAllWorkspacesStatsOverview(input.meta.requestId);
-  }, undefined, allWorkspacesStatsOverviewSchema);
-
-  ;
 
   return contract;
 }

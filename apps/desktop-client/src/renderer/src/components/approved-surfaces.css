@@ -37,139 +37,11 @@
   pointer-events: none;
 }
 
-.approved-surface {
-  position: absolute;
-  z-index: 18;
-  inset: 0;
-  color: var(--hud-ink);
-  pointer-events: auto;
-}
-
-.approved-surface button,
-.approved-surface input { font: inherit; }
-
-.approved-surface__heading {
-  position: absolute;
-  z-index: 25;
-  top: 24px;
-  left: 88px;
-  max-width: min(720px, calc(100vw - 440px));
-  color: #fff8e8;
-  text-shadow: 0 2px 10px rgba(28, 16, 8, 0.9);
-}
-
-.approved-surface__heading h2 {
-  margin: 0;
-  font: 680 29px/1.18 "Noto Serif SC Variable", "Songti SC", serif;
-  letter-spacing: -0.03em;
-}
-
-.approved-surface__heading p {
-  margin: 6px 0 0;
-  color: #f5e7d1;
-  font-size: 11px;
-}
-
 /* Objective pages wear the same mint HUD title plaque as the V3 HudPage shell. */
-.task-surface:is(.task-surface--objective-library, .task-surface--objective-detail) .approved-surface__heading {
-  top: 18px;
-  left: 103px;
-  max-width: min(720px, calc(100vw - 440px));
-  padding: 9px 15px 8px;
-  color: #443428;
-  border: 3px solid rgba(255, 252, 235, 0.87);
-  border-radius: 19px 24px 17px 22px;
-  background: var(--hud-mint);
-  box-shadow: 0 9px 20px rgba(45, 28, 17, 0.24);
-  text-shadow: none;
-}
-
-.task-surface:is(.task-surface--objective-library, .task-surface--objective-detail) .approved-surface__heading .approved-surface__eyebrow {
-  display: none;
-}
-
-.task-surface:is(.task-surface--objective-library, .task-surface--objective-detail) .approved-surface__heading h2 {
-  font-size: 23px;
-}
-
-.task-surface:is(.task-surface--objective-library, .task-surface--objective-detail) .approved-surface__heading p {
-  margin-top: 3px;
-  color: #665447;
-}
-
-.approved-surface__content {
-  position: absolute;
-  z-index: 15;
-  top: 94px;
-  right: 245px;
-  bottom: 62px;
-  left: 88px;
-  min-width: 0;
-  transition: left 560ms var(--hud-ease-out), right 560ms var(--hud-ease-out);
-}
-
-.task-surface:is(.task-surface--source-detail, .task-surface--objective-detail, .task-surface--graph) .approved-surface__content {
-  right: 88px;
-  left: 365px;
-}
-
-.approved-state {
-  display: grid;
-  width: 100%;
-  height: 100%;
-  min-height: 180px;
-  place-content: center;
-  justify-items: center;
-  gap: 9px;
-  padding: 28px;
-  border: 1px solid rgba(255, 255, 255, 0.56);
-  border: 4px solid rgba(255, 252, 235, 0.78);
-  border-radius:31px 42px 29px 38px/35px 30px 43px 31px;
-  background: radial-gradient(circle at 15% 0, rgba(255, 255, 255, 0.64), transparent 36%), var(--hud-paper);
-  box-shadow: var(--hud-shadow);
-  text-align: center;
-}
-
-.approved-state strong { font: 680 18px "Noto Serif SC Variable", "Songti SC", serif; }
-.approved-state p { max-width: 44em; margin: 0; color: var(--hud-soft); font-size: 11px; line-height: 1.65; }
 @keyframes v3-spin { to { transform: rotate(360deg); } }
-.v3-objective-state { width: fit-content; }
-
-.v3-objective-summary { max-width: 68ch; margin: 0 0 12px; color: #554336; font: 12px/1.7 "Noto Serif SC Variable", "Songti SC", serif; }
-.v3-action-error { padding: 7px 10px; border-radius: 13px 17px 12px 15px; background: #efb092; }
-.v3-primary-note { display: grid; min-height: 58px; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 9px; padding: 10px 2px; color: inherit; text-align: left; border: 0; border-bottom: 1px solid rgba(71, 67, 49, 0.19); background: transparent; box-shadow: none; cursor: pointer; }
-.v3-primary-note span { display: grid; min-width: 0; gap: 2px; }
-.v3-primary-note small { color: #52412e; font-size: 8px; }
-.v3-primary-note strong { overflow: hidden; font: 650 10px/1.45 "Noto Serif SC Variable", "Songti SC", serif; text-overflow: ellipsis; white-space: nowrap; }
-.v3-primary-note--missing { cursor: default; }
-.v3-lineage-warning { display: flex; align-items: flex-start; gap: 6px; margin: 8px 0 0; padding: 7px 9px; color: #6f3326; border-radius: 13px 16px 12px 15px; background: var(--hud-butter); font-size: 8px; line-height: 1.45; }
-.v3-lineage-warning svg { flex: 0 0 auto; }
-.v3-origin-list { min-height: 0; flex: 1; padding: 1px 0; overflow: auto; scrollbar-color: rgba(91, 73, 56, 0.46) transparent; scrollbar-width: thin; }
-.v3-origin-row { display: grid; grid-template-columns: 25px minmax(0, 1fr); gap: 8px; padding: 11px 2px; border-bottom: 1px solid rgba(71, 67, 49, 0.18); background: transparent; box-shadow: none; }
-.v3-origin-row__index { color: #52412e; font: 680 8px "Noto Serif SC Variable", "Songti SC", serif; font-variant-numeric: tabular-nums; }
-.v3-origin-row > div { display: grid; gap: 3px; }
-.v3-origin-row > div > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.v3-origin-row strong { font: 680 10px "Noto Serif SC Variable", "Songti SC", serif; }
-.v3-origin-row > div > div span { color: #52412e; font-size: 8px; }
-.v3-origin-row p { margin: 0; font-size: 8px; }
-.v3-origin-row small { color: #52412e; font-size: 8px; }
-.v3-origin-empty { display: grid; min-height: 125px; place-content: center; justify-items: center; gap: 4px; text-align: center; }
-.v3-origin-empty strong { font: 650 11px "Noto Serif SC Variable", "Songti SC", serif; }
-.v3-origin-empty span { color: #52412e; font-size: 8px; }
-.v3-lineage-boundary { padding: 10px 2px 0; color: #473b31; border-top: 1px dashed rgba(71, 67, 49, 0.24); }
-.v3-lineage-boundary strong { font: 650 9px "Noto Serif SC Variable", "Songti SC", serif; }
-.v3-lineage-boundary p { margin: 3px 0 0; font-size: 8px; line-height: 1.45; }
 
 /* Remaining production routes: keep their real contracts, replace the old
    projected-object composition with the approved V3 page families. */
-.approved-surface__eyebrow {
-  display: block;
-  margin-bottom: 3px;
-  color: #f0d994;
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-}
 
 .task-surface:is(.task-surface--study, .task-surface--notebook, .task-surface--card-generation, .task-surface--review, .task-surface--search, .task-surface--validation) .task-surface__spatial-layer {
   position: absolute;
@@ -194,81 +66,14 @@
 .desktop-app[data-surface-open="true"] .companion-presence .companion-visual-shell {
   cursor: default;
 }
-.desktop-app[data-directory-rail="collapsed"] .approved-surface__content { left: 22px; }
-.desktop-app[data-directory-rail="collapsed"] .task-surface:is(.task-surface--source-detail, .task-surface--objective-detail, .task-surface--graph) .approved-surface__content { left: 335px; }
-
-@media (hover: hover) and (pointer: fine) {
-  .v3-primary-note:hover { background: rgba(255, 248, 224, 0.18); transform: translateX(3px); }
-}
-
-@media (max-width: 900px), (max-height: 520px) {
-  .approved-surface__heading { top: 9px; left: 64px; max-width: calc(100vw - 270px); padding: 4px 7px; border: 2px solid rgba(255, 252, 235, 0.78); border-radius: 10px 12px 9px 11px; background: rgba(71, 52, 39, 0.62); }
-  .approved-surface__heading h2 { font-size: 14px; }
-  .approved-surface__heading p { margin-top: 1px; font-size: 10px; }
-  .task-surface:is(.task-surface--objective-library, .task-surface--objective-detail) .approved-surface__heading { top: 9px; left: 52px; max-width: calc(100vw - 220px); padding: 4px 7px; border-width: 2px; border-radius: 10px 12px 9px 11px; background: var(--hud-mint); box-shadow: 0 5px 10px rgba(45, 28, 17, 0.24); }
-  .task-surface:is(.task-surface--objective-library, .task-surface--objective-detail) .approved-surface__heading h2 { font-size: 14px; }
-  .task-surface:is(.task-surface--objective-library, .task-surface--objective-detail) .approved-surface__heading p { margin-top: 1px; font-size: 10px; }
-  .approved-surface__content { top: 48px; right: 124px; bottom: 32px; left: 64px; }
-  .task-surface:is(.task-surface--source-detail, .task-surface--objective-detail, .task-surface--graph) .approved-surface__content { right: 44px; left: 194px; }
-  .desktop-app[data-directory-rail="collapsed"] .approved-surface__content { left: 11px; }
-  .desktop-app[data-directory-rail="collapsed"] .task-surface:is(.task-surface--source-detail, .task-surface--objective-detail, .task-surface--graph) .approved-surface__content { left: 178px; }
-  .approved-state { min-height: 90px; gap: 4px; padding: 12px; }
-  .approved-state strong { font-size: 9px; }
-  .approved-state p { font-size: 5px; } .v3-objective-state{ gap: 3px; font-size: 5px; }
-  .v3-objective-state svg { width: 6px; height: 6px; }
-
-  .v3-objective-summary { margin: 0 0 6px; font-size: 6px; }
-  .v3-action-error { gap: 3px; margin: -2px 6px 0; padding: 3px 5px; border-radius: 7px 9px 6px 8px; font-size: 5px; }
-  .v3-action-error svg { width: 7px; height: 7px; }
-  .v3-primary-note { min-height: 29px; grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px; padding: 5px 1px; border-radius: 0; }
-  .v3-primary-note > svg { width: 8px; height: 8px; }
-  .v3-primary-note small,
-.v3-primary-note strong { font-size: 4px; }
-  .v3-lineage-warning { gap: 3px; margin: 4px 0 0; padding: 3px 5px; border-radius: 7px 9px 6px 8px; font-size: 4px; }
-  .v3-lineage-warning svg { width: 7px; height: 7px; }
-  .v3-origin-list { padding: 1px 0; }
-  .v3-origin-row { grid-template-columns: 12px minmax(0, 1fr); gap: 4px; padding: 5px 1px; border-radius: 0; }
-  .v3-origin-row:nth-child(even) { border-radius: 0; }
-  .v3-origin-row__index { font-size: 4px; }
-  .v3-origin-row > div { gap: 1px; }
-  .v3-origin-row strong { font-size: 5px; }
-  .v3-origin-row > div > div span,
-.v3-origin-row p,
-.v3-origin-row small { font-size: 4px; }
-  .v3-origin-empty { min-height: 62px; gap: 2px; border: 0; border-radius: 0; }
-  .v3-origin-empty svg { width: 10px; height: 10px; }
-  .v3-origin-empty strong { font-size: 6px; }
-  .v3-origin-empty span,
-.v3-lineage-boundary strong,
-.v3-lineage-boundary p { font-size: 4px; }
-  .v3-lineage-boundary { padding: 5px 1px 0; border-radius: 0; }
-  .v3-lineage-boundary p { margin-top: 1px; }
-}
-
-@media (max-width: 900px), (max-height: 520px) {
-}
 
 /* Legibility floor for the compact (200% zoom) viewport: the micro sizes set
    above predate the 7px floor, so every remaining text role is re-raised here.
    This block intentionally comes last and wins over the sizes above. */
-@media (max-width: 900px), (max-height: 520px) { .v3-objective-state, .v3-objective-summary{ font-size: 7px; }
-  .v3-primary-note small,
-.v3-primary-note strong,
-.v3-lineage-warning,
-.v3-origin-row strong,
-.v3-origin-row > div > div span,
-.v3-origin-row p,
-.v3-origin-row small,
-.v3-origin-empty strong,
-.v3-origin-empty span,
-.v3-lineage-boundary strong,
-.v3-lineage-boundary p { font-size: 7px; }
-}
 
 @media (prefers-reduced-motion: reduce) {
   /* 只压时长不压迭代次数，`.approved-state--loading svg` 那个 `v3-spin … infinite`
      会从 1.2s 一圈变成 1ms 一圈——减弱动效反而让它每秒转一千圈。 */
-  .approved-surface * { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
 }
 
 /* 生成中的逐张落地（A1·B4）。字阶与既有进度头条同一档（__label 13px / __meta 12px），

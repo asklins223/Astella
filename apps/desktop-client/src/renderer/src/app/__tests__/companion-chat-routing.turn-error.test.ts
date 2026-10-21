@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { RendererGatewayError } from "../client/desktop-client";
-import { companionTurnErrorMessage } from "../companion-session/companion-chat-routing";
+import { companionReplyFailureMessage, companionTurnErrorMessage } from "../companion-session/companion-chat-routing";
 
 const failure = (code: "conflict" | "api_unavailable") => new RendererGatewayError({
   code, retry: "never", safeMessageKey: `error.${code}`,
@@ -25,5 +25,10 @@ describe("被上一条挡住时的措辞", () => {
 
   it("别的失败照旧走通用文案，不套这条", () => {
     expect(companionTurnErrorMessage(failure("api_unavailable"))).not.toContain("上一条");
+  });
+  it("区分服务首输出超时和输出中断，并说明可继续", () => {
+    expect(companionReplyFailureMessage("PROVIDER_FIRST_OUTPUT_TIMEOUT", true)).toContain("首段内容");
+    expect(companionReplyFailureMessage("PROVIDER_IDLE_TIMEOUT", true)).toContain("新的进展超时");
+    expect(companionReplyFailureMessage("PROVIDER_FIRST_OUTPUT_TIMEOUT", true)).toContain("从中断处继续");
   });
 });

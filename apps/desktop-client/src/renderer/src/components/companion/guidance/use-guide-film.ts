@@ -6,7 +6,7 @@ import type { NotificationVoicePhase } from "../voice/companion-notification-voi
 /** 静音时约一分钟。朗读仍在进行时保留本幕结尾，不截断旁白来赶进度。 */
 export const GUIDE_FILM_SECONDS: Record<GuideStepId, number> = {
   voice: 0, room: 10, notes: 13, reading: 14, agent: 14, return: 9,
-  space: 10, sources: 12, review: 12, settings: 10,
+  space: 10, sources: 12, settings: 10,
 };
 export function filmClockStep(elapsed: number, delta: number, duration: number, running: boolean, voice: NotificationVoicePhase) {
   const time = running ? Math.min(duration, elapsed + Math.max(0, Math.min(delta, .25))) : elapsed;

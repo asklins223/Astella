@@ -20,9 +20,6 @@ compose 文件，否则门禁直接失败。
 
 | Flag | 读取方 | 默认（dev / prod） | 作用 |
 | --- | --- | --- | --- |
-| `LEARNING_RUN_ENABLED` | api | true / false | 方案 16 统一 LearningRun 能力总开关 |
-| `CARD_GENERATION_V2_ENABLED` | api | true / false | V2 价值优先生成总开关；false 时 V2 路由/管线 fail-closed |
-| `CARD_GENERATION_V2_LLM` | worker | true / false | V2 四阶段 LLM 模式；false 时走确定性占位管线 |
 | `COMPANION_DIALOGUE_V1_ENABLED` | api + worker | true / false | 伴星文字对话能力（含 `session/current`、`history/search` 只读面） |
 | `COMPANION_VOICE_DIALOGUE_V1_ENABLED` | api + worker | true / false | 半双工 ASR/TTS 语音对话 |
 | `COMPANION_STREAMING_VOICE_V1_ENABLED` | api | false / false | 流式语音；阻塞未解除前两侧都保持关 |
@@ -118,10 +115,9 @@ manifest 许可门禁（`commercialReleaseAllowed`）控制，不需要服务端
 1. **能力开关**：dev 栈已在 `docker-compose.dev.yml` 默认开启（除 streaming voice）；
    **prod 栈不是"全部 false fail-closed"——这句话是错的，2026-09-22 按 `docker-compose.yml` 逐条数过改在这里**：
    它是**混合姿态**，两件事分开看：
-   - **默认关**（能力类 4 支）：`LEARNING_RUN_ENABLED`、`CARD_GENERATION_V2_ENABLED`、
-     `COMPANION_VOICE_DIALOGUE_V1_ENABLED`、`COMPANION_STREAMING_VOICE_V1_ENABLED`；
-     另有 `CARD_GENERATION_V2_LLM`、`TRUST_PROXY`、`AI_ALLOW_DOCKER_DESKTOP_SYNTHETIC_DNS`
-     三支属于运行/安全参数而不是能力开关。全文件合计 `:-true` 13 支、`:-false` 7 支。
+   - **默认关**（能力类）：`COMPANION_VOICE_DIALOGUE_V1_ENABLED`、`COMPANION_STREAMING_VOICE_V1_ENABLED`；
+     另有 `TRUST_PROXY`、`AI_ALLOW_DOCKER_DESKTOP_SYNTHETIC_DNS`
+     两支属于运行/安全参数而不是能力开关。
    - **默认开**（能力类 11 支，全为 `${...:-true}`）：`COMPANION_DIALOGUE_V1_ENABLED`、
      `COMPANION_JOURNEY_V2`、`COMPANION_BRIDGE_V2`、`COMPANION_MEMORY_VECTOR_V1`、
      `COMPANION_MEMORY_EXTRACTOR_V1`、`COMPANION_MEMORY_STAR_MAP_V1`、`COMPANION_PET_PROFILE_V1`、

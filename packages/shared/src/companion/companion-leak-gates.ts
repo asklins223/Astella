@@ -41,7 +41,6 @@ const DIALOGUE = "companion-dialogue-content" as const;
 
 export const COMPANION_LEAK_GATES_V1: readonly CompanionLeakGateV1[] = [
   { id: "G1", judge: "unverifiedNumericClaims", judgeModule: DIALOGUE, scope: "正文里的数字与量词，比上下文集", disposition: "delete", because: "事实 span 落地后她能填的数字只剩服务端给的（W2-5）" },
-  { id: "G2", judge: "claimsNothingDueAgainstFacts", judgeModule: DIALOGUE, scope: "谎称没有到期的", disposition: "keep", because: "环境块没解析出实体时仍会假阴性，属已知会漏" },
   { id: "G3", judge: "claimsLookupThatNeverRan", judgeModule: DIALOGUE, scope: "谎称我查过了", disposition: "delete", because: "假阴性的动机是手上什么都没有，P1 之后那句不再成立" },
   { id: "G4", judge: "looksLikeUnfulfilledActionNarration", judgeModule: DIALOGUE, scope: "答应了却没做", disposition: "conditional", because: "要与结构化分类器合判，删分类器那一步（P3）未做" },
   { id: "G5", judge: "looksTruncatedReply", judgeModule: DIALOGUE, scope: "半句或短到不成一句", disposition: "keep", because: "结构判据，且是 repair ladder 的唯一入口" },

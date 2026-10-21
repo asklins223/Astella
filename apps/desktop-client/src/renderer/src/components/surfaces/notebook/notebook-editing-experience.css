@@ -6,8 +6,6 @@
 .hud-surface .notebook-desk[data-editing]:not([data-fullscreen]) .notebook-volume__bookmark small { display: none; }
 .hud-surface .notebook-desk[data-editing]:not([data-fullscreen]) .notebook-desk__rack { min-height: 50px; padding: 7px 18px; gap: 7px 10px; }
 .hud-surface .notebook-desk[data-editing]:not([data-fullscreen]) .notebook-desk__utilities { gap: 6px; }
-.hud-surface .notebook-desk[data-editing] .notebook-card-entry { min-height: 32px; padding: 5px 8px; border: 0; background: transparent; box-shadow: none; color: var(--hud-green); }
-.hud-surface .notebook-desk[data-editing] .notebook-card-entry:hover { background: #e9efdf; }
 .hud-surface .notebook-desk[data-editing]:not([data-fullscreen]) .notebook-volume__tools .editor-tools { padding-block: 4px; border-bottom-style: solid; }
 .hud-surface .notebook-desk[data-editing]:not([data-fullscreen]) .notebook-desk__scroll { padding-top: 22px; }
 .hud-surface .notebook-desk[data-editing]:not([data-fullscreen]) .notebook-volume__article-head { margin-bottom: 20px; padding-bottom: 16px; }

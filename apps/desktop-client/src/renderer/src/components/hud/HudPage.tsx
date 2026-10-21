@@ -22,7 +22,7 @@ export function HudPage({
   const definition = HUD_PAGES[page];
   return (
     <>
-      {page !== "assessment" && showTitle ? (
+      {showTitle ? (
         <div className="task-title">
           <h1>{definition.title}</h1>
           <p>{definition.subtitle}</p>

@@ -19,7 +19,7 @@ const mdFile = (name: string, body: string) => {
 };
 const source = (id: string, title: string) => ({ id, title, type: "text", status: "ready", origin: null,
   workspaceId: "workspace", createdBy: "reader", createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z",
-  noteCount: 0, metadata: null, cardProgress: { pendingReviewRuns: 0, activeObjectives: 0 } });
+  noteCount: 0, metadata: null, cardProgress: { activeCards: 0 } });
 const sources = [source("first", "记忆研究"), source("second", "阅读节奏")];
 const segments = [{ id: "segment-0", sourceId: "first", workspaceId: "workspace", ordinal: 0, text: "# 第一节", segmentType: "heading", charStart: 0, charEnd: 5 },
   { id: "segment-1", sourceId: "first", workspaceId: "workspace", ordinal: 1, text: "慢慢读这一段。", segmentType: "paragraph", charStart: 6, charEnd: 14 }];

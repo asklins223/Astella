@@ -151,6 +151,5 @@ describe("companion memory universe", () => {
 
   it("normalizes entity targets to current desktop routes", () => {
     expect(routeForMemoryEntityTarget({ kind: "note", noteId: NOTE_ID })).toEqual({ kind: "note.detail", noteId: NOTE_ID });
-    expect(routeForMemoryEntityTarget({ kind: "understanding", objectiveId: MEMORY_A })).toEqual({ kind: "objective.detail", objectiveId: MEMORY_A });
   });
 });

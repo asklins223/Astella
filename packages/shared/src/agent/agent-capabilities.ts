@@ -1,4 +1,4 @@
-export { agentGoalToolManifest, noteAgentCapabilityManifest, cardAgentCapabilityManifest,
+export { agentGoalToolManifest, noteAgentCapabilityManifest,
   methodAgentCapabilityManifest, basicAgentCapabilityManifest, externalAgentCapabilityManifest,
   agentGoalDeliveryManifest } from "./agent-capability-manifests.ts";
 import { agentCapabilityCatalog, getAgentCapability, type AgentCapabilityEntry } from "./agent-capability-catalog.ts";

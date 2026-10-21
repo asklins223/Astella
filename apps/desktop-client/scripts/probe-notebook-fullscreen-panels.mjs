@@ -114,7 +114,7 @@ if (!(await page.locator('.notebook-desk__side-page').count())) {
 
 // —— 二：速看脑图里的抽屉 ——
 await openToolsIfClosed()
-await page.getByRole('button', { name: '速看' }).first().click().catch(() => undefined)
+await page.getByRole('tab', { name: '速看' }).first().click().catch(() => undefined)
 await page.waitForTimeout(800)
 await page.getByRole('button', { name: '脑图' }).first().click().catch(() => undefined)
 await page.waitForTimeout(1400)

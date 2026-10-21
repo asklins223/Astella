@@ -516,9 +516,6 @@ const SIZE_DEBT: Readonly<Record<string, string>> = {
   //
   "app/companion-session/companion-chat-session.tsx":
     "2125 行 / 41 hook。下一步：消息归并与持久化分开。",
-  "components/surfaces/run/learning-run-surface.tsx":
-    "1822 行 / 39 hook。2026-09-29 已拆成 12 个模块（文案表 / 顶栏 / 题面 / 求助 / 发现卡 / 四档等待 / "
-    + "证据带 / 判定表 / 收据 / 动作条 / 两个确认框）。下一步：作答区里 `InteractionEditor` 那一支。",
   "components/companion/bubble/CompanionPresence.tsx":
     "1746 行 / 29 hook。**这一块不许随便拆**——座位预算是 `DESIGN.md` 的硬约束，"
     + "拆的时候必须保证 `--companion-seat-*` 的发布与读取仍在同一处。下一步：先补注释再拆。",
@@ -702,8 +699,6 @@ const SIZE_DEBT: Readonly<Record<string, string>> = {
   //    **搬到 graph-surface-types.ts 再 import 回来**（搬，不是重写）
   // 6. typecheck → 问守卫 → src/main → 17 守卫 → 构建 → 过了就 SIZE_DEBT → SIZE_DONE
   // ```
-  "components/surfaces/space/graph-surface.tsx":
-    "1485 行 / 37 hook。下一步：证据面板与画布分开。",
   // 2026-10-11：邮箱验证码三链路（发码/验证码登录/找回密码）落进 auth 屏，
   // hooks 22 → 29（越 25 软线）；同日注册拆两步、门禁加版本行后到 1686 行。
   "components/DesktopAccessGate.tsx":

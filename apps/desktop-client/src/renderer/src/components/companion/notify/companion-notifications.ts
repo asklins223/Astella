@@ -93,6 +93,11 @@ export function notifyCompanion(input: CompanionNotificationInput): void {
 }
 
 export const notificationKey = (notice: CompanionNotification) => `${notice.id}:${notice.occurrence}:${notice.revision}`;
+/**
+ * 跨会话稳定的身份：不含 `occurrence`（它只用于同一会话内区分重复投递，
+ * 每次启动从 1 重新数）。持久化"已经看过"只能用它。
+ */
+export const notificationIdentity = (notice: Pick<CompanionNotification, "id" | "revision">) => `${notice.id}:${notice.revision}`;
 
 export function nextCompanionNotification(items: readonly CompanionNotification[], seen: ReadonlySet<string>, busy: boolean): CompanionNotification | null {
   const candidates = items.filter(item => item.state === "unread" && !seen.has(notificationKey(item))

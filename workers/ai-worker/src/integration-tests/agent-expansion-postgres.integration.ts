@@ -302,7 +302,7 @@ test("两份冻结材料之间串错产物：类型、归属、payload 材料与
   // 换执行体：别的 job 的草稿不认。
   notDelivered(await read({ execution: { kind: "job", id: randomUUID() } }), "别的 job 的草稿不认");
   // 换一个**种类的执行体**去读同一行：kind 也是绑定的一部分，只有 job 才配这三类产物。
-  notDelivered(await read({ execution: { kind: "card_generation", id: randomUUID() } }),
+  notDelivered(await read({ execution: { kind: "card_generation", id: randomUUID() } as never }),
     "card_generation 执行体不配笔记产物的回执");
 
   // payload 与草稿都指向第三篇，而那一篇根本没被冻结进这个目标：仍然不认。

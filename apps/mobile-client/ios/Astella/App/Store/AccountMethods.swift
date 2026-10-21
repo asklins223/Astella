@@ -4,30 +4,50 @@ import Foundation
 
 extension AppStore {
     func loadAccountSettings() async {
+        accountSettingsGeneration += 1
+        let requestGeneration = accountSettingsGeneration
+        let session = api.token
+        let workspaceId = profile?.workspaceId
         isAccountBusy = true
         accountError = nil
-        defer { isAccountBusy = false }
+        defer {
+            if requestGeneration == accountSettingsGeneration,
+               session == api.token, workspaceId == profile?.workspaceId {
+                isAccountBusy = false
+            }
+        }
         do {
             let workspaceResponse = try await api.request("/auth/workspaces") as? [String: Any] ?? [:]
+            guard requestGeneration == accountSettingsGeneration,
+                  session == api.token, workspaceId == profile?.workspaceId else { return }
             workspaces = (workspaceResponse["workspaces"] as? [[String: Any]] ?? []).compactMap(WorkspaceSummary.init)
             let settings = try await api.request("/me/ai-settings") as? [String: Any] ?? [:]
+            guard requestGeneration == accountSettingsGeneration,
+                  session == api.token, workspaceId == profile?.workspaceId else { return }
             aiSettings = AISettings(settings)
             let companion = try await api.request("/me/companion") as? [String: Any] ?? [:]
+            guard requestGeneration == accountSettingsGeneration,
+                  session == api.token, workspaceId == profile?.workspaceId else { return }
             let account = companion["account"] as? [String: Any] ?? companion
             let agent = account["agentSettings"] as? [String: Any] ?? [:]
             companionPermissionLevel = agent["permissionLevel"] as? String
         } catch {
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, requestGeneration == accountSettingsGeneration,
+                  session == api.token, workspaceId == profile?.workspaceId else { return }
             accountError = mobilePageError(error, fallback: "账户设置暂时无法读取，请稍后重新加载。")
         }
     }
 
+    /// The API rejected a generation because this account has not signed the AI
+    /// agreement. `requiresConsent` is the deployment capability flag, so the
+    /// signature itself is what has to be invalidated here.
     func markAIConsentRequired() {
         guard var settings = aiSettings else {
             Task { await loadAccountSettings() }
             return
         }
-        settings.requiresConsent = true
+        settings.consentVersion = nil
+        settings.consentAt = nil
         aiSettings = settings
     }
 
@@ -68,29 +88,60 @@ extension AppStore {
     }
 
     func switchWorkspace(_ workspace: WorkspaceSummary) async {
-        guard workspace.id != profile?.workspaceId else { return }
+        guard workspace.id != profile?.workspaceId, !isSending else { return }
+        let session = api.token
         isAccountBusy = true
         accountError = nil
         accountNotice = nil
         defer { isAccountBusy = false }
         do {
             let result = try await api.request("/auth/switch-workspace", method: "POST", body: ["workspaceId": workspace.id]) as? [String: Any] ?? [:]
+            guard session == api.token else { return }
             guard let token = result["token"] as? String, !token.isEmpty else {
                 throw MobileAPIError(status: 0, code: "missing_session", message: "切换书房后没有收到新的登录凭据。")
             }
             try KeychainTokenStore.save(token)
             api.token = token
+            sessionRestoreGeneration += 1
+            accountSettingsGeneration += 1
+            notesRequestGeneration += 1
+            noteRequestGeneration += 1
+            annotationRequestGeneration += 1
+            annotationOperationGeneration += 1
             realtime.stop()
             conversationId = nil
             messages = []
-            runs = []
+            resetProcessPresentation()
+            isSending = false
+            pendingTurnRequest = nil
+            pendingTurnSignature = nil
+            selectedImage = nil
+            selectedFile = nil
+            attachmentRevision = UUID()
+            voiceArtifactId = nil
             notes = []
+            notesNextCursor = nil
+            notesQuery = ""
+            notesErrorMessage = nil
             noteDocument = nil
+            noteAnnotations = []
+            isAnnotationBusy = false
+            noteErrorMessage = nil
+            annotationErrorMessage = nil
+            annotationStatus = nil
+            visibleNoteId = nil
             pendingNoteContext = nil
+            pendingDiaryReference = nil
             selectedTab = .conversation
+            profile = nil
+            workspaces = []
+            aiSettings = nil
+            companionPermissionLevel = nil
             await restoreSession()
             await loadAccountSettings()
-            accountNotice = "已切换到「\(workspace.name)」。"
+            accountNotice = draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? "已切换到「\(workspace.name)」。"
+                : "已切换到「\(workspace.name)」。未发送的文字草稿已保留；附件和原文引用已清除，请确认内容后再发送。"
         } catch {
             accountError = mobilePageError(error, fallback: "书房没有切换，请重试。")
         }
@@ -114,7 +165,7 @@ extension AppStore {
     }
 
     func acceptAIConsent() async {
-        guard aiSettings?.requiresConsent == true else {
+        guard aiSettings?.needsSigning == true else {
             accountError = "当前没有可确认的授权版本。"
             return
         }
@@ -125,12 +176,14 @@ extension AppStore {
         do {
             _ = try await api.request("/me/ai-consent", method: "PUT", body: ["consentVersion": aiConsentVersion])
             if var settings = aiSettings {
-                settings.requiresConsent = false
+                // `requiresConsent` stays exactly as the server reports it (a
+                // capability flag); the signature is the account-level state.
                 settings.consentVersion = aiConsentVersion
                 settings.consentAt = ISO8601DateFormatter().string(from: Date())
                 settings.dataPolicy.sendToExternal = true
                 aiSettings = settings
             }
+            Task { await loadAccountSettings() }
             accountNotice = "AI 使用授权已确认。"
         } catch {
             accountError = mobilePageError(error, fallback: "授权没有保存，请检查连接后重试。")

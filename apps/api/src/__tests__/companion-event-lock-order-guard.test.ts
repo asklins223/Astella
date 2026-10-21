@@ -57,6 +57,12 @@ type LockOrderSite = {
 
 /** `FOR UPDATE OF r` 只锁 r 指向的表；r 是 companion_turn_runs 时不会碰会话行。 */
 const SITES: LockOrderSite[] = [
+  {
+    file: "apps/api/src/modules/companion-conversation/turn/companion-resume.ts",
+    runLock: /SELECT id FROM companion_turn_runs[\s\S]{0,400}?FOR NO KEY UPDATE/,
+    conversationLock: /SELECT id FROM companion_conversations/,
+    why: "恢复与核对先锁原 run 及活动 run，再锁会话，最后替换工作租约或写真实回执",
+  },
   // ─── worker ───────────────────────────────────────────────────────────────
   {
     file: "workers/ai-worker/src/handlers/agent/companion-agent-events.ts",

@@ -35,36 +35,30 @@ import { useRoomStore } from "../home/room-store";
  */
 export function useCompanionPageContext() {
   const hudPage = useRoomStore((state) => state.hudPage);
-  const activeRunId = useRoomStore((state) => state.activeRunId);
   const activeNoteId = useRoomStore((state) => state.activeNoteRef?.noteId ?? null);
   const activeNoteVersionId = useRoomStore((state) => state.activeNoteRef?.noteVersionId ?? null);
   const activeSourceId = useRoomStore((state) => state.activeSourceId);
-  const activeReviewScheduleId = useRoomStore((state) => state.activeReviewTarget?.scheduleId ?? null);
   const settingsSection = useRoomStore((state) => state.settingsSection);
   const pageReadableView = useRoomStore((state) => state.pageReadableView);
   const workspaceScopeRevision = useRoomStore((state) => state.workspaceScopeRevision);
   const pageInstanceIdRef = useRef(crypto.randomUUID());
   useEffect(() => {
     pageInstanceIdRef.current = crypto.randomUUID();
-  }, [activeRunId, workspaceScopeRevision]);
+  }, [hudPage, activeNoteId, activeSourceId, workspaceScopeRevision]);
   const brokerPageContext = useMemo(() => bridgePageContext({
     hudPage,
-    activeRunId,
     activeNoteId,
     activeNoteVersionId,
     activeSourceId,
-    activeReviewScheduleId,
     settingsSection,
     readableView: pageReadableView?.view ?? null,
-  }), [activeNoteId, activeNoteVersionId, activeReviewScheduleId, activeRunId, activeSourceId, hudPage, settingsSection, pageReadableView]);
+  }), [activeNoteId, activeNoteVersionId, activeSourceId, hudPage, settingsSection, pageReadableView]);
 
   return {
     hudPage,
-    activeRunId,
     activeNoteId,
     activeNoteVersionId,
     activeSourceId,
-    activeReviewScheduleId,
     settingsSection,
     pageReadableView,
     workspaceScopeRevision,

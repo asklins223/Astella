@@ -25,7 +25,7 @@ test("44 §6.2：临时供应商故障不成规则，也不判能力死刑", () 
 test("44 §6.2：outcome_unknown 既不是成功也不是失败，规则只能说「先核对」", () => {
   const result = classifyAgentRunFailure({
     runStatus: "failed",
-    operations: [op({ status: "outcome_unknown", capability: "card_generation_generate" })],
+    operations: [op({ status: "outcome_unknown", capability: "note_overview_generate" })],
   });
   assert.equal(result.failureClass, "outcome_unknown");
   assert.equal(result.contributesRule, true);

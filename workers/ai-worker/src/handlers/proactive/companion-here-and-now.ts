@@ -19,66 +19,28 @@
 
 import { sql } from "drizzle-orm";
 import { noteVisibleSqlText } from "@astella/shared/note-visibility";
-import { reviewScheduleTargetsConsumableCardPredicate } from "@astella/shared/review-consumable-target";
 import type { WorkerTransaction } from "../../db.ts";
 import { normalizeWorkspaceAIPolicy, visionReaderAvailableFromConfig } from "../../lib/governance.ts";
 import { noteSearchTerms, parsePageContext } from "../turn/companion-dialogue-content.ts";
 import { askableFactSpanKeys, loadFactSpans } from "../turn/companion-fact-spans.ts";
 import { readLivePageView, type LivePageView } from "../turn/companion-live-view.ts";
-import { findNearestNoteTitle, findNoteRuns } from "../note/companion-note-reads.ts";
-import { ACTIVE_LEARNING_RUN_PHASES } from "@astella/shared/learning-run-contracts";
+import { findNearestNoteTitle } from "../note/companion-note-reads.ts";
 import { getDefaultPersonaPreset } from "@astella/shared/pet-persona-presets";
 
 const FALLBACK_TIMEZONE = "Asia/Shanghai";
 
-/** 卡片及其来源笔记必须仍可供当前用户阅读；回收站卡不能出现在伴星的工具和统计里。 */
-export function visibleCompanionCardSourceCondition(userId: string) {
-  return sql`(c.note_version_id IS NULL OR EXISTS (
-    SELECT 1 FROM note_versions source_version
-    JOIN notes source_note ON source_note.id = source_version.note_id
-    WHERE source_version.id = c.note_version_id
-      AND source_note.deleted_at IS NULL
-      AND ${sql.raw(noteVisibleSqlText("source_note", `'${userId}'::uuid`))}
-  ))`;
-}
-
 /**
  * 可见笔记数——**唯一一句话**（环境块的 `noteCount` 与 `readLearningStats` 的
- * `note_count` 共用，且与首页 `/stats/overview` 的 `noteCount` 同一规则）。
+ * `note_count` 共用）。
  *
- * 为什么合成一句：`readLearningStats` 的那一支原先只判 `workspace_id` + `deleted_at`，
- * 于是协作空间里她答"笔记 12 篇"会把别人**私有**笔记算进去，而首页那一格是"我看得见的
- * 笔记有几篇"（`stats/service.ts` 的批次 4.5）。这条分岔是 W2-3 的对账测试抓到的
- * （`companion-stats-home-parity-postgres.integration.ts`），两处从此共用一个算式。
+ * 只判 `workspace_id` + `deleted_at` 会把协作空间里别人**私有**的笔记算进去，
+ * 而首页那一格是"我看得见的笔记有几篇"。这条分岔是 W2-3 的对账测试抓到的，
+ * 两处从此共用一个算式。
  */
 export function visibleCompanionNoteCountSql(scope: { workspaceId: string; userId: string }) {
   return sql`(SELECT count(*) FROM notes n
     WHERE n.workspace_id = ${scope.workspaceId} AND n.deleted_at IS NULL
       AND ${sql.raw(noteVisibleSqlText("n", `'${scope.userId}'::uuid`))})`;
-}
-
-/**
- * 到期排程"还能不能消费"——**直接复用复习队列那一条判据**（`@astella/shared/review-consumable-target`）。
- *
- * 这里曾经是**手抄的一份**：形状与队列那条一样，但多带了一条"卡的来源笔记要对本人可见"。
- * 后果不是"更安全"，而是**两个都叫"到期复习"的数在协作空间里不相等**——用户点进队列看到
- * 3 条，她说 2 条，于是"没有到期的"这句话在她那里成立（G2 的假阴性）。2026-09-24 的
- * 对账测试把这个分岔逮住（`companion-stats-home-parity-postgres.integration.ts`），
- * 现在两处共用一个函数，改一处两边一起变。
- *
- * 外层别名固定为 s（三条查询都是 `FROM review_schedules s`）。
- */
-export function visibleCompanionDueReviewCondition() {
-  return reviewScheduleTargetsConsumableCardPredicate({
-    subjectType: sql`s.subject_type`,
-    subjectId: sql`s.subject_id`,
-    workspaceId: sql`s.workspace_id`,
-    // 争议按个人读（§14.4），所以传排程行自己的 user_id，而不是这一圈查询的
-    // 本人 id——三条伴星查询的 WHERE 都已经各自带了 `s.user_id = 本人`，
-    // 这里再传一遍只会多一处可能与 WHERE 走岔的口径。
-    userId: sql`s.user_id`,
-    reminderKind: sql`s.reminder_kind`,
-  });
 }
 
 export interface HereAndNowSnapshot {
@@ -94,15 +56,6 @@ export interface HereAndNowSnapshot {
   /** 距上一次伴星对话多少分钟；从未聊过为 null。 */
   minutesSinceLastSeen: number | null;
   pet: { name: string; activeness: string; interactionCount: number } | null;
-  /**
-   * 进行中的学习运行。
-   *
-   * `topic` 取 `learning_tasks.target_summary`（真人类可读，如「牛顿第二定律的公式 F=ma」），
-   * **不是** `learning_runs.goal`——那一列是枚举，实测活跃运行里恒为 `stabilize`，
-   * 注入进去会让她说"你正在学习 stabilize"。
-   */
-  activeRun: { topic: string | null; phase: string; usedSeconds: number; budgetSeconds: number | null; taskPrompt: string | null } | null;
-  dueReviews: number;
   today: { studySeconds: number; runs: number };
   noteCount: number;
   pendingProposals: number;
@@ -142,7 +95,6 @@ export interface HereAndNowSnapshot {
      * 与事实块里的那一段同源（`findNoteRuns`）——两处各写一条 SQL 迟早一个说 1 轮、
      * 一个说 2 轮。
      */
-    openRuns: { id: string; phase: string }[];
     /**
      * 没匹配上时"最接近的一篇"（39b §9.3 那第二行的价值所在：把"库里没有这篇"由服务端
      * 替她说完，还附赠一个更接近的真东西，她就没有编造的必要）。判据与实体先行解析
@@ -183,15 +135,13 @@ export interface HereAndNowSnapshot {
 export interface LearningStatsFacts {
   readonly todayMinutes: number;
   readonly weekMinutes: number;
-  readonly dueReviews: number;
-  readonly dueNext24Hours: number;
   readonly activeCards: number;
   readonly noteCount: number;
 }
 
 /** 工具返回给模型的 safeSummary 与环境块那一行共用同一句措辞（两处各写迟早会分叉）。 */
 export function summarizeLearningStats(facts: LearningStatsFacts): string {
-  return `今日 ${facts.todayMinutes} 分钟，本周 ${facts.weekMinutes} 分钟，到期复习 ${facts.dueReviews} 项`;
+  return `今日 ${facts.todayMinutes} 分钟，本周 ${facts.weekMinutes} 分钟，学习卡 ${facts.activeCards} 张`;
 }
 
 /**
@@ -221,7 +171,7 @@ export function asksForLearningStats(text: string | undefined): boolean {
  */
 export function needsCompanionLearningStats(text: string | undefined): boolean {
   return asksForLearningStats(text) || askableFactSpanKeys(text).some(key =>
-    key === "today_minutes" || key === "week_minutes" || key === "due_count"
+    key === "today_minutes" || key === "week_minutes"
     || key === "card_count" || key === "note_count");
 }
 
@@ -256,8 +206,6 @@ export interface BoundaryFacts {
 interface LearningStatsRow extends Record<string, unknown> {
   today_seconds: string;
   week_seconds: string;
-  due_reviews: string;
-  due_next_24h: string;
   active_cards: string;
   note_count: string;
 }
@@ -284,22 +232,11 @@ export async function readLearningStats(
         WHERE workspace_id = ${scope.workspaceId} AND user_id = ${scope.userId}
           AND occurred_at > now() - interval '7 days'
       ) AS week_seconds,
-      (SELECT count(*) FROM review_schedules s
-        WHERE s.workspace_id = ${scope.workspaceId} AND s.user_id = ${scope.userId}
-          AND s.status = 'pending' AND s.next_review_at <= now()
-          AND (s.user_deferred_until IS NULL OR s.user_deferred_until <= now())
-          AND ${visibleCompanionDueReviewCondition()}
-      ) AS due_reviews,
-      (SELECT count(*) FROM review_schedules s
-        WHERE s.workspace_id = ${scope.workspaceId} AND s.user_id = ${scope.userId}
-          AND s.status = 'pending'
-          AND coalesce(s.user_deferred_until, s.next_review_at) > now()
-          AND coalesce(s.user_deferred_until, s.next_review_at) <= now() + interval '24 hours'
-          AND ${visibleCompanionDueReviewCondition()}
-      ) AS due_next_24h,
-      (SELECT count(*) FROM learning_cards_v2 c
-        WHERE c.workspace_id = ${scope.workspaceId} AND c.lifecycle = 'active'
-          AND ${visibleCompanionCardSourceCondition(scope.userId)}
+      (SELECT count(*) FROM note_learning_cards c
+        JOIN notes card_note ON card_note.id = c.note_id
+        WHERE c.workspace_id = ${scope.workspaceId} AND c.status = 'active'
+          AND card_note.deleted_at IS NULL
+          AND ${sql.raw(noteVisibleSqlText("card_note", `'${scope.userId}'::uuid`))}
       ) AS active_cards,
       ${visibleCompanionNoteCountSql(scope)} AS note_count
   `);
@@ -307,25 +244,10 @@ export async function readLearningStats(
   return {
     todayMinutes: Math.round(Number(row?.today_seconds ?? 0) / 60),
     weekMinutes: Math.round(Number(row?.week_seconds ?? 0) / 60),
-    dueReviews: Number(row?.due_reviews ?? 0),
-    dueNext24Hours: Number(row?.due_next_24h ?? 0),
     activeCards: Number(row?.active_cards ?? 0),
     noteCount: Number(row?.note_count ?? 0),
   };
 }
-
-// P0-16：与 api 侧（surface-service / topology-repository）逐字相同的 6 档副本。
-// 现从 shared 的唯一来源派生；此前它是裸数组，漏改一档不会报编译错。
-
-/**
- * `phase = ANY(${数组})` 在 drizzle 下是**坏的**：它把 JS 数组摊成 6 个独立标量参数，
- * 生成 `= ANY(($3,$4,$5,$6,$7,$8))`，Postgres 直接报 "op ANY/ALL (array) requires
- * array on right side"（实机把 read 阶段打挂、job 连败三次）。用 IN + 逐项参数化。
- */
-const ACTIVE_RUN_PHASE_PREDICATE = sql`r.phase IN (${sql.join(
-  ACTIVE_LEARNING_RUN_PHASES.map((phase) => sql`${phase}`),
-  sql`, `,
-)})`;
 
 function partOfDay(hour: number): string {
   if (hour < 5) return "凌晨";
@@ -456,28 +378,6 @@ export async function loadHereAndNow(
   `);
   const gapMinutes = seenRows[0]?.gap == null ? null : Math.round(Number(seenRows[0].gap));
 
-  const runRows = await tx.execute<{
-    phase: string; active_seconds_used: number; time_budget_seconds: number | null;
-    target_summary: string | null; task_prompt: string | null;
-  }>(sql`
-    SELECT r.phase, r.active_seconds_used, r.time_budget_seconds,
-           t.target_summary, t.prompt task_prompt
-    FROM learning_runs r
-    LEFT JOIN learning_tasks t ON t.id = r.active_task_id
-    WHERE r.workspace_id = ${scope.workspaceId} AND r.user_id = ${scope.userId}
-      AND ${ACTIVE_RUN_PHASE_PREDICATE}
-    ORDER BY r.updated_at DESC, r.id LIMIT 1
-  `);
-  const runRow = runRows[0];
-
-  const dueRows = await tx.execute<{ n: string }>(sql`
-    SELECT count(*) n FROM review_schedules s
-    WHERE s.workspace_id = ${scope.workspaceId} AND s.user_id = ${scope.userId}
-      AND s.status = 'pending' AND s.next_review_at <= now()
-      AND (s.user_deferred_until IS NULL OR s.user_deferred_until <= now())
-      AND ${visibleCompanionDueReviewCondition()}
-  `);
-
   // 今日学习量：按**用户本地日**切，不按 UTC 日——否则早上看到的"今日"是昨天下午。
   const todayRows = await tx.execute<{ seconds: string; runs: string }>(sql`
     SELECT coalesce(sum(active_seconds_used), 0) seconds, count(DISTINCT run_id) runs
@@ -539,11 +439,6 @@ export async function loadHereAndNow(
   const noteRefNearest = noteRefTitle && !noteRefRows[0]
     ? await findNearestNoteTitle(tx, scope, noteRefTitle)
     : null;
-  // 这一篇上还没结束的轮次（只在命中时才查）：用户说"继续学《X》"走的就是这一支，
-  // 回填放在这里，"这篇已有 1 轮在暂停中"才对最常见的说法成立。
-  const noteRefRuns = noteRefRows[0]
-    ? (await findNoteRuns(tx, scope, [noteRefRows[0].id])).get(noteRefRows[0].id) ?? []
-    : [];
 
   const reminderRows = await tx.execute<{ text: string; fire_at_local: string }>(sql`
     SELECT text,
@@ -610,16 +505,6 @@ export async function loadHereAndNow(
     pet: petRow
       ? { name: petRow.name, activeness: petRow.activeness, interactionCount: Number(petRow.interaction_count) }
       : null,
-    activeRun: runRow
-      ? {
-        topic: runRow.target_summary,
-        phase: runRow.phase,
-        usedSeconds: Number(runRow.active_seconds_used),
-        budgetSeconds: runRow.time_budget_seconds == null ? null : Number(runRow.time_budget_seconds),
-        taskPrompt: runRow.task_prompt,
-      }
-      : null,
-    dueReviews: Number(dueRows[0]?.n ?? 0),
     today: {
       studySeconds: Number(todayRows[0]?.seconds ?? 0),
       runs: Number(todayRows[0]?.runs ?? 0),
@@ -635,7 +520,6 @@ export async function loadHereAndNow(
           ageLabel: ageLabel(Number(noteRefRows[0].age_minutes)),
           imageCount: Number(noteRefRows[0].image_count ?? 0),
           opening: noteOpeningExcerpt(noteRefRows[0].opening),
-          openRuns: noteRefRuns.map((run) => ({ id: run.id, phase: run.phase })),
           nearest: null,
         }
         : {
@@ -645,7 +529,6 @@ export async function loadHereAndNow(
           ageLabel: null,
           imageCount: 0,
           opening: null,
-          openRuns: [],
           nearest: noteRefNearest,
         })
       : null,
@@ -683,13 +566,8 @@ export function noteOpeningExcerpt(content: unknown): string | null {
 
 export const PAGE_KIND_LABELS: Record<string, string> = {
   note: "笔记",
-  card: "学习卡",
-  objective: "学习卡",
   source: "资料",
-  review: "复习队列",
   star_map: "理解星图",
-  learning_run: "学习运行",
-  today: "今日学习",
   settings: "设置中心",
   conversation: "伴星中心",
 };
@@ -748,13 +626,15 @@ async function resolveCurrentPage(
     return { kind: label, title: rows[0]?.title ?? null, statusLine: null };
   }
   if (cardRef) {
-    const rows = await tx.execute<{ cue: string | null }>(sql`
-      SELECT front->>'cue' AS cue FROM learning_cards_v2
-      WHERE card_id = ${String(cardRef.cardId)}
-        AND workspace_id = ${scope.workspaceId}
+    const rows = await tx.execute<{ stem: string | null }>(sql`
+      SELECT q.stem FROM note_learning_card_questions q
+      JOIN note_learning_cards c ON c.id = q.card_id
+      WHERE c.id = ${String(cardRef.cardId)}
+        AND c.workspace_id = ${scope.workspaceId}
+      ORDER BY q.ordinal
       LIMIT 1
     `);
-    return { kind: label, title: rows[0]?.cue ?? null, statusLine: null };
+    return { kind: label, title: rows[0]?.stem ?? null, statusLine: null };
   }
   return { kind: label, title: null, statusLine: null };
 }
@@ -789,23 +669,11 @@ export function renderHereAndNow(snapshot: HereAndNowSnapshot): string | null {
   if (snapshot.pet) {
     lines.push(`你是「${snapshot.pet.name}」`);
   }
-  if (snapshot.activeRun) {
-    const run = snapshot.activeRun;
-    // 进度条上的分钟数不在这里：她在学什么、正在做哪一步才是对话用得上的，
-    // 而"已学 4 分钟"这种数用户低头就能看见，念出来就是报流水账。
-    const task = run.taskPrompt ? `，正在做：${run.taskPrompt}` : "";
-    lines.push(`用户正在学习${run.topic ? `「${run.topic}」` : ""}${task}`);
-  }
   // 今日学了多久 / 跑了几个运行 / 笔记库共几篇**不再渲染**（实机 2026-09-21：用户只说
   // 了「嘿嘿」，她回"今天已经学了 42 分钟，本周累计 99 分钟"）。这块是她的感知，
   // 不是台词本；用户真问"我今天学了多久"时她走 companion_get_learning_stats，
   // 那条路实测通（同一口径）。
   //
-  // 到期数**必须**留着：`claimsNothingDueAgainstFacts` 靠这一行识破
-  // "到期列表是空的"那句假阴性（§9.41），撤了等于把闸拆掉。
-  if (snapshot.dueReviews > 0) {
-    lines.push(`到期待复习 ${snapshot.dueReviews} 项`);
-  }
   if (snapshot.learningStats) {
     // 这一行是 §9.66 缺陷① 的解法：她以前先念历史里的旧数、再调工具、再在同一条
     // 消息里改口。真值必须在**她说之前**就在场，历史里的同类数字要被明确降级。
@@ -849,20 +717,6 @@ export function renderHereAndNow(snapshot: HereAndNowSnapshot): string | null {
         : ""}：标题可能记岔，或者它其实是一张卡片。先调用 companion_search_notes 换个关键词再查；查不到就照实说没查到，不要替笔记库下"没有这东西"的结论。`);
     // 只给开头一段，并点名"更长的原文还是要去读"：给全篇等于让她抄一个可能已经
     // 过期、也没进历史的版本，而那正是要修的东西。
-    // "这篇还有 N 轮没结束"（39b §9.8 的 C1）：用户说"继续学《X》"时，她手上要先有
-    // "有几轮、在哪个状态、runId 是哪个"，否则 start/resume 只能靠服务端挑最近一条。
-    if (ref.found && ref.openRuns.length > 0) {
-      const paused = ref.openRuns.filter((run) => run.phase === "paused").length;
-      const running = ref.openRuns.length - paused;
-      const parts: string[] = [];
-      if (running > 0) {
-        parts.push(`有 ${running} 轮学习正在进行中（runId=${ref.openRuns.find((run) => run.phase !== "paused")?.id}）`);
-      }
-      if (paused > 0) {
-        parts.push(`有 ${paused} 轮学习在暂停中（runId=${ref.openRuns.find((run) => run.phase === "paused")?.id}）`);
-      }
-      lines.push(`这一篇${parts.join("，")}：要接着学就用这个 runId 调用 companion_resume_learning，不要另起一轮。`);
-    }
     if (ref.found && ref.opening) {
       lines.push(`这篇的开头是：「${ref.opening}」（只到第一句为止；要更长的原文仍然要调用 companion_read_note 去读，不要照这段往下补。）`);
     }

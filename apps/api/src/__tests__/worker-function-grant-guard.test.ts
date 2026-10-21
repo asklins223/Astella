@@ -282,10 +282,13 @@ test("【自证】重授对账认得出 0426 这种「迁移授了、roles.sql �
     (REGRANTED.get("companion_process_event_payload") ?? new Set()).has("astella_worker"),
     "roles.sql 的重授没被扫到，判据本身已经坏了",
   );
-  // 「后来被 DROP 的不必再重授」这条豁免必须只认这四支——正则写宽了就是把整条守卫关掉。
+  // 「后来被 DROP 的不必再重授」这条豁免必须只认这几支——正则写宽了就是把整条守卫关掉。
+  // 2026-10-20：方案 57 的 0449 又 DROP 了两支旧制卡围栏，豁免集随之增加。
   assert.deepEqual(
     [...DROPPED_BY_LATER_MIGRATION].filter((fn) => MIGRATION_GRANTS.has(fn)).sort(),
     [
+      "astella_agent_card_execution_binding",
+      "astella_agent_card_job_current",
       "astella_claim_commit_outbox",
       "astella_enqueue_companion_thoughts",
       "astella_find_resumable_companion_journey",

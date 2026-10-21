@@ -33,6 +33,17 @@ test("缺任一字段的事件直接丢掉，不产出半条", () => {
   assert.deepEqual(items.map(item => item.ordinal), [4], "只有完整的那一条该留下");
 });
 
+/** 补听也要认出消息边界；旧留档没有这条身份时不要凭空补一个。 */
+test("messageId 随留档一起回来，旧留档没有时省略", () => {
+  const messageId = "11111111-1111-4111-8111-111111111111";
+  const items = companionVoiceSegmentsFromEventPayloads([
+    payload({ ordinal: 1, messageId }),
+    payload({ ordinal: 2, segmentId: "b".repeat(64), displayStart: 9, displayEnd: 17 }),
+  ]);
+  assert.equal(items[0]?.messageId, messageId);
+  assert.equal("messageId" in (items[1] ?? {}), false);
+});
+
 test("整轮都没有可播段时返回空数组，由调用方如实说没有留档", () => {
   assert.deepEqual(companionVoiceSegmentsFromEventPayloads([]), []);
 });

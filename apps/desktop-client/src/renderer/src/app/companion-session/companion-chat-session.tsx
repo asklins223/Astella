@@ -62,6 +62,7 @@ import { beginNoteExplanation, completeNoteExplanation, readNoteExplanation, int
 import {
   appendCompanionAgentNode,
   buildCompanionRunTraces,
+  mergeCompanionRunTraces,
   recordCompanionRunEvent,
   reconcileCompanionAgentNodes,
   type CompanionAgentNodes,
@@ -203,6 +204,8 @@ export interface CompanionNavChip {
    * 不再等「前往」。授权判定在服务端，客户端只服从这个标志（2026-09-19）。
    */
   readonly autoExecute?: boolean;
+  readonly intentGeneration?: number;
+  readonly runId?: string;
 }
 
 export interface CompanionChatSession {
@@ -311,6 +314,7 @@ export interface CompanionChatSession {
   readonly historyRevision: number;
   /** 向前翻一页（每页 20 条）；由历史抽屉的上滑触发。 */
   loadOlderMessages(): Promise<void>;
+  loadRunTrace(runId: string): Promise<CompanionRunTrace | null>;
   /**
    * 全量拉取会话消息（搜索/日期筛选的数据底座，带会话级缓存）。
    * 只有读到会话开头才返回完整结果；失败或未就绪返回 null，调用方不得缓存 null。
@@ -333,6 +337,7 @@ export interface CompanionChatSession {
    * `kind='cancelled'` 的消息，因此返回前会重取一次消息列表。
    */
   cancel(): Promise<boolean>;
+  recoverRun(runId: string, reconcileOnly?: boolean): Promise<string>;
   /** 正在等取消回执（按钮显示"正在停止…"）。 */
   readonly cancelling: boolean;
   /** 停止后的就地说明；有限时长后由 UI 调 dismissStopNotice 收掉。 */
@@ -349,7 +354,7 @@ export interface CompanionChatSession {
   decideProposal(proposalId: string, decision: "confirm" | "reject"): Promise<void>;
   /** 快照读不成时重试一次：与首次读取同一条路径，不另造第二份真话。 */
   retryProposal(proposalId: string): void;
-  goToRoute(route: DesktopRouteV1): Promise<void>;
+  goToRoute(route: DesktopRouteV1, isCurrent?: () => boolean): Promise<void>;
 }
 
 /**
@@ -433,8 +438,8 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
   // 「他在哪一页、看着哪一条」——九条 store 订阅 + 页面实例 id + bridge 上下文，
   // 收在 `useCompanionPageContext` 里：那不是聊天的职责，是「谁陪着他站在这一页」。
   const {
-    hudPage, activeRunId, activeNoteId, activeNoteVersionId, activeSourceId,
-    activeReviewScheduleId, settingsSection, pageReadableView, workspaceScopeRevision,
+    hudPage, activeNoteId, activeNoteVersionId, activeSourceId,
+    settingsSection, pageReadableView, workspaceScopeRevision,
     pageInstanceIdRef, brokerPageContext,
   } = useCompanionPageContext();
   const [feedNoteIntent, setFeedNoteIntent] = useState<CompanionNoteIntent | null>(null);
@@ -472,8 +477,6 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
    * （设置等）传 null，不发 context。
    */
   const pageContext = useMemo<CompanionPageContextV1 | null>(() => {
-    if (hudPage === "today") return { pageKind: "today", sharing: "page_registered" };
-    if (hudPage === "queue") return { pageKind: "review", sharing: "page_registered" };
     if (hudPage === "graph") return { pageKind: "star_map", sharing: "page_registered" };
     if (feedNoteIntent) {
       return {
@@ -489,28 +492,6 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     return null;
   }, [activeNoteId, activeNoteVersionId, feedNoteIntent, hudPage]);
 
-  const resolveTurnContext = useCallback(async (epoch: number): Promise<CompanionPageContextV1 | null> => {
-    if (hudPage !== "assessment" || !activeRunId) return pageContext;
-    const context = unwrapGatewayResult(await window.astella.companion.learningRun.getContext({
-      meta: createRequestMeta(epoch),
-      runId: activeRunId,
-    }));
-    const grant = unwrapGatewayResult(await window.astella.companion.learningRun.createContextGrant({
-      meta: createRequestMeta(epoch),
-      runId: activeRunId,
-      request: {
-        version: 1,
-        pageInstanceId: pageInstanceIdRef.current,
-        taskId: context.taskId,
-        contextRevision: context.contextRevision,
-      },
-    }));
-    return {
-      ...context,
-      requestedCapability: "grounded_tutor",
-      groundedTutorGrant: grant,
-    };
-  }, [activeRunId, feedNoteIntent, hudPage, pageContext]);
   const [phase, setPhase] = useState<CompanionChatPhase>("idle");
   const [failure, setFailure] = useState<string | null>(null);
   const [conversation, setConversation] = useState<CompanionChatConversationV1 | null>(null);
@@ -534,7 +515,6 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
   const historyLoadingRef = useRef(false);
   const historyLoadTokenRef = useRef(0);
   const historyAllRef = useRef<{ scopeRevision: number; revision: number; items: CompanionMessageV1[] } | null>(null);
-  const manuallyNavigatedKindsRef = useRef<Set<string>>(new Set());
   const autoExecutedRef = useRef<Set<string>>(new Set());
   const [autoNavigatedRoutes, setAutoNavigatedRoutes] = useState<ReadonlySet<string>>(() => new Set());
   const [liveReply, setLiveReply] = useState<CompanionChatLiveReply | null>(null);
@@ -690,7 +670,6 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     historyAllRef.current = null;
     historyRevisionRef.current += 1;
     setHistoryRevision(historyRevisionRef.current);
-    manuallyNavigatedKindsRef.current.clear();
     autoExecutedRef.current.clear();
     setAutoNavigatedRoutes(new Set());
     setCurrentLiveReply(null);
@@ -788,6 +767,20 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     conversationRef.current = ensured.conversation;
     setConversation(ensured.conversation);
     return ensured.conversation;
+  }, []);
+
+  const loadRunTrace = useCallback(async (runId: string): Promise<CompanionRunTrace | null> => {
+    const active = conversationRef.current;
+    const scope = useRoomStore.getState().workspaceScopeRevision;
+    if (!active) return null;
+    const epoch = await requireWorkspaceEpoch();
+    const result = await window.astella.companion.chat.listRunNodes({ meta: createRequestMeta(epoch),
+      request: { version: 1, conversationId: active.id, runIds: [runId], includeThinking: true } });
+    if (scope !== useRoomStore.getState().workspaceScopeRevision || active.id !== conversationRef.current?.id) return null;
+    if (!result.ok) throw result.error;
+    const traces = buildCompanionRunTraces(result.data.runs, result.data.items);
+    setRunTraces(current => mergeCompanionRunTraces(current, traces));
+    return traces.find(trace => trace.summary.runId === runId) ?? null;
   }, []);
 
   const refreshMessages = useCallback(async (conversationId: string, epoch: number) => {
@@ -1205,10 +1198,11 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
           if (terminal?.kind === "succeeded") {
             // The final transaction can commit between the history and status
             // reads. Only a read after that success can establish silence.
-            if (!match) {
+            if (!match || (terminal.messageId && match.id !== terminal.messageId)) {
               const committed = await refreshMessages(args.conversationId, args.epoch);
               if (cancelled) return true;
-              match = committed.filter(item => item.role === "assistant" && item.runId === args.runId && item.kind !== "action").at(-1);
+              match = terminal.messageId ? committed.find(item => item.id === terminal.messageId)
+                : committed.filter(item => item.role === "assistant" && item.runId === args.runId && item.kind !== "action").at(-1);
             }
             if (match) resolve({ kind: "reply", message: match });
             else if (terminal.messageId === null) resolve({ kind: "silent" });
@@ -1451,6 +1445,8 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
                   id: `evt:${streamed.seq}`,
                   summary: tool.safeSummary,
                   route,
+                  runId: args.runId,
+                  intentGeneration: args.generation,
                   ...(tool.autoExecute === true ? { autoExecute: true } : {}),
                 }]);
               }
@@ -1717,6 +1713,39 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     }
   }, [refreshMessages, startReplyPoll, startReplyStream]);
 
+  const recoverRun = useCallback(async (runId: string, reconcileOnly = false): Promise<string> => {
+    const active = conversationRef.current;
+    const trace = runTraces.find(item => item.summary.runId === runId);
+    if (!active || !trace || trace.summary.eventCursor === undefined) throw new Error("先刷新这次任务的记录，再继续。");
+    const epoch = await requireWorkspaceEpoch();
+    const localGeneration = sendGenerationRef.current;
+    const result = unwrapGatewayResult(await window.astella.companion.chat.resumeRun({ meta: createRequestMeta(epoch),
+      request: { version: 1, runId, generation: trace.summary.generation, expectedEventCursor: trace.summary.eventCursor, reconcileOnly } }));
+    if (conversationRef.current?.id !== active.id || localGeneration !== sendGenerationRef.current) return "记录已更新。";
+    setTracesRevision(value => value + 1);
+    if (reconcileOnly) return result.unresolvedCount
+      ? `仍有 ${result.unresolvedCount} 项结果无法确认，未重新执行；已完成的成果仍保留。`
+      : result.reconciledCount ? "已经核对保存结果，可直接预览。" : "记录已核对，没有发现新的保存回执。";
+    const generation = ++sendGenerationRef.current;
+    activeTurnRef.current = { runId, generation: result.generation, conversationId: active.id, explanationId: null };
+    setProcessRunId(runId); setNodes(trace.nodes); setFailure(null); setPhase("sending"); setMode("history");
+    setRunTraces(current => current.map(item => item.summary.runId === runId
+      ? { ...item, summary: { ...item.summary, status: result.status, errorCode: null, eventCursor: result.eventCursor } } : item));
+    void claimCompanionReply({ conversationId: active.id, runId, eventCursor: result.eventCursor - 1,
+      epoch, generation, voiceOutput: false }).then(async () => {
+      if (generation !== sendGenerationRef.current || conversationRef.current?.id !== active.id) return;
+      await refreshMessages(active.id, epoch);
+      if (generation !== sendGenerationRef.current) return;
+      activeTurnRef.current = null; setDraft(null); setPhase("ready"); setTracesRevision(value => value + 1);
+    }).catch(error => {
+      if (generation === sendGenerationRef.current && conversationRef.current?.id === active.id) {
+        activeTurnRef.current = null;
+        setFailure(gatewayErrorMessage(error)); setPhase("error"); setTracesRevision(value => value + 1);
+      }
+    });
+    return "正在从中断处继续，已保存的成果会保留。";
+  }, [runTraces, claimCompanionReply, refreshMessages]);
+
   /**
    * 缺少工作区 AI 同意时的固定引导：她先开口（文本 + 语音共用 liveReply 同一条
    * 管线），再把设置页打到「AI 数据同意」的签署卡并让它闪一下。
@@ -1804,7 +1833,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
         noteId: explanation.target.noteId, noteVersionId: explanation.target.anchor.noteVersionId,
         replyPurpose: "annotation" as const,
         annotationTarget: { requestId: explanation.id, anchor: explanation.target.anchor },
-      } : await resolveTurnContext(epoch);
+      } : pageContext;
       if (!explanation && turnContext?.pageKind === "note" && feedNoteIntent) turnContext = { ...turnContext, replyPurpose: feedNoteIntent.kind };
       if (turnContext?.pageKind === "note" && !explanation) {
         const paper = await prepareCompanionNotePaper(turnContext.noteId);
@@ -2102,7 +2131,6 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     guideToConsent,
     refreshMessages,
     resolveActiveRunGeneration,
-    resolveTurnContext,
     cancelRunInBackground,
     applyLateFollowups,
     feedNoteIntent,
@@ -2419,10 +2447,14 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     }
   }, [loadProposalSnapshots, proposalStates, pushNavChips]);
 
-  const goToRoute = useCallback(async (route: DesktopRouteV1) => {
+  const routeRequest = useRef(0);
+  const goToRoute = useCallback(async (route: DesktopRouteV1, isCurrent?: () => boolean) => {
+    const request = ++routeRequest.current;
+    const current = () => request === routeRequest.current && (isCurrent?.() ?? true);
     const scopeRevision = useRoomStore.getState().workspaceScopeRevision;
     const resolveResponse = await window.astella.navigation.resolve({ meta: createRequestMeta(), route });
     const resolved = unwrapGatewayResult(resolveResponse);
+    if (!current()) return;
     if (resolved.current.scope !== "workspace") throw new Error("navigation did not resolve to the current workspace");
     if (useRoomStore.getState().workspaceScopeRevision !== scopeRevision) throw new Error("工作空间已切换，请在当前空间重新操作。");
     unwrapGatewayResult(await window.astella.navigation.go({
@@ -2430,16 +2462,13 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
       route: resolved.current.route,
       entryKind: "user",
     }));
+    if (!current()) return;
     if (useRoomStore.getState().workspaceScopeRevision !== scopeRevision) throw new Error("工作空间已切换，请在当前空间重新操作。");
     // 历史栈记完还要真正换页（applyRouteToRoom）——否则按钮点了没反应。
     const applied = await applyRouteToRoom(resolved.current.route);
     if (!applied) throw new Error("这个落点在桌面端还没有对应的页面");
     if (useRoomStore.getState().workspaceScopeRevision !== scopeRevision) throw new Error("工作空间已切换，请在当前空间重新操作。");
-    // 会话内授权升级（2026-09-19 用户实测"第二次就不自动跳了"）：用户亲手点过
-    // 「前往」的落点类型，本轮会话里后续同类落点直接自动跳——用户已经用行动
-    // 授过权，再让他一枚一枚点同款按钮就是把确认当打卡。会话级记忆，不持久化；
-    // 服务端 permissionLevel=full 的 autoExecute 仍然照走。
-    manuallyNavigatedKindsRef.current.add(resolved.current.route.kind);
+    // A click authorizes this destination only; later results remain readable in place.
   }, []);
 
   /**
@@ -2466,7 +2495,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     const pending = navChips.filter(
       (chip) => chip.route
         && !autoExecutedRef.current.has(chip.id)
-        && (chip.autoExecute || manuallyNavigatedKindsRef.current.has(chip.route.kind)),
+        && chip.autoExecute && chip.intentGeneration === sendGenerationRef.current,
     );
     if (pending.length === 0) return;
     for (const chip of pending) autoExecutedRef.current.add(chip.id);
@@ -2523,6 +2552,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     nodes: reconcileCompanionAgentNodes(nodes, runTraces.find(trace => trace.summary.runId === processRunId)?.nodes ?? []),
     processRunId,
     runTraces,
+    loadRunTrace,
     feedSelection,
     feedPrompt,
     feedNoteAnchor,
@@ -2538,6 +2568,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     assistantCue,
     send,
     cancel,
+    recoverRun,
     cancelling,
     stopNotice,
     dismissStopNotice,
@@ -2554,6 +2585,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
   }), [
     assistantCue,
     cancel,
+    recoverRun,
     cancelling,
     companionName,
     conversation,
@@ -2597,6 +2629,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     proposalStates,
     pendingProposalCount,
     runTraces,
+    loadRunTrace,
     send,
     stopNotice,
   ]);

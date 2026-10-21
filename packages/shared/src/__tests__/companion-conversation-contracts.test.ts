@@ -5,17 +5,11 @@ import {
   companionContentBlockV1Schema,
   companionMessageV1Schema,
   companionTurnRunV1Schema,
-  companionPageContextV1Schema,
-  companionPersistedPageContextV1Schema,
-  companionLearningRunContextV1Schema,
-  companionLearningContextV1Schema,
   companionStreamEventV1Schema,
   companionErrorV1Schema,
   createCompanionTurnResponseV1Schema,
   createCompanionTurnRequestV1Schema,
   proposedLearningActionPayloadV1Schema,
-  proposalDecisionResponseV1Schema,
-  companionMenuCandidateIdV1Schema,
   COMPANION_P2_LIMITS,
   COMPANION_SELECTION_MAX_CHARS,
   companionSelectionV1Schema,
@@ -28,6 +22,21 @@ const UUID2 = "223e4567-e89b-12d3-a456-426614174001";
 const HASH = "a".repeat(64);
 const TIME = "2026-08-10T00:00:00.000Z";
 const SHA256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+test("a quote preserves exact executor-owned source identity while old excerpts remain readable", () => {
+  const quote = { type: "quote", label: "原文", text: "实际读到的摘录" };
+  assert.ok(companionContentBlockV1Schema.safeParse(quote).success);
+  for (const sourceRef of [
+    { kind: "note", noteId: UUID, noteVersionId: UUID2, blockOrdinal: 0 },
+    { kind: "source", sourceId: UUID, segmentOrdinal: 2 },
+  ]) assert.deepEqual(companionContentBlockV1Schema.parse({ ...quote, sourceRef }), { ...quote, sourceRef });
+  for (const sourceRef of [
+    { kind: "note", noteId: UUID },
+    { kind: "source", sourceId: "a title", segmentOrdinal: 1 },
+    { kind: "source", sourceId: UUID, segmentOrdinal: -1 },
+    { kind: "note", noteId: UUID, noteVersionId: UUID2, sourceId: UUID },
+  ]) assert.equal(companionContentBlockV1Schema.safeParse({ ...quote, sourceRef }).success, false);
+});
 
 test("选区20,000字符边界完整接收，超限拒绝并保留原输入", () => {
   const text = "字".repeat(COMPANION_SELECTION_MAX_CHARS - 5) + "尾部更正。";
@@ -213,59 +222,9 @@ test("turn run: terminal 状态 phase 必须 null（superRefine 由 service 保�
   assert.equal(ok.success, true);
 });
 
-test("page context：LearningRun grounded_tutor grant iff requestedCapability", () => {
-  const runContext = {
-    pageKind: "learning_run",
-    sharing: "user_selected",
-    runId: UUID,
-    snapshotId: UUID2,
-    taskId: UUID,
-    requestedCapability: "grounded_tutor",
-    contextRevision: HASH,
-  } as const;
-  const grant = {
-    version: 1,
-    grantId: UUID,
-    userId: UUID,
-    workspaceId: UUID,
-    pageInstanceId: UUID,
-    pageKind: "learning_run",
-    capability: "grounded_tutor",
-    runId: UUID,
-    snapshotId: UUID2,
-    taskId: UUID,
-    contextRevision: HASH,
-    permissionSnapshotHash: HASH,
-    issuedAt: TIME,
-    expiresAt: TIME,
-    signature: HASH,
-  };
-  assert.equal(companionPageContextV1Schema.safeParse({ ...runContext, groundedTutorGrant: grant }).success, true);
-  assert.equal(companionPageContextV1Schema.safeParse({ ...runContext, groundedTutorGrant: null }).success, false);
-  assert.equal(companionPageContextV1Schema.safeParse({
-    ...runContext,
-    requestedCapability: "none",
-    groundedTutorGrant: grant,
-  }).success, false);
-});
 
-test("persisted page context：LearningRun grant 可恢复且受 capability 约束", () => {
-  const context = {
-    pageKind: "learning_run",
-    sharing: "user_selected",
-    runId: UUID,
-    snapshotId: UUID2,
-    taskId: UUID,
-    requestedCapability: "grounded_tutor",
-    contextRevision: HASH,
-    groundedTutorGrant: { grantId: UUID, permissionSnapshotHash: HASH, expiresAt: TIME },
-  };
-  assert.equal(companionPersistedPageContextV1Schema.safeParse({ version: 1, context }).success, true);
-  assert.equal(companionPersistedPageContextV1Schema.safeParse({
-    version: 1,
-    context: { ...context, requestedCapability: "none", groundedTutorGrant: context.groundedTutorGrant },
-  }).success, false);
-});
+
+
 
 test("LearningRun page context revision input is deterministic and state-bound", () => {
   const input = {
@@ -299,11 +258,11 @@ test("SSE: union 中全部事件类型均可被接受（含 agent.skill/agent.to
         conversationId: UUID2,
         sourceMessageId: UUID,
         sourceGeneration: 1,
-        kind: { kind: "open_review" },
+        kind: { kind: "open_conversation_history" },
         payloadSha256: HASH,
-        title: "复习",
-        targetSummary: "今日复习",
-        impactSummary: "打开复习页",
+        title: "看历史",
+        targetSummary: "我们聊过的那几轮",
+        impactSummary: "打开对话历史",
         status: "pending",
       },
     },
@@ -440,114 +399,17 @@ test("P2 客户端限额常量与合同一致", () => {
 
 // ─── Plan 23 CS-05/CS-06：V2 学习运行 payload 与候选扩展 ────────────────
 
-test("proposedLearningActionPayload：accepts start_learning_run_v2（originV2 路径）", () => {
-  const objectiveId = "123e4567-e89b-12d3-a456-426614174000";
-  const cardId = "223e4567-e89b-12d3-a456-426614174000";
-  const v2 = proposedLearningActionPayloadV1Schema.safeParse({
-    kind: "start_learning_run_v2",
-    request: {
-      originV2: { kind: "card", cardId, objectiveId },
-      goal: "stabilize",
-      idempotencyKey: "pet-menu-v2:" + objectiveId,
-    },
-  });
-  assert.equal(v2.success, true);
-});
 
-test("learningRunStartCandidate：V2 字段必须完整", () => {
-  const ctx = {
-    version: 1 as const,
-    contextRevision: "a".repeat(64),
-    learningRunResumeCandidate: null,
-    learningRunStartCandidate: {
-      candidateId: "learning_run_start" as const,
-      title: "开始验证",
-      targetSummary: "用三分钟了解光的折射",
-      impactSummary: "创建一次学习运行",
-      payloadSha256: "b".repeat(64),
-      // V2 字段
-      objectiveId: "423e4567-e89b-12d3-a456-426614174000",
-      originV2: { kind: "card" as const, cardId: "223e4567-e89b-12d3-a456-426614174000", objectiveId: "423e4567-e89b-12d3-a456-426614174000" },
-      request: { version: 2 as const, originV2: { kind: "card" as const, cardId: "223e4567-e89b-12d3-a456-426614174000", objectiveId: "423e4567-e89b-12d3-a456-426614174000" }, goal: "stabilize" as const, idempotencyKey: "pet-menu-v2:423e4567-e89b-12d3-a456-426614174000" },
-    },
-  };
-  assert.equal(companionLearningContextV1Schema.safeParse(ctx).success, true);
-  const { objectiveId: _o, originV2: _v2, request: _request, ...missingV2 } = ctx.learningRunStartCandidate!;
-  assert.equal(companionLearningContextV1Schema.safeParse({
-    ...ctx,
-    learningRunStartCandidate: missingV2,
-  }).success, false);
-});
 
-test("proposedLearningActionPayload：accepts resume_learning_run", () => {
-  const resume = proposedLearningActionPayloadV1Schema.safeParse({
-    kind: "resume_learning_run",
-    runId: "323e4567-e89b-12d3-a456-426614174000",
-  });
-  assert.equal(resume.success, true);
-  assert.equal(proposedLearningActionPayloadV1Schema.safeParse({ kind: "resume_learning_run" }).success, false);
-  // 未知 kind 拒绝
-  assert.equal(proposedLearningActionPayloadV1Schema.safeParse({ kind: "start_learning_loop" }).success, false);
-});
 
-test("menu candidate id：learning_run_start / learning_run_resume 合法", () => {
-  assert.equal(companionMenuCandidateIdV1Schema.safeParse("learning_run_start").success, true);
-  assert.equal(companionMenuCandidateIdV1Schema.safeParse("learning_run_resume").success, true);
-  assert.equal(companionMenuCandidateIdV1Schema.safeParse("unknown_resume").success, false);
-  assert.equal(companionMenuCandidateIdV1Schema.safeParse("unknown_kind").success, false);
-});
+
+
+
+
 
 // ─── 方案 16 §18.1：工具网关第二批（Orchestrator 动作工具全集） ────────
 
-test("proposedLearningActionPayload：accepts §18 全部工具 kind", () => {
-  const runId = "423e4567-e89b-12d3-a456-426614174000";
-  const taskId = "523e4567-e89b-12d3-a456-426614174000";
-  const keyPointId = "623e4567-e89b-12d3-a456-426614174000";
-  const scheduleId = "723e4567-e89b-12d3-a456-426614174000";
-  const memoryId = "823e4567-e89b-12d3-a456-426614174000";
-  const cases: unknown[] = [
-    { kind: "pause_learning_run", runId },
-    { kind: "switch_task_variant", runId, taskId, alternativeId: "variant-2", reason: "这一题我想换成语音说" },
-    { kind: "request_hint_level", runId, taskId, level: 2 },
-    {
-      kind: "defer_review",
-      scheduleId,
-      scheduleGeneration: 3,
-      deferredUntil: "2026-08-20T09:00:00.000Z",
-      reasonCode: "user_requested",
-    },
-    { kind: "focus_graph_node", keyPointId, lens: "evidence" },
-    { kind: "restore_graph_viewport", runId },
-    { kind: "open_conversation_history" },
-    { kind: "confirm_or_reject_memory", memoryId, revision: 1720000000000, decision: "confirm" },
-    { kind: "delete_assistant_memory", memoryId, revision: 1720000000000 },
-    {
-      kind: "revise_memory",
-      memoryId,
-      expectedRevision: 3,
-      content: "周末更适合上午学习",
-      appliesWhen: "周末",
-      validUntil: null,
-    },
-    {
-      kind: "save_memory",
-      memoryKind: "goal",
-      content: "复习完数据库索引",
-      sourceQuote: "准备期中考试时复习数据库索引，并在 2026-10-15T17:00:00+08:00 前完成",
-      appliesWhen: "准备期中考试时",
-      validUntil: "2026-10-15T17:00:00+08:00",
-    },
-  ];
-  for (const payload of cases) {
-    assert.equal(proposedLearningActionPayloadV1Schema.safeParse(payload).success, true, JSON.stringify(payload));
-  }
-  assert.equal(proposedLearningActionPayloadV1Schema.safeParse({
-    kind: "save_memory",
-    memoryKind: "goal",
-    content: "复习完数据库索引",
-    validUntil: "下周",
-  }).success, false);
-});
+
 
 test("proposedLearningActionPayload：§18 工具非法变体拒绝", () => {
   const runId = "423e4567-e89b-12d3-a456-426614174000";
@@ -592,124 +454,11 @@ test("proposedLearningActionPayload：§18 工具非法变体拒绝", () => {
   );
 });
 
-test("learning context：LearningRun 候选字段可解析且旧字段被拒绝", () => {
-  const ok = companionLearningContextV1Schema.safeParse({
-    version: 1,
-    contextRevision: "a".repeat(64),
-    learningRunResumeCandidate: {
-      candidateId: "learning_run_resume",
-      runId: "323e4567-e89b-12d3-a456-426614174000",
-      title: "继续当前学习",
-      targetSummary: "继续学习：…",
-      impactSummary: "恢复当前学习运行",
-      payloadSha256: "b".repeat(64),
-    },
-    learningRunStartCandidate: {
-      candidateId: "learning_run_start",
-      title: "开始三分钟巩固",
-      targetSummary: "用三分钟巩固：…",
-      impactSummary: "创建一次三分钟学习运行",
-      payloadSha256: "c".repeat(64),
-      objectiveId: UUID,
-      originV2: { kind: "card", cardId: UUID2, objectiveId: UUID },
-      request: { version: 2, originV2: { kind: "card", cardId: UUID2, objectiveId: UUID }, goal: "stabilize", idempotencyKey: `pet-menu-v2:${UUID}` },
-    },
-  });
-  assert.equal(ok.success, true);
-  // 必填候选缺失仍拒绝
-  assert.equal(companionLearningContextV1Schema.safeParse({
-    version: 1,
-    contextRevision: "a".repeat(64),
-    learningRunResumeCandidate: null,
-    learningRunStartCandidate: null,
-    legacyCandidate: null,
-  }).success, false);
-});
 
-test("grounded tutor：LearningRun context 和 grant 必须绑定同一页面类型", () => {
-  const runId = "323e4567-e89b-12d3-a456-426614174000";
-  const snapshotId = "423e4567-e89b-12d3-a456-426614174000";
-  const taskId = "523e4567-e89b-12d3-a456-426614174000";
-  assert.equal(companionLearningRunContextV1Schema.safeParse({
-    version: 1,
-    pageKind: "learning_run",
-    sharing: "page_registered",
-    runId,
-    snapshotId,
-    taskId,
-    requestedCapability: "none",
-    contextRevision: HASH,
-    groundedTutorGrant: null,
-  }).success, true);
 
-  const runGrant = {
-    version: 1,
-    grantId: UUID,
-    userId: UUID2,
-    workspaceId: UUID,
-    pageInstanceId: UUID2,
-    pageKind: "learning_run",
-    capability: "grounded_tutor",
-    runId,
-    snapshotId,
-    taskId,
-    contextRevision: HASH,
-    permissionSnapshotHash: HASH,
-    issuedAt: TIME,
-    expiresAt: TIME,
-    signature: HASH,
-  };
-  assert.equal(companionPageContextV1Schema.safeParse({
-    pageKind: "learning_run",
-    sharing: "user_selected",
-    runId,
-    snapshotId,
-    taskId,
-    requestedCapability: "grounded_tutor",
-    contextRevision: HASH,
-    groundedTutorGrant: runGrant,
-  }).success, true);
-});
 
-test("proposalDecisionResponseV1Schema：route 接受 §18 V2 导航 kind（lens/restoreRun/连续历史）", () => {
-  const base = {
-    version: 1,
-    proposalId: "b23e4567-e89b-12d3-a456-426614174000",
-    status: "succeeded",
-    resultRef: null,
-    safeSummary: "聚焦知识节点",
-  };
-  // focus_graph_node：star_map + keyPointId + lens
-  assert.equal(
-    proposalDecisionResponseV1Schema.safeParse({ ...base, route: { kind: "star_map", keyPointId: "623e4567-e89b-12d3-a456-426614174000", lens: "evidence" } }).success,
-    true,
-  );
-  // restore_graph_viewport：star_map + restoreRun
-  assert.equal(
-    proposalDecisionResponseV1Schema.safeParse({ ...base, route: { kind: "star_map", restoreRun: "423e4567-e89b-12d3-a456-426614174000" } }).success,
-    true,
-  );
-  // open_conversation_history：产品层只有连续历史，不暴露内部 session id
-  assert.equal(
-    proposalDecisionResponseV1Schema.safeParse({ ...base, route: { kind: "conversation" } }).success,
-    true,
-  );
-  // 旧导航 kind 仍接受
-  assert.equal(proposalDecisionResponseV1Schema.safeParse({ ...base, route: { kind: "review" } }).success, true);
-  assert.equal(proposalDecisionResponseV1Schema.safeParse({
-    ...base,
-    route: {
-      kind: "card",
-      cardId: "a23e4567-e89b-12d3-a456-426614174000",
-      objectiveId: "b23e4567-e89b-12d3-a456-426614174000",
-    },
-  }).success, true);
-  // V1 旧字段 conversationId 不再接受（V2 合同）
-  assert.equal(
-    proposalDecisionResponseV1Schema.safeParse({ ...base, route: { kind: "conversation", conversationId: "923e4567-e89b-12d3-a456-426614174000" } }).success,
-    false,
-  );
-});
+
+
 
 test("划选投喂：turn 请求可携带 selection（user_selected），首个块仍是 text", () => {
   const ok = createCompanionTurnRequestV1Schema.safeParse({

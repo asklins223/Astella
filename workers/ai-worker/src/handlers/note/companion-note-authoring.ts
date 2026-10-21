@@ -7,8 +7,10 @@ import { companionCreateNoteV1Schema, companionCreatedNoteV1Schema,
   type CompanionCreatedNoteV1, type CompanionCreateNoteV1 } from "@astella/shared/companion-note-authoring-contracts";
 import { withWorkerWorkspaceTransaction } from "../../db.ts";
 import { lockJobLease } from "../../lib/job-lease.ts";
+import { lockCompanionRunForEventWrite } from "@astella/shared/companion-lock-order";
 import { assertCompanionContextSourcesCurrent } from "../context/companion-context-sources.ts";
 import type { AgentEventContext } from "../tools/companion-read-tools.ts";
+import { companionRequestRequirements, companionRequirementIssue } from "../turn/companion-request-requirements.ts";
 import { CompanionToolNotExecutedError, type AgentToolExecutionResult } from "../tools/companion-tool-result.ts";
 
 /** Each durable write has one identity; a task may create multiple notes. */
@@ -20,7 +22,7 @@ export function companionCreatedNoteId(runId: string, toolCallId: string): strin
 export function createdNoteToolResult(receipt: CompanionCreatedNoteV1): AgentToolExecutionResult {
   return { value: { ...receipt, status: "succeeded" }, resultRef: JSON.stringify(receipt),
     safeSummary: `已保存笔记《${receipt.title.slice(0, 36)}》，含 ${receipt.linkedNotes.length} 个库内链接，可打开继续编辑`,
-    blocks: [{ type: "nav", label: `打开《${receipt.title.slice(0, 60)}》`, route: { kind: "note", noteId: receipt.noteId } }] };
+    blocks: [{ type: "nav", label: `打开《${receipt.title.slice(0, 60)}》`, route: { kind: "note", noteId: receipt.noteId, noteVersionId: receipt.noteVersionId } }] };
 }
 
 export function readCreatedNoteReceipt(value: string | null): CompanionCreatedNoteV1 | null {
@@ -62,6 +64,7 @@ export function userForbidsNoteLibraryRead(userText: string | null | undefined):
 }
 
 export async function prepareCompanionGeneratedNote(tx: AgentSqlExecutor, event: CompanionNoteAuthoringEvent, input: CompanionCreateNoteV1) {
+  const characters = companionRequestRequirements(event.read.userText ?? "").noteCharacters;
   const scope = { workspaceId: event.ctx.workspaceId, userId: event.read.userId };
   const links = [...new Map(input.links.map(link => [link.noteId, link])).values()];
   assertGeneratedNoteLinks(input.markdown, new Set(links.map(link => link.noteId)));
@@ -90,6 +93,10 @@ export async function prepareCompanionGeneratedNote(tx: AgentSqlExecutor, event:
     readingPaths.push(`- [${escapeMarkdown(note.title)}](${noteLinkHref(note.id)})：${escapeMarkdown(link.reason)}`);
   }
   const markdown = input.markdown + (readingPaths.length ? `\n\n## 相关笔记\n\n${readingPaths.join("\n")}` : "");
+  // Count the actual saved body, including the reading paths appended by the
+  // host. Link destinations are metadata, not visible prose.
+  const issue = characters ? companionRequirementIssue({ characters }, markdown) : null;
+  if (issue) throw new CompanionToolNotExecutedError(`${issue.instruction} 字数包括保存时附加的相关笔记标题与说明，请相应收短正文。`);
   const blocks = markdownToBlocks(markdown);
   return { markdown, blocks, linkedNotes, links };
 }
@@ -104,6 +111,7 @@ export async function executeCompanionCreateNote(event: CompanionNoteAuthoringEv
   assertNotAborted();
   const scope = { workspaceId: event.ctx.workspaceId, userId: event.read.userId };
   const receipt = await withWorkerWorkspaceTransaction(scope, async tx => {
+    await lockCompanionRunForEventWrite(tx, event.read.runId);
     const [owner] = await queryRows<{ allowed: boolean }>(tx,
       sql`SELECT astella_note_creation_scope_current(${scope.workspaceId},${scope.userId}) AS allowed`);
     if (!owner?.allowed) throw new CompanionToolNotExecutedError("当前空间只能阅读，笔记没有保存。可以回到有写入权限的空间再整理。");
@@ -113,6 +121,7 @@ export async function executeCompanionCreateNote(event: CompanionNoteAuthoringEv
       JOIN user_companion_account_state a ON a.user_id=r.user_id
       WHERE r.id=${event.read.runId} AND r.workspace_id=${scope.workspaceId} AND r.user_id=${scope.userId}
         AND r.account_epoch=${event.read.accountEpoch} AND r.generation=${event.read.generation}
+        AND (r.job_id IS NULL OR r.job_id=${event.ctx.id})
         AND r.status IN ('accepted','running') AND r.cancel_requested_at IS NULL
         AND a.global_enabled AND a.epoch=r.account_epoch
         AND (r.permission_level='full' OR astella_companion_tool_confirmed_v1(r.id,${toolCallId ?? null}))

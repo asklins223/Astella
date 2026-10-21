@@ -82,18 +82,18 @@ test("历史查询：默认一页 20、按 revision 往回翻，越界游标不�
     assert.equal(agentRunHistoryQueryV1Schema.safeParse(bad).success, false, JSON.stringify(bad));
 });
 
-test("operation 自带的一致性：结果必须属于它自己的 execution 与 capability", () => {
+test("retired card executions and results are rejected instead of replayed", () => {
   const CARD_RUN = "99999999-9999-4999-8999-999999999999";
   const CARD_ARTIFACT = { kind: "card_candidates", id: CARD_RUN, noteId: ARTIFACT.noteId, noteVersionId: ARTIFACT.noteVersionId };
   const cardOperation = (overrides: Record<string, unknown> = {}) => operation({
     capability: "card_generation_generate", execution: { kind: "card_generation", id: CARD_RUN },
     result: { kind: "artifact", artifact: CARD_ARTIFACT }, ...overrides,
   });
-  assert.equal(agentRunRevisionV1Schema.safeParse(revision({ operations: [cardOperation()] })).success, true);
+  assert.equal(agentRunRevisionV1Schema.safeParse(revision({ operations: [cardOperation()] })).success, false);
   // capability 不对：执行体对了也不能结案。
   assert.equal(agentRunRevisionV1Schema.safeParse(revision({ operations: [cardOperation({ capability: "note_overview_generate" })] })).success, false);
   assert.equal(agentRunRevisionV1Schema.safeParse(revision({ operations: [cardOperation({
-    result: { kind: "no_cards_recommended", reasonCodes: ["no_learnable_objective"] } })] })).success, true);
+    result: { kind: "no_cards_recommended", reasonCodes: ["no_learnable_objective"] } })] })).success, false);
   assert.equal(agentRunRevisionV1Schema.safeParse(revision({ operations: [cardOperation({
     capability: "note_overview_generate",
     result: { kind: "no_cards_recommended", reasonCodes: ["no_learnable_objective"] } })] })).success, false);
@@ -115,7 +115,7 @@ test("operation 自带的一致性：结果必须属于它自己的 execution", 
   assert.equal(agentRunRevisionV1Schema.safeParse(revision({ operations: [operation({
     capability: CARD_CAPABILITY,
     execution: { kind: "card_generation", id: ARTIFACT.id },
-    result: { kind: "artifact", artifact: { kind: "card_candidates", id: ARTIFACT.id, noteId: ARTIFACT.noteId, noteVersionId: ARTIFACT.noteVersionId } } })] })).success, true);
+    result: { kind: "artifact", artifact: { kind: "card_candidates", id: ARTIFACT.id, noteId: ARTIFACT.noteId, noteVersionId: ARTIFACT.noteVersionId } } })] })).success, false);
   // 理由条数与长度有上限：领域事件可能被写坏，投影不能因此被撑破。
   assert.equal(agentRunRevisionV1Schema.safeParse(revision({ operations: [operation({
     capability: CARD_CAPABILITY,

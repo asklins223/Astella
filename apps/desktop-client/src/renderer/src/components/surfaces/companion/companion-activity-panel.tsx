@@ -1,5 +1,4 @@
 import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
-import type { CompanionLearningContextV1 } from "@astella/shared/companion-conversation-contracts";
 import type { CompanionJourneyAction,CompanionJourneyBootstrap } from "@astella/shared/companion-journey-contracts";
 import type { CompanionActivityDeliveryV1,CompanionActivityTimelineV1 } from "@astella/shared/companion-memory-desktop-contracts";
 import { Sparkles } from "lucide-react";
@@ -7,7 +6,6 @@ import { useEffect,useMemo,useRef,useState } from "react";
 import { HUD_PAGES } from "../../hud/hud-pages";
 import { usePageReadableView } from "../../hud/use-page-readable-view";
 import { formatRelative } from "../notebook/shell/surface-data.tsx";
-import { RESUME_RUN_ACTION_LABEL } from "../run/objective-state-copy";
 import type { Section } from "./companion-center-model";
 import { isPendingDelivery,needsDeliveryResponse } from "./companion-center-model";
 import { CenterFeedback,SectionState } from "./companion-center-primitives";
@@ -44,18 +42,14 @@ const JOURNEY_BRANCH_LABEL: Record<string, string> = {
 
 type ActivityPanelProps = {
   section: Section<CompanionJourneyBootstrap>;
-  learningContextSection: Section<CompanionLearningContextV1>;
   deliverySection: Section<CompanionActivityTimelineV1>;
   deliveries: CompanionActivityDeliveryV1[];
   busy: boolean;
   journeyLoading?: boolean;
-  learningLoading?: boolean;
   deliveryLoading?: boolean;
   error: string | null;
   onStart: (kind: "start_journey" | "replay") => void;
   onAction: (action: CompanionJourneyAction) => void;
-  onResumeLearning: (runId: string) => void;
-  onOpenObjective: (objectiveId: string) => void;
   onPresent: (item: CompanionActivityDeliveryV1) => void;
   onDelivery: (item: CompanionActivityDeliveryV1, transition: "acted" | "dismissed") => void;
   /** 还在等决定的提案 id；卡片状态以提案本身为准（审计 F3）。 */
@@ -65,11 +59,9 @@ type ActivityPanelProps = {
 
 const DELIVERY_PENDING_STATES: ReadonlyArray<CompanionActivityDeliveryV1["state"]> = ["queued", "delivered", "displayed"];
 
-const ACTIVITY_SECTIONS = { learning: "继续学习", journey: "伴星旅程", feed: "最近动态" } as const;
+const ACTIVITY_SECTIONS = { journey: "伴星旅程", feed: "最近动态" } as const;
 
 const ACTIVITY_LINES = {
-  learningUnavailable: "学习上下文当前不可用",
-  learningNothing: { message: "当前没有可继续的学习", detail: "这里只列出系统从真实学习状态里挑出的候选。" },
   journeyUnavailable: "旅程当前不可用",
   journeyInvite: { title: "开始第一段学习旅程", summary: "从你自己的资料开始，伴星会跟随真实进度。" },
   journeySkipped: { title: "旅程邀请已跳过", summary: "需要时可以重新开始，不会补造任何里程碑。" },
@@ -96,9 +88,6 @@ function resolvedGroupLabel(count: number): string {
 export function ActivityPanel(props: ActivityPanelProps) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const journeyState = props.section.ok ? props.section.value : null;
-  const learningContext = props.learningContextSection.ok ? props.learningContextSection.value : null;
-  const resumeCandidate = learningContext?.learningRunResumeCandidate ?? null;
-  const startCandidate = learningContext?.learningRunStartCandidate ?? null;
   const pending = props.deliveries.filter(isPendingDelivery);
   const resolved = props.deliveries.filter((item) => !isPendingDelivery(item));
   const proposals = pending.filter(needsDeliveryResponse);
@@ -115,12 +104,6 @@ export function ActivityPanel(props: ActivityPanelProps) {
     const push = (label: string, state: string) => {
       if (rows.length < 12) rows.push({ label, state });
     };
-    if (props.learningLoading) push("正在加载学习状态", ACTIVITY_SECTIONS.learning);
-    else if (!props.learningContextSection.ok) push(ACTIVITY_LINES.learningUnavailable, ACTIVITY_SECTIONS.learning);
-    else if (resumeCandidate) push(resumeCandidate.title, ACTIVITY_SECTIONS.learning);
-    else if (startCandidate) push(startCandidate.title, ACTIVITY_SECTIONS.learning);
-    else push(ACTIVITY_LINES.learningNothing.message, ACTIVITY_SECTIONS.learning);
-
     if (props.deliveryLoading) push("正在加载动态", ACTIVITY_SECTIONS.feed);
     else if (!props.deliverySection.ok) push(ACTIVITY_LINES.feedUnavailable, ACTIVITY_SECTIONS.feed);
     else if (props.deliveries.length === 0) push(ACTIVITY_LINES.feedEmpty.message, ACTIVITY_SECTIONS.feed);
@@ -147,20 +130,12 @@ export function ActivityPanel(props: ActivityPanelProps) {
       })),
       ...(props.deliverySection.ok && !props.deliveryLoading && resolved.length > 0 ? { notice: resolvedGroupLabel(resolved.length) } : {}),
     };
-  }, [historyOpen, journeyState, messages, pending.length, proposals, props.deliverySection, props.deliveryLoading, props.error, props.journeyLoading, props.learningContextSection, props.learningLoading, resolved, resumeCandidate, startCandidate]);
+  }, [historyOpen, journeyState, messages, pending.length, proposals, props.deliverySection, props.deliveryLoading, props.error, props.journeyLoading, resolved]);
   usePageReadableView(activityReadableView);
 
   const renderDelivery = (item: CompanionActivityDeliveryV1) => <ActivityDeliveryCard key={item.deliveryId} item={item} busy={props.busy} onPresent={props.onPresent} onDelivery={props.onDelivery} pendingProposalIds={props.pendingProposalIds} />;
   return <div className="cc-activity">
     <CenterFeedback error={props.error} />
-    <section className="cc-learning-continuation" aria-label="学习衔接">
-      <span className="cc-kicker">继续学习</span>
-      {props.learningLoading ? <p role="status">正在加载学习状态</p> : !props.learningContextSection.ok
-        ? <SectionState message={ACTIVITY_LINES.learningUnavailable} detail={props.learningContextSection.message} onRetry={props.onRetry} />
-        : resumeCandidate ? <div><span><strong>{resumeCandidate.title}</strong><p>{resumeCandidate.targetSummary}</p><small>{resumeCandidate.impactSummary}</small></span><button type="button" className="button primary" onClick={() => props.onResumeLearning(resumeCandidate.runId)}>{RESUME_RUN_ACTION_LABEL}</button></div>
-        : startCandidate ? <div><span><strong>{startCandidate.title}</strong><p>{startCandidate.targetSummary}</p><small>{startCandidate.impactSummary}</small></span><button type="button" onClick={() => props.onOpenObjective(startCandidate.objectiveId)}>查看目标</button></div>
-        : <p className="cc-muted">{ACTIVITY_LINES.learningNothing.message}</p>}
-    </section>
     <div className="cc-activity-columns">
       <section className="cc-timeline" aria-label="主动投递与状态更新"><h3>最近动态</h3>
         {props.deliveryLoading ? <SectionState loading message="正在加载动态" /> : !props.deliverySection.ok ? <SectionState message={ACTIVITY_LINES.feedUnavailable} detail={props.deliverySection.message} onRetry={props.onRetry} />

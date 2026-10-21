@@ -14,11 +14,11 @@ import type { MainPageContextInputV2 } from "@astella/shared";
 const uuid = () => crypto.randomUUID();
 
 function makeInput(): MainPageContextInputV2 {
-  const objectiveId = uuid();
+  const noteId = uuid();
   return {
-    routeRef: { kind: "card", cardId: uuid(), objectiveId },
-    pageKind: "card",
-    entityRefs: [{ kind: "card", cardId: uuid() }, { kind: "key_point", keyPointId: uuid() }],
+    routeRef: { kind: "note", noteId },
+    pageKind: "note",
+    entityRefs: [{ kind: "note", noteId }, { kind: "source", sourceId: uuid() }],
     interactionState: "idle",
     capabilityHints: ["open_route"],
     sensitivity: "normal",
@@ -40,7 +40,7 @@ test("computeContextRevision：内容变化必产生新 revision", () => {
   );
   assert.notEqual(
     computeContextRevision(a),
-    computeContextRevision({ ...a, entityRefs: [{ kind: "card", cardId: uuid() }] }),
+    computeContextRevision({ ...a, entityRefs: [{ kind: "note", noteId: uuid() }] }),
   );
   assert.notEqual(
     computeContextRevision(a),
@@ -71,13 +71,11 @@ test("buildContextSnapshot：安全字段来自服务端输入，revision 与输
 
 test("entityLookupKey：全部当前 EntityRef kind 有明确映射", () => {
   const sourceId = uuid();
+  const noteId = uuid();
+  const journeyId = uuid();
+  const assistantSessionId = uuid();
   assert.deepEqual(entityLookupKey({ kind: "source", sourceId }), { table: "sources", id: sourceId });
-  assert.equal(entityLookupKey({ kind: "card", cardId: uuid() })?.table, "learning_cards_v2");
-  assert.equal(entityLookupKey({ kind: "key_point", keyPointId: uuid() })?.table, "learning_objectives_v2");
-  assert.equal(entityLookupKey({ kind: "evidence", evidenceId: uuid() })?.table, "evidence_snapshots_v2");
-  assert.equal(entityLookupKey({ kind: "learning_run", runId: uuid() })?.table, "learning_runs");
-  assert.equal(entityLookupKey({ kind: "learning_task", runId: uuid(), taskId: uuid() })?.table, "learning_tasks");
-  assert.equal(entityLookupKey({ kind: "assistant_session", assistantSessionId: uuid() })?.table, "companion_conversations");
-  assert.equal(entityLookupKey({ kind: "route_plan", routePlanId: uuid() })?.table, "understanding_route_plans");
-  assert.equal(entityLookupKey({ kind: "change_set", changeSetId: "cs1" })?.table, "understanding_change_sets");
+  assert.deepEqual(entityLookupKey({ kind: "note", noteId }), { table: "notes", id: noteId });
+  assert.deepEqual(entityLookupKey({ kind: "companion_journey", journeyId }), { table: "companion_journeys", id: journeyId });
+  assert.deepEqual(entityLookupKey({ kind: "assistant_session", assistantSessionId }), { table: "companion_conversations", id: assistantSessionId });
 });

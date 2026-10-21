@@ -127,8 +127,8 @@ test("⑧ 自主方法进入读取目录，认识状态与来源独立于采用"
   const orchestrator = read("workers/ai-worker/src/handlers/context/companion-context-orchestrator.ts");
   assert.match(orchestrator, /await retrievePlaybookViews\(tx, scope\)/);
   const dialogue = read("workers/ai-worker/src/handlers/turn/companion-dialogue.ts");
-  assert.match(dialogue, /methodCandidates: read\.groundedTutorContext \? "" : renderPlaybookCandidates/,
-    "正式作答那一档不带候选：讲解只按材料与题面来");
+  assert.match(dialogue, /methodCandidates: renderPlaybookCandidates/,
+    "the live companion path includes its current playbook candidates");
   const content = read("workers/ai-worker/src/handlers/turn/companion-dialogue-content.ts");
   assert.match(content, /add\("method_candidates", input\.methodCandidates/,
     "候选要作为自己的一个来源进 44 的来源计划，否则预算回执里看不见它");

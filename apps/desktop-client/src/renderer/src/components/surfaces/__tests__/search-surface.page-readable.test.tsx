@@ -111,7 +111,7 @@ function filterValue(label: string): string | undefined {
 }
 
 beforeEach(() => {
-  useRoomStore.setState({ searchResume: null, searchQuery: "", searchTypeFilter: "all", searchWeakOnly: false });
+  useRoomStore.setState({ searchResume: null, searchQuery: "", searchTypeFilter: "all" });
   Object.defineProperty(Element.prototype, "scrollTo", { configurable: true, value: () => undefined });
   Object.defineProperty(Element.prototype, "scrollIntoView", { configurable: true, value: () => undefined });
 });
@@ -125,7 +125,6 @@ afterEach(() => {
   useRoomStore.setState({
     searchQuery: "",
     searchTypeFilter: "all",
-    searchWeakOnly: false,
     hudPage: "home",
     pageReadableView: null,
   });
@@ -170,18 +169,6 @@ describe("全局查找：她读到的与屏幕上的是同一份", () => {
     );
     // 第一条结果是自动选中的，所以这一屏最后那句话是"读到哪儿了"（页签下面那一格）。
     expect(view.notice).toBe(screen.getByText(/已到读取上限/).textContent);
-  });
-
-  it("开着「证据不足」时，那颗标签的文案逐字进 filters", async () => {
-    installApi();
-    await renderWithQuery("间隔", 2);
-    fireEvent.click(screen.getByRole("button", { name: "结果类型：只看学习卡" }));
-    const chip = await screen.findByRole("button", { name: /^证据不足/ });
-    fireEvent.click(chip);
-    // 标签上那个数要等目标状态读回来才有，视图与屏上必须一起到位才算同源。
-    await waitFor(() => expect(filterValue("证据不足筛选")).toBe(
-      screen.getByRole("button", { name: /^证据不足/ }).textContent,
-    ));
   });
 
   it("没有输入关键词：登记的是空态那一句，不带任何结果", async () => {

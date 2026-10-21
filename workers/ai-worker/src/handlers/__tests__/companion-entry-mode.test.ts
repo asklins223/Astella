@@ -2,8 +2,15 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { agentVoiceStyleDecisionV1Schema } from '@astella/shared/agent-contracts';
 import { validateCompanionAgentToolArguments, canUseCompanionAgentTool, getCompanionAgentTool } from '@astella/shared';
-import { companionDirectInterpretation, createCompanionDirectControls, resolveCompanionEntryMode, startCompanionEntry } from '../turn/companion-entry-mode.ts';
+import { companionDirectInterpretation, companionNamedNoteReadRequest, createCompanionDirectControls, resolveCompanionEntryMode, startCompanionEntry } from '../turn/companion-entry-mode.ts';
 const fresh = () => companionDirectInterpretation('a'.repeat(64));
+test('a named saved-note explanation goes to the evidence path unless its note was already prefetched', () => {
+    const text = '请根据《秦朝统一与中央集权制度》这篇已保存笔记，用三句话解释郡县制与分封制的区别；不要创建或修改笔记。';
+    assert.equal(companionNamedNoteReadRequest(text, []), true);
+    assert.equal(companionNamedNoteReadRequest(text, [{ role: 'system', content: '<prefetched_note>已读取的原文</prefetched_note>', hostObservation: true }]), false);
+    assert.equal(companionNamedNoteReadRequest('请用三句话解释郡县制。', []), false);
+    assert.equal(companionNamedNoteReadRequest('《秦朝》这个故事挺好，今天不想看笔记。', []), false);
+});
 test('entry mode is explicit and the unclassified placeholder never invents a tool decision', () => {
     assert.equal(resolveCompanionEntryMode('unknown'), 'classified');
     assert.equal(resolveCompanionEntryMode('direct_thinking'), 'direct_thinking');

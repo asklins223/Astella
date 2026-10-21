@@ -22,24 +22,15 @@ import { runNoteOverviewGenerate } from "./handlers/note/note-overview-generate.
 import { runNoteAnnotationExplain } from "./handlers/note/note-annotation-explain.ts";
 import { runNoteDynamicArtifactGenerate } from "./handlers/note/note-dynamic-artifact-generate.ts";
 import { runNoteExpansionGenerate } from "./handlers/note/note-expansion-generate.ts";
+import { runNoteLearningCardGenerate } from "./handlers/note/note-learning-card-generate.ts";
+import { markNoteLearningCardGradingFailed, runNoteLearningCardGrade } from "./handlers/note/note-learning-card-grade.ts";
 import { tickCompanionDailySummaryScheduler } from "./handlers/schedulers/companion-daily-summary-scheduler.ts";
 import { tickCompanionMemoryMaintenance } from "./handlers/memory/companion-memory-maintenance.ts";
 import { tickCompanionProposalExpiry } from "./handlers/schedulers/companion-proposal-expiry-scheduler.ts";
 import { tickCompanionRunReconcile } from "./handlers/schedulers/companion-run-reconcile-scheduler.ts";
 import { tickCompanionReminderDelivery } from "./handlers/schedulers/companion-reminder-scheduler.ts";
-import {
-  pollV2Outbox,
-  V2_POLL_TICK_BUDGET_MS,
-} from "./handlers/note/card-generation-v2-handler.ts";
-// 队列与租约在 39d W7-7 刀二里搬进 `card-generation-v2/outbox-queue.ts`：
-// 在途计数、排空等待、关停时交还租约都归那一处，worker 入口不再绕道旧 handler 拿。
-import {
-  getV2OutboxInflightCount,
-  releaseInflightV2OutboxLeases,
-  waitForV2OutboxDrain,
-} from "./card-generation-v2/outbox-queue.ts";
 
-import { HandlerTimeoutError, runWithAbortTimeout, runWithAbortBudget } from "./lib/handler-timeout.ts";
+import { runWithAbortTimeout, runWithAbortBudget } from "./lib/handler-timeout.ts";
 import { runWithLeaseHeartbeat } from "./lib/lease-heartbeat.ts";
 import { withJobTransaction, lockJobLease } from "./lib/job-lease.ts";
 import { resolveHandlerTimeout, resolveProviderCallTimeout, RESOLVED_TIMEOUT_INFO } from "./lib/handler-timeout-config.ts";
@@ -95,6 +86,8 @@ const HANDLERS = {
   note_annotation_explain: runNoteAnnotationExplain,
   note_dynamic_artifact_generate: runNoteDynamicArtifactGenerate,
   note_expansion_generate: runNoteExpansionGenerate,
+  note_learning_card_generate: runNoteLearningCardGenerate,
+  note_learning_card_grade: runNoteLearningCardGrade,
 } as const;
 
 /**
@@ -108,6 +101,7 @@ const HANDLERS = {
 const DEAD_FINALIZERS: Partial<Record<string, (job: { id: string; workspaceId: string; requestedBy: string | null; payload: Record<string, unknown>; leaseToken: string; signal?: AbortSignal }, message: string) => Promise<void>>> = {
   parse_source: markSourceParseFailed,
   agent_run_advance: markAgentAdvanceFailed,
+  note_learning_card_grade: markNoteLearningCardGradingFailed,
 };
 
 const POLL_MS = 500;
@@ -404,39 +398,6 @@ let lastMemorySkipLogAt = 0;
  * 检查当前进程内存使用是否在安全范围内。
  * 如果堆内存使用超过阈值，返回 false 并记录警告日志。
  */
-/**
- * 主 tick 里的 V2 制卡 outbox 一次 poll（预算 5 秒即返回，运行中的 job 继续后台跑）。
- *
- * 抽出来是因为它原来只在**函数末尾**被调用一次，而中间有一句
- * `if (claimLimits.interactiveLimit <= 0) return;`：主队列 4 条槽都被占时（后台 job
- * 单个可跑 110 秒），整轮直接返回，V2 既不被领取也不续约心跳，最长要多等一整个
- * handler 预算才轮到。
- *
- * 注意这**不是**把 V2 挪到主队列之前——第五轮审计 W#5 明确要求 V2 排在 claim/分发
- * 之后，免得串行 poll 延迟主队列并发配额的分配。顺序照旧，只是让那条早退不再顺手
- * 跳过 V2 的义务。
- */
-async function pollV2OutboxWithinTick(): Promise<void> {
-  try {
-    await pollV2Outbox(1, V2_POLL_TICK_BUDGET_MS);
-  } catch (error) {
-    // 5 秒预算是**设计内的提前返回**，不是失败（`pollV2Outbox` 头注释：主 tick 该
-    // 多久返回与 job 该跑多久是两个互不相干的期限）。正常制卡要几分钟，只要被领走的
-    // 那单超过 5 秒，runWithAbortTimeout 就抛 HandlerTimeoutError 让主 tick 先走，
-    // 任务本身仍由 v2Inflight 持有、靠 30 分钟租约兜底。此前这里一律 WARN
-    // 「outbox poll failed」，dev 库每跑一次制卡就记一条像故障的告警（2026-10-14
-    // 实测 7 条，全部对应正常在途任务），真出错那条反而被淹掉。预算超时降为 debug。
-    if (error instanceof HandlerTimeoutError) {
-      logger.debug({ budgetMs: V2_POLL_TICK_BUDGET_MS },
-        "V2 card generation outbox poll reached its tick budget; in-flight job continues");
-      return;
-    }
-    logger.warn(
-      { error: sanitizeOperationalError(error) },
-      "V2 card generation outbox poll failed",
-    );
-  }
-}
 
 function isMemoryAvailable(): boolean {
   const memUsage = process.memoryUsage();
@@ -578,8 +539,6 @@ export async function tick(): Promise<void> {
     inflightBackground,
   });
   if (claimLimits.interactiveLimit <= 0) {
-    // 主队列没槽位也要把 V2 的义务走完（见 `pollV2OutboxWithinTick` 的说明）。
-    await pollV2OutboxWithinTick();
     return;
   }
 
@@ -634,16 +593,6 @@ export async function tick(): Promise<void> {
     promise.then(() => inflight.delete(promise)).catch(() => inflight.delete(promise));
   }
 
-  // V2 Card Generation outbox poll (方案 20 C2)。
-  if (shuttingDown) return;
-  // 第五轮审计 W#5：置于主队列 claim/分发**之后**——V2 串行 poll 不能再延迟主
-  // 队列并发配额（available）的分配与 claim；先按配额拿到主队列 job 并分发，
-  // 最后才 poll V2。round-7 🟡2 修复：主 tick 以 V2_POLL_TICK_BUDGET_MS（5s）调用
-  // poll，使本 tick 仅最多阻塞该预算即返回——V2 job 的运行（最长整套 ~8.75min）
-  // 不再串行阻塞**下一 tick** 主队列的 claim/分发。超预算时 poll 返回、运行中 job
-  // 继续后台跑（30min 租约 + lease CAS + reaper 兜底，不丢副作用、不重复计费）。
-  // 每个 job 已 fire-and-forget（inflight），V2 poll 失败仅告警不断主循环。
-  await pollV2OutboxWithinTick();
 }
 
 export async function main() {
@@ -726,27 +675,9 @@ export async function main() {
       }
       // F-010: 优雅关停 — 不再认领新作业，等待在途 job 完成后退出。
       if (shuttingDown) {
-        if (inflight.size > 0 || getV2OutboxInflightCount() > 0) {
-          // 先把在途的 V2 租约交还，再等 drain：dev 里 tsx watch 只给 5 秒
-          // （`Process didn't exit in 5s. Force killing...`），一条付费管道跑不完。
-          // 不交还的话，强杀后这条 run 的租约要挂满 30 分钟才可能被重投——那半小时里
-          // 笔记被 in-flight 守卫锁住，而钱已经付过了。交还后本进程迟到的写入会被
-          // 自己的 token fence 挡掉（见 releaseV2OutboxLease），不会双写。
-          if (getV2OutboxInflightCount() > 0) {
-            const released = await releaseInflightV2OutboxLeases().catch((error) => {
-              logger.warn({ error: String(error) }, "V2 lease release on shutdown threw");
-              return 0;
-            });
-            logger.info(
-              { released, v2Inflight: getV2OutboxInflightCount() },
-              "V2 outbox leases returned so the next worker can take over immediately",
-            );
-          }
+        if (inflight.size > 0) {
           logger.info(
-            {
-              inflight: inflight.size,
-              v2Inflight: getV2OutboxInflightCount(),
-            },
+            { inflight: inflight.size },
             "shutdown signal received, waiting for in-flight jobs to finish…",
           );
           // 修复：优雅关停 drain 必须有界。某个 handler（如底层 provider 调用不响应
@@ -764,19 +695,12 @@ export async function main() {
             t.unref();
           });
           await Promise.race([
-            Promise.all([
-              Promise.allSettled([...inflight.keys()]),
-              waitForV2OutboxDrain(drainTimeoutMs),
-            ]),
+            Promise.allSettled([...inflight.keys()]),
             drainDeadline,
           ]);
-          if (inflight.size > 0 || getV2OutboxInflightCount() > 0) {
+          if (inflight.size > 0) {
             logger.warn(
-              {
-                inflight: inflight.size,
-                v2Inflight: getV2OutboxInflightCount(),
-                drainTimeoutMs,
-              },
+              { inflight: inflight.size, drainTimeoutMs },
               "drain timeout reached, exiting anyway (orphaned running jobs will be reaped by the next worker startup)",
             );
           }

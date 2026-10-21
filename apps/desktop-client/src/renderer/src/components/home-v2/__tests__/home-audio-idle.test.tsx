@@ -13,7 +13,7 @@ vi.mock("../../../app/companion-session/companion-voice-stream-playback", () => 
   playSegmentFromStream: vi.fn(),
 }));
 
-import { HomeV2AudioController } from "../HomeV2AudioController";
+import { HomeV2AudioController, COMPANION_VOICE_STREAM_SEGMENTS } from "../HomeV2AudioController";
 import { isCompanionSpeechActive, setCompanionVoiceHost } from "../../../app/companion-session/companion-voice-playback";
 import { hasStreamingSegmentChannel, playSegmentFromStream } from "../../../app/companion-session/companion-voice-stream-playback";
 import { resetHomeV2VoiceLevel, subscribeHomeV2VoiceLevel } from "../../../app/companion-session/companion-voice-level";
@@ -225,7 +225,10 @@ it("实时会话开麦后回复仍能真正启动音源，单段录音仍会挡�
   view.unmount();
 });
 
-it("流式伴星语音经过输出分析器并驱动 Live2D 共用嘴型振幅", async () => {
+// Streaming is deliberately off by default since 2026-10-21 (it stalled after a
+// few characters in real windows). The wiring below still has to be correct for
+// when the flag is turned back on, so this case only runs with the flag enabled.
+it.skipIf(!COMPANION_VOICE_STREAM_SEGMENTS)("流式伴星语音经过输出分析器并驱动 Live2D 共用嘴型振幅", async () => {
   vi.mocked(hasStreamingSegmentChannel).mockReturnValue(true);
   let finishStream!: (played: boolean) => void;
   vi.mocked(playSegmentFromStream).mockImplementation(async args => {

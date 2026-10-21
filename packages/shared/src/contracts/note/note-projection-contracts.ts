@@ -74,6 +74,8 @@ export const noteDetailV1Schema = z
     /** `private` = 界面上的「仅自己可见」，`shared` = 「已共享给空间」。 */
     shareScope: z.enum(["private", "shared"]),
     currentVersion: noteVersionProjectionV1Schema,
+    /** Explicit immutable-version read. Current version/revision remain truthful. */
+    requestedVersion: noteVersionProjectionV1Schema.optional(),
     permissions: notePermissionProjectionV1Schema,
     // The current version ID is the OCC/read revision for the frozen Note
     // surface.  It is opaque to the renderer and must be echoed as
@@ -95,6 +97,9 @@ export const noteDetailV1Schema = z
         path: ["currentVersion", "noteId"],
         message: "currentVersion.noteId must match noteId",
       });
+    }
+    if (value.requestedVersion && value.requestedVersion.noteId !== value.noteId) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["requestedVersion", "noteId"], message: "requested version belongs to a different note" });
     }
     if (value.revision !== value.currentVersionId) {
       context.addIssue({

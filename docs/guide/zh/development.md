@@ -64,7 +64,7 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'
 
 要真跑模型还要按槽位填所需 key：`DASHSCOPE_API_KEY`、`OPENAI_COMPAT_API_KEY`、`OPENCODE_GO_API_KEY`、`SILICONFLOW_API_KEY`、`BIGMODEL_API_KEY`、`TOKENRHYTHM_API_KEY`、`MIMO_API_KEY`。具体哪个平台服务哪种能力由 `config/ai-platforms.json` 决定，而 `docker-compose.dev.yml` 只透传**显式列出**的那几个变量。新增供应商时同时修改模型配置和所用 Compose 的环境透传，检查 API 与 Worker 两侧。`ASSESSMENT_CRITIC_URL` / `_KEY` / `_MODEL` 是另一组：未配置时 LearningRun 的开放回答评估走确定性路径而不是猜。
 
-其余变量（`COMPANION_*`、`LEARNING_RUN_ENABLED`、`CARD_GENERATION_*` 等）在 dev 里已经给了本机默认值，`make verify` 的 `.github/scripts/verify-companion-capability-config.mjs` 会检查 api 与 worker 声明的旗标是否成对，避免"API 收下的回合被 worker 当作功能关闭立刻拒掉"。
+其余变量（`COMPANION_*` 等）在 dev 里已经给了本机默认值，`make verify` 的 `.github/scripts/verify-companion-capability-config.mjs` 会检查 api 与 worker 声明的旗标是否成对，避免"API 收下的回合被 worker 当作功能关闭立刻拒掉"。
 
 ### 2. `make up`
 

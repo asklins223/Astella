@@ -9,7 +9,6 @@ import { sha256Utf8V1 } from "@astella/shared/content-hash";
 import { withWorkerWorkspaceTransaction } from "../../db.ts";
 import { resolveAIGovernanceContext } from "../../lib/governance.ts";
 import { lockJobLease } from "../../lib/job-lease.ts";
-import { findFormalAnswerTarget } from "../../lib/formal-answer-signal.ts";
 import type { WorkerTransaction } from "../../db.ts";
 import type { CompanionDialogueHandlerContext } from "../turn/companion-dialogue-store.ts";
 
@@ -48,8 +47,7 @@ export async function runCompanionInitiative(ctx: CompanionDialogueHandlerContex
     const [muted] = await tx.execute(sql`SELECT 1 FROM companion_room_profiles WHERE workspace_id=${scope.workspaceId}
       AND user_id=${scope.userId} AND proactive_muted`);
     if (muted || ["dnd", "offline"].includes(account.presence?.presence ?? "")
-      || (account.quiet_hours && isWithinQuietHours(account.quiet_hours,new Date()))
-      || await findFormalAnswerTarget(tx, scope)) { await deferParticipation(tx,ctx,60_000); return; }
+      || (account.quiet_hours && isWithinQuietHours(account.quiet_hours,new Date()))) { await deferParticipation(tx,ctx,60_000); return; }
     const pref = await readParticipationPreferences(tx, scope);
     const awareness = await readCompanionAwareness(tx, scope);
     const plans = await listCompanionAttention(tx, scope);

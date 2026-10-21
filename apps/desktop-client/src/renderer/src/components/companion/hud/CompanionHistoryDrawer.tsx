@@ -24,6 +24,8 @@ import { feedSelectionToCompanion } from "./companion-feed";
 import { useTactileSurface } from "../../motion/use-tactile-surface";
 import { useCompanionJournalMotion } from "../journal/use-companion-journal-motion";
 import { CompanionJournalTimeline } from "../journal/CompanionJournalTimeline";
+import { CompanionJournalViewState, useCompanionJournalViewState } from "../journal/companion-journal-view-state";
+import { useCompanionResultPreview } from "../journal/companion-result-preview";
 
 export function CompanionHistoryDrawer({
   open,
@@ -72,6 +74,8 @@ export function CompanionHistoryDrawer({
   readonly onRemoveImage: () => void;
 }) {
   const chat = useCompanionChat();
+  const journalViewChoices = useCompanionJournalViewState(chat.conversationId);
+  const journalTarget = useCompanionResultPreview(state => state.journalTarget);
   const [navNote, setNavNote] = useState<string | null>(null);
   const setInput = onInputChange;
   const drawerRef = useRef<HTMLElement>(null);
@@ -105,8 +109,13 @@ export function CompanionHistoryDrawer({
   const [searchInput, setSearchInput] = useState("");
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [dateFilter, setDateFilter] = useState<string | null>(null);
-  const { listRef, contentRef, atLatest, prevScrollHeightRef, stickToBottomRef, scrollToLatest, handleListScroll, releaseStick, handleListWheel, handleListTouchMove, handleListTouchStart, pendingJumpRef, jumpNotice, setJumpNotice } = useCompanionHistoryScroll({ chat, open, mounted, recordOpen: recordOpen || filter !== "all" });
+  const { listRef, contentRef, atLatest, prevScrollHeightRef, stickToBottomRef, scrollToLatest, handleListScroll, releaseStick, handleListWheel, handleListTouchMove, handleListTouchStart, pendingJumpRef, jumpNotice, setJumpNotice } = useCompanionHistoryScroll({ chat, open, mounted, recordOpen: recordOpen || filter !== "all", target: journalTarget });
   const positionsRef = useRef(new Map<string, { top: number; latest: boolean }>());
+  useEffect(() => {
+    if (!journalTarget) return;
+    setRecordOpen(false); setFilter("all");
+    stickToBottomRef.current = false;
+  }, [journalTarget]);
   const chooseSection = (next: typeof filter) => {
     positionsRef.current.set(recordOpen ? "search" : filter, { top: listRef.current?.scrollTop ?? 0, latest: stickToBottomRef.current });
     setRecordOpen(false); setFilter(next);
@@ -183,20 +192,16 @@ export function CompanionHistoryDrawer({
         ? <p className="companion-history__system">对话手记还没有就绪。</p>
         : null;
 
-  /**
-   * 整窗关闭要把子页一起退掉。关掉的抽屉只是 `return null`，state 全部留着，于是第二次
-   * 点「对话记录」直接开在查找页上（实测：重开时搜索框已在屏上、时间线一条都没渲染）。
-   * 挂在 `mounted` 落下之后——退出弹簧仍在运动时，保留当前页的内容。
-   */
+  /** Closing a paper preserves its section, query and reading position. Only
+   * a different conversation starts a fresh journal view. */
   useEffect(() => {
-    if (open || mounted) return;
     setRecordOpen(false);
     setFilter("all");
     setSearchInput("");
     setDateFilter(null);
     setCalendarOpen(false);
     positionsRef.current.clear();
-  }, [open, mounted]);
+  }, [chat.conversationId]);
 
   useEffect(() => {
     if (!open || !mounted) return undefined;
@@ -316,7 +321,7 @@ export function CompanionHistoryDrawer({
         <span className="companion-journal__cover-mark" aria-hidden="true"><BookHeart size={24} /></span>
         <div className="companion-history__heading">
           <h2 id="companion-history-title">对话手记</h2>
-          <p>{chat.companionName} <span>·</span> 这间书房，一起留下的日常</p>
+          <p>{chat.companionName} <span>·</span> 交流、进展与留下的成果</p>
         </div>
         <div className="companion-history__header-actions">
           {!recordOpen ? <button ref={backButtonRef} type="button" onClick={onBack} aria-label="返回气泡轻聊" title="气泡轻聊"><MessageCircle size={19} /></button> : null}
@@ -333,10 +338,9 @@ export function CompanionHistoryDrawer({
       </header>
       <div className="companion-journal__workspace">
       <nav className="companion-history__tabs" aria-label="手记内容">
-        <button type="button" className="text-action" aria-label="全部对话" aria-pressed={!recordOpen && filter === "all"} onClick={() => chooseSection("all")}><MessageCircle size={18} /><span><strong>全部对话</strong><small>你一句，我一句</small></span></button>
-        {goals ? <button type="button" className="text-action" aria-label={`交给我的事 ${goals.items.length}`} aria-pressed={!recordOpen && filter === "goals"} onClick={() => chooseSection("goals")}><BookOpenText size={18} /><span><strong>交给我的事</strong><small>要求、进展与成果</small></span><i className="companion-history__count">{goals.items.length}</i></button> : null}
-        <button type="button" className="text-action" aria-label={`待确认 ${pendingProposals.length}`} aria-pressed={!recordOpen && filter === "pending"} onClick={() => chooseSection("pending")}><CircleCheck size={18} /><span><strong>待确认</strong><small>等你作个决定</small></span><i className="companion-history__count" data-attention={pendingProposals.length > 0 || undefined}>{pendingProposals.length}</i></button>
-        <p className="companion-journal__rail-note">话留在纸上，<br />我还在你身旁。</p>
+        <button type="button" className="text-action" aria-label="全部对话" aria-pressed={!recordOpen && filter === "all"} onClick={() => chooseSection("all")}><MessageCircle size={17} /><span><strong>对话</strong></span></button>
+        {goals ? <button type="button" className="text-action" aria-label={`交给我的事 ${goals.items.length}`} aria-pressed={!recordOpen && filter === "goals"} onClick={() => chooseSection("goals")}><BookOpenText size={17} /><span><strong>交给我的事</strong></span><i className="companion-history__count">{goals.items.length}</i></button> : null}
+        <button type="button" className="text-action" aria-label={`待确认 ${pendingProposals.length}`} aria-pressed={!recordOpen && filter === "pending"} onClick={() => chooseSection("pending")}><CircleCheck size={17} /><span><strong>待确认</strong></span><i className="companion-history__count" data-attention={pendingProposals.length > 0 || undefined}>{pendingProposals.length}</i></button>
       </nav>
       <div className="companion-journal__page" data-tactile-page="true">
       {/* 记录视图专属工具行：搜索 + 自绘月历筛选 */}
@@ -382,13 +386,21 @@ export function CompanionHistoryDrawer({
         </div>
       ) : null}
       {recordOpen ? <button ref={backButtonRef} type="button" className="companion-journal__search-back" onClick={() => { setRecordOpen(false); setFilter("all"); setSearchInput(""); setDateFilter(null); }} aria-label="返回对话"><ChevronLeft size={16} />返回对话</button> : null}
+      <CompanionJournalViewState choices={journalViewChoices}>
       <div
         ref={listRef}
         className="companion-history__list"
-        onScroll={handleListScroll}
+        tabIndex={0}
+        aria-label="手记阅读区"
+        onScroll={event => {
+          handleListScroll();
+          positionsRef.current.set(recordOpen ? "search" : filter, { top: event.currentTarget.scrollTop, latest: stickToBottomRef.current });
+        }}
         onWheel={handleListWheel}
         onTouchStart={handleListTouchStart}
         onTouchMove={handleListTouchMove}
+        onFocusCapture={releaseStick}
+        onPointerDownCapture={releaseStick}
         onClickCapture={event => {
           const summary = (event.target as HTMLElement).closest(".companion-history__trace > summary");
           if (summary) releaseStick();
@@ -449,15 +461,18 @@ export function CompanionHistoryDrawer({
           )}
         </div>
       </div>
-      {/* 跳转至最新消息（微信式）：离开底部后出现，一键回底部。 */}
-      {!atLatest && !recordOpen && filter === "all" ? (
-        <button type="button" className="button companion-history__jump" onClick={scrollToLatest} aria-label="跳转至最新消息">
-          <ArrowDownToLine size={17} aria-hidden="true" />回到最新
-        </button>
-      ) : null}
+      </CompanionJournalViewState>
       {/* 常驻输入行（方案 §2）：与交互台同一套纸面表单，复用同一条会话，不新开滚动容器。记录视图是纯浏览页，不显示输入行。 */}
       {!recordOpen ? (
       <div className="companion-history__compose-area">
+        {/* 跳转至最新消息（微信式）：离开底部后出现，一键回底部。它挂在输入区里
+            （absolute，锚在输入区顶边之上），窗口窄/放大时输入区变高也不会再压到
+            输入区，更不会像原来那样按 bottom:137px 的固定估高飘进正文中间。 */}
+        {!atLatest && filter === "all" ? (
+          <button type="button" className="button companion-history__jump" onClick={scrollToLatest} aria-label="跳转至最新消息">
+            <ArrowDownToLine size={17} aria-hidden="true" />回到最新
+          </button>
+        ) : null}
         {chat.feedDiaryAnchor ? <div className="companion-history__quote" data-companion-feed="diary"><BookOpenText size={16} /><span>日记 {chat.feedDiaryAnchor.date}（第 {chat.feedDiaryAnchor.version} 版）——你接着说就行，我不替你发</span><button type="button" onClick={chat.dismissFeedSelection} aria-label="移除引用"><X size={16} /></button></div> : null}
         {chat.feedSelection ? <div className="companion-history__quote"><FileText size={16} /><span>{chat.feedSelection}</span><button type="button" onClick={chat.dismissFeedSelection} aria-label="移除引用"><X size={16} /></button></div> : null}
         <CompanionHistoryComposer input={input} onInputChange={setInput} onSend={sendText} voice={voice} voiceEnabled={voiceEnabled} companionName={chat.companionName} sending={chat.phase === "sending"} stopping={stopping} onStop={stopTurn} onVoiceToggle={onVoiceToggle} onPageActions={() => chat.setMode("actions")} image={image} imageUploading={imageUploading} imageError={imageError} onPickImage={onPickImage} onRemoveImage={onRemoveImage} sendLimitNote={sendLimitNote} />

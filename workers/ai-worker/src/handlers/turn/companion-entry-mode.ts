@@ -1,16 +1,25 @@
 import { agentTurnInterpretationV1Schema, type AgentTurnInterpretationV1 } from '@astella/shared/agent-contracts';
 import { companionTurnWritesDocumentContent, COMPANION_DIRECT_ENTRY_TOOL_NAMES, type AgentTurnRequest } from '@astella/shared';
 import type { CompanionAgentLoopArgs } from '../../contracts/companion-agent-loop.ts';
-import { COMPANION_TOOL_INTENT_TIMEOUT_MS, interpretCompanionTurn } from '../tools/companion-tool-intent.ts';
+import { COMPANION_TOOL_INTENT_TIMEOUT_MS, interpretCompanionTurn, explicitCompanionProductRequest } from '../tools/companion-tool-intent.ts';
 import { companionAttentionObjects } from '../proactive/companion-attention.ts';
 import { companionClassifierCapabilities } from './companion-classifier-surface.ts';
 import { currentWorkerWorkspaceTransaction } from '../../db.ts';
 import { isJobLeaseActive } from '../../lib/job-lease.ts';
 import type { createCompanionRouteRecorder } from '../agent/companion-route-record.ts';
 import { runCompanionHybridEntry, companionHybridReplyInterpretation, type CompanionHybridEntry } from './companion-hybrid-entry.ts';
+import { companionNamedNoteReadTitle } from '../note/companion-note-prefetch.ts';
+import { emitCompanionAssistantStatus } from './companion-dialogue-store.ts';
 export type CompanionEntryMode = 'classified' | 'direct_fast' | 'direct_thinking' | 'hybrid';
 export const usesCompanionDirectControls = (mode: CompanionEntryMode) => mode === 'direct_fast' || mode === 'direct_thinking';
 export const DIRECT_ENTRY_TOOLS: ReadonlySet<string> = new Set(COMPANION_DIRECT_ENTRY_TOOL_NAMES);
+/** A named saved note needs application evidence. The classifier and existing
+ * permission checks still decide how to read it; a casual preflight cannot. */
+export function companionNamedNoteReadRequest(text: string | undefined, messages: AgentTurnRequest['messages']): boolean {
+    return Boolean(companionNamedNoteReadTitle(text)
+        && !messages.some(message => message.role === 'system' && message.hostObservation
+            && typeof message.content === 'string' && message.content.startsWith('<prefetched_note>')));
+}
 /**
  * 2026-10-18 用户裁决：hybrid 为默认入口。未知取值仍退回 classified——
  * 配错一个值不该把整条链路切成未验证的入口。
@@ -24,6 +33,20 @@ export function resolveCompanionEntryMode(raw = process.env.COMPANION_AGENT_ENTR
  * that a user needs clarification. Native tool choice owns the decision. */
 export function companionDirectInterpretation(requestHash: string): AgentTurnInterpretationV1 {
     return agentTurnInterpretationV1Schema.parse({ version: 1, requestHash, intent: 'question', toolUse: 'uncertain', subjects: [], goalRelation: 'unrelated', goalReference: null, candidateOperations: [], ambiguities: [], status: 'uncertain' });
+}
+/** A clear, fresh note request already names its operation. Keep ambiguous
+ * follow-ups, navigation, participation and voice preferences on the normal
+ * interpreter; a host preparation never grants execution permissions. */
+export function companionExplicitNoteInterpretation(requestHash: string, text: string | undefined,
+    availableNames: readonly string[]): AgentTurnInterpretationV1 | null {
+    const value = text?.normalize('NFKC').trim() ?? '';
+    if (!availableNames.includes('companion_create_note') || !explicitCompanionProductRequest(value).newNote
+        || !/^(?:请|帮我|给我|麻烦)?\s*(?:生成|新建|创建|写|整理)/u.test(value)
+        || /(?:^|[，,。；;\n])\s*(?:不要|别|不必|不用|无需|请勿)/u.test(value)
+        || /(?:刚才|之前|继续|恢复|暂停|停止|取消|提醒|定时|以后|记住|口音|方言|普通话|粤语|四川话|语速|朗读|声音|说话|打开|跳转|查看|带我|如何|怎么|为什么|是否|能否|吗|[？?])/u.test(value)) return null;
+    return agentTurnInterpretationV1Schema.parse({ version: 1, requestHash, intent: 'task', toolUse: 'act',
+        subjects: [], goalRelation: 'new', goalReference: null, candidateOperations: ['companion_create_note'],
+        ambiguities: [], status: 'interpreted' });
 }
 export function startCompanionEntry(input: {
     args: CompanionAgentLoopArgs;
@@ -43,7 +66,7 @@ export function startCompanionEntry(input: {
     let hybrid: CompanionHybridEntry | null = null;
     const classify = () => interpretCompanionTurn(args.provider, args.baseMessages, {
         requestHash: input.requestHash, objects: companionAttentionObjects(args.read, input.relatedGoals),
-        capabilities: companionClassifierCapabilities({ availableToolNames: input.names, pageKind: input.pageKind }),
+        capabilities: companionClassifierCapabilities({ availableToolNames: input.names, pageKind: input.pageKind, userText: args.read.userText }),
         recentMessages: args.read.recentMessages, conversationClock: args.read.conversationClock,
         job: args.ctx, runId: args.read.runId, userId: args.read.userId, permissionLevel: input.permissionLevel,
         stepTimeoutMs: Math.min(COMPANION_TOOL_INTENT_TIMEOUT_MS, input.deadlineAt - Date.now()),
@@ -51,15 +74,21 @@ export function startCompanionEntry(input: {
         verifyAttempt: attempt => isJobLeaseActive({ ...args.ctx, leaseToken: attempt.leaseToken }),
         onReceipt: receipt => recorder.onReceipt(receipt, { runId: args.read.runId, providerId: args.provider.id, modelId: args.provider.modelId }),
     });
-    const cached = input.cached ?? (mode === 'classified' ? null : companionDirectInterpretation(input.requestHash));
+    const prepared = !usesCompanionDirectControls(mode)
+        ? companionExplicitNoteInterpretation(input.requestHash, args.read.userText, input.names) : null;
+    const cached = input.cached ?? prepared ?? (mode === 'classified' ? null : companionDirectInterpretation(input.requestHash));
     const resolve = async () => {
-        if (mode === 'hybrid' && !input.cached) {
-            if (input.skipHybrid) return classify();
+        if (mode === 'hybrid' && !input.cached && !prepared) {
+            const explicit = explicitCompanionProductRequest(args.read.userText);
+            if (input.skipHybrid || explicit.artifact || explicit.newNote
+                || companionNamedNoteReadRequest(args.read.userText, input.messages ?? args.baseMessages)) return classify();
             await args.onTurnInterpretation?.(companionDirectInterpretation(input.requestHash));
-            hybrid = await runCompanionHybridEntry({ provider: args.provider,
+            hybrid = await runCompanionHybridEntry({ provider: args.provider, fallbackProvider: args.fallbackProvider,
                 turnPolicy: typeof args.baseMessages[0]?.content === 'string' ? args.baseMessages[0].content : '',
                 messages: input.messages ?? args.baseMessages.filter(m => m.role !== 'system'), signal: args.ctx.signal,
-                deadlineAt: input.deadlineAt, onProviderDelta: args.onProviderDelta });
+                deadlineAt: input.deadlineAt, onProviderDelta: args.onProviderDelta, onReasoningDelta: args.onReasoningDelta,
+                onRecovery: async () => { await emitCompanionAssistantStatus({ workspaceId: args.ctx.workspaceId, read: args.read, expiresAt: args.expiresAt,
+                    status: 'acting', safeLabel: '当前服务的输出等待较久，正在用备用服务接续这次回复。' }); } });
             return hybrid.facts.decision === 'reply' ? companionHybridReplyInterpretation(input.requestHash) : classify();
         }
         return cached ?? classify();

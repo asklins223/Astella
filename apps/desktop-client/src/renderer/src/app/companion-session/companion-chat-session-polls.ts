@@ -66,7 +66,7 @@ export function useCompanionPolls(deps: CompanionPollDeps): void {
         id: `evt:${item.seq}`,
         summary: item.safeSummary,
         route: desktopRouteFromAgentRoute(item.route),
-        ...(item.autoExecute ? { autoExecute: true } : {}),
+        // A history replay is an entry point, not a new navigation intent.
       })));
     };
     const scheduled = scheduleCompanionPoll({ poll, intervalMs: AGENT_ROUTE_POLL_INTERVAL_MS, initialDelayMs: 0 });

@@ -17,7 +17,6 @@ import {
   listMembers,
   removeMember,
   getOnboardingState,
-  markOnboardingStep,
   ensureOnboardingState,
   computeStatus,
   ConsumeInviteError,
@@ -623,7 +622,7 @@ describe("invite-service getOnboardingState (DB mock)", () => {
 //   tx.select().from(sources).where().limit(1) → [] (first_content=false)
     //   tx.select().from(notes).where().limit(1) → [] (first_note=false)
     //   tx.select().from(learningCards).innerJoin().where().limit(1) → [] (first_card=false)
-    // storedSteps.evidence_review is undefined → false
+    // 方案 57 删掉旧复习链后，evidence_review 不再存在。
     setupDbMock({
       workspaceId: WS_ID,
       userId: USER_ID,
@@ -648,7 +647,6 @@ describe("invite-service getOnboardingState (DB mock)", () => {
       first_content: false,
       first_note: false,
       first_card: false,
-      evidence_review: false,
     });
   });
 
@@ -664,115 +662,6 @@ describe("invite-service getOnboardingState (DB mock)", () => {
   });
 });
 
-// ─── markOnboardingStep ──────────────────────────────────────────────────
-
-describe("invite-service markOnboardingStep (DB mock)", () => {
-  it("无效步骤返回 invalid_step（纯验证路径）", async () => {
-    setupDbMock({ workspaceId: WS_ID, userId: USER_ID });
-
-    const result = await markOnboardingStep(WS_ID, USER_ID, "invalid_step");
-    assert.equal(result.ok, false);
-    if (!result.ok) {
-      assert.equal(result.error, "invalid_step");
-    }
-  });
-
-  it("非 evidence_review 步骤返回 invalid_step", async () => {
-    setupDbMock({ workspaceId: WS_ID, userId: USER_ID });
-
-    const result = await markOnboardingStep(WS_ID, USER_ID, "ai_consent", true);
-    assert.equal(result.ok, false);
-    if (!result.ok) {
-      assert.equal(result.error, "invalid_step");
-    }
-  });
-
-  it("evidence_review 无 evidenceId 时返回 invalid_step", async () => {
-    setupDbMock({ workspaceId: WS_ID, userId: USER_ID });
-
-    const result = await markOnboardingStep(WS_ID, USER_ID, "evidence_review", true);
-    assert.equal(result.ok, false);
-    if (!result.ok) {
-      assert.equal(result.error, "invalid_step");
-    }
-  });
-
-  it("onboarding 状态不存在时返回 not_found", async () => {
-    setupDbMock({
-      workspaceId: WS_ID,
-      userId: USER_ID,
-      selectResult: [[]], // onboarding state not found
-    });
-
-    const result = await markOnboardingStep(WS_ID, USER_ID, "evidence_review", true, "ev-1");
-    assert.equal(result.ok, false);
-    if (!result.ok) {
-      assert.equal(result.error, "not_found");
-    }
-  });
-
-  it("evidence 不存在时返回 business_fact_missing", async () => {
-    setupDbMock({
-      workspaceId: WS_ID,
-      userId: USER_ID,
-      selectResult: [[
-        {
-          id: "ob-1", workspaceId: WS_ID, userId: USER_ID,
-          version: "v1", steps: {}, status: "pending",
-        },
-      ]],
-      evidenceSnapshotsV2FindFirst: undefined, // evidence not found
-    });
-
-    const result = await markOnboardingStep(WS_ID, USER_ID, "evidence_review", true, "ev-missing");
-    assert.equal(result.ok, false);
-    if (!result.ok) {
-      assert.equal(result.error, "business_fact_missing");
-    }
-  });
-
-  it("成功标记 evidence_review 步骤为完成", async () => {
-    setupDbMock({
-      workspaceId: WS_ID,
-      userId: USER_ID,
-      selectResult: [
-        [{  // onboarding state select
-          id: "ob-1", workspaceId: WS_ID, userId: USER_ID,
-          version: "v1", steps: {}, status: "pending",
-        }],
-        [], // firstContent select (sources)
-        [], // firstNote select (notes)
-        [], // firstCard select
-      ],
-      evidenceSnapshotsV2FindFirst: { evidenceSnapshotId: "ev-1", workspaceId: WS_ID },
-    });
-
-    const result = await markOnboardingStep(WS_ID, USER_ID, "evidence_review", true, "ev-1");
-    assert.deepEqual(result, { ok: true });
-  });
-
-  it("已完成所有步骤时状态变为 completed", async () => {
-    // All steps are derived as true except evidence_review which comes from stored steps
-    setupDbMock({
-      workspaceId: WS_ID,
-      userId: USER_ID,
-workspacesFindFirst: { aiConsentAt: new Date(), aiConsentVersion: "v1" },
-selectResult: [
-        [{  // onboarding state select
-          id: "ob-1", workspaceId: WS_ID, userId: USER_ID,
-          version: "v1", steps: {}, status: "pending",
-        }],
-        [{ id: "source-1" }], // firstContent select (sources)
-        [{ id: "note-1" }],   // firstNote select (notes)
-        [{ id: "card-1" }],   // firstCard select
-      ],
-      evidenceSnapshotsV2FindFirst: { evidenceSnapshotId: "ev-1", workspaceId: WS_ID },
-    });
-
-    const result = await markOnboardingStep(WS_ID, USER_ID, "evidence_review", true, "ev-1");
-    assert.deepEqual(result, { ok: true });
-  });
-});
 
 // ─── ensureOnboardingState ────────────────────────────────────────────────
 

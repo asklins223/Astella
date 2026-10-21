@@ -346,8 +346,7 @@ describe("renderer 类名闭合：发出去的都要被 CSS 接住", () => {
   it("@media 里的规则也要被算进去（剥壳算法自检）", () => {
     // 紧凑视图那一整段在 @media 内，类名极长且带 em dash 以外的字符
     expect(STYLED.has("hud-surface")).toBe(true);
-    expect(STYLED.has("resumable-index__head")).toBe(true);
-    expect(STYLED.has("resumable-index__note")).toBe(true);
+    expect(STYLED.has("companion-bubble")).toBe(true);
   });
 
   /**

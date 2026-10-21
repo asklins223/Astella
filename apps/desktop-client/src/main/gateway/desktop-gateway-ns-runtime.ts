@@ -1,13 +1,4 @@
-/**
- * 网关的「运行时」那一族方法 —— **2026-09-30 从 `DesktopGateway` 类搬出**。
- *
- * 本族原先依赖 `getConnectionState` / `connect` 两个类成员；2026-09-30 第四刀
- * 把它们搬进了 `GatewayTransport`，于是本族对类状态的依赖**归零**。
- *
- * 下面的代码**逐字搬移**：成员由脚本按 TS AST 的精确源区间从 `desktop-gateway.ts`
- * 切出，只做两处改写——签名前加 `t: GatewayTransport`，方法体里 `t.transport.` 换成 `t.`。
- */
-import { z } from "zod";
+
 import { DesktopGatewayFailure } from "./desktop-gateway-failure";
 import { rawHealthSchema, rawReadinessSchema } from "./desktop-gateway-transport";
 import type { ApiConnectionStateV1 } from "@astella/shared/desktop-ipc-contracts";

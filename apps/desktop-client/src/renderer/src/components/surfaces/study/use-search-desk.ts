@@ -5,17 +5,14 @@ import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../
 import { readAuthenticatedSession } from "../../../app/home/surface-session";
 import { objectKey, PAGE_SIZE, readSearchContent, type SearchContent, type SearchPreview } from "./search-presenter";
 
-const WEAK_STATES = new Set(["unvalidated", "fragile", "needs_repair"]);
-
 /** Results belong to a settled query; editing instantly invalidates their actions. */
 export function useSearchDesk(composing = false) {
   const query = useRoomStore(state => state.searchQuery);
   const type = useRoomStore(state => state.searchTypeFilter);
-  const weakOnly = useRoomStore(state => state.searchWeakOnly);
   const scope = useRoomStore(state => state.workspaceScopeRevision);
-  const filter = weakOnly ? "objective" : type;
+  const filter = type;
   const value = query.trim();
-  const identity = JSON.stringify([scope, value, filter, weakOnly]);
+  const identity = JSON.stringify([scope, value, filter]);
   const currentIdentity = useRef(identity); currentIdentity.current = identity;
   const [sessionReady, setSessionReady] = useState(false);
   const [sessionFailure, setSessionFailure] = useState<string | null>(null);
@@ -38,7 +35,6 @@ export function useSearchDesk(composing = false) {
   const reads = useRef(new Map<string, Promise<SearchContent>>());
   const resume = useRef(useRoomStore.getState().searchResume);
   const [restoring, setRestoring] = useState(Boolean(resume.current?.identity === identity));
-  const [weakState, setWeakState] = useState<{ identity: string; count: number; keys: Set<string>; failure: string | null } | null>(null);
 
   useEffect(() => {
     active.current = true;
@@ -104,7 +100,7 @@ export function useSearchDesk(composing = false) {
 
   useEffect(() => {
     sequence.current += 1; paging.current = false;
-    setPage(null); setSearchFailure(null); setPreview(null); setOpenFailure(null); setWeakState(null);
+    setPage(null); setSearchFailure(null); setPreview(null); setOpenFailure(null);
     const saved = useRoomStore.getState().searchResume;
     resume.current = saved?.identity === identity ? saved : null;
     setSelectedKey(resume.current?.selectedKey ?? null);
@@ -127,36 +123,9 @@ export function useSearchDesk(composing = false) {
     setRestoring(false);
   }, [restoring, currentPage, items.length, nextCursor, searching, searchFailure, runSearch]);
 
-  // Check the actual matching cards, with four concurrent reads. There is no
-  // unrelated "latest 100" sample that can silently hide an older weak card.
-  useEffect(() => {
-    if (!weakOnly || !currentPage) return;
-    let alive = true;
-    const requestedIdentity = identity;
-    const objectives = items.filter(item => item.objectType === "objective");
-    let cursor = 0;
-    const keys = new Set<string>();
-    const check = async () => {
-      while (cursor < objectives.length && alive && currentIdentity.current === requestedIdentity) {
-        const item = objectives[cursor++];
-        const content = await readContent(item);
-        if (content.kind === "objective" && WEAK_STATES.has(content.detail.personalState.state)) keys.add(objectKey(item));
-      }
-    };
-    void Promise.all(Array.from({ length: Math.min(4, objectives.length) }, check))
-      .then(() => { if (alive) setWeakState({ identity, count: items.length, keys, failure: null }); })
-      .catch(error => { if (alive) { alive = false; setWeakState({ identity, count: items.length, keys: new Set(), failure: gatewayErrorMessage(error) }); } });
-    return () => { alive = false; };
-  }, [weakOnly, currentPage, identity, readContent, previewTick]);
-
-  const filterBusy = Boolean(weakOnly && currentPage && (weakState?.identity !== identity || weakState.count !== items.length));
-  const filterFailure = weakOnly && weakState?.identity === identity ? weakState.failure : null;
-  const visible = useMemo(() => {
-    if (!currentPage) return [];
-    if (!weakOnly) return currentPage.items;
-    if (!weakState || weakState.identity !== identity || weakState.failure) return [];
-    return currentPage.items.filter(item => weakState.keys.has(objectKey(item)));
-  }, [currentPage, weakOnly, weakState, identity]);
+  const filterBusy = false;
+  const filterFailure = null;
+  const visible = currentPage?.items ?? [];
 
   useEffect(() => {
     if (restoring || filterBusy) return;
@@ -199,8 +168,6 @@ export function useSearchDesk(composing = false) {
         store.invoke("open-notebook", { returnTo });
       } else if (item.objectType === "source") {
         store.setActiveSourceId(item.objectId); store.invoke("open-source", { returnTo });
-      } else {
-        store.setActiveObjectiveId(item.objectId); store.invoke("open-objective", { returnTo });
       }
     } catch (error) {
       if (active.current && opening.current === request && currentSelection.current === key && currentIdentity.current === requestedIdentity) setOpenFailure(gatewayErrorMessage(error));
@@ -210,13 +177,12 @@ export function useSearchDesk(composing = false) {
   };
 
   return {
-    query, value, filter, weakOnly, identity, sessionReady, sessionFailure,
+    query, value, filter, identity, sessionReady, sessionFailure,
     items, total, nextCursor, visible, selected, selectedKey, setSelectedKey,
     searching: Boolean(value && sessionReady && (!currentPage && !searchFailure || searching)),
     restoring, filterBusy, filterFailure, searchFailure, preview: preview?.key === selectedKey ? preview : null,
     openingKey: openingRequest?.identity === identity && openingRequest.key === selectedKey ? openingRequest.key : null,
     openFailure, runSearch, openItem, retryPreview,
-    retryFilter: () => { cache.current.clear(); setPreviewTick(tick => tick + 1); },
     retry: () => setSessionTick(tick => tick + 1),
     settled: Boolean(currentPage && !searching && !restoring && !filterBusy),
     resume: resume.current,

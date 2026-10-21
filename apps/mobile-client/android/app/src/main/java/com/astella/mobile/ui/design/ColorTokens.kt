@@ -48,11 +48,11 @@ private val LightStudyScheme = lightColorScheme(
 
 private val DarkStudyScheme = darkColorScheme(
     primary = Color(0xFFA9C2FF),
-    onPrimary = Color.White,
+    onPrimary = Color(0xFF14213A),
     primaryContainer = Color(0xFF263B60),
     onPrimaryContainer = Color(0xFFA9C2FF),
     secondary = Color(0xFFA9C2FF),
-    onSecondary = Color.White,
+    onSecondary = Color(0xFF14213A),
     secondaryContainer = Color(0xFF263B60),
     onSecondaryContainer = Color(0xFFA9C2FF),
     tertiary = Color(0xFFA3CDD6), // systemGreen(dark)
@@ -85,7 +85,7 @@ private val DarkStudyScheme = darkColorScheme(
  * 业务代码只用这里的语义名，不直接写平台颜色。
  */
 object StudyPalette {
-    val actionFill = Color(0xFF8DB8F4)
+    val actionFill: Color @Composable get() = MaterialTheme.colorScheme.primary
     val night = Color(0xFF263656)
     val pollen = Color(0xFFBAD9FF)
     val ink: Color @Composable get() = MaterialTheme.colorScheme.onSurface

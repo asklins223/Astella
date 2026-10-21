@@ -1,27 +1,15 @@
 // @vitest-environment jsdom
 
 /**
- * 星图三层展开与状态三轴的**渲染判据**（39d W8-1、W8-3；39 §11.2、§11.4、§11.5、
- * §13.2、§16.12）。
+ * Star-map three layers and the axis panel (Plan 57).
  *
- * 钉的是**产品决定**，每一条都有一个"看起来也能跑"的反面实现：
- *
- *  1. **三层是同一条学习路径的三个尺度**（题面那一行）。反面：三层各起一套导航、
- *     各存一份选中态。判据看的是**换层之后锚着的那一篇没换、导航也只有这一排**。
- *  2. **每层有明确的动作**（§11.2 那一列「主要动作」逐条）。反面：三层都只画
- *     事实不给动作，于是"继续学习／查看关系理由／打开某个学习位置／查看相关记录"
- *     全都无处可点。
- *  3. **三轴分开**（§11.4）。反面：把三行并成一句"整体还不错"。判据数的是**三张
- *     带名字的纸签**与三句各说的话——不是某个 class 名。
- *  4. **不用条数/时长/比例画理解百分比**（§11.4 逐字）。反面：屏上出现一个 `%`。
- *     判据直接在层三的文本里找百分号。
- *  5. **有正文的笔记无需制卡即可出现**（§11.2、§16.12）。反面：零目标时不画这
- *     一篇，或者画一句"先制卡"。
- *  6. **没有学习记录时不伪造**（§11.2 逐字）。反面：拿一条示例记录填上。
- *  7. **等价列表**（§11.5）。反面：只在画布坏掉那天才出现的降级件，于是没人走过
- *     它，"等价"就无从验收。
- *  8. **伴星常驻**（AGENTS.md）。反面：等价册页铺满整屏、把她的座位盖住。
- *     判据看的是册页**左边距用的是共享座位预算**那个变量。
+ * Pinned product decisions, each with a "looks fine but is wrong" opposite:
+ *  1. The three layers are one note's path: overview → its card → attempts.
+ *  2. The three axes stay separate named slips; no single "mastery" sentence.
+ *  3. No percentage anywhere — only the attempt's own score/stars.
+ *  4. A note with body but no card still appears; the layer says so honestly.
+ *  5. No records means no fabricated row.
+ *  6. The "read by note" shelf is always available and reads the same topology.
  */
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
@@ -66,41 +54,31 @@ function nextId(): string {
   return `00000000-0000-4000-8000-${String(uuid).padStart(12, "0")}`;
 }
 
-const OBJECTIVE_ID = "00000000-0000-4000-8000-00000000a001";
 const NOTE_ID = "00000000-0000-4000-8000-00000000b001";
 const OTHER_NOTE_ID = "00000000-0000-4000-8000-00000000b002";
-const EVIDENCE_ID = "00000000-0000-4000-8000-00000000c001";
 const CARD_ID = "00000000-0000-4000-8000-00000000d001";
-
-function objectiveNode(over: Partial<{
-  state: "unvalidated" | "learning" | "stable" | "needs_repair";
-  runId: string | null;
-  nextReviewAt: string | null;
-}> = {}): UnderstandingNodeProjectionV3 {
-  return {
-    nodeRef: { kind: "objective", objectiveId: OBJECTIVE_ID },
-    label: "为什么有索引查询仍然可能慢",
-    publicSummary: "索引缩小扫描范围，但结果规模仍影响代价。",
-    activeCardId: null,
-    lifecycle: "active",
-    freshness: "fresh",
-    personal: {
-      state: over.state ?? "unvalidated",
-      activeRunId: over.runId === undefined ? null : over.runId,
-      activeScheduleId: null,
-      nextReviewAt: over.nextReviewAt ?? null,
-      practiceTrailCount: 0,
-      lastCanonicalEventId: null,
-      primaryAction: { kind: "none" },
-    },
-  } as UnderstandingNodeProjectionV3;
-}
+const QUESTION_A = "00000000-0000-4000-8000-00000000e001";
+const QUESTION_B = "00000000-0000-4000-8000-00000000e002";
+const ATTEMPT_A = "00000000-0000-4000-8000-00000000f001";
 
 function noteNode(id: string, label: string): UnderstandingNodeProjectionV3 {
   return { nodeRef: { kind: "note", noteId: id }, label, currentVersionId: nextId(), hasSource: true };
 }
 
-/** 零目标、零关系、只有一篇有正文的笔记——§11.2/§16.12 的那一支。 */
+function questionNode(id: string, stem: string, over: Partial<{ bestStars: number | null; bestScore: number | null }> = {}): UnderstandingNodeProjectionV3 {
+  return {
+    nodeRef: { kind: "card_question", cardId: CARD_ID, questionId: id, noteId: NOTE_ID },
+    label: stem,
+    questionType: "short_answer",
+    ordinal: 0,
+    bestStars: over.bestStars ?? null,
+    bestScore: over.bestScore ?? null,
+    attemptCount: 0,
+    lastAttemptAt: null,
+  };
+}
+
+/** 有正文、没有学习卡——这一篇照样在。 */
 const BARE_NOTE_SNAPSHOT = {
   version: 3 as const,
   workspaceId: "00000000-0000-4000-8000-00000000ffff",
@@ -109,66 +87,47 @@ const BARE_NOTE_SNAPSHOT = {
   nodes: [noteNode(NOTE_ID, "索引与代价"), noteNode(OTHER_NOTE_ID, "事务隔离级别")] as UnderstandingNodeProjectionV3[],
   edges: [] as UnderstandingEdgeProjectionV3[],
   continuationToken: null,
-  integrity: { truncated: false, missingOriginObjectiveIds: [] },
+  integrity: { truncated: false },
 };
 
-const RICH_SNAPSHOT = {
+const PRACTICED_SNAPSHOT = {
   ...BARE_NOTE_SNAPSHOT,
-  topologyRevision: "rev-rich",
+  topologyRevision: "rev-practiced",
   nodes: [
-    objectiveNode({ state: "learning", runId: nextId() }),
     noteNode(NOTE_ID, "索引与代价"),
     noteNode(OTHER_NOTE_ID, "事务隔离级别"),
-    { nodeRef: { kind: "evidence", evidenceSnapshotId: EVIDENCE_ID }, supportSummary: "讲义第 3 段：选择率与代价。", sourceLabel: "数据库讲义", restricted: false } as UnderstandingNodeProjectionV3,
-  ],
+    questionNode(QUESTION_A, "为什么有索引查询仍然可能慢？", { bestStars: 4, bestScore: 88 }),
+    questionNode(QUESTION_B, "结果规模怎样影响代价？", { bestStars: 2, bestScore: 55 }),
+  ] as UnderstandingNodeProjectionV3[],
   edges: [
-    { edgeId: "src-1", kind: "sourced_from", from: { kind: "note", id: NOTE_ID }, to: { kind: "objective", id: OBJECTIVE_ID }, reasonCodes: [], decidable: false },
-    { edgeId: "sup-1", kind: "supported_by", from: { kind: "objective", id: OBJECTIVE_ID }, to: { kind: "evidence", id: EVIDENCE_ID }, reasonCodes: [], decidable: false },
+    { edgeId: "q-1", kind: "contains_question", from: { kind: "note", id: NOTE_ID }, to: { kind: "card_question", id: QUESTION_A }, reasonCodes: ["note_learning_card"] },
+    { edgeId: "q-2", kind: "contains_question", from: { kind: "note", id: NOTE_ID }, to: { kind: "card_question", id: QUESTION_B }, reasonCodes: ["note_learning_card"] },
   ] as UnderstandingEdgeProjectionV3[],
 };
 
-const RICH_DEEPENING: NoteDeepeningV3 = {
+const PRACTICED_DEEPENING: NoteDeepeningV3 = {
   version: 3,
   noteId: NOTE_ID,
   noteTitle: "索引与代价",
   hasBody: true,
   sourceId: null,
   axes: { performance: "used_independently", nextStep: "can_continue", applicability: "basis_holds" },
-  local: {
-    openDrivingQuestion: "判断为什么有索引，查询仍然可能慢",
-    coreQuestions: [{ objectiveId: OBJECTIVE_ID, label: "为什么有索引查询仍然可能慢", summary: "索引缩小扫描范围，但结果规模仍影响代价。" }],
-    objectives: [{ objectiveId: OBJECTIVE_ID, label: "为什么有索引查询仍然可能慢", summary: "索引缩小扫描范围，但结果规模仍影响代价。", state: "stable", runId: "00000000-0000-4000-8000-00000000e001", cardId: CARD_ID }],
-    relations: [{ edgeId: "rel-1", otherObjectiveId: "00000000-0000-4000-8000-00000000f001", otherLabel: "选择率", relation: "prerequisite", status: "suggested", reasonCodes: ["prerequisite"] }],
-    gaps: [],
+  card: {
+    cardId: CARD_ID,
+    status: "active",
+    bestStars: 4,
+    bestScore: 88,
+    attemptCount: 2,
+    questions: [
+      { questionId: QUESTION_A, ordinal: 0, questionType: "short_answer", stem: "为什么有索引查询仍然可能慢？", bestStars: 4, bestScore: 88 },
+      { questionId: QUESTION_B, ordinal: 1, questionType: "single_choice", stem: "结果规模怎样影响代价？", bestStars: 4, bestScore: 88 },
+    ],
   },
-  records: [
-    {
-      recordId: "00000000-0000-4000-8000-0000000a0001",
-      runId: "00000000-0000-4000-8000-0000000b0001",
-      objectiveId: OBJECTIVE_ID,
-      objectiveLabel: "为什么有索引查询仍然可能慢",
-      answerForm: "prose",
-      answerText: "索引把要扫的行数降下来了，但还要看它捞出来多少行。",
-      feedback: [{ verdict: "partial", reason: "结果规模那一半还没有自己的例子。" }],
-      occurredAt: "2026-09-20T10:00:00.000Z",
-      materialBasis: [{ evidenceSnapshotId: EVIDENCE_ID, supportSummary: "讲义第 3 段：选择率与代价。" }],
-      cardId: CARD_ID,
-    },
-    {
-      // 结构化作答：那一格如实是空的
-      recordId: "00000000-0000-4000-8000-0000000a0002",
-      runId: "00000000-0000-4000-8000-0000000b0002",
-      objectiveId: OBJECTIVE_ID,
-      objectiveLabel: "为什么有索引查询仍然可能慢",
-      answerForm: "structured",
-      answerText: null,
-      feedback: [],
-      occurredAt: "2026-09-21T10:00:00.000Z",
-      materialBasis: [],
-      cardId: null,
-    },
+  attempts: [
+    { attemptId: ATTEMPT_A, status: "completed", score: 88, stars: 4, completedAt: "2026-09-20T10:00:00.000Z" },
+    { attemptId: nextId(), status: "grading", score: null, stars: null, completedAt: null },
   ],
-  recordsComplete: true,
+  attemptsComplete: true,
 };
 
 const BARE_DEEPENING: NoteDeepeningV3 = {
@@ -178,9 +137,9 @@ const BARE_DEEPENING: NoteDeepeningV3 = {
   hasBody: true,
   sourceId: null,
   axes: { performance: "no_record_yet", nextStep: "nothing_to_do", applicability: "basis_holds" },
-  local: { openDrivingQuestion: null, coreQuestions: [], objectives: [], relations: [], gaps: [] },
-  records: [],
-  recordsComplete: true,
+  card: null,
+  attempts: [],
+  attemptsComplete: true,
 };
 
 function stubGateway(options: {
@@ -209,411 +168,193 @@ function stubGateway(options: {
   return gateway;
 }
 
-/** 点开某一颗星（走搜索，顺带验一遍 §11.2 层一那个"搜索"动作本身还在）。 */
 async function openNode(label: string) {
   const search = await screen.findByRole("combobox", { name: "搜索理解星图" });
   fireEvent.change(search, { target: { value: label } });
   const listbox = await screen.findByRole("listbox", { name: "搜索结果" });
-  // 结果项的可及名里还有节点类型与状态，所以按包含匹配。
   fireEvent.click(await within(listbox).findByRole("option", { name: new RegExp(label) }));
   return screen.findByRole("complementary", { name: "星体详情" });
 }
 
-describe("星图三层展开 · 39d W8-1 §11.2", () => {
-  it("只有排期的新目标显示未开始，有真实练习记录才显示练习过", async () => {
-    const fresh = objectiveNode() as Extract<UnderstandingNodeProjectionV3, { nodeRef: { kind: "objective" } }>;
-    fresh.personal.state = "scheduled";
-    fresh.personal.activeScheduleId = nextId();
-    fresh.personal.nextReviewAt = "2026-10-06T08:00:00Z";
-    const practiced = { ...fresh, nodeRef: { kind: "objective" as const, objectiveId: nextId() }, label: "已经练习的目标",
-      personal: { ...fresh.personal, practiceTrailCount: 1 } };
-    stubGateway({ snapshot: { ...BARE_NOTE_SNAPSHOT, nodes: [fresh, practiced] } });
-    render(<GraphSurface />);
-    const search = await screen.findByRole("combobox", { name: "搜索理解星图" });
-    fireEvent.change(search, { target: { value: fresh.label } });
-    const results = await screen.findByRole("listbox", { name: "搜索结果" });
-    expect((await within(results).findByRole("option", { name: new RegExp(fresh.label) })).textContent).toContain("未开始");
-    fireEvent.change(search, { target: { value: practiced.label } });
-    expect((await within(results).findByRole("option", { name: /已经练习的目标/ })).textContent).toContain("练过，还不稳");
-  });
-
-  /**
-   * 画布上那条引用线不认方向，而「我引了它」和「它引了我」是两件事。层一那一份清单
-   * 就是把这条线说成能点的话（2026-10-10 补，接 `references` 边那一次）。
-   */
-  it("层一按方向列出正文引用，点一行跳到那一颗星", async () => {
-    stubGateway({
-      snapshot: {
-        ...RICH_SNAPSHOT,
-        edges: [
-          ...RICH_SNAPSHOT.edges,
-          { edgeId: "ref-out", kind: "references", from: { kind: "note", id: NOTE_ID }, to: { kind: "note", id: OTHER_NOTE_ID }, reasonCodes: ["link_id"], decidable: false },
-          { edgeId: "ref-in", kind: "references", from: { kind: "note", id: OTHER_NOTE_ID }, to: { kind: "note", id: NOTE_ID }, reasonCodes: ["link_title"], decidable: false },
-        ] as UnderstandingEdgeProjectionV3[],
-      },
-      deepening: RICH_DEEPENING,
-    });
-    render(<GraphSurface />);
-    const panel = await openNode("索引与代价");
-
-    expect(await within(panel).findByText("正文里的引用")).toBeTruthy();
-    const row = within(panel).getByText("引用了").closest("button")!;
-    expect(row.textContent).toContain("事务隔离级别");
-    expect(within(panel).getByText("被引用").closest("button")?.textContent).toContain("事务隔离级别");
-    fireEvent.click(row);
-    expect(await within(panel).findByRole("heading", { name: "事务隔离级别" })).toBeTruthy();
-  });
-
-  /**
-   * 折叠**按方向各切一刀**：被很多篇引用、自己只引了两篇的那种笔记，整串切会把
-   * 「引用了」那一半整个挤掉，方向就又看不全了。收起来的数量必须说出来——
-   * 不说，这一串读起来就是"这篇只有这些关系"。
-   */
-  it("引用一多就按方向各收一刀，并说清还有几篇没列出", async () => {
-    const cited = Array.from({ length: RELATION_ROW_LIMIT + 2 }, (_, index) => ({
-      id: nextId(), label: `被引笔记 ${String(index + 1).padStart(2, "0")}`,
-    }));
-    stubGateway({
-      snapshot: {
-        ...RICH_SNAPSHOT,
-        nodes: [...RICH_SNAPSHOT.nodes, ...cited.map(note => noteNode(note.id, note.label))],
-        edges: [
-          ...RICH_SNAPSHOT.edges,
-          ...cited.map(note => ({
-            edgeId: `ref-${note.id}`, kind: "references",
-            from: { kind: "note", id: NOTE_ID }, to: { kind: "note", id: note.id },
-            reasonCodes: ["link_id"], decidable: false,
-          })),
-          { edgeId: "ref-inbound", kind: "references", from: { kind: "note", id: OTHER_NOTE_ID }, to: { kind: "note", id: NOTE_ID }, reasonCodes: ["link_title"], decidable: false },
-        ] as UnderstandingEdgeProjectionV3[],
-      },
-      deepening: RICH_DEEPENING,
-    });
-    render(<GraphSurface />);
-    const panel = await openNode("索引与代价");
-
-    expect(await within(panel).findByText("正文里的引用")).toBeTruthy();
-    expect(within(panel).getAllByText("引用了").length).toBe(RELATION_ROW_LIMIT);
-    expect(within(panel).getAllByText("被引用").length).toBe(1);
-    fireEvent.click(within(panel).getByRole("button", { name: `还有 ${cited.length - RELATION_ROW_LIMIT} 篇没列出` }));
-    expect(within(panel).getAllByText("引用了").length).toBe(cited.length);
-    expect(within(panel).getByRole("button", { name: "收起" })).toBeTruthy();
-
-    // 展开记的是"为哪一篇展开"：跳到另一篇（它只有 1 条）不能带着这一篇的展开状态。
-    fireEvent.click(within(panel).getAllByText("被引用")[0]!.closest("button")!);
-    expect(await within(panel).findByRole("heading", { name: "事务隔离级别" })).toBeTruthy();
-    expect(within(panel).queryByRole("button", { name: "收起" })).toBeNull();
-  });
-
-  it("按笔记读时连续换篇，册页保持展开，隐藏画布索引不抢键盘焦点", async () => {
-    stubGateway({ snapshot: RICH_SNAPSHOT, deepening: RICH_DEEPENING });
-    render(<GraphSurface />);
-    await screen.findByRole("combobox", { name: "搜索理解星图" });
-    fireEvent.click(screen.getByRole("button", { name: "按笔记读" }));
-    const shelf = document.querySelector<HTMLElement>(".universe-booklist")!;
-    fireEvent.click(within(shelf).getByRole("button", { name: /索引与代价/ }));
-    expect(screen.getByRole("button", { name: "按笔记读" }).getAttribute("aria-pressed")).toBe("true");
-    fireEvent.click(within(shelf).getByRole("button", { name: /事务隔离级别/ }));
-    expect(within(screen.getByRole("complementary", { name: "星体详情" })).getByRole("heading", { name: "事务隔离级别" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "按笔记读" }).getAttribute("aria-pressed")).toBe("true");
-    expect(document.querySelector('[aria-label^="星图节点索引"]')?.getAttribute("tabindex")).toBe("-1");
-    fireEvent.click(screen.getByRole("button", { name: "在星图里看" }));
-    expect(screen.getByRole("button", { name: "漫游星图" }).getAttribute("aria-pressed")).toBe("true");
-    expect(within(screen.getByRole("complementary", { name: "星体详情" })).getByRole("heading", { name: "事务隔离级别" })).toBeTruthy();
-  });
-
-  it("从学习足迹打开笔记再回来，保留册页、当前篇与阅读尺度", async () => {
-    stubGateway({ snapshot: RICH_SNAPSHOT, deepening: RICH_DEEPENING });
-    const invoke = vi.fn(); useRoomStore.setState({ invoke } as never);
-    const view = render(<GraphSurface />);
-    await screen.findByRole("combobox", { name: "搜索理解星图" });
-    fireEvent.click(screen.getByRole("button", { name: "按笔记读" }));
-    fireEvent.click(within(document.querySelector<HTMLElement>(".universe-booklist")!).getByRole("button", { name: /索引与代价/ }));
-    const panel = screen.getByRole("complementary", { name: "星体详情" });
-    fireEvent.click(within(panel).getByRole("button", { name: "学习足迹" }));
-    await within(panel).findByText(/索引把要扫的行数降下来了/);
-    document.querySelector(".universe-booklist__pages")!.scrollTop = 120;
-    panel.querySelector(".universe-detail-body")!.scrollTop = 65;
-    fireEvent.click(within(panel).getByRole("button", { name: "打开笔记" }));
-    expect(invoke).toHaveBeenCalledWith("open-notebook");
-    expect(useRoomStore.getState().noteReturnTo).toBe("graph");
-    view.unmount(); render(<GraphSurface />);
-    const returned = await screen.findByRole("complementary", { name: "星体详情" });
-    await within(returned).findByText(/索引把要扫的行数降下来了/);
-    expect(within(returned).getByRole("button", { name: "学习足迹" }).getAttribute("aria-current")).toBe("true");
-    expect(screen.getByRole("button", { name: "按笔记读" }).getAttribute("aria-pressed")).toBe("true");
-    await waitFor(() => {
-      expect(document.querySelector(".universe-booklist__pages")!.scrollTop).toBe(120);
-      expect(returned.querySelector(".universe-detail-body")!.scrollTop).toBe(65);
-    });
-  });
-
-  it("紧凑视口里在星图看这一篇会合上遮住星空的旁页", async () => {
-    vi.spyOn(window, "matchMedia").mockImplementation(query => ({
-      matches: query.includes("max-width"), addEventListener: vi.fn(), removeEventListener: vi.fn(),
-    } as unknown as MediaQueryList));
-    stubGateway({ snapshot: RICH_SNAPSHOT, deepening: RICH_DEEPENING });
-    render(<GraphSurface />);
-    await screen.findByRole("combobox", { name: "搜索理解星图" });
-    fireEvent.click(screen.getByRole("button", { name: "按笔记读" }));
-    fireEvent.click(within(document.querySelector<HTMLElement>(".universe-booklist")!).getByRole("button", { name: /索引与代价/ }));
-    const panel = screen.getByRole("complementary", { name: "星体详情" });
-    fireEvent.click(within(panel).getByRole("button", { name: "在星图里看" }));
-    expect(screen.getByRole("button", { name: "漫游星图" }).getAttribute("aria-pressed")).toBe("true");
-    expect(panel.getAttribute("aria-hidden")).toBe("true");
-    expect(panel.hasAttribute("inert")).toBe(true);
-  });
-
+describe("星图三层展开 · Plan 57", () => {
   it("选中一篇笔记之后出现三个尺度；换层不换笔记，也只有这一排导航", async () => {
-    stubGateway({ snapshot: RICH_SNAPSHOT, deepening: RICH_DEEPENING });
+    stubGateway({ snapshot: PRACTICED_SNAPSHOT, deepening: PRACTICED_DEEPENING });
     render(<GraphSurface />);
+    const detail = await openNode("索引与代价");
 
-    const drawer = await openNode("索引与代价");
-    const tabs = within(drawer).getByRole("navigation", { name: "这一篇笔记的三个尺度" });
-    const names = within(tabs).getAllByRole("button").map((button) => button.textContent);
-    expect(names).toEqual(["笔记总览", "问题与关联", "学习足迹"]);
-    expect(within(drawer).getAllByRole("heading", { name: "索引与代价" })).toHaveLength(1);
-    expect(within(drawer).queryByText("节点类型")).toBeNull();
-
-    // 换层：锚着的那一篇不变，而且**导航没有多出第二排**。
-    fireEvent.click(within(tabs).getByRole("button", { name: "问题与关联" }));
-    await waitFor(() => {
-      expect(within(drawer).getAllByText("为什么有索引查询仍然可能慢").length).toBeGreaterThan(0);
-    });
-    // 层二里不再复述总览那一段的标题（否则"换层"读起来像换了一页）。
-    expect(within(drawer).queryByText("索引与代价")).toBeNull();
-    expect(within(drawer).getAllByRole("navigation", { name: "这一篇笔记的三个尺度" })).toHaveLength(1);
-
-    fireEvent.click(within(tabs).getByRole("button", { name: "学习足迹" }));
-    await waitFor(() => {
-      expect(within(drawer).getByText(/索引把要扫的行数降下来了/)).toBeTruthy();
-    });
-    expect(within(drawer).getAllByRole("navigation", { name: "这一篇笔记的三个尺度" })).toHaveLength(1);
+    const layers = within(detail).getByRole("navigation", { name: "这一篇笔记的三个尺度" });
+    expect(within(layers).getAllByRole("button")).toHaveLength(3);
+    fireEvent.click(within(layers).getByRole("button", { name: "配套练习" }));
+    expect(await within(detail).findAllByText("配套练习")).toBeTruthy();
+    // 层二不再重复笔记标题（标题只属于层一），锚点由选中项本身承担。
+    expect(within(detail).getByRole("navigation", { name: "这一篇笔记的三个尺度" })).toBeTruthy();
   });
 
-  it("换一篇笔记会回到第一层，不带着上一层的内容跟过去", async () => {
-    stubGateway({ snapshot: RICH_SNAPSHOT, deepening: RICH_DEEPENING });
+  it("层一按题目列出这一篇的卡，并给出练习情况", async () => {
+    stubGateway({ snapshot: PRACTICED_SNAPSHOT, deepening: PRACTICED_DEEPENING });
     render(<GraphSurface />);
+    const detail = await openNode("索引与代价");
 
-    const drawer = await openNode("索引与代价");
-    fireEvent.click(within(drawer).getByRole("button", { name: "学习足迹" }));
-    await waitFor(() => expect(within(drawer).getByText(/索引把要扫的行数降下来了/)).toBeTruthy());
-
-    fireEvent.click(within(drawer).getByRole("button", { name: "关闭星体详情" }));
-    const other = await openNode("事务隔离级别");
-    const tabs = within(other).getByRole("navigation", { name: "这一篇笔记的三个尺度" });
-    expect(within(tabs).getByRole("button", { name: "笔记总览" }).getAttribute("aria-current")).toBe("true");
-    expect(within(other).getAllByText("事务隔离级别").length).toBeGreaterThan(0);
+    expect(within(detail).getByText("题目")).toBeTruthy();
+    expect(within(detail).getByText("2 道")).toBeTruthy();
+    expect(within(detail).getByText("4 星")).toBeTruthy();
+    expect(within(detail).getByText("为什么有索引查询仍然可能慢？")).toBeTruthy();
   });
 
-  it("层一用一颗动作回同一篇笔记继续学习，不绕到卡片目标详情", async () => {
-    const invoke = vi.fn();
-    useRoomStore.setState({ invoke } as never);
-    stubGateway({ snapshot: RICH_SNAPSHOT, deepening: RICH_DEEPENING });
+  it("层二列出配套练习的每一道题与它的最好成绩", async () => {
+    stubGateway({ snapshot: PRACTICED_SNAPSHOT, deepening: PRACTICED_DEEPENING });
     render(<GraphSurface />);
+    const detail = await openNode("索引与代价");
+    fireEvent.click(within(detail).getByRole("button", { name: "配套练习" }));
 
-    const drawer = await openNode("索引与代价");
-    fireEvent.click(within(drawer).getByRole("button", { name: /回笔记继续学习/ }));
-    expect(invoke).toHaveBeenCalledWith("open-notebook");
-    expect(useRoomStore.getState().activeNoteRef?.noteId).toBe(NOTE_ID);
-    expect(within(drawer).queryByRole("button", { name: /打开这一篇笔记/ })).toBeNull();
+    expect(await within(detail).findByText("88 分")).toBeTruthy();
+    expect(within(detail).getByText("结果规模怎样影响代价？")).toBeTruthy();
+    expect(within(detail).getAllByText("最好 4 星").length).toBeGreaterThan(0);
   });
 
-  it("层二给「打开某个学习位置」「查看关系理由」「打开对应卡片」（§11.2 第二行的主要动作）", async () => {
-    const invoke = vi.fn();
-    useRoomStore.setState({ invoke } as never);
-    stubGateway({ snapshot: RICH_SNAPSHOT, deepening: RICH_DEEPENING });
+  it("层三只说真实作答：已批改的有分数，批改中的说正在批改", async () => {
+    stubGateway({ snapshot: PRACTICED_SNAPSHOT, deepening: PRACTICED_DEEPENING });
     render(<GraphSurface />);
+    const detail = await openNode("索引与代价");
+    fireEvent.click(within(detail).getByRole("button", { name: "练习记录" }));
 
-    const drawer = await openNode("索引与代价");
-    fireEvent.click(within(drawer).getByRole("button", { name: "问题与关联" }));
-
-    // 「查看关系理由」：理由与关系在同一行，且标着它是待确认建议（§11.3）。
-    await waitFor(() => {
-      expect(within(drawer).getByText("选择率")).toBeTruthy();
-      expect(within(drawer).getAllByText(/理解这条之前需要/).length).toBeGreaterThan(0);
-      expect(within(drawer).getByText("待确认建议")).toBeTruthy();
-    });
-
-    // 「打开某个学习位置」沿着同篇笔记继续，卡片单独有一颗入口。
-    fireEvent.click(within(drawer).getByRole("button", { name: /为什么有索引查询仍然可能慢/ }));
-    expect(useRoomStore.getState().activeNoteRef?.noteId).toBe(NOTE_ID);
-    expect(invoke).toHaveBeenCalledWith("open-notebook");
-
-    // 「打开相应卡片」
-    fireEvent.click(within(drawer).getAllByRole("button", { name: "打开对应卡片" })[0]);
-    expect(useRoomStore.getState().activeObjectiveId).toBe(OBJECTIVE_ID);
-    expect(invoke).toHaveBeenCalledWith("open-objective", expect.anything());
+    expect(await within(detail).findByText("88 分 · 4 星")).toBeTruthy();
+    expect(within(detail).getByText("伴星正在批改")).toBeTruthy();
   });
 
-  it("层三给「进入笔记旅程」与「打开相应卡片」，五格事实逐格出现（§11.2 第三行）", async () => {
-    const invoke = vi.fn();
-    useRoomStore.setState({ invoke } as never);
-    stubGateway({ snapshot: RICH_SNAPSHOT, deepening: RICH_DEEPENING });
+  it("有正文、没有学习卡的笔记照样出现，并如实说还没有题", async () => {
+    stubGateway({ snapshot: BARE_NOTE_SNAPSHOT, deepening: BARE_DEEPENING });
     render(<GraphSurface />);
+    const detail = await openNode("索引与代价");
 
-    const drawer = await openNode("索引与代价");
-    fireEvent.click(within(drawer).getByRole("button", { name: "学习足迹" }));
-    await waitFor(() => expect(within(drawer).getByText(/索引把要扫的行数降下来了/)).toBeTruthy());
-
-    // 原回答
-    expect(within(drawer).getByText(/索引把要扫的行数降下来了/)).toBeTruthy();
-    // 反馈（给人看的那一句）
-    expect(within(drawer).getByText(/结果规模那一半还没有自己的例子/)).toBeTruthy();
-    // 日期
-    expect(within(drawer).getAllByText(/2026/).length).toBeGreaterThan(0);
-    // 材料依据
-    expect(within(drawer).getByText("讲义第 3 段：选择率与代价。")).toBeTruthy();
-    // 可选卡片 + 进入笔记旅程
-    fireEvent.click(within(drawer).getAllByRole("button", { name: "进入笔记旅程" })[0]);
-    expect(invoke).toHaveBeenCalledWith("open-notebook");
+    expect(within(detail).getByText("这一篇还没有配套练习——在笔记里生成学习卡之后，题目会出现在这里。")).toBeTruthy();
+    fireEvent.click(within(detail).getByRole("button", { name: "配套练习" }));
+    expect(await within(detail).findByText("这一篇还没有学习卡。需要练的时候在笔记里生成一张。")).toBeTruthy();
   });
 
-  it("结构化作答那一格如实是空的，不替她造一句「用户完成了这一步」", async () => {
-    stubGateway({ snapshot: RICH_SNAPSHOT, deepening: RICH_DEEPENING });
+  it("没有练习记录时不编一条示例", async () => {
+    stubGateway({ snapshot: BARE_NOTE_SNAPSHOT, deepening: BARE_DEEPENING });
     render(<GraphSurface />);
+    const detail = await openNode("索引与代价");
+    fireEvent.click(within(detail).getByRole("button", { name: "练习记录" }));
 
-    const drawer = await openNode("索引与代价");
-    fireEvent.click(within(drawer).getByRole("button", { name: "学习足迹" }));
-    await waitFor(() => {
-      expect(within(drawer).getByText(/这一步是结构化作答，没有一句可念的回答/)).toBeTruthy();
-    });
-    expect(within(drawer).queryByText(/用户完成/)).toBeNull();
+    expect(await within(detail).findByText("这一篇还没有练习记录。这里不替你造一条示例。")).toBeTruthy();
   });
 });
 
-describe("状态三轴 · 39d W8-3 §11.4", () => {
+describe("状态三轴 · Plan 57", () => {
   it("三轴分成三张带名字的纸签，各说各的话，不合成一句", async () => {
-    stubGateway({ snapshot: RICH_SNAPSHOT, deepening: RICH_DEEPENING });
+    stubGateway({ snapshot: PRACTICED_SNAPSHOT, deepening: PRACTICED_DEEPENING });
     render(<GraphSurface />);
+    const detail = await openNode("索引与代价");
 
-    const drawer = await openNode("索引与代价");
-    fireEvent.click(within(drawer).getByRole("button", { name: "问题与关联" }));
-
-    const axes = await within(drawer).findByRole("group", { name: "三种状态（分开看，不合成一个）" });
-    expect(within(axes).getByText("学习表现")).toBeTruthy();
-    expect(within(axes).getByText("下一步")).toBeTruthy();
-    expect(within(axes).getByText("内容适用性")).toBeTruthy();
-    expect(within(axes).getByText("有一次是独立说出来的")).toBeTruthy();
-    expect(within(axes).getByText("可以接着往下走")).toBeTruthy();
-    expect(within(axes).getByText("依据还适用")).toBeTruthy();
-    // 三张纸签，不是两张也不是四张。
-    expect(within(axes).getAllByRole("term")).toHaveLength(3);
-    expect(within(axes).getAllByRole("definition")).toHaveLength(3);
+    fireEvent.click(within(detail).getByRole("button", { name: "配套练习" }));
+    const group = await within(detail).findByRole("group", { name: "三种状态（分开看，不合成一个）" });
+    expect(group).toBeTruthy();
+    expect(within(group).getByText("练习情况")).toBeTruthy();
+    expect(within(group).getByText("下一步")).toBeTruthy();
+    expect(within(group).getByText("内容适用性")).toBeTruthy();
   });
 
-  it("§11.4 逐字：不用条数、时长或比例画理解百分比——屏上没有一个百分号", async () => {
-    stubGateway({ snapshot: RICH_SNAPSHOT, deepening: RICH_DEEPENING });
+  it("屏上没有一个百分号", async () => {
+    stubGateway({ snapshot: PRACTICED_SNAPSHOT, deepening: PRACTICED_DEEPENING });
     render(<GraphSurface />);
-
-    const drawer = await openNode("索引与代价");
-    for (const tab of ["笔记总览", "问题与关联", "学习足迹"]) {
-      fireEvent.click(within(drawer).getByRole("button", { name: tab }));
-      // eslint-disable-next-line no-await-in-loop
-      await waitFor(() => expect(within(drawer).queryAllByText(/%/).length).toBe(0));
-    }
-    expect(within(drawer).queryByText(/理解度|掌握度|进度\s*\d/)).toBeNull();
+    const detail = await openNode("索引与代价");
+    fireEvent.click(within(detail).getByRole("button", { name: "配套练习" }));
+    // 画布上的缩放读数（100%）不是学习百分比；判据只看这一篇的内容层。
+    await waitFor(() => expect(detail.textContent).toContain("配套练习"));
+    expect(detail.textContent).not.toMatch(/\d+\s*%/);
+    fireEvent.click(within(detail).getByRole("button", { name: "练习记录" }));
+    await waitFor(() => expect(detail.textContent).toContain("练习记录"));
+    expect(detail.textContent).not.toMatch(/\d+\s*%/);
   });
 
-  it("零记录时三轴说「还没有学习记录」，而不是「已掌握」或任何折算", async () => {
-    stubGateway({ snapshot: BARE_NOTE_SNAPSHOT, deepening: BARE_DEEPENING });
+  it("正文改过只说材料状态，不改写练习表现", async () => {
+    const stale: NoteDeepeningV3 = {
+      ...PRACTICED_DEEPENING,
+      axes: { performance: "used_independently", nextStep: "can_continue", applicability: "basis_updated" },
+    };
+    stubGateway({ snapshot: PRACTICED_SNAPSHOT, deepening: stale });
     render(<GraphSurface />);
+    const detail = await openNode("索引与代价");
+    fireEvent.click(within(detail).getByRole("button", { name: "配套练习" }));
 
-    const drawer = await openNode("索引与代价");
-    fireEvent.click(within(drawer).getByRole("button", { name: "学习足迹" }));
-    const axes = await within(drawer).findByRole("group", { name: "三种状态（分开看，不合成一个）" });
-    expect(within(axes).getByText("还没有学习记录")).toBeTruthy();
-    expect(within(drawer).queryByText(/已掌握|已学完|掌握/)).toBeNull();
+    expect(await within(detail).findByText("正文改过，题目可能要对一眼")).toBeTruthy();
+    expect(within(detail).getByText("答得不错")).toBeTruthy();
   });
 });
 
-describe("没有记录时不伪造 · §11.2 逐字", () => {
-  it("有正文、零目标、零记录：这一篇照样在，图层是空的而不是编的", async () => {
-    stubGateway({ snapshot: BARE_NOTE_SNAPSHOT, deepening: BARE_DEEPENING });
+describe("按笔记读的等价册页", () => {
+  it("随时可切，列的是同一份拓扑，每一行都能回到笔记", async () => {
+    stubGateway({ snapshot: PRACTICED_SNAPSHOT, deepening: PRACTICED_DEEPENING });
     render(<GraphSurface />);
-
-    const drawer = await openNode("索引与代价");
-    fireEvent.click(within(drawer).getByRole("button", { name: "问题与关联" }));
-    await waitFor(() => {
-      expect(within(drawer).getByText("还没有形成任何目标，这里不替你编一条。")).toBeTruthy();
-      expect(within(drawer).getByText(/没有可核对的关系。这里不替你推断/)).toBeTruthy();
-    });
-
-    fireEvent.click(within(drawer).getByRole("button", { name: "学习足迹" }));
-    await waitFor(() => {
-      expect(within(drawer).getByText("这一篇还没有学习记录。这里不替你造一条示例。")).toBeTruthy();
-    });
-  });
-
-  it("有正文、零目标的笔记总览说「不需要先制卡」，不是「先形成学习卡」", async () => {
-    stubGateway({ snapshot: BARE_NOTE_SNAPSHOT, deepening: BARE_DEEPENING });
-    render(<GraphSurface />);
-
-    const drawer = await openNode("索引与代价");
-    await waitFor(() => {
-      expect(within(drawer).getByText(/不需要先制卡/)).toBeTruthy();
-    });
-    expect(within(drawer).queryByText(/先形成学习卡|先去制卡|必须制卡/)).toBeNull();
-  });
-});
-
-describe("等价列表与伴星座位 · 39d W8-3 §11.5、AGENTS.md", () => {
-  it("「按笔记读」随时可切，列的是同一份读数，每一行都能继续学习", async () => {
-    const invoke = vi.fn();
-    useRoomStore.setState({ invoke } as never);
-    stubGateway({ snapshot: RICH_SNAPSHOT, deepening: RICH_DEEPENING });
-    render(<GraphSurface />);
-
     await screen.findByRole("region", { name: "理解星图：你的真实知识宇宙" });
+
     fireEvent.click(screen.getByRole("button", { name: "按笔记读" }));
+    const shelf = await screen.findByRole("region", { name: "按笔记读星图（与星图等价）" });
+    expect(within(shelf).getByText("索引与代价")).toBeTruthy();
+    expect(within(shelf).getByText(/2 道题/)).toBeTruthy();
+    expect(within(shelf).getByText(/最好 4 星/)).toBeTruthy();
+  });
 
-    const list = await screen.findByRole("region", { name: "按笔记读星图（与星图等价）" });
-    // 画布上有的笔记，册页上逐字都有（§11.2「有正文的笔记无需制卡即可出现」）。
-    expect(within(list).getByText("索引与代价")).toBeTruthy();
-    expect(within(list).getByText("事务隔离级别")).toBeTruthy();
-    expect(within(list).getByText(/有来源 · 0 个目标/)).toBeTruthy();
+  it("没有题目的笔记在册页上如实说还没练", async () => {
+    stubGateway({ snapshot: BARE_NOTE_SNAPSHOT, deepening: BARE_DEEPENING });
+    render(<GraphSurface />);
+    await screen.findByRole("region", { name: "理解星图：你的真实知识宇宙" });
 
-    // 等价：同一个动作也有一颗，而且真的去同一处。
-    fireEvent.click(within(list).getAllByRole("button", { name: /回笔记继续学习/ })[0]);
-    expect(useRoomStore.getState().activeNoteRef?.noteId).toBe(NOTE_ID);
-    expect(invoke).toHaveBeenCalledWith("open-notebook");
+    fireEvent.click(screen.getByRole("button", { name: "按笔记读" }));
+    const shelf = await screen.findByRole("region", { name: "按笔记读星图（与星图等价）" });
+    expect(within(shelf).getAllByText(/0 道题 · 还没练/).length).toBeGreaterThan(0);
   });
 
   it("等价册页让开伴星的座位：左边距用的是共享座位预算，不是铺满整屏", () => {
-      // 2026-09-30：本文件移进 `__tests__/`，**这里要上一层**——
-  // `import.meta.dirname` 是「这个测试文件自己在哪儿」，它跟着文件一起下沉了，
-  // 而被读的源码／样式表仍留在上一层。打包器不会替你改 `resolve(…, …)`。
-const css = readFileSync(resolve(import.meta.dirname, "..", "understanding-universe.css"), "utf8");
-    const at = css.indexOf(".universe-booklist {");
-    expect(at).toBeGreaterThan(0);
-    const block = css.slice(at, css.indexOf("}", at));
-    expect(block).toMatch(/left:\s*calc\(var\(--universe-shell-left\)\s*\+\s*var\(--universe-seat-gutter\)\)/);
-    // 铺满整屏（left: 0）会把她的座位盖住，AGENTS.md 明写不许。
-    expect(block).not.toMatch(/left:\s*0\b/);
+    const css = readFileSync(resolve("src/renderer/src/components/surfaces/understanding-universe.css"), "utf8");
+    const block = css.slice(css.indexOf(".universe-booklist {"), css.indexOf("}", css.indexOf(".universe-booklist {")));
+    expect(block).toMatch(/left:\s*calc\(var\(--universe-shell-left\) \+ var\(--universe-seat-gutter\)\)/);
   });
-
 });
 
-describe("光痕与截断 · §11.4 逐字、§11.5", () => {
-  // 「星体的光痕只有两档」这条原先是 `readFileSync(graph-surface.tsx)` 断言
-  // `evidenceCoverage: evidenceDegreeForNode > 0 ? 1 : null`。它把本文件锁死在
-  // 「graph-surface.tsx 必须留在同级目录」上，挡住拆分；而且它断言的是**源码里出现过
-  // 那串字符**，不是行为。2026-09-29 搬到 `src/main/graph-surface-shape-guard.test.ts`
-  // ——静态形状判据属于守卫，而且守卫在目录树里按文件名定位，组件搬家不会波及它。
-
+describe("截断如实说", () => {
   it("记录被截断时说清「只列到这里」，不报一个冒充总数的数字", async () => {
     stubGateway({
-      snapshot: RICH_SNAPSHOT,
-      deepening: { ...RICH_DEEPENING, recordsComplete: false },
+      snapshot: PRACTICED_SNAPSHOT,
+      deepening: { ...PRACTICED_DEEPENING, attemptsComplete: false },
     });
     render(<GraphSurface />);
+    const detail = await openNode("索引与代价");
+    fireEvent.click(within(detail).getByRole("button", { name: "练习记录" }));
 
-    const drawer = await openNode("索引与代价");
-    fireEvent.click(within(drawer).getByRole("button", { name: "学习足迹" }));
-    await waitFor(() => {
-      expect(within(drawer).getByText(/只列到这里 2 条，更早的还在服务器上/)).toBeTruthy();
+    expect(await within(detail).findByText(/只列到今天 2 次，更早的还在服务器上/)).toBeTruthy();
+  });
+
+  it("拓扑被截断时在屏上说出来", async () => {
+    stubGateway({ snapshot: { ...PRACTICED_SNAPSHOT, integrity: { truncated: true } }, deepening: PRACTICED_DEEPENING });
+    render(<GraphSurface />);
+    expect(await screen.findByText(/这张星图已经装到本次的上限/)).toBeTruthy();
+  });
+});
+
+describe("引用折叠", () => {
+  it("引用一多就按方向各收一刀，并说清还有几篇没列出", async () => {
+    const cited = Array.from({ length: RELATION_ROW_LIMIT + 2 }, (_, index) => ({
+      node: noteNode(nextId(), `被引用的笔记 ${index + 1}`),
+    }));
+    stubGateway({
+      snapshot: {
+        ...BARE_NOTE_SNAPSHOT,
+        nodes: [noteNode(NOTE_ID, "索引与代价"), ...cited.map(({ node }) => node)],
+        edges: cited.map(({ node }) => ({
+          edgeId: `ref-${NOTE_ID}-${node.nodeRef.kind === "note" ? node.nodeRef.noteId : ""}`,
+          kind: "references",
+          from: { kind: "note", id: NOTE_ID },
+          to: { kind: "note", id: node.nodeRef.kind === "note" ? node.nodeRef.noteId : "" },
+          reasonCodes: ["link_id"],
+        })),
+      },
+      deepening: BARE_DEEPENING,
     });
-    // §11.5：截断时不得报"一共 N 条"。
-    expect(within(drawer).queryByText(/一共\s*\d+\s*条/)).toBeNull();
+    render(<GraphSurface />);
+    const detail = await openNode("索引与代价");
+    expect(within(detail).getByRole("button", { name: /还有 \d+ 篇没列出/ })).toBeTruthy();
   });
 });

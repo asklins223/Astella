@@ -35,7 +35,7 @@ const cases = [
 ] as const;
 const snapshot: HereAndNowSnapshot = { localTime: "2026-10-10 06:46", weekday: "周六", partOfDay: "早上",
   minutesSinceLastSeen: 7, pet: { name: "爱吃白饭的大肥鱼", activeness: "active", interactionCount: 9 },
-  activeRun: null, dueReviews: 0, today: { studySeconds: 0, runs: 0 }, noteCount: 3,
+  today: { studySeconds: 0, runs: 0 }, noteCount: 3,
   pendingProposals: 0,
   currentPage: { kind: "笔记库", title: null, statusLine: null }, livePageView: null,
   nextReminder: null, noteReference: null, imagesReadable: false, imagesUnreadableReason: "policy_off",

@@ -927,6 +927,8 @@ export class OpenCodeGoProvider implements AIProvider {
       let parsed: Record<string, unknown>;
       try {
         parsed = JSON.parse(data) as Record<string, unknown>;
+        if (typeof parsed.delta === "string" && parsed.delta.length > 0
+          && typeof parsed.type === "string" && /(?:output_text|reasoning_text|reasoning_summary_text|function_call_arguments)\.delta$/u.test(parsed.type)) options.onOutputActivity?.();
       } catch {
         return false; // 忽略无法解析的 SSE 行（部分网关会插入空行/注释）
       }

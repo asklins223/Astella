@@ -382,6 +382,9 @@ const thinkingSanctioned = new Set([
   // 但它只有一次 3 秒的窗口：开思考档的模型普遍要十几秒，追问就永远赶不到气泡上，
   // 而这件事本身只是"要不要再问一句"的判断，不是给她组织的正文。
   "companion-followup-suggestions.ts",
+  // Narrow publication review compares already written speech and authoritative
+  // run status. It never generates a question answer or performs background work.
+  "companion-initiative-speech-review.ts",
 ]);
 
 test("伴星思考档：对话按本轮意图选择，其余后台按各自预算运行", () => {

@@ -41,7 +41,7 @@ describe("魔法目录删除后 · 房间是唯一的导航", () => {
   it("没有主目标时主按钮写「看看今天」，按下去走到书桌", () => {
     const { container } = renderRoom();
 
-    fireEvent.click(screen.getByRole("button", { name: /展开今日下一步/ }));
+    fireEvent.click(screen.getByRole("button", { name: /展开阅读起点/ }));
     const primary = screen.getByRole("button", { name: "看看今天" });
     fireEvent.click(primary);
 
@@ -54,7 +54,7 @@ describe("魔法目录删除后 · 房间是唯一的导航", () => {
     const { container } = renderRoom();
 
     // 展开 HUD、按主按钮、再把四个区域都点一遍——旧入口每一条都在这半句里。
-    fireEvent.click(screen.getByRole("button", { name: /展开今日下一步/ }));
+    fireEvent.click(screen.getByRole("button", { name: /展开阅读起点/ }));
     fireEvent.click(screen.getByRole("button", { name: "看看今天" }));
     fireEvent.keyDown(window, { key: "Escape" });
     for (const object of container.querySelectorAll<HTMLElement>(".home-v2-object")) {
@@ -75,6 +75,6 @@ describe("魔法目录删除后 · 房间是唯一的导航", () => {
 
     const menu = container.querySelector('.home-v2-region-menu[data-region="desk"]')!;
     const features = [...menu.querySelectorAll("[data-feature]")].map((node) => node.getAttribute("data-feature"));
-    expect(features).toEqual(["continue", "today-review"]);
+    expect(features).toEqual(["continue"]);
   });
 });

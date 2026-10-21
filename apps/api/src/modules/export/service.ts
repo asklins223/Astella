@@ -1,23 +1,16 @@
 import { and, asc, count, desc, eq, gt, inArray, isNull, lt, or } from "drizzle-orm";
 import { withWorkspaceTransaction, type ApiTransaction } from "../../db/client.ts";
 import { notes, noteVersions, noteBlocks, sources, sourceSegments } from "@astella/shared/db-schema/note";
-import { visibleCardsCondition, visibleNotesCondition, visibleObjectivesCondition } from "../note/visibility.ts";
-import { reviewSchedules } from "@astella/shared/db-schema/evidence";
+import { visibleNotesCondition } from "../note/visibility.ts";
 import { aiArtifacts } from "@astella/shared/db-schema/ai";
 import { workspaces, workspaceMembers, users, onboardingStates } from "@astella/shared/db-schema/identity";
 import {
-  learningObjectivesV2,
-  learningObjectiveRevisionsV2,
-  learningObjectiveOriginsV2,
-  learningCardsV2,
-  evidenceSnapshotsV2,
-  evidenceRedactionsV2,
-  semanticSupportReportsV2,
-  learningObjectiveEvidenceBindingsV2,
-  evidenceEligibilityStatesV2,
-} from "@astella/shared/db-schema/card-generation-v2";
+  noteLearningCardAnswers,
+  noteLearningCardAttempts,
+  noteLearningCardQuestions,
+  noteLearningCards,
+} from "@astella/shared/db-schema/note-learning-cards";
 // v0.6: 当前仍使用的幂等/冷却账本 (计划 §6.9)
-import { validationAssistanceExposures } from "@astella/shared/db-schema/validation-v2";
 import { logger } from "../../lib/logger.ts";
 
 // keyset 游标类型别名（各表 load 回调显式标注，解脱 TS 对 K/T 的联合推断）。
@@ -105,11 +98,6 @@ async function checkExportSize(tx: ApiTransaction, workspaceId: string): Promise
   const [
     noteCount,
     blockCount,
-    evidenceSnapshotCount,
-    evidenceRedactionCount,
-    semanticSupportReportCount,
-    evidenceBindingCount,
-    evidenceEligibilityCount,
   ] = await Promise.all([
     tx.select({ cnt: count() })
       .from(notes)
@@ -117,21 +105,6 @@ async function checkExportSize(tx: ApiTransaction, workspaceId: string): Promise
     tx.select({ cnt: count() })
       .from(noteBlocks)
       .where(eq(noteBlocks.workspaceId, workspaceId)),
-    tx.select({ cnt: count() })
-      .from(evidenceSnapshotsV2)
-      .where(eq(evidenceSnapshotsV2.workspaceId, workspaceId)),
-    tx.select({ cnt: count() })
-      .from(evidenceRedactionsV2)
-      .where(eq(evidenceRedactionsV2.workspaceId, workspaceId)),
-    tx.select({ cnt: count() })
-      .from(semanticSupportReportsV2)
-      .where(eq(semanticSupportReportsV2.workspaceId, workspaceId)),
-    tx.select({ cnt: count() })
-      .from(learningObjectiveEvidenceBindingsV2)
-      .where(eq(learningObjectiveEvidenceBindingsV2.workspaceId, workspaceId)),
-    tx.select({ cnt: count() })
-      .from(evidenceEligibilityStatesV2)
-      .where(eq(evidenceEligibilityStatesV2.workspaceId, workspaceId)),
   ]);
   // F14（round-4）：size 防护覆盖面覆盖证据快照及其 V2 派生表，
   // 以及 append-only/易膨胀大表（sourceSegments、aiArtifacts），
@@ -166,23 +139,19 @@ async function checkExportSize(tx: ApiTransaction, workspaceId: string): Promise
       .from(sources)
       .where(eq(sources.workspaceId, workspaceId)),
     tx.select({ cnt: count() })
-      .from(learningObjectivesV2)
-      .where(eq(learningObjectivesV2.workspaceId, workspaceId)),
+      .from(noteLearningCards)
+      .where(eq(noteLearningCards.workspaceId, workspaceId)),
     tx.select({ cnt: count() })
-      .from(learningObjectiveRevisionsV2)
-      .where(eq(learningObjectiveRevisionsV2.workspaceId, workspaceId)),
+      .from(noteLearningCardQuestions)
+      .innerJoin(noteLearningCards, eq(noteLearningCardQuestions.cardId, noteLearningCards.id))
+      .where(eq(noteLearningCards.workspaceId, workspaceId)),
     tx.select({ cnt: count() })
-      .from(learningObjectiveOriginsV2)
-      .where(eq(learningObjectiveOriginsV2.workspaceId, workspaceId)),
+      .from(noteLearningCardAttempts)
+      .where(eq(noteLearningCardAttempts.workspaceId, workspaceId)),
     tx.select({ cnt: count() })
-      .from(learningCardsV2)
-      .where(eq(learningCardsV2.workspaceId, workspaceId)),
-    tx.select({ cnt: count() })
-      .from(reviewSchedules)
-      .where(eq(reviewSchedules.workspaceId, workspaceId)),
-    tx.select({ cnt: count() })
-      .from(validationAssistanceExposures)
-      .where(eq(validationAssistanceExposures.workspaceId, workspaceId)),
+      .from(noteLearningCardAnswers)
+      .innerJoin(noteLearningCardAttempts, eq(noteLearningCardAnswers.attemptId, noteLearningCardAttempts.id))
+      .where(eq(noteLearningCardAttempts.workspaceId, workspaceId)),
     tx.select({ cnt: count() })
       .from(onboardingStates)
       .where(eq(onboardingStates.workspaceId, workspaceId)),
@@ -193,12 +162,10 @@ async function checkExportSize(tx: ApiTransaction, workspaceId: string): Promise
   const extraCountTableNames = [
     "note_versions",
     "sources",
-    "learning_objectives_v2",
-    "learning_objective_revisions_v2",
-    "learning_objective_origins_v2",
-    "learning_cards_v2",
-    "review_schedules",
-    "validation_assistance_exposures",
+    "note_learning_cards",
+    "note_learning_card_questions",
+    "note_learning_card_attempts",
+    "note_learning_card_answers",
     "onboarding_states",
     "workspace_members",
   ] as const;
@@ -210,11 +177,6 @@ async function checkExportSize(tx: ApiTransaction, workspaceId: string): Promise
   const counts: Record<string, number> = {
     notes: Number(noteCount[0]?.cnt ?? 0),
     note_blocks: Number(blockCount[0]?.cnt ?? 0),
-    evidence_snapshots_v2: Number(evidenceSnapshotCount[0]?.cnt ?? 0),
-    evidence_redactions_v2: Number(evidenceRedactionCount[0]?.cnt ?? 0),
-    semantic_support_reports_v2: Number(semanticSupportReportCount[0]?.cnt ?? 0),
-    learning_objective_evidence_bindings_v2: Number(evidenceBindingCount[0]?.cnt ?? 0),
-    evidence_eligibility_states_v2: Number(evidenceEligibilityCount[0]?.cnt ?? 0),
     source_segments: Number(sourceSegmentCount[0]?.cnt ?? 0),
     ai_artifacts: Number(aiArtifactCount[0]?.cnt ?? 0),
   };
@@ -308,14 +270,7 @@ export async function exportWorkspace(
       noteBlockRows,
       sourceRows,
       sourceSegmentRows,
-      evidenceSnapshotRows,
-      evidenceRedactionRows,
-      semanticSupportReportRows,
-      evidenceBindingRows,
-      evidenceEligibilityRows,
-      reviewScheduleRows,
       aiArtifactRows,
-      assistanceExposureRows,
       onboardingStateRows,
     ] = await Promise.all([
       // CONC-03: 只导出未软删除的笔记 — desc(updatedAt) + id 下界 keyset
@@ -409,67 +364,6 @@ export async function exportWorkspace(
           )).orderBy(asc(sourceSegments.sourceId), asc(sourceSegments.ordinal), asc(sourceSegments.id)).limit(EXPORT_BATCH),
         cursorFrom: (last) => ({ sourceId: last.sourceId, ordinal: last.ordinal, id: last.id }),
       }),
-      // 旧版学习卡表 learningCards / cardKeyPoints 已删除，
-      // 不再导出。V2 卡片导出见下方 learningCardsV2 / objectivesV2 等分块加载。
-      // 原 asc(cardId, ordinal) + id 上界 cursor（cardKeyPoints）cursorType 一并移除。
-      // 原 desc(createdAt) + id 下界 cursor（learningCards）一并移除。
-      // V2 证据快照正文不在这张表内，导出 immutable metadata 及其关系表。
-      loadInBatches({
-        load: (c: string | null) =>
-          tx.select().from(evidenceSnapshotsV2).where(and(
-            eq(evidenceSnapshotsV2.workspaceId, workspaceId),
-            c ? gt(evidenceSnapshotsV2.id, c) : undefined,
-          )).orderBy(asc(evidenceSnapshotsV2.id)).limit(EXPORT_BATCH),
-        cursorFrom: (last) => last.id,
-      }),
-      loadInBatches({
-        load: (c: string | null) =>
-          tx.select().from(evidenceRedactionsV2).where(and(
-            eq(evidenceRedactionsV2.workspaceId, workspaceId),
-            c ? gt(evidenceRedactionsV2.id, c) : undefined,
-          )).orderBy(asc(evidenceRedactionsV2.id)).limit(EXPORT_BATCH),
-        cursorFrom: (last) => last.id,
-      }),
-      loadInBatches({
-        load: (c: string | null) =>
-          tx.select().from(semanticSupportReportsV2).where(and(
-            eq(semanticSupportReportsV2.workspaceId, workspaceId),
-            c ? gt(semanticSupportReportsV2.id, c) : undefined,
-          )).orderBy(asc(semanticSupportReportsV2.id)).limit(EXPORT_BATCH),
-        cursorFrom: (last) => last.id,
-      }),
-      loadInBatches({
-        load: (c: string | null) =>
-          tx.select().from(learningObjectiveEvidenceBindingsV2).where(and(
-            eq(learningObjectiveEvidenceBindingsV2.workspaceId, workspaceId),
-            c ? gt(learningObjectiveEvidenceBindingsV2.id, c) : undefined,
-          )).orderBy(asc(learningObjectiveEvidenceBindingsV2.id)).limit(EXPORT_BATCH),
-        cursorFrom: (last) => last.id,
-      }),
-      loadInBatches({
-        load: (c: string | null) =>
-          tx.select().from(evidenceEligibilityStatesV2).where(and(
-            eq(evidenceEligibilityStatesV2.workspaceId, workspaceId),
-            c ? gt(evidenceEligibilityStatesV2.id, c) : undefined,
-          )).orderBy(asc(evidenceEligibilityStatesV2.id)).limit(EXPORT_BATCH),
-        cursorFrom: (last) => last.id,
-      }),
-      // desc(createdAt) + id 下界
-      loadInBatches({
-        load: (c: CreatedIdCursor | null) =>
-          tx.select().from(reviewSchedules).where(and(
-            eq(reviewSchedules.workspaceId, workspaceId),
-            // 批次 3：复习排程是个人行为，不进共享资料包。
-            eq(reviewSchedules.userId, userId),
-            c
-              ? or(
-                  lt(reviewSchedules.createdAt, c.createdAt),
-                  and(eq(reviewSchedules.createdAt, c.createdAt), lt(reviewSchedules.id, c.id)),
-                )
-              : undefined,
-          )).orderBy(desc(reviewSchedules.createdAt), desc(reviewSchedules.id)).limit(EXPORT_BATCH),
-        cursorFrom: (last) => ({ createdAt: last.createdAt, id: last.id }),
-      }),
       // desc(createdAt) + id 下界
       loadInBatches({
         load: (c: CreatedIdCursor | null) =>
@@ -483,28 +377,6 @@ export async function exportWorkspace(
               : undefined,
           )).orderBy(desc(aiArtifacts.createdAt), desc(aiArtifacts.id)).limit(EXPORT_BATCH),
         cursorFrom: (last) => ({ createdAt: last.createdAt, id: last.id }),
-      }),
-      // validation_assistance_exposures — user-private, RLS-enforced. desc(lastExposedAt) + id
-      loadInBatches({
-        load: (c: { lastExposedAt: Date; id: string } | null) =>
-          tx.select().from(validationAssistanceExposures).where(and(
-            eq(validationAssistanceExposures.workspaceId, workspaceId),
-            c
-              ? or(
-                  lt(validationAssistanceExposures.lastExposedAt, c.lastExposedAt),
-                  and(
-                    eq(validationAssistanceExposures.lastExposedAt, c.lastExposedAt),
-                    lt(validationAssistanceExposures.id, c.id),
-                  ),
-                )
-              : undefined,
-          ))
-            .orderBy(
-              desc(validationAssistanceExposures.lastExposedAt),
-              desc(validationAssistanceExposures.id),
-            )
-            .limit(EXPORT_BATCH),
-        cursorFrom: (last) => ({ lastExposedAt: last.lastExposedAt, id: last.id }),
       }),
       // onboarding states (SEC-02/ALPHA-01) — per-user onboarding progress.
       // invite_codes are NOT exported: they contain token hashes which are
@@ -532,57 +404,35 @@ export async function exportWorkspace(
     const userIds = [userId, ...memberRows.map((m) => m.userId)].filter(Boolean) as string[];
     const [
       userRows,
-      // Plan 23 CS-07
-      objectiveRows,
-      objectiveRevisionRows,
-      objectiveOriginRows,
-      learningCardV2Rows,
+      learningCardRows,
     ] = await Promise.all([
       userIds.length
         ? tx.query.users.findMany({
             where: inArray(users.id, userIds),
           })
         : Promise.resolve([]),
-      // Plan 23 CS-07：learning_objectives_v2
+      // Plan 57: note-scoped learning cards. The card is a projection of its
+      // note, so it inherits the note's visibility — a private note's card must
+      // not leak its stem or answers through the export bundle.
       loadInBatches({
-        load: (c: PlainIdCursor | null) =>
-          tx.select().from(learningObjectivesV2).where(and(
-            eq(learningObjectivesV2.workspaceId, workspaceId),
-            visibleObjectivesCondition(userId, learningObjectivesV2.objectiveId),
-            c ? lt(learningObjectivesV2.id, c.id) : undefined,
-          )).orderBy(desc(learningObjectivesV2.id)).limit(EXPORT_BATCH),
-        cursorFrom: (last) => ({ id: last.id }),
-      }),
-      // Plan 23 CS-07：learning_objective_revisions_v2
-      loadInBatches({
-        load: (c: PlainIdCursor | null) =>
-          tx.select().from(learningObjectiveRevisionsV2).where(and(
-            eq(learningObjectiveRevisionsV2.workspaceId, workspaceId),
-            visibleObjectivesCondition(userId, learningObjectiveRevisionsV2.objectiveId),
-            c ? lt(learningObjectiveRevisionsV2.id, c.id) : undefined,
-          )).orderBy(desc(learningObjectiveRevisionsV2.id)).limit(EXPORT_BATCH),
-        cursorFrom: (last) => ({ id: last.id }),
-      }),
-      // Plan 23 CS-07：learning_objective_origins_v2
-      loadInBatches({
-        load: (c: PlainIdCursor | null) =>
-          tx.select().from(learningObjectiveOriginsV2).where(and(
-            eq(learningObjectiveOriginsV2.workspaceId, workspaceId),
-            c ? lt(learningObjectiveOriginsV2.id, c.id) : undefined,
-          )).orderBy(desc(learningObjectiveOriginsV2.id)).limit(EXPORT_BATCH),
-        cursorFrom: (last) => ({ id: last.id }),
-      }),
-      // Plan 23 CS-07：learning_cards_v2
-      // 整行出去 = `front`（正文摘录）和 `public_summary` 都在包里，所以这张表必须
-      // 跟着来源笔记判：上面 `notes` 已经按人筛了，卡不筛等于从卡片那一侧把同一篇
-      // 私有笔记的正文再抄一份进导出包。
-      loadInBatches({
-        load: (c: PlainIdCursor | null) =>
-          tx.select().from(learningCardsV2).where(and(
-            eq(learningCardsV2.workspaceId, workspaceId),
-            visibleCardsCondition(userId, learningCardsV2.noteVersionId),
-            c ? lt(learningCardsV2.id, c.id) : undefined,
-          )).orderBy(desc(learningCardsV2.id)).limit(EXPORT_BATCH),
+        load: async (c: PlainIdCursor | null) => {
+          const rows = await tx
+            .select({ card: noteLearningCards })
+            .from(noteLearningCards)
+            .innerJoin(notes, and(
+              eq(notes.id, noteLearningCards.noteId),
+              eq(notes.workspaceId, noteLearningCards.workspaceId),
+              isNull(notes.deletedAt),
+              visibleNotesCondition(userId),
+            ))
+            .where(and(
+              eq(noteLearningCards.workspaceId, workspaceId),
+              c ? lt(noteLearningCards.id, c.id) : undefined,
+            ))
+            .orderBy(desc(noteLearningCards.id))
+            .limit(EXPORT_BATCH);
+          return rows.map((row) => row.card);
+        },
         cursorFrom: (last) => ({ id: last.id }),
       }),
     ]);
@@ -616,20 +466,10 @@ export async function exportWorkspace(
       noteBlocks: noteBlockRows,
       sources: sourceRows,
       sourceSegments: sourceSegmentRows,
-      evidenceSnapshotsV2: evidenceSnapshotRows,
-      evidenceRedactionsV2: evidenceRedactionRows,
-      semanticSupportReportsV2: semanticSupportReportRows,
-      learningObjectiveEvidenceBindingsV2: evidenceBindingRows,
-      evidenceEligibilityStatesV2: evidenceEligibilityRows,
-      reviewSchedules: reviewScheduleRows,
       aiArtifacts: aiArtifactRows,
       onboardingStates: onboardingStateRows,
-      validationAssistanceExposures: assistanceExposureRows,
-      // Plan 23 CS-07：导出 learning_objectives_v2 / revision / origin / cards_v2
-      objectivesV2: objectiveRows,
-      objectiveRevisionsV2: objectiveRevisionRows,
-      objectiveOriginsV2: objectiveOriginRows,
-      learningCardsV2: learningCardV2Rows,
+      // Plan 57：笔记内学习卡
+      noteLearningCards: learningCardRows,
       /**
        * 导出清单：明确哪些数据已包含、哪些未包含。
        * 导出文件包含 users 和 workspaceMembers，便于离线备份审计。
@@ -645,20 +485,10 @@ export async function exportWorkspace(
           "noteBlocks",
           "sources",
           "sourceSegments",
-          "evidenceSnapshotsV2",
-          "evidenceRedactionsV2",
-          "semanticSupportReportsV2",
-          "learningObjectiveEvidenceBindingsV2",
-          "evidenceEligibilityStatesV2",
-          "reviewSchedules",
           "aiArtifacts",
           "onboardingStates",
-          "validationAssistanceExposures",
-          // Plan 23 CS-07：V2 表
-          "objectivesV2",
-          "objectiveRevisionsV2",
-          "objectiveOriginsV2",
-          "learningCardsV2",
+          // Plan 57：笔记内学习卡
+          "noteLearningCards",
         ],
         excluded: {
           searchDocuments: "可重建 — 调用 POST /search/reindex 即可从主表重建",

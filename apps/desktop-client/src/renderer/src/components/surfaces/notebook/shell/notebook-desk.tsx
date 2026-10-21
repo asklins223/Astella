@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode, type RefObject } from "react";
-import { BookOpen, Code2, Eye, History, Maximize2, Lightbulb, ListTree, MoreHorizontal, Paperclip, PencilLine, Pin, PinOff, ScanText, Sprout, StickyNote, X } from "lucide-react";
+import { BookOpen, Code2, Eye, History, Layers, Maximize2, Lightbulb, ListTree, MoreHorizontal, Paperclip, PencilLine, Pin, PinOff, ScanText, Sprout, StickyNote, X } from "lucide-react";
 import { NOTE_BODY_MODES, type NoteBodyMode } from "../document/note-document-mode.ts";
 import type { NoteOutlineEntry } from "../document/note-outline.ts";
 import { useNotebookPageTurn, useNotebookPaperMotion, useNotebookPaperPresence } from "./use-notebook-paper-motion.ts";
@@ -40,8 +40,9 @@ type Props = {
   readonly outline: readonly NoteOutlineEntry[];
   readonly onLocate: (block: number) => void;
   readonly onOpenDirectory: () => void;
-  readonly learningView: NotebookLearningView | "expansion" | "history" | "learning";
+  readonly learningView: NotebookLearningView | "expansion" | "history" | "learning" | "card";
   readonly onLearning: (kind: "overview" | "recall" | "expansion") => void;
+  readonly onCard?: () => void;
   readonly onBody: () => void;
   readonly onHistory?: () => void;
   readonly tools: ReactNode;
@@ -98,10 +99,10 @@ export function NotebookDesk(props: Props) {
   const editingBody = props.learningView === "body" && props.mode !== "preview";
   const context = props.learningView === "body"
     ? props.mode === "preview" ? "正在阅读" : props.mode === "source" ? "Markdown 源码" : "正在编辑"
-    : { overview: "这篇的速看", recall: "回想这篇", expansion: "往外学", artifact: "互动演示", history: "学习记录", learning: "这一轮学习" }[props.learningView];
+    : { overview: "这篇的速看", recall: "回想这篇", expansion: "往外学", artifact: "互动演示", history: "学习记录", learning: "这一轮学习", card: "学习卡" }[props.learningView];
   /** 全屏折签上的短标签：正文说模式，子页面说自己是谁——避免在速看里写「阅读」。 */
   const focusViewLabel = props.learningView === "body" ? undefined
-    : { overview: "速看", recall: "回想", expansion: "往外学", artifact: "互动演示", history: "记录", learning: "这一轮学习" }[props.learningView];
+    : { overview: "速看", recall: "回想", expansion: "往外学", artifact: "互动演示", history: "记录", learning: "这一轮学习", card: "学习卡" }[props.learningView];
 
   useLayoutEffect(() => {
     const ribbon = ribbonRef.current, desk = deskRef.current;
@@ -201,15 +202,25 @@ export function NotebookDesk(props: Props) {
     closeSideFromBody();
   };
 
-  const bookmarks = <nav className="notebook-volume__bookmarks" aria-label="笔记学习">
-    <button type="button" className="text-action notebook-volume__bookmark" data-learning="body" aria-pressed={props.learningView === "body"} onClick={props.onBody}>
+  /**
+   * The note's five views are one tab set: 正文 and the learning pages replace
+   * each other in the same paper. They used to be plain toggle buttons
+   * (`aria-pressed`), which told a screen reader nothing about there being a
+   * single selected view; they are `tab`s inside a `tablist` now. Styling keys
+   * off `aria-selected` (see notebook-desk.css / notebook-fullscreen.css).
+   */
+  const bookmarks = <nav className="notebook-volume__bookmarks" aria-label="笔记学习" role="tablist">
+    <button type="button" className="text-action notebook-volume__bookmark" data-learning="body" role="tab" aria-selected={props.learningView === "body"} onClick={props.onBody}>
       <BookOpen size={18} aria-hidden="true" /><span>正文</span>
     </button>
     {learningTabs.map(({ kind, label, detail, Icon }) => <button key={kind} type="button" className="text-action notebook-volume__bookmark"
-      data-learning={kind} aria-label={label} title={`${label} · ${detail}`} aria-pressed={props.learningView === kind} onClick={() => props.onLearning(kind)}>
+      data-learning={kind} aria-label={label} title={`${label} · ${detail}`} role="tab" aria-selected={props.learningView === kind} onClick={() => props.onLearning(kind)}>
       <Icon size={18} aria-hidden="true" /><span>{label}<small aria-hidden="true">{detail}</small></span>
     </button>)}
-    {props.onHistory ? <button type="button" className="text-action notebook-volume__bookmark" data-learning="history" aria-label="学习记录" aria-pressed={props.learningView === "history"} onClick={props.onHistory}>
+    <button type="button" className="text-action notebook-volume__bookmark" data-learning="card" aria-label="学习卡" title="学习卡 · 这篇的配套练习" role="tab" aria-selected={props.learningView === "card"} onClick={() => props.onCard?.()}>
+      <Layers size={18} aria-hidden="true" /><span>学习卡<small aria-hidden="true">配套练习</small></span>
+    </button>
+    {props.onHistory ? <button type="button" className="text-action notebook-volume__bookmark" data-learning="history" aria-label="学习记录" title="学习记录" role="tab" aria-selected={props.learningView === "history"} onClick={props.onHistory}>
       <History size={18} aria-hidden="true" /><span>记录</span>
     </button> : null}
   </nav>;
@@ -274,8 +285,8 @@ export function NotebookDesk(props: Props) {
                   全屏时整条 chrome 会变成右侧的工具页，那时它改挂常驻纸签（见上面 Ribbon）。 */}
               <div className="notebook-desk__utilities">
                 {!focus.fullscreen && props.presence ? <div className="notebook-desk__presence">{props.presence}</div> : null}
-                {!focus.fullscreen && !props.mindMapActive ? <button type="button" className="text-action" ref={focus.enterRef} aria-label="全屏笔记" title={props.learningView === "body" ? "全屏阅读与编辑 · ⌘/Ctrl+Shift+F" : "全屏看这一页 · ⌘/Ctrl+Shift+F"}
-                  onMouseDown={event => event.preventDefault()} onClick={focus.toggleFullscreen}><Maximize2 size={17} aria-hidden="true" /><span>全屏</span></button> : null}
+                {!focus.fullscreen && !props.mindMapActive ? <button type="button" className="text-action notebook-desk__utility-icon" ref={focus.enterRef} aria-label="全屏笔记" title={props.learningView === "body" ? "全屏阅读与编辑 · ⌘/Ctrl+Shift+F" : "全屏看这一页 · ⌘/Ctrl+Shift+F"}
+                  onMouseDown={event => event.preventDefault()} onClick={focus.toggleFullscreen}><Maximize2 size={17} aria-hidden="true" /><span className="notebook-desk__utility-label">全屏</span></button> : null}
                 {props.generationAction}
                 {props.sourceAction}
                 <details className="notebook-desk__drawer" ref={drawerRef}

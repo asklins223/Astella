@@ -1,6 +1,6 @@
 {
   "name": "@astella/shared",
-  "version": "1.8.27",
+  "version": "1.8.28",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
@@ -10,11 +10,6 @@
       "types": "./src/index.ts",
       "import": "./src/index.ts",
       "default": "./src/index.ts"
-    },
-    "./activity-surface-contracts": {
-      "types": "./src/contracts/desktop/activity-surface-contracts.ts",
-      "import": "./src/contracts/desktop/activity-surface-contracts.ts",
-      "default": "./src/contracts/desktop/activity-surface-contracts.ts"
     },
     "./ai-endpoints": {
       "types": "./src/platform/ai-endpoints.ts",
@@ -35,41 +30,6 @@
       "types": "./src/contracts/agent/context-budget-contracts.ts",
       "import": "./src/contracts/agent/context-budget-contracts.ts",
       "default": "./src/contracts/agent/context-budget-contracts.ts"
-    },
-    "./assessment-dispute-rules-v2": {
-      "types": "./src/review/assessment-dispute-rules-v2.ts",
-      "import": "./src/review/assessment-dispute-rules-v2.ts",
-      "default": "./src/review/assessment-dispute-rules-v2.ts"
-    },
-    "./card-generation-desktop-contracts": {
-      "types": "./src/contracts/learning/card-generation-desktop-contracts.ts",
-      "import": "./src/contracts/learning/card-generation-desktop-contracts.ts",
-      "default": "./src/contracts/learning/card-generation-desktop-contracts.ts"
-    },
-    "./card-generation-v2-contracts": {
-      "types": "./src/contracts/learning/card-generation-v2-contracts.ts",
-      "import": "./src/contracts/learning/card-generation-v2-contracts.ts",
-      "default": "./src/contracts/learning/card-generation-v2-contracts.ts"
-    },
-    "./card-generation-v2-hashing": {
-      "types": "./src/review/card-generation-v2-hashing.ts",
-      "import": "./src/review/card-generation-v2-hashing.ts",
-      "default": "./src/review/card-generation-v2-hashing.ts"
-    },
-    "./card-generation-v2-pipeline": {
-      "types": "./src/card-generation-v2-pipeline/index.ts",
-      "import": "./src/card-generation-v2-pipeline/index.ts",
-      "default": "./src/card-generation-v2-pipeline/index.ts"
-    },
-    "./card-generation-v3-contracts": {
-      "types": "./src/contracts/learning/card-generation-v3-contracts.ts",
-      "import": "./src/contracts/learning/card-generation-v3-contracts.ts",
-      "default": "./src/contracts/learning/card-generation-v3-contracts.ts"
-    },
-    "./card-quality-v2-contracts": {
-      "types": "./src/contracts/learning/card-quality-v2-contracts.ts",
-      "import": "./src/contracts/learning/card-quality-v2-contracts.ts",
-      "default": "./src/contracts/learning/card-quality-v2-contracts.ts"
     },
     "./circuit-breaker": {
       "types": "./src/platform/circuit-breaker.ts",
@@ -192,15 +152,15 @@
       "import": "./src/db-schema/index.ts",
       "default": "./src/db-schema/index.ts"
     },
+    "./db-schema/note-learning-cards": {
+      "types": "./src/db-schema/note-learning-cards.ts",
+      "import": "./src/db-schema/note-learning-cards.ts",
+      "default": "./src/db-schema/note-learning-cards.ts"
+    },
     "./db-schema/ai": {
       "types": "./src/db-schema/ai.ts",
       "import": "./src/db-schema/ai.ts",
       "default": "./src/db-schema/ai.ts"
-    },
-    "./db-schema/assessment-disputes": {
-      "types": "./src/db-schema/assessment-disputes.ts",
-      "import": "./src/db-schema/assessment-disputes.ts",
-      "default": "./src/db-schema/assessment-disputes.ts"
     },
     "./db-schema/assistant-deliveries": {
       "types": "./src/db-schema/assistant-deliveries.ts",
@@ -211,11 +171,6 @@
       "types": "./src/db-schema/assistant-memory.ts",
       "import": "./src/db-schema/assistant-memory.ts",
       "default": "./src/db-schema/assistant-memory.ts"
-    },
-    "./db-schema/card-generation-v2": {
-      "types": "./src/db-schema/card-generation-v2.ts",
-      "import": "./src/db-schema/card-generation-v2.ts",
-      "default": "./src/db-schema/card-generation-v2.ts"
     },
     "./db-schema/companion": {
       "types": "./src/db-schema/companion.ts",
@@ -257,11 +212,6 @@
       "import": "./src/platform/enums.ts",
       "default": "./src/platform/enums.ts"
     },
-    "./db-schema/evidence": {
-      "types": "./src/db-schema/evidence.ts",
-      "import": "./src/db-schema/evidence.ts",
-      "default": "./src/db-schema/evidence.ts"
-    },
     "./db-schema/identity": {
       "types": "./src/db-schema/identity.ts",
       "import": "./src/db-schema/identity.ts",
@@ -276,11 +226,6 @@
       "types": "./src/db-schema/learning-metrics.ts",
       "import": "./src/db-schema/learning-metrics.ts",
       "default": "./src/db-schema/learning-metrics.ts"
-    },
-    "./db-schema/learning-runs": {
-      "types": "./src/db-schema/learning-runs.ts",
-      "import": "./src/db-schema/learning-runs.ts",
-      "default": "./src/db-schema/learning-runs.ts"
     },
     "./db-schema/note": {
       "types": "./src/db-schema/note.ts",
@@ -302,16 +247,6 @@
       "import": "./src/db-schema/note-learning-artifacts.ts",
       "default": "./src/db-schema/note-learning-artifacts.ts"
     },
-    "./db-schema/note-learning-reflections": {
-      "types": "./src/db-schema/note-learning-reflections.ts",
-      "import": "./src/db-schema/note-learning-reflections.ts",
-      "default": "./src/db-schema/note-learning-reflections.ts"
-    },
-    "./db-schema/note-learning-rounds": {
-      "types": "./src/db-schema/note-learning-rounds.ts",
-      "import": "./src/db-schema/note-learning-rounds.ts",
-      "default": "./src/db-schema/note-learning-rounds.ts"
-    },
     "./db-schema/note-overviews": {
       "types": "./src/db-schema/note-overviews.ts",
       "import": "./src/db-schema/note-overviews.ts",
@@ -322,16 +257,6 @@
       "import": "./src/db-schema/note-recalls.ts",
       "default": "./src/db-schema/note-recalls.ts"
     },
-    "./db-schema/personal-objective-bindings": {
-      "types": "./src/db-schema/personal-objective-bindings.ts",
-      "import": "./src/db-schema/personal-objective-bindings.ts",
-      "default": "./src/db-schema/personal-objective-bindings.ts"
-    },
-    "./db-schema/personal-relation-decisions": {
-      "types": "./src/db-schema/personal-relation-decisions.ts",
-      "import": "./src/db-schema/personal-relation-decisions.ts",
-      "default": "./src/db-schema/personal-relation-decisions.ts"
-    },
     "./db-schema/search": {
       "types": "./src/db-schema/search.ts",
       "import": "./src/db-schema/search.ts",
@@ -341,16 +266,6 @@
       "types": "./src/db-schema/session.ts",
       "import": "./src/db-schema/session.ts",
       "default": "./src/db-schema/session.ts"
-    },
-    "./db-schema/understanding-projection": {
-      "types": "./src/db-schema/understanding-projection.ts",
-      "import": "./src/db-schema/understanding-projection.ts",
-      "default": "./src/db-schema/understanding-projection.ts"
-    },
-    "./db-schema/validation-v2": {
-      "types": "./src/db-schema/validation-v2.ts",
-      "import": "./src/db-schema/validation-v2.ts",
-      "default": "./src/db-schema/validation-v2.ts"
     },
     "./desktop-ipc-contracts": {
       "types": "./src/contracts/desktop/desktop-ipc-contracts.ts",
@@ -377,16 +292,6 @@
       "import": "./src/content/hash-canonical-v2.ts",
       "default": "./src/content/hash-canonical-v2.ts"
     },
-    "./help-condition-rules-v2": {
-      "types": "./src/review/help-condition-rules-v2.ts",
-      "import": "./src/review/help-condition-rules-v2.ts",
-      "default": "./src/review/help-condition-rules-v2.ts"
-    },
-    "./home-suggestion-v2": {
-      "types": "./src/review/home-suggestion-v2.ts",
-      "import": "./src/review/home-suggestion-v2.ts",
-      "default": "./src/review/home-suggestion-v2.ts"
-    },
     "./integration-test-db-env": {
       "types": "./src/platform/integration-test-db-env.ts",
       "import": "./src/platform/integration-test-db-env.ts",
@@ -398,36 +303,13 @@
       "default": "./src/contracts/agent/job-payload-contracts.ts"
     },
     "./job-queue-limits": "./src/platform/job-queue-limits.ts",
-    "./learning-card-v2-contracts": {
-      "types": "./src/contracts/learning/learning-card-v2-contracts.ts",
-      "import": "./src/contracts/learning/learning-card-v2-contracts.ts",
-      "default": "./src/contracts/learning/learning-card-v2-contracts.ts"
+    "./note-learning-card-contracts": {
+      "types": "./src/contracts/learning/note-learning-card-contracts.ts",
+      "import": "./src/contracts/learning/note-learning-card-contracts.ts",
+      "default": "./src/contracts/learning/note-learning-card-contracts.ts"
     },
-    "./learning-objective-surface-contracts": {
-      "types": "./src/contracts/learning/learning-objective-surface-contracts.ts",
-      "import": "./src/contracts/learning/learning-objective-surface-contracts.ts",
-      "default": "./src/contracts/learning/learning-objective-surface-contracts.ts"
-    },
-    "./learning-run-contracts": {
-      "types": "./src/contracts/learning/learning-run-contracts.ts",
-      "import": "./src/contracts/learning/learning-run-contracts.ts",
-      "default": "./src/contracts/learning/learning-run-contracts.ts"
-    },
-    "./learning-run-v2-contracts": {
-      "types": "./src/contracts/learning/learning-run-v2-contracts.ts",
-      "import": "./src/contracts/learning/learning-run-v2-contracts.ts",
-      "default": "./src/contracts/learning/learning-run-v2-contracts.ts"
-    },
-    "./learning-target-v2-contracts": {
-      "types": "./src/contracts/learning/learning-target-v2-contracts.ts",
-      "import": "./src/contracts/learning/learning-target-v2-contracts.ts",
-      "default": "./src/contracts/learning/learning-target-v2-contracts.ts"
-    },
-    "./limited-batch-v2": {
-      "types": "./src/review/limited-batch-v2.ts",
-      "import": "./src/review/limited-batch-v2.ts",
-      "default": "./src/review/limited-batch-v2.ts"
-    },
+    "./learning/note-learning-card-grading": "./src/learning/note-learning-card-grading.ts",
+    "./learning/note-learning-card-operation": "./src/learning/note-learning-card-operation.ts",
     "./markdown-parser": {
       "types": "./src/note/markdown-parser.ts",
       "import": "./src/note/markdown-parser.ts",
@@ -459,11 +341,6 @@
       "types": "./src/note/note-doc-schema.ts",
       "import": "./src/note/note-doc-schema.ts",
       "default": "./src/note/note-doc-schema.ts"
-    },
-    "./note-dynamic-artifact/round-artifact": {
-      "types": "./src/note-dynamic-artifact/round-artifact.ts",
-      "import": "./src/note-dynamic-artifact/round-artifact.ts",
-      "default": "./src/note-dynamic-artifact/round-artifact.ts"
     },
     "./note-dynamic-artifact/round-artifact-doc": {
       "types": "./src/note-dynamic-artifact/round-artifact-doc.ts",
@@ -505,11 +382,6 @@
       "import": "./src/contracts/note/note-learning-reflection-contracts.ts",
       "default": "./src/contracts/note/note-learning-reflection-contracts.ts"
     },
-    "./note-learning-round-contracts": {
-      "types": "./src/contracts/note/note-learning-round-contracts.ts",
-      "import": "./src/contracts/note/note-learning-round-contracts.ts",
-      "default": "./src/contracts/note/note-learning-round-contracts.ts"
-    },
     "./note-overview-contracts": {
       "types": "./src/contracts/note/note-overview-contracts.ts",
       "import": "./src/contracts/note/note-overview-contracts.ts",
@@ -529,11 +401,6 @@
       "types": "./src/contracts/note/note-recall-contracts.ts",
       "import": "./src/contracts/note/note-recall-contracts.ts",
       "default": "./src/contracts/note/note-recall-contracts.ts"
-    },
-    "./note-route-coverage-v2": {
-      "types": "./src/note/note-route-coverage-v2.ts",
-      "import": "./src/note/note-route-coverage-v2.ts",
-      "default": "./src/note/note-route-coverage-v2.ts"
     },
     "./note-save-contracts": {
       "types": "./src/contracts/note/note-save-contracts.ts",
@@ -559,26 +426,6 @@
       "types": "./src/note/note-visibility-condition.ts",
       "import": "./src/note/note-visibility-condition.ts",
       "default": "./src/note/note-visibility-condition.ts"
-    },
-    "./objective-card-groups-v2": {
-      "types": "./src/review/objective-card-groups-v2.ts",
-      "import": "./src/review/objective-card-groups-v2.ts",
-      "default": "./src/review/objective-card-groups-v2.ts"
-    },
-    "./objective-reuse-rules-v2": {
-      "types": "./src/review/objective-reuse-rules-v2.ts",
-      "import": "./src/review/objective-reuse-rules-v2.ts",
-      "default": "./src/review/objective-reuse-rules-v2.ts"
-    },
-    "./personal-binding-link-rules-v2": {
-      "types": "./src/review/personal-binding-link-rules-v2.ts",
-      "import": "./src/review/personal-binding-link-rules-v2.ts",
-      "default": "./src/review/personal-binding-link-rules-v2.ts"
-    },
-    "./personal-relation-decision-rules-v2": {
-      "types": "./src/review/personal-relation-decision-rules-v2.ts",
-      "import": "./src/review/personal-relation-decision-rules-v2.ts",
-      "default": "./src/review/personal-relation-decision-rules-v2.ts"
     },
     "./pet-persona-merge": {
       "types": "./src/companion/pet-persona-merge.ts",
@@ -615,76 +462,21 @@
       "import": "./src/contracts/agent/quality-evidence-contracts.ts",
       "default": "./src/contracts/agent/quality-evidence-contracts.ts"
     },
-    "./recall-waiting-v2-contracts": {
-      "types": "./src/contracts/learning/recall-waiting-v2-contracts.ts",
-      "import": "./src/contracts/learning/recall-waiting-v2-contracts.ts",
-      "default": "./src/contracts/learning/recall-waiting-v2-contracts.ts"
-    },
-    "./review-action-copy": {
-      "types": "./src/review/review-action-copy.ts",
-      "import": "./src/review/review-action-copy.ts",
-      "default": "./src/review/review-action-copy.ts"
-    },
-    "./review-authorization-rules-v2": {
-      "types": "./src/review/review-authorization-rules-v2.ts",
-      "import": "./src/review/review-authorization-rules-v2.ts",
-      "default": "./src/review/review-authorization-rules-v2.ts"
-    },
-    "./review-consumable-target": {
-      "types": "./src/review/review-consumable-target.ts",
-      "import": "./src/review/review-consumable-target.ts",
-      "default": "./src/review/review-consumable-target.ts"
-    },
-    "./review-dimension-v2": {
-      "types": "./src/review/review-dimension-v2.ts",
-      "import": "./src/review/review-dimension-v2.ts",
-      "default": "./src/review/review-dimension-v2.ts"
-    },
-    "./review-manual-date-constraint-v2": {
-      "types": "./src/review/review-manual-date-constraint-v2.ts",
-      "import": "./src/review/review-manual-date-constraint-v2.ts",
-      "default": "./src/review/review-manual-date-constraint-v2.ts"
-    },
-    "./review-queue-v2-contracts": {
-      "types": "./src/contracts/learning/review-queue-v2-contracts.ts",
-      "import": "./src/contracts/learning/review-queue-v2-contracts.ts",
-      "default": "./src/contracts/learning/review-queue-v2-contracts.ts"
-    },
-    "./review-reminder-contracts": {
-      "types": "./src/contracts/learning/review-reminder-contracts.ts",
-      "import": "./src/contracts/learning/review-reminder-contracts.ts",
-      "default": "./src/contracts/learning/review-reminder-contracts.ts"
-    },
     "./room-projection-contracts": {
       "types": "./src/contracts/desktop/room-projection-contracts.ts",
       "import": "./src/contracts/desktop/room-projection-contracts.ts",
       "default": "./src/contracts/desktop/room-projection-contracts.ts"
-    },
-    "./scheduling-policy-v2": {
-      "types": "./src/review/scheduling-policy-v2.ts",
-      "import": "./src/review/scheduling-policy-v2.ts",
-      "default": "./src/review/scheduling-policy-v2.ts"
     },
     "./source-image-contracts": {
       "types": "./src/contracts/desktop/source-image-contracts.ts",
       "import": "./src/contracts/desktop/source-image-contracts.ts",
       "default": "./src/contracts/desktop/source-image-contracts.ts"
     },
-    "./stats-overview-contracts": {
-      "types": "./src/contracts/desktop/stats-overview-contracts.ts",
-      "import": "./src/contracts/desktop/stats-overview-contracts.ts",
-      "default": "./src/contracts/desktop/stats-overview-contracts.ts"
-    },
     "./storage-config": "./src/platform/storage-config.ts",
     "./task-router": {
       "types": "./src/platform/task-router.ts",
       "import": "./src/platform/task-router.ts",
       "default": "./src/platform/task-router.ts"
-    },
-    "./today-batch-options-v2": {
-      "types": "./src/review/today-batch-options-v2.ts",
-      "import": "./src/review/today-batch-options-v2.ts",
-      "default": "./src/review/today-batch-options-v2.ts"
     },
     "./tts-voice-catalog": {
       "types": "./src/companion/tts-voice-catalog.ts",
@@ -759,7 +551,8 @@
       "types": "./src/companion/companion-awareness-idle.ts",
       "import": "./src/companion/companion-awareness-idle.ts",
       "default": "./src/companion/companion-awareness-idle.ts"
-    }
+    },
+    "./learning/note-learning-card-quality": "./src/learning/note-learning-card-quality.ts"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.2",

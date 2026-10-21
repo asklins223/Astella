@@ -50,8 +50,7 @@ const governance = (over: Partial<AIGovernanceContext> = {}): AIGovernanceContex
 const ctx = { workspaceId: "00000000-0000-0000-0000-000000000001", id: "job-1",
   requestedBy:"00000000-0000-0000-0000-000000000002",payload:{},leaseToken:"test",signal:new AbortController().signal };
 const read = { userId: "00000000-0000-0000-0000-000000000002", runId:"run-1",conversationId:"conversation-1",
-  userMessageId:"message-1",generation:1,accountEpoch:0,runStatus:"running",formalAnswerInProgress:false,
-  formalAnswerTarget:null,livePageView:null,pageContext:null,groundedTutorContext:null,userText:"你好",
+  userMessageId:"message-1",generation:1,accountEpoch:0,runStatus:"running",livePageView:null,pageContext:null,userText:"你好",
   recentMessages:[],residentMemories:[],memoryDirectory:[],playbookCatalog:[],playbookCandidates:[],deliveryObservation:null,organizationSurface:null,
   memoryRefs:[],hereAndNow:null,thisTurnFacts:null,factSpans:null,conversationSummary:null,
   personaProfileRevision:0,personaExamplesRevision:0,defaultExpressionVersion:"test",petProfile:null,

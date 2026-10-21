@@ -29,12 +29,7 @@ const OTHER_JOB_ID = "1f0a2b3c-0000-4000-8000-00000000000a";
 const NOTE_ID = "1f0a2b3c-0000-4000-8000-00000000000b";
 const NOTE_VERSION_ID = "1f0a2b3c-0000-4000-8000-00000000000c";
 const ARTIFACT_ID = "1f0a2b3c-0000-4000-8000-00000000000d";
-const CARD_RUN_ID = "1f0a2b3c-0000-4000-8000-00000000000e";
-const OTHER_CARD_RUN_ID = "1f0a2b3c-0000-4000-8000-00000000000f";
-
-const CARD_CAPABILITY = "card_generation_generate";
 const JOB_EXECUTION: AgentExecutionRefV1 = { kind: "job", id: JOB_ID };
-const CARD_EXECUTION: AgentExecutionRefV1 = { kind: "card_generation", id: CARD_RUN_ID };
 
 const ARTIFACT: AgentArtifactRefV1 = {
   kind: "note_overview",
@@ -43,17 +38,7 @@ const ARTIFACT: AgentArtifactRefV1 = {
   noteId: NOTE_ID,
   noteVersionId: NOTE_VERSION_ID,
 };
-const CARD_ARTIFACT: AgentArtifactRefV1 = {
-  kind: "card_candidates",
-  id: CARD_RUN_ID,
-  noteId: NOTE_ID,
-  noteVersionId: NOTE_VERSION_ID,
-};
 const ARTIFACT_RESULT: AgentOperationResultV1 = { kind: "artifact", artifact: ARTIFACT };
-const CARD_RESULT: AgentOperationResultV1 = { kind: "artifact", artifact: CARD_ARTIFACT };
-const NO_CARDS_RESULT: AgentOperationResultV1 = {
-  kind: "no_cards_recommended", reasonCodes: ["no_learnable_objective"],
-};
 
 test("a verified artifact from another job cannot complete this operation", () => {
   const current = operation();
@@ -70,7 +55,7 @@ function operation(overrides: Partial<AgentOperationV1> = {}): AgentOperationV1 
     runId: RUN_ID,
     revision: 3,
     scope: { workspaceId: WORKSPACE_ID, userId: USER_ID },
-    capability: "note.deepen.dynamic_artifact",
+    capability: "note_overview_generate",
     execution: JOB_EXECUTION,
     status: "running",
     lastEventSeq: 4,
@@ -129,14 +114,6 @@ test("operationId / runId / execution 的 kind+id 任一对不上按 identity_mi
     assert.equal(result.reason, "identity_mismatch");
     assert.equal(result.operation, current);
   }
-});
-
-test("执行体换成另一类，即使 id 相同也不是同一次操作", () => {
-  const current = operation();
-  const switched = reduceOperationReceipt(current, event({ execution: { kind: "card_generation", id: JOB_ID } }));
-  assert.equal(switched.accepted, false);
-  assert.equal(switched.reason, "identity_mismatch");
-  assert.equal(switched.operation, current);
 });
 
 test("旧 revision 与未来 revision 都按 revision_mismatch 拒绝", () => {
@@ -290,7 +267,7 @@ test("接受时只改 status/lastEventSeq/result/error，身份与能力保持�
       runId: RUN_ID,
       revision: 3,
       scope: { workspaceId: WORKSPACE_ID, userId: USER_ID },
-      capability: "note.deepen.dynamic_artifact",
+      capability: "note_overview_generate",
       execution: JOB_EXECUTION,
       status: "succeeded",
       lastEventSeq: 7,
@@ -321,75 +298,6 @@ test("非成功状态沿用已有结果，失败保留事件原因", () => {
   assert.equal(unknown.operation.status, "outcome_unknown");
   assert.deepEqual(unknown.operation.result, ARTIFACT_RESULT);
   assert.equal(unknown.operation.error, "回执中断");
-});
-
-test("制卡操作只能被自己的候选或无卡推荐结案", () => {
-  const current = operation({ capability: "card_generation_generate", execution: CARD_EXECUTION });
-
-  const delivered = reduceOperationReceipt(current, event({
-    execution: CARD_EXECUTION, seq: 5, status: "succeeded", result: CARD_RESULT, authoritative: true,
-  }));
-  assert.equal(delivered.accepted, true);
-  assert.equal(delivered.operation.status, "succeeded");
-  assert.deepEqual(delivered.operation.result, CARD_RESULT);
-
-  const noCards = reduceOperationReceipt(current, event({
-    execution: CARD_EXECUTION, seq: 5, status: "succeeded", result: NO_CARDS_RESULT, authoritative: true,
-  }));
-  assert.equal(noCards.accepted, true, "无卡推荐是正常收口，不是失败");
-  assert.deepEqual(noCards.operation.result, NO_CARDS_RESULT);
-
-  // 别的制卡 run 的候选、笔记产物的 jobId，都不是这一次执行的成果。
-  for (const result of [
-    { kind: "artifact" as const, artifact: { ...CARD_ARTIFACT, id: OTHER_CARD_RUN_ID } },
-    ARTIFACT_RESULT,
-  ]) {
-    const mismatched = reduceOperationReceipt(current, event({
-      execution: CARD_EXECUTION, seq: 5, status: "succeeded", result, authoritative: true,
-    }));
-    assert.equal(mismatched.accepted, false);
-    assert.equal(mismatched.reason, "unverified");
-    assert.equal(mismatched.operation, current);
-  }
-});
-
-test("no_cards 与制卡候选都只配 card_generation_generate 这个 capability", () => {
-  // 纯 reducer 的能力约束：执行体对了但 capability 不对，同样不算这次执行的成果。
-  for (const result of [CARD_RESULT, NO_CARDS_RESULT]) {
-    const wrongCapability = operation({ capability: "note_overview_generate", execution: CARD_EXECUTION });
-    const rejected = reduceOperationReceipt(wrongCapability, event({
-      execution: CARD_EXECUTION, seq: 5, status: "succeeded", result, authoritative: true,
-    }));
-    assert.equal(rejected.accepted, false);
-    assert.equal(rejected.reason, "unverified");
-    assert.equal(rejected.operation, wrongCapability);
-
-    const rightCapability = operation({ capability: CARD_CAPABILITY, execution: CARD_EXECUTION });
-    const accepted = reduceOperationReceipt(rightCapability, event({
-      execution: CARD_EXECUTION, seq: 5, status: "succeeded", result, authoritative: true,
-    }));
-    assert.equal(accepted.accepted, true, JSON.stringify(result.kind));
-  }
-});
-
-test("job 执行体不能拿无卡推荐结案", () => {
-  const current = operation();
-  const mismatched = reduceOperationReceipt(current, event({
-    seq: 5, status: "succeeded", result: NO_CARDS_RESULT, authoritative: true,
-  }));
-  assert.equal(mismatched.accepted, false);
-  assert.equal(mismatched.reason, "unverified");
-  assert.equal(mismatched.operation, current);
-});
-
-test("job 执行体不能拿制卡候选结案", () => {
-  const current = operation();
-  const mismatched = reduceOperationReceipt(current, event({
-    seq: 5, status: "succeeded", result: CARD_RESULT, authoritative: true,
-  }));
-  assert.equal(mismatched.accepted, false);
-  assert.equal(mismatched.reason, "unverified");
-  assert.equal(mismatched.operation, current);
 });
 
 test("归并不修改输入", () => {

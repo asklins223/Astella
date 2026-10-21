@@ -8,6 +8,7 @@ import { CompanionReplyAttachments } from "../journal/CompanionReplyAttachments"
 import { interactionSession } from "./companion-interaction-fixtures";
 import { useSourceImage } from "../../surfaces/source/source-image";
 import { copyText } from "../../../app/client/clipboard";
+import { useCompanionResultPreview } from "../journal/companion-result-preview";
 
 vi.mock("../../surfaces/source/source-image", () => ({ useSourceImage: vi.fn() }));
 vi.mock("../../../app/client/clipboard", () => ({ copyText: vi.fn() }));
@@ -25,6 +26,7 @@ const code: CompanionContentBlockV1 = { type: "code", language: "python", code: 
 const diagram: CompanionContentBlockV1 = { type: "diagram", title: "理解步骤", steps: [{ label: "找线索", detail: "比较 **Query** 与 Key。" }, { label: "核对相关程度" }] };
 
 beforeEach(() => {
+  useCompanionResultPreview.setState({ target: null, returnTo: null, journalTarget: null, positions: new Map(), galleries: new Map(), disclosures: new Map() });
   vi.useFakeTimers();
   vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
   Object.defineProperty(document, "hidden", { configurable: true, value: false });
@@ -34,17 +36,38 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe("one reply delivery", () => {
-  it("leads with the created note, keeps material closed and deduplicates repeated reads", () => {
+  it("keeps each object's expansion and scroll across switching, content updates and reopening", () => {
+    const chat = interactionSession({ richReply: { messageId: "retained", blocks: [diagram, code] } });
+    const view = render(<CompanionReplyAttachments chat={chat} paused={false} onDismiss={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "展开阅读" }));
+    const reader = screen.getByRole("region", { name: "步骤图预览" });
+    reader.scrollTop = 170; fireEvent.scroll(reader);
+    fireEvent.click(screen.getByRole("button", { name: "下一份内容" }));
+    const codeReader = screen.getByRole("region", { name: "代码预览" });
+    codeReader.scrollTop = 68; fireEvent.scroll(codeReader);
+    view.rerender(<CompanionReplyAttachments chat={interactionSession({ richReply: { messageId: "retained",
+      blocks: [diagram, { ...code, code: "print('a new streamed line')" }] } })} paused={false} onDismiss={vi.fn()} />);
+    expect(screen.getByRole("region", { name: "代码预览" })).toBe(codeReader);
+    expect(codeReader.scrollTop).toBe(68);
+    fireEvent.click(screen.getByRole("button", { name: "上一份内容" }));
+    expect(screen.getByRole("button", { name: "收起阅读" }).getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByRole("region", { name: "步骤图预览" }).scrollTop).toBe(170);
+    view.unmount();
+    render(<CompanionReplyAttachments chat={chat} paused={false} onDismiss={vi.fn()} />);
+    expect(screen.getByRole("button", { name: "收起阅读" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "步骤图预览" }).scrollTop).toBe(170);
+  });
+  it("leads with the saved note and keeps deduplicated reference material folded until opened", () => {
     render(<CompanionReplyAttachments chat={interactionSession({ richReply: { messageId: "one", blocks: [note, other, note, nav] } })} paused={false} onDismiss={vi.fn()} />);
     expect(screen.getByRole("button", { name: nav.label })).toBeTruthy();
     const materials = document.querySelector<HTMLDetailsElement>(".companion-reply-attachments__materials")!;
     expect(materials.open).toBe(false);
+    fireEvent.click(materials.querySelector("summary")!);
     expect(within(materials).getByText("2", { selector: "small" })).toBeTruthy();
-    expect(screen.queryByText("从鸦片战争到新中国成立。")).toBeNull();
-    open(materials);
+    expect(screen.getByText("从鸦片战争到新中国成立。")).toBeTruthy();
     const excerpt = screen.getByText(note.label, { selector: "summary > span" }).closest("details") as HTMLDetailsElement;
     expect(excerpt.open).toBe(false);
-    open(excerpt);
+    fireEvent.click(excerpt.querySelector("summary")!);
     expect(screen.getByRole("heading", { name: "先秦" })).toBeTruthy();
     expect(screen.getByRole("table")).toBeTruthy();
     expect(screen.getByRole("cell", { name: "约前2070年" })).toBeTruthy();
@@ -55,11 +78,12 @@ describe("one reply delivery", () => {
     render(<CompanionReplyAttachments chat={interactionSession({ richReply: { messageId: "one", blocks: [note, nav] } })} paused={false} onDismiss={onDismiss} />);
     advance(50_000);
     const materials = document.querySelector<HTMLDetailsElement>(".companion-reply-attachments__materials")!;
-    open(materials);
+    fireEvent.click(materials.querySelector("summary")!);
     advance(240_000);
     expect(onDismiss).not.toHaveBeenCalled();
-    open(materials, false);
-    advance(11_000);
+    fireEvent.click(materials.querySelector("summary")!);
+    expect(materials.open).toBe(false);
+    advance(61_000);
     expect(onDismiss).toHaveBeenCalledOnce();
   });
 
@@ -93,11 +117,15 @@ describe("one reply delivery", () => {
     }
     render(<Harness />);
     expect(screen.queryByRole("button", { name: nav.label })).toBeNull();
-    open(document.querySelector<HTMLDetailsElement>(".companion-reply-attachments__materials")!);
+    // 材料默认收起；打开后才渲染，且只属于这一条回复。
+    const firstMaterials = document.querySelector<HTMLDetailsElement>(".companion-reply-attachments__materials")!;
+    expect(firstMaterials.open).toBe(false);
+    fireEvent.click(firstMaterials.querySelector("summary")!);
     expect(screen.getByText(note.label, { selector: "summary > span" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "下一轮" }));
-    expect(document.querySelector<HTMLDetailsElement>(".companion-reply-attachments__materials")?.open).toBe(false);
-    open(document.querySelector<HTMLDetailsElement>(".companion-reply-attachments__materials")!);
+    const nextMaterials = document.querySelector<HTMLDetailsElement>(".companion-reply-attachments__materials")!;
+    expect(nextMaterials.open).toBe(false);
+    fireEvent.click(nextMaterials.querySelector("summary")!);
     expect(screen.queryByText(note.label)).toBeNull();
     expect(screen.getByText(other.label, { selector: "summary > span" })).toBeTruthy();
   });

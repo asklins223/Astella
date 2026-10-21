@@ -5,8 +5,8 @@
  * 更新 currentStep/refs/completionKind；Pet/主窗口不得自行宣布完成。
  * 以 (journeyId, domainEventId) 幂等（由 service 层 pending_events 保证）。
  *
- * P6 范围：learning_run.completed（含 scheduleImpact）→ first_run/first_schedule/
- * completed(real_first_loop)；其余事件类型入 pending 不推进（骨架预留）。
+ * P6 范围：note_learning_card.completed → completed(real_first_loop)；材料链里程碑
+ * source/note/card/evidence。其余事件类型入 pending 不推进（骨架预留）。
  */
 
 import { DomainError } from "@astella/shared";
@@ -53,30 +53,21 @@ const MILESTONE_STEPS: Record<string, CompanionJourneyStepV2> = {
 };
 
 /**
- * 把单个领域事件归约为 reducer 命令（P6：learning_run.completed 全链 +
+ * 把单个领域事件归约为 reducer 命令（P6：学习卡完成全链 +
  * source/note/card/evidence 里程碑）。未知事件 → noop（不越级推进）。
  */
 export function classifyJourneyEvent(event: JourneyDomainEventInput): ReducerCommand {
-  if (event.eventType === "learning_run.completed") {
-    const result = event.payload.result as
-      | { outcome?: string; scheduleImpact?: { kind?: string } }
-      | undefined;
-    const scheduleImpactKind = result?.scheduleImpact?.kind;
-    if (scheduleImpactKind === "created" || scheduleImpactKind === "rescheduled") {
-      return {
-        kind: "advance",
-        toStep: "closing",
-        refs: { runId: typeof event.payload.runId === "string" ? event.payload.runId : undefined },
-        completionKind: "real_first_loop",
-        terminalStatus: "completed",
-      };
-    }
-    // 无 schedule 副作用的首轮结算：仍记录 run 事实并推进到 first_schedule 之后
-    // 由后续 schedule 事件补全（§10.1：允许 created 或有明确原因的 none）。
+  // Plan 57 retired learning runs. The natural successor for "the first real
+  // loop" is finishing one note-owned learning card: the learner read a note,
+  // practised it and got a graded result back. The old `learning_run.completed`
+  // branch is gone with its table rather than left unreachable.
+  if (event.eventType === "note_learning_card.completed") {
     return {
       kind: "advance",
-      toStep: "first_schedule",
-      refs: { runId: typeof event.payload.runId === "string" ? event.payload.runId : undefined },
+      toStep: "closing",
+      refs: { cardId: typeof event.payload.cardId === "string" ? event.payload.cardId : undefined },
+      completionKind: "real_first_loop",
+      terminalStatus: "completed",
     };
   }
   const milestoneStep = MILESTONE_STEPS[event.eventType];

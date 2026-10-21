@@ -78,9 +78,7 @@ export function desktopRouteFromAgentRoute(route: CompanionAgentRouteEventV1["ro
         ? { kind: "source.detail", sourceId: route.sourceId }
         : companionPageRouteV2("source");
     case "note":
-      return { kind: "note.detail", noteId: route.noteId };
-    case "card":
-      return { kind: "objective.detail", objectiveId: route.objectiveId };
+      return { kind: "note.detail", noteId: route.noteId, ...(route.noteVersionId ? { noteVersionId: route.noteVersionId } : {}) };
     // 那一份产物按回执精确取回，形状就是手记成果卡在用的 `agentArtifactRefV1`。
     // 认不出来（种类不在落点表里）就映射成 null——递一个点了没反应的按钮比没有按钮更糟。
     case "learning_artifact": {
@@ -93,13 +91,8 @@ export function desktopRouteFromAgentRoute(route: CompanionAgentRouteEventV1["ro
       });
       return parsed.success ? { kind: "note.artifact", artifact: parsed.data } : null;
     }
-    case "learning_run":
-      return { kind: "learningRun.detail", runId: route.runId };
     case "home":
-    case "today":
     case "note_library":
-    case "objective_library":
-    case "review":
     case "search":
     case "star_map":
     case "conversation":
@@ -127,13 +120,6 @@ export async function applyRouteToRoom(route: DesktopRouteV1): Promise<boolean> 
     case "room.home":
       room.invoke("home");
       return true;
-    case "room.today":
-      // 目录栏上「今日学习」那颗用的就是 continue（room-machine 把它解析成 study 页）。
-      room.invoke("continue");
-      return true;
-    case "review.queue":
-      room.invoke("review");
-      return true;
     case "understanding.graph":
       room.invoke("graph");
       return true;
@@ -142,9 +128,6 @@ export async function applyRouteToRoom(route: DesktopRouteV1): Promise<boolean> 
       return true;
     case "note.library":
       room.invoke("open-notes");
-      return true;
-    case "objective.library":
-      room.invoke("open-objectives");
       return true;
     case "settings.section":
       room.setSettingsSection(route.section);
@@ -168,17 +151,6 @@ export async function applyRouteToRoom(route: DesktopRouteV1): Promise<boolean> 
       // 加同一次 invoke。这里再写一遍"怎么打开一份学习产物"就会分叉——那条路径上
       // 版本号、taskId 与清掉 learningView 的时机都各有讲究。
       return openAgentArtifact(route.artifact, room.workspaceScopeRevision);
-    case "learningRun.detail":
-      // 与 ReviewSurface / WorkspaceLibrarySurface 同一条入口：设 activeRunId **并且**
-      // 真正切页。只设 id 不会换页（Player 挂在任务视图那一页里，页面由 `invoke` 决定），
-      // 于是「前往」成了一次空转：两条 IPC 都成功、无报错、页面纹丝不动。
-      room.setActiveRunId(route.runId);
-      room.invoke("validate");
-      return true;
-    case "objective.detail":
-      room.setActiveObjectiveId(route.objectiveId);
-      room.invoke("open-objective");
-      return true;
     case "companion.center":
       room.setCompanionCenterTarget({
         tab: route.tab ?? "memory",
@@ -293,5 +265,7 @@ export function companionReplyFailureMessage(code: unknown, recoverable: unknown
   if (code === "REPLY_LENGTH_LIMIT") return "这次答复达到长度上限，已经说出的内容保留；说一句「接着讲」，我就从断的地方往下说。";
   if (code === "RATE_LIMITED") return "模型服务暂时繁忙，稍后再试就好。已经做好的内容还在。";
   if (code === "PROVIDER_UNAVAILABLE") return "模型服务暂时不可用，已经做好的内容还在。";
+  if (code === "PROVIDER_FIRST_OUTPUT_TIMEOUT") return "模型服务未能及时返回首段内容。已有内容保留，可以从中断处继续。";
+  if (code === "PROVIDER_IDLE_TIMEOUT") return "模型输出中断，等待新的进展超时。已有内容保留，可以从中断处继续。";
   return recoverable === false ? "这一轮没能完成。已有内容和操作结果仍保留，请先查看结果再决定下一步。" : "这一轮暂时没能完成，可以先查看已有内容再继续。";
 }

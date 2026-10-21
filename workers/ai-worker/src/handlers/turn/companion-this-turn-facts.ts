@@ -33,9 +33,9 @@ import { sql } from "drizzle-orm";
 import { noteVisibleSqlText } from "@astella/shared/note-visibility";
 import type { WorkerTransaction } from "../../db.ts";
 import { noteSearchTerms } from "./companion-dialogue-content.ts";
-import { ageLabel, visibleCompanionCardSourceCondition, visibleCompanionDueReviewCondition } from "../proactive/companion-here-and-now.ts";
+import { ageLabel } from "../proactive/companion-here-and-now.ts";
 import type { LivePageView } from "./companion-live-view.ts";
-import { findNearestNoteTitle, findNoteRuns, type NoteRunRow } from "../note/companion-note-reads.ts";
+import { findNearestNoteTitle } from "../note/companion-note-reads.ts";
 
 /**
  * 单轮 preflight 总预算（毫秒）。超了整块丢弃：这块是"她张口之前先替她查好"的增值，
@@ -79,9 +79,6 @@ export interface ThisTurnFacts {
 /** 页面种类 → 这一屏上的对象是什么。认不出来的页按"没解析出来"处理。 */
 const ENTITY_KIND_BY_PAGE: Record<string, TurnEntityKind> = {
   note: "note",
-  card: "card",
-  objective: "card",
-  review: "card",
 };
 
 const ORDINAL_REF = /第\s*([一二三四五六七八九十\d]+)\s*[张条篇个]/;
@@ -180,10 +177,6 @@ interface NoteFactRow extends Record<string, unknown> {
 interface CardFactRow extends Record<string, unknown> {
   card_id: string;
   cue: string | null;
-  schedule_status: string | null;
-  next_review_at: string | null;
-  user_deferred_until: string | null;
-  overdue: boolean | null;
 }
 
 interface ReminderFactRow extends Record<string, unknown> {
@@ -265,23 +258,18 @@ async function findCards(
   terms: string[],
 ): Promise<CardFactRow[]> {
   if (terms.length === 0) return [];
-  const match = termMatchChain((term) => sql`c.front->>'cue' ILIKE ${`%${term}%`}`, terms);
-  // 争议未决、已暂不安排或来源笔记已回收的目标不接排期，但 LEFT JOIN 仍保留用户问到的卡；
-  // 把这个判据放进 WHERE 会连卡片本身一起过滤掉。
+  const match = termMatchChain((term) => sql`q.stem ILIKE ${`%${term}%`}`, terms);
   const rows = await tx.execute<CardFactRow>(sql`
-    SELECT c.card_id, c.front->>'cue' AS cue,
-           s.status AS schedule_status,
-           to_char(s.next_review_at, 'MM-DD HH24:MI') AS next_review_at,
-           to_char(s.user_deferred_until, 'MM-DD HH24:MI') AS user_deferred_until,
-           (s.next_review_at IS NOT NULL AND s.next_review_at <= now()) AS overdue
-    FROM learning_cards_v2 c
-    LEFT JOIN review_schedules s
-     ON s.workspace_id = c.workspace_id AND s.subject_type = 'card'
-     AND s.subject_id = c.objective_id AND s.status = 'pending'
-     AND (s.user_id = ${scope.userId} OR s.user_id IS NULL)
-     AND ${visibleCompanionDueReviewCondition()}
-    WHERE c.workspace_id = ${scope.workspaceId} AND c.lifecycle = 'active'
-      AND ${visibleCompanionCardSourceCondition(scope.userId)}
+    SELECT c.id AS card_id, q.stem AS cue
+    FROM note_learning_cards c
+    JOIN notes n ON n.id = c.note_id AND n.deleted_at IS NULL
+    JOIN LATERAL (
+      SELECT stem FROM note_learning_card_questions
+      WHERE card_id = c.id ORDER BY ordinal LIMIT 1
+    ) q ON true
+    WHERE c.workspace_id = ${scope.workspaceId}
+      AND c.status = 'active'
+      AND (n.share_scope = 'shared' OR n.created_by = ${scope.userId})
       AND ${match}
     ORDER BY c.updated_at DESC LIMIT 6
   `);
@@ -357,11 +345,12 @@ async function resolvePreviousToolId(
     LIMIT 1
   `);
   if (notes[0]) return `笔记《${notes[0].title}》`;
-  const cards = await tx.execute<{ cue: string | null }>(sql`
-    SELECT front->>'cue' AS cue FROM learning_cards_v2
-    WHERE card_id = ${id} AND workspace_id = ${scope.workspaceId} AND lifecycle = 'active' LIMIT 1
+  const cards = await tx.execute<{ title: string }>(sql`
+    SELECT n.title FROM note_learning_cards c
+    JOIN notes n ON n.id = c.note_id
+    WHERE c.id = ${id}::uuid AND c.workspace_id = ${scope.workspaceId} AND c.status = 'active' LIMIT 1
   `);
-  if (cards[0]) return `学习卡《${cards[0].cue ?? ""}》`;
+  if (cards[0]) return `学习卡《${cards[0].title}》`;
   const reminders = await tx.execute<{ text: string }>(sql`
     SELECT text FROM companion_reminders
     WHERE id = ${id}::uuid AND workspace_id = ${scope.workspaceId} AND user_id = ${scope.userId} LIMIT 1
@@ -373,27 +362,18 @@ async function resolvePreviousToolId(
 // ─── 渲染 ─────────────────────────────────────────────────────────────────
 
 
-function renderNoteLine(note: NoteFactRow, runs: NoteRunRow[]): string {
+function renderNoteLine(note: NoteFactRow): string {
   const parts = [
     `笔记《${note.title}》：noteId=${note.id}`,
     `${ageLabel(Number(note.age_minutes))}改过`,
     `正文 ${note.block_count} 块`,
   ];
   if (Number(note.image_count) > 0) parts.push(`${note.image_count} 张图`);
-  const paused = runs.filter((run) => run.phase === "paused");
-  const running = runs.filter((run) => run.phase !== "paused");
-  if (running.length > 0) parts.push(`有 ${running.length} 轮学习正在进行中（runId=${running[0].id}）`);
-  if (paused.length > 0) parts.push(`有 ${paused.length} 轮学习在暂停中（runId=${paused[0].id}）`);
   return `- ${parts.join("，")}。`;
 }
 
 function renderCardLine(ref: TurnReference, card: CardFactRow): string {
-  const state = card.schedule_status === "pending"
-    ? (card.overdue ? "到期待复习" : "已安排复习")
-    : "没有待复习安排";
-  const deferred = card.user_deferred_until ? `，用户已延后到 ${card.user_deferred_until}` : "";
-  return `- 「${ref.text}」：学习卡《${card.cue ?? ""}》`
-    + `（cardId=${card.card_id}，${state}${deferred}）。`;
+  return `- 「${ref.text}」：学习卡《${card.cue ?? ""}》（cardId=${card.card_id}）。`;
 }
 
 // ─── 主流程 ───────────────────────────────────────────────────────────────
@@ -432,7 +412,6 @@ export async function loadThisTurnFacts(
   const cardRows = await findCards(tx, scope, terms);
   const reminderRows = await findReminders(tx, scope, terms);
   const memoryRows = await findMemories(tx, scope, terms);
-  const noteRuns = await findNoteRuns(tx, scope, noteRows.map((note) => note.id));
 
   const lines: string[] = [];
   const hitRules = new Set<string>();
@@ -476,7 +455,7 @@ export async function loadThisTurnFacts(
       ? bestByCoverage(noteRows, refTerms, (row) => row.title)
       : noteRows.find((row) => row.title === ref.text) ?? null);
     if (exact) {
-      lines.push(renderNoteLine(exact, noteRuns.get(exact.id) ?? []));
+      lines.push(renderNoteLine(exact));
       hitRules.add(ref.rule);
       continue;
     }

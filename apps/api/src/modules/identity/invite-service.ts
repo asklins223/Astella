@@ -18,11 +18,7 @@ import {
 import { sessions } from "@astella/shared/db-schema/session";
 import { onboardingStates, userAiSettings } from "@astella/shared/db-schema/identity";
 import { notes, sources } from "@astella/shared/db-schema/note";
-import { evidenceSnapshotsV2 } from "@astella/shared/db-schema/card-generation-v2";
-import {
-  learningCardsV2,
-  learningObjectiveOriginsV2,
-} from "@astella/shared/db-schema/card-generation-v2";
+import { noteLearningCards } from "@astella/shared/db-schema/note-learning-cards";
 import {
   generateInvitationToken,
   createInvitationTokenStorage,
@@ -657,7 +653,6 @@ export const ONBOARDING_STEPS = [
   "first_content",
   "first_note",
   "first_card",
-  "evidence_review",
 ] as const;
 
 export interface OnboardingState {
@@ -688,10 +683,8 @@ async function deriveOnboardingSnapshot(
   tx: ApiTransaction,
   workspaceId: string,
   userId: string,
-  storedSteps: Record<string, boolean>,
 ): Promise<DerivedOnboardingSnapshot> {
   // N#7-12：5 个派生查询相互无数据依赖，并行化（原来串行 5 次往返）。
-  // 该函数在 markOnboardingStep 的 FOR UPDATE 持有期内调用，并行化缩短写锁持有时间。
   const [aiSettings, firstContent, firstNote, firstCard] = await Promise.all([
     // ai_consent 步骤的事实源从"空间的同意"改成"本人的同意"（0237）。
     // 本事务由 withWorkspaceTransaction 开，`app.user_id` 已设置，所以这张启用了
@@ -712,17 +705,14 @@ async function deriveOnboardingSnapshot(
       .from(notes)
       .where(and(eq(notes.workspaceId, workspaceId), eq(notes.createdBy, userId), isNull(notes.deletedAt)))
       .limit(1),
-    // V2: 检测用户是否已有学习卡（first_card 步骤）。
-    // V1 退役：原查询经 learningCards.noteVersionId 直连 note（V1 表已删）。
-    // V2 卡片经 objectiveId 关联 objective，再经 learningObjectiveOriginsV2 回溯到 note。
+    // 检测用户是否已有学习卡（first_card 步骤）。Plan 57：卡直接挂在笔记上。
     tx
-      .select({ id: learningCardsV2.id })
-      .from(learningCardsV2)
-      .innerJoin(learningObjectiveOriginsV2, eq(learningObjectiveOriginsV2.objectiveId, learningCardsV2.objectiveId))
-      .innerJoin(notes, eq(notes.id, learningObjectiveOriginsV2.noteId))
+      .select({ id: noteLearningCards.id })
+      .from(noteLearningCards)
+      .innerJoin(notes, eq(notes.id, noteLearningCards.noteId))
       .where(
         and(
-          eq(learningCardsV2.workspaceId, workspaceId),
+          eq(noteLearningCards.workspaceId, workspaceId),
           eq(notes.createdBy, userId),
           isNull(notes.deletedAt),
         ),
@@ -740,7 +730,6 @@ async function deriveOnboardingSnapshot(
     first_content: firstContent.length > 0,
     first_note: firstNote.length > 0,
     first_card: firstCard.length > 0,
-    evidence_review: storedSteps.evidence_review === true,
   };
   const completedCount = ONBOARDING_STEPS.filter((step) => steps[step]).length;
   const status = completedCount === ONBOARDING_STEPS.length
@@ -778,7 +767,6 @@ export async function getOnboardingState(
         tx,
         workspaceId,
         userId,
-        storedSteps,
       );
 
       if (!onboardingStepsEqual(storedSteps, steps) || row.status !== status) {
@@ -799,82 +787,6 @@ export async function getOnboardingState(
   );
 }
 
-export type UpdateStepError = "invalid_step" | "not_found" | "business_fact_missing";
-
-export async function markOnboardingStep(
-  workspaceId: string,
-  userId: string,
-  step: string,
-  completed: boolean = true,
-  evidenceId?: string,
-): Promise<{ ok: true } | { ok: false; error: UpdateStepError }> {
-  // All other steps are derived from authoritative tables. Evidence review is
-  // the sole acknowledgement event and must reference evidence the user opened.
-  if (step !== "evidence_review" || !completed || !evidenceId) {
-    return { ok: false, error: "invalid_step" };
-  }
-
-  const result = await withWorkspaceTransaction(
-    { workspaceId, userId },
-    async (tx) => {
-      const rows = await tx
-        .select()
-        .from(onboardingStates)
-        .where(
-          and(
-            eq(onboardingStates.workspaceId, workspaceId),
-            eq(onboardingStates.userId, userId),
-          ),
-        )
-        .for("update");
-
-      const state = rows[0];
-      if (!state) return { ok: false as const, error: "not_found" as UpdateStepError };
-
-      // V1 evidences 表已随 0183 退役；evidence_review 步骤改查 V2 证据快照。
-      const evidence = await tx.query.evidenceSnapshotsV2.findFirst({
-        where: and(
-          // EntityRef/UI payloads carry the stable business identifier, not
-          // the storage surrogate `evidence_snapshots_v2.id`.
-          eq(evidenceSnapshotsV2.evidenceSnapshotId, evidenceId),
-          eq(evidenceSnapshotsV2.workspaceId, workspaceId),
-        ),
-      });
-      if (!evidence) {
-        return { ok: false as const, error: "business_fact_missing" as UpdateStepError };
-      }
-
-      const storedSteps = state.steps as Record<string, boolean>;
-      const wasEvidenceReviewed = storedSteps.evidence_review === true;
-      const { steps, status } = await deriveOnboardingSnapshot(
-        tx,
-        workspaceId,
-        userId,
-        { ...storedSteps, evidence_review: true },
-      );
-
-      if (!onboardingStepsEqual(storedSteps, steps) || state.status !== status) {
-        await tx
-          .update(onboardingStates)
-          .set({ steps, status, updatedAt: new Date() })
-          .where(eq(onboardingStates.id, state.id));
-      }
-
-      // Record each transition only once. A repeated acknowledgement may still
-      // complete onboarding if other authoritative facts changed meanwhile.
-      if (!wasEvidenceReviewed) {
-        recordFunnelEvent("onboarding_step");
-      }
-      if (state.status !== "completed" && status === "completed") {
-        recordFunnelEvent("onboarding_completed");
-      }
-
-      return { ok: true as const };
-    },
-  );
-
-  return result;
-}
 
 /** Ensure an onboarding state exists for a user. Creates if missing. */
 export async function ensureOnboardingState(

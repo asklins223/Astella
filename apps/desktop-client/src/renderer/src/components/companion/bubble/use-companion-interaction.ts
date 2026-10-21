@@ -61,7 +61,7 @@ export function useCompanionInteraction(chat: CompanionChatSession, voiceEnabled
   const errorLife = useCompanionTransient(errorKey, 60_000, obscured || errorKey !== null);
   const toolKey = chat.nodes.some(node => node.kind === "tool")
     ? `${chat.conversationId}:${chat.nodes.map(node => `${node.key}:${node.state}`).join("|")}:${chat.phase === "sending" ? "running" : "done"}` : null;
-  const toolNeedsAttention = chat.nodes.some(node => node.kind === "tool" && ["waiting_confirmation", "outcome_unknown", "failed", "not_executed", "unavailable"].includes(node.state));
+  const toolNeedsAttention = chat.nodes.some(node => node.kind === "tool" && ["waiting_confirmation", "outcome_unknown"].includes(node.state));
   const toolLife = useCompanionTransient(toolKey, 8_000, obscured || chat.phase === "sending" || Boolean(chat.liveReply || chat.richReply) || processReading || toolNeedsAttention);
   return {
     input, setInput, voice,

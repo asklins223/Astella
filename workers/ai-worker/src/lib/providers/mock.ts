@@ -363,6 +363,13 @@ fingerprint: `mock:${this.modelId}:${this.visionModelId}:native_tools`,
       .map((message) => String(message.content ?? ""))
       .join("\n");
 
+    // Default fixture verdict preserves normal greeting/publication paths.
+    // Semantic rejection and correction cases supply their own scripted verdicts.
+    if (systemContent.includes("核对一条即将主动发出的伴星发言")) {
+      const content = JSON.stringify({ decision: "publish", reason: "mock：本例验证正常发言发布路径。" });
+      return { content, usage: this.estimateUsage(userContent, content) };
+    }
+
     // Fixture attention mirrors the production structured contract.
     const isToolIntentCall = messages.some(message => message.role === "system"
       && String(message.content).includes("goalObjectIndex"));

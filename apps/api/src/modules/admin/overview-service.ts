@@ -15,11 +15,9 @@
  */
 
 import {
-  isCardGenerationV2Enabled,
   isCompanionDialogueEnabled,
   isCompanionJourneyV2Enabled,
   isCompanionVoiceDialogueEnabled,
-  isLearningRunEnabled,
   isMemoryContextEnabled,
   isMemoryVectorRebuildEnabled,
   isPetProfileEnabled,
@@ -71,16 +69,6 @@ export async function readOverview(configPath: string, configExists: boolean): P
   const dbPoolMax = Number(process.env.DB_POOL_MAX ?? process.env.API_DB_POOL_MAX ?? "");
 
   const capabilities: CapabilityFlagView[] = [
-    {
-      key: "LEARNING_RUN_ENABLED",
-      ...CAPABILITY_LABELS.LEARNING_RUN_ENABLED,
-      enabled: isLearningRunEnabled(),
-    },
-    {
-      key: "CARD_GENERATION_V2_ENABLED",
-      ...CAPABILITY_LABELS.CARD_GENERATION_V2_ENABLED,
-      enabled: isCardGenerationV2Enabled(),
-    },
     {
       key: "COMPANION_DIALOGUE_V1_ENABLED",
       ...CAPABILITY_LABELS.COMPANION_DIALOGUE_V1_ENABLED,

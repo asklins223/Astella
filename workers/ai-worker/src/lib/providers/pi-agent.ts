@@ -484,6 +484,8 @@ export class PiAgentProvider implements AIProvider {
     let finalMessage: PiAssistantMessage | undefined;
     try {
       for await (const event of stream) {
+        if (((event.type === "text_delta" || event.type === "thinking_delta" || event.type === "toolcall_delta") && event.delta.length > 0)
+          || event.type === "toolcall_end") options.onOutputActivity?.();
         if (event.type === "text_delta") wire.textDelta(event.delta);
         else if (event.type === "thinking_delta") options.onReasoningDelta?.(event.delta);
         else if (event.type === "toolcall_start" || event.type === "toolcall_delta") {
@@ -522,8 +524,9 @@ export class PiAgentProvider implements AIProvider {
     } finally { transport.close(); }
   }
 
-  executeAgentTurn(request: AgentTurnRequest, signal?: AbortSignal): Promise<AgentTurnResult> {
-    return this.run([], { nativeAgentRequest: request, responseFormat: "text" }, signal);
+  executeAgentTurn(request: AgentTurnRequest, signal?: AbortSignal,
+    observation?: { onOutputActivity?: () => void }): Promise<AgentTurnResult> {
+    return this.run([], { nativeAgentRequest: request, responseFormat: "text", onOutputActivity: observation?.onOutputActivity }, signal);
   }
 
   async chatCompletion(messages: ChatMessage[], options: ChatOptions, signal?: AbortSignal): Promise<ChatResult> {

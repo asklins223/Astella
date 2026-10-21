@@ -142,8 +142,8 @@ interface DailyFacts {
   sourcesCreated: number;
   jobsCreated: number;
   jobsCompleted: number;
-  learningRunsCreated: number;
-  learningRunsCompleted: number;
+  cardAttemptsCreated: number;
+  cardAttemptsCompleted: number;
   pageContexts: number;
   conversationMessages: number;
   userMessages: number;
@@ -172,9 +172,11 @@ async function collectFacts(tx: WorkerTransaction, scope: DayScope): Promise<Dai
       (SELECT count(*)::int FROM notes WHERE workspace_id = ${scope.workspaceId} AND created_by = ${scope.userId}
         AND updated_at >= ${dayStart(scope)} AND updated_at < ${dayEnd(scope)}
         AND deleted_at IS NULL) AS notes_updated,
-      (SELECT count(*)::int FROM learning_cards_v2 c WHERE c.workspace_id = ${scope.workspaceId}
+      (SELECT count(*)::int FROM note_learning_cards c
+        JOIN notes card_note ON card_note.id = c.note_id
+        WHERE c.workspace_id = ${scope.workspaceId}
         AND c.created_at >= ${dayStart(scope)} AND c.created_at < ${dayEnd(scope)}
-        AND c.note_version_id IN (SELECT nv.id FROM note_versions nv WHERE nv.created_by = ${scope.userId})) AS cards_created,
+        AND card_note.created_by = ${scope.userId}) AS cards_created,
       (SELECT count(*)::int FROM sources WHERE workspace_id = ${scope.workspaceId} AND created_by = ${scope.userId}
         AND created_at >= ${dayStart(scope)} AND created_at < ${dayEnd(scope)}) AS sources_created,
       (SELECT count(*)::int FROM jobs WHERE workspace_id = ${scope.workspaceId} AND requested_by = ${scope.userId}
@@ -182,11 +184,13 @@ async function collectFacts(tx: WorkerTransaction, scope: DayScope): Promise<Dai
       (SELECT count(*)::int FROM jobs WHERE workspace_id = ${scope.workspaceId} AND requested_by = ${scope.userId}
         AND finished_at >= ${dayStart(scope)} AND finished_at < ${dayEnd(scope)}
         AND status = 'succeeded') AS jobs_completed,
-      (SELECT count(*)::int FROM learning_runs WHERE workspace_id = ${scope.workspaceId} AND user_id = ${scope.userId}
-        AND created_at >= ${dayStart(scope)} AND created_at < ${dayEnd(scope)}) AS learning_runs_created,
-      (SELECT count(*)::int FROM learning_runs WHERE workspace_id = ${scope.workspaceId} AND user_id = ${scope.userId}
-        AND updated_at >= ${dayStart(scope)} AND updated_at < ${dayEnd(scope)}
-        AND phase = 'completed') AS learning_runs_completed,
+      (SELECT count(*)::int FROM note_learning_card_attempts a
+        WHERE a.workspace_id = ${scope.workspaceId} AND a.user_id = ${scope.userId}
+        AND a.started_at >= ${dayStart(scope)} AND a.started_at < ${dayEnd(scope)}) AS card_attempts_created,
+      (SELECT count(*)::int FROM note_learning_card_attempts a
+        WHERE a.workspace_id = ${scope.workspaceId} AND a.user_id = ${scope.userId}
+        AND a.completed_at >= ${dayStart(scope)} AND a.completed_at < ${dayEnd(scope)}
+        AND a.status = 'completed') AS card_attempts_completed,
       (SELECT count(DISTINCT page_kind)::int FROM assistant_page_contexts
         WHERE workspace_id = ${scope.workspaceId} AND user_id = ${scope.userId}
         AND created_at >= ${dayStart(scope)} AND created_at < ${dayEnd(scope)}) AS page_contexts,
@@ -208,8 +212,8 @@ async function collectFacts(tx: WorkerTransaction, scope: DayScope): Promise<Dai
     sourcesCreated: Number(row.sources_created ?? 0),
     jobsCreated: Number(row.jobs_created ?? 0),
     jobsCompleted: Number(row.jobs_completed ?? 0),
-    learningRunsCreated: Number(row.learning_runs_created ?? 0),
-    learningRunsCompleted: Number(row.learning_runs_completed ?? 0),
+    cardAttemptsCreated: Number(row.card_attempts_created ?? 0),
+    cardAttemptsCompleted: Number(row.card_attempts_completed ?? 0),
     pageContexts: Number(row.page_contexts ?? 0),
     conversationMessages: Number(row.conversation_messages ?? 0),
     userMessages: Number(row.user_messages ?? 0),
@@ -311,30 +315,29 @@ export async function collectDiaryMaterial(tx: WorkerTransaction, scope: DayScop
     });
   }
 
-  // 学了什么：走 learning_tasks.target_summary。
-  // **不能**用 learning_runs.goal——那一列是枚举（stabilize|clarify|…），
-  // 喂进去她会说出"你正在学习 stabilize"（companion-here-and-now.ts:37-43 踩过）。
-  const runRows = await tx.execute<{
-    at_local: string; what: string | null; phase: string; run_id: string; source_version: string;
+  // 今天做完的学习卡：标题取所属笔记，进度由完成时间给出。
+  const attemptRows = await tx.execute<{
+    at_local: string; what: string | null; attempt_id: string; source_version: string;
   }>(sql`
-    SELECT ${clockOf(scope, "r.created_at")} AS at_local,
-           r.id::text AS run_id, r.updated_at::text AS source_version,
-           coalesce(nullif(t.target_summary, ''), nullif(t.prompt, '')) AS what,
-           r.phase
-    FROM learning_runs r
-    LEFT JOIN learning_tasks t ON t.id = r.active_task_id
-    WHERE r.workspace_id = ${scope.workspaceId} AND r.user_id = ${scope.userId}
-      AND r.created_at >= ${dayStart(scope)} AND r.created_at < ${dayEnd(scope)}
-    ORDER BY r.created_at ASC
+    SELECT ${clockOf(scope, "a.completed_at")} AS at_local,
+           a.id::text AS attempt_id, a.completed_at::text AS source_version,
+           n.title AS what
+    FROM note_learning_card_attempts a
+    JOIN note_learning_cards c ON c.id = a.card_id
+    JOIN notes n ON n.id = c.note_id
+    WHERE a.workspace_id = ${scope.workspaceId} AND a.user_id = ${scope.userId}
+      AND a.status = 'completed'
+      AND a.completed_at >= ${dayStart(scope)} AND a.completed_at < ${dayEnd(scope)}
+    ORDER BY a.completed_at ASC
     LIMIT 5
   `);
-  for (const row of Array.isArray(runRows) ? runRows : []) {
+  for (const row of Array.isArray(attemptRows) ? attemptRows : []) {
     const what = normalizeMaterialText(row.what);
     if (!what) continue;
     pieces.push({
-      text: `你坐下来学${row.phase === "completed" ? "完" : "了"}「${what}」`,
+      text: `你做完了一张学习卡「${what}」`,
       group: "his", weight: 1, at: row.at_local,
-      sourceId: row.run_id, sourceType: "learning_run", sourceVersion: row.source_version,
+      sourceId: row.attempt_id, sourceType: "card", sourceVersion: row.source_version,
     });
   }
 
@@ -634,7 +637,7 @@ export async function collectDiaryMaterial(tx: WorkerTransaction, scope: DayScop
 
   const rowsIn = (rows: unknown) => (Array.isArray(rows) ? rows.length : 0);
   events =
-    rowsIn(noteRows) + rowsIn(sourceRows) + rowsIn(runRows) + rowsIn(reminderRows)
+    rowsIn(noteRows) + rowsIn(sourceRows) + rowsIn(attemptRows) + rowsIn(reminderRows)
     + rowsIn(memoryRows) + rowsIn(messageRows);
 
   const subject = pickDiarySubject(pieces);

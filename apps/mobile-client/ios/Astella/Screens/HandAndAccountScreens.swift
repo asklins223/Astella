@@ -51,6 +51,9 @@ struct OrbitScreen: View {
     @State private var memoryError: String?
     @State private var memoryGroup: OrbitMemoryGroup = .aboutYou
     @State private var memoryFilter: OrbitMemoryFilter = .active
+    @State private var appeared = false
+    @Namespace private var sectionLens
+    @Namespace private var memoryGroupLens
 
     private var recentDays: [OrbitDay] {
         let cutoff = Calendar.current.date(byAdding: .day, value: -13, to: Calendar.current.startOfDay(for: Date())) ?? .distantPast
@@ -66,39 +69,34 @@ struct OrbitScreen: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 orbitHero
-                HStack(spacing: 10) {
-                    sectionPicker
-                        .frame(maxWidth: .infinity)
-                    Button {
-                        withAnimation(Motion.gated(reduceMotion || store.localReduceMotion, Motion.routePush)) {
-                            store.beginDiaryCapture()
-                        }
-                    } label: {
-                        AstellaGlyph(kind: .edit, tint: StudyPalette.ink)
-                            .frame(width: 21, height: 21)
-                            .frame(width: 44, height: 44)
-                            .modifier(StudyGlassSurfaceStyle(radius: 22, interactive: true))
+                    .shellEntrance(0, active: appeared)
+                sectionPicker
+                    .padding(.top, 20)
+                    .shellEntrance(1, active: appeared)
+                Group {
+                    switch section {
+                    case .diary: diaryContent.padding(.top, 22)
+                    case .memory: memoryContent.padding(.top, 22)
+                    case .hand: handContent.padding(.top, 22)
                     }
-                    .buttonStyle(AstellaPressStyle())
-                    .accessibilityLabel("告诉伴星今天想记下的事")
-                    .accessibilityHint("打开对话并聚焦输入框，发送前可以继续编辑")
                 }
-                .padding(.horizontal, 2)
-                .padding(.top, 21)
-                switch section {
-                case .diary: diaryContent.padding(.top, 16)
-                case .memory: memoryContent.padding(.top, 18)
-                case .hand: handContent.padding(.top, 18)
-                }
+                .shellEntrance(2, active: appeared)
             }
-            .padding(.horizontal, 20)
-            .padding(.top, -8)
+            .padding(.horizontal, 22)
+            .padding(.top, 8)
             .padding(.bottom, 128)
             .frame(maxWidth: 560)
             .frame(maxWidth: .infinity)
         }
         .scrollIndicators(.hidden)
         .background(DawnBackground())
+        .onAppear {
+            guard !appeared else { return }
+            Task { @MainActor in
+                await Task.yield()
+                appeared = true
+            }
+        }
         .task {
             #if DEBUG
             if ["orbit", "orbit-memory", "orbit-tasks"].contains(store.uiReviewMode ?? "") {
@@ -139,11 +137,11 @@ struct OrbitScreen: View {
     private var orbitHero: some View {
         let active = recentDays.filter { $0.status == "generated" }.count
         return VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: 0) {
+            HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 0) {
-                    Text("OUR CONSTELLATION")
+                    Text("拾星 · 相伴的日子")
                         .font(.system(size: 10, weight: .medium)).tracking(1.4)
-                        .foregroundStyle(.white.opacity(0.64))
+                        .foregroundStyle(.white.opacity(0.66))
                     Group {
                         if companionDays > 0 {
                             Text("相伴 ") + Text("\(companionDays)").fontWeight(.bold) + Text(" 天")
@@ -151,43 +149,42 @@ struct OrbitScreen: View {
                             Text("从第一颗星开始")
                         }
                     }
-                    .font(.system(size: 33, weight: .medium))
-                    .tracking(-0.8)
+                    .font(.system(size: 34, weight: .medium))
+                    .tracking(-0.9)
                     .foregroundStyle(.white)
-                    .padding(.top, 15)
-                    .padding(.bottom, 9)
+                    .padding(.top, 14)
+                    .padding(.bottom, 8)
                     Text("我们一起走过的日子，都成了星光。")
-                        .font(.system(size: 12)).foregroundStyle(.white.opacity(0.76))
+                        .font(.system(size: 12.5)).foregroundStyle(.white.opacity(0.72))
                 }
                 Spacer(minLength: 0)
                 Image("CompanionAvatar")
                     .resizable().scaledToFill()
-                    .frame(width: 60, height: 60).clipShape(Circle())
+                    .frame(width: 56, height: 56).clipShape(Circle())
                     .background(.white.opacity(0.10), in: Circle())
-                    .overlay(Circle().stroke(.white.opacity(0.35), lineWidth: 1))
+                    .overlay(Circle().stroke(.white.opacity(0.32), lineWidth: 1))
                     .accessibilityHidden(true)
             }
             .frame(maxWidth: .infinity, alignment: .topLeading)
             OrbitStarTrail(days: recentDays)
-                .frame(height: 92)
-                .padding(.top, 23)
-                .offset(y: -3)
-            HStack {
-                Text("最近 14 天").foregroundStyle(.white.opacity(0.68))
+                .frame(height: 86)
+                .padding(.top, 20)
+            HStack(alignment: .center) {
+                Text("最近 14 天").foregroundStyle(.white.opacity(0.66))
                 Spacer()
                 HStack(spacing: 5) {
-                    AstellaGlyph(kind: .orbit, tint: .white).frame(width: 13, height: 13)
+                    AstellaGlyph(kind: .orbit, tint: .white).frame(width: 12, height: 12)
                     Text("点亮 \(active) 颗星").foregroundStyle(.white)
                 }
             }
             .font(.system(size: 11, weight: .medium))
-            .padding(.top, 3)
+            .padding(.top, 4)
         }
-        .padding(.horizontal, 24)
-        .padding(.top, 33)
+        .padding(.horizontal, 26)
+        .padding(.top, 30)
         .padding(.bottom, 18)
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .frame(height: 278, alignment: .topLeading)
+        .frame(height: 270, alignment: .topLeading)
         .background {
             RoundedRectangle(cornerRadius: 28, style: .continuous)
                 .fill(
@@ -222,36 +219,72 @@ struct OrbitScreen: View {
                 Button {
                     withAnimation(Motion.gated(reduceMotion || store.localReduceMotion, Motion.segment)) { section = item }
                 } label: {
-                    Text(item.rawValue)
-                        .font(.system(size: 12, weight: selected ? .semibold : .regular))
-                        .foregroundStyle(selected ? StudyPalette.ink : StudyPalette.muted)
-                        .frame(maxWidth: .infinity).frame(height: 36)
-                        .background(selected ? StudyPalette.paper : .clear, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    ZStack {
+                        if selected {
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .fill(StudyPalette.paper)
+                                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(StudyPalette.paperEdge.opacity(0.5), lineWidth: 0.7))
+                                .shadow(color: StudyPalette.ink.opacity(0.05), radius: 4, x: 0, y: 2)
+                                .matchedGeometryEffect(id: "orbit-section-lens", in: sectionLens)
+                        }
+                        Text(item.rawValue)
+                            .font(.system(size: 12.5, weight: selected ? .semibold : .regular))
+                            .foregroundStyle(selected ? StudyPalette.ink : StudyPalette.muted)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .contentShape(Rectangle())
+                    }
                 }
                 .buttonStyle(AstellaPressStyle())
                 .accessibilityAddTraits(selected ? [.isSelected] : [])
             }
         }
         .padding(4)
-        .modifier(StudyGlassSurfaceStyle(radius: 18, interactive: true))
+        .frame(height: 46)
+        .modifier(StudyGlassSurfaceStyle(radius: 20, interactive: true))
     }
 
     private var diaryContent: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("这是她替你写下的一天。列表只给摘要，点开看当日全文。")
-                .font(.system(size: 11))
-                .lineSpacing(4)
-                .foregroundStyle(StudyPalette.muted)
-                .padding(.horizontal, 2)
-                .padding(.bottom, 20)
-                .offset(y: 4)
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("她替你写下的日子")
+                        .font(.system(size: 17, weight: .semibold))
+                        .tracking(-0.2)
+                        .foregroundStyle(StudyPalette.ink)
+                    Text("列表只给摘要，点开看当日全文。")
+                        .font(.system(size: 12))
+                        .foregroundStyle(StudyPalette.muted)
+                }
+                Spacer(minLength: 8)
+                Button {
+                    withAnimation(Motion.gated(reduceMotion || store.localReduceMotion, Motion.routePush)) {
+                        store.beginDiaryCapture()
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        AstellaGlyph(kind: .edit, tint: StudyPalette.accent).frame(width: 14, height: 14)
+                        Text("聊聊今天").font(.system(size: 11.5, weight: .semibold)).foregroundStyle(StudyPalette.ink)
+                    }
+                    .padding(.horizontal, 12)
+                    .frame(height: 36)
+                    .modifier(StudyGlassSurfaceStyle(radius: 18, interactive: true))
+                }
+                .buttonStyle(AstellaPressStyle())
+                .sensoryFeedback(.selection, trigger: store.selectedTab)
+                .accessibilityLabel("告诉伴星今天想记下的事")
+                .accessibilityHint("打开对话并聚焦输入框，发送前可以继续编辑")
+            }
+            .padding(.bottom, 18)
+
             if loading { OrbitLoadingRow() }
             else if let diaryError { OrbitEmptyCard(title: "暂时看不到星迹", detail: diaryError, glyph: .orbit) }
-            else if recentDays.filter({ $0.status == "generated" }).isEmpty { OrbitEmptyCard(title: "星轨还很安静", detail: "等伴星写下第一篇日记，这里就会亮起一颗星。", glyph: .orbit) }
-            else {
-                ForEach(recentDays.filter { $0.status == "generated" }.sorted { $0.date > $1.date }) { day in
+            else if recentDays.filter({ $0.status == "generated" }).isEmpty {
+                OrbitEmptyCard(title: "星轨还很安静", detail: "等伴星写下第一篇日记，这里就会亮起一颗星。", glyph: .orbit)
+            } else {
+                ForEach(Array(recentDays.filter { $0.status == "generated" }.sorted { $0.date > $1.date }.enumerated()), id: \.element.id) { index, day in
                     OrbitDiaryRow(day: day, summary: diarySummaries[day.date])
-                        .padding(.bottom, 14)
+                        .padding(.bottom, 13)
+                        .shellEntrance(3 + index, active: appeared)
                 }
             }
         }
@@ -259,18 +292,21 @@ struct OrbitScreen: View {
 
     private var memoryContent: some View {
         VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("她记住的事")
+                    .font(.system(size: 17, weight: .semibold))
+                    .tracking(-0.2)
+                    .foregroundStyle(StudyPalette.ink)
+                Text("从相处里记下的事实，可核对、修订或收回。")
+                    .font(.system(size: 12))
+                    .foregroundStyle(StudyPalette.muted)
+            }
+            .padding(.bottom, 16)
+
             memoryGroupPicker
-                .padding(.bottom, 14)
+                .padding(.bottom, 12)
 
             memoryFilterChips
-                .padding(.bottom, 16)
-
-            Text("她从相处里记住的、关于你的事实。可核对、修订或收回。")
-                .font(.system(size: 12))
-                .lineSpacing(3)
-                .foregroundStyle(StudyPalette.muted)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, 2)
                 .padding(.bottom, 18)
 
             if loading { OrbitLoadingRow() }
@@ -278,20 +314,21 @@ struct OrbitScreen: View {
             else if visibleMemories.isEmpty {
                 OrbitEmptyCard(title: memoryEmptyTitle, detail: memoryEmptyDetail, glyph: .companion)
             } else {
-                ForEach(visibleMemories) { memory in
+                ForEach(Array(visibleMemories.enumerated()), id: \.element.id) { index, memory in
                     NavigationLink(value: OrbitNavigationRoute.memory(memory.id)) {
                         memoryCard(memory)
                     }
-                    .buttonStyle(.plain)
-                    .padding(.bottom, 14)
+                    .buttonStyle(AstellaPressStyle())
+                    .padding(.bottom, 12)
+                    .shellEntrance(3 + index, active: appeared)
                 }
             }
 
             NavigationLink(value: OrbitNavigationRoute.memoryRecycle) {
                 settingDestinationRow(title: "记忆回收站", detail: "恢复最近删除的记忆", glyph: .history)
             }
-            .buttonStyle(.plain)
-            .padding(.top, 4)
+            .buttonStyle(AstellaPressStyle())
+            .padding(.top, 8)
         }
     }
 
@@ -305,20 +342,28 @@ struct OrbitScreen: View {
                         memoryFilter = .active
                     }
                 } label: {
-                    Text(group.rawValue)
-                        .font(.system(size: 12, weight: selected ? .semibold : .regular))
-                        .foregroundStyle(selected ? StudyPalette.ink : StudyPalette.muted)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 34)
-                        .background(selected ? StudyPalette.paper.opacity(0.92) : .clear,
-                                    in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                    ZStack {
+                        if selected {
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(StudyPalette.paper)
+                                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(StudyPalette.paperEdge.opacity(0.5), lineWidth: 0.7))
+                                .shadow(color: StudyPalette.ink.opacity(0.04), radius: 3, x: 0, y: 1)
+                                .matchedGeometryEffect(id: "orbit-memory-group-lens", in: memoryGroupLens)
+                        }
+                        Text(group.rawValue)
+                            .font(.system(size: 12, weight: selected ? .semibold : .regular))
+                            .foregroundStyle(selected ? StudyPalette.ink : StudyPalette.muted)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .contentShape(Rectangle())
+                    }
                 }
                 .buttonStyle(AstellaPressStyle())
                 .accessibilityAddTraits(selected ? [.isSelected] : [])
             }
         }
         .padding(4)
-        .modifier(StudyGlassSurfaceStyle(radius: 18, interactive: true))
+        .frame(height: 42)
+        .modifier(StudyGlassSurfaceStyle(radius: 19, interactive: true))
     }
 
     private var memoryFilterChips: some View {
@@ -332,45 +377,50 @@ struct OrbitScreen: View {
                         }
                     } label: {
                         Text(filter.rawValue)
-                            .font(.system(size: 12, weight: selected ? .semibold : .regular))
+                            .font(.system(size: 11.5, weight: selected ? .semibold : .regular))
                             .foregroundStyle(selected ? StudyPalette.accentLabel : StudyPalette.ink)
-                            .padding(.horizontal, 15)
-                            .frame(minHeight: 33)
-                            .background(selected ? StudyPalette.accent : StudyPalette.paper.opacity(0.58), in: Capsule())
-                            .overlay(Capsule().stroke(selected ? Color.clear : .white.opacity(0.6), lineWidth: 0.8))
+                            .padding(.horizontal, 14)
+                            .frame(minHeight: 32)
+                            .background(selected ? StudyPalette.accent : StudyPalette.paper.opacity(0.66), in: Capsule())
+                            .overlay(Capsule().stroke(selected ? Color.clear : StudyPalette.paperEdge.opacity(0.55), lineWidth: 0.7))
                     }
                     .buttonStyle(AstellaPressStyle())
                     .accessibilityAddTraits(selected ? [.isSelected] : [])
                 }
             }
             .padding(.horizontal, 2)
+            .padding(.vertical, 1)
         }
         .scrollIndicators(.hidden)
     }
 
     private func memoryCard(_ memory: OrbitMemory) -> some View {
-        VStack(alignment: .leading, spacing: 13) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
-                Text(memoryKindLabel(memory.kind))
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(StudyPalette.accent)
-                    .padding(.horizontal, 9)
-                    .frame(minHeight: 24)
-                    .background(StudyPalette.sky.opacity(0.82), in: Capsule())
+                HStack(spacing: 5) {
+                    Circle().fill(StudyPalette.accent).frame(width: 4, height: 4)
+                    Text(memoryKindLabel(memory.kind))
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .tracking(0.3)
+                        .foregroundStyle(StudyPalette.accent)
+                }
+                .padding(.horizontal, 9)
+                .frame(minHeight: 24)
+                .background(StudyPalette.sky.opacity(0.8), in: Capsule())
                 Spacer(minLength: 8)
                 Text(memoryStatusLabel(memory))
-                    .font(.system(size: 11))
+                    .font(.system(size: 10.5))
                     .foregroundStyle(StudyPalette.muted)
             }
             Text(memory.content)
-                .font(.system(size: 17, weight: .semibold))
-                .lineSpacing(4)
+                .font(.system(size: 16, weight: .medium))
+                .lineSpacing(5)
                 .foregroundStyle(StudyPalette.ink)
                 .fixedSize(horizontal: false, vertical: true)
-            Rectangle().fill(StudyPalette.paperEdge.opacity(0.55)).frame(height: 0.7)
+            Rectangle().fill(StudyPalette.paperEdge.opacity(0.5)).frame(height: 0.7)
             HStack(spacing: 7) {
                 AstellaGlyph(kind: .library, tint: StudyPalette.muted).frame(width: 12, height: 12)
-                Text("相处里记下的").font(.system(size: 11)).foregroundStyle(StudyPalette.muted)
+                Text("相处里记下的").font(.system(size: 10.5)).foregroundStyle(StudyPalette.muted)
                 Spacer(minLength: 8)
                 SettingsStatusPill(
                     text: memory.candidate ? "待确认" : "有依据",
@@ -378,9 +428,14 @@ struct OrbitScreen: View {
                 )
             }
         }
-        .padding(18)
+        .padding(17)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .modifier(StudyGlassSurfaceStyle(radius: 22, interactive: true))
+        .background(StudyPalette.paper.opacity(0.86), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(StudyPalette.paperEdge.opacity(0.45), lineWidth: 0.8)
+        }
+        .shadow(color: StudyPalette.ink.opacity(0.03), radius: 8, x: 0, y: 3)
     }
 
     private var visibleMemories: [OrbitMemory] {
@@ -435,27 +490,48 @@ struct OrbitScreen: View {
     }
 
     private var handContent: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            orbitSectionTitle("现在交给伴星的", "需要你确认的事会留在这里")
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("现在交给伴星的")
+                    .font(.system(size: 17, weight: .semibold))
+                    .tracking(-0.2)
+                    .foregroundStyle(StudyPalette.ink)
+                Text("需要你确认的事会留在这里。")
+                    .font(.system(size: 12))
+                    .foregroundStyle(StudyPalette.muted)
+            }
             if store.runs.isEmpty && store.messages.flatMap(\.blocks).compactMap(\.proposalId).isEmpty {
                 OrbitEmptyCard(title: "没有等待处理的事", detail: "你可以安心读一会儿；需要继续时，再从相伴页把内容交给伴星。", glyph: .hand)
             }
             ForEach(store.runs) { run in
                 PaperSurface(padding: 17, radius: 18) {
                     VStack(alignment: .leading, spacing: 10) {
-                        HStack {
-                            AstellaGlyph(kind: .hand, tint: StudyPalette.accent).frame(width: 19, height: 19)
-                            Text(run.statusLabel).font(.subheadline.weight(.semibold)).foregroundStyle(StudyPalette.ink).padding(.leading, 3)
+                        HStack(spacing: 8) {
+                            AstellaGlyph(kind: .hand, tint: StudyPalette.accent).frame(width: 18, height: 18)
+                            Text(run.statusLabel)
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(StudyPalette.ink)
                             Spacer()
-                            Circle().fill(StudyPalette.accent).frame(width: 7, height: 7)
+                            Circle().fill(run.isActive ? StudyPalette.accent : StudyPalette.success).frame(width: 6, height: 6)
                         }
                         Text(run.thinkingText?.isEmpty == false ? run.thinkingText! : "整理完成后，会回到你们的对话里。")
-                            .font(.footnote).foregroundStyle(StudyPalette.muted).lineSpacing(4)
-                        HStack {
+                            .font(.system(size: 12.5))
+                            .foregroundStyle(StudyPalette.muted)
+                            .lineSpacing(4)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Rectangle().fill(StudyPalette.paperEdge.opacity(0.5)).frame(height: 0.7)
+                        HStack(spacing: 14) {
                             Button("查看对话") { store.returnToConversation(records: true) }
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(StudyPalette.accent)
                             Spacer()
-                            if run.isActive { Button("停止") { Task { await store.cancelActiveRuns() } } }
-                        }.font(.footnote.weight(.medium)).buttonStyle(AstellaPressStyle())
+                            if run.isActive {
+                                Button("停止") { Task { await store.cancelActiveRuns() } }
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundStyle(StudyPalette.muted)
+                            }
+                        }
+                        .frame(minHeight: 30)
                     }
                 }
             }
@@ -465,29 +541,40 @@ struct OrbitScreen: View {
             if let note = store.notes.first {
                 PaperSurface(padding: 17, radius: 18) {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("继续上次的思路").font(.caption).foregroundStyle(StudyPalette.muted)
-                        Text(note.title).font(.headline).foregroundStyle(StudyPalette.ink)
-                        if let snippet = note.snippet { Text(snippet).font(.footnote).foregroundStyle(StudyPalette.muted).lineLimit(2) }
+                        Text("继续上次的思路")
+                            .font(.system(size: 10.5, weight: .semibold))
+                            .tracking(0.5)
+                            .foregroundStyle(StudyPalette.muted)
+                        Text(note.title)
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(StudyPalette.ink)
+                        if let snippet = note.snippet {
+                            Text(snippet)
+                                .font(.system(size: 12.5))
+                                .lineSpacing(3)
+                                .foregroundStyle(StudyPalette.muted)
+                                .lineLimit(2)
+                        }
                         Button("带着这篇手记继续聊") {
                             Task {
                                 await store.loadNote(note.id)
                                 if let document = store.noteDocument { store.continueWithNote(document) }
                             }
-                        }.font(.footnote.weight(.medium)).buttonStyle(AstellaPressStyle())
+                        }
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(StudyPalette.accent)
+                        .padding(.top, 2)
+                        .buttonStyle(AstellaPressStyle())
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
             Button("回到对话看完整过程") { store.returnToConversation(records: true) }
-                .font(.footnote.weight(.medium)).frame(maxWidth: .infinity, minHeight: 44)
+                .font(.system(size: 12.5, weight: .medium))
+                .foregroundStyle(StudyPalette.muted)
+                .frame(maxWidth: .infinity, minHeight: 44)
                 .buttonStyle(AstellaPressStyle())
         }
-    }
-
-    private func orbitSectionTitle(_ title: String, _ subtitle: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(.system(size: 17, weight: .semibold)).foregroundStyle(StudyPalette.ink)
-            Text(subtitle).font(.caption).foregroundStyle(StudyPalette.muted)
-        }.padding(.top, 1)
     }
 
     private func loadOrbit() async {
@@ -599,6 +686,7 @@ private struct OrbitDiaryRow: View {
     let day: OrbitDay
     let summary: String?
     private var generated: Bool { day.status == "generated" }
+    private var isToday: Bool { Calendar.current.isDate(orbitDate(day.date) ?? .distantPast, inSameDayAs: Date()) }
     private var dayNumber: String {
         guard let date = orbitDate(day.date) else { return "—" }
         let formatter = DateFormatter(); formatter.dateFormat = "d"
@@ -609,68 +697,91 @@ private struct OrbitDiaryRow: View {
         let formatter = DateFormatter(); formatter.dateFormat = "M 月"
         return formatter.string(from: date)
     }
+    private var weekdayLabel: String {
+        guard let date = orbitDate(day.date) else { return "" }
+        let formatter = DateFormatter(); formatter.locale = Locale(identifier: "zh_CN"); formatter.dateFormat = "EEE"
+        return formatter.string(from: date)
+    }
     var body: some View {
         NavigationLink(value: OrbitNavigationRoute.diaryDay(day.date)) {
-            HStack(alignment: .top, spacing: 15) {
-                VStack(spacing: 4) {
+            HStack(alignment: .top, spacing: 16) {
+                VStack(spacing: 2) {
                     Text(dayNumber)
-                        .font(.system(size: 20, weight: .semibold, design: .rounded))
+                        .font(.system(size: 22, weight: .semibold, design: .rounded))
                         .monospacedDigit()
                     Text(monthLabel)
-                        .font(.system(size: 8, weight: .medium))
-                        .tracking(0.5)
+                        .font(.system(size: 8.5, weight: .medium))
+                        .tracking(0.4)
                         .opacity(0.72)
+                    Text(weekdayLabel)
+                        .font(.system(size: 8.5))
+                        .opacity(0.6)
                 }
                 .foregroundStyle(StudyPalette.muted)
-                .frame(width: 48, height: 56)
-                .background(LinearGradient(colors: [StudyPalette.paper, StudyPalette.sky], startPoint: .topLeading, endPoint: .bottomTrailing), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(.white.opacity(0.75), lineWidth: 0.7))
+                .frame(width: 50, height: 66)
+                .background(LinearGradient(colors: [StudyPalette.paper, StudyPalette.sky], startPoint: .topLeading, endPoint: .bottomTrailing), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous).stroke(.white.opacity(0.78), lineWidth: 0.7))
+                .overlay(alignment: .topTrailing) {
+                    if isToday {
+                        Circle().fill(StudyPalette.accent).frame(width: 6, height: 6).padding(6)
+                    }
+                }
+                .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 0) {
-                    if Calendar.current.isDate(orbitDate(day.date) ?? .distantPast, inSameDayAs: Date()) {
-                        Text("今天")
-                            .font(.system(size: 9, weight: .semibold))
+                    HStack(spacing: 7) {
+                        if isToday {
+                            Text("今天")
+                                .font(.system(size: 9, weight: .semibold))
+                                .tracking(0.4)
+                                .foregroundStyle(StudyPalette.accent)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(StudyPalette.sky, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        }
+                        Text("日记")
+                            .font(.system(size: 9, weight: .medium))
                             .tracking(0.5)
-                            .foregroundStyle(StudyPalette.accent)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(StudyPalette.sky, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                            .padding(.bottom, 8)
+                            .foregroundStyle(StudyPalette.muted)
                     }
+                    .padding(.bottom, 8)
+
                     Text(summary ?? "日记已写下。点开查看那一天的完整记录。")
-                        .font(.system(size: 14))
-                        .lineSpacing(8)
+                        .font(.system(size: 14.5))
+                        .lineSpacing(7)
                         .foregroundStyle(StudyPalette.ink)
                         .lineLimit(3)
                         .multilineTextAlignment(.leading)
-                    HStack(spacing: 7) {
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    HStack(spacing: 8) {
                         if day.hasImage {
-                            HStack(spacing: 5) {
-                                AstellaGlyph(kind: .photo, tint: StudyPalette.muted).frame(width: 12, height: 12)
+                            HStack(spacing: 4) {
+                                AstellaGlyph(kind: .photo, tint: StudyPalette.muted).frame(width: 11, height: 11)
                                 Text("图").font(.system(size: 9, weight: .medium))
                             }
                             .foregroundStyle(StudyPalette.muted)
-                            .padding(.horizontal, 8)
-                            .frame(height: 22)
-                            .background(StudyPalette.sky.opacity(0.72), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                            .padding(.trailing, 3)
+                            .padding(.horizontal, 7)
+                            .frame(height: 20)
+                            .background(StudyPalette.sky.opacity(0.7), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                         }
-                        AstellaGlyph(kind: .chevron, tint: StudyPalette.accent).frame(width: 13, height: 13)
+                        Spacer(minLength: 0)
                         Text("看全文")
                             .font(.system(size: 11, weight: .medium))
+                        AstellaGlyph(kind: .chevron, tint: StudyPalette.accent).frame(width: 11, height: 11)
                     }
                     .foregroundStyle(StudyPalette.accent)
-                    .padding(.top, 11)
-                    .frame(minHeight: 26, alignment: .leading)
+                    .padding(.top, 12)
+                    .frame(minHeight: 24, alignment: .leading)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(.horizontal, 18)
-            .padding(.vertical, 17)
-            .frame(minHeight: 123, alignment: .topLeading)
-            .background(StudyPalette.paper.opacity(0.82), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(StudyPalette.paperEdge.opacity(0.40), lineWidth: 0.8))
-            .shadow(color: StudyPalette.ink.opacity(0.035), radius: 10, x: 0, y: 4)
+            .padding(.horizontal, 17)
+            .padding(.vertical, 16)
+            .frame(minHeight: 128, alignment: .topLeading)
+            .background(StudyPalette.paper.opacity(0.86), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(StudyPalette.paperEdge.opacity(0.42), lineWidth: 0.8))
+            .shadow(color: StudyPalette.ink.opacity(0.03), radius: 9, x: 0, y: 4)
             .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         }.buttonStyle(AstellaPressStyle())
     }
@@ -681,12 +792,28 @@ struct OrbitEmptyCard: View {
     let detail: String
     let glyph: AstellaGlyphKind
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            AstellaGlyph(kind: glyph, tint: StudyPalette.accent).frame(width: 25, height: 25)
-            Text(title).font(.system(size: 16, weight: .semibold)).foregroundStyle(StudyPalette.ink)
-            Text(detail).font(.footnote).foregroundStyle(StudyPalette.muted).lineSpacing(4)
-        }.frame(maxWidth: .infinity, alignment: .leading).padding(20)
-            .background(StudyPalette.paper, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        VStack(alignment: .leading, spacing: 10) {
+            AstellaGlyph(kind: glyph, tint: StudyPalette.accent)
+                .frame(width: 22, height: 22)
+                .frame(width: 44, height: 44)
+                .background(StudyPalette.sky.opacity(0.75), in: Circle())
+            Text(title)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(StudyPalette.ink)
+                .padding(.top, 2)
+            Text(detail)
+                .font(.system(size: 12.5))
+                .lineSpacing(4)
+                .foregroundStyle(StudyPalette.muted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(20)
+        .background(StudyPalette.paper.opacity(0.8), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(StudyPalette.paperEdge.opacity(0.42), lineWidth: 0.8)
+        }
     }
 }
 
@@ -804,82 +931,96 @@ struct AccountScreen: View {
         @Bindable var store = store
         let currentAvatarURL = store.profile?.avatarURL
         let isAccountBusy = store.isAccountBusy
-        ScrollView {
+        ScrollViewReader { proxy in
+          ScrollView {
           VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 12) {
+            HStack(alignment: .center, spacing: 14) {
                 NavigationLink(value: AccountScreenRoute.profile) {
                     if let avatarURL = currentAvatarURL {
-                        ProfileAvatarImage(url: avatarURL, fallback: profileInitial)
+                        ProfileAvatarImage(url: avatarURL, fallback: profileInitial, size: 66)
                     } else {
                         Image("CompanionAvatar")
                             .resizable()
                             .scaledToFill()
-                            .frame(width: 64, height: 64)
+                            .frame(width: 66, height: 66)
                             .clipShape(Circle())
                             .overlay(Circle().stroke(.white.opacity(0.88), lineWidth: 1))
                     }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(AstellaPressStyle())
                 .accessibilityLabel("打开个人资料")
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(store.profile?.displayName.isEmpty == false ? store.profile!.displayName : "拾星同学")
-                        .font(.system(size: 19, weight: .semibold)).foregroundStyle(StudyPalette.ink).lineLimit(1)
-                    Text(store.profile?.email ?? "")
-                        .font(.system(size: 12.5)).foregroundStyle(StudyPalette.muted).lineLimit(1)
-                }
-                Spacer(minLength: 2)
-                NavigationLink(value: AccountScreenRoute.settings) {
-                    AstellaGlyph(kind: .settings, tint: StudyPalette.ink).frame(width: 18, height: 18)
-                        .frame(width: 34, height: 34).modifier(StudyGlassSurfaceStyle(radius: 12, interactive: true))
-                }.buttonStyle(AstellaPressStyle()).accessibilityLabel("设置")
+
                 NavigationLink(value: AccountScreenRoute.profile) {
-                    Text("编辑")
-                        .font(.system(size: 12.5, weight: .medium))
-                        .frame(minHeight: 34)
-                        .padding(.horizontal, 12)
-                        .background(StudyPalette.sky.opacity(0.68), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(store.profile?.displayName.isEmpty == false ? store.profile!.displayName : "拾星同学")
+                            .font(.system(size: 20, weight: .semibold))
+                            .tracking(-0.3)
+                            .foregroundStyle(StudyPalette.ink)
+                            .lineLimit(1)
+                        Text(store.profile?.email ?? "")
+                            .font(.system(size: 12.5))
+                            .foregroundStyle(StudyPalette.muted)
+                            .lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(AstellaPressStyle())
+                .accessibilityLabel("编辑个人资料")
+
+                NavigationLink(value: AccountScreenRoute.settings) {
+                    AstellaGlyph(kind: .settings, tint: StudyPalette.ink).frame(width: 18, height: 18)
+                        .frame(width: 38, height: 38)
+                        .modifier(StudyGlassSurfaceStyle(radius: 19, interactive: true))
+                }
+                .buttonStyle(AstellaPressStyle())
+                .accessibilityLabel("设置")
             }
             .padding(.horizontal, 4)
-            .padding(.top, 24)
-            .padding(.bottom, 20)
+            .padding(.top, 20)
+            .padding(.bottom, 18)
 
-            HStack(alignment: .center, spacing: 12) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(companionEyebrow)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Color(red: 0.35, green: 0.47, blue: 0.66))
-                    Text(companionDailyTitle)
-                        .font(.system(size: 22, weight: .semibold))
-                        .tracking(-0.5)
-                        .foregroundStyle(StudyPalette.ink)
-                    NavigationLink(value: AccountScreenRoute.companionCenter) {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(companionEyebrow)
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .tracking(0.8)
+                    .foregroundStyle(Color(red: 0.35, green: 0.47, blue: 0.66))
+                Text(companionDailyTitle)
+                    .font(.system(size: 23, weight: .semibold))
+                    .tracking(-0.5)
+                    .foregroundStyle(StudyPalette.ink)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 8)
+                NavigationLink(value: AccountScreenRoute.companionCenter) {
+                    HStack(spacing: 6) {
                         Text("进入伴星中心")
-                            .font(.system(size: 12.5, weight: .semibold))
-                            .foregroundStyle(StudyPalette.accentLabel)
-                            .padding(.horizontal, 16)
-                            .frame(minHeight: 36)
-                            .background(LinearGradient(colors: [StudyPalette.actionFill, StudyPalette.accent], startPoint: .topLeading, endPoint: .bottomTrailing), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                            .shadow(color: StudyPalette.accent.opacity(0.19), radius: 8, x: 0, y: 4)
+                            .font(.system(size: 12, weight: .semibold))
+                        AstellaGlyph(kind: .chevron, tint: StudyPalette.accentLabel).frame(width: 10, height: 10)
                     }
-                    .buttonStyle(AstellaPressStyle())
+                    .foregroundStyle(StudyPalette.accentLabel)
+                    .padding(.horizontal, 15)
+                    .frame(minHeight: 34)
+                    .background(LinearGradient(colors: [StudyPalette.actionFill, StudyPalette.accent], startPoint: .topLeading, endPoint: .bottomTrailing), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                    .shadow(color: StudyPalette.accent.opacity(0.18), radius: 8, x: 0, y: 4)
                 }
-                Spacer(minLength: 68)
+                .buttonStyle(AstellaPressStyle())
+                .padding(.top, 16)
             }
             .padding(.horizontal, 20)
-            .padding(.vertical, 18)
+            .padding(.vertical, 20)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(LinearGradient(colors: [Color(red: 0.85, green: 0.91, blue: 0.99).opacity(0.94), Color(red: 0.78, green: 0.87, blue: 0.98).opacity(0.68)], startPoint: .topLeading, endPoint: .bottomTrailing), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
             .overlay(alignment: .bottomTrailing) {
                 Image("CompanionAvatar")
                     .resizable().scaledToFit()
-                    .frame(width: 124, height: 124)
+                    .frame(width: 118, height: 118)
                     .opacity(0.92)
-                    .offset(x: -8, y: 24)
+                    .offset(x: -10, y: 20)
                     .allowsHitTesting(false)
             }
             .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(.white.opacity(0.5), lineWidth: 0.8))
 
             if let message = store.accountError {
                 AccountSection { accountNotice(message, glyph: .alert, color: StudyPalette.danger) }
@@ -960,13 +1101,20 @@ struct AccountScreen: View {
                         get: { store.localReduceMotion },
                         set: { store.setLocalReduceMotion($0) }
                     )) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("轻柔动效").font(.system(size: 17, weight: .semibold)).foregroundStyle(StudyPalette.ink)
-                            Text("减少位移，留下安静的状态反馈").font(.system(size: 11)).foregroundStyle(StudyPalette.muted)
+                        HStack(spacing: 12) {
+                            AstellaGlyph(kind: .sparkle, tint: StudyPalette.accent)
+                                .frame(width: 17, height: 17)
+                                .frame(width: 34, height: 34)
+                                .background(StudyPalette.sky.opacity(0.75), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("轻柔动效").font(.system(size: 15.5, weight: .medium)).foregroundStyle(StudyPalette.ink)
+                                Text("减少位移，留下安静的状态反馈").font(.system(size: 11.5)).foregroundStyle(StudyPalette.muted)
+                            }
                         }
                     }
-                    .frame(minHeight: 58)
+                    .frame(minHeight: 56)
                     .tint(StudyPalette.accent)
+                    .accessibilityLabel("轻柔动效")
                 }
             }
 
@@ -992,26 +1140,28 @@ struct AccountScreen: View {
 
             Button(role: .destructive) { store.logout() } label: {
                 HStack(spacing: 9) {
-                    AstellaGlyph(kind: .logout, tint: StudyPalette.danger).frame(width: 18, height: 18)
+                    AstellaGlyph(kind: .logout, tint: StudyPalette.danger).frame(width: 17, height: 17)
                     Text("退出登录").font(.system(size: 14, weight: .medium))
                 }
                 .foregroundStyle(StudyPalette.danger)
-                .frame(maxWidth: .infinity, minHeight: 54)
-                .background(StudyPalette.paper.opacity(0.52), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.white.opacity(0.78), lineWidth: 0.8))
+                .frame(maxWidth: .infinity, minHeight: 50)
+                .background(StudyPalette.paper.opacity(0.72), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(StudyPalette.paperEdge.opacity(0.5), lineWidth: 0.8))
             }
             .buttonStyle(AstellaPressStyle())
+            .padding(.top, 18)
 
             Text("ASTELLA · 拾星笔记")
-                .font(.system(size: 11, weight: .medium))
-                .tracking(2.4)
-                .foregroundStyle(StudyPalette.muted.opacity(0.72))
+                .font(.system(size: 10, weight: .medium))
+                .tracking(2.2)
+                .foregroundStyle(StudyPalette.muted.opacity(0.68))
                 .frame(maxWidth: .infinity)
-                .padding(.top, 26)
-                .padding(.bottom, 4)
+                .padding(.top, 28)
+                .padding(.bottom, 14)
                 .accessibilityHidden(true)
+                .id("account-footer")
         }
-        .padding(.horizontal, 22).padding(.top, -12).padding(.bottom, 128)
+        .padding(.horizontal, 22).padding(.top, 0).padding(.bottom, 72)
         }
         .scrollIndicators(.hidden)
         .background(DawnBackground())
@@ -1019,7 +1169,7 @@ struct AccountScreen: View {
         .toolbar(.hidden, for: .navigationBar)
         .task(id: store.profile?.workspaceId) {
             #if DEBUG
-            if store.uiReviewMode == "me" {
+            if ["me", "me-bottom"].contains(store.uiReviewMode ?? "") {
                 firstDiaryDate = Calendar.current.date(byAdding: .day, value: -6, to: Date())
                 todayDiaryCount = 0
                 diaryStatsLoaded = true
@@ -1031,6 +1181,16 @@ struct AccountScreen: View {
             await store.loadAccountSettings()
             if store.notes.isEmpty { await store.loadNotes() }
             await loadDailySummaryStats()
+        }
+        .onAppear {
+            #if DEBUG
+            if store.uiReviewMode == "me-bottom" {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                    proxy.scrollTo("account-footer", anchor: .top)
+                }
+            }
+            #endif
+        }
         }
     }
 
@@ -1101,7 +1261,7 @@ struct AccountScreen: View {
         guard let settings = store.aiSettings else {
             return store.isAccountBusy ? "正在读取授权状态…" : "已授权 · 可在本页调整"
         }
-        if settings.requiresConsent && settings.consentVersion == nil { return "尚未签署 · AI 外发调用已关闭" }
+        if settings.needsSigning { return "尚未签署 · AI 外发调用已关闭" }
         if let version = settings.consentVersion { return "已授权 · \(version)" }
         return "已授权 · 可在本页调整"
     }
@@ -1111,27 +1271,27 @@ struct AccountScreen: View {
     }
 
     private func accountLink(title: String, detail: String, glyph: AstellaGlyphKind) -> some View {
-        HStack(spacing: 13) {
+        HStack(spacing: 12) {
             AstellaGlyph(kind: glyph, tint: StudyPalette.accent)
                 .frame(width: 17, height: 17)
-                .frame(width: 36, height: 36)
-                .background(StudyPalette.sky.opacity(0.78), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title).font(.system(size: 17, weight: .semibold)).foregroundStyle(StudyPalette.ink)
-                Text(detail).font(.system(size: 11)).foregroundStyle(StudyPalette.muted)
+                .frame(width: 34, height: 34)
+                .background(StudyPalette.sky.opacity(0.75), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(.system(size: 15.5, weight: .medium)).foregroundStyle(StudyPalette.ink)
+                Text(detail).font(.system(size: 11.5)).foregroundStyle(StudyPalette.muted).lineLimit(1)
             }
-            Spacer()
-            AstellaGlyph(kind: .chevron, tint: StudyPalette.muted.opacity(0.8)).frame(width: 16, height: 16)
+            Spacer(minLength: 8)
+            AstellaGlyph(kind: .chevron, tint: StudyPalette.muted.opacity(0.7)).frame(width: 13, height: 13)
         }
-        .frame(minHeight: 58)
+        .frame(minHeight: 56)
         .contentShape(Rectangle())
     }
 
     private var accountRowDivider: some View {
         Rectangle()
-            .fill(StudyPalette.paperEdge.opacity(0.62))
+            .fill(StudyPalette.paperEdge.opacity(0.45))
             .frame(height: 0.7)
-            .padding(.leading, 68)
+            .padding(.leading, 58)
             .accessibilityHidden(true)
     }
 }
@@ -1165,6 +1325,7 @@ struct AccountProfileScreen: View {
     @Environment(AppStore.self) private var store
     @State private var displayName = ""
     @State private var avatarItem: PhotosPickerItem?
+    @State private var appeared = false
     private var userId: String { store.profile?.userId ?? "unknown" }
     private var fallback: String {
         String((store.profile?.displayName.trimmingCharacters(in: .whitespacesAndNewlines).first)
@@ -1182,15 +1343,15 @@ struct AccountProfileScreen: View {
 #endif
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .center, spacing: 17) {
+                HStack(alignment: .center, spacing: 16) {
                     PhotosPicker(selection: $avatarItem, matching: .images) {
                         ZStack(alignment: .bottomTrailing) {
                             Group {
                                 if let avatarURL {
-                                    ProfileAvatarImage(url: avatarURL, fallback: avatarFallback, size: 72)
+                                    ProfileAvatarImage(url: avatarURL, fallback: avatarFallback, size: 74)
                                 } else {
                                     Image("CompanionAvatar").resizable().scaledToFill()
-                                        .frame(width: 72, height: 72).clipShape(Circle())
+                                        .frame(width: 74, height: 74).clipShape(Circle())
                                 }
                             }
                             AstellaGlyph(kind: .camera, tint: .white)
@@ -1199,67 +1360,76 @@ struct AccountProfileScreen: View {
                                 .overlay(Circle().stroke(StudyPalette.canvas, lineWidth: 2))
                         }
                     }
+                    .buttonStyle(AstellaPressStyle())
                     .disabled(store.isAccountBusy)
                     .accessibilityLabel("更换头像")
 
                     VStack(alignment: .leading, spacing: 6) {
-                        HStack(spacing: 8) {
-                            TextField("你的昵称", text: $displayName)
-                            .font(.system(size: 20, weight: .semibold))
-                                .foregroundStyle(StudyPalette.ink)
-                                .textInputAutocapitalization(.never)
-                                .onChange(of: displayName) { _, value in
-                                    if value.count > 12 { displayName = String(value.prefix(12)) }
-                                }
-                            Button {
-                                Task { await store.saveProfile(displayName: displayName) }
-                            } label: {
-                                if store.isAccountBusy { ProgressView().tint(.white) }
-                                else { Text("保存").font(.system(size: 13, weight: .semibold)) }
+                        TextField("你的昵称", text: $displayName)
+                            .font(.system(size: 21, weight: .semibold))
+                            .tracking(-0.3)
+                            .foregroundStyle(StudyPalette.ink)
+                            .textInputAutocapitalization(.never)
+                            .onChange(of: displayName) { _, value in
+                                if value.count > 12 { displayName = String(value.prefix(12)) }
                             }
-                            .foregroundStyle(StudyPalette.accentLabel)
-                            .frame(width: 54, height: 38)
-                            .background(StudyPalette.accent, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                            .buttonStyle(AstellaPressStyle())
-                            .disabled(store.isAccountBusy || displayName.trimmingCharacters(in: .whitespacesAndNewlines) == (store.profile?.displayName ?? ""))
-                        }
                         Text("相伴 · \(store.profile?.workspaceName ?? "我的书房")")
                             .font(.system(size: 12)).foregroundStyle(StudyPalette.muted).lineLimit(1)
                     }
+                    Spacer(minLength: 0)
                 }
-                .padding(.top, 5)
-                .padding(.bottom, 18)
-                .padding(.trailing, 87)
+                .padding(.top, 4)
+                .shellEntrance(0, active: appeared)
 
-                Text("点头像可以更换，改好名字点保存。")
-                    .font(.system(size: 12)).foregroundStyle(StudyPalette.muted)
-                    .padding(.bottom, 0)
+                HStack(alignment: .center, spacing: 12) {
+                    Text("点头像可以更换照片，改好名字点保存。")
+                        .font(.system(size: 11.5))
+                        .lineSpacing(3)
+                        .foregroundStyle(StudyPalette.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 8)
+                    Button {
+                        Task { await store.saveProfile(displayName: displayName) }
+                    } label: {
+                        if store.isAccountBusy { ProgressView().tint(StudyPalette.accentLabel) }
+                        else { Text("保存").font(.system(size: 13, weight: .semibold)) }
+                    }
+                    .foregroundStyle(StudyPalette.accentLabel)
+                    .frame(width: 58, height: 36)
+                    .background(StudyPalette.accent, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .buttonStyle(AstellaPressStyle())
+                    .disabled(store.isAccountBusy || displayName.trimmingCharacters(in: .whitespacesAndNewlines) == (store.profile?.displayName ?? ""))
+                }
+                .padding(.top, 16)
+                .padding(.bottom, 8)
+                .shellEntrance(1, active: appeared)
 
                 if let message = store.accountError {
-                    featureAccountMessage(message, isError: true, retry: nil).padding(.bottom, 14)
+                    featureAccountMessage(message, isError: true, retry: nil).padding(.top, 8).padding(.bottom, 6)
                 } else if let message = store.accountNotice {
-                    featureAccountMessage(message, isError: false, retry: nil).padding(.bottom, 14)
+                    featureAccountMessage(message, isError: false, retry: nil).padding(.top, 8).padding(.bottom, 6)
                 }
 
                 AccountSection("账号") {
                     VStack(spacing: 0) {
                         HStack(alignment: .center) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("邮箱").font(.system(size: 14, weight: .medium)).foregroundStyle(StudyPalette.ink)
-                                Text("用于登录与找回密码").font(.system(size: 10)).foregroundStyle(StudyPalette.muted)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("邮箱").font(.system(size: 15.5, weight: .medium)).foregroundStyle(StudyPalette.ink)
+                                Text("用于登录与找回密码").font(.system(size: 11.5)).foregroundStyle(StudyPalette.muted)
                             }
                             Spacer(minLength: 12)
                             Text(store.profile?.email ?? "")
                                 .font(.system(size: 12)).foregroundStyle(StudyPalette.muted).lineLimit(1)
                         }
-                        .frame(minHeight: 58)
-                        Rectangle().fill(StudyPalette.paperEdge.opacity(0.6)).frame(height: 0.7)
+                        .frame(minHeight: 56)
+                        Rectangle().fill(StudyPalette.paperEdge.opacity(0.45)).frame(height: 0.7)
                         Button { store.selectedTab = .library } label: {
                             settingDestinationRow(title: "我的书房", detail: "\(noteCount) 份手记", glyph: .library)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(AstellaPressStyle())
                     }
                 }
+                .shellEntrance(2, active: appeared)
 
                 Button(role: .destructive) { store.logout() } label: {
                     HStack(spacing: 8) {
@@ -1267,24 +1437,30 @@ struct AccountProfileScreen: View {
                         Text("退出登录").font(.system(size: 14, weight: .medium))
                     }
                     .foregroundStyle(StudyPalette.danger)
-                    .frame(maxWidth: .infinity, minHeight: 54)
-                    .background(StudyPalette.paper.opacity(0.68), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(StudyPalette.paperEdge.opacity(0.8), lineWidth: 0.8))
+                    .frame(maxWidth: .infinity, minHeight: 50)
+                    .background(StudyPalette.paper.opacity(0.72), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(StudyPalette.paperEdge.opacity(0.5), lineWidth: 0.8))
                 }
                 .buttonStyle(AstellaPressStyle())
-                .padding(.top, 24)
+                .padding(.top, 20)
+                .shellEntrance(3, active: appeared)
 
                 Text("ASTELLA · 拾星笔记")
-                    .font(.system(size: 9, weight: .medium)).tracking(2.2).foregroundStyle(StudyPalette.muted)
+                    .font(.system(size: 10, weight: .medium)).tracking(2.2).foregroundStyle(StudyPalette.muted.opacity(0.68))
                     .frame(maxWidth: .infinity).padding(.top, 30).padding(.bottom, 24)
+                    .accessibilityHidden(true)
             }
-            .padding(.horizontal, 26)
+            .padding(.horizontal, 22)
         }
         .scrollIndicators(.hidden)
         .background(DawnBackground())
         .tint(StudyPalette.accent)
         .toolbar(.hidden, for: .navigationBar)
         .safeAreaInset(edge: .top, spacing: 0) { AstellaDetailHeader(title: "个人资料") }
+        .onAppear {
+            guard !appeared else { return }
+            Task { @MainActor in await Task.yield(); appeared = true }
+        }
         .task(id: userId) { displayName = store.profile?.displayName ?? "" }
         .onChange(of: avatarItem) { _, item in
             guard let item else { return }
@@ -1328,7 +1504,7 @@ struct CompanionSettingsScreen: View {
                                 detail: "她这样称呼你",
                                 value: store.profile?.displayName.isEmpty == false ? store.profile!.displayName : "拾星同学"
                             )
-                        }.buttonStyle(.plain)
+                        }.buttonStyle(AstellaPressStyle())
                         companionSettingsDivider
                         companionPreferenceRow(
                             title: "说话风格",
@@ -1347,14 +1523,14 @@ struct CompanionSettingsScreen: View {
                     VStack(spacing: 0) {
                         NavigationLink(value: AccountScreenRoute.conventions) {
                             companionPreferenceRow(title: "相处偏好", detail: "补充相处节奏和表达方式", showsChevron: true)
-                        }.buttonStyle(.plain)
+                        }.buttonStyle(AstellaPressStyle())
                         companionSettingsDivider
                         Button {
                             store.orbitRootSection = "memory"
                             store.selectedTab = .orbit
                         } label: {
                             companionPreferenceRow(title: "她记得的事", detail: "查看、核对与修正伴星记忆", showsChevron: true)
-                        }.buttonStyle(.plain)
+                        }.buttonStyle(AstellaPressStyle())
                     }
                 }
                 AccountSection("声音与语音") {
@@ -1368,7 +1544,7 @@ struct CompanionSettingsScreen: View {
                                 detail: "从相伴页的麦克风开始，不转写文字",
                                 trailingGlyph: .mic
                             )
-                        }.buttonStyle(.plain)
+                        }.buttonStyle(AstellaPressStyle())
                         companionSettingsDivider
                         companionPreferenceRow(
                             title: "朗读回复",
@@ -1390,7 +1566,7 @@ struct CompanionSettingsScreen: View {
     }
 
     private var companionSettingsDivider: some View {
-        Rectangle().fill(StudyPalette.paperEdge.opacity(0.58)).frame(height: 0.7)
+        Rectangle().fill(StudyPalette.paperEdge.opacity(0.45)).frame(height: 0.7)
     }
 
     private func companionPreferenceRow(
@@ -1401,21 +1577,21 @@ struct CompanionSettingsScreen: View {
         trailingGlyph: AstellaGlyphKind? = nil
     ) -> some View {
         HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title).font(.system(size: 13.5, weight: .medium)).foregroundStyle(StudyPalette.ink)
-                Text(detail).font(.system(size: 10)).foregroundStyle(StudyPalette.muted).lineLimit(1)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(.system(size: 15.5, weight: .medium)).foregroundStyle(StudyPalette.ink)
+                Text(detail).font(.system(size: 11.5)).foregroundStyle(StudyPalette.muted).lineLimit(2)
             }
             Spacer(minLength: 8)
             if let value {
-                Text(value).font(.system(size: 11.5)).foregroundStyle(StudyPalette.muted).lineLimit(1)
+                Text(value).font(.system(size: 12)).foregroundStyle(StudyPalette.muted).lineLimit(1)
             }
             if let trailingGlyph {
-                AstellaGlyph(kind: trailingGlyph, tint: StudyPalette.muted).frame(width: 16, height: 16)
+                AstellaGlyph(kind: trailingGlyph, tint: StudyPalette.muted).frame(width: 15, height: 15)
             } else if showsChevron {
-                AstellaGlyph(kind: .chevron, tint: StudyPalette.muted).frame(width: 14, height: 14)
+                AstellaGlyph(kind: .chevron, tint: StudyPalette.muted.opacity(0.7)).frame(width: 13, height: 13)
             }
         }
-        .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
         .contentShape(Rectangle())
     }
 }
@@ -1426,8 +1602,11 @@ struct MobileSettingsScreen: View {
     @AppStorage("study.appearance.dark") private var darkMode = false
     @AppStorage("study.appearance.mode") private var appearanceMode = "light"
     @State private var reduceMotion = false
+    @State private var appeared = false
+    @Namespace private var appearanceLens
 
     private var userId: String { store.profile?.userId ?? "unknown" }
+    private var motionDisabled: Bool { systemReduceMotion || store.localReduceMotion }
 
     private func appearanceButton(_ title: String, mode: String) -> some View {
         let selected = appearanceMode == mode
@@ -1436,18 +1615,23 @@ struct MobileSettingsScreen: View {
                 appearanceMode = mode
                 darkMode = mode == "dark"
             }
-            withAnimation(Motion.gated(systemReduceMotion || store.localReduceMotion, Motion.segment), apply)
+            withAnimation(Motion.gated(motionDisabled, Motion.segment), apply)
         } label: {
-            Text(title)
-                .font(.system(size: 12, weight: selected ? .semibold : .regular))
-                .foregroundStyle(selected ? StudyPalette.ink : StudyPalette.muted)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background {
-                    if selected {
-                        RoundedRectangle(cornerRadius: 14, style: .continuous).fill(StudyPalette.sky)
-                    }
+            ZStack {
+                if selected {
+                    RoundedRectangle(cornerRadius: 15, style: .continuous)
+                        .fill(StudyPalette.paper)
+                        .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous).stroke(StudyPalette.paperEdge.opacity(0.5), lineWidth: 0.7))
+                        .shadow(color: StudyPalette.ink.opacity(0.05), radius: 4, x: 0, y: 2)
+                        .matchedGeometryEffect(id: "settings-appearance-lens", in: appearanceLens)
+                        .padding(3)
                 }
-                .contentShape(Rectangle())
+                Text(title)
+                    .font(.system(size: 12.5, weight: selected ? .semibold : .regular))
+                    .foregroundStyle(selected ? StudyPalette.ink : StudyPalette.muted)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .contentShape(Rectangle())
+            }
         }
         .buttonStyle(AstellaPressStyle())
         .accessibilityAddTraits(selected ? [.isSelected] : [])
@@ -1456,16 +1640,15 @@ struct MobileSettingsScreen: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 10) {
                     settingsPageLabel("外观与显示")
-                    HStack(spacing: 3) {
+                    HStack(spacing: 0) {
                         appearanceButton("银白", mode: "light")
                         appearanceButton("深空", mode: "dark")
                         appearanceButton("随日夜", mode: "system")
                     }
-                    .padding(4)
-                    .frame(height: 54)
-                    .modifier(StudyGlassSurfaceStyle(radius: 18, interactive: true))
+                    .frame(height: 46)
+                    .modifier(StudyGlassSurfaceStyle(radius: 20, interactive: true))
 
                     VStack(spacing: 0) {
                         NavigationLink(value: AccountScreenRoute.readingSettings) {
@@ -1480,100 +1663,124 @@ struct MobileSettingsScreen: View {
                                 UserDefaults.standard.set(value, forKey: mobilePreferenceKey(userId, "reduceMotion"))
                             }
                         )) {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text("轻柔动效").font(.system(size: 17, weight: .semibold)).foregroundStyle(StudyPalette.ink)
-                                Text(systemReduceMotion ? "系统辅助功能已要求减少动效。" : "减少位移，留下安静的状态反馈")
-                                    .font(.system(size: 11)).foregroundStyle(StudyPalette.muted)
+                            HStack(spacing: 12) {
+                                AstellaGlyph(kind: .sparkle, tint: StudyPalette.accent)
+                                    .frame(width: 17, height: 17)
+                                    .frame(width: 34, height: 34)
+                                    .background(StudyPalette.sky.opacity(0.75), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("轻柔动效").font(.system(size: 15.5, weight: .medium)).foregroundStyle(StudyPalette.ink)
+                                    Text(systemReduceMotion ? "系统辅助功能已要求减少动效。" : "减少位移，留下安静的状态反馈")
+                                        .font(.system(size: 11.5)).foregroundStyle(StudyPalette.muted)
+                                }
                             }
                         }
-                        .frame(minHeight: 58)
+                        .frame(minHeight: 56)
                         .tint(StudyPalette.accent)
                         .disabled(systemReduceMotion)
+                        .accessibilityLabel("轻柔动效")
                     }
-                    .padding(.horizontal, 15)
-                    .padding(.vertical, 6)
-                    .background(StudyPalette.paper.opacity(0.88), in: RoundedRectangle(cornerRadius: 19, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 19, style: .continuous).stroke(StudyPalette.paperEdge.opacity(0.62), lineWidth: 0.8))
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 2)
+                    .background(StudyPalette.paper.opacity(0.82), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .stroke(StudyPalette.paperEdge.opacity(0.42), lineWidth: 0.8)
+                    }
+                    .shadow(color: StudyPalette.ink.opacity(0.025), radius: 8, x: 0, y: 3)
                 }
-                .padding(.top, 22)
+                .shellEntrance(0, active: appeared)
 
                 AccountSection("伴星与隐私") {
                     VStack(spacing: 0) {
                         NavigationLink(value: AccountScreenRoute.devicePermissions) {
                             settingDestinationRow(title: "设备权限", detail: "麦克风、相册、相机、文件与通知", glyph: .wave)
-                        }.buttonStyle(.plain)
+                        }.buttonStyle(AstellaPressStyle())
                         settingsDivider
                         NavigationLink(value: AccountScreenRoute.aiAuthorization) {
                             settingDestinationRow(title: "AI 授权与数据", detail: "读取手记、上传材料与记录保存", glyph: .lock)
-                        }.buttonStyle(.plain)
+                        }.buttonStyle(AstellaPressStyle())
                     }
                 }
+                .shellEntrance(1, active: appeared)
+
                 AccountSection("资料与连接") {
                     VStack(spacing: 0) {
                         Button {
                             store.selectedTab = .library
                         } label: {
                             settingDestinationRow(title: "书房与手记", detail: "手记、来源与导入进度", glyph: .library)
-                        }.buttonStyle(.plain)
+                        }.buttonStyle(AstellaPressStyle())
                         settingsDivider
                         NavigationLink(value: AccountScreenRoute.serverAddress) {
                             settingDestinationRow(title: "服务地址", detail: "连接自建或私有部署", glyph: .document)
-                        }.buttonStyle(.plain)
+                        }.buttonStyle(AstellaPressStyle())
                     }
                 }
-                .padding(.top, 7)
+                .shellEntrance(2, active: appeared)
+
                 Text("阅读字号、打开方式和动效偏好只保存在这台设备上。")
-                    .font(.caption)
+                    .font(.system(size: 11.5))
+                    .lineSpacing(3)
                     .foregroundStyle(StudyPalette.muted)
                     .padding(.horizontal, 4)
-                    .padding(.top, 20)
+                    .padding(.top, 22)
+                    .shellEntrance(3, active: appeared)
+
                 Text("ASTELLA · 拾星笔记")
-                    .font(.system(size: 11, weight: .medium))
-                    .tracking(2.4)
-                    .foregroundStyle(StudyPalette.muted.opacity(0.72))
+                    .font(.system(size: 10, weight: .medium))
+                    .tracking(2.2)
+                    .foregroundStyle(StudyPalette.muted.opacity(0.68))
                     .frame(maxWidth: .infinity)
-                    .padding(.top, 34)
+                    .padding(.top, 32)
                     .padding(.bottom, 30)
                     .accessibilityHidden(true)
+                    .shellEntrance(4, active: appeared)
             }
-            .padding(.horizontal, 24)
+            .padding(.horizontal, 22)
+            .padding(.bottom, 30)
         }
         .scrollIndicators(.hidden)
         .background(DawnBackground())
         .tint(StudyPalette.accent)
         .toolbar(.hidden, for: .navigationBar)
         .safeAreaInset(edge: .top, spacing: 0) { AstellaDetailHeader(title: "设置") }
+        .onAppear {
+            guard !appeared else { return }
+            Task { @MainActor in await Task.yield(); appeared = true }
+        }
         .task(id: userId) {
             reduceMotion = UserDefaults.standard.bool(forKey: mobilePreferenceKey(userId, "reduceMotion"))
         }
     }
 
     private var settingsDivider: some View {
-        Rectangle().fill(StudyPalette.paperEdge.opacity(0.6)).frame(height: 0.7)
+        Rectangle().fill(StudyPalette.paperEdge.opacity(0.45)).frame(height: 0.7)
     }
 
     private func settingsPageLabel(_ title: String) -> some View {
         Text(title)
-            .font(.system(size: 12.5, weight: .medium))
-            .tracking(0.6)
+            .font(.system(size: 12, weight: .semibold))
+            .tracking(0.7)
             .foregroundStyle(StudyPalette.muted)
+            .padding(.leading, 2)
     }
 }
 
 func settingDestinationRow(title: String, detail: String, glyph: AstellaGlyphKind) -> some View {
-    HStack(spacing: 13) {
+    HStack(spacing: 12) {
         AstellaGlyph(kind: glyph, tint: StudyPalette.accent)
             .frame(width: 17, height: 17)
-            .frame(width: 36, height: 36)
-            .background(StudyPalette.sky.opacity(0.78), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(.system(size: 17, weight: .semibold)).foregroundStyle(StudyPalette.ink)
-            Text(detail).font(.system(size: 11)).foregroundStyle(StudyPalette.muted)
+            .frame(width: 34, height: 34)
+            .background(StudyPalette.sky.opacity(0.75), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title).font(.system(size: 15.5, weight: .medium)).foregroundStyle(StudyPalette.ink)
+            Text(detail).font(.system(size: 11.5)).foregroundStyle(StudyPalette.muted).lineLimit(2)
         }
-        Spacer()
-        AstellaGlyph(kind: .chevron, tint: StudyPalette.muted.opacity(0.8)).frame(width: 16, height: 16)
+        Spacer(minLength: 8)
+        AstellaGlyph(kind: .chevron, tint: StudyPalette.muted.opacity(0.7)).frame(width: 13, height: 13)
     }
-    .frame(minHeight: 58)
+    .frame(minHeight: 56)
     .contentShape(Rectangle())
 }
 
@@ -1585,6 +1792,8 @@ struct ReadingSettingsScreen: View {
     @State private var textSize = 19.0
     @State private var showRecords = false
     @State private var reduceMotion = false
+    @State private var appeared = false
+    @Namespace private var appearanceLens
     private var userId: String { store.profile?.userId ?? "unknown" }
 
     private var textSizeName: String {
@@ -1607,27 +1816,32 @@ struct ReadingSettingsScreen: View {
                 darkMode = mode == "dark"
             }
         } label: {
-            Text(title)
-                .font(.system(size: 12, weight: selected ? .semibold : .regular))
-                .foregroundStyle(selected ? StudyPalette.ink : StudyPalette.muted)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background {
-                    if selected {
-                        RoundedRectangle(cornerRadius: 16, style: .continuous).fill(StudyPalette.sky)
-                            .shadow(color: StudyPalette.ink.opacity(0.06), radius: 6, x: 0, y: 3)
-                    }
+            ZStack {
+                if selected {
+                    RoundedRectangle(cornerRadius: 15, style: .continuous)
+                        .fill(StudyPalette.paper)
+                        .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous).stroke(StudyPalette.paperEdge.opacity(0.5), lineWidth: 0.7))
+                        .shadow(color: StudyPalette.ink.opacity(0.05), radius: 4, x: 0, y: 2)
+                        .matchedGeometryEffect(id: "reading-appearance-lens", in: appearanceLens)
+                        .padding(3)
                 }
-                .contentShape(Rectangle())
+                Text(title)
+                    .font(.system(size: 12.5, weight: selected ? .semibold : .regular))
+                    .foregroundStyle(selected ? StudyPalette.ink : StudyPalette.muted)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .contentShape(Rectangle())
+            }
         }
         .buttonStyle(AstellaPressStyle())
         .accessibilityAddTraits(selected ? [.isSelected] : [])
     }
 
-    private func sectionLabel(_ title: String, bottom: CGFloat = 13) -> some View {
+    private func sectionLabel(_ title: String, bottom: CGFloat = 12) -> some View {
         Text(title)
-            .font(.system(size: 12.5, weight: .medium))
-            .tracking(0.6)
+            .font(.system(size: 12, weight: .semibold))
+            .tracking(0.7)
             .foregroundStyle(StudyPalette.muted)
+            .padding(.leading, 2)
             .padding(.bottom, bottom)
     }
 
@@ -1643,10 +1857,11 @@ struct ReadingSettingsScreen: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 Text("这一页的改动保存在本机（这台设备），不会同步到账号。")
-                    .font(.system(size: 15)).lineSpacing(2)
+                    .font(.system(size: 12.5))
+                    .lineSpacing(3)
                     .foregroundStyle(StudyPalette.muted)
                     .padding(.horizontal, 2)
-                    .padding(.bottom, 12)
+                    .shellEntrance(0, active: appeared)
 
                 Text("清风徐来，水波不兴。举酒属客，诵明月之诗，歌窈窕之章。")
                     .font(StudySerif.font(size: textSize))
@@ -1654,37 +1869,40 @@ struct ReadingSettingsScreen: View {
                     .foregroundStyle(StudyPalette.ink)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 30)
+                    .padding(.vertical, 28)
                     .padding(.horizontal, 22)
-                    .modifier(StudyGlassSurfaceStyle(radius: 22))
-                    .padding(.top, 4)
-                    .padding(.bottom, 22)
+                    .background(StudyPalette.paper.opacity(0.86), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .stroke(StudyPalette.paperEdge.opacity(0.42), lineWidth: 0.8)
+                    }
+                    .padding(.top, 16)
+                    .shellEntrance(1, active: appeared)
 
                 HStack(spacing: 13) {
-                    Text("A").font(.system(size: 14, design: .serif)).foregroundStyle(StudyPalette.muted)
+                    Text("A").font(.system(size: 13, design: .serif)).foregroundStyle(StudyPalette.muted)
                     Slider(value: Binding(get: { textSize }, set: saveTextSize), in: 15...25, step: 1)
-                        .tint(StudyPalette.accent.opacity(0.55))
+                        .tint(StudyPalette.accent.opacity(0.6))
                         .accessibilityLabel("阅读字号")
-                    Text("A").font(.system(size: 22, weight: .medium, design: .serif)).foregroundStyle(StudyPalette.muted)
+                    Text("A").font(.system(size: 21, weight: .medium, design: .serif)).foregroundStyle(StudyPalette.muted)
                 }
                 .padding(.horizontal, 4)
+                .padding(.top, 20)
 
-                Text("当前：\(textSizeName)（\(Int(textSize))pt）")
+                Text("当前字号：\(textSizeName)（\(Int(textSize))pt）")
                     .font(.system(size: 11.5))
                     .foregroundStyle(StudyPalette.muted)
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 14)
-                    .padding(.bottom, 4)
+                    .padding(.leading, 4)
+                    .padding(.top, 10)
 
                 VStack(alignment: .leading, spacing: 0) {
-                    sectionLabel("外观", bottom: 13)
-                    HStack(spacing: 5) {
+                    sectionLabel("外观")
+                    HStack(spacing: 0) {
                         appearanceButton("银白", mode: "light")
                         appearanceButton("深夜", mode: "dark")
                         appearanceButton("随系统", mode: "system")
                     }
-                    .padding(5)
-                    .frame(height: 54)
+                    .frame(height: 46)
                     .modifier(StudyGlassSurfaceStyle(radius: 20, interactive: true))
                     Text("当前：\(themeLabel)。选择「随系统」时会跟随设备深浅色。")
                         .font(.system(size: 11.5))
@@ -1693,32 +1911,36 @@ struct ReadingSettingsScreen: View {
                         .padding(.horizontal, 4)
                         .padding(.top, 8)
                 }
-                .padding(.top, 18)
+                .padding(.top, 26)
+                .shellEntrance(2, active: appeared)
 
                 VStack(alignment: .leading, spacing: 0) {
-                    sectionLabel("默认打开", bottom: 13)
+                    sectionLabel("默认打开")
                     VStack(spacing: 0) {
                         defaultOpenOption(title: "伴星场景", detail: "打开先见到她，安静陪伴", glyph: .eye, selected: !showRecords) {
                             setDefaultOpen(records: false)
                         }
-                        Rectangle().fill(StudyPalette.paperEdge.opacity(0.58)).frame(height: 0.7)
+                        Rectangle().fill(StudyPalette.paperEdge.opacity(0.45)).frame(height: 0.7)
                         defaultOpenOption(title: "记录场景", detail: "打开就到对话记录", glyph: .text, selected: showRecords) {
                             setDefaultOpen(records: true)
                         }
                     }
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 6)
-                    .background(StudyPalette.paper.opacity(0.72), in: RoundedRectangle(cornerRadius: 25, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 25, style: .continuous).stroke(StudyPalette.paperEdge.opacity(0.5), lineWidth: 0.7))
-                    .shadow(color: StudyPalette.ink.opacity(0.045), radius: 11, x: 0, y: 5)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 2)
+                    .background(StudyPalette.paper.opacity(0.82), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .stroke(StudyPalette.paperEdge.opacity(0.42), lineWidth: 0.8)
+                    }
                     Text("保存在本机，下次打开按这里的设置进入。")
                         .font(.system(size: 11.5)).foregroundStyle(StudyPalette.muted)
                         .padding(.horizontal, 4).padding(.top, 8)
                 }
-                .padding(.top, 31)
+                .padding(.top, 26)
+                .shellEntrance(3, active: appeared)
 
                 VStack(alignment: .leading, spacing: 0) {
-                    sectionLabel("动效", bottom: 14)
+                    sectionLabel("动效")
                     Toggle(isOn: Binding(
                         get: { reduceMotion },
                         set: { value in
@@ -1728,35 +1950,42 @@ struct ReadingSettingsScreen: View {
                         }
                     )) {
                         VStack(alignment: .leading, spacing: 3) {
-                            Text("减少动效").font(.system(size: 17, weight: .semibold)).foregroundStyle(StudyPalette.ink)
+                            Text("减少动效").font(.system(size: 15.5, weight: .medium)).foregroundStyle(StudyPalette.ink)
                             Text("模型保持静止，粒子改为静态音量条")
-                                .font(.system(size: 11)).foregroundStyle(StudyPalette.muted)
+                                .font(.system(size: 11.5)).foregroundStyle(StudyPalette.muted)
                         }
                     }
-                    .frame(minHeight: 58)
+                    .frame(minHeight: 56)
                     .tint(StudyPalette.accent)
                     .disabled(systemReduceMotion)
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 6)
-                    .background(StudyPalette.paper.opacity(0.72), in: RoundedRectangle(cornerRadius: 25, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 25, style: .continuous).stroke(StudyPalette.paperEdge.opacity(0.5), lineWidth: 0.7))
-                    .shadow(color: StudyPalette.ink.opacity(0.045), radius: 11, x: 0, y: 5)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 2)
+                    .background(StudyPalette.paper.opacity(0.82), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .stroke(StudyPalette.paperEdge.opacity(0.42), lineWidth: 0.8)
+                    }
                     if systemReduceMotion {
                         Text("系统已开启「减弱动态效果」，动效会被强制减少，与此处开关无关。")
                             .font(.system(size: 11.5)).lineSpacing(3).foregroundStyle(StudyPalette.muted)
                             .padding(.horizontal, 4).padding(.top, 8)
                     }
                 }
-                .padding(.top, 30)
+                .padding(.top, 26)
+                .shellEntrance(4, active: appeared)
             }
-            .padding(.horizontal, 26)
-            .padding(.top, -12)
+            .padding(.horizontal, 22)
+            .padding(.bottom, 34)
         }
         .scrollIndicators(.hidden)
         .background(DawnBackground())
         .tint(StudyPalette.accent)
         .toolbar(.hidden, for: .navigationBar)
         .safeAreaInset(edge: .top, spacing: 0) { AstellaDetailHeader(title: "阅读与显示") }
+        .onAppear {
+            guard !appeared else { return }
+            Task { @MainActor in await Task.yield(); appeared = true }
+        }
         .task(id: userId) {
             let savedScale = UserDefaults.standard.object(forKey: mobilePreferenceKey(userId, "textScale")) as? Double ?? store.readingScale
             textSize = min(25, max(15, savedScale * 16))
@@ -1776,16 +2005,16 @@ struct ReadingSettingsScreen: View {
             HStack(spacing: 12) {
                 AstellaGlyph(kind: glyph, tint: StudyPalette.accent.opacity(0.9))
                     .frame(width: 17, height: 17)
-                    .frame(width: 36, height: 36)
-                    .background(StudyPalette.sky.opacity(0.78), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title).font(.system(size: 17, weight: .semibold)).foregroundStyle(StudyPalette.ink)
-                    Text(detail).font(.system(size: 11)).lineLimit(1).foregroundStyle(StudyPalette.muted)
+                    .frame(width: 34, height: 34)
+                    .background(StudyPalette.sky.opacity(0.75), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title).font(.system(size: 15.5, weight: .medium)).foregroundStyle(StudyPalette.ink)
+                    Text(detail).font(.system(size: 11.5)).lineLimit(1).foregroundStyle(StudyPalette.muted)
                 }
                 Spacer()
-                        if selected { AstellaGlyph(kind: .checkmark, tint: StudyPalette.accent).frame(width: 15, height: 15) }
+                if selected { AstellaGlyph(kind: .checkmark, tint: StudyPalette.accent).frame(width: 14, height: 14) }
             }
-            .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
             .contentShape(Rectangle())
         }
         .buttonStyle(AstellaPressStyle())
@@ -1859,18 +2088,22 @@ private struct ParticipationPreferencesEditor: View {
                     }
                 }
                 .tint(StudyPalette.accent)
-                .padding(.horizontal, 18)
-                .padding(.vertical, 12)
-                .modifier(StudyGlassSurfaceStyle(radius: 20, interactive: false))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(StudyPalette.paper.opacity(0.82), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(StudyPalette.paperEdge.opacity(0.42), lineWidth: 0.8)
+                }
                 .disabled(isSaving)
 
                 Text("我的约定")
-                    .font(.system(size: 12.5, weight: .medium))
-                    .tracking(0.6)
+                    .font(.system(size: 12, weight: .semibold))
+                    .tracking(0.7)
                     .foregroundStyle(StudyPalette.muted)
                     .padding(.leading, 2)
-                    .padding(.top, 26)
-                    .padding(.bottom, 11)
+                    .padding(.top, 28)
+                    .padding(.bottom, 12)
 
                 VStack(spacing: 0) {
                     if conventions.isEmpty {
@@ -1906,9 +2139,13 @@ private struct ParticipationPreferencesEditor: View {
                         }
                     }
                 }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 5)
-                .modifier(StudyGlassSurfaceStyle(radius: 24, interactive: false))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 2)
+                .background(StudyPalette.paper.opacity(0.82), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(StudyPalette.paperEdge.opacity(0.42), lineWidth: 0.8)
+                }
 
                 if isAdding {
                     VStack(alignment: .leading, spacing: 11) {
@@ -2110,90 +2347,202 @@ private struct ParticipationPreferencesEditor: View {
 
 struct CompanionCenterScreen: View {
     @Environment(AppStore.self) private var store
+    @State private var appeared = false
 
-    private var latest: String {
-        store.streamingText.isEmpty ? store.messages.last(where: { $0.role == "assistant" })?.displayText ?? "还没有新的回复，回去告诉她你想聊什么。" : store.streamingText
+    private var latest: String? {
+        guard !store.streamingText.isEmpty else {
+            return store.messages.last(where: { $0.role == "assistant" })?.displayText
+        }
+        return store.streamingText
     }
 
     private var isResponding: Bool { !store.streamingText.isEmpty || store.isSending }
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                HStack(spacing: 13) {
-                    Image("CompanionAvatar")
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: 62, height: 62)
-                        .clipShape(Circle())
-                        .overlay(Circle().stroke(.white.opacity(0.86), lineWidth: 1))
-                    VStack(alignment: .leading, spacing: 5) {
-                        SectionEyebrow(text: "拾星 · ASTELLA")
-                        Text("伴星")
-                            .font(.system(size: 25, weight: .semibold))
-                            .foregroundStyle(StudyPalette.ink)
-                        HStack(spacing: 6) {
-                            Circle().fill(store.realtimeStatus == "已连接" ? StudyPalette.success : StudyPalette.muted)
-                                .frame(width: 7, height: 7)
-                            Text(store.realtimeStatus == "已连接" ? "实时交流已连接" : store.realtimeStatus)
-                                .font(.caption)
-                                .foregroundStyle(StudyPalette.muted)
-                        }
-                    }
-                    Spacer(minLength: 0)
-                }
-                .padding(.top, 2)
-
-                VStack(alignment: .leading, spacing: 11) {
-                    HStack {
-                        SectionEyebrow(text: isResponding ? "正在回应" : "最近一次回应")
-                        Spacer()
-                        if isResponding { ProgressView().controlSize(.small) }
-                    }
-                    Text(companionMarkdown(latest))
-                        .font(.system(size: 16))
-                        .lineSpacing(5)
-                        .foregroundStyle(StudyPalette.ink)
-                        .lineLimit(8)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .textSelection(.enabled)
-                }
-                .padding(18)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(StudyPalette.paper.opacity(0.72), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(StudyPalette.paperEdge.opacity(0.58), lineWidth: 0.8))
-
+            VStack(alignment: .leading, spacing: 24) {
+                companionHero
+                    .shellEntrance(0, active: appeared)
+                recentExchange
+                    .shellEntrance(1, active: appeared)
+                relationshipShortcuts
+                    .shellEntrance(2, active: appeared)
                 NavigationLink(value: AccountScreenRoute.companionSettings) {
-                    settingDestinationRow(title: "伴星配置", detail: "调整交流方式与记忆偏好", glyph: .companion)
+                    settingDestinationRow(title: "伴星配置", detail: "相处偏好与交流方式", glyph: .companion)
+                        .padding(.horizontal, 16)
+                        .background(StudyPalette.paper.opacity(0.82), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(StudyPalette.paperEdge.opacity(0.42), lineWidth: 0.8))
                 }
-                .buttonStyle(.plain)
-
-                VStack(spacing: 4) {
-                    Button {
-                        store.returnToConversation(records: false)
-                    } label: {
-                        astellaLabel("回到伴星身边", glyph: .chat)
-                            .frame(maxWidth: .infinity)
-                    }
-                    .modifier(PrimaryActionStyle())
-                    Button {
-                        store.returnToConversation(records: true)
-                    } label: {
-                        astellaLabel("查看完整记录", glyph: .book)
-                    }
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(StudyPalette.accent)
-                    .frame(minHeight: 44)
-                }
+                .buttonStyle(AstellaPressStyle())
+                .shellEntrance(3, active: appeared)
             }
             .padding(.horizontal, 22)
-            .padding(.top, 4)
-            .padding(.bottom, 28)
+            .padding(.top, 8)
+            .padding(.bottom, 36)
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .scrollIndicators(.hidden)
         .background(DawnBackground()).toolbar(.hidden, for: .navigationBar)
         .safeAreaInset(edge: .top, spacing: 0) { AstellaDetailHeader(title: "伴星中心") }
+        .onAppear {
+            guard !appeared else { return }
+            Task { @MainActor in await Task.yield(); appeared = true }
+        }
+    }
+
+    private var companionHero: some View {
+        ZStack(alignment: .trailing) {
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .fill(LinearGradient(
+                    colors: [StudyPalette.sky.opacity(0.92), StudyPalette.paper.opacity(0.92), StudyPalette.paper.opacity(0.78)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ))
+            Circle()
+                .fill(StudyPalette.accent.opacity(0.08))
+                .frame(width: 176, height: 176)
+                .offset(x: 28, y: 38)
+                .clipped()
+            Image("CompanionStage")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 142, height: 154, alignment: .bottom)
+                .frame(maxHeight: .infinity, alignment: .bottom)
+                .offset(x: 0, y: -4)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 10) {
+                SectionEyebrow(text: "拾星 · 伴星")
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                Text("伴星")
+                    .font(.system(size: 27, weight: .semibold))
+                    .tracking(-0.5)
+                    .foregroundStyle(StudyPalette.ink)
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(isResponding ? StudyPalette.accent : (store.realtimeStatus == "已连接" ? StudyPalette.success : StudyPalette.muted))
+                        .frame(width: 7, height: 7)
+                    Text(isResponding ? "正在回应" : (store.realtimeStatus == "已连接" ? "语音交流已连接" : "随时可以继续交流"))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(StudyPalette.muted)
+                        .lineLimit(1)
+                }
+                Text(store.profile?.workspaceName ?? "和你一起读，也一起想")
+                    .font(.system(size: 12))
+                    .foregroundStyle(StudyPalette.muted)
+                    .lineLimit(1)
+                    .padding(.top, 1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 22)
+            .padding(.leading, 20)
+            .padding(.trailing, 138)
+        }
+        .frame(height: 160)
+        .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).stroke(.white.opacity(0.82), lineWidth: 0.9))
+        .shadow(color: StudyPalette.ink.opacity(0.06), radius: 16, x: 0, y: 8)
+    }
+
+    private var recentExchange: some View {
+        VStack(alignment: .leading, spacing: 13) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 4) {
+                    SectionEyebrow(text: isResponding ? "此刻的交流" : "最近一次交流")
+                }
+                Spacer()
+                if isResponding { ProgressView().controlSize(.small) }
+            }
+
+            Group {
+                if let latest, !latest.isEmpty {
+                    CompanionMarkdownText(text: latest, onOpenNote: { store.requestNoteReference($0) })
+                        .lineLimit(4)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text("还没有新的交流。想读什么、想到什么，都可以从这里继续。")
+                        .foregroundStyle(StudyPalette.muted)
+                }
+            }
+            .font(.system(size: 15))
+            .lineSpacing(4)
+            .foregroundStyle(StudyPalette.ink)
+            .textSelection(.enabled)
+
+            Rectangle().fill(StudyPalette.paperEdge.opacity(0.62)).frame(height: 0.7)
+
+            HStack(spacing: 10) {
+                Button { store.returnToConversation(records: false) } label: {
+                    Label("继续对话", systemImage: "bubble.left.and.bubble.right.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .foregroundStyle(StudyPalette.accentLabel)
+                        .background(StudyPalette.actionFill, in: Capsule())
+                }
+                .buttonStyle(AstellaPressStyle())
+                Button { store.returnToConversation(records: true) } label: {
+                    Label("完整记录", systemImage: "text.alignleft")
+                        .font(.system(size: 13, weight: .medium))
+                        .frame(minHeight: 44)
+                        .padding(.horizontal, 12)
+                        .foregroundStyle(StudyPalette.accent)
+                        .background(StudyPalette.sky.opacity(0.72), in: Capsule())
+                }
+                .buttonStyle(AstellaPressStyle())
+            }
+        }
+        .padding(17)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(StudyPalette.paper.opacity(0.82), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(StudyPalette.paperEdge.opacity(0.58), lineWidth: 0.8))
+    }
+
+    private var relationshipShortcuts: some View {
+        VStack(alignment: .leading, spacing: 11) {
+            VStack(alignment: .leading, spacing: 4) {
+                SectionEyebrow(text: "相伴 · 留下的记录")
+                Text("记忆与日记")
+                    .font(.system(size: 19, weight: .semibold))
+                    .foregroundStyle(StudyPalette.ink)
+            }
+
+            HStack(spacing: 10) {
+                relationshipShortcut(
+                    title: "她记得的事",
+                    detail: "查看与修正",
+                    glyph: .sparkle,
+                    action: { store.orbitRootSection = "memory"; store.selectedTab = .orbit }
+                )
+                relationshipShortcut(
+                    title: "我们的日记",
+                    detail: "回看相伴片段",
+                    glyph: .orbit,
+                    action: { store.orbitRootSection = "diary"; store.selectedTab = .orbit }
+                )
+            }
+        }
+    }
+
+    private func relationshipShortcut(title: String, detail: String, glyph: AstellaGlyphKind, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 10) {
+                AstellaGlyph(kind: glyph, tint: StudyPalette.accent)
+                    .frame(width: 19, height: 19)
+                    .frame(width: 38, height: 38)
+                    .background(StudyPalette.sky.opacity(0.78), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title).font(.system(size: 14, weight: .semibold)).foregroundStyle(StudyPalette.ink).lineLimit(1)
+                    Text(detail).font(.system(size: 11)).foregroundStyle(StudyPalette.muted).lineLimit(1)
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 96, alignment: .leading)
+            .padding(.horizontal, 13)
+            .background(StudyPalette.paper.opacity(0.78), in: RoundedRectangle(cornerRadius: 19, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 19, style: .continuous).stroke(StudyPalette.paperEdge.opacity(0.55), lineWidth: 0.8))
+            .contentShape(RoundedRectangle(cornerRadius: 19, style: .continuous))
+        }
+        .buttonStyle(AstellaPressStyle())
     }
 }
 
@@ -2227,18 +2576,56 @@ private struct AccountSection<Content: View>: View {
         self.title = title; self.content = content()
     }
     var body: some View {
-        VStack(alignment: .leading, spacing: title == "阅读" ? 16 : 13) {
+        VStack(alignment: .leading, spacing: 10) {
             if let title {
                 Text(title)
-                    .font(.system(size: 12.5, weight: .medium))
-                    .tracking(0.6)
+                    .font(.system(size: 12, weight: .semibold))
+                    .tracking(0.7)
                     .foregroundStyle(StudyPalette.muted)
+                    .padding(.leading, 2)
             }
             content
-                .padding(.horizontal, 18)
-                .padding(.vertical, 5)
-                .modifier(StudyGlassSurfaceStyle(radius: 25, interactive: false))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 2)
+                .background(StudyPalette.paper.opacity(0.82), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(StudyPalette.paperEdge.opacity(0.42), lineWidth: 0.8)
+                }
+                .shadow(color: StudyPalette.ink.opacity(0.025), radius: 8, x: 0, y: 3)
         }.frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.top, title == nil ? 12 : (title == "阅读" ? 28 : 22))
+        .padding(.top, title == nil ? 10 : 26)
+    }
+}
+
+// MARK: - Shell entrance (local helper)
+
+/// Shell-level entrance used by the 星轨 / 我的 / 设置 pages: each section rises
+/// 10 pt and fades in, 45 ms after the previous one. Timing stays local to the
+/// shell pages instead of adding a new global token; movement is removed when
+/// either the system or the in-app reduce-motion preference is on.
+private struct AstellaShellEntranceModifier: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var systemReduce
+    @Environment(AppStore.self) private var store
+    var index: Int
+    var active: Bool
+
+    private var disabled: Bool { systemReduce || store.localReduceMotion }
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(active || disabled ? 1 : 0)
+            .offset(y: active || disabled ? 0 : 10)
+            .animation(
+                disabled ? nil : Animation.spring(duration: 0.42, bounce: 0.03).delay(Double(max(0, index)) * 0.045),
+                value: active
+            )
+    }
+}
+
+extension View {
+    /// Staggered page entrance for shell sections (`index * 45 ms`).
+    func shellEntrance(_ index: Int, active: Bool) -> some View {
+        modifier(AstellaShellEntranceModifier(index: index, active: active))
     }
 }

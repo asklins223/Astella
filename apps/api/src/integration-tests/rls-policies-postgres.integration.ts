@@ -15,21 +15,20 @@ const POLICY_TABLES = [
   "search_documents",
   "ai_artifacts",
   "ai_audit_log",
-  "review_schedules",
   "jobs",
 ] as const;
 // benchmark_reports / benchmark_labels 已由迁移 0183（方案 24 §9.2：V1 学习卡旧栈
 // 孤儿表物理退役）DROP，实库已无这两张表，自然也没有 sec01 策略。保留在清单里会让
 // 期望策略数比实库多 4 条（2 表 × 2 策略）而恒失败。
+// review_schedules 随 Plan 57（0449）一并退役，同理不再计入。
 
 const WORKSPACE_POLICY_TABLES = POLICY_TABLES.filter((table) => ![
-  "review_schedules",
   "ai_artifacts",
   "ai_audit_log",
   "jobs",
 ].includes(table));
 
-const USER_PRIVATE_POLICY_TABLES = ["review_schedules"] as const;
+const USER_PRIVATE_POLICY_TABLES: readonly string[] = [];
 
 const API_ONLY_WORKSPACE_TABLES = new Set([
   "workspace_members",

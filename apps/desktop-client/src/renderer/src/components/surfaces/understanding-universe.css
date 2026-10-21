@@ -219,16 +219,6 @@
 .universe-detail-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 39px; border: 2px solid #fffef1; border-radius: 20px; padding: 0 13px; font-size: 11px; font-weight: 700; }
 .universe-detail-actions .is-primary { flex: 1; background: #f1bea3; color: #674a3b; box-shadow: 0 3px 0 #d49d81; }
 .universe-detail-actions .is-secondary { background: #e5eddc; color: #547454; box-shadow: 0 3px 0 #b6c9ab; }
-.universe-note-context { display: flex; align-items: center; gap: 9px; width: 100%; margin: 0 0 17px; border: 0; border-radius: 16px; padding: 10px 12px; background: #e8efdd; color: #628467; font-size: 11px; }
-.universe-note-context span { flex: 1; text-align: left; }
-.universe-relation-stamp { margin: 6px 8px 15px; border: 1px dashed #b6c5a6; border-radius: 16px; padding: 11px 13px; background: #f6f1da; }
-.universe-relation-stamp.is-confirmed { background: #e5f0df; border-style: solid; }
-.universe-relation-stamp.is-dismissed { background: #efeddf; color: #7f8270; }
-.universe-relation-stamp__label { display: block; font-size: 10px; }
-.universe-relation-stamp__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 9px; }
-.universe-relation-stamp__actions button { min-height: 30px; border: 1px solid #c5cbb4; border-radius: 15px; padding: 0 11px; background: #fffbed; color: #627458; font-size: 10px; }
-.universe-relation-stamp__actions button[aria-pressed="true"] { border-color: #679a7b; background: #d2e6c8; }
-.universe-relation-stamp__error { margin: 5px 0 0; width: 100%; font-size: 11px; color: #ae614e; }
 
 .universe-axes { margin: 0 0 20px; }
 .universe-axes__row { display: grid; gap: 7px; margin: 0; }
@@ -250,7 +240,6 @@
 .universe-overview-stars strong { font-size: 12px; font-weight: 650; }
 .universe-overview-stars small { font-size: 10px; color: #768266; }
 .universe-small-star { font-size: 23px; color: #c39847; }
-.universe-question { margin: 8px 0; border-radius: 20px; padding: 15px; background: #f5e7c0; color: #79683e; font-size: 14px; font-weight: 700; line-height: 1.85; }
 .universe-locals__list { display: grid; gap: 11px; list-style: none; padding: 0; margin: 0; }
 .universe-locals__item { border-radius: 20px; padding: 14px; background: #edf2e4; }
 .universe-locals__item > button { width: 100%; border: 0; border-radius: 12px; padding: 0; text-align: left; background: transparent; color: #426852; }
@@ -261,11 +250,7 @@
 .universe-locals__tags em.is-suggested { background: #f4e6ba; color: #897345; }
 .universe-locals__tags em.is-dismissed { background: #e1e2d4; color: #7d816e; }
 .universe-locals__tags em.is-gap { background: #f5decb; color: #95664f; }
-.universe-locals__tag--run { background: #efe4bf; }
-.universe-locals__card { min-height: 29px; border: 1px solid #abc4a1; border-radius: 15px; padding: 0 9px; background: #fffbed; color: #56754f; font-size: 10px; }
-.universe-locals__item--relation { border: 1px dashed #b9caa6; background: #f4f1de; }
 .universe-locals__item.is-gap { background: #f5e5d7; }
-.universe-relation-reason { flex-basis: 100%; }
 .universe-records { display: grid; gap: 19px; list-style: none; padding: 0; margin: 0; }
 .universe-record { border: 2px solid #fffdf4; border-radius: 23px; padding: 16px; background: #edf1e4; box-shadow: 0 3px 0 #c5d4b8; }
 .universe-record header { display: grid; gap: 8px; margin-bottom: 13px; }
@@ -273,12 +258,6 @@
 .universe-record header > span { font-size: 12px; font-weight: 750; overflow-wrap: anywhere; }
 .universe-record__answer { margin: 0 0 13px; padding: 12px 13px; border-radius: 16px; background: #fffbed; color: #506952; font-size: 12px; line-height: 1.95; white-space: pre-wrap; overflow-wrap: anywhere; }
 .universe-record__answer.is-empty { color: #75816b; font-size: 11px; }
-.universe-record__feedback { display: grid; gap: 9px; list-style: none; margin: 13px 0; padding: 0; }
-.universe-record__feedback li { display: flex; align-items: baseline; gap: 8px; font-size: 11px; line-height: 1.85; }
-.universe-record__feedback em { flex: 0 0 auto; color: #958049; font-style: normal; font-weight: 750; }
-.universe-record__material { display: grid; gap: 6px; margin: 15px 0; padding-top: 12px; border-top: 1px dashed #bccdac; }
-.universe-record__material > span { color: #6d805e; font-size: 10px; }
-.universe-record__material small { color: #6b7e61; font-size: 11px; line-height: 1.85; overflow-wrap: anywhere; }
 .universe-record footer { display: flex; flex-wrap: wrap; gap: 8px; }
 .universe-record footer button { min-height: 31px; border: 1px solid #b6cbaa; border-radius: 16px; padding: 0 10px; background: #fffbed; color: #5c7d51; font-size: 10px; }
 

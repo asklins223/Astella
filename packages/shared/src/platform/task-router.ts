@@ -32,7 +32,9 @@ export type AITaskType =
   | "note_learning_overview" // 独立后台任务：读取整篇笔记并生成带原文依据的速看
   | "note_annotation_explain" // 独立后台任务：解释选区并保存到原文锚点
   | "note_dynamic_artifact" // 独立后台任务：为笔记内容自由创作可交互的演示页面
-  | "note_expansion_draft"; // 笔记拓展方向和草稿由同一持久后台任务生成
+  | "note_expansion_draft" // 笔记拓展方向和草稿由同一持久后台任务生成
+  | "note_learning_card" // Plan 57：出题与主观题批改/总评
+  | "note_learning_grading"; // Plan 57：主观题批改与整卷总评
 
 /**
  * 模型槽位语义（2026-08-13 按"用户体验"分级，而非任务复杂度）：
@@ -71,6 +73,8 @@ const TASK_CAPABILITY_MAP: Record<AITaskType, Capability> = {
   // 那条链按 none 档直发），不跟着这一槽降档。
   note_dynamic_artifact: "agent_turn",
   note_expansion_draft: "note_generation",
+  note_learning_card: "note_generation",
+  note_learning_grading: "note_generation",
   // 读图不是一条独立能力（2026-10-12「不再单独配识图模型」）：它走副模型的
   // 普通 chat completion（消息里带 image_url），谁的眼睛由模型档案 vision 决定。
   analyze_image:       "text_generation",
@@ -100,6 +104,8 @@ const TASK_COMPLEXITY: Record<AITaskType, TaskComplexity> = {
   note_annotation_explain: "medium",
   note_dynamic_artifact: "high",
   note_expansion_draft: "high",
+  note_learning_card: "high",
+  note_learning_grading: "high",
 };
 
 /** 任务 → 所需能力 */

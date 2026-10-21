@@ -47,7 +47,6 @@ export type GraphControls = {
   searchOpen: boolean;
   searchActiveIndex: number;
   stateFilter: StateFilter;
-  showEvidence: boolean;
   showSources: boolean;
   showLinks: boolean;
   selectedId: string | null;
@@ -63,7 +62,6 @@ export type GraphControls = {
   setSearchOpen: Dispatch<SetStateAction<boolean>>;
   setSearchActiveIndex: Dispatch<SetStateAction<number>>;
   setStateFilter: Dispatch<SetStateAction<StateFilter>>;
-  setShowEvidence: Dispatch<SetStateAction<boolean>>;
   setShowSources: Dispatch<SetStateAction<boolean>>;
   setShowLinks: Dispatch<SetStateAction<boolean>>;
   setSelectedId: Dispatch<SetStateAction<string | null>>;
@@ -83,7 +81,6 @@ export function useGraphControls(
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchActiveIndex, setSearchActiveIndex] = useState(-1);
   const [stateFilter, setStateFilter] = useState<StateFilter>("all");
-  const [showEvidence, setShowEvidence] = useState(true);
   const [showSources, setShowSources] = useState(true);
   const [showLinks, setShowLinks] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -108,7 +105,7 @@ export function useGraphControls(
     query, setQuery, deferredQuery,
     searchOpen, setSearchOpen, searchActiveIndex, setSearchActiveIndex,
     stateFilter, setStateFilter,
-    showEvidence, setShowEvidence, showSources, setShowSources, showLinks, setShowLinks,
+    showSources, setShowSources, showLinks, setShowLinks,
     selectedId, setSelectedId, indexActiveIndex, setIndexActiveIndex,
     pendingFocusId, setPendingFocusId, fitRequest, setFitRequest,
     pathNoteId, setPathNoteId, layer, setLayer, listMode, setListMode,

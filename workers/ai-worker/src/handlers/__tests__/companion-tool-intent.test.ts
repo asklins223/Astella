@@ -107,7 +107,7 @@ test("用户禁止读取资料时仍可创建独立笔记，工具目录和分�
   assert.ok(!names.includes("companion_read_note"));
   assert.ok(names.includes("companion_create_note"));
   assert.match(getCompanionAgentTool("companion_create_note")!.description,
-    /禁止时独立保存、links 留空/);
+    /禁止库内读取时 links 留空/);
   const model = { ...provider(() => true), chatCompletion: async (messages: Parameters<AIProvider["chatCompletion"]>[0]) => {
     const input = JSON.parse(String(messages.at(-1)?.content));
     const instruction = String(messages[0]?.content);
@@ -514,6 +514,13 @@ test("显式产物请求与新建笔记请求有确定性判据，闲聊和'聊�
     ["整理这篇笔记的格式", { artifact: false, newNote: false }],
     ["帮我速看一下，在聊天里概括就好，不生成任何东西", { artifact: false, newNote: false }],
     ["往外学是什么意思？", { artifact: false, newNote: false }],
+    ["解释刚才保存的秦朝笔记中，郡县制和中央集权有什么关系，请依据那篇笔记的正文。", { artifact: false, newNote: false }],
+    ["刚才生成了三篇笔记，解释第一篇。", { artifact: false, newNote: false }],
+    ["请把生成的笔记读给我听。", { artifact: false, newNote: false }],
+    ["不要做脑图，请解释这个概念。", { artifact: false, newNote: false }],
+    ["不要创建或修改笔记。", { artifact: false, newNote: false }],
+    ["请根据这篇已保存笔记解释区别。", { artifact: false, newNote: false }],
+    ["不要修改旧笔记，请新建一篇笔记。", { artifact: false, newNote: true }],
     ["今天不想学习", { artifact: false, newNote: false }],
   ];
   for (const [text, expected] of cases) assert.deepEqual(explicitCompanionProductRequest(text), expected, text);
@@ -542,4 +549,24 @@ test("分类器把产物请求判成 none/unrelated 时补回候选并改成 act
   assert.equal(unrelated.toolUse, "none");
   const unavailable = reconcileCompanionInterpretation(interpretation, "给我生成这篇笔记的速看吧", ["companion_read_note"]);
   assert.deepEqual(unavailable.candidateOperations, []);
+  const calculation = reconcileCompanionInterpretation(interpretation, "请用计算工具核对347×29", ["agent_calculate"], "read_only");
+  assert.equal(calculation.toolUse, "read");
+  assert.deepEqual(calculation.candidateOperations, ["agent_calculate"]);
+  const readOnlyWrite = reconcileCompanionInterpretation(interpretation, "生成三篇笔记", capabilities, "read_only");
+  assert.deepEqual(readOnlyWrite.candidateOperations, []);
+  const read = { ...newNote, intent: "question" as const, toolUse: "read" as const, goalRelation: "unrelated" as const, candidateOperations: ["companion_read_note"] };
+  const editable = [...capabilities, "companion_edit_note"];
+  for (const text of [
+    "窗口验收：请根据《秦朝统一与中央集权制度》这篇已保存笔记，用三句话解释郡县制与分封制的区别；不要创建或修改笔记。",
+    "别改当前笔记，只需要解释其中的概念。",
+    "不创建或修改笔记，直接解释差异。",
+  ]) {
+    const result = reconcileCompanionInterpretation(read, text, editable);
+    assert.equal(result.toolUse, "read", text);
+    assert.deepEqual(result.candidateOperations, ["companion_read_note"], text);
+  }
+  const edit = reconcileCompanionInterpretation(read, "请修改当前笔记的标题。", editable);
+  assert.equal(edit.toolUse, "act"); assert.ok(edit.candidateOperations.includes("companion_edit_note"));
+  const quoted = reconcileCompanionInterpretation(read, "这句‘修改当前笔记’是什么意思？", editable);
+  assert.equal(quoted.toolUse, "none"); assert.deepEqual(quoted.candidateOperations, []);
 });

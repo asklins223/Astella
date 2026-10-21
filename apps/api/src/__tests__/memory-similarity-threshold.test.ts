@@ -1,9 +1,16 @@
 /**
- * `similarity()` 这一族判据只准有一个数（doc 34 L14 的守卫）。
+ * `similarity()` 这一族 SQL 判据只准用**具名共享常量**，不许在 SQL 里写数。
  *
- * 为什么要静态拦：冲突分组（api 侧）与"忽略过的候选别再抽出来"（worker 抽取器）
- * 读的是同一个常量，而它们分属两个进程、两份 import。谁在 SQL 里顺手写一个 `> 0.85`，
- * 两边就会悄悄分叉——同一句话在一边算重复、另一边算新事，而 typecheck 与单测都不会红。
+ * 为什么：同一个数被两边各写一遍，两边就会悄悄分叉，而 typecheck 与单测都不会红。
+ * 现在有两族互不相同的相似度用途，各有自己的常量：
+ *
+ * - `MEMORY_CONTENT_SIMILARITY_THRESHOLD`（0.85）：冲突分组（api 侧）与"忽略过的候选
+ *   别再抽出来"（worker 抽取器）读的是同一个数，分属两个进程、两份 import。
+ * - `COMPANION_SPEECH_REPEAT_CANDIDATE_SIMILARITY`（0.18）：主动发言发布前挑选
+ *   「相近旧话」待核对材料，检索相似不等于重复，复核在模型侧完成（方案 56/58）。
+ *
+ * 两族判的不是同一件事，不能合并；但每个 `similarity(` 调用都必须引用自己那族的
+ * 常量，别在 SQL 里再写一个数。
  *
  * 只管 SQL 的 `similarity(`。向量嵌入的相似度判据属于另一套度量，数值相同纯属巧合，不要为了"统一"把它们并成一个常量。
  */
@@ -13,7 +20,9 @@ import { join, relative } from "node:path";
 import test from "node:test";
 
 const REPO_ROOT = join(import.meta.dirname, "..", "..", "..", "..");
-const CONSTANT_NAME = "MEMORY_CONTENT_SIMILARITY_THRESHOLD";
+const MEMORY_CONSTANT = "MEMORY_CONTENT_SIMILARITY_THRESHOLD";
+const SPEECH_RETRIEVAL_CONSTANT = "COMPANION_SPEECH_REPEAT_CANDIDATE_SIMILARITY";
+const SIMILARITY_CONSTANTS = [MEMORY_CONSTANT, SPEECH_RETRIEVAL_CONSTANT] as const;
 
 function sourceFiles(dir: string): string[] {
   const out: string[] = [];
@@ -38,9 +47,24 @@ const sites = scanned
 test("扫描确实读到了东西（读不到时这条门禁就是假绿）", () => {
   assert.ok(sites.length >= 2, `只找到 ${sites.length} 处 similarity() 调用，判据可能已经搬家`);
   assert.ok(
-    sites.every((entry) => entry.source.includes(CONSTANT_NAME)),
-    `这些文件调用了 similarity() 却没引用共用常量：${sites
-      .filter((entry) => !entry.source.includes(CONSTANT_NAME))
+    sites.every((entry) => SIMILARITY_CONSTANTS.some((name) => entry.source.includes(name))),
+    `这些文件调用了 similarity() 却没引用共用常量（${SIMILARITY_CONSTANTS.join(" / ")}）：${sites
+      .filter((entry) => !SIMILARITY_CONSTANTS.some((name) => entry.source.includes(name)))
+      .map((entry) => entry.file)
+      .join(", ")}`,
+  );
+});
+
+test("每一族 similarity() 都用自己那族的常量，不串用", () => {
+  const speechReview = sites.find((entry) => entry.file.endsWith("companion-initiative-speech-review.ts"));
+  assert.ok(speechReview, "主动发言核对文件应当仍是相似度检索的一处调用点");
+  assert.ok(speechReview.source.includes(SPEECH_RETRIEVAL_CONSTANT), "主动发言核对必须引用自己的检索阈值常量");
+  const memorySites = sites.filter((entry) => !entry.file.endsWith("companion-initiative-speech-review.ts"));
+  assert.ok(memorySites.length >= 2, `记忆冲突判据的调用点少于 2 处：${memorySites.length}`);
+  assert.ok(
+    memorySites.every((entry) => entry.source.includes(MEMORY_CONSTANT)),
+    `记忆冲突判据没有引用 ${MEMORY_CONSTANT}：${memorySites
+      .filter((entry) => !entry.source.includes(MEMORY_CONSTANT))
       .map((entry) => entry.file)
       .join(", ")}`,
   );

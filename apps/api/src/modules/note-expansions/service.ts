@@ -189,7 +189,7 @@ async function taskForJob(
   else status = "failed";
   return noteExpansionTaskV1Schema.parse({
     taskId: job.id,
-    agentRunId: await agentRunForDomainExecution(tx, scope, "job", job.id),
+    agentRunId: await agentRunForDomainExecution(tx, scope, job.id),
     noteId,
     noteVersionId: input.noteVersionId,
     focusAnchor: input.focusAnchor ?? null,

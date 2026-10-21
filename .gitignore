@@ -158,6 +158,9 @@ apps/desktop-client/scripts/b4-landing-live/
 # 界面验证证据截图与交互原型（本地保留）
 apps/desktop-client/outputs/
 apps/desktop-client/prototypes/
+# 移动端/iOS 的构建缓存与模拟器截图（2026-10-21：一次 `git add -A` 会把 113MB
+# 的 SDK 索引缓存带进来；它们是本地产物，不是源码或评审图）
+apps/mobile-client/outputs/
 .env.bak*
 # 本地 electron/vite 构建日志（`> .devlog` 重定向的产物，不是产品代码）
 apps/desktop-client/.devlog

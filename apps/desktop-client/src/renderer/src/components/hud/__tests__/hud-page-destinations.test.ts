@@ -29,8 +29,8 @@ describe("页面词表对账（W2-1）", () => {
     const mapped = Object.keys(HUD_PAGE_DESTINATIONS).sort();
 
     // 正控制：两边都得真的读到东西。
-    expect(hudIds.length).toBeGreaterThan(15);
-    expect(mapped.length).toBeGreaterThan(15);
+    expect(hudIds.length).toBeGreaterThanOrEqual(10);
+    expect(mapped.length).toBeGreaterThanOrEqual(10);
 
     expect(mapped, "这一屏没有对账条目（漏了就是靠「反正没有」蒙过去）").toEqual(hudIds);
 
@@ -45,14 +45,8 @@ describe("页面词表对账（W2-1）", () => {
     // 显式声明「读得到但跳不回去」的那几档，**每条都要有理由**（见 hud-pages.ts 的注释）。
     // 加一档而忘了填这里，下面那条差集就会红——这正是要它红的地方。
     const READABLE_WITHOUT_DESTINATION: Readonly<Record<string, string>> = {
-      // 单篇笔记 / 单张卡：走各自专用的打开工具（companion_open_note / companion_open_card），
-      // 不走 companion_open_page —— 那一个只收无参落点。
+      // 单篇笔记：走 companion_open_note 专用工具，不走无参落点。
       note: "companion_open_note 专用工具",
-      card: "companion_open_card 专用工具",
-      // 单个学习目标：没有「单目标页」的无参落点（goal-detail 需要 objectiveId）。
-      objective: "goal-detail 需要 objectiveId，无参落点不存在",
-      // 正在跑的学习运行：assessment / result / resumable 都需要 runId。
-      learning_run: "assessment/result/resumable 都需要 runId，无参落点不存在",
       // 渲染层自报「别的页」，不是一屏真实的屏。
       other: "渲染层的兜底值，不对应任何一屏",
     };

@@ -17,14 +17,17 @@
  */
 
 import { resolveCompanionInitialToolNames } from "@astella/shared";
+import { companionTaskSurfaceCandidates } from "../tools/companion-tool-surface.ts";
 
 export function companionClassifierCapabilities(input: {
   availableToolNames: readonly string[];
   pageKind: string | null | undefined;
+  userText?: string;
 }): string[] {
   const visible = resolveCompanionInitialToolNames({
     availableToolNames: input.availableToolNames,
     pageKind: input.pageKind ?? null,
+    candidateOperations: companionTaskSurfaceCandidates(input.userText),
   });
   // Keeping core order = keeping the prompt stable between turns; a reordered
   // tool list costs a cache miss on providers that key on the prefix.

@@ -33,9 +33,7 @@ function entityNodeId(entityType: string, entityId: string) {
 
 function entityGraphType(entityType: string): GraphNode["type"] {
   if (entityType === "source") return "source";
-  if (entityType === "note") return "note";
-  if (entityType === "key_point") return "key_point";
-  return "key_point";
+  return "note";
 }
 
 export function buildCompanionMemoryUniverse(
@@ -127,10 +125,5 @@ export function routeForMemoryEntityTarget(target: CompanionMemoryEntityTargetV2
       return { kind: "note.detail", noteId: target.noteId };
     case "source":
       return { kind: "source.detail", sourceId: target.sourceId };
-    case "objective":
-    case "understanding":
-      return { kind: "objective.detail", objectiveId: target.objectiveId };
-    case "learning_run":
-      return { kind: "learningRun.detail", runId: target.runId };
   }
 }

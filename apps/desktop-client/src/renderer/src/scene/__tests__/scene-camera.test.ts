@@ -12,22 +12,15 @@ describe("scene camera contract", () => {
   it("keeps one finite named preset for every desktop destination", () => {
     expect(Object.keys(SCENE_CAMERA_PRESETS)).toEqual([
       "room",
-      "study",
       "notebook",
-      "card-generation",
-      "review",
+      "note-card",
       "search",
       "graph",
-      "validation",
       "source-library",
       "source-detail",
       "note-library",
-      "objective-library",
-      "objective-detail",
       "companion-center",
       "settings",
-      // 审计 F24 的「未完成的学习」：取景跟着研究册那一档。
-      "resumable",
     ]);
     for (const preset of Object.values(SCENE_CAMERA_PRESETS)) {
       expect(preset.scale).toBeGreaterThanOrEqual(1);
@@ -37,10 +30,10 @@ describe("scene camera contract", () => {
   });
 
   it("serializes the same camera values consumed by CSS scene rigs", () => {
-    expect(sceneCameraCssValues(SCENE_CAMERA_PRESETS.study)).toEqual({
-      "--scene-camera-scale": "1.12",
-      "--scene-camera-x-percent": "0%",
-      "--scene-camera-y-percent": "-3.5%",
+    expect(sceneCameraCssValues(SCENE_CAMERA_PRESETS.notebook)).toEqual({
+      "--scene-camera-scale": "1.13",
+      "--scene-camera-x-percent": "1.5%",
+      "--scene-camera-y-percent": "-4%",
     });
   });
 
@@ -72,15 +65,15 @@ describe("scene camera contract", () => {
 
   it("keeps named translation in the same centered convention as the CSS camera", () => {
     const viewport = { width: 1200, height: 675 };
-    const matrix = sceneCameraMatrixForViewport(SCENE_CAMERA_PRESETS.study, viewport);
+    const matrix = sceneCameraMatrixForViewport(SCENE_CAMERA_PRESETS.notebook, viewport);
     const center = projectSceneCameraPoint([SCENE_WORLD.width / 2, SCENE_WORLD.height / 2], matrix!);
 
-    expect(center?.[0]).toBeCloseTo(viewport.width / 2, 8);
-    expect(center?.[1]).toBeCloseTo(viewport.height / 2 - viewport.height * 0.035, 8);
+    expect(center?.[0]).toBeCloseTo(viewport.width / 2 + viewport.width * 0.015, 8);
+    expect(center?.[1]).toBeCloseTo(viewport.height / 2 - viewport.height * 0.04, 8);
   });
 
   it("rejects unusable viewport dimensions instead of producing a partial matrix", () => {
-    expect(sceneCameraMatrixForViewport(SCENE_CAMERA_PRESETS.study, { width: 0, height: 675 })).toBeNull();
-    expect(sceneCameraMatrixForViewport(SCENE_CAMERA_PRESETS.study, { width: 1200, height: Number.NaN })).toBeNull();
+    expect(sceneCameraMatrixForViewport(SCENE_CAMERA_PRESETS.notebook, { width: 0, height: 675 })).toBeNull();
+    expect(sceneCameraMatrixForViewport(SCENE_CAMERA_PRESETS.notebook, { width: 1200, height: Number.NaN })).toBeNull();
   });
 });

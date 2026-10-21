@@ -19,17 +19,16 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 /** 冻结基线。删一条闸 → 这里减一，并在实施日志里给出 (a) 重放台 still-leaks=0、(b) 真实流量 0 触发。 */
-const GATE_BASELINE = 9;
+const GATE_BASELINE = 8;
 
 /**
- * 对话输出闸的九个判据函数（G1–G9）。
+ * 对话输出闸的八个判据函数（去掉随复习链退役的“没有到期的”那一道）。
  *
  * 顺序即编号顺序，**不要重排**：删闸时把那一行删掉并同步 `GATE_BASELINE`，
  * 重排会让 review 看不出"到底删的是哪一道"。
  */
 const GATE_JUDGES: ReadonlyArray<{ id: string; fn: string; file: string }> = [
   { id: "G1", fn: "unverifiedNumericClaims", file: "../handlers/turn/companion-dialogue-content.ts" },
-  { id: "G2", fn: "claimsNothingDueAgainstFacts", file: "../handlers/turn/companion-dialogue-content.ts" },
   { id: "G3", fn: "claimsLookupThatNeverRan", file: "../handlers/turn/companion-dialogue-content.ts" },
   { id: "G4", fn: "looksLikeUnfulfilledActionNarration", file: "../handlers/turn/companion-dialogue-content.ts" },
   { id: "G5", fn: "looksTruncatedReply", file: "../handlers/turn/companion-dialogue-content.ts" },
@@ -70,7 +69,7 @@ function isCalled(source: string, name: string): boolean {
   return new RegExp(`\\b${name}\\s*\\(`).test(source);
 }
 
-test("棘轮：9 道判据仍然导出、仍然被运行时调用，且个数不超过基线", () => {
+test("棘轮：8 道判据仍然导出、仍然被运行时调用，且个数不超过基线", () => {
   const exportedByFile = new Map<string, Set<string>>();
   for (const gate of GATE_JUDGES) {
     if (!exportedByFile.has(gate.file)) {

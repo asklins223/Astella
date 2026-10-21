@@ -15,6 +15,8 @@ import { createNote, getNoteWithVersion } from "../../../../apps/api/src/modules
 import { loadNoteDoc, applyNoteDocUpdate } from "../../../../apps/api/src/modules/note/document-state.ts";
 import { projectFragmentBlocks, writeFragmentBlocks } from "../../../../apps/api/src/modules/note/doc-fragment.ts";
 import { persistFailedPartial } from "../handlers/turn/companion-dialogue-failure-retention.ts";
+import { resumeCompanionRun } from "../../../../apps/api/src/modules/companion-conversation/turn/companion-resume.ts";
+import { companionRequirementIssue } from "../handlers/turn/companion-request-requirements.ts";
 
 const dbUrl = testDatabaseUrl("DATABASE_URL_MIGRATOR");
 if (!new URL(dbUrl).pathname.startsWith("/astella_note_authoring_")) throw new Error("Use an isolated astella_note_authoring_* database");
@@ -77,6 +79,24 @@ async function readRelated(f: Awaited<ReturnType<typeof fixture>>) {
   await f.record("companion_read_note", args, "succeeded", read.resultRef!);
   return { ...args, reason: "提供 U、I、R 的关系，说明 P = I²R 的推导与适用条件" };
 }
+
+test("引用预览使用真实读取的对象、版本与段落，来源重读不伪造笔记身份", async () => {
+  const f = await fixture(), sourceId = randomUUID();
+  const note = await executeReadTool(f.event as AgentEventContext, getCompanionAgentTool("companion_read_note")!,
+    { noteId: f.related.note.id, noteVersionId: f.related.version.id, startOrdinal: 1 });
+  const noteQuote = note.blocks?.find(block => block.type === "quote");
+  assert.ok(noteQuote?.type === "quote");
+  assert.deepEqual(noteQuote.sourceRef, { kind: "note", noteId: f.related.note.id, noteVersionId: f.related.version.id, blockOrdinal: 1 });
+  await f.mutate(async tx => {
+    await tx`INSERT INTO sources(id,workspace_id,type,title,status,created_by) VALUES(${sourceId},${f.scope.workspaceId},'text','实际来源','ready',${f.scope.userId})`;
+    await tx`INSERT INTO source_segments(source_id,workspace_id,ordinal,text,char_start,char_end)
+      VALUES(${sourceId},${f.scope.workspaceId},2,'实际来源段落',0,6)`;
+  });
+  const source = await executeReadTool(f.event as AgentEventContext, getCompanionAgentTool("companion_read_source")!, { sourceId, startOrdinal: 2 });
+  const sourceQuote = source.blocks?.find(block => block.type === "quote");
+  assert.ok(sourceQuote?.type === "quote");
+  assert.deepEqual(sourceQuote.sourceRef, { kind: "source", sourceId, segmentOrdinal: 2 });
+});
 
 test("从讨论直接保存独立笔记，真实链接、搜索和CRDT编辑都能读到同一份内容", async () => {
   const f = await fixture(), link = await readRelated(f);
@@ -230,7 +250,46 @@ test("保存后的最终回复失败，历史仍交付真实笔记入口，重�
     JOIN companion_turn_runs r ON r.assistant_message_id=m.id WHERE r.id=${f.event.read.runId}`);
   assert.equal(message.status, "failed");
   assert.match(message.blocks[0].text, /笔记.*已保存.*无需重复生成/);
-  assert.deepEqual(message.blocks[1].route, { kind: "note", noteId: saved.value.noteId });
+  assert.deepEqual(message.blocks[1].route, { kind: "note", noteId: saved.value.noteId, noteVersionId: saved.value.noteVersionId });
+});
+
+test("保存已提交但外层回执丢失时，只核对原对象与版本，不重新生成或写入", async () => {
+  const f = await fixture();
+  const saved = await executeCompanionCreateNote(f.event, { title: "电功率", markdown: ARTICLE, links: [] }, undefined, f.creationCallId);
+  assert.equal(companionRequirementIssue({ noteCount: 1 }, "已保存", [{ role: "tool", content: JSON.stringify({ ok: true, data: saved.value }) }]), null);
+  await f.mutate(async tx => {
+    await tx`UPDATE companion_agent_tool_calls SET status='outcome_unknown' WHERE run_id=${f.event.read.runId} AND tool_call_id=${f.creationCallId}`;
+    await tx`UPDATE companion_turn_runs SET status='failed',error_code='PROVIDER_IDLE_TIMEOUT' WHERE id=${f.event.read.runId}`;
+  });
+  const request = { ...f.scope, runId: f.event.read.runId, body: { version: 1, generation: 1, expectedEventCursor: 0, reconcileOnly: true } };
+  const first = await resumeCompanionRun(request);
+  assert.equal(first.body.reconciledCount, 1); assert.equal(first.body.unresolvedCount, 0);
+  const repeated = await resumeCompanionRun(request);
+  assert.equal(repeated.body.reconciledCount, 0);
+  const [call] = await f.mutate(tx => tx`SELECT status,result_ref FROM companion_agent_tool_calls WHERE run_id=${f.event.read.runId} AND tool_call_id=${f.creationCallId}`);
+  assert.equal(call.status, "succeeded");
+  assert.equal(JSON.parse(call.result_ref).noteVersionId, saved.value.noteVersionId);
+  const events = await f.mutate(tx => tx`SELECT payload FROM companion_stream_events WHERE run_id=${f.event.read.runId} AND type='agent.tool'`);
+  assert.equal(events.length, 1); assert.equal(events[0].payload.tool.noteCreated.noteId, saved.value.noteId);
+  const [notes] = await f.mutate(tx => tx`SELECT count(*)::int AS n FROM notes WHERE workspace_id=${f.scope.workspaceId}`);
+  assert.equal(notes.n, 2); // original related note + exactly one created note
+  const [jobs] = await f.mutate(tx => tx`SELECT count(*)::int AS n FROM jobs WHERE workspace_id=${f.scope.workspaceId}`);
+  assert.equal(jobs.n, 1);
+});
+
+test("保存凭据损坏或对象已删除时，核对保留未知结果，不凭标题宣称成功", async () => {
+  for (const deleted of [false, true]) {
+    const f = await fixture();
+    const saved = await executeCompanionCreateNote(f.event, { title: "电功率", markdown: ARTICLE, links: [] }, undefined, f.creationCallId);
+    await f.mutate(async tx => {
+      await tx`UPDATE companion_turn_runs SET status='failed',error_code='PROVIDER_IDLE_TIMEOUT' WHERE id=${f.event.read.runId}`;
+      if (deleted) await tx`UPDATE notes SET deleted_at=now() WHERE id=${String(saved.value.noteId)}`;
+      await tx`UPDATE companion_agent_tool_calls SET status='outcome_unknown',result_ref=${deleted ? saved.resultRef! : '{"kind":"created_note"}'} WHERE run_id=${f.event.read.runId} AND tool_call_id=${f.creationCallId}`;
+    });
+    const result = await resumeCompanionRun({ ...f.scope, runId: f.event.read.runId,
+      body: { version: 1, generation: 1, expectedEventCursor: 0, reconcileOnly: true } });
+    assert.equal(result.body.reconciledCount, 0); assert.equal(result.body.unresolvedCount, 1);
+  }
 });
 
 test("自动关联前的库内检索不向模型暴露同空间其他成员的私有笔记", async () => {

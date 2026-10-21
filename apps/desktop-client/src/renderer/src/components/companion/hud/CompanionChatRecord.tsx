@@ -7,6 +7,7 @@ import { companionMessageText, desktopRouteFromAgentRoute } from "../../../app/c
 import { navigateCompanionHistoryRoute } from "../../../app/companion-session/companion-chat-routing";
 import { gatewayErrorMessage } from "../../../app/client/desktop-client";
 import type { CompanionRunTrace } from "../../../app/companion-session/companion-agent-nodes";
+import { savedCompanionNote } from "../../../app/companion-session/companion-agent-nodes";
 import { CompanionProposalChoice } from "../journal/CompanionProposalChoice";
 import { CompanionRunTraceView } from "../journal/CompanionRunTraceView";
 import { CompanionCardBlock, CompanionCodeBlock, CompanionDiagramBlock, CompanionRecordImage } from "../journal/companion-rich-content";
@@ -16,9 +17,11 @@ import { renderCompanionMarkdown } from "../content/companion-markdown";
 import { openExternalLink } from "../../../app/client/external-link";
 import { copyText } from "../../../app/client/clipboard";
 import { companionMessageCopyText } from "../journal/companion-message-copy";
+import { previewCompanionNote, previewCompanionSource, rememberCompanionNoteReturn } from "../journal/companion-result-preview";
 import { journalProposalNeedsAttention } from "../journal/companion-journal-model";
 import { CompanionMessageAudioButton } from "../voice/CompanionMessageAudioButton";
 import { CompanionFollowupPrompts } from "../journal/CompanionFollowupPrompts";
+import { useJournalDisclosure } from "../journal/companion-journal-view-state";
 
 /**
  * 「聊天记录」子级页面（2026-09-19，微信式）。
@@ -62,7 +65,7 @@ export function messageDayLabel(value: string): string {
 }
 
 export function shouldShowRunTrace(trace: CompanionRunTrace): boolean {
-  return Boolean(trace.summary.thinkingText?.trim())
+  return trace.summary.status === "failed" || Boolean(trace.summary.thinkingText?.trim())
     || Boolean(trace.events?.some(event => event.type === "assistant.thinking"))
     || trace.summary.toolCallCount > 0
     || trace.nodes.some(node => node.kind === "tool");
@@ -108,21 +111,30 @@ export function highlightText(text: string, keyword: string): ReactNode {
 function NavBlockLine({
   block,
   chat,
-  onNavigated,
+  onNavigated, runId,
 }: {
   readonly block: Extract<CompanionContentBlockV1, { type: "nav" }>;
   readonly chat: CompanionChatSession;
   readonly onNavigated?: () => void;
+  readonly runId?: string;
 }) {
   const [failure, setFailure] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const target = desktopRouteFromAgentRoute(block.route);
+  const target = block.route.kind === "note"
+    ? { kind: "note.detail" as const, noteId: block.route.noteId }
+    : desktopRouteFromAgentRoute(block.route);
   if (!target) {
     return <p className="companion-record__nav companion-record__nav--plain"><span>{block.label}</span></p>;
   }
   return (
     <div className="companion-record__nav">
-      <button type="button" disabled={busy} onClick={() => {
+      {block.route.kind === "note" ? <button type="button" onClick={event => {
+        if (block.route.kind === "note") previewCompanionNote({ noteId: block.route.noteId, noteVersionId: block.route.noteVersionId,
+          title: block.label.replace(/^打开[《「]?|[》」]$/gu, ""), runId }, event.currentTarget);
+      }}>预览</button> : null}
+      <button type="button" disabled={busy} onClick={event => {
+        if (block.route.kind === "note") rememberCompanionNoteReturn({ noteId: block.route.noteId,
+          noteVersionId: block.route.noteVersionId, title: block.label, runId }, event.currentTarget);
         setBusy(true);
         setFailure(null);
         void chat.goToRoute(target)
@@ -132,7 +144,7 @@ function NavBlockLine({
           .finally(() => setBusy(false));
       }}>
         <CornerDownRight size={12} />
-        {block.label}
+        {block.route.kind === "note" && block.route.noteVersionId ? "打开当前笔记" : block.label}
       </button>
       {failure ? <span className="companion-record__nav-error" role="status">{failure}</span> : null}
     </div>
@@ -154,7 +166,7 @@ function RecommendationCard({
   const target = desktopRouteFromAgentRoute(block.route);
   const openLabel = block.route.kind === "learning_artifact"
     ? `打开${block.kindLabel}`
-    : block.route.kind === "card" ? "打开学习卡" : "打开笔记";
+    : "打开笔记";
 
   return (
     <article className="companion-record__recommendation" data-kind={block.kindLabel}>
@@ -201,13 +213,14 @@ function RecommendationCard({
  * 展开之后也不再复检：那时量到的是全部片段的高度，会把「收起」自己量没掉。
  */
 export function CompanionQuoteBlock({
-  block,
+  block, runId,
 }: {
   readonly block: Extract<CompanionContentBlockV1, { type: "quote" }>;
+  readonly runId?: string;
 }) {
   const textRef = useRef<HTMLDivElement>(null);
   const [overflowing, setOverflowing] = useState(false);
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, toggleExpanded] = useJournalDisclosure(`${runId ?? "excerpt"}:quote:${JSON.stringify(block.sourceRef ?? block.label)}:${block.text}`, false);
   useLayoutEffect(() => {
     const text = textRef.current;
     if (!text || expanded) return;
@@ -223,8 +236,13 @@ export function CompanionQuoteBlock({
     <figure className="companion-record__quote" data-expanded={expanded ? "true" : undefined}>
       <figcaption>{block.label}</figcaption>
       <div className="companion-record__quote-text" ref={textRef}>{renderCompanionMarkdown(block.text)}</div>
+      {block.sourceRef ? <button type="button" onClick={event => {
+        const source = block.sourceRef!;
+        if (source.kind === "note") previewCompanionNote({ noteId: source.noteId, noteVersionId: source.noteVersionId, blockOrdinal: source.blockOrdinal, title: block.label, runId }, event.currentTarget);
+        else previewCompanionSource({ sourceId: source.sourceId, segmentOrdinal: source.segmentOrdinal, title: block.label, runId }, event.currentTarget);
+      }}>{block.sourceRef.kind === "note" ? "预览引用的笔记原文" : "预览来源全文"}</button> : null}
       {overflowing ? (
-        <button type="button" onClick={() => setExpanded((value) => !value)}>
+        <button type="button" onClick={toggleExpanded}>
           {expanded ? "收起片段" : "展开片段"}
         </button>
       ) : null}
@@ -237,12 +255,13 @@ export function CompanionMessageRichBlocks({
   blocks,
   chat,
   onNavNavigated,
-  onReadingChange,
+  onReadingChange, runId,
 }: {
   readonly blocks: readonly CompanionContentBlockV1[];
   readonly chat?: CompanionChatSession;
   readonly onNavNavigated?: () => void;
   readonly onReadingChange?: (reading: boolean) => void;
+  readonly runId?: string;
 }) {
   const sources = companionWebCitations(blocks);
   return <>
@@ -251,11 +270,11 @@ export function CompanionMessageRichBlocks({
       || block.type === "diagram" || block.type === "card" || block.type === "image" || block.type === "citation" || block.type === "code")
       .map((block, index) => (
         block.type === "nav"
-          ? chat ? <NavBlockLine key={`nav-${index}`} block={block} chat={chat} onNavigated={onNavNavigated} /> : <p className="companion-record__nav companion-record__nav--plain" key={`nav-${index}`}><span>{block.label}</span></p>
+          ? chat ? <NavBlockLine key={`nav-${index}`} block={block} chat={chat} runId={runId} onNavigated={onNavNavigated} /> : <p className="companion-record__nav companion-record__nav--plain" key={`nav-${index}`}><span>{block.label}</span></p>
           : block.type === "recommendation"
             ? <RecommendationCard key={`recommendation-${index}`} block={block} chat={chat} onNavigated={onNavNavigated} />
           : block.type === "quote"
-            ? <CompanionQuoteBlock key={`quote-${index}`} block={block} />
+            ? <CompanionQuoteBlock key={`quote-${index}`} block={block} runId={runId} />
             : block.type === "diagram"
               ? <CompanionDiagramBlock key={`diagram-${index}`} block={block} />
               : block.type === "card"
@@ -275,21 +294,65 @@ export function CompanionMessageRichBlocks({
   </>;
 }
 
+/** 这一轮真正落库的成果。它属于回复，不属于过程：过程只说做过什么，
+ * 成果在朗读文本下面一篇一个入口；只认真实回执，不推断、不补占位。 */
+function CompanionSavedArtifacts({ trace, chat }: {
+  readonly trace: CompanionRunTrace;
+  readonly chat: CompanionChatSession;
+}) {
+  const saved = useMemo(() => {
+    const seen = new Set<string>();
+    return trace.nodes.flatMap(node => {
+      const note = savedCompanionNote(node);
+      if (!note || seen.has(note.noteId)) return [];
+      seen.add(note.noteId);
+      return [{ ...note, runId: trace.summary.runId }];
+    });
+  }, [trace.nodes, trace.summary.runId]);
+  if (!saved.length) return null;
+  return <section className="companion-record__saved" aria-label="留下的成果">
+    <p className="companion-record__saved-heading">留下的成果 <span>{saved.length} 篇</span></p>
+    <ul>{saved.map((note, index) => <li key={note.noteId}>
+      <span className="companion-record__saved-index" aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
+      <strong>{note.title}</strong>
+      <span className="companion-record__saved-actions">
+        <button type="button" onClick={event => previewCompanionNote(note, event.currentTarget)}>预览</button>
+        <button type="button" onClick={event => {
+          rememberCompanionNoteReturn(note, event.currentTarget);
+          void chat.goToRoute({ kind: "note.detail", noteId: note.noteId }).catch(() => undefined);
+        }}>打开<ArrowUpRight size={12} aria-hidden="true" /></button>
+      </span>
+    </li>)}</ul>
+  </section>;
+}
+
 /** 单条消息（时间线 / 某日视图共用）。 */
 export function CompanionChatRecordArticle({
   message,
   chat,
   showTrace = true,
   showHeader = true,
+  bubble = false,
+  groupEnd = true,
+  representedNoteIds,
 }: {
   readonly message: CompanionMessageV1;
   readonly chat: CompanionChatSession;
   readonly showTrace?: boolean;
   readonly showHeader?: boolean;
+  /** 「手记」里的伴星发言用气泡圈住正文；用户消息沿用原来的整条气泡。 */
+  readonly bubble?: boolean;
+  /** 一条运行的最后一发言才带朗读、复制、材料与追问；中间发言只留气泡。 */
+  readonly groupEnd?: boolean;
+  /** 这一轮成果条已经逐篇列出、并给了预览/打开入口的笔记。重复的导航块不再画第二遍。 */
+  readonly representedNoteIds?: ReadonlySet<string>;
 }) {
   const [copyNote, setCopyNote] = useState<string | null>(null);
   const runSpeechMessages = message.runId ? chat.messages.filter(m => m.role === "assistant" && m.runId === message.runId) : [];
   const ownsRunAudio = runSpeechMessages.length <= 1 || runSpeechMessages.at(-1)?.id === message.id;
+  // 成果只挂在这次运行的**最后一条**助手消息下，和朗读入口同一归属；
+  // 分段到达的中间消息不再各挂一份。
+  const ownsRunArtifacts = message.role === "assistant" && (runSpeechMessages.length <= 1 || runSpeechMessages.at(-1)?.id === message.id);
   const selection = message.role === "user" ? message.selection : undefined;
   // 追问建议是当前回合的快捷入口。用户开始下一轮后，旧入口从手记中退场，
   // 但历史消息本身仍保留，避免改写已经保存的对话。
@@ -304,8 +367,14 @@ export function CompanionChatRecordArticle({
     ? chat.runTraces.find((item) => item.summary.assistantMessageId === message.id
       || (message.runId && item.summary.runId === message.runId)) ?? null
     : null;
+  const savedNoteIds = useMemo(() => new Set(trace?.nodes.flatMap(node => {
+    const note = savedCompanionNote(node);
+    return note ? [note.noteId] : [];
+  }) ?? []), [trace]);
+  const hiddenNoteIds = representedNoteIds ?? (savedNoteIds.size ? savedNoteIds : undefined);
   const ownsRunTrace = !message.runId || chat.messages.find(item => item.role === "assistant" && item.runId === message.runId)?.id === message.id;
   const sources = companionWebCitations(message.blocks);
+  const bodyText = companionMessageText({ ...message, blocks: message.blocks.filter(block => block.type === "text") });
   const references = richBlocks.filter(block => block.type === "quote" || (block.type === "citation" && !block.referenceId));
   const results = richBlocks.filter(block => block.type !== "quote" && block.type !== "citation");
   const proposalIds = message.role === "assistant" ? [...new Set([
@@ -318,25 +387,32 @@ export function CompanionChatRecordArticle({
     state={chat.proposalStates[id]} context="history"
     onDecide={decision => { void chat.decideProposal(id, decision); }} onRetry={() => chat.retryProposal(id)} />);
   return (
-    <article className={richBlocks.length > 0 ? "companion-record__turn companion-record__rich-turn" : "companion-record__turn"} data-message-id={message.id} data-role={message.role} data-kind={message.kind} data-headerless={!showHeader || undefined} data-cancelled={message.kind === "cancelled" || undefined}>
+    <article className={richBlocks.length > 0 ? "companion-record__turn companion-record__rich-turn" : "companion-record__turn"} data-message-id={message.id} data-role={message.role} data-kind={message.kind} data-bubble={bubble || undefined} data-headerless={!showHeader || undefined} data-cancelled={message.kind === "cancelled" || undefined}>
       {showHeader ? <header><span className="companion-record__author"><i className="companion-record__avatar" aria-hidden="true">{message.role === "user" ? <UserRound size={15} /> : <Sparkles size={15} />}</i><strong>{message.role === "user" ? "你" : chat.companionName}{message.kind === "voice_transcript" ? " · 语音" : ""}</strong></span><span className="companion-record__meta">{message.role === "assistant" && ownsRunAudio ? <CompanionMessageAudioButton runId={message.runId} exchange={runSpeechMessages.length > 1} /> : null}<time>{messageTime(message.createdAt)}</time></span></header> : null}
       {showTrace && ownsRunTrace && trace && shouldShowRunTrace(trace) ? <CompanionRunTraceView trace={trace} /> : null}
       {selection ? <details className="companion-record__selection"><summary><Quote size={14} aria-hidden="true" /><span>引用的原文</span><q>{selection.text.slice(0, 96)}</q></summary><CompanionQuoteBlock block={{ type: "quote", label: "当时选中的原文", text: selection.text }} /></details> : null}
       {/* 正文从 §4.8 起保留 markdown，由这里排版（抽屉与记录页共用本组件）。 */}
-      <div className="companion-record__body">{renderCompanionMarkdown(companionMessageText({ ...message, blocks: message.blocks.filter(block => block.type === "text") }), sources)}</div>
+      <div className={bubble ? "companion-record__body companion-record__body--bubble" : "companion-record__body"}>{renderCompanionMarkdown(bodyText, sources)}</div>
       <CompanionWebSources sources={sources} />
-      {results.length ? <div className="companion-record__results"><CompanionMessageRichBlocks blocks={results} chat={chat} /></div> : null}
-      {followups.length > 0 ? <CompanionFollowupPrompts prompts={followups} chat={chat} /> : null}
+      {/* 朗读与复制属于这条回复本身，紧贴正文；成果清单在它们后面。 */}
+      {groupEnd ? <div className="companion-record__actions">
+        {message.role === "assistant" && ownsRunAudio && !showHeader
+          ? <CompanionMessageAudioButton runId={message.runId} exchange={runSpeechMessages.length > 1} /> : null}
+        <button type="button" className="text-action" onClick={() => {
+          void copyText(companionMessageCopyText(message)).then((copied) => setCopyNote(copied ? "已复制" : "复制失败，请重试"));
+        }}><Copy size={16} />{copyNote ?? "复制文字"}</button>
+      </div> : null}
+      {groupEnd && message.role === "assistant" && trace && ownsRunArtifacts ? <CompanionSavedArtifacts trace={trace} chat={chat} /> : null}
+      {results.filter(block => !(block.type === "nav" && block.route.kind === "note" && hiddenNoteIds?.has(block.route.noteId))).length
+        ? <div className="companion-record__results"><CompanionMessageRichBlocks blocks={results.filter(block => !(block.type === "nav" && block.route.kind === "note" && hiddenNoteIds?.has(block.route.noteId)))} chat={chat} runId={message.runId ?? undefined} /></div> : null}
+      {groupEnd && followups.length > 0 ? <CompanionFollowupPrompts prompts={followups} chat={chat} /> : null}
       {message.kind === "cancelled" ? <p className="companion-record__stopped">你在这里停下了{stopSummary(trace)}</p> : null}
       {message.kind === "error" ? <p className="companion-record__stopped">这一轮没能说完{stopSummary(trace)}</p> : null}
-      {pending.length ? <div className="companion-record__decisions">{choices(pending)}</div> : null}
+      {groupEnd && pending.length ? <div className="companion-record__decisions">{choices(pending)}</div> : null}
       {references.length || settled.length ? <div className="companion-record__attachments">
-        {references.length ? <details className="companion-record__references"><summary><Quote size={14} aria-hidden="true" />查阅与出处 <small>{references.length}</small></summary><CompanionMessageRichBlocks blocks={references} chat={chat} /></details> : null}
+        {references.length ? <details className="companion-record__references"><summary><Quote size={14} aria-hidden="true" />查阅与出处 <small>{references.length}</small></summary><CompanionMessageRichBlocks blocks={references} chat={chat} runId={message.runId ?? undefined} /></details> : null}
         {settled.length ? <details className="companion-record__decision-history"><summary>确认记录 <small>{settled.length}</small></summary>{choices(settled)}</details> : null}
       </div> : null}
-      <div className="companion-record__actions"><button type="button" className="text-action" onClick={() => {
-        void copyText(companionMessageCopyText(message)).then((copied) => setCopyNote(copied ? "已复制" : "复制失败，请重试"));
-      }}><Copy size={16} />{copyNote ?? "复制文字"}</button></div>
     </article>
   );
 }

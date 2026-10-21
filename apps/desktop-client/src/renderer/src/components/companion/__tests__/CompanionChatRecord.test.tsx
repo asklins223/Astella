@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CompanionMessageV1 } from "@astella/shared/companion-conversation-contracts";
 import type { CompanionChatSession } from "../../../app/companion-session/companion-chat-session.tsx";
@@ -7,6 +7,7 @@ import type { CompanionRunTrace } from "../../../app/companion-session/companion
 import { useSourceImage } from "../../surfaces/source/source-image.ts";
 import { hasForeignModal } from "../content/companion-modal-ownership.ts";
 import { CompanionChatRecordArticle, MonthCalendar } from "../hud/CompanionChatRecord.tsx";
+import { useCompanionResultPreview } from "../journal/companion-result-preview";
 import { interactionProposal, interactionSession } from "./companion-interaction-fixtures";
 
 // 站内图字节通道整模块换掉：这三态是渲染分支的契约，不该靠真 fetch 去凑。
@@ -93,7 +94,7 @@ describe("手记正文与附页的阅读层级", () => {
       stepCount: 1, toolCallCount: 0, maxSteps: 4, maxToolCalls: 4, assistantMessageId: message().id, nodeCount: 1 },
     nodes: [{ key: "status:1", kind: "thinking", label: "思考中", state: "succeeded", toolName: null, summary: null, proposalId: null }],
   });
-  it("普通闲聊省去过程；工具过程在正文前折叠，引用与成果保留阅读层级", () => {
+  it("普通闲聊省去过程；历史过程与引用默认收起，成果入口直接可用", () => {
     const ordinary = render(<CompanionChatRecordArticle message={message()} chat={interactionSession({ runTraces: [runTrace()] })} />);
     expect(ordinary.container.querySelector(".companion-history__trace")).toBeNull();
     ordinary.unmount();
@@ -111,6 +112,40 @@ describe("手记正文与附页的阅读层级", () => {
     expect(container.querySelector(".companion-record__body")!.compareDocumentPosition(references) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(process.compareDocumentPosition(container.querySelector(".companion-record__body")!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
+  it("保存成果排在回复下面，预览/打开走真实回执，并隐藏重复的导航块", () => {
+    const noteId = "5a5a5a5a-5a5a-4a5a-8a5a-5a5a5a5a5a5a";
+    const trace: CompanionRunTrace = {
+      summary: { version: 1, runId: "11111111-1111-4111-8111-111111111111", status: "succeeded",
+        generation: 1, stepCount: 1, toolCallCount: 1, maxSteps: 4, maxToolCalls: 4,
+        assistantMessageId: message().id, nodeCount: 1 },
+      nodes: [{ key: "tool:save", kind: "tool", label: "新建笔记", state: "succeeded",
+        toolName: "companion_create_note", summary: null, proposalId: null,
+        noteCreated: { kind: "created_note", noteId, noteVersionId: `${noteId}-v1`, title: "秦制与天下", linkedNotes: [] } }],
+    };
+    const goToRoute = vi.fn().mockResolvedValue(undefined);
+    const { container } = render(<CompanionChatRecordArticle message={message({
+      runId: trace.summary.runId,
+      blocks: [
+        { type: "text", text: "秦那篇落在制度上。" },
+        { type: "nav", label: "打开秦制与天下", route: { kind: "note", noteId } },
+      ],
+    })} chat={interactionSession({ runTraces: [trace], goToRoute })} />);
+    const saved = container.querySelector(".companion-record__saved")!;
+    const body = container.querySelector(".companion-record__body")!;
+    const actions = container.querySelector(".companion-record__actions")!;
+    expect(saved.textContent).toContain("留下的成果");
+    expect(saved.textContent).toContain("秦制与天下");
+    expect(body.compareDocumentPosition(saved) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // 朗读/复制紧贴回复，成果排在它们后面。
+    expect(actions.compareDocumentPosition(saved) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // 成果清单已经给了同一篇的入口，正文里的导航块不再重复。
+    expect(screen.queryByRole("button", { name: "打开秦制与天下" })).toBeNull();
+    fireEvent.click(within(saved as HTMLElement).getByRole("button", { name: "预览" }));
+    expect(useCompanionResultPreview.getState().target).toMatchObject({ noteId, noteVersionId: `${noteId}-v1` });
+    fireEvent.click(within(saved as HTMLElement).getByRole("button", { name: "打开" }));
+    expect(goToRoute).toHaveBeenCalledWith({ kind: "note.detail", noteId });
+  });
+
   it("同一个确认同时出现在消息和过程时只展示一次，按钮在折叠区外；完成后留下折叠的确认记录", () => {
     const waiting = runTrace("waiting_for_confirmation");
     const trace = { ...waiting, nodes: [{ ...waiting.nodes[0], proposalId: "proposal" }] };
@@ -175,9 +210,9 @@ describe("CompanionChatRecordArticle 的跳转块（方案 29 §4.8）", () => {
   it("落点失败时就地说明并允许重试", async () => {
     const goToRoute = vi.fn().mockRejectedValueOnce(new Error("导航失败")).mockResolvedValueOnce(undefined);
     render(<CompanionChatRecordArticle message={message({ blocks: [
-      { type: "nav", label: "去复习", route: { kind: "review" } },
+      { type: "nav", label: "去笔记库", route: { kind: "note_library" } },
     ] })} chat={session(goToRoute)} />);
-    const button = screen.getByRole("button", { name: "去复习" });
+    const button = screen.getByRole("button", { name: "去笔记库" });
     fireEvent.click(button);
     await waitFor(() => expect(screen.getByRole("status")).toBeTruthy());
     expect(button.hasAttribute("disabled")).toBe(false);
@@ -186,17 +221,7 @@ describe("CompanionChatRecordArticle 的跳转块（方案 29 §4.8）", () => {
     expect(goToRoute).toHaveBeenCalledTimes(2);
   });
 
-  it("「去今日」现在给真按钮：这一页曾经在映射表里没有分支，按钮根本不渲染", () => {
-    const goToRoute = vi.fn().mockResolvedValue(undefined);
-    render(
-      <CompanionChatRecordArticle
-        message={message({ blocks: [{ type: "nav", label: "去今日", route: { kind: "today" } }] })}
-        chat={session(goToRoute)}
-      />,
-    );
-    fireEvent.click(screen.getByRole("button", { name: "去今日" }));
-    expect(goToRoute).toHaveBeenCalledWith({ kind: "room.today" });
-  });
+;
 
   it("这一版客户端不认识的落点（服务端比客户端新）：留下她去过哪里的痕迹，但不给假按钮", () => {
     const goToRoute = vi.fn();
@@ -220,18 +245,18 @@ describe("CompanionChatRecordArticle 的跳转块（方案 29 §4.8）", () => {
         message={message({
           blocks: [
             { type: "text", text: "两个都打开。" },
-            { type: "nav", label: "去复习", route: { kind: "review" } },
+            { type: "nav", label: "去笔记库", route: { kind: "note_library" } },
             {
               type: "nav",
               label: "去星图",
-              route: { kind: "star_map", keyPointId: "6b6b6b6b-6b6b-4b6b-8b6b-6b6b6b6b6b6b" },
+              route: { kind: "star_map" },
             },
           ],
         })}
         chat={session()}
       />,
     );
-    const labels = ["去复习", "去星图"].map((label) => screen.getByRole("button", { name: label }));
+    const labels = ["去笔记库", "去星图"].map((label) => screen.getByRole("button", { name: label }));
     expect(labels[0].compareDocumentPosition(labels[1]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 

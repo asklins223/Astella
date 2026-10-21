@@ -15,9 +15,6 @@ import {
   DesktopGatewayFailure,
 } from "./desktop-gateway-failure";
 import {
-  GatewayTransport as GatewayTransportFromDesktopgatewaytransport,
-} from "./desktop-gateway-transport";
-import {
   AiDataPolicyV1,
   DissolvePreviewResultV1,
   DissolveWorkspaceResultV1,
@@ -59,7 +56,6 @@ export async function dissolveWorkspace(t: GatewayTransport, workspaceId: string
     });
     if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
     t.currentSession = null;
-    t.roomProjectionCache = null;
     return parsed.data;
   }
 
@@ -130,7 +126,6 @@ export async function transferWorkspaceOwnership(t: GatewayTransport,
     });
     if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
     t.currentSession = null;
-    t.roomProjectionCache = null;
     return parsed.data;
   }
 
@@ -142,7 +137,6 @@ export async function updateAiConsent(t: GatewayTransport, consentVersion: strin
     }, true, true, requestId);
     // 写入后重新读取：界面显示的是服务端的当前状态，不在客户端拼一份。
     t.forgetCapabilities();
-    t.roomProjectionCache = null;
     return getWorkspaceAiSettings(t, requestId);
   }
 
@@ -153,6 +147,5 @@ export async function updateAiDataPolicy(t: GatewayTransport, policy: AiDataPoli
       body: JSON.stringify(policy),
     }, true, true, requestId);
     t.forgetCapabilities();
-    t.roomProjectionCache = null;
     return getWorkspaceAiSettings(t, requestId);
   }

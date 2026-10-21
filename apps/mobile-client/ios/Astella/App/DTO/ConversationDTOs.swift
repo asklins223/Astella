@@ -32,6 +32,7 @@ struct CompanionMessagePageDTO: Decodable {
     /// companionChatListMessagesResultV1Schema.items
     /// （同 schema 的 version / hasMore / oldestSeq 本次未读取，暂不建模）
     let items: [CompanionMessageDTO]
+    let hasMore: Bool?
 }
 
 /// 消息列表项。来源：companion-conversation-contracts.ts · companionMessageV1Schema
@@ -66,6 +67,13 @@ struct CompanionMessageBlockDTO: Decodable {
     let name: String?
     let proposalId: String?
     let code: String?
+    let route: CompanionNoteRouteDTO?
+    let title: String?
+    let steps: [CompanionDiagramStep]?
+    let front: String?
+    let summary: String?
+    let target: CompanionCitationTarget?
+    let sourceRef: CompanionQuoteSource?
 }
 
 /// GET /companion/conversations/:id/run-nodes 响应快照。
@@ -76,6 +84,7 @@ struct CompanionRunNodesSnapshotDTO: Decodable {
     /// companionRunNodesListResultV1Schema.runs（元素见 CompanionRunSummaryDTO；
     /// 同 schema 的 items 节点窗口本次未读取，暂不建模）
     let runs: [CompanionRunSummaryDTO]
+    let items: [CompanionProcessEventDTO]?
 }
 
 /// 一轮 run 的摘要。来源：companion-chat-desktop-contracts.ts · companionRunSummaryV1Schema
@@ -88,8 +97,17 @@ struct CompanionRunSummaryDTO: Decodable {
     let stepCount: Int
     /// companionRunSummaryV1Schema.toolCallCount
     let toolCallCount: Int
+    let nodeCount: Int
     /// companionRunSummaryV1Schema.thinkingText（nullable + optional，仅 includeThinking 时返回）
     let thinkingText: String?
+    let generation: Int?
+    let userMessageId: String?
+    let assistantMessageId: String?
+    let createdAt: String?
+    let updatedAt: String?
+    let processTimeline: [CompanionProcessEventDTO]?
+    let errorCode: String?
+    let eventCursor: Int?
 }
 
 /// POST /companion/conversations/:id/turns 响应（移动端当前只校验形状、不读字段）。

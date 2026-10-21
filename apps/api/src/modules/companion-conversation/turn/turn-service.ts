@@ -9,16 +9,14 @@ import { requireAiExecutionConsent } from "../../../lib/ai-execution-consent.ts"
  * 任一步失败全部回滚，返回 202。
  */
 
-import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { companionLeakGateVersionV1 } from "@astella/shared/companion-leak-gates";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import type { ApiTransaction } from "../../../db/client.ts";
 import { withWorkspaceTransaction } from "../../../db/client.ts";
 import { createJob } from "../../job/service.ts";
-import { type CompanionGroundedTutorGrantV1 } from "@astella/shared";
 import { DomainError } from "@astella/shared";
-import { sha256Utf8V1 } from "@astella/shared/content-hash";
-import { canonicalJsonV1 } from "@astella/shared/content-hash";
+import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
 import {
   createCompanionTurnRequestV1Schema,
   createCompanionTurnResponseV1Schema,
@@ -28,17 +26,11 @@ import {
 import { noteImageAssets } from "@astella/shared/db-schema/note";
 import { sourceImageObjectKeyFromUrl, sourceImageUrlFromObjectKey } from "@astella/shared/source-image-contracts";
 import { companionFileObjectKeyFromUrl } from "@astella/shared/companion-file-contracts";
-import { resolveAuthSurfaceManifestSecret } from "../../../companion-contracts/auth-surface.ts";
 import { ensureCompanionAccountState, getCompanionAccountEpoch } from "../../../companion-contracts/companion-account-epoch.ts";
 import { reclaimExpiredCompanionProposals, invalidateSupersededRunProposals } from "./companion-proposal-expiry.ts";
 import { lockCompanionConversationLifecycleRuns } from "@astella/shared/companion-lock-order";
 import { retainCompanionCancelledPartial } from "./companion-cancelled-retention.ts";
 import { activateAssistantPersonaForNewTurn } from "../pet-profile-service.ts";
-import {
-  contextRevisionForCompanionLearningRun,
-  isCompanionLearningRunTutorEligible,
-  loadCompanionLearningRunContext,
-} from "./learning-run-context.ts";
 import {
   companionConversations,
   companionMessages,
@@ -126,125 +118,14 @@ function sanitizeContext(request: CreateCompanionTurnRequestV1): unknown {
     contextRevision: "contextRevision" in ctx ? ctx.contextRevision ?? null : null,
   };
   switch (ctx.pageKind) {
-    case "today":
-      return { version: 1, context: { ...base }, ...withExtra({}) };
     case "note":
       return { version: 1, context: { ...base, noteId: ctx.noteId, ...(ctx.noteVersionId ? { noteVersionId: ctx.noteVersionId } : {}),
         ...(ctx.replyPurpose ? { replyPurpose: ctx.replyPurpose } : {}),
         ...(ctx.annotationTarget ? { annotationTarget: ctx.annotationTarget } : {}),
         ...(ctx.editing ? { editing: ctx.editing } : {}) }, ...withExtra({}) };
-    case "review":
-      return { version: 1, context: { ...base, cardId: ctx.cardId ?? null, keyPointId: ctx.keyPointId ?? null }, ...withExtra({}) };
-    case "card":
-      return { version: 1, context: { ...base, cardId: ctx.cardId, keyPointId: ctx.keyPointId ?? null }, ...withExtra({}) };
     case "star_map":
       return { version: 1, context: { ...base, keyPointId: ctx.keyPointId ?? null }, ...withExtra({}) };
-    case "learning_run":
-      return withExtra({
-        version: 1,
-        context: {
-          ...base,
-          runId: ctx.runId,
-          snapshotId: ctx.snapshotId,
-          taskId: ctx.taskId,
-          requestedCapability: ctx.requestedCapability,
-          groundedTutorGrant: ctx.groundedTutorGrant === null
-            ? null
-            : {
-              grantId: ctx.groundedTutorGrant.grantId,
-              permissionSnapshotHash: ctx.groundedTutorGrant.permissionSnapshotHash,
-              expiresAt: ctx.groundedTutorGrant.expiresAt,
-            },
-        },
-      });
   }
-}
-
-function grantHmacSecret(): string {
-  const configured = resolveAuthSurfaceManifestSecret();
-  if (configured) return configured;
-  // fail-closed：任何环境未配置 AUTH_SURFACE_MANIFEST_SECRET 都拒绝签发 grant。
-  // 已移除公开常量回退（"companion-dev-grant-secret" 可被伪造签名，绕过
-  // "仅学习页可签发 grant" 的控制与一次性消费）。dev 由 docker-compose.dev.yml
-  // 显式配置 dev 密钥；staging/生产未配置 → 503，宁可功能不可用也不降级安全。
-  throw new CompanionConversationError(
-    "INTERNAL_ERROR", 503, "companion grant signing is not configured",
-  );
-}
-
-function rejectGroundedTutorGrant(message: string): never {
-  throw new CompanionConversationError("ACTION_STALE", 409, message);
-}
-
-function verifyGrantSignature(grant: CompanionGroundedTutorGrantV1): void {
-  const { signature, ...payload } = grant;
-  const expected = createHmac("sha256", grantHmacSecret())
-    .update(`companion-grounded-tutor-grant-v1:${canonicalJsonV1(payload)}`)
-    .digest("hex");
-  const expectedBytes = Buffer.from(expected, "hex");
-  const actualBytes = Buffer.from(signature, "hex");
-  if (expectedBytes.length !== actualBytes.length || !timingSafeEqual(expectedBytes, actualBytes)) {
-    rejectGroundedTutorGrant("grounded tutor grant signature invalid");
-  }
-}
-
-/** 在 turn 原子事务内重查 LearningRun 页面关系，并以 unique grant id 消费。 */
-async function validateGroundedTutorGrant(
-  tx: ApiTransaction,
-  request: CreateCompanionTurnRequestV1,
-  scope: { workspaceId: string; userId: string },
-): Promise<string | null> {
-  const context = request.context;
-  if (!context || context.pageKind !== "learning_run") return null;
-  if (context.requestedCapability === "none") return null;
-  const grant = context.groundedTutorGrant;
-  if (grant === null) rejectGroundedTutorGrant("grounded tutor grant missing");
-
-  if (grant.userId !== scope.userId || grant.workspaceId !== scope.workspaceId || grant.contextRevision !== context.contextRevision) {
-    rejectGroundedTutorGrant("grounded tutor grant scope or context mismatch");
-  }
-  const now = Date.now();
-  const issuedAt = Date.parse(grant.issuedAt);
-  const expiresAt = Date.parse(grant.expiresAt);
-  if (!Number.isFinite(issuedAt) || !Number.isFinite(expiresAt) || issuedAt > now || expiresAt < now) {
-    rejectGroundedTutorGrant("grounded tutor grant expired or not yet valid");
-  }
-  verifyGrantSignature(grant);
-
-  // PostgreSQL advisory lock serializes two concurrent turn requests carrying the
-  // same HMAC grant before the partial unique index is reached.
-  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${grant.grantId}, 0))`);
-  const consumed = await tx.execute<{ id: string }>(sql`
-    SELECT id
-    FROM companion_turn_runs
-    WHERE context_grant_id = ${grant.grantId}
-    LIMIT 1
-  `);
-  if (consumed[0]) rejectGroundedTutorGrant("grounded tutor grant already consumed");
-
-  if (
-    grant.pageKind !== "learning_run"
-    || grant.runId !== context.runId
-    || grant.snapshotId !== context.snapshotId
-    || grant.taskId !== context.taskId
-  ) {
-    rejectGroundedTutorGrant("grounded tutor grant scope or context mismatch");
-  }
-  const current = await loadCompanionLearningRunContext(tx, {
-    workspaceId: scope.workspaceId,
-    userId: scope.userId,
-    runId: context.runId,
-  });
-  if (!current) rejectGroundedTutorGrant("learning run context not found");
-  if (
-    !isCompanionLearningRunTutorEligible(current)
-    || current.snapshotId !== context.snapshotId
-    || current.taskId !== context.taskId
-    || contextRevisionForCompanionLearningRun(current) !== context.contextRevision
-  ) {
-    rejectGroundedTutorGrant("learning run context is stale or no longer eligible");
-  }
-  return grant.grantId;
 }
 
 function eventRow(
@@ -560,12 +441,8 @@ export async function createCompanionTurn(args: {  workspaceId: string;
       voiceArtifactId = artifact.id;
     }
 
-    // P5 grounded tutor：所有授权字段都在写入前于同一事务重查并原子消费。
-    const contextGrantId = await validateGroundedTutorGrant(
-      tx,
-      request,
-      { workspaceId: args.workspaceId, userId: args.userId },
-    );
+    // Plan 57：LearningRun 页面与其一次性 grant 一起退役，不再有任何 grant。
+    const contextGrantId = null;
 
     // 用户随这一轮附的图（2026-10-06 输入框传图）：解析成权威资产再落库。
     const blocks = validateTurnFileBlocks(

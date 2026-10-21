@@ -118,9 +118,9 @@ function publishedPages(): Array<Record<string, unknown>> {
 }
 
 describe("可读视图跟着屏幕一起进 bridge context", () => {
-  it("生成中这一页带着视图发布（此前这一页连 pageKind 都不发）", async () => {
+  it("笔记页带着视图发布", async () => {
     useRoomStore.setState({
-      hudPage: "generating",
+      hudPage: "notes",
       activeNoteRef: { noteId: "33333333-3333-4333-8333-333333333333", noteVersionId: null },
       pageReadableView: { token: "t-1", view: viewWith("已写出 3 / 4 张候选") },
     });
@@ -129,13 +129,13 @@ describe("可读视图跟着屏幕一起进 bridge context", () => {
     await waitFor(() => expect(setContext).toHaveBeenCalled());
     const page = publishedPages().at(-1)!;
     expect(page.readableView).toEqual(viewWith("已写出 3 / 4 张候选"));
-    // 生成中这一页在 interactionState 上一直是 processing——它此前只是没人读。
-    expect(page.interactionState).toBe("processing");
+    expect(page.pageKind).toBe("note");
+    expect(page.interactionState).toBe("idle");
   });
 
-  it("计数器从 3/4 走到 4/4 会再发一次 publish（memo 依赖漏掉视图就是这里红）", async () => {
+  it("视图里的数字变化会再发一次 publish（memo 依赖漏掉视图就是这里红）", async () => {
     useRoomStore.setState({
-      hudPage: "generating",
+      hudPage: "notes",
       activeNoteRef: { noteId: "33333333-3333-4333-8333-333333333333", noteVersionId: null },
       pageReadableView: { token: "t-1", view: viewWith("已写出 3 / 4 张候选") },
     });

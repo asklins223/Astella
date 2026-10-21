@@ -81,7 +81,7 @@ const noteTitle = await page.locator('.notebook-volume__trail > span, #notebook-
 log(`打开的笔记：${(noteTitle ?? '（读不到标题）').trim().slice(0, 40)}`)
 
 // —— 子页面里直接进全屏（页内按钮） ——
-await page.getByRole('button', { name: '速看' }).first().click({ force: true }).catch(() => undefined)
+await page.getByRole('tab', { name: '速看' }).first().click({ force: true }).catch(() => undefined)
 await page.waitForTimeout(800)
 const entryVisible = await page.getByRole('button', { name: '全屏笔记' }).count()
 log(`速看里「全屏」入口：${entryVisible ? '在' : '不在'}`)
@@ -118,7 +118,7 @@ await writeFile(join(outDir, 'measurements.json'), JSON.stringify({ shots, notes
 
 // —— 速看里的脑图：全屏里画布占满整窗，右缘避开伴星座位 ——
 await openToolsIfClosed()
-await page.getByRole('button', { name: '速看' }).first().click().catch(() => undefined)
+await page.getByRole('tab', { name: '速看' }).first().click().catch(() => undefined)
 await page.waitForTimeout(800)
 const brainTab = page.getByRole('button', { name: '脑图' }).first()
 if (await brainTab.count()) {

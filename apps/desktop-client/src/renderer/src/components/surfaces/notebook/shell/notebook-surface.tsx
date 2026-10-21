@@ -9,55 +9,20 @@ import { useNotebookCompanionEditing } from "./use-notebook-companion-editing.ts
 import { beginNoteAiWork, endNoteAiWork, useNoteAiWork, resolveNoteAiRanges, type NoteAiRange } from "../../../companion/content/note-companion-editing";
 import { noteHtmlAlignments } from "../document/note-html-alignment.ts";
 import { publishCompanionRecordsChanged } from "../../../companion/content/companion-events";
-import { NoteReflectionShelf } from "../reading/note-reflection-shelf.tsx";
-import { noteLearningScene, notePracticeResultCopy, roundTrackNextV1, roundTrackV1 } from "../learning/note-learning-flow.ts";
-import { stageReflectionAppend } from "../reading/note-reflection-document.ts";
-import { LearningRunBody, releaseRunThroughMainV1 } from "../../run/learning-run-surface.tsx";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
-import { BookOpen, Clock3, FileText, History, Link2, MessageCircle, PencilLine, RefreshCw, Sparkles, X } from "lucide-react";
-import type { CapabilityProjectionV1 } from "@astella/shared/desktop-ipc-contracts";
-import type {
-  CardGenerationActiveSummaryV1,
-  CardGenerationRunSnapshotV1,
-  DesktopCardGenerationFeedbackReasonV2,
-} from "@astella/shared/card-generation-desktop-contracts";
-import type { RoomProjectionV1 } from "@astella/shared/room-projection-contracts";
-import { reviewSubscriptionV2Schema } from "@astella/shared/review-queue-v2-contracts";
-import type { z } from "zod";
+import { BookOpen, FileText, History, Link2, PencilLine } from "lucide-react";
 import type { DesktopNoteVersionItem, DesktopSourceDetail } from "@astella/shared/desktop-surface-contracts";
-import type {
-  LearningObjectiveSurfaceV3,
-  ObjectiveNoteChangeImpactV1,
-  ObjectiveReviewHoldV1,
-} from "@astella/shared/learning-objective-surface-contracts";
-/** W7-3 刀六：笔记订阅那一行。取共享合同那份，渲染层不再自己拼形状。 */
-type NoteReviewSubscriptionV1 = z.infer<typeof reviewSubscriptionV2Schema>;
 import type { NoteBlockProjectionV1, NoteDetailV1 } from "@astella/shared/note-projection-contracts";
-import type {
-  NoteLearningRoundHistoryV1,
-  NoteLearningRoundV1Wire,
-  RoundPracticeV1,
-  RoundTeachingV1,
-  RoundTeachingViewV1,
-} from "@astella/shared/note-learning-round-contracts";
 import { useRoomStore } from "../../../../app/home/room-store";
 import { SETTINGS_ATTENTION_AI_CONSENT, SETTINGS_SECTION_AI_CONSENT } from "../../../../app/companion-pages/companion-consent-gate";
 import type { NoteShareScopeV1 } from "@astella/shared/note-share-contracts";
-import type { DesktopRouteV1 } from "@astella/shared/desktop-ipc-contracts";
 import {
   createCommandId,
   createRequestMeta,
-  classifyGatewayError,
   gatewayErrorMessage,
-  type GatewayFailureKind,
-  RendererGatewayError,
   unwrapGatewayResult,
 } from "../../../../app/client/desktop-client";
 import { imageOnlyFiles } from "../../../../app/source/source-intake";
-import { ROUND_RECORD_COPY_V1, roundHistoryStateLabelV1, roundRecordDayV1, roundRecordModesLabelV1 } from "../learning/round-record-copy.ts";
-import { NoteRouteCoverage } from "../learning/note-route-coverage.tsx";
-import type { NoteRouteCoverageV1 } from "@astella/shared/note-route-coverage-v2";
 import { useHudPage } from "../../../hud/use-hud-page";
 import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 import { usePageReadableView } from "../../../hud/use-page-readable-view";
@@ -65,35 +30,12 @@ import type { HudPageId } from "../../../hud/hud-pages";
 import {
   SurfaceDataState,
   formatRelative,
-  noteBlockText,
+  noteLeadingTitleBlock,
   useSurfaceProjection,
 } from "./surface-data.tsx";
-import {
-  cardGenerationStatusLabel,
-  sourceCappedNotice,
-  isLiveGenerationForNote,
-  isNoteGenerationLive,
-  isCardGenerationInFlight,
-  isCardGenerationReviewOpen,
-} from "../../review/card-generation-status.ts";
-import {
-  reviewSourceScopeHint,
-  reviewSourceSwitchLabel,
-  reviewSubscriptionNotice,
-  objectiveHoldActionDescription,
-  objectiveHoldNotice,
-  objectiveNoteChangeImpactCopy,
-  objectiveResumeNotice,
-  objectiveReviewHoldHint,
-  objectiveReviewHoldLabel,
-  OBJECTIVE_HOLD_ACTION_LABEL,
-  OBJECTIVE_RESUME_ACTION_LABEL,
-} from "../../run/objective-state-copy.ts";
-import { startObjectiveJourney } from "../../run/objective-primary-action.ts";
 import { ArtifactFrameHost } from "../../source/artifact-frame-host.tsx";
 import { resolveArtifactMotion } from "../../source/artifact-motion";
 import { NotebookLearningArtifactPaper } from "../learning/notebook-learning-artifact-paper.tsx";
-import { RoundNotice } from "../learning/round-notice.tsx";
 import { parseMarkdownTable } from "@astella/shared/note-doc-schema";
 import { isHorizontalRule, noteInlineDisplayText, noteInlineImages, renderNoteInline } from "../reading/note-reading-inline.tsx";
 import { sourceImageObjectKeyFromUrl } from "@astella/shared/source-image-contracts";
@@ -121,7 +63,6 @@ import { useNotebookLearningEntry, type NoteLearningTask } from "../learning/use
 import { TaskSlip } from "../generation/task-slip.tsx";
 import { NotebookVersionChoice } from "../library/notebook-version-choice.tsx";
 import { NotebookLearningPage } from "../learning/notebook-learning-page.tsx";
-import { NotebookCardEntry } from "../generation/notebook-card-entry.tsx";
 import { useNoteDocLiveView } from "../document/use-note-doc-live-view.ts";
 import { NoteAnnotationSidePage } from "../annotation/note-annotation-side-page.tsx";
 import { useNotebookSidePage } from "../annotation/use-notebook-side-page.ts";
@@ -135,33 +76,21 @@ import { useNotebookLearningArtifactState } from "../learning/use-notebook-learn
 import { prepareNotebookTaskNotification } from "./notebook-task-notifications.ts";
 import { useNotebookExpansionState } from "../generation/use-notebook-expansion-state.ts";
 import { useNotebookExpansionTask } from "../generation/use-notebook-expansion-task.ts";
-import { useNotebookRoundState } from "../learning/use-notebook-round-state.ts";
 import { useNotebookRecallState } from "../learning/use-notebook-recall-state.ts";
 import { useNotebookSaveState } from "../document/use-notebook-save-state.ts";
-import { useNotebookPractice } from "../learning/use-notebook-practice.ts";
-import { useNotebookInspectedRound } from "../learning/use-notebook-inspected-round.ts";
 import { useNotebookOverview } from "../generation/use-notebook-overview.ts";
 import { useNotebookGoalResult } from "../learning/use-notebook-goal-result.ts";
 import { NoteRecallPaper } from "../learning/notebook-recall-paper.tsx";
 import { NoteOverviewPaper } from "../generation/notebook-overview-paper.tsx";
-import { GenerationSetup } from "../generation/notebook-generation-setup.tsx";
-import { RoundDeskLine } from "../learning/notebook-round-line.tsx";
 import { NotebookSelectionActions } from "./notebook-selection-actions.tsx";
 import { useNotebookSelection } from "../document/use-notebook-selection.ts";
 import { useNotebookAnnotationDraft } from "../annotation/use-notebook-annotation-draft.ts";
 import { NotebookAnnotationComposer } from "../annotation/notebook-annotation-composer.tsx";
 import { NotebookArtifactTaskPaper } from "../generation/notebook-artifact-task-paper.tsx";
-import { NotebookRoundRecap } from "../learning/notebook-round-recap.tsx";
-import { NotebookRoundHistory } from "../learning/notebook-round-history.tsx";
 import { NoteExpansionDrafts } from "../generation/notebook-expansion-drafts.tsx";
+import { openNoteLearningCard } from "../learning/card/learning-card-navigation";
 import { NotebookSharingControl } from "../library/notebook-sharing-control.tsx";
-import { useNotebookReviewHold } from "../learning/use-notebook-review-hold.ts";
-import { useNotebookSubscription } from "./use-notebook-subscription.ts";
-import { useNotebookTeaching } from "../learning/use-notebook-teaching.ts";
 import { useNotebookVersions } from "../library/use-notebook-versions.ts";
-import { useNotebookGenerationFeedback } from "../generation/use-notebook-generation-feedback.ts";
-import { FINISHED_RUN_STATUSES, generationOptionSummary, useNotebookGenerationOptions } from "../generation/notebook-generation-options.ts";
-import { noteCardGenerationEntry } from "../generation/note-card-generation-entry.ts";
 import { NoteImageUploads, useNoteImageUploads } from "../document/note-image-uploads.tsx";
 import { feedNoteIntentToCompanion, feedSelectionToCompanion } from "../../../companion/hud/companion-feed";
 import { noteAnchorsOverlap, noteExplanationBusy, pendingNoteExplanation, stopNoteExplanation, useNoteCompanionExplanations } from "../../../companion/content/note-companion-explanation";
@@ -206,71 +135,10 @@ const SOURCE_KIND_LABELS: Readonly<Record<string, string>> = {
   code: "代码",
 };
 
-export type NotebookProjection = {  readonly note: NoteDetailV1;
+export type NotebookProjection = {
+  readonly note: NoteDetailV1;
   readonly source: DesktopSourceDetail | null;
   readonly sourceFailure: string | null;
-  readonly objective: LearningObjectiveSurfaceV3 | null;
-  /** 最近的目标只用于学习记录页中的单项复习安排，不决定笔记的学习入口。 */
-  readonly noteObjective: {
-    readonly objectiveId: string;
-    readonly publicSummary: string;
-    readonly reviewHold: ObjectiveReviewHoldV1 | null;
-  } | null;
-  /**
-   * 这一篇此刻**未完成**的那一轮（39d W4-3 第三刀；表与服务是 W4-5）。
-   *
-   * 读不到 ⇒ null，那一整块不画——和上面 `noteObjective` 同一纪律：它是一块增补，
-   * 不能把笔记本身顶掉。`null` 在这里是真值："这一篇现在没有进行中的一轮"。
-   */
-  readonly openRound: NoteLearningRoundV1Wire | null;
-  /**
-   * W7-3 刀六：这一篇的**笔记订阅**（39 §9.1 第一段）。
-   *
-   * `null` = 这一篇没有订阅过（屏上给"开启"那一档）；有一份就画出那一档，
-   * `status` 决定开关在"开"还是"关"。读不到也走 `null`——它和上面那些读一样是
-   * **增补**，不能把笔记本身顶掉。
-   */
-  readonly noteSubscription: NoteReviewSubscriptionV1 | null;
-  /** 这一轮冻的正文，与这一篇现在已保存的那一版不是同一版（服务端算的，见 D3 §3 第 2 层）。 */
-  readonly openRoundContentMoved: boolean;
-  /** 这一轮绑定目标的引用依据变化；与正文版本提示分开显示。 */
-  readonly openRoundNoteChangeImpact: ObjectiveNoteChangeImpactV1 | null;
-  /**
-   * 这一篇的轮次记录（PRD §10.3 读侧第一刀）。**空数组是真值**："这一篇还没有过一轮"，
-   * 不是读失败——读失败走 `catch` 那条，同样是空表（这一块的纪律与上面两读一致：
-   * 它是增补，不许把笔记本身顶掉）。
-   */
-  readonly roundHistory: NoteLearningRoundHistoryV1 | null;
-  /**
-   * 这一篇的**核心路线**（39d W4-5 ③；§4.4）。与 `roundHistory` 分开两格：
-   * 那一格是**按轮次**的时间线，这一格是**按核心问题**的跨轮汇总。合成一格
-   * 就会出现「记录读到了但路线读失败」被读成「没有路线」。
-   *
-   * 读失败**不吞**：另给一句真因，因为空册页会被读成"这一篇没有核心问题"（§13.4）。
-   */
-  readonly routeCoverage: NoteRouteCoverageV1 | null;
-  readonly routeCoverageFailure: string | null;
-  /**
-   * 教学面那一整发（39d W4-6 刀二／刀三）：这一轮当前问题下的解释、这一轮练过哪几道、
-   * 以及「练一道」那一发的起点。**收回一份**而不是散成三个字段：它们本来就在同一发
-   * 回信里（服务端一次说清"这一轮现在是什么样"），分开存会让三者有时间差。
-   * 与上面两读同一条纪律：读不到 ⇒ null 且整块退成"还没讲过"，不把笔记顶掉。
-   */
-  readonly roundTeachingView: RoundTeachingViewV1 | null;
-  /** A failed teaching read must never look like an untouched round. */
-  readonly roundTeachingFailure: string | null;
-  readonly capabilities: CapabilityProjectionV1;
-  /**
-   * The workspace's one live Card Generation run (owner only; Member sees an
-   * empty section). The note page reads it so "生成学习卡" becomes a status
-   * sync instead of a duplicate start.
-   */
-  readonly activeGeneration: RoomProjectionV1["activeGenerationSummary"];
-  /**
-   * The note's most recent run, finished or not. A regeneration that answers the
-   * last one has to name it, and no other projection says which run that was.
-   */
-  readonly latestGenerationRun: CardGenerationRunSnapshotV1 | null;
 };
 
 const AUTOSAVE_DELAY_MS = 1_200;
@@ -283,257 +151,6 @@ const AUTOSAVE_DELAY_MS = 1_200;
  */
 const READING_WINDOW = 200;
 const NOTEBOOK_STRUCTURE_PAGE_SIZE_V1 = 12;
-
-/*
- * 轻量定向那张表单的全部字面（39d W4-3 第三刀；PRD §3.3）。一处一份：屏上这句话、
- * 测试里的期望都从这里取。
- *
- * 直接讲解与先试分别走服务端的 explain / preparePractice，屏上不借制卡入口。
- */
-export const ROUND_COPY = {
-  ask: "你想弄懂的是哪一件事？",
-  start: "开始这一轮",
-  starting: "正在开始…",
-  /** 已经有一轮在进行中时，那颗提交按钮是"改写这一句"，不是"再开一轮"。 */
-  save: "保存这个问题",
-  revise: "换一个问题",
-  saving: "正在改写…",
-  end: "先到这里",
-  ending: "正在收尾…",
-  /**
-   * 「接着学下去」（39d W4-5 ④ 的前置）：只有**停住**的那一轮摆这一颗。
-   * 恢复不需要「暂停」那颗欠的那道活跃度判据——它是用户明确的动作。
-   *
-   * 措辞从「继续这一轮」改成这句，是因为这一页上"这一轮"已经是主语（标题牌上写着），
-   * 按钮再说一遍就成了系统词；一个动词短语比一个内部名词更像"接着做下去"（39f UI-4）。
-   */
-  resume: "接着学下去",
-  reopenWithCurrent: "按当前内容新开一轮",
-  /**
-   * 这一轮冻的正文后来又保存过一版。与教学面那句 `teaching.staleVersion`（依据不再在这里定位）
-   * 不是一句话，也与笔记页那颗"有内容更新"的徽标不是一句话（D3 §5.1 后果②：徽标说内容，这句说这一轮）。
-   */
-  contentMoved: "这一轮当时用的正文，这一篇后来又保存过一版。",
-  resuming: "正在继续…",
-  reopening: "正在另起一轮…",
-  /**
-   * 迟到的那一句那三格（§16.39）。措辞按伴星那条口径走：说**这一发没进去**这个事实，
-   * 不报"服务端版本号"这类她用不上的字，也不把她那句写成"作废"——它只是没交上去。
-   */
-  lostDraft: (question: string) => `这一句没有交上去，先替你留着：${question}`,
-  applyLost: "把这一句改到新版本上",
-  dropLost: "不要这一句了",
-  fromStructure: "或从这篇的小节里另选一句：",
-  /**
-   * 那一块的第一句。`hasMore` 会改这句话的**量词**：只回了最近几条时报"开过 N 轮"
-   * 就是个假总数（§10.3 要的是完整历史，而这一版没做分页）——所以那种情况下
-   * 只说"最近的这几轮"，不替整篇报数。
-   */
-  historyLead: ROUND_RECORD_COPY_V1.noteLead,
-  loadOlder: ROUND_RECORD_COPY_V1.loadOlder,
-  loadingOlder: ROUND_RECORD_COPY_V1.loadingOlder,
-  /** §10.3 那一格里"完成／部分完成／中断"这三个字由这一处签发；`active` 不在其中。 */
-  historyState: ROUND_RECORD_COPY_V1.state,
-  /**
-   * §10.3 那一行的「实际方式」与「系统不确定项」（W4-8 刀一）。两格的字都**由服务端那两个
-   * 事实决定**，界面不重算也不猜：没讲过也没练过时这两格整格不出（不是"这一轮什么都没干"
-   * ——那需要另一种判断，而记录只报发生过什么）。
-   */
-  historyMode: ROUND_RECORD_COPY_V1.mode,
-  historyUncertain: ROUND_RECORD_COPY_V1.uncertain,
-  followUp: ROUND_RECORD_COPY_V1.followUp,
-  historyOutcome: ROUND_RECORD_COPY_V1.outcome,
-  /**
-   * 教学面（39d W4-6 刀二）。这一轮讲没讲过、按哪一版讲的、依据是哪几段，
-   * 这三句话由这一处签发——屏上与剧本读的是同一份（与状态那几档同一条规矩）。
-   */
-  teaching: {
-    start: "先讲讲这一节",
-    starting: "正在讲这一节…",
-    /**
-     * 缺口帮助停止之后摆的那四档（W4-6 刀四；PRD §5.3）。
-     *
-     * 第一句只说**读数**（帮了几次、还没有看到改善的证据），不许说成"你没弄懂"——
-     * 那是对用户下判断，而系统在这一档有的只是"没有证据"。
-     */
-    stopLead: (count: number) => `帮了 ${count} 次，还没有看到改善的证据——先不自动加题了。你想怎么走？`,
-    switchExplanation: "换一种解释",
-    backToMaterial: "回材料核对",
-    endRound: "先结束这一轮",
-    /**
-     * 动态产物（W4-6 刀五）。两句都只说这件事本身：动态这一版没起来**不是**
-     * 学习失败，文字解释与练习照旧（"动态失败不冒充教学失败"）。
-     */
-    artifactFailed: "这一版动态讲解没能打开；上面的文字解释照旧，可以继续读、继续练。",
-    artifactFallback: "动态这一版先停下了；步骤与解释在上面的文字里。",
-    /** 教学面里"练一道"（W4-6 刀三）：只在有 active 目标时出现。 */
-    practice: "练一道",
-    practicing: "正在开这一道…",
-    practicesLead: "这一轮练过：",
-    exampleLead: "例子：",
-    referencesLead: "依据（点开定位到正文）：",
-    /**
-     * 快照不是屏幕上这一版时，依据**不定位**：正文后来改过，块序号与屏上那段
-     * 已经不是同一份材料，照序号跳过去会把手指点到别处。话要如实说。
-     */
-    staleVersion: "这一轮是按开始那一版的正文讲的；正文后来改过，依据就不在这里定位了。",
-  },
-  openLine: (question: string) => `这一轮：${question}`,
-  revisedLine: (revision: number) => `这一句话已经改过 ${revision - 1} 次。`,
-  hint: "改这句话不用重编笔记；这一轮先只对你自己可见。",
-} as const;
-
-/**
- * 那颗提交按钮的字。真窗口跑出来的第一个缺陷就在这里（2026-09-26，§16.16 实机读数）：
- * 旧写法把"在途"与"空闲"两档接反了——已经有一轮在进行中、请求**根本没在跑**的时候
- * 屏上写着「正在改写…」，而改写真的在跑时写的是「正在开始…」。
- * "正在…"只许出现在真有一次请求在途的那一段时间里，这是这一页所有按钮共用的规矩。
- */
-/**
- * 一场练习现在到哪一步（W4-6 刀三）：**一处签发**，屏上与剧本读同一份。
- *
- * 结算过 ⇒ 说结论（七档与 run 自己的 `result.outcome` 一一对应，不另造词）；
- * 没结算 ⇒ 按 phase 说"正在进行／停住了／中断了"。`not_assessable` 不是"没弄通"，
- * 它是"这一次判不了"——两者都是要走下去的状态，说法必须分开（§3.2 那条老规矩）。
- */
-export const ROUND_PRACTICE_OUTCOME_LABEL_V1: Record<string, string> = {
-  demonstrated: "做出来了",
-  partial: "做出一部分",
-  needs_repair: "还有一处要补",
-  not_assessable: "这一次判不了",
-  practice_completed: "练完了",
-  skipped: "跳过了",
-  declared_unable: "说没想起来",
-};
-
-export function roundPracticeStateLabelV1(practice: Pick<RoundPracticeV1, "phase" | "outcome">): string {
-  if (practice.outcome) {
-    return ROUND_PRACTICE_OUTCOME_LABEL_V1[practice.outcome] ?? practice.outcome;
-  }
-  if (practice.phase === "paused") return "停住了";
-  if (["ended", "cancelled", "stale", "completed", "skipped"].includes(practice.phase)) return "中断了";
-  return "正在进行";
-}
-
-/**
- * 轮次那一块里此刻在途的那一发。`"resume"` 与其余四档共用同一个状态，因为屏上那一整块
- * （那颗提交按钮、教学面那几颗、输入框）的禁用判据是"这一块的某一发在途"——分成两份
- * 状态就会有一处忘了判，症状是"点两下发出两发"。
- */
-export type RoundBusyV1 = "start" | "revise" | "end" | "resume" | "reopen" | null;
-
-export function roundSubmitLabelV1(
-  busy: RoundBusyV1,
-  hasOpenRound: boolean,
-): string {
-  if (busy === "start") return ROUND_COPY.starting;
-  if (busy === "revise") return ROUND_COPY.saving;
-  return hasOpenRound ? ROUND_COPY.save : ROUND_COPY.start;
-}
-
-/**
- * 起步的三个问法（39f §3「本轮问题」那一格）。
- *
- * 上一版只有一颗「我完全不熟」，它把整篇题名塞进「从头到尾有个站得住的解释」——一篇
- * 长笔记于是被包装成**一个大问题**，用户读完仍然不知道该先弄懂哪一个机制、条件或边界。
- * 真正能收窄方向的是那三类**问法**，不是题名，所以三颗都不带题名。
- *
- * 题名那一路由 `structureQuestionCandidatesV1` 从这篇自己的小节里取（见下）：那才是
- * 唯一有依据的收窄。这三颗只是把"该往哪个方向问"摆出来，让人**挑一个方向**再改。
- */
-export const ROUND_PRESETS_V1: ReadonlyArray<{
-  readonly key: "condition" | "why" | "boundary";
-  readonly label: string;
-  readonly starter: string;
-}> = [
-  { key: "condition", label: "先弄懂那个条件", starter: "这篇里有一句话，它要成立需要什么条件？" },
-  // 「为什么非做不可，不做会错在哪」这一版**撤掉了**（2026-09-28 真窗口实测）：
-  // 它是一个**反事实**问法，而多数笔记（尤其是产品发布、技术介绍这类）根本不写"不做会
-  // 怎样"。于是讲解模型照着问法编——"不做就会导致语音错误（'東京'读成 dōng jīng）"、
-  // "无法支撑视频配音"——独立核查逐条指出材料没有这句话，**整份讲解被拒**。真窗口实测
-  // 连撞两次：换一篇短笔记、换一篇 70 段的富笔记，都是同一条 422。
-  //
-  // 判据不是"提问不好听"，是**这道题能不能被材料回答**：问法必须落在笔记真的说过的
-  // 那句话上。核查者那一档是明确允许"材料不足"如实说的（`hasMeasurementClaimV1` 旁边
-  // 的免责处理就是为它准备的），所以"材料没说"本身不该让整轮失败。
-  { key: "why", label: "先弄懂为什么", starter: "这一步为什么这么做？这篇给了什么理由？" },
-  { key: "boundary", label: "先弄懂边界", starter: "这个做法在什么情况下就不管用了？材料说过它的限制吗？" },
-];
-
-/**
- * 「从这篇的结构里另选一句」（§16.16 的第二半：用户否定推荐问题之后要有路可走）。
- *
- * 刻意**不调模型**：能出题的依据是这篇笔记里已经存在的小节标题，那是真实数据；
- * 一次模型调用只是把同一件事变贵且不可复现。三件判据：
- *  - 只认 `heading` 那一档——段落第一句当标题是**猜测**，这一页已经有过一次
- *    "把排版猜测当依据"的返工（见 `conceptMark` 头上那段）；
- *  - 字要取自**屏上显示的那一份**（`noteInlineDisplayText`），markdown 原文里的
- *    `**`、`[]()` 会跟着进问题；
- *  - 一节标题**复述整篇题名**（同名，或以题名开头再加一句限定）⇒ 不出：它没有把方向
- *    收窄，选了它等于没选；
- *  - 一颗上写的字要能放下，所以**标签**截断；但放进输入框的那句问话用**完整的小节名**
- *    ——真窗口实测：把带省略号的小节名塞进「」里，出来的是一句读不通的话
- *    （「学习科学术语定义集（用于验证定义类知识能否产出选…」）。
- * 一篇没有小节的笔记就**一颗都不出**：没有结构就不发明结构。
- */
-export const STRUCTURE_QUESTION_LIMIT_V1 = 3;
-
-/** 标签那一颗的宽度上限；超了就带省略号，只影响"看得见的字"，不影响放进问话的那一份。 */
-export const STRUCTURE_QUESTION_LABEL_MAX_V1 = 24;
-
-export type StructureQuestionCandidateV1 = {
-  readonly ordinal: number;
-  readonly label: string;
-  readonly question: string;
-};
-
-export function structureQuestionCandidatesV1(
-  blocks: readonly NoteBlockProjectionV1[],
-  noteTitle: string,
-): readonly StructureQuestionCandidateV1[] {
-  const title = noteTitle.trim();
-  const seen = new Set<string>();
-  const candidates: StructureQuestionCandidateV1[] = [];
-  for (const block of blocks) {
-    if (block.type !== "heading") continue;
-    const heading = headingDisplayTextV1(block);
-    if (heading.length === 0 || seen.has(heading)) continue;
-    // `startsWith` 已经含住"完全同名"那一档（变异验过：再写一条 `=== title` 是多余的，
-    // 摘掉它任何用例都不会红）。`title.length > 0` 那道挡不能省：空题名时
-    // `startsWith("")` 对每节都成立，会把一整组候选静默清空。
-    if (title.length > 0 && heading.startsWith(title)) continue;
-    seen.add(heading);
-    candidates.push({
-      ordinal: block.ordinal,
-      label: heading.length > STRUCTURE_QUESTION_LABEL_MAX_V1
-        ? `${heading.slice(0, STRUCTURE_QUESTION_LABEL_MAX_V1)}…`
-        : heading,
-      question: `先弄懂「${heading}」这一节在讲什么，以及它和整篇的关系`,
-    });
-    if (candidates.length >= STRUCTURE_QUESTION_LIMIT_V1) break;
-  }
-  return candidates;
-}
-
-/**
- * 那三个来源档不是三种表情，是"这句话是谁定的"这一件事实（§3.3）：
- * 没点预设、整句自己写的 ⇒ authored；点了预设原样用 ⇒ suggested；点了又改 ⇒ rewritten。
- */
-/**
- * 记录里那一格"这一轮到哪一步了"的**唯一**签发处（§10.3 的"完成／部分完成／中断"）。
- * 终态才看 outcome；`active`/`paused` 没有 outcome（0282 的双向 CHECK 保证），
- * 所以那种行只说状态、不猜原因。
- */
-/** 搬去 `round-record-copy.ts` 了（两个级别共用）；这一行留着是让既有 import 路径不变。 */
-export { roundHistoryStateLabelV1 };
-
-export function roundQuestionSourceV1(
-  draft: string,
-  starterApplied: string | null,
-): "suggested" | "user_rewritten" | "user_authored" {
-  if (starterApplied === null) return "user_authored";
-  return draft.trim() === starterApplied.trim() ? "suggested" : "user_rewritten";
-}
 
 function desktopApi() {
   return typeof window === "undefined" ? undefined : window.astella;
@@ -630,105 +247,6 @@ function excerpt(value: string, max = 96): string {
   return normalized.length > max ? `${normalized.slice(0, max)}…` : normalized;
 }
 
-/**
- * The sentence the reading page marks: the one that names the concept this note
- * is bound to. The mockup marked the opening clause of the first paragraph, but
- * nothing in the note record says the first paragraph is the claim — that was a
- * typographic guess presented as emphasis. The linked objective's concept label
- * is real data, so the mark follows it and disappears when there is nothing to
- * follow.
- */
-function conceptMark(
-  blocks: readonly NoteBlockProjectionV1[],
-  conceptLabel: string | null | undefined,
-): { readonly ordinal: number; readonly range: readonly [number, number] } | null {
-  const label = conceptLabel?.trim();
-  if (!label) return null;
-  for (const block of blocks) {
-    if (block.type !== "paragraph") continue;
-    // 区间要落在**显示出来的字**上：`content` 里还有 `**`、`![]()` 这些不占格子的标记，
-    // 与批注一样按实际文本节点计算；换行分隔符与图片不占字符。
-    const text = noteBlockRenderedTextV1(block.type, block.content);
-    const at = text.indexOf(label);
-    if (at < 0) continue;
-    return { ordinal: block.ordinal, range: sentenceRange(text, at, label.length) };
-  }
-  return null;
-}
-
-/** The sentence around `[at, at + length)`, punctuation included. */
-function sentenceRange(text: string, at: number, length: number): readonly [number, number] {
-  const stops = /[。！？!?\n]/;
-  let start = 0;
-  for (let index = at - 1; index >= 0; index -= 1) {
-    if (stops.test(text[index] ?? "")) {
-      start = index + 1;
-      break;
-    }
-  }
-  let end = text.length;
-  for (let index = at + length; index < text.length; index += 1) {
-    if (stops.test(text[index] ?? "")) {
-      end = index + 1;
-      break;
-    }
-  }
-  return [start, end];
-}
-
-/** Shared HUD notice for a note objective or its active learning round. */
-function NoteChangeImpactNotice({
-  impact,
-  context,
-}: {
-  impact: ObjectiveNoteChangeImpactV1 | null;
-  context?: "objective" | "round";
-}) {
-  const copy = objectiveNoteChangeImpactCopy(impact);
-  if (!copy || !impact) return null;
-  const notice = (
-    <>
-      <p className="small notebook-note" data-note-change-impact="true">{copy}</p>
-      {impact.status !== "unaffected" ? (
-        <details
-          className="notebook-objective__impact-evidence"
-          data-note-change-evidence="true"
-          {...(context === "round" ? { "data-round-note-change-evidence": "true" } : {})}
-        >
-          <summary>展开核对当时与现在的依据</summary>
-          {impact.evidenceDetails.map((detail) => (
-            <div className="notebook-objective__impact-excerpt" key={detail.evidenceIndex}>
-              <p className="small notebook-note">
-                <strong>依据 {detail.evidenceIndex} · 当时 · {detail.previousOrdinal ? `第 ${detail.previousOrdinal} 段` : "原文位置不明"}</strong>
-                <br />
-                {detail.previousQuote === null
-                  ? "当时的引用原文没有可核对的副本。"
-                  : `${detail.previousQuote}${detail.previousQuoteTruncated ? "…（节录）" : ""}`}
-              </p>
-              <p className="small notebook-note">
-                <strong>当前 · 同段同位置</strong>
-                <br />
-                {detail.currentQuote === null
-                  ? "当前版本没有可定位的对应段落。"
-                  : `${detail.currentQuote}${detail.currentQuoteTruncated ? "…（节录）" : ""}`}
-              </p>
-            </div>
-          ))}
-          {impact.evidenceDetails.length === 0 ? (
-            <p className="small notebook-note">这条目标还没有可展示的历史引用；请回笔记正文核对。</p>
-          ) : null}
-          {impact.evidenceDetailsOmittedCount > 0 ? (
-            <p className="small notebook-note">另有 {impact.evidenceDetailsOmittedCount} 条依据未展开。</p>
-          ) : null}
-        </details>
-      ) : null}
-    </>
-  );
-  return context === "round"
-    ? <div data-round-note-change-impact="true">{notice}</div>
-    : notice;
-}
-
 /** Page 08 / 09 / 22 — the note as one paper, read, written or discussed. */
 export function NotebookSurface() {
   // 排版偏好属于书桌本身：阅读、编辑与源码共用同一份，切换视图不重排。
@@ -736,11 +254,7 @@ export function NotebookSurface() {
   const invoke = useRoomStore((state) => state.invoke);
   const setSettingsAttention = useRoomStore((state) => state.setSettingsAttention);
   const setSettingsSection = useRoomStore((state) => state.setSettingsSection);
-  const setActiveCardGenerationRunId = useRoomStore((state) => state.setActiveCardGenerationRunId);
-  const setActiveObjectiveId = useRoomStore((state) => state.setActiveObjectiveId);
-  const setActiveRunId = useRoomStore((state) => state.setActiveRunId);
-  // 就地作答要靠它判断"这一轮正在答的那一次"是不是眼下这一次（见 `inlineRoundRunId`）。
-  const activeRunId = useRoomStore((state) => state.activeRunId);
+  const setReturnTarget = useRoomStore((state) => state.setReturnTarget);
   const activeNoteRef = useRoomStore((state) => state.activeNoteRef);
   const setActiveNoteRef = useRoomStore((state) => state.setActiveNoteRef);
   // 协同流只在协作空间里存在（personal 按门控不建长连接），所以订阅与否看它。
@@ -754,14 +268,6 @@ export function NotebookSurface() {
     if (!account) return null;
     return account.displayName?.trim() || account.email.split("@")[0]?.trim() || null;
   });
-  const setReturnTarget = useRoomStore((state) => state.setReturnTarget);
-  const [reflectionRoundId, setReflectionRoundId] = useState<string | undefined>(undefined);
-  const [historyInspectRevision, setHistoryInspectRevision] = useState(0);
-  const [legacyHistoryOpen, setLegacyHistoryOpen] = useState(false);
-  const legacyRouteCoverageRequestedForNoteRef = useRef<string | null>(null);
-  const historyDetailRef = useRef<HTMLElement>(null);
-  const appendedReflections = useRef(new Map<string, string>());
-  const reflectionShelfRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<NoteMarkdownEditorHandle | null>(null);
   const editorPaneRef = useRef<HTMLDivElement>(null);
   const epochRef = useRef<number | undefined>(undefined);
@@ -769,11 +275,7 @@ export function NotebookSurface() {
   const syncedNoteRef = useRef<string | null>(null);
   const saveRef = useRef<() => void>(() => {});
 
-  const [leaf, setLeaf] = useState<"reading" | "learning" | "history" | "expansion">("reading");
-  const [reviewingTeaching, setReviewingTeaching] = useState(false);
-  /** 就地作答的工位停在哪一屏：`assessment` 作答／`result` 那一次的结算。 */
-  const [inlineRunPage, setInlineRunPage] = useState<"assessment" | "result">("assessment");
-  const handledRoundReturnRef = useRef<string | null>(null);
+  const [leaf, setLeaf] = useState<"reading" | "history" | "expansion">("reading");
   const [showAllBlocks, setShowAllBlocks] = useState(false);
 
   const [focusedBlockOrdinal, setFocusedBlockOrdinal] = useState<number | null>(null);
@@ -798,15 +300,12 @@ export function NotebookSurface() {
 
   const leafScrollRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    setLeaf(activeNoteRef?.learningRoundId ? "learning" : "reading");
+    setLeaf("reading");
     setOverviewOpen(false);
-    setReviewingTeaching(false);
     setShowAllBlocks(false);
 
     setFocusedBlockOrdinal(null);
-    setReflectionRoundId(activeNoteRef?.learningRoundId);
-    appendedReflections.current.clear();
-  }, [activeNoteRef?.noteId, activeNoteRef?.learningRoundId]);
+  }, [activeNoteRef?.noteId]);
   /**
    * `title` 是**本机改过、还没写进文档**的那一份，`null` = 这一屏没改过标题，
    * 于是标题框画文档 `meta` 里的那一份（别人改名会跟着动）。正文不在这里存副本，
@@ -824,53 +323,8 @@ export function NotebookSurface() {
     via: "stream" | "uploaded" | "unchanged" | "queued";
   } | null>(null);
   const [sharing, setSharing] = useState(false);
-  const [startingGeneration, setStartingGeneration] = useState(false);
-  const [generationFailure, setGenerationFailure] = useState<string | null>(null);
-  /**
-   * W7-3 刀三：目标级「暂不安排」／「恢复并开启」那两条命令的状态。
-   *
-   * **notice 与 error 分开两个 state**（不是同一个字符串）：回执是成功的话也要念出来
-   * ——「顺手撤下了 N 条」是这一发**唯一**告诉用户"它有后果"的地方（§9.1 要求
-   * "操作时说明"），把它塞进 error 那条通道就等于成功时什么都不说。
-   */
-  /** W7-3 刀六：订阅那一发在进行中（"开"与"停"共用一颗闸，同一篇不该并发两发）。 */
-  // 39d W4-3 第三刀：那张表单自己的三份状态。`roundStarter` 记住"这句是哪一颗预设放的"，
-  // 来源那一档（suggested / rewritten / authored）就靠它判，不靠猜用户改没改。
-  /**
-   * 翻出来的那几页（第一页由投影自己读，往后每页累加在这里）。存着 `noteId` 并按它过滤，
-   * 而不是"切篇时记得清空"——后者靠一次副作用，漏一次就把上一篇的记录接在这一篇下面。
-   */
-  // 用合同那一份类型，不再手抄四格：上一刀加 `totalCount` 时，抄出来的那份形状
-  // 会静默少一格（`historyTotal` 读不到它，总数就退回 0），而 typecheck 只会红在
-  // 读它的那一行上，不会告诉你"这里本来该跟着长"。
-  /**
-   * 迟到的那一句（§16.39 的"另一份草稿明确保留为冲突"，39d W4-5 第四刀）。
-   *
-   * 被服务端判成 conflict 的那一发要做两件事，缺一不可：那一行换回**现在那一版**
-   * （真窗口实测过不换的害处：她对着作废的那句继续），同时她交出去的那一句
-   * **不许消失**——顶掉与拼进新版本是同一处缺陷的两种画法，PRD 两个都不要。
-   * 所以这里存的是「句子＋当时用的那句引子」这一对：`roundQuestionSourceV1` 按
-   * 引子判 source，只留句子会把她原本算 `suggested` 的那一发改记成 `user_authored`。
-   */
-  /** 教学面（W4-6 刀二）：生成那一发在途、以及它自己的失败那一句。 */
-  /** 「练一道」（W4-6 刀三）：开那场 run 的在途与它自己的失败那一句。 */
-  /**
-   * 动态产物落盘那一发（W4-6 刀五）：`idle` 还没试 / `ready` 已在盘上可以挂宿主 /
-   * `failed` 如实说明。**只有这三档**：失败不是"落盘失败"，它连带把宿主也关掉——
-   * 让宿主去读一个不存在的文件，画出来的是浏览器自己的错误页，那不是我们的界面。
-   */
-  const [artifactState, setArtifactState] = useState<"idle" | "ready" | "failed">("idle");
   const motionMode = useRoomStore((state) => state.motionMode);
   const reducedMotion = useRoomStore((state) => state.reducedMotion);
-  /**
-   * 依据里点开的那一段。它只是**屏幕上的注意力**（滚动 + 短暂高亮），不进任何写：
-   * 值一过期就撤掉，不留"上次点到哪"这种会跟人走的读数。
-   */
-  const generationTriggerRef = useRef<HTMLButtonElement>(null);
-  const closeGenerationSetup = () => {
-    generationTriggerRef.current?.focus();
-    setOptionsOpen(false);
-  };
   /** 本机光标此刻在第几块。冲突提示读的就是这一格，所以它必须与报给对端的那一份同源。 */
   const [caretBlock, setCaretBlock] = useState<number | null>(null);
   /**
@@ -896,24 +350,20 @@ export function NotebookSurface() {
     epochRef.current = workspaceEpoch;
     return readNotebookProjection({
       api, workspaceEpoch, noteId: activeNoteRef?.noteId,
-      readLegacyRoute: Boolean(activeNoteRef?.learningRoundId),
-      legacyRouteRequestedFor: legacyRouteCoverageRequestedForNoteRef.current,
     });
-  }, [activeNoteRef?.noteId, activeNoteRef?.learningRoundId]);
+  }, [activeNoteRef?.noteId]);
 
-  // The pill returns to whatever opened this note: the library, the
-  // card-generation workbench the reader stepped out of, or the star map a
-  // star was clicked on. It never skips a level up to the study room.
+  // The pill returns to whatever opened this note: the library, the notes list,
+  // or the star map a star was clicked on. It never skips a level up to the
+  // study room.
   useEffect(() => {
     // An explicit caller (such as the learning journal) owns its return path.
     if (useRoomStore.getState().returnTarget) return;
     const returnTo = useRoomStore.getState().noteReturnTo;
-    const target = returnTo === "generation"
-      ? { label: "返回生成任务", run: () => invoke("open-card-generation") }
-      : returnTo === "graph"
-        ? { label: "返回星图", run: () => invoke("graph") }
-        : returnTo === "search"
-          ? { label: "返回搜索", run: () => invoke("search") }
+    const target = returnTo === "graph"
+      ? { label: "返回星图", run: () => invoke("graph") }
+      : returnTo === "search"
+        ? { label: "返回搜索", run: () => invoke("search") }
         : { label: "返回笔记库", run: () => invoke("open-notes") };
     setReturnTarget(target);
     // Navigation may already have installed the next page's return path.
@@ -1000,18 +450,6 @@ const noteDocLive = useNoteDocLiveView(
     expansionError, setExpansionError,
   } = useNotebookExpansionState();
 
-  /** 「这一轮」那一簇的 6 个 state 已于 2026-09-29 收进 `use-notebook-round-state.ts`；
-      四个 handler 留在页面。两条不许动（`roundStarter` 记来源、`roundLostDraft` 是独立草稿）
-      写在那个文件里。 */
-  const {
-    roundDraft, setRoundDraft,
-    roundStarter, setRoundStarter,
-    roundEditing, setRoundEditing,
-    roundBusy, setRoundBusy,
-    roundFailure, setRoundFailure,
-    roundLostDraft, setRoundLostDraft,
-  } = useNotebookRoundState();
-
   /** 「回想」那一簇的 5 个 state 已于 2026-09-29 收进 `use-notebook-recall-state.ts`；
       四个 handler 留在页面（它们要读 note / activeNoteRef / epochRef / reload / setLeaf）。
       「四档动作共用一颗闸」这条在那个文件里。 */
@@ -1023,17 +461,6 @@ const noteDocLive = useNoteDocLiveView(
     load: loadNoteRecallRecords, start: startNoteRecall, act: actOnActiveRecall,
     open: openRecall, close: closeRecall,
   } = useNotebookRecallState({ note, epochRef });
-
-  /** 「练一道」那一发的在途与失败收进 hook；两个 handler 留在页面（它们要读
-      `openRound` / `roundPracticeStart` / `startObjectiveJourney` 这些页面级东西）。
-      `busy` 只有一格是**故意的**——见那个文件里第 3 条。 */
-  const {
-    busy: practiceBusy,
-    failure: practiceFailure,
-    begin: beginPractice,
-    end: endPractice,
-    setFailure: setPracticeFailure,
-  } = useNotebookPractice();
 
   /** 「速看」整簇（7 个 state + 读 + 发起 + 三个派生）已于 2026-09-29 收进
       `use-notebook-overview.ts`。它只依赖 `note` 与 `epochRef` 两样。 */
@@ -1072,82 +499,12 @@ const noteDocLive = useNoteDocLiveView(
     else setLeaf(activeNoteRef.learningView);
     useRoomStore.getState().setActiveNoteRef({ ...activeNoteRef, learningView: undefined });
   }, [activeNoteRef, note?.noteId, loading, failure, setLearningView]);
-  const [olderRounds, setOlderRounds] = useState<NoteLearningRoundHistoryV1 | null>(null);
-  const [olderBusy, setOlderBusy] = useState(false);
-  const [olderFailure, setOlderFailure] = useState<string | null>(null);
-
-
-  /** 生成设置那两格（当前这一档 + 面板开没开）与它们在会话里的记忆，
-      已于 2026-09-29 收进 `use-notebook-generation-options.ts`。 */
-  const {
-    options,
-    setOptions,
-    optionsOpen,
-    setOptionsOpen,
-  } = useNotebookGenerationOptions();
-
-  /** 生成反馈那张表的两个 state 已于 2026-09-29 收进 `use-notebook-generation-feedback.ts`。 */
-  const {
-    reasons: feedbackReasons,
-    setReasons: setFeedbackReasons,
-    note: feedbackNote,
-    reset: resetGenerationFeedback,
-    setNote: setFeedbackNote,
-  } = useNotebookGenerationFeedback();
-  const loadOlderRounds = async () => {
-    const api = desktopApi();
-    const current = data?.note ?? null;
-    if (!api || !current || !historyHasMore || olderBusy) return;
-    setOlderBusy(true);
-    setOlderFailure(null);
-    try {
-      const response = await api.noteLearningRound.history({
-        meta: createRequestMeta(epochRef.current),
-        noteId: current.noteId,
-        before: historyNextCursor ?? undefined,
-      });
-      if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
-      // 变量别叫 `page`：`page-readable-registration.test.ts` 那道静态守卫是"顺着调用点
-      // 往前找同名声明"来认屏名的，同名的那一发会让它抓到错的初始化式、把两屏整个丢掉。
-      const olderPage = unwrapGatewayResult(response);
-      setOlderRounds((previous) => {
-        const base = previous && previous.noteId === current.noteId && previous.contentMasked === olderPage.contentMasked
-          ? previous
-          : { noteId: current.noteId, items: [], nextCursor: null, hasMore: false };
-        return {
-          version: 1,
-          noteId: current.noteId,
-          contentMasked: olderPage.contentMasked,
-          items: [...base.items, ...olderPage.items],
-          nextCursor: olderPage.nextCursor,
-          hasMore: olderPage.hasMore,
-          // 累加之后各归各位：屏上列了几轮 = 两批 items 之和；总数还是服务端那一份
-          // （它与游标无关，翻到第二页不会把它"翻小"）。少带任意一格，
-          // 合同类型现在会当场拦住——因为这份状态不再手抄形状。
-          shownCount: base.items.length + olderPage.items.length,
-          totalCount: olderPage.totalCount,
-        };
-      });
-    } catch (error) {
-      setOlderFailure(gatewayErrorMessage(error));
-    } finally {
-      setOlderBusy(false);
-    }
-  };
-
-
 
   /** 版本历史那一簇（4 个 state + 读取与恢复）已于 2026-09-29 收进 `use-notebook-versions.ts`。 */
   const {
     versions, setVersions, versionsLoading, versionsFailure, setVersionsFailure,
     restoringVersionId, loadVersions, restoreVersion,
   } = useNotebookVersions({ data, epochRef, reload, api: desktopApi() });
-  const loadLegacyRouteCoverage = useCallback(() => {
-    if (!note || activeNoteRef?.learningRoundId
-      || legacyRouteCoverageRequestedForNoteRef.current === note.noteId) return;
-    legacyRouteCoverageRequestedForNoteRef.current = note.noteId;
-    void reload({ silent: true });
-  }, [activeNoteRef?.learningRoundId, note?.noteId, reload]);
   useEffect(() => {
     if (!note) return;
     const store = useRoomStore.getState();
@@ -1158,7 +515,6 @@ const noteDocLive = useNoteDocLiveView(
       noteId: note.noteId,
       noteVersionId: note.currentVersionId,
       mode: current?.noteId === note.noteId ? current.mode : "preview",
-      ...(current?.noteId === note.noteId && current.learningRoundId ? { learningRoundId: current.learningRoundId } : {}),
     });
   }, [note?.noteId, note?.currentVersionId]);
 
@@ -1676,140 +1032,8 @@ const noteDocLive = useNoteDocLiveView(
     window.addEventListener("astella:note-annotation-saved", onAnnotationSaved);
     return () => window.removeEventListener("astella:note-annotation-saved", onAnnotationSaved);
   }, [note?.noteId]);
-  useEffect(() => {
-    if (!activeNoteRef?.learningRoundId || note?.noteId !== activeNoteRef.noteId ||
-      reflectionRoundId !== activeNoteRef.learningRoundId || leaf !== "history" || mode !== "preview") return;
-    const frame = requestAnimationFrame(() => {
-      reflectionShelfRef.current?.scrollIntoView({ block: "start" });
-      reflectionShelfRef.current?.querySelector("summary")?.focus();
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [activeNoteRef?.noteId, activeNoteRef?.learningRoundId, note?.noteId, reflectionRoundId, leaf, mode]);
   const source = data?.source ?? null;
   const sourceFailure = data?.sourceFailure ?? null;
-  const objective = data?.objective ?? null;
-  /** 单项目标只在记录页的复习安排中出现。 */
-  const noteObjective = data?.noteObjective ?? null;
-  /** W7-3 刀六：这一篇的笔记订阅；读不到＝没有那一档开关（与上面同一纪律）。 */
-  const noteSubscription = data?.noteSubscription ?? null;
-  const openRound = data?.openRound ?? null;
-  const openRoundScopeRef = useRef("");
-  openRoundScopeRef.current = `${openRound?.roundId ?? ""}:${openRound?.revision ?? ""}`;
-
-  /** 三簇「一颗写动作 + 它的在途 + 它的失败」已于 2026-09-29 收进各自的 hook。
-      三处纪律（成功后回读 / 回执念出来 / 失败不吞）在那些文件的头注释里。 */
-  const {
-    reviewHoldBusy, reviewHoldNotice, reviewHoldError, runObjectiveReviewHoldAction,
-  } = useNotebookReviewHold({
-    noteId: data?.note?.noteId ?? null,
-    currentVersionId: data?.note?.currentVersionId ?? null,
-    noteObjective,
-    epochRef, reload, api: desktopApi(),
-    notices: { hold: objectiveHoldNotice, resume: objectiveResumeNotice },
-  });
-  const {
-    subscriptionBusy, subscriptionNotice, subscriptionError, runNoteSubscriptionAction,
-  } = useNotebookSubscription({
-    noteId: data?.note?.noteId ?? null,
-    epochRef, reload, api: desktopApi(),
-    notices: { notice: reviewSubscriptionNotice },
-  });
-  const {
-    teachingBusy, teachingFailure, teachingReflectionIds, setTeachingReflectionIds, startRoundTeaching,
-  } = useNotebookTeaching({
-    epochRef, reload, api: desktopApi(), openRound,
-    classifyError: classifyGatewayError,
-  });
-  useEffect(() => {
-    if (!data || !activeNoteRef?.learningRoundId || data.note.noteId !== activeNoteRef.noteId) return;
-    const key = `${data.note.noteId}:${activeNoteRef.learningRoundId}`;
-    if (handledRoundReturnRef.current === key) return;
-    handledRoundReturnRef.current = key;
-    // 「回到本轮学习」这颗按钮承诺的是**这一轮**，不是这篇文章。
-    // 同一篇可能已有更新的一轮；回看旧轮次不能把读者送到那一轮。
-    if (openRound?.roundId === activeNoteRef.learningRoundId) setLeaf("learning");
-    else setLeaf("history");
-  }, [data, activeNoteRef?.learningRoundId, openRound]);
-  useEffect(() => { setTeachingReflectionIds([]); }, [activeNoteRef?.noteId, openRound?.roundId]);
-  const openRoundContentMoved = data?.openRoundContentMoved ?? false;
-  const openRoundNoteChangeImpact = data?.openRoundNoteChangeImpact ?? null;
-  const roundHistory = data?.roundHistory ?? null;
-  const routeCoverage = data?.routeCoverage ?? null;
-  const routeCoverageFailure = data?.routeCoverageFailure ?? null;
-  /** 这一轮当前问题下的那条解释；`null` = 还没讲过（W4-6 刀二）。 */
-  const roundTeaching = data?.roundTeachingView?.teaching ?? null;
-  const roundNextStep = data?.roundTeachingView?.nextStep ?? null;
-  const roundTeachingFailure = data?.roundTeachingFailure ?? null;
-  /** 这一轮练过的那几道（W4-6 刀三；空数组 = 还没练过）。 */
-  const roundPractices = data?.roundTeachingView?.practices ?? [];
-  const practiceReceiptKey = roundPractices.map((practice) => `${practice.runId}:${practice.phase}:${practice.outcome ?? ""}`).join("|");
-  useEffect(() => { setReviewingTeaching(false); }, [openRound?.roundId, practiceReceiptKey]);
-  const learningScene = noteLearningScene({
-    roundPhase: openRound?.phase === "paused" ? "paused" : openRound ? "active" : null,
-    editingQuestion: roundEditing,
-    hasTeaching: Boolean(roundTeaching),
-    nextStep: roundNextStep,
-  });
-  const latestRoundPractice = roundPractices.at(-1) ?? null;
-  /**
-   * 此刻真正在跑的那一步，一句话；没有在跑就是 `null`。
-   *
-   * 三个动作各有各的 `busy` 布尔，于是屏上会出现"这一颗按钮说自己忙、那一颗按钮
-   * 说自己不忙、纸片底下还有一条红字"的三方不一致——用户看不出点了什么、在等什么。
-   * 这里按**优先级取唯一一个**在途动作（讲解 > 练一道 > 开轮次），只说那一句。
-   *
-   * 刻意不给百分比、不给预计秒数（§13.3「不伪造预计成功率」）：说得出来的只有
-   * "在做哪一步"，以及"做好了会自动接上"。
-   */
-  //
-  // **不要**在正文里再写一个"正在"：`RoundNotice` 的 pending 档已经印了"还在准备"
-  // 这一格标签（它是给屏幕阅读器的那句前缀，真窗口里两句拼起来读成"还在准备正在准备
-  // 这一道小问题"——同一件事说了两遍，且第二遍把第一遍吞掉了）。
-  const inFlightStep: string | null = teachingBusy
-    ? "为这个问题准备讲解。做好了会自动接上，可以先去读笔记。"
-    : practiceBusy
-      ? "准备这一道小问题。做好了会自动接上。"
-      : roundBusy !== null
-        ? "处理这一轮。处理完会接上，不用重复点。"
-        : null;
-  const roundResultCopy = notePracticeResultCopy({
-    question: openRound?.drivingQuestion ?? null,
-    practices: roundPractices,
-    nextStep: roundNextStep,
-  });
-  /**
-   * 纸上那三枚纸签（39f UI-2：暂停回来第一眼看不见"做过什么、接着做什么"）。
-   *
-   * 每一枚的判定都来自真实状态：讲没讲过看讲解在不在，练没练过看**已结算**的那几次，
-   * 结果看服务端有没有说这一轮可以收。所以这一排不会在用户什么也没做的时候先亮一格。
-   */
-  const roundTrack = roundTrackV1({
-    scene: learningScene,
-    hasTeaching: Boolean(roundTeaching),
-    practiceCount: roundPractices.length,
-    settledCount: roundPractices.filter((practice) => practice.outcome !== null).length,
-    canFinish: roundNextStep?.kind === "finish",
-  });
-  /** 「练一道」那一发的起点；`null` = 没有可开的目标（无目标轮次不摆这颗按钮）。 */
-  const roundPracticeStart = data?.roundTeachingView?.practiceStart ?? null;
-  /** 缺口帮助停止那一格（W4-6 刀四）：停了就摆四选一。 */
-  const roundGapHelp = data?.roundTeachingView?.gapHelp ?? null;
-  /** 这一条解释的动态产物引用（W4-6 刀五）；`null` = 没有动态版本（不是失败）。 */
-  const roundArtifact = data?.roundTeachingView?.artifact ?? null;
-  const capabilities = data?.capabilities ?? null;
-  const activeGenerations = data?.activeGeneration?.state === "data" ? data.activeGeneration.data : [];
-  // 这篇笔记自己的在制批次。一个工作区可以同时有多篇笔记各自在制一批卡，所以
-  // 必须按 noteId 找，不能取「最近更新的那一个」——此前取的是后者，于是第二篇
-  // 笔记的在制 run 一出现，这篇笔记的守卫就失效，「生成学习卡」可以再点一次
-  // （2026-09-20 实走复盘 #5）。run 在服务端跑，页面必须显示它的步骤而不是
-  // 对同一个版本再开一次。
-  const noteGeneration: CardGenerationActiveSummaryV1 | null = note
-    ? activeGenerations.find((generation) => isLiveGenerationForNote(generation, note.noteId)) ?? null
-    : null;
-  const latestRun = data?.latestGenerationRun ?? null;
-  // Only a run that has stopped can be answered; while one is live the page
-  // offers the status sync instead of a second start.
-  const feedbackTarget = latestRun && FINISHED_RUN_STATUSES.has(latestRun.status) ? latestRun : null;
   const segments = source?.segments ?? [];
   // Every block type — including images, which the editor writes as one
   // markdown line — has a text form now, so editability is a pure permission.
@@ -1938,19 +1162,21 @@ const noteDocLive = useNoteDocLiveView(
   const coWriters = caretBlock === null
     ? []
     : noteDocLive.presencePeers.filter((peer) => peer.mode === "editing" && peer.block === caretBlock);
-  const mark = useMemo(
-    () => conceptMark(readSourceBlocks, objective?.content.conceptLabel),
-    [readSourceBlocks, objective],
-  );
-  const readingDocumentSource = useMemo(() => readSourceBlocks.map(block => noteBlockMarkdown(block.type, block.content)).join("\n\n"), [readSourceBlocks]);
-  const allBlocks = readSourceBlocks;
+  /**
+   * AI-generated notes commonly start with `# <title>` in the body while the
+   * page header already prints that title. The reading view hides the duplicate
+   * at the display layer only: stored blocks, their ordinals and every
+   * annotation offset into `content` stay untouched. The in-body TOC is built
+   * from the visible blocks, so its heading order matches the rendered headings
+   * (see `note-markdown-reading`).
+   */
+  const leadingTitleBlock = useMemo(() => noteLeadingTitleBlock(readSourceBlocks, readTitle), [readSourceBlocks, readTitle]);
+  const readableBlocks = useMemo(() => leadingTitleBlock
+    ? readSourceBlocks.filter((block) => block.ordinal !== leadingTitleBlock.ordinal)
+    : readSourceBlocks, [readSourceBlocks, leadingTitleBlock]);
+  const readingDocumentSource = useMemo(() => readableBlocks.map(block => noteBlockMarkdown(block.type, block.content)).join("\n\n"), [readableBlocks]);
+  const allBlocks = readableBlocks;
   const htmlAlignments = useMemo(() => noteHtmlAlignments(readSourceBlocks), [readSourceBlocks]);
-  // §16.16 的第二半：这篇有小节时才多给几颗"从结构里另选"的起步句（用全部块，
-  // 不用阅读窗口那一段——结构是整篇的事实，不是当前滚到哪一屏）。
-  const structureQuestions = useMemo(
-    () => structureQuestionCandidatesV1(readSourceBlocks, docTitle),
-    [readSourceBlocks, docTitle],
-  );
   const readingBlocks = showAllBlocks || allBlocks.length <= READING_WINDOW
     ? allBlocks
     : allBlocks.slice(0, READING_WINDOW);
@@ -1969,49 +1195,6 @@ const noteDocLive = useNoteDocLiveView(
 
 
 
-  // ── 教学面的依据（W4-6 刀二）──
-  // 只认**屏幕上这一版**能对上的块：这一轮的快照与屏幕上读的那一版不同时，块序号
-  // 已经不是同一份材料，照序号跳过去会点到别处——那种情况下不摆这几颗，话在
-  // `ROUND_COPY.teaching.staleVersion`（如实说，而不是假装定位得到）。
-  const teachingSnapshotIsReadVersion = Boolean(
-    openRound && note && openRound.noteVersionId === note.currentVersionId,
-  );
-  const teachingReferences = useMemo(() => {
-    if (!roundTeaching || !teachingSnapshotIsReadVersion) return [];
-    return roundTeaching.sourceBlockOrdinals.flatMap((ordinal) => {
-      const block = allBlocks.find((item) => item.ordinal === ordinal);
-      return block ? [{ ordinal, label: teachingReferenceLabelV1(block) }] : [];
-    });
-  }, [roundTeaching, teachingSnapshotIsReadVersion, allBlocks]);
-  /**
-   * 动态产物那一发：教学面读到"这一条有动态版本"时，让 main 去确保它已落盘
-   * （幂等——已经在盘上就不重复取）。**读不到文件不影响文字那半边**：失败只把
-   * 宿主关掉并留一句如实话。
-   *
-   * 依赖里只放 `artifactId` 与当前轮：切篇/换条之后要重新试一次；同一份不重复发。
-   */
-  useEffect(() => {
-    const artifactId = roundArtifact?.artifactId ?? null;
-    if (!artifactId) {
-      setArtifactState("idle");
-      return;
-    }
-    const api = desktopApi();
-    if (!api) return;
-    let cancelled = false;
-    void (async () => {
-      try {
-        const response = await api.artifact.ensure({ meta: createRequestMeta(epochRef.current), artifactId });
-        if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
-        unwrapGatewayResult(response);
-        if (!cancelled) setArtifactState("ready");
-      } catch {
-        if (!cancelled) setArtifactState("failed");
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [roundArtifact?.artifactId]);
-
   const readingBodyRef = useRef<HTMLDivElement | null>(null);
   useLayoutEffect(() => {
     const body = readingBodyRef.current;
@@ -2025,6 +1208,9 @@ const noteDocLive = useNoteDocLiveView(
       if (anchor.noteVersionId !== note.currentVersionId || !noteAnchorMatchesV1(readSourceBlocks, anchor)) continue;
       const selected = readSourceBlocks.filter(block => block.ordinal >= anchor.startBlockOrdinal && block.ordinal <= anchor.endBlockOrdinal);
       if (selected.every(block => {
+        // The duplicate title heading is hidden from the body but printed by the
+        // page header: its text is still on screen, so the anchor stays verifiable.
+        if (block.ordinal === leadingTitleBlock?.ordinal) return true;
         const content = body.querySelector(`[data-block-ordinal="${block.ordinal}"] [data-note-block-content]`);
         return content && noteReadingText(content) === noteBlockRenderedTextV1(block.type, block.content);
       })) ids.add(annotation.annotationId);
@@ -2034,7 +1220,7 @@ const noteDocLive = useNoteDocLiveView(
         && current.ids.size === ids.size && [...ids].every((id) => current.ids.has(id))) return current;
       return { noteId: note.noteId, versionId: note.currentVersionId, ids };
     });
-  }, [note?.noteId, note?.currentVersionId, currentAnnotationCandidates, leaf, learningView, readSourceBlocks, showAllBlocks]);
+  }, [note?.noteId, note?.currentVersionId, currentAnnotationCandidates, leaf, learningView, readSourceBlocks, leadingTitleBlock, showAllBlocks]);
   useEffect(() => {
     if (unresolvedNoteAnnotations.length > 0) setAnnotationShelfOpen(true);
   }, [unresolvedNoteAnnotations.length, note?.noteId, note?.currentVersionId]);
@@ -2105,12 +1291,18 @@ const noteDocLive = useNoteDocLiveView(
    * 不留"上次点过哪"这种会跟人走的读数。
    */
   const locateTeachingReference = (ordinal: number): void => {
+    // A citation can point at the duplicate title heading (block ordinal 1).
+    // That heading is not in the body; the page header shows the same title, so
+    // locate the first visible block instead of scrolling to nothing.
+    const target = leadingTitleBlock && ordinal === leadingTitleBlock.ordinal
+      ? allBlocks[0]?.ordinal ?? ordinal
+      : ordinal;
     clearGoalResultSelection();
     setLeaf("reading");
     setLearningView("body");
-    if (isNoteEditingMode(mode)) requestAnimationFrame(() => editorRef.current?.focusPosition({ block: ordinal, offset: 0 }));
-    if (!readingBlocks.some((block) => block.ordinal === ordinal)) setShowAllBlocks(true);
-    setFocusedBlockOrdinal(ordinal);
+    if (isNoteEditingMode(mode)) requestAnimationFrame(() => editorRef.current?.focusPosition({ block: target, offset: 0 }));
+    if (!readingBlocks.some((block) => block.ordinal === target)) setShowAllBlocks(true);
+    setFocusedBlockOrdinal(target);
   };
   const openNoteAnnotation = (annotation: NoteAnnotationV1): void => {
     clearGoalResultSelection();
@@ -2169,7 +1361,6 @@ const noteDocLive = useNoteDocLiveView(
    *
    * 位置**不落库、不跟人走**：它只活在这一次打开的这一篇笔记里，关掉就没了。
    */
-  const backToReading = (): void => setLeaf("reading");
 
   // 这篇笔记的全部图片，按正文顺序排好；顺带记下**每一块**第一张图在画廊里的序号，
   // 让正文里的缩略图点击时知道自己该开在哪一张。一块可以有好几张：编辑器里的图是
@@ -2297,7 +1488,6 @@ const noteDocLive = useNoteDocLiveView(
       // 编辑器整个卸掉——自动保存每按几下就来一次，那等于每次保存都把选区、滚动位置和
       // 还没交出去的字一起带走。版本号、权限那半边照样刷新。
       await reload({ silent: true });
-      if (reason === "manual") appendedReflections.current.clear();
       return true;
     } catch (error) {
       setSaveState("error");
@@ -2390,405 +1580,6 @@ const noteDocLive = useNoteDocLiveView(
     }
   };
 
-  const api = desktopApi();
-  const routes = api?.contract.enabledRoutes ?? [];
-  const generationRoutes = routes.includes("note.detail") && routes.includes("note.cardGeneration");
-  const generationEnabled = Boolean(
-    capabilities
-    && generationRoutes
-    && capabilities.actionCapabilities["card_generation.start"] === "allowed"
-    && capabilities.featureAvailability.card_generation_v2.state === "enabled",
-  );
-  const generationReason = generationEnabled
-    ? null
-    : !capabilities
-      ? "正在确认 Card Generation 能力。"
-      : !generationRoutes
-        ? "这台电脑还没有开放生成学习卡的入口。"
-        : capabilities.featureAvailability.card_generation_v2.state !== "enabled"
-          ? "学习卡生成现在没有开放。"
-          // 能力位被拒和开关没开是两件事：把前者说成后者，读者会以为去找管理员
-          // 开功能，而真实原因是在这个空间里自己是只读身份。
-          : "生成学习卡由空间所有者发起，你在这个空间是成员。";
-
-  const startGeneration = async () => {
-    if (!api || !note || generationNeedsSavedVersion || saving || startingGeneration || !generationEnabled) return;
-    setStartingGeneration(true);
-    setGenerationFailure(null);
-    const expectedSource = noteAiSourceRef.current;
-    const isCurrent = () => expectedSource === noteAiSourceRef.current;
-    try {
-      if (!await ensureAiActionAllowed(epochRef.current, isCurrent)) return;
-      const previous = noteGeneration ?? latestRun;
-      if (previous && isCardGenerationInFlight(previous.status)) {
-        setGenerationFailure("上一份还在生成，请先查看进度并停止，再按最新笔记生成。");
-        return;
-      }
-      if (previous && isCardGenerationReviewOpen(previous.status)) {
-        const ended = await api.note.cardGeneration.close({
-          meta: createRequestMeta(epochRef.current), commandId: createCommandId("card-generation-replace-review"),
-          runId: previous.runId, expectedReviewDraftRevision: previous.reviewDraftRevision,
-        });
-        unwrapGatewayResult(ended);
-        if (!isCurrent()) return;
-        if (ended.workspaceEpoch) epochRef.current = ended.workspaceEpoch;
-        // If creating the next run fails, return to an entry that can retry.
-        reload();
-      }
-      const response = await api.note.cardGeneration.start({
-        meta: createRequestMeta(epochRef.current),
-        commandId: createCommandId("card-generation-start"),
-        noteId: note.noteId,
-        request: {
-          version: 2,
-          noteVersionId: note.currentVersionId,
-          sourceScope: { kind: "whole_note" },
-          learningGoal: options.learningGoal,
-          detailThreshold: options.detailThreshold,
-          quantity: { kind: "adaptive", hardMaxCards: options.hardMaxCards },
-          preferredStrategies: [...options.preferredStrategies],
-          ...(feedbackTarget && feedbackReasons.length
-            ? {
-                feedbackContext: {
-                  previousRunId: feedbackTarget.runId,
-                  reasonCodes: [...feedbackReasons],
-                  ...(feedbackNote.trim() ? { optionalNote: feedbackNote.trim() } : {}),
-                },
-              }
-            : {}),
-          clientRequestId: createCommandId("card-generation-request"),
-        },
-      });
-      if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
-      const accepted = unwrapGatewayResult(response);
-      if (accepted.agentRunId) publishCompanionRecordsChanged();
-      setActiveCardGenerationRunId(accepted.runId);
-      resetGenerationFeedback();
-      setOptionsOpen(false);
-      invoke("open-card-generation");
-    } catch (error) {
-      if (guideAiPermissionFailure(error)) return;
-      setGenerationFailure(gatewayErrorMessage(error));
-      // 被服务端拒绝说明页面看到的是过期状态（这篇笔记已有一批在制，或配额已满）。
-      // 不重读的话入口会一直停在「生成学习卡」，用户点一次撞一次 409。
-      reload();
-    } finally {
-      setStartingGeneration(false);
-    }
-  };
-
-
-  /**
-   * 入口按下去的那一下（2026-10-04 用户决定）。
-   *
-   * 干净的工作稿过去是**直接开跑**的，方案屏收在旁边的「调整这次」里。那样多数人
-   * 按这一下只要的是默认档，却根本不知道自己挑走了什么——直到卡片出来了才发现方向
-   * 不对，而那一批已经跑完。现在这一格只有一颗按钮，按它就开「这次想怎么练？」：
-   * 方向、数量、详略、卡型都在那儿，用户先说清要什么，再开始生成。
-   *
-   * 未保存的改动也不用再单独分一条路：挡住它的那句话（「笔记改动还没保存，保存后
-   * 就可以开始。」）本来就写在方案屏的底栏上，进得去就看得见。
-   */
-  const openGenerationSetup = () => { setOptionsOpen(true); };
-
-  /**
-   * 提交这一轮的问题：没有进行中轮次时开一轮，已经有了就是改写那一句。
-   *
-   * 两条路共用一次提交，因为屏上只有一句话与一颗按钮——差别只在带不带
-   * `expectedRevision`（§16.39 那一族：后到的那一份要失败并拿到现在那一版，
-   * 而不是悄悄覆盖）。成功后走 silent 回读：句子上屏的是**服务端存下来的那一条**，
-   * 不是本机草稿（这里写过的失败形状：屏幕显示了自己拼的那句，库里却是另一句）。
-   */
-  const submitRoundQuestion = async (target: "start" | "revise", snapshot: "current" | "last_saved" = "current") => {
-    const api = desktopApi();
-    const currentNote = data?.note ?? null;
-    const question = roundDraft.trim();
-    if (!api || !currentNote || (target === "revise" && question.length === 0) || roundBusy) return;
-    setRoundBusy(target);
-    setRoundFailure(null);
-    try {
-      if (target === "start" && snapshot === "current" && currentNote.permissions.canSave) {
-        if (!await save("manual")) {
-          setRoundFailure({ kind: "failed", message: "这次保存没有完成，还没有开始新的一轮。当前内容保留，可以重试保存。" });
-          return;
-        }
-      }
-      const meta = createRequestMeta(epochRef.current);
-      const source = roundQuestionSourceV1(question, roundStarter);
-      const response = target === "start"
-        ? await api.noteLearningRound.create({ meta, noteId: currentNote.noteId,
-          ...(question ? { drivingQuestion: question } : {}), drivingQuestionSource: source })
-        : await api.noteLearningRound.revise({
-          meta,
-          roundId: openRound!.roundId,
-          expectedRevision: openRound!.revision,
-          drivingQuestion: question,
-          drivingQuestionSource: source,
-        });
-      if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
-      unwrapGatewayResult(response);
-      setRoundEditing(false);
-      setRoundDraft("");
-      setRoundStarter(null);
-      setRoundLostDraft(null);
-      await reload({ silent: true });
-    } catch (error) {
-      setRoundFailure(classifyGatewayError(error));
-      // 只有服务端**明确拒掉**（conflict：这一轮在别处被推进过／已经收尾／已经有开着的一轮）
-      // 才敢说那一句没进去。网络与超时不能这样报——那一发的结果本机不知道，
-      // 把"可能已经写成功"说成"替你留着"，是拿一次假回执盖掉真回执。
-      if (error instanceof RendererGatewayError && error.code === "conflict") {
-        setRoundLostDraft({ question, starter: roundStarter });
-        setRoundDraft("");
-        setRoundStarter(null);
-        setRoundEditing(false);
-      }
-      // 失败也要把她带到**现在那一版**上去：真窗口实测（`probe-note-round-conflict.mts`），
-      // 迟到的那一发被服务端拒掉之后，屏上留着的还是那句已经不作数的草稿——
-      // "请先同步"这句话没有配一次同步，等于让她自己猜该按哪一版继续。
-      // 交出去的那一句不撤：conflict 时它搬去下面那一行，其余失败**留在输入框里**
-      // （不退出编辑态）——那一发可能已经写成功，说"替你留着"是拿一次假回执盖掉真
-      // 回执，但直接退编辑态又会让下一次「换一个问题」把它覆盖掉，两种都不能做。
-      await reload({ silent: true });
-    } finally {
-      setRoundBusy(null);
-    }
-  };
-
-  /** 活动的完成与能力结论分开：练习已结算才开放「完成本轮」。 */
-  const endNoteRound = async (outcome: "completed" | "partial" = "partial") => {
-    const api = desktopApi();
-    if (!api || !openRound || roundBusy) return;
-    setRoundBusy("end");
-    setRoundFailure(null);
-    try {
-      const response = await api.noteLearningRound.close({
-        meta: createRequestMeta(epochRef.current),
-        roundId: openRound.roundId,
-        expectedRevision: openRound.revision,
-        outcome,
-      });
-      if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
-      unwrapGatewayResult(response);
-      await reload({ silent: true });
-      setReflectionRoundId(openRound.roundId);
-      setLeaf("reading");
-    } catch (error) {
-      setRoundFailure(classifyGatewayError(error));
-      // 收尾迟到（这一轮在别处被推进过）同一条规矩：换回服务端读回来的那一版，
-      // 那一行不撤——撤掉会被读成"已经收尾了"，而它其实什么都没发生。
-      await reload({ silent: true });
-    } finally {
-      setRoundBusy(null);
-    }
-  };
-
-  /**
-   * 「继续这一轮」= resume：把停住的那一轮接回进行中（39d W4-5 ④ 的前置）。
-   *
-   * 与另外三发同一形状：①带读过的那一版 `expectedRevision`（这一轮在别处被推进过时，
-   * 这一发要失败并拿到现在那一版）；②成功后走 **silent 回读**——屏上那一整块换的是
-   * 服务端读回来的那一份，不是这一发的回执自己拼的（刀二那条纪律）；③失败也回读一次，
-   * 留一句如实的话。已经 active 的轮次重复点不出第二个状态：noop 由服务端判（不推进计数器）。
-   */
-  const resumeNoteRound = async () => {
-    const api = desktopApi();
-    if (!api || !openRound || roundBusy) return;
-    setRoundBusy("resume");
-    setRoundFailure(null);
-    try {
-      const response = await api.noteLearningRound.resume({
-        meta: createRequestMeta(epochRef.current),
-        roundId: openRound.roundId,
-        expectedRevision: openRound.revision,
-      });
-      if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
-      unwrapGatewayResult(response);
-      await reload({ silent: true });
-    } catch (error) {
-      setRoundFailure(classifyGatewayError(error));
-      await reload({ silent: true });
-    } finally {
-      setRoundBusy(null);
-    }
-  };
-
-    /**
-   * 「按当前内容新开一轮」（PRD §4.3 后半件，紧接上面那句「后来又保存过一版」）。
-   *
-   * 封存手上这一条与新建那一条在**服务端同一发事务**里做完：分两发调用会留下
-   * "旧的已封存、新的没建成"那个窗口，用户看到的是这一轮凭空没了。
-   * 与「继续这一轮」同一形状：带 CAS 钥匙、成功后 silent 回读、失败也回读一次。
-   * 只有上一行真的报了"动过"才摆这一颗——没问题时报这句话，就是无端的第二次确认。
-   */
-  const reopenNoteRound = async () => {
-    const api = desktopApi();
-    if (!api || !openRound || roundBusy) return;
-    setRoundBusy("reopen");
-    setRoundFailure(null);
-    try {
-      const response = await api.noteLearningRound.reopen({
-        meta: createRequestMeta(epochRef.current),
-        roundId: openRound.roundId,
-        expectedRevision: openRound.revision,
-      });
-      if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
-      unwrapGatewayResult(response);
-      await reload({ silent: true });
-    } catch (error) {
-      setRoundFailure(classifyGatewayError(error));
-      await reload({ silent: true });
-    } finally {
-      setRoundBusy(null);
-    }
-  };
-
-
-  /** Prepare a bounded first attempt from this saved snapshot without revealing the explanation. */
-  const prepareRoundPractice = async () => {
-    const api = desktopApi();
-    if (!api || !openRound || practiceBusy) return;
-    beginPractice();
-    const expectedSource = noteAiSourceRef.current;
-    const expectedRound = openRoundScopeRef.current;
-    try {
-      if (!await ensureAiActionAllowed(epochRef.current, () => expectedSource === noteAiSourceRef.current && expectedRound === openRoundScopeRef.current)) return;
-      const response = await api.noteLearningRound.preparePractice({
-        meta: createRequestMeta(epochRef.current),
-        roundId: openRound.roundId,
-        expectedRevision: openRound.revision,
-      });
-      if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
-      unwrapGatewayResult(response);
-      await reload({ silent: true });
-    } catch (error) {
-      if (guideAiPermissionFailure(error)) return;
-      setPracticeFailure(classifyGatewayError(error));
-      await reload({ silent: true });
-    } finally {
-      endPractice();
-    }
-  };
-
-  /**
-   * 「练一道」（W4-6 刀三）：用**服务端签发的那份起点**开一场 run。
-   *
-   * 刻意不自己拼请求：`start` 里那几格（goal／时长／怎么答／锚点）都来自服务端
-   * ——拼一份就等于在这一页埋下第二个来源（W4-2 第五刀收的就是这一族）。
-   *
-   * 开出去之后**留在这一页**（`openRunSurface` 不再 `invoke("validate")` 跳去作答页）：
-   * `activeRunId` 一落位，`inlineRoundRunId` 就成立，工位挂在 `practice` 那一屏里。
-   * 跳页的那一版把"这道题属于哪一轮"留给了用户自己记——现在问题、依据、上一轮做到
-   * 哪一步与正在作答的格子在同一张纸上，中间不留断点。
-   */
-  const startRoundPractice = async () => {
-    const practiceStartValue = roundPracticeStart;
-    if (!practiceStartValue || practiceBusy) return;
-    beginPractice();
-    try {
-      setActiveObjectiveId(practiceStartValue.objectiveId);
-      await startObjectiveJourney(
-        {
-          kind: "create_run",
-          objectiveId: practiceStartValue.objectiveId,
-          label: ROUND_COPY.teaching.practice,
-          start: practiceStartValue.start,
-        },
-        {
-          epochRef,
-          setActiveObjectiveId,
-          setActiveRunId,
-          // 就地：这一页自己会把工位挂出来。
-          openRunSurface: () => { setInlineRunPage("assessment"); },
-          reload: () => reload({ silent: true }),
-        },
-      );
-    } catch (error) {
-      setPracticeFailure(classifyGatewayError(error));
-    } finally {
-      endPractice();
-    }
-  };
-
-  /**
-   * 就地作答的工位：**这一轮**正在答的那一次 run。
-   *
-   * 判据是「服务端说的正在答的那一次」而不是「全局的 `activeRunId`」：从复习队列或
-   * 学习卡开来的另一次作答也占着 `activeRunId`，拿它当这一轮的会答错题。所以两份都要
-   * 吻合——场景是 `practice`，且 `nextStep.kind === "resume"` 且 `basisRunId` 就是它。
-   * `uncertain` 的 `basisRunId` 指向的是**已经结算**的那一次（要看的是它的反馈，不是
-   * 重新答一遍），所以那一格走 `openRoundPractice` 的结果页，不接工位。
-   */
-  const inlineRoundRunId: string | null =
-    learningScene === "practice"
-      && !reviewingTeaching
-      && roundNextStep?.kind === "resume"
-      && roundNextStep.basisRunId === activeRunId
-      ? roundNextStep.basisRunId
-      : null;
-
-  /**
-   * 回看这一轮里某一次作答：同样**就地**，不换页面语言。
-   *
-   * 挂的是同一个工位（它自己会显示这一次的结果页），所以题目与反馈用的是同一套控件与
-   * 同一份读数；离开时仍然经主进程释放 `FormalAssessmentGuard`（见
-   * `releaseRunThroughMainV1` 那段注释：绕过它的症状出现在**别处**，极难往回找）。
-   */
-  const openRoundPractice = async (runId: string) => {
-    setActiveObjectiveId(null);
-    setActiveRunId(runId);
-    setInlineRunPage("result");
-    await reload({ silent: true });
-  };
-
-  /**
-   * 离开就地作答的工位。
-   *
-   * 三步，顺序不能换：①摘掉 run 树；②让出一帧；③经主进程解析并提交返回路由。②③之间
-   * 必须是"主进程已经看不到 Player 了"才放行，所以这一段与 `LearningRunSurface` 里的
-   * 收尾共用 `releaseRunThroughMainV1`。落地后回读一次这一轮，于是纸上从 `practice`
-   * 变成 `result`——用户看见的是结算，而不是"被踢回上一个页面"。
-   */
-  const exitInlineRoundRun = async (request?: { route: DesktopRouteV1; objectiveId?: string; reflectionRoundId?: string }) => {
-    const runId = inlineRoundRunId;
-    if (!runId || !note) return;
-    setActiveRunId(null);
-    await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
-    await releaseRunThroughMainV1({
-      runId,
-      route: request?.route ?? { kind: "note.detail", noteId: note.noteId },
-    });
-    setInlineRunPage("assessment");
-    await reload({ silent: true });
-  };
-
-  const historyTail = olderRounds && olderRounds.noteId === note?.noteId ? olderRounds : null;
-  const historyItems: readonly NoteLearningRoundHistoryV1["items"][number][] = [
-    ...(roundHistory?.items ?? []),
-    ...(historyTail?.items ?? []),
-  ];
-  const selectedHistoryItem = historyItems.find((item) => item.roundId === reflectionRoundId);
-  const selectedHistoryMasked = Boolean(selectedHistoryItem && "contentMasked" in selectedHistoryItem && selectedHistoryItem.contentMasked);
-  /**
-   * 那句总数只读**服务端报的那一格**：`historyItems.length` 回答的是"这一屏列了几轮"，
-   * 不是"这一篇开过几轮"——翻过一页之后两者会分叉（§16.16 后半要的是后者）。
-  */
-
-  /** 「回看某一轮」那一簇（3 个 state + 一个 effect）已于 2026-09-29 收进
-      `use-notebook-inspected-round.ts`。那个 `cancelled` 防竞态闭包的说明在那个文件里。 */
-  const { inspectedRound, inspectedRoundBusy, inspectedRoundFailure } = useNotebookInspectedRound({
-    leaf,
-    roundId: reflectionRoundId,
-    noteId: note?.noteId,
-    masked: selectedHistoryMasked,
-    inspectRevision: historyInspectRevision,
-    epochRef,
-    api: desktopApi(),
-  });
-
-  const historyTotal = historyTail?.totalCount ?? roundHistory?.totalCount ?? 0;
-  const historyHasMore = historyTail ? historyTail.hasMore : (roundHistory?.hasMore ?? false);
-  const historyNextCursor = historyTail ? historyTail.nextCursor : (roundHistory?.nextCursor ?? null);
 
 
 
@@ -2814,13 +1605,6 @@ const noteDocLive = useNoteDocLiveView(
     || (learningArtifactRows?.noteId !== note.noteId && !learningArtifactError)
   ));
 
-  const inspectRoundInFootprint = (roundId: string) => {
-    setLegacyHistoryOpen(true);
-    loadLegacyRouteCoverage();
-    setReflectionRoundId(roundId);
-    setLeaf("history");
-    requestAnimationFrame(() => requestAnimationFrame(() => historyDetailRef.current?.scrollIntoView?.({ block: "start" })));
-  };
   const openFootprintRecall = (record: NoteRecallRecordV1) => {
     clearGoalResultSelection();
     rememberReadingPosition();
@@ -2864,83 +1648,6 @@ const noteDocLive = useNoteDocLiveView(
     if (kind === "expansion" && expansionRows?.nextCursor) void loadNoteExpansions(expansionRows.nextCursor);
   };
 
-  /** 「看更早的几轮」：带着游标再读一页，接在已经看到的那些后面（不覆盖）。 */
-
-  // Live status sync while this page stays open: one cardGeneration
-  // subscription per known run. Each event triggers a silent re-read of the
-  // projection — the entry button and status line follow the run's real step
-  // without a loading paper over the writer's text, and without offering a
-  // second start for the same note version.
-  const noteGenerationRunId = noteGeneration?.runId ?? null;
-
-  useEffect(() => {
-    if (!noteGenerationRunId || !window.astella) return undefined;
-    let disposed = false;
-    let subscriptionId: string | null = null;
-    let unsubscribeEvent: (() => void) | undefined;
-    const subscribe = async () => {
-      try {
-        const response = await window.astella.subscriptions.subscribe({
-          meta: createRequestMeta(),
-          topic: { kind: "cardGeneration", runId: noteGenerationRunId },
-        });
-        if (disposed) return;
-        subscriptionId = unwrapGatewayResult(response).subscriptionId;
-        unsubscribeEvent = window.astella.subscriptions.onEvent(subscriptionId, () => {
-          void reload({ silent: true });
-        });
-      } catch {
-        // Streaming is progressive enhancement: the status still refreshes on
-        // remount, on focus of another page, and through the workbench itself.
-      }
-    };
-    void subscribe();
-    return () => {
-      disposed = true;
-      unsubscribeEvent?.();
-      if (subscriptionId) {
-        void window.astella.subscriptions.unsubscribe({
-          meta: createRequestMeta(),
-          subscriptionId,
-        });
-      }
-    };
-  }, [noteGenerationRunId, reload]);
-
-  /**
-   * 后台还在做这一批时的兜底轮询。
-   *
-   * 事件流推的是"有事件才来"，这一格要的是"那一行状态自己往前走"——而流是会被顶回的
-   * （服务端每用户 SSE 上限 5，主进程那一侧曾经漏过连接；占满之后每一次订阅都 429，
-   * 入口就会一直停在旧阶段：明明已经写好了还读作「查看生成进度」，或者反过来）。
-   *
-   * **只在真在跑的时候跑**，而且比工作台慢一倍：这一页的 `reload` 是整份投影（笔记、
-   * 能力、资料袋、最新一批），不是工作台那种只读一条 run 的轻量重读；而这一格慢半拍
-   * 没有人会察觉——用户盯着的是刚点下去那一页。
-   */
-  const noteGenerationInFlight = Boolean(noteGeneration && isCardGenerationInFlight(noteGeneration.status));
-  useEffect(() => {
-    if (!noteGenerationRunId || !noteGenerationInFlight) return undefined;
-    const timer = window.setInterval(() => {
-      if (document.visibilityState === "hidden") return;
-      void reload({ silent: true });
-    }, 4000);
-    const onVisibility = (): void => { if (document.visibilityState === "visible") void reload({ silent: true }); };
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => {
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", onVisibility);
-    };
-  }, [noteGenerationRunId, noteGenerationInFlight, reload]);
-
-  const openGeneration = () => {
-    const run = noteGeneration ?? latestRun;
-    if (!run) return;
-    rememberReadingPosition();
-    setActiveCardGenerationRunId(run.runId);
-    invoke("open-card-generation");
-  };
-
   /**
    * 编辑器里的键盘约定。加粗、斜体、行内代码、撤销、重做都归 Milkdown 自己的
    * 快捷键；这一层只管纸张语境里的两条：⌘S 立即提交、⌘K 插入链接。
@@ -2978,7 +1685,7 @@ const noteDocLive = useNoteDocLiveView(
     changeMode(next);
   };
 
-  const page: HudPageId = leaf === "learning" || leaf === "expansion" ? "note-learning" : leaf === "history" ? "note-history" : isNoteEditingMode(mode) ? "note-edit" : "note-read";
+  const page: HudPageId = leaf === "expansion" ? "note-learning" : leaf === "history" ? "note-history" : isNoteEditingMode(mode) ? "note-edit" : "note-read";
   useHudPage(page);
 
   const sourceTitle = source?.source.title ?? (note?.sourceId ? "来源暂时不可读" : "没有关联来源");
@@ -3054,34 +1761,20 @@ const noteDocLive = useNoteDocLiveView(
    */
   const readableView = useMemo<PageReadableV1 | null>(() => {
     if (!note) return null;
-    // 这一轮那一屏（`leaf` 是 learning／expansion）：屏上最大的那一句是**那一轮的问题**。
+    // 往外学与回想各自一屏：屏上最大的那一句是这一屏的题目。
     if (leaf === "expansion") {
       return { pageId: "note.learning", title: readTitle || "这一篇", statusLine: "从这篇往外学", items: [] };
     }
     if (leaf === "reading" && learningView === "recall") {
       return { pageId: "note.learning", title: readTitle || "这一篇", statusLine: "正在回想", items: activeRecall ? [{ ordinal: 1, label: "回想问题", state: activeRecall.question }] : [] };
     }
-    if (leaf === "learning") {
-      return {
-        pageId: "note.learning",
-        title: readTitle || "这一篇",
-        statusLine: openRound
-          ? (openRound.phase === "paused" ? "这一轮停着" : "这一轮进行中")
-          : "这一轮还没有开始",
-        items: [
-          { ordinal: 1, label: "这一轮的问题", state: openRound?.drivingQuestion ?? "屏上还没有一轮" },
-        ],
-      };
-    }
-    // 轮回看那一屏：屏上摆的是笔记名与「这一轮走到哪儿」，不是来源片段。
+    // 学习记录那一屏：屏上摆的是笔记名与留下的记录，不是来源片段。
     if (leaf === "history") {
       return {
         pageId: "note.history",
         title: readTitle || "这一篇",
-        statusLine: historyTotal > 0 ? `练过 ${historyTotal} 轮` : "还没有练过",
-        items: [
-          { ordinal: 1, label: "这一轮", state: selectedHistoryItem ? (selectedHistoryMasked ? "这一轮的内容按权限遮蔽" : selectedHistoryItem.drivingQuestion) : "还没有翻开哪一轮" },
-        ],
+        statusLine: "留下的线索都在这页",
+        items: [],
       };
     }
     return {
@@ -3097,8 +1790,7 @@ const noteDocLive = useNoteDocLiveView(
       ] : [],
     };
   }, [note?.title, note?.noteId, firstSegmentClipLabel, source?.source.title, segments.length,
-    leaf, mode, readTitle, sourceBagOpen, learningView, activeRecall, openRound?.drivingQuestion, openRound?.phase,
-    historyTotal, selectedHistoryItem, selectedHistoryMasked]);
+    leaf, mode, readTitle, sourceBagOpen, learningView, activeRecall]);
   usePageReadableView(readableView);
 
 
@@ -3129,40 +1821,6 @@ const noteDocLive = useNoteDocLiveView(
         {source?.source.origin ? <><br />地址：{source.source.origin}</> : null}
       </div>
     </div>
-  );
-
-  const generationRun = noteGeneration ?? latestRun;
-  const { startsNewRun, sourceChanged, blockedByGeneration, offersRegenerate } = noteCardGenerationEntry(
-    generationRun, note?.currentVersionId, generationNeedsSavedVersion);
-  const generationAction = (
-    <>
-      <NotebookCardEntry status={startsNewRun ? undefined : generationRun?.status} busy={startingGeneration} triggerRef={generationTriggerRef}
-        startLabel={generationRun && !sourceChanged ? "重新生成学习卡" : "生成学习卡"}
-        disabled={saving || startsNewRun && (!generationEnabled || blockedByGeneration)}
-        partialSourceNotice={!startsNewRun && noteGeneration?.sourceCapped ? sourceCappedNotice(noteGeneration.sourceCapped) : null}
-        title={generationReason
-          ?? (blockedByGeneration ? "旧版笔记还在生成，请先查看旧版进度并停止，再生成最新版本"
-            : startsNewRun
-              ? generationRun && !sourceChanged ? "用最新已保存的笔记再生成一套"
-                : sourceChanged ? "按当前已保存的笔记生成学习卡"
-                  : generationNeedsSavedVersion ? "先保存当前改动，再从已保存版本开始生成"
-                    : "先说这次想怎么练，选完就开始生成"
-              : generationRun?.status === "activated" ? "查看已保存的学习卡"
-                : generationRun?.status === "review_ready" ? "这一批已经写好，等你逐张决定留哪些"
-                  : "这次生成在后台进行，来回翻看不会打断它")}
-        onClick={startsNewRun ? openGenerationSetup : openGeneration} />
-      {/*
-        「重新生成学习卡」只在这一颗**去看手上那一批**的时候补位（`offersRegenerate`）。
-        另外两种情形里主按钮自己就是"另开一批"：正文改过了就该说「生成学习卡」（这一版
-        还没有任何一批卡），上次那批停了就说「重新生成学习卡」——旁边再挂一颗同义的，
-        用户要先认出哪一颗是哪一颗才知道按哪一颗。
-        正在生成时一颗都不出现：此刻唯一能做的是"停下来"，而那一颗在进度页上。
-      */}
-      {offersRegenerate ? <button type="button" className="text-action notebook-card-entry__tweak" disabled={!generationEnabled || saving || startingGeneration}
-        title="按最新已保存的笔记再生成一套；也可以先说明这次想怎么练" onClick={openGenerationSetup}>重新生成学习卡</button> : null}
-      {generationRun && startsNewRun ? <button type="button" className="text-action notebook-card-entry__previous"
-        onClick={openGeneration}>{sourceChanged ? "查看旧版生成" : "查看上次生成"}</button> : null}
-    </>
   );
 
   /**
@@ -3240,30 +1898,6 @@ const noteDocLive = useNoteDocLiveView(
 
   // The run contract's knobs live in a full-screen planning sheet so both
   // reading and editing mode can reach the same deliberate start step.
-  const generationSetup = optionsOpen && generationEnabled ? createPortal(
-        <div className="generation-setup-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) closeGenerationSetup(); }}>
-            <GenerationSetup
-              options={options}
-              setOptions={setOptions}
-              startingGeneration={startingGeneration}
-              generationFailure={generationFailure}
-              dirty={generationNeedsSavedVersion || saving}
-              generationEnabled={generationEnabled}
-              startGeneration={() => void startGeneration()}
-              feedbackTarget={feedbackTarget}
-              feedbackNote={feedbackNote}
-              setFeedbackNote={setFeedbackNote}
-              feedbackReasons={feedbackReasons}
-              setFeedbackReasons={setFeedbackReasons}
-              generationOptionSummary={generationOptionSummary}
-              cardGenerationStatusLabel={cardGenerationStatusLabel}
-              formatRelative={formatRelative}
-              closeGenerationSetup={closeGenerationSetup}
-            />
-        </div>,
-        document.body,
-      ) : null;
-
   const askCompanionAboutNote = () => {
     if (!note || dirty || !note.currentVersionId) return;
     feedNoteIntentToCompanion({
@@ -3455,10 +2089,13 @@ const noteDocLive = useNoteDocLiveView(
         className="note-transcript"
         ref={readingBodyRef}
       >
-        {readSourceBlocks.length ? readingBlocks.map((block) => (
+        {/* `allBlocks` (not `readSourceBlocks`) owns this branch: a version whose
+            only block is the duplicate title heading has nothing left to read. */}
+        {allBlocks.length ? readingBlocks.map((block) => (
           <ReadingBlock
             key={block.ordinal}
             block={block}
+            mark={null}
             documentSource={readingDocumentSource}
             alignment={htmlAlignments.get(block.ordinal)}
             aiWork={noteAiRanges.find(range => block.ordinal >= range.startBlock && block.ordinal <= range.endBlock)}
@@ -3481,7 +2118,6 @@ const noteDocLive = useNoteDocLiveView(
             onOpenAiConsentSettings={openAiConsentSettings}
             onAskCompanion={(anchor) => askCompanionAboutPassage(anchor.excerpt, anchor, note.noteId)}
             focused={focusedBlockOrdinal === block.ordinal}
-            mark={mark?.ordinal === block.ordinal ? mark.range : null}
             workspaceEpoch={epochRef.current}
             gallery={noteImages.ordinalToStart.has(block.ordinal)
               ? {
@@ -3601,174 +2237,6 @@ const noteDocLive = useNoteDocLiveView(
         ) : null}
       </section>
       )}</div>)}
-      {leaf === "learning" ? (
-        /*
-         * 书桌上的这一页（2026-09-28 整体重构）。
-         *
-         * 上一版是「页眉 h2 + 薄荷标题牌 + 三枚药丸 + 描边框段落 + 底部悬浮坞」——
-         * 四个带框的东西从上到下排成一列，屏上读起来就是一张后台表单：标题被滚动容器
-         * 裁掉一半，薄荷左边框变成一截孤零零的竖条，说服用户的句子和一颗按钮占掉一个
-         * 整块描边框，失败提示被裁在纸脚看不见，而真正该被看见的「在弄什么」排在中间。
-         *
-         * 那一版的骨架整个不要了。现在这一页按**书桌**组织：
-         *
-         *   - 左栏是一条**顺着读下去**的线：问题 → 讲解 → 例子 → 作答 → 收获。
-         *     全部是纸上的字，**没有一块描边框**。
-         *   - 右栏是**摆在桌上的物件**：走到哪一步（进度绳）、笔记原句（依据便签）、
-         *     那页能动手的演示。这些是"手上拿着的东西"，不是"系统状态"。
-         *   - 主动作回到**纸脚**（`round-desk__foot`），不再挂在纸外的悬浮条上。
-         *   - 那一行「正在学 / 停住了 / 这一轮的收获」删掉：它是界面自己的状态，
-         *     用户看得见按钮在做什么，不需要另一句话复述一遍（39f UI-4）。
-         *
-         * 问题不再是"牌"，它是**这一页的标题**——所以它就是那个 h2，视觉上是一张
-         * 用和纸胶带贴在书页上的纸片，微微歪着，有自己的影子。
-         */
-        <section id="notebook-learning-leaf" className="round-desk" aria-label="这一轮学习" data-learning-scene={reviewingTeaching ? "teaching" : learningScene}>
-          <div className="round-desk__head">
-            <button type="button" className="round-bookmark" onClick={backToReading}>回到正文</button>
-            <p className="round-desk__note">{readTitle || "未命名笔记"}</p>
-          </div>
-
-          <div className="round-desk__body">
-            {/* ── 左栏：顺着读的那条线 ─────────────────────────────────── */}
-            <RoundDeskLine
-      data={data}
-      roundDraft={roundDraft}
-      setRoundDraft={setRoundDraft}
-      roundBusy={roundBusy}
-      roundFailure={roundFailure}
-      roundLostDraft={roundLostDraft}
-      setRoundLostDraft={setRoundLostDraft}
-      roundEditing={roundEditing}
-      setRoundEditing={setRoundEditing}
-      teachingBusy={teachingBusy}
-      teachingFailure={teachingFailure}
-      practiceBusy={practiceBusy}
-      reviewingTeaching={reviewingTeaching}
-      setReviewingTeaching={setReviewingTeaching}
-      learningScene={learningScene}
-      inFlightStep={inFlightStep}
-      inlineRoundRunId={inlineRoundRunId}
-      setInlineRunPage={setInlineRunPage}
-      structureQuestions={structureQuestions}
-      teachingReferences={teachingReferences}
-      roundArtifact={roundArtifact}
-      artifactState={artifactState}
-      onLocateReference={locateTeachingReference}
-      onSubmitQuestion={submitRoundQuestion}
-      onStartRoundTeaching={startRoundTeaching}
-      onStartRoundPractice={startRoundPractice}
-      onPrepareRoundPractice={prepareRoundPractice}
-      onEndNoteRound={endNoteRound}
-      onEndNoteRoundHere={() => endNoteRound()}
-      onExitInlineRun={exitInlineRoundRun}
-      onReload={reload}
-      onGoToReading={() => setLeaf("reading")}
-      onApplyLostDraft={() => { setRoundDraft(roundLostDraft?.question ?? ""); setRoundStarter(roundLostDraft?.starter ?? null); setRoundLostDraft(null); }}
-      noteChangeImpactNotice={openRoundNoteChangeImpact ? <NoteChangeImpactNotice impact={openRoundNoteChangeImpact} context="round" /> : null}
-      setRoundStarter={setRoundStarter}
-      setRoundFailure={setRoundFailure}
-      saving={saving}
-      saveState={saveState}
-      practiceFailure={practiceFailure}
-      latestRoundPractice={latestRoundPractice}
-      teachingReflectionIds={teachingReflectionIds}
-      teachingSnapshotIsReadVersion={teachingSnapshotIsReadVersion}
-      openRoundPractice={openRoundPractice}
-      dirty={dirty}
-            />
-
-            {/* ── 右栏：摆在桌上的物件 ─────────────────────────────────── */}
-            <aside className="round-desk__objects">
-              {/* 进度绳：三个刻痕串在一根线上，线上串着一颗木珠。上一版是三枚带框的药丸，
-                  读起来像三个系统状态；这里是一根线上的位置——"走到哪儿了"比"哪几格是
-                  什么状态"更接近人对自己进度的感觉。判定仍然全在 `roundTrackV1` 里。 */}
-              {openRound ? (
-                <ol className="round-thread" aria-label="这一轮走到哪一步">
-                  {roundTrack.map((step) => (
-                    <li key={step.key} data-mark={step.mark}>
-                      <span className="round-thread__bead" aria-hidden="true" />
-                      <span className="round-thread__label">{step.label}</span>
-                      <span className="round-thread__note">{step.note}</span>
-                    </li>
-                  ))}
-                </ol>
-              ) : null}
-
-              {/* 演示：一张**摊在桌上、比笔记纸略小并稍稍错开**的大纸。这是这一页最该被
-                  看见的东西，所以它不折进任何折叠区，也不再挂一个"跟着演示看一遍"的
-                  标题——它就是那一页演示本身。 */}
-              {roundArtifact && artifactState === "ready" ? (
-                <figure className="round-sheet" aria-label="动态演示">
-                  <span className="round-sheet__clip" aria-hidden="true" />
-                  <span className="round-sheet__fold" aria-hidden="true" />
-                  <ArtifactFrameHost
-                    artifactId={roundArtifact.artifactId}
-                    motion={resolveArtifactMotion(motionMode, reducedMotion)}
-                    fallback={<p className="round-slip__aside">{ROUND_COPY.teaching.artifactFallback}</p>}
-                  />
-                </figure>
-              ) : null}
-              {roundArtifact && artifactState === "failed" ? <p role="alert" className="round-slip__aside">{ROUND_COPY.teaching.artifactFailed}</p> : null}
-            </aside>
-          </div>
-
-          {/* ── 纸脚：主动作回到纸上（不是挂在纸外的悬浮条）──────────────── */}
-          {openRound && !roundEditing ? (
-            <div className="round-desk__foot">
-              {reviewingTeaching
-                ? <button type="button" className="round-stamp" onClick={() => setReviewingTeaching(false)}>{learningScene === "practice" ? "回到正在做的那道题" : "回到下一步"}</button>
-                : learningScene === "paused"
-                  ? <button type="button" className="round-stamp" disabled={roundBusy !== null} onClick={() => void resumeNoteRound()}>{roundBusy === "resume" ? ROUND_COPY.resuming : ROUND_COPY.resume}</button>
-                  : learningScene === "unavailable"
-                    ? <button type="button" className="round-stamp" onClick={() => void reload({ silent: true })}>重新读取这一轮</button>
-                    : learningScene === "question" && roundNextStep?.kind === "attempt" && roundPracticeStart
-                      ? <button type="button" className="round-stamp" disabled={practiceBusy} onClick={() => void startRoundPractice()}>{practiceBusy ? ROUND_COPY.teaching.practicing : "先试这一道"}</button>
-                      : learningScene === "question"
-                        ? <button type="button" className="round-stamp" disabled={teachingBusy || roundBusy !== null} onClick={() => void startRoundTeaching(false)}>{teachingBusy ? ROUND_COPY.teaching.starting : "看讲解"}</button>
-                        : learningScene === "teaching"
-                          ? roundNextStep?.kind === "attempt" && roundPracticeStart
-                            ? <button type="button" className="round-stamp" disabled={practiceBusy} onClick={() => void startRoundPractice()}>{practiceBusy ? ROUND_COPY.teaching.practicing : "拿这道题试一次"}</button>
-                            : <button type="button" className="round-stamp" onClick={() => setLeaf("reading")}>回到笔记里核对</button>
-                          : learningScene === "practice"
-                            ? <button type="button" className="round-stamp" onClick={() => { if (!roundNextStep?.basisRunId) return; void openRoundPractice(roundNextStep.basisRunId); }}>回到那道题</button>
-                            : roundNextStep?.kind === "help"
-                              ? <button type="button" className="round-stamp" disabled={teachingBusy} onClick={() => { setReviewingTeaching(true); void startRoundTeaching(true, teachingReflectionIds); }}>{teachingBusy ? ROUND_COPY.teaching.starting : "换一种讲解"}</button>
-                              : (roundNextStep?.kind === "retry" || roundNextStep?.kind === "apply") && roundPracticeStart
-                                ? <button type="button" className="round-stamp" disabled={practiceBusy} onClick={() => void startRoundPractice()}>{practiceBusy ? ROUND_COPY.teaching.practicing : roundNextStep.kind === "apply" ? "用新情境试一次" : "再试一次"}</button>
-                                : roundNextStep?.kind === "finish"
-                                  ? <button type="button" className="round-stamp" disabled={roundBusy !== null} onClick={() => void endNoteRound("completed")}>{roundBusy === "end" ? ROUND_COPY.ending : "这一轮学完了，回笔记"}</button>
-                                  : roundNextStep?.kind === "uncertain" || roundNextStep?.kind === "choose"
-                                    ? <button type="button" className="round-stamp" disabled={roundBusy !== null} onClick={() => void endNoteRound()}>{roundBusy === "end" ? ROUND_COPY.ending : "先到这里"}</button>
-                                    : <button type="button" className="round-stamp" onClick={() => void reload({ silent: true })}>重新读取下一步</button>}
-              {/* 次级动作是**纸签**，不是第二排描边按钮。它们挨着主动作，不抢主位。 */}
-              <div className="round-desk__others">
-                {learningScene === "result" && !reviewingTeaching && roundTeaching
-                  ? <button type="button" className="round-tab" onClick={() => setReviewingTeaching(true)}>回看讲解</button>
-                  : null}
-                {learningScene === "practice" && !reviewingTeaching && roundTeaching && !inlineRoundRunId
-                  ? <button type="button" className="round-tab" onClick={() => setReviewingTeaching(true)}>先回看讲解</button>
-                  : null}
-                {learningScene === "result" && !reviewingTeaching && roundNextStep?.kind === "uncertain" && roundNextStep.basisRunId
-                  ? <button type="button" className="round-tab" onClick={() => { void openRoundPractice(String(roundNextStep.basisRunId)); }}>看原回答和反馈</button>
-                  : null}
-                {openRound ? (
-                  <button type="button" className="round-tab" disabled={roundBusy !== null} onClick={() => { setRoundDraft(openRound.drivingQuestion); setRoundStarter(openRound.drivingQuestion); setRoundEditing(true); }}>{ROUND_COPY.revise}</button>
-                ) : null}
-                {openRoundContentMoved ? (
-                  <button type="button" className="round-tab" data-round-reopen-current="true" disabled={roundBusy !== null} onClick={() => void reopenNoteRound()}>{roundBusy === "reopen" ? ROUND_COPY.reopening : ROUND_COPY.reopenWithCurrent}</button>
-                ) : null}
-                {openRound && !reviewingTeaching && learningScene !== "result" ? (
-                  <button type="button" className="round-tab" disabled={roundBusy !== null} onClick={() => void endNoteRound()}>今天先到这里</button>
-                ) : null}
-                {openRound && !reviewingTeaching && learningScene === "result" ? (
-                  <button type="button" className="round-tab" disabled={roundBusy !== null} onClick={() => void endNoteRound()}>先到这里</button>
-                ) : null}
-              </div>
-            </div>
-          ) : null}
-        </section>
-      ) : null}
       {(<div hidden={leaf !== "history"}>{<section id="notebook-history-leaf" className="notebook-journey" aria-label="学习记录" tabIndex={-1} data-task-focus>
         <p className="notebook-journey__intro">速看、脑图、回想、批注和拓展都留在这里。打开一条记录，接着看当时的内容。</p>
           {/* ── 那一块为什么没被搬走（2026-09-29 量过的，不是猜的）─────────────────
@@ -3821,137 +2289,12 @@ const noteDocLive = useNoteDocLiveView(
         {footprintRowsLoaded && !footprintHasRecords ? (
           <div className="notebook-history-empty notebook-footprint-empty">
             <History size={28} aria-hidden="true" />
-            {historyTotal > 0 || historyItems.length > 0 ? (
-              <>
-                <p>这篇笔记还没有速看、回想、批注或拓展笔记。</p>
-                <p className="small">以前的讲解和练习仍在下方；回到正文，可以从更轻的方式开始。</p>
-              </>
-            ) : (
-              <>
-                <p>这篇笔记还没有学习记录。</p>
-                <p className="small">回到正文，先看懂这篇、回想一下，或圈出难懂的一句；做过的内容会留在这里。</p>
-              </>
-            )}
+            <p>这篇笔记还没有学习记录。</p>
+            <p className="small">回到正文，先看懂这篇、回想一下，或圈出难懂的一句；做过的内容会留在这里。</p>
             <button type="button" className="button primary" onClick={() => setLeaf("reading")}>回到笔记，选一种方式开始</button>
           </div>
         ) : null}
-        <details className="notebook-legacy-footprint" open={legacyHistoryOpen} onToggle={(event) => {
-          const open = event.currentTarget.open;
-          setLegacyHistoryOpen(open);
-          if (open) loadLegacyRouteCoverage();
-        }}>
-          <summary>以前的讲解与练习{historyTotal > 0 ? ` · ${historyTotal} 条记录` : ""}</summary>
-          <p className="small notebook-note">这里是以前的讲解和练习；新的记录会留在上面。</p>
-      {/* 旧学习流程的记录仍可回看，但不再作为新流程的默认入口。 */}
-      {historyItems.length > 0 ? (
-            <NotebookRoundHistory
-              items={historyItems}
-              total={historyTotal}
-              hasMore={historyHasMore}
-              busy={olderBusy}
-              failure={olderFailure}
-              recordDay={roundRecordDayV1}
-              recordModesLabel={roundRecordModesLabelV1}
-              historyStateLabel={roundHistoryStateLabelV1}
-              onInspect={inspectRoundInFootprint}
-              onLoadOlder={loadOlderRounds}
-            />
-      ) : null}
-        {/* 这一篇的核心路线册页（PRD §4.4；39d W4-5 ③）。摆在记录**上面**：
-            「这一篇走到哪」是那一页要答的第一句，而记录是它的证据。两者都空时
-            下面那个空态才出现——空态那一格说的是"还没留下学习记录"，而册页说的
-            是"还没有核心路线"，两句不能互相顶替。 */}
-        <NoteRouteCoverage
-          coverage={routeCoverage}
-          failure={routeCoverageFailure}
-          onInspectRound={inspectRoundInFootprint}
-        />
-        {reflectionRoundId ? (
-          <NotebookRoundRecap
-            masked={selectedHistoryMasked}
-            busy={inspectedRoundBusy}
-            failure={inspectedRoundFailure}
-            inspected={inspectedRound}
-            reflectionRoundId={reflectionRoundId}
-            selectedItem={selectedHistoryItem ?? null}
-            stateLabel={roundHistoryStateLabelV1}
-            recordDay={roundRecordDayV1}
-            practiceLabel={roundPracticeStateLabelV1}
-            onRetry={() => setHistoryInspectRevision((value) => value + 1)}
-            onOpenReflection={() => {
-              reflectionShelfRef.current?.scrollIntoView?.({ block: "start" });
-              reflectionShelfRef.current?.querySelector("summary")?.focus();
-            }}
-            detailRef={historyDetailRef}
-          />
-        ) : null}
-        </details>
-        <details className="notebook-review-options" data-note-review-options="true">
-          <summary>以后怎么复习（可选）</summary>
-          <p className="small notebook-note">这篇笔记的持续回访由你决定，卡片若单独开启复习会另行安排。</p>
-          <div className="notebook-objective__source" data-note-subscription="true">
-            {noteSubscription?.status === "active" ? (
-              <>
-                <button type="button" className="button" disabled={subscriptionBusy !== null}
-                  onClick={() => void runNoteSubscriptionAction("pause")}>
-                  {subscriptionBusy === "pause" ? "正在处理…" : reviewSourceSwitchLabel("note_subscription", true)}
-                </button>
-                <p className="small notebook-note">{reviewSourceScopeHint(noteSubscription)}</p>
-              </>
-            ) : (
-              <>
-                <button type="button" className="button" disabled={subscriptionBusy !== null}
-                  onClick={() => void runNoteSubscriptionAction("activate")}>
-                  {subscriptionBusy === "activate" ? "正在处理…" : reviewSourceSwitchLabel("note_subscription", false)}
-                </button>
-                <p className="small notebook-note">{noteSubscription ? reviewSourceScopeHint(noteSubscription) : "开启后，这篇里学过或已确认要维护的目标会持续回访。"}</p>
-              </>
-            )}
-            {subscriptionNotice ? <p className="small notebook-note" data-subscription-notice="true">{subscriptionNotice}</p> : null}
-            {subscriptionError ? <p className="small notebook-note" role="alert" data-subscription-error="true">{subscriptionError}</p> : null}
-          </div>
-          {noteObjective ? (
-            <div className="notebook-objective__hold" data-note-objective-hold="true">
-              <p className="small notebook-note">最近形成的一个学习目标：{noteObjective.publicSummary}</p>
-              {noteObjective.reviewHold ? (
-                <>
-                  <p className="small notebook-note" data-review-hold-label="true">{objectiveReviewHoldLabel(noteObjective.reviewHold)}</p>
-                  <button type="button" className="button" disabled={reviewHoldBusy !== null}
-                    onClick={() => void runObjectiveReviewHoldAction("resume")}>
-                    {reviewHoldBusy === "resume" ? "正在恢复…" : OBJECTIVE_RESUME_ACTION_LABEL}
-                  </button>
-                  <p className="small notebook-note">{objectiveReviewHoldHint(noteObjective.reviewHold)}</p>
-                </>
-              ) : (
-                <>
-                  <button type="button" className="button" disabled={reviewHoldBusy !== null}
-                    onClick={() => void runObjectiveReviewHoldAction("hold")}>
-                    {reviewHoldBusy === "hold" ? "正在处理…" : OBJECTIVE_HOLD_ACTION_LABEL}
-                  </button>
-                  <p className="small notebook-note">{objectiveHoldActionDescription()}</p>
-                </>
-              )}
-              {reviewHoldNotice ? <p className="small notebook-note" data-review-hold-notice="true">{reviewHoldNotice}</p> : null}
-              {reviewHoldError ? <p className="small notebook-note" role="alert" data-review-hold-error="true">{reviewHoldError}</p> : null}
-            </div>
-          ) : null}
-        </details>
       </section>}</div>)}
-      {(leaf === "learning" && learningScene === "result" && !reviewingTeaching && Boolean(openRound && (roundTeaching || roundPractices.length > 0))
-        || leaf === "history" && Boolean(reflectionRoundId && inspectedRound?.roundId === reflectionRoundId && (inspectedRound.view.teaching || inspectedRound.view.practices.length > 0))) ? <div className="note-reflection-anchor" ref={reflectionShelfRef}><NoteReflectionShelf key={note.noteId} noteId={note.noteId} roundId={leaf === "history" ? reflectionRoundId : openRound?.roundId}
-        refreshKey={`${roundTeaching?.teachingId ?? ""}:${roundPractices.map(p => `${p.runId}:${p.phase}`).join(",")}`}
-        workspaceEpoch={epochRef.current} canAppend={canSave && Boolean(noteDocLive.fragment) && !saving} shared={note.shareScope === "shared"}
-        openSources={leaf === "history" && Boolean(reflectionRoundId)}
-        canUseForTeaching={leaf !== "history" && Boolean(openRound)}
-        selectedForTeaching={teachingReflectionIds}
-        onSelectionChange={setTeachingReflectionIds}
-        onInspectBody={() => switchMode("preview")}
-        onAppend={async (source, annotation) => {
-          if (!note.permissions.canSave || !noteDocLive.fragment || saving) throw new Error("正文此刻不可编辑，请回到笔记核对权限和保存状态。");
-          stageReflectionAppend(noteDocLive.fragment, note.noteId, source, annotation, appendedReflections.current);
-          const saved = await save("manual");
-          return saved;
-        }} /></div> : null}
       {/* Leaving the editor now commits the pending draft first, so a reader who
           lands here must be told what happened to it instead of seeing the older
           server text with no explanation. */}
@@ -3974,16 +2317,10 @@ const noteDocLive = useNoteDocLiveView(
           </button>
         </p>
       ) : null}
-      {leaf === "reading" && learningView === "body" && generationReason ? <p className="small notebook-note">{generationReason}</p> : null}
-      {leaf === "reading" && learningView === "body" && generationFailure ? <p className="small notebook-note" role="alert">{generationFailure}</p> : null}
     </>
   ) : null;
 
-  /**
-   * 「版本历史」「生成设置」两个开关。阅读页与编辑页共用同一对：面板已经在同一
-   * 个组件里了；此前只有阅读页摆出按钮，编辑态摸不到
-   * （复盘 #15）。
-   */
+  /** 「版本历史」那一颗：阅读页与编辑页共用；此前只有阅读页摆出按钮，编辑态摸不到（复盘 #15）。 */
   const versionAndOptionsToggles = note ? (
     <>
       <button
@@ -4014,7 +2351,7 @@ const noteDocLive = useNoteDocLiveView(
         onChange={(event) => { const value = event.currentTarget.value.replace(/\r?\n/g, " "); applyDraft({ ...draftRef.current, title: value }); setLocalTitle(value, "manual"); }} />
     </h2>
   ) : <h2>{readTitle || "未命名笔记"}</h2>;
-  const pageTitle = leaf === "expansion" ? "往外学" : leaf === "history" ? "学习记录" : leaf === "learning" ? "学这篇笔记"
+  const pageTitle = leaf === "expansion" ? "往外学" : leaf === "history" ? "学习记录"
     : learningView === "overview" ? "这篇的速看" : learningView === "recall" ? "回想一下" : learningView === "artifact" ? "互动讲解"
       : isNoteEditingMode(mode) ? "笔记编辑" : "这篇笔记";
   const pageSubtitle = leaf === "expansion" ? "先翻开，再决定收下哪篇" : leaf === "history" ? "留下的线索都在这页"
@@ -4067,8 +2404,6 @@ const noteDocLive = useNoteDocLiveView(
       {isNoteEditingMode(mode) && leaf === "reading" ? <>
         {restoredDraftNote}
         {saveFailure ? <p className="small notebook-note" role="alert">保存没成功：{saveFailure}</p> : null}
-        {generationReason ? <p className="small notebook-note">{generationReason}</p> : null}
-        {generationFailure ? <p className="small notebook-note" role="alert">{generationFailure}</p> : null}
       </> : null}
     </div>
   ) : null;
@@ -4171,21 +2506,27 @@ const noteDocLive = useNoteDocLiveView(
                     {!editable ? <span className="tag">只读</span> : null}
                   </div>
                 </header> : null}
-                onMode={switchMode} outline={noteOutline(noteDocLive.fragment, readSourceBlocks)}
+                onMode={switchMode} outline={noteOutline(noteDocLive.fragment, readSourceBlocks)
+                  // The hidden duplicate title heading has no rendered target; keep
+                  // the page's own outline pointing at headings that are on the page.
+                  .filter((entry) => entry.block !== leadingTitleBlock?.ordinal)}
                 onLocate={locateTeachingReference}
                 onOpenDirectory={() => { setHistoryOpen(false); setSourceBagOpen(false); setOpenAnnotationId(null); setAnnotationTaskOpen(false); }}
                 learningView={leaf === "reading" ? learningView : leaf}
                 onLearning={learningEntry.request}
                 onBody={() => { clearGoalResultSelection(); rememberReadingPosition(); closeSidePage(); setLeaf("reading"); setLearningView("body"); setOverviewOpen(false); }}
                 onHistory={() => { clearGoalResultSelection(); rememberReadingPosition(); closeSidePage(); setLeaf("history"); }}
+                onCard={() => {
+                  clearGoalResultSelection(); rememberReadingPosition(); closeSidePage();
+                  openNoteLearningCard({ noteId: note.noteId, noteVersionId: note.currentVersionId, mode });
+                }}
                 primaryAction={isNoteEditingMode(mode) && leaf === "reading" && learningView === "body" && canSave ? <button type="button" className="button primary"
                     disabled={saving} onClick={() => void save("manual")}>{saveState === "error" ? "重试保存" : saving ? "正在保存…" : "保存版本"}</button> : null}
                 taskActions={leaf === "expansion" && expansionTask?.status === "ready" ? <>
                   <span className="notebook-expansion-selection" role="status">待收下 {pendingExpansionDrafts.length} 篇 · 未选中的仍是草稿</span>
                   <button type="button" className="button primary" disabled={expansionReviewSaving || !pendingExpansionDrafts.length} onClick={() => void confirmNoteExpansionDrafts()}>{expansionReviewSaving ? "正在保存…" : `确认收下 ${pendingExpansionDrafts.length} 篇`}</button>
                 </> : null}
-                sourceAction={<button type="button" className="text-action" aria-expanded={sourceBagOpen} onClick={() => setSourceBagOpen(!sourceBagOpen)}><Link2 size={16} aria-hidden="true" />资料袋</button>}
-                generationAction={generationAction}
+                sourceAction={<button type="button" className="text-action notebook-desk__utility-icon" aria-label="资料袋" title="资料袋" aria-expanded={sourceBagOpen} onClick={() => setSourceBagOpen(!sourceBagOpen)}><Link2 size={16} aria-hidden="true" /><span className="notebook-desk__utility-label">资料袋</span></button>}
                 extraActions={<>
                   {annotationDraft.draft ? <button type="button" className="text-action" onClick={() => setAnnotationDraftOpen(true)}><PencilLine size={14} aria-hidden="true" />继续写批注</button> : null}
                   {versionAndOptionsToggles}
@@ -4238,7 +2579,6 @@ const noteDocLive = useNoteDocLiveView(
         </article>
         </div>
       </main>
-      {generationSetup}
     </>
   );
 }

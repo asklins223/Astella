@@ -31,23 +31,14 @@ function routeCapability(contextWindowTokens: number, maxOutputTokens = 4_096): 
   };
 }
 
-test("任务身份只从持久化页面上下文中的合法实体 ID 推导", () => {
-  const runId = "00000000-0000-4000-8000-000000000111";
-  const cardId = "00000000-0000-4000-8000-000000000222";
-
-  assert.deepEqual(
-    taskEntityFromPersistedPageContext({ context: { pageKind: "learning_run", runId } }),
-    { entityType: "learning_run", entityId: runId },
-  );
-  assert.deepEqual(
-    taskEntityFromPersistedPageContext({ context: { pageKind: "review", cardId } }),
-    { entityType: "card", entityId: cardId },
-  );
-  assert.equal(
-    taskEntityFromPersistedPageContext({ context: { pageKind: "learning_run", runId: "forged" } }),
-    null,
-  );
-  assert.equal(taskEntityFromPersistedPageContext({ context: { pageKind: "home" } }), null);
+test("temporary learning memories use the current note identity and reject retired page kinds", () => {
+  const noteId = "00000000-0000-4000-8000-000000000111";
+  assert.deepEqual(taskEntityFromPersistedPageContext({ context: { pageKind: "note", noteId } }),
+    { entityType: "note", entityId: noteId });
+  assert.equal(taskEntityFromPersistedPageContext({ context: { pageKind: "note", noteId: "forged" } }), null);
+  for (const pageKind of ["home", "learning_run", "review", "card"]) {
+    assert.equal(taskEntityFromPersistedPageContext({ context: { pageKind, noteId, runId: noteId, cardId: noteId } }), null);
+  }
 });
 
 test("active 目录按声明容量整条取舍，少给了几条当场说清楚", () => {
@@ -253,18 +244,4 @@ test("resident 正文整条装配：装不下的整条不入选并可计数，�
   for (const memory of tight.residentMemories) {
     assert.ok(Object.values(bodies).includes(memory.content), "入选的正文不再是整条");
   }
-});
-
-test("正式学习 tutor 不读取或注入 resident 与 active 记忆", async () => {
-  let calls = 0;
-  const context = await assembleCompanionContext(
-    { execute: async () => { calls += 1; return []; } } as never,
-    { workspaceId: "workspace-1", userId: "user-1" },
-    { runId: "run-1", groundedTutorContext: { claim: "只用证据" } },
-  );
-
-  assert.equal(calls, 0);
-  assert.deepEqual(context.residentMemories, []);
-  assert.deepEqual(context.memoryDirectory, []);
-  assert.equal(context.retrievalMode, "disabled");
 });

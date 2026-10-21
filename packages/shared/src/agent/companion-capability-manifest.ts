@@ -78,7 +78,7 @@ const NAVIGATION_SCENE_GUIDANCE = {
  */
 const RECOMMENDATION_SCENE_GUIDANCE = {
   shared: [
-    "推荐卡片只在用户要你推荐/找/挑学习内容时挂；笔记候选先用companion_search_notes，学习卡候选先用companion_search_cards（用户问到期复习才用companion_list_due_reviews），再把本轮挑中的 id 一次放进 items，不要一条一次调用。",
+    "推荐卡片只在用户要你推荐/找/挑学习内容时挂；笔记候选先用companion_search_notes，学习卡候选先用companion_search_cards（用户问过去做了什么才用companion_list_recent_activity），再把本轮挑中的 id 一次放进 items，不要一条一次调用。",
     "学习卡搜索结果已经带题面，按它挑选即可；不要用companion_open_note或companion_open_card来准备推荐，那会触发跳转。卡片上的标题和种类由服务端按真实身份查回，正文只讲为什么是这一样；认不出的 id 会在回执里如实列出来，那时照实说没挂上，不要换个相近的顶替。",
   ],
 };
@@ -99,7 +99,7 @@ export const companionCapabilityManifest: readonly AgentCapabilityDeclaration[] 
   tool("companion_save_participation", "用户本轮明确要求以后怎样相处或停用时，合并保存自由 Markdown，保留未修改的要求与原意；只有真实保存回执后才说记住。", "reversible_low", false, companionParticipationToolWriteV1Schema,
     { label: "正在记住我们的相处方式", discovery: "直接告诉伴星以后怎样相处，她会记住并结合实际情境践行。" }, { maxInputChars: 20_000 }),
   tool("companion_arrange_attention", "为用户偏好或自己的疑问安排事件、重评或完成旧关注。目标已满足仍以实际版本和完整目标状态核验；changed=false 是成功且不增版本，不必重读或改写 intent。无后续就完成。", "reversible_low", false, companionAttentionWriteV1Schema, { label: "正在安排接着关注" }, { maxInputChars: 6_000 }),
-  tool("companion_publish_utterance", "确有值得说的新想法、提醒、问候或闲聊时发布一条独立发言；普通回答直接完整回复，不靠本工具拆段凑消息。", "reversible_low", false, companionPublishUtteranceV1Schema, { label: "正在接着说" }, { maxInputChars: 14_000 }),
+  tool("companion_publish_utterance", "把一条回复分成多条独立消息时使用：几个独立小点、连续几次短回应，或用户明确要求分条/逐句。分条时从第一句就用本工具，不要先写普通正文或加载说明；每条承担实际内容，最后一条final=true。需要连贯阅读的代码、公式、列表和长论证保持一条完整消息。", "reversible_low", false, companionPublishUtteranceV1Schema, { label: "分次发言" }, { maxInputChars: 14_000 }),
   tool("companion_finish_participation", "内部考虑没有值得说的新内容时直接安静结束，不把执行收尾发成发言，也不需要再多一次模型。", "reversible_low", false, companionFinishParticipationV1Schema, { label: "考虑已结束" }),
   tool("companion_write_annotation", "从原句发起伴星解释时写入完整批注。annotationTarget 已绑定原句、位置和身份，不可替换；用户保存后可编辑、删除或拓展。", "reversible_low", false, companionWriteAnnotationV1Schema,
     { label: "正在写原句解释" }, { maxInputChars: null, maxOutputChars: null }),
@@ -118,7 +118,7 @@ export const companionCapabilityManifest: readonly AgentCapabilityDeclaration[] 
   // 描述统一写成"什么时候该调"，因为工具描述是她唯一能看到的用法说明。
   tool("companion_search_notes", "按关键词搜索当前空间可见笔记。指定笔记用 match=all，找关联内容用 any。候选需读正文核对；不能只凭标题建链接。", "read", false, z.object({ query: z.string().min(1).max(120), limit: z.number().int().min(1).max(10).optional(), match: z.enum(["all", "any"]).optional() }).strict(), { label: "正在翻你的笔记" }),
   tool("companion_search_cards", "按关键词搜索当前空间可见的学习卡，返回真实 cardId、题面和摘要。用户让你找或推荐学习卡时调用；要推荐时挑出本轮结果里的 id，再交给 companion_recommend_learning 做成可点卡片。", "read", false, z.object({ query: z.string().min(1).max(120), limit: z.number().int().min(1).max(8).optional(), match: z.enum(["all", "any"]).optional() }).strict(), { label: "正在翻你的学习卡" }, { maxOutputChars: 8_000 }),
-  tool("companion_create_note", "用户要把讨论写成笔记、或点名主题要新建一到几篇笔记时调用（一次保存一篇）。允许联网则先搜读再选 links；禁止时独立保存、links 留空。速看/拓展等已有笔记的产物用 agent_start_goal；回执才代表接受。", "reversible_low", false, companionCreateNoteV1Schema,
+  tool("companion_create_note", "用户要求新建笔记时调用，一次保存一篇完整正文。允许读取笔记库时先检索关联内容，读取候选正文后才能选 links；没有相关内容或禁止库内读取时 links 留空。聊天正文不保存笔记，取得真实回执才算保存。已有笔记的速看、拓展用 agent_start_goal。", "reversible_low", false, companionCreateNoteV1Schema,
     { label: "正在写成笔记", discovery: "把聊清楚的知识点写成一篇可编辑笔记；经用户允许时可链接库内相关内容。" }, { maxInputChars: null, maxOutputChars: null }),
   // 「开启共享」这一句她以前只能回"没那个按钮"，而且这回她说的是真的：工具面里没有共享，
   // 页面词表里也没有协作空间，连跳过去自己点都跳不了（2026-10-09 线上）。补的是这个真缺口。
@@ -149,14 +149,12 @@ export const companionCapabilityManifest: readonly AgentCapabilityDeclaration[] 
   tool("companion_open_page", "跳到用户明确要求前往的某个页面，页面词表见 page 的说明。用户说的页面不在列里时别硬挑相近的，问他在哪儿看到的。", "read", false, z.object({ page: companionPageKindSchemaV2 }).strict(), { label: "正在带你去那个页面" }, {}, NAVIGATION_SCENE_GUIDANCE),
   // 描述里原有一句"（与首页同一口径）"——**2026-09-24 删掉**（39d W2-3 的对账核实）。
   // 那句话不是注释，是一条**需要断言的关系**，而逐字段核过之后它**只在三项上成立**：
-  // 笔记数 / 活跃卡数 / 到期数两侧同源（`notes` / `learning_cards_v2` / `review_schedules`），
+  // 笔记数 / 学习卡数两侧同源（`notes` / `note_learning_cards`），
   // 而 `todayMinutes` / `weekMinutes` 读的 `learning_metric_events` **在 `apps/api/src/modules`
   // 全域零命中**——首页的统计端点根本不读时长表，两个字段**没有可比对象**。
   // 在把口径对齐（或让对账测试只断言那三项）之前，不保留一句没人验的等价声明。
-  tool("companion_get_learning_stats", "回答进度时读取今日/本周学习时长、到期复习、活跃卡和笔记数；招呼、闲聊、接续话题不调用。数值用 {{f:key}} 由服务端填。", "read", false, emptyArguments, { label: "正在看你的学习数据" }),
-  tool("companion_list_task_queue", "列出当前学习运行里排着的任务（含进度和第几步）。用户问「我接下来要做什么」「还有什么任务」时调用。", "read", false, emptyArguments, { label: "正在看你的任务队列" }),
-  tool("companion_list_due_reviews", "列出到期（或快到期）的复习卡，带卡片标题和到期时间。用户问「有什么要复习的」时调用。", "read", false, z.object({ limit: z.number().int().min(1).max(20).optional() }).strict(), { label: "正在看到期复习" }),
-  tool("companion_open_card", "打开一个已存在的学习卡片。cardId 直接用到期复习列表给的那个 id 就行。", "read", false, z.object({ cardId: uuid }).strict(), { label: "正在打开那张卡" }, {}, NAVIGATION_SCENE_GUIDANCE),
+  tool("companion_get_learning_stats", "回答进度时读取今日/本周学习时长、学习卡和笔记数；招呼、闲聊、接续话题不调用。数值用 {{f:key}} 由服务端填。", "read", false, emptyArguments, { label: "正在看你的学习数据" }),
+  tool("companion_open_card", "打开一个已存在的学习卡片。cardId 用搜索学习卡给的那个 id。", "read", false, z.object({ cardId: uuid }).strict(), { label: "正在打开那张卡" }, {}, NAVIGATION_SCENE_GUIDANCE),
   // 推荐要的是**入口**，不是**跳屏**。上一行那条 open_card 与 open_note 都带 route：full 档会
   // 立刻执行，推荐五样就连跳五次；而 companion_search_notes 只回一批 noteId，运行时只在工具
   // 带回 route 时才生成落点块（companion-agent-runtime 那一段），所以她搜到的东西永远点不动。
@@ -165,11 +163,10 @@ export const companionCapabilityManifest: readonly AgentCapabilityDeclaration[] 
   tool("companion_recommend_learning", "把你要推荐给用户的那几样做成能点的卡片：笔记、学习卡、笔记学出来的互动演示/思维导图/速看。用户请你推荐、找、挑学习内容时用；它不是跳转，页面不会自己动。", "read", false, companionRecommendLearningV1Schema,
     { label: "正在把这些做成能点的卡片" }, { maxInputChars: 6_000 }, RECOMMENDATION_SCENE_GUIDANCE),
   // 参数名从 `keyPointId` 改成 `objectiveId`（2026-09-24，39d W2-1）：执行体打的是
-  // `learning_objectives_v2.objective_id`，而库里的 `key_point_id` 是另一个 id-space
+  // 目标类 id，而库里的 `key_point_id` 是另一个 id-space
   // （`validation_assistance_exposures.key_point_id → card_key_points.id`）。顺带把
   // 模型可见的 JSON schema 从 `minLength/maxLength` 收成 `format: "uuid"`——与 zod 那份
   // 成对，理由同上面三条。
-  tool("companion_focus_graph", "聚焦知识图谱中的某个学习目标。", "reversible_low", false, z.object({ objectiveId: uuid, lens: z.enum(["current_target", "evidence", "provenance", "issues"]) }).strict(), { label: "正在星图上定位" }, {}, NAVIGATION_SCENE_GUIDANCE),
   // `noteId` **可选**（39d W2-1 的裁定，2026-09-24）：给了就按那篇笔记收窄查找范围，
   // 修掉"无法指名哪一篇、服务端只能挑最近一条"；不给就保持今天的行为。
   // **改必填**（2026-09-26，W2-1 判据 1 转绿）：consequential 写工具必须能指名对象。
@@ -177,20 +174,14 @@ export const companionCapabilityManifest: readonly AgentCapabilityDeclaration[] 
   // 而伴星入口本来就是**语境锚定**的："学眼前这一篇"（39b C1 原话），noteId 从
   // 页面上下文/事实块拿得到；无 note-origin 的目标继续走人的那条路（笔记页主行动）。
   // 服务端不再"挑最近一条"（挑错用户看不出为什么——C1 的原诉）。
-  tool("companion_start_learning", "开始或继续这一篇笔记的学习。noteId 必填：从页面上下文或 <this_turn_facts> 拿，不要猜。服务端会在那篇笔记的目标上开出运行（没有卡也能开）。", "consequential", true, z.object({ noteId: uuid }).strict(), { label: "正在开一轮学习" }),
   // 同批（C1 的处方原话"恢复接受明确 runId"）：runId 必填，来源是 <this_turn_facts>
   // 的回填（"这篇已有 N 轮在暂停／进行中（runId=…）"）——多个候选时事实块会列出来，
   // 缺失就说明缺失，不再由服务端默默挑最近一条。执行侧按 workspace+user 归属校验。
-  tool("companion_resume_learning", "恢复一次明确的学习运行。runId 必填：用 <this_turn_facts> 回填的那个；多个候选就列给用户选，没有就照实说，不要猜。", "consequential", true, z.object({ runId: uuid }).strict(), { label: "正在接着学" }),
   // 以下动作改学习状态或排程数据：即使可逆也算 consequential，guided 档必须确认。
   // `format: "uuid"` 不是装饰：模型看得见的这份 schema 与下面 zod 那份**必须成对**。
   // 这三条原先写的是 `minLength/maxLength`，而 zod 收紧成 `uuid` —— 模型按宽的那份
   // 组织参数、服务端按严的那份拒绝，而 W2-4 的 S1 探针要量的正是"参数不合 schema 的比例"，
   // 两侧不一致会让那个读数量错东西。
-  tool("companion_pause_learning", "暂停当前学习运行。", "consequential", true, z.object({ runId: uuid }).strict(), { label: "正在暂停这一轮" }),
-  tool("companion_request_hint", "请求当前任务的提示。", "consequential", true, z.object({ runId: uuid, taskId: uuid, level: z.union([z.literal(1), z.literal(2), z.literal(3)]) }).strict(), { label: "正在找一条提示" }),
-  tool("companion_switch_task_variant", "切换当前任务的题目变体。reason 写用户为什么要换这一题（换法本身不记理由，只有这句会进这次修订的记录）。", "consequential", true, z.object({ runId: uuid, taskId: uuid, alternativeId: z.string().min(1).max(200), reason: z.string().min(1).max(200) }).strict(), { label: "正在换一道题" }),
-  tool("companion_defer_review", "延期当前复习提醒。", "consequential", true, z.object({ scheduleId: uuid, scheduleGeneration: z.number().int().nonnegative(), deferredUntil: z.string().datetime(), reasonCode: z.enum(["user_requested", "temporary_unavailable"]) }).strict(), { label: "正在把复习往后挪" }),
   // auto-set / auto-fill（2026-09-19 权限分级对齐原设计）：可逆的低风险写入。
   // requiresConfirmation=true 使 guided 档仍走提案确认；full 档视用户预授权直接执行。
   // kind 枚举与 assistant_memory_items.kind 的 DB CHECK 约束同源（见迁移）。
@@ -336,7 +327,7 @@ export const companionCapabilityManifest: readonly AgentCapabilityDeclaration[] 
         context.addIssue({ code: z.ZodIssueCode.custom, path: ["validUntil"], message: "validUntil must follow validFrom" });
       }
     }), { label: "正在改那条记忆" }),
-  tool("companion_list_recent_activity", "列出用户最近在系统里做过什么：写或改过的笔记、完成的复习、新增的卡片、到点兑现的提醒。用户问「我最近在忙什么」时调用。", "read", false, z.object({ days: z.number().int().min(1).max(30).optional() }).strict(), { label: "正在看最近做了什么" }),
+  tool("companion_list_recent_activity", "列出用户最近在系统里做过什么：写或改过的笔记、新增的学习卡、到点兑现的提醒。用户问「我最近在忙什么」时调用。", "read", false, z.object({ days: z.number().int().min(1).max(30).optional() }).strict(), { label: "正在看最近做了什么" }),
   tool("companion_set_boundary", "调整伴星的行为边界：是否可以玩趣、是否催学习、是否带语音情绪标签、口头禅。用户说「别催我学习」时调用。", "reversible_low", false, z.object({ allowPlayful: z.boolean().optional(), allowNudgeLearning: z.boolean().optional(), allowVoiceTags: z.boolean().optional(), catchphrase: z.string().min(1).max(30).optional() }).strict(), { label: "正在改行为边界" }),
   // 呈现类工具（方案 29 §4.8，抱怨 #10「只能输出纯文本」）。它不读也不写数据，只是把
   // 结构交给客户端排版，所以 riskClass=read：任何权限档都给，永不弹确认。

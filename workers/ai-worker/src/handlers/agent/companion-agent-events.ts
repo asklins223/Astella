@@ -253,6 +253,9 @@ export async function appendAgentEvent(
   type: "agent.tool",
   payload: Record<string, unknown>,
 ): Promise<void> {
+  if (payload.tool && typeof payload.tool === "object") {
+    payload = { ...payload, tool: { ...payload.tool, occurredAt: new Date().toISOString() } };
+  }
   await withWorkerWorkspaceTransaction(
     { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
     async (tx) => {

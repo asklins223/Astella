@@ -56,6 +56,7 @@ import { companionDisplayName, subscribeCompanionDisplayName } from "./companion
 import { CompanionHud, type CompanionHudAction } from "../hud/CompanionHud";
 import { useCompanionSeatBudget } from "./use-companion-seat-budget";
 import { useNotebookFullscreenActive } from "../../surfaces/notebook/shell/notebook-fullscreen-state.ts";
+import { isImmersiveCardScene, useLearningCardPresentation } from "../../surfaces/notebook/learning/card/learning-card-presentation";
 import { createCueDeliveryReporter, findCueDelivery } from "../voice/companion-cue-delivery";
 import { CompanionNotificationCenter } from "../notify/CompanionNotificationCenter";
 import { hasForeignModal } from "../content/companion-modal-ownership";
@@ -316,9 +317,14 @@ export function CompanionPresence() {
   const hudPage = useRoomStore((state) => state.hudPage);
   const guideFilm = useRoomStore(state => state.companionGuideFilm);
   const notebookFullscreen = useNotebookFullscreenActive();
+  const cardScene = useLearningCardPresentation(state => state.scene);
+  const cardReward = useLearningCardPresentation(state => state.reward);
   const companionPolicy = guideFilm ? { ...HUD_PAGES[hudPage].companion,
     mode: "ambient" as const, seat: "right" as const, framing: "full" as const,
     interaction: "none" as const, proactive: "silent" as const, draggable: false,
+  } : isImmersiveCardScene(cardScene) ? { ...HUD_PAGES[hudPage].companion,
+    mode: cardScene === "practice" || cardScene === "grading" ? "hidden" as const : "ambient" as const,
+    seat: "right" as const, framing: "bust" as const, proactive: "silent" as const, draggable: false,
   } : notebookFullscreen ? { ...HUD_PAGES[hudPage].companion, seat: "right" as const, framing: "bust" as const, draggable: false } : HUD_PAGES[hudPage].companion;
   const homeMode = companionPolicy.mode === "home";
   const sceneKey = surface ?? "room";
@@ -936,7 +942,7 @@ export function CompanionPresence() {
       window.cancelAnimationFrame(frame);
       observer.disconnect();
     };
-  }, [clampVisibleCompanion, companionPolicy.seat, companionPosition.x, companionPosition.y, homeMode, hudPage, projectCompanionIntoCamera, surface, targetWorldAnchor, guideFilm, notebookFullscreen]);
+  }, [clampVisibleCompanion, companionPolicy.seat, companionPosition.x, companionPosition.y, homeMode, hudPage, projectCompanionIntoCamera, surface, targetWorldAnchor, guideFilm, notebookFullscreen, cardScene]);
 
   useGSAP(() => {
     if (!homeMode) return;
@@ -1296,12 +1302,12 @@ export function CompanionPresence() {
 
   // 只提供当前场景最可能需要的真实入口；完整功能目录仍由房间物件承担。
   const actionItems = useMemo<readonly CompanionHudAction[]>(() => (
-    [
+    ([
       "continue",
-      "today-review",
       "current-notebook",
-    ].map((id) => {
-      const feature = getHomeFeature(id as HomeFeatureId);
+      "all-notes",
+    ] satisfies readonly HomeFeatureId[]).map((id) => {
+      const feature = getHomeFeature(id);
       return {
         id: feature.id,
         title: feature.title,
@@ -1355,7 +1361,7 @@ export function CompanionPresence() {
   const cuePresentation = chatPhase === "sending" || liveReply
     ? presentationForCharacterCueIntent(assistantCue?.intent ?? null)
     : null;
-  const presentation = touchKind === "head"
+  const presentation = cardReward.active ? "celebrate" : touchKind === "head"
     ? "celebrate"
     : touchKind === "body"
       ? "think"
@@ -1364,7 +1370,9 @@ export function CompanionPresence() {
       : presentedCompanionMoment === "lamp" || presentedCompanionMoment === "confirm"
         ? "celebrate"
         : cuePresentation ?? (engaged ? "invite" : "idle");
-  const presentationEmotion: Live2DEmotionEvent | null = touchKind === "head"
+  const presentationEmotion: Live2DEmotionEvent | null = cardReward.active
+    ? { emotion: "celebrate", intensity: .9, at: cardReward.at }
+    : touchKind === "head"
     ? { emotion: "happy", intensity: 0.9 }
     : touchKind === "body"
       ? { emotion: "curious", intensity: 0.65 }
@@ -1381,25 +1389,19 @@ export function CompanionPresence() {
   // 唯一形态下的状态文案（形态切换已随 orb 一并移除）。
   const companionUnavailable = !live2dRuntimeAllowed || status === "unavailable";
 
-  /**
-   * 「事件型暂停」= 失焦 + 弹窗。它与「持续条件」必须分开判：**只有发生的那一刻**才收起
-   * 已经打开的那一层。
-   *
-   * 为什么不能当持续条件（2026-09-19 实机复核发现）：失焦的判据住在主进程
-   * （`shared/window-state.ts` 要「可见且聚焦」才算 visible），经 IPC 异步送到渲染层。
-   * 而"把窗口从后台点回前台"的那一下点击，本身就会带着 `windowState === "hidden"` 的旧
-   * 快照进到点击处理器——按持续条件处理时，冷点击唤起的交互台会在同一帧被撤销：用户看到
-   * 「嗯？」冒出来又消失，得点第二次才开。full 动效因为中间隔了 180ms 节拍侥幸躲过，
-   * lite / off / 减少动效下必现。
-   */
+  /** A foreign modal yields the interaction surface. Window blur only pauses
+   * activity; reopening the app retains the user's journal and readers. */
   const eventPaused = homeV2ModalOpen || externalModalOpen || windowState !== "visible";
-  const eventPausedRef = useRef(eventPaused);
+  // Leaving the app pauses the companion, but keeps papers the user opened.
+  // In particular a journal/preview must survive switching to another app.
+  const coveringModalOpen = homeV2ModalOpen || externalModalOpen;
+  const coveringModalRef = useRef(coveringModalOpen);
   useEffect(() => {
-    const onset = eventPaused && !eventPausedRef.current;
-    eventPausedRef.current = eventPaused;
+    const onset = coveringModalOpen && !coveringModalRef.current;
+    coveringModalRef.current = coveringModalOpen;
     if (mode === "closed" || !onset) return;
     setMode("closed");
-  }, [eventPaused, mode, setMode]);
+  }, [coveringModalOpen, mode, setMode]);
 
   // 持续条件：页面不可见 / 账号关闭 / Live2D 不可用——只要成立就不允许交互层存在。
   useEffect(() => {
@@ -1474,6 +1476,7 @@ export function CompanionPresence() {
       data-task-surface-quiet={taskSurfaceQuiet || undefined}
       data-guide-film={guideFilm || undefined}
       data-notebook-fullscreen={notebookFullscreen || undefined}
+      data-learning-card-scene={cardScene ?? undefined}
       data-presence-paused={presencePaused || undefined}
       data-external-modal={externalModalOpen || undefined}
       data-home-modal={homeV2ModalOpen || undefined}
@@ -1512,7 +1515,7 @@ export function CompanionPresence() {
               emotion={presentationEmotion}
               inviteTrigger={inviteTrigger}
               toolAttentionTrigger={toolAttentionTrigger}
-              moment={characterMoment}
+              moment={cardReward.active ? { name: "celebration", at: cardReward.at } : characterMoment}
               onStatus={setStatus}
               // 首页全身取景；任务页半身取景（头与上半身充满容器，腿部裁出）。
               framing={companionPolicy.framing}

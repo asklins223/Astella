@@ -51,11 +51,8 @@ test("Agent permission levels keep hard confirmation boundaries", () => {
     assert.equal(canUseCompanionAgentTool("guided", definition).requiresConfirmation, true, name);
   }
   // 正控制：这份清单不是空集（空集时上面那个循环"全绿"等于什么都没判）。
-  assert.ok(COMPANION_PROPOSAL_EXECUTED_TOOLS.size >= 6, `清单只剩 ${COMPANION_PROPOSAL_EXECUTED_TOOLS.size} 条`);
+  assert.equal(COMPANION_PROPOSAL_EXECUTED_TOOLS.size, 0, "退役链路的提案执行工具已清空");
 
-  const focusGraph = getCompanionAgentTool("companion_focus_graph");
-  assert.ok(focusGraph);
-  assert.equal(canUseCompanionAgentTool("guided", focusGraph).requiresConfirmation, true);
 });
 
 test("低权限提供可审阅的写工具；未知档位不提供能力", () => {

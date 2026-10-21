@@ -2,23 +2,36 @@ package com.astella.mobile.ui.screens
 
 import com.astella.mobile.ui.design.*
 
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.TextPaint
+import android.text.method.LinkMovementMethod
+import android.text.style.ClickableSpan
 import android.view.ActionMode
 import android.view.Menu
 import android.view.MenuItem
+import android.view.View
 import android.widget.TextView
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.astella.mobile.R
 import com.astella.mobile.data.*
@@ -61,6 +74,8 @@ fun CompanionParticles(level: Float, active: Boolean, reduced: Boolean, modifier
     }
 }
 
+private val noteLinkPattern = Regex("\\[([^\\]]+)]\\(astella-note:([^\\s)]+)\\)")
+
 @Composable
 fun CompanionSelectableText(
     text: String,
@@ -69,10 +84,16 @@ fun CompanionSelectableText(
     color: androidx.compose.ui.graphics.Color = StudyPalette.ink,
     lineSpacingMultiplier: Float = if (serif) 1.72f else 1.4f,
     letterSpacing: Float = if (serif) .02f else 0f,
+    italic: Boolean = false,
+    onOpenNote: ((String) -> Unit)? = null,
     onSelection: (String, Boolean) -> Unit,
+    onAnnotate: (() -> Unit)? = null,
 ) {
     val ink = color
+    val accent = StudyPalette.accent
     val latestSelection by rememberUpdatedState(onSelection)
+    val latestAnnotate by rememberUpdatedState(onAnnotate)
+    val latestOpenNote by rememberUpdatedState(onOpenNote)
     AndroidView(
         factory = { context ->
             TextView(context).apply {
@@ -82,10 +103,15 @@ fun CompanionSelectableText(
                     override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
                         menu.add(0, 701, 0, "伴星解释")
                         menu.add(0, 702, 1, "伴星改写")
+                        if (latestAnnotate != null) menu.add(0, 703, 2, "留批注")
                         return true
                     }
                     override fun onPrepareActionMode(mode: ActionMode, menu: Menu) = false
                     override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean {
+                        if (item.itemId == 703) {
+                            latestAnnotate?.invoke()
+                            mode.finish(); return true
+                        }
                         if (item.itemId !in listOf(701, 702)) return false
                         val start = minOf(selectionStart, selectionEnd).coerceAtLeast(0)
                         val end = maxOf(selectionStart, selectionEnd).coerceAtMost(text.length)
@@ -97,12 +123,46 @@ fun CompanionSelectableText(
             }
         },
         update = { view ->
-            if (view.text.toString() != text) view.text = text
+            if (view.tag != text) {
+                view.tag = text
+                val matches = noteLinkPattern.findAll(text).toList()
+                if (matches.isEmpty()) {
+                    view.text = text
+                } else {
+                    val builder = SpannableStringBuilder()
+                    var cursor = 0
+                    matches.forEach { match ->
+                        builder.append(text.substring(cursor, match.range.first))
+                        val start = builder.length
+                        val label = match.groupValues[1]
+                        val noteId = match.groupValues[2]
+                        builder.append(label)
+                        val end = builder.length
+                        builder.setSpan(object : ClickableSpan() {
+                            override fun onClick(widget: View) { latestOpenNote?.invoke(noteId) }
+                            override fun updateDrawState(ds: TextPaint) {
+                                ds.color = android.graphics.Color.argb(
+                                    (accent.alpha * 255).toInt(), (accent.red * 255).toInt(),
+                                    (accent.green * 255).toInt(), (accent.blue * 255).toInt(),
+                                )
+                                ds.isUnderlineText = false
+                            }
+                        }, start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        cursor = match.range.last + 1
+                    }
+                    builder.append(text.substring(cursor))
+                    view.text = builder
+                    view.movementMethod = LinkMovementMethod.getInstance()
+                }
+            }
             view.textSize = fontSize
             view.setLineSpacing(0f, lineSpacingMultiplier)
             view.letterSpacing = letterSpacing
-            view.typeface = if (serif) android.graphics.Typeface.create("serif", android.graphics.Typeface.NORMAL)
-                else android.graphics.Typeface.DEFAULT
+            view.typeface = when {
+                serif -> android.graphics.Typeface.create("serif", if (italic) android.graphics.Typeface.ITALIC else android.graphics.Typeface.NORMAL)
+                italic -> android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.ITALIC)
+                else -> android.graphics.Typeface.DEFAULT
+            }
             view.setTextColor(android.graphics.Color.argb((ink.alpha * 255).toInt(), (ink.red * 255).toInt(), (ink.green * 255).toInt(), (ink.blue * 255).toInt()))
         },
         modifier = Modifier.fillMaxWidth(),
@@ -135,38 +195,104 @@ fun CompanionProposalCard(proposalId: String, viewModel: AppViewModel) {
         } catch (failure: Exception) { kotlinx.coroutines.currentCoroutineContext().ensureActive(); error = failure.message ?: "决定没有送达，请重试。" }
         finally { busy = false; decision = null }
     }
-    Surface(shape = RoundedCornerShape(18.dp), color = StudyPalette.paper, border = androidx.compose.foundation.BorderStroke(.5.dp, StudyPalette.paperEdge)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            val current = proposal
-            if (current == null) AstellaTextButton(onClick = { reload++ }) { Text(if (error == null) "正在接回修改建议…" else "重新读取建议") }
-            else {
-                Text(current.optString("title", "伴星的修改建议"), style = MaterialTheme.typography.titleMedium)
-                Text(current.optString("impactSummary"), style = MaterialTheme.typography.bodySmall, color = StudyPalette.muted)
-                val preview = current.optJSONObject("payload")?.optJSONObject("preview")
-                preview?.optString("beforeMarkdown")?.takeIf { it.isNotBlank() }?.let { before ->
-                    Text("原文", style = MaterialTheme.typography.labelMedium, color = StudyPalette.muted)
-                    SelectionContainer { Text(before, Modifier.fillMaxWidth().background(StudyPalette.inset, RoundedCornerShape(12.dp)).padding(12.dp), style = MaterialTheme.typography.bodyMedium) }
+    Column(
+        Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(StudyRadius.xl))
+            .background(StudyPalette.paper)
+            .border(.7.dp, StudyPalette.paperEdge.copy(alpha = .5f), RoundedCornerShape(StudyRadius.xl))
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        val current = proposal
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            AstellaGlyph(AstellaGlyphKind.Edit, Modifier.size(13.dp), tint = StudyPalette.accent)
+            Text(
+                "伴星的修改建议",
+                color = StudyPalette.accent, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = .3.sp,
+            )
+        }
+        if (current == null) {
+            QuietTextAction(
+                if (error == null) "正在接回修改建议…" else "重新读取建议",
+                onClick = { reload++ },
+            )
+        } else {
+            Text(
+                current.optString("title", "伴星的修改建议"),
+                color = StudyPalette.ink, fontSize = 16.5.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                current.optString("impactSummary"),
+                color = StudyPalette.muted, fontSize = 12.5.sp, lineHeight = 19.sp,
+            )
+            val preview = current.optJSONObject("payload")?.optJSONObject("preview")
+            preview?.optString("beforeMarkdown")?.takeIf { it.isNotBlank() }?.let { before ->
+                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text("原文", color = StudyPalette.muted, fontSize = 10.5.sp, fontWeight = FontWeight.Medium)
+                    SelectionContainer {
+                        Text(
+                            before,
+                            Modifier.fillMaxWidth()
+                                .clip(RoundedCornerShape(StudyRadius.md))
+                                .background(StudyPalette.inset.copy(alpha = .7f))
+                                .padding(12.dp),
+                            color = StudyPalette.ink, fontSize = 13.5.sp, lineHeight = 21.sp,
+                        )
+                    }
                 }
-                preview?.optString("markdown")?.takeIf { it.isNotBlank() }?.let { after ->
-                    Text("改写后", style = MaterialTheme.typography.labelMedium, color = StudyPalette.accent)
-                    SelectionContainer { Text(after, Modifier.fillMaxWidth().background(StudyPalette.sky, RoundedCornerShape(12.dp)).padding(12.dp), style = MaterialTheme.typography.bodyMedium) }
+            }
+            preview?.optString("markdown")?.takeIf { it.isNotBlank() }?.let { after ->
+                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text("改写后", color = StudyPalette.accent, fontSize = 10.5.sp, fontWeight = FontWeight.Medium)
+                    SelectionContainer {
+                        Text(
+                            after,
+                            Modifier.fillMaxWidth()
+                                .clip(RoundedCornerShape(StudyRadius.md))
+                                .background(StudyPalette.sky.copy(alpha = .7f))
+                                .padding(12.dp),
+                            color = StudyPalette.ink, fontSize = 13.5.sp, lineHeight = 21.sp,
+                        )
+                    }
                 }
-                if (current.optString("status") == "pending") Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    AstellaTextButton(onClick = { decision = "reject" }, enabled = !busy) { Text("保留原文") }
-                    AstellaButton(onClick = { decision = "confirm" }, enabled = !busy) { Text("确认写回") }
-                } else Text(when (current.optString("status")) {
-                    "succeeded" -> "已经写回手记"
-                    "rejected" -> "已保留原文"
-                    "expired" -> "这份建议已过期，请重新生成"
-                    "failed" -> "写回没有完成，请重新请伴星修改"
-                    else -> "正在写回手记…"
-                }, color = StudyPalette.muted, style = MaterialTheme.typography.bodySmall)
             }
-            if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-            error?.let {
-                Text(it, color = StudyPalette.danger, style = MaterialTheme.typography.bodySmall)
-                if (current != null) AstellaTextButton(onClick = { reload++ }) { Text("重新读取建议") }
+            if (current.optString("status") == "pending") {
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    QuietTextAction("保留原文", onClick = { decision = "reject" }, enabled = !busy)
+                    AstellaButton(
+                        onClick = { decision = "confirm" },
+                        enabled = !busy,
+                        shape = RoundedCornerShape(StudyRadius.lg),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 18.dp, vertical = 10.dp),
+                    ) { Text("确认写回", fontSize = 14.sp) }
+                }
+            } else {
+                Text(
+                    when (current.optString("status")) {
+                        "succeeded" -> "已经写回手记"
+                        "rejected" -> "已保留原文"
+                        "expired" -> "这份建议已过期，请重新生成"
+                        "failed" -> "写回没有完成，请重新请伴星修改"
+                        else -> "正在写回手记…"
+                    },
+                    color = StudyPalette.muted, fontSize = 12.sp,
+                )
             }
+        }
+        if (busy) LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp), color = StudyPalette.accent)
+        error?.let {
+            ShellNotice(
+                "建议没有读出来",
+                it,
+                glyph = AstellaGlyphKind.Alert,
+                tint = StudyPalette.danger,
+                actionLabel = "重试",
+                onAction = { reload++ },
+            )
         }
     }
 }

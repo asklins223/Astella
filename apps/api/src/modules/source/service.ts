@@ -3,11 +3,7 @@ import { MAX_PENDING_JOBS_PER_WORKSPACE } from "@astella/shared/job-queue-limits
 import type { ApiTransaction } from "../../db/client.ts";
 import { upsertSearchProjection } from "../../lib/search-index-upsert.ts";
 import { sources, sourceSegments, notes, noteVersions } from "@astella/shared/db-schema/note";
-import {
-  cardGenerationRunsV2,
-  learningObjectiveOriginsV2,
-  learningObjectivesV2,
-} from "@astella/shared/db-schema/card-generation-v2";
+import { noteLearningCards } from "@astella/shared/db-schema/note-learning-cards";
 import { visibleNotesCondition } from "../note/visibility.ts";
 import { applyNoteDocUpdate } from "../note/document-state.ts";
 import { writeFragmentBlocks } from "../note/doc-fragment.ts";
@@ -389,22 +385,20 @@ export async function listSources(
           .groupBy(notes.sourceId)
       : Promise.resolve([]),
     /**
-     * 学习卡进展（实走复盘 #18 后半）：来源 → 笔记 → 生成批次 / 正式目标。
-     * 仍然是一次批量聚合（不按行发请求）：批次按 note_id 直接连，正式目标经
-     * `learning_objective_origins_v2.note_id` 连——目标本身没有 sourceId，
-     * 它的来路记在 origins 上。
+     * 学习卡进展：来源 → 笔记 → 这份笔记当前那张活卡。
+     * 一次批量聚合，不按行发请求；卡只数笔记上的 `active` 卡。
      */
     sourceIds.length > 0
       ? executor
           .select({
             sourceId: notes.sourceId,
-            pendingReviewRuns: sql<number>`count(DISTINCT ${cardGenerationRunsV2.id}) FILTER (WHERE ${cardGenerationRunsV2.status} IN ('queued','source_sealing','planning','authoring','checking','review_ready'))::int`,
-            activeObjectives: sql<number>`count(DISTINCT ${learningObjectivesV2.objectiveId}) FILTER (WHERE ${learningObjectivesV2.lifecycle} = 'active')::int`,
+            activeCards: sql<number>`count(DISTINCT ${noteLearningCards.id}) FILTER (WHERE ${noteLearningCards.status} = 'active')::int`,
           })
           .from(notes)
-          .leftJoin(cardGenerationRunsV2, eq(cardGenerationRunsV2.noteId, notes.id))
-          .leftJoin(learningObjectiveOriginsV2, eq(learningObjectiveOriginsV2.noteId, notes.id))
-          .leftJoin(learningObjectivesV2, eq(learningObjectivesV2.objectiveId, learningObjectiveOriginsV2.objectiveId))
+          .leftJoin(noteLearningCards, and(
+            eq(noteLearningCards.noteId, notes.id),
+            eq(noteLearningCards.workspaceId, notes.workspaceId),
+          ))
           .where(and(
             inArray(notes.sourceId, sourceIds),
             eq(notes.workspaceId, workspaceId),
@@ -421,8 +415,7 @@ export async function listSources(
     ...s,
     noteCount: noteCountMap.get(s.id) ?? 0,
     cardProgress: {
-      pendingReviewRuns: cardProgressMap.get(s.id)?.pendingReviewRuns ?? 0,
-      activeObjectives: cardProgressMap.get(s.id)?.activeObjectives ?? 0,
+      activeCards: cardProgressMap.get(s.id)?.activeCards ?? 0,
     },
   }));
 

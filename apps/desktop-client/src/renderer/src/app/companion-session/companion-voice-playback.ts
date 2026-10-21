@@ -126,6 +126,13 @@ export function subscribeCompanionSpeechActivity(listener: () => void): () => vo
 /** 播放进度的广播节流：逐帧广播会带着 React 一起 60Hz 重渲气泡。 */
 const PROGRESS_INTERVAL_MS = 80;
 /**
+ * 两条消息之间的可听停顿（2026-10-21）。
+ *
+ * 同轮多条发言在界面上已经各画一个气泡，声音也要在消息边界断开；段内
+ * （同一个 messageId 的长消息切片）仍连续播放，不逐句停顿。
+ */
+export const COMPANION_SPEECH_MESSAGE_GAP_MS = 260;
+/**
  * 单段音频的等待上限（方案 29 §4.9，抱怨 #4「输出了但语音根本不读」）。
  *
  * 原来是 1600ms / 1200ms。这两个数字对一条**网络合成**链路太紧了：qwen-tts 与
@@ -427,6 +434,8 @@ export interface CompanionServerVoiceSegment {
   readonly displayText: string;
   readonly displayStart: number;
   readonly displayEnd: number;
+  /** 这条音频属于哪一条助手消息；同一轮多发言靠它分辨消息边界。 */
+  readonly messageId?: string;
   readonly cue: CharacterCuePayloadV1;
 }
 
@@ -456,8 +465,24 @@ interface CompanionQueuedSpeechSegment {
   readonly text: string;
   readonly startIndex: number;
   readonly endIndex: number;
+  readonly messageId?: string;
   readonly ref?: CompanionVoiceSpeakSegmentRequestV2;
   readonly cue?: CharacterCuePayloadV1;
+}
+
+/** 消息边界的那一拍停顿；停止时立刻醒来，不把这 260ms 拖在用户按下停止之后。 */
+function waitForSpeechGap(signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const done = (): void => {
+      if (timer !== undefined) clearTimeout(timer);
+      signal.removeEventListener("abort", done);
+      resolve();
+    };
+    signal.addEventListener("abort", done, { once: true });
+    timer = setTimeout(done, COMPANION_SPEECH_MESSAGE_GAP_MS);
+  });
 }
 
 function withDeadline<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
@@ -484,6 +509,8 @@ async function runQueuedSpeech(args: {
   let playedCount = 0;
   let previousEnd = 0;
   let hasStartedAudio = false;
+  /** 上一段真正播出的音频属于哪条消息；换消息时留一个短停顿。 */
+  let previousMessageId: string | undefined;
   /** 被跳过（超时/合成失败）的段数与最后一次的原因，供收尾降级判定。 */
   let missedSegments = 0;
   let lastMissReason: "deadline" | "synth_failed" = "deadline";
@@ -712,6 +739,7 @@ async function runQueuedSpeech(args: {
           hasStartedAudio = true;
           playedCount += 1;
           previousEnd = segment.endIndex;
+          if (segment.messageId) previousMessageId = segment.messageId;
           report(segment, "played", streamStartedAt);
           prefetchUpcoming();
           continue;
@@ -756,6 +784,16 @@ async function runQueuedSpeech(args: {
       }
       // 字节到手了：从这里开始，无论走哪条出口都必须有终态。
       inFlight = { segment, startedAtMs: pending.startedAtMs };
+
+      // 换了一条消息：先留一段可听停顿，再开口。同一 messageId 的长消息切片
+      // 不受影响，仍然连续播；没有 messageId 的旧段不猜边界。
+      if (segment.messageId && previousMessageId && segment.messageId !== previousMessageId) {
+        await waitForSpeechGap(args.signal);
+        if (args.runGeneration !== generation) {
+          reportAbandoned({ segment, startedAtMs: pending.startedAtMs });
+          return;
+        }
+      }
 
       // 记下"正在播的是哪一段"：位置读数要用它把 0..1 映射回绝对字数。
       playingSegment = segment;
@@ -814,6 +852,7 @@ async function runQueuedSpeech(args: {
       }
       playingSegment = null;
       previousEnd = segment.endIndex;
+      if (segment.messageId) previousMessageId = segment.messageId;
       playedCount += 1;
       // 走到这里才算"播成了"：`play()` 被打断时同样 resolve，所以必须排在上面那道
       // generation 检查之后——否则"用户三秒后打断"会被记成一次成功播放。
@@ -926,6 +965,7 @@ export function beginCompanionSpeechLine(options: { readonly strictSegments?: bo
         text: segment.displayText,
         startIndex: segment.displayStart,
         endIndex: segment.displayEnd,
+        ...(segment.messageId ? { messageId: segment.messageId } : {}),
         ref: segment.ref,
         cue: segment.cue,
       });

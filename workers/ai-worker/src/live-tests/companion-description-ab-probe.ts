@@ -74,7 +74,7 @@ const cases: AbCase[] = [
     accept: ["companion_recall_past_conversation"], intent: "task" },
   { name: "read_self_notes", text: "你自己记的关于我复习节奏那条是怎么写的", accept: ["companion_read_self_notes"], intent: "task" },
   { name: "read_current_page", text: "这一页怎么这么多张卡到期了", accept: ["companion_read_current_page"], intent: "task" },
-  { name: "open_page", text: "帮我打开复习队列", accept: ["companion_open_page"], intent: "task",
+  { name: "open_page", text: "帮我打开理解星图", accept: ["companion_open_page"], intent: "task",
     fieldCheck: (args) => args.page === "review" },
   { name: "learning_stats", text: "我这周一共学了多久", accept: ["companion_get_learning_stats"], intent: "task" },
   { name: "due_reviews", text: "今天有什么要复习的", accept: ["companion_list_due_reviews"],

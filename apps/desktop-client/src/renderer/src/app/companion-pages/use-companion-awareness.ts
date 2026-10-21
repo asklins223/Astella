@@ -14,8 +14,7 @@ import { markCompanionLaunchRegistered } from "./companion-launch-gate";
 export function useCompanionAwareness(conversationId: string | null) {
   const page = useCompanionPageContext();
   const latest = useRef({ page, conversationId }); latest.current = { page, conversationId };
-  const pageKey = [page.hudPage, page.activeNoteId, page.activeSourceId, page.activeRunId,
-    page.activeReviewScheduleId, page.settingsSection].filter(Boolean).join(":");
+  const pageKey = [page.hudPage, page.activeNoteId, page.activeSourceId, page.settingsSection].filter(Boolean).join(":");
   const pageState = companionAwarenessPageState(page);
   const participationBlocked = useRoomStore(state => state.onboardingOpen || state.companionGuideOpen);
   const publishRef = useRef<((topic: CompanionAwarenessObservationV1["topic"], evidence?: CompanionAwarenessObservationV1["evidence"]) => Promise<void>) | null>(null);
@@ -37,8 +36,8 @@ export function useCompanionAwareness(conversationId: string | null) {
       const foreground = document.visibilityState === "visible" && document.hasFocus() && room.windowState === "visible";
       const learning = ["note-read", "note-edit", "note-learning"].includes(p.hudPage)
         ? Boolean(p.activeNoteId && p.activeNoteVersionId)
-        : ["assessment", "result"].includes(p.hudPage) ? Boolean(p.activeRunId) : p.hudPage === "queue";
-      const currentPageKey = [p.hudPage, p.activeNoteId, p.activeSourceId, p.activeRunId, p.activeReviewScheduleId, p.settingsSection].filter(Boolean).join(":");
+        : false;
+      const currentPageKey = [p.hudPage, p.activeNoteId, p.activeSourceId, p.settingsSection].filter(Boolean).join(":");
       return { foreground, unlocked: true, typing: performance.now() < typingUntil, learning, speaking:isCompanionSpeechActive(),
         participationAllowed: !room.onboardingOpen && !room.companionGuideOpen
           && !room.mutedCompanionSceneKeys.includes(room.surface ?? "room") && !room.companionFocusUntilTaskEnd,

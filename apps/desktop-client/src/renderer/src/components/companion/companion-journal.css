@@ -12,10 +12,10 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  padding: 22px 20px 18px;
-  border: 1px solid #fffef6;
-  border-radius: 28px;
-  background: #f8f5e9;
+  padding: 22px 26px 18px;
+  border: 1px solid #eee7d5;
+  border-radius: 24px;
+  background: #fffcf3;
   color: var(--hud-ink);
   box-shadow: 0 25px 65px #35241935, 0 3px 0 #e4decc;
   container: companion-journal / inline-size;
@@ -29,7 +29,7 @@
 .companion-history:not([data-placement-ready]) { visibility: hidden; }
 .companion-history__scrim { position: fixed; inset: 0; z-index: 210; padding: 0; border: 0; background: #3126181c; cursor: default; }
 .companion-history__scrim[data-stage="exiting"] { pointer-events: none; }
-.companion-history > .companion-history__header { display: flex; flex: none; align-items: center; gap: 12px; padding: 0 4px 19px; border: 0; }
+.companion-history > .companion-history__header { display: flex; flex: none; align-items: center; gap: 12px; padding: 0 0 17px; border: 0; }
 .companion-journal__cover-mark { display: grid; flex: none; place-items: center; width: 47px; height: 47px; border-radius: 17px; background: #dfebd5; color: #527456; transform: rotate(-5deg); }
 .companion-history__heading { flex: 1; min-width: 0; }
 .companion-history__heading h2 { margin: 0; padding: 0; color: var(--hud-ink); font: 730 23px/1.5 "Noto Sans SC Variable", sans-serif; letter-spacing: -.045em; }
@@ -37,27 +37,38 @@
 .companion-history__heading p > span { padding-inline: 4px; }
 .companion-history__header-actions { display: flex; flex: none; align-items: center; gap: 2px; }
 .companion-history__header-actions button { display: grid; place-items: center; width: 36px; height: 40px; padding: 0; border: 0; border-radius: 12px; background: transparent; color: var(--hud-soft); cursor: pointer; }
-.companion-journal__workspace { display: grid; grid-template-columns: 144px minmax(0, 1fr); flex: 1; min-height: 0; gap: 16px; }
-.companion-history__tabs { display: flex; flex-direction: column; align-items: stretch; gap: 6px; min-height: 0; overflow-y: auto; padding: 12px 0; margin: 0; border: 0; scrollbar-width: thin; }
-.companion-history__tabs .text-action { position: relative; display: flex; align-items: center; gap: 9px; min-height: 66px; padding: 11px 10px; border: 1px solid transparent; border-radius: 15px; background: transparent; color: #776c5b; text-align: left; text-decoration: none; cursor: pointer; }
+.companion-journal__workspace { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); flex: 1; min-height: 0; gap: 14px; }
+.companion-history__tabs { display: flex; flex-direction: row; align-items: center; gap: 6px; min-height: 0; overflow-x: auto; overflow-y: hidden; padding: 0 0 12px; margin: 0; border: 0; border-bottom: 1px solid #e6dfcd; scrollbar-width: thin; }
+.companion-history__tabs .text-action { position: relative; display: flex; flex: 0 0 auto; align-items: center; gap: 7px; min-height: 40px; padding: 8px 14px; border: 1px solid transparent; border-radius: 12px; background: transparent; color: #776c5b; text-align: left; text-decoration: none; cursor: pointer; }
 .companion-history__tabs .text-action > svg { flex: none; }
 .companion-history__tabs .text-action > span { flex: 1; min-width: 0; }
-.companion-history__tabs strong { display: block; font-size: 12px; font-weight: 650; white-space: nowrap; }
+.companion-history__tabs strong { display: block; font-size: 13px; font-weight: 650; white-space: nowrap; }
 .companion-history__tabs small { display: block; margin-top: 5px; color: #8b806e; font-size: 10px; white-space: nowrap; }
 .companion-history__tabs [aria-pressed="true"] { background: #e1ebd9; border-color: #d4e0c9; color: #466c4b; }
 .companion-history__tabs [aria-pressed="true"] small { color: #687e61; }
 .companion-history__count { display: grid; flex: none; place-items: center; min-width: 17px; height: 17px; padding: 0 3px; border-radius: 7px; background: #e8e5d8; color: #807661; font-size: 10px; font-style: normal; }
 .companion-history__count[data-attention] { background: #ecd5b5; color: #87572b; }
-.companion-journal__rail-note { margin: auto 0 0; padding: 26px 11px 8px; color: #9a907c; font-size: 11px; line-height: 1.9; }
-.companion-journal__page { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 8px 19px 15px; border: 1px solid #eae5d5; border-radius: 20px; background: #fffdf6; opacity: calc(.72 + var(--tactile-page, 1) * .28); }
+.companion-journal__page { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 0 3px; border: 0; border-radius: 0; background: transparent; opacity: calc(.72 + var(--tactile-page, 1) * .28); }
 .companion-history button, .companion-history summary { transform: translateY(var(--tactile-drop, 0px)) scale(var(--tactile-press, 1)); }
 .companion-history :is(button, summary, input, textarea, [tabindex]):focus-visible { outline: 2px solid #709878; outline-offset: 3px; }
 .companion-history__list { position: relative; flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 4px 5px 20px; overscroll-behavior: contain; overflow-wrap: anywhere; scrollbar-width: thin; scrollbar-color: #d0c6b1 transparent; }
 .companion-history__content { display: flex; flex-direction: column; gap: 13px; min-height: 100%; padding: 0; }
 .companion-history__day { display: flex; align-self: stretch; align-items: center; gap: 12px; margin: 14px 0 3px; color: #9b907b; font-size: 10px; }
 .companion-history__day::before, .companion-history__day::after { content: ""; flex: 1; height: 1px; background: #ede8db; }
-.companion-history__list .companion-record__turn { display: block; align-self: stretch; width: 100%; min-width: 0; margin: 0; padding: 13px 0 17px; border: 0; border-radius: 0; background: transparent; box-shadow: none; color: #514c40; font-size: 14px; line-height: 1.85; }
+.companion-history__list .companion-record__turn { display: block; align-self: stretch; width: 100%; min-width: 0; margin: 0; padding: 13px 0 17px; border: 0; border-radius: 0; background: transparent; box-shadow: none; color: #454b3e; font-size: 15px; line-height: 1.9; }
 .companion-history__list .companion-record__turn[data-role="user"] { align-self: flex-end; width: fit-content; max-width: 90%; padding: 11px 15px 6px; border-radius: 17px 6px 17px 17px; background: #f4ece0; }
+/* 伴星发言在手记里也用气泡圈住；连续多条共用一个名字，气泡之间只留间距。 */
+.companion-history__list .companion-record__turn[data-bubble="true"] { padding-bottom: 9px; }
+.companion-history__list .companion-record__body--bubble {
+  width: fit-content;
+  max-width: min(100%, 680px);
+  padding: 10px 14px;
+  border: 1px solid #e8dfcc;
+  border-radius: 5px 16px 16px 16px;
+  background: #fdfaf1;
+  box-shadow: 0 1px 0 rgba(91, 62, 39, .04);
+  line-height: 1.85;
+}
 .companion-record__turn > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 9px; color: #a29887; font-size: 10px; }
 .companion-record__author { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
 .companion-record__author strong { color: #5c7b5b; font-size: 11px; font-weight: 650; overflow-wrap: anywhere; }
@@ -79,8 +90,24 @@
 .companion-record__body li { margin: 6px 0; }
 .companion-record__actions { display: flex; align-items: center; gap: 6px; margin-top: 5px; }
 .companion-record__actions .text-action { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 4px 0; border: 0; background: transparent; color: #a29783; font-size: 10px; cursor: pointer; }
+/* 回复行里的原声入口与“复制文字”同一层级，不再是一颗独立的胶囊。 */
+.companion-record__actions .companion-message-audio__button { min-height: 30px; padding: 4px 0; border: 0; border-radius: 0; background: transparent; color: #a29783; font-size: 10px; }
+.companion-record__actions .companion-message-audio__button:hover { color: #6f7b62; }
 .companion-record__actions svg { width: 12px; height: 12px; }
 .companion-record__results { display: grid; gap: 12px; margin-top: 14px; }
+/* 成果清单属于回复，不属于过程：朗读文本下面一篇一行，无框、无胶囊按钮。 */
+.companion-record__saved { margin-top: 14px; }
+.companion-record__saved-heading { display: flex; align-items: baseline; gap: 7px; margin: 0; padding-bottom: 3px; color: #7f8a71; font-size: 11px; font-weight: 600; }
+.companion-record__saved-heading span { color: #a29887; font-size: 10px; font-weight: 400; }
+.companion-record__saved ul { margin: 0; padding: 0; list-style: none; }
+.companion-record__saved li { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 9px 0; border-bottom: 1px dashed #e0d8c4; }
+.companion-record__saved li:last-child { border-bottom: 0; }
+.companion-record__saved-index { flex: none; width: 22px; color: #9a9280; font-size: 11px; font-variant-numeric: tabular-nums; }
+.companion-record__saved li > strong { flex: 1; min-width: 0; color: #3f5a3a; font-size: 14px; font-weight: 550; line-height: 1.6; overflow-wrap: anywhere; }
+.companion-record__saved-actions { display: flex; flex: none; align-items: center; gap: 13px; }
+.companion-record__saved-actions button { display: inline-flex; align-items: center; gap: 3px; padding: 2px 0; border: 0; background: none; color: #7b8a6c; font-size: 11px; line-height: 1.4; cursor: pointer; }
+.companion-record__saved-actions button:hover { color: #4f6b4b; text-decoration: underline; text-underline-offset: 3px; }
+.companion-record__saved-actions button:last-child { color: #5c7b5b; }
 .companion-record__selection { margin: 0 0 11px; padding: 0 0 10px; border-bottom: 1px solid #e4d7c5; color: #957c60; font-size: 11px; }
 .companion-record__selection > summary { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; list-style: none; cursor: pointer; }
 .companion-record__selection q { display: block; flex-basis: 100%; overflow: hidden; max-height: 2.9em; padding-left: 18px; color: #89755f; font-size: 12px; line-height: 1.45; }
@@ -112,14 +139,19 @@
 .companion-history__voice-live { display: flex; align-items: center; gap: 8px; min-height: 22px; margin: 7px 0 0; padding: 2px 0 2px 10px; border-left: 2px solid #9fb887; color: #526d45; font: 13px/1.7 "Noto Sans SC Variable", sans-serif; }
 .companion-history__compose-tools > span { color: #ada58f; font-size: 9px; }
 .companion-history__tool { display: grid; place-items: center; flex: none; width: 30px; height: 32px; padding: 0; border: 0; border-radius: 10px; background: transparent; color: #8d967c; cursor: pointer; }
-.companion-history__compose-tools .button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 32px; padding: 5px 11px; border: 1px solid #ccdac0; border-radius: 11px; background: #e1ecd6; color: #526d45; font-size: 11px; font-weight: 600; }
+.companion-history__compose-tools .button { display: inline-flex; flex: none; align-items: center; justify-content: center; gap: 5px; min-height: 32px; padding: 5px 11px; border: 1px solid #ccdac0; border-radius: 11px; background: #e1ecd6; color: #526d45; font-size: 11px; font-weight: 600; white-space: nowrap; }
 .companion-history__compose-tools .button svg { width: 15px; height: 15px; }
 .companion-history .button.primary, .companion-history__compose-tools .companion-history__composer-stop { margin-left: auto; }
 .companion-history__composer-stop + .button.primary { margin-left: 0; }
 .companion-history__quote { display: flex; align-items: center; gap: 7px; margin-bottom: 8px; padding: 5px 9px; border-left: 2px solid #a3b990; border-radius: 6px; background: #eef2e4; color: #7c886b; font-size: 11px; }
 .companion-history__quote > span { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .companion-history__quote button { display: grid; place-items: center; flex: none; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: inherit; }
-.companion-history__jump { position: absolute; bottom: 137px; left: 50%; z-index: 4; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 6px 12px; border: 1px solid #d1dec5; border-radius: 15px; background: #ebf1e3; color: #607353; box-shadow: 0 3px 12px #68704d15; font-size: 11px; translate: -50% 0; }
+/* 「回到最新」曾经 absolute + bottom:137px：137px 是当时输入区的估高。窗口窄、
+   输入工具换行或 200% 缩放时输入区更高，这颗胶囊便按错误的底边飘进正文中间
+   （实测盖住用户消息）。现在它住在输入区里、锚在输入区顶边之上 8px：任何宽度和
+   缩放下都贴着输入区，不会压住输入区；也不再依赖那个固定估高。 */
+.companion-history__compose-area { position: relative; }
+.companion-history__jump { position: absolute; right: auto; bottom: calc(100% + 8px); left: 50%; z-index: 4; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 6px 12px; border: 1px solid #d1dec5; border-radius: 15px; background: #ebf1e3; color: #607353; box-shadow: 0 3px 12px #68704d15; font-size: 11px; translate: -50% 0; }
 .companion-history__toolbar { display: flex; flex: none; align-items: center; gap: 8px; padding-top: 10px; }
 .companion-history .companion-record__search { min-width: 0; border: 1px solid #dedbc8; border-radius: 13px; background: #f7f8f0; }
 .companion-history .companion-record__search input { font-size: 13px; }
@@ -144,29 +176,37 @@
 .companion-history .companion-goal-journal h3 { font-family: "Noto Sans SC Variable", sans-serif; color: #5d6e52; font-size: 20px; }
 .companion-history .companion-goal-journal__index button { border-radius: 12px; padding: 17px 9px; }
 .companion-history__list [data-flash="true"] { animation: companion-history-flash 1.6s ease-out; }
+.companion-history__recovery { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 4px; padding: 12px; border: 1px solid #d5ddcb; border-radius: 12px; background: #f2f5ec; }
+.companion-history__recovery p { flex-basis: 100%; margin: 0 0 2px; color: #4d5b43; font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
+.companion-history__recovery button { min-height: 36px; padding: 7px 12px; border: 1px solid #cbd5bd; border-radius: 9px; background: #fffdf8; color: #42503a; font-size: 13px; cursor: pointer; }
+.companion-history__recovery button:disabled { opacity: .6; cursor: progress; }
+.companion-history__recovery button:focus-visible { outline: 2px solid #6c845b; outline-offset: 3px; }
 @media (hover: hover) and (pointer: fine) {
   .companion-history__tabs .text-action:hover { background: #e9eddf; }
   .companion-history .companion-goal-journal__index button:hover { background: #f4f6ec; }
 }
 @container companion-journal (max-width: 620px) {
   .companion-journal__workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); gap: 11px; }
-  .companion-history__tabs { flex-direction: row; overflow-x: auto; overflow-y: hidden; padding: 0; gap: 5px; }
-  .companion-history__tabs .text-action { flex: 1; justify-content: center; gap: 5px; min-height: 44px; padding: 7px 8px; border-radius: 12px; }
+  .companion-history__tabs { padding-bottom: 9px; gap: 5px; }
+  .companion-history__tabs .text-action { flex: 1; justify-content: center; gap: 5px; min-height: 40px; padding: 7px 8px; border-radius: 12px; }
   .companion-history__tabs .text-action > span { flex: none; }
-  .companion-history__tabs small, .companion-journal__rail-note { display: none; }
+  .companion-history__tabs small { display: none; }
   .companion-history__tabs .text-action > svg { width: 15px; height: 15px; }
   .companion-history__tabs strong { font-size: 11px; }
-  .companion-journal__page { padding-inline: 16px; }
+  .companion-journal__page { padding-inline: 2px; }
 }
 @container companion-journal (max-width: 440px) {
+  .companion-history__compose-tools { flex-wrap: wrap; gap: 2px; }
+  .companion-history__compose-tools .companion-history__tool { width: 28px; }
   .companion-journal__cover-mark { display: none; }
   .companion-history__heading h2 { font-size: 19px; }
   .companion-history__heading p { max-width: 180px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .companion-history__header-actions { gap: 0; }
   .companion-history__header-actions button { width: 30px; }
-  .companion-history__tabs .text-action { flex-direction: column; gap: 4px; padding: 8px 4px; }
-  .companion-history__count { position: absolute; top: 3px; right: 3px; min-width: 14px; height: 14px; font-size: 9px; }
-  .companion-journal__page { padding-inline: 11px; }
+  .companion-history__tabs .text-action { gap: 5px; padding: 8px 5px; }
+  .companion-history__tabs .text-action > svg { display: none; }
+  .companion-history__count { min-width: 14px; height: 14px; font-size: 9px; }
+  .companion-journal__page { padding-inline: 0; }
   .companion-history__compose-tools > span { display: none; }
   .companion-journal__section-heading { gap: 9px; }
   .companion-journal__section-symbol { width: 38px; height: 38px; }

@@ -28,19 +28,7 @@ function withoutComments(source: string): string {
     .replace(/(^|[^:"'`\\])\/\/.*$/gm, "$1");
 }
 
-test("制卡审计不把 outbox / generation run 的 id 写进 job_id", () => {
-  const code = withoutComments(readFileSync(join(WORKER_SRC, "card-generation-v2", "governed-provider.ts"), "utf8"));
-  const wrapped = code.slice(code.indexOf("createGovernedProvider("));
 
-  assert.doesNotMatch(wrapped, /\bjobId\s*:/,
-    "制卡把 id 写进了 job_id：那一列只认 jobs 行，制卡走 outbox，没有 jobs 行可填");
-  assert.match(code, /\bcorrelation\?/, "制卡没有承载真实引用（correlation）的入口");
-  assert.match(wrapped, /correlation/,
-    "声明了 correlation 却没有透传下去：真实引用仍然无处可查");
-  // 归属的另一半仍在：owner 与内容类别不能因为没有 jobId 一起丢掉。
-  assert.match(wrapped, /userId: input\.userId/);
-  assert.match(wrapped, /dataCategories: \["note_content"\]/);
-});
 
 test("看图的审计行声明 image_content", () => {
   const code = withoutComments(readFileSync(join(WORKER_SRC, "handlers", "tools", "companion-tool-execution.ts"), "utf8"));

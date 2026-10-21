@@ -396,3 +396,13 @@ export function hasMeasurementClaimV1(text: string): boolean {
  */
 export const ARTIFACT_ILLUSTRATION_NOTICE_V1 =
   "这是按你这一轮的材料画出来的示意，用来帮助理解；它不是对任何数据库或系统的实测执行。";
+
+/** 文本一律转义（`& < > " '`）：产物内容来自材料与用户输入，不能在这里注入标记。 */
+export function escapeArtifactTextV1(text: string): string {
+  return text
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}

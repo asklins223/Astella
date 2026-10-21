@@ -1,7 +1,7 @@
 import type { useCompanionPageContext } from "../companion-session/companion-chat-session-page";
 
 type Page = Pick<ReturnType<typeof useCompanionPageContext>, "hudPage" | "activeNoteId" | "activeNoteVersionId"
-  | "activeRunId" | "activeSourceId" | "pageReadableView">;
+  | "activeSourceId" | "pageReadableView">;
 
 /** A content watermark, not an identity or security hash. Counter refreshes only renew context. */
 function viewRevision(view: NonNullable<Page["pageReadableView"]>["view"]): string {
@@ -17,8 +17,8 @@ export function companionAwarenessPageState(page: Page): { ready: boolean; revis
   if (page.hudPage === "source-detail")
     return { ready: Boolean(page.activeSourceId && view?.pageId === "source_detail"),
       revision: view?.pageId === "source_detail" ? viewRevision(view) : null };
-  if (["assessment", "result"].includes(page.hudPage))
-    return { ready: Boolean(page.activeRunId && view?.pageId === page.hudPage),
-      revision: view?.pageId === page.hudPage ? viewRevision(view) : null };
+  if (page.hudPage === "note-card")
+    return { ready: Boolean(page.activeNoteId && view?.pageId === "note-card"),
+      revision: view?.pageId === "note-card" ? viewRevision(view) : null };
   return { ready: true, revision: null };
 }

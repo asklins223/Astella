@@ -107,6 +107,8 @@ export interface ChatOptions {
    */
   tools?: AgentTurnRequest["tools"];
   toolChoice?: "auto" | "required";
+  /** Actual text, reasoning or native argument output. Heartbeats do not count. */
+  onOutputActivity?: () => void;
   /** A named call is being generated; arguments may be incomplete. Display-only:
    * this signal never authorizes execution or claims that a write has started. */
   onToolCallStarted?: (slot: { index: number; id: string; name: string }) => void;

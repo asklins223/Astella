@@ -3088,6 +3088,69 @@
       "when": 1792300000000,
       "tag": "0444_companion_gate_corpus",
       "breakpoints": true
+    },
+    {
+      "idx": 441,
+      "version": "7",
+      "when": 1792386400000,
+      "tag": "0445_note_learning_cards",
+      "breakpoints": true
+    },
+    {
+      "idx": 442,
+      "version": "7",
+      "when": 1792472800000,
+      "tag": "0446_note_learning_card_operation_artifacts",
+      "breakpoints": true
+    },
+    {
+      "idx": 443,
+      "version": "7",
+      "when": 1792472800001,
+      "tag": "0447_companion_resume_job_fence",
+      "breakpoints": true
+    },
+    {
+      "idx": 444,
+      "version": "7",
+      "when": 1792559200000,
+      "tag": "0448_note_learning_cards_rls_direct",
+      "breakpoints": true
+    },
+    {
+      "idx": 445,
+      "version": "7",
+      "when": 1792649200000,
+      "tag": "0449_retire_learning_card_chain",
+      "breakpoints": true
+    },
+    {
+      "idx": 446,
+      "version": "7",
+      "when": 1792735600000,
+      "tag": "0450_retire_note_learning_reflections",
+      "breakpoints": true
+    },
+    {
+      "idx": 447,
+      "version": "7",
+      "when": 1792822000000,
+      "tag": "0451_grant_summary_invalidation_to_migrator",
+      "breakpoints": true
+    },
+    {
+      "idx": 448,
+      "version": "7",
+      "when": 1792823000000,
+      "tag": "0452_retire_learning_card_leftovers",
+      "breakpoints": true
+    },
+    {
+      "idx": 449,
+      "version": "7",
+      "when": 1792909400000,
+      "tag": "0453_note_learning_cards_omitted_question_count",
+      "breakpoints": true
     }
   ]
 }

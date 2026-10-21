@@ -89,14 +89,14 @@ test("同一对笔记反复出现只算一条边", () => {
   assert.equal(edges[0]!.edgeId, `ref-${NOTE_CALCULUS}-${NOTE_ALGEBRA}`);
 });
 
-test("引用是事实，不是待确认的建议", () => {
+test("正文引用只记关系本身，不带任何表态字段", () => {
   const edges = edgesFor(
     { noteId: NOTE_CALCULUS, content: `[线代](astella-note:${NOTE_ALGEBRA})` },
     { noteId: NOTE_ALGEBRA, content: "[[概率论]]" },
   );
   assert.equal(edges.length, 2);
   for (const edge of edges) {
-    assert.equal(edge.decidable, false, "正文写了的链接没有「我不这么认为」这一档");
+    assert.deepEqual(Object.keys(edge).sort(), ["edgeId", "from", "kind", "reasonCodes", "to"]);
   }
 });
 

@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 import { enqueueParticipationObservation } from "@astella/agent-host";
 import { sql } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/postgres-js";
 import type { AgentTurnRequest, AgentTurnResult } from "@astella/shared";
 import { assertCompanionContextSourcesCurrent } from "../handlers/context/companion-context-sources.ts";
 import { CompanionContextChangedError } from "../lib/non-retryable-errors.ts";
@@ -12,6 +13,8 @@ import { recordCompanionAwareness, readParticipationPreferences, writeParticipat
   arrangeCompanionAttention, writeCompanionSelfNote } from "@astella/agent-host";
 
 const admin = postgres(testDatabaseUrl("DATABASE_URL_MIGRATOR"), { max: 2 });
+const api = postgres(testDatabaseUrl("DATABASE_URL_API"), { max: 2 });
+const apiDb = drizzle(api);
 process.env.DATABASE_URL = testDatabaseUrl("DATABASE_URL_WORKER");
 delete process.env.AI_PLATFORMS_CONFIG;
 delete process.env.TOKENRHYTHM_API_KEY;
@@ -21,7 +24,7 @@ const { withWorkerWorkspaceTransaction: transaction, closeDatabase } = await imp
 const { runCompanionInitiative } = await import("../handlers/proactive/companion-initiative.ts");
 const { runCompanionDialogue } = await import("../handlers/turn/companion-dialogue.ts");
 const { MockProvider } = await import("../lib/providers/mock.ts");
-after(async () => { await admin.end({ timeout: 2 }); await closeDatabase(); });
+after(async () => { await admin.end({ timeout: 2 }); await api.end({ timeout: 2 }); await closeDatabase(); });
 
 async function fixture() {
   const userId = randomUUID(), workspaceId = randomUUID(), conversationId = randomUUID(), launchId = randomUUID();
@@ -40,8 +43,16 @@ async function fixture() {
 type Fixture = Awaited<ReturnType<typeof fixture>>;
 const prefs = async (f: Fixture, markdown: string, expectedRevision = 0) => (await transaction(f, tx => writeParticipationPreferences(tx, f,
   { markdown, enabled: true, expectedRevision, source: { kind: "settings", workspaceId: f.workspaceId, messageId: null, quote: null } }))).preferences;
+// Frontend awareness is accepted by the API role in production. Startup
+// supersession updates deliveries; the worker deliberately has no UPDATE grant.
+async function awarenessTransaction<T>(f: Fixture, operation: Parameters<typeof apiDb.transaction<T>>[0]) {
+  return apiDb.transaction(async tx => {
+    await tx.execute(sql`SELECT set_config('app.workspace_id',${f.workspaceId},true),set_config('app.user_id',${f.userId},true)`);
+    return operation(tx);
+  });
+}
 async function observe(f: Fixture, typing = false) {
-  return transaction(f, tx => recordCompanionAwareness(tx, f, { version: 1, id: randomUUID(), appLaunchId: f.launchId,
+  return awarenessTransaction(f, tx => recordCompanionAwareness(tx, f, { version: 1, id: randomUUID(), appLaunchId: f.launchId,
     deviceSessionId: `device:${f.launchId}`, host: "desktop", topic: "app.started", occurredAt: new Date().toISOString(), elapsedMs: 0,
     context: { foreground: true, unlocked: true, typing, learning: false, conversationId: f.conversationId,
       page: { key: "home", label: "书房", revision: null, context: null } } }));
@@ -68,6 +79,43 @@ async function runPrepared(f: Fixture, answer: (request: AgentTurnRequest) => Pr
   return run;
 }
 const silentAnswer = async (): Promise<AgentTurnResult> => ({ content:"",toolCalls:[],finishReason:"stop",usage:{promptTokens:10,completionTokens:0},providerRequestId:null });
+
+test("quiet participation cannot replay an earlier thought across a user turn through either publication channel", async () => {
+  for (const channel of ["final", "tool"] as const) {
+    const f = await fixture();
+    await observe(f); await prepare(f);
+    const previous = await runPrepared(f, silentAnswer);
+    const text = "诶，你说「方便面」这名儿起得怪有意思——明明得等三分钟，它咋好意思叫方便呢？";
+    for (let seq = 1; seq <= 6; seq++) await admin`INSERT INTO companion_messages
+      (id,workspace_id,user_id,conversation_id,seq,role,kind,blocks,run_id,content_sha256)
+      VALUES(${randomUUID()},${f.workspaceId},${f.userId},${f.conversationId},${seq},'assistant','proactive',
+        ${admin.json([{ type: "text", text: seq === 1 ? text : `后来聊到的另一件事，第 ${seq} 条。` }])},${previous.id},${"0".repeat(64)})`;
+    await admin`INSERT INTO companion_messages(id,workspace_id,user_id,conversation_id,seq,role,kind,blocks,content_sha256)
+      VALUES(${randomUUID()},${f.workspaceId},${f.userId},${f.conversationId},7,'user','text',
+        '[{"type":"text","text":"谢谢，我继续阅读。"}]'::jsonb,${"1".repeat(64)})`;
+    await admin`UPDATE companion_conversations SET next_message_seq=8 WHERE id=${f.conversationId}`;
+    await transaction(f, tx => recordCompanionAwareness(tx, f, {
+      version: 1, id: randomUUID(), appLaunchId: f.launchId, deviceSessionId: `device:${f.launchId}`,
+      host: "desktop", topic: "presence.quiet", occurredAt: new Date().toISOString(), elapsedMs: 0,
+      context: { foreground: true, unlocked: true, typing: false, learning: false, quietForMs: 600_000,
+        conversationId: f.conversationId, page: { key: "home", label: "书房", revision: null, context: null } },
+    }));
+    await prepare(f);
+    let calls = 0;
+    const run = await runPrepared(f, async () => channel === "final"
+      ? { ...(await silentAnswer()), content: text }
+      : calls++ > 0 ? silentAnswer() : { ...(await silentAnswer()), finishReason: "tool_calls", toolCalls: [
+        { id: "repeated-old-thought", name: "companion_publish_utterance", arguments: { text, final: true } },
+      ] });
+    assert.equal((await admin`SELECT 1 FROM companion_messages WHERE run_id=${run.id}`).length, 0, channel);
+    const events = await admin`SELECT type,payload FROM companion_stream_events WHERE run_id=${run.id}`;
+    assert.ok(events.some(e => e.type === "turn.completed" && e.payload.silent === true), channel);
+    assert.ok(events.every(e => !["assistant.delta", "assistant.utterance", "assistant.final", "voice.segment.ready"].includes(e.type)), channel);
+    assert.equal((await admin`SELECT status FROM companion_turn_runs WHERE id=${run.id}`)[0]?.status, "succeeded", channel);
+    assert.equal((await admin`SELECT count(*)::int AS count FROM companion_messages WHERE run_id=${previous.id}`)[0]?.count, 6,
+      "existing history is preserved");
+  }
+});
 
 test("reply-finished publication suppresses an exact parent paragraph through both final and tool channels", async () => {
   for (const channel of ["final", "tool"] as const) {
@@ -104,6 +152,54 @@ test("reply-finished publication suppresses an exact parent paragraph through bo
     assert.ok(events.every(e => !["assistant.delta", "assistant.utterance", "assistant.final", "voice.segment.ready"].includes(e.type)), channel);
     assert.equal((await admin`SELECT status FROM companion_turn_runs WHERE id=${followup.id}`)[0]?.status, "succeeded", channel);
   }
+});
+
+test("semantic publication review receives real old speech and unfinished status through both channels", async () => {
+  const originalChat = MockProvider.prototype.chatCompletion;
+  try {
+    for (const channel of ["final", "tool"] as const) for (const scenario of ["repeat", "correction", "failed"] as const) {
+      const f = await fixture(); await observe(f); await prepare(f);
+      const previous = await runPrepared(f, silentAnswer);
+      const oldText = "问你个事儿，你觉得打字速度快慢和脑子转得快慢是一回事吗？";
+      await admin`INSERT INTO companion_messages(id,workspace_id,user_id,conversation_id,seq,role,kind,blocks,run_id,content_sha256)
+        VALUES(${randomUUID()},${f.workspaceId},${f.userId},${f.conversationId},1,'assistant','text',
+          ${admin.json([{ type: "text", text: scenario === "correction" ? "原文的电压为6V，电阻为3Ω。" : oldText }])},${previous.id},${"0".repeat(64)})`;
+      if (scenario === "failed") {
+        const userMessageId = randomUUID();
+        await admin`INSERT INTO companion_messages(id,workspace_id,user_id,conversation_id,seq,role,kind,blocks,content_sha256)
+          VALUES(${userMessageId},${f.workspaceId},${f.userId},${f.conversationId},2,'user','text',
+            '[{"type":"text","text":"用三句话解释郡县制。"}]'::jsonb,${"1".repeat(64)})`;
+        await admin`UPDATE companion_turn_runs SET user_message_id=${userMessageId},status='failed',input_source=NULL WHERE id=${previous.id}`;
+      }
+      await admin`UPDATE companion_conversations SET next_message_seq=3 WHERE id=${f.conversationId}`;
+      await transaction(f, tx => recordCompanionAwareness(tx, f, { version: 1, id: randomUUID(), appLaunchId: f.launchId,
+        deviceSessionId: `device:${f.launchId}`, host: "desktop", topic: "presence.quiet", occurredAt: new Date().toISOString(), elapsedMs: 0,
+        context: { foreground: true, unlocked: true, typing: false, learning: false, quietForMs: 600_000, conversationId: f.conversationId,
+          page: { key: "home", label: "书房", revision: null, context: null } } }));
+      await prepare(f);
+      let reviewed = 0, steps = 0;
+      MockProvider.prototype.chatCompletion = async function(messages, options, signal) {
+        if (!messages.some(m => m.role === "system" && String(m.content).includes("核对一条即将主动发出"))) return originalChat.call(this, messages, options, signal);
+        reviewed++;
+        const data = JSON.parse(String(messages.find(m => m.role === "user")!.content));
+        if (scenario === "failed") assert.equal(data.unfinished.status, "failed");
+        else assert.ok(data.previous.length > 0, "similarity retrieval must include a real earlier thought");
+        return { content: JSON.stringify({ decision: scenario === "correction" ? "publish" : scenario === "failed" ? "failed_request_replay" : "repeat", reason: "受控判据：核对了事实差异与权威状态。" }), usage: { promptTokens: 20, completionTokens: 20 } };
+      };
+      const text = scenario === "repeat" ? oldText.replace("事儿", "事") : scenario === "correction" ? "原文的电压应为9V，电阻仍为3Ω。" : "郡县制那三句话我准备好了，你哪天想听就喊我。";
+      const run = await runPrepared(f, async () => channel === "final" ? { ...(await silentAnswer()), content: text }
+        : steps++ > 0 ? silentAnswer() : { ...(await silentAnswer()), finishReason: "tool_calls", toolCalls: [
+          { id: "semantic-publication", name: "companion_publish_utterance", arguments: { text, final: true } },
+        ] });
+      assert.equal(reviewed, 1, `${channel}/${scenario}`);
+      const messages = await admin`SELECT blocks FROM companion_messages WHERE run_id=${run.id} AND role='assistant'`;
+      assert.equal(messages.length, scenario === "correction" ? 1 : 0, `${channel}/${scenario}`);
+      if (scenario !== "correction") {
+        const events = await admin`SELECT type FROM companion_stream_events WHERE run_id=${run.id}`;
+        assert.ok(events.every(e => !["assistant.delta", "assistant.utterance", "assistant.final", "voice.segment.ready"].includes(e.type)));
+      }
+    }
+  } finally { MockProvider.prototype.chatCompletion = originalChat; }
 });
 
 test("built-in defaults greet a new account with no saved participation preference", async () => {
@@ -340,7 +436,7 @@ for (const userInitiated of [false, true]) test(`the same agent publishes real u
     const userMessageId = randomUUID();
     await admin`INSERT INTO companion_messages(id,workspace_id,user_id,conversation_id,seq,role,kind,blocks,run_id,content_sha256)
       VALUES(${userMessageId},${f.workspaceId},${f.userId},${f.conversationId},1,'user','text',
-        '[{"type":"text","text":"可以分几句跟我说，先问好，再问我想学什么。"}]'::jsonb,${run.id},${"0".repeat(64)})`;
+        '[{"type":"text","text":"分两条跟我说：第一条只跟我打个招呼，第二条问我今天想先做哪件事。这一轮请调用 companion_publish_utterance 两次，最后一条 final=true，不要用普通最终正文。"}]'::jsonb,${run.id},${"0".repeat(64)})`;
     await admin`UPDATE companion_conversations SET next_message_seq=2 WHERE id=${f.conversationId}`;
     await admin`UPDATE companion_turn_runs SET user_message_id=${userMessageId},input_source=NULL WHERE id=${run.id}`;
   }
@@ -359,6 +455,7 @@ for (const userInitiated of [false, true]) test(`the same agent publishes real u
     }
     step++;
     assert.equal(step, 1, "A batch of complete utterances must finish without an extra provider request");
+    assert.ok(request.tools.some(tool => tool.name === "companion_publish_utterance"), "实际请求必须提供发言工具，不能由 mock 绕过工具面");
     return { content: "", toolCalls: [
       { id: "say-first", name: "companion_publish_utterance", arguments: { text: "你回来啦。", final: false } },
       { id: "say-last", name: "companion_publish_utterance", arguments: { text: "今天想从哪里开始，我陪你。", final: true } },
@@ -386,6 +483,34 @@ for (const userInitiated of [false, true]) test(`the same agent publishes real u
   if (userInitiated) assert.equal((await admin`SELECT 1 FROM jobs j JOIN companion_awareness_observations o
     ON o.id=(j.payload->>'observationId')::uuid WHERE j.requested_by=${f.userId} AND j.type='companion_initiative'
       AND o.topic='reply.finished' AND j.status='pending'`).length, 1);
+});
+
+test("a partial user-requested publication continues through bare prose and premature final flags", async () => {
+  for (const prematureFinal of [false, true]) {
+    const f = await fixture(); await observe(f); await prepare(f);
+    const [prepared] = await admin`SELECT id FROM companion_turn_runs WHERE user_id=${f.userId}`;
+    const messageId = randomUUID();
+    await admin`INSERT INTO companion_messages(id,workspace_id,user_id,conversation_id,seq,role,kind,blocks,content_sha256)
+      VALUES(${messageId},${f.workspaceId},${f.userId},${f.conversationId},1,'user','text',
+        '[{"type":"text","text":"分两条跟我说：第一条只问好，第二条问我今天想先做什么。"}]'::jsonb,${"0".repeat(64)})`;
+    await admin`UPDATE companion_conversations SET next_message_seq=2 WHERE id=${f.conversationId}`;
+    await admin`UPDATE companion_turn_runs SET user_message_id=${messageId},input_source=NULL WHERE id=${prepared!.id}`;
+    let step = 0;
+    const run = await runPrepared(f, async request => {
+      step++;
+      assert.ok(request.tools.some(tool => tool.name === "companion_publish_utterance"));
+      if (step === 2) return { ...await silentAnswer(), content: "今天想先做什么？" };
+      assert.ok(step <= 3, "only the missing message should be repaired");
+      return { ...await silentAnswer(), content: step === 1 ? "我先准备一下。" : "", finishReason: "tool_calls",
+        toolCalls: [{ id: step === 1 ? "first-message" : "remaining-message", name: "companion_publish_utterance",
+          arguments: { text: step === 1 ? "你好。" : "今天想先做什么？", final: step === 1 ? prematureFinal : true } }] };
+    });
+    assert.equal(step, 3);
+    const messages = await admin`SELECT blocks FROM companion_messages WHERE run_id=${run.id} AND role='assistant' ORDER BY seq`;
+    assert.deepEqual(messages.map(message => message.blocks[0].text), ["你好。", "今天想先做什么？"]);
+    assert.equal((await admin`SELECT 1 FROM companion_stream_events WHERE run_id=${run.id} AND type IN ('assistant.delta','assistant.final')`).length, 0);
+    assert.equal((await admin`SELECT status FROM companion_turn_runs WHERE id=${run.id}`)[0]!.status, "succeeded");
+  }
 });
 
 test("a due intention yields to typing and can wake again at the same revision", async () => {
@@ -755,7 +880,7 @@ test("initiative without a hint uses the existing inbox rather than creating a d
   const f = await fixture(), inboxId = randomUUID();
   await admin`INSERT INTO companion_conversations(id,workspace_id,user_id,kind,title,title_source,status)
     VALUES(${inboxId},${f.workspaceId},${f.userId},'inbox','inbox','system','active')`;
-  await transaction(f, tx => recordCompanionAwareness(tx, f, { version: 1, id: randomUUID(), appLaunchId: f.launchId,
+  await awarenessTransaction(f, tx => recordCompanionAwareness(tx, f, { version: 1, id: randomUUID(), appLaunchId: f.launchId,
     deviceSessionId: `device:${f.launchId}`, host: "desktop", topic: "app.started", occurredAt: new Date().toISOString(), elapsedMs: 0,
     context: { foreground: true, unlocked: true, typing: false, learning: false, conversationId: null,
       page: { key: "home", label: "书房", revision: null, context: null } } }));

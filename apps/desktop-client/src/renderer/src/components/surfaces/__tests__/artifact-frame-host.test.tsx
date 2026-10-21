@@ -47,6 +47,23 @@ afterEach(() => {
 });
 
 describe("ArtifactFrameHost", () => {
+  it("restores the latest saved operation draft only when a trusted frame becomes ready", () => {
+    const frameWindow = { postMessage: vi.fn() };
+    const first = { kind: "controls", values: { force: 3 } };
+    const latest = { kind: "controls", values: { force: 7 } };
+    const { container, rerender } = render(<ArtifactFrameHost artifactId={ARTIFACT_ID} initialAnswer={first} isTrustedFrameSource={trusted} />);
+    Object.defineProperty(container.querySelector("iframe")!, "contentWindow", { value: frameWindow, configurable: true });
+    act(() => { window.dispatchEvent(foreignMessage()); });
+    expect(frameWindow.postMessage).not.toHaveBeenCalled();
+    act(() => { window.dispatchEvent(frameMessage("ready")); });
+    expect(frameWindow.postMessage).toHaveBeenLastCalledWith({ channel: "astella:artifact-frame", direction: "host->frame", command: "restore-answer", answer: first }, "*");
+    rerender(<ArtifactFrameHost artifactId={ARTIFACT_ID} initialAnswer={latest} isTrustedFrameSource={trusted} />);
+    act(() => { window.dispatchEvent(frameMessage("heartbeat")); });
+    expect(frameWindow.postMessage).toHaveBeenCalledTimes(1);
+    act(() => { window.dispatchEvent(frameMessage("ready")); });
+    expect(frameWindow.postMessage).toHaveBeenLastCalledWith({ channel: "astella:artifact-frame", direction: "host->frame", command: "restore-answer", answer: latest }, "*");
+  });
+
   it("ready（来源可信）后进入 live，心跳养着它不降级", async () => {
     render(<ArtifactFrameHost artifactId={ARTIFACT_ID} isTrustedFrameSource={trusted} />);
     expect(screen.getByText("正在准备动态内容…")).toBeTruthy();

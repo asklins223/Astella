@@ -6,6 +6,7 @@ import { noteRecallRecords } from "@astella/shared/db-schema/note-recalls";
 import { noteAnnotations } from "@astella/shared/db-schema/note-annotations";
 import { noteLearningArtifacts } from "@astella/shared/db-schema/note-learning-artifacts";
 import { noteExpansions } from "@astella/shared/db-schema/note-expansions";
+import { noteLearningCardAttempts, noteLearningCards } from "@astella/shared/db-schema/note-learning-cards";
 import {
   noteShelfStageV1,
   type NoteShelfLearningFactsV1,
@@ -20,6 +21,8 @@ const NO_FACTS: NoteShelfLearningFactsV1 = {
   annotationCount: 0,
   artifactCount: 0,
   expansionCount: 0,
+  hasCard: false,
+  bestCardStars: null,
   latestVersionNumber: null,
   latestAt: null,
 };
@@ -248,6 +251,35 @@ export async function noteShelfStatesByNoteId(
         entry.latestVersionNumber = row.sourceVersionNo;
       }
     }
+  }
+
+  // 学习卡：一笔记一卡（活卡一张），最好一次成绩决定纸签与星级。
+  const cardRows = await executor
+    .select({
+      noteId: noteLearningCards.noteId,
+      bestStars: sql<number | null>`max(${noteLearningCardAttempts.stars})`,
+      latestAt: sql<Date | string | null>`max(${noteLearningCardAttempts.completedAt})`,
+    })
+    .from(noteLearningCards)
+    .leftJoin(noteLearningCardAttempts, and(
+      eq(noteLearningCardAttempts.cardId, noteLearningCards.id),
+      eq(noteLearningCardAttempts.workspaceId, scoped.workspaceId),
+      eq(noteLearningCardAttempts.userId, scoped.userId),
+      eq(noteLearningCardAttempts.status, "completed"),
+    ))
+    .where(and(
+      eq(noteLearningCards.workspaceId, scoped.workspaceId),
+      eq(noteLearningCards.status, "active"),
+      inArray(noteLearningCards.noteId, noteIds),
+    ))
+    .groupBy(noteLearningCards.noteId);
+  for (const row of cardRows) {
+    if (!noteIdSet.has(row.noteId)) continue;
+    const entry = slot(row.noteId);
+    entry.hasCard = true;
+    if (row.bestStars !== null) entry.bestCardStars = Number(row.bestStars);
+    const at = iso(row.latestAt);
+    if (at && (!entry.latestAt || Date.parse(at) > Date.parse(entry.latestAt))) entry.latestAt = at;
   }
 
   for (const row of input.notes) {

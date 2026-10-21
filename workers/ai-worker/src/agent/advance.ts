@@ -16,7 +16,6 @@ import { isJobLeaseActive } from "../lib/job-lease.ts";
 import { HandlerTimeoutError } from "../lib/handler-timeout.ts";
 import { agentStorePorts } from "./store.ts";
 import { invokeNoteCapability } from "./note-capabilities.ts";
-import { invokeCardGenerationCapability } from "./card-capabilities.ts";
 import { invokeMethodCapability } from "./method-capabilities.ts";
 import { invokeBasicCapability } from "./basic-capabilities.ts";
 import { invokeExternalCapability } from "./external-capabilities.ts";
@@ -32,7 +31,7 @@ function capabilityInvoker(name: string, signal: AbortSignal) {
     store.invoke(async () => ({ status: "proposed", kind: "goal_delivery", delivery: agentGoalDeliveryManifest.argumentSchema.parse(call.arguments) }));
   const entry = getAgentCapability(name);
   if (!entry?.surfaces.includes("goal")) return null;
-  const executors = { note: invokeNoteCapability, card: invokeCardGenerationCapability,
+  const executors = { note: invokeNoteCapability,
     method: invokeMethodCapability, basic: invokeBasicCapability,
     external: (store: Parameters<typeof invokeExternalCapability>[0], call: Parameters<typeof invokeExternalCapability>[1]) => invokeExternalCapability(store, call, signal) };
   return entry.executor in executors ? executors[entry.executor as keyof typeof executors] : null;

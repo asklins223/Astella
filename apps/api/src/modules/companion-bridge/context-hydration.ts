@@ -55,7 +55,6 @@ export function buildContextSnapshot(input: HydratedContextInput): AssistantCont
     pageKind: input.input.pageKind,
     entityRefs: input.input.entityRefs,
     interactionState: input.input.interactionState,
-    graph: input.input.graph,
     capabilityHints: input.input.capabilityHints,
     sensitivity: input.input.sensitivity,
     readableView: input.input.readableView,
@@ -69,18 +68,8 @@ export function entityLookupKey(ref: EntityRefV2): { table: string; id: string }
   switch (ref.kind) {
     case "source": return { table: "sources", id: ref.sourceId };
     case "note": return { table: "notes", id: ref.noteId };
-    case "card": return { table: "learning_cards_v2", id: ref.cardId };
-    case "key_point": return { table: "learning_objectives_v2", id: ref.keyPointId };
-    // V1 evidences was retired in migration 0183. The public evidence id is
-    // the stable V2 evidence_snapshot_id, not the storage surrogate `id`.
-    case "evidence": return { table: "evidence_snapshots_v2", id: ref.evidenceId };
-    case "review_schedule": return { table: "review_schedules", id: ref.scheduleId };
-    case "learning_run": return { table: "learning_runs", id: ref.runId };
-    case "learning_task": return { table: "learning_tasks", id: ref.taskId };
     case "companion_journey": return { table: "companion_journeys", id: ref.journeyId };
     case "assistant_session": return { table: "companion_conversations", id: ref.assistantSessionId };
-    case "route_plan": return { table: "understanding_route_plans", id: ref.routePlanId };
-    case "change_set": return { table: "understanding_change_sets", id: ref.changeSetId };
     default: return null;
   }
 }

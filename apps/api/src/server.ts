@@ -23,33 +23,23 @@ import { noteOverviewRoutes } from "./modules/note-overviews/routes.ts";
 import { noteRecallRoutes } from "./modules/note-recalls/routes.ts";
 import { noteExpansionRoutes } from "./modules/note-expansions/routes.ts";
 import { noteLearningArtifactRoutes } from "./modules/note-learning-artifacts/routes.ts";
+import { noteLearningCardRoutes } from "./modules/note-learning-cards/routes.ts";
 import { noteCollaborationRoutes, closeNoteCollaboration } from "./modules/note/collaboration.ts";
 import { jobRoutes } from "./modules/job/routes.ts";
-import { reviewRoutes } from "./modules/review/routes.ts";
 import { sourceRoutes } from "./modules/source/routes.ts";
 import { importRoutes } from "./modules/import/routes.ts";
 import { searchRoutes } from "./modules/search/routes.ts";
 import { exportRoutes } from "./modules/export/routes.ts";
 import { auditRoutes } from "./modules/audit/routes.ts";
-import { statsRoutes } from "./modules/stats/routes.ts";
-import { activityRoutes } from "./modules/activity/routes.ts";
 import { uploadRoutes } from "./modules/upload/routes.ts";
-import { cardGenerationV2Routes } from "./modules/card-generation-v2/routes.ts";
-import { learningObjectiveRoutes } from "./modules/learning-objectives/routes.ts";
-import { noteLearningRoundRoutes } from "./modules/note-learning-rounds/routes.ts";
-import { learningDashboardRoutes } from "./modules/learning-dashboard/routes.ts";
 import { understandingTopologyV3Routes } from "./modules/note-deepening/routes.ts";
-import { isCardGenerationV2Enabled } from "./config/learning-companion-flags.ts";
 import { companionShellRoutes } from "./modules/companion-shell/index.ts";
 import { learningMetricRoutes } from "./modules/observability/routes.ts";
 import { companionConversationRoutes, companionConversationManagementRoutes, companionDiscoveryRoutes, companionExportRoutes, companionRealtimeRoutes, companionRunDiagnosticsRoutes, continuousHistoryRoutes } from "./modules/companion-conversation/index.ts";
 import { startCompanionNotifyListener, stopCompanionNotifyListener } from "./lib/companion-notify.ts";
-import { learningRunRoutes } from "./modules/learning-runs/run-routes.ts";
-import { learningDisputeRoutes } from "./modules/learning-runs/disputes/run-dispute-routes.ts";
 import { companionBridgeRoutes } from "./modules/companion-bridge/routes.ts";
 import { companionModelRoutes } from "./modules/companion-model/companion-model-routes.ts";
 import { companionJourneyRoutes } from "./modules/companion-journey/routes.ts";
-import { understandingProjectionRoutes } from "./modules/understanding/projection-routes.ts";
 import { proactiveInboxRoutes } from "./modules/companion-conversation/delivery/inbox-routes.ts";
 import { deliveryRoutes } from "./modules/companion-conversation/delivery/delivery-routes.ts";
 import { memoryRoutes } from "./modules/companion-conversation/memory/memory-routes.ts";
@@ -63,13 +53,7 @@ import { desktopTrustRoutes, resolveApiBindHost } from "./modules/desktop-trust/
 import { desktopUpdateRoutes } from "./modules/updates/desktop-update-routes.ts";
 import { cleanupExpiredSessions } from "./modules/identity/service.ts";
 import { purgeSoftDeletedNotes } from "./modules/note/maintenance.ts";
-import { sweepIdleNoteRoundsForPauseV1 } from "./modules/note-learning-rounds/round/round-activity-sweep.ts";
-import {
-  ENV_ROUND_ACTIVITY_SWEEP_INTERVAL,
-  roundActivitySweepIntervalMsV1,
-} from "./modules/note-learning-rounds/round/round-idle-pause-policy.ts";
 import { runLearningTtlMaintenance } from "./modules/learning-sessions/ttl-maintenance.ts";
-import { runLearningRunProcessingTick, setLearningRunProcessingWaker, closeStructuredSolutionSql } from "./modules/learning-runs/processing/run-processing-tick.ts";
 import { createGracefulShutdown } from "./server/graceful-shutdown.ts";
 import {
   QUEUE_SAMPLE_INTERVAL_MS,
@@ -262,17 +246,18 @@ app.get("/ready", async (_req, reply) => {
     const presentTables = new Set(
       tableRows.map((row) => (row as { table_name: string }).table_name),
     );
-    // QUAL-08 修复：不再与硬编码列表对比，改为检查当前 LearningRun 核心表是否存在。
+    // 核心表：笔记、来源、作业与伴星对话活下来；旧 learning_runs 一族已随 Plan 57 退役，
+    // 留在这里会让 readiness 永远 503。学习卡换成笔记侧的新三张表。
     const coreTables = [
       "users",
       "workspaces",
       "notes",
+      "sources",
       "jobs",
       "sessions",
-      "learning_runs",
-      "learning_run_private_contracts",
-      "learning_tasks",
-      "learning_task_variants",
+      "note_learning_cards",
+      "note_learning_card_questions",
+      "note_learning_card_attempts",
     ];
     const missingTables = coreTables.filter((table) => !presentTables.has(table));
 
@@ -383,35 +368,23 @@ async function main() {
   await app.register(noteRecallRoutes);
   await app.register(noteExpansionRoutes);
   await app.register(noteLearningArtifactRoutes);
+  await app.register(noteLearningCardRoutes);
   // 笔记协同的 WS 通道：必须与 `noteRoutes` 平级注册，不能嵌在它下面——那条链顶部有
   // `preHandler: requireSession`，而 v4 的 token 在握手之后的 Auth 消息里，不在请求头上。
   await app.register(noteCollaborationRoutes);
   await app.register(companionNoteEditDispatch);
   await app.register(companionNoteShareDispatch);
-  // §21.5：Card Generation V2 是原子 capability bundle，默认 fail-closed。
-  if (isCardGenerationV2Enabled()) {
-    await app.register(cardGenerationV2Routes);
-  } else {
-    app.log.info({ capability: "card_generation_v2" }, "card-generation-v2 disabled (CARD_GENERATION_V2_ENABLED not set)");
-  }
-  // Plan 23 W2/W3：Objective Surface + Dashboard 读取端点（只读；V3 已完成预上线
-  // 切流，能力状态由 shared capability contract 对外投影）。
-  await app.register(learningObjectiveRoutes);
-  // 39d W4-5（2026-09-26）：轮次的读写入口。合同里三件事由服务端定
-  // （实际用哪一版正文、三项预算、终态与冲突要带回现在那一版），所以这一层不是薄壳。
-  await app.register(noteLearningRoundRoutes);
-  await app.register(learningDashboardRoutes);
+  // Plan 57 (2026-10-19): the old card/objective/round/review product chain is retired.
+  // The modules stay on disk only until the schema/migration deletion lands; none of
+  // their routes are registered, so no desktop or companion caller can reach them.
   await app.register(understandingTopologyV3Routes);
   await app.register(jobRoutes);
-  await app.register(reviewRoutes);
   await app.register(sourceRoutes);
   await app.register(importRoutes);
   await app.register(searchRoutes);
   await app.register(exportRoutes);
   await app.register(objectTransferRoutes);
   await app.register(auditRoutes);
-  await app.register(statsRoutes);
-  await app.register(activityRoutes);
   await app.register(uploadRoutes);
   await app.register(companionShellRoutes);
   await app.register(learningMetricRoutes);
@@ -437,15 +410,10 @@ async function main() {
       process.env.DATABASE_URL?.trim() ??
       "postgres://astella:astella_dev@postgres:5432/astella",
   );
-  await app.register(learningRunRoutes);
-  // 39d W5-5：§14.2 的争议与更正。与 learningRunRoutes 分开注册而不是并进去，
-  // 是因为它服务的是**判定的读侧与更正**（§16.25 的一半在结算那一侧），
-  // 与 run 的生命周期写入不是同一条链。
-  await app.register(learningDisputeRoutes);
+  // Plan 57: learning-run and dispute routes are retired with the old chain.
   await app.register(companionBridgeRoutes);
   await app.register(companionModelRoutes);
   await app.register(companionJourneyRoutes);
-  await app.register(understandingProjectionRoutes);
   await app.register(proactiveInboxRoutes);
   await app.register(deliveryRoutes);
   await app.register(memoryRoutes);
@@ -468,13 +436,6 @@ async function main() {
   let queueSeriesTimer: NodeJS.Timeout | undefined;
   let sessionCleanupTimer: NodeJS.Timeout | undefined;
   let notePurgeTimer: NodeJS.Timeout | undefined;
-  let learningRunProcessingTimer: NodeJS.Timeout | undefined;
-  let roundActivitySweepTimer: NodeJS.Timeout | undefined;
-  // P1-10：`clearTimer` 取消不了"已经在跑"的那一轮 tick。记住在途 promise 与
-  // 等它的 waiter，关停时先等它收尾，免得它在连接池关掉之后还去写库。
-  // 声明放在 shutdown 之前——`drainInFlight` 闭包要用，而 shutdown 建得更早。
-  let processingTickInFlight: Promise<void> | null = null;
-  let processingDrainWaiters: Array<() => void> = [];
 
   const shutdown = createGracefulShutdown({
     clearTimer: () => {
@@ -490,10 +451,6 @@ async function main() {
       sessionCleanupTimer = undefined;
       if (notePurgeTimer) clearInterval(notePurgeTimer);
       notePurgeTimer = undefined;
-      if (learningRunProcessingTimer) clearInterval(learningRunProcessingTimer);
-      learningRunProcessingTimer = undefined;
-      if (roundActivitySweepTimer) clearInterval(roundActivitySweepTimer);
-      roundActivitySweepTimer = undefined;
     },
     // 先刷协同快照再关服务器：`onStoreDocument` 是 debounce 的，反过来会把窗口里
     // 最后一段编辑连同连接一起丢掉。
@@ -501,23 +458,8 @@ async function main() {
       await closeNoteCollaboration();
       await app.close();
     },
-    // P1-10：等在途 tick 收尾。有界超时在 createGracefulShutdown 里。
-    drainInFlight: async () => {
-      if (!processingTickInFlight) return;
-      await new Promise<void>((resolve) => {
-        processingDrainWaiters.push(resolve);
-        // 先注册 waiter 再复查一次，避免"刚好在这两行之间收完"时永久挂死。
-        if (!processingTickInFlight) {
-          const waiters = processingDrainWaiters;
-          processingDrainWaiters = [];
-          for (const r of waiters) r();
-        }
-      });
-    },
-    drainTimeoutMs: 15_000,
     // 2026-08-11：NOTIFY listener 连接必须显式关闭，否则进程退出挂起
     afterClose: () => {
-      void closeStructuredSolutionSql();
       stopCompanionNotifyListener();
     },
     closeDatabase,
@@ -531,76 +473,6 @@ async function main() {
   };
   process.on("SIGTERM", handleSignal);
   process.on("SIGINT", handleSignal);
-
-  // 2026-09-29（P0-9）：这一段整块从 main() 末尾**提到 app.listen() 之前**。
-  //
-  // 原来 `setLearningRunProcessingWaker(...)` 装在 listen 之后 200 多行处，于是
-  // 冷启动窗口里 `run-routes.ts` 提交产出物后调的 `wakeLearningRunProcessing()`
-  // 是**静默 no-op**（那是个模块级可变全局，没装就是没装），唤醒请求丢失，
-  // 用户要等最多 10 秒的轮询周期。同一段窗口里 outbox 也完全无人消费。
-  //
-  // 提前到 listen 之前有两个效果：唤醒不再丢；停机期间攒下的命令在开始收流量
-  // 之前就被接住。ticker 是 unref 的，不会因此把进程吊住。
-  // LR-PROC-01: learning_run_processing_outbox 消费（assessment_requested →
-  // 确定性评估/Fail-closed → commit_requested → canonical_unable Commit）。
-  // 轮询 10s，与 commit outbox 同一节奏；失败退避同模式。
-  if (!shutdown.isShuttingDown()) {
-    const processingWorkerId = `run-proc:${crypto.randomUUID()}`;
-    let processingIntervalMs = 10 * 1000;
-    let processingFailedStreak = 0;
-    let processingWakeRequested = false;
-
-    const runProcessingTickOnce = async (): Promise<void> => {
-      try {
-        const result = await runLearningRunProcessingTick(processingWorkerId, 50);
-        if (result.processed > 0 || result.failed > 0) {
-          app.log.info({ ...result }, "learning run processing tick");
-        }
-        processingFailedStreak = 0;
-        processingIntervalMs = 10 * 1000;
-      } catch (err) {
-        processingFailedStreak += 1;
-        processingIntervalMs = Math.min(10 * 1000 * (2 ** processingFailedStreak), 60_000);
-        app.log.error({ err, nextRetryMs: processingIntervalMs }, "learning run processing tick failed");
-      }
-    };
-
-    const scheduleProcessingTick = (delayMs: number): void => {
-      if (learningRunProcessingTimer) clearTimeout(learningRunProcessingTimer);
-      learningRunProcessingTimer = setTimeout(() => {
-        learningRunProcessingTimer = undefined;
-        const inFlight = runProcessingTickOnce().then(() => {
-          processingTickInFlight = null;
-          // 关停已经发起就不再续下一轮：否则会对着已关的连接池再挂一个定时器，
-          // 那个定时器下一次触发时拿到的 pool 已经 end 了。
-          if (shutdown.isShuttingDown()) return;
-          // 正在跑的这一轮里被喊过 → 不等节奏，立刻再来一轮。
-          scheduleProcessingTick(processingWakeRequested ? 0 : processingIntervalMs);
-          processingWakeRequested = false;
-        });
-        processingTickInFlight = inFlight;
-        void inFlight.finally(() => {
-          if (processingTickInFlight === inFlight) processingTickInFlight = null;
-          // 放行所有在等这一轮收尾的 drain waiter。
-          const waiters = processingDrainWaiters;
-          processingDrainWaiters = [];
-          for (const resolve of waiters) resolve();
-        });
-      }, delayMs);
-      learningRunProcessingTimer.unref();
-    };
-
-    setLearningRunProcessingWaker(() => {
-      if (learningRunProcessingTimer) {
-        scheduleProcessingTick(0);
-        return;
-      }
-      // 一轮正在执行中，无法重排定时器；标记下来让这轮结束后立即续跑。
-      processingWakeRequested = true;
-    });
-    // 启动先跑一次，把停机期间攒下的命令接住。
-    scheduleProcessingTick(0);
-  }
 
   // 2026-09-29（P0-9，启动顺序竞态）：`app.listen()` 原来在**这一段之前**，
   // 也就是在 SIGTERM 处理与关停协调器装好之前就开始对外服务。后果是这个窗口里
@@ -767,39 +639,6 @@ async function main() {
   //  - 坏值（非整数、比租约续租节奏还密）⇒ 回落默认，**不**让一个写错的 env 把服务拦在起不来。
   // 启动先跑一次（进程重启前留下的那一轮该由重启这一次收出来），之后按间隔跑，形状照
   // 上面 `sessionCleanupTimer`／`notePurgeTimer` 那两条。
-  const roundActivitySweepIntervalMs = roundActivitySweepIntervalMsV1();
-  if (roundActivitySweepIntervalMs === null) {
-    app.log.info({ env: ENV_ROUND_ACTIVITY_SWEEP_INTERVAL }, "note round idle-pause sweep is off");
-  } else {
-    try {
-      const swept = await sweepIdleNoteRoundsForPauseV1();
-      if (swept.paused.length > 0) {
-        app.log.info(
-          { paused: swept.paused.length, scopesScanned: swept.scopesScanned },
-          "idle note rounds paused on startup",
-        );
-      }
-    } catch (err) {
-      app.log.error({ err }, "note round idle-pause sweep on startup failed");
-    }
-
-    if (!shutdown.isShuttingDown()) {
-      roundActivitySweepTimer = setInterval(async () => {
-        try {
-          const swept = await sweepIdleNoteRoundsForPauseV1();
-          if (swept.paused.length > 0) {
-            app.log.info(
-              { paused: swept.paused.length, scopesScanned: swept.scopesScanned },
-              "idle note rounds paused",
-            );
-          }
-        } catch (err) {
-          app.log.error({ err }, "note round idle-pause sweep failed");
-        }
-      }, roundActivitySweepIntervalMs);
-      roundActivitySweepTimer.unref();
-    }
-  }
 
 }
 

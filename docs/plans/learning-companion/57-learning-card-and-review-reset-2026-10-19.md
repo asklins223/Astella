@@ -1,5 +1,16 @@
 # 57 · 学习卡并入笔记与取消复习/今日
 
+> **2026-10-21 窗口复查补充：** 已检查并修复放大布局、练习退出焦点、原文预览、题号精确跳转及报告／庆祝返回焦点，补充应用内关闭动效的连续窗口验证；题目语义等完整验收仍未结束。见[真实窗口检查记录](../../testing/plan-57-58-window-check-2026-10-21.md)。
+
+> **2026-10-21 implementation audit:** The note-card flow is implemented, but earlier completion records did not cover all active contracts, grading paths or source/version navigation. Those gaps and remaining formal-answer/tutor stubs have now been corrected, with real model/API and desktop-window checks. Broader semantic-content and UI/platform acceptance remains open. See the [current audit, fixes and evidence](../../testing/plan-57-58-audit-2026-10-21.md).
+
+> **2026-10-21 evening follow-up:** The documented per-question discard ("校验失败先重试一次；仍失败则丢弃该题，并在卡上报告有 N 道题未通过校验，没有收录；有效题少于 4 道才整卡失败") is now implemented end to end (worker generation/review, `omitted_question_count`, API contract, card-front notice), together with note-preview/title and tab-semantics fixes. Live probe still produced a 6/6 card; generation reliability and semantic duplicate detection remain open. See [defects, fixes and evidence](../../testing/plan-57-58-followup-2026-10-21.md).
+
+
+> **2026-10-20 desktop decision, superseding the inline layout below:** The note still owns one versioned learning card, but its entry opens a dedicated full-window page. The card front presents question count/types, actual practice history, best score and stars. A missing card has working 4/6/8-question settings and an honest generation state. Answering shows one question with a persistent answer sheet, arbitrary jumps, explicit skips and saved drafts. It contains no correctness, note citations, AI explanations or companion interruptions. Submission explicitly confirms unfinished questions as skips; every question remains in the equal-weight denominator. Results begin with a skippable full-window completion celebration and the existing Live2D celebration action, followed by correct/partial/wrong/skipped review, reference answers, versioned source passages and the actual summary. Celebration acknowledges completion, including a zero-star attempt; it does not claim mastery. Motion Off and system reduced motion keep the final result and controls available. This decision introduces no global card library or review queue. The user approved implementation directly and requested newly drawn backgrounds rather than the earlier prototype images. See [implementation and verification](../../testing/learning-card-desktop-2026-10-20.md).
+
+**Latest clarification, 2026-10-20:** “Separate page” means the independent `note-card` room destination and `LearningCardSurface`, rather than another leaf inside `NotebookDesk`. Reusing the project's visual language does not mean reusing its notebook container. The front retains normal directory navigation and the page-title plaque; the existing companion sits at bottom right. Return controls belong inside the paper at its upper left, with no external return-to-note pill or decorative stripe across the card. Practice and grading isolate the room chrome. Celebration and reports keep the normal left directory, upper-right room-control island, page heading and internal return action, with content positioned below and beside those controls. The card, report and reward papers follow the directory’s collapsed/expanded gutter and use the existing directory motion. Practice joins the question, jump sheet and footer in one board; reports join statistics, filters, details and summary in one sheet. No background blur or fog overlay is used. Celebration lights earned stars in sequence and drives the normal companion component. Earlier inline and notebook-leaf layout descriptions below are superseded.
+
 日期：2026-10-19，Asia/Shanghai。
 
 > 2026-10-19 用户决定：学习卡不再做独立模块或全局列表，改为每篇笔记一张学习卡，卡内多题；题目各自固定题型，不再有主观/客观切换，题干必须是明确疑问句；主观题要支持操作题（交互网页，用户操作页面元素做实践）。每张卡、每道题都必须有笔记原文依据；拓展题要给出拓展知识点文段，最多 1–2 道；允许 AI 生成拓展文段并明确标注，若生成过程联网检索必须标注网址。复习、今日学习、到期队列与催促式提醒全部取消；回看笔记即复习，改由伴星按用户意向定期提醒或生成复习/专项计划。用户同时要求审计并移除“闲功能”，本软件不养闲功能。
@@ -34,7 +45,7 @@
 | 星级 | 整卡得分映射到 0–5 星；取最佳一次完整作答 |
 | 点亮 | 至少完成一次完整作答；0 星也算点亮 |
 
-学习卡不离开笔记：笔记页的「学习卡」页签就是卡的家；笔记封面只留一个轻量星级标记。没有全局卡库、没有首页卡列表、没有独立学习卡页面。
+学习卡的数据归属不离开笔记：从笔记页的「学习卡」入口进入独立整窗页面；笔记封面保留轻量星级标记。没有全局卡库和首页卡列表。
 
 ### 2.2 卡的状态
 
@@ -61,7 +72,7 @@
 
 - 卡分 = 所有题得分的等权平均，四舍五入到整数。
 - 星星取**最佳一次完整作答**；重练低分不降星，历史里仍保留每次成绩。
-- 0★ 也点亮，显示「已尝试」和「再练一次」；星槽全暗，不做庆祝动画。
+- 0★ 也点亮，显示「已尝试」和「再练一次」；星槽全暗，完成庆祝不增加未获得的星级。
 - 只有完整作答才产生星级。未答完、批改失败、中途退出都不算一次完整作答。
 - 笔记改版后，旧卡与旧星保留为历史；新版本重新生成一张卡，不继承旧星。
 - 不设排行榜、不设连续打卡、不设每日重置、不与其他用户比较。
@@ -162,17 +173,17 @@ type CardQuestionGrounding = {
 
 ### 4.2 答题
 
-- 一次卡作答按题顺序进行；顶部显示「第 2/6 题」，不显示倒计时。
+- 一次只展示一道题；顶部显示「第 2/6 题」，答题卡支持自由跳转和跳过，不显示倒计时。
 - 每题只出现该题型的控件：单选/多选/判断/填空/排序/匹配/简答/操作；没有题型切换。
-- 客观题提交即判，不调用模型；简答/需要语义判断的操作题在全部提交后由伴星批改。页面显示「伴星正在给你批改这张卷子…」；批改失败明确说「这次没批完」，允许重试，不按 0 分算。
-- 每题下方可展开「依据」：原文引文、段落号；拓展题再加「AI 补充/来源」、文段截取、网址（如有）。
+- 整卡提交后统一批改；客观题按固定规则判分，不调用模型，简答题由伴星批改，操作题由可信宿主按目标状态判分。页面显示「伴星正在给你批改这张卷子…」；批改失败明确说「这次没批完」，允许重试，不按 0 分算。
+- 作答过程中不显示依据、解析或正误。交卷后的逐题结果可展开原文引文、段落号；拓展题再加「AI 补充/来源」、文段截取、网址（如有）。
 - 全部批完先生成总评，再显示结果纸：整卡得分、星级、总评、每题得分、依据、重练、回笔记。
 - 重练是整卡重做；低分不降星；历史保留每次得分。
 - 退出未完成时保留进度；下次从断点继续，不把未完成当一次成绩。
 
 ### 4.3 结果
 
-- 卡面点亮，星级按最佳成绩更新；如果本次更高，星星做一次很轻的填充动效，不做彩带/弹窗。
+- 卡面点亮，星级按最佳成绩更新；结果先进入可立即离开的全屏庆祝页，依次点亮本次获得的星级，配合纸花、奖章和伴星庆祝。Off 与减少动态直接展示最终结果。
 - 结果显示「最佳 4★ · 本次 3★」；0★ 时显示「已尝试 · 再练一次」，不写“失败”。
 - 总评放在分数下面，覆盖整张卷子（客观题和主观题）：说这次哪里稳、哪些题丢分、下一步练什么；不写“已掌握/未掌握”。
 - 每题结果可点开依据和反馈；答错时反馈指回具体原文或拓展文段。
@@ -588,3 +599,77 @@ host -> iframe: { type: "astella.card.result", score, feedback }
 - 实施时同步更新 `PRODUCT.md` 的学习卡/复习/今日/这一轮学习/validation 段落、`DESIGN.md` 的对应段落，以及 41 中与本方案冲突的卡片/复习/轮次/作答描述。
 - 41 的笔记正文、速看、回想、往外学、批注、记录（去掉 round 记录）与版本规则继续有效；56 的伴星主动交流继续有效，新增“计划”只作为伴星能力，不恢复催促式学习。
 - 星图、笔记架、伴星统计的旧 objective/review/round 口径在实施阶段 4 一并改接新卡；文档同步写明“不再读旧表”，避免下一轮又接回去。
+
+## 16. 实施记录（2026-10-20）
+
+### 16.1 硬切换已完成的部分
+
+- **旧链路删除**：`apps/api/src/modules` 下的 `learning-runs / learning-objectives / card-generation-v2 / review / note-learning-rounds / learning-dashboard / understanding(projection) / stats`、`modules/activity`，客户端 `surfaces/run` 旧 UI、`surfaces/review` 旧审核件、全局卡库与今日日志、worker 的 `card-generation-v2/v3` 与对应 handler，以及它们的契约测试与集成测试。
+- **表**：`0449_retire_learning_card_chain.sql` 一次删掉 objectives/revisions/origins/cards、候选与生成批次、证据快照族、review_schedules 族、learning_runs/tasks/artifacts/assessments/outbox、note_learning_rounds 族、validation_assistance_exposures、personal_relation_decisions_v2。同时把 `agent_operations` 的执行体收成只剩 `job` 一支，并重写恢复/取消两个 SQL 函数。
+- **Agent 能力**：`card_generation_generate` 从 shared 能力目录、agent-host、worker 执行器与 API 直连路径一并移除；agent 不再能写旧制卡 run。
+- **搜索/导出/onboarding/邀请/来源统计**：都改到新链 —— 搜索类型只收 `note|source`；导出只带 `note_learning_cards`（按笔记可见性）；`first_card` 查笔记活卡；来源行只报活卡数。
+- **星图**：拓扑合同只保留 `source / note / card_question`，边只保留 `contains_note / contains_question / references`；关系表态、objective/evidence 节点、learning_run 分支整条移除。层二「配套练习」与层三「练习记录」读新卡三张表。
+- **笔记架**：`noteShelfLearningFactsV1` 增加 `hasCard / bestCardStars`，新增 `practiced` 档与「学习卡最好 N 星」副签。
+- **伴星**：环境块去掉 activeRun/到期复习，学习统计只报今日/本周分钟、卡数、笔记数；到期列表、任务队列、聚焦星图三件工具随旧链退役；卡片检索与「打开这张卡」改读新卡。
+- **页面**：笔记页新增「学习卡」页签；设置页去掉旧学习卡计数；搜索页去掉 objective 过滤与「证据不足」开关；伴星动态页去掉「继续学习」候选段。
+
+### 16.2 尚未完成 / 待下一轮
+
+- **新卡 UI 的真实窗口验收**：生成 → 作答 → 批改 → 总评 → 星级这条链已在 dev 库手工跑通，但改版后的星图/笔记页/设置页尚未按 1440×810、125%/150%/200% 做真窗口截图走查。
+- **死 CSS**：旧 review/run/round 的样式仍在几份样式表里；`renderer-style-dead-guard` 已把它们登记进 `KNOWN_DEAD`（409 条，含 Plan 57 说明），下一轮清理时随条目一起删。
+- **伴星剩余旧词**：`companion-dialogue-content` 等处的「到期复习」识别规则与部分旧文案仍留着；它们不再接旧表，但文案/规则可再收一轮。
+- **首次验证 onboarding**：`evidence_review` 步骤已从前端契约与路由移除，存量 `onboarding_states.steps` 里的旧键会在下一次派生时被覆盖。
+- **构建与真窗口**：四包 typecheck 绿；桌面主进程测试 584 项全绿；渲染层 2310 项中仍有 14 项失败，集中在伴星对话/时间线/目标日志（与本轮改动无直接关系，属工作区并行改动或既存问题），需单独复核。
+
+### 16.3 收尾复核（2026-10-20 晚）
+
+- **新卡真实窗口**：`笔记 → 秦朝统一与中央集权制度 → 学习卡 → 再练一次`，4 题（单选/多选/简答/单选）逐题作答并核对了每题依据；批改态「伴星正在给你批改这张卷子…」之后出现整卷总评（客观题 275/300 折算 92 分、简答 80 分）与「本次 94 分 · 最佳 5 星」，最佳星级与「再练一次」保持。多选改为可多选后显式提交；题型标题显示中文；960×540、720×405 回流无横向溢出。
+- **星图 / 笔记库 / 笔记详情 / 设置**：1440×810 与 125%/150%/200% 回流走查完成；星图底部统计为「全部题目 / 再练 / 没练过 / 练过」，笔记架显示「练过学习卡 · 学习卡最好 5 星」，笔记详情保留「学习卡」页签；四个页面均无「今日学习/待复习/到期复习/复习队列」旧词、无横向溢出、无 console error。
+- **验证**：四包 `typecheck` 全绿；桌面构建通过；新卡共享用例 12 项（contracts / grading / operation / quality）通过。主进程 4 条 dashboard 旧用例按新投影重写为「notes+sources 构图、不请求 `/v2/learning-dashboard`、笔记读不到时如实失败」，101 项主进程用例全绿。
+- **清理**：删除 5 个零引用旧组件/模块（`assessment-dispute-strip`、`candidate-review-model`、`card-generation-*`、`review-focus`、`learning-run-result-policy`、`objective-library-view-state`）及 2 个旧链测试；死 CSS 台账补 15 条（409 → 424）；首页/目录/设置等处的旧复习文案与注释同步改写；本轮的 p57 探针脚本已删除。
+- **渲染层剩余红点**：10 条，全部位于用户并行编辑的伴星文件（`companion-chat-session.history-status`、`CompanionHud.interaction`、`CompanionReplyAttachments`、`companion-process-timeline`、`companion-her-notes-page`、`agent-goals-experience`），单跑仍复现；按既往归属口径记在并行改动，不并入本轮。
+
+### 16.4 全量清收（2026-10-20 深夜）
+
+- **旧 IPC / preload**：删除 `desktop-ipc-learning.ts` 与 54 个旧通道常量（objective / review / learningRun / noteLearningRound / assessmentDispute / cardGeneration / homeSuggestion / todayBatch / companionLearningRun），preload 对应命名空间全部移除；旧网关 `ns-learning` / `ns-assessment`、正式评估守卫、返程标记、run 事件流账本、卡生成处理器与旧类型一并删除。新卡 IPC 收进 `desktop-ipc-input-schemas.ts`。
+- **共享包**：删除 `review/*`（15 份）、`card-generation-v2-pipeline`、旧 learning/card 契约与 8 份旧 db-schema；重新导出 `learning/note-learning-card-quality`。伴星活 SQL 全部改读 `note_learning_cards` / `note_learning_card_attempts`（今日小结、最近活动、卡片标签、首页里程碑、提案跳转），不再查询任何已删表。
+- **工作区与依赖**：删除 `packages/card-generation` 整包、其依赖声明与 tsconfig/Docker 接线；更新 API / worker / agent-host 三份包锁，桌面端锁未动。三处本地 `@astella/shared` 改为指向源码的符号链接，避免 typecheck 对着旧副本。
+- **投影与路由**：`RoomProjectionV1` 收成 `mode + recentNote + recentActivitySummary + captureCapability`；桌面 route kind 去掉 `room.today / review.queue / note.cardGeneration / learningRun.detail / objective.*`，伴星页面词表收成 7 档，页面上下文只保留 note / star_map / conversation / settings / source / other；首页 `homePresentation` 改为“接着最近一篇笔记或从一份材料开始”。
+- **发布 smoke**：`smoke-packaged.mjs` 的 owner/member 旅程改为「笔记 → 打开笔记 → 学习卡 → 生成/校验 4–8 题依据」，删除 LearningRun Player、正式评估守卫、制卡审核与返程标记恢复段；笔记卡选择器按真窗口 aria-label 修正。`node --check` 通过。
+- **死 CSS**：按 `KNOWN_DEAD` 的 424 个死类删除 1255 条规则 / 1408 个选择器，台账清空；`objective-flow.css` 全死，连文件一起删除。
+- **伴星旧词与 HUD 元数据**：页面词表、工具组、工具描述、日记来源类型、`claimsNothingDue` 闸与环境块到期事实全部删除；`hud-pages.ts` / `room-machine.ts` / `scene-camera.ts` 里 today / queue / goals / generating / candidate / assessment / result / resumable 等不可达页与取景档一并删除，HUD 只保留 9 个现役页面（另加 4 个笔记阅读态元数据）。剩在历史迁移与归档脚本里的词不算活文案。
+- **验证**：四包 typecheck 全绿；桌面构建通过；共享套件 523 项全绿；API 1965 项 0 失败；worker 1933 项全绿；桌面 2844 项中 10 项失败，全部落在并行编辑的伴星文件（history-status / CompanionHud / ReplyAttachments / process-timeline / agent-goals），与本轮改动无关。真窗口复核：首页“接着读”、笔记库、笔记详情、学习卡页签、星图、设置均正常，无 console error、无横向溢出。
+
+**仍在路上的**（更新见 16.6）：
+
+- **打包 smoke**：已在 16.6 真跑通过；CI 侧 macOS/Windows/Linux 的 offline-only 闸口沿用同一条脚本。
+- **桌面 10 条伴星红点**：属于并行改动，需由那条工作线收口。
+
+### 16.5 空卡自愈与生成可靠性（2026-10-20 下午）
+
+- **现象**：打包旅程在一篇只有一句正文的测试笔记上看到「0 道题」，卡仍为 active；生成任务 `d47a411d` 以 `NOTE_OVERVIEW_OUTPUT_INVALID` 死亡。根因有三层：
+  1. API 先建空卡行再入队，任务失败后空壳永久占位；`ensureNoteLearningCardRow` 见行即返回 `card_exists`，用户再也无法重生成。
+  2. 生成输出偶尔把题干写成陈述句，质量闸一次判错就整轮作废（`maxAutoRetries` 默认 0）。
+  3. `astella_worker` 对五张新卡表没有授权；真正落题时 `permission denied for table note_learning_card_questions`，任务重试耗尽后只剩一条泛化的输出错误。
+- **修复**：
+  - `readNoteLearningCard` 把 0 题活卡当作不存在，并依据是否仍有 pending/running 生成任务返回 `generating`；`startNoteLearningCardAttempt` 拒绝 0 题卡（409 `card_not_ready`）；`ensureNoteLearningCardRow` 在同版空壳且无在飞任务时删除旧壳重新建卡，命中在飞任务则返回 `generating`，生成入口据此进入等待态而不是报「已有学习卡」。
+  - 生成任务改为 `maxModelCalls: 2 / maxAutoRetries: 1`（与笔记脑图生成同一口径），提示词明确要求题干出现疑问词，不只靠问号结尾。
+  - `roles.sql` 补 `astella_worker` 对 cards / questions / operation_artifacts / attempts / answers 的最小授权，并登记进 worker 权限期望矩阵；API 继续走全表 CRUD。
+- **验证（dev API 真调用）**：失败卡 `d008…` 首次 GET 为 `{card:null,generating:false}`；重生成返回新卡 `ec6e…`，19 秒后成功，6 题 / 6 种题型 / 6 题都有原文依据；随后走完开始作答 → 六题作答（客观题即时判分）→ 交卷 → worker 批改，历史记录 `completed`、71 分 3 星，总评包含整卷文本。
+- **备注**：新卡 UI 正由并行工作线改版；本轮只确认 API 合同 `{ card, generating }`、答题回执与 `questions[].operation` 与其 hook 对齐，不在真窗口层面重复验收。
+
+### 16.6 兼容层拆净与打包验收（2026-10-20 下午）
+
+- **并行回滚适配**：并行工作线在 15:10 回滚了新卡 UI 改版（`card-session` / `use-note-card-session` / `card-answer-controls` 等一并删除），学习卡面板回到 14:40 的简单版。本轮没有恢复改版，而是在现行面板上重放生成自愈所需的最小状态：`generating` 态 + 3 秒轮询 + 0 题卡不给开始。打包 smoke 的判据同步改成先读卡头「N 道题」再进第一题验证依据，不再依赖已删除的选择器。
+- **旧合同收口**：桌面 route schema 删除 `room.today / objective.library / objective.detail / review.queue / learningRun.detail`；namespace 删除 `objective / review / learningRun`；actionCapability 删除 `objective.read / review.read / card_generation.* / learning_run.*`；feature extras 删除 `card_generation_v2 / learning_run_v2`；gateway 事件流删除 `learning_run_changed / card_generation_changed`；navigation 去掉 `learningRunId`。能力投影同步收口：`buildDesktopCapabilityProjection` 不再读 `LEARNING_RUN_ENABLED / CARD_GENERATION_V2_ENABLED`，也不再把 `learning_objective_system_v3` 标成 enabled。
+- **伴星桥合同**：`EntityRefV2` 收成 source/note/companion_journey/assistant_session；`AllowedMainRouteV2` 收成 8 个现役页面；`UiTargetRef` 去掉 `note_generate_cards / card_evidence / run_current_task`；系统事件类型收成 `journey.* / generation_job.*`。worker 里 `pageKind === "learning_run"` 的 grounded-tutor fail-closed 判据与 liveView 的 `learningRunId` 一并删除；发现来源 `learning_run` 与其 UI 标签同步移除。
+- **配置与运维**：两份 compose 删除 `LEARNING_RUN_ENABLED / CARD_GENERATION_V2_ENABLED / CARD_GENERATION_V3_PROVIDER`；`verify-companion-capability-config.mjs` 的期望表与可治理键收成 `COMPANION_*`（验证通过：api 11 / worker 9）；admin overview 与 labels 去掉旧开关。`CAPABILITY_IDS` 去掉 `learning_run_companion / learning_question_markers / learning_objective_system_v3`。文档（api-and-data 中英、development 中英、feature-flag-inventory）同步改写。
+- **库表**：新增迁移 `0452_retire_learning_card_leftovers` 补删漏网表（`note_learning_round_targets`、`note_learning_round_model_attempts`、`assessment_corrections_v2` + `assessment_disputes_v2`）；dev 库已执行，`review*/learning_run*/learning_objective*/card_generation*` 表全部不存在。`roles.sql` 的 worker 期望矩阵与授权清单同步删掉旧行，新卡五表的最小授权保留；`role-grants` 复跑无异常。
+- **验证**：四包 typecheck 全绿；共享 523/523、worker 1932/1932、API 1963 项 0 失败（1 skipped）全绿；桌面定向 6 文件 237 项全绿（settings / notebook reading-shape / 学习卡 experience / companion-chat-session / discovery-panel / desktop-gateway / style guard）。打包链路：重建 → 打包 → `package:smoke` 真跑通过（owner 旅程覆盖 笔记 → 学习卡 → 卡头 4–8 道题 → 开始学习 → 第一题依据）。
+
+- **最终复核（17:55）**：并行会话在 17:27–17:38 把学习卡面板换成了新的 `learning/card/`（`lc-*`）全屏改版。四包 typecheck 仍全绿；重新打包后 `package:smoke` 对**新界面**同样真跑通过（判据已改成读界面事实：卡头「N 道题」+ 进入作答面，并同时认旧类名与新 `lc-*` 类名，共享发布闸不再因界面重构而红）。`roles.sql` 清掉旧 learning-card / objective / evidence / candidate 管线的全部授权镜像（含方案 20 那 16 张 V2 表的整段块）后，`role-grants` 复跑干净，权限矩阵无异常。
+
+**仍在收口的**：
+
+- **桌面全量渲染层**：此前在并发构建压力下 31 红；逐文件复跑除登记在案的伴星 history-status 外全绿。需在无并行任务时复跑一次全量，确认只剩伴星那一条。
+- **Companion Journey 的完成触发点（需要你拍板）**：`journey-reducer` 里还留着一支 `learning_run.completed → closing / real_first_loop` 的归约分支。它是**死代码**——`learning_runs` 表已随 0449 退役，全仓没有事件生产点（journey-hook 只产 `source/note/card/evidence.created` 四类里程碑）。但 journey 本身是活的 Plan 44 引导功能，所以现在的实际表现是：里程碑能一路推到 `first_evidence`，却永远不会自动走到「完成」。分支不能靠删代码解决（删了只是把死代码换成"永远不完成"），真正的收口是**换一个完成触发点**——最自然的后继是「用户完成第一张笔记内学习卡的完整作答」（提交批改、星级落卡）。这属于 Plan 44 的产品决定，不在方案 57 的范围内，故留给你裁决；一旦你定了后继事件，改动很小（reducer 加一支 `note_learning_card.completed` 归约 + API 侧在批改完成处挂 `hookJourneyEntityCreated`，两处各十几行）。

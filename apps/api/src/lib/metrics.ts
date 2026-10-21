@@ -160,15 +160,11 @@ export const readinessStatus = new Gauge({
  * 从 db-schema 派生而不是硬编码，与上面 JOB_TYPES 同一个理由：枚举加了命令而
  * allowlist 没跟上，标签就会静默分裂成两格。
  */
-import { LearningRunProcessingCommand as _LearningRunProcessingCommand } from "@astella/shared/db-schema/learning-runs";
 import {
   COMPANION_SUMMARY_TOTAL_DEF,
   COMPANION_MEMORY_USED_COUNT_DEF,
   COMPANION_MEMORY_RETRIEVAL_MODE_TOTAL_DEF,
 } from "@astella/shared/metrics-definitions";
-export const LEARNING_RUN_PROCESSING_COMMAND_TYPES = Object.values(
-  _LearningRunProcessingCommand,
-) as readonly string[];
 
 /** 单条 outbox 命令被 tick 处理后的终态 allowlist。 */
 export const LEARNING_RUN_PROCESSING_OUTCOMES = ["processed", "failed"] as const;

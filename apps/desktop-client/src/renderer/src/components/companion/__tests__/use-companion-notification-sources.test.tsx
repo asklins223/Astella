@@ -33,15 +33,10 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 describe("real notification source adapters", () => {
-  it("offers today's due reviews once and its action opens the review page", async () => {
+  it("does not create a due-review notice", async () => {
     source.home = { sanitizedReviewSummary: { state: "data", data: { dueCount: 2 } } };
-    const view = renderHook(useCompanionNotificationSources);
-    const notice = useCompanionNotifications.getState().items[0];
-    expect(notice).toMatchObject({ kind: "review", title: "2 项知识等你温习", scope: 7, audio: { clip: "review-due" } });
-    act(() => useCompanionNotifications.getState().dismiss(notice.id)); view.rerender();
-    expect(useCompanionNotifications.getState().items).toHaveLength(1);
-    await act(async () => notice.actions?.find(action => action.id === "review")?.run?.());
-    expect(useRoomStore.getState().surface).toBe("review");
+    renderHook(useCompanionNotificationSources);
+    expect(useCompanionNotifications.getState().items).toHaveLength(0);
   });
 
   it("routes reminders to independent messages and sends real displayed/acted receipts", async () => {

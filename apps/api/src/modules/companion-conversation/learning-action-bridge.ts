@@ -1,5 +1,4 @@
-import { resolveCompanionLearningContextInTransaction, sanitizeText } from "./companion-learning-menu-context.ts";
-export { resolveCompanionLearningContext } from "./companion-learning-menu-context.ts";
+import { sanitizeText } from "./companion-learning-menu-context.ts";
 /**
  * P5 §6.7：Learning menu context adapter（只读）。
  *
@@ -15,26 +14,16 @@ export { resolveCompanionLearningContext } from "./companion-learning-menu-conte
 
 import { sql } from "drizzle-orm";
 import { acceptCompanionToolReview } from "./companion-tool-review-action.ts";
-import { companionGroundedTutorGrantV1Schema, companionLearningContextV1Schema, companionLearningRunContextV1Schema, learningRunAssistanceConsequenceV1, proposedLearningActionPayloadV1Schema } from "@astella/shared";
+import { proposedLearningActionPayloadV1Schema } from "@astella/shared";
 import { sha256Utf8V1, canonicalJsonV1 } from "@astella/shared/content-hash";
 import { lockCompanionConversationWaitingRuns, lockCompanionRunForEventWrite } from "@astella/shared/companion-lock-order";
 import { withWorkspaceTransaction, type ApiTransaction } from "../../db/client.ts";
 // Plan 23 CS-05/CS-06：Objective Surface 派生 companion 上下文（不再依赖 V1 card_key_points.claim）。
 import { deliver } from "./delivery/delivery-service.ts";
-import { resolveAuthSurfaceManifestSecret } from "../../companion-contracts/auth-surface.ts";
 import { getCompanionAccountEpoch } from "../../companion-contracts/companion-account-epoch.ts";
-import {
-  buildCompanionLearningRunContext,
-  contextRevisionForCompanionLearningRun,
-  isCompanionLearningRunTutorEligible,
-  loadCompanionLearningRunContext,
-} from "./turn/learning-run-context.ts";
 // LearningRun 工具在 decision 事务内同步执行；confirm 后 proposal 直接
 // succeeded + resultRef=runId。
-import { applyAction, createRunV2, getRunPublicView, type CreateLearningRunV2Request } from "../learning-runs/run-service.ts";
-import { LearningRunServiceError } from "../learning-runs/run-errors.ts";
 // 方案 16 §18.1：工具网关第二批执行单元（确定性、同事务）。
-import { deferReviewSchedule } from "../review/review-defer-service.ts";
 import { createJob } from "../job/service.ts";
 import { getPetProfile, PetProfileCasConflictError, upsertPetProfile } from "./pet-profile-service.ts";
 import { resolveNavigationRouteFor, snapshotFor } from "./companion-proposal-snapshot.ts";
@@ -50,25 +39,6 @@ import { reclaimExpiredCompanionProposals } from "./turn/companion-proposal-expi
 
 const PROPOSAL_TTL_MINUTES = 5; // §6.7：resume/start 默认 5min（纯导航 10min）
 
-function menuProposalRequestHash(body: {
-  version: 1;
-  conversationId?: string;
-  clientMessageId: string;
-  candidateId: "learning_run_resume" | "learning_run_start";
-  expectedContextRevision: string;
-  expectedPayloadSha256: string;
-  sourceSurface: "pet" | "main";
-}): string {
-  return sha256(canonicalJson({
-    version: body.version,
-    conversationId: body.conversationId ?? null,
-    clientMessageId: body.clientMessageId,
-    candidateId: body.candidateId,
-    expectedContextRevision: body.expectedContextRevision,
-    expectedPayloadSha256: body.expectedPayloadSha256,
-    sourceSurface: body.sourceSurface,
-  }));
-}
 
 /**
  * §6.7：POST /companion/menu-proposals。
@@ -77,103 +47,6 @@ function menuProposalRequestHash(body: {
  * （带 action_ref）+ pending proposal + action.proposed event。
  * 任何验证失败零写入；同 key 同 body 幂等返回同 response，异 body 409。
  */
-export async function createCompanionMenuProposal(args: {
-  workspaceId: string;
-  userId: string;
-  body: {
-    version: 1;
-    conversationId?: string;
-    clientMessageId: string;
-    candidateId: "learning_run_resume" | "learning_run_start";
-    expectedContextRevision: string;
-    expectedPayloadSha256: string;
-    sourceSurface: "pet" | "main";
-  };
-  idempotencyKey: string;
-}): Promise<unknown> {
-  return withWorkspaceTransaction(
-    { workspaceId: args.workspaceId, userId: args.userId },
-    async (tx) => {
-      // L11：事件携带当前账号世代（global off 后旧 action 事件被客户端拒绝）。
-      const requestBodyHash = menuProposalRequestHash(args.body);
-
-
-      // 重算 context（同事务只读）
-      const context = await resolveCompanionLearningContextInTransaction(tx, {
-        workspaceId: args.workspaceId,
-        userId: args.userId,
-      });
-      if (context.contextRevision !== args.body.expectedContextRevision) {
-        throw new CompanionConversationError(
-          "CONTEXT_STALE", 409, "context revision mismatch",
-        );
-      }
-      const candidate = args.body.candidateId === "learning_run_resume"
-        ? context.learningRunResumeCandidate
-        : context.learningRunStartCandidate;
-      if (!candidate) {
-        // 2026-08-12+（15a-E）：细分 code——前端据此显示"当前没有进行中的学习/
-        // 没有可开始的学习"（此前 ACTION_STALE 无法区分）。
-        throw new CompanionConversationError(
-          args.body.candidateId === "learning_run_resume"
-            ? "NO_ACTIVE_RUN"
-            : "NO_CANDIDATE", 409, "candidate unavailable",
-        );
-      }
-      if (candidate.payloadSha256 !== args.body.expectedPayloadSha256) {
-        throw new CompanionConversationError(
-          "ACTION_STALE", 409, "payload hash mismatch",
-        );
-      }
-      // 服务端重新构造候选 payload，并精确验证其 sha256。
-      let payload: { kind: string; [k: string]: unknown };
-      if (args.body.candidateId === "learning_run_resume") {
-        const runId = context.learningRunResumeCandidate?.runId;
-        if (!runId) {
-          throw new CompanionConversationError("NO_ACTIVE_RUN", 409, "active learning run disappeared");
-        }
-        payload = { kind: "resume_learning_run", runId };
-      } else {
-        const start = context.learningRunStartCandidate;
-        if (!start || !start.objectiveId || !start.originV2) {
-          throw new CompanionConversationError("NO_CANDIDATE", 409, "learning candidate disappeared");
-        }
-        payload = {
-          kind: "start_learning_run_v2",
-          request: start.request,
-        };
-      }
-      const payloadHash = sha256(canonicalJson(payload));
-      if (payloadHash !== args.body.expectedPayloadSha256) {
-        throw new CompanionConversationError(
-          "ACTION_STALE", 409, "payload hash mismatch",
-        );
-      }
-
-      companionLearningContextV1Schema.parse(context);
-      return createCompanionProposalInTransaction(tx, {
-        workspaceId: args.workspaceId,
-        userId: args.userId,
-        conversationId: args.body.conversationId,
-        clientMessageId: args.body.clientMessageId,
-        idempotencyKey: args.idempotencyKey,
-        requestBodyHash,
-        payload,
-        payloadSha256: payloadHash,
-        title: candidate.title,
-        targetSummary: candidate.targetSummary,
-        impactSummary: candidate.impactSummary,
-        userText:
-          args.body.candidateId === "learning_run_resume"
-            ? `请继续当前学习：${candidate.targetSummary}`
-            : `请开始一小段学习：${candidate.targetSummary}`,
-        sourceSurface: args.body.sourceSurface,
-      });
-
-    },
-  );
-}
-
 /**
  * §6.7/§18.1：proposal 原子创建（menu 与 tool 网关共用事务体）。
  * 同一 RLS 事务：幂等检查（同 key 同 requestBodyHash 重放同 response）→
@@ -604,7 +477,6 @@ export async function createCompanionToolProposal(args: {
 
 // ─── P5 §6.6 Proposal decision（confirm/reject 原子消费） ───────────────
 
-import { type LearningRunActionV1 } from "@astella/shared";
 
 // §18.1 导航工具（纯导航同步 succeeded）；业务工具在下方分支同步执行。
 const NAVIGATION_KINDS = new Set([
@@ -883,151 +755,6 @@ async function decideCompanionProposalInCurrentTransaction(args: CompanionPropos
         };
       }
 
-      // LearningRun 工具（同步执行，事务内完成）。
-      if (kind === "start_learning_run_v2" || kind === "resume_learning_run") {
-        let runId: string;
-        let safeSummary: string;
-        if (kind === "start_learning_run_v2") {
-          const request = proposalPayload.request as CreateLearningRunV2Request | undefined;
-          if (!request || typeof request !== "object" || !("originV2" in request)) {
-            throw new CompanionConversationError("ACTION_STALE", 409, "learning run v2 payload is stale");
-          }
-          try {
-            const run = await createRunV2(tx, {
-              workspaceId: args.workspaceId,
-              userId: args.userId,
-              request: request as CreateLearningRunV2Request,
-            });
-            runId = run.runId;
-            safeSummary = "学习运行已创建";
-          } catch (error) {
-            if (error instanceof LearningRunServiceError) {
-              throw new CompanionConversationError("ACTION_STALE", 409, "learning run could not be prepared");
-            }
-            throw error;
-          }
-        } else {
-          const runIdRaw = proposalPayload.runId;
-          if (typeof runIdRaw !== "string") {
-            throw new CompanionConversationError("ACTION_STALE", 409, "learning run payload is stale");
-          }
-          try {
-            const run = await getRunPublicView(tx, {
-              workspaceId: args.workspaceId,
-              userId: args.userId,
-              runId: runIdRaw,
-            });
-            runId = run.runId;
-            safeSummary = "学习运行已恢复";
-          } catch (error) {
-            if (error instanceof LearningRunServiceError) {
-              throw new CompanionConversationError("ACTION_STALE", 409, "learning run could not be resumed");
-            }
-            throw error;
-          }
-        }
-        await tx.execute(sql`
-          UPDATE companion_action_proposals
-          SET status = 'succeeded', decision = 'confirm', decided_at = now(),
-              decision_key_hash = ${keyHash}, updated_at = now()
-          WHERE id = ${proposal.id}
-        `);
-        await appendDecisionEvent(tx, args.workspaceId, args.userId, proposal, "accepted");
-        await deliverActionResultForProposal(tx, args.workspaceId, args.userId, proposal.id);
-        return {
-          version: 1, proposalId: proposal.id, status: "succeeded",
-          resultRef: runId, route: null, safeSummary,
-        };
-      }
-
-      // ── 方案 16 §18.1：LearningRun 运行时工具（pause/request_hint/switch_variant） ──
-      // exposure-first：hint 只在用户确认后揭示（伴星模型不得自行生成题目提示）。
-      if (kind === "pause_learning_run" || kind === "request_hint_level" || kind === "switch_task_variant") {
-        const runId = proposalPayload.runId;
-        const taskId = proposalPayload.taskId;
-        if (typeof runId !== "string") {
-          throw new CompanionConversationError("ACTION_STALE", 409, "learning run payload is stale");
-        }
-        let action: LearningRunActionV1;
-        let safeSummary: string;
-        if (kind === "pause_learning_run") {
-          action = { kind: "pause" };
-          safeSummary = "学习运行已暂停";
-        } else if (kind === "request_hint_level") {
-          const level = proposalPayload.level;
-          if (typeof taskId !== "string" || (level !== 1 && level !== 2 && level !== 3)) {
-            throw new CompanionConversationError("ACTION_STALE", 409, "hint payload is stale");
-          }
-          action = { kind: "request_hint", level };
-          // 措辞由合同生成（39d W2-4 #14）：这句会上屏，而"看了提示会降成练习"
-          // 这件事只有一个真相——`exposureLowersTrust`。
-          safeSummary = `已揭示提示（${learningRunAssistanceConsequenceV1() ?? "本题资格已变化"}）`;
-        } else {
-          const alternativeId = proposalPayload.alternativeId;
-          const variantReason = proposalPayload.reason;
-          if (typeof taskId !== "string" || typeof alternativeId !== "string"
-            || typeof variantReason !== "string" || variantReason.length === 0) {
-            throw new CompanionConversationError("ACTION_STALE", 409, "variant payload is stale");
-          }
-          action = { kind: "switch_variant", alternativeId, reason: variantReason };
-          safeSummary = "已切换题目变体";
-        }
-        try {
-          const run = await getRunPublicView(tx, {
-            workspaceId: args.workspaceId,
-            userId: args.userId,
-            runId,
-          });
-          // §18：payload 的 taskId 必须匹配当前 active task（applyAction 只作用于
-          // 当前任务；不匹配即 stale，绝不作用于其他任务）。
-          if (typeof taskId === "string" && run.activeTaskId !== null && run.activeTaskId !== taskId) {
-            throw new CompanionConversationError("ACTION_STALE", 409, "task is not the active task");
-          }
-          await applyAction(tx, {
-            workspaceId: args.workspaceId,
-            userId: args.userId,
-            runId,
-            runRevision: run.revision,
-            runtimeEpoch: run.runtimeEpoch,
-            action,
-            idempotencyKey: `pet-tool:${proposal.id}:${kind}`,
-          });
-        } catch (error) {
-          if (error instanceof LearningRunServiceError || error instanceof CompanionConversationError) {
-            throw new CompanionConversationError("ACTION_STALE", 409, "learning run action could not be applied");
-          }
-          throw error;
-        }
-        return succeedSyncProposal(tx, args.workspaceId, args.userId, proposal, keyHash, runId, null, safeSummary);
-      }
-
-      // `plan_understanding_route` 分支已删除（2026-09-24，39d W2-1）：它的唯一 producer
-      // 是伴星工具 `companion_plan_route`，该工具 30 天真实流量 0 次调用且参数零字段校验，
-      // 已随契约里的 kind 一起整条删。**`createUnderstandingRoutePlan` 与
-      // `route-plan-service` 保留**——HTTP 路由 `POST /understanding/routes/plan` 仍是它的调用方。
-
-      // ── §18.1：defer_review（只写展示层 user_deferred_until） ──
-      if (kind === "defer_review") {
-        const payload = proposalPayload as unknown as {
-          scheduleId: string;
-          scheduleGeneration: number;
-          deferredUntil: string;
-          reasonCode: "user_requested" | "temporary_unavailable";
-        };
-        const outcome = await deferReviewSchedule(tx, { workspaceId: args.workspaceId, userId: args.userId }, {
-          scheduleId: payload.scheduleId,
-          scheduleGeneration: payload.scheduleGeneration,
-          deferredUntil: new Date(payload.deferredUntil),
-          reasonCode: payload.reasonCode,
-        });
-        if (outcome.status === "not_found") {
-          throw new CompanionConversationError("NOT_FOUND", 404, "review schedule not found");
-        }
-        if (outcome.status !== "ok") {
-          throw new CompanionConversationError("ACTION_STALE", 409, "review schedule generation changed");
-        }
-        return succeedSyncProposal(tx, args.workspaceId, args.userId, proposal, keyHash, outcome.scheduleId, null, "已延后复习提醒（不算完成复习）");
-      }
       const memoryOutcome = await executeCompanionMemoryProposalAction({
         tx,
         workspaceId: args.workspaceId,
@@ -1240,102 +967,4 @@ async function appendDecisionEvent(
   `);
 }
 
-// ─── P5 §6.7 Grounded tutor grant（HMAC + 5min TTL） ────────────────────
 
-import { createHmac, randomUUID as grantRandomUUID } from "node:crypto";
-
-const GRANT_TTL_MINUTES = 5;
-
-function grantHmacSecret(): string {
-  const configured = resolveAuthSurfaceManifestSecret();
-  if (configured) return configured;
-  // 与 turn-service 验证侧统一 fail-closed（2026-08-11）：
-  // 移除 NODE_ENV 分支的公开常量回退（staging 常非 production，且与验证侧
-  // 无条件 503 的行为矛盾）；任何环境未配置都不签发。
-  throw new CompanionConversationError(
-    "INTERNAL_ERROR", 503, "companion grant signing is not configured",
-  );
-}
-
-/** LearningRun 页面适配器：仅返回仍可安全进入 Grounded Tutor 的当前 task。 */
-export async function getCompanionLearningRunContext(args: {
-  workspaceId: string;
-  userId: string;
-  runId: string;
-}): Promise<{ statusCode: 200; body: unknown }> {
-  return withWorkspaceTransaction(
-    { workspaceId: args.workspaceId, userId: args.userId },
-    async (tx) => {
-      const row = await loadCompanionLearningRunContext(tx, args);
-      if (!row) throw new CompanionConversationError("NOT_FOUND", 404, "learning run context not found");
-      if (!isCompanionLearningRunTutorEligible(row)) {
-        throw new CompanionConversationError("ACTION_STALE", 409, "learning run context is no longer eligible");
-      }
-      return {
-        statusCode: 200 as const,
-        body: companionLearningRunContextV1Schema.parse(buildCompanionLearningRunContext(row)),
-      };
-    },
-  );
-}
-
-/**
- * LearningRun 专用的一次性授权。签名绑定 snapshotId 与 active task，随后由
- * turn create 在同一 RLS 事务内重新读取并消费，避免旧页面对已切换任务续用。
- */
-export async function createCompanionLearningRunContextGrant(args: {
-  workspaceId: string;
-  userId: string;
-  runId: string;
-  body: { version: 1; pageInstanceId: string; taskId: string; contextRevision: string };
-}): Promise<unknown> {
-  return withWorkspaceTransaction(
-    { workspaceId: args.workspaceId, userId: args.userId },
-    async (tx) => {
-      const run = await loadCompanionLearningRunContext(tx, args);
-      if (!run) throw new CompanionConversationError("NOT_FOUND", 404, "learning run not found");
-      const contextRevision = contextRevisionForCompanionLearningRun(run);
-      if (contextRevision !== args.body.contextRevision) {
-        throw new CompanionConversationError("CONTEXT_STALE", 409, "learning run context revision mismatch");
-      }
-      const taskId = run.taskId;
-      if (!isCompanionLearningRunTutorEligible(run) || taskId === null || taskId !== args.body.taskId) {
-        throw new CompanionConversationError("ACTION_STALE", 409, "learning run context is no longer eligible");
-      }
-
-      const grantId = grantRandomUUID();
-      const issuedAt = new Date();
-      const expiresAt = new Date(issuedAt.getTime() + GRANT_TTL_MINUTES * 60_000);
-      const permissionSnapshot = {
-        pageInstanceId: args.body.pageInstanceId,
-        pageKind: "learning_run" as const,
-        capability: "grounded_tutor" as const,
-        runId: run.runId,
-        snapshotId: run.snapshotId,
-        taskId,
-        contextRevision: args.body.contextRevision,
-      };
-      const permissionSnapshotHash = sha256(canonicalJson(permissionSnapshot));
-      const grantPayload = {
-        version: 1 as const,
-        grantId,
-        userId: args.userId,
-        workspaceId: args.workspaceId,
-        pageInstanceId: args.body.pageInstanceId,
-        pageKind: "learning_run" as const,
-        capability: "grounded_tutor" as const,
-        runId: run.runId,
-        snapshotId: run.snapshotId,
-        taskId,
-        contextRevision: args.body.contextRevision,
-        permissionSnapshotHash,
-        issuedAt: issuedAt.toISOString(),
-        expiresAt: expiresAt.toISOString(),
-      };
-      const signature = createHmac("sha256", grantHmacSecret())
-        .update(`companion-grounded-tutor-grant-v1:${canonicalJson(grantPayload)}`)
-        .digest("hex");
-      return companionGroundedTutorGrantV1Schema.parse({ ...grantPayload, signature });
-    },
-  );
-}

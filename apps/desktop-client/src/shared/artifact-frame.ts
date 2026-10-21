@@ -72,7 +72,7 @@ export const ARTIFACT_FRAME_CHANNEL = 'astella:artifact-frame'
  * 产物报告运行状态（ready／heartbeat／error）与原生滚轮增量（scroll）。
  * 滚轮只驱动包含本 frame 的阅读滚区，不参与运行状态，也不提供任意 DOM 指令。
  */
-export type ArtifactFramePhase = 'ready' | 'heartbeat' | 'error' | 'scroll'
+export type ArtifactFramePhase = 'ready' | 'heartbeat' | 'error' | 'scroll' | 'answer'
 
 export interface ArtifactFrameEvent {
   channel: typeof ARTIFACT_FRAME_CHANNEL
@@ -96,6 +96,11 @@ export interface ArtifactFrameEvent {
   scrollDeltaX?: number
   scrollDeltaY?: number
   scrollDeltaMode?: 0 | 1 | 2
+  /**
+   * Plan 57 操作题：模板只回传用户的操作状态（例如参数值），**不回传分数**。
+   * 分数由宿主按题目期望状态计算，frame 不能自报成绩。
+   */
+  answer?: unknown
 }
 
 export interface ArtifactFrameCommandMessage {
@@ -117,7 +122,7 @@ export function parseArtifactFrameEvent(data: unknown): ArtifactFrameEvent | nul
   if (candidate.channel !== ARTIFACT_FRAME_CHANNEL) return null
   if (candidate.direction !== 'frame->host') return null
   const phase = candidate.phase
-  if (phase !== 'ready' && phase !== 'heartbeat' && phase !== 'error' && phase !== 'scroll') return null
+  if (phase !== 'ready' && phase !== 'heartbeat' && phase !== 'error' && phase !== 'scroll' && phase !== 'answer') return null
   const event: ArtifactFrameEvent = { channel: ARTIFACT_FRAME_CHANNEL, direction: 'frame->host', phase }
   if (phase === 'scroll') {
     if (

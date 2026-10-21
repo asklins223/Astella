@@ -1,6 +1,4 @@
 /* A note's cards live in a soft, three-dimensional packet. */
-.desktop-app.hud-surface .card-library .approved-surface__heading { display: none; }
-.desktop-app.hud-surface .card-library .approved-surface__content { top: 75px; overflow: visible; container: card-packs-space / inline-size; }
 .desktop-app.hud-surface .card-library .card-collection { display: grid; grid-template-rows: auto auto minmax(0,1fr); height: 100%; min-width: 0; min-height: 0; gap: 17px; color: #435d4e; transform: translateY(var(--card-object-y,0px)); opacity: clamp(0,var(--card-object-open,1),1); }
 .card-collection__header { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 18px 25px; border: 3px solid #fffef4; border-radius: 29px; background: #f5f7e9; box-shadow: 0 4px 0 #c0ccb59c,0 10px 23px #334d2820; }
 .card-collection__welcome { display: flex; align-items: center; gap: 15px; min-width: 0; }
@@ -128,4 +126,3 @@
   .desktop-app.hud-surface .card-collection__pack-heading > .text-action { position: static; margin-top: 12px; width: fit-content; }
 }
 @container card-packs-space (max-width:330px) { .card-collection__packs { grid-template-columns: minmax(0,1fr); } }
-@media (max-width:720px),(max-height:590px) { .desktop-app.hud-surface .card-library .approved-surface__content { top: 55px; } }

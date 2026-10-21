@@ -128,8 +128,6 @@ services:
       - ./packages/agent-core/package.json:/app/packages/agent-core/package.json:ro
       - ./packages/agent-host/src:/app/packages/agent-host/src
       - ./packages/agent-host/package.json:/app/packages/agent-host/package.json:ro
-      - ./packages/card-generation/src:/app/packages/card-generation/src
-      - ./packages/card-generation/package.json:/app/packages/card-generation/package.json:ro
     command: ["npm", "run", "db:migrate"]
     networks:
       - astella_net
@@ -176,8 +174,6 @@ services:
       - ./packages/agent-core/package.json:/app/packages/agent-core/package.json:ro
       - ./packages/agent-host/src:/app/packages/agent-host/src
       - ./packages/agent-host/package.json:/app/packages/agent-host/package.json:ro
-      - ./packages/card-generation/src:/app/packages/card-generation/src
-      - ./packages/card-generation/package.json:/app/packages/card-generation/package.json:ro
     command: ["npm", "run", "db:seed"]
     networks:
       - astella_net
@@ -274,12 +270,9 @@ services:
       # Force polling so tsx watch actually picks up source changes.
       CHOKIDAR_USEPOLLING: "true"
       CHOKIDAR_INTERVAL: "1000"
-      # 文档 16：LearningRun 统一底座与 Journey V2（与本地 node 直跑同一套 env 契约）。
-      LEARNING_RUN_ENABLED: ${LEARNING_RUN_ENABLED:-true}
+      # 文档 16：Journey V2（与本地 node 直跑同一套 env 契约）。
       COMPANION_JOURNEY_V2: ${COMPANION_JOURNEY_V2:-true}
       COMPANION_BRIDGE_V2: ${COMPANION_BRIDGE_V2:-true}
-      # 方案 20：V2 价值优先生成（dev 默认开启）。
-      CARD_GENERATION_V2_ENABLED: ${CARD_GENERATION_V2_ENABLED:-true}
       # 方案 16 伴星/记忆/总结/画像/主动个性化（dev 默认开启）。
       # COMPANION_MEMORY_EXTRACTOR_V1 只由 worker 读取，因此只声明在 worker 服务。
       COMPANION_DAILY_SUMMARY_V1: ${COMPANION_DAILY_SUMMARY_V1:-true}
@@ -312,8 +305,6 @@ services:
       - ./packages/agent-core/package.json:/app/packages/agent-core/package.json:ro
       - ./packages/agent-host/src:/app/packages/agent-host/src
       - ./packages/agent-host/package.json:/app/packages/agent-host/package.json:ro
-      - ./packages/card-generation/src:/app/packages/card-generation/src
-      - ./packages/card-generation/package.json:/app/packages/card-generation/package.json:ro
       # 容器视图的操作通道：挂开发机自己的 socket（= 宿主机 root 等价权限，
       # 仅限本机开发栈）。生产 compose 不挂，面板显示"未接入"。
       - /var/run/docker.sock:/var/run/docker.sock
@@ -359,11 +350,6 @@ services:
       # worker actually reads are declared here.
       COMPANION_DIALOGUE_V1_ENABLED: ${COMPANION_DIALOGUE_V1_ENABLED:-true}
       COMPANION_VOICE_DIALOGUE_V1_ENABLED: ${COMPANION_VOICE_DIALOGUE_V1_ENABLED:-true}
-      # 制卡的模型档位开关（39d W7-7 刀二之后只剩这一个）：未设 = 确定性替身，
-      # 设成 `llm` = 真模型（按次付费）。旧链那三把（CARD_GENERATION_V2_LLM /
-      # V2_STAGE_CONCURRENCY / V2_SPECULATIVE_PEDAGOGY）随四阶段链一起没有读取者了，
-      # 留着会让"改了这行就等于换了模型档位"成为假话。
-      CARD_GENERATION_V3_PROVIDER: ${CARD_GENERATION_V3_PROVIDER:-deterministic}
       # 方案 16 伴星记忆抽取/向量/总结/日记（dev 默认开启）。
       COMPANION_MEMORY_EXTRACTOR_V1: ${COMPANION_MEMORY_EXTRACTOR_V1:-true}
       COMPANION_MEMORY_VECTOR_V1: ${COMPANION_MEMORY_VECTOR_V1:-true}
@@ -420,8 +406,6 @@ services:
       - ./packages/agent-core/package.json:/app/packages/agent-core/package.json:ro
       - ./packages/agent-host/src:/app/packages/agent-host/src
       - ./packages/agent-host/package.json:/app/packages/agent-host/package.json:ro
-      - ./packages/card-generation/src:/app/packages/card-generation/src
-      - ./packages/card-generation/package.json:/app/packages/card-generation/package.json:ro
       - ./config:/app/config:ro
     networks:
       - astella_net

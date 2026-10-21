@@ -28,7 +28,7 @@ import { test } from "node:test";
 const REPO_ROOT = resolve(import.meta.dirname, "..", "..", "..", "..");
 const SHARED_SRC = join(REPO_ROOT, "packages", "shared", "src");
 /** 探哪一份合同不重要，重要的是它两边都存在（快照里也有一份）。 */
-const PROBE_SUBPATH = "@astella/shared/learning-run-v2-contracts";
+const PROBE_SUBPATH = "@astella/shared/note-learning-card-contracts";
 const PACKAGES = ["apps/api", "workers/ai-worker"] as const;
 
 const RESOLVE_SNIPPET = `console.log(import.meta.resolve(${JSON.stringify(PROBE_SUBPATH)}))`;

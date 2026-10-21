@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId } from "react";
 import {
   BarChart3,
   Bell,
@@ -27,7 +27,11 @@ import {
   type CompanionAgentNode,
   type CompanionAgentNodes,
   nodeLabel,
+  savedCompanionNote,
 } from "../../../app/companion-session/companion-agent-nodes";
+import { previewCompanionNote } from "../journal/companion-result-preview";
+import { CompanionRunTiming } from "../journal/CompanionRunTiming";
+import { useJournalDisclosure } from "../journal/companion-journal-view-state";
 
 /** 实际工具调用的独立过程气泡。执行状态来自 SSE，展开只改变阅读范围。 */
 
@@ -37,6 +41,8 @@ export interface CompanionAgentRailProgress {
   readonly maxSteps: number | null;
   readonly toolCallCount: number;
   readonly maxToolCalls: number | null;
+  readonly runId?: string;
+  readonly createdAt?: string;
 }
 
 export type CompanionAgentRailTurnState = "running" | "done" | "stopped" | "failed";
@@ -58,8 +64,6 @@ const TOOL_ICONS: Record<string, LucideIcon> = {
   companion_create_note: FileText,
   companion_edit_note: FileText,
   companion_get_learning_stats: BarChart3,
-  companion_list_task_queue: ListChecks,
-  companion_list_due_reviews: CalendarClock,
   companion_schedule_reminder: Bell,
   companion_list_reminders: Bell,
   companion_cancel_reminder: Bell,
@@ -93,18 +97,22 @@ function nodeMark(node: CompanionAgentNode) {
   return <CircleDashed size={14} aria-hidden="true" />;
 }
 
-export function CompanionAgentRail({ nodes, progress, turnState, companionName, onActivity, onReadingChange, onDismiss, onStop, stopping = false }: {
+export function CompanionAgentRail({ nodes, progress, turnState, companionName, thinking, onActivity, onReadingChange, onDismiss, dismissLabel, onStop, onJournal, stopping = false }: {
   readonly nodes: CompanionAgentNodes;
   readonly progress: CompanionAgentRailProgress | null;
   readonly turnState: CompanionAgentRailTurnState;
   readonly companionName: string;
+  /** 这一轮此刻在想的一行尾巴；完整思考只在手记的运行轨迹里。 */
+  readonly thinking?: string;
   readonly onActivity?: () => void;
   readonly onReadingChange?: (open: boolean) => void;
   readonly onDismiss?: () => void;
+  readonly dismissLabel?: string;
   readonly onStop?: () => void;
   readonly stopping?: boolean;
+  readonly onJournal?: () => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, toggleExpanded] = useJournalDisclosure(`rail:${progress?.runId ?? nodes[0]?.key ?? "pending"}`, turnState === "running");
   const detailsId = useId();
   useEffect(() => {
     onReadingChange?.(expanded);
@@ -117,24 +125,40 @@ export function CompanionAgentRail({ nodes, progress, turnState, companionName, 
   const latestFirst = [...tools].reverse();
   const unresolved = latestFirst.find(node => node.state === "outcome_unknown") ?? latestFirst.find(node => node.state === "waiting_confirmation");
   const running = latestFirst.find(node => node.state === "running");
-  const issue = latestFirst.find(node => ["failed", "not_executed", "unavailable", "cancelled"].includes(node.state));
+  // A step that failed, was skipped or never started is normal inside an agent
+  // loop: the run keeps going and later steps may still produce the result the
+  // user asked for. Only report those per step; they must not decide the run's
+  // own state or repaint the whole card while it is still working.
+  const incomplete = latestFirst.filter(node => ["failed", "not_executed", "unavailable", "cancelled"].includes(node.state));
+  const issue = incomplete[0];
+  const succeededCount = tools.filter(node => node.state === "succeeded").length;
   const current = unresolved ?? running ?? issue ?? tools[tools.length - 1];
   const count = Math.max(progress?.toolCallCount ?? 0, countAgentToolCalls(tools));
-  const completed = tools.filter(node => node.state === "succeeded").length;
+  const savedNotes = [...new Map(tools.flatMap(node => {
+    const note = savedCompanionNote(node);
+    return note ? [[`${note.noteId}:${note.noteVersionId}`, note] as const] : [];
+  })).values()];
   const state = unresolved?.state ?? (turnState === "failed" ? "failed"
-    : turnState === "stopped" ? "cancelled" : turnState === "running" && running ? "running" : issue?.state ?? (turnState === "running" ? "running" : running ? "outcome_unknown" : "succeeded"));
-  const composing = turnState === "running" && !running && !unresolved && !issue;
+    : turnState === "stopped" ? "cancelled"
+      : turnState === "running" ? "running"
+        : running ? "outcome_unknown"
+          : succeededCount > 0 ? "succeeded" : issue?.state ?? "succeeded");
+  const composing = turnState === "running" && !running && !unresolved;
   const active = turnState === "running" && !composing;
   const headline = composing ? "正在组织回复…"
-    : state === "failed" ? "回复未完成"
+    : turnState === "failed" ? "回复未完成"
       : state === "cancelled" ? "这一轮已停止"
         : state === "outcome_unknown" ? "操作结果待核对"
           : state === "waiting_confirmation" ? "等你确认这项操作"
-            : state === "not_executed" ? "这项操作没有开始"
-              : state === "unavailable" ? "这项操作这次没能使用"
-                : active ? nodeLabel(current) : "操作已完成";
+            // The reply itself arrived; only the operations fell short, so do not
+            // claim the whole turn failed.
+            : state === "failed" ? "这条回复里的操作没有成功"
+              : state === "not_executed" ? "这条回复里的操作没有开始"
+                : state === "unavailable" ? "这条回复里的操作这次没能使用"
+                  : active ? nodeLabel(current) : savedNotes.length ? "笔记已经保存" : "操作已完成";
   const CurrentIcon = composing ? BookOpen : state === "succeeded" && !active ? Check : state === "cancelled" ? X : nodeIcon(current);
   const countText = `${count} 项操作`;
+  const incompleteText = incomplete.length ? `${incomplete.length} 项未完成` : "";
 
   return (
     <section className="companion-hud__rail" data-turn={turnState} data-state={state}
@@ -142,18 +166,27 @@ export function CompanionAgentRail({ nodes, progress, turnState, companionName, 
       onPointerMove={onActivity} onWheel={onActivity} onKeyDown={onActivity} onFocus={onActivity}
       aria-label={`${companionName} 的做事经过`}>
       <header className="companion-hud__rail-heading">
-        <strong><Wrench size={13} aria-hidden="true" />做事经过</strong>
+        <strong><Wrench size={13} aria-hidden="true" />本次进展</strong>
         <div className="companion-hud__rail-actions"><button type="button" className="text-action" aria-expanded={expanded} aria-controls={detailsId}
-          onClick={() => { onActivity?.(); setExpanded(value => !value); }}>
+          onClick={() => { onActivity?.(); toggleExpanded(); }}>
           {expanded ? "收起过程" : "查看过程"}<ChevronDown size={12} aria-hidden="true" />
         </button>
         {turnState === "running" && onStop ? <button type="button" className="text-action" onClick={onStop} disabled={stopping} aria-label="停止这一轮"><Square size={10} fill="currentColor" aria-hidden="true" />{stopping ? "停止中" : "停止"}</button>
-          : onDismiss ? <button type="button" className="text-action companion-hud__rail-dismiss" onClick={onDismiss} aria-label="收起做事经过"><X size={14} /></button> : null}</div>
+          : onDismiss ? <button type="button" className="text-action companion-hud__rail-dismiss" onClick={onDismiss} aria-label={dismissLabel ?? "收起做事经过"}><X size={14} /></button> : null}</div>
       </header>
+      {thinking ? <div className="companion-hud__rail-thinking" aria-hidden="true"><span>思考</span><p>{thinking}</p></div> : null}
       <div className="companion-hud__rail-current" role="status" aria-live="polite" aria-atomic="true" aria-label={`${companionName} 正在做的事`}>
         <span className="companion-hud__rail-current-icon" aria-hidden="true"><CurrentIcon size={18} /></span>
-        <div><p>{headline}</p><span>{state === "succeeded" ? countText : <>{composing ? "工具操作已结束" : STATE_LABEL[state]}<span aria-hidden="true"> · </span>{countText}</>}</span></div>
+        <div><p>{headline}</p><span>{state === "succeeded" ? <>{countText}{incompleteText ? <><span aria-hidden="true"> · </span>{incompleteText}</> : null}</> : <>{composing ? "工具操作已结束" : STATE_LABEL[state]}<span aria-hidden="true"> · </span>{countText}</>}</span></div>
       </div>
+      {turnState === "running" ? <CompanionRunTiming runId={progress?.runId ?? tools[0].key} startedAt={progress?.createdAt ?? tools[0].occurredAt}
+        latestActivityAt={tools.at(-1)?.occurredAt} activityKey={nodes.map(node => `${node.key}:${node.state}`).join("|")} active /> : null}
+      {savedNotes.length ? <div className="companion-hud__rail-results" aria-label="已保存，可立即预览">
+        <p className="companion-hud__rail-results-heading"><Check size={13} />已保存 {savedNotes.length} 篇<span>现在就能读</span></p>
+        {savedNotes.map(note => <button type="button" key={`${note.noteId}:${note.noteVersionId}`} onClick={event => {
+          onActivity?.(); previewCompanionNote({ ...note, runId: progress?.runId }, event.currentTarget);
+        }}><FileText size={16} />{note.title}<span>预览这份保存内容 →</span></button>)}
+      </div> : null}
       {expanded ? <div id={detailsId} className="companion-hud__rail-details">
         <ol className="companion-hud__rail-steps">
           {tools.map(node => {
@@ -165,8 +198,8 @@ export function CompanionAgentRail({ nodes, progress, turnState, companionName, 
             </li>;
           })}
         </ol>
-        <p className="companion-hud__rail-summary">已完成 {completed} 项 · 共 {countText}{progress && progress.stepCount > 0 ? ` · ${progress.stepCount} 步` : ""}</p>
       </div> : <div id={detailsId} hidden />}
+      {onJournal ? <button className="companion-hud__rail-journal" type="button" onClick={onJournal}>查看这次完整记录<History size={13} /></button> : null}
     </section>
   );
 }

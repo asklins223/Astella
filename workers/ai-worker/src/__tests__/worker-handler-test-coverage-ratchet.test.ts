@@ -76,6 +76,13 @@ const BASELINE_UNTESTED: ReadonlySet<string> = new Set([
   // 引用，覆盖写入事务的幂等入队与 rebuild 的当前模型 revision 判据，故从未测基线移除。
   "companion-reminder-scheduler",
   "note-expansion-generate",
+  // Plan 57：新学习卡链路与伴星恢复链新拆出的 handler，尚未补行为单测。
+  "companion-compaction-progress",
+  "companion-delivery-write",
+  "companion-note-reads",
+  "frozen-note-for-generation",
+  "note-learning-card-generate",
+  "note-learning-card-grade",
 ]);
 
 const WORKER_SRC = new URL("..", import.meta.url).pathname;

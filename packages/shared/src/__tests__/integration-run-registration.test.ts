@@ -118,13 +118,13 @@ test("分母自证：真的扫到了一批集成测试文件", () => {
   const files = integrationFiles();
   assert.ok(files.length > 80, `只扫到 ${files.length} 份 *.integration.ts：walk 坏了，这条判据就空转了`);
   // 阳性对照：已知被点名的那份必须扫得到。
-  assert.ok(files.some((f) => f.endsWith("learning-runs-postgres.integration.ts")),
+  assert.ok(files.some((f) => f.endsWith("rls-policies-postgres.integration.ts")),
     "扫描没覆盖到 apps/api 那一族");
 });
 
 test("注册面判据是灵敏的：被点名的算注册，没人提的不算", () => {
   const registered = registeredNames();
-  assert.ok(registered.has("learning-runs-postgres.integration.ts"),
+  assert.ok(registered.has("rls-policies-postgres.integration.ts"),
     "CI 点名单里那份被判成未注册 ⇒ 判据读不到注册面");
   assert.ok(!registered.has("这一份不存在.integration.ts"),
     "一个没人提的名字被判成已注册 ⇒ 判据恒真");
@@ -145,7 +145,7 @@ test("注册口径是「会执行它的那一行」：依赖声明里出现文�
   assert.ok(registrationText("apps/api/package.json", honest).includes("dark-two.integration.ts"),
     "脚本值里的点名也不算了 ⇒ 收窄把真注册一起切掉了");
   // 本轮修好的那两份：现在只活在脚本值里，声明行已经干净。
-  for (const name of ["history-search-postgres.integration.ts", "proactive-hook-postgres.integration.ts", "companion-memory-budget-postgres.integration.ts"]) {
+  for (const name of ["history-search-postgres.integration.ts", "proactive-hook-postgres.integration.ts"]) {
     assert.ok(registeredNames().has(name), `${name} 没在任何脚本值里被点名（它仍是暗文件）`);
   }
   // 覆盖面不许只盯一份 manifest：同一只手会改错任何一个包。

@@ -56,7 +56,6 @@ import {
 } from '../shared/window-geometry'
 import { registerM1DesktopIpc } from './ipc/desktop-ipc'
 import { desktopDeploymentEnvironment } from './window/desktop-deployment'
-import { FilePendingReturnMarkerStore } from './store/pending-return-marker-store'
 import { FileNoteDocCacheStore } from './note-doc/note-doc-cache-store'
 import { guardProcessOutputStreams } from './artifact/output-stream-guard'
 import { configureDesktopAppIdentity } from './window/desktop-app-identity'
@@ -889,9 +888,6 @@ app.whenReady()
         return false
       }
     },
-    pendingReturnMarkerStore: new FilePendingReturnMarkerStore(
-      resolve(app.getPath('userData'), 'pending-return-markers-v2.json')
-    ),
     // 决定 7：断网可编辑要能跨过重启，所以这份是本机的那一篇正文，落盘。
     noteDocCache: new FileNoteDocCacheStore(
       resolve(app.getPath('userData'), 'note-doc-cache.json')

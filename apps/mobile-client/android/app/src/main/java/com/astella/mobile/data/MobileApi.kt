@@ -42,6 +42,19 @@ class MobileApi(context: Context) {
         return execute(builder.build())
     }
 
+    /** Endpoints that answer with a bare JSON array (e.g. expansion confirm). */
+    fun requestArray(path: String, method: String = "GET", body: JSONObject? = null): org.json.JSONArray {
+        val builder = Request.Builder().url(url(path)).header("Accept", "application/json")
+        token?.let { builder.header("Authorization", "Bearer $it") }
+        val payload = body?.toString()?.toRequestBody("application/json; charset=utf-8".toMediaType())
+        builder.method(method, if (method == "GET" || method == "HEAD") null else payload ?: ByteArray(0).toRequestBody(null))
+        return client.newCall(builder.build()).execute().use { response ->
+            val raw = response.body.string()
+            if (!response.isSuccessful) throw failure(response.code, raw)
+            if (raw.isBlank()) org.json.JSONArray() else org.json.JSONArray(raw)
+        }
+    }
+
     fun uploadImage(uri: Uri, fileName: String): JSONObject {
         val bytes = appContext.contentResolver.openInputStream(uri)?.use { input ->
             val output = ByteArrayOutputStream()

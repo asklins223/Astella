@@ -8,9 +8,12 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 
+import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -35,6 +38,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -54,6 +58,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.FileProvider
+import java.io.File
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.animation.AnimatedContent
@@ -61,8 +68,12 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -80,6 +91,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -125,6 +137,7 @@ import com.astella.mobile.ui.design.StudySpacing
 import com.astella.mobile.ui.design.SectionEyebrow
 import androidx.compose.ui.draw.shadow
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.withContext
@@ -200,6 +213,9 @@ fun NotesScreen(
     var query by rememberSaveable { mutableStateOf("") }
     var workspaceMenuOpen by remember { mutableStateOf(false) }
     var statusSheet by remember { mutableStateOf(false) }
+    var exporting by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val importPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let(viewModel::selectFile)
     }
@@ -219,16 +235,42 @@ fun NotesScreen(
                 trailing = {
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         AstellaTap(
-                            onClick = { viewModel.loadNotes(query) },
+                            onClick = {
+                                if (exporting) return@AstellaTap
+                                val owner = state.profile?.isPersonalWorkspace == true ||
+                                    state.workspaces.firstOrNull { it.id == state.profile?.workspaceId }?.role == "owner"
+                                if (!owner) {
+                                    Toast.makeText(context, "只有书房拥有者可以导出整间书房。", Toast.LENGTH_SHORT).show()
+                                    return@AstellaTap
+                                }
+                                scope.launch {
+                                    exporting = true
+                                    try {
+                                        shareExportedJson(context, viewModel.exportWorkspaceBackup())
+                                    } catch (cause: Exception) {
+                                        Toast.makeText(context, "书房备份没有生成：${cause.message ?: "请稍后重试。"}", Toast.LENGTH_LONG).show()
+                                    } finally {
+                                        exporting = false
+                                    }
+                                }
+                            },
                             Modifier.size(40.dp).astellaGlass(20.dp, interactive = true),
                         ) {
-                            AstellaGlyph(AstellaGlyphKind.Download, Modifier.align(Alignment.Center).size(18.dp), tint = StudyPalette.ink)
+                            if (exporting) CircularProgressIndicator(
+                                Modifier.align(Alignment.Center).size(17.dp), strokeWidth = 2.dp, color = StudyPalette.accent,
+                            )
+                            else AstellaGlyph(AstellaGlyphKind.Download, Modifier.align(Alignment.Center).size(18.dp), tint = StudyPalette.ink)
                         }
                         AstellaTap(
                             onClick = { importPicker.launch(arrayOf("text/plain", "text/markdown", "application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")) },
-                            Modifier.size(40.dp).astellaGlass(20.dp, interactive = true).background(StudyPalette.accent, RoundedCornerShape(20.dp)),
+                            Modifier.size(40.dp)
+                                .background(
+                                    Brush.linearGradient(listOf(StudyPalette.actionFill, StudyPalette.accent)),
+                                    CircleShape,
+                                )
+                                .border(1.dp, Color.White.copy(alpha = .48f), CircleShape),
                         ) {
-                            AstellaGlyph(AstellaGlyphKind.Add, Modifier.align(Alignment.Center).size(20.dp), tint = Color.White)
+                            AstellaGlyph(AstellaGlyphKind.Add, Modifier.align(Alignment.Center).size(18.dp), tint = MaterialTheme.colorScheme.onPrimary)
                         }
                     }
                 },
@@ -238,30 +280,31 @@ fun NotesScreen(
             Box(Modifier.fillMaxWidth().padding(bottom = 11.dp)) {
                 AstellaTap(
                     onClick = { workspaceMenuOpen = true },
-                    modifier = Modifier.fillMaxWidth().astellaGlass(22.dp, interactive = true),
-                    enabled = state.workspaces.size > 1,
+                    modifier = Modifier.fillMaxWidth().astellaGlass(18.dp, interactive = true),
                 ) {
                     Row(
-                        Modifier.fillMaxWidth().heightIn(min = 62.dp).padding(horizontal = 13.dp, vertical = 9.dp),
+                        Modifier.fillMaxWidth().heightIn(min = 60.dp).padding(horizontal = 13.dp, vertical = 9.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        GlassIconTile(AstellaGlyphKind.Library, size = 36.dp)
-                        Column(Modifier.weight(1f).padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        GlassIconTile(AstellaGlyphKind.Library, size = 34.dp)
+                        Column(Modifier.weight(1f).padding(start = 11.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                             Text(
                                 state.profile?.workspaceName ?: "我的书房",
-                                fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = StudyPalette.ink,
+                                fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = StudyPalette.ink,
                                 maxLines = 1, overflow = TextOverflow.Ellipsis,
                             )
                             Text(
-                                "${if (state.profile?.isPersonalWorkspace == true) "个人空间 · 所有者" else "协作空间"} · ${state.notes.size} 篇",
+                                "${if (state.profile?.isPersonalWorkspace == true) "个人空间" else "协作空间"} · ${state.notes.size} 篇",
                                 fontSize = 10.sp, color = StudyPalette.muted,
                             )
                         }
-                        if (state.workspaces.size > 1) {
-                            Text("切换", fontSize = 11.sp, color = StudyPalette.muted)
-                            Spacer(Modifier.width(3.dp))
-                            AstellaGlyph(AstellaGlyphKind.Chevron, Modifier.size(11.dp), tint = StudyPalette.muted)
-                        }
+                        Text("切换", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = StudyPalette.accent)
+                        Spacer(Modifier.width(3.dp))
+                        AstellaGlyph(
+                            AstellaGlyphKind.Chevron,
+                            Modifier.size(10.dp).graphicsLayer { rotationZ = 90f },
+                            tint = StudyPalette.accent,
+                        )
                     }
                 }
                 androidx.compose.material3.DropdownMenu(
@@ -356,15 +399,17 @@ fun NotesScreen(
             } else state.notes
             item {
                 Row(
-                    Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 4.dp),
+                    Modifier.fillMaxWidth().padding(top = 28.dp, bottom = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(if (query.isBlank()) "全部手记" else "搜索结果",
+                    Text(
+                        if (query.isBlank()) state.profile?.workspaceName ?: "全部手记" else "搜索结果",
                         Modifier.weight(1f), color = StudyPalette.ink,
-                        fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        fontSize = 13.sp, fontWeight = FontWeight.SemiBold, letterSpacing = .6.sp,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
                     Text(if (query.isBlank()) "按最近更新" else "${visibleNotes.size} 篇",
-                        color = StudyPalette.muted, fontSize = 10.sp)
+                        color = StudyPalette.muted, fontSize = 10.5.sp)
                 }
             }
             itemsIndexed(visibleNotes, key = { _, note -> note.id }) { index, note ->
@@ -375,24 +420,32 @@ fun NotesScreen(
                 }
                 Column(Modifier.fillMaxWidth()) {
                     Row(
-                        Modifier.fillMaxWidth().clickable { onOpenNote(note.id) }.padding(vertical = 15.dp),
+                        Modifier.fillMaxWidth().clickable { onOpenNote(note.id) }
+                            .padding(horizontal = 6.dp, vertical = 20.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        NoteCover(note.title, Modifier.size(36.dp, 49.dp), note.id, rotate = 0f, textSize = 11.sp)
-                        Column(Modifier.weight(1f).padding(start = 15.dp)) {
-                            Text(note.title, color = StudyPalette.ink, fontSize = 15.sp, lineHeight = 20.sp,
+                        NoteCover(note.title, Modifier.size(38.dp, 53.dp), note.id, rotate = 0f, textSize = 11.5.sp)
+                        Column(Modifier.weight(1f).padding(start = 16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                            Text("手记", color = StudyPalette.muted, fontSize = 9.sp,
+                                fontWeight = FontWeight.SemiBold, letterSpacing = 1.1.sp)
+                            Text(note.title, color = StudyPalette.ink, fontSize = 17.sp, lineHeight = 23.sp,
                                 fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             note.snippet?.takeIf(String::isNotBlank)?.let { snippet ->
-                                Spacer(Modifier.height(5.dp))
-                                Text(snippet, color = StudyPalette.muted, fontSize = 11.sp, lineHeight = 17.sp,
+                                Text(snippet, color = StudyPalette.muted, fontSize = 12.5.sp, lineHeight = 19.sp,
                                     maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
-                            Spacer(Modifier.height(6.dp))
-                            val status = if (note.id == recentNoteId && query.isBlank()) "继续阅读" else "最近更新"
-                            Text("$status · ${formatDate(note.updatedAt)}", color = StudyPalette.muted,
-                                fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Row(verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                                AstellaGlyph(AstellaGlyphKind.Clock, Modifier.size(11.dp), tint = StudyPalette.muted.copy(alpha = .8f))
+                                Text(formatDate(note.updatedAt), color = StudyPalette.muted,
+                                    fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
                         }
-                        AstellaGlyph(AstellaGlyphKind.Chevron, Modifier.padding(start = 8.dp).size(15.dp), tint = Color(0xFFA1B3CE))
+                        AstellaGlyph(
+                            AstellaGlyphKind.Chevron,
+                            Modifier.size(14.dp),
+                            tint = StudyPalette.muted.copy(alpha = .7f),
+                        )
                     }
                     if (index < visibleNotes.lastIndex) {
                         androidx.compose.material3.HorizontalDivider(color = StudyPalette.paperEdge.copy(alpha = .70f))
@@ -402,12 +455,15 @@ fun NotesScreen(
         }
         if (state.isLoadingMoreNotes) item { CircularProgressIndicator(Modifier.fillMaxWidth().padding(12.dp).size(22.dp), color = StudyPalette.accent) }
         item {
-            AstellaTextButton(
+            AstellaTap(
                 onClick = { statusSheet = true },
-                modifier = Modifier.padding(top = 16.dp),
-                contentPadding = PaddingValues(horizontal = 0.dp, vertical = 4.dp),
+                modifier = Modifier.fillMaxWidth().padding(top = 16.dp).height(54.dp)
+                    .astellaGlass(20.dp, interactive = true),
             ) {
-                Text("资料与处理状态", color = StudyPalette.muted, fontSize = 10.sp)
+                Row(Modifier.align(Alignment.Center), verticalAlignment = Alignment.CenterVertically) {
+                    AstellaGlyph(AstellaGlyphKind.Info, Modifier.size(15.dp), tint = StudyPalette.muted)
+                    Text("资料与处理状态", Modifier.padding(start = 7.dp), color = StudyPalette.muted, fontSize = 12.5.sp)
+                }
             }
         }
     }
@@ -427,6 +483,16 @@ fun NotesScreen(
             }
         }
     }
+}
+
+internal fun shareExportedJson(context: Context, file: File) {
+    val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = "application/json"
+        putExtra(Intent.EXTRA_STREAM, uri)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    context.startActivity(Intent.createChooser(intent, "分享或存储文件"))
 }
 
 @Composable
@@ -485,17 +551,26 @@ fun NoteDetailScreen(
     onAccount: () -> Unit,
     onContinue: (NoteDocument) -> Unit,
     onOpenFeature: (String) -> Unit,
+    onOpenNote: (String) -> Unit = {},
 ) {
     LaunchedEffect(noteId) { viewModel.loadNote(noteId) }
     val document = state.noteDocument?.takeIf { it.id == noteId }
-    var annotationTarget by remember(document?.versionId) { mutableStateOf<NoteBlock?>(null) }
-    var pendingRemoval by remember { mutableStateOf<NoteAnnotation?>(null) }
+    val summary = state.notes.firstOrNull { it.id == noteId }
+    var drawerBlock by remember(document?.versionId) { mutableStateOf<NoteBlock?>(null) }
+    var drawerAnnotation by remember { mutableStateOf<NoteAnnotation?>(null) }
+    var editingNewAnnotation by remember { mutableStateOf(false) }
+    var expandedAnnotations by rememberSaveable(noteId) { mutableStateOf<Int?>(null) }
+    var drawerDetentExpanded by remember { mutableStateOf(false) }
     var selectionOriginal by remember { mutableStateOf<String?>(null) }
     var selectionBaseline by remember { mutableStateOf<Set<String>>(emptySet()) }
     var actionsExpanded by rememberSaveable(noteId) { mutableStateOf(false) }
     var readingScaleExpanded by rememberSaveable(noteId) { mutableStateOf(false) }
+    var showVersions by rememberSaveable(noteId) { mutableStateOf(false) }
+    var showExpansion by rememberSaveable(noteId) { mutableStateOf(false) }
+    var showLearningCard by rememberSaveable(noteId) { mutableStateOf(false) }
     var didRestoreReadingPosition by remember(noteId) { mutableStateOf(false) }
     val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
     val actionsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     LaunchedEffect(document?.versionId) {
         val current = document ?: return@LaunchedEffect
@@ -515,7 +590,11 @@ fun NoteDetailScreen(
         }
     }
     LaunchedEffect(state.annotationStatus) {
-        if (state.annotationStatus != null) annotationTarget = null
+        if (state.annotationStatus != null && drawerAnnotation == null) editingNewAnnotation = false
+    }
+    LaunchedEffect(document?.versionId, state.noteAnnotations) {
+        val anchor = drawerAnnotation?.anchor ?: return@LaunchedEffect
+        state.noteAnnotations.firstOrNull { it.anchor == anchor }?.let { drawerAnnotation = it }
     }
     Box(Modifier.fillMaxSize()) {
         LazyColumn(
@@ -537,109 +616,160 @@ fun NoteDetailScreen(
                 }
             } else {
                 item {
-                    Column(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 30.dp)) {
-                        Text(
-                            listOf("拾星书房", "第 ${document.versionNumber} 版", "当前手记")
-                                .joinToString("  ·  "),
-                            color = StudyPalette.muted,
-                            fontSize = 9.sp,
-                            letterSpacing = 1.6.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                    Column(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 24.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            AstellaGlyph(AstellaGlyphKind.Book, Modifier.size(13.dp), tint = StudyPalette.accent)
+                            val space = state.profile?.let { if (it.isPersonalWorkspace) "个人书房" else it.workspaceName } ?: "书房"
+                            Text(
+                                "手记 · 第 ${document.versionNumber} 版 · $space",
+                                Modifier.padding(start = 7.dp),
+                                color = StudyPalette.muted,
+                                fontSize = 11.5.sp,
+                                letterSpacing = .3.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                         Text(
                             document.title,
                             Modifier.padding(top = 16.dp),
                             color = StudyPalette.ink,
                             fontFamily = FontFamily.Serif,
                             fontSize = 39.sp,
-                            lineHeight = 52.sp,
+                            lineHeight = 48.sp,
                             letterSpacing = 3.sp,
                             fontWeight = FontWeight.Normal,
                         )
-                        Text(
-                            "选中文字，让伴星解释或一起改写。",
-                            Modifier.padding(top = 10.dp),
-                            color = StudyPalette.muted,
-                            fontSize = 12.sp,
-                            letterSpacing = .6.sp,
-                        )
+                        summary?.snippet?.trim()?.takeIf { it.isNotEmpty() }?.let { snippet ->
+                            Text(
+                                snippet,
+                                Modifier.padding(top = 11.dp),
+                                color = StudyPalette.muted,
+                                fontSize = 13.sp,
+                                lineHeight = 19.sp,
+                            )
+                        }
                     }
                 }
                 item(key = "current-version") {
-                    ReaderVersionRow(document, onClick = { onOpenFeature("versions") })
+                    ReaderVersionRow(document, summary, onClick = { showVersions = true })
                 }
                 items(document.blocks, key = { it.ordinal }) { block ->
-                    if (block.type in setOf("paragraph", "heading", "quote")) {
-                        Column(Modifier.padding(bottom = if (block.type == "heading") 14.dp else 25.dp)) {
-                            val heading = block.type == "heading"
-                            val body = if (heading) noteHeadingText(block.content) else block.content.trim()
-                            CompanionSelectableText(
-                                if (heading) body else "　　$body",
-                                (if (heading) 22f else 19f) * state.readingScale,
-                                serif = true,
-                                color = StudyPalette.readerInk,
-                                lineSpacingMultiplier = if (heading) 1.4f else 1.72f,
-                            ) { selected, rewrite ->
-                                selectionOriginal = selected
-                                selectionBaseline = state.messages.map { it.id }.toSet()
-                                viewModel.askAboutSelection(selected, document, rewrite)
-                            }
+                    val blockAnnotations = state.noteAnnotations
+                        .filter {
+                            it.versionState == "current" &&
+                                it.anchor.noteVersionId == document.versionId &&
+                                it.anchor.endBlockOrdinal == block.ordinal
                         }
-                    } else NoteBlockRow(
-                        block = block,
-                        readingScale = state.readingScale,
-                        viewModel = viewModel,
-                        onAnnotate = { viewModel.clearAnnotationNotice(); annotationTarget = block },
-                        onExplain = {
-                            NoteAnnotationAnchor.wholeBlock(block, document.versionId)?.let {
-                                viewModel.explainNoteAnnotation(noteId, it)
-                            } ?: run {
-                                viewModel.clearAnnotationNotice()
-                                viewModel.reportAnnotationError("这段内容暂时无法精确对应到手记原文。")
+                        .sortedWith(compareBy({ it.anchor.startOffset }, { it.id }))
+                    val bottomPadding = when {
+                        blockAnnotations.isNotEmpty() -> 8.dp
+                        block.type == "heading" -> 14.dp
+                        else -> 25.dp
+                    }
+                    Column {
+                        val annotateBlock = {
+                            viewModel.clearAnnotationNotice()
+                            drawerBlock = block
+                            drawerAnnotation = null
+                            editingNewAnnotation = true
+                            drawerDetentExpanded = true
+                        }
+                        val selectBlock: (String, Boolean) -> Unit = { selected, rewrite ->
+                            selectionOriginal = selected
+                            selectionBaseline = state.messages.map { it.id }.toSet()
+                            viewModel.askAboutSelection(selected, document, rewrite)
+                        }
+                        if (block.type == "quote") {
+                            Row(
+                                Modifier.fillMaxWidth().height(IntrinsicSize.Min).padding(bottom = bottomPadding),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                verticalAlignment = Alignment.Top,
+                            ) {
+                                Box(
+                                    Modifier.width(3.dp).fillMaxHeight()
+                                        .background(StudyPalette.accent.copy(alpha = .6f), RoundedCornerShape(2.dp)),
+                                )
+                                CompanionSelectableText(
+                                    block.content.replace(Regex("(?m)^\\s*>\\s?"), "").trim(),
+                                    16f * state.readingScale,
+                                    serif = true,
+                                    italic = true,
+                                    color = StudyPalette.muted,
+                                    lineSpacingMultiplier = 1.58f,
+                                    onOpenNote = onOpenNote,
+                                    onAnnotate = annotateBlock,
+                                    onSelection = selectBlock,
+                                )
                             }
-                        },
-                    )
-                }
-                if (state.annotationError != null || state.annotationStatus != null) item {
-                    Row(Modifier.fillMaxWidth().padding(top = 13.dp), verticalAlignment = Alignment.Top) {
-                        AstellaGlyph(
-                            if (state.annotationError != null) AstellaGlyphKind.Alert else AstellaGlyphKind.Check,
-                            Modifier.padding(top = 2.dp).size(18.dp),
-                            tint = if (state.annotationError != null) StudyPalette.danger else StudyPalette.success,
-                        )
-                        Text(state.annotationError ?: state.annotationStatus.orEmpty(), Modifier.weight(1f).padding(start = 8.dp),
-                            color = if (state.annotationError != null) StudyPalette.danger else StudyPalette.success,
-                            style = androidx.compose.material3.MaterialTheme.typography.bodySmall)
+                        } else if (block.type in setOf("paragraph", "heading")) {
+                            Column(Modifier.padding(bottom = bottomPadding)) {
+                                val heading = block.type == "heading"
+                                val body = if (heading) noteHeadingText(block.content) else block.content.trim()
+                                CompanionSelectableText(
+                                    if (heading) body else "　　$body",
+                                    (if (heading) 22f else 16f) * state.readingScale,
+                                    serif = true,
+                                    color = StudyPalette.readerInk,
+                                    lineSpacingMultiplier = if (heading) 1.32f else 1.58f,
+                                    onOpenNote = onOpenNote,
+                                    onAnnotate = annotateBlock,
+                                    onSelection = selectBlock,
+                                )
+                            }
+                        } else Box(Modifier.padding(bottom = bottomPadding)) {
+                            NoteBlockRow(
+                                block = block,
+                                readingScale = state.readingScale,
+                                viewModel = viewModel,
+                                onAnnotate = {
+                                    viewModel.clearAnnotationNotice()
+                                    drawerBlock = block
+                                    drawerAnnotation = null
+                                    editingNewAnnotation = true
+                                    drawerDetentExpanded = true
+                                },
+                                onExplain = {
+                                    NoteAnnotationAnchor.wholeBlock(block, document.versionId)?.let { anchor ->
+                                        viewModel.clearAnnotationNotice()
+                                        drawerBlock = block
+                                        drawerAnnotation = null
+                                        editingNewAnnotation = false
+                                        drawerDetentExpanded = true
+                                        viewModel.explainNoteAnnotation(noteId, anchor)
+                                    } ?: run {
+                                        viewModel.clearAnnotationNotice()
+                                        viewModel.reportAnnotationError("这段内容暂时无法精确对应到手记原文。")
+                                    }
+                                },
+                            )
+                        }
+                        if (blockAnnotations.isNotEmpty()) {
+                            AnnotationPlacement(
+                                annotations = blockAnnotations,
+                                expanded = expandedAnnotations == block.ordinal,
+                                onToggleExpanded = {
+                                    expandedAnnotations = if (expandedAnnotations == block.ordinal) null else block.ordinal
+                                },
+                                onOpen = { annotation ->
+                                    viewModel.clearAnnotationNotice()
+                                    drawerBlock = block
+                                    drawerAnnotation = annotation
+                                    editingNewAnnotation = false
+                                    drawerDetentExpanded = true
+                                },
+                            )
+                        }
                     }
                 }
-                if (state.annotationError != null) item {
-                    AstellaTextButton(onClick = { viewModel.retryNoteAnnotations(noteId) }) { Text("重新读取批注") }
-                }
-                if (state.noteAnnotations.isNotEmpty()) item {
-                    Column(Modifier.fillMaxWidth().padding(top = 28.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        androidx.compose.material3.HorizontalDivider(color = StudyPalette.paperEdge)
-                        Text("留在原文旁", Modifier.padding(top = 9.dp), color = StudyPalette.ink,
-                            style = androidx.compose.material3.MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                        Text("${state.noteAnnotations.size} 条批注与讲解", color = StudyPalette.muted,
-                            style = androidx.compose.material3.MaterialTheme.typography.bodySmall)
-                        state.noteAnnotations.forEach { annotation ->
-                            androidx.compose.material3.HorizontalDivider(color = StudyPalette.paperEdge)
-                            Text("“${annotation.anchor.excerpt}”", color = StudyPalette.ink,
-                                style = androidx.compose.material3.MaterialTheme.typography.bodyMedium, maxLines = 5, overflow = TextOverflow.Ellipsis)
-                            Text(annotation.explanation, color = StudyPalette.muted,
-                                style = androidx.compose.material3.MaterialTheme.typography.bodySmall)
-                            Text(if (annotation.versionState == "current") "对应当前版本" else "来自较早版本",
-                                color = StudyPalette.muted, style = androidx.compose.material3.MaterialTheme.typography.labelSmall)
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                AstellaTextButton(
-                                    enabled = !state.isAnnotationBusy && annotation.versionState == "current",
-                                    onClick = { viewModel.explainNoteAnnotation(noteId, annotation.anchor) },
-                                ) { Text("再讲一次") }
-                                AstellaTextButton(
-                                    enabled = !state.isAnnotationBusy,
-                                    onClick = { pendingRemoval = annotation },
-                                ) { Text("撤下", color = StudyPalette.muted) }
+                if (state.annotationError != null && state.noteAnnotations.isEmpty()) item {
+                    Row(Modifier.fillMaxWidth().padding(top = 13.dp), verticalAlignment = Alignment.Top) {
+                        AstellaGlyph(AstellaGlyphKind.Alert, Modifier.padding(top = 2.dp).size(18.dp), tint = StudyPalette.danger)
+                        Column(Modifier.weight(1f).padding(start = 8.dp)) {
+                            Text(state.annotationError.orEmpty(), color = StudyPalette.danger,
+                                style = MaterialTheme.typography.bodySmall)
+                            AstellaTextButton(onClick = { viewModel.retryNoteAnnotations(noteId) }, contentPadding = PaddingValues(horizontal = 0.dp)) {
+                                Text("重新读取批注")
                             }
                         }
                     }
@@ -650,7 +780,8 @@ fun NoteDetailScreen(
             Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            AstellaTap(
+            if (state.resultReturnTo != null) AstellaTextButton(onClick = onBack) { Text("返回手记与预览", style = MaterialTheme.typography.labelMedium) }
+            else AstellaTap(
                 onClick = onBack,
                 modifier = Modifier.size(44.dp).astellaGlass(22.dp, interactive = true)
                     .semantics { contentDescription = "返回书房" },
@@ -660,7 +791,8 @@ fun NoteDetailScreen(
             Text(
                 document?.let { "第 ${it.versionNumber} 版 · 一起读" } ?: "手记",
                 Modifier.weight(1f), color = StudyPalette.muted, textAlign = TextAlign.Center,
-                fontSize = 10.sp, letterSpacing = 1.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                fontSize = 12.sp, letterSpacing = .2.sp, fontWeight = FontWeight.Medium,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
             Row(
                 Modifier.height(44.dp).astellaGlass(22.dp, interactive = true).padding(horizontal = 2.dp),
@@ -684,7 +816,7 @@ fun NoteDetailScreen(
             item { Text("一起读这一段", style = androidx.compose.material3.MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold) }
             item { Text(selectionOriginal.orEmpty(), Modifier.fillMaxWidth().background(StudyPalette.inset, RoundedCornerShape(16.dp)).padding(16.dp), color = StudyPalette.muted) }
             items(state.messages.filter { it.id !in selectionBaseline && it.role == "assistant" && state.selectionRunId != null && it.runId == state.selectionRunId }, key = { it.id }) { MobileMessageRow(it, viewModel) }
-            if (state.streamingText.isNotEmpty() && state.selectionRunId != null && state.streamingRunId == state.selectionRunId) item { Text(state.streamingText, lineHeight = 26.sp, color = StudyPalette.ink) }
+            if (state.streamingText.isNotEmpty() && state.selectionRunId != null && state.streamingRunId == state.selectionRunId) item { CompanionMarkdownText(state.streamingText, fontSize = 15.sp, lineHeight = 26.sp, color = StudyPalette.ink) }
             if (state.isSending || state.runs.isNotEmpty()) item { Row(verticalAlignment = Alignment.CenterVertically) {
                 CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
                 Text("伴星正在读原文…", Modifier.padding(start = 10.dp), color = StudyPalette.muted)
@@ -704,11 +836,23 @@ fun NoteDetailScreen(
                 Text("这篇手记", color = StudyPalette.muted,
                     style = androidx.compose.material3.MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold)
-                listOf("overview" to "速览", "mindmap" to "脑图", "explain" to "讲解", "versions" to "版本记录").forEachIndexed { index, (kind, label) ->
+                val tools = listOf(
+                    Triple("overview", "速览", "doc.text.magnifyingglass"),
+                    Triple("mindmap", "脑图", "point.3.connected.trianglepath.dotted"),
+                    Triple("versions", "版本", "clock.arrow.circlepath"),
+                    Triple("expansion", "拓展笔记", "sparkle.magnifyingglass"),
+                    Triple("learning-card", "学习卡", "rectangle.on.rectangle.angled"),
+                )
+                tools.forEachIndexed { index, (kind, label, symbol) ->
                     Row(
                         Modifier.fillMaxWidth().heightIn(min = 52.dp).clickable {
                             actionsExpanded = false
-                            onOpenFeature(kind)
+                            when (kind) {
+                                "versions" -> showVersions = true
+                                "expansion" -> showExpansion = true
+                                "learning-card" -> showLearningCard = true
+                                else -> onOpenFeature(kind)
+                            }
                         },
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -716,19 +860,19 @@ fun NoteDetailScreen(
                             style = androidx.compose.material3.MaterialTheme.typography.bodyLarge)
                         AstellaGlyph(AstellaGlyphKind.Chevron, Modifier.size(15.dp), tint = StudyPalette.muted)
                     }
-                    if (index < 3) androidx.compose.material3.HorizontalDivider(color = StudyPalette.paperEdge)
+                    if (index < tools.size - 1) androidx.compose.material3.HorizontalDivider(color = StudyPalette.paperEdge)
                 }
                 androidx.compose.material3.HorizontalDivider(Modifier.padding(top = 4.dp), color = StudyPalette.paperEdge)
                 Row(
                     Modifier.fillMaxWidth().heightIn(min = 52.dp).clickable {
                         actionsExpanded = false
-                        onAccount()
+                        document?.let(onContinue)
                     },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("我的账户", Modifier.weight(1f), color = StudyPalette.ink,
+                    AstellaGlyph(AstellaGlyphKind.Chat, Modifier.padding(end = 12.dp).size(18.dp), tint = StudyPalette.accent)
+                    Text("在对话里继续提问", Modifier.weight(1f), color = StudyPalette.ink,
                         style = androidx.compose.material3.MaterialTheme.typography.bodyLarge)
-                    AstellaGlyph(AstellaGlyphKind.Chevron, Modifier.size(15.dp), tint = StudyPalette.muted)
                 }
             }
         }
@@ -780,59 +924,390 @@ fun NoteDetailScreen(
             }
         }
     }
-    annotationTarget?.let { target ->
-        val anchor = NoteAnnotationAnchor.wholeBlock(target, document?.versionId.orEmpty())
-        if (anchor != null) NoteAnnotationComposer(
-            block = target,
-            busy = state.isAnnotationBusy,
-            error = state.annotationError,
-            onDismiss = { if (!state.isAnnotationBusy) annotationTarget = null },
-            onSave = { explanation -> viewModel.saveNoteAnnotation(noteId, anchor, explanation) },
-            onExplain = { viewModel.explainNoteAnnotation(noteId, anchor) },
-        )
+    NoteVersionsSheet(
+        noteId = noteId,
+        state = state,
+        viewModel = viewModel,
+        visible = showVersions,
+        onDismiss = { showVersions = false },
+    )
+    NoteExpansionSheet(
+        noteId = noteId,
+        state = state,
+        viewModel = viewModel,
+        visible = showExpansion,
+        onDismiss = { showExpansion = false },
+        onAccount = onAccount,
+        onOpenNote = onOpenNote,
+    )
+    // 学习卡是独立整页导航，不再用底部抽屉；进入时轻推入、返回时滑出。
+    val motion = enabledMotion()
+    androidx.compose.animation.AnimatedVisibility(
+        visible = showLearningCard,
+        enter = androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(if (motion) 180 else 0)) +
+            androidx.compose.animation.slideInHorizontally(androidx.compose.animation.core.tween(if (motion) 280 else 0)) { it / 6 },
+        exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(if (motion) 150 else 0)) +
+            androidx.compose.animation.slideOutHorizontally(androidx.compose.animation.core.tween(if (motion) 220 else 0)) { it / 8 },
+    ) {
+        androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().background(StudyPalette.canvas)) {
+            NoteLearningCardScreen(
+                noteId = noteId,
+                state = state,
+                viewModel = viewModel,
+                onClose = { showLearningCard = false },
+                onAccount = onAccount,
+            )
+        }
     }
-    pendingRemoval?.let { annotation ->
-        AlertDialog(
-            onDismissRequest = { pendingRemoval = null },
-            title = { Text("撤下这条批注？") },
-            text = { Text("已生成的原文讲解也会一并移除；对话记录不会删除。") },
-            confirmButton = {
-                AstellaTextButton(onClick = {
-                    pendingRemoval = null
-                    viewModel.removeNoteAnnotation(noteId, annotation)
-                }) { Text("撤下", color = StudyPalette.danger) }
+    drawerBlock?.let { block ->
+        val anchor = NoteAnnotationAnchor.wholeBlock(block, document?.versionId.orEmpty())
+        if (anchor != null) NoteAnnotationsDrawer(
+            noteId = noteId,
+            block = block,
+            anchor = anchor,
+            annotation = drawerAnnotation,
+            editingNew = editingNewAnnotation,
+            state = state,
+            viewModel = viewModel,
+            onActiveAnnotation = { annotation ->
+                drawerAnnotation = annotation
+                editingNewAnnotation = false
             },
-            dismissButton = { AstellaTextButton(onClick = { pendingRemoval = null }) { Text("保留") } },
+            onLocate = { ordinal ->
+                drawerBlock = null
+                drawerAnnotation = null
+                val index = document?.blocks?.indexOfFirst { it.ordinal == ordinal } ?: -1
+                if (index >= 0) scope.launch { listState.animateScrollToItem(index + 2) }
+            },
+            onDismiss = {
+                if (!state.isAnnotationBusy) {
+                    drawerBlock = null
+                    drawerAnnotation = null
+                    editingNewAnnotation = false
+                }
+            },
         )
     }
 }
 
 @Composable
-private fun ReaderVersionRow(document: NoteDocument, onClick: () -> Unit) {
+private fun AnnotationPlacement(
+    annotations: List<NoteAnnotation>,
+    expanded: Boolean,
+    onToggleExpanded: () -> Unit,
+    onOpen: (NoteAnnotation) -> Unit,
+) {
+    fun kindLabel(annotation: NoteAnnotation): String =
+        if (annotation.sourceMessageId != null) "伴星讲解" else "我的批注"
+    Column(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 18.dp)) {
+        Row(
+            Modifier.clip(CircleShape)
+                .background(StudyPalette.sky.copy(alpha = .5f))
+                .clickable { if (annotations.size == 1) onOpen(annotations[0]) else onToggleExpanded() }
+                .padding(horizontal = 11.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            AstellaGlyph(AstellaGlyphKind.Quote, Modifier.size(11.dp), tint = StudyPalette.accent)
+            Text(
+                if (annotations.size == 1) kindLabel(annotations[0]) else "${annotations.size} 条批注",
+                color = StudyPalette.accent,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            if (annotations.size > 1) {
+                AstellaGlyph(
+                    if (expanded) AstellaGlyphKind.Chevron else AstellaGlyphKind.Chevron,
+                    Modifier.size(9.dp).graphicsLayer { if (expanded) rotationZ = -90f else rotationZ = 0f },
+                    tint = StudyPalette.accent,
+                )
+            }
+        }
+        if (annotations.size > 1 && expanded) {
+            Column(Modifier.padding(start = 8.dp, top = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                annotations.forEach { annotation ->
+                    Row(
+                        Modifier.fillMaxWidth()
+                            .background(StudyPalette.paper.copy(alpha = .66f), RoundedCornerShape(13.dp))
+                            .border(0.7.dp, StudyPalette.paperEdge.copy(alpha = .52f), RoundedCornerShape(13.dp))
+                            .clickable { onOpen(annotation) }
+                            .padding(horizontal = 11.dp, vertical = 9.dp),
+                        verticalAlignment = Alignment.Top,
+                    ) {
+                        Box(
+                            Modifier.padding(top = 5.dp).size(6.dp).background(StudyPalette.accent.copy(alpha = .78f), CircleShape),
+                        )
+                        Column(Modifier.weight(1f).padding(start = 10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Text(kindLabel(annotation), color = StudyPalette.ink, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            Text(annotation.anchor.excerpt.replace('\n', ' '), color = StudyPalette.muted,
+                                fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            if (annotation.explanation.isNotBlank()) {
+                                Text(annotation.explanation.replace('\n', ' '), color = StudyPalette.muted.copy(alpha = .88f),
+                                    fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                        AstellaGlyph(AstellaGlyphKind.Chevron, Modifier.padding(top = 3.dp).size(11.dp), tint = StudyPalette.muted.copy(alpha = .7f))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NoteAnnotationsDrawer(
+    noteId: String,
+    block: NoteBlock,
+    anchor: NoteAnnotationAnchor,
+    annotation: NoteAnnotation?,
+    editingNew: Boolean,
+    state: AppUiState,
+    viewModel: AppViewModel,
+    onActiveAnnotation: (NoteAnnotation) -> Unit,
+    onLocate: (Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var editing by remember(annotation?.id, editingNew) { mutableStateOf(editingNew || annotation == null) }
+    var draft by remember(annotation?.id, editingNew) { mutableStateOf(annotation?.explanation.orEmpty()) }
+    var confirmRemoval by remember { mutableStateOf(false) }
+    val busy = state.isAnnotationBusy
+    val isCompanionExplanation = annotation?.sourceMessageId != null
+    val title = when {
+        annotation == null -> "给这段原文留批注"
+        isCompanionExplanation -> "伴星讲解"
+        else -> "我的批注"
+    }
+
+    LaunchedEffect(annotation?.id) {
+        if (annotation != null && !editingNew) {
+            draft = annotation.explanation
+            editing = false
+        }
+    }
+    LaunchedEffect(state.annotationStatus) {
+        val status = state.annotationStatus ?: return@LaunchedEffect
+        if (status.contains("伴星已经把讲解贴回") || (editingNew && status.contains("批注"))) {
+            state.noteAnnotations.filter { it.anchor == anchor }.maxByOrNull { it.id }?.let {
+                onActiveAnnotation(it)
+                draft = it.explanation
+                editing = false
+            }
+        }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = StudyPalette.canvas,
+        contentColor = StudyPalette.ink,
+    ) {
+        Column(Modifier.fillMaxWidth().fillMaxHeight(.92f)) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 21.dp).padding(top = 17.dp, bottom = 13.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(title, color = StudyPalette.ink, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
+                    Text("第 ${anchor.startBlockOrdinal} 段 · 与原文相连", color = StudyPalette.muted, fontSize = 11.sp)
+                }
+                GlassCircleButton(onClick = onDismiss, size = 32.dp) {
+                    AstellaGlyph(AstellaGlyphKind.Close, Modifier.size(11.dp), tint = StudyPalette.muted)
+                }
+            }
+            HorizontalDivider(color = StudyPalette.paperEdge.copy(alpha = .7f))
+            Column(
+                Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp).padding(top = 17.dp, bottom = 30.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                if (state.annotationError != null) {
+                    Row(
+                        Modifier.fillMaxWidth()
+                            .background(StudyPalette.paper.copy(alpha = .82f), RoundedCornerShape(15.dp))
+                            .padding(13.dp),
+                        verticalAlignment = Alignment.Top,
+                    ) {
+                        AstellaGlyph(AstellaGlyphKind.Alert, Modifier.size(16.dp), tint = StudyPalette.danger)
+                        Column(Modifier.padding(start = 9.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                            Text(state.annotationError.orEmpty(), color = StudyPalette.danger, fontSize = 13.sp)
+                            AstellaTextButton(onClick = { viewModel.retryNoteAnnotations(noteId) }, contentPadding = PaddingValues(horizontal = 0.dp)) {
+                                Text("重新读取批注", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
+                } else if (busy && state.annotationStatus != null) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, color = StudyPalette.accent)
+                        Text(state.annotationStatus.orEmpty(), Modifier.padding(start = 8.dp), color = StudyPalette.muted, fontSize = 13.sp)
+                    }
+                } else if (state.annotationStatus != null) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        AstellaGlyph(AstellaGlyphKind.Check, Modifier.size(14.dp), tint = StudyPalette.success)
+                        Text(state.annotationStatus.orEmpty(), Modifier.padding(start = 8.dp), color = StudyPalette.muted, fontSize = 13.sp)
+                    }
+                }
+
+                Column(
+                    Modifier.fillMaxWidth()
+                        .background(StudyPalette.paper.copy(alpha = .83f), RoundedCornerShape(17.dp))
+                        .border(0.7.dp, StudyPalette.paperEdge.copy(alpha = .65f), RoundedCornerShape(17.dp))
+                        .padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(7.dp),
+                ) {
+                    Text("对应原文", color = StudyPalette.muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    Text(anchor.excerpt, color = StudyPalette.ink, fontSize = 15.sp, lineHeight = 23.sp, fontFamily = FontFamily.Serif)
+                }
+
+                if (annotation != null && !editing) {
+                    Column(
+                        Modifier.fillMaxWidth().astellaGlass(20.dp).padding(15.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                    ) {
+                        Text(
+                            annotation.explanation.ifBlank { "这条批注还没有正文。" },
+                            color = StudyPalette.ink, fontSize = 15.sp, lineHeight = 24.sp,
+                        )
+                        HorizontalDivider(color = StudyPalette.paperEdge.copy(alpha = .7f))
+                        Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                            Row(
+                                Modifier.weight(1f).heightIn(min = 42.dp)
+                                    .background(StudyPalette.inset.copy(alpha = .82f), RoundedCornerShape(13.dp))
+                                    .clickable { draft = annotation.explanation; editing = true },
+                                horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                AstellaGlyph(AstellaGlyphKind.Edit, Modifier.size(14.dp), tint = StudyPalette.ink)
+                                Text("编辑", Modifier.padding(start = 6.dp), color = StudyPalette.ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                            Row(
+                                Modifier.weight(1f).heightIn(min = 42.dp)
+                                    .background(StudyPalette.sky.copy(alpha = .7f), RoundedCornerShape(13.dp))
+                                    .clickable(enabled = !busy && annotation.versionState == "current") {
+                                        viewModel.clearAnnotationNotice()
+                                        viewModel.explainNoteAnnotation(noteId, anchor)
+                                    },
+                                horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                AstellaGlyph(AstellaGlyphKind.Companion, Modifier.size(14.dp), tint = StudyPalette.accent)
+                                Text("再请伴星讲解", Modifier.padding(start = 6.dp), color = StudyPalette.accent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            AstellaTextButton(onClick = { onLocate(annotation.anchor.startBlockOrdinal) }, contentPadding = PaddingValues(horizontal = 0.dp)) {
+                                Text("回到原文", color = StudyPalette.muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                            Spacer(Modifier.weight(1f))
+                            AstellaTextButton(enabled = !busy, onClick = { confirmRemoval = true }, contentPadding = PaddingValues(horizontal = 0.dp)) {
+                                Text("撤下", color = StudyPalette.danger, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
+                } else {
+                    Column(
+                        Modifier.fillMaxWidth().astellaGlass(20.dp).padding(15.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(if (annotation == null) "记下你的理解、疑问或提醒" else "编辑这条内容",
+                                Modifier.weight(1f), color = StudyPalette.ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                            if (annotation != null) {
+                                AstellaTextButton(enabled = !busy, onClick = { editing = false; draft = annotation.explanation }, contentPadding = PaddingValues(horizontal = 0.dp)) {
+                                    Text("取消", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                }
+                            }
+                        }
+                        Box(
+                            Modifier.fillMaxWidth().heightIn(min = 118.dp, max = 175.dp)
+                                .background(StudyPalette.inset, RoundedCornerShape(15.dp))
+                                .padding(13.dp),
+                        ) {
+                            if (draft.isEmpty()) {
+                                Text("写下这段话让你想到的内容", color = StudyPalette.muted.copy(alpha = .75f), fontSize = 14.sp)
+                            }
+                            BasicTextField(
+                                value = draft,
+                                onValueChange = { draft = it },
+                                textStyle = TextStyle(color = StudyPalette.ink, fontSize = 14.sp, lineHeight = 22.sp),
+                                cursorBrush = SolidColor(StudyPalette.accent),
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            AstellaOutlinedButton(
+                                onClick = {
+                                    viewModel.clearAnnotationNotice()
+                                    viewModel.explainNoteAnnotation(noteId, anchor)
+                                },
+                                modifier = Modifier.weight(1f),
+                                enabled = !busy && anchor.noteVersionId == state.noteDocument?.versionId,
+                            ) {
+                                AstellaGlyph(AstellaGlyphKind.Companion, Modifier.size(15.dp), tint = StudyPalette.accent)
+                                Text("请伴星讲解", Modifier.padding(start = 7.dp))
+                            }
+                            AstellaButton(
+                                onClick = {
+                                    if (annotation != null) viewModel.updateNoteAnnotation(noteId, annotation, draft)
+                                    else viewModel.saveNoteAnnotation(noteId, anchor, draft)
+                                },
+                                modifier = Modifier.weight(1f),
+                                enabled = !busy && draft.isNotBlank(),
+                                shape = RoundedCornerShape(17.dp),
+                            ) { Text(if (annotation == null) "留下批注" else "保存修改") }
+                        }
+                        Text("批注和讲解会留在这段原文旁，不会改动手记正文。", color = StudyPalette.muted, fontSize = 11.sp)
+                    }
+                }
+            }
+        }
+    }
+    if (confirmRemoval && annotation != null) {
+        AlertDialog(
+            onDismissRequest = { confirmRemoval = false },
+            title = { Text("撤下这条批注？") },
+            text = { Text("这条批注和关联讲解会一并移除，手记原文与对话仍会保留。") },
+            confirmButton = {
+                AstellaTextButton(onClick = {
+                    confirmRemoval = false
+                    viewModel.removeNoteAnnotation(noteId, annotation)
+                    onDismiss()
+                }) { Text("撤下批注与讲解", color = StudyPalette.danger) }
+            },
+            dismissButton = { AstellaTextButton(onClick = { confirmRemoval = false }) { Text("保留") } },
+        )
+    }
+}
+
+@Composable
+private fun ReaderVersionRow(document: NoteDocument, summary: NoteSummary?, onClick: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().padding(bottom = 26.dp)
-            .clip(RoundedCornerShape(20.dp))
-            .background(
-                Brush.linearGradient(listOf(StudyPalette.sky.copy(alpha = .92f), StudyPalette.sky.copy(alpha = .55f))),
-            )
-            .border(.8.dp, Color.White.copy(alpha = .70f), RoundedCornerShape(20.dp))
+            .astellaGlass(20.dp, interactive = true)
             .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 13.dp),
+            .padding(horizontal = 16.dp)
+            .heightIn(min = 68.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
-            Modifier.size(36.dp).clip(CircleShape).background(Color.White.copy(alpha = .82f)),
+            Modifier.size(37.dp).clip(CircleShape).background(StudyPalette.sky.copy(alpha = .72f)),
             contentAlignment = Alignment.Center,
-        ) { AstellaGlyph(AstellaGlyphKind.History, Modifier.size(17.dp), tint = StudyPalette.accent) }
-        Column(Modifier.weight(1f).padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        ) { AstellaGlyph(AstellaGlyphKind.Refresh, Modifier.size(17.dp), tint = StudyPalette.accent) }
+        Column(Modifier.weight(1f).padding(start = 13.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("第 ${document.versionNumber} 版", color = StudyPalette.ink,
-                fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-            Text("当前正文 · ${document.blocks.size} 段 · 点开可回看历史", color = StudyPalette.muted,
-                fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+            Text(
+                summary?.updatedAt?.takeIf { it.isNotBlank() }?.let { "最近更新 · ${formatMonthDay(it)}" }
+                    ?: "${document.blocks.size} 段 · 一起读",
+                color = StudyPalette.muted,
+                fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
         }
-        AstellaGlyph(AstellaGlyphKind.Chevron, Modifier.padding(start = 6.dp).size(15.dp), tint = Color(0xFFA1B3CE))
+        AstellaGlyph(AstellaGlyphKind.Chevron, Modifier.padding(start = 6.dp).size(15.dp), tint = StudyPalette.muted.copy(alpha = .8f))
     }
 }
+
+private fun formatMonthDay(value: String): String = runCatching {
+    java.time.Instant.parse(value).atZone(java.time.ZoneId.systemDefault())
+        .format(DateTimeFormatter.ofPattern("M 月 d 日"))
+}.getOrDefault(value)
 
 @Composable
 private fun NoteBlockRow(
@@ -875,7 +1350,7 @@ private fun NoteBlockRow(
 }
 
 @Composable
-private fun NoteBlockView(block: NoteBlock, readingScale: Float = 1f, viewModel: AppViewModel) {
+internal fun NoteBlockView(block: NoteBlock, readingScale: Float = 1f, viewModel: AppViewModel) {
     when (block.type) {
         "heading" -> Text(
             noteHeadingText(block.content),
@@ -893,26 +1368,27 @@ private fun NoteBlockView(block: NoteBlock, readingScale: Float = 1f, viewModel:
             Spacer(Modifier.padding(end = 10.dp).size(width = 3.dp, height = 42.dp).background(StudyPalette.accent.copy(alpha = .65f), RoundedCornerShape(2.dp)))
             Text(
                 block.content.replace(Regex("(?m)^\\s*>\\s?"), ""),
-                color = StudyPalette.readerInk,
+                color = StudyPalette.muted,
                 style = androidx.compose.material3.MaterialTheme.typography.bodyLarge.copy(
-                    fontSize = 17.sp * readingScale,
-                    lineHeight = 30.sp * readingScale,
+                    fontSize = 16.sp * readingScale,
+                    lineHeight = 26.sp * readingScale,
                     fontFamily = FontFamily.Serif,
+                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
                 ),
             )
         }
         "code" -> Box(
             Modifier.fillMaxWidth()
-                .clip(RoundedCornerShape(StudyRadius.md))
-                .background(androidx.compose.material3.MaterialTheme.colorScheme.surfaceVariant)
+                .clip(RoundedCornerShape(13.dp))
+                .background(Color.Black.copy(alpha = .045f))
                 .horizontalScroll(rememberScrollState()),
         ) {
             Text(
                 block.content,
-                Modifier.padding(13.dp),
+                Modifier.padding(14.dp),
                 color = StudyPalette.ink,
                 style = androidx.compose.material3.MaterialTheme.typography.bodyMedium.copy(
-                    fontSize = androidx.compose.material3.MaterialTheme.typography.bodyMedium.fontSize * readingScale,
+                    fontSize = 16.sp * .82f * readingScale,
                 ),
                 fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                 softWrap = false,
@@ -922,13 +1398,13 @@ private fun NoteBlockView(block: NoteBlock, readingScale: Float = 1f, viewModel:
         "list" -> {
             val lines = noteListLines(block.content)
             val ordered = Regex("^\\s*\\d+[.)]\\s+").containsMatchIn(block.content.lineSequence().firstOrNull().orEmpty())
-            Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 lines.forEachIndexed { index, line ->
                     Row(verticalAlignment = Alignment.Top) {
                         Text(if (ordered) "${index + 1}." else "•", Modifier.padding(end = 9.dp), color = StudyPalette.accent, fontWeight = FontWeight.SemiBold)
                         Text(line, color = StudyPalette.readerInk, style = androidx.compose.material3.MaterialTheme.typography.bodyLarge.copy(
-                            fontSize = 19.sp * readingScale,
-                            lineHeight = 35.sp * readingScale,
+                            fontSize = 16.sp * readingScale,
+                            lineHeight = 26.sp * readingScale,
                             fontFamily = FontFamily.Serif,
                         ))
                     }
@@ -1150,55 +1626,48 @@ fun AccountScreen(
         }.getOrNull()
     }
     val displayName = state.profile?.displayName?.ifBlank { state.profile?.email?.substringBefore('@').orEmpty() } ?: "拾星同学"
-    val readingSizeLabel = when {
-        state.readingScale >= 1.35f -> "大字"
-        state.readingScale >= 1.15f -> "较大"
-        else -> "标准"
-    }
-
     LazyColumn(
         Modifier.fillMaxSize(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 20.dp, top = 16.dp, end = 18.dp, bottom = 24.dp),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 22.dp, top = 16.dp, end = 22.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         item {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp).padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 AstellaTap(
                     onClick = { onSubpage("profile") },
-                    modifier = Modifier.size(62.dp).astellaGlass(31.dp, interactive = true),
+                    modifier = Modifier.size(64.dp).clip(CircleShape).background(StudyPalette.sky)
+                        .border(1.dp, Color.White.copy(alpha = .88f), CircleShape),
                 ) {
-                    Box(Modifier.align(Alignment.Center).fillMaxSize().padding(3.dp).clip(CircleShape).background(StudyPalette.sky)) {
-                        if (avatarBitmap != null) {
-                            Image(avatarBitmap!!.asImageBitmap(), "账户头像", Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
-                        } else {
-                            Text(
-                                (state.profile?.displayName?.firstOrNull() ?: state.profile?.email?.firstOrNull() ?: '阅').uppercase(),
-                                Modifier.align(Alignment.Center), color = StudyPalette.accent,
-                                fontSize = 22.sp, fontWeight = FontWeight.SemiBold,
-                            )
-                        }
+                    if (avatarBitmap != null) {
+                        Image(avatarBitmap!!.asImageBitmap(), "账户头像", Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+                    } else {
+                        Image(
+                            painterResource(R.drawable.companion_avatar), "伴星头像",
+                            Modifier.fillMaxSize(),
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                        )
                     }
                 }
-                Column(Modifier.weight(1f).padding(start = 14.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text(displayName, color = StudyPalette.ink, fontSize = 22.sp, fontWeight = FontWeight.SemiBold,
+                Column(Modifier.weight(1f).padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text(displayName, color = StudyPalette.ink, fontSize = 19.sp, fontWeight = FontWeight.SemiBold,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(state.profile?.email.orEmpty(), color = StudyPalette.muted, fontSize = 11.sp,
+                    Text(state.profile?.email.orEmpty(), color = StudyPalette.muted, fontSize = 12.5.sp,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 AstellaTap(
                     onClick = { onSubpage("settings") },
-                    modifier = Modifier.size(40.dp).astellaGlass(20.dp, interactive = true)
+                    modifier = Modifier.size(34.dp).astellaGlass(12.dp, interactive = true)
                         .semantics { contentDescription = "设置" },
                 ) {
-                    AstellaGlyph(AstellaGlyphKind.Grid, Modifier.align(Alignment.Center).size(17.dp), tint = StudyPalette.ink)
+                    AstellaGlyph(AstellaGlyphKind.Grid, Modifier.align(Alignment.Center).size(18.dp), tint = StudyPalette.ink)
                 }
                 Spacer(Modifier.width(8.dp))
                 AstellaTap(
                     onClick = { onSubpage("profile") },
-                    modifier = Modifier.height(40.dp).astellaGlass(20.dp, interactive = true)
-                        .padding(horizontal = 15.dp),
+                    modifier = Modifier.height(34.dp).background(StudyPalette.sky.copy(alpha = .68f), RoundedCornerShape(12.dp))
+                        .padding(horizontal = 12.dp),
                 ) {
-                    Text("编辑", Modifier.align(Alignment.Center), color = StudyPalette.ink, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                    Text("编辑", Modifier.align(Alignment.Center), color = StudyPalette.ink, fontSize = 12.5.sp, fontWeight = FontWeight.Medium)
                 }
             }
         }
@@ -1210,17 +1679,17 @@ fun AccountScreen(
         }
         item {
             Box(
-                Modifier.fillMaxWidth().height(112.dp).clip(RoundedCornerShape(22.dp))
-                    .background(Brush.linearGradient(listOf(Color(0xFFDDEAFB), Color(0xFFCDE0F6)))),
+                Modifier.fillMaxWidth().height(132.dp).clip(RoundedCornerShape(22.dp))
+                    .background(Brush.linearGradient(listOf(Color(0xFFD9E8FC), Color(0xFFC7DEF9)))),
             ) {
                 Image(
                     painterResource(R.drawable.companion_avatar), null,
-                    Modifier.align(Alignment.BottomEnd).offset(x = 18.dp, y = 16.dp).size(116.dp).graphicsLayer { alpha = .92f },
+                    Modifier.align(Alignment.BottomEnd).offset(x = (-8).dp, y = 24.dp).size(124.dp).graphicsLayer { alpha = .92f },
                     contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                 )
                 Column(
-                    Modifier.fillMaxWidth().padding(start = 18.dp, top = 15.dp, end = 100.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    Modifier.fillMaxWidth().padding(start = 20.dp, top = 18.dp, end = 72.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     val elapsedDays = firstDiaryDate?.let { (java.time.temporal.ChronoUnit.DAYS.between(it, java.time.LocalDate.now()) + 1).coerceAtLeast(1) }
                     Text(
@@ -1230,7 +1699,8 @@ fun AccountScreen(
                             elapsedDays != null -> "伴星 · 陪你读书的第 ${elapsedDays} 天"
                             else -> "伴星 · 还没开始记录"
                         },
-                        color = Color(0xFF5A79A8), fontSize = 11.sp,
+                        color = Color(0xFF5978A8), fontSize = 12.sp, fontWeight = FontWeight.Medium,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
                     Text(
                         when {
@@ -1239,15 +1709,20 @@ fun AccountScreen(
                             todayDiaryCount > 0 -> "今天一起留下了 ${todayDiaryCount} 段记录"
                             else -> "今天还没一起读"
                         },
-                        color = StudyPalette.ink, fontSize = 19.sp, fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF19283D), fontSize = 22.sp, fontWeight = FontWeight.SemiBold,
+                        letterSpacing = (-0.5).sp,
                         maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
                     AstellaTap(
                         onClick = onCompanion,
-                        modifier = Modifier.height(38.dp).background(StudyPalette.accent, RoundedCornerShape(12.dp))
+                        modifier = Modifier.height(36.dp)
+                            .background(
+                                Brush.linearGradient(listOf(StudyPalette.actionFill, StudyPalette.accent)),
+                                RoundedCornerShape(12.dp),
+                            )
                             .padding(horizontal = 16.dp),
                     ) {
-                        Text("进入伴星中心", Modifier.align(Alignment.Center), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                        Text("进入伴星中心", Modifier.align(Alignment.Center), color = MaterialTheme.colorScheme.onPrimary, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
@@ -1256,13 +1731,13 @@ fun AccountScreen(
             Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
                 SectionLabel("和伴星相处")
                 SettingsGroup {
-                    SettingsRow(AstellaGlyphKind.Shield, "伴星权限", "麦克风、相册与文件", onClick = { onSubpage("permissions") })
+                    SettingsRow(AstellaGlyphKind.Shield, "伴星权限", "麦克风、照片、文件与通知", onClick = { onSubpage("permissions") })
                     SettingsDivider()
-                    SettingsRow(AstellaGlyphKind.Check, "个人约定", "按你的偏好陪伴学习", onClick = { onSubpage("conventions") })
+                    SettingsRow(AstellaGlyphKind.Check, "个人约定", "把你的节奏告诉她", onClick = { onSubpage("conventions") })
                     SettingsDivider()
                     SettingsRow(
                         AstellaGlyphKind.Library, "书房",
-                        "${state.profile?.workspaceName ?: "我的书房"} · ${state.notes.size} 篇",
+                        state.profile?.workspaceName ?: "当前学习空间",
                         onClick = onLibrary,
                     )
                 }
@@ -1272,18 +1747,40 @@ fun AccountScreen(
             Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
                 SectionLabel("阅读")
                 SettingsGroup {
-                    SettingsRow(null, "阅读字号", readingSizeLabel, letter = "T", onClick = { onSubpage("readSettings") })
+                    SettingsRow(AstellaGlyphKind.Document, "阅读字号", "字号、默认打开与动效", onClick = { onSubpage("readSettings") })
                     SettingsDivider()
-                    SettingsRow(
-                        AstellaGlyphKind.Eye, "默认打开",
-                        if (state.chatShowsRecords) "记录场景" else "伴星场景",
-                        onClick = { onSubpage("readSettings") },
-                    )
+                    var showDefaultOpen by remember { mutableStateOf(false) }
+                    Box(Modifier.fillMaxWidth()) {
+                        SettingsRow(
+                            AstellaGlyphKind.Eye, "默认打开",
+                            if (state.chatShowsRecords) "记录场景" else "伴星场景",
+                            onClick = { showDefaultOpen = true },
+                        )
+                        DropdownMenu(expanded = showDefaultOpen, onDismissRequest = { showDefaultOpen = false }) {
+                            DropdownMenuItem(
+                                text = { Text("伴星场景", fontSize = 14.sp) },
+                                leadingIcon = { if (!state.chatShowsRecords) AstellaGlyph(AstellaGlyphKind.Check, Modifier.size(16.dp), tint = StudyPalette.accent) },
+                                onClick = {
+                                    viewModel.setChatShowsRecords(false)
+                                    showDefaultOpen = false
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("记录场景", fontSize = 14.sp) },
+                                leadingIcon = { if (state.chatShowsRecords) AstellaGlyph(AstellaGlyphKind.Check, Modifier.size(16.dp), tint = StudyPalette.accent) },
+                                onClick = {
+                                    viewModel.setChatShowsRecords(true)
+                                    showDefaultOpen = false
+                                },
+                            )
+                        }
+                    }
                     SettingsDivider()
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                            Text("减少动效", color = StudyPalette.ink, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                            Text(if (state.localReduceMotion) "页面过渡会保持安静" else "轻柔的页面过渡已开启", color = StudyPalette.muted, fontSize = 11.sp)
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 15.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        GlassIconTile(AstellaGlyphKind.Companion, size = 36.dp)
+                        Column(Modifier.weight(1f).padding(start = 13.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("轻柔动效", color = StudyPalette.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                            Text("减少位移，留下安静的状态反馈", color = StudyPalette.muted, fontSize = 11.sp, lineHeight = 15.sp)
                         }
                         AstellaSwitch(checked = state.localReduceMotion, onCheckedChange = viewModel::setLocalReduceMotion)
                     }
@@ -1292,31 +1789,56 @@ fun AccountScreen(
         }
         item {
             val settings = state.aiSettings
+            val authSummary = when {
+                settings == null -> "正在读取授权状态…"
+                settings.needsSigning -> "尚未签署 · AI 外发调用已关闭"
+                settings.consentVersion != null -> "已授权 · ${settings.consentVersion}"
+                else -> "已授权 · 可在本页调整"
+            }
             Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
                 SectionLabel("隐私与高级")
                 SettingsGroup {
                     SettingsRow(
                         AstellaGlyphKind.Lock,
                         "AI 使用授权与数据偏好",
-                        if (settings?.consentVersion == null && settings?.requiresConsent == true) "未授权 · 外部 AI 调用已关闭" else "控制哪些内容可以发送到外部服务",
+                        authSummary,
                         onClick = { onSubpage("aiAuth") },
                     )
                     SettingsDivider()
-                    SettingsRow(AstellaGlyphKind.Key, "修改密码", "通过邮箱验证码设置新密码", onClick = { onSubpage("password") })
+                    SettingsRow(AstellaGlyphKind.Key, "修改密码", "更换登录密码", onClick = { onSubpage("password") })
                     SettingsDivider()
                     SettingsRow(
-                        AstellaGlyphKind.Clock,
+                        AstellaGlyphKind.Document,
                         "服务地址",
-                        if (state.serviceAddress.isBlank()) "默认（官方服务）" else "已设置自定义服务",
+                        state.serviceAddress.ifBlank { "默认" },
                         onClick = { onSubpage("serverAddr") },
                     )
                 }
             }
         }
         item {
-            AstellaTextButton(onClick = { viewModel.logout() }, modifier = Modifier.fillMaxWidth()) {
-                Text("退出登录", color = StudyPalette.danger, fontSize = 14.sp)
+            AstellaTap(
+                onClick = { viewModel.logout() },
+                modifier = Modifier.fillMaxWidth().height(54.dp)
+                    .background(StudyPalette.paper.copy(alpha = .52f), RoundedCornerShape(18.dp))
+                    .border(.8.dp, Color.White.copy(alpha = .78f), RoundedCornerShape(18.dp)),
+            ) {
+                Row(Modifier.align(Alignment.Center), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                    AstellaGlyph(AstellaGlyphKind.Logout, Modifier.size(18.dp), tint = StudyPalette.danger)
+                    Text("退出登录", color = StudyPalette.danger, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                }
             }
+        }
+        item {
+            Text(
+                "ASTELLA · 拾星笔记",
+                Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 14.dp),
+                color = StudyPalette.muted.copy(alpha = .72f),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                letterSpacing = 2.4.sp,
+                textAlign = TextAlign.Center,
+            )
         }
     }
 }

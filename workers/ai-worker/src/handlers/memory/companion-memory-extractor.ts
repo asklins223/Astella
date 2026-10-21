@@ -424,8 +424,7 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
         conversationId: null,
       };
     }
-    // 任务身份只认**服务端落库**的 page_context（39b C8）：learning_run→runId、
-    // card/review→cardId；推不出就是 null，task 记忆会因此降级 workspace。
+    // Bind task memory to the actual persisted note; missing identity falls back to workspace.
     const taskEntity = taskEntityFromPersistedPageContext(run.page_context);
 
     const userRows = await tx.execute<{ id: string; seq: string; blocks: unknown; created_at: Date | string }>(sql`

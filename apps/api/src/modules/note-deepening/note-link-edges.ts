@@ -19,7 +19,6 @@ import {
   type NoteMarkdownTree,
 } from "@astella/shared/note-markdown";
 import type { UnderstandingEdgeProjectionV3 } from "@astella/shared/note-deepening-contracts";
-import { relationEdgeIsDecidableV2 } from "./personal-relation-decision-service.ts";
 
 /** 一块当前版本的正文；`blockType` 用来跳过代码块（代码里的 `[[…]]` 不是链接）。 */
 export interface NoteLinkBlockRowV3 {
@@ -102,7 +101,6 @@ export function buildNoteReferenceEdgesV3(input: {
         // 表态入口，撞了就连错笔记，而这里没有任何外键会替我发现撞了。
         edgeId: `ref-${block.noteId}-${toNoteId}`,
         kind: "references",
-        decidable: relationEdgeIsDecidableV2("references"),
         from: { kind: "note", id: block.noteId },
         to: { kind: "note", id: toNoteId },
         reasonCodes: [target.kind === "id" ? "link_id" : "link_title"],

@@ -8,22 +8,26 @@ import type { CompanionAgentPermissionLevel } from "@astella/shared/companion-ag
 import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../../app/client/desktop-client";
 import { useRoomStore } from "../../../app/home/room-store";
 import { ensureAiActionAllowed, guideAiPermissionFailure } from "../../../app/gate/ai-action-gate";
-import { useCompanionChat } from "../../../app/companion-session/companion-chat-session";
+import { companionMessageText, useCompanionChat } from "../../../app/companion-session/companion-chat-session";
 import { beginCompanionSpeechLine, stopCompanionSpeech, subscribeCompanionSpeech, type CompanionServerVoiceSegment, type CompanionSpeechSession } from "../../../app/companion-session/companion-voice-playback";
 import { COMPANION_VOICE_SEGMENT_READY_EVENT, drainCompanionVoiceSegments, type CompanionVoiceSegmentReadyDetail } from "../../../app/companion-session/companion-voice-segment-queue";
 import { COMPANION_REVEAL_TICK_MS, createCompanionRevealDriver, type CompanionRevealDriver } from "../../../app/companion-session/companion-reveal-driver";
 import { subscribeHomeV2VoiceLevel } from "../../../app/companion-session/companion-voice-level";
-import { companionTurnProcessLine, nodeLabel } from "../../../app/companion-session/companion-agent-nodes";
+import { companionTurnProcessLine, nodeLabel, savedCompanionNote } from "../../../app/companion-session/companion-agent-nodes";
 import type { CompanionAgentNode, CompanionAgentNodeState } from "../../../app/companion-session/companion-agent-nodes";
 import { CompanionAgentRail, type CompanionAgentRailProgress, type CompanionAgentRailTurnState } from "./companion-agent-rail";
 import { COMPANION_AGENT_PERMISSION_OPTIONS, COMPANION_INTERVENTION_OPTIONS, COMPANION_PRESENCE_OPTIONS, companionInterventionHint, quietHoursPatch, quietHoursWithBoundary, type QuietHoursBoundary } from "../bubble/companion-account-presence";
 import { companionBubbleHoldMs, companionBubblePreviewText, companionBubbleText } from "../bubble/companion-bubble-reveal";
+import { companionActiveBubble, companionReplyBubbles } from "../bubble/companion-reply-bubbles";
 import { openVoiceModelSettings as openVoiceModelSettingsAction } from "../voice/open-voice-model-settings";
 import { createCompanionBubbleFollow, type CompanionBubbleFollow } from "../bubble/companion-bubble-follow";
 import { companionWebCitations, CompanionWebSources, WebCitationContext, WebCitationText } from "../content/companion-web-citations";
 import { plainCompanionBubbleText } from "../content/companion-markdown";
 import { beginNoteReplySaveAttempt, isReadyNoteReplyForSave, resolveNoteReplySaveTarget } from "../content/note-reply-save";
 import { CompanionHistoryDrawer } from "./CompanionHistoryDrawer";
+import { CompanionResultPreview } from "../journal/CompanionResultPreview";
+import { targetCompanionJournal, useCompanionResultPreview } from "../journal/companion-result-preview";
+import { CompanionRunClock, CompanionRunDelay } from "../journal/CompanionRunTiming";
 import {
   CompanionComposerImageChip,
   CompanionComposerImageStatus,
@@ -143,6 +147,7 @@ export function CompanionHud({
 }: CompanionHudProps) {
   const voiceOutputEnabled = requestedVoiceOutputEnabled ?? voiceEnabled;
   const chat = useCompanionChat();
+  const cardPage = useRoomStore(state => state.surface === "note-card");
   const [moreView, setMoreView] = useState<MoreView>("menu");
   /** Settings use their own scrollable paper beside the actual model. */
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -151,7 +156,8 @@ export function CompanionHud({
   const [selectedGoalId, setSelectedGoalId] = useState<string | null>(null);
   const [goalHistoryTarget, setGoalHistoryTarget] = useState<{ runId: string; visit: number } | null>(null);
   const [replyProcessOpen, setReplyProcessOpen] = useState(false);
-  const interaction = useCompanionInteraction(chat, voiceEnabled, floatingBlocked || settingsOpen || goalBubbleOpen || chat.mode === "history", replyProcessOpen);
+  const previewOpen = useCompanionResultPreview(state => Boolean(state.target || state.sourceTarget));
+  const interaction = useCompanionInteraction(chat, voiceEnabled, floatingBlocked || settingsOpen || goalBubbleOpen || chat.mode === "history" || previewOpen, replyProcessOpen);
   const goals = useAgentGoals(chat.phase, id => {
     interaction.closeVoice(); setSettingsOpen(false); chat.setMode("closed"); setSelectedGoalId(id); setGoalBubbleOpen(true);
   });
@@ -453,6 +459,8 @@ export function CompanionHud({
    * 同时满足两边。
    */
   const speechSessionRef = useRef<CompanionSpeechSession | null>(null);
+  /** 当前语音会话属于哪一轮：同一轮 liveReply 更新要复用它，不能新开一个把旧会话停掉。 */
+  const speechSessionRunIdRef = useRef<string | null>(null);
   /** 草稿转成最终回复后仍在播放的会话；显现心跳必须继续读取它的音频位置。 */
   const speechPositionSessionRef = useRef<CompanionSpeechSession | null>(null);
   const pendingVoiceSegmentsRef = useRef<CompanionVoiceSegmentReadyDetail[]>([]);
@@ -491,7 +499,10 @@ export function CompanionHud({
   const replyObscuredRef = useRef(false);
   const replyAttachmentsRef = useRef(chat.richReply);
   replyAttachmentsRef.current = chat.richReply;
-  replyObscuredRef.current = floatingBlocked || settingsOpen || goalBubbleOpen || chat.mode === "history";
+  replyObscuredRef.current = floatingBlocked || settingsOpen || goalBubbleOpen || chat.mode === "history" || previewOpen;
+  /** 当前 liveReply 属于哪一轮：同一轮的文字更新不该把正在播的语音会话停掉。 */
+  const liveReplyRunIdRef = useRef<string | null>(null);
+  liveReplyRunIdRef.current = chat.liveReply?.runId ?? null;
   const noteReplyActivity = () => {
     replyActivityUntilRef.current = performance.now() + 2_500;
     interaction.outputActivity();
@@ -589,6 +600,7 @@ export function CompanionHud({
       activeSpeechPlanRef.current = null;
       speechSessionRef.current?.stop();
       speechSessionRef.current = null;
+      speechSessionRunIdRef.current = null;
       speechPositionSessionRef.current = null;
       pendingVoiceSegmentsRef.current = pendingVoiceSegmentsRef.current.filter((segment) => segment.runId === draft.runId);
       seenVoiceSegmentIdsRef.current.clear();
@@ -602,6 +614,7 @@ export function CompanionHud({
       speechPositionSessionRef.current = null;
       speechSessionRef.current?.stop();
       speechSessionRef.current = null;
+      speechSessionRunIdRef.current = null;
       pendingVoiceSegmentsRef.current = pendingVoiceSegmentsRef.current.filter((segment) => segment.runId !== draft.runId);
       reveal.noteSession("unavailable");
       return;
@@ -615,6 +628,7 @@ export function CompanionHud({
     // 有段可念；整轮没有段时由播放层直接收尾，显现交回阅读钟。
     if (speechSessionRef.current === null) {
       speechSessionRef.current = beginCompanionSpeechLine({ strictSegments: true });
+      speechSessionRunIdRef.current = draft.runId;
       activeSpeechPlanRef.current = speechSessionRef.current.planId;
       speechPositionSessionRef.current = speechSessionRef.current;
     }
@@ -640,6 +654,7 @@ export function CompanionHud({
         displayText: segment.displayText,
         displayStart: segment.displayStart,
         displayEnd: segment.displayEnd,
+        ...(segment.messageId ? { messageId: segment.messageId } : {}),
         cue: segment.cue,
       });
     }
@@ -659,6 +674,7 @@ export function CompanionHud({
       activeSpeechPlanRef.current = null;
       speechSessionRef.current?.stop();
       speechSessionRef.current = null;
+      speechSessionRunIdRef.current = null;
       speechPositionSessionRef.current = null;
       pendingVoiceSegmentsRef.current = [];
       seenVoiceSegmentIdsRef.current.clear();
@@ -688,10 +704,16 @@ export function CompanionHud({
     // （整段到达、未走流式草稿）在这里补开一个——服务端片段通常在 assistant.final
     // 前后到达，此刻把缓冲里的段喂进去还来得及播。
     let session = speechSessionRef.current;
+    // 同一轮的文字更新（主动轮先发言、认领后再落一次）复用已开的会话；
+    // 这时 speechSessionRef 已交棒给 speechPositionSessionRef，不能新开一个。
+    if (!session && reply.runId && speechSessionRunIdRef.current === reply.runId) {
+      session = speechPositionSessionRef.current;
+    }
     speechSessionRef.current = null;
     if (!voiceOutputEnabled) pendingVoiceSegmentsRef.current = [];
     if (!session && voiceOutputEnabled) {
       session = beginCompanionSpeechLine({ strictSegments: true });
+      speechSessionRunIdRef.current = session ? reply.runId ?? null : null;
     }
     let handle: ActiveCompanionSpeech | null = null;
     if (session) {
@@ -699,6 +721,7 @@ export function CompanionHud({
         // 语音被关掉：会话收干净，别挂在后台继续合成。
         activeSpeechPlanRef.current = null;
         speechPositionSessionRef.current = null;
+        speechSessionRunIdRef.current = null;
         session.stop();
       } else {
         // 把缓冲里还没喂的服务端段补进会话（走流式时已喂过，segmentId 幂等），
@@ -722,11 +745,13 @@ export function CompanionHud({
             displayText: segment.displayText,
             displayStart: segment.displayStart,
             displayEnd: segment.displayEnd,
+            ...(segment.messageId ? { messageId: segment.messageId } : {}),
             cue: segment.cue,
           });
         }
         pendingVoiceSegmentsRef.current = [];
         // final 只封住入队，不会立刻播完；显现心跳仍需持有这一会话的音频时钟。
+        speechSessionRunIdRef.current = reply.runId ?? speechSessionRunIdRef.current;
         speechPositionSessionRef.current = session;
         session.finish();
         handle = { planId: session.planId, mode: session.mode, stop: () => session.stop() };
@@ -799,9 +824,16 @@ export function CompanionHud({
       unsubscribeReadthrough?.();
       window.clearInterval(holdTimer);
       window.clearTimeout(exitTimer);
-      handle?.stop();
-      if (speechPositionSessionRef.current?.planId === handle?.planId) {
-        speechPositionSessionRef.current = null;
+      // 同一轮里 liveReply 可能落多次（主动轮先来一句、认领后再落一次）；
+      // 新 effect 会复用同一个会话，停掉它等于把还没播的第二段扔掉。
+      const sameRun = Boolean(reply.runId)
+        && liveReplyRunIdRef.current === reply.runId
+        && speechPositionSessionRef.current?.planId === handle?.planId;
+      if (!sameRun) {
+        handle?.stop();
+        if (speechPositionSessionRef.current?.planId === handle?.planId) {
+          speechPositionSessionRef.current = null;
+        }
       }
     };
   }, [chat.dismissLiveReply, chat.draft, chat.interrupted, ensureRevealDriver, chat.liveReply, voiceOutputEnabled]);
@@ -938,6 +970,9 @@ export function CompanionHud({
     }
   }, [chat, input, imageAttachment, requestedVoiceOutputEnabled]);
 
+  // 同轮复用的清理会跳过会话 stop；HUD 真正卸载时要单独把声音收掉。
+  useEffect(() => () => stopCompanionSpeech(), []);
+
   useEffect(() => {
     const requestId = chat.autoSendRequestId;
     const text = chat.feedPrompt?.trim();
@@ -974,6 +1009,41 @@ export function CompanionHud({
     () => plainCompanionBubbleText(chat.draft?.text ?? "", true),
     [chat.draft?.text],
   );
+  /**
+   * 同一轮的多条 assistant 消息各占一个气泡。只在正文与落库消息逐字对得上时
+   * 才拆；流式尾巴或对不上的时候退回一条，避免凭空造边界。
+   */
+  const replyBubbles = useMemo(() => {
+    const source = chat.liveReply
+      ? { runId: chat.liveReply.runId, text: replyText }
+      : chat.draft
+        ? { runId: chat.draft.runId, text: draftText }
+        : null;
+    if (!source?.text) return [];
+    // 气泡边界只认真实消息，不拆正文段落：要不要分条由伴星自己决定。
+    const parts = source.runId
+      ? chat.messages
+        .filter(message => message.role === "assistant" && message.runId === source.runId
+          && (message.kind === "text" || message.kind === "proactive"))
+        .slice()
+        .sort((a, b) => a.seq - b.seq)
+        .map(message => plainCompanionBubbleText(companionMessageText(message), true))
+      : [];
+    return companionReplyBubbles(source.text, parts);
+  }, [chat.liveReply, chat.draft, chat.messages, replyText, draftText]);
+  /**
+   * 气泡只留“此刻在想”的一行：`chat.thinking` 已经是尾部窗口，这里再取最后一个
+   * 非空行（没有分行就取末段），并把最新几个字留在可见处。完整思考在运行轨迹里，
+   * 气泡不随思考长高，也不把用户已读的旧想法反复顶出去。
+   */
+  const thinkingLine = useMemo(() => {
+    if (chat.phase !== "sending") return "";
+    const text = (chat.thinking ?? "").trim();
+    if (!text) return "";
+    const lastLine = text.split(/\n+/).map(line => line.trim()).filter(Boolean).at(-1) ?? text;
+    const compact = lastLine.replace(/\s+/g, " ");
+    return compact.length > 64 ? `…${compact.slice(-64)}` : compact;
+  }, [chat.phase, chat.thinking]);
   /**
    * 气泡的**本地**状态。名字里刻意不再出现 thinking：发送中 ≠ 她在思考。
    * 真开了思考档时服务端会发一条 `assistant.status: thinking`，走下面 `activeNode`
@@ -1014,17 +1084,22 @@ export function CompanionHud({
       : chat.stopNotice ? { tone: "stopped", text: stoppedText || chat.stopNotice }
         : interruptedSlotText && interaction.errorVisible ? { tone: "stopped", text: interruptedSlotText }
           : chat.phase === "error" && chat.failure && interaction.errorVisible ? { tone: "note", text: chat.feedNoteAnchor ? "这段解释还没生成，原文没有改动。" : chat.failure }
-            : chat.phase === "sending" && !shownReply && chat.thinking && !hasToolProcess
+            : chat.phase === "sending" && !shownReply && thinkingLine && !hasToolProcess
               // 她在想什么就显示什么（服务端只在真的开思考档时才发这些字）。
               // 一旦有正文可露（`shownReply`）这条立刻让位——思考从来不是回复的一部分。
               // 工具已经在跑的轮次不显示：那种轮子的进度归工具气泡说。
-              ? { tone: "thinking", text: chat.thinking }
+              ? { tone: "thinking", text: thinkingLine }
               : chat.phase === "sending" && activeNode && !hasToolProcess ? { tone: "process", text: nodeLabel(activeNode) }
               : phase === "waiting" && !hasToolProcess ? { tone: "process", text: companionTurnProcessLine(chat.nodes) }
                     : speechNotice && interaction.errorVisible ? { tone: "note", text: speechNotice }
                       : null;
   const outputText = slot?.text ?? "";
   const outputTone = slot?.tone ?? "reply";
+  /**
+   * 轻气泡一次只显示一条：当前这条读完（显现钟走到下一条的第一个字）才换成下一条，
+   * 前一条的 DOM 直接退场，不并排堆叠。
+   */
+  const activeReplyBubble = outputTone === "reply" ? companionActiveBubble(replyBubbles, revealedChars) : null;
   const stopping = chat.cancelling;
   const turnFailure = visibleTurnFailure(chat);
 
@@ -1093,6 +1168,8 @@ export function CompanionHud({
     || currentTrace.summary.status === "cancelled") ? currentTrace : null;
   const progressTrace = currentTrace;
   const railProgress: CompanionAgentRailProgress | null = progressTrace ? {
+    runId: progressTrace.summary.runId,
+    createdAt: progressTrace.summary.createdAt,
     stepCount: progressTrace.summary.stepCount,
     maxSteps: progressTrace.summary.maxSteps,
     toolCallCount: progressTrace.summary.toolCallCount,
@@ -1112,7 +1189,13 @@ export function CompanionHud({
    * 工具过程始终独立在回复上方；SSE 节点即时更新，不等待摘要轮询。
    */
   const railVisible = interaction.toolVisible;
-  const railNeedsAttention = chat.nodes.some(node => node.kind === "tool" && ["waiting_confirmation", "outcome_unknown", "failed", "not_executed", "unavailable"].includes(node.state));
+  const savedNoteIds = useMemo(() => new Set(chat.nodes.flatMap(node => {
+    const saved = savedCompanionNote(node); return saved ? [saved.noteId] : [];
+  })), [chat.nodes]);
+  // Only states the user must act on keep the card pinned. A step that failed
+  // inside a run that still delivered is normal agent behaviour; the step row
+  // says so, and the card is allowed to retire like any finished run.
+  const railNeedsAttention = chat.nodes.some(node => node.kind === "tool" && ["waiting_confirmation", "outcome_unknown"].includes(node.state));
   const dismissReply = () => { chat.dismissRichReply(); chat.dismissLiveReply(); if (railTurnState !== "running" && !railNeedsAttention) interaction.dismissTool(); };
 
   /**
@@ -1143,11 +1226,85 @@ export function CompanionHud({
     interaction.closeVoice();
   }, [interaction]);
 
+  /**
+   * 一条回复气泡。轻气泡一次只挂当前这条：名字条、脚注都不夹在消息之间；
+   * 正文、停止和状态都跟着当前这条走，材料只在最后一条出现。
+   */
+  const renderOutputCard = (options: { readonly text: string; readonly index: number; readonly attachments: boolean }) => {
+    const { text, index, attachments } = options;
+    const speechBubble = outputTone === "reply" || outputTone === "stopped";
+    // key 取 runId 而不是 messageId：流式草稿与最终回复共用同一轮 runId，
+    // 完成交接时 DOM 不重挂，pop 动画才不会在收尾那一刻重放一遍。
+    return (
+      <div
+        key={`${chat.liveReply?.runId ?? chat.liveReply?.messageId ?? chat.draft?.runId ?? "reply"}:${index}`}
+        ref={setBubbleEl}
+        className="companion-hud__output"
+        data-stage={bubbleStage}
+        data-tone={outputTone}
+        data-delivery={attachments && Boolean(chat.richReply) || undefined}
+        data-slot={slot?.tone ?? "reply"}
+        data-breath={breath}
+        onPointerMove={noteReplyActivity}
+        onKeyDown={noteReplyActivity}
+        onWheel={noteReplyActivity}
+        onFocus={noteReplyActivity}
+      >
+        <header className="companion-hud__reply-heading"><strong><Sparkles size={15} />{railVisible ? "给你的话" : outputTone === "reply" || outputTone === "process" ? chat.companionName
+          // 「她在想」只在真的想到东西时才这样写（那条状态是服务端按思考档发的）。
+            : outputTone === "thinking" ? "她在想" : "这轮对话"}</strong><div className="companion-hud__reply-meta">{chat.phase === "sending" && !railVisible ? <CompanionRunClock key={chat.processRunId ?? "accepting"}
+          runId={chat.processRunId ?? "accepting"} startedAt={currentTrace?.summary.createdAt}
+          activityKey={currentTrace?.events?.at(-1)?.seq} /> : null}{!railVisible && (chat.liveReply || chat.richReply) ? <button type="button" onClick={dismissReply} aria-label="收起伴星回复"><X size={16} /></button> : null}</div></header>
+        {activeNoteExplanation ? <CompanionNoteExplanationContext item={activeNoteExplanation} /> : null}
+        <span className="companion-hud__presence-dot" ref={presenceRef} aria-hidden="true" />
+        {/* 长回复的正文在它自己里面滚，新字钉在视野里（见上面的跟随 effect）。 */}
+        <p className="companion-hud__output-body" ref={setBubbleBodyEl} onScroll={handleBubbleScroll}>
+          {/* 思考是模型自己的原话：不剥标记、不解析引用，也不进朗读。 */}
+          {outputTone === "thinking" ? text
+            : <WebCitationContext.Provider value={webSources}><WebCitationText text={text} /></WebCitationContext.Provider>}
+        </p>
+        {chat.phase === "sending" && !railVisible ? <CompanionRunDelay key={chat.processRunId ?? "accepting"}
+          runId={chat.processRunId ?? "accepting"} startedAt={currentTrace?.summary.createdAt}
+          activityKey={currentTrace?.events?.at(-1)?.seq} /> : null}
+        {attachments && outputTone === "reply" ? <CompanionWebSources sources={webSources} /> : null}
+        {attachments && chat.richReply ? <CompanionReplyAttachments key={`attachments:${chat.richReply.messageId}`} chat={chat}
+          representedNoteIds={railVisible ? savedNoteIds : undefined}
+          followupsReady={readthroughReplyId === chat.richReply.messageId}
+          paused={floatingBlocked || settingsOpen || goalBubbleOpen || chat.mode === "history" || previewOpen || chat.phase === "sending" || revealedChars < (replyText || draftText).length || breath === "speaking" || replyProcessOpen}
+          onDismiss={dismissReply} /> : null}
+        {/* 视觉流式文本**不是**持续 live region（方案 §3 无障碍）：逐字更新会让读屏
+      反复朗读碎片；回合终态的稳定摘要在下方 `companion-hud__sr-status` 发布。 */}
+        {/* 被打断的原因就在这里说清楚——以前它只出现在输入面板里，
+      用户收起面板就既看不见原因、也不知道那半句还在不在（症状①-D）。 */}
+        {interruptedNote ? <p className="companion-hud__output-note" role="status">{interruptedNote}</p> : null}
+        {outputNotice && slot?.text !== outputNotice ? (
+          <p className="companion-hud__output-note" role="status">{outputNotice}</p>
+        ) : null}
+        {outputTone === "note" && !activeNoteExplanation && chat.feedNoteAnchor && chat.phase === "error" ? <button type="button" className="text-action companion-hud__output-retry" onClick={() => { void sendText(chat.feedPrompt ?? "请用通俗易懂的话解释这段，并举一个短例子。").catch(() => undefined); }}>重试这段解释</button> : null}
+        {/* 停止（方案 §6）：生成中用户视线在气泡上，不该强迫他把鼠标移到旁边的按钮列。 */}
+        {(chat.phase === "sending" || preparingSend) && !railVisible ? (
+          <button
+            type="button"
+            className="text-action companion-hud__output-stop"
+            disabled={stopping}
+            onClick={stopTurn}
+            title="停止这一轮"
+            aria-label="停止这一轮"
+          >
+            {stopping ? <Loader2 className="companion-hud__spin" size={13} aria-hidden="true" /> : <Square size={11} fill="currentColor" aria-hidden="true" />}
+            <span>{stopping ? "正在停止…" : "停止"}</span>
+          </button>
+        ) : null}
+      </div>
+    );
+  };
+
   return (
     <div ref={hudRef} className="companion-hud" data-mode={chat.mode} data-motion={motionMode} data-side={side} data-controls-side={controlsSide}>
       {createPortal(
-        <div ref={floatingRef} className="companion-hud--floating hud-surface" data-companion-owned="true" data-motion={motionMode} data-mode={chat.mode} data-side={side} data-blocked={floatingBlocked || settingsOpen || goalBubbleOpen || chat.mode === "history" || undefined}>
+        <div ref={floatingRef} className="companion-hud--floating hud-surface" data-companion-owned="true" data-motion={motionMode} data-mode={chat.mode} data-side={side} data-blocked={floatingBlocked || settingsOpen || goalBubbleOpen || chat.mode === "history" || cardPage && chat.mode === "closed" && !interaction.voiceOpen && chat.phase !== "sending" || undefined}>
           <div ref={headRef} className="companion-hud__head" aria-label="伴星的轻量交互">
+            {railVisible || outputText || chat.richReply ? <div className="companion-hud__exchange">
             {railVisible ? (
               <CompanionAgentRail
                 key={`${chat.conversationId}:${chat.processRunId ?? chat.nodes.find(node => node.kind === "tool")?.key}`}
@@ -1155,69 +1312,26 @@ export function CompanionHud({
                 progress={railProgress}
                 turnState={railTurnState}
                 companionName={chat.companionName}
+                thinking={thinkingLine}
                 onActivity={() => { interaction.toolActivity(); noteReplyActivity(); }}
                 onReadingChange={setReplyProcessOpen}
-                onDismiss={interaction.dismissTool}
+                onDismiss={dismissReply}
+                dismissLabel={outputText || chat.richReply ? "收起这次交流" : "收起做事经过"}
                 onStop={stopTurn}
                 stopping={stopping}
+                onJournal={() => { if (chat.processRunId) targetCompanionJournal(chat.processRunId); chat.setMode("history"); }}
               />
             ) : null}
             {outputText || chat.richReply ? (
-              <div
-                ref={setBubbleEl}
-                className="companion-hud__output"
-                data-stage={bubbleStage}
-                data-tone={outputTone}
-                data-delivery={Boolean(chat.richReply) || undefined}
-                data-slot={slot?.tone ?? "reply"}
-                data-breath={breath}
-                onPointerMove={noteReplyActivity}
-                onKeyDown={noteReplyActivity}
-                onWheel={noteReplyActivity}
-                onFocus={noteReplyActivity}
-              >
-                <header className="companion-hud__reply-heading"><strong><Sparkles size={15} />{outputTone === "reply" || outputTone === "process" ? chat.companionName
-                  // 「她在想」只在真的想到东西时才这样写（那条状态是服务端按思考档发的）。
-                    : outputTone === "thinking" ? "她在想" : "这轮对话"}</strong>{chat.liveReply || chat.richReply ? <button type="button" onClick={dismissReply} aria-label="收起伴星回复"><X size={16} /></button> : null}</header>
-                {activeNoteExplanation ? <CompanionNoteExplanationContext item={activeNoteExplanation} /> : null}
-                <span className="companion-hud__presence-dot" ref={presenceRef} aria-hidden="true" />
-                {/* 长回复的正文在它自己里面滚，新字钉在视野里（见上面的跟随 effect）。 */}
-                <p className="companion-hud__output-body" ref={setBubbleBodyEl} onScroll={handleBubbleScroll}>
-                  {/* 思考是模型自己的原话：不剥标记、不解析引用，也不进朗读。 */}
-                  {outputTone === "thinking" ? outputText
-                    : <WebCitationContext.Provider value={webSources}><WebCitationText text={outputText} /></WebCitationContext.Provider>}
-                </p>
-                {outputTone === "reply" ? <CompanionWebSources sources={webSources} /> : null}
-                {chat.richReply ? <CompanionReplyAttachments key={`attachments:${chat.richReply.messageId}`} chat={chat}
-                  followupsReady={readthroughReplyId === chat.richReply.messageId}
-                  paused={floatingBlocked || settingsOpen || goalBubbleOpen || chat.mode === "history" || chat.phase === "sending" || revealedChars < (replyText || draftText).length || breath === "speaking" || replyProcessOpen}
-                  onDismiss={dismissReply} /> : null}
-                {/* 视觉流式文本**不是**持续 live region（方案 §3 无障碍）：逐字更新会让读屏
-              反复朗读碎片；回合终态的稳定摘要在下方 `companion-hud__sr-status` 发布。 */}
-                {/* 被打断的原因就在这里说清楚——以前它只出现在输入面板里，
-              用户收起面板就既看不见原因、也不知道那半句还在不在（症状①-D）。 */}
-                {interruptedNote ? <p className="companion-hud__output-note" role="status">{interruptedNote}</p> : null}
-                {outputNotice && slot?.text !== outputNotice ? (
-                  <p className="companion-hud__output-note" role="status">{outputNotice}</p>
-                ) : null}
-                {outputTone === "note" && !activeNoteExplanation && chat.feedNoteAnchor && chat.phase === "error" ? <button type="button" className="text-action companion-hud__output-retry" onClick={() => { void sendText(chat.feedPrompt ?? "请用通俗易懂的话解释这段，并举一个短例子。").catch(() => undefined); }}>重试这段解释</button> : null}
-                {outputTone === "reply" || outputTone === "stopped" ? <footer className="companion-hud__reply-foot"><span>{chat.phase === "sending" ? "正在回复…" : chat.richReply ? "已留在对话手记" : "一会后收起 · 停在她的话上会多留一会"}</span><button type="button" className="text-action" onClick={() => chat.setMode("history")}>对话手记<ChevronLeft size={14} /></button></footer> : null}
-                {/* 停止（方案 §6）：生成中用户视线在气泡上，不该强迫他把鼠标移到旁边的按钮列。 */}
-                {(chat.phase === "sending" || preparingSend) && !railVisible ? (
-                  <button
-                    type="button"
-                    className="text-action companion-hud__output-stop"
-                    disabled={stopping}
-                    onClick={stopTurn}
-                    title="停止这一轮"
-                    aria-label="停止这一轮"
-                  >
-                    {stopping ? <Loader2 className="companion-hud__spin" size={13} aria-hidden="true" /> : <Square size={11} fill="currentColor" aria-hidden="true" />}
-                    <span>{stopping ? "正在停止…" : "停止"}</span>
-                  </button>
-                ) : null}
-              </div>
+              activeReplyBubble
+                ? renderOutputCard({
+                  text: activeReplyBubble.text,
+                  index: activeReplyBubble.index,
+                  attachments: activeReplyBubble.index === replyBubbles.length - 1,
+                })
+                : renderOutputCard({ text: outputText, index: 0, attachments: true })
             ) : null}
+            </div> : null}
             {chat.mode === "conversation" ? (
               <section className="companion-hud__panel companion-hud__composer" aria-label={`给 ${chat.companionName} 的消息气泡`} onPointerMove={interaction.inputActivity} onKeyDown={interaction.inputActivity} onWheel={interaction.inputActivity} onFocus={interaction.inputActivity}>
                 <header>
@@ -1414,6 +1528,7 @@ export function CompanionHud({
         document.body,
       ) : null}
       <div className="companion-hud__sr-status" role="status">{turnSummary}</div>
+      <CompanionResultPreview motionMode={motionMode} />
       <CompanionHistoryDrawer
         goals={goals}
         goalTarget={goalHistoryTarget}

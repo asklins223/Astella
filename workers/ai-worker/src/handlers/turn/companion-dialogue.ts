@@ -1,4 +1,5 @@
-import { finishCompanionParticipation, companionFollowupRepeatsParent } from "../tools/companion-participation-tools.ts";
+import { finishCompanionParticipation, companionInitiativeRepeatsSpeech } from "../tools/companion-participation-tools.ts";
+import { reviewCompanionInitiativeSpeech } from "../proactive/companion-initiative-speech-review.ts";
 import { readParticipationPreferences } from "@astella/agent-host";
 import { companionInitiativeInputV1Schema } from "@astella/shared/companion-initiative-contracts";
 import { listCompanionSelfNotes } from "@astella/agent-host";
@@ -7,36 +8,6 @@ import { resolveCompanionPersonaContext } from "../memory/companion-identity-con
 import { reserveCompanionProviderCall } from "../agent/companion-agent-events.ts";
 import { renderPlaybookCandidates, renderPlaybookCatalog } from "../memory/companion-playbooks.ts";
 import { renderCompanionDeliveryObservation } from "@astella/shared";
-/**
- * companion_agent Worker handler（03 合同 §8.1/§9，runbook 6.4 步骤 5-7）。
- *
- * 2026-08-24（AI 设计审查 §4.4 拆分）：本文件自 1600+ 行巨型文件重构为编排层，
- * 职责拆分：
- * - content   → ./companion-dialogue-content.ts（输出校验/markdown 剥离/
- *               delta 分块/persona 组装/确定性 cue——纯函数层）；
- * - store     → ./companion-dialogue-store.ts（事件写入/run failed 投影/
- *               grounded-tutor DB 读取/记忆任务入队/feature flags）；
- * - delta 管线 → ./companion-dialogue-deltas.ts（批量 delta 写库、
- *               provider 采样参数、失败分类）。
- * 本文件只保留 run 编排：read → memory context → fence claim →
- * bounded Agent loop → TTS 段 → 终态事务。
- *
- * 流程：
- * 1. 读 job payload 的 opaque runId（不携带任何 message 正文——runbook 步骤 5）；
- * 2. RLS 事务内读 run/conversation/最近消息，并按 prompt 的字符预算求可见尾部（§9.3）；
- * 3. 非 active run（cancelled/superseded/failed）直接返回——§6.5「cancel 后
- *    Worker 迟到 delta/final 被拒绝」，不重复 provider 调用；
- * 4. text_generation provider 生成（§9.5 参数）；输出经长度/cue/泄露校验；
- * 5. 终态事务内：fence claim（run 仍 active 才可写）→ assistant message →
- *    assistant.status/assistant.delta/assistant.final events（§5.2 wire 语义，
- *    delta ≤2000 code unit）→ run succeeded（prompt_version/hash）→
- *    该 run 全部 event expires_at 原子改 finished_at+24h → NOTIFY。
- *
- * provider 失败：run failed + error event（recoverable 分类），job 重试时
- * run 已非 active → 快速返回，不重复花钱（首个 delta 前 crash 可安全重试）。
- */
-
-import { decideCompanionVoiceDelivery, findFormalAnswerTarget } from "../../lib/formal-answer-signal.ts";
 import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
 import { sql } from "drizzle-orm";
 import { logger } from "../../lib/logger.ts";
@@ -104,7 +75,6 @@ import {
   buildCompanionPersonaMessages,
   validateCompanionOutput,
   textOfCompanionBlocks,
-  parsePageContext,
   boundCompanionRecentHistory,
   buildCompanionContextHandoffSnapshotV1,
   finalizeCompanionReplyText,
@@ -118,7 +88,6 @@ import {
   emitCompanionTtsSegments,
   recordCompanionRunFailureSpanBestEffort,
   markCompanionRunFailed,
-  readGroundedTutorContext,
   isActiveRun,
   isCompanionDialogueEnabled,
   isCompanionVoiceDialogueEnabled,
@@ -137,14 +106,7 @@ import {
   persistFailedPartial,
 } from "./companion-dialogue-failure-retention.ts";
 import { finalizeCompanionDialogueTurn } from "./companion-dialogue-finalization.ts";
-
-/** LearningRun 是正式学习页，缺证据时必须 fail closed。 */
-export function isGroundedTutorRequestedPageContext(
-  pageContext: Record<string, unknown> | null,
-): boolean {
-  return pageContext?.pageKind === "learning_run"
-    && pageContext.requestedCapability === "grounded_tutor";
-}
+import { CompanionOutputTimeoutError } from "../agent/companion-output-watchdog.ts";
 
 // ─── run 编排 ─────────────────────────────────────────────────────────────
 
@@ -199,17 +161,6 @@ export async function runCompanionDialogue(
         `);
         const conv = convRows[0];
         if (!conv) return null;
-        // 正式作答中就不念出来（doc 34 L15 的另一半）。判据与主动交流入口共用同一来源，
-        // 在**这一轮**读一次就够：一次 provider 调用远长于六个阶段的跃迁窗口，
-        // 中途放开等于在用户正在答的那一题上开口。
-        // 同一次读取顺手把**正在作答的那一题的身份**也带出来（39d W2-6 要往
-        // `learning_exposures_v2` 记一笔，必须拿到这一题冻结的那一版）。静音判据与
-        // 记账判据因此是同一条 SQL，不会一处放宽一处收紧。
-        const formalAnswerTarget = await findFormalAnswerTarget(tx, {
-          workspaceId: ctx.workspaceId,
-          userId: run.user_id,
-        });
-        const formalAnswerInProgress = formalAnswerTarget !== null;
         const userRows = await tx.execute<{ blocks: unknown; seq: string; created_at: string }>(sql`
           SELECT blocks, seq::text AS seq,
                  to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS created_at
@@ -334,11 +285,6 @@ export async function runCompanionDialogue(
         // 而选不选人格对第一句话毫无影响（用户 2026-10-05 的决定）。
         // 注意这不动版本记账：persona_profile_revision 仍然是 0，档案行仍然是空的。
         const petProfile = resolveCompanionPersonaContext(petProfileRow);
-        const groundedTutorContext = await readGroundedTutorContext(
-          tx,
-          run.page_context,
-          { workspaceId: ctx.workspaceId, userId: run.user_id },
-        );
         // 环境快照跑在**同一个** RLS 读事务里：它是一组常量级聚合 SQL，另开事务
         // 只会多一次往返，而且脱离这里的作用域边界（方案 29 §4.1）。
         const snapshot = await loadHereAndNow(tx, {
@@ -417,8 +363,6 @@ export async function runCompanionDialogue(
         `);
         return {
           runId: run.id,
-          formalAnswerInProgress,
-          formalAnswerTarget,
           livePageView: snapshot.livePageView,
           conversationId: run.conversation_id,
           userId: run.user_id,
@@ -469,7 +413,6 @@ export async function runCompanionDialogue(
             resultSafeSummary: proposal.result_safe_summary,
             expiresAt: proposal.expires_at,
           })),
-          groundedTutorContext,
           userText,
           recentMessages,
           conversationClock: snapshot.observedAt && snapshot.timezone ? {
@@ -505,12 +448,6 @@ export async function runCompanionDialogue(
     throw err;
   }
   if (!read) return; // run 已删/非本 workspace——job 成功无副作用
-
-  const parsedPageContext = parsePageContext(read.pageContext);
-  if (isGroundedTutorRequestedPageContext(parsedPageContext) && !read.groundedTutorContext) {
-    await markCompanionRunFailed(read, ctx, "ACTION_STALE", false, "grounded tutor evidence unavailable", "state");
-    throw new Error("grounded tutor evidence unavailable");
-  }
 
   // ── 阶段 2：provider（非 active run → 不重复调用） ───────────────────
   if (!isActiveRun(read.runStatus) && !(continuationProposalId && read.runStatus === "waiting_for_confirmation")) {
@@ -559,7 +496,7 @@ export async function runCompanionDialogue(
   let replayWindow = selectCompanionInteractiveReplayWindow(
     read.recentMessages,
     resolveRouteInputTokens(provider.getCapabilities?.() ?? null, provider.resolveOutputTokenLimit?.()),
-    availableSummary && !read.groundedTutorContext ? replaySummaryCoverage : null,
+    availableSummary ? replaySummaryCoverage : null,
   );
   // 摘要注入块要在窗口裁完、`read.recentMessages` 还没被换掉时定稿（判据见 `companion-summary-injection.ts`）。
   if (read.summaryInjection) read.conversationSummary = renderSummaryInjection(
@@ -568,7 +505,7 @@ export async function runCompanionDialogue(
     replayWindow = selectCompanionInteractiveReplayWindow(read.recentMessages,
       resolveRouteInputTokens(provider.getCapabilities?.() ?? null, provider.resolveOutputTokenLimit?.()));
   }
-  if (!read.conversationSummary || read.groundedTutorContext) replaySummaryCoverage = null;
+  if (!read.conversationSummary) replaySummaryCoverage = null;
   read.recentMessages = replayWindow.messages;
   replayTailSeqs = replayWindow.messages.map((message) => message.seq ?? null);
   if (read.contextHandoff) {
@@ -591,7 +528,7 @@ export async function runCompanionDialogue(
     omittedCount: replayWindow.receipt.omittedCount,
   }, "companion interactive replay window selected");
 
-  // 40 §4.6.6：resident 正文常驻，active 只注入有预算的目录（非 grounded_tutor）。
+  // 40 §4.6.6：resident 正文常驻，active 只注入有预算的目录。
   const emptyMemoryContext = (): ContextAssemblyResult => ({
     residentMemories: read.residentMemories,
     memoryDirectory: read.memoryDirectory,
@@ -607,7 +544,7 @@ export async function runCompanionDialogue(
     directoryTokenEstimate: 0,
   });
   let memoryContext: ContextAssemblyResult = emptyMemoryContext();
-  if (isCompanionMemoryContextEnabled() && !read.groundedTutorContext) {
+  if (isCompanionMemoryContextEnabled()) {
     try {
       memoryContext = await withWorkerWorkspaceTransaction(
         { workspaceId: ctx.workspaceId, userId: read.userId },
@@ -616,7 +553,6 @@ export async function runCompanionDialogue(
           { workspaceId: ctx.workspaceId, userId: read.userId },
           {
             runId: read.runId,
-            groundedTutorContext: read.groundedTutorContext,
             // 按页面类型推导 task 可见范围；无当前任务身份时不暴露 task 记忆。
             pageContext: read.pageContext,
           },
@@ -672,7 +608,7 @@ export async function runCompanionDialogue(
     ...handoffInput,
     modelMessages: [],
   });
-  const selfNotes = read.groundedTutorContext ? [] : await withWorkerWorkspaceTransaction(
+  const selfNotes = await withWorkerWorkspaceTransaction(
     { workspaceId: ctx.workspaceId, userId: read.userId }, tx => listCompanionSelfNotes(tx,
       { workspaceId: ctx.workspaceId, userId: read.userId }));
   // 上一轮说过「以后都用河南话」之后，账号里那一行就是这一轮的声音身份；正文也要
@@ -685,8 +621,8 @@ export async function runCompanionDialogue(
     messages = buildCompanionPersonaMessages({
       scope: { workspaceId: ctx.workspaceId, userId: read.userId },
       selfNotes: renderCompanionSelfNotes(selfNotes),
-      methodCatalog: read.groundedTutorContext ? "" : renderPlaybookCatalog(read.playbookCatalog),
-      methodCandidates: read.groundedTutorContext ? "" : renderPlaybookCandidates(read.playbookCandidates),
+      methodCatalog: renderPlaybookCatalog(read.playbookCatalog),
+      methodCandidates: renderPlaybookCandidates(read.playbookCandidates),
       deliveryObservation: renderCompanionDeliveryObservation(read.deliveryObservation),
       contextReceipt: receipts => {
         contextReceipts.recordAssembly(receipts);
@@ -699,7 +635,6 @@ export async function runCompanionDialogue(
       recentMessages: read.recentMessages,
       conversationClock: read.conversationClock,
       pageContext: read.pageContext,
-      groundedTutorContext: read.groundedTutorContext,
       residentMemories: read.residentMemories,
       memoryDirectory: read.memoryDirectory,
       memoryOmissions: {
@@ -884,27 +819,16 @@ export async function runCompanionDialogue(
   let voiceSegmentsEnabled = isCompanionVoiceDialogueEnabled();
   let voiceSegmentsWritten = false;
   let publishedVoiceChars = 0;
-  const voiceExpressionEnabled = !read.groundedTutorContext && read.petProfile?.boundaries?.allowVoiceTags !== false;
-  const voiceDeliveryDecision = decideCompanionVoiceDelivery({
-    voiceDialogueEnabled: voiceSegmentsEnabled,
-    formalAnswerInProgress: read.formalAnswerInProgress,
-  });
+  const voiceExpressionEnabled = read.petProfile?.boundaries?.allowVoiceTags !== false;
   let semanticVoiceStyle: AgentVoiceStyleDecisionV1 | null = null;
   /**
    * 这一轮的字要不要落进笔记/卡片。判据取结构化解释的候选能力（工具面按声明装配），
    * 不等工具真跑起来——第一段话可能在调用工具之前就说完了，而文案轮整轮都回普通话。
    */
   let turnWritesDocumentContent = false;
-  if (voiceDeliveryDecision === "formal_answer_in_progress") {
-    // 这一句是这条门唯一的可查痕迹：没有它，"她今天怎么不念了"只能靠猜。
-    logger.info({ runId: read.runId }, "正式作答中：这一轮伴星回复只出文字，不切句也不送合成");
-  }
   const emitVisibleVoiceSegments = async (visibleText: string, isFinal: boolean, modelText: string, messageId?: string, displayOffset = publishedVoiceChars): Promise<void> => {
-    // 不是"藏掉播放"：直接不发段事件，于是正文也不会被送去外部合成服务。
-    // 上面那句 `voiceSegmentsEnabled` 是另一件事——它是"这一段写失败之后本回合别再试"，
-    // 可以在一轮中途被关掉，而正式作答是整轮都不念。
+    // Disabled voice and failed segment delivery both stop synthesis here.
     if (!voiceSegmentsEnabled) return;
-    if (voiceDeliveryDecision !== "delivered") return;
     const expression = projectCompanionVoiceExpression(modelText, read.factSpans?.values ?? {});
     const expressionEnabled = voiceExpressionEnabled;
     // Whole-turn voice style is a user-directed semantic choice and remains available
@@ -1018,7 +942,7 @@ export async function runCompanionDialogue(
       : createCompanionReleaseRouterPort({
         mode: releaseRouterMode, scopeKey: `${ctx.workspaceId}:${read.userId}`, text: read.userText,
         recentMessages: read.recentMessages,
-        activeLearningTask: read.groundedTutorContext !== null || read.formalAnswerInProgress,
+        activeLearningTask: false,
         embed: releaseRouterEmbed, workspaceId: ctx.workspaceId, userId: read.userId,
       });
     agentResult = await runCompanionAgentLoop({
@@ -1163,15 +1087,17 @@ export async function runCompanionDialogue(
     const providerRejected = err instanceof ProviderRequestError;
     const rateLimited = providerRejected && err.status === 429;
     const policyDenied = err instanceof AIDataPolicyDeniedError;
+    const outputTimeout = err instanceof CompanionOutputTimeoutError;
     await markCompanionRunFailed(
       read,
       ctx,
-      contextChanged ? err.code : policyDenied ? "AI_DATA_POLICY_DENIED" : protocolLeak ? "REPLY_FORMAT_INVALID" : actionUnverified ? "ACTION_NOT_EXECUTED" : argumentsInvalid ? "TOOL_ARGUMENTS_INVALID" : noProgress ? "AGENT_NO_PROGRESS" : outputIncomplete ? "REPLY_LENGTH_LIMIT" : budgetExceeded ? "AGENT_BUDGET_EXCEEDED" : rateLimited ? "RATE_LIMITED" : providerRejected ? "PROVIDER_UNAVAILABLE" : "INTERNAL_ERROR",
+      contextChanged ? err.code : policyDenied ? "AI_DATA_POLICY_DENIED" : protocolLeak ? "REPLY_FORMAT_INVALID" : actionUnverified ? "ACTION_NOT_EXECUTED" : argumentsInvalid ? "TOOL_ARGUMENTS_INVALID" : noProgress ? "AGENT_NO_PROGRESS" : outputIncomplete ? "REPLY_LENGTH_LIMIT" : budgetExceeded ? "AGENT_BUDGET_EXCEEDED" : outputTimeout ? (err.code === "provider_first_output_timeout" ? "PROVIDER_FIRST_OUTPUT_TIMEOUT" : "PROVIDER_IDLE_TIMEOUT") : rateLimited ? "RATE_LIMITED" : providerRejected ? "PROVIDER_UNAVAILABLE" : "INTERNAL_ERROR",
       !policyDenied && !protocolLeak && !budgetExceeded && !contextChanged && !outputIncomplete && !outputUnverified && !actionUnverified && !argumentsInvalid && !noProgress && !streamStopped && !(providerRejected && [401,402,403].includes(err.status)),
       contextChanged ? err.message : policyDenied ? "请在 AI 数据同意页开启「允许发送到外部模型服务」后继续。" : contextOverflow ? "这次需要带入的内容太多，没法一次读完；可以按段继续。" : protocolLeak ? invalidReplyFailureText : actionUnverified ? "这次没有取得所要求操作的执行或无需变更回执，不能确认完成；已完成的其他操作仍保留。" : outputUnverified ? unverifiedQuoteFailureText : argumentsInvalid ? invalidArgumentsFailureText : noProgress ? noProgressFailureText : outputIncomplete ? "这次答复达到长度上限，已说出的内容保留；可以接着分段讲。" : budgetExceeded
         ? "companion agent budget exceeded"
         : streamStopped
           ? `companion stream stopped: ${streamingDelivery.failureReason() ?? "delivery pipeline"}`.slice(0, 240)
+          : outputTimeout ? `${err.message}；已完成的操作仍保留，可以从这次任务继续。`
           : rateLimited ? "模型服务暂时繁忙，请稍后重试；已经完成的操作仍保留。"
             : providerRejected ? "模型服务暂时无法完成这次请求，已经完成的操作仍保留。"
               : "companion agent execution failed",
@@ -1202,7 +1128,7 @@ export async function runCompanionDialogue(
     snapshot: committedHandoff.snapshot, sha256: committedHandoff.sha256,
   });
   if (agentResult.status === "waiting_for_confirmation") {
-    
+
     // 等用户确认：本轮不写 assistant.final（终态消息由确认后的续跑产出）。
     // 但**必须把已下发的稳定前缀落库关门**（④-b）：带工具的一步现在也会流式，
     // 这一步可能正是提议确认的那一步，开场白已经发给客户端——不 finish 的话
@@ -1348,7 +1274,11 @@ export async function runCompanionDialogue(
   // delta 与终态 assistant message 使用同一份净化文本（markdown/标签剥离后），
   // 否则客户端流式渲染的内容与 assistant.final 指向的消息不一致。
   assistantText = validated.ok ? validated.text : finalVisibleText;
-  if (await companionFollowupRepeatsParent(read, { workspaceId: ctx.workspaceId, userId: read.userId }, assistantText)) {
+  if (await companionInitiativeRepeatsSpeech(read, { workspaceId: ctx.workspaceId, userId: read.userId }, assistantText)) {
+    await finishCompanionParticipation(ctx, read, expiresAt);
+    return;
+  }
+  if (await reviewCompanionInitiativeSpeech({ ctx, read, text: assistantText, provider })) {
     await finishCompanionParticipation(ctx, read, expiresAt);
     return;
   }

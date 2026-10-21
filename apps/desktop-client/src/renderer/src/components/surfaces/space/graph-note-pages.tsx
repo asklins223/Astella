@@ -2,46 +2,36 @@ import { useMemo, useState } from "react";
 import { ArrowRight, BookOpenText, Play } from "lucide-react";
 import { RELATION_ROW_LIMIT } from "./graph-surface-types";
 import type { UnderstandingEdgeProjectionV3, UnderstandingNodeProjectionV3 } from "@astella/shared/note-deepening-contracts";
-import type { NoteApplicabilityAxisV3, NoteDeepeningV3, NoteNextStepAxisV3, NotePerformanceAxisV3 } from "@astella/shared/note-deepening-v3-contracts";
-import { graphNodeLabel, graphNodeSummary, graphObjectiveStateLabel, isNoteNode, isObjectiveNode } from "./graph-sky";
-
-type ObjectiveNode = Extract<UnderstandingNodeProjectionV3, { nodeRef: { kind: "objective" } }>;
+import type { NoteApplicabilityAxisV3, NoteDeepeningV3, NoteNextStepAxisV3, NotePerformanceAxisV3, NoteLearningQuestionTypeV1 } from "@astella/shared/note-deepening-v3-contracts";
+import { graphNodeLabel, graphNodeSummary, isNoteNode } from "./graph-sky";
 
 const PERFORMANCE_AXIS_LABEL: Readonly<Record<NotePerformanceAxisV3, string>> = {
-  no_record_yet: "还没有学习记录",
-  met_once: "见过一次，还没有留下可复述的记录",
-  assisted_once: "借助提示完成的",
-  used_independently: "有一次是独立说出来的",
-  repeated_over_time: "隔了不同日子，重复用上过",
+  no_record_yet: "还没有练过这张卡",
+  met_once: "答过，还有提升空间",
+  assisted_once: "答过，分数偏低",
+  used_independently: "答得不错",
+  repeated_over_time: "隔了不同日子都答得不错",
 };
 
 const NEXT_STEP_AXIS_LABEL: Readonly<Record<NoteNextStepAxisV3, string>> = {
-  nothing_to_do: "现在没有下一步",
-  can_continue: "可以接着往下走",
-  suggest_relearn: "建议补学",
-  due_for_review: "适合回访",
-  paused_by_user: "你把这一段停下了",
+  nothing_to_do: "还没有出题",
+  can_continue: "可以再做一遍",
 };
 
 const APPLICABILITY_AXIS_LABEL: Readonly<Record<NoteApplicabilityAxisV3, string>> = {
-  basis_holds: "依据还适用",
-  basis_updated: "材料有更新，要对一眼",
-  needs_check: "待核对",
-  no_permission: "现在读不到材料",
+  basis_holds: "跟当前正文一致",
+  basis_updated: "正文改过，题目可能要对一眼",
 };
 
-/** §11.2 笔记局部那一行的三个动作，各叫什么。 */
-const RELATION_REASON_LABEL: Readonly<Record<string, string>> = {
-  prerequisite: "理解这条之前需要",
-  explains: "用这一条来解释",
-  contrasts: "可以和这一条对比",
-  relates_to: "系统认为有关",
-};
-
-const RELATION_STATUS_LABEL: Readonly<Record<"confirmed" | "dismissed" | "suggested", string>> = {
-  confirmed: "你确认过",
-  suggested: "待确认建议",
-  dismissed: "你收起了",
+const QUESTION_TYPE_LABEL: Readonly<Record<NoteLearningQuestionTypeV1, string>> = {
+  single_choice: "单选",
+  multi_choice: "多选",
+  true_false: "判断",
+  fill_blank: "填空",
+  short_answer: "简答",
+  ordering: "排序",
+  matching: "配对",
+  operation: "操作",
 };
 
 function NoteStateAxes({ deepening }: { readonly deepening: NoteDeepeningV3 }) {
@@ -49,7 +39,7 @@ function NoteStateAxes({ deepening }: { readonly deepening: NoteDeepeningV3 }) {
     <div className="universe-axes" role="group" aria-label="三种状态（分开看，不合成一个）">
       <dl className="universe-axes__row">
         <div className="universe-axes__slip">
-          <dt>学习表现</dt>
+          <dt>练习情况</dt>
           <dd>{PERFORMANCE_AXIS_LABEL[deepening.axes.performance]}</dd>
         </div>
         <div className="universe-axes__slip">
@@ -66,10 +56,8 @@ function NoteStateAxes({ deepening }: { readonly deepening: NoteDeepeningV3 }) {
 }
 
 /**
- * 层一：笔记总览（§11.2 第一行「笔记、最近学习位置、未完旅程和当前回访建议」）。
- *
- * **由拓扑投影出来，不额外发一次读**——这一层要的东西（未完的一轮、回访日期、
- * 继续学习）拓扑里逐字都有，另起一份读就是第二个出处。
+ * 层一：笔记总览。只读拓扑投影，不额外发一次读——这一层要的东西（有没有
+ * 学习卡、练到几星、引用了谁）拓扑里都有。
  */
 export function NoteOverviewLayer({
   noteId,
@@ -77,7 +65,7 @@ export function NoteOverviewLayer({
   edges,
   onContinue,
   onOpenNote,
-  onSelectObjective,
+  onSelectQuestion,
   onSelectNote,
 }: {
   readonly noteId: string;
@@ -85,31 +73,30 @@ export function NoteOverviewLayer({
   readonly edges: readonly UnderstandingEdgeProjectionV3[];
   readonly onContinue: () => void;
   readonly onOpenNote: () => void;
-  readonly onSelectObjective: (objectiveId: string) => void;
+  readonly onSelectQuestion: (questionId: string) => void;
   readonly onSelectNote: (noteId: string) => void;
 }) {
   const note = projections.find((node) => isNoteNode(node) && node.nodeRef.noteId === noteId);
-  // 展开状态记的是"为哪一篇展开的"，不是布尔：换一篇笔记不能带着上一片的展开状态。
   const [expandedFor, setExpandedFor] = useState<string | null>(null);
-  const objectives = useMemo(() => {
-    const keys = new Set(
+  const questions = useMemo(() => {
+    const ids = new Set(
       edges
-        .filter((edge) => edge.kind === "sourced_from" && edge.from.kind === "note" && edge.from.id === noteId)
-        .map((edge) => `${edge.to.kind}:${edge.to.id}`),
+        .filter((edge) => edge.kind === "contains_question" && edge.from.kind === "note" && edge.from.id === noteId)
+        .map((edge) => edge.to.id),
     );
     return projections.filter(
-      (node): node is ObjectiveNode =>
-        isObjectiveNode(node) && keys.has(`objective:${node.nodeRef.objectiveId}`),
+      (node): node is Extract<UnderstandingNodeProjectionV3, { nodeRef: { kind: "card_question" } }> =>
+        node.nodeRef.kind === "card_question" && ids.has(node.nodeRef.questionId),
     );
   }, [edges, noteId, projections]);
-  const openRun = objectives.find((objective) => objective.personal.activeRunId !== null) ?? null;
-  const due = objectives.find((objective) => objective.personal.state === "due_review") ?? null;
+  const bestStars = questions.reduce<number | null>((best, node) => {
+    if (!("bestStars" in node) || node.bestStars === null) return best;
+    return best === null || node.bestStars > best ? node.bestStars : best;
+  }, null);
+
   /**
-   * 正文引用分两个方向列。画布上那条线不认方向，而「我引了它」和「它引了我」是两件
-   * 不同的事——只报一个数，用户就没法从这一篇走到引用它的那一篇。
-   *
-   * 折叠**按方向各切一刀**（不是整串切一刀）：被很多篇引用、自己只引了两篇的那种笔记，
-   * 整串切会把「引用了」那一半整个挤掉，方向就又看不全了。
+   * 正文引用分两个方向列。折叠**按方向各切一刀**：被很多篇引用、自己只引了两篇
+   * 的那种笔记，整串切会把「引用了」那一半整个挤掉。
    */
   const referenceGroups = useMemo(() => {
     const rows: { edgeId: string; noteId: string; label: string; outbound: boolean }[] = [];
@@ -121,7 +108,6 @@ export function NoteOverviewLayer({
       const node = projections.find(
         (candidate) => isNoteNode(candidate) && candidate.nodeRef.noteId === other.id,
       );
-      // 图上没这颗星就不列（截断时拓扑会少节点），否则这一行点过去是空的。
       if (!node || other.kind !== "note") continue;
       rows.push({ edgeId: edge.edgeId, noteId: other.id, label: graphNodeLabel(node), outbound });
     }
@@ -151,39 +137,34 @@ export function NoteOverviewLayer({
         </p>
       </section>
       <dl className="universe-detail-timing">
-        <div><dt>已形成的目标</dt><dd>{objectives.length} 个</dd></div>
-        <div><dt>未完的一轮</dt><dd>{openRun ? "有一轮" : "没有"}</dd></div>
-        <div><dt>该回访的</dt><dd>{due ? graphObjectiveStateLabel(due.personal.state) : "暂时没有"}</dd></div>
+        <div><dt>题目</dt><dd>{questions.length} 道</dd></div>
+        <div><dt>练过最好</dt><dd>{bestStars === null ? "还没练" : `${bestStars} 星`}</dd></div>
+        <div><dt>笔记</dt><dd>{note ? "有正文" : "读不到"}</dd></div>
       </dl>
       <section className="universe-locals">
         <div className="universe-detail-section-title">
           <span>从这一篇继续</span>
-          <small>正文和这一轮学习在同一篇里</small>
+          <small>正文和配套练习在同一篇里</small>
         </div>
-        <button type="button" className="universe-locals__act" onClick={openRun ? onContinue : onOpenNote}>
-          {openRun ? <Play size={14} /> : <BookOpenText size={14} />}
-          <span><strong>{openRun ? "回笔记继续学习" : "打开这一篇笔记"}</strong><small>正文、材料与本轮学习都在那儿</small></span>
+        <button type="button" className="universe-locals__act" onClick={questions.length > 0 ? onContinue : onOpenNote}>
+          {questions.length > 0 ? <Play size={14} /> : <BookOpenText size={14} />}
+          <span><strong>{questions.length > 0 ? "回笔记做这张卡" : "打开这一篇笔记"}</strong><small>正文、材料与配套练习都在那儿</small></span>
           <ArrowRight size={14} />
         </button>
-        {objectives.length > 0 ? <ul className="universe-overview-stars">
-          {objectives.map(objective => <li key={objective.nodeRef.objectiveId}>
-            <button type="button" onClick={() => onSelectObjective(objective.nodeRef.objectiveId)}>
+        {questions.length > 0 ? <ul className="universe-overview-stars">
+          {questions.map(question => <li key={question.nodeRef.questionId}>
+            <button type="button" onClick={() => onSelectQuestion(question.nodeRef.questionId)}>
               <span className="universe-small-star" aria-hidden="true">✦</span>
-              <span><strong>{graphNodeLabel(objective)}</strong><small>{graphObjectiveStateLabel(objective.personal.state)}</small></span>
+              <span><strong>{graphNodeLabel(question)}</strong><small>{graphNodeSummary(question)}</small></span>
               <ArrowRight size={14} />
             </button>
           </li>)}
         </ul> : null}
-        {objectives.length === 0 ? (
-          // §11.2「有正文的笔记无需制卡即可出现」：没有目标时**说清楚**是"还没有
-          // 形成目标"，而不是画一句"知识宇宙正在生成"。
-          <p className="universe-layer-empty">这一篇还没有形成任何目标——正文在就行，不需要先制卡。</p>
+        {questions.length === 0 ? (
+          <p className="universe-layer-empty">这一篇还没有配套练习——在笔记里生成学习卡之后，题目会出现在这里。</p>
         ) : null}
       </section>
       {referenceGroups.outbound.length + referenceGroups.inbound.length > 0 ? (
-        // 安静的一排文字，不做药丸：这一面板里唯一的实心块是上面那颗「打开这一篇
-        // 笔记」，引用只是"顺便可以跳过去"，跟它同量级就把主次压平了。方向写在左边
-        // 那一格，笔记名是这一行最重的字——画布上那条线不认方向，这里得认。
         <section className="universe-references">
           <div className="universe-detail-section-title"><span>正文里的引用</span></div>
           <ul>
@@ -197,7 +178,6 @@ export function NoteOverviewLayer({
             ))}
           </ul>
           {collapsible ? (
-            // 收起来的那一半要说清有多少，不然这一串看着就是"这篇只有这些关系"。
             <button type="button" className="universe-references__more" onClick={() => setExpandedFor(opened ? null : noteId)}>
               {opened ? "收起" : `还有 ${hiddenReferences} 篇没列出`}
             </button>
@@ -208,193 +188,93 @@ export function NoteOverviewLayer({
   );
 }
 
-/**
- * 层二：笔记局部（§11.2 第二行「核心问题／已形成的目标／必要前置和明确关系／
- * 当前缺口」；动作：查看关系理由、打开某个学习位置、查看相关记录）。
- */
+/** 层二：这一篇的卡与题目。 */
 export function NoteLocalLayer({
   deepening,
-  onOpenLearningPosition,
-  onOpenCard,
+  onOpenNote,
 }: {
   readonly deepening: NoteDeepeningV3;
-  readonly onOpenLearningPosition: () => void;
-  readonly onOpenCard: (objectiveId: string) => void;
+  readonly onOpenNote: () => void;
 }) {
-  const { local } = deepening;
+  const card = deepening.card;
   return (
     <>
       <NoteStateAxes deepening={deepening} />
-      {local.openDrivingQuestion ? (
-        <section className="universe-locals">
-          <div className="universe-detail-section-title"><span>这一轮的问题</span><small>未完的那一轮</small></div>
-          <p className="universe-question">{local.openDrivingQuestion}</p>
-        </section>
-      ) : null}
       <section className="universe-locals">
         <div className="universe-detail-section-title">
-          <span>核心问题与已形成的目标</span>
-          <small>{local.coreQuestions.length} 个</small>
+          <span>配套练习</span>
+          <small>{card ? `${card.questions.length} 道题` : "还没有出题"}</small>
         </div>
-        {local.objectives.length === 0 ? (
-          <p className="universe-layer-empty">还没有形成任何目标，这里不替你编一条。</p>
+        {!card ? (
+          <p className="universe-layer-empty">这一篇还没有学习卡。需要练的时候在笔记里生成一张。</p>
         ) : (
-          <ul className="universe-locals__list">
-            {local.objectives.map((objective) => (
-              <li key={objective.objectiveId} className="universe-locals__item">
-                <button type="button" onClick={onOpenLearningPosition}>
-                  <strong>{objective.label}</strong>
-                  <small>{objective.summary}</small>
-                </button>
-                <span className="universe-locals__tags">
-                  <em>{graphObjectiveStateLabel(objective.state)}</em>
-                  {objective.runId ? <em className="universe-locals__tag--run">有一轮没走完</em> : null}
-                  {objective.cardId ? (
-                    <button type="button" className="universe-locals__card" onClick={() => onOpenCard(objective.objectiveId)}>
-                      打开对应卡片
-                    </button>
-                  ) : null}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-      <section className="universe-locals">
-        {/* §11.3 + §11.2「查看关系理由」：理由与关系在同一行。拆成两张表，
-            屏上就得自己拼，而拼不上的那一行会变成一条没有理由的实线。 */}
-        <div className="universe-detail-section-title">
-          <span>必要前置与明确关系</span>
-          <small>{local.relations.length ? "每条都写清为什么被推出来" : "这一篇还没有可核对的关系"}</small>
-        </div>
-        {local.relations.length === 0 ? (
-          <p className="universe-layer-empty">没有可核对的关系。这里不替你推断——没有学习记录时不伪造关系。</p>
-        ) : (
-          <ul className="universe-locals__list">
-            {local.relations.map((relation) => (
-              <li key={relation.edgeId} className="universe-locals__item universe-locals__item--relation">
-                <div>
-                  <strong>{relation.otherLabel}</strong>
-                  <small>{RELATION_REASON_LABEL[relation.relation] ?? relation.relation}</small>
-                </div>
-                <span className="universe-locals__tags">
-                  <em className={`is-${relation.status}`}>{RELATION_STATUS_LABEL[relation.status]}</em>
-                  {relation.reasonCodes.length ? (
-                    <small className="universe-relation-reason">
-                      理由：{relation.reasonCodes.map((code) => RELATION_REASON_LABEL[code] ?? code).join("、")}
-                    </small>
-                  ) : (
-                    <small className="universe-relation-reason">系统没有给出理由。</small>
-                  )}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-      <section className="universe-locals">
-        <div className="universe-detail-section-title">
-          <span>当前缺口</span>
-          <small>{local.gaps.length ? "哪一个目标卡在哪一档" : "暂时没有缺口"}</small>
-        </div>
-        {local.gaps.length === 0 ? (
-          <p className="universe-layer-empty">没有列出来的缺口。</p>
-        ) : (
-          // §11.4「没有单一'整篇掌握亮度'」在层二的具体形状：列出来的是
-          // **哪一个**目标卡在哪一档，不是一句整体百分比。
-          <ul className="universe-locals__list">
-            {local.gaps.map((gap) => (
-              <li key={gap.objectiveId} className="universe-locals__item is-gap">
-                <button type="button" onClick={onOpenLearningPosition}>
-                  <strong>{gap.label}</strong>
-                  <small>建议补学</small>
-                </button>
-                <span className="universe-locals__tags"><em className="is-gap">{graphObjectiveStateLabel(gap.state)}</em></span>
-              </li>
-            ))}
-          </ul>
+          <>
+            <dl className="universe-detail-timing">
+              <div><dt>最好成绩</dt><dd>{card.bestScore === null ? "还没做完一次" : `${card.bestScore} 分`}</dd></div>
+              <div><dt>星级</dt><dd>{card.bestStars === null ? "还没有星" : `${card.bestStars} 星`}</dd></div>
+              <div><dt>做过</dt><dd>{card.attemptCount} 次</dd></div>
+            </dl>
+            <ul className="universe-locals__list">
+              {card.questions.map((question) => (
+                <li key={question.questionId} className="universe-locals__item">
+                  <div>
+                    <strong>{question.stem}</strong>
+                    <small>{QUESTION_TYPE_LABEL[question.questionType]}</small>
+                  </div>
+                  <span className="universe-locals__tags">
+                    <em>{question.bestStars === null ? "没练过" : `最好 ${question.bestStars} 星`}</em>
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <button type="button" className="universe-locals__act" onClick={onOpenNote}>
+              <Play size={14} />
+              <span><strong>去做这张卡</strong><small>答完由伴星批改，整卷给星级</small></span>
+              <ArrowRight size={14} />
+            </button>
+          </>
         )}
       </section>
     </>
   );
 }
 
-/**
- * 层三：证据详情（§11.2 第三行「真实回答／反馈／日期／材料依据／可选卡片」；
- * 动作：回看、进入笔记旅程、打开相应卡片）。
- */
+/** 层三：这张卡的历次作答。 */
 export function NoteRecordLayer({
   deepening,
   onOpenNote,
-  onOpenCard,
 }: {
   readonly deepening: NoteDeepeningV3;
   readonly onOpenNote: () => void;
-  readonly onOpenCard: (objectiveId: string) => void;
 }) {
   return (
     <>
       <NoteStateAxes deepening={deepening} />
       <section className="universe-locals">
         <div className="universe-detail-section-title">
-          <span>真实学习记录</span>
+          <span>练习记录</span>
           <small>
-            {deepening.recordsComplete
-              ? `${deepening.records.length} 条，全部在这里`
-              : `只列到这里 ${deepening.records.length} 条，更早的还在服务器上`}
+            {deepening.attemptsComplete
+              ? `${deepening.attempts.length} 次，全部在这里`
+              : `只列到今天 ${deepening.attempts.length} 次，更早的还在服务器上`}
           </small>
         </div>
-        {deepening.records.length === 0 ? (
-          <p className="universe-layer-empty">这一篇还没有学习记录。这里不替你造一条示例。</p>
+        {deepening.attempts.length === 0 ? (
+          <p className="universe-layer-empty">这一篇还没有练习记录。这里不替你造一条示例。</p>
         ) : (
           <ol className="universe-records">
-            {deepening.records.map((record) => (
-              <li key={record.recordId} className="universe-record">
+            {deepening.attempts.map((attempt) => (
+              <li key={attempt.attemptId} className="universe-record">
                 <header>
-                  <time dateTime={record.occurredAt}>{formatDeepeningDate(record.occurredAt)}</time>
-                  <span>{record.objectiveLabel ?? "这一步没有挂到具体目标上"}</span>
+                  <time dateTime={attempt.completedAt ?? undefined}>{attempt.completedAt ? formatDeepeningDate(attempt.completedAt) : "还没做完"}</time>
+                  <span>{attemptStatusLabel(attempt.status)}</span>
                 </header>
-                {/* 「原回答」。结构化作答那一格是空的——屏上就写清楚"这一步不是一句
-                    可复述的回答"，不替她造一句。 */}
-                {record.answerText ? (
-                  <blockquote className="universe-record__answer">{record.answerText}</blockquote>
-                ) : (
-                  <p className="universe-record__answer is-empty">
-                    {record.answerForm === "structured" ? "这一步是结构化作答，没有一句可念的回答。" : "这一次没有留下可念的回答。"}
-                  </p>
-                )}
-                {record.feedback.length ? (
-                  <ul className="universe-record__feedback">
-                    {record.feedback.map((item, index) => (
-                      <li key={`${record.recordId}-fb-${index}`}>
-                        <em>{FEEDBACK_VERDICT_LABEL[item.verdict]}</em>
-                        <span>{item.reason}</span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="universe-record__answer is-empty">这一次没有留下可展示的反馈。</p>
-                )}
-                {record.materialBasis.length ? (
-                  <div className="universe-record__material">
-                    <span>材料依据</span>
-                    {record.materialBasis.map((material) => (
-                      <small key={material.evidenceSnapshotId}>{material.supportSummary}</small>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="universe-record__material">
-                    <span>材料依据</span>
-                    <small>这一条没有挂材料。</small>
-                  </div>
-                )}
+                <p className="universe-record__answer">
+                  {attempt.score === null ? "还没有分数。" : `${attempt.score} 分`}
+                  {attempt.stars === null ? "" : ` · ${attempt.stars} 星`}
+                </p>
                 <footer>
-                  {/* 「可选卡片」——§11.2 末段：卡片是目标详情里的一条记忆工具
-                      链接，不为同一目标再画一颗星。 */}
-                  {record.cardId && record.objectiveId ? (
-                    <button type="button" onClick={() => onOpenCard(record.objectiveId!)}>打开对应卡片</button>
-                  ) : null}
-                  <button type="button" onClick={onOpenNote}>进入笔记旅程</button>
+                  <button type="button" onClick={onOpenNote}>回到这张卡</button>
                 </footer>
               </li>
             ))}
@@ -405,13 +285,15 @@ export function NoteRecordLayer({
   );
 }
 
-const FEEDBACK_VERDICT_LABEL: Readonly<Record<NoteDeepeningV3["records"][number]["feedback"][number]["verdict"], string>> = {
-  covered: "讲到了",
-  partial: "讲了一半",
-  missing: "没讲到",
-  contradicted: "与材料相反",
-  not_assessable: "判不了",
-};
+function attemptStatusLabel(status: NoteDeepeningV3["attempts"][number]["status"]): string {
+  switch (status) {
+    case "completed": return "已批改";
+    case "grading": return "伴星正在批改";
+    case "grading_failed": return "这次没批成";
+    case "abandoned": return "中途放弃了";
+    default: return "还没做完";
+  }
+}
 
 /** 「日期」按本地日历念；解析不了就**原样交出**那一串 ISO，不显示 Invalid Date。 */
 function formatDeepeningDate(iso: string): string {

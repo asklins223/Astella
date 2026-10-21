@@ -17,9 +17,6 @@ importers:
       '@astella/ai-quality':
         specifier: file:../../packages/ai-quality
         version: file:../../packages/ai-quality(@opentelemetry/api@1.9.1)(postgres@3.4.9)
-      '@astella/card-generation':
-        specifier: file:../../packages/card-generation
-        version: file:../../packages/card-generation(@opentelemetry/api@1.9.1)(postgres@3.4.9)
       '@astella/shared':
         specifier: file:../../packages/shared
         version: file:../../packages/shared(@opentelemetry/api@1.9.1)(postgres@3.4.9)
@@ -89,9 +86,6 @@ packages:
 
   '@astella/ai-quality@file:../../packages/ai-quality':
     resolution: {directory: ../../packages/ai-quality, type: directory}
-
-  '@astella/card-generation@file:../../packages/card-generation':
-    resolution: {directory: ../../packages/card-generation, type: directory}
 
   '@astella/shared@file:../../packages/shared':
     resolution: {directory: ../../packages/shared, type: directory}
@@ -1290,7 +1284,6 @@ snapshots:
   '@astella/agent-host@file:../../packages/agent-host(@opentelemetry/api@1.9.1)(postgres@3.4.9)':
     dependencies:
       '@astella/agent-core': file:../../packages/agent-core(@opentelemetry/api@1.9.1)(postgres@3.4.9)
-      '@astella/card-generation': file:../../packages/card-generation(@opentelemetry/api@1.9.1)(postgres@3.4.9)
       '@astella/shared': file:../../packages/shared(@opentelemetry/api@1.9.1)(postgres@3.4.9)
       drizzle-orm: 0.45.2(@opentelemetry/api@1.9.1)(postgres@3.4.9)
       zod: 3.25.76
@@ -1330,42 +1323,6 @@ snapshots:
     dependencies:
       '@astella/shared': file:../../packages/shared(@opentelemetry/api@1.9.1)(postgres@3.4.9)
       zod: 3.25.76
-    transitivePeerDependencies:
-      - '@aws-sdk/client-rds-data'
-      - '@cloudflare/workers-types'
-      - '@electric-sql/pglite'
-      - '@libsql/client'
-      - '@libsql/client-wasm'
-      - '@neondatabase/serverless'
-      - '@op-engineering/op-sqlite'
-      - '@opentelemetry/api'
-      - '@planetscale/database'
-      - '@prisma/client'
-      - '@tidbcloud/serverless'
-      - '@types/better-sqlite3'
-      - '@types/pg'
-      - '@types/sql.js'
-      - '@upstash/redis'
-      - '@vercel/postgres'
-      - '@xata.io/client'
-      - better-sqlite3
-      - bun-types
-      - expo-sqlite
-      - gel
-      - knex
-      - kysely
-      - mysql2
-      - pg
-      - postgres
-      - prisma
-      - sql.js
-      - sqlite3
-      - supports-color
-
-  '@astella/card-generation@file:../../packages/card-generation(@opentelemetry/api@1.9.1)(postgres@3.4.9)':
-    dependencies:
-      '@astella/shared': file:../../packages/shared(@opentelemetry/api@1.9.1)(postgres@3.4.9)
-      drizzle-orm: 0.45.2(@opentelemetry/api@1.9.1)(postgres@3.4.9)
     transitivePeerDependencies:
       - '@aws-sdk/client-rds-data'
       - '@cloudflare/workers-types'

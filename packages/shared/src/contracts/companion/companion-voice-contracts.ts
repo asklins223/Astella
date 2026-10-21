@@ -135,6 +135,8 @@ export const companionRunVoiceSegmentsResultV1Schema = z.strictObject({
     displayText: z.string().min(1),
     displayStart: z.number().int().nonnegative(),
     displayEnd: z.number().int().nonnegative(),
+    /** 这条音频属于哪一条助手消息；旧留档没有时省略，客户端据此分辨消息边界。 */
+    messageId: z.string().uuid().optional(),
     cue: z.unknown(),
   })).max(200),
 });

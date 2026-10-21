@@ -86,9 +86,9 @@ export function HudSpaceMenu({ onSwitched, onClose, onManage }: {
       <footer className="hud-space-footer">
         {message ? <p className="hud-bubble-status" data-tone={message.tone}
           role={message.tone === "error" ? "alert" : "status"}>{message.text}</p> : null}
-        {confirmation ? <HudBubbleConfirmation title="切换会中断当前测评" confirmLabel={confirmation.kind === "create" ? "创建并进入" : "确认切换"}
+        {confirmation ? <HudBubbleConfirmation title="离开当前学习页面" confirmLabel={confirmation.kind === "create" ? "创建并进入" : "确认切换"}
           onConfirm={spaces.confirm} onCancel={cancelConfirmation}>
-          {confirmation.kind === "switch" ? `准备进入「${confirmation.workspace.name}」。` : `准备创建并进入「${confirmation.name}」。`}正在进行的正式测评会结束；这间书房的搜索词、阅读位置与返回记录不会带过去。
+          {confirmation.kind === "switch" ? `准备进入「${confirmation.workspace.name}」。` : `准备创建并进入「${confirmation.name}」。`}当前页面还有未完成的操作。切换后会离开这一页；这间书房的搜索词、阅读位置与返回记录不会带过去。
         </HudBubbleConfirmation> : <>
           <div className="hud-space-actions">
             <button type="button" className="hud-bubble-button" disabled={!state.ready || busy !== null} aria-expanded={form === "join"}

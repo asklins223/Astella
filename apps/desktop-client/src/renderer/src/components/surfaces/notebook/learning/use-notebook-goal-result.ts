@@ -2,20 +2,21 @@ import type { NoteMindMapV1 } from "@astella/shared/note-mind-map-contracts";
 import { useCallback, useEffect, useState } from "react";
 import type { NoteOverviewV1 } from "@astella/shared/note-overview-contracts";
 import type { NoteLearningArtifactV1 } from "@astella/shared/note-learning-artifact-contracts";
+import type { NoteExpansionTaskV1 } from "@astella/shared/note-expansion-contracts";
 import type { NoteTargetRef } from "../../../../app/home/room-store";
 import { useRoomStore } from "../../../../app/home/room-store";
 import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../../../app/client/desktop-client";
 
-type SavedResult = { kind: "note_mind_map"; mindMap: NoteMindMapV1 } | { kind: "note_overview"; overview: NoteOverviewV1 } | { kind: "note_dynamic_artifact"; artifact: NoteLearningArtifactV1 };
+type SavedResult = { kind: "note_mind_map"; mindMap: NoteMindMapV1 } | { kind: "note_overview"; overview: NoteOverviewV1 } | { kind: "note_dynamic_artifact"; artifact: NoteLearningArtifactV1 } | { kind: "note_expansion"; task: NoteExpansionTaskV1 };
 /** Exact receipt loading is independent of a paginated gallery and of the current note version. */
 export function useNotebookGoalResult(noteId: string | undefined, requested: NoteTargetRef["learningResult"], epochRef: { current: number | undefined }) {
   const scope = useRoomStore(state => state.workspaceScopeRevision);
   const [attempt, setAttempt] = useState(0);
   const retry = useCallback(() => setAttempt(value => value + 1), []);
-  const key = `${scope}:${noteId}:${requested?.kind}:${requested?.taskId}:${requested?.artifactId}:${attempt}`;
+  const key = `${scope}:${noteId}:${requested?.kind}:${requested?.taskId}:${requested?.artifactId}:${requested?.noteVersionId}:${attempt}`;
   const [saved, setSaved] = useState<{ key: string; result: SavedResult | null; error: string | null } | null>(null);
   useEffect(() => {
-    if (!noteId || !requested || requested.kind === "note_expansion") return;
+    if (!noteId || !requested) return;
     let obsolete = false;
     void (async () => {
       try {
@@ -23,7 +24,7 @@ export function useNotebookGoalResult(noteId: string | undefined, requested: Not
         let result: SavedResult;
         if (requested.kind === "note_mind_map") {
           const task = unwrapGatewayResult(await window.astella.noteMindMap.getTask(input));
-          if (task.noteId !== noteId || !task.mindMap || task.mindMap.mindMapId !== requested.artifactId) throw new Error("这份脑图暂时没有读到，可以重新读取。");
+          if (task.taskId !== requested.taskId || task.noteId !== noteId || !task.mindMap || task.mindMap.mindMapId !== requested.artifactId) throw new Error("这份脑图暂时没有读到，可以重新读取。");
           result = { kind: "note_mind_map", mindMap: task.mindMap };
         } else if (requested.kind === "note_overview") {
           const task = unwrapGatewayResult(await window.astella.noteOverview.getTask(input));
@@ -31,6 +32,11 @@ export function useNotebookGoalResult(noteId: string | undefined, requested: Not
             throw new Error("这份速看暂时没有读到，可以重新读取。");
           }
           result = { kind: "note_overview", overview: task.overview };
+        } else if (requested.kind === "note_expansion") {
+          const task = unwrapGatewayResult(await window.astella.noteExpansion.getTask(input));
+          if (task.taskId !== requested.taskId || task.noteId !== noteId || task.taskId !== requested.artifactId)
+            throw new Error("这份拓展暂时没有读到，可以重新读取。");
+          result = { kind: "note_expansion", task };
         } else {
           const task = unwrapGatewayResult(await window.astella.noteLearningArtifact.getTask(input));
           if (task.taskId !== requested.taskId || task.noteId !== noteId || !task.artifact || task.artifact.artifactId !== requested.artifactId) {
@@ -38,6 +44,9 @@ export function useNotebookGoalResult(noteId: string | undefined, requested: Not
           }
           result = { kind: "note_dynamic_artifact", artifact: task.artifact };
         }
+        const versionId = result.kind === "note_mind_map" ? result.mindMap.noteVersionId : result.kind === "note_overview" ? result.overview.noteVersionId
+          : result.kind === "note_expansion" ? result.task.noteVersionId : result.artifact.noteVersionId;
+        if (requested.noteVersionId && versionId !== requested.noteVersionId) throw new Error("保存版本与这份成果不一致，暂时无法打开。");
         if (!obsolete && useRoomStore.getState().workspaceScopeRevision === scope) setSaved({ key, result, error: null });
       } catch (error) {
         if (!obsolete && useRoomStore.getState().workspaceScopeRevision === scope) setSaved({ key, result: null, error: gatewayErrorMessage(error) });
@@ -46,5 +55,5 @@ export function useNotebookGoalResult(noteId: string | undefined, requested: Not
     return () => { obsolete = true; };
   }, [key]);
   const current = saved?.key === key ? saved : { key, result: null, error: null };
-  return { ...current, loading: Boolean(noteId && requested && requested.kind !== "note_expansion" && saved?.key !== key), retry };
+  return { ...current, loading: Boolean(noteId && requested && saved?.key !== key), retry };
 }

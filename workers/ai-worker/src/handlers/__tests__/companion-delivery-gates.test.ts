@@ -101,14 +101,13 @@ test("companionStreamFallbackText：只在三个事实同时成立时才降级�
  * `by` 是 steer 起因的唯一区分口径（39b §9.6）。正文那句曾经写死成
  * "answered an action request"，于是编数字和空承诺都被读成"动作请求"。
  */
-test("companionSteerCause：五类起因分得开，不再一律读成动作请求", () => {
+test("companionSteerCause：起因分得开，不再一律读成动作请求", () => {
   const base = { unverifiedClaims: [], unverifiedQuotes: [], lookupClaim: false,
-    nothingDueClaim: false, userAskedForAction: false };
+    userAskedForAction: false };
   assert.equal(companionSteerCause({ ...base, correctQuote: "原文里的那一句" }), "unverified-quotes");
   assert.equal(companionSteerCause({ ...base, unverifiedClaims: ["42"] }), "unverified-numbers");
   assert.equal(companionSteerCause({ ...base, unverifiedQuotes: ["“引用”"] }), "unverified-quotes");
   assert.equal(companionSteerCause({ ...base, lookupClaim: true }), "claimed-lookup");
-  assert.equal(companionSteerCause({ ...base, lookupClaim: true, nothingDueClaim: true }), "claimed-nothing-due");
   assert.equal(companionSteerCause({ ...base, userAskedForAction: true }), "action-request");
   assert.equal(companionSteerCause(base), "promise-shape");
 });

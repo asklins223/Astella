@@ -123,13 +123,10 @@ describe("样式表只从一个地方进来", () => {
     // 2. 母本：`DESIGN.md` 指定的唯一视觉依据
     const mother = indexOf("hud/hud-pages.css");
     const integration = indexOf("hud/hud-surface.css");
-    const correction = indexOf("objective-flow.css");
     expect(mother, "清单里没有母本 hud-pages.css").toBeGreaterThan(-1);
     expect(integration, "清单里没有集成层 hud/hud-surface.css").toBeGreaterThan(-1);
-    expect(correction, "清单里没有修正层 objective-flow.css").toBeGreaterThan(-1);
-    // 集成层靠「排在母本之后」覆盖母本；修正层靠「排在集成层之后」覆盖集成层
+    // 集成层靠「排在母本之后」覆盖母本。
     expect(integration, "集成层必须排在母本之后（它就是靠这个顺序覆盖母本的）").toBeGreaterThan(mother);
-    expect(correction, "修正层必须排在集成层之后").toBeGreaterThan(integration);
   });
 
   it("main.tsx 走 styles.ts 这一个入口", () => {

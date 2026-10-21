@@ -255,7 +255,6 @@ export async function joinWorkspace(t: GatewayTransport, inviteToken: string, re
       method: "POST",
       body: JSON.stringify({ inviteToken }),
     }, true, true, requestId);
-    t.roomProjectionCache = null;
     // 走到这一行，成员关系与邀请码消费已经整笔落库（服务端把它们放在同一个事务里，
     // 消费是最后一步）。后面的会话重读只是把这份事实投影回本机，它失败**不能**改写
     // 已经发生的事：换成一个专门的码，让界面能说"已经加入了，刷新列表就能看到"。
@@ -278,7 +277,6 @@ export async function leaveWorkspace(t: GatewayTransport, workspaceId: string, r
       t.workspaceEpoch += 1;
       await t.persistCredential(t.credentialPersistence === "local_file");
     }
-    t.roomProjectionCache = null;
     return t.loadSession(requestId);
   }
 
@@ -296,7 +294,6 @@ export async function login(t: GatewayTransport, b: CompanionBridge, email: stri
     b.clearCompanionRuntimeState();
     t.token = parsed.data.token;
     t.workspaceEpoch = 1;
-    t.roomProjectionCache = null;
     // 能力投影与房间投影同生命周期：换身份/换空间之后它必须重来，不能靠 epoch 相等蒙过去
     // （两处都会把 workspaceEpoch 复位成 1，复位之后"和缓存里的 epoch 一样"是必然成立）。
     t.forgetCapabilities();
@@ -319,7 +316,6 @@ export async function register(t: GatewayTransport, b: CompanionBridge, email: s
     b.clearCompanionRuntimeState();
     t.token = parsed.data.token;
     t.workspaceEpoch = 1;
-    t.roomProjectionCache = null;
     // 能力投影与房间投影同生命周期：换身份/换空间之后它必须重来，不能靠 epoch 相等蒙过去
     // （两处都会把 workspaceEpoch 复位成 1，复位之后"和缓存里的 epoch 一样"是必然成立）。
     t.forgetCapabilities();
@@ -359,7 +355,6 @@ export async function loginWithCode(t: GatewayTransport, b: CompanionBridge, ema
   b.clearCompanionRuntimeState();
   t.token = parsed.data.token;
   t.workspaceEpoch = 1;
-  t.roomProjectionCache = null;
   t.forgetCapabilities();
   await t.persistCredential(persist);
   return t.loadSession(requestId);
@@ -382,7 +377,6 @@ export async function logout(t: GatewayTransport, b: CompanionBridge, requestId?
     t.currentSession = null;
     // 退登是人自己要走，下一次登录落回默认空间就是对的，不该被拖回上一个空间。
     t.sessionWorkspaceReturn = null;
-    t.roomProjectionCache = null;
     t.commandIdempotency.clear();
     b.clearCompanionRuntimeState();
     t.tokenIsRestored = false;
@@ -443,7 +437,6 @@ export async function switchWorkspace(t: GatewayTransport, b: CompanionBridge, w
     b.clearCompanionRuntimeState();
     t.token = parsed.data.token;
     t.workspaceEpoch += 1;
-    t.roomProjectionCache = null;
     await t.persistCredential(t.credentialPersistence === "local_file");
     const session = await t.loadSession();
     if (reason !== "restore" && session.status === "authenticated" && session.workspace
@@ -487,7 +480,6 @@ export async function changePassword(t: GatewayTransport, b: CompanionBridge, cu
     }, true, true, requestId);
     t.token = null;
     t.currentSession = null;
-    t.roomProjectionCache = null;
     t.commandIdempotency.clear();
     b.clearCompanionRuntimeState();
     t.tokenIsRestored = false;
@@ -510,7 +502,6 @@ export async function renameWorkspace(t: GatewayTransport, workspaceId: string, 
     });
     if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
     t.currentSession = null;
-    t.roomProjectionCache = null;
     return parsed.data;
   }
 
@@ -524,7 +515,6 @@ export function clearCredential(t: GatewayTransport, b: CompanionBridge, ): void
     void b.clearCompanionBridgeContext().catch(() => undefined);
     t.token = null;
     t.currentSession = null;
-    t.roomProjectionCache = null;
     t.commandIdempotency.clear();
     b.clearCompanionRuntimeState();
   }

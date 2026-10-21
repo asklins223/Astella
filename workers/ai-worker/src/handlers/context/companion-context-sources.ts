@@ -4,7 +4,6 @@ import { agentMemoryContextSourceV1Schema, type AgentScopeV1 } from "@astella/sh
 import { CompanionContextChangedError } from "../../lib/non-retryable-errors.ts";
 import type { CompanionContextHandoffSnapshotV1 } from "./companion-context-handoff.ts";
 import { isWithinQuietHours, type CompanionQuietHours } from "@astella/shared/companion-proactive-policy";
-import { findFormalAnswerTarget } from "../../lib/formal-answer-signal.ts";
 
 /**
  * 解析防御，不是业务闸：只兜「快照被塞进畸形大数组」，不承担新鲜度语义
@@ -42,8 +41,7 @@ export async function assertCompanionContextSourcesCurrent(tx: AgentSqlExecutor,
     const [account] = await queryRows<{ global_enabled: boolean; presence: { presence?: string } | null; quiet_hours: CompanionQuietHours | null }>(tx,
       sql`SELECT global_enabled,presence,quiet_hours FROM user_companion_account_state WHERE user_id=${scope.userId}`);
     if (!account?.global_enabled || ["dnd", "offline"].includes(account.presence?.presence ?? "")
-      || (account.quiet_hours && isWithinQuietHours(account.quiet_hours, new Date()))
-      || await findFormalAnswerTarget(tx, scope)) throw new CompanionContextChangedError();
+      || (account.quiet_hours && isWithinQuietHours(account.quiet_hours, new Date()))) throw new CompanionContextChangedError();
     const [muted] = await queryRows(tx,sql`SELECT 1 FROM companion_room_profiles WHERE workspace_id=${scope.workspaceId}
       AND user_id=${scope.userId} AND proactive_muted`);
     if (muted) throw new CompanionContextChangedError();

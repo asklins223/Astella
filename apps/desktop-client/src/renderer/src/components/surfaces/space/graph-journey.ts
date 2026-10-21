@@ -4,7 +4,6 @@ import type { UniverseViewport } from "./understanding-universe";
 export type GraphJourney = {
   query: string;
   stateFilter: StateFilter;
-  showEvidence: boolean;
   showSources: boolean;
   showLinks: boolean;
   selectedId: string | null;

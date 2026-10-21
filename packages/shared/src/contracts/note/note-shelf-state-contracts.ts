@@ -21,6 +21,10 @@ export const noteShelfLearningFactsV1Schema = z.strictObject({
   artifactCount: z.number().int().nonnegative(),
   /** 确认收下、真的长成新笔记的条数（`note_expansions`）。 */
   expansionCount: z.number().int().nonnegative(),
+  /** 这篇笔记有没有学习卡（活卡一张）。 */
+  hasCard: z.boolean(),
+  /** 这张卡最好的一次成绩几颗星（0..5）；没做过为 null。 */
+  bestCardStars: z.number().int().min(0).max(5).nullable(),
   /** 这些痕迹里最近的一次落在哪一版上。 */
   latestVersionNumber: z.number().int().positive().nullable(),
   /** 最近一次留下痕迹的时间。 */
@@ -45,6 +49,8 @@ export const noteShelfStageV1Schema = z.enum([
   "annotated",
   /** 从这篇长出去过新笔记。 */
   "grew",
+  /** 有学习卡，且做过至少一次。 */
+  "practiced",
 ]);
 export type NoteShelfStageV1 = z.infer<typeof noteShelfStageV1Schema>;
 
@@ -71,6 +77,8 @@ export function noteShelfStageV1(input: {
 }): NoteShelfStageV1 {
   if (!input.hasBody) return "draft";
   const { facts } = input;
+  // 学习卡是这一篇自己的练习；做过一次就比"只读过"更靠后。
+  if (facts.bestCardStars !== null) return "practiced";
   if (facts.expansionCount > 0) return "grew";
   if (facts.annotationCount > 0) return "annotated";
   if (facts.recallCount > 0) return "recalled";
@@ -86,6 +94,7 @@ export const NOTE_SHELF_STAGE_LABEL_V1: Record<NoteShelfStageV1, string> = {
   recalled: "有回想记录",
   annotated: "有原位批注",
   grew: "有关联笔记",
+  practiced: "练过学习卡",
 };
 
 /**
@@ -100,6 +109,7 @@ export function noteShelfStageDetailV1(
   if (facts.annotationCount > 0) detail.push(`${facts.annotationCount} 处批注`);
   if (facts.artifactCount > 0) detail.push(`${facts.artifactCount} 份互动讲解`);
   if (facts.expansionCount > 0) detail.push(`关联 ${facts.expansionCount} 篇`);
+  if (facts.bestCardStars !== null) detail.push(`学习卡最好 ${facts.bestCardStars} 星`);
   return detail;
 }
 
@@ -111,4 +121,5 @@ export const NOTE_SHELF_STAGE_RANK_V1: Record<NoteShelfStageV1, number> = {
   recalled: 3,
   annotated: 4,
   grew: 5,
+  practiced: 6,
 };

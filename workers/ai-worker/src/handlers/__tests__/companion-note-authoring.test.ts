@@ -21,7 +21,7 @@ test("创建身份稳定，保存回执含可打开的新笔记入口，恢复�
   assert.notEqual(companionCreatedNoteId(NOTE, "call-a"), companionCreatedNoteId(VERSION, "call-a"));
   assert.notEqual(companionCreatedNoteId(NOTE, "call-a"), companionCreatedNoteId(NOTE, "call-b"));
   const result = createdNoteToolResult(receipt);
-  assert.deepEqual(result.blocks, [{ type: "nav", label: "打开《欧姆定律》", route: { kind: "note", noteId: NOTE } }]);
+  assert.deepEqual(result.blocks, [{ type: "nav", label: "打开《欧姆定律》", route: { kind: "note", noteId: NOTE, noteVersionId: VERSION } }]);
   assert.deepEqual(readCreatedNoteReceipt(result.resultRef!), receipt);
   assert.equal(readCreatedNoteReceipt(JSON.stringify({ kind: "created_note", noteId: NOTE })), null);
   assert.equal(readCreatedNoteReceipt("not json"), null);

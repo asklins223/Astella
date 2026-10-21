@@ -18,6 +18,8 @@ const NO_FACTS: NoteShelfLearningFactsV1 = {
   annotationCount: 0,
   artifactCount: 0,
   expansionCount: 0,
+  hasCard: false,
+  bestCardStars: null,
   latestVersionNumber: null,
   latestAt: null,
 };
@@ -45,7 +47,8 @@ describe("noteShelfStageV1", () => {
     assert.equal(noteShelfStageV1({ hasBody: true, facts: facts({ artifactCount: 1 }) }), "untouched");
   });
 
-  it("按最深的那一条取档位：拓展 > 批注 > 回想 > 速看", () => {
+  it("按最深的那一条取档位：练习 > 拓展 > 批注 > 回想 > 速看", () => {
+    assert.equal(noteShelfStageV1({ hasBody: true, facts: facts({ bestCardStars: 3, expansionCount: 1 }) }), "practiced");
     assert.equal(noteShelfStageV1({ hasBody: true, facts: facts({ overviewCount: 1 }) }), "skimmed");
     assert.equal(noteShelfStageV1({ hasBody: true, facts: facts({ overviewCount: 1, recallCount: 1 }) }), "recalled");
     assert.equal(noteShelfStageV1({ hasBody: true, facts: facts({ recallCount: 1, annotationCount: 1 }) }), "annotated");
@@ -95,11 +98,11 @@ describe("noteShelfStage 文案与档位表", () => {
     assert.equal(new Set(ranks).size, ranks.length);
   });
 
-  it("空稿排在最前，长出笔记排在最后", () => {
+  it("练过学习卡排在最后：它是这一篇自己的练习", () => {
     const order = (Object.keys(NOTE_SHELF_STAGE_RANK_V1) as NoteShelfStageV1[])
       .sort((left, right) => NOTE_SHELF_STAGE_RANK_V1[left] - NOTE_SHELF_STAGE_RANK_V1[right]);
     assert.equal(order[0], "draft");
-    assert.equal(order.at(-1), "grew");
+    assert.equal(order.at(-1), "practiced");
   });
 });
 

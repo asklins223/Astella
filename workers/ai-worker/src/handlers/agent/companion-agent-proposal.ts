@@ -25,7 +25,6 @@ import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import {
   proposedLearningActionPayloadV1Schema,
-  startRunOriginV2,
   type CompanionAgentToolDefinitionV1,
 } from "@astella/shared";
 import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
@@ -39,7 +38,7 @@ import { describeAgentProposal } from "./companion-proposal-copy.ts";
 import { lockJobLease } from "../../lib/job-lease.ts";
 
 export async function buildActionPayload(
-  event: AgentEventContext,
+  _event: AgentEventContext,
   toolName: string,
   args: Record<string, unknown>,
 ): Promise<Record<string, unknown> | null> {
@@ -48,58 +47,9 @@ export async function buildActionPayload(
   // noteId/runId 从页面上下文与 <this_turn_facts> 的回填拿；服务端不再"挑最近一条"
   // （挑错用户看不出为什么——C1 的原诉）。resume 的 runId 在执行侧还有一道
   // workspace+user 归属校验（learning-action-bridge 的 getRunPublicView）。
-  if (toolName === "companion_resume_learning") {
-    const runId = typeof args.runId === "string" && args.runId.length > 0 ? args.runId : null;
-    if (!runId) return null;
-    return { kind: "resume_learning_run", runId };
-  }
-  if (toolName === "companion_start_learning") {
-    const noteId = typeof args.noteId === "string" && args.noteId.length > 0 ? args.noteId : null;
-    if (!noteId) return null;
-    const rows = await withWorkerWorkspaceTransaction(
-      { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
-      (tx) => tx.execute(sql`
-        SELECT o.objective_id, c.card_id
-        FROM learning_objectives_v2 o
-        -- LEFT JOIN：没有卡的目标也是可开的（39d W4-2 已放开页面那一侧的主行动）。
-        -- 原来这里是 INNER JOIN 且「row.card_id 为空就 return null」⇒ 她说「开始学习」
-        -- 对一个无卡目标报"当前不可用"，而同一篇笔记上那颗「开始学习」点得动。
-        LEFT JOIN learning_cards_v2 c ON c.objective_id = o.objective_id
-          AND c.workspace_id = o.workspace_id AND c.lifecycle = 'active'
-        WHERE o.workspace_id = ${event.ctx.workspaceId}
-          -- learning_objectives_v2 没有 user_id 列（迁移 0135/0175）：此前这一条
-          -- 谓词让整条 SQL 在计划期就报 "column o.user_id does not exist"，
-          -- companion_start_learning 永远不可用。归属边界是 workspace + RLS。
-          AND o.lifecycle = 'active'
-          AND EXISTS (
-            SELECT 1 FROM learning_objective_origins_v2 g
-            WHERE g.objective_id = o.objective_id
-              AND g.workspace_id = o.workspace_id
-              AND g.note_id = ${noteId}::uuid
-          )
-        ORDER BY o.updated_at DESC, o.objective_id LIMIT 1
-      `),
-    );
-    const row = rows[0] as { objective_id?: string; card_id?: string | null } | undefined;
-    if (!row?.objective_id) return null;
-    return {
-      kind: "start_learning_run_v2",
-      request: {
-        originV2: startRunOriginV2({ objectiveId: row.objective_id, cardId: row.card_id }),
-        goal: "stabilize",
-        idempotencyKey: `companion-agent:${event.read.runId}`,
-        requestedTimeBudgetSeconds: 180,
-      },
-    };
-  }
   const map: Record<string, Record<string, unknown>> = {
-    companion_pause_learning: { kind: "pause_learning_run", runId: args.runId },
-    companion_request_hint: { kind: "request_hint_level", runId: args.runId, taskId: args.taskId, level: args.level },
-    companion_switch_task_variant: { kind: "switch_task_variant", runId: args.runId, taskId: args.taskId, alternativeId: args.alternativeId, reason: args.reason },
-    companion_defer_review: { kind: "defer_review", scheduleId: args.scheduleId, scheduleGeneration: args.scheduleGeneration, deferredUntil: args.deferredUntil, reasonCode: args.reasonCode },
     // 工具参数叫 `objectiveId`，网关载荷的字段名仍是 `keyPointId`（内部提案合同的既有
     // 名字，本轮不改）——改名发生在这一行，读的人一眼能看出是同一个值换了个边界名。
-    companion_focus_graph: { kind: "focus_graph_node", keyPointId: args.objectiveId, lens: args.lens },
     // auto-set / auto-fill：guided 档提案确认后由 API decision 分支执行
     // （learning-action-bridge decideCompanionProposal 的 save_memory /
     // set_pet_activeness 分支）；full 档不经提案、由 executeDirectTool 直执行。

@@ -1,14 +1,20 @@
 # learning-companion 现行文档
 
+> **2026-10-21 窗口复查：** 方案 57、58 的放大布局、焦点、成果返回及只读请求修复见[真实窗口检查记录](../../testing/plan-57-58-window-check-2026-10-21.md)。整体仍有未完成验收项。
+
+> **2026-10-21 evening follow-up:** A further pass fixed note-library markdown leakage, duplicate note titles in reading and result previews, the journal "回到最新" overlap, mixed-run trace copy and companion contrast, and implemented Plan 57's documented per-question discard with the "N 道题没有收录" notice (plus three red source guards). See [defects, fixes and evidence](../../testing/plan-57-58-followup-2026-10-21.md). Generation reliability, semantic duplicate/semantic correctness, content quality and the native/zoom matrix remain open.
+
 > **本目录保留已登记的现行合同与单独列出的待决策候选方案。** 其余 141 份历史文档已于 2026-09-29 移出，存放在本机 `project-archive/docs-2026-09-29/learning-companion/`（该目录被 `.gitignore` 忽略，不随仓库分发）。
 >
 > **给实施 Agent：不要在本目录外搜索方案文档。** 这里列出的就是全部现行依据。
+
+> **2026-10-21 audit of Plans 57 and 58:** See the [current implementation audit](../../testing/plan-57-58-audit-2026-10-21.md) for corrected functional/UI gaps, actual regression and model evidence, and acceptance that remains open.
 
 ## 现行合同（按任务查）
 
 | 你要做的事 | 唯一依据 |
 | --- | --- |
-| Agent 的速度、质量与稳定性整改 | [58 · Agent 速度、质量与稳定性整改方案](./58-agent-experience-diagnosis-and-recovery-2026-10-19.md)（2026-10-19 用户最终要求；速度包括实际耗时与感知等待，进度展示必须与执行提速一起交付和验收。保留真实窗口与只读数据库基线，按三项重排实施和验收；尚未修改运行代码） |
+| Agent 的速度、质量与稳定性整改；伴星气泡与手记的交互优化 | [58 · Agent 速度、质量与稳定性整改方案](./58-agent-experience-diagnosis-and-recovery-2026-10-19.md)（实施中。2026-10-20 用户澄清：OpenDesign Cloud 只作为交互参考，不一比一还原。正式气泡、手记、预览、原路返回及执行恢复已改造；真实模型与 HTTP 链路仍有耗时和质量未达标样本，完整验收见[实施记录](../../testing/agent-experience-58-implementation-2026-10-19.md)） |
 | 通用主动交流能力：用户自然语言偏好、分句与续答、感知、关注和唤醒 | [56 · 伴星主动交流：自然接话、持续关注与用户自定义偏好](./56-companion-initiative-and-natural-exchange-2026-10-13.md)（自然分句与答后补充考虑、相关页面／难题帮助、启动问候和久学休息是所有账号自带的默认方式；自由偏好用于细化，不是启用前提。两端前台观察、同一 Agent 唤醒与多发言已接入；迁移与验收见 §13–§15） |
 | 学习卡并入笔记、取消复习/今日、伴星计划 | [57 · 学习卡并入笔记与取消复习/今日](./57-learning-card-and-review-reset-2026-10-19.md)（2026-10-19 用户决定：一篇笔记一张学习卡、卡内多题、固定题型、题干疑问句、每题原文依据、拓展题最多 1–2 道；星星按整卡得分、最佳一次、0★ 也点亮、按版本保留；复习/今日/到期队列/催促提醒取消，改为伴星按意向提醒或生成计划。**旧链路硬删除**：旧卡库/卡生成/review/objective/learning_runs/这一轮学习/首次验证整条移除，删完再搭新链，不做双轨；星图/笔记架/伴星统计改接新卡） |
 | App：伴星操作、已有笔记便携阅读、同一份数据与聊天 | [51 · 随身伴星与便携书房](./51-mobile-companion-full-agent-product-design-2026-10-10.md)（2026-10-10 用户确认复核修订与连贯前端 Demo；首版已有笔记阅读、图片加文字／独立语音与创建／修改，一级三入口、详情就地问与原路返回；小程序、PDF／Word、精确接力和流式跨端后续。2026-10-11 Demo 05 补齐本机账号、个人中心、设置与伴星中心并重做整套视觉，既有动效保留；Demo 06 默认动态 Live2D 与粒子语音，可切换保留的记录并记住偏好；实际本机模型已接入，语音输入仍为样例，未实现移动宿主及真实互通；2026-10-11 并入通义千问与豆包的竞品核对（§16）与据此改写的差异依据（§1.3）、现状缺口（§12 导出与拟人化合规）和结论（§17）。**2026-10-11 工程审计（§19）：前端原型不能作为移动客户端起点**——脱离评审实验台无法启动、业务侧零模型调用、与桌面零共享 token 与组件；§14.1 两条验收声明（字体 150%／44px 热区、键盘态看到上一条回复）与实际不符，已在 §14.1 更正。**待用户裁决三件**：① 宿主／分发／合规前置（§13 阶段 0、§15，阻塞其余全部）；② 手机首屏是「书房」还是「角色」（与 AGENTS.md「纸面与旁边的伴星」的冲突）；③ 两处内部冲突（「复习提醒」vs §2.4 不做定时提醒；「原件不出本机」vs 移动端 PDF 解析）。**裁决前不再扩写 §4–§8 界面细节。** 证据见[工程审计](../../testing/mobile-companion-prototype-audit-2026-10-11.md)与[桌面身份基线](../../testing/mobile-companion-desktop-identity-baseline-2026-10-11.md)） |

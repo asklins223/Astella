@@ -16,7 +16,7 @@ const MODULE_FILES: Record<string, string> = {
 };
 
 test("每一道闸的判据都是那个模块真导出的函数", async () => {
-  assert.equal(COMPANION_LEAK_GATES_V1.length, 9, "当前对话输出闸是 9 道；增减需同步重放台");
+  assert.equal(COMPANION_LEAK_GATES_V1.length, 8, "当前对话输出闸是 8 道；增减需同步重放台");
   assert.equal(new Set(COMPANION_LEAK_GATE_IDS_V1).size, COMPANION_LEAK_GATE_IDS_V1.length, "号不许重复");
   const modules = new Map<string, Record<string, unknown>>();
   for (const gate of COMPANION_LEAK_GATES_V1) {
@@ -44,5 +44,5 @@ test("版本由表派生：改任何一行都动它，同表重算稳定", () =>
   const flipped = COMPANION_LEAK_GATES_V1.map((gate) =>
     gate.id === "G1" ? { ...gate, disposition: "keep" as const } : gate);
   assert.notEqual(companionLeakGateVersionV1(flipped), base, "处置翻了也不动版本 ⇒ 同上");
-  assert.notEqual(companionLeakGateVersionV1(COMPANION_LEAK_GATES_V1.slice(0, 8)), base, "删一道闸必须反映到版本上");
+  assert.notEqual(companionLeakGateVersionV1(COMPANION_LEAK_GATES_V1.slice(0, 7)), base, "删一道闸必须反映到版本上");
 });

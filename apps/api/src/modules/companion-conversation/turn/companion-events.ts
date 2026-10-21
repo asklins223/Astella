@@ -178,6 +178,8 @@ export interface CompanionRunSummaryRow {
   runId: string;
   userMessageId: string | null;
   status: string;
+  errorCode: string | null;
+  eventCursor: number;
   /** 客户端"接着说话"要用的 CAS 值（见 desktop 合同的 generation 字段）。 */
   generation: number;
   stepCount: number;
@@ -187,6 +189,8 @@ export interface CompanionRunSummaryRow {
   maxToolCalls: number | null;
   assistantMessageId: string | null;
   nodeCount: number;
+  createdAt?: string;
+  updatedAt?: string;
   thinkingText?: string | null;
   processTimeline?: CompanionRunNodeEventV1[];
 }
@@ -257,6 +261,10 @@ export async function listCompanionRunNodes(args: {
     const runRows = await tx
       .select({
         runId: companionTurnRuns.id,
+        createdAt: companionTurnRuns.createdAt,
+        updatedAt: companionTurnRuns.updatedAt,
+        errorCode: companionTurnRuns.errorCode,
+        eventCursor: companionTurnRuns.lastEventSeq,
         userMessageId: companionTurnRuns.userMessageId,
         status: companionTurnRuns.status,
         generation: companionTurnRuns.generation,
@@ -303,6 +311,10 @@ export async function listCompanionRunNodes(args: {
         const budget = row.budgetSnapshot as { maxSteps?: unknown; maxToolCalls?: unknown } | null;
         return {
           runId: row.runId,
+          createdAt: row.createdAt.toISOString(),
+          updatedAt: row.updatedAt.toISOString(),
+          errorCode: row.errorCode,
+          eventCursor: Number(row.eventCursor),
           userMessageId: row.userMessageId,
           status: row.status,
           generation: row.generation,
@@ -771,7 +783,7 @@ export async function listCompanionRunVoiceSegments(args: {
 }): Promise<{
   runId: string; conversationId: string | null; generation: number | null; items: Array<{
     ordinal: number; segmentId: string; displayText: string;
-    displayStart: number; displayEnd: number; cue: unknown }>;
+    displayStart: number; displayEnd: number; messageId?: string; cue: unknown }>;
 }> {
   return withWorkspaceTransaction({ workspaceId: args.workspaceId, userId: args.userId }, async (tx) => {
     // 显式带 workspace_id（与上面几处同一口径），不让正确性依赖 RLS 是否真的生效。
@@ -809,7 +821,7 @@ export async function listCompanionRunVoiceSegments(args: {
  */
 export function companionVoiceSegmentsFromEventPayloads(payloads: readonly unknown[]): Array<{
   ordinal: number; segmentId: string; displayText: string;
-  displayStart: number; displayEnd: number; cue: unknown }> {
+  displayStart: number; displayEnd: number; messageId?: string; cue: unknown }> {
   return payloads.flatMap((raw) => {
     const payload = raw as Record<string, unknown> | null;
     if (!payload || typeof payload !== "object") return [];
@@ -818,6 +830,8 @@ export function companionVoiceSegmentsFromEventPayloads(payloads: readonly unkno
       || typeof payload.displayStart !== "number" || typeof payload.displayEnd !== "number") return [];
     return [{ ordinal: payload.ordinal, segmentId: payload.segmentId,
       displayText: payload.displayText, displayStart: payload.displayStart,
-      displayEnd: payload.displayEnd, cue: payload.cue ?? null }];
+      displayEnd: payload.displayEnd,
+      ...(typeof payload.messageId === "string" ? { messageId: payload.messageId } : {}),
+      cue: payload.cue ?? null }];
   }).sort((left, right) => left.ordinal - right.ordinal);
 }

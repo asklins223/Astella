@@ -234,13 +234,6 @@ const desktopApi: AstellaDesktopApiM2 = {
   room: {
     getProjection: (input) => invoke(DESKTOP_IPC_CHANNELS.roomGetProjection, input)
   },
-  activity: {
-    getToday: (input) => invoke(DESKTOP_IPC_CHANNELS.activityGetToday, input)
-  },
-  // 跨空间统计：唯一一条不随"当前空间"变化的读数（今日页的「全部空间」栏）。
-  stats: {
-    getOverviewAll: (input) => invoke(DESKTOP_IPC_CHANNELS.statsGetOverviewAll, input)
-  },
   source: {
     list: (input) => invoke(DESKTOP_IPC_CHANNELS.sourceList, input),
     create: (input) => invoke(DESKTOP_IPC_CHANNELS.sourceCreate, input),
@@ -357,11 +350,8 @@ const desktopApi: AstellaDesktopApiM2 = {
       listRunNodes: (input) => invoke(DESKTOP_IPC_CHANNELS.companionChatRunNodes, input),
       listRunVoiceSegments: (input) => invoke(DESKTOP_IPC_CHANNELS.companionChatRunVoiceSegments, input),
       // 停止本轮（2026-09-19）：服务端原子取消 + 已输出文本留档。
-      cancelRun: (input) => invoke(DESKTOP_IPC_CHANNELS.companionChatCancelRun, input)
-    },
-    learningRun: {
-      getContext: (input) => invoke(DESKTOP_IPC_CHANNELS.companionLearningRunGetContext, input),
-      createContextGrant: (input) => invoke(DESKTOP_IPC_CHANNELS.companionLearningRunCreateContextGrant, input)
+      cancelRun: (input) => invoke(DESKTOP_IPC_CHANNELS.companionChatCancelRun, input),
+      resumeRun: (input) => invoke(DESKTOP_IPC_CHANNELS.companionChatResumeRun, input)
     },
     account: {
       getState: (input) => invoke(DESKTOP_IPC_CHANNELS.companionAccountGetState, input),
@@ -430,9 +420,6 @@ const desktopApi: AstellaDesktopApiM2 = {
       search: (input) => invoke(DESKTOP_IPC_CHANNELS.companionHistorySearch, input),
       clear: (input) => invoke(DESKTOP_IPC_CHANNELS.companionHistoryClear, input)
     },
-    learningContext: {
-      get: (input) => invoke(DESKTOP_IPC_CHANNELS.companionLearningContextGet, input)
-    },
     journey: {
       bootstrap: (input) => invoke(DESKTOP_IPC_CHANNELS.companionJourneyBootstrap, input),
       get: (input) => invoke(DESKTOP_IPC_CHANNELS.companionJourneyGet, input),
@@ -493,23 +480,6 @@ const desktopApi: AstellaDesktopApiM2 = {
     uploadImage: (input) => invoke(DESKTOP_IPC_CHANNELS.noteImageUpload, input),
     // 导出成一个装满 .md 的目录（一篇一个）。落盘在 main，渲染层只拿到回执。
     exportMarkdown: (input) => invoke(DESKTOP_IPC_CHANNELS.notesMarkdownExport, input),
-    cardGeneration: {
-      start: (input) => invoke(DESKTOP_IPC_CHANNELS.noteCardGenerationStart, input),
-      getRun: (input) => invoke(DESKTOP_IPC_CHANNELS.noteCardGenerationGetRun, input),
-      getCandidates: (input) => invoke(DESKTOP_IPC_CHANNELS.noteCardGenerationGetCandidates, input),
-      review: (input) => invoke(DESKTOP_IPC_CHANNELS.noteCardGenerationReview, input),
-      reveal: (input) => invoke(DESKTOP_IPC_CHANNELS.noteCardGenerationReveal, input),
-      exposure: (input) => invoke(DESKTOP_IPC_CHANNELS.noteCardGenerationExposure, input),
-      latestRun: (input) => invoke(DESKTOP_IPC_CHANNELS.noteCardGenerationLatestRun, input),
-      activate: (input) => invoke(DESKTOP_IPC_CHANNELS.noteCardGenerationActivate, input),
-      cancel: (input) => invoke(DESKTOP_IPC_CHANNELS.noteCardGenerationCancel, input),
-      retry: (input) => invoke(DESKTOP_IPC_CHANNELS.noteCardGenerationRetry, input),
-      close: (input) => invoke(DESKTOP_IPC_CHANNELS.noteCardGenerationClose, input)
-    }
-  },
-  objective: {
-    list: (input) => invoke(DESKTOP_IPC_CHANNELS.objectiveList, input),
-    get: (input) => invoke(DESKTOP_IPC_CHANNELS.objectiveGet, input)
   },
   noteReflection: {
     list: (input) => invoke(DESKTOP_IPC_CHANNELS.noteReflectionList, input),
@@ -540,6 +510,14 @@ const desktopApi: AstellaDesktopApiM2 = {
     start: (input) => invoke(DESKTOP_IPC_CHANNELS.noteRecallStart, input),
     act: (input) => invoke(DESKTOP_IPC_CHANNELS.noteRecallAction, input),
   },
+  noteLearningCard: {
+    get: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningCardGet, input),
+    generate: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningCardGenerate, input),
+    startAttempt: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningCardStartAttempt, input),
+    answer: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningCardAnswer, input),
+    complete: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningCardComplete, input),
+    history: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningCardHistory, input),
+  },
   noteExpansion: {
     list: (input) => invoke(DESKTOP_IPC_CHANNELS.noteExpansionList, input),
     startTask: (input) => invoke(DESKTOP_IPC_CHANNELS.noteExpansionStartTask, input),
@@ -555,21 +533,6 @@ const desktopApi: AstellaDesktopApiM2 = {
     listTasks: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningArtifactTaskList, input),
     getTask: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningArtifactTaskGet, input),
   },
-  noteLearningRound: {
-    open: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningRoundOpen, input),
-    create: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningRoundCreate, input),
-    revise: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningRoundRevise, input),
-    reopen: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningRoundReopen, input),
-    resume: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningRoundResume, input),
-    close: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningRoundClose, input),
-    history: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningRoundHistory, input),
-    personalHistory: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningRoundPersonalHistory, input),
-    // 核心路线（39d W4-5 ③；§4.4）：跨全部轮次、按核心问题归并，只带 noteId。
-    route: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningRoundRoute, input),
-    teaching: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningRoundTeaching, input),
-    preparePractice: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningRoundPreparePractice, input),
-    explain: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningRoundExplain, input)
-  },
   // 动态产物落盘（39d W4-6 刀五）：渲染层只报一个 id，整份 HTML 由 main 取回落盘，
   // 宿主 frame 再从既定协议读——HTML 不穿这道桥。
   artifact: {
@@ -577,7 +540,6 @@ const desktopApi: AstellaDesktopApiM2 = {
   },
   understanding: {
     getTopology: (input) => invoke(DESKTOP_IPC_CHANNELS.understandingGetTopology, input),
-    setRelationDecision: (input) => invoke(DESKTOP_IPC_CHANNELS.understandingSetRelationDecision, input),
     getNoteDeepening: (input) => invoke(DESKTOP_IPC_CHANNELS.understandingGetNoteDeepening, input)
   },
   search: {
@@ -603,51 +565,6 @@ const desktopApi: AstellaDesktopApiM2 = {
     },
     unsubscribe: (input) => invoke(DESKTOP_IPC_CHANNELS.subscriptionsUnsubscribe, input)
   },
-  review: {
-    getQueue: (input) => invoke(DESKTOP_IPC_CHANNELS.reviewGetQueue, input),
-    defer: (input) => invoke(DESKTOP_IPC_CHANNELS.reviewDefer, input),
-    // 「先看笔记」（39d W5-4；§7.1）：一次暴露记账，界面自己跳去笔记页。
-    recordRecallSourceReveal: (input) => invoke(DESKTOP_IPC_CHANNELS.reviewRecordRecallSourceReveal, input),
-    // W7-3 刀三：目标级「暂不安排」与「恢复并开启」。两条分开的通道——
-    // §9.1 规则表把它们列成两件事，合成一颗开关会把中间那半句折叠掉。
-    holdObjective: (input) => invoke(DESKTOP_IPC_CHANNELS.reviewHoldObjective, input),
-    resumeObjective: (input) => invoke(DESKTOP_IPC_CHANNELS.reviewResumeObjective, input),
-    // W7-3 刀六：订阅来源分别开停。三条通道而不是一颗 toggle——§9.1 明写
-    // 「两种意图可以分别存在」，合成一颗开关会把"停哪一个"变成系统的默认。
-    activateSubscription: (input) => invoke(DESKTOP_IPC_CHANNELS.reviewSubscriptionActivate, input),
-    pauseSubscription: (input) => invoke(DESKTOP_IPC_CHANNELS.reviewSubscriptionPause, input),
-    listNoteSubscriptions: (input) => invoke(DESKTOP_IPC_CHANNELS.reviewSubscriptionListNotes, input),
-    // W7-4 刀七：首页「只推一件」。`timeZone` 由**渲染层**读出来带上来（§12.1「本次」
-    // 的边界按她的日历日算；在这里猜一次就会把她的午夜切错）。
-    readHomeSuggestion: (input) => invoke(DESKTOP_IPC_CHANNELS.homeSuggestionRead, input),
-    actOnHomeSuggestion: (input) => invoke(DESKTOP_IPC_CHANNELS.homeSuggestionAct, input),
-    // 今日复习那三个动作（减量／暂停／恢复，§12 表「今日复习」行）。
-    actOnTodayBatch: (input) => invoke(DESKTOP_IPC_CHANNELS.todayBatchOption, input)
-    ,
-    // 今日复习那一批的读侧（逐项带「为什么在这一批里」）。
-    readTodayBatch: (input) => invoke(DESKTOP_IPC_CHANNELS.todayBatchRead, input)
-  },
-  // 判定的争议（39 §14.2、§16.11、§16.25）。只有**人能按的**四条：
-  // `recheck` 与 `correction` 的写入方是系统，不挂在这里（理由见共享通道表那段）。
-  assessmentDispute: {
-    get: (input) => invoke(DESKTOP_IPC_CHANNELS.assessmentDisputeGet, input),
-    open: (input) => invoke(DESKTOP_IPC_CHANNELS.assessmentDisputeOpen, input),
-    supplement: (input) => invoke(DESKTOP_IPC_CHANNELS.assessmentDisputeSupplement, input),
-    close: (input) => invoke(DESKTOP_IPC_CHANNELS.assessmentDisputeClose, input)
-  },
-  learningRun: {
-    get: (input) => invoke(DESKTOP_IPC_CHANNELS.learningRunGet, input),
-    start: (input) => invoke(DESKTOP_IPC_CHANNELS.learningRunStart, input),
-    getDraft: (input) => invoke(DESKTOP_IPC_CHANNELS.learningRunGetDraft, input),
-    saveDraft: (input) => invoke(DESKTOP_IPC_CHANNELS.learningRunSaveDraft, input),
-    submit: (input) => invoke(DESKTOP_IPC_CHANNELS.learningRunSubmit, input),
-    action: (input) => invoke(DESKTOP_IPC_CHANNELS.learningRunAction, input),
-    getResult: (input) => invoke(DESKTOP_IPC_CHANNELS.learningRunGetResult, input),
-    revealTarget: (input) => invoke(DESKTOP_IPC_CHANNELS.learningRunRevealTarget, input),
-    getReturnContract: (input) => invoke(DESKTOP_IPC_CHANNELS.learningRunGetReturnContract, input),
-    recordActivityLease: (input) => invoke(DESKTOP_IPC_CHANNELS.learningRunRecordActivityLease, input),
-    abandon: (input) => invoke(DESKTOP_IPC_CHANNELS.learningRunAbandon, input)
-  }
 }
 
 /**

@@ -11,7 +11,7 @@ vi.mock("../../motion/use-tactile-surface", () => ({ useTactileSurface: () => {}
 const props = { replyBusy: false, blocked: false, muted: false, passiveMuted: false };
 const notice = (patch: Partial<CompanionNotificationInput> = {}): CompanionNotificationInput => ({ id: "test", kind: "help", title: "需要下载模型", body: "选择下载后可以说话", scope: "device", delivery: "immediate", ...patch });
 const flush = async (ms = 0) => { await act(async () => { await vi.advanceTimersByTimeAsync(ms); }); };
-beforeEach(() => { vi.useFakeTimers(); useCompanionNotifications.setState({ items: [] }); vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} }); });
+beforeEach(() => { vi.useFakeTimers(); useCompanionNotifications.setState({ items: [] }); localStorage.clear(); useRoomStore.setState({ accountIdentity: null }); vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} }); });
 afterEach(() => { cleanup(); setCompanionNotificationVoiceHost(null); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe("notification paper interactions", () => {
@@ -90,5 +90,43 @@ describe("notification paper interactions", () => {
     act(() => notifyCompanion(notice({ scope, actions: [{ id: "open", kind: "navigate", label: "打开", run }] }))); await flush();
     useRoomStore.setState({ workspaceScopeRevision: scope + 1 });
     fireEvent.click(screen.getByRole("button", { name: "打开" })); await flush(); expect(run).not.toHaveBeenCalled();
+  });
+  it("keeps a background notice the reader already saw out of the automatic paper after a restart", async () => {
+    // 上一轮会话：这条后台提示自动露出过一次。
+    useRoomStore.setState({ accountIdentity: { email: "reader@example.test", displayName: null } });
+    const first = render(<CompanionNotificationCenter {...props} />);
+    act(() => notifyCompanion(notice({ id: "initiative-missed:1", title: "有几句话你还没听过", delivery: "when-idle" })));
+    await flush(650);
+    expect(screen.getByText("有几句话你还没听过")).toBeTruthy();
+    first.unmount(); useCompanionNotifications.setState({ items: [] });
+
+    // 重启：同一条提示又进了收件箱，但它不该再自己展开。
+    act(() => notifyCompanion(notice({ id: "initiative-missed:1", title: "有几句话你还没听过", delivery: "when-idle" })));
+    render(<CompanionNotificationCenter {...props} />); await flush(1_000);
+    expect(screen.queryByRole("region", { name: "伴星通知：有几句话你还没听过" })).toBeNull();
+    expect(screen.getByRole("button", { name: /查看伴星通知，1 条待查看/ })).toBeTruthy();
+    // 用户主动打开收件箱仍然读得到。
+    fireEvent.click(screen.getByRole("button", { name: /查看伴星通知/ }));
+    expect(screen.getByText("有几句话你还没听过")).toBeTruthy();
+  });
+  it("still shows a direct guidance notice after a restart, because the step needs the reader now", async () => {
+    useRoomStore.setState({ accountIdentity: { email: "reader@example.test", displayName: null } });
+    const first = render(<CompanionNotificationCenter {...props} />);
+    act(() => notifyCompanion(notice({ id: "ai-permission-guidance" }))); await flush();
+    first.unmount(); useCompanionNotifications.setState({ items: [] });
+    act(() => notifyCompanion(notice({ id: "ai-permission-guidance", repeat: true })));
+    render(<CompanionNotificationCenter {...props} />); await flush();
+    expect(screen.getByRole("region", { name: "伴星通知：需要下载模型" })).toBeTruthy();
+  });
+  it("keeps each account's seen notices apart", async () => {
+    useRoomStore.setState({ accountIdentity: { email: "reader@example.test", displayName: null } });
+    const first = render(<CompanionNotificationCenter {...props} />);
+    act(() => notifyCompanion(notice({ id: "initiative-missed:1", title: "有几句话你还没听过", delivery: "when-idle" })));
+    await flush(650); first.unmount(); useCompanionNotifications.setState({ items: [] });
+
+    useRoomStore.setState({ accountIdentity: { email: "other@example.test", displayName: null } });
+    act(() => notifyCompanion(notice({ id: "initiative-missed:1", title: "有几句话你还没听过", delivery: "when-idle" })));
+    render(<CompanionNotificationCenter {...props} />); await flush(650);
+    expect(screen.getByText("有几句话你还没听过")).toBeTruthy();
   });
 });

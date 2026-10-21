@@ -124,7 +124,7 @@ type FakeRoomProfileRow = {
 };
 
 type FakeExecutorOptions = {
-  readonly milestones?: Partial<Record<"notes" | "learning_objectives_v2" | "learning_runs" | "assistant_memory_items", boolean>>;
+  readonly milestones?: Partial<Record<"notes" | "note_learning_cards" | "note_learning_card_attempts" | "assistant_memory_items", boolean>>;
   readonly initialProfile?: FakeRoomProfileRow | null;
   readonly profileReads?: FakeRoomProfileRow[];
   readonly petProfile?: Record<string, unknown> | null;
@@ -250,7 +250,7 @@ function profileRow(overrides: Partial<FakeRoomProfileRow> = {}): FakeRoomProfil
 
 test("first room-profile read creates the bounded default from canonical milestones", async () => {
   const fake = fakeExecutor({
-    milestones: { notes: true, learning_runs: true },
+    milestones: { notes: true, note_learning_card_attempts: true },
   });
   const profile = await getCompanionRoomProfile(fake.executor, scope, fake.now);
 
@@ -272,7 +272,7 @@ test("milestone reconciliation is monotonic and advances revision only for new u
   });
   const fake = fakeExecutor({
     initialProfile: existing,
-    milestones: { notes: true, learning_runs: true },
+    milestones: { notes: true, note_learning_card_attempts: true },
   });
   const profile = await getCompanionRoomProfile(fake.executor, scope, fake.now);
 

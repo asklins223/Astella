@@ -117,7 +117,6 @@ const ON_REQUEST_GATED_ROUTES: RouteCase[] = [
 
 /** B 组：preHandler 门禁（认证优先）→ 匿名恒 401，路由必须存在。 */
 const PRE_HANDLER_GATED_ROUTES: RouteCase[] = [
-  { label: "dialogue: learning-context", flag: "COMPANION_DIALOGUE_V1_ENABLED", method: "GET", url: "/companion/learning-context" },
   { label: "dialogue: continuous history", flag: "COMPANION_DIALOGUE_V1_ENABLED", method: "GET", url: "/companion/history" },
   { label: "dialogue: history search", flag: "COMPANION_DIALOGUE_V1_ENABLED", method: "GET", url: "/companion/history/search?q=x" },
   { label: "dialogue: inbox ensure", flag: "COMPANION_DIALOGUE_V1_ENABLED", method: "POST", url: "/companion/inbox/ensure", payload: {} },

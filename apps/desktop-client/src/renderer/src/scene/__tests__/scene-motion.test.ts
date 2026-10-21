@@ -47,7 +47,7 @@ describe("scene motion contract", () => {
 
   it("maps intent and settled route to a presentational phase", () => {
     expect(scenePhaseForIntent("continue", null)).toBe("focusing");
-    expect(scenePhaseForIntent("home", "study")).toBe("returning");
+    expect(scenePhaseForIntent("home", "notebook")).toBe("returning");
     expect(scenePhaseForIntent("home", null)).toBe("idle");
     expect(settledScenePhase("notebook")).toBe("task");
     expect(settledScenePhase(null)).toBe("idle");

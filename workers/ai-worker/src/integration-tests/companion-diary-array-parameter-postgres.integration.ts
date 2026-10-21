@@ -48,7 +48,7 @@ const { db } = await import("../db.ts");
 
 const ZERO_FACTS = {
   notesCreated: 0, notesUpdated: 0, cardsCreated: 0, sourcesCreated: 0,
-  jobsCreated: 0, jobsCompleted: 0, learningRunsCreated: 0, learningRunsCompleted: 0,
+  jobsCreated: 0, jobsCompleted: 0, cardAttemptsCreated: 0, cardAttemptsCompleted: 0,
   pageContexts: 0, conversationMessages: 0, userMessages: 0, assistantMessages: 0,
 };
 

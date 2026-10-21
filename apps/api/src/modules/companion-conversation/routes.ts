@@ -12,8 +12,9 @@ import {
   SSE_RECONNECT_INSTRUCTION,
 } from "../../lib/safe-sse-write.ts";
 import { CompanionConversationError, createCompanionTurn } from "./turn/turn-service.ts";
-import { createCompanionLearningRunContextGrantRequestV1Schema, createMenuProposalRequestV1Schema, createToolProposalRequestV1Schema, proposalDecisionRequestV1Schema } from "@astella/shared";
+import { createToolProposalRequestV1Schema, proposalDecisionRequestV1Schema } from "@astella/shared";
 import { cancelCompanionRun } from "./turn/companion-cancel.ts";
+import { resumeCompanionRun } from "./turn/companion-resume.ts";
 import { openCompanionEventStream, listCompanionAgentRoutes, listCompanionRunNodes, listCompanionRunVoiceSegments } from "./turn/companion-events.ts";
 import { companionRunNodesListRequestV1Schema } from "@astella/shared/companion-chat-desktop-contracts";
 import {
@@ -21,13 +22,9 @@ import {
   listCompanionMessages,
 } from "./turn/companion-conversations-service.ts";
 import {
-  createCompanionLearningRunContextGrant,
-  createCompanionMenuProposal,
   createCompanionToolProposal,
   decideCompanionProposal,
-  getCompanionLearningRunContext,
   getCompanionProposalSnapshot,
-  resolveCompanionLearningContext,
 } from "./learning-action-bridge.ts";
 import { createCompanionTurnRequestV1Schema } from "@astella/shared";
 import { allowedMainRouteV2Schema } from "@astella/shared";
@@ -86,40 +83,6 @@ export async function requireCompanionDialogue(_req: FastifyRequest, reply: Fast
 }
 
 export async function companionConversationRoutes(app: FastifyInstance) {
-  // P5 §6.7 POST /companion/menu-proposals：菜单 proposal create（原子）。
-  app.post(
-    "/companion/menu-proposals",
-    { preHandler: [requireSession, requireCompanionDialogue] },
-    async (req, reply) => {
-      const session = req.session!;
-      const idempotencyKey = req.headers["idempotency-key"];
-      if (typeof idempotencyKey !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(idempotencyKey)) {
-        return reply.code(400).send({ version: 1, error: "INVALID_REQUEST", message: "idempotency-key required", recoverable: false, requestId: req.id });
-      }
-      const body = (req.body ?? {}) as Record<string, unknown>;
-      if (!(await rateLimited(reply, req.id, `${session.workspaceId}:${session.userId}:write:turn`, COMPANION_RATE_LIMITS.menuProposalPerMinute.limit, COMPANION_RATE_LIMITS.menuProposalPerMinute.windowMs))) return;
-      const parsed = createMenuProposalRequestV1Schema.safeParse(body);
-      if (!parsed.success) {
-        return reply.code(400).send({ version: 1, error: "INVALID_REQUEST", message: "menu proposal body invalid", recoverable: false, requestId: req.id });
-      }
-      try {
-        const result = await createCompanionMenuProposal({ ...scopeOfSession(session),
-userId: session.userId,
-          body: parsed.data,
-          idempotencyKey,
-        });
-        return reply.code(201).send(result);
-      } catch (err) {
-        if (err instanceof CompanionConversationError) {
-          return reply.code(err.statusCode).send(
-          buildCompanionErrorBody(err, { recoverable: false, requestId: req.id }),
-        );
-        }
-        throw err;
-      }
-    },
-  );
-
   // 方案 16 §18.1 POST /companion/tool-proposals：Orchestrator/桌宠工具网关
   // 入口（payload 全量校验 → 原子 proposal；确认后由 decision 同步执行）。
   app.post(
@@ -215,62 +178,6 @@ userId: session.userId,
       }
     },
   );
-
-  // LearningRun 是当前正式学习页面；授权携带 frozen snapshot + active task，
-  // 使 worker 永远不会把旧 Session 的可变上下文混进新的 Run。
-  app.post<{ Params: { runId: string } }>(
-    "/learning-runs/:runId/companion-context-grants",
-    { preHandler: [requireSession, requireCompanionDialogue] },
-    async (req, reply) => {
-      const parsed = createCompanionLearningRunContextGrantRequestV1Schema.safeParse(req.body ?? {});
-      if (!parsed.success) {
-        return reply.code(400).send({ version: 1, error: "INVALID_REQUEST", message: "grant body invalid", recoverable: false, requestId: req.id });
-      }
-      try {
-        const result = await createCompanionLearningRunContextGrant({ ...scopeOfSession(req.session),
-userId: req.session.userId,
-          runId: req.params.runId,
-          body: parsed.data,
-        });
-        return reply.header("cache-control", "no-store").code(200).send(result);
-      } catch (err) {
-        if (err instanceof CompanionConversationError) {
-          return reply.code(err.statusCode).send(
-          buildCompanionErrorBody(err, { recoverable: false, requestId: req.id }),
-        );
-        }
-        throw err;
-      }
-    },
-  );
-
-  app.get<{ Params: { runId: string } }>(
-    "/learning-runs/:runId/companion-context",
-    { preHandler: [requireSession, requireCompanionDialogue] },
-    async (req, reply) => {
-      try {
-        const result = await getCompanionLearningRunContext({ ...scopeOfSession(req.session),
-userId: req.session.userId,
-          runId: req.params.runId,
-        });
-        return reply.code(result.statusCode).header("cache-control", "no-store").send(result.body);
-      } catch (err) {
-        if (err instanceof CompanionConversationError) {
-          return reply.code(err.statusCode).send(
-          buildCompanionErrorBody(err, { recoverable: true, requestId: req.id }),
-        );
-        }
-        throw err;
-      }
-    },
-  );
-  // P5 §6.7 GET /companion/learning-context：只读 menu context（零写入/零模型调用）。
-  app.get("/companion/learning-context", { preHandler: [requireSession, requireCompanionDialogue] }, async (req, reply) => {
-    const session = req.session!;
-    if (!(await rateLimited(reply, req.id, `${session.workspaceId}:${session.userId}:learning-context`, COMPANION_RATE_LIMITS.learningContextPerMinute.limit, COMPANION_RATE_LIMITS.learningContextPerMinute.windowMs))) return;
-    const context = await resolveCompanionLearningContext(scopeOfSession(session));
-    return reply.send(context);
-  });
 
   // POST /companion/conversations/:id/turns — 03 §6.5/§8.1 原子 turn 创建。
   // Idempotency-Key header 必填（UUID）；服务端只保存其 SHA-256。
@@ -521,10 +428,14 @@ userId: req.session.userId,
             generation: run.generation,
             stepCount: run.stepCount,
             toolCallCount: run.toolCallCount,
+            errorCode: run.errorCode,
+            eventCursor: run.eventCursor,
             maxSteps: run.maxSteps,
             maxToolCalls: run.maxToolCalls,
             assistantMessageId: run.assistantMessageId,
             nodeCount: run.nodeCount,
+            ...(run.createdAt ? { createdAt: run.createdAt } : {}),
+            ...(run.updatedAt ? { updatedAt: run.updatedAt } : {}),
             ...(run.thinkingText !== undefined ? { thinkingText: run.thinkingText } : {}),
             ...(run.processTimeline !== undefined ? { processTimeline: run.processTimeline } : {}),
           })),
@@ -542,6 +453,20 @@ userId: req.session.userId,
   );
 
   // POST /companion/runs/:id/cancel — 03 §8.2。202 首次取消 / 200 幂等。
+  app.post<{ Params: { id: string } }>("/companion/runs/:id/resume",
+    { preHandler: [requireSession, requireCompanionDialogue] }, async (req, reply) => {
+      if (!(await rateLimited(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:resume`,
+        COMPANION_RATE_LIMITS.cancelPerMinute.limit, COMPANION_RATE_LIMITS.cancelPerMinute.windowMs))) return;
+      try {
+        const result = await resumeCompanionRun({ ...scopeOfSession(req.session), userId: req.session.userId,
+          runId: req.params.id, body: req.body });
+        return reply.code(result.statusCode).send(result.body);
+      } catch (error) {
+        if (error instanceof CompanionConversationError)
+          return reply.code(error.statusCode).send(buildCompanionErrorBody(error, { recoverable: false, requestId: req.id }));
+        throw error;
+      }
+    });
   app.post<{ Params: { id: string } }>(
     "/companion/runs/:id/cancel",
     { preHandler: [requireSession, requireCompanionDialogue] },

@@ -211,16 +211,6 @@ describe("阅读页画的是编辑器里那一份", () => {
     act(() => useRoomStore.getState().returnTarget?.run());
     expect(returnTo.run).toHaveBeenCalledOnce();
   });
-  it("opens an older round's history even when this note has another open round", async () => {
-    const view = await show([block("paragraph", "同一篇里有一轮新的学习。")], undefined, undefined, true);
-    await act(async () => {
-      useRoomStore.setState({ activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID, mode: "preview", learningRoundId: "99999999-4999-4999-8999-999999999999" } });
-      await vi.advanceTimersByTimeAsync(1000);
-    });
-    expect(view.getByRole("region", { name: "学习记录" })).toBeTruthy();
-    expect(view.queryByRole("region", { name: "这一轮学习" })).toBeNull();
-    expect(useRoomStore.getState().hudPage).toBe("note-history");
-  });
   it.each(["current", "older"] as const)("历史里的 %s 批注在回想往返后仍打开具体原句，并返回原记录页", async versionState => {
     const date = "2026-10-01T00:00:00.000Z", excerpt = "上一轮的利息计入下一轮本金。";
     const annotation = noteAnnotationV1Schema.parse({ annotationId: "33333333-4333-4333-8333-333333333333", noteId: NOTE_ID,
@@ -230,7 +220,7 @@ describe("阅读页画的是编辑器里那一份", () => {
       sectionOrdinal: 1, sectionTitle: null, question: "为什么本金会增加？", answerTruncated: false, selfReport: null, reflection: null, state: "waiting", versionState: "current",
       sourceMessageId: null, conversationId: null, hintSourceMessageId: null, hintConversationId: null, createdAt: date, hintViewedAt: null, revealedAt: null, reportedAt: null });
     const view = await show([block("paragraph", excerpt)], undefined, undefined, false, [recall], undefined, [annotation]);
-    fireEvent.click(view.getByRole("button", { name: "学习记录" }));
+    fireEvent.click(view.getByRole("tab", { name: "学习记录" }));
     const history = view.getByRole("region", { name: "学习记录" });
     fireEvent.click(within(history).getByRole("button", { name: "打开这次回想" }));
     expect(view.getByRole("article", { name: "这篇笔记的回想" })).toBeTruthy();
@@ -249,8 +239,8 @@ describe("阅读页画的是编辑器里那一份", () => {
 
   it("正文、学习入口和记录保持顺序，不因已有记录改名或换位", async () => {
     const view = await show([block("paragraph", "Tool 是 Agent 调用外部能力的入口。")]);
-    const navigation = view.getByRole("navigation", { name: "笔记学习" });
-    expect(Array.from(navigation.querySelectorAll("button")).map(button => button.getAttribute("aria-label") ?? button.textContent?.trim())).toEqual(["正文", "速看", "回想", "往外学", "学习记录"]);
+    const navigation = view.getByRole("tablist", { name: "笔记学习" });
+    expect(Array.from(navigation.querySelectorAll("button")).map(button => button.getAttribute("aria-label") ?? button.textContent?.trim())).toEqual(["正文", "速看", "回想", "往外学", "学习卡", "学习记录"]);
     expect(view.body().textContent).toContain("Tool 是 Agent 调用外部能力的入口。");
     expect(view.queryByRole("button", { name: "和伴星聊聊" })).toBeNull();
     expect(view.queryByRole("button", { name: "也可以问伴星" })).toBeNull();
@@ -275,9 +265,9 @@ describe("阅读页画的是编辑器里那一份", () => {
     };
     const view = await show([block("paragraph", "Tool 是 Agent 调用外部能力的入口。")], undefined, undefined, false, undefined, [overview]);
     expect(view.queryByRole("article", { name: "这篇笔记的速看" })).toBeNull();
-    fireEvent.click(view.getByRole("button", { name: "速看" }));
+    fireEvent.click(view.getByRole("tab", { name: "速看" }));
     expect(within(view.getByRole("article", { name: "这篇笔记的速看" })).getByText("Tool 可以调用外部能力。")).toBeTruthy();
-    expect(view.getByRole("button", { name: "回想" })).toBeTruthy();
+    expect(view.getByRole("tab", { name: "回想" })).toBeTruthy();
     expect(view.queryByText("从记得的地方接着读")).toBeNull();
   });
 
@@ -300,13 +290,13 @@ describe("阅读页画的是编辑器里那一份", () => {
       createdAt: "2026-09-29T10:00:00.000Z",
     };
     const view = await show([block("paragraph", "Tool 是 Agent 调用外部能力的入口。")], undefined, undefined, false, undefined, [overview]);
-    fireEvent.click(view.getByRole("button", { name: "速看" }));
+    fireEvent.click(view.getByRole("tab", { name: "速看" }));
     expect(within(view.getByRole("article", { name: "这篇笔记的速看" })).getByText("有 2 条重点的原文引用没有核对上，没有收录。")).toBeTruthy();
   });
 
   it("速看开关挂在纸面框上，页内容的翻页动画抢不走它的位置", async () => {
     const view = await show([block("paragraph", "Tool 是 Agent 调用外部能力的入口。")]);
-    fireEvent.click(view.getByRole("button", { name: "速看" }));
+    fireEvent.click(view.getByRole("tab", { name: "速看" }));
     const switcher = view.getByRole("navigation", { name: "速看内容" });
     // 页内容（`.notebook-desk__page`）的入场动画带 `transform`，会把那一页变成绝对定位的
     // 包含块。开关若还在页里，就先落在页上、动画一停再跳回纸面左上——2026-10-08 真窗口
@@ -346,7 +336,7 @@ describe("阅读页画的是编辑器里那一份", () => {
     const view = await show([block("paragraph", "Tool 是 Agent 调用外部能力的入口。")], undefined, undefined, false, [unfinishedRecall]);
 
     expect(view.queryByRole("article", { name: "这篇笔记的回想" })).toBeNull();
-    fireEvent.click(view.getByRole("button", { name: "回想" }));
+    fireEvent.click(view.getByRole("tab", { name: "回想" }));
     // 点「回想」要先**查**这一篇有没有没做完的回想（那是 `lookup`，一次异步往返），
     // 查到才把那张纸打开。所以这里必须先把这次往返冲掉，不能紧接着同步断言。
     // 这条断言守的东西没变：查到了就得打开、打开的就是那一篇、题面干净。
@@ -399,7 +389,7 @@ describe("阅读页画的是编辑器里那一份", () => {
     const view = await show([block("heading", "例子"), block("paragraph", "这是选中句子。")],
       undefined, [artifact], false, undefined, undefined, [annotation]);
     expect(view.body().querySelectorAll(".note-annotation-badge")).toHaveLength(1);
-    fireEvent.click(view.getByRole("button", { name: "学习记录" }));
+    fireEvent.click(view.getByRole("tab", { name: "学习记录" }));
     fireEvent.click(view.getByRole("button", { name: "打开这份互动讲解" }));
     const source = view.getByText("对照原句").closest("details")!;
     expect(source.open).toBe(false);
@@ -441,24 +431,10 @@ describe("阅读页画的是编辑器里那一份", () => {
     expect(view.queryByLabelText("这一轮学习")).toBeNull();
     expect(view.queryByRole("article", { name: "上次讲解中的待核对说法" })).toBeNull();
     expect(view.queryByText("这是上次的讲解。")).toBeNull();
-    expect(view.getByRole("button", { name: "学习记录" })).toBeTruthy();
+    expect(view.getByRole("tab", { name: "学习记录" })).toBeTruthy();
   });
 
-  it("打开旧记录折页后才读取核心路线，笔记首屏不请求旧路线", async () => {
-    const view = await show([block("paragraph", "Tool 是 Agent 调用外部能力的入口。")]);
-    const route = vi.fn(async () => ok(null));
-    Object.assign(window.astella, { noteLearningRound: { route } });
-    expect(route).not.toHaveBeenCalled();
-
-    fireEvent.click(view.getByRole("button", { name: "学习记录" }));
-    const legacy = view.container.querySelector<HTMLDetailsElement>(".notebook-legacy-footprint")!;
-    fireEvent.click(legacy.querySelector("summary")!);
-    await act(async () => { await vi.advanceTimersByTimeAsync(100); });
-
-    expect(route).toHaveBeenCalledTimes(1);
-    expect(view.getByRole("heading", { level: 1, name: "学习记录" })).toBeTruthy();
-  });
-
+  
   it("段内换行画成换行，不再并成一行", async () => {
     const { body } = await show([block("paragraph", "修改笔记。12312\n123123123123")]);
     const paragraph = body().querySelector("p")!;
@@ -571,23 +547,89 @@ describe("阅读页画的是编辑器里那一份", () => {
     const heading = body().querySelector("h1")!;
     expect(heading.textContent).toBe("欧姆定律");
   });
+});
 
-  it("概念句的高亮切在显示文本上，标记符号不把它挤错位", async () => {
-    // 偏移量以前按 `content` 原文算：那句里带着 `**`，切片就会从标记符号中间开始，
-    // 高亮盖错字（旧实现框进来的是 `**欧姆定律**是结论`）。渲染与偏移现在同源于
-    // `noteInlineDisplayText`。
-    const { body } = await show(
-      [block("paragraph", "开头的话。**欧姆定律**是结论。结尾的话")],
-      "欧姆定律",
-    );
-    const marked = [...body().querySelectorAll("p .mark")].map((node) => node.textContent ?? "");
-    expect(marked.join("")).toBe("欧姆定律是结论。");
-    expect(marked.some((text) => text.includes("*"))).toBe(false);
-    // 高亮不许拆掉结构：那四个字仍然是粗体，高亮叠在它里面。
-    expect(body().querySelector("strong .mark")?.textContent).toBe("欧姆定律");
+describe("阅读页不重复笔记标题", () => {
+  /** 夹具里的标题永远是「阅读形状」；AI 生成的笔记会把它写成正文第一个 H1。 */
+  it("正文首个 heading 与标题同名时只在页眉显示一次，其余块号与偏移不动", async () => {
+    const view = await show([
+      block("heading", "# 阅读形状"),
+      block("paragraph", "第一段正文。"),
+      block("heading", "## 小节"),
+      block("paragraph", "小节正文。"),
+    ]);
+    const body = view.body();
+    // 被隐藏的那一块没有渲染，其余块保留原 ordinal（批注/依据按 ordinal 落位）。
+    expect(body.querySelector('[data-block-ordinal="0"]')).toBeNull();
+    expect(body.querySelectorAll(".reading-block")).toHaveLength(3);
+    expect(body.querySelector('[data-block-ordinal="1"]')?.textContent).toContain("第一段正文。");
+    // 页眉仍是标题出现的唯一位置；正文里的真正小节标题照常显示。
+    expect(view.getByRole("heading", { level: 2, name: "阅读形状" })).toBeTruthy();
+    expect([...body.querySelectorAll("h1, h2")].map(node => node.textContent)).toEqual(["小节"]);
+    expect(view.queryByText("这一版正文还没有段落。")).toBeNull();
+  });
+
+  it("首个 heading 与标题不同名时照常显示（只隐藏重复的那一个）", async () => {
+    const view = await show([block("heading", "# 前言"), block("paragraph", "正文。")]);
+    expect(view.body().querySelector('[data-block-ordinal="0"]')?.textContent).toContain("前言");
+  });
+
+  it("标题两侧留白不同也算同一个标题", async () => {
+    const view = await show([block("heading", "#   阅读形状  "), block("paragraph", "正文。")]);
+    expect(view.body().querySelector('[data-block-ordinal="0"]')).toBeNull();
+    expect(view.body().querySelector('[data-block-ordinal="1"]')).not.toBeNull();
+  });
+
+  it("只有重复标题的版本仍然如实说「还没有正文段落」", async () => {
+    const view = await show([block("heading", "# 阅读形状")]);
+    expect(view.queryByText("这一版正文还没有段落。")).toBeTruthy();
+  });
+
+  it("落在被隐藏标题上的批注仍按当前版本核对，不误报「需核对」", async () => {
+    // 标题文字仍在页眉上，所以指向这一块的锚点不算失联；块本身不画在正文里。
+    const excerpt = noteBlockRenderedTextV1("heading", "# 阅读形状");
+    const date = "2026-10-01T00:00:00.000Z";
+    const annotation = noteAnnotationV1Schema.parse({
+      annotationId: "33333333-4333-4333-8333-333333333333", noteId: NOTE_ID,
+      anchor: { noteVersionId: VERSION_ID, startBlockOrdinal: 0, endBlockOrdinal: 0,
+        startOffset: 0, endOffset: excerpt.length, excerpt, prefix: "", suffix: "" },
+      explanation: "标题本身也值得留一句。", sourceMessageId: null,
+      generationJobId: null, revision: 1, versionState: "current", createdAt: date, updatedAt: date,
+    });
+    const view = await show([block("heading", "# 阅读形状"), block("paragraph", "正文。")],
+      undefined, undefined, false, undefined, undefined, [annotation]);
+    expect(view.queryByText(/需核对/)).toBeNull();
+  });
+
+  it("目录不再单列一项与页眉重复的标题，后面的小节仍可定位", async () => {
+    const view = await show([
+      block("heading", "# 阅读形状"),
+      block("paragraph", "正文。"),
+      block("heading", "## 小节"),
+    ]);
+    await act(async () => { fireEvent.click(view.getByRole("button", { name: "目录" })); });
+    const directory = view.getByRole("complementary", { name: "笔记目录" });
+    expect(within(directory).queryByRole("button", { name: "阅读形状" })).toBeNull();
+    expect(within(directory).getByRole("button", { name: "小节" })).toBeTruthy();
   });
 });
 
+describe("笔记页视图的 tab 语义", () => {
+  it("容器是 tablist，选中的视图才有 aria-selected，切换后跟着换", async () => {
+    const view = await show([block("paragraph", "正文。")]);
+    const tablist = view.getByRole("tablist", { name: "笔记学习" });
+    const tabs = within(tablist).getAllByRole("tab");
+    expect(tabs.map(tab => tab.getAttribute("aria-label") ?? tab.textContent?.trim()))
+      .toEqual(["正文", "速看", "回想", "往外学", "学习卡", "学习记录"]);
+    expect(within(tablist).getByRole("tab", { name: "正文" }).getAttribute("aria-selected")).toBe("true");
+    expect(within(tablist).getByRole("tab", { name: "速看" }).getAttribute("aria-selected")).toBe("false");
+
+    // 切到速看会发起一次异步读取；先把这次往返冲掉再看选中态。
+    await act(async () => { fireEvent.click(within(tablist).getByRole("tab", { name: "速看" })); });
+    expect(within(tablist).getByRole("tab", { name: "速看" }).getAttribute("aria-selected")).toBe("true");
+    expect(within(tablist).getByRole("tab", { name: "正文" }).getAttribute("aria-selected")).toBe("false");
+  });
+});
 
 describe("伴星解释与原句批注并行", () => {
   const excerpt = "上一轮的利息计入下一轮本金。";

@@ -265,18 +265,21 @@ afterEach(() => {
 });
 
 describe("DesktopAccessGate 的失效判据（F01）", () => {
-  it("服务短暂离线隐藏内容，重连同一身份后保留笔记落点", async () => {
+  it("服务短暂离线保留实际页面与焦点，重连同一身份不重新挂载", async () => {
     const harness = installApi();
     const reset = vi.fn(() => useRoomStore.getState().resetWorkspaceScope());
     render(<DesktopAccessGate onWorkspaceBoundaryReset={reset}><button data-testid="room-focus">学习页面</button></DesktopAccessGate>);
-    await screen.findByTestId("room-focus");
+    const room = await screen.findByTestId("room-focus"); room.focus();
     useRoomStore.setState({ surface: "notebook", activeNoteRef: { noteId: "note-before-offline", noteVersionId: null } });
     act(() => harness.emitRuntime({ ...invalidationEvent("runtime"), kind: "connection_changed", data: { kind: "connection_changed", state: { version: 1, kind: "api_unavailable" } } }));
     await screen.findByRole("button", { name: "重新连接" });
-    expect(screen.queryByTestId("room-focus")).toBeNull();
+    expect(screen.getByTestId("room-focus")).toBe(room);
+    expect(document.activeElement).toBe(room);
+    expect(screen.getByText("连接暂时中断，已打开的内容和阅读位置保留。")).toBeTruthy();
     expect(reset).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "重新连接" }));
-    await screen.findByTestId("room-focus");
+    await waitFor(() => expect(screen.queryByRole("button", { name: "重新连接" })).toBeNull());
+    expect(screen.getByTestId("room-focus")).toBe(room);
     expect(useRoomStore.getState().surface).toBe("notebook");
     expect(useRoomStore.getState().activeNoteRef?.noteId).toBe("note-before-offline");
     expect(reset).not.toHaveBeenCalled();
@@ -344,14 +347,13 @@ describe("DesktopAccessGate 的失效判据（F01）", () => {
     const harness = installApi();
     const { onWorkspaceBoundaryReset, room } = await renderReadyGate();
     room.focus();
-    useRoomStore.setState({ surface: "objective-detail", activeObjectiveId: "card-1" });
+    useRoomStore.setState({ surface: "note-library" });
     const sessionReads = harness.getState.mock.calls.length;
     act(() => publishGateInvalidation("unsupported_contract"));
     await waitFor(() => expect(harness.getState.mock.calls.length).toBe(sessionReads + 1));
     expect(screen.getByTestId("room-focus")).toBe(room);
     expect(document.activeElement).toBe(room);
-    expect(useRoomStore.getState().surface).toBe("objective-detail");
-    expect(useRoomStore.getState().activeObjectiveId).toBe("card-1");
+    expect(useRoomStore.getState().surface).toBe("note-library");
     expect(onWorkspaceBoundaryReset).not.toHaveBeenCalled();
   });
 

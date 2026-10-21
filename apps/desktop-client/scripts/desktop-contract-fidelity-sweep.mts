@@ -15,8 +15,6 @@
 // 覆盖面只到**读面**：三个 schema 定义在网关文件内部（/health、/auth/me、/auth/workspaces）的不在此台，
 // 写面（POST/PUT/DELETE 那 18 处）会改 dev 数据，故意不扫。
 import {
-  todayActivityV1Schema,} from "@astella/shared/activity-surface-contracts";
-import {
   companionJourneyBootstrapSchema,} from "@astella/shared/companion-journey-contracts";
 import {
   companionMemoryConflictListV1Schema,} from "@astella/shared/companion-memory-desktop-contracts";
@@ -34,14 +32,7 @@ import {
   desktopSourceListPageSchema,
   desktopSourceNotesPageSchema,} from "@astella/shared/desktop-surface-contracts";
 import {
-  learningObjectiveSurfaceV3Schema,
-  objectiveListPageV3Schema,} from "@astella/shared/learning-objective-surface-contracts";
-import {
   noteDetailV1Schema,} from "@astella/shared/note-projection-contracts";
-import {
-  reviewQueueV2Schema,} from "@astella/shared/review-queue-v2-contracts";
-import {
-  allWorkspacesStatsOverviewSchema,} from "@astella/shared/stats-overview-contracts";
 
 const BASE = process.env.SWEEP_BASE ?? "http://127.0.0.1:4000";
 const EMAIL = process.env.SWEEP_EMAIL ?? "";
@@ -91,12 +82,8 @@ const fixed: [string, string, never][] = [  ["auth/capabilities/v1", "/auth/capa
   ["voice/preference", "/voice/preference", companionVoicePreferenceV1Schema as never],
   ["memory/conflicts", "/companion/memory/conflicts", companionMemoryConflictListV1Schema as never],
   ["journey/bootstrap", "/companion/journey/bootstrap", companionJourneyBootstrapSchema as never],
-  ["activity/today", `/activity/today?workspaceId=${workspaceId}`, todayActivityV1Schema as never],
-  ["stats/overview/all", "/stats/overview/all", allWorkspacesStatsOverviewSchema as never],
-  ["reviews/v2/queue", "/reviews/v2/queue", reviewQueueV2Schema as never],
   ["sources(list)", "/sources", desktopSourceListPageSchema as never],
   ["notes(list)", "/notes", desktopNoteListPageSchema as never],
-  ["objectives(list)", "/v2/learning-objectives", objectiveListPageV3Schema as never],
   ["search", "/search?q=IndexTTS", desktopSearchPageSchema as never],
 ];
 console.log("== 无 id 的那一批 ==");
@@ -106,10 +93,6 @@ for (const [label, path, schema] of fixed) results[label] = await probe(label, p
 console.log("\n== 从上面拿真 id 的那一批 ==");
 const sourceId = ((results["sources(list)"].body as { items?: { id: string }[] })?.items ?? [])[0]?.id;
 const noteId = ((results["notes(list)"].body as { items?: { id: string }[] })?.items ?? [])[0]?.id;
-const objectiveItems = ((results["objectives(list)"].body as { items?: Record<string, unknown>[] })?.items ?? []);
-const objectiveFirst = objectiveItems[0] ?? {};
-if (objectiveItems.length) console.log(`  目标条目第一个的键: ${Object.keys(objectiveFirst).slice(0, 10).join(", ")}`);
-const objectiveId = (objectiveFirst.objectiveId ?? objectiveFirst.id ?? undefined) as string | undefined;
 if (sourceId) {
   await probe("sources/:id", `/sources/${sourceId}`, desktopSourceDetailSchema as never);
   await probe("sources/:id/notes", `/sources/${sourceId}/notes`, desktopSourceNotesPageSchema as never);
@@ -118,16 +101,11 @@ if (noteId) {
   await probe("v2/notes/:id", `/v2/notes/${noteId}`, noteDetailV1Schema as never);
   await probe("v2/notes/:id/doc-state", `/v2/notes/${noteId}/doc-state`, noteDocServerStateV1Schema as never);
 } else console.log("  拿不到 note id，这一档没扫到");
-console.log(`  objectives(list) 顶层键: ${Object.keys((results["objectives(list)"].body ?? {}) as object).join(", ")}；条数: ${JSON.stringify(Object.values((results["objectives(list)"].body ?? {}) as Record<string, unknown>).map((v) => Array.isArray(v) ? v.length : null).filter((n) => n !== null))}`);
-if (objectiveId) {
-  await probe("objectives/:id", `/v2/learning-objectives/${objectiveId}`, learningObjectiveSurfaceV3Schema as never);
-} else console.log("  拿不到 objective id，这一档没扫到");
-
 // ── 判据自证：这轮"全都解得动"只有在判据真能喊的时候才有意义 ──────────────
 console.log("\n== 正控制（判据必须喊） ==");
 const probeRes = await fetch(`${BASE}/voice/preference`, { headers: { authorization: `Bearer ${token}` } });
 const probeBody = await probeRes.json();
-const wrong = reviewQueueV2Schema.safeParse(probeBody);
+const wrong = desktopSourceListPageSchema.safeParse(probeBody);
 console.log(wrong.success
   ? "  × 正控制失败：拿错 schema 也解得动 ⇒ 上面那句「全都解得动」不算数"
   : `  ✓ 换错 schema 会红（首个问题: ${(wrong.error?.issues[0]?.path ?? []).join(".")}）`);

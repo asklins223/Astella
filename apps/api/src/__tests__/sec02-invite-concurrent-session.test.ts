@@ -395,14 +395,14 @@ describe("SEC-02 DoD: 邀请 token 安全存储", () => {
 // ─── 5. onboarding 状态管理 ─────────────────────────────────────────────────
 
 describe("SEC-02 DoD: onboarding 状态管理", () => {
-  it("ONBOARDING_STEPS 包含 5 个步骤且顺序正确", () => {
-    assert.equal(ONBOARDING_STEPS.length, 5);
+  // 2026-10-20：方案 57 删掉旧复习链后，这一档随 evidence_review 一起消失（5 → 4）。
+  it("ONBOARDING_STEPS 包含 4 个步骤且顺序正确", () => {
+    assert.equal(ONBOARDING_STEPS.length, 4);
     assert.deepEqual([...ONBOARDING_STEPS], [
       "ai_consent",
       "first_content",
       "first_note",
       "first_card",
-      "evidence_review",
     ]);
   });
 

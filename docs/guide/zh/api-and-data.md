@@ -22,7 +22,7 @@
 
 ## 运行形态与启动顺序
 
-入口是 `apps/api/src/server.ts`：一个 Fastify 实例、**没有全局路径前缀**，各领域路由束平级 `register`（其中 `card-generation-v2` 只在 `CARD_GENERATION_V2_ENABLED=true` 时才注册）。监听地址由 `resolveApiBindHost()`（`apps/api/src/modules/desktop-trust/routes.ts`）决定——默认 `127.0.0.1`，只有 `ASTELLA_CONTAINER_MODE` 与 `ASTELLA_ALLOW_CONTAINER_WILDCARD` 同时为 `true` 才允许 `0.0.0.0`，否则启动即抛错；端口取 `PORT`，默认 `4000`。
+入口是 `apps/api/src/server.ts`：一个 Fastify 实例、**没有全局路径前缀**，各领域路由束平级 `register`。监听地址由 `resolveApiBindHost()`（`apps/api/src/modules/desktop-trust/routes.ts`）决定——默认 `127.0.0.1`，只有 `ASTELLA_CONTAINER_MODE` 与 `ASTELLA_ALLOW_CONTAINER_WILDCARD` 同时为 `true` 才允许 `0.0.0.0`，否则启动即抛错；端口取 `PORT`，默认 `4000`。
 
 插件层与钩子层：
 
@@ -49,17 +49,15 @@
 | 身份与工作区 | `identity` | `/auth/*`、`/workspaces*`、`/me/*`、`/invites*`、`/members*`、`/onboarding/*`、`/v1/auth/capabilities`、`/workspace/ai-audit-log` | 登录登出、会话、空间增删与转移、成员与邀请、引导状态、AI 同意与外发政策 |
 | 桌面信任握手 | `desktop-trust` | `/_astella/desktop/trust/v1/challenge` | 未认证 origin 换签名凭据，用 `ASTELLA_DESKTOP_PAIRING_*` |
 | 笔记 | `note` | `/notes*`、`/v2/notes/:id*`、`/note-doc`（WebSocket） | 列表与投影、文档状态读取、增量上送、版本与回收站、协同通道 |
-| 笔记周边 | `note-annotations` / `note-overviews` / `note-recalls` / `note-expansions` / `note-learning-artifacts` / `note-learning-rounds` | `/v2/notes/:noteId/{annotation,overview,expansion,learning-artifact}-tasks`、`/v2/notes/:noteId/{recalls,expansions,learning-round*}`、`/v2/note-learning-rounds*` | 页首四张书签各自的任务与产物读写（速看 / 回想 / 往外学 / 学习记录），加上选句的写批注与原句解读；结果都回到笔记版本上 |
+| 笔记周边 | `note-annotations` / `note-overviews` / `note-recalls` / `note-expansions` / `note-learning-artifacts` | `/v2/notes/:noteId/{annotation,overview,expansion,learning-artifact}-tasks`、`/v2/notes/:noteId/{recalls,expansions}` | 页首四张书签各自的任务与产物读写（速看 / 回想 / 往外学 / 互动讲解），加上选句的写批注与原句解读；结果都回到笔记版本上 |
 | 来源 | `source` | `/sources*` | 采集、重解析、编辑、恢复、由来源起笔记 |
-| 制卡 V2 | `card-generation-v2` | `/v2/card-generation-runs*`、`/v2/cards*`、`/v2/initial-validation-reminders*` | 整个 bundle 只在 `CARD_GENERATION_V2_ENABLED=true` 时注册 |
-| 复习 | `review` | `/v2/reviews/*` | 到期队列、延迟、目标暂停、原文揭示、一次性提醒、订阅 |
-| 学习运行与目标 | `learning-runs`、`learning-objectives`、`learning-dashboard` | `/learning-runs*`、`/v2/learning-runs/:runId/*`、`/learning/assessments/:assessmentId/disputes*`、`/v2/learning-objectives*`、`/v2/learning-dashboard`、`/v2/home/*` | 运行需要 `LEARNING_RUN_ENABLED=true`，否则全部 404；争议与更正单独一条注册链 |
+| 笔记内学习卡 | `note-learning-cards` | `/v2/notes/:noteId/learning-card*`、`/v2/learning-cards/:cardId/attempts*`、`/v2/note-learning-card-operation-artifacts/:artifactId` | 一笔记一卡、卡内多题；生成、作答、判分、历史与操作题产物 |
 | 理解与深读 | `note-deepening`、`understanding` | `/v3/understanding/*`、`/understanding/projection*`、`/understanding/routes/plan` | 拓扑快照、深读、关系判定、投影与增量 |
 | 伴星家族 | `companion-shell`、`companion-conversation`（含 `memory/`、`delivery/`、`discovery/`、`turn/`）、`companion-bridge`、`companion-journey` | `/me/companion*`、`/public/auth-surface-manifest`、`/companion/*`（对话、消息、proposals、memory、deliveries、inbox、daily、journeys、pet-profile、room-profile、home-projection、history、runs 诊断、export） | 对话与记忆各按能力开关 fail closed（`COMPANION_DIALOGUE_V1_ENABLED`、`COMPANION_JOURNEY_V2`、`COMPANION_MEMORY_VECTOR_V1`、`COMPANION_PET_PROFILE_V1`、`COMPANION_BRIDGE_V2` 等） |
 | Agent | `agent` | `/agent/runs*`、`/agent/long-goals`、`/agent/methods*`、`/agent/method-uses/:useId/feedback` | 运行与方法库的读写；这一层今天哪些真跑着、哪些只有后端，见 [统一 Agent 运行时（技术）](./agent-runtime.md) 的"已接通 vs 只有后端"，验收缺口另记在[方案索引](../../plans/learning-companion/README.md) |
 | 语音 | `learning-sessions` | `/voice/tts`、`/voice/tts/stream`、`/voice/transcribe`、`/voice/preference`、`/voice/guidance-profile`、`/voice/tts/playback-outcome` | TTS/ASR；未开语音能力时 404 |
 | 作业与检索 | `job`、`search`、`import`、`export`、`upload` | `/jobs*`、`/search*`、`/import/markdown`、`/export/*`、`/uploads/*` | job 只读投影（payload 与 `last_error` 脱敏）；上传三个端点 + 下载 |
-| 统计与观测 | `stats`、`activity`、`observability`、`audit` | `/stats/overview*`、`/activity/today`、`/metrics/learning-events`、`/workspace/audit-log` | 业务读数；`/metrics/learning-events` 与 Prometheus 的 `/metrics` 是两条路由 |
+| 统计与观测 | `observability`、`audit` | `/metrics/learning-events`、`/workspace/audit-log` | 业务读数；`/metrics/learning-events` 与 Prometheus 的 `/metrics` 是两条路由 |
 | 运维面板 | `admin` | `ADMIN_PANEL_PATH`（默认 `/admin`）下的静态壳与 `<base>/api/*` | 见下一节 |
 
 最常打的那几条（完整拼写，供 curl 与排障用）：
@@ -71,7 +69,7 @@
 | 来源 | `GET /sources`、`POST /sources`、`GET /sources/:id`、`POST /sources/:id/reparse` |
 | 作业 | `GET /jobs`、`GET /jobs/:id` |
 | 探针 | `GET /health`、`GET /ready`、`GET /metrics` |
-| 事件流 | `GET /learning-runs/:runId/events`、`GET /v2/card-generation-runs/:runId/events/stream`、`GET /companion/deliveries/inbox/stream`、`GET /companion/conversations/:id/events` |
+| 事件流 | `GET /companion/deliveries/inbox/stream`、`GET /companion/conversations/:id/events` |
 
 ## 鉴权与安全契约
 
@@ -184,7 +182,7 @@ hijack 之后的响应**不经过 `onSend`**，所以全局安全头不适用，
 | 池与超时 | `API_STATEMENT_TIMEOUT_MS`(60s)、`API_LOCK_TIMEOUT_MS`(5s)、`API_IDLE_IN_TRANSACTION_TIMEOUT_MS`(15s)、`API_POOL_IDLE_TIMEOUT_SECONDS`(30s)、`DB_GAUGE_INTERVAL_MS`(5s) | 池上限 25 是代码常量，不受 env 控制（面板里的 `DB_POOL_MAX` / `API_DB_POOL_MAX` 只是展示口径）；`application_name = 'astella_api'` 让池饱和度能按进程切开 |
 | HTTP 与边界 | `PORT`(4000)、`API_BIND_ADDRESS`(`127.0.0.1`)、`ASTELLA_CONTAINER_MODE`、`ASTELLA_ALLOW_CONTAINER_WILDCARD`、`CORS_ORIGIN`、`TRUST_PROXY`(false)、`AUTH_SURFACE_MANIFEST_SECRET` | `CORS_ORIGIN` 为空即不发 CORS 头；`TRUST_PROXY` 支持 `true`/`false`/跳数/逗号列表；关掉它而有前置代理时，`req.ip` 全是代理地址——登录的 IP 桶退化成"整机共享 5 次"、面板的按来源退避认错人、安全日志里的来源地址也只有一个值 |
 | 鉴权与限流 | `AUTH_RATE_LIMIT_STORE`、`AUTH_RATE_LIMIT_WINDOW_MS`(15min)、`AUTH_RATE_LIMIT_MAX_ATTEMPTS`(5)、`AUTH_COOKIE_SECURE`、`NODE_ENV` | store 默认 `postgres`；`Secure` 由 `AUTH_COOKIE_SECURE` 或 `NODE_ENV=production` 决定 |
-| 能力开关（API 侧读取的 13 个） | `LEARNING_RUN_ENABLED`、`CARD_GENERATION_V2_ENABLED`、`COMPANION_DIALOGUE_V1_ENABLED`、`COMPANION_VOICE_DIALOGUE_V1_ENABLED`、`COMPANION_STREAMING_VOICE_V1_ENABLED`、`COMPANION_JOURNEY_V2`、`COMPANION_BRIDGE_V2`、`COMPANION_MEMORY_VECTOR_V1`、`COMPANION_MEMORY_STAR_MAP_V1`、`COMPANION_PET_PROFILE_V1`、`COMPANION_PROACTIVE_PERSONALIZED_V1`、`COMPANION_SUMMARIZER_V1`、`COMPANION_DAILY_SUMMARY_V1` | 一律严格 `=== "true"`，**fail closed**：未设即关，端点 404 或整组不注册。多数判据集中在 `config/learning-companion-flags.ts`，少数在各自路由里读（星图、日报、桥接、主动投递）。`make verify` 的 `.github/scripts/verify-companion-capability-config.mjs` 双向钉住"每个服务只声明它实际读取的开关"及默认值：伴星基础能力 dev/prod 都默认开，`LEARNING_RUN_ENABLED` / `CARD_GENERATION_V2_ENABLED` / 语音只有 dev 默认开、prod 关。worker 侧的同族开关见 [模型与 Worker 链路](./ai-and-companion.md) |
+| 能力开关（API 侧读取的 11 个） | `COMPANION_DIALOGUE_V1_ENABLED`、`COMPANION_VOICE_DIALOGUE_V1_ENABLED`、`COMPANION_STREAMING_VOICE_V1_ENABLED`、`COMPANION_JOURNEY_V2`、`COMPANION_BRIDGE_V2`、`COMPANION_MEMORY_VECTOR_V1`、`COMPANION_MEMORY_STAR_MAP_V1`、`COMPANION_PET_PROFILE_V1`、`COMPANION_PROACTIVE_PERSONALIZED_V1`、`COMPANION_SUMMARIZER_V1`、`COMPANION_DAILY_SUMMARY_V1` | 一律严格 `=== "true"`，**fail closed**：未设即关，端点 404 或整组不注册。多数判据集中在 `config/learning-companion-flags.ts`，少数在各自路由里读（星图、日报、桥接、主动投递）。`make verify` 的 `.github/scripts/verify-companion-capability-config.mjs` 双向钉住"每个服务只声明它实际读取的开关"及默认值：伴星基础能力 dev/prod 都默认开，语音只有 dev 默认开、prod 关。worker 侧的同族开关见 [模型与 Worker 链路](./ai-and-companion.md) |
 | SSE 与处理并发 | `SSE_MAX_STREAMS_PER_USER`(5)、`SSE_MAX_STREAMS_TOTAL`(200)、`RUN_PROCESSING_CONCURRENCY`(4，上界 16) | 计数单进程内存态 |
 | 对象存储 | `STORAGE_MODE`、`STORAGE_ENDPOINT`、`STORAGE_PUBLIC_ENDPOINT`、`STORAGE_ACCESS_KEY_ID`、`STORAGE_SECRET_ACCESS_KEY`、`S3_REGION`(`us-east-1`)、`S3_BUCKET`(`astella-workspaces`)、`MINIO_ACCESS_KEY`/`MINIO_SECRET_KEY`（回退 `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD`）、`STORAGE_REQUEST_TIMEOUT_MS`(120s) | local 使用 MinIO 凭据；remote 使用远程专用凭据，不回退本地配置。凭证须成套，未配置时上传回 503。判定在 `@astella/shared/storage-config`，与 worker 共用 |
 | 语音 | `EDGE_TTS_BASE_URL`、`EDGE_TTS_PORT`、`EDGE_TTS_AUTH_TOKEN`、`EDGE_TTS_MAX_CONCURRENCY`、`QWEN_TTS_MAX_CONCURRENCY`、`DASHSCOPE_TTS_WORKSPACE_ID`、`SILICONFLOW_API_KEY`、`VOICE_ASR_MODEL` | 本机 edge-tts 容器 + 外部 ASR |

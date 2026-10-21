@@ -30,12 +30,11 @@ import {
   assistantMemoryItems,
   companionPersonaProfiles,
   companionRoomProfiles,
-  learningObjectivesV2,
-  learningRuns,
+  noteLearningCardAttempts,
+  noteLearningCards,
   notes,
   petProfiles,
 } from "@astella/shared/db-schema";
-import { visibleObjectivesCondition } from "../note/visibility.ts";
 
 export interface CompanionHomeScope {
   workspaceId: string;
@@ -172,24 +171,22 @@ async function readMilestones(
       isNotNull(notes.currentVersionId),
     ))
     .limit(1);
+  // Plan 57: milestones follow the new note-scoped card chain.
   const activeGoal = await executor
-    .select({ id: learningObjectivesV2.id })
-    .from(learningObjectivesV2)
+    .select({ id: noteLearningCards.id })
+    .from(noteLearningCards)
     .where(and(
-      eq(learningObjectivesV2.workspaceId, scope.workspaceId),
-      eq(learningObjectivesV2.lifecycle, "active"),
-      gt(learningObjectivesV2.currentRevision, 0),
-      visibleObjectivesCondition(scope.userId, learningObjectivesV2.objectiveId),
+      eq(noteLearningCards.workspaceId, scope.workspaceId),
+      eq(noteLearningCards.status, "active"),
     ))
     .limit(1);
   const completedReview = await executor
-    .select({ id: learningRuns.id })
-    .from(learningRuns)
+    .select({ id: noteLearningCardAttempts.id })
+    .from(noteLearningCardAttempts)
     .where(and(
-      eq(learningRuns.workspaceId, scope.workspaceId),
-      eq(learningRuns.userId, scope.userId),
-      eq(learningRuns.phase, "completed"),
-      isNotNull(learningRuns.result),
+      eq(noteLearningCardAttempts.workspaceId, scope.workspaceId),
+      eq(noteLearningCardAttempts.userId, scope.userId),
+      eq(noteLearningCardAttempts.status, "completed"),
     ))
     .limit(1);
   const confirmedMemory = await executor

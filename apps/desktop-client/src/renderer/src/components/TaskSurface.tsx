@@ -1,20 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import gsap from "gsap";
 import { useRoomStore } from "../app/home/room-store";
-import { CardGenerationSurface } from "./CardGenerationSurface";
 import { GraphSurface } from "./surfaces/space/graph-surface.tsx";
-import { ReviewSurface } from "./surfaces/review/ReviewSurface.tsx";
-import { StudySurface } from "./surfaces/study/StudySurface.tsx";
-import { ResumableSurface } from "./surfaces/library/ResumableSurface.tsx";
-import { ValidationSurface } from "./surfaces/run/validation-surface";
-import {
-  ObjectiveDetailSurface,
-  ObjectiveLibrarySurface,
-} from "./surfaces/library/WorkspaceLibrarySurface.tsx";
 import { CompanionCenterSurface } from "./surfaces/companion/companion-center-surface.tsx";
 import { RenderErrorBoundary } from "./RenderErrorBoundary";
 import { NoteLibrarySurface } from "./surfaces/notebook/library/note-library-surface.tsx";
 import { NotebookSurface } from "./surfaces/notebook/shell/notebook-surface.tsx";
+import { LearningCardSurface } from "./surfaces/notebook/learning/card/learning-card-surface";
 import { SearchSurface } from "./surfaces/study/search-surface.tsx";
 import { SettingsSurface } from "./surfaces/settings/settings-surface.tsx";
 import { SourceDetailSurface } from "./surfaces/source/source-detail-surface.tsx";
@@ -30,12 +22,11 @@ function useResolvedMotionMode(): ResolvedMotionMode {
 }
 
 function fallbackIntentForSurface(surface: NonNullable<ReturnType<typeof useRoomStore.getState>["surface"]>) {
-  if (surface === "review") return "review";
   if (surface === "search") return "search";
   if (surface === "graph") return "graph";
   if (surface === "source-library" || surface === "source-detail") return "open-sources";
   if (surface === "note-library") return "open-notes";
-  if (surface === "objective-library" || surface === "objective-detail") return "open-objectives";
+  if (surface === "note-card") return "open-note-card";
   if (surface === "companion-center") return "open-companion-center";
   if (surface === "settings") return "open-settings";
   return "continue";
@@ -109,9 +100,7 @@ export function TaskSurface() {
           && document.activeElement.getClientRects().length && !document.activeElement.closest("[inert], [aria-hidden='true']")) return;
         const selector = renderedSurface === "search"
           ? "[data-search-query], .search-field input"
-          : renderedSurface === "review"
-            ? "[data-review-return-focus='true'], [data-surface-initial-focus], .surface-close"
-            : "[data-surface-initial-focus], .surface-close";
+          : "[data-surface-initial-focus], .surface-close";
         // The shared "return to study" pill is the close control of every HUD
         // page and lives outside the surface element, so the surface is searched
         // first and the document is the fallback — without it a page opened from
@@ -155,7 +144,7 @@ export function TaskSurface() {
       const lite = motionMode === "lite";
       const surfaceEnterDuration = sceneMotionDuration(motionMode, "surfaceEnter");
       const surfaceExitDuration = sceneMotionDuration(motionMode, "surfaceExit");
-      const isObjectSurface = renderedSurface === "study" || renderedSurface === "review" || renderedSurface === "search";
+      const isObjectSurface = renderedSurface === "search";
 
       if (surface !== renderedSurface) {
         setTransition("leaving");
@@ -248,18 +237,9 @@ export function TaskSurface() {
         );
       }
       if (artifacts.length && isObjectSurface) {
-        const studyEntrance = renderedSurface === "study";
         enterTimeline.fromTo(
           artifacts,
-          studyEntrance
-            ? {
-                autoAlpha: 0,
-                y: lite ? 6 : 26,
-                scale: lite ? 1 : 0.955,
-                rotateX: lite ? 0 : -3.2,
-                transformOrigin: "50% 100%",
-              }
-            : {
+            {
                 autoAlpha: 0,
                 x: lite ? -5 : -22,
                 y: lite ? 5 : 18,
@@ -274,7 +254,7 @@ export function TaskSurface() {
             scale: 1,
             rotateX: 0,
             rotateZ: 0,
-            duration: surfaceEnterDuration * (lite ? 0.82 : studyEntrance ? 1 : 0.91),
+            duration: surfaceEnterDuration * (lite ? 0.82 : 0.91),
           },
           lite ? "artifact-rise" : "artifact-rise+=0.05",
         );
@@ -320,19 +300,13 @@ export function TaskSurface() {
         {/* 页面级兜底：一张纸坏掉不该带走整个书房。`key` 已经跟着 surface 变化，
             换页会重挂这一层，错误状态自然清掉，不需要额外的重置逻辑。 */}
         <RenderErrorBoundary label="这个页面">
-          {renderedSurface === "study" ? <StudySurface /> : null}
-          {renderedSurface === "resumable" ? <ResumableSurface /> : null}
           {renderedSurface === "notebook" ? <NotebookSurface /> : null}
-          {renderedSurface === "card-generation" ? <CardGenerationSurface /> : null}
-          {renderedSurface === "review" ? <ReviewSurface /> : null}
+          {renderedSurface === "note-card" ? <LearningCardSurface /> : null}
           {renderedSurface === "search" ? <SearchSurface /> : null}
           {renderedSurface === "graph" ? <GraphSurface /> : null}
-          {renderedSurface === "validation" ? <ValidationSurface /> : null}
           {renderedSurface === "source-library" ? <SourceLibrarySurface /> : null}
           {renderedSurface === "source-detail" ? <SourceDetailSurface /> : null}
           {renderedSurface === "note-library" ? <NoteLibrarySurface /> : null}
-          {renderedSurface === "objective-library" ? <ObjectiveLibrarySurface /> : null}
-          {renderedSurface === "objective-detail" ? <ObjectiveDetailSurface /> : null}
           {renderedSurface === "companion-center" ? <CompanionCenterSurface /> : null}
           {renderedSurface === "settings" ? <SettingsSurface /> : null}
         </RenderErrorBoundary>

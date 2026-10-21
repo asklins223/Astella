@@ -94,18 +94,13 @@ function handledTools(): Set<string> {
  * 而 `kind` 名是被 grep 得到的、也是分支本身的身份。
  */
 const PENDING_DIRECT_EXECUTOR: Readonly<Record<string, string>> = {
-  companion_start_learning: "命令在 decideCompanionProposal 的 start_learning_run_v2 分支；界面上另有开跑入口（39d W4-2）",
-  companion_resume_learning: "命令在 decideCompanionProposal 的 resume_learning_run 分支；提案那条路由已接",
-  companion_pause_learning: "命令在 decideCompanionProposal 的 pause_learning_run 分支；full 档欠自动确认那一步",
-  companion_switch_task_variant: "命令在 decideCompanionProposal 的 switch_task_variant 分支；full 档欠自动确认那一步",
-  companion_request_hint: "命令在 decideCompanionProposal 的 request_hint_level 分支（exposure-first）；full 档欠自动确认",
-  companion_defer_review: "命令在 decideCompanionProposal 的 defer_review 分支与 review-defer-service；界面上队列那颗按钮已做同一件事",
+  // Plan 57：学习运行/复习链退役后，已没有“命令住在提案路径、worker 无直执行器”的工具。
 };
 
 const live = COMPANION_AGENT_TOOL_DEFINITIONS.map((entry) => entry.name);
 
 test("正控制：台账两侧都真的读到了东西（读不到时差集为空就是假绿）", () => {
-  assert.ok(live.length >= 25, `registry 只数出 ${live.length} 条工具，扫描/导入形状变了`);
+  assert.ok(live.length >= 15, `registry 只数出 ${live.length} 条工具，扫描/导入形状变了`);
   const arms = handledTools();
   assert.ok(arms.size >= 20, `运行时只数出 ${arms.size} 个 case 分支，判据没读到函数体`);
   // 已知有分支的样本：拿一条**确实存在**的工具证明判据认得它（不是只数出 20 个别的名字）。
@@ -207,6 +202,6 @@ test("每一条 case 都长在派活规则真会送去的那个执行器里", ()
   assert.ok(readArms.size >= 10, `读取执行器只数出 ${readArms.size} 个 case`);
   assert.ok(directArms.size >= 5, `直执行器只数出 ${directArms.size} 个 case`);
   // 点名一条**已知在直执行器**里的，证明方向没写反（写反时上面那条会以相反的理由全绿）。
-  assert.ok(directArms.has("companion_focus_graph"),
-    "companion_focus_graph 的 case 不在直执行器里：它就是这条判据要防的那次搬家");
+  assert.ok(directArms.has("companion_set_activeness"),
+    "companion_set_activeness 的 case 不在直执行器里：判据方向可能写反了");
 });

@@ -83,52 +83,7 @@ import {
   createNoteDocState,
   mergeNoteDocUpdates,
 } from "../note-doc/note-doc-state.ts";
-import { NOTE_DOC_PENDING_LIMIT } from "../note-doc/note-doc-cache-store.ts";
-import {
-  CardActivationReceiptDesktopV1,
-  CardGenerationCancelResultV1,
-  CardGenerationCandidateListV1,
-  CardGenerationCloseResultV1,
-  CardGenerationExposureEligibilityV1,
-  CardGenerationJobAcceptedV1,
-  CardGenerationRetryResultV1,
-  CardGenerationReviewResultV1,
-  CardGenerationRunServerViewV2,
-  CardGenerationRunSnapshotV1,
-  cardActivationReceiptDesktopV1Schema,
-  cardGenerationCancelResultV1Schema,
-  cardGenerationCandidateListV1Schema,
-  cardGenerationCloseResultV1Schema,
-  cardGenerationExposureEligibilityV1Schema,
-  cardGenerationJobAcceptedV1Schema,
-  cardGenerationRetryResultV1Schema,
-  cardGenerationReviewResultV1Schema,
-  cardGenerationRunServerViewV2Schema,
-  cardGenerationRunSnapshotV1Schema,
-  projectCardActivationReceiptV1,
-  projectCardGenerationRunSnapshotV1,
-} from "@astella/shared/card-generation-desktop-contracts";
-import {
-  activateCardCandidatesRequestV2Schema,
-  candidateActionCommandV2Schema,
-  candidateRevealV2Schema,
-  cardActivationReceiptV2Schema,
-  cardPlanV2Schema,
-} from "@astella/shared/card-generation-v2-contracts";
-import {
-  computeClientReviewHashV2,
-} from "@astella/shared/card-generation-v2-hashing";
-import {
-  DesktopCandidateReviewRequestV2,
-  DesktopCardGenerationActivationSelectionV1,
-  DesktopCreateCardGenerationRunRequestV2,
-  DesktopNoteSaveRequestV1,
-  DesktopRevealCandidateRequestV2,
-  NoteDocStateResultV1,
-  NoteDocUploadResultV1,
-  noteDocServerStateV1Schema,
-  noteDocUploadResultV1Schema,
-} from "@astella/shared/desktop-ipc-contracts";
+import { NOTE_DOC_PENDING_LIMIT } from "../note-doc/note-doc-cache-store.ts";import { DesktopNoteSaveRequestV1, NoteDocStateResultV1, NoteDocUploadResultV1, noteDocServerStateV1Schema, noteDocUploadResultV1Schema } from "@astella/shared/desktop-ipc-contracts";
 import {
   DesktopNoteCreateRequest,
   DesktopNoteListItem,
@@ -179,18 +134,6 @@ import {
   noteReflectionWriteResultV1Schema,
 } from "@astella/shared/note-learning-reflection-contracts";
 import {
-  NoteLearningRoundHistoryV1,
-  NoteLearningRoundPersonalHistoryV1,
-  NoteLearningRoundV1Wire,
-  NoteLearningRoundViewV1,
-  ROUND_HISTORY_DEFAULT_LIMIT_V1,
-  RoundTeachingViewV1,
-  noteLearningRoundHistoryPageV1Schema,
-  noteLearningRoundPersonalHistoryPageV1Schema,
-  noteLearningRoundViewV1Schema,
-  roundTeachingViewV1Schema,
-} from "@astella/shared/note-learning-round-contracts";
-import {
   createNoteOverviewTaskV1Schema,
   noteOverviewLatestTaskQueryV1Schema,
   noteOverviewLatestTaskV1Schema,
@@ -208,10 +151,6 @@ import {
   noteRecallStartInputV1Schema,
   noteRecallStartResultV1Schema,
 } from "@astella/shared/note-recall-contracts";
-import {
-  NoteRouteCoverageV1,
-  noteRouteCoverageV1Schema,
-} from "@astella/shared/note-route-coverage-v2";
 import {
   NoteSaveReceiptV1,
   noteSaveReceiptV1Schema,
@@ -249,48 +188,6 @@ export async function ensureNoteDocSeeded(t: GatewayTransport, safeNoteId: strin
     // 归属也一并留下：这条路上没走过 `getNoteDocState`，不落这一位的话，
     // 本机那份永远"不可持久化"，离线队列又只能在内存里活一次。
     session.shareScope = parsed.data.shareScope;
-  }
-
-export async function getCardGenerationExposureEligibility(t: GatewayTransport, 
-    runId: string,
-    candidateId: string,
-    revision: number,
-    requestId?: string,
-  ): Promise<CardGenerationExposureEligibilityV1> {
-    await t.ensureConnected(requestId);
-    const query = new URLSearchParams({ revision: String(revision) });
-    const result = await t.request(
-      `/v2/card-generation-runs/${safeUuid(runId)}/candidates/${safeUuid(candidateId)}/exposure?${query.toString()}`,
-      { method: "GET" },
-      true,
-      true,
-      requestId,
-    );
-    return cardGenerationExposureEligibilityV1Schema.parse(result.body);
-  }
-
-export async function getCardGenerationPlan(t: GatewayTransport, runId: string, requestId?: string) {
-    await t.ensureConnected(requestId);
-    const result = await t.request(
-      `/v2/card-generation-runs/${safeUuid(runId)}/plan`,
-      { method: "GET" },
-      true,
-      true,
-      requestId,
-    );
-    return cardPlanV2Schema.parse(result.body);
-  }
-
-export async function getCardGenerationRunServerView(t: GatewayTransport, runId: string, requestId?: string): Promise<CardGenerationRunServerViewV2> {
-    await t.ensureConnected(requestId);
-    const result = await t.request(
-      `/v2/card-generation-runs/${safeUuid(runId)}`,
-      { method: "GET" },
-      true,
-      true,
-      requestId,
-    );
-    return cardGenerationRunServerViewV2Schema.parse(result.body);
   }
 
 export function noteDocLocalSession(t: GatewayTransport, noteId: string): NoteDocLocalSession {
@@ -361,137 +258,6 @@ export async function actOnNoteRecall(t: GatewayTransport, noteId: string, recal
     return parsed.data;
   }
 
-export async function activateCardGeneration(t: GatewayTransport, 
-    runId: string,
-    request: DesktopCardGenerationActivationSelectionV1,
-    commandId: string,
-    requestId?: string,
-  ): Promise<CardActivationReceiptDesktopV1> {
-    await t.ensureConnected(requestId);
-    if (request.runId !== runId) throw new DesktopGatewayFailure("invalid_request", "user_action");
-    try {
-      const server = await getCardGenerationRunServerView(t, runId, requestId);
-      const plan = await getCardGenerationPlan(t, runId, requestId);
-      // Activation confirmation must be based on current-user, exact-revision
-      // server state—not renderer/session memory. Any unavailable/invalid
-      // preflight fails closed before the activation POST is attempted.
-      for (const selected of request.selectedCandidates) {
-        const exposure = await getCardGenerationExposureEligibility(t, 
-          runId,
-          selected.candidateId,
-          selected.revision,
-          requestId,
-        );
-        if (exposure.exposureStatus === "unknown" || exposure.initialValidationPolicyEffect === "unknown") {
-          throw new DesktopGatewayFailure("result_unknown", "resync_first");
-        }
-      }
-      const clientReviewHash = computeClientReviewHashV2({
-        runId,
-        expectedReviewDraftRevision: request.expectedReviewDraftRevision,
-        selected: request.selectedCandidates.map((selected) => ({
-          candidateId: selected.candidateId,
-          revision: selected.revision,
-          revisionHash: selected.revisionHash,
-        })),
-        reviewUiContractVersion: "review-ui-v1",
-      });
-      const body = activateCardCandidatesRequestV2Schema.parse({
-        version: 2,
-        runId,
-        sourceSnapshotHash: server.sourceSnapshotHash,
-        semanticSpecHash: server.semanticSpecHash,
-        inputSnapshotHash: server.inputSnapshotHash,
-        expectedCardContentEpoch: server.cardContentEpoch,
-        planRevisionId: plan.planRevisionId,
-        expectedPlanVersion: plan.planVersion,
-        planHash: plan.planHash,
-        selectedCandidates: request.selectedCandidates.map((selected) => ({
-          ...selected,
-          qualityReportHashes: [],
-        })),
-        existingLifecycleActions: request.existingLifecycleActions,
-        expectedReviewDraftRevision: request.expectedReviewDraftRevision,
-        clientReviewHash,
-        // 那一档原样带过去，不在这里替用户决定。**不写成 `=== true ? {…} : {}`**：
-        // 服务端把这一格算进请求哈希（缺省与 false 折成同一档），所以这一发到底要不要
-        // 排期必须跟着**这一次命令**走，不能由传输层补一个默认值。
-        startReviewScheduling: request.startReviewScheduling,
-      });
-      const result = await t.request(
-        `/v2/card-generation-runs/${safeUuid(runId)}/activate`,
-        {
-          method: "POST",
-          body: JSON.stringify(body),
-          headers: { "X-Idempotency-Key": t.idempotencyKey("cardGeneration-activate", commandId) },
-        },
-        true,
-        true,
-        requestId,
-      );
-      const receipt = cardActivationReceiptV2Schema.parse(result.body);
-      return cardActivationReceiptDesktopV1Schema.parse(projectCardActivationReceiptV1(receipt));
-    } catch (error) {
-      if (error instanceof DesktopGatewayFailure && error.code === "api_unavailable") {
-        throw new DesktopGatewayFailure("result_unknown", "resync_first");
-      }
-      throw error;
-    }
-  }
-
-export async function cancelCardGeneration(t: GatewayTransport, runId: string, _commandId: string, requestId?: string): Promise<CardGenerationCancelResultV1> {
-    await t.ensureConnected(requestId);
-    try {
-      const result = await t.request(
-        `/v2/card-generation-runs/${safeUuid(runId)}/cancel`,
-        { method: "POST" },
-        true,
-        true,
-        requestId,
-      );
-      return cardGenerationCancelResultV1Schema.parse(result.body);
-    } catch (error) {
-      if (error instanceof DesktopGatewayFailure && error.code === "api_unavailable") {
-        throw new DesktopGatewayFailure("result_unknown", "resync_first");
-      }
-      throw error;
-    }
-  }
-
-export async function closeCardGeneration(t: GatewayTransport, runId: string, expectedReviewDraftRevision: number, _commandId: string, requestId?: string): Promise<CardGenerationCloseResultV1> {
-    await t.ensureConnected(requestId);
-    try {
-      const result = await t.request(
-        `/v2/card-generation-runs/${safeUuid(runId)}/close`,
-        {
-          method: "POST",
-          body: JSON.stringify({ expectedReviewDraftRevision }),
-        },
-        true,
-        true,
-        requestId,
-      );
-      return cardGenerationCloseResultV1Schema.parse(result.body);
-    } catch (error) {
-      if (error instanceof DesktopGatewayFailure && error.code === "api_unavailable") {
-        throw new DesktopGatewayFailure("result_unknown", "resync_first");
-      }
-      throw error;
-    }
-  }
-
-export async function closeNoteLearningRound(t: GatewayTransport, 
-    input: { roundId: string; expectedRevision: number; outcome: "completed" | "partial" },
-    requestId?: string,
-  ): Promise<NoteLearningRoundV1Wire> {
-    return postNoteLearningRoundAction(t, 
-      `/v2/note-learning-rounds/${safeUuid(input.roundId)}`,
-      { expectedRevision: input.expectedRevision, action: { kind: "close", outcome: input.outcome } },
-      requestId,
-      "PATCH",
-    );
-  }
-
 export async function confirmNoteExpansionTask(t: GatewayTransport, noteId: string, taskId: string, request: unknown, requestId?: string) {
     await t.ensureConnected(requestId);
     const input = confirmNoteExpansionTaskV1Schema.parse(request);
@@ -524,110 +290,10 @@ export async function createNote(t: GatewayTransport, request: DesktopNoteCreate
     }
   }
 
-export async function createNoteLearningRound(t: GatewayTransport, 
-    input: {
-      noteId: string;
-      drivingQuestion?: string;
-      drivingQuestionSource: "suggested" | "user_rewritten" | "user_authored";
-    },
-    requestId?: string,
-  ): Promise<NoteLearningRoundV1Wire> {
-    await t.ensureConnected(requestId);
-    const result = await t.request(
-      "/v2/note-learning-rounds",
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          noteId: input.noteId,
-          drivingQuestion: input.drivingQuestion,
-          drivingQuestionSource: input.drivingQuestionSource,
-        }),
-      },
-      true,
-      true,
-      requestId,
-    );
-    const parsed = noteLearningRoundViewV1Schema.safeParse(result.body);
-    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
-    return parsed.data.round;
-  }
-
 export async function deleteNote(t: GatewayTransport, noteId: string, requestId?: string): Promise<DesktopNoteMutationResult> {
     await t.ensureConnected(requestId);
     await t.request(`/notes/${safeUuid(noteId)}`, { method: "DELETE" }, true, true, requestId);
     return { noteId, status: "deleted" };
-  }
-
-export async function explainNoteLearningRoundTeaching(t: GatewayTransport, 
-    input: { roundId: string; expectedRevision: number; regenerate?: boolean; personalReflectionIds?: string[] },
-    requestId?: string,
-  ): Promise<RoundTeachingViewV1> {
-    await t.ensureConnected(requestId);
-    const result = await t.request(
-      `/v2/note-learning-rounds/${safeUuid(input.roundId)}/teaching`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        // `regenerate` 缺省不带（服务端默认 false = 同快照同问题复用既有那条）。
-        body: JSON.stringify({
-          expectedRevision: input.expectedRevision,
-          ...(input.regenerate ? { regenerate: true } : {}),
-          ...(input.personalReflectionIds?.length ? { personalReflectionIds: input.personalReflectionIds.map((id) => safeUuid(id)) } : {}),
-        }),
-      },
-      true,
-      true,
-      requestId,
-    );
-    if (result.status >= 300) throw t.mapResponseError(result.status, result.headers);
-    const parsed = roundTeachingViewV1Schema.safeParse(result.body);
-    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
-    return parsed.data;
-  }
-
-export async function getCardGenerationCandidates(t: GatewayTransport, runId: string, requestId?: string): Promise<CardGenerationCandidateListV1> {
-    await t.ensureConnected(requestId);
-    const result = await t.request(
-      `/v2/card-generation-runs/${safeUuid(runId)}/candidates`,
-      { method: "GET" },
-      true,
-      true,
-      requestId,
-    );
-    return cardGenerationCandidateListV1Schema.parse(result.body);
-  }
-
-export async function getCardGenerationExposure(t: GatewayTransport, 
-    runId: string,
-    candidateId: string,
-    revision: number,
-    requestId?: string,
-  ): Promise<CardGenerationExposureEligibilityV1> {
-    return getCardGenerationExposureEligibility(t, runId, candidateId, revision, requestId);
-  }
-
-export async function getCardGenerationRun(t: GatewayTransport, runId: string, requestId?: string): Promise<CardGenerationRunSnapshotV1> {
-    const server = await getCardGenerationRunServerView(t, runId, requestId);
-    return cardGenerationRunSnapshotV1Schema.parse(projectCardGenerationRunSnapshotV1(server));
-  }
-
-export async function getLatestCardGenerationRun(t: GatewayTransport, noteId: string, requestId?: string): Promise<CardGenerationRunSnapshotV1 | null> {
-    await t.ensureConnected(requestId);
-    try {
-      const result = await t.request(
-        `/v2/notes/${safeUuid(noteId)}/card-generation-runs/latest`,
-        { method: "GET" },
-        true,
-        true,
-        requestId,
-      );
-      const server = cardGenerationRunServerViewV2Schema.parse(result.body);
-      return cardGenerationRunSnapshotV1Schema.parse(projectCardGenerationRunSnapshotV1(server));
-    } catch (error) {
-      if (error instanceof DesktopGatewayFailure && error.code === "not_found") return null;
-      throw error;
-    }
   }
 
 export async function getLatestNoteAnnotationTask(t: GatewayTransport, noteId: string, query: unknown, requestId?: string) {
@@ -652,29 +318,11 @@ export async function getLatestNoteOverviewTask(t: GatewayTransport, noteId: str
     return parsed.data;
   }
 
-export async function getMyLearningRoundHistory(t: GatewayTransport, 
-    input: { limit?: number; before?: string },
-    requestId?: string,
-  ): Promise<NoteLearningRoundPersonalHistoryV1> {
+export async function getNote(t: GatewayTransport, noteId: string, requestId?: string, noteVersionId?: string): Promise<NoteDetailV1> {
     await t.ensureConnected(requestId);
-    const params = new URLSearchParams({ limit: String(input.limit ?? ROUND_HISTORY_DEFAULT_LIMIT_V1) });
-    if (input.before) params.set("before", safeUuid(input.before));
-    const result = await t.request(
-      `/v2/note-learning-rounds?${params.toString()}`,
-      { method: "GET" },
-      true,
-      false,
-      requestId,
-    );
+    const query = noteVersionId ? `?noteVersionId=${safeUuid(noteVersionId)}` : "";
+    const result = await t.request(`/v2/notes/${safeUuid(noteId)}${query}`, { method: "GET" }, true, true, requestId);
     if (result.status >= 300) throw t.mapResponseError(result.status, result.headers);
-    const parsed = noteLearningRoundPersonalHistoryPageV1Schema.safeParse(result.body);
-    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
-    return parsed.data;
-  }
-
-export async function getNote(t: GatewayTransport, noteId: string, requestId?: string): Promise<NoteDetailV1> {
-    await t.ensureConnected(requestId);
-    const result = await t.request(`/v2/notes/${safeUuid(noteId)}`, { method: "GET" }, true, true, requestId);
     const parsed = noteDetailV1Schema.safeParse(result.body);
     if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
     return parsed.data;
@@ -747,87 +395,11 @@ export async function getNoteLearningArtifactTask(t: GatewayTransport, noteId: s
     return parsed.data;
   }
 
-export async function getNoteLearningRoundHistory(t: GatewayTransport, 
-    input: { noteId: string; limit?: number; before?: string },
-    requestId?: string,
-  ): Promise<NoteLearningRoundHistoryV1> {
-    await t.ensureConnected(requestId);
-    const params = new URLSearchParams({ limit: String(input.limit ?? ROUND_HISTORY_DEFAULT_LIMIT_V1) });
-    if (input.before) params.set("before", safeUuid(input.before));
-    const result = await t.request(
-      `/v2/notes/${safeUuid(input.noteId)}/learning-rounds?${params.toString()}`,
-      { method: "GET" },
-      true,
-      false,
-      requestId,
-    );
-    if (result.status >= 300) throw t.mapResponseError(result.status, result.headers);
-    // 整份过合同（含 `hasMore` ⇒ `nextCursor` 那条 refine）：形状不对就报合同不受支持，
-    // 不在这里替服务端补一个游标。
-    const parsed = noteLearningRoundHistoryPageV1Schema.safeParse(result.body);
-    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
-    return parsed.data;
-  }
-
-export async function getNoteLearningRoundTeaching(t: GatewayTransport, roundId: string, requestId?: string): Promise<RoundTeachingViewV1> {
-    await t.ensureConnected(requestId);
-    const result = await t.request(
-      `/v2/note-learning-rounds/${safeUuid(roundId)}/teaching`,
-      { method: "GET" },
-      true,
-      false,
-      requestId,
-    );
-    if (result.status >= 300) throw t.mapResponseError(result.status, result.headers);
-    const parsed = roundTeachingViewV1Schema.safeParse(result.body);
-    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
-    return parsed.data;
-  }
-
 export async function getNoteOverviewTask(t: GatewayTransport, noteId: string, taskId: string, requestId?: string) {
     await t.ensureConnected(requestId);
     const result = await t.request(`/v2/notes/${safeUuid(noteId)}/overview-tasks/${safeUuid(taskId)}`, { method: "GET" }, true, true, requestId);
     if (result.status >= 300) throw t.mapResponseError(result.status, result.headers);
     const parsed = noteOverviewTaskV1Schema.safeParse(result.body);
-    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
-    return parsed.data;
-  }
-
-export async function getNoteRouteCoverage(t: GatewayTransport, 
-    input: { noteId: string },
-    requestId?: string,
-  ): Promise<NoteRouteCoverageV1> {
-    await t.ensureConnected(requestId);
-    const result = await t.request(
-      `/v2/notes/${safeUuid(input.noteId)}/learning-route`,
-      { method: "GET" },
-      true,
-      false,
-      requestId,
-    );
-    if (result.status >= 300) throw t.mapResponseError(result.status, result.headers);
-    const parsed = noteRouteCoverageV1Schema.safeParse(result.body);
-    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
-    return parsed.data;
-  }
-
-export async function getOpenNoteLearningRound(t: GatewayTransport, noteId: string, requestId?: string): Promise<NoteLearningRoundViewV1 | null> {
-    await t.ensureConnected(requestId);
-    const result = await t.request(
-      `/v2/notes/${safeUuid(noteId)}/learning-round`,
-      { method: "GET" },
-      true,
-      false,
-      requestId,
-      undefined,
-      true,
-    );
-    if (result.status >= 300) {
-      const roundNotFound = z.object({ error: z.literal("round_not_found") }).safeParse(result.body);
-      if (result.status === 404 && roundNotFound.success) return null;
-      throw t.mapResponseError(result.status, result.headers);
-    }
-    const parsed = noteLearningRoundViewV1Schema.safeParse(result.body);
     if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
     return parsed.data;
   }
@@ -1065,33 +637,6 @@ export async function fetchNoteMarkdown(
     return result.text;
   }
 
-export async function prepareNoteLearningRoundPractice(t: GatewayTransport, 
-    input: { roundId: string; expectedRevision: number }, requestId?: string,
-  ): Promise<RoundTeachingViewV1> {
-    await t.ensureConnected(requestId);
-    const result = await t.request(
-      `/v2/note-learning-rounds/${safeUuid(input.roundId)}/practice-preparation`,
-      { method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ expectedRevision: input.expectedRevision }) },
-      true, true, requestId,
-    );
-    if (result.status >= 300) throw t.mapResponseError(result.status, result.headers);
-    const parsed = roundTeachingViewV1Schema.safeParse(result.body);
-    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
-    return parsed.data;
-  }
-
-export async function reopenNoteLearningRound(t: GatewayTransport, 
-    input: { roundId: string; expectedRevision: number },
-    requestId?: string,
-  ): Promise<NoteLearningRoundViewV1> {
-    return postNoteLearningRoundView(t, 
-      `/v2/note-learning-rounds/${safeUuid(input.roundId)}/reopen`,
-      { expectedRevision: input.expectedRevision },
-      requestId,
-    );
-  }
-
 export async function restoreNote(t: GatewayTransport, noteId: string, requestId?: string): Promise<DesktopNoteMutationResult> {
     await t.ensureConnected(requestId);
     await t.request(`/notes/${safeUuid(noteId)}/restore`, { method: "POST" }, true, true, requestId);
@@ -1135,113 +680,6 @@ export async function restoreNoteVersion(t: GatewayTransport,
     return { noteId, status: "restored" };
   }
 
-export async function resumeNoteLearningRound(t: GatewayTransport, 
-    input: { roundId: string; expectedRevision: number },
-    requestId?: string,
-  ): Promise<RoundTeachingViewV1> {
-    await postNoteLearningRoundAction(t, 
-      `/v2/note-learning-rounds/${safeUuid(input.roundId)}`,
-      { expectedRevision: input.expectedRevision, action: { kind: "resume" } },
-      requestId,
-      "PATCH",
-    );
-    return getNoteLearningRoundTeaching(t, input.roundId, requestId);
-  }
-
-export async function retryCardGeneration(t: GatewayTransport, runId: string, _commandId: string, requestId?: string): Promise<CardGenerationRetryResultV1> {
-    await t.ensureConnected(requestId);
-    try {
-      const result = await t.request(
-        `/v2/card-generation-runs/${safeUuid(runId)}/retry`,
-        { method: "POST" },
-        true,
-        true,
-        requestId,
-      );
-      return cardGenerationRetryResultV1Schema.parse(result.body);
-    } catch (error) {
-      if (error instanceof DesktopGatewayFailure && error.code === "api_unavailable") {
-        // 与 cancel 同一纪律：网络断了不等于操作没生效，让用户先重新同步再决定。
-        throw new DesktopGatewayFailure("result_unknown", "resync_first");
-      }
-      throw error;
-    }
-  }
-
-export async function revealCardGenerationCandidate(t: GatewayTransport, 
-    runId: string,
-    candidateId: string,
-    request: DesktopRevealCandidateRequestV2,
-    commandId: string,
-    requestId?: string,
-  ): Promise<z.infer<typeof candidateRevealV2Schema>> {
-    await t.ensureConnected(requestId);
-    if (request.candidateId !== candidateId) throw new DesktopGatewayFailure("invalid_request", "user_action");
-    try {
-      const result = await t.request(
-        `/v2/card-generation-runs/${safeUuid(runId)}/candidates/${safeUuid(candidateId)}/reveal`,
-        {
-          method: "POST",
-          body: JSON.stringify(request),
-          headers: { "X-Idempotency-Key": t.idempotencyKey("cardGeneration-reveal", commandId) },
-        },
-        true,
-        true,
-        requestId,
-      );
-      return candidateRevealV2Schema.parse(result.body);
-    } catch (error) {
-      if (error instanceof DesktopGatewayFailure && error.code === "api_unavailable") {
-        throw new DesktopGatewayFailure("result_unknown", "resync_first");
-      }
-      throw error;
-    }
-  }
-
-export async function reviewCardGeneration(t: GatewayTransport, 
-    runId: string,
-    request: DesktopCandidateReviewRequestV2,
-    commandId: string,
-    requestId?: string,
-  ): Promise<CardGenerationReviewResultV1> {
-    await t.ensureConnected(requestId);
-    try {
-      const server = await getCardGenerationRunServerView(t, runId, requestId);
-      const plan = await getCardGenerationPlan(t, runId, requestId);
-      const body = candidateActionCommandV2Schema.parse({
-        version: 2,
-        runId,
-        expectedCardContentEpoch: server.cardContentEpoch,
-        expectedPlanVersion: plan.planVersion,
-        expectedPlanHash: plan.planHash,
-        expectedReviewDraftRevision: request.expectedReviewDraftRevision,
-        action: request.action,
-      });
-      const result = await t.request(
-        `/v2/card-generation-runs/${safeUuid(runId)}/candidate-actions`,
-        {
-          method: "POST",
-          body: JSON.stringify(body),
-          headers: { "X-Idempotency-Key": t.idempotencyKey("cardGeneration-review", commandId) },
-        },
-        true,
-        true,
-        requestId,
-      );
-      const response = cardGenerationReviewResultV1Schema.parse(result.body);
-      const refreshed = await getCardGenerationRunServerView(t, runId, requestId);
-      if (refreshed.reviewDraftRevision !== response.reviewDraftRevision) {
-        throw new DesktopGatewayFailure("unsupported_contract", "user_action");
-      }
-      return response;
-    } catch (error) {
-      if (error instanceof DesktopGatewayFailure && error.code === "api_unavailable") {
-        throw new DesktopGatewayFailure("result_unknown", "resync_first");
-      }
-      throw error;
-    }
-  }
-
 export async function reviewNoteExpansionTask(t: GatewayTransport, noteId: string, taskId: string, review: unknown, requestId?: string) {
     await t.ensureConnected(requestId);
     const input = noteExpansionReviewV1Schema.parse(review);
@@ -1254,21 +692,6 @@ export async function reviewNoteExpansionTask(t: GatewayTransport, noteId: strin
     const parsed = noteExpansionTaskV1Schema.safeParse(result.body);
     if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
     return parsed.data;
-  }
-
-export async function reviseNoteLearningRound(t: GatewayTransport, 
-    input: { roundId: string; expectedRevision: number; drivingQuestion: string; drivingQuestionSource: "suggested" | "user_rewritten" | "user_authored" },
-    requestId?: string,
-  ): Promise<NoteLearningRoundV1Wire> {
-    return postNoteLearningRoundAction(t, 
-      `/v2/note-learning-rounds/${safeUuid(input.roundId)}/driving-question`,
-      {
-        expectedRevision: input.expectedRevision,
-        drivingQuestion: input.drivingQuestion,
-        drivingQuestionSource: input.drivingQuestionSource,
-      },
-      requestId,
-    );
   }
 
 export async function saveNote(t: GatewayTransport, 
@@ -1316,33 +739,6 @@ export async function setNoteShareScope(t: GatewayTransport,
     const parsed = noteShareScopeReceiptV1Schema.safeParse(result.body);
     if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
     return parsed.data;
-  }
-
-export async function startCardGenerationRun(t: GatewayTransport, 
-    request: DesktopCreateCardGenerationRunRequestV2,
-    commandId: string,
-    requestId?: string,
-  ): Promise<CardGenerationJobAcceptedV1> {
-    await t.ensureConnected(requestId);
-    try {
-      const result = await t.request(
-        "/v2/card-generation-runs",
-        {
-          method: "POST",
-          body: JSON.stringify(request),
-          headers: { "X-Idempotency-Key": t.idempotencyKey("cardGeneration-start", commandId) },
-        },
-        true,
-        true,
-        requestId,
-      );
-      return cardGenerationJobAcceptedV1Schema.parse(result.body);
-    } catch (error) {
-      if (error instanceof DesktopGatewayFailure && error.code === "api_unavailable") {
-        throw new DesktopGatewayFailure("result_unknown", "resync_first");
-      }
-      throw error;
-    }
   }
 
 export async function startNoteAnnotationTask(t: GatewayTransport, noteId: string, request: unknown, requestId?: string) {
@@ -1604,38 +1000,6 @@ export async function flushNoteDocPending(t: GatewayTransport, noteId: string, r
     }
   }
 
-export async function postNoteLearningRoundAction(t: GatewayTransport, 
-    path: string,
-    payload: Record<string, unknown>,
-    requestId?: string,
-    method: "POST" | "PATCH" = "POST",
-  ): Promise<NoteLearningRoundV1Wire> {
-    return (await postNoteLearningRoundView(t, path, payload, requestId, method)).round;
-  }
-
-export async function postNoteLearningRoundView(t: GatewayTransport, 
-    path: string,
-    payload: Record<string, unknown>,
-    requestId?: string,
-    method: "POST" | "PATCH" = "POST",
-  ): Promise<NoteLearningRoundViewV1> {
-    await t.ensureConnected(requestId);
-    const result = await t.request(
-      path,
-      {
-        method,
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload),
-      },
-      true,
-      true,
-      requestId,
-    );
-    const parsed = noteLearningRoundViewV1Schema.safeParse(result.body);
-    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
-    return parsed.data;
-  }
-
 export async function watchNoteDocument(t: GatewayTransport, ndt: NoteDocTransport, 
     noteId: string,
     onEvent: (event: { noteId: string } & NoteDocStreamEventV1) => void | Promise<void>,
@@ -1809,4 +1173,58 @@ export async function getNoteMindMapSource(t: GatewayTransport, noteId: string, 
   const result = await t.request(`/v2/notes/${safeUuid(noteId)}/mind-maps/${safeUuid(mindMapId)}/source`, { method: "GET" }, true, true, requestId);
   if (result.status >= 300) throw t.mapResponseError(result.status, result.headers);
   return noteMindMapSourceV1Schema.parse(result.body);
+}
+// ── Plan 57: note-scoped learning card ─────────────────────────────────────
+
+export async function getNoteLearningCard(t: GatewayTransport, noteId: string, requestId?: string, cardId?: string) {
+  await t.ensureConnected(requestId);
+  const result = await t.request(`/v2/notes/${safeUuid(noteId)}/learning-card${cardId ? `?cardId=${safeUuid(cardId)}` : ""}`, { method: "GET" }, true, true, requestId);
+  if (result.status >= 300) throw t.mapResponseError(result.status, result.headers);
+  return result.body as { card: import("@astella/shared/note-learning-card-contracts").NoteLearningCardV1 | null; generating: boolean; generationFailure?: string; versions?: import("@astella/shared/note-learning-card-contracts").NoteLearningCardVersionV1[] };
+}
+
+export async function generateNoteLearningCard(t: GatewayTransport, noteId: string, noteVersionId: string, requestId?: string, options?: import("@astella/shared/note-learning-card-contracts").NoteLearningCardGenerationOptionsV1) {
+  await t.ensureConnected(requestId);
+  const result = await t.request(`/v2/notes/${safeUuid(noteId)}/learning-card/generate`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ noteVersionId: safeUuid(noteVersionId), ...(options ? { options } : {}) }),
+  }, true, true, requestId);
+  if (result.status >= 300) throw t.mapResponseError(result.status, result.headers);
+  return result.body as { cardId: string; jobId?: string; queued: boolean; reason?: string };
+}
+
+export async function startNoteLearningCardAttempt(t: GatewayTransport, cardId: string, requestId?: string) {
+  await t.ensureConnected(requestId);
+  const result = await t.request(`/v2/learning-cards/${safeUuid(cardId)}/attempts`, { method: "POST" }, true, true, requestId);
+  if (result.status >= 300) throw t.mapResponseError(result.status, result.headers);
+  return result.body as { attemptId: string; cardId: string };
+}
+
+export async function answerNoteLearningCard(t: GatewayTransport, input: { cardId: string; attemptId: string; questionId: string; answer: unknown; usedHint?: boolean }, requestId?: string) {
+  await t.ensureConnected(requestId);
+  const result = await t.request(`/v2/learning-cards/${safeUuid(input.cardId)}/attempts/${safeUuid(input.attemptId)}/answers`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ questionId: safeUuid(input.questionId), answer: input.answer, ...(input.usedHint ? { usedHint: true } : {}) }),
+  }, true, true, requestId);
+  if (result.status >= 300) throw t.mapResponseError(result.status, result.headers);
+  return result.body as { answerId: string };
+}
+
+export async function completeNoteLearningCard(t: GatewayTransport, cardId: string, attemptId: string, requestId?: string, summaryOnly?: boolean) {
+  await t.ensureConnected(requestId);
+  const result = await t.request(`/v2/learning-cards/${safeUuid(cardId)}/attempts/${safeUuid(attemptId)}/complete`, { method: "POST", ...(summaryOnly ? {
+    headers: { "content-type": "application/json", ...(requestId ? { "Idempotency-Key": t.idempotencyKey("note-card-summary", requestId) } : {}) },
+    body: JSON.stringify({ summaryOnly: true }),
+  } : {}) }, true, true, requestId);
+  if (result.status >= 300) throw t.mapResponseError(result.status, result.headers);
+  return result.body as { attemptId: string; grading: boolean; jobId?: string };
+}
+
+export async function listNoteLearningCardAttempts(t: GatewayTransport, cardId: string, requestId?: string) {
+  await t.ensureConnected(requestId);
+  const result = await t.request(`/v2/learning-cards/${safeUuid(cardId)}/attempts`, { method: "GET" }, true, true, requestId);
+  if (result.status >= 300) throw t.mapResponseError(result.status, result.headers);
+  return result.body as { items: import("@astella/shared/note-learning-card-contracts").NoteLearningCardAttemptV1[] };
 }

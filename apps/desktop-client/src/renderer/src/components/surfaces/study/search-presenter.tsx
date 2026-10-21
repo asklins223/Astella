@@ -1,18 +1,15 @@
 import type { ReactNode } from "react";
 import type { DesktopSearchItem, DesktopSourceDetail } from "@astella/shared/desktop-surface-contracts";
-import type { LearningObjectiveSurfaceV3 } from "@astella/shared/learning-objective-surface-contracts";
 import type { NoteDetailV1, NoteBlockProjectionV1 } from "@astella/shared/note-projection-contracts";
 import type { SearchTypeFilter } from "../../../app/home/room-store";
 import { createRequestMeta, unwrapGatewayResult } from "../../../app/client/desktop-client";
-import { freshnessLabel } from "../run/objective-state-copy";
 
 export const PAGE_SIZE = 24;
-export const TYPE_FILTERS = ["all", "note", "source", "objective"] as const;
+export const TYPE_FILTERS = ["all", "note", "source"] as const;
 export type SearchPreview =
   | { kind: "loading"; key: string }
   | { kind: "note"; key: string; detail: NoteDetailV1 }
   | { kind: "source"; key: string; detail: DesktopSourceDetail }
-  | { kind: "objective"; key: string; detail: LearningObjectiveSurfaceV3 }
   | { kind: "error"; key: string; message: string };
 
 export function objectKey(item: Pick<DesktopSearchItem, "objectType" | "objectId">): string {
@@ -23,7 +20,6 @@ export function typeLabel(objectType: DesktopSearchItem["objectType"]): string {
   switch (objectType) {
     case "note": return "笔记";
     case "source": return "来源";
-    case "objective": return "学习卡";
   }
 }
 
@@ -32,7 +28,6 @@ export function typeFilterLabel(filter: SearchTypeFilter): string {
     case "all": return "全部类型";
     case "note": return "只看笔记";
     case "source": return "只看来源";
-    case "objective": return "只看学习卡";
   }
 }
 
@@ -41,7 +36,6 @@ export function openLabel(objectType: DesktopSearchItem["objectType"]): string {
   switch (objectType) {
     case "note": return "打开完整笔记";
     case "source": return "打开这份来源";
-    case "objective": return "打开学习卡";
   }
 }
 
@@ -55,7 +49,6 @@ export const SEARCH_STATE_LINES = {
   searchingList: "正在搜索",
   sessionUnavailable: "搜索范围暂时不可用",
   listUnavailable: "搜索暂时不可用",
-  cannotCheckStates: "暂时无法核对学习卡状态",
 } as const;
 export const NO_QUERY_EMPTY = {
   message: "输入关键词开始查找",
@@ -66,10 +59,8 @@ export const PREVIEW_EMPTY = {
   detail: "预览会围绕关键词展开，完整内容随时打开。",
 } as const;
 /** 空结果有两条不同的说法（普通关键词没命中 vs 证据不足筛没了），两句都必须在屏上。 */
-export function noResultEmpty(weakOnly: boolean, query: string, hasMore = false): { readonly message: string; readonly detail: string } {
-  return weakOnly
-    ? { message: hasMore ? "这一页没有待巩固的学习卡" : "没有待巩固的学习卡", detail: hasMore ? "可以继续查找后面的结果，或关掉“证据不足”。" : "关掉“证据不足”，就能查看全部命中的学习卡。" }
-    : { message: `没有找到“${query.trim()}”`, detail: "试试更短的关键词，或看看全部类型。" };
+export function noResultEmpty(query: string): { readonly message: string; readonly detail: string } {
+  return { message: `没有找到“${query.trim()}”`, detail: "试试更短的关键词，或看看全部类型。" };
 }
 
 /**
@@ -140,28 +131,11 @@ export function previewParagraphs(preview: SearchPreview, query: string): string
       .filter((text) => text.length > 0);
     return windowAroundMatch(readable, query, 5);
   }
-  if (preview.kind === "objective") return [preview.detail.content.publicSummary];
   return [];
 }
 
 /** The gap note only appears when the server really reports a missing link. */
 export function previewGap(preview: SearchPreview): string | null {
-  if (preview.kind === "objective") {
-    if (preview.detail.sources.missingOrigin) return "这张学习卡还没有出处，结论暂时追不回材料。";
-    /**
-     * 那两格**状态名一律取 `freshnessLabel` 那一份**，后半句才是搜索这一面自己的话。
-     * 同一个服务端值在笔记页说「来源已有更新」、在这里说「来源已经过期」，
-     * 是 `objective-state-copy` 这个模块存在时要拦的那一件事（它的注释写的就是这种形状）。
-     */
-    if (preview.detail.content.freshness === "source_outdated") {
-      return `${freshnessLabel(preview.detail.content.freshness)}——这一条要重新核对。`;
-    }
-    if (preview.detail.content.freshness === "legacy_unreviewed") {
-      return `${freshnessLabel(preview.detail.content.freshness)}——这张学习卡的结论需要重新核对。`;
-    }
-    if (preview.detail.personal.initialValidation?.status === "deferred") return "初次验证被推迟，证据仍待补齐。";
-    return null;
-  }
   if (preview.kind === "note") {
     if (preview.detail.sourceId === null) return "这篇笔记没有关联来源，可以先阅读自己的记录。";
     if (preview.detail.currentVersion.blocks.length === 0) return "这篇笔记当前版本还没有可读内容。";
@@ -177,7 +151,7 @@ export function previewGap(preview: SearchPreview): string | null {
 }
 
 
-export type SearchContent = Extract<SearchPreview, { kind: "note" | "source" | "objective" }>;
+export type SearchContent = Extract<SearchPreview, { kind: "note" | "source" }>;
 export async function readSearchContent(item: DesktopSearchItem, epoch: number | undefined): Promise<SearchContent> {
   const meta = createRequestMeta(epoch);
   const key = objectKey(item);
@@ -189,6 +163,5 @@ export async function readSearchContent(item: DesktopSearchItem, epoch: number |
     const response = await window.astella.source.get({ meta, sourceId: item.objectId });
     return { kind: "source", key, detail: unwrapGatewayResult(response) };
   }
-  const response = await window.astella.objective.get({ meta, objectiveId: item.objectId });
-  return { kind: "objective", key, detail: unwrapGatewayResult(response) };
+  throw new Error("unsupported_search_object_type");
 }

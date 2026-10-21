@@ -22,7 +22,7 @@ function rectOf(element: Element) {
       : element.classList.contains("nav-collapse")
         ? (document.querySelector(".desktop-app")?.classList.contains("nav-collapsed")
           ? { left: 26, top: 745, width: 42, height: 38 } : { left: 34, top: 751, width: 34, height: 26 })
-        : element.classList.contains("content")
+        : element.classList.contains("content") || element.hasAttribute("data-directory-content")
           ? { left: document.querySelector(".nav-collapsed") ? 100 : 130, top: 100, width: 800, height: 600 }
         : element.classList.contains("nav-chip") ? { left: 29.5, top: 95, width: 43, height: 43 }
           : { left: 400, top: 100, width: 800, height: 600 };
@@ -127,6 +127,22 @@ describe("连续、可打断的目录形变", () => {
     content.style.transform = "translateY(5px)";
     flip.animation.onfinish?.(new Event("finish") as AnimationPlaybackEvent);
     expect(content.style.transform).toBe("translateY(5px)");
+  });
+
+  it("独立结算页让当前纸面跟随目录收放，而不是移动隐藏的底层正文", () => {
+    window.localStorage.setItem(DIRECTORY_RAIL_MODE_KEY, "expanded");
+    useRoomStore.setState({ surface: "note-card" });
+    render(<div className="desktop-app hud-surface"><main className="content" style={{ visibility: "hidden" }} /><section data-directory-content aria-label="练习报告" /><DirectoryRail /></div>);
+    fireEvent.click(screen.getByRole("button", { name: "收起目录" }));
+    const paper = screen.getByRole("region", { name: "练习报告" });
+    const first = animated.filter(entry => entry.element === paper);
+    expect(first).toHaveLength(1);
+    expect(first[0].frames[0].transform).toContain("translate3d(30px,");
+    expect(animated.some(entry => entry.element.classList.contains("content"))).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "展开目录" }));
+    const reversed = animated.filter(entry => entry.element === paper);
+    expect(reversed).toHaveLength(2);
+    expect(reversed[1].frames[0].transform).toContain("translate3d(-30px,");
   });
 
   it("冻结列仍在 HUD 作用域内，保持图标居中且首帧不先横移", () => {

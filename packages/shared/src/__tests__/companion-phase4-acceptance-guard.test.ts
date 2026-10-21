@@ -94,12 +94,14 @@ test("A19｜已发布成稿受保护：后台重跑不能替换（§5.5）", () 
 
 // ── A15：正式作答期间，提醒持久、日记安静更新、形象可见 ──────────────────
 
-test("A15｜正式作答期间**不弹**普通招呼（安静规则生效）", () => {
+test("A15｜学习卡专注场景保持安静，服务端勿扰仍保留参与机会", () => {
   const initiative = read("workers", "ai-worker", "src", "handlers", "proactive", "companion-initiative.ts");
-  assert.match(initiative, /findFormalAnswerTarget\(tx, scope\)/,
-    "主动交流准备没有读正式作答状态 —— 作答中途她会插话");
+  assert.match(initiative, /\["dnd", "offline"\]/);
   assert.match(initiative, /deferParticipation\(tx,\s*ctx,\s*60_000\)/,
-    "正式作答期间没有暂停并保留这次机会");
+    "勿扰期间没有暂停并保留这次机会");
+  const page = read("apps", "desktop-client", "src", "renderer", "src", "components", "surfaces", "notebook", "learning", "card", "learning-card-page.tsx");
+  assert.match(page, /setCompanionFocusUntilTaskEnd\(true\); stopCompanionSpeech\(\); stopCompanionNotificationSpeech\(\)/);
+  assert.match(page, /c\.scene === "practice" \|\| c\.scene === "grading"/);
 });
 
 test("A15｜约定提醒**持久**：只被设备不在与过期挡，不被作答/额度挡", () => {

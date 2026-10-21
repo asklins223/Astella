@@ -84,57 +84,10 @@ import {
 
 import { z } from "zod";
 import {
-  setPersonalRelationDecisionV2ResultSchema,
-  setPersonalRelationDecisionV2Schema,
-} from "../../review/personal-relation-decision-rules-v2.ts";
-import {
   CAPABILITY_IDS,
   capabilityIdSchema,
   type CapabilityId,
 } from "../../agent/capability-bundle.ts";
-import {
-} from "../learning/learning-run-contracts.ts";
-import {
-  createLearningRunV2RequestSchema,
-} from "../learning/learning-target-v2-contracts.ts";
-import {
-  learningRunActionRequestV2Schema,
-  learningRunActionResponseV2Schema,
-  learningRunPublicSnapshotV2Schema,
-  learningRunReturnContractV2Schema,
-  getLearningRunResultResponseV2Schema,
-  learningRunTargetRevealV2Schema,
-  learningTaskDraftV2Schema,
-  learningTaskDraftWriteReceiptV2Schema,
-  putLearningTaskDraftRequestV2Schema,
-  submitTaskArtifactReceiptV2Schema,
-  submitTaskArtifactV2Schema,
-  recordLearningRunActivityLeaseRequestV2Schema,
-} from "../learning/learning-run-v2-contracts.ts";
-import { reviewDeferRequestV2Schema, reviewDeferResultV2Schema, reviewQueueV2Schema } from "../learning/review-queue-v2-contracts.ts";
-import type {
-  ObjectiveHoldCommandV2,
-  ObjectiveHoldResultV2,
-  ObjectiveResumeCommandV2,
-  ObjectiveResumeResultV2,
-  ReviewSubscriptionCommandV2Wire,
-  ReviewSubscriptionResultV2Wire,
-  NoteReviewSubscriptionsV2Wire,
-  HomeSuggestionWireV2,
-  HomeSuggestionActionCommandV2,
-  HomeSuggestionActionResultV2,
-  TodayBatchOptionCommandV2,
-  TodayBatchOptionResultV2,
-  TodayBatchWireV2,
-} from "../learning/review-queue-v2-contracts.ts";
-import { assessmentDisputeEnvelopeV2Schema } from "../../review/assessment-dispute-rules-v2.ts";
-import type {
-  CloseAssessmentDisputeCommandV2,
-  CloseAssessmentDisputeResultV2,
-  OpenAssessmentDisputeCommandV2,
-  OpenAssessmentDisputeResultV2,
-  SupplementAssessmentDisputeCommandV2,
-} from "../../review/assessment-dispute-rules-v2.ts";
 import { roomProjectionV1Schema } from "./room-projection-contracts.ts";
 import {
   companionHomeProjectionV1Schema,
@@ -157,7 +110,6 @@ import {
   companionChatSendTurnResultV1Schema,
 } from "../companion/companion-chat-desktop-contracts.ts";
 import {
-  companionLearningContextV1Schema,
 } from "../companion/companion-conversation-contracts.ts";
 // 站内图片字节通道：来源解析把网页图片写进对象存储后，正文引用指向
 // `/api/uploads/…`；渲染层够不到 API 源也不持有令牌，由 main 代取。
@@ -242,16 +194,6 @@ import { noteSaveReceiptV1Schema, noteSaveRequestV1Schema } from "../note/note-s
 import { noteShareScopeReceiptV1Schema, type NoteShareScopeV1 } from "../note/note-share-contracts.ts";
 import { notePresenceListV1Schema } from "../note/note-presence-contracts.ts";
 import {
-  cardActivationReceiptDesktopV1Schema,
-  cardGenerationCandidateListV1Schema,
-  cardGenerationCloseResultV1Schema,
-  cardGenerationJobAcceptedV1Schema,
-  cardGenerationReviewResultV1Schema,
-  cardGenerationRetryResultV1Schema,
-  cardGenerationRunSnapshotV1Schema,
-} from "../learning/card-generation-desktop-contracts.ts";
-import { candidateRevealV2Schema } from "../learning/card-generation-v2-contracts.ts";
-import {
   desktopSourceListPageSchema,
   desktopSourceDetailSchema,
   desktopSourceNotesPageSchema,
@@ -269,46 +211,9 @@ import {
   desktopSearchPageSchema,
   desktopAiAuditPageV1Schema,
 } from "./desktop-surface-contracts.ts";
-import { objectiveListPageV3Schema, learningObjectiveSurfaceV3Schema } from "../learning/learning-objective-surface-contracts.ts";
-import {
-  noteLearningRoundHistoryPageV1Schema,
-  noteLearningRoundPersonalHistoryPageV1Schema,
-  noteLearningRoundV1Schema,
-  noteLearningRoundViewV1Schema,
-  roundDrivingQuestionSourceV1Schema,
-  roundTeachingViewV1Schema,
-} from "../note/note-learning-round-contracts.ts";
-import { noteRouteCoverageV1Schema } from "../../note/note-route-coverage-v2.ts";
-import {
-  recordRecallSourceRevealRequestV1Schema,
-  recordRecallSourceRevealResultV1Schema,
-} from "../learning/recall-waiting-v2-contracts.ts";
 import { understandingTopologySnapshotV3Schema } from "../note/note-deepening-contracts.ts";
 import { noteDeepeningV3Schema } from "../note/note-deepening-v3-contracts.ts";
-import { todayActivityV1Schema } from "./activity-surface-contracts.ts";
-// 跨空间统计合同（每空间一行 + 合计）：服务端路由、网关、渲染层共用同一份形状。
-import { allWorkspacesStatsOverviewSchema } from "./stats-overview-contracts.ts";
-import type {
-  DesktopCardGenerationActivationSelectionV1,
-  DesktopCandidateReviewRequestV2,
-  DesktopCreateCardGenerationRunRequestV2,
-  DesktopRevealCandidateRequestV2,
-  CardGenerationExposureEligibilityV1,
-  CardGenerationRunSnapshotV1,
-} from "../learning/card-generation-desktop-contracts.ts";
 
-export {
-  desktopCardGenerationActivationSelectionV1Schema,
-  desktopCandidateReviewRequestV2Schema,
-  desktopCreateCardGenerationRunRequestV2Schema,
-  desktopRevealCandidateRequestV2Schema,
-} from "../learning/card-generation-desktop-contracts.ts";
-export type {
-  DesktopCardGenerationActivationSelectionV1,
-  DesktopCandidateReviewRequestV2,
-  DesktopCreateCardGenerationRunRequestV2,
-  DesktopRevealCandidateRequestV2,
-} from "../learning/card-generation-desktop-contracts.ts";
 
 export const DESKTOP_IPC_CONTRACT_VERSION = "desktop-ipc-v1" as const;
 export const DESKTOP_IPC_SCHEMA_REVISION = "desktop-ipc-m2-2026-10-02" as const;
@@ -504,7 +409,6 @@ export const DESKTOP_IPC_CHANNELS = {
   companionHistoryList: "astella.v1.companion.history.list",
   companionHistorySearch: "astella.v1.companion.history.search",
   companionHistoryClear: "astella.v1.companion.history.clear",
-  companionLearningContextGet: "astella.v1.companion.learningContext.get",
   companionJourneyBootstrap: "astella.v1.companion.journey.bootstrap",
   companionJourneyGet: "astella.v1.companion.journey.get",
   companionInvitationAction: "astella.v1.companion.invitation.action",
@@ -549,10 +453,9 @@ export const DESKTOP_IPC_CHANNELS = {
   companionChatRunVoiceSegments: "astella.v1.companion.chat.runVoiceSegments.list",
   // 停止本轮（2026-09-19）：POST /companion/runs/:id/cancel。
   companionChatCancelRun: "astella.v1.companion.chat.cancelRun",
+  companionChatResumeRun: "astella.v1.companion.chat.resumeRun",
   // LearningRun 页面只读上下文 + 一次性 grounded tutor 授权。HTTP 协议不变，
   // 这里只把既有服务端端点收进 Electron 的 typed bridge。
-  companionLearningRunGetContext: "astella.v1.companion.learningRun.getContext",
-  companionLearningRunCreateContextGrant: "astella.v1.companion.learningRun.createContextGrant",
   noteGet: "astella.v1.note.get",
   sourceList: "astella.v1.source.list",
   sourceCreate: "astella.v1.source.create",
@@ -580,8 +483,6 @@ export const DESKTOP_IPC_CHANNELS = {
   // 这条任何成员都能导自己看得见的笔记（服务端 `GET /export/notes/:id` 本来就没有
   // owner 门，可见性由 `visibleNotesCondition(userId)` 判，见 export/routes.ts）。
   notesMarkdownExport: "astella.v1.notes.markdownExport",
-  objectiveList: "astella.v1.objective.list",
-  objectiveGet: "astella.v1.objective.get",
   // 39d W4-3 第三刀：笔记页那张轻量定向表单。四发对应 §16.16 那条判据的四个动作
   // （开、读、换问题、先到这里）。暂停这一版**仍不接**：§5.5 那句"没有其他活跃端
   // 才标可恢复暂停"要先有端的活跃度判据，那是 §16.39 那一刀的活，不先挂空口。
@@ -608,6 +509,12 @@ export const DESKTOP_IPC_CHANNELS = {
   noteRecallList: "astella.v1.noteRecall.list",
   noteRecallStart: "astella.v1.noteRecall.start",
   noteRecallAction: "astella.v1.noteRecall.action",
+  noteLearningCardGet: "astella.v1.noteLearningCard.get",
+  noteLearningCardGenerate: "astella.v1.noteLearningCard.generate",
+  noteLearningCardStartAttempt: "astella.v1.noteLearningCard.startAttempt",
+  noteLearningCardAnswer: "astella.v1.noteLearningCard.answer",
+  noteLearningCardComplete: "astella.v1.noteLearningCard.complete",
+  noteLearningCardHistory: "astella.v1.noteLearningCard.history",
   noteExpansionList: "astella.v1.noteExpansion.list",
   noteExpansionStartTask: "astella.v1.noteExpansion.startTask",
   noteExpansionLatestTask: "astella.v1.noteExpansion.latestTask",
@@ -619,16 +526,9 @@ export const DESKTOP_IPC_CHANNELS = {
   noteLearningArtifactTaskStart: "astella.v1.noteLearningArtifact.taskStart",
   noteLearningArtifactTaskList: "astella.v1.noteLearningArtifact.taskList",
   noteLearningArtifactTaskGet: "astella.v1.noteLearningArtifact.taskGet",
-  noteLearningRoundOpen: "astella.v1.noteLearningRound.open",
-  noteLearningRoundCreate: "astella.v1.noteLearningRound.create",
-  noteLearningRoundRevise: "astella.v1.noteLearningRound.revise",
-  noteLearningRoundReopen: "astella.v1.noteLearningRound.reopen",
-  noteLearningRoundResume: "astella.v1.noteLearningRound.resume",
-  noteLearningRoundClose: "astella.v1.noteLearningRound.close",
   // 这一篇的轮次记录（PRD §10.3 的读侧第一刀）。单开一发而不是塞进 `open`：
   // `open` 回的是"此刻那一轮"（没有就 404→null），而记录是"开过的每一轮"——
   // 收尾之后 `open` 变 null、记录变长，两件事的读数本来就相反。
-  noteLearningRoundHistory: "astella.v1.noteLearningRound.history",
   /**
    * 这一篇的**核心路线**（39d W4-5 ③；PRD §4.4）：跨全部轮次、按核心问题归并。
    *
@@ -637,24 +537,18 @@ export const DESKTOP_IPC_CHANNELS = {
    * 两者在屏上摆的地方不同、口径不同、失败时的退路也不同——合成一发就会出现
    * 「记录读到了但路线读失败」被读成「没有路线」。
    */
-  noteLearningRoundRoute: "astella.v1.noteLearningRound.route",
   // §10.3 第二级（本人、跨笔记）：与上面那一条同一形状，只是不带 noteId（W4-8 刀二）。
-  noteLearningRoundPersonalHistory: "astella.v1.noteLearningRound.personalHistory",
   // 教学产物两发（39d W4-6 刀二）。与记录那一发同一个理由不塞进 `open`：`open` 回的是
   // **轮次行**（有没有这一轮），解释是另一张表上的产物（这一轮讲没讲过）——两件事的
   // 读数本来就不在一处，合成一发会让"没有解释"和"没有轮次"分不开。
-  noteLearningRoundTeaching: "astella.v1.noteLearningRound.teaching",
-  noteLearningRoundPreparePractice: "astella.v1.noteLearningRound.preparePractice",
   // 动态产物的"确保落盘"（39d W4-6 刀五）。**不是**"把 HTML 塞过 IPC"：渲染层只报
   // 一个 id，main 带会话令牌去 API 取整份 HTML、按 D4 的配额检查后写进
   // `<userData>/artifacts/<id>.html`，frame 再按同一 id 从既定协议读它。
   // 这样 HTML 只走一次网络与一次落盘，不额外穿过 IPC 的两层校验。
   artifactEnsure: "astella.v1.artifact.ensure",
-  noteLearningRoundExplain: "astella.v1.noteLearningRound.explain",
   understandingGetTopology: "astella.v1.understanding.getTopology",
   // 39d W8-2：本人对一条建议关系的表态。**与读那条拓扑分开的通道**——
   // 写与读混在一个通道里，界面就会在读回执的同时把整张星图重取一遍。
-  understandingSetRelationDecision: "astella.v1.understanding.setRelationDecision",
   // 39d W8-1：星图三层展开的层二／层三，按**一篇**笔记读。
   // **与读整张拓扑分开的通道**：§11.5「总览只显示当前层，局部按需加载」——
   // 挂在 getTopology 上就等于让每一次读星图都把每一篇笔记的作答与反馈搬一遍，
@@ -686,67 +580,7 @@ export const DESKTOP_IPC_CHANNELS = {
   // 变成界面每次刷新列表都要问一遍的东西。
   notePresenceList: "astella.v1.note.presence.list",
   noteSetShare: "astella.v1.note.set-share",
-  noteCardGenerationStart: "astella.v1.note.cardGeneration.start",
-  noteCardGenerationGetRun: "astella.v1.note.cardGeneration.getRun",
-  noteCardGenerationGetCandidates: "astella.v1.note.cardGeneration.getCandidates",
-  noteCardGenerationReview: "astella.v1.note.cardGeneration.review",
-  noteCardGenerationExposure: "astella.v1.note.cardGeneration.exposure",
-  noteCardGenerationLatestRun: "astella.v1.note.cardGeneration.latestRun",
-  noteCardGenerationReveal: "astella.v1.note.cardGeneration.reveal",
-  noteCardGenerationActivate: "astella.v1.note.cardGeneration.activate",
-  noteCardGenerationCancel: "astella.v1.note.cardGeneration.cancel",
-  noteCardGenerationRetry: "astella.v1.note.cardGeneration.retry",
-  noteCardGenerationClose: "astella.v1.note.cardGeneration.close",
-  reviewGetQueue: "astella.v1.review.getQueue",
-  activityGetToday: "astella.v1.activity.getToday",
-  // 跨空间统计（页 14 的「全部空间」栏）：与 activityGetToday 同在 room.home 面，
   // 但读的是"我"而不是"当前空间"。
-  statsGetOverviewAll: "astella.v1.stats.getOverviewAll",
-  reviewDefer: "astella.v1.review.defer",
-  /**
-   * 「先看笔记」（39d W5-4；PRD §7.1）。挂在 `review` 命名空间下而不是
-   * `learningRun`：**等待态这一段还没有 run**（题目还在生成），而这一发
-   * 必须在那时候就成立——挂到 learningRun 下会让人以为"没有 run 就没法记账"。
-   */
-  reviewRecordRecallSourceReveal: "astella.v1.review.recordRecallSourceReveal",
-  // W7-3 刀三：目标级「暂不安排」与「恢复并开启」（39 §9.1 行 2、行 3）。
-  // 两条**分开的**通道而不是一个 toggle —— §9.1 规则表把"设排除"与
-  // "恢复并开启"列成两件不同的事，合成一颗开关会把中间那半句折叠掉。
-  reviewHoldObjective: "astella.v1.review.holdObjective",
-  reviewResumeObjective: "astella.v1.review.resumeObjective",
-  // W7-3 刀六：订阅来源分别开停。**三条**通道（开／停／读），不是一颗 toggle——
-  // §9.1 明写"两种意图可以分别存在"，合成一颗开关会把"停哪一个"变成系统的默认。
-  reviewSubscriptionActivate: "astella.v1.review.subscription.activate",
-  reviewSubscriptionPause: "astella.v1.review.subscription.pause",
-  reviewSubscriptionListNotes: "astella.v1.review.subscription.listNotes",
-  homeSuggestionRead: "astella.v1.home.suggestion.read",
-  homeSuggestionAct: "astella.v1.home.suggestion.act",
-  todayBatchOption: "astella.v1.home.todayBatch.option",
-  todayBatchRead: "astella.v1.home.todayBatch.read",
-  // 判定的争议（39 §14.2、§16.11、§16.25）。**四条用户能按的通道**，
-  // 刻意少于服务端那六条：`recheck` 与 `correction` 的写入方是系统，不是人
-  // （§14.2「**系统**基于原题、原回答和依据进行一次重新检查」）。
-  // 把它们也挂上 preload，等于把一次复核变成一个能被重复按下的按钮，
-  // 而 §16.22 的验收原话是「争议**不形成死循环**」。
-  //
-  // 另开一个命名空间而不是塞进 `review`：那边是「复习排期」，这边是「一次判定的异议」，
-  // 两者唯一的交集是 `close(holdObjective)` 顺带写的那一条目标级排除（§9.1 行 2），
-  // 合成一个命名空间会让「改期」和「申诉」在界面上长得一样。
-  assessmentDisputeGet: "astella.v1.assessmentDispute.get",
-  assessmentDisputeOpen: "astella.v1.assessmentDispute.open",
-  assessmentDisputeSupplement: "astella.v1.assessmentDispute.supplement",
-  assessmentDisputeClose: "astella.v1.assessmentDispute.close",
-  learningRunGet: "astella.v1.learningRun.get",
-  learningRunStart: "astella.v1.learningRun.start",
-  learningRunGetDraft: "astella.v1.learningRun.getDraft",
-  learningRunSaveDraft: "astella.v1.learningRun.saveDraft",
-  learningRunSubmit: "astella.v1.learningRun.submit",
-  learningRunAction: "astella.v1.learningRun.action",
-  learningRunGetResult: "astella.v1.learningRun.getResult",
-  learningRunRevealTarget: "astella.v1.learningRun.revealTarget",
-  learningRunGetReturnContract: "astella.v1.learningRun.getReturnContract",
-  learningRunRecordActivityLease: "astella.v1.learningRun.recordActivityLease",
-  learningRunAbandon: "astella.v1.learningRun.abandon",
   workspaceAiSettingsGet: "astella.v1.workspace.aiSettings.get",
   workspaceAiConsentUpdate: "astella.v1.workspace.aiConsent.update",
   workspaceAiDataPolicyUpdate: "astella.v1.workspace.aiDataPolicy.update",
@@ -893,9 +727,6 @@ export const desktopNamespaceValues = [
   "room",
   "source",
   "note",
-  "objective",
-  "review",
-  "learningRun",
   "understanding",
   "search",
   "companion",
@@ -922,17 +753,11 @@ export const desktopRouteKindValues = [
   "auth.login",
   "auth.register",
   "room.home",
-  "room.today",
-  "objective.library",
-  "objective.detail",
   "source.library",
   "source.detail",
   "note.library",
   "note.detail",
   "note.artifact",
-  "note.cardGeneration",
-  "review.queue",
-  "learningRun.detail",
   "understanding.graph",
   "search.global",
   "settings.section",
@@ -946,23 +771,17 @@ export const desktopRouteKindM1Values = ["auth.login", "auth.register"] as const
 export const desktopRouteKindM1Schema = z.enum(desktopRouteKindM1Values);
 export type DesktopRouteKindM1 = (typeof desktopRouteKindM1Values)[number];
 
-export const desktopNamespaceM2Values = [...desktopNamespaceM1Values, "room", "source", "note", "objective", "review", "learningRun", "understanding", "search", "companion", "settings"] as const;
+export const desktopNamespaceM2Values = [...desktopNamespaceM1Values, "room", "source", "note", "understanding", "search", "companion", "settings"] as const;
 export const desktopNamespaceM2Schema = z.enum(desktopNamespaceM2Values);
 export type DesktopNamespaceM2 = (typeof desktopNamespaceM2Values)[number];
 export const desktopRouteKindM2Values = [
   ...desktopRouteKindM1Values,
   "room.home",
-  "room.today",
-  "objective.library",
-  "objective.detail",
   "source.library",
   "source.detail",
   "note.library",
   "note.detail",
   "note.artifact",
-  "note.cardGeneration",
-  "review.queue",
-  "learningRun.detail",
   "understanding.graph",
   "search.global",
   "settings.section",
@@ -989,13 +808,10 @@ const gateRouteSchema = z.discriminatedUnion("kind", [
 
 const workspaceRouteSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("room.home") }),
-  z.strictObject({ kind: z.literal("room.today") }),
-  z.strictObject({ kind: z.literal("objective.library") }),
-  z.strictObject({ kind: z.literal("objective.detail"), objectiveId: uuidSchema }),
   z.strictObject({ kind: z.literal("source.library") }),
   z.strictObject({ kind: z.literal("source.detail"), sourceId: uuidSchema }),
   z.strictObject({ kind: z.literal("note.library") }),
-  z.strictObject({ kind: z.literal("note.detail"), noteId: uuidSchema }),
+  z.strictObject({ kind: z.literal("note.detail"), noteId: uuidSchema, noteVersionId: uuidSchema.optional() }),
   // 打开某一篇笔记的**那一份**学习产物（互动演示／思维导图／速看）。
   // 装的是既有的 `agentArtifactRefV1`：那一形状本来就是"按回执精确取回一份成果"，
   // 手记里的成果卡已经在用它跳这一页，不再为聊天入口抄第二份字段清单。
@@ -1003,12 +819,6 @@ const workspaceRouteSchema = z.discriminatedUnion("kind", [
     kind: z.literal("note.artifact"),
     artifact: agentArtifactRefV1Schema,
   }),
-  z.strictObject({
-    kind: z.literal("note.cardGeneration"),
-    cardGenerationRunId: uuidSchema,
-  }),
-  z.strictObject({ kind: z.literal("review.queue") }),
-  z.strictObject({ kind: z.literal("learningRun.detail"), runId: uuidSchema }),
   z.strictObject({ kind: z.literal("understanding.graph") }),
   z.strictObject({ kind: z.literal("search.global") }),
   z.strictObject({ kind: z.literal("settings.section"), section: nonEmptyStringSchema }),
@@ -1033,8 +843,6 @@ export type SafeInviteHintV1 = z.infer<typeof safeInviteHintSchema>;
 export const safeReturnTargetSchema = z.union([
   z.strictObject({ version: z.literal(1), kind: z.literal("room.home"), workspaceId: uuidSchema.optional() }),
   z.strictObject({ version: z.literal(1), kind: z.literal("note.detail"), noteId: uuidSchema, workspaceId: uuidSchema.optional() }),
-  z.strictObject({ version: z.literal(1), kind: z.literal("note.cardGeneration"), cardGenerationRunId: uuidSchema, workspaceId: uuidSchema.optional() }),
-  z.strictObject({ version: z.literal(1), kind: z.literal("learningRun.detail"), runId: uuidSchema, workspaceId: uuidSchema.optional() }),
   z.strictObject({ version: z.literal(1), kind: z.literal("understanding.graph"), workspaceId: uuidSchema.optional() }),
 ]);
 export type SafeReturnTargetV1 = z.infer<typeof safeReturnTargetSchema>;
@@ -1595,16 +1403,14 @@ export const UPDATE_STATE_CHANNEL = "astella.v1.update.state" as const;
 export const actionCapabilityValues = [
   "source.read", "source.create", "source.update", "source.archive", "source.createNote",
   "note.read", "note.create", "note.save", "note.delete", "note.restore", "note.permanentDelete",
-  "objective.read", "review.read", "understanding.read", "search.read",
-  "card_generation.start", "card_generation.review", "card_generation.reveal", "card_generation.activate", "card_generation.cancel", "card_generation.close", "card_generation.retry",
-  "learning_run.read", "learning_run.start", "learning_run.saveDraft", "learning_run.submit", "learning_run.action",
+  "understanding.read", "search.read",
   "companion.read", "companion.sendMessage", "companion.decideProposal", "settings.read", "settings.update",
 ] as const;
 export const actionCapabilitySchema = z.enum(actionCapabilityValues);
 export type ActionCapability = (typeof actionCapabilityValues)[number];
 
 const featureNameExtraValues = [
-  "card_generation_v2", "learning_run_v2", "companion_dialogue_v1",
+  "companion_dialogue_v1",
   "companion_journey_v2", "companion_bridge_v2", "companion_memory_vector_v1",
   "companion_memory_star_map_v1", "companion_summarizer_v1", "companion_daily_summary_v1",
   "companion_proactive_personalized_v1", "companion_pet_v1", "companion_pet_profile_v1",
@@ -2341,8 +2147,6 @@ export type AuthSurfaceManifestResultV1 = z.infer<typeof authSurfaceManifestResu
 
 export const gatewayEventPayloadM2Schema = z.union([
   gatewayEventPayloadM1Schema,
-  z.strictObject({ kind: z.literal("learning_run_changed"), runId: uuidSchema, revision: nonNegativeIntSchema }),
-  z.strictObject({ kind: z.literal("card_generation_changed"), runId: uuidSchema, eventCursor: nonNegativeIntSchema, revision: nonNegativeIntSchema }),
   z.strictObject({ kind: z.literal("companion_activity_changed"), inboxSequence: nonNegativeIntSchema }),
   z.strictObject({
     kind: z.literal("companion_chat_event"),
@@ -2355,8 +2159,6 @@ export type GatewayEventPayloadM2 = z.infer<typeof gatewayEventPayloadM2Schema>;
 
 export const gatewayEventPayloadSchema = z.union([
   gatewayEventPayloadM1Schema,
-  z.strictObject({ kind: z.literal("learning_run_changed"), runId: uuidSchema, revision: nonNegativeIntSchema }),
-  z.strictObject({ kind: z.literal("card_generation_changed"), runId: uuidSchema, eventCursor: nonNegativeIntSchema, revision: nonNegativeIntSchema }),
   z.strictObject({ kind: z.literal("companion_activity_changed"), inboxSequence: nonNegativeIntSchema }),
   z.strictObject({
     kind: z.literal("companion_chat_event"),
@@ -2378,7 +2180,7 @@ export const gatewayEventSchema = z
     workspaceEpoch: nonNegativeIntSchema,
     cursor: cursorSchema,
     eventRevision: nonNegativeIntSchema,
-    kind: z.enum(["connection_changed", "snapshot_invalidated", "learning_run_changed", "card_generation_changed", "companion_chat_event", "companion_activity_changed", "companion_delivery_changed", "domain_job_changed", "note_doc_event"]),
+    kind: z.enum(["connection_changed", "snapshot_invalidated", "companion_chat_event", "companion_activity_changed", "companion_delivery_changed", "domain_job_changed", "note_doc_event"]),
     schemaRevision: nonEmptyStringSchema,
     data: gatewayEventPayloadSchema,
   })
@@ -2398,16 +2200,6 @@ const runtimeSubscriptionTopicSchema = z.strictObject({
 });
 const workspaceSubscriptionTopicSchema = z.strictObject({
   kind: z.literal("workspace"),
-  cursor: cursorSchema.optional(),
-});
-const learningRunSubscriptionTopicSchema = z.strictObject({
-  kind: z.literal("learningRun"),
-  runId: uuidSchema,
-  cursor: cursorSchema.optional(),
-});
-const cardGenerationSubscriptionTopicSchema = z.strictObject({
-  kind: z.literal("cardGeneration"),
-  runId: uuidSchema,
   cursor: cursorSchema.optional(),
 });
 /**
@@ -2442,8 +2234,6 @@ export type SubscriptionTopicM1 = z.infer<typeof subscriptionTopicM1Schema>;
 export const subscriptionTopicSchema = z.discriminatedUnion("kind", [
   runtimeSubscriptionTopicSchema,
   workspaceSubscriptionTopicSchema,
-  learningRunSubscriptionTopicSchema,
-  cardGenerationSubscriptionTopicSchema,
   companionChatSubscriptionTopicSchema,
   z.strictObject({ kind: z.literal("companionDelivery"), cursor: cursorSchema.optional() }),
   z.strictObject({ kind: z.literal("domainJob"), jobId: uuidSchema, cursor: cursorSchema.optional() }),
@@ -2453,35 +2243,10 @@ export type SubscriptionTopicV1 = z.infer<typeof subscriptionTopicSchema>;
 export const subscriptionTopicM2Schema = z.discriminatedUnion("kind", [
   runtimeSubscriptionTopicSchema,
   workspaceSubscriptionTopicSchema,
-  learningRunSubscriptionTopicSchema,
-  cardGenerationSubscriptionTopicSchema,
   companionChatSubscriptionTopicSchema,
   noteDocSubscriptionTopicSchema,
 ]);
 export type SubscriptionTopicM2 = z.infer<typeof subscriptionTopicM2Schema>;
-
-// Renderer input intentionally omits idempotency keys. Main owns key
-// generation so replay identity cannot be forged by a page or deep link.
-export const desktopCreateLearningRunV2RequestSchema = createLearningRunV2RequestSchema.omit({ idempotencyKey: true });
-export type DesktopCreateLearningRunV2Request = z.infer<typeof desktopCreateLearningRunV2RequestSchema>;
-export const desktopPutLearningTaskDraftV2RequestSchema = putLearningTaskDraftRequestV2Schema.omit({ idempotencyKey: true });
-export type DesktopPutLearningTaskDraftV2Request = z.infer<typeof desktopPutLearningTaskDraftV2RequestSchema>;
-export const desktopSubmitTaskArtifactV2Schema = submitTaskArtifactV2Schema.omit({ idempotencyKey: true });
-export type DesktopSubmitTaskArtifactV2 = z.infer<typeof desktopSubmitTaskArtifactV2Schema>;
-export const desktopLearningRunActionRequestV2Schema = learningRunActionRequestV2Schema.omit({ idempotencyKey: true });
-export type DesktopLearningRunActionRequestV2 = z.infer<typeof desktopLearningRunActionRequestV2Schema>;
-export const desktopRecordLearningRunActivityLeaseRequestV2Schema = recordLearningRunActivityLeaseRequestV2Schema.omit({ deviceSessionId: true });
-export type DesktopRecordLearningRunActivityLeaseRequestV2 = z.infer<typeof desktopRecordLearningRunActivityLeaseRequestV2Schema>;
-export const recordLearningRunActivityLeaseOutputV2Schema = z.strictObject({ recorded: z.literal(true) });
-export type RecordLearningRunActivityLeaseOutputV2 = z.infer<typeof recordLearningRunActivityLeaseOutputV2Schema>;
-export const desktopLearningRunAbandonRequestV2Schema = z.strictObject({
-  version: z.literal(2),
-  snapshotId: uuidSchema,
-  runRevision: positiveIntSchema,
-  runtimeEpoch: nonNegativeIntSchema,
-  abandonLockedEvidence: z.boolean(),
-});
-export type DesktopLearningRunAbandonRequestV2 = z.infer<typeof desktopLearningRunAbandonRequestV2Schema>;
 
 // Note save has no renderer-controlled transport/idempotency fields.
 export const desktopNoteSaveRequestV1Schema = noteSaveRequestV1Schema;
@@ -2526,8 +2291,8 @@ export interface AstellaDesktopApiM1 {
     cancel(input: { meta: RequestMetaV1; requestId: string }): Promise<GatewayResultV1<{ cancelled: true }>>;
   };
   readonly navigation: {
-    resolve(input: { meta: RequestMetaV1; route: DesktopRouteV1; learningRunId?: Uuid }): Promise<GatewayResultV1<NavigationSnapshotV1>>;
-    go(input: { meta: RequestMetaV1; route: DesktopRouteV1; entryKind: NavigationReasonV1; learningRunId?: Uuid }): Promise<GatewayResultV1<NavigationSnapshotV1>>;
+    resolve(input: { meta: RequestMetaV1; route: DesktopRouteV1 }): Promise<GatewayResultV1<NavigationSnapshotV1>>;
+    go(input: { meta: RequestMetaV1; route: DesktopRouteV1; entryKind: NavigationReasonV1 }): Promise<GatewayResultV1<NavigationSnapshotV1>>;
     back(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<NavigationSnapshotV1>>;
     restore(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<NavigationSnapshotV1>>;
   };
@@ -2678,28 +2443,6 @@ export interface AstellaDesktopApiM2 extends AstellaDesktopApiM1 {
   };
   readonly room: {
     getProjection(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<z.infer<typeof roomProjectionV1Schema>>>;
-  };
-  /**
-   * 「今日学习」操作日志流：按客户端日历日窗口返回当天真实操作事件与
-   * 状态异常事务。数据全部来自权威表投影，与伴星日记（doc 22）同源。
-   */
-  readonly activity: {
-    getToday(input: {
-      meta: RequestMetaV1;
-      /** 客户端本地日历日窗口（ISO 带时区）。缺省时服务端按自己当天查询。 */
-      from?: string;
-      to?: string;
-    }): Promise<GatewayResultV1<z.infer<typeof todayActivityV1Schema>>>;
-  };
-  /**
-   * 「全部空间」统计：当前账号在每个活跃空间里的同一份数字 + 合计。
-   *
-   * 为什么需要它：`stats.overview`（HTTP `/stats/overview`）只算**当前空间**，
-   * 而界面上那些数字读起来像"我的"——切走一个空间，个人进度就看不见了。
-   * 这条按账号扇出，是唯一一条不随"当前空间"变化的读数。
-   */
-  readonly stats: {
-    getOverviewAll(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<z.infer<typeof allWorkspacesStatsOverviewSchema>>>;
   };
   readonly source: {
     list(input: { meta: RequestMetaV1; cursor?: string; limit?: number; status?: string }): Promise<GatewayResultV1<z.infer<typeof desktopSourceListPageSchema>>>;
@@ -2890,17 +2633,10 @@ export interface AstellaDesktopApiM2 extends AstellaDesktopApiM1 {
         meta: RequestMetaV1;
         request: import("../companion/companion-chat-desktop-contracts.ts").CompanionChatCancelRunRequestV1;
       }): Promise<GatewayResultV1<import("../companion/companion-chat-desktop-contracts.ts").CompanionChatCancelRunResultV1>>;
-    };
-    readonly learningRun: {
-      getContext(input: {
+      resumeRun(input: {
         meta: RequestMetaV1;
-        runId: Uuid;
-      }): Promise<GatewayResultV1<import("../companion/companion-conversation-contracts.ts").CompanionLearningRunContextV1>>;
-      createContextGrant(input: {
-        meta: RequestMetaV1;
-        runId: Uuid;
-        request: import("../companion/companion-conversation-contracts.ts").CreateCompanionLearningRunContextGrantRequestV1;
-      }): Promise<GatewayResultV1<import("../companion/companion-conversation-contracts.ts").CompanionGroundedTutorGrantV1>>;
+        request: import("../companion/companion-chat-desktop-contracts.ts").CompanionChatResumeRunRequestV1;
+      }): Promise<GatewayResultV1<import("../companion/companion-chat-desktop-contracts.ts").CompanionChatResumeRunResultV1>>;
     };
     /**
      * 账号级 presence 设置（GET/PATCH /me/companion）。PATCH 必须携带当前
@@ -3018,10 +2754,6 @@ export interface AstellaDesktopApiM2 extends AstellaDesktopApiM1 {
       search(input: { meta: RequestMetaV1; query: CompanionHistorySearchQueryV1 }): Promise<GatewayResultV1<z.infer<typeof companionHistorySearchV1Schema>>>;
       clear(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<z.infer<typeof companionHistoryClearResultV1Schema>>>;
     };
-    /** 只读学习候选；不会创建 proposal 或启动学习运行。 */
-    readonly learningContext: {
-      get(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<z.infer<typeof companionLearningContextV1Schema>>>;
-    };
     readonly journey: {
       bootstrap(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<z.infer<typeof companionJourneyBootstrapSchema>>>;
       get(input: { meta: RequestMetaV1; journeyId: Uuid }): Promise<GatewayResultV1<z.infer<typeof companionJourneySchema>>>;
@@ -3061,7 +2793,7 @@ export interface AstellaDesktopApiM2 extends AstellaDesktopApiM1 {
     create(input: { meta: RequestMetaV1; request: DesktopNoteCreateRequest }): Promise<GatewayResultV1<z.infer<typeof noteDetailV1Schema>>>;
     delete(input: { meta: RequestMetaV1; noteId: Uuid }): Promise<GatewayResultV1<DesktopNoteMutationResult>>;
     restore(input: { meta: RequestMetaV1; noteId: Uuid }): Promise<GatewayResultV1<DesktopNoteMutationResult>>;
-    get(input: { meta: RequestMetaV1; noteId: Uuid }): Promise<GatewayResultV1<z.infer<typeof noteDetailV1Schema>>>;
+    get(input: { meta: RequestMetaV1; noteId: Uuid; noteVersionId?: Uuid }): Promise<GatewayResultV1<z.infer<typeof noteDetailV1Schema>>>;
     /**
      * 「此刻谁开着哪一篇」（共享空间在场）。只回**真的有人开着**的那些篇，
      * 没人在看的一篇在这一份里不出现——界面因此不需要为它画任何东西，也不会把
@@ -3167,61 +2899,6 @@ export interface AstellaDesktopApiM2 extends AstellaDesktopApiM1 {
     exportMarkdown(input: {
       meta: RequestMetaV1;
     }): Promise<GatewayResultV1<NotesMarkdownExportResultV1>>;
-    readonly cardGeneration: {
-      start(input: {
-        meta: RequestMetaV1;
-        commandId: CommandMetaV1["commandId"];
-        noteId: Uuid;
-        request: DesktopCreateCardGenerationRunRequestV2;
-      }): Promise<GatewayResultV1<z.infer<typeof cardGenerationJobAcceptedV1Schema>>>;
-      getRun(input: { meta: RequestMetaV1; runId: Uuid }): Promise<GatewayResultV1<z.infer<typeof cardGenerationRunSnapshotV1Schema>>>;
-      getCandidates(input: { meta: RequestMetaV1; runId: Uuid }): Promise<GatewayResultV1<z.infer<typeof cardGenerationCandidateListV1Schema>>>;
-      review(input: {
-        meta: RequestMetaV1;
-        commandId: CommandMetaV1["commandId"];
-        runId: Uuid;
-        request: DesktopCandidateReviewRequestV2;
-      }): Promise<GatewayResultV1<z.infer<typeof cardGenerationReviewResultV1Schema>>>;
-      reveal(input: {
-        meta: RequestMetaV1;
-        commandId: CommandMetaV1["commandId"];
-        runId: Uuid;
-        candidateId: Uuid;
-        request: DesktopRevealCandidateRequestV2;
-      }): Promise<GatewayResultV1<z.infer<typeof candidateRevealV2Schema>>>;
-      exposure(input: {
-        meta: RequestMetaV1;
-        runId: Uuid;
-        candidateId: Uuid;
-        revision: number;
-      }): Promise<GatewayResultV1<CardGenerationExposureEligibilityV1>>;
-      latestRun(input: { meta: RequestMetaV1; noteId: Uuid }): Promise<GatewayResultV1<CardGenerationRunSnapshotV1>>;
-      activate(input: {
-        meta: RequestMetaV1;
-        commandId: CommandMetaV1["commandId"];
-        runId: Uuid;
-        request: DesktopCardGenerationActivationSelectionV1;
-      }): Promise<GatewayResultV1<z.infer<typeof cardActivationReceiptDesktopV1Schema>>>;
-      cancel(input: { meta: RequestMetaV1; commandId: CommandMetaV1["commandId"]; runId: Uuid }): Promise<GatewayResultV1<{ version: 1; runId: Uuid; status: "cancelled" }>>;
-      /**
-       * 就地重试一次"质量门禁失败"的 run（2026-09-18）。
-       *
-       * 服务端在**同一 run** 上重跑规划与作者，复用已封存的来源——比 `start` 重开一次
-       * 全新生成便宜得多。仅当服务端在恢复契约里签发 `retry_generation` 时客户端才
-       * 显示该入口；服务端仍会独立校验状态与失败原因（投影不是授权）。
-       */
-      retry(input: { meta: RequestMetaV1; commandId: CommandMetaV1["commandId"]; runId: Uuid }): Promise<GatewayResultV1<z.infer<typeof cardGenerationRetryResultV1Schema>>>;
-      close(input: { meta: RequestMetaV1; commandId: CommandMetaV1["commandId"]; runId: Uuid; expectedReviewDraftRevision: number }): Promise<GatewayResultV1<z.infer<typeof cardGenerationCloseResultV1Schema>>>;
-    };
-  };
-  readonly objective: {
-    /**
-     * `noteId` 按「笔记来源」收窄（39d W4-2）：笔记页要知道自己这一篇有没有目标。
-     * 主进程 schema、网关与 `GET /v2/learning-objectives` 早已收这一格，声明此前
-     * 漏了——漏在声明上不会报错，只会让调用处绕路（曾在此处写过一个交叉类型别名）。
-     */
-    list(input: { meta: RequestMetaV1; cursor?: string; limit?: number; lifecycle?: "active" | "archived" | "superseded"; noteId?: Uuid }): Promise<GatewayResultV1<z.infer<typeof objectiveListPageV3Schema>>>;
-    get(input: { meta: RequestMetaV1; objectiveId: Uuid }): Promise<GatewayResultV1<z.infer<typeof learningObjectiveSurfaceV3Schema>>>;
   };
   /**
    * 一篇笔记的「轮次」（39d W4-5 的表与服务，W4-3 的这张表单）。
@@ -3260,6 +2937,14 @@ export interface AstellaDesktopApiM2 extends AstellaDesktopApiM1 {
     start(input: { meta: RequestMetaV1; noteId: Uuid; request: z.infer<typeof noteRecallStartInputV1Schema> }): Promise<GatewayResultV1<z.infer<typeof noteRecallStartResultV1Schema>>>;
     act(input: { meta: RequestMetaV1; noteId: Uuid; recallId: Uuid; action: z.infer<typeof noteRecallActionV1Schema> }): Promise<GatewayResultV1<z.infer<typeof noteRecallActionResultV1Schema>>>;
   };
+  readonly noteLearningCard: {
+    get(input: { meta: RequestMetaV1; noteId: Uuid; cardId?: Uuid }): Promise<GatewayResultV1<{ card: import("../learning/note-learning-card-contracts.ts").NoteLearningCardV1 | null; generating: boolean; generationFailure?: string; versions?: import("../learning/note-learning-card-contracts.ts").NoteLearningCardVersionV1[] }>>;
+    generate(input: { meta: RequestMetaV1; noteId: Uuid; noteVersionId: Uuid; options?: import("../learning/note-learning-card-contracts.ts").NoteLearningCardGenerationOptionsV1 }): Promise<GatewayResultV1<{ cardId: string; jobId?: string; queued: boolean; reason?: string }>>;
+    startAttempt(input: { meta: RequestMetaV1; cardId: Uuid }): Promise<GatewayResultV1<{ attemptId: string; cardId: string }>>;
+    answer(input: { meta: RequestMetaV1; cardId: Uuid; attemptId: Uuid; questionId: Uuid; answer: unknown; usedHint?: boolean }): Promise<GatewayResultV1<{ answerId: string }>>;
+    complete(input: { meta: RequestMetaV1; cardId: Uuid; attemptId: Uuid; summaryOnly?: boolean }): Promise<GatewayResultV1<{ attemptId: string; grading: boolean; jobId?: string }>>;
+    history(input: { meta: RequestMetaV1; cardId: Uuid }): Promise<GatewayResultV1<{ items: import("../learning/note-learning-card-contracts.ts").NoteLearningCardAttemptV1[] }>>;
+  };
   readonly noteExpansion: {
     list(input: { meta: RequestMetaV1; noteId: Uuid; query?: z.infer<typeof noteExpansionListQueryV1Schema> }): Promise<GatewayResultV1<z.infer<typeof noteExpansionPageV1Schema>>>;
     startTask(input: { meta: RequestMetaV1; noteId: Uuid; request: z.infer<typeof createNoteExpansionTaskV1Schema> }): Promise<GatewayResultV1<z.infer<typeof noteExpansionTaskV1Schema>>>;
@@ -3275,126 +2960,6 @@ export interface AstellaDesktopApiM2 extends AstellaDesktopApiM1 {
     listTasks(input: { meta: RequestMetaV1; noteId: Uuid; query: z.infer<typeof noteLearningArtifactTaskListQueryV1Schema> }): Promise<GatewayResultV1<z.infer<typeof noteLearningArtifactTaskPageV1Schema>>>;
     getTask(input: { meta: RequestMetaV1; noteId: Uuid; taskId: Uuid }): Promise<GatewayResultV1<z.infer<typeof noteLearningArtifactTaskV1Schema>>>;
   };
-  readonly noteLearningRound: {
-    /**
-     * 回的是**那一层信封**（`{version, round, contentMoved}`），不是轮次记录本身：
-     * `contentMoved`（这一轮冻的正文与这一篇现在已保存的那一版不同）是读侧现算的派生格，
-     * 塞进 `noteLearningRoundV1Schema` 就等于宣称它是轮次那一行的某一列。
-     */
-    open(input: { meta: RequestMetaV1; noteId: Uuid }): Promise<
-      GatewayResultV1<z.infer<typeof noteLearningRoundViewV1Schema> | null>
-    >;
-    /**
-     * 「按当前内容新开一轮」：只交一把 CAS 钥匙，回的是新那一轮的信封
-     * （正文那一版、预算、本轮问题都由服务端自己取，见 D1 §3 那行 superseded 转移）。
-     */
-    reopen(input: { meta: RequestMetaV1; roundId: Uuid; expectedRevision: number }): Promise<
-      GatewayResultV1<z.infer<typeof noteLearningRoundViewV1Schema>>
-    >;
-    create(input: {
-      meta: RequestMetaV1;
-      noteId: Uuid;
-      drivingQuestion?: string;
-      drivingQuestionSource: z.infer<typeof roundDrivingQuestionSourceV1Schema>;
-    }): Promise<GatewayResultV1<z.infer<typeof noteLearningRoundV1Schema>>>;
-    /**
-     * 改写本轮问题（§3.3「用户可以改写这一句话」）。带 `expectedRevision`：两个窗口
-     * 同时开着时，后到的那一份要失败并拿到现在那一版，而不是悄悄覆盖。
-     */
-    revise(input: {
-      meta: RequestMetaV1;
-      roundId: Uuid;
-      expectedRevision: number;
-      drivingQuestion: string;
-      drivingQuestionSource: z.infer<typeof roundDrivingQuestionSourceV1Schema>;
-    }): Promise<GatewayResultV1<z.infer<typeof noteLearningRoundV1Schema>>>;
-    /**
-     * 「继续这一轮」：`paused → active`（39d W4-5 ④ 的前置，走 `PATCH /v2/note-learning-rounds/:roundId`
-     * 的 `advanceNoteLearningRoundRequestV1Schema` 那一族动作里 `resume` 那一支）。
-     *
-     * 回的是**教学面那一份**（`roundTeachingViewV1Schema`）而不是光一行轮次：恢复之后屏上要换回来的
-     * 就是那一整块（问题／解释／练一道／缺口帮助），而它们只由服务端读回——推进那一发的回执里
-     * 只有轮次行，网关因此在其后接着读一次同一轮的教学面。渲染层不自己拼第二份。
-     *
-     * `expectedRevision` 必填、且**重复调用不推进计数器**（判据在服务端 reducer：已 active 就是 noop）；
-     * `closed` 轮次一律拒（终态只读）。
-     */
-    resume(input: {
-      meta: RequestMetaV1;
-      roundId: Uuid;
-      expectedRevision: number;
-    }): Promise<GatewayResultV1<z.infer<typeof roundTeachingViewV1Schema>>>;
-    /** 「先到这里」：终态必须带原因（partial = 计划没走完就收尾），终态之后这一轮只读。 */
-    close(input: {
-      meta: RequestMetaV1;
-      roundId: Uuid;
-      expectedRevision: number;
-      outcome: "completed" | "partial";
-    }): Promise<GatewayResultV1<z.infer<typeof noteLearningRoundV1Schema>>>;
-    /**
-     * 这一篇的轮次记录：新的在前，只回最近 `limit` 条，`hasMore` 老实说还有没有更早的
-     * 更早的还有（`nextCursor`），读完才罢休。§10.3 那句"完整分页历史"到这里才算闭环。
-     */
-    history(input: {
-      meta: RequestMetaV1;
-      noteId: Uuid;
-      limit?: number;
-      /** 上一页最后一条的 id；给了就读得更早的那几轮。回读里的 `nextCursor` 就是它。 */
-      before?: string;
-    }): Promise<GatewayResultV1<z.infer<typeof noteLearningRoundHistoryPageV1Schema>>>;
-    /**
-     * 我的轮次记录（跨笔记，§10.3 第二级）。挂在**学习页**上，所以路由守卫与今日日志
-     * 同一条（`room.home`）；不带 noteId——这一页读的是"我"，不属于某一篇。
-     */
-    personalHistory(input: {
-      meta: RequestMetaV1;
-      limit?: number;
-      before?: string;
-    }): Promise<GatewayResultV1<z.infer<typeof noteLearningRoundPersonalHistoryPageV1Schema>>>;
-    /**
-     * 这一篇的核心路线（39d W4-5 ③；PRD §4.4）：跨全部轮次、按核心问题归并。
-     *
-     * 与 `history` 的分工：那一发按**轮次**列时间线，这一发按**核心问题**说
-     * 「这一篇走到哪」。§4.4 的门槛是「纳入的每个核心问题都实际学过，
-     * 或有适用证据可略过重复教学」——所以回信里 `verdict.kind` 是**服务端裁决**，
-     * 界面不许自己数一遍再自己下结论（那正是这批代码一直在拆的第二个来源）。
-     */
-    route(input: {
-      meta: RequestMetaV1;
-      noteId: Uuid;
-    }): Promise<GatewayResultV1<z.infer<typeof noteRouteCoverageV1Schema>>>;
-    /**
-     * 这一轮**当前问题版本**下的那条解释（W4-6 刀二）。
-     *
-     * `teaching: null` 是真的"还没讲过"，不是读失败：解释与"当前问题版本＋当前快照"
-     * 匹配，改写问题之后它会如实回 null——不把上一版问题的解释摆在这一版问题下面。
-     */
-    teaching(input: {
-      meta: RequestMetaV1;
-      roundId: Uuid;
-    }): Promise<GatewayResultV1<z.infer<typeof roundTeachingViewV1Schema>>>;
-    /** Privately prepare a source-grounded question before showing any explanation. */
-    preparePractice(input: {
-      meta: RequestMetaV1;
-      roundId: Uuid;
-      expectedRevision: number;
-    }): Promise<GatewayResultV1<z.infer<typeof roundTeachingViewV1Schema>>>;
-    /**
-     * 生成一条解释（W4-6 刀二；刀一那两条 HTTP 入口的第二条）。
-     *
-     * 幂等由服务端负责（同快照同问题已有 ⇒ 回既有那条，不重付）；`expectedRevision`
-     * 必填——两发之间问题被改写或轮次被收尾时，后到的那一发必须失败并拿到现在那一版。
-     */
-    explain(input: {
-      meta: RequestMetaV1;
-      roundId: Uuid;
-      expectedRevision: number;
-      /** 「换一种解释」（W4-6 刀四）：跳过复用、同一问题落第二条。缺省 = 复用。 */
-      regenerate?: boolean;
-      /** 由本人逐条勾选的私有纸签，只用于这一次个人讲解。 */
-      personalReflectionIds?: Uuid[];
-    }): Promise<GatewayResultV1<z.infer<typeof roundTeachingViewV1Schema>>>;
-  };
   readonly artifact: {
     /**
      * 确保这一份动态产物已经落在本机（幂等：已在就是 `stored: false`）。
@@ -3406,103 +2971,8 @@ export interface AstellaDesktopApiM2 extends AstellaDesktopApiM1 {
     ensure(input: {
       meta: RequestMetaV1;
       artifactId: Uuid;
-      origin?: "round" | "note_learning";
+      origin?: "round" | "note_learning" | "note_learning_card";
     }): Promise<GatewayResultV1<{ stored: boolean }>>;
-  };
-  readonly review: {
-    getQueue(input: {
-      meta: RequestMetaV1;
-      cursor?: string;
-      limit?: number;
-    }): Promise<GatewayResultV1<z.infer<typeof reviewQueueV2Schema>>>;
-    defer(input: { meta: RequestMetaV1; request: z.infer<typeof reviewDeferRequestV2Schema> }): Promise<
-      GatewayResultV1<z.infer<typeof reviewDeferResultV2Schema>>
-    >;
-    /**
-     * 「先看笔记」（39d W5-4；PRD §7.1、§16.24）。
-     *
-     * **它是一次暴露记账，不是导航**：界面自己跳去笔记页；这一发只保证
-     * 「读过正文」这件事落进暴露账，于是之后的判定按已看过材料处理。
-     *
-     * `conditionsAfter` 与 `userFacingLabel` 由服务端签发，界面**只呈现**
-     * ——屏上那句话与"这一次的条件上限"是同一份事实的两个读法。
-     */
-    recordRecallSourceReveal(input: {
-      meta: RequestMetaV1;
-    } & z.infer<typeof recordRecallSourceRevealRequestV1Schema>): Promise<
-      GatewayResultV1<z.infer<typeof recordRecallSourceRevealResultV1Schema>>
-    >;
-    /**
-     * 把一个目标设成「暂不安排」（39 §9.1 行 2）。只停这一个目标：别的目标、别的
-     * 授权来源、以及已经记下的历史观察都不动。回执里的 `dismissedPendingSchedules`
-     * 要在屏上念出来——立排除必须有看得见的后果，否则那句话只挡未来不挡现在。
-     */
-    holdObjective(input: { meta: RequestMetaV1; request: ObjectiveHoldCommandV2 }): Promise<
-      GatewayResultV1<ObjectiveHoldResultV2>
-    >;
-    /**
-     * 「恢复此目标并开启」——组合命令：同一事务里先解除排除、再走唯一调度边界排上
-     * 安排。**不提供"只解除"**：§9.1 行 3 明写只有这一条能解除，而只解除会让用户
-     * 点完之后那个目标再也回不到队列（撤下去的那些排期是 `dismissed`，终态）。
-     * 排不动时服务端回 409（`still_held`），这一层把它当失败交回，不当成成功。
-     */
-    resumeObjective(input: { meta: RequestMetaV1; request: ObjectiveResumeCommandV2 }): Promise<
-      GatewayResultV1<ObjectiveResumeResultV2>
-    >;
-    /**
-     * 开启（或重新开启）一个来源。回执里的 `stillCoveredBy` 要**念出来**：
-     * §9.1 规则表行 1「其他来源仍有效时显示原因」。
-     */
-    activateSubscription(input: { meta: RequestMetaV1; request: ReviewSubscriptionCommandV2Wire }): Promise<
-      GatewayResultV1<ReviewSubscriptionResultV2Wire>
-    >;
-    /**
-     * 停用一个来源。**只停这一个**——屏上必须能念出「仍由 X 继续安排」，
-     * 否则用户以为整篇都停了，而那张卡还开着（§9.1「不偷偷联动」）。
-     */
-    pauseSubscription(input: { meta: RequestMetaV1; request: ReviewSubscriptionCommandV2Wire }): Promise<
-      GatewayResultV1<ReviewSubscriptionResultV2Wire>
-    >;
-    /** 笔记那一屏的读侧。**连暂停的也列**：开关要能拨回"开"。 */
-    listNoteSubscriptions(input: { meta: RequestMetaV1 }): Promise<
-      GatewayResultV1<NoteReviewSubscriptionsV2Wire>
-    >;
-    /**
-     * 首页书桌那**一件**（§12.1「首页只推荐一件现在值得做的事」）。
-     *
-     * 读侧带 `timeZone` 而不是服务端猜：§12.1 那句「用户略过后**本次**不反复推荐
-     * 同一项」的「本次」按**她的日历日**算（刀五的 0306），而按 UTC 算会在她的午夜
-     * 前后切错一次——那一次恰好是"她刚做完今天"的时候。
-     */
-    readHomeSuggestion(input: { meta: RequestMetaV1; timeZone: string }): Promise<
-      GatewayResultV1<HomeSuggestionWireV2>
-    >;
-    /**
-     * 「换一个」/「暂不处理」。回执**顺带**交回下一件——屏上按一下就要立刻看到另一件，
-     * 而不是"空一下再刷"。
-     */
-    actOnHomeSuggestion(input: { meta: RequestMetaV1; request: HomeSuggestionActionCommandV2 }): Promise<
-      GatewayResultV1<HomeSuggestionActionResultV2>
-    >;
-    /**
-     * 今日复习那三个动作（§12 表「今日复习」行：可换顺序、减量、延后、暂停）。
-     *
-     * **共用一个 schema**：三个入口就是三处会分叉，而其中一处很可能忘了把 `remaining`
-     * 原样带回判据。回执交回**读出来的那一句**——渲染层自己拼的话，迟早有一处忘了带
-     * 「剩下 N 道」（§12 表「剩余需求不伪称完成」）。
-     */
-    actOnTodayBatch(input: { meta: RequestMetaV1; request: TodayBatchOptionCommandV2 }): Promise<
-      GatewayResultV1<TodayBatchOptionResultV2>
-    >;
-    /**
-     * 今日复习那一批的读侧（§12 表「今日复习」行「一批有限任务，**展示选择原因**」）。
-     *
-     * `timeZone` 同样**由客户端带上来**：它决定 0305/0306 那两处的「今天」是哪一天，
-     * 而按 UTC 算会在她的午夜前后切错一次——**那一次恰好是「她刚做完今天」的时候**。
-     */
-    readTodayBatch(input: { meta: RequestMetaV1; timeZone: string }): Promise<
-      GatewayResultV1<TodayBatchWireV2>
-    >;
   };
   /**
    * 判定的争议与更正（39 §14.2、§16.11、§16.25）。
@@ -3514,39 +2984,6 @@ export interface AstellaDesktopApiM2 extends AstellaDesktopApiM1 {
    *
    * 四条，缺的 `recheck` / `correction` 是**故意不给**：写入方是系统，见通道表那段。
    */
-  readonly assessmentDispute: {
-    /**
-     * 读回这一份判定上的争议。`dispute: null` 是**正常回执**不是失败——界面要先问
-     * 一句「有没有得吵」才决定那颗入口显不显示，报成错误会让入口永远出不来。
-     */
-    get(input: { meta: RequestMetaV1; assessmentId: Uuid }): Promise<
-      GatewayResultV1<z.infer<typeof assessmentDisputeEnvelopeV2Schema>>
-    >;
-    /**
-     * 开一份争议。`statement` 必填（服务端同形）：没有理由的「我不同意」进不了复核。
-     * 已开过一份时服务端回 200 + `created: false`（幂等回执），409 只留给"别的冲突"。
-     */
-    open(input: { meta: RequestMetaV1; request: OpenAssessmentDisputeCommandV2 }): Promise<
-      GatewayResultV1<OpenAssessmentDisputeResultV2>
-    >;
-    /**
-     * 补充说明。§14.2 明写允许，且**不重开**已落库的复核——所以这条在
-     * `recheck_upheld` 之后仍然可用（那正是"维持之后用户再补充"的产品路径）。
-     */
-    supplement(input: { meta: RequestMetaV1; request: SupplementAssessmentDisputeCommandV2 }): Promise<
-      GatewayResultV1<{ accepted: true }>
-    >;
-    /**
-     * 结束争议；`holdObjective: true` 时顺带把该项设成「暂不安排」（§14.2）。
-     *
-     * 三档 `outcome` 都要念出来，`hold_unavailable` 尤其不能当成成功：那一格是
-     * 「争议结束了，但排除没落上」，界面若显示成"已暂不安排"就是假回执。
-     * `dismissedPendingSchedules` 是这颗按钮唯一看得见的副作用，必须报。
-     */
-    close(input: { meta: RequestMetaV1; request: CloseAssessmentDisputeCommandV2 }): Promise<
-      GatewayResultV1<CloseAssessmentDisputeResultV2>
-    >;
-  };
   readonly understanding: {
     getTopology(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<z.infer<typeof understandingTopologySnapshotV3Schema>>>;
     /**
@@ -3554,14 +2991,6 @@ export interface AstellaDesktopApiM2 extends AstellaDesktopApiM1 {
      * 回 `{ changed: false }` 而不是让渲染层先分辨状态码才敢读，那一分歧迟早会
      * 被写成某个调用点的 `?? {}`。
      */
-    setRelationDecision(input: {
-      meta: RequestMetaV1;
-      fromObjectiveId: string;
-      toObjectiveId: string;
-      relation: z.infer<typeof setPersonalRelationDecisionV2Schema>["relation"];
-      decision: z.infer<typeof setPersonalRelationDecisionV2Schema>["decision"];
-      noteId?: string | null;
-    }): Promise<GatewayResultV1<z.infer<typeof setPersonalRelationDecisionV2ResultSchema>>>;
     /**
      * 39d W8-1：星图三层展开的层二（笔记局部）与层三（证据详情），按一篇笔记读。
      * `limit` **原样透传**，主进程不补默认值——补了就变成"客户端决定屏幕上
@@ -3574,53 +3003,10 @@ export interface AstellaDesktopApiM2 extends AstellaDesktopApiM1 {
     }): Promise<GatewayResultV1<z.infer<typeof noteDeepeningV3Schema>>>;
   };
   readonly search: {
-    global(input: { meta: RequestMetaV1; query: string; type?: "note" | "source" | "objective"; limit?: number; cursor?: string }): Promise<GatewayResultV1<z.infer<typeof desktopSearchPageSchema>>>;
+    global(input: { meta: RequestMetaV1; query: string; type?: "note" | "source"; limit?: number; cursor?: string }): Promise<GatewayResultV1<z.infer<typeof desktopSearchPageSchema>>>;
     /** F-025：搜索索引漂移检测（Owner）。 */
     drift(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<SearchDriftResultV1>>;
     /** F-011：重建当前工作区搜索索引（Owner）。 */
     reindex(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<SearchReindexResultV1>>;
-  };
-  readonly learningRun: {
-    get(input: { meta: RequestMetaV1; runId: Uuid }): Promise<GatewayResultV1<z.infer<typeof learningRunPublicSnapshotV2Schema>>>;
-    start(input: {
-      meta: RequestMetaV1;
-      commandId: CommandMetaV1["commandId"];
-      request: DesktopCreateLearningRunV2Request;
-    }): Promise<GatewayResultV1<z.infer<typeof learningRunPublicSnapshotV2Schema>>>;
-    getDraft(input: { meta: RequestMetaV1; runId: Uuid; taskId: Uuid }): Promise<GatewayResultV1<z.infer<typeof learningTaskDraftV2Schema> | null>>;
-    saveDraft(input: {
-      meta: RequestMetaV1;
-      commandId: CommandMetaV1["commandId"];
-      runId: Uuid;
-      taskId: Uuid;
-      request: DesktopPutLearningTaskDraftV2Request;
-    }): Promise<GatewayResultV1<z.infer<typeof learningTaskDraftWriteReceiptV2Schema>>>;
-    submit(input: {
-      meta: RequestMetaV1;
-      commandId: CommandMetaV1["commandId"];
-      runId: Uuid;
-      taskId: Uuid;
-      request: DesktopSubmitTaskArtifactV2;
-    }): Promise<GatewayResultV1<z.infer<typeof submitTaskArtifactReceiptV2Schema>>>;
-    action(input: {
-      meta: RequestMetaV1;
-      commandId: CommandMetaV1["commandId"];
-      runId: Uuid;
-      request: DesktopLearningRunActionRequestV2;
-    }): Promise<GatewayResultV1<z.infer<typeof learningRunActionResponseV2Schema>>>;
-    getResult(input: { meta: RequestMetaV1; runId: Uuid }): Promise<GatewayResultV1<z.infer<typeof getLearningRunResultResponseV2Schema>>>;
-    revealTarget(input: { meta: RequestMetaV1; runId: Uuid }): Promise<GatewayResultV1<z.infer<typeof learningRunTargetRevealV2Schema>>>;
-    getReturnContract(input: { meta: RequestMetaV1; runId: Uuid }): Promise<GatewayResultV1<z.infer<typeof learningRunReturnContractV2Schema>>>;
-    recordActivityLease(input: {
-      meta: RequestMetaV1;
-      runId: Uuid;
-      request: DesktopRecordLearningRunActivityLeaseRequestV2;
-    }): Promise<GatewayResultV1<z.infer<typeof recordLearningRunActivityLeaseOutputV2Schema>>>;
-    abandon(input: {
-      meta: RequestMetaV1;
-      commandId: CommandMetaV1["commandId"];
-      runId: Uuid;
-      request: DesktopLearningRunAbandonRequestV2;
-    }): Promise<GatewayResultV1<z.infer<typeof learningRunActionResponseV2Schema>>>;
   };
 }

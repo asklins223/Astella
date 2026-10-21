@@ -5,7 +5,6 @@ export * from "./operation-receipt.ts";
 export * from "./operation-store.ts";
 export * from "./note-operation.ts";
 export * from "./note-creation.ts";
-export * from "./card-operation.ts";
 export * from "./methods.ts";
 export * from "./identity.ts";
 export * from "./reflections.ts";
@@ -18,3 +17,4 @@ export * from "./self-notes.ts";
 
 export * from "./participation.ts";
 export * from "./proactive-floor.ts";
+export * from "./companion-write-reconciliation.ts";

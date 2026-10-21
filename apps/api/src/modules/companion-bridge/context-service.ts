@@ -30,13 +30,8 @@ export interface BridgeScope {
 const HYDRATABLE_TABLES = new Set([
   "sources",
   "notes",
-  // 当前卡片与学习卡实体使用 learning_cards_v2 / learning_objectives_v2。
-  "learning_cards_v2",
-  "learning_objectives_v2",
-  "evidence_snapshots_v2",
-  "review_schedules",
-  "learning_runs",
-  "learning_tasks",
+  // Plan 57：实体只认笔记/来源与伴星对话；旧卡、目标、复习、运行族已退役。
+  "note_learning_cards",
   "companion_conversations",
 ]);
 
@@ -131,7 +126,7 @@ export async function publishContext(
     pageKind: input.page.pageKind,
     entityRefs: input.page.entityRefs as never,
     interactionState: input.page.interactionState,
-    graph: (input.page.graph ?? null) as never,
+    graph: null as never,
     capabilityHints: input.page.capabilityHints as never,
     sensitivity: input.page.sensitivity,
     readableView: (input.page.readableView ?? null) as never,
@@ -240,13 +235,7 @@ async function verifyEntityRefs(
     // 用 ARRAY[$1,$2,...] 展开（而非 `ANY(${array})`）：postgres.js 对**单元素** JS 数组
     // 会折叠为标量字符串参数（报“malformed array literal”），ARRAY[...] 逐参绑定恒稳定；
     // 每个 id 走独立绑定位（无注入风险）。
-    // 2026-08-23 修复：V2 表的业务键与代理主键分离（learning_cards_v2.card_id /
-    // learning_objectives_v2.objective_id），EntityRef 携带的是业务键——按表选择
-    // 查找列，其余表仍用 id。
-    const idColumn = table === "learning_cards_v2" ? "card_id"
-      : table === "learning_objectives_v2" ? "objective_id"
-      : table === "evidence_snapshots_v2" ? "evidence_snapshot_id"
-      : "id";
+    const idColumn = "id";
     const idList = sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `);
     const rows = await tx.execute(sql`
       SELECT ${sql.raw(idColumn)} AS id FROM ${sql.raw(table)}

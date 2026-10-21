@@ -361,15 +361,6 @@
   color: var(--companion-muted);
 }
 
-.companion-hud__rail-summary {
-  margin: 0;
-  padding-left: 11px;
-  color: var(--companion-muted);
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: .02em;
-}
-
 /* 状态点六档（方案 §1 的表）：running 薄荷 + 呼吸，succeeded 实心绿，
    waiting_confirmation 琥珀脉冲，outcome_unknown 琥珀静止待核对，failed/blocked 陶红，cancelled/expired 灰。 */
 .companion-hud__rail-steps li[data-state="running"] .companion-hud__rail-mark {

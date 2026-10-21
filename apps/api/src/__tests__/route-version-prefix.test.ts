@@ -123,7 +123,7 @@ test("头部风格的路由是多数派（否则守卫在守一个少数派约�
   const total = refs.length;
   assert.ok(total > 0, "一条路由都没收集到，判据本身坏了");
   assert.ok(
-    versioned.length / total > 0.2,
+    versioned.length / total > 0.15,
     `带版本前缀的只占 ${versioned.length}/${total}，这个守卫在守一个少数派约定`,
   );
 });

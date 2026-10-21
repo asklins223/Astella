@@ -106,7 +106,7 @@ export interface DiaryPiece {
   noteId?: string;
   /** Stable database source for selection provenance; derived summaries have no source id. */
   sourceId?: string;
-  sourceType?: "note" | "source" | "learning_run" | "companion_message" | "reminder" | "memory";
+  sourceType?: "note" | "source" | "card" | "companion_message" | "reminder" | "memory";
   /** Immutable source version or content hash observed during material collection. */
   sourceVersion?: string;
   /** Distinct conversations must not become one scene just because times overlap. */

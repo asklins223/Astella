@@ -1,0 +1,2719 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#17191a" />
+  <title>拾星书房 · 伴星任务与对话手记</title>
+  <style>
+    :root {
+      --paper: oklch(99% 0.012 84);
+      --paper-deep: oklch(96.2% 0.02 82);
+      --desk: oklch(90.5% 0.025 77);
+      --desk-deep: oklch(85% 0.032 73);
+      --surface: oklch(99.7% 0.008 84);
+      --fg: oklch(27% 0.024 65);
+      --muted: oklch(47% 0.018 70);
+      --soft: oklch(58% 0.016 72);
+      --border: oklch(88.5% 0.021 78);
+      --line-strong: oklch(81% 0.028 76);
+      --accent: oklch(45.5% 0.083 170);
+      --accent-hover: oklch(41.5% 0.086 170);
+      --mint-soft: oklch(93.2% 0.032 168);
+      --mint-wash: oklch(96.2% 0.018 168);
+      --peach: oklch(85% 0.062 45);
+      --peach-soft: oklch(95.3% 0.025 50);
+      --gold: oklch(84% 0.102 84);
+      --gold-soft: oklch(95.5% 0.038 88);
+      --danger: oklch(50% 0.14 28);
+      --danger-soft: oklch(95.5% 0.035 30);
+      --ok: oklch(46% 0.075 158);
+      --ink-deep: oklch(23% 0.022 62);
+      --rail-bg: oklch(94.3% 0.022 160);
+      --stage-bg: oklch(84% 0.03 74);
+      --focus: var(--accent);
+      --font-display: "Songti SC", "STSong", "Noto Serif CJK SC", "Source Han Serif SC", "SimSun", serif;
+      --font-body: "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Microsoft YaHei", system-ui, sans-serif;
+      --font-mono: "SFMono-Regular", "Cascadia Mono", Menlo, Consolas, monospace;
+      --ease-enter: cubic-bezier(0.22, 1, 0.36, 1);
+      --ease-move: cubic-bezier(0.25, 1, 0.5, 1);
+      --ease-press: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+      --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+      --dur-press: 120ms;
+      --dur-fast: 160ms;
+      --dur-ui: 220ms;
+      --dur-panel: 300ms;
+      --dur-journal: 340ms;
+      --composer-h: 88px;
+      --companion-w: clamp(332px, 26.5vw, 378px);
+      --rail-w: 68px;
+    }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; padding: 0; }
+    body {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: #17191a;
+      color: var(--fg);
+      font-family: var(--font-body);
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+    button, input, textarea, select { font: inherit; color: inherit; }
+    button { cursor: pointer; }
+    button, a, select, input, textarea { -webkit-tap-highlight-color: transparent; }
+    button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
+      outline: 2px solid var(--focus);
+      outline-offset: 2px;
+    }
+    ::selection { background: var(--mint-soft); color: var(--fg); }
+    .sr-only {
+      position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+      overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+    }
+    .svg-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+    .icon { width: 18px; height: 18px; display: block; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: 0 0 auto; }
+    .mascot { width: 60px; height: 60px; display: block; overflow: visible; }
+    .mascot .blink { transform-box: fill-box; transform-origin: center; animation: companion-blink 8.5s infinite; }
+    @keyframes companion-blink { 0%, 93%, 96%, 100% { transform: scaleY(1); } 94.5% { transform: scaleY(0.12); } }
+    .mono { font-family: var(--font-mono); }
+
+    /* Prototype chrome — deliberately outside the product surface. */
+    .proto-bar {
+      position: relative; z-index: 300; flex: 0 0 auto; min-height: 46px;
+      display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px;
+      padding: 7px 14px; background: #17191a; color: #eef0ef;
+      border-bottom: 1px solid #2b2f30; font: 11.5px/1.3 var(--font-mono);
+      letter-spacing: 0.02em;
+    }
+    .proto-brand { display: flex; align-items: center; gap: 8px; color: #f3efe4; letter-spacing: 0.04em; white-space: nowrap; }
+    .proto-dot { width: 7px; height: 7px; border-radius: 50%; background: oklch(79% 0.12 165); box-shadow: 0 0 0 3px oklch(79% 0.12 165 / 0.12); }
+    .proto-group { display: flex; align-items: center; gap: 6px; }
+    .proto-label { color: #8f9798; white-space: nowrap; }
+    .seg { display: flex; gap: 2px; padding: 3px; background: #222627; border: 1px solid #34393b; border-radius: 8px; }
+    .seg-btn { min-height: 27px; padding: 3px 10px; border: 0; border-radius: 5px; background: transparent; color: #aab0b1; font-size: 11px; }
+    .seg-btn:hover { color: #fff; background: #333839; }
+    .seg-btn[aria-pressed="true"] { background: #f2eee4; color: #1b1d1e; }
+    .proto-select { display: flex; align-items: center; gap: 6px; color: #8f9798; }
+    .proto-select select {
+      max-width: 176px; min-height: 29px; padding: 3px 24px 3px 8px; border: 1px solid #3a3f40;
+      border-radius: 7px; background: #222627; color: #eef0ef; font-size: 11px; outline-offset: 2px;
+    }
+    .proto-btn {
+      min-height: 29px; padding: 3px 10px; border: 1px solid #3a3f40; border-radius: 7px;
+      background: transparent; color: #d6dada; font-size: 11px;
+    }
+    .proto-btn:hover { background: #2a2e2f; color: #fff; }
+    .proto-spacer { flex: 1; min-width: 8px; }
+
+    .stage {
+      position: relative; flex: 1; min-height: 0; width: 100%; overflow: hidden;
+      display: grid; place-items: stretch;
+      background:
+        radial-gradient(1000px 620px at 24% -12%, oklch(95% 0.026 83 / 0.8), transparent 66%),
+        repeating-linear-gradient(93deg, transparent 0 22px, oklch(57% 0.03 72 / 0.032) 23px, transparent 24px 47px),
+        linear-gradient(130deg, var(--desk), var(--desk-deep));
+    }
+    .stage.mobile-stage {
+      place-items: center; padding: 16px; background:
+        radial-gradient(600px 300px at 50% 0%, #f0f1f3, transparent 60%),
+        linear-gradient(145deg, #e4e5e8, #d7d8dc);
+    }
+    .app {
+      position: relative; width: 100%; height: 100%; min-width: 0; min-height: 0;
+      display: grid; grid-template-columns: var(--rail-w) minmax(0, 1fr) var(--companion-w);
+      /* 阅读定位留在各自内层，避免整个书房被焦点或定位滚动带走。 */
+      overflow: clip; background: var(--desk); color: var(--fg);
+    }
+    .app.platform-mobile {
+      --paper: #ffffff;
+      --paper-deep: #f7f7fa;
+      --surface: #ffffff;
+      --fg: #1c1c1e;
+      --muted: #6c6c70;
+      --soft: #8e8e93;
+      --border: #dedee3;
+      --line-strong: #c7c7cc;
+      --accent: #007aff;
+      --accent-hover: #0066cc;
+      --mint-soft: #e9f2ff;
+      --mint-wash: #f4f8ff;
+      --peach-soft: #fff3e8;
+      --gold-soft: #fff8e6;
+      --danger: #d92c20;
+      --danger-soft: #fff0ee;
+      --ok: #12813f;
+      --rail-bg: #f2f2f7;
+      --stage-bg: #dedfe3;
+      --focus: #007aff;
+      width: min(390px, 100%); height: min(844px, 100%);
+      grid-template-columns: minmax(0, 1fr);
+      border: 1px solid rgba(255,255,255,.8); border-radius: 42px;
+      box-shadow: 0 36px 90px rgba(24,26,29,.28), 0 0 0 8px #17191b, 0 0 0 9px #3b3e42;
+      background: var(--rail-bg);
+    }
+    .spine {
+      position: relative; z-index: 5; display: flex; flex-direction: column; align-items: center;
+      gap: 12px; padding: 18px 8px 20px; background:
+        radial-gradient(160px 240px at 50% 4%, oklch(97% 0.02 95 / .8), transparent 75%),
+        linear-gradient(180deg, oklch(87.2% 0.04 76), oklch(84.5% 0.035 72));
+      border-right: 1px solid oklch(74% 0.035 72 / .48);
+    }
+    .brand-mark {
+      width: 42px; height: 42px; border-radius: 14px; display: grid; place-items: center;
+      color: var(--accent); background: var(--paper); border: 1px solid oklch(82% 0.03 78);
+      box-shadow: 0 6px 16px oklch(50% 0.05 70 / .14), inset 0 1px 0 #fff;
+    }
+    .brand-mark .icon { width: 22px; height: 22px; }
+    .spine-nav { display: flex; flex-direction: column; gap: 8px; width: 100%; margin-top: 10px; }
+    .spine-btn {
+      width: 100%; min-height: 57px; padding: 7px 2px; border: 1px solid transparent; border-radius: 13px;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+      background: transparent; color: oklch(42% 0.025 70); font-size: 10px; letter-spacing: 0.06em;
+      transition: background-color var(--dur-fast) ease, color var(--dur-fast) ease, transform var(--dur-press) var(--ease-press);
+    }
+    .spine-btn .icon { width: 20px; height: 20px; }
+    .spine-btn:hover { background: oklch(100% 0 0 / .46); color: var(--fg); }
+    .spine-btn:active { transform: scale(.96); }
+    .spine-btn[aria-current="page"] {
+      color: var(--fg); background: oklch(99% 0.012 84 / .92); border-color: oklch(82% 0.03 79 / .6);
+      box-shadow: 0 6px 14px oklch(50% 0.04 70 / .10);
+    }
+    .spine-bottom { margin-top: auto; display: flex; flex-direction: column; align-items: center; gap: 9px; }
+    .spine-seal { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; color: oklch(48% 0.06 160); border: 1px solid oklch(73% 0.04 160 / .55); font: 9px/1 var(--font-mono); letter-spacing: .04em; }
+
+    .reading-pane { position: relative; min-width: 0; min-height: 0; padding: 18px 22px; overflow: hidden; background: transparent; }
+    .note-sheet {
+      position: relative; width: 100%; max-width: 820px; height: 100%; margin: 0 auto;
+      min-height: 0; display: flex; flex-direction: column; overflow: hidden;
+      border: 1px solid oklch(92% 0.018 84); border-radius: 19px;
+      background-color: var(--paper);
+      background-image:
+        radial-gradient(oklch(68% 0.03 78 / .08) 0.55px, transparent 0.7px),
+        radial-gradient(oklch(100% 0 0 / .7) 0.5px, transparent 0.65px);
+      background-size: 13px 13px, 11px 11px; background-position: 0 0, 5px 7px;
+      box-shadow: 0 26px 64px oklch(47% 0.045 68 / .18), 0 2px 0 oklch(100% 0 0 / .9) inset;
+    }
+    .desk-topbar {
+      position: relative; z-index: 2; flex: 0 0 auto; min-height: 55px; display: flex; align-items: center;
+      justify-content: space-between; gap: 12px; padding: 8px 18px 8px 24px;
+      background: oklch(99.2% 0.01 84 / .88); border-bottom: 1px solid oklch(90% 0.018 82 / .8);
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    }
+    .crumb { min-width: 0; display: flex; align-items: center; gap: 8px; }
+    .crumb-sep { color: var(--soft); font-size: 11px; }
+    .crumb-label { color: var(--muted); font-size: 11.5px; letter-spacing: .03em; white-space: nowrap; }
+    .crumb-current { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; }
+    .top-actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+    .version-chip {
+      display: inline-flex; align-items: center; gap: 5px; min-height: 25px; padding: 3px 8px;
+      border: 1px solid oklch(86% 0.025 82); border-radius: 999px; background: oklch(97.3% 0.018 84);
+      color: var(--muted); font-size: 10.5px; white-space: nowrap;
+    }
+    .version-chip .icon { width: 12px; height: 12px; }
+    .top-btn {
+      min-height: 32px; padding: 4px 9px; display: inline-flex; align-items: center; gap: 5px;
+      border: 1px solid var(--border); border-radius: 8px; background: transparent; color: var(--muted);
+      font-size: 11.5px; transition: background-color var(--dur-fast) ease, color var(--dur-fast) ease, transform var(--dur-press) var(--ease-press);
+    }
+    .top-btn:hover { background: var(--paper-deep); color: var(--fg); }
+    .top-btn:active { transform: scale(.97); }
+    .top-btn .icon { width: 15px; height: 15px; }
+    .context-return { display: flex; align-items: center; gap: 6px; min-width: 0; margin-right: 2px; }
+    .context-return .context-text { max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; color: var(--muted); }
+    .reader-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-gutter: stable; scrollbar-width: thin; scrollbar-color: oklch(80% 0.025 80) transparent; }
+    .reader-scroll::-webkit-scrollbar { width: 7px; }
+    .reader-scroll::-webkit-scrollbar-thumb { background: oklch(82% 0.02 80); border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }
+    .note-inner { width: 100%; max-width: 704px; margin: 0 auto; padding: 42px 48px 86px; }
+    .note-header { margin-bottom: 28px; }
+    .note-kicker { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; color: var(--accent); font-size: 11px; font-weight: 600; letter-spacing: .06em; }
+    .note-kicker::before { content: ""; width: 18px; height: 1px; background: currentColor; opacity: .7; }
+    .note-title { margin: 0; font-family: var(--font-display); font-size: clamp(36px, 3.3vw, 48px); line-height: 1.3; font-weight: 600; letter-spacing: 0; color: var(--ink-deep); }
+    .note-subtitle { max-width: 34em; margin: 12px 0 0; font-family: var(--font-display); font-size: 16.5px; line-height: 1.7; color: var(--muted); }
+    .note-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-top: 20px; color: var(--soft); font-size: 11.5px; letter-spacing: .02em; }
+    .meta-dot { width: 3px; height: 3px; border-radius: 50%; background: currentColor; opacity: .55; }
+    .note-rule { display: flex; align-items: center; gap: 10px; margin: 26px 0 30px; color: var(--gold); }
+    .note-rule::before, .note-rule::after { content: ""; height: 1px; flex: 1; background: linear-gradient(90deg, transparent, var(--border)); }
+    .note-rule::after { background: linear-gradient(90deg, var(--border), transparent); }
+    .note-rule .icon { width: 13px; height: 13px; }
+    .note-lead { margin: 0 0 30px; font-family: var(--font-display); font-size: 18.5px; line-height: 1.88; color: oklch(34% 0.02 65); }
+    .note-body h2 { margin: 36px 0 14px; font-family: var(--font-display); font-size: 23px; line-height: 1.55; font-weight: 600; color: var(--ink-deep); }
+    .note-body p { margin: 0 0 1.05em; font-size: 17px; line-height: 1.95; color: oklch(31% 0.02 65); }
+    .note-body .quote { margin: 26px -10px; padding: 20px 32px 18px; border-radius: 13px; background: linear-gradient(90deg, transparent, var(--mint-soft) 10%, var(--mint-soft) 90%, transparent); text-align: center; }
+    .note-body .quote p { margin: 0; font-family: var(--font-display); font-size: 18px; line-height: 1.8; color: oklch(30% 0.032 158); }
+    .note-body .quote cite { display: block; margin-top: 8px; color: var(--muted); font-family: var(--font-body); font-size: 11.5px; font-style: normal; letter-spacing: .03em; }
+    .inline-cite {
+      display: inline; padding: 0 1px; border: 0; border-bottom: 1px dotted oklch(55% 0.07 168);
+      background: transparent; color: oklch(38% 0.07 168); font-size: inherit; line-height: inherit;
+    }
+    .inline-cite:hover { background: var(--mint-soft); }
+    .reading-mark {
+      display: flex; gap: 10px; margin: 25px 0; padding: 13px 0 13px 14px;
+      border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+      color: var(--muted); font-size: 13px; line-height: 1.7;
+    }
+    .reading-mark .icon { width: 15px; height: 15px; margin-top: 3px; color: var(--gold); }
+    .note-end { margin-top: 46px; padding-top: 24px; border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 14px; color: var(--soft); font-size: 11.5px; }
+    .note-end .end-stars { color: var(--gold); letter-spacing: .4em; font-size: 11px; }
+    .historical-banner { margin: 0 0 28px; padding: 12px 14px; border-radius: 11px; background: var(--gold-soft); border: 1px solid oklch(87% 0.05 86); color: oklch(38% 0.04 72); font-size: 12px; line-height: 1.65; display: flex; gap: 10px; align-items: flex-start; }
+    .historical-banner .icon { width: 15px; height: 15px; margin-top: 1px; color: oklch(57% 0.09 76); }
+    .historical-banner button { margin-left: auto; flex: 0 0 auto; }
+
+    .mobile-nav { display: none; flex: 0 0 auto; min-height: 50px; align-items: center; gap: 4px; padding: 3px 8px; background: color-mix(in srgb, var(--surface) 92%, transparent); border-bottom: 1px solid var(--border); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
+    .mobile-nav .icon-btn { width: 44px; height: 44px; }
+    .nav-title { flex: 1; min-width: 0; text-align: center; font-size: 15px; font-weight: 600; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .nav-spacer { width: 44px; flex: 0 0 auto; }
+
+    .companion {
+      position: relative; z-index: 6; min-width: 0; min-height: 0; display: flex; flex-direction: column;
+      border-left: 1px solid oklch(84% 0.025 158 / .55); background:
+        radial-gradient(300px 230px at 78% 0%, oklch(95.5% 0.04 168), transparent 72%),
+        linear-gradient(180deg, oklch(96% 0.022 165), oklch(97% 0.014 92));
+    }
+    .companion-head { flex: 0 0 auto; display: flex; align-items: center; gap: 11px; padding: 15px 16px 11px; }
+    .companion-avatar {
+      position: relative; width: 62px; height: 62px; flex: 0 0 auto; display: grid; place-items: center;
+      border-radius: 22px; border: 1px solid oklch(84% 0.03 165); background:
+        radial-gradient(80% 70% at 50% 33%, oklch(99% 0.008 95), oklch(92.5% 0.033 166));
+      box-shadow: 0 8px 20px oklch(50% 0.06 165 / .12), inset 0 1px 0 #fff;
+    }
+    .companion-avatar .mascot { width: 58px; height: 58px; }
+    .companion-id { min-width: 0; flex: 1; }
+    .companion-name { display: flex; align-items: center; gap: 7px; font-family: var(--font-display); font-size: 18px; font-weight: 600; color: var(--ink-deep); }
+    .companion-name .tiny-star { color: var(--gold); font-size: 10px; }
+    .companion-status { margin-top: 3px; display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11.5px; line-height: 1.4; }
+    .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex: 0 0 auto; }
+    .status-dot.failed { background: var(--danger); }
+    .status-dot.stopped { background: var(--soft); }
+    .status-dot.done { background: var(--ok); }
+    .companion-head .icon-btn { width: 34px; height: 34px; }
+    .companion-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 2px 14px calc(var(--composer-h) + 14px); scrollbar-width: thin; scrollbar-color: oklch(82% 0.02 165) transparent; }
+    .companion-scroll::-webkit-scrollbar { width: 6px; }
+    .companion-scroll::-webkit-scrollbar-thumb { background: oklch(82% 0.02 165); border-radius: 99px; }
+    .chat-thread { display: flex; flex-direction: column; gap: 11px; padding: 6px 0 14px; }
+    .msg { display: flex; gap: 7px; align-items: flex-start; max-width: 100%; }
+    .msg-user { justify-content: flex-end; }
+    .msg-avatar { width: 26px; height: 26px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 9px; background: oklch(94% 0.026 166); border: 1px solid oklch(86% 0.03 166); }
+    .msg-avatar .mascot { width: 27px; height: 27px; }
+    .msg-bubble-wrap { max-width: min(272px, calc(100% - 33px)); }
+    .msg-bubble { padding: 9px 11px; border-radius: 14px; font-size: 12.3px; line-height: 1.66; }
+    .msg-companion .msg-bubble { color: var(--fg); background: color-mix(in oklch, var(--surface) 82%, var(--mint-soft)); border: 1px solid oklch(88% 0.025 160); border-bottom-left-radius: 5px; }
+    .msg-user .msg-bubble { color: oklch(97.7% 0.01 85); background: oklch(33% 0.03 68); border: 1px solid oklch(29% 0.03 68); border-bottom-right-radius: 5px; }
+    .msg-meta { display: flex; align-items: center; gap: 7px; margin-top: 4px; color: var(--soft); font-size: 9.5px; letter-spacing: .03em; }
+    .msg-user .msg-meta { justify-content: flex-end; }
+    .msg-sound { width: 24px; height: 24px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--muted); display: grid; place-items: center; }
+    .msg-sound:hover { background: oklch(90% 0.02 165); color: var(--fg); }
+    .msg-sound .icon { width: 13px; height: 13px; }
+    .msg-sound.is-playing { color: var(--accent); background: var(--mint-soft); }
+    .msg-attachment { display: block; margin-top: 6px; border-radius: 9px; overflow: hidden; max-width: 210px; background: oklch(0% 0 0 / .12); }
+    .msg-attachment img { display: block; width: 100%; height: auto; max-height: 150px; object-fit: cover; }
+    .msg-attachment.voice { padding: 7px 9px; display: flex; align-items: center; gap: 6px; font-size: 11px; color: inherit; }
+    .msg-attachment.voice .bars { display: flex; align-items: center; gap: 2px; height: 12px; }
+    .msg-attachment.voice .bars span { width: 2px; border-radius: 9px; background: currentColor; opacity: .7; }
+    .msg-attachment.voice .bars span:nth-child(1), .msg-attachment.voice .bars span:nth-child(5) { height: 4px; }
+    .msg-attachment.voice .bars span:nth-child(2), .msg-attachment.voice .bars span:nth-child(4) { height: 9px; }
+    .msg-attachment.voice .bars span:nth-child(3) { height: 12px; }
+
+    .task-card { position: relative; margin: 2px 0 10px; padding: 13px; border: 1px solid oklch(86.5% 0.025 82); border-radius: 16px; background: color-mix(in oklch, var(--surface) 76%, var(--gold-soft)); box-shadow: 0 10px 24px oklch(50% 0.045 70 / .08); }
+    .task-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .status-pill { display: inline-flex; align-items: center; gap: 5px; min-height: 23px; padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: 600; letter-spacing: .02em; color: var(--muted); background: var(--paper-deep); border: 1px solid var(--border); }
+    .status-pill::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; opacity: .8; }
+    .status-pill.running { color: var(--accent); background: var(--mint-soft); border-color: oklch(84% 0.04 166); }
+    .status-pill.failed { color: var(--danger); background: var(--danger-soft); border-color: oklch(88% 0.045 30); }
+    .status-pill.stopped { color: var(--soft); background: var(--paper-deep); }
+    .status-pill.done { color: var(--ok); background: oklch(94.5% 0.025 155); border-color: oklch(86% 0.035 155); }
+    .status-pill.verify { color: oklch(52% 0.08 72); background: var(--gold-soft); border-color: oklch(87% 0.05 83); }
+    .task-tools { display: flex; align-items: center; gap: 2px; }
+    .text-btn { min-height: 28px; padding: 3px 7px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); font-size: 10.5px; transition: background-color var(--dur-fast) ease, color var(--dur-fast) ease; }
+    .text-btn:hover { background: var(--paper); color: var(--fg); }
+    .text-btn.danger:hover { color: var(--danger); background: var(--danger-soft); }
+    .task-title { margin: 9px 0 5px; font-family: var(--font-display); font-size: 19px; line-height: 1.4; font-weight: 600; color: var(--ink-deep); }
+    .task-request { margin: 0; color: var(--muted); font-size: 11.5px; line-height: 1.65; }
+    .current-step { display: flex; gap: 9px; margin-top: 11px; padding: 9px; border: 1px solid oklch(86% 0.028 160); border-radius: 12px; background: oklch(99% 0.01 90 / .72); }
+    .step-index { width: 31px; height: 31px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 50%; background: var(--mint-soft); color: var(--accent); font: 10px/1 var(--font-mono); font-weight: 700; }
+    .step-copy { min-width: 0; }
+    .step-copy strong { display: block; font-size: 12.5px; line-height: 1.45; font-weight: 600; color: var(--fg); }
+    .step-copy span { display: block; min-height: 2.4em; margin-top: 2px; color: var(--muted); font-size: 10.5px; line-height: 1.5; }
+    .elapsed-line { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 7px 2px 9px; color: var(--soft); font-size: 9.5px; letter-spacing: .02em; }
+    .elapsed-line .icon { width: 11px; height: 11px; }
+    .task-materials { display: flex; align-items: center; gap: 5px; margin: 0 2px 9px; color: var(--muted); font-size: 10px; }
+    .task-materials .icon { width: 12px; height: 12px; }
+    .task-materials button { margin-left: auto; }
+    .outputs { border-top: 1px solid oklch(88% 0.02 82); }
+    .output-row { padding: 9px 0 7px; border-bottom: 1px solid oklch(89% 0.018 82); }
+    .output-row:last-child { border-bottom: 0; padding-bottom: 2px; }
+    .output-main { display: flex; align-items: flex-start; gap: 7px; }
+    .output-index { width: 19px; flex: 0 0 auto; padding-top: 1px; color: var(--soft); font: 9.5px/1.5 var(--font-mono); }
+    .output-copy { min-width: 0; flex: 1; }
+    .output-title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); font-size: 12px; font-weight: 600; line-height: 1.45; }
+    .output-sub { display: block; margin-top: 1px; color: var(--soft); font-size: 9.5px; line-height: 1.4; }
+    .output-state { flex: 0 0 auto; padding-top: 1px; color: var(--soft); font-size: 9.5px; white-space: nowrap; }
+    .output-state.saved { color: var(--ok); }
+    .output-state.failed { color: var(--danger); }
+    .output-state.writing { color: var(--accent); }
+    .output-actions { display: flex; flex-wrap: wrap; gap: 3px; margin: 5px 0 0 26px; }
+    .mini-btn { min-height: 27px; padding: 3px 7px; border: 1px solid var(--border); border-radius: 7px; background: transparent; color: var(--muted); font-size: 10.5px; transition: background-color var(--dur-fast) ease, border-color var(--dur-fast) ease, color var(--dur-fast) ease, transform var(--dur-press) var(--ease-press); }
+    .mini-btn:hover { background: var(--paper); border-color: var(--line-strong); color: var(--fg); }
+    .mini-btn:active { transform: scale(.97); }
+    .mini-btn.strong { color: var(--accent); border-color: oklch(82% 0.045 168); background: oklch(97% 0.02 168); }
+    .notice-panel { margin-top: 10px; padding: 10px; border-radius: 11px; border: 1px solid oklch(88% 0.04 32); background: var(--danger-soft); }
+    .notice-panel.warn { border-color: oklch(86% 0.045 80); background: var(--gold-soft); }
+    .notice-panel.info { border-color: oklch(84% 0.04 168); background: var(--mint-wash); }
+    .notice-title { display: flex; align-items: center; gap: 5px; color: var(--fg); font-size: 11.5px; font-weight: 600; line-height: 1.5; }
+    .notice-title .icon { width: 13px; height: 13px; color: var(--danger); }
+    .notice-panel.warn .notice-title .icon { color: oklch(54% 0.09 75); }
+    .notice-panel.info .notice-title .icon { color: var(--accent); }
+    .notice-body { margin: 4px 0 8px; color: var(--muted); font-size: 10.5px; line-height: 1.55; }
+    .notice-actions { display: flex; flex-wrap: wrap; gap: 5px; }
+    .btn { min-height: 38px; padding: 0 13px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; border: 1px solid transparent; border-radius: 9px; font-size: 12px; font-weight: 600; line-height: 1.2; transition: background-color var(--dur-fast) ease, border-color var(--dur-fast) ease, color var(--dur-fast) ease, transform var(--dur-press) var(--ease-press); }
+    .btn:active { transform: scale(.98); }
+    .btn .icon { width: 14px; height: 14px; }
+    .btn-primary { color: oklch(99% 0.01 160); background: var(--accent); }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-secondary { color: var(--fg); background: var(--surface); border-color: var(--border); }
+    .btn-secondary:hover { background: var(--paper-deep); border-color: var(--line-strong); }
+    .btn-ghost { color: var(--muted); background: transparent; }
+    .btn-ghost:hover { color: var(--fg); background: var(--paper-deep); }
+    .btn-small { min-height: 30px; padding-inline: 9px; font-size: 10.5px; border-radius: 7px; }
+    .task-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; }
+    .journal-entry { flex: 1; min-height: 35px; padding: 4px 10px; display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 1px solid transparent; border-radius: 9px; background: transparent; color: var(--fg); font-size: 11.5px; font-weight: 600; text-align: left; }
+    .journal-entry:hover { background: var(--paper); border-color: var(--border); }
+    .journal-entry .icon { width: 14px; height: 14px; color: var(--muted); }
+    .complete-strip { display: flex; align-items: center; gap: 7px; margin-top: 10px; padding: 9px 10px; border-radius: 11px; background: oklch(95% 0.025 155); border: 1px solid oklch(86% 0.035 155); color: var(--ok); font-size: 10.5px; line-height: 1.5; }
+    .complete-strip .icon { width: 15px; height: 15px; }
+
+    .composer-bar {
+      position: absolute; z-index: 62; right: 0; bottom: 0; width: var(--companion-w); padding: 8px 13px 13px;
+      background: linear-gradient(180deg, transparent, var(--rail-bg) 34%); pointer-events: auto;
+    }
+    .composer-shell { display: flex; align-items: flex-end; gap: 3px; padding: 5px; border: 1px solid oklch(83% 0.03 160); border-radius: 16px; background: var(--surface); box-shadow: 0 10px 28px oklch(44% 0.05 160 / .12); }
+    .composer-shell:focus-within { border-color: oklch(69% 0.07 168); box-shadow: 0 0 0 3px oklch(83% 0.05 168 / .36), 0 10px 28px oklch(44% 0.05 160 / .12); }
+    .composer-tools { display: flex; align-items: flex-end; gap: 0; }
+    .icon-btn { width: 34px; height: 34px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 9px; background: transparent; color: var(--muted); transition: background-color var(--dur-fast) ease, color var(--dur-fast) ease, transform var(--dur-press) var(--ease-press); }
+    .icon-btn:hover { color: var(--fg); background: var(--paper-deep); }
+    .icon-btn:active { transform: scale(.94); }
+    .icon-btn .icon { width: 17px; height: 17px; }
+    .icon-btn.recording { color: var(--danger); background: var(--danger-soft); }
+    .chat-input { flex: 1; min-width: 0; max-height: 82px; resize: none; border: 0; outline: none; background: transparent; padding: 8px 3px 7px; color: var(--fg); font-size: 12.5px; line-height: 1.5; }
+    .chat-input::placeholder { color: var(--soft); }
+    .send-btn { width: 34px; height: 34px; flex: 0 0 auto; display: grid; place-items: center; border: 0; border-radius: 10px; background: var(--accent); color: white; transition: background-color var(--dur-fast) ease, transform var(--dur-press) var(--ease-press); }
+    .send-btn:hover { background: var(--accent-hover); }
+    .send-btn:active { transform: scale(.94); }
+    .send-btn:disabled { color: var(--soft); background: var(--paper-deep); cursor: default; transform: none; }
+    .send-btn .icon { width: 16px; height: 16px; }
+    .composer-foot { margin: 5px 4px 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--soft); font-size: 9px; letter-spacing: .02em; }
+    .composer-foot .recording-label { color: var(--danger); }
+    .composer-attachments { display: flex; flex-wrap: wrap; gap: 5px; margin: 0 2px 6px; }
+    .attach-chip { min-height: 30px; display: flex; align-items: center; gap: 5px; padding: 3px 5px 3px 3px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--muted); font-size: 9.5px; }
+    .attach-chip img { width: 24px; height: 24px; border-radius: 5px; object-fit: cover; }
+    .attach-chip .icon { width: 13px; height: 13px; }
+    .attach-chip button { width: 22px; height: 22px; border: 0; border-radius: 5px; background: transparent; color: var(--muted); display: grid; place-items: center; }
+    .attach-chip button:hover { background: var(--paper-deep); color: var(--fg); }
+    .attach-chip button .icon { width: 11px; height: 11px; }
+
+    .mobile-task-strip { display: none; position: absolute; z-index: 47; left: 0; right: 0; bottom: var(--composer-h); min-height: 52px; padding: 7px 13px; border-top: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 94%, var(--mint-wash)); }
+    .task-strip-btn { width: 100%; min-height: 38px; display: flex; align-items: center; gap: 9px; padding: 2px; border: 0; background: transparent; text-align: left; }
+    .task-strip-avatar { width: 34px; height: 34px; flex: 0 0 auto; border-radius: 12px; display: grid; place-items: center; background: var(--mint-soft); border: 1px solid oklch(84% 0.035 166); }
+    .task-strip-avatar .mascot { width: 35px; height: 35px; }
+    .task-strip-copy { min-width: 0; flex: 1; }
+    .task-strip-copy strong { display: block; font-size: 11.5px; line-height: 1.4; font-weight: 600; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .task-strip-copy span { display: block; margin-top: 1px; font-size: 10px; line-height: 1.35; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .task-strip-btn > .icon { width: 15px; height: 15px; color: var(--soft); }
+
+    .mobile-sheet {
+      position: absolute; z-index: 49; left: 0; right: 0; bottom: var(--composer-h); height: min(74%, 620px);
+      display: flex; flex-direction: column; overflow: hidden; border-radius: 20px 20px 0 0;
+      background: var(--surface); border-top: 1px solid var(--border); box-shadow: 0 -24px 60px rgba(30,32,34,.18);
+      transform: translateY(calc(100% + 24px)); opacity: 0; pointer-events: none;
+      transition: transform var(--dur-panel) var(--ease-enter), opacity var(--dur-fast) ease;
+    }
+    .app.sheet-open .mobile-sheet { transform: translateY(0); opacity: 1; pointer-events: auto; }
+    .sheet-grab { width: 100%; height: 22px; display: grid; place-items: center; border: 0; background: transparent; flex: 0 0 auto; }
+    .sheet-grab::after { content: ""; width: 36px; height: 4px; border-radius: 99px; background: #c7c7cc; }
+    .sheet-head { display: flex; align-items: center; gap: 9px; padding: 0 14px 10px; border-bottom: 1px solid var(--border); }
+    .sheet-head .mascot { width: 38px; height: 38px; }
+    .sheet-head-copy { flex: 1; min-width: 0; }
+    .sheet-head-copy strong { display: block; font-size: 14px; font-weight: 600; color: var(--fg); }
+    .sheet-head-copy span { display: block; margin-top: 1px; font-size: 10.5px; color: var(--muted); }
+    .mobile-sheet-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 10px 12px calc(20px + env(safe-area-inset-bottom)); }
+    .mobile-sheet .chat-thread { padding-top: 0; }
+
+    .journal-layer {
+      position: absolute; z-index: 54; inset: 0 var(--companion-w) 0 0; pointer-events: none;
+      opacity: 0; background: oklch(31% 0.03 70 / .18); backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px);
+      transition: opacity var(--dur-ui) ease;
+    }
+    .app.journal-open .journal-layer { pointer-events: auto; opacity: 1; }
+    .journal-panel {
+      position: absolute; inset: 14px; display: flex; flex-direction: column; overflow: hidden;
+      border: 1px solid oklch(90% 0.02 82); border-radius: 20px; background: var(--paper);
+      box-shadow: 0 26px 70px oklch(38% 0.04 66 / .24);
+      transform: translateX(22px) scale(.992); opacity: 0; transition: transform var(--dur-journal) var(--ease-enter), opacity var(--dur-ui) ease;
+    }
+    .app.journal-open .journal-panel { transform: none; opacity: 1; }
+    .journal-head { flex: 0 0 auto; min-height: 64px; display: flex; align-items: center; gap: 10px; padding: 10px 14px 10px 18px; border-bottom: 1px solid var(--border); background: oklch(99.2% 0.01 84 / .85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+    .journal-head-copy { min-width: 0; flex: 1; }
+    .journal-kicker { color: var(--muted); font-size: 10px; letter-spacing: .05em; }
+    .journal-title { margin-top: 2px; font-family: var(--font-display); font-size: 19px; font-weight: 600; line-height: 1.35; color: var(--ink-deep); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .journal-head-tools { display: flex; align-items: center; gap: 6px; }
+    .journal-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 26px clamp(18px, 4vw, 52px) 64px; scrollbar-width: thin; scrollbar-color: oklch(80% 0.02 80) transparent; }
+    .journal-body::-webkit-scrollbar { width: 7px; }
+    .journal-body::-webkit-scrollbar-thumb { background: oklch(82% 0.02 80); border-radius: 99px; }
+    .journal-inner { width: 100%; max-width: 760px; margin: 0 auto; }
+    .archive-banner { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 20px; padding: 12px 14px; border: 1px solid oklch(85% 0.05 84); border-radius: 12px; background: var(--gold-soft); color: oklch(37% 0.04 70); font-size: 12px; line-height: 1.65; }
+    .archive-banner .icon { width: 16px; height: 16px; color: oklch(55% 0.085 74); margin-top: 1px; }
+    .archive-banner .banner-copy { flex: 1; min-width: 0; }
+    .archive-banner strong { display: block; margin-bottom: 2px; font-weight: 600; color: var(--fg); }
+    .archive-index { display: flex; align-items: center; gap: 9px; margin-bottom: 26px; padding: 9px 11px; border: 1px dashed var(--line-strong); border-radius: 11px; color: var(--muted); font-size: 11px; }
+    .archive-index .icon { width: 14px; height: 14px; }
+    .archive-index .archive-copy { flex: 1; min-width: 0; line-height: 1.5; }
+    .archive-index strong { display: block; color: var(--fg); font-weight: 600; }
+    .timeline { position: relative; }
+    .j-entry { position: relative; padding-left: 30px; margin-bottom: 28px; }
+    .j-entry::before { content: ""; position: absolute; left: 7px; top: 18px; bottom: -28px; width: 1px; background: var(--border); }
+    .j-entry:last-child::before { display: none; }
+    .j-entry:last-child { margin-bottom: 0; }
+    .j-dot { position: absolute; left: 0; top: 5px; width: 15px; height: 15px; border-radius: 50%; border: 1px solid oklch(77% 0.04 78); background: var(--paper); display: grid; place-items: center; color: var(--muted); }
+    .j-dot::after { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+    .j-dot.user { color: var(--fg); background: var(--paper-deep); }
+    .j-dot.done { color: var(--ok); background: oklch(95% 0.02 155); border-color: oklch(80% 0.04 155); }
+    .j-dot.error { color: var(--danger); background: var(--danger-soft); border-color: oklch(82% 0.06 30); }
+    .j-dot.active { color: var(--accent); background: var(--mint-soft); border-color: oklch(74% 0.07 168); }
+    .j-time { margin-bottom: 7px; color: var(--soft); font: 9.5px/1.2 var(--font-mono); letter-spacing: .04em; }
+    .j-label { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 7px; font-size: 11.5px; font-weight: 600; color: var(--fg); }
+    .j-label .j-badge { padding: 1px 6px; border-radius: 99px; background: var(--paper-deep); color: var(--muted); font-size: 9px; font-weight: 500; border: 1px solid var(--border); }
+    .j-text { color: var(--muted); font-size: 13px; line-height: 1.8; }
+    .request-block { padding: 14px 16px; border-radius: 14px; background: oklch(95.5% 0.02 82); border: 1px solid oklch(89% 0.02 82); color: var(--fg); font-size: 13.5px; line-height: 1.75; }
+    .request-block .request-meta { display: flex; gap: 7px; align-items: center; margin-top: 7px; color: var(--soft); font-size: 9.5px; }
+    .plan-list { margin: 9px 0 0; padding: 0; list-style: none; display: grid; gap: 5px; color: var(--muted); font-size: 12px; line-height: 1.65; }
+    .plan-list li { display: flex; gap: 7px; }
+    .plan-list li::before { content: ""; width: 4px; height: 4px; margin-top: .75em; border-radius: 50%; background: var(--gold); flex: 0 0 auto; }
+    .material-list { display: grid; gap: 6px; margin-top: 11px; }
+    .material-row { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); }
+    .material-row .icon { width: 14px; height: 14px; color: var(--muted); }
+    .material-copy { min-width: 0; flex: 1; }
+    .material-copy strong { display: block; font-size: 11px; line-height: 1.4; font-weight: 500; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .material-copy span { display: block; margin-top: 1px; color: var(--soft); font-size: 9px; }
+    .material-state { flex: 0 0 auto; font-size: 9px; color: var(--muted); }
+    .material-state.bad { color: var(--danger); }
+    .record-card { padding: 14px 15px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); box-shadow: 0 6px 18px oklch(48% 0.04 72 / .05); }
+    .record-head { display: flex; align-items: flex-start; gap: 10px; }
+    .record-index { width: 27px; height: 27px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 8px; background: var(--mint-soft); color: var(--accent); font: 10px/1 var(--font-mono); }
+    .record-copy { flex: 1; min-width: 0; }
+    .record-kicker { color: var(--soft); font-size: 9.5px; }
+    .record-title { margin: 2px 0 0; font-family: var(--font-display); font-size: 19px; line-height: 1.4; font-weight: 600; color: var(--ink-deep); }
+    .record-state { flex: 0 0 auto; color: var(--ok); font-size: 9.5px; }
+    .record-excerpt { margin: 10px 0 11px; color: var(--muted); font-size: 12px; line-height: 1.75; }
+    .record-sources { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 10px; }
+    .source-pill { min-height: 25px; padding: 2px 7px; border: 1px solid var(--border); border-radius: 999px; background: var(--paper); color: var(--muted); font-size: 9.5px; }
+    .source-pill:hover { color: var(--fg); border-color: var(--line-strong); }
+    .record-actions { display: flex; flex-wrap: wrap; gap: 5px; }
+    .current-card { padding: 14px 15px; border-radius: 14px; border: 1px solid oklch(84% 0.04 166); background: linear-gradient(135deg, var(--mint-wash), oklch(99% 0.01 90)); }
+    .current-card .current-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+    .current-card h3 { margin: 0; font-family: var(--font-display); font-size: 17px; line-height: 1.4; font-weight: 600; color: var(--ink-deep); }
+    .current-card p { margin: 4px 0 0; color: var(--muted); font-size: 12px; line-height: 1.7; }
+    .current-card .current-actions { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
+    .error-card { padding: 14px 15px; border-radius: 14px; border: 1px solid oklch(86% 0.05 32); background: var(--danger-soft); }
+    .error-card h3 { display: flex; gap: 6px; align-items: center; margin: 0 0 5px; font-size: 13px; font-weight: 600; color: var(--fg); }
+    .error-card h3 .icon { width: 15px; height: 15px; color: var(--danger); }
+    .error-card p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.7; }
+    .error-card .error-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+    .empty-record { padding: 12px 14px; border: 1px dashed var(--line-strong); border-radius: 12px; color: var(--muted); font-size: 12px; line-height: 1.7; background: oklch(99% 0.006 90 / .45); }
+    .empty-record strong { display: block; margin-bottom: 2px; color: var(--fg); font-weight: 600; }
+    .complete-card { padding: 15px; border-radius: 14px; border: 1px solid oklch(84% 0.035 155); background: oklch(96.5% 0.02 155); }
+    .complete-card h3 { display: flex; align-items: center; gap: 7px; margin: 0; font-family: var(--font-display); font-size: 18px; color: oklch(34% 0.05 155); }
+    .complete-card h3 .icon { width: 18px; height: 18px; }
+    .complete-card p { margin: 5px 0 0; color: var(--muted); font-size: 12px; line-height: 1.7; }
+
+    .preview-layer { position: absolute; z-index: 56; inset: 0 var(--companion-w) 0 0; pointer-events: none; }
+    .preview-scrim { position: absolute; inset: 0; background: oklch(28% 0.03 65 / .16); backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px); opacity: 0; transition: opacity var(--dur-ui) ease; }
+    .preview-panel {
+      position: absolute; right: 24px; bottom: 24px; width: min(620px, calc(100% - 48px)); max-height: calc(100% - 48px);
+      display: flex; flex-direction: column; overflow: hidden; border: 1px solid oklch(90% 0.02 82); border-radius: 20px;
+      background: var(--paper); box-shadow: 0 30px 80px oklch(38% 0.04 66 / .28);
+      transform: translateY(10px) scale(.955); transform-origin: var(--origin-x, 82%) var(--origin-y, 88%);
+      opacity: 0; pointer-events: none;
+      transition: transform var(--dur-panel) var(--ease-enter), opacity var(--dur-fast) ease;
+    }
+    .app.preview-open .preview-layer { pointer-events: auto; }
+    .app.preview-open .preview-scrim { opacity: 1; }
+    .app.preview-open .preview-panel { transform: translateY(0) scale(1); opacity: 1; pointer-events: auto; }
+    .preview-head { flex: 0 0 auto; display: flex; align-items: flex-start; gap: 10px; padding: 16px 16px 12px 20px; border-bottom: 1px solid var(--border); }
+    .preview-heading { flex: 1; min-width: 0; }
+    .preview-kicker { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin-bottom: 5px; color: var(--soft); font-size: 9.5px; letter-spacing: .03em; }
+    .preview-title { margin: 0; font-family: var(--font-display); font-size: 23px; line-height: 1.42; font-weight: 600; color: var(--ink-deep); }
+    .preview-head .icon-btn { width: 34px; height: 34px; flex: 0 0 auto; }
+    .preview-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 18px 24px 22px; scrollbar-width: thin; scrollbar-color: oklch(80% 0.02 80) transparent; }
+    .preview-body::-webkit-scrollbar { width: 7px; }
+    .preview-body::-webkit-scrollbar-thumb { background: oklch(82% 0.02 80); border-radius: 99px; }
+    .preview-meta { display: flex; flex-wrap: wrap; gap: 6px 10px; margin-bottom: 15px; color: var(--soft); font-size: 10px; line-height: 1.5; }
+    .preview-prose p { margin: 0 0 1em; color: oklch(32% 0.02 65); font-size: 14px; line-height: 1.85; }
+    .preview-prose p:first-child::first-letter { font-family: var(--font-display); font-size: 2.1em; float: left; line-height: .9; padding: 3px 5px 0 0; color: var(--accent); }
+    .preview-prose .stream-line { min-height: 3.6em; }
+    .stream-caret { display: inline-block; width: 2px; height: 1em; margin-left: 2px; vertical-align: -0.15em; background: var(--accent); animation: caret-pulse 900ms steps(1) infinite; }
+    .preview-note { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: var(--gold-soft); color: oklch(40% 0.04 74); font-size: 11px; line-height: 1.65; border: 1px solid oklch(87% 0.045 84); }
+    .preview-note.error { background: var(--danger-soft); color: oklch(43% 0.09 30); border-color: oklch(87% 0.05 32); }
+    .preview-empty { padding: 22px 0 12px; text-align: center; }
+    .preview-empty-icon { width: 54px; height: 54px; margin: 0 auto 12px; border-radius: 18px; display: grid; place-items: center; color: var(--accent); background: var(--mint-soft); }
+    .preview-empty-icon .icon { width: 24px; height: 24px; }
+    .preview-empty h3 { margin: 0 0 5px; font-family: var(--font-display); font-size: 19px; color: var(--ink-deep); }
+    .preview-empty p { max-width: 27em; margin: 0 auto; color: var(--muted); font-size: 12px; line-height: 1.75; }
+    .preview-foot { flex: 0 0 auto; display: flex; align-items: center; gap: 7px; padding: 11px 16px 13px; border-top: 1px solid var(--border); background: color-mix(in srgb, var(--paper) 86%, white); }
+    .preview-foot .foot-copy { flex: 1; min-width: 0; color: var(--soft); font-size: 9.5px; line-height: 1.45; }
+    .preview-foot .foot-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; flex: 0 0 auto; }
+    .version-update { display: flex; align-items: center; gap: 7px; margin-bottom: 12px; padding: 8px 10px; border: 1px solid oklch(84% 0.045 166); border-radius: 9px; background: var(--mint-soft); color: oklch(35% 0.06 166); font-size: 10.5px; line-height: 1.5; }
+    .version-update .icon { width: 13px; height: 13px; }
+    .version-update button { margin-left: auto; flex: 0 0 auto; }
+
+    .edit-layer { position: absolute; z-index: 91; inset: 0; display: grid; place-items: center; padding: 20px; background: oklch(25% 0.02 65 / .28); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); opacity: 0; pointer-events: none; transition: opacity var(--dur-fast) ease; }
+    .app.edit-open .edit-layer { opacity: 1; pointer-events: auto; }
+    .edit-panel { width: min(500px, 100%); padding: 22px; border-radius: 19px; border: 1px solid var(--border); background: var(--surface); box-shadow: 0 28px 70px oklch(30% 0.03 65 / .26); transform: translateY(9px) scale(.98); transition: transform var(--dur-panel) var(--ease-enter); }
+    .app.edit-open .edit-panel { transform: none; }
+    .edit-title { margin: 0; font-family: var(--font-display); font-size: 23px; line-height: 1.4; color: var(--ink-deep); }
+    .edit-copy { margin: 6px 0 14px; color: var(--muted); font-size: 12px; line-height: 1.65; }
+    .edit-label { display: block; margin-bottom: 6px; color: var(--fg); font-size: 11px; font-weight: 600; }
+    .edit-textarea { width: 100%; min-height: 118px; resize: vertical; padding: 11px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--paper); color: var(--fg); font-size: 13px; line-height: 1.65; }
+    .edit-textarea:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--mint-soft); }
+    .edit-hint { margin: 7px 0 0; color: var(--soft); font-size: 10px; line-height: 1.5; }
+    .edit-actions { display: flex; justify-content: flex-end; gap: 7px; margin-top: 17px; }
+
+    .toast-region { position: absolute; z-index: 84; left: 24px; bottom: 24px; width: min(372px, calc(100% - 48px)); pointer-events: none; }
+    .toast { pointer-events: auto; display: flex; align-items: flex-start; gap: 9px; padding: 11px 12px; border-radius: 13px; color: oklch(97% 0.01 85); background: oklch(29% 0.027 68); border: 1px solid oklch(38% 0.03 68); box-shadow: 0 16px 38px oklch(28% 0.04 65 / .22); animation: toast-in var(--dur-ui) var(--ease-enter); }
+    .toast .toast-icon { width: 26px; height: 26px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 8px; background: oklch(100% 0 0 / .10); color: oklch(83% 0.08 165); }
+    .toast .toast-icon .icon { width: 14px; height: 14px; }
+    .toast-copy { flex: 1; min-width: 0; }
+    .toast-title { font-size: 11.5px; font-weight: 600; line-height: 1.45; }
+    .toast-body { margin-top: 2px; color: oklch(84% 0.015 82); font-size: 10px; line-height: 1.5; }
+    .toast-actions { display: flex; align-items: center; gap: 4px; margin-top: 7px; }
+    .toast-action { min-height: 26px; padding: 2px 7px; border: 1px solid oklch(100% 0 0 / .18); border-radius: 6px; background: transparent; color: #fff; font-size: 9.5px; }
+    .toast-action:hover { background: oklch(100% 0 0 / .12); }
+    .toast-close { width: 24px; height: 24px; flex: 0 0 auto; display: grid; place-items: center; border: 0; border-radius: 6px; background: transparent; color: oklch(83% 0.02 82); }
+    .toast-close:hover { background: oklch(100% 0 0 / .10); color: #fff; }
+    .toast-close .icon { width: 12px; height: 12px; }
+    @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes caret-pulse { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0; } }
+
+    .guide-layer { position: fixed; z-index: 500; inset: 0; display: grid; place-items: center; padding: 20px; background: rgba(17,19,20,.56); backdrop-filter: blur(8px); opacity: 0; pointer-events: none; transition: opacity var(--dur-ui) ease; }
+    .guide-layer.open { opacity: 1; pointer-events: auto; }
+    .guide-panel { width: min(760px, 100%); max-height: min(760px, calc(100% - 20px)); display: flex; flex-direction: column; overflow: hidden; border-radius: 20px; background: #fbfaf6; border: 1px solid #ddd8ce; box-shadow: 0 30px 90px rgba(0,0,0,.3); transform: translateY(10px) scale(.99); transition: transform var(--dur-panel) var(--ease-enter); }
+    .guide-layer.open .guide-panel { transform: none; }
+    .guide-head { display: flex; align-items: flex-start; gap: 12px; padding: 20px 22px 14px; border-bottom: 1px solid #e1ddd4; }
+    .guide-head h2 { margin: 0; font: 600 24px/1.35 var(--font-display); color: #282521; }
+    .guide-head p { margin: 4px 0 0; color: #68625b; font-size: 12px; line-height: 1.6; }
+    .guide-head .icon-btn { margin-left: auto; color: #5f5a54; }
+    .guide-body { overflow-y: auto; padding: 20px 22px 26px; display: grid; grid-template-columns: 1fr 1fr; gap: 22px; color: #39352f; }
+    .guide-block h3 { margin: 0 0 7px; font: 600 14px/1.4 var(--font-body); color: #282521; }
+    .guide-block p, .guide-block li { color: #5e5851; font-size: 12px; line-height: 1.7; }
+    .guide-block ol, .guide-block ul { margin: 0; padding-left: 18px; }
+    .guide-block li + li { margin-top: 4px; }
+    .guide-block code { font: 10.5px/1.4 var(--font-mono); background: #efebe3; padding: 1px 4px; border-radius: 4px; color: #4c463f; }
+    .guide-wide { grid-column: 1 / -1; }
+    .guide-note { padding: 12px 14px; border-radius: 10px; border: 1px solid #e4ddcf; background: #f6f1e7; color: #61594e; font-size: 11px; line-height: 1.65; }
+    .guide-keys { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .guide-keys span { display: inline-flex; align-items: center; min-height: 25px; padding: 2px 7px; border-radius: 6px; background: #f0ece4; border: 1px solid #ddd7cc; font: 10px/1 var(--font-mono); color: #5d574f; }
+
+    .app.journal-open .companion .notice-actions { display: none; }
+    .target-glow { animation: target-glow 1.8s var(--ease-enter); }
+    @keyframes target-glow { 0% { background-color: transparent; } 12%, 52% { background-color: oklch(91% 0.045 86 / .72); } 100% { background-color: transparent; } }
+    .journal-focus { animation: journal-focus 1.5s var(--ease-enter); }
+    @keyframes journal-focus { 0% { box-shadow: 0 0 0 0 oklch(72% 0.07 168 / 0); } 18% { box-shadow: 0 0 0 3px oklch(72% 0.07 168 / .22); } 100% { box-shadow: 0 0 0 0 oklch(72% 0.07 168 / 0); } }
+    .just-arrived { animation: output-arrive 520ms var(--ease-enter); }
+    @keyframes output-arrive { 0% { opacity: .4; transform: translateY(8px); background: var(--mint-soft); } 60% { opacity: 1; transform: translateY(0); } 100% { background: transparent; } }
+    .preview-new-chip { position: absolute; z-index: 4; bottom: 70px; right: 16px; min-height: 29px; padding: 3px 9px; display: inline-flex; align-items: center; gap: 5px; border: 1px solid oklch(81% 0.05 166); border-radius: 999px; background: var(--mint-soft); color: oklch(36% 0.06 166); font-size: 10px; box-shadow: 0 6px 16px oklch(50% 0.06 166 / .12); }
+    .preview-new-chip .icon { width: 12px; height: 12px; }
+    .preview-new-chip:hover { background: oklch(89% 0.045 166); }
+    .app.is-compact .preview-new-chip { bottom: 74px; right: 12px; }
+    .app.is-compact .notice-panel { margin-top: 9px; }
+    .app.is-compact { --rail-w: 0px; grid-template-columns: minmax(0, 1fr); }
+    .app.is-compact .spine, .app.is-compact .companion { display: none; }
+    .app.is-compact .reading-pane { padding: 0; background: var(--paper); }
+    .app.is-compact .note-sheet { max-width: none; height: 100%; border: 0; border-radius: 0; box-shadow: none; }
+    .app.is-compact .desk-topbar { display: none; }
+    .app.is-compact .mobile-nav { display: flex; }
+    .app.is-compact .note-inner { max-width: 690px; padding: 30px 22px 70px; }
+    .app.is-compact .note-title { font-size: clamp(31px, 7vw, 40px); }
+    .app.is-compact .note-body p { font-size: 16.5px; }
+    .app.is-compact .reader-scroll { padding-bottom: calc(var(--composer-h) + 68px); }
+    .app.is-compact .composer-bar { width: 100%; padding: 7px 11px calc(8px + env(safe-area-inset-bottom)); background: color-mix(in srgb, var(--surface) 92%, transparent); border-top: 1px solid var(--border); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
+    .app.is-compact .composer-shell { border-radius: 14px; }
+    .app.is-compact .composer-foot { display: none; }
+    .app.is-compact .chat-input { font-size: 16px; min-height: 34px; padding-top: 7px; }
+    .app.is-compact .mobile-task-strip { display: block; }
+    .app.is-compact .icon-btn, .app.is-compact .send-btn { width: 44px; height: 44px; }
+    .app.is-compact .composer-tools .icon-btn { width: 38px; height: 44px; }
+    .app.is-compact .send-btn { width: 42px; }
+    .app.is-compact .composer-shell { padding: 4px; }
+    .app.is-compact .toast-region { left: 12px; right: 12px; bottom: calc(var(--composer-h) + 14px); width: auto; }
+    .app.is-compact .journal-layer { inset: 0 0 var(--composer-h) 0; }
+    .app.is-compact .journal-panel { inset: 0; border: 0; border-radius: 0; box-shadow: none; }
+    .app.is-compact .journal-head { padding-top: max(10px, env(safe-area-inset-top)); }
+    .app.is-compact .preview-layer { inset: 0 0 var(--composer-h) 0; }
+    .app.is-compact .preview-panel { left: 0; right: 0; bottom: 0; width: 100%; max-height: 88%; border: 0; border-radius: 20px 20px 0 0; transform: translateY(100%); transform-origin: 50% 100%; }
+    .app.is-compact.preview-open .preview-panel { transform: translateY(0); }
+    .app.is-compact .preview-head { padding-top: 18px; }
+    .app.is-compact .toast { border-radius: 12px; }
+    .app.is-compact .edit-panel { width: 100%; max-width: 500px; }
+    .app.is-compact .edit-layer { padding: 12px; padding-bottom: calc(var(--composer-h) + 12px); align-items: end; }
+    .app.is-compact .edit-panel { border-radius: 18px; }
+    .app.is-compact .mobile-sheet { left: 0; right: 0; }
+    .app.platform-mobile.is-compact { border-radius: 42px; }
+    .app.platform-mobile.is-compact .reading-pane { background: var(--paper); }
+    .app.platform-mobile.is-compact .note-sheet { background-image: none; }
+    .app.platform-mobile.is-compact .note-shell, .app.platform-mobile.is-compact .note-sheet { background-color: #fff; }
+    .app.platform-mobile.is-compact .note-title { color: #1c1c1e; font-family: var(--font-body); font-size: clamp(29px, 7vw, 34px); font-weight: 700; line-height: 1.36; }
+    .app.platform-mobile.is-compact .note-subtitle { font-family: var(--font-body); font-size: 14px; line-height: 1.7; color: var(--muted); }
+    .app.platform-mobile.is-compact .note-lead { font-family: var(--font-body); font-size: 17px; line-height: 1.85; color: #2c2c2e; }
+    .app.platform-mobile.is-compact .note-body h2 { font-family: var(--font-body); font-size: 21px; line-height: 1.5; font-weight: 700; color: #1c1c1e; }
+    .app.platform-mobile.is-compact .note-body p { color: #2c2c2e; font-size: 17px; line-height: 1.85; }
+    .app.platform-mobile.is-compact .note-body .quote { background: #f4f8ff; border-radius: 10px; }
+    .app.platform-mobile.is-compact .note-body .quote p { color: #184e91; }
+    .app.platform-mobile.is-compact .note-kicker { color: var(--accent); }
+    .app.platform-mobile.is-compact .note-rule { color: var(--accent); }
+    .app.platform-mobile.is-compact .inline-cite { color: var(--accent); border-bottom-color: color-mix(in srgb, var(--accent) 50%, transparent); }
+    .app.platform-mobile.is-compact .reading-mark { border-color: var(--border); color: var(--muted); }
+    .app.platform-mobile.is-compact .task-strip-avatar { border-radius: 10px; }
+    .app.platform-mobile.is-compact .mobile-task-strip { background: color-mix(in srgb, var(--surface) 92%, transparent); border-color: var(--border); backdrop-filter: blur(18px); }
+    .app.platform-mobile.is-compact .composer-bar { background: color-mix(in srgb, var(--surface) 95%, transparent); border-color: var(--border); }
+    .app.platform-mobile.is-compact .composer-shell { border-color: var(--border); box-shadow: none; background: #f7f7fa; }
+    .app.platform-mobile.is-compact .composer-shell:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+    .app.platform-mobile.is-compact .chat-input { font-size: 16px; }
+    .app.platform-mobile.is-compact .task-card { background: #fff; border-color: var(--border); box-shadow: none; }
+    .app.platform-mobile.is-compact .status-pill { border-radius: 999px; }
+    .app.platform-mobile.is-compact .task-title { font-family: var(--font-body); font-size: 18px; font-weight: 600; }
+    .app.platform-mobile.is-compact .current-step { background: #f7f7fa; border-color: var(--border); }
+    .app.platform-mobile.is-compact .step-index { background: #e9f2ff; color: var(--accent); }
+    .app.platform-mobile.is-compact .mini-btn.strong { color: var(--accent); background: #eef5ff; border-color: #cfe2ff; }
+    .app.platform-mobile.is-compact .task-member, .app.platform-mobile.is-compact .journal-panel, .app.platform-mobile.is-compact .preview-panel, .app.platform-mobile.is-compact .edit-panel, .app.platform-mobile.is-compact .mobile-sheet { background-color: #fff; }
+    .app.platform-mobile.is-compact .journal-panel, .app.platform-mobile.is-compact .preview-panel { background-image: none; }
+    .app.platform-mobile.is-compact .journal-head, .app.platform-mobile.is-compact .preview-head { background: rgba(255,255,255,.88); }
+    .app.platform-mobile.is-compact .journal-title, .app.platform-mobile.is-compact .preview-title, .app.platform-mobile.is-compact .record-title, .app.platform-mobile.is-compact .current-card h3 { font-family: var(--font-body); font-weight: 600; }
+    .app.platform-mobile.is-compact .note-sheet { background-color: #fff; background-image: none; }
+    .app.platform-mobile.is-compact .note-end { border-color: var(--border); }
+    .app.platform-mobile.is-compact .context-return { display: none; }
+    .app.platform-mobile.is-compact .mobile-nav { border-color: var(--border); }
+    .app.platform-mobile.is-compact .mobile-nav .icon-btn { color: var(--accent); }
+    .app.platform-mobile.is-compact .nav-title { color: #1c1c1e; }
+    .app.platform-mobile.is-compact .journal-body, .app.platform-mobile.is-compact .preview-body { padding-left: 16px; padding-right: 16px; }
+    .app.platform-mobile.is-compact .toast-region { top: max(58px, calc(env(safe-area-inset-top) + 52px)); bottom: auto; }
+    .app.platform-mobile.is-compact .toast { background: #1c1c1e; }
+    .app.platform-mobile.is-compact .preview-foot { padding-bottom: calc(13px + env(safe-area-inset-bottom)); }
+    .app.platform-mobile.is-compact .journal-layer { background: rgba(30,32,34,.2); }
+    .app.platform-mobile.is-compact .journal-layer .journal-panel { inset: 0; }
+    .app.platform-mobile.is-compact .edit-layer { padding-bottom: calc(var(--composer-h) + 12px); }
+
+    @media (max-width: 860px), (max-height: 560px) {
+      .app:not(.is-compact) { --rail-w: 0px; grid-template-columns: minmax(0, 1fr); }
+      .app:not(.is-compact) .spine, .app:not(.is-compact) .companion { display: none; }
+      .app:not(.is-compact) .reading-pane { padding: 0; background: var(--paper); }
+      .app:not(.is-compact) .note-sheet { max-width: none; border: 0; border-radius: 0; box-shadow: none; }
+      .app:not(.is-compact) .desk-topbar { display: none; }
+      .app:not(.is-compact) .mobile-nav { display: flex; }
+      .app:not(.is-compact) .mobile-task-strip { display: block; }
+      .app:not(.is-compact) .composer-bar { width: 100%; padding: 7px 11px calc(8px + env(safe-area-inset-bottom)); background: color-mix(in srgb, var(--surface) 92%, transparent); border-top: 1px solid var(--border); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
+      .app:not(.is-compact) .reader-scroll { padding-bottom: calc(var(--composer-h) + 68px); }
+      .app:not(.is-compact) .toast-region { left: 12px; right: 12px; bottom: calc(var(--composer-h) + 14px); width: auto; }
+      .app:not(.is-compact) .journal-layer { inset: 0 0 var(--composer-h) 0; }
+      .app:not(.is-compact) .journal-panel { inset: 0; border: 0; border-radius: 0; }
+      .app:not(.is-compact) .preview-layer { inset: 0 0 var(--composer-h) 0; }
+      .app:not(.is-compact) .preview-panel { left: 0; right: 0; bottom: 0; width: 100%; max-height: 88%; border: 0; border-radius: 20px 20px 0 0; transform: translateY(100%); transform-origin: 50% 100%; }
+      .app:not(.is-compact).preview-open .preview-panel { transform: translateY(0); }
+      .app:not(.is-compact) .mobile-sheet { display: flex; }
+      .app:not(.is-compact) .edit-layer { padding-bottom: calc(var(--composer-h) + 12px); }
+      .app:not(.is-compact) .toast-region { top: 58px; bottom: auto; }
+    }
+    @media (max-width: 580px) {
+      .app.platform-mobile { width: 100%; height: 100%; border: 0; border-radius: 0; box-shadow: none; }
+      .stage.mobile-stage { padding: 0; }
+      .proto-bar { gap: 6px 8px; padding: 6px 9px; }
+      .proto-brand { font-size: 10.5px; }
+      .proto-select select { max-width: 138px; }
+      .proto-spacer { display: none; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .mascot .blink { animation: none; }
+      .stream-caret { animation: none; opacity: 1; }
+    }
+    .app[data-motion="reduced"] *, .guide-layer[data-motion="reduced"] * { transition-duration: 120ms !important; }
+    .app[data-motion="reduced"] .preview-panel, .app[data-motion="reduced"] .journal-panel, .app[data-motion="reduced"] .mobile-sheet, .app[data-motion="reduced"] .edit-panel { transform: none !important; }
+    .app[data-motion="reduced"] .mascot .blink, .app[data-motion="reduced"] .stream-caret { animation: none; }
+    .app[data-motion="off"] *, .app[data-motion="off"] *::before, .app[data-motion="off"] *::after, .guide-layer[data-motion="off"] * { transition: none !important; animation: none !important; }
+    .app[data-motion="off"] button:active, .app[data-motion="off"] .btn:active { transform: none !important; }
+    .app[data-motion="off"] .stream-caret { opacity: 1; }
+    .app[data-motion="reduced"] .toast { animation: none; }
+    .app[data-motion="reduced"] .mascot .blink { animation: none; }
+  </style>
+</head>
+<body>
+  <svg class="svg-sprite" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+    <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1L3.2 9.4l6.1-.9L12 3Z"/></symbol>
+    <symbol id="i-book" viewBox="0 0 24 24"><path d="M5 4.5h9.5A3.5 3.5 0 0 1 18 8v11.5H8.5A3.5 3.5 0 0 1 5 16V4.5Z"/><path d="M5 16.2A3.2 3.2 0 0 1 8.2 13H18"/><path d="M9 7.5h5"/></symbol>
+    <symbol id="i-note" viewBox="0 0 24 24"><path d="M6 3.8h9.5L20 8.3v11.9H6V3.8Z"/><path d="M15 4v5h5M9 12h6M9 15.5h6M9 8.5h2"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="m14.5 5-7 7 7 7"/><path d="M8 12h12"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6.5" y="6.5" width="11" height="11" rx="1.5"/></symbol>
+    <symbol id="i-attach" viewBox="0 0 24 24"><path d="m9 12.5 5.6-5.6a3 3 0 0 1 4.2 4.2l-7.2 7.2a4.5 4.5 0 0 1-6.4-6.4l7-7"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3.5" width="6" height="11" rx="3"/><path d="M6.5 11.5a5.5 5.5 0 0 0 11 0M12 17v3M9.5 20h5"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="m4.5 11.3 15-7.1-5.2 15.3-2.6-6.1-7.2-2.1Z"/><path d="m11.7 13.4 4.3-4.3"/></symbol>
+    <symbol id="i-volume" viewBox="0 0 24 24"><path d="M4 9.5h4l4.5-3.6v12.2L8 14.5H4v-5Z"/><path d="M16 9a4.5 4.5 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h13M13 6l6 6-6 6"/></symbol>
+    <symbol id="i-external" viewBox="0 0 24 24"><path d="M13 5h6v6M19 5l-8 8"/><path d="M18 14.5v4.2H5.3V5.7h4.2"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.4 4.3L19 7"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4 21 20H3L12 4Z"/><path d="M12 9v5M12 17.2v.1"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5.2l3.4 2"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><path d="M3.5 12s3.1-6 8.5-6 8.5 6 8.5 6-3.1 6-8.5 6-8.5-6-8.5-6Z"/><circle cx="12" cy="12" r="2.8"/></symbol>
+    <symbol id="i-expand" viewBox="0 0 24 24"><path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M19.5 9A8 8 0 0 0 5 7.2L3.5 9M3.5 5v4h4M4.5 15A8 8 0 0 0 19 16.8l1.5-1.8M20.5 19v-4h-4"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M6 3.8h8l4 4v12.4H6V3.8Z"/><path d="M14 4v4.2h4M9 12h6M9 15.5h4"/></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="m4.5 17 5-4.7 3 2.8 2.4-2.2 4.6 4.1"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 3 1.7 5.3L19 10l-5.3 1.7L12 17l-1.7-5.3L5 10l5.3-1.7L12 3Z"/><path d="m19 15 .8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15Z"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3.5 7.5h7l2 2h8v9h-17v-11Z"/><path d="M3.5 7.5v-2h7l2 2"/></symbol>
+    <symbol id="companion" viewBox="0 0 120 120">
+      <ellipse cx="60" cy="104" rx="34" ry="8" fill="oklch(86% 0.052 76 / .55)"/>
+      <path d="M78 78c13 1 18 9 17 18-8 2-16-2-20-8" fill="oklch(81% 0.07 164)"/>
+      <circle cx="60" cy="60" r="30" fill="oklch(96% 0.013 84)"/>
+      <path d="M31 64c4 18 16 29 29 29 13 0 25-11 29-29-9 5-19 8-29 8s-20-3-29-8Z" fill="oklch(90% 0.055 165)"/>
+      <path d="M34 61c6 6 15 9 26 9s20-3 26-9" fill="none" stroke="oklch(69% 0.08 166)" stroke-width="2.5" stroke-linecap="round"/>
+      <path d="M48 53c1.5 2 4.5 2 6 0M66 53c1.5 2 4.5 2 6 0" fill="none" stroke="oklch(37% 0.035 65)" stroke-width="2.6" stroke-linecap="round" class="blink"/>
+      <path d="M57 61c2 1.6 4 1.6 6 0" fill="none" stroke="oklch(48% 0.07 30)" stroke-width="2.2" stroke-linecap="round"/>
+      <circle cx="42" cy="60" r="4" fill="oklch(88% 0.07 50 / .55)"/>
+      <circle cx="78" cy="60" r="4" fill="oklch(88% 0.07 50 / .55)"/>
+      <path d="M90 26l2.1 6.1 6.1 2.1-6.1 2.1L90 42l-2.1-5.7-6.1-2.1 6.1-2.1L90 26Z" fill="oklch(83% 0.11 86)"/>
+      <path d="M28 35l1.5 4.2 4.2 1.5-4.2 1.5L28 46.4l-1.5-4.2-4.2-1.5 4.2-1.5L28 35Z" fill="oklch(83% 0.11 86 / .8)"/>
+      <path d="M42 78c-6 1-11 5-13 11" fill="none" stroke="oklch(69% 0.08 166)" stroke-width="2.5" stroke-linecap="round"/>
+    </symbol>
+  </svg>
+
+  <header class="proto-bar" data-od-id="prototype-toolbar">
+    <div class="proto-brand"><span class="proto-dot"></span>交互原型 · 演示数据</div>
+    <div class="proto-group">
+      <span class="proto-label">查看</span>
+      <div class="seg" role="group" aria-label="演示平台">
+        <button type="button" class="seg-btn" data-platform="desktop" aria-pressed="true">桌面</button>
+        <button type="button" class="seg-btn" data-platform="mobile" aria-pressed="false">手机 390</button>
+      </div>
+    </div>
+    <label class="proto-select">状态
+      <select id="scenario-select" aria-label="演示状态">
+        <option value="partial">部分失败（主演示）</option>
+        <option value="fresh">从头开始</option>
+        <option value="normal">正常推进</option>
+        <option value="slow">生成较慢</option>
+        <option value="confirm">等待确认</option>
+        <option value="verifying">核对保存结果</option>
+        <option value="stopped">已停止</option>
+        <option value="complete">全部完成</option>
+        <option value="archive">回看旧记录</option>
+      </select>
+    </label>
+    <label class="proto-select">动效
+      <select id="motion-select" aria-label="动效强度">
+        <option value="full">完整</option>
+        <option value="reduced">轻量</option>
+        <option value="off">关闭</option>
+      </select>
+    </label>
+    <div class="proto-spacer"></div>
+    <button type="button" class="proto-btn" id="simulate-new">模拟新版到达</button>
+    <button type="button" class="proto-btn" id="open-guide">操作导览</button>
+  </header>
+
+  <main class="stage" id="stage">
+    <div class="app platform-desktop" id="app" data-motion="full" data-od-id="app-shell">
+      <aside class="spine" data-od-id="desktop-spine">
+        <div class="brand-mark" aria-label="拾星书房"><svg class="icon"><use href="#i-star"/></svg></div>
+        <nav class="spine-nav" aria-label="书房导航">
+          <button type="button" class="spine-btn" aria-current="page" data-action="focus-reader" data-od-id="nav-reading"><svg class="icon"><use href="#i-book"/></svg><span>阅读</span></button>
+          <button type="button" class="spine-btn" data-action="open-journal" data-od-id="nav-journal"><svg class="icon"><use href="#i-note"/></svg><span>手记</span></button>
+        </nav>
+        <div class="spine-bottom"><div class="spine-seal" title="拾星书房">星</div></div>
+      </aside>
+
+      <section class="reading-pane" data-od-id="reading-surface">
+        <div class="note-sheet" id="note-sheet" data-od-id="note-sheet">
+          <div class="desk-topbar" id="desk-topbar" data-od-id="reading-toolbar"></div>
+          <nav class="mobile-nav" id="mobile-nav" data-od-id="mobile-navigation">
+            <button type="button" class="icon-btn" data-action="mobile-back" aria-label="返回"><svg class="icon"><use href="#i-back"/></svg></button>
+            <div class="nav-title" id="mobile-nav-title">秦制与天下</div>
+            <button type="button" class="icon-btn" data-action="open-journal" aria-label="打开对话手记"><svg class="icon"><use href="#i-note"/></svg></button>
+          </nav>
+          <div class="reader-scroll" id="reader-scroll" tabindex="0" data-od-id="reader-scroll">
+            <article class="note-inner" id="note-content" data-od-id="note-content"></article>
+          </div>
+        </div>
+      </section>
+
+      <aside class="companion" id="companion-rail" data-od-id="companion-rail">
+        <div class="companion-head" data-od-id="companion-header">
+          <div class="companion-avatar"><svg class="mascot" role="img" aria-label="伴星形象占位"><use href="#companion"/></svg></div>
+          <div class="companion-id">
+            <div class="companion-name">伴星 <span class="tiny-star" aria-hidden="true">✦</span></div>
+            <div class="companion-status" id="companion-status"><span class="status-dot"></span><span>正在整理三篇笔记</span></div>
+          </div>
+          <button type="button" class="icon-btn" data-action="open-journal" aria-label="打开本次对话手记"><svg class="icon"><use href="#i-note"/></svg></button>
+        </div>
+        <div class="companion-scroll" id="companion-scroll">
+          <section class="chat-thread" id="chat-list" aria-label="与伴星的轻聊"></section>
+          <div id="task-card"></div>
+        </div>
+      </aside>
+
+      <div class="mobile-task-strip" id="mobile-task-strip" data-od-id="mobile-task-strip"></div>
+
+      <div class="mobile-sheet" id="mobile-sheet" aria-hidden="true" data-od-id="mobile-companion-sheet">
+        <button type="button" class="sheet-grab" data-action="close-sheet" aria-label="收起伴星任务面板"></button>
+        <div class="sheet-head">
+          <svg class="mascot" aria-hidden="true"><use href="#companion"/></svg>
+          <div class="sheet-head-copy"><strong>伴星</strong><span id="sheet-status">正在整理三篇笔记</span></div>
+          <button type="button" class="icon-btn" data-action="close-sheet" aria-label="收起"><svg class="icon"><use href="#i-close"/></svg></button>
+        </div>
+        <div class="mobile-sheet-scroll">
+          <section class="chat-thread" id="mobile-chat-list" aria-label="与伴星的轻聊"></section>
+          <div id="mobile-task-card"></div>
+        </div>
+      </div>
+
+      <form class="composer-bar" id="composer-bar" data-od-id="composer">
+        <div class="composer-attachments" id="composer-attachments"></div>
+        <div class="composer-shell">
+          <div class="composer-tools">
+            <button type="button" class="icon-btn" data-action="attach" aria-label="传入图片"><svg class="icon"><use href="#i-attach"/></svg></button>
+            <button type="button" class="icon-btn" id="mic-btn" data-action="voice" aria-label="语音输入"><svg class="icon"><use href="#i-mic"/></svg></button>
+          </div>
+          <textarea class="chat-input" id="chat-input" rows="1" maxlength="600" placeholder="和伴星说点什么…" aria-label="给伴星发消息"></textarea>
+          <button type="submit" class="send-btn" id="send-btn" aria-label="发送消息" disabled><svg class="icon"><use href="#i-send"/></svg></button>
+        </div>
+        <div class="composer-foot"><span>Enter 发送 · Shift + Enter 换行</span><span id="recording-label" class="recording-label" aria-live="polite"></span></div>
+        <input type="file" id="image-input" accept="image/*" class="sr-only" tabindex="-1" aria-hidden="true" />
+      </form>
+
+      <div class="journal-layer" id="journal-layer" aria-hidden="true">
+        <section class="journal-panel" id="journal-panel" role="dialog" aria-modal="false" aria-labelledby="journal-title" data-od-id="journal-panel">
+          <header class="journal-head">
+            <button type="button" class="icon-btn" data-action="close-journal" aria-label="收起手记"><svg class="icon"><use href="#i-back"/></svg></button>
+            <div class="journal-head-copy"><div class="journal-kicker">对话手记 · 10 月 19 日</div><div class="journal-title" id="journal-title">整理三篇历史笔记</div></div>
+            <div class="journal-head-tools" id="journal-head-tools"></div>
+          </header>
+          <div class="journal-body" id="journal-body"><div class="journal-inner" id="journal-inner"></div></div>
+        </section>
+      </div>
+
+      <div class="preview-layer" id="preview-layer" aria-hidden="true">
+        <div class="preview-scrim" data-action="close-preview"></div>
+        <section class="preview-panel" id="preview-panel" role="dialog" aria-modal="false" aria-labelledby="preview-title" data-od-id="preview-panel">
+          <header class="preview-head">
+            <div class="preview-heading"><div class="preview-kicker" id="preview-kicker"></div><h2 class="preview-title" id="preview-title">预览</h2></div>
+            <button type="button" class="icon-btn" id="preview-close" data-action="close-preview" aria-label="关闭预览"><svg class="icon"><use href="#i-close"/></svg></button>
+          </header>
+          <div class="preview-body" id="preview-body"></div>
+          <footer class="preview-foot" id="preview-foot"></footer>
+        </section>
+      </div>
+
+      <div class="edit-layer" id="edit-layer" aria-hidden="true">
+        <section class="edit-panel" role="dialog" aria-modal="true" aria-labelledby="edit-title">
+          <h2 class="edit-title" id="edit-title">修改这次整理的要求</h2>
+          <p class="edit-copy">已保存的成果保留原样；未开始或需重试的部分会按新要求继续。</p>
+          <label class="edit-label" for="edit-text">新的要求</label>
+          <textarea class="edit-textarea" id="edit-text"></textarea>
+          <p class="edit-hint">例如：保留出处、只调整结构、把每篇控制在 5 分钟阅读量内。</p>
+          <div class="edit-actions"><button type="button" class="btn btn-secondary" data-action="close-editor">取消</button><button type="button" class="btn btn-primary" data-action="apply-editor">保存要求</button></div>
+        </section>
+      </div>
+
+      <div class="toast-region" id="toast-region" aria-live="polite" aria-atomic="true"></div>
+    </div>
+  </main>
+
+  <div class="guide-layer" id="guide-layer" data-motion="full">
+    <section class="guide-panel" role="dialog" aria-modal="true" aria-labelledby="guide-title">
+      <header class="guide-head">
+        <div><h2 id="guide-title">拾星书房 · 原型导览</h2><p>交互原型使用本地演示数据，不发起真实模型或后端请求。</p></div>
+        <button type="button" class="icon-btn" id="close-guide" aria-label="关闭操作导览"><svg class="icon"><use href="#i-close"/></svg></button>
+      </header>
+      <div class="guide-body">
+        <section class="guide-block"><h3>建议走一遍</h3><ol><li>在右侧伴星任务卡里预览“秦制与天下”。</li><li>打开完整手记，定位到当前任务与资料。</li><li>点击“只重试未完成部分”，观察唐朝与宋朝逐份到达。</li><li>从成果打开正式笔记，再“返回刚才位置”。</li><li>回看较早记录，等待/模拟新版到达，再回到最新。</li></ol></section>
+        <section class="guide-block"><h3>状态演示</h3><ul><li>顶部“状态”只属于原型工具，不会出现在产品界面中。</li><li>可切换部分失败、慢速、待确认、核对、停止与完成。</li><li>“动效”可切换完整 / 轻量 / 关闭；所有状态仍可操作。</li><li>平台切换会保留任务进度、选中成果、预览与草稿。</li></ul></section>
+        <section class="guide-block guide-wide"><h3>关键语义</h3><p><code>预览</code>叫出同一份材料或成果的就地层；<code>打开笔记</code>进入正式阅读；<code>在手记中查看</code>定位到对应条目；<code>返回刚才位置</code>恢复阅读滚动、手记锚点、展开预览与未发送草稿。关闭预览不会停止任务，停止只作用于剩余工作。</p><div class="guide-keys"><span>Esc 关闭最上层</span><span>J 打开手记</span><span>⌘/Ctrl + Enter 发送</span><span>Tab 逐项聚焦</span></div></section>
+        <section class="guide-block guide-wide"><div class="guide-note">正常产品界面不显示实现术语或工程检查表。角色为可用 Live2D 替换的固定座位形象占位；技术参数、真实 API、模型耗时与稳定性不在本次原型中声称。设计说明见项目内《操作导览与设计说明.md》。</div></section>
+      </div>
+    </section>
+  </div>
+
+  <script>
+  (() => {
+    'use strict';
+
+    const $ = (selector, root = document) => root.querySelector(selector);
+    const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
+    const esc = (value = '') => String(value).replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+    const deep = (value) => JSON.parse(JSON.stringify(value));
+    const app = $('#app');
+    const stage = $('#stage');
+    const readerScroll = $('#reader-scroll');
+    const noteContent = $('#note-content');
+    const deskTopbar = $('#desk-topbar');
+    const mobileNav = $('#mobile-nav');
+    const mobileNavTitle = $('#mobile-nav-title');
+    const companionScroll = $('#companion-scroll');
+    const chatList = $('#chat-list');
+    const mobileChatList = $('#mobile-chat-list');
+    const taskCardHost = $('#task-card');
+    const mobileTaskCardHost = $('#mobile-task-card');
+    const companionStatus = $('#companion-status');
+    const mobileStrip = $('#mobile-task-strip');
+    const sheetStatus = $('#sheet-status');
+    const composerBar = $('#composer-bar');
+    const chatInput = $('#chat-input');
+    const sendBtn = $('#send-btn');
+    const attachmentsHost = $('#composer-attachments');
+    const imageInput = $('#image-input');
+    const micBtn = $('#mic-btn');
+    const recordingLabel = $('#recording-label');
+    const journalLayer = $('#journal-layer');
+    const journalBody = $('#journal-body');
+    const journalInner = $('#journal-inner');
+    const journalTitle = $('#journal-title');
+    const journalHeadTools = $('#journal-head-tools');
+    const previewLayer = $('#preview-layer');
+    const previewPanel = $('#preview-panel');
+    const previewKicker = $('#preview-kicker');
+    const previewTitle = $('#preview-title');
+    const previewBody = $('#preview-body');
+    const previewFoot = $('#preview-foot');
+    const editLayer = $('#edit-layer');
+    const editText = $('#edit-text');
+    const toastRegion = $('#toast-region');
+    const guideLayer = $('#guide-layer');
+    const guidePanel = $('.guide-panel', guideLayer);
+
+    const OUTPUT_META = {
+      qin: { title: '秦制与天下', subtitle: '郡县、文字与驰道', noteId: 'qin', index: '01' },
+      tang: { title: '唐的开放与边界', subtitle: '长安、丝路与安史之乱', noteId: 'tang', index: '02' },
+      song: { title: '宋的城市与日常', subtitle: '市井、印刷与文人生活', noteId: 'song', index: '03' }
+    };
+
+    const NOTES = {
+      qin: {
+        title: '秦制与天下',
+        subtitle: '从郡县、文字到驰道：秦如何把六国收进同一套秩序，又为何二世而亡',
+        kicker: '中国古代史 · 读书笔记',
+        meta: ['历史 · 制度史', '约 9 分钟', '当前笔记 · 版本 2'],
+        lead: '秦的统一不只是地图颜色的改变。它把度量、文字、道路与官僚层级一并写进制度，让“天下”第一次成为可被同一套尺度治理的空间。',
+        preview: '<p>秦的统一不只是地图颜色的改变。它把度量、文字、道路与官僚层级一并写进制度，让“天下”第一次成为可被同一套尺度治理的空间。</p><p>公元前 221 年，秦王政称皇帝。围绕如何治理新征服的六国，朝堂上出现过一次著名的分歧。王绾主张在燕、齐、楚故地分封诸子，李斯则认为分封会重新制造割据。最后，秦始皇采纳李斯之议，把天下分为三十六郡。</p><p>郡县制并非秦的凭空发明。秦的不同之处，在于把它推到整个帝国尺度，并以文书、上计和监察把它连成一套可以运转的系统。</p>',
+        body: `
+          <div class="note-rule"><svg class="icon"><use href="#i-star"/></svg></div>
+          <p class="note-lead">秦的统一不只是地图颜色的改变。它把度量、文字、道路与官僚层级一并写进制度，让“天下”第一次成为可被同一套尺度治理的空间。</p>
+          <div class="note-body">
+            <h2 data-od-id="qin-heading-1">一、郡县：把地方收进官僚链条</h2>
+            <p>公元前 221 年，秦王政称皇帝。围绕如何治理新征服的六国，朝堂上出现过一次著名的分歧。王绾主张在燕、齐、楚故地分封诸子，李斯则认为分封会重新制造割据。最后，秦始皇采纳李斯之议，把天下分为三十六郡，郡下设县，官吏由中央任免、调遣。</p>
+            <p>郡县制并非秦的凭空发明，战国以来的各国已经积累了大量县制经验。秦的不同之处，在于把它推到整个帝国尺度，并以文书、上计和监察把它连成一套可以运转的系统。云梦睡虎地出土的秦简，让我们看到法律条文如何被要求传达到基层。</p>
+            <div class="quote" id="qin-source-1" tabindex="-1">
+              <p>“分天下以为三十六郡，郡置守、尉、监。”</p>
+              <cite>《史记·秦始皇本纪》 <button type="button" class="inline-cite" data-action="open-source" data-source-id="qin-shiji">查看材料</button></cite>
+            </div>
+            <p>制度的关键不只在“设郡”，还在郡守、郡尉、郡监彼此分权。军事、行政与监察被拆开，地方长官不再同时掌握土地、军队与人事。秦把地方收进一条可被中央读取的官僚链条，而不是让它停在血缘与封地之中。</p>
+            <h2 data-od-id="qin-heading-2">二、同文与同轨：统一如何抵达日常</h2>
+            <p>统一度量衡、统一车轨、统一文字，常被后世概括为“书同文，车同轨”。这些措施看似技术性，实际决定了政令能否跨越旧国边界、赋税能否换算、军队能否快速调动。</p>
+            <div class="quote" id="qin-source-2" tabindex="-1">
+              <p>“凡法律令者，以教道民，去其淫僻，除其恶俗，而使之之于为善也。”</p>
+              <cite>睡虎地秦墓竹简 · 语书（整理注） <button type="button" class="inline-cite" data-action="open-source" data-source-id="qin-shuihudi">查看材料</button></cite>
+            </div>
+            <p>秦驰道以咸阳为中心向四方伸展。道路不仅是交通工程，也是权力的路径：文书沿路而行，军队沿路而聚，皇帝巡行沿路而宣告天下。统一因此不只发生在诏书里，也发生在每一次丈量、抄写与转运之中。</p>
+            <div class="reading-mark" id="qin-source-3">
+              <svg class="icon" aria-hidden="true"><use href="#i-star"/></svg>
+              <div><strong>我的标记：</strong>制度的尺度，最终也会落在人的一日三餐与行旅之上。 <button type="button" class="inline-cite" data-action="open-source" data-source-id="qin-course">回到这则笔记</button></div>
+            </div>
+            <h2 data-od-id="qin-heading-3">三、秩序的代价</h2>
+            <p>秦制的高效伴随高强度的征发与刑罚。修宫室、筑长城、戍边、转运，都把人力和时间从家庭与土地中抽走。制度能力越强，社会承受的压力也越集中。</p>
+            <p>秦二世而亡，不等于秦制全然消失。汉承秦制，后世王朝不断调整郡县与封建、中央与地方的平衡。秦留下的问题不是“要不要统一”，而是“统一如何被持续地承受”。</p>
+          </div>
+          <div class="note-end"><span>读到这里，右侧伴星仍在整理唐朝与宋朝的笔记。</span><span class="end-stars" aria-hidden="true">✦ ✦ ✦</span></div>`
+      },
+      tang: {
+        title: '唐的开放与边界',
+        subtitle: '长安、丝路与安史之乱：开放如何成为一套有条件的秩序',
+        kicker: '中国古代史 · 本次整理',
+        meta: ['历史 · 隋唐史', '约 7 分钟', '本次整理 · 版本 1'],
+        lead: '长安的开放不是没有门槛的流动。它把来自西域、草原与海东的人、货与观念收进同一座城，也用户籍、关津与军镇为这种流动设定条件。',
+        preview: '<p>长安的开放不是没有门槛的流动。它把来自西域、草原与海东的人、货与观念收进同一座城，也用户籍、关津与军镇为这种流动设定条件。</p><p>从西市到东市，粟特商人、僧侣、乐工与使节共享一套城市秩序。真正支撑开放的，不是城门本身，而是帝国对道路、税收和身份的持续管理。</p><p>安史之乱以后，开放的重心从帝国边疆退回到地方社会。理解唐的开放，也要同时理解它的边界如何被重新划定。</p>',
+        body: `
+          <div class="note-rule"><svg class="icon"><use href="#i-star"/></svg></div>
+          <p class="note-lead">长安的开放不是没有门槛的流动。它把来自西域、草原与海东的人、货与观念收进同一座城，也用户籍、关津与军镇为这种流动设定条件。</p>
+          <div class="note-body">
+            <h2 data-od-id="tang-heading-1">一、长安：开放是一套有条件的秩序</h2>
+            <p>从西市到东市，粟特商人、僧侣、乐工与使节共享一套城市秩序。真正支撑开放的，不是城门本身，而是帝国对道路、税收和身份的持续管理。</p>
+            <p>长安的国际化常被描述为一种气象，但它同时是一套行政能力。驿传、关津、市籍与译语共同把陌生人纳入可识别的位置，让流动可以被记录，也可以被限制。</p>
+            <div class="quote" id="tang-source-1" tabindex="-1">
+              <p>“天下诸津，舟航所聚，旁通巴汉，前指闽越。”</p>
+              <cite>《旧唐书》相关篇目 · 整理摘录 <button type="button" class="inline-cite" data-action="open-source" data-source-id="tang-jiu">查看材料</button></cite>
+            </div>
+            <h2 data-od-id="tang-heading-2">二、安史之乱以后：边界向内移动</h2>
+            <p>安史之乱以后，开放的重心从帝国边疆退回到地方社会。人口迁徙、军镇割据与财政重心的变化，让“长安”不再等于全部天下。</p>
+            <p>开放并未终结，而是改变了尺度：地方城市、寺院网络与海上贸易承担了新的连接。理解唐的开放，也要同时理解它的边界如何被重新划定。</p>
+            <div class="quote" id="tang-source-2" tabindex="-1">
+              <p>“由是天下之财，尽入于上。”</p>
+              <cite>《资治通鉴》唐纪 · 阅读摘录 <button type="button" class="inline-cite" data-action="open-source" data-source-id="tang-zztj">查看材料</button></cite>
+            </div>
+            <p>把开放写成单向的赞歌，会看不见制度对流动的筛选；把边界写成封闭，也会漏掉地方社会重新连接世界的能力。唐的张力，正在这两者之间。</p>
+          </div>
+          <div class="note-end"><span>这篇由本次整理生成，来源与段落关系保留在对话手记中。</span><span class="end-stars" aria-hidden="true">✦ ✦ ✦</span></div>`
+      },
+      song: {
+        title: '宋的城市与日常',
+        subtitle: '市井、印刷与文人生活：一个更细密的日常世界',
+        kicker: '中国古代史 · 本次整理',
+        meta: ['历史 · 宋史', '约 6 分钟', '本次整理 · 版本 1'],
+        lead: '宋代城市的变化不只在城墙之内，也在一天的时间被重新安排：开市更早，夜市更晚，印刷让文字进入更多人的手边。',
+        preview: '<p>宋代城市的变化不只在城墙之内，也在一天的时间被重新安排：开市更早，夜市更晚，印刷让文字进入更多人的手边。</p><p>《东京梦华录》把汴京的街巷、节令与饮食写得细密。它让城市不只是政治中心，也成为可以被日常经验描述的生活空间。</p><p>当印刷、科举与商业一起扩张，文人生活与市民生活之间出现了更多交叉，宋代因此显得既精致又流动。</p>',
+        body: `
+          <div class="note-rule"><svg class="icon"><use href="#i-star"/></svg></div>
+          <p class="note-lead">宋代城市的变化不只在城墙之内，也在一天的时间被重新安排：开市更早，夜市更晚，印刷让文字进入更多人的手边。</p>
+          <div class="note-body">
+            <h2 data-od-id="song-heading-1">一、汴京：城市成为可描述的日常</h2>
+            <p>《东京梦华录》把汴京的街巷、节令与饮食写得细密。它让城市不只是政治中心，也成为可以被日常经验描述的生活空间。街市、瓦舍与酒楼把陌生人聚在同一套节奏里。</p>
+            <div class="quote" id="song-source-1" tabindex="-1">
+              <p>“夜市直至三更尽，才五更又复开张。”</p>
+              <cite>《东京梦华录》节选 <button type="button" class="inline-cite" data-action="open-source" data-source-id="song-dongjing">查看材料</button></cite>
+            </div>
+            <h2 data-od-id="song-heading-2">二、印刷与文人：更细密的知识网络</h2>
+            <p>印刷术让书籍的复制成本下降，也让地方书院、家刻与坊刻形成更细密的知识网络。文字的流通不再只依赖官府与寺院。</p>
+            <p>当印刷、科举与商业一起扩张，文人生活与市民生活之间出现了更多交叉。宋代因此显得既精致又流动，日常本身也成为一种可以被记录、传阅与模仿的对象。</p>
+            <p>把宋代只写成“积贫积弱”，会漏掉这些发生在城市与书页之间的变化。制度的紧张与生活的丰盈，常常同时存在。</p>
+          </div>
+          <div class="note-end"><span>这篇由本次整理生成，来源与段落关系保留在对话手记中。</span><span class="end-stars" aria-hidden="true">✦ ✦ ✦</span></div>`
+      },
+      'qin-old': {
+        title: '秦制与天下（初稿）',
+        subtitle: '当时保存的版本：先搭起郡县与文书制度的骨架，尚未展开制度的代价',
+        kicker: '较早完成记录 · 历史版本',
+        meta: ['历史 · 制度史', '10 月 18 日保存', '历史版本 · v1'],
+        history: true,
+        preview: '<p>秦的统一不只是地图颜色的改变。它把度量、文字、道路与官僚层级一并写进制度，让“天下”第一次成为可被同一套尺度治理的空间。</p><p>公元前 221 年，秦王政称皇帝。围绕如何治理新征服的六国，王绾主张分封诸子，李斯则认为分封会重新制造割据。秦始皇采纳李斯之议，把天下分为三十六郡。</p><p>这是 10 月 18 日保存的初稿，当时只展开了郡县与文书制度，尚未补上制度的代价与后世回声。</p>',
+        body: `
+          <div class="note-rule"><svg class="icon"><use href="#i-star"/></svg></div>
+          <p class="note-lead">秦的统一不只是地图颜色的改变。它把度量、文字、道路与官僚层级一并写进制度，让“天下”第一次成为可被同一套尺度治理的空间。</p>
+          <div class="note-body">
+            <h2>一、郡县：把地方收进官僚链条</h2>
+            <p>公元前 221 年，秦王政称皇帝。围绕如何治理新征服的六国，王绾主张分封诸子，李斯则认为分封会重新制造割据。秦始皇采纳李斯之议，把天下分为三十六郡。</p>
+            <div class="quote" id="old-source-1" tabindex="-1">
+              <p>“分天下以为三十六郡，郡置守、尉、监。”</p>
+              <cite>《史记·秦始皇本纪》 <button type="button" class="inline-cite" data-action="open-source" data-source-id="old-shiji">查看材料</button></cite>
+            </div>
+            <p>这是当时保存的骨架版：先说明郡县如何设立，尚未展开文书、驰道与制度代价。后续版本补上了这些部分，但这份快照保持原样。</p>
+          </div>
+          <div class="note-end"><span>历史快照 · 不会随当前任务继续更新</span><span class="end-stars" aria-hidden="true">✦ ✦ ✦</span></div>`
+      }
+    };
+
+    const SOURCES = {
+      'qin-shiji': { label: '《史记·秦始皇本纪》', noteId: 'qin', anchor: 'qin-source-1', state: 'read', meta: '已读 · 1,284 字 · 公版古籍', excerpt: '“分天下以为三十六郡，郡置守、尉、监。”秦把郡县制度推到帝国尺度，郡守、郡尉与郡监分掌行政、军事和监察。' },
+      'qin-shuihudi': { label: '睡虎地秦墓竹简 · 语书', noteId: 'qin', anchor: 'qin-source-2', state: 'read', meta: '已读 · 642 字 · 整理注', excerpt: '“凡法律令者，以教道民，去其淫僻，除其恶俗，而使之之于为善也。”简文让基层法律传达与教化成为可观察的制度细节。' },
+      'qin-course': { label: '课程笔记 03｜郡县制与驰道', noteId: 'qin', anchor: 'qin-source-3', state: 'read', meta: '你的笔记 · 1,016 字', excerpt: '我的标记：制度的尺度，最终也会落在人的一日三餐与行旅之上。驰道把政令、军队与赋税运输连接起来。' },
+      'tang-jiu': { label: '《旧唐书》相关篇目', noteId: 'tang', anchor: 'tang-source-1', state: 'unavailable', meta: '在线副本暂时不可用', excerpt: '', error: '在线副本读取失败。已保存的秦朝笔记不受影响；唐朝草稿仍在本地，可稍后只重试未完成部分。' },
+      'tang-zztj': { label: '《资治通鉴》唐纪', noteId: 'tang', anchor: 'tang-source-2', state: 'read', meta: '已读 · 摘录 380 字', excerpt: '“由是天下之财，尽入于上。”财政与军政的变化，是理解安史之乱后唐帝国重心移动的一条线索。' },
+      'song-dongjing': { label: '《东京梦华录》节选', noteId: 'song', anchor: 'song-source-1', state: 'read', meta: '已读 · 节选 520 字', excerpt: '“夜市直至三更尽，才五更又复开张。”城市的时间被重新安排，街市与瓦舍把日常经验带进文字。' },
+      'old-shiji': { label: '《史记·秦始皇本纪》', noteId: 'qin-old', anchor: 'old-source-1', state: 'read', meta: '当时引用 · 公版古籍', excerpt: '“分天下以为三十六郡，郡置守、尉、监。”当时保存的版本只引用了这一处，尚未补入睡虎地简与课程笔记。' }
+    };
+
+    const MATERIAL_IDS = ['qin-shiji', 'qin-shuihudi', 'qin-course', 'tang-jiu', 'song-dongjing'];
+    const ARCHIVE_OUTPUT = {
+      id: 'qin-old', noteId: 'qin-old', title: '秦制与天下 · 初稿', subtitle: '10 月 18 日 21:18 保存', state: 'saved',
+      version: 1, savedAt: '10月18日 21:18', hasDraft: true, sources: ['old-shiji'],
+      excerpt: '这是 10 月 18 日保存的初稿，当时只展开了郡县与文书制度，尚未补上制度的代价与后世回声。'
+    };
+    const DEFAULT_CHAT = [
+      { id: 'm1', role: 'user', text: '帮我把秦、唐、宋三篇历史笔记整理一下，保留出处。秦朝这篇先来，我边读边看。', time: '21:04', attachments: [] },
+      { id: 'm2', role: 'companion', text: '好。我会按“读原文 → 核对出处 → 整理成篇 → 保存”的顺序做，先交秦朝。每篇保存后你就可以直接打开。', time: '21:04', attachments: [] }
+    ];
+
+    const state = {
+      platform: 'desktop',
+      motion: 'full',
+      compact: false,
+      scenario: 'partial',
+      noteId: 'qin',
+      readingPositions: { qin: 0, tang: 0, song: 0, 'qin-old': 0 },
+      task: null,
+      chat: deep(DEFAULT_CHAT),
+      draftText: '',
+      attachments: [],
+      recordingStart: null,
+      recordingTick: null,
+      preview: { open: false, kind: null, id: null, from: null, snapshot: null, updateAvailable: false, scrollTop: 0, triggerId: null },
+      journal: { open: false, mode: 'current', anchor: null, scrollTop: 0, archiveHasNew: false, trigger: null },
+      sheetOpen: false,
+      editOpen: false,
+      returnCtx: null,
+      contextLabel: '',
+      selectedOutput: 'qin',
+      toast: null,
+      toastTimer: null,
+      flashOutput: null,
+      streamTimer: null,
+      voiceLabelTimer: null,
+      taskTimers: []
+    };
+
+    const stateKey = (key) => {
+      try { return localStorage.getItem(key); } catch { return null; }
+    };
+    const saveState = (key, value) => {
+      try { localStorage.setItem(key, value); } catch { /* local-only demo */ }
+    };
+
+    const timeNow = () => new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false });
+    const fmtElapsed = (ms) => {
+      const total = Math.max(0, Math.floor(ms / 1000));
+      const minutes = String(Math.floor(total / 60)).padStart(2, '0');
+      const seconds = String(total % 60).padStart(2, '0');
+      return `${minutes}:${seconds}`;
+    };
+    const currentElapsed = () => state.task ? state.task.elapsedMs + (state.task.runningSince ? Date.now() - state.task.runningSince : 0) : 0;
+    const freezeElapsed = () => {
+      if (state.task && state.task.runningSince) {
+        state.task.elapsedMs += Date.now() - state.task.runningSince;
+        state.task.runningSince = null;
+      }
+    };
+    const startElapsed = () => {
+      if (state.task && !state.task.runningSince) state.task.runningSince = Date.now();
+    };
+    const clearTaskTimers = () => {
+      state.taskTimers.forEach((id) => clearTimeout(id));
+      state.taskTimers = [];
+    };
+    const scheduleTask = (fn, delay) => {
+      const id = setTimeout(() => {
+        state.taskTimers = state.taskTimers.filter((timer) => timer !== id);
+        fn();
+      }, delay);
+      state.taskTimers.push(id);
+      return id;
+    };
+    const outputBase = (id) => ({
+      id, ...OUTPUT_META[id], state: 'waiting', version: 1, savedAt: null, hasDraft: false, reason: null,
+      sources: id === 'qin' ? ['qin-shiji', 'qin-shuihudi', 'qin-course'] : id === 'tang' ? ['tang-jiu', 'tang-zztj'] : ['song-dongjing'],
+      draft: id === 'tang'
+        ? '<p>唐的开放不是没有边界的开放。长安把来自西域、草原与海东的人、货与观念收进同一座城，但帝国也用户籍、关津与军镇为这种流动设定条件。</p><p>从西市到东市，粟特商人、僧侣、乐工与使节共享一套城市秩序。真正支撑开放的，不是城门本身，而是帝国对道路、税收和身份的持续管理。</p>'
+        : id === 'song'
+          ? '<p>宋代城市的变化不只在城墙之内，也在一天的时间被重新安排：开市更早，夜市更晚，印刷让文字进入更多人的手边。</p>'
+          : '<p>秦的统一不只是地图颜色的改变。它把度量、文字、道路与官僚层级一并写进制度。</p>',
+      excerpt: id === 'qin' ? '秦的统一把度量、文字、道路与官僚层级一并写进制度，让“天下”第一次成为可被同一套尺度治理的空间。' : id === 'tang' ? '长安的开放不是没有门槛的流动，它同时依赖道路、税收与身份管理。' : '宋代城市的时间被重新安排，印刷让文字进入更多人的手边。'
+    });
+
+    function makeTask(scenario) {
+      const task = {
+        request: '帮我把秦、唐、宋三篇历史笔记整理一下，保留出处。秦朝这篇先来，我边读边看。',
+        title: '整理三篇历史笔记',
+        status: 'running',
+        current: 'qin',
+        stage: '',
+        workNote: '',
+        elapsedMs: 0,
+        runningSince: Date.now(),
+        pending: null,
+        verification: null,
+        error: null,
+        requirementUpdatedAt: null,
+        requirementNote: '',
+        outputs: { qin: outputBase('qin'), tang: outputBase('tang'), song: outputBase('song') }
+      };
+      const save = (id, options = {}) => {
+        task.outputs[id] = { ...task.outputs[id], ...options, state: 'saved', hasDraft: true, savedAt: options.savedAt || timeNow() };
+      };
+      if (scenario === 'fresh') {
+        task.outputs.qin = { ...task.outputs.qin, state: 'writing' };
+        task.stage = '正在读你选中的三篇笔记';
+        task.workNote = '先核对阅读标记与出处，再开始成篇。秦朝篇会最先交付。';
+        task.elapsedMs = 0;
+      } else if (scenario === 'normal' || scenario === 'slow') {
+        save('qin', { version: 2 });
+        task.outputs.tang = { ...task.outputs.tang, state: 'writing', hasDraft: true };
+        task.current = 'tang';
+        task.stage = scenario === 'slow' ? '正在逐段核对《旧唐书》引文' : '正在整理唐朝笔记';
+        task.workNote = scenario === 'slow' ? '材料较长，这一步仍在继续；可先读已保存的秦朝笔记。' : '先核对《旧唐书》的纪年，再按你的笔记结构成篇。';
+        task.elapsedMs = scenario === 'slow' ? 202000 : 84000;
+      } else if (scenario === 'confirm') {
+        save('qin', { version: 2 });
+        task.outputs.tang = { ...task.outputs.tang, state: 'confirm' };
+        task.current = 'tang';
+        task.status = 'confirm';
+        task.stage = '需要你确认资料范围';
+        task.workNote = '《旧唐书》与《资治通鉴》对起因的叙述不完全一致；确认后再继续，不会改动秦朝成果。';
+        task.elapsedMs = 112000;
+        task.runningSince = null;
+        task.pending = {
+          title: '唐朝篇的叙述范围',
+          detail: '两处材料对安史之乱起因的侧重点不同。要以哪一种作为主线继续整理？',
+          options: [
+            { value: 'zztj', label: '以《资治通鉴》为主' },
+            { value: 'both', label: '保留两说，标为待核' }
+          ]
+        };
+      } else if (scenario === 'verifying') {
+        save('qin', { version: 2 });
+        task.outputs.tang = { ...task.outputs.tang, state: 'verifying', hasDraft: true };
+        task.current = 'tang';
+        task.status = 'verifying';
+        task.stage = '正在核对唐朝笔记的保存结果';
+        task.workNote = '先核对本地草稿与保存回执，避免重复创建。已保存的秦朝笔记仍可正常阅读。';
+        task.elapsedMs = 143000;
+        task.runningSince = null;
+        task.verification = {
+          title: '保存结果暂时未知',
+          detail: '唐朝笔记的保存回执没有按时返回。正在核对本地草稿，不会引导你重复创建。'
+        };
+      } else if (scenario === 'stopped') {
+        save('qin', { version: 2 });
+        task.outputs.tang = { ...task.outputs.tang, state: 'stopped', hasDraft: true };
+        task.current = 'tang';
+        task.status = 'stopped';
+        task.stage = '已停止剩余工作';
+        task.workNote = '已保存的秦朝笔记留在这里，停止不会删除成果。可以继续未完成部分。';
+        task.elapsedMs = 96000;
+        task.runningSince = null;
+      } else if (scenario === 'complete') {
+        save('qin', { version: 2 });
+        save('tang');
+        save('song');
+        task.current = 'song';
+        task.status = 'complete';
+        task.stage = '三篇整理完成';
+        task.workNote = '每一篇都保留了题目、正文和来源关系，可以从手记回到任意一篇。';
+        task.elapsedMs = 348000;
+        task.runningSince = null;
+      } else {
+        save('qin', { version: 2 });
+        task.outputs.tang = { ...task.outputs.tang, state: 'failed', hasDraft: true, reason: '《旧唐书》在线副本读取失败，草稿仍在本地。' };
+        task.current = 'tang';
+        task.status = 'blocked';
+        task.stage = '唐朝笔记暂时未能保存';
+        task.workNote = '资料读取失败，秦朝笔记已保存；唐朝草稿仍在本地，可只重试未完成部分。';
+        task.elapsedMs = 134000;
+        task.runningSince = null;
+        task.error = {
+          title: '唐朝笔记遇到资料问题',
+          detail: '《旧唐书》在线副本暂时不可用。已保存的秦朝笔记不受影响；唐朝草稿可读，但尚未保存。',
+          outputId: 'tang'
+        };
+      }
+      if (task.status !== 'running') task.runningSince = null;
+      return task;
+    }
+
+    function taskShortState(id) {
+      const output = state.task.outputs[id];
+      const map = { saved: '已保存', writing: '生成中', failed: '失败', waiting: '未开始', confirm: '待确认', verifying: '核对中', stopped: '已停止' };
+      return map[output.state] || output.state;
+    }
+
+    function statusInfo(status) {
+      if (status === 'blocked') return { label: '待处理', cls: 'failed', dot: 'failed' };
+      if (status === 'confirm') return { label: '待确认', cls: 'verify', dot: 'failed' };
+      if (status === 'verifying') return { label: '核对中', cls: 'verify', dot: 'failed' };
+      if (status === 'stopped') return { label: '已停止', cls: 'stopped', dot: 'stopped' };
+      if (status === 'complete') return { label: '已完成', cls: 'done', dot: 'done' };
+      return { label: '进行中', cls: 'running', dot: '' };
+    }
+
+    function currentJournalAnchor() {
+      if (state.task.status === 'complete') return 'journal-complete';
+      if (state.task.error) return 'journal-error';
+      if (state.task.status === 'stopped') return 'journal-current';
+      return 'journal-current';
+    }
+
+    function companionSummary() {
+      const task = state.task;
+      if (!task) return '正在整理三篇笔记';
+      if (task.status === 'blocked') return '停在唐朝 · 秦朝已保存';
+      if (task.status === 'confirm') return '等你确认资料范围';
+      if (task.status === 'verifying') return '正在核对保存结果';
+      if (task.status === 'stopped') return '已停止剩余工作';
+      if (task.status === 'complete') return '三篇整理完成';
+      if (task.current === 'qin') return '正在读三篇笔记';
+      return `正在整理第 ${task.current === 'tang' ? 2 : 3} 篇 · ${task.current === 'tang' ? '唐朝' : '宋朝'}`;
+    }
+
+    function summaryLine() {
+      return `秦${taskShortState('qin')} · 唐${taskShortState('tang')} · 宋${taskShortState('song')}`;
+    }
+
+    function stateLabelForOutput(output) {
+      if (output.state === 'saved') return `已保存${output.savedAt ? ' ' + output.savedAt : ''}`;
+      if (output.state === 'writing') return output.hasDraft ? '草稿可读' : '生成中';
+      if (output.state === 'failed') return '失败 · 草稿可读';
+      if (output.state === 'confirm') return '待确认';
+      if (output.state === 'verifying') return '核对保存中';
+      if (output.state === 'stopped') return '已停止';
+      return '未开始';
+    }
+
+    function getOutput(id) {
+      if (id === 'qin-old') return ARCHIVE_OUTPUT;
+      return state.task.outputs[id];
+    }
+
+    function noteHTML(noteId) {
+      const note = NOTES[noteId];
+      const history = note.history
+        ? `<div class="historical-banner"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg><div><strong>这是一份历史版本，不是当前笔记。</strong><br>你正在阅读 10 月 18 日 21:18 保存的初稿。当前笔记已经更新到版本 2。</div><button type="button" class="top-btn" data-action="open-current-note">打开当前版本</button></div>`
+        : '';
+      const meta = note.meta.map((item, index) => `${index ? '<span class="meta-dot" aria-hidden="true"></span>' : ''}<span>${esc(item)}</span>`).join('');
+      return `
+        <header class="note-header">
+          <div class="note-kicker">${esc(note.kicker)}</div>
+          ${history}
+          <h1 class="note-title" data-od-id="note-title">${esc(note.title)}</h1>
+          <p class="note-subtitle">${esc(note.subtitle)}</p>
+          <div class="note-meta">${meta}</div>
+        </header>
+        ${note.body}`;
+    }
+
+    function renderNote(options = {}) {
+      const noteId = state.noteId;
+      const note = NOTES[noteId];
+      const preserved = options.preserve ? readerScroll.scrollTop : 0;
+      noteContent.innerHTML = noteHTML(noteId);
+      mobileNavTitle.textContent = note.title;
+      renderDeskTopbar();
+      renderMobileNav();
+      if (!options.anchor) {
+        if (typeof options.scrollTop === 'number') {
+          requestAnimationFrame(() => { readerScroll.scrollTop = options.scrollTop; state.readingPositions[noteId] = readerScroll.scrollTop; });
+        } else if (options.preserve) {
+          requestAnimationFrame(() => { readerScroll.scrollTop = preserved; });
+        } else {
+          requestAnimationFrame(() => { readerScroll.scrollTop = state.readingPositions[noteId] || 0; });
+        }
+      }
+      if (options.anchor) scrollReaderToAnchor(options.anchor, options.highlight !== false);
+      if (options.focusReader) readerScroll.focus({ preventScroll: true });
+    }
+
+    function renderDeskTopbar() {
+      const note = NOTES[state.noteId];
+      const back = state.returnCtx
+        ? `<div class="context-return"><button type="button" class="top-btn" data-action="return-context"><svg class="icon"><use href="#i-back"/></svg>返回刚才位置</button><span class="context-text">${esc(state.contextLabel || '原阅读位置')}</span></div>`
+        : `<span class="crumb-label">书房</span><span class="crumb-sep" aria-hidden="true">/</span>`;
+      deskTopbar.innerHTML = `
+        <div class="crumb">${back}<span class="crumb-current">${esc(note.title)}</span></div>
+        <div class="top-actions">
+          <span class="version-chip"><svg class="icon" aria-hidden="true"><use href="#i-star"/></svg>${esc(note.meta[note.meta.length - 1])}</span>
+          <button type="button" class="top-btn" data-action="open-journal" data-anchor="${currentJournalAnchor()}"><svg class="icon"><use href="#i-note"/></svg>手记</button>
+        </div>`;
+    }
+
+    function renderMobileNav() {
+      const back = $('[data-action="mobile-back"]', mobileNav);
+      if (!back) return;
+      back.disabled = !state.returnCtx && state.noteId === 'qin';
+      back.setAttribute('aria-label', state.returnCtx ? '返回刚才位置' : '返回');
+      back.style.opacity = back.disabled ? '.38' : '';
+    }
+
+    function scrollReaderToAnchor(anchorId, highlight = true) {
+      requestAnimationFrame(() => {
+        const target = document.getElementById(anchorId);
+        if (!target) return;
+        const top = target.getBoundingClientRect().top - readerScroll.getBoundingClientRect().top + readerScroll.scrollTop - 24;
+        readerScroll.scrollTo({ top: Math.max(0, top), behavior: state.motion === 'full' ? 'smooth' : 'auto' });
+        if (highlight) {
+          target.classList.remove('target-glow');
+          void target.offsetWidth;
+          target.classList.add('target-glow');
+          setTimeout(() => target.classList.remove('target-glow'), 1800);
+        }
+      });
+    }
+
+    function messageHTML(message) {
+      const isUser = message.role === 'user';
+      const attachments = (message.attachments || []).map((file) => {
+        if (file.type === 'image') return `<span class="msg-attachment"><img src="${file.url}" alt="随消息发送的图片" /></span>`;
+        return `<span class="msg-attachment voice"><span class="bars" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></span><span>语音 · ${esc(file.duration || '00:03')}</span></span>`;
+      }).join('');
+      const avatar = isUser ? '' : '<span class="msg-avatar" aria-hidden="true"><svg class="mascot"><use href="#companion"/></svg></span>';
+      return `
+        <div class="msg ${isUser ? 'msg-user' : 'msg-companion'}" data-od-id="chat-message-${message.id}">
+          ${avatar}
+          <div class="msg-bubble-wrap">
+            <div class="msg-bubble">${esc(message.text).replace(/\n/g, '<br>')}${attachments}</div>
+            <div class="msg-meta"><span>${esc(message.time)}</span>${isUser ? '' : `<button type="button" class="msg-sound" data-action="play-sound" data-message-id="${message.id}" aria-label="回放伴星消息提示音"><svg class="icon"><use href="#i-volume"/></svg></button>`}</div>
+          </div>
+        </div>`;
+    }
+
+    function renderChat(scrollToBottom = false) {
+      const html = state.chat.map(messageHTML).join('');
+      chatList.innerHTML = html;
+      mobileChatList.innerHTML = html;
+      if (scrollToBottom) {
+        requestAnimationFrame(() => {
+          chatList.scrollTop = chatList.scrollHeight;
+          mobileChatList.scrollTop = mobileChatList.scrollHeight;
+          companionScroll.scrollTop = companionScroll.scrollHeight;
+        });
+      }
+    }
+
+    function outputActions(output, scope) {
+      if (output.state === 'saved') {
+        return `<button type="button" class="mini-btn strong" data-action="preview-result" data-id="${output.id}" data-from="${scope}" data-od-id="preview-${output.id}-${scope}">预览</button><button type="button" class="mini-btn" data-action="open-note" data-id="${output.id}" data-od-id="open-${output.id}-${scope}">打开笔记</button>`;
+      }
+      if (output.state === 'writing' && output.hasDraft) {
+        return `<button type="button" class="mini-btn strong" data-action="preview-result" data-id="${output.id}" data-from="${scope}">预览草稿</button>`;
+      }
+      if (output.state === 'failed') {
+        return `<button type="button" class="mini-btn" data-action="preview-result" data-id="${output.id}" data-from="${scope}">查看草稿</button>`;
+      }
+      return `<button type="button" class="mini-btn" data-action="preview-result" data-id="${output.id}" data-from="${scope}">查看状态</button>`;
+    }
+
+    function outputRow(output, scope) {
+      const stateClass = output.state === 'saved' ? 'saved' : output.state === 'failed' ? 'failed' : output.state === 'writing' ? 'writing' : '';
+      return `
+        <div class="output-row ${state.flashOutput === output.id ? 'just-arrived' : ''}" data-od-id="output-${output.id}-${scope}">
+          <div class="output-main">
+            <span class="output-index">${output.index}</span>
+            <div class="output-copy"><span class="output-title">${esc(output.title)}</span><span class="output-sub">${esc(output.subtitle)}</span></div>
+            <span class="output-state ${stateClass}">${stateLabelForOutput(output)}</span>
+          </div>
+          <div class="output-actions">${outputActions(output, scope)}</div>
+        </div>`;
+    }
+
+    function noticeHTML() {
+      const task = state.task;
+      if (task.error) {
+        return `<div class="notice-panel" data-od-id="task-error">
+          <div class="notice-title"><svg class="icon"><use href="#i-alert"/></svg>${esc(task.error.title)}</div>
+          <p class="notice-body">${esc(task.error.detail)}</p>
+          <div class="notice-actions"><button type="button" class="btn btn-primary btn-small" data-action="retry">只重试未完成部分</button><button type="button" class="btn btn-ghost btn-small" data-action="preview-result" data-id="tang" data-from="companion">查看草稿</button></div>
+        </div>`;
+      }
+      if (task.pending) {
+        return `<div class="notice-panel warn" data-od-id="task-confirm">
+          <div class="notice-title"><svg class="icon"><use href="#i-alert"/></svg>${esc(task.pending.title)}</div>
+          <p class="notice-body">${esc(task.pending.detail)}</p>
+          <div class="notice-actions">${task.pending.options.map((option, index) => `<button type="button" class="btn ${index === 0 ? 'btn-primary' : 'btn-secondary'} btn-small" data-action="confirm-choice" data-choice="${option.value}">${esc(option.label)}</button>`).join('')}</div>
+        </div>`;
+      }
+      if (task.verification) {
+        return `<div class="notice-panel warn" data-od-id="task-verification">
+          <div class="notice-title"><svg class="icon"><use href="#i-clock"/></svg>${esc(task.verification.title)}</div>
+          <p class="notice-body">${esc(task.verification.detail)}</p>
+          <div class="notice-actions"><button type="button" class="btn btn-primary btn-small" data-action="recheck">继续核对</button><button type="button" class="btn btn-ghost btn-small" data-action="preview-result" data-id="tang" data-from="companion">查看本地草稿</button></div>
+        </div>`;
+      }
+      if (task.status === 'stopped') {
+        return `<div class="notice-panel info" data-od-id="task-stopped">
+          <div class="notice-title"><svg class="icon"><use href="#i-pause"/></svg>已停止剩余工作</div>
+          <p class="notice-body">已保存的成果不会删除，也没有迟到回复会替换当前阅读。</p>
+          <div class="notice-actions"><button type="button" class="btn btn-primary btn-small" data-action="resume">继续未完成部分</button></div>
+        </div>`;
+      }
+      return '';
+    }
+
+    function completionHTML() {
+      if (state.task.status !== 'complete') return '';
+      return `<div class="complete-strip"><svg class="icon"><use href="#i-check"/></svg><span>三篇已保存。可以从手记回看每一篇的来源与过程。</span></div>`;
+    }
+
+    function taskCardHTML(scope) {
+      const task = state.task;
+      const info = statusInfo(task.status);
+      const currentIndex = task.current === 'qin' ? 1 : task.current === 'tang' ? 2 : 3;
+      const stop = task.status === 'running' || task.status === 'confirm' || task.status === 'verifying'
+        ? `<button type="button" class="text-btn danger" data-action="stop">停止</button>` : '';
+      const materialLine = `<div class="task-materials"><svg class="icon"><use href="#i-file"/></svg><span>${task.current === 'qin' ? '3 份资料已读' : '已读 3 份 · 待读 2 份'}</span><button type="button" class="text-btn" data-action="preview-materials">查看资料</button></div>`;
+      const currentStep = task.status === 'complete'
+        ? `<div class="current-step"><span class="step-index">✓</span><div class="step-copy"><strong>三篇整理完成</strong><span>每篇都保留了题目、正文和来源关系。</span></div></div>`
+        : `<div class="current-step"><span class="step-index">${currentIndex}/3</span><div class="step-copy"><strong>${esc(task.stage)}</strong><span>${esc(task.workNote)}</span></div></div>`;
+      return `
+        <section class="task-card" data-od-id="task-card-${scope}">
+          <div class="task-top">
+            <span class="status-pill ${info.cls}">${info.label}</span>
+            <div class="task-tools"><button type="button" class="text-btn" data-action="edit-task">修改要求</button>${stop}</div>
+          </div>
+          <h2 class="task-title">${esc(task.title)}</h2>
+          <p class="task-request">${esc(task.request)}</p>
+          ${currentStep}
+          <div class="elapsed-line"><span><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg> 已用时 <span class="js-elapsed">${fmtElapsed(currentElapsed())}</span></span><span>${task.status === 'complete' ? '已停止计时' : task.status === 'running' ? '按阶段推进' : '计时已暂停'}</span></div>
+          ${materialLine}
+          <div class="outputs">${['qin', 'tang', 'song'].map((id) => outputRow(task.outputs[id], scope)).join('')}</div>
+          ${noticeHTML()}
+          ${completionHTML()}
+          <div class="task-footer"><button type="button" class="journal-entry" data-action="open-journal" data-anchor="${currentJournalAnchor()}">查看完整手记<svg class="icon"><use href="#i-arrow"/></svg></button></div>
+        </section>`;
+    }
+
+    function renderTaskCards() {
+      taskCardHost.innerHTML = taskCardHTML('desktop');
+      mobileTaskCardHost.innerHTML = taskCardHTML('sheet');
+    }
+
+    function renderCompanionStatus() {
+      const info = statusInfo(state.task.status);
+      companionStatus.innerHTML = `<span class="status-dot ${info.dot}"></span><span>${esc(companionSummary())}</span>`;
+      sheetStatus.textContent = companionSummary();
+    }
+
+    function renderMobileStrip() {
+      mobileStrip.innerHTML = `
+        <button type="button" class="task-strip-btn" data-action="open-sheet" data-od-id="mobile-task-summary">
+          <span class="task-strip-avatar" aria-hidden="true"><svg class="mascot"><use href="#companion"/></svg></span>
+          <span class="task-strip-copy"><strong>${esc(companionSummary())}</strong><span>${esc(summaryLine())}</span></span>
+          <svg class="icon"><use href="#i-chevron"/></svg>
+        </button>`;
+    }
+
+    function renderComposerAttachments() {
+      attachmentsHost.innerHTML = state.attachments.map((file, index) => {
+        if (file.type === 'image') return `<span class="attach-chip"><img src="${file.url}" alt="" /><span>图片</span><button type="button" data-action="remove-attachment" data-index="${index}" aria-label="移除图片"><svg class="icon"><use href="#i-close"/></svg></button></span>`;
+        return `<span class="attach-chip"><svg class="icon"><use href="#i-mic"/></svg><span>语音 · ${esc(file.duration)}</span><button type="button" data-action="remove-attachment" data-index="${index}" aria-label="移除语音"><svg class="icon"><use href="#i-close"/></svg></button></span>`;
+      }).join('');
+    }
+
+    function syncSendButton() {
+      const has = chatInput.value.trim().length > 0 || state.attachments.length > 0;
+      sendBtn.disabled = !has;
+    }
+
+    function autoSizeInput() {
+      chatInput.style.height = 'auto';
+      chatInput.style.height = Math.min(82, Math.max(34, chatInput.scrollHeight)) + 'px';
+    }
+
+    function measureComposer() {
+      const height = composerBar.offsetHeight;
+      if (height > 0) app.style.setProperty('--composer-h', `${height}px`);
+    }
+
+    function showToast(config) {
+      if (state.toastTimer) clearTimeout(state.toastTimer);
+      state.toast = { tone: 'info', persistent: false, ...config };
+      renderToast();
+      if (!state.toast.persistent) {
+        state.toastTimer = setTimeout(() => { state.toast = null; renderToast(); }, config.duration || 5600);
+      }
+    }
+
+    function renderToast() {
+      if (!state.toast) { toastRegion.innerHTML = ''; return; }
+      const toast = state.toast;
+      const icon = toast.tone === 'success' ? 'i-check' : toast.tone === 'warning' ? 'i-alert' : 'i-spark';
+      const action = toast.actionLabel ? `<div class="toast-actions"><button type="button" class="toast-action" data-toast-action="${toast.action || 'dismiss'}" data-toast-id="${toast.payload || ''}">${esc(toast.actionLabel)}</button></div>` : '';
+      toastRegion.innerHTML = `<div class="toast" role="status"><span class="toast-icon"><svg class="icon"><use href="#${icon}"/></svg></span><div class="toast-copy"><div class="toast-title">${esc(toast.title)}</div><div class="toast-body">${esc(toast.body || '')}</div>${action}</div><button type="button" class="toast-close" data-toast-action="dismiss" aria-label="关闭提示"><svg class="icon"><use href="#i-close"/></svg></button></div>`;
+    }
+
+    function dismissToast() {
+      if (state.toastTimer) clearTimeout(state.toastTimer);
+      state.toast = null;
+      renderToast();
+    }
+
+    function renderJournalHeader() {
+      const archive = state.journal.mode === 'archive';
+      journalTitle.textContent = archive ? '整理《秦制与天下》· 初稿' : state.task.title;
+      $('.journal-kicker', journalLayer).textContent = archive ? '对话手记 · 10 月 18 日' : '对话手记 · 10 月 19 日';
+      journalHeadTools.innerHTML = archive
+        ? `<button type="button" class="top-btn" data-action="back-latest">${state.journal.archiveHasNew ? '有新成果 · ' : ''}回到最新<svg class="icon"><use href="#i-arrow"/></svg></button>`
+        : `<span class="version-chip"><svg class="icon"><use href="#i-clock"/></svg>本次任务</span>`;
+    }
+
+    function materialRows(ids) {
+      return ids.map((id) => {
+        const source = SOURCES[id];
+        return `<div class="material-row"><svg class="icon"><use href="#${source.state === 'unavailable' ? 'i-alert' : 'i-file'}"/></svg><div class="material-copy"><strong>${esc(source.label)}</strong><span>${esc(source.meta)}</span></div><span class="material-state ${source.state === 'unavailable' ? 'bad' : ''}">${source.state === 'unavailable' ? '不可用' : '已读'}</span><button type="button" class="mini-btn" data-action="open-source" data-source-id="${id}">${source.state === 'unavailable' ? '查看原因' : '预览'}</button></div>`;
+      }).join('');
+    }
+
+    function sourcePills(ids) {
+      return ids.map((id) => `<button type="button" class="source-pill" data-action="open-source" data-source-id="${id}">${esc(SOURCES[id].label)}</button>`).join('');
+    }
+
+    function recordActions(output) {
+      if (output.state === 'saved') {
+        return `<button type="button" class="mini-btn strong" data-action="preview-result" data-id="${output.id}" data-from="journal">预览</button><button type="button" class="mini-btn" data-action="open-note" data-id="${output.id}">打开笔记</button>`;
+      }
+      return `<button type="button" class="mini-btn" data-action="preview-result" data-id="${output.id}" data-from="journal">${output.hasDraft ? '预览草稿' : '查看状态'}</button>`;
+    }
+
+    function recordHTML(output, noteText) {
+      const archive = output.id === 'qin-old';
+      const out = archive ? ARCHIVE_OUTPUT : output;
+      const note = NOTES[out.noteId || out.id];
+      const version = `版本 ${out.version || 1}`;
+      const kicker = archive ? '当时成果 · 10 月 18 日 21:18 保存' : `本次整理 · 第 ${out.index || '?'} 篇 · ${version}`;
+      const sources = (out.sources || []).length ? `<div class="record-sources">${sourcePills(out.sources)}</div>` : '';
+      return `<div class="record-card" data-journal-anchor="journal-output-${out.id}" data-od-id="journal-record-${out.id}">
+        <div class="record-head"><span class="record-index">${out.index || '旧'}</span><div class="record-copy"><div class="record-kicker">${esc(kicker)}</div><h3 class="record-title">${esc(out.title)}</h3></div><span class="record-state">${archive ? '历史快照' : '已保存'}</span></div>
+        <p class="record-excerpt">${esc(noteText || out.excerpt || note.preview.replace(/<[^>]+>/g, ' ').slice(0, 120))}</p>
+        ${sources}
+        <div class="record-actions">${recordActions(out)}</div>
+      </div>`;
+    }
+
+    function entryShell({ time, dot = '', label, badge = '', content, anchor = '' }) {
+      return `<section class="j-entry" ${anchor ? `data-journal-anchor="${anchor}"` : ''}><span class="j-dot ${dot}" aria-hidden="true"></span><div class="j-time">${esc(time)}</div><div class="j-label">${esc(label)}${badge ? `<span class="j-badge">${esc(badge)}</span>` : ''}</div>${content}</section>`;
+    }
+
+    function currentCardHTML() {
+      const task = state.task;
+      const info = statusInfo(task.status);
+      let extra = '';
+      let actions = `<button type="button" class="btn btn-secondary btn-small" data-action="open-journal" data-anchor="journal-current">定位到这里</button>`;
+      if (task.error) {
+        extra = `<p>${esc(task.error.detail)}</p>`;
+        actions = `<button type="button" class="btn btn-primary btn-small" data-action="retry">只重试未完成部分</button><button type="button" class="btn btn-secondary btn-small" data-action="preview-result" data-id="tang" data-from="journal">查看唐朝草稿</button>`;
+      } else if (task.pending) {
+        extra = `<p>${esc(task.pending.detail)}</p>`;
+        actions = task.pending.options.map((option, index) => `<button type="button" class="btn ${index === 0 ? 'btn-primary' : 'btn-secondary'} btn-small" data-action="confirm-choice" data-choice="${option.value}">${esc(option.label)}</button>`).join('');
+      } else if (task.verification) {
+        extra = `<p>${esc(task.verification.detail)}</p>`;
+        actions = `<button type="button" class="btn btn-primary btn-small" data-action="recheck">继续核对</button><button type="button" class="btn btn-secondary btn-small" data-action="preview-result" data-id="tang" data-from="journal">查看本地草稿</button>`;
+      } else if (task.status === 'stopped') {
+        extra = `<p>停止剩余工作不会删除秦朝笔记；重新聊天也不会被旧任务替换。</p>`;
+        actions = `<button type="button" class="btn btn-primary btn-small" data-action="resume">继续未完成部分</button>`;
+      } else {
+        extra = `<p>${esc(task.workNote)}</p>`;
+      }
+      return `<div class="current-card" data-journal-anchor="journal-current" id="journal-current">
+        <div class="current-top"><span class="status-pill ${info.cls}">${info.label}</span><span class="mono" style="font-size:9px;color:var(--soft)">已用时 <span class="js-elapsed">${fmtElapsed(currentElapsed())}</span></span></div>
+        <h3>${esc(task.stage)}</h3>${extra}
+        ${task.requirementNote ? `<p><strong>要求更新：</strong>${esc(task.requirementNote)}</p>` : ''}
+        <div class="current-actions">${actions}</div>
+      </div>`;
+    }
+
+    function outputEntry(output, time, forceCurrent = false) {
+      const task = state.task;
+      const isCurrent = forceCurrent || (task.current === output.id && ['running', 'confirm', 'verifying', 'stopped'].includes(task.status));
+      if (output.state === 'saved') {
+        return entryShell({ time: output.savedAt || time, dot: 'done', label: `第 ${output.index} 篇 · ${output.title}`, badge: '已保存', content: recordHTML(output), anchor: `journal-output-${output.id}` });
+      }
+      if (isCurrent) {
+        return entryShell({ time: time || '现在', dot: 'active', label: `第 ${output.index} 篇 · ${output.title}`, badge: stateLabelForOutput(output), content: currentCardHTML(), anchor: 'journal-current' });
+      }
+      if (output.state === 'failed') {
+        return entryShell({ time: time || '现在', dot: 'error', label: `第 ${output.index} 篇 · ${output.title}`, badge: '生成失败', content: `<div class="error-card" data-journal-anchor="journal-error"><h3><svg class="icon"><use href="#i-alert"/></svg>${esc(output.reason || '这篇暂时未能保存')}</h3><p>秦朝笔记已经保存，可以继续阅读。唐朝草稿仍在本地，重试只会处理未完成部分。</p><div class="error-actions"><button type="button" class="btn btn-primary btn-small" data-action="retry">只重试未完成部分</button><button type="button" class="btn btn-secondary btn-small" data-action="preview-result" data-id="tang" data-from="journal">查看草稿</button></div></div>`, anchor: 'journal-error' });
+      }
+      if (output.state === 'stopped') {
+        return entryShell({ time: '现在', dot: '', label: `第 ${output.index} 篇 · ${output.title}`, badge: '已停止', content: `<div class="empty-record"><strong>这一步已停止。</strong>已保存的秦朝成果仍在，可以继续未完成部分。</div>`, anchor: `journal-output-${output.id}` });
+      }
+      return entryShell({ time: '—', dot: '', label: `第 ${output.index} 篇 · ${output.title}`, badge: '仍在准备', content: `<div class="empty-record" data-journal-anchor="journal-output-${output.id}"><strong>仍在队列中</strong>没有可读内容之前，不显示虚假百分比。轮到这篇时，草稿与保存状态会直接出现在这里。</div>`, anchor: `journal-output-${output.id}` });
+    }
+
+    function latestJournalHTML() {
+      const task = state.task;
+      const request = `<div class="request-block">${esc(task.request)}<div class="request-meta"><span>你</span><span>·</span><span>10 月 19 日 21:04</span></div></div>`;
+      const plan = `<p class="j-text">我会先读原文，核对出处，再按你的笔记结构成篇。每篇独立保存；一篇保存后，其余工作可以继续。</p><ul class="plan-list"><li>先交付秦朝篇，再整理唐朝与宋朝。</li><li>只重试未完成部分，不覆盖已保存成果。</li><li>资料不可用时会停在原位置，并保留可读草稿。</li></ul><div class="material-list">${materialRows(MATERIAL_IDS)}</div>`;
+      let timeline = '';
+      timeline += entryShell({ time: '10月19日 21:04', dot: 'user', label: '你的请求', content: request, anchor: 'journal-request' });
+      timeline += entryShell({ time: '21:04', dot: 'active', label: '伴星接下任务', badge: '本次任务', content: plan, anchor: 'journal-plan' });
+      timeline += outputEntry(task.outputs.qin, '21:06');
+      if (task.requirementUpdatedAt) timeline += entryShell({ time: task.requirementUpdatedAt, dot: '', label: '要求已更新', badge: '保留已保存成果', content: `<p class="j-text">${esc(task.requirementNote || '未开始与待重试部分会按新要求继续。')}</p>`, anchor: 'journal-requirement' });
+      timeline += outputEntry(task.outputs.tang, '21:09');
+      timeline += outputEntry(task.outputs.song, '21:12');
+      if (task.status === 'complete') {
+        timeline += entryShell({ time: timeNow(), dot: 'done', label: '三篇整理完成', badge: '可回看', content: `<div class="complete-card" data-journal-anchor="journal-complete"><h3><svg class="icon"><use href="#i-check"/></svg>三篇都已保存</h3><p>可以从这里打开任意一篇正式笔记，也可以回到每一条来源。新消息不会自动把你带离正在阅读的位置。</p></div>`, anchor: 'journal-complete' });
+      }
+      return `<div class="archive-index"><svg class="icon"><use href="#i-clock"/></svg><div class="archive-copy"><strong>较早完成记录 · 10 月 18 日</strong>《秦制与天下》初稿已完成。当前任务继续独立推进。</div><button type="button" class="mini-btn" data-action="open-archive">回看</button></div><div class="timeline">${timeline}</div>`;
+    }
+
+    function archiveJournalHTML() {
+      const banner = `<div class="archive-banner"><svg class="icon"><use href="#i-clock"/></svg><div class="banner-copy"><strong>你正在回看一份较早记录。</strong>这里保持 10 月 18 日保存的当时成果，不会随当前任务更新。${state.journal.archiveHasNew ? '<br>当前任务已有新成果，阅读位置不会被打断。' : ''}</div><button type="button" class="mini-btn" data-action="back-latest">回到最新</button></div>`;
+      const request = `<div class="request-block">帮我把《秦制与天下》整理成初稿，先留一个能继续扩写的骨架。<div class="request-meta"><span>你</span><span>·</span><span>10 月 18 日 21:02</span></div></div>`;
+      const plan = `<p class="j-text">我先按郡县制度搭骨架，保留《史记》的原始引文。制度的代价与后世回声留到下一版补。</p><div class="material-list">${materialRows(['old-shiji'])}</div>`;
+      const record = recordHTML(ARCHIVE_OUTPUT, '这是 10 月 18 日保存的初稿，当时只展开了郡县与文书制度，尚未补上制度的代价与后世回声。');
+      return `${banner}<div class="timeline">
+        ${entryShell({ time: '10月18日 21:02', dot: 'user', label: '当时的请求', content: request, anchor: 'journal-archive-current' })}
+        ${entryShell({ time: '21:03', dot: 'active', label: '伴星整理初稿', badge: '历史记录', content: plan, anchor: 'journal-archive-plan' })}
+        ${entryShell({ time: '21:18', dot: 'done', label: '当时成果 · 初稿', badge: '版本 1', content: record, anchor: 'journal-archive-output' })}
+        ${entryShell({ time: '21:18', dot: '', label: '记录在此结束', content: '<p class="j-text">这份手记只保留当时保存的版本。当前笔记已更新，回到最新可以查看本次任务。</p>', anchor: 'journal-archive-end' })}
+      </div>`;
+    }
+
+    function renderJournal(options = {}) {
+      if (!state.journal.open) return;
+      const previousScroll = options.preserve ? journalBody.scrollTop : state.journal.scrollTop;
+      renderJournalHeader();
+      journalInner.innerHTML = state.journal.mode === 'archive' ? archiveJournalHTML() : latestJournalHTML();
+      const targetScroll = typeof options.scrollTop === 'number' ? options.scrollTop : previousScroll;
+      requestAnimationFrame(() => {
+        if (state.journal.anchor && options.useAnchor) {
+          scrollJournalTo(state.journal.anchor);
+        } else {
+          journalBody.scrollTop = targetScroll || 0;
+        }
+      });
+    }
+
+    function scrollJournalTo(anchor) {
+      const bodyRect = journalBody.getBoundingClientRect();
+      const target = journalBody.querySelector(`[data-journal-anchor="${anchor}"]`) || journalBody.querySelector('#' + anchor);
+      if (!target) return;
+      const top = target.getBoundingClientRect().top - bodyRect.top + journalBody.scrollTop - 14;
+      journalBody.scrollTo({ top: Math.max(0, top), behavior: state.motion === 'full' ? 'smooth' : 'auto' });
+      target.classList.remove('journal-focus');
+      void target.offsetWidth;
+      target.classList.add('journal-focus');
+      setTimeout(() => target.classList.remove('journal-focus'), 1500);
+    }
+
+    function openJournal(anchor = 'journal-current', mode = 'current', options = {}) {
+      if (!options.silent) dismissToast();
+      if (state.preview.open && !options.keepPreview) closePreview({ silent: true });
+      if (state.journal.open && state.journal.mode === mode && state.journal.anchor === anchor) {
+        state.journal.scrollTop = journalBody.scrollTop;
+      }
+      state.journal.open = true;
+      state.journal.mode = mode;
+      state.journal.anchor = anchor;
+      if (!options.restoreScroll) state.journal.scrollTop = 0;
+      if (!options.silent) state.journal.trigger = options.trigger || document.activeElement;
+      app.classList.add('journal-open');
+      journalLayer.setAttribute('aria-hidden', 'false');
+      renderJournal({ restore: true, useAnchor: true, scrollTop: options.scrollTop });
+      requestAnimationFrame(() => { if (!options.noFocus) $('[data-action="close-journal"]', journalLayer)?.focus({ preventScroll: true }); });
+    }
+
+    function closeJournal(options = {}) {
+      if (!state.journal.open) return;
+      state.journal.scrollTop = journalBody.scrollTop;
+      state.journal.open = false;
+      app.classList.remove('journal-open');
+      journalLayer.setAttribute('aria-hidden', 'true');
+      if (!options.silent) {
+        const trigger = state.journal.trigger;
+        if (trigger && trigger.isConnected) trigger.focus({ preventScroll: true });
+      }
+    }
+
+    function previewStatusInfo(snapshot) {
+      if (snapshot.kind === 'materials') return { cls: 'running', label: '本次资料 · 5 份' };
+      if (snapshot.kind === 'source') {
+        if (snapshot.source.state === 'unavailable') return { cls: 'failed', label: '资料暂不可用' };
+        return { cls: 'done', label: '引用材料 · 可定位' };
+      }
+      if (snapshot.output.state === 'saved') return { cls: 'done', label: `已保存成果 · 版本 ${snapshot.output.version || 1}` };
+      if (snapshot.output.state === 'writing') return { cls: 'running', label: '生成中草稿 · 尚未保存' };
+      if (snapshot.output.state === 'failed') return { cls: 'failed', label: '未完成草稿 · 保存失败' };
+      if (snapshot.output.state === 'verifying') return { cls: 'verify', label: '核对保存结果 · 本地草稿可读' };
+      if (snapshot.output.state === 'confirm') return { cls: 'verify', label: '等待确认 · 暂无可读内容' };
+      return { cls: 'stopped', label: '仍在准备 · 暂无可读内容' };
+    }
+
+    function makePreviewSnapshot(kind, id) {
+      if (kind === 'materials') return { kind, id: 'materials', title: '本次整理所用的资料' };
+      if (kind === 'source') {
+        const source = SOURCES[id];
+        return { kind, id, title: source.label, source };
+      }
+      const output = getOutput(id);
+      const note = NOTES[output.noteId || output.id];
+      return { kind: 'result', id, title: output.title, output: deep(output), noteId: output.noteId || output.id, notePreview: note.preview, note };
+    }
+
+    function openPreview(kind, id, from = 'companion', trigger = null, options = {}) {
+      if (state.preview.open && state.preview.kind === kind && state.preview.id === id && !options.force) {
+        return;
+      }
+      dismissToast();
+      clearStream();
+      if (trigger) {
+        const layerRect = previewLayer.getBoundingClientRect();
+        const rect = trigger.getBoundingClientRect();
+        const x = Math.min(1, Math.max(0, (rect.left + rect.width / 2 - layerRect.left) / Math.max(1, layerRect.width)));
+        const y = Math.min(1, Math.max(0, (rect.top + rect.height / 2 - layerRect.top) / Math.max(1, layerRect.height)));
+        previewPanel.style.setProperty('--origin-x', `${Math.round(x * 100)}%`);
+        previewPanel.style.setProperty('--origin-y', `${Math.round(y * 100)}%`);
+      }
+      state.preview = {
+        open: true, kind, id, from, snapshot: makePreviewSnapshot(kind, id), updateAvailable: false,
+        scrollTop: 0, triggerId: trigger ? trigger.getAttribute('data-od-id') || '' : ''
+      };
+      state.selectedOutput = kind === 'result' ? id : state.selectedOutput;
+      app.classList.add('preview-open');
+      previewLayer.setAttribute('aria-hidden', 'false');
+      renderPreview();
+      requestAnimationFrame(() => { previewBody.scrollTop = 0; $('#preview-close')?.focus({ preventScroll: true }); });
+    }
+
+    function closePreview(options = {}) {
+      if (!state.preview.open) return;
+      state.preview.scrollTop = previewBody.scrollTop;
+      state.preview.open = false;
+      app.classList.remove('preview-open');
+      previewLayer.setAttribute('aria-hidden', 'true');
+      clearPreviewNewChip();
+      clearStream();
+      if (!options.silent) {
+        const target = options.returnFocus || document.querySelector(`[data-od-id="${state.preview.triggerId}"]`);
+        if (target && target.isConnected) target.focus({ preventScroll: true });
+        else readerScroll.focus({ preventScroll: true });
+      }
+    }
+
+    function clearPreviewNewChip() {
+      $$('.preview-new-chip', previewPanel).forEach((chip) => chip.remove());
+    }
+
+    function showPreviewNewChip() {
+      if (!state.preview.open || $$('.preview-new-chip', previewPanel).length) return;
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'preview-new-chip';
+      chip.dataset.action = 'view-preview-latest';
+      chip.innerHTML = '<svg class="icon"><use href="#i-spark"/></svg>新版已到 · 查看';
+      previewPanel.appendChild(chip);
+    }
+
+    function renderPreview() {
+      if (!state.preview.open) return;
+      clearPreviewNewChip();
+      const snapshot = state.preview.snapshot;
+      const preserveScroll = state.preview.scrollTop || 0;
+      clearStream();
+      const info = previewStatusInfo(snapshot);
+      const update = state.preview.updateAvailable
+        ? `<div class="version-update"><svg class="icon"><use href="#i-spark"/></svg><span>${state.preview.kind === 'result' ? '这篇有新版本到达。你正在看的那一版不会被自动替换。' : '有新内容到达。'}</span><button type="button" class="mini-btn" data-action="view-preview-latest">查看最新</button></div>`
+        : '';
+      previewKicker.innerHTML = `<span class="status-pill ${info.cls}">${info.label}</span><span>${snapshot.kind === 'result' ? '来自本次整理' : snapshot.kind === 'source' ? '来源与段落关系' : '本次任务'}</span>`;
+      let title = snapshot.title;
+      let body = '';
+      let foot = '';
+      let startStreamText = '';
+
+      if (snapshot.kind === 'materials') {
+        previewKicker.innerHTML = `<span class="status-pill running">本次资料 · 5 份</span><span>每份都可打开原位置</span>`;
+        title = '本次整理所用的资料';
+        body = `<div class="material-list">${materialRows(MATERIAL_IDS)}</div><p class="preview-note">在线副本不可用时，会保留草稿与已保存成果；你可以先回到原位置，不会丢失阅读进度。</p>`;
+        foot = `<div class="foot-copy">关闭预览只收起这一层，不会停止任务。</div><div class="foot-actions"><button type="button" class="btn btn-secondary btn-small" data-action="close-preview">关闭预览</button></div>`;
+      } else if (snapshot.kind === 'source') {
+        const source = snapshot.source;
+        if (source.state === 'unavailable') {
+          previewKicker.innerHTML = `<span class="status-pill failed">资料暂不可用</span><span>${esc(source.label)}</span>`;
+          title = '这份原文暂时打不开';
+          body = `<div class="preview-empty"><div class="preview-empty-icon"><svg class="icon"><use href="#i-alert"/></svg></div><h3>在线副本不可用</h3><p>${esc(source.error || '资料暂时不可用。已保存成果与阅读位置不受影响。')}</p></div>`;
+          foot = `<div class="foot-copy">回到原位置即可继续阅读手记或笔记。</div><div class="foot-actions"><button type="button" class="btn btn-primary btn-small" data-action="close-preview">返回刚才位置</button><button type="button" class="btn btn-secondary btn-small" data-action="open-journal" data-anchor="journal-plan">在手记中查看</button></div>`;
+        } else {
+          title = source.label;
+          body = `<div class="preview-meta"><span>${esc(source.meta)}</span><span>·</span><span>可定位到正式笔记</span></div><div class="preview-prose"><p>${esc(source.excerpt)}</p></div><p class="preview-note">这是整理时使用的材料摘录。打开原文会定位到笔记中的对应段落，返回时接回当前手记与预览。</p>`;
+          foot = `<div class="foot-copy">关闭预览只收起这一层，不会停止任务。</div><div class="foot-actions"><button type="button" class="btn btn-primary btn-small" data-action="open-source-note" data-source-id="${source.noteId ? snapshot.id : ''}">查看原文</button><button type="button" class="btn btn-secondary btn-small" data-action="open-journal" data-anchor="journal-plan">在手记中查看</button></div>`;
+        }
+      } else {
+        const output = snapshot.output;
+        if (output.state === 'saved') {
+          title = output.title;
+          body = `<div class="preview-meta"><span>${esc(output.savedAt || '已保存')}</span><span>·</span><span>版本 ${output.version || 1}</span><span>·</span><span>${output.sources?.length || 0} 份来源</span></div><div class="preview-prose">${snapshot.notePreview}</div><p class="preview-note">你打开的是已保存的成果。可以继续展开阅读，或回到手记查看同一份条目。</p>`;
+          foot = `<div class="foot-copy">关闭预览只收起这一层，不会停止任务。</div><div class="foot-actions"><button type="button" class="btn btn-primary btn-small" data-action="open-note" data-id="${output.id}">打开笔记</button><button type="button" class="btn btn-secondary btn-small" data-action="open-journal" data-anchor="journal-output-${output.id}">在手记中查看</button></div>`;
+        } else if (output.state === 'writing' || output.state === 'verifying' || output.state === 'failed') {
+          const isDraft = output.hasDraft;
+          title = output.title;
+          body = `<div class="preview-meta"><span>${stateLabelForOutput(output)}</span><span>·</span><span>${isDraft ? '草稿可读' : '暂无字句'}</span></div><div class="preview-prose">${isDraft ? output.draft : ''}${isDraft ? '<p class="stream-line"><span id="preview-stream-text"></span><span class="stream-caret" aria-hidden="true"></span></p>' : ''}</div>${output.state === 'failed' ? `<p class="preview-note error">草稿尚未保存。重试只会处理未完成部分，不会覆盖已保存的秦朝笔记。</p>` : output.state === 'verifying' ? `<p class="preview-note">保存结果还在核对中。先读本地草稿，不会触发重复创建。</p>` : `<p class="preview-note">这是生成中的草稿，保存后会变成可打开的正式笔记。阅读位置不会被新字句挤走。</p>`}`;
+          if (isDraft) startStreamText = output.draft;
+          foot = `<div class="foot-copy">关闭预览只收起这一层，不会停止任务。</div><div class="foot-actions"><button type="button" class="btn btn-primary btn-small" data-action="open-journal" data-anchor="${currentJournalAnchor()}">在手记中查看</button><button type="button" class="btn btn-secondary btn-small" data-action="close-preview">回到伴星</button></div>`;
+        } else {
+          title = output.title;
+          body = `<div class="preview-empty"><div class="preview-empty-icon"><svg class="icon"><use href="#i-clock"/></svg></div><h3>仍在准备，暂无可读内容</h3><p>这篇还没有可读字句。任务继续推进后会直接出现草稿，不需要你反复等待或刷新。</p></div>`;
+          foot = `<div class="foot-copy">关闭预览只收起这一层，不会停止任务。</div><div class="foot-actions"><button type="button" class="btn btn-primary btn-small" data-action="close-preview">返回刚才位置</button></div>`;
+        }
+      }
+
+      previewTitle.textContent = title;
+      previewBody.innerHTML = update + body;
+      previewFoot.innerHTML = foot;
+      requestAnimationFrame(() => { previewBody.scrollTop = preserveScroll; });
+      if (startStreamText && (state.motion === 'full')) {
+        const initial = startStreamText.replace(/<[^>]+>/g, '').slice(0, 58);
+        startStream(initial, startStreamText);
+      }
+    }
+
+    function startStream(initial, htmlText) {
+      clearStream();
+      const textEl = $('#preview-stream-text');
+      if (!textEl) return;
+      const full = htmlText.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+      let index = initial.length;
+      textEl.textContent = initial;
+      state.streamTimer = setInterval(() => {
+        if (!state.preview.open || !document.body.contains(textEl)) { clearStream(); return; }
+        const atBottom = previewBody.scrollHeight - previewBody.scrollTop - previewBody.clientHeight < 34;
+        index = Math.min(full.length, index + 2);
+        textEl.textContent = full.slice(0, index);
+        if (atBottom) previewBody.scrollTop = previewBody.scrollHeight;
+        if (index >= full.length) clearStream();
+      }, 32);
+    }
+
+    function clearStream() {
+      if (state.streamTimer) clearInterval(state.streamTimer);
+      state.streamTimer = null;
+    }
+
+    function captureReturnContext() {
+      return {
+        noteId: state.noteId,
+        readingScroll: readerScroll.scrollTop,
+        journalOpen: state.journal.open,
+        journalMode: state.journal.mode,
+        journalAnchor: state.journal.anchor,
+        journalScroll: state.journal.open ? journalBody.scrollTop : state.journal.scrollTop,
+        previewOpen: state.preview.open,
+        preview: state.preview.open ? deep(state.preview) : null,
+        selectedOutput: state.selectedOutput,
+        sheetOpen: state.sheetOpen
+      };
+    }
+
+    function openNote(noteId, options = {}) {
+      if (!NOTES[noteId]) return;
+      if (!state.returnCtx) {
+        state.returnCtx = captureReturnContext();
+        state.contextLabel = options.label || (state.journal.open ? '从对话手记打开' : state.preview.open ? '从预览打开' : '原阅读位置');
+      }
+      if (state.preview.open) closePreview({ silent: true });
+      if (state.journal.open) closeJournal({ silent: true });
+      state.noteId = noteId;
+      renderNote({ scrollTop: options.anchor ? 0 : (state.readingPositions[noteId] || 0), anchor: options.anchor, highlight: options.highlight });
+      requestAnimationFrame(() => {
+        if (!options.anchor) readerScroll.focus({ preventScroll: true });
+      });
+    }
+
+    function openOutput(id) {
+      const output = getOutput(id);
+      if (!output || output.state !== 'saved') {
+        showToast({ title: '这篇还没有可打开的正式笔记', body: '先预览草稿或等待保存完成；这不会中断当前任务。', tone: 'warning' });
+        return;
+      }
+      state.selectedOutput = id;
+      openNote(output.noteId || id, { label: id === 'qin-old' ? '从历史记录打开当时版本' : '从成果打开正式笔记' });
+    }
+
+    function returnToPosition() {
+      const ctx = state.returnCtx;
+      if (!ctx) return;
+      state.returnCtx = null;
+      state.contextLabel = '';
+      state.noteId = ctx.noteId;
+      state.selectedOutput = ctx.selectedOutput;
+      renderNote({ scrollTop: ctx.readingScroll });
+      if (ctx.journalOpen) {
+        state.journal.mode = ctx.journalMode;
+        openJournal(ctx.journalAnchor, ctx.journalMode, { silent: true, noFocus: true, scrollTop: ctx.journalScroll });
+      }
+      if (ctx.previewOpen && ctx.preview) {
+        state.preview = deep(ctx.preview);
+        state.preview.open = true;
+        app.classList.add('preview-open');
+        previewLayer.setAttribute('aria-hidden', 'false');
+        renderPreview();
+        requestAnimationFrame(() => {
+          previewBody.scrollTop = ctx.preview.scrollTop || 0;
+          if (state.journal.open) $('[data-action="close-journal"]', journalLayer)?.focus({ preventScroll: true });
+          else $('#preview-close')?.focus({ preventScroll: true });
+        });
+      }
+      if (ctx.sheetOpen) openSheet({ silent: true });
+      showToast({ title: '已接回刚才的位置', body: '阅读滚动、手记条目、预览展开状态和未发送草稿都已保留。', tone: 'success', duration: 3400 });
+    }
+
+    function openSourcePreview(sourceId, trigger, from = 'companion') {
+      const source = SOURCES[sourceId];
+      if (!source) return;
+      openPreview('source', sourceId, from, trigger);
+    }
+
+    function openSourceNote(sourceId) {
+      const source = SOURCES[sourceId];
+      if (!source) return;
+      if (source.state === 'unavailable') {
+        openPreview('source', sourceId, 'reading', null, { force: true });
+        return;
+      }
+      if (!NOTES[source.noteId]) {
+        showToast({ title: '原文暂不可用', body: '这份材料还没有对应的正式笔记，已保留当前阅读位置。', tone: 'warning' });
+        return;
+      }
+      openNote(source.noteId, { anchor: source.anchor, label: `已定位到 · ${source.label}` });
+    }
+
+    function refreshTaskUI(options = {}) {
+      renderCompanionStatus();
+      renderTaskCards();
+      renderMobileStrip();
+      if (state.journal.open) {
+        if (state.journal.mode === 'current') renderJournal({ preserve: true, scrollTop: journalBody.scrollTop });
+        else renderJournalHeader();
+      }
+      if (state.preview.open && state.preview.kind === 'result') {
+        const output = getOutput(state.preview.id);
+        if (output && state.preview.snapshot && output.state === 'saved' && state.preview.snapshot.output.state !== 'saved') {
+          state.preview.updateAvailable = true;
+          showPreviewNewChip();
+        }
+      }
+      if (options.flashId) {
+        state.flashOutput = options.flashId;
+        setTimeout(() => { state.flashOutput = null; }, 900);
+      }
+      updateElapsedLabels();
+    }
+
+    function updateElapsedLabels() {
+      const text = fmtElapsed(currentElapsed());
+      $$('.js-elapsed').forEach((node) => { node.textContent = text; });
+    }
+
+    function markSaved(id, options = {}) {
+      const output = state.task.outputs[id];
+      if (!output) return;
+      const patch = {
+        state: 'saved', savedAt: timeNow(),
+        version: output.state === 'saved' ? (output.version || 1) + 1 : (output.version || 1),
+        hasDraft: true, reason: null
+      };
+      if (options.version) patch.version = options.version;
+      state.task.outputs[id] = { ...output, ...patch };
+      state.flashOutput = id;
+      const previewingThis = state.preview.open && state.preview.id === id && state.preview.snapshot && state.preview.snapshot.output.state !== 'saved';
+      if (previewingThis) {
+        state.preview.updateAvailable = true;
+        showPreviewNewChip();
+      }
+      if (state.journal.open && state.journal.mode === 'archive') state.journal.archiveHasNew = true;
+      if (!previewingThis) showToast({
+        title: `《${state.task.outputs[id].title}》${options.newVersion ? '新版本已保存' : '已保存'}`,
+        body: `版本 ${state.task.outputs[id].version} · 可以预览，或打开正式笔记。`,
+        tone: 'success',
+        actionLabel: '预览',
+        payload: id,
+        action: 'preview',
+        persistent: Boolean(state.journal.open && state.journal.mode === 'archive')
+      });
+    }
+
+    function completeTaskIfDone() {
+      const ids = ['qin', 'tang', 'song'];
+      if (ids.every((id) => state.task.outputs[id].state === 'saved')) {
+        state.task.status = 'complete';
+        state.task.current = 'song';
+        state.task.stage = '三篇整理完成';
+        state.task.workNote = '每一篇都保留了题目、正文和来源关系，可以从手记回到任意一篇。';
+        freezeElapsed();
+        return true;
+      }
+      return false;
+    }
+
+    function retryUnfinished() {
+      clearTaskTimers();
+      const task = state.task;
+      const target = task.outputs.tang.state !== 'saved' ? 'tang' : task.outputs.song.state !== 'saved' ? 'song' : null;
+      if (!target) { showToast({ title: '没有需要重试的部分', body: '三篇都已经保存。', tone: 'success' }); return; }
+      state.scenario = 'retry';
+      task.error = null;
+      task.pending = null;
+      task.verification = null;
+      task.status = 'running';
+      task.current = target;
+      task.stage = target === 'tang' ? '只重做唐朝这篇' : '继续整理宋朝笔记';
+      task.workNote = '已保存的秦朝笔记保留原样，不会重新生成；只处理未完成部分。';
+      task.outputs[target] = { ...task.outputs[target], state: 'writing', hasDraft: target === 'tang', reason: null };
+      startElapsed();
+      refreshTaskUI();
+      scheduleTask(() => {
+        task.stage = '读取《旧唐书》并核对引文';
+        task.workNote = '先确认资料是否可用，再继续保留两说或选择主线。';
+        refreshTaskUI();
+      }, 900);
+      scheduleTask(() => {
+        task.stage = '按你的笔记结构收束唐朝篇';
+        task.workNote = '正文正在续写，旧内容不会被新字句挤走。';
+        refreshTaskUI();
+      }, 2200);
+      scheduleTask(() => {
+        markSaved('tang');
+        task.current = 'song';
+        task.status = 'running';
+        task.stage = '唐朝已保存，继续宋朝笔记';
+        task.workNote = '秦朝和唐朝都已保存；宋朝还在队列中，不会重新打开前两篇。';
+        task.outputs.song = { ...task.outputs.song, state: 'writing', hasDraft: true };
+        refreshTaskUI({ flashId: 'tang' });
+      }, 3900);
+      scheduleTask(() => {
+        markSaved('song', { version: 1 });
+        const done = completeTaskIfDone();
+        if (done) refreshTaskUI({ flashId: 'song' });
+        showToast({ title: '三篇整理完成', body: '每一篇都可以独立打开，来源与过程仍保留在手记里。', tone: 'success', actionLabel: '查看手记', action: 'journal', payload: 'journal-complete' });
+      }, 6900);
+    }
+
+    function stopTask() {
+      if (!['running', 'confirm', 'verifying'].includes(state.task.status)) return;
+      clearTaskTimers();
+      freezeElapsed();
+      state.task.status = 'stopped';
+      state.task.stage = '已停止剩余工作';
+      state.task.workNote = '已保存的成果不会删除；继续未完成部分时会从当前状态接上。';
+      state.task.error = null;
+      state.task.pending = null;
+      state.task.verification = null;
+      state.task.outputs.tang = { ...state.task.outputs.tang, state: state.task.outputs.tang.state === 'saved' ? 'saved' : 'stopped' };
+      state.task.outputs.song = { ...state.task.outputs.song, state: state.task.outputs.song.state === 'saved' ? 'saved' : 'waiting' };
+      refreshTaskUI();
+      showToast({ title: '已停止剩余工作', body: '秦朝笔记仍可预览；迟到的任务更新不会替换轻聊消息或当前阅读。', tone: 'warning' });
+    }
+
+    function resumeTask() {
+      retryUnfinished();
+    }
+
+    function confirmChoice(choice) {
+      clearTaskTimers();
+      const task = state.task;
+      task.pending = null;
+      task.error = null;
+      task.status = 'running';
+      task.current = 'tang';
+      task.stage = choice === 'zztj' ? '按《资治通鉴》主线继续唐朝篇' : '保留两说，标为待核';
+      task.workNote = choice === 'zztj' ? '已按你的选择收束叙述范围；秦朝成果不变。' : '两种说法都会保留，并在正式笔记中标注待核。';
+      task.outputs.tang = { ...task.outputs.tang, state: 'writing', hasDraft: true };
+      startElapsed();
+      refreshTaskUI();
+      scheduleTask(() => {
+        task.stage = '唐朝篇正在保存';
+        task.workNote = '保存成功后会立刻显示版本与预览入口。';
+        refreshTaskUI();
+      }, 1300);
+      scheduleTask(() => {
+        markSaved('tang');
+        task.current = 'song';
+        task.stage = '唐朝已保存，继续宋朝笔记';
+        task.workNote = '宋朝还在准备；已保存的唐朝篇可独立打开。';
+        task.outputs.song = { ...task.outputs.song, state: 'writing', hasDraft: true };
+        refreshTaskUI({ flashId: 'tang' });
+      }, 3000);
+      scheduleTask(() => {
+        markSaved('song', { version: 1 });
+        completeTaskIfDone();
+        refreshTaskUI({ flashId: 'song' });
+        showToast({ title: '三篇整理完成', body: '这次要求已按确认范围落定，可以回到手记逐篇查看。', tone: 'success' });
+      }, 6000);
+    }
+
+    function recheckSave() {
+      const task = state.task;
+      clearTaskTimers();
+      task.status = 'verifying';
+      task.stage = '正在核对保存回执与本地草稿';
+      task.workNote = '在结果确认前不会创建第二份唐朝笔记。';
+      freezeElapsed();
+      refreshTaskUI();
+      scheduleTask(() => {
+        task.verification = null;
+        markSaved('tang');
+        task.current = 'song';
+        task.status = 'running';
+        task.stage = '核对完成：唐朝笔记已保存';
+        task.workNote = '没有发现重复创建；宋朝继续整理，秦朝成果保持不变。';
+        task.outputs.song = { ...task.outputs.song, state: 'writing', hasDraft: true };
+        startElapsed();
+        refreshTaskUI({ flashId: 'tang' });
+        showToast({ title: '核对完成', body: '唐朝笔记已保存，未发现重复创建。', tone: 'success', actionLabel: '预览', action: 'preview', payload: 'tang' });
+      }, 1700);
+      scheduleTask(() => {
+        markSaved('song', { version: 1 });
+        completeTaskIfDone();
+        refreshTaskUI({ flashId: 'song' });
+      }, 4800);
+    }
+
+    function editTask() {
+      state.editOpen = true;
+      app.classList.add('edit-open');
+      editLayer.setAttribute('aria-hidden', 'false');
+      editText.value = state.task.request;
+      requestAnimationFrame(() => editText.focus({ preventScroll: true }));
+    }
+
+    function closeEditor() {
+      state.editOpen = false;
+      app.classList.remove('edit-open');
+      editLayer.setAttribute('aria-hidden', 'true');
+    }
+
+    function applyEditor() {
+      const value = editText.value.trim();
+      if (!value) { editText.focus(); return; }
+      state.task.request = value;
+      state.task.requirementUpdatedAt = timeNow();
+      state.task.requirementNote = '已保存成果保持原样；未完成或待重试部分会按新要求继续。';
+      if (state.task.status === 'complete') {
+        state.task.requirementNote = '三篇成果保持不变；这条要求记在本次手记里，供下一次整理参考。';
+      }
+      closeEditor();
+      refreshTaskUI();
+      if (state.journal.open && state.journal.mode === 'current') renderJournal({ preserve: true, scrollTop: journalBody.scrollTop });
+      showToast({ title: '要求已更新', body: '已保存成果不变，剩余工作会在同一任务里继续。', tone: 'success', duration: 3600 });
+    }
+
+    function openSheet(options = {}) {
+      state.sheetOpen = true;
+      app.classList.add('sheet-open');
+      $('#mobile-sheet').setAttribute('aria-hidden', 'false');
+      renderChat(false);
+      renderTaskCards();
+      if (!options.silent) requestAnimationFrame(() => $('[data-action="close-sheet"]', $('#mobile-sheet'))?.focus({ preventScroll: true }));
+    }
+
+    function closeSheet(options = {}) {
+      state.sheetOpen = false;
+      app.classList.remove('sheet-open');
+      $('#mobile-sheet').setAttribute('aria-hidden', 'true');
+      if (!options.silent) {
+        const strip = $('.task-strip-btn', mobileStrip);
+        if (strip) strip.focus({ preventScroll: true });
+      }
+    }
+
+    function openArchiveJournal() {
+      state.journal.archiveHasNew = false;
+      openJournal('journal-archive-current', 'archive');
+    }
+
+    function backToLatest() {
+      state.journal.archiveHasNew = false;
+      openJournal(currentJournalAnchor(), 'current');
+    }
+
+    function simulateNewVersion() {
+      const next = ['qin', 'tang', 'song'].find((id) => state.task.outputs[id].state !== 'saved');
+      if (!next) {
+        showToast({ title: '三篇都是最新版本', body: '当前没有新的成果到达。', tone: 'info' });
+        return;
+      }
+      clearTaskTimers();
+      const wasArchive = state.journal.open && state.journal.mode === 'archive';
+      const wasPreview = state.preview.open && state.preview.kind === 'result' && state.preview.id === next;
+      const task = state.task;
+      task.outputs[next] = { ...task.outputs[next], state: 'saved', savedAt: timeNow(), version: task.outputs[next].version || 1, hasDraft: true };
+      task.error = null;
+      task.pending = null;
+      task.verification = null;
+      const remaining = ['qin', 'tang', 'song'].filter((id) => task.outputs[id].state !== 'saved');
+      if (remaining.length === 0) {
+        task.status = 'complete';
+        task.current = 'song';
+        task.stage = '三篇整理完成';
+        task.workNote = '每一篇都保留了题目、正文和来源关系。';
+        freezeElapsed();
+      } else {
+        task.status = 'running';
+        task.current = remaining[0];
+        task.stage = `《${task.outputs[next].title}》新版已保存`;
+        task.workNote = `剩余 ${remaining.length} 篇仍在队列中；已保存内容不会被替换。`;
+        startElapsed();
+      }
+      if (wasPreview) { state.preview.updateAvailable = true; showPreviewNewChip(); }
+      if (wasArchive) {
+        state.journal.archiveHasNew = true;
+        renderJournalHeader();
+        showToast({ title: `《${task.outputs[next].title}》新版已保存`, body: '你仍在回看旧记录，阅读位置没有改变。回到最新后再查看新版本。', tone: 'success', actionLabel: '回到最新', action: 'journal-latest', payload: next, persistent: true });
+      } else if (!wasPreview) {
+        showToast({ title: `《${task.outputs[next].title}》新版已保存`, body: '新成果没有自动打开。你可以选择预览，继续留在当前阅读。', tone: 'success', actionLabel: '预览', action: 'preview', payload: next });
+      }
+      refreshTaskUI({ flashId: next });
+    }
+
+    function viewLatestFromToast(id) {
+      dismissToast();
+      if (state.journal.open && state.journal.mode === 'archive') {
+        state.journal.archiveHasNew = false;
+        openJournal(`journal-output-${id}`, 'current', { keepPreview: true });
+        return;
+      }
+      if (state.preview.open && state.preview.id === id) {
+        state.preview.snapshot = makePreviewSnapshot('result', id);
+        state.preview.updateAvailable = false;
+        renderPreview();
+        return;
+      }
+      openPreview('result', id, 'companion', null, { force: true });
+    }
+
+    function setupJournalScrollMemory() {
+      journalBody.addEventListener('scroll', () => { state.journal.scrollTop = journalBody.scrollTop; }, { passive: true });
+      previewBody.addEventListener('scroll', () => { state.preview.scrollTop = previewBody.scrollTop; }, { passive: true });
+      readerScroll.addEventListener('scroll', () => {
+        if (!state.returnCtx || state.noteId) state.readingPositions[state.noteId] = readerScroll.scrollTop;
+      }, { passive: true });
+    }
+
+    function handleAction(actionEl) {
+      const action = actionEl.dataset.action;
+      const id = actionEl.dataset.id;
+      switch (action) {
+        case 'focus-reader': readerScroll.focus({ preventScroll: true }); break;
+        case 'open-journal': {
+          const anchor = actionEl.dataset.anchor || currentJournalAnchor();
+          openJournal(anchor, 'current', { trigger: actionEl });
+          break;
+        }
+        case 'close-journal': closeJournal(); break;
+        case 'open-archive': openArchiveJournal(); break;
+        case 'back-latest': backToLatest(); break;
+        case 'mobile-back': {
+          if (state.returnCtx) returnToPosition();
+          else if (state.noteId !== 'qin') { state.noteId = 'qin'; renderNote({ scrollTop: 0 }); }
+          break;
+        }
+        case 'return-context': returnToPosition(); break;
+        case 'open-sheet': openSheet(); break;
+        case 'close-sheet': closeSheet(); break;
+        case 'preview-result': {
+          state.selectedOutput = id;
+          openPreview('result', id, actionEl.dataset.from || 'companion', actionEl);
+          break;
+        }
+        case 'preview-materials': openPreview('materials', 'materials', 'companion', actionEl); break;
+        case 'open-source': openSourcePreview(actionEl.dataset.sourceId, actionEl, actionEl.closest('#journal-layer') ? 'journal' : actionEl.closest('#preview-layer') ? 'preview' : 'reading'); break;
+        case 'open-source-note': openSourceNote(actionEl.dataset.sourceId); break;
+        case 'open-note': openOutput(id); break;
+        case 'open-current-note': openNote('qin', { label: '从历史版本返回当前笔记', highlight: false }); break;
+        case 'close-preview': closePreview(); break;
+        case 'view-preview-latest': viewLatestFromToast(state.preview.id); break;
+        case 'retry': retryUnfinished(); break;
+        case 'stop': stopTask(); break;
+        case 'resume': resumeTask(); break;
+        case 'confirm-choice': confirmChoice(actionEl.dataset.choice); break;
+        case 'recheck': recheckSave(); break;
+        case 'edit-task': editTask(); break;
+        case 'close-editor': closeEditor(); break;
+        case 'apply-editor': applyEditor(); break;
+        case 'attach': imageInput.click(); break;
+        case 'voice': toggleVoice(); break;
+        case 'remove-attachment': removeAttachment(Number(actionEl.dataset.index)); break;
+        case 'play-sound': playMessageSound(actionEl.dataset.messageId, actionEl); break;
+        default: break;
+      }
+    }
+
+    function sendChat() {
+      const text = chatInput.value.trim();
+      if (!text && state.attachments.length === 0) return;
+      const attachments = deep(state.attachments);
+      const message = { id: 'u' + Date.now(), role: 'user', text: text || (attachments[0]?.type === 'image' ? '发来一张图片。' : '发来一段语音。'), time: timeNow(), attachments };
+      state.chat.push(message);
+      state.draftText = '';
+      state.attachments = [];
+      chatInput.value = '';
+      autoSizeInput();
+      renderComposerAttachments();
+      syncSendButton();
+      renderChat(true);
+      const replyText = state.task.status === 'running'
+        ? '收到。我不会打断正在进行的整理；这条消息会留在轻聊里。已保存的成果仍可随时预览。'
+        : state.task.status === 'complete'
+          ? '三篇都整理好了。你可以从手记回到每一篇的出处；要改哪一篇，直接告诉我。'
+          : '我在。当前任务停在唐朝，已保存的秦朝笔记还在。你可以先读，也可以让我只重试未完成部分。';
+      setTimeout(() => {
+        state.chat.push({ id: 'b' + Date.now(), role: 'companion', text: replyText, time: timeNow(), attachments: [] });
+        renderChat(true);
+      }, 720);
+    }
+
+    function removeAttachment(index) {
+      const file = state.attachments[index];
+      if (file?.url) URL.revokeObjectURL(file.url);
+      state.attachments.splice(index, 1);
+      renderComposerAttachments();
+      syncSendButton();
+    }
+
+    function toggleVoice() {
+      if (!state.recordingStart) {
+        state.recordingStart = Date.now();
+        micBtn.classList.add('recording');
+        micBtn.setAttribute('aria-label', '结束语音输入');
+        const tick = () => {
+          if (!state.recordingStart) return;
+          const sec = Math.floor((Date.now() - state.recordingStart) / 1000);
+          recordingLabel.textContent = `演示语音 ${String(Math.floor(sec / 60)).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')} · 再次点击结束`;
+        };
+        tick();
+        state.recordingTick = setInterval(tick, 500);
+      } else {
+        const seconds = Math.max(1, Math.floor((Date.now() - state.recordingStart) / 1000));
+        clearInterval(state.recordingTick);
+        state.recordingTick = null;
+        state.recordingStart = null;
+        micBtn.classList.remove('recording');
+        micBtn.setAttribute('aria-label', '语音输入');
+        recordingLabel.textContent = '';
+        state.attachments.push({ type: 'voice', duration: `00:${String(seconds).padStart(2, '0')}` });
+        renderComposerAttachments();
+        syncSendButton();
+      }
+    }
+
+    function playMessageSound(messageId, button) {
+      button.classList.add('is-playing');
+      setTimeout(() => button.classList.remove('is-playing'), 700);
+      try {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContext) return;
+        if (!playMessageSound.ctx) playMessageSound.ctx = new AudioContext();
+        const ctx = playMessageSound.ctx;
+        if (ctx.state === 'suspended') ctx.resume();
+        const now = ctx.currentTime;
+        [523.25, 659.25].forEach((frequency, index) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.value = frequency;
+          gain.gain.setValueAtTime(0, now + index * 0.11);
+          gain.gain.linearRampToValueAtTime(0.045, now + index * 0.11 + 0.012);
+          gain.gain.exponentialRampToValueAtTime(0.0001, now + index * 0.11 + 0.34);
+          osc.connect(gain); gain.connect(ctx.destination);
+          osc.start(now + index * 0.11); osc.stop(now + index * 0.11 + 0.36);
+        });
+      } catch { /* sound is optional; state remains usable */ }
+    }
+
+    function applyShell() {
+      const mobile = state.platform === 'mobile';
+      const compact = mobile || state.compact;
+      app.classList.toggle('platform-mobile', mobile);
+      app.classList.toggle('platform-desktop', !mobile);
+      app.classList.toggle('is-compact', compact);
+      app.dataset.motion = state.motion;
+      stage.classList.toggle('mobile-stage', mobile);
+      $$('[data-platform]').forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.platform === state.platform)));
+      $$('.seg-btn').forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.platform === state.platform)));
+      $('#scenario-select').value = state.scenario === 'retry' ? 'partial' : state.scenario;
+      $('#motion-select').value = state.motion;
+      guideLayer.dataset.motion = state.motion;
+      app.classList.toggle('sheet-open', state.sheetOpen);
+      app.classList.toggle('edit-open', state.editOpen);
+      app.classList.toggle('journal-open', state.journal.open);
+      app.classList.toggle('preview-open', state.preview.open);
+      measureComposer();
+    }
+
+    function renderAll() {
+      applyShell();
+      renderNote();
+      renderCompanionStatus();
+      renderChat(false);
+      renderTaskCards();
+      renderMobileStrip();
+      renderComposerAttachments();
+      syncSendButton();
+      renderToast();
+    }
+
+    function setScenario(name) {
+      clearTaskTimers();
+      clearStream();
+      if (state.preview.open) closePreview({ silent: true });
+      if (state.journal.open) closeJournal({ silent: true });
+      if (state.sheetOpen) closeSheet({ silent: true });
+      closeEditor();
+      state.returnCtx = null;
+      state.contextLabel = '';
+      state.noteId = 'qin';
+      state.readingPositions = { qin: 0, tang: 0, song: 0, 'qin-old': 0 };
+      state.scenario = name;
+      state.task = makeTask(name === 'archive' ? 'partial' : name);
+      if (name === 'archive') state.task = makeTask('partial');
+      state.chat = deep(DEFAULT_CHAT);
+      state.selectedOutput = name === 'complete' ? 'song' : 'qin';
+      state.journal = { open: false, mode: 'current', anchor: null, scrollTop: 0, archiveHasNew: false, trigger: null };
+      state.preview = { open: false, kind: null, id: null, from: null, snapshot: null, updateAvailable: false, scrollTop: 0, triggerId: null };
+      state.flashOutput = null;
+      state.toast = null;
+      renderAll();
+      if (name === 'fresh') startFreshDemo();
+      if (name === 'archive') requestAnimationFrame(() => openJournal('journal-archive-current', 'archive'));
+    }
+
+    function startFreshDemo() {
+      const task = state.task;
+      scheduleTask(() => {
+        markSaved('qin', { version: 2 });
+        task.current = 'tang';
+        task.stage = '秦朝已保存，继续整理唐朝笔记';
+        task.workNote = '秦朝篇已经可以预览；唐朝还在读资料，不会重写刚保存的内容。';
+        task.outputs.tang = { ...task.outputs.tang, state: 'writing' };
+        refreshTaskUI({ flashId: 'qin' });
+      }, 1800);
+      scheduleTask(() => {
+        task.outputs.tang = { ...task.outputs.tang, hasDraft: true };
+        task.stage = '唐朝笔记已形成可读草稿';
+        task.workNote = '草稿先给你看，保存后再变成正式笔记。';
+        refreshTaskUI();
+        showToast({ title: '唐朝草稿已可预览', body: '草稿不会自动打开，当前位置保持不变。', tone: 'info', actionLabel: '预览草稿', action: 'preview', payload: 'tang' });
+      }, 4700);
+    }
+
+    function changePlatform(platform) {
+      const prevScroll = readerScroll.scrollTop;
+      state.platform = platform;
+      saveState('sx-platform', platform);
+      if (platform === 'desktop') closeSheet({ silent: true });
+      applyShell();
+      requestAnimationFrame(() => { readerScroll.scrollTop = prevScroll; state.readingPositions[state.noteId] = prevScroll; measureComposer(); });
+      renderDeskTopbar();
+      renderMobileNav();
+      renderCompanionStatus();
+      renderMobileStrip();
+      if (state.preview.open) renderPreview();
+      if (state.journal.open) renderJournal({ preserve: true, scrollTop: journalBody.scrollTop });
+      showToast({ title: platform === 'mobile' ? '已切到手机视图' : '已切到桌面视图', body: `任务进度、选中成果与预览保持在当前状态。`, tone: 'info', duration: 2600 });
+    }
+
+    function changeMotion(motion) {
+      state.motion = motion;
+      saveState('sx-motion', motion);
+      applyShell();
+      if (state.journal.open) renderJournal({ preserve: true, scrollTop: journalBody.scrollTop });
+      if (state.preview.open) renderPreview();
+    }
+
+    function openGuide() {
+      guideLayer.classList.add('open');
+      requestAnimationFrame(() => $('#close-guide')?.focus({ preventScroll: true }));
+    }
+
+    function closeGuide() {
+      guideLayer.classList.remove('open');
+      $('#open-guide')?.focus({ preventScroll: true });
+    }
+
+    function handleToastAction(action, id) {
+      if (action === 'dismiss') { dismissToast(); return; }
+      if (action === 'preview') { dismissToast(); openPreview('result', id, 'companion', null, { force: true }); return; }
+      if (action === 'view-preview-latest') { viewLatestFromToast(id); return; }
+      if (action === 'journal-latest') {
+        dismissToast();
+        if (state.journal.open) {
+          state.journal.archiveHasNew = false;
+          openJournal(`journal-output-${id}`, 'current', { keepPreview: true });
+        } else {
+          openPreview('result', id, 'companion', null, { force: true });
+        }
+        return;
+      }
+      if (action === 'journal') { dismissToast(); openJournal(id || 'journal-current'); return; }
+    }
+
+    // Events
+    app.addEventListener('click', (event) => {
+      const actionEl = event.target.closest('[data-action]');
+      if (!actionEl) return;
+      if (actionEl.tagName === 'A') return;
+      event.preventDefault();
+      handleAction(actionEl);
+    });
+    toastRegion.addEventListener('click', (event) => {
+      const actionEl = event.target.closest('[data-toast-action]');
+      if (!actionEl) return;
+      handleToastAction(actionEl.dataset.toastAction, actionEl.dataset.toastId);
+    });
+    composerBar.addEventListener('submit', (event) => { event.preventDefault(); sendChat(); });
+    chatInput.addEventListener('input', () => {
+      state.draftText = chatInput.value;
+      autoSizeInput();
+      syncSendButton();
+    });
+    chatInput.addEventListener('keydown', (event) => {
+      if (event.isComposing) return;
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        sendChat();
+      }
+    });
+    imageInput.addEventListener('change', () => {
+      const file = imageInput.files && imageInput.files[0];
+      if (!file) return;
+      state.attachments.push({ type: 'image', name: file.name, url: URL.createObjectURL(file) });
+      imageInput.value = '';
+      renderComposerAttachments();
+      syncSendButton();
+    });
+    $$('[data-platform]').forEach((button) => button.addEventListener('click', () => changePlatform(button.dataset.platform)));
+    $('#scenario-select').addEventListener('change', (event) => setScenario(event.target.value));
+    $('#motion-select').addEventListener('change', (event) => changeMotion(event.target.value));
+    $('#simulate-new').addEventListener('click', simulateNewVersion);
+    $('#open-guide').addEventListener('click', openGuide);
+    $('#close-guide').addEventListener('click', closeGuide);
+    guideLayer.addEventListener('click', (event) => { if (event.target === guideLayer) closeGuide(); });
+    guidePanel.addEventListener('click', (event) => event.stopPropagation());
+
+    document.addEventListener('keydown', (event) => {
+      if (event.isComposing) return;
+      if (event.key === 'Escape') {
+        if (guideLayer.classList.contains('open')) { closeGuide(); return; }
+        if (state.editOpen) { closeEditor(); return; }
+        if (state.preview.open) { closePreview(); return; }
+        if (state.sheetOpen) { closeSheet(); return; }
+        if (state.journal.open) { closeJournal(); return; }
+        return;
+      }
+      const target = event.target;
+      const typing = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+      if (typing || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (String(event.key).toLowerCase() === 'j') {
+        event.preventDefault();
+        if (!state.journal.open) openJournal(currentJournalAnchor());
+        else closeJournal();
+      }
+    });
+
+    const compactQuery = window.matchMedia('(max-width: 860px), (max-height: 560px)');
+    const syncCompact = () => {
+      state.compact = compactQuery.matches;
+      applyShell();
+      if (state.preview.open) {
+        // Keep selected preview and scroll while switching layout.
+        state.preview.scrollTop = previewBody.scrollTop;
+        renderPreview();
+      }
+    };
+    if (compactQuery.addEventListener) compactQuery.addEventListener('change', syncCompact);
+    else compactQuery.addListener(syncCompact);
+    window.addEventListener('resize', () => { measureComposer(); });
+    if (window.ResizeObserver) new ResizeObserver(measureComposer).observe(composerBar);
+
+    // Initial state
+    const rememberedMotion = stateKey('sx-motion');
+    if (['full', 'reduced', 'off'].includes(rememberedMotion)) state.motion = rememberedMotion;
+    else if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) state.motion = 'reduced';
+    const rememberedPlatform = stateKey('sx-platform');
+    if (rememberedPlatform === 'desktop' || rememberedPlatform === 'mobile') state.platform = rememberedPlatform;
+    state.compact = compactQuery.matches;
+    state.task = makeTask('partial');
+    state.chat = deep(DEFAULT_CHAT);
+    state.preview = { open: false, kind: null, id: null, from: null, snapshot: null, updateAvailable: false, scrollTop: 0, triggerId: null };
+    state.journal = { open: false, mode: 'current', anchor: null, scrollTop: 0, archiveHasNew: false, trigger: null };
+    setupJournalScrollMemory();
+    renderAll();
+    setInterval(updateElapsedLabels, 1000);
+    autoSizeInput();
+    requestAnimationFrame(() => { measureComposer(); if (state.platform === 'mobile') stage.classList.add('mobile-stage'); });
+  })();
+  </script>
+</body>
+</html>
+

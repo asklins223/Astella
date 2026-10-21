@@ -119,13 +119,12 @@ export function companionSteerCause(input: {
   unverifiedClaims: readonly unknown[];
   unverifiedQuotes: readonly unknown[];
   lookupClaim: boolean;
-  nothingDueClaim: boolean;
   userAskedForAction: boolean;
-}): "unverified-quotes" | "unverified-numbers" | "claimed-nothing-due" | "claimed-lookup"
+}): "unverified-quotes" | "unverified-numbers" | "claimed-lookup"
   | "action-request" | "promise-shape" {
   if (input.correctQuote) return "unverified-quotes";
   if (input.unverifiedClaims.length > 0) return "unverified-numbers";
   if (input.unverifiedQuotes.length > 0) return "unverified-quotes";
-  if (input.lookupClaim) return input.nothingDueClaim ? "claimed-nothing-due" : "claimed-lookup";
+  if (input.lookupClaim) return "claimed-lookup";
   return input.userAskedForAction ? "action-request" : "promise-shape";
 }

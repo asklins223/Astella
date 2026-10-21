@@ -21,7 +21,6 @@ import {
   type InviteStatus,
   type ConsumeInviteErrorCode,
   type RemoveMemberError,
-  type UpdateStepError,
   type CreateInviteError,
   type RevokeInviteError,
 } from "../modules/identity/invite-service.ts";
@@ -252,14 +251,14 @@ describe("invite-service: ConsumeInviteError 错误码完整性", () => {
 // ─── ONBOARDING_STEPS 完成检测逻辑 ──────────────────────────────────────
 
 describe("invite-service: ONBOARDING_STEPS 完成检测逻辑", () => {
-  it("包含 5 个步骤且顺序正确", () => {
-    assert.equal(ONBOARDING_STEPS.length, 5);
+  it("包含 4 个步骤且顺序正确", () => {
+    // 方案 57 把学习卡并进笔记，evidence_review 随旧复习链一起删除。
+    assert.equal(ONBOARDING_STEPS.length, 4);
     assert.deepEqual([...ONBOARDING_STEPS], [
       "ai_consent",
       "first_content",
       "first_note",
       "first_card",
-      "evidence_review",
     ]);
   });
 
@@ -346,10 +345,6 @@ describe("invite-service: 错误类型联合完整性", () => {
     assert.equal(errors.length, 3);
   });
 
-  it("UpdateStepError 覆盖步骤更新失败场景", () => {
-    const errors: UpdateStepError[] = ["invalid_step", "not_found"];
-    assert.equal(errors.length, 2);
-  });
 });
 
 // ─── 角色验证逻辑（createInvite 的纯验证路径） ──────────────────────────

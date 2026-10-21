@@ -223,7 +223,7 @@ test("active 目录只返回有界语义线索与适用时间，不把正文带�
   const directory = await retrieveActiveCompanionMemoryDirectory(
     tx as never,
     { workspaceId: "w", userId: "u" },
-    { entityType: "learning_run", entityId: "run-1" },
+    { entityType: "note", entityId: "run-1" },
   );
 
   assert.match(tx.queries[0], /budget_tier = 'active'/);
@@ -262,7 +262,7 @@ test("按 ID 展开只读取仍有效、同范围且版本匹配的 active 正�
   const memory = await readActiveCompanionMemoryById(
     tx as never,
     { workspaceId: "w", userId: "u" },
-    { entityType: "learning_run", entityId: "run-1" },
+    { entityType: "note", entityId: "run-1" },
     ROW.id,
     4,
   );
@@ -349,7 +349,7 @@ test("无任务身份时 task 行不可见；有身份时按 memory_links 绑定
     { workspaceId: "w", userId: "u" },
     "光合",
     8,
-    { entityType: "learning_run", entityId: "0f1e2d3c-4b5a-4978-8796-a5b4c3d2e1f0" },
+    { entityType: "note", entityId: "0f1e2d3c-4b5a-4978-8796-a5b4c3d2e1f0" },
   );
   assert.ok(withEntity.queries[0].includes("memory_links"));
   // entity_type/entityId 是绑定参数（drizzle 参数化），SQL 文本里只见占位符——
@@ -617,7 +617,7 @@ test("补召回 SQL 必须带与主查询一致的 scope 过滤，且只取缺 r
     "光合",
     provider,
     8,
-    { entityType: "learning_run", entityId: "0f1e2d3c-4b5a-4978-8796-a5b4c3d2e1f0" },
+    { entityType: "note", entityId: "0f1e2d3c-4b5a-4978-8796-a5b4c3d2e1f0" },
     new Array(1024).fill(0.01),
   );
   const supplement = tx.queries.find((q) => !q.includes("<=>"));

@@ -69,12 +69,12 @@ describe("navChipsStillOutsideMessages（§4.8：消息里的落点取代游离 
   });
 
   it("消息里已经落了同一个落点，chip 换个说法也不重复（判据是路由不是文案）", () => {
-    const messages = [messageWithNav("去今日", { kind: "today" })];
-    expect(navChipsStillOutsideMessages([chip("今日学习在这儿", { kind: "room.today" })], messages)).toEqual([]);
+    const messages = [messageWithNav("打开那篇笔记", { kind: "note", noteId: NOTE_ID })];
+    expect(navChipsStillOutsideMessages([chip("笔记在这儿", { kind: "note.detail", noteId: NOTE_ID })], messages)).toEqual([]);
   });
 
   it("只有回执文字、没有落点的 chip 不被消息里的路由吃掉（它俩不是同一件事）", () => {
-    const messages = [messageWithNav("去今日", { kind: "today" })];
+    const messages = [messageWithNav("打开那篇笔记", { kind: "note", noteId: NOTE_ID })];
     const pending = chip("第四张卡在写", null);
     expect(navChipsStillOutsideMessages([pending], messages)).toEqual([pending]);
   });
@@ -86,7 +86,7 @@ describe("navChipsStillOutsideMessages（§4.8：消息里的落点取代游离 
   });
 
   it("一条 nav 块都没有时不改变 chip 行（历史消息不受这条规则影响）", () => {
-    const chips = [chip("去复习", { kind: "review.queue" })];
+    const chips = [chip("去笔记库", { kind: "note.library" })];
     expect(navChipsStillOutsideMessages(chips, [])).toEqual(chips);
     expect(navChipsStillOutsideMessages(chips, [
       { blocks: [{ type: "text", text: "只有正文" }] },
@@ -139,8 +139,8 @@ describe("applyRouteToRoom（白名单里每种路由都必须真正换页）", 
 
   it("正控制：白名单确实读到了这十四个 kind（读空了整个循环就是空跑）", () => {
     expect(agentRoutes.map((route) => route.kind).sort()).toEqual([
-      "card", "conversation", "home", "learning_artifact", "learning_run", "note", "note_library",
-      "objective_library", "review", "search", "settings", "source", "star_map", "today",
+      "conversation", "home", "learning_artifact", "note", "note_library",
+      "search", "settings", "source", "star_map",
     ]);
   });
 

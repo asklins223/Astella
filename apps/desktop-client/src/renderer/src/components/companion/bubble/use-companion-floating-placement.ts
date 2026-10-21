@@ -89,7 +89,9 @@ export function useCompanionFloatingPlacement(
       if (!active) { delete floating.dataset.placementReady; return; }
       const inputOnly = head.childElementCount === 1 && head.firstElementChild?.classList.contains("companion-hud__composer");
       const output = head.querySelector<HTMLElement>(".companion-hud__output");
-      const textLength = output?.querySelector(".companion-hud__output-body")?.textContent?.length ?? 0;
+      // 同轮多条发言会画成多个气泡；宽度按整轮正文算，而不是只看第一条。
+      const textLength = Array.from(head.querySelectorAll<HTMLElement>(".companion-hud__output-body"))
+        .reduce((length, body) => length + (body.textContent?.length ?? 0), 0);
       // The composer stays compact even when replies request a wider paper.
       const preferredWidth = inputOnly ? Math.min(preferredHeadWidth ?? 280, 320)
         : preferredHeadWidth ?? (output?.dataset.tone === "note" || output?.dataset.tone === "process" ? 280

@@ -11,6 +11,8 @@ test("page references keep the actual note/version pair; malformed references ne
   assert.deepEqual(companionAttentionObjects({ pageContext: { context: { noteId: id, noteVersionId: version } } }),
     [{ kind: "note_version", id, versionId: version }]);
   assert.deepEqual(companionAttentionObjects({ pageContext: { context: { noteId: "invented" } } }), []);
+  assert.deepEqual(companionAttentionObjects({ pageContext: { context: { runId: id, keyPointId: version } } }),
+    [{ kind: "agent_run", id }]);
 });
 test("persona fields cannot close their data envelope, and empty settings add no invented personality", () => {
   assert.deepEqual(buildCompanionPersonaData(null), []);

@@ -13,7 +13,6 @@ import {
 } from "react";
 import { useCompanionHomeProjection } from "../../app/companion-pages/companion-home-projection";
 import { useHomeProjection } from "../../app/home/home-projection";
-import { useHomeNextStepProjection } from "../surfaces/library/home-next-step-projection.ts";
 import { homePresentation } from "../../app/home/home-presentation";
 import { useRoomStore } from "../../app/home/room-store";
 import { resolveSceneMotionMode } from "../../scene/scene-motion";
@@ -59,9 +58,7 @@ const HOME_V2_REGION_TRIGGER_IDS: Readonly<Record<Exclude<HomeV2Zone, "wide">, s
 });
 const HOME_PROJECTION_FEATURE_IDS = new Set<HomeFeatureId>([
   "continue",
-  "today-review",
   "current-notebook",
-  "current-target",
 ]);
 
 const DEFAULT_CONTEXT: HomeV2ContextValue = {
@@ -109,8 +106,6 @@ export function HomeV2Provider({ children }: { readonly children: ReactNode }) {
   const finishOnboarding = useRoomStore((state) => state.finishOnboarding);
   const setActiveNoteRef = useRoomStore((state) => state.setActiveNoteRef);
   const setActiveSourceId = useRoomStore((state) => state.setActiveSourceId);
-  const setActiveObjectiveId = useRoomStore((state) => state.setActiveObjectiveId);
-  const setActiveRunId = useRoomStore((state) => state.setActiveRunId);
   const { projection, loading, failure } = useHomeProjection();
   const companionHome = useCompanionHomeProjection();
   const home = homePresentation(projection, loading, failure);
@@ -172,19 +167,6 @@ export function HomeV2Provider({ children }: { readonly children: ReactNode }) {
     if (onboardingOpen) finishOnboarding();
   }, [finishOnboarding, onboardingOpen]);
 
-  /**
-   * 「今日下一步」的**真实读数**（§12.1）。
-   *
-   * 服务端/IPC/preload 早就有 `readHomeSuggestion`，这里拿它给书桌上那一条填**理由**：
-   * 没有建议时那句「今天没有到期的事 / 今天的位置暂时读不到」也出自这份读数，而不是
-   * `homePresentation` 那句"标题"。
-   * 读不到时**不用旧投影顶替**：那会把"读不到"说成"今天没有事"。
-   *
-   * 2026-10-05 用户决定：随魔法目录一起删掉 §12.1 那张独立便签（理由 / 换一个 /
-   * 暂不处理）。这份读数只留在书桌条目上，不再单独占一块。
-   */
-  const homeNextStep = useHomeNextStepProjection();
-
   const featurePresentation = useCallback((featureId: HomeFeatureId): HomeFeatureRuntimeV1 => {
     const definition = getHomeFeature(featureId);
     let detail = definition.purpose;
@@ -193,37 +175,12 @@ export function HomeV2Provider({ children }: { readonly children: ReactNode }) {
 
     switch (featureId) {
       case "continue":
-        // 有真实读数就用它（它带理由，且理由是必填非空的那一份）。
-        const wire = homeNextStep.kind === "wire" ? homeNextStep.suggestion : null;
-        if (wire?.kind === "suggested") {
-          detail = wire.headline;
-          // 理由整句放得下；截断要保留出处，不另写一句短的。
-          meta = wire.reasonLine;
-        } else if (wire?.kind === "nothing_due") {
-          detail = "今天没有到期的事";
-          meta = "可以新建笔记、从资料写一篇，或接着读最近那篇";
-        } else {
-          detail = home.title;
-          meta = homeNextStep.kind === "loading" ? "正在看今天的位置…" : "今天的位置暂时读不到";
-        }
-        break;
-      case "today-review":
-        detail = home.reviewLabel;
-        // 同一条（审计 F25）：读不到时不要用"数量 —"冒充加载态——它在同步和读失败之间
-        // 长得一样。两种状态各说各的。
-        meta = home.dueCount !== null
-          ? `${home.dueCount} 项待复习`
-          : home.reviewState === "syncing" ? "正在读取…" : "暂时读不到";
+        detail = home.note?.title ?? "还没有打开过的笔记";
+        meta = home.note ? "继续阅读" : "去笔记库";
         break;
       case "current-notebook":
         detail = home.note?.title ?? "还没有打开过的笔记";
-        // 审计 F25：投影不含全量总数（`noteCount` 恒为 null），此前卡片附注写"数量 —"，
-        // 读起来像"还没加载完"。这一格要说的是"点进去能做什么"，不是全库有多少。
         meta = home.note ? "继续阅读" : "从一份材料开始";
-        break;
-      case "current-target":
-        detail = home.hasFocus ? "今天的主目标已经定下" : "还没定下今天的主目标";
-        meta = home.hasFocus ? "查看这个目标" : "从一篇笔记开始学习";
         break;
       case "companion-center":
         detail = companionHome.projection?.profileSummary.name
@@ -269,24 +226,13 @@ export function HomeV2Provider({ children }: { readonly children: ReactNode }) {
       invoke("open-companion-center");
       return;
     }
-    if (feature.id === "today-review") {
-      invoke("review");
-      return;
-    }
     if (feature.id === "continue") {
-      // 审计 F24：这张卡的附注写着「N 项可恢复」，那点击就必须到那 N 项上——
-      // 恰好一条时直达那条 run；两条以上时进「未完成的学习」清单；读不到时
-      // 才退回原来的今日学习（那是历史日志，不是待办清单）。
-      if (home.soleActiveRun) {
-        setActiveRunId(home.soleActiveRun.runId);
-        invoke("validate");
-        return;
+      if (home.note) {
+        setActiveNoteRef({ noteId: home.note.noteId, noteVersionId: home.note.noteVersionId });
+        invoke("open-notebook");
+      } else {
+        invoke("open-notes");
       }
-      if ((home.activeRunCount ?? 0) > 1) {
-        invoke("open-resumable");
-        return;
-      }
-      invoke("continue");
       return;
     }
     if (feature.id === "current-notebook") {
@@ -307,16 +253,6 @@ export function HomeV2Provider({ children }: { readonly children: ReactNode }) {
       invoke("search");
       return;
     }
-    if (feature.id === "current-target") {
-      const objectiveId = projection?.primaryFocus.state === "data" ? projection.primaryFocus.data.objective.objectiveId : null;
-      if (objectiveId) {
-        setActiveObjectiveId(objectiveId);
-        invoke("open-objective");
-      } else {
-        invoke("open-objectives");
-      }
-      return;
-    }
     if (feature.id === "understanding-graph") {
       invoke("graph");
       return;
@@ -326,7 +262,7 @@ export function HomeV2Provider({ children }: { readonly children: ReactNode }) {
       return;
     }
     openFeatureNotice(feature.id);
-  }, [home.note, home.soleActiveRun, invoke, openFeatureNotice, projection, setActiveNoteRef, setActiveObjectiveId, setActiveRunId, setActiveSourceId]);
+  }, [home.note, invoke, openFeatureNotice, setActiveNoteRef, setActiveSourceId]);
 
   useEffect(() => {
     if (!surface) return;
@@ -334,7 +270,7 @@ export function HomeV2Provider({ children }: { readonly children: ReactNode }) {
     featureTriggerRef.current = null;
     // 离开书房去页面时，已聚焦的区域也要一起退：功能说明都在这里收，
     // 唯独漏了区域，于是回到书房还挂着一条区域功能签条——既像残留，又压住
-    // 左下角承载「今日下一步」的任务岛。
+    // 左下角承载「阅读起点」的任务岛。
     exitRegion();
   }, [exitRegion, surface]);
 

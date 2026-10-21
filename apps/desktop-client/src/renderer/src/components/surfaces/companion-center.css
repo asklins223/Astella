@@ -309,10 +309,6 @@
 .hud-surface .cc-discovery-footnote { margin-top: 22px; }
 
 /* Activity distinguishes choices from ordinary messages. */
-.hud-surface .cc-learning-continuation { padding-bottom: 22px; border-bottom: 1px solid var(--cc-line); }
-.hud-surface .cc-learning-continuation > div { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 10px; }
-.hud-surface .cc-learning-continuation > p { margin-top: 8px; }
-.hud-surface .cc-learning-continuation small { color: var(--cc-muted); font-size: 11px; }
 .hud-surface .cc-activity-columns { display: grid; grid-template-columns: minmax(0, 1fr) 210px; gap: 28px; margin-top: 24px; }
 .hud-surface .cc-timeline > h3, .hud-surface .cc-journey h3 { font: 600 17px/1.5 var(--cc-serif); }
 .hud-surface .cc-timeline-group h4 { margin: 20px 0 10px; color: var(--cc-muted); font-size: 11px; font-weight: 500; }

@@ -4,7 +4,14 @@ import type { AgentTurnRequest } from "@astella/shared";
 import { judgeCompanionStepClosing, waitingConfirmationReceipts } from "../turn/companion-step-closing.ts";
 import { judgeCompanionUnavailableTool } from "../tools/companion-unavailable-tool.ts";
 import { companionProviderFitsRequest } from "../agent/companion-provider-fit.ts";
-import { namesCurrentNoteRead } from "../note/companion-note-prefetch.ts";
+import { companionNamedNoteReadTitle, namesCurrentNoteRead } from "../note/companion-note-prefetch.ts";
+
+test("named-note prefetch only chooses a single explicitly named reading subject", () => {
+  assert.equal(companionNamedNoteReadTitle("请根据《秦朝》这篇已保存笔记解释制度。"), "秦朝");
+  assert.equal(companionNamedNoteReadTitle("请比较《秦朝》和《唐朝》两篇笔记。"), null);
+  assert.equal(companionNamedNoteReadTitle("讲个《秦朝》的故事。"), null);
+  assert.equal(companionNamedNoteReadTitle("新建一篇《秦朝》笔记。"), null);
+});
 
 /**
  * Behaviour of the decision helpers extracted out of the agent loop on

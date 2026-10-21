@@ -51,7 +51,6 @@ test("目标只获得真实材料可用的能力，缺材料仍可明确交付 n
   assert.deepEqual(methodProperties.expectedRevision.enum, [2]);
   const withoutMethod = names(resolveAgentGoalExecutionManifest({ notes, methods: [] }));
   assert.ok(withoutMethod.includes("note_read"));
-  assert.ok(withoutMethod.includes("card_generation_generate"));
   assert.ok(!withoutMethod.includes("agent_read_method"));
   const onlyMethod = names(resolveAgentGoalExecutionManifest({ notes: [], methods }));
   assert.ok(onlyMethod.includes("agent_read_method"));
@@ -89,8 +88,6 @@ test("unsupported model parameter constraints fail during registration instead o
 test("companion capabilities derive UUID, variant bounds and refinements from the actual validator", () => {
   const card = getCompanionAgentTool("companion_open_card")!.parameters as { properties: Record<string, { format?: string }> };
   assert.equal(card.properties.cardId.format, "uuid");
-  const variant = getCompanionAgentTool("companion_switch_task_variant")!.parameters as { properties: Record<string, { maxLength?: number }> };
-  assert.equal(variant.properties.alternativeId.maxLength, 200);
   assert.equal(validateCompanionAgentToolArguments("companion_save_memory", { kind: "preference", content: "简短", appliesWhen: "今天" }).success, false);
   assert.deepEqual(agentToolParameters(z.union([z.literal(1), z.literal(2), z.literal(3)])), { type: "integer", enum: [1, 2, 3] });
   assert.deepEqual(agentToolParameters(z.string().max(200).nullable().optional()), { anyOf: [{ type: "string", maxLength: 200 }, { type: "null" }] });

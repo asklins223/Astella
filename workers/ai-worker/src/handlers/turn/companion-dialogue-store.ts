@@ -5,12 +5,12 @@
  * - ReadContext：read 阶段冻结的上下文结构；
  * - insertStreamEvent / emitCompanionTtsSegments：事件写入（独立事务 + fence）；
  * - markCompanionRunFailed：run failed + error event（fence：仅 active 可写终态）;
- * - readGroundedTutorContext / parsePageContext 的 DB 侧使用、
+ * - parsePageContext 的 DB 侧使用、
  *   enqueueCompanionMemoryJobs：终态事务内异步入队记忆任务；
- * - feature flags 与 grounded-tutor prompt 常量。
+ * - feature flags。
  */
 
-import { canonicalJsonV1, sha256Hex, sha256Utf8V1 } from "@astella/shared/content-hash";
+import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
 import type {
   CompanionRunFailureClassV1,
   PetPersonaPresetBoundaries,
@@ -26,17 +26,13 @@ import { assertCompanionHandoffSourcesCurrent, assertCompanionContextSourcesCurr
 // 2026-08-25（AI 设计审计修复）：复用 content 模块的同一实现，消除拆分时
 // 复制出的双份 parsePageContext（两份漂移会让编排层与 DB 层对同一
 // page_context 得出不同判定）。content→store 无依赖边，不构成循环。
-import { parsePageContext, renderCompanionUserTurn, textOfCompanionBlocks } from "./companion-dialogue-content.ts";
+import { renderCompanionUserTurn, textOfCompanionBlocks } from "./companion-dialogue-content.ts";
 import type { CompanionContextHandoffSnapshotV1 } from "./companion-dialogue-content.ts";
 import type { CompanionRecentHistoryMessage } from "../context/companion-context-handoff.ts";
 import { REPLAY_HISTORY_READ_ROWS } from "../context/companion-context-handoff.ts";
 import { latestCompanionExchangeStart, type HistorySummaryCoverage } from "../context/companion-history-projection.ts";
 import type { CompanionMemoryDirectoryEntry } from "../memory/companion-memory-vector.ts";
 import type { PlaybookCandidateEntry, PlaybookCatalogEntry } from "../memory/companion-playbooks.ts";
-import {
-  materializeGroundedTutorEvidence,
-  type GroundedTutorEvidenceRow,
-} from "../context/companion-grounded-evidence.ts";
 
 /** 与 turn-service 对齐的硬限额（03 §6.10）。 */
 export interface CompanionDialogueHandlerContext {
@@ -58,14 +54,6 @@ export interface ReadContext {
   runStatus: string;
   /** L11：run 创建时冻结的账号世代（surface_epoch）。 */
   accountEpoch: number;
-  /** 本轮开始时这个人是否正在正式作答（`lib/formal-answer-signal.ts`，doc 34 L15）。 */
-  formalAnswerInProgress: boolean;
-  /**
-   * 正在作答的那一题的**身份**（同一份判据带出来的，doc 34 L15 / 39d W2-6）：
-   * 终态那一笔暴露账目要按它写 objective_id/objective_revision——**这一题冻结的那一版**，
-   * 不是目标当前的那一版。不在正式作答时为 null。
-   */
-  formalAnswerTarget: import("../../lib/formal-answer-signal.ts").FormalAnswerTarget | null;
   /**
    * 本轮开始时用户停在哪一屏（read 阶段那一次 `readLivePageView`，与 `<here_and_now>`
    * 同一个读数）。终态记账要判"是不是在作答页问的"（39d W2-6），而**必须在 read 阶段
@@ -87,7 +75,6 @@ export interface ReadContext {
   /** 按摘要覆盖线收边走掉的那几类条数；渲染成的账本块要把它说出去。 */
   actionLedgerOmitted?: { completed: number; unresolved: number; notCompleted: number } | null;
   proposals?: CompanionContextHandoffSnapshotV1["proposals"];
-  groundedTutorContext: import("./companion-dialogue-content.ts").GroundedTutorContext | null;
   userText: string;
   recentMessages: import("../context/companion-context-handoff.ts").CompanionRecentHistoryMessage[];
   conversationClock?: import("./companion-conversation-evidence.ts").CompanionConversationClock;
@@ -958,142 +945,6 @@ export async function emitCompanionTtsSegments(args: {
   return true;
 }
 
-// V2: read grounded tutor context from learning_objectives_v2 +
-// learning_objective_revisions_v2 (claim → objective_statement) +
-// evidence_snapshots_v2 + learning_objective_evidence_bindings_v2.
-// key_point_id is now an alias for objective_id; card_id validates
-// the card exists via learning_cards_v2.
-export async function readGroundedTutorContext(
-  tx: { execute(query: unknown): Promise<unknown> },
-  pageContext: unknown,
-  scope: { workspaceId: string; userId: string },
-): Promise<import("./companion-dialogue-content.ts").GroundedTutorContext | null> {
-  const context = parsePageContextForStore(pageContext);
-  if (context?.requestedCapability !== "grounded_tutor") {
-    return null;
-  }
-  if (context.pageKind === "learning_run") {
-    return readGroundedTutorContextForLearningRun(tx, context, scope);
-  }
-  return null;
-}
-
-/**
- * 新 LearningRun 只读取 PREPARE 冻结的 target/evidence closure。即使
- * Objective 在 Run 期间更新，也不会把新 claim 或新证据带进已授权的 Tutor。
- */
-async function readGroundedTutorContextForLearningRun(
-  tx: { execute(query: unknown): Promise<unknown> },
-  context: Record<string, unknown>,
-  scope: { workspaceId: string; userId: string },
-): Promise<import("./companion-dialogue-content.ts").GroundedTutorContext | null> {
-  const runId = typeof context.runId === "string" ? context.runId : null;
-  const snapshotId = typeof context.snapshotId === "string" ? context.snapshotId : null;
-  const taskId = typeof context.taskId === "string" ? context.taskId : null;
-  if (!runId || !snapshotId || !taskId) return null;
-
-  const frozenRows = await tx.execute(sql`
-    SELECT s.target, s.evidence_bindings
-    FROM learning_runs r
-    JOIN learning_run_private_contracts c
-      ON c.run_id = r.id
-      AND c.workspace_id = ${scope.workspaceId}
-      AND c.user_id = ${scope.userId}
-      AND c.snapshot_id = ${snapshotId}
-    JOIN learning_target_snapshots_v2 s
-      ON s.run_id = r.id
-      AND s.snapshot_id = c.snapshot_id
-      AND s.workspace_id = ${scope.workspaceId}
-      AND s.user_id = ${scope.userId}
-    JOIN learning_tasks t
-      ON t.id = r.active_task_id
-      AND t.id = ${taskId}
-      AND t.run_id = r.id
-      AND t.workspace_id = ${scope.workspaceId}
-      AND t.user_id = ${scope.userId}
-      AND t.status = 'active'
-    WHERE r.id = ${runId}
-      AND r.workspace_id = ${scope.workspaceId}
-      AND r.user_id = ${scope.userId}
-      AND r.phase = 'active'
-      AND s.published_target_eligibility IN ('eligible', 'practice_only')
-    LIMIT 1
-  `) as Array<{ target: unknown; evidence_bindings: unknown }>;
-  const frozen = frozenRows[0];
-  if (!frozen || !frozen.target || typeof frozen.target !== "object" || !Array.isArray(frozen.evidence_bindings)) {
-    return null;
-  }
-
-  const claimValue = (frozen.target as { objectiveStatement?: unknown }).objectiveStatement;
-  const claim = typeof claimValue === "string"
-    ? claimValue.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim()
-    : "";
-  if (!claim) return null;
-
-  const allExpectedById = new Map<string, string>();
-  const expectedById = new Map<string, string>();
-  for (const raw of frozen.evidence_bindings) {
-    if (!raw || typeof raw !== "object") return null;
-    const binding = raw as { evidenceSnapshotId?: unknown; evidenceSnapshotHash?: unknown };
-    if (
-      typeof binding.evidenceSnapshotId !== "string"
-      || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(binding.evidenceSnapshotId)
-      || typeof binding.evidenceSnapshotHash !== "string"
-      || !/^[0-9a-f]{64}$/i.test(binding.evidenceSnapshotHash)
-    ) {
-      return null;
-    }
-    const previous = allExpectedById.get(binding.evidenceSnapshotId);
-    if (previous && previous !== binding.evidenceSnapshotHash) return null;
-    allExpectedById.set(binding.evidenceSnapshotId, binding.evidenceSnapshotHash);
-    // 模型上下文最多容纳五条 sealed quote。Snapshot 的 binding
-    // 顺序本身冻结，故取前五个不同 evidence 仍是确定性、可审计的子闭包。
-    if (expectedById.size < 5 || expectedById.has(binding.evidenceSnapshotId)) {
-      expectedById.set(binding.evidenceSnapshotId, binding.evidenceSnapshotHash);
-    }
-  }
-  if (expectedById.size === 0) return null;
-
-  // IDs 已按 UUID schema 校验；显式 uuid[] 可避免 postgres-js 对数组 bind 的
-  // 参数歧义；只取 usable 的 sealed evidence。
-  const idsLiteral = `{${[...expectedById.keys()].join(",")}}`;
-  const evidenceRows = await tx.execute(sql`
-    SELECT DISTINCT es.evidence_snapshot_id,
-           es.evidence_snapshot_hash,
-           es.quote_hash,
-           es.block_content_hash,
-           es.start_offset,
-           es.end_offset,
-           es.created_at,
-           nb.content AS block_content
-    FROM evidence_snapshots_v2 es
-    JOIN evidence_eligibility_states_v2 ees
-      ON ees.workspace_id = es.workspace_id
-      AND ees.evidence_snapshot_id = es.evidence_snapshot_id
-      AND ees.status = 'usable'
-    JOIN note_blocks nb ON nb.id = es.block_id AND nb.workspace_id = es.workspace_id
-    WHERE es.workspace_id = ${scope.workspaceId}
-      AND es.evidence_snapshot_id = ANY(${idsLiteral}::uuid[])
-    ORDER BY es.created_at DESC
-    LIMIT 5
-  `) as GroundedTutorEvidenceRow[];
-  if (evidenceRows.length !== expectedById.size) return null;
-  const rowsWithExpected = evidenceRows.map((row) => ({
-    ...row,
-    expected_evidence_snapshot_hash: expectedById.get(row.evidence_snapshot_id),
-  }));
-  try {
-    const evidence = materializeGroundedTutorEvidence(rowsWithExpected);
-    return evidence.length > 0 ? { claim, evidence } : null;
-  } catch {
-    return null;
-  }
-}
-
-function parsePageContextForStore(value: unknown): Record<string, unknown> | null {
-  return parsePageContext(value);
-}
-
 export function isActiveRun(status: string): boolean {
   return status === "accepted" || status === "running";
 }
@@ -1434,11 +1285,4 @@ export async function insertCompanionFinalAssistantMessage(
             ${args.runId}, ${args.contentSha256},
             ${args.reasoning && args.reasoning.length > 0 ? JSON.stringify(args.reasoning) : null}::jsonb)
   `);
-}
-
-/** grounded-tutor 分支的审计元数据（prompt id/hash）。 */
-export const GROUNDED_TUTOR_PROMPT_ID = "companion-grounded-tutor-v1";
-
-export function computeGroundedTutorPromptSha256(prompt: string): string {
-  return sha256Hex(prompt);
 }

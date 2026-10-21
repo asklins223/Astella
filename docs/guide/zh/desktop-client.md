@@ -213,7 +213,7 @@ Windows 更新使用 `WindowsInstallerUpdater` 完整下载与 SHA-512 校验，
 
 - **能力芯片说"未接入"不代表屏上没有。** `NATIVE_CAPABILITY_CHANNELS 与 `transportNativeCapabilities()`（`src/main/desktop-gateway-transport.ts`）只看频道名在不在 `DESKTOP_IPC_CHANNELS` 里，于是映射为 `null` 的 `filePicker`、`notifications`、`live2d` 一律报"未接入"——尽管通知与伴星都在屏幕上真实工作。要改显示就改这张表，别改界面文案。
 - **被删掉的东西不会回来。**Home V1（9 个 tile 那版）、魔法目录页、除 `whale` 之外的 Live2D 形态都是直接删除而非弃用；跟着旧方案或旧截图找它们的代码，找不到是正常的。
-- **three.js 只有一个用户。**`surfaces/review/candidate-card-scene.ts` 与 `candidate-card-geometry.ts`，只负责候选卡审核台的卡厚、受光与翻面。首页不是 3D，星图也不是（星图是自绘 canvas）。
+- **three.js 已经不在了。**候选卡审核台（`surfaces/review/`）整条线删除时，它唯一的使用者一起走了，`three` / `@types/three` 也从依赖里摘掉。首页是固定镜头的 2.5D 海报层，星图是自绘 canvas，没有 WebGL 场景。
 - **行数与 hook 数不是拆分红线。**`NotebookSurface` 早就过 2000 行，靠 `SIZE_DEBT` 台账合法存在；拆不拆看依赖与职责，不看指标。
 - **`sandbox` 与 `--no-sandbox` 是环境相关的。**受限容器里不加那条 switch 整个客户端起不来，本地加了反而丢掉沙箱；判断前先读 `src/main/index.ts` 的注释。
 - **子 iframe 拿不到桥。**产物 iframe 由 `process.isMainFrame` 守住 preload；修改 frame 接线前确认这条边界。

@@ -19,8 +19,6 @@ function snapshot(overrides: Partial<HereAndNowSnapshot> = {}): HereAndNowSnapsh
     partOfDay: "晚上",
     minutesSinceLastSeen: null,
     pet: null,
-    activeRun: null,
-    dueReviews: 0,
     today: { studySeconds: 0, runs: 0 },
     noteCount: 0,
     pendingProposals: 0,
@@ -47,13 +45,13 @@ test("答应的提醒会出现在她知道的当下（不记得自己许过约�
 
 test("用户点名的笔记：找到就给 id，没找到也不给她「它不存在」这个结论", () => {
   const found = renderHereAndNow(snapshot({
-    noteReference: { title: "欧姆定律生成验收", found: true, noteId: "b4ab4749-d888-4b93-9019-e33b74679206", ageLabel: "4 天前", imageCount: 0, opening: null, openRuns: [], nearest: null },
+    noteReference: { title: "欧姆定律生成验收", found: true, noteId: "b4ab4749-d888-4b93-9019-e33b74679206", ageLabel: "4 天前", imageCount: 0, opening: null, nearest: null },
   }));
   assert.ok(found?.includes("b4ab4749-d888-4b93-9019-e33b74679206"));
   assert.ok(found?.includes("companion_read_note"));
 
   const missing = renderHereAndNow(snapshot({
-    noteReference: { title: "欧姆定律生成验收", found: false, noteId: null, ageLabel: null, imageCount: 0, opening: null, openRuns: [], nearest: null },
+    noteReference: { title: "欧姆定律生成验收", found: false, noteId: null, ageLabel: null, imageCount: 0, opening: null, nearest: null },
   }));
   assert.ok(missing?.includes("按标题没找到"));
   // 关键：这一行必须把她推向"再查一次/照实说"，而不是让她有依据地下假结论
@@ -71,7 +69,7 @@ test("《标题》没对上时给出最接近的一篇，命中时反而不能�
   const withNearest = renderHereAndNow(snapshot({
     noteReference: {
       title: "欧姆定律生成验收", found: false, noteId: null, ageLabel: null, imageCount: 0, opening: null,
-      openRuns: [], nearest: { title: "欧姆定律生成验收稿", score: 0.62 },
+      nearest: { title: "欧姆定律生成验收稿", score: 0.62 },
     },
   }));
   assert.ok(withNearest?.includes("最接近的是《欧姆定律生成验收稿》"));
@@ -81,7 +79,7 @@ test("《标题》没对上时给出最接近的一篇，命中时反而不能�
   const found = renderHereAndNow(snapshot({
     noteReference: {
       title: "欧姆定律生成验收", found: true, noteId: "b4ab4749-d888-4b93-9019-e33b74679206",
-      ageLabel: "4 天前", imageCount: 0, opening: null, openRuns: [], nearest: null,
+      ageLabel: "4 天前", imageCount: 0, opening: null, nearest: null,
     },
   }));
   assert.ok(!found?.includes("最接近的是"), "命中时还提最接近的，等于把真对象说成近似的");
@@ -92,31 +90,7 @@ test("《标题》没对上时给出最接近的一篇，命中时反而不能�
  * **先**有"这篇有几轮、什么状态、runId 是哪个"——否则那两个工具只能服务端替她挑最近一条，
  * 挑错了用户看不出为什么动的不是这一篇。
  */
-test("点名的笔记上有没结束的轮次：给出轮数与 runId，并指向 resume", () => {
-  const block = renderHereAndNow(snapshot({
-    noteReference: {
-      title: "数据库索引优化策略", found: true, noteId: "b4ab4749-d888-4b93-9019-e33b74679206",
-      ageLabel: "2 小时前", imageCount: 0, opening: null, nearest: null,
-      openRuns: [
-        { id: "11111111-1111-4111-8111-111111111111", phase: "paused" },
-        { id: "22222222-2222-4222-8222-222222222222", phase: "active" },
-      ],
-    },
-  }));
-  assert.ok(block?.includes("有 1 轮学习正在进行中"));
-  assert.ok(block?.includes("有 1 轮学习在暂停中"));
-  assert.ok(block?.includes("22222222-2222-4222-8222-222222222222"), "进行中的那一轮没给 runId");
-  assert.ok(block?.includes("companion_resume_learning"), "没把她推向「接着这一轮」，她会另起一轮");
 
-  // 反向对照：没有没结束的轮次时一个字都不提（多写的"0 轮"就是噪音，也可能被她念出来）。
-  const none = renderHereAndNow(snapshot({
-    noteReference: {
-      title: "数据库索引优化策略", found: true, noteId: "b4ab4749-d888-4b93-9019-e33b74679206",
-      ageLabel: "2 小时前", imageCount: 0, opening: null, openRuns: [], nearest: null,
-    },
-  }));
-  assert.ok(!none?.includes("在暂停中"));
-});
 
 /**
  * 图的事实要在她说之前就在场（实机 2026-09-21 场景 Z）。
@@ -129,7 +103,7 @@ test("有图就先把图数交给她：看不了时禁止承诺，能看时指�
   const denied = renderHereAndNow(snapshot({
     imagesReadable: false,
     imagesUnreadableReason: "policy_off",
-    noteReference: { title: "IndexTTS 2.5", found: true, noteId: "a7aa823c-f2cf-4b3d-bda1-37a6eca14bce", ageLabel: "3 天前", imageCount: 6, opening: null, openRuns: [], nearest: null },
+    noteReference: { title: "IndexTTS 2.5", found: true, noteId: "a7aa823c-f2cf-4b3d-bda1-37a6eca14bce", ageLabel: "3 天前", imageCount: 6, opening: null, nearest: null },
   }));
   assert.ok(denied?.includes("6 张图"));
   assert.ok(denied?.includes("图片外发没开启"));
@@ -142,21 +116,21 @@ test("有图就先把图数交给她：看不了时禁止承诺，能看时指�
   const noReader = renderHereAndNow(snapshot({
     imagesReadable: false,
     imagesUnreadableReason: "no_reader",
-    noteReference: { title: "IndexTTS 2.5", found: true, noteId: "a7aa823c-f2cf-4b3d-bda1-37a6eca14bce", ageLabel: "3 天前", imageCount: 6, opening: null, openRuns: [], nearest: null },
+    noteReference: { title: "IndexTTS 2.5", found: true, noteId: "a7aa823c-f2cf-4b3d-bda1-37a6eca14bce", ageLabel: "3 天前", imageCount: 6, opening: null, nearest: null },
   }));
   assert.ok(noReader?.includes("没有能看图的模型"));
   assert.ok(!noReader?.includes("允许发送图片内容"), "没有可用模型时别指点用户去拧开关");
 
   const readable = renderHereAndNow(snapshot({
     imagesReadable: true,
-    noteReference: { title: "IndexTTS 2.5", found: true, noteId: "a7aa823c-f2cf-4b3d-bda1-37a6eca14bce", ageLabel: "3 天前", imageCount: 2, opening: null, openRuns: [], nearest: null },
+    noteReference: { title: "IndexTTS 2.5", found: true, noteId: "a7aa823c-f2cf-4b3d-bda1-37a6eca14bce", ageLabel: "3 天前", imageCount: 2, opening: null, nearest: null },
   }));
   assert.ok(readable?.includes("companion_read_image"));
   assert.ok(!readable?.includes("图片外发没开启"), "政策开着时不能告诉她看不了");
 
   // 没图时一个字都不提：多出来的那句"另有一张图"本身就是假事实。
   const none = renderHereAndNow(snapshot({
-    noteReference: { title: "欧姆定律", found: true, noteId: "b4ab4749-d888-4b93-9019-e33b74679206", ageLabel: "4 天前", imageCount: 0, opening: null, openRuns: [], nearest: null },
+    noteReference: { title: "欧姆定律", found: true, noteId: "b4ab4749-d888-4b93-9019-e33b74679206", ageLabel: "4 天前", imageCount: 0, opening: null, nearest: null },
   }));
   assert.ok(!none?.includes("张图"));
 });
@@ -181,19 +155,18 @@ test("空状态只有一行时钟时整块不注入", () => {
 
 test("有值行才渲染，空行不进 prompt", () => {
   const block = renderHereAndNow(snapshot({
-    dueReviews: 41,
-    today: { studySeconds: 1560, runs: 2 },
-    activeRun: { topic: "贝叶斯更新", phase: "active", usedSeconds: 240, budgetSeconds: 600, taskPrompt: "解释先验概率" },
+    pet: { name: "Mao", activeness: "moderate", interactionCount: 12 },
+    minutesSinceLastSeen: 45,
   }))!;
   assert.match(block, /^<here_and_now>\n/);
   assert.match(block, /\n<\/here_and_now>$/);
   assert.match(block, /现在：2026-09-20 18:12 周六（晚上）/);
-  assert.match(block, /正在学习「贝叶斯更新」，正在做：解释先验概率/);
-  assert.match(block, /到期待复习 41 项/);
+  assert.match(block, /你是「Mao」/);
+  assert.match(block, /距上次和用户说话：45 分钟前/);
   // 没有笔记、没有待确认动作、没有宠物档案 → 这三行必须整个不出现，而不是写成"无"。
   assert.doesNotMatch(block, /最近笔记/);
   assert.doesNotMatch(block, /还有 .* 个动作/);
-  assert.doesNotMatch(block, /你是「/);
+  assert.doesNotMatch(renderHereAndNow(snapshot()) ?? "", /你是「/);
   assert.doesNotMatch(block, /无/);
 });
 
@@ -212,19 +185,14 @@ test("有值行才渲染，空行不进 prompt", () => {
  */
 test("环境块不给可念的时长与计数：知道 ≠ 念出来", () => {
   const block = renderHereAndNow(snapshot({
-    dueReviews: 41,
     today: { studySeconds: 1_560, runs: 2 },
     noteCount: 828,
     pet: { name: "Mao", activeness: "moderate", interactionCount: 137 },
-    activeRun: { topic: "贝叶斯更新", phase: "active", usedSeconds: 240, budgetSeconds: 600, taskPrompt: null },
   }))!;
   assert.doesNotMatch(block, /今日已学|个学习运行/);
   assert.doesNotMatch(block, /累计互动|137/);
   assert.doesNotMatch(block, /笔记库共|828/);
   assert.doesNotMatch(block, /已学 \d+ 分钟|计划 \d+ 分钟/);
-  // 该在的还得在：否则"整块删空"也能骗过上面四条否定式断言。
-  assert.match(block, /到期待复习 41 项/);
-  assert.match(block, /正在学习「贝叶斯更新」/);
   assert.match(block, /你是「Mao」/);
   assert.doesNotMatch(block, /最近笔记|贝叶斯笔记/);
 });
@@ -233,23 +201,6 @@ test("久未见面才提示间隔，刚聊过不打扰", () => {
   assert.doesNotMatch(renderHereAndNow(snapshot({ minutesSinceLastSeen: 5 })) ?? "", /距上次/);
   assert.match(renderHereAndNow(snapshot({ minutesSinceLastSeen: 20 })) ?? "", /距上次和用户说话：20 分钟前/);
   assert.match(renderHereAndNow(snapshot({ minutesSinceLastSeen: 60 * 26 })) ?? "", /距上次和用户说话：昨天/);
-});
-
-test("当前学习目标整条给：不剪成半句，也不再拿固定块宽当上限", () => {
-  // 2026-10-12 裁决：喂模型那一侧不做硬截断。目标与任务那句长也整句给——
-  // 剪成半句她会照着半句说话；"别把每轮 token 撑爆"由请求上下文治理那条闸负责，
-  // 不在这里靠剪字替它猜。
-  const topic = "一".repeat(80);
-  const taskPrompt = "把整条目标说完再谈下一步".repeat(12);
-  const block = renderHereAndNow(snapshot({
-    activeRun: { topic, phase: "active", usedSeconds: 0, budgetSeconds: null, taskPrompt },
-    noteCount: 828,
-  }))!;
-  assert.ok(block.includes(`正在学习「${topic}」`), "学习目标整条给");
-  assert.ok(block.includes(`正在做：${taskPrompt}`), "任务那句同样整条给");
-  assert.ok(!block.includes("…"), "剪在半句上的那个省略号不该再出现");
-  // 这一块真正不能再装回来的东西还在原地被挡着：笔记清单与可念的读数
-  assert.doesNotMatch(block, /最近笔记|嵌套|828/);
 });
 
 /**
@@ -284,14 +235,13 @@ test("恒定的作答影响目录键不代表每一句闲聊都在问学习统�
   for (const text of [undefined, "小鱼", "终于弄完了，累死", "报告啊，我自己看着都嫌废话多",
     "明天才交呢，我先玩会儿", "刚点了蛋炒饭", "你今天有啥有意思的事啊", "我连续学了几天？"])
     assert.equal(needsCompanionLearningStats(text), false, `不该预取学习统计：${text}`);
-  for (const text of ["我笔记有几篇？", "最近的学习进度怎么样？", "有几张卡到期？", "我今天学了多久？"])
+  for (const text of ["我笔记有几篇？", "最近的学习进度怎么样？", "我有几张卡？", "我今天学了多久？"])
     assert.equal(needsCompanionLearningStats(text), true, `必须仍能提供统计：${text}`);
 });
 
 test("问到学习数据时：环境块只给指路，数值由 <fact_spans> 渲染（一处一个来源）", () => {
   const stats = {
-    todayMinutes: 33, weekMinutes: 154, dueReviews: 25,
-    dueNext24Hours: 8, activeCards: 16, noteCount: 11,
+    todayMinutes: 33, weekMinutes: 154, activeCards: 16, noteCount: 11,
   };
   const asked = renderHereAndNow(snapshot({ learningStats: stats }))!;
   // 39d W2-5：数值**撤出环境块**，只留指路与防复读那半句（历史里的旧数仍要被降级）。
@@ -301,7 +251,7 @@ test("问到学习数据时：环境块只给指路，数值由 <fact_spans> 渲
   assert.doesNotMatch(asked, /33 分钟/, "数值不许在环境块里再渲染一遍（那样就有两处来源了）");
   assert.doesNotMatch(renderHereAndNow(snapshot()) ?? "", /可报的读数在 <fact_spans> 里/);
   // 工具与环境块共用同一份摘要，口径不能两份。
-  assert.equal(summarizeLearningStats(stats), "今日 33 分钟，本周 154 分钟，到期复习 25 项");
+  assert.equal(summarizeLearningStats(stats), "今日 33 分钟，本周 154 分钟，学习卡 16 张");
 });
 
 /**
@@ -366,7 +316,7 @@ test("点名的笔记找到时，快照里带出真开头并注明不许往下�
     noteReference: {
       title: "欧姆定律生成验收", found: true, noteId: "b4ab4749-d888-4b93-9019-e33b74679206",
       ageLabel: "4 天前", imageCount: 0, opening,
-      openRuns: [], nearest: null,
+      nearest: null,
     },
   }));
   assert.ok(block?.includes(`这篇的开头是：「${opening}」`));

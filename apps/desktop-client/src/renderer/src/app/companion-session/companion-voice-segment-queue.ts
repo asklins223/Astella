@@ -35,6 +35,11 @@ export type CompanionVoiceSegmentReadyDetail = Readonly<{
    * 不是播放判据，缺了不该让整帧被丢掉。
    */
   synthesisTextSha256?: string;
+  /**
+   * 这条音频属于哪一条助手消息（服务端签发时带）。同一轮的多条发言靠它分辨
+   * 消息边界：段内连续播，换消息时留一个短停顿。旧留档没有这个字段时省略。
+   */
+  messageId?: string;
   cue: CompanionServerVoiceSegment["cue"];
 }>;
 
@@ -69,7 +74,8 @@ export function isCompanionVoiceSegmentDetail(value: unknown): value is Companio
     && typeof detail.segmentId === "string" && typeof detail.ordinal === "number"
     && typeof detail.displayText === "string" && detail.displayText.length > 0
     && typeof detail.displayStart === "number" && typeof detail.displayEnd === "number"
-    && typeof detail.conversationId === "string" && typeof detail.generation === "number";
+    && typeof detail.conversationId === "string" && typeof detail.generation === "number"
+    && (detail.messageId === undefined || typeof detail.messageId === "string");
 }
 
 /**

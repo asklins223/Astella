@@ -189,9 +189,9 @@ test("C5 分页纯函数：单块超预算时切文本并如实标记（至少�
   assert.equal(page.endOrdinal, 1, "超预算的那块是本页最后一块");
 });
 
-test("C8 任务记忆：绑定匹配才可见；别的 run / 无身份 / 跨用户都不可见", async () => {
-  const runA = randomUUID();
-  const runB = randomUUID();
+test("C8 note task memories require a matching note identity and remain private across users", async () => {
+  const noteA = randomUUID();
+  const noteB = randomUUID();
   const workspaceMemoryId = randomUUID();
   const taskMemoryA = randomUUID();
   const taskMemoryB = randomUUID();
@@ -200,22 +200,22 @@ test("C8 任务记忆：绑定匹配才可见；别的 run / 无身份 / 跨用�
   await seedMemory({ id: taskMemoryB, content: "另一轮记忆：混淆了两个概念", scope: "task" });
   await admin`
     INSERT INTO memory_links (workspace_id, user_id, memory_id, entity_type, entity_id, auto_linked)
-    VALUES (${workspaceId}, ${ownerId}, ${taskMemoryA}, 'learning_run', ${runA}, true)
+    VALUES (${workspaceId}, ${ownerId}, ${taskMemoryA}, 'note', ${noteA}, true)
   `;
   await admin`
     INSERT INTO memory_links (workspace_id, user_id, memory_id, entity_type, entity_id, auto_linked)
-    VALUES (${workspaceId}, ${ownerId}, ${taskMemoryB}, 'learning_run', ${runB}, true)
+    VALUES (${workspaceId}, ${ownerId}, ${taskMemoryB}, 'note', ${noteB}, true)
   `;
 
   await withWorkerWorkspaceTransaction({ workspaceId, userId: ownerId }, async (tx) => {
-    const onRunA = await retrieveCompanionMemoriesKeyword(
+    const onNoteA = await retrieveCompanionMemoriesKeyword(
       tx, { workspaceId, userId: ownerId }, "记忆", 20,
-      { entityType: "learning_run", entityId: runA },
+      { entityType: "note", entityId: noteA },
     );
-    const contentsA = onRunA.items.map((item) => item.content);
+    const contentsA = onNoteA.items.map((item) => item.content);
     assert.ok(contentsA.some((text) => text.includes("准备考试")), "workspace 记忆总是可见");
     assert.ok(contentsA.some((text) => text.includes("卡在第二步排序")), "本轮的 task 记忆可见");
-    assert.ok(!contentsA.some((text) => text.includes("混淆了两个概念")), "别的 run 的 task 记忆不可见（改前的泄漏）");
+    assert.ok(!contentsA.some((text) => text.includes("混淆了两个概念")), "task memory from another note is not visible");
 
     const withoutEntity = await retrieveCompanionMemoriesKeyword(
       tx, { workspaceId, userId: ownerId }, "记忆", 20, null,
@@ -230,7 +230,7 @@ test("C8 任务记忆：绑定匹配才可见；别的 run / 无身份 / 跨用�
   await withWorkerWorkspaceTransaction({ workspaceId, userId: peerId }, async (tx) => {
     const asPeer = await retrieveCompanionMemoriesKeyword(
       tx, { workspaceId, userId: peerId }, "记忆", 20,
-      { entityType: "learning_run", entityId: runA },
+      { entityType: "note", entityId: noteA },
     );
     assert.equal(asPeer.items.length, 0, "别人的记忆一行都不可见");
   });

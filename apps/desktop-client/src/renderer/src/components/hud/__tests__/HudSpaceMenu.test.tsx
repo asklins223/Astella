@@ -31,7 +31,7 @@ subscribeGateInvalidation((code) => { gateInvalidations.push(code); });
 afterEach(() => {
   cleanup();
   Reflect.deleteProperty(window, "astella");
-  useRoomStore.setState({ activeRunId: null });
+  useRoomStore.setState({ navigationGuard: null });
   gateInvalidations.length = 0;
   clearSpaceArrival();
   // 最近使用是本机记录：上一个用例写下的时间戳不能变成下一个用例的排序依据。
@@ -162,7 +162,7 @@ describe("HudSpaceMenu", () => {
   });
 
 
-  it("asks twice before switching away from a running formal assessment", async () => {
+  it("asks twice before switching away from a page with unfinished work", async () => {
     // 切换会走门禁失效路径，主进程当场 failClosed 掉正式测评并拆流，store 里的
     // activeRunId 直接被清空——一次点击就能让进行中的测评无声消失。
     const onSwitched = vi.fn();
@@ -174,7 +174,7 @@ describe("HudSpaceMenu", () => {
         switch: switchWorkspace,
       },
     });
-    useRoomStore.setState({ activeRunId: "11111111-9999-4999-8999-999999999999" });
+    useRoomStore.setState({ navigationGuard: () => undefined });
     render(<HudSpaceMenu onSwitched={onSwitched} />);
     await waitFor(() => expect(screen.getByRole("button", { name: /海岸研究室/ })).toBeTruthy());
 
@@ -189,7 +189,7 @@ describe("HudSpaceMenu", () => {
     await waitFor(() => expect(onSwitched).toHaveBeenCalledWith("海岸研究室"));
   });
 
-  it("switches on the first click when no assessment is running", async () => {
+  it("switches on the first click when no page navigation guard is active", async () => {
     const switchWorkspace = vi.fn().mockResolvedValue(ok(session(OTHER.workspaceId), 2));
     installApi({
       auth: { getState: vi.fn().mockResolvedValue(ok(session(CURRENT.workspaceId), 1)) },
@@ -198,7 +198,7 @@ describe("HudSpaceMenu", () => {
         switch: switchWorkspace,
       },
     });
-    useRoomStore.setState({ activeRunId: null });
+    useRoomStore.setState({ navigationGuard: null });
     render(<HudSpaceMenu onSwitched={() => undefined} />);
     await waitFor(() => expect(screen.getByRole("button", { name: /海岸研究室/ })).toBeTruthy());
 
@@ -265,7 +265,7 @@ describe("HudSpaceMenu", () => {
     const create = vi.fn().mockResolvedValue(ok({ version: 1, workspaceId: OTHER.workspaceId, name: "新书房" }));
     installApi({ auth: { getState: vi.fn().mockResolvedValue(ok(session(CURRENT.workspaceId), 1)) },
       workspace: { list: vi.fn().mockResolvedValue(ok({ workspaces: [CURRENT, OTHER] }, 1)), create } });
-    useRoomStore.setState({ activeRunId: "11111111-9999-4999-8999-999999999999" });
+    useRoomStore.setState({ navigationGuard: () => undefined });
     await renderMenu();
     fireEvent.click(screen.getByRole("button", { name: "新建空间" }));
     fireEvent.change(screen.getByLabelText("新协作空间名称"), { target: { value: "新书房" } });

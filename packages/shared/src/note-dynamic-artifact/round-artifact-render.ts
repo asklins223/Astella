@@ -21,9 +21,9 @@
  * 动效由展示宿主管理（`artifact-template.ts`）；保存成果只保留模型自己的页面脚本。
  * 不再附第二份动效转发器，避免重复通知和过期 load 回调覆盖用户最新的档位。
  */
-import { escapeArtifactTextV1 } from "./round-artifact.ts";
 import {
   ARTIFACT_ILLUSTRATION_NOTICE_V1,
+  escapeArtifactTextV1,
   type ArtifactNodeV1,
 } from "./round-artifact-measure.ts";
 import { splitArtifactDocumentV1 } from "./round-artifact-doc.ts";

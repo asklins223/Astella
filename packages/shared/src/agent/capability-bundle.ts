@@ -24,17 +24,14 @@ export const CAPABILITY_IDS = [
   "trusted_multimodal_core",
   "global_companion_shell",
   "companion_onboarding_v1",
-  "learning_run_companion",
   "multimodal_voice",
   "structured_proof_v1",
   "journey_routes",
   "understanding_universe_v2",
   "current_target_tutor",
   // 原 should-bundle 段
-  "learning_question_markers",
   "semantic_relationships",
   "tutor_workspace_expansion",
-  "learning_objective_system_v3",
   // 原 internal-atomic 段
   "scene",
   "critic",

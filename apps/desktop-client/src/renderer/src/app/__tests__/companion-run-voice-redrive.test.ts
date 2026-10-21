@@ -49,6 +49,19 @@ describe("主动轮留档补声", () => {
     })]);
   });
 
+  it("留档里的 messageId 原样带到播放段上，补听也能在消息边界停顿", async () => {
+    const messageId = "11111111-1111-4111-8111-111111111111";
+    const queued: unknown[] = [];
+    const ok = await redriveCompanionRunVoice("run-redrive", {
+      alreadyArrived: () => false,
+      listSegments: async () => result({ items: [segment({ messageId })] }),
+      enqueue: (detail) => { queued.push(detail); return true; },
+      announce: () => undefined,
+    });
+    expect(ok).toBe(true);
+    expect(queued).toEqual([expect.objectContaining({ messageId })]);
+  });
+
   /** 反向：已经在流里念过的那一轮，补一次就等于同一句念两遍。 */
   it("已经在流里到场过的轮次直接跳过，不打服务端也不唤醒", async () => {
     let listed = 0;

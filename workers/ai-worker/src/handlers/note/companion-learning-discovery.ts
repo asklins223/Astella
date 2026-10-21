@@ -2,7 +2,6 @@ import { sql } from "drizzle-orm";
 import { companionRecommendLearningV1Schema } from "@astella/shared";
 import { withWorkerWorkspaceTransaction } from "../../db.ts";
 import { noteSearchTerms } from "../turn/companion-dialogue-content.ts";
-import { visibleCompanionCardSourceCondition } from "../proactive/companion-here-and-now.ts";
 import { recommendationToolResult, type AgentEventContext, type RecommendedLearningRow } from "../tools/companion-read-tools.ts";
 import type { AgentToolExecutionResult } from "../tools/companion-tool-result.ts";
 
@@ -24,47 +23,43 @@ export async function executeCompanionLearningDiscoveryTool(
       if (terms.length === 0) {
         return { value: { cards: [] }, safeSummary: "检索词是空的，我需要先知道要搜什么" };
       }
-      const cardText = sql`concat_ws(' ', c.front->>'cue', c.front->>'prompt', c.public_summary, c.knowledge_form)`;
+      const cardText = sql`concat_ws(' ', q.stem, c.note_id::text)`;
       const termConditions = terms.map((term) => sql`${cardText} ILIKE ${`%${term}%`}`);
       const rows = await withWorkerWorkspaceTransaction(
         { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
         async (tx) => tx.execute<{
           card_id: string;
-          objective_id: string;
-          cue: string | null;
-          prompt: string | null;
-          summary: string | null;
-          form: string | null;
+          note_id: string;
+          stem: string | null;
+          question_type: string | null;
         }>(sql`
-          SELECT c.card_id::text AS card_id,
-                 c.objective_id::text AS objective_id,
-                 c.front->>'cue' AS cue,
-                 c.front->>'prompt' AS prompt,
-                 c.public_summary AS summary,
-                 c.knowledge_form AS form
-          FROM learning_cards_v2 c
+          SELECT c.id::text AS card_id,
+                 c.note_id::text AS note_id,
+                 q.stem AS stem,
+                 q.question_type AS question_type
+          FROM note_learning_cards c
+          JOIN notes n ON n.id = c.note_id AND n.deleted_at IS NULL
+          JOIN LATERAL (
+            SELECT stem, question_type FROM note_learning_card_questions
+            WHERE card_id = c.id ORDER BY ordinal LIMIT 1
+          ) q ON true
           WHERE c.workspace_id = ${event.ctx.workspaceId}
-            AND c.lifecycle = 'active'
-            AND ${visibleCompanionCardSourceCondition(event.read.userId)}
+            AND c.status = 'active'
+            AND (n.share_scope = 'shared' OR n.created_by = ${event.read.userId})
             AND (${sql.join(termConditions, anyMatch ? sql` OR ` : sql` AND `)})
           ORDER BY (${sql.join(termConditions.map((condition) => sql`CASE WHEN ${condition} THEN 1 ELSE 0 END`), sql` + `)}) DESC,
-                   c.updated_at DESC, c.card_id
+                   c.updated_at DESC, c.id
           LIMIT ${limit}
         `),
       );
       const cards = rows.map((row) => {
-        const cue = String(row.cue ?? "").replace(/\s+/g, " ").trim();
-        const prompt = String(row.prompt ?? "").replace(/\s+/g, " ").trim();
-        const summary = String(row.summary ?? "").replace(/\s+/g, " ").trim();
-        const title = (cue || prompt || summary || "未命名学习卡").slice(0, 80);
+        const stem = String(row.stem ?? "").replace(/\s+/g, " ").trim();
         return {
           cardId: row.card_id,
-          objectiveId: row.objective_id,
-          title,
-          ...(cue ? { cue: cue.slice(0, 160) } : {}),
-          ...(prompt ? { prompt: prompt.slice(0, 220) } : {}),
-          ...(summary ? { summary: summary.slice(0, 160) } : {}),
-          ...(row.form ? { knowledgeForm: String(row.form).slice(0, 40) } : {}),
+          noteId: row.note_id,
+          title: (stem || "这张学习卡还没有题目").slice(0, 80),
+          ...(stem ? { stem: stem.slice(0, 220) } : {}),
+          ...(row.question_type ? { questionType: String(row.question_type) } : {}),
         };
       });
       return {
@@ -100,17 +95,19 @@ export async function executeCompanionLearningDiscoveryTool(
             const anyCardKey = sql.join(cardIds.map((id) => sql`${id}::uuid`), sql`, `);
             found.push(...await tx.execute<RecommendedLearningRow>(sql`
               SELECT 'card' AS source,
-                     coalesce(nullif(trim(c.front->>'cue'), ''),
-                              nullif(trim(c.front->>'prompt'), ''),
-                              c.public_summary) AS title,
-                     c.card_id::text AS card_id, c.objective_id::text AS objective_id,
+                     coalesce(nullif(trim(q.stem), ''), '这张学习卡还没有题目') AS title,
+                     c.id::text AS card_id,
                      (EXTRACT(EPOCH FROM (now() - c.updated_at)) / 60)::int AS age_minutes
-              FROM learning_cards_v2 c
+              FROM note_learning_cards c
+              JOIN notes n ON n.id = c.note_id AND n.deleted_at IS NULL
+              LEFT JOIN LATERAL (
+                SELECT stem FROM note_learning_card_questions
+                WHERE card_id = c.id ORDER BY ordinal LIMIT 1
+              ) q ON true
               WHERE c.workspace_id = ${event.ctx.workspaceId}
-                AND c.lifecycle = 'active'
-                AND ${visibleCompanionCardSourceCondition(event.read.userId)}
-                AND (c.card_id = ANY(ARRAY[${anyCardKey}]::uuid[])
-                  OR c.objective_id = ANY(ARRAY[${anyCardKey}]::uuid[]))
+                AND c.status = 'active'
+                AND (n.share_scope = 'shared' OR n.created_by = ${event.read.userId})
+                AND c.id = ANY(ARRAY[${anyCardKey}]::uuid[])
             `));
           }
           if (artifactIds.length > 0) {

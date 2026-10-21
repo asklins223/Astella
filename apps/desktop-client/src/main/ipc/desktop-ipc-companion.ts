@@ -6,223 +6,15 @@ import { companionParticipationPreferencesV1Schema, companionParticipationPrefer
 import { registerAgentChannels } from "./desktop-ipc-agent";
 import type { GatewayTransport } from "../gateway/desktop-gateway-transport";
 import type { InputSchema, ParsedMeta } from "./desktop-ipc";
-import {
-  setPersonalRelationDecisionV2ResultSchema,
-  setPersonalRelationDecisionV2Schema,
-} from "@astella/shared/personal-relation-decision-rules-v2";
 import * as ns_source from "../gateway/desktop-gateway-ns-source";
 import * as ns_note from "../gateway/desktop-gateway-ns-note";
 import * as ns_companion from "../gateway/desktop-gateway-ns-companion";
-import * as ns_learning from "../gateway/desktop-gateway-ns-learning";
 import * as ns_workspace from "../gateway/desktop-gateway-ns-workspace";
 import * as ns_auth from "../gateway/desktop-gateway-ns-auth";
-import * as ns_runtime from "../gateway/desktop-gateway-ns-runtime";
-import { noteReflectionPageV1Schema, noteReflectionCommandV1Schema, noteReflectionWriteResultV1Schema } from "@astella/shared/note-learning-reflection-contracts";
-import { noteAnnotationPageV1Schema, noteAnnotationCommandV1Schema, noteAnnotationWriteResultV1Schema, createNoteAnnotationTaskV1Schema, noteAnnotationLatestTaskQueryV1Schema, noteAnnotationLatestTaskV1Schema, noteAnnotationTaskV1Schema } from "@astella/shared/note-annotation-contracts";
-import {
-  createNoteOverviewTaskV1Schema,
-  noteOverviewLatestTaskQueryV1Schema,
-  noteOverviewLatestTaskV1Schema,
-  noteOverviewPageV1Schema,
-  noteOverviewTaskV1Schema,
-} from "@astella/shared/note-overview-contracts";
-import { noteRecallActionV1Schema, noteRecallActionResultV1Schema, noteRecallPageV1Schema, noteRecallStartInputV1Schema, noteRecallStartResultV1Schema } from "@astella/shared/note-recall-contracts";
-import {
-  createNoteExpansionTaskV1Schema,
-  confirmNoteExpansionTaskV1Schema,
-  noteExpansionBatchWriteResultV1Schema,
-  noteExpansionLatestTaskQueryV1Schema,
-  noteExpansionLatestTaskV1Schema,
-  noteExpansionListQueryV1Schema,
-  noteExpansionPageV1Schema,
-  noteExpansionReviewV1Schema,
-  noteExpansionTaskV1Schema,
-} from "@astella/shared/note-expansion-contracts";
-import {
-  createNoteDynamicArtifactTaskV1Schema,
-  noteLearningArtifactPageV1Schema,
-  noteLearningArtifactTaskListQueryV1Schema,
-  noteLearningArtifactTaskPageV1Schema,
-  noteLearningArtifactTaskV1Schema,
-} from "@astella/shared/note-learning-artifact-contracts";
-import { app, BrowserWindow, clipboard, ipcMain, shell, type IpcMainInvokeEvent, type WebContents } from "electron";
+import * as ns_runtime from "../gateway/desktop-gateway-ns-runtime";import { app, BrowserWindow, type IpcMainInvokeEvent } from "electron";
 import { saveCompanionExportFile } from "../store/companion-export-file";
-import { z } from "zod";
-import {
-  DESKTOP_API_SERVICE_ID,
-  DESKTOP_IPC_CHANNELS,
-  DESKTOP_IPC_CONTRACT_VERSION,
-  DESKTOP_IPC_SCHEMA_REVISION,
-  type ActionCapability,
-  apiHealthSnapshotSchema,
-  apiConnectionStateSchema,
-  authSurfaceManifestResultV1Schema,
-  capabilityProjectionSchema,
-  companionBridgeStateV1Schema,
-  clipboardReadLinksResultSchema,
-  isWebLinkUrl,
-  shellOpenExternalRequestV1Schema,
-  shellOpenExternalResultV1Schema,
-  desktopContractSnapshotSchema,
-  desktopNamespaceM2Values,
-  desktopRouteKindM2Values,
-  desktopRouteSchema,
-  extractCandidateLinks,
-  gatewayEventSchema,
-  navigationSnapshotSchema,
-  sessionContextSchema,
-  workspaceContextSchema,
-  workspaceSummarySchema,
-  type AstellaDesktopApiM2,
-  type ApiHealthSnapshotV1,
-  type DesktopContractSnapshotV1,
-  type DesktopRouteV1,
-  type GatewayErrorCode,
-  type GatewayEventPayloadM2,
-  type GatewayEventV1,
-  type GatewayResultV1,
-  type NavigationEntryV1,
-  type NavigationSnapshotV1,
-  type RequestMetaV1,
-  type SessionContextV1,
-  type SubscriptionTopicM2,
-  type WindowStateSnapshotV1,
-  desktopCreateLearningRunV2RequestSchema,
-  desktopCreateCardGenerationRunRequestV2Schema,
-  desktopCandidateReviewRequestV2Schema,
-  desktopRevealCandidateRequestV2Schema,
-  desktopCardGenerationActivationSelectionV1Schema,
-  desktopLearningRunAbandonRequestV2Schema,
-  desktopLearningRunActionRequestV2Schema,
-  desktopPutLearningTaskDraftV2RequestSchema,
-  desktopRecordLearningRunActivityLeaseRequestV2Schema,
-  recordLearningRunActivityLeaseOutputV2Schema,
-  desktopSubmitTaskArtifactV2Schema,
-  desktopNoteSaveRequestV1Schema,
-  commandIdSchema,
-  emailSchema,
-  gatewayErrorSchema,
-  inviteTokenSchema,
-  isoTimestampSchema,
-  navigationReasonSchema,
-  newPasswordSchema,
-  requestIdSchema,
-  requestMetaSchema,
-  runtimeSnapshotSchema,
-  secretInputSchema,
-  subscriptionIdSchema,
-  subscriptionTopicM2Schema,
-  positiveIntSchema,
-  uuidSchema,
-  windowStateSnapshotV1Schema,
-  aiDataPolicyV1Schema,
-  workspaceAiSettingsV1Schema,
-  workspaceExportResultV1Schema,
-  // 旧版设置页回补（2026-09-18）。
-  AVATAR_MAX_BYTES,
-  authProfileResultV1Schema,
-  avatarObjectKeySchema,
-  avatarUploadResultV1Schema,
-  inviteCreatedV1Schema,
-  inviteListResultV1Schema,
-  memberListResultV1Schema,
-  NOTE_DOC_BLOCKS_MAX_COUNT,
-  noteDocStateResultV1Schema,
-  noteDocWriteResultV1Schema,
-  noteDocPresenceResultV1Schema,
-  noteDocDraftSaveResultV1Schema,
-  noteDocDraftGetResultV1Schema,
-  noteDocDraftClearResultV1Schema,
-  type NoteDocDraftSaveResultV1,
-  type NoteDocDraftGetResultV1,
-  type NoteDocDraftClearResultV1,
-  type NoteDocWriteResultV1,
-  renameWorkspaceResultV1Schema,
-  dissolvePreviewResultV1Schema,
-  dissolveWorkspaceResultV1Schema,
-  transferWorkspaceOwnershipResultV1Schema,
-  createWorkspaceResultV1Schema,
-  searchDriftResultV1Schema,
-  searchReindexResultV1Schema,
-  type DesktopRouteKindM2,
-  NOTE_DOC_UPDATE_MAX_CHARS,
-} from "@astella/shared/desktop-ipc-contracts";
-import {
-  NOTE_DOC_PRESENCE_MAX_CHARS,
-  type NoteDocWatchHandle,
-} from "../note-doc/note-doc-transport.ts";
-import { mainPageContextInputV2Schema } from "@astella/shared/companion-bridge-contracts";
-import {
-  desktopSourceListPageSchema,
-  desktopSourceCreateRequestSchema,
-  desktopSourceDetailSchema,
-  desktopSourceNotesPageSchema,
-  desktopSourceUpdateRequestSchema,
-  desktopSourceNoteResultSchema,
-  desktopSourceCreateResultV1Schema,
-  desktopSourceArchiveResultSchema,
-  desktopSourceRestoreResultSchema,
-  desktopSourceReparseResultSchema,
-  desktopAiAuditPageV1Schema,
-  desktopNoteListPageSchema,
-  desktopNoteCreateRequestSchema,
-  desktopNoteMutationResultSchema,
-  desktopNoteVersionListSchema,
-  desktopSearchPageSchema,
-} from "@astella/shared/desktop-surface-contracts";
-import { objectiveListPageV3Schema, learningObjectiveSurfaceV3Schema } from "@astella/shared/learning-objective-surface-contracts";
-import {
-  noteLearningRoundHistoryPageV1Schema,
-  noteLearningRoundPersonalHistoryPageV1Schema,
-  noteLearningRoundV1Schema,
-  noteLearningRoundViewV1Schema,
-  ROUND_HISTORY_MAX_LIMIT_V1,
-  roundDrivingQuestionSourceV1Schema,
-  roundTeachingViewV1Schema,
-} from "@astella/shared/note-learning-round-contracts";
-import { noteRouteCoverageV1Schema } from "@astella/shared/note-route-coverage-v2";
-import {
-  recordRecallSourceRevealRequestV1Schema,
-  recordRecallSourceRevealResultV1Schema,
-} from "@astella/shared/recall-waiting-v2-contracts";
-import { understandingTopologySnapshotV3Schema } from "@astella/shared/note-deepening-contracts";
-import { noteDeepeningV3Schema } from "@astella/shared/note-deepening-v3-contracts";
-import { todayActivityV1Schema } from "@astella/shared/activity-surface-contracts";
-import { allWorkspacesStatsOverviewSchema } from "@astella/shared/stats-overview-contracts";
-import {
-  getLearningRunResultResponseV2Schema,
-  learningRunTargetRevealV2Schema,
-  learningRunActionResponseV2Schema,
-  learningRunPublicSnapshotV2Schema,
-  learningRunReturnContractV2Schema,
-  learningTaskDraftV2Schema,
-  learningTaskDraftWriteReceiptV2Schema,
-  submitTaskArtifactReceiptV2Schema,
-} from "@astella/shared/learning-run-v2-contracts";
-import { reviewDeferRequestV2Schema, reviewDeferResultV2Schema, reviewQueueV2Schema } from "@astella/shared/review-queue-v2-contracts";
-import {
-  noteReviewSubscriptionsV2Schema,
-  homeSuggestionWireV2Schema,
-  homeSuggestionActionCommandV2Schema,
-  homeSuggestionActionResultV2Schema,
-  todayBatchOptionCommandV2Schema,
-  todayBatchOptionResultV2Schema,
-  objectiveHoldCommandV2Schema,
-  objectiveHoldResultV2Schema,
-  objectiveResumeCommandV2Schema,
-  objectiveResumeResultV2Schema,
-  reviewSubscriptionCommandV2Schema,
-  reviewSubscriptionResultV2Schema,
-} from "@astella/shared/review-queue-v2-contracts";
-import {
-  openAssessmentDisputeCommandV2Schema,
-  openAssessmentDisputeResultV2Schema,
-  closeAssessmentDisputeCommandV2Schema,
-  closeAssessmentDisputeResultV2Schema,
-  supplementAssessmentDisputeCommandV2Schema,
-  assessmentDisputeEnvelopeV2Schema,
-} from "@astella/shared/assessment-dispute-rules-v2";
-import { roomProjectionV1Schema } from "@astella/shared/room-projection-contracts";
+import { z } from "zod";import { DESKTOP_IPC_CHANNELS, companionBridgeStateV1Schema, type RequestMetaV1, requestMetaSchema, uuidSchema } from "@astella/shared/desktop-ipc-contracts";
+import { mainPageContextInputV2Schema } from "@astella/shared/companion-bridge-contracts";import { desktopSourceCreateRequestSchema, desktopSourceUpdateRequestSchema } from "@astella/shared/desktop-surface-contracts";
 import {
   companionAccountPatchSchema,
   companionAccountStateV1Schema,
@@ -273,19 +65,11 @@ import {
   companionAgentRoutesListResultV1Schema,
   companionChatCancelRunRequestV1Schema,
   companionChatCancelRunResultV1Schema,
+  companionChatResumeRunRequestV1Schema,
+  companionChatResumeRunResultV1Schema,
   companionRunNodesListRequestV1Schema,
   companionRunNodesListResultV1Schema,
-} from "@astella/shared/companion-chat-desktop-contracts";
-import {
-  companionGroundedTutorGrantV1Schema,
-  companionLearningContextV1Schema,
-  companionLearningRunContextV1Schema,
-  createCompanionLearningRunContextGrantRequestV1Schema,
-} from "@astella/shared/companion-conversation-contracts";
-import {
-  sourceImageGetRequestV1Schema,
-  sourceImageGetResultV1Schema,
-} from "@astella/shared/source-image-contracts";
+} from "@astella/shared/companion-chat-desktop-contracts";import { sourceImageGetRequestV1Schema } from "@astella/shared/source-image-contracts";
 import {
   noteImageUploadRequestV1Schema,
   noteImageUploadResultV1Schema,
@@ -341,41 +125,11 @@ import {
   companionJourneyBootstrapSchema,
   companionJourneySchema,
 } from "@astella/shared/companion-journey-contracts";
-import { noteDetailV1Schema } from "@astella/shared/note-projection-contracts";
-import { noteSaveReceiptV1Schema } from "@astella/shared/note-save-contracts";
-import { noteShareScopeReceiptV1Schema, noteShareScopeValuesV1, type NoteShareScopeReceiptV1 } from "@astella/shared/note-share-contracts";
-import {
-  cardActivationReceiptDesktopV1Schema,
-  cardGenerationCandidateListV1Schema,
-  cardGenerationCancelResultV1Schema,
-  cardGenerationRetryResultV1Schema,
-  cardGenerationCloseResultV1Schema,
-  cardGenerationExposureEligibilityV1Schema,
-  cardGenerationJobAcceptedV1Schema,
-  cardGenerationReviewResultV1Schema,
-  cardGenerationRunSnapshotV1Schema,
-} from "@astella/shared/card-generation-desktop-contracts";
-import { candidateRevealV2Schema } from "@astella/shared/card-generation-v2-contracts";
-import { DesktopGateway } from "../gateway/desktop-gateway";
-import * as ns_assessment from "../gateway/desktop-gateway-ns-assessment";
 import * as ns_search from "../gateway/desktop-gateway-ns-search";
 import * as ns_invite from "../gateway/desktop-gateway-ns-invite";
-import * as ns_home from "../gateway/desktop-gateway-ns-home";
+
 import * as ns_artifact from "../gateway/desktop-gateway-ns-artifact";
-import type { SessionCredentialStore } from "../gateway/desktop-gateway-credentials";
 import { DesktopGatewayFailure } from "../gateway/desktop-gateway-failure";
-import { createSessionCredentialStore } from "../store/session-credential-store";
-import { FormalAssessmentGuard, type CompanionDeliveryKind } from "../store/formal-assessment-guard";
-import { matchesLearningRunReturnRoute, recoverPendingReturnMarker, resolveLearningRunReturn, routeForLearningRunReturn } from "../store/learning-run-return-resolver";
-import { MemoryPendingReturnMarkerStore, type PendingReturnMarkerStore } from "../store/pending-return-marker-store";
-import {
-  MemoryNoteDocCacheStore,
-  type NoteDocCacheEntryV1,
-  type NoteDocCacheKey,
-  type NoteDocCacheStore,
-} from "../note-doc/note-doc-cache-store.ts";
-import { ensureArtifactStored } from "../artifact/artifact-store";
-import type { WindowStateSnapshot } from "../../shared/window-state";
 
 /**
  * 伴星这一族的 IPC 通道（2026-09-30 从 `desktop-ipc.ts` 搬出，第②步）。
@@ -528,15 +282,7 @@ const companionChatCancelRunInputSchema = z.strictObject({
   ...m1InputBase,
   request: companionChatCancelRunRequestV1Schema,
 });
-const companionLearningRunContextInputSchema = z.strictObject({
-  ...m1InputBase,
-  runId: uuidSchema,
-});
-const companionLearningRunContextGrantInputSchema = z.strictObject({
-  ...m1InputBase,
-  runId: uuidSchema,
-  request: createCompanionLearningRunContextGrantRequestV1Schema,
-});
+const companionChatResumeRunInputSchema = z.strictObject({ ...m1InputBase, request: companionChatResumeRunRequestV1Schema });
 const companionAccountPatchInputSchema = z.strictObject({
   ...m1InputBase,
   request: companionAccountPatchSchema,
@@ -937,18 +683,11 @@ channel(DESKTOP_IPC_CHANNELS.companionHomeGetProjection, runtimeInputSchema, asy
     assertEpoch(input.meta, getActiveWorkspaceEpoch());
     return ns_companion.cancelCompanionChatRun(gateway.gatewayTransport, input.request, input.meta.requestId);
   }, companionChatCancelRunResultV1Schema);
-
-  channel(DESKTOP_IPC_CHANNELS.companionLearningRunGetContext, companionLearningRunContextInputSchema, async (_event, _window, input) => {
-    requireM2Route(contract, "learningRun.detail");
+  channel(DESKTOP_IPC_CHANNELS.companionChatResumeRun, companionChatResumeRunInputSchema, async (_event, _window, input) => {
+    requireM2Route(contract, "room.home");
     assertEpoch(input.meta, getActiveWorkspaceEpoch());
-    return ns_companion.getCompanionLearningRunContext(gateway.gatewayTransport, input.runId, input.meta.requestId);
-  }, companionLearningRunContextV1Schema);
-
-  channel(DESKTOP_IPC_CHANNELS.companionLearningRunCreateContextGrant, companionLearningRunContextGrantInputSchema, async (_event, _window, input) => {
-    requireM2Route(contract, "learningRun.detail");
-    assertEpoch(input.meta, getActiveWorkspaceEpoch());
-    return ns_companion.createCompanionLearningRunContextGrant(gateway.gatewayTransport, input.runId, input.request, input.meta.requestId);
-  }, companionGroundedTutorGrantV1Schema);
+    return ns_companion.resumeCompanionChatRun(gateway.gatewayTransport, input.request, input.meta.requestId);
+  }, companionChatResumeRunResultV1Schema);
 
   // 伴星中心（页 20）的共同记录。与其余伴星通道同一路由门控：这些都是"书房"
   // 内的呈现，不新增导航目标，也不把记忆正文写进路由或快照。
@@ -1238,12 +977,6 @@ channel(DESKTOP_IPC_CHANNELS.companionMemoryCreate, companionMemoryCreateInputSc
     assertEpoch(input.meta, getActiveWorkspaceEpoch());
     return ns_companion.clearCompanionHistory(gateway.gatewayTransport, input.meta.requestId);
   }, companionHistoryClearResultV1Schema);
-
-  channel(DESKTOP_IPC_CHANNELS.companionLearningContextGet, runtimeInputSchema, async (_event, _window, input) => {
-    requireM2Route(contract, "room.home");
-    assertEpoch(input.meta, getActiveWorkspaceEpoch());
-    return ns_companion.getCompanionLearningContext(gateway.gatewayTransport, input.meta.requestId);
-  }, companionLearningContextV1Schema);
 
   channel(DESKTOP_IPC_CHANNELS.companionJourneyBootstrap, runtimeInputSchema, async (_event, _window, input) => {
     requireM2Route(contract, "room.home");

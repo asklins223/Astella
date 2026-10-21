@@ -85,12 +85,14 @@ import com.astella.mobile.ui.launch.LocalLaunchLanding
 import com.astella.mobile.ui.screens.AIAuthScreen
 import com.astella.mobile.ui.screens.AccountScreen
 import com.astella.mobile.ui.screens.CompanionCenterScreen
+import com.astella.mobile.ui.screens.CompanionSettingsScreen
 import com.astella.mobile.ui.screens.ConventionsScreen
 import com.astella.mobile.ui.screens.ConversationScreen
 import com.astella.mobile.ui.screens.LoginScreen
 import com.astella.mobile.ui.screens.NoteDetailScreen
 import com.astella.mobile.ui.screens.NoteFeatureScreen
 import com.astella.mobile.ui.screens.NotesScreen
+import com.astella.mobile.ui.screens.OrbitDiaryDetailScreen
 import com.astella.mobile.ui.screens.OrbitScreen
 import com.astella.mobile.ui.screens.PasswordChangeScreen
 import com.astella.mobile.ui.screens.PermissionsScreen
@@ -126,9 +128,13 @@ fun AstellaRoot(
         }
     }
     var selectedTab by rememberSaveable { mutableStateOf(MainTab.Conversation) }
-    var accountSubpage by rememberSaveable { mutableStateOf<String?>(null) }
+    // 账户子页按打开顺序入栈：个人资料/个人约定既可从“我的”进入，也可从伴星配置进入，
+    // 返回必须回到各自的入口，不能靠一张固定的父页表。
+    var accountStack by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    val accountSubpage = accountStack.lastOrNull()
     var selectedNoteId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedNoteFeature by rememberSaveable { mutableStateOf<String?>(null) }
+    var orbitDiaryDate by rememberSaveable { mutableStateOf<String?>(null) }
     var launchFinished by rememberSaveable { mutableStateOf(false) }
     var companionBounds by remember { mutableStateOf<Rect?>(null) }
     val showsArrival = !launchFinished && state.startupLoadState in setOf(StartupLoadState.Loading, StartupLoadState.Ready)
@@ -141,13 +147,17 @@ fun AstellaRoot(
     /** 一级目的地：切换时清掉所有子路由，避免停留在上一个手记/设置页。 */
     fun navigateTab(tab: MainTab) {
         selectedTab = tab
-        accountSubpage = null
+        accountStack = emptyList()
         selectedNoteId = null
         selectedNoteFeature = null
     }
 
     fun openSubpage(page: String) {
-        accountSubpage = page
+        accountStack = accountStack + page
+    }
+
+    fun closeSubpage() {
+        if (accountStack.isNotEmpty()) accountStack = accountStack.dropLast(1)
     }
 
     val owner = LocalLifecycleOwner.current
@@ -177,12 +187,12 @@ fun AstellaRoot(
             navigateTab(MainTab.Conversation)
         }
     }
+    LaunchedEffect(state.diaryCaptureRequest) {
+        if (state.diaryCaptureRequest > 0) navigateTab(MainTab.Conversation)
+    }
     BackHandler(accountSubpage != null || selectedNoteId != null || selectedNoteFeature != null) {
         when {
-            accountSubpage in setOf("readSettings", "permissions", "aiAuth", "serverAddr") -> accountSubpage = "settings"
-            accountSubpage == "settings" -> accountSubpage = null
-            accountSubpage == "conventions" || accountSubpage == "profile" -> accountSubpage = "companion"
-            accountSubpage != null -> accountSubpage = null
+            accountSubpage != null -> closeSubpage()
             selectedNoteFeature != null -> selectedNoteFeature = null
             selectedNoteId != null -> selectedNoteId = null
             else -> Unit
@@ -199,7 +209,7 @@ fun AstellaRoot(
                 if (viewModel.hasStoredSession()) SessionRecoveryScreen(state, viewModel)
                 else LoginScreen(state, viewModel)
             } else {
-                val inSubpage = accountSubpage != null || selectedNoteId != null || selectedNoteFeature != null
+                val inSubpage = accountSubpage != null || selectedNoteId != null || selectedNoteFeature != null || orbitDiaryDate != null
                 Box(Modifier.fillMaxSize()) {
                     AstellaAtmosphere(Modifier.fillMaxSize().hazeSource(haze))
                     Scaffold(
@@ -232,6 +242,7 @@ fun AstellaRoot(
                             AnimatedContent(
                                 targetState = when {
                                     accountSubpage != null -> "account:$accountSubpage"
+                                    orbitDiaryDate != null -> "orbit:diary:$orbitDiaryDate"
                                     selectedNoteFeature != null -> "feature:${selectedNoteFeature}:${selectedNoteId}"
                                     selectedNoteId != null -> "note:${selectedNoteId}"
                                     else -> selectedTab.name
@@ -260,43 +271,58 @@ fun AstellaRoot(
                                         state, viewModel,
                                         themeMode = themeMode,
                                         onThemeMode = onThemeMode,
-                                        onBack = { accountSubpage = null },
-                                        onReadSettings = { accountSubpage = "readSettings" },
-                                        onPermissions = { accountSubpage = "permissions" },
-                                        onAiAuth = { accountSubpage = "aiAuth" },
-                                        onServerAddress = { accountSubpage = "serverAddr" },
-                                        onProfile = { accountSubpage = "profile" },
+                                        onBack = { closeSubpage() },
+                                        onReadSettings = { openSubpage("readSettings") },
+                                        onPermissions = { openSubpage("permissions") },
+                                        onAiAuth = { openSubpage("aiAuth") },
+                                        onServerAddress = { openSubpage("serverAddr") },
+                                        onLibrary = { navigateTab(MainTab.Library) },
                                     )
                                     destination == "account:readSettings" -> ReadSettingsScreen(
                                         state, viewModel,
                                         themeMode = themeMode,
                                         onThemeMode = onThemeMode,
-                                        onBack = { accountSubpage = "settings" },
+                                        onBack = { closeSubpage() },
                                     )
-                                    destination == "account:permissions" -> PermissionsScreen(state, onBack = { accountSubpage = "settings" })
-                                    destination == "account:aiAuth" -> AIAuthScreen(state, viewModel, onBack = { accountSubpage = "settings" })
-                                    destination == "account:serverAddr" -> ServerAddressScreen(state, viewModel, onBack = { accountSubpage = "settings" })
-                                    destination == "account:profile" -> ProfileScreen(state, viewModel, onBack = { accountSubpage = null })
-                                    destination == "account:conventions" -> ConventionsScreen(state, viewModel, onBack = { accountSubpage = null })
-                                    destination == "account:password" -> PasswordChangeScreen(state, viewModel, onBack = { accountSubpage = null })
+                                    destination == "account:permissions" -> PermissionsScreen(state, onBack = { closeSubpage() })
+                                    destination == "account:aiAuth" -> AIAuthScreen(state, viewModel, onBack = { closeSubpage() })
+                                    destination == "account:serverAddr" -> ServerAddressScreen(state, viewModel, onBack = { closeSubpage() })
+                                    destination == "account:profile" -> ProfileScreen(
+                                        state, viewModel,
+                                        onBack = { closeSubpage() },
+                                        onLibrary = { navigateTab(MainTab.Library) },
+                                    )
+                                    destination == "account:conventions" -> ConventionsScreen(state, viewModel, onBack = { closeSubpage() })
+                                    destination == "account:password" -> PasswordChangeScreen(state, viewModel, onBack = { closeSubpage() })
                                     destination == "account:companion" -> CompanionCenterScreen(
-                                        state, viewModel, onBack = { accountSubpage = null },
+                                        state,
+                                        onBack = { closeSubpage() },
                                         onConversation = { records ->
                                             viewModel.setChatShowsRecords(records)
                                             navigateTab(MainTab.Conversation)
                                         },
-                                        onConventions = { accountSubpage = "conventions" },
-                                        onProfile = { accountSubpage = "profile" },
+                                        onConfig = { openSubpage("companionSettings") },
                                         onMemory = {
-                                            accountSubpage = null
+                                            viewModel.openOrbitSection("memory")
                                             navigateTab(MainTab.Orbit)
                                         },
+                                        onDiary = {
+                                            viewModel.openOrbitSection("diary")
+                                            navigateTab(MainTab.Orbit)
+                                        },
+                                    )
+                                    destination == "account:companionSettings" -> CompanionSettingsScreen(
+                                        state,
+                                        onBack = { closeSubpage() },
+                                        onConventions = { openSubpage("conventions") },
+                                        onProfile = { openSubpage("profile") },
+                                        onMemory = { navigateTab(MainTab.Orbit) },
                                     )
                                     destination == MainTab.Me.name -> AccountScreen(
                                         state, viewModel,
                                         onLibrary = { navigateTab(MainTab.Library) },
-                                        onCompanion = { accountSubpage = "companion" },
-                                        onSubpage = { page -> accountSubpage = page },
+                                        onCompanion = { openSubpage("companion") },
+                                        onSubpage = { page -> openSubpage(page) },
                                     )
                                     destination.startsWith("feature:") -> NoteFeatureScreen(
                                         noteId = destination.substringAfterLast(":"),
@@ -306,27 +332,31 @@ fun AstellaRoot(
                                         onBack = { selectedNoteFeature = null },
                                         onAccount = {
                                             selectedNoteFeature = null
-                                            selectedNoteId = null
-                                            accountSubpage = null
-                                            selectedTab = MainTab.Me
+                                            navigateTab(MainTab.Me)
                                         },
                                     )
                                     destination.startsWith("note:") -> NoteDetailScreen(
                                         noteId = selectedNoteId ?: destination.removePrefix("note:"),
                                         state = state,
                                         viewModel = viewModel,
-                                        onBack = { selectedNoteId = null },
+                                        onBack = {
+                                            selectedNoteId = null
+                                            if (state.resultReturnTo != null) {
+                                                selectedTab = MainTab.Conversation
+                                                viewModel.returnToResultJournal()
+                                            }
+                                        },
                                         onAccount = {
                                             selectedNoteId = null
                                             selectedNoteFeature = null
-                                            accountSubpage = null
-                                            selectedTab = MainTab.Me
+                                            navigateTab(MainTab.Me)
                                         },
                                         onContinue = { document ->
                                             viewModel.continueWithNote(document)
                                             navigateTab(MainTab.Conversation)
                                         },
                                         onOpenFeature = { feature -> selectedNoteFeature = feature },
+                                        onOpenNote = { id -> selectedNoteId = id },
                                     )
                                     destination == MainTab.Conversation.name -> ConversationScreen(
                                         state = state,
@@ -334,8 +364,7 @@ fun AstellaRoot(
                                         onAccount = {
                                             selectedNoteFeature = null
                                             selectedNoteId = null
-                                            selectedTab = MainTab.Me
-                                            accountSubpage = null
+                                            navigateTab(MainTab.Me)
                                         },
                                         selectedTab = selectedTab,
                                         onSelectTab = ::navigateTab,
@@ -346,9 +375,20 @@ fun AstellaRoot(
                                         darkTheme = darkTheme,
                                         onToggleTheme = onToggleTheme,
                                     )
+                                    destination.startsWith("orbit:diary:") -> OrbitDiaryDetailScreen(
+                                        date = destination.removePrefix("orbit:diary:"),
+                                        viewModel = viewModel,
+                                        onBack = { orbitDiaryDate = null },
+                                        onContinue = { date, version ->
+                                            viewModel.continueWithDiary(date, version)
+                                            orbitDiaryDate = null
+                                            navigateTab(MainTab.Conversation)
+                                        },
+                                    )
                                     destination == MainTab.Orbit.name -> OrbitScreen(
                                         state, viewModel,
                                         onConversation = { navigateTab(MainTab.Conversation) },
+                                        onDiaryDay = { orbitDiaryDate = it },
                                     )
                                     else -> NotesScreen(
                                         state,
@@ -360,8 +400,11 @@ fun AstellaRoot(
                             }
                         }
                     }
-                    // 设计稿：阅读、设置等子页仍保留右下角伴星圆形入口。
-                    if (inSubpage && accountSubpage == null && selectedNoteFeature == null) {
+                    // 设计稿：阅读与速览等子页保留右下角伴星圆形入口；脑图与版本面板不遮画布。
+                    val showsCompanionOrb = inSubpage &&
+                        (accountSubpage != null || orbitDiaryDate != null ||
+                            (selectedNoteId != null && selectedNoteFeature == null) || selectedNoteFeature == "overview")
+                    if (showsCompanionOrb) {
                         Box(
                             Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 18.dp, bottom = 14.dp),
                         ) {
@@ -370,8 +413,7 @@ fun AstellaRoot(
                                     if (selectedNoteId != null) state.noteDocument?.let { viewModel.continueWithNote(it) }
                                     selectedNoteId = null
                                     selectedNoteFeature = null
-                                    selectedTab = MainTab.Conversation
-                                    accountSubpage = null
+                                    navigateTab(MainTab.Conversation)
                                 },
                                 size = 56.dp,
                             )
@@ -398,11 +440,10 @@ fun CompanionShortcut(onClick: () -> Unit, size: androidx.compose.ui.unit.Dp = 5
         modifier.size(size).astellaGlass(size / 2, interactive = true)
             .semantics { contentDescription = "打开伴星" },
     ) {
-        Image(
-            painter = painterResource(R.drawable.companion_avatar),
-            contentDescription = null,
-            modifier = Modifier.align(Alignment.Center).padding(3.dp).fillMaxSize().clip(CircleShape),
-            contentScale = ContentScale.Crop,
+        AstellaGlyph(
+            AstellaGlyphKind.Companion,
+            Modifier.align(Alignment.Center).size(size * .42f),
+            tint = StudyPalette.accent,
         )
     }
 }
@@ -483,6 +524,7 @@ private fun BoxWithConstraintsCompat(modifier: Modifier, content: @Composable (a
 
 private fun destinationDepth(destination: String): Int = when {
     destination.startsWith("account:") -> 2
+    destination.startsWith("orbit:diary:") -> 2
     destination.startsWith("feature:") -> 2
     destination == "account" || destination.startsWith("note:") -> 1
     else -> 0

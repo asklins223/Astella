@@ -3,7 +3,6 @@ import PhotosUI
 import UniformTypeIdentifiers
 
 struct ConversationScreen: View {
-    var selectionLens: Namespace.ID
     var onOpenNote: (String) -> Void
     @Environment(AppStore.self) private var store
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
@@ -32,13 +31,14 @@ struct ConversationScreen: View {
         GeometryReader { geometry in
             ZStack(alignment: .bottomLeading) {
                 VStack(spacing: 0) {
-                    ConversationTopBar()
+                    ConversationTopBar(isVoiceBusy: voiceCapture.isRecording || voiceCapture.isTranscribing)
                     ZStack {
                         if store.chatShowsRecords {
                             MessageHistory(
                                 messages: store.messages,
                                 streamingText: store.streamingText,
-                                onMore: { showHistoryActions = true }
+                                onMore: { showHistoryActions = true },
+                                onOpenNote: onOpenNote
                             )
                                 .transition(reduced ? .opacity : .offset(x: 24).combined(with: .opacity))
                         } else {
@@ -76,18 +76,28 @@ struct ConversationScreen: View {
             .coordinateSpace(name: "conversation")
         }
         .background(DawnBackground())
+        .sheet(item: Bindable(store).resultPreview) { target in
+            CompanionResultPreviewSheet(target: target, onOpenNote: onOpenNote)
+        }
+        .onChange(of: store.chatShowsRecords) { _, records in
+            if records { Task { await store.refreshRuns(includeThinking: true) } }
+        }
         .toolbar(.hidden, for: .tabBar)
+        // The dock lives in MainTabShell and never leaves the screen; the composer
+        // floats just above it, the way an iOS 26 bottom accessory sits over the
+        // tab bar. Keeping the dock out of this screen is what stops it from being
+        // rebuilt (and hard-cutting) on every tab change.
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            VStack(spacing: 0) {
+            AstellaGlassContainer(spacing: 14) {
                 composer
-                if !store.composerHasFocus {
-                    AstellaMainDock(selectionLens: selectionLens, integrated: true)
-                }
+                    .padding(.horizontal, 6)
+                    .padding(.top, 8)
+                    .padding(.bottom, 6)
+                    .modifier(StudyGlassSurfaceStyle(radius: 27, interactive: true))
+                    .astellaGlassMaterialize()
             }
-            .padding(.horizontal, 7).padding(.top, 10).padding(.bottom, 7)
-            .modifier(StudyGlassSurfaceStyle(radius: 30, interactive: true))
-            .padding(.horizontal, 23).padding(.bottom, 4)
-            .offset(y: 14)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 6)
         }
         .confirmationDialog("对话操作", isPresented: $showHistoryActions, titleVisibility: .visible) {
             Button("递一份材料") { withAnimation(Motion.gated(reduced, Motion.segment)) { menuOpen = true } }
@@ -233,25 +243,25 @@ struct ConversationScreen: View {
     }
 
     private var attachmentMenu: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack { Text("交给伴星").font(.system(size: 11, weight: .medium)).tracking(2); Spacer(); AstellaStar().fill(StudyPalette.accent).frame(width: 11, height: 15) }
-                .foregroundStyle(StudyPalette.muted).padding(.horizontal, 14).padding(.top, 12).padding(.bottom, 9)
+        VStack(alignment: .leading, spacing: 2) {
+            HStack { Text("交给伴星").font(.system(size: 10.5, weight: .semibold)).tracking(1.4); Spacer(); AstellaStar().fill(StudyPalette.accent).frame(width: 11, height: 15) }
+                .foregroundStyle(StudyPalette.muted).padding(.horizontal, 14).padding(.top, 13).padding(.bottom, 9)
             menuItem("加图片", detail: "一起看见细节", icon: .photo, index: 2) { showPhotos = true }
             menuItem("加文件", detail: "PDF · Word · 文本", icon: .document, index: 1) { showFiles = true }
             menuItem("引用手记", detail: "接着已有的思路", icon: .book, index: 0) { showNotes = true }
-        }.padding(8).frame(width: 252).modifier(StudyGlassSurfaceStyle(radius: 24, interactive: true))
+        }.padding(8).frame(width: 254).modifier(StudyGlassSurfaceStyle(radius: 24, interactive: true))
     }
     private func menuItem(_ label: String, detail: String, icon: AstellaGlyphKind, index: Int, action: @escaping () -> Void) -> some View {
         Button { closeMenu(); action() } label: {
             HStack(spacing: 13) {
-                AstellaGlyph(kind: icon, tint: StudyPalette.accent).frame(width: 21, height: 21).frame(width: 42, height: 42).background(StudyPalette.sky, in: RoundedRectangle(cornerRadius: 13))
-                VStack(alignment: .leading, spacing: 4) {
+                AstellaGlyph(kind: icon, tint: StudyPalette.accent).frame(width: 20, height: 20).frame(width: 40, height: 40).background(StudyPalette.sky, in: RoundedRectangle(cornerRadius: 13))
+                VStack(alignment: .leading, spacing: 3) {
                     Text(label).font(.system(size: 14, weight: .medium))
-                    Text(detail).font(.system(size: 10)).foregroundStyle(StudyPalette.muted)
+                    Text(detail).font(.system(size: 10.5)).foregroundStyle(StudyPalette.muted)
                 }
                 Spacer()
                 AstellaGlyph(kind: .chevron, tint: StudyPalette.muted).frame(width: 11, height: 11)
-            }.foregroundStyle(StudyPalette.ink).frame(minHeight: 58).padding(.horizontal, 12)
+            }.foregroundStyle(StudyPalette.ink).frame(minHeight: 56).padding(.horizontal, 12)
         }.buttonStyle(AstellaPressStyle()).offset(y: menuOpen || reduced ? 0 : CGFloat(14 * index))
         .opacity(menuOpen ? 1 : 0)
         .animation(reduced ? nil : Motion.segment.delay(menuOpen ? Double(index) * Motion.menuStagger : 0), value: menuOpen)
@@ -297,6 +307,7 @@ struct ConversationScreen: View {
 }
 
 private struct ConversationTopBar: View {
+    var isVoiceBusy = false
     @Environment(AppStore.self) private var store
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
@@ -307,10 +318,10 @@ private struct ConversationTopBar: View {
     var body: some View {
         GeometryReader { geometry in
             let compact = geometry.size.width < 410
-            let modeWidth = compact ? min(112, geometry.size.width * 0.30) : 118
-            let workspaceWidth = max(104, geometry.size.width - modeWidth - 102)
+            let modeWidth = compact ? min(116, geometry.size.width * 0.31) : 122
+            let workspaceWidth = max(100, geometry.size.width - modeWidth - 104)
 
-            HStack(spacing: 7) {
+            HStack(spacing: 8) {
                 Menu {
                     ForEach(store.workspaces) { workspace in
                         Button {
@@ -327,9 +338,9 @@ private struct ConversationTopBar: View {
                     }
                 } label: {
                     HStack(spacing: 6) {
-                        Circle().fill(StudyPalette.actionFill).frame(width: 5, height: 5)
+                        Circle().fill(StudyPalette.actionFill).frame(width: 6, height: 6)
                         Text(store.profile?.workspaceName ?? "我的书房")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.system(size: 12.5, weight: .semibold))
                             .lineLimit(1)
                             .truncationMode(.tail)
                             .foregroundStyle(StudyPalette.ink)
@@ -339,7 +350,7 @@ private struct ConversationTopBar: View {
                     .contentShape(Rectangle())
                 }
                 .frame(width: workspaceWidth, alignment: .leading)
-                .disabled(store.workspaces.count < 2 || store.isAccountBusy)
+                .disabled(store.workspaces.count < 2 || store.isAccountBusy || store.isSending || isVoiceBusy)
                 .accessibilityLabel("切换书房")
 
                 Spacer(minLength: 2)
@@ -347,8 +358,8 @@ private struct ConversationTopBar: View {
                     modeButton(title: "伴星", records: false)
                     modeButton(title: "记录", records: true)
                 }
-                .frame(width: modeWidth, height: 36)
-                .modifier(StudyGlassSurfaceStyle(radius: 20, interactive: true))
+                .frame(width: modeWidth, height: 38)
+                .modifier(StudyGlassSurfaceStyle(radius: 19, interactive: true))
                 .accessibilityElement(children: .contain)
                 Spacer(minLength: 2)
 
@@ -360,16 +371,16 @@ private struct ConversationTopBar: View {
                     }
                 } label: {
                     AstellaGlyph(kind: isDark ? .sun : .moon, tint: StudyPalette.ink)
-                        .frame(width: 24, height: 24)
-                        .frame(width: 40, height: 40)
-                        .modifier(StudyGlassSurfaceStyle(radius: 20, interactive: true))
+                        .frame(width: 22, height: 22)
+                        .frame(width: 38, height: 38)
+                        .modifier(StudyGlassSurfaceStyle(radius: 19, interactive: true))
                 }
                 .buttonStyle(AstellaPressStyle())
                 .accessibilityLabel(isDark ? "切换到浅色外观" : "切换到深色外观")
             }
             .padding(.horizontal, 22)
-            .padding(.top, 0)
-            .padding(.bottom, 6)
+            .padding(.top, 2)
+            .padding(.bottom, 8)
         }
         .frame(height: 62)
         .sensoryFeedback(.selection, trigger: store.chatShowsRecords)
@@ -384,13 +395,18 @@ private struct ConversationTopBar: View {
         } label: {
             ZStack {
                 if selected {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    RoundedRectangle(cornerRadius: 15, style: .continuous)
                         .fill(StudyPalette.sky)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 15, style: .continuous)
+                                .stroke(StudyPalette.paperEdge.opacity(0.55), lineWidth: 0.7)
+                        )
+                        .shadow(color: StudyPalette.ink.opacity(0.05), radius: 4, x: 0, y: 2)
                         .matchedGeometryEffect(id: "conversation-mode-lens", in: modeLens)
                         .padding(3)
                 }
                 Text(title)
-                    .font(.system(size: 12, weight: selected ? .semibold : .regular))
+                    .font(.system(size: 12.5, weight: selected ? .semibold : .regular))
                     .foregroundStyle(selected ? StudyPalette.ink : StudyPalette.muted)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .contentShape(Rectangle())

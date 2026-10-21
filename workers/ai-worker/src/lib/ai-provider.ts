@@ -96,7 +96,8 @@ export interface AIProvider {
   chatCompletionStreamToolCalls?: boolean;
 
   // ── Supervisor Agent v1（计划 §8.1） ──
-  executeAgentTurn?(request: AgentTurnRequest, signal?: AbortSignal): Promise<AgentTurnResult>;
+  executeAgentTurn?(request: AgentTurnRequest, signal?: AbortSignal,
+    observation?: { onOutputActivity?: () => void }): Promise<AgentTurnResult>;
   getCapabilities?(): ProviderCapability;
   /** Effective transport output ceiling, also used by the context governor. */
   /** 这一发的输出天花板：档案声明值，拿不到声明时是这一档平台的兜底。 */

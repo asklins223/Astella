@@ -68,11 +68,6 @@ const GRAPH_LENS_LABEL: Record<string, string> = {
   current_target: "当前目标", evidence: "证据", provenance: "来源", issues: "存疑处",
 };
 
-const DEFER_REASON_LABEL: Record<string, string> = {
-  user_requested: "你说现在不方便",
-  temporary_unavailable: "现在顾不上",
-};
-
 /**
  * 截断到 `max` 以内，且尽量断在小句边界。
  *
@@ -159,56 +154,6 @@ function copy(payload: ProposalPayload): AgentProposalCopy | null {
         title: clamp(`把活跃度调成${ACTIVENESS_LABEL[payload.activeness] ?? payload.activeness}`, TITLE_MAX),
         targetSummary: clamp("伴星主动开口的频率", TARGET_MAX),
         impactSummary: clamp("下一次尚未开始的对话会用上；正在进行的这一轮不变。", IMPACT_MAX),
-      };
-
-    case "pause_learning_run":
-      return {
-        title: clamp("先暂停这一轮", TITLE_MAX),
-        targetSummary: clamp("当前正在进行的那一轮学习", TARGET_MAX),
-        impactSummary: clamp("进度会留着，随时能接着学。", IMPACT_MAX),
-      };
-
-    case "resume_learning_run":
-      return {
-        title: clamp("接着学这一轮", TITLE_MAX),
-        targetSummary: clamp("上一次没学完的那一轮", TARGET_MAX),
-        impactSummary: clamp("回到你离开时的位置，进度都还在。", IMPACT_MAX),
-      };
-
-    case "start_learning_run_v2": {
-      const seconds = payload.request.requestedTimeBudgetSeconds ?? 180;
-      const minutes = Math.max(1, Math.round(seconds / 60));
-      return {
-        title: clamp("开一轮新的学习", TITLE_MAX),
-        targetSummary: clamp(`当前这篇笔记的一个学习目标，先学 ${minutes} 分钟`, TARGET_MAX),
-        impactSummary: clamp("会新建一轮学习记录；想停随时能停，进度会留着。", IMPACT_MAX),
-      };
-    }
-
-    case "request_hint_level":
-      return {
-        // 与作答工位上的措辞同源（`learning-run-copy.tsx`：「给我一点提示」/「第 N 级提示」）。
-        title: clamp(payload.level === 1 ? "给我一点提示" : `看第 ${payload.level} 级提示`, TITLE_MAX),
-        targetSummary: clamp("当前这道题", TARGET_MAX),
-        impactSummary: clamp("看过提示之后，这一轮只计练习分，不作为掌握证据。", IMPACT_MAX),
-      };
-
-    case "switch_task_variant":
-      return {
-        title: clamp("换一道题", TITLE_MAX),
-        // `alternativeId` 是 id，用户读不出来；模型写的换题理由才是他能核对的依据。
-        targetSummary: clamp(payload.reason, TARGET_MAX),
-        impactSummary: clamp(
-          "当前这道会换成同一目标的另一道，刚才的作答留在这一轮的记录里。",
-          IMPACT_MAX,
-        ),
-      };
-
-    case "defer_review":
-      return {
-        title: clamp("把这次复习往后挪", TITLE_MAX),
-        targetSummary: clamp(DEFER_REASON_LABEL[payload.reasonCode] ?? "这次复习", TARGET_MAX),
-        impactSummary: clamp("这次复习重新排期，到点还会提醒你，不会跳过。", IMPACT_MAX),
       };
 
     case "focus_graph_node":

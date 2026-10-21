@@ -31,7 +31,8 @@
 .hud-surface .notebook-note-list__search input { width: 0; flex: 1; min-width: 0; padding: 0; border: 0; border-radius: 0; background: none; color: #405447; outline: none; box-shadow: none; font: 12px/1.8 "Noto Sans SC Variable", sans-serif; }
 .hud-surface .notebook-note-list__search input::-webkit-search-cancel-button { display: none; }
 .hud-surface .notebook-note-list__search:focus-within { outline: 2px solid #81a97e; outline-offset: 2px; }
-.hud-surface .notebook-note-list__scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; padding: 12px 2px; margin-inline: -2px; }
+.hud-surface .notebook-note-list__scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; padding: 12px 2px; margin-inline: -2px; }
+.hud-surface .notebook-note-list__scroll::-webkit-scrollbar { display: none; }
 .hud-surface .notebook-note-list__scroll ul { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .hud-surface .notebook-note-list__item {
   display: flex; flex-direction: column; gap: 7px; width: 100%; padding: 12px 13px; text-align: left;

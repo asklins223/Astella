@@ -65,8 +65,8 @@ export async function fixture() {
 
 export function readContext(f: Awaited<ReturnType<typeof fixture>>): ReadContext {
   return { ...f.event.read, conversationId: f.conversationId, userMessageId: f.messageId,
-    runStatus: "running", formalAnswerInProgress: false, formalAnswerTarget: null,
-    livePageView: null, pageContext: null, groundedTutorContext: null, userText: "你好",
+    runStatus: "running",
+    livePageView: null, pageContext: null, userText: "你好",
     recentMessages: [], residentMemories: [], memoryDirectory: [], playbookCatalog: [], playbookCandidates: [], deliveryObservation: null,
     organizationSurface: null, memoryRefs: [], hereAndNow: null, thisTurnFacts: null,
     factSpans: null, conversationSummary: null, personaProfileRevision: 0,

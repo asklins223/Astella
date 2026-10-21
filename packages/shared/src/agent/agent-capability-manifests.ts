@@ -1,12 +1,7 @@
-import { CARD_GENERATION_HARD_MAX_CARDS_CEILING } from ".././contracts/learning/card-generation-v2-contracts.ts";
 import { z } from "zod";
 import { defineAgentCapability } from "./agent-capability-definition.ts";
 import { AGENT_GOAL_DELIVERY_CAPABILITY, agentGoalDeliveryV1Schema, createAgentRunV1Schema, reviseAgentRunV1Schema } from ".././contracts/agent/agent-contracts.ts";
 import { agentLongGoalsQueryV1Schema } from ".././contracts/agent/agent-long-goal-contracts.ts";
-// 制卡可选参数**直接引用现役领域词表**，不在能力清单里另抄一份枚举：抄一份就会
-// 出现「模型能填一个领域合同不接受的值」，而失败只会在真的跑起管道时才显形。
-// 这两个 schema 是纯 zod、无 node: 依赖，客户端 bundle 安全。
-import { cardDetailThresholdV2Schema, cardLearningGoalV2Schema } from ".././contracts/learning/card-generation-v2-contracts.ts";
 function manifest(name: string, description: string, riskClass: "read" | "reversible_low", argumentSchema: z.ZodType<Record<string, unknown>>, presentation: { label: string; methodStep?: string; discovery?: string }, maxOutputChars: number | null = 4000) {
   return defineAgentCapability(name, description, riskClass, false, argumentSchema, presentation, { maxInputChars: 8000, maxOutputChars });
 }
@@ -55,18 +50,6 @@ export const noteAgentCapabilityManifest = [
 // 放开 blockRanges 等于让模型凭空圈一段原文。整篇在领域侧被封存成不可变快照，
 // 依据、原子与候选全部按那一版对齐。
 //
-// 张数上界与领域合同同一份声明（用户要几张就几张，到上限为止）；
-// 没填时批次的自适应默认量在 `CARD_GENERATION_DEFAULT_HARD_MAX_CARDS`。
-const cardGenerateArgs = noteArgs.extend({
-  learningGoal: cardLearningGoalV2Schema.optional(),
-  detailThreshold: cardDetailThresholdV2Schema.optional(),
-  hardMaxCards: z.number().int().min(1).max(CARD_GENERATION_HARD_MAX_CARDS_CEILING).optional(),
-}).strict();
-
-export const cardAgentCapabilityManifest = [
-  manifest("card_generation_generate", "为这版笔记生成一批待审核的学习卡。可选说明学习目标（remember 记住、understand 理解、apply 会用、exam 应考）、细节程度（concise 精简、balanced 适中、deep 深入）和最多几张（1 到 50，按领域合同；不给就按内容自适应）。返回 accepted、稳定 operationId 与真实制卡批次 execution 引用；accepted 只代表已接受，不是完成，要等后台核对到真实可审候选才算生成成功。生成完是**待审核候选**，不是已经生效的学习卡：要让用户打开这批卡的审核台自己决定收下哪些，不自动激活、不自动排复习、不替他判断要不要留着。领域如实判定这一篇不值得出卡时，会给出 no_cards_recommended 与原因，如实转述，不要编一张假的成果出来；确实要出卡才启动，普通提问和只读目标不要顺手生成。", "reversible_low", cardGenerateArgs, { label: "准备学习卡", methodStep: "基于新材料生成待审核学习卡；核对候选，让用户决定收下哪些。", discovery: "根据笔记准备一批学习卡，选过、改过、收下后才生效。" }),
-] as const;
-
 export const methodAgentCapabilityManifest = [
   manifest("agent_read_method", "按本轮方法目录中的真实 methodId 与 revision 读取用户已确认的方法，记录这次查阅。只有当前条件相关时读取；方法只是合作指引，不代表旧材料、旧产物或旧授权适用于新目标。依据被纠正、停用、遗忘或能力变化时拒绝使用。", "read",
     z.object({ methodId: z.string().uuid(), expectedRevision: z.number().int().positive() }).strict(), { label: "查阅合作方法" }, null),

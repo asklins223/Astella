@@ -450,12 +450,6 @@ button:disabled {
   perspective: 1200px;
 }
 
-.task-artifact {
-  color: var(--ink);
-  pointer-events: auto;
-  will-change: auto;
-}
-
 /* `.surface-primary` / `.surface-secondary` 已删除（2026-09-29）。它们是母本之前
    留下来的第二套主/次按钮：深橙渐变 + 白字 + 8px 圆角，与 V3.1 母本的「桃底 + 深墨字 +
    不等圆角」是两套语言并存——同一个产品里「主按钮」有两个答案，agent 挑哪个全凭碰上
@@ -565,84 +559,13 @@ button:disabled {
 .card-generation-recovery strong { color: var(--accent-deep); font-size: 12px; }
 .card-generation-recovery p { margin: 0; color: var(--ink-soft); font-size: 11px; line-height: 1.55; }
 
-@media (max-width: 720px) {
-    }
-
 .run-spinner { animation: run-spin 900ms linear infinite; }
 
 @keyframes run-spin { to { transform: rotate(360deg); } }
 
-.run-text-editor, .run-part-editor, .run-bundle-editor {
-  display: grid;
-  gap: 9px;
-}
-
-.run-text-editor > span, .run-bundle-part h4 { color: var(--ink-soft); font-size: 10px; font-weight: 700; }
-.run-text-editor textarea { width: 100%; min-height: 125px; padding: 13px; color: var(--ink); line-height: 1.7; resize: vertical; border: 1px solid var(--line); border-radius: 7px; background: rgba(255, 253, 247, 0.66); }
-.run-text-editor small { justify-self: end; color: var(--ink-soft); font-size: 9px; }
-
-.run-order-list, .run-relation-list {
-  display: grid;
-  gap: 6px;
-  padding: 0;
-  margin: 0;
-  list-style: none;
-}
-
-.run-order-list li, .run-relation-list li {
-  display: flex;
-  min-height: 40px;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 9px;
-  color: #514031;
-  font-size: 11px;
-  border: 1px solid rgba(77, 50, 31, 0.15);
-  border-radius: 6px;
-  background: rgba(255, 252, 244, 0.44);
-}
-
-.run-order-list li > span:nth-child(2), .run-relation-list li > span { min-width: 0; flex: 1; }
-.run-order-controls { display: inline-flex; gap: 3px; margin-left: auto; }
-.run-icon-button { display: grid; width: 30px; height: 30px; place-items: center; color: var(--ink-soft); border: 1px solid rgba(77, 50, 31, 0.2); border-radius: 6px; background: rgba(255, 252, 244, 0.55); cursor: pointer; }
-.run-icon-button:hover:not(:disabled) { color: var(--accent-deep); background: var(--paper-strong); }
-.run-empty-row { color: var(--ink-soft) !important; font-style: italic; }
-
-.run-relation-controls { display: grid; grid-template-columns: minmax(0, 1fr) minmax(86px, 0.7fr) minmax(0, 1fr) auto; gap: 6px; }
-.run-relation-controls select, .run-repair-row select { min-width: 0; min-height: 34px; padding: 0 8px; color: var(--ink); font-size: 11px; border: 1px solid var(--line); border-radius: 6px; background: rgba(255, 253, 247, 0.7); }
-.run-repair-list { display: grid; gap: 7px; }
-.run-repair-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(150px, 0.8fr) auto; align-items: center; gap: 8px; font-size: 11px; }
-.run-repair-row > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
 /* 客观题（2026-09-21 批次 3）的选择 / 判断 / 配对控件配方已整体搬到
    components/objective-flow.css。留在这里时会和 HUD 作用域那套各写一半，
    实测同一个 .learning-response 里排序行是横线纸、选择行是半透明白卡。 */
-
-
-.run-bundle-editor { gap: 12px; }
-.run-bundle-part { display: grid; gap: 9px; padding: 12px; border: 1px solid rgba(77, 50, 31, 0.16); border-radius: 7px; background: rgba(255, 252, 244, 0.34); }
-.run-bundle-part h4 { margin: 0; }.run-confirmation{
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 12px 14px;
-  color: #5b4937;
-  font-size: 11px;
-  line-height: 1.65;
-  border-radius: 7px;
-}
-.run-inline-error { margin: 0; color: var(--accent-deep); font-size: 11px; line-height: 1.6; }
-
-.run-confirmation { flex-wrap: wrap; align-items: center; border: 1px solid rgba(189, 91, 45, 0.3); background: rgba(255, 244, 224, 0.94); box-shadow: var(--soft-shadow); }
-.run-confirmation h2 { flex: 1 1 100%; margin: 0; color: var(--accent-deep); font-family: "Noto Serif SC Variable", "Songti SC", serif; font-size: 13px; }
-.run-confirmation p { flex: 1 1 100%; margin: 0; }
-
-@media (max-width: 720px) {
-  .run-relation-controls { grid-template-columns: 1fr 1fr; }
-  .run-relation-controls .run-icon-button { width: 100%; }
-  .run-repair-row { grid-template-columns: 1fr; align-items: stretch; }
-  .run-repair-row > span { white-space: normal; }
-}
 
 @media (prefers-reduced-motion: reduce) {
   .run-spinner { animation: none; }
@@ -707,9 +630,6 @@ button:disabled {
   }
 
   .desktop-app[data-surface-open="true"] .companion-presence[data-surface="study"] { display: none; }
-}
-
-@media (max-width: 720px) {
 }
 
 @media (max-width: 900px), (max-height: 660px) {
@@ -827,7 +747,7 @@ button:disabled {
   .desktop-app[data-surface-open="true"] .companion-presence[data-surface="search"] {
     display: none;
   }
-}.card-generation-recovery, .run-order-list li, .run-relation-list li, .run-bundle-part, .run-confirmation{
+}.card-generation-recovery{
   background: transparent;
   box-shadow: none;
 }
@@ -839,57 +759,14 @@ button:disabled {
   border-block-color: rgba(83, 64, 48, 0.2);
 }
 
-.run-text-editor textarea {
-  padding-inline: 2px;
-  border: 0;
-  border-bottom: 1px solid rgba(83, 64, 48, 0.28);
-  border-radius: 0;
-  background: transparent;
-}
-
-.run-order-list li, .run-relation-list li, .run-bundle-part {
-  border-inline: 0;
-  border-radius: 0;
-  border-block-color: rgba(83, 64, 48, 0.18);
-}
-
-.run-icon-button {
-  border-color: rgba(83, 64, 48, 0.24);
-  border-radius: 50%;
-  background: transparent;
-}
-
-.run-icon-button:hover:not(:disabled) { background: rgba(101, 126, 88, 0.08); }
-
-@media (max-width: 900px), (max-height: 660px) {
-}
-
-@media (max-width: 720px) {
-}
-
-@media (max-width: 720px) {
-}
-
-.task-surface .run-icon-button {
-  width: 40px;
-  min-width: 40px;
-  height: 40px;
-}
-
 /* The empty review state belongs to the illustrated scroll on the right. It
    must never land on the open-book foreground just because the queue is empty. */
-@media (min-width: 901px) and (min-height: 661px) {
-}
 
 /* The notebook title is printed on the page; keep the return control on the
    room wall so it never competes with the first line of notebook ink. */
-@media (min-width: 901px) and (min-height: 661px) {
-}
 
 /* Compact mode keeps one authored fallback sheet; section wrappers remain
    transparent so zoomed or narrow windows do not produce nested paper cards. */
-@media (max-width: 900px), (max-height: 660px) {
-}
 
 
 @media (max-width: 900px), (max-height: 660px) {
@@ -1033,45 +910,4 @@ button:disabled {
    刻意不画进度环、不画骨架屏——那两样都在暗示"内容马上就到"，而 §7.1 要的是
    「先从记忆里找一找」：这一段等待本身就是提取的一部分，给它一根进度条等于
    催她跳过提取。 */
-.hud-surface .queue-desk .deck-card__waiting {
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-  margin-top: 12px;
-  padding: 15px 17px 14px 20px;
-  border: 3px solid var(--hud-cream);
-  border-left: 6px solid var(--hud-peach);
-  border-radius: 19px 14px 22px 16px;
-  background: color-mix(in srgb, var(--hud-butter) 24%, var(--hud-paper-light));
-  box-shadow: var(--hud-shadow-small);
-}
-.hud-surface .queue-desk .deck-card__waiting h2 { margin: 0; color: var(--hud-ink); font-size: 16px; line-height: 1.6; }
-.hud-surface .queue-desk .deck-card__progress {
-  margin: 0;
-  color: var(--hud-soft);
-  font-size: 13px;
-  line-height: 1.7;
-}
 /* 提取线索：每条一枚小小的纸签，斜着贴，和册页那族同一套物件语言。 */
-.hud-surface .queue-desk .deck-card__clues { margin: 4px 0 0; padding: 0; list-style: none; }
-.hud-surface .queue-desk .deck-card__clues li {
-  display: inline-block;
-  margin: 5px 8px 0 0;
-  padding: 5px 12px;
-  border: 2px solid var(--hud-cream);
-  border-radius: 13px 10px 15px 11px;
-  background: var(--hud-paper-light);
-  color: var(--hud-ink);
-  font-size: 13px;
-  line-height: 1.6;
-}
-.hud-surface .queue-desk .deck-card__clues-empty { margin: 2px 0 0; color: var(--hud-soft) !important; font-size: 13px !important; }
-.hud-surface .queue-desk .deck-card__reveal-notice {
-  margin: 6px 0 0 !important;
-  padding-top: 9px;
-  border-top: 1px dashed var(--hud-line);
-  color: var(--hud-ink) !important;
-  font-size: 13px !important;
-  line-height: 1.7 !important;
-}
-.hud-surface .queue-desk .deck-card__may-read { margin: 4px 0 0 !important; color: var(--hud-soft) !important; font-size: 12px !important; line-height: 1.7 !important; }

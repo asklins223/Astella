@@ -4,7 +4,7 @@ import { act, cleanup, render, waitFor } from "@testing-library/react";
 import type { GatewayResultV1, SessionContextV1 } from "@astella/shared/desktop-ipc-contracts";
 import type { NoteBlockProjectionV1 } from "@astella/shared/note-projection-contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { useSurfaceProjection, formatRelative, formatSourceStamp, noteBodyText, parseImageBlock, type SurfaceProjectionOptions } from "../notebook/shell/surface-data.tsx";
+import { useSurfaceProjection, formatRelative, formatSourceStamp, noteBlockPlainText, noteBodyText, noteLeadingTitleBlock, noteParagraphCount, parseImageBlock, type SurfaceProjectionOptions } from "../notebook/shell/surface-data.tsx";
 
 function session(workspaceEpoch: number): SessionContextV1 {
   return {
@@ -252,6 +252,62 @@ describe("noteBodyText 遇到图片块", () => {
   it("没有说明文字的图片块不留下一串标记", () => {
     const blocks = [{ ordinal: 1, type: "image", content: "![](/api/uploads/w-1/x.png)" }] as unknown as NoteBlockProjectionV1[];
     expect(noteBodyText(blocks)).toBe("");
+  });
+});
+
+describe("预览按 Markdown 读出正文，不漏标记", () => {
+  const asBlocks = (...items: readonly (readonly [string, string])[]): NoteBlockProjectionV1[] =>
+    items.map(([type, content], ordinal) => ({ ordinal, type, content })) as unknown as NoteBlockProjectionV1[];
+
+  it("heading / 列表 / 强调 / 链接 / 行内代码都只剩文字", () => {
+    const text = noteBodyText(asBlocks(
+      ["heading", "# 宋朝的经济与社会变迁"],
+      ["paragraph", "## 商业与城市"],
+      ["list", "- 交子与纸币\n- **坊市**不再封闭"],
+      ["paragraph", "参见 [资料](https://example.com/a) 与 `mint`。"],
+    ));
+    expect(text).toBe("宋朝的经济与社会变迁 商业与城市 交子与纸币 坊市不再封闭 参见 资料 与 mint。");
+    for (const marker of ["#", "##", "-", "**", "[", "](", "`"]) expect(text).not.toContain(marker);
+  });
+
+  it("一个块里的多段、换行与 HTML 强调也按显示顺序连成一句话", () => {
+    expect(noteBlockPlainText({ type: "paragraph", content: "<strong>重点</strong>内容\n第二行" } as NoteBlockProjectionV1))
+      .toBe("重点内容 第二行");
+    expect(noteBlockPlainText({ type: "quote", content: "第一段\n\n第二段" } as NoteBlockProjectionV1)).toBe("第一段 第二段");
+    expect(noteBlockPlainText({ type: "code", content: "const a = 1" } as NoteBlockProjectionV1)).toBe("const a = 1");
+  });
+
+  it("实体与分类列表编号同样不露出标记", () => {
+    expect(noteBodyText(asBlocks(["paragraph", "A &amp; B &lt; C"], ["list", "1. 第一\n2. 第二"])))
+      .toBe("A & B < C 第一 第二");
+  });
+});
+
+describe("笔记开头重复标题（AI 生成的正文以 `# 标题` 起头）", () => {
+  const titled = (): NoteBlockProjectionV1[] => [
+    { ordinal: 0, type: "heading", content: "# 宋朝的经济与社会变迁" },
+    { ordinal: 1, type: "paragraph", content: "960 年，赵匡胤建立宋朝。" },
+  ] as NoteBlockProjectionV1[];
+
+  it("给出标题时，预览不再从同名标题开始；不给出时按原文照旧", () => {
+    expect(noteBodyText(titled(), { title: "宋朝的经济与社会变迁" })).toBe("960 年，赵匡胤建立宋朝。");
+    expect(noteBodyText(titled())).toBe("宋朝的经济与社会变迁 960 年，赵匡胤建立宋朝。");
+    // 空白差异不算两个标题（标题输入与正文来源可能空格不同）。
+    expect(noteLeadingTitleBlock(titled(), "  宋朝的经济与社会变迁 ")?.ordinal).toBe(0);
+  });
+
+  it("标题不匹配时保留开头那个 heading（不是所有首标题都该消失）", () => {
+    const blocks = [{ ordinal: 0, type: "heading", content: "# 另一个标题" }] as NoteBlockProjectionV1[];
+    expect(noteLeadingTitleBlock(blocks, "宋朝的经济与社会变迁")).toBeNull();
+    expect(noteBodyText(blocks, { title: "宋朝的经济与社会变迁" })).toBe("另一个标题");
+  });
+
+  it("段数与预览同一口径：只有重复标题的版本没有正文段落", () => {
+    const onlyTitle = [titled()[0]!];
+    expect(noteParagraphCount(onlyTitle, { title: "宋朝的经济与社会变迁" })).toBe(0);
+    expect(noteBodyText(onlyTitle, { title: "宋朝的经济与社会变迁" })).toBe("");
+    // 标题之外的那一段仍然是正文。
+    expect(noteParagraphCount(titled(), { title: "宋朝的经济与社会变迁" })).toBe(1);
   });
 });
 

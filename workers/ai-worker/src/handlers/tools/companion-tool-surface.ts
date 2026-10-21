@@ -14,6 +14,12 @@ import {
   resolveCompanionToolGroupNames,
   type AgentTurnRequest,
 } from "@astella/shared";
+import { explicitCompanionProductRequest, explicitlyRequestsUtterances } from "./companion-tool-intent.ts";
+
+export function companionTaskSurfaceCandidates(userText: string | undefined): string[] {
+  return [...(explicitCompanionProductRequest(userText).newNote ? ["companion_create_note"] : []),
+    ...(explicitlyRequestsUtterances(userText) ? ["companion_publish_utterance"] : [])];
+}
 
 type ToolDefinition = AgentTurnRequest["tools"][number];
 
@@ -31,13 +37,31 @@ export function createCompanionToolSurface(input: {
   pageKind: string | null;
   candidateOperations: readonly string[];
   loadedToolNames?: Iterable<string>;
+  userText?: string;
+  initiative?: boolean;
 }): CompanionToolSurface {
   const loadedToolNames = new Set(input.loadedToolNames ?? []);
   const initialToolNames = resolveCompanionInitialToolNames({
     availableToolNames: input.definitions.map(definition => definition.name),
     pageKind: input.pageKind,
-    candidateOperations: input.candidateOperations,
+    candidateOperations: [...input.candidateOperations, ...companionTaskSurfaceCandidates(input.userText)],
   });
+  // A fresh note task needs its authoring dependencies immediately. Unrelated
+  // core groups remain discoverable, without serializing them at every step.
+  // The deterministic new-note signal decides; classifier candidates only add
+  // groups, so an empty or noisy candidate list must not defeat the narrowing.
+  if (explicitCompanionProductRequest(input.userText).newNote) {
+    const authoring = new Set(["companion_create_note", "companion_search_notes", "companion_read_note", "companion_read_source",
+      "companion_read_current_page", "companion_read_history", "companion_load_tools"]);
+    for (const name of initialToolNames) if (!authoring.has(name)) initialToolNames.delete(name);
+  }
+  // 分条发言不再只属于主动轮：伴星可以自己决定把回复拆成几条真实消息。
+  // 安静结束仍然只给主动轮。只加入当前宿主上下文已经授权的定义。
+  for (const name of input.initiative
+    ? ["companion_publish_utterance", "companion_finish_participation"]
+    : ["companion_publish_utterance"]) {
+    if (input.definitions.some(definition => definition.name === name)) initialToolNames.add(name);
+  }
   return {
     initialToolNames,
     loadedToolNames,

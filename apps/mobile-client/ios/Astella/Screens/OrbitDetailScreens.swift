@@ -65,7 +65,7 @@ struct OrbitDiaryDetailScreen: View {
         Group {
             if let record {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 18) {
+                    VStack(alignment: .leading, spacing: 22) {
                         if record.status == "generated" {
                             diaryHero(record)
                             if record.hidden { hiddenNotice }
@@ -123,10 +123,10 @@ struct OrbitDiaryDetailScreen: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 7) {
                 AstellaGlyph(kind: .orbit, tint: .white.opacity(0.86)).frame(width: 13, height: 13)
-                Text("A DAY WITH ASTER").font(.system(size: 9, weight: .semibold)).tracking(1.4).foregroundStyle(.white.opacity(0.78))
+                Text("拾星 · 每日手记").font(.system(size: 10, weight: .semibold)).tracking(1.2).foregroundStyle(.white.opacity(0.72))
             }
             Text(diaryLongDate(entry.date))
-                .font(.system(size: 29, weight: .medium)).tracking(-0.55).foregroundStyle(.white)
+                .font(.system(size: 30, weight: .medium)).tracking(-0.6).foregroundStyle(.white)
             HStack(spacing: 8) {
                 Text(entry.generatedAt.map { "生成于 \(diaryTimestamp($0))" } ?? "生成时间未提供")
                 Text("·")
@@ -135,10 +135,10 @@ struct OrbitDiaryDetailScreen: View {
             .font(.system(size: 11)).foregroundStyle(.white.opacity(0.76))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 22)
-        .padding(.vertical, 22)
+        .padding(.horizontal, 24)
+        .padding(.vertical, 24)
         .background {
-            RoundedRectangle(cornerRadius: 23, style: .continuous)
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .fill(LinearGradient(colors: [Color(red: 0.30, green: 0.43, blue: 0.62), Color(red: 0.19, green: 0.28, blue: 0.42)], startPoint: .topLeading, endPoint: .bottomTrailing))
                 .overlay(RoundedRectangle(cornerRadius: 23, style: .continuous).stroke(.white.opacity(0.20), lineWidth: 0.8))
                 .shadow(color: StudyPalette.ink.opacity(0.12), radius: 15, x: 0, y: 8)
@@ -162,7 +162,7 @@ struct OrbitDiaryDetailScreen: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 7) {
                 AstellaGlyph(kind: .book, tint: StudyPalette.accent).frame(width: 15, height: 15)
-                Text("每日手记").font(.system(size: 11, weight: .semibold)).foregroundStyle(StudyPalette.accent)
+                Text("每日手记").font(.system(size: 10.5, weight: .semibold)).tracking(0.8).foregroundStyle(StudyPalette.accent)
             }
             .padding(.bottom, 17)
 
@@ -171,7 +171,7 @@ struct OrbitDiaryDetailScreen: View {
                 case "text":
                     ForEach(Array(diaryParagraphs(block.text ?? "").enumerated()), id: \.offset) { _, paragraph in
                         Text(paragraph)
-                            .font(.system(size: 16)).lineSpacing(8).foregroundStyle(StudyPalette.ink)
+                            .font(.system(size: 16.5)).lineSpacing(8.5).foregroundStyle(StudyPalette.ink)
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(.bottom, 16)
                     }
@@ -185,7 +185,10 @@ struct OrbitDiaryDetailScreen: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(16)
-                    .background(StudyPalette.sky.opacity(0.70), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .background(StudyPalette.inset.opacity(0.85), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .overlay(alignment: .leading) {
+                        Rectangle().fill(StudyPalette.accent.opacity(0.45)).frame(width: 2).padding(.vertical, 14)
+                    }
                     .padding(.bottom, 17)
                 case "image":
                     if let url = block.url, !url.isEmpty {
@@ -200,9 +203,9 @@ struct OrbitDiaryDetailScreen: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(21)
-        .background(StudyPalette.paper, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(StudyPalette.paperEdge.opacity(0.64), lineWidth: 0.8))
+        .padding(20)
+        .background(StudyPalette.paper.opacity(0.88), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(StudyPalette.paperEdge.opacity(0.45), lineWidth: 0.8))
     }
 
     private var diaryPager: some View {
@@ -212,7 +215,8 @@ struct OrbitDiaryDetailScreen: View {
                     HStack(spacing: 6) { AstellaGlyph(kind: .back, tint: StudyPalette.accent).frame(width: 13, height: 13); Text("前一天") }
                         .font(.footnote.weight(.medium)).foregroundStyle(StudyPalette.accent)
                         .frame(maxWidth: .infinity, minHeight: 44)
-                        .background(StudyPalette.paper, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .background(StudyPalette.paper.opacity(0.85), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).stroke(StudyPalette.paperEdge.opacity(0.45), lineWidth: 0.7))
                 }.buttonStyle(AstellaPressStyle())
             } else {
                 Text("已经是最早的一篇").font(.caption).foregroundStyle(StudyPalette.muted).frame(maxWidth: .infinity, minHeight: 44)
@@ -222,7 +226,8 @@ struct OrbitDiaryDetailScreen: View {
                     HStack(spacing: 6) { Text("后一天"); AstellaGlyph(kind: .chevron, tint: StudyPalette.accent).frame(width: 13, height: 13) }
                         .font(.footnote.weight(.medium)).foregroundStyle(StudyPalette.accent)
                         .frame(maxWidth: .infinity, minHeight: 44)
-                        .background(StudyPalette.paper, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .background(StudyPalette.paper.opacity(0.85), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).stroke(StudyPalette.paperEdge.opacity(0.45), lineWidth: 0.7))
                 }.buttonStyle(AstellaPressStyle())
             } else {
                 Text("已经是最新的一篇").font(.caption).foregroundStyle(StudyPalette.muted).frame(maxWidth: .infinity, minHeight: 44)
@@ -239,21 +244,23 @@ struct OrbitDiaryDetailScreen: View {
                     AstellaGlyph(kind: .chat, tint: .white).frame(width: 17, height: 17)
                     Text("聊聊这篇")
                 }
-                .font(.system(size: 14, weight: .semibold)).foregroundStyle(StudyPalette.accentLabel)
-                .frame(maxWidth: .infinity, minHeight: 48)
+                .font(.system(size: 15, weight: .semibold)).foregroundStyle(StudyPalette.accentLabel)
+                .frame(maxWidth: .infinity, minHeight: 50)
                 .background(StudyPalette.accent, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
             .buttonStyle(AstellaPressStyle())
             HStack(spacing: 10) {
                 Button(entry.hidden ? "恢复显示" : "隐藏这篇") { Task { await setHidden(!entry.hidden) } }
                     .font(.footnote.weight(.medium)).foregroundStyle(StudyPalette.ink)
-                    .frame(maxWidth: .infinity, minHeight: 43)
-                    .background(StudyPalette.paper, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .background(StudyPalette.paper.opacity(0.85), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).stroke(StudyPalette.paperEdge.opacity(0.45), lineWidth: 0.7))
                     .disabled(isWorking)
                 Button("删除") { confirmDelete = true }
                     .font(.footnote.weight(.medium)).foregroundStyle(StudyPalette.danger)
-                    .frame(maxWidth: .infinity, minHeight: 43)
-                    .background(StudyPalette.paper, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .background(StudyPalette.paper.opacity(0.85), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).stroke(StudyPalette.paperEdge.opacity(0.45), lineWidth: 0.7))
                     .disabled(isWorking)
             }
             Text("隐藏不会删除内容；删除会同时移除这篇日记派生的摘录和记忆。")
@@ -510,7 +517,7 @@ struct OrbitMemoryDetailScreen: View {
         Group {
             if let memory {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 18) {
+                    VStack(alignment: .leading, spacing: 22) {
                         memorySummary(memory)
                         sourceFacts(memory)
                         if isEditing { correctionForm(memory) }
@@ -557,7 +564,7 @@ struct OrbitMemoryDetailScreen: View {
                 if item.pinned { AstellaGlyph(kind: .history, tint: StudyPalette.accent).frame(width: 16, height: 16).accessibilityLabel("已固定") }
             }
             Text(item.content)
-                .font(.system(size: 22, weight: .medium)).tracking(-0.3).lineSpacing(5)
+                .font(.system(size: 21, weight: .medium)).tracking(-0.3).lineSpacing(6)
                 .foregroundStyle(StudyPalette.ink).fixedSize(horizontal: false, vertical: true)
             if item.sourceBasis == "inferred_from_statement" || item.sourceSpeaker == "companion" {
                 HStack(alignment: .top, spacing: 8) {
@@ -567,14 +574,14 @@ struct OrbitMemoryDetailScreen: View {
                 }.padding(12).background(StudyPalette.sky.opacity(0.72), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading).padding(19)
-        .background(StudyPalette.paper, in: RoundedRectangle(cornerRadius: 21, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 21, style: .continuous).stroke(StudyPalette.paperEdge.opacity(0.66), lineWidth: 0.8))
+        .frame(maxWidth: .infinity, alignment: .leading).padding(20)
+        .background(StudyPalette.paper.opacity(0.88), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(StudyPalette.paperEdge.opacity(0.45), lineWidth: 0.8))
     }
 
     private func sourceFacts(_ item: OrbitMemoryRecord) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("来源与范围").font(.system(size: 11, weight: .semibold)).foregroundStyle(StudyPalette.muted).padding(.bottom, 9)
+            Text("来源与范围").font(.system(size: 12, weight: .semibold)).tracking(0.7).foregroundStyle(StudyPalette.muted).padding(.bottom, 10)
             memoryFact("来源性质", memorySourceLabel(item.sourceType))
             memoryFact("说话者", memorySpeakerLabel(item.sourceSpeaker, author: item.authorType))
             memoryFact("适用范围", memoryScopeLabel(item.scope))
@@ -590,9 +597,9 @@ struct OrbitMemoryDetailScreen: View {
                 }.buttonStyle(.plain).padding(.top, 5)
             }
         }
-        .padding(.horizontal, 16).padding(.vertical, 13)
-        .background(StudyPalette.paper.opacity(0.82), in: RoundedRectangle(cornerRadius: 19, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 19, style: .continuous).stroke(StudyPalette.paperEdge.opacity(0.55), lineWidth: 0.8))
+        .padding(.horizontal, 16).padding(.vertical, 4)
+        .background(StudyPalette.paper.opacity(0.82), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(StudyPalette.paperEdge.opacity(0.42), lineWidth: 0.8))
     }
 
     private func memoryFact(_ title: String, _ value: String) -> some View {
@@ -675,7 +682,8 @@ struct OrbitMemoryDetailScreen: View {
             Text(title).font(.footnote.weight(.medium)).foregroundStyle(tint)
             Spacer()
             AstellaGlyph(kind: .chevron, tint: StudyPalette.muted).frame(width: 14, height: 14)
-        }.padding(.horizontal, 13).frame(minHeight: 46).background(StudyPalette.paper, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }.padding(.horizontal, 13).frame(minHeight: 46).background(StudyPalette.paper.opacity(0.85), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).stroke(StudyPalette.paperEdge.opacity(0.45), lineWidth: 0.7))
     }
 
     private func actionChip(_ title: String, glyph: AstellaGlyphKind) -> some View {
@@ -687,7 +695,7 @@ struct OrbitMemoryDetailScreen: View {
         if revisionError != nil || !revisions.isEmpty {
             VStack(alignment: .leading, spacing: 11) {
                 HStack {
-                    Text("修订历史").font(.system(size: 11, weight: .semibold)).foregroundStyle(StudyPalette.muted)
+                    Text("修订历史").font(.system(size: 12, weight: .semibold)).tracking(0.7).foregroundStyle(StudyPalette.muted)
                     Spacer()
                     Button("重新读取") { Task { await loadRevisions() } }.font(.caption.weight(.semibold)).foregroundStyle(StudyPalette.accent)
                 }
@@ -701,7 +709,8 @@ struct OrbitMemoryDetailScreen: View {
                         .background(StudyPalette.inset, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
                 }
             }
-            .padding(15).background(StudyPalette.paper.opacity(0.68), in: RoundedRectangle(cornerRadius: 17, style: .continuous))
+            .padding(16).background(StudyPalette.paper.opacity(0.82), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(StudyPalette.paperEdge.opacity(0.42), lineWidth: 0.8))
         }
     }
 
@@ -824,7 +833,7 @@ struct OrbitMemoryRecycleScreen: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 13) {
                 Text("普通删除会把记忆放进回收站。恢复后会重新参与伴星的记忆检索；彻底清除后无法恢复。")
-                    .font(.footnote).lineSpacing(4).foregroundStyle(StudyPalette.muted).padding(.horizontal, 3)
+                    .font(.system(size: 12.5)).lineSpacing(3).foregroundStyle(StudyPalette.muted).padding(.horizontal, 2)
                 if isLoading { OrbitLoadingRow() }
                 else if let error { OrbitDetailFeedback(text: error, isError: true, retry: { Task { await load() } }) }
                 else if memories.isEmpty { OrbitEmptyCard(title: "回收站是空的", detail: "移入回收站的记忆会显示在这里。", glyph: .history) }

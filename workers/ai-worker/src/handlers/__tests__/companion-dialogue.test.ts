@@ -21,7 +21,6 @@ import {
   looksLikeUnfulfilledActionNarration,
   unverifiedNumericClaims,
   claimsLookupThatNeverRan,
-  claimsNothingDueAgainstFacts,
   companionOutputRejectionReason,
   containsCompanionInternalToken,
   extractQuotedPassages,
@@ -39,24 +38,8 @@ import {
   textOfCompanionBlocks,
   unwrapCompanionJsonEnvelope,
 } from "../turn/companion-dialogue-content.ts";
-import { isGroundedTutorRequestedPageContext } from "../turn/companion-dialogue.ts";
 import { selectCompanionReplayWindow } from "../context/companion-context-handoff.ts";
 import { pickCompanionFailureFallbackLine } from "../turn/companion-dialogue-failure-retention.ts";
-
-test("grounded tutor：LearningRun 页面必须请求受限模式", () => {
-  assert.equal(isGroundedTutorRequestedPageContext({
-    pageKind: "learning_run",
-    requestedCapability: "grounded_tutor",
-  }), true);
-  assert.equal(isGroundedTutorRequestedPageContext({
-    pageKind: "learning_run",
-    requestedCapability: "none",
-  }), false);
-  assert.equal(isGroundedTutorRequestedPageContext({
-    pageKind: "card",
-    requestedCapability: "grounded_tutor",
-  }), false);
-});
 
 test("摘要裁剪水位复用 prompt 的可见尾部选择规则", () => {
   // 两条链必须落在同一个 seq 上，否则「摘要没覆盖、原文也没回放」的空档又回来。
@@ -252,37 +235,6 @@ test("超大页面与旧摘要整块纳入、不切片，当前问题和确定�
   assert.deepEqual(messages.at(-1), { role: "user", content: "今晚想做什么菜？" });
 });
 
-test("grounded tutor：只把受限证据放入 provider 输入", () => {
-  const messages = buildCompanionPersonaMessages({
-    userText: "这个结论为什么成立？",
-    recentMessages: [],
-    pageContext: { pageKind: "learning_run", runId: "internal-only", snapshotId: "snapshot", taskId: "task" },
-    groundedTutorContext: {
-      claim: "光合作用把光能转成化学能。",
-      evidence: ["叶绿体中的色素吸收光能。"],
-    },
-  });
-  assert.match(String(messages[0].content), /Grounded Tutor/);
-  // 证据以 <grounded_target> 数据块进 system；页面上下文不得混进来。
-  assert.match(String(messages[0].content), /<grounded_target>/);
-  assert.match(String(messages[0].content), /光合作用把光能转成化学能。/);
-  assert.ok(!String(messages[0].content).includes("internal-only"), "页面上下文不进 grounded tutor 输入");
-  assert.deepEqual(messages.at(-1), { role: "user", content: "这个结论为什么成立？" });
-});
-
-test("grounded tutor：仍沿用用户设定的伴星人格，不丢失称呼和语气", () => {
-  const messages = buildCompanionPersonaMessages({
-    userText: "解释这一句",
-    recentMessages: [],
-    pageContext: { pageKind: "learning_run" },
-    groundedTutorContext: { claim: "间隔复习有助于巩固记忆。", evidence: ["重复提取能加固痕迹。"] },
-    petProfile: { name: "爱吃白饭的大肥鱼", speakingStyle: "慵懒贪吃", personalityTags: ["贪吃"], examples: [] },
-  });
-  assert.match(String(messages[0].content), /爱吃白饭的大肥鱼/);
-  assert.match(String(messages[0].content), /慵懒贪吃/);
-  assert.match(String(messages[0].content), /重复提取能加固痕迹/);
-});
-
 test("residentMemories 注入 system 的 <memory_data> 数据块", () => {
   const messages = buildCompanionPersonaMessages({
     userText: "今天继续学",
@@ -399,7 +351,7 @@ test("模型能分清本轮没注入记忆与记忆不存在，并只在相关�
   assert.match(system, /模型推断、待核、争议或已替代/);
 });
 
-test("没有目录线索时，模型仍可在长期偏好可能相关时主动检索；严格 tutor 不受影响", () => {
+test("没有目录线索时，模型仍可在长期偏好可能相关时主动检索", () => {
   const ordinary = buildCompanionPersonaMessages({
     userText: "继续按之前的方式讲。",
     recentMessages: [],
@@ -408,13 +360,7 @@ test("没有目录线索时，模型仍可在长期偏好可能相关时主动�
   assert.match(String(ordinary[0]?.content), /长期记忆不是每轮都要搜索/);
   assert.match(String(ordinary[0]?.content), /companion_recall_memory/);
 
-  const tutor = buildCompanionPersonaMessages({
-    userText: "解释这段材料。",
-    recentMessages: [],
-    pageContext: null,
-    groundedTutorContext: { claim: "材料说明的结论", evidence: [] },
-  });
-  assert.doesNotMatch(String(tutor[0]?.content), /长期记忆不是每轮都要搜索/);
+
 });
 
 test("persona 历史：完整的最近20条交给请求预算治理", () => {
@@ -1283,18 +1229,7 @@ test("坍缩闸**不看字数**（40 §4.4.2「短句不单独触发重跑」「
 
 // ─── 「没有到期的」这类不报数字的假阴性（2026-09-21 实机 25 项 → 答"列表是空的"）──
 
-test("claimsNothingDueAgainstFacts：真值在环境块里，她那句话就是可证伪的", () => {
-  const facts = "<here_and_now>现在：2026-09-21 18:40（晚上）\n今日已学 18 分钟，6 个学习运行，到期待复习 25 项</here_and_now>";
-  assert.equal(claimsNothingDueAgainstFacts("到期列表现在是空的，没有卡可以打开。", facts), true, "实机原句");
-  assert.equal(claimsNothingDueAgainstFacts("今天没有到期的复习。", facts), true);
-  assert.equal(claimsNothingDueAgainstFacts("到期的复习没有几张，先不管它们。", facts), true);
-  // 真值本来就是 0：同一句话是实话，不该拦。
-  assert.equal(claimsNothingDueAgainstFacts("到期列表现在是空的。", "<here_and_now>到期待复习 0 项</here_and_now>"), false);
-  // 环境块里没有这一行 → 无从对照，不凭措辞猜。
-  assert.equal(claimsNothingDueAgainstFacts("到期列表是空的。", "今日已学 12 分钟"), false);
-  // 同一条真值下如实报数，不该命中（否则 steer 会被自己的闸反复烧掉）。
-  assert.equal(claimsNothingDueAgainstFacts("到期待复习的有 25 项，先挑第一张？", facts), false);
-});
+
 
 // ─── §12.6 ②：她当"原文"端出来的段落，逐字比对本轮真出处 ─────────────────
 // 三段文本都是活库里的真东西（AC 轮修复前/后 + 那篇笔记的正文）。

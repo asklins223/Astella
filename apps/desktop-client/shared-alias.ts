@@ -40,7 +40,7 @@ function targetFile(entry: unknown): string | null {
  *
  * 旧写法是 `@astella/shared/*` → `src/*.ts`，本文件旧注释也写着「子路径全是
  * `src/*.ts` 平铺文件」。2026-09-30 把 46 份合同搬进 `src/contracts/` 之后，
- * 那条假设就不成立了——而它**静默失效**：`src/learning-run-v2-contracts.ts`
+ * 那条假设就不成立了——而它**静默失效**：`src/contracts/learning/note-learning-card-contracts.ts`
  * 已不存在，vite 报出来的是 `Cannot find package`，看不出"别名还指着旧位置"。
  *
  * ## 为什么也不能「先列 contracts/ 再列平铺」

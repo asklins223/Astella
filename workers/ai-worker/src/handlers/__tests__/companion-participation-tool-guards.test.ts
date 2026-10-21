@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { executeCompanionParticipationTool } from "../tools/companion-participation-tools.ts";
+import { companionInitiativeRepeatsSpeech, executeCompanionParticipationTool } from "../tools/companion-participation-tools.ts";
 import { CompanionToolBlockedError, CompanionToolError, CompanionToolNotExecutedError } from "../tools/companion-tool-result.ts";
 import type { AgentEventContext } from "../tools/companion-read-tools.ts";
 
@@ -22,6 +22,15 @@ function context(over: Record<string, unknown> = {}, readOver: Record<string, un
     ...over,
   } as unknown as AgentEventContext;
 }
+
+test("用户明确请求的回复与真实启动/回前台招呼不会被主动去重静音", async () => {
+  for (const initiativeInput of [null, { topic: "app.started" }, { topic: "app.foreground" }]) {
+    const event = context({}, { initiativeInput });
+    assert.equal(await companionInitiativeRepeatsSpeech(event.read, {
+      workspaceId: event.ctx.workspaceId, userId: event.read.userId,
+    }, "欢迎回来。"), false);
+  }
+});
 
 test("内部考虑才有安静结束能力，用户提问那一轮不能拿它代替回答", async () => {
   await assert.rejects(() => executeCompanionParticipationTool(context(), "companion_finish_participation", { decision: "silent" }),
@@ -60,4 +69,12 @@ test("执行收尾不会变成一条对白", async () => {
     context({}, { initiativeInput: { topic: "attention.due", facts: { canSpeak: true } } }),
     "companion_publish_utterance", { text: "（安静结束，本轮不发言。）" }, "call-3"),
     (error: unknown) => error instanceof CompanionToolNotExecutedError && /执行收尾不需要发给用户/.test(String((error as Error).message)));
+});
+test("主动发言的语义核对在任何发布写入之前生效", async () => {
+  let called = false;
+  await assert.rejects(() => executeCompanionParticipationTool(context({ reviewInitiativeSpeech: async () => {
+    called = true; return "repeat：同一问题仅换了语气。";
+  } }, { initiativeInput: { topic: "app.started", facts: { canSpeak: true } } }),
+  "companion_publish_utterance", { text: "问你个事，打字快慢怎么回事？" }, "reviewed-call"), /主动发言没有发布.*repeat/);
+  assert.equal(called, true);
 });

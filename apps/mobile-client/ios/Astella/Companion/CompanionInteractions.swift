@@ -354,17 +354,82 @@ func companionMarkdown(_ text: String) -> AttributedString {
     )) ?? AttributedString(normalizedLists)
 }
 
+func normalizedNoteReferenceMarkup(_ text: String) -> String {
+    var value = text
+    for _ in 0..<4 {
+        let unescaped = value.replacingOccurrences(
+            of: #"\\([\[\]])"#,
+            with: "$1",
+            options: .regularExpression
+        )
+        if unescaped == value { break }
+        value = unescaped
+    }
+    return value.replacingOccurrences(
+        of: #"\[\[([^\[\]\n]+)\]\]"#,
+        with: "$1",
+        options: .regularExpression
+    )
+}
+
+/// Keeps internal note references readable and tappable in native message text.
+/// SwiftUI's Markdown parser does not reliably recognize the app's custom URL scheme.
+func companionMarkdownWithNoteLinks(_ text: String) -> AttributedString {
+    let normalizedText = normalizedNoteReferenceMarkup(text)
+    guard let regex = try? NSRegularExpression(pattern: #"\[([^\]]+)\]\(astella-note:([^\s)]+)\)"#) else {
+        return companionMarkdown(normalizedText)
+    }
+    let matches = regex.matches(in: normalizedText, range: NSRange(normalizedText.startIndex..., in: normalizedText))
+    guard !matches.isEmpty else { return companionMarkdown(normalizedText) }
+
+    var result = AttributedString()
+    var cursor = normalizedText.startIndex
+    for match in matches {
+        guard let fullRange = Range(match.range, in: normalizedText),
+              let titleRange = Range(match.range(at: 1), in: normalizedText),
+              let idRange = Range(match.range(at: 2), in: normalizedText) else { continue }
+        result.append(companionMarkdown(String(normalizedText[cursor..<fullRange.lowerBound])))
+        var title = AttributedString(String(normalizedText[titleRange]))
+        let noteId = String(normalizedText[idRange])
+        if let encodedId = noteId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+           let url = URL(string: "astella-note://note/\(encodedId)") {
+            title.link = url
+        }
+        result.append(title)
+        cursor = fullRange.upperBound
+    }
+    result.append(companionMarkdown(String(normalizedText[cursor...])))
+    return result
+}
+
+struct CompanionMarkdownText: View {
+    var text: String
+    var onOpenNote: ((String) -> Void)? = nil
+
+    var body: some View {
+        Text(companionMarkdownWithNoteLinks(text))
+            .environment(\.openURL, OpenURLAction { url in
+                guard url.scheme == "astella-note" else { return .systemAction }
+                let noteId = url.pathComponents.last?.removingPercentEncoding ?? ""
+                guard !noteId.isEmpty, noteId != "note", let onOpenNote else { return .discarded }
+                onOpenNote(noteId)
+                return .handled
+            })
+    }
+}
+
 private func noteReferenceAttributedText(
     _ text: String,
     baseAttributes: [NSAttributedString.Key: Any],
     linkColor: UIColor
 ) -> NSAttributedString {
-    let result = NSMutableAttributedString(string: text, attributes: baseAttributes)
+    let normalizedText = normalizedNoteReferenceMarkup(text)
+    let result = NSMutableAttributedString(string: normalizedText, attributes: baseAttributes)
     guard let regex = try? NSRegularExpression(pattern: #"\[([^\]]+)\]\(astella-note:([^\s)]+)\)"#) else {
         return result
     }
-    let source = text as NSString
-    for match in regex.matches(in: text, range: NSRange(location: 0, length: source.length)).reversed() {
+    let source = normalizedText as NSString
+    for match in regex.matches(in: normalizedText, range: NSRange(location: 0, length: source.length)).reversed() {
         guard match.numberOfRanges == 3 else { continue }
         let label = source.substring(with: match.range(at: 1))
         let noteId = source.substring(with: match.range(at: 2))
@@ -386,6 +451,9 @@ struct CompanionSelectableText: UIViewRepresentable {
     let fontSize: CGFloat
     var style: CompanionTextStyle?
     var onOpenNote: ((String) -> Void)? = nil
+    var annotationMarks: [SelectableTextAnnotationMark] = []
+    var noteReferences: [SelectableTextNoteReference] = []
+    var onOpenAnnotationBlock: ((Int) -> Void)? = nil
     var onSelection: (String, Bool) -> Void
     func makeUIView(context: Context) -> SelectionTextView {
         let view = SelectionTextView()
@@ -397,26 +465,58 @@ struct CompanionSelectableText: UIViewRepresentable {
         return view
     }
     func updateUIView(_ view: SelectionTextView, context: Context) {
-        if let style {
-            let paragraph = NSMutableParagraphStyle()
-            paragraph.lineSpacing = style.lineSpacing
-            paragraph.paragraphSpacing = style.paragraphSpacing
-            paragraph.firstLineHeadIndent = style.firstLineIndent
-            paragraph.headIndent = 0
-            paragraph.lineBreakMode = .byWordWrapping
-            let attributes: [NSAttributedString.Key: Any] = [
-                .font: StudySerif.uiFont(size: style.fontSize, serif: style.serif),
-                .foregroundColor: style.color,
-                .paragraphStyle: paragraph,
-            ]
-            view.attributedText = noteReferenceAttributedText(text, baseAttributes: attributes, linkColor: UIColor(StudyPalette.accent))
-        } else {
-            if view.text != text { view.text = text }
-            view.font = UIFont.systemFont(ofSize: fontSize)
-            view.textColor = .label
+        let resolvedStyle = style ?? CompanionTextStyle(fontSize: fontSize, color: .label)
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineSpacing = resolvedStyle.lineSpacing
+        paragraph.paragraphSpacing = resolvedStyle.paragraphSpacing
+        paragraph.firstLineHeadIndent = resolvedStyle.firstLineIndent
+        paragraph.headIndent = 0
+        paragraph.lineBreakMode = .byWordWrapping
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: StudySerif.uiFont(size: resolvedStyle.fontSize, serif: resolvedStyle.serif),
+            .foregroundColor: resolvedStyle.color,
+            .paragraphStyle: paragraph,
+        ]
+        let rendered = NSMutableAttributedString(
+            attributedString: noteReferenceAttributedText(text, baseAttributes: attributes, linkColor: UIColor(StudyPalette.accent))
+        )
+        let renderedLength = rendered.length
+        for reference in noteReferences {
+            guard reference.startOffset >= 0, reference.endOffset > reference.startOffset,
+                  reference.endOffset <= renderedLength,
+                  let escapedID = reference.noteId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+                  let url = URL(string: "astella-note://note/\(escapedID)") else { continue }
+            let range = NSRange(location: reference.startOffset, length: reference.endOffset - reference.startOffset)
+            rendered.addAttribute(.link, value: url, range: range)
+            rendered.addAttribute(.foregroundColor, value: UIColor(StudyPalette.accent), range: range)
+            rendered.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: range)
         }
+        for mark in annotationMarks.sorted(by: {
+            if $0.endOffset != $1.endOffset { return $0.endOffset > $1.endOffset }
+            return ($0.number ?? 0) > ($1.number ?? 0)
+        }) {
+            guard mark.startOffset >= 0, mark.endOffset > mark.startOffset,
+                  mark.endOffset <= renderedLength else { continue }
+            let range = NSRange(location: mark.startOffset, length: mark.endOffset - mark.startOffset)
+            rendered.addAttribute(.backgroundColor, value: UIColor(StudyPalette.accent.opacity(0.16)), range: range)
+            rendered.addAttribute(.underlineColor, value: UIColor(StudyPalette.accent.opacity(0.58)), range: range)
+            rendered.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: range)
+
+            guard let number = mark.number,
+                  let markerURL = URL(string: "astella-annotation://block/\(mark.blockOrdinal)") else { continue }
+            let markerFont = UIFont.systemFont(ofSize: resolvedStyle.fontSize * 0.62, weight: .semibold)
+            let markerAttributes: [NSAttributedString.Key: Any] = [
+                .font: markerFont,
+                .foregroundColor: UIColor(StudyPalette.accent),
+                .baselineOffset: resolvedStyle.fontSize * 0.34,
+                .link: markerURL,
+            ]
+            rendered.insert(NSAttributedString(string: superscriptAnnotationNumber(number), attributes: markerAttributes), at: mark.endOffset)
+        }
+        view.attributedText = rendered
         view.onSelection = onSelection
         view.onOpenNote = onOpenNote
+        view.onOpenAnnotationBlock = onOpenAnnotationBlock
     }
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: SelectionTextView, context: Context) -> CGSize? {
         guard let width = proposal.width else { return nil }
@@ -424,13 +524,39 @@ struct CompanionSelectableText: UIViewRepresentable {
     }
 }
 
+struct SelectableTextAnnotationMark: Equatable {
+    var blockOrdinal: Int
+    var startOffset: Int
+    var endOffset: Int
+    var number: Int?
+}
+
+struct SelectableTextNoteReference: Equatable {
+    var startOffset: Int
+    var endOffset: Int
+    var noteId: String
+}
+
+private func superscriptAnnotationNumber(_ value: Int) -> String {
+    let digits: [Character: Character] = ["0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴", "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹"]
+    return String(String(value).map { digits[$0] ?? $0 })
+}
+
 final class SelectionTextView: UITextView, UITextViewDelegate {
     var onSelection: ((String, Bool) -> Void)?
     var onOpenNote: ((String) -> Void)?
+    var onOpenAnnotationBlock: ((Int) -> Void)?
 
     func textView(_ textView: UITextView, primaryActionFor textItem: UITextItem, defaultAction: UIAction) -> UIAction? {
-        guard case let .link(URL) = textItem.content, URL.scheme == "astella-note" else { return defaultAction }
-        let noteId = URL.pathComponents.last ?? ""
+        guard case let .link(url) = textItem.content else { return defaultAction }
+        if url.scheme == "astella-annotation" {
+            guard let blockOrdinal = Int(url.lastPathComponent) else { return nil }
+            return UIAction(title: "查看批注", image: UIImage(systemName: "text.bubble")) { [weak self] _ in
+                self?.onOpenAnnotationBlock?(blockOrdinal)
+            }
+        }
+        guard url.scheme == "astella-note" else { return defaultAction }
+        let noteId = url.pathComponents.last ?? ""
         guard !noteId.isEmpty, noteId != "note" else { return nil }
         return UIAction(title: "打开引用笔记", image: UIImage(systemName: "book")) { [weak self] _ in
             self?.onOpenNote?(noteId.removingPercentEncoding ?? noteId)

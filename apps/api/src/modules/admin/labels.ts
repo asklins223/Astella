@@ -116,7 +116,7 @@ export const JOB_TYPE_LABELS: Record<string, string> = {
   note_expansion_generate: "笔记拓展",
   note_dynamic_artifact_generate: "动态演示",
   note_annotation_explain: "批注解读",
-  card_generation_v2: "学习卡生成",
+  note_learning_card_generate: "学习卡出题",
 };
 
 /** 作业终态。 */
@@ -203,18 +203,10 @@ export const METRIC_FAMILY_LABELS: Record<string, string> = {
 /**
  * 能力开关 → 人话。
  *
- * 这里给的是**产品上的说法**，不是环境变量名：`LEARNING_RUN_ENABLED`
- * 对一个用这个系统的人来说不是"能力开关"，而是"能不能在学笔记时答题"。
+ * 这里给的是**产品上的说法**，不是环境变量名：`COMPANION_JOURNEY_V2`
+ * 对一个用这个系统的人来说不是"能力开关"，而是"伴星会不会主动记住偏好"。
  */
 export const CAPABILITY_LABELS: Record<string, { label: string; detail: string }> = {
-  LEARNING_RUN_ENABLED: {
-    label: "学习答题",
-    detail: "在学笔记里出题、作答、判分并安排复习",
-  },
-  CARD_GENERATION_V2_ENABLED: {
-    label: "学习卡生成",
-    detail: "把笔记自动变成可练习的知识卡",
-  },
   COMPANION_DIALOGUE_V1_ENABLED: {
     label: "伴星对话",
     detail: "与桌面伴星进行文字交流",
@@ -245,8 +237,7 @@ export const CAPABILITY_LABELS: Record<string, { label: string; detail: string }
  * 能力键（`vision` / `embedding` / `agent_turn` …）的短名。
  *
  * 与 {@link CAPABILITY_LABELS} 分开：那一组键的是**环境变量名**（决定功能开不开），
- * 这一组键的是**能力名**（决定用哪个模型）。两者字面上会撞——
- * `CARD_GENERATION_V2_ENABLED` 与 `card_generation_v2` 是两回事，
+ * 这一组键的是**能力名**（决定用哪个模型）。两者字面上会撞，
  * 合成一张表会让其中一个悄悄取到另一个的文案。
  */
 export const CAPABILITY_KIND_LABELS: Record<string, string> = {

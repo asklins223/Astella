@@ -197,6 +197,10 @@ BEGIN
       OWNER TO astella_migrator;
   END IF;
 
+  IF to_regprocedure('public.astella_retire_companion_resume_job_v1(uuid,uuid)') IS NOT NULL THEN
+    ALTER FUNCTION public.astella_retire_companion_resume_job_v1(uuid,uuid) OWNER TO astella_migrator;
+  END IF;
+
   IF to_regprocedure('public.astella_reap_stale_jobs(integer,integer)') IS NOT NULL THEN
     ALTER FUNCTION public.astella_reap_stale_jobs(integer, integer)
       OWNER TO astella_migrator;
@@ -292,6 +296,21 @@ DO $$ BEGIN
   END IF;
 END $$;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO astella_api;
+
+-- Plan 57: note-scoped learning cards. The API gets the broad business CRUD
+-- above; the worker only fills a generated card and grades an attempt, so it
+-- gets exactly those verbs on the five tables it touches.
+DO $$
+BEGIN
+  IF to_regclass('public.note_learning_cards') IS NOT NULL THEN
+    GRANT SELECT, UPDATE ON TABLE public.note_learning_cards TO astella_worker;
+    GRANT SELECT, INSERT ON TABLE public.note_learning_card_questions TO astella_worker;
+    GRANT SELECT, INSERT ON TABLE public.note_learning_card_operation_artifacts TO astella_worker;
+    GRANT SELECT, UPDATE ON TABLE public.note_learning_card_attempts TO astella_worker;
+    GRANT SELECT, INSERT, UPDATE ON TABLE public.note_learning_card_answers TO astella_worker;
+  END IF;
+END
+$$;
 
 -- Memory history is append-only. Both runtimes may read it; the database trigger
 -- writes snapshots with the same transaction as the current-row revision.
@@ -470,7 +489,6 @@ BEGIN
     'sources',
     'source_segments',
     'validation_events',
-    'review_schedules',
     'jobs',
     'search_documents',
     'ai_artifacts',
@@ -503,10 +521,7 @@ BEGIN
     -- （permission denied 被归成 operational_error）。这张表在 roles.sql 里原本零覆盖，
     -- 是在重建容器权限后才暴露出来的——迁移里的 GRANT 会被下面的 REVOKE ALL 抹掉。
     'user_ai_settings',
-    -- companion 处理器读取学习上下文与页面上下文（daily summary / grounded run）。
-    'learning_runs',
-    'learning_tasks',
-    'learning_run_private_contracts',
+    -- companion 处理器读取页面上下文（daily summary / grounded run）。
     'assistant_page_contexts',
     -- 记忆提取器写投递箱后回读去重。
     'assistant_deliveries',
@@ -519,19 +534,6 @@ BEGIN
     -- The initiative handler reads this space's proactive mute switch before
     -- letting her speak on her own; the grant must survive the bootstrap REVOKE ALL.
     'companion_room_profiles',
-    'learning_artifacts',
-    'learning_run_events',
-    'learning_run_idempotency',
-    'learning_task_presentation_history',
-    'learning_task_variants',
-    -- 0296：争议表。到期复习判据（`packages/shared/review-consumable-target.ts`）
-    -- 现在读它——§16.22「争议项不自动重新入队」在**读侧**的那一半就落在这条共享
-    -- 判据上，伴星的到期读数与到期清单都走它。缺 SELECT 的表现不是报错，而是伴星
-    -- 报出的到期数**比队列多**，还把一条正被质疑的目标照常念出来：worker 侧那三条
-    -- 查询各自 catch 过错误，permission denied 到不了用户眼前。
-    'assessment_disputes_v2',
-    -- 无卡笔记目标的到期判据需要核对本人仍有效的笔记订阅。
-    'review_subscriptions_v2',
     'understanding_change_sets',
     'understanding_projection_checkpoints',
     'understanding_route_plans',
@@ -573,7 +575,6 @@ BEGIN
   -- SELECT grants above are intentionally retained because RETURNING and
   -- conflict updates require read access to affected columns.
   FOREACH table_name IN ARRAY ARRAY[
-    'review_schedules',
     'jobs',
     'search_documents'
   ]
@@ -789,11 +790,10 @@ BEGIN
     END IF;
   END LOOP;
 
-  -- V2 事件/revision/origins 追加写（迁移 0162/0166/0167 授权镜像）
+  -- V2 事件/revision/origins 追加写（迁移 0162/0166/0167 授权镜像）。
+  -- Plan 57：旧 learning-card / objective / evidence / candidate 管线表随 0449
+  -- 退役，其授权镜像条目一并删除；下面这些是仍存活的笔记学习产物表。
   FOREACH table_name IN ARRAY ARRAY[
-    'card_domain_events_v2',
-    'learning_card_revisions_v2',
-    'learning_objective_origins_v2',
     -- 0305/0306/0307（39d W7-4）：「今天这一批」的锁、首页「换一个／暂不处理」的略过行。
     -- **它们此前一直不在任何清单里**——表建了、迁移走了、RLS 策略也写了，但受限角色
     -- **没有授权**，于是被测路径一读就 `Failed query`。**新增表必须同时进这两个清单**，
@@ -810,38 +810,9 @@ BEGIN
     END IF;
   END LOOP;
 
-  -- ─── 方案 20 V2（迁移 0135/0138；与 0142 grant repair 对齐）──────────
-  -- V2 管线以 astella_worker（NOBYPASSRLS）直查 V2 表。roles.sql 是唯一
-  -- 授权源：不镜像的话每次 bootstrap 的 REVOKE ALL 会清掉 0135/0138 的
-  -- 迁移授权并导致 worker 管线 permission denied。
-  -- 16 张核心表 full CRUD（outbox claim/complete、runs/plans/candidates、
-  -- objectives/revisions/cards/publications/reminders/receipts/events）。
-  FOREACH table_name IN ARRAY ARRAY[
-    'card_generation_runs_v2',
-    'card_generation_plans_v2',
-    'card_generation_candidates_v2',
-    'learning_objectives_v2',
-    'learning_objective_revisions_v2',
-    'learning_cards_v2',
-    'learning_card_publication_revisions_v2',
-    'card_exposure_ledger_v2',
-    'initial_validation_reminders_v2',
-    'card_activation_receipts_v2',
-    'card_generation_post_activation_consumptions',
-    'card_generation_events_v2',
-    'candidate_evidence_binding_plans_v2',
-    'evidence_eligibility_states_v2',
-    'card_generation_run_outbox_v2',
-    'learning_target_snapshots_v2'
-  ]
-  LOOP
-    IF to_regclass(format('public.%I', table_name)) IS NOT NULL THEN
-      EXECUTE format(
-        'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.%I TO astella_worker',
-        table_name
-      );
-    END IF;
-  END LOOP;
+  -- Plan 57：方案 20 的 16 张 V2 管线表（runs/plans/candidates/objectives/
+  -- cards/publications/exposures/reminders/receipts/events/outbox/targets）随
+  -- 0449 退役，整段授权镜像删除。新链的 worker 授权见上方 note_learning_card_*。
 
   -- capability state：worker 更新/读取 epoch（§18.1）
   IF to_regclass('public.card_content_capability_state') IS NOT NULL THEN
@@ -849,22 +820,9 @@ BEGIN
       TO astella_worker;
   END IF;
 
-  -- 管线写入/回读表（specs/input snapshots/evidence 域/equivalence/lineage/
-  -- exposures/candidate quality+lineage+feedback）：worker SELECT + INSERT
+  -- 管线写入/回读表：worker SELECT + INSERT。Plan 57 后这里只剩仍存活的
+  -- 笔记学习产物（脑图/概览/批注/互动讲解…）；旧制卡管线表随 0449 退役。
   FOREACH table_name IN ARRAY ARRAY[
-    'card_generation_semantic_specs_v2',
-    'card_generation_input_snapshots_v2',
-    'evidence_snapshots_v2',
-    'evidence_quote_copies_v2',
-    'evidence_redactions_v2',
-    'semantic_support_reports_v2',
-    'learning_objective_evidence_bindings_v2',
-    'learning_objective_equivalence_reports_v2',
-    'learning_objective_revision_equivalence_v2',
-    'learning_objective_lineage_v2',
-    'learning_exposures_v2',
-    'card_candidate_quality_reports_v2',
-    'card_candidate_feedback_v2',
     -- 0321–0324: independent note learning jobs read their saved result by
     -- generation_job_id before writing, then insert the completed artifact.
     'note_mind_maps',
@@ -894,6 +852,14 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO astella_worker;
 -- pass revokes ambient access and grants the exact signatures to Worker only.
 REVOKE ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public
   FROM PUBLIC, astella_api, astella_worker;
+
+-- Apply this ACL after the bulk revoke so repeated reconciliation keeps the
+-- scoped resume entry point callable by API, without granting queue access.
+DO $$ BEGIN
+  IF to_regprocedure('public.astella_retire_companion_resume_job_v1(uuid,uuid)') IS NOT NULL THEN
+    GRANT EXECUTE ON FUNCTION public.astella_retire_companion_resume_job_v1(uuid,uuid) TO astella_api;
+  END IF;
+END $$;
 
 -- 扩展函数（pg_trgm / pgvector / …）是安装的库代码，不是应用面：它们的 EXECUTE
 -- 默认来自 PUBLIC，上面的 REVOKE 会一并清掉，若不恢复，任何调用都会
@@ -1096,7 +1062,10 @@ BEGIN
     -- `companion_messages` 的 UPDATE/DELETE 触发器往下调用那一支——缺授权时触发器照样
     -- 被 fire、会话修订号照样前进，但那份盖了被改写区间的摘要再也盖不上作废标记，
     -- 于是读侧继续注入一份自称「更早那段对话」的过期摘要。
-    ('public.astella_invalidate_covered_conversation_summaries(uuid, bigint)', 'astella_api, astella_worker'),
+    -- 迁移器也要给：它拥有全部表，补数据迁移与验收夹具都会改 companion_messages，
+    -- 触发器以调用者身份执行（0433 的触发器函数没有 SECURITY DEFINER），
+    -- 缺这一支时任何以迁移器身份改写消息的操作直接 42501。
+    ('public.astella_invalidate_covered_conversation_summaries(uuid, bigint)', 'astella_api, astella_worker, astella_migrator'),
     -- 0389：交接快照的压缩围栏。worker 把它写在一条 UPDATE 的 WHERE 里
     -- （companion-dialogue-store.ts:469），缺授权时整条 UPDATE 抛错，
     -- 长会话压缩交接快照那一步必挂；平时不压缩就一声不响，所以一直没被发现。
@@ -1104,6 +1073,10 @@ BEGIN
     -- 0438：交接快照的压缩追加函数——worker 推进快照的唯一入口（写在 SELECT 里调用，
     -- 缺授权时那一条历史压力压缩整步 42501，长会话才走得到）。
     ('public.astella_append_handoff_compactions_v1(uuid,text,jsonb,text)', 'astella_worker'),
+    -- 0447：用户续跑一条失败的伴星运行时，API 退役旧作业租约的唯一入口。
+    -- 函数自己校验运行归属、作业身份与 payload，API 不直接拿 jobs 的写权限。
+    -- 三处要一起改：迁移的 GRANT（0447 已有）、这里、下面两份清单。
+    ('public.astella_retire_companion_resume_job_v1(uuid,uuid)', 'astella_api'),
     ('public.companion_process_event_payload(text,jsonb)', 'astella_api, astella_worker')
   ) AS required(signature, roles) LOOP
     IF to_regprocedure(fn.signature) IS NOT NULL THEN
@@ -1798,20 +1771,19 @@ BEGIN
       ('note_overviews', true, true, false, false),
       ('note_annotations', true, true, false, false),
       ('note_learning_artifacts', true, true, false, false),
+      -- Plan 57: worker fills a generated card and grades one attempt.
+      ('note_learning_cards', true, false, true, false),
+      ('note_learning_card_questions', true, true, false, false),
+      ('note_learning_card_operation_artifacts', true, true, false, false),
+      ('note_learning_card_attempts', true, false, true, false),
+      ('note_learning_card_answers', true, true, true, false),
       ('note_expansion_tasks', true, true, false, false),
       ('note_image_assets', true, false, false, false),
       ('sources', true, false, true, false),
       ('source_segments', true, true, false, true),
-      ('validation_events', true, true, false, false),
-      ('review_schedules', true, true, true, false),
       ('jobs', true, true, true, false),
       ('search_documents', true, true, true, true),
       ('ai_artifacts', true, true, false, false),
-      ('review_attempts', true, false, true, false),
-      ('validation_questions', true, true, false, false),
-      ('validation_assistance_exposures', true, false, false, false),
-      ('learning_unit_exposure', true, true, true, false),
-      ('learning_exposure_dependency_ledger', true, true, true, false),
       -- Before 0422 the worker cannot create proactive runs/conversations.
       -- Bootstrap runs against that old schema before applying migrations.
       ('companion_conversations', true, to_regclass('public.companion_participation_preference_versions') IS NOT NULL, true, false),
@@ -1840,10 +1812,7 @@ BEGIN
       -- 写/改=「以后都用河南话」这类持续要求由 worker 的语义判定落库。不删行：
       -- 撤回方言是删 jsonb 里的 tts_dialect 键，同一行还放着作答模态与音色选择。
       ('user_learning_preferences', true, true, true, false),
-      -- companion 处理器的学习上下文读取面。
-      ('learning_runs', true, false, false, false),
-      ('learning_tasks', true, false, false, false),
-      ('learning_run_private_contracts', true, false, false, false),
+      -- companion 处理器的页面上下文读取面。
       ('assistant_page_contexts', true, false, false, false),
       -- 记忆提取器投递箱：写入后回读去重。
       ('assistant_deliveries', true, true, false, false),
@@ -1851,29 +1820,12 @@ BEGIN
       ('companion_journeys', true, false, false, false),
       ('companion_sandbox_namespaces', true, false, false, false),
       ('companion_room_profiles', true, false, false, false),
-      ('learning_artifacts', true, false, false, false),
-      ('learning_run_events', true, false, false, false),
-      ('learning_run_idempotency', true, false, false, false),
-      ('learning_task_presentation_history', true, false, false, false),
-      ('learning_task_variants', true, false, false, false),
       ('understanding_change_sets', true, false, false, false),
       ('understanding_projection_checkpoints', true, false, false, false),
       ('understanding_route_plans', true, false, false, false),
       ('companion_journey_pending_events', true, true, false, false),
       ('learning_metric_events', true, true, false, false),
       ('companion_voice_artifacts', true, true, true, false),
-      ('learning_task_disclosure_profiles', true, true, true, false),
-      ('learning_task_private_solutions', true, true, true, false),
-      ('learning_task_safety_reports', true, true, true, false),
-      ('learning_assessments', true, false, true, false),
-      ('learning_run_processing_outbox', true, false, true, false),
-      ('card_domain_events_v2', true, true, true, true),
-      ('learning_card_revisions_v2', true, true, true, true),
-      ('learning_objective_origins_v2', true, true, true, true),
-      -- 0305/0306/0307（39d W7-4）：与上面同一组。这两张表**只有本人那一侧读写**
-      -- （worker 那一支不进），所以四列都给。
-      ('daily_review_batches_v2', true, true, true, true),
-      ('home_suggestion_dismissals_v2', true, true, true, true),
       -- 0170/0173 只给 SELECT；0178 补 INSERT/UPDATE（关系状态写入 + 每日衰减）。
       ('pet_profiles', true, true, true, false),
       ('assistant_memory_items', true, true, true, true),
@@ -1904,42 +1856,6 @@ BEGIN
       ('companion_diary_generation_checkpoints', true, true, true, true),
       ('understanding_events', false, true, false, false),
       ('ai_audit_log', false, true, false, false),
-      -- 方案 20 V2（迁移 0135/0138；与 grant 授权镜像一致）
-      ('card_generation_runs_v2', true, true, true, true),
-      ('card_generation_plans_v2', true, true, true, true),
-      ('card_generation_candidates_v2', true, true, true, true),
-      ('learning_objectives_v2', true, true, true, true),
-      ('learning_objective_revisions_v2', true, true, true, true),
-      ('learning_cards_v2', true, true, true, true),
-      ('learning_card_publication_revisions_v2', true, true, true, true),
-      ('card_exposure_ledger_v2', true, true, true, true),
-      ('initial_validation_reminders_v2', true, true, true, true),
-      ('card_activation_receipts_v2', true, true, true, true),
-      ('card_generation_post_activation_consumptions', true, true, true, true),
-      ('card_generation_events_v2', true, true, true, true),
-      ('candidate_evidence_binding_plans_v2', true, true, true, true),
-      ('evidence_eligibility_states_v2', true, true, true, true),
-      ('card_generation_run_outbox_v2', true, true, true, true),
-      ('learning_target_snapshots_v2', true, true, true, true),
-      ('card_content_capability_state', true, true, true, false),
-      ('card_generation_semantic_specs_v2', true, true, false, false),
-      ('card_generation_input_snapshots_v2', true, true, false, false),
-      ('evidence_snapshots_v2', true, true, false, false),
-      ('evidence_quote_copies_v2', true, true, false, false),
-      ('evidence_redactions_v2', true, true, false, false),
-      ('semantic_support_reports_v2', true, true, false, false),
-      ('learning_objective_evidence_bindings_v2', true, true, false, false),
-      ('learning_objective_equivalence_reports_v2', true, true, false, false),
-      ('learning_objective_revision_equivalence_v2', true, true, false, false),
-      ('learning_objective_lineage_v2', true, true, false, false),
-      ('learning_exposures_v2', true, true, false, false),
-      ('card_candidate_quality_reports_v2', true, true, false, false),
-      ('card_candidate_feedback_v2', true, true, false, false),
-      -- 0296：**只读**。worker 侧唯一的读点是到期复习判据里那个
-      -- `NOT EXISTS (... assessment_disputes_v2 ...)`（§16.22 读侧）。
-      -- 不给 INSERT/UPDATE/DELETE：开争议与复核都只由 API 的 run-disputes 做，
-      -- worker 写它就是绕开"一个判定至多一份争议"与"复核至多一次"那两条库级闸。
-      ('assessment_disputes_v2', true, false, false, false),
       -- 方案 50 §8.3：反思那一行与它的模型检查点由 worker 全权维护；
       -- 派生来源边只写与删（边一旦落下就不改，改等于伪造当时的依据）。
       ('companion_self_notes', true, true, true, true),
@@ -1953,8 +1869,7 @@ BEGIN
       ('companion_self_note_versions', true, false, false, false),
       ('companion_reflections', true, true, true, true),
       ('companion_reflection_sources', true, true, false, true),
-      ('companion_reflection_checkpoints', true, true, true, true),
-      ('review_subscriptions_v2', true, false, false, false)
+      ('companion_reflection_checkpoints', true, true, true, true)
   ), actual AS (
     SELECT
       c.relname AS table_name,
@@ -2202,6 +2117,9 @@ BEGIN
     -- 0438：交接快照压缩追加（与上面那份 GRANT、下面那份必检清单成对）。
     AND p.oid IS DISTINCT FROM
       to_regprocedure('public.astella_append_handoff_compactions_v1(uuid,text,jsonb,text)')
+    -- 0447：用户续跑时退役旧作业租约（与上面那份 GRANT、下面那份必检清单成对）。
+    AND p.oid IS DISTINCT FROM
+      to_regprocedure('public.astella_retire_companion_resume_job_v1(uuid,uuid)')
     -- 扩展函数（pg_trgm/pgvector/…）按 deptype='e' 整体放行：它们是库代码，
     -- 上面按扩展统一恢复 EXECUTE，逐个列举会再次变成打地鼠。
     AND NOT EXISTS (
@@ -2313,6 +2231,10 @@ BEGIN
     -- privileges），而 dev 库因为尚未应用 0433 一时看不出来。
     AND p.oid IS DISTINCT FROM
       to_regprocedure('public.astella_invalidate_covered_conversation_summaries(uuid, bigint)')
+    -- 0447：续跑失败运行时退役旧作业租约（与上面那份 GRANT、下面那份必检清单成对）。
+    -- 缺这行豁免，任何全新环境在引导自检时就 RAISE，而不是等到用户点"继续"才失败。
+    AND p.oid IS DISTINCT FROM
+      to_regprocedure('public.astella_retire_companion_resume_job_v1(uuid,uuid)')
     AND NOT EXISTS (
       SELECT 1 FROM pg_depend d
       WHERE d.objid = p.oid AND d.deptype = 'e'
@@ -2436,6 +2358,9 @@ BEGIN
       ('astella_worker', 'astella_assert_handoff_snapshot_fence(uuid,integer)'),
       -- 0438：worker 推进交接快照的唯一入口。
       ('astella_worker', 'astella_append_handoff_compactions_v1(uuid,text,jsonb,text)'),
+      -- 0447：续跑失败运行时退役旧作业租约。缺它时 API 的 resume 直接 permission
+      -- denied，用户点"从中断处继续"只会得到一个不明所以的失败。
+      ('astella_api', 'astella_retire_companion_resume_job_v1(uuid,uuid)'),
       -- 0433：改写/删除消息的触发器往下调用这一支给摘要盖区间级作废标记，
       -- api 与 worker 两条写路径都会触发。
       ('astella_api', 'astella_invalidate_covered_conversation_summaries(uuid, bigint)'),

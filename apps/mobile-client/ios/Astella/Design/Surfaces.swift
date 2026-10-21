@@ -104,38 +104,53 @@ struct NoticeSurface<Content: View>: View {
 }
 
 /// Quiet, neutral glass: one blur plane, a uniform edge and a contact shadow.
+/// On iOS 26+ the interactive surfaces use the system Liquid Glass material,
+/// which supplies its own edge light and press response; non-interactive paper
+/// surfaces keep the built-in style so content never sits on refractive glass.
 struct StudyGlassSurfaceStyle: ViewModifier {
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceTransparency) private var opaque
     var radius: CGFloat
     var interactive = false
     var tint: Color? = nil
+
+    @ViewBuilder
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
-        content
-            .background {
-                ZStack {
-                    if opaque { shape.fill(StudyPalette.paper) }
-                    else { shape.fill(.ultraThinMaterial) }
-                    if let tint {
-                        shape.fill(tint)
-                    } else {
-                        shape.fill(LinearGradient(
-                            colors: scheme == .dark
-                                ? [StudyPalette.paper.opacity(0.16), StudyPalette.sky.opacity(0.10), StudyPalette.paper.opacity(0.08)]
-                                : [Color.white.opacity(0.76), Color.white.opacity(0.42), StudyPalette.sky.opacity(0.30)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ))
+        if #available(iOS 26.0, *), interactive, !opaque {
+            content
+                .glassEffect(nativeGlass, in: shape)
+        } else {
+            content
+                .background {
+                    ZStack {
+                        if opaque { shape.fill(StudyPalette.paper) }
+                        else { shape.fill(.ultraThinMaterial) }
+                        if let tint {
+                            shape.fill(tint)
+                        } else {
+                            shape.fill(LinearGradient(
+                                colors: scheme == .dark
+                                    ? [StudyPalette.paper.opacity(0.16), StudyPalette.sky.opacity(0.10), StudyPalette.paper.opacity(0.08)]
+                                    : [Color.white.opacity(0.76), Color.white.opacity(0.42), StudyPalette.sky.opacity(0.30)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ))
+                        }
                     }
                 }
-            }
-            .overlay { shape.stroke(tint == nil ? Color.white.opacity(scheme == .dark ? 0.15 : 0.82) : .white.opacity(0.24), lineWidth: 0.85) }
-            .overlay(alignment: .top) {
-                shape.stroke(StudyPalette.paperEdge.opacity(scheme == .dark ? 0.13 : 0.33), lineWidth: 0.55)
-                    .padding(1)
-                    .mask(LinearGradient(colors: [.white, .clear], startPoint: .top, endPoint: .bottom))
-            }
-            .shadow(color: StudyPalette.ink.opacity(scheme == .dark ? 0.12 : interactive ? 0.07 : 0.045), radius: interactive ? 17 : 11, x: 0, y: interactive ? 8 : 5)
+                .overlay { shape.stroke(tint == nil ? Color.white.opacity(scheme == .dark ? 0.15 : 0.82) : .white.opacity(0.24), lineWidth: 0.85) }
+                .overlay(alignment: .top) {
+                    shape.stroke(StudyPalette.paperEdge.opacity(scheme == .dark ? 0.13 : 0.33), lineWidth: 0.55)
+                        .padding(1)
+                        .mask(LinearGradient(colors: [.white, .clear], startPoint: .top, endPoint: .bottom))
+                }
+                .shadow(color: StudyPalette.ink.opacity(scheme == .dark ? 0.12 : interactive ? 0.07 : 0.045), radius: interactive ? 17 : 11, x: 0, y: interactive ? 8 : 5)
+        }
+    }
+
+    @available(iOS 26.0, *)
+    private var nativeGlass: Glass {
+        (tint.map { Glass.regular.tint($0) } ?? .regular).interactive()
     }
 }

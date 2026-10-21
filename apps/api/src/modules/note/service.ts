@@ -5,10 +5,9 @@ import { deriveNoteTitle, noteDocBlocksFromRows, projectFragmentBlocks, setNoteT
 import { type ApiTransaction } from "../../db/client.ts";
 import { notes, noteVersions, noteBlocks, noteImageAssets } from "@astella/shared/db-schema/note";
 import { searchDocuments } from "@astella/shared/db-schema/search";
-import { learningCardsV2, learningObjectivesV2 } from "@astella/shared/db-schema/card-generation-v2";
+import { noteLearningCards } from "@astella/shared/db-schema/note-learning-cards";
 import { computeContentHash } from "./content-hash.ts";
 import { upsertSearchDocument, type NoteSearchDocument } from "./search-projection.ts";
-import { refreshNoteObjectiveSearchProjections } from "../learning-objectives/search-projection.ts";
 import { noteShelfStatesByNoteId } from "./shelf-state.ts";
 import { logger } from "../../lib/logger.ts";
 import { DomainError } from "@astella/shared";
@@ -511,6 +510,7 @@ export async function getNoteWithVersion(
   noteId: string,
   workspaceId: string,
   userId: string,
+  requestedVersionId?: string,
 ) {
   // CONC-03: 不返回已软删除的笔记
   // 批次 4.5: 读点与写点是同一条判据。这里漏掉就等于"列表里看不见、知道 uuid 就能读"。
@@ -537,10 +537,21 @@ export async function getNoteWithVersion(
     orderBy: (b, { asc: asc1 }) => [asc1(b.ordinal)],
   });
 
+  // Resolve an explicit historical identity under the same visibility check.
+  // Never substitute today's content when a saved result points to an older version.
+  const requestedVersion = requestedVersionId && requestedVersionId !== versionId
+    ? await executor.query.noteVersions.findFirst({ where: and(eq(noteVersions.id, requestedVersionId), eq(noteVersions.noteId, noteId)) })
+    : requestedVersionId ? version : undefined;
+  if (requestedVersionId && !requestedVersion) return null;
+  const requestedBlocks = requestedVersion && requestedVersion.id !== versionId
+    ? await executor.query.noteBlocks.findMany({ where: eq(noteBlocks.versionId, requestedVersion.id), orderBy: (b, { asc: asc1 }) => [asc1(b.ordinal)] })
+    : blocks;
+
   return {
     note,
     version,
     blocks: blocks as NoteBlock[],
+    ...(requestedVersion ? { requestedVersion: { ...requestedVersion, blocks: requestedBlocks as NoteBlock[] } } : {}),
   };
 }
 
@@ -707,7 +718,6 @@ export async function setNoteShareScope(
     .returning();
 
   // 笔记正文的可见性仍由查询侧 join 判断；目标索引正文可能带这篇公开标题，需同步移除。
-  await refreshNoteObjectiveSearchProjections(tx, workspaceId, noteId);
   return { note: updated, changed: true };
 }
 
@@ -758,7 +768,6 @@ export async function deleteNote(
   await deleteSearchDocuments(executor, workspaceId, [
     { objectType: "note", objectId: noteId },
   ]);
-  await refreshNoteObjectiveSearchProjections(executor, workspaceId, noteId);
 
   return { ok: true as const };
 }
@@ -836,7 +845,6 @@ export async function restoreDeletedNote(
     });
   }
 
-  await refreshNoteObjectiveSearchProjections(executor, workspaceId, noteId);
 
   return result;
 }
@@ -893,47 +901,18 @@ export async function physicalDeleteNote(
     const versionIds = versionRows.map((v) => v.id);
 
     /**
-     * L17（用户口径：卡留着但退役）：删这篇笔记之前，先把**由它的版本产出的卡与目标**退役。
-     *
-     * 顺序是硬的，不是风格：外键 `learning_cards_v2.note_version_id` 自 0274 起是 SET NULL，
-     * 而 `visibleCardsCondition` 的第一支是 `note_version_id IS NULL`（"没有可追溯来源的卡
-     * 不受这条约束"）。先断线后退役 = 那张卡在笔记消失后**回到复习队列**；
-     * 先退役后断线 = 它 lifecycle 已经不是 active，队列与卡列表两条判据都进不来。
-     * 卡的正文与发布版本、她练过的 exposure 全部保留（"留着"那半句话）。
-     *
-     * 目标一起退役：一个目标最多一张 active 卡（`lc_v2_ws_obj_active_idx` 是部分唯一索引），
-     * 所以这里不存在"连带打死另一篇来源的活卡"；epoch 前移与 archiveCardV2 同形。
+     * Plan 57: cards are owned by the note. Retire them before the physical
+     * delete so the unique active-card index cannot resurrect a stale paper on
+     * a restored note; the rows themselves stay for history.
      */
-    if (versionIds.length > 0) {
-      const retiredCards = await tx
-        .update(learningCardsV2)
-        .set({ lifecycle: "archived", updatedAt: sql`now()` })
-        .where(and(
-          inArray(learningCardsV2.noteVersionId, versionIds),
-          eq(learningCardsV2.lifecycle, "active"),
-        ))
-        .returning({ objectiveId: learningCardsV2.objectiveId });
-      const objectiveIds = [...new Set(retiredCards.map((c) => c.objectiveId))];
-      if (objectiveIds.length > 0) {
-        await tx
-          .update(learningObjectivesV2)
-          .set({
-            lifecycle: "archived",
-            lifecycleEpoch: sql`${learningObjectivesV2.lifecycleEpoch} + 1`,
-            updatedAt: sql`now()`,
-          })
-          .where(and(
-            inArray(learningObjectivesV2.objectiveId, objectiveIds),
-            eq(learningObjectivesV2.lifecycle, "active"),
-          ));
-      }
-      if (retiredCards.length > 0) {
-        logger.info(
-          { noteId, retiredCards: retiredCards.length },
-          "cards retired before physical note deletion (doc 34 L17)",
-        );
-      }
-    }
+    await tx
+      .update(noteLearningCards)
+      .set({ status: "archived", updatedAt: sql`now()` })
+      .where(and(
+        eq(noteLearningCards.workspaceId, workspaceId),
+        eq(noteLearningCards.noteId, noteId),
+        eq(noteLearningCards.status, "active"),
+      ));
 
     // 收集图片资产与旧版 Markdown object key。Typed asset 可能被同一
     // workspace 的其他笔记版本复用，必须在级联删除后重新检查引用，
@@ -1199,7 +1178,6 @@ export async function restoreNoteVersion(
       },
     );
 
-    if (titleChanged) await refreshNoteObjectiveSearchProjections(tx, workspaceId, noteId);
     const result = {
       note: {
         ...note,

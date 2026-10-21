@@ -4,7 +4,14 @@ import type { DesktopSourceListItem } from "@astella/shared/desktop-surface-cont
 import type { NoteBlockProjectionV1 } from "@astella/shared/note-projection-contracts";
 import { gatewayErrorMessage } from "../../../../app/client/desktop-client";
 import { readAuthenticatedSession } from "../../../../app/home/surface-session";
-import { noteImageHtmlAttrs } from "@astella/shared/note-markdown";
+import {
+  noteBlockMarkdown,
+  noteFootnoteBody,
+  noteImageHtmlAttrs,
+  noteMarkdownTree,
+  type NoteMarkdownNode,
+  type NoteMarkdownTree,
+} from "@astella/shared/note-markdown";
 
 export { readAuthenticatedSession };
 
@@ -268,8 +275,11 @@ export function parseImageBlock(content: string): { readonly alt: string; readon
 }
 
 /**
- * Note blocks arrive as HTML-ish text. Every note surface shows them as prose,
- * so the markup is flattened once here instead of in each page body.
+ * Note blocks arrive as HTML-ish text. The **reading** surfaces turn their
+ * Markdown into elements themselves, so this only flattens the inline HTML
+ * wrapper (`<br>`, entities) that a block may carry. Previews must use
+ * `noteBlockPlainText` below instead: block content is stored as Markdown, and
+ * flattening HTML alone used to print `# heading` / `- item` verbatim.
  */
 export function noteBlockText(value: string): string {
   if (!/<\/?[a-z][^>]*>/i.test(value)) return value;
@@ -284,14 +294,94 @@ export function noteBlockText(value: string): string {
     .replace(/&quot;/gi, '"');
 }
 
+/**
+ * The text a reader actually sees for one block: Markdown syntax removed, runs
+ * of whitespace collapsed. Heading markers, list bullets/numbering, emphasis,
+ * backticks, link destinations and image syntax leave no characters, while the
+ * words they wrap stay. The block is parsed through the same Markdown wrapper
+ * the reading view uses for it (`noteBlockMarkdown`), so a heading/list/quote
+ * block whose content is stored without its Markdown wrapper still works.
+ */
+export function noteBlockPlainText(block: Pick<NoteBlockProjectionV1, "type" | "content">): string {
+  // 图片块整行存的就是 `![alt](url)`；预览要说的仍是"这一版里有什么"，只留说明文字。
+  if (block.type === "image") return parseImageBlock(block.content)?.alt ?? "";
+  // A footnote definition is metadata for a reference in prose, not a paragraph:
+  // its rendered shell ("脚注", "返回引用") must not leak into a preview.
+  if (noteFootnoteBody(block.content)) return "";
+  const source = noteBlockMarkdown(block.type, block.content);
+  return noteBlockText(markdownPlainText(noteMarkdownTree(source))).replace(/\s+/g, " ").trim();
+}
+
+/** Block-level elements separate two runs of displayed prose. */
+const PLAIN_TEXT_BLOCK_TAGS: Record<string, true> = {
+  p: true, h1: true, h2: true, h3: true, h4: true, h5: true, h6: true,
+  li: true, blockquote: true, pre: true, ul: true, ol: true,
+  table: true, thead: true, tbody: true, tr: true, td: true, th: true,
+  div: true, section: true, aside: true, header: true, footer: true,
+};
+
+/** Text nodes of a rendered Markdown tree, with block-level separators kept. */
+function markdownPlainText(node: NoteMarkdownTree | NoteMarkdownNode): string {
+  if (node.type === "text") return node.value;
+  if (node.type === "root") return node.children.map(markdownPlainText).join("");
+  if (node.type !== "element") return "";
+  // An image is an atom; its description is the only readable part.
+  if (node.tagName === "img") return String(node.properties.alt ?? "");
+  // `<br>` separates two visible lines: without a space English words would fuse.
+  if (node.tagName === "br") return " ";
+  // A checkbox in a task list has no text of its own; the label follows it.
+  if (node.tagName === "input") return "";
+  // `[toc]` renders as a nav of heading links: an index, not prose. A shelf
+  // preview must not repeat the whole outline.
+  if (node.tagName === "nav" && node.properties.dataNoteToc !== undefined) return "";
+  // A footnote reference is a superscript number; the sentence itself reads cleaner without it.
+  if (node.tagName === "sup" && node.children.some((child) =>
+    child.type === "element" && child.tagName === "a" && child.properties.dataFootnoteRef !== undefined)) return "";
+  const content = node.children.map(markdownPlainText).join("");
+  // Two list items (or two paragraphs inside one stored block) are two runs of
+  // prose; joining their text directly would fuse them into one word.
+  return PLAIN_TEXT_BLOCK_TAGS[node.tagName] ? ` ${content} ` : content;
+}
+
+export type NoteProseOptions = {
+  /**
+   * The title printed by the surface that shows the prose (a shelf card heading,
+   * the reading page header). AI-generated notes start with a `# <title>`
+   * heading; that leading copy is dropped from the prose because the title is
+   * already on screen. Stored blocks and their ordinals are never changed.
+   */
+  readonly title?: string | null;
+};
+
+/**
+ * The first block when it is a heading repeating the note title, else null.
+ * Both the shelf card and the reading page print the title above the body, so
+ * keeping the body-level copy would show the same title twice.
+ */
+export function noteLeadingTitleBlock(
+  blocks: readonly NoteBlockProjectionV1[],
+  title: string | null | undefined,
+): NoteBlockProjectionV1 | null {
+  const first = blocks[0];
+  const expected = title?.replace(/\s+/g, " ").trim();
+  if (!first || !expected || first.type !== "heading") return null;
+  return noteBlockPlainText(first) === expected ? first : null;
+}
+
+function blocksWithoutLeadingTitle(
+  blocks: readonly NoteBlockProjectionV1[],
+  title: string | null | undefined,
+): readonly NoteBlockProjectionV1[] {
+  return noteLeadingTitleBlock(blocks, title) ? blocks.slice(1) : blocks;
+}
+
 /** The whole version as one line of prose, with runs of whitespace collapsed. */
-export function noteBodyText(blocks: readonly NoteBlockProjectionV1[]): string {
-  return blocks
-    .map((block) => block.type === "image"
-      // 图片块整行存的就是 `![alt](url)`，直接 join 会把 markdown 语法漏进
-      // 摘要行。这里只留说明文字——预览要说的仍是"这一版里有什么"。
-      ? parseImageBlock(block.content)?.alt ?? ""
-      : noteBlockText(block.content))
+export function noteBodyText(
+  blocks: readonly NoteBlockProjectionV1[],
+  options: NoteProseOptions = {},
+): string {
+  return blocksWithoutLeadingTitle(blocks, options.title)
+    .map(noteBlockPlainText)
     .join(" ")
     .replace(/\s+/g, " ")
     .trim();
@@ -304,10 +394,12 @@ export function noteBodyText(blocks: readonly NoteBlockProjectionV1[]): string {
  * 空段落（编辑器光标的落点）不算正文。列表卡以前直接数 `blocks.length`，于是同一张卡上
  * 会同时写"1 段正文"和"这一版还没有正文段落"——两句话互否，而读者只能信一句。
  */
-export function noteParagraphCount(blocks: readonly NoteBlockProjectionV1[]): number {
-  return blocks.filter((block) => (block.type === "image"
-    ? (parseImageBlock(block.content)?.alt ?? "").trim().length > 0
-    : noteBlockText(block.content).trim().length > 0)).length;
+export function noteParagraphCount(
+  blocks: readonly NoteBlockProjectionV1[],
+  options: NoteProseOptions = {},
+): number {
+  return blocksWithoutLeadingTitle(blocks, options.title)
+    .filter((block) => noteBlockPlainText(block).length > 0).length;
 }
 
 /**

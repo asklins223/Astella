@@ -3,10 +3,9 @@ import { createPortal } from "react-dom";
 import { ArrowUpRight, BookOpenText, Check, ChevronDown, ChevronLeft, ChevronRight, LoaderCircle, Settings2, X } from "lucide-react";
 import { useCompanionFloatingPlacement } from "../bubble/use-companion-floating-placement";
 import { CompanionGoalControls } from "./CompanionGoalControls";
-import { CompanionCardTasks } from "../journal/CompanionCardTasks";
 import { isCompanionComposition } from "../content/companion-composer-key";
 import { agentGoalActive, type AgentGoalsController } from "./use-agent-goals";
-import { artifactLabel, goalHeadline, goalNextHint, goalStatusText, goalTitle, latestGoalArtifacts, openAgentArtifact } from "./agent-goal-presentation";
+import { artifactLabel, goalNextHint, goalProgressLine, goalStatusText, goalTitle, latestGoalArtifacts, previewAgentArtifact } from "./agent-goal-presentation";
 
 export function CompanionGoalBubble({ anchorRef, motionMode, blocked, open, selectedId, goals, onOpen, onClose, onSelect, onDetails, onChat }: {
   anchorRef: RefObject<HTMLDivElement | null>; motionMode: "full" | "lite" | "off"; blocked: boolean;
@@ -32,6 +31,7 @@ export function CompanionGoalBubble({ anchorRef, motionMode, blocked, open, sele
     if (!visible) return;
     const escape = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.defaultPrevented || isCompanionComposition(event)) return;
+      if (document.querySelector('dialog[open], [role="dialog"][aria-modal="true"], [role="alertdialog"][aria-modal="true"]')) return;
       event.preventDefault(); event.stopPropagation();
       if (adjusting) { setAdjusting(false); adjustRef.current?.focus({ preventScroll: true }); }
       else { onClose(); buttonRef.current?.focus({ preventScroll: true }); }
@@ -52,20 +52,20 @@ export function CompanionGoalBubble({ anchorRef, motionMode, blocked, open, sele
       data-side={side} data-blocked={!visible || undefined}>
       <div ref={headRef} className="companion-hud__head">
         {visible ? <section className="companion-hud__output companion-goal-bubble" aria-label="伴星交给我的事" aria-busy={initialLoading}>
-          <header className="companion-goal-bubble__header"><span>{selected ? goalStatusText[selected.status] : "交给我的事"}</span>
+          <header className="companion-goal-bubble__header"><span className="companion-goal-bubble__status" data-state={selected?.status ?? "none"}><i aria-hidden="true" />{selected ? goalStatusText[selected.status] : "交给我的事"}</span>
             <button type="button" aria-label="收起任务气泡" onClick={close}><X size={16} /></button></header>
           <div className="companion-goal-bubble__body">
-            <h2 ref={titleRef} tabIndex={-1}>{selected ? goalHeadline(selected) : initialLoading ? "正在加载任务…" : initialError ? "任务记录没有加载成功" : "把一件事交给我"}</h2>
+            <h2 ref={titleRef} tabIndex={-1}>{selected ? goalTitle(selected) : initialLoading ? "正在加载任务…" : initialError ? "任务记录没有加载成功" : "把一件事交给我"}</h2>
             {selected ? <>
-              <p className="companion-goal-bubble__intent" title={selected.goal}>{goalTitle(selected)}</p>
+              <p className="companion-goal-bubble__progress" data-state={selected.status}>{goalProgressLine(selected)}</p>
               {selected.artifacts.length ? <div className="companion-goal-bubble__results" aria-label="做好的成果">
-                {artifacts.slice(0, moreResults ? artifacts.length : 3).map(artifact => <button type="button" key={artifact.id} onClick={() => { if (openAgentArtifact(artifact, goals.scope)) close(); }}>
+                <p className="companion-goal-bubble__section">成果 <span>{artifacts.length}</span></p>
+                {artifacts.slice(0, moreResults ? artifacts.length : 3).map(artifact => <button type="button" key={artifact.id} onClick={event => { if (previewAgentArtifact(artifact, goals.scope, selected.runId, artifactLabel(artifact, selected), event.currentTarget)) close(); }}>
                   <Check size={13} /><span>{artifactLabel(artifact, selected)}</span><ArrowUpRight size={13} />
                 </button>)}
                 {artifacts.length > 3 ? <button type="button" className="companion-goal-bubble__more-results" aria-expanded={moreResults}
                   onClick={() => setMoreResults(value => !value)}>{moreResults ? "收起更多成果" : `其余 ${artifacts.length - 3} 份成果`}</button> : null}
               </div> : null}
-              <CompanionCardTasks operations={selected.operations} artifacts={selected.artifacts} scope={goals.scope} onOpen={close} />
               <p className="companion-goal-bubble__hint" role="status">{goalNextHint(selected)}</p>
               {adjusting ? <CompanionGoalControls run={selected} goals={goals} /> : null}
             </> : !initialLoading && !initialError ? <><p className="companion-goal-bubble__hint">告诉我想做什么，例如整理笔记、解释问题，或准备学习卡。</p>
@@ -73,8 +73,8 @@ export function CompanionGoalBubble({ anchorRef, motionMode, blocked, open, sele
             {goals.error ? <p className="companion-goal-error" role="alert">{goals.error}<button type="button" onClick={() => void goals.refresh()}>重新读取</button></p> : null}
           </div>
           <footer className="companion-goal-bubble__footer">
-            {selected ? <><button ref={adjustRef} type="button" aria-expanded={adjusting} onClick={() => setAdjusting(value => !value)}><Settings2 size={14} />调整<ChevronDown size={12} /></button>
-              <button type="button" onClick={() => onDetails(selected.runId)}><BookOpenText size={14} />去手记看完整记录</button></> : null}
+            {selected ? <><button type="button" className="companion-goal-bubble__open-task" onClick={() => onDetails(selected.runId)}><BookOpenText size={14} />打开任务页<ArrowUpRight size={12} /></button>
+              <button ref={adjustRef} type="button" aria-expanded={adjusting} onClick={() => setAdjusting(value => !value)}><Settings2 size={14} />调整<ChevronDown size={12} /></button></> : null}
           </footer>
           {goals.items.length > 1 ? <nav className="companion-goal-bubble__paging" aria-label="切换交给我的事">
             <button type="button" aria-label="上一件事" disabled={index === 0 || Boolean(goals.pending)} onClick={() => onSelect(goals.items[index-1].runId)}><ChevronLeft size={14} /></button>

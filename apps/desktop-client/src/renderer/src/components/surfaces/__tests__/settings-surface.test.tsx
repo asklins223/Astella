@@ -79,16 +79,11 @@ function capabilities(companionAllowed: boolean, dialogueEnabled = false) {
     actionCapabilities: {
       "source.read": "denied", "source.create": "allowed", "source.update": "allowed", "source.archive": "allowed", "source.createNote": "allowed",
       "note.read": "allowed", "note.create": "allowed", "note.save": "allowed", "note.delete": "allowed", "note.restore": "allowed", "note.permanentDelete": "allowed",
-      "objective.read": "allowed", "review.read": "allowed", "understanding.read": "denied", "search.read": "denied",
-      "card_generation.start": "denied", "card_generation.review": "denied", "card_generation.reveal": "denied", "card_generation.activate": "denied", "card_generation.cancel": "denied", "card_generation.close": "denied",
-      "learning_run.read": "denied", "learning_run.start": "denied", "learning_run.saveDraft": "denied", "learning_run.submit": "denied", "learning_run.action": "denied",
+      "understanding.read": "denied", "search.read": "denied",
       "companion.read": action, "companion.sendMessage": action, "companion.decideProposal": action,
       "settings.read": "allowed", "settings.update": "allowed",
     },
     featureAvailability: {
-      learning_objective_system_v3: { state: "enabled" as const },
-      learning_run_v2: { state: "disabled" as const, reason: "error.feature_disabled" as const },
-      card_generation_v2: { state: "disabled" as const, reason: "error.feature_disabled" as const },
       companion_dialogue_v1: dialogueEnabled ? { state: "enabled" as const } : { state: "disabled" as const, reason: "error.feature_disabled" as const },
       companion_voice_dialogue_v1: { state: "disabled" as const, reason: "error.feature_disabled" as const },
     },
@@ -340,7 +335,6 @@ function installApi(options: {
       exportMarkdown: vi.fn(async () => ok({ version: 1 as const, canceled: false, directory: "/Users/reader/Documents/书房笔记",
         total: 12, exported: 12, failed: 0 })),
     },
-    objective: { list: vi.fn(async () => ok({ items: [], total: 2, nextCursor: null })) },
   };
   Object.defineProperty(window, "astella", { configurable: true, value: api });
   return { api, calls, currentAi: () => ai };
@@ -908,7 +902,6 @@ describe("the inventory", () => {
     await waitFor(() => expect(api.source.list).toHaveBeenCalled());
     expect(await screen.findByText("3")).toBeTruthy();
     expect(await screen.findByText("5")).toBeTruthy();
-    expect(await screen.findByText("2")).toBeTruthy();
   });
 });
 

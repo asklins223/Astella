@@ -1,5 +1,4 @@
 import { sql } from "drizzle-orm";
-import { learningRunAssistanceConsequenceV1 } from "@astella/shared/learning-run-contracts";
 import type { WorkerTransaction } from "../../db.ts";
 
 /**
@@ -23,19 +22,12 @@ import type { WorkerTransaction } from "../../db.ts";
 export const FACT_SPAN_KEYS = {
   today_minutes: { quantifiers: ["分钟", "小时"], label: "今天学了多久" },
   week_minutes: { quantifiers: ["分钟", "小时"], label: "本周学了多久" },
-  due_count: { quantifiers: ["项", "个", "条"], label: "到期复习几项" },
-  card_count: { quantifiers: ["张"], label: "活跃卡片几张" },
+  card_count: { quantifiers: ["张"], label: "学习卡几张" },
   // 39b §9.4 列了五个键，这里多一个 `note_count`：回放里 G1 唯一那条 still-leak 就是
   // 「我知道你笔记库里有 11 篇」（笔记数）——没有这个键，那条声明在新机制下**无值可填**，
   // 闸就删不掉。值本来就在同一份统计里（`readLearningStats.noteCount`），不增查询。
   note_count: { quantifiers: ["篇"], label: "笔记几篇" },
   streak_days: { quantifiers: ["天"], label: "连续学习几天" },
-  /**
-   * 后果告知（39d W2-4 #14）。它**不是读数**，所以量词集是空的——`askable` 恒真：
-   * 用户没问数字，她也该知道"给提示会把这一题降成练习"。真值来自合同
-   * （`learningRunAssistanceConsequenceV1`），不是这里手写的一句。
-   */
-  assistance_consequence: { quantifiers: [], label: "看提示的后果" },
 } as const;
 
 export type FactSpanKey = keyof typeof FACT_SPAN_KEYS;
@@ -59,57 +51,28 @@ const ASK_PATTERNS: Record<FactSpanKey, RegExp[]> = {
     /(这周|本周|这个星期|最近|这一阵)[^。！？]{0,12}(多久|多长时间|多少|几)[^。！？]{0,6}(分钟|小时)/,
     /(这周|本周|这个星期)[^。！？]{0,6}(学|复习|读|看了?)[^。！？]{0,6}(多久|多长时间|多少)/,
   ],
-  due_count: [
-    /(多少|几个|几条|几项|几)[^。！？]{0,6}(项|个|条)?[^。！？]{0,4}(到期|该复习|要复习)/,
-    /(到期|复习)[^。！？]{0,8}(多少|几个|几条|几项)/,
-  ],
   card_count: [/(多少|几)[^。！？]{0,4}(卡|卡片|学习卡)/],
   // 「几篇」在句尾时后面没有名词（"我笔记有几篇"），所以量词本身也算落点。
   note_count: [/(多少|几)[^。！？]{0,4}(笔记|篇)/],
   streak_days: [/(连续|连着|坚持)[^。！？]{0,6}(多少|几天|几)/],
-  // 空数组是**故意的**：这一格不吃问句（见上面那条注释的"恒真"），
-  // 由 `askableFactSpanKeys` 无条件放行；写进这里就等于把它退回"先问到才配说"。
-  assistance_consequence: [],
 };
 
 export function askableFactSpanKeys(userText: string | undefined): FactSpanKey[] {
-  const always: FactSpanKey[] = ["assistance_consequence"];
-  if (typeof userText !== "string" || userText.length === 0) return always;
-  const asked = (Object.keys(ASK_PATTERNS) as FactSpanKey[])
+  if (typeof userText !== "string" || userText.length === 0) return [];
+  return (Object.keys(ASK_PATTERNS) as FactSpanKey[])
     .filter((key) => ASK_PATTERNS[key].some((pattern) => pattern.test(userText)));
-  return [...new Set([...asked, ...always])];
 }
 
 /**
  * 连续学习天数，供对话事实目录使用。取最近 14 条日记（新→旧），
- * `learningRunsCompleted` 或 `learningRunsCreated` 大于 0 就接着数，遇到一天没有就停。
+ * 当天完成过学习卡就接着数，遇到一天没有就停。
  */
-/** 这一轮有没有一题正等着答（活动 run 的活动任务）。 */
-async function hasAnswerableTask(
-  tx: WorkerTransaction,
-  scope: { workspaceId: string; userId: string },
-): Promise<boolean> {
-  const rows = await tx.execute<{ id: string }>(sql`
-    SELECT r.id
-    FROM learning_runs r
-    JOIN learning_tasks t ON t.id = r.active_task_id
-    WHERE r.workspace_id = ${scope.workspaceId}
-      AND r.user_id = ${scope.userId}
-      AND r.phase IN ('preparing', 'active', 'assessing', 'checkpoint', 'committing', 'paused')
-      AND t.status = 'active'
-    ORDER BY r.created_at DESC
-    LIMIT 1
-  `);
-  return rows.length > 0;
-}
-
 export async function readStreakDays(
   tx: WorkerTransaction,
   scope: { workspaceId: string; userId: string },
 ): Promise<number> {
   const rows = await tx.execute<{ date: string; runs: number }>(sql`
-    SELECT date, COALESCE((facts->>'learningRunsCompleted')::int, 0)
-      + COALESCE((facts->>'learningRunsCreated')::int, 0) AS runs
+    SELECT date, COALESCE((facts->>'cardAttemptsCompleted')::int, 0) AS runs
     FROM companion_daily_summaries
     WHERE workspace_id = ${scope.workspaceId} AND user_id = ${scope.userId}
     ORDER BY date DESC LIMIT 14
@@ -131,20 +94,13 @@ export async function loadFactSpans(
   tx: WorkerTransaction,
   scope: { workspaceId: string; userId: string },
   keys: readonly FactSpanKey[],
-  stats: { todayMinutes?: number; weekMinutes?: number; dueReviews?: number; activeCards?: number; noteCount?: number } | null,
+  stats: { todayMinutes?: number; weekMinutes?: number; activeCards?: number; noteCount?: number } | null,
 ): Promise<{ values: FactSpanValues; block: string | null } | null> {
   if (keys.length === 0) return null;
   const streakDays = keys.includes("streak_days") ? await readStreakDays(tx, scope) : null;
-  // 后果这一格只在"这一轮真的有一题在答"时进目录：没有活动任务就没有可降级的对象，
-  // 硬塞一句"看提示会降成练习"就是对她念一条此刻不成立的规则。
-  const consequence = keys.includes("assistance_consequence")
-    ? (await hasAnswerableTask(tx, scope) ? learningRunAssistanceConsequenceV1() : null)
-    : null;
   const values = pickFactSpanValues({
-    assistance_consequence: consequence,
     today_minutes: stats?.todayMinutes,
     week_minutes: stats?.weekMinutes,
-    due_count: stats?.dueReviews,
     card_count: stats?.activeCards,
     note_count: stats?.noteCount,
     streak_days: streakDays,

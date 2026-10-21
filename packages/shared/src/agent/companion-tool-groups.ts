@@ -9,7 +9,6 @@
 
 export const COMPANION_TOOL_GROUP_IDS = [
   "notes",
-  "learning",
   "memory",
   "persona",
   "attention",
@@ -50,14 +49,6 @@ export const COMPANION_TOOL_GROUPS: Readonly<Record<CompanionToolGroupId, {
       "companion_search_notes", "companion_search_cards", "companion_read_note", "companion_read_source",
       "companion_create_note", "companion_edit_note", "companion_share_note",
       "companion_recommend_learning", "companion_write_annotation",
-    ],
-  },
-  learning: {
-    label: "学习运行",
-    description: "开始/恢复/暂停学习，请求提示，换题，延期复习，任务队列、到期复习、打开卡片、聚焦目标。",
-    tools: [
-      "companion_start_learning", "companion_resume_learning", "companion_pause_learning",
-      "companion_request_hint", "companion_switch_task_variant", "companion_defer_review",
     ],
   },
   memory: {
@@ -108,9 +99,9 @@ export const COMPANION_TOOL_GROUPS: Readonly<Record<CompanionToolGroupId, {
   },
   stats: {
     label: "进度与当前页面",
-    description: "学习统计、任务队列、到期复习、最近活动、当前页面/上下文/历史，以及实际计算。",
+    description: "学习统计、最近活动、当前页面/上下文/历史，以及实际计算。",
     tools: [
-      "companion_get_learning_stats", "companion_list_task_queue", "companion_list_due_reviews",
+      "companion_get_learning_stats",
       "companion_list_recent_activity", "companion_read_context", "companion_read_current_page",
       "companion_read_history", "agent_calculate",
     ],
@@ -118,7 +109,7 @@ export const COMPANION_TOOL_GROUPS: Readonly<Record<CompanionToolGroupId, {
   navigation: {
     label: "带路",
     description: "打开笔记、页面、学习卡，聚焦知识图谱目标。",
-    tools: ["companion_open_note", "companion_open_page", "companion_open_card", "companion_focus_graph"],
+    tools: ["companion_open_note", "companion_open_page", "companion_open_card"],
   },
 });
 
@@ -163,13 +154,8 @@ export function companionToolGroupCatalog(groups: Iterable<string>): Array<{
 export const COMPANION_PAGE_TOOL_GROUPS: Readonly<Record<string, readonly CompanionToolGroupId[]>> = Object.freeze({
   note: ["notes", "visual"],
   source: ["notes", "visual"],
-  learning_run: ["learning", "notes"],
-  review: ["learning"],
-  card: ["learning", "navigation"],
-  objective: ["goals", "navigation"],
   star_map: ["navigation"],
   settings: ["persona"],
-  today: ["stats"],
   conversation: ["stats"],
   other: ["stats"],
 });

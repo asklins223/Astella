@@ -35,12 +35,10 @@ import { COMPANION_CASUAL_NO_TOOLS_POLICY_V4, COMPANION_CASUAL_POLICY_V4,
   COMPANION_HOST_CONVERSATION_POLICY_V1, COMPANION_HOST_OCCASION_GOAL_V1 } from "./companion-conversation-policy.ts";
 import {
   claimsLookupThatNeverRan,
-  claimsNothingDueAgainstFacts,
   companionSelectionText,
   looksLikeUnfulfilledActionNarration,
   unverifiedNumericClaims,
   unverifiedQuoteClaims,
-  type GroundedTutorContext,
 } from "./companion-dialogue-content.ts";
 import { companionQuoteSourceTexts } from "../context/companion-quote-evidence.ts";
 
@@ -52,6 +50,7 @@ import { companionQuoteSourceTexts } from "../context/companion-quote-evidence.t
  * 对用户说"你连喊三遍我听见了"——而用户只说过一遍。system 里那句"不是新的用户请求"
  * 挡不住这条形状：模型数的是 `user` 轮的数量。所以重附必须**写在正文里**标明身份，
  * 并且只保留一份（旧的重附件由 `dropCompanionInternalCorrections` 摘掉）。
+ * 方案58：重附身份必须也是宿主，不能继续伪造一个 user 轮次。
  */
 export const COMPANION_INTERNAL_CORRECTION_MARKER = "【内部核对，不是用户的新消息】";
 
@@ -110,7 +109,7 @@ export function companionStepCorrectionMessages(input: {
       ].join("\n"),
     },
     markInternalCorrection(
-      { ...input.currentRequest, role: input.currentRequest.role === "system" ? "system" : "user" },
+      { ...input.currentRequest, role: "system", hostObservation: true },
       hostOccasion,
     ),
   ];
@@ -408,7 +407,6 @@ export function reviewCompanionStepCorrection(input: {
   turnToolUse: string;
   /** 实时页面上下文原件（形状由 companionSelectionText 解析）。 */
   pageContext: unknown;
-  groundedTutorContext: GroundedTutorContext | null;
   stepCalls: number;
   toolCallCount: number;
   finalAnswerOnly: boolean;
@@ -426,7 +424,6 @@ export function reviewCompanionStepCorrection(input: {
 }): {
   unverifiedClaims: string[];
   unverifiedQuotes: string[];
-  nothingDueClaim: boolean;
   lookupClaim: boolean;
   steerPlan: ReturnType<typeof planStepSteer>;
   correctQuote: boolean;
@@ -456,14 +453,10 @@ export function reviewCompanionStepCorrection(input: {
   const onlyCalculations = materialToolMessages.length > 0
     && materialToolMessages.every(message => calculationIds.has(message.toolCallId ?? ""));
   const unverifiedQuotes = unverifiedQuoteClaims(input.said, quoteSources, {
-    allowUnattributedQuotes: !input.groundedTutorContext && !companionSelectionText(input.pageContext)
+    allowUnattributedQuotes: !companionSelectionText(input.pageContext)
       && (onlyCalculations || (input.turnToolUse === "none" && materialToolMessages.length === 0)),
   });
-  // "到期列表现在是空的"不报任何数字，上面那条看不见；它是一句可证伪的假阴性，
-  // 直接对着环境块里服务端算出的那个数判（同一个 steer 额度、同一条 nudge：
-  // 指出该调哪个工具，比指责她没调有用）。
-  const nothingDueClaim = claimsNothingDueAgainstFacts(input.said, input.contextText);
-  const lookupClaim = claimsLookupThatNeverRan(input.said) || nothingDueClaim || requiredRead;
+  const lookupClaim = claimsLookupThatNeverRan(input.said) || requiredRead;
   const withinBudget = input.stepCount < input.stepBudget && input.nowMs < input.deadlineAt;
   // 两条**独立**的一次性额度（实机 2026-09-21 连着三轮 V 场景）：共用一条时，
   // 额度被第 1 步那句引言（"我换个词再搜一次"，命中 action-request）先花掉，
@@ -489,7 +482,7 @@ export function reviewCompanionStepCorrection(input: {
     correctionUsed: input.quoteCorrectionUsed,
     withinBudget,
   });
-  return { unverifiedClaims, unverifiedQuotes, nothingDueClaim, lookupClaim, steerPlan, correctQuote };
+  return { unverifiedClaims, unverifiedQuotes, lookupClaim, steerPlan, correctQuote };
 }
 
 /**

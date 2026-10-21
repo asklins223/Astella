@@ -17,7 +17,7 @@ export interface AgentHistoryExecutor { execute(query: SQL): Promise<unknown> }
 /** agent_operations 一行；执行体三列互斥（XOR 由 0373 的 CHECK 保证）。 */
 export interface AgentOperationRow {
   id: string; revision: number; capability: string;
-  job_id: string | null; card_generation_run_id: string | null; card_generation_outbox_id: string | null;
+  job_id: string | null;
   status: string; last_event_seq: string | number; result: unknown; error: string | null;
   run_id?: string; created_at?: string | Date;
 }
@@ -25,7 +25,6 @@ export interface AgentOperationRow {
 /** 三列 → 一次执行体；三列全空不是一种执行体（由 CHECK 挡住，这里不猜）。 */
 export function agentExecutionRefFromRow(row: AgentOperationRow): AgentExecutionRefV1 {
   if (row.job_id) return { kind: "job", id: row.job_id };
-  if (row.card_generation_run_id) return { kind: "card_generation", id: row.card_generation_run_id };
   throw new Error(`agent operation ${row.id} has no execution reference`);
 }
 

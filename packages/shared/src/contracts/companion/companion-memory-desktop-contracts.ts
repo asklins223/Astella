@@ -264,18 +264,12 @@ export type CompanionMemoryRecycleListV1 = z.infer<typeof companionMemoryRecycle
 export const companionMemoryEntityTypeV2Schema = z.enum([
   "note",
   "source",
-  "card",
-  "key_point",
-  "learning_run",
 ]);
 export type CompanionMemoryEntityTypeV2 = z.infer<typeof companionMemoryEntityTypeV2Schema>;
 
 export const companionMemoryEntityTargetV2Schema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("note"), noteId: z.string().uuid() }),
   z.strictObject({ kind: z.literal("source"), sourceId: z.string().uuid() }),
-  z.strictObject({ kind: z.literal("objective"), objectiveId: z.string().uuid() }),
-  z.strictObject({ kind: z.literal("understanding"), objectiveId: z.string().uuid() }),
-  z.strictObject({ kind: z.literal("learning_run"), runId: z.string().uuid() }),
 ]);
 export type CompanionMemoryEntityTargetV2 = z.infer<typeof companionMemoryEntityTargetV2Schema>;
 
@@ -319,7 +313,7 @@ export type CompanionMemoryStarMapV2 = z.infer<typeof companionMemoryStarMapV2Sc
 /**
  * 日记只有她自己写的那一段话。当天计数（`companion_daily_summaries.facts`）**不再上线**：
  * 用户 2026-09-21 的裁决是"这跟系统统计数据有什么区别"，而 facts 仍要写进 DB，
- * 因为 `companion-fact-spans.ts` 会用 `learningRunsCreated/Completed` 计算对话可引用的连续学习天数。
+ * 因为 `companion-fact-spans.ts` 会用当天完成的学习卡次数计算对话可引用的连续学习天数。
  */
 export const companionDailyFailureReasonV1Schema = z.enum([
   "consent_required",

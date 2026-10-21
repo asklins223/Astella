@@ -5,10 +5,8 @@ import {
   type CapabilityProjectionV1,
 } from "@astella/shared/desktop-ipc-contracts";
 import {
-  isCardGenerationV2Enabled,
   isCompanionDialogueEnabled,
   isCompanionVoiceDialogueEnabled,
-  isLearningRunEnabled,
 } from "../../config/learning-companion-flags.ts";
 
 type CapabilityRole = "owner" | "member";
@@ -56,8 +54,6 @@ function aiOutboundAllowed(ai: WorkspaceAiConsentFacts | null): boolean {
 
 export function buildDesktopCapabilityProjection(input: CapabilityProjectionInput): CapabilityProjectionV1 {
   const { role, ai } = input;
-  const learningRunEnabled = isLearningRunEnabled();
-  const cardGenerationEnabled = isCardGenerationV2Enabled();
   const dialogueEnabled = isCompanionDialogueEnabled();
   const voiceDialogueEnabled = isCompanionVoiceDialogueEnabled();
   const outboundAllowed = aiOutboundAllowed(ai);
@@ -65,15 +61,7 @@ export function buildDesktopCapabilityProjection(input: CapabilityProjectionInpu
     actionCapabilityValues.map((capability) => [capability, "denied" as const]),
   ) as Record<(typeof actionCapabilityValues)[number], "allowed" | "denied" | "conditional">;
 
-  for (const capability of ["note.read", "objective.read", "settings.read"] as const) actionCapabilities[capability] = "allowed";
-  actionCapabilities["review.read"] = learningRunEnabled ? "allowed" : "denied";
-  actionCapabilities["learning_run.read"] = learningRunEnabled ? "allowed" : "denied";
-  if (learningRunEnabled) {
-    actionCapabilities["learning_run.start"] = "allowed";
-    actionCapabilities["learning_run.saveDraft"] = "allowed";
-    actionCapabilities["learning_run.submit"] = "allowed";
-    actionCapabilities["learning_run.action"] = "allowed";
-  }
+  for (const capability of ["note.read", "settings.read"] as const) actionCapabilities[capability] = "allowed";
 
   // 伴星对工作区内容的读取、外发与提议写入都受同一条 AI 同意边界约束。
   // 三条一起开、一起关，避免出现「读得到但发不出」这类自相矛盾的投影。
@@ -87,28 +75,18 @@ export function buildDesktopCapabilityProjection(input: CapabilityProjectionInpu
     for (const capability of ["source.create", "source.update", "source.archive", "source.createNote", "note.create", "note.save", "note.delete", "note.restore", "note.permanentDelete", "settings.update"] as const) {
       actionCapabilities[capability] = "allowed";
     }
-    if (cardGenerationEnabled) {
-      for (const capability of ["card_generation.start", "card_generation.review", "card_generation.reveal", "card_generation.activate", "card_generation.cancel", "card_generation.close", "card_generation.retry"] as const) {
-        actionCapabilities[capability] = "allowed";
-      }
-    }
   }
 
   const featureAvailability = Object.fromEntries(
     featureNameValues.map((feature) => [feature, unavailableFeature]),
   ) as Record<(typeof featureNameValues)[number], { state: "enabled" | "disabled" | "conditional" | "unavailable"; reason?: "error.feature_disabled" }>;
-  featureAvailability.learning_objective_system_v3 = { state: "enabled" };
-  featureAvailability.learning_run_v2 = learningRunEnabled ? { state: "enabled" } : unavailableFeature;
-  featureAvailability.card_generation_v2 = cardGenerationEnabled && role === "owner"
-    ? { state: "enabled" }
-    : unavailableFeature;
   // 设置页的「对话能力」「语音对话」直接显示这两项，必须来自真实开关。
   featureAvailability.companion_dialogue_v1 = dialogueEnabled ? { state: "enabled" } : unavailableFeature;
   featureAvailability.companion_voice_dialogue_v1 = voiceDialogueEnabled ? { state: "enabled" } : unavailableFeature;
 
   return capabilityProjectionSchema.parse({
     version: 1,
-    revision: `desktop-capability-v1:${role}:run-${learningRunEnabled ? "on" : "off"}:card-${cardGenerationEnabled ? "on" : "off"}:ai-${outboundAllowed ? "out" : "hold"}:dialogue-${dialogueEnabled ? "on" : "off"}:voice-${voiceDialogueEnabled ? "on" : "off"}`,
+    revision: `desktop-capability-v1:${role}:ai-${outboundAllowed ? "out" : "hold"}:dialogue-${dialogueEnabled ? "on" : "off"}:voice-${voiceDialogueEnabled ? "on" : "off"}`,
     // 服务端自己的边界令牌：成员变动 / AI 同意或外发政策改变 / 空间改名时
     // 由触发器 +1（0261），这里如实回传。客户端拿旧值请求会被判 stale_workspace。
     workspaceEpoch: input.workspaceEpoch,

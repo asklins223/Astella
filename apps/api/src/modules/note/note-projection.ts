@@ -25,6 +25,7 @@ export type NoteReadProjectionSource = {
     type: string;
     content: string;
   }>;
+  requestedVersion?: NoteReadProjectionSource["version"] & { blocks: NoteReadProjectionSource["blocks"] };
 };
 
 /**
@@ -64,6 +65,12 @@ export function projectNoteDetailV1(
         content: block.content,
       })),
     },
+    ...(source.requestedVersion ? { requestedVersion: {
+      versionId: source.requestedVersion.id, noteId: source.requestedVersion.noteId,
+      versionNo: source.requestedVersion.versionNo, contentHash: source.requestedVersion.contentHash,
+      createdAt: source.requestedVersion.createdAt.toISOString(), updatedAt: source.requestedVersion.updatedAt.toISOString(),
+      blocks: source.requestedVersion.blocks.map(({ ordinal, type, content }) => ({ ordinal, type, content })),
+    } } : {}),
     permissions: {
       canRead: true,
       canEdit: role === "owner",

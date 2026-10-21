@@ -23,9 +23,7 @@
       "@astella/agent-core": ["../../packages/agent-core/src/index.ts"],
       "@astella/agent-host": ["../../packages/agent-host/src/index.ts"],
       // 2026-10-04：制卡领域服务。指到**实时源码**而不是 node_modules 的安装期快照——
-      // pnpm 对 file: 依赖只在 install 时拷贝一次，改了 packages/card-generation 而
       // typecheck 仍对着旧快照，正是上面那段 shared 注释里记过的那个分叉。
-      "@astella/card-generation": ["../../packages/card-generation/src/index.ts"],
       "@astella/shared": [
         "../../packages/shared/src/index.ts"
       ],

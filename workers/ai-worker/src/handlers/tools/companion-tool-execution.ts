@@ -68,8 +68,6 @@ import {
   readLearningStats,
   summarizeLearningStats,
   tzSubquery,
-  visibleCompanionCardSourceCondition,
-  visibleCompanionDueReviewCondition,
 } from "../proactive/companion-here-and-now.ts";
 import {
   NOTE_READ_MAX_CHARS,
@@ -83,12 +81,9 @@ import {
   missingImageMessage,
   readLatestPageContextRow,
   sourceNotReadyNote,
-  taskQueueToolResult,
   type ActivityRow,
   type AgentEventContext,
-  type DueReviewRow,
   type NoteSearchRow,
-  type TaskQueueRow,
 } from "./companion-read-tools.ts";
 import { partitionPersonaPatch } from "../turn/companion-step-plan.ts";
 import { companionConversationTimeEvidence, conversationInstant } from "../turn/companion-conversation-evidence.ts";
@@ -185,29 +180,12 @@ export async function executeReadTool(
         safeSummary: "工具组装载由运行时处理" };
     case "companion_read_context": {
       const page = parsePageContext(event.read.pageContext);
-      const result = await withWorkerWorkspaceTransaction(
-        { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
-        async (tx) => {
-          const rows = await tx.execute<{ id: string; phase: string; active_task_id: string | null }>(sql`
-            SELECT id, phase, active_task_id
-            FROM learning_runs
-            WHERE workspace_id = ${event.ctx.workspaceId}
-              AND user_id = ${event.read.userId}
-              AND phase IN ('preparing', 'active', 'assessing', 'checkpoint', 'committing', 'paused')
-            ORDER BY updated_at DESC, id
-            LIMIT 1
-          `);
-          const current = rows[0];
-          return {
-            pageKind: typeof page?.pageKind === "string" ? page.pageKind : null,
-            groundedTutorAvailable: event.read.groundedTutorContext !== null,
-            currentLearningRun: current
-              ? { runId: current.id, phase: current.phase, taskId: current.active_task_id }
-              : null,
-          };
+      return {
+        value: {
+          pageKind: typeof page?.pageKind === "string" ? page.pageKind : null,
         },
-      );
-      return { value: result, safeSummary: "已读取当前学习上下文" };
+        safeSummary: "已读取当前学习上下文",
+      };
     }
     case "companion_read_current_page": {
       const row = await withWorkerWorkspaceTransaction(
@@ -379,17 +357,12 @@ export async function executeReadTool(
           WHERE n.workspace_id = ${event.ctx.workspaceId}
             AND n.deleted_at IS NULL AND n.updated_at > ${window}
           UNION ALL
-          SELECT 'review', coalesce(nullif(c.front->>'cue', ''), '一张卡片'),
-                 (EXTRACT(EPOCH FROM (now() - s.last_review_at)) / 60)::int
-          FROM review_schedules s
-          LEFT JOIN learning_cards_v2 c ON c.card_id = s.subject_id AND c.workspace_id = s.workspace_id
-          WHERE s.workspace_id = ${event.ctx.workspaceId} AND s.user_id = ${event.read.userId}
-            AND s.status = 'completed' AND s.last_review_at > ${window}
-          UNION ALL
-          SELECT 'card', coalesce(nullif(c2.front->>'cue', ''), '新卡片'),
-                 (EXTRACT(EPOCH FROM (now() - c2.created_at)) / 60)::int
-          FROM learning_cards_v2 c2
-          WHERE c2.workspace_id = ${event.ctx.workspaceId} AND c2.created_at > ${window}
+          SELECT 'card', '学习卡《' || n.title || '》',
+                 (EXTRACT(EPOCH FROM (now() - c.created_at)) / 60)::int
+          FROM note_learning_cards c
+          JOIN notes n ON n.id = c.note_id
+          WHERE c.workspace_id = ${event.ctx.workspaceId} AND c.created_at > ${window}
+            AND n.deleted_at IS NULL
           UNION ALL
           SELECT 'reminder', r.text,
                  (EXTRACT(EPOCH FROM (now() - r.fired_at)) / 60)::int
@@ -418,31 +391,26 @@ export async function executeReadTool(
         { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
         async (tx) => {
           const rows = await tx.execute<{
-            card_id: string; objective_id: string; cue: string | null;
-            prompt: string | null; summary: string | null; form: string | null;
+            card_id: string; note_id: string; stem: string | null;
           }>(sql`
-            SELECT c.card_id, c.objective_id, c.front->>'cue' AS cue,
-                   c.front->>'prompt' AS prompt,
-                   c.public_summary AS summary, c.knowledge_form AS form
-            FROM learning_cards_v2 c
-            -- 到期列表递过来的那个 id 是 review_schedules.subject_id，而它按方案 20
-            -- §29.4 的别名规则**存的是 objectiveId**（subject_type 却叫 'card'）。
-            -- 只按 card_id 查的话她永远打不开：实测 23 个 subject_id 里 19 个是 objectiveId。
-            -- 两个键一次查掉，精确命中卡片时排前面。
+            SELECT c.id AS card_id, c.note_id,
+                   (SELECT stem FROM note_learning_card_questions
+                    WHERE card_id = c.id ORDER BY ordinal LIMIT 1) AS stem
+            FROM note_learning_cards c
+            JOIN notes n ON n.id = c.note_id AND n.deleted_at IS NULL
             WHERE c.workspace_id = ${event.ctx.workspaceId}
-              AND c.lifecycle = 'active'
-              AND (c.card_id = ${cardId} OR c.objective_id = ${cardId})
-              AND ${visibleCompanionCardSourceCondition(event.read.userId)}
-            ORDER BY (c.card_id = ${cardId}) DESC
+              AND c.status = 'active'
+              AND (n.share_scope = 'shared' OR n.created_by = ${event.read.userId})
+              AND c.id = ${cardId}
             LIMIT 1
           `);
           return rows[0] ?? null;
         },
       );
       if (!card) throw new CompanionToolError("这个空间里没有这张学习卡");
-      const route = { kind: "card", cardId: card.card_id, objectiveId: card.objective_id };
-      const front = [card.cue, card.prompt].filter((part): part is string => Boolean(part?.trim())).join(" — ");
-      const cardTitle = (card.cue ?? "").trim();
+      const route = { kind: "card", cardId: card.card_id, noteId: card.note_id };
+      const front = String(card.stem ?? "").trim();
+      const cardTitle = front;
       return {
         // 题面必须**同时**进 value：只进 blocks 的话，块渲染给用户看了，
         // 她自己却看不见那段文字（实机 2026-09-21 Y 轮：card 块落库成功，
@@ -452,9 +420,8 @@ export async function executeReadTool(
           route,
           card: {
             cardId: card.card_id,
+            noteId: card.note_id,
             front,
-            summary: card.summary,
-            knowledgeForm: card.form,
           },
         },
         route,
@@ -470,8 +437,8 @@ export async function executeReadTool(
               // 纸上这一段是展示预览，长度由卡片块合同那一个源定；整份题面在上面的 value 里，
               // 所以她能读到的一切都在，块只是摆在纸面上的那一截。
               front: front.slice(0, COMPANION_CARD_BLOCK_PREVIEW_MAX_CHARS),
-              summary: card.summary?.slice(0, COMPANION_CARD_BLOCK_PREVIEW_MAX_CHARS) ?? null,
-              knowledgeForm: card.form,
+              summary: null,
+              knowledgeForm: null,
             }]
           : [],
         safeSummary: "已定位到学习卡片",
@@ -601,6 +568,7 @@ export async function executeReadTool(
               type: "quote" as const,
               label: `《${note.title.slice(0, 28)}》· ${ageLabel(Number(note.ageMinutes))}`,
               text: quoted + (page.body.length > quoted.length ? "…" : ""),
+              sourceRef: { kind: "note" as const, noteId, noteVersionId: note.versionId, blockOrdinal: startOrdinal },
             }]
           : [],
         safeSummary: `已读出笔记《${note.title.slice(0, 24)}》`
@@ -656,6 +624,7 @@ export async function executeReadTool(
               type: "quote" as const,
               label: `来源《${source.title.slice(0, 28)}》`,
               text: quoted + (page.body.length > quoted.length ? "…" : ""),
+              sourceRef: { kind: "source" as const, sourceId, segmentOrdinal: startOrdinal },
             }]
           : [],
         safeSummary: `已读出来源《${source.title.slice(0, 24)}》`
@@ -887,74 +856,6 @@ export async function executeReadTool(
       return {
         value,
         safeSummary: summarizeLearningStats(stats),
-      };
-    }
-    case "companion_list_task_queue": {
-      const rows = await withWorkerWorkspaceTransaction(
-        { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
-        async (tx) => tx.execute<TaskQueueRow>(sql`
-          SELECT t.id::text AS task_id,
-                 t.sequence,
-                 t.status,
-                 coalesce(nullif(t.target_summary, ''), left(t.prompt, 60)) AS label,
-                 r.phase AS run_phase,
-                 t.run_id::text AS run_id
-          FROM learning_tasks t
-          JOIN learning_runs r ON r.id = t.run_id
-          WHERE t.workspace_id = ${event.ctx.workspaceId}
-            AND t.user_id = ${event.read.userId}
-            AND r.phase IN ('preparing', 'active', 'assessing', 'checkpoint', 'committing', 'paused')
-            AND t.status IN ('pending', 'presented', 'in_progress')
-          ORDER BY r.updated_at DESC, t.sequence
-          LIMIT 12
-        `),
-      );
-      return taskQueueToolResult(rows);
-    }
-    case "companion_list_due_reviews": {
-      // 这一份列表与 `companion_get_learning_stats` 的到期数、以及首页的"待复习"必须是
-      // **同一个集合**：以前这里比统计多一层"卡的来源笔记要对本人可见"，于是会出现
-      // "她说 2 项、点进队列有 3 条"（清单比数还短，说不过去）。判据统一到队列那一条。
-      const limit = typeof args.limit === "number" ? Math.min(20, Math.max(1, args.limit)) : 8;
-      const rows = await withWorkerWorkspaceTransaction(
-        { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
-        async (tx) => tx.execute<DueReviewRow>(sql`
-          SELECT s.id::text AS schedule_id,
-                 s.subject_id::text AS objective_id,
-                 c.card_id::text AS card_id,
-                 coalesce(nullif(c.front->>'cue', ''), '这条复习还没有生成卡片') AS title,
-                 (EXTRACT(EPOCH FROM (now() - coalesce(s.user_deferred_until, s.next_review_at))) / 3600)::int AS overdue_hours
-          FROM review_schedules s
-          JOIN learning_objectives_v2 o
-            ON o.objective_id = s.subject_id AND o.workspace_id = s.workspace_id AND o.lifecycle = 'active'
-          JOIN learning_cards_v2 c
-            ON c.objective_id = s.subject_id AND c.workspace_id = s.workspace_id AND c.lifecycle = 'active'
-          WHERE s.workspace_id = ${event.ctx.workspaceId}
-            AND s.user_id = ${event.read.userId}
-            AND s.status = 'pending'
-            AND s.next_review_at <= now()
-            AND (s.user_deferred_until IS NULL OR s.user_deferred_until <= now())
-            AND ${visibleCompanionDueReviewCondition()}
-          ORDER BY s.next_review_at
-          LIMIT ${limit}
-        `),
-      );
-      const due = rows.map((row) => ({
-        scheduleId: row.schedule_id,
-        // 只给她一个可以直接用的 id，并把"有没有卡"说出来：以前给的是 scheduleId
-        // （她拿不到卡片 id），后来给的其实是 objectiveId（open_card 只认 card_id，
-        // 永远 not_found）。现在 open_card 两个键都查，这里给哪个都不会炸，
-        // 但有卡时给 card 自己的 id，跳过去落点更准。
-        cardId: row.card_id ?? row.objective_id,
-        hasCard: row.card_id !== null,
-        title: String(row.title).slice(0, 60),
-        overdueHours: Math.max(0, Number(row.overdue_hours)),
-      }));
-      return {
-        value: { dueReviews: due },
-        safeSummary: due.length > 0
-          ? `${due.length} 项复习已到期（其中 ${due.filter((item) => item.hasCard).length} 项有卡片）`
-          : "目前没有到期的复习",
       };
     }
     case "companion_list_reminders": {
@@ -1394,42 +1295,6 @@ export async function executeDirectTool(
       return {
         value: { reminderId: cancelled.id },
         safeSummary: `已取消提醒「${cancelled.text.slice(0, 40)}」`,
-      };
-    }
-    case "companion_focus_graph": {
-      // 参数名就是它真正打的那一列（`learning_objectives_v2.objective_id`），不再叫
-      // `keyPointId`（2026-09-24，39d W2-1）：库里 `key_point_id` 是**另一个 id-space**
-      // （`validation_assistance_exposures.key_point_id → card_key_points.id`），用别名
-      // 跨两张表读起来像是在查 key point，实际查的是 objective。
-      // 与 companion_open_card 同等的归属校验——只做 UUID 格式校验会让模型用任意 UUID
-      // 构造前端导航 route。
-      const objectiveId = String(args.objectiveId);
-      const exists = await withWorkerWorkspaceTransaction(
-        { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
-        async (tx) => {
-          const rows = await tx.execute(sql`
-            SELECT objective_id FROM learning_objectives_v2
-            WHERE objective_id = ${objectiveId}
-              AND workspace_id = ${event.ctx.workspaceId}
-              AND lifecycle = 'active'
-            LIMIT 1
-          `);
-          return rows.length > 0;
-        },
-      );
-      if (!exists) throw new CompanionToolError("这个空间里没有这个学习目标");
-      const route = {
-        kind: "star_map",
-        // 这里是唯一一处跨边界改名：`DesktopRouteV1.star_map` 的字段名仍是
-        // `keyPointId`（客户端路由契约，不在 W2-1 的授权范围内），值取自 objectiveId。
-        keyPointId: objectiveId,
-        lens: String(args.lens),
-      };
-      return {
-        value: { route },
-        route,
-        routeLabel: "在星图里看这个知识点",
-        safeSummary: "已聚焦知识图谱节点",
       };
     }
     default:

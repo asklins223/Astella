@@ -90,7 +90,6 @@ import {
   type WorkspaceSummaryV1,
 } from "@astella/shared/desktop-ipc-contracts";
 import type { DesktopAiAuditItemV1, DesktopAiAuditPageV1 } from "@astella/shared/desktop-surface-contracts";
-import { formatObjectiveDateTime } from "../run/objective-state-copy.ts";
 import type { MotionMode } from "../../../app/home/room-machine";
 import {
   NO_AVATAR_SRC,
@@ -115,6 +114,16 @@ import { useHudPage } from "../../hud/use-hud-page";
 import { usePageReadableView } from "../../hud/use-page-readable-view";
 import { HUD_PAGES } from "../../hud/hud-pages";
 import { SurfaceDataState, readAuthenticatedSession } from "../notebook/shell/surface-data.tsx";
+
+function formatObjectiveDateTime(value: string | null | undefined): string {
+  if (!value) return "时间未定";
+  const parsed = new Date(value);
+  if (!Number.isFinite(parsed.valueOf())) return "时间未定";
+  const hour = String(parsed.getHours()).padStart(2, "0");
+  const minute = String(parsed.getMinutes()).padStart(2, "0");
+  return `${parsed.getMonth() + 1}月${parsed.getDate()}日 ${hour}:${minute}`;
+}
+
 
 const SECTIONS = SETTINGS_SECTIONS.map(({ id, label }) => [id, label] as const);
 const SECTION_IDS: readonly string[] = SECTIONS.map(([id]) => id);
@@ -357,7 +366,7 @@ export function SettingsSurface() {
   const [joining, setJoining] = useState(false);
   const [aiSaving, setAiSaving] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
-  const [inventory, setInventory] = useState<{ sources: number; notes: number; objectives: number } | null>(null);
+  const [inventory, setInventory] = useState<{ sources: number; notes: number } | null>(null);
   const [inventoryLoading, setInventoryLoading] = useState(true);
   const [inventoryFailure, setInventoryFailure] = useState<string | null>(null);
   // ── 旧版设置页回补（2026-09-18）────────────────────────────────
@@ -545,16 +554,14 @@ export function SettingsSurface() {
     void (async () => {
       try {
         const meta = () => createRequestMeta(epochRef.current);
-        const [sources, notes, objectives] = await Promise.all([
+        const [sources, notes] = await Promise.all([
           window.astella.source.list({ meta: meta(), limit: 1 }),
           window.astella.note.list({ meta: meta(), limit: 1 }),
-          window.astella.objective.list({ meta: meta(), limit: 1 }),
         ]);
         if (!active) return;
         setInventory({
           sources: unwrapGatewayResult(sources).total,
           notes: unwrapGatewayResult(notes).total,
-          objectives: unwrapGatewayResult(objectives).total,
         });
       } catch (error) {
         // The inventory is informational; the rest of the page still stands.
@@ -1749,11 +1756,9 @@ export function SettingsSurface() {
           <h3 className="settings-group__title">快捷键</h3>
           <dl className="settings-shortcut-list">
             <div><dt><kbd>⌘/Ctrl + K</kbd><span>搜索</span></dt><dd>在任何页面打开全局搜索。</dd></div>
-            <div><dt><kbd>⌘/Ctrl + Enter</kbd><span>继续学习</span></dt><dd>打开今天真正停下的位置。</dd></div>
             <div><dt><kbd>⌘/Ctrl + S</kbd><span>保存版本</span></dt><dd>编辑笔记时留下一个可回去的版本。</dd></div>
             <div><dt><kbd>⌘/Ctrl + Shift + F</kbd><span>全屏笔记</span></dt><dd>打开或退出全屏阅读与编辑。</dd></div>
-            <div><dt><kbd>R</kbd><span>今日复习</span></dt><dd>只在书桌（首页）生效，任务页里不会把你带走。</dd></div>
-            <div><dt><kbd>G</kbd><span>理解星图</span></dt><dd>同样只在书桌生效。</dd></div>
+            <div><dt><kbd>G</kbd><span>理解星图</span></dt><dd>只在书桌（首页）生效。</dd></div>
           </dl>
         </section>
 
@@ -1956,10 +1961,6 @@ export function SettingsSurface() {
               <b>{countOrDash(inventory?.notes)}</b>
               <span>笔记</span>
             </div>
-            <div className="settings-stat" data-loading={inventoryLoading ? "true" : undefined}>
-              <b>{countOrDash(inventory?.objectives)}</b>
-              <span>学习卡</span>
-            </div>
           </div>
           {inventoryFailure ? (
             <SettingsInlineState
@@ -2061,7 +2062,6 @@ export function SettingsSurface() {
       metrics: [
         { label: "来源", value: countOrDash(inventory?.sources) },
         { label: "笔记", value: countOrDash(inventory?.notes) },
-        { label: "学习卡", value: countOrDash(inventory?.objectives) },
       ],
       items: deviceDetailsOpen ? [
         { label: "剪贴板链接识别", state: capabilityChipLabel("native", capabilities?.nativeCapabilities.clipboard) ?? undefined },

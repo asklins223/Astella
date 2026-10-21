@@ -61,6 +61,7 @@ export interface CompanionSpeculativeFlightsV1 {
 }
 
 export function startCompanionSpeculativeFirstSteps(args: {
+  allowSpeculation?: boolean;
   provider: AIProvider;
   ctxSignal: AbortSignal;
   onProviderDelta: ((delta: string) => Promise<boolean>) | undefined;
@@ -84,6 +85,7 @@ export function startCompanionSpeculativeFirstSteps(args: {
    */
   releaseRouter?: CompanionReleaseRouterPort;
 }): CompanionSpeculativeFlightsV1 {
+  if (args.allowSpeculation === false) return { settle: async () => null };
   const eligible = args.cachedInterpretation === null
     && typeof args.provider.chatCompletionStream === "function"
     && Boolean(args.onProviderDelta);

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { plainCompanionBubbleText, renderCompanionMarkdown } from "../content/companion-markdown.tsx";
+import { plainCompanionBubbleText, renderCompanionMarkdown, stripLeadingPreviewTitle } from "../content/companion-markdown.tsx";
 
 /** 打开通道换成记账替身：这个文件只验"点了有没有把地址交出去、交的是哪一条"。 */
 const { opened } = vi.hoisted(() => ({ opened: [] as string[] }));
@@ -16,6 +16,25 @@ function show(text: string) {
 afterEach(() => {
   opened.length = 0;
   cleanup();
+});
+
+describe("stripLeadingPreviewTitle（预览页头已写标题时只去掉重复的首行标题）", () => {
+  it("去掉与标题一致的 ATX 一二级标题", () => {
+    expect(stripLeadingPreviewTitle("# 秦朝统一\n\n正文", "秦朝统一")).toBe("\n正文");
+    expect(stripLeadingPreviewTitle("## 秦朝统一\n正文", "秦朝统一")).toBe("正文");
+  });
+  it("去掉与标题一致的 setext 标题", () => {
+    expect(stripLeadingPreviewTitle("秦朝统一\n===\n\n正文", "秦朝统一")).toBe("\n正文");
+  });
+  it("标题不同、不是首行、或正文本来没有标题时原样保留", () => {
+    expect(stripLeadingPreviewTitle("# 郡县制\n正文", "秦朝统一")).toBe("# 郡县制\n正文");
+    expect(stripLeadingPreviewTitle("正文\n\n# 秦朝统一", "秦朝统一")).toBe("正文\n\n# 秦朝统一");
+    expect(stripLeadingPreviewTitle("正文第一段。", "秦朝统一")).toBe("正文第一段。");
+    expect(stripLeadingPreviewTitle("# 秦朝统一", "")).toBe("# 秦朝统一");
+  });
+  it("标题空白差异不影响判断", () => {
+    expect(stripLeadingPreviewTitle("#  秦朝统一  \n正文", " 秦朝统一 ")).toBe("正文");
+  });
 });
 
 describe("renderCompanionMarkdown（§4.8：可见正文保留结构，由渲染层排版）", () => {

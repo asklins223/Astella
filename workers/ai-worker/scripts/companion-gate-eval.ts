@@ -39,7 +39,6 @@ import { readFileSync, writeFileSync } from "node:fs";
 
 import {
   claimsLookupThatNeverRan,
-  claimsNothingDueAgainstFacts,
   containsCompanionInternalToken,
   keepRecomputedBlocks,
   looksLikeJsonEnvelope,
@@ -402,7 +401,6 @@ function judgeTurns(turns: ReplayTurn[], activeness: string) {
       gates: {
         // A 类：只在"整轮零工具调用"时才有意义（调用方按硬前提筛选）。
         G1: { fired: numericClaims.length > 0, detail: numericClaims },
-        G2: { fired: claimsNothingDueAgainstFacts(said, contextText) },
         G3: { fired: claimsLookupThatNeverRan(said) },
         G4: { fired: looksLikeUnfulfilledActionNarration(said) },
         G6: { fired: quoteClaims.length > 0, detail: quoteClaims },

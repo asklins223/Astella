@@ -21,7 +21,7 @@ export const agentLongGoalRefV1Schema = z.object({ memoryId:z.string().uuid(),re
 
 /** Current-turn attention is an interpretation, never a grant to execute. */
 export const agentAttentionObjectV1Schema = z.object({
-  kind: z.enum(["note", "note_version", "card", "learning_run", "agent_run", "memory", "key_point"]),
+  kind: z.enum(["note", "note_version", "card", "agent_run", "memory"]),
   id: z.string().uuid(), revision: z.number().int().positive().optional(), versionId: z.string().uuid().optional(),
 }).strict();
 export type AgentAttentionObjectV1 = z.infer<typeof agentAttentionObjectV1Schema>;
@@ -105,17 +105,11 @@ export const agentGoalDeliveryV1Schema = z.object({
 }).strict();
 export type AgentGoalDeliveryV1 = z.infer<typeof agentGoalDeliveryV1Schema>;
 
-/**
- * 一次操作真正推进的是哪一个执行体：回执按 kind+id 绑定，换执行体不换身份。
- * `job` 落在 jobs 行上；`card_generation` 直接落在真实制卡 run 上（没有准备用的假 jobs）。
- */
-export const agentExecutionRefV1Schema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("job"), id: z.string().uuid() }).strict(),
-  z.object({ kind: z.literal("card_generation"), id: z.string().uuid() }).strict(),
-]);
+/** Plan 57: operations and saved note artifacts use the current job chain. */
+export const agentExecutionRefV1Schema = z.object({ kind: z.literal("job"), id: z.string().uuid() }).strict();
 export type AgentExecutionRefV1 = z.infer<typeof agentExecutionRefV1Schema>;
 
-/** 三类笔记产物保留 jobId（权威事实在那张 jobs 行上）；制卡候选没有 jobId。 */
+/** Saved note artifacts carry the identity of their current job. */
 export const agentArtifactRefV1Schema = z.discriminatedUnion("kind", [
   z.object({kind:z.literal("note_mind_map"),id:z.string().uuid(),jobId:z.string().uuid(),noteId:z.string().uuid(),noteVersionId:z.string().uuid()}).strict(),
   z.object({
@@ -130,11 +124,6 @@ export const agentArtifactRefV1Schema = z.discriminatedUnion("kind", [
     kind: z.literal("note_expansion"),
     id: z.string().uuid(), jobId: z.string().uuid(), noteId: z.string().uuid(), noteVersionId: z.string().uuid(),
   }).strict(),
-  z.object({
-    // id 是真实 card_generation_runs_v2.id。
-    kind: z.literal("card_candidates"),
-    id: z.string().uuid(), noteId: z.string().uuid(), noteVersionId: z.string().uuid(),
-  }).strict(),
 ]);
 
 /**
@@ -147,47 +136,20 @@ export const AGENT_ARTIFACT_KIND_LABELS_V1: Record<AgentArtifactRefV1["kind"], s
   note_overview: "速看",
   note_dynamic_artifact: "互动演示",
   note_expansion: "拓展草稿",
-  card_candidates: "待审核学习卡",
 };
-/** 唯一登记制卡能力的名字；card 侧两种结果只配它。 */
-export const AGENT_CARD_GENERATION_CAPABILITY = "card_generation_generate";
-
-/** 无卡推荐的依据条数与长度上限：理由取领域事件里已保存的 reasonCodes，不猜正文。 */
-export const AGENT_OPERATION_RESULT_MAX_REASON_CODES = 20;
-export const AGENT_OPERATION_REASON_CODE_MAX_LENGTH = 100;
-
-/** artifact 与 no_cards_recommended 都是成功收口；伪造一个空 artifact 才是失败。 */
-export const agentOperationResultV1Schema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("artifact"), artifact: agentArtifactRefV1Schema }).strict(),
-  z.object({
-    kind: z.literal("no_cards_recommended"),
-    reasonCodes: z.array(z.string().min(1).max(AGENT_OPERATION_REASON_CODE_MAX_LENGTH))
-      .max(AGENT_OPERATION_RESULT_MAX_REASON_CODES),
-  }).strict(),
-]);
+/** A result is a saved artifact belonging to this operation. */
+export const agentOperationResultV1Schema = z.object({ kind: z.literal("artifact"), artifact: agentArtifactRefV1Schema }).strict();
 export type AgentOperationResultV1 = z.infer<typeof agentOperationResultV1Schema>;
 
-/**
- * 结果必须真的属于这次 execution 与这个 capability——reducer 接受 `succeeded` 的硬条件，
- * 唯一一份判定：
- *   - note 三类：capability 非制卡 ∧ artifact.jobId === job execution.id；
- *   - card_candidates / no_cards_recommended：capability === card_generation_generate
- *     ∧ execution.kind === "card_generation"（前者再要求 artifact.id === execution.id）。
- */
+/** Plan 57: operations and saved note artifacts use the current job chain. */
 export function agentOperationResultMatchesExecutionV1(
   execution: AgentExecutionRefV1,
   result: AgentOperationResultV1,
   capability: string,
 ): boolean {
-  if (result.kind === "no_cards_recommended") {
-    return capability === AGENT_CARD_GENERATION_CAPABILITY && execution.kind === "card_generation";
-  }
-  const artifact = result.artifact;
-  if (artifact.kind === "card_candidates") {
-    return capability === AGENT_CARD_GENERATION_CAPABILITY
-      && execution.kind === "card_generation" && artifact.id === execution.id;
-  }
-  return execution.kind === "job" && artifact.jobId === execution.id;
+  const expectedCapability = { note_overview: "note_overview_generate", note_mind_map: "note_mind_map_generate",
+    note_dynamic_artifact: "note_dynamic_artifact_generate", note_expansion: "note_expansion_generate" }[result.artifact.kind];
+  return execution.kind === "job" && result.artifact.jobId === execution.id && capability === expectedCapability;
 }
 
 export const agentOperationV1Schema = z.object({

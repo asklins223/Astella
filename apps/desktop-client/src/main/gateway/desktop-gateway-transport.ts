@@ -51,7 +51,6 @@ import type { SessionCredentialStore } from "./desktop-gateway-credentials";
 import type { CompanionVoiceAudioCache, VoiceAudioProfile } from "../voice/companion-voice-audio-cache";
 import type { CompanionMessageAudioCache } from "../voice/companion-message-audio-cache";
 import type { RoomProjectionV1 } from "@astella/shared/room-projection-contracts";
-import type { LearningDashboardV2 } from "@astella/shared/learning-objective-surface-contracts";
 import type {
   ApiConnectionStateV1,
   CapabilityProjectionV1,
@@ -543,13 +542,6 @@ export class GatewayTransport {
   // **某个昂贵投影的缓存**，都跟着 `workspaceEpoch` 走（缓存要按纪元失效）。
   // `joinWorkspace` / `leaveWorkspace` 要读它，而那两个方法要变成自由函数，
   // 所以缓存得先在传输层有个落脚点。
-
-  roomProjectionCache: {
-    readonly etag: string;
-    readonly workspaceEpoch: number;
-    readonly dashboard: LearningDashboardV2;
-    readonly value: RoomProjectionV1;
-  } | null = null;
 
     forgetCapabilities(): void {
         this.cachedCapabilities = null;

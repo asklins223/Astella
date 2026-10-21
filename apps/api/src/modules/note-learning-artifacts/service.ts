@@ -141,7 +141,7 @@ async function projectTask(tx: ApiTransaction, scope: NoteLearningArtifactScopeV
   else status = "failed";
   return noteLearningArtifactTaskV1Schema.parse({
     taskId: job.id,
-    agentRunId: await agentRunForDomainExecution(tx, scope, "job", job.id),
+    agentRunId: await agentRunForDomainExecution(tx, scope, job.id),
     noteId,
     noteVersionId: input.noteVersionId,
     sourceKind: input.sourceKind,

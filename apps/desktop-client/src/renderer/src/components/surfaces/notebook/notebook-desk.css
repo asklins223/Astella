@@ -28,13 +28,13 @@
 .hud-surface .notebook-desk { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; gap: 9px; padding: 0; }
 .hud-surface .notebook-volume__bookmarks { z-index: 3; display: flex; align-items: stretch; gap: 7px; padding: 0 6px; flex: none; }
 .hud-surface .notebook-volume__bookmark { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; padding: 7px 16px; border: 2px solid #fff8e7; border-radius: 20px 20px 17px 17px; background: #f2f0df; color: #526653; font-size: 14px; font-weight: 750; text-decoration: none; box-shadow: 0 3px 0 #b3ba9a, 0 5px 9px #29382918; }
-.hud-surface .notebook-volume__bookmark span { display: grid; gap: 1px; text-align: left; letter-spacing: .02em; }
+.hud-surface .notebook-volume__bookmark span { display: grid; gap: 1px; text-align: left; letter-spacing: .02em; white-space: nowrap; }
 .hud-surface .notebook-volume__bookmark small { color: #70836c; font-size: 10px; line-height: 1.4; font-weight: 500; }
 .hud-surface .notebook-volume__bookmark[data-learning="overview"] { background: #ddebc9; }
 .hud-surface .notebook-volume__bookmark[data-learning="recall"] { background: #f6e8b9; }
 .hud-surface .notebook-volume__bookmark[data-learning="expansion"] { background: #d3e7e3; }
 .hud-surface .notebook-volume__bookmark[data-learning="history"] { margin-left: auto; }
-.hud-surface .notebook-volume__bookmark[aria-pressed="true"] { background: #fffbec; color: #376447; box-shadow: 0 3px 0 #8dab83, inset 0 0 0 1px #bdd3ac, 0 6px 10px #29382920; }
+.hud-surface .notebook-volume__bookmark[aria-selected="true"] { background: #fffbec; color: #376447; box-shadow: 0 3px 0 #8dab83, inset 0 0 0 1px #bdd3ac, 0 6px 10px #29382920; }
 .hud-surface .notebook-volume { display: flex; position: relative; flex: 1; min-width: 0; min-height: 0; padding: 5px 5px 8px 13px; border: 2px solid #e6ebd2; border-radius: 30px; background: #bfd5a9; box-shadow: 0 7px 0 #94b385, 0 15px 30px #2a392633, inset 0 1px 0 #fff9df; }
 .hud-surface .notebook-volume::before { content: ""; position: absolute; inset: 25px auto 25px 5px; width: 3px; border: 0; border-radius: 5px; background: #e4efcf; pointer-events: none; }
 .hud-surface .notebook-volume::after { content: ""; position: absolute; inset: auto 28px 3px 28px; height: 3px; border-radius: 3px; background: #efeeda; pointer-events: none; }
@@ -66,13 +66,7 @@
 .hud-surface .notebook-desk:not([data-view="body"]):not([data-fullscreen]) .notebook-desk__rack { flex-wrap: nowrap; min-height: 40px; padding: 5px 7px; border: 1px solid #d8dfcc; border-radius: 20px; background: #edf1e2ed; box-shadow: 0 3px 0 #bccbb340, 0 7px 20px #40544712; backdrop-filter: blur(16px); }
 .hud-surface .notebook-desk:not([data-view="body"]):not([data-fullscreen]) .notebook-volume__trail { display: none; }
 .hud-surface .notebook-desk:not([data-view="body"]):not([data-fullscreen]):not([data-mind-map]) .notebook-desk__scroll { padding-top: 78px; }
-.hud-surface .notebook-desk__utilities .notebook-card-entry { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; min-height: 36px; padding: 6px 12px; font-size: 12px; border-radius: 15px; box-shadow: 0 2px 0 #d2cdb3; }
-.hud-surface .notebook-card-entry__state, .hud-surface .notebook-card-entry__coverage { padding: 2px 6px; border-radius: 8px; background: var(--hud-mint); color: #426646; font-size: 10px; }
-.hud-surface .notebook-card-entry__coverage, .hud-surface .notebook-card-entry[data-status="review_ready"] .notebook-card-entry__state, .hud-surface .notebook-card-entry[data-status="needs_attention"] .notebook-card-entry__state { background: var(--hud-butter); color: #75623b; }
-.hud-surface .notebook-card-entry[data-status="failed"] .notebook-card-entry__state { background: #f5ddc9; color: #944e3b; }
 /* 入口旁边那两颗次要动作：与入口同一行的收边，别让它们自己那一行的外距把这一格撑散。 */
-.hud-surface .notebook-card-entry__tweak, .hud-surface .notebook-card-entry__previous { margin-left: -6px; }
-.hud-surface .notebook-card-entry__tweak:disabled { opacity: .45; cursor: default; }
 .hud-surface .notebook-desk__drawer { position: relative; }
 .hud-surface .notebook-desk__drawer > summary { display: grid; place-items: center; min-height: 36px; width: 36px; padding: 0; border: 0; border-radius: 13px; background: #eeefdf; list-style: none; cursor: pointer; }
 .hud-surface .notebook-desk__drawer > summary::-webkit-details-marker { display: none; }
@@ -222,10 +216,6 @@
 .hud-surface .notebook-workspace .note-image-upload__kind, .hud-surface .notebook-workspace .note-image-upload__size { color: var(--hud-soft); }
 .hud-surface .notebook-workspace .note-image-upload__name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .hud-surface .notebook-workspace .note-image-upload__state { color: var(--hud-ink); }
-.hud-surface .notebook-workspace .notebook-round-history { padding-top: 18px; }
-.hud-surface .notebook-workspace .notebook-round-history__day, .hud-surface .notebook-workspace .notebook-round-history__state { color: var(--hud-soft); font-size: 12px; }
-.hud-surface .notebook-workspace .notebook-round-history__modes, .hud-surface .notebook-workspace .notebook-round-history__follow-up { color: var(--hud-green); font-size: 13px; }
-.hud-surface .notebook-workspace .notebook-round-history__uncertain { color: var(--hud-clay); font-size: 13px; }
 
 /* Scale is the interruptible touch spring's channel; hover uses translate. */
 .hud-surface :is(.notebook-desk, .note-library, .notebook-dialog) :is(button, summary) { scale: var(--note-touch-scale, 1); }
@@ -249,10 +239,15 @@
   .hud-surface .notebook-desk__save-tray { padding-inline: 14px; flex-wrap: wrap; }
 }
 @container (max-width: 440px) {
-  .hud-surface .notebook-volume__bookmarks { gap: 5px; padding: 0; }
+  .hud-surface .notebook-desk:not([data-fullscreen]) > .notebook-volume__bookmarks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; padding: 0; }
   .hud-surface .notebook-volume__bookmark { flex: 1; padding: 7px 5px; min-width: 0; font-size: 12px; border-radius: 14px; }
+  .hud-surface .notebook-volume__bookmark[data-learning="history"] { margin-left: 0; }
   .hud-surface .notebook-volume__bookmark svg { width: 15px; }
   .hud-surface .notebook-desk__mode { gap: 5px; padding-inline: 8px; }
+  .hud-surface .notebook-desk:not([data-fullscreen]) .notebook-desk__mode svg { display: none; }
+  .hud-surface .notebook-desk:not([data-fullscreen])[data-view="body"] .notebook-desk__utilities { gap: 6px; }
+  .hud-surface .notebook-desk:not([data-fullscreen])[data-view="body"] .notebook-desk__utility-icon { width: 32px; justify-content: center; }
+  .hud-surface .notebook-desk:not([data-fullscreen])[data-view="body"] .notebook-desk__utility-label { display: none; }
   .hud-surface .notebook-volume__heading h2 { font-size: 23px; }
   .hud-surface .notebook-desk__scroll { padding: 20px 16px 28px; }
   .hud-surface .notebook-desk__side-page { padding: 18px 14px; }

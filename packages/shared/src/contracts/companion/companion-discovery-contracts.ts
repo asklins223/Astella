@@ -56,8 +56,6 @@ export const COMPANION_DISCOVERY_SOURCES = [
   "diary",
   /** 一条伴星记忆（判断/偏好/目标…）。 */
   "memory",
-  /** 一次学习运行的产物。 */
-  "learning_run",
 ] as const;
 export type CompanionDiscoverySource = (typeof COMPANION_DISCOVERY_SOURCES)[number];
 

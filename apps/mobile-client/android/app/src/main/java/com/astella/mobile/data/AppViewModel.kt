@@ -31,7 +31,19 @@ data class AppUiState(
     val annotationStatus: String? = null,
     val annotationError: String? = null,
     val pendingNoteContext: PendingNoteContext? = null,
-    val runs: List<ActiveRun> = emptyList(),
+    val pendingDiaryReference: PendingDiaryReference? = null,
+    val processRuns: List<ActiveRun> = emptyList(),
+    val processError: String? = null,
+    val historyHasMore: Boolean = false,
+    val historyLoadingOlder: Boolean = false,
+    val journalFollowsLatest: Boolean = true,
+    val journalTargetRunId: String? = null,
+    val journalCollapsed: Set<String> = emptySet(),
+    val orbitSectionRequest: String? = null,
+    val composerFocusRequest: Int = 0,
+    val diaryCaptureRequest: Int = 0,
+    val resultPreview: CompanionNoteTarget? = null,
+    val resultReturnTo: CompanionNoteTarget? = null,
     val workspaces: List<WorkspaceSummary> = emptyList(),
     val aiSettings: AISettings? = null,
     val companionPermissionLevel: String? = null,
@@ -65,6 +77,7 @@ data class AppUiState(
     val serviceAddress: String = "",
 ) {
     val isAuthenticated get() = profile != null
+    val runs get() = processRuns.filter(ActiveRun::isActive)
 }
 
 class AppViewModel(application: Application) : AndroidViewModel(application) {
@@ -88,16 +101,47 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private var lastObservation = android.os.SystemClock.elapsedRealtime()
     private var pendingTurnSignature: String? = null
     private var pendingTurnRequest: JSONObject? = null
+    private var minimumStreamingGeneration = 0
     private var voiceJob: kotlinx.coroutines.Job? = null
     private var audioPlayer: android.media.MediaPlayer? = null
     private var audioFile: java.io.File? = null
     private var meterJob: kotlinx.coroutines.Job? = null
     private var intakeGeneration = 0
+    private var processRequestGeneration = 0
+    private var journalScope: String? = null
+    private var journalReading = Triple<String?, Int, Int>(null, 0, 0)
+    private val previewOffsets = mutableMapOf<String, Int>()
 
     fun hasStoredSession(): Boolean = api.token != null
 
+    fun setResultPreview(target: CompanionNoteTarget?) { _state.value = _state.value.copy(resultPreview = target) }
+    fun openResultPage(target: CompanionNoteTarget) { _state.value = _state.value.copy(resultPreview = null, resultReturnTo = target) }
+    fun returnToResultJournal() {
+        val target = _state.value.resultReturnTo ?: return
+        _state.value = _state.value.copy(chatShowsRecords = true, resultReturnTo = null, resultPreview = target)
+    }
+    fun toggleProcessDisclosure(runId: String) {
+        val collapsed = _state.value.journalCollapsed
+        _state.value = _state.value.copy(journalCollapsed = if (runId in collapsed) collapsed - runId else collapsed + runId)
+    }
+    fun saveJournalReading(key: String?, index: Int, offset: Int, follows: Boolean) {
+        journalScope = "${_state.value.profile?.userId}:${_state.value.profile?.workspaceId}"
+        journalReading = Triple(key, index, offset)
+        if (_state.value.journalFollowsLatest != follows) _state.value = _state.value.copy(journalFollowsLatest = follows)
+    }
+    fun journalReadingPosition(): Triple<String?, Int, Int> = if (journalScope == "${_state.value.profile?.userId}:${_state.value.profile?.workspaceId}") journalReading else Triple(null, 0, 0)
+    fun previewOffset(target: CompanionNoteTarget): Int = previewOffsets["${_state.value.profile?.userId}:${_state.value.profile?.workspaceId}:${target.identity}"] ?: 0
+    fun hasPreviewOffset(target: CompanionNoteTarget): Boolean = previewOffsets.containsKey("${_state.value.profile?.userId}:${_state.value.profile?.workspaceId}:${target.identity}")
+    fun savePreviewOffset(target: CompanionNoteTarget, offset: Int) { previewOffsets["${_state.value.profile?.userId}:${_state.value.profile?.workspaceId}:${target.identity}"] = offset }
+    fun contentPreviewOffset(identity: String): Int = previewOffsets["${_state.value.profile?.userId}:${_state.value.profile?.workspaceId}:content:$identity"] ?: 0
+    fun hasContentPreviewOffset(identity: String): Boolean = previewOffsets.containsKey("${_state.value.profile?.userId}:${_state.value.profile?.workspaceId}:content:$identity")
+    fun saveContentPreviewOffset(identity: String, offset: Int) { previewOffsets["${_state.value.profile?.userId}:${_state.value.profile?.workspaceId}:content:$identity"] = offset }
+
     suspend fun requestApi(path: String, method: String = "GET", body: JSONObject? = null): JSONObject =
         withContext(Dispatchers.IO) { api.request(path, method, body) }
+
+    suspend fun requestApiArray(path: String, method: String = "GET", body: JSONObject? = null): JSONArray =
+        withContext(Dispatchers.IO) { api.requestArray(path, method, body) }
 
     init {
         if (api.token != null) restoreSession()
@@ -220,7 +264,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         "请求错误", "请求失败", "请求没有完成，请稍后重试。", "request failed", "internal server error",
     )
 
-    private fun pageMessage(error: Throwable, fallback: String): String {
+    internal fun pageMessage(error: Throwable, fallback: String): String {
         val apiFailure = error as? ApiFailure
         if (apiFailure != null) return when {
             apiFailure.status == 0 -> "暂时连接不上书房，请检查网络或服务地址后重试。"
@@ -293,21 +337,28 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun refreshMessages() = viewModelScope.launch {
         val id = _state.value.conversationId ?: return@launch
+        val session = api.token
         runCatching {
             withContext(Dispatchers.IO) { api.request("/companion/conversations/$id/messages?limit=50") }
         }.onSuccess { page ->
+            if (api.token != session || _state.value.conversationId != id) return@onSuccess
             val messages = page.optJSONArray("items").objects().map(CompanionMessage::from).sortedBy(CompanionMessage::seq)
-            _state.value = _state.value.copy(messages = messages)
+            val ids = messages.map { it.id }.toSet()
+            val older = _state.value.messages.filter { it.id !in ids }
+            _state.value = _state.value.copy(messages = (older + messages).sortedBy { it.seq },
+                historyHasMore = if (older.isEmpty()) page.optBoolean("hasMore") else _state.value.historyHasMore)
         }.onFailure { patch(error = pageMessage(it, "对话记录暂时无法读取，请重新连接后重试。")) }
     }
 
-    fun refreshRuns() = viewModelScope.launch {
+    fun refreshRuns(runIds: List<String> = emptyList(), includeThinking: Boolean = false) = viewModelScope.launch {
         val id = _state.value.conversationId ?: return@launch
-        runCatching { withContext(Dispatchers.IO) { api.request("/companion/conversations/$id/run-nodes?after=0") } }
+        val session = api.token; val requestGeneration = ++processRequestGeneration
+        val query = (if (includeThinking) "&includeThinking=true" else "") + if (runIds.isNotEmpty()) "&runIds=${runIds.joinToString(",")}" else ""
+        runCatching { withContext(Dispatchers.IO) { api.request("/companion/conversations/$id/run-nodes?after=0$query") } }
             .onSuccess { snapshot ->
-                val runs = snapshot.optJSONArray("runs").objects().map(ActiveRun::from).filter(ActiveRun::isActive)
-                _state.value = _state.value.copy(runs = runs)
-            }.onFailure { _state.value = _state.value.copy(runs = emptyList()) }
+                if (api.token != session || _state.value.conversationId != id || requestGeneration != processRequestGeneration) return@onSuccess
+                _state.value = _state.value.copy(processRuns = mergeCompanionProcessSnapshot(_state.value.processRuns, snapshot), processError = null)
+            }.onFailure { if (api.token == session && _state.value.conversationId == id) _state.value = _state.value.copy(processError = pageMessage(it, "过程记录暂时无法读取，已有成果仍然保留。")) }
     }
 
     fun loadNotes(query: String) = viewModelScope.launch {
@@ -445,6 +496,26 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun updateNoteAnnotation(noteId: String, annotation: NoteAnnotation, explanation: String) = viewModelScope.launch {
+        if (!isCurrentNote(noteId)) return@launch
+        val operationGeneration = ++annotationOperationGeneration
+        _state.value = _state.value.copy(isAnnotationBusy = true, annotationError = null, annotationStatus = null)
+        try {
+            withContext(Dispatchers.IO) {
+                api.request("/v2/notes/$noteId/annotations/${annotation.id}", "PATCH", JSONObject()
+                    .put("expectedRevision", annotation.revision).put("explanation", explanation.trim()))
+            }
+            if (!isCurrentNoteOperation(noteId, operationGeneration)) return@launch
+            refreshNoteAnnotations(noteId)
+            if (!isCurrentNoteOperation(noteId, operationGeneration)) return@launch
+            _state.value = _state.value.copy(annotationStatus = "批注已更新。", isAnnotationBusy = false)
+        } catch (error: Throwable) {
+            if (isCurrentNoteOperation(noteId, operationGeneration)) {
+                _state.value = _state.value.copy(isAnnotationBusy = false, annotationError = error.message ?: "批注没有更新，请重新读取后再试。")
+            }
+        }
+    }
+
     fun explainNoteAnnotation(noteId: String, anchor: NoteAnnotationAnchor) = viewModelScope.launch {
         if (!isCurrentNote(noteId)) return@launch
         val operationGeneration = ++annotationOperationGeneration
@@ -533,11 +604,34 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         _state.value = _state.value.copy(pendingNoteContext = null)
     }
 
+    suspend fun exportWorkspaceBackup(fileName: String = "书房备份"): java.io.File {
+        val payload = requestApi("/export/workspace")
+        val safeName = (_state.value.profile?.workspaceName ?: "Astella").replace(Regex("[/:]"), "-")
+        val directory = java.io.File(getApplication<Application>().cacheDir, "exports").apply { mkdirs() }
+        val file = java.io.File(directory, "$safeName-$fileName.json")
+        withContext(Dispatchers.IO) { file.writeText(payload.toString(2)) }
+        return file
+    }
+
+    fun continueWithDiary(date: String, version: Int) {
+        if (version <= 0) return
+        _state.value = _state.value.copy(
+            pendingNoteContext = null,
+            pendingDiaryReference = PendingDiaryReference(date, version),
+            accountError = null,
+        )
+    }
+
+    fun clearPendingDiaryReference() {
+        _state.value = _state.value.copy(pendingDiaryReference = null)
+    }
+
     fun setChatShowsRecords(value: Boolean) {
         _state.value.profile?.userId?.takeIf(String::isNotBlank)?.let {
             devicePreferences.edit().putBoolean(devicePreferenceKey(it, "showRecords"), value).apply()
         }
         _state.value = _state.value.copy(chatShowsRecords = value)
+        if (value) refreshRuns(includeThinking = true)
     }
 
     fun setReadingScale(value: Float) {
@@ -675,7 +769,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun acceptAIConsent() = viewModelScope.launch {
-        if (_state.value.aiSettings?.requiresConsent != true) {
+        if (_state.value.aiSettings?.needsSigning != true) {
             _state.value = _state.value.copy(accountError = "当前没有可确认的授权版本。")
             return@launch
         }
@@ -686,7 +780,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             }
             val settings = _state.value.aiSettings?.let { current ->
                 current.copy(
-                    requiresConsent = false,
                     consentVersion = AI_CONSENT_VERSION,
                     consentAt = java.time.Instant.now().toString(),
                     dataPolicy = current.dataPolicy.copy(sendToExternal = true),
@@ -758,12 +851,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val image = if (isSelection) null else current.selectedImage
         val file = if (isSelection) null else current.selectedFile
         val context = noteContext ?: current.pendingNoteContext
+        val diaryReference = current.pendingDiaryReference
         if (current.isSending || (content.isEmpty() && image == null && file == null)) return@launch
+        minimumStreamingGeneration = (current.processRuns.maxOfOrNull { it.generation } ?: 0) + 1
+        _state.value = _state.value.copy(streamingText = "", streamingRunId = null)
         patch(isSending = true, error = null)
         val session = api.token
         val signature = JSONObject().put("conversation", id).put("text", content).put("selection", selection)
             .put("attachment", if (isSelection) "" else current.attachmentRevision)
             .put("note", context?.noteId).put("version", context?.versionId)
+            .put("diary", diaryReference?.date).put("diaryVersion", diaryReference?.version)
             .put("voice", if (isSelection) null else voiceArtifactId).toString()
         try {
             val body = if (signature == pendingTurnSignature && pendingTurnRequest != null) pendingTurnRequest!! else {
@@ -788,6 +885,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 request.put("blocks", blocks)
                 selection?.let { request.put("selection", JSONObject().put("text", it).put("sharing", "user_selected")) }
                 context?.let { request.put("context", JSONObject().put("pageKind", "note").put("sharing", "page_registered").put("noteId", it.noteId).put("noteVersionId", it.versionId)) }
+                diaryReference?.let { request.put("diaryReference", JSONObject().put("date", it.date).put("version", it.version)) }
                 if (session != api.token || id != _state.value.conversationId) return@launch
                 pendingTurnRequest = request
                 request
@@ -802,7 +900,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 kotlinx.coroutines.currentCoroutineContext().ensureActive()
                 withContext(Dispatchers.IO) { api.request("/companion/conversations/$id/turns", "POST", body, key) }
             }
-            if (session != api.token) return@launch
+            if (session != api.token || _state.value.conversationId != id) return@launch
+            minimumStreamingGeneration = maxOf(response.optInt("generation"), _state.value.processRuns.maxOfOrNull { it.generation } ?: 0)
             pendingTurnSignature = null; pendingTurnRequest = null
             if (isSelection) _state.value = _state.value.copy(isSending = false, selectionRunId = response.getString("runId"))
             else {
@@ -812,7 +911,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     selectedImage = if (sameAttachment) null else _state.value.selectedImage,
                     selectedFile = if (sameAttachment) null else _state.value.selectedFile,
                     draft = if (_state.value.draft == text) "" else _state.value.draft,
-                    voiceTranscript = "", pendingNoteContext = if (_state.value.pendingNoteContext == context) null else _state.value.pendingNoteContext)
+                    voiceTranscript = "", pendingNoteContext = if (_state.value.pendingNoteContext == context) null else _state.value.pendingNoteContext,
+                    pendingDiaryReference = if (_state.value.pendingDiaryReference == diaryReference) null else _state.value.pendingDiaryReference)
             }
             refreshMessages(); refreshRuns()
         } catch (failure: Exception) {
@@ -881,27 +981,43 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         api.token = null
         voiceArtifactId = null
         pendingTurnSignature = null; pendingTurnRequest = null
+        minimumStreamingGeneration = 0
         _state.value = AppUiState(serviceAddress = api.baseUrl)
     }
 
     private fun consumeEvent(event: JSONObject) {
         viewModelScope.launch {
+            if (event.optNullableString("conversationId")?.let { it != _state.value.conversationId } == true) return@launch
+            val processRunId = event.optNullableString("runId")
+            if (processRunId != null) {
+                val old = _state.value.processRuns.firstOrNull { it.id == processRunId }
+                    ?: ActiveRun(processRunId, "running", 0, 0, null)
+                val projected = projectCompanionProcessEvent(old, event)
+                _state.value = _state.value.copy(processRuns = _state.value.processRuns.filterNot { it.id == processRunId } + projected)
+            }
+            val run = _state.value.processRuns.firstOrNull { it.id == processRunId }
+            val generation = event.optInt("generation")
+            val isCurrentOutput = !_state.value.isSending && generation >= minimumStreamingGeneration &&
+                generation >= (_state.value.processRuns.maxOfOrNull { it.generation } ?: 0) && event.optLong("seq") >= (run?.eventCursor ?: 0)
             when (event.optString("type")) {
                 "assistant.delta" -> {
+                    if (!isCurrentOutput || run?.isActive == false) return@launch
                     val addition = event.optJSONObject("payload")?.optString("textDelta").orEmpty()
                     val runId = event.optNullableString("runId")
                     _state.value = _state.value.copy(streamingRunId = runId,
                         streamingText = (if (_state.value.streamingRunId == runId) _state.value.streamingText else "") + addition)
                 }
                 "sync.required" -> loadConversation()
-                "turn.completed", "assistant.final" -> {
+                "turn.completed", "assistant.final", "turn.cancelled" -> {
                     if (_state.value.streamingRunId == event.optNullableString("runId")) _state.value = _state.value.copy(streamingText = "", streamingRunId = null)
                     refreshMessages()
                     refreshRuns()
                 }
                 "action.proposed" -> { refreshMessages(); refreshRuns() }
-                "turn.accepted", "assistant.status", "agent.tool" -> refreshRuns()
+                "turn.accepted" -> refreshRuns()
                 "error" -> {
+                    if (!isCurrentOutput) return@launch
+                    if (_state.value.streamingRunId == processRunId) _state.value = _state.value.copy(streamingText = "", streamingRunId = null)
                     _state.value = _state.value.copy(error = pageMessage(
                         IllegalStateException(event.optJSONObject("payload")?.optString("message").orEmpty()),
                         "这一轮暂时没有完成，请保留草稿后重试。",
@@ -913,6 +1029,24 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun recordInteraction() { lastInteraction = android.os.SystemClock.elapsedRealtime() }
+
+    fun openOrbitSection(section: String) {
+        _state.value = _state.value.copy(orbitSectionRequest = section)
+    }
+
+    fun beginDiaryCapture() {
+        val current = _state.value
+        _state.value = current.copy(
+            draft = if (current.draft.isBlank()) "今天我想记下：" else current.draft,
+            chatShowsRecords = false,
+            composerFocusRequest = current.composerFocusRequest + 1,
+            diaryCaptureRequest = current.diaryCaptureRequest + 1,
+        )
+    }
+
+    fun consumeOrbitSectionRequest() {
+        if (_state.value.orbitSectionRequest != null) _state.value = _state.value.copy(orbitSectionRequest = null)
+    }
 
     suspend fun reportAwareness(topic: String, foreground: Boolean, page: String, noteId: String? = null) {
         val current = _state.value
@@ -992,7 +1126,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun cancelActiveRuns() = viewModelScope.launch {
         stopVoice()
-        try { _state.value.runs.forEach { requestApi("/companion/runs/${it.id}/cancel", "POST", JSONObject()) }; refreshRuns() }
+        try { _state.value.runs.forEach { requestApi("/companion/runs/${it.id}/cancel", "POST", JSONObject().put("version", 1).put("generation", it.generation).put("reason", "user")) }; refreshRuns() }
         catch (error: Exception) { patch(error = error.message ?: "暂时没有停下来，请重试。") }
     }
 

@@ -56,13 +56,7 @@ import {
 } from "./desktop-gateway-uuid";
 import {
   DesktopGatewayFailure,
-} from "./desktop-gateway-failure";
-import {
-  CAPABILITY_CACHE_TTL_MS,
-  rawHealthSchema,
-  rawReadinessSchema,
-  transportNativeCapabilities,
-} from "./desktop-gateway-transport";
+} from "./desktop-gateway-failure";import { CAPABILITY_CACHE_TTL_MS, transportNativeCapabilities } from "./desktop-gateway-transport";
 import type { GatewayTransport } from "./desktop-gateway-transport";
 
 export async function archiveSource(t: GatewayTransport, sourceId: string, requestId?: string): Promise<DesktopSourceArchiveResult> {

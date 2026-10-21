@@ -64,7 +64,7 @@ For local development use a key id such as `local-dev` and revision such as `loc
 
 Real model calls need keys: `DASHSCOPE_API_KEY`, `OPENAI_COMPAT_API_KEY`, `OPENCODE_GO_API_KEY`, `SILICONFLOW_API_KEY`, `BIGMODEL_API_KEY`, `TOKENRHYTHM_API_KEY`, `MIMO_API_KEY`. Which platform serves which capability is decided by `config/ai-platforms.json`, and `docker-compose.dev.yml` only passes through the variables **explicitly listed** there. When adding a provider, update the model JSON and environment forwarding in the Compose files you use, checking both API and Worker. `ASSESSMENT_CRITIC_URL` / `_KEY` / `_MODEL` are a separate group: unconfigured, open-ended answer assessment takes the deterministic path instead of guessing.
 
-The remaining variables (`COMPANION_*`, `LEARNING_RUN_ENABLED`, `CARD_GENERATION_*`, …) already have local defaults in dev. `.github/scripts/verify-companion-capability-config.mjs`, run by `make verify`, checks that the flags declared by api and worker stay paired, so the API never accepts a turn the worker immediately rejects as disabled.
+The remaining variables (`COMPANION_*`, …) already have local defaults in dev. `.github/scripts/verify-companion-capability-config.mjs`, run by `make verify`, checks that the flags declared by api and worker stay paired, so the API never accepts a turn the worker immediately rejects as disabled.
 
 ### 2. `make up`
 

@@ -8,7 +8,6 @@ export const SCENE_BEATS = {
   note: ["收好一份资料", "展开成自己的笔记", "留下一个问题"],
   reading: ["继续读这篇笔记", "选中这一句，叫我解释", "理解留在原句旁"],
   agent: ["把同一个问题交给我", "进展看得到，随时补充", "先看提纲，再确认保存"],
-  review: ["给自己一个线索", "回到原文核对", "需要时，再复习"],
   return: ["从一个问题开始", "走过一篇笔记", "现在，换成你的内容"],
 } as const;
 
@@ -28,7 +27,6 @@ export function GuidanceScene({ step, guide, phase, onPhase, controls = true }: 
     <div className="guidance-scene__door" data-guide-object="true" aria-hidden={!room}><svg viewBox="0 0 210 300" fill="none" aria-hidden="true"><path data-guide-draw="true" d="M30 283V33Q30 12 51 12H161Q182 12 182 33V283M15 284H197" stroke="#819b6c" strokeWidth="5" strokeLinecap="round" /><path d="M51 38 155 57V265L51 279Z" fill="#d9e7c2" stroke="#9bb385" strokeWidth="2" /><rect x="68" y="69" width="67" height="73" rx="33" fill="#fff7dd" /><path d="M101 70v69M69 105h65" stroke="#adbc8e" strokeWidth="3" /><circle cx="137" cy="178" r="6" fill="#b5996e" /><path d="M68 209h55v36H68Z" stroke="#b6c5a1" strokeWidth="2" /></svg><span>我们从这里出发</span></div>
     <div className="guidance-scene__source" data-guide-object="true" aria-hidden={kind !== "note"}><FileText size={40} /><small>资料 · 示例</small><h3>学习的方法</h3><i /><i /><i /><span>出处和原文，一起留下</span></div>
     <div className="guidance-scene__request" data-guide-object="true" aria-hidden={kind !== "agent"}>“为什么回想比重读更有帮助？”<br /><b>帮我把这个问题，整理成提纲。</b></div>
-    <div className="guidance-scene__review-box" data-guide-object="true" aria-hidden={kind !== "review"}><i /><i /><i /><span>留下的理解</span></div>
     <article className="guidance-scene__folio" data-guide-object="true" aria-hidden={step.id === "settings"}>
       <span className="guidance-scene__folio-tab"><BookOpen size={15} />{room ? "这间书房" : "学习的方法"}</span>
       <div data-guide-content="true">
@@ -36,7 +34,6 @@ export function GuidanceScene({ step, guide, phase, onPhase, controls = true }: 
           : kind === "note" ? <><small>我的笔记 · 教学示例</small><h3>用自己的话，<br />记下来。</h3><p>读完一段，试着合上书。<br />回想让我们发现理解的空隙。<br />带着问题，再回到原文。</p><span className="guidance-scene__thought">为什么回想比重读更有帮助？</span><em>资料出处 ↗</em></>
           : kind === "reading" ? <><small>还是这篇笔记 · 教学示例</small><h3>给理解一个着落</h3><p>读完一段，试着合上书。<br /><button type="button" className="guidance-scene__sentence" onClick={() => onPhase(1)} aria-label="演示：选中这句请伴星解释">回想让我们发现理解的空隙。</button><br />带着问题，再回到原文。</p><span className="guidance-scene__saved"><MessageCircle size={15} /> 理解留在原句旁 · 示例</span></>
           : kind === "agent" ? <><small><Sparkles size={16} /> 任务 · 教学示例</small><h3>{phase === 0 ? "收到，交给我。" : phase === 1 ? "正在整理这个问题…" : "提纲候选准备好了。"}</h3><ol><li>厘清刚才的问题<Check size={14} /></li><li>整理这篇笔记的内容<Check size={14} /></li><li>准备一份提纲<Check size={14} /></li></ol><span className="guidance-scene__task-foot">可以补充、停止；确认后才保存</span></>
-          : kind === "review" ? <><small>自己的回想 · 教学示例</small><h3>为什么回想比重读<br />更有帮助？</h3><p>{phase === 0 ? "先停一停，自己想想。" : phase === 1 ? "回到笔记，核对刚才的理解。" : "需要巩固时，再安排一次复习。"}</p><span className="guidance-scene__task-foot">线索 → 回想 → 核对</span></>
           : <><small>问题 → 笔记 → 理解 → 伴星帮忙</small><h3>从这里，开始你的学习。</h3><p>挑一篇想读的笔记，<br />或者写下你自己的问题。</p><div className="guidance-scene__finish"><Check size={20} />这条路，你已经认识了</div></>}
       </div>
     </article>

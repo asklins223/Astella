@@ -10,23 +10,12 @@ const NAV_ICONS = {
   home: "M4 11.5 12 4l8 7.5M6.5 10.3V20h11v-9.7M10 20v-5h4v5",
   sources: "M5 3.5h14a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-13a2 2 0 0 1 2-2ZM8.5 8h7M8.5 12h7M8.5 16h4.5",
   notes: "M5 19.5 7.3 14 16 5.3a2 2 0 0 1 2.8 2.8L10.2 17 5 19.5Zm9-12.3 2.8 2.8M7.3 14l2.9 3",
-  goals: "m12 3 8 9-8 9-8-9 8-9Zm0 5 3.5 4-3.5 4-3.5-4 3.5-4Z",
-  // The second authored glyph (今日学习 was the first): the mockup's rail has no
-  // 星图 chip, but the page is a real destination now. Same 24×24 / 1.7-stroke
-  // outline language — a small constellation: three star nodes joined by two
-  // lines, with the brightest star sitting higher, reading as "the map of
-  // relations between stars" next to 理解 (its diamond) at 19px.
+  // The second authored glyph: the mockup's rail has no 星图 chip, but the page
+  // is a real destination now. Same 24×24 / 1.7-stroke outline language — a
+  // small constellation: three star nodes joined by two lines, with the
+  // brightest star sitting higher, reading as "the map of relations between
+  // stars" next to 理解 (its diamond) at 19px.
   graph: "M5.2 18.6 11.2 11.2 18.8 16.4M11.2 11.2l4.6-6.2M5.2 18.6m-1.9 0a1.9 1.9 0 1 0 3.8 0 1.9 1.9 0 1 0-3.8 0M11.2 11.2m-1.5 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0M18.8 16.4m-1.6 0a1.6 1.6 0 1 0 3.2 0 1.6 1.6 0 1 0-3.2 0M15.8 5m-1.9 0a1.9 1.9 0 1 0 3.8 0 1.9 1.9 0 1 0-3.8 0",
-  // The only glyph here with no mockup counterpart. The mockup's rail has eight
-  // chips and routes 复习 straight to page 14 (`data-target="14"`), so it never
-  // draws a 今日学习 entry; this one is authored in the same 24×24 / 1.7-stroke
-  // outline language — calendar frame, top hangers, month rule, then a marked
-  // date cell — so 今日学习 and 复习 can sit side by side as two destinations.
-  //
-  // The date marker is deliberately off-centre with a rule beside it: a single
-  // centred ring reads as a camera lens next to 来源 and 复习 at 19px.
-  today: "M8 3v2.6M16 3v2.6M6.8 5.6h10.4a2.2 2.2 0 0 1 2.2 2.2v10.4a2.2 2.2 0 0 1-2.2 2.2H6.8a2.2 2.2 0 0 1-2.2-2.2V7.8a2.2 2.2 0 0 1 2.2-2.2ZM4.6 10.6h14.8M10.4 13.5a2 2 0 1 0 0 4 2 2 0 1 0 0-4M14.6 15.5h1.4",
-  review: "M19 8a7.5 7.5 0 1 0 .4 7M19 4v4h-4M12 8v4l2.5 1.7",
   search: "M16 10.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0Zm-1 4.5 5 5",
   companion: "M12 3.5c.7 4.7 3.8 7.8 8.5 8.5-4.7.7-7.8 3.8-8.5 8.5-.7-4.7-3.8-7.8-8.5-8.5 4.7-.7 7.8-3.8 8.5-8.5Z",
   settings: "M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm4 1.5v-3l-2-.6-.7-1.6 1-1.8-2.1-2.1-1.8 1-1.6-.7-.6-2h-3l-.6 2-1.6.7-1.8-1-2.1 2.1 1 1.8-.7 1.6-2 .6v3l2 .6.7 1.6-1 1.8 2.1 2.1 1.8-1 1.6.7.6 2h3l.6-2 1.6-.7 1.8 1 2.1-2.1-1-1.8.7-1.6 2-.6Z",
@@ -42,15 +31,9 @@ const DIRECTORY_ITEMS: readonly DirectoryItem[] = [
   { id: "home", label: "首页", intent: "home" },
   { id: "sources", label: "来源", intent: "open-sources" },
   { id: "notes", label: "笔记", intent: "open-notes" },
-  { id: "goals", label: "学习卡", intent: "open-objectives" },
   // 星图 (page 19) sits with the understanding group: it is the topology view
-  // of the same sources → notes → objectives chain the three chips above open.
+  // of the same sources → notes chain the two chips above open.
   { id: "graph", label: "星图", intent: "graph" },
-  // 今日学习 (page 14) and 复习 (page 15) are two different pages, and the rail
-  // is the only place either one can be reached from. `continue` is the intent
-  // `room-machine.ts` resolves to `{ surface: "study" }`, i.e. page 14.
-  { id: "today", label: "今日学习", intent: "continue" },
-  { id: "review", label: "复习", intent: "review" },
   { id: "search", label: "搜索", intent: "search" },
   { id: "companion", label: "伴星", intent: "open-companion-center" },
   { id: "settings", label: "设置", intent: "open-settings" },
@@ -134,7 +117,8 @@ function readRailLayout(rail: HTMLElement, collapsed: boolean): RailLayoutSnapsh
   const moving = [
     rail,
     document.querySelector<HTMLElement>(".home-v2-hud"),
-    document.querySelector<HTMLElement>(".hud-surface .content"),
+    document.querySelector<HTMLElement>(".hud-surface [data-directory-content]")
+      ?? document.querySelector<HTMLElement>(".hud-surface .content"),
     document.querySelector<HTMLElement>(".hud-surface .return-home"),
   ].filter((element): element is HTMLElement => Boolean(element));
 
@@ -222,7 +206,7 @@ export function DirectoryRail({ readOnly = false }: { readonly readOnly?: boolea
   const [autoCollapsed, setAutoCollapsed] = useState(false);
   const hadSurfaceRef = useRef(false);
   const [portalHost, setPortalHost] = useState<HTMLElement | null>(null);
-  // 十个自绘图标没有文字，光靠图形认不出「今日学习」和「复习」。悬停或键盘
+  // 自绘图标没有文字，光靠图形认不出各页。悬停或键盘
   // 聚焦时在图标旁浮一枚小纸签把目的地名字说出来；rail 自己有 overflow 裁剪，
   // ::after 会被裁掉，所以标签走 fixed 定位、跟着当前 chip 的实时位置走。
   const [chipTag, setChipTag] = useState<{ label: string; top: number; left: number } | null>(null);
@@ -339,15 +323,9 @@ export function DirectoryRail({ readOnly = false }: { readonly readOnly?: boolea
 
   const activeId = useMemo<DirectoryItem["id"]>(() => {
     if (!surface) return "home";
-    if (surface === "study") return "today";
-    // 「未完成的学习」是从今日学习「接着上次学」走进去的，高亮跟同一条学习线走；
-    // 以前它兜底到 home，停在这一页时目录最亮的是「首页」，位置感是错的。
-    if (surface === "resumable") return "today";
     if (surface.startsWith("source-")) return "sources";
     if (surface.startsWith("note")) return "notes";
-    if (surface.startsWith("objective") || surface === "card-generation") return "goals";
     if (surface === "graph") return "graph";
-    if (surface === "review" || surface === "validation") return "review";
     if (surface === "search") return "search";
     if (surface === "companion-center") return "companion";
     if (surface === "settings") return "settings";

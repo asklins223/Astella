@@ -35,7 +35,6 @@ const SOURCE_LABEL: Record<string, string> = {
   assistant_reply: "一段对话",
   diary: "日记",
   memory: "她记住的",
-  learning_run: "一次学习",
 };
 
 type Section<T> =

@@ -20,7 +20,6 @@ export function computeContextRevisionV2(input: MainPageContextInput): string {
       .sort()
       .map((json) => JSON.parse(json) as typeof input.entityRefs[number]),
     interactionState: input.interactionState,
-    graph: input.graph ?? null,
     capabilityHints: [...input.capabilityHints].sort(),
     sensitivity: input.sensitivity,
     // 可读视图必须进摘要：视图变了就是 context 变了，否则 renew 的 CAS 与

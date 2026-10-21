@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CompanionChatSession } from "../../../app/companion-session/companion-chat-session";
 import type { CompanionVoiceCaption, CompanionVoiceInputOptions, CompanionVoicePhase } from "../voice/use-companion-voice-input";
 import { CompanionHud } from "../hud/CompanionHud";
+import { beginCompanionSpeechLine } from "../../../app/companion-session/companion-voice-playback";
 import { interactionProposal, interactionSession, interactionSettings } from "./companion-interaction-fixtures";
 import { COMPANION_SELECTION_MAX_CHARS, COMPANION_P2_LIMITS } from "@astella/shared/companion-conversation-contracts";
 
@@ -47,8 +48,8 @@ vi.mock("../voice/use-companion-voice-input", async importOriginal => {
 vi.mock("../../../app/companion-session/companion-voice-playback", async importOriginal => {
   const actual = await importOriginal<typeof import("../../../app/companion-session/companion-voice-playback")>();
   return { ...actual, stopCompanionSpeech: vi.fn(), subscribeCompanionSpeech: () => () => undefined,
-    beginCompanionSpeechLine: (...args: Parameters<typeof actual.beginCompanionSpeechLine>) =>
-      state.speechSession ?? actual.beginCompanionSpeechLine(...args) };
+    beginCompanionSpeechLine: vi.fn((...args: Parameters<typeof actual.beginCompanionSpeechLine>) =>
+      state.speechSession ?? actual.beginCompanionSpeechLine(...args)) };
 });
 vi.mock("../../../app/companion-session/companion-voice-level", async importOriginal => {
   const actual = await importOriginal<typeof import("../../../app/companion-session/companion-voice-level")>();
@@ -114,9 +115,12 @@ describe("production companion interaction", () => {
     expect(reply.contains(screen.getByRole("button", { name: "打开新笔记" }))).toBe(true);
     expect(reply.contains(screen.getByRole("status", { name: "小鲸 正在做的事" }))).toBe(false);
     expect(document.querySelectorAll(".companion-hud__paper")).toHaveLength(0);
+    // 材料默认收在“查阅的材料”里；打开后仍在同一条回复里，不需要换页。
     expect(screen.queryByText("先秦到清朝的历程。")).toBeNull();
+    fireEvent.click(screen.getByText("查阅的材料"));
+    expect(screen.getByText("先秦到清朝的历程。")).toBeTruthy();
     expect(dismissLiveReply).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "收起伴星回复" }));
+    fireEvent.click(screen.getByRole("button", { name: "收起这次交流" }));
     expect(dismissLiveReply).toHaveBeenCalledOnce();
     expect(dismissRichReply).toHaveBeenCalledOnce();
     expect(document.querySelector(".companion-hud__output")).toBeNull();
@@ -194,14 +198,25 @@ describe("production companion interaction", () => {
     expect(after.querySelector(".companion-hud__output-body")?.textContent).not.toContain("先想清楚");
   });
 
-  it("工具已经在跑的轮次不用思考盖住进度", () => {
+  it("长期思考只把最新一行留在气泡里，不把整段想法堆高", () => {
+    const thought = `先看散射。${"再想想有没有更贴切的例子，".repeat(12)}最后落到天空的颜色。`;
+    state.chat = interactionSession({ mode: "closed", phase: "sending", processRunId: "current", thinking: thought });
+    render(<Harness />);
+    advance(1_200);
+    const body = document.querySelector(".companion-hud__output-body");
+    expect(body?.textContent?.startsWith("…")).toBe(true);
+    expect(body?.textContent?.endsWith("最后落到天空的颜色。")).toBe(true);
+    expect(body?.textContent?.length).toBeLessThan(thought.length);
+  });
+
+  it("工具已经在跑的轮次，思考收在进度上方的一行里，不盖住进度", () => {
     state.chat = interactionSession({ mode: "closed", phase: "sending", processRunId: "current",
       thinking: "该先读笔记再回答。",
       nodes: [{ key: "tool:read", kind: "tool", label: "查阅原文", state: "running", toolName: "companion_read_note", summary: null, proposalId: null }] });
     render(<Harness />);
     advance(1_200);
     expect(document.querySelector(".companion-hud__output")?.getAttribute("data-tone")).not.toBe("thinking");
-    expect(screen.queryByText("该先读笔记再回答。")).toBeNull();
+    expect(document.querySelector(".companion-hud__rail-thinking")?.textContent).toContain("该先读笔记再回答。");
   });
 
   it("被上一条挡住时，「停掉上一条」是真能按的一颗按钮", async () => {
@@ -474,6 +489,64 @@ describe("production companion interaction", () => {
     expect(screen.getByRole("status", { name: "小鲸 正在做的事" })).toBeTruthy();
   });
 
+  it("同一轮 liveReply 更新不重启语音会话，换轮才停", () => {
+    const stop = vi.fn();
+    state.speechSession = { planId: "same-run", mode: "voice", segments: [], segmentCount: 0, stop,
+      feed: vi.fn(), feedSegment: vi.fn(), finish: vi.fn(), currentVisibleChars: () => null };
+    const begin = vi.mocked(beginCompanionSpeechLine);
+    begin.mockClear();
+    const live = (text: string) => ({ messageId: "one", runId: "run-a", text,
+      hasActionBlocks: false, proposalIds: [] });
+    state.chat = interactionSession({ mode: "closed", liveReply: live("第一段。") });
+    render(<Harness voiceEnabled />);
+    advance(500);
+    expect(begin).toHaveBeenCalledTimes(1);
+    patch({ liveReply: live("第一段。\n\n第二段。") });
+    advance(500);
+    expect(begin).toHaveBeenCalledTimes(1);
+    expect(stop).not.toHaveBeenCalled();
+    patch({ liveReply: { ...live("新的一轮。"), runId: "run-b", messageId: "two" } });
+    advance(500);
+    expect(begin).toHaveBeenCalledTimes(2);
+    expect(stop).toHaveBeenCalledOnce();
+  });
+
+  it("shows one light bubble at a time and switches after the first message is read", () => {
+    const runId = "11111111-1111-4111-8111-111111111111";
+    const conversationId = "44444444-4444-4444-8444-444444444444";
+    const assistant = (id: string, seq: number, text: string) => ({
+      version: 1 as const, id, workspaceId: conversationId, conversationId, seq,
+      role: "assistant" as const, kind: "text" as const, blocks: [{ type: "text" as const, text }],
+      runId, clientMessageId: null, contentSha256: "0".repeat(64),
+      createdAt: "2026-10-21T11:00:00Z", editedAt: null,
+    });
+    const first = assistant("22222222-2222-4222-8222-222222222222", 2, "第一件事，我们先确定条件。");
+    const second = assistant("33333333-3333-4333-8333-333333333333", 3, "接着，再看这个条件下会发生什么。");
+    state.chat = interactionSession({ mode: "closed", messages: [first, second],
+      liveReply: { messageId: second.id, runId,
+        text: "第一件事，我们先确定条件。\n\n接着，再看这个条件下会发生什么。",
+        hasActionBlocks: false, proposalIds: [] } });
+    render(<Harness />);
+
+    advance(500);
+    let bubbles = [...document.querySelectorAll<HTMLElement>(".companion-hud__output")];
+    expect(bubbles).toHaveLength(1);
+    const firstText = bubbles[0]!.querySelector(".companion-hud__output-body")?.textContent ?? "";
+    expect(firstText.startsWith("第一件事")).toBe(true);
+    expect(firstText).not.toContain("接着");
+    expect(bubbles[0]!.querySelector(".companion-hud__reply-heading")).toBeTruthy();
+    expect(document.querySelector(".companion-hud__reply-foot")).toBeNull();
+    expect(bubbles[0]!.querySelector(".companion-hud__output-tools")).toBeNull();
+
+    advance(3_000);
+    bubbles = [...document.querySelectorAll<HTMLElement>(".companion-hud__output")];
+    expect(bubbles).toHaveLength(1);
+    expect(bubbles[0]!.querySelector(".companion-hud__output-body")?.textContent)
+      .toBe("接着，再看这个条件下会发生什么。");
+    expect(bubbles[0]!.querySelector(".companion-hud__reply-heading")).toBeTruthy();
+    expect(document.querySelector(".companion-hud__reply-foot")).toBeNull();
+  });
+
   it("shows the current tool instantly, keeps stop accessible, and avoids a duplicate waiting bubble", () => {
     state.chat = interactionSession({ mode: "closed", phase: "sending", processRunId: "current",
       nodes: [{ key: "tool:one", kind: "tool", label: "查阅原文", state: "running", toolName: "companion_read_note", summary: null, proposalId: null }] });
@@ -499,7 +572,9 @@ describe("production companion interaction", () => {
     const process = document.querySelector(".companion-hud__rail")!;
     expect(process.parentElement).toBe(reply.parentElement);
     expect(process.compareDocumentPosition(reply) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByRole("button", { name: "查看过程" }).getAttribute("aria-expanded")).toBe("false");
     fireEvent.click(screen.getByRole("button", { name: "查看过程" }));
+    expect(screen.getByRole("button", { name: "收起过程" }).getAttribute("aria-expanded")).toBe("true");
     expect(process.querySelector(".companion-hud__rail-steps li")).toBeTruthy();
     advance(60_000);
     expect(dismissLiveReply).not.toHaveBeenCalled();

@@ -25,6 +25,8 @@ extension AppStore {
 
     func loadNotes(query: String = "") async {
         let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let session = api.token
+        let workspaceId = profile?.workspaceId
         notesRequestGeneration += 1
         let requestGeneration = notesRequestGeneration
         notesQuery = normalized
@@ -33,7 +35,8 @@ extension AppStore {
         isLoading = true
         notesErrorMessage = nil
         defer {
-            if requestGeneration == notesRequestGeneration { isLoading = false }
+            if requestGeneration == notesRequestGeneration,
+               session == api.token, workspaceId == profile?.workspaceId { isLoading = false }
         }
         do {
             let path = normalized.isEmpty ? "/notes" : "/search"
@@ -45,11 +48,13 @@ extension AppStore {
                     URLQueryItem(name: "limit", value: "30")
                 ]
             let page = try await api.request(path, query: params) as? [String: Any]
-            guard requestGeneration == notesRequestGeneration else { return }
+            guard requestGeneration == notesRequestGeneration,
+                  session == api.token, workspaceId == profile?.workspaceId else { return }
             notes = (page?["items"] as? [[String: Any]] ?? []).compactMap(NoteSummary.init)
             notesNextCursor = page?["nextCursor"] as? String
         } catch {
-            guard requestGeneration == notesRequestGeneration else { return }
+            guard requestGeneration == notesRequestGeneration,
+                  session == api.token, workspaceId == profile?.workspaceId else { return }
             notesErrorMessage = mobilePageError(error, fallback: "手记暂时无法读取，请检查连接后重新加载。")
         }
     }
@@ -57,6 +62,8 @@ extension AppStore {
     func loadMoreNotes(query: String) async {
         let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !isLoading, !isLoadingMoreNotes, normalized == notesQuery, let cursor = notesNextCursor else { return }
+        let session = api.token
+        let workspaceId = profile?.workspaceId
         let requestGeneration = notesRequestGeneration
         isLoadingMoreNotes = true
         defer {
@@ -70,18 +77,23 @@ extension AppStore {
                 params.append(URLQueryItem(name: "type", value: "note"))
             }
             let page = try await api.request(path, query: params) as? [String: Any]
-            guard requestGeneration == notesRequestGeneration, normalized == notesQuery, notesNextCursor == cursor else { return }
+            guard requestGeneration == notesRequestGeneration, normalized == notesQuery,
+                  notesNextCursor == cursor, session == api.token,
+                  workspaceId == profile?.workspaceId else { return }
             let next = (page?["items"] as? [[String: Any]] ?? []).compactMap(NoteSummary.init)
             var seen = Set(notes.map(\.id))
             notes.append(contentsOf: next.filter { seen.insert($0.id).inserted })
             notesNextCursor = page?["nextCursor"] as? String
         } catch {
-            guard requestGeneration == notesRequestGeneration, normalized == notesQuery else { return }
+            guard requestGeneration == notesRequestGeneration, normalized == notesQuery,
+                  session == api.token, workspaceId == profile?.workspaceId else { return }
             notesErrorMessage = mobilePageError(error, fallback: "下一页手记没有加载出来，请稍后重试。")
         }
     }
 
     func loadNote(_ id: String) async {
+        let session = api.token
+        let workspaceId = profile?.workspaceId
         noteRequestGeneration += 1
         let requestGeneration = noteRequestGeneration
         annotationRequestGeneration += 1
@@ -94,29 +106,35 @@ extension AppStore {
         noteErrorMessage = nil
         do {
             let value = try await api.request("/v2/notes/\(id)") as? [String: Any] ?? [:]
-            guard requestGeneration == noteRequestGeneration else { return }
+            guard requestGeneration == noteRequestGeneration,
+                  session == api.token, workspaceId == profile?.workspaceId else { return }
             guard let document = NoteDocument(value) else {
                 throw MobileAPIError(status: 0, code: "invalid_note", message: "手记没有返回可阅读的版本内容。")
             }
             noteDocument = document
             await loadNoteAnnotations(id)
         } catch {
-            guard requestGeneration == noteRequestGeneration else { return }
+            guard requestGeneration == noteRequestGeneration,
+                  session == api.token, workspaceId == profile?.workspaceId else { return }
             noteErrorMessage = mobilePageError(error, fallback: "这篇手记暂时无法打开，请检查连接后重新加载。")
         }
     }
 
     func loadNoteAnnotations(_ noteId: String) async {
         guard noteDocument?.id == noteId else { return }
+        let session = api.token
+        let workspaceId = profile?.workspaceId
         annotationRequestGeneration += 1
         let requestGeneration = annotationRequestGeneration
         do {
             let page = try await api.request("/v2/notes/\(noteId)/annotations") as? [String: Any] ?? [:]
-            guard requestGeneration == annotationRequestGeneration, noteDocument?.id == noteId else { return }
+            guard requestGeneration == annotationRequestGeneration, noteDocument?.id == noteId,
+                  session == api.token, workspaceId == profile?.workspaceId else { return }
             noteAnnotations = (page["items"] as? [[String: Any]] ?? []).compactMap(NoteAnnotation.init)
             annotationErrorMessage = nil
         } catch {
-            guard requestGeneration == annotationRequestGeneration, noteDocument?.id == noteId else { return }
+            guard requestGeneration == annotationRequestGeneration, noteDocument?.id == noteId,
+                  session == api.token, workspaceId == profile?.workspaceId else { return }
             annotationErrorMessage = mobilePageError(error, fallback: "批注暂时无法读取，请重新加载后再试。")
         }
     }
@@ -146,6 +164,29 @@ extension AppStore {
         } catch {
             guard isCurrentNoteOperation(noteId, generation: operationGeneration) else { return }
             annotationErrorMessage = mobilePageError(error, fallback: "批注没有保存，请检查连接后重试。")
+        }
+    }
+
+    func updateNoteAnnotation(noteId: String, annotation: NoteAnnotation, explanation: String) async {
+        guard noteDocument?.id == noteId else { return }
+        annotationOperationGeneration += 1
+        let operationGeneration = annotationOperationGeneration
+        isAnnotationBusy = true
+        annotationErrorMessage = nil
+        annotationStatus = nil
+        defer { if operationGeneration == annotationOperationGeneration { isAnnotationBusy = false } }
+        do {
+            _ = try await api.request("/v2/notes/\(noteId)/annotations/\(annotation.id)", method: "PATCH", body: [
+                "expectedRevision": annotation.revision,
+                "explanation": explanation.trimmingCharacters(in: .whitespacesAndNewlines),
+            ])
+            guard isCurrentNoteOperation(noteId, generation: operationGeneration) else { return }
+            await loadNoteAnnotations(noteId)
+            guard isCurrentNoteOperation(noteId, generation: operationGeneration) else { return }
+            annotationStatus = "批注已更新。"
+        } catch {
+            guard isCurrentNoteOperation(noteId, generation: operationGeneration) else { return }
+            annotationErrorMessage = mobilePageError(error, fallback: "批注没有更新，请重新读取后再试。")
         }
     }
 
@@ -228,13 +269,18 @@ extension AppStore {
         generation == annotationOperationGeneration && noteDocument?.id == noteId
     }
 
-    func continueWithNote(_ document: NoteDocument) {
+    func continueWithNote(_ document: NoteDocument, question: String? = nil) {
         guard !document.versionId.isEmpty else {
             accountError = "没有取得这篇手记的版本信息，请重新打开后再试。"
             return
         }
         pendingNoteContext = PendingNoteContext(noteId: document.id, versionId: document.versionId, title: document.title)
         pendingDiaryReference = nil
+        if let question {
+            draft = question
+            setChatShowsRecords(false)
+            composerFocusRequestID &+= 1
+        }
         selectedTab = .conversation
     }
 
@@ -279,6 +325,86 @@ extension AppStore {
 
     func clearPendingDiaryReference() {
         pendingDiaryReference = nil
+    }
+}
+
+// MARK: - Notes · 拓展笔记（笔记客户端共用的任务/确认接口）
+
+extension AppStore {
+    func noteExpansions(noteId: String) async throws -> [String: Any] {
+        try await api.request("/v2/notes/\(noteId)/expansions") as? [String: Any] ?? [:]
+    }
+
+    func noteLearningCard(noteId: String) async throws -> [String: Any] {
+        try await api.request("/v2/notes/\(noteId)/learning-card") as? [String: Any] ?? [:]
+    }
+
+    func generateNoteLearningCard(noteId: String, noteVersionId: String, questionCount: Int) async throws -> [String: Any] {
+        try await api.request("/v2/notes/\(noteId)/learning-card/generate", method: "POST", body: [
+            "noteVersionId": noteVersionId,
+            "options": ["questionCount": questionCount],
+        ]) as? [String: Any] ?? [:]
+    }
+
+    func noteLearningCardAttempts(cardId: String) async throws -> [[String: Any]] {
+        let page = try await api.request("/v2/learning-cards/\(cardId)/attempts") as? [String: Any] ?? [:]
+        return page["items"] as? [[String: Any]] ?? []
+    }
+
+    func startNoteLearningCardAttempt(cardId: String) async throws -> [String: Any] {
+        try await api.request("/v2/learning-cards/\(cardId)/attempts", method: "POST") as? [String: Any] ?? [:]
+    }
+
+    func saveNoteLearningCardAnswer(cardId: String, attemptId: String, questionId: String, answer: Any) async throws {
+        _ = try await api.request("/v2/learning-cards/\(cardId)/attempts/\(attemptId)/answers", method: "POST", body: [
+            "questionId": questionId,
+            "answer": answer,
+        ])
+    }
+
+    func completeNoteLearningCardAttempt(cardId: String, attemptId: String, summaryOnly: Bool = false) async throws -> [String: Any] {
+        try await api.request("/v2/learning-cards/\(cardId)/attempts/\(attemptId)/complete", method: "POST",
+                              body: summaryOnly ? ["summaryOnly": true] : [:]) as? [String: Any] ?? [:]
+    }
+
+    func latestNoteExpansionTask(noteId: String, noteVersionId: String) async throws -> [String: Any] {
+        try await api.request("/v2/notes/\(noteId)/expansion-tasks/latest",
+                              query: [URLQueryItem(name: "noteVersionId", value: noteVersionId)]) as? [String: Any] ?? [:]
+    }
+
+    func noteExpansionTask(noteId: String, taskId: String) async throws -> [String: Any] {
+        try await api.request("/v2/notes/\(noteId)/expansion-tasks/\(taskId)") as? [String: Any] ?? [:]
+    }
+
+    func createNoteExpansionTask(noteId: String, noteVersionId: String) async throws -> [String: Any] {
+        try await api.request("/v2/notes/\(noteId)/expansion-tasks", method: "POST", body: [
+            "noteVersionId": noteVersionId,
+            "requestId": UUID().uuidString.lowercased(),
+        ]) as? [String: Any] ?? [:]
+    }
+
+    /// The review endpoint accepts only the editable fields of each draft
+    /// (`candidateId`, `title`, `blocks`, `selected`); the task draft carries
+    /// generation-only fields (`requestId`, `relationship`, `sourceReferences`)
+    /// that the strict request schema rejects, so project before sending.
+    func reviewNoteExpansionTask(noteId: String, taskId: String, drafts: [[String: Any]]) async throws -> [String: Any] {
+        let review = drafts.compactMap { draft -> [String: Any]? in
+            guard let candidateId = draft["candidateId"] as? String,
+                  let title = draft["title"] as? String,
+                  let blocks = draft["blocks"] as? [[String: Any]] else { return nil }
+            return [
+                "candidateId": candidateId,
+                "title": title,
+                "blocks": blocks,
+                "selected": draft["selected"] as? Bool ?? false,
+            ]
+        }
+        return try await api.request("/v2/notes/\(noteId)/expansion-tasks/\(taskId)/drafts", method: "PUT",
+                                     body: ["drafts": review]) as? [String: Any] ?? [:]
+    }
+
+    func confirmNoteExpansionTask(noteId: String, taskId: String, candidateIds: [String]) async throws -> [[String: Any]] {
+        try await api.request("/v2/notes/\(noteId)/expansion-tasks/\(taskId)/confirm", method: "POST", body: ["candidateIds": candidateIds]) as? [[String: Any]] ?? []
     }
 }
 

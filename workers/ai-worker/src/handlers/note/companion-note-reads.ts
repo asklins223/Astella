@@ -23,7 +23,6 @@
 import { sql } from "drizzle-orm";
 import { noteVisibleSqlText } from "@astella/shared/note-visibility";
 import type { WorkerTransaction } from "../../db.ts";
-import { ACTIVE_LEARNING_RUN_PHASES } from "@astella/shared/learning-run-contracts";
 
 /** 候选池：最近更新的 N 篇可见笔记。够用且恒定，不为它开窗口函数。 */
 const NEAREST_CANDIDATE_LIMIT = 60;
@@ -62,53 +61,4 @@ export async function findNearestNoteTitle(
     if (score > 0 && (!best || score > best.score)) best = { title: row.title, score };
   }
   return best;
-}
-
-/** 一篇笔记正在进行的轮次（"这篇有 N 轮在暂停／进行中"这句回填的来源）。 */
-export interface NoteRunRow extends Record<string, unknown> {
-  id: string;
-  phase: string;
-  note_id: string;
-}
-
-// P0-16：与 api 侧（surface-service / topology-repository）逐字相同的 6 档副本。
-// 现从 shared 的唯一来源派生；此前它是裸 `as const`，漏改一档不会报编译错。
-
-/**
- * 这篇笔记上有哪些轮次还没结束——按"目标有 origin 指向这篇笔记"关联。
- *
- * 为什么经 `learning_objective_origins_v2` 而不是 `learning_runs.origin`：后者是 jsonb
- * 的 **return_target**（哪张卡/哪个目标），没有 note 这一维；而 origin 表是"目标从哪篇
- * 笔记来"的正规记录。代价是覆盖率低（39d §18.1：208 个 objective 只有 22 个有 origin 行）
- * ——这是数据的现状，不是判据的问题：没有 origin 就没有"这篇"这个说法，宁可不回填。
- */
-export async function findNoteRuns(
-  tx: WorkerTransaction,
-  scope: { workspaceId: string; userId: string },
-  noteIds: string[],
-): Promise<Map<string, NoteRunRow[]>> {
-  const grouped = new Map<string, NoteRunRow[]>();
-  if (noteIds.length === 0) return grouped;
-  const idList = sql.join(noteIds.map((id) => sql`${id}::uuid`), sql`, `);
-  const phaseList = sql.join(ACTIVE_LEARNING_RUN_PHASES.map((phase) => sql`${phase}`), sql`, `);
-  const rows = await tx.execute<NoteRunRow>(sql`
-    SELECT r.id, r.phase, o.note_id
-    FROM learning_runs r
-    JOIN learning_objective_origins_v2 o
-      ON o.workspace_id = r.workspace_id AND o.note_id IN (${idList})
-     AND EXISTS (
-       SELECT 1 FROM learning_target_snapshots_v2 s
-       WHERE s.run_id = r.id AND s.workspace_id = r.workspace_id
-         AND s.objective_id = o.objective_id
-     )
-    WHERE r.workspace_id = ${scope.workspaceId} AND r.user_id = ${scope.userId}
-      AND r.phase IN (${phaseList})
-    ORDER BY r.updated_at DESC LIMIT 12
-  `);
-  for (const row of Array.isArray(rows) ? rows : []) {
-    const list = grouped.get(String(row.note_id)) ?? [];
-    list.push({ ...row, note_id: String(row.note_id) });
-    grouped.set(String(row.note_id), list);
-  }
-  return grouped;
 }

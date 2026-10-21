@@ -33,9 +33,9 @@ const REGION_COPY: Readonly<Record<ObjectZone, Readonly<{
   detail: string;
   icon: LucideIcon;
 }>>> = Object.freeze({
-  desk: { id: "desk-book", label: "书桌", detail: "今日下一步与今日复习", icon: BookOpenText },
+  desk: { id: "desk-book", label: "书桌", detail: "继续正在读的笔记", icon: BookOpenText },
   shelf: { id: "bookshelf", label: "书架", detail: "笔记、来源与搜索", icon: Search },
-  window: { id: "window-stars", label: "星窗", detail: "学习目标与理解星图", icon: Orbit },
+  window: { id: "window-stars", label: "星窗", detail: "理解星图", icon: Orbit },
   rest: { id: "rest-cushion", label: "休息角", detail: "伴星、日记、人格与记忆", icon: MessageCircle },
 });
 
@@ -162,9 +162,9 @@ function HomeV2Hud({ loading, state, title, primaryLabel, theme, motionMode, onP
   return (
     <aside ref={rootRef} className={`home-v2-hud${expanded ? " home-v2-hud--expanded" : ""}`} data-state={loading ? "loading" : state} data-theme={theme} data-motion-mode={motionMode} aria-labelledby="home-v2-hud-title" aria-describedby="home-v2-hud-detail" onKeyDown={(event) => { if (event.key === "Escape" && expanded) { event.preventDefault(); event.stopPropagation(); collapse(); } }}>
       <span className="home-v2-hud__skin" aria-hidden="true"><i /><i /><i /></span>
-      <button ref={triggerRef} type="button" className="home-v2-hud__trigger" aria-expanded={expanded} aria-label={expanded ? "收起今日下一步" : `展开今日下一步：${hudTitle}`} onClick={() => setExpanded((current) => !current)}>
+      <button ref={triggerRef} type="button" className="home-v2-hud__trigger" aria-expanded={expanded} aria-label={expanded ? "收起阅读起点" : `展开阅读起点：${hudTitle}`} onClick={() => setExpanded((current) => !current)}>
         <span className="home-v2-hud__signal" aria-hidden="true" />
-        <span className="home-v2-hud__trigger-copy"><small>{loading ? "正在同步" : "今日下一步"}</small><strong id="home-v2-hud-title">{hudTitle}</strong></span>
+        <span className="home-v2-hud__trigger-copy"><small>{loading ? "正在同步" : "阅读起点"}</small><strong id="home-v2-hud-title">{hudTitle}</strong></span>
         {expanded ? <ChevronLeft size={16} strokeWidth={1.8} aria-hidden="true" /> : <ChevronRight size={16} strokeWidth={1.8} aria-hidden="true" />}
       </button>
       <div className="home-v2-hud__panel" aria-hidden={!expanded} inert={!expanded}>
@@ -203,8 +203,7 @@ export function HomeV2ObjectLayer() {
    * 必须按下面第 200 行那条早退的**同一组条件**收口：这个组件在业务页面上仍然挂载
    * （只是渲染 null），无条件发布就会让首页和当前页抢同一个槽位——症状是"她在某些
    * 页面上读到的是首页"。
-   * 三个读数（`reviewLabel` / `activeRunCount` / `queueCount`）直接取
-   * `homePresentation` 的产物，与首页那三张卡同源。
+   * 只报首页真正读到的当前笔记；读不到的项不编造。
    */
   const homeShowing = !surface && !onboardingOpen && viewPreset === "room";
   const readableView = useMemo<PageReadableV1 | null>(() => {
@@ -214,9 +213,7 @@ export function HomeV2ObjectLayer() {
       title: home.title,
       statusLine: home.detail.slice(0, 160),
       metrics: [
-        { label: "复习", value: home.reviewLabel },
-        ...(home.activeRunCount !== null ? [{ label: "可恢复的学习", value: `${home.activeRunCount} 轮` }] : []),
-        ...(home.queueCount !== null ? [{ label: "队列", value: `${home.queueCount} 项` }] : []),
+        { label: "当前笔记", value: home.note?.title ?? "还没有打开过的笔记" },
       ],
       ...(failure ? { notice: `首页没有读到最新投影：${failure.slice(0, 80)}` } : {}),
     };
@@ -228,7 +225,7 @@ export function HomeV2ObjectLayer() {
   const portalTarget = portalHost ?? document.body;
   /**
    * 没有主目标时（`primaryIntent` 为 null），主按钮不再把人带去另一张页面，
-   * 而是**把镜头走到书桌**——今天的那一件、今日复习与目标都在那里。
+   * 而是**把镜头走到书桌**——今天的笔记与入口都在那里。
    * 2026-10-05 用户决定：原来这条分支指向的魔法目录整页删除。
    */
   const runPrimary = () => {
@@ -238,10 +235,6 @@ export function HomeV2ObjectLayer() {
     }
     if (home.primaryIntent === "continue") {
       runFeature("continue");
-      return;
-    }
-    if (home.primaryIntent === "open-objective") {
-      runFeature("current-target");
       return;
     }
     focusRegion("desk");

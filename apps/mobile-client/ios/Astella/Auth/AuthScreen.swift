@@ -349,11 +349,7 @@ struct LoginScreen: View {
         Group {
             switch route {
             case .login:
-                HStack(spacing: 18) {
-                    Button("邮箱验证码登录") { navigate(.emailLogin) }
-                    Text("·").foregroundStyle(StudyPalette.muted)
-                    Button("注册新账号") { navigate(.register) }
-                }
+                Button("注册新账号") { navigate(.register) }
             case .register:
                 HStack(spacing: 5) {
                     Text("已有账号？").foregroundStyle(StudyPalette.muted)

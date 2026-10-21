@@ -178,8 +178,6 @@ function filesUnderRegistering(registration: Registration): string[] {
  */
 const PUBLISHED_BY_PANEL: Readonly<Record<string, string | readonly string[]>> = {
   companion: ["companion-center-overview", "companion-dialogue-panel", "companion-diary-panel", "companion-memory-panel", "companion-memory-map", "companion-memory-maintenance", "companion-discovery-panel", "companion-activity-panel", "companion-persona-panel"].map(file => `src/renderer/src/components/surfaces/companion/${file}.tsx`),
-  candidate: "src/renderer/src/components/surfaces/review/use-card-generation-readable-view.ts",
-  generating: "src/renderer/src/components/surfaces/review/use-card-generation-readable-view.ts",
 };
 
 function callsPublish(source: string): boolean {
@@ -343,13 +341,14 @@ describe("可读视图登记台账（W2-7）", () => {
 
   it("会红自证：漏登记、忘删欠账、把欠账写成理由三种形状都逮得住", () => {
     const registration = pageRegistration();
-    const todayFile = registration.get("today");
-    expect(todayFile, "扫描器没找到 today 这一屏").toBeDefined();
+    // 「今日」页已经随旧学习链退役；自证用现在仍在的表单页。
+    const todayFile = registration.get("settings");
+    expect(todayFile, "扫描器没找到 settings 这一屏").toBeDefined();
 
     // ① 把一屏改成"没登记" ⇒ 差集必须点名它。
     const leaked = new Map(registration);
-    leaked.set("today", { file: todayFile!.file, registered: false, own: false });
-    expect(unaccountedPages(leaked, NOT_REGISTERED_WITH_REASON, PENDING_W2_7).join(" ")).toContain("today");
+    leaked.set("settings", { file: todayFile!.file, registered: false, own: false });
+    expect(unaccountedPages(leaked, NOT_REGISTERED_WITH_REASON, PENDING_W2_7).join(" ")).toContain("settings");
 
     // ② 登记完却留着欠账条目 ⇒ stale 必须点名它。（用**合成**的欠账表：真表现在已清空，
     // 拿它当这条自证的一条腿，明天它就自证不了了。）
@@ -357,10 +356,10 @@ describe("可读视图登记台账（W2-7）", () => {
     forgotten.set("settings", { file: registration.get("settings")!.file, registered: true, own: true });
     expect(staleEntries(forgotten, NOT_REGISTERED_WITH_REASON, { settings: "合成欠账" }).join(" ")).toContain("settings");
 
-    // ③ 把"还没做"伪装成"不登记的理由" ⇒ 现状就该红（today 已经登记了）。
+    // ③ 把"还没做"伪装成"不登记的理由" ⇒ 现状就该红（settings 已经登记了）。
     expect(
-      staleEntries(registration, { ...NOT_REGISTERED_WITH_REASON, today: "伪装成理由" }, PENDING_W2_7).join(" "),
-    ).toContain("today");
+      staleEntries(registration, { ...NOT_REGISTERED_WITH_REASON, settings: "伪装成理由" }, PENDING_W2_7).join(" "),
+    ).toContain("settings");
 
     // ④ 「面板代登记」那道核对真的在核：三种形状各判一次。
     const panels = "src/renderer/src/components/surfaces/companion/companion-center-panels.tsx";

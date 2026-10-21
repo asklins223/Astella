@@ -6,7 +6,7 @@
  * 约束原先散在各文件的注释里：写提示词的人知道"这段防的是什么"，读到的人
  * 只看到一段中文，机器则一条也核不了。于是三件事同时成立且都不报警——
  * 提示词改了没有同步版本身份、守卫删了没有清单说它本来该在、跨任务冲突
- * （`HOST_PROTOCOL` 与 `GROUNDED_TUTOR` 抢同一件事的格式权）要靠人读两段文本才发现。
+ * Fixed protocol and task-specific output rules need an explicit ownership boundary.
  *
  * 40b §1.4 第 1 条把"行号仅作定位、不能成为稳定合同身份"说得很死：文本一改行号就漂，
  * 而这里的 `id` 必须能跨重构引用。所以身份取**语义**（`HOST_PROTOCOL_FIXED`），
@@ -40,7 +40,6 @@
 /** 适用任务。取值必须是**这条要求挂在哪条链上**，不是"哪些任务顺便也适用"。 */
 export const MODEL_REQUIREMENT_TASKS = [
   "companion_dialogue",
-  "companion_tutor",
   "companion_diary",
   "companion_memory",
   "companion_proactive",
@@ -75,7 +74,6 @@ export const MODEL_REQUIREMENT_SOURCE_VERSIONS = [
   "COMPANION_LEAK_GATES_V1",
   "COMPANION_AGENT_CONTRACT_VERSION",
   "COMPANION_HARD_MAX_CHARS",
-  "GROUNDED_TUTOR_PROMPT_ID",
   "COMPANION_DIARY_DRAFT_PROMPT_VERSION",
   "AI_TASK_RETRYABLE_FAILURE_CLASSES",
   "AI_CONSENT_REQUIRED_CODE",
@@ -107,7 +105,6 @@ export interface ModelRequirement {
 
 const DIALOGUE_AND_FRIENDS = [
   "companion_dialogue",
-  "companion_tutor",
   "companion_diary",
 ] as const;
 
@@ -236,7 +233,7 @@ export const MODEL_REQUIREMENTS: readonly ModelRequirement[] = [
     purpose:
       "工具面范围：每轮提供**扁平**工具面，只按权限档（read_only/guided/full）与外发约束"
       + "过滤。工具行为与权限契约不随人格改变；模型可建议，不可自行授权。",
-    appliesTo: ["companion_dialogue", "companion_tutor"],
+    appliesTo: ["companion_dialogue"],
     sourceVersion: "COMPANION_AGENT_CONTRACT_VERSION",
     enforcedBy: "service",
     evidence: {
@@ -252,7 +249,7 @@ export const MODEL_REQUIREMENTS: readonly ModelRequirement[] = [
     purpose:
       "工具参数契约：参数不合法时**不执行**，且回给模型与用户看的是同一句中文。"
       + "两份清单靠人同步过一次，上一批提醒工具因此上线即坏。",
-    appliesTo: ["companion_dialogue", "companion_tutor"],
+    appliesTo: ["companion_dialogue"],
     sourceVersion: "COMPANION_AGENT_CONTRACT_VERSION",
     enforcedBy: "schema",
     evidence: {
@@ -283,7 +280,7 @@ export const MODEL_REQUIREMENTS: readonly ModelRequirement[] = [
       "输出拒绝原因的结构与泄露校验：流式每个 flush 都过同一份判据，"
       + "只做「必须先于任何对外写入」那部分——空、超长、内部 token 泄露三选一，"
       + "命中即终止 run，不让任何字符先落到用户面前。",
-    appliesTo: ["companion_dialogue", "companion_tutor", "companion_proactive"],
+    appliesTo: ["companion_dialogue", "companion_proactive"],
     sourceVersion: "COMPANION_HARD_MAX_CHARS",
     enforcedBy: "service",
     evidence: {
@@ -300,7 +297,7 @@ export const MODEL_REQUIREMENTS: readonly ModelRequirement[] = [
       "坍缩闸只判**语法上没闭合**（以裸数字结尾、开了成对符号没关、整体读不出说完），"
       + "不再判字数。收尾词表连同豁免已按 40 §4.4.2 整体删除——"
       + "短不是缺陷，把「安静」档用户的三个字判成截断只换来一次白烧的重跑。",
-    appliesTo: ["companion_dialogue", "companion_tutor"],
+    appliesTo: ["companion_dialogue"],
     sourceVersion: "COMPANION_LEAK_GATES_V1",
     enforcedBy: "service",
     evidence: {
@@ -308,21 +305,6 @@ export const MODEL_REQUIREMENTS: readonly ModelRequirement[] = [
       export: "looksTruncatedReply",
       resolve: "source",
       note: "G5 在身份表里的 judge 名，也是修复阶梯唯一的结构入口。",
-    },
-  },
-  {
-    id: "TUTOR_CHANNEL_FORMAT",
-    purpose:
-      "作答页与陪伴页的**格式权**分工：`GROUNDED_TUTOR` 走任务专属规则，但固定协议与"
-      + "身份边界不被整段换掉——答题那一屏她身上只剩任务规则的形状，正是格式冲突的现场。",
-    appliesTo: ["companion_tutor"],
-    sourceVersion: "GROUNDED_TUTOR_PROMPT_ID",
-    enforcedBy: "prompt",
-    evidence: {
-      file: "workers/ai-worker/src/handlers/turn/companion-dialogue-content.ts",
-      export: "GROUNDED_TUTOR_COMPANION_PROMPT",
-      resolve: "source",
-      note: "提示词 id 身份在 `companion-dialogue-store.ts` 的 GROUNDED_TUTOR_PROMPT_ID。",
     },
   },
   {
@@ -372,7 +354,7 @@ export const MODEL_REQUIREMENTS: readonly ModelRequirement[] = [
     purpose:
       "模型预算与业务提交是两条轴：只有 transport/timeout/output_shape 值得再花一次钱；"
       + "权限、内容版本、无效输入、实质质量问题不自动重试，提交失败也绝不回头重跑模型。",
-    appliesTo: ["companion_dialogue", "companion_tutor", "companion_diary", "companion_proactive"],
+    appliesTo: ["companion_dialogue", "companion_diary", "companion_proactive"],
     sourceVersion: "AI_TASK_RETRYABLE_FAILURE_CLASSES",
     enforcedBy: "service",
     evidence: {

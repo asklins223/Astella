@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, FileText, History, Loader2, Sparkles, X } fr
 import type { CompanionChatSession, CompanionProposalUiState } from "../../../app/companion-session/companion-chat-session";
 import { CompanionProposalChoice, companionProposalExpired } from "./CompanionProposalChoice";
 import { useCompanionTransient } from "../notify/use-companion-transient";
+import { targetCompanionJournal } from "./companion-result-preview";
 
 export function CompanionStatusPaper({ identity, title = "笔记关联", paused, children }: { identity: string; title?: string; paused: boolean; children: ReactNode }) {
   return <ReplyPaper identity={identity} title={title} kind="note-status" icon={<FileText size={17} />} holdMs={60_000} paused={paused}>{children}</ReplyPaper>;
@@ -74,7 +75,13 @@ function ProposalPapers({ chat, paused, hostRef, focusRef }: { chat: CompanionCh
     const count = results.filter(id => paperStatus(chat.proposalStates[id]) === status).length;
     return count ? [`${label} ${count} 项`] : [];
   }).join(" · ");
-  const openHistory = () => chat.setMode("history");
+  const openHistory = () => {
+    const proposalId = id ?? failedId ?? results.at(-1);
+    const runId = chat.runTraces.find(trace => trace.nodes.some(node => node.proposalId === proposalId))?.summary.runId
+      ?? chat.messages.find(message => message.blocks.some(block => block.type === "action_ref" && block.proposalId === proposalId))?.runId;
+    if (runId) targetCompanionJournal(runId);
+    chat.setMode("history");
+  };
   const resultIdentity = results.map(id => `${id}:${paperStatus(chat.proposalStates[id])}`).join("|");
   const id = selectedId && active.includes(selectedId) ? selectedId : active[0];
   const index = active.indexOf(id);

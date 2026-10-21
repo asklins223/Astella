@@ -227,3 +227,19 @@ function renderBlocks(text: string, depth: number): ReactNode[] {
   }
   return blocks;
 }
+
+/**
+ * 预览纸的页头已经印着这篇笔记的标题；AI 写的笔记又把标题写成正文第一行，
+ * 于是同一句标题在屏幕上出现两次（2026-10-21 真实窗口）。只在**显示层**去掉
+ * 紧挨页头的那一条，存档与块序号都不动；并且只在文字与页头标题完全一致时才动手，
+ * 不猜"差不多"的标题。只认第一行的 ATX 一二级标题与 setext 标题。
+ */
+export function stripLeadingPreviewTitle(markdown: string, title: string): string {
+  const wanted = title.replace(/\s+/g, " ").trim();
+  if (!wanted) return markdown;
+  const atx = /^[ \t]{0,3}#{1,2}[ \t]+([^\n]+?)[ \t]*(?:\n|$)/.exec(markdown);
+  if (atx && atx[1].replace(/\s+/g, " ").trim() === wanted) return markdown.slice(atx[0].length);
+  const setext = /^[ \t]{0,3}([^\n]+?)[ \t]*\n[ \t]*(?:=+|-+)[ \t]*(?:\n|$)/.exec(markdown);
+  if (setext && setext[1].replace(/\s+/g, " ").trim() === wanted) return markdown.slice(setext[0].length);
+  return markdown;
+}
