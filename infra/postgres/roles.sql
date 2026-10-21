@@ -494,7 +494,6 @@ BEGIN
     'ai_artifacts',
     'review_attempts',
     'validation_questions',
-    'validation_assistance_exposures',
     'learning_unit_exposure',
     'learning_exposure_dependency_ledger',
     'companion_conversations',
@@ -760,65 +759,26 @@ BEGIN
     END IF;
   END LOOP;
 
-  -- learning 任务私有/披露/安全面写入
-  FOREACH table_name IN ARRAY ARRAY[
-    'companion_voice_artifacts',
-    'learning_task_disclosure_profiles',
-    'learning_task_private_solutions',
-    'learning_task_safety_reports'
-  ]
-  LOOP
-    IF to_regclass(format('public.%I', table_name)) IS NOT NULL THEN
-      EXECUTE format(
-        'GRANT SELECT, INSERT, UPDATE ON TABLE public.%I TO astella_worker',
-        table_name
-      );
-    END IF;
-  END LOOP;
+  -- 语音产物写入。Plan 57：learning 任务私有/披露/安全面三张表随 0449 退役，
+  -- 授权镜像条目一并删除——留着它们会在**迁移之前**的 role-bootstrap 里重新授出
+  -- 权限，而事务矩阵已经不期待这三张表，于是部署在旧库上直接红在引导自检。
+  IF to_regclass('public.companion_voice_artifacts') IS NOT NULL THEN
+    GRANT SELECT, INSERT, UPDATE ON TABLE public.companion_voice_artifacts TO astella_worker;
+  END IF;
 
-  -- 评估与处理 outbox 更新
-  FOREACH table_name IN ARRAY ARRAY[
-    'learning_assessments',
-    'learning_run_processing_outbox'
-  ]
-  LOOP
-    IF to_regclass(format('public.%I', table_name)) IS NOT NULL THEN
-      EXECUTE format(
-        'GRANT SELECT, UPDATE ON TABLE public.%I TO astella_worker',
-        table_name
-      );
-    END IF;
-  END LOOP;
+  -- Plan 57：评估与处理 outbox（learning_assessments / learning_run_processing_outbox）
+  -- 随 0449 退役，授权镜像删除。
 
-  -- V2 事件/revision/origins 追加写（迁移 0162/0166/0167 授权镜像）。
-  -- Plan 57：旧 learning-card / objective / evidence / candidate 管线表随 0449
-  -- 退役，其授权镜像条目一并删除；下面这些是仍存活的笔记学习产物表。
-  FOREACH table_name IN ARRAY ARRAY[
-    -- 0305/0306/0307（39d W7-4）：「今天这一批」的锁、首页「换一个／暂不处理」的略过行。
-    -- **它们此前一直不在任何清单里**——表建了、迁移走了、RLS 策略也写了，但受限角色
-    -- **没有授权**，于是被测路径一读就 `Failed query`。**新增表必须同时进这两个清单**，
-    -- 而「加迁移时顺手加授权」不是自动的：漏了不会红在部署上，只红在被测路径的第一次读。
-    'daily_review_batches_v2',
-    'home_suggestion_dismissals_v2'
-  ]
-  LOOP
-    IF to_regclass(format('public.%I', table_name)) IS NOT NULL THEN
-      EXECUTE format(
-        'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.%I TO astella_worker',
-        table_name
-      );
-    END IF;
-  END LOOP;
+  -- Plan 57：0305/0306/0307（39d W7-4）的「今天这一批」与首页略过行表
+  -- （daily_review_batches_v2 / home_suggestion_dismissals_v2）随复习/今日链路退役，
+  -- 整段授权镜像删除，不再在旧库的引导阶段授出权限。
 
   -- Plan 57：方案 20 的 16 张 V2 管线表（runs/plans/candidates/objectives/
   -- cards/publications/exposures/reminders/receipts/events/outbox/targets）随
   -- 0449 退役，整段授权镜像删除。新链的 worker 授权见上方 note_learning_card_*。
 
-  -- capability state：worker 更新/读取 epoch（§18.1）
-  IF to_regclass('public.card_content_capability_state') IS NOT NULL THEN
-    GRANT SELECT, INSERT, UPDATE ON TABLE public.card_content_capability_state
-      TO astella_worker;
-  END IF;
+  -- Plan 57：capability state（card_content_capability_state）随 0449 退役，
+  -- 授权镜像删除。
 
   -- 管线写入/回读表：worker SELECT + INSERT。Plan 57 后这里只剩仍存活的
   -- 笔记学习产物（脑图/概览/批注/互动讲解…）；旧制卡管线表随 0449 退役。
