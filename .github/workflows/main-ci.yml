@@ -88,8 +88,7 @@ jobs:
           - label: Agent host
             path: packages/agent-host
             deps: >-
-              packages/shared,packages/card-generation,
-              packages/agent-core,packages/agent-host
+              packages/shared,packages/agent-core,packages/agent-host
           # AI 质量层：PR Mock。校验数据集完整性、标签覆盖、评分器逻辑，
           # 全程固定桩，不碰付费网络——这正是"AI 任务只跑通逻辑"的那一支。
           - label: AI quality (PR mock)
@@ -105,7 +104,6 @@ jobs:
           cache: npm
           cache-dependency-path: |
             packages/shared/package-lock.json
-            packages/card-generation/package-lock.json
             packages/agent-core/package-lock.json
             packages/agent-host/package-lock.json
             packages/ai-quality/package-lock.json
@@ -153,7 +151,6 @@ jobs:
           cache: npm
           cache-dependency-path: |
             packages/shared/package-lock.json
-            packages/card-generation/package-lock.json
             packages/agent-core/package-lock.json
             packages/agent-host/package-lock.json
             workers/ai-worker/package-lock.json
@@ -166,7 +163,7 @@ jobs:
       # `Typecheck API` 就报三条 TS2307（2026-10-06 冷缓存演练实测）。
       - name: Install dependencies
         run: |
-          for dir in packages/shared packages/card-generation packages/agent-core \
+          for dir in packages/shared packages/agent-core \
                       packages/agent-host workers/ai-worker apps/api; do
             echo "── npm ci $dir"
             (cd "$dir" && npm ci --no-audit --no-fund)
@@ -197,7 +194,6 @@ jobs:
           cache: npm
           cache-dependency-path: |
             packages/shared/package-lock.json
-            packages/card-generation/package-lock.json
             packages/agent-core/package-lock.json
             packages/agent-host/package-lock.json
             packages/ai-quality/package-lock.json
@@ -214,7 +210,7 @@ jobs:
       # 对方都会红。旧的 CI 之所以没踩到，是因为它在每一个 job 里都把两套都装齐了。
       - name: Install dependencies
         run: |
-          for dir in packages/shared packages/card-generation packages/agent-core \
+          for dir in packages/shared packages/agent-core \
                       packages/agent-host packages/ai-quality apps/api workers/ai-worker; do
             echo "── npm ci $dir"
             (cd "$dir" && npm ci --no-audit --no-fund)
