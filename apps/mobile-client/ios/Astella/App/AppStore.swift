@@ -116,7 +116,7 @@ final class AppStore {
             ?? CommandLine.arguments.first(where: { $0.hasPrefix("--ui-review=") })?.replacingOccurrences(of: "--ui-review=", with: "")
         if ["auth-login", "auth-register", "auth-register-password", "auth-register-code", "auth-forgot", "auth-reset", "auth-reset-password", "auth-email-login", "auth-email-login-code"].contains(uiReviewMode ?? "") {
             self.uiReviewMode = uiReviewMode
-        } else if ["conversation", "records", "library", "orbit", "orbit-memory", "orbit-tasks", "read", "note-overview", "note-overview-ready", "note-mind-map", "note-annotations", "note-annotations-multiple", "note-explain", "note-explain-ready", "note-versions", "note-expansion", "note-expansion-saved", "note-learning-card", "note-learning-practice", "note-learning-result", "me", "me-bottom", "launch-preview", "settings", "profile", "companion-settings", "reading-settings", "device-permissions", "ai-authorization", "server-address", "conventions", "companion-center", "change-password", "dock-switch"].contains(uiReviewMode ?? "") {
+        } else if ["conversation", "conversation-speaking", "records", "library", "orbit", "orbit-memory", "orbit-tasks", "read", "note-overview", "note-overview-ready", "note-mind-map", "note-annotations", "note-annotations-multiple", "note-explain", "note-explain-ready", "note-versions", "note-expansion", "note-expansion-saved", "note-learning-card", "note-learning-practice", "note-learning-result", "me", "me-bottom", "launch-preview", "settings", "profile", "companion-settings", "reading-settings", "device-permissions", "ai-authorization", "server-address", "conventions", "companion-center", "change-password", "dock-switch"].contains(uiReviewMode ?? "") {
             let reviewTime = ISO8601DateFormatter()
             self.uiReviewMode = uiReviewMode
             profile = UserProfile([
@@ -177,6 +177,25 @@ final class AppStore {
                 ],
             ])
             switch uiReviewMode {
+            case "conversation-speaking":
+                // Reviewing the transient speech bubble: a turn is running and
+                // its answer is streaming, so the home shows her words.
+                streamingText = "风很轻，水面安静得没有波纹。我们就从这份安静里，慢慢读下去。"
+                var speakingRun = ActiveRun(id: "open-design-speaking", status: "running", stepCount: 1, toolCallCount: 1, thinkingText: nil)
+                speakingRun.userMessageId = "open-design-reading-prompt"
+                speakingRun.createdAt = reviewTime.string(from: Date().addingTimeInterval(-4))
+                speakingRun.updatedAt = reviewTime.string(from: Date().addingTimeInterval(-1))
+                speakingRun.nodes = [
+                    CompanionProcessNode(
+                        id: "status:speaking",
+                        seq: 4,
+                        label: "正在把这一句说完",
+                        status: "executing",
+                        summary: nil,
+                        occurredAt: speakingRun.updatedAt
+                    ),
+                ]
+                processRuns = [speakingRun]
             case "records": chatShowsRecords = true
             case "library": selectedTab = .library
             case "orbit": selectedTab = .orbit

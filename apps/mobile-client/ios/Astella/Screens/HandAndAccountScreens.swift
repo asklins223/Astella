@@ -51,7 +51,6 @@ struct OrbitScreen: View {
     @State private var memoryError: String?
     @State private var memoryGroup: OrbitMemoryGroup = .aboutYou
     @State private var memoryFilter: OrbitMemoryFilter = .active
-    @State private var appeared = false
     @Namespace private var sectionLens
     @Namespace private var memoryGroupLens
 
@@ -69,10 +68,8 @@ struct OrbitScreen: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 orbitHero
-                    .shellEntrance(0, active: appeared)
                 sectionPicker
                     .padding(.top, 20)
-                    .shellEntrance(1, active: appeared)
                 Group {
                     switch section {
                     case .diary: diaryContent.padding(.top, 22)
@@ -80,7 +77,6 @@ struct OrbitScreen: View {
                     case .hand: handContent.padding(.top, 22)
                     }
                 }
-                .shellEntrance(2, active: appeared)
             }
             .padding(.horizontal, 22)
             .padding(.top, 8)
@@ -90,13 +86,6 @@ struct OrbitScreen: View {
         }
         .scrollIndicators(.hidden)
         .background(DawnBackground())
-        .onAppear {
-            guard !appeared else { return }
-            Task { @MainActor in
-                await Task.yield()
-                appeared = true
-            }
-        }
         .task {
             #if DEBUG
             if ["orbit", "orbit-memory", "orbit-tasks"].contains(store.uiReviewMode ?? "") {
@@ -284,7 +273,6 @@ struct OrbitScreen: View {
                 ForEach(Array(recentDays.filter { $0.status == "generated" }.sorted { $0.date > $1.date }.enumerated()), id: \.element.id) { index, day in
                     OrbitDiaryRow(day: day, summary: diarySummaries[day.date])
                         .padding(.bottom, 13)
-                        .shellEntrance(3 + index, active: appeared)
                 }
             }
         }
@@ -320,7 +308,6 @@ struct OrbitScreen: View {
                     }
                     .buttonStyle(AstellaPressStyle())
                     .padding(.bottom, 12)
-                    .shellEntrance(3 + index, active: appeared)
                 }
             }
 
@@ -973,7 +960,7 @@ struct AccountScreen: View {
                         .frame(width: 38, height: 38)
                         .modifier(StudyGlassSurfaceStyle(radius: 19, interactive: true))
                 }
-                .buttonStyle(AstellaPressStyle())
+                .buttonStyle(AstellaRoundPressStyle())
                 .accessibilityLabel("设置")
             }
             .padding(.horizontal, 4)
@@ -1071,7 +1058,7 @@ struct AccountScreen: View {
             AccountSection("阅读") {
                 VStack(spacing: 0) {
                     NavigationLink(value: AccountScreenRoute.readingSettings) {
-                        accountLink(title: "阅读字号", detail: "字号、默认打开与动效", glyph: .document)
+                        accountLink(title: "阅读字号", detail: "字号、默认打开与动效", glyph: .text)
                     }
                     accountRowDivider
                     Menu {
@@ -1323,10 +1310,14 @@ private struct ProfileAvatarImage: View {
 
 struct AccountProfileScreen: View {
     @Environment(AppStore.self) private var store
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     @State private var displayName = ""
     @State private var avatarItem: PhotosPickerItem?
-    @State private var appeared = false
     private var userId: String { store.profile?.userId ?? "unknown" }
+    private var trimmedName: String { displayName.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var nameChanged: Bool {
+        !trimmedName.isEmpty && trimmedName != (store.profile?.displayName ?? "")
+    }
     private var fallback: String {
         String((store.profile?.displayName.trimmingCharacters(in: .whitespacesAndNewlines).first)
             ?? store.profile?.email.first
@@ -1379,30 +1370,32 @@ struct AccountProfileScreen: View {
                     Spacer(minLength: 0)
                 }
                 .padding(.top, 4)
-                .shellEntrance(0, active: appeared)
 
                 HStack(alignment: .center, spacing: 12) {
-                    Text("点头像可以更换照片，改好名字点保存。")
+                    Text("点头像更换照片，昵称改好后保存。")
                         .font(.system(size: 11.5))
                         .lineSpacing(3)
                         .foregroundStyle(StudyPalette.muted)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 8)
-                    Button {
-                        Task { await store.saveProfile(displayName: displayName) }
-                    } label: {
-                        if store.isAccountBusy { ProgressView().tint(StudyPalette.accentLabel) }
-                        else { Text("保存").font(.system(size: 13, weight: .semibold)) }
+                    if nameChanged {
+                        Button {
+                            Task { await store.saveProfile(displayName: displayName) }
+                        } label: {
+                            if store.isAccountBusy { ProgressView().tint(StudyPalette.accentLabel) }
+                            else { Text("保存").font(.system(size: 13, weight: .semibold)) }
+                        }
+                        .foregroundStyle(StudyPalette.accentLabel)
+                        .frame(width: 58, height: 36)
+                        .background(StudyPalette.accent, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .buttonStyle(AstellaPressStyle())
+                        .disabled(store.isAccountBusy)
+                        .transition(.opacity.combined(with: .scale(scale: 0.88)))
                     }
-                    .foregroundStyle(StudyPalette.accentLabel)
-                    .frame(width: 58, height: 36)
-                    .background(StudyPalette.accent, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .buttonStyle(AstellaPressStyle())
-                    .disabled(store.isAccountBusy || displayName.trimmingCharacters(in: .whitespacesAndNewlines) == (store.profile?.displayName ?? ""))
                 }
+                .animation(Motion.gated(systemReduceMotion || store.localReduceMotion, Motion.segment), value: nameChanged)
                 .padding(.top, 16)
                 .padding(.bottom, 8)
-                .shellEntrance(1, active: appeared)
 
                 if let message = store.accountError {
                     featureAccountMessage(message, isError: true, retry: nil).padding(.top, 8).padding(.bottom, 6)
@@ -1429,7 +1422,6 @@ struct AccountProfileScreen: View {
                         .buttonStyle(AstellaPressStyle())
                     }
                 }
-                .shellEntrance(2, active: appeared)
 
                 Button(role: .destructive) { store.logout() } label: {
                     HStack(spacing: 8) {
@@ -1443,7 +1435,6 @@ struct AccountProfileScreen: View {
                 }
                 .buttonStyle(AstellaPressStyle())
                 .padding(.top, 20)
-                .shellEntrance(3, active: appeared)
 
                 Text("ASTELLA · 拾星笔记")
                     .font(.system(size: 10, weight: .medium)).tracking(2.2).foregroundStyle(StudyPalette.muted.opacity(0.68))
@@ -1457,10 +1448,6 @@ struct AccountProfileScreen: View {
         .tint(StudyPalette.accent)
         .toolbar(.hidden, for: .navigationBar)
         .safeAreaInset(edge: .top, spacing: 0) { AstellaDetailHeader(title: "个人资料") }
-        .onAppear {
-            guard !appeared else { return }
-            Task { @MainActor in await Task.yield(); appeared = true }
-        }
         .task(id: userId) { displayName = store.profile?.displayName ?? "" }
         .onChange(of: avatarItem) { _, item in
             guard let item else { return }
@@ -1602,7 +1589,6 @@ struct MobileSettingsScreen: View {
     @AppStorage("study.appearance.dark") private var darkMode = false
     @AppStorage("study.appearance.mode") private var appearanceMode = "light"
     @State private var reduceMotion = false
-    @State private var appeared = false
     @Namespace private var appearanceLens
 
     private var userId: String { store.profile?.userId ?? "unknown" }
@@ -1644,8 +1630,8 @@ struct MobileSettingsScreen: View {
                     settingsPageLabel("外观与显示")
                     HStack(spacing: 0) {
                         appearanceButton("银白", mode: "light")
-                        appearanceButton("深空", mode: "dark")
-                        appearanceButton("随日夜", mode: "system")
+                        appearanceButton("深夜", mode: "dark")
+                        appearanceButton("随系统", mode: "system")
                     }
                     .frame(height: 46)
                     .modifier(StudyGlassSurfaceStyle(radius: 20, interactive: true))
@@ -1689,7 +1675,6 @@ struct MobileSettingsScreen: View {
                     }
                     .shadow(color: StudyPalette.ink.opacity(0.025), radius: 8, x: 0, y: 3)
                 }
-                .shellEntrance(0, active: appeared)
 
                 AccountSection("伴星与隐私") {
                     VStack(spacing: 0) {
@@ -1702,7 +1687,6 @@ struct MobileSettingsScreen: View {
                         }.buttonStyle(AstellaPressStyle())
                     }
                 }
-                .shellEntrance(1, active: appeared)
 
                 AccountSection("资料与连接") {
                     VStack(spacing: 0) {
@@ -1717,7 +1701,6 @@ struct MobileSettingsScreen: View {
                         }.buttonStyle(AstellaPressStyle())
                     }
                 }
-                .shellEntrance(2, active: appeared)
 
                 Text("阅读字号、打开方式和动效偏好只保存在这台设备上。")
                     .font(.system(size: 11.5))
@@ -1725,7 +1708,6 @@ struct MobileSettingsScreen: View {
                     .foregroundStyle(StudyPalette.muted)
                     .padding(.horizontal, 4)
                     .padding(.top, 22)
-                    .shellEntrance(3, active: appeared)
 
                 Text("ASTELLA · 拾星笔记")
                     .font(.system(size: 10, weight: .medium))
@@ -1735,7 +1717,6 @@ struct MobileSettingsScreen: View {
                     .padding(.top, 32)
                     .padding(.bottom, 30)
                     .accessibilityHidden(true)
-                    .shellEntrance(4, active: appeared)
             }
             .padding(.horizontal, 22)
             .padding(.bottom, 30)
@@ -1745,10 +1726,6 @@ struct MobileSettingsScreen: View {
         .tint(StudyPalette.accent)
         .toolbar(.hidden, for: .navigationBar)
         .safeAreaInset(edge: .top, spacing: 0) { AstellaDetailHeader(title: "设置") }
-        .onAppear {
-            guard !appeared else { return }
-            Task { @MainActor in await Task.yield(); appeared = true }
-        }
         .task(id: userId) {
             reduceMotion = UserDefaults.standard.bool(forKey: mobilePreferenceKey(userId, "reduceMotion"))
         }
@@ -1792,7 +1769,6 @@ struct ReadingSettingsScreen: View {
     @State private var textSize = 19.0
     @State private var showRecords = false
     @State private var reduceMotion = false
-    @State private var appeared = false
     @Namespace private var appearanceLens
     private var userId: String { store.profile?.userId ?? "unknown" }
 
@@ -1861,7 +1837,6 @@ struct ReadingSettingsScreen: View {
                     .lineSpacing(3)
                     .foregroundStyle(StudyPalette.muted)
                     .padding(.horizontal, 2)
-                    .shellEntrance(0, active: appeared)
 
                 Text("清风徐来，水波不兴。举酒属客，诵明月之诗，歌窈窕之章。")
                     .font(StudySerif.font(size: textSize))
@@ -1877,7 +1852,6 @@ struct ReadingSettingsScreen: View {
                             .stroke(StudyPalette.paperEdge.opacity(0.42), lineWidth: 0.8)
                     }
                     .padding(.top, 16)
-                    .shellEntrance(1, active: appeared)
 
                 HStack(spacing: 13) {
                     Text("A").font(.system(size: 13, design: .serif)).foregroundStyle(StudyPalette.muted)
@@ -1912,16 +1886,15 @@ struct ReadingSettingsScreen: View {
                         .padding(.top, 8)
                 }
                 .padding(.top, 26)
-                .shellEntrance(2, active: appeared)
 
                 VStack(alignment: .leading, spacing: 0) {
                     sectionLabel("默认打开")
                     VStack(spacing: 0) {
-                        defaultOpenOption(title: "伴星场景", detail: "打开先见到她，安静陪伴", glyph: .eye, selected: !showRecords) {
+                        defaultOpenOption(title: "伴星场景", detail: "打开先见到她，安静陪伴", glyph: .companion, selected: !showRecords) {
                             setDefaultOpen(records: false)
                         }
                         Rectangle().fill(StudyPalette.paperEdge.opacity(0.45)).frame(height: 0.7)
-                        defaultOpenOption(title: "记录场景", detail: "打开就到对话记录", glyph: .text, selected: showRecords) {
+                        defaultOpenOption(title: "记录场景", detail: "打开就到对话记录", glyph: .chat, selected: showRecords) {
                             setDefaultOpen(records: true)
                         }
                     }
@@ -1937,7 +1910,6 @@ struct ReadingSettingsScreen: View {
                         .padding(.horizontal, 4).padding(.top, 8)
                 }
                 .padding(.top, 26)
-                .shellEntrance(3, active: appeared)
 
                 VStack(alignment: .leading, spacing: 0) {
                     sectionLabel("动效")
@@ -1972,7 +1944,6 @@ struct ReadingSettingsScreen: View {
                     }
                 }
                 .padding(.top, 26)
-                .shellEntrance(4, active: appeared)
             }
             .padding(.horizontal, 22)
             .padding(.bottom, 34)
@@ -1982,10 +1953,6 @@ struct ReadingSettingsScreen: View {
         .tint(StudyPalette.accent)
         .toolbar(.hidden, for: .navigationBar)
         .safeAreaInset(edge: .top, spacing: 0) { AstellaDetailHeader(title: "阅读与显示") }
-        .onAppear {
-            guard !appeared else { return }
-            Task { @MainActor in await Task.yield(); appeared = true }
-        }
         .task(id: userId) {
             let savedScale = UserDefaults.standard.object(forKey: mobilePreferenceKey(userId, "textScale")) as? Double ?? store.readingScale
             textSize = min(25, max(15, savedScale * 16))
@@ -2347,7 +2314,6 @@ private struct ParticipationPreferencesEditor: View {
 
 struct CompanionCenterScreen: View {
     @Environment(AppStore.self) private var store
-    @State private var appeared = false
 
     private var latest: String? {
         guard !store.streamingText.isEmpty else {
@@ -2362,11 +2328,8 @@ struct CompanionCenterScreen: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 companionHero
-                    .shellEntrance(0, active: appeared)
                 recentExchange
-                    .shellEntrance(1, active: appeared)
                 relationshipShortcuts
-                    .shellEntrance(2, active: appeared)
                 NavigationLink(value: AccountScreenRoute.companionSettings) {
                     settingDestinationRow(title: "伴星配置", detail: "相处偏好与交流方式", glyph: .companion)
                         .padding(.horizontal, 16)
@@ -2374,7 +2337,6 @@ struct CompanionCenterScreen: View {
                         .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(StudyPalette.paperEdge.opacity(0.42), lineWidth: 0.8))
                 }
                 .buttonStyle(AstellaPressStyle())
-                .shellEntrance(3, active: appeared)
             }
             .padding(.horizontal, 22)
             .padding(.top, 8)
@@ -2384,10 +2346,6 @@ struct CompanionCenterScreen: View {
         .scrollIndicators(.hidden)
         .background(DawnBackground()).toolbar(.hidden, for: .navigationBar)
         .safeAreaInset(edge: .top, spacing: 0) { AstellaDetailHeader(title: "伴星中心") }
-        .onAppear {
-            guard !appeared else { return }
-            Task { @MainActor in await Task.yield(); appeared = true }
-        }
     }
 
     private var companionHero: some View {
@@ -2474,16 +2432,20 @@ struct CompanionCenterScreen: View {
 
             HStack(spacing: 10) {
                 Button { store.returnToConversation(records: false) } label: {
-                    Label("继续对话", systemImage: "bubble.left.and.bubble.right.fill")
-                        .font(.system(size: 14, weight: .semibold))
+                    HStack(spacing: 6) {
+                        AstellaGlyph(kind: .chat, tint: StudyPalette.accentLabel).frame(width: 15, height: 15)
+                        Text("继续对话").font(.system(size: 14, weight: .semibold))
+                    }
                         .frame(maxWidth: .infinity, minHeight: 44)
                         .foregroundStyle(StudyPalette.accentLabel)
                         .background(StudyPalette.actionFill, in: Capsule())
                 }
                 .buttonStyle(AstellaPressStyle())
                 Button { store.returnToConversation(records: true) } label: {
-                    Label("完整记录", systemImage: "text.alignleft")
-                        .font(.system(size: 13, weight: .medium))
+                    HStack(spacing: 6) {
+                        AstellaGlyph(kind: .text, tint: StudyPalette.accent).frame(width: 13, height: 13)
+                        Text("完整记录").font(.system(size: 13, weight: .medium))
+                    }
                         .frame(minHeight: 44)
                         .padding(.horizontal, 12)
                         .foregroundStyle(StudyPalette.accent)
@@ -2595,37 +2557,5 @@ private struct AccountSection<Content: View>: View {
                 .shadow(color: StudyPalette.ink.opacity(0.025), radius: 8, x: 0, y: 3)
         }.frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, title == nil ? 10 : 26)
-    }
-}
-
-// MARK: - Shell entrance (local helper)
-
-/// Shell-level entrance used by the 星轨 / 我的 / 设置 pages: each section rises
-/// 10 pt and fades in, 45 ms after the previous one. Timing stays local to the
-/// shell pages instead of adding a new global token; movement is removed when
-/// either the system or the in-app reduce-motion preference is on.
-private struct AstellaShellEntranceModifier: ViewModifier {
-    @Environment(\.accessibilityReduceMotion) private var systemReduce
-    @Environment(AppStore.self) private var store
-    var index: Int
-    var active: Bool
-
-    private var disabled: Bool { systemReduce || store.localReduceMotion }
-
-    func body(content: Content) -> some View {
-        content
-            .opacity(active || disabled ? 1 : 0)
-            .offset(y: active || disabled ? 0 : 10)
-            .animation(
-                disabled ? nil : Animation.spring(duration: 0.42, bounce: 0.03).delay(Double(max(0, index)) * 0.045),
-                value: active
-            )
-    }
-}
-
-extension View {
-    /// Staggered page entrance for shell sections (`index * 45 ms`).
-    func shellEntrance(_ index: Int, active: Bool) -> some View {
-        modifier(AstellaShellEntranceModifier(index: index, active: active))
     }
 }

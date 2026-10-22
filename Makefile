@@ -31,6 +31,7 @@ DEV_PROFILES := --profile storage
 .PHONY: up storage seed-demo down logs reset-db \
 	rebuild config clean-init \
 	ensure-db-volume disposable-db \
+	companion-model \
 	shell-api shell-worker version-check verify release-check \
 	coverage-gate skip-todo-gate release-manifest \
 	test-postgres test-companion-home-profile-postgres \
@@ -70,6 +71,35 @@ storage: ensure-db-volume
 		if [ -z "$$cid" ]; then echo "Missing required init service: $$svc" >&2; exit 1; fi; \
 		docker wait $$cid >/dev/null; \
 	done
+
+# 把桌面端随包的 Live2D 模型发布到本地对象存储：手机端
+# `GET /companion/model/manifest` 读取的就是这份清单，没有它 iOS/Android
+# 的伴星只能回退静态图（API 日志里是 `model_manifest_missing`）。
+#
+# 只限本机开发：whale 模型 `redistributionAllowed=false`，不要发布到生产或
+# 共享对象存储；对外分发前需重新确认许可。
+COMPANION_MODEL_DIR ?= ../desktop-client/src/renderer/public/assets/companion/live2d-v3/whale
+COMPANION_MODEL_ID ?= companion-live2d-whale-v3
+companion-model:
+	@test -x apps/api/node_modules/.bin/tsx || { \
+		echo "apps/api/node_modules is missing; run pnpm install first" >&2; exit 1; }
+	@$(COMPOSE) --profile storage up -d minio
+	@set -e; \
+	cid="$$( $(COMPOSE) ps -q minio )"; \
+	if [ -z "$$cid" ]; then echo "minio is not running" >&2; exit 1; fi; \
+	status=""; \
+	for _ in $$(seq 1 30); do \
+		status="$$( docker inspect -f '{{.State.Health.Status}}' "$$cid" 2>/dev/null || echo starting )"; \
+		[ "$$status" = "healthy" ] && break; \
+		sleep 1; \
+	done; \
+	if [ "$$status" != "healthy" ]; then echo "minio did not become healthy ($$status)" >&2; exit 1; fi
+	cd apps/api && STORAGE_MODE=local STORAGE_ENDPOINT=http://127.0.0.1:9000 \
+		S3_BUCKET="$(or $(S3_BUCKET),astella-workspaces)" \
+		MINIO_ROOT_USER="$(or $(MINIO_ROOT_USER),astella)" \
+		MINIO_ROOT_PASSWORD="$(or $(MINIO_ROOT_PASSWORD),astella_dev_secret)" \
+		node_modules/.bin/tsx scripts/ingest-companion-model.ts \
+		--dir "$(COMPANION_MODEL_DIR)" --model-id "$(COMPANION_MODEL_ID)"
 
 # Manually remove stale one-shot init containers.  This is NOT called
 # automatically by `up` — init containers are left in place after they

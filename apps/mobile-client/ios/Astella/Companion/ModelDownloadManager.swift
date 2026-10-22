@@ -191,7 +191,12 @@ final class ModelDownloadManager {
     }
 
     private func fetchAndValidate(_ file: CompanionModelManifest.File) async throws -> Data {
-        let downloadURL = file.download.url.hasPrefix("/") ? try api.url(file.download.url) : URL(string: file.download.url)
+        // 相对地址由服务端拼好并做过 percent-encoding（文件名可含中文）。
+        // 必须按已编码路径解析：`api.url(_:)` 会把 `%E5…` 再编码成 `%25E5…`，
+        // 请求 404，整个版本下载失败后只能回落静态图。
+        let downloadURL = file.download.url.hasPrefix("/")
+            ? try api.url(percentEncodedPath: file.download.url)
+            : URL(string: file.download.url)
         guard let url = downloadURL else {
             throw URLError(.badURL)
         }

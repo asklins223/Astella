@@ -83,8 +83,8 @@ struct AuthPrimaryButtonStyle: ButtonStyle {
                     .stroke(active ? .white.opacity(0.14) : StudyPalette.paperEdge.opacity(0.5), lineWidth: 0.8)
             }
             .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .opacity(active ? (configuration.isPressed ? 0.76 : 1) : 0.6)
-            .scaleEffect(configuration.isPressed && !motionDisabled ? 0.98 : 1)
+            .opacity(active ? (configuration.isPressed ? 0.86 : 1) : 0.6)
+            .scaleEffect(configuration.isPressed && !motionDisabled ? 0.99 : 1)
             .animation(Motion.gated(motionDisabled, Motion.press), value: configuration.isPressed)
     }
 }

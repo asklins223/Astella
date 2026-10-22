@@ -715,9 +715,17 @@ private fun MessageHistory(state: AppUiState, viewModel: AppViewModel, reduceMot
                     Modifier.then(if (reduceMotion) Modifier else Modifier.animateItem()),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
-                    MobileMessageRow(message, viewModel, reduceMotion)
+                    val turnRun = if (message.role == "assistant") state.processRuns.firstOrNull { it.assistantMessageId == message.id } else null
+                    MobileMessageRow(
+                        message, viewModel, reduceMotion,
+                        showsAvatar = turnRun == null,
+                        showsBodyLabel = turnRun != null,
+                    )
                     state.processRuns.filter { it.userMessageId == message.id || (it.userMessageId == null && it.assistantMessageId == message.id) }
-                        .forEach { CompanionRunProcessView(it, state, viewModel) }
+                        .forEach { run ->
+                            AssistantTurnHead(run)
+                            CompanionRunProcessView(run, state, viewModel)
+                        }
                 }
             }
             if (state.streamingText.isNotEmpty()) item(key = "streaming") {
@@ -781,7 +789,13 @@ private fun MessageHistory(state: AppUiState, viewModel: AppViewModel, reduceMot
 }
 
 @Composable
-fun MobileMessageRow(message: CompanionMessage, viewModel: AppViewModel, reduceMotion: Boolean = false) {
+fun MobileMessageRow(
+    message: CompanionMessage,
+    viewModel: AppViewModel,
+    reduceMotion: Boolean = false,
+    showsAvatar: Boolean = true,
+    showsBodyLabel: Boolean = false,
+) {
     val user = message.role == "user"
     if (user) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
@@ -818,13 +832,23 @@ fun MobileMessageRow(message: CompanionMessage, viewModel: AppViewModel, reduceM
         return
     }
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-        Image(
+        if (showsAvatar) Image(
             painterResource(R.drawable.brand_mark), null,
             Modifier.padding(top = 3.dp, end = 10.dp).size(26.dp).clip(CircleShape),
             contentScale = androidx.compose.ui.layout.ContentScale.Crop,
         )
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("阿星", color = StudyPalette.muted, fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold, letterSpacing = .4.sp)
+            if (showsBodyLabel) Row(
+                Modifier.padding(start = 2.dp).fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
+            ) {
+                Text("正文", color = StudyPalette.muted, fontSize = 9.sp, fontWeight = FontWeight.SemiBold, letterSpacing = .9.sp)
+                AstellaGlyph(AstellaGlyphKind.Check, Modifier.size(10.dp), tint = StudyPalette.success)
+                Text("已写完", color = StudyPalette.success, fontSize = 9.sp)
+                Spacer(Modifier.weight(1f))
+            }
+            if (!showsBodyLabel) Text("阿星", color = StudyPalette.muted, fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold, letterSpacing = .4.sp)
             message.blocks.forEachIndexed { index, block ->
                 when {
                     block.type == "image" && !block.url.isNullOrBlank() -> AuthenticatedImage(block.url, block.alt ?: block.label ?: "对话图片", viewModel)

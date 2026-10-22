@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct MainTabShell: View {
     @Environment(AppStore.self) private var store
@@ -23,26 +24,38 @@ struct MainTabShell: View {
     }
 
     var body: some View {
-        ZStack {
-                // Tabs swap instantly, the way a native tab bar does. Cross-fading
-                // two full-screen pages stacked their opaque backgrounds and
-                // washed the whole window out to white.
-                switch store.selectedTab {
-                case .conversation:
-                    NavigationStack(path: $conversationPath) {
-                        root(ConversationScreen(onOpenNote: { noteId in
-                            store.selectedTab = .library
-                            libraryPath.append(noteId)
-                        }))
-                    }
-                        .id(store.conversationRootRevision)
-                case .library:
-                    NavigationStack(path: $libraryPath) { root(NotesScreen()) }
-                case .orbit:
-                    NavigationStack(path: $orbitPath) { root(OrbitScreen()) }
-                case .me:
-                    NavigationStack(path: $mePath) { root(AccountScreen()) }
+        @Bindable var store = store
+        // A real TabView keeps each tab's navigation stack, scroll offset and
+        // loaded data alive. Swapping views by hand used to rebuild the page on
+        // every tap: scroll jumped to the top, page fetches ran again and the
+        // entrance animation replayed. The system tab bar itself stays hidden;
+        // the glass dock is our bar.
+        TabView(selection: $store.selectedTab) {
+            Tab("相伴", systemImage: "sparkles", value: MainTab.conversation) {
+                NavigationStack(path: $conversationPath) {
+                    root(ConversationScreen(onOpenNote: { noteId in
+                        store.selectedTab = .library
+                        libraryPath.append(noteId)
+                    }))
                 }
+                .id(store.conversationRootRevision)
+                .toolbar(.hidden, for: .tabBar)
+            }
+
+            Tab("书房", systemImage: "books.vertical", value: MainTab.library) {
+                NavigationStack(path: $libraryPath) { root(NotesScreen()) }
+                    .toolbar(.hidden, for: .tabBar)
+            }
+
+            Tab("星轨", systemImage: "circle.dotted", value: MainTab.orbit) {
+                NavigationStack(path: $orbitPath) { root(OrbitScreen()) }
+                    .toolbar(.hidden, for: .tabBar)
+            }
+
+            Tab("我的", systemImage: "person", value: MainTab.me) {
+                NavigationStack(path: $mePath) { root(AccountScreen()) }
+                    .toolbar(.hidden, for: .tabBar)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay(alignment: .bottom) {
@@ -51,11 +64,23 @@ struct MainTabShell: View {
                     store.resultReturnTo = nil
                     store.returnToConversation(records: true)
                     store.resultPreview = target
-                } label: { Label("返回手记与预览", systemImage: "arrow.uturn.backward") }
-                    .buttonStyle(.borderedProminent).tint(.blue).padding(.bottom, 94)
+                } label: {
+                    HStack(spacing: 7) {
+                        AstellaGlyph(kind: .back, tint: StudyPalette.ink).frame(width: 13, height: 13)
+                        Text("返回手记与预览").font(.system(size: 13, weight: .semibold))
+                    }
+                    .foregroundStyle(StudyPalette.ink)
+                    .padding(.horizontal, 16)
+                    .frame(minHeight: 42)
+                    .modifier(StudyGlassSurfaceStyle(radius: 21, interactive: true))
+                    .shadow(color: StudyPalette.ink.opacity(0.08), radius: 12, x: 0, y: 5)
+                }
+                .buttonStyle(AstellaPressStyle())
+                .padding(.bottom, 96)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .animation(Motion.gated(reducedMotion || store.localReduceMotion, Motion.segment), value: store.selectedTab)
+        .animation(Motion.gated(reducedMotion || store.localReduceMotion, Motion.companionDock), value: store.resultReturnTo == nil)
         .onAppear {
             queueReviewRouteIfNeeded()
             #if DEBUG
@@ -162,6 +187,12 @@ struct MainTabShell: View {
     private func root<Content: View>(_ content: Content) -> some View {
         content
             .toolbar(.hidden, for: .navigationBar)
+            .background(
+                InteractivePopGestureEnabler()
+                    .frame(width: 0, height: 0)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            )
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 Color.clear.frame(height: dockReserveHeight)
             }
@@ -199,10 +230,8 @@ private struct AstellaCompanionShortcut: View {
 
     var body: some View {
         Button {
-            withAnimation(Motion.gated(reducedMotion || store.localReduceMotion, Motion.routePush)) {
-                store.chatShowsRecords = false
-                store.selectedTab = .conversation
-            }
+            store.chatShowsRecords = false
+            store.selectedTab = .conversation
         } label: {
             AstellaGlyph(kind: .companion, tint: StudyPalette.accent)
                 .frame(width: 25, height: 25)
@@ -213,7 +242,7 @@ private struct AstellaCompanionShortcut: View {
                 .shadow(color: StudyPalette.ink.opacity(0.08), radius: 7, x: 0, y: 3)
                 .contentShape(Circle())
         }
-        .buttonStyle(AstellaPressStyle())
+        .buttonStyle(AstellaRoundPressStyle())
         .accessibilityLabel("与伴星交流")
         .accessibilityHint("返回相伴页面")
     }
@@ -300,5 +329,37 @@ struct AstellaMainDock: View {
             }
         }
         .padding(.horizontal, 10).padding(.vertical, 5)
+    }
+}
+
+/// Every page draws its own header and hides the system navigation bar. UIKit
+/// turns the interactive pop gesture off together with that bar, so each stack
+/// installs this bridge and gets the native swipe-back, with its own
+/// rubber-banding and cancellation, back.
+struct InteractivePopGestureEnabler: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> Bridge { Bridge() }
+    func updateUIViewController(_ controller: Bridge, context: Context) {}
+
+    final class Bridge: UIViewController, UIGestureRecognizerDelegate {
+        override func didMove(toParent parent: UIViewController?) {
+            super.didMove(toParent: parent)
+            install()
+        }
+
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            install()
+        }
+
+        private func install() {
+            guard let navigation = navigationController,
+                  let gesture = navigation.interactivePopGestureRecognizer else { return }
+            gesture.delegate = self
+            gesture.isEnabled = true
+        }
+
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            (navigationController?.viewControllers.count ?? 0) > 1
+        }
     }
 }

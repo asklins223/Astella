@@ -49,11 +49,19 @@ struct MessageHistory: View {
                                 }
                                 let availableWidth = geometry.size.width - 44
                                 let maxBubbleWidth = max(220, availableWidth * (message.role == "user" ? 0.83 : 0.79))
-                                MessageRow(message: message, maxBubbleWidth: maxBubbleWidth, onOpenNote: onOpenNote)
+                                let turnRun = message.role == "assistant" ? store.processRuns.first(where: { $0.assistantMessageId == message.id }) : nil
+                                MessageRow(
+                                    message: message,
+                                    maxBubbleWidth: maxBubbleWidth,
+                                    onOpenNote: onOpenNote,
+                                    showsAvatar: turnRun == nil,
+                                    showsBodyLabel: turnRun != nil
+                                )
                                     .id(message.id)
                                     .transition(motionDisabled ? .opacity : .offset(y: 14).combined(with: .opacity).combined(with: .scale(scale: 0.98, anchor: message.role == "user" ? .bottomTrailing : .bottomLeading)))
                                     .padding(.bottom, 16)
                                 ForEach(store.processRuns.filter { $0.userMessageId == message.id || ($0.userMessageId == nil && $0.assistantMessageId == message.id) }) { run in
+                                    AssistantTurnHead(run: run)
                                     CompanionRunProcessView(run: run).padding(.bottom, 16)
                                 }
                             }
@@ -115,11 +123,11 @@ struct MessageHistory: View {
                             return
                         }
                         guard store.journalFollowsLatest else { return }
-                        if motionDisabled {
-                            proxy.scrollTo("latest", anchor: .bottom)
-                        } else {
-                            withAnimation(Motion.messageSend) { proxy.scrollTo("latest", anchor: .bottom) }
-                        }
+                        // Streaming appends several times a second. Running a
+                        // spring for every token kept restarting the same
+                        // animation and the list visibly stuttered; the content
+                        // grows on its own, so follow it without one.
+                        proxy.scrollTo("latest", anchor: .bottom)
                     }
                     .onChange(of: store.journalTargetRunId) { _, _ in _ = scrollToTarget(proxy) }
                     .onChange(of: store.processRuns) { _, _ in _ = scrollToTarget(proxy) }

@@ -1,66 +1,108 @@
+import Foundation
 import SwiftUI
 
-/// One completed exchange's process, folded into a quiet card. The header keeps
-/// the status legible at a glance; expanding reveals a real timeline with a
-/// continuous rule, so the steps read as one sequence instead of equal-weight rows.
+private func companionDurationLabel(_ run: ActiveRun) -> String {
+    let parser = ISO8601DateFormatter()
+    parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    func date(_ value: String?) -> Date? {
+        guard let value else { return nil }
+        return parser.date(from: value) ?? ISO8601DateFormatter().date(from: value)
+    }
+    guard let start = date(run.createdAt) else { return "" }
+    let end = run.isActive ? Date() : date(run.updatedAt) ?? Date()
+    let seconds = max(0, end.timeIntervalSince(start))
+    if seconds < 60 { return String(format: "%.1fs", seconds) }
+    return "\(Int(seconds) / 60)m\(Int(seconds) % 60)s"
+}
+
+/// The assistant turn opener: who is speaking, which mode, and how long this
+/// exchange took. The process trace belongs beneath it, not beside the answer.
+struct AssistantTurnHead: View {
+    var run: ActiveRun
+
+    private var duration: String { companionDurationLabel(run) }
+
+    var body: some View {
+        HStack(spacing: 7) {
+            Image("CompanionAvatar")
+                .resizable()
+                .scaledToFill()
+                .frame(width: 22, height: 22)
+                .clipShape(Circle())
+                .overlay(Circle().stroke(.white.opacity(0.85), lineWidth: 0.7))
+                .accessibilityHidden(true)
+            Text("阿星")
+                .font(.system(size: 11.5, weight: .semibold))
+                .foregroundStyle(StudyPalette.ink)
+            if run.thinkingText?.isEmpty == false {
+                HStack(spacing: 4) {
+                    AstellaGlyph(kind: .sparkle, tint: StudyPalette.accent)
+                        .frame(width: 10, height: 10)
+                    Text("深想")
+                        .font(.system(size: 9.5, weight: .semibold))
+                }
+                .foregroundStyle(StudyPalette.accent)
+                .padding(.horizontal, 7)
+                .frame(height: 21)
+                .background(StudyPalette.accent.opacity(0.10), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            }
+            Spacer(minLength: 6)
+            if !duration.isEmpty {
+                Text(duration)
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(StudyPalette.muted.opacity(0.66))
+                    .monospacedDigit()
+            }
+        }
+        .padding(.horizontal, 2)
+        .padding(.bottom, 8)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// One exchange's process, folded into a quiet disclosure. The answer stays the
+/// heaviest thing on screen: collapsed, this is only a header; expanded, the
+/// steps get a rail that lives *inside* the process instead of beside the answer.
 struct CompanionRunProcessView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.accessibilityReduceMotion) private var systemReduce
     var run: ActiveRun
     @State private var recovering = false
     @State private var recoveryNotice = ""
+    @State private var openNodes: Set<String> = []
 
     private var motionDisabled: Bool { systemReduce || store.localReduceMotion }
     private var expanded: Bool { !store.journalCollapsed.contains(run.id) }
+    private var faint: Color { StudyPalette.muted.opacity(0.66) }
+    private var rail: Color { StudyPalette.muted.opacity(0.28) }
+    private var cardFill: Color { StudyPalette.paper.opacity(0.68) }
     private var emptyProcessMessage: String {
         if run.isActive { return "已接下请求，等待第一段进展。" }
         if run.nodeCount > 0 { return "详细过程暂时无法读取；已保存的消息和成果仍可查看。" }
         return "这次交流没有留下可展示的步骤。"
     }
-    private var statusTint: Color {
-        if run.status == "failed" { return StudyPalette.danger }
-        return run.isActive ? StudyPalette.accent : StudyPalette.success
+    private var headerSubtitle: String {
+        if run.isActive { return run.progressLabel }
+        let tools = visibleNodes.isEmpty ? "思考" : "\(visibleNodes.count) 个工具"
+        return expanded ? "\(tools) · 可收起" : "\(tools) · 已收起，可展开回看"
+    }
+    private var hasActions: Bool {
+        run.isActive || run.canResume || visibleNodes.contains { $0.status == "outcome_unknown" }
+    }
+    private var elapsedLabel: String { companionDurationLabel(run) }
+    private var visibleNodes: [CompanionProcessNode] {
+        run.nodes.filter { !$0.id.hasPrefix("status:") }
+    }
+    private var visibleStepCount: Int {
+        visibleNodes.count + (run.thinkingText?.isEmpty == false ? 1 : 0)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Button {
-                withAnimation(Motion.gated(motionDisabled, Motion.segment)) {
-                    if expanded { store.journalCollapsed.insert(run.id) } else { store.journalCollapsed.remove(run.id) }
-                }
-            } label: {
-                HStack(spacing: 9) {
-                    Circle()
-                        .fill(statusTint)
-                        .frame(width: 6, height: 6)
-                        .overlay {
-                            if run.isActive {
-                                Circle().stroke(statusTint.opacity(0.22), lineWidth: 4).padding(-4)
-                            }
-                        }
-                    Text("这次交流的过程")
-                        .font(.system(size: 12.5, weight: .semibold))
-                        .foregroundStyle(StudyPalette.ink)
-                    Spacer(minLength: 8)
-                    Text(run.statusLabel)
-                        .font(.system(size: 10.5, weight: .medium))
-                        .foregroundStyle(statusTint)
-                        .padding(.horizontal, 8)
-                        .frame(minHeight: 22)
-                        .background(statusTint.opacity(0.10), in: Capsule())
-                    AstellaGlyph(kind: .chevron, tint: StudyPalette.muted)
-                        .frame(width: 11, height: 11)
-                        .rotationEffect(.degrees(expanded ? 90 : 0))
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(AstellaPressStyle())
-            .accessibilityLabel(expanded ? "收起这次过程" : "展开这次过程")
+            header
 
             if expanded {
-                VStack(alignment: .leading, spacing: 13) {
-                    CompanionRunClock(run: run)
-
+                VStack(alignment: .leading, spacing: 10) {
                     if run.status == "failed" {
                         Text(run.failureDescription)
                             .font(.system(size: 12))
@@ -72,101 +114,265 @@ struct CompanionRunProcessView: View {
                             .background(StudyPalette.danger.opacity(0.07), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     }
 
-                    if let thinking = run.thinkingText, !thinking.isEmpty {
-                        Text(thinking)
-                            .font(.system(size: 12.5))
-                            .lineSpacing(4)
-                            .foregroundStyle(StudyPalette.muted)
-                            .textSelection(.enabled)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    if !run.nodes.isEmpty {
+                    if visibleStepCount > 0 {
                         timeline
-                    } else if run.thinkingText?.isEmpty != false {
+                    } else {
                         Text(emptyProcessMessage)
                             .font(.system(size: 12.5))
                             .foregroundStyle(StudyPalette.muted)
                     }
                 }
-                .padding(.top, 13)
+                .padding(.top, 2)
+                .padding(.leading, 2)
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
 
             actions
-                .padding(.top, 12)
+                .padding(.top, hasActions ? 8 : 0)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(StudyPalette.paper, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(StudyPalette.paperEdge.opacity(0.55), lineWidth: 0.8)
-        }
         .id("run:\(run.id)")
+    }
+
+    private var header: some View {
+        Button {
+            withAnimation(Motion.gated(motionDisabled, Motion.segment)) {
+                if expanded { store.journalCollapsed.insert(run.id) } else { store.journalCollapsed.remove(run.id) }
+            }
+        } label: {
+            HStack(spacing: 8) {
+                iconTile(.sparkle, size: 27, iconSize: 13)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("思考与工具")
+                        .font(.system(size: 11.5, weight: .semibold))
+                        .foregroundStyle(StudyPalette.ink)
+                    Text(headerSubtitle)
+                        .font(.system(size: 10))
+                        .foregroundStyle(faint)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 6)
+                if !elapsedLabel.isEmpty {
+                    Text(elapsedLabel)
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundStyle(faint)
+                        .monospacedDigit()
+                }
+                AstellaGlyph(kind: .chevron, tint: faint)
+                    .frame(width: 15, height: 15)
+                    .rotationEffect(.degrees(expanded ? 90 : -90))
+            }
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(AstellaPressStyle())
+        .accessibilityLabel(expanded ? "收起这次过程" : "展开这次过程")
     }
 
     private var timeline: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(run.nodes.enumerated()), id: \.element.id) { index, node in
-                HStack(alignment: .top, spacing: 11) {
-                    VStack(spacing: 0) {
-                        Circle()
-                            .fill(node.isRunning ? StudyPalette.accent : StudyPalette.paperEdge)
-                            .frame(width: 7, height: 7)
-                            .padding(.top, 5)
-                        if index < run.nodes.count - 1 {
-                            Rectangle()
-                                .fill(StudyPalette.paperEdge.opacity(0.5))
-                                .frame(width: 1)
-                                .frame(maxHeight: .infinity)
-                        }
-                    }
-                    .frame(width: 9)
+            if let thinking = run.thinkingText, !thinking.isEmpty {
+                timelineRow(
+                    id: "thinking",
+                    label: "想了想",
+                    code: "thought",
+                    icon: .sparkle,
+                    state: run.isActive ? "整理中" : "已想",
+                    stateTint: run.isActive ? StudyPalette.accent : StudyPalette.success,
+                    dotTint: run.isActive ? StudyPalette.accent : StudyPalette.success,
+                    pulsing: run.isActive,
+                    isLast: visibleNodes.isEmpty,
+                    hasBody: true,
+                    showsCheck: !run.isActive
+                ) {
+                    Text(thinking)
+                        .font(.system(size: 12))
+                        .lineSpacing(4)
+                        .foregroundStyle(StudyPalette.muted)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
 
-                    VStack(alignment: .leading, spacing: 5) {
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            Text(node.label)
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundStyle(StudyPalette.ink)
-                                .fixedSize(horizontal: false, vertical: true)
-                            Spacer(minLength: 4)
-                            if node.id.hasPrefix("tool:") {
-                                Text(node.isRunning && !run.isActive ? "结果待核对" : node.statusLabel)
-                                    .font(.system(size: 10.5))
-                                    .foregroundStyle(StudyPalette.muted)
-                            }
-                        }
-                        if let summary = node.summary, !summary.isEmpty {
-                            Text(summary)
-                                .font(.system(size: 12))
-                                .lineSpacing(3)
-                                .foregroundStyle(StudyPalette.muted)
-                                .textSelection(.enabled)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        if let note = node.note {
-                            Button { store.resultPreview = note } label: {
-                                HStack(spacing: 6) {
-                                    AstellaGlyph(kind: .book, tint: StudyPalette.accent).frame(width: 12, height: 12)
-                                    Text("预览《\(note.title)》").font(.system(size: 11.5, weight: .medium))
-                                }
-                                .foregroundStyle(StudyPalette.accent)
-                                .padding(.horizontal, 10)
-                                .frame(minHeight: 30)
-                                .background(StudyPalette.sky, in: Capsule())
-                            }
-                            .buttonStyle(AstellaPressStyle())
-                        }
-                        if let proposalId = node.proposalId, node.status == "waiting_confirmation" {
-                            CompanionProposalCard(proposalId: proposalId)
-                        }
-                    }
-                    .padding(.bottom, index < run.nodes.count - 1 ? 14 : 0)
+            ForEach(Array(visibleNodes.enumerated()), id: \.element.id) { index, node in
+                let succeeded = node.status == "succeeded"
+                timelineRow(
+                    id: node.id,
+                    label: node.label,
+                    code: nodeCode(node),
+                    icon: icon(for: node),
+                    state: succeeded ? "完成" : (node.isRunning && !run.isActive ? "结果待核对" : node.statusLabel),
+                    stateTint: stateTint(for: node),
+                    dotTint: node.isRunning ? StudyPalette.accent : (succeeded ? StudyPalette.success : StudyPalette.muted.opacity(0.55)),
+                    pulsing: node.isRunning && run.isActive,
+                    isLast: index == visibleNodes.count - 1,
+                    hasBody: hasBody(node),
+                    showsCheck: succeeded
+                ) {
+                    nodeCard(node)
                 }
             }
         }
+    }
+
+    private func timelineRow<Content: View>(
+        id: String, label: String, code: String?, icon: AstellaGlyphKind,
+        state: String?, stateTint: Color, dotTint: Color, pulsing: Bool,
+        isLast: Bool, hasBody: Bool, showsCheck: Bool = false,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        let runningHere = run.isActive && visibleNodes.first(where: { $0.id == id })?.isRunning == true
+        let isOpen = hasBody && (openNodes.contains(id) || runningHere)
+        return HStack(alignment: .top, spacing: 0) {
+            VStack(spacing: 0) {
+                Circle()
+                    .fill(dotTint)
+                    .frame(width: 7, height: 7)
+                    .overlay {
+                        if pulsing {
+                            Circle().stroke(dotTint.opacity(0.22), lineWidth: 3).padding(-3)
+                        }
+                    }
+                    .padding(.top, 18)
+                if !isLast {
+                    Rectangle()
+                        .fill(rail)
+                        .frame(width: 1)
+                        .frame(maxHeight: .infinity)
+                        .padding(.top, 4)
+                }
+            }
+            .frame(width: 9)
+
+            VStack(alignment: .leading, spacing: 0) {
+                Button {
+                    guard hasBody else { return }
+                    withAnimation(Motion.gated(motionDisabled, Motion.segment)) {
+                        if openNodes.contains(id) { openNodes.remove(id) } else { openNodes.insert(id) }
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        iconTile(icon)
+                        HStack(alignment: .firstTextBaseline, spacing: 7) {
+                            Text(label)
+                                .font(.system(size: 11.5, weight: .medium))
+                                .foregroundStyle(StudyPalette.ink)
+                                .lineLimit(1)
+                            if let code, !code.isEmpty {
+                                Text(code)
+                                    .font(.system(size: 8.5, design: .monospaced))
+                                    .foregroundStyle(faint)
+                                    .lineLimit(1)
+                            }
+                        }
+                        Spacer(minLength: 4)
+                        if showsCheck {
+                            AstellaGlyph(kind: .checkmark, tint: stateTint)
+                                .frame(width: 9, height: 9)
+                        }
+                        if let state, !state.isEmpty {
+                            Text(state)
+                                .font(.system(size: 9, weight: .medium))
+                                .foregroundStyle(stateTint)
+                                .lineLimit(1)
+                        }
+                        AstellaGlyph(kind: .chevron, tint: faint)
+                            .frame(width: 15, height: 15)
+                            .rotationEffect(.degrees(isOpen ? 90 : 0))
+                            .opacity(hasBody ? 1 : 0)
+                    }
+                    .frame(minHeight: 40)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(!hasBody)
+                .accessibilityLabel(hasBody ? (isOpen ? "收起\(label)" : "展开\(label)") : label)
+
+                if isOpen {
+                    content()
+                        .padding(11)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(cardFill, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                                .stroke(StudyPalette.paperEdge.opacity(0.4), lineWidth: 0.7)
+                        }
+                        .padding(.bottom, 8)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+            }
+            .padding(.leading, 10)
+        }
+        .padding(.bottom, isLast ? 0 : 2)
+    }
+
+    @ViewBuilder private func nodeCard(_ node: CompanionProcessNode) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            if let summary = node.summary, !summary.isEmpty {
+                Text(summary)
+                    .font(.system(size: 12))
+                    .lineSpacing(4)
+                    .foregroundStyle(StudyPalette.muted)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let note = node.note {
+                Button { store.resultPreview = note } label: {
+                    HStack(spacing: 6) {
+                        AstellaGlyph(kind: .book, tint: StudyPalette.accent).frame(width: 12, height: 12)
+                        Text("预览《\(note.title)》").font(.system(size: 11.5, weight: .medium))
+                    }
+                    .foregroundStyle(StudyPalette.accent)
+                    .padding(.horizontal, 10)
+                    .frame(minHeight: 30)
+                    .background(StudyPalette.sky, in: Capsule())
+                }
+                .buttonStyle(AstellaPressStyle())
+            }
+            if let proposalId = node.proposalId, node.status == "waiting_confirmation" {
+                CompanionProposalCard(proposalId: proposalId)
+            }
+        }
+    }
+
+    private func iconTile(_ kind: AstellaGlyphKind, size: CGFloat = 22, iconSize: CGFloat = 12) -> some View {
+        RoundedRectangle(cornerRadius: size * 0.34, style: .continuous)
+            .fill(StudyPalette.paper.opacity(0.78))
+            .overlay {
+                RoundedRectangle(cornerRadius: size * 0.34, style: .continuous)
+                    .stroke(StudyPalette.paperEdge.opacity(0.5), lineWidth: 0.7)
+            }
+            .overlay {
+                AstellaGlyph(kind: kind, tint: StudyPalette.muted)
+                    .frame(width: iconSize, height: iconSize)
+            }
+            .frame(width: size, height: size)
+    }
+
+    private func nodeCode(_ node: CompanionProcessNode) -> String? {
+        if node.id.hasPrefix("tool:") { return String(node.id.dropFirst(5)) }
+        return nil
+    }
+
+    private func icon(for node: CompanionProcessNode) -> AstellaGlyphKind {
+        let key = "\(node.id) \(node.label)".lowercased()
+        if key.contains("read") || key.contains("note") || key.contains("book") || key.contains("读") { return .book }
+        if key.contains("search") || key.contains("lookup") || key.contains("查") { return .search }
+        if key.contains("write") || key.contains("edit") || key.contains("save") || key.contains("写") { return .edit }
+        if key.contains("quote") || key.contains("注") { return .quote }
+        return node.note == nil ? .sparkle : .book
+    }
+
+    private func hasBody(_ node: CompanionProcessNode) -> Bool {
+        (node.summary?.isEmpty == false) || node.note != nil || (node.proposalId != nil && node.status == "waiting_confirmation")
+    }
+
+    private func stateTint(for node: CompanionProcessNode) -> Color {
+        if node.isRunning { return StudyPalette.accent }
+        if node.status == "succeeded" { return StudyPalette.success }
+        if ["failed", "outcome_unknown"].contains(node.status) { return StudyPalette.danger }
+        if node.status == "waiting_confirmation" { return StudyPalette.accent }
+        return faint
     }
 
     @ViewBuilder private var actions: some View {

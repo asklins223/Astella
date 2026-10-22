@@ -57,6 +57,38 @@ JAVA_HOME="$(brew --prefix openjdk@17)" ./gradlew assembleDebug
 
 Android `local.properties`、Gradle 缓存和构建产物不会提交。开发清单只在 Debug 变体放开本机 HTTP；Release 只允许 HTTPS。
 
+### 伴星动态模型的本地发布（2026-10-21）
+
+伴星的动态形态不随安装包分发：会话恢复后 App 请求 `GET /companion/model/manifest`，再按清单逐文件下载、校验 SHA-256 并缓存到本机。清单不可用时整段下载失败，界面回退静态 PNG——看起来就是"伴星只是一张贴图"。
+
+本地开发要看到动态模型，对象存储里必须有一份清单。`make up` 会启动 MinIO（storage profile），然后在仓库根执行：
+
+```bash
+make companion-model
+```
+
+该目标把桌面端同一套 `live2d-v3/whale`（41 个文件，约 4.1 MB）发布到本地 MinIO，默认前缀 `companion/live2d/` 并写入 `manifest.json`；版本号按文件内容哈希自动生成，模型内容变化后 App 下次会话恢复会重新下载。API 日志出现 `model_manifest_missing` 时，先确认 MinIO 健康，再重跑这条命令。
+
+许可边界：该模型记录为 `redistributionAllowed=false`，这条命令只用于本机开发；不要发布到生产或共享对象存储，对外分发前需单独确认许可。
+
+未签名的 iOS 模拟器构建没有 Keychain entitlement，登录 token 只存在进程内存，重启后会回到登录页。需要直接核对已登录界面时，可用 Debug 专用变量注入一枚有效会话：
+
+```bash
+SIMCTL_CHILD_ASTELLA_API_TOKEN=<token> \
+SIMCTL_CHILD_ASTELLA_API_ORIGIN=http://127.0.0.1:4000 \
+xcrun simctl launch --terminate-running-process booted com.astella.mobile
+```
+
+Release 构建不读取该变量；token 不要写进仓库。
+
+**2026-10-21 核对：** 补发清单后，iOS（iPhone 17 / iOS 27 模拟器，Debug）实际完成清单请求、41 个文件下载与本地缓存（`Application Support/companion-model/<modelId>/<version>/`，含 `local-manifest.json`），Cubism 框架初始化并加载模型，舞台上透明背景的 Live2D 形象连续渲染（相邻截图在舞台区域约 6 万像素变化）。同一轮修掉三个 iOS 链路问题：
+
+- 清单里已 percent-encoding 的相对下载地址被 `URLComponents.path` 二次编码（中文表情文件 404，整个版本安装失败）→ 改用 `percentEncodedPath`；
+- 首帧加载竞态：`mtkView:drawableSizeWillChange:` 回调里 `view.drawableSize` 仍是 0×0，模型永远不会加载→在 `drawInMTKView` 里补一次加载；
+- MTKView 默认不透明，只把 `clearColor` 的 alpha 设为 0 会渲染成黑色矩形→同时关闭 view/layer 的 opaque。
+
+Android 与 iOS 共用同一清单与下载接口；这一轮没有重跑 Android 窗口核对。
+
 ### 本轮构建与登录态窗口核对（2026-10-18）
 
 - **Android 构建：** 使用外接拓展盘 `/Volumes/asklins/Android/sdk` 的 Android SDK 与 `/opt/homebrew/opt/openjdk@17` 下的 JDK 17，运行 `JAVA_HOME=/opt/homebrew/opt/openjdk@17 ./gradlew --offline assembleDebug` 成功。当前 API 36 Pixel 8 AVD 位于 `/Volumes/asklins/Android/avd`；ADB 使用 `/Volumes/asklins/Android/sdk/platform-tools/adb`。最新 APK 已安装并打开，认证态恢复成功。

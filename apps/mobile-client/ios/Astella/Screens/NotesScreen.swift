@@ -373,33 +373,38 @@ struct NoteShelfRow: View {
                 .frame(width: 42, height: 58)
                 .offset(y: -2)
             VStack(alignment: .leading, spacing: 6) {
-                Text("手记")
-                    .font(.system(size: 8.5, weight: .semibold))
-                    .tracking(1.4)
-                    .foregroundStyle(StudyPalette.muted.opacity(0.9))
+                HStack(spacing: 6) {
+                    Text("手记")
+                        .font(.system(size: 8.5, weight: .semibold))
+                        .tracking(1.4)
+                        .foregroundStyle(StudyPalette.muted.opacity(0.9))
+                    Circle().fill(StudyPalette.paperEdge).frame(width: 2.5, height: 2.5)
+                    Text(Self.dateLabel(note.updatedAt))
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(StudyPalette.muted.opacity(0.85))
+                }
                 Text(note.title)
-                    .font(.system(size: 16.5, weight: .semibold))
+                    .font(StudySerif.font(size: 17.5, weight: .semibold))
+                    .tracking(0.4)
                     .foregroundStyle(StudyPalette.ink)
                     .multilineTextAlignment(.leading)
                     .lineLimit(1)
                 if let snippet = note.snippet, !snippet.isEmpty {
                     Text(snippet)
                         .font(.system(size: 12.5))
-                        .lineSpacing(3)
+                        .lineSpacing(3.5)
                         .foregroundStyle(StudyPalette.muted)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
                 }
-                HStack(spacing: 6) {
-                    Text(Self.dateLabel(note.updatedAt))
-                        .font(.system(size: 10))
-                        .foregroundStyle(StudyPalette.muted.opacity(0.9))
-                    Circle().fill(StudyPalette.paperEdge).frame(width: 2.5, height: 2.5)
+                HStack(spacing: 5) {
                     Text("继续阅读")
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(StudyPalette.accent)
+                    AstellaGlyph(kind: .chevron, tint: StudyPalette.accent.opacity(0.8))
+                        .frame(width: 8, height: 8)
                 }
-                .padding(.top, 4)
+                .padding(.top, 3)
             }
             Spacer(minLength: 0)
             AstellaGlyph(kind: .chevron, tint: StudyPalette.muted.opacity(0.6))
@@ -414,12 +419,26 @@ struct NoteShelfRow: View {
     }
 
     static func dateLabel(_ value: String) -> String {
-        guard let date = ISO8601DateFormatter().date(from: value) else { return "刚刚" }
+        guard let date = Self.parseDate(value) else { return "刚刚" }
+        let calendar = Calendar.current
+        if calendar.isDateInToday(date) { return "今天" }
+        if calendar.isDateInYesterday(date) { return "昨天" }
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "zh_CN")
         formatter.timeZone = .current
-        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.dateFormat = "M 月 d 日"
         return formatter.string(from: date)
+    }
+
+    private static func parseDate(_ value: String) -> Date? {
+        let iso = ISO8601DateFormatter()
+        if let date = iso.date(from: value) { return date }
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = iso.date(from: value) { return date }
+        let dayOnly = DateFormatter()
+        dayOnly.locale = Locale(identifier: "en_US_POSIX")
+        dayOnly.dateFormat = "yyyy-MM-dd"
+        return dayOnly.date(from: value)
     }
 }
 
@@ -498,6 +517,8 @@ struct NoteDetailScreen: View {
     @State private var showsLearningCard = false
     @State private var showsVersionHistory = false
     @State private var annotationDrawerDetent: PresentationDetent = .medium
+    @State private var overviewDetent: PresentationDetent = .fraction(0.95)
+    @State private var versionDetent: PresentationDetent = .fraction(0.92)
     @State private var noteLoadRetry = 0
     @State private var showSlowLoadHint = false
     @State private var slowLoadTask: Task<Void, Never>?
@@ -524,7 +545,7 @@ struct NoteDetailScreen: View {
                     showsLearningCard = true
                 }
                 if ["note-explain", "note-explain-ready"].contains(store.uiReviewMode ?? "") {
-                    if store.uiReviewMode == "note-explain-ready" { annotationDrawerDetent = .fraction(0.95) }
+                    annotationDrawerDetent = .fraction(0.95)
                     selectedAnnotationBlock = store.noteDocument?.blocks.first
                     if store.uiReviewMode == "note-explain-ready" {
                         selectedAnnotation = store.noteAnnotations.first { $0.anchor.startBlockOrdinal == selectedAnnotationBlock?.id }
@@ -567,13 +588,13 @@ struct NoteDetailScreen: View {
             }
             .sheet(isPresented: $showsVersionHistory) {
                 NoteVersionsScreen(noteId: noteId)
-                    .presentationDetents([.medium, .fraction(0.95)])
+                    .presentationDetents([.medium, .fraction(0.95)], selection: $versionDetent)
                     .presentationDragIndicator(.visible)
                     .presentationCornerRadius(30)
             }
             .sheet(isPresented: $showsOverviewDrawer) {
                 NoteOverviewScreen(noteId: noteId)
-                    .presentationDetents([.medium, .fraction(0.95)])
+                    .presentationDetents([.medium, .fraction(0.95)], selection: $overviewDetent)
                     .presentationDragIndicator(.visible)
                     .presentationCornerRadius(30)
             }
@@ -789,6 +810,7 @@ struct NoteDetailScreen: View {
         store.clearAnnotationNotice()
         selectedAnnotation = nil
         selectedAnnotationBlock = block
+        annotationDrawerDetent = .fraction(0.95)
         showsAnnotationsDrawer = true
         if explain {
             Task { await store.explainNoteAnnotation(noteId: noteId, anchor: anchor) }
@@ -893,11 +915,11 @@ struct NoteDetailScreen: View {
         .frame(height: 64)
     }
 
-    private func readerToolSymbol(_ kind: NoteReaderTool) -> String {
+    private func readerToolGlyph(_ kind: NoteReaderTool) -> AstellaGlyphKind {
         switch kind {
-        case .overview: "doc.text.magnifyingglass"
-        case .mindMap: "point.3.connected.trianglepath.dotted"
-        case .versions: "clock.arrow.circlepath"
+        case .overview: .document
+        case .mindMap: .mindMap
+        case .versions: .history
         }
     }
 
@@ -909,7 +931,7 @@ struct NoteDetailScreen: View {
                         showsReaderTools = false
                         showsVersionHistory = true
                     } label: {
-                        readerToolLabel(kind, symbol: readerToolSymbol(kind))
+                        readerToolLabel(kind, glyph: readerToolGlyph(kind))
                     }
                     .buttonStyle(AstellaPressStyle())
                 } else if kind == .overview {
@@ -917,12 +939,12 @@ struct NoteDetailScreen: View {
                         showsReaderTools = false
                         showsOverviewDrawer = true
                     } label: {
-                        readerToolLabel(kind, symbol: readerToolSymbol(kind))
+                        readerToolLabel(kind, glyph: readerToolGlyph(kind))
                     }
                     .buttonStyle(AstellaPressStyle())
                 } else if let featureKind = kind.featureKind {
                     NavigationLink(value: NoteFeatureRoute(noteId: noteId, kind: featureKind)) {
-                        readerToolLabel(kind, symbol: readerToolSymbol(kind))
+                        readerToolLabel(kind, glyph: readerToolGlyph(kind))
                     }
                     .buttonStyle(.plain)
                 }
@@ -932,7 +954,7 @@ struct NoteDetailScreen: View {
                 showsReaderTools = false
                 showsExpansionDrawer = true
             } label: {
-                readerToolLabel(title: "拓展笔记", symbol: "sparkle.magnifyingglass")
+                readerToolLabel(title: "拓展笔记", glyph: .sparkle)
             }
             .buttonStyle(AstellaPressStyle())
 
@@ -940,7 +962,7 @@ struct NoteDetailScreen: View {
                 showsReaderTools = false
                 showsLearningCard = true
             } label: {
-                readerToolLabel(title: "学习卡", symbol: "rectangle.on.rectangle.angled")
+                readerToolLabel(title: "学习卡", glyph: .recall)
             }
             .buttonStyle(AstellaPressStyle())
 
@@ -955,9 +977,8 @@ struct NoteDetailScreen: View {
                 store.continueWithNote(document)
             } label: {
                 HStack(spacing: 12) {
-                    Image(systemName: "bubble.left.and.text.bubble.right")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(StudyPalette.accent)
+                    AstellaGlyph(kind: .chat, tint: StudyPalette.accent)
+                        .frame(width: 18, height: 18)
                         .frame(width: 22, height: 22)
                     Text("在对话里继续提问")
                         .font(.system(size: 16, weight: .medium))
@@ -976,15 +997,14 @@ struct NoteDetailScreen: View {
         .presentationCompactAdaptation(.popover)
     }
 
-    private func readerToolLabel(_ kind: NoteReaderTool, symbol: String) -> some View {
-        readerToolLabel(title: kind.title, symbol: symbol)
+    private func readerToolLabel(_ kind: NoteReaderTool, glyph: AstellaGlyphKind) -> some View {
+        readerToolLabel(title: kind.title, glyph: glyph)
     }
 
-    private func readerToolLabel(title: String, symbol: String) -> some View {
+    private func readerToolLabel(title: String, glyph: AstellaGlyphKind) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: symbol)
-                .font(.system(size: 16, weight: .medium))
-                .foregroundStyle(StudyPalette.accent)
+            AstellaGlyph(kind: glyph, tint: StudyPalette.accent)
+                .frame(width: 18, height: 18)
                 .frame(width: 22, height: 22)
             Text(title)
                 .font(.system(size: 16, weight: .medium))
@@ -1024,28 +1044,26 @@ struct NoteDetailScreen: View {
         Button {
             showsVersionHistory = true
         } label: {
-            HStack(spacing: 13) {
-                AstellaGlyph(kind: .refresh, tint: StudyPalette.accent)
-                    .frame(width: 17, height: 17)
-                    .frame(width: 37, height: 37)
-                    .background(StudyPalette.sky.opacity(0.72), in: Circle())
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("第 \(document.versionNumber) 版")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(StudyPalette.ink)
-                    Text(versionDetail(document))
-                        .font(.system(size: 11))
-                        .foregroundStyle(StudyPalette.muted)
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 0)
-                AstellaGlyph(kind: .chevron, tint: StudyPalette.muted.opacity(0.8))
-                    .frame(width: 15, height: 15)
+            HStack(spacing: 8) {
+                AstellaGlyph(kind: .history, tint: StudyPalette.accent)
+                    .frame(width: 13, height: 13)
+                Text("第 \(document.versionNumber) 版")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(StudyPalette.ink)
+                Circle().fill(StudyPalette.muted.opacity(0.45)).frame(width: 2.5, height: 2.5)
+                Text(versionDetail(document))
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(StudyPalette.muted)
+                    .lineLimit(1)
+                AstellaGlyph(kind: .chevron, tint: StudyPalette.muted.opacity(0.7))
+                    .frame(width: 9, height: 9)
+                    .padding(.leading, 1)
             }
-            .padding(.horizontal, 16)
-            .frame(minHeight: 68)
-            .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .modifier(StudyGlassSurfaceStyle(radius: 20, interactive: true))
+            .padding(.horizontal, 13)
+            .frame(height: 34)
+            .background(StudyPalette.sky.opacity(0.62), in: Capsule())
+            .overlay(Capsule().stroke(.white.opacity(0.5), lineWidth: 0.7))
+            .contentShape(Capsule())
         }
         .buttonStyle(AstellaPressStyle())
         .accessibilityLabel("第 \(document.versionNumber) 版，查看版本记录")
@@ -1416,16 +1434,17 @@ private struct NoteAnnotationsDrawer: View {
     }
 
     private var headerBar: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(isCompanionExplanation ? "伴星讲解" : (annotation == nil ? "留一条批注" : "我的批注"))
-                    .font(.system(size: 12, weight: .semibold))
-                    .tracking(1.6)
-                    .foregroundStyle(StudyPalette.muted)
-                Text(annotation == nil ? "写在这段原文旁" : (isCompanionExplanation ? "伴星为这段原文写过讲解" : "贴在原文旁的笔记"))
-                    .font(StudySerif.font(size: 16, weight: .semibold))
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(isCompanionExplanation ? "伴星讲解" : (annotation == nil ? "新批注" : "我的批注"))
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .tracking(2.2)
+                    .foregroundStyle(StudyPalette.accent)
+                Text(isCompanionExplanation ? "这段原文的另一种读法" : (annotation == nil ? "写在这段原文旁" : "贴在原文旁的笔记"))
+                    .font(StudySerif.font(size: 20, weight: .semibold))
                     .foregroundStyle(StudyPalette.ink)
-                    .lineLimit(1)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
             if store.isAnnotationBusy {
@@ -1443,59 +1462,85 @@ private struct NoteAnnotationsDrawer: View {
     }
 
     private var excerptCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 11) {
             HStack(spacing: 7) {
-                AstellaGlyph(kind: .quote, tint: StudyPalette.accent).frame(width: 13, height: 13)
+                AstellaGlyph(kind: .quote, tint: StudyPalette.accent).frame(width: 12, height: 12)
                 Text("原文")
-                    .font(.system(size: 10, weight: .semibold)).tracking(1.2)
+                    .font(.system(size: 10, weight: .semibold)).tracking(1.8)
                     .foregroundStyle(StudyPalette.accent)
                 Spacer(minLength: 0)
                 if let anchor {
-                    Button("回到原文") { onLocate(anchor.startBlockOrdinal); dismiss() }
+                    Button {
+                        onLocate(anchor.startBlockOrdinal)
+                        dismiss()
+                    } label: {
+                        HStack(spacing: 3) {
+                            Text("回到原文")
+                            AstellaGlyph(kind: .chevron, tint: StudyPalette.accent.opacity(0.8))
+                                .frame(width: 9, height: 9)
+                        }
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(StudyPalette.accent)
+                    }
                 }
             }
-            HStack(alignment: .top, spacing: 10) {
-                Capsule().fill(StudyPalette.accent.opacity(0.5)).frame(width: 2.5)
+            HStack(alignment: .top, spacing: 11) {
+                RoundedRectangle(cornerRadius: 2).fill(StudyPalette.accent.opacity(0.5)).frame(width: 2.5)
                 Text(anchor?.excerpt ?? "这段原文没有可用的摘录。")
-                    .font(StudySerif.font(size: 14))
-                    .lineSpacing(5)
+                    .font(StudySerif.font(size: 15))
+                    .lineSpacing(5.5)
                     .foregroundStyle(StudyPalette.ink.opacity(0.94))
+                    .lineLimit(6)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if let anchor {
                 Text("第 \(anchor.startBlockOrdinal + 1) 段")
-                    .font(.system(size: 10)).foregroundStyle(StudyPalette.muted)
+                    .font(.system(size: 9.5, weight: .medium))
+                    .tracking(0.8)
+                    .foregroundStyle(StudyPalette.muted.opacity(0.9))
             }
         }
-        .padding(16)
+        .padding(17)
         .background(StudyPalette.paper, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(StudyPalette.paperEdge, lineWidth: 0.7))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(StudyPalette.paperEdge.opacity(0.7), lineWidth: 0.7))
     }
 
     private func explanationCard(_ annotation: NoteAnnotation) -> some View {
-        VStack(alignment: .leading, spacing: 9) {
-            HStack(spacing: 7) {
-                AstellaGlyph(kind: isCompanionExplanation ? .companion : .edit,
-                             tint: isCompanionExplanation ? StudyPalette.accent : StudyPalette.muted)
-                    .frame(width: 13, height: 13)
-                Text(isCompanionExplanation ? "伴星的讲解" : "你的批注")
-                    .font(.system(size: 10, weight: .semibold)).tracking(1.2)
-                    .foregroundStyle(StudyPalette.muted)
+        VStack(alignment: .leading, spacing: 11) {
+            HStack(spacing: 8) {
+                ZStack {
+                    Circle()
+                        .fill(isCompanionExplanation ? StudyPalette.accent.opacity(0.16) : StudyPalette.inset)
+                        .frame(width: 24, height: 24)
+                    AstellaGlyph(kind: isCompanionExplanation ? .companion : .edit,
+                                 tint: isCompanionExplanation ? StudyPalette.accent : StudyPalette.muted)
+                        .frame(width: 12, height: 12)
+                }
+                Text(isCompanionExplanation ? "伴星讲过" : "你写的")
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .tracking(1.6)
+                    .foregroundStyle(isCompanionExplanation ? StudyPalette.accent : StudyPalette.muted)
                 Spacer(minLength: 0)
                 Text("第 \(annotation.revision) 次修订")
-                    .font(.system(size: 9.5)).foregroundStyle(StudyPalette.muted.opacity(0.8))
+                    .font(.system(size: 9.5))
+                    .foregroundStyle(StudyPalette.muted.opacity(0.8))
             }
             Text(annotation.explanation)
-                .font(.system(size: 14.5)).lineSpacing(6)
+                .font(StudySerif.font(size: 15))
+                .lineSpacing(6.5)
                 .foregroundStyle(StudyPalette.ink)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(16)
+        .padding(17)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(StudyPalette.sky.opacity(isCompanionExplanation ? 0.55 : 0.35),
-                    in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .background(
+            isCompanionExplanation ? StudyPalette.sky.opacity(0.55) : StudyPalette.paper.opacity(0.8),
+            in: RoundedRectangle(cornerRadius: 20, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(isCompanionExplanation ? Color.clear : StudyPalette.paperEdge.opacity(0.6), lineWidth: 0.7)
+        )
     }
 
     private var editorCard: some View {
@@ -1536,43 +1581,55 @@ private struct NoteAnnotationsDrawer: View {
     }
 
     private func actionRow(_ annotation: NoteAnnotation) -> some View {
-        VStack(spacing: 10) {
-            if !isEditing {
-                Button {
-                    draft = annotation.explanation
-                    withAnimation(Motion.gated(store.localReduceMotion, Motion.segment)) { isEditing = true }
-                } label: {
-                    HStack(spacing: 8) {
-                        AstellaGlyph(kind: .edit, tint: StudyPalette.ink).frame(width: 15, height: 15)
-                        Text("修改这条批注")
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                if !isEditing {
+                    Button {
+                        draft = annotation.explanation
+                        withAnimation(Motion.gated(store.localReduceMotion, Motion.segment)) { isEditing = true }
+                    } label: {
+                        compactActionLabel("修改", glyph: .edit)
                     }
-                }
-                .modifier(SecondaryActionStyle())
-            } else {
-                Button("取消修改") {
-                    draft = annotation.explanation
-                    withAnimation(Motion.gated(store.localReduceMotion, Motion.segment)) { isEditing = false }
-                }
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(StudyPalette.muted)
-            }
-            if !isCompanionExplanation, let anchor {
-                Button {
-                    Task { await store.explainNoteAnnotation(noteId: noteId, anchor: anchor) }
-                } label: {
-                    HStack(spacing: 8) {
-                        AstellaGlyph(kind: .sparkle, tint: StudyPalette.accent).frame(width: 15, height: 15)
-                        Text("请伴星讲解这段原文")
+                    .buttonStyle(AstellaPressStyle())
+                } else {
+                    Button {
+                        draft = annotation.explanation
+                        withAnimation(Motion.gated(store.localReduceMotion, Motion.segment)) { isEditing = false }
+                    } label: {
+                        compactActionLabel("取消修改", glyph: .close)
                     }
+                    .buttonStyle(AstellaPressStyle())
                 }
-                .modifier(SecondaryActionStyle())
-                .disabled(store.isAnnotationBusy)
+                if !isCompanionExplanation, let anchor {
+                    Button {
+                        Task { await store.explainNoteAnnotation(noteId: noteId, anchor: anchor) }
+                    } label: {
+                        compactActionLabel("请伴星讲解这段", glyph: .sparkle, tinted: true)
+                    }
+                    .buttonStyle(AstellaPressStyle())
+                    .disabled(store.isAnnotationBusy)
+                }
+                Spacer(minLength: 0)
             }
             Button("撤下这条批注") { confirmsRemoval = true }
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 11.5, weight: .medium))
                 .foregroundStyle(StudyPalette.danger)
                 .disabled(store.isAnnotationBusy)
+                .padding(.leading, 3)
         }
+    }
+
+    private func compactActionLabel(_ title: String, glyph: AstellaGlyphKind, tinted: Bool = false) -> some View {
+        HStack(spacing: 6) {
+            AstellaGlyph(kind: glyph, tint: tinted ? StudyPalette.accent : StudyPalette.ink.opacity(0.82))
+                .frame(width: 12, height: 12)
+            Text(title)
+                .font(.system(size: 11.5, weight: .semibold))
+                .foregroundStyle(tinted ? StudyPalette.accent : StudyPalette.ink.opacity(0.82))
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 32)
+        .background(tinted ? StudyPalette.sky.opacity(0.85) : StudyPalette.inset.opacity(0.72), in: Capsule())
     }
 
     private func statusRow(_ status: String) -> some View {
@@ -1805,48 +1862,28 @@ private struct NoteVersionsScreen: View {
     @State private var showRestore = false
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                PageHeading(eyebrow: "保存轨迹", title: "版本记录", subtitle: "恢复会另存为新版本，原来的内容仍会保留。")
-                if let failure { featureError(failure, retry: { Task { await load() } }) }
-                if loading && items.isEmpty {
-                    ProgressView("正在读取版本…").frame(maxWidth: .infinity).padding(28)
-                } else if items.isEmpty && failure == nil {
-                    VStack(alignment: .leading, spacing: 9) {
-                        AstellaGlyph(kind: .refresh, tint: StudyPalette.accent).frame(width: 23, height: 23)
-                        Text("还没有版本记录").font(.headline.weight(.semibold)).foregroundStyle(StudyPalette.ink)
-                        Text("这篇手记目前只有当前版本。").font(.subheadline).foregroundStyle(StudyPalette.muted)
+        VStack(spacing: 0) {
+            header
+            Rectangle().fill(StudyPalette.paperEdge.opacity(0.55)).frame(height: 0.7)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    if let failure {
+                        featureError(failure, retry: { Task { await load() } })
+                            .padding(.bottom, 16)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 18)
-                } else {
-                    ForEach(Array(items.enumerated()), id: \.offset) { _, version in
-                        versionRow(version)
-                    }
-                    if items.count == 1 {
-                        HStack(alignment: .top, spacing: 13) {
-                            VStack(spacing: 0) {
-                                Circle().fill(StudyPalette.paperEdge).frame(width: 9, height: 9)
-                                Rectangle().fill(StudyPalette.paperEdge.opacity(0.75)).frame(width: 1, height: 34)
-                            }
-                            .padding(.leading, StudySpacing.lg + 7)
-                            .padding(.top, 5)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("接下来的保存").font(.subheadline.weight(.semibold)).foregroundStyle(StudyPalette.ink)
-                                Text("新版本会沿着这条轨迹追加，原来的内容仍会保留。")
-                                    .font(.footnote).lineSpacing(3).foregroundStyle(StudyPalette.muted)
-                            }
-                            .padding(.top, 1)
-                        }
-                        .padding(.top, 1)
+                    if loading && items.isEmpty {
+                        loadingState
+                    } else if items.isEmpty && failure == nil {
+                        emptyState
+                    } else {
+                        timeline
                     }
                 }
+                .padding(.horizontal, 22).padding(.top, 18).padding(.bottom, 30)
             }
-            .padding(.horizontal, 24).padding(.top, 14).padding(.bottom, 28)
+            .scrollIndicators(.hidden)
         }
         .background(DawnBackground())
-        .navigationTitle("")
-        .navigationBarTitleDisplayMode(.inline)
         .confirmationDialog("恢复到第 \(selected?["versionNo"] as? Int ?? 1) 版？", isPresented: $showRestore, titleVisibility: .visible) {
             Button("恢复这一版", role: .destructive) { Task { await restoreSelected() } }
             Button("取消", role: .cancel) { selected = nil }
@@ -1856,56 +1893,200 @@ private struct NoteVersionsScreen: View {
         .task { await load() }
     }
 
-    @ViewBuilder
-    private func versionRow(_ version: [String: Any]) -> some View {
-        let current = version["id"] as? String == store.noteDocument?.versionId
-        if current {
-            PaperSurface(padding: StudySpacing.lg, radius: StudyRadius.xl) {
-                VStack(alignment: .leading, spacing: 11) {
-                    HStack(spacing: 11) {
-                        AstellaGlyph(kind: .check, tint: StudyPalette.accent).frame(width: 22, height: 22)
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("第 \(version["versionNo"] as? Int ?? 1) 版")
-                                .font(.headline.weight(.semibold)).foregroundStyle(StudyPalette.ink)
-                            Text(dateLabel(version["createdAt"] as? String))
-                                .font(.caption).foregroundStyle(StudyPalette.muted)
-                        }
-                        Spacer()
-                        Text("当前")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(StudyPalette.accent)
-                    }
-                    if let document = store.noteDocument, document.id == noteId,
-                       let excerpt = document.blocks.first(where: { !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.type != "image" })?.content {
-                        Divider().overlay(StudyPalette.paperEdge)
-                        Text(excerpt.replacingOccurrences(of: "\n", with: " "))
-                            .font(.subheadline).lineSpacing(3)
+    private var header: some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 7) {
+                    Text("保存轨迹")
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .tracking(2.2)
+                        .foregroundStyle(StudyPalette.accent)
+                    if !items.isEmpty {
+                        Circle().fill(StudyPalette.paperEdge).frame(width: 3, height: 3)
+                        Text("\(items.count) 个版本")
+                            .font(.system(size: 10.5))
                             .foregroundStyle(StudyPalette.muted)
-                            .lineLimit(3)
                     }
                 }
+                Text("版本记录")
+                    .font(StudySerif.font(size: 23, weight: .semibold))
+                    .tracking(1)
+                    .foregroundStyle(StudyPalette.ink)
+                Text("恢复会另存为新版本，原来的内容仍会保留。")
+                    .font(.system(size: 11.5))
+                    .lineSpacing(3)
+                    .foregroundStyle(StudyPalette.muted)
             }
-        } else {
-            HStack(alignment: .center, spacing: 13) {
-                AstellaGlyph(kind: .refresh, tint: StudyPalette.muted)
-                    .frame(width: 16, height: 16).frame(width: 32, height: 32)
-                    .background(StudyPalette.inset, in: Circle())
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("第 \(version["versionNo"] as? Int ?? 1) 版")
-                        .font(.headline.weight(.semibold)).foregroundStyle(StudyPalette.ink)
-                    Text(dateLabel(version["createdAt"] as? String))
-                        .font(.caption).foregroundStyle(StudyPalette.muted)
-                }
-                Spacer()
-                Button("恢复") { selected = version; showRestore = true }
-                    .font(.subheadline.weight(.semibold)).foregroundStyle(StudyPalette.accent)
-                    .disabled(restoring)
+            Spacer(minLength: 0)
+            Button { dismiss() } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(StudyPalette.muted)
+                    .frame(width: 32, height: 32)
+                    .background(StudyPalette.inset.opacity(0.7), in: Circle())
             }
-            .padding(.vertical, 10)
+            .buttonStyle(AstellaPressStyle())
+            .accessibilityLabel("收起版本记录")
+        }
+        .padding(.horizontal, 22).padding(.top, 16).padding(.bottom, 14)
+    }
+
+    private var loadingState: some View {
+        HStack(spacing: 10) {
+            ProgressView().controlSize(.small).tint(StudyPalette.accent)
+            Text("正在读取版本…")
+                .font(.system(size: 12.5))
+                .foregroundStyle(StudyPalette.muted)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 40)
+    }
+
+    private var emptyState: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            AstellaGlyph(kind: .history, tint: StudyPalette.accent)
+                .frame(width: 22, height: 22)
+                .frame(width: 52, height: 52)
+                .background(StudyPalette.sky, in: Circle())
+            Text("还没有版本记录")
+                .font(StudySerif.font(size: 18, weight: .semibold))
+                .foregroundStyle(StudyPalette.ink)
+            Text("这篇手记目前只有当前版本。之后每次保存，都会沿着这条轨迹多留一页。")
+                .font(.system(size: 12.5))
+                .lineSpacing(4)
+                .foregroundStyle(StudyPalette.muted)
+                .fixedSize(horizontal: false, vertical: true)
+            if let failure { featureError(failure, retry: { Task { await load() } }).padding(.top, 6) }
+        }
+        .padding(.top, 34)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var timeline: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            ForEach(Array(items.enumerated()), id: \.offset) { index, version in
+                versionRow(version, isLast: index == items.count - 1 && items.count > 1)
+            }
+            if items.count == 1 {
+                upcomingRow
+            }
         }
     }
 
+    @ViewBuilder
+    private func versionRow(_ version: [String: Any], isLast: Bool) -> some View {
+        let current = version["id"] as? String == store.noteDocument?.versionId
+        HStack(alignment: .top, spacing: 15) {
+            ZStack {
+                Circle()
+                    .fill(current ? StudyPalette.accent : StudyPalette.paper)
+                    .frame(width: 10, height: 10)
+                    .overlay(Circle().stroke(current ? Color.clear : StudyPalette.paperEdge, lineWidth: 1.4))
+                if current {
+                    Circle().fill(StudyPalette.accent.opacity(0.24)).frame(width: 18, height: 18)
+                }
+            }
+            .frame(width: 10)
+            .padding(.top, 17)
+
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text("第 \(version["versionNo"] as? Int ?? 1) 版")
+                        .font(StudySerif.font(size: 17, weight: .semibold))
+                        .foregroundStyle(StudyPalette.ink)
+                    Spacer(minLength: 0)
+                    if current {
+                        Text("正在读")
+                            .font(.system(size: 9.5, weight: .semibold))
+                            .tracking(0.6)
+                            .foregroundStyle(StudyPalette.accent)
+                            .padding(.horizontal, 8).frame(height: 20)
+                            .background(StudyPalette.sky, in: Capsule())
+                    } else {
+                        Button {
+                            selected = version
+                            showRestore = true
+                        } label: {
+                            Text("恢复这一版")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(StudyPalette.accent)
+                                .padding(.horizontal, 11).frame(height: 28)
+                                .background(StudyPalette.sky.opacity(0.85), in: Capsule())
+                        }
+                        .buttonStyle(AstellaPressStyle())
+                        .disabled(restoring)
+                    }
+                }
+                Text(dateLabel(version["createdAt"] as? String))
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(StudyPalette.muted)
+                if current, let document = store.noteDocument, document.id == noteId,
+                   let excerpt = document.blocks.first(where: { !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.type != "image" })?.content {
+                    HStack(alignment: .top, spacing: 9) {
+                        RoundedRectangle(cornerRadius: 2).fill(StudyPalette.accent.opacity(0.45)).frame(width: 2)
+                        Text(excerpt.replacingOccurrences(of: "\n", with: " "))
+                            .font(StudySerif.font(size: 13))
+                            .lineSpacing(4.5)
+                            .foregroundStyle(StudyPalette.ink.opacity(0.82))
+                            .lineLimit(3)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(.top, 2)
+                }
+            }
+            .padding(15)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                current ? StudyPalette.paper : StudyPalette.paper.opacity(0.55),
+                in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(current ? StudyPalette.accent.opacity(0.28) : StudyPalette.paperEdge.opacity(0.55), lineWidth: 0.8)
+            )
+        }
+        .background(alignment: .topLeading) {
+            if !isLast {
+                GeometryReader { proxy in
+                    Rectangle()
+                        .fill(StudyPalette.accent.opacity(0.22))
+                        .frame(width: 1.2, height: proxy.size.height + 14)
+                        .offset(x: 4.4, y: 22)
+                }
+            }
+        }
+    }
+
+    private var upcomingRow: some View {
+        HStack(alignment: .top, spacing: 15) {
+            Circle()
+                .strokeBorder(StudyPalette.paperEdge, style: StrokeStyle(lineWidth: 1.2, dash: [2.5, 2.5]))
+                .frame(width: 10, height: 10)
+                .padding(.top, 8)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("接下来的保存")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(StudyPalette.ink)
+                Text("新版本会沿着这条轨迹追加，原来的内容仍会保留。")
+                    .font(.system(size: 11.5))
+                    .lineSpacing(3)
+                    .foregroundStyle(StudyPalette.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.leading, 2)
+            Spacer(minLength: 0)
+        }
+        .padding(.top, 2)
+    }
+
     private func load() async {
+        #if DEBUG
+        if store.uiReviewMode == "note-versions" {
+            items = Self.reviewItems
+            failure = nil
+            return
+        }
+        #endif
         loading = true; failure = nil
         defer { loading = false }
         do {
@@ -1913,6 +2094,21 @@ private struct NoteVersionsScreen: View {
             items = page["items"] as? [[String: Any]] ?? []
         } catch { failure = noteFeatureFailure(error) }
     }
+
+    #if DEBUG
+    private static let reviewItems: [[String: Any]] = [
+        [
+            "id": "open-design-redwall-v2",
+            "versionNo": 2,
+            "createdAt": "2026-10-19T09:12:00Z",
+        ],
+        [
+            "id": "open-design-redwall-v1",
+            "versionNo": 1,
+            "createdAt": "2026-10-17T21:40:00Z",
+        ],
+    ]
+    #endif
 
     private func restoreSelected() async {
         guard let versionId = selected?["id"] as? String, let baseVersionId = store.noteDocument?.versionId else { return }
@@ -1927,7 +2123,10 @@ private struct NoteVersionsScreen: View {
 
     private func dateLabel(_ raw: String?) -> String {
         guard let raw, let date = ISO8601DateFormatter().date(from: raw) else { return "保存时间未提供" }
-        return date.formatted(date: .abbreviated, time: .shortened)
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "M 月 d 日 · HH:mm"
+        return formatter.string(from: date)
     }
 }
 
@@ -1943,10 +2142,27 @@ private struct NoteOverviewScreen: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("速览").font(.system(size: 20, weight: .semibold)).foregroundStyle(StudyPalette.ink)
-                    Text("主线 · 要点 · 原文依据").font(.system(size: 11)).foregroundStyle(StudyPalette.muted)
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 7) {
+                        Text("速览")
+                            .font(.system(size: 10.5, weight: .semibold))
+                            .tracking(2.2)
+                            .foregroundStyle(StudyPalette.accent)
+                        Circle().fill(StudyPalette.paperEdge).frame(width: 3, height: 3)
+                        Text("第 \(store.noteDocument?.versionNumber ?? 1) 版")
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundStyle(StudyPalette.muted)
+                    }
+                    Text(store.noteDocument?.title ?? "这篇手记")
+                        .font(StudySerif.font(size: 23, weight: .semibold))
+                        .tracking(0.6)
+                        .foregroundStyle(StudyPalette.ink)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("主线 · 要点 · 原文依据")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(StudyPalette.muted)
                 }
                 Spacer(minLength: 0)
                 Button { dismiss() } label: {
@@ -1957,9 +2173,19 @@ private struct NoteOverviewScreen: View {
                 .buttonStyle(AstellaPressStyle())
                 .accessibilityLabel("收起速览")
             }
-            .padding(.horizontal, 21).padding(.top, 12).padding(.bottom, 7)
-            NoteFeatureSourceLine(document: store.noteDocument)
-                .padding(.horizontal, 20).padding(.top, 3).padding(.bottom, 4)
+            .padding(.horizontal, 22).padding(.top, 16).padding(.bottom, 6)
+            HStack(spacing: 8) {
+                AstellaGlyph(kind: .quote, tint: StudyPalette.muted.opacity(0.8))
+                    .frame(width: 11, height: 11)
+                Text("从原文归纳，不改动正文")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(StudyPalette.muted)
+                Spacer(minLength: 0)
+                Text("\(store.noteDocument?.blocks.count ?? 0) 段")
+                    .font(.system(size: 10))
+                    .foregroundStyle(StudyPalette.muted.opacity(0.85))
+            }
+            .padding(.horizontal, 22).padding(.bottom, 4)
             GeometryReader { proxy in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
@@ -1976,14 +2202,7 @@ private struct NoteOverviewScreen: View {
                             if older { featureNotice("这份速览基于第 \(overview["noteVersionNumber"] as? Int ?? 1) 版，当前正文可能已经变化。") }
                             overviewSummaryCard(overview)
                             if !points.isEmpty {
-                                VStack(alignment: .leading, spacing: 11) {
-                                    Text("要点与原文")
-                                        .font(.system(size: 18, weight: .semibold))
-                                        .foregroundStyle(StudyPalette.ink)
-                                    ForEach(Array(points.enumerated()), id: \.offset) { entry in
-                                        overviewPoint(entry.offset + 1, point: entry.element)
-                                    }
-                                }
+                                overviewPointsCard(points)
                             }
                             if let coverage = overview["coverage"] as? [String: Any], (coverage["imageBlocksNotRead"] as? Int ?? 0) > 0 {
                                 featureNotice("有图片内容没有纳入这次速览，请结合原文查看。")
@@ -2019,56 +2238,105 @@ private struct NoteOverviewScreen: View {
     }
 
     private func overviewSummaryCard(_ overview: [String: Any]) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                AstellaGlyph(kind: .quote, tint: StudyPalette.accent).frame(width: 17, height: 17)
-                Text("核心脉络").font(.subheadline.weight(.semibold)).foregroundStyle(StudyPalette.accent)
-                Spacer()
-                Text("第 \(overview["noteVersionNumber"] as? Int ?? store.noteDocument?.versionNumber ?? 1) 版")
-                    .font(.caption.weight(.medium)).foregroundStyle(StudyPalette.muted)
+        HStack(alignment: .top, spacing: 13) {
+            RoundedRectangle(cornerRadius: 2)
+                .fill(StudyPalette.accent.opacity(0.45))
+                .frame(width: 2.5)
+            VStack(alignment: .leading, spacing: 13) {
+                HStack(spacing: 8) {
+                    AstellaGlyph(kind: .quote, tint: StudyPalette.accent).frame(width: 14, height: 14)
+                    Text("核心脉络")
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .tracking(1.6)
+                        .foregroundStyle(StudyPalette.accent)
+                    Spacer()
+                    Text("第 \(overview["noteVersionNumber"] as? Int ?? store.noteDocument?.versionNumber ?? 1) 版")
+                        .font(.system(size: 10))
+                        .foregroundStyle(StudyPalette.muted)
+                        .padding(.horizontal, 8)
+                        .frame(height: 20)
+                        .background(StudyPalette.inset.opacity(0.8), in: Capsule())
+                }
+                Text(overview["body"] as? String ?? "")
+                    .font(StudySerif.font(size: 17.5))
+                    .tracking(0.2)
+                    .lineSpacing(7)
+                    .foregroundStyle(StudyPalette.ink)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            Text(overview["body"] as? String ?? "")
-                .font(.system(size: 17, weight: .regular))
-                .lineSpacing(6)
-                .foregroundStyle(StudyPalette.ink)
-                .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(18)
+        .padding(19)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .modifier(StudyGlassSurfaceStyle(radius: 22))
+        .background(StudyPalette.paper, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(StudyPalette.paperEdge.opacity(0.6), lineWidth: 0.7)
+        )
+    }
+
+    private func overviewPointsCard(_ points: [[String: Any]]) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                Text("要点与原文")
+                    .font(StudySerif.font(size: 16, weight: .semibold))
+                    .foregroundStyle(StudyPalette.ink)
+                Spacer(minLength: 0)
+                Text("\(points.count) 个关键点")
+                    .font(.system(size: 10))
+                    .foregroundStyle(StudyPalette.muted)
+            }
+            .padding(.bottom, 4)
+            ForEach(Array(points.enumerated()), id: \.offset) { entry in
+                if entry.offset > 0 {
+                    Rectangle()
+                        .fill(StudyPalette.paperEdge.opacity(0.55))
+                        .frame(height: 0.7)
+                        .padding(.vertical, 15)
+                }
+                overviewPoint(entry.offset + 1, point: entry.element)
+                    .padding(.top, entry.offset == 0 ? 12 : 0)
+            }
+        }
+        .padding(19)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(StudyPalette.paper.opacity(0.72), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(StudyPalette.paperEdge.opacity(0.5), lineWidth: 0.7)
+        )
     }
 
     private func overviewPoint(_ number: Int, point: [String: Any]) -> some View {
-        VStack(alignment: .leading, spacing: 11) {
-            HStack(alignment: .top, spacing: 10) {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(alignment: .firstTextBaseline, spacing: 11) {
                 Text(String(format: "%02d", number))
-                    .font(.caption.monospacedDigit().weight(.semibold))
-                    .foregroundStyle(StudyPalette.accent)
-                    .frame(width: 31, height: 31)
-                    .background(StudyPalette.sky, in: Circle())
+                    .font(StudySerif.font(size: 15, weight: .semibold))
+                    .tracking(0.5)
+                    .foregroundStyle(StudyPalette.accent.opacity(0.85))
+                    .frame(width: 24, alignment: .leading)
                 Text(point["explanation"] as? String ?? "")
-                    .font(.system(size: 15.5, weight: .medium))
-                    .lineSpacing(4)
+                    .font(.system(size: 15, weight: .medium))
+                    .lineSpacing(5)
                     .foregroundStyle(StudyPalette.ink)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 3)
             }
             if let quote = point["quote"] as? String, !quote.isEmpty {
                 HStack(alignment: .top, spacing: 9) {
-                    RoundedRectangle(cornerRadius: 2).fill(StudyPalette.accent.opacity(0.55)).frame(width: 2)
-                    Text("“\(quote)”")
-                        .font(.system(size: 14))
-                        .lineSpacing(4)
+                    RoundedRectangle(cornerRadius: 2).fill(StudyPalette.accent.opacity(0.45)).frame(width: 2)
+                    Text(quote)
+                        .font(StudySerif.font(size: 13.5))
+                        .lineSpacing(4.5)
                         .foregroundStyle(StudyPalette.muted)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.leading, 41)
+                .padding(.vertical, 9)
+                .padding(.horizontal, 11)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(StudyPalette.inset.opacity(0.62), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .padding(.leading, 35)
             }
         }
-        .padding(15)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .modifier(StudyGlassSurfaceStyle(radius: 19))
     }
 
     private var taskTitle: String { (task?["status"] as? String) == "queued" ? "已排入整理" : "正在整理这篇手记…" }
@@ -2225,34 +2493,32 @@ private struct NoteExpansionDrawer: View {
     }
 
     private var sourceCard: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             AstellaGlyph(kind: .book, tint: StudyPalette.accent)
-                .frame(width: 18, height: 18)
-                .frame(width: 38, height: 38)
-                .background(StudyPalette.sky, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-            VStack(alignment: .leading, spacing: 3) {
+                .frame(width: 14, height: 14)
+                .frame(width: 30, height: 30)
+                .background(StudyPalette.sky, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            VStack(alignment: .leading, spacing: 2) {
                 Text("来自这篇手记")
-                    .font(.system(size: 10, weight: .semibold)).tracking(0.8)
+                    .font(.system(size: 9, weight: .semibold)).tracking(1)
                     .foregroundStyle(StudyPalette.muted)
                 Text(store.noteDocument?.title ?? "当前手记")
-                    .font(StudySerif.font(size: 15, weight: .semibold))
+                    .font(StudySerif.font(size: 13.5, weight: .semibold))
                     .foregroundStyle(StudyPalette.ink)
                     .lineLimit(1)
-                Text("第 \(store.noteDocument?.versionNumber ?? 1) 版 · \(store.noteDocument?.blocks.count ?? 0) 段正文")
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(StudyPalette.muted)
             }
             Spacer(minLength: 0)
-            if store.noteDocument != nil {
-                Text("原文")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(StudyPalette.muted)
-                    .padding(.horizontal, 8).frame(height: 20)
-                    .background(StudyPalette.inset, in: Capsule())
-            }
+            Text("第 \(store.noteDocument?.versionNumber ?? 1) 版 · \(store.noteDocument?.blocks.count ?? 0) 段")
+                .font(.system(size: 10))
+                .foregroundStyle(StudyPalette.muted)
         }
-        .padding(13)
-        .modifier(StudyGlassSurfaceStyle(radius: 18))
+        .padding(.horizontal, 11)
+        .frame(height: 48)
+        .background(StudyPalette.paper.opacity(0.55), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 15, style: .continuous)
+                .stroke(StudyPalette.paperEdge.opacity(0.55), lineWidth: 0.7)
+        )
     }
 
     @ViewBuilder private var drawerContent: some View {
@@ -4648,7 +4914,7 @@ private struct NoteMindMapScreen: View {
     @State private var loading = false
     @State private var working = false
     @State private var failure: String?
-    @State private var zoom: CGFloat = 0.85
+    @State private var zoom: CGFloat = 1
     @State private var canvasPan = CGSize.zero
 
     private var graphNodes: [NoteMindMapNode] {
@@ -4674,11 +4940,15 @@ private struct NoteMindMapScreen: View {
                     .padding(.top, 8)
             }
             if loading && map == nil {
-                ProgressView("正在读取脑图…")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                NoteFeatureLoadingState(title: "正在读取脑图")
+                    .padding(.horizontal, 22)
+                    .padding(.top, 6)
+                Spacer(minLength: 0)
             } else if working && map == nil {
-                ProgressView("正在整理思路…")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                NoteFeatureLoadingState(title: "正在围绕原文整理思路")
+                    .padding(.horizontal, 22)
+                    .padding(.top, 6)
+                Spacer(minLength: 0)
             } else if graphNodes.isEmpty {
                 ScrollView {
                     FeatureGenerationPrimer(kind: "mindmap", document: store.noteDocument)
@@ -4711,56 +4981,118 @@ private struct NoteMindMapScreen: View {
     }
 
     private var mindMapToolbar: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 11) {
             Button { dismiss() } label: {
                 AstellaGlyph(kind: .back, tint: StudyPalette.ink)
                     .frame(width: 18, height: 18)
-                    .frame(width: 38, height: 38)
-                    .background(StudyPalette.paper.opacity(0.68), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .frame(width: 40, height: 40)
+                    .modifier(StudyGlassSurfaceStyle(radius: 20, interactive: true))
             }
             .buttonStyle(AstellaPressStyle())
             .accessibilityLabel("返回阅读")
 
-            Image("CompanionAvatar")
-                .resizable()
-                .scaledToFit()
-                .frame(width: 34, height: 34)
-                .background(StudyPalette.sky.opacity(0.68), in: Circle())
-                .clipShape(Circle())
-                .accessibilityHidden(true)
-
-            Text("脑图")
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(StudyPalette.ink)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("脑图")
+                    .font(StudySerif.font(size: 17, weight: .semibold))
+                    .foregroundStyle(StudyPalette.ink)
+                Text(mapSubtitle)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(StudyPalette.muted)
+                    .lineLimit(1)
+            }
             Spacer(minLength: 0)
         }
-        .foregroundStyle(StudyPalette.accent)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .modifier(StudyGlassSurfaceStyle(radius: 24))
         .padding(.horizontal, 20)
-        .padding(.top, 5)
+        .padding(.top, 6)
+        .padding(.bottom, 8)
+    }
+
+    private var mapSubtitle: String {
+        let title = store.noteDocument?.title ?? "当前手记"
+        guard !graphNodes.isEmpty else { return "从 \(title) 展开" }
+        return "\(title) · 第 \(store.noteDocument?.versionNumber ?? 1) 版 · \(graphNodes.count) 个节点"
     }
 
     private var mapDock: some View {
-        Button {
-            canvasPan = .zero
-            zoom = 0.85
-            Task { await generate() }
-        } label: {
-            astellaLabel(
-                loading || working
-                    ? (graphNodes.isEmpty ? "正在读取脑图…" : "正在重新生成…")
-                    : (graphNodes.isEmpty && map == nil ? "生成脑图" : "重新生成脑图"),
-                glyph: .companion
-            )
-            .frame(maxWidth: .infinity)
+        HStack(spacing: 6) {
+            Button {
+                withAnimation(Motion.gated(store.localReduceMotion, Motion.segment)) {
+                    zoom = max(0.6, zoom / 1.22)
+                }
+            } label: {
+                Image(systemName: "minus.magnifyingglass")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(StudyPalette.ink.opacity(graphNodes.isEmpty ? 0.35 : 0.86))
+                    .frame(width: 44, height: 38)
+            }
+            .buttonStyle(AstellaPressStyle())
+            .disabled(graphNodes.isEmpty)
+            .accessibilityLabel("缩小脑图")
+
+            Button {
+                withAnimation(Motion.gated(store.localReduceMotion, Motion.segment)) {
+                    canvasPan = .zero
+                    zoom = 1
+                }
+            } label: {
+                Text("适应")
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(StudyPalette.muted)
+                    .frame(width: 52, height: 38)
+            }
+            .buttonStyle(AstellaPressStyle())
+            .disabled(graphNodes.isEmpty)
+            .accessibilityLabel("适应屏幕")
+
+            Button {
+                withAnimation(Motion.gated(store.localReduceMotion, Motion.segment)) {
+                    zoom = min(2.2, zoom * 1.22)
+                }
+            } label: {
+                Image(systemName: "plus.magnifyingglass")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(StudyPalette.ink.opacity(graphNodes.isEmpty ? 0.35 : 0.86))
+                    .frame(width: 44, height: 38)
+            }
+            .buttonStyle(AstellaPressStyle())
+            .disabled(graphNodes.isEmpty)
+            .accessibilityLabel("放大脑图")
+
+            Rectangle()
+                .fill(StudyPalette.paperEdge.opacity(0.8))
+                .frame(width: 0.7, height: 22)
+                .padding(.horizontal, 6)
+
+            Button {
+                Task { await generate() }
+            } label: {
+                HStack(spacing: 7) {
+                    if loading || working {
+                        ProgressView().controlSize(.mini).tint(StudyPalette.accent)
+                    } else {
+                        AstellaGlyph(kind: .refresh, tint: StudyPalette.accent).frame(width: 14, height: 14)
+                    }
+                    Text(loading || working
+                         ? (graphNodes.isEmpty ? "正在读取…" : "正在整理…")
+                         : (graphNodes.isEmpty ? "生成脑图" : "重新生成"))
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(StudyPalette.accent)
+                }
+                .padding(.horizontal, 14)
+                .frame(height: 34)
+                .background(StudyPalette.sky.opacity(0.9), in: Capsule())
+            }
+            .buttonStyle(AstellaPressStyle())
+            .disabled(loading || working || store.noteDocument == nil || store.aiSettings?.canUseExternalAI != true || requiresAIConsent(failure) || requiresAIDataPolicy(failure))
         }
-        .modifier(PrimaryActionStyle())
-        .disabled(loading || working || store.noteDocument == nil || store.aiSettings?.canUseExternalAI != true || requiresAIConsent(failure) || requiresAIDataPolicy(failure))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .modifier(StudyGlassSurfaceStyle(radius: 22))
         .padding(.horizontal, 20)
-        .padding(.vertical, 11)
-        .background(StudyPalette.canvas)
+        .padding(.top, 6)
+        .padding(.bottom, 8)
+        .frame(maxWidth: .infinity)
+        .background(StudyPalette.canvas.opacity(0.001))
     }
 
     private func load() async {
@@ -4868,12 +5200,15 @@ private struct NoteMindMapPosition: Identifiable {
     let depth: Int
     let centerY: CGFloat
     var id: String { node.id }
-    var x: CGFloat { 22 + CGFloat(depth) * 170 }
+
+    static let columnX: [CGFloat] = [20, 156, 306]
+
+    var x: CGFloat { Self.columnX[min(depth, Self.columnX.count - 1)] }
     var width: CGFloat {
         switch node.kind {
-        case "root": 108
-        case "group": 122
-        default: 132
+        case "root": 112
+        case "group": 124
+        default: 154
         }
     }
 }
@@ -4883,7 +5218,7 @@ private struct NoteMindMapLayout {
     let byID: [String: NoteMindMapPosition]
     let size: CGSize
 
-    init(nodes: [NoteMindMapNode]) {
+    init(nodes: [NoteMindMapNode], targetHeight: CGFloat = 0) {
         let nodeByID = Dictionary(uniqueKeysWithValues: nodes.map { ($0.id, $0) })
         let children = Dictionary(grouping: nodes.compactMap { node -> (String, NoteMindMapNode)? in
             guard let parent = node.parentID else { return nil }
@@ -4892,8 +5227,11 @@ private struct NoteMindMapLayout {
         let rootID = nodes.first(where: { $0.kind == "root" })?.id ?? nodes.first?.id
         var output: [NoteMindMapPosition] = []
         var row = 0
-        let rowSpacing: CGFloat = 100
-        let topInset: CGFloat = 58
+        let topInset: CGFloat = 40
+        let leafCount = nodes.filter { (children[$0.id] ?? []).isEmpty }.count
+        let rowSpacing: CGFloat = targetHeight > 0
+            ? min(150, max(94, (targetHeight - topInset * 2) / CGFloat(max(1, leafCount - 1))))
+            : 92
 
         func place(_ nodeID: String, depth: Int) -> CGFloat {
             guard let node = nodeByID[nodeID] else { return topInset }
@@ -4913,15 +5251,17 @@ private struct NoteMindMapLayout {
         if let rootID { _ = place(rootID, depth: 0) }
         positions = output
         byID = Dictionary(uniqueKeysWithValues: output.map { ($0.id, $0) })
-        let maxDepth = output.map(\.depth).max() ?? 0
         size = CGSize(
-            width: max(CGFloat(512), 22 + CGFloat(maxDepth) * 170 + 132 + 18),
-            height: max(CGFloat(676), topInset * 2 + CGFloat(max(1, row - 1)) * rowSpacing + 60)
+            width: 482,
+            height: targetHeight > 0
+                ? targetHeight
+                : max(CGFloat(600), topInset * 2 + CGFloat(max(1, row - 1)) * rowSpacing + 70)
         )
     }
 }
 
 private struct NoteMindMapCanvas: View {
+    @Environment(\.colorScheme) private var scheme
     let nodes: [NoteMindMapNode]
     @Binding var zoom: CGFloat
     @Binding var pan: CGSize
@@ -4930,12 +5270,18 @@ private struct NoteMindMapCanvas: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let layout = NoteMindMapLayout(nodes: nodes)
-            let canvasZoom = min(2.5, max(0.4, zoom * pinchScale))
+            let fit = min(1, (proxy.size.width - 24) / 482)
+            let layout = NoteMindMapLayout(
+                nodes: nodes,
+                targetHeight: fit > 0 ? (proxy.size.height - 32) / fit : 600
+            )
+            let canvasZoom = min(2.4, max(0.4, zoom * fit * pinchScale))
             let originX = (proxy.size.width - layout.size.width * canvasZoom) / 2 + pan.width + dragTranslation.width
-            let originY = (proxy.size.height - layout.size.height * canvasZoom) / 2 + pan.height + dragTranslation.height
+            let originY = max(18, (proxy.size.height - layout.size.height * canvasZoom) / 2) + pan.height + dragTranslation.height
             ZStack(alignment: .topLeading) {
                 Color.clear.contentShape(Rectangle())
+                dotGrid
+                    .frame(width: proxy.size.width, height: proxy.size.height)
                 Canvas { context, _ in
                     for position in layout.positions {
                         guard let parentID = position.node.parentID,
@@ -4946,14 +5292,19 @@ private struct NoteMindMapCanvas: View {
                             y: originY + parent.centerY * canvasZoom
                         )
                         let end = CGPoint(x: originX + position.x * canvasZoom, y: originY + position.centerY * canvasZoom)
-                        let reach = max(18 * canvasZoom, (end.x - start.x) * 0.46)
+                        let reach = max(18 * canvasZoom, (end.x - start.x) * 0.5)
                         path.move(to: start)
                         path.addCurve(
                             to: end,
                             control1: CGPoint(x: start.x + reach, y: start.y),
                             control2: CGPoint(x: end.x - reach, y: end.y)
                         )
-                        context.stroke(path, with: .color(StudyPalette.accent.opacity(0.42)), lineWidth: 1.5 * canvasZoom)
+                        let strength: Double = position.depth <= 1 ? 0.42 : 0.26
+                        context.stroke(
+                            path,
+                            with: .color(StudyPalette.accent.opacity(strength)),
+                            style: StrokeStyle(lineWidth: 1.4 * canvasZoom, lineCap: .round)
+                        )
                     }
                 }
                 .frame(width: proxy.size.width, height: proxy.size.height)
@@ -4980,39 +5331,132 @@ private struct NoteMindMapCanvas: View {
             .simultaneousGesture(
                 MagnificationGesture()
                     .updating($pinchScale) { value, state, _ in state = value }
-                    .onEnded { value in zoom = min(2.5, max(0.4, zoom * value)) }
+                    .onEnded { value in zoom = min(2.4, max(0.4, zoom * value)) }
             )
             .accessibilityLabel("无限画布脑图，可拖动平移并双指缩放")
         }
     }
 
+    private var dotGrid: some View {
+        Canvas { context, size in
+            let spacing: CGFloat = 26
+            guard spacing > 0 else { return }
+            var y: CGFloat = 13
+            while y < size.height {
+                var x: CGFloat = 13
+                while x < size.width {
+                    context.fill(
+                        Path(ellipseIn: CGRect(x: x, y: y, width: 1.6, height: 1.6)),
+                        with: .color(StudyPalette.paperEdge.opacity(0.72))
+                    )
+                    x += spacing
+                }
+                y += spacing
+            }
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    @ViewBuilder
     private func nodeCard(_ position: NoteMindMapPosition) -> some View {
         let node = position.node
-        return Text(node.label)
-            .font(node.kind == "root"
-                  ? .system(size: 14, weight: .semibold, design: .serif)
-                  : .system(size: 12, weight: .medium))
-            .tracking(node.kind == "root" ? 1 : 0)
-            .multilineTextAlignment(.center)
-            .lineLimit(2)
-            .foregroundStyle(node.kind == "root" ? StudyPalette.accent : StudyPalette.ink)
-            .frame(width: position.width - 28)
-            .frame(minHeight: 50)
-            .padding(.horizontal, 14)
-            .background {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+        switch node.kind {
+        case "root":
+            VStack(spacing: 7) {
+                AstellaGlyph(kind: .companion, tint: .white.opacity(0.72))
+                    .frame(width: 13, height: 13)
+                Text(node.label)
+                    .font(StudySerif.font(size: 18, weight: .semibold))
+                    .tracking(1.6)
+                    .foregroundStyle(.white.opacity(0.96))
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+            }
+            .frame(width: position.width - 24)
+            .frame(minHeight: 68)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
                     .fill(LinearGradient(
-                        colors: [StudyPalette.paper.opacity(0.94), StudyPalette.paper.opacity(0.78)],
+                        colors: scheme == .dark
+                            ? [Color(red: 0.14, green: 0.21, blue: 0.36), Color(red: 0.10, green: 0.15, blue: 0.27)]
+                            : [StudyPalette.ink, StudyPalette.ink.opacity(0.84)],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     ))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .stroke(.white.opacity(0.16), lineWidth: 0.8)
+            )
+            .shadow(color: StudyPalette.ink.opacity(0.22), radius: 12, x: 0, y: 6)
+            .accessibilityLabel("中心主题：\(node.label)")
+        case "group":
+            HStack(alignment: .center, spacing: 10) {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(StudyPalette.accent)
+                    .frame(width: 3, height: 26)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(node.label)
+                        .font(.system(size: 13.5, weight: .semibold))
+                        .foregroundStyle(StudyPalette.ink)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                    if let explanation = node.explanation, !explanation.isEmpty {
+                        Text(explanation)
+                            .font(.system(size: 10.5))
+                            .lineSpacing(2)
+                            .foregroundStyle(StudyPalette.muted)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                    }
+                }
+                Spacer(minLength: 0)
             }
-            .overlay {
+            .padding(.horizontal, 12)
+            .padding(.vertical, 11)
+            .frame(width: position.width, alignment: .leading)
+            .background(StudyPalette.paper, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(Color.white.opacity(0.88), lineWidth: 0.9)
+                    .stroke(StudyPalette.paperEdge.opacity(0.9), lineWidth: 0.8)
+            )
+            .shadow(color: StudyPalette.ink.opacity(0.06), radius: 8, x: 0, y: 4)
+            .accessibilityLabel("分支：\(node.label)")
+        default:
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 5) {
+                    Circle()
+                        .fill(StudyPalette.accent.opacity(0.85))
+                        .frame(width: 4, height: 4)
+                    Text(node.label)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(StudyPalette.ink)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                }
+                if let explanation = node.explanation?.trimmingCharacters(in: .whitespacesAndNewlines), !explanation.isEmpty {
+                    Text(explanation)
+                        .font(.system(size: 11))
+                        .lineSpacing(2.5)
+                        .foregroundStyle(StudyPalette.muted)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                }
             }
-            .shadow(color: StudyPalette.ink.opacity(0.05), radius: 7, x: 0, y: 4)
-            .accessibilityLabel(node.label)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .frame(width: position.width, alignment: .leading)
+            .background(StudyPalette.paper.opacity(0.94), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 15, style: .continuous)
+                    .stroke(Color.white.opacity(scheme == .dark ? 0.10 : 0.9), lineWidth: 0.8)
+            )
+            .shadow(color: StudyPalette.ink.opacity(0.05), radius: 7, x: 0, y: 3)
+            .accessibilityLabel("要点：\(node.label)")
+        }
     }
 }
 
@@ -5119,39 +5563,6 @@ private func noteFeatureFailure(_ error: Error) -> String {
 
 private func containsCJK(_ value: String) -> Bool {
     value.unicodeScalars.contains { (0x4e00...0x9fff).contains(Int($0.value)) }
-}
-
-private struct NoteFeatureSourceLine: View {
-    var document: NoteDocument?
-
-    var body: some View {
-        HStack(spacing: 11) {
-            AstellaGlyph(kind: .book, tint: StudyPalette.accent)
-                .frame(width: 19, height: 19)
-                .frame(width: 38, height: 38)
-                .background(StudyPalette.sky, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-            VStack(alignment: .leading, spacing: 3) {
-                Text(document?.title ?? "当前手记")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(StudyPalette.ink)
-                    .lineLimit(1)
-                Text("第 \(document?.versionNumber ?? 1) 版 · \(document?.blocks.count ?? 0) 段正文")
-                    .font(.caption)
-                    .foregroundStyle(StudyPalette.muted)
-            }
-            Spacer(minLength: 0)
-            Text("手记")
-                .font(.caption.weight(.medium))
-                .foregroundStyle(StudyPalette.muted)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(StudyPalette.inset.opacity(0.7), in: Capsule())
-        }
-        .padding(.horizontal, 13)
-        .padding(.vertical, 11)
-        .modifier(StudyGlassSurfaceStyle(radius: 18))
-        .accessibilityElement(children: .combine)
-    }
 }
 
 private struct NoteFeatureLoadingState: View {

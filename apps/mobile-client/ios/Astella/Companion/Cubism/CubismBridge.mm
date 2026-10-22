@@ -98,6 +98,11 @@ const csmFloat32 kExpressionSettleDelta = 60.0f;
     view.colorPixelFormat = MTLPixelFormatBGRA8Unorm;
     view.depthStencilPixelFormat = MTLPixelFormatDepth32Float;
     view.clearColor = MTLClearColorMake(0.0, 0.0, 0.0, 0.0); // 纸面上的透明底
+    // MTKView 默认不透明：只把 clearColor 的 alpha 设为 0 不会透出页面纸面，
+    // 整个舞台会渲染成一块黑色矩形。必须同时关掉 view/layer 的 opaque。
+    view.opaque = NO;
+    view.layer.opaque = NO;
+    view.backgroundColor = UIColor.clearColor;
     view.preferredFramesPerSecond = 60;
     view.enableSetNeedsDisplay = NO;
     view.paused = _reduceMotion;
@@ -173,7 +178,7 @@ const csmFloat32 kExpressionSettleDelta = 60.0f;
     }
     CGSize size = view.drawableSize;
     if (size.width < 1.0 || size.height < 1.0) {
-        return; // drawable 尺寸就绪后由 mtkView:drawableSizeWillChange: 再触发
+        return; // drawable 尺寸就绪后由 drawInMTKView / drawableSizeWillChange: 再触发
     }
 
     [CubismBridge ensureFrameworkInitialized];
@@ -326,7 +331,14 @@ const csmFloat32 kExpressionSettleDelta = 60.0f;
 
 - (void)drawInMTKView:(MTKView *)view {
     if (_model == NULL) {
-        return;
+        // 首帧加载竞态：MTKView 在首次 layout 时先回调 drawableSizeWillChange:，
+        // 那个回调里读 view.drawableSize 仍是 0×0（尺寸尚未写回），tryLoadPending
+        // 于是直接返回；之后尺寸不再变化，模型就永远不会加载，舞台一片空白。
+        // drawInMTKView 拿到的 drawableSize 已经就绪，在这里补一次加载。
+        [self tryLoadPending];
+        if (_model == NULL) {
+            return;
+        }
     }
     CGSize size = view.drawableSize;
     if (size.width < 1.0 || size.height < 1.0) {

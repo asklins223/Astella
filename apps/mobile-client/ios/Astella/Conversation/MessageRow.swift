@@ -7,11 +7,13 @@ struct MessageRow: View {
     var message: CompanionMessage
     var maxBubbleWidth: CGFloat = 320
     var onOpenNote: ((String) -> Void)? = nil
+    var showsAvatar: Bool = true
+    var showsBodyLabel: Bool = false
     private var isUser: Bool { message.role == "user" }
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            if !isUser {
+            if !isUser && showsAvatar {
                 Image("CompanionAvatar")
                     .resizable()
                     .scaledToFill()
@@ -20,11 +22,27 @@ struct MessageRow: View {
                     .overlay(Circle().stroke(.white.opacity(0.85), lineWidth: 0.7))
                     .accessibilityHidden(true)
                     .padding(.top, 3)
-            } else {
+            } else if isUser {
                 Spacer(minLength: 38)
             }
 
             VStack(alignment: isUser ? .trailing : .leading, spacing: 0) {
+                if !isUser && showsBodyLabel {
+                    HStack(spacing: 5) {
+                        Text("正文")
+                            .font(.system(size: 9, weight: .semibold))
+                            .tracking(0.9)
+                            .foregroundStyle(StudyPalette.muted)
+                        AstellaGlyph(kind: .checkmark, tint: StudyPalette.success)
+                            .frame(width: 10, height: 10)
+                        Text("已写完")
+                            .font(.system(size: 9))
+                            .foregroundStyle(StudyPalette.success)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.leading, 3)
+                    .padding(.bottom, 5)
+                }
                 VStack(alignment: isUser ? .trailing : .leading, spacing: 10) {
                     ForEach(Array(message.blocks.enumerated()), id: \.offset) { index, block in
                         if block.type == "image", let url = block.url {

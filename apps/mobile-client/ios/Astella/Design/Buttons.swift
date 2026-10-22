@@ -20,8 +20,25 @@ struct AstellaPressStyle: ButtonStyle {
     private var motionDisabled: Bool { reduced || store.localReduceMotion }
 
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label.opacity(enabled ? (configuration.isPressed ? 0.76 : 1) : 0.4)
-            .scaleEffect(configuration.isPressed && !motionDisabled ? 0.97 : 1)
+        // Rows and cards only dim a little. The old 0.76 / 0.97 pair made a
+        // whole settings card flash and shrink like a web button.
+        configuration.label.opacity(enabled ? (configuration.isPressed ? 0.86 : 1) : 0.4)
+            .scaleEffect(configuration.isPressed && !motionDisabled ? 0.99 : 1)
+            .animation(Motion.gated(motionDisabled, Motion.pressSoft), value: configuration.isPressed)
+    }
+}
+
+/// For 38–60 pt circular controls, where a slightly deeper press reads as touch.
+struct AstellaRoundPressStyle: ButtonStyle {
+    @Environment(AppStore.self) private var store
+    @Environment(\.accessibilityReduceMotion) private var reduced
+    @Environment(\.isEnabled) private var enabled
+
+    private var motionDisabled: Bool { reduced || store.localReduceMotion }
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.opacity(enabled ? 1 : 0.4)
+            .scaleEffect(configuration.isPressed && !motionDisabled ? 0.93 : 1)
             .animation(Motion.gated(motionDisabled, Motion.press), value: configuration.isPressed)
     }
 }

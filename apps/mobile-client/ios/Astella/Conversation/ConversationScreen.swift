@@ -42,8 +42,7 @@ struct ConversationScreen: View {
                             )
                                 .transition(reduced ? .opacity : .offset(x: 24).combined(with: .opacity))
                         } else {
-                            CompanionScene(message: store.messages.last(where: { $0.role == "assistant" }),
-                                           streamingText: store.streamingText,
+                            CompanionScene(streamingText: store.streamingText,
                                            audioActive: voiceCapture.isRecording || store.voicePlayback.isPlaying,
                                            onOpenNote: { onOpenNote($0) })
                             .transition(reduced ? .opacity : .offset(x: -24).combined(with: .opacity))
@@ -338,7 +337,8 @@ private struct ConversationTopBar: View {
                     }
                 } label: {
                     HStack(spacing: 6) {
-                        Circle().fill(StudyPalette.actionFill).frame(width: 6, height: 6)
+                        AstellaGlyph(kind: .library, tint: StudyPalette.muted)
+                            .frame(width: 13, height: 13)
                         Text(store.profile?.workspaceName ?? "我的书房")
                             .font(.system(size: 12.5, weight: .semibold))
                             .lineLimit(1)
@@ -364,18 +364,19 @@ private struct ConversationTopBar: View {
                 Spacer(minLength: 2)
 
                 Button {
+                    // Appearance is not a content transition: animating the
+                    // colour scheme dragged every surface through half-tinted
+                    // frames. The system switches instantly, so do the same.
                     let next = !isDark
-                    withAnimation(Motion.gated(reduceMotion || store.localReduceMotion, Motion.segment)) {
-                        darkMode = next
-                        appearanceMode = next ? "dark" : "light"
-                    }
+                    darkMode = next
+                    appearanceMode = next ? "dark" : "light"
                 } label: {
                     AstellaGlyph(kind: isDark ? .sun : .moon, tint: StudyPalette.ink)
                         .frame(width: 22, height: 22)
                         .frame(width: 38, height: 38)
                         .modifier(StudyGlassSurfaceStyle(radius: 19, interactive: true))
                 }
-                .buttonStyle(AstellaPressStyle())
+                .buttonStyle(AstellaRoundPressStyle())
                 .accessibilityLabel(isDark ? "切换到浅色外观" : "切换到深色外观")
             }
             .padding(.horizontal, 22)

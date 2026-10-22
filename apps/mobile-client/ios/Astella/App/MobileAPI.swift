@@ -36,6 +36,15 @@ final class MobileAPI {
             ?? "http://127.0.0.1:4000"
         baseURL = configured.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         token = KeychainTokenStore.read()
+        #if DEBUG
+        // 只读调试入口：`xcrun simctl launch` 用 SIMCTL_CHILD_ASTELLA_API_TOKEN 传入
+        // 一个已有会话，未签名模拟器构建（Keychain 不可用、token 只存在进程内存）
+        // 也能直接进入已登录界面做真实链路核对。Release 不读取该变量。
+        if let debugToken = ProcessInfo.processInfo.environment["ASTELLA_API_TOKEN"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines), !debugToken.isEmpty {
+            token = debugToken
+        }
+        #endif
     }
 
     func url(_ path: String, query: [URLQueryItem] = []) throws -> URL {
@@ -43,6 +52,25 @@ final class MobileAPI {
             throw MobileAPIError(status: 0, code: "invalid_origin", message: "服务地址格式不正确。")
         }
         components.path = path.hasPrefix("/api/uploads/") ? String(path.dropFirst(4)) : path
+        components.queryItems = query.isEmpty ? nil : query
+        guard let url = components.url else {
+            throw MobileAPIError(status: 0, code: "invalid_url", message: "无法生成请求地址。")
+        }
+        return url
+    }
+
+    /// 服务端返回的**已编码**相对地址（目前只有伴星模型清单的 `download.url`）。
+    ///
+    /// `url(_:)` 走 `URLComponents.path`，它接受**未编码**路径，会把路径里已有的
+    /// `%E5…` 再编码成 `%25E5…`。模型文件名带中文（`expressions/双手比耶.exp3.json`），
+    /// 服务端返回的是已编码路径（`expressions/%E5%8F%8C…`），再用 `path` 拼接就会
+    /// 双重编码、请求 404，整个模型下载因此失败并回落静态图。这里改用
+    /// `percentEncodedPath` 原样拼接。Android 端走字符串拼接，不存在这个问题。
+    func url(percentEncodedPath path: String, query: [URLQueryItem] = []) throws -> URL {
+        guard var components = URLComponents(string: baseURL) else {
+            throw MobileAPIError(status: 0, code: "invalid_origin", message: "服务地址格式不正确。")
+        }
+        components.percentEncodedPath = path
         components.queryItems = query.isEmpty ? nil : query
         guard let url = components.url else {
             throw MobileAPIError(status: 0, code: "invalid_url", message: "无法生成请求地址。")

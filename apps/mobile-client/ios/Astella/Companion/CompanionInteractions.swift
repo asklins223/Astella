@@ -137,6 +137,9 @@ final class CompanionVoicePlayback: NSObject, AVAudioPlayerDelegate {
     private(set) var isPlaying = false
     private(set) var isPaused = false
     private(set) var level: Double = 0
+    /// The words currently being read, so a screen that only shows the spoken
+    /// sentence (the companion home) can echo them while audio is active.
+    private(set) var spokenText = ""
     private var player: AVAudioPlayer?
     private var task: Task<Void, Never>?
     private var meter: Task<Void, Never>?
@@ -145,6 +148,7 @@ final class CompanionVoicePlayback: NSObject, AVAudioPlayerDelegate {
         stop()
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { return }
+        spokenText = clean
         let current = revision
         isLoading = true
         task = Task {
@@ -194,6 +198,7 @@ final class CompanionVoicePlayback: NSObject, AVAudioPlayerDelegate {
         meter?.cancel(); meter = nil
         player?.stop(); player = nil
         isLoading = false; isPlaying = false; isPaused = false; level = 0
+        spokenText = ""
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {

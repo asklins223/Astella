@@ -119,12 +119,15 @@ struct AstellaGlyph: View {
                 shelf.move(to: CGPoint(x: 12, y: 7)); shelf.addLine(to: CGPoint(x: 16, y: 7)); shelf.addLine(to: CGPoint(x: 16, y: 13)); shelf.addLine(to: CGPoint(x: 12, y: 13)); shelf.closeSubpath()
                 stroke(shelf)
             case .orbit:
-                var orbit = Path()
-                orbit.move(to: CGPoint(x: 12, y: 3)); orbit.addLine(to: CGPoint(x: 14.2, y: 9.8)); orbit.addLine(to: CGPoint(x: 21, y: 12))
-                orbit.addLine(to: CGPoint(x: 14.2, y: 14.2)); orbit.addLine(to: CGPoint(x: 12, y: 21)); orbit.addLine(to: CGPoint(x: 9.8, y: 14.2))
-                orbit.addLine(to: CGPoint(x: 3, y: 12)); orbit.addLine(to: CGPoint(x: 9.8, y: 9.8)); orbit.closeSubpath()
-                fill(orbit)
-                fill(Path(ellipseIn: CGRect(x: 18.7, y: 2.5, width: 2.5, height: 2.5)))
+                // A tilted ring with a satellite, so 星轨 is not a second copy
+                // of the four-point star used for 相伴.
+                let spin = CGAffineTransform(translationX: -12, y: -12)
+                    .concatenating(CGAffineTransform(rotationAngle: -.pi / 6))
+                    .concatenating(CGAffineTransform(translationX: 12, y: 12))
+                let ring = Path(ellipseIn: CGRect(x: 2.8, y: 7.4, width: 18.4, height: 9.2)).applying(spin)
+                stroke(ring)
+                fill(Path(ellipseIn: CGRect(x: 10.8, y: 10.8, width: 2.4, height: 2.4)))
+                fill(Path(ellipseIn: CGRect(x: 19.2, y: 2.4, width: 3.6, height: 3.6)))
             case .sparkle:
                 var sparkle = Path()
                 sparkle.move(to: CGPoint(x: 12, y: 2.5))
@@ -179,12 +182,11 @@ struct AstellaGlyph: View {
             case .chevron:
                 var next = Path(); next.move(to: CGPoint(x: 8.5, y: 5)); next.addLine(to: CGPoint(x: 15.5, y: 12)); next.addLine(to: CGPoint(x: 8.5, y: 19)); stroke(next)
             case .person:
-                fill(Path(ellipseIn: CGRect(x: 8, y: 2.5, width: 8, height: 8)))
-                var shoulders = Path()
-                shoulders.move(to: CGPoint(x: 3, y: 20.5))
-                shoulders.addCurve(to: CGPoint(x: 21, y: 20.5), control1: CGPoint(x: 3, y: 13.2), control2: CGPoint(x: 21, y: 13.2))
-                shoulders.addLine(to: CGPoint(x: 21, y: 21.5)); shoulders.addLine(to: CGPoint(x: 3, y: 21.5)); shoulders.closeSubpath()
-                fill(shoulders)
+                var person = Path()
+                person.addEllipse(in: CGRect(x: 8.4, y: 3, width: 7.2, height: 7.2))
+                person.move(to: CGPoint(x: 4, y: 20.5))
+                person.addCurve(to: CGPoint(x: 20, y: 20.5), control1: CGPoint(x: 4, y: 14), control2: CGPoint(x: 20, y: 14))
+                stroke(person)
             case .mic:
                 var mic = Path(roundedRect: CGRect(x: 9, y: 2.8, width: 6, height: 11), cornerRadius: 3)
                 mic.move(to: CGPoint(x: 5.5, y: 10.5)); mic.addCurve(to: CGPoint(x: 18.5, y: 10.5), control1: CGPoint(x: 5.5, y: 18.8), control2: CGPoint(x: 18.5, y: 18.8))
@@ -296,14 +298,14 @@ struct AstellaGlyph: View {
                 if kind == .eyeSlash { eye.move(to: CGPoint(x: 4, y: 4)); eye.addLine(to: CGPoint(x: 20, y: 20)) }
                 stroke(eye)
             case .settings:
-                for rect in [
-                    CGRect(x: 3, y: 3, width: 7, height: 7),
-                    CGRect(x: 14, y: 3, width: 7, height: 7),
-                    CGRect(x: 3, y: 14, width: 7, height: 7),
-                    CGRect(x: 14, y: 14, width: 7, height: 7),
-                ] {
-                    fill(Path(roundedRect: rect, cornerRadius: 2.2))
-                }
+                var rails = Path()
+                rails.move(to: CGPoint(x: 3.5, y: 6.5)); rails.addLine(to: CGPoint(x: 20.5, y: 6.5))
+                rails.move(to: CGPoint(x: 3.5, y: 12)); rails.addLine(to: CGPoint(x: 20.5, y: 12))
+                rails.move(to: CGPoint(x: 3.5, y: 17.5)); rails.addLine(to: CGPoint(x: 20.5, y: 17.5))
+                stroke(rails)
+                fill(Path(ellipseIn: CGRect(x: 7, y: 4, width: 5, height: 5)))
+                fill(Path(ellipseIn: CGRect(x: 13, y: 9.5, width: 5, height: 5)))
+                fill(Path(ellipseIn: CGRect(x: 6, y: 15, width: 5, height: 5)))
             case .history:
                 var history = Path()
                 history.move(to: CGPoint(x: 4, y: 9)); history.addArc(center: CGPoint(x: 12, y: 12), radius: 8, startAngle: .degrees(200), endAngle: .degrees(160), clockwise: false)
@@ -472,7 +474,7 @@ struct AstellaDetailHeader: View {
             Spacer(minLength: 0)
         }
         .foregroundStyle(StudyPalette.ink)
-        .buttonStyle(AstellaPressStyle())
+        .buttonStyle(AstellaRoundPressStyle())
         .padding(.horizontal, 22)
         .padding(.top, 8)
         // Keep the content inset stable while placing the visible header on

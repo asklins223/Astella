@@ -1,3 +1,29 @@
+## iOS note subpages design pass — 2026-10-21
+
+User decision this round: the note module's subpages still looked bad, and only iOS should be reworked for now.
+
+- **One page language.** 速览、脑图、版本记录、批注抽屉与拓展笔记 now share an eyebrow (10.5 pt, 2.2 tracking), a Songti title (20–23 pt) and hairline separators instead of a stack of unrelated glass cards. Reader quotations and numerals use the serif face.
+- **速览.** Opens at `.fraction(0.95)`. The header carries 「速览 · 第 N 版」 and the real note title; 核心脉络 is one paper sheet with an inset accent rule, and 要点与原文 is one sheet whose rows are separated by hairlines, each with a serif number and the original sentence in a low-contrast inset. The duplicate source card was removed.
+- **脑图.** Rewritten canvas: three columns (中心 → 分支 → 要点), dark ink seal for the root, accent rule on branches, dot + one-line explanation on leaves, dotted paper grid, curved links. The layout now distributes leaf rows over the available height; default zoom fits the width and the dock holds zoom out / 适应 / zoom in / 重新生成. The old 12 pt text cards and the duplicate top 「适应」 pill are gone.
+- **版本记录.** Timeline with a per-row rail that starts and ends on real dots, so it no longer floats above/below the list. Current version shows the writing pill 「正在读」 and a 3-line excerpt; older rows offer 「恢复这一版」. Date copy is `M 月 d 日 · HH:mm`; empty state explains how future saves append.
+- **批注.** Serif header and excerpt, companion explanations on a sky sheet with a round glyph, user notes on paper, compact capsule actions (修改 / 请伴星讲解 / 撤下). A new annotation opens the drawer at `.fraction(0.95)` so the excerpt, editor and save button are all visible together; the excerpt is capped at six lines with 「回到原文」 still available. Sheet errors still surface below the actions.
+- **阅读页 / 书房.** The version entry is now a 34 pt capsule (「第 N 版 · 最近更新」) instead of a 68 pt glass card; shelf rows use a Songti title and a `今天 / 昨天 / M 月 d 日` date (date-only strings no longer fall back to 刚刚, which also fixes the previous 「刚刚」 for `yyyy-MM-dd`).
+- **Fixtures (DEBUG only).** `note-versions` now returns two deterministic versions so the timeline can be inspected without a backend; existing note review modes are unchanged.
+- **Verification.** `xcodebuild -project apps/mobile-client/ios/Astella.xcodeproj -scheme Astella -sdk iphonesimulator -configuration Debug build CODE_SIGNING_ALLOWED=NO` exits 0 with no NotesScreen warnings. Simulator captures on iPhone 18 Pro Max / iOS 27 (installed Debug build, `--ui-review=` modes): library, read, note-overview-ready, note-mind-map, note-annotations, note-explain, note-explain-ready, note-versions, note-expansion, note-learning-card. Files: `apps/mobile-client/outputs/notes-subpages-2026-10-21/`. A dark-appearance smoke check (`study.appearance.mode=dark`) covered the mind map and 速览; the mind-map root switched to a fixed deep-navy seal and leaf highlights no longer hard-code white. The simulator preference was restored to light afterwards.
+- **Limits.** Backend generation, restore and annotation writes were not exercised (the API is unauthenticated in this environment, 403); only the review fixtures and reader UI were rendered. Android notes were left untouched. The annotation screenshots still show a fixture-only 「批注信息不完整」 error because the fixture anchor does not match the review block. Overflow at the largest accessibility text sizes and physical-device feel were not measured.
+
+## iOS companion home: transient speech and a bigger stage — 2026-10-21
+
+User decisions this round (iOS only): remove the 「回想练习」「今日手边」 shortcuts and the 「继续一起读」 card from the companion home; make the companion larger and adjust her placement; the reply bubble must not be permanent — it appears while she is speaking and leaves by itself when she finishes; drop the 「阿星轻轻说」 label from the bubble.
+
+- **Speech bubble is now a transient utterance.** `CompanionScene` keeps a small speech lifecycle instead of rendering the last assistant message forever. The bubble opens when a turn starts (`isSending` or an active run), follows `streamingText` while the answer is written, stays while the saved answer is read aloud (the playback object now exposes `spokenText`), and closes after a short reading beat once the turn and audio are done. The idle home has no bubble at all; the historical greeting no longer reappears on launch or after returning from 记录.
+- **Lifecycle edge cases.** The first page of loaded history is admitted without speaking; a newly persisted reply replaces the streamed snapshot before the linger is measured; a reply that arrives without a watched turn (proactive message) is shown once and then leaves; a new turn clears the previous lingering sentence to three dots until its first words arrive; a failed turn grants the same short grace instead of cutting the bubble instantly. Reduce Motion keeps the opacity fade but removes the scale/offset and the dot loop.
+- **Composition.** `CompanionScene` no longer has the quick-action row, the reading row, or their helpers. A `CompanionStageLayout` fits the 440×534 artwork to the page, centers its *visible* pixels, and reserves a bubble band above the headdress (the PNG has ~23% transparent headroom), so the bubble floats above her head without covering it. On iPhone 18 Pro Max the visible artwork grows to ≈415×388 pt (previously ≈305×285); short pages shrink the artwork so a three-line bubble still clears her head. The live 「正在发生」 progress card stays as a bottom overlay while a run is active.
+- **Entry points preserved.** 记录 is still the top-bar segment (回想记录), 手边 still lives in 星轨, and continuing a note still happens in 书房, so the removed home shortcuts do not remove capabilities. `DESIGN_SPEC.md` records the new home rule.
+- **Review fixture.** Added `ASTELLA_UI_REVIEW=conversation-speaking` (DEBUG only): an active run plus streaming text so the transient bubble and progress card can be inspected without a live backend.
+- **Verification.** Final `xcodebuild -project ios/Astella.xcodeproj -scheme Astella -destination 'id=D7787BF2…' CODE_SIGNING_ALLOWED=NO build` exits 0. Real-window screenshots on iPhone 18 Pro Max / iOS 27 and iPhone 18 Pro / iOS 27: idle home (bubble absent), speaking home (bubble without label, enlarged artwork, progress card), compact-height layout, and a dark-appearance smoke check. Auto-dismiss was checked with a temporary fixture that completed the turn after 20 s: the bubble was still present while the run was active, and gone (~3 s after completion) in the next capture; that temporary code was removed before the final build. `git diff --check -- apps/mobile-client` clean.
+- **Limits.** The review fixture forces the known static-artwork fallback, so the Live2D slot, real streamed deltas and server TTS ending were not exercised in this pass (the playback end path is code-verified). No VoiceOver announcement is posted for the transient bubble; the full conversation remains readable in 记录. Timing was checked from screenshots, not video, so rapid re-send/interrupt frames and physical-device refresh were not measured. Screenshots: `apps/mobile-client/outputs/companion-home-transient-2026-10-21/`.
+
 ## Mobile note-card flow and design-quality pass, both platforms — 2026-10-21
 
 User decisions this round: connect 拓展笔记 and the new client 学习卡 (including answering) on both native clients; then, after reviewing the Android result page, the user required 学习卡 to be its own dedicated page and rejected the design as 「全部东西挤在一起，没层级，没动效，没布局，没设计。贼难看」. Scope confirmed with the user: all 学习卡 pages, the 拓展笔记 drawer, 手记阅读页/书库, and 星轨/伴星/我的 surfaces, on **both** iOS and Android, staying within the existing mobile visual language.
@@ -338,3 +364,39 @@ Reviewed the supplied screenshots as reports of UI defects and the supplied Open
 - This review used DEBUG route fixtures and simulator screenshots. It did not exercise taps, keyboard behavior, VoiceOver, Reduce Motion transitions, or a physical device.
 - The companion model still cannot load in the current environment: the model manifest request returned HTTP 502 (`model_manifest_missing`). This pass improves the failure state but does not repair the model service or establish asset redistribution rights.
 - The local Open Design prototype could not be rendered in the browser due to the local-file URL policy; prototype review was limited to its source and the screenshots supplied by the user.
+
+## 2026-10-22 iOS shell motion, native behaviour and icon pass
+
+A full sweep of the signed-in iOS surface (shell, conversation, library, orbit, account and every settings detail) while checking motion, icons and page chrome. Only iOS was touched; Android remains as-is.
+
+### What was wrong
+
+- The shell swapped tabs with a `switch`, destroying and rebuilding each root on every tap. Scroll position reset, page `.task` fetches re-ran, and the three-step entrance stagger (opacity + 10 pt, 45 ms apart) replayed. A system tab bar never does this.
+- Every page hides the navigation bar for its own header, which also turns off UIKit's interactive pop gesture. Back was tap-only even though the specification asks for the native swipe.
+- Streaming replies re-started a 0.32 s spring scroll on every token, so the transcript stuttered while text arrived.
+- The shared press style dimmed whole cards to 0.76 opacity and scaled them to 0.97, flashing and shrinking list rows like a web button; circular 38–60 pt controls then got the same treatment.
+- Icons: `.settings` drew a 2×2 grid (read as an app launcher), `.orbit` was a second four-point star next to 相伴's star, `.person` was a solid blob, the companion center used SF Symbol labels, appearance names disagreed between screens (深空/深夜, 随日夜/随系统), and the result-return control was a system-blue bordered button.
+- The profile page always showed a disabled blue 保存 button, so the primary action read as broken until the name differed.
+
+### Fixes in this pass
+
+- Tabs are a real `TabView` with the system bar hidden; each stack, scroll offset and loaded data now survives switching. All shell entrance staggers and the tab-swap animation were removed, so a tab change is instant like the system bar.
+- Added `InteractivePopGestureEnabler` (a small `UIViewControllerRepresentable` bridge per stack root) so the native interactive pop gesture works under the hidden bar, with its own cancellation and rubber-banding.
+- Streaming text scrolls without animation; message insertion keeps its spring. Appearance switching is no longer wrapped in an animation.
+- Split press feedback: `AstellaPressStyle` now dims rows/cards slightly (0.86, scale 0.99); `AstellaRoundPressStyle` keeps the deeper 0.93 press for circular icon controls (back, appearance, companion shortcut, settings). The auth primary button follows the same softer values.
+- Icon redraws: `.settings` is now three sliders, `.orbit` a tilted ring with a satellite, `.person` a line-art head and shoulders. Companion-center action labels use the app glyphs instead of SF Symbols; reading-settings scene icons use the companion mark and a chat bubble. Appearance labels are consistently 银白／深夜／随系统.
+- Profile only reveals 保存 when the trimmed nickname actually changes; the hint copy is shorter. The result-return control is a glass capsule with the app back glyph.
+- The note reader keeps the native push. The iOS 18 zoom transition was tried again and removed again: the narrow dark loading strip documented on 2026-10-19 could not be reproduced or ruled out without gesture automation, so it was not re-landed.
+
+### Coverage and evidence
+
+- iOS simulator Debug build succeeded (`CODE_SIGNING_ALLOWED=NO`); the only warnings are the existing Live2D core objects built for simulator 26.2 while the project links iOS 18.0. No Swift warnings in the touched files.
+- Captured conversation (light and dark), records, library, orbit, me, settings, profile, reading settings, companion center, device permissions, AI authorization, conventions, server address, change password, register, forgot password, the reader and the mind map. The `dock-switch` fixture switched to 书房 and back under a slow animation and rendered correctly with the custom dock after each change.
+- Full-screen captures are in `/tmp/audit-after` for this session; they are not committed. The dock's bottom margin, safe-area reserve and page padding were checked again after moving to `TabView`.
+
+### Remaining verification limits
+
+- `simctl` cannot inject taps or gestures. Swipe-back, the zoom decision, keyboard focus and VoiceOver still need a person or UI-test automation on a device; the pop bridge uses the standard `UINavigationController` delegate approach.
+- The backend remains unauthenticated for these runs (403), so screenshots use DEBUG fixtures. The Live2D manifest still returns 502 and the PNG fallback is what is visible.
+- Dark appearance keeps the light companion artwork because no night variant exists; the lit desk illustration is still bright at night. This pass did not recolour the character art.
+- Android was not modified.

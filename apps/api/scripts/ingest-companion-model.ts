@@ -15,7 +15,7 @@
 import { createHash } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, CreateBucketCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { NodeHttpHandler } from "@smithy/node-http-handler";
 import { resolveStorageConfig } from "@astella/shared/storage-config";
 
@@ -66,6 +66,16 @@ async function main() {
     requestHandler: new NodeHttpHandler({ requestTimeout: config.requestTimeoutMs }),
   });
   const prefix = (process.env.COMPANION_MODEL_OBJECT_PREFIX ?? "companion/live2d/").replace(/\/*$/, "/");
+
+  // 桶可能还没建（minio-init 的 mc 镜像不可用时也一样）。头一回部署模型时
+  // 由这里补建，避免"清单发布成功但根本没有桶"被误读成别的问题。
+  try {
+    await client.send(new CreateBucketCommand({ Bucket: config.bucket }));
+    console.log(`created bucket ${config.bucket}`);
+  } catch (error) {
+    const name = (error as { name?: string }).name ?? "";
+    if (name !== "BucketAlreadyOwnedByYou" && name !== "BucketAlreadyExists") throw error;
+  }
 
   const allFiles = (await walk(dir)).sort();
   const entryFile = allFiles.find((f) => f.endsWith(".model3.json"));

@@ -1,14 +1,9 @@
 package com.astella.mobile.ui.screens
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -28,8 +23,12 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.res.painterResource
+import com.astella.mobile.R
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.astella.mobile.data.*
@@ -67,9 +66,42 @@ fun CompanionRunClock(run: ActiveRun) {
     }
 }
 
+/** 一轮回答的开头：谁在说、用什么方式、花了多久；过程与正文都归在这条线下面。 */
+@Composable
+fun AssistantTurnHead(run: ActiveRun) {
+    Row(
+        Modifier.fillMaxWidth().padding(start = 2.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(7.dp),
+    ) {
+        Image(
+            painterResource(R.drawable.companion_avatar), null,
+            Modifier.size(22.dp).clip(CircleShape)
+                .border(.7.dp, Color.White.copy(alpha = .85f), CircleShape),
+            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+        )
+        Text("阿星", color = StudyPalette.ink, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
+        if (run.thinkingText?.isNotBlank() == true) Row(
+            Modifier.clip(RoundedCornerShape(7.dp))
+                .background(StudyPalette.accent.copy(alpha = .10f))
+                .padding(horizontal = 7.dp)
+                .height(21.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            AstellaGlyph(AstellaGlyphKind.Companion, Modifier.size(10.dp), tint = StudyPalette.accent)
+            Text("深想", color = StudyPalette.accent, fontSize = 9.5.sp, fontWeight = FontWeight.SemiBold)
+        }
+        Spacer(Modifier.weight(1f))
+        processElapsedLabel(run).takeIf { it.isNotEmpty() }?.let {
+            Text(it, color = StudyPalette.muted.copy(alpha = .66f), fontSize = 9.sp, fontFamily = FontFamily.Monospace)
+        }
+    }
+}
+
 /**
- * 一次过程：收起时只占一行（状态点 + 标题 + 用时 + 展开箭头），
- * 展开后才出现时间线、思考摘录和失败说明——正文始终比过程重。
+ * 一次过程：收起时只有一行（图标 + 标题 + 用时 + 展开箭头），
+ * 展开后节点内部才出现轨道、步骤卡片与思考摘录——正文始终比过程重。
  */
 @Composable
 fun CompanionRunProcessView(run: ActiveRun, state: AppUiState, viewModel: AppViewModel) {
@@ -78,130 +110,177 @@ fun CompanionRunProcessView(run: ActiveRun, state: AppUiState, viewModel: AppVie
     val scope = rememberCoroutineScope()
     var recovering by remember(run.id) { mutableStateOf(false) }
     var recoveryNotice by remember(run.id) { mutableStateOf("") }
+    var openNodes by remember(run.id) { mutableStateOf(emptySet<String>()) }
     fun recover(reconcileOnly: Boolean) {
         if (recovering) return
         recovering = true
         scope.launch { try { recoveryNotice = viewModel.recoverProcessRun(run, reconcileOnly) } finally { recovering = false } }
     }
+    fun toggleNode(id: String) {
+        openNodes = if (id in openNodes) openNodes - id else openNodes + id
+    }
     val chevron by animateFloatAsState(
-        if (expanded) 90f else 0f,
+        if (expanded) 90f else -90f,
         if (reduce) snap() else MotionTokens.press(),
         label = "process-chevron",
     )
+    val faint = StudyPalette.muted.copy(alpha = .66f)
+    val rail = StudyPalette.muted.copy(alpha = .28f)
+    val cardFill = StudyPalette.paper.copy(alpha = .68f)
+    val thinking = run.thinkingText?.takeIf { it.isNotBlank() }
+    val visibleNodes = run.nodes.filterNot { it.id.startsWith("status:") }
+    val visibleCount = visibleNodes.size + if (thinking != null) 1 else 0
+    val toolsLabel = if (visibleNodes.isEmpty()) "思考" else "${visibleNodes.size} 个工具"
+    val headerSubtitle = when {
+        run.isActive -> run.progressLabel
+        expanded -> "$toolsLabel · 可收起"
+        else -> "$toolsLabel · 已收起，可展开回看"
+    }
+
     Column(
         Modifier.fillMaxWidth()
-            .clip(RoundedCornerShape(StudyRadius.lg))
-            .background(StudyPalette.inset.copy(alpha = .45f))
-            .animateContentSize(if (reduce) snap() else MotionTokens.routePush())
-            .padding(horizontal = 13.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+            .animateContentSize(if (reduce) snap() else MotionTokens.routePush()),
     ) {
         Row(
             Modifier.fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
                 .clickable { viewModel.toggleProcessDisclosure(run.id) }
                 .padding(vertical = 1.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(Modifier.size(6.dp).background(runStatusColor(run), CircleShape))
-            Text(
-                "这次过程",
-                Modifier.padding(start = 7.dp),
-                color = StudyPalette.ink, fontSize = 12.5.sp, fontWeight = FontWeight.Medium,
-            )
-            Text(
-                " · ${run.statusLabel}",
-                color = runStatusColor(run).copy(alpha = .9f), fontSize = 11.sp, maxLines = 1,
-            )
-            Spacer(Modifier.weight(1f))
-            Text(
-                if (run.isActive) "进行中" else "已完成",
-                color = StudyPalette.muted, fontSize = 10.5.sp,
-            )
+            ProcessIconTile(AstellaGlyphKind.Companion, 27.dp, 13.dp)
+            Column(
+                Modifier.weight(1f).padding(start = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    "思考与工具",
+                    color = StudyPalette.ink, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    headerSubtitle,
+                    color = faint, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+            }
+            processElapsedLabel(run).let {
+                if (it.isNotEmpty()) Text(
+                    it,
+                    Modifier.padding(start = 6.dp),
+                    color = faint, fontSize = 9.sp, fontFamily = FontFamily.Monospace, maxLines = 1,
+                )
+            }
             AstellaGlyph(
                 AstellaGlyphKind.Chevron,
-                Modifier.padding(start = 5.dp).size(11.dp).rotate(chevron),
-                tint = StudyPalette.muted,
+                Modifier.padding(start = 6.dp).size(15.dp).rotate(chevron),
+                tint = faint,
             )
         }
-        if (run.status == "failed") {
-            Text(
-                run.failureDescription,
-                color = StudyPalette.danger, fontSize = 12.5.sp, lineHeight = 19.sp,
-            )
-        }
-        AnimatedVisibility(
-            visible = expanded,
-            enter = if (reduce) fadeIn(snap()) else expandVertically(MotionTokens.routePush()) + fadeIn(MotionTokens.segment()),
-            exit = if (reduce) fadeOut(snap()) else shrinkVertically(MotionTokens.routePush()) + fadeOut(MotionTokens.segment()),
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                CompanionRunClock(run)
-                run.thinkingText?.takeIf { it.isNotBlank() }?.let { thinking ->
-                    Row(Modifier.height(IntrinsicSize.Min)) {
-                        Box(Modifier.width(2.dp).fillMaxHeight().background(StudyPalette.accent.copy(alpha = .35f), CircleShape))
-                        SelectionContainer {
-                            Text(
-                                thinking,
-                                Modifier.padding(start = 10.dp),
-                                color = StudyPalette.muted, fontSize = 12.5.sp, lineHeight = 20.sp,
-                            )
-                        }
-                    }
+        if (expanded) {
+            Column(
+                Modifier.padding(top = 2.dp, start = 2.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                if (run.status == "failed") {
+                    Text(
+                        run.failureDescription,
+                        Modifier.fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(StudyPalette.danger.copy(alpha = .07f))
+                            .padding(11.dp),
+                        color = StudyPalette.danger, fontSize = 12.sp, lineHeight = 19.sp,
+                    )
                 }
-                run.nodes.forEach { node ->
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Row(verticalAlignment = Alignment.Top) {
-                            Box(
-                                Modifier.padding(top = 5.dp).size(5.dp)
-                                    .background(if (node.isRunning) StudyPalette.accent else StudyPalette.muted.copy(alpha = .6f), CircleShape),
-                            )
-                            Text(
-                                node.label,
-                                Modifier.weight(1f).padding(start = 8.dp),
-                                color = StudyPalette.ink, fontSize = 12.5.sp, lineHeight = 18.sp, fontWeight = FontWeight.Medium,
-                            )
-                            if (node.id.startsWith("tool:")) Text(
-                                if (node.isRunning && !run.isActive) "结果待核对" else node.statusLabel,
-                                style = MaterialTheme.typography.labelSmall, color = StudyPalette.muted,
-                            )
-                        }
-                        node.summary?.let {
-                            SelectionContainer {
-                                Text(
-                                    it,
-                                    Modifier.padding(start = 13.dp),
-                                    color = StudyPalette.muted, fontSize = 12.sp, lineHeight = 19.sp,
-                                )
-                            }
-                        }
-                        node.note?.let { note ->
-                            QuietTextAction(
-                                "预览《${note.title.take(14)}》",
-                                onClick = { viewModel.setResultPreview(note) },
-                                modifier = Modifier.padding(start = 11.dp),
-                                glyph = AstellaGlyphKind.Document,
-                            )
-                        }
-                        if (node.status == "waiting_confirmation") node.proposalId?.let {
-                            Box(Modifier.padding(start = 13.dp, top = 2.dp)) { CompanionProposalCard(it, viewModel) }
-                        }
-                    }
-                }
-                if (run.nodes.isEmpty() && run.thinkingText.isNullOrBlank()) {
+                if (visibleCount == 0) {
                     Text(
                         if (run.isActive) "已接下请求，等待第一段进展。" else "这次交流没有留下详细步骤。",
                         color = StudyPalette.muted, fontSize = 12.5.sp,
                     )
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        if (thinking != null) {
+                            ProcessTimelineRow(
+                                id = "thinking",
+                                label = "想了想",
+                                code = "thought",
+                                icon = AstellaGlyphKind.Companion,
+                                stateText = if (run.isActive) "整理中" else "已想",
+                                stateTint = if (run.isActive) StudyPalette.accent else StudyPalette.success,
+                                dotTint = if (run.isActive) StudyPalette.accent else StudyPalette.success,
+                                pulsing = run.isActive,
+                                isLast = visibleNodes.isEmpty(),
+                                hasBody = true,
+                                showsCheck = !run.isActive,
+                                open = "thinking" in openNodes,
+                                onToggle = { toggleNode("thinking") },
+                                rail = rail,
+                                cardFill = cardFill,
+                                faint = faint,
+                            ) {
+                                SelectionContainer {
+                                    Text(
+                                        thinking,
+                                        color = StudyPalette.muted, fontSize = 12.sp, lineHeight = 20.sp,
+                                    )
+                                }
+                            }
+                        }
+                        visibleNodes.forEachIndexed { index, node ->
+                            val succeeded = node.status == "succeeded"
+                            ProcessTimelineRow(
+                                id = node.id,
+                                label = node.label,
+                                code = node.id.removePrefix("tool:").takeIf { node.id.startsWith("tool:") },
+                                icon = processNodeIcon(node),
+                                stateText = if (succeeded) "完成" else if (node.isRunning && !run.isActive) "结果待核对" else node.statusLabel,
+                                stateTint = processNodeStateTint(node, faint),
+                                dotTint = when {
+                                    node.isRunning -> StudyPalette.accent
+                                    succeeded -> StudyPalette.success
+                                    else -> StudyPalette.muted.copy(alpha = .55f)
+                                },
+                                pulsing = node.isRunning && run.isActive,
+                                isLast = index == visibleNodes.lastIndex,
+                                hasBody = node.summary?.isNotBlank() == true || node.note != null || (node.proposalId != null && node.status == "waiting_confirmation"),
+                                showsCheck = succeeded,
+                                open = node.id in openNodes || (node.isRunning && run.isActive),
+                                onToggle = { toggleNode(node.id) },
+                                rail = rail,
+                                cardFill = cardFill,
+                                faint = faint,
+                            ) {
+                                node.summary?.takeIf { it.isNotBlank() }?.let {
+                                    SelectionContainer {
+                                        Text(it, color = StudyPalette.muted, fontSize = 12.sp, lineHeight = 20.sp)
+                                    }
+                                }
+                                node.note?.let { note ->
+                                    QuietTextAction(
+                                        "预览《${note.title.take(14)}》",
+                                        onClick = { viewModel.setResultPreview(note) },
+                                        glyph = AstellaGlyphKind.Document,
+                                    )
+                                }
+                                if (node.status == "waiting_confirmation") node.proposalId?.let {
+                                    CompanionProposalCard(it, viewModel)
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+        val hasActions = run.isActive || run.canResume || (!run.isActive && visibleNodes.any { it.status == "outcome_unknown" })
+        if (hasActions) Row(
+            Modifier.fillMaxWidth().padding(top = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             if (run.isActive) QuietTextAction(
                 "停止这次任务",
                 onClick = { viewModel.cancelProcessRun(run.id) },
                 modifier = Modifier,
             )
-            if (!run.isActive && run.nodes.any { it.status == "outcome_unknown" }) QuietTextAction(
+            if (!run.isActive && visibleNodes.any { it.status == "outcome_unknown" }) QuietTextAction(
                 "核对保存结果",
                 enabled = !recovering,
                 onClick = { recover(true) },
@@ -214,6 +293,144 @@ fun CompanionRunProcessView(run: ActiveRun, state: AppUiState, viewModel: AppVie
         }
         if (recoveryNotice.isNotBlank()) {
             Text(recoveryNotice, color = StudyPalette.muted, fontSize = 12.sp, lineHeight = 18.sp)
+        }
+    }
+}
+
+private fun processElapsedLabel(run: ActiveRun): String {
+    fun timestamp(value: String?) = value?.let { runCatching { Instant.parse(it).toEpochMilli() }.getOrNull() }
+    val start = timestamp(run.createdAt) ?: return ""
+    val end = if (run.isActive) System.currentTimeMillis() else timestamp(run.updatedAt) ?: System.currentTimeMillis()
+    val seconds = ((end - start).coerceAtLeast(0)) / 1000f
+    return if (seconds < 60f) String.format(java.util.Locale.US, "%.1fs", seconds)
+    else "${(seconds / 60).toInt()}m${(seconds % 60).toInt()}s"
+}
+
+private fun processNodeIcon(node: CompanionProcessNode): AstellaGlyphKind {
+    val key = "${node.id} ${node.label}".lowercase()
+    return when {
+        listOf("read", "note", "book", "读").any(key::contains) -> AstellaGlyphKind.Book
+        listOf("search", "lookup", "查").any(key::contains) -> AstellaGlyphKind.Search
+        listOf("write", "edit", "save", "写").any(key::contains) -> AstellaGlyphKind.Edit
+        listOf("quote", "注").any(key::contains) -> AstellaGlyphKind.Quote
+        node.note != null -> AstellaGlyphKind.Book
+        else -> AstellaGlyphKind.Companion
+    }
+}
+
+@Composable
+private fun processNodeStateTint(node: CompanionProcessNode, faint: Color): Color = when {
+    node.isRunning -> StudyPalette.accent
+    node.status == "succeeded" -> StudyPalette.success
+    node.status == "waiting_confirmation" -> StudyPalette.accent
+    node.status in setOf("failed", "outcome_unknown") -> StudyPalette.danger
+    else -> faint
+}
+
+@Composable
+private fun ProcessIconTile(icon: AstellaGlyphKind, size: Dp = 22.dp, iconSize: Dp = 12.dp) {
+    Box(
+        Modifier.size(size)
+            .clip(RoundedCornerShape(size * .34f))
+            .background(StudyPalette.paper.copy(alpha = .78f))
+            .border(.7.dp, StudyPalette.paperEdge.copy(alpha = .5f), RoundedCornerShape(size * .34f)),
+        contentAlignment = Alignment.Center,
+    ) {
+        AstellaGlyph(icon, Modifier.size(iconSize), tint = StudyPalette.muted)
+    }
+}
+
+@Composable
+private fun ProcessTimelineRow(
+    id: String,
+    label: String,
+    code: String?,
+    icon: AstellaGlyphKind,
+    stateText: String?,
+    stateTint: Color,
+    dotTint: Color,
+    pulsing: Boolean,
+    isLast: Boolean,
+    hasBody: Boolean,
+    showsCheck: Boolean = false,
+    open: Boolean,
+    onToggle: () -> Unit,
+    rail: Color,
+    cardFill: Color,
+    faint: Color,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val isOpen = hasBody && open
+    val chevron by animateFloatAsState(
+        if (isOpen) 90f else 0f,
+        label = "node-chevron-$id",
+    )
+    Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+        Column(Modifier.width(14.dp).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(Modifier.padding(top = 15.dp).size(13.dp), contentAlignment = Alignment.Center) {
+                if (pulsing) Box(Modifier.fillMaxSize().background(dotTint.copy(alpha = .16f), CircleShape))
+                Box(Modifier.size(7.dp).background(dotTint, CircleShape))
+            }
+            if (!isLast) Box(
+                Modifier.padding(top = 4.dp).width(1.dp).weight(1f).background(rail),
+            )
+        }
+        Column(Modifier.weight(1f).padding(start = 10.dp)) {
+            Row(
+                Modifier.fillMaxWidth()
+                    .clip(RoundedCornerShape(11.dp))
+                    .clickable(enabled = hasBody, onClick = onToggle)
+                    .padding(vertical = 2.dp)
+                    .heightIn(min = 40.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                ProcessIconTile(icon)
+                Row(
+                    Modifier.weight(1f).padding(start = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        label,
+                        color = StudyPalette.ink, fontSize = 11.5.sp, fontWeight = FontWeight.Medium,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
+                    if (!code.isNullOrEmpty()) Text(
+                        code,
+                        Modifier.padding(start = 7.dp),
+                        color = faint, fontSize = 8.5.sp, fontFamily = FontFamily.Monospace,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                if (showsCheck) AstellaGlyph(
+                    AstellaGlyphKind.Check,
+                    Modifier.padding(start = 6.dp).size(9.dp),
+                    tint = stateTint,
+                )
+                stateText?.takeIf { it.isNotEmpty() }?.let {
+                    Text(
+                        it,
+                        Modifier.padding(start = if (showsCheck) 3.dp else 6.dp),
+                        color = stateTint, fontSize = 9.sp, fontWeight = FontWeight.Medium, maxLines = 1,
+                    )
+                }
+                if (hasBody) AstellaGlyph(
+                    AstellaGlyphKind.Chevron,
+                    Modifier.padding(start = 5.dp).size(15.dp).rotate(chevron),
+                    tint = faint,
+                ) else Spacer(Modifier.width(20.dp))
+            }
+            if (isOpen) {
+                Column(
+                    Modifier.fillMaxWidth()
+                        .padding(bottom = 8.dp)
+                        .clip(RoundedCornerShape(13.dp))
+                        .background(cardFill)
+                        .border(.7.dp, StudyPalette.paperEdge.copy(alpha = .4f), RoundedCornerShape(13.dp))
+                        .padding(11.dp),
+                    verticalArrangement = Arrangement.spacedBy(9.dp),
+                    content = content,
+                )
+            }
         }
     }
 }
