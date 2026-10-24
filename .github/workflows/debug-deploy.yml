@@ -25,3 +25,14 @@ jobs:
           rc=$?
           echo "ssh_exit=$rc"
           echo "ssh_stderr=$(head -c 500 /tmp/ssh.err)"
+      - name: Check GHCR pull permission
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin >/tmp/login.out 2>&1
+          echo "login_exit=$?"
+          tail -3 /tmp/login.out
+          docker pull ghcr.io/asklins223/astella-api:sha-770601dc2e2526d361bd6e7da9a9b20653264a05 >/tmp/pull.out 2>&1
+          echo "pull_exit=$?"
+          tail -3 /tmp/pull.out
