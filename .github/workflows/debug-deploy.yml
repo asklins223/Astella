@@ -1,0 +1,27 @@
+name: Debug deploy connectivity
+on:
+  workflow_dispatch:
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check deploy secrets and SSH
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          set -u
+          echo "host_len=${#DEPLOY_HOST} port=${DEPLOY_PORT} user_len=${#DEPLOY_USER} key_len=${#DEPLOY_SSH_KEY} known_len=${#DEPLOY_KNOWN_HOSTS}"
+          test -n "$DEPLOY_HOST" && test -n "$DEPLOY_USER" && test -n "$DEPLOY_SSH_KEY" && test -n "$DEPLOY_KNOWN_HOSTS"
+          printf '%s\n' "$DEPLOY_SSH_KEY" > key
+          chmod 600 key
+          ssh-keygen -y -f key >/dev/null && echo key-valid
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > known_hosts
+          chmod 600 known_hosts
+          ssh -i key -p "${DEPLOY_PORT:-22}" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=known_hosts -o ConnectTimeout=20 "$DEPLOY_USER@$DEPLOY_HOST" 'deploy 0000000000000000000000000000000000000000' >/tmp/ssh.out 2>/tmp/ssh.err
+          rc=$?
+          echo "ssh_exit=$rc"
+          echo "ssh_stderr=$(head -c 500 /tmp/ssh.err)"
