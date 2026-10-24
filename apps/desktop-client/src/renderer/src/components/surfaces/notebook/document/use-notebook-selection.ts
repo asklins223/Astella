@@ -19,7 +19,11 @@ export function useNotebookSelection(input: {
     if (gesture.current.pointerId !== null || gesture.current.keys.size) return;
     const { bodyRef, note, blocks, active } = latest.current;
     const body = bodyRef.current, selection = window.getSelection();
-    if (!active || !body || !selection || !selection.rangeCount || selection.isCollapsed) { setSelectedPassage(null); return; }
+    if (!active || !body || !selection) { setSelectedPassage(null); return; }
+    // 重新渲染正文可能让浏览器把选区收缩到 0 个 range；这不是用户取消选择，
+    // 保留已经浮出的选句条。真正点击别处会由 pointerdown 清理。
+    if (!selection.rangeCount) return;
+    if (selection.isCollapsed) { setSelectedPassage(null); return; }
     const range = selection.getRangeAt(0);
     if (!body.contains(range.startContainer) || !body.contains(range.endContainer)) { setSelectedPassage(null); return; }
     if (Array.from(body.querySelectorAll(".note-ai-locked")).some(element => range.intersectsNode(element))) {
@@ -76,7 +80,14 @@ export function useNotebookSelection(input: {
       if (gesture.current.pointerId === null && !gesture.current.keys.size) frame = requestAnimationFrame(captureSelectedPassage);
     };
     const pointerdown = (event: PointerEvent) => {
-      if (event.button > 0 || event.isPrimary === false || !(event.target instanceof Node) || !latest.current.bodyRef.current?.contains(event.target)) return;
+      if (event.button > 0 || event.isPrimary === false || !(event.target instanceof Node)) return;
+      if (!latest.current.bodyRef.current?.contains(event.target)) {
+        // 点选句操作条自身（portal 在 body 外）不能先把条子拆掉；点其他区域才收起。
+        if (!(event.target instanceof Element && event.target.closest("[data-note-selection-action]"))) {
+          setSelectedPassage(null);
+        }
+        return;
+      }
       gesture.current.pointerId = event.pointerId;
       cancelAnimationFrame(frame); setSelectedPassage(null);
     };
@@ -106,6 +117,8 @@ export function useNotebookSelection(input: {
     document.addEventListener("selectionchange", changed);
     document.addEventListener("pointerdown", pointerdown, true);
     document.addEventListener("pointerup", pointerup, true);
+    // 原生鼠标选区的收尾事件；部分环境只发 mouseup 而不发 pointerup / selectionchange。
+    document.addEventListener("mouseup", changed, true);
     document.addEventListener("pointercancel", cancel, true);
     document.addEventListener("keydown", keydown, true);
     document.addEventListener("keyup", keyup, true);
@@ -114,6 +127,7 @@ export function useNotebookSelection(input: {
       document.removeEventListener("selectionchange", changed);
       document.removeEventListener("pointerdown", pointerdown, true);
       document.removeEventListener("pointerup", pointerup, true);
+      document.removeEventListener("mouseup", changed, true);
       document.removeEventListener("pointercancel", cancel, true);
       document.removeEventListener("keydown", keydown, true);
       document.removeEventListener("keyup", keyup, true);

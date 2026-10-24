@@ -70,7 +70,7 @@ it("restores bounded saved controls only from the actual parent and emits no gra
 
 it("steps expose the chosen order, support undo/reset, replay exactly and recover editable state", async () => {
   const { createRequire } = await import("node:module");
-  const require = createRequire(new URL("../../../../apps/desktop-client/package.json", import.meta.url));
+  const require = createRequire(import.meta.url);
   const { JSDOM } = require("jsdom");
   const repair = operationSpecV1Schema.parse({title:"步骤修复",prompt:"按顺序选择",controls:[],target:{},steps:["观察","验证","总结"]});
   const html = renderOperationTemplateV1("repair_steps",repair);

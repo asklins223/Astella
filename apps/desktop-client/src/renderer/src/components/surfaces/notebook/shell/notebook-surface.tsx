@@ -1232,8 +1232,6 @@ const noteDocLive = useNoteDocLiveView(
   const noteAiWork = useNoteAiWork(state => state.items);
   const noteAiRanges: NoteAiRange[] = groupNoteAiRanges(resolveNoteAiRanges([
     ...Object.values(noteAiWork).filter(item => item.noteId === note?.noteId).flatMap(item => item.ranges),
-    ...noteCompanionExplanations.filter(item => noteExplanationBusy(item) && item.target.anchor.noteVersionId === note?.currentVersionId).map(item => ({ startBlock: item.target.anchor.startBlockOrdinal,
-      endBlock: item.target.anchor.endBlockOrdinal, label: "伴星正在解释这段", expectedBlocks: note?.currentVersion.blocks.slice(item.target.anchor.startBlockOrdinal, item.target.anchor.endBlockOrdinal + 1).map(b => b.content) })),
     ...(annotationTask && annotationTask.noteVersionId === note?.currentVersionId && (annotationTask.status === "queued" || annotationTask.status === "running") ? [{ startBlock: annotationTask.anchor.startBlockOrdinal,
       endBlock: annotationTask.anchor.endBlockOrdinal, label: "伴星正在解读原句", expectedBlocks: note?.currentVersion.blocks.slice(annotationTask.anchor.startBlockOrdinal, annotationTask.anchor.endBlockOrdinal + 1).map(b => b.content) }] : []),
   ], readSourceBlocks));
