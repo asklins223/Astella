@@ -71,6 +71,7 @@ import {
   METRIC_SERIES_META,
 } from "./labels.ts";
 import { logger } from "../../lib/logger.ts";
+import { readReleaseOverview } from "../app-release/service.ts";
 
 // 这一行在**模块顶层**求值，所以"取不到自己所在目录"不是延后失败，是导入即崩。
 //
@@ -127,6 +128,7 @@ const STATIC_FILES: Array<{ path: string; file: string; type: string }> = [
   { path: "/views/metrics.js", file: "views/metrics.js", type: STATIC_TYPES[".js"] },
   { path: "/views/config.js", file: "views/config.js", type: STATIC_TYPES[".js"] },
   { path: "/views/infra.js", file: "views/infra.js", type: STATIC_TYPES[".js"] },
+  { path: "/views/releases.js", file: "views/releases.js", type: STATIC_TYPES[".js"] },
   { path: "/styles.css", file: "styles.css", type: STATIC_TYPES[".css"] },
   { path: "/assets/astella-mark-v1.png", file: "assets/astella-mark-v1.png", type: STATIC_TYPES[".png"] },
 ];
@@ -217,6 +219,14 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   api.get(`${apiBase}/overview`, async (_request, reply) => {
     const config = await readConfigSnapshot();
     return reply.send(await readOverview(config.path, config.exists));
+  });
+
+  // ─── 版本控制 ────────────────────────────────────────────────────────
+  //
+  // 四条发布线（服务端 / 桌面 / iOS / Android）的当前指针与最近历史；
+  // 数据来自 Release Center 的三张全局表，面板只读展示，不做激活操作。
+  api.get(`${apiBase}/releases`, async (_request, reply) => {
+    return reply.send(await readReleaseOverview());
   });
 
   // ─── 指标 ────────────────────────────────────────────────────────────

@@ -54,7 +54,7 @@ Full Agent permission does not upgrade workspace membership. Read-only mode bloc
 
 ## Boundaries and evidence
 
-Project-owned source code and documentation use [PolyForm Noncommercial 1.0.0](../../../LICENSE) for its permitted noncommercial purposes (source-available, not OSI open source); SDKs, models and assets follow their separate [third-party notices](../../../THIRD_PARTY_NOTICES.md). [release/version.json](../../../release/version.json) maintains the unified product version; published assets determine download availability.
+Project-owned source code and documentation use [PolyForm Noncommercial 1.0.0](../../../LICENSE) for its permitted noncommercial purposes (source-available, not OSI open source); SDKs, models and assets follow their separate [third-party notices](../../../THIRD_PARTY_NOTICES.md). [release/version.json](../../../release/version.json) maintains the server version and [apps/desktop-client/version.json](../../../apps/desktop-client/version.json) the desktop client version; published assets determine download availability.
 
 Implemented entry points and business paths have tests and selected window/real-model evidence. Read acceptance per item: [note editing](../../testing/companion-note-editing-2026-10-08.md), [note creation](../../testing/companion-note-authoring-2026-10-08.md), [plan 44](../../plans/learning-companion/44-unified-context-window-and-compaction-2026-10-05.md) for context governance and database/model comparisons, and [plan 46](../../plans/learning-companion/46-companion-natural-conversation-research-and-design-2026-10-07.md) for dialogue naturalness and waiting stability. These records do not establish acceptance of the entire product or long-term effects.
 

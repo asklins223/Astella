@@ -1,6 +1,6 @@
 name: Server deploy
 
-# Called only after the existing CI jobs pass for a v* tag.
+# Called only after the existing CI jobs pass for a server release tag (s-v*).
 on:
   workflow_call:
 
@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   images:
-    if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+    if: github.ref_type == 'tag' && startsWith(github.ref_name, 's-v')
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -33,8 +33,9 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
+          # 服务端版本线：release/version.json 是唯一来源，tag 必须是 s-v<该版本>。
           node .github/scripts/version-contract.mjs --check
-          node --input-type=module -e 'import {parseReleaseTag} from "./.github/scripts/version-contract.mjs"; import fs from "node:fs"; const tag=parseReleaseTag(process.env.RELEASE_TAG); if (!tag || tag.version !== JSON.parse(fs.readFileSync("release/version.json")).version) process.exit(1);'
+          node .github/scripts/version-contract.mjs --tag "$RELEASE_TAG"
       - name: Test deployment scripts
         run: |
           python3 infra/deploy/__tests__/bundle.test.py
@@ -149,3 +150,53 @@ jobs:
           } | ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=20 \
             -o UserKnownHostsFile="$task_ssh_dir/known_hosts" -i "$task_ssh_dir/key" \
             -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$DEPLOY_HOST" "deploy $GITHUB_SHA"
+
+      # 可选：部署成功后把这次服务端发布登记到 Release Center（server_releases），
+      # 供 GET /app/server-version 与管理面板展示。这是**可选步骤**：secrets 不存在时
+      # 直接跳过，登记失败也只 warning，绝不让它把已经成功的部署判红。
+      #
+      # 判断条件放在 env + shell 里而不是 `if:`：GitHub 表达式里直接引用不存在的
+      # secret 会得到一个空字符串，`if:` 上不好读，也不方便本地演练。
+      - name: Register server release in Release Center
+        env:
+          RELEASE_CENTER_URL: ${{ secrets.RELEASE_CENTER_URL }}
+          RELEASE_CENTER_TOKEN: ${{ secrets.RELEASE_CENTER_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          API_DIGEST: ${{ needs.images.outputs.api }}
+          WORKER_DIGEST: ${{ needs.images.outputs.worker }}
+          TTS_DIGEST: ${{ needs.images.outputs.edge_tts }}
+          EMBEDDING_DIGEST: ${{ needs.images.outputs.embedding }}
+        run: |
+          set -euo pipefail
+          if [ -z "${RELEASE_CENTER_URL:-}" ] || [ -z "${RELEASE_CENTER_TOKEN:-}" ]; then
+            echo "Release Center 未配置（RELEASE_CENTER_URL / RELEASE_CENTER_TOKEN），跳过服务端版本登记"
+            exit 0
+          fi
+          base="${RELEASE_CENTER_URL%/}"
+          # payload 用 node 生成：notes 是长中文句子，手写 JSON 容易在引号与换行上出错。
+          node --input-type=module -e '
+            import { readFileSync, writeFileSync } from "node:fs";
+            const source = JSON.parse(readFileSync("release/version.json", "utf8"));
+            writeFileSync("server-release-payload.json", `${JSON.stringify({
+              version: source.version,
+              tag: process.env.RELEASE_TAG,
+              commit: process.env.GITHUB_SHA,
+              imageDigests: {
+                api: process.env.API_DIGEST,
+                worker: process.env.WORKER_DIGEST,
+                edgeTts: process.env.TTS_DIGEST,
+                embedding: process.env.EMBEDDING_DIGEST,
+              },
+              releasedAt: new Date().toISOString(),
+              notes: source.notes.join("\n\n"),
+            }, null, 2)}\n`);
+          '
+          if curl -fsS -X POST "${base}/internal/server-releases" \
+              -H "Authorization: Bearer ${RELEASE_CENTER_TOKEN}" \
+              -H 'Content-Type: application/json' \
+              --data-binary @server-release-payload.json; then
+            echo "服务端版本已登记到 Release Center"
+          else
+            echo "::warning::服务端版本登记失败（不阻塞部署；配置修好后可人工重放这一步）"
+          fi
+          rm -f server-release-payload.json

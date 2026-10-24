@@ -36,7 +36,7 @@ Production learning, card and voice defaults differ from development. Follow exe
 
 ## Unified versions and publication
 
-`release/version.json` maintains `version` and a nonempty `notes` array. After a one-time root `npm ci`:
+`release/version.json` (server) and `apps/desktop-client/version.json` (desktop) each maintain `version` and `notes`. After a one-time root `npm ci`:
 
 ```bash
 npm run release:prepare

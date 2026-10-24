@@ -242,6 +242,10 @@ services:
       # 运维面板（/admin）。dev 给一个固定的弱口令便于本机调试；弱于 16 字符即
       # 视为未启用（面板不注册任何路由）。生产 compose 用 `:-`，即留空 = 关闭。
       ADMIN_PANEL_TOKEN: ${ADMIN_PANEL_TOKEN:-astella-dev-admin-panel-token}
+      # Release Center 内部注册令牌（CI 用）。未设置时 /internal/* 整组关闭。
+      RELEASE_CENTER_TOKEN: ${RELEASE_CENTER_TOKEN:-astella-dev-release-center-token}
+      RELEASE_ASSET_HOSTS: ${RELEASE_ASSET_HOSTS:-}
+      RELEASE_ASSETS_PUBLIC_BASE_URL: ${RELEASE_ASSETS_PUBLIC_BASE_URL:-}
       # 运维面板的「基础设施」页：挂 Docker socket 后可以看容器状态、拉日志、
       # 做 start/stop/restart。socket 等价于宿主机 root 权限，所以只在**本机
       # 开发栈**默认打开；正式部署由 deploy overlay 挂载并启用。

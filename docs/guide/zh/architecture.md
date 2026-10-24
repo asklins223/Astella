@@ -201,7 +201,7 @@ sequenceDiagram
 
 ## 统一版本
 
-服务端与桌面客户端共用 `release/version.json`。`npm run release:prepare` 同步 API、Worker、shared、desktop 的包版本与 lockfile，以及中文 README 版本标记；英文 README 的显示版本手动同步。内部包保留内部版本。
+服务端版本在 `release/version.json`，桌面客户端版本在 `apps/desktop-client/version.json`。`npm run release:prepare` 分别同步 API/Worker/shared 与 desktop 的包版本、lockfile 和 README 版本标记；两条线可独立递增。内部包保留内部版本。
 
 `v<版本>` 标签通过 `main-ci.yml` 的测试后调用 `server-deploy.yml` 构建 GHCR 镜像并部署；桌面独立完成质量与安装包发布。详见 [服务器部署](deployment.md) 与 [运行与发布](operations.md)。
 
@@ -226,7 +226,7 @@ sequenceDiagram
 | 改作答判定与复习排期 | `apps/api/src/modules/learning-runs/processing/run-processing-tick.ts` 与 `run-processing-assessment.ts`、`apps/api/src/server.ts`（接线与节奏） |
 | 换模型平台或改能力映射 | `config/ai-platforms.json`、`docker-compose.dev.yml` 里 api 与 worker **两边都要透传**同一批 key（2026-09-17 漏传 `OPENCODE_GO_API_KEY` 就是这条）、`workers/ai-worker/src/lib/providers/` |
 | 改健康检查语义 | `apps/api/src/server.ts`（`/health`）与 （`/ready`）、`workers/ai-worker/src/lib/metrics.ts`、`docker-compose.dev.yml` 的两段 `healthcheck` |
-| 改版本号 | `release/version.json`，然后跑 `node .github/scripts/version-contract.mjs --write` / `node .github/scripts/desktop-version.mjs --set <ver>` |
+| 改版本号 | 服务端：`release/version.json` + `version-contract.mjs --write`；桌面：`apps/desktop-client/version.json` + `desktop-version.mjs --set <ver>` |
 
 ## 相关分册
 

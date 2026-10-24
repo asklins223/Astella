@@ -1,17 +1,19 @@
 name: Desktop release
 
-# 与服务端共用 release/version.json 和 v<version> tag。
+# 桌面客户端独立发布线：版本源 apps/desktop-client/version.json，tag c-v<version>
+# （macOS 与 Windows 是同一产品线、同一个版本号）。服务端版本在 release/version.json，
+# 由 s-v* tag 触发部署，两条线互不跟随。
 # Windows 与 macOS 安装包、桌面质量检查全部成功后先上传 Draft，再公开 Release。
 # 资产上传完成前不公开，避免更新器读到未上传完整的安装包或更新清单。
 
 on:
   push:
     tags:
-      - "v*"
+      - "c-v*"
   workflow_dispatch:
     inputs:
       version:
-        description: 版本号（留空则用 tag / release/version.json）
+        description: 版本号（留空则用 tag / apps/desktop-client/version.json）
         type: string
         default: ""
       mac_arch:
@@ -62,11 +64,11 @@ jobs:
             tag_version="$(node .github/scripts/desktop-version.mjs --tag "${{ github.ref_name }}")"
             is_tag="true"
             if [ -z "$requested" ]; then requested="$tag_version"; fi
-            # tag 与唯一来源不一致时直接停：继续下去只会得到一个"标题写 v1.2.0、
+            # tag 与唯一来源不一致时直接停：继续下去只会得到一个"标题写 c-v1.2.0、
             # 产物里却是另一个版本"的 Release，而更新器读到的是后者。
-            source_version="$(node -e "console.log(require('./release/version.json').version)")"
+            source_version="$(node -e "console.log(require('./apps/desktop-client/version.json').version)")"
             if [ "$tag_version" != "$source_version" ]; then
-              echo "::error::tag ${{ github.ref_name }} 指向 $tag_version，但 release/version.json 是 $source_version。请先改版本号再打 tag。" >&2
+              echo "::error::tag ${{ github.ref_name }} 指向 $tag_version，但 apps/desktop-client/version.json 是 $source_version。请先改版本号再打 tag。" >&2
               exit 1
             fi
           fi
@@ -74,10 +76,10 @@ jobs:
           if [ -n "$requested" ]; then
             node .github/scripts/desktop-version.mjs --set "$requested"
           fi
-          version="$(node -e "console.log(require('./release/version.json').version)")"
+          version="$(node -e "console.log(require('./apps/desktop-client/version.json').version)")"
           node .github/scripts/desktop-version.mjs --check
 
-          tag="v${version}"
+          tag="c-v${version}"
           if [ "${{ github.ref_type }}" = "tag" ]; then tag="${{ github.ref_name }}"; fi
 
           echo "version=${version}" >> "$GITHUB_OUTPUT"
@@ -108,6 +110,11 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: write
+    env:
+      # 步骤的 `if:` 读环境变量时只能读 job/workflow 级 env；S3 是否配置在这里给一次。
+      RELEASE_S3_ENDPOINT: ${{ secrets.RELEASE_S3_ENDPOINT }}
+      RELEASE_S3_REGION: ${{ secrets.RELEASE_S3_REGION }}
+      RELEASE_S3_BUCKET: ${{ secrets.RELEASE_S3_BUCKET }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -169,7 +176,7 @@ jobs:
           cat "$latest_win"
 
       - name: Write release notes
-        run: node .github/scripts/release-notes.mjs --output release-notes.md
+        run: node .github/scripts/release-notes.mjs --source desktop --output release-notes.md
 
       - name: Create draft release and upload all assets
         id: upload
@@ -177,7 +184,7 @@ jobs:
         with:
           tag_name: ${{ needs.resolve.outputs.tag }}
           name: Astella ${{ needs.resolve.outputs.tag }}
-          # 产品更新内容与版本号都由 release/version.json 管理。
+          # 产品更新内容与版本号都由 apps/desktop-client/version.json 管理。
           generate_release_notes: false
           body_path: release-notes.md
           draft: true
@@ -204,3 +211,41 @@ jobs:
           fi
           gh api --method PATCH "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" -F draft=false >/dev/null
           echo "全部资产已上传，Release ${{ needs.resolve.outputs.tag }} 已公开"
+
+      # 可选：把增量相关的 blockmap 与 latest*.yml 同步到对象存储，供国内下载/归档；
+      # 完整安装包仍只放 GitHub Release（用户决定）。
+      - name: Mirror incremental assets to object storage (optional)
+        if: env.RELEASE_S3_BUCKET != '' && env.RELEASE_S3_ENDPOINT != ''
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.RELEASE_S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.RELEASE_S3_SECRET_ACCESS_KEY }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          aws configure set default.s3.addressing_style path
+          aws_cp() {
+            aws s3 cp "$@" --endpoint-url "$RELEASE_S3_ENDPOINT" --region "$RELEASE_S3_REGION"               --only-show-errors
+          }
+          for file in artifacts/*.blockmap; do
+            [ -e "$file" ] || continue
+            case "$(basename "$file")" in
+              *-win-x64.exe.blockmap) aws_cp "$file" "s3://$RELEASE_S3_BUCKET/app-releases/windows/$VERSION/" ;;
+              *-mac-*.zip.blockmap) aws_cp "$file" "s3://$RELEASE_S3_BUCKET/app-releases/macos/$VERSION/" ;;
+            esac
+          done
+          aws_cp artifacts/latest.yml "s3://$RELEASE_S3_BUCKET/app-releases/windows/$VERSION/"
+          aws_cp artifacts/latest-mac.yml "s3://$RELEASE_S3_BUCKET/app-releases/macos/$VERSION/"
+          echo "incremental assets mirrored to object storage"
+
+      # 可选：登记到 Release Center；缺少 RELEASE_CENTER_* 时脚本自动跳过。
+      - name: Register desktop release in Release Center (optional)
+        env:
+          RELEASE_CENTER_URL: ${{ secrets.RELEASE_CENTER_URL }}
+          RELEASE_CENTER_TOKEN: ${{ secrets.RELEASE_CENTER_TOKEN }}
+          RELEASE_ASSETS_PUBLIC_BASE_URL: ${{ secrets.RELEASE_ASSETS_PUBLIC_BASE_URL }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+          TAG: ${{ needs.resolve.outputs.tag }}
+          WINDOWS_SIGNED: ${{ needs.build.outputs.windows_signed }}
+          MACOS_SIGNED: ${{ needs.build.outputs.macos_signed }}
+        run: |
+          node .github/scripts/release-register-desktop.mjs             --artifacts artifacts             --version "$VERSION"             --tag "$TAG"

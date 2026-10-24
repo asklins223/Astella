@@ -2,9 +2,11 @@
   "name": "astella-repository-tools",
   "private": true,
   "scripts": {
-    "release:prepare": "node .github/scripts/version-contract.mjs --write && node .github/scripts/release-notes.mjs",
-    "release:check": "node .github/scripts/version-contract.mjs --check",
-    "release:notes": "node .github/scripts/release-notes.mjs"
+    "release:prepare": "node .github/scripts/version-contract.mjs --write && node .github/scripts/desktop-version.mjs --write && node .github/scripts/release-notes.mjs --source server && node .github/scripts/release-notes.mjs --source desktop",
+    "release:check": "node .github/scripts/version-contract.mjs --check && node .github/scripts/desktop-version.mjs --check",
+    "release:notes": "node .github/scripts/release-notes.mjs",
+    "release:notes:server": "node .github/scripts/release-notes.mjs --source server",
+    "release:notes:desktop": "node .github/scripts/release-notes.mjs --source desktop"
   },
   "devDependencies": {
     "c8": "^12.0.0",

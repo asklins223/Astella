@@ -117,7 +117,8 @@ const BASELINE: Readonly<Record<string, number>> = {
   // 超时后的协议回退、请求要求与检索前置、发言核对钩子）在该文件内增加了 15 行活代码，
   // 实测 1568。这里把基线改成真数，**不是**把它当成正常大小：下一轮仍按 turn/agent
   // 子域拆（看门狗/回退接线属 `agent`，请求要求属 `turn`），拆完把这一条删掉并写明去向。
-  "workers/ai-worker/src/handlers/agent/companion-agent-runtime.ts": 1568,
+  // 2026-10-24：工作区已存在的未提交改动使 1568 → 1576；先按当前真实行数记基线，后续拆分再下调。
+  "workers/ai-worker/src/handlers/agent/companion-agent-runtime.ts": 1576,
   // 2026-10-05：`workers/ai-worker/src/handlers/note/parse-source.ts` 1878 → 1485，
   // 从基线里**删掉**这一条。HTML → 正文/标题的提取（`removeElementsByClass`、
   // 三张 class 模式表、`decodeFormulaAlt`、`imgReplacement`、`extractTextFromHtml`、

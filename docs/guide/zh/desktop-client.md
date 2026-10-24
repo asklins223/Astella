@@ -25,7 +25,7 @@
 
 | 项 | 值 |
 | --- | --- |
-| 包名 / 版本 | `astella-desktop-client` / `release/version.json` |
+| 包名 / 版本 | `astella-desktop-client` / `apps/desktop-client/version.json`（与 `c-v*` tag 对齐） |
 | 运行时 | Electron `44.7.0`、electron-vite `^5.0.0`、Vite `^7.3.6` |
 | macOS 最低版本 | macOS 13 Ventura；`electron-builder.yml` 同步声明安装要求 |
 | 界面 | React `^19.2.0`、TypeScript `^5.9.3`、Zustand `^5`、GSAP `^3.15` |

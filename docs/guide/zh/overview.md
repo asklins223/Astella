@@ -54,7 +54,7 @@
 
 ## 产品边界与验证状态
 
-项目自有源码和文档采用 [PolyForm Noncommercial 1.0.0](../../../LICENSE)，限许可规定的非商业用途（源码可用许可，不属于 OSI 开源许可），第三方 SDK、模型与素材按 [第三方声明](../../../THIRD_PARTY_NOTICES.md) 分别处理。产品版本由 [release/version.json](../../../release/version.json) 统一维护，具体下载资产以发布页为准。
+项目自有源码和文档采用 [PolyForm Noncommercial 1.0.0](../../../LICENSE)，限许可规定的非商业用途（源码可用许可，不属于 OSI 开源许可），第三方 SDK、模型与素材按 [第三方声明](../../../THIRD_PARTY_NOTICES.md) 分别处理。服务端版本由 [release/version.json](../../../release/version.json)、桌面客户端版本由 [apps/desktop-client/version.json](../../../apps/desktop-client/version.json) 分别维护，具体下载资产以发布页为准。
 
 现有入口和业务链路已有代码、测试及部分窗口／真实模型证据。验收应逐项阅读：笔记编辑与写作见 [编辑记录](../../testing/companion-note-editing-2026-10-08.md) 和 [生成记录](../../testing/companion-note-authoring-2026-10-08.md)；上下文治理的实库、模型对照与剩余限制见 [方案 44](../../plans/learning-companion/44-unified-context-window-and-compaction-2026-10-05.md)；长对话自然度与等待稳定性见 [方案 46](../../plans/learning-companion/46-companion-natural-conversation-research-and-design-2026-10-07.md)。这些记录不构成全产品或长期效果已经通过的结论。
 

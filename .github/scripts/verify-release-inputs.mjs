@@ -8,8 +8,13 @@ import {
   inspectVersionCopies,
   loadVersionSource,
   PACKAGE_ROOTS,
-  parseReleaseTag,
+  parseServerReleaseTag,
 } from "./version-contract.mjs";
+import {
+  DESKTOP_PACKAGE_ROOTS,
+  inspectDesktopVersionCopies,
+  loadDesktopVersionSource,
+} from "./desktop-version.mjs";
 
 const requiredFiles = [
   ".github/workflows/main-ci.yml",
@@ -28,15 +33,18 @@ const requiredFiles = [
   "packages/shared/package-lock.json",
   "README.md",
   "release/version.json",
+  "apps/desktop-client/version.json",
   "release/release-manifest.schema.json",
   ".github/scripts/release-manifest-contract.mjs",
   ".github/scripts/release-manifest-contract.test.mjs",
   ".github/scripts/version-contract.mjs",
   ".github/scripts/version-contract.test.mjs",
+  ".github/scripts/desktop-version.mjs",
   "apps/api/src/db/migrations/meta/_journal.json",
 ];
 
-const packageRoots = PACKAGE_ROOTS;
+// lockfile 根元数据的两条版本线都要查：服务端 3 个包根 + 桌面 1 个。
+const packageRoots = [...PACKAGE_ROOTS, ...DESKTOP_PACKAGE_ROOTS];
 const manifestSchemaPath = "release/release-manifest.schema.json";
 const requiredManifestFields = [
   "schemaVersion",
@@ -97,6 +105,10 @@ let releaseVersion = null;
 try {
   releaseVersion = loadVersionSource();
   for (const issue of inspectVersionCopies(process.cwd(), releaseVersion)) {
+    fail(issue);
+  }
+  const desktopVersion = loadDesktopVersionSource();
+  for (const issue of inspectDesktopVersionCopies(process.cwd(), desktopVersion)) {
     fail(issue);
   }
 } catch (error) {
@@ -209,8 +221,8 @@ if (releaseVersion) {
     process.env.GITHUB_REF_TYPE === "tag"
   ) {
     const githubTag = process.env.GITHUB_REF_NAME;
-    if (!githubTag || !parseReleaseTag(githubTag)) {
-      fail(`GitHub tag ${githubTag ?? "<missing>"} is not a supported stable or rc.N release tag`);
+    if (!githubTag || !parseServerReleaseTag(githubTag)) {
+      fail(`GitHub tag ${githubTag ?? "<missing>"} is not a supported s-v<version> server release tag`);
     } else if (!exactTagNames.includes(githubTag)) {
       fail(`GitHub tag ${githubTag} does not point at the checked-out commit`);
     }

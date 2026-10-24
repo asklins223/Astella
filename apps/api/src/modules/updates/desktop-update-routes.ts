@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../../db/client.ts";
+import { readDesktopUpdateManifest } from "../app-release/service.ts";
 
 /**
  * 桌面更新清单：**服务端下发**（2026-10-10 用户决定，替代客户端直连 GitHub 检查）。
@@ -57,11 +58,16 @@ async function fetchText(url: string): Promise<string> {
  * 只认第一条 `<entry>` 里的 `/tag/<x>`：Release 按时间倒序排，第一条就是最新正式版。
  * 拿不到就抛——宁可让客户端退回 GitHub，也不要把一个猜测的版本发下去。
  */
-export function latestTagFromFeed(atom: string): string {
-  const tag = /<entry>[\s\S]*?<link[^>]*href="([^"]+)"/.exec(atom)?.[1];
-  const matched = tag?.match(/\/tag\/([^/?#]+)/);
-  if (!matched) throw new Error("update_source_no_tag");
-  return matched[1];
+export function latestTagFromFeed(atom: string, tagPrefix?: string): string {
+  const tags: string[] = [];
+  for (const match of atom.matchAll(/<entry>[\s\S]*?<link[^>]*href="([^"]+)"/g)) {
+    const tag = match[1]?.match(/\/tag\/([^/?#]+)/)?.[1];
+    if (tag) tags.push(tag);
+  }
+  if (tags.length === 0) throw new Error("update_source_no_tag");
+  // 桌面发布改用 c-v 前缀；老版本仍是 v*。优先取带前缀的最新一条，找不到再退回第一条，
+  // 这样迁移前后都不会把「最新 tag」认成服务端/手机端的发布。
+  return tags.find((tag) => !tagPrefix || tag.startsWith(tagPrefix)) ?? tags[0]!;
 }
 
 /**
@@ -128,7 +134,7 @@ export async function desktopUpdateManifest(channel: ChannelFile, deps: Manifest
 
   try {
     const feed = await fetcher(`${RELEASES_ORIGIN}/releases.atom`);
-    const tag = latestTagFromFeed(feed);
+    const tag = latestTagFromFeed(feed, "c-v");
     const yaml = await fetcher(`${RELEASES_ORIGIN}/releases/download/${tag}/${channel}`);
     const body = rewriteChannelManifest(yaml, tag);
     await save(channel, tag, body).catch(() => undefined);
@@ -144,7 +150,9 @@ export async function desktopUpdateRoutes(app: FastifyInstance): Promise<void> {
     const params = z.strictObject({ channelFile: z.enum(CHANNEL_FILES) }).safeParse(req.params);
     if (!params.success) return reply.code(404).send({ error: "update_channel_not_found" });
     try {
-      const body = await desktopUpdateManifest(params.data.channelFile);
+      // Release Center 是首选事实源；只有它还没有当前版本时才回退 GitHub 缓存。
+      const stored = await readDesktopUpdateManifest(params.data.channelFile).catch(() => null);
+      const body = stored ?? await desktopUpdateManifest(params.data.channelFile);
       reply.header("Content-Type", "text/yaml; charset=utf-8");
       reply.header("Cache-Control", "public, max-age=300");
       return reply.send(body);

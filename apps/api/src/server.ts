@@ -51,6 +51,7 @@ import { voiceRoutes } from "./modules/learning-sessions/voice-routes.ts";
 import { adminRoutes } from "./modules/admin/routes.ts";
 import { desktopTrustRoutes, resolveApiBindHost } from "./modules/desktop-trust/routes.ts";
 import { desktopUpdateRoutes } from "./modules/updates/desktop-update-routes.ts";
+import { appReleaseRoutes } from "./modules/app-release/routes.ts";
 import { cleanupExpiredSessions } from "./modules/identity/service.ts";
 import { purgeSoftDeletedNotes } from "./modules/note/maintenance.ts";
 import { runLearningTtlMaintenance } from "./modules/learning-sessions/ttl-maintenance.ts";
@@ -361,6 +362,7 @@ async function main() {
   await app.register(desktopTrustRoutes);
   // 桌面更新清单是**公开**的：更新发生在登录之前，也发生在账号还没有的机器上。
   await app.register(desktopUpdateRoutes);
+  await app.register(appReleaseRoutes);
   await app.register(noteRoutes);
   await app.register(noteAnnotationRoutes);
   await app.register(noteOverviewRoutes);

@@ -7,8 +7,8 @@ name: Desktop package
 # 启动的包看看"，不该被一串还没跑通的门禁挡住。两边刻意不互相 depends_on——
 # 质量闸挂了照样能出包，只是那个包别拿去发版。
 #
-# 手动跑（不带版本号）时用 release/version.json 里的版本；被 desktop-release.yml
-# 以 v* tag 调用时，用 tag 里的版本。
+# 手动跑（不带版本号）时用 apps/desktop-client/version.json 里的版本；
+# 被 desktop-release.yml 以 c-v* tag 调用时，用 tag 里的版本。
 #
 # 无 Apple 证书时生成完整 ad-hoc 签名，并使用跨版本稳定的 designated requirement。
 # macOS 首次打开仍可能需要在隐私与安全中允许；有证书时使用 Developer ID 和公证。
@@ -25,7 +25,7 @@ on:
           - arm64
           - x64
       version:
-        description: 版本号（留空则用 release/version.json）
+        description: 版本号（留空则用 apps/desktop-client/version.json）
         type: string
         default: ""
   workflow_call:
@@ -41,7 +41,7 @@ on:
         type: string
         default: arm64
       version:
-        description: 版本号（留空则用 release/version.json）
+        description: 版本号（留空则用 apps/desktop-client/version.json）
         type: string
         default: ""
     outputs:
@@ -54,6 +54,12 @@ on:
       macos_arch:
         description: macOS 实际构建架构
         value: ${{ jobs.macos.outputs.arch }}
+      windows_signed:
+        description: Windows 是否配置了代码签名
+        value: ${{ jobs.windows.outputs.signed }}
+      macos_signed:
+        description: macOS 是否配置了 Developer ID 签名
+        value: ${{ jobs.macos.outputs.signed }}
 
 permissions:
   contents: read
@@ -77,6 +83,7 @@ jobs:
     timeout-minutes: 90
     outputs:
       version: ${{ steps.version.outputs.version }}
+      signed: ${{ steps.signing.outputs.signed }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -108,9 +115,10 @@ jobs:
             node .github/scripts/desktop-version.mjs --set "${{ inputs.version }}"
           fi
           node .github/scripts/desktop-version.mjs --check
-          echo "version=$(node -e "console.log(require('./release/version.json').version)")" >> "$GITHUB_OUTPUT"
-          echo "Windows build version: $(node -e "console.log(require('./release/version.json').version)")"
+          echo "version=$(node -e "console.log(require('./apps/desktop-client/version.json').version)")" >> "$GITHUB_OUTPUT"
+          echo "Windows build version: $(node -e "console.log(require('./apps/desktop-client/version.json').version)")"
       - name: Configure Windows signing
+        id: signing
         # shell 必须显式声明：windows runner 默认是 pwsh，而下面这段是 bash
         # （`set -euo pipefail` / `[ -n … ]` / `$GITHUB_ENV`）。macOS runner 默认就是
         # bash，那一侧不需要这一行。
@@ -127,10 +135,12 @@ jobs:
             echo "CSC_LINK=${{ secrets.WIN_CSC_LINK }}" >> "$GITHUB_ENV"
             echo "CSC_KEY_PASSWORD=${{ secrets.WIN_CSC_KEY_PASSWORD }}" >> "$GITHUB_ENV"
             echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
+            echo "signed=true" >> "$GITHUB_OUTPUT"
             echo "Windows code signing: 已启用"
           else
             # 让 electron-builder 自己去找证书，找不到就干净地跳过。
             echo "CSC_IDENTITY_AUTO_DISCOVERY=true" >> "$GITHUB_ENV"
+            echo "signed=false" >> "$GITHUB_OUTPUT"
             echo "Windows code signing: 未配置，产物将未签名"
           fi
       - uses: actions/setup-dotnet@v4
@@ -194,6 +204,7 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       arch: ${{ inputs.mac_arch || 'arm64' }}
+      signed: ${{ steps.signing.outputs.signed }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -217,9 +228,10 @@ jobs:
             node .github/scripts/desktop-version.mjs --set "${{ inputs.version }}"
           fi
           node .github/scripts/desktop-version.mjs --check
-          echo "version=$(node -e "console.log(require('./release/version.json').version)")" >> "$GITHUB_OUTPUT"
-          echo "macOS build version: $(node -e "console.log(require('./release/version.json').version)")"
+          echo "version=$(node -e "console.log(require('./apps/desktop-client/version.json').version)")" >> "$GITHUB_OUTPUT"
+          echo "macOS build version: $(node -e "console.log(require('./apps/desktop-client/version.json').version)")"
       - name: Configure macOS signing and notarization
+        id: signing
         # 同 Windows 那一节：secret 缺失时不能把空串写进 CSC_LINK，否则
         # electron-builder 会拿空前缀当证书路径，报一条完全指不到根因的
         # "not a file"。
@@ -229,9 +241,11 @@ jobs:
             echo "CSC_LINK=${{ secrets.MAC_CSC_LINK }}" >> "$GITHUB_ENV"
             echo "CSC_KEY_PASSWORD=${{ secrets.MAC_CSC_KEY_PASSWORD }}" >> "$GITHUB_ENV"
             echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
+            echo "signed=true" >> "$GITHUB_OUTPUT"
             echo "macOS code signing: 已启用"
           else
             echo "CSC_IDENTITY_AUTO_DISCOVERY=true" >> "$GITHUB_ENV"
+            echo "signed=false" >> "$GITHUB_OUTPUT"
             echo "macOS code signing: 使用完整 ad-hoc 签名和跨版本稳定的更新要求；首次打开仍需用户在隐私与安全中允许"
           fi
           # 公证凭据存在才会真的去跑 notarize；缺了就让 electron-builder 自行跳过。

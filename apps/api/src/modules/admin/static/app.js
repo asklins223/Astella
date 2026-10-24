@@ -8,8 +8,9 @@ import { view as logsView } from "./views/logs.js";
 import { view as metricsView } from "./views/metrics.js";
 import { view as infraView } from "./views/infra.js";
 import { view as configView, resetDraft as resetConfigDraft } from "./views/config.js";
+import { view as releasesView } from "./views/releases.js";
 
-const VIEWS = { overview: overviewView, queues: queuesView, logs: logsView, metrics: metricsView, infra: infraView, config: configView };
+const VIEWS = { overview: overviewView, queues: queuesView, logs: logsView, metrics: metricsView, infra: infraView, config: configView, releases: releasesView };
 const SEARCH = {
   overview: "系统健康 运行状态 待办 总览 overview",
   queues: "任务 队列 失败 重试 死信 jobs queues",
@@ -17,6 +18,7 @@ const SEARCH = {
   metrics: "指标 耗时 性能 曲线 metrics",
   infra: "基础设施 容器 数据库 存储 重启 docker infra",
   config: "模型 配置 密钥 AI config",
+  releases: "版本 发布 历史 tag 客户端 release versions",
 };
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];

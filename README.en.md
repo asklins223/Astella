@@ -6,7 +6,7 @@
 
 A desktop study room for personal learning. Turn material into notes, understand and recall it beside the original passage, and make cards for long-term review when needed. A Live2D companion can discuss what you are reading, find sources, create notes and edit the body at your request.
 
-[![Latest release](https://img.shields.io/github/v/release/asklins223/Astella)](https://github.com/asklins223/Astella/releases/latest)
+[![Desktop client release](https://img.shields.io/github/v/release/asklins223/Astella)](https://github.com/asklins223/Astella/releases/latest)
 [![Electron 44](https://img.shields.io/badge/Electron-44-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
 [![React 19](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)](https://react.dev/)
 [![Fastify 5](https://img.shields.io/badge/Fastify-5-000000?logo=fastify&logoColor=white)](https://fastify.dev/)
@@ -15,7 +15,8 @@ A desktop study room for personal learning. Turn material into notes, understand
 
 [中文](README.md) · [English](README.en.md) · [User and developer guide](docs/guide/README.md)
 
-Repository version: `v1.8.29` (shared by the server and desktop client)
+Server version: `s-v2.0.0` · [release/version.json](release/version.json)<br />
+Desktop client version: `c-v2.0.0` · [apps/desktop-client/version.json](apps/desktop-client/version.json)
 
 </div>
 
@@ -201,9 +202,9 @@ Ordinary `npm test` does not discover `*.integration.ts`; real-model and S3 prob
 
 ## Versions, releases and licensing
 
-[release/version.json](release/version.json) is the only manually maintained source of product version and release notes. Edit `version` and `notes`, run `npm ci` at the root once, then `npm run release:prepare` to synchronize four product packages, lockfiles and the Chinese README version marker and preview release notes. Maintain the English README version text alongside it. An annotated `v<version>` tag triggers server CI/deployment and desktop releases.
+[release/version.json](release/version.json) holds the server version and release notes, while [apps/desktop-client/version.json](apps/desktop-client/version.json) holds the desktop client version and notes; the two release lines move independently. After editing either `version` / `notes`, run `npm ci` at the root once and `npm run release:prepare`: it synchronizes the shared, api and worker packages, their lockfiles and the Chinese README server marker from the first file, then the desktop package, lockfile and desktop marker from the second, and previews both sets of release notes. Maintain the English README version text alongside it. An annotated `s-v<version>` tag triggers server CI/deployment and a `c-v<version>` tag triggers desktop packaging and release; iOS (`i-v<version>`) and Android (`a-v<version>`) release from [asklins223/astella-mobile](https://github.com/asklins223/astella-mobile).
 
-Desktop updates go directly to GitHub Releases. Packaging supports macOS, Windows and Linux; the current automated installer release covers macOS and Windows, while Linux can be packaged separately. macOS builds without an Apple certificate use ad-hoc signing and may need first-launch authorization. See [Server deployment](docs/guide/en/deployment.md) for credentials, migration rollback and object transfers.
+Desktop updates keep using electron-updater `latest*.yml` manifests: the server Release Center serves them first and GitHub Releases is the fallback. Packaging supports macOS, Windows and Linux; the current automated installer release covers macOS and Windows, while Linux can be packaged separately. macOS builds without an Apple certificate use ad-hoc signing and may need first-launch authorization. See [Server deployment](docs/guide/en/deployment.md) for credentials, migration rollback and object transfers.
 
 Project-owned source code and documentation are licensed under [PolyForm Noncommercial 1.0.0](LICENSE) for its permitted noncommercial purposes. Commercial use requires separate permission. This is a source-available license, not an OSI open-source license. New versions use this license from 2026-10-09; versions previously released under MIT retain that license. The bundled Live2D SDK, models and other assets have separate licenses and redistribution restrictions in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md); brand assets are described in [assets/brand/README.md](assets/brand/README.md).
 

@@ -2,11 +2,11 @@
 
 中文 · [English](../en/deployment.md)
 
-推送统一的 `v<版本>` tag 同时触发两端发布，版本唯一来源为 `release/version.json`。
+发布线已拆分：服务端推送 `s-v<版本>` tag 触发部署，桌面客户端推送 `c-v<版本>` tag 触发发布；iOS/Android 在手机端独立仓库分别用 `i-v*`/`a-v*` tag。服务端版本来源为 `release/version.json`，桌面客户端版本来源为 `apps/desktop-client/version.json`。
 
 桌面端：Windows x64 与 macOS 构建安装包，同时验证桌面质量与打包启动；全部成功并检查更新清单后才公开 GitHub Release。单独手动运行 Desktop package 仍可取得测试安装包。没有 Apple 证书时使用完整 ad-hoc 签名和稳定的跨版本更新要求，macOS 首次打开仍可能需要在隐私与安全中允许；Windows 覆盖安装分支仍未在无头 runner 上验证。
 
-服务端：现有 CI 的测试全部成功后调用 Server deploy，构建 Linux amd64 的 API、Worker 和 TTS 镜像推送 GHCR，以 digest 记录镜像，再通过 SSH 部署该 tag 的确切提交。版本必须与 `release/version.json` 一致；打 tag 前运行 `npm run release:prepare` 同步版本副本并预览发布说明，再运行 `npm run version:check`。部署串行执行，不打断正在迁移的任务。重新部署可在 GitHub 重跑该 tag 的 CI。
+服务端：现有 CI 的测试全部成功后调用 Server deploy，构建 Linux amd64 的 API、Worker 和 TTS 镜像推送 GHCR，以 digest 记录镜像，再通过 SSH 部署该 tag 的确切提交。版本必须与对应 version 文件一致；打 tag 前运行 `npm run release:prepare` 同步两条版本线副本并预览发布说明，再运行 `npm run release:check`。部署串行执行，不打断正在迁移的任务。重新部署可在 GitHub 重跑该 tag 的 CI。
 
 ## 私有配置
 

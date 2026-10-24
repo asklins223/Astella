@@ -2,7 +2,7 @@
 
 [中文](../zh/deployment.md) · English
 
-A unified `v<version>` tag triggers desktop release and server deployment. `release/version.json` is the version authority. Before tagging, run `npm run release:prepare` to synchronize copies and preview release notes, then `npm run version:check`.
+Release lines are split: the server deploys from `s-v<version>` tags, the desktop client publishes from `c-v<version>` tags, and iOS/Android publish from `i-v*`/`a-v*` in the standalone mobile repository. The server version source is `release/version.json`; the desktop client version source is `apps/desktop-client/version.json`. Before tagging, run `npm run release:prepare` to synchronize both lines and preview notes, then `npm run release:check`.
 
 Desktop release builds Windows x64 and macOS installers, checks desktop quality and packaged startup, and publishes the GitHub Release only after successful jobs and update-manifest validation. A manual Desktop package run also produces test installers. Without an Apple certificate, macOS uses complete ad-hoc signing and a stable cross-version designated requirement; first launch may still require approval in Privacy & Security. Windows overwrite installation is not established by a headless-runner build.
 

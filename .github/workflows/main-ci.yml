@@ -1,6 +1,6 @@
 name: CI
 
-# CI 跑本地测试；统一 v* tag 在测试通过后调用服务器部署。
+# CI 跑本地测试；服务端 tag s-v* 在测试通过后调用服务器部署，桌面 tag c-v* 只跑测试。
 #
 # 2026-10-06（用户决定）：**CI = 本地跑得通的那套测试**，逐个包一一对应。
 #
@@ -37,7 +37,7 @@ name: CI
 on:
   push:
     branches: [main]
-    tags: ["v*"]
+    tags: ["s-v*", "c-v*"]
   pull_request:
   workflow_dispatch:
 
@@ -54,7 +54,7 @@ env:
 jobs:
   deploy:
     name: Deploy server on release tags
-    if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+    if: github.ref_type == 'tag' && startsWith(github.ref_name, 's-v')
     needs: [packages, api, worker, desktop, backup-scripts]
     permissions:
       contents: read

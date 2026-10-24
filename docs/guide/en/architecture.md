@@ -201,7 +201,7 @@ Three identities that never mix.
 
 ## Unified version
 
-Server and desktop share `release/version.json`. `npm run release:prepare` synchronizes API, Worker, shared and desktop package versions/lockfiles and the Chinese README marker; maintain the English README version alongside it. Internal packages retain their internal versions.
+The server version lives in `release/version.json`; the desktop client version lives in `apps/desktop-client/version.json`. `npm run release:prepare` synchronizes API/Worker/shared and desktop package versions, lockfiles and README markers independently. Internal packages retain their internal versions.
 
 A `v<version>` tag passes `main-ci.yml` tests before `server-deploy.yml` builds GHCR images and deploys. Desktop quality/installer publication runs separately. See [Deployment](deployment.md) and [Operations](operations.md).
 
@@ -226,7 +226,7 @@ A `v<version>` tag passes `main-ci.yml` tests before `server-deploy.yml` builds 
 | Answer assessment and review scheduling | `apps/api/src/modules/learning-runs/processing/run-processing-tick.ts` and `run-processing-assessment.ts`, `apps/api/src/server.ts` (wiring and cadence) |
 | Switching a model platform or capability mapping | `config/ai-platforms.json`, and the same key list must be passed through **both** api and worker in `docker-compose.dev.yml` (2026-09-17: `OPENCODE_GO_API_KEY` was missing there and card generation failed closed), `workers/ai-worker/src/lib/providers/` |
 | Health-check semantics | `apps/api/src/server.ts` (`/health`) and (`/ready`), `workers/ai-worker/src/lib/metrics.ts`, the two `healthcheck` blocks in `docker-compose.dev.yml` |
-| Bumping a version | `release/version.json`, then `node .github/scripts/version-contract.mjs --write` / `node .github/scripts/desktop-version.mjs --set <ver>` |
+| Bumping a version | Server: `release/version.json` + `version-contract.mjs --write`; desktop: `apps/desktop-client/version.json` + `desktop-version.mjs --set <ver>` |
 
 ## Related chapters
 

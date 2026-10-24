@@ -16,10 +16,19 @@ copyright: Copyright © 2026 Astella
 # 这里只提供 owner/repo；真正的 Release 由 desktop-release.yml 以
 # 「先建 Draft、资产传完再公开」的方式发布，避免更新器读到半成品。
 # （发布时把资产传上去的也是这一份 publish 配置——别改成 generic。）
+#
+# 2026-10-24 版本线拆分：桌面发布 tag 变成 **c-v<version>**（服务端是 s-v*）。
+# electron-builder 的 GitHub provider 默认按 `v<version>` 找/建 Release，
+# 不声明前缀时它会把这次发布算到 `v2.0.0` 上，与 CI 实际创建的 `c-v2.0.0`
+# 对不上。`tagNamePrefix` 是 electron-builder 26 支持的字段（builder-util-runtime
+# 的 GithubOptions，覆盖旧的 vPrefixedTagName），这里只影响发布目标 tag；
+# electron-updater 运行时仍是「查最新 Release → 下载该 tag 下的 latest*.yml」，
+# 不依赖前缀，所以 GitHub 兜底不变。
 publish:
   provider: github
   owner: asklins223
   repo: Astella
+  tagNamePrefix: c-v
 
 directories:
   output: release

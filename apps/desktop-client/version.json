@@ -1,0 +1,7 @@
+{
+  "version": "2.0.0",
+  "notes": [
+    "桌面客户端 2.0.0：桌面（macOS 与 Windows 同一版本线）自本版本起独立于服务端发版，版本源改为 apps/desktop-client/version.json，发布 tag 为 c-v<版本>。",
+    "更新方式保持不变：electron-updater 继续读取 latest.yml / latest-mac.yml，清单由服务端 Release Center 托管，GitHub Releases 作为兜底；安装包与清单的发布流程仍是 Draft 上传完成后再公开。"
+  ]
+}

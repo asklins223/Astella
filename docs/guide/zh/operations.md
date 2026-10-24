@@ -36,7 +36,7 @@
 
 ## 统一版本与发布
 
-`release/version.json` 维护 `version` 与非空 `notes` 数组。仓库根首次 `npm ci` 后：
+`release/version.json`（服务端）与 `apps/desktop-client/version.json`（桌面）分别维护 `version`/`notes`。仓库根首次 `npm ci` 后：
 
 ```bash
 npm run release:prepare

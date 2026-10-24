@@ -25,7 +25,7 @@
 
 | Item | Value |
 | --- | --- |
-| Package / version | `astella-desktop-client` / `release/version.json` |
+| Package / version | `astella-desktop-client` / `apps/desktop-client/version.json` (matches `c-v*` tags) |
 | Runtime | Electron `44.7.0`, electron-vite `^5.0.0`, Vite `^7.3.6` |
 | Minimum macOS | macOS 13 Ventura; declared in `electron-builder.yml` |
 | UI | React `^19.2.0`, TypeScript `^5.9.3`, Zustand `^5`, GSAP `^3.15` |

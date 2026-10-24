@@ -129,6 +129,7 @@ const CROSS_MODULE_BASELINE: ReadonlySet<string> = new Set([
   "modules/identity/middleware.ts",
   "modules/identity/session-service.ts", // NoteDoc and companion realtime authenticate WebSocket sessions through the canonical token decoder.
   "modules/storage/exports.ts", // Common signed export/spool contract used by companion and workspace export routes.
+  "modules/app-release/service.ts", // Release Center 的只读版本查询是 updates 桌面清单与 admin 版本面板共用的域间契约。
   "modules/job/service.ts",
   "modules/note/companion-source.ts",
   "modules/note/content-hash.ts",

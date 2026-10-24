@@ -6,7 +6,7 @@
 
 面向个人学习的桌面书房。把材料整理成笔记，在原文旁理解、回想和追问；需要时生成学习卡，接入长期复习。Live2D 伴星陪你读，也能按你的要求查资料、整理新笔记和修改正文。
 
-[![最新发布](https://img.shields.io/github/v/release/asklins223/Astella)](https://github.com/asklins223/Astella/releases/latest)
+[![桌面客户端发布](https://img.shields.io/github/v/release/asklins223/Astella)](https://github.com/asklins223/Astella/releases/latest)
 [![Electron 44](https://img.shields.io/badge/Electron-44-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
 [![React 19](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)](https://react.dev/)
 [![Fastify 5](https://img.shields.io/badge/Fastify-5-000000?logo=fastify&logoColor=white)](https://fastify.dev/)
@@ -15,7 +15,8 @@
 
 [中文](README.md) · [English](README.en.md) · [使用与开发手册](docs/guide/README.md)
 
-当前版本：`v1.8.29`（仓库版本；服务端与桌面客户端共用）
+服务端版本：`s-v2.0.0` · [release/version.json](release/version.json)<br />
+桌面客户端版本：`c-v2.0.0` · [apps/desktop-client/version.json](apps/desktop-client/version.json)
 
 > 手机端（iOS SwiftUI / Android Compose）已于 2026-10-24 拆分为独立私有仓库 [asklins223/astella-mobile](https://github.com/asklins223/astella-mobile)，本仓库不再包含 `apps/mobile-client`。
 
@@ -203,9 +204,9 @@ make verify
 
 ## 版本、发布与许可
 
-[release/version.json](release/version.json) 是产品版本与更新内容的唯一手工来源。修改 `version` 和 `notes` 后，在仓库根运行 `npm ci`（首次）与 `npm run release:prepare`，同步四个产品包及 lockfile、中文 README 版本标记，并预览发布说明；英文 README 的版本文字需同步维护。带注释的 `v<版本>` 标签触发服务端 CI／部署和桌面发布。
+[release/version.json](release/version.json) 保存服务端版本与更新内容，[apps/desktop-client/version.json](apps/desktop-client/version.json) 保存桌面客户端版本与更新内容；两条发布线各自递增、互不跟随。修改任一 `version` 与 `notes` 后，在仓库根运行 `npm ci`（首次）与 `npm run release:prepare`：它会先同步 shared、api、worker 的包版本、lockfile 与中文 README 的服务端版本标记，再同步桌面包、lockfile 与中文 README 的桌面客户端版本标记，并预览两条线的发布说明；英文 README 的版本文字需同步维护。带注释的 `s-v<版本>` 标签触发服务端 CI／部署，`c-v<版本>` 标签触发桌面打包与发布；iOS（`i-v<版本>`）与 Android（`a-v<版本>`）在 [asklins223/astella-mobile](https://github.com/asklins223/astella-mobile) 仓库各自发布。
 
-桌面更新直连 GitHub Releases。打包配置支持 macOS、Windows 和 Linux；当前自动发布安装包的工作流覆盖 macOS 和 Windows，Linux 可单独打包。macOS 无 Apple 证书时使用 ad-hoc 签名，首次打开仍可能需要系统授权。部署凭据、迁移回退与对象传输见 [服务器部署](docs/guide/zh/deployment.md)。
+桌面更新继续使用 electron-updater 的 `latest*.yml` 清单：优先由服务端 Release Center 下发，GitHub Releases 作为兜底。打包配置支持 macOS、Windows 和 Linux；当前自动发布安装包的工作流覆盖 macOS 和 Windows，Linux 可单独打包。macOS 无 Apple 证书时使用 ad-hoc 签名，首次打开仍可能需要系统授权。部署凭据、迁移回退与对象传输见 [服务器部署](docs/guide/zh/deployment.md)。
 
 项目自有源码和文档采用 [PolyForm Noncommercial 1.0.0](LICENSE)，允许许可规定的非商业用途；商业用途需另行取得授权。该许可属于源码可用许可，不属于 OSI 定义的开源许可。2026-10-09 起的新版本采用此许可，此前已按 MIT 发布的版本仍遵循原授权。随包分发的 Live2D SDK、模型和其他素材有各自的许可及再分发限制，见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)；品牌素材见 [assets/brand/README.md](assets/brand/README.md)。
 

@@ -27,7 +27,9 @@ const MODULE_CONTRACTS: ModuleContract[] = [
   // handlers 12 → 13：`GET /notes/presence`（共享空间的在场）。它自己开
   // `withWorkspaceTransaction(scopeOfSession(req.session), …)` 只拿去判可见性，
   // 在场本身读的是内存里那份按连接计的登记表（不落库、不占事务）。
-  { name: "note", handlers: 13, services: 10, handlerWithoutInlineTransaction: 1 },
+  // 2026-10-24：`GET /v2/notes/:id/reader` 已在当前树里（14 条处理器），
+  // 事务数仍为 13（doc-update 豁免）；同步计数基线，判据不放宽。
+  { name: "note", handlers: 14, services: 10, handlerWithoutInlineTransaction: 1 },
   // 删掉无人调用的 POST /sources/statuses 后：7 路由 / 7 服务。
   // 补上 POST /sources/:id/reparse（doc 34 L7，"可以重新解析"那句文案的端点）后各加一：
   // 两个数一起动正是这条断言要的形状——多一条路由就必须多一个事务边界。

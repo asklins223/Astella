@@ -49,7 +49,10 @@ const CHECK_CACHE_MS = 6 * 60 * 60 * 1000
  */
 const PUBLISH_OWNER = 'asklins223'
 const PUBLISH_REPO = 'Astella'
-const DESKTOP_TAG_PREFIX = 'v'
+// 2026-10-24 版本线拆分：服务端 tag 是 s-v*，桌面客户端 tag 改成 c-v<version>。
+// 与 `.github/scripts/desktop-version.mjs` 的 DESKTOP_TAG_PREFIX 保持同一套约定；
+// 改前缀时两处要一起改，否则「去下载页」的链接会指向不存在的 tag。
+const DESKTOP_TAG_PREFIX = 'c-v'
 
 /**
  * Release 正文 → 纯文本。
@@ -123,7 +126,7 @@ function firstFileSize(info: { files?: readonly { size?: number }[] }): number |
  * 对应版本的 Release 页。
  *
  * macOS 更新签名无效时安装不了，界面要给出"去下载页手动装"的路——那条链接必须真的有
- * href，不能是个点了没反应的 `<a>`。按 tag 规则（v<version>）拼，
+ * href，不能是个点了没反应的 `<a>`。按 tag 规则（c-v<version>）拼，
  * 与 `.github/scripts/desktop-version.mjs` 的 DESKTOP_TAG_PREFIX 是同一套约定。
  */
 function releasePageUrl(version: string): string {

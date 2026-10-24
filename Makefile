@@ -151,10 +151,12 @@ rebuild:
 config:
 	$(COMPOSE) config --quiet
 
-# release/version.json holds the version and update notes. To synchronize
-# generated copies and preview release notes, run: npm run release:prepare
+# 版本线拆分（2026-10-24）：release/version.json 是服务端版本的唯一来源，
+# apps/desktop-client/version.json 是桌面客户端版本的唯一来源。同步副本并预览
+# 两条发布线说明：npm run release:prepare
 version-check:
 	node .github/scripts/version-contract.mjs --check
+	node .github/scripts/desktop-version.mjs --check
 
 # Honest local/CI baseline using only gates that exist today. Coverage gate is
 # 覆盖率门禁：verify 与 release-check 都真卡（2026-09-29 P3-12 统一）。
