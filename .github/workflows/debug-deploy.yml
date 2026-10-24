@@ -13,7 +13,7 @@ jobs:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
         run: |
-          set -u
+          set +e
           echo "host_len=${#DEPLOY_HOST} port=${DEPLOY_PORT} user_len=${#DEPLOY_USER} key_len=${#DEPLOY_SSH_KEY} known_len=${#DEPLOY_KNOWN_HOSTS}"
           test -n "$DEPLOY_HOST" && test -n "$DEPLOY_USER" && test -n "$DEPLOY_SSH_KEY" && test -n "$DEPLOY_KNOWN_HOSTS"
           printf '%s\n' "$DEPLOY_SSH_KEY" > key
