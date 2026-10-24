@@ -219,10 +219,13 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.RELEASE_S3_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.RELEASE_S3_SECRET_ACCESS_KEY }}
+          AWS_MAX_ATTEMPTS: "10"
+          AWS_RETRY_MODE: adaptive
           VERSION: ${{ needs.resolve.outputs.version }}
         run: |
           set -euo pipefail
           aws configure set default.s3.addressing_style path
+          aws configure set default.s3.max_concurrent_requests 1
           aws_cp() {
             aws s3 cp "$@" --endpoint-url "$RELEASE_S3_ENDPOINT" --region "$RELEASE_S3_REGION"               --only-show-errors
           }
