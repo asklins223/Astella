@@ -67,3 +67,28 @@
 - `RELEASE_CENTER_*`、`RELEASE_S3_*` 未在 GitHub 配置：登记与对象存储步骤会自动跳过；资产清单暂用 `https://assets.invalid` 占位。
 - 热更新资产只覆盖 iOS（`notes-web` + `launch-motion`）；Android 热更新按决定暂不做。资产版本目前与原生版本号绑定（同一 tag 一次发布），独立资产 hotfix 尚未拆出。
 - Release Center 当前为空（临时数据已清理），运维面板在首次发布前显示“未发布”。
+
+## 最终上线结果（2026-10-24 18:30 Asia/Shanghai）
+
+- 服务端：`s-v2.0.0` CI + 部署成功，`https://103.106.191.159/app/server-version` 返回 `{version:"2.0.0", tag:"s-v2.0.0"}`；运维面板 `/panel-6b3f9c2d/api/releases` 200。
+- 桌面：`c-v2.0.0` 发布成功，macOS/Windows 已登记为当前版本；`/updates/desktop/latest*.yml` 返回改写后的 GitHub 资产地址。
+- Android：`a-v2.0.0` CI 成功，签名 APK 已发布并登记为当前版本（`signed:true`）。
+- iOS：`i-v2.0.0` CI 成功，unsigned IPA 已发布；按策略只登记历史、不激活为当前可安装版本，因此 `/app/version?platform=ios` 返回 404（面板历史可见）。
+- 对象存储：生产 S3（`https://cn-nb1.rains3.com`，bucket `astella`）已配置；`app-assets/*` 与 `app-releases/*` 加 public-read bucket policy；CI 通过 Release Center 新内部接口上传 blobs（服务器侧写 S3），不再依赖 runner 直连 S3。
+- GitHub secrets：服务端/桌面/手机两仓库均设置 `RELEASE_CENTER_URL/TOKEN`、`RELEASE_S3_*`、`RELEASE_ASSETS_PUBLIC_BASE_URL`；主仓库另设置 `DEPLOY_HOST/USER/PORT/SSH_KEY/KNOWN_HOSTS`。
+- 生产 GitHub Environment `production` 的分支策略原先只允许 `v*` tag，已补 `s-v*` tag，否则 deploy job 会在分配 runner 前直接失败（无日志、无步骤）。
+
+### iOS CI 根因与修复
+
+GitHub `macos-latest` 实际是 Xcode 26.6（只有 Xcode 26.0–26.6），本地是 Xcode 27。项目代码用了 iOS 27 API 且 SwiftUI 表达式在旧类型检查器下超时，表现为 `unable to type-check this expression in reasonable time`。修复：
+- iOS 27 `ToolbarPlacement.statusBar` 用 `#if compiler(>=6.4)` 门控，旧 SDK 回退 `.navigationBar`；
+- `MainTabShell` 的 Tab label/内容拆成子视图，最终改用兼容 Xcode 26 的 `TabView + tabItem + tag`；
+- 拆分思维导图尺寸表达式、提取飞行清理 task、修正 flight id 类型；
+- `xcodebuild` 增加 `-Xfrontend -solver-expression-time-threshold=10000`（旧编译器兜底）；
+- 本地 Xcode 27 用相同 archive 命令验证通过后才推 tag。
+
+### 已知边界
+
+- iOS 仍未签名，unsigned IPA 不能直接安装，也不会成为 `/app/version` 当前版本；Apple 证书就绪后把 `signed` 置真并激活即可。
+- 热更新 blobs 已进 S3；`client-assets-full/incr` 归档仍留在 GitHub Release（JSON 上传接口有 body 上限），因此不再在 `/app/version` 的 `mirrors` 中声明未镜像的归档地址。
+- Android 客户端暂未接入版本检查/热更新；iOS 已接入。
