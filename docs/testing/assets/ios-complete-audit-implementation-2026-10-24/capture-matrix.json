@@ -1,0 +1,2436 @@
+[
+  {
+    "index": 0,
+    "route": "auth-login",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.29,
+    "originalCaptureBasename": "000-auth-login-off.png",
+    "originalCaptureSHA256": "1b9dc4e7cd9373366e2ce79dccf676e24c1a2ba69934f3ab12d7b12c75a90047",
+    "contactSheet": "contact-00.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 1
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 1,
+    "route": "auth-register",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.11,
+    "originalCaptureBasename": "001-auth-register-off.png",
+    "originalCaptureSHA256": "8ad9735353aecea24145730738116a4323c40de3ac471e4c363932808a2a1407",
+    "contactSheet": "contact-00.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 2
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 2,
+    "route": "auth-register-password",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.12,
+    "originalCaptureBasename": "002-auth-register-password-off.png",
+    "originalCaptureSHA256": "0b59e2117f817283ffb53ac2db38935a5e0af079c316e511cb1c491316da12f0",
+    "contactSheet": "contact-00.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 3
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 3,
+    "route": "auth-register-code",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.14,
+    "originalCaptureBasename": "003-auth-register-code-off.png",
+    "originalCaptureSHA256": "f6aa758e53794b77352084a698921a9cc8b5fb3d04633b4a5bc527b9b5b383d4",
+    "contactSheet": "contact-00.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 4
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 4,
+    "route": "auth-forgot",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.09,
+    "originalCaptureBasename": "004-auth-forgot-off.png",
+    "originalCaptureSHA256": "3215e820a71115de88362bb071e64478ee7e5a89108aa183b4c781720cb47a91",
+    "contactSheet": "contact-00.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 1
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 5,
+    "route": "auth-reset",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.14,
+    "originalCaptureBasename": "005-auth-reset-off.png",
+    "originalCaptureSHA256": "4d06917b1b2b7c889614c965ee8e41399a1ba072257f678dbf74043e56a3ad8e",
+    "contactSheet": "contact-00.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 2
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 6,
+    "route": "auth-reset-password",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.13,
+    "originalCaptureBasename": "006-auth-reset-password-off.png",
+    "originalCaptureSHA256": "98f3dd17365c8e31846abf2efbe8cb5b9b6e93a4f524d22fe3e261490062ae81",
+    "contactSheet": "contact-00.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 3
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 7,
+    "route": "auth-email-login",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.12,
+    "originalCaptureBasename": "007-auth-email-login-off.png",
+    "originalCaptureSHA256": "7e2076e25a91f1ae69d3c280db4686484b1965f9c0b988ed25296ebe4379b1c5",
+    "contactSheet": "contact-00.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 4
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 8,
+    "route": "auth-email-login-code",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.1,
+    "originalCaptureBasename": "008-auth-email-login-code-off.png",
+    "originalCaptureSHA256": "4161138f7e95a63878047f8db2cfc303c9fdfc5ce06578ae862652d9e5122298",
+    "contactSheet": "contact-00.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 1
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 9,
+    "route": "profile",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.12,
+    "originalCaptureBasename": "009-profile-off.png",
+    "originalCaptureSHA256": "f285d5d8ee6e79c5e6b3f7e0b4ab4fb6fecebb2a57ea80f3422d63509789553c",
+    "contactSheet": "contact-00.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 2
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 10,
+    "route": "companion-center",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.16,
+    "originalCaptureBasename": "010-companion-center-off.png",
+    "originalCaptureSHA256": "b447bb8a67f2d86ed2d1f8f1a93cc2d1a66f6de76914653ec6258ab2eebfaa3c",
+    "contactSheet": "contact-00.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 3
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 11,
+    "route": "companion-settings",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.12,
+    "originalCaptureBasename": "011-companion-settings-off.png",
+    "originalCaptureSHA256": "3c3dd645b830f7d837b02d05a15fc92add71e790ad7bd55a500c5deba94ddd0a",
+    "contactSheet": "contact-00.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 4
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 12,
+    "route": "companion-settings-loading",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.13,
+    "originalCaptureBasename": "012-companion-settings-loading-off.png",
+    "originalCaptureSHA256": "ea3f1d07161f46e94073270f0b42ec8a972d9b2b1a6272c8be2f59b09ac5182e",
+    "contactSheet": "contact-01.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 1
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 13,
+    "route": "companion-settings-error",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.13,
+    "originalCaptureBasename": "013-companion-settings-error-off.png",
+    "originalCaptureSHA256": "ff586893388e7eb914beb1cd6794cc2b98498c20ac062174856977246935cff3",
+    "contactSheet": "contact-01.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 2
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 14,
+    "route": "reading-settings",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.13,
+    "originalCaptureBasename": "014-reading-settings-off.png",
+    "originalCaptureSHA256": "c43e6180a89deea7e557fd35a0577603bc71f4a35f45c1e9b4f4a0f98ddad8ce",
+    "contactSheet": "contact-01.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 3
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 15,
+    "route": "device-permissions",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.12,
+    "originalCaptureBasename": "015-device-permissions-off.png",
+    "originalCaptureSHA256": "9567878152a6a68b0cde4ce15939a5aacba2d6bef758b9e663571ba3ad382b87",
+    "contactSheet": "contact-01.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 4
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 16,
+    "route": "ai-authorization",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.1,
+    "originalCaptureBasename": "016-ai-authorization-off.png",
+    "originalCaptureSHA256": "35dc8bf4375d52617667cdd515a5a442fdc0cb15af9d122c80db9864701f59b2",
+    "contactSheet": "contact-01.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 1
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 17,
+    "route": "ai-authorization-required",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.11,
+    "originalCaptureBasename": "017-ai-authorization-required-off.png",
+    "originalCaptureSHA256": "eb03e196987a8e1ef0842c2c3122172b74b31b877c72dd1c31d74e8dc4eaf8f5",
+    "contactSheet": "contact-01.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 2
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 18,
+    "route": "ai-authorization-loading",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.1,
+    "originalCaptureBasename": "018-ai-authorization-loading-off.png",
+    "originalCaptureSHA256": "bac48202f97d8976cb5baa168c50a88334713473ab51b420b853397a22ee8b4d",
+    "contactSheet": "contact-01.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 3
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 19,
+    "route": "ai-authorization-error",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.14,
+    "originalCaptureBasename": "019-ai-authorization-error-off.png",
+    "originalCaptureSHA256": "7241ae941ac49003ef364a5ef149758d8f4562053b2a86952cd9751fc8973f5a",
+    "contactSheet": "contact-01.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 4
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 20,
+    "route": "conventions",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.11,
+    "originalCaptureBasename": "020-conventions-off.png",
+    "originalCaptureSHA256": "be496a8ef96f903e3b615f7f2ef561a16060f1cfe2f3acced2b23f76f29ebbb3",
+    "contactSheet": "contact-01.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 1
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 21,
+    "route": "conventions-loading",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.12,
+    "originalCaptureBasename": "021-conventions-loading-off.png",
+    "originalCaptureSHA256": "b83376625941948f2dcbdcb3bf16b0baafd56dd3398fe3d56e6909f40d59a9f9",
+    "contactSheet": "contact-01.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 2
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 22,
+    "route": "conventions-error",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.13,
+    "originalCaptureBasename": "022-conventions-error-off.png",
+    "originalCaptureSHA256": "68f81fbe142096587c4c3cf90154b55c6081ca4081199fecb021113df002eae4",
+    "contactSheet": "contact-01.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 3
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 23,
+    "route": "conventions-empty",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.11,
+    "originalCaptureBasename": "023-conventions-empty-off.png",
+    "originalCaptureSHA256": "1af4a90549f9a9dbdc24da6de5154581656ed29c63eae72dec91d4625d476f30",
+    "contactSheet": "contact-01.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 4
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 24,
+    "route": "server-address",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.12,
+    "originalCaptureBasename": "024-server-address-off.png",
+    "originalCaptureSHA256": "939b449b06a7da9976c63b5e6c3733ea2c53bdb53b35c2455c01fcc161d7c349",
+    "contactSheet": "contact-02.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 1
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 25,
+    "route": "settings",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.11,
+    "originalCaptureBasename": "025-settings-off.png",
+    "originalCaptureSHA256": "d0dff0791171e7405f58146d8a66332ca7e05390834772da9d3579a461786bcd",
+    "contactSheet": "contact-02.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 2
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 26,
+    "route": "change-password",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.14,
+    "originalCaptureBasename": "026-change-password-off.png",
+    "originalCaptureSHA256": "7f59eb7bd05a40bc58c607a53286eac763208e9066600803c031e043a094bd3c",
+    "contactSheet": "contact-02.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 3
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 27,
+    "route": "cache-management",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.26,
+    "originalCaptureBasename": "027-cache-management-off.png",
+    "originalCaptureSHA256": "525171aae9de0539e91de28c8d45e1c492d8483ceef74eafc535f1f911daa7c5",
+    "contactSheet": "contact-02.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 4
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 28,
+    "route": "about",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.35,
+    "originalCaptureBasename": "028-about-off.png",
+    "originalCaptureSHA256": "497e311ec87710c9ddd5afb35e31bf4d4a0929a4be1eae07eb65d5f0245be6b1",
+    "contactSheet": "contact-02.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 1
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 29,
+    "route": "workspace-management",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 5.84,
+    "originalCaptureBasename": "029-workspace-management-off.png",
+    "originalCaptureSHA256": "525171aae9de0539e91de28c8d45e1c492d8483ceef74eafc535f1f911daa7c5",
+    "contactSheet": "contact-02.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 2
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 30,
+    "route": "workspace-management-dissolve",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.82,
+    "originalCaptureBasename": "030-workspace-management-dissolve-off.png",
+    "originalCaptureSHA256": "525171aae9de0539e91de28c8d45e1c492d8483ceef74eafc535f1f911daa7c5",
+    "contactSheet": "contact-02.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 3
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 31,
+    "route": "invite-management",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.91,
+    "originalCaptureBasename": "031-invite-management-off.png",
+    "originalCaptureSHA256": "525171aae9de0539e91de28c8d45e1c492d8483ceef74eafc535f1f911daa7c5",
+    "contactSheet": "contact-02.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 4
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 32,
+    "route": "invite-management-member",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.68,
+    "originalCaptureBasename": "032-invite-management-member-off.png",
+    "originalCaptureSHA256": "525171aae9de0539e91de28c8d45e1c492d8483ceef74eafc535f1f911daa7c5",
+    "contactSheet": "contact-02.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 1
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 33,
+    "route": "invite-management-personal",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.81,
+    "originalCaptureBasename": "033-invite-management-personal-off.png",
+    "originalCaptureSHA256": "525171aae9de0539e91de28c8d45e1c492d8483ceef74eafc535f1f911daa7c5",
+    "contactSheet": "contact-02.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 2
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 34,
+    "route": "invite-management-members",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.59,
+    "originalCaptureBasename": "034-invite-management-members-off.png",
+    "originalCaptureSHA256": "525171aae9de0539e91de28c8d45e1c492d8483ceef74eafc535f1f911daa7c5",
+    "contactSheet": "contact-02.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 3
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 35,
+    "route": "invite-management-receipt",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.86,
+    "originalCaptureBasename": "035-invite-management-receipt-off.png",
+    "originalCaptureSHA256": "525171aae9de0539e91de28c8d45e1c492d8483ceef74eafc535f1f911daa7c5",
+    "contactSheet": "contact-02.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 4
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 36,
+    "route": "conversation",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.66,
+    "originalCaptureBasename": "036-conversation-off.png",
+    "originalCaptureSHA256": "525171aae9de0539e91de28c8d45e1c492d8483ceef74eafc535f1f911daa7c5",
+    "contactSheet": "contact-03.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 1
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 37,
+    "route": "conversation-speaking",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.26,
+    "originalCaptureBasename": "037-conversation-speaking-off.png",
+    "originalCaptureSHA256": "525171aae9de0539e91de28c8d45e1c492d8483ceef74eafc535f1f911daa7c5",
+    "contactSheet": "contact-03.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 2
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 38,
+    "route": "records",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.22,
+    "originalCaptureBasename": "038-records-off.png",
+    "originalCaptureSHA256": "525171aae9de0539e91de28c8d45e1c492d8483ceef74eafc535f1f911daa7c5",
+    "contactSheet": "contact-03.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 3
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 39,
+    "route": "records-plain",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.17,
+    "originalCaptureBasename": "039-records-plain-off.png",
+    "originalCaptureSHA256": "525171aae9de0539e91de28c8d45e1c492d8483ceef74eafc535f1f911daa7c5",
+    "contactSheet": "contact-03.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 4
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 40,
+    "route": "records-inputs",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.14,
+    "originalCaptureBasename": "040-records-inputs-off.png",
+    "originalCaptureSHA256": "525171aae9de0539e91de28c8d45e1c492d8483ceef74eafc535f1f911daa7c5",
+    "contactSheet": "contact-03.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 1
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 41,
+    "route": "records-rich",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.35,
+    "originalCaptureBasename": "041-records-rich-off.png",
+    "originalCaptureSHA256": "a3926da2e683718b56862f7d60d6905be559a39c72bfc7e1e9d1414d3fd8ca17",
+    "contactSheet": "contact-03.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 2
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 42,
+    "route": "records-confirmation",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.14,
+    "originalCaptureBasename": "042-records-confirmation-off.png",
+    "originalCaptureSHA256": "dbd35be7c4719481f34370e5acd04e74e4a081806e141ba21fdd754810645dc0",
+    "contactSheet": "contact-03.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 3
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 43,
+    "route": "records-proposal-expired",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.39,
+    "originalCaptureBasename": "043-records-proposal-expired-off.png",
+    "originalCaptureSHA256": "4c0391082b5084b58cf13850c33548b8aac9e9878d8187f16fe496c539bfdd6b",
+    "contactSheet": "contact-03.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 4
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 44,
+    "route": "records-proposal-executing",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.39,
+    "originalCaptureBasename": "044-records-proposal-executing-off.png",
+    "originalCaptureSHA256": "a63482a2a78746355dc92e05976775d20ce541dce4db9c1bbc94eec5ec8855b0",
+    "contactSheet": "contact-03.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 1
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 45,
+    "route": "records-proposal-failed",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.67,
+    "originalCaptureBasename": "045-records-proposal-failed-off.png",
+    "originalCaptureSHA256": "5e6349b7629290184302e229183eb4ae1e46417afb9a16e36550754ac52c07c1",
+    "contactSheet": "contact-03.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 2
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 46,
+    "route": "records-background",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.87,
+    "originalCaptureBasename": "046-records-background-off.png",
+    "originalCaptureSHA256": "a63482a2a78746355dc92e05976775d20ce541dce4db9c1bbc94eec5ec8855b0",
+    "contactSheet": "contact-03.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 3
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 47,
+    "route": "records-problems",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 4.22,
+    "originalCaptureBasename": "047-records-problems-off.png",
+    "originalCaptureSHA256": "a63482a2a78746355dc92e05976775d20ce541dce4db9c1bbc94eec5ec8855b0",
+    "contactSheet": "contact-03.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 4
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 48,
+    "route": "library",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.59,
+    "originalCaptureBasename": "048-library-off.png",
+    "originalCaptureSHA256": "a63482a2a78746355dc92e05976775d20ce541dce4db9c1bbc94eec5ec8855b0",
+    "contactSheet": "contact-04.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 1
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 49,
+    "route": "library-loading",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.39,
+    "originalCaptureBasename": "049-library-loading-off.png",
+    "originalCaptureSHA256": "a63482a2a78746355dc92e05976775d20ce541dce4db9c1bbc94eec5ec8855b0",
+    "contactSheet": "contact-04.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 2
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 50,
+    "route": "library-empty",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.87,
+    "originalCaptureBasename": "050-library-empty-off.png",
+    "originalCaptureSHA256": "c2335138167659eeb4eefcdc0a261bf0128ecad09e4ec61625470a25f6cadcb0",
+    "contactSheet": "contact-04.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 3
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 51,
+    "route": "library-error",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.09,
+    "originalCaptureBasename": "051-library-error-off.png",
+    "originalCaptureSHA256": "260062d62b533ba02563cfe63e2cf16997ff08b024b70c8dce2214efbe2296c5",
+    "contactSheet": "contact-04.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 4
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 52,
+    "route": "library-rename",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.1,
+    "originalCaptureBasename": "052-library-rename-off.png",
+    "originalCaptureSHA256": "84bcb0f2537267c779ae8544fe10b947d508cdec0cb081ed97bcef97ce2f4b42",
+    "contactSheet": "contact-04.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 1
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 53,
+    "route": "library-rename-done",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.08,
+    "originalCaptureBasename": "053-library-rename-done-off.png",
+    "originalCaptureSHA256": "79f1aad2b3dccea2b6eff08d36f54cdd0648313158e0d23d8fcb94246e48b5c8",
+    "contactSheet": "contact-04.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 2
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 54,
+    "route": "library-delete",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.08,
+    "originalCaptureBasename": "054-library-delete-off.png",
+    "originalCaptureSHA256": "b150769d42661398b8ad64619d87fc2279750ae8ae94068776478ae1adcc0de6",
+    "contactSheet": "contact-04.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 3
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 55,
+    "route": "library-deleted",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.12,
+    "originalCaptureBasename": "055-library-deleted-off.png",
+    "originalCaptureSHA256": "bad32dff492ad7582f01369c5b9c0689b878ae47624503ece24ce91b53fd756c",
+    "contactSheet": "contact-04.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 4
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 56,
+    "route": "read",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.17,
+    "originalCaptureBasename": "056-read-off.png",
+    "originalCaptureSHA256": "a63482a2a78746355dc92e05976775d20ce541dce4db9c1bbc94eec5ec8855b0",
+    "contactSheet": "contact-04.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 1
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 57,
+    "route": "read-loading",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.18,
+    "originalCaptureBasename": "057-read-loading-off.png",
+    "originalCaptureSHA256": "b444e6d504af56d4d8c979b5873ec3f45a1a7dc5da16a38925e855bf7f2dfee5",
+    "contactSheet": "contact-04.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 2
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 58,
+    "route": "orbit",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.13,
+    "originalCaptureBasename": "058-orbit-off.png",
+    "originalCaptureSHA256": "1f9d54838e5195b21c42797c1fad0eb0444fd42527d7963eb3445d915ed2ee9a",
+    "contactSheet": "contact-04.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 3
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 59,
+    "route": "orbit-memory",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.3,
+    "originalCaptureBasename": "059-orbit-memory-off.png",
+    "originalCaptureSHA256": "d1b63787fb3f4f28bc648e52ea99f51828e9bb91239ee721f0cc5842c1f3fb68",
+    "contactSheet": "contact-04.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 4
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 60,
+    "route": "orbit-tasks",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.19,
+    "originalCaptureBasename": "060-orbit-tasks-off.png",
+    "originalCaptureSHA256": "a045e794ca5785b00f2c146f6219a6e2c032c618a3f88112d4182ae6052a3811",
+    "contactSheet": "contact-05.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 1
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 61,
+    "route": "orbit-memory-detail",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.24,
+    "originalCaptureBasename": "061-orbit-memory-detail-off.png",
+    "originalCaptureSHA256": "52f18fd759ca657638d3f4110959eb395b233343a057012a0679906515f6c81b",
+    "contactSheet": "contact-05.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 2
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 62,
+    "route": "orbit-memory-detail-candidate",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.23,
+    "originalCaptureBasename": "062-orbit-memory-detail-candidate-off.png",
+    "originalCaptureSHA256": "430f7bd2615bcc62fcfbf4c67a9c3ee990417c6bbc7f231717d966bc5d0b8da6",
+    "contactSheet": "contact-05.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 3
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 63,
+    "route": "orbit-memory-detail-pinned",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.15,
+    "originalCaptureBasename": "063-orbit-memory-detail-pinned-off.png",
+    "originalCaptureSHA256": "102ded3400c8477e6e885a0f10a722185e6198a5255a25cfb6c40b0f7a6f00de",
+    "contactSheet": "contact-05.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 4
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 64,
+    "route": "orbit-memory-detail-archived",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.11,
+    "originalCaptureBasename": "064-orbit-memory-detail-archived-off.png",
+    "originalCaptureSHA256": "d6597af1638b9b57876c9f80e30ffbb8d5fe7e3326e1ee90d54a804a515dfdb9",
+    "contactSheet": "contact-05.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 1
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 65,
+    "route": "orbit-memory-detail-disputed",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.1,
+    "originalCaptureBasename": "065-orbit-memory-detail-disputed-off.png",
+    "originalCaptureSHA256": "5176ab379a9b5e553a9684c8a6a16a3ec715482f777f10d847af3cbf2d3a1a63",
+    "contactSheet": "contact-05.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 2
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 66,
+    "route": "orbit-memory-detail-superseded",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.1,
+    "originalCaptureBasename": "066-orbit-memory-detail-superseded-off.png",
+    "originalCaptureSHA256": "bdbed84cc08221c7104caa6886cecba13af19e18d1be121cb3d4ff898bf7bab4",
+    "contactSheet": "contact-05.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 3
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 67,
+    "route": "orbit-memory-detail-conflict",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.09,
+    "originalCaptureBasename": "067-orbit-memory-detail-conflict-off.png",
+    "originalCaptureSHA256": "8705e597fb10dcc50d9d9e6aa208e7ae62eaf66bfbb426d2fac1e5d100412254",
+    "contactSheet": "contact-05.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 4
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 68,
+    "route": "orbit-memory-detail-long",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.13,
+    "originalCaptureBasename": "068-orbit-memory-detail-long-off.png",
+    "originalCaptureSHA256": "2a94315df77518d7a96e4baf7c236d98e1886e80c1e2dcf03ac31d6af822375c",
+    "contactSheet": "contact-05.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 1
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 69,
+    "route": "orbit-memory-detail-missing",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.09,
+    "originalCaptureBasename": "069-orbit-memory-detail-missing-off.png",
+    "originalCaptureSHA256": "a4173ab0eff88d8258cf53fd08080dbb4cd0e4839a360c0ca434f47c6baaea47",
+    "contactSheet": "contact-05.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 2
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 70,
+    "route": "orbit-memory-detail-dismissed",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.09,
+    "originalCaptureBasename": "070-orbit-memory-detail-dismissed-off.png",
+    "originalCaptureSHA256": "8d43f16a6520bf79bc614e8a74c1434780f96e838000a1b010c380e23ed3faa7",
+    "contactSheet": "contact-05.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 3
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 71,
+    "route": "orbit-memory-detail-loading",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.07,
+    "originalCaptureBasename": "071-orbit-memory-detail-loading-off.png",
+    "originalCaptureSHA256": "e09006c82596dddb58e0d437a9d080fdecfb1b65c11f44ca0422f7e8dbaed010",
+    "contactSheet": "contact-05.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 4
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 72,
+    "route": "orbit-memory-detail-error",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.08,
+    "originalCaptureBasename": "072-orbit-memory-detail-error-off.png",
+    "originalCaptureSHA256": "6277751935293a8ecd79d3bd7e066ab4a40855ff8df7f93552b08dec9808548e",
+    "contactSheet": "contact-06.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 1
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 73,
+    "route": "orbit-memory-detail-goal",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.11,
+    "originalCaptureBasename": "073-orbit-memory-detail-goal-off.png",
+    "originalCaptureSHA256": "e8d960702b0776b2250ac4232941493963c5c33ab95031f551a55a28712cdeca",
+    "contactSheet": "contact-06.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 2
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 74,
+    "route": "me",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.08,
+    "originalCaptureBasename": "074-me-off.png",
+    "originalCaptureSHA256": "cc3723475cdc796ceba7e5f4af7b185b7ed50ed08d4183520b2de1175d59235a",
+    "contactSheet": "contact-06.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 3
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 75,
+    "route": "me-bottom",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.12,
+    "originalCaptureBasename": "075-me-bottom-off.png",
+    "originalCaptureSHA256": "cc3723475cdc796ceba7e5f4af7b185b7ed50ed08d4183520b2de1175d59235a",
+    "contactSheet": "contact-06.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 4
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 76,
+    "route": "diary",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.1,
+    "originalCaptureBasename": "076-diary-off.png",
+    "originalCaptureSHA256": "0b691ee99fea4f24962a3073b3af9d7cc09388b765a59c881421e68cde91e531",
+    "contactSheet": "contact-06.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 1
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 77,
+    "route": "diary-loading",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.08,
+    "originalCaptureBasename": "077-diary-loading-off.png",
+    "originalCaptureSHA256": "5b8b4c983e0431bc94767ee62aafc9dec81479b63b67c32b3e00c572abbab83f",
+    "contactSheet": "contact-06.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 2
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 78,
+    "route": "note-overview-generating",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.14,
+    "originalCaptureBasename": "078-note-overview-generating-off.png",
+    "originalCaptureSHA256": "0bfa814697d3fecf6ed0ffa4b51afa0044c386a71786f50ca18313bb2a7a273e",
+    "contactSheet": "contact-06.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 3
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 79,
+    "route": "note-mind-map-generating",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.14,
+    "originalCaptureBasename": "079-note-mind-map-generating-off.png",
+    "originalCaptureSHA256": "bc74f27ad8bd766ce5d37be6155b6303553a636fe01f6b1b084434c2a1537a72",
+    "contactSheet": "contact-06.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 4
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 80,
+    "route": "note-expansion-generating",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.18,
+    "originalCaptureBasename": "080-note-expansion-generating-off.png",
+    "originalCaptureSHA256": "6233f7ee8a85c700fd5cc21d9d8c5ce95ba6e61662d8ff410028d55ac56946c8",
+    "contactSheet": "contact-06.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 1
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 81,
+    "route": "note-working",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.14,
+    "originalCaptureBasename": "081-note-working-off.png",
+    "originalCaptureSHA256": "217d0ca5a4b85def9b939ac89ac5b9e88a9fefe0a2dc8975d578e2eef030272c",
+    "contactSheet": "contact-06.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 2
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 82,
+    "route": "note-rewrite",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.17,
+    "originalCaptureBasename": "082-note-rewrite-off.png",
+    "originalCaptureSHA256": "63fee0524287bafe3799ea8f6f7cf8941b45632f9a1f9a7dc1b4f35718fa3a2c",
+    "contactSheet": "contact-06.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 3
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 83,
+    "route": "note-overview",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.16,
+    "originalCaptureBasename": "083-note-overview-off.png",
+    "originalCaptureSHA256": "5da08e9cb5e616352ab0fe74f44a9cca0ee14d62545798fa1c0c22cad2dfeb4a",
+    "contactSheet": "contact-06.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 4
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 84,
+    "route": "note-overview-ready",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.14,
+    "originalCaptureBasename": "084-note-overview-ready-off.png",
+    "originalCaptureSHA256": "6816c5f31933f1f163776d25f0448b173b154e0a604212042c0a496c1b69cfb6",
+    "contactSheet": "contact-07.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 1
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 85,
+    "route": "note-mind-map",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.12,
+    "originalCaptureBasename": "085-note-mind-map-off.png",
+    "originalCaptureSHA256": "68df7c753c26627e30551affda40e8d960cea468fc6059dc803e04ac52229c60",
+    "contactSheet": "contact-07.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 2
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 86,
+    "route": "note-annotations",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.07,
+    "originalCaptureBasename": "086-note-annotations-off.png",
+    "originalCaptureSHA256": "217d0ca5a4b85def9b939ac89ac5b9e88a9fefe0a2dc8975d578e2eef030272c",
+    "contactSheet": "contact-07.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 3
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 87,
+    "route": "note-annotations-multiple",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.14,
+    "originalCaptureBasename": "087-note-annotations-multiple-off.png",
+    "originalCaptureSHA256": "217d0ca5a4b85def9b939ac89ac5b9e88a9fefe0a2dc8975d578e2eef030272c",
+    "contactSheet": "contact-07.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 4
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 88,
+    "route": "note-explain-ready",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.16,
+    "originalCaptureBasename": "088-note-explain-ready-off.png",
+    "originalCaptureSHA256": "dede656dbc11d80fad951bd895100c34600b0f922462c192e73eefdfb1116a3d",
+    "contactSheet": "contact-07.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 1
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 89,
+    "route": "note-versions",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.16,
+    "originalCaptureBasename": "089-note-versions-off.png",
+    "originalCaptureSHA256": "a2d3c9f7ea5e433d2d8b1e97592fdb173fad1b2e16d21fb23dd3663ef25be7bb",
+    "contactSheet": "contact-07.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 2
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 90,
+    "route": "note-outline",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.12,
+    "originalCaptureBasename": "090-note-outline-off.png",
+    "originalCaptureSHA256": "217d0ca5a4b85def9b939ac89ac5b9e88a9fefe0a2dc8975d578e2eef030272c",
+    "contactSheet": "contact-07.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 3
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 91,
+    "route": "note-outline-empty",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.13,
+    "originalCaptureBasename": "091-note-outline-empty-off.png",
+    "originalCaptureSHA256": "e6dd57847a9316e38b4570f47d13e84626fdefb8d1c06c80dea2dc02d5e48b7e",
+    "contactSheet": "contact-07.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 4
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 92,
+    "route": "note-outline-jump",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.1,
+    "originalCaptureBasename": "092-note-outline-jump-off.png",
+    "originalCaptureSHA256": "217d0ca5a4b85def9b939ac89ac5b9e88a9fefe0a2dc8975d578e2eef030272c",
+    "contactSheet": "contact-07.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 1
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 93,
+    "route": "note-expansion",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.18,
+    "originalCaptureBasename": "093-note-expansion-off.png",
+    "originalCaptureSHA256": "a0d943efc9bb05e5f62d3acf75f488953d7648380efc676cbe84d3563549bca6",
+    "contactSheet": "contact-07.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 2
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 94,
+    "route": "note-expansion-saved",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.23,
+    "originalCaptureBasename": "094-note-expansion-saved-off.png",
+    "originalCaptureSHA256": "0a7e59dc7b96976cd2d05cf93ecf602f42d6961b4e6b93d8f23010fe6805eb8d",
+    "contactSheet": "contact-07.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 3
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 95,
+    "route": "note-learning-card",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.16,
+    "originalCaptureBasename": "095-note-learning-card-off.png",
+    "originalCaptureSHA256": "e48666db57b6a4b523ba879f622c03fd2d155b7e3b4b8a5359f5a4b45ad8557c",
+    "contactSheet": "contact-07.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 4
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 96,
+    "route": "note-learning-practice",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.12,
+    "originalCaptureBasename": "096-note-learning-practice-off.png",
+    "originalCaptureSHA256": "295702b47f9009a13b09462de10ca335c59051e0dfb196577aaeab2f7f2a4b94",
+    "contactSheet": "contact-08.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 1
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 97,
+    "route": "note-learning-generating",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.1,
+    "originalCaptureBasename": "097-note-learning-generating-off.png",
+    "originalCaptureSHA256": "afa7d7076c3c86e2bfef0f453aabf48e4f78fd95dc893f4cf9683fdec600e471",
+    "contactSheet": "contact-08.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 2
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 98,
+    "route": "note-learning-result",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.11,
+    "originalCaptureBasename": "098-note-learning-result-off.png",
+    "originalCaptureSHA256": "1f8ac3971beb37cba2f39b253191431dc7dd52138bbfeaee71e068e4bb8eff5a",
+    "contactSheet": "contact-08.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 3
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 99,
+    "route": "note-learning-result-zero",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.1,
+    "originalCaptureBasename": "099-note-learning-result-zero-off.png",
+    "originalCaptureSHA256": "08658fa461883bb57e1f3b6e47860b47aa9485cc5891a4bdcbdf58d225100d94",
+    "contactSheet": "contact-08.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 4
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 100,
+    "route": "conversation-speaking",
+    "variant": "dark-large",
+    "arguments": [
+      "--ui-dark",
+      "--ui-large-type",
+      "--ui-long-content",
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.11,
+    "originalCaptureBasename": "100-conversation-speaking-dark-large.png",
+    "originalCaptureSHA256": "9a83c40b3cb6a8abb43aece326b8be503e234f18fadf46b7a4a19fa05ba333da",
+    "contactSheet": "contact-08.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 1
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 101,
+    "route": "records-rich",
+    "variant": "dark-large",
+    "arguments": [
+      "--ui-dark",
+      "--ui-large-type",
+      "--ui-long-content",
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.14,
+    "originalCaptureBasename": "101-records-rich-dark-large.png",
+    "originalCaptureSHA256": "64f73d6f2ef57ad44c9a0a0f93ffe0370536d4645e56555c7d31d8717b288d54",
+    "contactSheet": "contact-08.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 2
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 102,
+    "route": "library",
+    "variant": "dark-large",
+    "arguments": [
+      "--ui-dark",
+      "--ui-large-type",
+      "--ui-long-content",
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.1,
+    "originalCaptureBasename": "102-library-dark-large.png",
+    "originalCaptureSHA256": "b316bc0caff14536000ff6e2b2e2182c5e27f0d4f23e71748107cbdcdffbbcfd",
+    "contactSheet": "contact-08.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 3
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 103,
+    "route": "read",
+    "variant": "dark-large",
+    "arguments": [
+      "--ui-dark",
+      "--ui-large-type",
+      "--ui-long-content",
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.09,
+    "originalCaptureBasename": "103-read-dark-large.png",
+    "originalCaptureSHA256": "71fd10122fc14895e0926277991a5d81b90256276929df9fd6cf098064f205c7",
+    "contactSheet": "contact-08.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 4
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 104,
+    "route": "orbit",
+    "variant": "dark-large",
+    "arguments": [
+      "--ui-dark",
+      "--ui-large-type",
+      "--ui-long-content",
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.11,
+    "originalCaptureBasename": "104-orbit-dark-large.png",
+    "originalCaptureSHA256": "b92964bc9f9464035b5ec61e3f956c1f2fe26eceb5e30ee8234d0a37995f06cb",
+    "contactSheet": "contact-08.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 1
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 105,
+    "route": "orbit-memory-detail-long",
+    "variant": "dark-large",
+    "arguments": [
+      "--ui-dark",
+      "--ui-large-type",
+      "--ui-long-content",
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.13,
+    "originalCaptureBasename": "105-orbit-memory-detail-long-dark-large.png",
+    "originalCaptureSHA256": "c187e1cc385e1f8e1aca92150e2c8649296eac8c7c284e93b5bec8f1b7239851",
+    "contactSheet": "contact-08.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 2
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 106,
+    "route": "me",
+    "variant": "dark-large",
+    "arguments": [
+      "--ui-dark",
+      "--ui-large-type",
+      "--ui-long-content",
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.1,
+    "originalCaptureBasename": "106-me-dark-large.png",
+    "originalCaptureSHA256": "9f296a8da9dda36fe9a4a2e2adb5095a52d3f012dd71cf7e1dbc0ad560b75fcb",
+    "contactSheet": "contact-08.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 3
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 107,
+    "route": "profile",
+    "variant": "dark-large",
+    "arguments": [
+      "--ui-dark",
+      "--ui-large-type",
+      "--ui-long-content",
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.22,
+    "originalCaptureBasename": "107-profile-dark-large.png",
+    "originalCaptureSHA256": "239203d2bbf5cb22d92557487a9c698732ba622b1f6c3364aeaff55c69a33d53",
+    "contactSheet": "contact-08.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 4
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 108,
+    "route": "conventions",
+    "variant": "dark-large",
+    "arguments": [
+      "--ui-dark",
+      "--ui-large-type",
+      "--ui-long-content",
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.1,
+    "originalCaptureBasename": "108-conventions-dark-large.png",
+    "originalCaptureSHA256": "092d1df2e9649b7a6eb84cb711ee1681479146568204f1b1a9a6c07c43750e18",
+    "contactSheet": "contact-09.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 1
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 109,
+    "route": "settings",
+    "variant": "dark-large",
+    "arguments": [
+      "--ui-dark",
+      "--ui-large-type",
+      "--ui-long-content",
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.07,
+    "originalCaptureBasename": "109-settings-dark-large.png",
+    "originalCaptureSHA256": "34fce06c19cf3365585e477b3cf7a3c0e19bc7bd3b79ba9f1f701b70d23d286b",
+    "contactSheet": "contact-09.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 2
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 110,
+    "route": "invite-management",
+    "variant": "dark-large",
+    "arguments": [
+      "--ui-dark",
+      "--ui-large-type",
+      "--ui-long-content",
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.19,
+    "originalCaptureBasename": "110-invite-management-dark-large.png",
+    "originalCaptureSHA256": "442815ad1d0f1b1449ebb6f948ed100d529410e09c6797eae82370c17bb054c7",
+    "contactSheet": "contact-09.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 3
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 111,
+    "route": "note-overview-ready",
+    "variant": "dark-large",
+    "arguments": [
+      "--ui-dark",
+      "--ui-large-type",
+      "--ui-long-content",
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.17,
+    "originalCaptureBasename": "111-note-overview-ready-dark-large.png",
+    "originalCaptureSHA256": "ec068ea34fe7c1d4303b6fb371fb984b980d1703348b0b6c66754907098e3f2b",
+    "contactSheet": "contact-09.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 4
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 112,
+    "route": "note-mind-map",
+    "variant": "dark-large",
+    "arguments": [
+      "--ui-dark",
+      "--ui-large-type",
+      "--ui-long-content",
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.24,
+    "originalCaptureBasename": "112-note-mind-map-dark-large.png",
+    "originalCaptureSHA256": "0e975d1fc318c12915df1047747b72e9c7e319bb64173b236449d631bbe432b2",
+    "contactSheet": "contact-09.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 1
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 113,
+    "route": "note-learning-practice",
+    "variant": "dark-large",
+    "arguments": [
+      "--ui-dark",
+      "--ui-large-type",
+      "--ui-long-content",
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.64,
+    "originalCaptureBasename": "113-note-learning-practice-dark-large.png",
+    "originalCaptureSHA256": "003a908a2e2d2ef5e57ad9ef3d69272be4aecb0e4b1b0968d997cdb83f42002b",
+    "contactSheet": "contact-09.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 2
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 114,
+    "route": "note-learning-result",
+    "variant": "dark-large",
+    "arguments": [
+      "--ui-dark",
+      "--ui-large-type",
+      "--ui-long-content",
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.82,
+    "originalCaptureBasename": "114-note-learning-result-dark-large.png",
+    "originalCaptureSHA256": "239203d2bbf5cb22d92557487a9c698732ba622b1f6c3364aeaff55c69a33d53",
+    "contactSheet": "contact-09.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 3
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 115,
+    "route": "auth-login",
+    "variant": "default",
+    "arguments": [],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.96,
+    "originalCaptureBasename": "115-auth-login-default.png",
+    "originalCaptureSHA256": "3ee4e3936494c2f983bb1cd3c056e65d678a000e3b1562b37e4436e32dc10a89",
+    "contactSheet": "contact-09.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 4
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 116,
+    "route": "profile",
+    "variant": "default",
+    "arguments": [],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.66,
+    "originalCaptureBasename": "116-profile-default.png",
+    "originalCaptureSHA256": "5e91317457263993b15d919b85aef62d90969055a9ab7673808808ea4402bacd",
+    "contactSheet": "contact-09.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 1
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 117,
+    "route": "read",
+    "variant": "default",
+    "arguments": [],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.63,
+    "originalCaptureBasename": "117-read-default.png",
+    "originalCaptureSHA256": "239203d2bbf5cb22d92557487a9c698732ba622b1f6c3364aeaff55c69a33d53",
+    "contactSheet": "contact-09.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 2
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 118,
+    "route": "orbit",
+    "variant": "default",
+    "arguments": [],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.73,
+    "originalCaptureBasename": "118-orbit-default.png",
+    "originalCaptureSHA256": "0b770b3de66578eb0363ae6732b87aa64117e4ac7da58d1e81a7de56c32a65d7",
+    "contactSheet": "contact-09.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 3
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 119,
+    "route": "me",
+    "variant": "default",
+    "arguments": [],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.67,
+    "originalCaptureBasename": "119-me-default.png",
+    "originalCaptureSHA256": "9e485a78abd38f252c9149d3d40daf9215a827fe513614789b676435f6dcacc5",
+    "contactSheet": "contact-09.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 4
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 120,
+    "route": "note-overview-ready",
+    "variant": "default",
+    "arguments": [],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.28,
+    "originalCaptureBasename": "120-note-overview-ready-default.png",
+    "originalCaptureSHA256": "26124aa8e0078e17b4e6c4af6500ac100253bbd1b05509baf1761a2c7154db5c",
+    "contactSheet": "contact-10.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 1
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 121,
+    "route": "note-mind-map",
+    "variant": "default",
+    "arguments": [],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.23,
+    "originalCaptureBasename": "121-note-mind-map-default.png",
+    "originalCaptureSHA256": "24db6f021657e7c20ffdedab82592b2f636be90972cc1b3d9fb8b85c86ddebf5",
+    "contactSheet": "contact-10.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 2
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 122,
+    "route": "note-annotations",
+    "variant": "default",
+    "arguments": [],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.09,
+    "originalCaptureBasename": "122-note-annotations-default.png",
+    "originalCaptureSHA256": "d58bc6a60d14637454a17a97ecc49f14851650df18ba42ba11569c4c9162e4ea",
+    "contactSheet": "contact-10.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 3
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 123,
+    "route": "note-versions",
+    "variant": "default",
+    "arguments": [],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.14,
+    "originalCaptureBasename": "123-note-versions-default.png",
+    "originalCaptureSHA256": "5157cf0fb3ba55669fde223e7003426ba6f1d7e20c73db85d454078aaf0ea4df",
+    "contactSheet": "contact-10.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 4
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 124,
+    "route": "note-learning-card",
+    "variant": "default",
+    "arguments": [],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.15,
+    "originalCaptureBasename": "124-note-learning-card-default.png",
+    "originalCaptureSHA256": "3c895bf2b246ebb28e98b441aa695aa8c01ea06922ace538eeb81dff7c4d2759",
+    "contactSheet": "contact-10.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 1
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 125,
+    "route": "note-learning-practice",
+    "variant": "default",
+    "arguments": [],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.12,
+    "originalCaptureBasename": "125-note-learning-practice-default.png",
+    "originalCaptureSHA256": "d6c9b2ea09d69f183f1aa9950a982afff7c7bc0a3d287d061a155a909f7b47f8",
+    "contactSheet": "contact-10.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 2
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  },
+  {
+    "index": 126,
+    "route": "note-learning-result",
+    "variant": "default",
+    "arguments": [],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "seconds": 3.11,
+    "originalCaptureBasename": "126-note-learning-result-default.png",
+    "originalCaptureSHA256": "b5a6196c5eb840530972bee0af0ab18c9f71dfc436a9c7e8a6991a85668350c5",
+    "contactSheet": "contact-10.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 3
+    },
+    "observation": "Initial frame; consult delayed receipt when present"
+  }
+]

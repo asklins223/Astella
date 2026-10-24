@@ -1,0 +1,20 @@
+{
+  "Type": "Live2D Expression",
+  "Parameters": [
+    {
+      "Id": "point",
+      "Value": -1,
+      "Blend": "Add"
+    },
+    {
+      "Id": "danbaofan",
+      "Value": 1,
+      "Blend": "Add"
+    },
+    {
+      "Id": "ji",
+      "Value": 1,
+      "Blend": "Add"
+    }
+  ]
+}

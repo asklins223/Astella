@@ -1,0 +1,152 @@
+[
+  {
+    "operation": "reader-runtime",
+    "seconds": 0.14,
+    "exitCode": 0
+  },
+  {
+    "operation": "simulator-build",
+    "seconds": 35.58,
+    "exitCode": 0
+  },
+  {
+    "operation": "simulator-install",
+    "seconds": 9.97,
+    "exitCode": 0
+  },
+  {
+    "operation": "open-library",
+    "seconds": 2.22,
+    "exitCode": 0
+  },
+  {
+    "operation": "reader-runtime",
+    "seconds": 0.03,
+    "exitCode": 0
+  },
+  {
+    "operation": "simulator-build",
+    "seconds": 31.33,
+    "exitCode": 0
+  },
+  {
+    "operation": "simulator-install",
+    "seconds": 1.87,
+    "exitCode": 0
+  },
+  {
+    "operation": "open-read",
+    "seconds": 2.04,
+    "exitCode": 0
+  },
+  {
+    "operation": "reader-runtime",
+    "seconds": 0.06,
+    "exitCode": 0
+  },
+  {
+    "operation": "simulator-build",
+    "seconds": 26.44,
+    "exitCode": 0
+  },
+  {
+    "operation": "reader-runtime",
+    "seconds": 0.03,
+    "exitCode": 0
+  },
+  {
+    "operation": "simulator-build",
+    "seconds": 9.38,
+    "exitCode": 0
+  },
+  {
+    "operation": "simulator-install",
+    "seconds": 1.04,
+    "exitCode": 0
+  },
+  {
+    "operation": "open-read",
+    "seconds": 0.22,
+    "exitCode": 0
+  },
+  {
+    "operation": "reader-runtime",
+    "seconds": 0.03,
+    "exitCode": 0
+  },
+  {
+    "operation": "simulator-build",
+    "seconds": 15.61,
+    "exitCode": 0
+  },
+  {
+    "operation": "reader-runtime",
+    "seconds": 0.03,
+    "exitCode": 0
+  },
+  {
+    "operation": "simulator-build",
+    "seconds": 15.73,
+    "exitCode": 0
+  },
+  {
+    "operation": "simulator-install",
+    "seconds": 0.96,
+    "exitCode": 0
+  },
+  {
+    "operation": "open-conversation-speaking",
+    "seconds": 0.67,
+    "exitCode": 0
+  },
+  {
+    "operation": "reader-runtime",
+    "seconds": 0.03,
+    "exitCode": 0
+  },
+  {
+    "operation": "simulator-build",
+    "seconds": 9.85,
+    "exitCode": 0
+  },
+  {
+    "operation": "simulator-install",
+    "seconds": 1.03,
+    "exitCode": 0
+  },
+  {
+    "operation": "open-conversation-speaking",
+    "seconds": 0.65,
+    "exitCode": 0
+  },
+  {
+    "operation": "reader-runtime",
+    "seconds": 0.08,
+    "exitCode": 0
+  },
+  {
+    "operation": "simulator-build",
+    "seconds": 17.55,
+    "exitCode": 0
+  },
+  {
+    "operation": "reader-runtime",
+    "seconds": 0.04,
+    "exitCode": 0
+  },
+  {
+    "operation": "simulator-build",
+    "seconds": 4.58,
+    "exitCode": 0
+  },
+  {
+    "operation": "simulator-install",
+    "seconds": 1.02,
+    "exitCode": 0
+  },
+  {
+    "operation": "open-me",
+    "seconds": 0.61,
+    "exitCode": 0
+  }
+]

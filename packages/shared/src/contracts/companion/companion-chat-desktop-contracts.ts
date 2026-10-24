@@ -234,6 +234,10 @@ export const companionRunNodesListRequestV1Schema = z.strictObject({
   includeThinking: z.boolean().optional(),
   /** 读取已加载历史消息对应的轮次，避免旧消息受最近 20 轮窗口限制。 */
   runIds: z.array(z.string().uuid()).max(100).optional(),
+  /** User-only turns still own a run even when no assistant message was saved. */
+  userMessageIds: z.array(z.string().uuid()).max(100).optional(),
+  /** Include unfinished or recoverable work beyond the recent-history window. */
+  includeRecoverable: z.boolean().optional(),
 });
 export type CompanionRunNodesListRequestV1 = z.infer<typeof companionRunNodesListRequestV1Schema>;
 

@@ -1,0 +1,58 @@
+{
+  "recordedAt": "2026-10-23T01:51:34.159Z",
+  "environment": "local synthetic iOS fixture",
+  "messages": [
+    {
+      "id": "3417795a-feaf-4766-b311-00bd6e62e191",
+      "role": "user",
+      "selection": {
+        "text": "清风徐来，水波不兴。\n\n举酒属客，诵明月之诗，歌窈窕之章。",
+        "sharing": "user_selected"
+      },
+      "inputReference": {
+        "kind": "note",
+        "noteId": "ced96eb3-7cdc-4c13-8d2f-0500da129abc",
+        "noteVersionId": "4bf83415-f764-42cb-89af-00785d8fdfb0",
+        "title": "赤壁赋 · 相伴验收"
+      },
+      "blocks": [
+        {
+          "type": "text",
+          "text": "请解释我引用的这两个段落。"
+        }
+      ]
+    },
+    {
+      "id": "860e88d1-a59f-4a35-972f-e954c8272c8f",
+      "role": "user",
+      "blocks": [
+        {
+          "type": "text",
+          "text": "看看这份阅读材料。"
+        },
+        {
+          "type": "file",
+          "url": "/api/uploads/9c204c71-5534-4d55-9ca9-afd8e392d699/companion-files/5c3656b8-8219-4794-9789-00e954b7c6e0/d188b8e6-3de2-4a35-846d-15feb90eefe8.md",
+          "name": "赤壁赋阅读材料.md",
+          "mime": "text/markdown",
+          "byteLength": 99,
+          "text": "# 赤壁赋阅读材料\n\n清风徐来，水波不兴。\n\n风的轻柔与水的宁静相互衬托。"
+        }
+      ]
+    },
+    {
+      "id": "bb695eb3-ef5f-48b8-ab7c-f2e199c153a2",
+      "role": "user",
+      "blocks": [
+        {
+          "type": "image",
+          "url": "/api/uploads/9c204c71-5534-4d55-9ca9-afd8e392d699/companion/4a9a23d8-55b5-4517-ad8e-c7c2102f127c.png",
+          "label": "表情参考.png",
+          "alt": "伴星表情参考",
+          "assetId": "33d5396d-945e-4a51-99f6-3ecbceecb459"
+        }
+      ]
+    }
+  ],
+  "modelRuns": "cancelled immediately after accepted; persistence and upload validation only"
+}

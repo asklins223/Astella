@@ -66,7 +66,7 @@ export function startCompanionEntry(input: {
     let hybrid: CompanionHybridEntry | null = null;
     const classify = () => interpretCompanionTurn(args.provider, args.baseMessages, {
         requestHash: input.requestHash, objects: companionAttentionObjects(args.read, input.relatedGoals),
-        capabilities: companionClassifierCapabilities({ availableToolNames: input.names, pageKind: input.pageKind, userText: args.read.userText }),
+        capabilities: companionClassifierCapabilities({ availableToolNames: input.names, pageKind: input.pageKind, userText: args.read.userText, hasImageAttachments: Boolean(args.read.userImageAttachments?.length) }),
         recentMessages: args.read.recentMessages, conversationClock: args.read.conversationClock,
         job: args.ctx, runId: args.read.runId, userId: args.read.userId, permissionLevel: input.permissionLevel,
         stepTimeoutMs: Math.min(COMPANION_TOOL_INTENT_TIMEOUT_MS, input.deadlineAt - Date.now()),
@@ -80,7 +80,7 @@ export function startCompanionEntry(input: {
     const resolve = async () => {
         if (mode === 'hybrid' && !input.cached && !prepared) {
             const explicit = explicitCompanionProductRequest(args.read.userText);
-            if (input.skipHybrid || explicit.artifact || explicit.newNote
+            if (input.skipHybrid || Boolean(args.read.userImageAttachments?.length) || explicit.artifact || explicit.newNote
                 || companionNamedNoteReadRequest(args.read.userText, input.messages ?? args.baseMessages)) return classify();
             await args.onTurnInterpretation?.(companionDirectInterpretation(input.requestHash));
             hybrid = await runCompanionHybridEntry({ provider: args.provider, fallbackProvider: args.fallbackProvider,

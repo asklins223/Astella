@@ -24,6 +24,7 @@ test("手记重读：从旧 run 恢复原文，普通消息/助手不串引用�
   const selection = { text: "第二段：间隔重复把复习排在快忘还没忘的时刻。\n".repeat(150)
     + "最后更正：这一段不是提醒安排，只是对记忆机制的说明。", sharing: "user_selected" as const };
   const question = "请用通俗易懂的话解释这段。";
+  const inputReference = { kind: "note" as const, noteId: randomUUID(), noteVersionId: randomUUID(), title: "发送时的手记标题" };
   const scoped = <T>(operation: (tx: postgres.TransactionSql) => Promise<T>) => connection.begin(async (tx) => {
     await tx`SELECT set_config('app.workspace_id', ${scope.workspaceId}, true)`;
     await tx`SELECT set_config('app.user_id', ${scope.userId}, true)`;
@@ -45,7 +46,10 @@ test("手记重读：从旧 run 恢复原文，普通消息/助手不串引用�
       // 与修复前相同：消息只有提问；选文仅存在 run.page_context，不靠写回或回填。
       await tx`INSERT INTO companion_turn_runs (id, workspace_id, user_id, conversation_id, user_message_id, assistant_message_id, generation, status, idempotency_key_hash, request_body_hash, page_context)
         VALUES (${randomUUID()}, ${scope.workspaceId}, ${scope.userId}, ${conversationId}, ${messageIds[0]}, ${messageIds[1]}, 1, 'succeeded',
-                ${'1'.repeat(64)}, ${'2'.repeat(64)}, ${tx.json({ version: 1, selection, privateContext: '不能出现在历史响应中' })})`;
+                ${'1'.repeat(64)}, ${'2'.repeat(64)}, ${tx.json({ version: 1, selection,
+                  context: { pageKind: 'note', noteId: inputReference.noteId, noteVersionId: inputReference.noteVersionId,
+                    noteTitle: inputReference.title, editing: { privateCoordinates: '不能出现在历史响应中' } },
+                  privateContext: '不能出现在历史响应中' })})`;
       // 旧/损坏数据不可冒充已授权选文。
       await tx`INSERT INTO companion_turn_runs (id, workspace_id, user_id, conversation_id, user_message_id, assistant_message_id, generation, status, idempotency_key_hash, request_body_hash, page_context)
         VALUES (${randomUUID()}, ${scope.workspaceId}, ${scope.userId}, ${conversationId}, ${messageIds[2]}, ${messageIds[3]}, 2, 'succeeded',
@@ -59,7 +63,9 @@ test("手记重读：从旧 run 恢复原文，普通消息/助手不串引用�
     const older = await listCompanionMessages({ ...scope, conversationId, limit: 2, beforeSeq: recent.body.oldestSeq });
     const parsedMessages = older.body.items.map((item) => companionMessageV1Schema.parse(item));
     assert.deepEqual(parsedMessages[0].selection, selection);
+    assert.deepEqual(parsedMessages[0].inputReference, inputReference);
     assert.equal(parsedMessages[1].selection, undefined);
+    assert.equal(parsedMessages[1].inputReference, undefined);
     assert.deepEqual(parsedMessages[0].blocks, [{ type: 'text', text: question }]);
     assert.equal(parsedMessages[0].contentSha256, '0'.repeat(64));
 
@@ -70,14 +76,17 @@ test("手记重读：从旧 run 恢复原文，普通消息/助手不串引用�
     const history = companionHistoryPageV1Schema.parse(next.value);
     assert.deepEqual(history.items.map((item) => item.messageId), messageIds.slice(0, 2));
     assert.deepEqual(history.items[0].selection, selection);
+    assert.deepEqual(history.items[0].inputReference, inputReference);
     assert.equal(history.items[1].selection, undefined);
     assert.equal(history.nextCursor, null);
 
     const searched = companionHistorySearchV1Schema.parse(await searchContinuousHistory({ ...scope, query: question, limit: 10 }));
     assert.equal(searched.items.length, 2);
     assert.deepEqual(searched.items.find((item) => item.messageId === messageIds[0])?.selection, selection);
+    assert.deepEqual(searched.items.find((item) => item.messageId === messageIds[0])?.inputReference, inputReference);
     assert.equal(searched.items.find((item) => item.messageId === messageIds[2])?.selection, undefined);
     assert.ok(!JSON.stringify(searched).includes('privateContext'));
+    assert.ok(!JSON.stringify(searched).includes('privateCoordinates'));
     const otherUser = await listContinuousHistory({ ...scope, userId: randomUUID(), limit: 100 });
     assert.deepEqual(otherUser.value?.items, []);
 

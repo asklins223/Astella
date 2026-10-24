@@ -1,0 +1,118 @@
+{
+  "date": "2026-10-24",
+  "baseCommit": "6882d049",
+  "workingTree": "Existing modified and untracked work preserved; verification does not describe a clean release revision.",
+  "status": "Approved source implementation and integrated simulator regression complete; physical and controlled-runtime limits remain explicit.",
+  "register": {
+    "findingsImplemented": 105,
+    "proposalsImplemented": 21,
+    "limitedRiskChecks": 17,
+    "totalUniqueIDs": 143
+  },
+  "simulator": {
+    "name": "Astella Me QA 2026-10-23",
+    "udid": "5394F283-BD13-4C34-A541-529FA5980DEF",
+    "model": "iPhone 17",
+    "os": "iOS 27",
+    "physicalPhoneConnected": false
+  },
+  "finalOperations": [
+    {
+      "operation": "reader-runtime",
+      "seconds": 0.04,
+      "exitCode": 0
+    },
+    {
+      "operation": "simulator-build",
+      "seconds": 4.58,
+      "exitCode": 0
+    },
+    {
+      "operation": "simulator-install",
+      "seconds": 1.02,
+      "exitCode": 0
+    },
+    {
+      "operation": "open-me",
+      "seconds": 0.61,
+      "exitCode": 0
+    }
+  ],
+  "tests": {
+    "packageTypechecks": {
+      "passed": 4,
+      "packages": [
+        "shared",
+        "api",
+        "desktop-client",
+        "ai-worker"
+      ]
+    },
+    "swift": {
+      "passed": 88,
+      "recordCache": 41,
+      "protocolIntegrityNotice": 30,
+      "geometry": 5,
+      "independentlyOwnedJourney": 12
+    },
+    "nativeMotionReaderRegistration": 11,
+    "canonicalReader": 26,
+    "operationTemplate": 6,
+    "isolatedNotePermission": 8,
+    "isolatedRunCursorHistory": 10,
+    "isolatedAccountOrbit": 31,
+    "structuralGuards": 4,
+    "readerRuntimeCurrent": true,
+    "diffWhitespaceCheck": true
+  },
+  "captures": {
+    "initial": 127,
+    "delayedRechecks": 49,
+    "launchOrCaptureCommandFailures": 0,
+    "contactSheetsVisuallyReviewed": 16,
+    "remainingBlankHeuristicMatches": [
+      {
+        "index": 57,
+        "route": "read-loading",
+        "assessment": "Intentional skeleton"
+      },
+      {
+        "index": 77,
+        "route": "diary-loading",
+        "assessment": "Intentional skeleton"
+      }
+    ],
+    "intermediateFrames": "Retained as intermediate; not counted as settled-state or real-network passes."
+  },
+  "semanticContrast": {
+    "nominalOpaquePairs": 52,
+    "minimumRatio": 4.7769,
+    "limit": "Not an exhaustive test of translucent, disabled or composited states."
+  },
+  "remainingAcceptanceIDs": [
+    "M03",
+    "H01",
+    "H02",
+    "H03",
+    "H04",
+    "H05",
+    "H06",
+    "H07",
+    "H08",
+    "H09",
+    "H10",
+    "H11",
+    "H12",
+    "H13",
+    "H14",
+    "H15",
+    "H16"
+  ],
+  "limitations": [
+    "No physical iPhone acceptance; microphone/ASR/lifecycle, physical gestures, VoiceOver rotor/focus and Instruments results remain unconfirmed.",
+    "GPU fault injection, ActivityKit, APNs delivery, large-cache/export/photo and minimum-OS hardware acceptance remain unconfirmed.",
+    "Current backend has no client-resource manifest endpoint; the approved honest-unavailability and verified fallback behavior is implemented.",
+    "Overwritten diary revisions report unavailability instead of silently substituting present content.",
+    "Concurrent Plan 59 feature implementation belongs to the other user-owned chat and is preserved without attributing it to this audit."
+  ]
+}

@@ -588,13 +588,12 @@ export async function authRoutes(app: FastifyInstance, options: AuthRoutesOption
     "/members",
     { preHandler: [requireSession, requireOwner] },
     async (req) => {
-      // Y10（round-3 审计）：支持可选 ?limit=（服务端默认 200、上限 500），
-      // 防止超大工作区成员全量无界返回。total 为真实总数（含未返回的后段）。
-      const rawLimit = (req.query as { limit?: unknown }).limit;
-      const parsedLimit = typeof rawLimit === "string" && /^\d+$/.test(rawLimit)
-        ? Number(rawLimit)
-        : undefined;
-      return await listMembers(req.session.workspaceId, req.session.userId, { limit: parsedLimit });
+      const query = parseQuery(app, z.object({
+        limit: z.coerce.number().int().min(1).max(500).optional(),
+        offset: z.coerce.number().int().min(0).optional(),
+        q: z.string().trim().min(1).max(200).optional(),
+      }), req.query);
+      return await listMembers(req.session.workspaceId, req.session.userId, query);
     },
   );
 

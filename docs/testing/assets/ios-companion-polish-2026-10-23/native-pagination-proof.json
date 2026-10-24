@@ -1,0 +1,12 @@
+{
+  "environment": "local synthetic account, CUA native window interaction",
+  "readerRequests": [
+    "/v2/notes/0ea6d1fc-8854-46dd-8067-f21e3e585c5c/reader",
+    "/v2/notes/0ea6d1fc-8854-46dd-8067-f21e3e585c5c/reader?noteVersionId=f7e752e5-275e-427a-9f6c-6bf939f84c19&afterOrdinal=119"
+  ],
+  "messageRequests": [
+    "/companion/conversations/b0f3524e-9682-4259-92a9-234e932aa50e/messages?limit=50",
+    "/companion/conversations/b0f3524e-9682-4259-92a9-234e932aa50e/messages?limit=50&beforeSeq=63"
+  ],
+  "recordedAt": "2026-10-23T08:10:41.911745+00:00"
+}

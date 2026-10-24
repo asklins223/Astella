@@ -19,6 +19,7 @@ import {
   companionImageBlockV1Schema,
   companionQuoteBlockV1Schema,
   companionSelectionV1Schema,
+  companionInputReferenceV1Schema,
   companionTextBlockV1Schema,
 } from "./companion-conversation-contracts.ts";
 import type { CompanionPersonaProfileContent } from "../../db-schema/companion-memory.ts";
@@ -768,6 +769,7 @@ export const companionHistoryItemV1Schema = z.strictObject({
   kind: z.enum(["text", "voice_transcript", "proactive", "action", "result", "error", "cancelled"]),
   blocks: z.array(companionContentBlockV1Schema).min(1).max(32),
   selection: companionSelectionV1Schema.optional(),
+  inputReference: companionInputReferenceV1Schema.optional(),
   runId: z.string().uuid().nullable(),
   createdAt: isoTimestampSchema,
   editedAt: isoTimestampSchema.nullable(),

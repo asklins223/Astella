@@ -95,6 +95,7 @@ export interface ReadContext {
    * 每轮无条件注入，不经工具、不经模型。
    */
   hereAndNow: string | null;
+  userImageAttachments?: readonly { assetId: string; label: string }[];
   /**
    * `<this_turn_facts>` 数据块（39d W2-3）：用户这句话点到的对象是谁、在不在、状态如何。
    * null = 这一轮没有可解析的指称，或解析超预算被整块丢弃。

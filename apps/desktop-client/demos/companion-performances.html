@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>伴星完整动作 · 本地验收</title>
+<style>
+  * { box-sizing: border-box; } body { margin: 0; background: #f5f2ec; color: #323d4d; font: 15px system-ui; }
+  main { display: grid; grid-template-columns: minmax(380px, 1fr) 310px; min-height: 100dvh; }
+  #stage { position: relative; min-height: 700px; } canvas { width: 100%; height: 100%; position: absolute; }
+  aside { padding: 24px; background: #fffdf8; } h1 { font-size: 22px; } h2 { font-size: 15px; margin-top: 24px; }
+  button { display: block; width: 100%; margin: 7px 0; padding: 10px; border: 1px solid #d4dbdf; border-radius: 10px; background: white; color: inherit; text-align: left; cursor: pointer; }
+  button:focus-visible { outline: 2px solid #3a70ca; outline-offset: 2px; } output { display: block; margin: 16px 0; line-height: 1.6; }
+  #diagnostics { font: 12px ui-monospace, monospace; white-space: pre-wrap; } p { line-height: 1.6; }
+</style>
+<main>
+  <div id="stage"><canvas id="live2d"></canvas></div>
+  <aside>
+    <h1>伴星完整动作</h1><p>本地验收 · 使用正式桌面驱动与两端共用的模型资产。</p>
+    <output id="status">正在加载模型…</output>
+    <h2>参考图场景</h2><div id="scenes"></div>
+    <h2>切换与归位</h2>
+    <button id="next">轮播下一个</button><button id="voice">播放口型 / 收口</button>
+    <button id="pause">暂停 / 继续</button><button id="framing">全身 / 半身</button>
+    <div id="diagnostics"></div>
+  </aside>
+</main>
+<script type="module" src="./companion-performances.ts"></script>
+</html>

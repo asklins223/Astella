@@ -108,3 +108,83 @@ test("owner 解散协作空间：200 并带回逐表计数，空间与其成员�
   `;
   assert.equal(tombstone.length, 1, "审计 tombstone 不在这次解散里（它必须活过删除）");
 });
+
+test('原生成员名册与邀请可翻过 200/100 条，邮箱搜索按字面匹配并保持真实总数', async () => {
+  const room = randomUUID(), roomOwner = randomUUID();
+  let token = '';
+  const stem = `native-roster-${room}`;
+  try {
+    await admin`INSERT INTO users (id,email,password_hash,role) VALUES (${roomOwner},${stem + '-owner@example.test'},'test','owner')`;
+    await admin`INSERT INTO workspaces (id,name,owner_id,workspace_type) VALUES (${room},'原生分页测试',${roomOwner},'collaborative')`;
+    await admin`INSERT INTO workspace_members (workspace_id,user_id,role) VALUES (${room},${roomOwner},'owner')`;
+    await admin`WITH inserted AS (
+      INSERT INTO users (email,password_hash,role)
+      SELECT ${stem} || '-' || n || '@example.test','test','owner' FROM generate_series(1,235) n RETURNING id
+    ) INSERT INTO workspace_members (workspace_id,user_id,role) SELECT ${room},id,'member' FROM inserted`;
+    await admin`INSERT INTO invite_codes (workspace_id,created_by,role,token_hash,token_hint)
+      SELECT ${room},${roomOwner},'member',md5(${stem} || n),'page-' || n FROM generate_series(1,105) n`;
+    token = (await issueSession(roomOwner, room)).token;
+    const headers = { authorization: `Bearer ${token}` };
+    for (const [route, expected] of [['members', 236], ['invites', 105]] as const) {
+      const seen = new Set<string>();
+      for (let offset = 0; offset < expected; offset += 30) {
+        const response = await app.inject({method:'GET', url:`/${route}?limit=30&offset=${offset}`, headers});
+        assert.equal(response.statusCode, 200, response.body);
+        assert.equal(response.json().total, expected);
+        for (const item of response.json().items as Array<{userId?:string;id?:string}>) {
+          const id = item.userId ?? item.id!;
+          assert.equal(seen.has(id), false, '同时间创建的成员/邀请分页仍需稳定顺序');
+          seen.add(id);
+        }
+      }
+      assert.equal(seen.size, expected);
+    }
+    const searched = await app.inject({method:'GET',url:'/members?' + new URLSearchParams({limit:'30',q:stem + '-235@'}),headers});
+    assert.equal(searched.statusCode, 200, searched.body);
+    assert.equal(searched.json().total, 1);
+    assert.equal(searched.json().items[0].email, stem + '-235@example.test');
+    const literal = await app.inject({method:'GET',url:'/members?q=%25',headers});
+    assert.equal(literal.statusCode, 200, literal.body);
+    assert.equal(literal.json().total, 0);
+    assert.equal((await app.inject({method:'GET',url:'/members?offset=-1',headers})).statusCode, 400);
+  } finally {
+    if (token) await revokeSession(token);
+    await admin`DELETE FROM invite_codes WHERE workspace_id=${room}`;
+    await admin`DELETE FROM workspace_members WHERE workspace_id=${room}`;
+    await admin`DELETE FROM workspaces WHERE id=${room}`;
+    await admin`DELETE FROM users WHERE email LIKE ${stem + '%'}`;
+  }
+});
+
+test('共同所有者可以把自己的权限交还当前主所有者，第三位所有者保持权限', async () => {
+  const room = randomUUID(), primary = randomUUID(), actor = randomUUID(), third = randomUUID();
+  let actorToken = '', thirdToken = '';
+  try {
+    await admin`INSERT INTO users (id,email,password_hash,role) VALUES
+      (${primary},${`transfer-primary-${room}@example.test`},'test','owner'),
+      (${actor},${`transfer-actor-${room}@example.test`},'test','owner'),
+      (${third},${`transfer-third-${room}@example.test`},'test','owner')`;
+    await admin`INSERT INTO workspaces (id,name,owner_id,workspace_type) VALUES (${room},'共同所有者测试',${primary},'collaborative')`;
+    await admin`INSERT INTO workspace_members (workspace_id,user_id,role) VALUES (${room},${primary},'owner'),(${room},${actor},'owner'),(${room},${third},'owner')`;
+    actorToken = (await issueSession(actor,room)).token;
+    thirdToken = (await issueSession(third,room)).token;
+    const response = await app.inject({method:'POST',url:`/workspaces/${room}/transfer-ownership`,headers:{authorization:`Bearer ${actorToken}`},payload:{toUserId:primary}});
+    assert.equal(response.statusCode, 200, response.body);
+    assert.equal(response.json().newOwnerUserId, primary);
+    const members = await admin`SELECT user_id,role FROM workspace_members WHERE workspace_id=${room}`;
+    const roles = new Map(members.map(row=>[row.user_id,row.role]));
+    assert.equal(roles.get(primary),'owner');
+    assert.equal(roles.get(actor),'member');
+    assert.equal(roles.get(third),'owner');
+    const refused = await app.inject({method:'GET',url:'/members',headers:{authorization:`Bearer ${actorToken}`}});
+    assert.equal(refused.statusCode,403,'旧 token 不能保留已交出的管理权限');
+    const self = await app.inject({method:'POST',url:`/workspaces/${room}/transfer-ownership`,headers:{authorization:`Bearer ${thirdToken}`},payload:{toUserId:third}});
+    assert.equal(self.statusCode,409);
+  } finally {
+    for (const token of [actorToken,thirdToken]) if (token) await revokeSession(token);
+    await admin`DELETE FROM workspace_audit_log WHERE workspace_id=${room}`;
+    await admin`DELETE FROM workspace_members WHERE workspace_id=${room}`;
+    await admin`DELETE FROM workspaces WHERE id=${room}`;
+    await admin`DELETE FROM users WHERE id IN (${primary},${actor},${third})`;
+  }
+});

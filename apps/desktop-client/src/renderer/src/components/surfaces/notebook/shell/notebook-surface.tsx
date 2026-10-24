@@ -1,3 +1,4 @@
+import { useNotebookWorkingLayer } from "../document/note-ai-working-layer";
 import { ensureAiActionAllowed, guideAiPermissionFailure } from "../../../../app/gate/ai-action-gate";
 import { CompanionNoteWritePreview } from "../../../companion/journal/CompanionNoteWritePreview";
 import { useNotebookMindMap } from "../generation/use-notebook-mind-map.ts";
@@ -6,7 +7,7 @@ import type { NoteMindMapV1 } from "@astella/shared/note-mind-map-contracts";
 import { noteBlockMarkdown } from "@astella/shared/note-markdown";
 import { readNotebookProjection } from "./notebook-projection.ts";
 import { useNotebookCompanionEditing } from "./use-notebook-companion-editing.ts";
-import { beginNoteAiWork, endNoteAiWork, useNoteAiWork, resolveNoteAiRanges, type NoteAiRange } from "../../../companion/content/note-companion-editing";
+import { beginNoteAiWork, endNoteAiWork, useNoteAiWork, resolveNoteAiRanges, groupNoteAiRanges, type NoteAiRange } from "../../../companion/content/note-companion-editing";
 import { noteHtmlAlignments } from "../document/note-html-alignment.ts";
 import { publishCompanionRecordsChanged } from "../../../companion/content/companion-events";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -1229,13 +1230,15 @@ const noteDocLive = useNoteDocLiveView(
   useNotebookCompanionEditing({ note, blocks: readSourceBlocks, mode, editable, bodyRef: readingBodyRef, editorRef,
     selection: selectedPassage, flush: noteDocLive.flush });
   const noteAiWork = useNoteAiWork(state => state.items);
-  const noteAiRanges: NoteAiRange[] = resolveNoteAiRanges([
+  const noteAiRanges: NoteAiRange[] = groupNoteAiRanges(resolveNoteAiRanges([
     ...Object.values(noteAiWork).filter(item => item.noteId === note?.noteId).flatMap(item => item.ranges),
     ...noteCompanionExplanations.filter(item => noteExplanationBusy(item) && item.target.anchor.noteVersionId === note?.currentVersionId).map(item => ({ startBlock: item.target.anchor.startBlockOrdinal,
       endBlock: item.target.anchor.endBlockOrdinal, label: "伴星正在解释这段", expectedBlocks: note?.currentVersion.blocks.slice(item.target.anchor.startBlockOrdinal, item.target.anchor.endBlockOrdinal + 1).map(b => b.content) })),
     ...(annotationTask && annotationTask.noteVersionId === note?.currentVersionId && (annotationTask.status === "queued" || annotationTask.status === "running") ? [{ startBlock: annotationTask.anchor.startBlockOrdinal,
       endBlock: annotationTask.anchor.endBlockOrdinal, label: "伴星正在解读原句", expectedBlocks: note?.currentVersion.blocks.slice(annotationTask.anchor.startBlockOrdinal, annotationTask.anchor.endBlockOrdinal + 1).map(b => b.content) }] : []),
-  ], readSourceBlocks);
+  ], readSourceBlocks));
+  useNotebookWorkingLayer(readingBodyRef, leaf === "reading" && learningView === "body" && mode === "preview",
+    `${note?.noteId}:${note?.currentVersionId}`, noteAiRanges.map(range => `${range.startBlock}:${range.endBlock}:${range.label}`).join("|"));
 
   const askCompanionAboutPassage = (text: string, anchor: NoteAnnotationAnchorV1 | null, noteId: string): void => {
     if (anchor) {

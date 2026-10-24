@@ -51,25 +51,30 @@ export function renderOperationTemplateV1(template: OperationTemplateV1, spec: O
     <label class="op-control">
       <span>${escapeHtml(control.label)}</span>
       <input type="range" data-control="${escapeHtml(control.id)}" min="${control.min}" max="${control.max}" step="${control.step}" value="${control.initial}" />
-      <output data-output="${escapeHtml(control.id)}">${control.initial}${escapeHtml(control.unit ?? "")}</output>
+      <output data-output="${escapeHtml(control.id)}" data-unit="${escapeHtml(control.unit ?? "")}">${control.initial}${escapeHtml(control.unit ?? "")}</output>
     </label>`).join("");
   const steps = template === "repair_steps" && spec.steps
-    ? `<p>按正确顺序选择步骤；再次按下可撤回。</p><ol class="op-steps">${[...spec.steps].reverse().map((step) => `<li><button type="button" aria-pressed="false" data-step="${escapeHtml(step)}">${escapeHtml(step)}</button></li>`).join("")}</ol>`
+    ? `<p>按正确顺序选择步骤；再次按下可撤回。下方会保留你的选择顺序。</p><div class="op-sequence" aria-live="polite"><strong>已选顺序</strong><ol id="picked-order"></ol><p id="picked-empty">还未选择步骤。</p><button type="button" id="undo-step">撤回上一步</button> <button type="button" id="reset-steps">重新开始</button></div><ol class="op-steps">${[...spec.steps].reverse().map((step) => `<li><button type="button" aria-pressed="false" data-step="${escapeHtml(step)}">${escapeHtml(step)}</button></li>`).join("")}</ol>`
     : "";
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <style>
-  :root { color-scheme: light; }
-  body { margin:0; padding:16px; font:14px/1.6 "Noto Sans SC",system-ui,sans-serif; color:#2f3a32; background:#fbfaf3; }
-  h1 { font-size:18px; margin:0 0 6px; }
-  p { margin:0 0 14px; color:#5c6763; }
+  :root { color-scheme: light dark; --op-ink:#25354f; --op-muted:#60708b; --op-paper:#f8fbff; --op-surface:#ffffff; --op-edge:#d8e4f4; --op-accent:#285fe8; --op-selected:#e6f1ff; --op-font:16px; }
+  @media (prefers-color-scheme: dark) { :root { --op-ink:#e5efff; --op-muted:#a2b3cc; --op-paper:#142238; --op-surface:#1c2d47; --op-edge:#384c6b; --op-accent:#9ac5ff; --op-selected:#27466d; } }
+  body { margin:0; padding:16px; font:var(--op-font)/1.65 ui-rounded,system-ui,sans-serif; color:var(--op-ink); background:var(--op-paper); overflow-wrap:anywhere; }
+  h1 { font-size:1.25em; margin:0 0 6px; }
+  p { margin:0 0 14px; color:var(--op-muted); }
   .op-control { display:grid; gap:6px; margin:0 0 14px; }
-  input[type=range] { width:100%; accent-color:#52644f; }
-  output { font-variant-numeric: tabular-nums; color:#1e4a3e; }
+  input[type=range] { width:100%; accent-color:var(--op-accent); min-height:44px; }
+  output { font-variant-numeric: tabular-nums; color:var(--op-accent); }
   .op-steps { display:grid; gap:8px; padding:0; list-style:none; }
-  .op-steps button { width:100%; padding:10px 12px; border:1px solid #d9d4c3; border-radius:12px; background:#fffdf4; text-align:left; font:inherit; }
-  .op-steps button[aria-pressed=true] { border-color:#52644f; background:#e7efdf; }
-  :focus-visible { outline:3px solid #527c61; outline-offset:3px; }
+  .op-steps button { width:100%; padding:10px 12px; border:1px solid var(--op-edge); border-radius:12px; background:var(--op-surface); color:var(--op-ink); min-height:44px; text-align:left; font:inherit; }
+  .op-steps button[aria-pressed=true] { border-color:var(--op-accent); background:var(--op-selected); }
+  .op-sequence { padding:12px; border:1px solid var(--op-edge); border-radius:12px; }
+  .op-sequence button { min-height:44px; padding:8px 12px; color:var(--op-ink); background:var(--op-surface); border:1px solid var(--op-edge); border-radius:10px; font:inherit; }
+  button:disabled { opacity:.55; }
+  @media (prefers-reduced-motion:reduce) { *,*::before,*::after { animation:none!important; transition:none!important; scroll-behavior:auto!important; } }
+  :focus-visible { outline:3px solid var(--op-accent); outline-offset:3px; }
 </style></head><body>
 <h1>${escapeHtml(spec.title)}</h1>
 <p>${escapeHtml(spec.prompt)}</p>
@@ -77,29 +82,45 @@ ${steps}
 ${controls}
 <script>
   const channel = ${JSON.stringify(ARTIFACT_FRAME_CHANNEL)};
-  const send = (phase, extra = {}) => parent.postMessage({ channel, direction: "frame->host", phase, ...extra }, "*");
+  const contentHeight = () => Math.max(document.documentElement?.scrollHeight || 0, document.body?.scrollHeight || 0);
+  const send = (phase, extra = {}) => parent.postMessage({ channel, direction: "frame->host", phase, contentHeight: contentHeight(), ...extra }, "*");
+  let readOnly = false;
   const controls = [...document.querySelectorAll("[data-control]")];
   const update = () => {
+    if (readOnly) return;
     const values = {};
     for (const input of controls) {
       values[input.dataset.control] = Number(input.value);
       const output = document.querySelector('[data-output="' + input.dataset.control + '"]');
-      if (output) output.textContent = input.value;
+      if (output) output.textContent = input.value + (output.dataset?.unit || "");
     }
     send("answer", { answer: { kind: "controls", values } });
   };
   for (const input of controls) input.addEventListener("input", update);
   const picked = [];
+  const renderPicked = () => {
+    const list = document.getElementById?.("picked-order");
+    if (list) { list.replaceChildren(...picked.map(step => { const item = document.createElement("li"); item.textContent = step; return item; })); }
+    const empty = document.getElementById?.("picked-empty");
+    if (empty) empty.hidden = picked.length > 0;
+    for (const button of document.querySelectorAll("[data-step]")) button.setAttribute("aria-pressed", String(picked.includes(button.dataset.step)));
+    for (const id of ["undo-step", "reset-steps"]) { const button = document.getElementById?.(id); if (button) button.disabled = readOnly || picked.length === 0; }
+  };
+  const emitSteps = () => { renderPicked(); send("answer", { answer: { kind: "steps", steps: [...picked] } }); };
+  document.getElementById?.("undo-step")?.addEventListener("click", () => { if (!readOnly) { picked.pop(); emitSteps(); } });
+  document.getElementById?.("reset-steps")?.addEventListener("click", () => { if (!readOnly) { picked.length = 0; emitSteps(); } });
   for (const button of document.querySelectorAll("[data-step]")) button.addEventListener("click", () => {
+    if (readOnly) return;
     const index = picked.indexOf(button.dataset.step);
     if (index >= 0) picked.splice(index, 1); else picked.push(button.dataset.step);
-    button.setAttribute("aria-pressed", String(index < 0));
-    send("answer", { answer: { kind: "steps", steps: [...picked] } });
+    emitSteps();
   });
   addEventListener("message", (event) => {
     const message = event.data;
     if (event.source !== parent || !message || message.channel !== channel || message.direction !== "host->frame" || message.command !== "restore-answer") return;
-    if (message.readOnly === true) for (const control of document.querySelectorAll("input,button")) control.disabled = true;
+    readOnly = message.readOnly === true;
+    for (const control of document.querySelectorAll("input,button")) control.disabled = readOnly;
+    renderPicked();
     const answer = message.answer;
     if (!answer || typeof answer !== "object") return;
     if (answer.kind === "controls" && answer.values && typeof answer.values === "object") {
@@ -108,17 +129,19 @@ ${controls}
         if (typeof value !== "number" || !Number.isFinite(value)) continue;
         input.value = String(Math.max(Number(input.min), Math.min(Number(input.max), value)));
         const output = document.querySelector('[data-output="' + input.dataset.control + '"]');
-        if (output) output.textContent = input.value;
+        if (output) output.textContent = input.value + (output.dataset?.unit || "");
       }
     }
     if (answer.kind === "steps" && Array.isArray(answer.steps)) {
       picked.length = 0;
-      for (const step of answer.steps) if (typeof step === "string" && [...document.querySelectorAll("[data-step]")].some(button => button.dataset.step === step)) picked.push(step);
-      for (const button of document.querySelectorAll("[data-step]")) button.setAttribute("aria-pressed", String(picked.includes(button.dataset.step)));
+      for (const step of answer.steps) if (typeof step === "string" && !picked.includes(step) && [...document.querySelectorAll("[data-step]")].some(button => button.dataset.step === step)) picked.push(step);
+      renderPicked();
     }
   });
+  renderPicked();
+  if (typeof ResizeObserver !== "undefined" && document.body) new ResizeObserver(() => send("heartbeat")).observe(document.body);
   send("ready", { stepCount: controls.length });
-  setInterval(() => send("heartbeat"), 1000);
+  setInterval(() => { if (!document.hidden) send("heartbeat"); }, 1000);
 </script></body></html>`;
 }
 

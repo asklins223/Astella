@@ -146,6 +146,10 @@ const creatableMemoryKindSchema = memoryKindSchema.exclude(["judgment"]);
 const memoryBudgetTierSchema = z.enum(["resident", "active", "archived"]);
 
 const listQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+  offset: z.coerce.number().int().min(0).optional().default(0),
+  kinds: z.string().regex(/^(preference|goal|learning_context|interaction_note|episodic|judgment)(,(preference|goal|learning_context|interaction_note|episodic|judgment))*$/).optional(),
+  state: z.enum(["active", "candidate", "pinned", "disputed", "archived", "ignored", "superseded"]).optional(),
   focusMemoryId: z.string().uuid().optional(),
   kind: memoryKindSchema.optional(),
   q: z.string().min(1).max(200).optional(),
@@ -205,8 +209,12 @@ export async function memoryRoutes(app: FastifyInstance) {
 
   app.get("/companion/memory/recycle", { preHandler: [requireSession] }, async (req, reply) => {
     const scope = scopeOfSession(req.session);
-    const items = await withWorkspaceTransaction(scope, tx => listRecycledMemories(tx, scope));
-    return reply.header("Cache-Control", "no-store").send({ version: 1, items });
+    const parsed = z.object({ limit: z.coerce.number().int().min(1).max(100).optional().default(50), offset: z.coerce.number().int().min(0).optional().default(0) }).safeParse(req.query ?? {});
+    if (!parsed.success) throw app.httpErrors.badRequest("回收区分页参数非法");
+    const page = parsed.data;
+    const rows = await withWorkspaceTransaction(scope, tx => listRecycledMemories(tx, scope, { limit: page.limit + 1, offset: page.offset }));
+    const hasMore = rows.length > page.limit;
+    return reply.header("Cache-Control", "no-store").send({ version: 1, items: rows.slice(0, page.limit), hasMore, nextOffset: hasMore ? page.offset + page.limit : null });
   });
 
   app.get(
@@ -347,6 +355,10 @@ export async function memoryRoutes(app: FastifyInstance) {
       const scope = scopeOfSession(req.session);
       const items = await withWorkspaceTransaction(scope, (tx) =>
         listMemories(tx, scope, {
+          limit: query.data.limit ? query.data.limit + 1 : undefined,
+          offset: query.data.offset,
+          kinds: query.data.kinds?.split(",") as MemoryKindV2[] | undefined,
+          state: query.data.state,
           focusMemoryId: query.data.focusMemoryId,
           kind: query.data.kind as MemoryKindV2 | undefined,
           q: query.data.q,
@@ -355,7 +367,10 @@ export async function memoryRoutes(app: FastifyInstance) {
           includeArchived: query.data.includeArchived,
         }),
       );
-      return reply.header("Cache-Control", "no-store").send({ version: 2, items });
+      if (query.data.limit === undefined) return reply.header("Cache-Control", "no-store").send({ version: 2, items });
+      const limit = query.data.limit;
+      const hasMore = items.length > limit;
+      return reply.header("Cache-Control", "no-store").send({ version: 2, items: items.slice(0, limit), hasMore, nextOffset: hasMore ? query.data.offset + limit : null });
     },
   );
 

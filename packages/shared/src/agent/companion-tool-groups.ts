@@ -183,6 +183,7 @@ export function resolveCompanionInitialToolNames(input: {
   availableToolNames: readonly string[];
   pageKind?: string | null;
   candidateOperations?: readonly string[];
+  hasImageAttachments?: boolean;
 }): Set<string> {
   const available = new Set(input.availableToolNames);
   const names = new Set<string>();
@@ -197,6 +198,9 @@ export function resolveCompanionInitialToolNames(input: {
   for (const name of resolveCompanionToolGroupNames(groups)) {
     if (available.has(name)) names.add(name);
   }
+  // A validated image attached to this turn is a host fact, independent of
+  // page or intent classification. The policy-filtered catalog still owns permission.
+  if (input.hasImageAttachments && available.has("companion_read_image")) names.add("companion_read_image");
   // The loader itself must always be reachable; otherwise the surface is closed.
   if (available.has("companion_load_tools")) names.add("companion_load_tools");
   return names;

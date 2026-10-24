@@ -14,6 +14,8 @@ import type { NoteMarkdownEditorHandle } from "./note-markdown-editor.tsx";
 import { noteSourceOffset, noteSourcePosition, noteSourceBlocks } from "./note-source-structure.ts";
 import { placementsByBlock, type AnnotationPlacement } from "../annotation/note-annotation-placement.ts";
 import type { NoteDocumentPosition } from "./note-source-bridge.ts";
+import { groupNoteAiRanges } from "../../../companion/content/note-companion-editing";
+import { createNoteWorkingLayer, workingPassagesIn } from "./note-ai-working-layer";
 import type { NoteAiRange } from "../../../companion/content/note-companion-editing";
 import { changesTouchLockedRange } from "./note-ai-lock.ts";
 import { noteImageMarkdown, noteMarkdownSyntax, noteRichStyleCss, cleanNoteRichStyle, richStyleFromCss, noteStyledMdastHtml, type NoteRichStyle } from "@astella/shared/note-markdown";
@@ -88,6 +90,7 @@ export function NoteSourceEditor(props: {
         latest.current.onChange(source);
       } else setError("这处语法暂时无法同步，源码仍在这里。请保留纯编辑并核对这一处。");
     };
+    let workingLayer: ReturnType<typeof createNoteWorkingLayer> | undefined;
     const view = new EditorView({ parent: root.current, state: EditorState.create({
       doc: props.editor.getMarkdown() ?? "",
       extensions: [noteMarkdown, syntaxHighlighting(sourceHighlightStyle), syntaxHighlighting(codeHighlighter), bracketMatching(), drawSelection(),
@@ -103,9 +106,13 @@ export function NoteSourceEditor(props: {
         readOnly.current.of(EditorState.readOnly.of(props.disabled)), gutter.current.of(lineNumbers()),
         annotationPlacementsField,
         EditorState.transactionFilter.of(tr => {
-          if (!tr.docChanged || fromDocument) return tr;
+          if (fromDocument) return tr;
           const blocks = noteSourceBlocks(tr.startState.doc.toString());
           let blocked = false;
+          if (tr.selection) for (const range of latest.current.aiRanges ?? []) {
+            const first = blocks[range.startBlock], last = blocks[range.endBlock];
+            if (first && last && tr.newSelection.ranges.some(selection => !selection.empty && changesTouchLockedRange(selection.from, selection.to, first.from - 1, last.to + 1))) blocked = true;
+          }
           tr.changes.iterChangedRanges((from, to) => {
             for (const range of latest.current.aiRanges ?? []) {
               const first = blocks[range.startBlock], last = blocks[range.endBlock];
@@ -117,13 +124,13 @@ export function NoteSourceEditor(props: {
         EditorView.decorations.compute(["doc", annotationPlacementsField], state => {
           const blocks = noteSourceBlocks(state.doc.toString());
           const decorations: Range<Decoration>[] = [];
-          const lines = new Map<number, string>();
-          for (const range of latest.current.aiRanges ?? []) for (let ordinal = range.startBlock; ordinal <= range.endBlock; ordinal++) {
+          const lines = new Map<number, { label: string; group: string }>();
+          for (const range of groupNoteAiRanges(latest.current.aiRanges ?? [])) for (let ordinal = range.startBlock; ordinal <= range.endBlock; ordinal++) {
             const block = blocks[ordinal]; if (!block) continue;
             const first = state.doc.lineAt(block.from).number, last = state.doc.lineAt(block.to).number;
-            for (let line = first; line <= last; line++) lines.set(state.doc.line(line).from, range.label);
+            for (let line = first; line <= last; line++) lines.set(state.doc.line(line).from, { label: range.label, group: `${range.startBlock}:${range.endBlock}` });
           }
-          for (const [from, label] of lines) decorations.push(Decoration.line({ attributes: { class: "note-ai-working", "data-ai-label": label, "aria-busy": "true" } }).range(from));
+          for (const [from, work] of lines) decorations.push(Decoration.line({ attributes: { class: "note-ai-locked", "data-ai-label": work.label, "data-ai-group": work.group, "aria-busy": "true" } }).range(from));
           return Decoration.set(decorations, true);
         }),
         // CM6 在**每次 view update** 时重算这条，所以「用户改源码 → 块下标变 →
@@ -137,6 +144,10 @@ export function NoteSourceEditor(props: {
           ...searchKeymap, indentWithTab, ...defaultKeymap,
         ]),
         EditorView.domEventHandlers({
+          mousedown: event => {
+            if (!(event.target instanceof Element) || !event.target.closest(".note-ai-locked")) return false;
+            event.preventDefault(); return true;
+          },
           compositionend: () => { queueMicrotask(sync); },
           click: (event) => {
             // 点那一行的记号 → 打开**同一张**旁页。键盘也走这一条（Enter / Space），
@@ -175,9 +186,11 @@ export function NoteSourceEditor(props: {
         EditorView.updateListener.of((update) => {
           if (update.docChanged && !fromDocument) write(update.state.doc.toString(), update.startState.doc.toString(), update.changes);
           if (update.docChanged || update.selectionSet) updatePosition(update.state);
+          workingLayer?.update();
         }),
       ],
     }) });
+    workingLayer = createNoteWorkingLayer(root.current, () => workingPassagesIn(view.dom));
     function updatePosition(state: EditorState) {
       const selection = state.selection.main;
       const line = state.doc.lineAt(selection.head);
@@ -286,7 +299,7 @@ export function NoteSourceEditor(props: {
           quote: names.has("Blockquote"), bullet: names.has("BulletList"), ordered: names.has("OrderedList"), canUndo: history?.canUndo ?? false, canRedo: history?.canRedo ?? false };
       },
     };
-    return () => { unsubscribe(); props.handleRef.current = null; viewRef.current = null; view.destroy(); };
+    return () => { workingLayer?.destroy(); unsubscribe(); props.handleRef.current = null; viewRef.current = null; view.destroy(); };
   }, [props.editor, props.handleRef]);
 
   useEffect(() => { viewRef.current?.dispatch({ effects: readOnly.current.reconfigure(EditorState.readOnly.of(props.disabled)) }); }, [props.disabled]);
@@ -295,7 +308,12 @@ export function NoteSourceEditor(props: {
   // 批注集合进 StateField；装饰依赖集合和 doc，两者变化都会重算位置。
   const placements = props.annotationPlacements;
   useEffect(() => {
-    viewRef.current?.dispatch({ effects: setAnnotationPlacements.of(placements ?? []) });
+    const view = viewRef.current;
+    if (!view) return;
+    const selection = view.state.selection.main, blocks = noteSourceBlocks(view.state.doc.toString());
+    const overlap = (props.aiRanges ?? []).find(range => { const first = blocks[range.startBlock], last = blocks[range.endBlock];
+      return first && last && !selection.empty && changesTouchLockedRange(selection.from, selection.to, first.from - 1, last.to + 1); });
+    view.dispatch({ effects: setAnnotationPlacements.of(placements ?? []), ...(overlap ? { selection: { anchor: blocks[overlap.endBlock]!.to } } : {}) });
   }, [placements, props.aiRanges]);
 
   return <div className="note-source-editor">

@@ -72,6 +72,9 @@ export type CompanionConversationV1 = z.infer<typeof companionConversationV1Sche
  */
 export const COMPANION_REPLY_MAX_CHARS = 200_000;
 
+/** 上传与实际识图使用同一上限，不能收下图片后再按另一个阈值拒绝。 */
+export const COMPANION_IMAGE_MAX_BYTES_V1 = 10 * 1024 * 1024;
+
 export const companionTextBlockV1Schema = z.object({
   type: z.literal("text"),
   text: z.string().min(1).max(COMPANION_REPLY_MAX_CHARS),
@@ -302,6 +305,12 @@ export const companionSelectionV1Schema = z.strictObject({
 });
 export type CompanionSelectionV1 = z.infer<typeof companionSelectionV1Schema>;
 
+/** 用户主动随消息带上的来源身份；不包含页面权限、编辑坐标或后台上下文。 */
+export const companionInputReferenceV1Schema = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("note"), noteId: z.string().uuid(), noteVersionId: z.string().uuid().optional(), title: z.string().min(1).max(200).optional() }),
+  z.strictObject({ kind: z.literal("diary"), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), version: z.number().int().positive() }),
+]);
+
 // ─── Message（§3.3） ──────────────────────────────────────────────────────
 
 export const companionMessageV1Schema = z.object({
@@ -332,6 +341,7 @@ export const companionMessageV1Schema = z.object({
   /** Optional continuation prompts are presentation metadata, stored outside the hashed content blocks. */
   followUpPrompts: z.array(z.string().min(4).max(120)).max(3).optional(),
   selection: companionSelectionV1Schema.optional(),
+  inputReference: companionInputReferenceV1Schema.optional(),
   runId: z.string().uuid().nullable(),
   clientMessageId: z.string().uuid().nullable(),
   // 2026-08-11：API 实际返回 contentSha256（内容校验用），契约补齐声明
@@ -403,6 +413,7 @@ export const companionPageContextV1Schema = z.discriminatedUnion("pageKind", [
     sharing: z.literal("page_registered"),
     noteId: z.string().uuid(),
     noteVersionId: z.string().uuid().optional(),
+    noteTitle: z.string().trim().min(1).max(200).optional(),
     editing: companionNoteEditingContextV1Schema.optional(),
     replyPurpose: z.enum(["annotation", "overview", "recall", "recall_hint", "expansion"]).optional(),
     annotationTarget: companionAnnotationTargetV1Schema.optional(),
@@ -420,17 +431,18 @@ export type CompanionPageContextV1 = z.infer<typeof companionPageContextV1Schema
 
 // ─── Turn create response（§4.2） ─────────────────────────────────────────
 
+export const COMPANION_TURN_MAX_IMAGES_V1 = 9;
+
 export const createCompanionTurnRequestV1Schema = z.object({
   version: z.literal(1),
   clientMessageId: z.string().uuid(),
   inputKind: z.enum(["text", "voice_transcript"]),
   /**
-   * 输入块（2026-10-15 扩展 A 放宽）：1–2 块；附件（图片或文件）至多一个。
-   * 首块可以是文字，也可以是**仅附件**（用户拖来一张图/一个文件、什么都没说）——
-   * 此时由服务端登记显式「仅附件意图」，客户端不许伪造文案。
+   * 2026-10-23：可选的首块文字＋最多 9 张图片＋最多一个文件；允许仅附件。
+   * 所有附件归属同一条用户消息，无文字时保留真实的仅附件意图。
    * 语音转写仍必须是唯一文字块、不携带附件。
    */
-  blocks: z.array(companionContentBlockV1Schema).min(1).max(2),
+  blocks: z.array(companionContentBlockV1Schema).min(1).max(COMPANION_TURN_MAX_IMAGES_V1 + 2),
   voiceArtifactId: z.string().uuid().optional(),
   sourceSurface: z.enum(["pet", "main"]),
   /**
@@ -459,24 +471,22 @@ export const createCompanionTurnRequestV1Schema = z.object({
     version: z.number().int().min(1),
   }).optional(),
 }).strict().superRefine((value, ctx) => {
-  const [first, second] = value.blocks;
-  const isAttachment = (block: { type: string }) => block.type === "image" || block.type === "file";
+  const first = value.blocks[0];
   if (value.inputKind === "voice_transcript") {
-    if (first?.type !== "text") {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["blocks"], message: "voice transcript turn must start with one text block" });
+    if (first?.type !== "text" || value.blocks.length !== 1) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["blocks"], message: "voice transcript turn carries exactly one text block and no attachment" });
     }
-    if (second) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["blocks", 1], message: "voice transcript turn carries no attachment" });
+  } else {
+    for (const [index, block] of value.blocks.entries()) {
+      if (block.type !== "image" && block.type !== "file" && !(index === 0 && block.type === "text")) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["blocks", index], message: "only the first optional text block and image/file attachments are allowed" });
+      }
     }
-  } else if (!first || (first.type !== "text" && !isAttachment(first))) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["blocks"], message: "text turn starts with one text block or one attachment" });
-  } else if (second) {
-    // 至多一个附件：text+附件、仅附件 均可；附件+附件、text+text 拒绝。
-    if (isAttachment(first) && isAttachment(second)) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["blocks", 1], message: "at most one attachment (image or file) per turn" });
+    if (value.blocks.filter((block) => block.type === "image").length > COMPANION_TURN_MAX_IMAGES_V1) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["blocks"], message: `at most ${COMPANION_TURN_MAX_IMAGES_V1} images per turn` });
     }
-    if (!isAttachment(second)) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["blocks", 1], message: "the only optional block is one image or file attachment" });
+    if (value.blocks.filter((block) => block.type === "file").length > 1) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["blocks"], message: "at most one file per turn" });
     }
   }
   if ((value.inputKind === "voice_transcript") !== (value.voiceArtifactId !== undefined)) {

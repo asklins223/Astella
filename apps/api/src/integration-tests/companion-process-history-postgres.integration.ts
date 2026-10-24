@@ -7,7 +7,9 @@ import { closeDatabase } from "../db/client.ts";
 
 const databaseUrl = process.env.DATABASE_URL_API ?? process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("companion process history requires a real Postgres database");
-const db = postgres(databaseUrl, { max: 2 });
+// Fixture setup needs to assume the worker role; the application query below
+// still uses DATABASE_URL_API through withWorkspaceTransaction.
+const db = postgres(process.env.DATABASE_URL_MIGRATOR ?? databaseUrl, { max: 2 });
 test.after(async () => { await closeDatabase(); await db.end({ timeout: 2 }); });
 
 test("worker 写入的思考和工具随对话保留：清理实时事件、超过最近 20 轮后仍能回读", async () => {

@@ -2,6 +2,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { QWEN_TTS_DIALECT_PREFERENCE_KEY, QWEN_TTS_SUPPORTED_DIALECTS } from "@astella/shared/tts-voice-catalog";
 import type { AgentPersistentVoicePreferenceV1, AgentVoicePreferenceWriteStatusV1 } from "@astella/shared/agent-contracts";
 import { userLearningPreferences } from "@astella/shared/db-schema/companion";
+import { COMPANION_PREFERRED_ADDRESS_KEY } from "@astella/shared/companion-shell-contracts";
 import { withWorkerWorkspaceTransaction, type WorkerTransaction } from "../../db.ts";
 
 export function mergePersistentDialectPreference(
@@ -91,4 +92,13 @@ export async function readCompanionDialectPreference(input: {
   userId: string;
 }): Promise<AgentPersistentVoicePreferenceV1["dialect"]> {
   return withWorkerWorkspaceTransaction(input, tx => readStoredDialectPreference(tx, input.userId));
+}
+
+export async function readCompanionPreferredAddress(input: { workspaceId: string; userId: string }): Promise<string | null> {
+  return withWorkerWorkspaceTransaction(input, async tx => {
+    const [row] = await tx.select({ preferences: userLearningPreferences.explicitPreferences }).from(userLearningPreferences)
+      .where(and(eq(userLearningPreferences.userId, input.userId), sql`${userLearningPreferences.workspaceId} IS NULL`)).limit(1);
+    const address = row?.preferences?.[COMPANION_PREFERRED_ADDRESS_KEY];
+    return typeof address === "string" && address.trim().length > 0 && address.length <= 40 ? address.trim() : null;
+  });
 }

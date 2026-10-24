@@ -1,0 +1,12 @@
+IOSurfaceClientSetSurfaceNotify failed e00002c7
+[companion-notice] authorization=2 alert=2
+objc[70332]: Class UIAccessibilityLoaderWebShared is implemented in both /private/var/run/com.apple.security.cryptexd/mnt/com.apple.iPhoneOS.SimulatorRuntime-v24.1.434.0.XK4uMK/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 27.0.simruntime/Contents/Resources/RuntimeRoot/System/Library/AccessibilityBundles/WebKit.axbundle/WebKit (0x150b4c398) and /private/var/run/com.apple.security.cryptexd/mnt/com.apple.iPhoneOS.SimulatorRuntime-v24.1.434.0.XK4uMK/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 27.0.simruntime/Contents/Resources/RuntimeRoot/System/Library/AccessibilityBundles/WebCore.axbundle/WebCore (0x1511cc310). This may cause spurious casting failures and mysterious crashes. One of the duplicates must be removed or renamed.
+2026-10-23 12:05:11.216 Astella[70332:16565990] StudyNavigation depth=1 enabled=0
+2026-10-23 12:05:11.424 Astella[70332:16565990] [Live2D] model state -> ready(version: "49f60af20eb4", root: file:///Volumes/asklins/Xcode/Developer/CoreSimulator/Devices/912953CC-9AD5-4BF3-A81C-A506D8CC6F36/data/Containers/Data/Application/C95EECA6-8EA4-4432-8B56-E52F6257202D/Library/Application%20Support/companion-model/companion-live2d-whale-v3/49f60af20eb4/, entry: "c_0120.model3.json")
+[companion-notice] avatar: attached 83030 bytes
+[companion-notice] communication: content updated
+[companion-notice] posted kind=proactive id=companion.message.DEBUG-PROACTIVE body=刚才安静了好一会儿，忽然想起你昨天说想再看看那篇赤壁赋。要不要我陪你翻回去？
+AstellaLaunch bridgeReady
+AstellaLaunch assetsReady
+[companion-notice] added id=companion.message.DEBUG-PROACTIVE delivered=true attachments=1
+com.astella.mobile: 70332

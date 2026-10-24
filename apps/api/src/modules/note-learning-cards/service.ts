@@ -87,7 +87,7 @@ export async function readNoteLearningCard(
   scope: NoteLearningCardScopeV1,
   noteId: string,
   cardId?: string,
-): Promise<{ card: NoteLearningCardV1 | null; generating: boolean; generationFailure?: string; versions: NoteLearningCardVersionV1[] }> {
+): Promise<{ card: NoteLearningCardV1 | null; generating: boolean; generationStatus?: string; generationStartedAt?: string; generationFailure?: string; versions: NoteLearningCardVersionV1[] }> {
   await requireVisibleNote(tx, scope, noteId);
   const [card] = await tx.select().from(noteLearningCards)
     .where(and(
@@ -149,18 +149,19 @@ async function hasInFlightCardGeneration(tx: ApiTransaction, workspaceId: string
   return (await cardGenerationState(tx, workspaceId, cardId)).generating;
 }
 
-async function cardGenerationState(tx: ApiTransaction, workspaceId: string, cardId: string): Promise<{ generating: boolean; generationFailure?: string }> {
-  const [row] = await tx.select({ status: jobs.status, lastError: jobs.lastError }).from(jobs)
+async function cardGenerationState(tx: ApiTransaction, workspaceId: string, cardId: string): Promise<{ generating: boolean; generationStatus?: string; generationStartedAt?: string; generationFailure?: string }> {
+  const [row] = await tx.select({ status: jobs.status, lastError: jobs.lastError, startedAt: jobs.startedAt }).from(jobs)
     .where(and(
       eq(jobs.workspaceId, workspaceId),
       eq(jobs.type, JobType.NOTE_LEARNING_CARD_GENERATE),
       sql`${jobs.payload}->>'cardId' = ${cardId}`,
     )).orderBy(desc(jobs.scheduledAt)).limit(1);
-  if (row?.status === JobStatus.PENDING || row?.status === JobStatus.RUNNING) return { generating: true };
+  if (row?.status === JobStatus.PENDING || row?.status === JobStatus.RUNNING) return { generating: true, generationStatus: row.status === JobStatus.PENDING ? "queued" : "running",
+    ...(row.startedAt ? { generationStartedAt: row.startedAt.toISOString() } : {}) };
   if (row?.status !== JobStatus.DEAD) return { generating: false };
   // Report the failure category, never raw model output, SQL or provider details.
   const error = row.lastError ?? "";
-  const reason = /质量闸门|缺少题目|学习卡结果|原文依据/u.test(error) ? "题目没有通过原文、答案或题型校验，这次没有收录题目。"
+  const reason = /质量闸门|缺少题目|学习卡结果|原文依据|NOTE_OVERVIEW_OUTPUT_INVALID/u.test(error) ? "题目没有通过原文、答案或题型校验，这次没有收录题目。"
     : /没有可用于出题的正文/u.test(error) ? "这篇笔记还没有可用于出题的正文，请先补充并保存。"
       : /consent|AI_CONSENT/iu.test(error) ? "需要先在设置中启用 AI，再生成学习卡。"
         : /timeout|超时/iu.test(error) ? "出题服务这次等待超时，原文仍在，可以再试一次。"

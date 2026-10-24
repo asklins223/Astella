@@ -18,6 +18,7 @@
  * 判据、上限、SQL 一个字没改。调用点在 `companion-agent-runtime.ts`，从这里 import。
  */
 
+import { COMPANION_IMAGE_MAX_BYTES_V1 } from "@astella/shared/companion-conversation-contracts";
 import { sql, type SQL } from "drizzle-orm";
 import { pageReadableV1Schema } from "@astella/shared/companion-bridge-contracts";
 import { noteVisibleSqlText } from "@astella/shared/note-visibility";
@@ -346,15 +347,9 @@ export async function loadSourceReadPage(
   };
 }
 
-/**
- * 读图：原图字节上限。
- *
- * 上传侧允许 10MB，而一次视觉请求要把它 base64（≈×1.37）后整包发出去。不设这一层
- * 的结果不是"慢一点"：手机拍的原图稳定把这一步推到超时，用户看到的是"她没反应"，
- * 比一句"这张太大我看不了"坏得多。超过它就明确拒绝，不静默降分辨率（那会悄悄改变
- * 她看到的内容，而小字正是图片里最值钱的部分）。
- */
-export const READ_IMAGE_MAX_RAW_BYTES = 2_000_000;
+/** 上传回执认可的图片必须能进入识图。实际请求复用视觉 provider 的截止时间，
+ * 失败保留可重试的工具回执，不再用隐藏的 2 MB 阈值拒绝已接收的图片，也不丢小字。 */
+export const READ_IMAGE_MAX_RAW_BYTES = COMPANION_IMAGE_MAX_BYTES_V1;
 
 /** Nested vision uses the configured provider duration rather than a quick-read ceiling. */
 export const READ_IMAGE_TOOL_TIMEOUT_MS = DEFAULT_AI_PROVIDER_TIMEOUT_MS;

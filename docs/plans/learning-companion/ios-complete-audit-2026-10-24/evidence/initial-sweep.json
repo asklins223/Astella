@@ -1,0 +1,702 @@
+[
+  {
+    "route": "auth-login",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 71634",
+    "captureIndex": 0
+  },
+  {
+    "route": "auth-register",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 71682",
+    "captureIndex": 1
+  },
+  {
+    "route": "auth-register-password",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 71737",
+    "captureIndex": 2
+  },
+  {
+    "route": "auth-register-code",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 71774",
+    "captureIndex": 3
+  },
+  {
+    "route": "auth-forgot",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 71806",
+    "captureIndex": 4
+  },
+  {
+    "route": "auth-reset",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 71867",
+    "captureIndex": 5
+  },
+  {
+    "route": "auth-reset-password",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 71888",
+    "captureIndex": 6
+  },
+  {
+    "route": "auth-email-login",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 71910",
+    "captureIndex": 7
+  },
+  {
+    "route": "auth-email-login-code",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 71946",
+    "captureIndex": 8
+  },
+  {
+    "route": "profile",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 71968",
+    "captureIndex": 9
+  },
+  {
+    "route": "companion-center",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 71996",
+    "captureIndex": 10
+  },
+  {
+    "route": "companion-settings",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 72019",
+    "captureIndex": 11
+  },
+  {
+    "route": "companion-settings-loading",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 72060",
+    "captureIndex": 12
+  },
+  {
+    "route": "companion-settings-error",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 72088",
+    "captureIndex": 13
+  },
+  {
+    "route": "reading-settings",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 72119",
+    "captureIndex": 14
+  },
+  {
+    "route": "device-permissions",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 72144",
+    "captureIndex": 15
+  },
+  {
+    "route": "ai-authorization",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 72194",
+    "captureIndex": 16
+  },
+  {
+    "route": "ai-authorization-required",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 72216",
+    "captureIndex": 17
+  },
+  {
+    "route": "ai-authorization-loading",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 72240",
+    "captureIndex": 18
+  },
+  {
+    "route": "ai-authorization-error",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 72268",
+    "captureIndex": 19
+  },
+  {
+    "route": "conventions",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 72291",
+    "captureIndex": 20
+  },
+  {
+    "route": "conventions-loading",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 72312",
+    "captureIndex": 21
+  },
+  {
+    "route": "conventions-error",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 72341",
+    "captureIndex": 22
+  },
+  {
+    "route": "conventions-empty",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 72382",
+    "captureIndex": 23
+  },
+  {
+    "route": "server-address",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 72402",
+    "captureIndex": 24
+  },
+  {
+    "route": "settings",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 72435",
+    "captureIndex": 25
+  },
+  {
+    "route": "change-password",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 72462",
+    "captureIndex": 26
+  },
+  {
+    "route": "cache-management",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 72487",
+    "captureIndex": 27
+  },
+  {
+    "route": "about",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 72525",
+    "captureIndex": 28
+  },
+  {
+    "route": "workspace-management",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 72567",
+    "captureIndex": 29
+  },
+  {
+    "route": "workspace-management-dissolve",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 72601",
+    "captureIndex": 30
+  },
+  {
+    "route": "invite-management",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 72623",
+    "captureIndex": 31
+  },
+  {
+    "route": "invite-management-member",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 72642",
+    "captureIndex": 32
+  },
+  {
+    "route": "invite-management-personal",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 72666",
+    "captureIndex": 33
+  },
+  {
+    "route": "invite-management-members",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 72703",
+    "captureIndex": 34
+  },
+  {
+    "route": "invite-management-receipt",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 72733",
+    "captureIndex": 35
+  },
+  {
+    "route": "conversation",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 72758",
+    "captureIndex": 36
+  },
+  {
+    "route": "conversation-speaking",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 72790",
+    "captureIndex": 37
+  },
+  {
+    "route": "records",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 72815",
+    "captureIndex": 38
+  },
+  {
+    "route": "records-plain",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 72835",
+    "captureIndex": 39
+  },
+  {
+    "route": "records-inputs",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 72868",
+    "captureIndex": 40
+  },
+  {
+    "route": "records-rich",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 72905",
+    "captureIndex": 41
+  },
+  {
+    "route": "records-confirmation",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 72925",
+    "captureIndex": 42
+  },
+  {
+    "route": "records-proposal-expired",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 72944",
+    "captureIndex": 43
+  },
+  {
+    "route": "records-proposal-executing",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 72968",
+    "captureIndex": 44
+  },
+  {
+    "route": "records-proposal-failed",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 72997",
+    "captureIndex": 45
+  },
+  {
+    "route": "records-background",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 73017",
+    "captureIndex": 46
+  },
+  {
+    "route": "records-problems",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 73046",
+    "captureIndex": 47
+  },
+  {
+    "route": "library",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 73073",
+    "captureIndex": 48
+  },
+  {
+    "route": "library-loading",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 73096",
+    "captureIndex": 49
+  },
+  {
+    "route": "library-empty",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 73121",
+    "captureIndex": 50
+  },
+  {
+    "route": "library-error",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 73142",
+    "captureIndex": 51
+  },
+  {
+    "route": "library-rename",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 73183",
+    "captureIndex": 52
+  },
+  {
+    "route": "library-rename-done",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 73205",
+    "captureIndex": 53
+  },
+  {
+    "route": "library-delete",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 73224",
+    "captureIndex": 54
+  },
+  {
+    "route": "library-deleted",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 73246",
+    "captureIndex": 55
+  },
+  {
+    "route": "read",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 73286",
+    "captureIndex": 56
+  },
+  {
+    "route": "read-loading",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 73311",
+    "captureIndex": 57
+  },
+  {
+    "route": "orbit",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 73334",
+    "captureIndex": 58
+  },
+  {
+    "route": "orbit-memory",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 73362",
+    "captureIndex": 59
+  },
+  {
+    "route": "orbit-tasks",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 73394",
+    "captureIndex": 60
+  },
+  {
+    "route": "orbit-memory-detail",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 73416",
+    "captureIndex": 61
+  },
+  {
+    "route": "orbit-memory-detail-candidate",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 73450",
+    "captureIndex": 62
+  },
+  {
+    "route": "orbit-memory-detail-pinned",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 73478",
+    "captureIndex": 63
+  },
+  {
+    "route": "orbit-memory-detail-archived",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 73502",
+    "captureIndex": 64
+  },
+  {
+    "route": "orbit-memory-detail-disputed",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 73535",
+    "captureIndex": 65
+  },
+  {
+    "route": "orbit-memory-detail-superseded",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 73564",
+    "captureIndex": 66
+  },
+  {
+    "route": "orbit-memory-detail-conflict",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 73587",
+    "captureIndex": 67
+  },
+  {
+    "route": "orbit-memory-detail-long",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 73609",
+    "captureIndex": 68
+  },
+  {
+    "route": "orbit-memory-detail-missing",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 73633",
+    "captureIndex": 69
+  },
+  {
+    "route": "orbit-memory-detail-dismissed",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 73661",
+    "captureIndex": 70
+  },
+  {
+    "route": "orbit-memory-detail-loading",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 73696",
+    "captureIndex": 71
+  },
+  {
+    "route": "orbit-memory-detail-error",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 73715",
+    "captureIndex": 72
+  },
+  {
+    "route": "orbit-memory-detail-goal",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 73741",
+    "captureIndex": 73
+  },
+  {
+    "route": "me",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 73766",
+    "captureIndex": 74
+  },
+  {
+    "route": "me-bottom",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 73786",
+    "captureIndex": 75
+  },
+  {
+    "route": "diary",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 73810",
+    "captureIndex": 76
+  },
+  {
+    "route": "diary-loading",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 73836",
+    "captureIndex": 77
+  },
+  {
+    "route": "note-overview-generating",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 73858",
+    "captureIndex": 78
+  },
+  {
+    "route": "note-mind-map-generating",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 73887",
+    "captureIndex": 79
+  },
+  {
+    "route": "note-expansion-generating",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 73913",
+    "captureIndex": 80
+  },
+  {
+    "route": "note-working",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 73942",
+    "captureIndex": 81
+  },
+  {
+    "route": "note-rewrite",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 73970",
+    "captureIndex": 82
+  },
+  {
+    "route": "note-overview",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 74015",
+    "captureIndex": 83
+  },
+  {
+    "route": "note-overview-ready",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 74043",
+    "captureIndex": 84
+  },
+  {
+    "route": "note-mind-map",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 74071",
+    "captureIndex": 85
+  },
+  {
+    "route": "note-annotations",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 74092",
+    "captureIndex": 86
+  },
+  {
+    "route": "note-annotations-multiple",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 74120",
+    "captureIndex": 87
+  },
+  {
+    "route": "note-explain-ready",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 74148",
+    "captureIndex": 88
+  },
+  {
+    "route": "note-versions",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 74173",
+    "captureIndex": 89
+  },
+  {
+    "route": "note-outline",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 74200",
+    "captureIndex": 90
+  },
+  {
+    "route": "note-outline-empty",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 74230",
+    "captureIndex": 91
+  },
+  {
+    "route": "note-outline-jump",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 74258",
+    "captureIndex": 92
+  },
+  {
+    "route": "note-expansion",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 74290",
+    "captureIndex": 93
+  },
+  {
+    "route": "note-expansion-saved",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 74332",
+    "captureIndex": 94
+  },
+  {
+    "route": "note-learning-card",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 74359",
+    "captureIndex": 95
+  },
+  {
+    "route": "note-learning-practice",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 74398",
+    "captureIndex": 96
+  },
+  {
+    "route": "note-learning-generating",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 74427",
+    "captureIndex": 97
+  },
+  {
+    "route": "note-learning-result",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 74454",
+    "captureIndex": 98
+  },
+  {
+    "route": "note-learning-result-zero",
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "pid": "com.astella.mobile: 74477",
+    "captureIndex": 99
+  }
+]

@@ -284,7 +284,7 @@ describe("window Live2D policy", () => {
   });
 
   it("任务时刻各有表演：接活戴眼镜、成功比耶、失败吐魂、等确认冒问号、收工摘眼镜", () => {
-    expect(momentCueForWindowLive2D("working", "whale")).toEqual({ costume: "glasses-round" });
+    expect(momentCueForWindowLive2D("working", "whale")).toEqual({ costume: "glasses-square" });
     expect(momentCueForWindowLive2D("tool_succeeded", "whale")).toEqual({
       motion: { group: "Bubble", index: 0 },
       overlay: "peace",
@@ -296,7 +296,7 @@ describe("window Live2D policy", () => {
     expect(momentCueForWindowLive2D("awaiting_confirmation", "whale")?.overlay).toBe("question");
     expect(momentCueForWindowLive2D("reminder", "whale")?.overlay).toBe("surprised");
     expect(momentCueForWindowLive2D("task_started", "whale")?.motion)
-      .toEqual({ group: "Spray", index: 0 });
+      .toEqual({ group: "TakingNotes", index: 2 });
     // 一轮说完必须把眼镜摘下来，否则一副圆脸眼镜挂到下一次对话。
     expect(momentCueForWindowLive2D("reply_completed", "whale")).toEqual({ costume: null });
     expect(momentCueForWindowLive2D("space_arrived", "whale")).toEqual({ motion: { group: "Bubble", index: 0 }, costume: null });

@@ -1,0 +1,3081 @@
+{
+  "date": "2026-10-24",
+  "baseCommit": "6882d049",
+  "scope": "Current working-tree iOS implementation, including SwiftUI, UIKit, NotesWeb, launch artwork runtime, Cubism, notifications, widgets, and the actual API contracts it calls.",
+  "status": "Approved source implementation and integrated simulator regression complete; 17 hardware/fault/performance checks retain explicit acceptance limits.",
+  "referenceRoots": {
+    "ios": "apps/mobile-client/ios/Astella/",
+    "api": "apps/api/src/modules/",
+    "shared": "packages/shared/src/",
+    "worker": "workers/ai-worker/src/handlers/",
+    "mobile": "apps/mobile-client/",
+    "widgets": "apps/mobile-client/ios/AstellaWidgets/"
+  },
+  "items": [
+    {
+      "id": "G01",
+      "kind": "issue",
+      "priority": "P1",
+      "area": "Shared boundaries",
+      "finding": "Conversation disk cache is shared by every account, server and workspace. loadConversation displays latest.json before ensuring the current inbox; logout clears only memory. If the new inbox request fails, another account's private messages remain visible.",
+      "change": "Scope cached messages by server, user, workspace and conversation; reject mismatched cache envelopes before presentation, and clear account-owned transient outputs at session boundaries.",
+      "refs": [
+        "ios:App/CacheManager.swift:72",
+        "ios:App/Store/ConversationMethods.swift:62",
+        "ios:App/Store/SessionMethods.swift:216"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "G02",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Shared accessibility",
+      "finding": "Small secondary text uses #868A91 on #F7F8FA or white: calculated contrast is 3.26:1 or 3.47:1. User messages force white text on the adaptive accent; its dark-mode #8AB2FF gives only 2.12:1. Important instructions and sent messages lose readability.",
+      "change": "Use semantic foreground/background pairs, including accentLabel for accent fills; strengthen small-text contrast and verify all normal, error, selected and disabled combinations in both appearances.",
+      "refs": [
+        "ios:Design/Tokens.swift:22",
+        "ios:Conversation/MessageRow.swift:66",
+        "ios:Conversation/MessageRow.swift:83",
+        "ios:Conversation/CompanionComposer.swift:224"
+      ],
+      "evidenceBasis": "Source foreground/background pairs and a read-only WCAG luminance calculation. Full device accessibility review remains pending.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "implementation.md",
+          "notes-implementation.md",
+          "account-implementation.md",
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "G03",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Shared accessibility",
+      "finding": "Dynamic Type covers selected headings/body views but leaves auth fields, feature text, question stems/editors, full replies, annotation answers, segmented labels and WK titles/code/tables at fixed sizes. Large-type fixtures therefore do not mean the whole experience scales.",
+      "change": "Use semantic styles or scaled metrics throughout; send scale to Web content, allow layout reflow, and switch dense two-column layouts when necessary. Preserve the app's rounded visual identity.",
+      "refs": [
+        "ios:Auth/AuthComponents.swift:247",
+        "ios:Design/LiquidGlass.swift:179",
+        "ios:Screens/Notes/NoteLearningCard.swift:629",
+        "ios:Companion/CompanionSpeechBubble.swift:112",
+        "ios:Conversation/CompanionAnnotationAnswer.swift:10",
+        "ios:NotesWeb/reader.css:10",
+        "ios:Screens/Notes/NoteOverview.swift:172"
+      ],
+      "evidenceBasis": "Source and visual comparison of normal, loading, and supported large-type Debug fixtures.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "implementation.md",
+          "notes-implementation.md",
+          "account-implementation.md",
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "G04",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Shared accessibility",
+      "finding": "Core actions have small touch targets: note/diary-reference removal is 15x15 pt, rewrite removal 30x30, the Web selection toolbar about 29 pt high, annotation locate 28 pt, annotation actions 34 pt, version restore 30 pt, and several conversation controls 38 pt high. Outer row padding does not enlarge the inner button.",
+      "change": "Provide comfortable hit regions around the existing compact visuals; check neighbouring targets and VoiceOver activation without inflating every visual control.",
+      "refs": [
+        "ios:Conversation/CompanionComposer.swift:187",
+        "ios:Conversation/CompanionComposer.swift:197",
+        "ios:NotesWeb/reader.css:89",
+        "ios:Screens/Notes/NoteAnnotations.swift:131",
+        "ios:Screens/Notes/NoteAnnotations.swift:305",
+        "ios:Screens/Notes/NoteVersions.swift:131",
+        "ios:Conversation/ConversationScreen.swift:107",
+        "ios:Conversation/CompanionMiniChat.swift:25"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "implementation.md",
+          "notes-implementation.md",
+          "account-implementation.md",
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "G05",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Shared accessibility",
+      "finding": "Floating/history playback pause-resume uses only an accessibility-hidden glyph and has no accessible name. The memory correction TextEditor also has no explicit accessible label. Their parent screens otherwise provide meaningful labels.",
+      "change": "Give each control its actual current action/value and associate editable fields with their labels; verify the resulting VoiceOver tree and focus order.",
+      "refs": [
+        "ios:Conversation/CompanionComposer.swift:475",
+        "ios:Design/Components.swift:345",
+        "ios:Screens/MemoryDetailScreen.swift:572"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "implementation.md",
+          "notes-implementation.md",
+          "account-implementation.md",
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "G06",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Loading and intermediate states",
+      "finding": "Generic .list/.cards skeletons are reused for persona/convention forms, memory cards, version timelines, overview, mind map and operation questions. .cards currently draws the same icon-and-lines fallback as a list, so placeholders do not reserve the loaded content's structure.",
+      "change": "Create content-shaped placeholders per page family; keep headings/actions stable and preserve existing content during refresh. Avoid adding decorative loading motion.",
+      "refs": [
+        "ios:Design/ScreenStates.swift:99",
+        "ios:Screens/Account/ParticipationPreferencesScreen.swift:23",
+        "ios:Screens/Account/CompanionSettingsScreens.swift:87",
+        "ios:Screens/HandAndAccountScreens.swift:358",
+        "ios:Screens/Notes/NoteVersions.swift:67",
+        "ios:Screens/Notes/NoteOperation.swift:56"
+      ],
+      "evidenceBasis": "Source and visual comparison of normal, loading, and supported large-type Debug fixtures.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "implementation.md",
+          "notes-implementation.md",
+          "account-implementation.md",
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "G07",
+      "kind": "issue",
+      "priority": "P3",
+      "area": "Feedback interruption",
+      "finding": "Copy feedback starts an independent timer for every tap. A previous note-copy timer or invite-copy timer can dismiss the newest confirmation almost immediately; invite feedback can also carry across receipt changes.",
+      "change": "Own feedback with a cancellable task and an operation/receipt identity; a new copy restarts only its own reading interval.",
+      "refs": [
+        "ios:Screens/Notes/NoteReader.swift:302",
+        "ios:Screens/SpaceManagementScreens.swift:851"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "implementation.md",
+          "notes-implementation.md",
+          "account-implementation.md",
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "G08",
+      "kind": "issue",
+      "priority": "P3",
+      "area": "Shared accessibility",
+      "finding": "The current-workspace row remains an accessible Button even though hit testing is disabled and its action deliberately returns. It does not expose selected-state semantics, so assistive navigation encounters a misleading inert action.",
+      "change": "Represent the current room as selected information or a meaningful control, with an explicit selected value and no dead activation path.",
+      "refs": [
+        "ios:Screens/SpaceManagementScreens.swift:274",
+        "ios:Screens/SpaceManagementScreens.swift:305"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "account-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "G09",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Resource update",
+      "finding": "About advertises updates for reading and launch-motion resources. The client calls /app/client-assets/manifest, for which the current API has no implementation, and LaunchMotionWebView always loads the bundle rather than the updater's active root. The advertised startup-resource update has no complete call chain.",
+      "change": "Implement and verify the resource manifest/activation flow and connect both consumers, or present the capability honestly as unavailable until that chain exists. Keep offline bundle fallback explicit.",
+      "refs": [
+        "ios:Screens/Account/AboutAndStorageScreens.swift:47",
+        "ios:Screens/Account/AboutAndStorageScreens.swift:52",
+        "ios:App/ClientAssetUpdater.swift:49",
+        "ios:Shell/LaunchMotionWebView.swift:34"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "C01",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Conversation and voice",
+      "finding": "On first inbox identification, loadConversation clears cached messages. refreshMessages absorbs its GET failure, after which loadConversation writes the empty array to disk. A recoverable history outage therefore destroys the available offline copy.",
+      "change": "Keep a correctly scoped cache until a successful replacement receipt; propagate refresh outcome and never persist a failed/partial fetch as a successful empty history.",
+      "refs": [
+        "ios:App/Store/ConversationMethods.swift:72",
+        "ios:App/Store/ConversationMethods.swift:79",
+        "ios:App/Store/ConversationMethods.swift:113"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "C02",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Conversation and voice",
+      "finding": "Message-cache serialization drops selection/inputReference and rich-block routes, source references, titles, diagrams, citations and file metadata. It is written during loadConversation rather than on later message receipts. Offline history loses both recent messages and the evidence needed to understand old ones.",
+      "change": "Cache the complete supported message contract in a versioned, scoped envelope and update it from successful message receipts, with bounded retention.",
+      "refs": [
+        "ios:App/CacheManager.swift:86",
+        "ios:App/CacheManager.swift:105",
+        "ios:App/Store/ConversationMethods.swift:79"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "C03",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Conversation and voice",
+      "finding": "The text field remains editable during recording/transcription, but manual and 59-second automatic ASR completion unconditionally replace store.draft. A late transcription can erase a correction or unrelated text the user just typed.",
+      "change": "Track the draft revision owned by each recording; merge or offer the transcript when text has changed instead of overwriting newer work.",
+      "refs": [
+        "ios:Conversation/CompanionComposer.swift:209",
+        "ios:Conversation/CompanionComposer.swift:215",
+        "ios:App/VoiceCapture.swift:87"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "C04",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Conversation and voice",
+      "finding": "Typing or attaching material during recording makes voiceAction false while canSend is false. The same button still represents Finish recording but becomes disabled. Only Cancel or the undisclosed automatic timeout remains.",
+      "change": "Make recording completion an independent enabled action while recording; define text/attachment coexistence explicitly and preserve the user's latest intent.",
+      "refs": [
+        "ios:Conversation/CompanionComposer.swift:31",
+        "ios:Conversation/CompanionComposer.swift:208",
+        "ios:Conversation/CompanionComposer.swift:211",
+        "ios:Conversation/CompanionComposer.swift:227"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "C05",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Conversation and voice",
+      "finding": "VoiceCapture deletes the only WAV in defer on success, empty transcription and network failure. A temporary transcription failure after a long answer cannot be retried from the recording.",
+      "change": "Retain a failed recording as a recoverable draft with retry and explicit discard; clean it only after success, cancellation or the chosen retention policy.",
+      "refs": [
+        "ios:App/VoiceCapture.swift:113",
+        "ios:App/VoiceCapture.swift:137"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "C06",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Conversation and voice",
+      "finding": "Transcription has no visible cancellation control, although its request can wait 90 seconds and sending stays disabled. The user can type during the wait but cannot abandon ASR and send that text.",
+      "change": "Expose Cancel transcription, cancel/fence the pending operation and restore ordinary sending immediately; pair this with draft-revision protection.",
+      "refs": [
+        "ios:Conversation/CompanionComposer.swift:227",
+        "ios:Conversation/CompanionComposer.swift:462",
+        "ios:App/MobileAPI.swift:253"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "C07",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Conversation and voice",
+      "finding": "The reference picker lists only store.notes and requests the newest 30. It has no search or pagination, so older notes cannot be selected through this feature.",
+      "change": "Give the picker its own searchable/paginated data scope and preserve the chosen note/version identity.",
+      "refs": [
+        "ios:Conversation/CompanionComposer.swift:480",
+        "ios:App/Store/NotesMethods.swift:47"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "C08",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Conversation and voice",
+      "finding": "Reference-picker loading, empty and failure cases are the same blank list. Reader lookup has no row busy state, and its errors are assigned behind the sheet. A slow or failed selection looks inert.",
+      "change": "Render initial loading, no notes, no matches, per-row progress and retry in the picker itself; retain the list during refresh.",
+      "refs": [
+        "ios:Conversation/CompanionComposer.swift:480",
+        "ios:Conversation/CompanionComposer.swift:492",
+        "ios:Conversation/CompanionComposer.swift:497"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "C09",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Conversation and voice",
+      "finding": "Each note-picker tap starts an unfenced task. If A returns after a later B selection, A overwrites B's pending reference after the sheet closes. Completion also lacks token/workspace ownership checks.",
+      "change": "Use a latest-selection identity and session scope; ignore stale receipts and show which row is being resolved.",
+      "refs": [
+        "ios:Conversation/CompanionComposer.swift:483",
+        "ios:Conversation/CompanionComposer.swift:490"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "C10",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Conversation and voice",
+      "finding": "Tapping a historical diary reference creates an input reader with no body text. That reader only displays supplied text and its destination controls support files/notes, leaving a diary reference with metadata but no content or destination.",
+      "change": "Resolve the exact referenced diary/version, or clearly explain its availability and offer the appropriate diary destination with loading/error states.",
+      "refs": [
+        "ios:Conversation/CompanionUserInputs.swift:23",
+        "ios:Conversation/CompanionUserInputs.swift:144",
+        "ios:Conversation/CompanionUserInputs.swift:156"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "C11",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Conversation and voice",
+      "finding": "The current worker emits recommendation cards and learning_artifact routes, but iOS drops recommendation metadata and accepts only note routes. Non-note recommendations disappear; note recommendations lose their title/reason and become generic result cards.",
+      "change": "Decode and render the active recommendation contract, including exact artifact destinations; provide a visible fallback for unsupported content instead of silent omission.",
+      "refs": [
+        "ios:App/DTO/ConversationDTOs.swift:58",
+        "ios:App/DTO/CompanionProcessModels.swift:25",
+        "ios:Conversation/MessageRow.swift:43",
+        "worker:tools/companion-read-tools.ts:521",
+        "worker:tools/companion-read-tools.ts:560"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "C12",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Conversation and voice",
+      "finding": "Follow-up suggestions supplied by the service have no DTO/view representation, and assistant.followups.ready is ignored. The server-provided continuation actions are unavailable on iOS.",
+      "change": "Decide the intended iOS presentation, then carry the supported prompt contract through persistence, replay and accessible actions; avoid silently discarding it.",
+      "refs": [
+        "ios:App/DTO/ConversationDTOs.swift:39",
+        "ios:App/Store/ConversationMethods.swift:342"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "C13",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Conversation and voice",
+      "finding": "Saved-version result previews replace every image with a suggestion to open the current note. After the note changes, this cannot establish what the historical result contained.",
+      "change": "Render authenticated images belonging to the saved version, with loading, failure, retry and full-size inspection.",
+      "refs": [
+        "ios:Conversation/CompanionResultPreview.swift:100"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "C14",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Conversation and voice",
+      "finding": "View this full record only changes journal state. From a saved result in mini chat on Library it dismisses back to mini chat, without selecting Conversation or locating the full record. This was reproduced in the running app.",
+      "change": "Use one scope-aware navigation command that dismisses the relevant sheet, selects the records surface and locates the requested run after presentation.",
+      "refs": [
+        "ios:App/CompanionProcess.swift:91",
+        "ios:Conversation/CompanionResultPreview.swift:78",
+        "ios:Conversation/MessageHistory.swift:317"
+      ],
+      "evidenceBasis": "Source and simulator interaction: saved result → View full record from Library mini chat returned to the same mini chat.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "C15",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Conversation and voice",
+      "finding": "Older-history pagination loads run details only from message.runId. User messages have null runId, so failed/stopped turns without an assistant row and outside the newest-20 run snapshot lose their failure/process/recovery controls.",
+      "change": "Page or resolve run ownership by user-message identity as well as assistant run IDs; retain actionable terminal runs in older history.",
+      "refs": [
+        "ios:App/CompanionProcess.swift:158",
+        "api:companion-conversation/turn/turn-service.ts:487",
+        "api:companion-conversation/turn/companion-events.ts:283"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "C16",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Conversation and voice",
+      "finding": "Record projection excludes terminal runs without a visible user or assistant message. Proactive runs can have no user message, so a silent completed run with saved results is filtered out even when loaded explicitly. The projection defect is proven; its production frequency is unmeasured.",
+      "change": "Keep terminal runs that own results or actionable receipts visible and locatable, without fabricating a spoken message.",
+      "refs": [
+        "ios:App/DTO/CompanionRecordPresentation.swift:190",
+        "ios:App/DTO/CompanionRecordPresentation.swift:193"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "C17",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Conversation and voice",
+      "finding": "Initial sync fetches messages, then a run snapshot, then starts replay after that snapshot's latestSeq. A reply committed between the two reads can be absent from messages but already excluded from replay, leaving it missing until another refresh.",
+      "change": "Establish a consistent snapshot/replay boundary and reconcile messages after the cursor boundary, with a test that commits a reply between the two responses.",
+      "refs": [
+        "ios:App/Store/ConversationMethods.swift:78",
+        "ios:App/Store/ConversationMethods.swift:83",
+        "api:companion-conversation/turn/companion-events.ts:231"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "C18",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Conversation and voice",
+      "finding": "When the run snapshot fails, initial sync substitutes cursor zero. Replay can treat historical speech as live, or repeatedly hit CURSOR_EXPIRED and repeat the same failed recovery path. Snapshot failure is being converted into a valid cursor.",
+      "change": "Keep sync in an explicit recoverable state until a trustworthy cursor is obtained; separate historical replay from live delivery and bound resynchronization retries.",
+      "refs": [
+        "ios:App/Store/ConversationMethods.swift:81",
+        "ios:Companion/CompanionSpeech.swift:72",
+        "ios:Companion/CompanionDelivery.swift:99",
+        "api:companion-conversation/turn/companion-events.ts:527"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "C19",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Conversation and voice",
+      "finding": "Chat Live Activity updates only when isSending changes. Submission acceptance can mark the previous assistant message as Already replied, while the new utterance never updates it. Ordinary completion and logout do not end the chat activity, so stale content can remain on the lock screen.",
+      "change": "Bind activities to account/conversation/run identity, update from real delivery status and clear them at completion and session boundaries.",
+      "refs": [
+        "ios:Conversation/CompanionComposer.swift:109",
+        "ios:Companion/CompanionLiveActivity.swift:45",
+        "ios:App/Store/SessionMethods.swift:190",
+        "widgets:CompanionLiveActivityWidget.swift:15"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "C20",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Conversation and voice",
+      "finding": "Notification payloads contain conversationId/messageId but opening ignores both and operates on the current inbox. A stale notification surviving a scope boundary has no validation or correct-room routing. Foreground cleanup lowers occurrence but does not make this handler scope-aware.",
+      "change": "Validate notification ownership, restore or explicitly explain the referenced scope, then locate the exact message/run; never silently interpret another scope's identifier in the current room.",
+      "refs": [
+        "ios:Companion/CompanionNotice.swift:104",
+        "ios:App/Store/ConversationMethods.swift:31"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "C21",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Conversation and voice",
+      "finding": "File, camera, microphone and authorization failures share one generic error channel. Retry reloads Conversation, or sends the draft if an old turnSubmitFailed flag remains; it does not retry the failed action.",
+      "change": "Use typed failures with an operation-specific recovery action and preserved input. A file/mic retry must not implicitly send text.",
+      "refs": [
+        "ios:Conversation/CompanionComposer.swift:55",
+        "ios:App/Store/AttachmentMethods.swift:64",
+        "ios:App/VoiceCapture.swift:51"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "C22",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Conversation and voice",
+      "finding": "Conversation retry/reconnect owns no loading state; history uses global isLoading, also used by note fetching. Empty history can show no conversations during a real request, or show a skeleton for unrelated note work; repeated Retry stays enabled.",
+      "change": "Separate conversation initial-load, refresh and reconnect states from note/account work, and keep retry feedback on the operation being retried.",
+      "refs": [
+        "ios:App/Store/ConversationMethods.swift:60",
+        "ios:Conversation/MessageHistory.swift:28",
+        "ios:App/Store/NotesMethods.swift:38"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "C23",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Conversation and voice",
+      "finding": "The composer accepts arbitrarily long text and starts attachment uploads before the server rejects text beyond its hard limit. The resulting technical English error is passed to the user without an editing target.",
+      "change": "Match the server's text-length unit before uploading; show a precise editable validation state while preserving the entire draft and attachment receipts.",
+      "refs": [
+        "ios:Conversation/CompanionComposer.swift:209",
+        "ios:App/Store/ConversationMethods.swift:152",
+        "ios:App/Store/ConversationMethods.swift:219",
+        "api:companion-conversation/turn/turn-service.ts:220",
+        "ios:App/AppStore.swift:583"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "C24",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Conversation and voice",
+      "finding": "Model idle, downloading and failure all display the same PNG. Download/render failure has no explanation or in-app Retry, and ordinary reconnection does not recover it. The companion can stay static for the rest of the session.",
+      "change": "Keep a quiet fallback while exposing real download/failure status and targeted recovery in an appropriate place; retry without requiring sign-out or relaunch.",
+      "refs": [
+        "ios:Companion/CompanionStageView.swift:41",
+        "ios:App/Store/CompanionModelMethods.swift:9",
+        "ios:App/AppStore.swift:560"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "C25",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Conversation and voice",
+      "finding": "Required texture load/decode/allocation failures return null and are logged/ignored; bridge success checks only whether the model object exists. Missing Metal availability also returns without a failure transition. Some blank/partial renders therefore never activate PNG fallback.",
+      "change": "Propagate required rendering-resource failures to the shared renderer state and provide a recoverable fallback, distinguishing temporary drawable readiness from terminal failure.",
+      "refs": [
+        "ios:Companion/Cubism/LAppTextureManager.mm:50",
+        "ios:Companion/Cubism/LAppModel.mm:1073",
+        "ios:Companion/Cubism/CubismBridge.mm:228",
+        "ios:Companion/Cubism/CubismBridge.mm:256"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "C26",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Conversation and voice",
+      "finding": "A cached model is accepted by file count/path/byte size without comparing content hashes. Same-size corruption or corrected bytes in the same version can keep reusing a bad model, compounding the missing recovery UI.",
+      "change": "Compare manifest identity/hashes and invalidate/revalidate failed versions on recovery. Avoid introducing unconditional expensive hashing on every UI update.",
+      "refs": [
+        "ios:Companion/ModelDownloadManager.swift:240",
+        "ios:Companion/ModelDownloadManager.swift:278"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "N01",
+      "kind": "issue",
+      "priority": "P1",
+      "area": "Notes and reading",
+      "finding": "The WK reader loads a local file and inserts image src values directly. First-party uploads use authenticated /api/uploads URLs, but there is no API-origin or authenticated image bridge. Relative uploads resolve against file:, and image failure has no placeholder/retry path.",
+      "change": "Resolve first-party media through an authenticated, version-aware native/Web bridge and implement loading, error, retry and inspection states.",
+      "refs": [
+        "ios:Screens/Notes/NoteWebReader.swift:84",
+        "ios:NotesWeb/reader.js:41",
+        "api:upload/upload-service.ts:281",
+        "api:upload/routes.ts:95"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "notes-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "N02",
+      "kind": "issue",
+      "priority": "P1",
+      "area": "Notes and reading",
+      "finding": "Reader note links never reach requestNoteReference; the WK coordinator has no link policy or note-link message handler. The in-app note link was visibly inert in the simulator. HTTP links can replace the reader document without an application browser-return path.",
+      "change": "Route internal links to the exact application destination and external links to an appropriate browser surface; keep the reader document and its position intact.",
+      "refs": [
+        "ios:NotesWeb/reader.js:514",
+        "ios:Screens/Notes/NoteWebReader.swift:126",
+        "shared:note/note-markdown.ts:86"
+      ],
+      "evidenceBasis": "Source and simulator interaction: tapped a visible in-note blue note link with no navigation or response.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "notes-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "N03",
+      "kind": "issue",
+      "priority": "P1",
+      "area": "Notes and reading",
+      "finding": "Selections derive offsets/excerpts from DOM textContent after KaTeX. A read-only reproduction turns '方程 $x^2=1$ 的解。' into '方程 x2=1x^2=1x2=1 的解。', while server anchors use canonical TeX-source text. Valid formula paragraphs cannot yield matching anchors/highlights.",
+      "change": "Use one canonical text/offset projection with a mapping to rendered DOM ranges, covering formulas, inline syntax and line breaks; verify end-to-end anchor acceptance.",
+      "refs": [
+        "ios:NotesWeb/reader.js:155",
+        "ios:NotesWeb/reader.js:408",
+        "shared:note/note-markdown.ts:135",
+        "api:note-annotations/service.ts:107"
+      ],
+      "evidenceBasis": "Source and read-only jsdom/KaTeX rendering probe against the bundled reader, compared with the shared canonical projection.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "notes-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "N04",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Notes and reading",
+      "finding": "The reader bypasses the shared note grammar. A valid list block becomes a paragraph, ==highlight==/subscript/superscript remain literal, and soft-newline text differs from the canonical coordinate projection. Supported rich structures do not have equivalent reading/anchor behaviour.",
+      "change": "Reuse or faithfully implement the canonical note projection and extensions, with parity examples covering all supported block and inline types.",
+      "refs": [
+        "ios:NotesWeb/reader.js:5",
+        "ios:NotesWeb/reader.js:52",
+        "shared:note/note-markdown.ts:191",
+        "shared:note/note-markdown.ts:239"
+      ],
+      "evidenceBasis": "Source and read-only jsdom/KaTeX rendering probe against the bundled reader, compared with the shared canonical projection.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "notes-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "N05",
+      "kind": "issue",
+      "priority": "P1",
+      "area": "Notes and reading",
+      "finding": "Restore this version is offered to real mobile sessions, but the endpoint requires owner and rejects clientKind mobile even for owners. The dialog also promises a newly saved version, whereas the service changes the current-version pointer. The UI promises an operation that cannot succeed and describes different effects.",
+      "change": "Align the intended confirmed restore operation, mobile/owner authorization and actual version semantics; expose an honest read-only state where it is unavailable and preserve conflict recovery.",
+      "refs": [
+        "ios:Screens/Notes/NoteVersions.swift:121",
+        "ios:Screens/Notes/NoteVersions.swift:53",
+        "api:note/routes.ts:423",
+        "api:identity/middleware.ts:110",
+        "api:note/service.ts:1152"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "notes-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "N06",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Notes and reading",
+      "finding": "Members can enter import and prepare a document, and the client explicitly says members may import. POST /import/markdown is owner-only, so Save as note predictably fails after the preparation work.",
+      "change": "Resolve the member-import capability in the actual server contract and gate or support the action consistently before file preparation.",
+      "refs": [
+        "ios:Screens/NotesScreen.swift:189",
+        "ios:App/AppStore.swift:194",
+        "ios:Companion/CompanionInteractions.swift:146",
+        "api:import/routes.ts:21"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "notes-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "N07",
+      "kind": "issue",
+      "priority": "P1",
+      "area": "Notes and reading",
+      "finding": "Library import preparation and failure write attachmentPreparationProgress/errorMessage, which neither Library nor the shell presents. Large/locked/scanned/corrupt documents and offline import can fail with no visible explanation or recovery on the initiating page.",
+      "change": "Give library import its own preparation, cancellation, validation, failure and retry presentation; preserve the selected material and avoid routing the error behind a conversation surface.",
+      "refs": [
+        "ios:App/Store/AttachmentMethods.swift:54",
+        "ios:App/Store/AttachmentMethods.swift:64",
+        "ios:Companion/CompanionInteractions.swift:158",
+        "ios:Screens/NotesScreen.swift:243"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "notes-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "N08",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Notes and reading",
+      "finding": "WK file-load/navigation failure and Web content-process termination have no delegate-to-error transition. Slow-note recovery stops when a document exists, so the reader can remain loading/blank even though its data request succeeded.",
+      "change": "Handle all WK failure/termination paths and rebuild the reader from the preserved document/position with a visible retry state.",
+      "refs": [
+        "ios:Screens/Notes/NoteWebReader.swift:111",
+        "ios:Screens/Notes/NoteReader.swift:315",
+        "ios:Screens/Notes/NoteReader.swift:425"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "notes-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "N09",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Notes and reading",
+      "finding": "Search updates notesQuery before requesting, but retains old notes on failure. The list then labels A's retained items as B's search results. A generic error below the cards does not identify that the results belong to a different query.",
+      "change": "Keep result identity with the query that produced it; show retained results as stale/previous results or keep the new result region in a clear failed state.",
+      "refs": [
+        "ios:App/Store/NotesMethods.swift:35",
+        "ios:App/Store/NotesMethods.swift:58",
+        "ios:Screens/NotesScreen.swift:292"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "notes-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "N10",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Notes and reading",
+      "finding": "After successful annotation deletion, the drawer falls back to initialAnnotation when the item disappears from the store. Deleted text and edit/delete actions remain visible and repeating them returns 404.",
+      "change": "Represent deletion explicitly, dismiss or transition the drawer after the receipt, and never revive an initial snapshot as the live record.",
+      "refs": [
+        "ios:Screens/Notes/NoteAnnotations.swift:39",
+        "ios:Screens/Notes/NoteAnnotations.swift:94",
+        "ios:App/Store/NotesMethods.swift:472"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "notes-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "N11",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Notes and reading",
+      "finding": "Both annotation drawers discard the ordinal passed by Return to original and only close the sheet. Offscreen source passages are never located.",
+      "change": "Route the source ordinal through the existing version-aware jump function after dismissal and support unloaded source pages.",
+      "refs": [
+        "ios:Screens/Notes/NoteReader.swift:156",
+        "ios:Screens/Notes/NoteReader.swift:162",
+        "ios:Screens/Notes/NoteAnnotations.swift:119"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "notes-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "N12",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Notes and reading",
+      "finding": "Annotations are fetched without version or pagination, limited to 100 across all versions, then filtered to the current version. An older-version collection can consume the page and make valid current highlights disappear without a partial-result indication.",
+      "change": "Request the intended version and paginate to a complete or explicitly bounded result; keep older-version history separate and visible when requested.",
+      "refs": [
+        "ios:App/Store/NotesMethods.swift:326",
+        "ios:Screens/Notes/NoteReader.swift:350",
+        "api:note-annotations/service.ts:85"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "notes-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "N13",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Notes and reading",
+      "finding": "Version history requests limit=50, offset=0 and has no next-page action or partial indicator. Earlier valid history becomes inaccessible.",
+      "change": "Add version-history pagination and accurate total/partial state while retaining the current selection and scroll position.",
+      "refs": [
+        "ios:App/Store/NotesMethods.swift:625",
+        "ios:Screens/Notes/NoteVersions.swift:92"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "notes-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "N14",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Notes and reading",
+      "finding": "Opening/reloading a note immediately clears its visible annotations. A failed annotation request is reported only inside an annotation drawer; the main reader silently loses the highlights.",
+      "change": "Preserve correctly scoped highlights during refresh and show annotation-specific availability/retry without replacing readable body content.",
+      "refs": [
+        "ios:App/Store/NotesMethods.swift:244",
+        "ios:App/Store/NotesMethods.swift:332",
+        "ios:Screens/Notes/NoteAnnotations.swift:74"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "notes-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "N15",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Notes and reading",
+      "finding": "An AI explanation holds one global isAnnotationBusy flag. A user trying to annotate an unrelated range encounters a disabled editor/save even though only the original working range should be locked.",
+      "change": "Own busy state per operation/range and distinguish editable drafts from in-flight writes; preserve the existing precise range lock.",
+      "refs": [
+        "ios:App/Store/NotesMethods.swift:413",
+        "ios:Screens/Notes/NoteAnnotations.swift:219"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "notes-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "N16",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Notes and reading",
+      "finding": "Version dates use only default ISO8601DateFormatter, while API dates contain fractional seconds. A local Foundation probe accepts the fixture timestamp without fractions and rejects the real-format example, producing missing dates.",
+      "change": "Use the project's tolerant ISO8601 parsing path consistently and test actual serialized API timestamps.",
+      "refs": [
+        "ios:Screens/Notes/NoteVersions.swift:217",
+        "ios:Screens/Notes/NoteVersions.swift:271",
+        "api:note/service.ts:1080",
+        "ios:App/Models.swift:190"
+      ],
+      "evidenceBasis": "Source and a read-only Foundation ISO8601 parsing probe; fractional and non-fractional timestamps compared.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "notes-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "N17",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Notes and reading",
+      "finding": "Each unloaded outline jump starts a task, while loadNotePage rejects any request during another page load. A later B destination can be dropped and an earlier A request can scroll after B was selected.",
+      "change": "Own a latest destination request, cancel or supersede earlier work and apply only the newest requested jump after its page becomes available.",
+      "refs": [
+        "ios:Screens/Notes/NoteReader.swift:453",
+        "ios:App/Store/NotesMethods.swift:283"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "notes-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "N18",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Notes and reading",
+      "finding": "The WK payload key omits appearance/resolved colors and title. A retained reader can skip an appearance-only or title-only update, leaving native chrome and Web content inconsistent until another key changes. Visual reproduction of each reachable appearance path is still required.",
+      "change": "Include all rendered metadata/theme inputs in invalidation and update those properties without resetting reading position.",
+      "refs": [
+        "ios:Screens/Notes/NoteWebReader.swift:150",
+        "ios:Screens/Notes/NoteWebReader.swift:193",
+        "ios:Screens/Notes/NoteWebReader.swift:253"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "notes-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "N19",
+      "kind": "issue",
+      "priority": "P1",
+      "area": "Notes and reading",
+      "finding": "Mind-map x positions clamp every depth >=2 to the same third column. A legal single-child depth-2/depth-3 chain also shares centerY, so one node completely obscures another.",
+      "change": "Lay out the actual supported tree depth, derive canvas bounds from node geometry and preserve readable separation for every legal node.",
+      "refs": [
+        "ios:Screens/Notes/NoteMindMap.swift:327",
+        "ios:Screens/Notes/NoteMindMap.swift:359",
+        "shared:contracts/note/note-mind-map-contracts.ts:26"
+      ],
+      "evidenceBasis": "Source geometry/coordinate derivation. Physical pan/pinch feel and large-graph profiling remain pending.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "notes-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "N20",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Notes and reading",
+      "finding": "Fit to screen resets zoom/pan but computes fit from width alone. Minimum leaf spacing can place nodes beyond the reported targetHeight, so large graphs remain outside the viewport after Fit.",
+      "change": "Compute complete graph bounds, fit both dimensions and center those bounds while allowing later direct manipulation.",
+      "refs": [
+        "ios:Screens/Notes/NoteMindMap.swift:170",
+        "ios:Screens/Notes/NoteMindMap.swift:355",
+        "ios:Screens/Notes/NoteMindMap.swift:379",
+        "ios:Screens/Notes/NoteMindMap.swift:395"
+      ],
+      "evidenceBasis": "Source geometry/coordinate derivation. Physical pan/pinch feel and large-graph profiling remain pending.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "notes-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "N21",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Notes and reading",
+      "finding": "Live pinch clamps zoom*fit*pinchScale, but pinch completion clamps zoom*value before applying fit. On a typical phone fit about 0.766, a live 2.4 scale can snap back to about 1.84 on release. Geometry mismatch is proven; physical pinch remains unverified.",
+      "change": "Use one scale coordinate system and clamp policy for live interaction, release and zoom buttons; preserve the presented scale at handoff.",
+      "refs": [
+        "ios:Screens/Notes/NoteMindMap.swift:395",
+        "ios:Screens/Notes/NoteMindMap.swift:400",
+        "ios:Screens/Notes/NoteMindMap.swift:456"
+      ],
+      "evidenceBasis": "Source geometry/coordinate derivation. Physical pan/pinch feel and large-graph profiling remain pending.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "notes-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "N22",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Notes and reading",
+      "finding": "Mind-map parsing drops source ordinals, retained quotes are never shown, and node text is capped at two lines without a detail action. Zoom cannot reveal the omitted explanation or navigate to evidence.",
+      "change": "Offer readable node detail and exact source navigation, retaining note/version/block identity; let the canvas remain a summary rather than the only reader.",
+      "refs": [
+        "ios:Screens/Notes/NoteMindMap.swift:317",
+        "ios:Screens/Notes/NoteMindMap.swift:490",
+        "ios:Screens/Notes/NoteMindMap.swift:517",
+        "api:note-mind-maps/routes.ts:41"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "notes-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "N23",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Notes and reading",
+      "finding": "An expansion draft's body is limited to six preview lines; tapping the card only selects it. Users must accept substantial AI content without a way to read the full draft, although the service supports reviewed edits.",
+      "change": "Add full draft review and, where appropriate, title/body editing before acceptance while preserving selection state.",
+      "refs": [
+        "ios:Screens/Notes/NoteExpansion.swift:316",
+        "ios:Screens/Notes/NoteExpansion.swift:379",
+        "api:note-expansions/service.ts:275"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "notes-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "N24",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Notes and reading",
+      "finding": "Accepting any subset of expansion drafts sets local task.status to confirmed. The server remains ready until all drafts are confirmed, so the unselected drafts disappear until the feature is reopened.",
+      "change": "Apply the server receipt's remaining-draft/task state and keep unaccepted drafts available for review or explicit dismissal.",
+      "refs": [
+        "ios:Screens/Notes/NoteExpansion.swift:537",
+        "ios:Screens/Notes/NoteExpansion.swift:540",
+        "api:note-expansions/service.ts:187"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "notes-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "N25",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Notes and reading",
+      "finding": "Expansion selection stays editable during review/confirmation. An earlier review receipt replaces drafts after a newer tap, and selectedDraftIDs is then read from that overwritten state. The committed subset can differ from the latest visible choice.",
+      "change": "Freeze or revision-track the submitted selection and reconcile receipts without discarding newer edits; show the exact batch being accepted.",
+      "refs": [
+        "ios:Screens/Notes/NoteExpansion.swift:53",
+        "ios:Screens/Notes/NoteExpansion.swift:320",
+        "ios:Screens/Notes/NoteExpansion.swift:535"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "notes-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "N26",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Notes and reading",
+      "finding": "Overview, mind map and expansion replace existing results whenever the latest generation ticket is not ready. A failed regeneration can keep the older readable result hidden even after reopening, with no View existing result action.",
+      "change": "Keep the last successful result readable while showing the new task's status and failure separately; make result version and generation identity explicit.",
+      "refs": [
+        "ios:Screens/Notes/NoteOverview.swift:22",
+        "ios:Screens/Notes/NoteOverview.swift:41",
+        "ios:Screens/Notes/NoteMindMap.swift:70",
+        "ios:Screens/Notes/NoteExpansion.swift:64"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "notes-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "N27",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Notes and reading",
+      "finding": "Reopened learning-card failures pass human-readable generationFailure through an enum-only formatter, collapsing useful causes to a generic message. Mind-map failureMessage is also discarded. Recovery instructions disappear across task restoration.",
+      "change": "Persist/display structured failure codes together with safe human explanations and the correct recoverable action.",
+      "refs": [
+        "ios:Screens/Notes/NoteLearningCard.swift:1597",
+        "ios:Screens/Notes/NoteFeatureComponents.swift:382",
+        "ios:App/Store/NoteGenerationMethods.swift:162",
+        "api:note-learning-cards/service.ts:164"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "notes-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "N28",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Notes and reading",
+      "finding": "A generation-time consent rejection can become literal ai_consent_required in a progress page with only Retry. The authorization-aware dock is hidden during generation, so the user cannot recover from that state in context.",
+      "change": "Represent authorization/data-policy failures as typed states with an accessible settings destination and a preserved original request.",
+      "refs": [
+        "ios:Screens/Notes/NoteFeatureComponents.swift:98",
+        "ios:Screens/Notes/NoteGenerationProgress.swift:42",
+        "ios:Screens/Notes/NoteLearningComponents.swift:165"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "notes-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "N29",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Notes and reading",
+      "finding": "Materials and processing status unconditionally claims Only local and Connected, and reports store.notes.count as the room total. Imports/read data use the server, and notes is only a loaded/search subset. Offline/search/paginated cases produce false status statements.",
+      "change": "Derive locality, connection and counts from actual state/receipts and label partial or unknown values honestly.",
+      "refs": [
+        "ios:Screens/Notes/ProcessingStatusSheet.swift:15",
+        "ios:Screens/Notes/ProcessingStatusSheet.swift:60",
+        "ios:Companion/CompanionInteractions.swift:146"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "notes-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "N30",
+      "kind": "issue",
+      "priority": "P1",
+      "area": "Notes and reading",
+      "finding": "Native text selection/edit actions are disabled and replacement selection requires a touch/pointer hold. There is no equivalent keyboard/assistive action to create a passage selection; focusable annotation marks also have no Enter/Space handler.",
+      "change": "Provide equivalent accessible selection and passage actions, preserve appropriate native capabilities, and verify keyboard/VoiceOver operation rather than relying on visual touch controls alone.",
+      "refs": [
+        "ios:Screens/Notes/NoteWebReader.swift:16",
+        "ios:NotesWeb/reader.css:13",
+        "ios:NotesWeb/reader.js:114",
+        "ios:NotesWeb/reader.js:232"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "notes-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "N31",
+      "kind": "issue",
+      "priority": "P3",
+      "area": "Notes and reading",
+      "finding": "Overview/map/expansion initialize loading=false and await account settings before starting their content read. Their first render can claim Nothing generated before existing results were requested, creating a false empty intermediate state.",
+      "change": "Start in unknown/loading, request independent data concurrently when safe, and distinguish first load from refresh without flashing an empty primer.",
+      "refs": [
+        "ios:Screens/Notes/NoteOverview.swift:26",
+        "ios:Screens/Notes/NoteOverview.swift:74",
+        "ios:Screens/Notes/NoteOverview.swift:98",
+        "ios:Screens/Notes/NoteMindMap.swift:97",
+        "ios:Screens/Notes/NoteExpansion.swift:97"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "notes-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "L01",
+      "kind": "issue",
+      "priority": "P1",
+      "area": "Learning and read-only results",
+      "finding": "Answer editors remain interactive while submission flushes answers and awaits Complete. A late edit can enter the buffer after grading starts; the server rejects further saves, while Close refuses to leave with a nonempty buffer. Normal exit can become blocked by an unsaveable edit.",
+      "change": "Establish a submission ownership boundary: finish/freeze the submitted revision atomically, preserve any later draft separately and always provide a recoverable exit without silently losing work.",
+      "refs": [
+        "ios:Screens/Notes/NoteLearningCard.swift:649",
+        "ios:Screens/Notes/NoteLearningCard.swift:1759",
+        "ios:Screens/Notes/NoteLearningCard.swift:1765",
+        "ios:Screens/Notes/NoteLearningCard.swift:1806",
+        "api:note-learning-cards/service.ts:257"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "notes-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "L02",
+      "kind": "issue",
+      "priority": "P1",
+      "area": "Learning and read-only results",
+      "finding": "Learning-card versionNumber reads nonexistent card.versionNo, then falls back to the current note version. The API supplies noteVersionId and a separate versions list. Older questions and stars can consequently be labelled as the new note version with no stale warning.",
+      "change": "Resolve the card's immutable source version through the actual contract; present old-version cards/results honestly and make switching/regeneration explicit.",
+      "refs": [
+        "ios:Screens/Notes/NoteLearningCard.swift:187",
+        "api:note-learning-cards/service.ts:75",
+        "api:note-learning-cards/service.ts:125"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "notes-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "L03",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Learning and read-only results",
+      "finding": "Regenerate lets the user choose 4/6/8 questions, but an existing same-version card returns card_exists with no generation job. iOS simply reloads the unchanged card, silently ignoring the selected count.",
+      "change": "Align the regenerate action with server semantics: either support a deliberate replacement flow or honestly explain/reuse the existing card without pretending to regenerate it.",
+      "refs": [
+        "ios:Screens/Notes/NoteLearningCard.swift:388",
+        "ios:Screens/Notes/NoteLearningCard.swift:530",
+        "api:note-learning-cards/service.ts:191",
+        "api:note-learning-cards/routes.ts:65"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "notes-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "L04",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Learning and read-only results",
+      "finding": "The complete-practice count is calculated from at most 50 returned attempts rather than the accurate completedAttemptCount already supplied by the card. Long-term totals are understated.",
+      "change": "Use the server's complete statistic and keep paged attempt history separate from aggregate progress.",
+      "refs": [
+        "ios:Screens/Notes/NoteLearningCard.swift:60",
+        "api:note-learning-cards/service.ts:134",
+        "api:note-learning-cards/service.ts:325"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "notes-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "L05",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Learning and read-only results",
+      "finding": "Repair-steps questions store selection order in an invisible array but show only pressed buttons in the original reversed list. Different complete orderings look identical in read-only replay, hiding the defining answer property.",
+      "change": "Show the chosen sequence/positions as it is constructed and replay that exact order in the completed read-only result.",
+      "refs": [
+        "shared:learning/note-learning-card-operation.ts:56",
+        "shared:learning/note-learning-card-operation.ts:92",
+        "shared:learning/note-learning-card-operation.ts:114"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "notes-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "L06",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Learning and read-only results",
+      "finding": "Operation questions hardcode a light cream/green theme and fixed text sizes. The host supplies answers/readOnly but no appearance, scale or motion preferences, making operation questions inconsistent with dark mode and accessibility settings.",
+      "change": "Pass semantic appearance/typography/motion inputs through the artifact host contract while keeping read-only controls genuinely noneditable.",
+      "refs": [
+        "shared:learning/note-learning-card-operation.ts:62",
+        "ios:Screens/Notes/NoteOperation.swift:27",
+        "ios:Screens/Notes/NoteOperation.swift:149"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "notes-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "A01",
+      "kind": "issue",
+      "priority": "P1",
+      "area": "Account, spaces and Orbit",
+      "finding": "Saving a typo/dead service address logs the user out, but logged-out authentication and recovery screens contain no service-address editor. The connection cannot be repaired through ordinary app navigation.",
+      "change": "Provide service recovery from login/session failure and validate the chosen origin without trapping access to the editor; preserve the current endpoint until the change is explicitly committed.",
+      "refs": [
+        "ios:Screens/Account/ServiceAddressScreen.swift:45",
+        "ios:Screens/Account/ServiceAddressScreen.swift:53",
+        "ios:Auth/AuthScreen.swift:347",
+        "ios:Shell/SessionRecoveryScreen.swift:19"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "account-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "A02",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Account, spaces and Orbit",
+      "finding": "Workspace rows guard isSpaceBusy, but switchWorkspace sets only isAccountBusy and permits concurrent switches. The first response rotates the token and causes a later intended selection to be discarded. The UI follows response order rather than the latest tap.",
+      "change": "Own switching as a distinct operation with target identity, a defined latest-intent policy and coherent progress/disabled states.",
+      "refs": [
+        "ios:Screens/SpaceManagementScreens.swift:265",
+        "ios:Screens/SpaceManagementScreens.swift:275",
+        "ios:App/Store/AccountMethods.swift:162",
+        "ios:App/Store/AccountMethods.swift:180",
+        "ios:App/Store/AccountMethods.swift:186"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "account-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "A03",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Account, spaces and Orbit",
+      "finding": "A normal switch with stayOnCurrentTab clears profile, removes MainTabShell and loses its local management navigation path. Switch/create/current-room leave or dissolve returns to Me root rather than the promised management list. Debug switching bypasses the boundary reset and conceals this difference.",
+      "change": "Preserve an explicit safe post-switch destination across session restoration and present the resulting notice/draft warning at that destination.",
+      "refs": [
+        "ios:App/Store/AccountMethods.swift:147",
+        "ios:App/Store/AccountMethods.swift:154",
+        "ios:App/Store/AccountMethods.swift:192",
+        "ios:App/AstellaApp.swift:233",
+        "ios:Shell/MainTabShell.swift:18"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "account-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "A04",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Account, spaces and Orbit",
+      "finding": "The Disputed memory filter returns false unconditionally and the list model does not retain epistemicStatus. A disputed memory can never appear in its dedicated filter.",
+      "change": "Carry actual memory state into the list and implement the server-aligned disputed filter with truthful empty-state copy.",
+      "refs": [
+        "ios:Screens/HandAndAccountScreens.swift:40",
+        "ios:Screens/HandAndAccountScreens.swift:511"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "account-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "A05",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Account, spaces and Orbit",
+      "finding": "Fixed memory filtering uses budgetTier=resident, whereas Pin changes pinned=true. Newly pinned memories do not enter Fixed; resident but unpinned memories do. The Debug action sets both properties and masks the production mismatch.",
+      "change": "Use the actual pin property consistently and keep memory-budget retention distinct from the user's pin action in models and fixtures.",
+      "refs": [
+        "ios:Screens/HandAndAccountScreens.swift:510",
+        "ios:Screens/MemoryDetailScreen.swift:1064",
+        "ios:Screens/MemoryDetailScreen.swift:1137",
+        "api:companion-conversation/memory/memory-service.ts:870"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "account-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "A06",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Account, spaces and Orbit",
+      "finding": "Ignored candidates keep candidate=true but receive dismissedAt, which the list discards. They return to Pending confirmation even though their detail says Ignored and no longer offers adoption controls.",
+      "change": "Preserve dismissal state and give ignored candidates their correct list/filter treatment instead of repeatedly soliciting the same decision.",
+      "refs": [
+        "ios:Screens/HandAndAccountScreens.swift:45",
+        "ios:Screens/HandAndAccountScreens.swift:509",
+        "api:companion-conversation/memory/memory-service.ts:938"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "account-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "A07",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Account, spaces and Orbit",
+      "finding": "Ordinary noncandidate memories are labelled Confirmed and Has evidence without carrying tentative/inferred/disputed/superseded state. The list overstates certainty and can contradict the detail screen.",
+      "change": "Use the actual epistemic, confirmation and replacement state in concise labels; do not infer evidence or user confirmation from absence of candidate status.",
+      "refs": [
+        "ios:Screens/HandAndAccountScreens.swift:40",
+        "ios:Screens/HandAndAccountScreens.swift:469",
+        "ios:Screens/HandAndAccountScreens.swift:516"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "account-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "A08",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Account, spaces and Orbit",
+      "finding": "Memory groups/filters run locally on only the first 200 unfiltered records, including archived/candidate content. There is no paging/search/partial-result indicator, so older matching memories silently disappear.",
+      "change": "Use server-aligned filtering and pagination or an explicit bounded-search contract, with truthful counts and load-more/retry states.",
+      "refs": [
+        "ios:Screens/HandAndAccountScreens.swift:638",
+        "api:companion-conversation/memory/memory-service.ts:34",
+        "api:companion-conversation/memory/memory-service.ts:1119"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "account-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "A09",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Account, spaces and Orbit",
+      "finding": "Orbit checks the selected month/cancellation before its memory request, but not after success; loading=false is also unconditional there. An obsolete month/refresh request can overwrite memory state or end a newer request's skeleton.",
+      "change": "Fence every receipt and finalizer with request identity and scope; separate diary-month and memory loading ownership.",
+      "refs": [
+        "ios:Screens/HandAndAccountScreens.swift:636",
+        "ios:Screens/HandAndAccountScreens.swift:642",
+        "ios:Screens/HandAndAccountScreens.swift:651"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "account-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "A10",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Account, spaces and Orbit",
+      "finding": "The monthly API returns failed diary days, but the timeline keeps only generated entries. A month of failed generation can appear as No diary, and the existing failure-detail UI has no ordinary list entry.",
+      "change": "Represent failed/pending days with their actual state and a readable explanation/recovery path; reserve genuine empty states for absence of records.",
+      "refs": [
+        "ios:Screens/HandAndAccountScreens.swift:228",
+        "ios:Screens/HandAndAccountScreens.swift:293",
+        "ios:Screens/OrbitDetailScreens.swift:359"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "account-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "A11",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Account, spaces and Orbit",
+      "finding": "Diary/memory refresh failure replaces already usable content with an error card; memory and recycle refreshes also re-enter full skeleton states. Weak connectivity removes readable material and disrupts scanning.",
+      "change": "Keep successful content while refreshing and show a local stale/error retry affordance. Use the full skeleton only before the first usable result.",
+      "refs": [
+        "ios:Screens/HandAndAccountScreens.swift:222",
+        "ios:Screens/HandAndAccountScreens.swift:357",
+        "ios:Screens/OrbitDetailScreens.swift:660"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "account-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "A12",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Account, spaces and Orbit",
+      "finding": "Diary paging searches only the previous/current/next month but labels the absence of a neighbour as the earliest/latest diary globally. Sparse entries outside that window become falsely undiscoverable.",
+      "change": "Fetch true neighbours or state the limited/unavailable navigation result honestly, including independent date-navigation failure.",
+      "refs": [
+        "ios:Screens/OrbitDetailScreens.swift:343",
+        "ios:Screens/OrbitDetailScreens.swift:354",
+        "ios:Screens/OrbitDetailScreens.swift:405"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "account-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "A13",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Account, spaces and Orbit",
+      "finding": "Previous/next diary actions push another diary onto NavigationStack. The Back control labelled Orbit only dismisses one page, so after paging it returns to a different diary rather than Orbit and builds a deep stack.",
+      "change": "Treat adjacent-date paging as changing the current diary destination, with one clear return to the originating Orbit position.",
+      "refs": [
+        "ios:Screens/OrbitDetailScreens.swift:144",
+        "ios:Screens/OrbitDetailScreens.swift:335",
+        "ios:Screens/OrbitDetailScreens.swift:346"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "account-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "A14",
+      "kind": "issue",
+      "priority": "P3",
+      "area": "Account, spaces and Orbit",
+      "finding": "Hide/delete are available for an existing failed/non-generated diary, but their errors are only rendered inside the generated diary-paper branch. On these states a failed action is silent.",
+      "change": "Put action feedback at a screen-level state boundary available to every record status, with the correct retry action.",
+      "refs": [
+        "ios:Screens/OrbitDetailScreens.swift:87",
+        "ios:Screens/OrbitDetailScreens.swift:159",
+        "ios:Screens/OrbitDetailScreens.swift:265",
+        "ios:Screens/OrbitDetailScreens.swift:430"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "account-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "A15",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Account, spaces and Orbit",
+      "finding": "Memory history removes every snapshot whose text equals today's body. An A→B→A history loses the first A, while repeated old state snapshots can be counted as multiple content edits.",
+      "change": "Identify actual chronological content transitions and preserve genuine earlier versions independently of whether their text matches the current body.",
+      "refs": [
+        "ios:Screens/MemoryDetailScreen.swift:346",
+        "ios:Screens/MemoryDetailScreen.swift:372"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "account-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "A16",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Account, spaces and Orbit",
+      "finding": "Swift grapheme counts are used for memory/auth limits while the server validates JavaScript UTF-16 string length. Emoji/composed-character inputs can satisfy the displayed limit but be rejected on save. OTP accepts Unicode numbers, while the API requires six ASCII digits, creating another client/server validation mismatch.",
+      "change": "Define and share length/normalization rules per field, validate before submission and never silently truncate by a different coordinate unit.",
+      "refs": [
+        "ios:Screens/MemoryDetailScreen.swift:579",
+        "ios:Screens/MemoryDetailScreen.swift:587",
+        "ios:Auth/AuthScreen.swift:33",
+        "ios:Auth/AuthScreen.swift:34",
+        "api:companion-conversation/memory/memory-routes.ts:178",
+        "api:identity/email-code-routes.ts:41"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "account-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "A17",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Account, spaces and Orbit",
+      "finding": "Reset moves from six-digit entry to Set new password using only local format validation, then claims Verification passed. Actual verification happens only after both new-password fields are completed, so a bad code is discovered after more work.",
+      "change": "Either verify at the step that claims success or use accurate intermediate copy and preserve all input when the final verification fails.",
+      "refs": [
+        "ios:Auth/AuthScreen.swift:76",
+        "ios:Auth/AuthScreen.swift:510",
+        "ios:App/Store/SessionMethods.swift:73"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "account-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "A18",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Account, spaces and Orbit",
+      "finding": "All auth routes share password/confirmation state, and ordinary route changes do not clear it. A password typed for login can reappear as the new-password draft in Forgot password or registration.",
+      "change": "Own secrets per flow/purpose and clear or deliberately transfer only the relevant fields when crossing authentication flows.",
+      "refs": [
+        "ios:Auth/AuthScreen.swift:11",
+        "ios:Auth/AuthScreen.swift:544"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "account-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "A19",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Account, spaces and Orbit",
+      "finding": "The sign-in agreement/privacy names are plain Text. A logged-out user cannot open the documents they are being asked to agree to; document sheets are only reachable in authenticated settings.",
+      "change": "Provide readable public document links at the authentication decision and retain their real deployment/version identity. This is an access/consent UX finding, not a legal conclusion.",
+      "refs": [
+        "ios:Auth/AuthScreen.swift:192",
+        "ios:Screens/Account/AboutAndStorageScreens.swift:54"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "account-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "A20",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Account, spaces and Orbit",
+      "finding": "Create/join workspace clear the submitted draft before awaiting, and rename clears its target before the operation. Network or validation failure closes the alert and forces retyping/repasting.",
+      "change": "Retain the submitted draft and target until success or explicit discard, with inline recoverable errors and coherent per-operation busy state.",
+      "refs": [
+        "ios:Screens/SpaceManagementScreens.swift:214",
+        "ios:Screens/SpaceManagementScreens.swift:227",
+        "ios:Screens/SpaceManagementScreens.swift:397"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "account-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "A21",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Account, spaces and Orbit",
+      "finding": "Invite history stops at 100 and the member list at 200. The UI displays noninteractive More not shown text with no paging path; older active invites cannot be revoked and older members cannot be managed on iOS.",
+      "change": "Add accessible pagination/search with server totals, per-page error recovery and stable selection for management actions.",
+      "refs": [
+        "ios:App/Store/SpaceMethods.swift:498",
+        "ios:App/Store/SpaceMethods.swift:519",
+        "ios:Screens/SpaceManagementScreens.swift:885",
+        "ios:Screens/SpaceManagementScreens.swift:976"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "account-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "A22",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Account, spaces and Orbit",
+      "finding": "Revoking the just-created invitation refreshes history but leaves the matching plaintext receipt and Copy action intact. A now-invalid code still looks usable and can be shared again.",
+      "change": "Invalidate or remove the matching receipt on revoke/expiry and expose its actual status before Copy.",
+      "refs": [
+        "ios:App/Store/SpaceMethods.swift:620",
+        "ios:Screens/SpaceManagementScreens.swift:791",
+        "ios:Screens/SpaceManagementScreens.swift:818"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "account-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "A23",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Account, spaces and Orbit",
+      "finding": "Ownership transfer commits before two permission refreshes that swallow errors. If both reads fail, the client still thinks it is owner, clears rosters into loading, and displays a success message saying it is now a member. Pull-to-refresh does not repair the role.",
+      "change": "Apply the authoritative transfer receipt immediately, then reconcile reads without reviving old privileges; show permission-refresh failure explicitly.",
+      "refs": [
+        "ios:App/Store/SpaceMethods.swift:688",
+        "ios:App/Store/SpaceMethods.swift:693",
+        "ios:App/Store/SpaceMethods.swift:696"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "account-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "A24",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Account, spaces and Orbit",
+      "finding": "Transfer confirmation promises the target becomes the only owner, but owner invitations permit co-owners and the service demotes only the acting owner. A third co-owner remains, so the confirmation misstates the consequence.",
+      "change": "Describe and implement one consistent co-owner/transfer model; confirm the actual authority change rather than promising uniqueness the service does not enforce.",
+      "refs": [
+        "ios:Screens/SpaceManagementScreens.swift:549",
+        "ios:App/DTO/SpaceManagementModels.swift:144",
+        "api:identity/workspace-membership-service.ts:447"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "account-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "A25",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Account, spaces and Orbit",
+      "finding": "Continue with this note awaits loadNote(A), then uses whichever global noteDocument exists. If B supersedes A's request, A can return early and the continuation uses B despite the user selecting A.",
+      "change": "Return/fence the requested document by exact ID/version and session scope before creating conversation context.",
+      "refs": [
+        "ios:Screens/HandAndAccountScreens.swift:584",
+        "ios:App/Store/NotesMethods.swift:258"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "account-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "A26",
+      "kind": "issue",
+      "priority": "P3",
+      "area": "Account, spaces and Orbit",
+      "finding": "Resend countdown decrements once per sleep rather than using an expiry timestamp, and Back resets it to zero. Background suspension extends the displayed wait, while Back→Forward can invite a resend still forbidden by the server.",
+      "change": "Store the receipt's resend-available time and derive remaining time on foreground/route changes without resetting the real cooldown.",
+      "refs": [
+        "ios:Auth/AuthScreen.swift:137",
+        "ios:Auth/AuthScreen.swift:558"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "account-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "A27",
+      "kind": "issue",
+      "priority": "P3",
+      "area": "Account, spaces and Orbit",
+      "finding": "A shared isSpaceBusy flag labels revoke/remove/transfer as Generating and spins every noncurrent workspace row. The intermediate state names and highlights the wrong operation/target.",
+      "change": "Track operation kind and target; localize busy feedback to the affected control and name the real action.",
+      "refs": [
+        "ios:Screens/SpaceManagementScreens.swift:294",
+        "ios:Screens/SpaceManagementScreens.swift:774"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "account-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "A28",
+      "kind": "issue",
+      "priority": "P3",
+      "area": "Account, spaces and Orbit",
+      "finding": "Archived-memory help says withdrawn memories pass through recycle and are then permanently archived. The implementation has distinct archive and delete/recycle operations, so recovery/retention expectations are inaccurate.",
+      "change": "Explain Archive and Recycle as their actual separate actions and state the available reversal for each.",
+      "refs": [
+        "ios:Screens/HandAndAccountScreens.swift:537",
+        "ios:Screens/MemoryDetailScreen.swift:1064",
+        "ios:Screens/MemoryDetailScreen.swift:1167"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "account-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "A29",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Account, spaces and Orbit",
+      "finding": "Accessibility text sizes force auth compact mode, which removes AuthHeading.detail entirely. Verification destination/help, reset guidance and password instructions can disappear for the users who most need readable context.",
+      "change": "Reflow or shorten supporting information without removing essential instructions; make it accessible with keyboard/VoiceOver and large text.",
+      "refs": [
+        "ios:Auth/AuthScreen.swift:118",
+        "ios:Auth/AuthComponents.swift:49"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "account-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "M01",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Motion",
+      "finding": "Attachment absorb/failure applies surprised/question as an external model expression with no lifetime. Idle/thinking do not clear it; the five-second timer resets only performance expressions and restores the external face. On the same idle scene it can remain indefinitely and defer automatic performances.",
+      "change": "Separate transient event expressions from semantic delivery cues, restore the latest semantic/idle face after the event and fence interruption by a newer cue/event.",
+      "refs": [
+        "ios:Companion/CompanionEvents.swift:52",
+        "ios:Companion/Cubism/Live2DRenderView.swift:96",
+        "ios:Companion/Cubism/LAppModel.mm:476",
+        "ios:Companion/Cubism/LAppModel.mm:495",
+        "ios:Companion/Cubism/LAppModel.mm:1005"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "M02",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Motion",
+      "finding": "Attachment-panel transition always uses rise with a 14 pt offset. Under system Reduce Motion it still receives the nonnil feedback animation, so positional movement remains. App-Off root transactions may suppress some cases; the local transition contract itself is incorrect.",
+      "change": "Use a fade/static transition when either motion preference is off and test preference changes while the panel is already entering/exiting.",
+      "refs": [
+        "ios:Conversation/CompanionComposer.swift:42",
+        "ios:Conversation/CompanionComposer.swift:244",
+        "ios:Design/Motion.swift:75"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "M03",
+      "kind": "check",
+      "priority": "P2",
+      "area": "Needs device or fault-injection verification",
+      "finding": "Outline recenter checks only system Reduce Motion and starts Motion.panel when the current ordinal changes. It does not read the app's local motion preference, but root transaction suppression may cover this path. A visible Off-mode violation has not been established.",
+      "change": "Verify recentering with app Off, system Reduce Motion, and a late visible-section receipt after manual outline scrolling; repair the preference ownership only if the effective transaction still moves content.",
+      "refs": [
+        "ios:Screens/Notes/NoteOutline.swift:63",
+        "ios:Screens/Notes/NoteOutline.swift:142",
+        "ios:Screens/Notes/NoteOutline.swift:157",
+        "ios:App/AstellaApp.swift:241"
+      ],
+      "evidenceBasis": "Unconfirmed risk from source inspection; requires the stated runtime/device/fault-injection check.",
+      "implementation": {
+        "status": "source reviewed; device/fault/performance acceptance remains explicit",
+        "records": [
+          "notes-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md",
+        "observed": "Outline recenter source gates both system and app reduced motion; specific recenter interruption/focus interaction remains unconfirmed."
+      }
+    },
+    {
+      "id": "Q01",
+      "kind": "issue",
+      "priority": "P1",
+      "area": "Audit and preview safety",
+      "finding": "Auth review modes set uiReviewMode but skip api.isUIReview=true/token=nil. Auth submit/sendCode have no review guard, so a populated Debug auth preview can send real email/login/register/reset requests despite the documented sample-data isolation. No such request was submitted during this audit.",
+      "change": "Make every preview route use the same explicit network/write isolation, including authentication, and verify attempted operations are blocked before external effects.",
+      "refs": [
+        "ios:App/AppStore.swift:238",
+        "ios:App/AppStore.swift:243",
+        "ios:Auth/AuthScreen.swift:489",
+        "ios:Auth/AuthScreen.swift:527",
+        "ios:App/MobileAPI.swift:55"
+      ],
+      "evidenceBasis": "Source and call-chain inspection; no live backend mutation reproduced.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "U01",
+      "kind": "proposal",
+      "priority": "P2",
+      "area": "Product and UI proposals",
+      "finding": "Overview quotes, learning-card grounding and memory provenance describe evidence but usually cannot open the actual source statement/version. The explanation cannot be checked in its reading/conversation context.",
+      "change": "Add one coherent source-inspection path with immutable note/version/block or message identity and an exact return to the prior surface.",
+      "refs": [
+        "ios:Screens/Notes/NoteOverview.swift:205",
+        "ios:Screens/Notes/NoteLearningCard.swift:1047",
+        "ios:Screens/MemoryDetailScreen.swift:771"
+      ],
+      "evidenceBasis": "Observed current implementation plus a product/UI judgment for user decision; not classified as a proven implementation defect.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "implementation.md",
+          "notes-implementation.md",
+          "account-implementation.md",
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "U02",
+      "kind": "proposal",
+      "priority": "P2",
+      "area": "Product and UI proposals",
+      "finding": "Touch selection is deliberately whole-block. Users cannot narrow to one sentence, and paragraphs over 2,000 UTF-16 units disable annotate/explain/rewrite because the selected range cannot be reduced.",
+      "change": "Support precise sentence/range selection with understandable handles and equivalent accessible actions, while retaining efficient paragraph/multiple-paragraph selection.",
+      "refs": [
+        "ios:NotesWeb/reader.js:189",
+        "ios:NotesWeb/reader.js:216",
+        "ios:NotesWeb/reader.js:239"
+      ],
+      "evidenceBasis": "Observed current implementation plus a product/UI judgment for user decision; not classified as a proven implementation defect.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "notes-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "U03",
+      "kind": "proposal",
+      "priority": "P2",
+      "area": "Product and UI proposals",
+      "finding": "Continue reading reopens the top because only a note ID is saved. Orbit's Continue the previous thought uses store.notes.first, which may be a search result rather than the recent note. Continuation labels promise more than the stored context supports.",
+      "change": "Restore a version-aware reading location and actual recent context, with an honest fallback when content changed; otherwise rename the actions as Recently opened.",
+      "refs": [
+        "ios:Screens/Notes/NoteReader.swift:436",
+        "ios:App/Store/NotesMethods.swift:507",
+        "ios:Screens/HandAndAccountScreens.swift:567"
+      ],
+      "evidenceBasis": "Observed current implementation plus a product/UI judgment for user decision; not classified as a proven implementation defect.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "implementation.md",
+          "notes-implementation.md",
+          "account-implementation.md",
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "U04",
+      "kind": "proposal",
+      "priority": "P2",
+      "area": "Product and UI proposals",
+      "finding": "Draft files offer import/remove but no full original/extracted-text preview. The equivalent reader exists after sending, so users can inspect what they transmitted only after the transmission.",
+      "change": "Provide pre-send/pre-import inspection, including extraction warnings, selected file identity and an easy return to the preserved draft.",
+      "refs": [
+        "ios:Conversation/CompanionDraftAttachments.swift:48",
+        "ios:Conversation/CompanionUserInputs.swift:132"
+      ],
+      "evidenceBasis": "Observed current implementation plus a product/UI judgment for user decision; not classified as a proven implementation defect.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "U05",
+      "kind": "proposal",
+      "priority": "P2",
+      "area": "Product and UI proposals",
+      "finding": "Stopping a long/incorrect active reply is not available beside the conversation. The stage opens records, while Stop lives in task cards under Orbit/Hand, requiring the user to discover another surface.",
+      "change": "Put a clear Stop action beside the active turn, with immediate stopping state, server acknowledgement and a recoverable record of any saved results.",
+      "refs": [
+        "ios:Conversation/CompanionScene.swift:65",
+        "ios:Conversation/MessageHistory.swift:215",
+        "ios:Conversation/CompanionTaskCard.swift:138"
+      ],
+      "evidenceBasis": "Observed current implementation plus a product/UI judgment for user decision; not classified as a proven implementation defect.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "U06",
+      "kind": "proposal",
+      "priority": "P2",
+      "area": "Product and UI proposals",
+      "finding": "Speech bubbles disappear after a 5–18 second wall-clock interval without extending for focus or reading interaction. Slow readers and VoiceOver users can lose content/actions during inspection.",
+      "change": "Make accessible/long reading user-controlled or focus-aware, retain the full record path and keep new replies from erasing the currently inspected content.",
+      "refs": [
+        "ios:Companion/CompanionDelivery.swift:32"
+      ],
+      "evidenceBasis": "Observed current implementation plus a product/UI judgment for user decision; not classified as a proven implementation defect.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "U07",
+      "kind": "proposal",
+      "priority": "P2",
+      "area": "Product and UI proposals",
+      "finding": "Unsent conversation text, attachments and references exist only in process memory. iOS eviction while researching elsewhere or waiting on voice work loses the unfinished draft.",
+      "change": "Define scoped local draft retention, persistence, expiry and explicit discard, including recoverable materials and sensitive audio handling.",
+      "refs": [
+        "ios:App/AppStore.swift:161",
+        "ios:App/AppStore.swift:165",
+        "ios:App/AppStore.swift:182"
+      ],
+      "evidenceBasis": "Observed current implementation plus a product/UI judgment for user decision; not classified as a proven implementation defect.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "U08",
+      "kind": "proposal",
+      "priority": "P2",
+      "area": "Product and UI proposals",
+      "finding": "Long profile/persona/convention/memory/annotation drafts are view-local and ordinary Back/Close/swipe dismissal does not preserve or handle dirty state. Accidental navigation can erase substantial unsaved writing.",
+      "change": "Preserve recoverable form drafts and define an explicit abandonment policy; do not delay focus or ordinary navigation merely to complete animation.",
+      "refs": [
+        "ios:Screens/Account/AccountComponents.swift:35",
+        "ios:Screens/Account/ParticipationPreferencesScreen.swift:7",
+        "ios:Screens/MemoryDetailScreen.swift:572",
+        "ios:Screens/Notes/NoteAnnotations.swift:18",
+        "ios:Screens/Notes/NoteAnnotations.swift:104"
+      ],
+      "evidenceBasis": "Observed current implementation plus a product/UI judgment for user decision; not classified as a proven implementation defect.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "implementation.md",
+          "notes-implementation.md",
+          "account-implementation.md",
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "U09",
+      "kind": "proposal",
+      "priority": "P2",
+      "area": "Product and UI proposals",
+      "finding": "Companion notifications depend on the local process receiving a reply during limited background execution. They do not deliver after suspension/termination, even if the user enabled notifications for a long task.",
+      "change": "Decide the intended delivery guarantee and implement an appropriate push/background completion path, or explain the current limit in the actual notification experience.",
+      "refs": [
+        "ios:App/CompanionNotifications.swift:19",
+        "ios:App/Store/ConversationMethods.swift:43"
+      ],
+      "evidenceBasis": "Observed current implementation plus a product/UI judgment for user decision; not classified as a proven implementation defect.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "U10",
+      "kind": "proposal",
+      "priority": "P2",
+      "area": "Product and UI proposals",
+      "finding": "Voice capture starts before checking AI authorization/data policy, though ASR requires consent. A user can complete a long recording and upload before discovering the operation cannot run.",
+      "change": "Resolve the relevant authorization before costly capture/transmission, explaining the exact service use while preserving a text alternative and any existing draft.",
+      "refs": [
+        "ios:App/VoiceCapture.swift:36",
+        "api:learning-sessions/voice-routes.ts:803"
+      ],
+      "evidenceBasis": "Observed current implementation plus a product/UI judgment for user decision; not classified as a proven implementation defect.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "U11",
+      "kind": "proposal",
+      "priority": "P3",
+      "area": "Product and UI proposals",
+      "finding": "Recording UI is a static dot/text despite real metering and a 59-second automatic finish. It does not show elapsed time, the limit or evidence that sound is being captured.",
+      "change": "Use the real input level and elapsed/remaining time for restrained recording feedback; explain the transition to transcription and keep Cancel/Finish clear.",
+      "refs": [
+        "ios:App/VoiceCapture.swift:80",
+        "ios:Conversation/CompanionComposer.swift:462"
+      ],
+      "evidenceBasis": "Observed current implementation plus a product/UI judgment for user decision; not classified as a proven implementation defect.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "U12",
+      "kind": "proposal",
+      "priority": "P3",
+      "area": "Product and UI proposals",
+      "finding": "Attachment flight stores an origin but never uses it. The icon appears at the top-right, waits 250 ms, disappears and triggers absorb, without showing a source-to-companion relationship.",
+      "change": "Either use measured source/target geometry for a meaningful, interruptible handoff or use simpler immediate receipt feedback. Do not imply successful upload/read before the receipt.",
+      "refs": [
+        "ios:Conversation/CompanionComposer.swift:138",
+        "ios:Conversation/CompanionComposer.swift:145",
+        "ios:Conversation/CompanionComposer.swift:502"
+      ],
+      "evidenceBasis": "Observed current implementation plus a product/UI judgment for user decision; not classified as a proven implementation defect.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "U13",
+      "kind": "proposal",
+      "priority": "P2",
+      "area": "Product and UI proposals",
+      "finding": "Mini chat implicitly attaches the current note and recreates that context whenever no explicit note is selected. Its context header has no remove/opt-out control, so an unrelated question cannot be clearly separated from the current page.",
+      "change": "Make implicit page context visible and removable per draft, with a clear way to restore it when useful.",
+      "refs": [
+        "ios:Conversation/CompanionMiniChat.swift:36",
+        "ios:Conversation/CompanionComposer.swift:298"
+      ],
+      "evidenceBasis": "Observed current implementation plus a product/UI judgment for user decision; not classified as a proven implementation defect.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "U14",
+      "kind": "proposal",
+      "priority": "P2",
+      "area": "Product and UI proposals",
+      "finding": "Owner invitation help emphasizes invitation/member management but omits authority to dissolve the workspace. The destructive capability is relevant before issuing that role.",
+      "change": "Explain the actual authority of each invited role at the decision, using the same server capability model as management controls.",
+      "refs": [
+        "ios:App/DTO/SpaceManagementModels.swift:153",
+        "ios:Screens/SpaceManagementScreens.swift:267"
+      ],
+      "evidenceBasis": "Observed current implementation plus a product/UI judgment for user decision; not classified as a proven implementation defect.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "account-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "U15",
+      "kind": "proposal",
+      "priority": "P3",
+      "area": "Product and UI proposals",
+      "finding": "Goals and methods is only a filter for kind=goal memory. It has no method records, plan lifecycle, progress or completion management despite the broader label.",
+      "change": "Rename the surface to match its content or define a genuine plan/method experience with clear opt-in participation and state ownership.",
+      "refs": [
+        "ios:Screens/HandAndAccountScreens.swift:502"
+      ],
+      "evidenceBasis": "Observed current implementation plus a product/UI judgment for user decision; not classified as a proven implementation defect.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "account-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "U16",
+      "kind": "proposal",
+      "priority": "P2",
+      "area": "Product and UI proposals",
+      "finding": "Diary images open a scaled-to-fit lightbox with no zoom/pan; failure shows only text with no retry. Text-rich or detailed illustrations cannot be inspected like conversation images.",
+      "change": "Reuse a suitable accessible image-inspection interaction with zoom/pan/reset and targeted loading/error/retry.",
+      "refs": [
+        "ios:Screens/OrbitDetailScreens.swift:475",
+        "ios:Screens/OrbitDetailScreens.swift:521"
+      ],
+      "evidenceBasis": "Observed current implementation plus a product/UI judgment for user decision; not classified as a proven implementation defect.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "account-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "U17",
+      "kind": "proposal",
+      "priority": "P3",
+      "area": "Product and UI proposals",
+      "finding": "Memory/recycle use a fixed 32 pt, 82 pt-high header while account pages use a compact semantic headline. Closely related detail/action surfaces have inconsistent hierarchy and large-text behaviour.",
+      "change": "Choose navigation proportions according to content and task, then make related detail pages coherent without forcing every page into an identical card layout.",
+      "refs": [
+        "ios:Design/Components.swift:454",
+        "ios:Screens/Account/AccountComponents.swift:43"
+      ],
+      "evidenceBasis": "Observed current implementation plus a product/UI judgment for user decision; not classified as a proven implementation defect.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "implementation.md",
+          "notes-implementation.md",
+          "account-implementation.md",
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "U18",
+      "kind": "proposal",
+      "priority": "P2",
+      "area": "Product and UI proposals",
+      "finding": "Every question change slides the full answer content horizontally; frequent Orbit group/filter changes also animate whole content in addition to the selection lens. Repeated scanning bears substantial motion unrelated to a new spatial destination.",
+      "change": "Compare stable content or a restrained local change for frequent navigation, while reserving more expressive motion for meaningful scene changes/completion. Judge with rapid forward/reverse use, not token values alone.",
+      "refs": [
+        "ios:Screens/Notes/NoteLearningCard.swift:75",
+        "ios:Screens/Notes/NoteLearningCard.swift:655",
+        "ios:Screens/HandAndAccountScreens.swift:157",
+        "ios:Screens/HandAndAccountScreens.swift:376"
+      ],
+      "evidenceBasis": "Observed current implementation plus a product/UI judgment for user decision; not classified as a proven implementation defect.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "implementation.md",
+          "notes-implementation.md",
+          "account-implementation.md",
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "U19",
+      "kind": "proposal",
+      "priority": "P2",
+      "area": "Product and UI proposals",
+      "finding": "Session restore waits sequentially for inbox, messages, run snapshot and notes before marking startup ready. A slow unrelated notes request prolongs the default launch cover before the companion landing. Skip exists, but readiness is coupled to more than the visible destination needs.",
+      "change": "Make session validity and visible-destination readiness independent from secondary data; progressively reveal usable content and keep background recovery visible without a global barrier.",
+      "refs": [
+        "ios:App/Store/SessionMethods.swift:153",
+        "ios:App/Store/SessionMethods.swift:174",
+        "ios:App/Store/SessionMethods.swift:176",
+        "ios:App/AstellaApp.swift:136"
+      ],
+      "evidenceBasis": "Observed current implementation plus a product/UI judgment for user decision; not classified as a proven implementation defect.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "U20",
+      "kind": "proposal",
+      "priority": "P3",
+      "area": "Product and UI proposals",
+      "finding": "Root requests notification permission immediately after account arrival, while the permission page says Decide when needed. Users are asked before seeing the task/reply delivery context that would explain the benefit.",
+      "change": "Choose and document an intentional contextual permission moment with a useful explanation and a deferred path; keep the default companion capabilities independent of granting notifications.",
+      "refs": [
+        "ios:App/AstellaApp.swift:193",
+        "ios:App/CompanionNotifications.swift:96",
+        "ios:Screens/Account/DevicePermissionsScreen.swift:16"
+      ],
+      "evidenceBasis": "Observed current implementation plus a product/UI judgment for user decision; not classified as a proven implementation defect.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "U21",
+      "kind": "proposal",
+      "priority": "P2",
+      "area": "Product and UI proposals",
+      "finding": "Orbit Hand renders only active runs/proposals and no processError/recovery state. Failed but resumable work can disappear from the surface intended for things needing attention.",
+      "change": "Define Hand around actionable pending/recoverable work, including failed/stopped tasks and clear retry/continue/reconcile outcomes, without duplicating the entire conversation history.",
+      "refs": [
+        "ios:Screens/HandAndAccountScreens.swift:554",
+        "ios:Screens/HandAndAccountScreens.swift:559",
+        "ios:App/Models.swift:519"
+      ],
+      "evidenceBasis": "Observed current implementation plus a product/UI judgment for user decision; not classified as a proven implementation defect.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "implementation.md",
+          "notes-implementation.md",
+          "account-implementation.md",
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "H01",
+      "kind": "check",
+      "priority": "P2",
+      "area": "Needs device or fault-injection verification",
+      "finding": "First microphone permission may send scenePhase inactive, cancel the activation UUID and discard the granted callback.",
+      "change": "On a fresh real-device permission state, accept the prompt and verify recording actually starts; distinguish temporary system alerts from true abandonment.",
+      "refs": [
+        "ios:Conversation/CompanionComposer.swift:136",
+        "ios:App/VoiceCapture.swift:19",
+        "ios:App/VoiceCapture.swift:45"
+      ],
+      "evidenceBasis": "Unconfirmed risk from source inspection; requires the stated runtime/device/fault-injection check.",
+      "implementation": {
+        "status": "source reviewed; device/fault/performance acceptance remains explicit",
+        "records": [
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "H02",
+      "kind": "check",
+      "priority": "P2",
+      "area": "Needs device or fault-injection verification",
+      "finding": "Model hashing, first native model parse and texture preload occur on the main actor/call path. Actual typing/scroll latency has not been measured.",
+      "change": "Profile cold model arrival while interacting on device; move or amortize only measured expensive work, preserving renderer ownership.",
+      "refs": [
+        "ios:Companion/ModelDownloadManager.swift:215",
+        "ios:Companion/Cubism/CubismBridge.mm:250",
+        "ios:Companion/Cubism/LAppTextureManager.mm:72"
+      ],
+      "evidenceBasis": "Unconfirmed risk from source inspection; requires the stated runtime/device/fault-injection check.",
+      "implementation": {
+        "status": "source reviewed; device/fault/performance acceptance remains explicit",
+        "records": [
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "H03",
+      "kind": "check",
+      "priority": "P2",
+      "area": "Needs device or fault-injection verification",
+      "finding": "Long history uses an eager stack, repeated projections/Markdown parsing and retained image state. Growth under streaming may be expensive; eager layout also has an intentional scroll-stability purpose.",
+      "change": "Profile long mixed-media history plus streaming on device; do not blindly replace the stack without preserving scroll anchors.",
+      "refs": [
+        "ios:Conversation/MessageHistory.swift:60",
+        "ios:Companion/CompanionInteractions.swift:267"
+      ],
+      "evidenceBasis": "Unconfirmed risk from source inspection; requires the stated runtime/device/fault-injection check.",
+      "implementation": {
+        "status": "source reviewed; device/fault/performance acceptance remains explicit",
+        "records": [
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "H04",
+      "kind": "check",
+      "priority": "P2",
+      "area": "Needs device or fault-injection verification",
+      "finding": "A multi-block speech bubble's descendant line limits do not bound its total composition height, while stage geometry retains a minimum size.",
+      "change": "Test long Markdown/table/code replies on a small phone, with keyboard and accessibility text; record any clipped content, overlapping controls or inaccessible actions.",
+      "refs": [
+        "ios:Companion/CompanionSpeechBubble.swift:31",
+        "ios:Conversation/CompanionScene.swift:24"
+      ],
+      "evidenceBasis": "Unconfirmed risk from source inspection; requires the stated runtime/device/fault-injection check.",
+      "implementation": {
+        "status": "source reviewed; device/fault/performance acceptance remains explicit",
+        "records": [
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md",
+        "observed": "Simulator large-type stage and independent model recovery details verified; complete model/GPU lifecycle and device performance remain unconfirmed."
+      }
+    },
+    {
+      "id": "H05",
+      "kind": "check",
+      "priority": "P2",
+      "area": "Needs device or fault-injection verification",
+      "finding": "Inactive Live2D slots can call the shared setMouthOpen before active ownership is chosen, potentially overwriting the winning slot's amplitude.",
+      "change": "Check real TTS lip continuity while changing tabs/opening mini chat and inspect update order; assign amplitude to the winning slot if reproduced.",
+      "refs": [
+        "ios:Companion/Cubism/Live2DRenderView.swift:76",
+        "ios:Companion/Cubism/Live2DRenderView.swift:153",
+        "ios:Companion/CompanionStageView.swift:49"
+      ],
+      "evidenceBasis": "Unconfirmed risk from source inspection; requires the stated runtime/device/fault-injection check.",
+      "implementation": {
+        "status": "source reviewed; device/fault/performance acceptance remains explicit",
+        "records": [
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "H06",
+      "kind": "check",
+      "priority": "P2",
+      "area": "Needs device or fault-injection verification",
+      "finding": "A retained composer's menuOpen can stay true while onDisappear clears global hidesBottomDock; onAppear does not restore that flag.",
+      "change": "Open +, leave via a programmatic/tab route and return without remounting; check whether the drawer and dock coexist and whether focus remains coherent.",
+      "refs": [
+        "ios:Conversation/CompanionComposer.swift:118",
+        "ios:Conversation/CompanionComposer.swift:122",
+        "ios:Shell/MainTabShell.swift:65"
+      ],
+      "evidenceBasis": "Unconfirmed risk from source inspection; requires the stated runtime/device/fault-injection check.",
+      "implementation": {
+        "status": "source reviewed; device/fault/performance acceptance remains explicit",
+        "records": [
+          "companion-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md",
+        "observed": "App-Off attachment drawer open/close/reversal repeated in simulator; physical gesture and frame-time acceptance remain unconfirmed."
+      }
+    },
+    {
+      "id": "H07",
+      "kind": "check",
+      "priority": "P2",
+      "area": "Needs device or fault-injection verification",
+      "finding": "Reader scrolling and hydration scan accumulated sections/annotations, and native continuous paging retains all loaded blocks.",
+      "change": "Profile hundreds/thousands of realistic blocks, images and annotations after many pages; measure frame time/memory before choosing windowing or cache changes.",
+      "refs": [
+        "ios:NotesWeb/reader.js:303",
+        "ios:NotesWeb/reader.js:345",
+        "ios:NotesWeb/reader.js:400",
+        "ios:App/Store/NotesMethods.swift:303"
+      ],
+      "evidenceBasis": "Unconfirmed risk from source inspection; requires the stated runtime/device/fault-injection check.",
+      "implementation": {
+        "status": "source reviewed; device/fault/performance acceptance remains explicit",
+        "records": [
+          "notes-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "H08",
+      "kind": "check",
+      "priority": "P2",
+      "area": "Needs device or fault-injection verification",
+      "finding": "Mind-map layout is recreated inside a body invalidated by pan/pinch updates. The supported graph size is not bounded by this view.",
+      "change": "Profile a large/deep valid graph during continuous gestures and cache stable layout if measured work justifies it.",
+      "refs": [
+        "ios:Screens/Notes/NoteMindMap.swift:394",
+        "ios:Screens/Notes/NoteMindMap.swift:446"
+      ],
+      "evidenceBasis": "Unconfirmed risk from source inspection; requires the stated runtime/device/fault-injection check.",
+      "implementation": {
+        "status": "source reviewed; device/fault/performance acceptance remains explicit",
+        "records": [
+          "notes-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "H09",
+      "kind": "check",
+      "priority": "P2",
+      "area": "Needs device or fault-injection verification",
+      "finding": "Workspace export downloads, decodes and pretty-prints a whole archive in memory on the main actor, without progress/cancel. The server permits a large aggregate archive.",
+      "change": "Test representative large exports for peak memory, responsiveness and cancellation, including interrupted file export.",
+      "refs": [
+        "ios:Screens/NotesScreen.swift:501",
+        "api:export/service.ts:78"
+      ],
+      "evidenceBasis": "Unconfirmed risk from source inspection; requires the stated runtime/device/fault-injection check.",
+      "implementation": {
+        "status": "source reviewed; device/fault/performance acceptance remains explicit",
+        "records": [
+          "notes-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "H10",
+      "kind": "check",
+      "priority": "P2",
+      "area": "Needs device or fault-injection verification",
+      "finding": "The reader disables pinch zoom and has no general overflow-wrap or horizontally scrolling table wrapper.",
+      "change": "Render long unbreakable URLs, wide real tables and inline formulas at enlarged text size; record clipping and the actual inspection/recovery path.",
+      "refs": [
+        "ios:NotesWeb/reader.html:5",
+        "ios:NotesWeb/reader.css:28",
+        "ios:NotesWeb/reader.css:62"
+      ],
+      "evidenceBasis": "Unconfirmed risk from source inspection; requires the stated runtime/device/fault-injection check.",
+      "implementation": {
+        "status": "source reviewed; device/fault/performance acceptance remains explicit",
+        "records": [
+          "notes-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "H11",
+      "kind": "check",
+      "priority": "P2",
+      "area": "Needs device or fault-injection verification",
+      "finding": "Question changes replace an inner VStack ID but retain the ScrollView; goToQuestion never explicitly restores the new stem to the top.",
+      "change": "Scroll deeply in a long question, jump next/previous and by number, and verify stem visibility, focus and answer preservation in each direction.",
+      "refs": [
+        "ios:Screens/Notes/NoteLearningCard.swift:625",
+        "ios:Screens/Notes/NoteLearningCard.swift:655",
+        "ios:Screens/Notes/NoteLearningCard.swift:751"
+      ],
+      "evidenceBasis": "Unconfirmed risk from source inspection; requires the stated runtime/device/fault-injection check.",
+      "implementation": {
+        "status": "source reviewed; device/fault/performance acceptance remains explicit",
+        "records": [
+          "notes-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md",
+        "observed": "Answer B retained after Q1 to Q2 to Q1 at ordinary and actual accessibility large type; deep long-question/focus performance remains unconfirmed."
+      }
+    },
+    {
+      "id": "H12",
+      "kind": "check",
+      "priority": "P2",
+      "area": "Needs device or fault-injection verification",
+      "finding": "Some consent/password/ownership callbacks lack session/generation checks and can outlive the old shell. A delayed old password success could log out a newer session.",
+      "change": "Delay each response across logout/login/server/workspace changes and verify old receipts cannot mutate the new session. Do not classify a cross-account runtime incident without reproduction.",
+      "refs": [
+        "ios:App/Store/AccountMethods.swift:253",
+        "ios:App/Store/AccountMethods.swift:293",
+        "ios:App/Store/SpaceMethods.swift:687"
+      ],
+      "evidenceBasis": "Unconfirmed risk from source inspection; requires the stated runtime/device/fault-injection check.",
+      "implementation": {
+        "status": "source reviewed; device/fault/performance acceptance remains explicit",
+        "records": [
+          "account-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "H13",
+      "kind": "check",
+      "priority": "P2",
+      "area": "Needs device or fault-injection verification",
+      "finding": "Cache measurement and removal synchronously traverse/delete directories on MainActor before yielding. Large-cache UI latency is not measured.",
+      "change": "Profile representative cache sizes during Measure/Clear and keep progress/cancellation responsive if the synchronous work is material.",
+      "refs": [
+        "ios:App/CacheManager.swift:133",
+        "ios:App/CacheManager.swift:150"
+      ],
+      "evidenceBasis": "Unconfirmed risk from source inspection; requires the stated runtime/device/fault-injection check.",
+      "implementation": {
+        "status": "source reviewed; device/fault/performance acceptance remains explicit",
+        "records": [
+          "implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "H14",
+      "kind": "check",
+      "priority": "P3",
+      "area": "Needs device or fault-injection verification",
+      "finding": "Memory/recycle/admin lists eagerly build many text/shadow rows and animate filtering. Actual device cost at the 200/300-row bounds is unmeasured.",
+      "change": "Test realistic large lists with long content and enlarged text, measuring gesture responsiveness and memory before changing layout strategy.",
+      "refs": [
+        "ios:Screens/HandAndAccountScreens.swift:366",
+        "ios:Screens/OrbitDetailScreens.swift:590",
+        "ios:Screens/SpaceManagementScreens.swift:867",
+        "ios:Screens/SpaceManagementScreens.swift:958"
+      ],
+      "evidenceBasis": "Unconfirmed risk from source inspection; requires the stated runtime/device/fault-injection check.",
+      "implementation": {
+        "status": "source reviewed; device/fault/performance acceptance remains explicit",
+        "records": [
+          "account-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "H15",
+      "kind": "check",
+      "priority": "P2",
+      "area": "Needs device or fault-injection verification",
+      "finding": "Avatar preparation awaits photo data and decodes/re-encodes before saveAvatar owns busy/session state.",
+      "change": "Test an iCloud wait, large image, repeated selection and account change during preparation; verify feedback, latest-selection ownership and cancellation.",
+      "refs": [
+        "ios:Screens/Account/ProfileScreens.swift:80"
+      ],
+      "evidenceBasis": "Unconfirmed risk from source inspection; requires the stated runtime/device/fault-injection check.",
+      "implementation": {
+        "status": "source reviewed; device/fault/performance acceptance remains explicit",
+        "records": [
+          "account-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "H16",
+      "kind": "check",
+      "priority": "P2",
+      "area": "Needs device or fault-injection verification",
+      "finding": "Account, memory, recycle and invite destinations omit the per-page swipe-back bridge installed by reader/diary. Simulator drag attempts did not establish a reliable positive control, so failure is not claimed as reproduced.",
+      "change": "Verify edge and content swipe-back, cancellation and reversal on a physical phone across every destination, including dirty forms. Repair only the actual navigation ownership/gesture failure.",
+      "refs": [
+        "ios:Screens/Account/AccountComponents.swift:23",
+        "ios:Screens/MemoryDetailScreen.swift:177",
+        "ios:Screens/OrbitDetailScreens.swift:649",
+        "ios:Shell/MainTabShell.swift:603"
+      ],
+      "evidenceBasis": "Unconfirmed risk from source inspection; requires the stated runtime/device/fault-injection check.",
+      "implementation": {
+        "status": "source reviewed; device/fault/performance acceptance remains explicit",
+        "records": [
+          "account-implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    },
+    {
+      "id": "G10",
+      "kind": "issue",
+      "priority": "P2",
+      "area": "Shared accessibility",
+      "finding": "The launch cover leaves the obscured application root in the accessibility tree and activatable. In launch-preview, activating the hidden Records control changed its selected state while the cover remained visible; Skip then revealed Records. This violates the loading scene's focus and interaction boundary.",
+      "change": "Give the cover one coherent interaction/accessibility boundary: expose Skip and useful loading status while hiding and blocking obscured destinations until the root is actually revealed. Preserve the current destination during cancellation.",
+      "refs": [
+        "ios:App/AstellaApp.swift:133",
+        "ios:Shell/LaunchMotionView.swift:43",
+        "ios:Shell/LaunchMotionView.swift:56"
+      ],
+      "evidenceBasis": "Source and simulator accessibility activation: hidden Records changed selected state under the launch cover; verified the changed destination after Skip. Ordinary touch-through has not been separately established.",
+      "implementation": {
+        "status": "implemented",
+        "records": [
+          "implementation.md"
+        ],
+        "runtimeRecord": "../../../testing/ios-complete-audit-implementation-2026-10-24.md"
+      }
+    }
+  ]
+}

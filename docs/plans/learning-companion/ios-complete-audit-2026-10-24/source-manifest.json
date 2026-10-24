@@ -1,0 +1,645 @@
+{
+  "basis": "Working tree, 2026-10-24; excludes vendored/generated artwork content. Runtime captures used the already-installed Debug app.",
+  "files": [
+    {
+      "path": "apps/mobile-client/ios/Astella/App/AppStore.swift",
+      "lines": 594,
+      "sha256": "c06debfcf907d90d66bc5f7f312f064050e37ff35636f768f2046bf8663f123b"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/App/AstellaApp.swift",
+      "lines": 246,
+      "sha256": "3ed0c507072b2190d8d8cdfce64bd6298cf7f693765625e2b8bcfe6b24dbf9c1"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/App/CacheManager.swift",
+      "lines": 194,
+      "sha256": "44fa98b331906f9e71634d1616a019b50e74191615993614cbff67414cd1de1f"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/App/ClientAssetUpdater.swift",
+      "lines": 156,
+      "sha256": "547cac7cc021991ea070ee6593f0b0fc9059ced7a353b334bc2afd678efd0c8d"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/App/CompanionNotifications.swift",
+      "lines": 332,
+      "sha256": "e38c4a31c6e605ebee5a0a2b8c8dff0d9b5fd171e2962eff9abb0dd887d10c91"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/App/CompanionProcess.swift",
+      "lines": 187,
+      "sha256": "33f8fc15dd7e4a60862cf2381ee755a50ff834b2280808c69e80fb4879407595"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/App/CompanionRealtime.swift",
+      "lines": 192,
+      "sha256": "20d0ddf257607bb170fd93f70b4d957ac84cef86716cb2bb933092b86ea7bbf6"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/App/DTO/CompanionIntakeModels.swift",
+      "lines": 62,
+      "sha256": "215475b966341d54fa79c57d871b94e605e8d469ce0e2da3a0baf17188caf884"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/App/DTO/CompanionProcessModels.swift",
+      "lines": 87,
+      "sha256": "83fead478d24336ec2d20ad362319ac9314a4d4ce2615b94d09d8a4a452566be"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/App/DTO/CompanionProposalModels.swift",
+      "lines": 119,
+      "sha256": "da3e766bfffe5088729c3a090cfdc8fe67b856073465302ea3546a2395ceaa7b"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/App/DTO/CompanionRecordPresentation.swift",
+      "lines": 206,
+      "sha256": "3b09abdcb3867022b7955b19d0419fdadbb210faf0ddaef7a0ac1e1ff3606839"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/App/DTO/ConversationDTOs.swift",
+      "lines": 165,
+      "sha256": "68232f35973fb064e51b1a1286efd1c7658cee740d5007305767e504206a1600"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/App/DTO/NoteGenerationModels.swift",
+      "lines": 104,
+      "sha256": "c9c01082dad8ad253b1fd02a34c85a1f54decce38d809c278b00dfc958cebfc3"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/App/DTO/SpaceManagementModels.swift",
+      "lines": 167,
+      "sha256": "f816d94c123820a91f4c82f952b56cc0ed01d4a097b132fe1013ccc49e15020c"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/App/KeychainTokenStore.swift",
+      "lines": 76,
+      "sha256": "933268865645a8ba5fe89b385bea8925cfdd510fe598d899ea20a65c61cfa8b8"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/App/MobileAPI.swift",
+      "lines": 281,
+      "sha256": "7e677c952de41ba8ef7154e22adaed217e1a509cac7c7e596346ecd2d539a98b"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/App/Models.swift",
+      "lines": 556,
+      "sha256": "94eb1ff939aaecbe196d1b9f29112d28279e6fa3e569a5cda7a9590f5f8a1132"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/App/Store/AccountMethods.swift",
+      "lines": 443,
+      "sha256": "dd56604fd10e15dd8e9db82d1058a3b15593064574a68b331aebabd5b80b392d"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/App/Store/AttachmentMethods.swift",
+      "lines": 83,
+      "sha256": "6b0961521190b83b3d259e4c34abc85d9f0d84b39435aa0514e64d833469a808"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/App/Store/CompanionModelMethods.swift",
+      "lines": 12,
+      "sha256": "65948e4231a9c977e726f5bdb1d05335750a6b68d93de9c81cdebb6c592836aa"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/App/Store/ConversationMethods.swift",
+      "lines": 498,
+      "sha256": "315a6297e617d2f7dba0e417048a165678291766121e926551e38cd766679647"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/App/Store/HandMethods.swift",
+      "lines": 15,
+      "sha256": "11245d26f97cd080b5699d35c52787a0f67ae2c4856cdea30dfbbe488589d8b4"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/App/Store/NoteGenerationMethods.swift",
+      "lines": 166,
+      "sha256": "251729bb454223b10e20a986d666af67027354ee525b52fb1ff171803bb2e703"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/App/Store/NotesMethods.swift",
+      "lines": 703,
+      "sha256": "284dd89fb61f7488d1b7f08fd31e149164b249f229e03b6731b2a96dca317ca1"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/App/Store/ProposalMethods.swift",
+      "lines": 92,
+      "sha256": "53e93738bad68218b753ed07d65891190da38028d3e04e1d61b4b1ff8682eacb"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/App/Store/SessionMethods.swift",
+      "lines": 265,
+      "sha256": "efc8af7e0f59b918c1799f40e4a78b25ec1bc1bf46c44ae79ad5ed8a4d735772"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/App/Store/SpaceMethods.swift",
+      "lines": 711,
+      "sha256": "e1e8d7266e3dd35b346507bc9e731b459cf288e0a6373ca5fbf95f936176f68c"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/App/VoiceCapture.swift",
+      "lines": 143,
+      "sha256": "fea08229962c11b1a05e89ac919d7b462194c5c5cd2d724817276e019b0f1005"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Astella-Bridging-Header.h",
+      "lines": 4,
+      "sha256": "99d3033c852b0e801d972c4589208784ffb93e9de6d0e824844410a2c4cc0101"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Auth/AuthComponents.swift",
+      "lines": 334,
+      "sha256": "78c08383e8d84fead0742ff4e8e108824e7ea5f4047c4fc39be17ddb7a6df618"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Auth/AuthScreen.swift",
+      "lines": 599,
+      "sha256": "6e189bea2d9491e4550c6db4bb367dde23959e9040e117e0f4a210c236653710"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Companion/CompanionAudioStream.swift",
+      "lines": 115,
+      "sha256": "3b6ec8862d5510fbf24cebc52b13fa97b1547b6901c5c3dc13c931cb2cc87527"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Companion/CompanionDelivery.swift",
+      "lines": 202,
+      "sha256": "4f1919a9a861a9794df796b5d6644961a2a0e3f36ebe9b1e2319d0d306eb77f1"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Companion/CompanionEvents.swift",
+      "lines": 74,
+      "sha256": "c102c1eb28f91ab33519ea77d499afbeb0b6e76b2f331bf03d392c06761e1d97"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Companion/CompanionInteractions.swift",
+      "lines": 541,
+      "sha256": "c211af49afcf9d2b23544f27f2083ed680cafeed1994f17ed6976e375b51c7c6"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Companion/CompanionLiveActivity.swift",
+      "lines": 64,
+      "sha256": "7859c1c0a801b99ea4e277a3f3a35fd2cc16110fda068a155aba7cd23facf8f7"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Companion/CompanionMarkdownBlocks.swift",
+      "lines": 87,
+      "sha256": "efe5de66f386a5f20e46f58237db6954a592e677e794feff8f09af2112fd5c5f"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Companion/CompanionNotice.swift",
+      "lines": 133,
+      "sha256": "00b47f5d8669ea7c9437f9d167277d1b37d2b48c2ee38b82ae1fbd6577204513"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Companion/CompanionSpeech.swift",
+      "lines": 135,
+      "sha256": "623b75be875760e92d38d0d37ecc140d9ca534a22f2fbe1211e4ac6149996e4a"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Companion/CompanionSpeechBubble.swift",
+      "lines": 181,
+      "sha256": "37a4c6c9b9d1d760ced1ddb794d3e4fd02c51a976bd231df912fc41bfbb57a6a"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Companion/CompanionStageView.swift",
+      "lines": 232,
+      "sha256": "347e4c8b732a0cc51ee254c807860850c4f5fe498a3f7245a5e951bd630fdace"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Companion/CompanionVoicePlayback.swift",
+      "lines": 252,
+      "sha256": "da6ad966225ae0bdb29fe4ab47086c071f00cc0016c0d42a4d45d4ddd42a3293"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Companion/Cubism/CompanionMotionState.hpp",
+      "lines": 104,
+      "sha256": "5e352c5363b9c69518925f48ff269b1013146188499aee443c4aa588dde74362"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Companion/Cubism/CubismBridge.h",
+      "lines": 65,
+      "sha256": "6240ec242357ee26b64c4512589f3b1dcea50181c82996a3b40d1e604b693fce"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Companion/Cubism/CubismBridge.mm",
+      "lines": 498,
+      "sha256": "f2e712ae0d24b21b643cbc8eac98233fbcc2989c759350d0a3b073fead0df72a"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Companion/Cubism/LAppAllocator.h",
+      "lines": 58,
+      "sha256": "15f045b52d34d3d5bd75d77b2eff7b8d3111f346213615a00626fa1c6401af9a"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Companion/Cubism/LAppAllocator.mm",
+      "lines": 59,
+      "sha256": "70b90d68bf7e946742dc2043acf78a1c2073881dcbc06bb184a9ef70eb939aa9"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Companion/Cubism/LAppDefine.h",
+      "lines": 72,
+      "sha256": "edf3ec95d20ef189552f6c5405192af9ee5fbb059df762eaacb6683b69ab13ed"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Companion/Cubism/LAppDefine.mm",
+      "lines": 77,
+      "sha256": "01f3c62ccb3c0aa97f0701291f43f3cd665a1a0912e258219ea9aab22d7b7d21"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Companion/Cubism/LAppModel.h",
+      "lines": 283,
+      "sha256": "516cd1f45ae6bb452bcfce498df6c2dabc34199c2f8cb2688ea543b4ff85b8d6"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Companion/Cubism/LAppModel.mm",
+      "lines": 1211,
+      "sha256": "d87b62b411167100000042ae117a1159b781772fb1e7126a2676dcd27af9ecf1"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Companion/Cubism/LAppPal.h",
+      "lines": 87,
+      "sha256": "dc37c62e2cc1d49c522ed11a88fc5fcec43b768cf60d2a09418d50f2859fd09f"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Companion/Cubism/LAppPal.mm",
+      "lines": 121,
+      "sha256": "8f97110b34c639c17899b05c1446593b9246d352497ee358dbbb99a0a61ceddf"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Companion/Cubism/LAppTextureManager.h",
+      "lines": 79,
+      "sha256": "b684ad9446d875a2c91ff93e15f6accb6cef74f499254f31e4ac0f31114c0e73"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Companion/Cubism/LAppTextureManager.mm",
+      "lines": 128,
+      "sha256": "5aba36b63710b423233fe1430314ec76faeebf297667ff220a035948b5b8c9e4"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Companion/Cubism/Live2DRenderView.swift",
+      "lines": 174,
+      "sha256": "4d07562198e8e776b40e48b8a5979d39c8edadd179478499f679583f6e7bcc4f"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Companion/ModelDownloadManager.swift",
+      "lines": 352,
+      "sha256": "ff05f68456e0eb0272b846a840ff5eeb2b475124c235fdb7d98290e47818b288"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Conversation/CompanionAnnotationAnswer.swift",
+      "lines": 36,
+      "sha256": "783a47a087c31a2c9489fd9dc2ad5b917fc12e585661c1171702c17ec2217728"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Conversation/CompanionComposer.swift",
+      "lines": 540,
+      "sha256": "e9929c52772164464e255c7752cec760f919f6cb9e84323fbaa7234fdd7432b3"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Conversation/CompanionDraftAttachments.swift",
+      "lines": 65,
+      "sha256": "927cb5404264590cd082d1d3b1a8c62dfd7196f980a7d1e10323595474cc7fba"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Conversation/CompanionImageGallery.swift",
+      "lines": 148,
+      "sha256": "33665348a894182d8596296bcd07377f9c24d084c3ef5fc298c13877071c845e"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Conversation/CompanionImageView.swift",
+      "lines": 210,
+      "sha256": "e87d90702cb31852ae6a6e3b9ccb3af7d10b9ed253533c721f272d031b3be277"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Conversation/CompanionMiniChat.swift",
+      "lines": 146,
+      "sha256": "e8b1a8ff36624971c0071f677ab7b8f8f339d6c4eec21eb8f68e172592c07a55"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Conversation/CompanionProcessView.swift",
+      "lines": 155,
+      "sha256": "6867e67e9270042837293f69073cba070fec396a652170b3f0e1ca792504cbb0"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Conversation/CompanionProposalCard.swift",
+      "lines": 235,
+      "sha256": "559675a0ce219eab3e7f19404be8c926b6430027d894c756e3f99686254e7eb7"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Conversation/CompanionRecordCards.swift",
+      "lines": 102,
+      "sha256": "ad3e13ea5b400f0586c9f92a710f2046184a4f1e4dba49b620e2371e9ac8e560"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Conversation/CompanionRecordFixtures.swift",
+      "lines": 128,
+      "sha256": "9c9472ae9a322300805c5bd4cf3e6db15f4d26ac9f765eb4723db874f7c3109a"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Conversation/CompanionResultPreview.swift",
+      "lines": 111,
+      "sha256": "b1b93031a00086bc00aeea95d31a97977c6623c45dea03abbbaa21d9b25eb48a"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Conversation/CompanionScene.swift",
+      "lines": 100,
+      "sha256": "abcc3fecb69b7a41fd356a073880b413cf4327d7606abda8f7a6d53a86da36c7"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Conversation/CompanionSheetHost.swift",
+      "lines": 43,
+      "sha256": "7acb5f8c6616559b4b0912f6aa3a176c5c19410b17c3ed62f568f473be1fb974"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Conversation/CompanionTaskCard.swift",
+      "lines": 189,
+      "sha256": "aa2a9d8efc308d2d5b3308b1bedf11795c2d802ddcef605706026e35cb5a1519"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Conversation/CompanionUserInputs.swift",
+      "lines": 218,
+      "sha256": "98ad5cfa01e1c638dba3588b0719e1e198665d92f37114b658ffefe9b23ed813"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Conversation/ConversationFailurePanel.swift",
+      "lines": 54,
+      "sha256": "dea2ec03f9261cf283924c92bc6ac9a34bedc91342ec397e4e3d538dc726aee1"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Conversation/ConversationScreen.swift",
+      "lines": 133,
+      "sha256": "baa66a5ffdebe2b28a858b514c123ec53724712abeabe26c5092cc4a2df10427"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Conversation/MessageHistory.swift",
+      "lines": 352,
+      "sha256": "8fbc329485a67e256bb61b666741d2462e00d9bd616f1773c649dd2a7088b1ec"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Conversation/MessageRow.swift",
+      "lines": 288,
+      "sha256": "04e59acb47382c44c7740a05d9a177a04fada3185a7c9c612d95c677566e3e35"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Design/Buttons.swift",
+      "lines": 77,
+      "sha256": "17d56b5907244699b4c2555cf5c7c67e10683b70316fce5b24fd97807a6e3844"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Design/Components.swift",
+      "lines": 645,
+      "sha256": "61ff1269c7388a915577c1b088e156f4c3bd72dbb246a05c547ff8696c6cc2ad"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Design/LiquidGlass.swift",
+      "lines": 255,
+      "sha256": "f17866bfc05369da081a117d6b45ce43dbef84699b2751bcb801a349d9182403"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Design/Motion.swift",
+      "lines": 131,
+      "sha256": "db19f6b2165a1d8072bb0c6d39f5e7e416e9c65e7a1be6d9b9ee03d351236c4c"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Design/ScreenStates.swift",
+      "lines": 199,
+      "sha256": "c14d678191696cfcc261f09750622f49391eae334d943d4a922d53cfdaecbfd4"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Design/Surfaces.swift",
+      "lines": 94,
+      "sha256": "136dbaadc64d76bc8a1b235077930c248e49fb1b39064403e7866d235e31e453"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Design/Tokens.swift",
+      "lines": 86,
+      "sha256": "1e0ce1a3ae5588f56301190f1da01d443e392d5978529aa9aa229d8a0e76d859"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/LaunchMotion/index.html",
+      "lines": 7,
+      "sha256": "d0b971de6f50a9cb5a3cd42b58a41f6b66633c40426898704a0df1470bac91e7"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/LaunchMotion/motion.js",
+      "lines": 4435,
+      "sha256": "d89ead346539f8b38ca3ca6a0493e5290fc8f3486e774605d62d473ccecfd728"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/NotesWeb/annotation-ranges.js",
+      "lines": 23,
+      "sha256": "ed54247bb250fcf3b25b7fa1cc18895f68c06945b50169831afd442a3de6d762"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/NotesWeb/note-point-wave.js",
+      "lines": 176,
+      "sha256": "70c86a0a3386155b71d69a175b9d3e40a83f28790ba713f6ea0ae918bb4fd63e"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/NotesWeb/reader.css",
+      "lines": 113,
+      "sha256": "a383a0cb6335bb993fcef8b2675c19695a746fc850fa7deec4a69af6a17f2234"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/NotesWeb/reader.html",
+      "lines": 26,
+      "sha256": "5bebaf25c625c5776d2245150eed209e80b0c688421fa9d32c56f4556cf5501e"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/NotesWeb/reader.js",
+      "lines": 547,
+      "sha256": "47cd93c5a5ae20822ed828790776d28b25726154f396ac904da16b8afdb8b159"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Screens/Account/AIDataAuthorizationScreen.swift",
+      "lines": 160,
+      "sha256": "1b9c3f652b0b8c8deff8aa505ed86f54d687d461dd01b31af58a96a54d0cf78f"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Screens/Account/AboutAndStorageScreens.swift",
+      "lines": 224,
+      "sha256": "2a6e25ed06ecec2036f170c934ed7bb35d76f7fed9869acddc25beecdf70dba6"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Screens/Account/AccountComponents.swift",
+      "lines": 249,
+      "sha256": "f81ea30461ed7c89bb4fba3ab6ee816b09595652398fd91583cb5eb80fbb09cb"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Screens/Account/AccountScreen.swift",
+      "lines": 101,
+      "sha256": "199774a62a5905d47beb98bac72c777179d8758e9437fe827ff2999008b1441f"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Screens/Account/AppSettingsScreens.swift",
+      "lines": 152,
+      "sha256": "bf5cf09996e2c3685898611a7f1a57117e83554eb6fe2846e63fbd95211aebb0"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Screens/Account/CompanionSettingsScreens.swift",
+      "lines": 169,
+      "sha256": "a4ae3c8682409a45b2a238240e07488f980fefd6851ff8a18d422b728b5c3687"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Screens/Account/DevicePermissionsScreen.swift",
+      "lines": 106,
+      "sha256": "f5904095ca75073e7681e015f9dbacf274cf057a28149ec7b240e1f80197476a"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Screens/Account/ParticipationPreferencesScreen.swift",
+      "lines": 134,
+      "sha256": "d6a2044376ff1b5aa6aa025659fb35804611787742ed507187d340e1c172eeb0"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Screens/Account/ProfileScreens.swift",
+      "lines": 155,
+      "sha256": "25bb5c1923d7ac3c1ed999bf7a8a247670ead64bef259cc2aa0b43504f0cd199"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Screens/Account/ServiceAddressScreen.swift",
+      "lines": 81,
+      "sha256": "90d3fc9ef886a5562577182ce8e0d6fd204e45eb7af469bac4ce4ac57471aeb8"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Screens/HandAndAccountScreens.swift",
+      "lines": 904,
+      "sha256": "4480128c020ba2df8036cfcbe31986aeb3b21954ada69fd6c7a66a71f31e1594"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Screens/MemoryDetailScreen.swift",
+      "lines": 1500,
+      "sha256": "1b81d6c81727d3a0ce9ff8f17ca5a91596d0786bfbdce2eb00451747e8982b0c"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Screens/Notes/LibraryComponents.swift",
+      "lines": 271,
+      "sha256": "8357e5ac76666e9295556c80d5262287d2252e9474db0a9a1780099dfaea2f45"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Screens/Notes/NoteAnnotations.swift",
+      "lines": 401,
+      "sha256": "335466faf8e6ff3971123e9d2d284b46ee26881d756ea205e56bac944c71f59a"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Screens/Notes/NoteExpansion.swift",
+      "lines": 568,
+      "sha256": "18cbf0ded62832f48d7abad107d9ffd0cb8465dc984c2d7e53ec5f4f24a28253"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Screens/Notes/NoteFeatureComponents.swift",
+      "lines": 394,
+      "sha256": "2af8cc51f7312272dd06f175c508d60d8de4601d476a2cfd358031030d662b23"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Screens/Notes/NoteGenerationProgress.swift",
+      "lines": 83,
+      "sha256": "32c961edbd07f4ac8799a2916bb4628eed81e9de41487228aedf21008c0a7f7b"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Screens/Notes/NoteLearningCard.swift",
+      "lines": 2004,
+      "sha256": "c9cac7bca864ea5b79a98dfd6c582f0b9475b740c4413e63eb1a22e545934c56"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Screens/Notes/NoteLearningComponents.swift",
+      "lines": 244,
+      "sha256": "e09bc704939466b24e087cd08b6ef7bf196fd9889eeb14d478134d1463a9d86e"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Screens/Notes/NoteMindMap.swift",
+      "lines": 576,
+      "sha256": "8417dda44c4755666f0d43a9a8cf045d878c395a4a060f0946b6ea73f52059d0"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Screens/Notes/NoteOperation.swift",
+      "lines": 172,
+      "sha256": "377de80f84839f5584ff55ba669eb20e6d232e8169218d31cf3ba7618ef5b7e7"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Screens/Notes/NoteOutline.swift",
+      "lines": 214,
+      "sha256": "54240660dc22bb95ed4cf875ca61f5ce397c46d97fbece5c70207a5d3c6ea2c1"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Screens/Notes/NoteOverview.swift",
+      "lines": 300,
+      "sha256": "90ab13eae4bd4585adbba71b1ea2c3bc61360663d3562c672b3b25113541ae10"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Screens/Notes/NoteReader.swift",
+      "lines": 1142,
+      "sha256": "714903c10862b62ddfd977700c29a58a3564c2ca07f557aaec4112244cc20e14"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Screens/Notes/NoteRoutes.swift",
+      "lines": 48,
+      "sha256": "a43f54b584c65ff2fc5c85107b3ab2c1108cd94c9b95cf56fcaadd8eca546eeb"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Screens/Notes/NoteVersions.swift",
+      "lines": 287,
+      "sha256": "6f84501dd0bca9957152734fe0176f4222b107fffa2644c5e7c1485dac15917c"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Screens/Notes/NoteWebReader.swift",
+      "lines": 290,
+      "sha256": "c71bcda1b97b17606ce99cf7d99a10d4f41c19c4f382eeea76fa5061e8318bd4"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Screens/Notes/ProcessingStatusSheet.swift",
+      "lines": 136,
+      "sha256": "7d9dd3e42f00304dfb54988fd33afb507e4d4245f0ab2993c536ef6478032f5d"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Screens/NotesScreen.swift",
+      "lines": 554,
+      "sha256": "0074f0a0fd2e793f33760daa78f921c50e8e3a899c1ec53dff99625d689f1ab0"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Screens/OrbitDetailScreens.swift",
+      "lines": 774,
+      "sha256": "df06f86e79d13f2d6022245b2798652ae10daba6e8cf29db535886d79eb13da0"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Screens/OrbitStarfield.swift",
+      "lines": 187,
+      "sha256": "417f3a6dc74fdaca2d98e7a5e436e541c21a5446cf490225a06a5edee98adbd7"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Screens/SpaceManagementScreens.swift",
+      "lines": 1137,
+      "sha256": "415ec90b3a4d50a075f7fea094373bb2573f05df9790cc1e81b2c4ad9c7a8ea9"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Shell/LaunchMotionView.swift",
+      "lines": 90,
+      "sha256": "d5bf11372b70190c79aee31b562297035cb215e8e519caaabb48ac389b0dece5"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Shell/LaunchMotionWebView.swift",
+      "lines": 115,
+      "sha256": "abe4b185db4943da3b01e720d8c3cee92ca12ef29b4fc5773f9fdab3116196af"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Shell/MainTabShell.swift",
+      "lines": 683,
+      "sha256": "900ea19933ba08745c9ae8140fdf67337c1aa76262d66b7979b807de3d0cde76"
+    },
+    {
+      "path": "apps/mobile-client/ios/Astella/Shell/SessionRecoveryScreen.swift",
+      "lines": 29,
+      "sha256": "7795affad735de0d3e2e137137f359f5d7efe264d93a6c971d2dcc12df3a877e"
+    },
+    {
+      "path": "apps/mobile-client/ios/AstellaWidgets/AstellaWidgetsBundle.swift",
+      "lines": 9,
+      "sha256": "317736568064ceefc4b7a050ee2f5ffcb0f6ebf85f747bef8968a649bb0d6dec"
+    },
+    {
+      "path": "apps/mobile-client/ios/AstellaWidgets/CompanionLiveActivityWidget.swift",
+      "lines": 58,
+      "sha256": "c72e14a62e893a18c230116396ce898e64f303ae9b8c11997a7de868c70993a4"
+    }
+  ]
+}

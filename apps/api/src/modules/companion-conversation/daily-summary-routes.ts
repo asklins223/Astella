@@ -378,6 +378,25 @@ export async function dailySummaryRoutes(app: FastifyInstance) {
    * 按天聚合：**只要有一天写成过，那一天就是写过**，否则算她试过没写成。
    * 没写的日子根本不出现在结果里——「缺席」不是这里的一种状态。
    */
+  // 日记相邻日期来自完整可访问域，不能用三个月窗口冒充全局边界。
+  app.get<{ Querystring: { date?: string } }>("/companion/daily/neighbours", { preHandler: [requireSession] }, async (req, reply) => {
+    const parsed = dateSchema.safeParse(req.query.date);
+    if (!parsed.success) throw app.httpErrors.badRequest("date 非法，应为 YYYY-MM-DD");
+    const date = parsed.data;
+    const scope = scopeOfSession(req.session);
+    const result = await withWorkspaceTransaction(scope, async tx => {
+      const [row] = await tx.select({
+        previousDate: sql<string | null>`max(${companionDailySummaries.date}) FILTER (WHERE ${companionDailySummaries.date} < ${date})`,
+        nextDate: sql<string | null>`min(${companionDailySummaries.date}) FILTER (WHERE ${companionDailySummaries.date} > ${date})`,
+      }).from(companionDailySummaries).where(and(
+        eq(companionDailySummaries.workspaceId, scope.workspaceId), eq(companionDailySummaries.userId, scope.userId),
+        isNull(companionDailySummaries.deletedAt),
+      ));
+      return row ?? { previousDate: null, nextDate: null };
+    });
+    return reply.header("Cache-Control", "no-store").send({ version: 1, ...result });
+  });
+
   app.get<{ Querystring: Record<string, string | undefined> }>(
     "/companion/daily/month",
     { preHandler: [requireSession] },

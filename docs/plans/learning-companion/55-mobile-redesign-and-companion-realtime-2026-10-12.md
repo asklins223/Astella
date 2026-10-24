@@ -1,5 +1,12 @@
 # 55 · 手机交流重设计与两端共用的伴星实时接口
 
+**2026-10-24 approved audit decision:** Workspace owners may explicitly restore an exact saved note version on mobile. This operation switches the current-version pointer; it preserves all saved versions and does not create another version. The endpoint retains owner authorization and optional `baseVersionId` conflict protection. Members remain read-only for restoration, and ordinary mobile freeform body edits / collaboration updates remain forbidden. This supersedes the earlier blanket restriction only for saved-version restore.
+
+**2026-10-23 多图修订：**用户要求图片保持小缩略图、独立于文字气泡，并在覆盖全屏的浮层中浏览本次发送的整组图片。回合合同同步改为「可选首块文字＋最多 9 张图片＋最多一份文件」，取代 2026-10-15 的单附件上限；语音转写仍为唯一文字块。iOS 的系统相册使用有序多选，草稿可逐张预览／移除，发送时逐张上传，失败重试复用已有回执，完整上传后只提交一次用户消息。worker 保留全部九张的资产引用，不再截掉第三张之后的图片；图片归属与文件读取权限仍逐项校验。Android 此轮不重做入口。具体实测见 [记录与卡片验收](../../testing/ios-companion-records-2026-10-23.md)。
+
+
+**2026-10-22 iOS 新决定与实施：**用户选择大伴星＋当前句气泡的「贴近说话」，长讲解自然分句完整朗读并可打断。iOS 已接 `voice.segment.ready` V2、真实 `/voice/tts/stream` 增量播放、大小形态的语义表情与电平口型、同一 Agent 的选段写入与回应。原生日志确认音频在响应体收齐前开始播放；完整范围和剩余真机验收见 [实施记录](../../testing/ios-companion-delivery-2026-10-22.md)。这条决定覆盖下文 iOS「不做流式 TTS」与「离开对话页停止声音」的旧范围；Android 与 MiMo 整段 ASR 保持原样。
+
 **2026-10-18 原生接入状态更正：**当前双端客户端已将服务端 MiMo 整段 ASR、`POST /voice/tts` 分段朗读、图片／文件附件、Live2D manifest 下载与本地缓存，以及伴星 WebSocket 订阅接入真实页面；朗读支持暂停／继续／停止，进入后台会停止录音与播放。手机端仍不做流式 ASR，也不把服务端 TTS 分段调用描述成流式播放。具体客户端链路与剩余运行验收见 [手机端 README](../../../apps/mobile-client/README.md) 和[多轮审查记录](../../../apps/mobile-client/MOBILE_AUDIT.md)。
 
 **2026-10-14 原生双端决定：**用户明确取代手机 React 客户端，使用 iOS SwiftUI 与 Android Kotlin/Jetpack Compose 两套原生工程，iOS 视觉与动效作为 Android 的共同标尺。用户之后明确采用 Apple 系统中性色与单一系统蓝，移除多色装饰渐变，并适配深浅色外观。共享 `/companion/inbox/ensure`、`/companion/realtime`、`/voice/transcribe` 和消息合同；图片上传仍由用户发送动作触发。两端已有登录、WebSocket 会话／回执、MiMo 整段转写和手记读取代码。React 描述是 2026-10-12 历史实现状态；桌面仍使用 SSE 与本机 ASR，移动端也没有流式 ASR/TTS。当前工程和未迁移能力见 [`apps/mobile-client/README.md`](../../../apps/mobile-client/README.md) 与 [界面规范](../../../apps/mobile-client/DESIGN_SPEC.md)。

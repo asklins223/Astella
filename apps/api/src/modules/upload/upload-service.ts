@@ -1,3 +1,4 @@
+import { COMPANION_IMAGE_MAX_BYTES_V1 } from "@astella/shared/companion-conversation-contracts";
 import { AVATAR_MAX_BYTES } from "@astella/shared/desktop-ipc-contracts";
 import type { ObjectTransferDownload } from "@astella/shared/object-transfer-contracts";
 /**
@@ -49,7 +50,7 @@ import {
 import { logger } from "../../lib/logger.ts";
 
 // 上传体积上限：路由层用于 multipart limits，服务层用于 toBuffer() 后的双重校验。
-export const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB
+export const MAX_IMAGE_SIZE = COMPANION_IMAGE_MAX_BYTES_V1; // 10MB
 export const MAX_AVATAR_SIZE = AVATAR_MAX_BYTES;
 
 /**

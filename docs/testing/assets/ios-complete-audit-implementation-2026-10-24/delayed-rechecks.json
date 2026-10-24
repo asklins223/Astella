@@ -1,0 +1,1017 @@
+[
+  {
+    "index": 27,
+    "route": "cache-management",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 5,
+    "blankCandidate": false,
+    "originalCaptureBasename": "recheck-027-cache-management-off.png",
+    "originalCaptureSHA256": "0aa64ce4b6ca156dd4d28641f58b91740fc0d30f48ca18ffa4fa07fc0752c2f1",
+    "contactSheet": "recheck-00.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 1
+    },
+    "observation": "Visually reviewed delayed capture"
+  },
+  {
+    "index": 29,
+    "route": "workspace-management",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 5,
+    "blankCandidate": false,
+    "originalCaptureBasename": "recheck-029-workspace-management-off.png",
+    "originalCaptureSHA256": "af8ff2339972afa24034a22146c688e1f74f3dbaa4f85b826ea10755387ef9fc",
+    "contactSheet": "recheck-00.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 2
+    },
+    "observation": "Visually reviewed delayed capture"
+  },
+  {
+    "index": 30,
+    "route": "workspace-management-dissolve",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 5,
+    "blankCandidate": false,
+    "originalCaptureBasename": "recheck-030-workspace-management-dissolve-off.png",
+    "originalCaptureSHA256": "0e120d32f34fa7a596d7c98da30ec1ea31761a03be565ac05bf531e23ffb4dca",
+    "contactSheet": "recheck-00.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 3
+    },
+    "observation": "Visually reviewed delayed capture"
+  },
+  {
+    "index": 31,
+    "route": "invite-management",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 5,
+    "blankCandidate": false,
+    "originalCaptureBasename": "recheck-031-invite-management-off.png",
+    "originalCaptureSHA256": "848a22487edf4b4deb33f01ee0eedbf13d415cb17d9a0ddc7cf798fbec6b1c7d",
+    "contactSheet": "recheck-00.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 4
+    },
+    "observation": "Visually reviewed delayed capture"
+  },
+  {
+    "index": 32,
+    "route": "invite-management-member",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 5,
+    "blankCandidate": false,
+    "originalCaptureBasename": "recheck-032-invite-management-member-off.png",
+    "originalCaptureSHA256": "c361b6ea48507084b851d6de43a7611543a987f26fd59c42ea570be78cf2f8db",
+    "contactSheet": "recheck-00.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 1
+    },
+    "observation": "Visually reviewed delayed capture"
+  },
+  {
+    "index": 33,
+    "route": "invite-management-personal",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 5,
+    "blankCandidate": false,
+    "originalCaptureBasename": "recheck-033-invite-management-personal-off.png",
+    "originalCaptureSHA256": "7db8ac4c6510fe16da95a939a14c42c8eeae7c12e0cd455e208fba14b9369951",
+    "contactSheet": "recheck-00.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 2
+    },
+    "observation": "Visually reviewed delayed capture"
+  },
+  {
+    "index": 34,
+    "route": "invite-management-members",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 5,
+    "blankCandidate": false,
+    "originalCaptureBasename": "recheck-034-invite-management-members-off.png",
+    "originalCaptureSHA256": "138eb167fafdf3be5adbf9e6e94584bd2750c9a50e3d3f55976cfb0690631d0b",
+    "contactSheet": "recheck-00.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 3
+    },
+    "observation": "Visually reviewed delayed capture"
+  },
+  {
+    "index": 35,
+    "route": "invite-management-receipt",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 5,
+    "blankCandidate": false,
+    "originalCaptureBasename": "recheck-035-invite-management-receipt-off.png",
+    "originalCaptureSHA256": "630b86789d830a357faf96b00d47669bc1f2bb1473b838f22fd0c96bcbf13b38",
+    "contactSheet": "recheck-00.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 4
+    },
+    "observation": "Visually reviewed delayed capture"
+  },
+  {
+    "index": 36,
+    "route": "conversation",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 8,
+    "blankCandidate": false,
+    "originalCaptureBasename": "recheck-036-conversation-off.png",
+    "originalCaptureSHA256": "cb70bc597fc28a9ccc04e7acb5ff49f4eada085f23fa6425f329ae072394b413",
+    "contactSheet": "recheck-00.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 1
+    },
+    "observation": "Visually reviewed delayed capture"
+  },
+  {
+    "index": 37,
+    "route": "conversation-speaking",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 5,
+    "blankCandidate": false,
+    "originalCaptureBasename": "recheck-037-conversation-speaking-off.png",
+    "originalCaptureSHA256": "1647bef4efa4f57e9b4c96b9209f63d188ede2b1db3621154d27968fc3e062db",
+    "contactSheet": "recheck-00.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 2
+    },
+    "observation": "Visually reviewed delayed capture"
+  },
+  {
+    "index": 38,
+    "route": "records",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 5,
+    "blankCandidate": false,
+    "originalCaptureBasename": "recheck-038-records-off.png",
+    "originalCaptureSHA256": "d6ae05b4ed55860cef0d8d6db927d79b36df01edddeb0cb0ebe4a767b341e4f5",
+    "contactSheet": "recheck-00.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 3
+    },
+    "observation": "Visually reviewed delayed capture"
+  },
+  {
+    "index": 39,
+    "route": "records-plain",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 5,
+    "blankCandidate": false,
+    "originalCaptureBasename": "recheck-039-records-plain-off.png",
+    "originalCaptureSHA256": "5ef5a00b58a7f8c31c837facf9039f1168c0222943a6ee6edcca6fbf12343453",
+    "contactSheet": "recheck-00.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 4
+    },
+    "observation": "Visually reviewed delayed capture"
+  },
+  {
+    "index": 40,
+    "route": "records-inputs",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 5,
+    "blankCandidate": false,
+    "originalCaptureBasename": "recheck-040-records-inputs-off.png",
+    "originalCaptureSHA256": "a97b026bd483823e30366b6f338c1cef1eccb49806f60892d0a0207cb11ce55f",
+    "contactSheet": "recheck-01.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 1
+    },
+    "observation": "Visually reviewed delayed capture"
+  },
+  {
+    "index": 44,
+    "route": "records-proposal-executing",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 5,
+    "blankCandidate": false,
+    "originalCaptureBasename": "recheck-044-records-proposal-executing-off.png",
+    "originalCaptureSHA256": "6823aef7ed8eff6ef9b3fef84a3d9fe30ef18dc6e3be09194bd012889fbda3cf",
+    "contactSheet": "recheck-01.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 2
+    },
+    "observation": "Visually reviewed delayed capture"
+  },
+  {
+    "index": 46,
+    "route": "records-background",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 5,
+    "blankCandidate": false,
+    "originalCaptureBasename": "recheck-046-records-background-off.png",
+    "originalCaptureSHA256": "403c876a614486dc623eb028f24f82481178878a90c411a59f279a4d9275ccc3",
+    "contactSheet": "recheck-01.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 3
+    },
+    "observation": "Visually reviewed delayed capture"
+  },
+  {
+    "index": 47,
+    "route": "records-problems",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 5,
+    "blankCandidate": false,
+    "originalCaptureBasename": "recheck-047-records-problems-off.png",
+    "originalCaptureSHA256": "d6ab6f887b79bd4111d2f39f58d701b3f1c9582015d6acdd50f3525ee77fcf82",
+    "contactSheet": "recheck-01.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 4
+    },
+    "observation": "Visually reviewed delayed capture"
+  },
+  {
+    "index": 48,
+    "route": "library",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 5,
+    "blankCandidate": false,
+    "originalCaptureBasename": "recheck-048-library-off.png",
+    "originalCaptureSHA256": "e740e851062de86c0ee6819b8ada2d4e5132c0e7b05e90ccda8c5cbd7eef3bfd",
+    "contactSheet": "recheck-01.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 1
+    },
+    "observation": "Visually reviewed delayed capture"
+  },
+  {
+    "index": 49,
+    "route": "library-loading",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 5,
+    "blankCandidate": false,
+    "originalCaptureBasename": "recheck-049-library-loading-off.png",
+    "originalCaptureSHA256": "0546202bcee9725aa5616895944d3ef346e288da71a61c6e700db4806f98e810",
+    "contactSheet": "recheck-01.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 2
+    },
+    "observation": "Visually reviewed delayed capture"
+  },
+  {
+    "index": 56,
+    "route": "read",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 5,
+    "blankCandidate": false,
+    "originalCaptureBasename": "recheck-056-read-off.png",
+    "originalCaptureSHA256": "b7ec3e47da2f9d0708389bfd7c44a3e66498c3afafa65dd05ebdc39196259367",
+    "contactSheet": "recheck-01.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 3
+    },
+    "observation": "Visually reviewed delayed capture"
+  },
+  {
+    "index": 57,
+    "route": "read-loading",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 11,
+    "blankCandidate": true,
+    "originalCaptureBasename": "recheck-057-read-loading-off.png",
+    "originalCaptureSHA256": "6fc0f8a3aba82039a7a9777d1eeea8486edb7b2080fb7e8ffd4483d45241706a",
+    "contactSheet": "recheck-01.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 4
+    },
+    "observation": "Intentional loading skeleton"
+  },
+  {
+    "index": 77,
+    "route": "diary-loading",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 11,
+    "blankCandidate": true,
+    "originalCaptureBasename": "recheck-077-diary-loading-off.png",
+    "originalCaptureSHA256": "43f964e2ac233a2a39f29644eb21d7b2b8d027e2e4c9b6da67aa9ff5d00494c3",
+    "contactSheet": "recheck-01.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 1
+    },
+    "observation": "Intentional loading skeleton"
+  },
+  {
+    "index": 79,
+    "route": "note-mind-map-generating",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 5,
+    "blankCandidate": false,
+    "originalCaptureBasename": "recheck-079-note-mind-map-generating-off.png",
+    "originalCaptureSHA256": "27931761185d2c7581ccf953fda2e263e0be02f83687037087be1d215acbfbfe",
+    "contactSheet": "recheck-01.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 2
+    },
+    "observation": "Visually reviewed delayed capture"
+  },
+  {
+    "index": 81,
+    "route": "note-working",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 5,
+    "blankCandidate": false,
+    "originalCaptureBasename": "recheck-081-note-working-off.png",
+    "originalCaptureSHA256": "9e185c317a53db81b43da7fb2994cc1e791e570c36aec0334583b7834d6cd559",
+    "contactSheet": "recheck-01.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 3
+    },
+    "observation": "Visually reviewed delayed capture"
+  },
+  {
+    "index": 82,
+    "route": "note-rewrite",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 5,
+    "blankCandidate": false,
+    "originalCaptureBasename": "recheck-082-note-rewrite-off.png",
+    "originalCaptureSHA256": "955a2da9f752bdb3a81d5219f0ba5e9d6078a6d92f99976266e45e4134a40908",
+    "contactSheet": "recheck-01.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 4
+    },
+    "observation": "Visually reviewed delayed capture"
+  },
+  {
+    "index": 86,
+    "route": "note-annotations",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 5,
+    "blankCandidate": false,
+    "originalCaptureBasename": "recheck-086-note-annotations-off.png",
+    "originalCaptureSHA256": "42399976f2c9fdc6b824874244b347af20941392a54e0d8979af815fb35b65c4",
+    "contactSheet": "recheck-02.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 1
+    },
+    "observation": "Intermediate annotation frame; same family settled at index 122"
+  },
+  {
+    "index": 87,
+    "route": "note-annotations-multiple",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 5,
+    "blankCandidate": false,
+    "originalCaptureBasename": "recheck-087-note-annotations-multiple-off.png",
+    "originalCaptureSHA256": "865a9110546df29d96b6ccedf98a8aa4c1e67dc1dd0d8536bcba077405cca5f2",
+    "contactSheet": "recheck-02.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 2
+    },
+    "observation": "Visually reviewed delayed capture"
+  },
+  {
+    "index": 90,
+    "route": "note-outline",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 5,
+    "blankCandidate": false,
+    "originalCaptureBasename": "recheck-090-note-outline-off.png",
+    "originalCaptureSHA256": "7984ba125b6680c68239b3fd92f7f045ee9111c671a90eb59e3c401e687052ec",
+    "contactSheet": "recheck-02.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 3
+    },
+    "observation": "Visually reviewed delayed capture"
+  },
+  {
+    "index": 91,
+    "route": "note-outline-empty",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 5,
+    "blankCandidate": false,
+    "originalCaptureBasename": "recheck-091-note-outline-empty-off.png",
+    "originalCaptureSHA256": "d8877c5a785aafa0179b31ad737cb8a069fd292e9e735204aef763a68f1368d0",
+    "contactSheet": "recheck-02.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 4
+    },
+    "observation": "Visually reviewed delayed capture"
+  },
+  {
+    "index": 92,
+    "route": "note-outline-jump",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 5,
+    "blankCandidate": false,
+    "originalCaptureBasename": "recheck-092-note-outline-jump-off.png",
+    "originalCaptureSHA256": "2515205592a92f6865e8a67d6e252ac41e4b159fc55b961600a16279b210169b",
+    "contactSheet": "recheck-02.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 1
+    },
+    "observation": "Visually reviewed delayed capture"
+  },
+  {
+    "index": 100,
+    "route": "conversation-speaking",
+    "variant": "dark-large",
+    "arguments": [
+      "--ui-dark",
+      "--ui-large-type",
+      "--ui-long-content",
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 5,
+    "blankCandidate": false,
+    "originalCaptureBasename": "recheck-100-conversation-speaking-dark-large.png",
+    "originalCaptureSHA256": "1c1e69c075ccddcb9b41702c48b52f02b8e40e51e23508d9002f1c74aa3f2b89",
+    "contactSheet": "recheck-02.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 2
+    },
+    "observation": "Visually reviewed delayed capture"
+  },
+  {
+    "index": 101,
+    "route": "records-rich",
+    "variant": "dark-large",
+    "arguments": [
+      "--ui-dark",
+      "--ui-large-type",
+      "--ui-long-content",
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 5,
+    "blankCandidate": false,
+    "originalCaptureBasename": "recheck-101-records-rich-dark-large.png",
+    "originalCaptureSHA256": "b54efab65195ed8c5e3bd2537815f9d3efb2574cb83baa69193b37a7411c07c7",
+    "contactSheet": "recheck-02.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 3
+    },
+    "observation": "Visually reviewed delayed capture"
+  },
+  {
+    "index": 102,
+    "route": "library",
+    "variant": "dark-large",
+    "arguments": [
+      "--ui-dark",
+      "--ui-large-type",
+      "--ui-long-content",
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 5,
+    "blankCandidate": false,
+    "originalCaptureBasename": "recheck-102-library-dark-large.png",
+    "originalCaptureSHA256": "a763af36b6463acacc6e4f6cc9ae4385c321520d7b53fc9a7e382d8793d23d9f",
+    "contactSheet": "recheck-02.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 4
+    },
+    "observation": "Visually reviewed delayed capture"
+  },
+  {
+    "index": 103,
+    "route": "read",
+    "variant": "dark-large",
+    "arguments": [
+      "--ui-dark",
+      "--ui-large-type",
+      "--ui-long-content",
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 5,
+    "blankCandidate": false,
+    "originalCaptureBasename": "recheck-103-read-dark-large.png",
+    "originalCaptureSHA256": "3bf7e9a27b3298e38f63d848b9a0b748462b432cb2cc53ff93836107254622c8",
+    "contactSheet": "recheck-02.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 1
+    },
+    "observation": "Visually reviewed delayed capture"
+  },
+  {
+    "index": 104,
+    "route": "orbit",
+    "variant": "dark-large",
+    "arguments": [
+      "--ui-dark",
+      "--ui-large-type",
+      "--ui-long-content",
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 5,
+    "blankCandidate": false,
+    "originalCaptureBasename": "recheck-104-orbit-dark-large.png",
+    "originalCaptureSHA256": "9d8d6b4843054f7b06c880edea81b0c2c86cce53a818d036eb03b42cbbab5439",
+    "contactSheet": "recheck-02.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 2
+    },
+    "observation": "Visually reviewed delayed capture"
+  },
+  {
+    "index": 105,
+    "route": "orbit-memory-detail-long",
+    "variant": "dark-large",
+    "arguments": [
+      "--ui-dark",
+      "--ui-large-type",
+      "--ui-long-content",
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 5,
+    "blankCandidate": false,
+    "originalCaptureBasename": "recheck-105-orbit-memory-detail-long-dark-large.png",
+    "originalCaptureSHA256": "eee322f48749abeb9045b7717c2821ef485bce897ce952d4d9100fd3ec0cbd81",
+    "contactSheet": "recheck-02.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 3
+    },
+    "observation": "Visually reviewed delayed capture"
+  },
+  {
+    "index": 106,
+    "route": "me",
+    "variant": "dark-large",
+    "arguments": [
+      "--ui-dark",
+      "--ui-large-type",
+      "--ui-long-content",
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 5,
+    "blankCandidate": false,
+    "originalCaptureBasename": "recheck-106-me-dark-large.png",
+    "originalCaptureSHA256": "4c4eb3ccac23130c0175b5a775db44291c122317769a9765e31fc0c318099fc7",
+    "contactSheet": "recheck-02.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 4
+    },
+    "observation": "Visually reviewed delayed capture"
+  },
+  {
+    "index": 107,
+    "route": "profile",
+    "variant": "dark-large",
+    "arguments": [
+      "--ui-dark",
+      "--ui-large-type",
+      "--ui-long-content",
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 5,
+    "blankCandidate": false,
+    "originalCaptureBasename": "recheck-107-profile-dark-large.png",
+    "originalCaptureSHA256": "d9f8c23dd84b75c7b17a1ca71380bf0a9408c35d1eda5772a0adce4fea60a6f5",
+    "contactSheet": "recheck-03.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 1
+    },
+    "observation": "Visually reviewed delayed capture"
+  },
+  {
+    "index": 108,
+    "route": "conventions",
+    "variant": "dark-large",
+    "arguments": [
+      "--ui-dark",
+      "--ui-large-type",
+      "--ui-long-content",
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 5,
+    "blankCandidate": false,
+    "originalCaptureBasename": "recheck-108-conventions-dark-large.png",
+    "originalCaptureSHA256": "3d1c05f05ca7bd4a155a2f784c9ade163c7e0f14070588fd132d3304a3230c86",
+    "contactSheet": "recheck-03.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 2
+    },
+    "observation": "Visually reviewed delayed capture"
+  },
+  {
+    "index": 109,
+    "route": "settings",
+    "variant": "dark-large",
+    "arguments": [
+      "--ui-dark",
+      "--ui-large-type",
+      "--ui-long-content",
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 5,
+    "blankCandidate": false,
+    "originalCaptureBasename": "recheck-109-settings-dark-large.png",
+    "originalCaptureSHA256": "03cf292e744eb0e8de29d8bd01d178900681f9bc17b9ec651dcb860221c0d651",
+    "contactSheet": "recheck-03.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 3
+    },
+    "observation": "Visually reviewed delayed capture"
+  },
+  {
+    "index": 110,
+    "route": "invite-management",
+    "variant": "dark-large",
+    "arguments": [
+      "--ui-dark",
+      "--ui-large-type",
+      "--ui-long-content",
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 5,
+    "blankCandidate": false,
+    "originalCaptureBasename": "recheck-110-invite-management-dark-large.png",
+    "originalCaptureSHA256": "00a57182b9c654f3a306aec2de58d0c4e500367740a286be6e6d47e883fbc91b",
+    "contactSheet": "recheck-03.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 4
+    },
+    "observation": "Visually reviewed delayed capture"
+  },
+  {
+    "index": 111,
+    "route": "note-overview-ready",
+    "variant": "dark-large",
+    "arguments": [
+      "--ui-dark",
+      "--ui-large-type",
+      "--ui-long-content",
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 5,
+    "blankCandidate": false,
+    "originalCaptureBasename": "recheck-111-note-overview-ready-dark-large.png",
+    "originalCaptureSHA256": "ae1a720d7206e4d29c81063240a6c53384655af3ab1592686b718cb3a70f63ab",
+    "contactSheet": "recheck-03.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 1
+    },
+    "observation": "Visually reviewed delayed capture"
+  },
+  {
+    "index": 112,
+    "route": "note-mind-map",
+    "variant": "dark-large",
+    "arguments": [
+      "--ui-dark",
+      "--ui-large-type",
+      "--ui-long-content",
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 5,
+    "blankCandidate": false,
+    "originalCaptureBasename": "recheck-112-note-mind-map-dark-large.png",
+    "originalCaptureSHA256": "4e9a913bde29da3581f85863d30fb41d0948fb81584b5c189628f54f89ea2d5b",
+    "contactSheet": "recheck-03.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 2
+    },
+    "observation": "Visually reviewed delayed capture"
+  },
+  {
+    "index": 113,
+    "route": "note-learning-practice",
+    "variant": "dark-large",
+    "arguments": [
+      "--ui-dark",
+      "--ui-large-type",
+      "--ui-long-content",
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 5,
+    "blankCandidate": false,
+    "originalCaptureBasename": "recheck-113-note-learning-practice-dark-large.png",
+    "originalCaptureSHA256": "5bf9a48cc4d6e7688ad39a979021156002a0038df483f7a329322786d0d88e2c",
+    "contactSheet": "recheck-03.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 3
+    },
+    "observation": "Visually reviewed delayed capture"
+  },
+  {
+    "index": 114,
+    "route": "note-learning-result",
+    "variant": "dark-large",
+    "arguments": [
+      "--ui-dark",
+      "--ui-large-type",
+      "--ui-long-content",
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 5,
+    "blankCandidate": false,
+    "originalCaptureBasename": "recheck-114-note-learning-result-dark-large.png",
+    "originalCaptureSHA256": "4b419cac5753ebbd2688bba078b334bc9e481648537ca3a48dca4a5a0d36f3b4",
+    "contactSheet": "recheck-03.jpg",
+    "contactCell": {
+      "row": 2,
+      "column": 4
+    },
+    "observation": "Visually reviewed delayed capture"
+  },
+  {
+    "index": 116,
+    "route": "profile",
+    "variant": "default",
+    "arguments": [],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 5,
+    "blankCandidate": false,
+    "originalCaptureBasename": "recheck-116-profile-default.png",
+    "originalCaptureSHA256": "fd892141c1dff392ee0487a057f9c4d0534b0b23def80233958ecfc8b018d31d",
+    "contactSheet": "recheck-03.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 1
+    },
+    "observation": "Visually reviewed delayed capture"
+  },
+  {
+    "index": 117,
+    "route": "read",
+    "variant": "default",
+    "arguments": [],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 5,
+    "blankCandidate": false,
+    "originalCaptureBasename": "recheck-117-read-default.png",
+    "originalCaptureSHA256": "a4cd6c7c7d12484de75c5fb4f9d9a9bf8fb9adb13196e02133e682d1d1bbad41",
+    "contactSheet": "recheck-03.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 2
+    },
+    "observation": "Visually reviewed delayed capture"
+  },
+  {
+    "index": 118,
+    "route": "orbit",
+    "variant": "default",
+    "arguments": [],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 5,
+    "blankCandidate": false,
+    "originalCaptureBasename": "recheck-118-orbit-default.png",
+    "originalCaptureSHA256": "0c008e4d19487fb6d1c5e11036ffc21d676af9163f3237a551148d39ec50f727",
+    "contactSheet": "recheck-03.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 3
+    },
+    "observation": "Visually reviewed delayed capture"
+  },
+  {
+    "index": 120,
+    "route": "note-overview-ready",
+    "variant": "default",
+    "arguments": [],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 5,
+    "blankCandidate": false,
+    "originalCaptureBasename": "recheck-120-note-overview-ready-default.png",
+    "originalCaptureSHA256": "278bd86a7e7300aa71093613a8d6c3de796cfef76c127403a2d56618fd59a87b",
+    "contactSheet": "recheck-03.jpg",
+    "contactCell": {
+      "row": 3,
+      "column": 4
+    },
+    "observation": "Visually reviewed delayed capture"
+  },
+  {
+    "index": 122,
+    "route": "note-annotations",
+    "variant": "default",
+    "arguments": [],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "recheckWaitSeconds": 5,
+    "blankCandidate": false,
+    "originalCaptureBasename": "recheck-122-note-annotations-default.png",
+    "originalCaptureSHA256": "f18e1cd605479f868911a0c817f05fc0f80ea02dade5c6ef48535d1fe65baea7",
+    "contactSheet": "recheck-04.jpg",
+    "contactCell": {
+      "row": 1,
+      "column": 1
+    },
+    "observation": "Visually reviewed delayed capture"
+  }
+]

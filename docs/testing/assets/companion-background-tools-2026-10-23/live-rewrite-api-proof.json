@@ -1,0 +1,15 @@
+{
+  "noteId": "ced96eb3-7cdc-4c13-8d2f-0500da129abc",
+  "runId": "46f21ceb-3220-4540-a14b-0a938cfc7c48",
+  "proposalId": "f55185b8-34f8-4bee-89da-9a2d5b05f8ea",
+  "versionId": "4bf83415-f764-42cb-89af-00785d8fdfb0",
+  "unchangedBlocks": [
+    0,
+    1
+  ],
+  "replacedBlock": 2,
+  "before": "清风缓缓吹来，江面不起波澜。苏轼把风的轻柔与水面的宁静放在一起，写出了泛舟之初安闲、舒展的心情。",
+  "after": "清风吹着，江面平静，苏轼泛舟之初的心情又安闲又舒展。",
+  "scope": "synthetic-local-fixture",
+  "verifiedAt": "2026-10-23T12:39:18.424Z"
+}

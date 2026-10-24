@@ -41,6 +41,12 @@ import {
 import {
   companionVoicePreferencePatchV1Schema,
 } from "@astella/shared";
+import {
+  QWEN_TTS_DIALECT_VOICE_BY_DIALECT,
+  QWEN_TTS_GENERAL_DIALECT_VOICE,
+  QWEN_TTS_SUPPORTED_DIALECTS,
+  TTS_PREVIEW_TEXT,
+} from "@astella/shared/tts-voice-catalog";
 import { companionTtsStreamRequestV1Schema } from "@astella/shared";
 import {
   companionVoicePlaybackOutcomeRequestV1Schema,
@@ -410,9 +416,9 @@ export async function voiceRoutes(app: FastifyInstance) {
     }
     try {
       const config = loadTtsEngineConfig();
-      const selection = reference
-        ? await resolveSelectionForSynthesis(req.session, req.log)
-        : resolveTtsSelection(null, config);
+      const selection = await resolveSelectionForSynthesis(req.session, req.log);
+      // 手机原文回听也走增量播放器；与 /voice/tts 的普通朗读保持同一音色与语速。
+      if (!reference) selection.qwenDialect = null;
       // 段引用沿用账号选择；V1 文本接口保留请求参数优先、配置兜底的约定。
       if (text?.engine) selection.engine = text.engine;
       const profile = resolveTtsSynthesisProfile(config, selection, ttsInstruction);
@@ -634,6 +640,74 @@ export async function voiceRoutes(app: FastifyInstance) {
       explicit: true,
       updatedAt: updatedAt ?? new Date().toISOString(),
     };
+  });
+
+  // GET /voice/catalog — 声音设置页的方言选项与试听句。
+  // 名单直接来自共享音色目录，客户端不再打包一份自己维护的方言表。
+  app.get("/voice/catalog", { preHandler: [requireSession] }, async () => {
+    return {
+      version: 1,
+      previewText: TTS_PREVIEW_TEXT,
+      dialects: [
+        { value: "", title: "普通话" },
+        ...QWEN_TTS_SUPPORTED_DIALECTS.map((title) => ({ value: title, title })),
+      ],
+    };
+  });
+
+  // POST /voice/audition { version:1, dialect } → audio/mpeg
+  // 试听只合成、不写账号偏好：它走和 /voice/tts 同一条 qwen 优先、edge 兜底链路，
+  // 音色按所选方言从共享目录挑，正文固定用 TTS_PREVIEW_TEXT（与设置页字幕同一句）。
+  app.post("/voice/audition", { preHandler: [requireSession, requireAiConsent] }, async (req, reply) => {
+    const body = parseBody(app, z.object({
+      version: z.literal(1),
+      dialect: z.string().max(16).optional(),
+    }), req.body);
+    const requested = (body.dialect ?? "").trim();
+    const dialect = requested.length > 0
+      ? (QWEN_TTS_SUPPORTED_DIALECTS as readonly string[]).includes(requested)
+        ? requested as (typeof QWEN_TTS_SUPPORTED_DIALECTS)[number]
+        : null
+      : null;
+    if (requested.length > 0 && dialect === null) {
+      return reply.code(400).send({ error: "INVALID_DIALECT", message: "这个方言暂时不可用。" });
+    }
+    const session = req.session!;
+    if (!(await rateLimitVoice(reply, req.id, `${session.workspaceId}:${session.userId}:tts`,
+      COMPANION_RATE_LIMITS.ttsPerMinute.limit, COMPANION_RATE_LIMITS.ttsPerMinute.windowMs))) return;
+    const aborted = responseAbortController(reply);
+    const base = resolveTtsSelection(null, loadTtsEngineConfig());
+    const selection: ResolvedTtsSelection = {
+      engine: "qwen",
+      qwenVoice: dialect
+        ? QWEN_TTS_DIALECT_VOICE_BY_DIALECT[dialect] ?? QWEN_TTS_GENERAL_DIALECT_VOICE
+        : base.qwenVoice,
+      edgeVoice: base.edgeVoice,
+      qwenInstruction: base.qwenInstruction,
+      qwenInstructionExplicit: false,
+      qwenDialect: dialect,
+      explicit: false,
+    };
+    try {
+      const result = await synthesizeTtsBytes({
+        text: TTS_PREVIEW_TEXT,
+        signal: aborted.signal,
+        edgeVoice: base.edgeVoice,
+        queueKey: `${session.workspaceId}:${session.userId}`,
+        scope: { workspaceId: session.workspaceId, userId: session.userId, currentActiveTransaction: currentApiWorkspaceTransaction },
+        selection,
+        onQwenFallback: (error) => req.log.warn({ err: error }, "qwen tts audition failed; falling back to edge-tts"),
+      });
+      return reply
+        .type(result.contentType)
+        .header("Cache-Control", "no-store")
+        .send(Buffer.from(result.audio));
+    } catch (err) {
+      if (err instanceof EdgeTtsError) {
+        return reply.code(502).send({ error: err.code, message: "语音合成服务暂不可用，请稍后重试" });
+      }
+      throw err;
+    }
   });
 
   // Companion branch（§11.3）：请求含 conversationId/runId/...（strict ref）时，重读

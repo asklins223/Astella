@@ -36,9 +36,24 @@ import { noteSaveRequestV1Schema } from "@astella/shared/note-save-contracts";
 import { MAX_SOURCE_TEXT_BYTES } from "@astella/shared/object-transfer-contracts";
 import { noteShareScopeRequestV1Schema } from "@astella/shared/note-share-contracts";
 import { clampLimit } from "../../lib/pagination-utils.ts";
+import { readNotePage } from "./reader-page.ts";
 
 export async function noteRoutes(app: FastifyInstance) {
   app.addHook("preHandler", requireSession);
+
+  app.get<{ Params: { id: string } }>("/v2/notes/:id/reader", async (req, reply) => {
+    const params = uuidParamSchema.safeParse(req.params);
+    if (!params.success) return reply.code(400).send({ error: "invalid_id_format", message: "无效的笔记格式" });
+    const query = parseQuery(app, z.object({ noteVersionId: z.string().uuid().optional(),
+      afterOrdinal: z.coerce.number().int().min(0).optional(), beforeOrdinal: z.coerce.number().int().min(0).optional(),
+      limit: z.coerce.number().int().min(1).max(32).default(24) })
+      .refine(q => q.afterOrdinal === undefined || q.beforeOrdinal === undefined, "只能选择一个读取方向"), req.query);
+    const result = await withWorkspaceTransaction(scopeOfSession(req.session), tx =>
+      readNotePage(tx, req.session, params.data.id, query));
+    if (!result) return reply.code(404).send({ error: "not_found", message: "这篇笔记或版本已不可读取。" });
+    reply.header("Cache-Control", "private, no-store");
+    return result;
+  });
 
   app.get("/notes", async (req) => {
     // R-022: 统一 Zod 校验，非法参数返回 400 而非 NaN 进入查询
@@ -399,14 +414,14 @@ actorUserId: req.session.userId,
   // POST /notes/:id/versions/:versionId/restore — 恢复到指定版本
   // CONC-05: 可选 baseVersionId 乐观检查，不匹配时返回 409
   // RBAC: 仅 owner 可恢复版本。恢复把整篇正文换成旧的那一份，**它算改正文**，
-  // 所以手机会话同样吃 `requireNoteContentWrites`（0413）——伴星改正文走内部
-  // tool call，不经过这一条，挡在这里不会挡到她。
+  // 2026-10-24 审计确认：拥有者在手机上也可显式恢复已保存的版本。
+  // 普通正文编辑继续使用 requireNoteContentWrites；恢复仍由 owner + baseVersionId 保护。
   const restoreSchema = z.object({
     baseVersionId: z.string().uuid().optional(),
   }).default({});
   app.post<{ Params: { id: string; versionId: string } }>(
     "/notes/:id/versions/:versionId/restore",
-    { preHandler: [requireOwner, requireNoteContentWrites] },
+    { preHandler: [requireOwner] },
     async (req, reply) => {
       const params = uuidParamSchema.safeParse(req.params);
       if (!params.success) return reply.code(400).send({ error: "invalid_id_format", message: "无效的 id 格式" });

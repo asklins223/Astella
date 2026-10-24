@@ -1,0 +1,1293 @@
+[
+  {
+    "route": "auth-login",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 1
+  },
+  {
+    "route": "auth-register",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "auth-register-password",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "auth-register-code",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "auth-forgot",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "auth-reset",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "auth-reset-password",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "auth-email-login",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "auth-email-login-code",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "profile",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "companion-center",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "companion-settings",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "companion-settings-loading",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "companion-settings-error",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "reading-settings",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "device-permissions",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "ai-authorization",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "ai-authorization-required",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "ai-authorization-loading",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "ai-authorization-error",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "conventions",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "conventions-loading",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "conventions-error",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "conventions-empty",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "server-address",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "settings",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "change-password",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "cache-management",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "about",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "workspace-management",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "workspace-management-dissolve",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "invite-management",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "invite-management-member",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "invite-management-personal",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "invite-management-members",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "invite-management-receipt",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "conversation",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "conversation-speaking",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "records",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "records-plain",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "records-inputs",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "records-rich",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "records-confirmation",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "records-proposal-expired",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "records-proposal-executing",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "records-proposal-failed",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "records-background",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "records-problems",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "library",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "library-loading",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "library-empty",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "library-error",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "library-rename",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "library-rename-done",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "library-delete",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "library-deleted",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "read",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "read-loading",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "orbit",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "orbit-memory",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "orbit-tasks",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "orbit-memory-detail",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "orbit-memory-detail-candidate",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "orbit-memory-detail-pinned",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "orbit-memory-detail-archived",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "orbit-memory-detail-disputed",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "orbit-memory-detail-superseded",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "orbit-memory-detail-conflict",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "orbit-memory-detail-long",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "orbit-memory-detail-missing",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "orbit-memory-detail-dismissed",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "orbit-memory-detail-loading",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "orbit-memory-detail-error",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "orbit-memory-detail-goal",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "me",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "me-bottom",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "diary",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "diary-loading",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "note-overview-generating",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "note-mind-map-generating",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "note-expansion-generating",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "note-working",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "note-rewrite",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "note-overview",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "note-overview-ready",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "note-mind-map",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "note-annotations",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "note-annotations-multiple",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "note-explain-ready",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "note-versions",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "note-outline",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "note-outline-empty",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "note-outline-jump",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "note-expansion",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "note-expansion-saved",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "note-learning-card",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "note-learning-practice",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "note-learning-generating",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "note-learning-result",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "note-learning-result-zero",
+    "variant": "off",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "conversation-speaking",
+    "variant": "dark-large",
+    "arguments": [
+      "--ui-dark",
+      "--ui-large-type",
+      "--ui-long-content",
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "records-rich",
+    "variant": "dark-large",
+    "arguments": [
+      "--ui-dark",
+      "--ui-large-type",
+      "--ui-long-content",
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "library",
+    "variant": "dark-large",
+    "arguments": [
+      "--ui-dark",
+      "--ui-large-type",
+      "--ui-long-content",
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "read",
+    "variant": "dark-large",
+    "arguments": [
+      "--ui-dark",
+      "--ui-large-type",
+      "--ui-long-content",
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "orbit",
+    "variant": "dark-large",
+    "arguments": [
+      "--ui-dark",
+      "--ui-large-type",
+      "--ui-long-content",
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "orbit-memory-detail-long",
+    "variant": "dark-large",
+    "arguments": [
+      "--ui-dark",
+      "--ui-large-type",
+      "--ui-long-content",
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "me",
+    "variant": "dark-large",
+    "arguments": [
+      "--ui-dark",
+      "--ui-large-type",
+      "--ui-long-content",
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "profile",
+    "variant": "dark-large",
+    "arguments": [
+      "--ui-dark",
+      "--ui-large-type",
+      "--ui-long-content",
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "conventions",
+    "variant": "dark-large",
+    "arguments": [
+      "--ui-dark",
+      "--ui-large-type",
+      "--ui-long-content",
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "settings",
+    "variant": "dark-large",
+    "arguments": [
+      "--ui-dark",
+      "--ui-large-type",
+      "--ui-long-content",
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "invite-management",
+    "variant": "dark-large",
+    "arguments": [
+      "--ui-dark",
+      "--ui-large-type",
+      "--ui-long-content",
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "note-overview-ready",
+    "variant": "dark-large",
+    "arguments": [
+      "--ui-dark",
+      "--ui-large-type",
+      "--ui-long-content",
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "note-mind-map",
+    "variant": "dark-large",
+    "arguments": [
+      "--ui-dark",
+      "--ui-large-type",
+      "--ui-long-content",
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "note-learning-practice",
+    "variant": "dark-large",
+    "arguments": [
+      "--ui-dark",
+      "--ui-large-type",
+      "--ui-long-content",
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "note-learning-result",
+    "variant": "dark-large",
+    "arguments": [
+      "--ui-dark",
+      "--ui-large-type",
+      "--ui-long-content",
+      "--ui-reduce-motion"
+    ],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "auth-login",
+    "variant": "default",
+    "arguments": [],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "profile",
+    "variant": "default",
+    "arguments": [],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "read",
+    "variant": "default",
+    "arguments": [],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "orbit",
+    "variant": "default",
+    "arguments": [],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "me",
+    "variant": "default",
+    "arguments": [],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "note-overview-ready",
+    "variant": "default",
+    "arguments": [],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "note-mind-map",
+    "variant": "default",
+    "arguments": [],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "note-annotations",
+    "variant": "default",
+    "arguments": [],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "note-versions",
+    "variant": "default",
+    "arguments": [],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "note-learning-card",
+    "variant": "default",
+    "arguments": [],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "note-learning-practice",
+    "variant": "default",
+    "arguments": [],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  },
+  {
+    "route": "note-learning-result",
+    "variant": "default",
+    "arguments": [],
+    "launchCode": 0,
+    "screenshotCode": 0,
+    "extraWaits": 0
+  }
+]

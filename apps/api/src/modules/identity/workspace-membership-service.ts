@@ -421,7 +421,7 @@ export async function transferWorkspaceOwnership(
     });
     const actorIsOwner = workspace.ownerId === actorUserId || actorMembership?.role === "owner";
     if (!actorIsOwner) return { ok: false, error: "not_owner" } as const;
-    if (workspace.ownerId === targetUserId) {
+    if (actorUserId === targetUserId) {
       return { ok: false, error: "target_is_owner" } as const;
     }
 
@@ -442,8 +442,8 @@ export async function transferWorkspaceOwnership(
       .update(workspaces)
       .set({ ownerId: targetUserId })
       .where(eq(workspaces.id, workspaceId));
-    // 成员角色跟着走：两个 co-owner 并列会让 `isWorkspaceOwner` 的 OR 语义出现
-    // 两个人都能"全权"的状态，而"谁是 owner"必须只有一个答案。
+    // 交出的是操作者自己的所有权；已经通过邀请获得权限的其他所有者保持原角色。
+    // owner_id 指向本次接手的人，不把它误当成成员表里只能有一个 owner 的限制。
     await tx
       .update(workspaceMembers)
       .set({ role: "member" })

@@ -17,3 +17,9 @@ test("选区生成保留原位置和全部输入文字，不把选区编号重�
   assert.equal(focused.split("笔记原文：\n\n")[1], "[原文第 24 段，blockOrdinal=23]\n循环结束时 left=right；返回值允许等于 n。");
   assert.notEqual(focused, buildNoteExpansionPrompt(blocks, false));
 });
+
+
+test("关系说明必须为字符串，防止模型把字段改成嵌套对象", () => {
+  const prompt = buildNoteExpansionPrompt([{ ordinal: 0, type: "paragraph", content: "清风徐来，水波不兴。" }], false);
+  assert.match(prompt, /relationship 必须是 12 到 500 字的 JSON 字符串，不是对象或数组/);
+});

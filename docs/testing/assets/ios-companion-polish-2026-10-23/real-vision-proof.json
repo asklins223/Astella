@@ -1,0 +1,229 @@
+{
+  "environment": "local synthetic account, actual configured MiMo vision provider",
+  "runId": "228b482b-c3eb-4958-97c3-b446e9bb2b6d",
+  "status": "succeeded",
+  "toolCallCount": 4,
+  "images": [
+    {
+      "type": "image",
+      "url": "/api/uploads/9c204c71-5534-4d55-9ca9-afd8e392d699/companion/2b29b559-e2e9-4c24-aa4d-f2efca79913a.jpg",
+      "label": "照片-1.jpg",
+      "alt": "照片-1.jpg",
+      "assetId": "9b33fe46-549e-4174-bd3e-6aea461f7551"
+    },
+    {
+      "type": "image",
+      "url": "/api/uploads/9c204c71-5534-4d55-9ca9-afd8e392d699/companion/980d8ee1-1f20-46bc-b957-dda6a9ecde05.jpg",
+      "label": "照片-2.jpg",
+      "alt": "照片-2.jpg",
+      "assetId": "4cf69ba9-37c8-49a5-9fc7-43c3f8fd7ac6"
+    },
+    {
+      "type": "image",
+      "url": "/api/uploads/9c204c71-5534-4d55-9ca9-afd8e392d699/companion/146e5aac-84cd-43fa-a433-38f666316d6e.jpg",
+      "label": "照片-3.jpg",
+      "alt": "照片-3.jpg",
+      "assetId": "ef1d9666-ce67-450b-a350-651d6804369e"
+    }
+  ],
+  "downloads": [
+    {
+      "label": "照片-1.jpg",
+      "bytes": 4713455,
+      "contentType": "image/jpeg"
+    },
+    {
+      "label": "照片-2.jpg",
+      "bytes": 1941184,
+      "contentType": "image/jpeg"
+    },
+    {
+      "label": "照片-3.jpg",
+      "bytes": 2459102,
+      "contentType": "image/jpeg"
+    }
+  ],
+  "toolEvents": [
+    {
+      "seq": 1112,
+      "type": "agent.tool",
+      "runId": "228b482b-c3eb-4958-97c3-b446e9bb2b6d",
+      "payload": {
+        "tool": {
+          "name": "companion_read_image",
+          "status": "requested",
+          "safeLabel": "正在看那张图",
+          "toolCallId": "01a1676a5d72caae40602905e4b099e6"
+        }
+      },
+      "version": 1
+    },
+    {
+      "seq": 1113,
+      "type": "agent.tool",
+      "runId": "228b482b-c3eb-4958-97c3-b446e9bb2b6d",
+      "payload": {
+        "tool": {
+          "name": "companion_read_image",
+          "status": "executing",
+          "safeLabel": "正在看那张图",
+          "toolCallId": "01a1676a5d72caae40602905e4b099e6"
+        }
+      },
+      "version": 1
+    },
+    {
+      "seq": 1114,
+      "type": "agent.tool",
+      "runId": "228b482b-c3eb-4958-97c3-b446e9bb2b6d",
+      "payload": {
+        "tool": {
+          "name": "companion_read_image",
+          "status": "failed",
+          "safeLabel": "正在看那张图",
+          "toolCallId": "01a1676a5d72caae40602905e4b099e6",
+          "safeSummary": "工具执行失败，请稍后再试"
+        }
+      },
+      "version": 1
+    },
+    {
+      "seq": 1115,
+      "type": "agent.tool",
+      "runId": "228b482b-c3eb-4958-97c3-b446e9bb2b6d",
+      "payload": {
+        "tool": {
+          "name": "companion_read_image",
+          "status": "requested",
+          "safeLabel": "正在看那张图",
+          "toolCallId": "01a1676a6368f1a0ea54518288f34d6a"
+        }
+      },
+      "version": 1
+    },
+    {
+      "seq": 1116,
+      "type": "agent.tool",
+      "runId": "228b482b-c3eb-4958-97c3-b446e9bb2b6d",
+      "payload": {
+        "tool": {
+          "name": "companion_read_image",
+          "status": "executing",
+          "safeLabel": "正在看那张图",
+          "toolCallId": "01a1676a6368f1a0ea54518288f34d6a"
+        }
+      },
+      "version": 1
+    },
+    {
+      "seq": 1117,
+      "type": "agent.tool",
+      "runId": "228b482b-c3eb-4958-97c3-b446e9bb2b6d",
+      "payload": {
+        "tool": {
+          "name": "companion_read_image",
+          "status": "succeeded",
+          "safeLabel": "正在看那张图",
+          "toolCallId": "01a1676a6368f1a0ea54518288f34d6a",
+          "safeSummary": "已看过那张图（3000×2002，197 字描述）"
+        }
+      },
+      "version": 1
+    },
+    {
+      "seq": 1118,
+      "type": "agent.tool",
+      "runId": "228b482b-c3eb-4958-97c3-b446e9bb2b6d",
+      "payload": {
+        "tool": {
+          "name": "companion_read_image",
+          "status": "requested",
+          "safeLabel": "正在看那张图",
+          "toolCallId": "01a1676a6a615305505e687e9b8181b1"
+        }
+      },
+      "version": 1
+    },
+    {
+      "seq": 1119,
+      "type": "agent.tool",
+      "runId": "228b482b-c3eb-4958-97c3-b446e9bb2b6d",
+      "payload": {
+        "tool": {
+          "name": "companion_read_image",
+          "status": "executing",
+          "safeLabel": "正在看那张图",
+          "toolCallId": "01a1676a6a615305505e687e9b8181b1"
+        }
+      },
+      "version": 1
+    },
+    {
+      "seq": 1120,
+      "type": "agent.tool",
+      "runId": "228b482b-c3eb-4958-97c3-b446e9bb2b6d",
+      "payload": {
+        "tool": {
+          "name": "companion_read_image",
+          "status": "succeeded",
+          "safeLabel": "正在看那张图",
+          "toolCallId": "01a1676a6a615305505e687e9b8181b1",
+          "safeSummary": "已看过那张图（3000×2002，383 字描述）"
+        }
+      },
+      "version": 1
+    },
+    {
+      "seq": 1235,
+      "type": "agent.tool",
+      "runId": "228b482b-c3eb-4958-97c3-b446e9bb2b6d",
+      "payload": {
+        "tool": {
+          "name": "companion_read_image",
+          "status": "requested",
+          "safeLabel": "正在看那张图",
+          "toolCallId": "call_301da605753142509a29eef1"
+        }
+      },
+      "version": 1
+    },
+    {
+      "seq": 1236,
+      "type": "agent.tool",
+      "runId": "228b482b-c3eb-4958-97c3-b446e9bb2b6d",
+      "payload": {
+        "tool": {
+          "name": "companion_read_image",
+          "status": "executing",
+          "safeLabel": "正在看那张图",
+          "toolCallId": "call_301da605753142509a29eef1"
+        }
+      },
+      "version": 1
+    },
+    {
+      "seq": 1237,
+      "type": "agent.tool",
+      "runId": "228b482b-c3eb-4958-97c3-b446e9bb2b6d",
+      "payload": {
+        "tool": {
+          "name": "companion_read_image",
+          "status": "succeeded",
+          "safeLabel": "正在看那张图",
+          "toolCallId": "call_301da605753142509a29eef1",
+          "safeSummary": "已看过那张图（4032×3024，314 字描述）"
+        }
+      },
+      "version": 1
+    }
+  ],
+  "replies": [
+    [
+      {
+        "type": "text",
+        "text": "第一张刚才读取失败了，我再试一次。\n\n按发送顺序，这次我真看到了：\n\n第一张（照片-1）：一片开得正盛的多肉花境，玫红和亮粉的放射状小花密密麻麻挤满画面，角落散着几簇紫色和明黄色的同款花，背后是深绿灌木，左上角露出小片灰蓝天空和几根电线。\n\n第二张（照片-2）：一道长曝光的白色瀑布从覆满绿苔的崖顶垂落，底部腾起淡紫色水雾，天空是阴沉的灰紫色云层，前景有几株枯黄花序的草。\n\n第三张（照片-3）：同一道瀑布的另一视角——左侧是深褐色的高大火山岩壁，瀑布从岩顶倾泻汇入灰绿色水面，右侧逆光阳光穿过水雾晕成一片暖白，前景是长满黄绿苔藓的碎石河岸。",
+        "emotion": "neutral"
+      }
+    ]
+  ]
+}

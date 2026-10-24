@@ -34,10 +34,10 @@ coverage/
 /apps/web/outputs/
 .dsh-vision-router/
 /project-archive/
+/reference-projects/
 /product-design-assets/
 /e2e-artifacts/
 /.reasonix/
-/reference-projects/learning-companion/repos/
 scripts/*.py
 scripts/*.js
 scripts/*.mjs
@@ -161,6 +161,8 @@ apps/desktop-client/prototypes/
 # 移动端/iOS 的构建缓存与模拟器截图（2026-10-21：一次 `git add -A` 会把 113MB
 # 的 SDK 索引缓存带进来；它们是本地产物，不是源码或评审图）
 apps/mobile-client/outputs/
+# 手机端已于 2026-10-24 拆分为独立私有仓库 astella-mobile；原目录不再入库。
+/apps/mobile-client/
 .env.bak*
 # 本地 electron/vite 构建日志（`> .devlog` 重定向的产物，不是产品代码）
 apps/desktop-client/.devlog

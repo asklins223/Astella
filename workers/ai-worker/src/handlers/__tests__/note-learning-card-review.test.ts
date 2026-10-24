@@ -5,6 +5,8 @@ import {
   hostDuplicateQuestionGroups,
   noteLearningCardReviewMessages,
   validateNoteLearningCardReview,
+  noteLearningCardReviewTool,
+  noteLearningCardReviewSubmission,
 } from "../note/note-learning-card-review.ts";
 import type { GeneratedCardQuestion } from "../note/note-learning-card-validation.ts";
 import { NoteOverviewOutputError } from "../../lib/non-retryable-errors.ts";
@@ -255,4 +257,26 @@ test("shape failures retry once without spending a review; a structural review f
   });
   assert.equal(result.questions.length, 4);
   assert.equal(reviews, 2);
+});
+
+
+test("structured review submission declares the exact card length and still applies independent answer/evidence validation", () => {
+  for (const count of [4, 6, 8]) {
+    const tool = noteLearningCardReviewTool(count);
+    const items = (tool.parameters.properties as Record<string, { minItems: number; maxItems: number }>).questions!;
+    assert.equal(items.minItems, count);
+    assert.equal(items.maxItems, count);
+  }
+  const review = reviewFor(four);
+  const raw = noteLearningCardReviewSubmission({ toolCalls: [{ id: "r", name: "submit_card_review", arguments: review }] });
+  assert.deepEqual(validateNoteLearningCardReview(raw, four, lines), { issues: [], duplicateGroups: [] });
+  review.questions[0]!.solution = { optionIds: ["1"] };
+  const wrong = noteLearningCardReviewSubmission({ toolCalls: [{ id: "r", name: "submit_card_review", arguments: review }] });
+  assert.equal(validateNoteLearningCardReview(wrong, four, lines).issues[0]?.checks[0], "answer_mismatch");
+  const plain = noteLearningCardReviewSubmission({ toolCalls: [], content: json(reviewFor(four)) });
+  assert.deepEqual(validateNoteLearningCardReview(plain, four, lines), { issues: [], duplicateGroups: [] });
+  const partial = noteLearningCardReviewSubmission({ toolCalls: [], content: json({ questions: reviewFor(four).questions.slice(0, 2), duplicateGroups: [] }) });
+  assert.throws(() => validateNoteLearningCardReview(partial, four, lines));
+  assert.throws(() => noteLearningCardReviewSubmission({ toolCalls: [] }), /唯一/);
+  assert.throws(() => noteLearningCardReviewSubmission({ toolCalls: [{ id: "x", name: "unknown", arguments: {} }] }), /唯一/);
 });

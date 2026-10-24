@@ -3,7 +3,8 @@ import { readFileSync } from "node:fs";
 import { URL as NodeURL } from "node:url";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { WindowLive2DDriver } from "../live2d/WindowLive2DDriver";
-import { WINDOW_LIVE2D_ASSETS } from "../live2d/window-live2d-contract";
+import { WINDOW_LIVE2D_ASSETS, WINDOW_LIVE2D_MODEL_REGISTRY, type WindowLive2DPerformanceCue } from "../live2d/window-live2d-contract";
+import { EMPTY_WINDOW_LIVE2D_CATALOG, loadWindowLive2DCatalog, parseWindowLive2DCatalog, motionSpecKey, type Model3File, type Expression3File, type Motion3File } from "../live2d/live2d-performance-catalog";
 
 vi.mock("../live2d/live2d-performance-catalog", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../live2d/live2d-performance-catalog")>();
@@ -23,16 +24,18 @@ function modelFixture() {
     anchor: point(), position: point(), scale: point(), alpha: 1,
     update: vi.fn(),
     motion: vi.fn(async () => undefined), destroy: vi.fn(),
+    expression: vi.fn(async (_name: string) => undefined),
     internalModel: {
       originalWidth: 1000, originalHeight: 1000,
-      coreModel: { setParameterValueById: write, getDrawableCount: () => boxes.length, getDrawableOpacity: () => 1,
+      coreModel: { setParameterValueById: write, getParameterIndex: (_name: string) => 0, getParameterDefaultValue: () => 0, getDrawableCount: () => boxes.length, getDrawableOpacity: () => 1,
         getModel: () => ({ parts, drawables: { parentPartIndices: drawableParts } }) },
+      motionManager: { stopAllMotions: vi.fn(), expressionManager: { resetExpression: vi.fn() } },
       getDrawableBounds: (index: number) => boxes[index],
       on: (event: string, listener: () => void) => listeners.set(event, listener),
       off: (event: string) => listeners.delete(event),
     },
   };
-  return { model, boxes, parts, drawableParts, write, update: () => listeners.get("beforeModelUpdate")?.() };
+  return { model, boxes, parts, drawableParts, write, motionUpdate: () => listeners.get("beforeMotionUpdate")?.(), update: () => listeners.get("beforeModelUpdate")?.() };
 }
 
 let fixture: ReturnType<typeof modelFixture>;
@@ -54,6 +57,7 @@ function mountDriver(): Promise<void> {
 
 beforeEach(async () => {
   vi.useFakeTimers();
+  vi.mocked(loadWindowLive2DCatalog).mockResolvedValue(EMPTY_WINDOW_LIVE2D_CATALOG);
   fixture = modelFixture();
   nextFixture = fixture;
   size = { width: 200, height: 200 };
@@ -91,6 +95,80 @@ beforeEach(async () => {
   await mountDriver();
   expect(onStatus).toHaveBeenLastCalledWith("ready");
   expect(container.style.getPropertyValue("--companion-model-ink-left")).toBe("0.0900");
+});
+
+async function performanceCatalog(cues: WindowLive2DPerformanceCue[]) {
+  const asset = (path: string) => JSON.parse(readFileSync(new NodeURL(`../../../../public/assets/companion/live2d-v3/whale/${path}`, import.meta.url), "utf8"));
+  const model = asset("c_0120.model3.json") as Model3File;
+  const expressions = new Map<string, Expression3File>((model.FileReferences?.Expressions ?? []).map(entry =>
+    [entry!.Name as string, asset(entry!.File as string)]));
+  const motions = new Map<string, Motion3File>();
+  for (const [group, clips] of Object.entries(model.FileReferences?.Motions ?? {})) {
+    clips?.forEach((clip, index) => motions.set(motionSpecKey(group, index), asset(clip!.File as string)));
+  }
+  const catalog = parseWindowLive2DCatalog(model, expressions, motions, "Idle", new Map(Object.entries(WINDOW_LIVE2D_MODEL_REGISTRY.whale.propRoles)));
+  vi.mocked(loadWindowLive2DCatalog).mockResolvedValue({ ...catalog, performanceCues: cues });
+  vi.spyOn(Math, "random").mockReturnValue(0.999);
+  driver.destroy();
+  await mountDriver();
+}
+
+it("keeps the omelet and ketchup dependency pose until the expression expires", async () => {
+  await performanceCatalog([{ kind: "expression", name: "ketchup-squeeze" }]);
+  driver.playInviteOnce();
+  expect(fixture.model.expression).toHaveBeenLastCalledWith("ketchup-squeeze");
+  fixture.write.mockClear(); fixture.update();
+  expect(fixture.write.mock.calls.some(([id]) => ["point", "danbaofan", "ji"].includes(id))).toBe(false);
+  vi.advanceTimersByTime(5_100); fixture.write.mockClear(); fixture.motionUpdate(); fixture.update();
+  expect(fixture.write.mock.calls).toContainEqual(["danbaofan", 0]);
+  expect(fixture.model.internalModel.motionManager.expressionManager.resetExpression).toHaveBeenCalled();
+});
+
+it("lets the full note scene own its glasses, whale and hand, then releases them", async () => {
+  await performanceCatalog([{ kind: "motion", cue: { group: "TakingNotes", index: 2 } }]);
+  driver.playInviteOnce();
+  expect(fixture.model.motion).toHaveBeenLastCalledWith("TakingNotes", 2, 2);
+  fixture.write.mockClear(); fixture.update();
+  expect(fixture.write.mock.calls.some(([id]) => ["ParamCheek72", "jingyu", "pointX", "pointZ"].includes(id))).toBe(false);
+  vi.advanceTimersByTime(6_600); fixture.write.mockClear(); fixture.motionUpdate(); fixture.update();
+  expect(fixture.write.mock.calls).toContainEqual(["ParamCheek72", 0]);
+  expect(fixture.write.mock.calls).toContainEqual(["jingyu", 0]);
+});
+
+it("rapid taps replace the whole scene and release to the latest semantic face", async () => {
+  await performanceCatalog([
+    { kind: "motion", cue: { group: "Ketchup", index: 0 } },
+    { kind: "expression", name: "omelet" },
+  ]);
+  driver.playInviteOnce(); driver.playInviteOnce();
+  expect(fixture.model.internalModel.motionManager.stopAllMotions).toHaveBeenCalledTimes(2);
+  expect(fixture.model.expression).toHaveBeenLastCalledWith("omelet");
+  vi.advanceTimersByTime(4_900);
+  driver.pushEmotion({ emotion: "curious", intensity: 1 }); fixture.update();
+  expect(fixture.model.expression).toHaveBeenLastCalledWith("omelet");
+  vi.advanceTimersByTime(200); fixture.update();
+  expect(fixture.model.expression).toHaveBeenLastCalledWith("question");
+});
+
+it("a tapped prop preserves a semantic face already in the SDK expression slot", async () => {
+  await performanceCatalog([{ kind: "prop", name: "glasses-square", prop: "costume" }]);
+  driver.pushEmotion({ emotion: "curious", intensity: 1 }); fixture.update();
+  expect(fixture.model.expression).toHaveBeenLastCalledWith("question");
+  const reset = fixture.model.internalModel.motionManager.expressionManager.resetExpression;
+  const resetsBeforeTap = reset.mock.calls.length;
+  driver.playInviteOnce();
+  expect(reset).toHaveBeenCalledTimes(resetsBeforeTap);
+});
+
+it("an older asynchronous emotion completion cannot interrupt a newer tapped motion", async () => {
+  await performanceCatalog([{ kind: "motion", cue: { group: "TakingNotes", index: 2 } }]);
+  let finish!: (value: undefined) => void;
+  fixture.model.motion.mockImplementationOnce(() => new Promise<undefined>(resolve => { finish = resolve; }));
+  driver.pushEmotion({ emotion: "surprised", intensity: 1 });
+  driver.playInviteOnce();
+  finish(undefined);
+  for (let index = 0; index < 4; index += 1) await Promise.resolve();
+  expect(fixture.model.motion).toHaveBeenLastCalledWith("TakingNotes", 2, 2);
 });
 
 afterEach(() => {

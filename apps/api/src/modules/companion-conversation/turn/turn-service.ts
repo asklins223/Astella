@@ -120,6 +120,7 @@ function sanitizeContext(request: CreateCompanionTurnRequestV1): unknown {
   switch (ctx.pageKind) {
     case "note":
       return { version: 1, context: { ...base, noteId: ctx.noteId, ...(ctx.noteVersionId ? { noteVersionId: ctx.noteVersionId } : {}),
+        ...(ctx.noteTitle ? { noteTitle: ctx.noteTitle } : {}),
         ...(ctx.replyPurpose ? { replyPurpose: ctx.replyPurpose } : {}),
         ...(ctx.annotationTarget ? { annotationTarget: ctx.annotationTarget } : {}),
         ...(ctx.editing ? { editing: ctx.editing } : {}) }, ...withExtra({}) };

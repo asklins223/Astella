@@ -1,0 +1,16 @@
+{
+  "Type": "Live2D Expression",
+  "IsModelCustomizationExpression": false,
+  "Parameters": [
+    {
+      "Id": "jingyu",
+      "Value": 1,
+      "Blend": "Add"
+    },
+    {
+      "Id": "fangzhuoshang",
+      "Value": 1,
+      "Blend": "Add"
+    }
+  ]
+}

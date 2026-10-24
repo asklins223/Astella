@@ -80,3 +80,11 @@ if (typeof window !== "undefined" && typeof IntersectionObserver === "undefined"
   }
   globalThis.IntersectionObserver = VisibleIntersectionObserver
 }
+
+// jsdom has no layout engine; observers retain their normal lifecycle while
+// passage-layer tests supply the rectangles they actually want to measure.
+if (typeof window !== "undefined" && typeof ResizeObserver === "undefined") {
+  globalThis.ResizeObserver = class implements ResizeObserver {
+    observe() {} unobserve() {} disconnect() {}
+  };
+}

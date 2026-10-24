@@ -516,10 +516,10 @@ test("输入框传图：一轮可以带一张用户自己传的图，形状与�
   // 2026-10-15 扩展 A：允许「仅附件」（用户拖一张图/一个文件、什么都没说），
   // 由服务端登记显式「仅附件意图」，客户端不再伪造文案。
   assert.equal(createCompanionTurnRequestV1Schema.safeParse(turn([image])).success, true);
-  // 至多一张，第二块只认 image。
+  // 多张图片属于同一次发送。
   assert.equal(createCompanionTurnRequestV1Schema.safeParse(
     turn([{ type: "text", text: "两张" }, image, image]),
-  ).success, false);
+  ).success, true);
   assert.equal(createCompanionTurnRequestV1Schema.safeParse(
     turn([{ type: "text", text: "问题" }, { type: "quote", label: "原文", text: "一段话" }]),
   ).success, false);
@@ -633,10 +633,12 @@ test("扩展 A：text+文件、仅文件、仅图片、text+图片 均合法", (
   })).success, true);
 });
 
-test("扩展 A：双附件、text+text、附件+文字 的组合按合同拒绝", () => {
-  // 附件+附件：拒绝
+test("多图和一个文件可混合发送，重复文件、text+text、附件+文字仍拒绝", () => {
   assert.equal(createCompanionTurnRequestV1Schema.safeParse(turnBody({
     blocks: [IMAGE_BLOCK, FILE_BLOCK],
+  })).success, true);
+  assert.equal(createCompanionTurnRequestV1Schema.safeParse(turnBody({
+    blocks: [FILE_BLOCK, FILE_BLOCK],
   })).success, false);
   // text+text：拒绝（第二块必须是附件）
   assert.equal(createCompanionTurnRequestV1Schema.safeParse(turnBody({

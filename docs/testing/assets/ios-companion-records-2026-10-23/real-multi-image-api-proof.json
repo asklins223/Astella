@@ -1,0 +1,65 @@
+{
+  "recordedAt": "2026-10-23T04:25:42.312Z",
+  "environment": "local synthetic account, native iOS PhotosPicker, simulator sample landscape images",
+  "message": {
+    "id": "ca4aa51f-979b-49c9-8004-85f1ea1c0e3d",
+    "seq": 95,
+    "blocks": [
+      {
+        "type": "image",
+        "url": "/api/uploads/9c204c71-5534-4d55-9ca9-afd8e392d699/companion/2b29b559-e2e9-4c24-aa4d-f2efca79913a.jpg",
+        "label": "照片-1.jpg",
+        "alt": "照片-1.jpg",
+        "assetId": "9b33fe46-549e-4174-bd3e-6aea461f7551"
+      },
+      {
+        "type": "image",
+        "url": "/api/uploads/9c204c71-5534-4d55-9ca9-afd8e392d699/companion/980d8ee1-1f20-46bc-b957-dda6a9ecde05.jpg",
+        "label": "照片-2.jpg",
+        "alt": "照片-2.jpg",
+        "assetId": "4cf69ba9-37c8-49a5-9fc7-43c3f8fd7ac6"
+      },
+      {
+        "type": "image",
+        "url": "/api/uploads/9c204c71-5534-4d55-9ca9-afd8e392d699/companion/146e5aac-84cd-43fa-a433-38f666316d6e.jpg",
+        "label": "照片-3.jpg",
+        "alt": "照片-3.jpg",
+        "assetId": "ef1d9666-ce67-450b-a350-651d6804369e"
+      }
+    ]
+  },
+  "authenticatedDownloads": [
+    {
+      "label": "照片-1.jpg",
+      "bytes": 4713455,
+      "contentType": "image/jpeg"
+    },
+    {
+      "label": "照片-2.jpg",
+      "bytes": 1941184,
+      "contentType": "image/jpeg"
+    },
+    {
+      "label": "照片-3.jpg",
+      "bytes": 2459102,
+      "contentType": "image/jpeg"
+    }
+  ],
+  "run": {
+    "runId": "a05c94c9-4a57-49bb-ba8f-fa05fb26ab09",
+    "status": "succeeded",
+    "toolCallCount": 0,
+    "processTimeline": [
+      {
+        "seq": 885,
+        "type": "assistant.status",
+        "runId": "a05c94c9-4a57-49bb-ba8f-fa05fb26ab09",
+        "payload": {
+          "status": "waiting",
+          "safeLabel": "正在准备回复…"
+        },
+        "version": 1
+      }
+    ]
+  }
+}

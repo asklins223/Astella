@@ -23,10 +23,12 @@ export function companionClassifierCapabilities(input: {
   availableToolNames: readonly string[];
   pageKind: string | null | undefined;
   userText?: string;
+  hasImageAttachments?: boolean;
 }): string[] {
   const visible = resolveCompanionInitialToolNames({
     availableToolNames: input.availableToolNames,
     pageKind: input.pageKind ?? null,
+    hasImageAttachments: input.hasImageAttachments,
     candidateOperations: companionTaskSurfaceCandidates(input.userText),
   });
   // Keeping core order = keeping the prompt stable between turns; a reordered

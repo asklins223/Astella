@@ -9,7 +9,7 @@ export type NoteExpansionCandidate = {
 };
 
 const JSON_SHAPE = [
-  "只返回 JSON，顶层只含 drafts 数组，包含 2 到 4 篇草稿。每篇只含 title、relationship、sourceReferences、blocks 四个字段。title 为 2 到 120 字；relationship 为 12 到 500 字。",
+  "只返回 JSON，顶层只含 drafts 数组，包含 2 到 4 篇草稿。每篇只含 title、relationship、sourceReferences、blocks 四个字段。title 为 2 到 120 字；relationship 必须是 12 到 500 字的 JSON 字符串，不是对象或数组；直接写一两句关系说明，不要使用 relationType、description 等嵌套字段。",
   "sourceReferences 包含 1 到 3 个对象，每个只含 blockOrdinal（使用下方标注的整数 blockOrdinal，从 0 开始）和 quote（对应段落中 8 到 320 字的逐字摘录）。每条引用必须对应自己的拓展方向。关系说明与正文用原文的主题或引句说明来处，不使用内部段落编号。",
   "blocks 包含 2 到 30 个正文块，每块只含 type 和 content。type 必须是 paragraph、heading、list、quote、code 中的一个具体值，不要把多个类型用竖线拼在一起。列表使用 list，每项一行，不带项目符号；标题使用 heading，不带井号；代码使用 code，不带围栏。不要把整段 Markdown 列表塞入 paragraph。content 为非空字符串，每块不超过 8000 字，每篇正文总长不超过 20000 字。不要输出 Markdown 围栏或额外字段。",
 ].join("\n\n");

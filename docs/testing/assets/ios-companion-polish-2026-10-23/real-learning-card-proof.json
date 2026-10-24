@@ -1,0 +1,168 @@
+{
+  "environment": "local synthetic math note, real generation/review/grading",
+  "noteId": "a36d79b4-c9d4-4fe4-a2dd-ef720b35fcb3",
+  "request": {
+    "cardId": "41646bae-20dc-4ee5-a9b1-85200819e499",
+    "jobId": "84bc6950-3521-4821-b3b1-881a2d46cd74",
+    "queued": true
+  },
+  "generationStates": [
+    {
+      "generating": true,
+      "generationStatus": "running",
+      "generationStartedAt": "2026-10-23T06:43:01.536Z",
+      "readyQuestionCount": null
+    },
+    {
+      "generating": false,
+      "generationStatus": null,
+      "generationStartedAt": null,
+      "readyQuestionCount": 4
+    }
+  ],
+  "cardId": "41646bae-20dc-4ee5-a9b1-85200819e499",
+  "questionTypes": [
+    "single_choice",
+    "fill_blank",
+    "true_false",
+    "ordering"
+  ],
+  "attemptId": "105d965a-40a0-4ecf-a6c3-3b83e4b65568",
+  "result": {
+    "attemptId": "105d965a-40a0-4ecf-a6c3-3b83e4b65568",
+    "status": "completed",
+    "score": 100,
+    "stars": 5,
+    "summary": {
+      "text": "第1题：正确选出四分之三的表示，并准确说明分母4是平均分的份数、分子3是取出的份数，概念清晰。\n\n第2题：通分过程完整，正确写出六分之三与六分之二，并得到六分之五的结果。\n\n第3题：判断正确，理解了单位整体不同不能直接比较分数大小。\n\n第4题：排序完全正确，掌握了分数加法从检查单位整体到约分的完整流程。\n\n下一步：可以尝试一道综合题：先判断两个分数的单位整体是否相同，再通分计算并约分，把整套流程串起来运用。"
+    },
+    "startedAt": "2026-10-23T06:52:15.911Z",
+    "completedAt": "2026-10-23T06:52:24.878Z",
+    "answers": [
+      {
+        "questionId": "b27a5b23-63c9-4baf-a3f6-9208b05c44b5",
+        "answer": false,
+        "score": 100,
+        "feedback": {
+          "kind": "objective"
+        },
+        "skipped": false,
+        "referenceAnswer": {
+          "correct": false
+        },
+        "rubric": null,
+        "grounding": {
+          "note": [
+            {
+              "quote": "两张大小不同的纸各取一半，得到的纸片可能不一样大，不能仅因都是二分之一就断言实际面积相同。",
+              "blockOrdinal": 6
+            },
+            {
+              "quote": "比较分数时必须明确单位整体相同。",
+              "blockOrdinal": 1
+            }
+          ]
+        }
+      },
+      {
+        "questionId": "c64b22f6-b595-44bd-812e-7e51e5c4baee",
+        "answer": {
+          "values": [
+            "六分之三",
+            "六分之二",
+            "六分之五"
+          ]
+        },
+        "score": 100,
+        "feedback": {
+          "kind": "objective"
+        },
+        "skipped": false,
+        "referenceAnswer": {
+          "blanks": [
+            [
+              "六分之三"
+            ],
+            [
+              "六分之二"
+            ],
+            [
+              "六分之五"
+            ]
+          ]
+        },
+        "rubric": null,
+        "grounding": {
+          "note": [
+            {
+              "quote": "例如二分之一加三分之一，先化为六分之三与六分之二，得到六分之五。",
+              "blockOrdinal": 5
+            }
+          ]
+        }
+      },
+      {
+        "questionId": "e3a9cddd-6e70-4d36-88c8-4e46ded059a9",
+        "answer": {
+          "optionId": "0"
+        },
+        "score": 100,
+        "feedback": {
+          "kind": "objective"
+        },
+        "skipped": false,
+        "referenceAnswer": {
+          "correctOptionId": "0"
+        },
+        "rubric": null,
+        "grounding": {
+          "note": [
+            {
+              "quote": "分母表示平均分的份数，分子表示取出的份数。",
+              "blockOrdinal": 1
+            },
+            {
+              "quote": "以一条相同长度的纸带为整体，平均分成四份，取其中三份，就是四分之三。",
+              "blockOrdinal": 1
+            }
+          ]
+        }
+      },
+      {
+        "questionId": "fb81502b-03f0-4e11-9d50-e899c494496b",
+        "answer": {
+          "order": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4"
+          ]
+        },
+        "score": 100,
+        "feedback": {
+          "kind": "objective"
+        },
+        "skipped": false,
+        "referenceAnswer": {
+          "order": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4"
+          ]
+        },
+        "rubric": null,
+        "grounding": {
+          "note": [
+            {
+              "quote": "计算分数加法时，先检查单位整体，再判断分母是否相同；分母不同则先通分，之后相加，最后检查是否可以约分。",
+              "blockOrdinal": 6
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

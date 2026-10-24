@@ -1,0 +1,440 @@
+[
+  {
+    "route": "me",
+    "name": "me",
+    "arguments": [],
+    "launch": 0,
+    "contentRendered": true,
+    "settleSeconds": 1.3,
+    "seconds": 4.55
+  },
+  {
+    "route": "settings",
+    "name": "settings",
+    "arguments": [],
+    "launch": 0,
+    "contentRendered": true,
+    "settleSeconds": 1.3,
+    "seconds": 5.36
+  },
+  {
+    "route": "profile",
+    "name": "profile",
+    "arguments": [],
+    "launch": 0,
+    "contentRendered": true,
+    "settleSeconds": 1.3,
+    "seconds": 5.34
+  },
+  {
+    "route": "companion-center",
+    "name": "companion-center",
+    "arguments": [],
+    "launch": 0,
+    "contentRendered": true,
+    "settleSeconds": 1.3,
+    "seconds": 4.21
+  },
+  {
+    "route": "companion-settings",
+    "name": "companion-settings",
+    "arguments": [],
+    "launch": 0,
+    "contentRendered": true,
+    "settleSeconds": 1.3,
+    "seconds": 5.38
+  },
+  {
+    "route": "conventions",
+    "name": "conventions",
+    "arguments": [],
+    "launch": 0,
+    "contentRendered": true,
+    "settleSeconds": 1.3,
+    "seconds": 5.53
+  },
+  {
+    "route": "reading-settings",
+    "name": "reading-settings",
+    "arguments": [],
+    "launch": 0,
+    "contentRendered": true,
+    "settleSeconds": 1.3,
+    "seconds": 5.36
+  },
+  {
+    "route": "device-permissions",
+    "name": "device-permissions",
+    "arguments": [],
+    "launch": 0,
+    "contentRendered": true,
+    "settleSeconds": 1.3,
+    "seconds": 5.47
+  },
+  {
+    "route": "ai-authorization",
+    "name": "ai-authorization",
+    "arguments": [],
+    "launch": 0,
+    "contentRendered": true,
+    "settleSeconds": 1.3,
+    "seconds": 5.41
+  },
+  {
+    "route": "server-address",
+    "name": "server-address",
+    "arguments": [],
+    "launch": 0,
+    "contentRendered": true,
+    "settleSeconds": 1.3,
+    "seconds": 4.2
+  },
+  {
+    "route": "about",
+    "name": "about",
+    "arguments": [],
+    "launch": 0,
+    "contentRendered": true,
+    "settleSeconds": 1.3,
+    "seconds": 4.27
+  },
+  {
+    "route": "cache-management",
+    "name": "cache-management",
+    "arguments": [],
+    "launch": 0,
+    "contentRendered": true,
+    "settleSeconds": 1.3,
+    "seconds": 5.37
+  },
+  {
+    "route": "change-password",
+    "name": "change-password",
+    "arguments": [],
+    "launch": 0,
+    "contentRendered": true,
+    "settleSeconds": 1.3,
+    "seconds": 5.43
+  },
+  {
+    "route": "workspace-management",
+    "name": "workspace-management",
+    "arguments": [],
+    "launch": 0,
+    "contentRendered": true,
+    "settleSeconds": 1.3,
+    "seconds": 5.37
+  },
+  {
+    "route": "ai-authorization-required",
+    "name": "ai-authorization-required",
+    "arguments": [],
+    "launch": 0,
+    "contentRendered": true,
+    "settleSeconds": 1.3,
+    "seconds": 4.21
+  },
+  {
+    "route": "conventions-empty",
+    "name": "conventions-empty",
+    "arguments": [],
+    "launch": 0,
+    "contentRendered": true,
+    "settleSeconds": 1.3,
+    "seconds": 4.24
+  },
+  {
+    "route": "conventions-error",
+    "name": "conventions-error",
+    "arguments": [],
+    "launch": 0,
+    "contentRendered": true,
+    "settleSeconds": 1.3,
+    "seconds": 4.2
+  },
+  {
+    "route": "ai-authorization-error",
+    "name": "ai-authorization-error",
+    "arguments": [],
+    "launch": 0,
+    "contentRendered": true,
+    "settleSeconds": 1.3,
+    "seconds": 4.22
+  },
+  {
+    "route": "companion-settings-error",
+    "name": "companion-settings-error",
+    "arguments": [],
+    "launch": 0,
+    "contentRendered": true,
+    "settleSeconds": 1.3,
+    "seconds": 4.22
+  },
+  {
+    "route": "conventions-loading",
+    "name": "conventions-loading",
+    "arguments": [],
+    "launch": 0,
+    "contentRendered": true,
+    "settleSeconds": 1.3,
+    "seconds": 4.22
+  },
+  {
+    "route": "ai-authorization-loading",
+    "name": "ai-authorization-loading",
+    "arguments": [],
+    "launch": 0,
+    "contentRendered": true,
+    "settleSeconds": 1.3,
+    "seconds": 4.25
+  },
+  {
+    "route": "companion-settings-loading",
+    "name": "companion-settings-loading",
+    "arguments": [],
+    "launch": 0,
+    "contentRendered": true,
+    "settleSeconds": 1.3,
+    "seconds": 5.34
+  },
+  {
+    "route": "me",
+    "name": "me-dark",
+    "arguments": [
+      "--ui-dark"
+    ],
+    "launch": 0,
+    "contentRendered": true,
+    "settleSeconds": 1.3,
+    "seconds": 4.22
+  },
+  {
+    "route": "settings",
+    "name": "settings-dark",
+    "arguments": [
+      "--ui-dark"
+    ],
+    "launch": 0,
+    "contentRendered": true,
+    "settleSeconds": 1.3,
+    "seconds": 4.26
+  },
+  {
+    "route": "companion-center",
+    "name": "companion-center-dark",
+    "arguments": [
+      "--ui-dark"
+    ],
+    "launch": 0,
+    "contentRendered": true,
+    "settleSeconds": 1.3,
+    "seconds": 4.22
+  },
+  {
+    "route": "ai-authorization",
+    "name": "ai-authorization-dark",
+    "arguments": [
+      "--ui-dark"
+    ],
+    "launch": 0,
+    "contentRendered": true,
+    "settleSeconds": 1.3,
+    "seconds": 4.26
+  },
+  {
+    "route": "me",
+    "name": "me-large",
+    "arguments": [
+      "--ui-large-type",
+      "--ui-long-content"
+    ],
+    "launch": 0,
+    "contentRendered": true,
+    "settleSeconds": 1.3,
+    "seconds": 4.27
+  },
+  {
+    "route": "settings",
+    "name": "settings-large",
+    "arguments": [
+      "--ui-large-type",
+      "--ui-long-content"
+    ],
+    "launch": 0,
+    "contentRendered": true,
+    "settleSeconds": 1.3,
+    "seconds": 4.21
+  },
+  {
+    "route": "profile",
+    "name": "profile-large",
+    "arguments": [
+      "--ui-large-type",
+      "--ui-long-content"
+    ],
+    "launch": 0,
+    "contentRendered": true,
+    "settleSeconds": 1.3,
+    "seconds": 4.22
+  },
+  {
+    "route": "companion-center",
+    "name": "companion-center-large",
+    "arguments": [
+      "--ui-large-type",
+      "--ui-long-content"
+    ],
+    "launch": 0,
+    "contentRendered": true,
+    "settleSeconds": 1.3,
+    "seconds": 4.24
+  },
+  {
+    "route": "device-permissions",
+    "name": "device-permissions-large",
+    "arguments": [
+      "--ui-large-type",
+      "--ui-long-content"
+    ],
+    "launch": 0,
+    "contentRendered": true,
+    "settleSeconds": 1.3,
+    "seconds": 4.24
+  },
+  {
+    "route": "workspace-management",
+    "name": "workspace-management-large",
+    "arguments": [
+      "--ui-large-type",
+      "--ui-long-content"
+    ],
+    "launch": 0,
+    "contentRendered": true,
+    "settleSeconds": 1.3,
+    "seconds": 4.24
+  },
+  {
+    "route": "change-password",
+    "name": "change-password-large",
+    "arguments": [
+      "--ui-large-type",
+      "--ui-long-content"
+    ],
+    "launch": 0,
+    "contentRendered": true,
+    "settleSeconds": 1.3,
+    "seconds": 4.21
+  },
+  {
+    "route": "settings",
+    "name": "settings-reduced",
+    "arguments": [
+      "--ui-reduce-motion"
+    ],
+    "launch": 0,
+    "contentRendered": true,
+    "settleSeconds": 1.3,
+    "seconds": 5.41
+  },
+  {
+    "route": "invite-management",
+    "name": "invite-management-dark",
+    "arguments": [
+      "--ui-dark"
+    ],
+    "launch": 0,
+    "contentRendered": true,
+    "settleSeconds": 1.3,
+    "seconds": 4.2,
+    "pass": "invitation-layout-correction"
+  },
+  {
+    "route": "invite-management-member",
+    "name": "invite-management-member",
+    "arguments": [],
+    "launch": 0,
+    "contentRendered": true,
+    "settleSeconds": 1.3,
+    "seconds": 4.13,
+    "pass": "invitation-layout-correction"
+  },
+  {
+    "route": "invite-management-personal",
+    "name": "invite-management-personal",
+    "arguments": [],
+    "launch": 0,
+    "contentRendered": true,
+    "settleSeconds": 1.3,
+    "seconds": 4.19,
+    "pass": "invitation-layout-correction"
+  },
+  {
+    "route": "invite-management-members",
+    "name": "invite-management-members",
+    "arguments": [],
+    "launch": 0,
+    "contentRendered": true,
+    "settleSeconds": 1.3,
+    "seconds": 4.21,
+    "pass": "invitation-layout-correction"
+  },
+  {
+    "route": "invite-management",
+    "name": "invite-management",
+    "arguments": [],
+    "launch": 0,
+    "contentRendered": true,
+    "settleSeconds": 1.3,
+    "seconds": 4.5,
+    "pass": "final-invitation-metadata"
+  },
+  {
+    "route": "invite-management-receipt",
+    "name": "invite-management-receipt",
+    "arguments": [],
+    "launch": 0,
+    "contentRendered": true,
+    "settleSeconds": 1.3,
+    "seconds": 4.23,
+    "pass": "final-invitation-metadata"
+  },
+  {
+    "route": "invite-management",
+    "name": "invite-management-large",
+    "arguments": [
+      "--ui-large-type",
+      "--ui-long-content"
+    ],
+    "launch": 0,
+    "contentRendered": true,
+    "settleSeconds": 1.3,
+    "seconds": 4.18,
+    "pass": "final-invitation-metadata"
+  },
+  {
+    "route": "invite-management-members",
+    "name": "invite-members-large",
+    "arguments": [
+      "--ui-large-type",
+      "--ui-long-content"
+    ],
+    "launch": 0,
+    "contentRendered": true,
+    "settleSeconds": 1.3,
+    "seconds": 4.21,
+    "pass": "final-invitation-metadata"
+  },
+  {
+    "route": "invite-management-receipt",
+    "name": "invite-receipt-large",
+    "arguments": [
+      "--ui-large-type",
+      "--ui-long-content"
+    ],
+    "launch": 0,
+    "contentRendered": true,
+    "settleSeconds": 1.3,
+    "seconds": 4.22,
+    "pass": "final-invitation-metadata"
+  }
+]

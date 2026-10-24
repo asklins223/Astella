@@ -60,6 +60,7 @@ export async function settleCompanionTurnPreamble(deps: CompanionTurnPreambleDep
   const speculativeNames = resolveCompanionInitialToolNames({
     availableToolNames: deps.availableDefinitions.map(definition => definition.name),
     pageKind,
+    hasImageAttachments: Boolean(read.userImageAttachments?.length),
   });
   const speculativeTools = deps.availableDefinitions
     .filter(definition => speculativeNames.has(definition.name))
@@ -71,7 +72,7 @@ export async function settleCompanionTurnPreamble(deps: CompanionTurnPreambleDep
    * 攒住/作废由 `runStreamingAgentStep` 的 `releaseGate` 执行，留哪一版在下面定。
    */
   const speculativeFlights = startCompanionSpeculativeFirstSteps({
-    allowSpeculation: !explicitCompanionProductRequest(read.userText).newNote
+    allowSpeculation: !read.userImageAttachments?.length && !explicitCompanionProductRequest(read.userText).newNote
       && !explicitCompanionProductRequest(read.userText).artifact && !companionRequestRequirements(read.userText).characters
       && !explicitlyRequestsUtterances(read.userText),
     provider: provider,

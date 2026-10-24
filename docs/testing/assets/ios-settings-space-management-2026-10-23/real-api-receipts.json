@@ -1,0 +1,324 @@
+{
+  "baseUrl": "http://127.0.0.1:4000",
+  "capturedAt": "2026-10-23T10:22+08:00",
+  "credentialNote": "仅记录状态与响应字段，不写入任何 token。",
+  "cases": [
+    {
+      "case": "01_wm_A_before",
+      "method": "GET",
+      "path": "/auth/workspaces",
+      "status": 200,
+      "body": {
+        "workspaces": [
+          {
+            "name": "QA Owner的工作区",
+            "role": "owner",
+            "type": "personal"
+          },
+          {
+            "name": "QA 资料室",
+            "role": "owner",
+            "type": "collaborative"
+          },
+          {
+            "name": "QA 协作书房",
+            "role": "owner",
+            "type": "collaborative"
+          }
+        ]
+      }
+    },
+    {
+      "case": "02_members_A",
+      "method": "GET",
+      "path": "/members",
+      "status": 200,
+      "body": {
+        "total": 2,
+        "items": [
+          {
+            "role": "member",
+            "email": "qa.space.member@example.com"
+          },
+          {
+            "role": "owner",
+            "email": "qa.space.owner@example.com"
+          }
+        ]
+      }
+    },
+    {
+      "case": "03_invites_A_before",
+      "method": "GET",
+      "path": "/invites?limit=100",
+      "status": 200,
+      "body": {
+        "total": 3,
+        "items": [
+          {
+            "hint": "00895dfc",
+            "status": "active"
+          },
+          {
+            "hint": "ed3d4c86",
+            "status": "revoked"
+          },
+          {
+            "hint": "e3f7c002",
+            "status": "consumed"
+          }
+        ]
+      }
+    },
+    {
+      "case": "04_invite_created",
+      "method": "POST",
+      "path": "/invites",
+      "status": 200,
+      "body": {
+        "id": "a78fe397-a7cd-4371-9840-e95f15236497",
+        "tokenHint": "732a4225",
+        "role": "member",
+        "expiresAt": "2026-10-24T02:22:42.787Z",
+        "note": "token 明文不写入文档"
+      }
+    },
+    {
+      "case": "05_invites_after_create",
+      "method": "GET",
+      "path": "/invites?limit=100",
+      "status": 200,
+      "body": {
+        "total": 4
+      }
+    },
+    {
+      "case": "06_revoke_created",
+      "method": "DELETE",
+      "path": "/invites/:id",
+      "status": 204,
+      "body": null
+    },
+    {
+      "case": "07_revoke_created_again",
+      "method": "DELETE",
+      "path": "/invites/:id",
+      "status": 409,
+      "body": {
+        "error": "already_revoked"
+      }
+    },
+    {
+      "case": "08_revoke_already_revoked",
+      "method": "DELETE",
+      "path": "/invites/:id",
+      "status": 409,
+      "body": {
+        "error": "already_revoked"
+      }
+    },
+    {
+      "case": "09_workspace_created",
+      "method": "POST",
+      "path": "/workspaces",
+      "status": 200,
+      "body": {
+        "workspaceId": "1d49136a-0caa-4073-9058-31fff487d116",
+        "workspaceName": "QA 核对临时空间"
+      }
+    },
+    {
+      "case": "10_dissolve_preview",
+      "method": "GET",
+      "path": "/workspaces/:id/dissolve-preview",
+      "status": 200,
+      "body": {
+        "counts": {
+          "notes": 0,
+          "sources": 0
+        }
+      }
+    },
+    {
+      "case": "11_rename_archive_1",
+      "method": "PATCH",
+      "path": "/workspaces/:id/name",
+      "status": 200,
+      "body": {
+        "ok": true,
+        "workspaceId": "24a31039-5c31-42d3-bf6a-16ee22584b98",
+        "name": "QA 资料室 · 改名验证"
+      }
+    },
+    {
+      "case": "12_rename_archive_2",
+      "method": "PATCH",
+      "path": "/workspaces/:id/name",
+      "status": 200,
+      "body": {
+        "ok": true,
+        "workspaceId": "24a31039-5c31-42d3-bf6a-16ee22584b98",
+        "name": "QA 资料室"
+      }
+    },
+    {
+      "case": "13_transfer_archive_to_nonmember",
+      "method": "POST",
+      "path": "/workspaces/:id/transfer-ownership",
+      "status": 409,
+      "body": {
+        "error": "target_not_member"
+      }
+    },
+    {
+      "case": "14_transfer_personal",
+      "method": "POST",
+      "path": "/workspaces/:id/transfer-ownership",
+      "status": 409,
+      "body": {
+        "error": "personal_workspace_not_transferable"
+      }
+    },
+    {
+      "case": "15_remove_self",
+      "method": "DELETE",
+      "path": "/members/:userId",
+      "status": 409,
+      "body": {
+        "error": "self_remove_owner"
+      }
+    },
+    {
+      "case": "16_remove_unknown",
+      "method": "DELETE",
+      "path": "/members/:userId",
+      "status": 404,
+      "body": {
+        "error": "not_found"
+      }
+    },
+    {
+      "case": "17_dissolve_throwaway",
+      "method": "DELETE",
+      "path": "/workspaces/:id",
+      "status": 200,
+      "body": {
+        "dissolved": true,
+        "counts": {
+          "onboarding_states": 1,
+          "workspace_members": 1,
+          "_rehomedGlobalMemories": 0,
+          "_orphanedGlobalMemories": 0,
+          "_retiredWorkspaceMemories": 0
+        }
+      }
+    },
+    {
+      "case": "18_wm_A_after",
+      "method": "GET",
+      "path": "/auth/workspaces",
+      "status": 200,
+      "body": {
+        "workspaces": [
+          {
+            "name": "QA Owner的工作区",
+            "role": "owner"
+          },
+          {
+            "name": "QA 资料室",
+            "role": "owner"
+          },
+          {
+            "name": "QA 协作书房",
+            "role": "owner"
+          }
+        ]
+      }
+    },
+    {
+      "case": "19_members_A_after",
+      "method": "GET",
+      "path": "/members",
+      "status": 200,
+      "body": {
+        "total": 2
+      }
+    },
+    {
+      "case": "20_invites_A_after",
+      "method": "GET",
+      "path": "/invites?limit=100",
+      "status": 200,
+      "body": {
+        "total": 4,
+        "items": [
+          {
+            "hint": "732a4225",
+            "status": "revoked"
+          },
+          {
+            "hint": "00895dfc",
+            "status": "active"
+          },
+          {
+            "hint": "ed3d4c86",
+            "status": "revoked"
+          },
+          {
+            "hint": "e3f7c002",
+            "status": "consumed"
+          }
+        ]
+      }
+    },
+    {
+      "case": "21_me_A_after",
+      "method": "GET",
+      "path": "/auth/me",
+      "status": 200,
+      "body": {
+        "role": "owner",
+        "workspaceName": "QA 协作书房",
+        "workspaceType": "collaborative",
+        "isPersonal": false
+      }
+    },
+    {
+      "case": "22_join_B_already_member",
+      "method": "POST",
+      "path": "/auth/join-workspace",
+      "status": 409,
+      "body": {
+        "error": "already_member"
+      }
+    },
+    {
+      "case": "23_me_B_after",
+      "method": "GET",
+      "path": "/auth/me",
+      "status": 200,
+      "body": {
+        "role": "member",
+        "workspaceName": "QA 协作书房"
+      }
+    },
+    {
+      "case": "24_members_B_forbidden",
+      "method": "GET",
+      "path": "/members",
+      "status": 403,
+      "body": {
+        "error": "owner role required"
+      }
+    },
+    {
+      "case": "25_invites_B_forbidden",
+      "method": "GET",
+      "path": "/invites?limit=100",
+      "status": 403,
+      "body": {
+        "error": "owner role required"
+      }
+    }
+  ]
+}

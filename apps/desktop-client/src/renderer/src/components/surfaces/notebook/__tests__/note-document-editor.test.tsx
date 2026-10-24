@@ -401,8 +401,8 @@ describe("三种正文视图共用真实编辑器与 Y.Doc", () => {
   it("AI区域在富文本和源码同时锁定，其他段落继续输入，解除后立即可编辑", async () => {
     const doc = documentWith("锁定段落", "自由段落");
     const view = await mount(doc, "source", false, [{ startBlock: 0, endBlock: 0, expectedBlocks: ["锁定段落"], label: "伴星正在改这段" }]);
-    await waitFor(() => expect(view.container.querySelector('.ProseMirror .note-ai-working')?.getAttribute('contenteditable')).toBe('false'));
-    expect(view.container.querySelector('.cm-line.note-ai-working')).not.toBeNull();
+    await waitFor(() => expect(view.container.querySelector('.ProseMirror .note-ai-locked')?.getAttribute('contenteditable')).toBe('false'));
+    expect(view.container.querySelector('.cm-line.note-ai-locked')).not.toBeNull();
     const before = view.code().state.doc.toString();
     await act(async () => view.code().dispatch({ changes: { from: 1, insert: "不能写入" } }));
     expect(view.code().state.doc.toString()).toBe(before);
@@ -411,7 +411,26 @@ describe("三种正文视图共用真实编辑器与 Y.Doc", () => {
     await act(async () => view.lock([]));
     await act(async () => view.code().dispatch({ changes: { from: 1, insert: "已解锁" } }));
     expect(view.ref.current!.getMarkdown()).toContain("锁已解锁定段落");
-    expect(view.container.querySelector('.ProseMirror .note-ai-working')).toBeNull();
+    expect(view.container.querySelector('.ProseMirror .note-ai-locked')).toBeNull();
+  });
+
+  it("跨两段处理时只能在范围外选择，取消后恢复选择", async () => {
+    const dispatch = vi.spyOn(ProseMirrorView.prototype, "dispatch");
+    const view = await mount(documentWith("第一段锁定", "第二段锁定", "第三段自由"), "live-preview", false,
+      [{ startBlock: 0, endBlock: 1, label: "伴星正在解释" }]);
+    await act(async () => view.ref.current!.focusPosition({ block: 2, offset: 1 }));
+    const pm = dispatch.mock.instances.at(-1)! as ProseMirrorView; dispatch.mockRestore();
+    await act(async () => pm.dispatch(pm.state.tr.setSelection(TextSelection.create(pm.state.doc, 1, 3))));
+    expect(pm.state.selection.empty).toBe(true);
+    view.mode("source");
+    await act(async () => view.code().dispatch({ selection: { anchor: 1, head: 6 } }));
+    expect(view.code().state.selection.main.empty).toBe(true);
+    const third = noteSourceBlocks(view.code().state.doc.toString())[2]!;
+    await act(async () => view.code().dispatch({ selection: { anchor: third.from, head: third.from + 2 } }));
+    expect(view.code().state.selection.main.empty).toBe(false);
+    await act(async () => view.lock([]));
+    await act(async () => view.code().dispatch({ selection: { anchor: 1, head: 3 } }));
+    expect(view.code().state.selection.main.empty).toBe(false);
   });
 
   it("整篇删除、源码替换和富文本工具栏不能绕过 AI 锁", async () => {

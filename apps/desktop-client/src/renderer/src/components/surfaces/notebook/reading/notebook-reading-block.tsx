@@ -76,8 +76,8 @@ export function ReadingBlock(props: {
       data-block-ordinal={props.block.ordinal}
       {...(props.focused ? { "data-block-focused": "true" } : {})}
     >
-      <div data-note-block-content="true" className={props.aiWork ? "note-ai-working" : undefined}
-        aria-busy={Boolean(props.aiWork)} data-ai-label={props.aiWork?.label} inert={Boolean(props.aiWork)}><ReadingBlockContent
+      <div data-note-block-content="true" className={props.aiWork ? "note-ai-locked" : undefined}
+        aria-busy={Boolean(props.aiWork)} data-ai-label={props.aiWork?.label} data-ai-group={props.aiWork ? `${props.aiWork.startBlock}:${props.aiWork.endBlock}` : undefined} inert={Boolean(props.aiWork)}><ReadingBlockContent
         documentSource={props.documentSource}
         block={props.block}
         mark={annotationMark ?? props.mark}

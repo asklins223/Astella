@@ -1,7 +1,0 @@
-{
-  "name": "astella-mobile-companion-prototype",
-  "private": true,
-  "version": "0.0.0",
-  "type": "commonjs",
-  "description": "Browser prototype for the mobile companion demo. Isolated from the mobile-client Vite app: the vanilla .js files use CommonJS module.exports guards and the __tests__ run with `node --test`, so this subtree is pinned to commonjs."
-}

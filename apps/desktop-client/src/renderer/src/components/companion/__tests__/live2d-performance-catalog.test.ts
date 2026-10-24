@@ -67,18 +67,49 @@ function catalogOf(modelId: WindowLive2DModelId) {
 describe("Live2D 表演清单来自各形态自己的资产", () => {
   const whale = catalogOf("whale");
 
-  it("大肥鱼：5 条动作组除 Idle 外全部进池，30 个表情分成 14 张脸 + 16 件道具", () => {
+  it("完整原包与记笔记组合全部进池：9 个非待机动作、44 个表情／道具", () => {
     expect(whale.performanceCues.filter((cue) => cue.kind === "motion")
       .map((cue) => (cue.kind === "motion" ? cue.cue.group : null)))
-      .toEqual(["Bubble", "Spray", "Selfie", "SelfieQuick"]);
+      .toEqual(["Bubble", "Spray", "Selfie", "SelfieQuick", "PhoneOpen", "Ketchup",
+        "TakingNotes", "TakingNotes", "TakingNotes"]);
     expect(whale.performanceCues.filter((cue) => cue.kind === "expression")
       .map((cue) => (cue.kind === "expression" ? cue.name : null))).toEqual([
       "happy", "starstruck", "heart-eyes", "blush", "mischievous", "sweat", "dizzy",
       "angry", "sad", "cry", "dazed", "drool", "gloomy", "tongue",
+      "side-ponytail", "headband-off", "parfait-hidden", "phone-pink", "ketchup-squeeze", "board-undo",
+      "board-eraser", "dark-tablecloth", "board-press", "board-pen", "omelet", "drink", "drink-white", "whale-on-desk",
     ]);
     expect(whale.performanceCues.filter((cue) => cue.kind === "prop")).toHaveLength(16);
     expect(whale.hasMotionGroup("Idle")).toBe(false);
     expect(whale.hasMotionGroup("Spray")).toBe(true);
+  });
+
+  it("道具变体携带依赖，不能对着空气挤酱／换色／移动鲸鱼", () => {
+    expect(whale.expressionWrites["ketchup-squeeze"]).toEqual(expect.arrayContaining([
+      { parameter: "point", value: -1, blend: "Add" },
+      { parameter: "danbaofan", value: 1, blend: "Add" },
+      { parameter: "ji", value: 1, blend: "Add" },
+    ]));
+    expect(whale.expressionParameters["drink-white"]).toEqual(new Set(["mozhua", "mozhua2"]));
+    expect(whale.expressionParameters["phone-pink"]).toEqual(new Set(["phone", "shouji"]));
+    expect(whale.expressionParameters["whale-on-desk"]).toEqual(new Set(["jingyu", "fangzhuoshang"]));
+  });
+
+  it("只保留 Idle 循环，记笔记三个组合都保护手、道具与脸部曲线", () => {
+    const model = readAsset("live2d-v3/whale/c_0120.model3.json") as Model3File;
+    for (const [group, clips] of Object.entries(model.FileReferences?.Motions ?? {})) {
+      for (const clip of clips ?? []) {
+        const motion = readAsset(clip?.File as string) as { Meta: { Loop: boolean } };
+        expect(motion.Meta.Loop, group).toBe(group === "Idle");
+      }
+    }
+    for (let index = 0; index < 3; index += 1) {
+      const note = whale.motionSpecs[motionSpecKey("TakingNotes", index)];
+      expect(note.durationMs).toBe(6_000);
+      expect(note.parameters).toEqual(expect.arrayContaining(["point", "pointX", "pointY", "pointZ", "jingyu", "fangzhuoshang"]));
+    }
+    expect(whale.motionSpecs["TakingNotes|2"].parameters).toContain("ParamCheek72");
+    expect(whale.motionSpecs["Ketchup|0"].parameters).toEqual(expect.arrayContaining(["danbaofan", "ji", "ParamEyeROpen"]));
   });
 
   it("大肥鱼的道具都是可开关的装饰：只登记 Add 写入，且至少动一个装饰参数", () => {

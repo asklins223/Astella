@@ -104,7 +104,7 @@ import { companionRecoveryIdentity, openCompanionTurn } from "../turn/companion-
 import { judgeCompanionUnavailableTool } from "../tools/companion-unavailable-tool.ts";
 import { resumeCompanionInterruptedInput } from "./companion-resume-input.ts";
 import { companionToolAuditLabel, rejectUnknownCompanionTool, unofferedToolReceipt, validateCompanionToolCall } from "../tools/companion-tool-call-validation.ts";
-import { applyCompanionToolLoad, createCompanionToolSurface } from "../tools/companion-tool-surface.ts";
+import { applyCompanionToolLoad, createCompanionToolSurface, companionAttachmentReadRequired } from "../tools/companion-tool-surface.ts";
 
 
 export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promise<CompanionAgentLoopResult> {
@@ -267,6 +267,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     definitions,
     userText: args.read.userText,
     initiative: Boolean(args.read.initiativeInput),
+    hasImageAttachments: Boolean(args.read.userImageAttachments?.length),
     pageKind: notePage?.context?.pageKind ?? null,
     candidateOperations: attention.candidateOperations,
     loadedToolNames: recovered?.state.loadedToolNames ?? [],
@@ -474,11 +475,17 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     const needsNoteSearch = availableDefinitions.some(tool => tool.name === "companion_search_notes")
       && companionNoteNeedsRelatedSearch(args.read.userText ?? "", event.constraints.noteLibraryReadEnabled !== false,
         [...compactedEvidence, ...messages]);
+    const needsAttachedImageRead = toolCallCount === 0 && companionAttachmentReadRequired({
+      hasImageAttachments: Boolean(args.read.userImageAttachments?.length),
+      visionEnabled: event.constraints.visionEnabled === true,
+      userText: args.read.userText,
+    });
     // 工具面、执行政策与请求装配这三样的判据在 `companion-agent-step-assembly.ts`。
     const { tools: toolsOfferedThisStep, toolChoice: toolChoiceThisStep } = companionStepToolSurface({
       toolDefinitions: offeredToolDefinitions().filter(tool => tool.name !== "companion_deepen"
         || (entryMode === "direct_fast" && !directControls.deepened()))
-        .filter(tool => !needsNoteSearch || tool.name === "companion_search_notes"),
+        .filter(tool => needsAttachedImageRead ? tool.name === "companion_read_image"
+          : !needsNoteSearch || tool.name === "companion_search_notes"),
       webSearchAllowedForStep: companionWebSearchAllowedForStep({
         accountEnabled: currentMeta.webSearchEnabled === true,
         constraintsEnabled: event.constraints.webSearchEnabled === true,
@@ -486,7 +493,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
         used: webSearchCalls,
       }),
       finalAnswerOnly,
-      requiresTool: userRequiresTool || needsNoteSearch,
+      requiresTool: userRequiresTool || needsNoteSearch || needsAttachedImageRead,
       toolCallCount,
     });
     const runtimePolicy = companionStepPolicyText({
@@ -507,7 +514,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
      * answer step still uses the turn's declared thinking level.
      */
     const readOnlyRequiredStep = toolChoiceThisStep === "required"
-      && (needsNoteSearch || (!userAskedForAction && stepCount === resumedStepCount + 1));
+      && (needsAttachedImageRead || needsNoteSearch || (!userAskedForAction && stepCount === resumedStepCount + 1));
     if (readOnlyRequiredStep) {
       logger.info({ runId: args.read.runId, stepCount, basis: "read-required-first-step" },
         "companion read-only required step uses the lowest declared thinking level");
@@ -990,6 +997,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       const steerNames = resolveCompanionInitialToolNames({
         availableToolNames: definitions.map(definition => definition.name),
         pageKind: notePage?.context?.pageKind ?? null,
+        hasImageAttachments: Boolean(args.read.userImageAttachments?.length),
         candidateOperations: [...requestedActionTools, ...steerableActionTools, ...steerableReadTools],
       });
       for (const name of steerNames) loadedToolNames.add(name);

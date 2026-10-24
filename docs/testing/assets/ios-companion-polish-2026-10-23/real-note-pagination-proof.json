@@ -1,0 +1,31 @@
+{
+  "recordedAt": "2026-10-23T05:59:06.701Z",
+  "noteId": "0ea6d1fc-8854-46dd-8067-f21e3e585c5c",
+  "versionId": "f7e752e5-275e-427a-9f6c-6bf939f84c19",
+  "first": {
+    "blocks": 24,
+    "total": 240,
+    "bytes": 41939,
+    "ms": 31,
+    "outline": 12
+  },
+  "next": {
+    "firstOrdinal": 24,
+    "bytes": 43072,
+    "ms": 44
+  },
+  "far": {
+    "firstOrdinal": 200,
+    "bytes": 41315,
+    "ms": 23
+  },
+  "before": {
+    "lastOrdinal": 199,
+    "bytes": 43121,
+    "ms": 17
+  },
+  "full": {
+    "bytes": 425698,
+    "ms": 21
+  }
+}

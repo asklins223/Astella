@@ -36,6 +36,8 @@ import {
   THINKING_CUE_PAYLOAD_V1,
   validateCompanionOutput,
   textOfCompanionBlocks,
+  companionUserImageAttachments,
+  renderUserAttachedImagesLine,
   unwrapCompanionJsonEnvelope,
 } from "../turn/companion-dialogue-content.ts";
 import { selectCompanionReplayWindow } from "../context/companion-context-handoff.ts";
@@ -546,6 +548,18 @@ test("validateCompanionOutput：剥离情感/富语言标签（双文本管线�
 test("textOfCompanionBlocks：只取 text block", () => {
   assert.equal(textOfCompanionBlocks([{ type: "text", text: "hi" }, { type: "image" }]), "hi");
   assert.equal(textOfCompanionBlocks("not-array"), "");
+});
+
+test("多图输入：第三至第九张按顺序进入伴星上下文，不伪造用户文字", () => {
+  const images = Array.from({ length: 9 }, (_, index) => ({ type: "image", assetId: `image-${index + 1}`, label: `第 ${index + 1} 张` }));
+  const received = companionUserImageAttachments([{ type: "text", text: "比较这些图" }, ...images]);
+  assert.deepEqual(received.map((image) => image.assetId), images.map((image) => image.assetId));
+  const line = renderUserAttachedImagesLine(received)!;
+  assert.match(line, /9 张图/);
+  for (const image of images) assert.ok(line.includes(`assetId=${image.assetId}（${image.label}）`));
+  assert.equal(textOfCompanionBlocks(images), "〔用户本轮只发送了 9 张图片，没有文字说明〕");
+  assert.equal(textOfCompanionBlocks([{ type: "text", text: "比较这些图" }, ...images]), "比较这些图");
+  assert.deepEqual(companionUserImageAttachments([null, { type: "image" }, { type: "image", assetId: " " }, { type: "file", assetId: "not-image" }]), []);
 });
 
 test("buildFinalCuePayload：模型语气产出有界 cue", () => {

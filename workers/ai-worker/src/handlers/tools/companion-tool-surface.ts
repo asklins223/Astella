@@ -39,11 +39,13 @@ export function createCompanionToolSurface(input: {
   loadedToolNames?: Iterable<string>;
   userText?: string;
   initiative?: boolean;
+  hasImageAttachments?: boolean;
 }): CompanionToolSurface {
   const loadedToolNames = new Set(input.loadedToolNames ?? []);
   const initialToolNames = resolveCompanionInitialToolNames({
     availableToolNames: input.definitions.map(definition => definition.name),
     pageKind: input.pageKind,
+    hasImageAttachments: input.hasImageAttachments,
     candidateOperations: [...input.candidateOperations, ...companionTaskSurfaceCandidates(input.userText)],
   });
   // A fresh note task needs its authoring dependencies immediately. Unrelated
@@ -52,7 +54,7 @@ export function createCompanionToolSurface(input: {
   // groups, so an empty or noisy candidate list must not defeat the narrowing.
   if (explicitCompanionProductRequest(input.userText).newNote) {
     const authoring = new Set(["companion_create_note", "companion_search_notes", "companion_read_note", "companion_read_source",
-      "companion_read_current_page", "companion_read_history", "companion_load_tools"]);
+      "companion_read_current_page", "companion_read_history", "companion_load_tools", "companion_read_image"]);
     for (const name of initialToolNames) if (!authoring.has(name)) initialToolNames.delete(name);
   }
   // 分条发言不再只属于主动轮：伴星可以自己决定把回复拆成几条真实消息。
@@ -121,4 +123,14 @@ export async function applyCompanionToolLoad(input: {
     riskClass: "read", status: "succeeded", safeLabel: "已装载更多能力", safeSummary: summary,
   });
   return loaded;
+}
+
+/** 附图只有资产身份，首轮须真正读取才能回答画面；显式不看图的请求保持原意。 */
+export function companionAttachmentReadRequired(input: {
+  hasImageAttachments: boolean; visionEnabled: boolean; userText: string;
+}): boolean {
+  if (!input.hasImageAttachments || !input.visionEnabled) return false;
+  const declined = /(?:不要|不用|无需|先别|别|不必|不需要)\s*(?:先|再|帮我)?\s*(?:读图|看图|识图|识别图片|分析图片|分析照片|查看图片|查看照片)/u.test(input.userText)
+    || /\b(?:do not|don't|no need to)\s+(?:read|inspect|analy[sz]e|describe)\s+(?:(?:the|these|my)\s+)?(?:images?|pictures?|photos?)\b/iu.test(input.userText);
+  return !declined;
 }

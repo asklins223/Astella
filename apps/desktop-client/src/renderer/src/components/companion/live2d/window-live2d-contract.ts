@@ -101,8 +101,8 @@ interface WindowLive2DManifestExpectation {
 }
 
 /**
- * 按模型的呈现 → 动作 cue 映射。whale 的动作都在具名组里（`Idle` / `Bubble` /
- * `Spray` / `Selfie` / `SelfieQuick`），语义上对不上"邀请/指路"的呈现留在 Idle，
+ * 按模型的呈现 → 动作 cue 映射。whale 的动作都在具名组里，
+ * 语义上对不上"邀请/指路"的呈现留在 Idle，
  * 她的表现力由 `momentCue` 与 `emotionExpression` 承担。
  */
 type PresentationMotionMap = Readonly<
@@ -208,13 +208,12 @@ export class WindowLive2DPerformanceRotation {
 }
 
 /**
- * 待机随机表演的节奏：新模型上场 4s 后开演，之后每 7–15s 演一条。
- * 2026-09-20 用户反馈"待机时老是一个动作转圈、几乎看不到表演"——原来的
- * 8s 首发 + 14–30s 间隔在一段正常长度的陪伴里最多插两三出戏。
+ * 与 iOS 一致：首次 24 秒后，每条表演结束后安静待机 20–40 秒。
+ * 点击仍立即轮播；完整资产池不以频繁自动切换为代价。
  */
-export const WINDOW_LIVE2D_FIRST_PERFORMANCE_DELAY_MS = 4_000;
-export const WINDOW_LIVE2D_PERFORMANCE_INTERVAL_MS = 7_000;
-export const WINDOW_LIVE2D_PERFORMANCE_INTERVAL_SPAN_MS = 8_000;
+export const WINDOW_LIVE2D_FIRST_PERFORMANCE_DELAY_MS = 24_000;
+export const WINDOW_LIVE2D_PERFORMANCE_INTERVAL_MS = 20_000;
+export const WINDOW_LIVE2D_PERFORMANCE_INTERVAL_SPAN_MS = 20_000;
 
 /** 随机抽到的表情停留多久；表情是粘性的，到点复位回中性脸。 */
 export const WINDOW_LIVE2D_PERFORMANCE_EXPRESSION_HOLD_MS = 5_000;
@@ -265,8 +264,8 @@ export interface WindowLive2DModelDescriptor {
 }
 
 /**
- * whale 的动作只有自带那 5 组（Idle / Bubble 吹泡泡糖 / Spray 鲸鱼喷水 / Selfie 自拍 /
- * SelfieQuick 举手机），语义上都不对应"邀请/指路"，所以呈现层大多留在 Idle：
+ * whale 的展示动作和完整道具组合从资产自动进池；任务开始另用记笔记场景。
+ * 邀请／指路没有对应作者动作，所以呈现层大多留在 Idle：
  * 她的表现力由 `momentCue`（任务时刻）和 `emotionExpression`（12 张脸）承担。
  * celebrate 用吹泡泡糖——唯一一个真的像"在庆祝"的动作，且 5s 只在呈现层循环位上，
  * 不占用情绪动作的互斥窗口。
@@ -313,8 +312,8 @@ const WHALE_EMOTION_MOTION: Readonly<Record<string, WindowLive2DMotionCue>> = {
  * 大肥鱼的「服装配件」登记表（作者原包的贴纸 / 眼镜 / 小道具类 exp3）。
  *
  * 全部是只写装饰可见性参数的单参数表情，所以能逐帧叠加、能脱下来；
- * 发型类（头箍=摘掉发箍、单边马尾）会永久改形象、桌面道具类（蛋包饭 / 魔爪 / 桌布）
- * 需要一张伴星没有的桌子，两类都没登记（取舍记录见资产目录 README）。
+ * 新接入的桌面场景和发型用限时表情槽，由共用资产携带依赖并自行归位；
+ * 不登记成会常驻的 costume，避免把临时表演留到下一轮对话。
  */
 const WHALE_PROP_ROLES: Readonly<Record<string, WindowLive2DPropKind>> = {
   "glasses-round": "costume",
@@ -343,8 +342,8 @@ const WHALE_PROP_ROLES: Readonly<Record<string, WindowLive2DPropKind>> = {
  * 挂到下一轮对话。
  */
 const WHALE_MOMENT_CUE: Readonly<Partial<Record<WindowLive2DCharacterMoment, WindowLive2DMomentCue>>> = {
-  task_started: { motion: { group: "Spray", index: 0 } },
-  working: { costume: "glasses-round" },
+  task_started: { motion: { group: "TakingNotes", index: 2 } },
+  working: { costume: "glasses-square" },
   tool_succeeded: { motion: { group: "Bubble", index: 0 }, overlay: "peace", costume: null, holdMs: 3_000 },
   tool_failed: { overlay: "soul", costume: null, holdMs: 3_200 },
   awaiting_confirmation: { overlay: "question", holdMs: 6_000 },
@@ -635,6 +634,8 @@ export function parameterValuesForWindowLive2D(input: {
    * 呼吸、身体摇摆和口型不放手：那是活着的证据，不是表情内容。
    */
   readonly expressionOwnedParameters?: ReadonlySet<string>;
+  /** 作者动作正在控制的参数；自然输入让位，真实语音口型仍可覆盖。 */
+  readonly motionOwnedParameters?: ReadonlySet<string>;
 }): WindowLive2DParameterValue[] {
   const owned = input.expressionOwnedParameters;
   const blinkPhase = input.nowMs % 4_500;
@@ -699,12 +700,9 @@ export function parameterValuesForWindowLive2D(input: {
     );
   }
 
-  return arbitrateLive2DParameters(owned
-    ? requests.filter((request) => !(
-      (request.layer === "blink" || request.layer === "facs")
-      && owned.has(request.parameter)
-    ))
-    : requests)
+  return arbitrateLive2DParameters(requests.filter((request) =>
+    !(request.layer !== "lipsync" && input.motionOwnedParameters?.has(request.parameter))
+    && !((request.layer === "blink" || request.layer === "facs") && owned?.has(request.parameter))))
     .map(({ parameter, value }) => clampParameter(parameter, value))
     .filter((value): value is WindowLive2DParameterValue => value !== null);
 }

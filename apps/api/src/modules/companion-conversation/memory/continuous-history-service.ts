@@ -4,7 +4,7 @@ import type { ApiTransaction } from "../../../db/client.ts";
 import { withWorkspaceTransaction } from "../../../db/client.ts";
 import { resolveAuthSurfaceManifestSecret } from "../../../companion-contracts/auth-surface.ts";
 import { escapeLikePattern } from "../../../lib/like-escape.ts";
-import { companionMessageSelection, companionMessageSelectionSql } from "../turn/message-selection.ts";
+import { companionMessageInputContext, companionMessageInputContextSql } from "../turn/message-input-context.ts";
 import { readStoredCompanionBlocks } from "../turn/message-blocks.ts";
 
 const CURSOR_CONTEXT = "companion-continuous-history-v1:";
@@ -80,7 +80,7 @@ type HistoryRow = {
   role: "user" | "assistant" | "system";
   kind: "text" | "voice_transcript" | "proactive" | "action" | "result" | "error" | "cancelled";
   blocks: unknown;
-  selection: unknown;
+  inputContext: unknown;
   run_id: string | null;
   // postgres-js 对 raw execute 不把 timestamptz 解析成 Date（返回
   // "2026-08-20 01:33:39.135727+00" 这类字符串），时间一律在 SQL 层
@@ -97,7 +97,7 @@ function item(row: HistoryRow) {
     role: row.role,
     kind: row.kind,
     blocks: readStoredCompanionBlocks(row.blocks),
-    ...companionMessageSelection(row.selection),
+    ...companionMessageInputContext(row.inputContext),
     runId: row.run_id,
     createdAt: row.created_at_iso,
     editedAt: row.edited_at_iso,
@@ -129,7 +129,7 @@ export async function listContinuousHistory(args: {
     }
     const rows = await tx.execute<HistoryRow>(sql`
       SELECT m.id, m.role, m.kind, m.blocks, m.run_id,
-             ${companionMessageSelectionSql("m")} AS selection,
+             ${companionMessageInputContextSql("m")} AS "inputContext",
              to_char(m.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS created_at_iso,
              to_char(m.edited_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS edited_at_iso,
              to_char(m.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_created_at
@@ -194,7 +194,7 @@ export async function searchContinuousHistory(args: {
   return withWorkspaceTransaction(args, async (tx) => {
     const rows = await tx.execute<HistoryRow>(sql`
       SELECT m.id, m.role, m.kind, m.blocks, m.run_id,
-             ${companionMessageSelectionSql("m")} AS selection,
+             ${companionMessageInputContextSql("m")} AS "inputContext",
              to_char(m.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS created_at_iso,
              to_char(m.edited_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS edited_at_iso,
              to_char(m.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_created_at

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { escapeLikePattern } from "../../lib/like-escape.ts";
 import { and, eq, isNull, or, gte, desc, sql, inArray } from "drizzle-orm";
 import { DomainError } from "@astella/shared";
 import {
@@ -493,12 +494,13 @@ export interface MemberListItem {
 export async function listMembers(
   workspaceId: string,
   userId: string,
-  options?: { limit?: number },
+  options?: { limit?: number; offset?: number; q?: string },
 ): Promise<{ items: MemberListItem[]; total: number }> {
   // Y10（round-3 审计）：原实现无 LIMIT 全量返回活跃成员（超大工作区成员很多时
   // 无界响应）。新增可选 limit（默认 200，上限 500）；total 只在翻页满时（很可能还有
   // 更多成员）才补一次 count 查询得到真实总数——小于 limit 的常见情形不额外查询。
   const limit = clampLimit(options?.limit, 200, 500);
+  const offset = Math.max(0, options?.offset ?? 0);
   return withWorkspaceTransaction(
     { workspaceId, userId },
     async (tx) => {
@@ -514,13 +516,15 @@ export async function listMembers(
           and(
             eq(workspaceMembers.workspaceId, workspaceId),
             isNull(workspaceMembers.leftAt),
+            options?.q ? sql`EXISTS (SELECT 1 FROM users u WHERE u.id = ${workspaceMembers.userId} AND u.email ILIKE ${"%" + escapeLikePattern(options.q) + "%"} ESCAPE '\\')` : undefined,
           ),
         )
-        .orderBy(desc(workspaceMembers.joinedAt))
-        .limit(limit);
+        .orderBy(desc(workspaceMembers.joinedAt), desc(workspaceMembers.userId))
+        .limit(limit)
+        .offset(offset);
 
       let total = members.length;
-      if (members.length >= limit) {
+      if (offset > 0 || options?.q || members.length >= limit) {
         // 已拿满一页：可能还有更多成员，取真实总数（供前端判断是否还有下一页）。
         const [totalRows] = await tx
           .select({ n: sql<number>`count(*)::integer` })
@@ -529,6 +533,7 @@ export async function listMembers(
             and(
               eq(workspaceMembers.workspaceId, workspaceId),
               isNull(workspaceMembers.leftAt),
+              options?.q ? sql`EXISTS (SELECT 1 FROM users u WHERE u.id = ${workspaceMembers.userId} AND u.email ILIKE ${"%" + escapeLikePattern(options.q) + "%"} ESCAPE '\\')` : undefined,
             ),
           );
         total = totalRows?.n ?? members.length;

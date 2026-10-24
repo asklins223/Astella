@@ -5,7 +5,8 @@
  * 一个 preHandler 名字证明不了它挂在哪儿、也证明不了 `decodeToken` 真的把那一位
  * 读了出来（`permission-guard.test.ts` 顶部记的就是这种守卫如何失效）。所以这里
  * 按产品形状走：`POST /auth/login` 带 `clientKind:'mobile'` 拿到 token → 拿这枚
- * token 打两条正文写入口 → 断 403；同一个账号再签一枚普通（桌面）token，
+ * token 验证自由正文写入 403；2026-10-24 用户批准拥有者恢复已保存版本，恢复口 200。
+ * 同一个账号再签一枚普通（桌面）token，
  * **同一份请求体**打同一个口 → 断 200。
  *
  * 正向对照用的是真的 yjs 增量（以库里那份快照为差集基准），不是随手编的字节：
@@ -35,6 +36,8 @@ const admin = postgres(CONN, { max: 3 });
 const tag = randomUUID().slice(0, 8);
 const userId = randomUUID();
 const workspaceId = randomUUID();
+const memberId = randomUUID();
+const memberEmail = `mobile-member-${tag}@example.test`;
 const email = `mobile-scope-${tag}@example.test`;
 const password = "mobile-scope-pw";
 
@@ -45,17 +48,18 @@ let app: FastifyInstance;
 /** doc-update 会打开 Hocuspocus 直连，收尾要先把那些文档卸载掉。 */
 let mobileToken = "";
 let desktopToken = "";
+let memberToken = "";
 /** 一篇只有当前版本（测增量上送）。 */
 let noteId = "";
 /** 两版的那篇（测版本恢复）。 */
 let restoreNoteId = "";
 let restoreFirstVersionId = "";
 
-async function login(clientKind?: string): Promise<string> {
+async function login(clientKind?: string, accountEmail = email): Promise<string> {
   const response = await app.inject({
     method: "POST",
     url: "/auth/login",
-    payload: { email, password, ...(clientKind === undefined ? {} : { clientKind }) },
+    payload: { email: accountEmail, password, ...(clientKind === undefined ? {} : { clientKind }) },
   });
   assert.equal(response.statusCode, 200, `登录必须 200，实际 ${response.statusCode}：${response.body}`);
   return response.json().token as string;
@@ -104,6 +108,10 @@ before(async () => {
     await tx`UPDATE users SET personal_workspace_id = ${workspaceId} WHERE id = ${userId}`;
     await tx`INSERT INTO workspace_members (workspace_id, user_id, role)
       VALUES (${workspaceId}, ${userId}, 'owner')`;
+    await tx`INSERT INTO users (id, email, password_hash, role, personal_workspace_id)
+      VALUES (${memberId}, ${memberEmail}, ${passwordHash}, 'member', ${workspaceId})`;
+    await tx`INSERT INTO workspace_members (workspace_id, user_id, role)
+      VALUES (${workspaceId}, ${memberId}, 'member')`;
   });
 
   app = Fastify({ logger: false });
@@ -115,6 +123,7 @@ before(async () => {
 
   mobileToken = await login("mobile");
   desktopToken = await login();
+  memberToken = await login("mobile", memberEmail);
 
   const created = await withWorkspaceTransaction({ workspaceId, userId }, (tx) =>
     createNote(tx, workspaceId, userId, {
@@ -142,7 +151,7 @@ before(async () => {
 
 after(async () => {
   await closeNoteCollaboration().catch(() => {});
-  for (const token of [mobileToken, desktopToken]) {
+  for (const token of [mobileToken, desktopToken, memberToken]) {
     if (!token) continue;
     await admin`DELETE FROM sessions WHERE token = ${hashToken(token)}`;
   }
@@ -150,11 +159,11 @@ after(async () => {
   // 删除顺序有硬约束：notes 级联带走 versions/blocks，先删子表会撞外键。
   await admin`DELETE FROM note_document_states WHERE workspace_id = ${workspaceId}`;
   await admin`DELETE FROM search_documents WHERE workspace_id = ${workspaceId}`;
-  await admin`UPDATE users SET personal_workspace_id = NULL WHERE id = ${userId}`;
+  await admin`UPDATE users SET personal_workspace_id = NULL WHERE id IN (${userId}, ${memberId})`;
   await admin`DELETE FROM notes WHERE workspace_id = ${workspaceId}`;
   await admin`DELETE FROM workspace_members WHERE workspace_id = ${workspaceId}`;
   await admin`DELETE FROM workspaces WHERE id = ${workspaceId}`;
-  await admin`DELETE FROM users WHERE id = ${userId}`;
+  await admin`DELETE FROM users WHERE id IN (${userId}, ${memberId})`;
   const leftover = await admin`SELECT count(*)::int AS n FROM workspaces WHERE id = ${workspaceId}`;
   assert.equal(leftover[0].n, 0, `夹具残留了工作区 ${workspaceId}，teardown 顺序需要修`);
   await admin.end({ timeout: 5 }).catch(() => {});
@@ -173,7 +182,7 @@ test("这一位落在凭据那一行上：手机签发的会话写的是 mobile"
   );
 });
 
-test("手机会话：增量上送与版本恢复一律 403，理由说得出口", async () => {
+test("mobile owner: freeform body writes remain forbidden, exact saved-version restore is allowed", async () => {
   const update = await incrementalUpdateFor(noteId, `手机上敲的一行 ${tag}`);
 
   const docUpdate = await app.inject({
@@ -186,17 +195,31 @@ test("手机会话：增量上送与版本恢复一律 403，理由说得出口"
   assert.equal(docUpdate.json().error, "mobile_note_edit_forbidden");
   assert.match(docUpdate.json().message, /手机上/);
 
+  const beforeVersions = await admin`SELECT count(*)::int AS n FROM note_versions WHERE note_id = ${restoreNoteId}`;
   const restore = await app.inject({
     method: "POST",
     url: `/notes/${restoreNoteId}/versions/${restoreFirstVersionId}/restore`,
-    headers: asBearer(mobileToken),
-    payload: {},
+    headers: asBearer(mobileToken), payload: {},
   });
-  assert.equal(restore.statusCode, 403, `恢复版本也是改正文，必须 403，实际 ${restore.statusCode}：${restore.body}`);
-  assert.equal(restore.json().error, "mobile_note_edit_forbidden");
+  assert.equal(restore.statusCode, 200, `mobile owner saved-version restore must succeed: ${restore.body}`);
+  const [current] = await admin`SELECT current_version_id FROM notes WHERE id = ${restoreNoteId}`;
+  const afterVersions = await admin`SELECT count(*)::int AS n FROM note_versions WHERE note_id = ${restoreNoteId}`;
+  assert.equal(current.current_version_id, restoreFirstVersionId);
+  assert.equal(afterVersions[0].n, beforeVersions[0].n, "restore switches the pointer without making a new version");
 
   // 被挡的那一趟一个字都不该落库：403 之后正文还是原来那句。
   assert.deepEqual(await storedBody(noteId), [`正文甲 ${tag}`]);
+});
+
+test("mobile members cannot restore a note version", async () => {
+  const restore = await app.inject({ method: "POST", url: `/notes/${restoreNoteId}/versions/${restoreFirstVersionId}/restore`, headers: asBearer(memberToken), payload: {} });
+  assert.equal(restore.statusCode, 403);
+  assert.equal(restore.json().error, "owner role required");
+});
+
+test("mobile owner restore retains the version conflict guard", async () => {
+  const response = await app.inject({ method: "POST", url: `/notes/${restoreNoteId}/versions/${restoreFirstVersionId}/restore`, headers: asBearer(mobileToken), payload: { baseVersionId: randomUUID() } });
+  assert.equal(response.statusCode, 409);
 });
 
 test("同一枚手机 token，换一种请求头写法也还是 403", async () => {
@@ -238,7 +261,7 @@ test("桌面会话照常：同一份请求体在桌面 token 上是 200", async 
 
 test("挡的是正文写入，不是这篇笔记：读、建、列都照常", async () => {
   // 「手机上人不改正文」不等于手机上看不了、也新建不了。这一条把那道闸的范围钉住：
-  // 只有改正文的两条口吃 403。
+  // 自由正文编辑口仍为 403；已保存版本的恢复按 owner 权限单独判断。
   const read = await app.inject({ method: "GET", url: `/v2/notes/${noteId}`, headers: asBearer(mobileToken) });
   assert.equal(read.statusCode, 200, `手机读笔记不得被挡，实际 ${read.statusCode}：${read.body}`);
 

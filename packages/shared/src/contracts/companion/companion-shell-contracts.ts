@@ -14,6 +14,14 @@
  */
 
 import { z } from "zod";
+
+export const COMPANION_PREFERRED_ADDRESS_KEY = "companion_preferred_address" as const;
+export const companionPersonalizationV1Schema = z.object({
+  version: z.literal(1), revision: z.number().int().nonnegative(),
+  preferredAddress: z.string().trim().min(1).max(40).nullable(),
+}).strict();
+export const companionPersonalizationWriteV1Schema = companionPersonalizationV1Schema.omit({ version: true });
+
 import { isTtsVoiceAllowed, QWEN_TTS_SUPPORTED_DIALECTS, ttsEngineV1Schema } from "../../companion/tts-voice-catalog.ts";
 import { VOICE_STYLE_INSTRUCTION_MAX_UNITS, voiceStyleInstructionUnits } from "../../companion/voice-expression-tags.ts";
 import {

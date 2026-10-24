@@ -31,6 +31,8 @@ export function resolveNoteAiRanges(ranges: readonly NoteAiRange[], blocks: read
 
 /** Feedback only; actual authority comes from the current-turn tool/permission fences. */
 export function noteEditRequestRanges(text: string, editing: CompanionNoteEditingContextV1): NoteAiRange[] {
+  const selected = editing.selection;
+  if (selected && /(讲解|解释|分析|explain)/i.test(text)) return [{ startBlock: selected.startBlock, endBlock: selected.endBlock, label: "伴星正在讲解", expectedBlocks: selected.expectedBlocks }];
   if (!/(插入|追加|补充.*(这里|光标|末尾|最后)|删除|删掉|替换|改写|改成|转[换成为].*(表格|流程图)|insert|append|delete|replace|rewrite|convert)/i.test(text)) return [];
   if (/(末尾|最后|append)/i.test(text) && editing.tail) return [{ startBlock: editing.tail.block, endBlock: editing.tail.block,
     label: "伴星正在末尾补充", expectedBlocks: [editing.tail.expectedBlock] }];
@@ -38,4 +40,15 @@ export function noteEditRequestRanges(text: string, editing: CompanionNoteEditin
   if (selection) return [{ startBlock: selection.startBlock, endBlock: selection.endBlock, label: "伴星正在调整这段", expectedBlocks: selection.expectedBlocks }];
   const cursor = editing.cursor;
   return cursor ? [{ startBlock: cursor.block, endBlock: cursor.block, label: "伴星正在准备补充", expectedBlocks: [cursor.expectedBlock] }] : [];
+}
+
+/** Overlapping tool ranges belong to one visible passage, never paragraph loops. */
+export function groupNoteAiRanges(ranges: readonly NoteAiRange[]): NoteAiRange[] {
+  const groups: NoteAiRange[] = [];
+  for (const range of [...ranges].sort((a, b) => a.startBlock - b.startBlock || b.endBlock - a.endBlock)) {
+    const previous = groups.at(-1);
+    if (previous && range.startBlock <= previous.endBlock) previous.endBlock = Math.max(previous.endBlock, range.endBlock);
+    else groups.push({ ...range });
+  }
+  return groups;
 }

@@ -1,0 +1,15 @@
+{
+  "Type": "Live2D Expression",
+  "Parameters": [
+    {
+      "Id": "mozhua",
+      "Value": 1,
+      "Blend": "Add"
+    },
+    {
+      "Id": "mozhua2",
+      "Value": 1,
+      "Blend": "Add"
+    }
+  ]
+}

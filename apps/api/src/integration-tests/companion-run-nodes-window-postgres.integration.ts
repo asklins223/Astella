@@ -142,3 +142,51 @@ test("别人的会话读不到（RLS）：返回 404 而不是空列表", async 
     await outsider.cleanup();
   }
 });
+
+test("user-only failure and actionable work survive the recent twenty-run window", async () => {
+  const fixture = await seedBusyConversation();
+  const { workspaceId, userId, conversationId } = fixture;
+  const oldMessageId = randomUUID(), recentMessageId = randomUUID(), oldRunId = randomUUID();
+  try {
+    await sql.begin(async tx => {
+      await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true), set_config('app.user_id', ${userId}, true)`;
+      for (const [id, seq] of [[oldMessageId, 1], [recentMessageId, 2]] as const) {
+        await tx`INSERT INTO companion_messages (id,conversation_id,workspace_id,user_id,role,seq,kind,blocks,content_sha256)
+          VALUES (${id},${conversationId},${workspaceId},${userId},'user',${seq},'text',${tx.json([{type:'text',text:'question'}])},${'0'.repeat(64)})`;
+      }
+      for (let index = 0; index < 21; index++) {
+        await tx`INSERT INTO companion_turn_runs
+          (id,conversation_id,workspace_id,user_id,user_message_id,generation,status,error_code,idempotency_key_hash,request_body_hash,created_at)
+          VALUES (${index === 0 ? oldRunId : randomUUID()},${conversationId},${workspaceId},${userId},${index === 0 ? oldMessageId : recentMessageId},${index + 1},
+            ${index === 0 ? 'failed' : 'succeeded'},${index === 0 ? 'PROVIDER_FIRST_OUTPUT_TIMEOUT' : null},${randomUUID()},${'b'.repeat(64)},${new Date(Date.now() - (22-index)*60_000)})`;
+      }
+    });
+    const recent = await listCompanionRunNodes({ workspaceId,userId,conversationId,after:0 });
+    assert.ok(recent.ok && !recent.runs.some(run => run.runId === oldRunId));
+    const archived = await listCompanionRunNodes({ workspaceId,userId,conversationId,after:0,userMessageIds:[oldMessageId] });
+    assert.ok(archived.ok);
+    assert.deepEqual(archived.runs.map(run => run.runId), [oldRunId]);
+    assert.equal(archived.runs[0]?.assistantMessageId, null);
+    const actionable = await listCompanionRunNodes({ workspaceId,userId,conversationId,after:0,includeRecoverable:true });
+    assert.ok(actionable.ok && actionable.runs.some(run => run.runId === oldRunId));
+    await sql.begin(async tx => {
+      await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true), set_config('app.user_id', ${userId}, true)`;
+      await tx`UPDATE companion_turn_runs SET status='succeeded',error_code=NULL,
+        process_timeline=${tx.json([
+          {type:'agent.tool',payload:{tool:{toolCallId:'same',status:'requested'}}},
+          {type:'agent.tool',payload:{tool:{toolCallId:'same',status:'succeeded'}}}
+        ])} WHERE id=${oldRunId}`;
+    });
+    const resolved = await listCompanionRunNodes({ workspaceId,userId,conversationId,after:0,includeRecoverable:true });
+    assert.ok(resolved.ok && !resolved.runs.some(run => run.runId === oldRunId), "old requested events must not revive a completed tool");
+  } catch (error) {
+    throw error instanceof Error && error.cause instanceof Error ? error.cause : error;
+  } finally {
+    await sql.begin(async tx => {
+      await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true), set_config('app.user_id', ${userId}, true)`;
+      await tx`DELETE FROM companion_turn_runs WHERE conversation_id=${conversationId}`;
+      await tx`DELETE FROM companion_messages WHERE conversation_id=${conversationId}`;
+    });
+    await fixture.cleanup();
+  }
+});

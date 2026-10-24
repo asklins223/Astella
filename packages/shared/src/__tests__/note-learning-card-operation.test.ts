@@ -67,3 +67,31 @@ it("restores bounded saved controls only from the actual parent and emits no gra
   assert.equal(sent.at(-1)!.phase, "answer"); assert.equal(sent.at(-1)!.answer!.values.voltage, 12);
   assert.ok(sent.every((message) => !("score" in message)));
 });
+
+it("steps expose the chosen order, support undo/reset, replay exactly and recover editable state", async () => {
+  const { createRequire } = await import("node:module");
+  const require = createRequire(new URL("../../../../apps/desktop-client/package.json", import.meta.url));
+  const { JSDOM } = require("jsdom");
+  const repair = operationSpecV1Schema.parse({title:"步骤修复",prompt:"按顺序选择",controls:[],target:{},steps:["观察","验证","总结"]});
+  const html = renderOperationTemplateV1("repair_steps",repair);
+  const dom = new JSDOM(html,{runScripts:"outside-only"});
+  const w = dom.window;
+  try {
+    w.eval(html.match(/<script>([\s\S]*?)<\/script>/)![1]!);
+    const steps = [...w.document.querySelectorAll("[data-step]")] as any[];
+    steps.find(button=>button.dataset.step==="验证").click();
+    steps.find(button=>button.dataset.step==="观察").click();
+    const order = () => [...w.document.querySelectorAll("#picked-order li")].map((item:any)=>item.textContent);
+    assert.deepEqual(order(),["验证","观察"]);
+    w.document.getElementById("undo-step").click(); assert.deepEqual(order(),["验证"]);
+    const restore = (readOnly: boolean, values: string[]) => w.dispatchEvent(new w.MessageEvent("message",{source:w,data:{channel:"astella:artifact-frame",direction:"host->frame",command:"restore-answer",readOnly,answer:{kind:"steps",steps:values}}}));
+    restore(true,["总结","观察","总结"]);
+    assert.deepEqual(order(),["总结","观察"],"replay preserves chosen order while removing duplicate invalid states");
+    assert.ok(steps.every(button=>button.disabled));
+    steps[0].click(); assert.deepEqual(order(),["总结","观察"]);
+    restore(false,["验证"]); assert.ok(steps.every(button=>!button.disabled));
+    steps.find(button=>button.dataset.step==="观察").click(); assert.deepEqual(order(),["验证","观察"]);
+    w.document.getElementById("reset-steps").click(); assert.deepEqual(order(),[]);
+    assert.equal(w.document.getElementById("picked-empty").hidden,false);
+  } finally { w.close(); }
+});

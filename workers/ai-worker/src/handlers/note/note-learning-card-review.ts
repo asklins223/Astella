@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { ChatMessage } from "@astella/shared";
+import type { AgentTurnRequest, AgentTurnResult, ChatMessage } from "@astella/shared";
 import { extractJsonFromText } from "../../lib/providers/json-response.ts";
 import { NoteOverviewOutputError } from "../../lib/non-retryable-errors.ts";
 import {
@@ -155,6 +155,47 @@ export function noteLearningCardReviewMessages(questions: readonly GeneratedCard
       answerSupported: "boolean", unambiguous: "boolean", knowledgePoint: "具体考查点", reason: "简短解题依据",
       evidence: [{ blockOrdinal: "原文段落号", quote: "必要的逐字短句" }], solution: "按题型填写独立答案，主观题可为null" })), duplicateGroups: [] } }) },
   ];
+}
+
+/** 独立审题用结构化提交，限制逐题数量；正文覆盖与答案仍由原校验独立复核。 */
+export function noteLearningCardReviewTool(questionCount: number): AgentTurnRequest["tools"][number] {
+  return {
+    name: "submit_card_review",
+    description: `提交全部 ${questionCount} 道题的独立审题，题号必须逐一覆盖，不能遗漏。`,
+    parameters: {
+      type: "object", additionalProperties: false, required: ["questions", "duplicateGroups"],
+      properties: {
+        questions: { type: "array", minItems: questionCount, maxItems: questionCount, items: {
+          type: "object", additionalProperties: false,
+          required: ["questionNumber", "answerSupported", "unambiguous", "knowledgePoint", "reason", "evidence", "solution"],
+          properties: {
+            questionNumber: { type: "integer", minimum: 1, maximum: questionCount },
+            answerSupported: { type: "boolean" }, unambiguous: { type: "boolean" },
+            knowledgePoint: { type: "string", minLength: 2, maxLength: 300 },
+            reason: { type: "string", minLength: 8, maxLength: 1500 },
+            evidence: { type: "array", maxItems: 3, items: { type: "object", additionalProperties: false,
+              required: ["blockOrdinal", "quote"], properties: { blockOrdinal: { type: "integer", minimum: 0 }, quote: { type: "string", minLength: 1 } } } },
+            solution: { type: ["object", "null"], additionalProperties: true },
+          },
+        } },
+        duplicateGroups: { type: "array", maxItems: 8, items: { type: "object", additionalProperties: false,
+          required: ["questionNumbers", "reason"], properties: {
+            questionNumbers: { type: "array", minItems: 2, maxItems: 8, items: { type: "integer", minimum: 1, maximum: questionCount } },
+            reason: { type: "string", minLength: 4, maxLength: 800 },
+          } } },
+      },
+    },
+  };
+}
+
+export function noteLearningCardReviewSubmission(result: Pick<AgentTurnResult, "toolCalls"> & { content?: string | null }): string {
+  // MiMo Responses keeps tool_choice=auto. A plain JSON submission still goes
+  // through the identical count, independent-answer and source-evidence gates.
+  if (result.toolCalls.length === 0 && result.content?.trim()) return result.content;
+  if (result.toolCalls.length !== 1 || result.toolCalls[0]?.name !== "submit_card_review") {
+    throw new NoteOverviewOutputError("审题没有提交唯一、完整的结构化结果");
+  }
+  return JSON.stringify(result.toolCalls[0].arguments);
 }
 
 /**

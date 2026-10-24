@@ -10,7 +10,7 @@
  * - latest-generation fence 由 Worker 写侧保证（cancel/supersede 后迟到输出零写入）。
  */
 
-import { eq, and, gt, gte, lte, sql, inArray, desc } from "drizzle-orm";
+import { eq, and, or, gt, gte, lte, sql, inArray, desc } from "drizzle-orm";
 import { companionConversations, companionStreamEvents, companionTurnRuns } from "./turn-service.ts";
 import { withWorkspaceTransaction } from "../../../db/client.ts";
 import { subscribeCompanionEvents } from "../../../lib/companion-notify.ts";
@@ -202,6 +202,8 @@ export async function listCompanionRunNodes(args: {
   after: number;
   includeThinking?: boolean;
   runIds?: readonly string[];
+  userMessageIds?: readonly string[];
+  includeRecoverable?: boolean;
 }): Promise<
   | { ok: true; items: CompanionRunNodeRow[]; runs: CompanionRunSummaryRow[]; latestSeq: number }
   | { ok: false; statusCode: 404; code: "NOT_FOUND"; message: string }
@@ -223,6 +225,7 @@ export async function listCompanionRunNodes(args: {
       .where(and(
         eq(companionConversations.id, args.conversationId),
         eq(companionConversations.workspaceId, args.workspaceId),
+        eq(companionConversations.userId, args.userId),
       ))
       .limit(1);
     if (!conv[0]) {
@@ -250,6 +253,8 @@ export async function listCompanionRunNodes(args: {
       .from(companionStreamEvents)
       .where(and(
         eq(companionStreamEvents.conversationId, args.conversationId),
+        eq(companionStreamEvents.workspaceId, args.workspaceId),
+        eq(companionStreamEvents.userId, args.userId),
         gt(companionStreamEvents.seq, args.after),
         inArray(companionStreamEvents.type, [...COMPANION_NODE_EVENT_TYPES]),
         gt(companionStreamEvents.expiresAt, new Date()),
@@ -258,7 +263,7 @@ export async function listCompanionRunNodes(args: {
       .limit(COMPANION_NODE_EVENT_BATCH);
     rows.reverse();
 
-    const runRows = await tx
+    const selectRuns = () => tx
       .select({
         runId: companionTurnRuns.id,
         createdAt: companionTurnRuns.createdAt,
@@ -275,12 +280,33 @@ export async function listCompanionRunNodes(args: {
         thinkingText: args.includeThinking ? companionTurnRuns.thinkingText : sql<string | null>`NULL`,
         processTimeline: args.includeThinking ? companionTurnRuns.processTimeline : sql<CompanionRunNodeEventV1[]>`'[]'::jsonb`,
       })
-      .from(companionTurnRuns)
-      .where(and(eq(companionTurnRuns.conversationId, args.conversationId),
-        eq(companionTurnRuns.workspaceId, args.workspaceId), eq(companionTurnRuns.userId, args.userId),
-        args.runIds?.length ? inArray(companionTurnRuns.id, [...args.runIds]) : undefined))
+      .from(companionTurnRuns);
+    const scopedRuns = and(eq(companionTurnRuns.conversationId, args.conversationId),
+      eq(companionTurnRuns.workspaceId, args.workspaceId), eq(companionTurnRuns.userId, args.userId));
+    const explicitIds = args.runIds?.length || args.userMessageIds?.length;
+    const selectedRuns = await selectRuns()
+      .where(and(scopedRuns, explicitIds ? or(
+        args.runIds?.length ? inArray(companionTurnRuns.id, [...args.runIds]) : undefined,
+        args.userMessageIds?.length ? inArray(companionTurnRuns.userMessageId, [...args.userMessageIds]) : undefined,
+      ) : undefined))
       .orderBy(desc(companionTurnRuns.createdAt))
-      .limit(args.runIds?.length ? 100 : COMPANION_RUN_SUMMARY_LIMIT);
+      .limit(explicitIds ? 200 : COMPANION_RUN_SUMMARY_LIMIT);
+    // Hand is an actionable inbox, not a slice of the twenty latest turns.
+    // Scope predicates remain explicit even when the DB role bypasses RLS.
+    const recoverableRuns = args.includeRecoverable ? await selectRuns()
+      .where(and(scopedRuns, or(
+        inArray(companionTurnRuns.status, ["accepted", "running", "cancel_requested", "waiting_for_confirmation"]),
+        and(eq(companionTurnRuns.status, "failed"), inArray(companionTurnRuns.errorCode,
+          ["PROVIDER_UNAVAILABLE", "PROVIDER_TIMEOUT", "PROVIDER_FIRST_OUTPUT_TIMEOUT", "PROVIDER_IDLE_TIMEOUT", "RATE_LIMITED", "JOB_DEAD", "JOB_MISSING"])),
+        sql`EXISTS (SELECT 1 FROM (
+          SELECT DISTINCT ON (node->'payload'->'tool'->>'toolCallId') node
+          FROM jsonb_array_elements(${companionTurnRuns.processTimeline}) WITH ORDINALITY AS events(node, ordinal)
+          WHERE node->>'type' = 'agent.tool' AND node->'payload'->'tool'->>'toolCallId' IS NOT NULL
+          ORDER BY node->'payload'->'tool'->>'toolCallId', ordinal DESC
+        ) latest WHERE latest.node->'payload'->'tool'->>'status' IN ('outcome_unknown', 'requested', 'executing'))`,
+      )))
+      .orderBy(desc(companionTurnRuns.updatedAt)) : [];
+    const runRows = [...new Map([...selectedRuns, ...recoverableRuns].map(run => [run.runId, run])).values()];
 
     // 每个 run 当前还剩多少条可读节点事件（TTL 清理后归零 → UI 显式说明"已过期"）。
     const countRows = await tx
@@ -288,6 +314,8 @@ export async function listCompanionRunNodes(args: {
       .from(companionStreamEvents)
       .where(and(
         eq(companionStreamEvents.conversationId, args.conversationId),
+        eq(companionStreamEvents.workspaceId, args.workspaceId),
+        eq(companionStreamEvents.userId, args.userId),
         inArray(companionStreamEvents.type, [...COMPANION_NODE_EVENT_TYPES]),
         gt(companionStreamEvents.expiresAt, new Date()),
       ))

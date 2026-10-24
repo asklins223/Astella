@@ -9,7 +9,8 @@
  * 事务，满足 SEC-01 跨 workspace 隔离审计。
  */
 
-import { and, desc, eq, ilike, isNull, sql } from "drizzle-orm";
+import { escapeLikePattern } from "../../../lib/like-escape.ts";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import type { ApiTransaction } from "../../../db/client.ts";
 import {
@@ -829,6 +830,7 @@ export async function eraseMemory(
 export async function listRecycledMemories(
   executor: ApiTransaction,
   scope: { workspaceId: string; userId: string },
+  options: { limit?: number; offset?: number } = {},
 ): Promise<Array<{
   id: string; kind: string; content: string; deletedAt: string; purgeAfter: string; sourceEventId: string | null;
 }>> {
@@ -843,8 +845,9 @@ export async function listRecycledMemories(
      WHERE workspace_id = ${scope.workspaceId}
        AND user_id = ${scope.userId}
        AND deleted_at IS NOT NULL
-     ORDER BY deleted_at DESC
-     LIMIT 200
+     ORDER BY deleted_at DESC, id DESC
+     LIMIT ${Math.max(1, Math.min(201, options.limit ?? 200))}
+     OFFSET ${Math.max(0, options.offset ?? 0)}
   `);
   const list = Array.isArray(rows) ? rows : ((rows as { rows?: unknown[] } | null)?.rows ?? []) as Array<{
     id: string; kind: string; content: string; deleted_at: string; purge_after: string; source_event_id: string | null;
@@ -1101,6 +1104,10 @@ export async function listMemories(
     scope?: MemoryScopeV2;
     includeCandidates?: boolean;
     includeArchived?: boolean;
+    kinds?: MemoryKindV2[];
+    state?: "active" | "candidate" | "pinned" | "disputed" | "archived" | "ignored" | "superseded";
+    limit?: number;
+    offset?: number;
   } = {},
 ): Promise<MemoryItemV2[]> {
   const rows = await executor
@@ -1111,13 +1118,22 @@ export async function listMemories(
       eq(assistantMemoryItems.userId, scope.userId),
       isNull(assistantMemoryItems.deletedAt),
       input.kind ? eq(assistantMemoryItems.kind, input.kind) : undefined,
+      input.kinds?.length ? inArray(assistantMemoryItems.kind, input.kinds) : undefined,
+      input.state === "active" ? sql`${assistantMemoryItems.candidate} = false AND ${assistantMemoryItems.dismissedAt} IS NULL AND ${assistantMemoryItems.archivedAt} IS NULL AND ${assistantMemoryItems.epistemicStatus} NOT IN ('disputed', 'superseded')` : undefined,
+      input.state === "candidate" ? sql`${assistantMemoryItems.candidate} = true AND ${assistantMemoryItems.dismissedAt} IS NULL AND ${assistantMemoryItems.archivedAt} IS NULL` : undefined,
+      input.state === "pinned" ? sql`${assistantMemoryItems.pinned} = true AND ${assistantMemoryItems.dismissedAt} IS NULL AND ${assistantMemoryItems.archivedAt} IS NULL` : undefined,
+      input.state === "disputed" ? eq(assistantMemoryItems.epistemicStatus, "disputed") : undefined,
+      input.state === "archived" ? sql`${assistantMemoryItems.archivedAt} IS NOT NULL` : undefined,
+      input.state === "ignored" ? sql`${assistantMemoryItems.dismissedAt} IS NOT NULL` : undefined,
+      input.state === "superseded" ? eq(assistantMemoryItems.epistemicStatus, "superseded") : undefined,
       input.scope ? eq(assistantMemoryItems.scope, input.scope) : undefined,
       input.includeArchived ? undefined : isNull(assistantMemoryItems.archivedAt),
       input.includeCandidates ? undefined : eq(assistantMemoryItems.candidate, false),
-      input.q ? ilike(assistantMemoryItems.content, `%${input.q}%`) : undefined,
+      input.q ? sql`${assistantMemoryItems.content} ILIKE ${`%${escapeLikePattern(input.q)}%`} ESCAPE '\\'` : undefined,
     ))
-    .orderBy(desc(assistantMemoryItems.pinned), desc(assistantMemoryItems.updatedAt))
-    .limit(MEMORY_LIST_LIMIT);
+    .orderBy(desc(assistantMemoryItems.pinned), desc(assistantMemoryItems.updatedAt), desc(assistantMemoryItems.id))
+    .limit(Math.max(1, Math.min(201, input.limit ?? MEMORY_LIST_LIMIT)))
+    .offset(Math.max(0, input.offset ?? 0));
   if (input.focusMemoryId && !rows.some(row => row.id === input.focusMemoryId)) {
     const focused = await executor.select().from(assistantMemoryItems).where(and(
       eq(assistantMemoryItems.id, input.focusMemoryId),

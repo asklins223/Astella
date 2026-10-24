@@ -35,7 +35,6 @@ import {
 } from "./live2d-emotion";
 import {
   WINDOW_LIVE2D_DEFAULT_OVERLAY_HOLD_MS,
-  isFaceLayerLive2DParameter,
   momentCueForWindowLive2D,
   propParameterValuesForWindowLive2D,
   type WindowLive2DCharacterMoment,
@@ -99,6 +98,7 @@ interface Live2DInternalModel {
   off?: (event: string, listener: () => void) => unknown;
   /** 表情管理器（model3.json 声明了 Expressions 时存在）；情绪过期时用它复位。 */
   motionManager?: {
+    stopAllMotions?: () => void;
     expressionManager?: {
       resetExpression?: () => void;
     };
@@ -374,9 +374,8 @@ export class WindowLive2DDriver {
   private overlayProp: ActiveProp | null = null;
   /**
    * 整活参数归位表：非待机动作动过、而待机动作不碰的参数 → 模型默认值。
-   * 自拍的手机、喷水的 `pengshui`、泡泡糖的 `chuipaopao*` 都属于这一类：动作演完
-   * Cubism 不会自己收回这些值，手机会一直举到下次切换形态（2026-09-20 核对资产时
-   * 从曲线终值确认：`phone` 结束时是 1）。逐帧写默认值，所以不存在"漏收"的状态。
+   * 包括手机、蛋包饭、临时发型和作者脸部曲线。每帧在 motion 更新之前还原基线，
+   * 再交给动作、表情、物理与实时口型，避免结束后留下道具或最后一帧姿势。
    */
   private gagParameterResets: ReadonlyArray<WindowLive2DParameterValue> = [];
   /** 本形态登记为道具的那几件穿戴物的参数写入；道具层只认这张表。 */
@@ -414,6 +413,14 @@ export class WindowLive2DDriver {
    * 现在挂在 `beforeModelUpdate` 上：motion/物理更新完 → 我们写 → 核心更新渲染。
    * 顺序确定，不再有竞态。
    */
+  private readonly handleMotionUpdate = (): void => {
+    if (this.disposed || this.paused) return;
+    const core = this.model?.internalModel?.coreModel;
+    for (const { parameter, value } of this.gagParameterResets) {
+      core?.setParameterValueById?.(parameter, value);
+    }
+  };
+
   private readonly handleModelUpdate = (): void => {
     if (this.disposed || this.paused || !this.model) return;
     const coreModel = this.model.internalModel?.coreModel;
@@ -433,8 +440,8 @@ export class WindowLive2DDriver {
           setParameter.call(coreModel, parameter, value);
         }
       };
-      // 顺序即优先级：整活参数归位 → 逐帧参数层（呼吸/眨眼/情绪/口型）→ 道具层。
-      write(this.gagParameterResetValues());
+      // Baseline reset already ran before motion/expression/physics, like iOS.
+      // Resetting here would erase a meal, hairstyle, or the author's smile.
       write(parameterValuesForWindowLive2D({
         presentation: this.presentation,
         nowMs,
@@ -443,6 +450,7 @@ export class WindowLive2DDriver {
         toolAttentionAtMs: this.toolAttentionAtMs ?? undefined,
         lipSyncParameter: this.descriptor.lipSyncParameter,
         expressionOwnedParameters: this.activeExpressionOwnedParameters(),
+        motionOwnedParameters: this.playingGagParameters,
       }));
       write(this.propParameterValues());
     } catch (error) {
@@ -693,8 +701,8 @@ export class WindowLive2DDriver {
     model.anchor.set(0.5, 0.5);
     model.alpha = 1;
     this.app?.stage.addChild(model);
-    // 参数写入挂进模型自己的更新周期（见 handleModelUpdate 的说明），
-    // 私有 ticker 只推进模型时间；参数仍在 motion 更新之后写入。
+    // 归位先于 motion；自然输入、口型和道具仲裁在 motion 之后落位。
+    model.internalModel?.on?.("beforeMotionUpdate", this.handleMotionUpdate);
     model.internalModel?.on?.("beforeModelUpdate", this.handleModelUpdate);
     this.measureContentBox();
     this.fitModel();
@@ -702,6 +710,7 @@ export class WindowLive2DDriver {
   }
 
   private detachModel(model: Live2DModel): void {
+    model.internalModel?.off?.("beforeMotionUpdate", this.handleMotionUpdate);
     model.internalModel?.off?.("beforeModelUpdate", this.handleModelUpdate);
     this.app?.stage.removeChild?.(model);
   }
@@ -753,7 +762,11 @@ export class WindowLive2DDriver {
     if (this.performanceExpressionUntilMs !== null && nowMs >= this.performanceExpressionUntilMs) {
       this.performanceExpressionUntilMs = null;
       this.performanceExpressionName = null;
-      if (this.lastEmotionExpression === null || this.lastEmotionExpression === undefined) {
+      if (typeof this.lastEmotionExpression === "string") {
+        void Promise.resolve(this.model?.expression?.(this.lastEmotionExpression)).catch(
+          (error: unknown) => console.warn("[WindowLive2D] restoring emotion failed", error),
+        );
+      } else {
         try {
           this.model?.internalModel?.motionManager?.expressionManager?.resetExpression?.();
         } catch {
@@ -784,10 +797,15 @@ export class WindowLive2DDriver {
       this.nextPerformanceAtMs = nowMs + WINDOW_LIVE2D_PERFORMANCE_INTERVAL_MS;
       return;
     }
-    this.nextPerformanceAtMs = nowMs
-      + WINDOW_LIVE2D_PERFORMANCE_INTERVAL_MS
-      + Math.random() * WINDOW_LIVE2D_PERFORMANCE_INTERVAL_SPAN_MS;
     this.playPerformanceCue(cue, nowMs);
+    this.schedulePerformance(nowMs);
+  }
+
+  private schedulePerformance(nowMs: number): void {
+    const occupiedUntil = Math.max(nowMs, this.performanceMotionUntilMs ?? 0,
+      this.gagWindowUntilMs ?? 0, this.performanceExpressionUntilMs ?? 0, this.overlayProp?.untilMs ?? 0);
+    this.nextPerformanceAtMs = occupiedUntil + WINDOW_LIVE2D_PERFORMANCE_INTERVAL_MS
+      + Math.random() * WINDOW_LIVE2D_PERFORMANCE_INTERVAL_SPAN_MS;
   }
 
   private playPerformanceCue(
@@ -845,7 +863,7 @@ export class WindowLive2DDriver {
       costume: this.propWrites(this.costumeProp),
       overlay: this.propWrites(this.overlayProp),
       declared: this.declaredPropWrites,
-      reservedParameters: this.activeExpressionOwnedParameters(),
+      reservedParameters: new Set([...this.activeExpressionOwnedParameters() ?? [], ...this.playingGagParameters]),
     });
   }
 
@@ -868,7 +886,7 @@ export class WindowLive2DDriver {
   }
 
   /**
-   * 整活参数归位表：非待机动作动过、而待机动作不碰的参数 → 模型默认值。
+   * 基线归位表：非待机动作动过、而待机动作不碰的参数 → 模型默认值。
    *
    * 大肥鱼的动作各管各的道具参数（`pengshui`、`phone*`、`chuipaopao*`），idle 一条
    * 都不覆盖它们，所以 Cubism 里那份"最后一帧的值"会一直挂着——自拍演完手机还举着。
@@ -884,7 +902,6 @@ export class WindowLive2DDriver {
     for (const spec of Object.values(this.catalog.motionSpecs)) {
       for (const parameter of spec.parameters) {
         if (seen.has(parameter) || this.catalog.idleMotionParameters.has(parameter)) continue;
-        if (isFaceLayerLive2DParameter(parameter)) continue;
         seen.add(parameter);
         const value = getDefaultValue.call(coreModel, getIndex.call(coreModel, parameter));
         if (!Number.isFinite(value)) continue;
@@ -892,11 +909,6 @@ export class WindowLive2DDriver {
       }
     }
     return resets;
-  }
-
-  private gagParameterResetValues(): ReadonlyArray<WindowLive2DParameterValue> {
-    if (this.playingGagParameters.size === 0) return this.gagParameterResets;
-    return this.gagParameterResets.filter(({ parameter }) => !this.playingGagParameters.has(parameter));
   }
 
   /**
@@ -968,6 +980,8 @@ export class WindowLive2DDriver {
     if (name === this.lastEmotionExpression) return;
     this.lastEmotionExpression = name;
     if (!this.model) return;
+    // A tap holds the face briefly; remember new delivery cues for its release.
+    if (this.performanceExpressionName !== null) return;
 
     if (name) {
       void Promise.resolve(this.model.expression?.(name)).catch(
@@ -1032,10 +1046,26 @@ export class WindowLive2DDriver {
     const cue = this.performanceRotation.next();
     if (cue) {
       const nowMs = typeof performance === "undefined" ? Date.now() : performance.now();
-      this.nextPerformanceAtMs = nowMs
-        + WINDOW_LIVE2D_PERFORMANCE_INTERVAL_MS
-        + Math.random() * WINDOW_LIVE2D_PERFORMANCE_INTERVAL_SPAN_MS;
+      const hadPerformanceExpression = this.performanceExpressionName !== null;
+      this.model.internalModel?.motionManager?.stopAllMotions?.();
+      this.performanceMotionUntilMs = null;
+      this.playingGagParameters = new Set();
+      this.gagWindowUntilMs = null;
+      this.performanceExpressionName = null;
+      this.performanceExpressionUntilMs = null;
+      this.overlayProp = null;
+      if (hadPerformanceExpression) {
+        this.model.internalModel?.motionManager?.expressionManager?.resetExpression?.();
+        if (cue.kind !== "expression" && typeof this.lastEmotionExpression === "string") {
+          void Promise.resolve(this.model.expression?.(this.lastEmotionExpression)).catch(
+            (error: unknown) => console.warn("[WindowLive2D] restoring emotion failed", error),
+          );
+        }
+      }
+      this.lastMotionKey = "";
+      if (cue.kind !== "motion") this.applyPresentation(this.presentation);
       this.playPerformanceCue(cue, nowMs);
+      this.schedulePerformance(nowMs);
       return;
     }
     // 清单读不出来的形态回落到 invite 动作；再没有就静默跳过（点击仍由父组件处理）。
@@ -1054,7 +1084,7 @@ export class WindowLive2DDriver {
         // If an emotion motion was already running, its completion owns the
         // restore. Applying the presentation here would otherwise interrupt
         // that motion with a late invite callback.
-        if (!this.disposed && !this.emotionMotionPlaying) {
+        if (!this.disposed && !this.emotionMotionPlaying && this.performanceMotionUntilMs === null) {
           this.applyPresentation(this.presentation);
         }
       });
@@ -1080,6 +1110,7 @@ export class WindowLive2DDriver {
     this.resizeObserver = null;
     window.removeEventListener("resize", this.resizeToContainer);
     window.visualViewport?.removeEventListener("resize", this.resizeToContainer);
+    this.model?.internalModel?.off?.("beforeMotionUpdate", this.handleMotionUpdate);
     this.model?.internalModel?.off?.("beforeModelUpdate", this.handleModelUpdate);
     this.app?.ticker?.remove(this.advanceModel);
     this.emotionController.reset();
@@ -1142,7 +1173,7 @@ export class WindowLive2DDriver {
         // An invite can start while the emotion motion is finishing. Let the
         // invite completion own the next presentation restore instead of
         // allowing this late promise callback to interrupt it.
-        if (!this.disposed && !this.invitePlaying) this.applyPresentation(this.presentation);
+        if (!this.disposed && !this.invitePlaying && this.performanceMotionUntilMs === null) this.applyPresentation(this.presentation);
       });
   }
 

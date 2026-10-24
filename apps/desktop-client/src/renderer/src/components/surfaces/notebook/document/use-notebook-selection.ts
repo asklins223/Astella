@@ -22,6 +22,9 @@ export function useNotebookSelection(input: {
     if (!active || !body || !selection || !selection.rangeCount || selection.isCollapsed) { setSelectedPassage(null); return; }
     const range = selection.getRangeAt(0);
     if (!body.contains(range.startContainer) || !body.contains(range.endContainer)) { setSelectedPassage(null); return; }
+    if (Array.from(body.querySelectorAll(".note-ai-locked")).some(element => range.intersectsNode(element))) {
+      selection.removeAllRanges(); setSelectedPassage(null); return;
+    }
     const roots = Array.from(body.querySelectorAll<HTMLElement>("[data-block-ordinal]"))
       .map(block => ({ block, content: block.querySelector<HTMLElement>("[data-note-block-content]") ?? block }))
       .filter(({ content }) => range.intersectsNode(content) && content.textContent?.length);

@@ -205,7 +205,9 @@ function resolveRelative(modelUrl: string, relative: string): string {
 
 async function fetchJson<T>(url: string): Promise<T | null> {
   try {
-    const response = await fetch(url, { cache: "force-cache", credentials: "same-origin" });
+    // Model paths survive app updates; revalidate instead of retaining an old
+    // catalogue beside the newly loaded SDK model and motion files.
+    const response = await fetch(url, { cache: "no-cache", credentials: "same-origin" });
     if (!response.ok) return null;
     return await response.json() as T;
   } catch {

@@ -3,7 +3,7 @@ import test from "node:test";
 import { companionClassifierCapabilities } from "../turn/companion-classifier-surface.ts";
 import { buildCompanionTurnInterpretationMessages, explicitlyRequestsUtterances } from "../tools/companion-tool-intent.ts";
 import { resolveAllCompanionAgentTools, canUseCompanionAgentTool } from "@astella/shared";
-import { createCompanionToolSurface } from "../tools/companion-tool-surface.ts";
+import { createCompanionToolSurface, companionAttachmentReadRequired } from "../tools/companion-tool-surface.ts";
 
 /**
  * The interpreter answers "does this need a tool" and "what kind of work is
@@ -100,4 +100,25 @@ test("载荷实测：切到页组后分类器少付一半字符", () => {
   const full = size(available);
   const sliced = size(companionClassifierCapabilities({ availableToolNames: available, pageKind: "today" }));
   assert.ok(sliced < full * 0.6, `分类器载荷应从 ${full} 降到 60% 以下，实测 ${sliced}`);
+});
+
+test("this turn's image attachment exposes vision on a conversation page without classifier guesses", () => {
+  const definitions = resolveAllCompanionAgentTools("full", { visionEnabled: true });
+  const input = { definitions, pageKind: "conversation", candidateOperations: [], userText: "说说这三张图", hasImageAttachments: true };
+  assert.ok(createCompanionToolSurface(input).offered().some(tool => tool.name === "companion_read_image"));
+  assert.ok(companionClassifierCapabilities({ availableToolNames: definitions.map(d => d.name), pageKind: "conversation", hasImageAttachments: true }).includes("companion_read_image"));
+  const denied = resolveAllCompanionAgentTools("full", { visionEnabled: false });
+  assert.ok(!createCompanionToolSurface({ ...input, definitions: denied }).offered().some(tool => tool.name === "companion_read_image"));
+});
+
+
+test("actual attached images need a read receipt even when interpretation is uncertain; explicit opt-out stays honored", () => {
+  const input = { hasImageAttachments: true, visionEnabled: true, userText: "请按顺序描述这三张图。" };
+  assert.equal(companionAttachmentReadRequired(input), true);
+  assert.equal(companionAttachmentReadRequired({ ...input, hasImageAttachments: false }), false);
+  assert.equal(companionAttachmentReadRequired({ ...input, visionEnabled: false }), false);
+  for (const userText of ["不用看图，先聊聊", "不要帮我分析照片", "don't inspect these images"]) {
+    assert.equal(companionAttachmentReadRequired({ ...input, userText }), false);
+  }
+  assert.equal(companionAttachmentReadRequired({ ...input, userText: "不要猜，看图再回答" }), true);
 });

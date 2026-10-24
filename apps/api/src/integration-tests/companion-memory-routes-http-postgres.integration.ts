@@ -10,7 +10,7 @@ import { test, after, before } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
-import Fastify, { type FastifyInstance, type InjectOptions } from "fastify";
+import Fastify, { type FastifyInstance, type InjectOptions, type LightMyRequestResponse } from "fastify";
 import sensible from "@fastify/sensible";
 // 账号级范围守卫的**同一句**拒绝文案（API 两处路由、伴星工具与提案链共用它）。
 import {
@@ -736,4 +736,68 @@ test('账号级范围守卫：一般 global 偏好能存，本地内容/条件�
     const removed = await app.inject(req(tokenA, 'DELETE', `/companion/memory/${id}`));
     assert.equal(removed.statusCode, 204, removed.body);
   }
+});
+
+test('原生记忆筛选先于分页：旧固定项、争议与忽略候选可达，整组分页无 200 条截断', async () => {
+  const marker = `native-page-${randomUUID()}`;
+  await sql`INSERT INTO assistant_memory_items (workspace_id,user_id,kind,content,scope,candidate,pinned,budget_tier,epistemic_status,updated_at)
+    SELECT ${workspaceId},${userA},'preference',${marker} || '-noise-' || n,'workspace',false,false,'active','supported',now()
+    FROM generate_series(1,205) n`;
+  await sql`INSERT INTO assistant_memory_items (workspace_id,user_id,kind,content,scope,candidate,pinned,budget_tier,epistemic_status,updated_at)
+    SELECT ${workspaceId},${userA},'goal',${marker} || '-goal-' || n,'workspace',false,false,'active','supported','2020-01-01'::timestamptz
+    FROM generate_series(1,71) n`;
+  const special = await sql`INSERT INTO assistant_memory_items (workspace_id,user_id,kind,content,scope,candidate,pinned,budget_tier,epistemic_status,dismissed_at,updated_at)
+    VALUES
+      (${workspaceId},${userA},'goal',${marker + '-pin'},'workspace',false,true,'active','supported',null,'2019-01-01'),
+      (${workspaceId},${userA},'goal',${marker + '-resident'},'workspace',false,false,'resident','supported',null,'2019-01-01'),
+      (${workspaceId},${userA},'goal',${marker + '-dispute'},'workspace',false,false,'active','disputed',null,'2019-01-01'),
+      (${workspaceId},${userA},'goal',${marker + '-ignored'},'workspace',true,false,'active','tentative',now(),'2019-01-01'),
+      (${workspaceId},${userA},'goal',${marker + '-candidate'},'workspace',true,false,'active','tentative',null,'2019-01-01'),
+      (${workspaceId},${userB},'goal',${marker + '-private'},'workspace',false,true,'active','supported',null,'2019-01-01')
+    RETURNING id, content`;
+  const query = (state: string, offset = 0) => '/companion/memory?' + new URLSearchParams({
+    state, kinds: 'goal', q: marker, includeCandidates: 'true', includeArchived: 'true', limit: '30', offset: String(offset),
+  });
+  const rows: Array<{ memoryItemId: string; content: string }> = [];
+  let offset: number | null = 0;
+  do {
+    const page: LightMyRequestResponse = await app.inject(req(tokenA, 'GET', query('active', offset)));
+    assert.equal(page.statusCode, 200, page.body);
+    rows.push(...page.json().items);
+    offset = page.json().nextOffset;
+  } while (offset !== null);
+  assert.equal(rows.length, 73);
+  assert.equal(new Set(rows.map(item => item.memoryItemId)).size, 73);
+  for (const [state, tail] of [['pinned', '-pin'], ['disputed', '-dispute'], ['ignored', '-ignored'], ['candidate', '-candidate']] as const) {
+    const response = await app.inject(req(tokenA, 'GET', query(state)));
+    assert.equal(response.statusCode, 200, response.body);
+    assert.deepEqual(response.json().items.map((item: { content: string }) => item.content), [marker + tail]);
+  }
+  const ignoredID = special.find(row => row.content === marker + '-ignored')!.id;
+  assert.equal(rows.some(row => row.memoryItemId === ignoredID), false);
+  const malformed = await app.inject(req(tokenA, 'GET', '/companion/memory?state=unknown&limit=30'));
+  assert.equal(malformed.statusCode, 400);
+});
+
+test('回收区可继续翻页，非法分页回 400，字面百分号搜索不会匹配全部记忆', async () => {
+  const marker = `native-recycle-${randomUUID()}`;
+  await sql`INSERT INTO assistant_memory_items (workspace_id,user_id,kind,content,scope,deleted_at,purge_after)
+    SELECT ${workspaceId},${userA},'preference',${marker} || n,'workspace',now(),now()+interval '30 days'
+    FROM generate_series(1,63) n`;
+  const seen = new Set<string>();
+  let offset: number | null = 0;
+  do {
+    const response: LightMyRequestResponse = await app.inject(req(tokenA, 'GET', `/companion/memory/recycle?limit=30&offset=${offset}`));
+    assert.equal(response.statusCode, 200, response.body);
+    for (const item of response.json().items as Array<{id: string; content: string}>) {
+      assert.equal(seen.has(item.id), false);
+      if (item.content.startsWith(marker)) seen.add(item.id);
+    }
+    offset = response.json().nextOffset;
+  } while (offset !== null);
+  assert.equal(seen.size, 63);
+  assert.equal((await app.inject(req(tokenA, 'GET', '/companion/memory/recycle?offset=-1'))).statusCode, 400);
+  const literal = await app.inject(req(tokenA, 'GET', '/companion/memory?q=%25&includeCandidates=true&includeArchived=true'));
+  assert.equal(literal.statusCode, 200, literal.body);
+  assert.equal(literal.json().items.every((item: {content: string}) => item.content.includes('%')), true);
 });

@@ -4,6 +4,10 @@ Use English for all subsequent project communication and documentation updates u
 
 Understand the experience the user wants to achieve in the current task, and follow the actual call chain through to completion. The user's latest decisions take precedence over older documents and general skills; when conflicts arise, update the relevant guidance and explain the tradeoffs. Existing pages are a starting point for understanding the product and may be restructured.
 
+## Repository Split
+
+The mobile client (iOS SwiftUI / Android Compose) was split out of this repository on 2026-10-24 into the private repository [asklins223/astella-mobile](https://github.com/asklins223/astella-mobile). This repository no longer contains `apps/mobile-client`; mobile product/design/testing work now lives there. `project-archive/` and `reference-projects/` are intentionally untracked and ignored in this repository.
+
 ## Current Documentation Entry Points
 
 Choose the documents relevant to the task; there is no need to load every document.

@@ -112,3 +112,21 @@ test("来源撤权会遮蔽带版本与段落身份的新摘录", async () => {
   assert.equal(book.statusCode, 200, book.body);
   assert.equal(book.json().entries.some((entry: { source: string }) => entry.source === "diary"), false);
 });
+
+test('相邻日记跨过稀疏月份并包含真实失败日，排除已删除与其他成员，非法日期可恢复', async () => {
+  await admin`INSERT INTO companion_daily_summaries (workspace_id,user_id,date,timezone,status,facts,summary,deleted_at)
+    VALUES
+      (${workspaceId},${userA},'2020-01-02','Asia/Shanghai','generated','{}','早期日记',null),
+      (${workspaceId},${userA},'2021-05-06','Asia/Shanghai','failed','{}','',null),
+      (${workspaceId},${userA},'2021-04-01','Asia/Shanghai','generated','{}','已删除',now()),
+      (${workspaceId},${userB},'2021-04-02','Asia/Shanghai','generated','{}','别人的日记',null)`;
+  const response = await app.inject({ method: 'GET', url: '/companion/daily/neighbours?date=2021-04-15', headers: headers() });
+  assert.equal(response.statusCode, 200, response.body);
+  assert.equal(response.json().previousDate, '2020-01-02');
+  assert.equal(response.json().nextDate, '2021-05-06');
+  assert.equal(response.headers['cache-control'], 'no-store');
+  const invalid = await app.inject({ method: 'GET', url: '/companion/daily/neighbours?date=invalid', headers: headers() });
+  assert.equal(invalid.statusCode, 400, invalid.body);
+  const anonymous = await app.inject({ method: 'GET', url: '/companion/daily/neighbours?date=2021-04-15' });
+  assert.equal(anonymous.statusCode, 401);
+});

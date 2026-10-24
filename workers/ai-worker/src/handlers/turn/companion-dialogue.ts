@@ -62,7 +62,7 @@ import {
 } from "../../lib/tts-segments.ts";
 import { resolveCompanionVoiceInstruction } from "./companion-voice-request-style.ts";
 import { resolveCompanionEntryMode } from "./companion-entry-mode.ts";
-import { persistCompanionDialectPreference, readCompanionDialectPreference } from "./companion-voice-preference.ts";
+import { persistCompanionDialectPreference, readCompanionDialectPreference, readCompanionPreferredAddress } from "./companion-voice-preference.ts";
 import { qwenDialectForInstruction } from "@astella/shared/tts-voice-catalog";
 import { companionVoiceExpressionBoundaries, companionVoiceSegmentExpression, projectCompanionVoiceExpression } from "./companion-voice-expression.ts";
 import {
@@ -80,6 +80,7 @@ import {
   finalizeCompanionReplyText,
   renderCompanionContextHandoff,
   renderUserAttachedImagesLine,
+  companionUserImageAttachments,
 } from "./companion-dialogue-content.ts";
 import {
   type CompanionDialogueHandlerContext,
@@ -172,18 +173,8 @@ export async function runCompanionDialogue(
         const userText = userRows[0] ? textOfCompanionBlocks(userRows[0].blocks) : "";
         // 这一轮用户附的图（2026-10-06 输入框传图）：assetId 由 API 在创建 turn 时
         // 按上传回执解析并写回块里；这里的读取与 companion_read_image 共用同一个 id。
-        // 至多两张：消息契约允许一张，多出来的（历史遗留）不阻断对话。
-        const userImageAttachments = (Array.isArray(userRows[0]?.blocks)
-          ? (userRows[0]!.blocks as Array<Record<string, unknown>>)
-          : [])
-          .filter((block) => block.type === "image" && typeof block.assetId === "string")
-          .slice(0, 2)
-          .map((block) => ({
-            assetId: String(block.assetId),
-            label: typeof block.label === "string" && block.label.trim().length > 0
-              ? block.label.trim().slice(0, 80)
-              : "用户发来的图片",
-          }));
+        // 与提交合同同一上限，保留本次发送顺序，不截掉第三张之后的图片。
+        const userImageAttachments = companionUserImageAttachments(userRows[0]?.blocks);
         const currentUserSeq = userRows[0]?.seq ?? conv.next_message_seq;
         // 排除非对话与未完成的助手输出，保留用户连发的补充以及发送时间、回合状态；摘要水位
         // 必须从这份相同的可见尾部计算，不能让 system 注记占掉最近消息名额。
@@ -429,6 +420,7 @@ export async function runCompanionDialogue(
           memoryRefs: [],
           actionLedgerOmitted: actionLedgerRead.omitted,
           hereAndNow,
+          userImageAttachments,
           thisTurnFacts: thisTurnFacts?.block ?? null,
           factSpans: snapshot.factSpans,
           conversationSummary: null,
@@ -475,6 +467,14 @@ export async function runCompanionDialogue(
     const reason = "请在 AI 数据同意页开启「允许发送到外部模型服务」后继续。";
     await markCompanionRunFailed(read, ctx, "AI_DATA_POLICY_DENIED", false, reason, "state");
     throw new AIDataPolicyDeniedError(reason);
+  }
+  if (read.userImageAttachments?.length) {
+    const imageAvailability = !govCtx.policy.sendImageContent
+      ? "账号尚未开启图片识别。需要识图时说明可在 AI 设置中开启；不要把未授权说成模型不支持图片。"
+      : resolveVisionReader(govCtx)
+        ? "本轮已提供可读取的真实图片，companion_read_image 可用。需要描述画面时先读取对应 assetId；不能因为尚未读取就声称只有文件名或没有看图工具。"
+        : "当前服务尚未配置可用的识图模型，需要明确说明服务配置暂不可用。";
+    read.hereAndNow = [read.hereAndNow, imageAvailability].filter(Boolean).join("\n");
   }
   const contextReceipts = createCompanionContextReceipts();
   // 折叠轨迹收集器：loop 里折了就记，回合结束时并进交接快照的下一版（44 §3.3）。
@@ -616,6 +616,7 @@ export async function runCompanionDialogue(
   const accountVoiceDialect = await readCompanionDialectPreference({
     workspaceId: ctx.workspaceId, userId: read.userId,
   });
+  const accountPreferredAddress = await readCompanionPreferredAddress({ workspaceId: ctx.workspaceId, userId: read.userId });
   let messages: ReturnType<typeof buildCompanionPersonaMessages>;
   try {
     messages = buildCompanionPersonaMessages({
@@ -648,6 +649,7 @@ export async function runCompanionDialogue(
       continuationData: renderCompanionContextHandoff(handoffDraft),
       petProfile: read.petProfile,
       accountVoiceDialect,
+      accountPreferredAddress,
     });
   } catch (error) {
     if (error instanceof AgentContextError) {

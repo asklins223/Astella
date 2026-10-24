@@ -80,9 +80,9 @@ const generatedResponseSchema = z.strictObject({ drafts: z.array(generatedDraftS
 type SourceBlock = NoteExpansionSourceBlock;
 
 /** 把校验问题写成"字段:类型"的小清单：重试提示要靠它指出该改哪一处。 */
-function issueFields(error: { readonly issues: readonly { path: (string | number)[], code: string }[] }): string {
+function issueFields(error: { readonly issues: readonly { path: (string | number)[], code: string; message?: string }[] }): string {
   return error.issues.slice(0, 4)
-    .map((issue) => `${issue.path.join(".") || "root"}:${issue.code}`).join(", ");
+    .map((issue) => `${issue.path.join(".") || "root"}:${issue.code}${issue.message ? ` (${issue.message.slice(0, 160)})` : ""}`).join(", ");
 }
 
 const EXPANSION_REPAIR_FALLBACK = "请重新检查候选结构、关系说明与逐字原文来处。";
@@ -408,7 +408,7 @@ export async function runNoteExpansionGenerate(job: JobPayload): Promise<void> {
     inputSnapshotRef: { kind: "note_version", id: source.noteVersionId, hash: inputSnapshotHash },
     input: messages,
     modelId: provider.modelId,
-    promptVersion: `${provider.promptVersion}:note-expansion-draft-v2`,
+    promptVersion: `${provider.promptVersion}:note-expansion-draft-v3`,
     resourceClass: "interactive_ai",
     timeoutMs: resolveProviderCallTimeout("note_expansion_generate"),
     isOutputShapeError: (error) => error instanceof NoteExpansionOutputError,
