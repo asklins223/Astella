@@ -1,6 +1,7 @@
-import { timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { parseBody } from "../../lib/validate.ts";
+import { uploadObject } from "../../lib/object-storage.ts";
 import { assetManifestResponse, assertAllowedUrl, validateClientAssets } from "./manifest.ts";
 import {
   activateReleaseSchema,
@@ -8,6 +9,7 @@ import {
   assetManifestQuerySchema,
   clientAssetsRegistrationSchema,
   serverReleaseRegistrationSchema,
+  clientAssetUploadSchema,
   versionQuerySchema,
 } from "./schema.ts";
 import {
@@ -161,6 +163,21 @@ export async function appReleaseRoutes(app: FastifyInstance): Promise<void> {
         throw error;
       }
       return reply.code(201).send({ release });
+    });
+
+    internal.post("/internal/client-assets/upload", { bodyLimit: 32 * 1024 * 1024 }, async (request, reply) => {
+      const body = parseBody(app, clientAssetUploadSchema, request.body);
+      let uploaded = 0;
+      for (const file of body.files) {
+        const data = Buffer.from(file.base64, "base64");
+        const sha = createHash("sha256").update(data).digest("hex");
+        if (file.key.startsWith("app-assets/blobs/") && file.key.slice("app-assets/blobs/".length) !== sha) {
+          return fail(reply, 400, "blob_hash_mismatch", "blob 内容与 key 不一致");
+        }
+        await uploadObject(file.key, data, "application/octet-stream");
+        uploaded += 1;
+      }
+      return reply.send({ uploaded });
     });
 
     internal.post("/internal/client-assets", async (request, reply) => {

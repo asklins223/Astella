@@ -77,6 +77,14 @@ export const serverReleaseRegistrationSchema = z.object({
 }).strict();
 export type ServerReleaseRegistration = z.infer<typeof serverReleaseRegistrationSchema>;
 
+
+export const clientAssetUploadSchema = z.object({
+  files: z.array(z.object({
+    key: z.string().regex(/^(?:app-assets\/blobs\/[a-f0-9]{64}|app-releases\/(?:ios|android)\/[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+)$/),
+    base64: z.string().min(1).max(8 * 1024 * 1024),
+  })).min(1).max(500),
+}).strict();
+
 export const versionQuerySchema = z.object({
   platform: z.enum(RELEASE_PLATFORMS).default("ios"),
   channel: channelSchema.default("stable"),
