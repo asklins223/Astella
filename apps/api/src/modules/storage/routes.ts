@@ -1,6 +1,6 @@
 import { activeStorageLocation, backupEnabled, getBackupQueue, type StorageLocation } from "../../lib/storage/replicas.ts";
 import { startStorageMaintenance } from "./chat-maintenance.ts";
-import { randomUUID, createHash } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { notes } from "@astella/shared/db-schema/note";
@@ -11,7 +11,9 @@ import { SOURCE_IMAGE_MAX_BYTES } from "@astella/shared/source-image-contracts";
 import { db, withWorkspaceTransaction, scopeOfSession, type WorkspaceTransactionContext } from "../../db/client.ts";
 import { requireSession, isWorkspaceOwner } from "../identity/middleware.ts";
 import { parseBody } from "../../lib/validate.ts";
-import { storageTransferOrigins, usesRemoteStorage, signObjectUpload, getObject, headObject, deleteObject, persistObject } from "../../lib/object-storage.ts";
+import { storageTransferOrigins, usesRemoteStorage, signObjectUpload, getObject, getObjectPrefix, headObject, deleteObject, persistObject, type StagedUpload } from "../../lib/object-storage.ts";
+import { mayInspectObjectPrefix, verifiedTransferContent } from "./transfer-integrity.ts";
+export { verifyTransferredBytes } from "./transfer-integrity.ts";
 import { uploadNoteImage, uploadCompanionImage, uploadAvatar, uploadImportedImage, uploadCompanionFile } from "../upload/upload-service.ts";
 import { createSource } from "../source/service.ts";
 import { sourceCreateSchema } from "../source/schema.ts";
@@ -55,13 +57,10 @@ export function validateTransferPurpose(request: ObjectTransferRequest): void {
     throw Object.assign(new Error("unsupported import type"), { statusCode: 415 });
 }
 
-export function verifyTransferredBytes(bytes: Buffer, request: Pick<ObjectTransferRequest, "byteLength" | "sha256">): boolean {
-  return bytes.length === request.byteLength && createHash("sha256").update(bytes).digest("hex") === request.sha256;
-}
-
 async function commitTransfer(scope: WorkspaceTransactionContext, request: ObjectTransferRequest,
-  staging: { key: string; etag: string; location?: StorageLocation }, bytes: Buffer): Promise<{ status: number; body: unknown }> {
-  const file = { mimetype: request.mimeType, toBuffer: async () => bytes };
+  staging: StagedUpload, bytes: Buffer): Promise<{ status: number; body: unknown }> {
+  const file = { mimetype: request.mimeType, toBuffer: async () => bytes,
+    ...(staging.verifiedSha256 && staging.verifiedLength !== undefined ? { verified: { sha256: staging.verifiedSha256, byteLength: staging.verifiedLength } } : {}) };
   if (request.purpose === "note_image" || request.purpose === "companion_image" || request.purpose === "avatar" || request.purpose === "markdown_import_image") {
     const result = request.purpose === "note_image" ? await uploadNoteImage(scope, { noteId: request.noteId!, file, staging })
       : request.purpose === "markdown_import_image" ? await uploadImportedImage(scope, { file, staging })
@@ -147,9 +146,12 @@ export async function objectTransferRoutes(app: FastifyInstance): Promise<void> 
       await tx.execute(sql`INSERT INTO object_transfers(id,workspace_id,user_id,purpose,staging_key,request_json,expires_at,storage_location)
         VALUES(${id}::uuid,${scope.workspaceId}::uuid,${scope.userId}::uuid,${request.purpose},${key},${JSON.stringify(request)}::jsonb,${expiresAt.toISOString()}::timestamptz,${location})`);
     });
-    const url = await signObjectUpload(key, request.mimeType, request.byteLength, location);
+    const checksum = process.env.STORAGE_VERIFIED_UPLOADS === 'true' && mayInspectObjectPrefix(request)
+      ? Buffer.from(request.sha256, 'hex').toString('base64') : undefined;
+    const url = await signObjectUpload(key, request.mimeType, request.byteLength, location, checksum ? request.sha256 : undefined);
     return reply.header("Cache-Control", "no-store").send(objectTransferUploadSchema.parse({ version: 1, transferId: id,
-      url, method: "PUT", headers: { "Content-Type": request.mimeType, "Content-Length": String(request.byteLength) }, expiresAt: expiresAt.toISOString() }));
+      url, method: "PUT", headers: { "Content-Type": request.mimeType, "Content-Length": String(request.byteLength),
+        ...(checksum ? { 'x-amz-checksum-sha256': checksum } : {}) }, expiresAt: expiresAt.toISOString() }));
   });
   app.post<{ Params: { id: string } }>("/storage/transfers/:id/complete", async (req, reply) => {
     if (!usesRemoteStorage()) return reply.code(409).send({ error: "direct_storage_disabled" });
@@ -173,11 +175,16 @@ export async function objectTransferRoutes(app: FastifyInstance): Promise<void> 
     try {
       const request = objectTransferRequestSchema.parse(row.request_json);
       validateTransferPurpose(request);
-      const head = await headObject(row.staging_key, row.storage_location ?? "primary");
+      const location = row.storage_location ?? 'primary';
+      const maySample = process.env.STORAGE_VERIFIED_UPLOADS === 'true' && mayInspectObjectPrefix(request);
+      const head = await headObject(row.staging_key, location, maySample);
       if (!head || head.contentLength !== request.byteLength) throw Object.assign(new Error("uploaded file size mismatch"), { statusCode: 400 });
-      const object = await getObject(row.staging_key, row.storage_location ?? "primary");
-      if (!verifyTransferredBytes(object.body, request)) throw Object.assign(new Error("uploaded file hash mismatch"), { statusCode: 400 });
-      const result = await commitTransfer(scope, request, { key: row.staging_key, etag: object.etag, location: row.storage_location ?? "primary" }, object.body);
+      const { bytes, etag, verified } = await verifiedTransferContent(request, head, maySample, {
+        prefix: (etag, length) => getObjectPrefix(row.staging_key, location, etag, length),
+        full: () => getObject(row.staging_key, location),
+      });
+      const result = await commitTransfer(scope, request, { key: row.staging_key, etag, location,
+        ...(verified ? { verifiedSha256: request.sha256, verifiedLength: request.byteLength } : {}) }, bytes);
       await withWorkspaceTransaction(scope, tx => tx.execute(sql`UPDATE object_transfers SET status=${result.status < 300 ? "completed" : "failed"},
         result_status=${result.status},result_json=${JSON.stringify(result.body)}::jsonb,updated_at=now() WHERE id=${row.id}::uuid`));
       await deleteObject(row.staging_key, row.storage_location ?? "primary").catch(() => undefined);

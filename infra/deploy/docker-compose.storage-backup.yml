@@ -2,6 +2,7 @@ services:
   api:
     environment:
       STORAGE_BACKUP_ENABLED: 'true'
+      STORAGE_VERIFIED_UPLOADS: ${STORAGE_VERIFIED_UPLOADS:-true}
       STORAGE_BACKUP_ENDPOINT: http://backup-minio:9000
       STORAGE_BACKUP_PUBLIC_ENDPOINT: ${STORAGE_BACKUP_PUBLIC_ENDPOINT:-https://103.106.191.159:9443}
       STORAGE_BACKUP_ACCESS_KEY_ID: ${STORAGE_BACKUP_ACCESS_KEY_ID:?Initialize backup credentials on the host}

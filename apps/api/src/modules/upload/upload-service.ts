@@ -40,6 +40,7 @@ import {
   getObject,
   headObject,
   deleteObject,
+  type StagedUpload,
 } from "../../lib/object-storage.ts";
 import {
   validateImageMagicBytes,
@@ -84,7 +85,11 @@ function isObjectMissingError(err: unknown): boolean {
 export interface UploadFileHandle {
   mimetype: string;
   toBuffer(): Promise<Buffer>;
+  /** Set only by direct-transfer completion after the object store verified SHA-256. */
+  verified?: { sha256: string; byteLength: number };
 }
+const uploadLength = (file: UploadFileHandle, bytes: Buffer) => file.verified?.byteLength ?? bytes.length;
+const uploadHash = (file: UploadFileHandle, bytes: Buffer) => file.verified?.sha256 ?? createHash("sha256").update(bytes).digest("hex");
 
 /** POST /uploads/images 成功响应体。 */
 export interface NoteImageUploadBody {
@@ -162,7 +167,7 @@ export type UploadDownloadResult =
  */
 export async function uploadNoteImage(
   scope: WorkspaceTransactionContext,
-  input: { noteId: string; file: UploadFileHandle; staging?: { key: string; etag: string } },
+  input: { noteId: string; file: UploadFileHandle; staging?: StagedUpload },
 ): Promise<NoteImageUploadResult> {
   const { noteId, file } = input;
 
@@ -217,7 +222,7 @@ export async function uploadNoteImage(
   }
 
   // Double-check file size
-  if (buffer.length > MAX_IMAGE_SIZE) {
+  if (uploadLength(file, buffer) > MAX_IMAGE_SIZE) {
     return { ok: false, reason: "too_large" };
   }
 
@@ -259,9 +264,9 @@ export async function uploadNoteImage(
           workspaceId: scope.workspaceId,
           uploadedForNoteId: liveNote.id,
           objectKey,
-          sha256: createHash("sha256").update(buffer).digest("hex"),
+          sha256: uploadHash(file, buffer),
           mimeType: file.mimetype,
-          byteSize: buffer.length,
+          byteSize: uploadLength(file, buffer),
           width: dimensions.width,
           height: dimensions.height,
           status: "ready",
@@ -286,7 +291,7 @@ export async function uploadNoteImage(
       assetId: asset.id,
       url,
       objectKey,
-      size: buffer.length,
+      size: uploadLength(file, buffer),
       mimeType: file.mimetype,
       sha256: asset.sha256,
       width: dimensions.width,
@@ -306,7 +311,7 @@ export async function uploadNoteImage(
  */
 async function storeDetachedImage(
   scope: WorkspaceTransactionContext,
-  input: { file: UploadFileHandle; staging?: { key: string; etag: string } },
+  input: { file: UploadFileHandle; staging?: StagedUpload },
   objectKeyFor: (ext: string) => string,
 ): Promise<DetachedImageUploadResult> {
   const { file } = input;
@@ -328,7 +333,7 @@ async function storeDetachedImage(
   if (!validateImageMagicBytes(buffer, file.mimetype)) {
     return { ok: false, reason: "content_type_mismatch" };
   }
-  if (buffer.length > MAX_IMAGE_SIZE) {
+  if (uploadLength(file, buffer) > MAX_IMAGE_SIZE) {
     return { ok: false, reason: "too_large" };
   }
   const dimensions = readImageDimensions(buffer, file.mimetype);
@@ -360,9 +365,9 @@ async function storeDetachedImage(
             workspaceId: scope.workspaceId,
             uploadedForNoteId: null,
             objectKey,
-            sha256: createHash("sha256").update(buffer).digest("hex"),
+            sha256: uploadHash(file, buffer),
             mimeType: file.mimetype,
-            byteSize: buffer.length,
+            byteSize: uploadLength(file, buffer),
             width: dimensions.width,
             height: dimensions.height,
             status: "ready",
@@ -387,7 +392,7 @@ async function storeDetachedImage(
       assetId: asset.id,
       url: `/api/uploads/${objectKey}`,
       objectKey,
-      size: buffer.length,
+      size: uploadLength(file, buffer),
       mimeType: file.mimetype,
       sha256: asset.sha256,
       width: dimensions.width,
@@ -399,7 +404,7 @@ async function storeDetachedImage(
 /** 伴星对话图片上传（2026-10-06 输入框传图）：POST /uploads/companion-images。 */
 export async function uploadCompanionImage(
   scope: WorkspaceTransactionContext,
-  input: { file: UploadFileHandle; staging?: { key: string; etag: string } },
+  input: { file: UploadFileHandle; staging?: StagedUpload },
 ): Promise<DetachedImageUploadResult> {
   return storeDetachedImage(scope, input, (ext) => `${scope.workspaceId}/companion/${randomUUID()}.${ext}`);
 }
@@ -449,7 +454,7 @@ function validateCompanionFileMagic(buffer: Buffer, mime: CompanionFileMimeType)
  */
 export async function uploadCompanionFile(
   scope: WorkspaceTransactionContext,
-  input: { file: UploadFileHandle; requestedName?: string; staging?: { key: string; etag: string } },
+  input: { file: UploadFileHandle; requestedName?: string; staging?: StagedUpload },
 ): Promise<CompanionFileUploadResult> {
   const { file } = input;
   const mime = file.mimetype as CompanionFileMimeType;
@@ -464,7 +469,7 @@ export async function uploadCompanionFile(
     if (fileTooLargeError(err)) return { ok: false, reason: "file_read_too_large" };
     throw err;
   }
-  if (buffer.length > COMPANION_FILE_MAX_BYTES) return { ok: false, reason: "too_large" };
+  if (uploadLength(file, buffer) > COMPANION_FILE_MAX_BYTES) return { ok: false, reason: "too_large" };
   if (!validateCompanionFileMagic(buffer, mime)) return { ok: false, reason: "content_type_mismatch" };
 
   const objectKey = `${scope.workspaceId}/companion-files/${scope.userId}/${randomUUID()}.${companionFileExtensionForMimeType(mime)}`;
@@ -487,8 +492,8 @@ export async function uploadCompanionFile(
       objectKey,
       name,
       mimeType: mime,
-      byteLength: buffer.length,
-      sha256: createHash("sha256").update(buffer).digest("hex"),
+      byteLength: uploadLength(file, buffer),
+      sha256: uploadHash(file, buffer),
     },
   };
 }
@@ -504,7 +509,7 @@ export async function uploadCompanionFile(
  */
 export async function uploadImportedImage(
   scope: WorkspaceTransactionContext,
-  input: { file: UploadFileHandle; staging?: { key: string; etag: string } },
+  input: { file: UploadFileHandle; staging?: StagedUpload },
 ): Promise<DetachedImageUploadResult> {
   return storeDetachedImage(
     scope,
@@ -519,7 +524,7 @@ export async function uploadImportedImage(
  */
 export async function uploadAvatar(
   scope: WorkspaceTransactionContext,
-  input: { file: UploadFileHandle; staging?: { key: string; etag: string } },
+  input: { file: UploadFileHandle; staging?: StagedUpload },
 ): Promise<AvatarUploadResult> {
   const file = input.file;
 
@@ -553,7 +558,7 @@ export async function uploadAvatar(
   }
 
   // Double-check file size
-  if (buffer.length > MAX_AVATAR_SIZE) {
+  if (uploadLength(file, buffer) > MAX_AVATAR_SIZE) {
     return { ok: false, reason: "too_large" };
   }
 
@@ -634,7 +639,7 @@ export async function uploadAvatar(
     body: {
       url,
       objectKey,
-      size: buffer.length,
+      size: uploadLength(file, buffer),
       mimeType: file.mimetype,
     },
   };

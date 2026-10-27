@@ -206,7 +206,8 @@ export async function getObject(objectKey: string, explicitLocation?: StorageLoc
 export async function headObject(
   objectKey: string,
   explicitLocation?: StorageLocation,
-): Promise<{ etag: string | undefined; contentType: string | undefined; contentLength: number | undefined } | null> {
+  withChecksum = false,
+): Promise<{ etag: string | undefined; contentType: string | undefined; contentLength: number | undefined; checksumSHA256?: string } | null> {
   // 2026-08-12（存储面审计）：与 getObject 同款路径遍历防御（纵深——所有
   // 调用方当前已在路由层校验，新增调用方不易踩坑）。
   if (objectKey.includes("..")) {
@@ -216,6 +217,7 @@ export async function headObject(
   const command = new HeadObjectCommand({
     Bucket: location === "primary" ? getBucket() : replicaBucket(location),
     Key: objectKey,
+    ...(withChecksum ? { ChecksumMode: "ENABLED" as const } : {}),
   });
   try {
     const result = await (location === "primary" ? getClient() : replicaClient(location)).send(command);
@@ -223,6 +225,7 @@ export async function headObject(
       etag: result.ETag,
       contentType: result.ContentType,
       contentLength: result.ContentLength,
+      checksumSHA256: result.ChecksumSHA256,
     };
   } catch (err) {
     // 2026-08-12（存储面审计）：只把“对象不存在”折叠为 null；
@@ -234,6 +237,25 @@ export async function headObject(
     }
     throw err;
   }
+}
+
+/** Read only validated image/PDF/DOCX headers after S3 has verified the whole-object checksum. */
+export async function getObjectPrefix(objectKey: string, location: StorageLocation, etag: string, length: number): Promise<Buffer> {
+  if (objectKey.includes('..') || length < 1 || length > 256 * 1024) throw new Error('invalid prefix request');
+  const response = await (location === 'primary' ? getClient() : replicaClient(location)).send(new GetObjectCommand({
+    Bucket: location === 'primary' ? getBucket() : replicaBucket(location), Key: objectKey,
+    Range: `bytes=0-${length - 1}`, IfMatch: etag,
+  }));
+  if (!response.Body || response.$metadata.httpStatusCode !== 206 || (response.ContentLength ?? Infinity) > length)
+    throw new Error('object store did not honor bounded range request');
+  const pieces: Buffer[] = []; let received = 0;
+  for await (const chunk of response.Body as AsyncIterable<Uint8Array>) {
+    received += chunk.byteLength;
+    if (received > length) throw new Error('object range exceeded requested size');
+    pieces.push(Buffer.from(chunk));
+  }
+  if (received !== length) throw new Error('object range truncated');
+  return Buffer.concat(pieces, received);
 }
 
 /**
@@ -279,10 +301,12 @@ function publicClient(location: StorageLocation = "primary"): S3Client {
     forcePathStyle: true, requestChecksumCalculation: "WHEN_REQUIRED", responseChecksumValidation: "WHEN_REQUIRED" });
 }
 
-export async function signObjectUpload(key: string, mimeType: string, byteLength: number, location: StorageLocation = "primary"): Promise<string> {
+export async function signObjectUpload(key: string, mimeType: string, byteLength: number, location: StorageLocation = "primary", sha256?: string): Promise<string> {
   const signer = publicClient(location);
   try { return await getSignedUrl(signer, new PutObjectCommand({ Bucket: replicaBucket(location), Key: key,
-    ContentType: mimeType, ContentLength: byteLength }), { expiresIn: 900, signableHeaders: new Set(["content-type", "content-length"]) }); }
+    ContentType: mimeType, ContentLength: byteLength, ...(sha256 ? { ChecksumSHA256: Buffer.from(sha256, 'hex').toString('base64') } : {}) }),
+    { expiresIn: 900, signableHeaders: new Set(["content-type", "content-length", ...(sha256 ? ["x-amz-checksum-sha256"] : [])]),
+      ...(sha256 ? { unhoistableHeaders: new Set(["x-amz-checksum-sha256"]) } : {}) }); }
   finally { signer.destroy(); }
 }
 
@@ -300,14 +324,15 @@ export async function signObjectDownload(key: string, contentType: string, byteL
 }
 
 /** Copy to an unsigned final key: replaying the staging PUT cannot alter a committed asset. */
-export async function persistObject(key: string, bytes: Buffer, mimeType: string, staging?: { key: string; etag: string; location?: StorageLocation }): Promise<void> {
+export type StagedUpload = { key: string; etag: string; location?: StorageLocation; verifiedSha256?: string; verifiedLength?: number };
+export async function persistObject(key: string, bytes: Buffer, mimeType: string, staging?: StagedUpload): Promise<void> {
   if (!staging) { await uploadObject(key, bytes, mimeType); return; }
   const location = staging.location ?? "primary";
   const bucket = location === "primary" ? getBucket() : replicaBucket(location);
   await (location === "primary" ? getClient() : replicaClient(location)).send(new CopyObjectCommand({ Bucket: bucket, Key: key,
     CopySource: `${bucket}/${staging.key.split("/").map(encodeURIComponent).join("/")}`,
     CopySourceIfMatch: staging.etag, ContentType: mimeType, MetadataDirective: "REPLACE",
-    Metadata: { "astella-sha256": createHash("sha256").update(bytes).digest("hex") } }));
+    Metadata: { "astella-sha256": staging.verifiedSha256 ?? createHash("sha256").update(bytes).digest("hex") } }));
   await enqueueReplica(key, location);
 }
 

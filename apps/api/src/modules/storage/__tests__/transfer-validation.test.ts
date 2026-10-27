@@ -51,3 +51,38 @@ test("companion originals use direct transfer with the existing 20 MiB limit", (
   assert.throws(() => validateTransferPurpose({ ...file, byteLength: 20 * 1024 * 1024 + 1 }), /too large/);
   assert.throws(() => validateTransferPurpose({ ...file, mimeType: "application/octet-stream" }), /unsupported file type/);
 });
+
+test('S3-verified image and PDF only read a bounded header; legacy and text validate full bytes', async () => {
+  const { verifiedTransferContent, HEADER_LIMIT } = await import('../transfer-integrity.ts');
+  const bytes = Buffer.alloc(HEADER_LIMIT + 8192, 3);
+  bytes.writeUInt32BE(0x89504e47, 0); bytes.writeUInt32BE(80,16); bytes.writeUInt32BE(60,20);
+  const request = { ...base, byteLength: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') };
+  const head = { contentLength: bytes.length, etag: 'v1', checksumSHA256: Buffer.from(request.sha256,'hex').toString('base64') };
+  let prefixReads=0, fullReads=0;
+  const reads = { prefix: async (etag: string, count: number) => { prefixReads++; assert.equal(etag,'v1'); return bytes.subarray(0,count); },
+    full: async () => { fullReads++; return { body: bytes, etag: 'v1' }; } };
+  const result = await verifiedTransferContent(request,head,true,reads);
+  assert.equal(result.verified,true); assert.equal(result.bytes.length,24); assert.equal(prefixReads,1); assert.equal(fullReads,0);
+  const pdf = await verifiedTransferContent({ ...request, purpose:'companion_file',mimeType:'application/pdf' },head,true,reads);
+  assert.equal(pdf.bytes.length,5);
+  assert.equal(prefixReads,2); assert.equal(fullReads,0);
+  const legacy = await verifiedTransferContent(request,{ contentLength:bytes.length,etag:'v1' },true,reads);
+  assert.equal(legacy.verified,false); assert.equal(fullReads,1);
+  await verifiedTransferContent({ ...request,purpose:'companion_file',mimeType:'text/plain' },head,true,reads);
+  assert.equal(fullReads,2);
+  await assert.rejects(verifiedTransferContent(request,{...head,checksumSHA256:Buffer.alloc(32).toString('base64')},true,reads),/hash mismatch/);
+  await assert.rejects(verifiedTransferContent(request,{...head,contentLength:1},true,reads),/size mismatch/);
+});
+
+test('JPEG with dimensions beyond the bounded header falls back to the complete verified body', async () => {
+  const { verifiedTransferContent } = await import('../transfer-integrity.ts');
+  const bytes=Buffer.alloc(300000,0); bytes[0]=0xff; bytes[1]=0xd8;
+  const sha256=createHash('sha256').update(bytes).digest('hex');
+  const request={...base,mimeType:'image/jpeg',byteLength:bytes.length,sha256};
+  let fullReads=0;
+  const reads={ prefix:async (_etag:string,count:number)=>bytes.subarray(0,count),full:async()=>{fullReads++;return {body:bytes,etag:'v1'};} };
+  const result=await verifiedTransferContent(request,{contentLength:bytes.length,etag:'v1',checksumSHA256:Buffer.from(sha256,'hex').toString('base64')},true,reads);
+  assert.equal(result.bytes.length,bytes.length); assert.equal(fullReads,1);
+  await assert.rejects(verifiedTransferContent(request,{contentLength:bytes.length,etag:'v1',checksumSHA256:Buffer.from(sha256,'hex').toString('base64')},true,
+    {...reads,full:async()=>({body:bytes,etag:'v2'})}),/changed/);
+});

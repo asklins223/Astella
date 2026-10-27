@@ -6,7 +6,7 @@ import postgres from "postgres";
 import Fastify from "fastify";
 import sensible from "@fastify/sensible";
 import multipart from "@fastify/multipart";
-import { S3Client, ListObjectsV2Command, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, ListObjectsV2Command, DeleteObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { objectTransferDownloadSchema } from "@astella/shared/object-transfer-contracts";
 import { resolveStorageConfig } from "@astella/shared/storage-config";
 
@@ -58,7 +58,7 @@ after(async () => {
 
 const fixture = fixtures[0]!;
 const headers = (other = false) => ({ authorization: `Bearer ${fixtures[other ? 1 : 0]!.token}`, "x-astella-object-transfer-accept": "1" });
-async function prepare(purpose: "source_text" | "note_image" | "avatar" | "companion_image" | "markdown_import",
+async function prepare(purpose: "source_text" | "note_image" | "avatar" | "companion_image" | "companion_file" | "markdown_import",
   bytes: Buffer, extra: Record<string, unknown> = {}) {
   const result = await app.inject({ method: "POST", url: "/storage/transfers", headers: headers(), payload: {
     purpose, fileName: purpose === "source_text" ? "test.md" : "test.png", mimeType: purpose === "source_text" ? "text/markdown" : "image/png",
@@ -129,16 +129,55 @@ test("private remote storage: direct source upload, worker parse, note images, r
   assert.equal(downloaded.headers["x-astella-object-transfer"], "1");
   assert.deepEqual(await download(downloaded.json()), png);
   const modified = Buffer.from(png); modified[modified.length - 1] ^= 1;
-  await put(imageGrant, modified);
+  if (imageGrant.headers['x-amz-checksum-sha256']) {
+    const replay = await fetch(imageGrant.url, { method: 'PUT', headers: imageGrant.headers, body: new Uint8Array(modified), redirect: 'manual' });
+    assert.notEqual(replay.status, 200, 'the signed SHA-256 must reject altered bytes'); await replay.body?.cancel();
+  } else await put(imageGrant, modified);
   const again = await app.inject({ method: "GET", url: `/uploads/${image.objectKey}`, headers: headers() });
   assert.deepEqual(await download(again.json()), png, "replaying a staging URL cannot change the committed image");
-  const tamperedGrant = await prepare("companion_image", png); await put(tamperedGrant, modified);
-  const tampered = await app.inject({ method: "POST", url: `/storage/transfers/${tamperedGrant.transferId}/complete`, headers: headers() });
-  assert.equal(tampered.statusCode, 400);
+  const tamperedGrant = await prepare("companion_image", png);
+  if (tamperedGrant.headers['x-amz-checksum-sha256']) {
+    const tampered = await fetch(tamperedGrant.url, { method: 'PUT', headers: tamperedGrant.headers, body: new Uint8Array(modified), redirect: 'manual' });
+    assert.notEqual(tampered.status, 200, 'the object store rejects altered bytes'); await tampered.body?.cancel();
+  } else {
+    await put(tamperedGrant, modified);
+    const tampered = await app.inject({ method: "POST", url: `/storage/transfers/${tamperedGrant.transferId}/complete`, headers: headers() });
+    assert.equal(tampered.statusCode, 400);
+  }
   for (const purpose of ["avatar", "companion_image"] as const) {
     const uploaded = await prepare(purpose, png); await put(uploaded, png);
     const receipt = await app.inject({ method: "POST", url: `/storage/transfers/${uploaded.transferId}/complete`, headers: headers() });
     assert.equal(receipt.statusCode, 201, receipt.statusCode >= 300 ? receipt.body : "");
+  }
+  if (process.env.STORAGE_VERIFIED_UPLOADS === 'true') {
+    const largePng = Buffer.concat([png, Buffer.alloc(300000, 0)]);
+    const grant = await prepare('companion_image', largePng);
+    assert.ok(grant.headers['x-amz-checksum-sha256']);
+    await put(grant, largePng);
+    const receipt = await app.inject({ method:'POST', url:`/storage/transfers/${grant.transferId}/complete`, headers:headers() });
+    assert.equal(receipt.statusCode,201,receipt.body);
+    assert.equal(receipt.json().size,largePng.length);
+    assert.equal(receipt.json().sha256,createHash('sha256').update(largePng).digest('hex'));
+    const fetched = await app.inject({ method:'GET',url:`/uploads/${receipt.json().objectKey}`,headers:headers() });
+    assert.deepEqual(await download(fetched.json()),largePng);
+
+    const pdf = Buffer.concat([Buffer.from('%PDF-1.4\n'), Buffer.alloc(300000, 0)]);
+    const pdfGrant = await prepare('companion_file', pdf, { fileName:'test.pdf', mimeType:'application/pdf' });
+    console.log('CHECKSUM_E2E_STAGE=' + JSON.stringify({ image:new URL(grant.url).pathname, pdf:new URL(pdfGrant.url).pathname }));
+    assert.ok(pdfGrant.headers['x-amz-checksum-sha256']); await put(pdfGrant,pdf);
+    const pdfReceipt = await app.inject({method:'POST',url:`/storage/transfers/${pdfGrant.transferId}/complete`,headers:headers()});
+    assert.equal(pdfReceipt.statusCode,201,pdfReceipt.body);
+    assert.equal(pdfReceipt.json().byteLength,pdf.length);
+    assert.equal(pdfReceipt.json().sha256,createHash('sha256').update(pdf).digest('hex'));
+    const pdfFetch = await app.inject({method:'GET',url:`/uploads/${pdfReceipt.json().objectKey}`,headers:headers()});
+    assert.deepEqual(await download(pdfFetch.json()),pdf);
+
+    // A grant issued by the previous server can finish after the rollout.
+    const legacyGrant = await prepare('companion_image', png);
+    const legacyKey = decodeURIComponent(new URL(legacyGrant.url).pathname).replace(`/${config.bucket}/`, '');
+    await storage.send(new PutObjectCommand({Bucket:config.bucket,Key:legacyKey,Body:png,ContentType:'image/png'}));
+    const legacyReceipt = await app.inject({method:'POST',url:`/storage/transfers/${legacyGrant.transferId}/complete`,headers:headers()});
+    assert.equal(legacyReceipt.statusCode,201,legacyReceipt.body);
   }
   for (const path of [`/export/notes/${noteId}`, "/export/workspace", "/companion/export"]) {
     const response = await app.inject({ method: "GET", url: path, headers: headers() });
