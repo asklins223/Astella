@@ -46,3 +46,44 @@ test("64 KiB burst bound and abort", async () => {
  const stream = throttledObjectBytes(bytes(), 16384, controller.signal);
  assert.equal((await stream.next()).value!.byteLength, 65536); controller.abort(); await assert.rejects(stream.next());
 });
+
+test('Beijing nightly window defers backups but never blocks recovery or deletion', async () => {
+ const { inNightlyBackupWindow, replicaCopyMayRun } = await import('../../../lib/storage/policy.ts');
+ const at = (time: string) => Date.parse(`2026-10-27T${time}+08:00`);
+ assert.equal(inNightlyBackupWindow(at('01:59:59')), false);
+ assert.equal(inNightlyBackupWindow(at('02:00:00')), true);
+ assert.equal(inNightlyBackupWindow(at('05:59:59')), true);
+ assert.equal(inNightlyBackupWindow(at('06:00:00')), false);
+ const root = await mkdtemp(join(tmpdir(), 'astella-backup-window-'));
+ try {
+  const copied: string[] = [], removed: string[] = [];
+  const queue = new StorageBackupQueue(root, { scan: empty.scan,
+   copy: async job => { copied.push(job.key); }, remove: async job => { removed.push(job.key); } },
+   { ...options, allowCopy: replicaCopyMayRun });
+  await queue.enqueue('room/notes/new/image.png','primary');
+  await queue.enqueue('room/companion/outage.png','backup');
+  await queue.enqueue('room/notes/gone/image.png','primary','delete');
+  const day = Date.parse('2099-01-01T12:00:00+08:00');
+  for (let i=0;i<4;i++) await queue.runOnce(day);
+  assert.deepEqual(copied,['room/companion/outage.png']);
+  assert.deepEqual(removed,['room/notes/gone/image.png']);
+  await queue.runOnce(Date.parse('2099-01-02T02:00:00+08:00'));
+  assert.deepEqual(copied,['room/companion/outage.png','room/notes/new/image.png']);
+ } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('legacy completed receipts are rechecked once under the new retention policy', async () => {
+ const { writeFile } = await import('node:fs/promises');
+ const root = await mkdtemp(join(tmpdir(), 'astella-backup-policy-'));
+ try {
+  let inspected = 0;
+  const queue = new StorageBackupQueue(root, { ...empty, copy: async () => { inspected++; } }, options);
+  await queue.enqueue('room/companion/legacy.png','primary');
+  const file = (await readdir(root)).find(n => n.endsWith('.json'))!;
+  const job = JSON.parse(await readFile(join(root,file),'utf8'));
+  delete job.policyVersion; job.done=true;
+  await writeFile(join(root,file),JSON.stringify(job));
+  await queue.runOnce(); await queue.runOnce();
+  assert.equal(inspected,1);
+ } finally { await rm(root,{ recursive:true,force:true }); }
+});

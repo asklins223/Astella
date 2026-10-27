@@ -3165,6 +3165,13 @@
       "when": 1793075780005,
       "tag": "0460_object_transfer_storage_location",
       "breakpoints": true
+    },
+    {
+      "idx": 452,
+      "version": "7",
+      "when": 1793096400000,
+      "tag": "0461_chat_upload_retention",
+      "breakpoints": true
     }
   ]
 }

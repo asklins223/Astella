@@ -444,6 +444,8 @@ export async function uploadRoutes(
         ifNoneMatch: req.headers["if-none-match"] },
     );
     if (!outcome.ok) {
+      if (outcome.reason === 'expired') return reply.code(410).header('Cache-Control', 'no-store')
+        .send({ error: 'attachment_expired', message: '聊天附件已超过 30 天保留期限' });
       if (outcome.reason === "not_found") {
         return reply.code(404).send({ error: "not_found", message: "资源不存在" });
       }

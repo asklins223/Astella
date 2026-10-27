@@ -1,4 +1,5 @@
 import { activeStorageLocation, backupEnabled, getBackupQueue, type StorageLocation } from "../../lib/storage/replicas.ts";
+import { startStorageMaintenance } from "./chat-maintenance.ts";
 import { randomUUID, createHash } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { and, eq, isNull, sql } from "drizzle-orm";
@@ -101,6 +102,7 @@ async function commitTransfer(scope: WorkspaceTransactionContext, request: Objec
 }
 
 export async function objectTransferRoutes(app: FastifyInstance): Promise<void> {
+  startStorageMaintenance(app);
   if (backupEnabled()) {
     getBackupQueue().start();
     app.addHook("onClose", async () => { await getBackupQueue().stop(); });

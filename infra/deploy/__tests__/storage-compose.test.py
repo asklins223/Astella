@@ -60,6 +60,8 @@ class StorageComposeTest(unittest.TestCase):
             self.assertEqual(services[name]['environment']['STORAGE_BACKUP_ENABLED'], 'true')
             self.assertEqual(services[name]['environment']['STORAGE_BACKUP_ENDPOINT'], 'http://backup-minio:9000')
         self.assertEqual(services['api']['environment']['STORAGE_BACKUP_BYTES_PER_SECOND'], '262144')
+        self.assertEqual(services['api']['environment']['STORAGE_BACKUP_START_HOUR_UTC8'], '2')
+        self.assertEqual(services['api']['environment']['STORAGE_BACKUP_END_HOUR_UTC8'], '6')
         self.assertFalse(services['backup-minio'].get('ports'))
         self.assertEqual(int(services['backup-minio']['mem_limit']), 512 * 1024 * 1024)
         self.assertEqual(float(services['backup-minio']['cpus']), 0.5)

@@ -191,6 +191,7 @@ $$;
 -- entrypoints before applying their exact ACLs and validating SECURITY
 -- DEFINER/search_path below; extension-owned functions remain untouched.
 DO $$
+DECLARE obj record;
 BEGIN
   IF to_regprocedure('public.astella_claim_jobs(integer,integer,integer)') IS NOT NULL THEN
     ALTER FUNCTION public.astella_claim_jobs(integer, integer, integer)
@@ -247,6 +248,13 @@ BEGIN
   IF to_regprocedure('public.astella_purge_expired_object_transfers()') IS NOT NULL THEN
     ALTER FUNCTION public.astella_purge_expired_object_transfers() OWNER TO astella_migrator;
   END IF;
+  -- Chat retention maintenance functions must bypass actor RLS only as this fixed role.
+  FOR obj IN SELECT p.oid::regprocedure AS signature FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+    WHERE n.nspname='public' AND p.proname = ANY(ARRAY[
+      'astella_retain_chat_upload','astella_note_retains_chat_upload','astella_source_retains_chat_upload',
+      'astella_chat_upload_retained','astella_register_legacy_chat_upload','astella_claim_expired_chat_uploads',
+      'astella_finish_chat_upload_purge','astella_pending_chat_upload_promotions','astella_ack_chat_upload_promotion'])
+  LOOP EXECUTE format('ALTER FUNCTION %s OWNER TO astella_migrator', obj.signature); END LOOP;
   -- 0171/0172：方案 22 桌宠日记/记忆维护 SECURITY DEFINER 函数，owner 收敛到
   -- astella_migrator（BYPASSRLS 语义依赖；search_path 需对齐 pg_catalog, public）。
   IF to_regprocedure('public.astella_enqueue_companion_daily_summaries()') IS NOT NULL THEN
@@ -293,6 +301,11 @@ DO $$ BEGIN
   IF to_regclass('public.agent_run_revisions') IS NOT NULL THEN
     REVOKE ALL ON TABLE public.agent_run_revisions FROM PUBLIC,astella_api,astella_worker;
     GRANT SELECT,INSERT ON TABLE public.agent_run_revisions TO astella_api,astella_worker;
+  END IF;
+END $$;
+DO $$ BEGIN
+  IF to_regclass('public.chat_upload_objects') IS NOT NULL THEN
+    REVOKE UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER ON public.chat_upload_objects FROM astella_api,astella_worker;
   END IF;
 END $$;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO astella_api;
@@ -1122,6 +1135,26 @@ BEGIN
     GRANT EXECUTE ON FUNCTION public.astella_purge_expired_object_transfers() TO astella_api;
   END IF;
 
+  -- Chat originals and note promotion maintenance: fixed API-only entry points.
+  IF to_regprocedure('public.astella_chat_upload_retained(text)') IS NOT NULL THEN
+    GRANT EXECUTE ON FUNCTION public.astella_chat_upload_retained(text) TO astella_api;
+  END IF;
+  IF to_regprocedure('public.astella_register_legacy_chat_upload(text,timestamptz)') IS NOT NULL THEN
+    GRANT EXECUTE ON FUNCTION public.astella_register_legacy_chat_upload(text,timestamptz) TO astella_api;
+  END IF;
+  IF to_regprocedure('public.astella_claim_expired_chat_uploads(integer)') IS NOT NULL THEN
+    GRANT EXECUTE ON FUNCTION public.astella_claim_expired_chat_uploads(integer) TO astella_api;
+  END IF;
+  IF to_regprocedure('public.astella_finish_chat_upload_purge(text)') IS NOT NULL THEN
+    GRANT EXECUTE ON FUNCTION public.astella_finish_chat_upload_purge(text) TO astella_api;
+  END IF;
+  IF to_regprocedure('public.astella_pending_chat_upload_promotions(integer)') IS NOT NULL THEN
+    GRANT EXECUTE ON FUNCTION public.astella_pending_chat_upload_promotions(integer) TO astella_api;
+  END IF;
+  IF to_regprocedure('public.astella_ack_chat_upload_promotion(text)') IS NOT NULL THEN
+    GRANT EXECUTE ON FUNCTION public.astella_ack_chat_upload_promotion(text) TO astella_api;
+  END IF;
+
   -- API 侧独占的 SECURITY DEFINER 函数（跨租户批处理 / TTL 清理 / journey 查询）。
   -- 同样必须镜像：REVOKE ALL ON ALL FUNCTIONS 会清掉迁移里的 GRANT EXECUTE，
   -- 而缺一个就整条功能 permission denied（此前依次暴露为：记忆去重 similarity、
@@ -1488,6 +1521,7 @@ BEGIN
   WHERE n.nspname = 'public'
     AND c.relkind IN ('r', 'p')
     AND c.relname NOT IN (
+      'chat_upload_objects',
       'note_mind_maps',
       'note_mind_map_stages',
       'companion_diary_generation_checkpoints',
@@ -1536,6 +1570,13 @@ BEGIN
   IF mismatch IS NOT NULL THEN
     RAISE EXCEPTION 'API privilege matrix mismatch: %', mismatch;
   END IF;
+  IF to_regclass('public.chat_upload_objects') IS NOT NULL AND (
+    NOT has_table_privilege('astella_api','public.chat_upload_objects','SELECT')
+    OR NOT has_table_privilege('astella_api','public.chat_upload_objects','INSERT')
+    OR has_table_privilege('astella_api','public.chat_upload_objects','UPDATE,DELETE,TRUNCATE')
+    OR has_table_privilege('astella_worker','public.chat_upload_objects','SELECT,INSERT,UPDATE,DELETE')
+  ) THEN RAISE EXCEPTION 'Chat upload retention privilege matrix mismatch'; END IF;
+
 
   SELECT string_agg(format('%I.%I',n.nspname,c.relname), ', ') INTO mismatch
   FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
@@ -1953,7 +1994,16 @@ BEGIN
       to_regprocedure('public.astella_purge_companion_audit_ttl(integer,integer)'),
       to_regprocedure('public.astella_purge_invitation_ledger_ttl(integer,integer)'),
       to_regprocedure('public.astella_purge_tutor_nonces_ttl(integer,integer)'),
-      to_regprocedure('public.astella_purge_expired_object_transfers()')
+      to_regprocedure('public.astella_purge_expired_object_transfers()'),
+      to_regprocedure('public.astella_retain_chat_upload(text)'),
+      to_regprocedure('public.astella_note_retains_chat_upload()'),
+      to_regprocedure('public.astella_source_retains_chat_upload()'),
+      to_regprocedure('public.astella_chat_upload_retained(text)'),
+      to_regprocedure('public.astella_register_legacy_chat_upload(text,timestamptz)'),
+      to_regprocedure('public.astella_claim_expired_chat_uploads(integer)'),
+      to_regprocedure('public.astella_finish_chat_upload_purge(text)'),
+      to_regprocedure('public.astella_pending_chat_upload_promotions(integer)'),
+      to_regprocedure('public.astella_ack_chat_upload_promotion(text)')
     )
       AND (
         NOT p.prosecdef
@@ -2117,6 +2167,12 @@ BEGIN
     AND p.oid IS DISTINCT FROM
       to_regprocedure('public.astella_purge_tutor_nonces_ttl(integer,integer)')
     AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_purge_expired_object_transfers()')
+    AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_chat_upload_retained(text)')
+    AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_register_legacy_chat_upload(text,timestamptz)')
+    AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_claim_expired_chat_uploads(integer)')
+    AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_finish_chat_upload_purge(text)')
+    AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_pending_chat_upload_promotions(integer)')
+    AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_ack_chat_upload_promotion(text)')
     -- 0327（P0-4，`users` 表 RLS）：登录查询与"同空间成员"判据。
     -- 前者是登录路径（会话建立之前，没有 RLS 上下文），后者被 users 的策略
     -- 2.3 调用——**必须** SECURITY DEFINER，否则策略里的裸子查询会被
@@ -2300,6 +2356,12 @@ BEGIN
       ('astella_api', 'astella_purge_invitation_ledger_ttl(integer,integer)'),
       ('astella_api', 'astella_purge_tutor_nonces_ttl(integer,integer)'),
       ('astella_api', 'astella_purge_expired_object_transfers()'),
+      ('astella_api', 'astella_chat_upload_retained(text)'),
+      ('astella_api', 'astella_register_legacy_chat_upload(text,timestamptz)'),
+      ('astella_api', 'astella_claim_expired_chat_uploads(integer)'),
+      ('astella_api', 'astella_finish_chat_upload_purge(text)'),
+      ('astella_api', 'astella_pending_chat_upload_promotions(integer)'),
+      ('astella_api', 'astella_ack_chat_upload_promotion(text)'),
       ('astella_api', 'astella_find_user_by_email(text)'),
       ('astella_api', 'astella_user_in_workspace(uuid,uuid)'),
       ('astella_api', 'astella_read_companion_turn_handoff_snapshot_v1(uuid)'),

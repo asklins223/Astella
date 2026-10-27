@@ -9,6 +9,9 @@ services:
       STORAGE_BACKUP_BUCKET: ${STORAGE_BACKUP_BUCKET:-astella-backup}
       STORAGE_BACKUP_BYTES_PER_SECOND: ${STORAGE_BACKUP_BYTES_PER_SECOND:-262144}
       STORAGE_BACKUP_INTERVAL_MS: ${STORAGE_BACKUP_INTERVAL_MS:-5000}
+      # Daily incremental backup, Beijing 02:00–06:00; chat originals expire after 30 days and are excluded.
+      STORAGE_BACKUP_START_HOUR_UTC8: ${STORAGE_BACKUP_START_HOUR_UTC8:-2}
+      STORAGE_BACKUP_END_HOUR_UTC8: ${STORAGE_BACKUP_END_HOUR_UTC8:-6}
     volumes: [object_backup_queue:/var/lib/astella/object-backup-queue]
   worker:
     environment:
@@ -20,6 +23,8 @@ services:
       STORAGE_BACKUP_BUCKET: ${STORAGE_BACKUP_BUCKET:-astella-backup}
       STORAGE_BACKUP_BYTES_PER_SECOND: ${STORAGE_BACKUP_BYTES_PER_SECOND:-262144}
       STORAGE_BACKUP_INTERVAL_MS: ${STORAGE_BACKUP_INTERVAL_MS:-5000}
+      STORAGE_BACKUP_START_HOUR_UTC8: ${STORAGE_BACKUP_START_HOUR_UTC8:-2}
+      STORAGE_BACKUP_END_HOUR_UTC8: ${STORAGE_BACKUP_END_HOUR_UTC8:-6}
   nginx:
     ports: ['9443:9443']
     volumes:

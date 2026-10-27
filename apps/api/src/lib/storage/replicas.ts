@@ -7,6 +7,8 @@ import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { resolveStorageConfig } from "@astella/shared/storage-config";
 import { logger } from "../logger.ts";
+import { shouldBackUpObject } from "./chat-catalog.ts";
+import { isChatObjectKey, replicaCopyMayRun, inNightlyBackupWindow, backupHours } from "./policy.ts";
 
 export type StorageLocation = "primary" | "backup";
 let backup: S3Client | undefined;
@@ -77,14 +79,26 @@ export async function locationForObject(key: string): Promise<StorageLocation> {
 }
 export async function enqueueReplica(key: string, source: StorageLocation, operation: "copy" | "delete" = "copy"): Promise<void> {
   if (!backupEnabled()) return;
+  if (operation === 'copy' && source === 'primary' && !await shouldBackUpObject(key)) return;
   try { await getBackupQueue().enqueue(key, source, operation); }
   catch (error) { logger.error({ error: error instanceof Error ? error.message : "queue write failed" }, "backup queue admission failed; foreground object remains usable and reconciliation will retry"); }
 }
 export function getBackupQueue(): StorageBackupQueue {
   if (queue) return queue;
   const bytesPerSecond = positive(process.env.STORAGE_BACKUP_BYTES_PER_SECOND, 262_144);
+  const hours = backupHours(process.env);
   queue = new StorageBackupQueue(process.env.STORAGE_BACKUP_QUEUE_DIR || "/var/lib/astella/object-backup-queue", {
     async copy(job, rate, signal) {
+      const retained = await shouldBackUpObject(job.key);
+      if (job.source === 'primary' && !retained) {
+        // Remove legacy chat replicas only after confirming the cloud original.
+        // A local-only outage upload must never be removed before recovery.
+        if (isChatObjectKey(job.key)) {
+          await replicaClient('primary').send(new HeadObjectCommand({ Bucket: replicaBucket('primary'), Key: job.key }), { abortSignal: signal });
+          await replicaClient('backup').send(new DeleteObjectCommand({ Bucket: backupBucket(), Key: job.key }), { abortSignal: signal });
+        }
+        return;
+      }
       const source = replicaClient(job.source), destinationName = job.source === "primary" ? "backup" : "primary";
       const target = replicaClient(destinationName), sourceBucket = replicaBucket(job.source), targetBucket = replicaBucket(destinationName);
       const head = await source.send(new HeadObjectCommand({ Bucket: sourceBucket, Key: job.key }), { abortSignal: signal });
@@ -92,7 +106,12 @@ export function getBackupQueue(): StorageBackupQueue {
         if ((error as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode !== 404) throw error;
         return undefined;
       });
-      if (previous?.Metadata?.["astella-source-etag"] === head.ETag && previous?.ContentLength === head.ContentLength) return;
+      const removeTransientReplica = async () => {
+        if (job.source === 'backup' && !retained) await source.send(new DeleteObjectCommand({ Bucket: sourceBucket, Key: job.key }), { abortSignal: signal });
+      };
+      if (previous?.Metadata?.["astella-source-etag"] === head.ETag && previous?.ContentLength === head.ContentLength) {
+        await removeTransientReplica(); return;
+      }
       const object = await source.send(new GetObjectCommand({ Bucket: sourceBucket, Key: job.key, IfMatch: head.ETag }), { abortSignal: signal });
       if (!object.Body) throw new Error("backup source has no body");
       const hash = createHash("sha256"); let count = 0;
@@ -111,6 +130,7 @@ export function getBackupQueue(): StorageBackupQueue {
           throw new Error("backup object integrity mismatch");
         }
         if (job.source === "backup") health = undefined;
+        await removeTransientReplica();
       } finally { stream.destroy(); }
     },
     async remove(job, signal) {
@@ -122,18 +142,21 @@ export function getBackupQueue(): StorageBackupQueue {
       const token = cursor?.includes(":") ? cursor.slice(cursor.indexOf(":") + 1) : undefined;
       const result = await replicaClient(location).send(new ListObjectsV2Command({ Bucket: replicaBucket(location), MaxKeys: 100,
         ...(token ? { ContinuationToken: token } : {}) }), { abortSignal: signal });
-      const keys = (result.Contents ?? []).flatMap(item => item.Key && !item.Key.startsWith("temporary/") ? [item.Key] : []);
+      const keys: string[] = [];
+      for (const item of result.Contents ?? []) if (item.Key && !item.Key.startsWith('temporary/')
+        && (location === 'backup' || await shouldBackUpObject(item.Key))) keys.push(item.Key);
       const next = result.NextContinuationToken ? `${location}:${result.NextContinuationToken}` : location === "primary" ? "backup:" : undefined;
       return { keys: location === "primary" ? keys : [], ...(location === "backup" ? { backupKeys: keys } : {}),
         ...(next ? { cursor: next } : {}) };
     }
-  }, { bytesPerSecond, intervalMs: positive(process.env.STORAGE_BACKUP_INTERVAL_MS, 5_000),
+  }, { bytesPerSecond, intervalMs: positive(process.env.STORAGE_BACKUP_INTERVAL_MS, 5_000), allowCopy: (job, now) => replicaCopyMayRun(job, now, hours),
+    allowScan: now => inNightlyBackupWindow(now, hours),
     warn: error => logger.warn({ error: error instanceof Error ? error.message : "backup operation failed" }, "slow object backup will retry") });
   return queue;
 }
 
 export type ReplicaJob = { key: string; source: "primary" | "backup"; operation: "copy" | "delete";
-  revision: string; attempts: number; nextAt: number; done: boolean; updatedAt: number };
+  revision: string; attempts: number; nextAt: number; done: boolean; updatedAt: number; policyVersion?: number };
 export interface ReplicaTransport {
   copy(job: ReplicaJob, bytesPerSecond: number, signal: AbortSignal): Promise<void>;
   remove(job: ReplicaJob, signal: AbortSignal): Promise<void>;
@@ -150,6 +173,7 @@ export class StorageBackupQueue {
   private scanOffset = 0;
   constructor(readonly directory: string, private readonly transport: ReplicaTransport,
     private readonly options: { bytesPerSecond: number; intervalMs: number; retryBaseMs?: number;
+      allowCopy?: (job: ReplicaJob, now: number) => boolean; allowScan?: (now: number) => boolean;
       warn: (error: unknown) => void }) {}
   private file(key: string): string { return join(this.directory, createHash("sha256").update(key).digest("hex") + ".json"); }
   async enqueue(key: string, source: ReplicaJob["source"], operation: ReplicaJob["operation"] = "copy"): Promise<void> {
@@ -158,7 +182,7 @@ export class StorageBackupQueue {
     const previous = this.pending.get(key) ?? Promise.resolve();
     const next = previous.catch(() => undefined).then(async () => {
       const job: ReplicaJob = { key, source, operation, revision: randomUUID(), attempts: 0,
-        nextAt: Date.now(), done: false, updatedAt: Date.now() };
+        nextAt: Date.now(), done: false, updatedAt: Date.now(), policyVersion: 2 };
       await this.save(job);
     });
     this.pending.set(key, next);
@@ -207,12 +231,13 @@ export class StorageBackupQueue {
       this.scanOffset = (this.scanOffset + batch.length) % Math.max(1, names.length);
       for (const name of batch) {
         const job = await this.read(join(this.directory, name));
-        if (!job || job.done || job.nextAt > now) continue;
+        if (!job || (job.done && job.policyVersion === 2) || job.nextAt > now) continue;
+        if (job.operation === 'copy' && this.options.allowCopy && !this.options.allowCopy(job, now)) continue;
         try {
           if (job.operation === "copy") await this.transport.copy(job, this.options.bytesPerSecond, this.abort.signal);
           else await this.transport.remove(job, this.abort.signal);
           // A concurrent delete/replacement must keep its own queued intent.
-          if ((await this.read(this.file(job.key)))?.revision === job.revision) await this.saveState({ ...job, done: true, updatedAt: Date.now() });
+          if ((await this.read(this.file(job.key)))?.revision === job.revision) await this.saveState({ ...job, done: true, updatedAt: Date.now(), policyVersion: 2 });
         } catch (error) {
           if (this.abort.signal.aborted) return false;
           this.options.warn(error);
@@ -224,7 +249,7 @@ export class StorageBackupQueue {
         return true;
       }
       // Backfill pre-existing objects, slowly. Completed receipts suppress repeated downloads.
-      if (now >= this.nextScan) {
+      if (now >= this.nextScan && (!this.options.allowScan || this.options.allowScan(now))) {
         const page = await this.transport.scan(this.cursor, this.abort.signal);
         for (const key of page.keys) if (!(await this.read(this.file(key)))) await this.enqueue(key, "primary");
         for (const key of page.backupKeys ?? []) if (!(await this.read(this.file(key)))) await this.enqueue(key, "backup");

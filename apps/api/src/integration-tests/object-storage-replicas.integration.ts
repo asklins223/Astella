@@ -32,15 +32,15 @@ test("streamed standby, primary outage, new local write, slow recovery and delet
    STORAGE_BACKUP_ACCESS_KEY_ID: credentials.accessKeyId, STORAGE_BACKUP_SECRET_ACCESS_KEY: credentials.secretAccessKey,
    STORAGE_BACKUP_QUEUE_DIR: root, STORAGE_BACKUP_BYTES_PER_SECOND: "131072" });
   const storage = await import("../lib/object-storage.ts"), replicas = await import("../lib/storage/replicas.ts");
-  const bytes = Buffer.alloc(256 * 1024, 0x53), key = "room/companion/image.jpg";
+  const bytes = Buffer.alloc(256 * 1024, 0x53), key = "room/notes/note/image.jpg";
   await storage.uploadObject(key, bytes, "image/jpeg");
-  assert.equal(await replicas.getBackupQueue().runOnce(), true);
+  assert.equal(await replicas.getBackupQueue().runOnce(Date.parse("2099-01-02T02:00:00+08:00")), true);
   const mirrored = await clients[1]!.send(new GetObjectCommand({ Bucket: "astella-replica-it", Key: key }));
   assert.equal(createHash("sha256").update(await mirrored.Body!.transformToByteArray()).digest("hex"), createHash("sha256").update(bytes).digest("hex"));
   execFileSync("docker", ["stop", "--time", "2", names[0]!], { stdio: "pipe" });
   replicas.markPrimaryUnavailable();
   assert.deepEqual((await storage.getObject(key)).body, bytes);
-  const localKey = "room/companion/during-outage.jpg", localBytes = Buffer.from("new object while the cloud is unavailable");
+  const localKey = "room/notes/note/during-outage.jpg", localBytes = Buffer.from("new object while the cloud is unavailable");
   await storage.uploadObject(localKey, localBytes, "image/jpeg");
   assert.deepEqual((await storage.getObject(localKey)).body, localBytes);
   // A stopped --rm container is replaced as an empty recovered primary; recovery uses only queued local writes.
@@ -49,11 +49,11 @@ test("streamed standby, primary outage, new local write, slow recovery and delet
    try { await clients[0]!.send(new CreateBucketCommand({ Bucket: "astella-replica-it" })); break; }
    catch (error) { if (attempt === 30) throw error; await new Promise(r => setTimeout(r, 500)); }
   }
-  await replicas.getBackupQueue().runOnce();
+  await replicas.getBackupQueue().runOnce(Date.parse("2099-01-02T02:00:00+08:00"));
   assert.deepEqual((await storage.getObject(localKey, "primary")).body, localBytes);
   await storage.deleteObject(localKey);
   await assert.rejects(storage.getObject(localKey));
-  await replicas.getBackupQueue().runOnce();
+  await replicas.getBackupQueue().runOnce(Date.parse("2099-01-02T02:00:00+08:00"));
   for (const client of clients) await assert.rejects(client.send(new GetObjectCommand({ Bucket: "astella-replica-it", Key: localKey })));
  } finally {
   for (const client of clients) client.destroy();

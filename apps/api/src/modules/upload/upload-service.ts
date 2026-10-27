@@ -48,6 +48,7 @@ import {
   readImageDimensions,
 } from "../../lib/file-validation.ts";
 import { logger } from "../../lib/logger.ts";
+import { registerChatUpload, chatUploadExpired } from "../../lib/storage/chat-catalog.ts";
 
 // 上传体积上限：路由层用于 multipart limits，服务层用于 toBuffer() 后的双重校验。
 export const MAX_IMAGE_SIZE = COMPANION_IMAGE_MAX_BYTES_V1; // 10MB
@@ -153,7 +154,7 @@ export type AvatarUploadResult =
 export type UploadDownloadResult =
   | { ok: true; notModified: true; maxAge: number; etag: string | undefined }
   | { ok: true; notModified: false; body: Buffer; download?: ObjectTransferDownload; contentType: string; maxAge: number; etag: string }
-  | { ok: false; reason: "not_found" | "storage_unavailable" };
+  | { ok: false; reason: "not_found" | "storage_unavailable" | "expired" };
 
 /**
  * 笔记图片上传：校验笔记归属（提前校验，避免无效请求浪费内存读取文件）、
@@ -339,6 +340,7 @@ async function storeDetachedImage(
   }
 
   const objectKey = objectKeyFor(extFromMimeType(file.mimetype));
+  await registerChatUpload(scope, objectKey);
 
   try {
     await persistObject(objectKey, buffer, file.mimetype, input.staging);
@@ -466,6 +468,7 @@ export async function uploadCompanionFile(
   if (!validateCompanionFileMagic(buffer, mime)) return { ok: false, reason: "content_type_mismatch" };
 
   const objectKey = `${scope.workspaceId}/companion-files/${scope.userId}/${randomUUID()}.${companionFileExtensionForMimeType(mime)}`;
+  await registerChatUpload(scope, objectKey);
   try {
     await persistObject(objectKey, buffer, mime, input.staging);
   } catch (err) {
@@ -730,6 +733,8 @@ export async function downloadUploadObject(
     }
     }
   }
+
+  if (await chatUploadExpired(scope, path)) return { ok: false, reason: 'expired' };
 
   // Check If-None-Match for conditional requests.
   // Use HEAD request for pre-check: if the ETag matches, return 304
