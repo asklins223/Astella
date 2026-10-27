@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import type { AgentTurnResult } from "@astella/shared";
 import type { AIProvider } from "../../lib/ai-provider.ts";
 import { ProviderRequestError } from "../../lib/provider-request-error.ts";
 import { AgentOutputError } from "../../lib/non-retryable-errors.ts";
@@ -10,12 +11,18 @@ import { recoverCompanionStreamFailure } from "../agent/companion-stream-recover
 const provider = { id: "primary", modelId: "primary", executeAgentTurn: async () => ({}) } as unknown as AIProvider;
 const alternate = { id: "alternate", modelId: "alternate", executeAgentTurn: async () => ({}) } as unknown as AIProvider;
 
+/** A complete result shape, so the stub satisfies the real return type. */
+const turnResult = (content: string): AgentTurnResult => ({
+  content, toolCalls: [], finishReason: "stop",
+  usage: null, providerRequestId: null,
+});
+
 function harness(overrides: Partial<Parameters<typeof recoverCompanionStreamFailure>[0]> = {}) {
   const calls: string[] = [];
   const input = {
     error: new Error("boom") as unknown,
-    runBuffered: async (attempts?: number) => { calls.push(`buffered:${attempts ?? "default"}`); return { content: "ok" }; },
-    attemptStream: async () => { calls.push("stream"); return { content: "streamed" }; },
+    runBuffered: async (attempts?: number) => { calls.push(`buffered:${attempts ?? "default"}`); return turnResult("ok"); },
+    attemptStream: async () => { calls.push("stream"); return turnResult("streamed"); },
     canRetryStream: () => true,
     stepProvider: provider,
     fallbackProvider: alternate as AIProvider | null | undefined,
@@ -38,7 +45,7 @@ test("a looping reply retries once on the alternate model instead of failing the
 test("a loop that repeats again on the retry gives up honestly", async () => {
   const { input } = harness({
     error: new CompanionDegenerateLoopError("loop"),
-    runBuffered: async () => ({ content: "记住了，十点以后不打扰你，有事留到明天。".repeat(100) }),
+    runBuffered: async () => turnResult("记住了，十点以后不打扰你，有事留到明天。".repeat(100)),
   });
   await assert.rejects(recoverCompanionStreamFailure(input),
     (error: unknown) => error instanceof AgentOutputError && error.code === "no_progress");
