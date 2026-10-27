@@ -687,7 +687,7 @@ export function renderHereAndNow(snapshot: HereAndNowSnapshot): string | null {
     const on = (value: boolean) => (value ? "开着" : "关着");
     lines.push(`用户这一轮要改的是行为边界，当前生效的状态：催复习=${on(b.allowNudgeLearning)}，`
       + `玩趣=${on(b.allowPlayful)}，语音情绪标签=${on(b.allowVoiceTags)}。`
-      + "这些开关只有调用 companion_set_boundary 才会变；光答\"记下了\"什么都没变。");
+      + "这些开关只有调用 companion_persona_write（action=boundary）才会变；光答\"记下了\"什么都没变。");
   }
   // An inventory of recent notes made greetings repeat yesterday's work.
   // The current page and explicit note reference remain below; library history
@@ -708,24 +708,24 @@ export function renderHereAndNow(snapshot: HereAndNowSnapshot): string | null {
   if (snapshot.noteReference) {
     const ref = snapshot.noteReference;
     lines.push(ref.found
-      ? `用户提到的《${ref.title}》在笔记库里，noteId=${ref.noteId}（${ref.ageLabel}写的）；要看正文就调用 companion_read_note 用这个 id。`
+      ? `用户提到的《${ref.title}》在笔记库里，noteId=${ref.noteId}（${ref.ageLabel}写的）；要看正文就调用 companion_notes_read（action=read）用这个 id。`
       // 没找到时**不把"它不存在"当结论交给她**——那正是实机里她零工具却脱口而出的假阴性。
       // 39b §9.3：这一行的价值在于"库里没有匹配"由服务端替她说完，还附赠一个更接近的
       // 真东西——她就没有编造的必要，也不会把"我没查到"说成"库里没有"。
       : `按标题没找到《${ref.title}》这篇笔记${ref.nearest
         ? `；最接近的是《${ref.nearest.title}》（相似度 ${ref.nearest.score.toFixed(2)}）`
-        : ""}：标题可能记岔，或者它其实是一张卡片。先调用 companion_search_notes 换个关键词再查；查不到就照实说没查到，不要替笔记库下"没有这东西"的结论。`);
+        : ""}：标题可能记岔，或者它其实是一张卡片。先调用 companion_notes_read（action=search）换个关键词再查；查不到就照实说没查到，不要替笔记库下"没有这东西"的结论。`);
     // 只给开头一段，并点名"更长的原文还是要去读"：给全篇等于让她抄一个可能已经
     // 过期、也没进历史的版本，而那正是要修的东西。
     if (ref.found && ref.opening) {
-      lines.push(`这篇的开头是：「${ref.opening}」（只到第一句为止；要更长的原文仍然要调用 companion_read_note 去读，不要照这段往下补。）`);
+      lines.push(`这篇的开头是：「${ref.opening}」（只到第一句为止；要更长的原文仍然要调用 companion_notes_read（action=read）去读，不要照这段往下补。）`);
     }
     // 图的事实在这里给，而不是等她去猜：图片不是 note_blocks 的一部分，她把正文
     // 读三遍也看不到图，于是"我读完了，里面没有截图"听起来像诚实的回答（实机
     // 2026-09-21 就是这么一句假阴性）。
     if (ref.found && ref.imageCount > 0) {
       lines.push(snapshot.imagesReadable
-        ? `这篇另有 ${ref.imageCount} 张图，图不在正文里。要看图里写了什么就调用 companion_read_image。`
+        ? `这篇另有 ${ref.imageCount} 张图，图不在正文里。要看图里写了什么就调用 companion_visual（action=read_image）。`
         : snapshot.imagesUnreadableReason === "no_reader"
           ? `这篇另有 ${ref.imageCount} 张图，图不在正文里（正文没有图片标记不代表没有图）。`
             + "现在没有能看图的模型，这些图你看不了：照实说看不了，不要说「我看看这张图」，"

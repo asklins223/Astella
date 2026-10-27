@@ -20,7 +20,7 @@ export const agentMethodEvidenceV1Schema = z.object({
   eventId: z.string().min(1).max(240).optional(), note: z.string().optional(),
 }).strict().refine(value => !!(value.memoryId || value.runId || value.eventId), "缺少经验来源");
 /**
- * 一条手册（method）的边界，**先声明成常量**再进 schema：`companion_read_playbook` 的
+ * 一条手册（method）的边界，**先声明成常量**再进 schema：`memory.read.playbook` 的
  * `maxOutputChars` 要按这些数派生，不能再挂那个跟它无关的 4,000 默认值。
  */
 export const AGENT_METHOD_TITLE_MAX_CHARS = 120;

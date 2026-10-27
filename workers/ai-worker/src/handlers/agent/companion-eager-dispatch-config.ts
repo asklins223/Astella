@@ -38,10 +38,10 @@ export const EAGER_TOOL_DISPATCH_ENABLED: boolean =
  * 再发一次模型请求的那几个。
  */
 export const EAGER_DISPATCH_ELIGIBLE_TOOLS: ReadonlySet<string> = new Set([
-  "companion_read_memory",
-  "companion_recall_memory",
-  "companion_read_playbook",
-  "companion_read_diary",
+  "memory.read.read",
+  "memory.read.recall",
+  "memory.read.playbook",
+  "memory.read.diary",
 ]);
 
 

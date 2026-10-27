@@ -8,7 +8,7 @@
  * ─── 为什么要单独放在 shared ───
  * 这条判据原先只在 `apps/api/src/modules/note/visibility.ts` 里，而伴星跑在
  * `workers/ai-worker`——**另一个进程、另一个包**。结果是：HTTP 那侧的列表/搜索/
- * 卡片/目标全都按人收窄了，伴星的 `companion_read_note` 与 here-and-now 快照
+ * 卡片/目标全都按人收窄了，伴星的 `notes.read.read` 与 here-and-now 快照
  * 仍然只按 `workspace_id` 查 `notes`。协作空间里，成员甲的伴星因此能读出成员乙
  * **私有笔记的正文**——比审查初稿抓到的"标题注入 prompt"更重一档。
  *

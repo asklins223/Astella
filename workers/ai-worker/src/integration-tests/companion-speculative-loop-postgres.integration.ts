@@ -111,7 +111,7 @@ test("真实工具循环保留完整JSON，并按块内游标读到长段落的�
         next=parsed.data;
         if(!parsed.data.truncated) return {content:"内容已经读完了。",toolCalls:[],finishReason:"stop",usage:null,providerRequestId:null};
       }
-      return {content:null,toolCalls:[{id:`read-${calls}`,name:'companion_read_note',arguments:{noteId,
+      return {content:null,toolCalls:[{id:`read-${calls}`,name:'companion_notes_read',arguments:{ action: "read",noteId,
         noteVersionId:versionId,startOrdinal:next.nextStartOrdinal,startOffset:next.nextStartOffset}}],
         finishReason:"tool_calls",usage:null,providerRequestId:null};
     };
@@ -161,11 +161,11 @@ for (const failure of ["provider_first_output_timeout", "provider_idle_timeout",
           assert.equal(request.messages.find(message => message.role === "user")?.content, text);
           if (!searched) {
             searched = true;
-            return { content: null, toolCalls: [{ id: "grounding", name: "companion_search_notes",
-              arguments: { query: "秦朝", match: "any" } }], finishReason: "tool_calls", usage: null, providerRequestId: null };
+            return { content: null, toolCalls: [{ id: "grounding", name: "companion_notes_read",
+              arguments: { action: "search", query: "秦朝", match: "any" } }], finishReason: "tool_calls", usage: null, providerRequestId: null };
           }
-          return { content: null, toolCalls: [{ id: "saved-note", name: "companion_create_note",
-            arguments: { title: "秦朝", markdown: "秦始皇于公元前221年完成统一，建立秦朝。郡县制加强了中央对地方的管理，统一文字和度量衡促进了交流。沉重的徭役和政治危机又加快了秦朝的衰亡。秦朝虽短暂，仍对后世制度产生了深远影响。", links: [] } }],
+          return { content: null, toolCalls: [{ id: "saved-note", name: "companion_notes_write",
+            arguments: { action: "create", title: "秦朝", markdown: "秦始皇于公元前221年完成统一，建立秦朝。郡县制加强了中央对地方的管理，统一文字和度量衡促进了交流。沉重的徭役和政治危机又加快了秦朝的衰亡。秦朝虽短暂，仍对后世制度产生了深远影响。", links: [] } }],
             finishReason: "tool_calls", usage: null, providerRequestId: null };
         },
       } as AIProvider;
@@ -190,7 +190,7 @@ for (const failure of ["provider_first_output_timeout", "provider_idle_timeout",
       assert.deepEqual(served, ["primary", "fallback", "fallback"], "the fallback remains selected and receipts close the request without another model call");
       assert.ok(!delivered.join("").includes("秦朝笔记已经保存好了"), "unverified save prose must never become visible");
       const rows = await f.mutate(tx => tx`SELECT name,status,result_ref FROM companion_agent_tool_calls WHERE run_id=${f.event.read.runId} ORDER BY created_at`);
-      assert.equal(rows.filter(row => row.name === "companion_create_note" && row.status === "succeeded").length, 1);
+      assert.equal(rows.filter(row => row.name === "notes.write.create" && row.status === "succeeded").length, 1);
       const notes = await f.mutate(tx => tx`SELECT id FROM notes WHERE workspace_id=${f.event.ctx.workspaceId}`);
       assert.equal(notes.length, 1, "recovery must not duplicate a business write");
       const [checkpoint] = await f.mutate(tx => tx`SELECT runtime_checkpoint FROM companion_agent_steps WHERE run_id=${f.event.read.runId} AND runtime_checkpoint IS NOT NULL ORDER BY step_no DESC LIMIT 1`);
@@ -441,12 +441,15 @@ test("检索工具返回完整存量记忆，已展开记录按ID避重而非比
       (id,workspace_id,user_id,kind,content,scope,candidate,user_confirmed,importance,confidence,embedding_status)
       VALUES (${memoryId},${f.event.ctx.workspaceId},${f.event.read.userId},'episodic',${content},'workspace',false,true,0.9,1,'none')`);
     const event = { ...f.event, read: readContext(f), expiresAt: new Date(Date.now() + 60_000).toISOString(), constraints: { visionEnabled: false } };
-    const recall = getCompanionAgentTool("companion_recall_memory")!;
+    // The memory family keys on internal operation names, exactly as the
+    // dispatcher hands them over after resolving `action`.
+    const recall = { ...getCompanionAgentTool("companion_memory_read")!, name: "memory.read.recall" };
     const first = await executeCompanionMemoryTool(event, recall, { query: "蓝笔" });
     const memories = (first.value as { memories: Array<{ memoryId: string; revision: number; content: string }> }).memories;
     assert.equal(memories.length, 1);
     assert.equal(memories[0]?.content, content);
-    const read = await executeCompanionMemoryTool(event, getCompanionAgentTool("companion_read_memory")!,
+    const read = await executeCompanionMemoryTool(event,
+      { ...getCompanionAgentTool("companion_memory_read")!, name: "memory.read.read" },
       { memoryId, expectedRevision: memories[0]!.revision });
     assert.equal((read.value as { content: string }).content, content);
     assert.equal(event.read.memoryRefs[0]?.memoryId, memoryId);
@@ -471,7 +474,7 @@ function actionNarrationStub(modelId: string, served: string[], text: string): A
   return {
     id: "openai_compatible", modelId,
     chatCompletion: async () => ({ content: JSON.stringify({ intent: "task", toolUse: "act",
-      subjects: [], goalRelation: "unrelated", candidateOperations: ["companion_save_participation"],
+      subjects: [], goalRelation: "unrelated", candidateOperations: ["attention.write.save_participation"],
       ambiguities: [], voiceStyle: { decision: "none", instruction: null }, pendingOfferIndexes: [] }), usage: {} }),
     executeAgentTurn: async () => { served.push(modelId);
       return { content: text, toolCalls: [], finishReason: "stop", usage: null, providerRequestId: null }; },
@@ -638,7 +641,7 @@ test("hybrid handoff classifies lazily and the host reads actual note facts befo
     provider.chatCompletionStreamToolCalls=true;
     provider.chatCompletion=async()=>{
       order.push('classify');return {content:JSON.stringify({intent:'question',toolUse:'read',subjects:[],goalRelation:'unrelated',
-        candidateOperations:['companion_read_note'],ambiguities:[],voiceStyle:{decision:'none',instruction:null,persistentPreference:{action:'keep',dialect:null}},pendingOfferIndexes:[]}),usage:{}};
+        candidateOperations:['notes.read.read'],ambiguities:[],voiceStyle:{decision:'none',instruction:null,persistentPreference:{action:'keep',dialect:null}},pendingOfferIndexes:[]}),usage:{}};
     };
     provider.chatCompletionStream=async(messages,options,_signal,onDelta)=>{
       if(order.length===0){order.push('handoff');assert.equal(options.disableThinking,true);
@@ -786,10 +789,10 @@ test("live direct entries use governed real models with isolated database tools"
         if(scenario.mode!=='hybrid'){assert.equal(meta.route.classifier.source,'direct');assert.equal(traces.filter(c=>c.kind==='classifier').length,0);}
         if('casual' in scenario){assert.equal(meta.route.hybrid.decision,'reply');assert.equal(traces.filter(c=>c.kind==='classifier').length,0);assert.equal(traces.length,1);}
         if('read' in scenario){
-          assert.ok(calls.some(c=>c.name==='companion_read_note'&&c.status==='succeeded')||(scenario.mode==='hybrid'&&prefetched));
+          assert.ok(calls.some(c=>c.name==='companion_notes_read'&&c.status==='succeeded')||(scenario.mode==='hybrid'&&prefetched));
           if(result.status==='completed')assert.match(result.text,'edit' in scenario?/75|七十五/:typeof scenario.read==='number'?/93|九十三/:/72|七十二/);
           if('edit' in scenario){
-            assert.ok(calls.some(c=>c.name==='companion_edit_note'&&c.status==='succeeded'));
+            assert.ok(calls.some(c=>c.name==='companion_notes_write'&&c.status==='succeeded'));
             const blocks=await f.mutate(tx=>tx`SELECT b.content FROM note_blocks b JOIN notes n ON n.current_version_id=b.version_id WHERE n.id=${noteId} ORDER BY b.ordinal`);
             const saved=blocks.map(b=>b.content).join('\n');assert.match(saved,/75/);assert.match(saved,/61/);assert.doesNotMatch(saved,/72/);
           }

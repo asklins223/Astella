@@ -38,7 +38,7 @@
  *    title≤80 / target≤160 / impact≤240。
  */
 
-import { COMPANION_AGENT_TOOL_LABELS, proposedLearningActionPayloadV1Schema } from "@astella/shared";
+import { companionToolLabel, proposedLearningActionPayloadV1Schema } from "@astella/shared";
 import type { z } from "zod";
 
 type ProposalPayload = z.infer<typeof proposedLearningActionPayloadV1Schema>;
@@ -110,7 +110,7 @@ export function describeAgentProposal(payload: ProposalPayload, toolName: string
 function fallbackCopy(toolName: string): AgentProposalCopy {
   // 注册表里的 `presentation.label` 是**已经写给人听**的（如「正在记住这件事」），
   // 只是为了放在动作轨道上用了进行时；去掉「正在」后可以直接当标题。
-  const label = COMPANION_AGENT_TOOL_LABELS[toolName]?.replace(/^正在/, "");
+  const label = companionToolLabel(toolName)?.replace(/^正在/, "");
   return {
     title: clamp(label && label.length > 0 ? label : "要做一件事", TITLE_MAX),
     targetSummary: clamp("这件事", TARGET_MAX),
@@ -122,10 +122,15 @@ function copy(payload: ProposalPayload): AgentProposalCopy | null {
   switch (payload.kind) {
     case "agent_tool_review":
       return {
-        title: clamp(payload.confirmationStage === "after_preview" ? "保存这次改动？" : "确认这次操作？", TITLE_MAX),
+        title: clamp(payload.confirmationStage === "after_preview"
+          ? ["companion_notes_write", "notes.write.create", "notes.write.edit"].includes(payload.toolName) && payload.preview.markdown && !payload.preview.beforeMarkdown
+            ? "保存这篇手记？" : "保存这次改动？"
+          : "确认这次操作？", TITLE_MAX),
         targetSummary: clamp(payload.preview.title, TARGET_MAX),
         impactSummary: payload.confirmationStage === "after_preview"
-          ? "结果已经准备好。保存后正式生效；取消会恢复原文，不覆盖你自己的后续修改。"
+          ? ["companion_notes_write", "notes.write.create", "notes.write.edit"].includes(payload.toolName) && payload.preview.markdown && !payload.preview.beforeMarkdown
+            ? "确认后保存为新手记；取消不会创建。"
+            : "确认后保存这次修改；取消不会改变原文。"
           : "确认之后才会执行这次操作；取消不会改变原内容。",
       };
     case "save_memory":

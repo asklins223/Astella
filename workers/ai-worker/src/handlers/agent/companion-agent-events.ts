@@ -253,6 +253,7 @@ export async function appendAgentEvent(
   type: "agent.tool",
   payload: Record<string, unknown>,
 ): Promise<void> {
+  await event.flushThinking?.();
   if (payload.tool && typeof payload.tool === "object") {
     payload = { ...payload, tool: { ...payload.tool, occurredAt: new Date().toISOString() } };
   }

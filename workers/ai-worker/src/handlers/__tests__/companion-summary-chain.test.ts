@@ -102,7 +102,7 @@ test("44 §5.5：摘要盖到 541、回放从 561 起，注入块要点名中间
   assert.match(block!, /更早还有 2 段没有任何摘要覆盖/);
   // 最近的那一段排在第一个——她这一轮最可能谈到的就是刚被挤出窗口的那些。
   assert.match(block!, /消息 542–560/);
-  assert.match(block!, /companion_read_history/);
+  assert.match(block!, /companion_observe/);
 });
 
 test("44 §5.5：注入块带上覆盖缺口，并给出**怎么取回**——只说有洞等于把边界推给日志", () => {
@@ -113,7 +113,7 @@ test("44 §5.5：注入块带上覆盖缺口，并给出**怎么取回**——�
   assert.match(block!, /更早还有 1 段没有任何摘要覆盖/);
   assert.match(block!, /别把摘要当成读过/);
   // 入口必须具体到工具与参数，否则模型知道「有洞」却不知道怎么补。
-  assert.match(block!, /companion_read_history/);
+  assert.match(block!, /companion_observe/);
   assert.match(block!, /fromSeq/);
   assert.match(block!, /20/);
   assert.ok(block!.endsWith("</conversation_summary>"));
@@ -123,7 +123,7 @@ test("44 §4.4：没有缺口时不说缺口——正常回答不固定插入截
   const block = renderConversationSummary({ title: "一次讨论" }, { coverageVerified: true });
   assert.ok(!block!.includes("没有任何摘要覆盖"));
   // 没有洞就不提取回入口：那是正常情况，不是限制。
-  assert.ok(!block!.includes("companion_read_history"));
+  assert.ok(!block!.includes("companion_observe"));
 });
 
 // ─── 44 §4.4：注入上限是容量，不再是截断点 ──────────────────────────────

@@ -27,7 +27,7 @@ export const companionCreateNoteV1Schema = z.object({
   markdown: z.string().trim().min(1).describe("根据当前讨论整理的完整独立笔记，支持标题、列表、表格、代码与公式"),
   links: z.array(z.object({
     noteId: z.string().uuid(),
-    noteVersionId: z.string().uuid().describe("本轮companion_read_note实际返回的version"),
+    noteVersionId: z.string().uuid().describe("本轮notes.read.read实际返回的version"),
     reason: z.string().trim().min(5).max(240).describe("说明这篇已有笔记与新笔记的具体关系，不能只凭标题猜测"),
   }).strict()).default([]),
 }).strict();
@@ -54,7 +54,8 @@ export type CompanionNoteEditingContextV1 = z.infer<typeof companionNoteEditingC
 export const companionEditNoteV1Schema = z.object({
   noteId: z.string().uuid(), noteVersionId: z.string().uuid(),
   operation: z.enum(["insert_at_cursor", "append", "replace_selection", "delete_selection", "replace_blocks", "delete_blocks"]),
-  markdown: z.string().optional().describe("要插入或替换的新正文；表格用GFM，流程图用mermaid围栏"),
+  markdown: z.string().optional().describe("要插入或替换的新正文；只改措辞或数值时保留原来的标题、列表、表格与代码结构；表格用GFM，流程图用mermaid围栏"),
+  preserveBlockStructure: z.boolean().optional().describe("replace_blocks默认true，核对原段落的块数、类型与属性不变。只有用户明确要求调整段落结构或格式时设false；普通改字、改数值保持true"),
   startBlock: z.number().int().nonnegative().optional().describe("复制读取结果首块的blockIndex（0起算），不要传ordinal；只改complete=true的整块"),
   endBlock: z.number().int().nonnegative().optional().describe("复制读取结果末块的blockIndex（包含该块）"),
   expectedBlocks: z.array(z.string()).min(1).optional().describe("逐字复制本轮实际读取的各块content，避免覆盖新改动"),

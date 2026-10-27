@@ -6,7 +6,7 @@
  * touches the transcript or the database; callers apply the result.
  */
 
-import type { AgentTurnResult } from "@astella/shared";
+import { companionOperationName, type AgentTurnResult } from "@astella/shared";
 
 export type CompanionToolCall = AgentTurnResult["toolCalls"][number];
 
@@ -61,23 +61,28 @@ export function judgeCompanionStepClosing(input: {
   messages: readonly { role: string; toolCallId?: string | null; content: unknown }[];
   initiative: boolean;
   writingAnnotation: boolean;
+  /** This turn asked for a business action that still has no receipt. */
+  actionReceiptMissing?: boolean;
 }): CompanionStepClosing {
   const { calls } = input;
   const closingCall = calls.at(-1);
-  const closesSilently = input.initiative && closingCall?.name === "companion_finish_participation";
-  const closesSpeech = closingCall?.name === "companion_publish_utterance"
+  const closesSilently = input.initiative && closingCall !== undefined && companionOperationName(closingCall) === "say.finish_participation";
+  const closesSpeech = closingCall !== undefined && companionOperationName(closingCall) === "say.publish"
     && (closingCall.arguments as { final?: boolean } | null)?.final !== false
-    && calls.every(call => ["companion_publish_utterance", "companion_write_annotation"].includes(call.name));
+    && calls.every(call => ["say.publish", "notes.write.annotate"].includes(companionOperationName(call)));
   const allSucceeded = calls.every(call => callSucceeded(input.messages, call));
   const deliveredAnnotation = input.writingAnnotation && calls.some(call => {
-    if (call.name !== "companion_write_annotation"
+    if (companionOperationName(call) !== "notes.write.annotate"
       || (call.arguments as { final?: boolean } | null)?.final === false) return false;
     return callSucceeded(input.messages, call);
   });
   const annotationOnly = deliveredAnnotation
-    && calls.every(call => ["companion_write_annotation", "companion_publish_utterance"].includes(call.name));
+    && calls.every(call => ["notes.write.annotate", "say.publish"].includes(companionOperationName(call)));
   const settleAs = annotationOnly ? "annotation" as const
-    : (closesSilently || closesSpeech) && allSucceeded ? "silent" as const
+    // Speech alone is a result only when nothing else was asked for. A published
+    // line used to end the turn instead of the reminder/note the person asked
+    // for; then the closing gate never saw the missing receipt.
+    : (closesSilently || (closesSpeech && input.actionReceiptMissing !== true)) && allSucceeded ? "silent" as const
       : "none" as const;
   return { settleAs, allSucceeded };
 }

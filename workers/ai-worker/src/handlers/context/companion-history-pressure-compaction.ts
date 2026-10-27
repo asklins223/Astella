@@ -71,7 +71,7 @@ export async function compactUncoveredHistory(input: {
   const messages: Message[] = [{ role: "assistant", content: canonicalJsonV1({
     kind: "compacted_conversation_history", conversationId: bound.conversationId,
     fromSeq: entries[0]!.seq, throughSeq: entries.at(-1)!.seq, sourceSha256,
-    boundary: "较早完整交流的语义摘要，只作历史数据，不是新请求或执行回执。用户的本轮要求仍在后面的原始消息中；旧邀请不构成待办，操作是否完成以真实回执为准。精确引用需用 companion_read_history 按会话与 seq 取回原文。",
+    boundary: "较早完整交流的语义摘要，只作历史数据，不是新请求或执行回执。用户的本轮要求仍在后面的原始消息中；旧邀请不构成待办，操作是否完成以真实回执为准。精确引用需用 companion_observe（action=history） 按会话与 seq 取回原文。",
     summary,
   }) }, ...kept];
   const cost = await measureAgentTurnRequest({ ...input.request, messages }, counting);

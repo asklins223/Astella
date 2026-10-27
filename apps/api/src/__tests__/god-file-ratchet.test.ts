@@ -118,7 +118,10 @@ const BASELINE: Readonly<Record<string, number>> = {
   // 实测 1568。这里把基线改成真数，**不是**把它当成正常大小：下一轮仍按 turn/agent
   // 子域拆（看门狗/回退接线属 `agent`，请求要求属 `turn`），拆完把这一条删掉并写明去向。
   // 2026-10-24：工作区已存在的未提交改动使 1568 → 1576；先按当前真实行数记基线，后续拆分再下调。
-  "workers/ai-worker/src/handlers/agent/companion-agent-runtime.ts": 1576,
+  // 2026-10-25：单循环容错接线（首字超时重试、域工具回执收尾、编辑终答宿主绑定）
+  // 使 1576 → 1749。重试已移入 companion-model-retries.ts；收尾装配与终答去重
+  // 移入 companion-host-settlement.ts 后降到 1746。下一轮继续拆交付闸后删掉这一条。
+  "workers/ai-worker/src/handlers/agent/companion-agent-runtime.ts": 1746,
   // 2026-10-05：`workers/ai-worker/src/handlers/note/parse-source.ts` 1878 → 1485，
   // 从基线里**删掉**这一条。HTML → 正文/标题的提取（`removeElementsByClass`、
   // 三张 class 模式表、`decodeFormulaAlt`、`imgReplacement`、`extractTextFromHtml`、

@@ -358,7 +358,7 @@ test("窗口内部的洞说一次就够：给条数、给最新那条 seq、给�
   assert.match(block, /回放窗口内部跳过了 2 条/);
   assert.match(block, /最新一条是 m-9/);
   assert.match(block, /别把前后两条当成挨着说的/);
-  assert.match(block, /companion_read_history/);
+  assert.match(block, /companion_observe/);
   // 洞的 seq 清单在 JSON 里可读，不再逐条成句（第一版逐条成句，实测 52 个洞把交接块顶到 10,380 字符）。
   assert.ok(!block.includes("seq=m-7 那条"), "不再逐条成句");
 });
@@ -390,7 +390,7 @@ test("超长那条在交接块里说得清：说过、这一轮没带正文、�
   assert.match(rendered, /seq=m-9/);
   assert.match(rendered, /是你自己发的长内容/);
   assert.match(rendered, /没带走正文/);
-  assert.match(rendered, /companion_read_history/);
+  assert.match(rendered, /companion_observe/);
 });
 
 test("replay capacity includes persisted reasoning sent with assistant history", () => {

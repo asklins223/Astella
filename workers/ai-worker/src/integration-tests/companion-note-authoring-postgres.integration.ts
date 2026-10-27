@@ -56,10 +56,10 @@ async function fixture(options: { userText?: string; searchCompleted?: boolean }
   const record = (name: string, args: Record<string, unknown>, status = "succeeded", resultRef: string | null = null) => mutate(tx => tx`
     INSERT INTO companion_agent_tool_calls(id,workspace_id,user_id,conversation_id,run_id,step_id,tool_call_id,name,
       tool_version,arguments,arguments_sha256,risk_class,status,result_ref)
-    VALUES(${randomUUID()},${workspaceId},${userId},${conversationId},${runId},${stepId},${name === 'companion_create_note' ? creationCallId : randomUUID()},${name},'1.0.0',
-      ${JSON.stringify(args)}::jsonb,${'c'.repeat(64)},${name === 'companion_create_note' ? 'reversible_low' : 'read'},${status},${resultRef})`);
-  if (options.searchCompleted !== false) await record("companion_search_notes", { query: "电功率 欧姆定律" });
-  await record("companion_create_note", { title: "电功率", markdown: ARTICLE, links: [] }, "executing");
+    VALUES(${randomUUID()},${workspaceId},${userId},${conversationId},${runId},${stepId},${name === 'notes.write.create' ? creationCallId : randomUUID()},${name},'1.0.0',
+      ${JSON.stringify(args)}::jsonb,${'c'.repeat(64)},${name === 'notes.write.create' ? 'reversible_low' : 'read'},${status},${resultRef})`);
+  if (options.searchCompleted !== false) await record("notes.read.search", { query: "电功率 欧姆定律" });
+  await record("notes.write.create", { title: "电功率", markdown: ARTICLE, links: [] }, "executing");
   const event: CompanionNoteAuthoringEvent = {
     ctx: { id: jobId, workspaceId, requestedBy: userId, leaseToken: 'authoring-lease', payload: { runId }, signal: new AbortController().signal },
     read: { userId, runId, accountEpoch: 0, generation: 1, userText },
@@ -75,15 +75,15 @@ async function readRelated(f: Awaited<ReturnType<typeof fixture>>) {
   // Real read executor supplies the frozen read receipt; only the surrounding
   // mock provider ledger is fixture data.
   const args = { noteId: f.related.note.id, noteVersionId: f.related.version.id };
-  const read = await executeReadTool(f.event as AgentEventContext, getCompanionAgentTool("companion_read_note")!, args);
-  await f.record("companion_read_note", args, "succeeded", read.resultRef!);
+  const read = await executeReadTool(f.event as AgentEventContext, getCompanionAgentTool("companion_notes_read")!, { action: "read", ...args });
+  await f.record("notes.read.read", args, "succeeded", read.resultRef!);
   return { ...args, reason: "提供 U、I、R 的关系，说明 P = I²R 的推导与适用条件" };
 }
 
 test("引用预览使用真实读取的对象、版本与段落，来源重读不伪造笔记身份", async () => {
   const f = await fixture(), sourceId = randomUUID();
-  const note = await executeReadTool(f.event as AgentEventContext, getCompanionAgentTool("companion_read_note")!,
-    { noteId: f.related.note.id, noteVersionId: f.related.version.id, startOrdinal: 1 });
+  const note = await executeReadTool(f.event as AgentEventContext, getCompanionAgentTool("companion_notes_read")!,
+    { action: "read", noteId: f.related.note.id, noteVersionId: f.related.version.id, startOrdinal: 1 });
   const noteQuote = note.blocks?.find(block => block.type === "quote");
   assert.ok(noteQuote?.type === "quote");
   assert.deepEqual(noteQuote.sourceRef, { kind: "note", noteId: f.related.note.id, noteVersionId: f.related.version.id, blockOrdinal: 1 });
@@ -92,7 +92,7 @@ test("引用预览使用真实读取的对象、版本与段落，来源重读�
     await tx`INSERT INTO source_segments(source_id,workspace_id,ordinal,text,char_start,char_end)
       VALUES(${sourceId},${f.scope.workspaceId},2,'实际来源段落',0,6)`;
   });
-  const source = await executeReadTool(f.event as AgentEventContext, getCompanionAgentTool("companion_read_source")!, { sourceId, startOrdinal: 2 });
+  const source = await executeReadTool(f.event as AgentEventContext, getCompanionAgentTool("companion_notes_read")!, { action: "source", sourceId, startOrdinal: 2 });
   const sourceQuote = source.blocks?.find(block => block.type === "quote");
   assert.ok(sourceQuote?.type === "quote");
   assert.deepEqual(sourceQuote.sourceRef, { kind: "source", sourceId, segmentOrdinal: 2 });
@@ -142,8 +142,8 @@ test("一篇长笔记能保存八条已读关联，正文和末尾都完整落�
     }));
     assert.ok(related);
     const args = { noteId: related.note.id, noteVersionId: related.version.id };
-    const read = await executeReadTool(f.event as AgentEventContext, getCompanionAgentTool("companion_read_note")!, args);
-    await f.record("companion_read_note", args, "succeeded", read.resultRef!);
+    const read = await executeReadTool(f.event as AgentEventContext, getCompanionAgentTool("companion_notes_read")!, { action: "read", ...args });
+    await f.record("notes.read.read", args, "succeeded", read.resultRef!);
     links.push({ ...args, reason: `第 ${index} 篇提供推导的具体条件与依据` });
   }
   const markdown = ARTICLE + "\n\n" + "功率的适用条件需要结合电路的电压与电流核对。".repeat(2_000) + "正文最后一句仍完整保留。";
@@ -173,9 +173,9 @@ test("超过旧 2 MiB 的内部笔记写入完整保存，不借用传输帧配�
 
 test("没有相关材料时保存独立笔记，不虚构关联；未搜索时不保存", async () => {
   const f = await fixture();
-  await f.mutate(tx => tx`DELETE FROM companion_agent_tool_calls WHERE run_id=${f.event.read.runId} AND name='companion_search_notes'`);
+  await f.mutate(tx => tx`DELETE FROM companion_agent_tool_calls WHERE run_id=${f.event.read.runId} AND name='notes.read.search'`);
   await assert.rejects(executeCompanionCreateNote(f.event, { title: "电功率", markdown: ARTICLE }, undefined, f.creationCallId), /先搜索库里/);
-  await f.record("companion_search_notes", { query: "没有匹配的独立概念" });
+  await f.record("notes.read.search", { query: "没有匹配的独立概念" });
   const saved = await executeCompanionCreateNote(f.event, { title: "电功率", markdown: ARTICLE }, undefined, f.creationCallId);
   assert.deepEqual(saved.value.linkedNotes, []);
 });
@@ -183,15 +183,15 @@ test("没有相关材料时保存独立笔记，不虚构关联；未搜索时�
 test("用户明确要求不读其他资料时，不暴露或执行库搜索仍可保存独立笔记", async () => {
   const f = await fixture({ userText: "把电功率整理成笔记，不要读取其他资料。", searchCompleted: false });
   const readEvent = { ...f.event, constraints: { noteLibraryReadEnabled: false } } as AgentEventContext;
-  assert.equal(resolveAllCompanionAgentTools("full", readEvent.constraints).some(tool => tool.name === "companion_search_notes"), false);
+  assert.equal(resolveAllCompanionAgentTools("full", readEvent.constraints).some(tool => tool.name === "companion_notes_read"), false);
   await assert.rejects(
-    executeReadTool(readEvent, getCompanionAgentTool("companion_search_notes")!, { query: "电功率" }),
+    executeReadTool(readEvent, getCompanionAgentTool("companion_notes_read")!, { action: "search", query: "电功率" }),
     /要求不读取笔记库/,
   );
   const saved = await executeCompanionCreateNote(f.event, { title: "电功率", markdown: ARTICLE, links: [] }, undefined, f.creationCallId);
   assert.deepEqual(saved.value.linkedNotes, []);
   assert.equal((await f.mutate(tx => tx`SELECT count(*)::int AS count FROM companion_agent_tool_calls
-    WHERE run_id=${f.event.read.runId} AND name='companion_search_notes'`))[0]?.count, 0);
+    WHERE run_id=${f.event.read.runId} AND name='notes.read.search'`))[0]?.count, 0);
 });
 
 test("只凭标题、未读版本、改版或跨空间的关联不落库", async () => {
@@ -209,7 +209,7 @@ test("只凭标题、未读版本、改版或跨空间的关联不落库", async
   await f.mutate(tx => tx`UPDATE notes SET current_version_id=${f.related.version.id} WHERE id=${f.related.note.id}`);
   const other = await fixture();
   const foreignLink = { noteId: other.related.note.id, noteVersionId: other.related.version.id, reason: "不能跨空间取资料" };
-  await f.record("companion_read_note", foreignLink, "succeeded", JSON.stringify({kind:"note_read",noteId:foreignLink.noteId,noteVersionId:foreignLink.noteVersionId}));
+  await f.record("notes.read.read", foreignLink, "succeeded", JSON.stringify({kind:"note_read",noteId:foreignLink.noteId,noteVersionId:foreignLink.noteVersionId}));
   await assert.rejects(executeCompanionCreateNote(f.event, { ...args, links: [foreignLink] }, undefined, f.creationCallId), /当前不可见/);
   await f.mutate(tx => tx`UPDATE notes SET deleted_at=now() WHERE id=${f.related.note.id}`);
   await assert.rejects(executeCompanionCreateNote(f.event, args, undefined, f.creationCallId), /尚未读取/);
@@ -239,7 +239,7 @@ test("保存后的最终回复失败，历史仍交付真实笔记入口，重�
   const f = await fixture();
   const saved = await executeCompanionCreateNote(f.event, { title: "电功率", markdown: ARTICLE }, undefined, f.creationCallId);
   await f.mutate(async tx => {
-    await tx`UPDATE companion_agent_tool_calls SET status='succeeded' WHERE run_id=${f.event.read.runId} AND name='companion_create_note'`;
+    await tx`UPDATE companion_agent_tool_calls SET status='succeeded' WHERE run_id=${f.event.read.runId} AND name='notes.write.create'`;
     await tx`UPDATE companion_turn_runs SET status='failed',error_code='PROVIDER_UNAVAILABLE' WHERE id=${f.event.read.runId}`;
   });
   const [turn] = await f.mutate(tx => tx`SELECT conversation_id FROM companion_turn_runs WHERE id=${f.event.read.runId}`);
@@ -300,16 +300,16 @@ test("自动关联前的库内检索不向模型暴露同空间其他成员的�
         VALUES(${id},${f.scope.workspaceId},'检索隔离专用标记',${other.scope.userId},${shareScope})`;
     }
   });
-  const result = await executeReadTool(f.event as AgentEventContext, getCompanionAgentTool("companion_search_notes")!, { query: "检索隔离专用标记" });
+  const result = await executeReadTool(f.event as AgentEventContext, getCompanionAgentTool("companion_notes_read")!, { action: "search", query: "检索隔离专用标记" });
   const found = result.value.notes as Array<{noteId:string}>;
   assert.deepEqual(found.map(note => note.noteId), [sharedId]);
 });
 
 test("自动关联按多个概念取候选，不要求旧笔记包含新笔记的全部主题词", async () => {
   const f = await fixture();
-  const all = await executeReadTool(f.event as AgentEventContext, getCompanionAgentTool("companion_search_notes")!, { query: "欧姆定律 电功率", match: "all" });
+  const all = await executeReadTool(f.event as AgentEventContext, getCompanionAgentTool("companion_notes_read")!, { action: "search", query: "欧姆定律 电功率", match: "all" });
   assert.deepEqual(all.value.notes, []);
-  const any = await executeReadTool(f.event as AgentEventContext, getCompanionAgentTool("companion_search_notes")!, { query: "欧姆定律 电功率", match: "any" });
+  const any = await executeReadTool(f.event as AgentEventContext, getCompanionAgentTool("companion_notes_read")!, { action: "search", query: "欧姆定律 电功率", match: "any" });
   assert.deepEqual((any.value.notes as Array<{noteId:string}>).map(note => note.noteId), [f.related.note.id]);
 });
 

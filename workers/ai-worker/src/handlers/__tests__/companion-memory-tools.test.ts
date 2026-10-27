@@ -23,7 +23,6 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { COMPANION_AGENT_TOOL_DEFINITIONS } from "@astella/shared/companion-agent-registry";
 
 import { executeCompanionMemoryTool } from "../tools/companion-memory-tools.ts";
 import { CompanionToolError } from "../tools/companion-tool-result.ts";
@@ -31,29 +30,23 @@ import { CompanionToolError } from "../tools/companion-tool-result.ts";
 const HANDLERS = resolve(import.meta.dirname, "..");
 const EXECUTION_SOURCE = readFileSync(join(HANDLERS, "tools", "companion-tool-execution.ts"), "utf8");
 
-/** 这六个工具构成"记忆族"。改动这一族的成员时，两处都要跟着改。 */
-const MEMORY_TOOLS = [
-  "companion_read_memory",
-  "companion_recall_memory",
-  "companion_save_memory",
-  "companion_revise_memory",
-  "companion_move_memory",
-  "companion_forget_memory",
-  // 判断记录（40 §4.5.5）同属这一族：它也写 assistant_memory_items，
-  // 也需要同样的准入/版本/抑制/容量纪律。把它留在外面的话，
-  // 它就会成为第二个没有台账盯着的写入口。
-  "companion_remember_judgment",
-  // 手册展开（40 §4.6.10）也归这一族：它写/读的是陪伴记录，同样需要
-  // 准入、版本与抑制纪律；留在外面就会成为第二个没人盯的入口。
-  "companion_read_playbook",
-  // 日记读回（40 §6）也走这一族：它读的是陪伴记录，同样受 workspace 隔离与
-  // 版本核对约束。留在外面就成了第二个不受台账盯着的读取通道。
-  "companion_read_diary",
+/** 记忆族的内部操作 id。模型只看到 companion_memory_read/write + action。 */
+const MEMORY_OPERATIONS = [
+  "memory.read.read",
+  "memory.read.recall",
+  "memory.read.past_conversation",
+  "memory.read.playbook",
+  "memory.read.diary",
+  "memory.write.save",
+  "memory.write.revise",
+  "memory.write.move",
+  "memory.write.forget",
+  "memory.write.judgment",
 ] as const;
 
 /** 取出一个顶层函数体的文本（花括号配平）。与台账那条判据同一种取法。 */
 function functionBody(name: string): string {
-  const start = EXECUTION_SOURCE.indexOf(`async function ${name}`);
+  const start = EXECUTION_SOURCE.indexOf(`function ${name}`);
   assert.ok(start >= 0, `执行器里找不到 ${name}——改名了就要同步这张表`);
   let depth = 0;
   for (let i = EXECUTION_SOURCE.indexOf("{", start); i < EXECUTION_SOURCE.length; i += 1) {
@@ -67,13 +60,13 @@ function functionBody(name: string): string {
 }
 
 const caseLabels = (body: string): string[] =>
-  [...body.matchAll(/case "(companion_[a-z_]+)"/g)].map((m) => m[1]);
+  [...body.matchAll(/case "([a-z]+\.[a-z_.]+)"/g)].map((m) => m[1]);
 
 test("记忆族的每个工具在两把执行器里各只有一个标签，且转交给本模块", () => {
   const read = caseLabels(functionBody("executeReadTool"));
   const direct = caseLabels(functionBody("executeDirectTool"));
 
-  for (const name of MEMORY_TOOLS) {
+  for (const name of MEMORY_OPERATIONS) {
     const inRead = read.filter((t) => t === name).length;
     const inDirect = direct.filter((t) => t === name).length;
     assert.equal(inRead + inDirect, 1,
@@ -82,16 +75,13 @@ test("记忆族的每个工具在两把执行器里各只有一个标签，且�
   }
 });
 
-test("记忆族的标签长在 riskClass 真会送过去的那一把执行器里", () => {
+test("记忆族的标签长在风险档真会送过去的那一把执行器里", () => {
   const read = new Set(caseLabels(functionBody("executeReadTool")));
   const direct = new Set(caseLabels(functionBody("executeDirectTool")));
-  const wrongSide = MEMORY_TOOLS.filter((name) => {
-    const def = COMPANION_AGENT_TOOL_DEFINITIONS.find((d) => d.name === name);
-    assert.ok(def, `registry 里没有 ${name}——记忆族与注册表不同步`);
-    return def!.riskClass === "read" ? !read.has(name) : !direct.has(name);
-  });
+  const wrongSide = MEMORY_OPERATIONS.filter((name) =>
+    name.startsWith("memory.read.") ? !read.has(name) : !direct.has(name));
   assert.deepEqual(wrongSide, [],
-    "这些记忆工具的 case 长在派活规则不会送到的执行器里，运行时等于没有分支");
+    "这些记忆操作的 case 长在派活规则不会送到的执行器里，运行时等于没有分支");
 });
 
 test("转交的那一行真的指向本模块（标签留着但忘了转交＝死分支）", () => {
@@ -106,14 +96,16 @@ test("转交的那一行真的指向本模块（标签留着但忘了转交＝�
     // 少了 `return` 这一跳，第一步就 break，判据会报「一个标签都没转交」。
     const labels: string[] = [];
     for (const line of before.split("\n").reverse()) {
-      const label = /^\s*case "(companion_[a-z_]+)":\s*$/.exec(line);
+      const label = /^\s*case "([a-z]+\.[a-z_.]+)":\s*$/.exec(line);
       if (label) { labels.push(label[1]); continue; }
       if (line.trim() === "" || /^\s*(\/\/|return\b)/.test(line)) continue;
       break;
     }
     for (const name of labels) delegated.add(name);
   }
-  assert.deepEqual([...delegated].sort(), [...MEMORY_TOOLS].sort(),
+  // past_conversation 由执行器本体实现，不走记忆模块。
+  assert.deepEqual([...delegated].sort(),
+    MEMORY_OPERATIONS.filter(operation => operation !== "memory.read.past_conversation").sort(),
     "执行器里转交出去的标签与记忆族对不上——"
     + "要么某个记忆工具没被转交（死分支），要么转交了不该属于这一族的工具");
 });
@@ -136,7 +128,7 @@ test("按 ID 展开与召回工具都返回认识状态及不可当作事实复�
 test("本模块只接记忆族：别的一个都不接，来了就报错而不是静默返回空", () => {
   // 真跑一次：不是记忆工具就该当场拒绝，而不是默默给一个空结果。
   const foreign = {
-    name: "companion_search_notes",
+    name: "notes.read.search",
     riskClass: "read",
     requiresConfirmation: false,
   };
@@ -215,25 +207,17 @@ function withoutComments(source: string): string {
 
 test("【自证】正控制：判据认得出「两边都有分支」与「标签长错边」这两种形状", () => {
   // 这条判据的全部力气在两把执行器的差集上；这里用合成输入证明它不是恒真。
-  const readSet = new Set(["companion_read_memory"]);
-  const directSet = new Set(["companion_save_memory", "companion_read_memory"]);
-  const duplicated = MEMORY_TOOLS.filter((n) => readSet.has(n) && directSet.has(n));
-  assert.deepEqual(duplicated, ["companion_read_memory"], "自证样本没造好");
+  const readSet = new Set(["memory.read.read"]);
+  const directSet = new Set(["memory.write.save", "memory.read.read"]);
+  const duplicated = MEMORY_OPERATIONS.filter((n) => readSet.has(n) && directSet.has(n));
+  assert.deepEqual(duplicated, ["memory.read.read"], "自证样本没造好");
 
-  const misplaced = MEMORY_TOOLS.filter((n) =>
-    COMPANION_AGENT_TOOL_DEFINITIONS.find((d) => d.name === n)?.riskClass === "read"
-      ? !readSet.has(n) : !directSet.has(n));
-  // readSet 里只有 read_memory、directSet 里只有 save_memory 与 read_memory，
-  // 于是两个 read 档里缺 recall_memory、四个写档里缺 revise/move/forget。
+  const misplaced = MEMORY_OPERATIONS.filter((n) =>
+    n.startsWith("memory.read.") ? !readSet.has(n) : !directSet.has(n));
   assert.deepEqual(misplaced,
     [
-      "companion_recall_memory",
-      "companion_revise_memory",
-      "companion_move_memory",
-      "companion_forget_memory",
-      "companion_remember_judgment",
-      "companion_read_playbook",
-      "companion_read_diary",
+      "memory.read.recall", "memory.read.past_conversation", "memory.read.playbook", "memory.read.diary",
+      "memory.write.revise", "memory.write.move", "memory.write.forget", "memory.write.judgment",
     ],
     "自证样本没造好");
 });

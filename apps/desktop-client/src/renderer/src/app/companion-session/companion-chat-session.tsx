@@ -1401,7 +1401,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
           // 抽屉开关。
           if (streamed.eventType === "agent.tool") {
             const work = streamed.payload.tool as { name?: string; toolCallId?: string; status?: string; proposalId?: string; noteEditTarget?: { noteId: string; startBlock: number; endBlock: number }; noteEdit?: unknown; noteAnnotation?: { requestId: string; annotation: unknown } } | undefined;
-            if (work?.name === "companion_write_annotation") {
+            if (work?.name === "notes.write.annotate") {
               const pending = pendingSendRef.current;
               if (pending?.generation === args.generation && pending.explanationId) {
                 if (work.status === "executing") progressNoteExplanation(pending.explanationId);
@@ -1422,7 +1422,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
               if (["succeeded", "failed", "blocked", "outcome_unknown", "not_executed"].includes(work.status))
                 void loadProposalSnapshots([proposalId]);
             }
-            if (work?.name === "companion_edit_note") {
+            if (work?.name === "notes.write.edit") {
               if (work.noteEditTarget && work.status === "executing") beginNoteAiWork(`turn:${args.generation}:tool:${work.toolCallId}`, work.noteEditTarget.noteId,
                 [{ ...work.noteEditTarget, label: "伴星正在调整这段" }]);
               if (work.status && !["requested", "executing"].includes(work.status)) endNoteAiWork(`turn:${args.generation}:tool:${work.toolCallId}`);

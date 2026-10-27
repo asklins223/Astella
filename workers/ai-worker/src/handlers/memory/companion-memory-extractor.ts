@@ -14,7 +14,8 @@ import { taskEntityFromPersistedPageContext, type CompanionTaskEntityRef } from 
 import { createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { companionMemoryContentMaxLength } from "@astella/shared/companion-memory-desktop-contracts";
-import { readJobPayloadString, resolveCompanionMemoryTemporalMetadata } from "@astella/shared";
+import { normalizeCompanionMemoryContent, readJobPayloadString,
+  resolveCompanionMemoryTemporalMetadata } from "@astella/shared";
 import { stableStringify, sha256Utf8V1 } from "@astella/shared/content-hash";
 import { logger } from "../../lib/logger.ts";
 import { createProvider } from "../../lib/ai-provider.ts";
@@ -306,6 +307,33 @@ export async function memorySourceHasActionProposal(
     ) AS delegated
   `);
   return rows[0]?.delegated === true;
+}
+
+/**
+ * An active memory that already covers this candidate makes the extraction a
+ * duplicate. Only the "existing covers candidate" direction is skipped: a
+ * candidate that adds a condition is allowed through as a refinement.
+ */
+export async function hasCoveredActiveMemoryTwin(
+  tx: WorkerTransaction,
+  input: { workspaceId: string; userId: string; kind: string; content: string },
+): Promise<boolean> {
+  const normalized = normalizeCompanionMemoryContent(input.content);
+  if (normalized.length < 6) return false;
+  const rows = await tx.execute<{ id: string }>(sql`
+    SELECT id FROM assistant_memory_items
+    WHERE workspace_id = ${input.workspaceId}
+      AND user_id = ${input.userId}
+      AND kind = ${input.kind}
+      AND deleted_at IS NULL
+      AND dismissed_at IS NULL
+      AND archived_at IS NULL
+      AND (valid_from IS NULL OR valid_from <= now())
+      AND (valid_until IS NULL OR valid_until > now())
+      AND position(${normalized} in regexp_replace(regexp_replace(lower(content), '[[:space:][:punct:]]', '', 'g'), '^(用户|我)', '')) > 0
+    LIMIT 1
+  `);
+  return rows.length > 0;
 }
 
 /** Suppress only a similar, dismissed memory of the same semantic kind. */
@@ -719,6 +747,7 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
 
   // 用户明确"忽略"过的事，下一轮抽取不能再当成新事端上来（doc 34 L14 的后半）。
   let skippedDismissedTwins = 0;
+  let skippedCoveredTwins = 0;
   let skippedForgottenSources = 0;
   let skippedActionSources = 0;
   // 本轮的页面身份（39b C8）：有它 task 记忆才落 task 档并绑定；没有就全部降级 workspace。
@@ -774,6 +803,12 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
       });
       if (dismissedTwin) {
         skippedDismissedTwins += 1;
+        continue;
+      }
+      if (await hasCoveredActiveMemoryTwin(tx, {
+        workspaceId: job.workspaceId, userId, kind: candidate.kind, content: candidate.content,
+      })) {
+        skippedCoveredTwins += 1;
         continue;
       }
       const insertedRows = await tx.execute<{ id: string }>(sql`
@@ -880,7 +915,8 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
     {
       jobId: job.id,
       runId,
-      count: candidates.length - skippedDismissedTwins - skippedForgottenSources - skippedActionSources,
+      count: candidates.length - skippedDismissedTwins - skippedCoveredTwins
+        - skippedForgottenSources - skippedActionSources,
       // 分母：模型给了几条
       attempted: confidenceAccepted.length,
       // 分子按原因分开
@@ -890,6 +926,7 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
       volatileDropped: sourcedCandidates.length - nonVolatileCandidates.length,
       duplicateSourceKindDropped,
       dismissedTwinsSkipped: skippedDismissedTwins,
+      coveredTwinsSkipped: skippedCoveredTwins,
       forgottenSourcesSkipped: skippedForgottenSources,
       actionSourcesSkipped: skippedActionSources,
     },

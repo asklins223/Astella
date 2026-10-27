@@ -41,7 +41,7 @@ import {
   recoverCompanionRunFailureSpanBestEffort,
 } from "../turn/companion-dialogue-store.ts";
 import { CompanionAgentBudgetExceededError } from "../../lib/non-retryable-errors.ts";
-import { COMPANION_AGENT_TOOL_LABELS } from "@astella/shared";
+import { companionToolLabel } from "@astella/shared";
 import { type AgentEventContext } from "./companion-read-tools.ts";
 import { resolveCompanionAgentBudget, resolveProviderCallTimeout } from "../../lib/handler-timeout-config.ts";
 import type { CompanionAgentToolDefinitionV1, CompanionAgentToolStatus } from "@astella/shared";
@@ -77,7 +77,7 @@ export function companionToolExecutionTimeout(definition: Pick<CompanionAgentToo
   // Writes include a durable API dispatch and CRDT save, or nested generation.
   // They are bounded by the run deadline, not the quick database-read budget.
   if (definition.riskClass !== "read") return resolveCompanionAgentBudget().loopDeadlineMs;
-  if (["companion_read_image", "agent_web_search", "agent_read_public_document"].includes(definition.name))
+  if (["visual.read_image", "web.search", "web.read_document"].includes(definition.name))
     return resolveProviderCallTimeout("companion_agent");
   // Local reads already have database statement/lock timeouts. An extra guessed
   // ten-second tool ceiling can fail healthy work while its query still runs.
@@ -103,7 +103,7 @@ export async function runCompanionToolExecution(args: ToolExecutionRunArgs): Pro
       toolVersion: definition.toolVersion,
       riskClass: definition.riskClass,
       status: "requested",
-      safeLabel: COMPANION_AGENT_TOOL_LABELS[definition.name] ?? definition.description.slice(0, 240),
+      safeLabel: companionToolLabel(definition.name) ?? definition.description.slice(0, 240),
     },
   });
 
@@ -161,7 +161,7 @@ export async function runCompanionToolExecution(args: ToolExecutionRunArgs): Pro
     );
     // Repair instructions belong to the model receipt. They are not a progress
     // message for the person reading the journal, including after reconnect.
-    const publicSummary = definition.name === "companion_publish_utterance" && failure.modelStatus === "not_executed"
+    const publicSummary = definition.name === "say.publish" && failure.modelStatus === "not_executed"
       ? "这次分条发送没有执行。" : failure.safeSummary;
     // 账本与 SSE 走映射后的既有词，模型拿精确词——理由见 companionToolFailureFaces。
     await updateToolCall(event, operationCallId, { status: failure.ledgerStatus, safeSummary: publicSummary });
@@ -173,7 +173,7 @@ export async function runCompanionToolExecution(args: ToolExecutionRunArgs): Pro
         toolVersion: definition.toolVersion,
         riskClass: definition.riskClass,
         status: failure.ledgerStatus,
-        safeLabel: COMPANION_AGENT_TOOL_LABELS[definition.name] ?? definition.description.slice(0, 240),
+        safeLabel: companionToolLabel(definition.name) ?? definition.description.slice(0, 240),
         safeSummary: publicSummary,
       },
     });

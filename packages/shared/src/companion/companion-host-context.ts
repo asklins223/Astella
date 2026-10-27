@@ -1,4 +1,4 @@
-import { isCompanionAutonomousTool } from "./companion-autonomy.ts";
+import { isCompanionAutonomousDomainTool, isCompanionAutonomousTool, isCompanionSelfMaintainedDomainTool } from "./companion-autonomy.ts";
 
 /**
  * 宿主上下文：这一轮**实际发生的事**，不是分类器猜的意图（2026-10-16）。
@@ -42,9 +42,7 @@ export interface CompanionHostContextFacts {
  * 其余写类在没有自主标记时已经被 `isCompanionAutonomousTool` 挡掉了。
  */
 export const COMPANION_NAVIGATION_TOOL_NAMES: readonly string[] = Object.freeze([
-  "companion_open_page",
-  "companion_open_note",
-  "companion_open_card",
+  "companion_open",
 ]);
 
 /**
@@ -57,12 +55,8 @@ const HOST_CONTEXT_RULES: Readonly<Record<string, {
   onlyIn?: readonly CompanionHostContext[];
   notIn?: readonly CompanionHostContext[];
 }>> = Object.freeze({
-  // 批注只能从句子的批注入手写；没有批注目标时这个能力不可能成功。
-  companion_write_annotation: { onlyIn: ["annotation"] },
   // 整篇正文那一轮直接把正文交上去，不用分句发言（用了反而与正文分叉）。
-  companion_publish_utterance: { notIn: ["note_reply"] },
-  // 收尾发言只存在于主动那一轮。
-  companion_finish_participation: { onlyIn: ["initiative"] },
+  companion_say: { notIn: ["note_reply"] },
 });
 
 /** 宿主事实 → 这一轮生效的上下文集合。任何对话轮至少是 `user`。 */
@@ -92,5 +86,12 @@ export function companionCapabilityOfferedInHostContext(
   // 主动那一轮只剩自主能力与非导航只读能力：她不能替用户执行业务操作。
   if (!contexts.has("initiative")) return true;
   return isCompanionAutonomousTool(definition.name)
+    || isCompanionAutonomousDomainTool(definition.name)
+    // These domains also host autonomous actions (identity/style/tags/self_note;
+    // arrange/schedule_wake/save_participation). Their gated actions still hit the
+    // execution-time confirmation, so the whole tool may ride along.
+    // Her own records and the plans she maintains are hers to advance; the
+    // gated actions inside them still confirm at execution time.
+    || isCompanionSelfMaintainedDomainTool(definition.name)
     || (definition.riskClass === "read" && !COMPANION_NAVIGATION_TOOL_NAMES.includes(definition.name));
 }

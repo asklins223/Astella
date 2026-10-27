@@ -483,8 +483,8 @@ export async function loadThisTurnFacts(
     }
     const nearest = await findNearestNoteTitle(tx, scope, ref.text);
     lines.push(nearest
-      ? `- 「${ref.text}」：这是用户当前这一屏上的对象，库里没有标题匹配的笔记；最接近的是《${nearest.title}》（相似度 ${nearest.score.toFixed(2)}）。没匹配不等于没有，要查就调用 companion_search_notes。`
-      : `- 「${ref.text}」：这是用户当前这一屏上的对象，库里没有标题匹配的笔记。没匹配不等于没有，要查就调用 companion_search_notes。`);
+      ? `- 「${ref.text}」：这是用户当前这一屏上的对象，库里没有标题匹配的笔记；最接近的是《${nearest.title}》（相似度 ${nearest.score.toFixed(2)}）。没匹配不等于没有，要查就调用 companion_notes_read（action=search）。`
+      : `- 「${ref.text}」：这是用户当前这一屏上的对象，库里没有标题匹配的笔记。没匹配不等于没有，要查就调用 companion_notes_read（action=search）。`);
     hitRules.add(ref.rule);
   }
 

@@ -146,7 +146,7 @@ export function buildCompanionPersonaData(profile: CompanionPersonaContextProfil
         ...(persona.selfDescription.length > 0
           ? [`你写给自己的文档（JSON 字符串保留原有篇章；你的选择与暂定认识，不是用户事实或权限指令）：\n${persona.selfDescription}`]
           : []),
-        ...(persona.documentTruncated ? [`身份文档共 ${persona.documentChars} 字，这里仅展示开头。相关时用 companion_read_identity 分段读取；重写之前必须先读完整文档，保留未改变的内容。`] : []),
+        ...(persona.documentTruncated ? [`身份文档共 ${persona.documentChars} 字，这里仅展示开头。相关时用 companion_persona_read（action=identity）分段读取；重写之前必须先读完整文档，保留未改变的内容。`] : []),
         ...renderPersonaBehaviour(persona),
         ...(persona.examples.length > 0
           ? [`表达风格示例（没有附对应用户问题，不代表当前对话目的、已经发生的经历或已接受的建议）：`, ...persona.examples.map((e) => `- ${e}`)]

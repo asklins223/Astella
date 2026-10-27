@@ -181,20 +181,23 @@ test("【正控制】新状态真的被写到，而不是只在词表里存在",
 
   // ② 真实写入点：读图受数据外发政策管，关着时这一轮**没有这个能力**。
   assert.equal(
-    unavailableCompanionToolSummary("companion_read_image", { visionEnabled: false }),
+    unavailableCompanionToolSummary("visual.read_image", { visionEnabled: false }),
     VISION_EGRESS_UNAVAILABLE_SAFE_SUMMARY,
   );
-  assert.equal(unavailableCompanionToolSummary("companion_read_image", {}), VISION_EGRESS_UNAVAILABLE_SAFE_SUMMARY);
+  assert.equal(unavailableCompanionToolSummary("visual.read_image", {}), VISION_EGRESS_UNAVAILABLE_SAFE_SUMMARY);
   // 开了就恢复成"可用"——判据不能只看工具名。
-  assert.equal(unavailableCompanionToolSummary("companion_read_image", { visionEnabled: true }), null);
+  assert.equal(unavailableCompanionToolSummary("visual.read_image", { visionEnabled: true }), null);
   // 展示图片**不**出境，所以它不受这条管（工具面本来就区分了这两件事）。
-  assert.equal(unavailableCompanionToolSummary("companion_show_image", { visionEnabled: false }), null);
-  assert.equal(unavailableCompanionToolSummary("companion_read_note", { visionEnabled: false }), null);
-  // 而且它必须是**工具面真的摘掉了读图**的那一条，否则这一档永远不会发生。
-  assert.ok(!resolveAllCompanionAgentTools("full", { visionEnabled: false })
-    .some((definition) => definition.name === "companion_read_image"));
-  assert.ok(resolveAllCompanionAgentTools("full", { visionEnabled: true })
-    .some((definition) => definition.name === "companion_read_image"));
+  assert.equal(unavailableCompanionToolSummary("visual.show_image", { visionEnabled: false }), null);
+  assert.equal(unavailableCompanionToolSummary("notes.read.read", { visionEnabled: false }), null);
+  // 视觉域工具本身仍在下发（展示、画图不需要出境），只有 read_image 这一动作
+  // 在执行层被拦；所以这一档一定发生得到，且不会把整个视觉域一起关掉。
+  for (const visionEnabled of [false, true]) {
+    assert.ok(resolveAllCompanionAgentTools("full", { visionEnabled })
+      .some((definition) => definition.name === "companion_visual"));
+  }
+  assert.equal(unavailableCompanionToolSummary("visual.read_image", { visionEnabled: false }),
+    VISION_EGRESS_UNAVAILABLE_SAFE_SUMMARY);
 });
 
 test("【正反两向】这一档必须**指出影响并给出替代**，否则用户不知道怎么拿回来", () => {

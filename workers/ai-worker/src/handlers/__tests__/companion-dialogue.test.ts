@@ -298,7 +298,7 @@ test("active 目录只含有界元数据，并提示相关时按 ID 与版本展
   assert.match(system, /喜欢先看反例再读定义/);
   assert.match(system, /适用：解释新概念时/);
   assert.match(system, /版本：4/);
-  assert.match(system, /companion_read_memory\(memoryId, expectedRevision\)/);
+  assert.match(system, /companion_memory_read（action=read）/);
   assert.doesNotMatch(system, /<memory_data>/, "active 正文不能自动注入");
   assert.doesNotMatch(system, /正文没有自动注入的独有内容/);
   assert.equal(validateCompanionOutput("<memory_directory>记忆标题 2026-09</memory_directory>").ok, false,
@@ -345,7 +345,7 @@ test("模型能分清本轮没注入记忆与记忆不存在，并只在相关�
   assert.match(system, /resident 2 条、目录 3 条/);
   assert.match(system, /没带入不代表不存在/);
   assert.match(system, /当前问题确实需要相关旧记忆时/);
-  assert.match(system, /companion_recall_memory/);
+  assert.match(system, /companion_memory_read（action=recall）/);
   assert.match(system, /长期记忆不是每轮都要搜索/);
   assert.match(system, /只有缺少会改变回答的旧交流、约定/);
   assert.match(system, /已有原文或本轮提供的完整问题足够时直接回答/);
@@ -360,7 +360,7 @@ test("没有目录线索时，模型仍可在长期偏好可能相关时主动�
     pageContext: null,
   });
   assert.match(String(ordinary[0]?.content), /长期记忆不是每轮都要搜索/);
-  assert.match(String(ordinary[0]?.content), /companion_recall_memory/);
+  assert.match(String(ordinary[0]?.content), /companion_memory_read（action=recall）/);
 
 
 });
@@ -968,6 +968,9 @@ test("looksLikeUnfulfilledActionNarration：只说了要做什么、一个工具
   assert.equal(looksLikeUnfulfilledActionNarration("这就去记忆里翻一翻～"), true);
   assert.equal(looksLikeUnfulfilledActionNarration("好，这就把它忘掉～"), true);
   assert.equal(looksLikeUnfulfilledActionNarration(" 我马上帮你查 "), true);
+  // 2026-10-27 实机：导航被说成"做了"而一个工具都没跑。
+  assert.equal(looksLikeUnfulfilledActionNarration("好，我这就打开笔记库。"), true);
+  assert.equal(looksLikeUnfulfilledActionNarration("[neutral]好，我这就打开笔记库。"), true);
   // 坍缩闸放过它（句子结构完整），所以需要另一条判据
   assert.equal(looksTruncatedReply("这就去记忆里翻一翻～"), false);
 });

@@ -18,6 +18,7 @@ after(async () => {
 
 test("search defaults off, saves on first write, follows the account, and preserves independent settings", async () => {
   const fresh = await getCompanionOverview(userId, spaceA);
+  assert.equal(fresh.account.agentSettings?.permissionLevel, "guided");
   assert.notEqual(fresh.account.agentSettings?.webSearchEnabled, true);
   const enabled = await updateCompanionAccountState(userId, spaceA, { revision: 0, webSearchEnabled: true });
   assert.equal(enabled.agentSettings?.webSearchEnabled, true);
@@ -29,6 +30,9 @@ test("search defaults off, saves on first write, follows the account, and preser
   const disabled = await updateCompanionAccountState(userId, spaceA, { revision: permission.revision, webSearchEnabled: false });
   assert.equal(disabled.agentSettings?.permissionLevel, "read_only");
   assert.equal(disabled.agentSettings?.webSearchEnabled, false);
-  assert.equal(disabled.epoch, 0);
+  assert.equal(disabled.epoch, 1, "lowering permission revokes authority of runs accepted before the change");
+  const full = await updateCompanionAccountState(userId, spaceA, { revision: disabled.revision, agentPermissionLevel: "full" });
+  assert.equal(full.epoch, disabled.epoch, "explicitly increasing permission must not invalidate a pending single-use confirmation");
+  assert.equal(full.agentSettings?.webSearchEnabled, false);
   await assert.rejects(updateCompanionAccountState(userId, spaceB, { revision: enabled.revision, webSearchEnabled: true }), /revision/);
 });

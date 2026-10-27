@@ -27,7 +27,9 @@ export async function readNotePage(tx: ApiTransaction, scope: { workspaceId: str
       'ordinal', ${noteBlocks.ordinal}, 'type', 'heading', 'content', left(${noteBlocks.content}, 200))
       order by ${noteBlocks.ordinal}) filter (where ${noteBlocks.type} = 'heading'), '[]'::json)`,
   }).from(noteBlocks).where(where) : [];
-  return { noteId, title: note.title, currentVersion: { versionId: version.id,
+  // Version hashes identify immutable checkpoints; live document edits update
+  // note_blocks under the same version. Readers need the live revision too.
+  return { noteId, title: note.title, contentRevision: note.updatedAt.toISOString(), currentVersion: { versionId: version.id,
     versionNo: version.versionNo, blocks: page.blocks.map(projectReaderBlock) }, reader: {
     nextOrdinal: page.hasMore || query.beforeOrdinal !== undefined ? page.blocks.at(-1)?.ordinal ?? null : null,
     hasEarlierBlocks: query.beforeOrdinal !== undefined ? page.hasMore : query.afterOrdinal !== undefined,

@@ -29,7 +29,7 @@ afterEach(() => {
   clearAccountSignOutNotice();
 });
 
-type SignOutPayload = { loggedOut: true; serverRevoked: boolean };
+type SignOutPayload = { loggedOut: true; serverRevoked: boolean; quickLoginAvailable?: boolean };
 
 function envelope(data: SignOutPayload): GatewayResultV1<SignOutPayload> {
   return {
@@ -62,6 +62,13 @@ function stubLogout(
 }
 
 describe("退出登录这个动作", () => {
+  it("keeps the requested avatar login without claiming remote revocation failed", async () => {
+    const logout = stubLogout(async () => envelope({ loggedOut: true, serverRevoked: false, quickLoginAvailable: true }));
+    await signOutCurrentAccount();
+    expect(logout.mock.calls[0][0]).toMatchObject({ keepQuickLogin: true });
+    expect(peekAccountSignOutNotice()).toBeNull();
+    expect(invalidations).toEqual(["auth_required"]);
+  });
   it("本机与学习服务都干净了，就不给登录页留一句话", async () => {
     const logout = stubLogout(async () => envelope({ loggedOut: true, serverRevoked: true }));
 

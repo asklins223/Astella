@@ -22,6 +22,8 @@ import type { AIProvider } from "../../lib/ai-provider.ts";
 import { resolveProviderCallTimeout } from "../../lib/handler-timeout-config.ts";
 import { logger } from "../../lib/logger.ts";
 import { AIContextCompactionRequiredError, AIContextOverflowError } from "../../lib/context-governor.ts";
+import { AgentOutputError } from "../../lib/non-retryable-errors.ts";
+import { CompanionToolOutputRepairError } from "../tools/companion-tool-output-repair.ts";
 import { companionStepOutputCeiling } from "../turn/companion-dialogue-content.ts";
 import { stepHoldChars } from "../turn/companion-step-plan.ts";
 import { canRetryCompanionStream, runStreamingAgentStep } from "./companion-agent-streaming-step.ts";
@@ -75,8 +77,6 @@ export function startCompanionSpeculativeFirstSteps(args: {
   messages: AgentMessage[];
   deadlineAt: number;
   availableTools: AgentTurnRequest["tools"];
-  /** 这一轮能不能用 web 搜索（与真实第一步同一判据，由运行时算好交进来）。 */
-  webSearchAllowed: boolean;
   /** 本轮已有的工具回执数：非 0 就不投提问版（续跑的第一步工具面不一样）。 */
   toolCallCount: number;
   /**
@@ -131,8 +131,9 @@ export function startCompanionSpeculativeFirstSteps(args: {
   // 作废是这条飞地的正常出口之一：先接住，免得没人处理的 rejection 冒出来。
   casualFlight?.catch(() => undefined);
 
-  const questionTools = args.availableTools
-    .filter(definition => definition.name !== "agent_web_search" || args.webSearchAllowed);
+  // Search availability is enforced per action at execution: the web domain
+  // also reads documents, so removing the tool would drop that too.
+  const questionTools = args.availableTools;
   const questionRequest = eligible && args.provider.chatCompletionStreamToolCalls === true
     && args.toolCallCount === 0
     ? buildQuestionFirstStepRequest({
@@ -181,6 +182,14 @@ export function startCompanionSpeculativeFirstSteps(args: {
       if (!state.emitted && !args.ctxSignal.aborted && Date.now() < settle.deadlineAt
         && (err instanceof AIContextCompactionRequiredError || err instanceof AIContextOverflowError)) {
         logger.info({ runId: settle.runId }, "speculative context pressure deferred to formal request compaction");
+        return null;
+      }
+      // A protocol-shaped draft (tool JSON written as prose) is exactly what the
+      // formal step's repair path exists for. Nothing was delivered, so discard
+      // the guess instead of failing the turn before the loop can even start.
+      if (!state.emitted && (err instanceof CompanionToolOutputRepairError
+        || (err instanceof AgentOutputError && ["arguments_malformed", "tool_protocol_leak"].includes(err.code)))) {
+        logger.warn({ runId: settle.runId, err }, `speculative ${label} draft broke the tool protocol; falling back to the formal step`);
         return null;
       }
       // 投机请求一旦送达文字，或输出额度/鉴权等确定性失败，就和正式流式

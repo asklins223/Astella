@@ -10,15 +10,18 @@
 
 import {
   companionToolGroupCatalog,
+  COMPANION_COMMON_ACTION_TOOL_NAMES,
   resolveCompanionInitialToolNames,
   resolveCompanionToolGroupNames,
   type AgentTurnRequest,
 } from "@astella/shared";
-import { explicitCompanionProductRequest, explicitlyRequestsUtterances } from "./companion-tool-intent.ts";
-
-export function companionTaskSurfaceCandidates(userText: string | undefined): string[] {
-  return [...(explicitCompanionProductRequest(userText).newNote ? ["companion_create_note"] : []),
-    ...(explicitlyRequestsUtterances(userText) ? ["companion_publish_utterance"] : [])];
+/**
+ * The tool surface is a declaration view: permissions, page context and the
+ * common action tools. It must not depend on guessing what the sentence asks
+ * for; the model chooses from the tools it can see.
+ */
+export function companionTaskSurfaceCandidates(_userText: string | undefined): string[] {
+  return [];
 }
 
 type ToolDefinition = AgentTurnRequest["tools"][number];
@@ -46,22 +49,33 @@ export function createCompanionToolSurface(input: {
     availableToolNames: input.definitions.map(definition => definition.name),
     pageKind: input.pageKind,
     hasImageAttachments: input.hasImageAttachments,
-    candidateOperations: [...input.candidateOperations, ...companionTaskSurfaceCandidates(input.userText)],
+    candidateOperations: [...input.candidateOperations],
   });
-  // A fresh note task needs its authoring dependencies immediately. Unrelated
-  // core groups remain discoverable, without serializing them at every step.
-  // The deterministic new-note signal decides; classifier candidates only add
-  // groups, so an empty or noisy candidate list must not defeat the narrowing.
-  if (explicitCompanionProductRequest(input.userText).newNote) {
-    const authoring = new Set(["companion_create_note", "companion_search_notes", "companion_read_note", "companion_read_source",
-      "companion_read_current_page", "companion_read_history", "companion_load_tools", "companion_read_image"]);
-    for (const name of initialToolNames) if (!authoring.has(name)) initialToolNames.delete(name);
+  // Proactive turns keep the earlier, narrower surface: common writes are for
+  // user-requested work, not for self-initiated participation. Her own persona
+  // records stay available — advancing a self-note is exactly what a proactive
+  // turn is for, and it never writes anything the user owns.
+  if (input.initiative) {
+    for (const name of COMPANION_COMMON_ACTION_TOOL_NAMES) initialToolNames.delete(name);
+    for (const name of ["companion_notes_write", "companion_memory_write"]) {
+      initialToolNames.delete(name);
+    }
+    // Her own records and the attention plan she maintains are hers to advance;
+    // gated actions on them (cancel/pause/activeness/boundary) still hit the
+    // execution-time confirmation and the initiative business-op block.
+    for (const name of ["companion_persona_read", "companion_persona_write", "companion_attention_write",
+      "companion_observe", "companion_notes_read", "companion_say"]) {
+      if (input.definitions.some(definition => definition.name === name)) initialToolNames.add(name);
+    }
   }
+  // Candidate operations and page declarations may add tools. Nothing narrows
+  // the declared, permission-filtered surface here: a compound request keeps
+  // its reminder, memory, or persona capabilities alongside note authoring.
   // 分条发言不再只属于主动轮：伴星可以自己决定把回复拆成几条真实消息。
   // 安静结束仍然只给主动轮。只加入当前宿主上下文已经授权的定义。
   for (const name of input.initiative
-    ? ["companion_publish_utterance", "companion_finish_participation"]
-    : ["companion_publish_utterance"]) {
+    ? ["say.publish", "say.finish_participation"]
+    : ["say.publish"]) {
     if (input.definitions.some(definition => definition.name === name)) initialToolNames.add(name);
   }
   return {

@@ -41,7 +41,7 @@ const MEMORY_LIST_LIMIT = 200;
  * 而不再有版本历史挡路**。这正是合同把「普通删除」与「彻底清除」分成两条路的原因。
  *
  * 数值的**唯一声明在 shared**（`companionMemoryRecycleBinDays`）：worker 里模型自己调用的
- * `companion_forget_memory` 是这份状态迁移的第二条实现，抄一份数就等于给两边各留一个漂移点。
+ * `memory.write.forget` 是这份状态迁移的第二条实现，抄一份数就等于给两边各留一个漂移点。
  */
 const memoryRecycleBinDays = companionMemoryRecycleBinDays;
 

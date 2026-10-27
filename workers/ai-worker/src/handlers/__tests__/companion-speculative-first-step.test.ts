@@ -60,11 +60,11 @@ test("她上一条还挂着用户没接的收尾时作废——投机的请求�
 
 
 test("提前生成的闲聊第一步提供自身工具，业务写入不进入投机面", () => {
-  const own = getCompanionAgentTool("companion_write_self_note")!, business = getCompanionAgentTool("companion_create_note")!;
+  const own = getCompanionAgentTool("companion_persona_write")!, business = getCompanionAgentTool("companion_notes_write")!;
   const request = buildCasualFirstStepRequest({ turnPolicy: "当前身份", permissionLevel: "read_only", stepBudget: 3,
     messages: [{ role: "user", content: "你在关注什么？" }], maxTokens: 8000,
     tools: [own, business].map(({ name, description, parameters }) => ({ name, description, parameters })) });
-  assert.deepEqual(request.tools?.map(tool => tool.name), ["companion_write_self_note"]);
+  assert.deepEqual(request.tools?.map(tool => tool.name), ["companion_persona_write"]);
   assert.doesNotMatch(request.systemPrompt, /本轮没有可调用工具/);
 });
 
@@ -102,12 +102,12 @@ test("提问版遇到指称、歧义、候选动作、目标关联或待收的�
 });
 
 test("提问版的第一步与真实第一步同形：完整工具面、开思考、知识核对指引、温度 0.3", () => {
-  const own = getCompanionAgentTool("companion_write_self_note")!, business = getCompanionAgentTool("companion_create_note")!;
+  const own = getCompanionAgentTool("companion_persona_write")!, business = getCompanionAgentTool("companion_notes_write")!;
   const request = buildQuestionFirstStepRequest({ turnPolicy: "当前身份", permissionLevel: "full", stepBudget: 5,
     messages: [{ role: "user", content: "牛顿第二定律是什么？" }], maxTokens: 8000,
     tools: [own, business].map(({ name, description, parameters }) => ({ name, description, parameters })) });
   // 与闲聊版不同：写类工具照发（工具面只由声明决定），不是只看自身工具。
-  assert.deepEqual(request.tools?.map(tool => tool.name), ["companion_write_self_note", "companion_create_note"]);
+  assert.deepEqual(request.tools?.map(tool => tool.name), ["companion_persona_write", "companion_notes_write"]);
   assert.equal(request.disableThinking, false);
   assert.equal(request.temperature, 0.3);
   assert.equal(request.toolChoice, "auto");

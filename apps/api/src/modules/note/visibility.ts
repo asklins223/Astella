@@ -1,6 +1,6 @@
 // 判据文本的唯一来源。API 与 Worker 两个包共用同一段 SQL——伴星读正文那条路
 // 在 worker 里，此前它按 workspace 直接查 notes，把同空间别人的私有笔记一起读了
-// 出来（`companion_read_note` / here-and-now 快照）。
+// 出来（`notes.read.read` / here-and-now 快照）。
 import {
   isNoteVisibleToViewer as isNoteVisibleToViewerShared,
   noteVisibleSqlText as noteVisibleSqlTextShared,

@@ -170,7 +170,7 @@ function eventRow(
  *
  * 客户端只知道上传回执给的站内 url；服务端按 url → object_key →
  * `note_image_assets` 解析，并把 assetId 写回块里——她读图
- *（`companion_read_image` 的 assetId）与消息渲染用的是同一个 id。
+ *（`visual.read_image` 的 assetId）与消息渲染用的是同一个 id。
  * 跨空间、未登记、已删除的图一律 400：绝不落一条"看起来有图但谁都认不出"的消息。
  */
 async function resolveTurnImageBlocks(

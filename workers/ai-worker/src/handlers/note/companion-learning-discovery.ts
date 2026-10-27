@@ -5,7 +5,7 @@ import { noteSearchTerms } from "../turn/companion-dialogue-content.ts";
 import { recommendationToolResult, type AgentEventContext, type RecommendedLearningRow } from "../tools/companion-read-tools.ts";
 import type { AgentToolExecutionResult } from "../tools/companion-tool-result.ts";
 
-type CompanionLearningDiscoveryToolName = "companion_search_cards" | "companion_recommend_learning";
+type CompanionLearningDiscoveryToolName = "notes.read.cards" | "companion_recommend_learning";
 
 /** Executes scoped learning-card search and explicit recommendation lookup. */
 export async function executeCompanionLearningDiscoveryTool(
@@ -14,7 +14,7 @@ export async function executeCompanionLearningDiscoveryTool(
   args: Record<string, unknown>,
 ): Promise<AgentToolExecutionResult> {
   switch (name) {
-    case "companion_search_cards": {
+    case "notes.read.cards": {
       // 与笔记检索共用词切分和 all/any 语义；空词不能退化成 %% 扫整库。
       const query = String(args.query ?? "").trim();
       const limit = typeof args.limit === "number" ? Math.min(8, Math.max(1, args.limit)) : 5;

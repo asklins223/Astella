@@ -37,9 +37,9 @@ export async function signOutCurrentAccount(): Promise<void> {
   let notice: string | null = null;
   try {
     const result = unwrapGatewayResult(
-      await window.astella.auth.logout({ meta: createRequestMeta() }),
+      await window.astella.auth.logout({ meta: createRequestMeta(), keepQuickLogin: true }),
     );
-    if (!result.serverRevoked) notice = REVOCATION_UNCONFIRMED;
+    if (!result.serverRevoked && !result.quickLoginAvailable) notice = REVOCATION_UNCONFIRMED;
   } catch {
     // `unwrapGatewayResult` 已经把网关错误广播给门禁了；这里只负责换成一句人话，
     // 因为原始 code 与地址端口都不该出现在给用户读的句子裡。

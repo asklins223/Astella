@@ -19,7 +19,7 @@
 [中文](README.md) · [English](README.en.md) · [使用与开发手册](docs/guide/README.md)
 
 服务端版本：`s-v2.0.6` · [release/version.json](release/version.json)<br />
-桌面客户端版本：`c-v2.0.0` · [apps/desktop-client/version.json](apps/desktop-client/version.json)
+桌面客户端版本：`c-v2.0.1` · [apps/desktop-client/version.json](apps/desktop-client/version.json)
 
 > 手机端（iOS SwiftUI / Android Compose）已于 2026-10-24 拆分为独立私有仓库 [asklins223/astella-mobile](https://github.com/asklins223/astella-mobile)，本仓库不再包含 `apps/mobile-client`。
 
@@ -66,6 +66,8 @@
 ## 快速开始：本机开发
 
 需要 Docker + Compose v2、Make、Node.js 22。后端依赖在容器内运行，桌面客户端在宿主机启动；各包使用独立的 npm lockfile。
+
+2026-10-25 iOS 本地联调使用现有数据库与对象存储，仅启动 API、worker、Postgres、MinIO 和 Edge TTS，按用户要求不启动向量模型。SSE、语音接口、最新笔记读取修复及实测限制见 [联调记录](docs/testing/ios-sse-local-2026-10-25.md)。
 
 ### 1. 配置
 

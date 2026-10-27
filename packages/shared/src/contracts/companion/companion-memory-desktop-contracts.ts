@@ -164,7 +164,7 @@ export const companionMemoryContentMaxLength = 200;
  * 记忆墓碑在回收区停留几天（40 §7）。
  *
  * **唯一来源**：到期清理要求 `deleted_at` 与 `purge_after` 都非空，而写下 `purge_after`
- * 的地方有两处——API 的记忆服务与 worker 里模型自己调用的 `companion_forget_memory`。
+ * 的地方有两处——API 的记忆服务与 worker 里模型自己调用的 `memory.write.forget`。
  * 这个数原来只在 API 那份实现里，worker 少写一列就整条永远进不了回收区；
  * 放到 shared 是为了两边引用同一个数，不是各自抄一遍。
  */

@@ -62,7 +62,7 @@ async function seedBusyConversation() {
       INSERT INTO companion_stream_events
         (conversation_id, seq, workspace_id, user_id, run_id, generation, account_epoch, type, payload, expires_at)
       VALUES (${conversationId}, 251, ${workspaceId}, ${userId}, NULL, 0, 0, 'agent.tool',
-              '{"tool":{"toolCallId":"dead","name":"companion_read_context","status":"succeeded","safeLabel":"读取学习上下文"}}'::jsonb,
+              '{"tool":{"toolCallId":"dead","name":"observe.context","status":"succeeded","safeLabel":"读取学习上下文"}}'::jsonb,
               now() - interval '1 hour')
     `;
     // 生产里 `next_event_seq` 随每次写入自增；`latestSeq` 读的就是它减一，所以种子要自己推进，

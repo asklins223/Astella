@@ -41,14 +41,14 @@ test("44 §5.5：摘要块给出的取回入口，指向一条真实存在且带
 
 test("44 §5.5：会话内取回复用 read_history，跨会话取回复用 recall_past_conversation", () => {
   // 两条路径都真的读库；摘要块指向的是会话内那条。
-  const history = toolDef("companion_read_history");
+  const history = toolDef("companion_observe");
   assert.ok(history);
   assert.match(history!.description, /fromSeq/);
-  assert.ok(hasParam("companion_read_history", "fromSeq"));
+  assert.ok(hasParam("companion_observe", "fromSeq"));
   // 跨会话那条的 conversationId 必填 —— seq 是会话内局部序号（44 §8.3）。
-  const recall = toolDef("companion_recall_past_conversation");
+  const recall = toolDef("companion_memory_read");
   assert.ok(recall);
-  assert.ok(hasParam("companion_recall_past_conversation", "fromSeq"));
+  assert.ok(hasParam("companion_memory_read", "fromSeq"));
 });
 
 test("44 §5.5：取回路径真的连到会话范围校验，而不是上下文里的转述", () => {
@@ -70,7 +70,7 @@ test("44 §3.2：跨会话找回同时给会话摘要、方法与长期目标", 
   assert.match(source, /searchPastConversationMessages\(/);
   assert.match(source, /listAgentMethods\(/);
   assert.match(source, /listAgentLongGoals\(/);
-  const recall = toolDef("companion_recall_past_conversation");
+  const recall = toolDef("companion_memory_read");
   assert.match(recall!.description, /方法/);
   assert.match(recall!.description, /长期目标/);
 });

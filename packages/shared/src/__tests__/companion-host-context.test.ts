@@ -5,13 +5,13 @@ import { activeCompanionHostContexts, COMPANION_NAVIGATION_TOOL_NAMES, companion
 
 const read = (name: string) => ({
   name,
-  riskClass: name === "companion_read_note" || name === "companion_open_page" ? "read" : "reversible_low",
+  riskClass: ["companion_notes_read", "companion_open"].includes(name) ? "read" : "reversible_low",
 });
 
 test("没有宿主事实时一律照旧全给：缺省是 fail open", () => {
   const nothing = { writingAnnotation: false, completeNoteReply: false, initiative: false };
   assert.deepEqual([...activeCompanionHostContexts(nothing)], ["user"]);
-  for (const name of ["companion_create_note", "companion_edit_note", "companion_search_notes", "把名字写错的能力"]) {
+  for (const name of ["companion_notes_write", "companion_open", "companion_notes_read", "把名字写错的能力"]) {
     assert.equal(companionCapabilityOfferedInHostContext(read(name), nothing), true, name);
   }
 });
@@ -22,31 +22,37 @@ test("三个声明过的能力只在各自宿主上下文里下发", () => {
   const noteReply = { ...plain, completeNoteReply: true };
   const initiative = { ...plain, initiative: true };
 
-  // 批注：只有从句子批注入手那一轮才有批注目标，别处这个能力不可能成功。
-  assert.equal(companionCapabilityOfferedInHostContext(read("companion_write_annotation"), plain), false);
-  assert.equal(companionCapabilityOfferedInHostContext(read("companion_write_annotation"), annotation), true);
   // 整篇正文那一轮直接交付正文，不用分句发言（用了反而与正文分叉）。
-  assert.equal(companionCapabilityOfferedInHostContext(read("companion_publish_utterance"), plain), true);
-  assert.equal(companionCapabilityOfferedInHostContext(read("companion_publish_utterance"), noteReply), false);
-  assert.equal(companionCapabilityOfferedInHostContext(read("companion_publish_utterance"), annotation), true,
+  assert.equal(companionCapabilityOfferedInHostContext(read("companion_say"), plain), true);
+  assert.equal(companionCapabilityOfferedInHostContext(read("companion_say"), noteReply), false);
+  assert.equal(companionCapabilityOfferedInHostContext(read("companion_say"), annotation), true,
     "批注轮仍然分句发言");
-  // 收尾发言只存在于主动那一轮。
-  assert.equal(companionCapabilityOfferedInHostContext(read("companion_finish_participation"), plain), false);
-  assert.equal(companionCapabilityOfferedInHostContext(read("companion_finish_participation"), initiative), true);
+  // 批注写入仍由工具层放行：动作级前置条件在执行体里判。
+  assert.equal(companionCapabilityOfferedInHostContext(read("companion_notes_write"), plain), true);
+  assert.equal(companionCapabilityOfferedInHostContext(read("companion_notes_write"), annotation), true);
+  // 主动轮：非自主的写类摘掉（companion_say 属于自主能力，保留）。
+  assert.equal(companionCapabilityOfferedInHostContext(read("companion_notes_write"), initiative), false);
+  assert.equal(companionCapabilityOfferedInHostContext(read("companion_notes_write"),
+    { writingAnnotation: false, completeNoteReply: false, initiative: false }), true);
+  assert.equal(companionCapabilityOfferedInHostContext(read("companion_say"), initiative), true);
 });
 
 test("主动那一轮只剩自主能力与非导航只读能力", () => {
   const initiative = { writingAnnotation: false, completeNoteReply: false, initiative: true };
   // 自主能力（她只碰自己的记录）留下。
-  assert.equal(companionCapabilityOfferedInHostContext(read("companion_write_self_note"), initiative), true);
+  // Persona write is shown in initiative only for its autonomous actions; the
+  // tool itself stays on the surface so those actions remain reachable.
+  assert.equal(companionCapabilityOfferedInHostContext(read("companion_persona_write"), initiative), true);
   // 非导航的只读能力留下。
-  assert.equal(companionCapabilityOfferedInHostContext(read("companion_read_note"), initiative), true);
+  assert.equal(companionCapabilityOfferedInHostContext(read("companion_notes_read"), initiative), true);
   // 导航只读能力摘掉：主动轮里"替用户跳页面"是业务操作。
   for (const name of COMPANION_NAVIGATION_TOOL_NAMES) {
     assert.equal(companionCapabilityOfferedInHostContext(read(name), initiative), false, name);
   }
   // 非自主的写类摘掉。
-  assert.equal(companionCapabilityOfferedInHostContext(read("companion_create_note"), initiative), false);
+  assert.equal(companionCapabilityOfferedInHostContext(read("companion_notes_write"), initiative), false);
+  assert.equal(companionCapabilityOfferedInHostContext(read("companion_notes_write"),
+    { writingAnnotation: false, completeNoteReply: false, initiative: false }), true);
 });
 
 test("判据在类型上就拿不到本轮意图（2026-10-09 那次翻车的入口）", () => {

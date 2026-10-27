@@ -23,13 +23,13 @@ export async function processCompanionNoteShare(scope: { workspaceId: string; us
           JOIN user_companion_account_state a ON a.user_id=r.user_id
           JOIN jobs j ON j.id=r.job_id
           WHERE c.id=${callId} AND c.workspace_id=${scope.workspaceId} AND c.user_id=${scope.userId}
-            AND c.name='companion_share_note' AND c.status='executing' AND c.result_ref IS NULL
+            AND c.name='notes.write.share' AND c.status='executing' AND c.result_ref IS NULL
             AND r.status IN ('accepted','running') AND r.cancel_requested_at IS NULL
             AND a.global_enabled AND a.epoch=r.account_epoch
             AND (r.permission_level='full' OR astella_companion_tool_confirmed_v1(r.id,c.tool_call_id))
             AND j.status='running' AND j.type='companion_agent' AND j.requested_by=c.user_id
             AND EXISTS(SELECT 1 FROM jsonb_array_elements(r.permission_snapshot->'offeredTools') t
-              WHERE t->>'name'='companion_share_note')
+              WHERE t->>'name' = 'companion_notes_write')
           FOR UPDATE OF c,r,a SKIP LOCKED`);
       const row = (Array.isArray(rows) ? rows : [])[0];
       if (!row) return;
@@ -50,7 +50,7 @@ export async function processCompanionNoteShare(scope: { workspaceId: string; us
             message: "这篇笔记不是这位用户写的，或者已经不在这位用户的空间里，可见范围没有改动。要改得由作者自己去那一页。" })
       },updated_at=now()
         WHERE id=${callId} AND workspace_id=${scope.workspaceId} AND user_id=${scope.userId}
-          AND name='companion_share_note' AND status='executing' AND result_ref IS NULL`);
+          AND name='notes.write.share' AND status='executing' AND result_ref IS NULL`);
     });
   } catch (error) {
     logger.error({ err: error, callId }, "companion note share dispatch failed");
@@ -60,7 +60,7 @@ export async function processCompanionNoteShare(scope: { workspaceId: string; us
       SET result_ref=${JSON.stringify({ kind: "note_share_unknown",
         message: "共享结果暂时无法确认，请先在那一页核对可见范围，不要重复操作。" })},updated_at=now()
       WHERE id=${callId} AND workspace_id=${scope.workspaceId} AND user_id=${scope.userId}
-        AND name='companion_share_note' AND status='executing' AND result_ref IS NULL`));
+        AND name='notes.write.share' AND status='executing' AND result_ref IS NULL`));
   }
 }
 

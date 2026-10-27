@@ -18,9 +18,12 @@ import {
 import {
   FINAL_ANSWER_HOLD_CHARS,
   companionActionResultRecorded,
+  companionCurrentToolSuccesses,
+  companionNoteEditRoutingMessages,
   actionSteerBudget,
   companionStepCorrectionMessages,
   dropCompanionInternalCorrections,
+  companionMessagesAfterToolProgress,
   isCompanionInternalCorrection,
   companionWriteToolNames,
   partitionPersonaPatch,
@@ -33,7 +36,9 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   canUseCompanionAgentTool,
+  companionDomainActionAutoExecutes,
   getCompanionAgentTool,
+  isCompanionAutonomousAction,
   isCompanionAutonomousTool,
   resolveAllCompanionAgentTools,
   validateCompanionAgentToolArguments,
@@ -65,7 +70,7 @@ import { currentPageToolResult } from "../tools/companion-read-tools.ts";
 import { NOTE_SEARCH_MAX_TERMS, noteSearchTerms } from "../turn/companion-dialogue-content.ts";
 import { interpretCompanionTurn } from "../tools/companion-tool-intent.ts";
 import { MockProvider } from "../../lib/providers/mock.ts";
-import { ProviderRequestError } from "../../lib/provider-request-error.ts";
+import { ProviderRequestError, ProviderStreamError } from "../../lib/provider-request-error.ts";
 import { AgentOutputError } from "../../lib/non-retryable-errors.ts";
 import { CompanionStreamStoppedError } from "../turn/companion-dialogue-stream.ts";
 import type { AIProvider } from "../../lib/ai-provider.ts";
@@ -73,18 +78,49 @@ import type { AgentTurnRequest, AgentTurnResult } from "@astella/shared";
 import { AGENT_GOAL_HANDOFF_INSTRUCTIONS } from "../../agent/goal-handoff-instructions.ts";
 
 test("automatic note linking starts with one combined search and retries only when needed", () => {
-  assert.match(AGENT_GOAL_HANDOFF_INSTRUCTIONS, /先用companion_search_notes的match=any做一次简短组合查询/);
+  assert.match(AGENT_GOAL_HANDOFF_INSTRUCTIONS, /先用 companion_notes_read（action=search）的match=any做一次简短组合查询/);
   assert.match(AGENT_GOAL_HANDOFF_INSTRUCTIONS, /只有一次搜索没有返回有用候选时，才换一个更宽的组合词重试一次/);
   assert.doesNotMatch(AGENT_GOAL_HANDOFF_INSTRUCTIONS, /分开的查询词/);
+});
+
+test("latest-note listing is explicit and preserves keyword search validation", () => {
+  const recent = validateCompanionAgentToolArguments("companion_notes_read", { action: "search", order: "updated", limit: 3 });
+  assert.equal(recent.success, true);
+  if (recent.success) assert.deepEqual(recent.data, { action: "search", order: "updated", limit: 3 });
+  const keyword = validateCompanionAgentToolArguments("companion_notes_read", { action: "search", query: "  电磁感应  " });
+  assert.equal(keyword.success, true);
+  if (keyword.success) assert.deepEqual(keyword.data, { action: "search", query: "电磁感应" });
+  for (const args of [{ action: "search" }, { action: "search", query: "" }, { action: "search", query: "   " },
+    { action: "search", order: "relevance" }, { action: "search", order: "updated", limit: 11 }]) {
+    assert.equal(validateCompanionAgentToolArguments("companion_notes_read", args).success, false);
+  }
+});
+
+test("only a successful current-turn action receipt releases streamed acknowledgement", () => {
+  const oldUser = { role: "user" as const, content: "旧请求" };
+  const user = { role: "user" as const, content: "修改这篇笔记" };
+  const call = { role: "assistant" as const, content: "", toolCalls: [{ id: "edit", name: "notes.write.edit", arguments: {} }] };
+  const result = (ok: boolean, status: string) => ({ role: "tool" as const, toolCallId: "edit", content: JSON.stringify({ ok, data: { status } }) });
+  assert.deepEqual(companionCurrentToolSuccesses([oldUser, call, result(true, "succeeded"), user]), []);
+  assert.equal(companionActionResultRecorded([oldUser, call, result(true, "succeeded"), user], ["notes.write.edit"]), false);
+  for (const status of ["not_executed", "outcome_unknown", "waiting_confirmation", "failed"]) {
+    assert.deepEqual(companionCurrentToolSuccesses([user, call, result(true, status)]), []);
+  }
+  assert.deepEqual(companionCurrentToolSuccesses([user, call, result(false, "succeeded")]), []);
+  assert.deepEqual(companionCurrentToolSuccesses([user, call, result(true, "succeeded")]).map(tool => tool.name), ["notes.write.edit"]);
 });
 
 test("rate, account and authorization rejections do not repeat through a buffered fallback", () => {
   const state={emitted:false,now:10,deadline:100};
   for (const status of [401,402,403,429]) assert.equal(canRetryCompanionStream(new ProviderRequestError({provider:"real",status}),state),false);
   assert.equal(canRetryCompanionStream(new ProviderRequestError({provider:"real",status:504}),state),true);
-  assert.equal(canRetryCompanionStream(new Error("empty stream"),state),true);
-  assert.equal(canRetryCompanionStream(new Error("socket closed"),{...state,emitted:true}),false);
-  assert.equal(canRetryCompanionStream(new Error("socket closed"),{...state,now:100}),false);
+  assert.equal(canRetryCompanionStream(new ProviderStreamError("real","stream_empty"),state),true);
+  assert.equal(canRetryCompanionStream(new Error("generic transport stopped"),state),true,
+    "an unwrapped stream transport error still gets one buffered attempt");
+  assert.equal(canRetryCompanionStream(new ProviderRequestError({provider:"real",status:400}),state),false,
+    "a deterministic request rejection is not repeated on another transport");
+  assert.equal(canRetryCompanionStream(new ProviderStreamError("real","stream_incomplete"),{...state,emitted:true}),false);
+  assert.equal(canRetryCompanionStream(new ProviderStreamError("real","stream_incomplete"),{...state,now:100}),false);
   assert.equal(canRetryCompanionStream(new AgentOutputError("output_truncated", "exhausted"),state),false);
 });
 
@@ -100,6 +136,7 @@ function toolIntentTaskContext(signal = new AbortController().signal) {
     runId: "run-agent-runtime-test",
     userId: "user-agent-runtime-test",
     permissionLevel: "guided",
+    capabilities: ["companion_notes_read"],
     currentActiveTransaction: () => undefined,
     verifyAttempt: async () => true,
   };
@@ -146,13 +183,15 @@ test("工具异常使用执行器的同一类，写操作超时以结果待核�
 test("低权限保留写能力供预览，实际业务写入必须等待确认", () => {
   for (const permission of ["read_only", "guided"] as const) {
     const tools = resolveAllCompanionAgentTools(permission);
-    assert.ok(tools.some(tool => tool.name === "companion_create_note"));
+    assert.ok(tools.some(tool => tool.name === "companion_notes_write"));
     for (const definition of tools) {
       const auth = canUseCompanionAgentTool(permission, definition);
       assert.equal(auth.allowed, true);
       // Voice settings already applied directly through the interpreter;
-      // native entry preserves that account preference behavior.
-      assert.equal(auth.requiresConfirmation, definition.riskClass !== "read" && !(isCompanionAutonomousTool(definition.name) || ["companion_save_participation", "companion_write_annotation", "companion_configure_turn"].includes(definition.name)));
+      // native entry preserves that account preference behavior. A flat alias
+      // follows the gate of the action it stands for: `companion_self_note_write`
+      // is `persona.write.self_note`, already auto-executing through its domain tool.
+      assert.equal(auth.requiresConfirmation, definition.riskClass !== "read" && !(isCompanionAutonomousTool(definition.name) || ["attention.write.save_participation", "notes.write.annotate", "companion_configure_turn", "companion_say", "companion_self_note_write"].includes(definition.name)));
     }
   }
 });
@@ -161,33 +200,38 @@ test("工具解析：guided 的业务写操作都确认，读取与自主记录�
   const tools = resolveAllCompanionAgentTools("guided");
   assert.ok(tools.length > 0);
   for (const definition of tools) {
-    const auth = canUseCompanionAgentTool("guided", definition);
-    assert.equal(auth.allowed, true);
-    // 读取永不确认；约定类写入（提醒）是用户亲口要过的、可逆且不改学习状态，
-    // guided 下也直接执行；其余写操作一律先出提案。
-    const autoExecutes = definition.riskClass === "read"
-      || (isCompanionAutonomousTool(definition.name) || ["companion_save_participation", "companion_write_annotation", "companion_configure_turn"].includes(definition.name));
-    assert.equal(
-      auth.requiresConfirmation,
-      !autoExecutes,
-      `${definition.name}（${definition.riskClass}）在 guided 下的确认要求不符`,
-    );
+    const actions = (definition.parameters.properties as { action?: { enum?: string[] } } | undefined)?.action?.enum ?? [null];
+    for (const action of actions) {
+      const args = action ? { action } : {};
+      const auth = canUseCompanionAgentTool("guided", definition, args);
+      assert.equal(auth.allowed, true, `${definition.name}:${action ?? "-"}`);
+      // Reads never confirm; autonomous actions and the interpreter's
+      // pre-authorized conversation writes execute directly; every other action
+      // must go through a proposal first.
+      const autoExecutes = definition.riskClass === "read"
+        || isCompanionAutonomousAction(definition.name, action ?? undefined)
+        || isCompanionAutonomousTool(definition.name)
+        || ["companion_configure_turn", "companion_say"].includes(definition.name)
+        || companionDomainActionAutoExecutes(definition.name, args);
+      assert.equal(auth.requiresConfirmation, !autoExecutes,
+        `${definition.name}:${action ?? "-"}（${definition.riskClass}）在 guided 下的确认要求不符`);
+    }
   }
-  for (const name of ["companion_schedule_reminder", "companion_cancel_reminder"]) {
+  for (const [name, action] of [["companion_attention_write", "schedule_reminder"], ["companion_attention_write", "cancel_reminder"]] as const) {
     const definition = getCompanionAgentTool(name);
     assert.ok(definition, `${name} 必须存在`);
-    assert.equal(canUseCompanionAgentTool("guided", definition).requiresConfirmation, true, name);
+    assert.equal(canUseCompanionAgentTool("guided", definition, { action }).requiresConfirmation, true, `${name}:${action}`);
   }
   // 提醒必须是可查可撤的：只有 schedule 没有 list/cancel 的话，用户说"不用提醒了"
   // 就只能等它自己响。
-  assert.ok(getCompanionAgentTool("companion_list_reminders")?.riskClass === "read");
+  assert.ok(getCompanionAgentTool("companion_attention_read")?.riskClass === "read");
 });
 
 
 
 test("工具参数：未知工具、未知字段、类型错误全部失败关闭", () => {
   assert.equal(validateCompanionAgentToolArguments("does_not_exist", {}).success, false);
-  assert.equal(validateCompanionAgentToolArguments("companion_read_context", { extra: 1 }).success, false);
+  assert.equal(validateCompanionAgentToolArguments("observe.context", { extra: 1 }).success, false);
   assert.equal(validateCompanionAgentToolArguments("companion_pause_learning", { runId: "not-a-uuid" }).success, false);
   assert.equal(
     validateCompanionAgentToolArguments("companion_request_hint", {
@@ -200,17 +244,17 @@ test("工具参数：未知工具、未知字段、类型错误全部失败关�
 });
 
 test("工具调用标识：越界 id/name 被阻止（fail closed）", () => {
-  assert.deepEqual(boundedToolCallIdentity({ id: "call_1", name: "companion_read_context" }), {
+  assert.deepEqual(boundedToolCallIdentity({ id: "call_1", name: "observe.context" }), {
     id: "call_1",
-    name: "companion_read_context",
+    name: "observe.context",
   });
   // provider 返回空 id（OpenAI-compatible 解析层会把缺失 id 变成 ""）
-  assert.equal(boundedToolCallIdentity({ id: "", name: "companion_read_context" }), null);
+  assert.equal(boundedToolCallIdentity({ id: "", name: "observe.context" }), null);
   // 超出 SSE 合同上限：toolCallId ≤200、name ≤80
-  assert.equal(boundedToolCallIdentity({ id: "x".repeat(201), name: "companion_read_context" }), null);
+  assert.equal(boundedToolCallIdentity({ id: "x".repeat(201), name: "observe.context" }), null);
   assert.equal(boundedToolCallIdentity({ id: "call_1", name: "n".repeat(81) }), null);
   // 非字符串
-  assert.equal(boundedToolCallIdentity({ id: undefined, name: "companion_read_context" }), null);
+  assert.equal(boundedToolCallIdentity({ id: undefined, name: "observe.context" }), null);
   assert.equal(boundedToolCallIdentity({ id: "call_1", name: 42 }), null);
 });
 
@@ -522,7 +566,7 @@ test("流式单步（④-b）：带工具的一步把 tool_calls 一并带回，
   // 然后什么都没发生"。
   const deltas = ["好，", "这就带你过去。"];
   const { provider } = streamingStubProvider(deltas, [
-    { id: "call_1", name: "companion_open_page", arguments: {} },
+    { id: "call_1", name: "open.page", arguments: {} },
   ]);
   const seen: string[] = [];
   const result = await runStreamingAgentStep({
@@ -536,7 +580,7 @@ test("流式单步（④-b）：带工具的一步把 tool_calls 一并带回，
     },
   });
   assert.equal(result.content, "好，这就带你过去。");
-  assert.deepEqual(result.toolCalls, [{ id: "call_1", name: "companion_open_page", arguments: {} }]);
+  assert.deepEqual(result.toolCalls, [{ id: "call_1", name: "open.page", arguments: {} }]);
   assert.equal(result.finishReason, "tool_calls");
   assert.deepEqual(seen, ["好，", "这就带你过去。"]);
 });
@@ -560,7 +604,7 @@ test("流式单步（④-b）：分段符随本段第一个文本增量一起下
 
 test("流式单步（④-b）：本段没有文本时不下发分段符（最终正文也不会空出一段）", async () => {
   const { provider } = streamingStubProvider([], [
-    { id: "call_1", name: "companion_read_context", arguments: {} },
+    { id: "call_1", name: "observe.context", arguments: {} },
   ]);
   const seen: string[] = [];
   await runStreamingAgentStep({
@@ -672,6 +716,25 @@ test("坍缩闸：跨过阈值时把攒住的文本一次性按序放行，之�
   assert.equal(emitted, true);
 });
 
+test("带写入声明的流在核对前不落屏", async () => {
+  const { provider } = streamingStubProvider(["好，记下了", "：晚上九点以后不打扰你"]);
+  const seen: string[] = [];
+  let emitted = false;
+  const result = await runStreamingAgentStep({
+    provider,
+    stepRequest: STREAM_STEP_REQUEST as never,
+    ctxSignal: new AbortController().signal,
+    timeoutMs: 5_000,
+    holdUntilChars: 4,
+    holdWhile: text => /记下了|已保存/.test(text),
+    onTextEmitted: () => { emitted = true; },
+    onProviderDelta: async (delta: string) => { seen.push(delta); return true; },
+  });
+  assert.deepEqual(seen, [], "claim was not published before the host could verify it");
+  assert.equal(emitted, false);
+  assert.match(String(result.content), /记下了/);
+});
+
 test("坍缩闸：分段符只贴在真正放行的第一帧前面，不重复", async () => {
   const { provider } = streamingStubProvider(["第一段", "第二段", "第三段"]);
   const seen: string[] = [];
@@ -696,18 +759,18 @@ test("扁平工具面：guided/full 档下写工具与读工具同时在列，�
   const guided = resolveAllCompanionAgentTools("guided").map(tool => tool.name);
   const full = resolveAllCompanionAgentTools("full").map(tool => tool.name);
   // 曾经这些只存在于特定技能里：不选中的技能 = 拿不到的能力。
-  for (const name of ["companion_save_memory", "companion_open_page", "companion_read_note"]) {
+  for (const name of ["companion_memory_write", "companion_open", "companion_notes_read"]) {
     assert.ok(guided.includes(name), `guided 必须能看到 ${name}`);
     assert.ok(full.includes(name), `full 必须能看到 ${name}`);
   }
   // 跨技能的组合现在可能了（以前一轮只能拿到一个技能的子集）。
-  assert.ok(guided.includes("companion_read_context") && guided.includes("companion_search_notes"),
+  assert.ok(guided.includes("companion_observe") && guided.includes("companion_notes_read"),
     "上下文与系统查询工具必须同时可用");
   // 抱怨 #5/#6 的那一面：看笔记、看数据、看队列、跳到页面，任何一轮都在。
   for (const name of [
-    "companion_search_notes", "companion_read_note", "companion_open_note", "companion_open_page",
-    "companion_get_learning_stats",
-    "companion_schedule_reminder", "companion_list_reminders", "companion_cancel_reminder",
+    "companion_notes_read", "companion_notes_write", "companion_open",
+    "companion_observe",
+    "companion_attention_read", "companion_attention_write", "companion_say",
   ]) {
     assert.ok(guided.includes(name), `guided 必须能看到 ${name}`);
   }
@@ -726,20 +789,20 @@ test("扁平工具面：read_only 档能生成可审阅写入，确认由执行�
  * `companion_set_boundary` 一次没调（tools=0，边界其实没改）。查下来不是模型不肯调，
  * 而是**这一支的提示根本没点名任何工具**：`steerableReadTools` 只收读类工具，
  * 而 action 那一支用的是泛指文案"调用合适的工具"——同一个文件上面 30 行就写着
- * "小模型对『你去调用工具』这种泛指不敏感，对『调用 companion_search_notes』会照做"。
+ * "小模型对『你去调用工具』这种泛指不敏感，对『调用笔记搜索』会照做"。
  * 换到兜底模型也一样，因为要它做的仍然是"猜哪个工具"。
  */
 test("steerableToolNames：lookup 点读类、action 点可逆写，consequential 永不点名", () => {
   const defs = [
-    { name: "companion_search_notes", riskClass: "read" },
-    { name: "companion_recall_memory", riskClass: "read" },
-    { name: "companion_set_boundary", riskClass: "reversible_low" },
-    { name: "companion_save_memory", riskClass: "reversible_low" },
+    { name: "notes.read.search", riskClass: "read" },
+    { name: "memory.read.recall", riskClass: "read" },
+    { name: "persona.write.boundary", riskClass: "reversible_low" },
+    { name: "memory.write.save", riskClass: "reversible_low" },
     { name: "companion_start_learning", riskClass: "consequential" },
     { name: "companion_pause_learning", riskClass: "consequential" },
   ];
-  assert.deepEqual(steerableToolNames(defs, "lookup"), ["companion_search_notes", "companion_recall_memory"]);
-  assert.deepEqual(steerableToolNames(defs, "action"), ["companion_set_boundary", "companion_save_memory"]);
+  assert.deepEqual(steerableToolNames(defs, "lookup"), ["notes.read.search", "memory.read.recall"]);
+  assert.deepEqual(steerableToolNames(defs, "action"), ["persona.write.boundary", "memory.write.save"]);
   // 这条是安全性质，不是风格：一句纠正性提示里出现 companion_start_learning，
   // 等于系统自己把用户没要过的学习运行推上桌。
   for (const kind of ["lookup", "action"] as const) {
@@ -810,7 +873,36 @@ test("多次内部纠正只留一份重附的当前请求：她不能把重附�
   }
   assert.equal(messages.filter(message => message.role === "user").length, 1,
     "only the original human turn is a user message; repairs retain host identity");
-  assert.equal(messages.filter(isCompanionInternalCorrection).length, 1);
+  assert.equal(messages.filter(isCompanionInternalCorrection).length, 2,
+    "one instruction and one carried request remain; previous instructions retire together");
+});
+
+test("successful tool progress retires obsolete routing repairs and unshared success claims", () => {
+  const request = { role: "user" as const, content: "修改这篇手记" };
+  const published = { role: "assistant" as const, content: "我先核对原文。" };
+  const call = { role: "assistant" as const, content: "", toolCalls: [{ id: "search", name: "notes.read.search", arguments: {} }] };
+  const receipt = { role: "tool" as const, toolCallId: "search", content: '{"ok":true}' };
+  const messages = [request, published, { role: "assistant" as const, content: "已修改，但其实没执行" },
+    ...companionStepCorrectionMessages({ currentRequest: request, instruction: "本步只搜索", alreadyDisplayed: false }), call, receipt];
+  assert.deepEqual(companionMessagesAfterToolProgress(messages, [published.content]), [request, published, call, receipt]);
+});
+
+test("named edit routing uses the fresh request without treating old saved claims as evidence", () => {
+  const old = { role: "assistant" as const, content: "历史里说过已保存" };
+  const current = { role: "user" as const, content: "修改《阅读验收》里的尾页" };
+  const call = { role: "assistant" as const, content: "", toolCalls: [{ id: "s", name: "notes.read.search", arguments: {} }] };
+  const receipt = { role: "tool" as const, toolCallId: "s", content: '{"ok":true}' };
+  const history = [old, current, call, receipt];
+  assert.deepEqual(companionNoteEditRoutingMessages(history, true, true), [current, call, receipt]);
+  const followUp = { role: "user" as const, content: "帮我把拉伸改成十分钟。" };
+  assert.deepEqual(companionNoteEditRoutingMessages([old, followUp, call, receipt], true, true), [followUp, call, receipt],
+    "an independently resolved follow-up does not need quotation marks or a repeated title");
+  const write = { role: "assistant" as const, content: "", toolCalls: [{ id: "e", name: "notes.write.edit", arguments: {} }] };
+  const written = { role: "tool" as const, toolCallId: "e", content: '{"ok":true,"data":{"kind":"edited_note"}}' };
+  assert.deepEqual(companionNoteEditRoutingMessages([old, followUp, call, receipt, write, written], true, true),
+    [followUp, call, receipt, write, written], "the final acknowledgement uses the current write, not historical prose");
+  assert.equal(companionNoteEditRoutingMessages(history, true, false), history);
+  assert.equal(companionNoteEditRoutingMessages(history, false, true), history);
 });
 
 /**
@@ -908,13 +1000,19 @@ test("编辑请求只读过正文仍须推进，写入有失败或未知回执�
     hasUnverifiedClaims: false, actionResultRecorded: false };
   assert.equal(planStepSteer(input).steer, true);
   assert.equal(planStepSteer({ ...input, actionResultRecorded: true }).steer, false);
-  const messages = [{ role: "assistant" as const, content: "", toolCalls: [{ id: "read", name: "companion_read_note", arguments: {} }] },
+  const messages = [{ role: "assistant" as const, content: "", toolCalls: [{ id: "read", name: "notes.read.read", arguments: {} }] },
     { role: "tool" as const, toolCallId: "read", content: JSON.stringify({ ok: true }) }];
-  assert.equal(companionActionResultRecorded(messages, ["companion_edit_note"]), false);
-  for (const status of ["succeeded", "failed", "outcome_unknown", "not_executed"]) {
+  assert.equal(companionActionResultRecorded(messages, ["notes.write.edit"]), false);
+  // Only a successful receipt counts as "the write landed". Failed/unknown
+  // attempts must not release an acknowledgement, and they still must not be
+  // retried by the loop (that is the replay guard, tested separately).
+  assert.equal(companionActionResultRecorded([...messages,
+    { role: "assistant", content: "", toolCalls: [{ id: "edit", name: "notes.write.edit", arguments: {} }] },
+    { role: "tool", toolCallId: "edit", content: JSON.stringify({ ok: true, status: "succeeded" }) }], ["notes.write.edit"]), true);
+  for (const status of ["failed", "outcome_unknown", "not_executed"]) {
     assert.equal(companionActionResultRecorded([...messages,
-      { role: "assistant", content: "", toolCalls: [{ id: "edit", name: "companion_edit_note", arguments: {} }] },
-      { role: "tool", toolCallId: "edit", content: JSON.stringify({ status }) }], ["companion_edit_note"]), true);
+      { role: "assistant", content: "", toolCalls: [{ id: "edit", name: "notes.write.edit", arguments: {} }] },
+      { role: "tool", toolCallId: "edit", content: JSON.stringify({ ok: false, status }) }], ["notes.write.edit"]), false);
   }
 });
 
@@ -932,18 +1030,18 @@ test("planStepSteer：额度用尽后不再重复补同一条", () => {
  * 口径是"补正按名字来，销毁整条消息按权威事实来"。
  */
 const productionMisnamedRun = [
-  { role: "assistant" as const, content: "", toolCalls: [{ id: "c1", name: "companion_create_note", arguments: {} }] },
+  { role: "assistant" as const, content: "", toolCalls: [{ id: "c1", name: "notes.write.create", arguments: {} }] },
   { role: "tool" as const, toolCallId: "c1", content: JSON.stringify({ ok: true, summary: "已保存笔记《科举制度专题（隋—清）》" }) },
 ];
 const productionToolSurface = [
-  { name: "companion_read_note", riskClass: "read" },
-  { name: "companion_search_notes", riskClass: "read" },
-  { name: "companion_create_note", riskClass: "reversible_low" },
-  { name: "agent_start_goal", riskClass: "reversible_low" },
+  { name: "notes.read.read", riskClass: "read" },
+  { name: "notes.read.search", riskClass: "read" },
+  { name: "notes.write.create", riskClass: "reversible_low" },
+  { name: "goals.write.start", riskClass: "reversible_low" },
 ];
 
 test("点名的动作没回执、但本轮真有写落下 → 不许判死整轮", () => {
-  assert.equal(companionActionResultRecorded(productionMisnamedRun, ["agent_start_goal"]), false,
+  assert.equal(companionActionResultRecorded(productionMisnamedRun, ["goals.write.start"]), false,
     "补正那一步仍要点名她没调的工具，这条判据没被放宽");
   assert.equal(
     companionActionResultRecorded(productionMisnamedRun, companionWriteToolNames(productionToolSurface)),
@@ -952,7 +1050,7 @@ test("点名的动作没回执、但本轮真有写落下 → 不许判死整轮
 
 test("一次写都没落下时，闸照旧判死（放宽的是误判不是谎报）", () => {
   const narratedOnly = [
-    { role: "assistant" as const, content: "", toolCalls: [{ id: "r1", name: "companion_read_note", arguments: {} }] },
+    { role: "assistant" as const, content: "", toolCalls: [{ id: "r1", name: "notes.read.read", arguments: {} }] },
     { role: "tool" as const, toolCallId: "r1", content: JSON.stringify({ ok: true }) },
   ];
   assert.equal(
@@ -960,7 +1058,7 @@ test("一次写都没落下时，闸照旧判死（放宽的是误判不是谎�
     false, "只读过正文不算做成");
   assert.equal(
     companionActionResultRecorded([...productionMisnamedRun,
-      { role: "assistant" as const, content: "", toolCalls: [{ id: "c2", name: "companion_create_note", arguments: {} }] },
+      { role: "assistant" as const, content: "", toolCalls: [{ id: "c2", name: "notes.write.create", arguments: {} }] },
       { role: "tool" as const, toolCallId: "c2", content: JSON.stringify({ ok: false, status: "not_executed" }) }],
       companionWriteToolNames(productionToolSurface)),
     true, "同一次调用里有一条真落成的，就仍然算落了东西");
@@ -993,8 +1091,8 @@ test("三道交付闸的销毁都必须过统一的后果判定", () => {
     "补正那一步仍要点名她没调的工具：放宽的是销毁，不是判据");
   // 降级交付之后，权威事实要跟着结果一起交回交付层（2026-10-16 补的两道流式闸读它）。
   // 少一处就意味着那条出口绕过了闸：明明落了库的写，到交付层变成"什么都没过"。
-  assert.equal(source.match(/writesLanded: landedWrites/g)?.length, 3,
-    "有三条 settled 出口（终答步、独立成品步、截断降级步）都要把这份事实交回去");
+  assert.equal(source.match(/writesLanded: (?:landedWrites|input\.landedWrites)/g)?.length, 4,
+    "四条 settled 出口（终答步、独立成品步、截断降级步、宿主收尾）都要把这份事实交回去");
 });
 
 // ─── #8 终答步 provider 违约的两条 fail-open 出口 ────────────────────────
@@ -1131,13 +1229,13 @@ test("read_current_page：`no_live_page` **不**抛 —— 那不是能力不可
   assert.equal(result.value.reason, "no_live_page");
 });
 
-test("read_current_page：工具已注册、是读类、只读权限下也给她", () => {
-  const definition = getCompanionAgentTool("companion_read_current_page");
+test("read_current_page：观察域已注册、是读类、只读权限下也给她", () => {
+  const definition = getCompanionAgentTool("companion_observe");
   assert.ok(definition, "工具没进注册表");
   assert.equal(definition.riskClass, "read");
   assert.equal(definition.requiresConfirmation, false);
   assert.ok(
-    resolveAllCompanionAgentTools("read_only").map(tool => tool.name).includes("companion_read_current_page"),
+    resolveAllCompanionAgentTools("read_only").map(tool => tool.name).includes("companion_observe"),
     "只读权限下也应该能读页面",
   );
 });
@@ -1149,7 +1247,7 @@ test("required tool_choice 不受支持时，同一请求只切一次跨模型�
     role: "companion_agent",
     systemPrompt: "测试",
     messages: [{ role: "user", content: "打开笔记" }],
-    tools: [{ name: "companion_read_context", description: "读取上下文", parameters: {} }],
+    tools: [{ name: "observe.context", description: "读取上下文", parameters: {} }],
     toolChoice: "required",
     maxTokens: 100,
     temperature: 0.4,
@@ -1184,7 +1282,7 @@ test("required tool_choice 不受支持时，同一请求只切一次跨模型�
       assert.strictEqual(actualSignal, signal);
       return {
         content: null,
-        toolCalls: [{ id: "call_1", name: "companion_read_context", arguments: {} }],
+        toolCalls: [{ id: "call_1", name: "observe.context", arguments: {} }],
         finishReason: "tool_calls",
         usage: null,
         providerRequestId: null,
@@ -1213,7 +1311,7 @@ test("工具兜底只处理 required 能力错误，不吞其他错误或同模�
     role: "companion_agent",
     systemPrompt: "测试",
     messages: [{ role: "user", content: "打开笔记" }],
-    tools: [{ name: "companion_read_context", description: "读取上下文", parameters: {} }],
+    tools: [{ name: "observe.context", description: "读取上下文", parameters: {} }],
     toolChoice: "required",
     maxTokens: 100,
     temperature: 0.4,
@@ -1288,19 +1386,19 @@ test("分类器不可用时不强制工具，不继承历史执行授权", async
 });
 
 test("a classifier history-read hint leaves the full-context model free to answer while other reads/actions remain required", () => {
-  for (const name of ["companion_read_history", "companion_recall_past_conversation", "companion_recall_memory", "companion_read_memory"]) {
+  for (const name of ["observe.history", "memory.read.past_conversation", "memory.read.recall", "memory.read.read"]) {
     assert.equal(companionStepRequiresTool(true, [name]), false, name);
   }
-  assert.equal(companionStepRequiresTool(true, ["companion_read_history", "companion_recall_memory"]), false);
-  for (const name of ["companion_read_note", "agent_web_search", "agent_calculate", "companion_edit_note"]) {
-    assert.equal(companionStepRequiresTool(true, ["companion_read_history", name]), true, name);
+  assert.equal(companionStepRequiresTool(true, ["observe.history", "memory.read.recall"]), false);
+  for (const name of ["notes.read.read", "web.search", "observe.calculate", "notes.write.edit"]) {
+    assert.equal(companionStepRequiresTool(true, ["observe.history", name]), true, name);
   }
   assert.equal(companionStepRequiresTool(true, []), true, "an unclassified read is not silently waived");
   assert.equal(companionStepRequiresTool(true), true, "action callers do not pass advisory candidates");
 });
 
 test("不变量：任何一步都不许同时出现 tools:[] 与 toolChoice:\"required\"", () => {
-  const offered = [{ name: "companion_read_context", description: "读上下文", parameters: {} }];
+  const offered = [{ name: "observe.context", description: "读上下文", parameters: {} }];
   const step = (finalAnswerOnly: boolean, requiresTool: boolean, toolCallCount: number, tools = offered) =>
     companionStepToolShape({ tools, finalAnswerOnly, requiresTool, toolCallCount });
 
@@ -1344,7 +1442,7 @@ test("mock 守 provider 合同：required 必回工具调用，工具面为空�
   };
   const forced = await mock.executeAgentTurn({
     ...base,
-    tools: [{ name: "companion_read_context", description: "读上下文", parameters: {} }],
+    tools: [{ name: "observe.context", description: "读上下文", parameters: {} }],
     toolChoice: "required",
   });
   assert.equal(forced.toolCalls.length, 1, "required 这一档必须回一个工具调用");
@@ -1359,10 +1457,10 @@ test("mock 守 provider 合同：required 必回工具调用，工具面为空�
       ...base.messages,
       // `content: ""` 而不是 null：内部 `AgentMessage` 的形状是 string|parts，
       // 这里要表达的"这一步没有正文"用空串就够，mock 也只看有没有 tool 消息。
-      { role: "assistant", content: "", toolCalls: [{ id: "c1", name: "companion_read_context", arguments: {} }] },
+      { role: "assistant", content: "", toolCalls: [{ id: "c1", name: "observe.context", arguments: {} }] },
       { role: "tool", content: "已读取：{notes:[]}", toolCallId: "c1" },
     ],
-    tools: [{ name: "companion_read_context", description: "读上下文", parameters: {} }],
+    tools: [{ name: "observe.context", description: "读上下文", parameters: {} }],
     toolChoice: "required",
   });
   assert.equal(afterToolResult.toolCalls.length, 1,
@@ -1373,12 +1471,12 @@ test("mock 守 provider 合同：required 必回工具调用，工具面为空�
       ...base.messages,
       // `content: ""` 而不是 null：内部 `AgentMessage` 的形状是 string|parts，
       // 这里要表达的"这一步没有正文"用空串就够，mock 也只看有没有 tool 消息。
-      { role: "assistant", content: "", toolCalls: [{ id: "c1", name: "companion_read_context", arguments: {} }] },
+      { role: "assistant", content: "", toolCalls: [{ id: "c1", name: "observe.context", arguments: {} }] },
       // 带 `safeSummary`：mock 现在只取那一格回话（原样回显工具结果会把工具面里
       // 流通的裸 uuid 搬进正文，`internal_token_leak` 拦下、整轮终止）。
       { role: "tool", content: JSON.stringify({ value: { notes: [] }, safeSummary: "已读取：没有待读笔记" }), toolCallId: "c1" },
     ],
-    tools: [{ name: "companion_read_context", description: "读上下文", parameters: {} }],
+    tools: [{ name: "observe.context", description: "读上下文", parameters: {} }],
     toolChoice: "auto",
   });
   assert.equal(autoInstead.toolCalls.length, 0, "auto 那一档不该被 mock 偷偷升级成必调工具");
@@ -1450,7 +1548,7 @@ test("工具面只由权限档与数据外发政策装配，不再被本轮判�
   const assemblyStart = source.indexOf("const availableDefinitions = resolveAllCompanionAgentTools(");
   assert.ok(assemblyStart > 0, "找不到工具面装配那一句");
   const surfaceExpression = source.slice(assemblyStart, assemblyStart + 400);
-  for (const name of ["companion_write_annotation", "companion_publish_utterance", "companion_finish_participation"]) {
+  for (const name of ["notes.write.annotate", "say.publish", "say.finish_participation"]) {
     assert.ok(!surfaceExpression.includes(`definition.name === "${name}"`),
       `装配那一句里又出现了按能力名写的成员资格分支（${name}）—— 那是声明层该管的事`);
   }

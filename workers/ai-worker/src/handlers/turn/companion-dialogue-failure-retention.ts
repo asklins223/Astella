@@ -13,7 +13,7 @@ import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
 import { withWorkerWorkspaceTransaction } from "../../db.ts";
 import { logger } from "../../lib/logger.ts";
 import type { CompanionContentBlockV1 } from "@astella/shared";
-import { COMPANION_AGENT_TOOL_LABELS } from "@astella/shared";
+import { companionToolLabel } from "@astella/shared";
 import { createdNoteToolResult, readCreatedNoteReceipt } from "../note/companion-note-authoring.ts";
 
 /**
@@ -101,7 +101,7 @@ export async function persistFailedPartial(args: {
         const blocks: CompanionContentBlockV1[] = [{ type: "text", text, emotion: "neutral" }];
         const calls = await tx.execute<{ result_ref: string | null }>(sql`SELECT result_ref FROM companion_agent_tool_calls
           WHERE run_id=${args.runId} AND workspace_id=${args.workspaceId} AND user_id=${args.userId}
-            AND name='companion_create_note' AND status='succeeded' ORDER BY created_at`);
+            AND name = 'notes.write.create' AND status='succeeded' ORDER BY created_at`);
         const savedLines: string[] = [];
         for (const call of calls) {
           const receipt = readCreatedNoteReceipt(call.result_ref);
@@ -125,10 +125,10 @@ export async function persistFailedPartial(args: {
         const others = await tx.execute<{ name: string; done: string }>(sql`
           SELECT name, count(*)::text AS done FROM companion_agent_tool_calls
           WHERE run_id=${args.runId} AND workspace_id=${args.workspaceId} AND user_id=${args.userId}
-            AND status='succeeded' AND risk_class <> 'read' AND name <> 'companion_create_note'
+            AND status='succeeded' AND risk_class <> 'read' AND name <> 'notes.write.create'
           GROUP BY name ORDER BY name`);
         if (others[0]) {
-          const named = others.map(row => `${COMPANION_AGENT_TOOL_LABELS[row.name] ?? row.name}`
+          const named = others.map(row => `${companionToolLabel(row.name) ?? row.name}`
             + (Number(row.done) > 1 ? ` ×${row.done}` : "")).join("、");
           const line = `这一轮已经做成的操作仍然保留：${named}。`;
           const current = String((blocks[0] as { text?: string }).text ?? text);

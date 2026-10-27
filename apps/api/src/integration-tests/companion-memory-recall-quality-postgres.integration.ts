@@ -154,7 +154,7 @@ after(async () => {
 
 /** 走真实工具入口：模型在运行时调的就是这条。无外发授权 → 查询向量为空。 */
 async function recallViaTool(query: string, limit = 8) {
-  const definition = COMPANION_AGENT_TOOL_DEFINITIONS.find((item) => item.name === "companion_recall_memory");
+  const definition = COMPANION_AGENT_TOOL_DEFINITIONS.find((item) => item.name === "companion_memory_read");
   assert.ok(definition);
   const controller = new AbortController();
   const event = {

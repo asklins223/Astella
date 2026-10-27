@@ -6,7 +6,7 @@ import type { AgentEventContext } from "../tools/companion-read-tools.ts";
 test("空学习卡搜索词返回空结果，不打开数据库事务", async () => {
   const result = await executeCompanionLearningDiscoveryTool(
     {} as AgentEventContext,
-    "companion_search_cards",
+    "notes.read.cards",
     { query: "   " },
   );
   assert.deepEqual(result.value, { cards: [] });

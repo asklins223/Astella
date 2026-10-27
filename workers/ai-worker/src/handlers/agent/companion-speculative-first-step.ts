@@ -52,7 +52,11 @@ export function buildCasualFirstStepRequest(args: {
   tools?: AgentTurnRequest["tools"];
 }): AgentTurnRequest {
   // Speculation only proposes: runtime executes after release and checkpointing.
-  const tools = args.tools?.filter(tool => isCompanionAutonomousTool(tool.name)) ?? [];
+  // Her own persona records are autonomous (self_note/identity/style/tags), so the
+  // domain tool rides along; business writes still stay out of the speculative face.
+  // Execution still gates activeness/boundary on that tool.
+  const tools = args.tools?.filter(tool => isCompanionAutonomousTool(tool.name)
+    || tool.name === "companion_persona_write") ?? [];
   const contextSources = new Map([
       ["turn", { scope: { kind: "policy" as const }, content: args.turnPolicy }],
       ["execution", { scope: { kind: "policy" as const }, content: companionStepRuntimePolicy({

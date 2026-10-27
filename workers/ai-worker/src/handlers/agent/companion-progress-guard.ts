@@ -26,12 +26,69 @@
  * 仍然原样重放时，就不再给她第三次同样的轮次，按 `no_progress` 失败收口。
  */
 
-/** 同一个调用指纹允许的原地重放次数。判据是"完全相同的调用"，不是调用总数。 */
-export const COMPANION_IDENTICAL_CALL_REPLAYS_ALLOWED = 1;
+/**
+ * A successful identical call may be repeated a few times while the model
+ * re-reads the same fresh evidence. One replay was too tight for ordinary
+ * multi-step UI flows (a diagram was regenerated three times and the turn was
+ * killed after the second). Keep a finite cap, but make it a real loop guard.
+ */
+export const COMPANION_IDENTICAL_CALL_REPLAYS_ALLOWED = 5;
+
+/**
+ * Reads are cheap and may legitimately be repeated while the model re-checks
+ * fresh evidence. Actions and generated artifacts are not: a second identical
+ * success already means the loop is spending the user's time without progress.
+ */
+export const COMPANION_ACTION_REPLAYS_ALLOWED = 0;
+
+/**
+ * A tool may be rejected several times before the host stops offering it.
+ * One bad payload is a normal model mistake; five is a broken contract or a
+ * dead loop. The run-wide cap below catches alternating tools.
+ */
+export const COMPANION_MALFORMED_TOOL_ATTEMPTS_ALLOWED = 5;
+/** Total invalid tool calls allowed in one run before settling honestly. */
+export const COMPANION_INVALID_TOOL_CALLS_ALLOWED = 12;
+/** Extra free-choice steps after a completion claim that has no receipt. */
+export const COMPANION_UNBACKED_CLAIM_RETRIES_ALLOWED = 3;
+/** The same wrong arithmetic result may repeat this many times before settling. */
+export const COMPANION_ARITHMETIC_REPEAT_ALLOWED = 3;
+/** Different wrong results still get a real chance to converge. */
+export const COMPANION_ARITHMETIC_TOTAL_ALLOWED = 6;
+/** A current-turn requirement may be retried several times before the host settles honestly. */
+export const COMPANION_REQUIREMENT_RETRIES_ALLOWED = 3;
+/** A successful action may be asked for again; answer with the prior receipt a few times. */
+export const COMPANION_ACTION_REPLAY_RETRIES_ALLOWED = 3;
+
+/**
+ * Count schema rejections per tool, not per exact payload. A model that keeps
+ * changing invalid arguments otherwise evades the identical-call replay guard
+ * and spends the whole turn retrying one broken contract.
+ */
+export function companionMalformedToolExhausted(attempts: Map<string, number>, toolName: string): number {
+  const count = (attempts.get(toolName) ?? 0) + 1;
+  attempts.set(toolName, count);
+  return count;
+}
 
 /** 一次调用的身份：工具名 + 规范化参数哈希。 */
 export function companionCallFingerprint(name: string, argumentsHash: string): string {
   return `${name}:${argumentsHash}`;
+}
+
+/**
+ * How many identical replays this operation may have after its first success.
+ * `riskClass === "read"` is not enough on its own: `visual.diagram` is declared
+ * read-only but still generates a visible artifact, and repeated navigation or
+ * search is user-visible/costly. Those use the action cap.
+ */
+export function companionReplayLimitFor(name: string, riskClass: string): number {
+  if (riskClass !== "read") return COMPANION_ACTION_REPLAYS_ALLOWED;
+  if (name === "visual.diagram" || name === "say.publish" || name === "companion_load_tools"
+    || name === "web.search" || name === "observe.calculate" || name.startsWith("open.")) {
+    return COMPANION_ACTION_REPLAYS_ALLOWED;
+  }
+  return COMPANION_IDENTICAL_CALL_REPLAYS_ALLOWED;
 }
 
 /**
@@ -43,8 +100,9 @@ export function companionCallFingerprint(name: string, argumentsHash: string): s
 export function companionReplayExhausted(
   successfulReceipts: Map<string, number>,
   fingerprint: string,
+  allowed = COMPANION_IDENTICAL_CALL_REPLAYS_ALLOWED,
 ): boolean {
   const seen = (successfulReceipts.get(fingerprint) ?? 0) + 1;
   successfulReceipts.set(fingerprint, seen);
-  return seen > COMPANION_IDENTICAL_CALL_REPLAYS_ALLOWED + 1;
+  return seen > allowed + 1;
 }

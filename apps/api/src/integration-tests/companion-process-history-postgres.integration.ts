@@ -17,9 +17,15 @@ test("worker 写入的思考和工具随对话保留：清理实时事件、超�
   const userMessageId = randomUUID(), assistantMessageId = randomUUID(), runId = randomUUID();
   const entries = [
     { type: "assistant.thinking", payload: { index: 0, text: "先查阅这篇笔记。" } },
-    { type: "agent.tool", payload: { tool: { toolCallId: "read", name: "companion_open_card", status: "requested", safeLabel: "打开笔记", privateDiagnostic: "不进入手记档案" } } },
+    { type: "agent.tool", payload: { tool: { toolCallId: "read", name: "companion_open", status: "requested", safeLabel: "打开笔记", privateDiagnostic: "不进入手记档案" } } },
     { type: "assistant.thinking", payload: { index: 1, text: "接着核对材料中的例子。" } },
-    { type: "agent.tool", payload: { tool: { toolCallId: "read", name: "companion_open_card", status: "succeeded", safeLabel: "打开笔记", safeSummary: "读到了当时的正文" } } },
+    { type: "agent.tool", payload: { tool: { toolCallId: "read", name: "companion_open", status: "succeeded", safeLabel: "打开笔记", safeSummary: "读到了当时的正文" } } },
+    { type: "assistant.delta", payload: { appendFrom: 0, textDelta: "先说读取到的结果。" } },
+    { type: "assistant.thinking", payload: { index: 2, text: "接着保存一份比较手记。" } },
+    { type: "agent.tool", payload: { tool: { toolCallId: "create", name: "companion_notes_write", status: "succeeded", safeLabel: "保存手记",
+      noteCreated: { noteId: randomUUID(), noteVersionId: randomUUID(), title: "比较手记" }, privateDiagnostic: "不进入手记档案" } } },
+    { type: "assistant.delta", payload: { appendFrom: 10, textDelta: "比较手记已保存。" } },
+    { type: "assistant.final", payload: { messageId: assistantMessageId, textLength: 18, privateDiagnostic: "不进入手记档案" } },
   ];
   try {
     await db.begin(async tx => {
@@ -28,7 +34,7 @@ test("worker 写入的思考和工具随对话保留：清理实时事件、超�
       await tx`INSERT INTO workspaces (id,name,owner_id) VALUES (${workspaceId},'手记过程测试',${userId})`;
       await tx`INSERT INTO workspace_members (workspace_id,user_id,role) VALUES (${workspaceId},${userId},'owner')`;
       await tx`INSERT INTO companion_conversations (id,workspace_id,user_id,kind,title,title_source,status,next_event_seq)
-        VALUES (${conversationId},${workspaceId},${userId},'dialogue','过程测试','placeholder','active',5)`;
+        VALUES (${conversationId},${workspaceId},${userId},'dialogue','过程测试','placeholder','active',${entries.length + 1})`;
       await tx`INSERT INTO companion_messages (id,conversation_id,workspace_id,user_id,role,seq,kind,blocks,content_sha256)
         VALUES (${userMessageId},${conversationId},${workspaceId},${userId},'user',1,'text',${tx.json([{ type: "text", text: "查阅笔记" }])},${"0".repeat(64)})`;
       for (let i = 1; i <= 21; i++) await tx`INSERT INTO companion_turn_runs
@@ -56,8 +62,10 @@ test("worker 写入的思考和工具随对话保留：清理实时事件、超�
     assert.ok(archived.ok);
     assert.equal(archived.items.length, 0);
     assert.equal(archived.runs.length, 1);
-    assert.equal(archived.runs[0]!.processTimeline?.length, 4);
-    assert.deepEqual(archived.runs[0]!.processTimeline?.map(event => event.seq), [1,2,3,4]);
+    assert.equal(archived.runs[0]!.processTimeline?.length, entries.length);
+    assert.deepEqual(archived.runs[0]!.processTimeline?.map(event => event.seq), entries.map((_, index) => index + 1));
+    assert.deepEqual(archived.runs[0]!.processTimeline?.map(event => event.type), entries.map(event => event.type));
+    assert.equal((archived.runs[0]!.processTimeline?.[6]?.payload as { tool: { noteCreated: { title: string } } }).tool.noteCreated.title, "比较手记");
     assert.equal(archived.runs[0]!.assistantMessageId, assistantMessageId);
     assert.ok(!JSON.stringify(archived.runs[0]!.processTimeline).includes("privateDiagnostic"));
     const forbidden = await listCompanionRunNodes({ workspaceId: randomUUID(),userId,conversationId,after: 0,includeThinking: true,runIds: [runId] });

@@ -31,13 +31,22 @@ export function transformCompanionNoteEdit(before: Node, input: CompanionEditNot
       || expected.some((text, i) => blocks[start + i]?.content !== text)) conflict();
   };
   const parsed = (markdown: string) => Fragment.fromArray(noteBlocksToPmNodes(markdownToBlocks(markdown)).map(json => schema.nodeFromJSON(json)));
-  const content = parsed(input.markdown ?? "");
+  let content = parsed(input.markdown ?? "");
   let tr = new Transform(before);
   if (input.operation === "append") {
     tr = tr.insert(before.content.size, content);
   } else if (input.operation.endsWith("blocks")) {
     const first = input.startBlock!, last = input.endBlock!;
     verify(first, last, input.expectedBlocks!);
+    if (input.operation === "replace_blocks" && input.preserveBlockStructure !== false) {
+      const preserved = content.childCount === last - first + 1
+        ? Array.from({ length: content.childCount }, (_, index) =>
+          preservingBlockStructure(before.child(first + index), content.child(index), Fragment)) : [];
+      if (preserved.length === 0 || preserved.some(node => node === null)) throw new NoteEditConflict(
+        "这次替换会改变原文的标题、列表、表格或段落结构，尚未保存。只改文字或数值时，请保留原段落的格式后再替换。",
+      );
+      content = Fragment.fromArray(preserved as Node[]);
+    }
     tr = tr.replaceWith(starts[first]!, starts[last]! + before.child(last).nodeSize, content);
   } else if (input.operation === "insert_at_cursor") {
     const cursor = editing?.cursor;
@@ -73,6 +82,27 @@ export function transformCompanionNoteEdit(before: Node, input: CompanionEditNot
   if (next.eq(before)) throw new NoteEditConflict("这次要求没有改变正文。");
   next.check();
   return next;
+}
+
+/** Source/style provenance is not Markdown syntax. Preserve it while checking
+ * nested list/table shape; inline text can change without replacing a block. */
+function preservingBlockStructure(original: Node, replacement: Node, FragmentRuntime: typeof Fragment): Node | null {
+  const syntaxAttrs = (node: Node) => Object.fromEntries(Object.entries(node.attrs)
+    .filter(([key]) => key !== "sourceRef" && key !== "noteStyle"));
+  if (original.type.name !== replacement.type.name
+    || JSON.stringify(syntaxAttrs(original)) !== JSON.stringify(syntaxAttrs(replacement))) return null;
+  let children = replacement.content;
+  if (!original.isTextblock && !original.isLeaf) {
+    if (original.childCount !== replacement.childCount) return null;
+    const preserved = Array.from({ length: original.childCount }, (_, index) =>
+      preservingBlockStructure(original.child(index), replacement.child(index), FragmentRuntime));
+    if (preserved.some(node => node === null)) return null;
+    children = FragmentRuntime.fromArray(preserved as Node[]);
+  }
+  return replacement.type.create({ ...replacement.attrs,
+    ...("sourceRef" in original.attrs ? { sourceRef: original.attrs.sourceRef } : {}),
+    ...("noteStyle" in original.attrs ? { noteStyle: original.attrs.noteStyle } : {}),
+  }, children, replacement.marks);
 }
 
 function insertContent(tr: Transform, from: number, to: number, content: Fragment, SliceRuntime: typeof Slice): Transform {

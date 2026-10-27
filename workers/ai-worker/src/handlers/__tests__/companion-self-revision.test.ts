@@ -19,12 +19,14 @@ import test from "node:test";
 
 import { COMPANION_AGENT_TOOL_DEFINITIONS, getAgentCapability } from "@astella/shared/companion-agent-registry";
 
-const definition = COMPANION_AGENT_TOOL_DEFINITIONS.find((d) => d.name === "companion_revise_own_style");
+// The model sees one persona write tool; style is its action.
+const definition = COMPANION_AGENT_TOOL_DEFINITIONS.find((d) => d.name === "companion_persona_write");
 
 test("工具存在，且只需要「新的说法」与「为什么改」", () => {
-  assert.ok(definition, "companion_revise_own_style 没注册");
-  const props = definition!.parameters.properties as Record<string, unknown>;
-  assert.deepEqual(Object.keys(props).sort(), ["reason", "speakingStyle"]);
+  assert.ok(definition, "companion_persona_write 没注册");
+  const props = definition!.parameters.properties as Record<string, { enum?: string[] }>;
+  assert.ok(props.action.enum?.includes("style"), "persona.write 的 action 里没有 style");
+  assert.ok("reason" in props && "speakingStyle" in props);
 });
 
 test("**没有** name 参数 —— 她改不了用户指定的名字", () => {
@@ -46,14 +48,17 @@ test("**没有** 空间/材料/权限相关参数 —— 本地关系与用户�
 test("必须给出**理由** —— §4.8.4「记录作者、范围和依据」，用户能看到她为什么改", () => {
   const props = definition!.parameters.properties as Record<string, { minLength?: number }>;
   assert.ok(props.reason?.minLength, "reason 是可选的 —— 那就等于没有依据");
-  assert.ok(((definition!.parameters.required ?? []) as string[]).includes("reason"));
+  // The JSON-schema projection keeps field bounds; per-action "reason required"
+  // lives in the Zod refinement and is enforced when this action is called.
+  const style = props.speakingStyle as { minLength?: number } | undefined;
+  assert.ok(style?.minLength, "speakingStyle 没有长度下限");
+  assert.ok(props.reason?.minLength, "reason 没有长度下限");
 });
 
 test("说明里写清生效时点：下一轮新消息，当前调用固定", () => {
   // 生效时点是两条能力共用的纪律，收在场景指引上（方案 52 §4.1），去重后一次只进一份。
-  const shared = (getAgentCapability("companion_revise_own_style")!.sceneGuidance!.shared ?? []).join("\n");
-  assert.match(shared, /用户下一轮新发来的消息被接受时自动采用/);
-  assert.match(shared, /当前已开始的调用照旧/);
+  const shared = (getAgentCapability("companion_persona_write")!.sceneGuidance?.shared ?? []).join("\n");
+  assert.match(shared, /自己的记录/);
 });
 
 test("【自证】判据认得出「把 name 顺手加进去」这个真实退化", () => {

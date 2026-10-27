@@ -5,7 +5,9 @@ export type CompanionProcessRow =
 
 /** Older archives may contain model repair instructions in this tool receipt. */
 export function companionProcessNodeSummary(node: CompanionAgentNode): string {
-  if (node.toolName === "companion_publish_utterance" && node.state === "not_executed") return "这次分条发送没有执行。";
+  // `companion_publish_utterance` 是这次域合并之前的账本名，只可能出现在旧存档里。
+  if ((node.toolName === "say.publish" || node.toolName === "companion_publish_utterance")
+    && node.state === "not_executed") return "这次分条发送没有执行。";
   return node.summary ?? "";
 }
 

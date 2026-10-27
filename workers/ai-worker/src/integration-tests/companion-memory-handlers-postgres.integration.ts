@@ -192,7 +192,7 @@ test("active 目录只给线索；按稳定 ID 展开要求有效范围与当前
   assert.equal(entry?.appliesWhen, "讨论学习目标时");
   assert.equal("content" in entry, false, "目录只返回标题/适用条件，不带正文列");
 
-  const definition = getCompanionAgentTool("companion_read_memory");
+  const definition = getCompanionAgentTool("companion_memory_read");
   assert.ok(definition);
   const read = {
     userId,
@@ -207,6 +207,7 @@ test("active 目录只给线索；按稳定 ID 展开要求有效范围与当前
     constraints: {},
   } as unknown as Parameters<typeof executeReadTool>[0];
   const expanded = await executeReadTool(event, definition, {
+    action: "read",
     memoryId,
     expectedRevision: 1,
   });
@@ -214,11 +215,11 @@ test("active 目录只给线索；按稳定 ID 展开要求有效范围与当前
   assert.equal(read.memoryRefs[0]?.memoryId, memoryId);
 
   await assert.rejects(
-    () => executeReadTool(event, definition, { memoryId, expectedRevision: 2 }),
+    () => executeReadTool(event, definition, { action: "read", memoryId, expectedRevision: 2 }),
     /没找到这条仍有效且版本匹配/,
   );
   await assert.rejects(
-    () => executeReadTool(event, definition, { memoryId: randomUUID(), expectedRevision: 1 }),
+    () => executeReadTool(event, definition, { action: "read", memoryId: randomUUID(), expectedRevision: 1 }),
     /没找到这条仍有效且版本匹配/,
   );
 });
@@ -240,7 +241,7 @@ test("维护 tick：数据库日期键保证每日一次，重复调用不抛错
 });
 
 test("full 档记忆修订：CAS 追加旧版本，保留来源与未改的时间条件", async () => {
-  const definition = getCompanionAgentTool("companion_revise_memory");
+  const definition = getCompanionAgentTool("companion_memory_write");
   assert.ok(definition);
   const event = {
     ctx: { workspaceId },
@@ -248,6 +249,7 @@ test("full 档记忆修订：CAS 追加旧版本，保留来源与未改的时�
   } as unknown as Parameters<typeof executeDirectTool>[0];
 
   const result = await executeDirectTool(event, definition, {
+    action: "revise",
     memoryId: revisionMemoryId,
     expectedRevision: 1,
     content: "新的记忆内容",
@@ -296,6 +298,7 @@ test("full 档记忆修订：CAS 追加旧版本，保留来源与未改的时�
 
   await assert.rejects(
     () => executeDirectTool(event, definition, {
+      action: "revise",
       memoryId: revisionMemoryId,
       expectedRevision: 1,
       content: "过期输入不得覆盖",
@@ -317,7 +320,7 @@ test("full 档记忆修订：CAS 追加旧版本，保留来源与未改的时�
  * 伴星直接执行就把"这个班的作业"写进了账号级偏好，并被同步到别的书房。
  */
 test("full 档修订：账号级规则改成本书房内容被拒；源行、副本与历史都不动", async () => {
-  const definition = getCompanionAgentTool("companion_revise_memory");
+  const definition = getCompanionAgentTool("companion_memory_write");
   assert.ok(definition);
   const event = {
     ctx: { workspaceId },
@@ -353,6 +356,7 @@ test("full 档修订：账号级规则改成本书房内容被拒；源行、副
   for (const attempt of rejected) {
     await assert.rejects(
       () => executeDirectTool(event, definition, {
+        action: "revise",
         memoryId: accountMemoryId,
         expectedRevision: 1,
         ...attempt.args,
@@ -367,6 +371,7 @@ test("full 档修订：账号级规则改成本书房内容被拒；源行、副
 
   // 正向对照之二：正常的账号级修订仍然能用，而且副本跟着同步。
   const revised = await executeDirectTool(event, definition, {
+    action: "revise",
     memoryId: accountMemoryId,
     expectedRevision: 1,
     content: "习惯晚上九点之后写笔记，白天只做采集",
@@ -380,7 +385,7 @@ test("full 档修订：账号级规则改成本书房内容被拒；源行、副
 });
 
 test("full 档修订：空间内记忆不受账号级守卫约束", async () => {
-  const definition = getCompanionAgentTool("companion_revise_memory");
+  const definition = getCompanionAgentTool("companion_memory_write");
   assert.ok(definition);
   const event = {
     ctx: { workspaceId },
@@ -389,6 +394,7 @@ test("full 档修订：空间内记忆不受账号级守卫约束", async () => 
 
   // 内容与条件都是这个书房专属的——对 scope='workspace' 的记忆来说，这很正常。
   const result = await executeDirectTool(event, definition, {
+    action: "revise",
     memoryId: localMemoryId,
     expectedRevision: 1,
     content: "复习这个班的作业时先看反例",

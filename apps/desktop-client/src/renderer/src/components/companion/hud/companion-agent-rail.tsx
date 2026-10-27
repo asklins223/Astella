@@ -53,21 +53,22 @@ export type CompanionAgentRailTurnState = "running" | "done" | "stopped" | "fail
  * 不猜语义（猜错比不认识更坏）。
  */
 const TOOL_ICONS: Record<string, LucideIcon> = {
-  companion_read_context: ScanSearch,
-  companion_read_history: History,
-  companion_read_memory: Brain,
-  companion_open_card: Layers,
-  companion_open_page: Network,
-  companion_open_note: FileText,
-  companion_search_notes: ScanSearch,
-  companion_read_note: FileText,
-  companion_create_note: FileText,
-  companion_edit_note: FileText,
-  companion_get_learning_stats: BarChart3,
-  companion_schedule_reminder: Bell,
-  companion_list_reminders: Bell,
-  companion_cancel_reminder: Bell,
-  companion_start_learning: Sparkles,
+  "observe.context": ScanSearch,
+  "observe.history": History,
+  "observe.stats": BarChart3,
+  "observe.activity": ScanSearch,
+  "memory.read.read": Brain,
+  "memory.read.recall": Brain,
+  "open.card": Layers,
+  "open.page": Network,
+  "open.note": FileText,
+  "notes.read.search": ScanSearch,
+  "notes.read.read": FileText,
+  "notes.write.create": FileText,
+  "notes.write.edit": FileText,
+  "attention.write.schedule_reminder": Bell,
+  "attention.read.reminders": Bell,
+  "attention.write.cancel_reminder": Bell,
 };
 
 function nodeIcon(node: CompanionAgentNode): LucideIcon {

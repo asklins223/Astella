@@ -76,7 +76,7 @@ export interface CompanionReplayWindowReceiptV1 {
   omittedCount: number;
   /**
    * 没带走的那一段里**最新**的一条 seq（它和更早的都没带）；全带上了就是 null。
-   * 与摘要的 `uncovered` 同一个词：这一段由 `companion_read_history` 按 seq 取回。
+   * 与摘要的 `uncovered` 同一个词：这一段由 `companion_observe（action=history）` 按 seq 取回。
    */
   uncoveredThroughSeq: string | null;
   /**
@@ -403,21 +403,21 @@ export function renderCompanionContextHandoff(snapshot: CompanionContextHandoffS
     // 少带的那一段要说得出**为什么**与**怎么补**，否则她只能假设上面没有发生过。
     ...(snapshot.replayWindow && snapshot.replayWindow.omittedCount > 0
       ? [snapshot.replayWindow.summaryFold
-        ? `本轮保留了 ${snapshot.replayWindow.takenCount} 条原话，另有 ${snapshot.replayWindow.omittedCount} 条由已校验的 <conversation_summary> 代表；要核对原文就按 seq 调用 companion_read_history 取回。`
-        : `旧交接记录只带回 ${snapshot.replayWindow.takenCount} 条原话，另有 ${snapshot.replayWindow.omittedCount} 条没有回放，不能假定它们已由摘要代表；要用那一段就先按 seq 调用 companion_read_history 取回。`]
+        ? `本轮保留了 ${snapshot.replayWindow.takenCount} 条原话，另有 ${snapshot.replayWindow.omittedCount} 条由已校验的 <conversation_summary> 代表；要核对原文就按 seq 调用 companion_observe（action=history） 取回。`
+        : `旧交接记录只带回 ${snapshot.replayWindow.takenCount} 条原话，另有 ${snapshot.replayWindow.omittedCount} 条没有回放，不能假定它们已由摘要代表；要用那一段就先按 seq 调用 companion_observe（action=history） 取回。`]
       : []),
     // 动作回执同理：按摘要覆盖线收边之后，「那件事我做过了」在账本上不能只剩一句
     // 「摘要里好像提过」。说清多少条被折进摘要、怎么回去核对。
     ...(ledgerFolded > 0
       ? [`另有 ${ledgerFolded} 条更早的动作回执没逐条带走，那一段的结论由 <conversation_summary> 代表`
-        + "（不是没发生过）；要核对其中某个动作到底成没成，先按 seq 用 companion_read_history 取回那一段原文。"]
+        + "（不是没发生过）；要核对其中某个动作到底成没成，先按 seq 用 companion_observe（action=history） 取回那一段原文。"]
       : []),
     // 整条比整个窗口还长的那几条单独点名：不点名的话，"我上一句到底说过什么"
     // 在账本上没有任何痕迹，她会当成自己没说过（正文不剪进这里——剪过的字她会照着说）。
     ...(snapshot.replayWindow?.oversizedSkipped ?? []).map(entry =>
       `seq=${entry.seq ?? "?"} 那条${entry.role === "assistant" ? "是你自己发的长内容" : "是用户发的长内容"}`
       + `（约 ${entry.tokens} tok，整条比本轮回放窗口还长），这一轮没带走正文——它说过，只是装不下；`
-      + `要谈那一段就按这个 seq 调用 companion_read_history 取回原文。`),
+      + `要谈那一段就按这个 seq 调用 companion_observe（action=history） 取回原文。`),
     // 窗口内部的洞：一条汇总 + seq 清单在 JSON 里，**不逐条成句**。
     // 逐条点名是第一版的写法，真窗口实测：22 条带走、52 条洞，交接块从 7,152 涨到
     // 10,380 字符——把收边换成了另一种膨胀。洞本身必须说（不然她会把前后两条当成挨着
@@ -425,7 +425,7 @@ export function renderCompanionContextHandoff(snapshot: CompanionContextHandoffS
     ...(skippedHoles.length > 0
       ? [`回放窗口内部跳过了 ${skippedHoles.length} 条（seq 见 replayWindow.skippedToFit，`
         + `最新一条是 ${skippedHoles.at(-1)}）：那些条说过，只是这一轮的预算装不下它们；`
-        + "要谈那一段就按对应 seq 用 companion_read_history 取回，别把前后两条当成挨着说的。"]
+        + "要谈那一段就按对应 seq 用 companion_observe（action=history） 取回，别把前后两条当成挨着说的。"]
       : []),
     serialized,
     "</continuation_data>",
@@ -506,7 +506,7 @@ export const PAST_OFFER_NOTE = "（这句说完就算过去了。）";
  * 看得见她的上一条和用户的这一句；这里只按索引改形态。索引来自模型而不是词表或标点：
  * 只认问号的那一版实测等于没做，因为记账的句子多是陈述句（「就等你丢个词进来」「想接着问冰箱我随时接」）。
  *
- * 只作用于**喂给模型的那一份**：DB 原文、审计用的 `historyTail`、`companion_read_history`
+ * 只作用于**喂给模型的那一份**：DB 原文、审计用的 `historyTail`、`companion_observe（action=history）`
  * 取回的正文都保持原样。她仍然记得自己说过什么，只是那不再是一笔待收的账。
  *
  * 泛型按 `{role, content}` 这条**要发出去的形状**收：调用方那侧还带着 toolCalls、reasoning

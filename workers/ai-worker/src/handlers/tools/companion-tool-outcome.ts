@@ -58,8 +58,12 @@ export function unavailableCompanionToolSummary(
   constraints: { visionEnabled?: boolean; webSearchEnabled?: boolean },
   execution: { searchLimitReached?: boolean } = {},
 ): string | null {
-  if (toolName === "agent_web_search" && constraints.webSearchEnabled !== true) return "联网搜索已关闭或暂时不可用，请继续回答并说明未能联网核实。";
-  if (toolName === "agent_web_search" && execution.searchLimitReached) return "本轮搜索次数已用完，这次没有执行。请根据已取得的网页资料回答；资料不足的部分直接说明，继续补搜需等下一轮。";
+  // Callers pass the internal operation id (`web.search`); the legacy alias is
+  // still accepted so an older caller cannot silently lose the explanation.
+  if ((toolName === "web.search" || toolName === "agent_web_search") && constraints.webSearchEnabled !== true)
+    return "联网搜索已关闭或暂时不可用，请继续回答并说明未能联网核实。";
+  if ((toolName === "web.search" || toolName === "agent_web_search") && execution.searchLimitReached)
+    return "本轮搜索次数已用完，这次没有执行。请根据已取得的网页资料回答；资料不足的部分直接说明，继续补搜需等下一轮。";
   return isVisionGatedCompanionTool(toolName) && constraints.visionEnabled !== true
     ? VISION_EGRESS_UNAVAILABLE_SAFE_SUMMARY
     : null;

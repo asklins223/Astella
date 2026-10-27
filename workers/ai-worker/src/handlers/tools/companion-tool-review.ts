@@ -1,6 +1,6 @@
 import { prepareCompanionGeneratedNote } from "../note/companion-note-authoring.ts";
 import { sql } from "drizzle-orm";
-import { companionToolConfirmationStage, COMPANION_AGENT_TOOL_LABELS, type CompanionAgentToolDefinitionV1 } from "@astella/shared";
+import { companionOperationArguments, companionOperationName, companionToolConfirmationStage, companionToolLabel, type CompanionAgentToolDefinitionV1 } from "@astella/shared";
 import { companionCreateNoteV1Schema, companionEditNoteV1Schema, companionNoteEditingContextV1Schema } from "@astella/shared/companion-note-authoring-contracts";
 import { previewCompanionNoteEdit, NoteEditConflict } from "@astella/shared/note-companion-transform";
 import { noteBlockMarkdown } from "@astella/shared/note-markdown";
@@ -18,18 +18,20 @@ export async function prepareCompanionToolReview(event: AgentEventContext,
   const originClientKind = ((event.read.pageContext as { clientSurface?: unknown } | null)?.clientSurface === "mobile")
     ? "mobile" : null;
   const confirmationStage = companionToolConfirmationStage(definition, arguments_, { originClientKind });
+  // Callers may pass either the domain definition or an internal operation name.
+  const operation = companionOperationName({ name: definition.name, arguments: arguments_ });
   let expectedTarget: Record<string, unknown> | undefined;
   const preview: { title: string; markdown?: string; beforeMarkdown?: string; noteId?: string } = {
-    title: String(arguments_.title ?? COMPANION_AGENT_TOOL_LABELS[definition.name] ?? "查看这次改动").slice(0, 200),
+    title: String(arguments_.title ?? companionToolLabel(definition.name) ?? "查看这次改动").slice(0, 200),
   };
-  if (definition.name === "companion_create_note") {
-    const input = companionCreateNoteV1Schema.parse(arguments_);
+  if (operation === "notes.write.create") {
+    const input = companionCreateNoteV1Schema.parse(companionOperationArguments(operation, arguments_));
     const prepared = await withWorkerWorkspaceTransaction({ workspaceId: event.ctx.workspaceId, userId: event.read.userId },
       tx => prepareCompanionGeneratedNote(tx, event, input));
     preview.markdown = prepared.markdown;
   }
-  else if (definition.name === "companion_edit_note") {
-    const input = companionEditNoteV1Schema.parse(arguments_);
+  else if (operation === "notes.write.edit") {
+    const input = companionEditNoteV1Schema.parse(companionOperationArguments(operation, arguments_));
     const page = event.read.pageContext as { context?: { noteId?: string; noteVersionId?: string; editing?: unknown } } | null;
     if (page?.context?.noteId !== input.noteId) throw new CompanionToolNotExecutedError("请先打开要调整的笔记，再准备这次改动。");
     const editing = companionNoteEditingContextV1Schema.parse(page.context.editing ?? {});
@@ -57,10 +59,10 @@ export async function prepareCompanionToolReview(event: AgentEventContext,
         ? changed.map(block => noteBlockMarkdown(block.type, block.content)).join("\n\n")
         : `将从《${result.title}》删除以下原文：\n\n${input.expectedBlocks?.join("\n\n") ?? editing.selection?.excerpt ?? ""}`;
     } catch (error) { if (error instanceof NoteEditConflict) throw new CompanionToolNotExecutedError(error.message); throw error; }
-  } else if (definition.name === "companion_forget_memory" || definition.name === "companion_cancel_reminder") {
+  } else if (operation === "memory.write.forget" || operation === "attention.write.cancel_reminder") {
     const scope = { workspaceId: event.ctx.workspaceId, userId: event.read.userId };
     expectedTarget = await withWorkerWorkspaceTransaction(scope, async tx => {
-      const rows = definition.name === "companion_forget_memory"
+      const rows = operation === "memory.write.forget"
         ? await tx.execute<{ state: Record<string, unknown> }>(sql`SELECT jsonb_build_object('content',content,'revision',revision) AS state
           FROM assistant_memory_items WHERE id=${String(arguments_.memoryId)}::uuid AND workspace_id=${scope.workspaceId}
             AND user_id=${scope.userId} AND deleted_at IS NULL`)
@@ -70,8 +72,8 @@ export async function prepareCompanionToolReview(event: AgentEventContext,
       if (!rows[0]) throw new CompanionToolNotExecutedError("要删除的内容已经变化或不再可用，请重新查看。");
       return rows[0].state;
     });
-    preview.title = definition.name === "companion_forget_memory" ? "删除这条记忆" : "取消这个提醒";
-    preview.markdown = definition.name === "companion_forget_memory" ? String(expectedTarget.content)
+    preview.title = operation === "memory.write.forget" ? "删除这条记忆" : "取消这个提醒";
+    preview.markdown = operation === "memory.write.forget" ? String(expectedTarget.content)
       : `${String(expectedTarget.text)}\n\n原定时间：${String(expectedTarget.fireAt)}`;
   } else {
     const labels: Record<string, string> = { content: "内容", text: "内容", title: "标题", activeness: "陪伴频率",
@@ -80,6 +82,9 @@ export async function prepareCompanionToolReview(event: AgentEventContext,
     const values = Object.entries(arguments_).filter(([key]) => !/id$|revision|sourceQuote/i.test(key));
     preview.markdown = values.map(([key, value]) => `${labels[key] ?? "改动"}：${typeof value === "boolean" ? (value ? "开启" : "关闭") : typeof value === "string" ? value : JSON.stringify(value)}`).join("\n\n");
   }
-  return { kind: "agent_tool_review", toolName: definition.name, arguments: arguments_, confirmationStage, preview,
+  // Freeze exactly what the ledger row stores. The confirmation SQL compares the
+  // two for equality, and the API recovers the action from the row's operation id.
+  return { kind: "agent_tool_review", toolName: operation,
+    arguments: companionOperationArguments(operation, arguments_), confirmationStage, preview,
     ...(expectedTarget ? { expectedTarget } : {}) };
 }

@@ -13,6 +13,7 @@ import { assertCompanionContextSourcesCurrent } from "../context/companion-conte
 import { enqueueSystemEventDelivery } from "../agent/companion-delivery-write.ts";
 import { buildFinalCuePayload, companionAssistantMessageKind, } from "./companion-dialogue-content.ts";
 import { persistFailedPartial } from "./companion-dialogue-failure-retention.ts";
+import { companionReplyMessageDrafts } from "./companion-split-intent.ts";
 import {
   insertStreamEvent,
   recoverCompanionRunFailureSpanInTransaction,
@@ -42,6 +43,14 @@ export async function finalizeCompanionDialogueTurn(args: {
   provider: { id: string; modelId: string };
   agentResult: Extract<CompanionAgentLoopResult, { status: "completed" }>;
   assistantText: string;
+  /**
+   * The reply cut into the separate messages it already contains. When a turn
+   * asks for several messages, each part becomes its own chat message so the
+   * client renders one bubble per part; a single part keeps today's one-message
+   * delivery. The last part is the one `assistant.final` and the run point at,
+   * which is also where artifacts and playback attach.
+   */
+  assistantParts?: readonly string[];
   ttsRawText: string;
   voiceExpressionEnabled: boolean;
   memoryContext: ContextAssemblyResult;
@@ -54,12 +63,20 @@ export async function finalizeCompanionDialogueTurn(args: {
     ctx, read, runId, provider, agentResult, assistantText, ttsRawText, voiceExpressionEnabled,
     memoryContext, voiceSegmentsWritten, expiresAt, streamingDelivery, notifyCompanionEvent,
   } = args;
+  /**
+   * Separate-message delivery: when the reply was cut into parts, each part is
+   * stored as its own assistant message in order, and the last one keeps the
+   * final identity (assistant.final, run.assistant_message_id, artifacts).
+   * Rich blocks stay with the last message so a list of saved notes never lands
+   * between two sentences.
+   */
+  const messageParts = args.assistantParts?.filter(part => part.trim().length > 0) ?? [];
+  const splitMessages = messageParts.length > 1 ? messageParts : [assistantText];
 
   // ── 阶段 3c：终态事务（message + final + run succeeded） ──
   // 15b：TTS 段已在 delta 过程（流式）或 validate 后（非流式）逐个下发完毕，
   // 终态事务不再携带 segments——事件布局变为 final @ eventStart、cue @ +1、
   // character.cue @ +1。
-  const assistantMessageId = randomUUID();
   // Historical emotion comes from the same model-authored expression as speech, never text keywords.
   const finalCue = !voiceExpressionEnabled
     ? buildFinalCuePayload("") : buildFinalCuePayload(ttsRawText);
@@ -69,13 +86,17 @@ export async function finalizeCompanionDialogueTurn(args: {
   // 而 `textOfCompanionBlocks` 只认 text/code/citation，nav 不会污染模型上下文。
   const orderedRichBlocks = [...agentResult.blocks.filter(block => block.type === "citation" && block.referenceId),
     ...agentResult.blocks.filter(block => !(block.type === "citation" && block.referenceId))];
-  const blocks = [
-    { type: "text", text: assistantText, emotion: replyEmotion },
-    // Preserve every search source before optional rich results; at most three searches yield 24 sources.
-    // Reserve one block slot for the asynchronous optional follow-up suggestions.
-    ...orderedRichBlocks.slice(0, 32),
-  ];
-  const contentSha256 = sha256Utf8V1(canonicalJsonV1(blocks));
+  // One message per part; rich blocks trail the reply on the last message.
+  const messageDrafts = companionReplyMessageDrafts({
+    parts: splitMessages,
+    richBlocks: orderedRichBlocks,
+    emotion: replyEmotion,
+    hash: blocks => sha256Utf8V1(canonicalJsonV1(blocks)),
+    newId: randomUUID,
+  });
+  const finalMessage = messageDrafts[messageDrafts.length - 1]!;
+  const assistantMessageId = finalMessage.id;
+  const contentSha256 = finalMessage.contentSha256;
   const textSha256 = sha256Utf8V1(assistantText);
   try {
     const published = await withWorkerWorkspaceTransaction(
@@ -106,7 +127,7 @@ export async function finalizeCompanionDialogueTurn(args: {
         const eventCount = 2; // final + cue
         const counters = await tx.execute<{ next_message_seq: string; next_event_seq: string }>(sql`
           UPDATE companion_conversations
-          SET next_message_seq = next_message_seq + 1,
+          SET next_message_seq = next_message_seq + ${messageDrafts.length},
               next_event_seq = next_event_seq + ${eventCount},
               last_message_at = now()
           WHERE id = ${read.conversationId}
@@ -114,7 +135,8 @@ export async function finalizeCompanionDialogueTurn(args: {
         `);
         const next = counters[0];
         if (!next) throw new Error("conversation counter update returned no row");
-        const messageSeq = Number(next.next_message_seq) - 1;
+        // Consecutive seq values, one per part, in the order she said them.
+        const firstMessageSeq = Number(next.next_message_seq) - messageDrafts.length;
         const eventStart = Number(next.next_event_seq) - eventCount;
 
         // 主动那一轮的收尾消息也必须记成 `proactive`，和 `companion_publish_utterance`
@@ -123,12 +145,15 @@ export async function finalizeCompanionDialogueTurn(args: {
         // 历史/记忆/摘要也按 kind 认她主动说过的话。写死 'text' 会让她自己开口的
         // 大部分发言在这三处都不算数（2026-10-13 方案 56 遗留缺陷）。
         // reasoning 随消息一起落库的判据在 store 那个函数里（0435）。
-        await insertCompanionFinalAssistantMessage(tx, {
-          messageId: assistantMessageId, workspaceId: ctx.workspaceId, userId: read.userId,
-          conversationId: read.conversationId, messageSeq, kind: companionAssistantMessageKind(read),
-          blocks, runId: read.runId, contentSha256,
-          reasoning: agentResult.status === "completed" ? agentResult.reasoning ?? null : null,
-        });
+        for (const [index, draft] of messageDrafts.entries()) {
+          await insertCompanionFinalAssistantMessage(tx, {
+            messageId: draft.id, workspaceId: ctx.workspaceId, userId: read.userId,
+            conversationId: read.conversationId, messageSeq: firstMessageSeq + index,
+            kind: companionAssistantMessageKind(read),
+            blocks: draft.blocks, runId: read.runId, contentSha256: draft.contentSha256,
+            reasoning: agentResult.status === "completed" ? agentResult.reasoning ?? null : null,
+          });
+        }
 
         await tx.execute(sql`
           INSERT INTO companion_stream_events
@@ -236,7 +261,9 @@ export async function finalizeCompanionDialogueTurn(args: {
           userId: read.userId,
           runId: read.runId,
           conversationId: read.conversationId,
-          messageSeq,
+          // Memory extraction reads this message. The last part carries the
+          // reply's identity, so that is the one it should find.
+          messageSeq: Number(next.next_message_seq) - 1,
         });
 
         // 终态事务：该 run 全部 event 的 expires_at 原子改为 finished_at+24h
@@ -250,7 +277,8 @@ export async function finalizeCompanionDialogueTurn(args: {
         const maxSeq = eventStart + eventCount - 1;
         await notifyCompanionEvent(tx, maxSeq);
         logger.info(
-          { runId: read.runId, messageId: assistantMessageId, seq: messageSeq },
+          { runId: read.runId, messageId: assistantMessageId,
+            seq: Number(next.next_message_seq) - 1, messageCount: messageDrafts.length },
           "companion dialogue run succeeded",
         );
         return true;

@@ -48,14 +48,14 @@ test("用户点名的笔记：找到就给 id，没找到也不给她「它不�
     noteReference: { title: "欧姆定律生成验收", found: true, noteId: "b4ab4749-d888-4b93-9019-e33b74679206", ageLabel: "4 天前", imageCount: 0, opening: null, nearest: null },
   }));
   assert.ok(found?.includes("b4ab4749-d888-4b93-9019-e33b74679206"));
-  assert.ok(found?.includes("companion_read_note"));
+  assert.ok(found?.includes("companion_notes_read") && found.includes("action=read"));
 
   const missing = renderHereAndNow(snapshot({
     noteReference: { title: "欧姆定律生成验收", found: false, noteId: null, ageLabel: null, imageCount: 0, opening: null, nearest: null },
   }));
   assert.ok(missing?.includes("按标题没找到"));
   // 关键：这一行必须把她推向"再查一次/照实说"，而不是让她有依据地下假结论
-  assert.ok(missing?.includes("companion_search_notes"));
+  assert.ok(missing?.includes("companion_notes_read") && missing.includes("action=search"));
   assert.ok(!missing?.includes("不存在"));
 });
 
@@ -99,7 +99,7 @@ test("《标题》没对上时给出最接近的一篇，命中时反而不能�
  * `note_blocks`，而图在另一张表里，所以**照实读正文也会推出"没有图"**。这种假阴性
  * 靠事后闸拦只能救回一次（并且要先付一步假话），把图数当数据注入才是根治。
  */
-test("有图就先把图数交给她：看不了时禁止承诺，能看时指向 companion_read_image", () => {
+test("有图就先把图数交给她：看不了时禁止承诺，能看时指向读图动作", () => {
   const denied = renderHereAndNow(snapshot({
     imagesReadable: false,
     imagesUnreadableReason: "policy_off",
@@ -125,7 +125,7 @@ test("有图就先把图数交给她：看不了时禁止承诺，能看时指�
     imagesReadable: true,
     noteReference: { title: "IndexTTS 2.5", found: true, noteId: "a7aa823c-f2cf-4b3d-bda1-37a6eca14bce", ageLabel: "3 天前", imageCount: 2, opening: null, nearest: null },
   }));
-  assert.ok(readable?.includes("companion_read_image"));
+  assert.ok(readable?.includes("companion_visual") && readable.includes("action=read_image"));
   assert.ok(!readable?.includes("图片外发没开启"), "政策开着时不能告诉她看不了");
 
   // 没图时一个字都不提：多出来的那句"另有一张图"本身就是假事实。
@@ -324,7 +324,7 @@ test("点名的笔记找到时，快照里带出真开头并注明不许往下�
   // 开头整句给之后，「这只给到了第一句」这句话更不能少：她是拿这句当全篇还是拿它
   // 当线索，取决于这句提示还在不在（2026-10-12 取消封顶字数时钉住的就是这一条）。
   assert.ok(block?.includes("只到第一句为止"), "取消剪字之后仍要说明这只是一句开头");
-  assert.ok(block?.includes("companion_read_note"), "要把方向指向读原文，而不是让她自己补");
+  assert.ok(block?.includes("companion_notes_read") && block.includes("action=read"), "要把方向指向读原文，而不是让她自己补");
 });
 
 /**

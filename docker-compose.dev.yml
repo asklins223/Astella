@@ -378,12 +378,14 @@ services:
       # Handler budgets are independent of the 120s crash-recovery lease; active jobs renew it.
       WORKER_MODEL_TIMEOUT_MS: ${WORKER_MODEL_TIMEOUT_MS:-}
       WORKER_PROVIDER_TIMEOUT_MS: ${WORKER_PROVIDER_TIMEOUT_MS:-900000}
+      COMPANION_PROVIDER_FIRST_OUTPUT_TIMEOUT_MS: ${COMPANION_PROVIDER_FIRST_OUTPUT_TIMEOUT_MS:-60000}
+      COMPANION_PROVIDER_IDLE_TIMEOUT_MS: ${COMPANION_PROVIDER_IDLE_TIMEOUT_MS:-45000}
       # 伴星分类器的延迟对冲（2026-10-17）：同一条分类请求并发两份、先到先用。
       # 实测副本之间延迟不相关（r=-0.12），min-of-two 把 p90 压掉约 0.7 s、吃掉 10 s 级长尾；
       # 分类器 temperature=0，副本不改变语义。0 = 立即并发，正数 = 延迟触发，off = 关闭。
       # 默认显式开启（测试环境不设这个变量，所以单测里仍是单发）。
       COMPANION_TOOL_INTENT_HEDGE_MS: ${COMPANION_TOOL_INTENT_HEDGE_MS:-0}
-      COMPANION_AGENT_ENTRY_MODE: ${COMPANION_AGENT_ENTRY_MODE:-hybrid}
+      COMPANION_AGENT_ENTRY_MODE: ${COMPANION_AGENT_ENTRY_MODE:-direct_fast}
       # L1 放行路由的影子模式（2026-10-17）：对 100% 流量计算 L1 判断但不改变放行，
       # 结果只写进 companion_turn_runs.route.l1，和同一轮 L2 解释比对，出覆盖率—漏放率曲线。
       # off = 完全不算；shadow = 只记录不生效；enforce = L1 真的可提前打开投机首步的放行闸（默认开）。

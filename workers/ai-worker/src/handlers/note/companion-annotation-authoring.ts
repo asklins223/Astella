@@ -36,7 +36,7 @@ export async function executeCompanionWriteAnnotation(event: AgentEventContext,
         AND a.global_enabled AND a.epoch=r.account_epoch
         AND r.page_context->'context'->'annotationTarget'=${JSON.stringify(target.data)}::jsonb
         AND EXISTS(SELECT 1 FROM jsonb_array_elements(r.permission_snapshot->'offeredTools') tool
-          WHERE tool->>'name'='companion_write_annotation') FOR UPDATE OF r`);
+          WHERE tool->>'name' IN ('notes.write.annotate','companion_notes_write')) FOR UPDATE OF r`);
     if (!run || event.ctx.requestedBy !== scope.userId)
       throw new CompanionToolNotExecutedError("这一轮的原句或权限已失效，解释没有写入。");
     const [note] = await queryRows<{ current_version_id: string | null }>(tx, sql`SELECT n.current_version_id FROM notes n
@@ -72,7 +72,7 @@ export async function executeCompanionWriteAnnotation(event: AgentEventContext,
       createdAt: new Date(saved.created_at).toISOString(), updatedAt: new Date(saved.updated_at).toISOString() });
     const result = companionWrittenAnnotationV1Schema.parse({ kind: "written_annotation", requestId, annotation });
     await tx.execute(sql`UPDATE companion_agent_tool_calls SET result_ref=${JSON.stringify(result)}
-      WHERE run_id=${event.read.runId} AND tool_call_id=${toolCallId} AND name='companion_write_annotation' AND status='executing'`);
+      WHERE run_id=${event.read.runId} AND tool_call_id=${toolCallId} AND name='notes.write.annotate' AND status='executing'`);
     return result;
   });
   return { value: { kind: receipt.kind, requestId, annotationId: receipt.annotation.annotationId, saved: true },

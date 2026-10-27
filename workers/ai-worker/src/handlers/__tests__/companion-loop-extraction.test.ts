@@ -14,11 +14,15 @@ import { resumeCompanionInterruptedInput } from "../agent/companion-resume-input
 
 const tool = (name: string) => ({ name, description: "", parameters: {}, toolVersion: "1" });
 const definitions = [
-  tool("companion_read_context"),
-  tool("companion_read_note"),
-  tool("companion_search_notes"),
-  tool("agent_web_search"),
-  tool("companion_list_recent_activity"),
+  tool("companion_observe"),
+  tool("companion_notes_read"),
+  tool("companion_say"),
+  tool("companion_open"),
+  tool("notes.read.search"),
+  tool("web.search"),
+  tool("companion_web"),
+  tool("observe.activity"),
+  tool("companion_load_tools"),
 ];
 
 test("工具面：核心+当前页组先给，装载后只增不减", () => {
@@ -26,25 +30,35 @@ test("工具面：核心+当前页组先给，装载后只增不减", () => {
     definitions: definitions as never, pageKind: "today", candidateOperations: [],
   });
   const initial = surface.offered().map(tool => tool.name);
-  assert.ok(initial.includes("companion_read_context"), "核心里一定有读取上下文");
-  assert.equal(initial.includes("agent_web_search"), false, "联网搜索不在核心面里");
+  assert.ok(initial.includes("companion_observe"), "核心里一定有读取上下文");
+  assert.equal(initial.includes("web.search"), false, "联网搜索不在核心面里");
   assert.equal(surface.loadedToolNames.size, 0);
 
   const before = new Set(initial);
-  surface.loadedToolNames.add("agent_web_search");
+  surface.loadedToolNames.add("web.search");
   const after = surface.offered().map(tool => tool.name);
   for (const name of before) assert.ok(after.includes(name), `装载不能摘掉 ${name}`);
-  assert.ok(after.includes("agent_web_search"));
+  assert.ok(after.includes("web.search"));
 });
 
-test("工具面：候选操作只能加组，不会把页面组整体换掉", () => {
+test("分条请求把 companion_say 放进初始工具面", () => {
+  const surface = createCompanionToolSurface({
+    definitions, pageKind: null, candidateOperations: [],
+    userText: "分两条跟我说：先说声早，再问我想先做哪件事。",
+  });
+  assert.ok(surface.offered().some(tool => tool.name === "companion_say"),
+    "用户明确要求多条消息时，模型必须能直接调用 companion_say");
+});
+
+test("工具面：候选操作不再改变工具面，未装载的能力由 load_tools 展开", () => {
   const surface = createCompanionToolSurface({
     definitions: definitions as never, pageKind: "today",
-    candidateOperations: ["agent_web_search"],
+    candidateOperations: ["web.search"],
   });
   const names = surface.offered().map(tool => tool.name);
-  assert.ok(names.includes("companion_read_context"));
-  assert.ok(names.includes("agent_web_search"), "候选操作点名的能力要出现在面里");
+  assert.ok(names.includes("companion_observe"));
+  assert.ok(!names.includes("web.search"), "分类候选不能替模型决定工具面");
+  assert.ok(names.includes("companion_load_tools"));
 });
 
 test("装载工具组：回执只说装了什么，审计同步记一条", async () => {
@@ -59,42 +73,46 @@ test("装载工具组：回执只说装了什么，审计同步记一条", async
     pushReceipt: content => receipts.push(content),
     recordAudit: async tool => { audits.push(tool.safeLabel); },
   });
-  assert.deepEqual(loaded, ["agent_web_search"]);
+  assert.deepEqual(loaded, ["companion_web"]);
   assert.equal(JSON.parse(receipts[0]!).data.loadedGroups[0], "web");
   assert.match(receipts[0]!, /已装载 1 个工具/);
   assert.deepEqual(audits, ["已装载更多能力"]);
-  assert.ok(surface.offered().some(tool => tool.name === "agent_web_search"));
+  assert.ok(surface.offered().some(tool => tool.name === "companion_web"));
 });
 
-test("参数校验：无效参数给出可修字段，重复同一份无效输入才判死", () => {
+test("参数校验：无效参数给出完整契约与可修字段，重复提交仍可继续修正", () => {
   const first = validateCompanionToolCall({
-    name: "companion_read_note", arguments: { noteId: "not-a-uuid" },
-    alreadyRejected: new Set(), identity: "companion_read_note:x",
+    name: "companion_notes_read", arguments: { action: "read", noteId: "not-a-uuid" },
+    alreadyRejected: new Set(), identity: "companion_notes_read:x",
   });
   assert.ok(first.rejection);
   assert.equal(first.rejection!.repeatedInvalid, false);
   assert.equal(first.accepted, null);
+  const receipt = JSON.parse(first.rejection!.content);
+  assert.equal(receipt.tool, "companion_notes_read");
+  assert.ok(receipt.parameters, "失败回执要带完整工具契约，模型才知道正确形状");
+  assert.ok(receipt.validationIssues.length > 0);
 
   const again = validateCompanionToolCall({
-    name: "companion_read_note", arguments: { noteId: "not-a-uuid" },
-    alreadyRejected: new Set(["companion_read_note:x"]), identity: "companion_read_note:x",
+    name: "companion_notes_read", arguments: { action: "read", noteId: "not-a-uuid" },
+    alreadyRejected: new Set(["companion_notes_read:x"]), identity: "companion_notes_read:x",
   });
-  assert.equal(again.rejection!.repeatedInvalid, true, "同样的无效输入再交一次不再有进展");
+  assert.equal(again.rejection!.repeatedInvalid, true, "宿主仍记录同一份无效输入，但不再立即判死");
 
   const ok = validateCompanionToolCall({
-    name: "companion_read_note",
-    arguments: { noteId: "27af9007-a6da-400c-857b-b95bfbef5010" },
-    alreadyRejected: new Set(), identity: "companion_read_note:y",
+    name: "companion_notes_read",
+    arguments: { action: "read", noteId: "27af9007-a6da-400c-857b-b95bfbef5010" },
+    alreadyRejected: new Set(), identity: "companion_notes_read:y",
   });
   assert.ok(ok.accepted, "合法参数应当通过");
   assert.equal(ok.rejection, null);
 });
 
 test("未下发工具：回执点名该先装载，并列出当前可用", () => {
-  const receipt = JSON.parse(unofferedToolReceipt("agent_web_search", ["companion_read_context", "companion_read_note"]));
+  const receipt = JSON.parse(unofferedToolReceipt("companion_web", ["companion_observe", "companion_notes_read"]));
   assert.equal(receipt.status, "not_executed");
   assert.match(receipt.error, /companion_load_tools/);
-  assert.match(receipt.error, /companion_read_context/);
+  assert.match(receipt.error, /companion_observe/);
 });
 
 test("未注册工具：按最高风险入账，并回一条阻止回执", async () => {
@@ -103,13 +121,17 @@ test("未注册工具：按最高风险入账，并回一条阻止回执", async
   const receipts: string[] = [];
   await rejectUnknownCompanionTool({
     identity: { id: "call-x", name: "companion_invented_tool" },
+    availableTools: ["companion_memory_write", "companion_notes_read"],
     recordRejected: async reason => { recorded.push(reason); },
     appendEvent: async tool => { events.push({ riskClass: tool.riskClass, status: tool.status }); },
     pushReceipt: content => receipts.push(content),
   });
   assert.match(recorded[0]!, /未注册/);
   assert.deepEqual(events, [{ riskClass: "irreversible", status: "blocked" }]);
-  assert.equal(JSON.parse(receipts[0]!).status, "blocked");
+  const receipt = JSON.parse(receipts[0]!);
+  assert.equal(receipt.status, "blocked");
+  assert.equal(receipt.requestedTool, "companion_invented_tool");
+  assert.ok(receipt.availableTools.includes("companion_memory_write"));
 });
 
 test("回合开场：历史保留 hostObservation，主动轮把观察压在末尾", () => {
@@ -129,12 +151,12 @@ test("回合开场：历史保留 hostObservation，主动轮把观察压在末�
 
   const identity = companionRecoveryIdentity({
     args: base, currentRequest: opening.currentRequest, permissionLevel: "full",
-    definitions: [{ name: "companion_read_note", toolVersion: "1", parameters: {} }],
+    definitions: [{ name: "companion_notes_read", toolVersion: "1", parameters: {} }],
     primary: { id: "mimo", modelId: "mimo-v2.6-flash", promptVersion: "p1" },
     fallback: { id: "deepseek", modelId: "deepseek-v3", promptVersion: "p2" },
   });
   assert.equal(identity.version, 1);
-  assert.deepEqual(identity.definitions.map(item => item.name), ["companion_read_note"]);
+  assert.deepEqual(identity.definitions.map(item => item.name), ["companion_notes_read"]);
   assert.equal(identity.fallback?.modelId, "deepseek-v3");
 });
 

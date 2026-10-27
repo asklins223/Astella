@@ -2,8 +2,30 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { agentVoiceStyleDecisionV1Schema } from '@astella/shared/agent-contracts';
 import { validateCompanionAgentToolArguments, canUseCompanionAgentTool, getCompanionAgentTool } from '@astella/shared';
-import { companionDirectInterpretation, companionNamedNoteReadRequest, createCompanionDirectControls, resolveCompanionEntryMode, startCompanionEntry } from '../turn/companion-entry-mode.ts';
+import { companionDirectInterpretation, companionNamedNoteReadRequest, companionExplicitNoteReadInterpretation, createCompanionDirectControls, resolveCompanionEntryMode, startCompanionEntry } from '../turn/companion-entry-mode.ts';
+import { companionLatestNoteReadCount } from '../note/companion-note-prefetch.ts';
 const fresh = () => companionDirectInterpretation('a'.repeat(64));
+test('explicit newest-note selections resolve counts without guessing broader requests', () => {
+    for (const [text, count] of [
+        ['请读取最新一篇手记的正文。', 1], ['请读取书房最近更新的三篇手记，概括正文。', 3],
+        ['比较最近两篇笔记。', 2], ['查阅最新１０篇笔记。', 10],
+    ] as const) assert.equal(companionLatestNoteReadCount(text), count, text);
+    for (const text of ['最新三篇手记这个标题怎样？', '概括最新20篇笔记', '读取最新一周的笔记', '读取这些手记']) {
+        assert.equal(companionLatestNoteReadCount(text), null, text);
+    }
+});
+test('explicit fresh saved-note reads cannot be treated as no-tool casual replies', () => {
+    const names = ['companion_notes_read'];
+    for (const text of ['请只读取最新一篇手记的正文，用两句话概括。', '帮我读取书房最近更新的三篇笔记。', '请查阅《秦朝》这篇手记。']) {
+        const result = companionExplicitNoteReadInterpretation('a'.repeat(64), text, names);
+        assert.equal(result?.toolUse, 'read', text);
+        assert.ok(result?.candidateOperations.includes('companion_notes_read'));
+    }
+    for (const text of ['请不要读取最新笔记。', '最新笔记这个标题怎么写更好？', '今天不想看笔记。']) {
+        assert.equal(companionExplicitNoteReadInterpretation('a'.repeat(64), text, names), null);
+    }
+    assert.equal(companionExplicitNoteReadInterpretation('a'.repeat(64), '读取我的笔记', []), null);
+});
 test('a named saved-note explanation goes to the evidence path unless its note was already prefetched', () => {
     const text = '请根据《秦朝统一与中央集权制度》这篇已保存笔记，用三句话解释郡县制与分封制的区别；不要创建或修改笔记。';
     assert.equal(companionNamedNoteReadRequest(text, []), true);
@@ -12,7 +34,12 @@ test('a named saved-note explanation goes to the evidence path unless its note w
     assert.equal(companionNamedNoteReadRequest('《秦朝》这个故事挺好，今天不想看笔记。', []), false);
 });
 test('entry mode is explicit and the unclassified placeholder never invents a tool decision', () => {
+    // Default is the native tool loop. An explicit unknown value still falls
+    // back to the conservative classified path rather than becoming new work.
+    assert.equal(resolveCompanionEntryMode(undefined), 'direct_fast');
     assert.equal(resolveCompanionEntryMode('unknown'), 'classified');
+    assert.equal(resolveCompanionEntryMode('hybrid'), 'hybrid');
+    assert.equal(resolveCompanionEntryMode('classified'), 'classified');
     assert.equal(resolveCompanionEntryMode('direct_thinking'), 'direct_thinking');
     assert.equal(resolveCompanionEntryMode('direct_fast'), 'direct_fast');
     const a = fresh();
@@ -72,7 +99,7 @@ test('a current event-only request binds the actual execution constraint', async
 test('account voice controls retain existing preference semantics without authorizing note edits', () => {
     const voice = getCompanionAgentTool('companion_configure_turn')!;
     assert.deepEqual(canUseCompanionAgentTool('read_only', voice), { allowed: true, requiresConfirmation: false });
-    const edit = getCompanionAgentTool('companion_edit_note')!;
-    assert.equal(canUseCompanionAgentTool('read_only', edit, { operation: 'replace_blocks' }).requiresConfirmation, true);
-    assert.equal(canUseCompanionAgentTool('guided', edit, { operation: 'delete_blocks' }).requiresConfirmation, true);
+    const edit = getCompanionAgentTool('companion_notes_write')!;
+    assert.equal(canUseCompanionAgentTool('read_only', edit, { action: 'edit', operation: 'replace_blocks' }).requiresConfirmation, true);
+    assert.equal(canUseCompanionAgentTool('guided', edit, { action: 'edit', operation: 'delete_blocks' }).requiresConfirmation, true);
 });

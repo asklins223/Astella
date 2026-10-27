@@ -153,7 +153,7 @@ function conversationSourceId(conversationId: string, messageId: string): string
  *
  * 容量与计量单位都是**摘要模型档案声明的 token**：一条要么整条给，要么整条记进
  * `uncovered`——旧写法按字符夹，再配一个 `chars/2` 的换算猜 token，两头都不是声明。
- * 新的整条记录仍可后来被读到（`companion_read_history`），只是这一次没进摘要。
+ * 新的整条记录仍可后来被读到（`companion_observe（action=history）`），只是这一次没进摘要。
  */
 export function buildSummarizerSnapshot(
   rows: SummarizerSnapshotMessage[],
@@ -387,7 +387,7 @@ export function renderConversationSummary(
     ...(coverageGaps && coverageGaps.length > 0
       ? [
         `更早还有 ${coverageGaps.length} 段没有任何摘要覆盖（消息 ${coverageGaps[0]!.fromSeq}–${coverageGaps[0]!.throughSeq} 等）：`
-        + "要谈那部分就用 companion_read_history 带上对应 fromSeq 取回原文，别把摘要当成读过；"
+        + "要谈那部分就用 companion_observe（action=history） 带上对应 fromSeq 取回原文，别把摘要当成读过；"
         + "取不到就照实说没有记录。",
       ]
       : []),

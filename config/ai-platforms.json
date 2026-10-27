@@ -1,121 +1,144 @@
 {
-  "platforms": {
-    "siliconflow": {
-      "type": "siliconflow",
-      "apiKey": "${SILICONFLOW_API_KEY}",
-      "baseUrl": "https://api.siliconflow.cn/v1",
-      "models": {
-        "BAAI/bge-m3": {
-          "contextWindowTokens": 8192
-        }
-      }
-    },
-    "mimo": {
-      "type": "openai_compatible",
-      "apiKey": "${MIMO_API_KEY}",
-      "baseUrl": "https://api.xiaomimimo.com/v1",
-      "models": {
-        "mimo-v2.5-asr": {}
-      },
-      "options": {
-        "thinkingParam": "thinking_type",
-        "maxTokensParam": "max_completion_tokens"
-      }
-    },
-    "mimo-agent": {
-      "type": "mimo_responses",
-      "apiKey": "${MIMO_API_KEY}",
-      "baseUrl": "https://api.xiaomimimo.com/v1",
-      "models": {
-        "mimo-v2.6-flash": {
-          "protocol": "openai-responses",
-          "supportsAssistantPhase": false,
-          "temperature": "reasoning_none_only",
-          "contextWindowTokens": 1000000,
-          "maxOutputTokens": 131072,
-          "vision": true,
-          "reasoning": {
-            "levels": [
-              "none",
-              "low",
-              "medium",
-              "high"
-            ],
-            "default": "medium"
-          }
-        }
-      }
-    },
-    "mock": {
-      "type": "mock"
-    },
-    "embedding-local": {
-      "type": "local_embedding",
-      "apiKey": "local",
-      "baseUrl": "http://embedding:80/v1",
-      "models": {
-        "BAAI/bge-m3": {
-          "contextWindowTokens": 8192
-        }
-      }
-    },
-    "siliconflow-chat": {
-      "type": "openai_compatible",
-      "apiKey": "${SILICONFLOW_API_KEY}",
-      "baseUrl": "https://api.siliconflow.cn/v1",
-      "models": {
-        "deepseek-ai/DeepSeek-V3": {
-          "contextWindowTokens": 65536,
-          "maxOutputTokens": 8192,
-          "vision": false
-        }
-      }
+ "platforms": {
+  "siliconflow": {
+   "type": "siliconflow",
+   "apiKey": "${SILICONFLOW_API_KEY}",
+   "baseUrl": "https://api.siliconflow.cn/v1",
+   "models": {
+    "BAAI/bge-m3": {
+     "contextWindowTokens": 8192
     }
+   }
   },
-  "capabilities": {
-    "agent_turn": {
-      "platform": "mimo-agent",
-      "model": "mimo-v2.6-flash"
-    },
-    "note_generation": {
-      "platform": "mimo-agent",
-      "model": "mimo-v2.6-flash",
-      "reasoningEffort": "low"
-    },
-    "text_generation": {
-      "platform": "mimo-agent",
-      "model": "mimo-v2.6-flash"
-    },
-    "speech_recognition": {
-      "platform": "mimo",
-      "model": "mimo-v2.5-asr"
-    },
-    "embedding": {
-      "platform": "siliconflow",
-      "model": "BAAI/bge-m3"
-    },
-    "embedding_fallback": {
-      "platform": "embedding-local",
-      "model": "BAAI/bge-m3"
-    },
-    "companion_fallback": {
-      "platform": "siliconflow-chat",
-      "model": "deepseek-ai/DeepSeek-V3"
-    }
+  "mimo": {
+   "type": "openai_compatible",
+   "apiKey": "${MIMO_API_KEY}",
+   "baseUrl": "https://api.xiaomimimo.com/v1",
+   "models": {
+    "mimo-v2.5-asr": {}
+   },
+   "options": {
+    "thinkingParam": "thinking_type",
+    "maxTokensParam": "max_completion_tokens"
+   }
   },
-  "tts": {
-    "engine": "qwen",
-    "qwen": {
-      "model": "qwen-audio-3.1-tts-flash",
-      "voice": "longhua_v3.1",
-      "format": "mp3",
-      "sampleRate": 22050,
-      "workspaceId": "llm-55ujpy2wafojbdp8",
-      "instruction": "青年女性声音，音调中等偏柔，音色甜美圆润，语速自然适中，情感温柔明亮，适合学习陪伴对话"
-    },
-    "edge": {
-      "voice": "zh-CN-XiaoxiaoNeural",
-      "rate": "+0%"
+  "mimo-agent": {
+   "type": "mimo_responses",
+   "apiKey": "${MIMO_API_KEY}",
+   "baseUrl": "https://api.xiaomimimo.com/v1",
+   "models": {
+    "mimo-v2.6-flash": {
+     "protocol": "openai-responses",
+     "supportsAssistantPhase": false,
+     "temperature": "reasoning_none_only",
+     "contextWindowTokens": 1000000,
+     "maxOutputTokens": 131072,
+     "vision": true,
+     "reasoning": {
+      "levels": [
+       "none",
+       "low",
+       "medium",
+       "high"
+      ],
+      "default": "medium"
+     }
     }
+   }
+  },
+  "mock": {
+   "type": "mock"
+  },
+  "embedding-local": {
+   "type": "local_embedding",
+   "apiKey": "local",
+   "baseUrl": "http://embedding:80/v1",
+   "models": {
+    "BAAI/bge-m3": {
+     "contextWindowTokens": 8192
+    }
+   }
+  },
+  "siliconflow-chat": {
+   "type": "openai_compatible",
+   "apiKey": "${SILICONFLOW_API_KEY}",
+   "baseUrl": "https://api.siliconflow.cn/v1",
+   "models": {
+    "deepseek-ai/DeepSeek-V3": {
+     "contextWindowTokens": 65536,
+     "maxOutputTokens": 8192,
+     "vision": false
+    }
+   }
+  },
+  "tokenrhythm": {
+   "type": "openai_compatible",
+   "apiKey": "${TOKENRHYTHM_API_KEY}",
+   "baseUrl": "https://tokenrhythm.studio/v1",
+   "models": {
+    "deepseek-v4.1-flash-1017": {
+     "contextWindowTokens": 1000000,
+     "maxOutputTokens": 384000,
+     "vision": true,
+     "reasoning": {
+      "levels": [
+       "high",
+       "max"
+      ],
+      "default": "high"
+     }
+    }
+   },
+   "options": {
+    "disableMaxTokens": false,
+    "thinkingParam": "reasoning_effort"
+   }
   }
+ },
+ "capabilities": {
+  "agent_turn": {
+   "platform": "mimo-agent",
+   "model": "mimo-v2.6-flash"
+  },
+  "note_generation": {
+   "platform": "mimo-agent",
+   "model": "mimo-v2.6-flash",
+   "reasoningEffort": "low"
+  },
+  "text_generation": {
+   "platform": "mimo-agent",
+   "model": "mimo-v2.6-flash"
+  },
+  "speech_recognition": {
+   "platform": "mimo",
+   "model": "mimo-v2.5-asr"
+  },
+  "embedding": {
+   "platform": "siliconflow",
+   "model": "BAAI/bge-m3"
+  },
+  "embedding_fallback": {
+   "platform": "embedding-local",
+   "model": "BAAI/bge-m3"
+  },
+  "companion_fallback": {
+   "platform": "tokenrhythm",
+   "model": "deepseek-v4.1-flash-1017"
+  }
+ },
+ "tts": {
+  "engine": "qwen",
+  "qwen": {
+   "model": "qwen-audio-3.1-tts-flash",
+   "voice": "longhua_v3.1",
+   "format": "mp3",
+   "sampleRate": 22050,
+   "workspaceId": "llm-55ujpy2wafojbdp8",
+   "instruction": "青年女性声音，音调中等偏柔，音色甜美圆润，语速自然适中，情感温柔明亮，适合学习陪伴对话"
+  },
+  "edge": {
+   "voice": "zh-CN-XiaoxiaoNeural",
+   "rate": "+0%"
+  }
+ }
 }

@@ -19,21 +19,23 @@ test("长日记的成稿、校订输入与检查点保留所有段落和末尾",
 });
 
 test("长流程的参数、工具结果与对话块都保留全部步骤", async () => {
-  const definition = getCompanionAgentTool("companion_render_diagram")!;
+  const definition = getCompanionAgentTool("visual.diagram")!;
   const steps = Array.from({ length: 35 }, (_, index) => ({ label: `第 ${index + 1} 步`, detail: "完整条件与操作。".repeat(30) }));
-  const result = await executeReadTool({} as never, definition, { title: "完整过程", steps });
+  const result = await executeReadTool({ constraints: {} } as never, { ...definition, name: "visual.diagram" }, { title: "完整过程", steps });
   assert.deepEqual(result.value.steps, steps);
   assert.deepEqual(companionContentBlockV1Schema.parse(result.blocks![0]), { type: "diagram", title: "完整过程", steps });
 });
 
 test("确认预览保留参数；笔记已经离开时不准备错误目标的改动", async () => {
-  const definition = getCompanionAgentTool("companion_set_activeness")!;
+  const definition = getCompanionAgentTool("persona.write.activeness")!;
   const args = { activeness: "quiet" };
-  const review = await prepareCompanionToolReview({ read: { pageContext: null } } as never, definition, args);
-  assert.equal(review.arguments, args);
+  const review = await prepareCompanionToolReview({ read: { pageContext: null } } as never,
+    { ...definition, name: "persona.write.activeness" }, args);
+  // Normalization keeps the same fields but returns a new object, so compare by value.
+  assert.deepEqual(review.arguments, args);
   assert.match(review.preview.markdown!, /安静|quiet/);
   await assert.rejects(prepareCompanionToolReview({ read: { pageContext: null } } as never,
-    getCompanionAgentTool("companion_edit_note")!, {
+    { ...getCompanionAgentTool("notes.write.edit")!, name: "notes.write.edit" }, {
       noteId: "5f0c1a44-1111-4000-8000-000000000001", noteVersionId: "5f0c1a44-1111-4000-8000-000000000002",
       operation: "append", markdown: "完整补充内容",
     }), /请先打开/);

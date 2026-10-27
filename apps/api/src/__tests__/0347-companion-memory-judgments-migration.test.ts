@@ -58,7 +58,8 @@ test("抑制表与 kind 枚举**一起放开**——否则「忘掉一条判断�
 });
 
 test("工具契约存在，且参数就是合同点名的三样", () => {
-  assert.match(registry, /companion_remember_judgment/);
+  // Judgment is an action on the merged memory write tool.
+  assert.match(registry, /action: z\.enum\(\[[^\]]*"judgment"/);
   assert.match(registry, /sourceEventIds[\s\S]*?min\(1\)\.max\(8\)/,
     "依据事件必填且有界（§4.5.5：无来源不能写成长期记录）");
   assert.match(registry, /epistopic|epistemicStatus: z\.enum\(\["supported", "tentative", "disputed"\]\)/);

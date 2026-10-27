@@ -7,7 +7,8 @@ import { createAgentRunV1Schema } from "../contracts/agent/agent-contracts.ts";
 import { getCompanionAgentTool, validateCompanionAgentToolArguments } from "../agent/companion-agent-registry.ts";
 
 test("invalid tool arguments expose repair fields without echoing submitted values", () => {
-  const result = validateCompanionAgentToolArguments("companion_arrange_attention", {
+  const result = validateCompanionAgentToolArguments("companion_attention_write", {
+    action: "arrange",
     key: "quiet", expectedRevision: "RAW_PRIVATE_VALUE", intent: "", topics: ["not-a-topic"],
     nextReviewAt: "invalid-time", expiresAt: null, preferenceRevision: 1, selfNote: null, state: "active",
   });
@@ -18,6 +19,23 @@ test("invalid tool arguments expose repair fields without echoing submitted valu
   assert.ok(result.issues.some(issue => issue.path.join(".") === "topics.0" && issue.allowedValues?.includes("presence.quiet")));
   assert.ok(result.issues.some(issue => issue.path.join(".") === "nextReviewAt"));
   assert.ok(!JSON.stringify(result).includes("RAW_PRIVATE_VALUE"));
+});
+
+test("custom action requirements reach the model as repair text", () => {
+  const missing = validateCompanionAgentToolArguments("companion_attention_write", {
+    action: "save_participation", enabled: true, sourceQuote: "晚上九点以后别打扰我",
+  });
+  assert.equal(missing.success, false);
+  if (missing.success) return;
+  const issue = missing.issues.find(item => item.path.join(".") === "markdown");
+  assert.match(String(issue?.message ?? ""), /markdown/);
+  assert.match(String(issue?.message ?? ""), /expectedRevision 可省略/);
+
+  const withoutRevision = validateCompanionAgentToolArguments("companion_attention_write", {
+    action: "save_participation", markdown: "晚上九点以后不打扰用户", enabled: true,
+    sourceQuote: "晚上九点以后别打扰我",
+  });
+  assert.equal(withoutRevision.success, true, "the host reads the current revision when omitted");
 });
 
 test("the same capability schema supplies model bounds and rejects invalid or expanded authority", () => {
@@ -86,9 +104,9 @@ test("unsupported model parameter constraints fail during registration instead o
 });
 
 test("companion capabilities derive UUID, variant bounds and refinements from the actual validator", () => {
-  const card = getCompanionAgentTool("companion_open_card")!.parameters as { properties: Record<string, { format?: string }> };
+  const card = getCompanionAgentTool("companion_open")!.parameters as { properties: Record<string, { format?: string }> };
   assert.equal(card.properties.cardId.format, "uuid");
-  assert.equal(validateCompanionAgentToolArguments("companion_save_memory", { kind: "preference", content: "简短", appliesWhen: "今天" }).success, false);
+  assert.equal(validateCompanionAgentToolArguments("companion_memory_write", { action: "save", kind: "preference", content: "简短", appliesWhen: "今天" }).success, false);
   assert.deepEqual(agentToolParameters(z.union([z.literal(1), z.literal(2), z.literal(3)])), { type: "integer", enum: [1, 2, 3] });
   assert.deepEqual(agentToolParameters(z.string().max(200).nullable().optional()), { anyOf: [{ type: "string", maxLength: 200 }, { type: "null" }] });
 });

@@ -86,7 +86,7 @@ export const companionTextBlockV1Schema = z.object({
 /**
  * 她读出来的那段原文（方案 29 §4.8，抱怨 #10「只能输出纯文本」）。
  *
- * 为什么由服务端而不是模型给：`companion_read_note` 已经取到了正文，
+ * 为什么由服务端而不是模型给：`notes.read.read` 已经取到了正文，
  * 让模型把这几百字**再抄一遍**既慢又必然改写——用户看到的"引用"就不是原文。
  * 服务端直接带出这一块，她的正文只负责说"我读到了什么、意味着什么"。
  * 桌宠日记（0252）同一条规矩：她给引用编号，原文由服务端带。
@@ -105,7 +105,7 @@ export const companionQuoteBlockV1Schema = z.object({
 /**
  * 她把某张图**摆到对话里**（方案 29 §4.8 里 B6 剩下的那一块，抱怨 #9 的另一半）。
  *
- * 与 `companion_read_image` 是两件不同的事：读图要把字节发给视觉模型（受
+ * 与 `visual.read_image` 是两件不同的事：读图要把字节发给视觉模型（受
  * `sendImageContent` 管，政策关着时工具根本不下发）；这一块只是让本机显示一张
  * **她自己库里**的图，一个字节都不出境。所以用户说"把那张图给我看"时，即使
  * 图片外发关着，她也做得成。
@@ -129,7 +129,7 @@ export const companionImageBlockV1Schema = z.object({
    * 用户这一轮自己传的图（2026-10-06 输入框传图）。
    *
    * 指向 `note_image_assets` 行；由**服务端**在创建 turn 时按 url 解析并写入
-   *（客户端给的值一律被服务端结果覆盖）。她读图时 `companion_read_image` 的
+   *（客户端给的值一律被服务端结果覆盖）。她读图时 `visual.read_image` 的
    * assetId 与这里是同一个 id。她摆出来的图（服务端拼 url 的展示块）没有该字段。
    */
   assetId: z.string().uuid().optional(),
@@ -169,7 +169,7 @@ export type CompanionRecommendationBlockV1 = z.infer<typeof companionRecommendat
 /**
  * `companion_recommend_learning` 的参数。她只报"哪一样"，不报"在哪张表"：
  * 学习卡那条路已经证明，用户/到期列表递过来的 id 可能是 objective_id 而不是 card_id
- * （`companion_open_card` 的别名规则），产物三张表也各有各的 id——让她分辨表格只会多一类
+ * （`open.card` 的别名规则），产物三张表也各有各的 id——让她分辨表格只会多一类
  * "她报错了种类"的失败。执行体按 id 查回真实身份与种类，认不出来就如实报那一条。
  */
 export const COMPANION_RECOMMENDATION_TARGET_KINDS_V1 = ["note", "card", "artifact"] as const;
@@ -248,13 +248,13 @@ export const companionContentBlockV1Schema = z.discriminatedUnion("type", [
   /**
    * 她读出来的那段原文（方案 29 §4.8，抱怨 #10「只能输出纯文本」）。
    *
-   * 为什么由服务端而不是模型给：`companion_read_note` 已经取到了正文，
+   * 为什么由服务端而不是模型给：`notes.read.read` 已经取到了正文，
    * 让模型把这几百字**再抄一遍**既慢又必然改写——用户看到的"引用"就不是原文。
    * 服务端直接带出这一块，她的正文只负责说"我读到了什么、意味着什么"。
    */
   companionQuoteBlockV1Schema,
   /**
-   * 步骤/流程（方案 29 §4.8）。收的是**结构化输入**（`companion_render_diagram`），
+   * 步骤/流程（方案 29 §4.8）。收的是**结构化输入**（`visual.diagram`），
    * 不是让模型用文字"画"——她用字符画箭头时，客户端只能当纯文本换行显示，
    * 手机上还会折行错乱。
    *
@@ -270,7 +270,7 @@ export const companionContentBlockV1Schema = z.discriminatedUnion("type", [
   }).strict(),
   /**
    * 她打开的那张卡片**内容**（§4.8）。`nav` 块只回答"跳去哪"，这块回答"这张卡写着什么"——
-   * 由 `companion_open_card` 服务端带出，同样不让模型转抄题面。
+   * 由 `open.card` 服务端带出，同样不让模型转抄题面。
    *
    * 字段按 `learning_cards_v2` 真实有的东西来：题面（front.cue/prompt）、
    * 这张卡在考什么（public_summary）、知识形态。**没有"答案"字段**——
@@ -447,7 +447,7 @@ export const createCompanionTurnRequestV1Schema = z.object({
   sourceSurface: z.enum(["pet", "main"]),
   /**
    * 发起端界面（2026-10-15 扩展 C）：`mobile` 发起的回合里，伴星对笔记正文的
-   * 修改（companion_edit_note）一律先出「确认后写回」提案（before_execute），
+   * 修改（notes.write.edit）一律先出「确认后写回」提案（before_execute），
    * 用户在客户端看前后对照后确认才落库；桌面（缺省）行为不变。
    */
   clientSurface: z.enum(["desktop", "mobile"]).optional(),
@@ -460,7 +460,7 @@ export const createCompanionTurnRequestV1Schema = z.object({
    * 日记引用（40 §6「聊聊这篇」）。
    *
    * 日记页那个次级动作只**打开对话并附上引用**，不自动发送用户消息；用户自己
-   * 接着打字之后，这条引用随本轮上抛，伴星据此调用 `companion_read_diary`
+   * 接着打字之后，这条引用随本轮上抛，伴星据此调用 `memory.read.diary`
    * 按**当前权限**现读那一篇——而不是让用户把全文复制粘贴。
    *
    * `version` 必填：§5.5 保证已发布成稿不被后台重跑静默替换，所以「用户看到的
@@ -623,7 +623,9 @@ export const deferReviewReasonCodeV1Schema = z.enum([
 export const proposedLearningActionPayloadV1Schema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("agent_tool_review"),
-    toolName: z.string().regex(/^[a-z][a-z0-9_]*$/).max(80),
+    // Domain tool (`companion_notes_write`) or internal operation (`notes.write.create`).
+    // The ledger keys on the operation, so a confirmed card must be able to name it too.
+    toolName: z.string().regex(/^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)*$/).max(80),
     arguments: z.record(z.unknown()),
     confirmationStage: z.enum(["after_preview", "before_execute"]),
     expectedTarget: z.record(z.unknown()).optional(),

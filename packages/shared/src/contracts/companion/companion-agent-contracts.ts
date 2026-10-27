@@ -10,7 +10,8 @@
  */
 
 import { z } from "zod";
-import { isCompanionAutonomousTool } from "../../companion/companion-autonomy.ts";
+import { isCompanionAutonomousAction, isCompanionAutonomousTool } from "../../companion/companion-autonomy.ts";
+import { companionDomainActionAutoExecutes, companionDomainActionRequiresConfirmation } from "../../agent/companion-domain-tools.ts";
 import { companionCreatedNoteV1Schema, companionEditedNoteV1Schema, companionWrittenAnnotationV1Schema } from "./companion-note-authoring-contracts.ts";
 
 export const COMPANION_AGENT_CONTRACT_VERSION = 1 as const;
@@ -31,7 +32,10 @@ export const COMPANION_AGENT_DEADLINE_MS = null;
  * （见 CompanionAgentToolExecutionConstraints），因为工具名是模型给的。
  */
 export const VISION_GATED_COMPANION_TOOL_NAMES: readonly string[] = Object.freeze([
-  "companion_read_image",
+  // Only the action that sends image bytes abroad is gated. Displaying an image
+  // locally and drawing a diagram do not leave the device, so the visual domain
+  // tool itself stays available; read_image is rejected at execution.
+  "visual.read_image",
 ]);
 
 export function isVisionGatedCompanionTool(toolName: string): boolean {
@@ -258,11 +262,18 @@ export function canUseCompanionAgentTool(
     // Turn voice controls keep the interpreter's account-scoped preference
     // semantics. Their handler requires current user wording and cannot write
     // notes, launch goals or grant any business capability.
-    || ["companion_save_participation", "companion_write_annotation", "companion_configure_turn"].includes(definition.name)) {
+    || ["companion_configure_turn"].includes(definition.name)
+    || definition.name === "companion_say"
+    || companionDomainActionAutoExecutes(definition.name, arguments_)
+    || isCompanionAutonomousAction(definition.name, typeof arguments_.action === "string" ? arguments_.action : undefined)
+    ) {
     return { allowed: true, requiresConfirmation: false };
   }
+  if (companionDomainActionRequiresConfirmation(definition.name, arguments_)) {
+    return { allowed: true, requiresConfirmation: true };
+  }
   if (definition.confirmationStage === "before_execute" || definition.riskClass === "irreversible"
-    || (definition.riskClass === "consequential" && definition.requiresConfirmation) || (definition.name === "companion_edit_note"
+    || (definition.riskClass === "consequential" && definition.requiresConfirmation) || (definition.name === "notes.write.edit"
     && typeof arguments_.operation === "string" && arguments_.operation.startsWith("delete"))) {
     return { allowed: true, requiresConfirmation: true };
   }
@@ -289,9 +300,12 @@ export function companionToolConfirmationStage(
   // 扩展 C（2026-10-15）：手机发起的回合里，笔记正文修改一律先经人确认
   // （产品规则「手机上人不改正文，伴星改」的交互面：改写建议 + 前后对照，
   // 用户确认后才经伴星通道落库）。桌面（缺省）行为不变。
-  if (options?.originClientKind === "mobile" && definition.name === "companion_edit_note") {
+  if (options?.originClientKind === "mobile" && (definition.name === "notes.write.edit"
+    || (definition.name === "companion_notes_write" && arguments_.action === "edit"))) {
     return "before_execute";
   }
-  return definition.confirmationStage === "before_execute" || definition.riskClass !== "reversible_low" || (definition.name === "companion_edit_note"
+  if (companionDomainActionRequiresConfirmation(definition.name, arguments_)) return "before_execute";
+  if (companionDomainActionAutoExecutes(definition.name, arguments_)) return "after_preview";
+  return definition.confirmationStage === "before_execute" || definition.riskClass !== "reversible_low" || (definition.name === "notes.write.edit"
     && String(arguments_.operation).startsWith("delete")) ? "before_execute" : "after_preview";
 }

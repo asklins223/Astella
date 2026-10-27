@@ -20,8 +20,10 @@ describe("工具标签表与注册表集合相等（W2-1）", () => {
     const labelled = Object.keys(TOOL_LABELS).sort();
 
     // 正控制：两边都得真的读到东西。任一为空表，下面的差集都会是空的假绿。
-    expect(registered.length).toBeGreaterThan(20);
-    expect(labelled.length).toBeGreaterThan(20);
+    // 域合并后工具面正好 20 条（15 个读写域 + 打开、观察、看图、发言、收尾），
+    // 所以这里只要求非空且与注册表一一对应，不再按旧条数设下限。
+    expect(registered.length).toBeGreaterThanOrEqual(20);
+    expect(labelled.length).toBeGreaterThanOrEqual(20);
 
     expect(labelled, "注册了但界面上没有说明的工具（用户会看到「正在处理…」）")
       .toEqual(expect.arrayContaining(registered));

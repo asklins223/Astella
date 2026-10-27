@@ -39,6 +39,7 @@ const PARAM_TARGETS: Readonly<Record<string, Readonly<Record<string, IdTarget>>>
   agent_start_goal: { longGoalMemoryId: { table: "assistant_memory_items", column: "id" } },
   agent_list_goals: { longGoalMemoryId: { table: "assistant_memory_items", column: "id" } },
   agent_list_long_goals: { memoryId: { table: "assistant_memory_items", column: "id" } },
+  companion_goals_read: { longGoalMemoryId: { table: "assistant_memory_items", column: "id" } },
   agent_revise_goal: { runId: { table: "agent_runs", column: "id" } },
   agent_control_goal: { runId: { table: "agent_runs", column: "id" } },
   companion_read_note: {
@@ -51,6 +52,33 @@ const PARAM_TARGETS: Readonly<Record<string, Readonly<Record<string, IdTarget>>>
   },
   companion_read_source: { sourceId: { table: "sources", column: "id" } },
   companion_open_note: { noteId: { table: "notes", column: "id" } },
+  companion_open: {
+    noteId: { table: "notes", column: "id" },
+    cardId: { table: "note_learning_cards", column: "id" },
+  },
+  companion_notes_read: {
+    noteId: { table: "notes", column: "id" },
+    noteVersionId: { table: "note_versions", column: "id" },
+    sourceId: { table: "sources", column: "id" },
+  },
+  companion_notes_write: {
+    noteId: { table: "notes", column: "id" },
+    noteVersionId: { table: "note_versions", column: "id" },
+  },
+  companion_memory_read: {
+    memoryId: { table: "assistant_memory_items", column: "id" },
+    conversationId: { table: "companion_conversations", column: "id" },
+    playbookId: { table: "companion_procedural_playbooks", column: "id" },
+  },
+  companion_memory_write: { memoryId: { table: "assistant_memory_items", column: "id" } },
+  companion_memory_forget: { memoryId: { table: "assistant_memory_items", column: "id" } },
+  companion_attention_write: {
+    noteId: { table: "notes", column: "id" },
+    reminderId: { table: "companion_reminders", column: "id" },
+  },
+  companion_finish: {
+    receiptId: { opaque: true, note: "本轮工具调用的 call id，不是数据库主键；由运行时按当前请求的成功回执核对" },
+  },
   // 共享改的是 `notes.share_scope` 那一列，身份仍是笔记主键；判据是 `created_by`，
   // 所以这一条走的是与 `setNoteShareScope` 同一个 id-space，没有另起一套。
   companion_share_note: { noteId: { table: "notes", column: "id" } },
@@ -68,6 +96,10 @@ const PARAM_TARGETS: Readonly<Record<string, Readonly<Record<string, IdTarget>>>
   companion_forget_memory: { memoryId: { table: "assistant_memory_items", column: "id" } },
   companion_revise_memory: { memoryId: { table: "assistant_memory_items", column: "id" } },
   companion_read_image: {
+    noteId: { table: "notes", column: "id" },
+    assetId: { table: "note_image_assets", column: "id" },
+  },
+  companion_visual: {
     noteId: { table: "notes", column: "id" },
     assetId: { table: "note_image_assets", column: "id" },
   },

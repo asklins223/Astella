@@ -18,7 +18,8 @@ import {
   EAGER_DISPATCH_ELIGIBLE_TOOLS,
   EAGER_TOOL_DISPATCH_ENABLED,
 } from "../agent/companion-eager-dispatch-config.ts";
-import { getCompanionAgentTool } from "@astella/shared";
+import { companionOperationDomainTool, getCompanionAgentTool } from "@astella/shared";
+const definitionFor = (operation: string) => getCompanionAgentTool(companionOperationDomainTool(operation) ?? operation);
 
 test("默认关闭 —— 收益没实测之前它不许自己开始跑", () => {
   // 40b §4.3：「无收益或等待不合格就撤回。」没量过就等于还没到能开的时候。
@@ -28,13 +29,14 @@ test("默认关闭 —— 收益没实测之前它不许自己开始跑", () => 
 
 test("白名单里每一项都必须**真的存在**于登记表", () => {
   for (const name of EAGER_DISPATCH_ELIGIBLE_TOOLS) {
-    assert.ok(getCompanionAgentTool(name), `白名单里的 ${name} 不在登记表里 —— 派发时会静默空转`);
+    assert.ok(companionOperationDomainTool(name), `${name} 不是任何域工具的操作 id`);
+    assert.ok(definitionFor(name), `白名单里的 ${name} 不在登记表里 —— 派发时会静默空转`);
   }
 });
 
 test("白名单里每一项都是只读、无需确认 —— 有副作用的绝不许进", () => {
   for (const name of EAGER_DISPATCH_ELIGIBLE_TOOLS) {
-    const definition = getCompanionAgentTool(name)!;
+    const definition = definitionFor(name)!;
     assert.equal(definition.riskClass, "read",
       `${name} 不是 read 风险档。riskClass 是**风险**不是"有没有副作用"，
       而 §4.1-1 要的是后者。`);
@@ -46,11 +48,11 @@ test("白名单里每一项都是只读、无需确认 —— 有副作用的绝
 test("一个写工具都不许在白名单里", () => {
   // 正控制 + 反向：把已知的写工具都断言一遍。
   for (const name of [
-    "companion_save_memory",
-    "companion_forget_memory",
-    "companion_revise_memory",
-    "companion_move_memory",
-    "companion_remember_judgment",
+    "memory.write.save",
+    "memory.write.forget",
+    "memory.write.revise",
+    "memory.write.move",
+    "memory.write.judgment",
   ]) {
     assert.ok(!EAGER_DISPATCH_ELIGIBLE_TOOLS.has(name),
       `${name} 在白名单里 —— 跑两遍就是重复提交`);
@@ -61,9 +63,9 @@ test("一个写工具都不许在白名单里", () => {
 
 test("【自证】判据认得出「把一个写工具加进白名单」这个真实退化", () => {
   // 退化形状：有人觉得 read_memory "看起来也是只读的"，把 save_memory 加进去。
-  const degraded = new Set([...EAGER_DISPATCH_ELIGIBLE_TOOLS, "companion_save_memory"]);
-  assert.ok(degraded.has("companion_save_memory"), "自证样本没造好：退化名单确实混进了写工具");
+  const degraded = new Set([...EAGER_DISPATCH_ELIGIBLE_TOOLS, "memory.write.save"]);
+  assert.ok(degraded.has("memory.write.save"), "自证样本没造好：退化名单确实混进了写工具");
   // 正控制：真名单里没有它。
-  assert.ok(!EAGER_DISPATCH_ELIGIBLE_TOOLS.has("companion_save_memory"),
+  assert.ok(!EAGER_DISPATCH_ELIGIBLE_TOOLS.has("memory.write.save"),
     "自证：当前名单是干净的，所以判据今天是绿的");
 });

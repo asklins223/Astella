@@ -33,22 +33,22 @@ test("用户明确请求的回复与真实启动/回前台招呼不会被主动�
 });
 
 test("内部考虑才有安静结束能力，用户提问那一轮不能拿它代替回答", async () => {
-  await assert.rejects(() => executeCompanionParticipationTool(context(), "companion_finish_participation", { decision: "silent" }),
+  await assert.rejects(() => executeCompanionParticipationTool(context(), "say.finish_participation", { decision: "silent" }),
     (error: unknown) => error instanceof CompanionToolBlockedError && /当前用户提问仍需要完整回答/.test(String((error as Error).message)));
   assert.deepEqual(await executeCompanionParticipationTool(
-    context({}, { initiativeInput: { topic: "attention.due", facts: { canSpeak: true } } }), "companion_finish_participation", { decision: "silent" }),
+    context({}, { initiativeInput: { topic: "attention.due", facts: { canSpeak: true } } }), "say.finish_participation", { decision: "silent" }),
     { value: { decision: "silent", completed: true }, safeSummary: "本次考虑已结束。" });
 });
 
 test("发言要有真实工具调用身份，没有就不写消息", async () => {
-  await assert.rejects(() => executeCompanionParticipationTool(context(), "companion_publish_utterance", { text: "你好。" }),
+  await assert.rejects(() => executeCompanionParticipationTool(context(), "say.publish", { text: "你好。" }),
     (error: unknown) => error instanceof CompanionToolError && /缺少实际身份/.test(String((error as Error).message)));
 });
 
 test("人不在这台设备前面时，发言被挡在发布之前", async () => {
   await assert.rejects(() => executeCompanionParticipationTool(
     context({}, { initiativeInput: { topic: "attention.due", facts: { canSpeak: false }, deviceSessionId: "desktop:x:3" } }),
-    "companion_publish_utterance", { text: "接着说一句。" }, "call-1"),
+    "say.publish", { text: "接着说一句。" }, "call-1"),
     (error: unknown) => error instanceof CompanionToolBlockedError && /不在可参与的前台/.test(String((error as Error).message)));
 });
 
@@ -59,7 +59,7 @@ test("要写进笔记的整段内容不会被逐句发成聊天发言", async ()
   ]) {
     await assert.rejects(() => executeCompanionParticipationTool(
       context({}, { initiativeInput: { topic: "reply.finished", facts: { canSpeak: true } }, pageContext }),
-      "companion_publish_utterance", { text: "可以先把它想成……" }, "call-2"),
+      "say.publish", { text: "可以先把它想成……" }, "call-2"),
       (error: unknown) => error instanceof CompanionToolNotExecutedError && /完整解释/.test(String((error as Error).message)));
   }
 });
@@ -67,7 +67,7 @@ test("要写进笔记的整段内容不会被逐句发成聊天发言", async ()
 test("执行收尾不会变成一条对白", async () => {
   await assert.rejects(() => executeCompanionParticipationTool(
     context({}, { initiativeInput: { topic: "attention.due", facts: { canSpeak: true } } }),
-    "companion_publish_utterance", { text: "（安静结束，本轮不发言。）" }, "call-3"),
+    "say.publish", { text: "（安静结束，本轮不发言。）" }, "call-3"),
     (error: unknown) => error instanceof CompanionToolNotExecutedError && /执行收尾不需要发给用户/.test(String((error as Error).message)));
 });
 test("主动发言的语义核对在任何发布写入之前生效", async () => {
@@ -75,6 +75,6 @@ test("主动发言的语义核对在任何发布写入之前生效", async () =>
   await assert.rejects(() => executeCompanionParticipationTool(context({ reviewInitiativeSpeech: async () => {
     called = true; return "repeat：同一问题仅换了语气。";
   } }, { initiativeInput: { topic: "app.started", facts: { canSpeak: true } } }),
-  "companion_publish_utterance", { text: "问你个事，打字快慢怎么回事？" }, "reviewed-call"), /主动发言没有发布.*repeat/);
+  "say.publish", { text: "问你个事，打字快慢怎么回事？" }, "reviewed-call"), /主动发言没有发布.*repeat/);
   assert.equal(called, true);
 });

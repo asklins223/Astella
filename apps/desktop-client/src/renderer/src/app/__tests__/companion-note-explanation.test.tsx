@@ -143,7 +143,7 @@ it("写工具先保存独立正文，后续分句发言不会混入解释", asyn
   expect(context).toMatchObject({ replyPurpose: "annotation", annotationTarget: { requestId: attempt.id, anchor: target.anchor } });
   emit("assistant.delta", { appendFrom: 0, textDelta: "我来看看这句。" });
   expect(current().text).toBe("");
-  emit("agent.tool", { tool: { name: "companion_write_annotation", status: "succeeded",
+  emit("agent.tool", { tool: { name: "notes.write.annotate", status: "succeeded",
     noteAnnotation: { kind: "written_annotation", requestId: attempt.id, annotation: savedAnnotation(attempt.id) } } });
   expect(current()).toMatchObject({ phase: "saved", text: savedAnnotation(attempt.id).explanation });
   messages = [{ id: id(30), role: "assistant", seq: 2, runId: id(6), kind: "text", blocks: [{ type: "text", text: "解释写好了，例子也放在里面。" }] }];

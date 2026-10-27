@@ -238,16 +238,11 @@ test("§16.39(a)：闲聊那一圈不许留下任何正式学习记录的行", a
    * `packages/shared/src/agent/companion-agent-registry.ts` 与
    * `companion-agent-runtime.ts`——两个文件当时都在别的会话里在途，故不在此刀。
    */
+  // Plan 57 把旧的学习跑/复习链整条删了，能证明"闲聊不写正式记录"的只剩
+  // 仍然活着的卡与事件表；已删的表不再盯着——盯一个不存在的表只会 42P01。
   const LEARNING_TABLES = [
-    "learning_runs",
-    "learning_tasks",
-    "learning_task_variants",
-    "learning_artifacts",
-    "learning_assessments",
-    "learning_target_snapshots_v2",
-    "learning_cards_v2",
-    "learning_objectives_v2",
-    "review_schedules",
+    "note_learning_cards",
+    "learning_metric_events",
   ] as const;
 
   async function countLearningRows(): Promise<Record<string, number>> {
@@ -290,16 +285,14 @@ test("§16.39(a)：闲聊那一圈不许留下任何正式学习记录的行", a
     await sql.begin(async (tx) => {
       await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
       await tx`SELECT set_config('app.user_id', ${userId}, true)`;
-      await tx`INSERT INTO review_schedules
-          (id, workspace_id, user_id, subject_type, subject_id, status, next_review_at,
-           interval_days, generation, policy_version, reason_code, created_at, updated_at)
-        VALUES (${randomUUID()}, ${workspaceId}, ${userId}, 'card', ${randomUUID()},
-          'pending', now(), 1, 1, 's1639-probe', 'fixture', now(), now())`;
+      await tx`INSERT INTO learning_metric_events
+          (id, workspace_id, user_id, event_type, run_id, occurred_at)
+        VALUES (${randomUUID()}, ${workspaceId}, ${userId}, 's1639_probe', ${f.runId}, now())`;
     });
     const probe = await countLearningRows();
     assert.equal(
-      probe.review_schedules,
-      before.review_schedules + 1,
+      probe.learning_metric_events,
+      before.learning_metric_events + 1,
       "反向对照：故意插的一行没被量到——这把尺子量不到东西，上面那些 0===0 是假的",
     );
   } finally {
@@ -322,7 +315,7 @@ test("Agent：工具循环的审计行与 agent.tool SSE 事件符合共享合�
     assert.ok(s.run.tool_call_count >= 1, "至少执行一次工具");
     assert.ok(s.toolCalls.length >= 1, "工具调用写入审计表");
     assert.equal(s.toolCalls[0].status, "succeeded");
-    assert.equal(s.toolCalls[0].name, "companion_read_context");
+    assert.equal(s.toolCalls[0].name, "observe.context");
     assert.equal(s.assistant.length, 1, "循环结束后产出最终答复");
 
     const toolEvents = s.events.filter((e) => (e as { type: string }).type === "agent.tool");
@@ -420,7 +413,7 @@ test("低权限长代码笔记完整到达预览，合法 JSON 转义不受通�
     assert.equal(payload.kind, "agent_tool_review");
     assert.equal(payload.confirmationStage, "after_preview");
     assert.equal(payload.preview.markdown, "```text\n" + "\\".repeat(9500) + "\n```");
-    assert.ok(state.toolCalls.some(call => call.name === "companion_create_note" && call.status === "waiting_confirmation"));
+    assert.ok(state.toolCalls.some(call => call.name === "notes.write.create" && call.status === "waiting_confirmation"));
     const rows = await sql.begin(async tx => {
       await tx`SELECT set_config('app.workspace_id',${workspaceId},true),set_config('app.user_id',${userId},true)`;
       return tx`SELECT count(*)::int AS count FROM notes WHERE workspace_id=${workspaceId}`;
@@ -445,7 +438,11 @@ test("Agent：20 个工具回合继续执行到任务完成，不提前收起工
     assert.equal(types.includes("error"), false);
     assert.equal(Number(s.run.step_count), 21);
     assert.equal(Number(s.run.tool_call_count), 20);
-    assert.ok(Number(s.run.model_call_count) >= 22, "分类器和所有模型步骤都过真实原子计数，不受旧默认调用上限截断");
+    // 每一个模型步骤都过真实原子计数，不受旧默认调用上限截断。上限 12 次是这次
+    // 要证明"早已不起作用"的那个数——21 步本身就超过它。
+    assert.ok(Number(s.run.model_call_count) >= Number(s.run.step_count),
+      `每一步都要计入模型调用（实际 ${s.run.model_call_count} 次 / ${s.run.step_count} 步）`);
+    assert.ok(Number(s.run.model_call_count) > 12, "模型调用数必须真的越过旧默认上限");
     assert.ok(Number(s.run.agent_elapsed_ms) >= 3_000_000_000, "累计活跃时间不被整型毫秒计数截断");
     assert.deepEqual(s.run.budget_snapshot, { maxSteps: null, maxToolCallsPerStep: null,
       maxToolCalls: null, maxModelCalls: null, maxWebSearchCalls: null, deadlineMs: null });
@@ -706,7 +703,7 @@ test("Agent 工具调用：句柄经真实写入 SQL 落库，形状与读回一
                VALUES (${stepId}, ${workspaceId}, ${userId}, ${f.conversationId}, ${f.runId}, 1,
                        'model', 'running')`;
     });
-    const definition = getCompanionAgentTool("companion_start_learning");
+    const definition = getCompanionAgentTool("companion_memory_write");
     assert.ok(definition, "工具定义必须存在");
 
     // 走生产写入路径（类型检查覆盖不到列名/参数绑定，必须实库往返）
@@ -750,7 +747,7 @@ test("Agent 写操作结果不明：provider 换 call id 时不重放；相同�
                        'model', 'running')`;
     });
     const event = await leasedToolEvent(workspaceId, userId, f);
-    const definition = getCompanionAgentTool("companion_schedule_reminder");
+    const definition = getCompanionAgentTool("companion_attention_write");
     assert.ok(definition);
     const arguments_ = { text: "复习", fireAtLocal: "2026-10-01T18:00" };
     const argsHash = safeArgumentsHash(arguments_);
@@ -792,7 +789,7 @@ test("Agent 写操作结果不明：provider 换 call id 时不重放；相同�
       [{ tool_call_id: "call_uncertain_1", status: "outcome_unknown" }],
     );
 
-    const readDefinition = getCompanionAgentTool("companion_read_current_page");
+    const readDefinition = getCompanionAgentTool("companion_observe");
     assert.ok(readDefinition);
     const readHash = safeArgumentsHash({});
     const firstRead = await ensureAgentToolCall(
@@ -1027,7 +1024,7 @@ test("同一句偏好不重复写第二遍：第二次回执指向已有的那�
       await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
       await tx`SELECT set_config('app.user_id', ${userId}, true)`;
       return tx`SELECT result_safe_summary FROM companion_agent_tool_calls
-                WHERE run_id = ${second.runId} AND name = 'companion_save_memory'`;
+                WHERE run_id = ${second.runId} AND name = 'memory.write.save'`;
     });
     assert.match(String(calls[0]?.result_safe_summary ?? ""), /已经记过/,
       "第二遍的回执要说清是「已经记过」，而不是假装又存了一条");

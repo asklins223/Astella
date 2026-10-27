@@ -14,9 +14,10 @@ export interface AgentCapabilityEntry extends AgentCapabilityDeclaration {
 
 const groups: readonly { entries: readonly AgentCapabilityDeclaration[]; executor: AgentCapabilityExecutor;
   surfaces: readonly AgentCapabilitySurface[]; requires: AgentCapabilityEntry["requires"] }[] = [
-  { entries: agentGoalToolManifest, executor: "goal_control", surfaces: ["conversation"], requires: null },
-  { entries: basicAgentCapabilityManifest, executor: "basic", surfaces: ["conversation", "goal"], requires: null },
-  { entries: externalAgentCapabilityManifest, executor: "external", surfaces: ["conversation", "goal"], requires: null },
+  // Internal executor shapes only: the model reaches goals through companion_goals_*.
+  { entries: agentGoalToolManifest, executor: "goal_control", surfaces: [], requires: null },
+  { entries: basicAgentCapabilityManifest, executor: "basic", surfaces: ["goal"], requires: null },
+  { entries: externalAgentCapabilityManifest, executor: "external", surfaces: ["goal"], requires: null },
   { entries: companionCapabilityManifest, executor: "companion", surfaces: ["conversation"], requires: null },
   { entries: noteAgentCapabilityManifest, executor: "note", surfaces: ["goal"], requires: "frozenNote" },
   { entries: methodAgentCapabilityManifest, executor: "method", surfaces: ["goal"], requires: "confirmedMethod" },
@@ -60,6 +61,8 @@ export function collectAgentCapabilitySceneGuidance(
 export type AgentCapabilityArgumentIssue = {
   path: string[]; code: string; expected?: string; format?: string;
   minimum?: number; maximum?: number; allowedValues?: unknown[]; fields?: string[];
+  /** Host-authored repair sentence for a custom refinement. Never upstream prose. */
+  message?: string;
 };
 
 export function validateAgentCapabilityArguments(name: string, args: unknown, surface?: AgentCapabilitySurface):
@@ -76,6 +79,11 @@ export function validateAgentCapabilityArguments(name: string, args: unknown, su
       issues: parsed.error.issues.map(issue => {
         const data = issue as unknown as Record<string, unknown>;
         return { path: issue.path.map(String), code: issue.code,
+          // Custom issues are authored in this repository and say exactly which
+          // fields an action needs. Built-in validator prose can echo values, so
+          // it is still dropped.
+          ...(issue.code === "custom" && typeof issue.message === "string"
+            ? { message: issue.message.slice(0, 200) } : {}),
           ...(typeof data.expected === "string" ? { expected: data.expected } : {}),
           ...(typeof data.format === "string" ? { format: data.format } : {}),
           ...(typeof data.validation === "string" ? { format: data.validation } : {}),

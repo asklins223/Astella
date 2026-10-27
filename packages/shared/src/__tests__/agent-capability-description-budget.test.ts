@@ -110,6 +110,7 @@ test(`聊天面工具数不超过 ${CONVERSATION_TOOL_LIMIT} 条`, () => {
 });
 
 test(`能力总目录不超过 ${CATALOG_TOOL_LIMIT} 条`, () => {
+  // 隐藏的 legacy 工具只作为执行别名存在，不下发给模型，也不占模型面的条目预算。
   assert.ok(agentCapabilityCatalog.length <= CATALOG_TOOL_LIMIT,
     `能力目录 ${agentCapabilityCatalog.length} 条，超过上限 ${CATALOG_TOOL_LIMIT}。`);
 });

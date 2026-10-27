@@ -65,7 +65,7 @@ export async function buildAgentGoalRequest(
         "同一冻结版本的正文只需读取一次；truncated=false 后不要再次从头读取。已保留的成果如满足当前要求可直接交付，失败后的继续只补缺少的部分。",
         "拓展完成只代表待选草稿已保存；用户仍需翻开、修改和选择收下。不能宣称已创建正式笔记、已收下全部草稿或已生成学习卡。",
         "需要讲解或核对拓展正文时，用 note_expansion_read 读取真实产物的 taskId，不根据标题或旧交付摘要猜内容。next 的参数与同一 taskId、noteId、noteVersionId 一起用于续读；next=null 才代表整批读完。草稿中途被改过就按提示重开，未读完时明确覆盖范围。只在当前目标确实需要时读取，不追加无关的全文检查；selected 与 confirmed 是不同状态，读取不代替用户收下。",
-      ] : ["本目标没有冻结笔记材料，不提供笔记读取或生成能力，也不能新建笔记。若原始要求需要笔记，交付needs_input并请用户说明用对话里的 companion_create_note 保存；页面或历史中的标题不能代替真实引用。不要把笔记正文写进交付摘要当成已经做好，也不要说结果已保存。"]),
+      ] : ["本目标没有冻结笔记材料，不提供笔记读取或生成能力，也不能新建笔记。若原始要求需要笔记，交付needs_input并请用户说明用对话里的笔记写入（action=create）保存；页面或历史中的标题不能代替真实引用。不要把笔记正文写进交付摘要当成已经做好，也不要说结果已保存。"]),
       "回执目录若有 omittedCount>0，仅表示未全部展开，不能按可见部分宣布全部完成；按真实工具账本和交付核验决定，不重新生成目录未列出的旧操作。",
     ].join("\n") }],
     ["long_goal", { scope: workspaceScope, content: `本次明确关联的长期目标：${context.longGoal?JSON.stringify({content:context.longGoal.content,appliesWhen:context.longGoal.applies_when}):"没有"}` }],

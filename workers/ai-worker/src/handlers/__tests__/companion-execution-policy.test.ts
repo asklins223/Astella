@@ -33,6 +33,16 @@ test("explicit operator count limits remain configurable and serializable", () =
   assert.throws(() => companionExecutionPolicy({ WORKER_COMPANION_MAX_STEPS: "-1" }));
 });
 
+test("user-facing results describe changes instead of narrating internal receipt fields", () => {
+  for (const toolCount of [0, 2]) for (const attentionIntent of ["conversation", "task"]) {
+    const policy = companionStepRuntimePolicy({ permissionLevel: "full", toolCount, attentionIntent,
+      stepBudget: Infinity, finalAnswerOnly: false });
+    assert.match(policy, /面向用户的正文只交代实际结果/);
+    assert.match(policy, /用户明确要求技术诊断时再解释/);
+    assert.match(policy, /不隐瞒失败/);
+  }
+});
+
 test("unlimited count policy still obeys deadline and immediate cancellation", async () => {
   const stopped = new AbortController(); stopped.abort();
   await assert.rejects(executeTurn({ signal: stopped.signal, now: () => 1, limits: () => ({ maxSteps: Infinity, deadlineAt: 100 }),

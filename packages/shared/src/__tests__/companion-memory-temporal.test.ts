@@ -59,14 +59,14 @@ test("正文里顺手提到的今天/这次不算短窗口：时间说法只认�
   }), { ok: false, reason: "missing_finite_validity" });
 });
 
-test("source quotes and applicability conditions are exact user-authored substrings", () => {
+test("source quotes are exact; a paraphrased applicability condition is dropped, not allowed to erase the memory", () => {
   assert.deepEqual(resolveCompanionMemoryTemporalMetadata({
     kind: "preference",
     content: "解释机制时先举例",
     sourceQuote: "我喜欢解释机制时先举例",
     appliesWhen: "累的时候",
     sourceText: "我喜欢解释机制时先举例",
-  }), { ok: false, reason: "unverifiable_applies_when" });
+  }), { ok: true, appliesWhen: null, validUntil: null });
 
   assert.deepEqual(resolveCompanionMemoryTemporalMetadata({
     kind: "goal",

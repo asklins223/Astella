@@ -12,6 +12,7 @@ import * as ns_invite from "../gateway/desktop-gateway-ns-invite";
 import * as ns_artifact from "../gateway/desktop-gateway-ns-artifact";import { type NoteDocCacheStore } from "../note-doc/note-doc-cache-store.ts";
 import { runtimeInputSchema } from "./desktop-ipc-companion";
 import type { InputSchema, ParsedMeta } from "./desktop-ipc";
+import { rememberedDesktopAccountV1Schema } from "@astella/shared/desktop-ipc-contracts";
 /**
  * 「空间」这一族的 IPC 通道（2026-09-30 从 `desktop-ipc.ts` 搬出，第②步）。
  *
@@ -119,7 +120,8 @@ const authResetPasswordInputSchema = z.strictObject({
   code: emailCodeField,
   newPassword: newPasswordSchema,
 });
-const logoutOutputSchema = z.strictObject({ loggedOut: z.literal(true), serverRevoked: z.boolean() });
+const logoutInputSchema = z.strictObject({ ...m1InputBase, keepQuickLogin: z.boolean().optional() });
+const logoutOutputSchema = z.strictObject({ loggedOut: z.literal(true), serverRevoked: z.boolean(), quickLoginAvailable: z.boolean().optional() });
 const changePasswordOutputSchema = z.strictObject({ changed: z.literal(true), sessionsRevoked: z.literal(true) });
 const sendEmailCodeOutputSchema = z.strictObject({ ok: z.literal(true), resendInSeconds: z.number().int().nonnegative() });
 const resetPasswordOutputSchema = z.strictObject({ ok: z.literal(true) });
@@ -192,9 +194,25 @@ installHandler(DESKTOP_IPC_CHANNELS.authGetState, runtimeInputSchema, options, a
     return session;
   }, (output) => safeWorkspaceEpoch(output), sessionContextSchema);
 
-  installHandler(DESKTOP_IPC_CHANNELS.authLogout, runtimeInputSchema, options, async (_event, window, input) => {
+  installHandler(DESKTOP_IPC_CHANNELS.authRememberedAccount, runtimeInputSchema, options, async () => {
+    return ns_auth.getRememberedAccount(gateway.gatewayTransport);
+  }, undefined, rememberedDesktopAccountV1Schema.nullable());
+
+  installHandler(DESKTOP_IPC_CHANNELS.authForgetRemembered, runtimeInputSchema, options, async () => {
+    return ns_auth.forgetRememberedAccount(gateway.gatewayTransport);
+  }, undefined, z.strictObject({ forgotten: z.literal(true) }));
+
+  installHandler(DESKTOP_IPC_CHANNELS.authResumeRemembered, runtimeInputSchema, options, async (_event, _window, input) => {
+    const session = await ns_auth.resumeRememberedAccount(gateway.gatewayTransport, gateway.companionBridge, input.meta.requestId);
+    setActiveWorkspaceEpoch(session.workspaceEpoch);
+    rememberSession(session);
+    void startCompanionLifecycle(session.workspaceEpoch);
+    return session;
+  }, (output) => safeWorkspaceEpoch(output), sessionContextSchema);
+
+  installHandler(DESKTOP_IPC_CHANNELS.authLogout, logoutInputSchema, options, async (_event, window, input) => {
     try {
-      const result = await ns_auth.logout(gateway.gatewayTransport, gateway.companionBridge, input.meta.requestId);
+      const result = await ns_auth.logout(gateway.gatewayTransport, gateway.companionBridge, input.meta.requestId, input.keepQuickLogin);
       stopCompanionChatStreams();
       stopCompanionLifecycle();
       setActiveWorkspaceEpoch(0);

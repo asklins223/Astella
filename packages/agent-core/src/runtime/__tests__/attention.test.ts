@@ -7,6 +7,18 @@ const input = { requestHash: "a".repeat(64), objects: [{ kind: "agent_run" as co
 const task = { intent: "task_control", toolUse: "act", subjects: [{ description: "刚才那件事", objectIndex: 0 }],
   goalRelation: "control", goalObjectIndex: 0, candidateOperations: ["agent_control_goal"], ambiguities: [],
   voiceStyle: { decision: "none", instruction: null } };
+test("descriptive subject shorthand and absent indexes do not erase an otherwise valid interpretation", () => {
+  for (const subjects of [["周一安排"], [{ description: "周一安排", objectIndex: null }]]) {
+    const result = resolveAgentTurnInterpretation({ ...task, intent: "task", subjects, goalRelation: "unrelated",
+      goalObjectIndex: null, candidateOperations: ["companion_search_notes", "companion_read_note", "companion_edit_note"] },
+    { ...input, objects: [], capabilities: ["companion_search_notes", "companion_read_note", "companion_edit_note"] });
+    assert.equal(result.intent, "task");
+    assert.equal(result.toolUse, "act");
+    assert.equal(result.status, "interpreted");
+    assert.deepEqual(result.subjects, [{ description: "周一安排", reference: null }]);
+    assert.equal(result.candidateOperations.length, 3);
+  }
+});
 test("a task can bind a scoped goal; subsequent small talk cannot inherit its operation or relation", () => {
   const control = resolveAgentTurnInterpretation(task, input);
   assert.deepEqual(control.goalReference, input.objects[0]);
@@ -16,6 +28,14 @@ test("a task can bind a scoped goal; subsequent small talk cannot inherit its op
   assert.deepEqual(chat.candidateOperations, []);
   assert.equal(chat.toolUse, "none");
 });
+test("a conversational label cannot erase an operation the interpreter actually named", () => {
+  const result = resolveAgentTurnInterpretation({ ...task, intent: "conversation", goalRelation: "unrelated",
+    goalObjectIndex: null, candidateOperations: ["agent_control_goal"] }, input);
+  assert.equal(result.intent, "conversation");
+  assert.equal(result.toolUse, "act");
+  assert.deepEqual(result.candidateOperations, ["agent_control_goal"]);
+});
+
 test("invented object identity, unavailable capability and unresolved ambiguity never authorize a write", () => {
   const result = resolveAgentTurnInterpretation({ ...task, goalObjectIndex: 50,
     subjects: [{ description: "它", objectIndex: 50 }], candidateOperations: ["invented_delete"], ambiguities: ["修改哪件事未明确"] }, input);

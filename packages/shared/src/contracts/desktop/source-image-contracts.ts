@@ -75,7 +75,7 @@ export function sourceImageObjectKeyFromUrl(url: string): string | null {
  * 与上面那个解析函数放在同一文件、共用同一个前缀常量，是因为它们必须永远互逆：
  * 服务端拼 url、schema 校验 url、渲染层解析 url 是三步，任何一步自己写一遍
  * `"/api/uploads/" + key`，将来前缀一变就会出现"图落库了但永远显示不出来"。
- * （`companion_show_image` 与桌宠日记的图片块都走这里。）
+ * （`visual.show_image` 与桌宠日记的图片块都走这里。）
  */
 export function sourceImageUrlFromObjectKey(objectKey: string): string {
   return `${SOURCE_IMAGE_UPLOAD_PREFIX}${objectKey}`;

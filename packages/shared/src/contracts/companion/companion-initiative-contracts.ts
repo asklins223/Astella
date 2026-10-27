@@ -20,6 +20,9 @@ export const companionParticipationPreferencesWriteV1Schema = z.object({
   enabled: z.boolean(),
 }).strict();
 export const companionParticipationToolWriteV1Schema = companionParticipationPreferencesWriteV1Schema.extend({
+  /** Omitted by the model means "apply to the current revision"; the host reads
+   * it under the same transaction lock. An explicit stale revision still fails. */
+  expectedRevision: z.number().int().nonnegative().optional(),
   sourceQuote: z.string().min(1).max(2_000).describe("本轮用户要求以后怎样相处的逐字原话；不能引用历史或自己的判断"),
 }).strict();
 

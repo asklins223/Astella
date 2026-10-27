@@ -2,6 +2,20 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { renderCompanionUserTurn } from "../turn/companion-dialogue-content.ts";
 import { paginateReadBlocks } from "../tools/companion-read-tools.ts";
+import { noteBlocksToPmNodes, pmNodesToNoteBlocks } from "@astella/shared/note-doc-schema";
+
+test("读取真实编辑器投影时保留列表类型与Markdown，冲突核对仍用精确content", () => {
+  const editable = pmNodesToNoteBlocks(noteBlocksToPmNodes([
+    { type: "list", content: "- 晚上：散步二十分钟\n- 回来后：拉伸五分钟" },
+  ]));
+  const page = paginateReadBlocks(editable.map((block, index) => ({ ...block, ordinal: index + 1 })), 3000);
+  assert.equal(page.blocks[0]?.type, "list");
+  assert.equal(page.blocks[0]?.content, "晚上：散步二十分钟\n回来后：拉伸五分钟");
+  assert.equal(page.body, "- 晚上：散步二十分钟\n- 回来后：拉伸五分钟");
+  const partial = paginateReadBlocks([{ ordinal: 1, type: "list", content: "长内容".repeat(80) }], 30);
+  assert.equal(partial.blocks[0]?.complete, false);
+  assert.equal(partial.body, partial.blocks[0]?.content, "a partial block is never presented as complete Markdown");
+});
 
 test("全文编辑可以完整取得八千字及精确块边界，过长单块保留可续读位置", () => {
   const blocks = Array.from({ length: 55 }, (_, i) => ({ ordinal: i + 1, content: `第${i + 1}块\n` + "正文".repeat(75) }));

@@ -57,12 +57,12 @@ async function fixture(operation = "append", blocks: NoteCreateInput["blocks"] =
     await tx`UPDATE companion_turn_runs SET page_context=${tx.json({ context: { pageKind: "note", sharing: "page_registered", noteId, noteVersionId,
       editing: { cursor: { block: 0, offset: 2, coordinate: "document", expectedBlock: "甲乙丙丁" } } } })} WHERE id=${runId}`;
     await tx`INSERT INTO companion_agent_tool_calls(id,workspace_id,user_id,conversation_id,run_id,step_id,tool_call_id,name,tool_version,arguments,arguments_sha256,risk_class,status)
-      VALUES(${callId},${workspaceId},${userId},${conversationId},${runId},${stepId},${toolCallId},'companion_edit_note','1.0.0',${tx.json(args)},${'c'.repeat(64)},'reversible_low','executing')`;
+      VALUES(${callId},${workspaceId},${userId},${conversationId},${runId},${stepId},${toolCallId},'notes.write.edit','1.0.0',${tx.json(args)},${'c'.repeat(64)},'reversible_low','executing')`;
   });
   const confirmDeletion = async () => mutate(async tx => {
     const [call] = await tx`SELECT arguments,proposal_id FROM companion_agent_tool_calls WHERE id=${callId}`;
     const proposalId = call.proposal_id ?? randomUUID();
-    const payload = { kind: "agent_tool_review", toolName: "companion_edit_note", arguments: call.arguments,
+    const payload = { kind: "agent_tool_review", toolName: "companion_notes_write", arguments: call.arguments,
       confirmationStage: "before_execute", preview: { title: "原笔记", noteId } };
     await tx`INSERT INTO companion_action_proposals(id,workspace_id,user_id,conversation_id,source_message_id,source_generation,
       payload,payload_sha256,title,target_summary,impact_summary,status,decision,origin,agent_run_id,agent_tool_call_id,
@@ -117,7 +117,7 @@ test("修改已落盘但外层状态未知时，只核对精确版本并交付�
   assert.deepEqual(await f.content(), ["甲乙丙丁", "保留段落", "已保存的新内容"]);
   const events = await f.mutate(tx => tx`SELECT payload FROM companion_stream_events WHERE run_id=${f.runId} AND type='agent.tool'`);
   assert.equal(events.length, 1);
-  assert.equal(events[0].payload.tool.name, "companion_edit_note");
+  assert.equal(events[0].payload.tool.name, "companion_notes_write");
   assert.equal(events[0].payload.tool.noteEdit.noteVersionId, receipt.noteVersionId);
   assert.equal(events[0].payload.tool.noteCreated, undefined);
   await f.mutate(tx => tx`UPDATE companion_agent_tool_calls SET status='outcome_unknown',
@@ -177,7 +177,7 @@ test("写入等候超过十秒的真实 API 保存仍成功，工具不会被快
   const event = { ctx: { id: f.jobId, workspaceId: f.workspaceId, requestedBy: f.userId, leaseToken: "edit-lease", payload: { runId: f.runId }, signal: new AbortController().signal },
     read: { userId: f.userId, runId: f.runId, conversationId: f.conversationId, accountEpoch: 0, generation: 1 } as AgentEventContext["read"],
     expiresAt: new Date(Date.now() + 60_000).toISOString(), constraints: { visionEnabled: false } } as AgentEventContext;
-  const execution = runCompanionToolExecution({ event, definition: getCompanionAgentTool("companion_edit_note")!,
+  const execution = runCompanionToolExecution({ event, definition: getCompanionAgentTool("companion_notes_write")!,
     operationCallId: f.toolCallId, toolCallId: f.toolCallId,
     arguments: { noteId: f.noteId, noteVersionId: f.noteVersionId, operation: "append", markdown: "已保存的新内容" },
     deadlineAt: Date.now() + 30_000, signal: event.ctx.signal, runId: f.runId, logger: { warn() {} } });

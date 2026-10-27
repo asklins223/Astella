@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "character": "大肥鱼 / DS鲸鱼娘",
+  "presets": [
+    {
+      "id": "smile",
+      "label": "微笑",
+      "assetName": "AvatarPresetSmile",
+      "file": "dafeiyu-smile.png",
+      "sha256": "b96ad807c9cd20579f3ad2f77d9bdd27ad7310baea2c6a37ec95977ddc471590"
+    },
+    {
+      "id": "happy",
+      "label": "开心",
+      "assetName": "AvatarPresetHappy",
+      "file": "dafeiyu-happy.png",
+      "sha256": "7e3b1f84f62c28e8a9f50dc34dcd6f85f9fc3cfac99afe68323784de0137bd37"
+    },
+    {
+      "id": "wink",
+      "label": "眨眼",
+      "assetName": "AvatarPresetWink",
+      "file": "dafeiyu-wink.png",
+      "sha256": "faedb86ee2074f9fe9ce38985956a97b3baf036fb17478a30ad22c50945fcad5"
+    },
+    {
+      "id": "shy",
+      "label": "害羞",
+      "assetName": "AvatarPresetShy",
+      "file": "dafeiyu-shy.png",
+      "sha256": "56274a2c6c7585621982b41ad62378acd991a34a2ce141748cf536046c6b896a"
+    },
+    {
+      "id": "surprised",
+      "label": "惊讶",
+      "assetName": "AvatarPresetSurprised",
+      "file": "dafeiyu-surprised.png",
+      "sha256": "986f4a481863a4e837b18a63bf9059ced98b3866ac563b144538a28c82d577a2"
+    }
+  ]
+}

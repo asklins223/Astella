@@ -63,8 +63,14 @@ export function compactEvidence(value: string, options: QuoteGroundingOptions = 
 export function exactQuote(blockText: string, candidate: string, options: QuoteGroundingOptions = {}): string | null {
   const needle = compactEvidence(candidate, options).text;
   if (needle.length < 1) return null;
-  if (options.minNeedleChars !== undefined && Array.from(needle).length < options.minNeedleChars) return null;
   const source = compactEvidence(blockText, options);
+  // 下限是"别拿两个词糊弄"，不是固定 8 个字：短段（不足 40 字）里 4 个字已经能认出
+  // 说的是哪件事（三行清单里的「明天继续。」就是全部依据），长段仍按 8 个字卡。
+  const sourceChars = Array.from(source.text).length;
+  const floor = sourceChars < 40 ? 4 : (options.minNeedleChars ?? 0);
+  const minimum = options.minNeedleChars === undefined ? undefined
+    : Math.min(floor, Math.max(1, sourceChars));
+  if (minimum !== undefined && Array.from(needle).length < minimum) return null;
   const offset = source.text.indexOf(needle);
   if (offset < 0) return null;
   // `indexOf` 给的是 UTF-16 码元下标，而 sourceOffsets 是按**码点**记的：正文里只要有

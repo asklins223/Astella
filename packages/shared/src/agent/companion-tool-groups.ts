@@ -24,17 +24,50 @@ export const COMPANION_DIRECT_ENTRY_TOOL_NAMES = ["companion_deepen", "companion
 
 export const COMPANION_CORE_TOOL_NAMES: readonly string[] = Object.freeze([
   ...COMPANION_DIRECT_ENTRY_TOOL_NAMES,
-  "companion_read_context",
-  "companion_read_history",
-  "companion_search_notes",
-  "companion_read_note",
-  "companion_read_memory",
-  "companion_recall_memory",
-  "companion_save_memory",
-  "companion_read_participation",
-  "companion_read_identity",
-  "companion_read_self_notes",
+  "companion_observe",
+  "companion_notes_read",
+  "companion_notes_write",
+  "companion_memory_read",
+  "companion_memory_write",
+  "companion_attention_read",
+  "companion_attention_write",
+  "companion_say",
+  "companion_persona_read",
+  "companion_persona_write",
+  "companion_visual",
+  "companion_goals_read",
+  "companion_goals_write",
+  "companion_finish",
   "companion_load_tools",
+]);
+
+/**
+ * 高频应用动作，不随本轮意图分类进出工具面。
+ *
+ * 2026-10-25 实机：分类器一次解析失败，候选操作为空，手机端又没有当前笔记页，
+ * 于是 `companion_edit_note` 根本不在工具面里；模型照着历史里上一次成功的编辑，
+ * 回了一句“保存回执 succeeded”。工具面按声明给，不按猜测给——这些是已授权
+ * 用户最常要求的动作，先把它们放进默认面；其余能力仍可用 `companion_load_tools`
+ * 展开。它们只扩大可见视图，执行侧的权限、确认与回执校验不变。
+ */
+export const COMPANION_COMMON_ACTION_TOOL_NAMES: readonly string[] = Object.freeze([
+  "companion_notes_write",
+  "companion_memory_write",
+  "companion_attention_write",
+  "companion_persona_write",
+  "companion_open",
+  "companion_goals_write",
+  // A diagram is a general deliverable, not a note-page affordance. Keeping it
+  // out of the common surface made "draw this as a flowchart" fall back to a
+  // code block on pages that did not declare the visual group.
+  "companion_visual",
+  // Separate delivery is a general response shape, not a proactive-only tool.
+  "companion_say",
+  // Flat aliases: same operations, simpler model-facing choice.
+  "companion_self_note_write",
+  "companion_memory_forget",
+  "companion_goal_start",
+  "companion_memory_save",
 ]);
 
 export const COMPANION_TOOL_GROUPS: Readonly<Record<CompanionToolGroupId, {
@@ -46,70 +79,58 @@ export const COMPANION_TOOL_GROUPS: Readonly<Record<CompanionToolGroupId, {
     label: "笔记与来源",
     description: "搜索、读取、新建、修改、共享笔记与来源，学习卡搜索，推荐卡片，打开笔记。",
     tools: [
-      "companion_search_notes", "companion_search_cards", "companion_read_note", "companion_read_source",
-      "companion_create_note", "companion_edit_note", "companion_share_note",
-      "companion_recommend_learning", "companion_write_annotation",
+      "companion_notes_read", "companion_notes_write", "companion_recommend_learning",
     ],
   },
   memory: {
     label: "长期记忆与手册",
     description: "保存/修订/忘记记忆，记录判断，检索旧对话，读手册、日记，调整记忆容量层。",
     tools: [
-      "companion_save_memory", "companion_forget_memory", "companion_revise_memory",
-      "companion_remember_judgment", "companion_recall_memory", "companion_read_memory",
-      "companion_recall_past_conversation", "companion_move_memory",
-      "companion_read_playbook", "companion_read_diary",
+      "companion_memory_read", "companion_memory_write",
     ],
   },
   persona: {
     label: "她自己的表达与边界",
     description: "写自己的记事、身份、语气、标签，调整活跃度与行为边界。",
     tools: [
-      "companion_write_self_note", "companion_revise_identity", "companion_revise_own_style",
-      "companion_revise_own_tags", "companion_set_activeness", "companion_set_boundary",
+      "companion_persona_read", "companion_persona_write",
     ],
   },
   attention: {
     label: "参与、提醒与关注",
     description: "相处偏好、提醒、关注安排、主动发言、暂停学习建议。",
     tools: [
-      "companion_read_participation", "companion_save_participation", "companion_arrange_attention",
-      "companion_schedule_wake", "companion_schedule_reminder", "companion_list_reminders",
-      "companion_cancel_reminder", "companion_pause_learning_suggestions",
-      "companion_publish_utterance", "companion_finish_participation",
+      "companion_attention_read", "companion_attention_write", "companion_say",
     ],
   },
   goals: {
     label: "后台持续目标",
     description: "启动、查看、修改、暂停/继续/停止后台目标，生成速看/脑图/演示/拓展稿。",
     tools: [
-      "agent_start_goal", "agent_list_goals", "agent_list_long_goals",
-      "agent_revise_goal", "agent_control_goal",
+      "companion_goals_read", "companion_goals_write",
     ],
   },
   web: {
     label: "联网与公开文档",
     description: "联网搜索、读取用户给出的公开 HTTPS 文档。",
-    tools: ["agent_web_search", "agent_read_public_document"],
+    tools: ["companion_web"],
   },
   visual: {
     label: "看图与画图",
     description: "读图、在本地显示用户库里的图片、把步骤画成流程图。",
-    tools: ["companion_read_image", "companion_show_image", "companion_render_diagram"],
+    tools: ["companion_visual"],
   },
   stats: {
     label: "进度与当前页面",
     description: "学习统计、最近活动、当前页面/上下文/历史，以及实际计算。",
     tools: [
-      "companion_get_learning_stats",
-      "companion_list_recent_activity", "companion_read_context", "companion_read_current_page",
-      "companion_read_history", "agent_calculate",
+      "companion_observe",
     ],
   },
   navigation: {
     label: "带路",
     description: "打开笔记、页面、学习卡，聚焦知识图谱目标。",
-    tools: ["companion_open_note", "companion_open_page", "companion_open_card"],
+    tools: ["companion_open"],
   },
 });
 
@@ -190,17 +211,20 @@ export function resolveCompanionInitialToolNames(input: {
   for (const name of COMPANION_CORE_TOOL_NAMES) {
     if (available.has(name)) names.add(name);
   }
-  const groups = new Set<CompanionToolGroupId>(companionPageToolGroups(input.pageKind));
-  for (const candidate of input.candidateOperations ?? []) {
-    const group = companionToolGroupFor(candidate);
-    if (group) groups.add(group);
+  // Common application actions are declaration-driven. A wrong or missing
+  // interpretation must not remove the user's ability to act.
+  for (const name of COMPANION_COMMON_ACTION_TOOL_NAMES) {
+    if (available.has(name)) names.add(name);
   }
+  const groups = new Set<CompanionToolGroupId>(companionPageToolGroups(input.pageKind));
+  // Intent candidates do not add or remove groups. The model expands the
+  // surface itself with companion_load_tools when it needs another capability.
   for (const name of resolveCompanionToolGroupNames(groups)) {
     if (available.has(name)) names.add(name);
   }
   // A validated image attached to this turn is a host fact, independent of
   // page or intent classification. The policy-filtered catalog still owns permission.
-  if (input.hasImageAttachments && available.has("companion_read_image")) names.add("companion_read_image");
+  if (input.hasImageAttachments && available.has("companion_visual")) names.add("companion_visual");
   // The loader itself must always be reachable; otherwise the surface is closed.
   if (available.has("companion_load_tools")) names.add("companion_load_tools");
   return names;

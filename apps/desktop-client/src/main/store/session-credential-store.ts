@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { app } from "electron";
+import { rememberedDesktopAccountV1Schema } from "@astella/shared/desktop-ipc-contracts";
 import type { SessionCredentialStore } from "../gateway/desktop-gateway-credentials";
 
 /**
@@ -15,8 +16,27 @@ import type { SessionCredentialStore } from "../gateway/desktop-gateway-credenti
 export function createSessionCredentialStore(): SessionCredentialStore {
   const filePath = resolve(app.getPath("userData"), "session-credential-local-v1.txt");
   const temporaryPath = `${filePath}.tmp`;
+  const rememberedPath = resolve(app.getPath("userData"), "quick-login-account-v1.json");
 
   return {
+    async loadRemembered() {
+      try {
+        const raw = JSON.parse(await readFile(rememberedPath, "utf8"));
+        const { origin, token, ...hint } = raw;
+        const parsed = rememberedDesktopAccountV1Schema.safeParse(hint);
+        if (!parsed.success || typeof origin !== "string" || !/^https?:\/\//.test(origin)
+          || typeof token !== "string" || !token.trim()) return null;
+        return { ...parsed.data, origin, token };
+      } catch { return null; }
+    },
+    async saveRemembered(credential) {
+      await mkdir(dirname(rememberedPath), { recursive: true });
+      await writeFile(`${rememberedPath}.tmp`, JSON.stringify(credential), { mode: 0o600 });
+      await rename(`${rememberedPath}.tmp`, rememberedPath);
+    },
+    async clearRemembered() {
+      await Promise.all([rm(rememberedPath, { force: true }), rm(`${rememberedPath}.tmp`, { force: true })]);
+    },
     hasStored(): boolean {
       return existsSync(filePath);
     },

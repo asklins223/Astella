@@ -152,7 +152,7 @@ async function createMemory(body: Record<string, unknown>): Promise<Record<strin
 }
 
 async function recall(query: string, runId = randomUUID()): Promise<{ memories: Array<Record<string, unknown>>; retrievalMode: string }> {
-  const definition = COMPANION_AGENT_TOOL_DEFINITIONS.find(item => item.name === "companion_recall_memory");
+  const definition = COMPANION_AGENT_TOOL_DEFINITIONS.find(item => item.name === "companion_memory_read");
   assert.ok(definition);
   const controller = new AbortController();
   const event = {

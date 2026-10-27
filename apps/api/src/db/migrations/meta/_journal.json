@@ -3162,12 +3162,40 @@
     {
       "idx": 451,
       "version": "7",
+      "when": 1792893600000,
+      "tag": "0455_companion_reply_output_timeline",
+      "breakpoints": true
+    },
+    {
+      "idx": 452,
+      "version": "7",
+      "when": 1792931000000,
+      "tag": "0457_companion_domain_tool_authorization",
+      "breakpoints": true
+    },
+    {
+      "idx": 453,
+      "version": "7",
+      "when": 1792931060000,
+      "tag": "0458_companion_note_edit_dispatch_domain",
+      "breakpoints": true
+    },
+    {
+      "idx": 454,
+      "version": "7",
+      "when": 1792931120000,
+      "tag": "0459_companion_note_share_dispatch_domain",
+      "breakpoints": true
+    },
+    {
+      "idx": 455,
+      "version": "7",
       "when": 1793075780005,
       "tag": "0460_object_transfer_storage_location",
       "breakpoints": true
     },
     {
-      "idx": 452,
+      "idx": 456,
       "version": "7",
       "when": 1793096400000,
       "tag": "0461_chat_upload_retention",

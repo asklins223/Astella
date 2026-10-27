@@ -13,12 +13,12 @@ export function companionTimeWakeupConstraint(
   name: string, args: Record<string, unknown>,
 ): { key: string; instruction: string } | null {
   if (attention.executionConstraints?.timeBasedWakeups !== "forbid") return null;
-  const field = name === "companion_arrange_attention" ? "nextReviewAt"
-    : name === "companion_schedule_wake" ? "at"
-      : name === "companion_schedule_reminder" ? "fireAtLocal" : null;
+  const field = name === "attention.write.arrange" ? "nextReviewAt"
+    : name === "attention.write.schedule_wake" ? "at"
+      : name === "attention.write.schedule_reminder" ? "fireAtLocal" : null;
   if (!field || args[field] === null || args[field] === undefined) return null;
   return { key: `timeBasedWakeups:${name}:${field}`,
-    instruction: name === "companion_schedule_reminder"
+    instruction: name === "attention.write.schedule_reminder"
       ? "本轮禁止定时唤醒，没有创建提醒。保留已完成的操作，不改用其他时间安排绕过限制。"
       : `本轮只允许事件触发，不设置定时唤醒或内部定时重评。将 ${field} 设为 JSON null；保留事件订阅，不改用其他安排绕过限制。` };
 }

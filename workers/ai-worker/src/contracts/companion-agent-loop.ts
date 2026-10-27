@@ -35,6 +35,13 @@ export interface CompanionAgentLoopArgs {
    */
   toolConstraints: CompanionAgentToolExecutionConstraints;
   baseMessages: ChatMessage[];
+  /**
+   * The delivery shape resolved for this turn (how many separate messages the
+   * request asked for), so every step writes the reply in that shape from the
+   * start. Delivery still splits on the model's own paragraph boundaries; this
+   * only tells it that the boundaries matter.
+   */
+  replyShape?: { messages: number } | null;
   /** Hash/scope-verified committed deltas already shown in this same run. */
   initialVisibleText?: string;
   /** Commit complete, validated visible step text before pausing or resuming. */
@@ -72,6 +79,7 @@ export interface CompanionAgentLoopArgs {
    * 因此也永远进不了朗读。写失败只让思考显示自己停下，绝不影响这一轮回复。
    */
   onReasoningDelta?: (text: string) => void;
+  flushThinking?: () => Promise<void>;
   /** Structured semantic direction is resolved before the speculative first step is released. */
   onTurnInterpretation?: (interpretation: AgentTurnInterpretationV1) =>
     void | AgentVoicePreferenceWriteStatusV1 | Promise<void | AgentVoicePreferenceWriteStatusV1>;

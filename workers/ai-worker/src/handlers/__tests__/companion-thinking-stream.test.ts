@@ -14,6 +14,20 @@ import { createCompanionThinkingDelivery } from "../turn/companion-thinking-stre
 
 const read = { userId: "u1", runId: "r1", conversationId: "c1", generation: 1, accountEpoch: 0 };
 
+test("输出边界刷出已收到的思考，后续思考仍能继续且不移动到先前正文之后", async () => {
+  const ordered: string[] = [];
+  const { delivery } = harness({ flushChars: 800, flushIntervalMs: 10_000,
+    write: async chunks => { ordered.push(...chunks.map(chunk => chunk.text)); return true; } });
+  delivery.onReasoningDelta("先读原文。");
+  await delivery.flush(); ordered.push("工具读取");
+  delivery.onReasoningDelta("已有结论。");
+  await delivery.flush(); ordered.push("第一段正文");
+  delivery.onReasoningDelta("再比较另一处。");
+  await delivery.flush(); ordered.push("第二段正文");
+  await delivery.finish();
+  assert.deepEqual(ordered, ["先读原文。", "工具读取", "已有结论。", "第一段正文", "再比较另一处。", "第二段正文"]);
+});
+
 test("默认完整下发思考，超过旧 60000 字上限也不丢后续内容", async () => {
   const { delivery, written } = harness();
   const text = "完整保留思考。".repeat(10_000);

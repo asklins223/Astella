@@ -175,7 +175,7 @@ export async function runTrial(raw: AIProvider, f: Fixture, arm: Arm, timeoutMs 
         }
         if (arm === 'classified') {
             const promise = classify(provider, messages, f, controller.signal).then(value => { trial.classifierMs = performance.now() - zero; return value; });
-            const flights = startCompanionSpeculativeFirstSteps({ provider, ctxSignal: controller.signal, onProviderDelta: onDelta, attention: promise, cachedInterpretation: null, turnPolicy, permissionLevel: 'full', stepBudget: Infinity, messages, deadlineAt: Date.now() + timeoutMs, availableTools: surface.offered(), webSearchAllowed: false, toolCallCount: 0 });
+            const flights = startCompanionSpeculativeFirstSteps({ provider, ctxSignal: controller.signal, onProviderDelta: onDelta, attention: promise, cachedInterpretation: null, turnPolicy, permissionLevel: 'full', stepBudget: Infinity, messages, deadlineAt: Date.now() + timeoutMs, availableTools: surface.offered(), toolCallCount: 0 });
             attention = await promise;
             const before = performance.now();
             first = await flights.settle({ attention, runId: randomUUID(), deadlineAt: Date.now() + timeoutMs, handlerStartedAtMs: Date.now() - Math.round(before - zero) });

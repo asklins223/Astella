@@ -420,6 +420,11 @@ export function calculateAgentExpression(
     );
   }
 
+  // The model (and users) often write the typographic operators. Treat them
+  // as the same arithmetic instead of failing a correct calculation.
+  expression = expression.replace(/[×✕✖]/g, "*").replace(/[÷∕]/g, "/")
+    .replace(/[−–—]/g, "-").replace(/[＋]/g, "+").replace(/[（]/g, "(").replace(/[）]/g, ")");
+
   const table = new Map<string, number>();
   for (const variable of variables) {
     if (typeof variable?.name !== "string" || !IDENTIFIER.test(variable.name)) {

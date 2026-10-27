@@ -7,6 +7,7 @@ import { companionEnvelopeMatchesBody, createCompanionEnvelopeDecoder } from "..
 import { CompanionStreamStoppedError } from "../turn/companion-dialogue-stream.ts";
 import { ProviderRequestError, ProviderStreamError } from "../../lib/provider-request-error.ts";
 import { AgentOutputError, isNonRetryableError } from "../../lib/non-retryable-errors.ts";
+import { isTransientCompanionModelError } from "./companion-model-retries.ts";
 import { stripVoiceExpressionTags, withholdPartialVoiceExpressionTag } from "@astella/shared/voice-expression-tags";
 import { containsCompanionToolProtocol,
   withholdPartialCompanionToolProtocol } from "../tools/companion-tool-protocol-output.ts";
@@ -15,9 +16,20 @@ import { watchCompanionOutput, CompanionOutputTimeoutError } from "./companion-o
 
 /** A different response transport cannot repair an account or rate rejection. */
 export function canRetryCompanionStream(error: unknown, state: { emitted: boolean; now: number; deadline: number }): boolean {
-  return !state.emitted && state.now < state.deadline && !isNonRetryableError(error) && !(error instanceof CompanionStreamStoppedError)
-    && !(error instanceof CompanionOutputTimeoutError)
-    && !(error instanceof ProviderRequestError && [401, 402, 403, 429].includes(error.status));
+  // Use the same transient classification as buffered turns. A deterministic
+  // 400/404/422 will fail identically on the other transport; retrying it only
+  // spends another provider round trip. Retrying 429 on another transport does
+  // not help either, so it is never attempted while this turn can still fail.
+  if (state.emitted || state.now >= state.deadline) return false;
+  // An idle timeout after output means the stream stalled mid-answer; another
+  // transport would only append an incoherent continuation.
+  if (error instanceof CompanionOutputTimeoutError && error.code !== "provider_first_output_timeout") return false;
+  if (error instanceof ProviderRequestError) {
+    return error.status !== 429 && isTransientCompanionModelError(error);
+  }
+  // Stream implementations may surface a plain transport error; buffered mode
+  // gets one chance to complete it. Protocol/contract errors stay terminal.
+  return !(error instanceof CompanionStreamStoppedError) && !isNonRetryableError(error);
 }
 
 /**
@@ -99,6 +111,12 @@ export async function runStreamingAgentStep(args: {
    * 未放行时 `deliveredChars()===0`，交付管线自动走既有的整段补写 delta 分支。
    */
   holdUntilChars?: number;
+  /**
+   * Keep buffering while the accumulated text contains a claim the host must
+   * verify. Once an unbacked "已保存" reaches the screen it cannot be withdrawn,
+   * so a false completion is worse than a few seconds of silence.
+   */
+  holdWhile?: (text: string) => boolean;
   /** Retain the entire result until the caller's semantic guards pass. This
    * defers delivery, never clips or stops upstream generation. */
   deferPublication?: boolean;
@@ -219,6 +237,7 @@ export async function runStreamingAgentStep(args: {
   const releaseHeld = (): void => {
     if (released || !gateOpen || discarded || stopped) return;
     if (stripVoiceExpressionTags(withholdPartialVoiceExpressionTag(held)).length < holdUntilChars) return;
+    if (args.holdWhile?.(held)) return;
     released = true;
     const text = held;
     held = "";
@@ -318,8 +337,9 @@ export async function runStreamingAgentStep(args: {
       emit(buffered);
       return;
     }
-    if (head.length > SNIFF_MAX_CHARS && !/[}\]]/.test(head)) {
+    if (args.responseFormat !== "json_object" && head.length > SNIFF_MAX_CHARS && !/[}\]]/.test(head)) {
       // 又长又不见闭合：不是信封，按自然文本直通（否则会一直憋着不下发）。
+      // 显式 JSON 请求仍由增量解码器剥壳；大首包不是泄露信封语法的理由。
       mode = "passthrough";
       const buffered = sniffed;
       sniffed = "";

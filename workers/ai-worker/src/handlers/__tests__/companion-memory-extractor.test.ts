@@ -108,7 +108,8 @@ test("有效期只接受来源里的原样绝对时间；未转换的短期状�
       appliesWhen: "累的时候",
       validUntil: null,
     }, "我喜欢讲机制时先举例"),
-    { ok: false, reason: "unverifiable_applies_when" },
+    { ok: true, appliesWhen: null, validUntil: null },
+    "a paraphrased condition is dropped; the verified user preference itself still saves",
   );
 });
 
@@ -385,6 +386,10 @@ const thinkingSanctioned = new Set([
   // Narrow publication review compares already written speech and authoritative
   // run status. It never generates a question answer or performs background work.
   "companion-initiative-speech-review.ts",
+  // Delivery-shape judge: one closed-set question about the request ("separate
+  // messages?"), answered alongside the turn. It never writes the reply, and it
+  // only decides how text already asked for gets delivered.
+  "companion-split-intent.ts",
 ]);
 
 test("伴星思考档：对话按本轮意图选择，其余后台按各自预算运行", () => {
@@ -420,7 +425,8 @@ test("伴星思考档：对话按本轮意图选择，其余后台按各自预�
   const runtime = readFileSync(new URL("agent/companion-agent-runtime.ts", dir), "utf8");
   assert.match(runtime, /companionTurnThinking\(attention\)/,
     "Agent 运行时不再经过 companionTurnThinking，闲聊/提问两档就会散成各处硬编码");
-  assert.match(runtime, /disableThinking: !directEntry \? turnThinking\.disableThinking \|\| readOnlyRequiredStep : directControls\.disableThinking\(\)/,
+  assert.match(runtime,
+    /disableThinking: !directEntry \? turnThinking\.disableThinking \|\| \(readOnlyRequiredStep && !userAskedForAction && actionSteerAttempts === 0\) : directControls\.disableThinking\(\)/,
     "Classified turns must retain their intent policy; direct turns must use their explicit entry/deepening policy");
 });
 

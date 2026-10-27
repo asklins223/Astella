@@ -241,14 +241,14 @@ test("失败留档：本轮真落库过的非笔记写也要点名，不漏成�
   const { workspaceId, userId } = await seedBase();
   const s = await seedRun(workspaceId, userId, "failed");
   const drop = await seedSucceededCall(workspaceId, userId, s.cid, s.runId,
-    "companion_save_participation", "reversible_low");
+    "attention.write.save_participation", "reversible_low");
   try {
     assert.equal(await persistFailedPartial({ workspaceId, userId, conversationId: s.cid,
       runId: s.runId, deliveredText: DELIVERED }), true);
     const text = (await readPartial(workspaceId, userId, s.cid, s.runId)).messages[0].text;
     assert.ok(text.startsWith(DELIVERED), "用户看过的那段字仍然在");
     assert.match(text, /已经做成的操作仍然保留/, "点了名的落库操作必须出现在留档里");
-    assert.match(text, /正在记住我们的相处方式|companion_save_participation/,
+    assert.match(text, /正在记住我们的相处方式|attention.write.save_participation/,
       "点名的必须是本轮真做成那件事（用界面同一份标签），不是泛泛一句「有操作」");
   } finally {
     await drop();
@@ -261,7 +261,7 @@ test("失败留档：只有读操作时不点名任何成果", async () => {
   const { workspaceId, userId } = await seedBase();
   const s = await seedRun(workspaceId, userId, "failed");
   const drop = await seedSucceededCall(workspaceId, userId, s.cid, s.runId,
-    "companion_read_note", "read");
+    "notes.read.read", "read");
   try {
     assert.equal(await persistFailedPartial({ workspaceId, userId, conversationId: s.cid,
       runId: s.runId, deliveredText: DELIVERED }), true);

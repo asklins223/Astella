@@ -38,20 +38,34 @@ test("超过 500 字的引用仍然核得回原文：不再因此判整份速看
   assert.equal(exactQuote(long, long), long);
 });
 
-test("核不上的那一条剔掉，同一段里已经核实的其他重点照留，并报出剔了几条", () => {
-  const blocks = new Map([
-    [0, { ordinal: 0, type: "text", content: SOURCE }],
-    [1, { ordinal: 1, type: "image", content: SOURCE }],
-  ]);
+test("核不上的那一条剔掉；引文在本段内的，按它真正所在的块重新锚定而不是整条丢掉", () => {
+  const blocks = [
+    { ordinal: 0, type: "text", content: SOURCE },
+    { ordinal: 1, type: "image", content: SOURCE },
+  ];
   const resolved = resolveOverviewPoints([
     { blockOrdinal: 0, quote: "把复习安排在快要忘记的时候", explanation: "复习时机比次数重要。" },
     { blockOrdinal: 0, quote: "这句话原文里根本没有出现过", explanation: "编出来的。" },
-    { blockOrdinal: 1, quote: "把复习安排在快要忘记的时候", explanation: "图片段不是可引用原文。" },
+    { blockOrdinal: 1, quote: "把复习安排在快要忘记的时候", explanation: "块号报成了图片段，引文仍是正文。" },
     { blockOrdinal: 9, quote: "把复习安排在快要忘记的时候", explanation: "这一段不在本段范围里。" },
-  ], (ordinal) => blocks.get(ordinal));
-  assert.equal(resolved.points.length, 1, "只留核得回原文的那一条");
-  assert.equal(resolved.points[0]!.quote, "把复习安排在快要忘记的时候");
-  assert.equal(resolved.dropped, 3, "剔掉几条要能报出来，否则少给的重点是无声的");
+  ], blocks);
+  assert.equal(resolved.points.length, 3, "真实存在的引文都留下");
+  assert.equal(resolved.points[0]!.blockOrdinal, 0);
+  assert.equal(resolved.points[1]!.blockOrdinal, 0, "报错的块号被重新锚定到真正包含引文的块");
+  assert.equal(resolved.points[2]!.blockOrdinal, 0);
+  assert.equal(resolved.dropped, 1, "只有原文里根本没有的那条被剔掉");
+});
+
+test("列表项编号被当成段号时，三条引文都按真正所在的块留下", () => {
+  const list = "1. 今天联调通过了。\n2. 还有三个小问题。\n3. 明天继续。";
+  const resolved = resolveOverviewPoints([
+    { blockOrdinal: 1, quote: "1. 今天联调通过了。", explanation: "第一点。" },
+    { blockOrdinal: 2, quote: "2. 还有三个小问题。", explanation: "第二点。" },
+    { blockOrdinal: 3, quote: "3. 明天继续。", explanation: "第三点。" },
+  ], [{ ordinal: 0, type: "list", content: list }]);
+  assert.equal(resolved.points.length, 3);
+  assert.deepEqual(resolved.points.map((point) => point.blockOrdinal), [0, 0, 0]);
+  assert.equal(resolved.points[2]!.quote, "明天继续。", "短句也是这一段唯一能给的依据");
 });
 
 test("要点清单按原文顺序排，同一段同一句只留一条", () => {
@@ -86,6 +100,17 @@ test("行首编号与表格竖线不算内容差别：长文里这两类引文�
   // 真实形状：底本是渲染后的正文（竖线已剥），模型引的是原始 markdown（带竖线）。
   assert.equal(exactQuote("当前交流当前请求、相关记忆与方法明确长期要求", "当前交流 | 当前请求、相关记忆与方法 | 明确长期要求"),
     "当前交流当前请求、相关记忆与方法明确长期要求");
+});
+
+test("三行短笔记：整句引用与短解释照收，不拿长文的字数尺子量短文", () => {
+  const shortLine = "明天继续。";
+  assert.equal(exactQuote(shortLine, shortLine), shortLine, "底本不足 8 字时，整句就是它能提供的全部依据");
+  assert.equal(exactQuote("把复习安排在快要忘记的时候更有效。", "复习"), null, "长底本里的两个字仍然不收");
+  const parsed = parseOverviewChunk(JSON.stringify({
+    gist: "联调通过，剩两个问题。",
+    points: [{ blockOrdinal: 2, quote: "明天继续。", explanation: "收尾。" }],
+  }));
+  assert.equal(parsed.points[0]!.explanation, "收尾。", "短解释是内容判断，不是字数判断");
 });
 
 test("该拒的照拒：不是可核对的结构化内容、或者一条重点都没有", () => {

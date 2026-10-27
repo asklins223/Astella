@@ -23,6 +23,7 @@ import { sql, type SQL } from "drizzle-orm";
 import { pageReadableV1Schema } from "@astella/shared/companion-bridge-contracts";
 import { noteVisibleSqlText } from "@astella/shared/note-visibility";
 import { noteBlocksToPmNodes, pmNodesToNoteBlocks, type NoteDocBlockSpec } from "@astella/shared/note-doc-schema";
+import { noteBlockMarkdown } from "@astella/shared/note-markdown";
 import { ageLabel, PAGE_KIND_LABELS } from "../proactive/companion-here-and-now.ts";
 import { CompanionToolUnavailableError } from "./companion-tool-result.ts";
 
@@ -44,6 +45,7 @@ import {
 import type { CompanionDialogueHandlerContext, ReadContext } from "../turn/companion-dialogue-store.ts";
 
 export interface AgentEventContext {
+  flushThinking?: () => Promise<void>;
   ctx: CompanionDialogueHandlerContext;
   read: ReadContext;
   expiresAt: string;
@@ -68,10 +70,11 @@ export const NOTE_READ_MAX_CHARS = 3_000;
 export interface ReadPageBlock {
   readonly ordinal: number;
   readonly content: string;
+  readonly type?: NoteDocBlockSpec["type"];
 }
 
 export interface ReadPage {
-  readonly blocks: readonly { ordinal: number; blockIndex: number; content: string; startOffset: number; complete: boolean }[];
+  readonly blocks: readonly { ordinal: number; blockIndex: number; content: string; type?: NoteDocBlockSpec["type"]; startOffset: number; complete: boolean }[];
   readonly body: string;
   /** 本页实际读到的最后一个块序号；一块都没有时为 null。 */
   readonly endOrdinal: number | null;
@@ -144,7 +147,7 @@ export function paginateReadBlocks(blocks: readonly ReadPageBlock[], maxChars: n
     throw new Error("invalid read page budget or offset");
   }
   const parts: string[] = [];
-  const pageBlocks: Array<{ ordinal: number; blockIndex: number; content: string; startOffset: number; complete: boolean }> = [];
+  const pageBlocks: Array<ReadPage["blocks"][number]> = [];
   let used = 0;
   let endOrdinal: number | null = null;
   let blockTextTruncated = false;
@@ -166,8 +169,13 @@ export function paginateReadBlocks(blocks: readonly ReadPageBlock[], maxChars: n
     const safeTake = take < remaining.length && /[\uD800-\uDBFF]/.test(remaining.charAt(take - 1))
       ? take - 1 : take;
     const text = remaining.slice(0, safeTake);
-    pageBlocks.push({ ordinal: block.ordinal, blockIndex: block.ordinal - 1, content: text, startOffset: offset, complete: offset === 0 && safeTake === block.content.length });
-    parts.push(separator + text);
+    const complete = offset === 0 && safeTake === block.content.length;
+    pageBlocks.push({ ordinal: block.ordinal, blockIndex: block.ordinal - 1, content: text,
+      ...(block.type ? { type: block.type } : {}), startOffset: offset, complete });
+    // Editable content is also the exact conflict token. Simple list content
+    // intentionally has no bullets; keep its type and reconstruct Markdown in
+    // the reading body rather than presenting it as an ordinary paragraph.
+    parts.push(separator + (complete && block.type ? noteBlockMarkdown(block.type, text) : text));
     used += separator.length + text.length;
     endOrdinal = block.ordinal;
     if (safeTake < remaining.length) {
@@ -266,7 +274,7 @@ export async function loadNoteReadPage(
   ));
   // 分页与续读指针在装载半里完成（组合点只有这一处）：工具与集测看到的是同一页。
   const page = paginateReadBlocks(
-    editableBlocks.map((block, index) => ({ ordinal: index + 1, content: block.content }))
+    editableBlocks.map((block, index) => ({ ordinal: index + 1, type: block.type, content: block.content }))
       .filter(block => block.ordinal >= input.startOrdinal),
     input.maxChars,
     input.startOffset,
@@ -372,7 +380,7 @@ export interface NoteReadRow extends Record<string, unknown> {
   age_minutes: number;
 }
 
-/** 一张可被 `companion_read_image` / `companion_show_image` 取到的图。 */
+/** 一张可被 `visual.read_image` / `visual.show_image` 取到的图。 */
 export interface ImageAssetRow extends Record<string, unknown> {
   id: string;
   object_key: string;
@@ -387,7 +395,7 @@ export interface ImageAssetRow extends Record<string, unknown> {
  * 按 assetId 或「noteId + 第几张」取一张图，并带回**这篇一共有几张**。
  *
  * 读图与显示图共用这一条查询，所以两边对"哪一张"的理解必须一致：
- * `position` 与 `companion_read_note` 回传的 `imageAssetIds` 同一排序
+ * `position` 与 `notes.read.read` 回传的 `imageAssetIds` 同一排序
  * （created_at DESC, id），她拿着那个列表说"第 2 张"才真的是第 2 张。
  *
  * 两个 id 都可能是模型编的，所以取字节的唯一途径是**我们自己库里的行**：
@@ -459,7 +467,7 @@ export interface ActivityRow extends Record<string, unknown> {
  * `companion_recommend_learning` 的结果（纯函数，便于测）。
  *
  * 为什么这一族要单独存在（2026-10-14，用户原话「只做介绍，不给我一个可以跳转的卡片式消息」）：
- * `companion_search_notes` 只回 noteId，而运行时只在工具带回 `route` 时才生成落点块；
+ * `notes.read.search` 只回 noteId，而运行时只在工具带回 `route` 时才生成落点块；
  * 带 route 的那几条（open_note/open_card/open_page）在 full 档会**真的换屏**。
  * 于是"推荐五样"要么一条都点不动，要么连跳五次——她两头都不该被选中，实际选了闭嘴念一段介绍。
  *
@@ -488,7 +496,7 @@ export function recommendationToolResult(
   rows: readonly RecommendedLearningRow[],
 ): { value: Record<string, unknown>; blocks: CompanionRecommendationBlockV1[]; safeSummary: string } {
   // 她递来的 id 与表里的键对不上是常态：学习卡的到期列表 id 可能是 objective_id
-  // （`companion_open_card` 的别名规则），所以卡片按两个键都认，落点仍用查回来的真 card_id。
+  // （`open.card` 的别名规则），所以卡片按两个键都认，落点仍用查回来的真 card_id。
   const byRequestedId = new Map<string, RecommendedLearningRow>();
   for (const row of rows) {
     if (row.source === "card") {
@@ -567,7 +575,7 @@ function recommendationRoute(
 }
 
 /**
- * `companion_read_current_page` 的结果（纯函数，便于测）。
+ * `observe.current_page` 的结果（纯函数，便于测）。
  *
  * 三件事是这条工具的存在理由，缺一条它就会重新变成"真而无关的答案"：
  *

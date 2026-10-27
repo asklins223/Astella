@@ -48,7 +48,8 @@ const generatedDraftFields = z.strictObject({
   relationship: z.string().trim().min(12).max(500),
   sourceReferences: z.array(z.strictObject({
     blockOrdinal: z.number().int().min(0).max(100_000),
-    quote: z.string().trim().min(8).max(320),
+    // 字数下限交给引用核对：底本不足 8 个字时整句就是全部来处，不在合同里先判死。
+    quote: z.string().trim().min(1).max(320),
   })).min(1).max(3),
   blocks: z.array(z.strictObject({
     type: z.enum(["paragraph", "heading", "code", "list", "quote"]),
@@ -103,7 +104,8 @@ function parseResponse(raw: string) {
 
 /**
  * 引文核对的唯一一份在 `note-grounding-source.ts`（脑图/速看/拓展共用）；
- * 拓展这一档保留自己原有的两条：至少 8 个字、按小写比对（素材里英文缩写大小写不稳定）。
+ * 拓展这一档保留自己原有的两条：至少 8 个字（短段降到 4 个字，见 `exactQuote`）、
+ * 按小写比对（素材里英文缩写大小写不稳定）。
  */
 function findExactQuote(blockText: string, candidate: string): string | null {
   return quoteFromSource(blockText, candidate, { minNeedleChars: 8, caseInsensitive: true });
@@ -329,6 +331,9 @@ export async function runNoteExpansionGenerate(job: JobPayload): Promise<void> {
       promptVersion: `${provider.promptVersion}:note-expansion-candidate-v1`,
       resourceClass: "interactive_ai",
       timeoutMs: resolveProviderCallTimeout("note_expansion_generate"),
+      // 修正那一发（retryIndex>0）需要真的被允许：没有这份预算，repair 分支永远走不到。
+      maxModelCalls: 2,
+      maxAutoRetries: 1,
       isOutputShapeError: (error) => error instanceof NoteExpansionOutputError,
       execute: async (request, signal, retryIndex) => {
         await agentContext.reserveModelCall();
@@ -398,6 +403,40 @@ export async function runNoteExpansionGenerate(job: JobPayload): Promise<void> {
     generationParameters,
     messages,
   });
+  const sourceByOrdinal = new Map(source.blocks.map((block) => [block.ordinal, block]));
+  /**
+   * Quote grounding is part of the output contract, not a post-step. Keeping it
+   * outside `execute` meant a structurally valid draft with one ungrounded quote
+   * failed the whole job without using the repair attempt.
+   */
+  const draftsFromResponse = (value: ReturnType<typeof parseResponse>): NoteExpansionDraftV1[] =>
+    value.drafts.map((draft) => {
+      const references = draft.sourceReferences.map((reference) => {
+        const sourceBlock = sourceByOrdinal.get(reference.blockOrdinal);
+        const quote = sourceBlock ? findExactQuote(noteBlockRenderedTextV1(sourceBlock.type, sourceBlock.content), reference.quote) : null;
+        if (!quote) throw new NoteExpansionOutputError("拓展关系没有可核对的原文来处");
+        return { blockOrdinal: reference.blockOrdinal, quote };
+      });
+      try {
+        return noteExpansionDraftV1Schema.parse({
+          candidateId: randomUUID(),
+          requestId: randomUUID(),
+          title: draft.title,
+          relationship: draft.relationship,
+          sourceReferences: references,
+          blocks: draft.blocks,
+          selected: false,
+        });
+      } catch (error) {
+        // A field-level mismatch is still a repairable output shape. Treating it
+        // as an unknown ZodError skipped the in-job repair attempt and spent a
+        // whole job retry instead.
+        if (error instanceof z.ZodError) {
+          throw new NoteExpansionOutputError(`拓展草稿字段不符合约定（${issueFields(error)}）`);
+        }
+        throw error;
+      }
+    });
   let draftRejected: { readonly output: string; readonly reason: string } | null = null;
   const generated = await runWorkerAiTask({
     job,
@@ -411,6 +450,9 @@ export async function runNoteExpansionGenerate(job: JobPayload): Promise<void> {
     promptVersion: `${provider.promptVersion}:note-expansion-draft-v3`,
     resourceClass: "interactive_ai",
     timeoutMs: resolveProviderCallTimeout("note_expansion_generate"),
+    // 同上：草稿这一发的修正重试也要有模型调用额度。
+    maxModelCalls: 2,
+    maxAutoRetries: 1,
     isOutputShapeError: (error) => error instanceof NoteExpansionOutputError,
     execute: async (request, signal, retryIndex) => {
       // 每次真正调用模型前重新占一次目标预算：模型在事务外跑，目标可能已被
@@ -422,9 +464,11 @@ export async function runNoteExpansionGenerate(job: JobPayload): Promise<void> {
           : request,
         generationParameters, signal);
       try {
+        const parsed = parseResponse(response.content);
+        draftsFromResponse(parsed);
         return {
           ok: true,
-          output: parseResponse(response.content),
+          output: parsed,
           promptTokens: response.usage?.promptTokens ?? undefined,
           completionTokens: response.usage?.completionTokens ?? undefined,
         };
@@ -436,24 +480,7 @@ export async function runNoteExpansionGenerate(job: JobPayload): Promise<void> {
       }
     },
   });
-  const sourceByOrdinal = new Map(source.blocks.map((block) => [block.ordinal, block]));
-  const drafts: NoteExpansionDraftV1[] = generated.drafts.map((draft) => {
-    const references = draft.sourceReferences.map((reference) => {
-      const sourceBlock = sourceByOrdinal.get(reference.blockOrdinal);
-      const quote = sourceBlock ? findExactQuote(noteBlockRenderedTextV1(sourceBlock.type, sourceBlock.content), reference.quote) : null;
-      if (!quote) throw new NoteExpansionOutputError("拓展关系没有可核对的原文来处");
-      return { blockOrdinal: reference.blockOrdinal, quote };
-    });
-    return noteExpansionDraftV1Schema.parse({
-      candidateId: randomUUID(),
-      requestId: randomUUID(),
-      title: draft.title,
-      relationship: draft.relationship,
-      sourceReferences: references,
-      blocks: draft.blocks,
-      selected: false,
-    });
-  });
+  const drafts: NoteExpansionDraftV1[] = draftsFromResponse(generated);
 
   await withJobTransaction(job, async (tx) => {
     await lockJobLease(tx, job);

@@ -52,7 +52,7 @@ export async function executeCompanionShareNote(
     const rows = await withWorkerWorkspaceTransaction(scope, tx => tx.execute<{ result_ref: string | null; status: string }>(sql`
       SELECT result_ref,status FROM companion_agent_tool_calls WHERE run_id=${event.read.runId}
         AND tool_call_id=${callId} AND workspace_id=${scope.workspaceId} AND user_id=${scope.userId}
-        AND name='companion_share_note'`));
+        AND name='notes.write.share'`));
     const row = (Array.isArray(rows) ? rows : [])[0];
     if (row?.result_ref) return companionShareStepResult(JSON.parse(row.result_ref));
     if (!row || row.status !== "executing")

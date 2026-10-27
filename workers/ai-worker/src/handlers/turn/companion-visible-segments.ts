@@ -55,7 +55,9 @@ export function joinVisibleSegmentsDeduped(
       continue;
     }
     const key = segment.trim();
-    if (key.length >= 8 && keptKeys.has(key) && !delivered[index]) {
+    // Repeat the same segment (even if it was already streamed) is one answer,
+    // not two. Keep the first occurrence and drop later copies.
+    if (key.length >= 8 && keptKeys.has(key)) {
       dropped.push(segment);
       continue;
     }

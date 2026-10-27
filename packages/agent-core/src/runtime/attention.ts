@@ -1,6 +1,7 @@
 import { agentTurnInterpretationProposalV1Schema, agentTurnInterpretationV1Schema,
   type AgentAttentionObjectV1, type AgentTurnInterpretationV1 } from "@astella/shared/agent-contracts";
 import { getAgentCapability } from "@astella/shared/agent-capability-catalog";
+import { companionOperationDomainTool } from "@astella/shared";
 
 /** Bind only host-supplied identities. Old context explains a pronoun but does
  * not restore an earlier execution instruction or confer new authority. */
@@ -34,7 +35,13 @@ export function resolveAgentTurnInterpretation(proposal: unknown, input: {
   // model describes the action with the word "control".
   const domainOperationOnly = value.candidateOperations.length > 0
     && value.candidateOperations.every(name => input.capabilities.includes(name)
-      && getAgentCapability(name) && getAgentCapability(name)!.executor !== "goal_control");
+      && (() => {
+        // Background-goal operations keep requiring a real run identity even
+        // though they now arrive through the goals domain tool.
+        if (name.startsWith("goals.")) return false;
+        const capability = getAgentCapability(companionOperationDomainTool(name) ?? name);
+        return capability !== undefined && capability.executor !== "goal_control";
+      })());
   const voiceControlOnly = value.toolUse === "none" && value.candidateOperations.length === 0
     && (value.voiceStyle.decision !== "none" || value.voiceStyle.persistentPreference.action !== "keep");
   const goalRelation = value.goalObjectIndex === undefined && (domainOperationOnly || voiceControlOnly)
@@ -62,14 +69,24 @@ export function resolveAgentTurnInterpretation(proposal: unknown, input: {
         ? { action: "clear" as const, dialect: null }
         : { action: "keep" as const, dialect: null },
   };
-  const conversational = value.intent === "conversation" || (value.intent === "question" && value.toolUse === "none");
+  // Intent, tool use, candidates and goal relation are independent observations.
+  // A conversational label cannot erase operations the interpreter actually
+  // named, and an ambiguity about one subject cannot demote an unrelated act.
+  // Only an act that cannot name any valid operation (or whose goal identity is
+  // missing) loses execution confidence; a valid independent candidate survives.
+  const conversationOnly = value.intent === "conversation" && value.toolUse === "none";
+  const unresolvedTaskReference = ["control", "continue", "revise", "discuss", "unclear"].includes(goalRelation)
+    && !goalReference;
+  const toolUse = conversationOnly ? "none" as const
+    : value.toolUse === "act" && (candidateOperations.length === 0 || unresolvedTaskReference)
+      ? "uncertain" as const : value.toolUse;
   const { goalObjectIndex: _index, subjects: _subjects, ...fields } = value;
   return agentTurnInterpretationV1Schema.parse({ ...fields, pendingOfferIndexes, version: 1, requestHash: input.requestHash,
     voiceStyle, ...(executionConstraints ? { executionConstraints } : {}),
-    subjects, goalReference: conversational || goalRelation === "unrelated" || goalRelation === "new" ? null : goalReference,
-    goalRelation: conversational ? "unrelated" : goalRelation,
-    candidateOperations: conversational ? [] : candidateOperations,
-    toolUse: conversational ? "none" : ambiguities.length && value.toolUse === "act" ? "uncertain" : value.toolUse,
-    ambiguities: [...new Set(ambiguities)], status: ambiguities.length || value.toolUse === "uncertain" ? "uncertain" : "interpreted",
+    subjects, goalReference: conversationOnly || goalRelation === "unrelated" || goalRelation === "new" ? null : goalReference,
+    goalRelation: conversationOnly ? "unrelated" : goalRelation,
+    candidateOperations: conversationOnly ? [] : candidateOperations,
+    toolUse,
+    ambiguities: [...new Set(ambiguities)], status: ambiguities.length || toolUse === "uncertain" ? "uncertain" : "interpreted",
   });
 }

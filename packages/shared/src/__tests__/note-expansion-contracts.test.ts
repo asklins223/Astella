@@ -6,6 +6,7 @@ import {
   noteExpansionDraftV1Schema,
   noteExpansionLinkV1Schema,
   noteExpansionListQueryV1Schema,
+  noteExpansionReferenceV1Schema,
   noteExpansionReviewV1Schema,
 } from "../contracts/note/note-expansion-contracts.ts";
 
@@ -60,6 +61,8 @@ describe("note expansion contracts", () => {
 
   it("keeps candidate citations and review edits bounded and separate from confirmation", () => {
     assert.equal(noteExpansionDraftV1Schema.parse(draft).selected, false);
+    assert.equal(noteExpansionReferenceV1Schema.safeParse({ blockOrdinal: 0, quote: "明天继续" }).success, true,
+      "短笔记里的短句也应能成为逐字来处");
     assert.equal(noteExpansionDraftV1Schema.safeParse({ ...draft, sourceReferences: [] }).success, false);
     assert.equal(noteExpansionDraftV1Schema.safeParse({ ...draft, blocks: [{ type: "paragraph", content: "字".repeat(20_001) }] }).success, false);
     assert.equal(noteExpansionReviewV1Schema.parse({

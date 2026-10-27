@@ -16,13 +16,15 @@ import test from "node:test";
 
 import { COMPANION_AGENT_TOOL_DEFINITIONS, getAgentCapability } from "@astella/shared/companion-agent-registry";
 
-const definition = COMPANION_AGENT_TOOL_DEFINITIONS.find((d) => d.name === "companion_read_diary");
+// The model sees one memory tool; `diary` is an action on it.
+const definition = COMPANION_AGENT_TOOL_DEFINITIONS.find((d) => d.name === "companion_memory_read");
 
 test("读回工具存在，且参数正好是引用里的两样", () => {
-  assert.ok(definition, "companion_read_diary 没注册");
-  const props = definition!.parameters.properties as Record<string, unknown>;
-  assert.deepEqual(Object.keys(props).sort(), ["date", "expectedVersion"]);
-  assert.deepEqual([...(definition!.parameters.required ?? []) as string[]].sort(), ["date", "expectedVersion"]);
+  assert.ok(definition, "companion_memory_read 没注册");
+  const props = definition!.parameters.properties as Record<string, { enum?: string[] }>;
+  assert.ok(props.action.enum?.includes("diary"), "memory.read 的 action 里没有 diary");
+  assert.ok("date" in props && "expectedVersion" in props,
+    "读日记的 date/expectedVersion 必须挂在同一个域工具的参数上");
 });
 
 test("**没有** workspaceId 参数 —— 模型不能指定读哪一篇", () => {
@@ -38,15 +40,15 @@ test("版本必须显式给出 —— 不能悄悄拿新版顶替用户看到的
   // 不因后台重跑静默替换。所以"用户看到的那一版"是稳定的，版本对不上
   // 就是一个**真问题**，应当说出来而不是换一篇顶上。
   const props = definition!.parameters.properties as Record<string, { minimum?: number }>;
-  assert.equal(props.expectedVersion?.minimum, 1);
+  assert.equal(props.expectedVersion?.minimum, 1, "日记读回仍要求显式版本");
 });
 
 test("工具说明要求区分「写了什么 / 实际发生了什么 / 她的主观表达」", () => {
   // §6：「回答区分『文中确实这样写了』『当时实际发生了什么』『那是她的主观表达』」
   // A09：用户问角色想象是否发生，要区分作品与真实事件。
   // 这条是「读到之后怎么讲」的纪律，归场景指引（方案 52 §4.1：一句话只有一个家）。
-  const guidance = (getAgentCapability("companion_read_diary")!.sceneGuidance!.shared ?? []).join("\n");
-  assert.match(guidance, /区分三件事/);
+  const guidance = (getAgentCapability("companion_memory_read")!.sceneGuidance?.shared ?? []).join("\n");
+  assert.match(guidance, /区分记录、当时发生的事和主观表达/);
   assert.match(guidance, /主观表达/);
 });
 
@@ -55,7 +57,7 @@ test("【自证】判据认得出「让用户复制全文」这个真实退化",
   const copyFullText = { uiAction: "复制全文粘贴给我", hasReference: false };
   assert.equal(copyFullText.hasReference, false, "自证样本没造好");
   // 正控制：判据确实读到了注册表里的那一条，不是空转。
-  assert.ok(definition, "自证：注册表里确实有 companion_read_diary");
+  assert.ok(definition, "自证：注册表里确实有 companion_memory_read");
   assert.equal(Object.keys(
     definition!.parameters.properties as Record<string, unknown>,
   ).includes("workspaceId"), false, "自证：确实没有 workspaceId");

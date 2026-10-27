@@ -22,13 +22,35 @@ export async function assertCompanionHandoffSourcesCurrent(
   tx: AgentSqlExecutor,
   scope: AgentScopeV1,
   snapshot: Pick<CompanionContextHandoffSnapshotV1, "memoryRefs" | "memoryDirectory" | "memorySourceVersions">,
+  options: {
+    allowMissingIds?: ReadonlySet<string> | readonly string[];
+    allowRevisions?: ReadonlyMap<string, number>;
+  } = {},
 ): Promise<void> {
   const visibleIds = [...snapshot.memoryRefs, ...(snapshot.memoryDirectory ?? [])].map(source => source.memoryId);
   // An old snapshot with memory text but no version cannot prove freshness.
   const parsed = agentMemoryContextSourceV1Schema.array().max(MAX_MEMORY_SOURCE_VERSIONS).safeParse(snapshot.memorySourceVersions ?? []);
   if (!parsed.success || visibleIds.some(id => !parsed.data.some(source => source.memoryId === id))
-    || !(await agentMemoryContextSourcesCurrent(tx, scope, parsed.data)))
+    || !(await agentMemoryContextSourcesCurrent(tx, scope, parsed.data, options)))
     throw new CompanionContextChangedError();
+}
+
+/** Writes this run performed itself: their effects are the confirmed action, not user drift. */
+async function memoryWritesByRun(tx: AgentSqlExecutor, scope: AgentScopeV1, runId: string) {
+  const rows = await queryRows<{ name: string; id: string | null; revision: number | null }>(tx, sql`
+    SELECT name, arguments->>'memoryId' AS id,
+           CASE WHEN name='memory.write.revise'
+             THEN (result_payload->'json'->'value'->>'revision')::int END AS revision
+      FROM companion_agent_tool_calls
+     WHERE run_id=${runId} AND workspace_id=${scope.workspaceId} AND user_id=${scope.userId}
+       AND status='succeeded' AND name IN ('memory.write.forget','memory.write.revise')
+  `);
+  const missing = rows.filter(row => row.name === "memory.write.forget" && row.id)
+    .map(row => row.id as string);
+  const revisions = new Map(rows.filter(row => row.name === "memory.write.revise" && row.id
+    && Number.isFinite(Number(row.revision)))
+    .map(row => [row.id as string, Number(row.revision)] as const));
+  return { missing, revisions };
 }
 
 /** Reused at provider reservation, stream flush and final commit. The checks
@@ -64,7 +86,7 @@ export async function assertCompanionContextSourcesCurrent(tx: AgentSqlExecutor,
         AND user_id=${scope.userId} AND entry_key=${selfNote.key}
         AND (revision=${selfNote.revision ?? 0} OR EXISTS(SELECT 1 FROM companion_agent_tool_calls tc
           WHERE tc.run_id=${runId} AND tc.status='succeeded'
-            AND (CASE WHEN tc.name IN ('companion_write_self_note','companion_schedule_wake') AND tc.result_ref IS NOT NULL
+            AND (CASE WHEN tc.name IN ('persona.write.self_note','attention.write.schedule_wake') AND tc.result_ref IS NOT NULL
               THEN tc.result_ref::jsonb ELSE NULL END)->'selfNote'=jsonb_build_object('key',entry_key,'revision',revision)))
         AND NOT user_disabled AND tier<>'archived'
         AND (expires_at IS NULL OR expires_at>now())`);
@@ -93,5 +115,9 @@ export async function assertCompanionContextSourcesCurrent(tx: AgentSqlExecutor,
   `);
   // Budget-only callers have no prompt snapshot. The dialogue host always
   // commits its snapshot before reaching an actual provider boundary.
-  if (saved) await assertCompanionHandoffSourcesCurrent(tx, scope, saved.snapshot);
+  if (saved) {
+    const ownWrites = await memoryWritesByRun(tx, scope, runId);
+    await assertCompanionHandoffSourcesCurrent(tx, scope, saved.snapshot,
+      { allowMissingIds: ownWrites.missing, allowRevisions: ownWrites.revisions });
+  }
 }

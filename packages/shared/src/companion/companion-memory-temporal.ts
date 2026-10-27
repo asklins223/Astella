@@ -30,15 +30,18 @@ const FINITE_WINDOW_SIGNAL = /(今天|今日|今晚|明天|后天|本周|这周|
 export function resolveCompanionMemoryTemporalMetadata(
   input: CompanionMemoryTemporalMetadataInput,
 ): CompanionMemoryTemporalMetadataResolution {
-  if (input.sourceQuote == null && (input.appliesWhen != null || input.validUntil != null)) {
+  // A paraphrased applicability condition narrows or widens the stored memory.
+  // When the user's own quote is verified but that paraphrase is not verbatim,
+  // drop the condition and keep the explicitly requested memory. A deadline is
+  // different: inventing one changes when the record expires, so it stays strict.
+  const appliesWhen = input.sourceQuote != null && input.appliesWhen != null
+    && !input.sourceQuote.includes(input.appliesWhen) ? null : input.appliesWhen ?? null;
+  if (input.sourceQuote == null && input.validUntil != null) {
     return { ok: false, reason: "missing_source_quote" };
   }
   const sourceQuote = input.sourceQuote ?? input.content;
   if (input.sourceQuote != null && !input.sourceText.includes(sourceQuote)) {
     return { ok: false, reason: "unverified_source_quote" };
-  }
-  if (input.appliesWhen != null && !sourceQuote.includes(input.appliesWhen)) {
-    return { ok: false, reason: "unverifiable_applies_when" };
   }
   if (input.validUntil != null && !sourceQuote.includes(input.validUntil)) {
     return { ok: false, reason: "unverifiable_valid_until" };
@@ -63,7 +66,7 @@ export function resolveCompanionMemoryTemporalMetadata(
   }
   return {
     ok: true,
-    appliesWhen: input.appliesWhen ?? null,
+    appliesWhen,
     validUntil: input.validUntil ?? null,
   };
 }

@@ -33,29 +33,34 @@ test("核心工具都在真实目录里", () => {
   for (const name of COMPANION_CORE_TOOL_NAMES) assert.ok(available.includes(name), name);
 });
 
-test("初始工具面 = 核心 + 当前页面组，远小于 65 个", () => {
+test("初始工具面 = 核心 + 当前页面组 + 高频动作，远小于 65 个", () => {
   const note = resolveCompanionInitialToolNames({ availableToolNames: available, pageKind: "note" });
-  assert.ok(note.has("companion_read_note"));
+  assert.ok(note.has("companion_notes_read"));
   assert.ok(note.has("companion_load_tools"));
+  assert.ok(note.has("companion_notes_write"), "高频写动作不随意图分类进出工具面");
   assert.ok(!note.has("agent_web_search"), "笔记页不默认背联网工具");
-  assert.ok(note.size >= 12 && note.size < 30, `笔记页工具数=${note.size}`);
+  assert.ok(note.size >= 12 && note.size < 40, `笔记页工具数=${note.size}`);
   const home = resolveCompanionInitialToolNames({ availableToolNames: available, pageKind: "today" });
-  assert.ok(home.size < note.size, "首页比笔记页更窄");
+  assert.ok(home.size <= note.size, "页面组只能收窄，不能比笔记页更宽");
+  assert.ok(home.has("companion_observe"), "首页组保留学习统计");
+  assert.ok(note.has("companion_observe"), "观察域是跨页核心读能力，笔记页也保留");
+  assert.ok(note.has("companion_visual"), "笔记页保留图片能力");
 });
 
-test("候选操作只能加组，不能减掉核心或页面组", () => {
+test("候选操作不再增删工具面；能力由声明与 load_tools 决定", () => {
   const base = resolveCompanionInitialToolNames({ availableToolNames: available, pageKind: "note" });
   const expanded = resolveCompanionInitialToolNames({ availableToolNames: available, pageKind: "note",
     candidateOperations: ["agent_web_search", "companion_schedule_reminder"] });
-  for (const name of base) assert.ok(expanded.has(name), `${name} 被候选操作挤掉了`);
-  assert.ok(expanded.has("agent_web_search"));
-  assert.ok(expanded.has("companion_schedule_reminder"));
+  assert.deepEqual([...expanded], [...base]);
+  assert.ok(!expanded.has("agent_web_search"), "分类候选不能替代模型自己的工具发现");
+  assert.ok(expanded.has("companion_load_tools"));
+  assert.ok(expanded.has("companion_finish"));
 });
 
 test("装载组解析与页面组声明是同一份", () => {
   assert.deepEqual(resolveCompanionToolGroupNames(["web"]), new Set(COMPANION_TOOL_GROUPS.web.tools));
   assert.deepEqual(resolveCompanionToolGroupNames(["missing-group"]), new Set());
-  assert.equal(companionToolGroupFor("companion_read_note"), "notes");
+  assert.equal(companionToolGroupFor("companion_notes_read"), "notes");
   assert.ok(companionPageToolGroups("note").includes("notes"));
   assert.deepEqual(companionPageToolGroups("unknown-page"), companionPageToolGroups("other"));
 });

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { getCompanionAgentTool } from "@astella/shared";
 import test from "node:test";
 
 /**
@@ -83,26 +84,25 @@ test("③ 落库的 payload 必须过 schema", () => {
   }
 });
 
-test("保存记忆的提案保留来源短引句、适用条件和有效期", () => {
-  const start = code.indexOf("companion_save_memory:");
-  const end = code.indexOf("companion_set_activeness:", start);
-  const branch = code.slice(start, end);
-  assert.ok(start >= 0 && end > start, "保存记忆工具的 proposal payload 映射缺失");
-  for (const field of ["sourceQuote", "appliesWhen", "validUntil"]) {
-    assert.ok(branch.includes(field), `提案 payload 丢失 ${field}`);
-  }
-});
+/**
+ * 记忆写入现在和别的写工具走同一条确认路（`agent_tool_review` 原样冻结参数），
+ * 所以「来源短引句、适用条件、期限」跟着 `arguments` 一起过确认，而不是另抄一份
+ * payload 映射——两份映射迟早会有一份漏字段。
+ */
+const REVIEW = join(import.meta.dirname, "../tools/companion-tool-review.ts");
+const reviewCode = readFileSync(REVIEW, "utf8")
+  .replace(/\/\*[\s\S]*?\*\//g, "")
+  .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
 
-test("修订记忆的提案保留 memoryId、expectedRevision 和显式修订字段", () => {
-  const start = code.indexOf("companion_revise_memory:");
-  const end = code.indexOf("companion_set_activeness:", start);
-  const branch = code.slice(start, end);
-  assert.ok(start >= 0 && end > start, "修订记忆工具的 proposal payload 映射缺失");
-  for (const field of ["memoryId", "expectedRevision", "content", "appliesWhen", "validFrom", "validUntil"]) {
-    assert.ok(branch.includes(field), `修订记忆提案 payload 丢失 ${field}`);
+test("记忆写入的确认提案原样冻结模型给的那份参数", () => {
+  assert.ok(/arguments: arguments_/.test(reviewCode),
+    "确认提案没有原样带上 arguments——确认后重放的那次调用就会和用户看到的不一样");
+  assert.ok(/kind: "agent_tool_review"/.test(reviewCode), "确认提案的 kind 不再是 agent_tool_review");
+  // 记忆域那几个字段必须一路被 schema 校验到，而不是成为自由形状。
+  const manifest = JSON.stringify(getCompanionAgentTool("companion_memory_write")?.parameters ?? "");
+  for (const field of ["sourceQuote", "appliesWhen", "validUntil", "memoryId", "expectedRevision"]) {
+    assert.ok(manifest.includes(field), `记忆写入的声明里丢了 ${field}`);
   }
-  assert.ok(/args\.appliesWhen !== undefined/.test(branch), "未提供的适用条件必须保留旧值，而不是被清空");
-  assert.ok(/args\.validUntil !== undefined/.test(branch), "未提供的期限必须保留旧值，而不是被清空");
 });
 
 test("【自证】判据会红：把 pending 那道闸抽掉必须被抓", () => {

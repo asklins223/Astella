@@ -648,8 +648,8 @@ function mergeAnimationVoiceOff(
 /**
  * 更新账号级 Companion 状态（global off / presence / suppression / 隐私控制）。
  * - revision 乐观锁：UPDATE ... WHERE revision = base，rowCount=0 → 409。
- * - global off（globalEnabled false）时 epoch 单调递增，并在同一 DB 事务内
- *   写入 PostgreSQL NOTIFY；账号 SSE 在各 API 进程内 fan-out 到 active devices。
+ * - 全局关闭或降低操作权限时 epoch 递增，撤销旧权限下尚未完成的运行。
+ *   全局关闭另在同一事务内 NOTIFY，账号 SSE 将关闭信号广播给 active devices。
  */
 export async function updateCompanionAccountState(
   userId: string,
@@ -727,6 +727,9 @@ export async function updateCompanionAccountState(
     const currentAgentSettings = parsedAgentSettings.success
       ? parsedAgentSettings.data
       : defaultAgentSettings();
+    const permissionRank = { read_only: 0, guided: 1, full: 2 } as const;
+    const permissionReduced = patch.agentPermissionLevel !== undefined
+      && permissionRank[patch.agentPermissionLevel] < permissionRank[currentAgentSettings.permissionLevel];
     const [updated] = await tx
       .update(userCompanionAccountState)
       .set({
@@ -754,7 +757,9 @@ export async function updateCompanionAccountState(
         // 见上方 globalOffApplied）。所有 active device session 的 surfaceEpoch
         // 落后即视为撤销，迟到的 Companion 结果一律丢弃；已经是 off 时重复关闭
         // 不递增、不重复广播（幂等），跨跃迁则继续单调递增。
-        epoch: globalOffApplied ? row.epoch + 1 : row.epoch,
+        // Revoking operation authority also fences already-running jobs and
+        // queued writes; their frozen full permission must not survive it.
+        epoch: globalOffApplied || permissionReduced ? row.epoch + 1 : row.epoch,
         updatedAt: now,
       })
       .where(and(

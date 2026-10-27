@@ -268,6 +268,9 @@ export const DESKTOP_IPC_CHANNELS = {
   authLogin: "astella.v1.auth.login",
   authRegister: "astella.v1.auth.register",
   authLogout: "astella.v1.auth.logout",
+  authRememberedAccount: "astella.v1.auth.rememberedAccount",
+  authResumeRemembered: "astella.v1.auth.resumeRemembered",
+  authForgetRemembered: "astella.v1.auth.forgetRemembered",
   authReauthenticate: "astella.v1.auth.reauthenticate",
   authChangePassword: "astella.v1.auth.changePassword",
   authJoinWorkspace: "astella.v1.auth.joinWorkspace",
@@ -1663,6 +1666,14 @@ export const authProfileResultV1Schema = z.strictObject({
 });
 export type AuthProfileResultV1 = z.infer<typeof authProfileResultV1Schema>;
 
+/** Only the account hint crosses preload; the credential remains owned by main. */
+export const rememberedDesktopAccountV1Schema = z.strictObject({
+  email: emailSchema,
+  displayName: z.string().max(32).nullable(),
+  avatarDataURL: z.string().max(14_000_100).regex(/^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/).nullable(),
+});
+export type RememberedDesktopAccountV1 = z.infer<typeof rememberedDesktopAccountV1Schema>;
+
 /** 头像上传、读取与缓存共用上限：10 MB。 */
 export const AVATAR_MAX_BYTES = 10 * 1024 * 1024;
 export const avatarGetResultV1Schema = sourceImageGetResultV1Schema.extend({
@@ -2297,11 +2308,14 @@ export interface AstellaDesktopApiM1 {
     restore(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<NavigationSnapshotV1>>;
   };
   readonly auth: {
+    getRememberedAccount(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<RememberedDesktopAccountV1 | null>>;
+    resumeRememberedAccount(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<SessionContextV1>>;
+    forgetRememberedAccount(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<{ forgotten: true }>>;
     getSurfaceManifest(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<AuthSurfaceManifestResultV1>>;
     getState(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<SessionContextV1>>;
     login(input: { meta: RequestMetaV1; email: string; password: string; remember: boolean }): Promise<GatewayResultV1<SessionContextV1>>;
     register(input: { meta: RequestMetaV1; email: string; password: string; inviteToken?: string; displayName?: string; emailCode?: string; remember: boolean }): Promise<GatewayResultV1<SessionContextV1>>;
-    logout(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<{ loggedOut: true; serverRevoked: boolean }>>;
+    logout(input: { meta: RequestMetaV1; keepQuickLogin?: boolean }): Promise<GatewayResultV1<{ loggedOut: true; serverRevoked: boolean; quickLoginAvailable?: boolean }>>;
     reauthenticate(input: { meta: RequestMetaV1; password: string }): Promise<GatewayResultV1<SessionContextV1>>;
     changePassword(input: { meta: RequestMetaV1; commandId: string; currentPassword: string; newPassword: string }): Promise<GatewayResultV1<{ changed: true; sessionsRevoked: true }>>;
     /** 发一枚邮箱验证码；服务端限流失败也走 GatewayResult 的 error 分支。 */

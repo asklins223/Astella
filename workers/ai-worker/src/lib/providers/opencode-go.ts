@@ -679,8 +679,12 @@ export class OpenCodeGoProvider implements AIProvider {
    *   （不支持 none 的模型落到它自己的最低档）；未声明档位时用网关缺省的 minimal；
    * - 未声明 `reasoning` → 不下发该字段，用网关默认。
    */
-  private reasoningField(perCallDisableThinking: boolean): Record<string, unknown> {
+  private reasoningField(perCallDisableThinking: boolean, explicitEffort?: string): Record<string, unknown> {
     const reasoning = this.modelProfile?.reasoning;
+    // Explicit per-step effort wins, but only when the model declares that level.
+    if (explicitEffort && reasoning?.levels.includes(explicitEffort as never)) {
+      return { reasoning: { effort: explicitEffort } };
+    }
     if (perCallDisableThinking) {
       if (!reasoning) return { reasoning: { effort: "minimal" } };
       const off = OpenCodeGoProvider.EFFORT_ORDER.find((level) => reasoning.levels.includes(level));
@@ -765,7 +769,7 @@ export class OpenCodeGoProvider implements AIProvider {
     if (signal?.aborted) throw abortError(signal, "before request");
     const model = options.model ?? this.modelId;
     const { instructions, input } = buildChatInput(messages);
-    const reasoning = this.reasoningField(options.disableThinking ?? false);
+    const reasoning = this.reasoningField(options.disableThinking ?? false, options.reasoningEffort);
     const body: Record<string, unknown> = {
       model,
       input,
@@ -1120,6 +1124,7 @@ export class OpenCodeGoProvider implements AIProvider {
     }
     const reasoning = this.reasoningField(
       (request.disableThinking ?? false) || continuationGuard || requiredToolThinkingOff,
+      request.reasoningEffort,
     );
     const body: Record<string, unknown> = {
       model,

@@ -105,6 +105,7 @@ export function createCompanionStepCompaction(deps: CompanionStepCompactionDeps)
           request: { ...compactionRequest, messages: [...history?.messages ?? replay] },
           targetInputTokens: pressure.targetTokens,
           maxOutputTokens: companionStepOutputCeiling(compactionProvider),
+          skipWhenWithinTarget: true,
           ...(compactionProvider.countTextTokens ? { countTokens: (text: string) => compactionProvider.countTextTokens!(text) } : {}),
           summarize: createWorkingStateSummarizer(compactionProvider,
             { signal: deps.signal, deadlineAt: deps.deadlineAt }, sourceProgress("active_tool_rounds")),

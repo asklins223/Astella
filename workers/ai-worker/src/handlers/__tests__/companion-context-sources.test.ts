@@ -42,3 +42,12 @@ test("33+ memory sources parse fine — the bound is anti-malformed, not a fresh
     memorySourceVersions: many,
   });
 });
+
+test("后台精修推进版本不掐断这一轮；用户自己改写才掐断", async () => {
+  // Memory extraction/merge bumps revisions while a turn is in flight. Treating
+  // that as "the user changed the context" killed healthy turns (2026-10-26).
+  await assertCompanionHandoffSourcesCurrent(tx([{ id: memoryId, revision: 3, author_type: "extractor" }]), scope, snapshot);
+  await assertCompanionHandoffSourcesCurrent(tx([{ id: memoryId, revision: 3, author_type: "companion" }]), scope, snapshot);
+  await assert.rejects(assertCompanionHandoffSourcesCurrent(
+    tx([{ id: memoryId, revision: 3, author_type: "user" }]), scope, snapshot), CompanionContextChangedError);
+});

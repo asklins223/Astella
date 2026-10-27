@@ -1,4 +1,5 @@
-
+import type { RememberedDesktopAccountV1 } from "@astella/shared/desktop-ipc-contracts";
+export type QuickLoginCredential = RememberedDesktopAccountV1 & { origin: string; token: string };
 
 /** 凭据存储的能力；实现把凭据落在 userData 的本地文件里。 */
 export type SessionCredentialStore = {
@@ -7,4 +8,7 @@ export type SessionCredentialStore = {
     load(): Promise<string | null>;
     save(token: string): Promise<void>;
     clear(): Promise<void>;
+    loadRemembered?(): Promise<QuickLoginCredential | null>;
+    saveRemembered?(credential: QuickLoginCredential): Promise<void>;
+    clearRemembered?(): Promise<void>;
   };

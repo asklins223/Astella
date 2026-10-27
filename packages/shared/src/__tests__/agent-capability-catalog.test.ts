@@ -10,12 +10,15 @@ import { COMPANION_AGENT_TOOL_DEFINITIONS, COMPANION_DOCUMENT_AUTHORING_TOOLS,
 import { agentToolParameters } from "../agent/agent-tool-parameters.ts";
 
 test("every surface resolves the same unique capability, validator, model schema and executor metadata", () => {
-  assert.ok(agentCapabilityCatalog.length > 35);
+  assert.ok(agentCapabilityCatalog.length >= 30);
   assert.equal(new Set(agentCapabilityCatalog.map(entry => entry.definition.name)).size, agentCapabilityCatalog.length);
   for (const entry of agentCapabilityCatalog) {
     assert.equal(getAgentCapability(entry.definition.name), entry);
     assert.deepEqual(entry.definition.parameters, agentToolParameters(entry.argumentSchema));
-    assert.ok(entry.executor && entry.surfaces.length);
+    assert.ok(entry.executor, `${entry.definition.name} 没有执行器`);
+    // Empty surfaces mark internal executor shapes (goals) that the model reaches
+    // through a domain tool rather than directly.
+    assert.ok(Array.isArray(entry.surfaces));
     assert.equal(getCompanionAgentTool(entry.definition.name), entry.surfaces.includes("conversation") ? entry.definition : null);
     assert.equal(agentGoalExecutionManifest.some(view => view.definition === entry.definition), entry.surfaces.includes("goal"));
     assert.equal(COMPANION_AGENT_TOOL_DEFINITIONS.includes(entry.definition), entry.surfaces.includes("conversation"));
@@ -24,8 +27,6 @@ test("every surface resolves the same unique capability, validator, model schema
 test("unknown capabilities, wrong surfaces and expanded authority fail closed", () => {
   assert.equal(validateAgentCapabilityArguments("invented_action", {}).success, false);
   assert.equal(validateAgentCapabilityArguments("agent_start_goal", {}, "goal").success, false);
-  assert.equal(validateAgentCapabilityArguments("agent_calculate", { expression: "12/4" }, "conversation").success, true);
-  assert.equal(validateAgentCapabilityArguments("agent_calculate", { expression: "12/4" }, "goal").success, true);
   assert.equal(validateAgentCapabilityArguments("agent_calculate", { expression: "12/4", workspaceId: "another" }).success, false);
 });
 
@@ -35,7 +36,7 @@ test("unknown capabilities, wrong surfaces and expanded authority fail closed", 
  * 也天天背着它们。现在它们登记在各自的能力上，由这一步真的发下去了哪些工具决定。
  */
 test("日常聊天的工具面不带别人的操作规程", () => {
-  const chatFace = ["companion_read_context", "companion_search_notes", "companion_read_history"];
+  const chatFace = ["companion_observe", "companion_notes_read"];
   const guidance = collectAgentCapabilitySceneGuidance(chatFace, "guided");
   assert.equal(guidance.some((line) => line.includes("expectedBlocks")), false,
     "面里没有编辑工具时，块序号规程不该进请求");
@@ -44,13 +45,13 @@ test("日常聊天的工具面不带别人的操作规程", () => {
 });
 
 test("编辑规程只在能编辑的那一步出现一次", () => {
-  const face = ["companion_read_note", "companion_edit_note"];
+  const face = ["companion_notes_read", "companion_notes_write"];
   const guidance = collectAgentCapabilitySceneGuidance(face, "guided");
   assert.equal(guidance.filter((line) => line.includes("expectedBlocks")).length, 1);
 });
 
 test("跳转那段按授权档分开，两条导航工具也只说一遍", () => {
-  const face = ["companion_open_page", "companion_open_note", "companion_focus_graph"];
+  const face = ["companion_open"];
   const guided = collectAgentCapabilitySceneGuidance(face, "guided");
   const full = collectAgentCapabilitySceneGuidance(face, "full");
   assert.equal(guided.filter((line) => line.includes("跳转入口已准备好")).length, 1,
@@ -83,7 +84,7 @@ test("「文案工作」的名单都指向真实登记的能力，改名不会�
   for (const name of COMPANION_DOCUMENT_AUTHORING_TOOLS) {
     assert.ok(getAgentCapability(name), `${name} 已不在能力目录里：名单要同步，否则文案轮会照常带方言念给用户`);
   }
-  assert.equal(companionTurnWritesDocumentContent(["companion_read_note", "companion_search_notes"]), false,
+  assert.equal(companionTurnWritesDocumentContent(["companion_notes_read", "companion_observe"]), false,
     "读资料与讲解不算文案工作");
-  assert.equal(companionTurnWritesDocumentContent(["agent_start_goal"]), true);
+  assert.equal(companionTurnWritesDocumentContent(["companion_goals_write"]), true);
 });

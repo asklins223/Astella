@@ -6,7 +6,6 @@ import { companionStepToolShape } from "../tools/companion-tool-call-ledger.ts";
 import { companionStepRuntimePolicy } from "../turn/companion-step-plan.ts";
 import { companionContextAssemblyCapacity } from "../context/companion-context-receipts.ts";
 import { companionStepOutputCeiling } from "../turn/companion-dialogue-content.ts";
-import { webSearchServiceAvailable } from "../../agent/web-search.ts";
 import type { AIProvider } from "../../lib/ai-provider.ts";
 
 /**
@@ -19,17 +18,6 @@ import type { AIProvider } from "../../lib/ai-provider.ts";
 type AgentTurnTool = AgentTurnRequest["tools"][number];
 type AgentTurnMessage = AgentTurnRequest["messages"][number];
 
-/** 联网搜索这一步还能不能给：账号开关、外发政策、本轮额度、服务可用性，四样都要真。 */
-export function companionWebSearchAllowedForStep(input: {
-  accountEnabled: boolean;
-  constraintsEnabled: boolean;
-  limit: number | null | undefined;
-  used: number;
-}): boolean {
-  return input.accountEnabled === true && input.constraintsEnabled === true
-    && (input.limit == null || input.used < input.limit) && webSearchServiceAvailable();
-}
-
 /**
  * 工具面与 `tool_choice` **成对**算出来（判据在 `companionStepToolShape`：
  * `tools: []` 配 `required` 是 provider 直接 400 的那一对，2026-09-22 实测 3 次
@@ -37,13 +25,14 @@ export function companionWebSearchAllowedForStep(input: {
  */
 export function companionStepToolSurface(input: {
   toolDefinitions: AgentTurnTool[];
-  webSearchAllowedForStep: boolean;
   finalAnswerOnly: boolean;
   requiresTool: boolean;
   toolCallCount: number;
 }): { tools: AgentTurnTool[]; toolChoice: AgentTurnRequest["toolChoice"] } {
   return companionStepToolShape({
-    tools: input.toolDefinitions.filter(tool => tool.name !== "agent_web_search" || input.webSearchAllowedForStep),
+    // Search availability is enforced per action at execution: the web domain
+    // also reads documents, so removing the tool would drop that too.
+    tools: input.toolDefinitions,
     finalAnswerOnly: input.finalAnswerOnly,
     requiresTool: input.requiresTool,
     toolCallCount: input.toolCallCount,
@@ -51,12 +40,12 @@ export function companionStepToolSurface(input: {
 }
 
 /**
- * 原句批注与整篇交付两段场景指引：批注必须由 `companion_write_annotation` 独立交付，
+ * 原句批注与整篇交付两段场景指引：批注必须由 `companion_notes_write` 的 annotate 动作独立交付，
  * 保存回执即交付；笔记正文那一轮不能用分句发言代替完整正文。
  */
 function companionStepReplyShapeGuidance(writingAnnotation: boolean, completeNoteReply: boolean): string {
   if (writingAnnotation)
-    return "\n用户从原句发起了伴星解释。必须用 companion_write_annotation 独立写入完整解释；聊天正文不会保存成解释。原句身份已绑定，不需要再确认。需要上下文可以先读；完整写入即交付，final 默认 true，界面据保存回执立即结束。可以在同一次输出简短交流，不要在后续模型步骤重复解释或确认写完。只有用户要求的其他工作尚未完成时设 final=false。批注正文不带方言、语音标签、聊天前言或执行说明。";
+    return "\n用户从原句发起了伴星解释。必须用 companion_notes_write（action=annotate）独立写入完整解释；聊天正文不会保存成解释。原句身份已绑定，不需要再确认。需要上下文可以先读；完整写入即交付，final 默认 true，界面据保存回执立即结束。可以在同一次输出简短交流，不要在后续模型步骤重复解释或确认写完。只有用户要求的其他工作尚未完成时设 final=false。批注正文不带方言、语音标签、聊天前言或执行说明。";
   if (completeNoteReply)
     return "\n这轮正文会完整保存为笔记学习内容。用连续最终正文完整交付，不使用分句发言工具；前言和执行说明不能代替解释，不能只给一段等待后补。";
   return "";
@@ -97,9 +86,12 @@ export function assembleCompanionStepRequest(input: {
   executionGuidance: string;
   attention: AgentTurnInterpretationV1;
   messages: AgentTurnMessage[];
+  currentUserText?: string;
   tools: AgentTurnTool[];
   toolChoice: AgentTurnRequest["toolChoice"];
   disableThinking: boolean;
+  /** 本步思考档位；由运行时按已发生的事实决定。 */
+  reasoningEffort?: "none" | "low" | "medium" | "high";
   provider: AIProvider;
   temperature: number;
   prefetchedRequest?: AgentTurnRequest | null;
@@ -109,6 +101,9 @@ export function assembleCompanionStepRequest(input: {
     ["execution", { scope: { kind: "policy" }, content: [input.runtimePolicy, input.executionGuidance].filter(Boolean).join("\n") }],
     ["attention", { scope: { kind: "request" },
       content: ATTENTION_DATA_NOTE + JSON.stringify(input.attention).replaceAll("<", "\\u003c").replaceAll(">", "\\u003e") + "</current_turn_interpretation_data>" }],
+    ["current_request", { scope: { kind: "request" }, content: input.currentUserText
+      ? "本轮要回答的用户问题如下；刚读取的手记、历史中的题目和先前任务都是材料，不能替换这个问题。\n"
+        + JSON.stringify(input.currentUserText) : "" }],
   ]);
   return input.prefetchedRequest ?? {
     role: AgentRole.COMPANION_AGENT,
@@ -118,12 +113,14 @@ export function assembleCompanionStepRequest(input: {
         { id: "turn", authority: "policy", required: true },
         { id: "execution", authority: "policy", required: true },
         { id: "attention", authority: "data", required: true },
+        ...(input.currentUserText ? [{ id: "current_request", authority: "data" as const, required: true }] : []),
       ],
     }, stepContextSources).systemPrompt,
     messages: input.messages,
     tools: input.tools,
     toolChoice: input.toolChoice,
     disableThinking: input.disableThinking,
+    ...(input.reasoningEffort ? { reasoningEffort: input.reasoningEffort } : {}),
     /**
      * 这一步能说多少，**只由模型档案声明的输出上限**决定（2026-10-07 用户决定：
      * 这是 agent，不是单轮 chat，代码里不许留一个会把话砍断的小数）。provider 自己会按

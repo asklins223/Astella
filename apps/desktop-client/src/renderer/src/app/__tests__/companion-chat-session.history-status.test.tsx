@@ -233,7 +233,7 @@ describe("手记记录刷新与当前回复的状态归属", () => {
     const { sending } = await startSend();
     expect(chat.processRunId).toBe(id(6));
     emit("assistant.delta", { appendFrom: 0, textDelta: "我先查一下相关笔记。" });
-    const tool = { toolCallId: "read-one", name: "companion_read_note", safeLabel: "读取笔记" };
+    const tool = { toolCallId: "read-one", name: "notes.read.read", safeLabel: "读取笔记" };
     emit("agent.tool", { tool: { ...tool, status: "requested" } });
     expect(chat.nodes.filter(node => node.kind === "tool")).toHaveLength(1);
     expect(chat.draft?.text).toBe("我先查一下相关笔记。");

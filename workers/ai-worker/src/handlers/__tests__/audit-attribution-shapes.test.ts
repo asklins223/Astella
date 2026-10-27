@@ -32,7 +32,7 @@ function withoutComments(source: string): string {
 
 test("看图的审计行声明 image_content", () => {
   const code = withoutComments(readFileSync(join(WORKER_SRC, "handlers", "tools", "companion-tool-execution.ts"), "utf8"));
-  const at = code.indexOf('operation: "companion_read_image"');
+  const at = code.indexOf('operation: "visual.read_image"');
   assert.ok(at > 0, "没找到看图那次的 operation");
   // 审计上下文的对象字面量在 operation **之前**开括号，所以往回找最近的 `{`，
   // 再从那里向前配平。往回找 `at` 之后的 `{` 会一路跑到文件后面的别的对象上。

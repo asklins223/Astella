@@ -18,13 +18,13 @@ const available = resolveAllCompanionAgentTools("full", { visionEnabled: true, w
 
 test("明确分条消息请求从首步取得发言能力，普通分点回答和否定请求保持自然正文", () => {
   const definitions = resolveAllCompanionAgentTools("full", {});
-  for (const text of ["分两条跟我说：第一条问好，第二条问我想做什么。", "可以分几句跟我说，先问好，再问我想学什么。", "请调用 companion_publish_utterance 两次，最后 final=true。", "逐句发给我，先问好。"] ) {
+  for (const text of ["分两条跟我说：第一条问好，第二条问我想做什么。", "可以分几句跟我说，先问好，再问我想学什么。", "请调用 companion_say 两次，最后 final=true。", "逐句发给我，先问好。"] ) {
     assert.equal(explicitlyRequestsUtterances(text), true, text);
     const surface = createCompanionToolSurface({ definitions, pageKind: "home", candidateOperations: [], userText: text });
-    assert.ok(surface.offered().some(tool => tool.name === "companion_publish_utterance"));
-    assert.ok(companionClassifierCapabilities({ availableToolNames: available, pageKind: "home", userText: text }).includes("companion_publish_utterance"));
+    assert.ok(surface.offered().some(tool => tool.name === "companion_say"));
+    assert.ok(companionClassifierCapabilities({ availableToolNames: available, pageKind: "home", userText: text }).includes("companion_say"));
   }
-  for (const text of ["用两句话解释欧姆定律。", "请分点说说。", "不要分两条发给我，只说一句。", "companion_publish_utterance 是什么意思？"]) {
+  for (const text of ["用两句话解释欧姆定律。", "请分点说说。", "成功后分三条简短说明你核对了哪些内容。", "请逐条说明各个变化。", "不要分两条发给我，只说一句。", "companion_say 是什么意思？"]) {
     assert.equal(explicitlyRequestsUtterances(text), false, text);
   }
 });
@@ -34,62 +34,60 @@ test("普通对话也能从第一步分条发言，安静结束只给主动轮�
   const input = { definitions, pageKind: "home", candidateOperations: [] };
   const ordinary = createCompanionToolSurface(input).offered().map(tool => tool.name);
   const initiative = createCompanionToolSurface({ ...input, initiative: true }).offered().map(tool => tool.name);
-  assert.ok(ordinary.includes("companion_publish_utterance"), "普通对话里伴星也要能自己决定分条");
-  assert.equal(ordinary.includes("companion_finish_participation"), false);
-  for (const name of ["companion_publish_utterance", "companion_finish_participation"]) {
+  assert.ok(ordinary.includes("companion_say"), "普通对话里伴星也要能自己决定分条");
+  for (const name of ["companion_say"]) {
     assert.ok(initiative.includes(name), `${name} 不应再等一次装载往返`);
   }
-  assert.equal(initiative.includes("companion_create_note"), false);
+  assert.equal(initiative.includes("companion_notes_write"), false);
   const restricted = createCompanionToolSurface({ ...input, initiative: true,
-    definitions: definitions.filter(tool => tool.name !== "companion_publish_utterance") });
-  assert.equal(restricted.offered().some(tool => tool.name === "companion_publish_utterance"), false);
+    definitions: definitions.filter(tool => tool.name !== "companion_say") });
+  assert.equal(restricted.offered().some(tool => tool.name === "companion_say"), false);
 });
 
 test("明确的新笔记请求在第一次生成前准备授权的笔记能力，空候选不再造成先生成后拒绝", () => {
   for (const text of ["生成几篇历史笔记给我", "写三篇中国历史笔记"]) {
     const definitions = resolveAllCompanionAgentTools("full", {});
     const surface = createCompanionToolSurface({ definitions, pageKind: "home", candidateOperations: [], userText: text });
-    assert.ok(surface.offered().some(tool => tool.name === "companion_create_note"));
-    assert.ok(companionClassifierCapabilities({ availableToolNames: available, pageKind: "home", userText: text }).includes("companion_create_note"));
+    assert.ok(surface.offered().some(tool => tool.name === "companion_notes_write"));
+    assert.ok(companionClassifierCapabilities({ availableToolNames: available, pageKind: "home", userText: text }).includes("companion_notes_write"));
   }
   const readOnly = createCompanionToolSurface({ definitions: resolveAllCompanionAgentTools("read_only", {}), pageKind: "home", candidateOperations: [], userText: "生成三篇历史笔记" });
-  assert.ok(readOnly.offered().some(tool => tool.name === "companion_create_note"));
-  const definition = resolveAllCompanionAgentTools("read_only", {}).find(tool => tool.name === "companion_create_note")!;
+  assert.ok(readOnly.offered().some(tool => tool.name === "companion_notes_write"));
+  const definition = resolveAllCompanionAgentTools("read_only", {}).find(tool => tool.name === "companion_notes_write")!;
   assert.equal(canUseCompanionAgentTool("read_only", definition).requiresConfirmation, true);
 });
 
-test("新建笔记时收窄只看真正要做的事：分类器多给或给空，都不再放回无关核心组", () => {
+test("新建笔记只增加笔记能力，不裁掉同一句里的记忆或提醒能力", () => {
   const definitions = resolveAllCompanionAgentTools("full", {});
-  for (const candidateOperations of [[], ["companion_create_note"], ["companion_create_note", "companion_read_context"]] as const) {
-    const surface = createCompanionToolSurface({ definitions, pageKind: "home", candidateOperations, userText: "生成三篇中国历史笔记" });
+  for (const candidateOperations of [[], ["companion_notes_write"], ["companion_notes_write", "companion_observe"]] as const) {
+    const surface = createCompanionToolSurface({ definitions, pageKind: "home", candidateOperations, userText: "生成三篇中国历史笔记，再提醒我晚上九点复习" });
     const offered = surface.offered().map(tool => tool.name);
-    assert.ok(offered.includes("companion_create_note"), `候选 ${JSON.stringify(candidateOperations)} 丢了建笔记`);
-    assert.equal(offered.includes("companion_save_memory"), false, `候选 ${JSON.stringify(candidateOperations)} 又把记忆写回面里`);
+    assert.ok(offered.includes("companion_notes_write"), `候选 ${JSON.stringify(candidateOperations)} 丢了建笔记`);
+    assert.ok(offered.includes("companion_memory_write"), `候选 ${JSON.stringify(candidateOperations)} 裁掉了同一句里的记忆能力`);
+    assert.ok(offered.includes("companion_attention_write"), `候选 ${JSON.stringify(candidateOperations)} 裁掉了同一句里的提醒能力`);
   }
-  // 不是新建笔记的话，收窄不该发生：核心组照常给。
   const plain = createCompanionToolSurface({ definitions, pageKind: "home", candidateOperations: [], userText: "今天有点累" });
-  assert.ok(plain.offered().some(tool => tool.name === "companion_save_memory"));
+  assert.ok(plain.offered().some(tool => tool.name === "companion_memory_write"));
 });
 
-test("分类器只看这一轮会下发的工具面：核心 + 当前页组 + 装载器", () => {
+test("语义入口知道已授权的跨页读写能力，执行工具面仍按组展开", () => {
   const conversation = companionClassifierCapabilities({ availableToolNames: available, pageKind: "today" });
-  assert.ok(conversation.length >= 8 && conversation.length <= 24,
-    `分类器不该再拿全量目录，实际 ${conversation.length} 个`);
-  assert.ok(conversation.includes("companion_read_context"), "核心读取能力要在");
+  assert.deepEqual(conversation, available);
+  assert.ok(conversation.includes("companion_notes_write"));
+  assert.ok(conversation.includes("companion_observe"), "核心读取能力要在");
   assert.ok(conversation.includes("companion_load_tools"), "装载器必须始终可见，否则面会关死");
   assert.equal(conversation.includes("companion_switch_task_variant"), false,
     "冷门写工具不该出现在这一页的分类器载荷里");
 });
 
-test("分类器看不到的名字仍然可达：候选操作由运行时按目录展开组", () => {
+test("语义目录不授予新能力，也不受当前页或关键词控制", () => {
   const today = companionClassifierCapabilities({ availableToolNames: available, pageKind: "today" });
-  const full = available.length;
-  assert.ok(today.length < full, "这一页的切片必须小于全量目录");
-  // 装载器在、页组在 => 分类器即使点名面外工具，运行时仍能按组把它拉进来。
+  assert.deepEqual(today, companionClassifierCapabilities({ availableToolNames: available, pageKind: "conversation", userText: "中午换成散步" }));
+  assert.deepEqual(companionClassifierCapabilities({ availableToolNames: ["companion_notes_read"], pageKind: "note" }), ["companion_notes_read"]);
   assert.ok(today.includes("companion_load_tools"));
 });
 
-test("载荷实测：切到页组后分类器少付一半字符", () => {
+test("完整语义目录只传短标签，不传执行参数和 JSON schema", () => {
   const messages = [{ role: "user" as const, content: "今天先把最要紧的一件事说清楚：我接下来该先做什么？" }];
   const size = (capabilities: string[]) => {
     const built = buildCompanionTurnInterpretationMessages(messages, {
@@ -97,18 +95,21 @@ test("载荷实测：切到页组后分类器少付一半字符", () => {
     } as never)!;
     return (built[0].content as string).length + (built[1].content as string).length;
   };
-  const full = size(available);
-  const sliced = size(companionClassifierCapabilities({ availableToolNames: available, pageKind: "today" }));
-  assert.ok(sliced < full * 0.6, `分类器载荷应从 ${full} 降到 60% 以下，实测 ${sliced}`);
+  const manifest = size(companionClassifierCapabilities({ availableToolNames: available, pageKind: "today" }));
+  const definitions = resolveAllCompanionAgentTools("full", { visionEnabled: true, webSearchEnabled: true });
+  assert.ok(manifest < JSON.stringify(definitions).length / 2);
+  const built = buildCompanionTurnInterpretationMessages(messages, { objects: [], capabilities: available, recentMessages: [] } as never)!;
+  assert.ok(!(built[1].content as string).includes('"parameters"'));
 });
 
 test("this turn's image attachment exposes vision on a conversation page without classifier guesses", () => {
   const definitions = resolveAllCompanionAgentTools("full", { visionEnabled: true });
   const input = { definitions, pageKind: "conversation", candidateOperations: [], userText: "说说这三张图", hasImageAttachments: true };
-  assert.ok(createCompanionToolSurface(input).offered().some(tool => tool.name === "companion_read_image"));
-  assert.ok(companionClassifierCapabilities({ availableToolNames: definitions.map(d => d.name), pageKind: "conversation", hasImageAttachments: true }).includes("companion_read_image"));
+  assert.ok(createCompanionToolSurface(input).offered().some(tool => tool.name === "companion_visual"));
+  assert.ok(companionClassifierCapabilities({ availableToolNames: definitions.map(d => d.name), pageKind: "conversation", hasImageAttachments: true }).includes("companion_visual"));
   const denied = resolveAllCompanionAgentTools("full", { visionEnabled: false });
-  assert.ok(!createCompanionToolSurface({ ...input, definitions: denied }).offered().some(tool => tool.name === "companion_read_image"));
+  // The visual domain tool stays offered; only read_image is refused at execution.
+  assert.ok(createCompanionToolSurface({ ...input, definitions: denied }).offered().some(tool => tool.name === "companion_visual"));
 });
 
 

@@ -50,7 +50,7 @@ describe("CompanionRunTraceView", () => {
       },
       nodes: [
         { key: "tool:call-1", kind: "tool", label: "搜笔记", state: "succeeded",
-          toolName: "companion_search_notes", summary: "找到 8 篇", proposalId: null },
+          toolName: "notes.read.search", summary: "找到 8 篇", proposalId: null },
       ],
     };
 
@@ -104,7 +104,7 @@ describe("CompanionRunTraceView", () => {
 
   it("恢复只提交原运行身份，处理中不能连点，错误保留在记录里", async () => {
     const original = traceWith({ key: "tool:unknown", kind: "tool", label: "保存笔记", state: "outcome_unknown",
-      toolName: "companion_create_note", summary: "尚未核对", proposalId: null });
+      toolName: "notes.write.create", summary: "尚未核对", proposalId: null });
     const trace = { ...original, summary: { ...original.summary, status: "failed" as const, errorCode: "PROVIDER_IDLE_TIMEOUT" as const, eventCursor: 9 } };
     let fail: (error: Error) => void = () => {};
     const recover = vi.fn(() => new Promise<string>((_resolve, reject) => { fail = reject; }));
@@ -131,7 +131,7 @@ describe("CompanionRunTraceView", () => {
     const modelFacing = "读取学习数据统计：今天/本周学了多久、到期复习数。**只在用户问进度时调用**";
     render(<CompanionRunTraceView trace={traceWith({
       key: "tool:stats", kind: "tool", label: modelFacing, state: "succeeded",
-      toolName: "companion_get_learning_stats", summary: "今日 39 分钟", proposalId: null,
+      toolName: "observe.stats", summary: "今日 39 分钟", proposalId: null,
     })} />);
     expect(screen.getByText("正在看你的学习数据", { selector: "strong" })).toBeTruthy();
     expect(screen.queryByText(modelFacing)).toBeNull();
@@ -149,10 +149,10 @@ describe("CompanionRunTraceView", () => {
 
   it("流式时过程展开、完成后收起；思考默认折叠，需要时再打开", () => {
     const old = traceWith({ key: "tool:read", kind: "tool", label: "读笔记", state: "succeeded",
-      toolName: "companion_read_note", summary: "已读完", proposalId: null });
+      toolName: "notes.read.read", summary: "已读完", proposalId: null });
     const trace: CompanionRunTrace = { ...old, summary: { ...old.summary, status: "running" }, events: [
       { version: 1, seq: 1, runId: old.summary.runId, type: "assistant.thinking", payload: { text: "第一段", index: 0 } },
-      { version: 1, seq: 2, runId: old.summary.runId, type: "agent.tool", payload: { tool: { toolCallId: "read", name: "companion_read_note", status: "succeeded", safeLabel: "读笔记", safeSummary: "已读完" } } },
+      { version: 1, seq: 2, runId: old.summary.runId, type: "agent.tool", payload: { tool: { toolCallId: "read", name: "notes.read.read", status: "succeeded", safeLabel: "读笔记", safeSummary: "已读完" } } },
       { version: 1, seq: 3, runId: old.summary.runId, type: "assistant.thinking", payload: { text: "当前这一段", index: 1 } },
     ] };
     const view = render(<CompanionRunTraceView trace={trace} />);

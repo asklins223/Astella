@@ -4,7 +4,7 @@ import { AgentRole, type AgentTurnRequest } from "@astella/shared";
 import { activeCompactionMaterial, compactActiveToolContext, createWorkingStateSummarizer } from "../context/companion-active-context-compaction.ts";
 import { MockProvider } from "../../lib/providers/mock.ts";
 
-const round = (id: string, name = "companion_read_note"): AgentTurnRequest["messages"] => [
+const round = (id: string, name = "notes.read.read"): AgentTurnRequest["messages"] => [
   { role: "assistant", content: "", toolCalls: [{ id, name, arguments: { noteId: id } }] },
   { role: "tool", toolCallId: id, content: JSON.stringify({ ok: true, data: "原始证据".repeat(1000) }) },
 ];
@@ -46,8 +46,8 @@ test("working-state checkpoints reject empty results and echoed source envelopes
 });
 
 test("压缩当前工具回合保留用户原文、最近证据、写入回执与未完成调用", async () => {
-  const messages: AgentTurnRequest["messages"] = [question, ...round("old-read"), ...round("saved", "companion_edit_note"),
-    ...round("latest-read"), { role: "assistant", content: "", toolCalls: [{ id: "pending", name: "companion_edit_note", arguments: {} }] }];
+  const messages: AgentTurnRequest["messages"] = [question, ...round("old-read"), ...round("saved", "notes.write.edit"),
+    ...round("latest-read"), { role: "assistant", content: "", toolCalls: [{ id: "pending", name: "notes.write.edit", arguments: {} }] }];
   assert.deepEqual(activeCompactionMaterial(messages)!.removed, round("old-read"));
   const request: AgentTurnRequest = { role: AgentRole.COMPANION_AGENT, systemPrompt: "政策", messages, tools: [], toolChoice: "auto", temperature: 0.2, maxTokens: 1000 };
   let calls = 0;
@@ -61,10 +61,18 @@ test("压缩当前工具回合保留用户原文、最近证据、写入回执�
   assert.equal(folded!.receipt.sourceKind, "active_tool_rounds");
 });
 
+test("history folding already under pressure target does not spend a working-state summarizer call", async () => {
+  const messages: AgentTurnRequest["messages"] = [question, ...round("old-read"), ...round("saved", "notes.write.edit")];
+  const request: AgentTurnRequest = { role: AgentRole.COMPANION_AGENT, systemPrompt: "policy", messages, tools: [],
+    toolChoice: "auto", temperature: 0.2, maxTokens: 1000 };
+  assert.equal(await compactActiveToolContext({ request, targetInputTokens: 100_000, maxOutputTokens: 1000,
+    skipWhenWithinTarget: true, summarize: async () => { throw new Error("already fits"); } }), null);
+});
+
 test("不拆散并行调用与结果；没有可压缩回合或摘要不缩小时原样保留", async () => {
   assert.equal(activeCompactionMaterial([question, ...round("only")]), null);
   const pair: AgentTurnRequest["messages"] = [{ role: "assistant", content: "", toolCalls: [
-    { id: "a", name: "companion_read_note", arguments: {} }, { id: "b", name: "companion_read_note", arguments: {} }] },
+    { id: "a", name: "notes.read.read", arguments: {} }, { id: "b", name: "notes.read.read", arguments: {} }] },
     { role: "tool", toolCallId: "a", content: "a" }, { role: "user", content: "插入的用户要求" },
     { role: "tool", toolCallId: "b", content: "b" }];
   assert.equal(activeCompactionMaterial([...pair, ...round("tail")]), null);
@@ -77,7 +85,7 @@ test("a single oversized historical read is fully consumed with its exact tool s
   const source = JSON.stringify({ ok: true, data: { messages: [{ seq: "1", text: "Complete original source. ".repeat(5000)
     + "Final correction must survive.", sourceHash: "a".repeat(64) }], nextFromSeq: "2", confidence: 0.75 } });
   const messages: AgentTurnRequest["messages"] = [question,
-    { role: "assistant", content: "", toolCalls: [{ id: "huge-history", name: "companion_read_history", arguments: { fromSeq: 1 } }] },
+    { role: "assistant", content: "", toolCalls: [{ id: "huge-history", name: "observe.history", arguments: { fromSeq: 1 } }] },
     { role: "tool", toolCallId: "huge-history", content: source }];
   const request: AgentTurnRequest = { role: AgentRole.COMPANION_AGENT, systemPrompt: "policy", messages, tools: [], maxTokens: 1000, temperature: 0.2 };
   const result = await compactActiveToolContext({ request, targetInputTokens: 5000, maxOutputTokens: 1000,
@@ -96,12 +104,12 @@ test("a single oversized historical read is fully consumed with its exact tool s
 
 test("latest small historical evidence stays native, and latest writes or mutable note reads never use the exceptional fold", async () => {
   const base = { role: AgentRole.COMPANION_AGENT, systemPrompt: "policy", tools: [], maxTokens: 1000, temperature: 0.2 };
-  for (const name of ["companion_edit_note", "companion_read_note"]) {
+  for (const name of ["notes.write.edit", "notes.read.read"]) {
     assert.equal(await compactActiveToolContext({ request: { ...base, messages: [question, ...round("latest", name)] },
       targetInputTokens: 500, maxOutputTokens: 1000, summarize: async () => { throw new Error("must not summarize protected source"); } }), null);
   }
   const small: AgentTurnRequest["messages"] = [question,
-    { role: "assistant", content: "", toolCalls: [{ id: "small", name: "companion_read_history", arguments: {} }] },
+    { role: "assistant", content: "", toolCalls: [{ id: "small", name: "observe.history", arguments: {} }] },
     { role: "tool", toolCallId: "small", content: "A small complete historical result." }];
   assert.equal(await compactActiveToolContext({ request: { ...base, messages: small }, targetInputTokens: 5000,
     maxOutputTokens: 1000, summarize: async () => { throw new Error("a small result should not need compaction"); } }), null);

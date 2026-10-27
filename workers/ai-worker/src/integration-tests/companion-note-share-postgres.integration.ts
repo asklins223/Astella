@@ -85,7 +85,7 @@ async function fixture() {
       await tx`INSERT INTO companion_agent_tool_calls(id,workspace_id,user_id,conversation_id,run_id,step_id,tool_call_id,
         name,tool_version,arguments,arguments_sha256,risk_class,status)
         VALUES(${callId},${workspaceId},${userId},${conversationId},${runId},${stepId},${toolCallId},
-          'companion_share_note','1.0.0',${tx.json({ noteId, shareScope })},${'c'.repeat(64)},
+          'notes.write.share','1.0.0',${tx.json({ noteId, shareScope })},${'c'.repeat(64)},
           'reversible_low','executing')`;
     });
     const event = {
@@ -94,8 +94,8 @@ async function fixture() {
       read: { userId, runId, accountEpoch: 0, generation: 1 },
       expiresAt: new Date(Date.now() + 60_000), constraints: {},
     } as unknown as AgentEventContext;
-    const pending = executeDirectTool(event, getCompanionAgentTool("companion_share_note")!,
-      { noteId, shareScope }, new AbortController().signal, toolCallId);
+    const pending = executeDirectTool(event, getCompanionAgentTool("companion_notes_write")!,
+      { action: "share", noteId, shareScope }, new AbortController().signal, toolCallId);
     await processCompanionNoteShare({ workspaceId, userId }, callId);
     return pending;
   };

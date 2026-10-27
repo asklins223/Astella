@@ -74,7 +74,7 @@ export async function prepareCompanionGeneratedNote(tx: AgentSqlExecutor, event:
   if (!forbidsLibraryRead) {
     const [searched] = await queryRows<{ found: boolean }>(tx, sql`SELECT EXISTS(SELECT 1 FROM companion_agent_tool_calls
       WHERE run_id=${event.read.runId} AND workspace_id=${scope.workspaceId} AND user_id=${scope.userId}
-        AND name='companion_search_notes' AND status='succeeded') AS found`);
+        AND name='notes.read.search' AND status='succeeded') AS found`);
     if (!searched?.found)
       throw new CompanionToolNotExecutedError("先搜索库里与这个知识点相关的笔记，再保存；没有相关内容也可以写成独立笔记。");
   }
@@ -86,7 +86,7 @@ export async function prepareCompanionGeneratedNote(tx: AgentSqlExecutor, event:
         AND (n.share_scope='shared' OR n.created_by=${scope.userId}) AND n.current_version_id=${link.noteVersionId}
         AND EXISTS(SELECT 1 FROM companion_agent_tool_calls c WHERE c.run_id=${event.read.runId}
           AND c.workspace_id=${scope.workspaceId} AND c.user_id=${scope.userId}
-          AND c.name='companion_read_note' AND c.status='succeeded'
+          AND c.name='notes.read.read' AND c.status='succeeded'
           AND c.result_ref=${JSON.stringify({ kind: "note_read", noteId: link.noteId, noteVersionId: link.noteVersionId })})`);
     if (!note) throw new CompanionToolNotExecutedError("关联的笔记尚未读取、已经改版或当前不可见。先核对正文，再保存新笔记。");
     linkedNotes.push({ noteId: note.id, title: note.title });
@@ -126,7 +126,7 @@ export async function executeCompanionCreateNote(event: CompanionNoteAuthoringEv
         AND a.global_enabled AND a.epoch=r.account_epoch
         AND (r.permission_level='full' OR astella_companion_tool_confirmed_v1(r.id,${toolCallId ?? null}))
         AND EXISTS(SELECT 1 FROM jsonb_array_elements(r.permission_snapshot->'offeredTools') tool
-          WHERE tool->>'name'='companion_create_note') FOR UPDATE OF r`);
+          WHERE tool->>'name' IN ('notes.write.create','companion_notes_write')) FOR UPDATE OF r`);
     if (!run || event.ctx.requestedBy !== scope.userId)
       throw new CompanionToolNotExecutedError("这一轮已停止或没有保存权限，笔记没有保存。");
     assertNotAborted();
@@ -140,7 +140,7 @@ export async function executeCompanionCreateNote(event: CompanionNoteAuthoringEv
       // its argument text; never replace an editable document on recovery.
       const [call] = await queryRows<{ result_ref: string | null }>(tx,
         sql`SELECT result_ref FROM companion_agent_tool_calls WHERE run_id=${event.read.runId}
-          AND name='companion_create_note' AND tool_call_id=${toolCallId} AND result_ref IS NOT NULL LIMIT 1`);
+          AND name='notes.write.create' AND tool_call_id=${toolCallId} AND result_ref IS NOT NULL LIMIT 1`);
       return readCreatedNoteReceipt(call?.result_ref ?? null) ?? {
         kind: "created_note" as const, noteId: existing.id, noteVersionId: existing.current_version_id,
         title: existing.title, linkedNotes: [],
@@ -156,7 +156,7 @@ export async function executeCompanionCreateNote(event: CompanionNoteAuthoringEv
     // Persist identity with the business write. An interrupted outer ledger
     // update can recover this receipt without creating a second note.
     await tx.execute(sql`UPDATE companion_agent_tool_calls SET result_ref=${JSON.stringify(result)}
-      WHERE run_id=${event.read.runId} AND tool_call_id=${toolCallId} AND name='companion_create_note' AND status='executing'`);
+      WHERE run_id=${event.read.runId} AND tool_call_id=${toolCallId} AND name='notes.write.create' AND status='executing'`);
     return result;
   });
   return createdNoteToolResult(receipt);

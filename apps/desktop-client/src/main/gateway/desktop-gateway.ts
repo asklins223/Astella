@@ -114,7 +114,7 @@ export function parseCompanionSseFrame(block: string): CompanionChatStreamEventV
   // refresh without a collaboration stream. The strict shared schema has
   // already checked its identity, shape and 3MB update limit above.
   const carriesNoteEdit = envelope.data.type === "agent.tool"
-    && envelope.data.payload.tool.name === "companion_edit_note"
+    && envelope.data.payload.tool.name === "notes.write.edit"
     && envelope.data.payload.tool.status === "succeeded"
     && envelope.data.payload.tool.noteEdit !== undefined;
   if (JSON.stringify(payload).length > (carriesNoteEdit ? 3_010_000 : COMPANION_CHAT_EVENT_MAX_PAYLOAD_BYTES)) return null;

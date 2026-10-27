@@ -10,17 +10,17 @@ export async function reconcileCompanionSavedNotes(tx: AgentSqlExecutor,
   const calls = await queryRows<{ tool_call_id: string; name: string; tool_version: string; risk_class: string; result_ref: string | null }>(tx,
     sql`SELECT tool_call_id,name,tool_version,risk_class,result_ref FROM companion_agent_tool_calls
       WHERE run_id=${scope.runId} AND workspace_id=${scope.workspaceId} AND user_id=${scope.userId}
-        AND name IN ('companion_create_note','companion_edit_note') AND status IN ('executing','outcome_unknown')
+        AND name IN ('notes.write.create','notes.write.edit') AND status IN ('executing','outcome_unknown')
         ${toolCallId ? sql`AND tool_call_id=${toolCallId}` : sql``} ORDER BY created_at FOR UPDATE`);
   const resolved: { toolCallId: string; name: string; toolVersion: string; riskClass: string; receipt: CompanionCreatedNoteV1 | CompanionEditedNoteV1 }[] = [];
   for (const call of calls) {
     let receipt: CompanionCreatedNoteV1 | CompanionEditedNoteV1;
     try { const value = JSON.parse(call.result_ref ?? "null");
-      receipt = call.name === 'companion_create_note' ? companionCreatedNoteV1Schema.parse(value) : companionEditedNoteV1Schema.parse(value);
+      receipt = call.name === 'notes.write.create' ? companionCreatedNoteV1Schema.parse(value) : companionEditedNoteV1Schema.parse(value);
     } catch { continue; }
     const [saved] = await queryRows<{ id: string }>(tx, sql`SELECT n.id FROM notes n JOIN note_versions v ON v.note_id=n.id
       WHERE n.id=${receipt.noteId} AND v.id=${receipt.noteVersionId} AND n.workspace_id=${scope.workspaceId}
-        AND (n.created_by=${scope.userId} OR (n.share_scope='shared' AND ${call.name}='companion_edit_note')) AND n.deleted_at IS NULL`);
+        AND (n.created_by=${scope.userId} OR (n.share_scope='shared' AND ${call.name}='notes.write.edit')) AND n.deleted_at IS NULL`);
     if (!saved) continue;
     await tx.execute(sql`UPDATE companion_agent_tool_calls SET status='succeeded',
       result_safe_summary=${receipt.kind === 'created_note' ? `已核对，笔记《${receipt.title.slice(0, 36)}》已保存` : `已核对，笔记修改已保存：${receipt.summary}`},updated_at=now()

@@ -303,6 +303,7 @@ export class GatewayTransport {
       if (!remember || !store || !this.token) {
         this.credentialPersistence = "memory";
         if (store) await store.clear().catch(() => undefined);
+        if (!remember) await store?.clearRemembered?.().catch(() => undefined);
         return;
       }
       try {

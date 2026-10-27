@@ -27,7 +27,7 @@ describe("手记的思考与操作时间线", () => {
   it("结束状态优先于最后一条工具进度，旧档案中的发言纠正指令不再展示给用户", () => {
     const internal = "这轮已经开始连续回复，请接着把当前回复完成。需要分几句交流时，从第一句使用发言能力，避免正文和发言重复。";
     const current = recordCompanionRunEvent([], event(1, "agent.tool", { tool: {
-      toolCallId: "speech", name: "companion_publish_utterance", status: "not_executed", safeLabel: "正在接着说", safeSummary: internal,
+      toolCallId: "speech", name: "say.publish", status: "not_executed", safeLabel: "正在接着说", safeSummary: internal,
     } }))[0]!;
     const completed: CompanionRunTrace = { ...current, summary: { ...current.summary, status: "succeeded" } };
     const view = render(<CompanionRunTraceView trace={completed} />);
@@ -48,8 +48,8 @@ describe("手记的思考与操作时间线", () => {
       summary: { version: 1, runId, status: "succeeded", generation: 1, stepCount: 2, toolCallCount: 2,
         maxSteps: 4, maxToolCalls: 12, assistantMessageId: messageId, nodeCount: 2 },
       nodes: [
-        { key: "tool:search", kind: "tool", label: "正在翻你的笔记", state: "succeeded", toolName: "companion_search_notes", summary: "找到 3 篇", proposalId: null },
-        { key: "tool:write", kind: "tool", label: "正在写成笔记", state: "failed", toolName: "companion_create_note", summary: "保存失败：网络暂时不可用", proposalId: null },
+        { key: "tool:search", kind: "tool", label: "正在翻你的笔记", state: "succeeded", toolName: "notes.read.search", summary: "找到 3 篇", proposalId: null },
+        { key: "tool:write", kind: "tool", label: "正在写成笔记", state: "failed", toolName: "notes.write.create", summary: "保存失败：网络暂时不可用", proposalId: null },
       ],
     };
     const view = render(<CompanionRunTraceView trace={settled} />);
@@ -63,7 +63,7 @@ describe("手记的思考与操作时间线", () => {
       summary: { version: 1, runId, status: "succeeded", generation: 1, stepCount: 1, toolCallCount: 1,
         maxSteps: 4, maxToolCalls: 12, assistantMessageId: messageId, nodeCount: 1 },
       nodes: [
-        { key: "tool:write", kind: "tool", label: "正在写成笔记", state: "not_executed", toolName: "companion_create_note", summary: "关联的笔记尚未读取。", proposalId: null },
+        { key: "tool:write", kind: "tool", label: "正在写成笔记", state: "not_executed", toolName: "notes.write.create", summary: "关联的笔记尚未读取。", proposalId: null },
       ],
     };
     const view = render(<CompanionRunTraceView trace={settled} />);

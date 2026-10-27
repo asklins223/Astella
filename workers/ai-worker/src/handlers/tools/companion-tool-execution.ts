@@ -37,6 +37,8 @@ import {isVisionGatedCompanionTool,
   type CompanionAgentToolDefinitionV1,
   PAST_MESSAGES_PAGE_TARGET_CHARS,
   COMPANION_CARD_BLOCK_PREVIEW_MAX_CHARS,
+  companionOperationArguments,
+  companionOperationName,
 } from "@astella/shared";
 import { stableStringify, sha256Utf8V1 } from "@astella/shared/content-hash";
 import { withWorkerWorkspaceTransaction, type WorkerTransaction } from "../../db.ts";
@@ -93,6 +95,7 @@ import { runWorkerAiTask } from "../note/worker-ai-task.ts";
 import {
   CompanionToolError,
   CompanionToolBlockedError,
+  CompanionToolNotExecutedError,
   CompanionToolUnavailableError,
   type AgentToolExecutionResult,
 } from "./companion-tool-result.ts";
@@ -117,33 +120,67 @@ async function withAutonomousWriteTransaction<T>(event: AgentEventContext, write
   });
 }
 
+/** Internal background capabilities keep their own keys; the model-facing
+ * domain tool is translated to the operation above before reaching here. */
+const INTERNAL_CAPABILITY: Readonly<Record<string, string>> = Object.freeze({
+  "goals.read.list": "agent_list_goals",
+  "goals.read.list_long": "agent_list_long_goals",
+  "goals.write.start": "agent_start_goal",
+  "goals.write.revise": "agent_revise_goal",
+  "goals.write.control": "agent_control_goal",
+  "observe.calculate": "agent_calculate",
+  "web.search": "agent_web_search",
+  "web.read_document": "agent_read_public_document",
+});
+
+
 export async function executeReadTool(
   event: AgentEventContext,
   definition: CompanionAgentToolDefinitionV1,
   args: Record<string, unknown>,
 ): Promise<AgentToolExecutionResult> {
-  if (["agent_list_goals","agent_list_long_goals"].includes(definition.name)) return executeAgentGoalTool(event, definition.name, args);
+  if (false) return executeAgentGoalTool(event, "", args);
   // 外发政策门禁。工具面本来已经把受管工具摘掉了（见 resolveAllCompanionAgentTools），
   // 这里再拦一次是因为**工具名是模型给的**：不复核就等于"下发面没列出来"这件事
   // 只是运气好，而不是一个保证。判定只看服务端解析出的约束，不看模型自述。
   if (event.constraints?.noteLibraryReadEnabled === false
-    && ["companion_search_notes", "companion_search_cards", "companion_read_note", "companion_recommend_learning"].includes(definition.name)) {
+    && ["notes.read.search", "notes.read.cards", "notes.read.read", "companion_recommend_learning"].includes(definition.name)) {
     throw new CompanionToolBlockedError("你这轮要求不读取笔记库和学习卡资料，我不会搜索或读取库内学习内容。");
   }
   if (isVisionGatedCompanionTool(definition.name) && event.constraints.visionEnabled !== true) {
     throw new CompanionToolBlockedError(VISION_EGRESS_DENIED_MESSAGE);
   }
   switch (definition.name) {
-    case "companion_read_participation":
+    case "goals.read.list":
+    case "goals.read.list_long":
+      return executeAgentGoalTool(event, INTERNAL_CAPABILITY[definition.name]!, args);
+    case "companion_persona_read":
+    case "companion_observe":
+    case "companion_visual":
+    case "companion_goals_read":
+    case "companion_memory_read":
+    case "companion_attention_read":
+    case "companion_notes_read":
+    case "companion_open":
+    case "companion_web": {
+      const operation = companionOperationName({ name: definition.name, arguments: args });
+      if (operation === definition.name) throw new CompanionToolError("没有说明要执行哪一类动作。");
+      if (operation === "web.search" && event.constraints.webSearchEnabled !== true) {
+        throw new CompanionToolUnavailableError("这轮没有开启联网搜索；继续回答，但无法联网核实。");
+      }
+      return executeReadTool(event, { ...definition, name: operation },
+        companionOperationArguments(operation, args));
+    }
+    case "attention.read.participation":
       return executeCompanionParticipationTool(event, definition.name, args);
-    case "companion_read_identity": {
+    case "persona.read.identity": {
       const document = event.read.petProfile?.selfDescription ?? "";
       const offset = Number(args.offset ?? 0), end = Math.min(document.length, offset + Number(args.maxChars ?? 16_000));
       return { value: { revision: event.read.personaProfileRevision, document: document.slice(offset, end),
         offset, nextOffset: end, totalChars: document.length, truncated: end < document.length },
         safeSummary: "已读取本轮固定的身份文档。" };
     }
-    case "companion_read_self_notes": {
+    case "persona.read.self_notes": {
       const items = await withWorkerWorkspaceTransaction(
         { workspaceId: event.ctx.workspaceId, userId: event.read.userId }, tx => listCompanionSelfNotes(tx,
           { workspaceId: event.ctx.workspaceId, userId: event.read.userId }, { key: args.key as string | undefined,
@@ -151,7 +188,7 @@ export async function executeReadTool(
       return { value: { items: args.key ? items : items.map(({body: _body, ...note}) => note) },
         safeSummary: args.key ? "已展开自己的记事。" : "已读取自己的记事目录。" };
     }
-    case "agent_web_search": {
+    case "web.search": {
       const value = await executeWebSearch({ workspaceId: event.ctx.workspaceId, userId: event.read.userId },
         args as Parameters<typeof executeWebSearch>[1], event.ctx.signal);
       return { value, resultRef: JSON.stringify(value), blocks: webSearchCitationBlocks(value), safeSummary: value.status === "succeeded"
@@ -159,18 +196,24 @@ export async function executeReadTool(
         : value.reason === "quota_exhausted" ? "搜索额度不足，已暂时停用联网搜索；继续回答，但无法联网核实"
           : "本次联网搜索不可用；继续回答，但无法联网核实" };
     }
-    case "agent_read_public_document": {
+    case "web.read_document": {
       // 窗口里**所有**用户说过的话都算授权依据：只认最近 3 条时，用户四轮前贴过的链接
       // 会被判成"没给过"，她会去要一个已经给过的东西。窗口本身已由声明预算收边。
       const userTexts = [event.read.userText,
         ...event.read.recentMessages.filter(message => message.role === "user").map(message => message.text)];
       const value = await executeExternalCapability({ workspaceId: event.ctx.workspaceId, userId: event.read.userId },
-        { name: definition.name, arguments: args }, userTexts, event.ctx.signal);
+        { name: INTERNAL_CAPABILITY[definition.name] ?? definition.name, arguments: args }, userTexts, event.ctx.signal);
       return { value, safeSummary: ("truncated" in value && value.truncated) ? "已读取公开文档的一部分，来源与覆盖范围已保留" : "已读取公开文档，来源与正文已核对" };
     }
-    case "agent_calculate": {
-      const result=executeBasicCapability({name:definition.name,arguments:args});
-      return {value:result,safeSummary:`计算结果：${result.value}`};
+    case "observe.calculate": {
+      try {
+        const result=executeBasicCapability({name:INTERNAL_CAPABILITY[definition.name] ?? definition.name,arguments:args});
+        return {value:result,safeSummary:`计算结果：${result.value}`};
+      } catch (error) {
+        // The model needs the real parse/evaluation reason to correct the
+        // expression; a generic "failed" sends it into another blind retry.
+        throw new CompanionToolError(`计算没有执行：${error instanceof Error ? error.message : "表达式无法解析"}`);
+      }
     }
     case "companion_load_tools":
       // Surface expansion is stateful and owned by the agent loop; if this
@@ -178,7 +221,7 @@ export async function executeReadTool(
       // falling through to "no direct executor".
       return { value: { groups: [], note: "工具组装载由当前回合的 agent 运行时处理" },
         safeSummary: "工具组装载由运行时处理" };
-    case "companion_read_context": {
+    case "observe.context": {
       const page = parsePageContext(event.read.pageContext);
       return {
         value: {
@@ -187,7 +230,7 @@ export async function executeReadTool(
         safeSummary: "已读取当前学习上下文",
       };
     }
-    case "companion_read_current_page": {
+    case "observe.current_page": {
       const row = await withWorkerWorkspaceTransaction(
         { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
         (tx) => readLatestPageContextRow(tx, {
@@ -199,7 +242,7 @@ export async function executeReadTool(
     }
     // 跨会话找回（方案 44 §3.2／§8.3）。两步：给 conversationId 就取回那一段原文，
     // 只给 query 就在别的会话里检索。两个分支共用一次事务与同一套范围校验。
-    case "companion_recall_past_conversation": {
+    case "memory.read.past_conversation": {
       const conversationId = typeof args.conversationId === "string" ? args.conversationId : null;
       const fromSeq = typeof args.fromSeq === "number" ? args.fromSeq : null;
       // 不再剪搜索词：剪掉的那半句会悄悄改掉搜出来的东西（与 companion_search_notes 同一条口径）。
@@ -286,7 +329,7 @@ export async function executeReadTool(
         },
       );
     }
-    case "companion_read_history": {
+    case "observe.history": {
       const limit = typeof args.limit === "number" ? Math.min(20, Math.max(1, args.limit)) : 10;
       const fromSeq = typeof args.fromSeq === "number" ? args.fromSeq : null;
       // 取回入口（44 §5.5）：带 fromSeq 就是去读**这一轮没读到的**那一段原文。
@@ -339,13 +382,13 @@ export async function executeReadTool(
         ? `已读取 ${history.length} 条对话历史，还有后续记录可继续查看`
         : `已读取 ${history.length} 条对话历史` };
     }
-        case "companion_read_memory":
-    case "companion_recall_memory":
-    case "companion_read_playbook":
-    case "companion_read_diary":
+    case "memory.read.read":
+    case "memory.read.recall":
+    case "memory.read.playbook":
+    case "memory.read.diary":
       // 函数体已搬到 companion-memory-tools.ts（按域切，见那里）。
       return executeCompanionMemoryTool(event, definition, args);
-    case "companion_list_recent_activity": {
+    case "observe.activity": {
       const days = typeof args.days === "number" ? Math.min(30, Math.max(1, args.days)) : 7;
       const window = sql`now() - (${days} * interval '1 day')`;
       const rows = await withWorkerWorkspaceTransaction(
@@ -385,7 +428,7 @@ export async function executeReadTool(
           : `最近 ${days} 天没有记录到动态`,
       };
     }
-    case "companion_open_card": {
+    case "open.card": {
       const cardId = String(args.cardId);
       const card = await withWorkerWorkspaceTransaction(
         { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
@@ -444,13 +487,14 @@ export async function executeReadTool(
         safeSummary: "已定位到学习卡片",
       };
     }
-    case "companion_search_notes": {
+    case "notes.read.search": {
       // 不再把搜索词剪到 120 字：她写长了一点，被裁掉的那半句会悄悄改掉搜出来的东西。
-      const query = String(args.query).trim();
-      const limit = typeof args.limit === "number" ? Math.min(8, Math.max(1, args.limit)) : 5;
+      const query = String(args.query ?? "").trim();
+      const recent = args.order === "updated";
+      const limit = typeof args.limit === "number" ? Math.min(10, Math.max(1, args.limit)) : 5;
       const terms = noteSearchTerms(query);
       const anyMatch = args.match === "any";
-      if (terms.length === 0) {
+      if (terms.length === 0 && !recent) {
         // 检索词被剥成空（模型只给了空格或纯标点）时**不能**放一个 `%%` 进去——
         // 那会命中库里所有笔记，然后被她当成"这些都相关"念出来。
         return { value: { notes: [] }, safeSummary: "检索词是空的，我需要先知道要搜什么" };
@@ -465,6 +509,10 @@ export async function executeReadTool(
           WHERE nb.version_id = n.current_version_id
             AND nb.content ILIKE ${`%${term}%`}
         ))`);
+      const matches = termConditions.length > 0
+        ? sql.join(termConditions, anyMatch ? sql` OR ` : sql` AND `) : sql`TRUE`;
+      const ordering = recent ? sql`n.updated_at DESC,n.id`
+        : sql`(${sql.join(termConditions.map(condition => sql`CASE WHEN ${condition} THEN 1 ELSE 0 END`), sql` + `)}) DESC,n.updated_at DESC,n.id`;
       const rows = await withWorkerWorkspaceTransaction(
         { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
         async (tx) => tx.execute<NoteSearchRow>(sql`
@@ -477,14 +525,13 @@ export async function executeReadTool(
             SELECT string_agg(nb.content, ' ') AS snippet
             FROM note_blocks nb
             WHERE nb.version_id = n.current_version_id
-              AND nb.content ILIKE ${`%${terms[0]}%`}
+              AND ${terms.length > 0 ? sql`nb.content ILIKE ${`%${terms[0]}%`}` : sql`TRUE`}
           ) b ON true
           WHERE n.workspace_id = ${event.ctx.workspaceId}
             AND n.deleted_at IS NULL
             AND (n.share_scope='shared' OR n.created_by=${event.read.userId})
-            AND (${sql.join(termConditions, anyMatch ? sql` OR ` : sql` AND `)})
-          ORDER BY (${sql.join(termConditions.map(condition => sql`CASE WHEN ${condition} THEN 1 ELSE 0 END`), sql` + `)}) DESC,
-            n.updated_at DESC,n.id
+            AND (${matches})
+          ORDER BY ${ordering}
           LIMIT ${limit}
         `),
       );
@@ -497,14 +544,14 @@ export async function executeReadTool(
       return {
         value: { notes: notesFound },
         safeSummary: notesFound.length > 0
-          ? `找到 ${notesFound.length} 篇${anyMatch ? "可核对的" : "相关"}笔记`
-          : `没有找到与「${query.slice(0, 20)}」相关的笔记`,
+          ? recent ? `已找到最近更新的 ${notesFound.length} 篇笔记` : `找到 ${notesFound.length} 篇${anyMatch ? "可核对的" : "相关"}笔记`
+          : recent && terms.length === 0 ? "当前书房没有可读取的笔记" : `没有找到与「${query.slice(0, 20)}」相关的笔记`,
       };
     }
-    case "companion_search_cards":
+    case "notes.read.cards":
     case "companion_recommend_learning":
       return executeCompanionLearningDiscoveryTool(event, definition.name, args);
-    case "companion_read_note": {
+    case "notes.read.read": {
       const noteId = String(args.noteId);
       const noteVersionId = typeof args.noteVersionId === "string" ? args.noteVersionId : undefined;
       // 分页续读（39d W6-2 / 39b C5）：startOrdinal 是上一页给的 nextStartOrdinal；
@@ -576,7 +623,7 @@ export async function executeReadTool(
           + `，${page.body.length} 字${note.imageTotal > 0 ? `，另附 ${note.imageTotal} 张图` : ""}）`,
       };
     }
-    case "companion_read_source": {
+    case "notes.read.source": {
       const sourceId = String(args.sourceId);
       const startOrdinal = typeof args.startOrdinal === "number"
         && Number.isInteger(args.startOrdinal) && args.startOrdinal >= 1
@@ -631,7 +678,7 @@ export async function executeReadTool(
           + `（${page.endOrdinal !== null ? `第 ${startOrdinal}–${page.endOrdinal} 段，共 ${source.totalSegments} 段` : "无正文"}，${page.body.length} 字）`,
       };
     }
-    case "companion_read_image": {
+    case "visual.read_image": {
       const assetId = typeof args.assetId === "string" && args.assetId ? args.assetId : null;
       const noteId = typeof args.noteId === "string" && args.noteId ? args.noteId : null;
       if (!assetId && !noteId) {
@@ -671,7 +718,7 @@ export async function executeReadTool(
         // 对这条永远是空的，而它恰恰是最该被看见的一次外发。
         {
           userId: event.read.userId,
-          operation: "companion_read_image",
+          operation: "visual.read_image",
           reserveCall: () => reserveCompanionProviderCall(event),
           jobId: event.ctx.id,
           dataCategories: ["image_content"],
@@ -705,7 +752,7 @@ export async function executeReadTool(
         const output = await runWorkerAiTask({
           job: event.ctx,
           userId: event.read.userId,
-          taskId: "companion_read_image",
+          taskId: "visual.read_image",
           taskVersion: 1,
           idempotencyKey: `companion-read-image:${event.read.runId}:${event.read.userMessageId}:${inputSnapshotHash}`,
           inputSnapshotRef: {
@@ -771,7 +818,7 @@ export async function executeReadTool(
         safeSummary: `已看过那张图（${asset.width}×${asset.height}，${description.length} 字描述）`,
       };
     }
-    case "companion_show_image": {
+    case "visual.show_image": {
       const assetId = typeof args.assetId === "string" && args.assetId ? args.assetId : null;
       const noteId = typeof args.noteId === "string" && args.noteId ? args.noteId : null;
       const position = typeof args.position === "number" ? Math.min(20, Math.max(1, Math.floor(args.position))) : 1;
@@ -806,7 +853,7 @@ export async function executeReadTool(
         safeSummary: `已把那张图放到对话里（${asset.width}×${asset.height}）`,
       };
     }
-    case "companion_open_note": {
+    case "open.note": {
       const noteId = String(args.noteId);
       const found = await withWorkerWorkspaceTransaction(
         { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
@@ -828,7 +875,7 @@ export async function executeReadTool(
         safeSummary: `已定位到笔记《${note.title.slice(0, 24)}》`,
       };
     }
-    case "companion_open_page": {
+    case "open.page": {
       const page = String(args.page);
       // 与 allowedMainRouteV2Schema 对齐的无参页面；带实体的（note/card/learning_run）
       // 各有专门工具去做归属校验，这里不接受 id，避免"任意 UUID 构造导航 route"。
@@ -841,7 +888,7 @@ export async function executeReadTool(
         safeSummary: `已定位到${label}页面`,
       };
     }
-    case "companion_get_learning_stats": {
+    case "observe.stats": {
       // 取数与环境块共用同一份（`readLearningStats`）：她答话的口径和"用户问到学习数据
       // 时先注入的真值"必须是同一个数，两处各写一份迟早会分叉。
       const stats = await withWorkerWorkspaceTransaction(
@@ -858,7 +905,7 @@ export async function executeReadTool(
         safeSummary: summarizeLearningStats(stats),
       };
     }
-    case "companion_list_reminders": {
+    case "attention.read.reminders": {
       // 回给用户本地钟面时间而不是 UTC ISO：她要照着这个数说"你答应我的事"。
       const rows = await withWorkerWorkspaceTransaction(
         { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
@@ -891,7 +938,7 @@ export async function executeReadTool(
           : "目前没有待兑现的提醒",
       };
     }
-    case "companion_render_diagram": {
+    case "visual.diagram": {
       // 呈现类：不查库、不写库，只是把她给的结构变成一块交给客户端（§4.8）。
       // 参数已校验；所有步骤和补充说明完整交给客户端。
       const title = String(args.title).trim();
@@ -913,6 +960,8 @@ export async function executeReadTool(
   }
 }
 
+/** Flat aliases carry no `action`; the shared map owns which action each stands for. */
+
 /**
  * auto-set / auto-fill 工具的直执行器（2026-09-19 权限分级对齐原设计）。
  *
@@ -933,30 +982,56 @@ export async function executeDirectTool(
   signal?: AbortSignal,
   toolCallId?: string,
 ): Promise<AgentToolExecutionResult> {
-  if (["agent_start_goal", "agent_revise_goal", "agent_control_goal"].includes(definition.name))
-    return executeAgentGoalTool(event, definition.name, args);
+  if (false) return executeAgentGoalTool(event, "", args);
   switch (definition.name) {
-    case "companion_save_participation":
-    case "companion_arrange_attention":
-    case "companion_publish_utterance":
-    case "companion_finish_participation":
+    case "goals.write.start":
+    case "goals.write.revise":
+    case "goals.write.control":
+      return executeAgentGoalTool(event, INTERNAL_CAPABILITY[definition.name]!, args);
+    case "companion_persona_write":
+    case "companion_goals_write":
+    case "companion_memory_write":
+    case "companion_attention_write":
+    case "companion_say":
+    case "companion_notes_write": {
+      const operation = companionOperationName({ name: definition.name, arguments: args });
+      if (operation === definition.name) throw new CompanionToolError("没有说明要执行哪一类动作。");
+      const operationArgs = operation === "goals.write.control"
+        ? { ...companionOperationArguments(operation, args), action: args.control }
+        : companionOperationArguments(operation, args);
+      return executeDirectTool(event, { ...definition, name: operation }, operationArgs, signal, toolCallId);
+    }
+    // Flat aliases carry no `action`; their declared mapping is the action.
+    case "companion_self_note_write":
+    case "companion_memory_forget":
+    case "companion_goal_start":
+    case "companion_memory_save": {
+      const operation = companionOperationName({ name: definition.name, arguments: args });
+      if (operation === definition.name) throw new CompanionToolError("这项能力没有对应的执行动作。");
+      return executeDirectTool(event, { ...definition, name: operation },
+        companionOperationArguments(operation, args), signal, toolCallId);
+    }
+    case "attention.write.save_participation":
+    case "attention.write.arrange":
+    case "say.publish":
+    case "say.finish_participation":
       return executeCompanionParticipationTool(event, definition.name, args, toolCallId);
-    case "companion_write_annotation": {
+    case "notes.write.annotate": {
       if (!toolCallId) throw new CompanionToolError("解释写入缺少执行身份，没有重复保存。");
       return executeCompanionWriteAnnotation(event, args, signal, toolCallId);
     }
-    case "companion_create_note": {
+    case "notes.write.create": {
       if (!toolCallId) throw new CompanionToolError("创建笔记缺少这轮的执行记录，没有重复保存。");
       return executeCompanionCreateNote(event, args, signal, toolCallId);
     }
-    case "companion_edit_note": {
+    case "notes.write.edit": {
       if (!toolCallId) throw new CompanionToolError("正文编辑缺少这轮的执行记录，请重新发送要求。");
       return executeCompanionNoteEdit(event, toolCallId, signal);
     }
     // 「共享给空间」/「取消共享」（2026-10-09 补的能力）。与正文编辑同一形状：
     // worker 不写 `notes`（0395 起就没有那个权限，而可见性一变要跟着刷新目标索引里的
     // 公开标题，那条规则只住在服务层一处），派发给 API 的 `companion-share-dispatch`。
-    case "companion_share_note": {
+    case "notes.write.share": {
       if (!toolCallId) throw new CompanionToolError("共享缺少这轮的执行记录，请重新发送要求。");
       return executeCompanionShareNote(event, toolCallId, signal);
     }
@@ -967,11 +1042,11 @@ export async function executeDirectTool(
     //  1. 写的是 `speakingStyle`，**不是** name —— 用户指定的名字她改不了；
     //  2. 版本行的 author 是 `assistant_tool`、reason 是她自己给的理由，
     //     用户在人格页能看到这一条是谁在什么时候改的（§4.8.4「记录作者、范围和依据」）。
-    case "companion_write_self_note":
-    case "companion_schedule_wake": {
+    case "persona.write.self_note":
+    case "attention.write.schedule_wake": {
       const note = await withAutonomousWriteTransaction(event, async tx => {
           const scope = { workspaceId: event.ctx.workspaceId, userId: event.read.userId };
-          if (definition.name === "companion_schedule_wake") {
+          if (definition.name === "attention.write.schedule_wake") {
             const [current] = await listCompanionSelfNotes(tx, scope, { key: String(args.key), includeArchived: true });
             if (!current) throw new CompanionToolError("先写下或读取这条自己的记事，再安排重评。");
             const saved = await writeCompanionSelfNote(tx, scope, { key: current.key, expectedRevision: Number(args.expectedRevision),
@@ -986,7 +1061,15 @@ export async function executeDirectTool(
               state: args.at ? "active" : "completed" }, { conversationId: event.read.conversationId, runId: event.read.runId });
             return { ...saved, nextReviewAt: attention.attention.nextReviewAt };
           }
-          const input = args as unknown as import("@astella/shared").CompanionSelfNoteWriteV1;
+          const raw = args as unknown as import("@astella/shared").CompanionSelfNoteWriteV1;
+          // The model only has to say what she wants to remember. Key, tier,
+          // revision and reason are host bookkeeping, not content.
+          const title = (raw.title ?? "").trim() || raw.body.trim().slice(0, 24);
+          const key = (raw.key ?? "").trim() || `own-${sha256Utf8V1(title).slice(0, 12)}`;
+          const [existing] = await listCompanionSelfNotes(tx, scope, { key, includeArchived: true });
+          const input = { ...raw, key, title, tier: raw.tier ?? "active",
+            expectedRevision: raw.expectedRevision ?? existing?.revision ?? 0,
+            reason: (raw.reason ?? "").trim() || "自己想留下这件事" };
           const saved = await writeCompanionSelfNote(tx, scope, { ...input, nextReviewAt: null });
           if (input.nextReviewAt) {
             const key = `self:${saved.key}`.slice(0,120);
@@ -1005,7 +1088,7 @@ export async function executeDirectTool(
       return { value: note, resultRef: JSON.stringify({selfNote:{key:note.key,revision:note.revision}}),
         safeSummary: "自己的记事已保存；内部重评安排不需要用户确认。" };
     }
-    case "companion_revise_identity": {
+    case "persona.write.identity": {
       const outcome = await withAutonomousWriteTransaction(event,
         tx => applyAssistantPersonaEdit(tx, event.read.userId, "selfDescription", args.document, String(args.reason),
           { stage: true, sourceWorkspaceId: event.ctx.workspaceId,
@@ -1016,7 +1099,7 @@ export async function executeDirectTool(
       return { value: { changed: outcome.kind === "changed" },
         safeSummary: outcome.kind === "changed" ? "身份文档已保存，下一轮自动采用，无需确认。" : "身份文档没有实质变化。" };
     }
-    case "companion_revise_own_style": {
+    case "persona.write.style": {
       const speakingStyle = String(args.speakingStyle).slice(0, 400);
       const reason = String(args.reason).slice(0, 120);
       const outcome = await withWorkerWorkspaceTransaction(
@@ -1044,7 +1127,7 @@ export async function executeDirectTool(
      * 与改语气同一条通路、同一套边界，差别只有改的字段：名字仍然不可改，
      * 版本行的作者与理由照旧记在她名下，用户在人格页能看见是谁动的。
      */
-    case "companion_revise_own_tags": {
+    case "persona.write.tags": {
       const tags = (Array.isArray(args.personalityTags) ? args.personalityTags : [])
         .map((tag) => String(tag).trim().slice(0, 20))
         .filter((tag) => tag.length > 0)
@@ -1075,7 +1158,7 @@ export async function executeDirectTool(
      * 只改**主动推荐**这一路。已授权的安排不在这一行的可达范围里：
      * 它们由各自的到期提醒持有，这里既不读也不写（§8.2「不会取消已授权安排」）。
      */
-    case "companion_pause_learning_suggestions": {
+    case "attention.write.pause": {
       const scope = String(args.scope);
       /**
        * ⚠️ 长度是**算出来**的，不是随手取的。
@@ -1122,7 +1205,7 @@ export async function executeDirectTool(
           : "已恢复正常，会按原来的安排来",
       };
     }
-    case "companion_set_activeness": {
+    case "persona.write.activeness": {
       const activeness = String(args.activeness);
       const label = activeness === "quiet" ? "安静" : activeness === "active" ? "活跃" : "适中";
       const outcome = await withWorkerWorkspaceTransaction(
@@ -1142,14 +1225,14 @@ export async function executeDirectTool(
       }
       return { value: { activeness, changed: true }, safeSummary: `已把伴星活跃度设为「${label}」，下一次尚未开始的调用会使用新设置` };
     }
-        case "companion_save_memory":
-    case "companion_revise_memory":
-    case "companion_move_memory":
-    case "companion_remember_judgment":
-    case "companion_forget_memory":
+    case "memory.write.save":
+    case "memory.write.revise":
+    case "memory.write.move":
+    case "memory.write.judgment":
+    case "memory.write.forget":
       // 函数体已搬到 companion-memory-tools.ts（按域切，见那里）。
       return executeCompanionMemoryTool(event, definition, args, toolCallId);
-    case "companion_set_boundary": {
+    case "persona.write.boundary": {
       // 只合并显式给出的键，不动其它边界。已开始的调用继续使用
       // 启动时固定的人格版本；下一次尚未开始的调用才会读到这次修改。
       const patch: Record<string, boolean | string> = {};
@@ -1157,7 +1240,8 @@ export async function executeDirectTool(
         if (typeof args[key] === "boolean") patch[key] = args[key] as boolean;
       }
       if (typeof args.catchphrase === "string") patch.catchphrase = args.catchphrase.slice(0, 30);
-      if (Object.keys(patch).length === 0) throw new CompanionToolError("没有要调整的边界项");
+      // An empty boundary call is a malformed request, not a failed action.
+      if (Object.keys(patch).length === 0) throw new CompanionToolNotExecutedError("没有要调整的边界项");
       const labels: Record<string, string> = {
         allowPlayful: "玩趣",
         allowNudgeLearning: "催学习",
@@ -1212,7 +1296,7 @@ export async function executeDirectTool(
         safeSummary: parts.join("；"),
       };
     }
-    case "companion_schedule_reminder": {
+    case "attention.write.schedule_reminder": {
       const text = String(args.text).slice(0, 200);
       // 39d W5-6 刀三（§16.13）：模型说这条提醒是在说哪篇笔记时，把那个 noteId 记下来。
       // 兑现闸据此在共享撤回后不再投递（迁移 0299）。**服务端校验它**：模型可能给
@@ -1276,7 +1360,7 @@ export async function executeDirectTool(
         safeSummary: `已安排提醒：${created.fire_at_local}「${text.slice(0, 40)}」`,
       };
     }
-    case "companion_cancel_reminder": {
+    case "attention.write.cancel_reminder": {
       const reminderId = String(args.reminderId);
       const cancelled = await withWorkerWorkspaceTransaction(
         { workspaceId: event.ctx.workspaceId, userId: event.read.userId },

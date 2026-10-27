@@ -79,6 +79,74 @@ import {
   SOURCE_IMAGE_MIME_TYPES,
 } from "@astella/shared/source-image-contracts";
 import type { GatewayTransport } from "./desktop-gateway-transport";
+import type { QuickLoginCredential } from "./desktop-gateway-credentials";
+
+export async function getRememberedAccount(t: GatewayTransport) {
+  const saved = await t.credentials?.loadRemembered?.().catch(() => null);
+  if (!saved || saved.origin !== t.configuration?.config.apiOrigin) return null;
+  const { token: _token, origin: _origin, ...hint } = saved;
+  return hint;
+}
+
+export async function forgetRememberedAccount(t: GatewayTransport): Promise<{ forgotten: true }> {
+  await t.credentials?.clearRemembered?.();
+  return { forgotten: true };
+}
+
+async function rememberAccount(t: GatewayTransport, requestId?: string): Promise<boolean> {
+  const token = t.token, origin = t.configuration?.config.apiOrigin;
+  const session = t.currentSession ?? (token ? await getSession(t, requestId).catch(() => null) : null);
+  if (!token || !origin || session?.status !== "authenticated" || !t.credentials?.saveRemembered) return false;
+  const old = await t.credentials.loadRemembered?.().catch(() => null);
+  const same = old?.origin === origin && old.email === session.user.email;
+  let displayName = session.user.displayName ?? null;
+  let avatarDataURL = same ? old.avatarDataURL : null;
+  try {
+    const profile = await getProfile(t, requestId);
+    displayName = profile.displayName;
+    if (!profile.avatarUrl) avatarDataURL = null;
+    else {
+      const key = profile.avatarUrl.replace(/^\/api\/uploads\//, "");
+      if (avatarObjectKeySchema.safeParse(key).success) {
+        const image = await getAvatar(t, key, requestId);
+        avatarDataURL = `data:${image.mimeType};base64,${image.imageBase64}`;
+      }
+    }
+  } catch { /* The last verified identity still permits local sign-out offline. */ }
+  if (t.token !== token) return false;
+  const credential: QuickLoginCredential = { origin, token, email: session.user.email, displayName, avatarDataURL };
+  try { await t.credentials.saveRemembered(credential); return true; }
+  catch { return false; }
+}
+
+export async function resumeRememberedAccount(t: GatewayTransport, b: CompanionBridge, requestId?: string): Promise<SessionContextV1> {
+  await t.ensureConnected(requestId);
+  const saved = await t.credentials?.loadRemembered?.();
+  if (!saved || saved.origin !== t.configuration?.config.apiOrigin || t.token) {
+    throw new DesktopGatewayFailure("auth_required", "user_action");
+  }
+  await b.clearCompanionBridgeContext(requestId).catch(() => undefined);
+  t.token = saved.token;
+  t.tokenIsRestored = true;
+  t.currentSession = null;
+  t.workspaceEpoch = 1;
+  t.forgetCapabilities();
+  t.commandIdempotency.clear();
+  b.clearCompanionRuntimeState();
+  try {
+    const session = await t.loadSession(requestId);
+    if (session.status !== "authenticated" || session.user.email.toLowerCase() !== saved.email.toLowerCase()) {
+      throw new DesktopGatewayFailure("auth_required", "user_action");
+    }
+    await t.persistCredential(true);
+    return { ...session, credentialPersistence: t.credentialPersistence };
+  } catch (error) {
+    await t.discardStoredCredential();
+    if (error instanceof DesktopGatewayFailure && (error.httpStatus === 401 || error.httpStatus === 403
+      || ["auth_required", "invalid_credentials"].includes(error.code))) await forgetRememberedAccount(t);
+    throw error;
+  }
+}
 
 export async function getSession(t: GatewayTransport, requestId?: string): Promise<SessionContextV1> {
     await t.ensureConnected(requestId);
@@ -370,7 +438,9 @@ export async function resetPassword(t: GatewayTransport, email: string, code: st
   return { ok: true };
 }
 
-export async function logout(t: GatewayTransport, b: CompanionBridge, requestId?: string): Promise<{ loggedOut: true; serverRevoked: boolean }> {
+export async function logout(t: GatewayTransport, b: CompanionBridge, requestId?: string, keepQuickLogin = false): Promise<{ loggedOut: true; serverRevoked: boolean; quickLoginAvailable?: boolean }> {
+    const quickLoginAvailable = keepQuickLogin && t.credentialPersistence === "local_file" && await rememberAccount(t, requestId);
+    if (!quickLoginAvailable) await forgetRememberedAccount(t).catch(() => undefined);
     await b.clearCompanionBridgeContext(requestId).catch(() => undefined);
     const token = t.token;
     t.token = null;
@@ -384,10 +454,11 @@ export async function logout(t: GatewayTransport, b: CompanionBridge, requestId?
     // Local sign-out is authoritative: the stored credential goes even when the
     // server revoke cannot be reached.
     await t.credentials?.clear().catch(() => undefined);
+    if (quickLoginAvailable) return { loggedOut: true, serverRevoked: false, quickLoginAvailable: true };
     if (!token) return { loggedOut: true, serverRevoked: false };
     try {
       await t.ensureConnected(requestId);
-      await t.request("/auth/logout", { method: "POST" }, true, true, requestId);
+      await t.request("/auth/logout", { method: "POST", headers: { Authorization: `Bearer ${token}` } }, false, true, requestId);
       return { loggedOut: true, serverRevoked: true };
     } catch (error) {
       if (error instanceof DesktopGatewayFailure) {
@@ -485,6 +556,7 @@ export async function changePassword(t: GatewayTransport, b: CompanionBridge, cu
     t.tokenIsRestored = false;
     t.credentialPersistence = "memory";
     await t.credentials?.clear().catch(() => undefined);
+    await forgetRememberedAccount(t).catch(() => undefined);
     return { changed: true, sessionsRevoked: true };
   }
 

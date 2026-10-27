@@ -27,7 +27,7 @@ test("摘要盖到 541、回放从 561 起：注入块点出中间那一段，�
   const block = renderSummaryInjection(input(), "561", page(440, 565));
   assert.match(block!, /更早还有 1 段没有任何摘要覆盖/);
   assert.match(block!, /消息 542–560/);
-  assert.match(block!, /companion_read_history/);
+  assert.match(block!, /companion_observe/);
 });
 
 test("两条线接得上或互相盖住时不报洞——有洞才说，没洞不制造限制", () => {

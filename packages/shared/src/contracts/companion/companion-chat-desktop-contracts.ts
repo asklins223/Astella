@@ -108,7 +108,7 @@ export const companionAgentRouteEventV1Schema = z.strictObject({
   version: z.literal(1),
   /** 事件在 companion_stream_events 里的 seq（会话内单调）。 */
   seq: z.number().int().nonnegative(),
-  /** 工具名（companion_open_card 等），仅用于展示。 */
+  /** 工具名（open.card 等），仅用于展示。 */
   tool: z.string().min(1).max(80),
   safeSummary: z.string().min(1).max(240),
   route: allowedMainRouteV2Schema,
@@ -149,7 +149,7 @@ export type CompanionAgentRoutesListResultV1 = z.infer<typeof companionAgentRout
 export const companionRunNodeEventV1Schema = z.strictObject({
   version: z.literal(1),
   seq: z.number().int().nonnegative(),
-  /** 过程事件：assistant.status / assistant.thinking / agent.tool。 */
+  /** Ordered archive: process, visible body chunks, utterances and final message identity. */
   type: z.string().min(1).max(64),
   /** 事件 payload（与 SSE 帧里的 payload 同一个对象）。 */
   payload: z.unknown(),

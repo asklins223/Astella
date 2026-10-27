@@ -275,7 +275,7 @@ describe("parseCompanionSseFrame（伴星 SSE 帧的过桥门槛）", () => {
   });
 
   it("真实正文保存回执允许传递受限的长 CRDT 更新，超出合同仍丢弃", () => {
-    const tool = { toolCallId: "edit-call", name: "companion_edit_note", toolVersion: "1.0.0", riskClass: "reversible_low", status: "succeeded", safeLabel: "已保存正文",
+    const tool = { toolCallId: "edit-call", name: "notes.write.edit", toolVersion: "1.0.0", riskClass: "reversible_low", status: "succeeded", safeLabel: "已保存正文",
       noteEdit: { kind: "edited_note", noteId: "11111111-1111-4111-8111-111111111111", noteVersionId: "22222222-2222-4222-8222-222222222222", operation: "append", summary: "已追加", update: "A".repeat(24_000) } };
     expect(parseCompanionSseFrame(frame({ type: "agent.tool", payload: { tool } }))?.payload.tool).toEqual(tool);
     expect(parseCompanionSseFrame(frame({ type: "agent.tool", payload: { tool: { ...tool, noteEdit: { ...tool.noteEdit, update: "A".repeat(3_000_001) } } } }))).toBeNull();
@@ -473,7 +473,7 @@ describe("DesktopGateway", () => {
     };
 
     function fakeStore(initial: string | null = null) {
-      const state = { token: initial, saves: [] as string[], clears: 0 };
+      const state = { token: initial, saves: [] as string[], clears: 0, remembered: null as import("../gateway/desktop-gateway-credentials").QuickLoginCredential | null };
       return {
         state,
         store: {
@@ -481,6 +481,9 @@ describe("DesktopGateway", () => {
           load: async () => state.token,
           save: async (token: string) => { state.token = token; state.saves.push(token) },
           clear: async () => { state.token = null; state.clears += 1 },
+          loadRemembered: async () => state.remembered,
+          saveRemembered: async (value: import("../gateway/desktop-gateway-credentials").QuickLoginCredential) => { state.remembered = value; },
+          clearRemembered: async () => { state.remembered = null; },
         },
       };
     }
@@ -499,6 +502,59 @@ describe("DesktopGateway", () => {
         return new Response(JSON.stringify({ ok: true }), { status: 200 });
       };
     }
+
+    it("leaves a signed-out account closed until its avatar is explicitly used", async () => {
+      const { state, store } = fakeStore();
+      const fetcher = vi.fn(routeAuth({}));
+      vi.stubGlobal("fetch", fetcher);
+      const gateway = new DesktopGateway(environment(), { credentials: store });
+      await ns_auth.login(gateway.gatewayTransport, gateway.companionBridge, "student@example.com", "password", undefined, true);
+      await expect(ns_auth.logout(gateway.gatewayTransport, gateway.companionBridge, undefined, true))
+        .resolves.toEqual({ loggedOut: true, serverRevoked: false, quickLoginAvailable: true });
+      expect(state.token).toBeNull();
+      expect(state.remembered?.token).toBe("issued-token");
+      expect(fetcher.mock.calls.some(([url]) => String(url).endsWith("/auth/logout"))).toBe(false);
+      const reopened = new DesktopGateway(environment(), { credentials: store });
+      await expect(ns_auth.getSession(reopened.gatewayTransport)).resolves.toMatchObject({ status: "anonymous" });
+      const hint = await ns_auth.getRememberedAccount(reopened.gatewayTransport);
+      expect(hint).toEqual({ email: "student@example.com", displayName: null, avatarDataURL: null });
+      await expect(ns_auth.resumeRememberedAccount(reopened.gatewayTransport, reopened.companionBridge))
+        .resolves.toMatchObject({ status: "authenticated" });
+      expect(state.token).toBe("issued-token");
+    });
+
+    it("retires an expired quick credential but preserves it during a network outage", async () => {
+      const { state, store } = fakeStore();
+      const base = routeAuth({});
+      let failure: "offline" | "expired" | null = null;
+      vi.stubGlobal("fetch", vi.fn(async (input, init) => {
+        if (String(input).endsWith("/auth/me") && failure === "offline") throw new TypeError("offline");
+        if (String(input).endsWith("/auth/me") && failure === "expired") return new Response("{}", { status: 401 });
+        return base(input, init);
+      }));
+      const gateway = new DesktopGateway(environment(), { credentials: store });
+      await ns_auth.login(gateway.gatewayTransport, gateway.companionBridge, "student@example.com", "password", undefined, true);
+      await ns_auth.logout(gateway.gatewayTransport, gateway.companionBridge, undefined, true);
+      failure = "offline";
+      await expect(ns_auth.resumeRememberedAccount(gateway.gatewayTransport, gateway.companionBridge)).rejects.toBeInstanceOf(DesktopGatewayFailure);
+      expect(state.remembered).not.toBeNull();
+      expect(gateway.gatewayTransport.token).toBeNull();
+      failure = "expired";
+      await expect(ns_auth.resumeRememberedAccount(gateway.gatewayTransport, gateway.companionBridge)).rejects.toBeInstanceOf(DesktopGatewayFailure);
+      expect(state.remembered).toBeNull();
+      expect(state.token).toBeNull();
+    });
+
+    it("does not offer or send a remembered credential to a different service", async () => {
+      const { state, store } = fakeStore();
+      vi.stubGlobal("fetch", vi.fn(routeAuth({})));
+      const gateway = new DesktopGateway(environment(), { credentials: store });
+      await ns_auth.getSession(gateway.gatewayTransport);
+      state.remembered = { origin: "https://another.test", token: "other-token", email: "student@example.com", displayName: null, avatarDataURL: null };
+      await expect(ns_auth.getRememberedAccount(gateway.gatewayTransport)).resolves.toBeNull();
+      await expect(ns_auth.resumeRememberedAccount(gateway.gatewayTransport, gateway.companionBridge)).rejects.toMatchObject({ code: "auth_required" });
+      expect(gateway.gatewayTransport.token).toBeNull();
+    });
 
     it("reports local-file persistence for a device that has not stored a credential yet", async () => {
       const { store } = fakeStore();

@@ -20,19 +20,20 @@ import { CompanionToolBlockedError, CompanionToolError, CompanionToolNotExecuted
 export async function executeCompanionParticipationTool(event: AgentEventContext, name: string,
   args: Record<string, unknown>, toolCallId?: string): Promise<AgentToolExecutionResult> {
   const scope = { workspaceId: event.ctx.workspaceId, userId: event.read.userId };
-  if (name === "companion_finish_participation") {
+  if (name === "say.finish_participation") {
     if (!event.read.initiativeInput) throw new CompanionToolBlockedError("这是内部主动考虑的结束能力，当前用户提问仍需要完整回答。");
     companionFinishParticipationV1Schema.parse(args);
     return { value: { decision: "silent", completed: true }, safeSummary: "本次考虑已结束。" };
   }
-  if (name === "companion_read_participation") {
+  if (name === "attention.read.participation") {
     const value = await withWorkerWorkspaceTransaction(scope, async tx => ({
       preferences: await readParticipationPreferences(tx, scope), awareness: await readCompanionAwareness(tx, scope),
       attention: await listCompanionAttention(tx, scope),
     }));
     return { value, safeSummary: "已读到相处偏好、实际情境和关注安排。" };
   }
-  if (name === "companion_publish_utterance") {
+  if (name === "say.publish") {
+    await event.flushThinking?.();
     if (!toolCallId) throw new CompanionToolError("这条发言缺少实际身份。");
     const page = event.read.pageContext as { context?: { pageKind?: string; replyPurpose?: string; annotationTarget?: { requestId: string } }; selection?: unknown } | null;
     if (!page?.context?.annotationTarget && (page?.context?.replyPurpose || (page?.context?.pageKind === "note" && page.selection)))
@@ -43,7 +44,7 @@ export async function executeCompanionParticipationTool(event: AgentEventContext
       const [saved] = await withWorkerWorkspaceTransaction(scope, tx => tx.execute<{ id: string }>(sql`SELECT id FROM note_annotations
         WHERE id=${page.context!.annotationTarget!.requestId} AND workspace_id=${scope.workspaceId}
           AND user_id=${scope.userId} AND generation_job_id=${event.ctx.id}`));
-      if (!saved) throw new CompanionToolNotExecutedError("先用 companion_write_annotation 写入完整解释，再结束这轮交流。发言不能代替批注。");
+      if (!saved) throw new CompanionToolNotExecutedError("先用 companion_notes_write（action=annotate）写入完整解释，再结束这轮交流。发言不能代替批注。");
     }
     if (isCompanionParticipationClosure(parsed.text))
       throw new CompanionToolNotExecutedError("执行收尾不需要发给用户。没有新内容时返回空 content 安静结束。");
@@ -52,7 +53,7 @@ export async function executeCompanionParticipationTool(event: AgentEventContext
     if (!validated.ok) throw new CompanionToolError("这条发言未通过正文校验，请修正后再说。");
     const text = validated.text;
     if (await companionInitiativeRepeatsSpeech(event.read, scope, text))
-      throw new CompanionToolNotExecutedError("这段内容已经说过。请换一个实际想说的新内容，或者用 companion_finish_participation 安静结束。");
+      throw new CompanionToolNotExecutedError("这段内容已经说过。请换一个实际想说的新内容，或者用 companion_say（action=finish_participation）安静结束。");
     const review = await event.reviewInitiativeSpeech?.(text);
     if (review) throw new CompanionToolNotExecutedError(`这条主动发言没有发布：${review}。请换一个有实际新增内容的话题，或安静结束。`);
     event.verifyUtterance?.(text);
@@ -109,9 +110,9 @@ export async function executeCompanionParticipationTool(event: AgentEventContext
   const value = await withWorkerWorkspaceTransaction(scope, async tx => {
     await lockJobLease(tx, event.ctx);
     await assertCompanionContextSourcesCurrent(tx, scope, event.read.runId);
-    if (name === "companion_arrange_attention") return arrangeCompanionAttention(tx, scope,
+    if (name === "attention.write.arrange") return arrangeCompanionAttention(tx, scope,
       companionAttentionWriteV1Schema.parse(args), { conversationId: event.read.conversationId, runId: event.read.runId });
-    if (name === "companion_save_participation") {
+    if (name === "attention.write.save_participation") {
       if (!event.read.userMessageId || event.read.initiativeInput)
         throw new CompanionToolBlockedError("内部关注不能替用户修改相处偏好。");
       const input = companionParticipationToolWriteV1Schema.parse(args);
@@ -119,7 +120,11 @@ export async function executeCompanionParticipationTool(event: AgentEventContext
         WHERE id=${event.read.userMessageId} AND conversation_id=${event.read.conversationId} AND role='user'`);
       const original = message?.blocks.filter(b => b.type === "text").map(b => b.text ?? "").join("\n") ?? "";
       if (!original.includes(input.sourceQuote)) throw new CompanionToolBlockedError("保存依据须是本轮用户的真实原话。");
-      return writeParticipationPreferences(tx, scope, { ...input, source: { kind: "user_message",
+      // Reading the current revision is the same step an explicit revision fence
+      // would perform; omitting it must not make a direct preference unsavable.
+      const expectedRevision = input.expectedRevision
+        ?? (await readParticipationPreferences(tx, scope)).revision;
+      return writeParticipationPreferences(tx, scope, { ...input, expectedRevision, source: { kind: "user_message",
         workspaceId: scope.workspaceId, messageId: event.read.userMessageId, quote: input.sourceQuote } });
     }
     throw new CompanionToolError("没有这项参与能力。");
@@ -131,7 +136,7 @@ export async function executeCompanionParticipationTool(event: AgentEventContext
   });
   return { value, safeSummary: !value.changed
     ? "已核对：当前状态已经满足，无需变更；版本、依据和原有安排均未改动。"
-    : name === "companion_save_participation" ? "已经记住这次明确的相处偏好。" : "关注安排已保存；触发时会结合情境重新考虑。" };
+    : name === "attention.write.save_participation" ? "已经记住这次明确的相处偏好。" : "关注安排已保存；触发时会结合情境重新考虑。" };
 }
 
 /** Both publication channels check the persisted exchange, including speech outside the replay window. */

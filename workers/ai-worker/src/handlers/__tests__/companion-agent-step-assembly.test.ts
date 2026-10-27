@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { assembleCompanionStepRequest, companionStepPolicyText, companionStepToolSurface, companionWebSearchAllowedForStep } from "../agent/companion-agent-step-assembly.ts";
+import { assembleCompanionStepRequest, companionStepPolicyText, companionStepToolSurface } from "../agent/companion-agent-step-assembly.ts";
 import { companionStepOutputCeiling } from "../turn/companion-dialogue-content.ts";
 import type { AgentTurnRequest } from "@astella/shared";
 import { companionStepCorrectionMessages } from "../turn/companion-step-plan.ts";
@@ -38,47 +38,34 @@ test("host occasions do not inherit the user-dialogue continuation task", () => 
 
 test("终答步收起工具时绝不留下空工具面配 required 的那一对", () => {
   const shape = companionStepToolSurface({
-    toolDefinitions: [READ_TOOL, WRITE_TOOL] as never[], webSearchAllowedForStep: false,
+    toolDefinitions: [READ_TOOL, WRITE_TOOL] as never[],
     finalAnswerOnly: true, requiresTool: true, toolCallCount: 0,
   });
   assert.deepEqual(shape.tools, []);
   assert.equal(shape.toolChoice, "auto", "tools 空 + required 是 provider 直接 400 的那一对");
 });
 
-test("联网工具四样都真才留下，其他工具不受它影响", () => {
-  const cases = [
-    { accountEnabled: true, constraintsEnabled: true, limit: null, used: 0, expected: true },
-    { accountEnabled: false, constraintsEnabled: true, limit: null, used: 0, expected: false },
-    { accountEnabled: true, constraintsEnabled: false, limit: null, used: 0, expected: false },
-    { accountEnabled: true, constraintsEnabled: true, limit: 2, used: 2, expected: false },
-    { accountEnabled: true, constraintsEnabled: true, limit: 2, used: 1, expected: true },
-  ];
-  for (const input of cases) {
-    const shape = companionStepToolSurface({
-      toolDefinitions: [READ_TOOL, WEB_TOOL] as never[],
-      webSearchAllowedForStep: companionWebSearchAllowedForStep(input),
-      finalAnswerOnly: false, requiresTool: false, toolCallCount: 0,
-    });
-    assert.equal(shape.tools.some(tool => tool.name === "agent_web_search"), input.expected && webSearchServiceUp(),
-      `账号 ${input.accountEnabled} 外发 ${input.constraintsEnabled} 额度 ${input.used}/${input.limit}`);
-    assert.ok(shape.tools.some(tool => tool.name === "companion_read_note"), "读工具永远在");
-  }
+test("联网开关不再摘掉工具面：web 域同时读文档，执行层按动作拒绝", () => {
+  // `companion_web` 一个域里有 search 和 read_document 两个动作。按工具摘表面
+  // 会连读文档一起摘掉，所以开关只在执行层按 action 生效（见 judgeCompanionUnavailableTool）。
+  const shape = companionStepToolSurface({
+    toolDefinitions: [READ_TOOL, WEB_TOOL] as never[],
+    finalAnswerOnly: false, requiresTool: false, toolCallCount: 0,
+  });
+  assert.ok(shape.tools.some(tool => tool.name === "agent_web_search"));
+  assert.ok(shape.tools.some(tool => tool.name === "companion_read_note"));
 });
-
-// 服务可用性由环境决定，测试里跟着它走，不另写一份判据。
-function webSearchServiceUp(): boolean {
-  return companionWebSearchAllowedForStep({ accountEnabled: true, constraintsEnabled: true, limit: null, used: 0 });
-}
 
 test("原句批注与整篇交付各自拿到需要完整交付的那句指引", () => {
   const base = { permissionLevel: "full", toolCount: 3, stepBudget: 8, finalAnswerOnly: false, attentionIntent: "question", offeredToolNames: ["companion_read_note"] };
   const annotation = companionStepPolicyText({ ...base, writingAnnotation: true, completeNoteReply: false });
-  assert.match(annotation, /companion_write_annotation/);
+  assert.match(annotation, /companion_notes_write/);
+  assert.match(annotation, /action=annotate/);
   assert.match(annotation, /聊天正文不会保存成解释/);
   assert.ok(!annotation.includes("这轮正文会完整保存为笔记学习内容"));
   const noteReply = companionStepPolicyText({ ...base, writingAnnotation: false, completeNoteReply: true });
   assert.match(noteReply, /用连续最终正文完整交付/);
-  assert.ok(!noteReply.includes("companion_write_annotation 独立写入"));
+  assert.ok(!noteReply.includes("action=annotate 独立写入"));
   const plain = companionStepPolicyText({ ...base, writingAnnotation: false, completeNoteReply: false });
   assert.ok(!plain.includes("批注正文") && !plain.includes("分句发言工具"));
 });

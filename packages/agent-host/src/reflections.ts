@@ -299,7 +299,7 @@ export async function pendingPersonaProposalSources(
     SELECT c.id, c.name, c.arguments_sha256
     FROM companion_agent_tool_calls c
     WHERE c.user_id = ${userId} AND c.run_id = ${pending.proposalId}::uuid
-      AND c.name IN ('companion_revise_own_style', 'companion_revise_own_tags', 'companion_revise_identity')
+      AND c.name IN ('persona.write.style', 'persona.write.tags', 'persona.write.identity')
     ORDER BY c.created_at
   `);
   return rows.map((row) => ({

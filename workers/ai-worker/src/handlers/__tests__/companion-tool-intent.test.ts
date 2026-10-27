@@ -25,14 +25,34 @@ function taskContext(signal = new AbortController().signal) {
     runId: "run-tool-intent-test",
     userId: "user-tool-intent-test",
     permissionLevel: "guided",
+    capabilities: ["companion_notes_read"],
     currentActiveTransaction: () => undefined,
     verifyAttempt: async () => true,
   };
 }
 
 const proposal = (action: boolean) => ({ intent: action ? "task" : "conversation", toolUse: action ? "act" : "none",
-  subjects: [], goalRelation: action ? "new" : "unrelated", candidateOperations: [], ambiguities: [],
+  subjects: [], goalRelation: action ? "new" : "unrelated",
+  candidateOperations: action ? ["companion_notes_read"] : [], ambiguities: [],
   voiceStyle: { decision: "none", instruction: null } });
+
+test("hybrid 的语义读取结果和解释失败都不能被‘最近更新’提升成写入", async () => {
+  const messages = [{ role: "user" as const, content: "请比较书房里最近更新的三篇手记，说明内容差异和适合先读的顺序。" }];
+  const context = { ...taskContext(), semanticOnly: true,
+    capabilities: ["companion_read_note", "companion_search_notes", "companion_edit_note"] };
+  const model = { ...provider(() => false), chatCompletion: async () => ({
+    content: JSON.stringify({ ...proposal(false), intent: "question", toolUse: "read",
+      candidateOperations: ["companion_read_note"] }), usage: {},
+  }) } as AIProvider;
+  const read = await interpretCompanionTurn(model, messages, context);
+  assert.equal(read.toolUse, "read");
+  assert.deepEqual(read.candidateOperations, ["companion_read_note"]);
+  const invalid = { ...model, chatCompletion: async () => ({ content: "invalid", usage: {} }) } as AIProvider;
+  const uncertain = await interpretCompanionTurn(invalid, messages, context);
+  assert.equal(uncertain.status, "uncertain");
+  assert.equal(uncertain.toolUse, "uncertain");
+  assert.deepEqual(uncertain.candidateOperations, []);
+});
 
 test("structured attention interprets dialect intent from current wording and recent context", async () => {
   const messages = [
@@ -105,21 +125,21 @@ test("用户禁止读取资料时仍可创建独立笔记，工具目录和分�
   const names = definitions.map(tool => tool.name);
   assert.ok(!names.includes("companion_search_notes"));
   assert.ok(!names.includes("companion_read_note"));
-  assert.ok(names.includes("companion_create_note"));
-  assert.match(getCompanionAgentTool("companion_create_note")!.description,
+  assert.ok(names.includes("companion_notes_write"));
+  assert.match(getCompanionAgentTool("companion_notes_write")!.description,
     /禁止库内读取时 links 留空/);
   const model = { ...provider(() => true), chatCompletion: async (messages: Parameters<AIProvider["chatCompletion"]>[0]) => {
     const input = JSON.parse(String(messages.at(-1)?.content));
     const instruction = String(messages[0]?.content);
     assert.deepEqual(input.capabilities.map((tool: { name: string }) => tool.name), names);
     assert.match(instruction, /明确禁止搜索或读取资料时，仍独立创建新笔记，不发起资料读取或添加库内链接/);
-    return { content: JSON.stringify({ ...proposal(true), candidateOperations: ["companion_create_note"] }), usage: {} };
+    return { content: JSON.stringify({ ...proposal(true), candidateOperations: ["companion_notes_write"] }), usage: {} };
   } } as AIProvider;
   const result = await interpretCompanionTurn(model, [
     { role: "user", content: "把刚才聊的知识点写成新笔记，不要读取其他资料。" },
   ], { ...taskContext(), permissionLevel: "full", capabilities: names });
   assert.equal(result.toolUse, "act");
-  assert.deepEqual(result.candidateOperations, ["companion_create_note"]);
+  assert.deepEqual(result.candidateOperations, ["companion_notes_write"]);
 });
 
 test("生成请求的分类输入只带短说法不带整份说明，当前笔记与历史拒绝不会替代能力事实", async () => {
@@ -135,14 +155,14 @@ test("生成请求的分类输入只带短说法不带整份说明，当前笔�
     // 方案 52 §4.5：分类器的活儿是从面里挑 name，整份 description 每轮白付 3,394 token。
     assert.ok(input.capabilities.every((tool: { description?: string }) => tool.description === undefined),
       "分类输入不能再带上工具级 description；要加回去先跑对照");
-    const handoff = input.capabilities.find((tool: { name: string }) => tool.name === "agent_start_goal");
-    assert.equal(handoff.label, COMPANION_AGENT_TOOL_LABELS["agent_start_goal"],
+    const handoff = input.capabilities.find((tool: { name: string }) => tool.name === "companion_goals_write");
+    assert.equal(handoff.label, COMPANION_AGENT_TOOL_LABELS["companion_goals_write"],
       "用途取唯一能力清单里的短说法，不在分类器里另写一份文案");
     assert.equal(handoff.riskClass, "reversible_low");
     assert.match(instruction, /历史助手说过能力没接上、不能保存，不是当前能力事实/);
     assert.match(instruction, /不要求用户再说‘保存’或指定保存位置/);
     return { content: JSON.stringify({ ...proposal(true),
-      subjects: [{ description: "这篇笔记", objectIndex: 0 }], candidateOperations: ["agent_start_goal"] }), usage: {} };
+      subjects: [{ description: "这篇笔记", objectIndex: 0 }], candidateOperations: ["companion_goals_write"] }), usage: {} };
   } } as AIProvider;
   const result = await interpretCompanionTurn(model, [
     { role: "assistant", content: "速看和拓展能力没有接上，这轮只能写文字。" },
@@ -150,7 +170,7 @@ test("生成请求的分类输入只带短说法不带整份说明，当前笔�
   ], { ...taskContext(), objects: [note], capabilities: names });
   assert.equal(result.toolUse, "act");
   assert.deepEqual(result.subjects[0]?.reference, note);
-  assert.deepEqual(result.candidateOperations, ["agent_start_goal"]);
+  assert.deepEqual(result.candidateOperations, ["companion_goals_write"]);
 });
 
 test("只读权限的分类输入不泄露创建任务工具，模型猜出的写能力不能变成执行候选", async () => {
@@ -158,8 +178,8 @@ test("只读权限的分类输入不泄露创建任务工具，模型猜出的�
   const model = { ...provider(() => true), chatCompletion: async (messages: Parameters<AIProvider["chatCompletion"]>[0]) => {
     const input = JSON.parse(String(messages.at(-1)?.content));
     assert.ok(input.capabilities.every((tool: { riskClass: string }) => tool.riskClass === "read"));
-    assert.ok(!input.capabilities.some((tool: { name: string }) => tool.name === "agent_start_goal"));
-    return { content: JSON.stringify({ ...proposal(true), candidateOperations: ["agent_start_goal"] }), usage: {} };
+    assert.ok(!input.capabilities.some((tool: { name: string }) => tool.name === "companion_goals_write"));
+    return { content: JSON.stringify({ ...proposal(true), candidateOperations: ["companion_goals_write"] }), usage: {} };
   } } as AIProvider;
   const result = await interpretCompanionTurn(model, [{ role: "user", content: "生成速看" }], {
     ...taskContext(), permissionLevel: "read_only", capabilities: names,
@@ -521,6 +541,9 @@ test("显式产物请求与新建笔记请求有确定性判据，闲聊和'聊�
     ["不要创建或修改笔记。", { artifact: false, newNote: false }],
     ["请根据这篇已保存笔记解释区别。", { artifact: false, newNote: false }],
     ["不要修改旧笔记，请新建一篇笔记。", { artifact: false, newNote: true }],
+    ["请实际创建并保存一篇手记，标题为《阅读验收》。请勿修改其他手记，也不要生成学习卡。", { artifact: false, newNote: true }],
+    ["不要生成学习卡，请新建一篇手记。", { artifact: false, newNote: true }],
+    ["请创建一篇笔记，但不要生成任何东西，只在聊天里概括。", { artifact: false, newNote: false }],
     ["今天不想学习", { artifact: false, newNote: false }],
   ];
   for (const [text, expected] of cases) assert.deepEqual(explicitCompanionProductRequest(text), expected, text);
@@ -535,27 +558,27 @@ test("分类器把产物请求判成 none/unrelated 时补回候选并改成 act
     voiceStyle: { decision: "none" as const, instruction: null,
       persistentPreference: { action: "keep" as const, dialect: null } },
   } as never;
-  const capabilities = ["agent_start_goal", "companion_create_note", "companion_read_note"];
+  const capabilities = ["companion_goals_write", "companion_notes_write", "companion_notes_read"];
   const artifact = reconcileCompanionInterpretation(interpretation, "给我生成这篇笔记的速看吧", capabilities);
-  assert.deepEqual(artifact.candidateOperations, ["agent_start_goal"]);
+  assert.deepEqual(artifact.candidateOperations, ["companion_goals_write"]);
   assert.equal(artifact.toolUse, "act");
   assert.equal(artifact.intent, "task");
   assert.equal(artifact.goalRelation, "new");
   const newNote = reconcileCompanionInterpretation(interpretation, "给我生成几个历史的笔记", capabilities);
-  assert.deepEqual(newNote.candidateOperations, ["companion_create_note"]);
+  assert.deepEqual(newNote.candidateOperations, ["companion_notes_write"]);
   assert.equal(newNote.toolUse, "act");
   const unrelated = reconcileCompanionInterpretation(interpretation, "今天不想学习", capabilities);
   assert.deepEqual(unrelated.candidateOperations, []);
   assert.equal(unrelated.toolUse, "none");
-  const unavailable = reconcileCompanionInterpretation(interpretation, "给我生成这篇笔记的速看吧", ["companion_read_note"]);
+  const unavailable = reconcileCompanionInterpretation(interpretation, "给我生成这篇笔记的速看吧", ["companion_notes_read"]);
   assert.deepEqual(unavailable.candidateOperations, []);
-  const calculation = reconcileCompanionInterpretation(interpretation, "请用计算工具核对347×29", ["agent_calculate"], "read_only");
+  const calculation = reconcileCompanionInterpretation(interpretation, "请用计算工具核对347×29", ["companion_observe"], "read_only");
   assert.equal(calculation.toolUse, "read");
-  assert.deepEqual(calculation.candidateOperations, ["agent_calculate"]);
+  assert.deepEqual(calculation.candidateOperations, ["companion_observe"]);
   const readOnlyWrite = reconcileCompanionInterpretation(interpretation, "生成三篇笔记", capabilities, "read_only");
   assert.deepEqual(readOnlyWrite.candidateOperations, []);
-  const read = { ...newNote, intent: "question" as const, toolUse: "read" as const, goalRelation: "unrelated" as const, candidateOperations: ["companion_read_note"] };
-  const editable = [...capabilities, "companion_edit_note"];
+  const read = { ...newNote, intent: "question" as const, toolUse: "read" as const, goalRelation: "unrelated" as const, candidateOperations: ["companion_notes_read"] };
+  const editable = capabilities;
   for (const text of [
     "窗口验收：请根据《秦朝统一与中央集权制度》这篇已保存笔记，用三句话解释郡县制与分封制的区别；不要创建或修改笔记。",
     "别改当前笔记，只需要解释其中的概念。",
@@ -563,10 +586,12 @@ test("分类器把产物请求判成 none/unrelated 时补回候选并改成 act
   ]) {
     const result = reconcileCompanionInterpretation(read, text, editable);
     assert.equal(result.toolUse, "read", text);
-    assert.deepEqual(result.candidateOperations, ["companion_read_note"], text);
+    assert.deepEqual(result.candidateOperations, ["companion_notes_read"], text);
   }
   const edit = reconcileCompanionInterpretation(read, "请修改当前笔记的标题。", editable);
-  assert.equal(edit.toolUse, "act"); assert.ok(edit.candidateOperations.includes("companion_edit_note"));
+  assert.equal(edit.toolUse, "act"); assert.ok(edit.candidateOperations.includes("companion_notes_write"));
+  const namedEdit = reconcileCompanionInterpretation(read, "请再次实际修改《阅读与流式验收》，重新读取当前正文后把尾页标记替换并保存。", editable);
+  assert.equal(namedEdit.toolUse, "act"); assert.ok(namedEdit.candidateOperations.includes("companion_notes_write"));
   const quoted = reconcileCompanionInterpretation(read, "这句‘修改当前笔记’是什么意思？", editable);
   assert.equal(quoted.toolUse, "none"); assert.deepEqual(quoted.candidateOperations, []);
 });

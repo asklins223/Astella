@@ -26,6 +26,8 @@ import { AVATAR_MAX_BYTES } from "@astella/shared/desktop-ipc-contracts";
 import { ImageUp } from "lucide-react";
 import { SettingRow } from "./settings-primitives.tsx";
 import { AvatarCropDialog } from "./avatar-crop-dialog.tsx";
+import { AvatarSourcePicker } from "../../account/avatar-preset-picker";
+import { avatarPresetFile, type AvatarPresetId } from "../../account/default-avatars";
 
 /** 上传结果：失败时 `message` 是给人看的一句话，取景框就地显示它。 */
 export type AvatarUploadOutcome = { readonly ok: true } | { readonly ok: false; readonly message: string };
@@ -51,10 +53,15 @@ export function SettingsAccountPanel(props: {
    */
   const [pendingAvatar, setPendingAvatar] = useState<File | null>(null);
   const [fileFailure, setFileFailure] = useState<string | null>(null);
+  const [presetBusy, setPresetBusy] = useState(false);
+  const [selectedPreset, setSelectedPreset] = useState<AvatarPresetId | null>(null);
+  const [showsSources, setShowsSources] = useState(false);
+  const presetFlight = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const editButtonRef = useRef<HTMLButtonElement>(null);
   const closeCropper = (restoreFocus: boolean) => {
     setPendingAvatar(null);
-    if (restoreFocus) fileInputRef.current?.focus();
+    if (restoreFocus) editButtonRef.current?.focus();
   };
   return (
 <div className="settings-block">
@@ -95,15 +102,17 @@ export function SettingsAccountPanel(props: {
   </div>
   <div className="settings-rows">
     <SettingRow title="头像" detail="PNG / JPG / WebP / GIF，10 MB 以内；选好后拖动、缩放取景，圆环里就是最终的头像。">
-      <label className="button" data-disabled={props.busy !== null || !profile ? "true" : undefined} aria-disabled={props.busy !== null || !profile}>
+      <button ref={editButtonRef} type="button" className="button" disabled={props.busy !== null || !profile || presetBusy} onClick={() => setShowsSources(true)}>
         <ImageUp size={13} aria-hidden="true" />
-        {props.busy === "avatar" ? "上传中…" : "更换…"}
+        {props.busy === "avatar" ? "上传中…" : "编辑头像"}
+      </button>
         <input
           ref={fileInputRef}
           className="settings-file-input"
           type="file"
+          aria-label="自定义头像图片"
           accept="image/png,image/jpeg,image/webp,image/gif"
-          disabled={props.busy !== null || !profile}
+          disabled={props.busy !== null || !profile || presetBusy}
           onChange={(event) => {
             const file = event.currentTarget.files?.[0];
             event.currentTarget.value = "";
@@ -115,7 +124,6 @@ export function SettingsAccountPanel(props: {
             if (file) setPendingAvatar(file);
           }}
         />
-      </label>
       {profile?.avatarUrl ? (
         <button type="button" className="button" disabled={props.busy !== null} onClick={() => void clearAvatar()}>
           清除
@@ -123,6 +131,20 @@ export function SettingsAccountPanel(props: {
       ) : null}
     </SettingRow>
   </div>
+  {showsSources ? <AvatarSourcePicker selected={selectedPreset} busy={presetBusy || busy !== null} error={fileFailure}
+      onClose={() => setShowsSources(false)} onUpload={() => { setShowsSources(false); fileInputRef.current?.click(); }}
+      onSelect={(id) => {
+        if (presetFlight.current) return;
+        presetFlight.current = true; setPresetBusy(true); setFileFailure(null);
+        void (async () => {
+          try {
+            const result = await uploadAvatar(await avatarPresetFile(id));
+            if (result.ok) { setSelectedPreset(id); setShowsSources(false); }
+            else setFileFailure(result.message);
+          } catch (error) { setFileFailure(error instanceof Error ? error.message : "头像没有更新，请重试。"); }
+          finally { presetFlight.current = false; setPresetBusy(false); }
+        })();
+      }} /> : null}
   {fileFailure ? <p role="alert">{fileFailure}</p> : null}
   {pendingAvatar ? (
     <AvatarCropDialog
@@ -133,6 +155,7 @@ export function SettingsAccountPanel(props: {
         // 成功了才收框（按钮随即被禁用，焦点不还给它）；失败把原因抛回去，
         // 取景框留在原地显示，裁剪结果不丢，可以直接再试。
         if (outcome.ok) {
+          setSelectedPreset(null);
           closeCropper(false);
           return;
         }

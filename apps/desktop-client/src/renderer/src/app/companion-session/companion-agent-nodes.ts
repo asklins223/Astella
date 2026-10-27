@@ -19,7 +19,7 @@
  * 状态映射到 UI 只保留六档（轨道只需要这六档的视觉），映射表是 `TOOL_STATE`。
  */
 
-import { COMPANION_AGENT_TOOL_LABELS } from "@astella/shared/companion-agent-registry";
+import { COMPANION_AGENT_TOOL_LABELS, companionToolLabel } from "@astella/shared/companion-agent-registry";
 import { companionCreatedNoteV1Schema, companionEditedNoteV1Schema, type CompanionCreatedNoteV1, type CompanionEditedNoteV1 } from "@astella/shared/companion-note-authoring-contracts";
 
 import type {
@@ -89,9 +89,15 @@ export function savedCompanionNote(node: CompanionAgentNode) {
 /** Display labels are projected from the registered capabilities. */
 export const TOOL_LABELS = COMPANION_AGENT_TOOL_LABELS;
 
-/** 一个节点该显示的那句话。工具节点用上面的表；思考/动作节点的 label 本来就是人话。 */
+/**
+ * 一个节点该显示的那句话。工具节点用上面的表；思考/动作节点的 label 本来就是人话。
+ *
+ * 账本里存的是内部动作名（`notes.read.read`），工具面给的是域工具名
+ * （`companion_notes_read`）——`companionToolLabel` 两个都认，否则界面只剩一句
+ * 「正在处理…」。
+ */
 export function nodeLabel(node: CompanionAgentNode): string {
-  if (node.kind === "tool" && node.toolName) return TOOL_LABELS[node.toolName] ?? "正在处理…";
+  if (node.kind === "tool" && node.toolName) return companionToolLabel(node.toolName) ?? "正在处理…";
   return node.label;
 }
 

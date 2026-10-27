@@ -38,10 +38,10 @@ describe("实时工具帧与本轮快照接续", () => {
   it("a reconciled edit exposes its saved version and keeps the large CRDT update out of UI state", () => {
     const noteId = "11111111-1111-4111-8111-111111111111", noteVersionId = "22222222-2222-4222-8222-222222222222";
     const receipt = { kind: "edited_note", noteId, noteVersionId, operation: "append", summary: "已追加到笔记末尾", update: "encoded-update" };
-    const node = fold([tool("succeeded", { name: "companion_edit_note", noteEdit: receipt })])[0];
+    const node = fold([tool("succeeded", { name: "notes.write.edit", noteEdit: receipt })])[0];
     expect(savedCompanionNote(node)).toEqual({ noteId, noteVersionId, title: "修改后的笔记" });
     expect(node.noteEdited).not.toHaveProperty("update");
-    const recovered = reconcileCompanionAgentNodes(fold([tool("succeeded", { name: "companion_edit_note" })]), [node]);
+    const recovered = reconcileCompanionAgentNodes(fold([tool("succeeded", { name: "notes.write.edit" })]), [node]);
     expect(recovered[0].noteEdited).toEqual(node.noteEdited);
     expect(savedCompanionNote(fold([tool("outcome_unknown", { noteEdit: receipt })])[0])).toBeNull();
     expect(savedCompanionNote(fold([tool("succeeded", { noteEdit: { ...receipt, noteVersionId: "missing" } })])[0])).toBeNull();
@@ -244,7 +244,7 @@ describe("companionTurnProcessLine 的过程文案映射", () => {
   });
 
   it("没开思考但跑过工具：进入回复阶段", () => {
-    const nodes = fold([tool("succeeded", { name: "companion_read_note" })]);
+    const nodes = fold([tool("succeeded", { name: "notes.read.read" })]);
     expect(companionTurnProcessLine(nodes)).toBe("正在组织回复…");
   });
 

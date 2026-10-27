@@ -146,8 +146,8 @@ test("a journey conversation does not require a summary before its source can be
 test("the actual conversation-recall tool searches source records and retrieves the exact failed question", async () => {
   const event = { ctx: { workspaceId: scope.workspaceId }, read: { userId: scope.userId, conversationId: ids.current, conversationClock: clock },
     constraints: {}, expiresAt: new Date(Date.now() + 60_000).toISOString() } as AgentEventContext;
-  const definition = getCompanionAgentTool("companion_recall_past_conversation")!;
-  const result = await executeReadTool(event, definition, { query: "UnsummarizedNeedle", limit: 1 });
+  // 走真正的派发入口：域工具名 + action，和模型实际调用同一条路。
+  const result = await executeReadTool(event, getCompanionAgentTool("companion_memory_read")!, { action: "past_conversation", query: "UnsummarizedNeedle", limit: 1 });
   const value = result.value as { hits: Array<{ sourceKind: string; conversationId: string; fromSeq: string }>;
     searchScope: { exhaustive: boolean; sourceStatus: Record<string, string> } };
   assert.equal(value.hits.length, 1);
@@ -155,12 +155,13 @@ test("the actual conversation-recall tool searches source records and retrieves 
   assert.equal(value.hits[0]!.conversationId, ids.old);
   assert.equal(value.searchScope.exhaustive, false);
   assert.ok(Object.values(value.searchScope.sourceStatus).every(status => status === "searched"));
-  const source = await executeReadTool(event, definition, { query: "UnsummarizedNeedle",
+  const definition = getCompanionAgentTool("companion_memory_read")!;
+  const source = await executeReadTool(event, definition, { action: "past_conversation", query: "UnsummarizedNeedle",
     conversationId: value.hits[0]!.conversationId, fromSeq: Number(value.hits[0]!.fromSeq) });
   const messages = source.value.messages as Array<{ text: string; replyStatus: string }>;
   assert.equal(messages[0]!.text, failedQuestion);
   assert.equal(messages[0]!.replyStatus, "failed");
-  const invalid = await executeReadTool(event, definition, { query: "UnsummarizedNeedle", conversationId: ids.old });
+  const invalid = await executeReadTool(event, definition, { action: "past_conversation", query: "UnsummarizedNeedle", conversationId: ids.old });
   assert.match(invalid.safeSummary, /尚未检索/);
   assert.equal("searchScope" in invalid.value, false, "a rejected request must not claim that a search took place");
 });

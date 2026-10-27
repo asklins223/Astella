@@ -17,6 +17,7 @@ import {
 import { createProvider } from "../../lib/ai-provider.ts";
 import { AIContextOverflowError, governContextPressure } from "../../lib/context-governor.ts";
 import { extractJsonFromText } from "../../lib/providers/json-response.ts";
+import { buildRepairAttempt, repairInstruction } from "../../lib/model-repair-attempt.ts";
 import { resolveProviderCallTimeout } from "../../lib/handler-timeout-config.ts";
 import { planCoveringChunks } from "../../lib/source-coverage.ts";
 import { assertJobLease, lockJobLease, withJobTransaction } from "../../lib/job-lease.ts";
@@ -35,14 +36,15 @@ const visibleNoteCondition = sql.raw(noteVisibleSqlText(
   "NULLIF(current_setting('app.user_id', true), '')::uuid",
 ));
 
-const overviewChunkSchema = z.strictObject({
-  // 只卡下限：说清楚是要求，"最多多少字"不是。上限原先与提示词里那串数字互相打架
-  // （提示词写 120／160／140，合同写 180／200／200），模型按提示词写、按合同被拒。
-  gist: z.string().trim().min(8),
-  points: z.array(z.strictObject({
+const overviewChunkSchema = z.object({
+  // 字段只卡"有没有内容"：字数是长文的尺子，三行笔记的一句话小结、五个字的解释
+  // 就是它全部的解释空间。是否可信由引用核对（逐字来自原文）与"至少留下一条"判定，
+  // 不由本地字数判。模型多给的键直接丢弃，不为一个多余字段判死整份结果。
+  gist: z.string().trim().min(1),
+  points: z.array(z.object({
     blockOrdinal: z.number().int().min(0).max(100_000),
-    quote: z.string().trim().min(8),
-    explanation: z.string().trim().min(8),
+    quote: z.string().trim().min(1),
+    explanation: z.string().trim().min(1),
   })).min(1),
 });
 
@@ -51,8 +53,8 @@ type OverviewPoint = { blockOrdinal: number; quote: string; explanation: string 
 
 /**
  * 引文核对的唯一一份在 `note-grounding-source.ts`（脑图/速看/拓展共用）；
- * 速看这一档保留自己的"至少 8 个字"下限——太短的句子撑不起一个要点，
- * 而这个闸是原有行为，收口时不能顺手丢掉。
+ * 速看这一档保留"至少 8 个字"的下限——太短的句子撑不起一个要点。短段
+ * （不足 40 字）降到 4 个字：三行清单里的「明天继续。」就是它唯一的依据。
  */
 export function exactQuote(blockText: string, candidate: string): string | null {
   return quoteFromSource(blockText, candidate, { minNeedleChars: 8 });
@@ -123,19 +125,26 @@ export function parseOverviewChunk(raw: string) {
  */
 export function resolveOverviewPoints(
   points: readonly { blockOrdinal: number; quote: string; explanation: string }[],
-  blockAt: (ordinal: number) => SourceBlock | undefined,
+  blocks: readonly SourceBlock[],
 ): { points: OverviewPoint[]; dropped: number } {
+  const quoteIn = (block: SourceBlock, quote: string) => block.type === "image"
+    ? null
+    : exactQuote(noteBlockRenderedTextV1(block.type, block.content), quote);
   const kept: OverviewPoint[] = [];
   let dropped = 0;
   for (const point of points) {
-    const source = blockAt(point.blockOrdinal);
-    // 与脑图、扩展同一个口径：底本先渲染再逐字定位，落库的是读者在笔记上看到的那一句，
-    // 不是带 `**`、`- ` 的 markdown 源码。
-    const quote = source && source.type !== "image"
-      ? exactQuote(noteBlockRenderedTextV1(source.type, source.content), point.quote)
-      : null;
-    if (!quote) { dropped += 1; continue; }
-    kept.push({ blockOrdinal: point.blockOrdinal, quote, explanation: point.explanation });
+    const claimed = blocks.find((block) => block.ordinal === point.blockOrdinal);
+    let anchored = claimed ? { ordinal: claimed.ordinal, quote: quoteIn(claimed, point.quote) } : null;
+    if (!anchored?.quote) {
+      // 模型会把列表项编号当成段号（一篇三行列表就报 1/2/3）——引文本身仍逐字来自
+      // 这一段，按它真正所在的块重新锚定，比整条丢掉更接近"读数不该把合法内容判死"。
+      for (const block of blocks) {
+        const quote = quoteIn(block, point.quote);
+        if (quote) { anchored = { ordinal: block.ordinal, quote }; break; }
+      }
+    }
+    if (!anchored?.quote) { dropped += 1; continue; }
+    kept.push({ blockOrdinal: anchored.ordinal, quote: anchored.quote, explanation: point.explanation });
   }
   return { points: kept, dropped };
 }
@@ -300,7 +309,9 @@ export async function runNoteOverviewGenerate(job: JobPayload): Promise<void> {
       generationParameters,
       messages,
     });
-    const parsed = await runWorkerAiTask({
+    const chunkBlocks = blocks.filter((block) => chunk.ordinals.has(block.ordinal));
+    let rejected: { readonly output: string; readonly reason: string } | null = null;
+    const generated = await runWorkerAiTask({
       job,
       userId: job.requestedBy!,
       taskId: "note_overview_chunk",
@@ -312,22 +323,35 @@ export async function runNoteOverviewGenerate(job: JobPayload): Promise<void> {
       promptVersion: `${provider.promptVersion}:note-overview-chunk-v1`,
       resourceClass: "interactive_ai",
       timeoutMs: providerTimeout,
+      // 一发被结构或引文核对拒绝，允许带着上一版修正一次；两发都不过才判死。
+      maxModelCalls: 2,
+      maxAutoRetries: 1,
       isOutputShapeError: (error) => error instanceof NoteOverviewOutputError,
-      execute: async (request, signal) => {
+      execute: async (request, signal, retryIndex) => {
         await agentContext.reserveModelCall();
-        const response = await provider.chatCompletion(request, generationParameters, signal);
-        return {
-          ok: true,
-          output: parseOverviewChunk(response.content),
-          promptTokens: response.usage?.promptTokens ?? undefined,
-          completionTokens: response.usage?.completionTokens ?? undefined,
-        };
+        const response = await provider.chatCompletion(
+          retryIndex > 0 && rejected
+            ? buildRepairAttempt(request, rejected.output, repairInstruction(rejected.reason,
+              `只输出严格 JSON；quote 必须逐字出现在原文里；blockOrdinal 只能用这些段号：${[...chunk.ordinals].join("、")}；points 至少一条。`))
+            : request,
+          generationParameters, signal);
+        try {
+          const parsed = parseOverviewChunk(response.content);
+          const resolved = resolveOverviewPoints(parsed.points, chunkBlocks);
+          if (resolved.points.length === 0) throw new NoteOverviewOutputError("速看没有留下可回到原文的依据");
+          return {
+            ok: true,
+            output: { gist: parsed.gist, points: resolved.points, dropped: resolved.dropped },
+            promptTokens: response.usage?.promptTokens ?? undefined,
+            completionTokens: response.usage?.completionTokens ?? undefined,
+          };
+        } catch (error) {
+          if (error instanceof NoteOverviewOutputError) rejected = { output: response.content, reason: error.message };
+          throw error;
+        }
       },
     });
-    // 逐条核回原文；核不上的只剔掉那一条，不把同一段里已经核实的其他重点一起丢掉。
-    const resolved = resolveOverviewPoints(parsed.points, (ordinal) =>
-      chunk.ordinals.has(ordinal) ? blocks.find((block) => block.ordinal === ordinal) : undefined);
-    return { gist: parsed.gist, points: resolved.points, dropped: resolved.dropped };
+    return generated;
   }
 
   // 各段互相独立，一起发才让长笔记和短笔记花掉差不多的墙上时间；批次只数并发，

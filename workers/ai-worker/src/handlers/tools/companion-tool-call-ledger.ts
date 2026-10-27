@@ -29,9 +29,11 @@ import type { AgentTurnRequest, AgentTurnResult } from "@astella/shared";
 import { sql } from "drizzle-orm";
 import {
   canUseCompanionAgentTool,
+  companionOperationAction,
+  companionOperationDomainTool,
+  companionDomainActionAutoExecutes,
   getCompanionAgentTool,
-  COMPANION_PROPOSAL_EXECUTED_TOOLS,
-  COMPANION_AGENT_TOOL_LABELS,
+  companionToolLabel,
   type CompanionAgentToolDefinitionV1,
   type ProviderReasoningHandle,
 } from "@astella/shared";
@@ -41,7 +43,7 @@ import { logger } from "../../lib/logger.ts";
 import { ProviderRequestError } from "../../lib/provider-request-error.ts";
 import type { AIProvider } from "../../lib/ai-provider.ts";
 import { appendAgentEvent, readRunMeta } from "../agent/companion-agent-events.ts";
-import { buildActionPayload, createAgentProposal } from "../agent/companion-agent-proposal.ts";
+import { createAgentProposal } from "../agent/companion-agent-proposal.ts";
 import { prepareCompanionToolReview } from "./companion-tool-review.ts";
 import { TOOL_OUTCOME_UNKNOWN_SAFE_SUMMARY } from "./companion-tool-outcome.ts";
 import type { AgentEventContext } from "./companion-read-tools.ts";
@@ -98,8 +100,8 @@ export function boundedToolCallIdentity(
  * actions and other reads retain the existing required-tool contract.
  */
 const CONTEXT_RETRIEVAL_TOOLS = new Set([
-  "companion_read_history", "companion_recall_past_conversation",
-  "companion_recall_memory", "companion_read_memory",
+  "observe.history", "memory.read.past_conversation",
+  "memory.read.recall", "memory.read.read",
 ]);
 export function companionStepRequiresTool(decision: boolean | null, readCandidates?: readonly string[]): boolean {
   return decision === true && (!readCandidates?.length
@@ -269,8 +271,9 @@ export async function executeTool(
   signal?: AbortSignal,
 ): Promise<AgentToolExecutionResult | { waiting: true; proposalId: string }> {
   let confirmedProposalId: string | undefined;
-  if (event.read.initiativeInput && !isCompanionAutonomousTool(definition.name)
-    && (definition.riskClass !== "read" || ["companion_open_page", "companion_open_note", "companion_open_card"].includes(definition.name)))
+  if (event.read.initiativeInput && !(isCompanionAutonomousTool(definition.name)
+    || companionDomainActionAutoExecutes(definition.name, call.arguments))
+    && (definition.riskClass !== "read" || ["open.page", "open.note", "open.card"].includes(definition.name)))
     throw new CompanionToolBlockedError("这次只有内部关注，不能替用户执行业务操作。");
   let authorization = canUseCompanionAgentTool(
     (await readRunMeta(event)).permissionLevel,
@@ -298,9 +301,7 @@ export async function executeTool(
     throw new CompanionToolBlockedError(authorization.reason ?? "这一步超出了你给伴星的权限，我先不做");
   }
   if (authorization.requiresConfirmation) {
-    const payload = COMPANION_PROPOSAL_EXECUTED_TOOLS.has(definition.name)
-      ? await buildActionPayload(event, definition.name, call.arguments)
-      : await prepareCompanionToolReview(event, definition, call.arguments);
+    const payload = await prepareCompanionToolReview(event, definition, call.arguments);
     if (!payload) throw new CompanionToolError("这一步现在做不了（要做的那件东西已经不在了）");
     const proposal = await createAgentProposal(event, definition, call, payload);
     await appendAgentEvent(event, "agent.tool", {
@@ -310,7 +311,7 @@ export async function executeTool(
         toolVersion: definition.toolVersion,
         riskClass: definition.riskClass,
         status: "waiting_confirmation",
-        safeLabel: COMPANION_AGENT_TOOL_LABELS[definition.name] ?? definition.description.slice(0, 240),
+        safeLabel: companionToolLabel(definition.name) ?? definition.description.slice(0, 240),
         proposalId: proposal.proposalId,
         safeSummary: proposal.safeSummary,
       },
@@ -328,8 +329,8 @@ export async function executeTool(
       riskClass: definition.riskClass,
       status: "executing",
       ...(confirmedProposalId ? { proposalId: confirmedProposalId } : {}),
-      ...(definition.name === "companion_edit_note" ? { noteEditTarget: companionNoteEditTarget(call.arguments, event.read.pageContext) } : {}),
-      safeLabel: COMPANION_AGENT_TOOL_LABELS[definition.name] ?? definition.description.slice(0, 240),
+      ...(definition.name === "notes.write.edit" ? { noteEditTarget: companionNoteEditTarget(call.arguments, event.read.pageContext) } : {}),
+      safeLabel: companionToolLabel(definition.name) ?? definition.description.slice(0, 240),
     },
   });
   // 读类走既有 read 执行器；其余工具通过本轮授权与能力定义的确认判据后直执行。
@@ -367,7 +368,7 @@ export async function executeTool(
   // 客户端应直接执行，不再等「前往」。授权判定只在服务端做，客户端只服从标志。
   const permissionLevel = (await readRunMeta(event)).permissionLevel;
   const autoExecute = result.route !== undefined && permissionLevel === "full";
-  const noteCreated = definition.name === "companion_create_note" ? readCreatedNoteReceipt(result.resultRef ?? null) : null;
+  const noteCreated = definition.name === "notes.write.create" ? readCreatedNoteReceipt(result.resultRef ?? null) : null;
   await appendAgentEvent(event, "agent.tool", {
     tool: {
       toolCallId: call.id,
@@ -376,9 +377,9 @@ export async function executeTool(
       riskClass: definition.riskClass,
       status: "succeeded",
       ...(confirmedProposalId ? { proposalId: confirmedProposalId } : {}),
-      ...(definition.name === "companion_edit_note" && result.resultRef ? { noteEdit: companionEditedNoteV1Schema.parse(JSON.parse(result.resultRef)) } : {}),
-      ...(definition.name === "companion_write_annotation" && result.resultRef ? { noteAnnotation: companionWrittenAnnotationV1Schema.parse(JSON.parse(result.resultRef)) } : {}),
-      safeLabel: COMPANION_AGENT_TOOL_LABELS[definition.name] ?? definition.description.slice(0, 240),
+      ...(definition.name === "notes.write.edit" && result.resultRef ? { noteEdit: companionEditedNoteV1Schema.parse(JSON.parse(result.resultRef)) } : {}),
+      ...(definition.name === "notes.write.annotate" && result.resultRef ? { noteAnnotation: companionWrittenAnnotationV1Schema.parse(JSON.parse(result.resultRef)) } : {}),
+      safeLabel: companionToolLabel(definition.name) ?? definition.description.slice(0, 240),
       safeSummary: result.safeSummary,
       occurredAt: new Date().toISOString(),
       ...(noteCreated ? { noteCreated } : {}),
@@ -533,7 +534,7 @@ export async function ensureAgentToolCall(
         if (row.arguments_sha256 !== argsHash || row.name !== definition.name) {
           return blockedRecord();
         }
-        if (["companion_create_note", "companion_edit_note"].includes(definition.name) && ["executing", "outcome_unknown"].includes(row.status)) {
+        if (["notes.write.create", "notes.write.edit"].includes(definition.name) && ["executing", "outcome_unknown"].includes(row.status)) {
           const checked = await reconcileCompanionSavedNotes(tx, { workspaceId: event.ctx.workspaceId,
             userId: event.read.userId, runId: event.read.runId }, row.tool_call_id);
           if (checked.resolved.length) {
@@ -633,6 +634,12 @@ export async function ensureAgentToolCall(
  * 导出仅为可测：这是「冷启动续跑是否带回 reasoning 句柄」的唯一实现点，
  * 而 runCompanionDialogue 没有 provider 注入缝，无法从外层断言消息形状。
  */
+/** Rebuild the model-facing domain call from a frozen ledger operation row. */
+function domainCallArguments(operation: string, arguments_: Record<string, unknown>): Record<string, unknown> {
+  const action = companionOperationAction(operation);
+  return action === null ? arguments_ : { action, ...arguments_ };
+}
+
 export async function loadContinuation(
   event: AgentEventContext,
   baseMessages: AgentMessage[],
@@ -675,7 +682,10 @@ export async function loadContinuation(
     const definition = getCompanionAgentTool(row.name);
     if (!definition) throw new CompanionToolError("这项能力已经不可用，确认的改动没有执行。");
     const { runCompanionToolExecution } = await import("./companion-tool-execution-run.ts");
-    const run = await runCompanionToolExecution({ event, definition, arguments: row.arguments,
+    // The ledger stores only the fields this operation's executor accepts. The
+    // dispatcher needs the action back, or every confirmed card dies on
+    // "没有说明要执行哪一类动作" after the user has already said yes.
+    const run = await runCompanionToolExecution({ event, definition, arguments: domainCallArguments(row.name, row.arguments),
       operationCallId: row.tool_call_id, toolCallId: row.tool_call_id, reviewProposalId: proposalId,
       deadlineAt, signal: event.ctx.signal, runId: event.read.runId,
       logger });
@@ -702,8 +712,13 @@ export async function loadContinuation(
       : row.result_safe_summary ?? "操作尚未得到保存回执，请先核对结果。" };
   if (recovery) {
     const index = baseMessages.findIndex(message => message.role === "tool" && message.toolCallId === recovery.pendingCallId);
-    if (index < 0 || !baseMessages.some(message => message.role === "assistant"
-      && message.toolCalls?.some(call => call.id === recovery.pendingCallId && call.name === row.name)))
+    // The pending call may be named by its operation or by the domain tool it
+    // belongs to; both identify the same frozen call.
+    const domainName = companionOperationDomainTool(row.name) ?? row.name;
+    const pendingName = baseMessages.find(message => message.role === "assistant"
+      && message.toolCalls?.some(call => call.id === recovery.pendingCallId))?.toolCalls
+      ?.find(call => call.id === recovery.pendingCallId)?.name;
+    if (index < 0 || (pendingName !== row.name && pendingName !== domainName))
       throw new CompanionContextChangedError();
     const finish = row.status === "succeeded" ? withCompanionRecoveryTransaction : withCompanionFailureTransaction;
     await finish(event, async tx => {
@@ -724,7 +739,8 @@ export async function loadContinuation(
     {
       role: "assistant",
       content: "",
-      toolCalls: [{ id: row.tool_call_id, name: row.name, arguments: row.arguments }],
+      toolCalls: [{ id: row.tool_call_id, name: companionOperationDomainTool(row.name) ?? row.name,
+        arguments: domainCallArguments(row.name, row.arguments) }],
       ...(reasoning && reasoning.length > 0 ? { reasoning } : {}),
     },
     {

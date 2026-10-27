@@ -90,7 +90,7 @@ export function activeCompactionMaterial(messages: readonly Message[], includeLa
     // When a single retrieved historical source fills the request, keeping it
     // verbatim forever prevents recovery. Its whole completed round can be
     // read semantically, with exact original output retained in the checkpoint.
-    return includeLatestHistory && calls.every(call => ["companion_read_history", "companion_recall_past_conversation"].includes(call.name));
+    return includeLatestHistory && calls.every(call => ["observe.history", "memory.read.past_conversation"].includes(call.name));
   });
   if (!folded.length) return null;
   const remove = new Set(folded.flatMap(round => Array.from({ length: round.end - round.start + 1 }, (_, offset) => round.start + offset)));
@@ -108,11 +108,18 @@ export async function compactActiveToolContext(input: {
   maxOutputTokens: number;
   countTokens?: (text: string) => number | null | Promise<number | null>;
   summarize: (material: string, maxTokens: number) => Promise<string>;
+  /** Recovery callers set this: if the request already fits, return without a model call. */
+  skipWhenWithinTarget?: boolean;
 }): Promise<FoldedReplay | null> {
   const counting = input.countTokens ? { countTokens: input.countTokens } : {};
   let material = activeCompactionMaterial(input.request.messages);
   let protectedCost = material ? await measureAgentTurnRequest({ ...input.request, messages: material.kept }, counting) : null;
   const fullCost = await measureAgentTurnRequest(input.request, counting);
+  // History folding may already have brought the request under pressure. That
+  // is the common recovery case, and summarizing active tool rounds anyway adds
+  // a serial model call before the retry that would have fit as-is.
+  if (input.skipWhenWithinTarget
+    && fullCost.inputTokens + fullCost.errorMarginTokens < input.targetInputTokens) return null;
   if ((!protectedCost && fullCost.inputTokens + fullCost.errorMarginTokens >= input.targetInputTokens)
     || (protectedCost && protectedCost.inputTokens + protectedCost.errorMarginTokens >= input.targetInputTokens)) {
     material = activeCompactionMaterial(input.request.messages, true);

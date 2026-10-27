@@ -23,7 +23,7 @@ import { boundCompanionRecentHistory, type CompanionRecentHistoryMessage } from 
 import { conversationInstant, type CompanionConversationClock } from "../turn/companion-conversation-evidence.ts";
 
 const TASK_ID = "companion_tool_intent";
-const TASK_VERSION = 22;
+const TASK_VERSION = 23;
 /**
  * 分类器等待上限（2026-10-17）。
  *
@@ -55,6 +55,9 @@ export interface CompanionToolIntentTaskContext {
   runId: string;
   userId: string;
   permissionLevel: string;
+  /** Hybrid uses the semantic verdict directly; lexical fallbacks cannot turn
+   * a reference such as "最近更新" into an edit request. */
+  semanticOnly?: boolean;
   currentActiveTransaction?: () => unknown;
   verifyAttempt: (attempt: AiAttemptToken) => Promise<boolean>;
   stepTimeoutMs?: number;
@@ -143,14 +146,16 @@ export function buildCompanionTurnInterpretationMessages(
       content: [
         `你是伴星的回合解释器，只输出 JSON：{"intent":"conversation|question|task|task_control|mixed","toolUse":"none|read|act|uncertain","subjects":[],"goalRelation":"unrelated|new|continue|revise|control|discuss|unclear","candidateOperations":[],"ambiguities":[],"voiceStyle":{"decision":"none|apply|clarify","instruction":null,"persistentPreference":{"action":"keep|set|clear","dialect":null}},"executionConstraints":{"timeBasedWakeups":"forbid|unspecified","sourceQuote":null},"pendingOfferIndexes":[]}。`,
         "current 是用户这一句；recent 只帮助理解指代，不继承旧任务。intent：闲聊/情绪/称呼=conversation；知识、解释、查资料、核对记录=question；保存/修改/生成/安排/导航=task；控制后台目标=task_control；两者都有=mixed。",
+        'subjects 的每项格式是 {"description":"讨论对象"}，仅当 objects 里确有对应身份时再加 objectIndex；没有就省略索引。对象名称不要求已在 objects 出现，搜索与读取可以继续定位。',
         "toolUse：直接回答或闲聊=none；需要看用户自己的笔记、卡片、来源、历史、记忆、统计、到期、任务、提醒、页面、图片，或联网查资料、实际计算=read；需要写入、修改、删除、执行、导航=act；缺少对象/范围/指代不明/无法执行=uncertain。",
         "需要工具的例子：查看或读取资料、搜笔记/卡片、问学习进度/到期/任务/提醒/最近活动、看图、联网核实、把数值代入计算、保存或修改记忆/笔记/偏好/人格/提醒/共享/学习任务、调整笔记格式。不需要工具：普通知识解释、闲聊、情绪、角色口味、自我介绍、操作方法、直接写故事/诗/文案草稿。",
         "称呼伴星、随口招呼、情绪表达和角色口味是对话内容；话题名词或昵称没有对应 object 不构成歧义。",
-        "用户明确要求调整/整理/规范/优化当前笔记格式/排版，或插入/删除/替换正文、转表格/流程图时，是 task/act，候选 companion_edit_note；‘改一下’与‘调整一下’含义相同；明确说全文/整篇且没有局部限制时范围是整篇，无需选区或光标；只问有哪些问题、怎么调整、先别改时按 question/read；不要求用户额外说保存。",
-        "用户要求生成速看、脑图、互动演示、拓展稿或学习卡时是 task/act、goalRelation=new，用 agent_start_goal；不要求用户再说‘保存’或指定保存位置。历史助手说过能力没接上、不能保存，不是当前能力事实。",
-        "用户要求新建一到几篇笔记（‘写/生成/整理成笔记’，包括点名主题、不基于已有笔记）时是 task/act，候选 companion_create_note；要几篇就一篇一次保存。不要用 agent_start_goal：后台目标只能在已有笔记上出速看、脑图、演示、拓展稿或学习卡，不能新建笔记。",
+        "用户明确要求调整/整理/规范/优化当前笔记格式/排版，或插入/删除/替换正文、转表格/流程图时，是 task/act，候选 companion_notes_write（action=edit）；‘改一下’与‘调整一下’含义相同；明确说全文/整篇且没有局部限制时范围是整篇，无需选区或光标；只问有哪些问题、怎么调整、先别改时按 question/read；不要求用户额外说保存。",
+        "用户要求生成速看、脑图、互动演示、拓展稿或学习卡时是 task/act、goalRelation=new，用 companion_goals_write（action=start）；不要求用户再说‘保存’或指定保存位置。历史助手说过能力没接上、不能保存，不是当前能力事实。",
+        "用户要求新建一到几篇笔记（‘写/生成/整理成笔记’，包括点名主题、不基于已有笔记）时是 task/act，候选 companion_notes_write（action=create）；要几篇就一篇一次保存。不要用 companion_goals_write：后台目标只能在已有笔记上出速看、脑图、演示、拓展稿或学习卡，不能新建笔记。",
         "用户明确禁止搜索或读取资料时，仍独立创建新笔记，不发起资料读取或添加库内链接。",
         "candidateOperations 只填 capabilities 里的 name，是候选不是授权；subjects 讨论对象只在 objects 有真实对应时给 objectIndex，否则只写 description；只有指向 objects 里真实后台目标时才加 goalObjectIndex（0 起算），否则省略；goalRelation 只对真实 agent_run 用 continue/revise/control/discuss，其他用 unrelated；没有对象、代词未消解或修改范围不明放入 ambiguities。",
+        "objects 是宿主目前知道的对象线索，不是整个书房目录。用户要改一篇已命名或上下文已确定的手记时，即使还没有其 ID，也可判 task/act，并候选搜索、读取和编辑；执行链会定位并核实。尚未搜索不等于不存在，不把可由工具查明的目标身份当成用户必须补充的信息。",
         `voiceStyle：当前句明确要求改变口音/方言/语速/音色/场景语气→apply 并给 ≤50 字 instruction；结合完整语义和近期对话理解省略与指代，不能靠关键词或固定词序猜。只有用户明确说“以后/今后/之后都默认/一直用某具体方言”这类持续要求时才 set 并填规范名称；说过“以后默认河南话，但这句用四川话”要 set 河南话、本轮 apply 四川话；明确要求以后普通话或停止固定方言→clear、dialect=null；普通轮次和临时切换→none/keep；单轮点名其他地区不改默认；要求讲方言但没说哪种→clarify。只提到地区、讲自己想家、询问方言词义、讲故事/笑话都不等于切换声音。支持方言：${QWEN_TTS_SUPPORTED_DIALECTS.join("、")}。本轮明确要求普通话时 apply ${QWEN_TTS_STANDARD_MANDARIN_INSTRUCTION}。`,
         "executionConstraints 只记录 current 明确“只按事件触发/不要定时”的要求→forbid，并在 sourceQuote 逐字引用 current 里的原话；否则 unspecified/sourceQuote=null。历史里的单轮限制不继承。",
         "pendingOfferIndexes：recent 里某条 assistant 结尾还挂着用户这句没接的邀请/提议/等待，逐条给出 index；用户已接、已照做或已说不用回应就不放。只引用 recent 给过的 index，没有就返回空数组。",
@@ -186,20 +191,22 @@ function committedIntentTask<T>(output: T): AiTaskReceipt<T> {
  * 分类器是小模型，而它的候选操作直接决定工具面：`createCompanionToolSurface` 会把
  * `candidateOperations` 对应的组装进初始工具面。实测同一句"给我生成这篇笔记的速看吧"
  * 两次运行分别被判成 `read` 和 `none`；生产里"给我生成几个历史的笔记"被判成
- * `companion_save_memory`。`agent_start_goal` / `companion_create_note` 因此没进工具面，
+ * `companion_save_memory`。`agent_start_goal` / `companion_notes_write` 因此没进工具面，
  * 用户要的产物只能等她自己 `companion_load_tools`，或者根本做不成。
  *
  * 这里只补**候选**：当当前话语本身明确点名了产物、或明确要新建笔记时，把对应操作放回
  * 候选里。候选不是授权——执行侧仍按权限、风险等级和真实材料复核，补候选不改变她能做什么，
  * 只是把已经存在的入口重新放回她面前。否定句、"聊天里概括"和编辑当前笔记不加。
  */
-const COMPANION_CHAT_ONLY_REQUEST = /(?:聊天里|直接在聊天|只)(?:概括|说说|讲讲|回答)|不生成任何|别生成|不要生成|不用生成|不生成东西/;
+// A restriction on one product (e.g. 不要生成学习卡) must not erase a
+// separate, affirmative request to create a note in the same turn.
+const COMPANION_CHAT_ONLY_REQUEST = /(?:聊天里|直接在聊天|只)(?:概括|说说|讲讲|回答)|不生成任何(?:东西|产物|内容)|(?:别|不要|不用)生成(?:任何)?(?:东西|产物|内容)|不生成东西/;
 // 产物请求：动词在前（生成这篇的速看）或名词在前（速看生成一下）都算。
 const COMPANION_ARTIFACT_REQUEST = /(?:生成|做|来|准备|出|搞|整理|写|要|画)[^。！？]{0,8}(?:速看|脑图|思维导图|互动演示|动态讲解|演示|拓展稿|拓展笔记|往外学|学习卡|复习卡|草稿)|(?:速看|脑图|思维导图|互动演示|动态讲解|拓展稿|学习卡|复习卡)[^。！？]{0,6}(?:生成|做|来|出|准备)/;
 const COMPANION_ARTIFACT_BARE = /(?:速看|脑图|思维导图|互动演示|动态讲解|拓展笔记|复习卡)(?:吧|一下|一份|一个)/;
 const COMPANION_NEW_NOTE_REQUEST = /(?:写|生成|新建|创建|整理|做成|保存|记)(?:成|出|到|为)?[^。！？；;\n]*?笔记/;
 const COMPANION_CURRENT_NOTE_EDIT = /(?:这|那|当前|该|本)(?:篇)?笔记/;
-const COMPANION_EDIT_REQUEST = /(?:整理|调整|规范|优化|修改|改|排版|格式化|转换成|变成)(?:一下|成|为)?[^。！？]{0,10}(?:这篇|当前|这段|这一篇|这个)?(?:笔记|正文|排版|格式|表格|列表|标题|段落)|把(?:选中|这[一篇段])[^。！？]{0,10}(?:改成|变成|换成)|(?:这|那|当前|该)(?:篇|段|个)?[^。！？]{0,10}(?:笔记|正文|排版|格式)[^。！？]{0,6}(?:整理|调整|规范|优化|修改|排版|格式化)/;
+const COMPANION_EDIT_REQUEST = /(?:整理|调整|规范|优化|修改|改|(?<!已)保存|删除|更新|排版|格式化|转换成|变成)(?:一下|成|为)?[^。！？]{0,10}(?:这篇|当前|这段|这一篇|这个)?(?:笔记|正文|排版|格式|表格|列表|标题|段落)|(?:修改|改写|编辑|更新|调整)[^，,。！？；;\n]{0,10}《》|把(?:选中|这[一篇段])[^。！？]{0,10}(?:改成|变成|换成)|(?:这|那|当前|该)(?:篇|段|个)?[^。！？]{0,10}(?:笔记|正文|排版|格式)[^。！？]{0,6}(?:整理|调整|规范|优化|修改|排版|格式化)|(?:把|将|给我|帮我)[^。！？]{0,20}(?:改成|改为|换成|替换|删除|删掉|保存|调整|更新|加上|加一条|追加|插入)|(?:笔记|手记|安排|计划|表格|列表|正文|待办|这篇|那篇)[^。！？]{0,16}(?:改成|改为|换成|替换|删除|删掉|(?<!已)保存|加上|加一条|追加|插入|调整|更新)/;
 const COMPANION_READ_SUMMARY = /(?:聊天里|直接|只)[^。！？]{0,6}(?:概括|说说|讲讲|回答)|帮我(?:速|读|看)[^。！？]{0,6}(?:一下|看看|概括)/;
 const COMPANION_TERM_QUESTION = /(?:是什么意思|什么意思|啥意思|怎么理解|是什么概念)[？?]?\s*$/;
 const COMPANION_GOAL_CONTROL = /(?:刚才|那件|这件事|这个任务|跑着的事)[^。！？]{0,8}(?:停|暂停|继续|恢复|取消|终止)|(?:停|暂停|停止|取消|终止)(?:一下|掉)?[^。！？]{0,6}(?:那件事|刚才|这个任务|这件事)/;
@@ -220,18 +227,30 @@ export function explicitlyRequestsCalculationTool(text: string): boolean {
     && !/(?:不要|不用|无需|别)[^，,。！？\n]{0,8}(?:计算工具|计算器)/u.test(text);
 }
 
+/** The user is asking her to write in her own notebook, not to change a
+ * behaviour boundary or a user fact. */
+export function explicitlyWritesOwnNotes(text: string | null | undefined): boolean {
+  return /(?:你自己|你自己的|记进你自己的|写进你自己的)[^，。！？\n]{0,6}(?:记事|记一下|记下|记录|写一下|写下)|你的记事里/u
+    .test(text?.normalize("NFKC") ?? "");
+}
+
 /** Explicit message delivery, rather than paragraphs inside one reply. */
 export function explicitlyRequestsUtterances(text: string | null | undefined): boolean {
   const current = text?.normalize("NFKC").replace(/[“「『‘"]([^”」』’"]*)[”」』’"]/gu, "") ?? "";
   if (COMPANION_TERM_QUESTION.test(current)) return false;
-  return affirmativeOperationMatches(current, /(?:调用|使用|用)[^，,。！？；;\n]{0,12}companion_publish_utterance|(?:分|拆成|拆为)[^，,。！？；;\n]{0,6}(?:条|句)(?:消息|发言)?[^，,。！？；;\n]{0,8}(?:说|发)|(?:分次|逐条|逐句)[^，,。！？；;\n]{0,8}(?:说|发)/u).length > 0;
+  return affirmativeOperationMatches(current, /(?:调用|使用|用)[^，,。！？；;\n]{0,12}companion_say|(?:分|拆成|拆为)[^，,。！？；;\n]{0,6}(?:条|句)(?:消息|发言)?[^，,。！？；;\n]{0,8}(?:说(?!明)|发(?!展|现|生|光))|(?:分次|逐条|逐句)[^，,。！？；;\n]{0,8}(?:说(?!明)|发(?!展|现|生|光))/u).length > 0;
 }
 
 /** What the current utterance explicitly asks for, independent of the classifier. */
+function companionOperationText(text: string | null | undefined): string {
+  return text?.normalize("NFKC").replace(/[“「『‘"]([^”」』’"]*)[”」』’"]/gu, "")
+    .replace(/《[^》\n]+》/gu, "《》").replace(/手记/gu, "笔记") ?? "";
+}
+
 export function explicitCompanionProductRequest(text: string | null | undefined): {
   artifact: boolean; newNote: boolean;
 } {
-  const normalized = text?.normalize("NFKC").replace(/[“「『‘"]([^”」』’"]*)[”」』’"]/gu, "") ?? "";
+  const normalized = companionOperationText(text);
   if (!normalized || COMPANION_CHAT_ONLY_REQUEST.test(normalized) || COMPANION_TERM_QUESTION.test(normalized)) return { artifact: false, newNote: false };
   const artifact = affirmativeOperationMatches(normalized, COMPANION_ARTIFACT_REQUEST).length > 0 || affirmativeOperationMatches(normalized, COMPANION_ARTIFACT_BARE).length > 0;
   // 产物词汇优先：'生成拓展笔记' 是产物请求，不是新建一篇普通笔记。
@@ -246,6 +265,28 @@ export function explicitCompanionProductRequest(text: string | null | undefined)
   return { artifact, newNote };
 }
 
+const CROSS_CLAUSE_EDIT_REQUEST = /(?:笔记|手记|安排|计划|表格|列表|正文|待办|这篇|那篇)[^。！？]{0,24}(?:改成|改为|换成|替换|删除|删掉|(?<!已)保存|加上|加一条|追加|插入|调整|更新)/u;
+const CROSS_CLAUSE_EDIT_NEGATIVE = /(?:不要|不用|无需|不必|请勿|(?:^|[，,。；;：:\s])别(?:再|改|动|碰|保存|删除|调整|更新|安排))[^。！？]{0,12}(?:改|保存|删除|调整|更新|安排)/u;
+const EDIT_REQUEST_MARKER = /(?:请|帮我|给我|麻烦|把|将|能不能|可以|需要你|想要你)|(?:改成|改为|换成|替换|保存|删除|删掉|加一条|追加|插入|整理一下|调整一下|改一下|修改一下|优化一下|排版一下)/u;
+const DESCRIPTIVE_EDIT_NEGATIVE = /(?:有点|很|太|比较|特别|有些|挺)[^。！？]{0,6}(?:乱|差|糟糕|不整齐)|(?:排版|格式)(?:有点|很|太|比较|特别|有些|挺)|(?:已经|已|刚刚|刚)[^。！？]{0,8}(?:更新|修改|保存|删除|调整|改)(?:了|过)/u;
+
+/** A current-turn edit request that already names its action. It is a routing
+ * hint for the fast entry and the classifier fallback, never an authorization. */
+export function explicitlyRequestsCompanionEdit(text: string | null | undefined): boolean {
+  const normalized = companionOperationText(text);
+  if (!normalized) return false;
+  const request = explicitCompanionProductRequest(normalized);
+  if (request.artifact || request.newNote) return false;
+  // A description of a messy note is not a request to change it. Only keep the
+  // descriptive shape when the sentence also carries an imperative marker.
+  if (!EDIT_REQUEST_MARKER.test(normalized) && DESCRIPTIVE_EDIT_NEGATIVE.test(normalized)) return false;
+  // Commas split target from action in ordinary Chinese ("周一安排里，中午改成…").
+  // The clause-level matcher cannot see across them, so this one check looks at
+  // the whole utterance. Negated requests still opt out.
+  if (CROSS_CLAUSE_EDIT_REQUEST.test(normalized) && !CROSS_CLAUSE_EDIT_NEGATIVE.test(normalized)) return true;
+  return affirmativeOperationMatches(normalized, COMPANION_EDIT_REQUEST).length > 0;
+}
+
 /**
  * 显式请求的确定性兜底：分类器是小模型，ambiguities 会把 act 降成 uncertain，
  * 候选也可能漏。这里只处理"话语本身已经明确"的几类，且不越过权限档。
@@ -256,36 +297,38 @@ export function reconcileCompanionInterpretation(
   capabilities: readonly string[],
   permissionLevel?: string,
 ): AgentTurnInterpretationV1 {
-  const text = current?.normalize("NFKC").replace(/[“「『‘"]([^”」』’"]*)[”」』’"]/gu, "") ?? "";
+  const text = companionOperationText(current);
   if (!text) return interpretation;
-  const wantsUtterances = explicitlyRequestsUtterances(current) && capabilities.includes("companion_publish_utterance");
+  // 计算仍是一个读能力，但工具面已经按域暴露：优先点名模型真的能调到的那个。
+  const calculationTool = capabilities.includes("companion_observe") ? "companion_observe"
+    : capabilities.includes("observe.calculate") ? "observe.calculate" : null;
+  const wantsUtterances = explicitlyRequestsUtterances(current) && capabilities.includes("companion_say");
   // Calculation is a read capability, including in read-only mode. Never use
   // that request to add any of the write candidates reconciled below.
   if (permissionLevel === "read_only") {
     if (wantsUtterances) return agentTurnInterpretationV1Schema.parse({ ...interpretation, toolUse: "act",
-      candidateOperations: [...new Set([...interpretation.candidateOperations, "companion_publish_utterance"])] });
-    if (!explicitlyRequestsCalculationTool(text) || !capabilities.includes("agent_calculate")) return interpretation;
+      candidateOperations: [...new Set([...interpretation.candidateOperations, "companion_say"])] });
+    if (!explicitlyRequestsCalculationTool(text) || !calculationTool) return interpretation;
     return agentTurnInterpretationV1Schema.parse({ ...interpretation, toolUse: "read",
-      candidateOperations: [...new Set([...interpretation.candidateOperations, "agent_calculate"])] });
+      candidateOperations: [...new Set([...interpretation.candidateOperations, calculationTool])] });
   }
   const add = (list: string[], name: string) => {
     if (capabilities.includes(name) && !list.includes(name)) list.push(name);
     return list;
   };
   const request = explicitCompanionProductRequest(text);
-  const wantsEdit = affirmativeOperationMatches(text, COMPANION_EDIT_REQUEST).length > 0 && !request.artifact && !request.newNote;
+  const wantsEdit = explicitlyRequestsCompanionEdit(text);
   const wantsRead = !request.artifact && !request.newNote && !wantsEdit && COMPANION_READ_SUMMARY.test(text);
   const termQuestion = !request.artifact && !request.newNote && !wantsEdit && !wantsRead && COMPANION_TERM_QUESTION.test(text);
   const goalControl = !request.artifact && !request.newNote && !wantsEdit && !wantsRead && !termQuestion
     && COMPANION_GOAL_CONTROL.test(text);
   const candidates = [...interpretation.candidateOperations];
-  if (wantsUtterances) add(candidates, "companion_publish_utterance");
-  const wantsCalculation = explicitlyRequestsCalculationTool(text) && capabilities.includes("agent_calculate");
-  if (wantsCalculation) add(candidates, "agent_calculate");
-  if (request.artifact) add(candidates, "agent_start_goal");
-  if (request.newNote) add(candidates, "companion_create_note");
-  if (wantsEdit) add(candidates, "companion_edit_note");
-  if (wantsRead) add(candidates, "companion_read_note");
+  if (wantsUtterances) add(candidates, "companion_say");
+  const wantsCalculation = explicitlyRequestsCalculationTool(text) && calculationTool !== null;
+  if (wantsCalculation) add(candidates, calculationTool!);
+  if (request.artifact) add(candidates, "companion_goals_write");
+  if (request.newNote || wantsEdit) add(candidates, "companion_notes_write");
+  if (wantsRead) add(candidates, "companion_notes_read");
   const explicitAction = request.artifact || request.newNote || wantsEdit || goalControl || wantsUtterances;
   const toolUse: AgentTurnInterpretationV1["toolUse"] = explicitAction ? "act"
     : wantsRead || wantsCalculation ? "read" : termQuestion ? "none" : interpretation.toolUse;
@@ -313,7 +356,8 @@ export async function interpretCompanionTurn(
   const binding = { requestHash: taskContext.requestHash ?? sha256Utf8V1(current),
     objects: taskContext.objects ?? [], capabilities: taskContext.capabilities ?? [],
     offerCandidates: companionOfferCandidates(messages), currentUserText: current };
-  const finalize = (value: AgentTurnInterpretationV1) => reconcileCompanionInterpretation(value, current, binding.capabilities, taskContext.permissionLevel);
+  const finalize = (value: AgentTurnInterpretationV1) => taskContext.semanticOnly ? value
+    : reconcileCompanionInterpretation(value, current, binding.capabilities, taskContext.permissionLevel);
   const unknown = () => finalize(resolveAgentTurnInterpretation(null, binding));
   const requestMessages = buildCompanionTurnInterpretationMessages(messages, taskContext);
   if (!requestMessages) return unknown();
@@ -366,14 +410,20 @@ export async function interpretCompanionTurn(
       // 分类器 temperature=0 且输出是受约束 JSON，副本不改变语义（零质量风险）；
       // 实测副本之间延迟几乎不相关（r=-0.12），所以这是纯尾部收益，不碰主步与工具。
       const call = await runHedgedCall(
-        (signal) => provider.chatCompletion(input.messages, {
+        async (signal) => {
+          const options = {
           // 天花板只认档案声明：这一发的上限由 provider 按模型档案给，
           // handler 报的数字早就不是这一发的真实上界了。
           // 关思考仍由 disableThinking 决定——它是档位判据，不是砍话的那把刀。
           temperature: 0,
-          responseFormat: "json_object",
+          responseFormat: "json_object" as const,
           disableThinking: true,
-        }, signal),
+          };
+          // The private JSON verdict uses the non-streaming transport: the
+          // stream is the user-visible reply channel, and a provider that only
+          // speaks prose there would never return this schema.
+          return provider.chatCompletion(input.messages, options, signal);
+        },
         { signal: env.signal, hedgeDelayMs, onHedge: () => { hedged = true; } },
       );
       hedged ||= call.hedged;

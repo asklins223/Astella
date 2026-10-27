@@ -2,6 +2,7 @@ import type { AgentTurnRequest } from "@astella/shared";
 import { companionCreatedNoteV1Schema } from "@astella/shared/companion-note-authoring-contracts";
 import { stripVoiceExpressionTags } from "@astella/shared/voice-expression-tags";
 import { explicitCompanionProductRequest, explicitlyRequestsCalculationTool, explicitlyRequestsUtterances } from "../tools/companion-tool-intent.ts";
+import { companionOperationName, companionPublicationFinal, isCompanionPublicationCall } from "@astella/shared";
 
 function number(text: string): number | null {
   if (/^\d+$/u.test(text)) return Number(text);
@@ -26,7 +27,8 @@ export function companionReceiptOnlyNoteRequest(text: string, prepared: boolean,
 export function companionRequestRequirements(text: string, canCreateNotes = false, availableTools: readonly string[] = []): CompanionRequestRequirements {
   const value = text.normalize("NFKC").replace(/[“「『‘"]([^”」』’"]*)[”」』’"]/gu, "");
   const result: CompanionRequestRequirements = {};
-  if (availableTools.includes("agent_calculate") && explicitlyRequestsCalculationTool(value)) result.requiredTools = ["agent_calculate"];
+  const calculationTool = availableTools.includes("companion_observe") ? "companion_observe" : null;
+  if (calculationTool && explicitlyRequestsCalculationTool(value)) result.requiredTools = [calculationTool];
   const numeral = "([\\d零一二两三四五六七八九十百千]+)";
   if (explicitlyRequestsUtterances(value)) {
     const count = new RegExp(`(?:分|拆成|拆为)\\s*${numeral}\\s*(?:条|句)`, "u").exec(value);
@@ -64,20 +66,28 @@ export function companionVisibleCharacterCount(text: string): number {
 
 export function companionRequirementGuidance(requirements: CompanionRequestRequirements): string {
   const length = requirements.noteCharacters ?? requirements.characters;
-  return [requirements.noteCount ? `本轮需要 ${requirements.noteCount} 篇不同笔记，以真实保存回执核对数量。完成第一篇正文就调用 companion_create_note，拿到回执再写下一篇；不预写后面几篇，不用聊天正文代替保存。已保存的笔记不要再建。` : "",
-    requirements.utteranceCount ? `本轮需要 ${requirements.utteranceCount} 条独立消息，用 companion_publish_utterance 的真实发布回执核对。每条只承担用户指定的内容，最后一条 final=true，不以连续正文或一条消息替代。` : "",
+  return [requirements.noteCount ? `本轮需要 ${requirements.noteCount} 篇不同笔记，以真实保存回执核对数量。完成第一篇正文就调用 companion_notes_write（action=create），拿到回执再写下一篇；不预写后面几篇，不用聊天正文代替保存。已保存的笔记不要再建。` : "",
+    requirements.utteranceCount ? `本轮需要 ${requirements.utteranceCount} 条独立消息，用 companion_say（action=publish）的真实发布回执核对。每条只承担用户指定的内容，最后一条 final=true，不以连续正文或一条消息替代。` : "",
     requirements.requiredTools?.length ? `用户明确要求使用工具核对，本轮必须取得 ${requirements.requiredTools.join("、")} 的成功回执后才能交付核对结论。` : "",
     length ? `${requirements.noteCharacters ? "每篇笔记正文" : "本轮正文"}的篇幅为 ${length.min}–${Number.isFinite(length.max) ? length.max : "不限"} 字，按不含标点、空白、Markdown 符号的可见文字统计；标题与标点不能充当正文字数。直接按篇幅写出完整正文与结尾，宿主会在保存前核对长度，不需要在推理中逐字计数。` : "",
   ].filter(Boolean).join("\n");
 }
 
 /** Count durable publication identities, including checkpoint-replayed receipts. */
-export function companionUtteranceRequirementIssue(requirements: CompanionRequestRequirements, messages: AgentTurnRequest["messages"]) {
-  const calls = new Map(messages.flatMap(message => message.role === "assistant"
-    ? (message.toolCalls ?? []).filter(call => call.name === "companion_publish_utterance").map(call => [call.id, call] as const) : []));
+export function companionPublishedUtterances(messages: AgentTurnRequest["messages"]): { count: number; pending: boolean } {
+  // Only this request's publications count. Earlier turns also contain published
+  // messages; counting them would let an old turn satisfy a new split request.
+  let boundary = messages.length - 1;
+  while (boundary >= 0 && messages[boundary].role !== "user") boundary -= 1;
+  const current = boundary < 0 ? messages : messages.slice(boundary);
+  // Publication receipts key on the operation, not the model-facing name, so
+  // any call that publishes is counted the same way.
+  const calls = new Map(current.flatMap(message => message.role === "assistant"
+    ? (message.toolCalls ?? []).filter(call => isCompanionPublicationCall({ name: call.name, arguments: call.arguments }))
+      .map(call => [call.id, call] as const) : []));
   const delivered = new Set<string>();
   let pending = false;
-  for (const message of messages) {
+  for (const message of current) {
     const call = message.toolCallId ? calls.get(message.toolCallId) : undefined;
     if (message.role !== "tool" || !call || typeof message.content !== "string") continue;
     try {
@@ -85,16 +95,47 @@ export function companionUtteranceRequirementIssue(requirements: CompanionReques
       const value = receipt.data ?? (typeof receipt.resultRef === "string" ? JSON.parse(receipt.resultRef) : null);
       if (receipt.ok !== true || value?.published !== true || typeof value.messageId !== "string" || delivered.has(value.messageId)) continue;
       delivered.add(value.messageId);
-      pending = (call.arguments as { final?: boolean }).final === false;
+      pending = companionPublicationFinal({ name: call.name, arguments: call.arguments }) === false;
     } catch { /* A missing or malformed receipt cannot prove publication. */ }
   }
-  if (requirements.utteranceCount && delivered.size < requirements.utteranceCount) return {
-    key: `utterances:${requirements.utteranceCount}:${[...delivered].sort().join(",")}`,
-    instruction: `用户要求 ${requirements.utteranceCount} 条独立消息，真实发布只有 ${delivered.size} 条。继续调用 companion_publish_utterance 交付剩余 ${requirements.utteranceCount - delivered.size} 条，最后一条 final=true；不要重复已发内容，不用普通最终正文代替消息。`,
+  return { count: delivered.size, pending };
+}
+
+export function companionUtteranceRequirementIssue(requirements: CompanionRequestRequirements, messages: AgentTurnRequest["messages"]) {
+  const { count: deliveredCount, pending } = companionPublishedUtterances(messages);
+  if (requirements.utteranceCount && deliveredCount < requirements.utteranceCount) return {
+    key: `utterances:${requirements.utteranceCount}:${deliveredCount}`,
+    instruction: `用户要求 ${requirements.utteranceCount} 条独立消息，真实发布只有 ${deliveredCount} 条。继续调用 companion_say（action=publish）交付剩余 ${requirements.utteranceCount - deliveredCount} 条，最后一条 final=true；不要重复已发内容，不用普通最终正文代替消息。`,
   };
-  if (!requirements.utteranceCount && pending) return { key: `utterance-pending:${[...delivered].sort().join(",")}`,
-    instruction: "上一条实际发言标为 final=false，这轮还未交付完。请用 companion_publish_utterance 继续发布尚未说出的内容，最后一条 final=true；不重复已发内容，不用普通最终正文代替。" };
+  if (!requirements.utteranceCount && pending) return { key: `utterance-pending:${deliveredCount}`,
+    instruction: "上一条实际发言标为 final=false，这轮还未交付完。请用 companion_say（action=publish）继续发布尚未说出的内容，最后一条 final=true；不重复已发内容，不用普通最终正文代替。" };
   return null;
+}
+
+/**
+ * Delivery shape judged from the request itself, without a phrase list.
+ *
+ * `delivered` counts the separate messages the user has actually received:
+ * published utterances plus ordinary reply text that already reached the chat.
+ * Counting the paragraph means a reply that arrived as one block is "1 of 2",
+ * so the correction asks only for what is still missing instead of repeating
+ * what the user just read. A pending `final=false` publication is unfinished
+ * regardless of count, because that line announced more.
+ */
+export function companionSplitShapeIssue(input: {
+  count: number; delivered: number; pending: boolean; textShown?: boolean;
+}): { key: string; instruction: string } | null {
+  const delivered = input.delivered + (input.textShown === true ? 1 : 0);
+  const remaining = input.count - delivered;
+  if (remaining <= 0 && !input.pending) return null;
+  return {
+    key: `split-shape:${input.count}:${delivered}${input.pending ? ":pending" : ""}`,
+    instruction: remaining > 0
+      ? `用户要把回复拆成 ${input.count} 条独立消息，目前已经收到 ${delivered} 条。`
+        + (input.textShown === true ? "刚才那一整段用户已经看到，不要再说一遍。" : "")
+        + `把还没说的 ${remaining} 条用 companion_say（action=publish）逐条发出，每条只承担一个意思，最后一条 final=true；不要改用一整段正文代替。`
+      : "上一条发言标了 final=false，这轮还没说完。用 companion_say（action=publish）发下一条，最后一条 final=true；不重复已发内容。",
+  };
 }
 
 export function companionRequirementIssue(requirements: CompanionRequestRequirements, text: string,
@@ -102,7 +143,8 @@ export function companionRequirementIssue(requirements: CompanionRequestRequirem
   const speech = companionUtteranceRequirementIssue(requirements, messages);
   if (speech) return speech;
   for (const tool of requirements.requiredTools ?? []) {
-    const ids = new Set(messages.flatMap((message) => message.role === "assistant" ? message.toolCalls?.filter((call) => call.name === tool).map((call) => call.id) ?? [] : []));
+    const ids = new Set(messages.flatMap((message) => message.role === "assistant"
+      ? message.toolCalls?.filter((call) => call.name === tool || companionOperationName(call) === tool).map((call) => call.id) ?? [] : []));
     const succeeded = messages.some((message) => {
       if (message.role !== "tool" || !message.toolCallId || !ids.has(message.toolCallId) || typeof message.content !== "string") return false;
       try { return JSON.parse(message.content).ok === true; } catch { return false; }

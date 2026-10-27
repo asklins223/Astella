@@ -118,13 +118,15 @@ export function companionSteerCause(input: {
   correctQuote?: unknown;
   unverifiedClaims: readonly unknown[];
   unverifiedQuotes: readonly unknown[];
+  unbackedActionClaims?: readonly unknown[];
   lookupClaim: boolean;
   userAskedForAction: boolean;
 }): "unverified-quotes" | "unverified-numbers" | "claimed-lookup"
-  | "action-request" | "promise-shape" {
+  | "unbacked-action-claim" | "action-request" | "promise-shape" {
   if (input.correctQuote) return "unverified-quotes";
   if (input.unverifiedClaims.length > 0) return "unverified-numbers";
   if (input.unverifiedQuotes.length > 0) return "unverified-quotes";
   if (input.lookupClaim) return "claimed-lookup";
+  if ((input.unbackedActionClaims?.length ?? 0) > 0) return "unbacked-action-claim";
   return input.userAskedForAction ? "action-request" : "promise-shape";
 }

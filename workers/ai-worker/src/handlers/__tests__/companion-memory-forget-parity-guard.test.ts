@@ -24,10 +24,12 @@ const apiForgot = readFileSync(
 
 /** 取一个 case 分支的源码，判据只在这一段里生效。 */
 function forgetBranch(): string {
-  const start = workerForget.indexOf('case "companion_forget_memory"');
+  const start = workerForget.indexOf('case "memory.write.forget"');
   assert.notEqual(start, -1, "找不到 worker 的遗忘分支");
-  const end = workerForget.indexOf('case "companion_set_boundary"', start);
-  return workerForget.slice(start, end === -1 ? start + 6_000 : end);
+  // The branch grew with cascade cleanup; a fixed character window would inspect
+  // only its first half. End at the switch's default arm instead.
+  const end = workerForget.indexOf("default:", start);
+  return workerForget.slice(start, end === -1 ? start + 12_000 : end);
 }
 
 test("worker 的遗忘路径写 purge_after，与到期清理的判据对齐", () => {

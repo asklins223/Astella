@@ -108,7 +108,7 @@ describe("production companion interaction", () => {
         { type: "quote", label: "《中国近代史总揽》", text: "从鸦片战争到新中国成立。" },
         { type: "nav", label: "打开新笔记", route: { kind: "note", noteId: "created-note" } },
       ] },
-      nodes: [{ key: "tool:one", kind: "tool", label: "查阅原文", state: "succeeded", toolName: "companion_read_note", summary: "已找到", proposalId: null }] });
+      nodes: [{ key: "tool:one", kind: "tool", label: "查阅原文", state: "succeeded", toolName: "notes.read.read", summary: "已找到", proposalId: null }] });
     render(<Harness />);
     advance(1_000);
     const reply = document.querySelector(".companion-hud__output")!;
@@ -212,7 +212,7 @@ describe("production companion interaction", () => {
   it("工具已经在跑的轮次，思考收在进度上方的一行里，不盖住进度", () => {
     state.chat = interactionSession({ mode: "closed", phase: "sending", processRunId: "current",
       thinking: "该先读笔记再回答。",
-      nodes: [{ key: "tool:read", kind: "tool", label: "查阅原文", state: "running", toolName: "companion_read_note", summary: null, proposalId: null }] });
+      nodes: [{ key: "tool:read", kind: "tool", label: "查阅原文", state: "running", toolName: "notes.read.read", summary: null, proposalId: null }] });
     render(<Harness />);
     advance(1_200);
     expect(document.querySelector(".companion-hud__output")?.getAttribute("data-tone")).not.toBe("thinking");
@@ -473,11 +473,11 @@ describe("production companion interaction", () => {
     advance(1_200);
     const reply = document.querySelector(".companion-hud__output")!;
     expect(reply.querySelector(".companion-hud__output-body")?.textContent).toContain("我先看一下");
-    const tool = { key: "tool:read", kind: "tool" as const, label: "查阅原文", state: "running" as const, toolName: "companion_read_note", summary: null, proposalId: null };
+    const tool = { key: "tool:read", kind: "tool" as const, label: "查阅原文", state: "running" as const, toolName: "notes.read.read", summary: null, proposalId: null };
     patch({ nodes: [tool] });
     expect(document.querySelector(".companion-hud__output")).toBe(reply);
     expect(screen.getByRole("status", { name: "小鲸 正在做的事" }).textContent).toContain("进行中");
-    patch({ draft: { runId: "current", text: spoken + "我也会核对前后顺序。" }, nodes: [{ ...tool, state: "succeeded" }, { ...tool, key: "tool:create", toolName: "companion_create_note" }] });
+    patch({ draft: { runId: "current", text: spoken + "我也会核对前后顺序。" }, nodes: [{ ...tool, state: "succeeded" }, { ...tool, key: "tool:create", toolName: "notes.write.create" }] });
     advance(2_500);
     expect(reply.querySelector(".companion-hud__output-body")?.textContent).toContain("我也会核对");
     expect(screen.getByRole("status", { name: "小鲸 正在做的事" }).textContent).toContain("2 项操作");
@@ -549,7 +549,7 @@ describe("production companion interaction", () => {
 
   it("shows the current tool instantly, keeps stop accessible, and avoids a duplicate waiting bubble", () => {
     state.chat = interactionSession({ mode: "closed", phase: "sending", processRunId: "current",
-      nodes: [{ key: "tool:one", kind: "tool", label: "查阅原文", state: "running", toolName: "companion_read_note", summary: null, proposalId: null }] });
+      nodes: [{ key: "tool:one", kind: "tool", label: "查阅原文", state: "running", toolName: "notes.read.read", summary: null, proposalId: null }] });
     render(<Harness />);
     expect(screen.getByRole("status", { name: "小鲸 正在做的事" }).textContent).toContain("进行中");
     expect(document.querySelector(".companion-hud__output")).toBeNull();
@@ -563,7 +563,7 @@ describe("production companion interaction", () => {
   it("keeps tool process in its own bubble above the reply and pauses while reading", () => {
     const dismissLiveReply = vi.fn();
     state.chat = interactionSession({ mode: "closed", liveReply: { messageId: "one", text: "这里是回复", hasActionBlocks: false, proposalIds: [] }, dismissLiveReply,
-      nodes: [{ key: "tool:one", kind: "tool", label: "查阅原文", state: "succeeded", toolName: "companion_read_note", summary: "已找到", proposalId: null }] });
+      nodes: [{ key: "tool:one", kind: "tool", label: "查阅原文", state: "succeeded", toolName: "notes.read.read", summary: "已找到", proposalId: null }] });
     render(<Harness />);
     advance(1_000);
     const rail = screen.getByRole("status", { name: "小鲸 正在做的事" });

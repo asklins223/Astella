@@ -146,10 +146,11 @@ export class MockProvider implements AIProvider {
         message.role === "user" && String(message.content ?? "").includes("【mock:wants-memory】"));
       const scriptedEscapedNote = request.messages.some(message => message.role === "user"
         && String(message.content ?? "").includes("【mock:escaped-note】"));
-      if (scriptedEscapedNote && !request.messages.some(message => message.toolCalls?.some(call => call.name === "companion_create_note"))) {
+      if (scriptedEscapedNote && !request.messages.some(message => message.toolCalls?.some(call => call.name === "companion_notes_write"
+      && (call.arguments as { action?: unknown } | undefined)?.action === "create"))) {
         const call = toolResult
-          ? { name: "companion_create_note", arguments: { title: "代码示例", markdown: "```text\n" + "\\".repeat(9500) + "\n```", links: [] } }
-          : { name: "companion_search_notes", arguments: { query: "代码示例" } };
+          ? { name: "companion_notes_write", arguments: { action: "create", title: "代码示例", markdown: "```text\n" + "\\".repeat(9500) + "\n```", links: [] } }
+          : { name: "companion_notes_read", arguments: { action: "search", query: "代码示例" } };
         return { content: null, toolCalls: [{ id: `call_note_${randomUUID()}`, ...call }], finishReason: "tool_calls",
           usage: this.estimateUsage(JSON.stringify(request), JSON.stringify(call)), providerRequestId: "mock-note-preview" };
       }
@@ -178,8 +179,9 @@ export class MockProvider implements AIProvider {
         // `readCompanionMemoryWriteSource` 的原话门拒掉——那道门正是要一起验的。
         toolCalls.push({
           id: `call_save_memory_${randomUUID()}`,
-          name: "companion_save_memory",
+          name: "companion_memory_write",
           arguments: {
+            action: "save",
             kind: "preference",
             content: "打招呼时就只打招呼，不盘点笔记",
             sourceQuote: "以后打招呼别盘点笔记",
@@ -195,7 +197,7 @@ export class MockProvider implements AIProvider {
         };
       }
       if (wantsToolCall) {
-        const contextTool = request.tools.find((tool) => tool.name === "companion_read_context");
+        const contextTool = request.tools.find((tool) => tool.name === "companion_observe");
         // required 这一档下"没找到那个顺手的工具"不能变成"干脆不回 tool_calls"——
         // 那正好是要被测的那个违约形状。挑工具面上第一个能点的（参数由用例自己给形状）。
         const chosen = contextTool ?? (request.toolChoice === "required" ? request.tools[0] : undefined);
@@ -204,8 +206,13 @@ export class MockProvider implements AIProvider {
             // id 每步唯一：同毫秒的两次 `Date.now()` 会让"工具事件覆盖的调用集合
             // 与审计行同一批"那条断言随机变红。
             id: `call_companion_context_${randomUUID()}`,
-            name: chosen?.name ?? "companion_read_context",
-            arguments: {},
+            name: chosen?.name ?? "companion_observe",
+            // 域工具必须带 action，否则执行层会回「没有说明要执行哪一类动作」。
+            // 长任务剧本按轮次变化 limit：原样重复同一个只读调用是可观测的"原地重放"，
+            // 会被进展守卫按 no_progress 收口——那条判据是对的，剧本要演的是真推进。
+            arguments: chosen?.name === "companion_observe"
+              ? { action: "context", ...(scriptedLongTask ? { limit: 1 + request.messages.filter(message => message.role === "tool").length % 20 } : {}) }
+              : {},
           });
         }
       }
@@ -378,7 +385,8 @@ fingerprint: `mock:${this.modelId}:${this.visionModelId}:native_tools`,
       const action = userContent.includes("【mock:wants-tool】")
         || userContent.includes("【mock:wants-memory】");
       const decided = JSON.stringify({ intent: action || readTask ? "task" : "conversation", toolUse: readTask ? "read" : action ? "act" : "none",
-        subjects: [], goalRelation: action ? "new" : "unrelated", candidateOperations: [], ambiguities: [],
+        subjects: [], goalRelation: action ? "new" : "unrelated",
+        candidateOperations: action || readTask ? ["companion_notes_read"] : [], ambiguities: [],
         // `pendingOfferIndexes` is required by the proposal contract; omitting it
         // left the mock chain in the "uncertain" cell and hid wiring mistakes.
         pendingOfferIndexes: [],
@@ -485,8 +493,8 @@ fingerprint: `mock:${this.modelId}:${this.visionModelId}:native_tools`,
       content,
       toolCalls: [{
         id: `call_companion_context_${randomUUID()}`,
-        name: "companion_read_context",
-        arguments: {},
+        name: "companion_observe",
+        arguments: { action: "context" },
       }],
       finishReason: "tool_calls",
     };

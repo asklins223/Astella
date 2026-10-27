@@ -228,6 +228,11 @@ export const agentTurnRequestSchema = z.object({
    * 取**能关到的最低档**（声明了 `none` 就是真关），没声明 none 的模型退到最低档。
    */
   disableThinking: z.boolean().optional(),
+  /**
+   * 本步思考档位。宿主按**这一步已经发生的事实**决定（闲聊 none、调过工具 medium、
+   * 纠正步 high），不按用户问法猜；未给时按 enable/disable 与模型档案默认档。
+   */
+  reasoningEffort: z.enum(["none", "minimal", "low", "medium", "high", "xhigh", "max"]).optional(),
 }).strict();
 export type AgentTurnRequest = z.infer<typeof agentTurnRequestSchema>;
 

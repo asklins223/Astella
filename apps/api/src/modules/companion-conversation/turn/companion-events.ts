@@ -351,7 +351,7 @@ export async function listCompanionRunNodes(args: {
           maxSteps: typeof budget?.maxSteps === "number" ? budget.maxSteps : COMPANION_AGENT_MAX_STEPS,
           maxToolCalls: typeof budget?.maxToolCalls === "number" ? budget.maxToolCalls : COMPANION_AGENT_MAX_TOOL_CALLS,
           assistantMessageId: row.assistantMessageId,
-          nodeCount: Math.max(nodeCounts.get(row.runId) ?? 0, row.processTimeline.filter(event => event.type !== "assistant.thinking").length),
+          nodeCount: Math.max(nodeCounts.get(row.runId) ?? 0, row.processTimeline.filter(event => ["assistant.status", "agent.tool"].includes(event.type)).length),
           ...(args.includeThinking ? { thinkingText: row.thinkingText, processTimeline: row.processTimeline } : {}),
         };
       }),

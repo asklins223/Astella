@@ -80,9 +80,12 @@ function renderPanel(overrides: {
 }
 
 function pickFile(name: string, type = "image/png") {
-  const input = screen.getByLabelText("更换…") as HTMLInputElement;
+  const trigger = screen.getByRole("button", { name: "编辑头像" });
+  fireEvent.click(trigger);
+  fireEvent.click(screen.getByRole("button", { name: "上传自定义图片" }));
+  const input = screen.getByLabelText("自定义头像图片") as HTMLInputElement;
   fireEvent.change(input, { target: { files: [new File(["raw"], name, { type })] } });
-  return input;
+  return trigger;
 }
 
 async function openCropper(name: string) {
@@ -163,7 +166,7 @@ describe("设置页头像取景框", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("取消不上传，焦点回到「更换…」", async () => {
+  it("取消不上传，焦点回到编辑头像入口", async () => {
     const { uploadAvatar } = renderPanel();
     const { input } = await openCropper("portrait.png");
 

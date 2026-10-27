@@ -1,7 +1,13 @@
 import { CompanionToolNotExecutedError } from "../tools/companion-tool-result.ts";
 import { explicitlyRequestsUtterances } from "../tools/companion-tool-intent.ts";
 import { companionRequestRequirements, companionRequirementIssue, companionRequirementGuidance, companionReceiptOnlyNoteRequest, companionUtteranceRequirementIssue } from "../turn/companion-request-requirements.ts";
-import { companionCallFingerprint, companionReplayExhausted } from "./companion-progress-guard.ts";
+import { companionCurrentRequestMessages } from "../turn/companion-step-plan.ts";
+import { companionArithmeticMismatch, type CompanionArithmeticMismatch } from "../turn/companion-arithmetic-check.ts";
+import { companionCallFingerprint, companionMalformedToolExhausted, companionReplayExhausted, companionReplayLimitFor,
+  COMPANION_ARITHMETIC_REPEAT_ALLOWED, COMPANION_ARITHMETIC_TOTAL_ALLOWED,
+  COMPANION_ACTION_REPLAY_RETRIES_ALLOWED,
+  COMPANION_INVALID_TOOL_CALLS_ALLOWED, COMPANION_MALFORMED_TOOL_ATTEMPTS_ALLOWED,
+  COMPANION_UNBACKED_CLAIM_RETRIES_ALLOWED } from "./companion-progress-guard.ts";
 import { isCompanionParticipationClosure } from "../proactive/companion-participation-output.ts";
 import { reviewCompanionInitiativeSpeech } from "../proactive/companion-initiative-speech-review.ts";
 import { sql } from "drizzle-orm";
@@ -20,9 +26,11 @@ import {
   updateToolCall,
 } from "../tools/companion-tool-call-ledger.ts";
 import {
-  COMPANION_AGENT_TOOL_LABELS,
-  allowedMainRouteV2Schema,
+  companionToolLabel,
   companionCapabilityOfferedInHostContext,
+  companionOperationArguments,
+  companionOperationDomainTool,
+  companionOperationName,
   getCompanionAgentTool,
   resolveAllCompanionAgentTools,
   resolveCompanionInitialToolNames,
@@ -58,21 +66,27 @@ import {
   resolveProviderCallTimeout,
 } from "../../lib/handler-timeout-config.ts";
 import { AgentOutputError, CompanionAgentBudgetExceededError, CompanionContextChangedError } from "../../lib/non-retryable-errors.ts";
+import { runWithCompanionModelRetries } from "./companion-model-retries.ts";
+import { assembleCompanionFinishText, assembleCompanionHostSettlement,
+  settleCompanionLandedWritesOnFailure } from "./companion-host-settlement.ts";
 import { ProviderRequestError } from "../../lib/provider-request-error.ts";
 import { withWorkerWorkspaceTransaction } from "../../db.ts";
+import { retrieveCompanionMemoriesKeyword } from "../memory/companion-memory-vector.ts";
+import { sameCompanionMemoryFact } from "@astella/shared";
 import {
   emitCompanionAssistantStatus,
   recoverCompanionRunFailureSpanBestEffort,
 } from "../turn/companion-dialogue-store.ts";
 import { settleCompanionTurnPreamble } from "../turn/companion-turn-preamble.ts";
 import { createCompanionStepCompaction } from "../context/companion-step-compaction.ts";
-import { looksTruncatedReply, companionStepOutputCeiling } from "../turn/companion-dialogue-content.ts";
+import { claimsApplicationActionCompletion, claimsFutureApplicationAction,
+  looksTruncatedReply, companionStepOutputCeiling } from "../turn/companion-dialogue-content.ts";
 import { companionNumericEvidenceContext } from "../context/companion-context-evidence.ts";
 import { runCompanionToolExecution } from "../tools/companion-tool-execution-run.ts";
 import { CompanionToolPreparation } from "../tools/companion-tool-preparation.ts";
 import { companionExecutionPolicy } from "./companion-execution-policy.ts";
 import { repairDegenerateCompanionAnswer } from "./companion-answer-repair.ts";
-import { assembleCompanionStepRequest, companionStepPolicyText, companionStepToolSurface, companionWebSearchAllowedForStep } from "./companion-agent-step-assembly.ts";
+import { assembleCompanionStepRequest, companionStepPolicyText, companionStepToolSurface } from "./companion-agent-step-assembly.ts";
 import { companionInitiativeInterpretationFields } from "../proactive/companion-initiative-observation.ts";
 import { createdNoteToolResult, readCreatedNoteReceipt, userForbidsNoteLibraryRead } from "../note/companion-note-authoring.ts";
 import {
@@ -81,7 +95,7 @@ import {
 } from "./companion-eager-dispatch-config.ts";
 import { canRetryCompanionStream, runStreamingAgentStep } from "./companion-agent-streaming-step.ts";
 import { executeWatchedCompanionTurn, CompanionOutputTimeoutError } from "./companion-output-watchdog.ts";
-import { companionNoteNeedsRelatedSearch } from "../note/companion-note-authoring-stage.ts";
+import { companionNoteNeedsRelatedSearch, companionNoteEditPrerequisite } from "../note/companion-note-authoring-stage.ts";
 import { CompanionStreamStoppedError } from "../turn/companion-dialogue-stream.ts";
 export { runStreamingAgentStep };
 export {
@@ -97,7 +111,9 @@ export {
 } from "../tools/companion-tool-outcome.ts";
 
 import { readCompanionWebSearchReceipts, readWebSearchReceipt, webSearchCitationBlocks, webSearchServiceAvailable } from "../../agent/web-search.ts";
-import { prefetchCompanionNote } from "../note/companion-note-prefetch.ts";
+import { createCompanionNoteObservation } from "./companion-note-observation.ts";
+import { companionCurrentSuccessfulToolReceipts, validateCompanionFinish, type CompanionFinishArguments } from "./companion-finish.ts";
+import { companionExecutionBlocks } from "./companion-tool-output.ts";
 import { companionProviderFitsRequest } from "./companion-provider-fit.ts";
 import { judgeCompanionStepClosing, waitingConfirmationReceipts } from "../turn/companion-step-closing.ts";
 import { companionRecoveryIdentity, openCompanionTurn } from "../turn/companion-turn-opening.ts";
@@ -105,7 +121,6 @@ import { judgeCompanionUnavailableTool } from "../tools/companion-unavailable-to
 import { resumeCompanionInterruptedInput } from "./companion-resume-input.ts";
 import { companionToolAuditLabel, rejectUnknownCompanionTool, unofferedToolReceipt, validateCompanionToolCall } from "../tools/companion-tool-call-validation.ts";
 import { applyCompanionToolLoad, createCompanionToolSurface, companionAttachmentReadRequired } from "../tools/companion-tool-surface.ts";
-
 
 export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promise<CompanionAgentLoopResult> {
   if (typeof args.provider.executeAgentTurn !== "function") {
@@ -117,6 +132,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     read: args.read,
     expiresAt: args.expiresAt,
     constraints: args.toolConstraints,
+    flushThinking: args.flushThinking,
     onUtterancePublished: async (...published) => {
       utterancePublished = true;
       await args.onUtterancePublished?.(...published);
@@ -183,7 +199,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     companionInitiativeInterpretationFields({ requestHash: attentionRequestHash, topic: args.read.initiativeInput.topic }))
     : writingAnnotation ? agentTurnInterpretationV1Schema.parse({
     version: 1, requestHash: attentionRequestHash, intent: "task", toolUse: "act", subjects: [],
-    goalRelation: "new", goalReference: null, candidateOperations: ["companion_write_annotation"], ambiguities: [], status: "interpreted",
+    goalRelation: "new", goalReference: null, candidateOperations: ["notes.write.annotate"], ambiguities: [], status: "interpreted",
   }) : meta.turnInterpretation?.requestHash === attentionRequestHash ? meta.turnInterpretation : null;
   /**
    * 分类器**不等**——它和"闲聊版第一步"并行跑（2026-10-07 用户决定：首字延迟里
@@ -193,7 +209,10 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
   const opening = openCompanionTurn(args);
   const dialogueHistory = opening.dialogueHistory;
   const currentRequest = opening.currentRequest;
-  const requirements = companionRequestRequirements(args.read.userText ?? "", availableDefinitions.some(tool => tool.name === "companion_create_note"), availableDefinitions.map(tool => tool.name));
+  // The direct agent branch does not route behavior with phrase lists. The
+  // legacy classified/hybrid entries keep their existing request requirements.
+  const requirements = directEntry ? {}
+    : companionRequestRequirements(args.read.userText ?? "", availableDefinitions.some(tool => tool.name === "companion_notes_write"), availableDefinitions.map(tool => tool.name));
   let messages = opening.messages;
   const recoveryIdentity = companionRecoveryIdentity({
     args, currentRequest, permissionLevel: meta.permissionLevel,
@@ -217,12 +236,8 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       stepCount: recovered.state.stepCount }, "restored private Agent working-state checkpoint");
     if (recovered.phase === "settled") return recovered.result!;
   }
-  const noteInput = { workspaceId: args.ctx.workspaceId, userId: args.read.userId, runId: args.read.runId,
-    recovered: Boolean(recovered), noteId: notePage?.context?.noteId, noteVersionId: notePage?.context?.noteVersionId,
-    userText: args.read.userText };
-  const hybridNoteAllowed = event.constraints.noteLibraryReadEnabled !== false && !userForbidsNoteLibraryRead(args.read.userText);
-  const earlyNote = entryMode === "hybrid" && !cachedInterpretation && hybridNoteAllowed && notePage?.context?.pageKind === "note"
-    ? await prefetchCompanionNote({ ...noteInput, toolUse: "read", candidateOperations: ["companion_read_note"] }) : null;
+  const noteObservation = createCompanionNoteObservation(event, Boolean(recovered), notePage?.context);
+  const earlyNote = entryMode === "hybrid" && !cachedInterpretation ? await noteObservation.currentPage() : null;
   if (earlyNote?.message) messages.push(earlyNote.message);
   const entry = startCompanionEntry({ args, mode: entryMode, requestHash: attentionRequestHash,
     cached: cachedInterpretation, relatedGoals: meta.relatedGoals,
@@ -244,25 +259,23 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     handlerStartedAtMs,
     deadlineAt,
     elapsedMsDelta: elapsedDelta(),
+    speculationAllowed: !directEntry,
     getMessages: () => messages,
     setMessages: (next) => { messages = next; },
   });
   const {
-    attention, historyBinding, userRequiresTool, userAskedForAction, definitions,
+    attention, historyBinding, userRequiresTool, userAskedForAction, definitions, reminderListAsked,
     steerableReadTools, steerableActionTools, requestedActionTools,
   } = preamble;
   const directControls = createCompanionDirectControls({ mode: directEntry ? entryMode : "classified", attention,
     userText: args.read.userText, deepened: recovered?.state.deepened, onInterpretation: args.onTurnInterpretation });
   if (definitions.length === 0)
     throw new Error(`companion tool surface resolved empty for permission "${String(meta.permissionLevel)}"`);
-  /**
-   * Host pre-read for the current note: see companion-note-prefetch.ts for why
-   * the host reads before generation and which interpretations trigger it.
-   */
-  const notePrefetch = earlyNote ?? (!hybridNoteAllowed ? { prefetched: false, message: null }
-    : await prefetchCompanionNote({ ...noteInput, toolUse: attention.toolUse, candidateOperations: attention.candidateOperations }));
+  const notePrefetch = earlyNote ?? await noteObservation.read(attention);
   const notePrefetched = notePrefetch.prefetched;
   if (!earlyNote && notePrefetch.message) messages.push(notePrefetch.message);
+  const requiresMaterialRead = (!notePrefetched || notePrefetch.truncated === true)
+    && userRequiresTool && attention.toolUse === "read";
   const toolSurface = createCompanionToolSurface({
     definitions,
     userText: args.read.userText,
@@ -344,24 +357,56 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
   });
   const sendWithBoundedCompaction = stepCompaction.send;
 
-  const contextText = companionNumericEvidenceContext(args.baseMessages);
+  // Numeric evidence must include receipts obtained during this loop, not only
+  // the request's starting transcript. Otherwise a freshly read statistic is
+  // treated as invented and costs a full correction round.
+  const contextText = (): string => companionNumericEvidenceContext([
+    ...args.baseMessages, ...compactedEvidence, ...companionCurrentRequestMessages(messages),
+  ]);
+  const hostReminderInjected = typeof args.read.hereAndNow === "string" && /提醒/.test(args.read.hereAndNow);
   let stepCount = recovered?.state.stepCount ?? resolveAgentStepCountForResume(meta);
   const resumedStepCount = stepCount;
   let toolCallCount = meta.toolCallCount;
   const invalidArgumentCalls = new Set<string>(recovered?.state.invalidArgumentCalls);
+  /**
+   * Repeated schema failures are a tool-contract problem, not new work. Different
+   * invalid payloads defeat the identical-call guard, so count per tool instead:
+   * after five rejected payloads this run stops offering that tool and lets the
+   * model answer or use another one. Valid arguments reset nothing else.
+   */
+  const malformedToolAttempts = new Map<string, number>();
+  const malformedTools = new Set<string>();
+  /** Any rejected tool call (schema, unknown, unoffered) counts toward one cap. */
+  let invalidToolCallCount = 0;
+  const invalidToolCallLimitReached = (): boolean => {
+    invalidToolCallCount += 1;
+    return invalidToolCallCount >= COMPANION_INVALID_TOOL_CALLS_ALLOWED;
+  };
+  /** A forbidden time-based action may be retried a few times, then settled. */
+  const executionConstraintAttempts = new Map<string, number>();
   const rejectedExecutionConstraints = new Set<string>(recovered?.state.rejectedExecutionConstraints);
   /** 每个「工具名 + 参数」指纹已交付过几次成功回执；判据与收口见 `companion-progress-guard.ts`。 */
   const successfulCallReceipts = new Map<string, number>();
+  /**
+   * Set when the previous step produced a completion claim with no receipt.
+   * The next step must actually call a tool; the host does not choose which.
+   */
+  let correctionRequiresTool = false;
   event.verifyUtterance = text => {
+    // The rule exists to stop one reply from being said twice: prose first, then
+    // the same sentences again through the speech tool.
     if (visibleSegments.some(segment => segment.trim()))
       throw new CompanionToolNotExecutedError("这轮已经开始连续回复，请接着把当前回复完成。需要分几句交流时，从第一句使用发言能力，避免正文和发言重复。");
-    const checked = reviewCompanionStepCorrection({ said: text, contextText, messages, compactedEvidence, turnToolUse: attention.toolUse,
-      pageContext: args.read.pageContext,
-      stepCalls: 0, toolCallCount, finalAnswerOnly: false, stepCount, stepBudget: budget.maxSteps ?? Infinity,
-      nowMs: Date.now(), deadlineAt, userAskedForAction: false, requestedActionTools: [],
-      actionSteerAttempts: 0, lookupClaimSteered: false, quoteCorrectionUsed: false });
-    if (checked.unverifiedQuotes.length || checked.unverifiedClaims.length)
-      throw new CompanionToolNotExecutedError("这条发言的原文引用或个人读数尚未核对，没有发布。先读取真实来源，或改成有依据的表达后再说。");
+    if (!directEntry) {
+      const checked = reviewCompanionStepCorrection({ said: text, contextText: contextText(), messages, compactedEvidence, turnToolUse: attention.toolUse,
+        pageContext: args.read.pageContext,
+        stepCalls: 0, toolCallCount, finalAnswerOnly: false, stepCount, stepBudget: budget.maxSteps ?? Infinity,
+        nowMs: Date.now(), deadlineAt, userAskedForAction: false, requestedActionTools: [],
+        actionSteerAttempts: 0, lookupClaimSteered: false, quoteCorrectionUsed: false,
+        landedWrites: companionActionResultRecorded(messages, companionWriteToolNames(definitions)) });
+      if (checked.unverifiedQuotes.length || checked.unverifiedClaims.length || checked.unbackedActionClaims.length)
+        throw new CompanionToolNotExecutedError("这条发言的原文引用、个人读数或写入声明尚未核对，没有发布。先读取真实来源、取得真实回执，或改成有依据的表达后再说。");
+    }
   };
   event.reviewInitiativeSpeech = text => reviewCompanionInitiativeSpeech({ ctx: args.ctx, read: args.read, text, provider: args.provider });
 
@@ -399,6 +444,11 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
   // prose with no intervening progress must not become an unbounded retry loop.
   let outputRepairToolCount: number | null = recovered?.state.outputRepairToolCount ?? null;
   const requirementCorrections = new Set(recovered?.state.requirementCorrections ?? []);
+  /** A wrong calculated result gets a real chance to converge; a repeated same
+   * wrong result is the signal that it is not making progress. */
+  const arithmeticMismatchCounts = new Map<string, number>();
+  let arithmeticCorrectionCount = 0;
+  const actionReplayCounts = new Map<string, number>();
   /** "让她做件事却没落地"闸每轮至多一次：补一步就够，不把她逼成循环。 */
   let actionSteerAttempts = recovered?.state.actionSteerAttempts ?? 0;
   let quoteCorrectionUsed = recovered?.state.quoteCorrectionUsed ?? false;
@@ -413,9 +463,8 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
   if (args.continuationProposalId && (!recovered || recovered.phase === "waiting")) {
     messages = await loadContinuation(event, messages, args.continuationProposalId, deadlineAt,
       recovered?.phase === "waiting" ? { pendingCallId: recovered.pendingCallId!, onExecution: saved => {
-        for (const block of saved.blocks ?? []) pushRichBlock(block);
-        const route = allowedMainRouteV2Schema.safeParse(saved.route);
-        if (route.success) pushRichBlock({ type: "nav", label: (saved.routeLabel ?? "查看已保存的结果").slice(0, 80), route: route.data });
+        for (const block of companionExecutionBlocks(saved, { runId: args.read.runId,
+          fallbackLabel: "查看已保存的结果" })) pushRichBlock(block);
       } } : undefined);
   }
   const workingState = (completedStepCount = stepCount): CompanionRuntimeState => ({
@@ -424,7 +473,8 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     visibleSegments: [...visibleSegments], visibleSegmentDelivered: [...visibleSegmentDelivered], richBlocks: [...richBlocks],
     webSearchCalls, historyFoldApplied, invalidArgumentCalls: [...invalidArgumentCalls], requirementCorrections: [...requirementCorrections],
     rejectedExecutionConstraints: [...rejectedExecutionConstraints], degenerateRetried, outputRepairToolCount,
-    actionSteerAttempts, quoteCorrectionUsed, lookupClaimSteered, steerSwapToFallback, protocolFallback, utterancePublished,
+    actionSteerAttempts, quoteCorrectionUsed, lookupClaimSteered,
+    steerSwapToFallback, protocolFallback, utterancePublished,
     loadedToolNames: [...loadedToolNames],
     entryMode, deepened: directControls.deepened(),
   });
@@ -432,6 +482,83 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     errorCode?: string, result?: Extract<CompanionAgentLoopResult, { status: "completed" }>) => finishStep(event, stepId, status, hash,
       errorCode, encodeCompanionRuntimeCheckpoint(recoveryIdentity, { phase: result ? "settled" : "continue",
         state: workingState(), ...(result ? { result } : {}) }));
+  /**
+   * 质量闸用尽重试后的收尾：保留已经交付/落下的真实内容，附一句宿主核对说明。
+   * 目的不是“成功”，而是不让一次模型波动把整轮打成死信，也不把没做的事说成做了。
+   */
+  const settleWithHostNote = async (input: {
+    stepId: string; said: string; saidHash: string; errorCode: string; note: string;
+    includeSaid: boolean; landedWrites: boolean; reasoning?: AgentTurnResult["reasoning"];
+  }): Promise<Extract<CompanionAgentLoopResult, { status: "completed" }>> => {
+    const settlement = assembleCompanionHostSettlement({
+      visibleSegments, visibleSegmentDelivered, richBlockCount: richBlocks.length,
+      said: input.said, includeSaid: input.includeSaid, note: input.note,
+      landedWrites: input.landedWrites, reasoning: input.reasoning,
+    });
+    if (settlement.empty) {
+      await finishBoundary(input.stepId, "failed", input.saidHash, input.errorCode);
+      await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta() });
+      throw new AgentOutputError("no_progress", "no verified reply body or saved result remains after correction");
+    }
+    const completedResult = { status: "completed" as const, text: settlement.text, blocks: richBlocks, memoryRefs: [],
+      writesLanded: input.landedWrites,
+      ...(settlement.reasoning ? { reasoning: settlement.reasoning } : {}) };
+    await finishBoundary(input.stepId, "failed", input.saidHash, input.errorCode, completedResult);
+    await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta(),
+      ...args.contextReceipts?.runMetaPatch() });
+    return completedResult;
+  };
+  const arithmeticCorrectionInstruction = (mismatch: CompanionArithmeticMismatch) =>
+    `你写出的结果 ${mismatch.claimed} 与表达式 ${mismatch.expression} 的计算结果 ${mismatch.expected} 不一致。`
+    + "先用 companion_observe（action=calculate）核对，再用回执里的结果回答；不要心算。";
+  const settleArithmeticLoop = async (stepId: string, result: AgentTurnResult, mismatch: CompanionArithmeticMismatch) =>
+    settleWithHostNote({ stepId, said: String(result.content ?? ""), saidHash: sha256Utf8V1(String(result.content ?? "")),
+      errorCode: "ARITHMETIC_MISMATCH",
+      note: `（宿主核对：${mismatch.expression} 的计算结果是 ${mismatch.expected}，回答里的 ${mismatch.claimed} 对不上；已停止继续尝试。）`,
+      includeSaid: false,
+      landedWrites: companionActionResultRecorded(messages, companionWriteToolNames(definitions)),
+      reasoning: result.reasoning });
+  /**
+   * Help a wrong calculation converge instead of accepting or instantly killing
+   * it. A different wrong result means the model is still trying; the same wrong
+   * result repeated is the signal that it cannot get there on its own.
+   */
+  const arithmeticRetry = async (input: { stepId: string; result: AgentTurnResult; text: string;
+    stepEmitted: boolean; toolCallId?: string }) => {
+    if (args.read.initiativeInput || !input.text.trim()) return null;
+    const mismatch = companionArithmeticMismatch(args.read.userText ?? "", input.text);
+    if (!mismatch) return null;
+    const key = `${mismatch.expression}|${mismatch.claimed}`;
+    const repeats = (arithmeticMismatchCounts.get(key) ?? 0) + 1;
+    arithmeticMismatchCounts.set(key, repeats);
+    arithmeticCorrectionCount += 1;
+    const instruction = arithmeticCorrectionInstruction(mismatch);
+    if (repeats > COMPANION_ARITHMETIC_REPEAT_ALLOWED || arithmeticCorrectionCount > COMPANION_ARITHMETIC_TOTAL_ALLOWED) {
+      return { kind: "settled" as const, result: await settleArithmeticLoop(input.stepId, input.result, mismatch) };
+    }
+    if (input.toolCallId) {
+      messages.push({ role: "tool", toolCallId: input.toolCallId,
+        content: JSON.stringify({ ok: false, status: "not_executed", error: instruction }) });
+    }
+    messages = dropCompanionInternalCorrections(messages);
+    messages.push(...companionStepCorrectionMessages({ currentRequest, alreadyDisplayed: input.stepEmitted, instruction }));
+    await finishBoundary(input.stepId, "succeeded", sha256Utf8V1(input.text));
+    await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta() });
+    return { kind: "continue" as const };
+  };
+  /** Stop a turn that keeps producing unusable tool calls. The agent remains
+   * free between attempts; this only bounds a loop that cannot make progress. */
+  const settleInvalidToolLoop = async (stepId: string, result: AgentTurnResult) => {
+    const said = String(result.content ?? "");
+    logger.warn({ runId: args.read.runId, stepCount, invalidToolCallCount },
+      "companion invalid tool call loop reached its cap; settling honestly");
+    return settleWithHostNote({ stepId, said, saidHash: sha256Utf8V1(said),
+      errorCode: "TOO_MANY_INVALID_TOOL_CALLS",
+      note: "（宿主核对：本轮累计多次工具调用没有形成有效执行，已停止继续尝试；没有保存或修改。）",
+      includeSaid: false,
+      landedWrites: companionActionResultRecorded(messages, companionWriteToolNames(definitions)),
+      reasoning: result.reasoning });
+  };
   const waitForConfirmation = (proposalId: string, calls: AgentTurnResult["toolCalls"], index: number) => {
     // Close every declared call honestly before a future model request. Later
     // calls remain in the transcript with their original arguments and an
@@ -471,8 +598,23 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     // 上限就抽走工具面逼她作答——那是用计数决定她说什么。纯函数那一侧仍接受这个
     // 入参供探针渲染文案，运行时永远传 false。
     const finalAnswerOnly = false;
-    const pendingNoteCount = Boolean(requirements.noteCount && companionRequirementIssue({ noteCount: requirements.noteCount }, "", [...compactedEvidence, ...messages]));
-    const needsNoteSearch = availableDefinitions.some(tool => tool.name === "companion_search_notes")
+    /**
+     * Adaptive-thinking ladder for hosts whose model has no adaptive mode.
+     * It follows facts already true for this step, never the user's wording:
+     *   - first casual step, no tool yet  -> none  (fast chat)
+     *   - this turn has used a tool        -> medium (act on evidence)
+     *   - correcting a failed/unsupported step -> high
+     * Deepen is a user-visible control; it raises the ceiling to high.
+     */
+    const stepReasoningEffort = ((): "none" | "medium" | "high" => {
+      if (actionSteerAttempts > 0 || requirementCorrections.size > 0 || arithmeticCorrectionCount > 0) return "high";
+      if (directControls.deepened()) return "high";
+      if (toolCallCount > 0) return "medium";
+      return "none";
+    })();
+    const pendingNoteCount = !directEntry && Boolean(requirements.noteCount
+      && companionRequirementIssue({ noteCount: requirements.noteCount }, "", [...compactedEvidence, ...messages]));
+    const needsNoteSearch = !directEntry && availableDefinitions.some(tool => tool.name === "companion_notes_read")
       && companionNoteNeedsRelatedSearch(args.read.userText ?? "", event.constraints.noteLibraryReadEnabled !== false,
         [...compactedEvidence, ...messages]);
     const needsAttachedImageRead = toolCallCount === 0 && companionAttachmentReadRequired({
@@ -480,21 +622,33 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       visionEnabled: event.constraints.visionEnabled === true,
       userText: args.read.userText,
     });
+    const currentSuccesses = companionCurrentToolSuccesses([...compactedEvidence, ...messages]);
+    const editPrerequisite = companionNoteEditPrerequisite({ requestedActions: requestedActionTools,
+      hasPageNote: typeof notePage?.context?.noteId === "string",
+      hostNotePrefetched: notePrefetched && notePrefetch.truncated !== true,
+      successfulTools: currentSuccesses });
+    const actionReceiptReady = requestedActionTools.length > 0
+      && requestedActionTools.every(name => currentSuccesses.some(tool => tool.name === name));
+    const pendingMaterialRead = requiresMaterialRead && toolCallCount === 0;
+    // Candidates may name the domain tool or one of its operations; the surface
+    // speaks domain tools only. Normalize before deciding which tool survives.
+    const materialReadTools = new Set(attention.candidateOperations.map(name => companionOperationDomainTool(name) ?? name));
     // 工具面、执行政策与请求装配这三样的判据在 `companion-agent-step-assembly.ts`。
+    const requireToolThisStep = correctionRequiresTool && stepCount > resumedStepCount;
+    correctionRequiresTool = false;
     const { tools: toolsOfferedThisStep, toolChoice: toolChoiceThisStep } = companionStepToolSurface({
-      toolDefinitions: offeredToolDefinitions().filter(tool => tool.name !== "companion_deepen"
-        || (entryMode === "direct_fast" && !directControls.deepened()))
-        .filter(tool => needsAttachedImageRead ? tool.name === "companion_read_image"
-          : !needsNoteSearch || tool.name === "companion_search_notes"),
-      webSearchAllowedForStep: companionWebSearchAllowedForStep({
-        accountEnabled: currentMeta.webSearchEnabled === true,
-        constraintsEnabled: event.constraints.webSearchEnabled === true,
-        limit: budget.maxWebSearchCalls,
-        used: webSearchCalls,
-      }),
+      toolDefinitions: offeredToolDefinitions().filter(tool => !malformedTools.has(tool.name))
+        .filter(tool => tool.name !== "companion_deepen"
+          || (entryMode === "direct_fast" && !directControls.deepened()))
+        .filter(tool => tool.name === "companion_finish" || (needsAttachedImageRead ? tool.name === "companion_visual"
+          : needsNoteSearch || editPrerequisite === "search" ? tool.name === "companion_notes_read"
+          : editPrerequisite === "read" ? tool.name === "companion_notes_read"
+          : !pendingMaterialRead || materialReadTools.size === 0 || materialReadTools.has(tool.name))),
       finalAnswerOnly,
-      requiresTool: userRequiresTool || needsNoteSearch || needsAttachedImageRead,
-      toolCallCount,
+      requiresTool: (userRequiresTool && (userAskedForAction || !notePrefetched || notePrefetch.truncated === true))
+        || needsNoteSearch || needsAttachedImageRead || editPrerequisite !== null
+        || requireToolThisStep,
+      toolCallCount: editPrerequisite ? 0 : toolCallCount,
     });
     const runtimePolicy = companionStepPolicyText({
       permissionLevel: currentMeta.permissionLevel,
@@ -514,7 +668,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
      * answer step still uses the turn's declared thinking level.
      */
     const readOnlyRequiredStep = toolChoiceThisStep === "required"
-      && (needsAttachedImageRead || needsNoteSearch || (!userAskedForAction && stepCount === resumedStepCount + 1));
+      && (needsAttachedImageRead || needsNoteSearch || editPrerequisite !== null || (!userAskedForAction && stepCount === resumedStepCount + 1));
     if (readOnlyRequiredStep) {
       logger.info({ runId: args.read.runId, stepCount, basis: "read-required-first-step" },
         "companion read-only required step uses the lowest declared thinking level");
@@ -528,13 +682,25 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     let stepRequest: AgentTurnRequest = assembleCompanionStepRequest({
       turnPolicy: typeof args.baseMessages[0]?.content === "string" ? args.baseMessages[0].content : "",
       runtimePolicy,
-      executionGuidance: [needsNoteSearch ? "新笔记保存前需要一次库内关联检索。现在只用 companion_search_notes，以 match=any 合并查询当前主题的关键词；先取得真实结果，再写正文。此步不生成笔记正文。" : "",
-        responseStrategy.guidance, companionRequirementGuidance(requirements), companionExecutionConstraintGuidance(attention), companionDirectGuidance(entryMode)].filter(Boolean).join("\n"),
+      executionGuidance: [needsNoteSearch ? "新笔记保存前需要一次库内关联检索。现在只用 companion_notes_read（action=search），以 match=any 合并查询当前主题的关键词；先取得真实结果，再写正文。此步不生成笔记正文。" : "",
+        pendingMaterialRead ? "用户本轮明确要求读取材料，目前还没有本轮读取回执。现在先调用所提供的读取工具；历史回复及历史读取不能证明最新资料的状态，也不能代替本轮请求的读取。要求最近更新的手记时，先用 companion_notes_read（action=search）的 order=updated 取得当前候选，再 action=read 读取正文。此步不直接回答摘要，也不声称已经读完。" : "",
+        editPrerequisite ? "当前编辑能力允许从对话中修改已保存手记，目标页无需预先打开；历史里要求先打开页面的拒绝不再代表本轮条件。先定位并读取完整段落，后续步骤会提供编辑工具；权限与版本核验仍须通过。" : "",
+        editPrerequisite === "search" ? "现在先用 companion_notes_read（action=search）定位用户指定的已保存手记，取得真实noteId；本步不撰写正文、不猜测ID。" : "",
+        editPrerequisite === "read" ? "现在用 companion_notes_read（action=read）读取目标版本，includeBlocks=true、maxChars=20000，取得真实version、blockIndex与完整content。目标ID不确定时先搜索；未读完按游标续读。本步不撰写修改内容。" : "",
+        responseStrategy.guidance, companionRequirementGuidance(requirements), companionExecutionConstraintGuidance(attention),
+        // The shape is known before the first word, so she writes it as asked
+        // instead of being corrected afterwards.
+        args.replyShape
+          ? `用户要求这条回复分成 ${args.replyShape.messages} 条独立消息：每条单独一段、段与段之间空一行，每条只承担一个意思，把用户要说的内容都说全。宿主会按段投递成多条消息，不需要调用发言工具。`
+          : "",
+        companionDirectGuidance(entryMode)].filter(Boolean).join("\n"),
       attention,
-      messages,
+      currentUserText: currentRequest.hostObservation ? undefined : args.read.userText,
+      messages: companionNoteEditRoutingMessages(messages, requestedActionTools.includes("notes.write.edit"), noteObservation.hasResolvedTarget(attention)),
       tools: toolsOfferedThisStep,
       toolChoice: toolChoiceThisStep,
-      disableThinking: !directEntry ? turnThinking.disableThinking || readOnlyRequiredStep : directControls.disableThinking(),
+      disableThinking: !directEntry ? turnThinking.disableThinking || (readOnlyRequiredStep && !userAskedForAction && actionSteerAttempts === 0) : directControls.disableThinking(),
+      reasoningEffort: stepReasoningEffort,
       provider: args.provider,
       temperature: responseStrategy.temperature,
       prefetchedRequest: prefetched?.request ?? null,
@@ -547,8 +713,8 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
         toolCallId: tool.id, name: definition.name, toolVersion: definition.toolVersion,
         riskClass: definition.riskClass, status,
         safeLabel: status === "requested"
-          ? `正在准备${(COMPANION_AGENT_TOOL_LABELS[definition.name] ?? "这一步").replace(/^正在/, "")}`
-          : COMPANION_AGENT_TOOL_LABELS[definition.name] ?? "这一步",
+          ? `正在准备${(companionToolLabel(definition.name) ?? "这一步").replace(/^正在/, "")}`
+          : companionToolLabel(definition.name) ?? "这一步",
         ...(status === "not_executed" ? { safeSummary: "内容准备中断，这一步没有执行。" } : {}),
       } });
     });
@@ -571,8 +737,12 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
         "companion agent steered step runs on the configured fallback provider",
       );
     }
+    /** Tools this step loaded, so they are callable in the same output. */
+    const loadedThisStep = new Set<string>();
     /** 本步是否已经下发过文本（重试判据，每步重置）。 */
     let stepEmitted = false;
+    /** The text the user actually saw this step, including streamed deltas. */
+    let stepVisibleText = "";
     // 投机那一步的字可能已经流出去了：`stepEmitted` 必须照实带过来，
     // 否则重试安全性与坍缩闸都会以为这一步没发过字（那两个判据都以它为准）。
     if (prefetched) stepEmitted = prefetched.emitted;
@@ -652,13 +822,28 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
         && typeof stepProvider.chatCompletionStream === "function"
         && (finalAnswerOnly || stepRequest.tools.length === 0 || stepProvider.chatCompletionStreamToolCalls === true);
       stepCompaction.setProvider(stepProvider);
+      // One transport-attempt budget per logical step, shared by streaming and
+      // buffered mode. A persistent 5xx used to spend two stream attempts and
+      // then three buffered attempts, five serial provider calls for one step.
+      let providerTransportAttempts = 0;
+      const runBuffered = (attempts = Math.max(1, 3 - providerTransportAttempts)): Promise<AgentTurnResult> =>
+        runWithCompanionModelRetries(
+          () => runWithAbortBudget(
+            executeBufferedTurn,
+            args.ctx.signal,
+            Math.min(providerCallTimeout, Math.max(1, deadlineAt - Date.now())),
+          ),
+          { signal: args.ctx.signal, deadlineAt, attempts,
+            // With another provider available, let the caller switch instead of re-asking this one.
+            switchProviderAvailable: args.fallbackProvider !== undefined && args.fallbackProvider !== args.provider },
+        );
 
       if (prefetched) {
         // The speculative stream has already completed (and may have delivered
         // text). Consume it before choosing any provider transport.
         result = prefetched.result;
       } else if (canStreamThisStep) {
-        // 每一步都走真实流式：增量实时交给交付管线（净化 + 校验 + 落库 + SSE 下发）。
+        // Every step streams: deltas go straight through validate → persist → SSE.
         // 分段符与最终正文的拼接口径必须一致（非首段 "\n\n"），否则已下发前缀
         // 与最终正文会分叉——见 joinVisibleSegmentsDeduped。
         // "非首段"要按**实际下发过**判断，不能按分段数组长度：被 hold 攒住、从没发出去
@@ -679,46 +864,54 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
          *  - 不重发事件、不重放结果——那是账本的职责，而账本只有一行 per call id。
          */
         // 流式那一步同样可能先被闸拦下（此时一个字都还没下发，重发不会复读）。
-        const attemptStream = (): Promise<AgentTurnResult> =>
-          sendWithBoundedCompaction(stepRequest, (folded) =>
+        const attemptStream = (): Promise<AgentTurnResult> => {
+          providerTransportAttempts += 1;
+          return sendWithBoundedCompaction(stepRequest, (folded) =>
             runModelStepTask(stepProvider, folded, args.ctx.signal, (signal) =>
               runStreamingAgentStep({
                 provider: stepProvider,
                 stepRequest: folded,
                 ctxSignal: signal,
               timeoutMs: providerCallTimeout,
-              onProviderDelta: args.onProviderDelta!,
+              onProviderDelta: async text => {
+                stepVisibleText += text;
+                return args.onProviderDelta!(text);
+              },
               ...(args.onReasoningDelta ? { onReasoningDelta: args.onReasoningDelta } : {}),
               separatorBefore: visibleSegmentDelivered.includes(true) ? VISIBLE_SEGMENT_SEPARATOR : "",
               // Action and required-read steps buffer prose until the step's
               // tool outcome is known. Streaming them looked faster, but a
               // required-read step that then gets steered produced two full
               // answers in one bubble (2026-10-17 `today` turn).
-              deferPublication: stepRequest.toolChoice === "required" || Boolean(requirements.characters) || pendingNoteCount
-                || explicitlyRequestsUtterances(args.read.userText),
+              //
+              // Buffer only when the user wants an application change buffered; prose streams.
+              deferPublication: stepRequest.toolChoice === "required"
+                || (!directEntry && ((requiresMaterialRead && toolCallCount === 0)
+                  || Boolean(requirements.characters) || pendingNoteCount
+                  || explicitlyRequestsUtterances(args.read.userText)
+                  || (userRequiresTool && companionMayNeedApplicationEvidence(args.read.userText)))),
               onToolCallStarted: preparation.observe,
               // 不给回调时 provider 与这一步**完全不做额外的事**（少传一个键）。
               ...(eagerScheduler
                 ? {
                   onToolCallSettled: (slot: { index: number; id: string; name: string; argsText: string }) => {
-                    eagerScheduler.offer(slot);
+                    if (slot.name !== "companion_finish") eagerScheduler.offer(slot);
                   },
                 }
                 : {}),
-              // 每一步都攒批，不只终答步。`finalAnswerOnly` 是 `stepCount >= maxSteps`，
-              // 也就是"只有被强制收尾的那一步"才算终答——而她**直接答话**（不调工具）
-              // 是第 1 步，那时 hold=0，字当场流出去、stepEmitted 置位，
-              // 退化闸的 `!stepEmitted` 就永远不成立。实机 2026-09-21 两条三字输入
-              // （"小猫？"→"嗯？"、"嘿嘿嘿"→"嗯，我在。"）各带 2 条 delta、
-              // 3 小时内 `walking the repair ladder` 日志 0 次，就是这么漏过去的。
-              // 代价写在这里，别让下一个人以为是疏忽：**工具步那句开场白也会被攒住**，
-              // 短于 12 字的"我先看看你的笔记"不再逐字出现，而是随整段一起补发。
+              // Every step batches, not only the final one: a direct answer is step 1,
+              // and holding nothing there would leave the degenerate gate blind.
               // 换来的是坍缩闸可达——按用户口径（"说的太短了"是抱怨 #1），这个方向值。
               // 攒批不影响正确性：没下发过的内容仍由 writeTail 在终态补发，
               // "已下发是最终正文的前缀"这条不变量照旧成立。
-              holdUntilChars: stepHoldChars({ userAskedForAction }),
+              holdUntilChars: stepHoldChars({ userAskedForAction: userAskedForAction && !actionReceiptReady }),
+              // A completion/promise claim must not reach the screen before the
+              // host knows whether this step has a receipt for it.
+              holdWhile: text => !directEntry && (claimsApplicationActionCompletion(text).length > 0
+                || claimsFutureApplicationAction(text).length > 0),
               onTextEmitted: () => { stepEmitted = true; },
             })));
+        };
         /**
          * 这一步能不能原样重来。
          *
@@ -730,12 +923,6 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
          */
         const canRetryStream = (err: unknown): boolean =>
           canRetryCompanionStream(err, { emitted: stepEmitted, now: Date.now(), deadline: deadlineAt });
-        const runBuffered = (): Promise<AgentTurnResult> =>
-          runWithAbortBudget(
-            executeBufferedTurn,
-            args.ctx.signal,
-            Math.min(providerCallTimeout, Math.max(1, deadlineAt - Date.now())),
-          );
         try {
           result = await attemptStream();
         } catch (error) {
@@ -748,13 +935,31 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
             { err: error, stepCount },
             "companion streaming answer failed before any delta",
           );
-          // 网关 5xx 是瞬时故障：实测 tokenrhythm→litellm 偶发
-          // `504 UPSTREAM_TIMEOUT`（直连压测 10 次撞到 1 次），前两个真实轮次也都
-          // 撞上同一形态。缓冲轮对空输出有 3 次重试，流式轮此前**一次即降级**——
-          // 于是约一成的轮次白白丢掉"边生成边显示"（症状 ④）。给流式一次原样重试：
-          // 只有"一个字都没下发"才走到这里（上面 canRetryStream 已保证），
-          // 所以重试不会让客户端看到两段前缀。仍失败才退化成整段取回。
-          if (error instanceof ProviderRequestError && error.status >= 500 && canRetryStream(error)) {
+          // A first-output timeout means this route produced nothing, not that
+          // the request is bad. If another configured model can fit it, use that
+          // instead of repeating the same empty wait. One attempt: the fallback
+          // is recovery, not a second retry stack.
+          const switchedOnTimeout = error instanceof CompanionOutputTimeoutError
+            && error.code === "provider_first_output_timeout"
+            && args.fallbackProvider && args.fallbackProvider !== stepProvider
+            && typeof args.fallbackProvider.executeAgentTurn === "function"
+            && await companionProviderFitsRequest(args.fallbackProvider, stepRequest);
+          if (switchedOnTimeout) {
+            logger.warn({ runId: args.read.runId, stepCount, fallbackModelId: args.fallbackProvider!.modelId },
+              "companion first-output timeout switched to a fitting fallback model");
+            stepProvider = args.fallbackProvider!;
+            protocolFallback = true;
+            result = await runBuffered(1);
+          } else if (error instanceof CompanionOutputTimeoutError
+            && error.code === "provider_first_output_timeout") {
+            // No usable alternate route: retry this one once, not the default
+            // three-attempt stack. A stalled route must not hold the turn for
+            // several consecutive first-output waits.
+            result = await runBuffered(1);
+          } else if (error instanceof ProviderRequestError && error.status >= 500) {
+            // A 5xx before any delta is transient: retry the stream once, then
+            // fall back to the buffered turn. Nothing was delivered, so no
+            // duplicate prefix.
             try {
               result = await attemptStream();
             } catch (retryError) {
@@ -778,11 +983,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
         // 那是提前派发最不能出的错。close 幂等，抛错路已 close 过也不影响。
         if (eagerScheduler) await eagerScheduler.close(false);
       } else {
-        result = await runWithAbortBudget(
-          executeBufferedTurn,
-          args.ctx.signal,
-          providerCallTimeout,
-        );
+        result = await runBuffered();
       }
       if (containsCompanionToolProtocol(String(result.content ?? "")))
         throw new CompanionToolOutputRepairError("", String(result.content ?? ""));
@@ -791,6 +992,17 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       await preparation.finish([]).catch(preparationError => logger.warn(
         { runId: args.read.runId, err: preparationError }, "companion tool preparation could not be settled"));
       if (eagerScheduler) await eagerScheduler.close(true);
+      // A landed write outlives a transport failure; do not bury it in an error card.
+      const landed = args.ctx.signal.aborted ? null : settleCompanionLandedWritesOnFailure({ messages,
+        visibleSegments, visibleSegmentDelivered, richBlocks, stepEmitted, definitions });
+      if (landed) {
+        const completedResult = { status: "completed" as const, text: landed.text, blocks: richBlocks, memoryRefs: [], writesLanded: true };
+        await finishBoundary(stepId, "failed", undefined, "PROVIDER_UNAVAILABLE", completedResult);
+        await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta(), ...args.contextReceipts?.runMetaPatch() });
+        logger.warn({ runId: args.read.runId, stepCount, receipts: landed.receiptIds, err: error },
+          "companion model step failed after landed writes; delivered the real receipts host-side");
+        return { kind: "settled", result: completedResult };
+      }
       if (error instanceof CompanionOutputTimeoutError && !stepEmitted && !protocolFallback
         && stepProvider === args.provider && args.fallbackProvider !== args.provider
         && typeof args.fallbackProvider?.executeAgentTurn === "function" && !args.ctx.signal.aborted
@@ -847,12 +1059,8 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       );
       throw error;
     }
-    // B 兜底（2026-09-19 内容质量）：这一步被输出预算砍断、且**一个字都没下发过**时
-    // 重试一次——半截话不该是用户拿到的最终答复。已下发的（流式成功，stepEmitted=true）
-    // 无法撤回，只能留痕（下方 finishReason 日志）。
-    // 2026-10-07：预算已经改成"按模型档案声明"，所以不再"翻倍"（翻倍是对着一个小常数
-    // 想出来的办法）；只有这一步确实低于当前可用天花板时才抬到天花板重来，已经在天花板
-    // 上就没有可长的空间，只留痕。
+    // Truncated with nothing delivered: retry once at the declared ceiling. A
+    // streamed prefix cannot be withdrawn, so that case is only logged.
     if (result.finishReason === "length" && !stepEmitted && Date.now() < deadlineAt) {
       const ceiling = companionStepOutputCeiling(stepProvider);
       if (ceiling > stepRequest.maxTokens) {
@@ -887,14 +1095,14 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       }
     }
     if (args.read.initiativeInput && isCompanionParticipationClosure(result.content)) result = { ...result, content: "" };
-    let calls = result.toolCalls ?? [];
+    let calls: NonNullable<AgentTurnResult["toolCalls"]> = result.toolCalls ?? [];
     if (calls.length === 0 && (utterancePublished || !String(result.content ?? "").trim())) {
       const [published] = await withWorkerWorkspaceTransaction({ workspaceId: args.ctx.workspaceId, userId: args.read.userId },
         tx => tx.execute(sql`SELECT 1 FROM companion_run_utterances WHERE run_id=${args.read.runId} LIMIT 1`));
       // Publishing selects an explicit message channel. A subsequent bare final
       // only ends execution; it cannot leak completion notes or repeat speech.
       if ((utterancePublished || published || (args.read.initiativeInput && !String(result.content ?? "").trim()))
-        && !companionUtteranceRequirementIssue(requirements, [...compactedEvidence, ...messages])) {
+        && (directEntry || !companionUtteranceRequirementIssue(requirements, [...compactedEvidence, ...messages]))) {
         await finishBoundary(stepId, "succeeded", sha256Utf8V1(""), undefined,
           { status: "completed", text: "", blocks: richBlocks, memoryRefs: [] });
         await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta() });
@@ -945,27 +1153,43 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     // 必须显式写 `: string`：`said → lookupClaim → steerSwapToFallback → stepProvider → result → said`
     // 是一圈真实的类型推断回路（steer 之后那一步换哪个模型，取决于这一步说了什么）。
     // 少这个注解，tsc 报 TS7022/TS18046 一长串，而看起来最无辜的改法都会"莫名"炸掉整个文件。
-    const said: string = String(result.content ?? "");
-    const unmet = calls.length === 0 ? companionRequirementIssue(requirements, said, [...compactedEvidence, ...messages]) : null;
-    if (unmet && !stepEmitted) {
-      if (requirementCorrections.has(unmet.key)) throw new AgentOutputError("no_progress", "当前请求的完整性仍未满足，已保留真实保存结果，未声称完成。");
+    const said: string = String(result.content ?? "").trim() ? String(result.content ?? "") : stepVisibleText;
+    const unmet = !directEntry && calls.length === 0
+      ? companionRequirementIssue(requirements, said, [...compactedEvidence, ...messages]) : null;
+    if (unmet) {
+      if (requirementCorrections.has(unmet.key) || stepEmitted) {
+        const completedResult = await settleWithHostNote({ stepId, said, saidHash: sha256Utf8V1(said),
+          errorCode: "REQUIREMENT_UNMET", note: companionRequirementUnmetFallback(requirements, landedWrites),
+          includeSaid: false, landedWrites, reasoning: result.reasoning });
+        logger.warn({ runId: args.read.runId, stepCount, requirement: unmet.key, landedWrites },
+          "companion requirement remained unmet after correction; delivered an honest partial result");
+        return { kind: "settled", result: completedResult };
+      }
       requirementCorrections.add(unmet.key);
       // A save request answered with prose has not happened. Use the configured
       // alternate for its correction, preserving all receipts and operation IDs.
       if (pendingNoteCount && stepProvider === args.provider && args.fallbackProvider !== args.provider
         && typeof args.fallbackProvider?.executeAgentTurn === "function") protocolFallback = true;
-      if (said.trim()) messages.push({ role: "assistant", content: said });
+      // The draft was never displayed. Keep it out of history so the next step
+      // cannot imitate its short/incomplete shape; the correction message
+      // carries the requirement and the current request instead.
       messages = dropCompanionInternalCorrections(messages);
       messages.push(...companionStepCorrectionMessages({ currentRequest, alreadyDisplayed: false, instruction: unmet.instruction }));
       await finishBoundary(stepId, "succeeded", sha256Utf8V1(said));
       await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta() });
       return { kind: "continue" };
     }
-    const {
-      unverifiedClaims, unverifiedQuotes, lookupClaim, steerPlan, correctQuote,
-    } = reviewCompanionStepCorrection({
+    if (calls.length === 0) {
+      const arithmeticStep = await arithmeticRetry({ stepId, result, text: said, stepEmitted });
+      if (arithmeticStep) return arithmeticStep;
+    }
+    // The receipt gate is independent of routing: whatever entry mode is used,
+    // "already set / saved / forgot" with no tool receipt this turn is a claim,
+    // not a completion. Word-list claim detection only decides whether to ask
+    // for a retry; it never chooses a tool or a route.
+    const review = reviewCompanionStepCorrection({
       said,
-      contextText,
+      contextText: contextText(),
       compactedEvidence,
       messages,
       turnToolUse: attention.toolUse,
@@ -979,18 +1203,40 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       deadlineAt,
       userAskedForAction,
       requestedActionTools,
-      // A required surface (tool_choice=required) that came back with no call
-      // is a provider contract miss, not a valid answer. Only enforce on the
-      // first step; later steps may legitimately settle after a tool receipt.
-      requiresReadReceipt: !notePrefetched && stepCount === resumedStepCount + 1
-        && attention.toolUse === "read" && calls.length === 0 && toolCallCount === 0,
+      // A correction without a receipt still has not read anything. Completed
+      // reads and host prefetches remove this requirement; step count cannot.
+      requiresReadReceipt: requiresMaterialRead && calls.length === 0 && toolCallCount === 0,
+      requiresReminderRead: reminderListAsked && !hostReminderInjected
+        && calls.length === 0 && toolCallCount === 0,
+      landedWrites,
       actionSteerAttempts,
       lookupClaimSteered,
       quoteCorrectionUsed,
     });
+    const { unverifiedClaims, unverifiedQuotes, unbackedActionClaims, lookupClaim, steerPlan, correctQuote }
+      = directEntry
+        ? { unverifiedClaims: [], unverifiedQuotes: [],
+          unbackedActionClaims: review.unbackedActionClaims,
+          lookupClaim: false, correctQuote: false,
+          // Quote/numeric wording checks stay off in this mode; a promise with
+          // no receipt does not. "我这就打开笔记库" / "我这就去查" are exactly
+          // what this branch must not deliver when nothing ran. The retry is
+          // decided by facts (no receipt, budget left) and never names a tool,
+          // so it is not a phrase-list route.
+          steerPlan: {
+            steer: calls.length === 0 && stepCount < stepBudget && Date.now() < deadlineAt
+              && actionSteerAttempts < actionSteerBudget({ userAskedForAction })
+              && ((userAskedForAction && !companionActionResultRecorded(messages, requestedActionTools))
+                || (toolCallCount === 0 && (review.unbackedActionClaims.length > 0
+                  || looksLikeUnfulfilledActionNarration(said)))),
+            consumeAction: true, consumeLookup: false, swapToFallback: false,
+          } }
+        : review;
     if (steerPlan.steer || correctQuote) {
       if (correctQuote) quoteCorrectionUsed = true;
       if (steerPlan.consumeAction) actionSteerAttempts += 1;
+      // The correction is a prompt, not a forced tool call: the agent remains
+      // free to answer or choose another action.
       // The correction step may need a tool from a group the first step did not
       // load. Expand the surface for this steer rather than naming a tool the
       // model cannot call.
@@ -1017,25 +1263,29 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       steerSwapToFallback = steerPlan.swapToFallback;
       // 空的一步（provider 退化时会一个字都不给）不写进正文，也不回灌空的
       // assistant 消息——那会在拼接里留下一个孤立的空段。
-      if (said.trim().length > 0) {
-        // 被 steer 掉的那一步：**只有已经流式下发过的话才留在最终正文里**。
-        // 没发出去的那句（被 hold 攒住）如果留下，用户会在同一条消息里先看到
-        // "嗯，记住了喵。"再看到纠正后的正文——三遍同义反复就是这么拼出来的
-        // （实机 2026-09-22 场景 T，delta 只有 1 批 73 字 = 全程没流式，最后整段补发）。
-        // 丢掉它对用户不可见（他本来就没收到），而这句话正是这次要纠正的内容。
+      if (said.trim().length > 0 && (!pendingMaterialRead || stepEmitted)) {
+        // Only text the user already received stays in the visible reply; a held
+        // draft was never seen and is exactly what this correction replaces.
         // assistant 消息仍然回灌：模型要看得见自己说过什么，纠正才接得上。
         if (stepEmitted) {
           visibleSegments.push(said);
           visibleSegmentDelivered.push(true);
         }
-        messages.push({ role: "assistant", content: said });
+        // 没发出去的草稿不回灌历史：尤其是“已保存/已改好”这种无回执的完成声明，
+        // 一旦留在消息里，下一轮她会把自己的谎当依据（2026-10-25 实机连锁复读）。
+        // 纠正指令已经带着待核对的片段，足够她重写；只有用户真正看到的那段才进历史。
+        if (stepEmitted) messages.push({ role: "assistant", content: said });
       }
       messages = dropCompanionInternalCorrections(messages);
       messages.push(...companionStepCorrectionMessages({
         currentRequest,
         alreadyDisplayed: stepEmitted,
         instruction: buildCompanionStepCorrectionInstruction({
+          missingActionReceipt: userAskedForAction && requestedActionTools.length > 0
+            && !companionActionResultRecorded(messages, requestedActionTools),
+          prerequisiteTools: editPrerequisite || needsNoteSearch ? toolsOfferedThisStep.map(tool => tool.name) : undefined,
           correctQuote,
+          unbackedActionClaims,
           unverifiedQuotes,
           unverifiedClaims,
           lookupClaim,
@@ -1044,15 +1294,45 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
           requestedActionTools,
         }),
       }));
+      correctionRequiresTool = unbackedActionClaims.length > 0;
       await finishBoundary(stepId, "succeeded", sha256Utf8V1(said));
       await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta(),
         ...args.contextReceipts?.runMetaPatch() });
       logger.warn({ runId: args.read.runId, stepCount, chars: said.trim().length,
         claims: unverifiedClaims.slice(0, 4),
+        actionClaims: unbackedActionClaims.slice(0, 4),
         by: companionSteerCause({ correctQuote, unverifiedClaims, unverifiedQuotes, lookupClaim,
-          userAskedForAction }) },
+          unbackedActionClaims, userAskedForAction }) },
       "companion agent step needs a steer; cause in `by`");
       return { kind: "continue" };
+    }
+    /**
+     * Give the agent more than one chance when it claimed a write without any
+     * receipt. The next step is still a normal free-choice step: no forced
+     * tool_choice and no named tool, only the factual feedback that nothing ran.
+     */
+    if (calls.length === 0 && unbackedActionClaims.length > 0 && !args.read.initiativeInput
+      && actionSteerAttempts < COMPANION_UNBACKED_CLAIM_RETRIES_ALLOWED) {
+      actionSteerAttempts += 1;
+      correctionRequiresTool = true;
+      messages = dropCompanionInternalCorrections(messages);
+      messages.push(...companionStepCorrectionMessages({ currentRequest, alreadyDisplayed: stepEmitted,
+        instruction: `上一段声称“${unbackedActionClaims.slice(0, 2).join("、")}”，但本轮没有任何工具回执。`
+          + "不要假设它已经执行；如果用户要求改变数据，请调用合适的工具并等待真实回执；如果只是聊天，请删掉完成声明后正常回答。" }));
+      await finishBoundary(stepId, "succeeded", sha256Utf8V1(said));
+      await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta() });
+      logger.warn({ runId: args.read.runId, stepCount, attempt: actionSteerAttempts,
+        claims: unbackedActionClaims.slice(0, 3) }, "companion unbacked claim gets another free-choice step");
+      return { kind: "continue" };
+    }
+    // Unbacked completion claims get an honest note; a proactive turn just stays quiet.
+    if (calls.length === 0 && unbackedActionClaims.length > 0 && !args.read.initiativeInput) {
+      const completedResult = await settleWithHostNote({ stepId, said, saidHash: sha256Utf8V1(said),
+        errorCode: "ACTION_CLAIM_UNVERIFIED", note: companionUnbackedActionFallback(landedWrites),
+        includeSaid: stepEmitted, landedWrites, reasoning: result.reasoning });
+      logger.warn({ runId: args.read.runId, stepCount, claims: unbackedActionClaims.slice(0, 4),
+        landedWrites, emitted: stepEmitted }, "companion unbacked action claim withheld; delivered an honest receipt note");
+      return { kind: "settled", result: completedResult };
     }
     // 一次纠正的额度限制生成次数，不能把仍不匹配的原文引用降为成功终答。
     const saidHash = sha256Utf8V1(said);
@@ -1062,23 +1342,74 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       hasDeliverablePrefix: said.trim().length > 0 });
     if (calls.length === 0 && unverifiedQuotes.length > 0) {
       if (quoteGate.destroysTurn) {
-        await finishStep(event, stepId, "failed", saidHash, quoteGate.stepErrorCode);
-        throw new AgentOutputError("unverified_quote", "companion quote does not match the available source after correction");
+        const completedResult = await settleWithHostNote({ stepId, said, saidHash,
+          errorCode: quoteGate.stepErrorCode, note: companionUnverifiedQuoteFallback(),
+          includeSaid: stepEmitted, landedWrites, reasoning: result.reasoning });
+        logger.warn({ runId: args.read.runId, stepCount, quotes: unverifiedQuotes.slice(0, 2) },
+          "companion quote remained unverified after correction; delivered an honest note");
+        return { kind: "settled", result: completedResult };
       }
       await finishBoundary(stepId, "failed", saidHash, quoteGate.stepErrorCode);
       logger.warn({ runId: args.read.runId, stepCount }, quoteGate.bypassNote);
+    }
+    if (reminderListAsked && !hostReminderInjected && !messages.some(message => message.role === "tool")) {
+      logger.warn({ runId: args.read.runId, stepCount }, "reminder list asked but never read; delivered an honest note");
+      return { kind: "settled", result: await settleWithHostNote({ stepId, said, saidHash,
+        errorCode: "REMINDER_LIST_NOT_READ", note: companionReminderReadFallback(),
+        includeSaid: false, landedWrites, reasoning: result.reasoning }) };
+    }
+    if (requiresMaterialRead && calls.length === 0 && toolCallCount === 0) {
+      const completedResult = await settleWithHostNote({ stepId, said, saidHash,
+        errorCode: "READ_NOT_EXECUTED", note: companionMaterialReadFallback(),
+        includeSaid: stepEmitted, landedWrites, reasoning: result.reasoning });
+      logger.warn({ runId: args.read.runId, stepCount }, "requested material read still has no receipt; delivered an honest note");
+      return { kind: "settled", result: completedResult };
     }
     const actionGate = judgeCompanionDeliveryGate({ gate: "action_not_executed", landedWrites });
     if (calls.length === 0 && userAskedForAction && requestedActionTools.length > 0
       && !companionActionResultRecorded(messages, requestedActionTools)) {
       if (actionGate.destroysTurn) {
-        await finishStep(event, stepId, "failed", saidHash, actionGate.stepErrorCode);
-        throw new AgentOutputError("action_unverified", "requested action has no execution or verified unchanged receipt after correction");
+        const completedResult = await settleWithHostNote({ stepId, said, saidHash,
+          errorCode: actionGate.stepErrorCode, note: companionActionNotExecutedFallback(landedWrites),
+          includeSaid: stepEmitted, landedWrites, reasoning: result.reasoning });
+        logger.warn({ runId: args.read.runId, stepCount, requestedActionTools },
+          "requested action has no receipt after correction; delivered an honest note instead of failing the run");
+        return { kind: "settled", result: completedResult };
       }
       await finishBoundary(stepId, "failed", saidHash, actionGate.stepErrorCode);
       logger.warn({ runId: args.read.runId, stepCount }, actionGate.bypassNote);
     }
     if (calls.length === 0) {
+      // 写回执已经落下时，普通正文同样可以交付：回执真实且属于本轮，宿主直接
+      // 绑定它们，不再为了补一个 companion_finish 多花一次完整模型调用。
+      if (landedWrites) {
+        // The model wrote the user-facing answer but skipped the receipt
+        // reference. The receipts are real and owned by this request, so bind
+        // them host-side instead of asking for the same generation again.
+        const receipts = companionCurrentSuccessfulToolReceipts(messages);
+        const writes = receipts.filter(receipt => receipt.riskClass !== "read");
+        if (writes.length > 0) {
+          const base = joinVisibleSegmentsDeduped([...visibleSegments, said], [...visibleSegmentDelivered, stepEmitted]).text.trim();
+          const summary = writes.map(receipt => receipt.summary).filter(Boolean).join("；");
+          const text = base && summary ? `${base}\n\n${summary}`
+            : base || (summary ? `改好了：${summary}。` : "改动已经保存。");
+          const completedResult = { status: "completed" as const, text, blocks: richBlocks, memoryRefs: [],
+            writesLanded: true, ...(result.reasoning && result.reasoning.length > 0 ? { reasoning: result.reasoning } : {}) };
+          await finishBoundary(stepId, "succeeded", sha256Utf8V1(text), undefined, completedResult);
+          await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta(),
+            ...args.contextReceipts?.runMetaPatch() });
+          logger.warn({ runId: args.read.runId, stepCount, receipts: writes.map(receipt => receipt.id) },
+            "companion wrote but skipped companion_finish; bound current-request receipts host-side");
+          return { kind: "settled", result: completedResult };
+        }
+        const completedResult = await settleWithHostNote({ stepId, said, saidHash: sha256Utf8V1(said),
+          errorCode: "FINISH_CONTRACT_INCOMPLETE",
+          note: "（宿主核对：写入回执已经落下，但本轮没有按终答契约引用回执；完成状态以工具回执为准。）",
+          includeSaid: stepEmitted, landedWrites, reasoning: result.reasoning });
+        logger.warn({ runId: args.read.runId, stepCount },
+          "companion wrote but did not finalize with receipt references; delivered an honest receipt note");
+        return { kind: "settled", result: completedResult };
+      }
       // ④-b：可见正文是**每一步 content 的顺序拼接**（工具步前的开场白也在里面）。
       // 拼接口径必须与流式下发的分段符一致，否则已下发前缀与最终正文分叉。
       // 判据用 length（不是 trim）：只要这一步吐出过字符，它的分段符就已经在下发原文里。
@@ -1103,8 +1434,11 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       }
       const text = deduped.text;
       if (text.trim().length === 0) {
-        await finishStep(event, stepId, "failed", undefined, "EMPTY_AGENT_RESPONSE");
-        throw new Error("companion agent returned empty final response");
+        const completedResult = await settleWithHostNote({ stepId, said, saidHash: sha256Utf8V1(said),
+          errorCode: "EMPTY_AGENT_RESPONSE", note: companionEmptyReplyFallback(),
+          includeSaid: false, landedWrites, reasoning: result.reasoning });
+        logger.warn({ runId: args.read.runId, stepCount }, "companion agent returned an empty final response; delivered a host receipt note");
+        return { kind: "settled", result: completedResult };
       }
       if (stepText.trim().length === 0 && visibleSegments.length > 0) {
         // 终答那一步一个字都没说，但前面工具步说过话——本轮只能拿开场白当答复。
@@ -1115,8 +1449,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
           "companion agent final step was empty; answering with earlier step text only",
         );
       }
-      // E：有被丢弃的复读段时上面已经留痕；这个观测项只针对"想丢也丢不了"的
-      // 情况——复读段已经流式下发，只能保留（删了会与最终正文分叉）。
+      // An already-streamed repeat cannot be dropped without diverging from the final text.
       const duplicated = deduped.dropped.length === 0 ? findDuplicateSegment(visibleSegments) : null;
       if (duplicated !== null) {
         logger.warn(
@@ -1137,11 +1470,8 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       // 交回终步 reasoning：下一轮若以这条收尾，网关要求把 reasoning_text 一并带回。
       return { kind: "settled", result: completedResult };
     }
-    // 每步工具数不再有上限（2026-10-16）：旧的 `AGENT_TOOL_CALL_LIMIT` 用一个计数
-    // 决定她这一步能问几件事，保证不了正确性。带工具的一步：这一步的 content
-    // 是**开场白**（"我先看看你的笔记"），不是终答。
-    // 它已经随流式下发（④-b），因此必须留在可见正文里——否则客户端累积的草稿
-    // 会与最终 assistant 消息对不上（见 joinVisibleSegmentsDeduped 的说明）。
+    // A tool step's content is a preamble, not the final answer. It was already
+    // streamed, so it stays in the visible text or the draft diverges from the message.
     if (stepEmitted && typeof result.content === "string" && result.content.length > 0) {
       visibleSegments.push(result.content);
       visibleSegmentDelivered.push(true);
@@ -1187,19 +1517,27 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
           },
         });
         messages.push({ role: "tool", toolCallId: call.id, content: JSON.stringify({ ok: false, status: "blocked", error: "invalid tool call identity" }) });
+        if (invalidToolCallLimitReached()) return { kind: "settled", result: await settleInvalidToolLoop(stepId, result) };
         continue;
       }
       // The reduced surface is a declaration, not a suggestion. A tool that
       // was not offered this step must be loaded first; otherwise the model
       // could silently use the full catalog and the prompt savings would be
       // cosmetic. `load_tools` itself must be callable even before loading.
-      if (identity.name !== "companion_load_tools"
-        && !toolsOfferedThisStep.some(tool => tool.name === identity.name)) {
+      // A step can load a group and then use it in the same output. Judging that
+      // second call against the surface as it was at step start rejected it as
+      // "not loaded" (2026-10-27 live: diagram ran 10 steps doing exactly this),
+      // so anything this step loaded is callable from here on.
+      const offeredNow = toolsOfferedThisStep.some(tool => tool.name === identity.name)
+        || (loadedThisStep.has(identity.name)
+          && offeredToolDefinitions().some(tool => tool.name === identity.name));
+      if (identity.name !== "companion_load_tools" && !offeredNow) {
         const offered = toolsOfferedThisStep.map(tool => tool.name);
         await recordRejectedToolCall(event, stepId, identity, safeArgumentsHash(call.arguments),
           getCompanionAgentTool(identity.name), "not_executed", "这个工具组还没有装载");
         messages.push({ role: "tool", toolCallId: call.id,
           content: unofferedToolReceipt(identity.name, offered) });
+        if (invalidToolCallLimitReached()) return { kind: "settled", result: await settleInvalidToolLoop(stepId, result) };
         continue;
       }
       const definition = getCompanionAgentTool(identity.name);
@@ -1208,11 +1546,13 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       if (!definition) {
         await rejectUnknownCompanionTool({
           identity,
+          availableTools: toolsOfferedThisStep.map(tool => tool.name),
           recordRejected: reason => recordRejectedToolCall(event, stepId, identity,
             safeArgumentsHash(call.arguments), null, "blocked", reason),
           appendEvent: tool => appendAgentEvent(event, "agent.tool", { tool }),
           pushReceipt: content => messages.push({ role: "tool", toolCallId: identity.id, content }),
         });
+        if (invalidToolCallLimitReached()) return { kind: "settled", result: await settleInvalidToolLoop(stepId, result) };
         continue;
       }
       const invalidIdentity = `${identity.name}:${safeArgumentsHash(call.arguments)}`;
@@ -1220,8 +1560,10 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
         alreadyRejected: invalidArgumentCalls, identity: invalidIdentity });
       if (validated.rejection) {
         invalidArgumentCalls.add(invalidIdentity);
+        const malformedAttempts = companionMalformedToolExhausted(malformedToolAttempts, identity.name);
+        if (malformedAttempts >= COMPANION_MALFORMED_TOOL_ATTEMPTS_ALLOWED) malformedTools.add(identity.name);
         logger.warn({ runId: args.read.runId, toolName: identity.name,
-          repeatedInvalid: validated.rejection.repeatedInvalid, ...validated.logFields },
+          malformedAttempts, ...validated.logFields },
         "companion tool arguments rejected; schema field metadata only");
         // 40b §3.2：`not_executed` 就是「参数无效」这一格。它据此知道
         // **改参数重来是有意义的**，而 "failed" 会让它以为这个工具本身坏了，
@@ -1242,16 +1584,104 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
           },
         });
         messages.push({ role: "tool", toolCallId: identity.id, content: validated.rejection.content });
-        if (validated.rejection.repeatedInvalid) {
-          await finishStep(event, stepId, "failed", undefined, "REPEATED_INVALID_TOOL_ARGUMENTS");
-          await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta() });
-          throw new AgentOutputError("arguments_malformed", "companion repeated identical invalid tool arguments after validation feedback");
+        if (malformedAttempts >= COMPANION_MALFORMED_TOOL_ATTEMPTS_ALLOWED) {
+          messages.push({ role: "tool", toolCallId: identity.id, content: JSON.stringify({
+            ok: false, status: "unavailable",
+            error: `${identity.name} 已经连续 ${malformedAttempts} 次参数不符合契约，本轮暂时不再提供这个工具。不要继续重试它；改用已提供的其他工具，或如实说明这一项没有做成。`,
+          }) });
         }
+        if (invalidToolCallLimitReached()) {
+          return { kind: "settled", result: await settleInvalidToolLoop(stepId, result) };
+        }
+        // Exact duplicates are still just rejected receipts: the model may
+        // correct the payload. The per-tool and run-wide caps end a real loop.
         continue;
       }
       const parsedArgs = { data: validated.accepted!.arguments };
+      // A forget call may carry only the user's own description. Resolve it to
+      // one real memory before the ledger/confirmation freezes arguments.
+      // Several hits are only ambiguous when they are different facts: the same
+      // preference stored twice is one thing to the user, and the delete already
+      // cascades through its copies, so the best match is the right target.
+      if (companionOperationName({ name: identity.name, arguments: parsedArgs.data }) === "memory.write.forget"
+        && !parsedArgs.data.memoryId && typeof parsedArgs.data.query === "string") {
+        const scope = { workspaceId: args.ctx.workspaceId, userId: args.read.userId };
+        const found = await withWorkerWorkspaceTransaction(scope, tx =>
+          retrieveCompanionMemoriesKeyword(tx, scope, String(parsedArgs.data.query), 6, null, { budgetTier: "active" }));
+        const target = found.items.length === 1 ? found.items[0]
+          : found.items.length > 1 && found.items.every(item => sameCompanionMemoryFact(item.content, found.items[0]!.content))
+            ? found.items[0] : undefined;
+        if (target) {
+          parsedArgs.data = { ...parsedArgs.data, memoryId: target.memoryId,
+            expectedRevision: target.revision };
+        } else {
+          messages.push({ role: "tool", toolCallId: call.id, content: JSON.stringify({
+            ok: false, status: "not_executed",
+            error: found.items.length === 0
+              ? "没有找到和这句相符的记忆；如果确实没有，就直接告诉用户当前没有这条，不要编造删除。"
+              : `找到 ${found.items.length} 条可能相关的记忆，不能替你猜是哪一条。先向用户确认，或把命中的原话列出来让他选。`,
+            candidates: found.items.map(item => ({ memoryId: item.memoryId, content: item.content.slice(0, 80) })),
+          }) });
+          continue;
+        }
+      }
       const serializedArgs = canonicalJsonV1(parsedArgs.data);
       const argsHash = sha256Utf8V1(serializedArgs);
+      // Domain tools keep one model-facing name; internal receipts and policy
+      // checks still key on the legacy operation they dispatch to.
+      const executedToolName = companionOperationName({ name: identity.name, arguments: parsedArgs.data });
+      const ledgerDefinition = executedToolName === definition.name ? definition : { ...definition, name: executedToolName };
+      if (identity.name === "companion_finish") {
+        if (calls.length !== 1) {
+          messages.push({ role: "tool", toolCallId: call.id,
+            content: JSON.stringify({ ok: false, status: "not_executed",
+              error: "companion_finish 必须单独调用：先完成本轮工具调用，再单独交付最终回答。" }) });
+          continue;
+        }
+        const verdict = validateCompanionFinish(parsedArgs.data as CompanionFinishArguments, messages);
+        if (!verdict.ok) {
+          messages.push({ role: "tool", toolCallId: call.id,
+            content: JSON.stringify({ ok: false, status: "not_executed", error: verdict.error }) });
+          await appendAgentEvent(event, "agent.tool", { tool: { toolCallId: identity.id, name: identity.name,
+            toolVersion: definition.toolVersion, riskClass: definition.riskClass, status: "not_executed",
+            safeLabel: "最终回答没有交付", safeSummary: verdict.error.slice(0, 240) } });
+          continue;
+        }
+        const writesNow = companionActionResultRecorded(messages, companionWriteToolNames(definitions));
+        if (writesNow && !verdict.writesLanded) {
+          const error = "本轮已有真实写回执；companion_finish 的 actions 不能为空。把对应回执 id 放进 actions 后再交付，或先说明为什么这轮不需要引用它。";
+          messages.push({ role: "tool", toolCallId: call.id,
+            content: JSON.stringify({ ok: false, status: "not_executed", error }) });
+          await appendAgentEvent(event, "agent.tool", { tool: { toolCallId: identity.id, name: identity.name,
+            toolVersion: definition.toolVersion, riskClass: definition.riskClass, status: "not_executed",
+            safeLabel: "最终回答没有交付", safeSummary: error } });
+          continue;
+        }
+        const finishText = assembleCompanionFinishText({ visibleSegments, visibleSegmentDelivered,
+          utterancePublished, finishText: verdict.text });
+        // A finisher can leave verdict.text empty while the streamed content
+        // (result.content) carries the actual answer. Review the text the user
+        // would see, not just the finish argument.
+        const reviewedFinishText = finishText.trim() ? finishText
+          : (String(result.content ?? "").trim() ? String(result.content ?? "") : stepVisibleText);
+        const arithmeticStep = await arithmeticRetry({ stepId, result, text: reviewedFinishText,
+          stepEmitted, toolCallId: call.id });
+        if (arithmeticStep) return arithmeticStep;
+        messages.push({ role: "tool", toolCallId: call.id,
+          content: JSON.stringify({ ok: true, receiptId: call.id, summary: "最终回答已交付" }) });
+        await appendAgentEvent(event, "agent.tool", { tool: { toolCallId: identity.id, name: identity.name,
+          toolVersion: definition.toolVersion, riskClass: definition.riskClass, status: "succeeded",
+          safeLabel: "最终回答已交付" } });
+        toolCallCount += 1;
+        const text = finishText;
+        const completedResult = { status: "completed" as const, text, blocks: richBlocks, memoryRefs: [],
+          writesLanded: verdict.writesLanded || writesNow,
+          ...(result.reasoning && result.reasoning.length > 0 ? { reasoning: result.reasoning } : {}) };
+        await finishBoundary(stepId, "succeeded", sha256Utf8V1(text), undefined, completedResult);
+        await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta(),
+          ...args.contextReceipts?.runMetaPatch() });
+        return { kind: "settled", result: completedResult };
+      }
       const control = await directControls.apply(identity.name, parsedArgs.data);
       if (control) {
         messages.push({ role: "tool", toolCallId: call.id, content: JSON.stringify(control) });
@@ -1264,12 +1694,13 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       await directControls.observeDocumentWork([identity.name]);
       if (identity.name === "companion_load_tools") {
         const groups = (parsedArgs.data as { groups?: string[] }).groups ?? [];
-        await applyCompanionToolLoad({
+        const loaded = await applyCompanionToolLoad({
           surface: toolSurface, groups, definitions,
           callId: call.id, toolName: identity.name, toolVersion: definition.toolVersion,
           pushReceipt: content => messages.push({ role: "tool", toolCallId: call.id, content }),
           recordAudit: tool => appendAgentEvent(event, "agent.tool", { tool }),
         });
+        for (const name of loaded) loadedThisStep.add(name);
         continue;
       }
       const restriction = companionTimeWakeupConstraint(attention, identity.name, parsedArgs.data);
@@ -1277,24 +1708,25 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
         await recordRejectedToolCall(event, stepId, identity, argsHash, definition, "not_executed", restriction.instruction);
         await appendAgentEvent(event, "agent.tool", { tool: { toolCallId: identity.id, name: identity.name,
           toolVersion: definition.toolVersion, riskClass: definition.riskClass, status: "not_executed",
-          safeLabel: COMPANION_AGENT_TOOL_LABELS[definition.name], safeSummary: "这轮只按事件触发，没有设置时间。" } });
+          safeLabel: companionToolLabel(definition.name), safeSummary: "这轮只按事件触发，没有设置时间。" } });
         messages.push({ role: "tool", toolCallId: identity.id, content: JSON.stringify({ ok: false,
           status: "not_executed", code: "execution_constraint", error: restriction.instruction }) });
-        if (rejectedExecutionConstraints.has(restriction.key)) {
-          await finishStep(event, stepId, "failed", undefined, "REPEATED_EXECUTION_CONSTRAINT");
-          await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta() });
-          throw new AgentOutputError("arguments_malformed", "companion repeatedly violated an unchanged execution constraint");
+        const constraintAttempts = (executionConstraintAttempts.get(restriction.key) ?? 0) + 1;
+        executionConstraintAttempts.set(restriction.key, constraintAttempts);
+        if (constraintAttempts >= 3 || invalidToolCallLimitReached()) {
+          return { kind: "settled", result: await settleInvalidToolLoop(stepId, result) };
         }
         rejectedExecutionConstraints.add(restriction.key);
         continue;
       }
       // Field/range limits come from the capability's actual schema. A second
       // generic JSON character cap rejects valid escaped Markdown and evidence.
+      const ledgerArguments = companionOperationArguments(executedToolName, parsedArgs.data);
       const record = await ensureAgentToolCall(
         event,
         stepId,
-        definition,
-        { id: identity.id, arguments: parsedArgs.data },
+        ledgerDefinition,
+        { id: identity.id, arguments: ledgerArguments },
         argsHash,
         result.reasoning,
       );
@@ -1311,12 +1743,12 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
             toolVersion: definition.toolVersion,
             riskClass: definition.riskClass,
             status: record.status as CompanionAgentToolStatus,
-            safeLabel: COMPANION_AGENT_TOOL_LABELS[definition.name] ?? definition.description.slice(0, 240),
+            safeLabel: companionToolLabel(definition.name) ?? definition.description.slice(0, 240),
             ...(record.safeSummary ? { safeSummary: record.safeSummary } : {}),
-            ...(definition.name === "companion_create_note" && record.status === "succeeded" && readCreatedNoteReceipt(record.resultRef)
+            ...(executedToolName === "notes.write.create" && record.status === "succeeded" && readCreatedNoteReceipt(record.resultRef)
               ? { noteCreated: readCreatedNoteReceipt(record.resultRef)! } : {}),
-            ...(definition.name === "companion_edit_note" && record.status === "succeeded" && record.resultRef ? { noteEdit: companionEditedNoteV1Schema.parse(JSON.parse(record.resultRef)) } : {}),
-            ...(definition.name === "companion_write_annotation" && record.status === "succeeded" && record.resultRef ? { noteAnnotation: JSON.parse(record.resultRef) } : {}),
+            ...(executedToolName === "notes.write.edit" && record.status === "succeeded" && record.resultRef ? { noteEdit: companionEditedNoteV1Schema.parse(JSON.parse(record.resultRef)) } : {}),
+            ...(executedToolName === "notes.write.annotate" && record.status === "succeeded" && record.resultRef ? { noteAnnotation: JSON.parse(record.resultRef) } : {}),
             ...(record.status === "waiting_confirmation" && record.proposalId
               ? { proposalId: record.proposalId }
               : {}),
@@ -1333,28 +1765,38 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
         }
         if (record.status === "succeeded") {
           // 账本复用回执=原地重放的计数点之一（另一个在下面真执行成功那一支）。
-          if (companionReplayExhausted(successfulCallReceipts, companionCallFingerprint(definition.name, argsHash))) {
-            await finishStep(event, stepId, "failed", undefined, "REPEATED_IDENTICAL_TOOL_CALL");
-            await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta() });
-            throw new AgentOutputError("no_progress", "companion repeated an identical tool call after its successful receipt");
+          const replayFingerprint = companionCallFingerprint(definition.name, argsHash);
+          const replayLimit = companionReplayLimitFor(executedToolName, definition.riskClass);
+          if (companionReplayExhausted(successfulCallReceipts, replayFingerprint, replayLimit)) {
+            const replays = (actionReplayCounts.get(replayFingerprint) ?? 0) + 1;
+            actionReplayCounts.set(replayFingerprint, replays);
+            if (replays > COMPANION_ACTION_REPLAY_RETRIES_ALLOWED) {
+              await finishStep(event, stepId, "failed", undefined, "REPEATED_IDENTICAL_TOOL_CALL");
+              await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta() });
+              throw new AgentOutputError("no_progress", "companion repeated an identical tool call after its successful receipt");
+            }
+            messages.push({ role: "tool", toolCallId: call.id,
+              content: JSON.stringify({ ok: true, replay: true,
+                summary: "这个操作本轮已经执行成功，直接用上一条回执的结果；不要重复执行。",
+                operation: executedToolName }) });
+            malformedTools.add(definition.name);
+            continue;
           }
           if (record.resultPayload) {
             const saved = record.resultPayload;
-            for (const block of saved.blocks ?? []) pushRichBlock(block);
-            const route = allowedMainRouteV2Schema.safeParse(saved.route);
-            if (route.success) pushRichBlock({ type: "nav",
-              label: (saved.routeLabel ?? COMPANION_AGENT_TOOL_LABELS[definition.name] ?? definition.name).slice(0, 80), route: route.data });
-            if (definition.name === "agent_web_search" && saved.value.status === "unavailable") event.constraints.webSearchEnabled = false;
+            for (const block of companionExecutionBlocks(saved, { runId: args.read.runId, toolName: definition.name,
+              fallbackLabel: companionToolLabel(definition.name) ?? "查看结果" })) pushRichBlock(block);
+            if (executedToolName === "web.search" && saved.value.status === "unavailable") event.constraints.webSearchEnabled = false;
             messages.push({ role: "tool", toolCallId: call.id,
-              content: JSON.stringify({ ok: true, data: saved.value, summary: saved.safeSummary }) });
+              content: JSON.stringify({ ok: true, receiptId: call.id, operation: executedToolName, data: saved.value, summary: saved.safeSummary }) });
             continue;
           }
-          const editedNote = definition.name === "companion_edit_note" && record.resultRef
+          const editedNote = executedToolName === "notes.write.edit" && record.resultRef
             ? companionEditedNoteV1Schema.parse(JSON.parse(record.resultRef)) : null;
           const editedModelReceipt = editedNote ? { kind: editedNote.kind, noteId: editedNote.noteId, noteVersionId: editedNote.noteVersionId, operation: editedNote.operation, summary: editedNote.summary } : null;
-          const createdNote = definition.name === "companion_create_note" ? readCreatedNoteReceipt(record.resultRef) : null;
+          const createdNote = executedToolName === "notes.write.create" ? readCreatedNoteReceipt(record.resultRef) : null;
           if (createdNote) for (const block of createdNoteToolResult(createdNote).blocks ?? []) pushRichBlock(block);
-          const searchResult = definition.name === "agent_web_search" ? readWebSearchReceipt(record.resultRef) : null;
+          const searchResult = executedToolName === "web.search" ? readWebSearchReceipt(record.resultRef) : null;
           if (searchResult) {
             for (const block of webSearchCitationBlocks(searchResult)) pushRichBlock(block);
             if (searchResult.status === "unavailable") event.constraints.webSearchEnabled = false;
@@ -1364,6 +1806,8 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
             toolCallId: call.id,
             content: JSON.stringify({
               ok: true,
+              receiptId: call.id,
+              operation: executedToolName,
               summary: record.safeSummary ?? "工具已完成",
               ...(searchResult ? { data: searchResult } : {}),
               ...(editedModelReceipt ? { data: editedModelReceipt } : record.resultRef ? { resultRef: record.resultRef } : {}),
@@ -1400,9 +1844,9 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
        * 所以直接把它终结成 `blocked`，精确词只给模型。
        */
       const unavailable = judgeCompanionUnavailableTool({
-        toolName: identity.name,
+        toolName: executedToolName,
         constraints: event.constraints,
-        searchLimitReached: identity.name === "agent_web_search"
+        searchLimitReached: executedToolName === "web.search"
           && budget.maxWebSearchCalls != null && webSearchCalls >= budget.maxWebSearchCalls,
       });
       if (unavailable) {
@@ -1417,7 +1861,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
             toolVersion: definition.toolVersion,
             riskClass: definition.riskClass,
             status: unavailable.ledgerStatus,
-            safeLabel: COMPANION_AGENT_TOOL_LABELS[definition.name] ?? definition.description.slice(0, 240),
+            safeLabel: companionToolLabel(definition.name) ?? definition.description.slice(0, 240),
             safeSummary: unavailable.safeSummary,
           },
         });
@@ -1435,7 +1879,20 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
        * 之前各自落）、记预算（`toolCallCount` 是循环的账）、推 tool 消息
        * （形状由这一处统一决定，分叉不报错）。
        */
-      if (definition.name === "agent_web_search") webSearchCalls++;
+      // Before invoking an action, reuse the successful receipt for the same
+      // fingerprint. Reads may legitimately re-read; actions and generated
+      // artifacts must not run twice just because the model asked again.
+      const preReplayFingerprint = companionCallFingerprint(definition.name, argsHash);
+      if (companionReplayLimitFor(executedToolName, definition.riskClass) === 0
+        && (successfulCallReceipts.get(preReplayFingerprint) ?? 0) > 0) {
+        messages.push({ role: "tool", toolCallId: call.id,
+          content: JSON.stringify({ ok: true, replay: true,
+            summary: "这个操作本轮已经执行成功，直接用上一条回执的结果；不要重复执行。",
+            operation: executedToolName }) });
+        malformedTools.add(definition.name);
+        continue;
+      }
+      if (executedToolName === "web.search") webSearchCalls++;
       const run = await runCompanionToolExecution({
         event,
         definition,
@@ -1453,6 +1910,12 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
           toolCallId: call.id,
           content: JSON.stringify({ ok: false, status: run.modelStatus, error: run.safeSummary }),
         });
+        // A rejected execution is an invalid tool call too. Without this the
+        // same blocked or failed call could be retried forever because only
+        // successful receipts feed the identical-call guard.
+        if (invalidToolCallLimitReached()) {
+          return { kind: "settled", result: await settleInvalidToolLoop(stepId, result) };
+        }
         continue;
       }
       if (run.kind === "waiting") {
@@ -1462,13 +1925,31 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
         return { kind: "settled", result: { status: "waiting_for_confirmation", proposalId: run.proposalId, memoryRefs: [] } };
       }
       // 同一个「工具名 + 参数」本轮已交付过成功回执，这次又是原样调用=原地重放。
-      if (companionReplayExhausted(successfulCallReceipts, companionCallFingerprint(definition.name, argsHash))) {
-        await finishStep(event, stepId, "failed", undefined, "REPEATED_IDENTICAL_TOOL_CALL");
-        await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta() });
-        throw new AgentOutputError("no_progress", "companion repeated an identical tool call after its successful receipt");
+      // For an action, do not execute it again: answer with the prior receipt so
+      // the visible artifact stays single and the model can finish. Only a
+      // repeated replay without finishing is a real loop.
+      const replayFingerprint = companionCallFingerprint(definition.name, argsHash);
+      const replayLimit = companionReplayLimitFor(executedToolName, definition.riskClass);
+      if (companionReplayExhausted(successfulCallReceipts, replayFingerprint, replayLimit)) {
+        const replays = (actionReplayCounts.get(replayFingerprint) ?? 0) + 1;
+        actionReplayCounts.set(replayFingerprint, replays);
+        if (replays > COMPANION_ACTION_REPLAY_RETRIES_ALLOWED) {
+          await finishStep(event, stepId, "failed", undefined, "REPEATED_IDENTICAL_TOOL_CALL");
+          await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta() });
+          throw new AgentOutputError("no_progress", "companion repeated an identical tool call after its successful receipt");
+        }
+        messages.push({ role: "tool", toolCallId: call.id,
+          content: JSON.stringify({ ok: true, replay: true,
+            summary: "这个操作本轮已经执行成功，直接用上一条回执的结果；不要重复执行。",
+            operation: executedToolName }) });
+        malformedTools.add(definition.name);
+        continue;
       }
       const execution = run.execution;
-      if (definition.name === "agent_web_search" && (execution.value as { status?: string })?.status === "unavailable") {
+      messages = companionMessagesAfterToolProgress(messages, visibleSegments);
+      actionSteerAttempts = 0;
+      lookupClaimSteered = false;
+      if (executedToolName === "web.search" && (execution.value as { status?: string })?.status === "unavailable") {
         event.constraints.webSearchEnabled = false;
       }
       await recoverCompanionRunFailureSpanBestEffort({
@@ -1476,43 +1957,25 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
         userId: args.read.userId,
         runId: args.read.runId,
       }, "tool");
-      // 富载荷进消息流（方案 29 §4.8，抱怨 #5「连跳到某个笔记都做不到」的收尾）：
-      // 她打开/跳转到的落点以前只活在 agent.tool 事件和一行游离在正文之外的 chip 里，
-      // 事件有 TTL、chip 不落在正文顺序中，于是回看时"她带我去看的那篇笔记"根本不存在。
-      // route 仍然过一遍主进程白名单：它是服务端构造的，但"构造得对"不该靠约定。
-      if (execution.route) {
-        const parsedRoute = allowedMainRouteV2Schema.safeParse(execution.route);
-        if (parsedRoute.success) {
-          pushRichBlock({
-            type: "nav",
-            // 兜底用注册表里的展示名（「正在带你去那个页面」），不是工具描述：
-            // 这一块会渲染成「可以接着看这里」那张纸签，描述是写给模型的用法说明。
-            label: (execution.routeLabel ?? COMPANION_AGENT_TOOL_LABELS[definition.name] ?? definition.description).slice(0, 80),
-            route: parsedRoute.data,
-          });
-        } else {
-          logger.warn(
-            { runId: args.read.runId, tool: definition.name },
-            "companion agent produced a route outside the allowed main-route schema; nav block dropped",
-          );
-        }
-      }
-      for (const block of execution.blocks ?? []) pushRichBlock(block);
+      for (const block of companionExecutionBlocks(execution, { runId: args.read.runId, toolName: definition.name,
+        fallbackLabel: companionToolLabel(definition.name) ?? "查看结果" })) pushRichBlock(block);
       messages.push({
         role: "tool",
         toolCallId: call.id,
         // Read tools budget and paginate their data before serialization. Cutting
         // an encoded envelope corrupts escapes/cursors; the next complete request
         // is governed by its actual token budget instead.
-        content: JSON.stringify({ ok: true, data: execution.value, summary: execution.safeSummary }),
+        content: JSON.stringify({ ok: true, receiptId: call.id, operation: executedToolName, data: execution.value, summary: execution.safeSummary }),
       });
     }
     const closing = judgeCompanionStepClosing({
       calls, messages, initiative: Boolean(args.read.initiativeInput), writingAnnotation,
+      actionReceiptMissing: userAskedForAction && requestedActionTools.length > 0
+        && !companionActionResultRecorded(messages, requestedActionTools),
     });
     // For a plain save-N-notes request, the durable receipts are the completion
     // condition. A separate model round cannot add another saved result here.
-    const noteOnly = companionReceiptOnlyNoteRequest(args.read.userText ?? "", Boolean(companionExplicitNoteInterpretation(attentionRequestHash, args.read.userText,
+    const noteOnly = !directEntry && companionReceiptOnlyNoteRequest(args.read.userText ?? "", Boolean(companionExplicitNoteInterpretation(attentionRequestHash, args.read.userText,
       availableDefinitions.map(tool => tool.name))), requirements);
     if (noteOnly && !companionRequirementIssue({ noteCount: requirements.noteCount }, "", [...compactedEvidence, ...messages])) {
       const text = [...visibleSegments, `已保存 ${requirements.noteCount} 篇笔记，可以逐篇预览或打开继续阅读。`].filter(Boolean).join(VISIBLE_SEGMENT_SEPARATOR);
@@ -1528,7 +1991,8 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       await finishBoundary(stepId, "succeeded", auditHash(messages.slice(-calls.length)), undefined, completedResult);
       return { kind: "settled", result: completedResult };
     }
-    const unfinishedSpeech = companionUtteranceRequirementIssue(requirements, [...compactedEvidence, ...messages]);
+    const unfinishedSpeech = directEntry ? null
+      : companionUtteranceRequirementIssue(requirements, [...compactedEvidence, ...messages]);
     if (closing.settleAs === "silent" && !unfinishedSpeech) {
       const completedResult = { status: "completed" as const, text: "", blocks: richBlocks, memoryRefs: [] };
       await finishBoundary(stepId, "succeeded", auditHash(messages.slice(-calls.length)), undefined, completedResult);
@@ -1555,8 +2019,20 @@ export { readLatestPageContextRow };
 // 步进规划族已搬到 companion-step-plan.ts（B2）。纯搬运：判据、上限、类型一字未改。
 import {
   buildCompanionStepCorrectionInstruction,
+  companionActionNotExecutedFallback,
   companionActionResultRecorded,
+  companionCurrentToolSuccesses,
+  companionEmptyReplyFallback,
+  companionMaterialReadFallback,
+  companionReminderReadFallback,
+  companionMayNeedApplicationEvidence,
+  companionNoteEditRoutingMessages,
+  companionRequirementUnmetFallback,
   companionStepCorrectionMessages,
+  companionMessagesAfterToolProgress,
+  actionSteerBudget,
+  companionUnbackedActionFallback,
+  companionUnverifiedQuoteFallback,
   dropCompanionInternalCorrections,
   companionWriteToolNames,
   reviewCompanionStepCorrection,
@@ -1564,6 +2040,7 @@ import {
   type CompanionAgentLoopResult,
 } from "../turn/companion-step-plan.ts";
 import { companionSteerCause, judgeCompanionDeliveryGate } from "./companion-delivery-gates.ts";
+import { looksLikeUnfulfilledActionNarration } from "../turn/companion-dialogue-content.ts";
 
 // 事件与步进持久化由 companion-agent-events.ts 承担，也在该模块保存运行态模型恢复点。
 import {

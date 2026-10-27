@@ -42,6 +42,8 @@ const CHUNKS_PER_TX = 4;
 export interface CompanionThinkingDelivery {
   /** provider 的思考增量。同步、绝不抛出——它在 SSE 读取循环里。 */
   onReasoningDelta(text: string): void;
+  /** A visible body/tool boundary waits for reasoning already observed. */
+  flush(): Promise<void>;
   /** 本轮收尾：把最后一块刷出去（失败也已自行 closed，调用方无需处理返回值）。 */
   finish(): Promise<void>;
   /** 已经交出去多少字（测试/诊断）。 */
@@ -142,6 +144,11 @@ export function createCompanionThinkingDelivery(args: ThinkingDeliveryArgs): Com
     });
   };
 
+  const settle = async (): Promise<void> => {
+    if (timer !== null) { clearTimeout(timer); timer = null; }
+    flush(true);
+    await chain.catch(() => undefined);
+  };
   return {
     onReasoningDelta(text: string): void {
       if (closed || text.length === 0) return;
@@ -158,11 +165,8 @@ export function createCompanionThinkingDelivery(args: ThinkingDeliveryArgs): Com
       }
     },
 
-    async finish(): Promise<void> {
-      if (timer !== null) { clearTimeout(timer); timer = null; }
-      flush(true);
-      await chain.catch(() => undefined);
-    },
+    flush: settle,
+    finish: settle,
 
     emittedChars(): number {
       return emitted;

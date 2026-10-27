@@ -23,6 +23,7 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 import { COMPANION_AGENT_TOOL_DEFINITIONS } from "@astella/shared/companion-agent-registry";
 import { COMPANION_PROPOSAL_EXECUTED_TOOLS } from "@astella/shared/companion-agent-contracts";
+import { COMPANION_DOMAIN_OPERATIONS } from "@astella/shared";
 
 /**
  * 2026-09-30（B2）：执行体**不再只在 runtime 那一个文件里**。
@@ -55,7 +56,8 @@ const RUNTIME_SOURCE = [...handlerSources(HANDLERS_DIR), ...handlerSources(resol
   .join("\n");
 /** 取出某个顶层函数体的文本（花括号配平；够用且不需要解析器）。 */
 function functionBody(name: string): string {
-  const start = RUNTIME_SOURCE.indexOf(`async function ${name}`);
+  const start = RUNTIME_SOURCE.indexOf(`function ${name}`);
+  assert.ok(start >= 0, `运行时里找不到函数 ${name}——改名了就要同步这张表`);
   assert.ok(start >= 0, `运行时里找不到函数 ${name}——改名了就要同步这张表`);
   let depth = 0;
   for (let index = RUNTIME_SOURCE.indexOf("{", start); index < RUNTIME_SOURCE.length; index += 1) {
@@ -68,12 +70,17 @@ function functionBody(name: string): string {
   throw new Error(`${name} 的花括号没配平`);
 }
 
+const ARM_PATTERN = /case "([a-z]+(?:\.[a-z_]+)+|companion_[a-z_]+|agent_[a-z_]+)"/g;
 function handledTools(): Set<string> {
   const arms = new Set<string>();
   for (const fn of ["executeReadTool", "executeDirectTool", "executeAgentGoalTool", "executeCompanionEntryControl"]) {
-    for (const match of functionBody(fn).matchAll(/case "((?:companion_|agent_)[a-z_]+)"/g)) arms.add(match[1]);
+    for (const match of functionBody(fn).matchAll(ARM_PATTERN)) arms.add(match[1]);
   }
   return arms;
+}
+/** Every internal operation a model-facing domain tool can dispatch to. */
+function domainOperations(): string[] {
+  return Object.values(COMPANION_DOMAIN_OPERATIONS).flatMap(actions => Object.values(actions));
 }
 
 /**
@@ -97,31 +104,26 @@ const PENDING_DIRECT_EXECUTOR: Readonly<Record<string, string>> = {
   // Plan 57：学习运行/复习链退役后，已没有“命令住在提案路径、worker 无直执行器”的工具。
 };
 
+/**
+ * 由运行时终答器直接消费的工具：它不是领域动作，没有外部副作用，也不需要
+ * domain executor。`companion-agent-runtime` 在登记账本前校验 receipt ids 并收轮。
+ */
+const RUNTIME_HANDLED = new Set(["companion_finish"]);
+
 const live = COMPANION_AGENT_TOOL_DEFINITIONS.map((entry) => entry.name);
 
 test("正控制：台账两侧都真的读到了东西（读不到时差集为空就是假绿）", () => {
   assert.ok(live.length >= 15, `registry 只数出 ${live.length} 条工具，扫描/导入形状变了`);
   const arms = handledTools();
-  assert.ok(arms.size >= 20, `运行时只数出 ${arms.size} 个 case 分支，判据没读到函数体`);
-  // 已知有分支的样本：拿一条**确实存在**的工具证明判据认得它（不是只数出 20 个别的名字）。
-  assert.ok(arms.has("companion_open_page"), "companion_open_page 明明有分支却没被读到 ⇒ 判据形状错了");
-  assert.ok(arms.has("companion_save_memory"), "写类执行器的分支没读到 ⇒ 两把函数漏了一把");
+  assert.ok(arms.size >= 30, `运行时只数出 ${arms.size} 个操作分支，判据没读到函数体`);
+  assert.ok(arms.has("open.page"), "读执行器里没有 open.page 分支 ⇒ 判据形状错了");
+  assert.ok(arms.has("notes.write.edit"), "直执行器里没有 notes.write.edit 分支 ⇒ 两把函数漏了一把");
 });
 
-test("每一条活工具：要么有执行分支，要么在欠账表里写明为什么没有", () => {
+test("模型能选的每一个域动作都有执行分支", () => {
   const arms = handledTools();
-  const unaccounted = live
-    .filter((name) => !arms.has(name))
-    .filter((name) => !(name in PENDING_DIRECT_EXECUTOR));
-  assert.deepEqual(unaccounted, [], "这些工具她叫得出名字、运行时一句 `no direct executor`——补分支或记进欠账表并给理由");
-
-  // 反向：欠账表里不许留下已经不需要它的条目（实现完忘了删，这张表就变成了免死金牌）。
-  const stale = Object.keys(PENDING_DIRECT_EXECUTOR).filter((name) => arms.has(name));
-  assert.deepEqual(stale, [], "这些工具已经有执行分支了，欠账条目该删");
-
-  // 幻影：表里写了早就不存在的工具名。
-  const phantom = Object.keys(PENDING_DIRECT_EXECUTOR).filter((name) => !live.includes(name));
-  assert.deepEqual(phantom, [], "欠账表里有 registry 已经没有的工具");
+  const missing = domainOperations().filter(operation => !arms.has(operation));
+  assert.deepEqual(missing, [], "这些域动作没有执行分支：模型调了只会撞 no direct executor");
 });
 
 /**
@@ -132,6 +134,7 @@ test("每一条活工具：要么有执行分支，要么在欠账表里写明�
 test("没有执行分支的工具必须是需要确认的那一类（否则它在所有权限档都会撞 throw）", () => {
   const arms = handledTools();
   const exposed = COMPANION_AGENT_TOOL_DEFINITIONS
+    .filter((entry) => !RUNTIME_HANDLED.has(entry.name))
     .filter((entry) => !arms.has(entry.name))
     .filter((entry) => !entry.requiresConfirmation)
     .map((entry) => `${entry.name}（riskClass=${entry.riskClass}，不需要确认却没有执行分支）`);
@@ -181,27 +184,17 @@ test("权限判据里那份「提案执行」名单与本表是同一批工具�
  * 的 case 并成一个集合**，所以它数出来"有分支"、这条守卫一直是绿的——
  * 那是我的判据形状错了，不是实现错了：并集看不见"住在哪一边"。
  */
-test("每一条 case 都长在派活规则真会送去的那个执行器里", () => {
-  const dispatch = /riskClass === "read"\s*\n?\s*\?\s*await executeReadTool/.test(RUNTIME_SOURCE)
-    || /riskClass === "read"[\s\S]{0,40}\?\s*await executeReadTool/.test(RUNTIME_SOURCE);
+
+test("每个操作分支长在派活规则真会送去的那个执行器里", () => {
+  const dispatch = /riskClass === "read"[\s\S]{0,40}\?\s*await executeReadTool/.test(RUNTIME_SOURCE);
   assert.ok(dispatch, "派活规则的形状变了（不再按 riskClass=read 分流）——这条判据要先跟着改");
 
-  const readArms = new Set([...functionBody("executeReadTool").matchAll(/case "((?:companion_|agent_)[a-z_]+)"/g)].map((m) => m[1]));
-  const directArms = new Set([...functionBody("executeDirectTool").matchAll(/case "((?:companion_|agent_)[a-z_]+)"/g)].map((m) => m[1]));
+  const arms = (fn: string) => new Set([...functionBody(fn).matchAll(ARM_PATTERN)].map((m) => m[1]));
+  const readArms = arms("executeReadTool");
+  const directArms = arms("executeDirectTool");
   const both = [...readArms].filter((name) => directArms.has(name));
-  assert.deepEqual(both, [], "同一个工具在两处各有一个 case：派活规则送过去的那一个才是活的，另一个是第二份实现");
-
-  const misplaced = COMPANION_AGENT_TOOL_DEFINITIONS
-    .filter((definition) => definition.riskClass === "read" ? !readArms.has(definition.name) : !directArms.has(definition.name))
-    .filter((definition) => readArms.has(definition.name) || directArms.has(definition.name))
-    .map((definition) => `${definition.name}（档位 ${definition.riskClass}）的 case 在 ${
-      definition.riskClass === "read" ? "executeDirectTool" : "executeReadTool"}，派活规则却送去另一边`);
-  assert.deepEqual(misplaced, [], "这些工具的 case 长在派活规则不会送到的那个执行器里，运行时等于没有分支");
-
-  // 正控制：这条判据认得"两边各有一批"这个现状（两边都空就是判据在空转）。
-  assert.ok(readArms.size >= 10, `读取执行器只数出 ${readArms.size} 个 case`);
-  assert.ok(directArms.size >= 5, `直执行器只数出 ${directArms.size} 个 case`);
-  // 点名一条**已知在直执行器**里的，证明方向没写反（写反时上面那条会以相反的理由全绿）。
-  assert.ok(directArms.has("companion_set_activeness"),
-    "companion_set_activeness 的 case 不在直执行器里：判据方向可能写反了");
+  assert.deepEqual(both, [], "同一个操作在两个执行器里各有一个 case：只有派活规则送过去的那个是活的");
+  assert.ok(readArms.size >= 15, `读取执行器只数出 ${readArms.size} 个操作分支`);
+  assert.ok(directArms.size >= 15, `直执行器只数出 ${directArms.size} 个操作分支`);
+  assert.ok(directArms.has("notes.write.edit"), "notes.write.edit 的 case 不在直执行器里：判据方向可能写反了");
 });

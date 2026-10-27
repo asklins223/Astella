@@ -4,6 +4,7 @@ import { agentCapabilityCatalog, getAgentCapability, validateAgentCapabilityArgu
 export { getAgentCapability };
 import { isVisionGatedCompanionTool, type CompanionAgentPermissionLevel,
   type CompanionAgentToolDefinitionV1, type CompanionAgentToolExecutionConstraints } from ".././contracts/companion/companion-agent-contracts.ts";
+import { COMPANION_OPERATION_LABELS, companionOperationDomainTool } from "./companion-domain-tools.ts";
 
 const conversationCapabilities = agentCapabilityCatalog.filter(entry => entry.surfaces.includes("conversation"));
 export const COMPANION_AGENT_TOOL_DEFINITIONS: readonly CompanionAgentToolDefinitionV1[] =
@@ -12,6 +13,18 @@ export const COMPANION_AGENT_TOOL_NAMES: readonly string[] = Object.freeze(conve
 export const COMPANION_AGENT_TOOL_LABELS: Readonly<Record<string, string>> = Object.freeze(
   Object.fromEntries(conversationCapabilities.map(entry => [entry.definition.name, entry.presentation.label])),
 );
+
+/**
+ * The ledger speaks operation ids (`notes.write.edit`), the tool surface speaks
+ * domain tools (`companion_notes_write`). Anything that shows a running tool to
+ * the user resolves through here, or the card prints a raw id.
+ */
+export function companionToolLabel(name: string): string | undefined {
+  // Operation labels are the specific ones ("正在翻你的笔记"); the domain label
+  // ("正在读笔记资料") is the fallback for a call that named no action.
+  return COMPANION_OPERATION_LABELS[name]
+    ?? COMPANION_AGENT_TOOL_LABELS[companionOperationDomainTool(name) ?? name];
+}
 /** 只有 6 条能力写了 discovery（这一句是「用户能做什么」的短说法）。 */
 export const COMPANION_AGENT_TOOL_DISCOVERY: Readonly<Record<string, string>> = Object.freeze(
   Object.fromEntries(conversationCapabilities
@@ -27,7 +40,7 @@ export const COMPANION_AGENT_TOOL_DISCOVERY: Readonly<Record<string, string>> = 
  * 读资料都不在这一列——那些正是可以带口音的场合。
  */
 export const COMPANION_DOCUMENT_AUTHORING_TOOLS: readonly string[] = Object.freeze([
-  "companion_edit_note", "companion_create_note", "companion_write_annotation", "agent_start_goal",
+  "companion_notes_write", "companion_goals_write",
 ]);
 
 export function companionTurnWritesDocumentContent(candidateOperations: readonly string[]): boolean {
@@ -42,14 +55,15 @@ export function resolveAllCompanionAgentTools(
 ): CompanionAgentToolDefinitionV1[] {
   if (!["read_only", "guided", "full"].includes(permission)) return [];
   return COMPANION_AGENT_TOOL_DEFINITIONS.filter(definition =>
-    (!isVisionGatedCompanionTool(definition.name) || constraints.visionEnabled === true)
-    && (definition.name !== "agent_web_search" || constraints.webSearchEnabled === true)
+(!isVisionGatedCompanionTool(definition.name) || constraints.visionEnabled === true)
     && (constraints.noteLibraryReadEnabled !== false
-      || !["companion_search_notes", "companion_search_cards", "companion_read_note", "companion_recommend_learning"].includes(definition.name))
+      || !["companion_notes_read", "companion_recommend_learning"].includes(definition.name))
     );
 }
 export function getCompanionAgentTool(toolName: string): CompanionAgentToolDefinitionV1 | null {
-  const entry = getAgentCapability(toolName);
+  // Executors and receipts key on the internal operation; the declaration lives
+  // on the domain tool. Accept both so callers cannot silently get null.
+  const entry = getAgentCapability(companionOperationDomainTool(toolName) ?? toolName);
   return entry?.surfaces.includes("conversation") ? entry.definition : null;
 }
 export function validateCompanionAgentToolArguments(toolName: string, args: unknown) {

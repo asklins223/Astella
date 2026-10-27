@@ -8,7 +8,7 @@
  */
 
 import {
-  COMPANION_AGENT_TOOL_LABELS,
+  companionToolLabel,
   getCompanionAgentTool,
   validateCompanionAgentToolArguments,
 } from "@astella/shared";
@@ -38,6 +38,9 @@ export function unofferedToolReceipt(name: string, offeredNames: readonly string
     status: "not_executed",
     error: `工具 ${name} 不在本步已装载的工具面里。先调用 companion_load_tools 装载对应组；`
       + `当前可用：${offeredNames.slice(0, 20).join("、")}`,
+    requestedTool: name,
+    availableTools: offeredNames.slice(0, 20),
+    instruction: "先调用 companion_load_tools 装载需要的组，再从 availableTools 里重新选择工具；不要重复调用未装载的工具。",
   });
 }
 
@@ -66,9 +69,12 @@ export function validateCompanionToolCall(input: {
         status: faces.modelStatus,
         error: parsed.reason,
         code: "invalid_arguments",
+        tool: input.name,
         validationIssues: parsed.issues,
         parameters: definition?.parameters,
-        instruction: "按 validationIssues 修正参数，不重复提交相同无效参数；已经成功的操作不必重做。",
+        // The model needs the actual contract and the failing fields, not just
+        // “invalid arguments”, to repair without guessing.
+        instruction: "按 validationIssues 修正参数；parameters 是完整工具契约。不要重复提交相同无效参数；已经成功的操作不必重做。",
       }),
       reason: parsed.reason,
       // Validation is pure: identical invalid input cannot become valid by
@@ -86,7 +92,7 @@ export function validateCompanionToolCall(input: {
 }
 
 export function companionToolAuditLabel(name: string, description: string): string {
-  return COMPANION_AGENT_TOOL_LABELS[name] ?? description.slice(0, 240);
+  return companionToolLabel(name) ?? description.slice(0, 240);
 }
 
 /**
@@ -98,6 +104,7 @@ export function companionToolAuditLabel(name: string, description: string): stri
  */
 export async function rejectUnknownCompanionTool(input: {
   identity: CompanionToolCallIdentity;
+  availableTools?: readonly string[];
   recordRejected: (reason: string) => Promise<void>;
   appendEvent: (tool: { toolCallId: string; name: string; toolVersion: string;
     riskClass: "irreversible"; status: "blocked"; safeLabel: string }) => Promise<void>;
@@ -108,5 +115,9 @@ export async function rejectUnknownCompanionTool(input: {
     toolCallId: input.identity.id, name: input.identity.name, toolVersion: "unknown",
     riskClass: "irreversible", status: "blocked", safeLabel: "未注册工具，操作已阻止",
   });
-  input.pushReceipt(JSON.stringify({ ok: false, status: "blocked", error: "unknown or disallowed tool" }));
+  input.pushReceipt(JSON.stringify({ ok: false, status: "blocked", error: "unknown or disallowed tool",
+    requestedTool: input.identity.name,
+    availableTools: (input.availableTools ?? []).slice(0, 20),
+    instruction: "这个工具名不在当前工具面里。从 availableTools 里选择一个真实工具；不要继续编造工具名。",
+  }));
 }

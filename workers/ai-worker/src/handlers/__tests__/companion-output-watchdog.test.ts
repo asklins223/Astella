@@ -1,10 +1,26 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { watchCompanionOutput, executeWatchedCompanionTurn } from "../agent/companion-output-watchdog.ts";
+import { watchCompanionOutput, executeWatchedCompanionTurn, companionOutputWatchdogPolicy } from "../agent/companion-output-watchdog.ts";
 import type { AIProvider } from "../../lib/ai-provider.ts";
 import type { AgentTurnRequest, AgentTurnResult } from "@astella/shared";
 
 const flush = () => new Promise<void>(resolve => setImmediate(resolve));
+test("cold-start output budget is independent from idle progress and remains configurable", () => {
+  const keys = ["COMPANION_PROVIDER_FIRST_OUTPUT_TIMEOUT_MS", "COMPANION_PROVIDER_IDLE_TIMEOUT_MS"] as const;
+  const previous = keys.map(key => process.env[key]);
+  try {
+    for (const key of keys) delete process.env[key];
+    assert.deepEqual(companionOutputWatchdogPolicy(), { firstOutputMs: 60_000, idleMs: 45_000 });
+    process.env.COMPANION_PROVIDER_FIRST_OUTPUT_TIMEOUT_MS = "90000";
+    process.env.COMPANION_PROVIDER_IDLE_TIMEOUT_MS = "30000";
+    assert.deepEqual(companionOutputWatchdogPolicy(), { firstOutputMs: 90_000, idleMs: 30_000 });
+  } finally {
+    keys.forEach((key, index) => {
+      if (previous[index] === undefined) delete process.env[key];
+      else process.env[key] = previous[index];
+    });
+  }
+});
 test("first output and idle expiry abort the provider with distinct reasons", async t => {
   t.mock.timers.enable({ apis: ["Date", "setTimeout"], now: 0 });
   try {

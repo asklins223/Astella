@@ -16,7 +16,7 @@ function toolNode(overrides: Partial<CompanionAgentNode> = {}): CompanionAgentNo
     kind: "tool",
     label: "正在翻你的笔记",
     state: "succeeded",
-    toolName: "companion_search_notes",
+    toolName: "notes.read.search",
     summary: null,
     proposalId: null,
     ...overrides,
@@ -84,12 +84,12 @@ describe("CompanionAgentRail", () => {
     expect(screen.getByRole("status").textContent).toContain("正在翻你的笔记");
     expect(screen.getByRole("status").textContent).toContain("进行中");
     expect(screen.getByRole("button", { name: "收起过程" })).toBeTruthy();
-    view.rerender(<CompanionAgentRail nodes={[toolNode(), toolNode({ key: "tool:read", toolName: "companion_read_note", state: "running", summary: "正在读取《中国古代史总揽》" })]} progress={null} turnState="running" companionName="大肥鱼" />);
+    view.rerender(<CompanionAgentRail nodes={[toolNode(), toolNode({ key: "tool:read", toolName: "notes.read.read", state: "running", summary: "正在读取《中国古代史总揽》" })]} progress={null} turnState="running" companionName="大肥鱼" />);
     expect(screen.getByRole("status").textContent).toContain("正在读那篇笔记");
     expect(screen.getByRole("status").textContent).toContain("2 项操作");
     expect(screen.getByRole("button", { name: "收起过程" }).getAttribute("aria-expanded")).toBe("true");
     expect(screen.getByText("正在读取《中国古代史总揽》")).toBeTruthy();
-    view.rerender(<CompanionAgentRail nodes={[toolNode(), toolNode({ key: "tool:read", toolName: "companion_read_note" })]} progress={null} turnState="done" companionName="大肥鱼" />);
+    view.rerender(<CompanionAgentRail nodes={[toolNode(), toolNode({ key: "tool:read", toolName: "notes.read.read" })]} progress={null} turnState="done" companionName="大肥鱼" />);
     expect(screen.getByRole("status").textContent).toContain("操作已完成");
     expect(screen.getByRole("button", { name: "查看过程" })).toBeTruthy();
     expect(document.body.textContent).not.toContain("0 步");
@@ -113,7 +113,7 @@ describe("CompanionAgentRail", () => {
 
   it("一步没做成不改变整轮结论：后面的步骤成功时仍报告已完成，并单独点出未完成数", () => {
     const { container } = render(<CompanionAgentRail
-      nodes={[toolNode({ key: "write", state: "not_executed", toolName: "companion_create_note" }), toolNode({ key: "read", toolName: "companion_read_note" })]}
+      nodes={[toolNode({ key: "write", state: "not_executed", toolName: "notes.write.create" }), toolNode({ key: "read", toolName: "notes.read.read" })]}
       progress={null} turnState="done" companionName="大肥鱼" />);
     const rail = container.querySelector(".companion-hud__rail")!;
     expect(rail.getAttribute("data-state")).toBe("succeeded");

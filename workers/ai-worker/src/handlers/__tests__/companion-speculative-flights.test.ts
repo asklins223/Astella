@@ -12,6 +12,7 @@ import type { AgentTurnInterpretationV1 } from "@astella/shared/agent-contracts"
 import type { AIProvider } from "../../lib/ai-provider.ts";
 import { startCompanionSpeculativeFirstSteps } from "../agent/companion-speculative-flights.ts";
 import { AIContextCompactionRequiredError, AIContextOverflowError } from "../../lib/context-governor.ts";
+import { AgentOutputError } from "../../lib/non-retryable-errors.ts";
 
 const interpretation = (overrides: Record<string, unknown>): AgentTurnInterpretationV1 => ({
   intent: "conversation", toolUse: "none", subjects: [], ambiguities: [], candidateOperations: [],
@@ -61,7 +62,6 @@ function baseArgs(provider: AIProvider, attention: AgentTurnInterpretationV1) {
     messages: [{ role: "user" as const, content: "为什么傍晚的天是红的？" }],
     deadlineAt: Date.now() + 60_000,
     availableTools: TOOLS,
-    webSearchAllowed: true,
     toolCallCount: 0,
   };
 }
@@ -94,7 +94,7 @@ test("提问版还要 provider 声明流式解析工具、本轮零工具回执�
   assert.equal(withFlag.sent.length, 1, "续跑的第一步工具面不同，提问版不出发");
 });
 
-test("解释留下提问版时返回的是那条请求，工具面按这一轮能不能搜索现算", async () => {
+test("解释留下提问版时返回的是那条请求，工具面不因搜索权限被摘", async () => {
   const allowed = recordingProvider({ streamToolCalls: true });
   const flights = start(baseArgs(allowed.provider, interpretation({ intent: "question" })));
   const kept = await flights.settle({
@@ -103,16 +103,9 @@ test("解释留下提问版时返回的是那条请求，工具面按这一轮�
   });
   assert.ok(kept);
   assert.equal(kept.result.content, "这一版的第一步已经把话说完了。");
+  // The web domain also reads documents, so search availability is a per-action
+  // execution decision — the domain tool stays on the surface either way.
   assert.equal(allowed.sent.some(step => step.disableThinking === false && step.tools.includes("agent_web_search")), true);
-
-  const blocked = recordingProvider({ streamToolCalls: true });
-  const blockedFlights = start({ ...baseArgs(blocked.provider, interpretation({ intent: "question" })), webSearchAllowed: false });
-  const blockedKept = await blockedFlights.settle({
-    attention: interpretation({ intent: "question" }), runId: "r1",
-    deadlineAt: Date.now() + 60_000, handlerStartedAtMs: Date.now(),
-  });
-  assert.ok(blockedKept);
-  assert.equal(blocked.sent.filter(step => step.disableThinking === false)[0]!.tools.includes("agent_web_search"), false);
 });
 
 
@@ -128,4 +121,19 @@ test("speculative input pressure with no delivered text yields to the formal com
     assert.equal(await flights.settle({ attention, runId: "pressure-run", deadlineAt: Date.now() + 60000, handlerStartedAtMs: Date.now() }), null);
     assert.equal(visible, 0);
   }
+});
+
+test("投机稿把工具调用写进正文时作废，交给正式步修，不把整轮打成失败", async () => {
+  const provider = {
+    id: "stub", modelId: "stub-model", visionModelId: "stub-model", promptVersion: "test",
+    chatCompletion: async () => { throw new Error("not used"); },
+    executeAgentTurn: async () => { throw new Error("not used"); },
+    chatCompletionStream: async () => {
+      throw new AgentOutputError("arguments_malformed", "tool call parameters were not valid JSON");
+    },
+  } as unknown as AIProvider;
+  const flights = start({ ...baseArgs(provider, interpretation({ intent: "conversation" })) });
+  const kept = await flights.settle({ attention: interpretation({ intent: "conversation" }), runId: "r1",
+    deadlineAt: Date.now() + 60_000, handlerStartedAtMs: Date.now() });
+  assert.equal(kept, null, "作废的投机稿不该被保留，也不该把错误抛给整轮");
 });

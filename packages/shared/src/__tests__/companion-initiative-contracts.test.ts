@@ -42,8 +42,8 @@ test("initiative source has its own identity, and speech/silence have explicit e
   assert.equal(companionInitiativeInputV1Schema.parse(input).kind, "initiative");
   const base = { version: 1, eventId: "event-1", workspaceId: randomUUID(), conversationId: randomUUID(), seq: 2, runId: randomUUID(), generation: 1, accountEpoch: 0, createdAt: new Date().toISOString() };
   assert.equal(companionStreamEventV1Schema.safeParse({ ...base, type: "turn.completed", payload: { messageIds: [], silent: true } }).success, true);
-  for (const name of ["companion_read_participation", "companion_save_participation", "companion_arrange_attention", "companion_publish_utterance"]) assert.ok(getCompanionAgentTool(name), name);
-  assert.equal(validateCompanionAgentToolArguments("companion_publish_utterance", { text: "先用一个小例子说明。" }).success, true);
+  for (const name of ["companion_attention_read", "companion_attention_write", "companion_say"]) assert.ok(getCompanionAgentTool(name), name);
+  assert.equal(validateCompanionAgentToolArguments("companion_say", { action: "publish", text: "先用一个小例子说明。" }).success, true);
 });
 
 /**

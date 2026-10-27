@@ -33,6 +33,20 @@ function payload(value: unknown) {
   return parsed.data;
 }
 
+test("新建与修改预览说明各自的保存结果，取消不声称发生回滚", () => {
+  // 新建与修改现在共用一个工具面；区别在预览里有没有改前全文。
+  const review = (preview: { markdown?: string; beforeMarkdown?: string }) => describeAgentProposal(payload({
+    kind: "agent_tool_review", toolName: "companion_notes_write", arguments: {}, confirmationStage: "after_preview",
+    preview: { title: "周三散步", ...preview },
+  }), "companion_notes_write");
+  const create = review({ markdown: "晚上散步二十分钟" });
+  const edit = review({ markdown: "晚上散步三十分钟", beforeMarkdown: "晚上散步二十分钟" });
+  assert.match(create.title, /这篇手记/);
+  assert.match(create.impactSummary, /新手记/);
+  assert.doesNotMatch(create.impactSummary, /恢复|原文/);
+  assert.match(edit.impactSummary, /取消不会改变原文/);
+});
+
 test("保存记忆：目标那行指名要记的内容，不印工具描述", () => {
   const copy = describeAgentProposal(payload({
     kind: "save_memory",

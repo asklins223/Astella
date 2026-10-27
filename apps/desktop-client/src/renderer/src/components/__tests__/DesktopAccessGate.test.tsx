@@ -21,6 +21,7 @@ import {
   type GatewayEventV1,
   type GatewayResultV1,
   type SessionContextV1,
+  type RememberedDesktopAccountV1,
   type SubscriptionTopicM2,
 } from "@astella/shared/desktop-ipc-contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -161,7 +162,7 @@ type Harness = {
   readonly emitRuntime: (event: GatewayEventV1) => void;
 };
 
-function installApi(options: { hangSession?: boolean; initialSession?: SessionContextV1 } = {}): Harness {
+function installApi(options: { hangSession?: boolean; initialSession?: SessionContextV1; rememberedAccount?: RememberedDesktopAccountV1 } = {}): Harness {
   let currentSession = options.initialSession ?? session(1);
   const listeners = new Map<string, (event: GatewayEventV1) => void>();
   const topics = new Map<string, SubscriptionTopicM2["kind"]>();
@@ -181,9 +182,13 @@ function installApi(options: { hangSession?: boolean; initialSession?: SessionCo
     runtime: { getSnapshot, retryApiConnection: retryConnection },
     auth: {
       getState,
+      getRememberedAccount: vi.fn(async () => ok(options.rememberedAccount ?? null)),
+      forgetRememberedAccount: vi.fn(async () => ok({ forgotten: true })),
+      resumeRememberedAccount: vi.fn(async () => { currentSession = session(1); return ok(currentSession); }),
       getSurfaceManifest: vi.fn(async () => ok({ manifest: { surfaces: [] }, testMode: true })),
       login: vi.fn(),
       register: vi.fn(),
+      uploadAvatar: vi.fn(),
       reauthenticate: vi.fn(),
       joinWorkspace: vi.fn(),
       logout,
@@ -516,5 +521,70 @@ describe("门禁右上角更新入口的落点", () => {
     const chip = document.querySelector(".desktop-access-gate__update");
     expect(chip?.closest(".desktop-access-gate__panel")).toBeNull();
     expect(chip?.parentElement?.classList.contains("desktop-access-gate")).toBe(true);
+  });
+});
+
+describe("avatar login and registration", () => {
+  const hint = { email: "owner@example.com", displayName: "Owner", avatarDataURL: null };
+  async function showAccount() {
+    const harness = installApi({ initialSession: anonymousSession(), rememberedAccount: hint });
+    render(<DesktopAccessGate motionMode="off"><span data-testid="avatar-room">学习页面</span></DesktopAccessGate>);
+    await screen.findByRole("button", { name: "登录Owner" });
+    return harness;
+  }
+
+  it("switches between avatar and a fresh ordinary form, and can forget the account", async () => {
+    await showAccount();
+    expect(screen.queryByPlaceholderText("输入密码")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "使用其他账号" }));
+    expect((screen.getByPlaceholderText("name@example.com") as HTMLInputElement).value).toBe("");
+    fireEvent.click(screen.getByRole("button", { name: "返回头像登录" }));
+    fireEvent.click(screen.getByRole("button", { name: "忘记此账号" }));
+    await screen.findByRole("button", { name: "登录" });
+    expect(window.astella.auth.forgetRememberedAccount).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("button", { name: "返回头像登录" })).toBeNull();
+  });
+
+  it("uses one explicit resume request for rapid repeated avatar taps", async () => {
+    const harness = await showAccount();
+    let complete!: () => void;
+    vi.mocked(window.astella.auth.resumeRememberedAccount).mockImplementationOnce(() => new Promise((resolve) => {
+      complete = () => { harness.setSession(session(1)); resolve(ok(session(1))); };
+    }));
+    const avatar = screen.getByRole("button", { name: "登录Owner" });
+    fireEvent.click(avatar); fireEvent.click(avatar);
+    expect(window.astella.auth.resumeRememberedAccount).toHaveBeenCalledOnce();
+    expect(window.astella.auth.login).not.toHaveBeenCalled();
+    await act(async () => complete());
+    await screen.findByTestId("avatar-room");
+  });
+
+  it("retries only the avatar upload after registration has already succeeded", async () => {
+    const harness = installApi({ initialSession: anonymousSession() });
+    vi.mocked(window.astella.auth.register).mockImplementation(async () => { harness.setSession(session(1)); return ok(session(1)); });
+    vi.mocked(window.astella.auth.uploadAvatar).mockRejectedValueOnce(new Error("upload unavailable"))
+      .mockResolvedValueOnce(ok({ version: 1, url: "/api/uploads/avatars/test.png", objectKey: "avatars/test.png" }));
+    vi.stubGlobal("fetch", vi.fn(async (url) => {
+      if (String(url).includes("/default-avatars/")) return new Response(new Uint8Array([1, 2, 3]), { headers: { "Content-Type": "image/png" } });
+      throw new Error("no room manifest in this test");
+    }));
+    render(<DesktopAccessGate motionMode="off"><span data-testid="avatar-room">学习页面</span></DesktopAccessGate>);
+    fireEvent.click(await screen.findByRole("button", { name: /还没有账号？注册/ }));
+    fireEvent.change(screen.getByPlaceholderText("name@example.com"), { target: { value: "owner@example.com" } });
+    fireEvent.change(screen.getByPlaceholderText("至少 8 位"), { target: { value: "valid-password" } });
+    fireEvent.change(screen.getByPlaceholderText("再输入一次"), { target: { value: "valid-password" } });
+    fireEvent.click(screen.getByRole("button", { name: "下一步" }));
+    expect(screen.queryByRole("button", { name: "微笑头像" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "编辑头像" }));
+    expect(screen.getAllByRole("button", { name: /^(微笑|开心|眨眼|害羞|惊讶)头像$/ })).toHaveLength(5);
+    expect(screen.getByRole("button", { name: "上传自定义图片" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "微笑头像" }));
+    fireEvent.click(screen.getByRole("button", { name: "创建账号" }));
+    const retry = await screen.findByRole("button", { name: "重试上传头像" });
+    expect(window.astella.auth.register).toHaveBeenCalledOnce();
+    fireEvent.click(retry);
+    await screen.findByTestId("avatar-room");
+    expect(window.astella.auth.register).toHaveBeenCalledOnce();
+    expect(window.astella.auth.uploadAvatar).toHaveBeenCalledTimes(2);
   });
 });

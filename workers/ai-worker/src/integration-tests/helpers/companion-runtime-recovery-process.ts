@@ -26,9 +26,9 @@ const scripted = async (onDelta?: (text: string) => void) => {
   }
   if (calls === 1) {
     if (fixture.mode === "read") return { content: null,
-      toolCalls: [{ id: "durable-history-read", name: "companion_read_history", arguments: { fromSeq: 1, limit: 3 } }],
+      toolCalls: [{ id: "durable-history-read", name: "companion_observe", arguments: { action: "history", fromSeq: 1, limit: 3 } }],
       finishReason: "tool_calls", usage: {}, providerRequestId: "first-process-read" };
-    const bad = "<tool_call><function=agent_calculate><parameter=expression>1+1</parameter></function></tool_call>";
+    const bad = "<tool_call><function=companion_observe><parameter=expression>1+1</parameter></function></tool_call>";
     if (onDelta) { onDelta(prefix); await new Promise(resolve => setTimeout(resolve, 20)); onDelta(bad); }
     return { content: (onDelta ? prefix : "") + bad,
       toolCalls: [], finishReason: "stop", usage: {}, providerRequestId: "first-process-format-draft" };

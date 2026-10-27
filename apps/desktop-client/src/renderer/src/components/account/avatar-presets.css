@@ -1,0 +1,37 @@
+.account-avatar-presets { display: flex; overflow-x: auto; overscroll-behavior-x: contain; gap: 14px; width: 100%; min-width: 0; padding: 8px 5px 14px; scroll-snap-type: x proximity; }
+.account-avatar-presets__option { display: grid; justify-items: center; gap: 7px; flex: 0 0 82px; scroll-snap-align: start; padding: 4px; border: 0; color: inherit; background: transparent; cursor: pointer; font-size: 12px; }
+.account-avatar-presets__option img { width: 72px; height: 72px; border-radius: 50%; object-fit: cover; outline: 2px solid transparent; outline-offset: 4px; }
+.account-avatar-presets__option[aria-pressed="true"] img { outline-color: #4f927a; }
+.account-avatar-presets__option:disabled { opacity: .55; cursor: default; }
+.account-avatar-registration { display: grid; justify-items: center; gap: 22px; }
+.account-avatar-registration__preview, .desktop-access-gate__quick-avatar { width: 112px; height: 112px; border-radius: 50%; object-fit: cover; }
+.desktop-access-gate__quick-account { display: grid; justify-items: center; gap: 12px; text-align: center; margin: 12px 0 24px; }
+.desktop-access-gate__quick-account button { border: 0; background: transparent; color: inherit; cursor: pointer; }
+.desktop-access-gate__quick-initial { display: grid; place-items: center; background: #e1efff; color: #3479d9; font-size: 38px; }
+.desktop-access-gate__quick-account p { margin: 0; overflow-wrap: anywhere; }
+.desktop-access-gate__avatar-progress { font-size: 12px; opacity: .7; margin: 0; }
+.desktop-access-gate__fields[hidden] { display: none; }
+.desktop-access-gate--returning .desktop-access-gate__brand { justify-content: center; }
+.desktop-access-gate--returning .desktop-access-gate__brand-mark { width: 28px; height: 28px; }
+.desktop-access-gate--returning .desktop-access-gate__heading { text-align: center; }
+.desktop-access-gate__brand-type { display: grid; gap: 4px; text-align: left; }
+.desktop-access-gate__brand-type small { font-size: 8px; letter-spacing: 2px; font-weight: 500; opacity: .6; }
+.account-avatar-registration__edit { display: grid; justify-items: center; gap: 12px; border: 0; background: transparent; color: inherit; cursor: pointer; }
+.account-avatar-source__backdrop { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 24px; background: rgb(10 24 45 / 45%); }
+.account-avatar-source { width: min(440px, 100%); min-width: 0; padding: 28px; border: 2px solid #fffdf1; border-radius: 28px; background: #f7f9ec; color: #405c50; box-shadow: 0 5px 0 #c9d7bc, 0 20px 80px rgb(0 0 0 / 20%); font-family: "Noto Sans SC Variable", "PingFang SC", sans-serif; color-scheme: light; }
+.account-avatar-source h2 { margin: 0 0 10px; font-size: 20px; }
+.account-avatar-source p { font-size: 13px; line-height: 1.6; }
+.account-avatar-source__heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.account-avatar-source__heading span { color: #789381; font-size: 10px; letter-spacing: .12em; }
+.account-avatar-source__heading h2 { margin: 6px 0 0; font-weight: 650; }
+.account-avatar-source__heading > button, .account-avatar-presets__navigation button { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 1px solid #dae5d6; border-radius: 50%; background: #fffdf5; color: #557263; cursor: pointer; }
+.account-avatar-source > p { color: #6e8075; margin: 12px 0 24px; }
+.account-avatar-presets__carousel { min-width: 0; width: 100%; }
+.account-avatar-presets__navigation { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 6px; }
+.account-avatar-presets__navigation span { flex: 1; font-size: 11px; color: #7c8f80; }
+.account-avatar-source__upload { display: flex; width: 100%; align-items: center; gap: 14px; margin-top: 22px; padding: 17px 16px; border: 1px solid #d7e5d7; border-radius: 18px; background: #edf4e9; color: #476e59; text-align: left; cursor: pointer; }
+.account-avatar-source__upload > span { flex: 1; display: grid; gap: 4px; }
+.account-avatar-source__upload strong { font-size: 13px; font-weight: 600; }
+.account-avatar-source__upload small { color: #748777; font-size: 11px; }
+.account-avatar-source button:focus-visible { outline: 3px solid #6da48a; outline-offset: 4px; }
+.account-avatar-source button:disabled { opacity: .5; cursor: default; }

@@ -51,12 +51,12 @@ async function fixture() {
     await t`INSERT INTO companion_turn_runs(id,conversation_id,workspace_id,user_id,user_message_id,generation,status,
       idempotency_key_hash,request_body_hash,account_epoch,job_id,permission_level,permission_snapshot,page_context)
       VALUES(${runId},${conversationId},${scope.workspaceId},${scope.userId},${messageId},1,'running',${'a'.repeat(64)},${'b'.repeat(64)},0,${jobId},'guided',
-      ${t.json({offeredTools:[{name:'companion_write_annotation'}]})},${t.json(pageContext)})`;
+      ${t.json({offeredTools:[{name:'companion_notes_write'}]})},${t.json(pageContext)})`;
     await t`INSERT INTO companion_agent_steps(id,workspace_id,user_id,conversation_id,run_id,step_no,kind,status)
       VALUES(${stepId},${scope.workspaceId},${scope.userId},${conversationId},${runId},1,'model','running')`;
     await t`INSERT INTO companion_agent_tool_calls(id,workspace_id,user_id,conversation_id,run_id,step_id,tool_call_id,name,
       tool_version,arguments,arguments_sha256,risk_class,status)
-      VALUES(${randomUUID()},${scope.workspaceId},${scope.userId},${conversationId},${runId},${stepId},'write-quote','companion_write_annotation',
+      VALUES(${randomUUID()},${scope.workspaceId},${scope.userId},${conversationId},${runId},${stepId},'write-quote','notes.write.annotate',
       '1.0.0',${t.json({markdown})},${'c'.repeat(64)},'reversible_low','executing')`;
   });
   const event = { ctx: { id: jobId, ...scope, requestedBy: scope.userId, leaseToken: 'annotation-lease', payload: {runId}, signal: new AbortController().signal },
@@ -129,10 +129,10 @@ test("完整写入就是终态，附带的无效发言不再产生额外模型�
   let calls = 0;
   MockProvider.prototype.executeAgentTurn = async request => {
     assert.equal(++calls, 1, "完整产物已写入，不能为了无效的附带发言再次调模型");
-    assert.ok(request.tools.some(tool => tool.name === "companion_write_annotation"));
+    assert.ok(request.tools.some(tool => tool.name === "companion_notes_write"));
     return { content: "", toolCalls: [
-      { id: "write-formal-explanation", name: "companion_write_annotation", arguments: { markdown } },
-      { id: "invalid-optional-speech", name: "companion_publish_utterance", arguments: { text: "（这轮没有需要补充的新内容，安静收尾。）" } },
+      { id: "write-formal-explanation", name: "companion_notes_write", arguments: { action: "annotate", markdown } },
+      { id: "invalid-optional-speech", name: "companion_say", arguments: { action: "publish", text: "（这轮没有需要补充的新内容，安静收尾。）" } },
     ], finishReason: "tool_calls", usage: {promptTokens:10,completionTokens:10}, providerRequestId: null };
   };
   Object.defineProperty(MockProvider.prototype,"chatCompletionStream",{...stream,value:undefined});

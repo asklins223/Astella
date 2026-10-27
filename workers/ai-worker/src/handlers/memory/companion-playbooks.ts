@@ -149,7 +149,7 @@ export function renderPlaybookCatalog(entries: readonly PlaybookCatalogEntry[]):
     // 整条取舍的留痕：目录因条数上限少给时要如实说，模型才不会被「短了一截的目录」
     // 误判成「她的经验就只有这些」。
     ...(omitted > 0 ? [`（目录按条数上限整条取舍，另有 ${omitted} 条已确认做法没有列进来；需要更全可以在方法页查看。）`] : []),
-    "条件匹配且与用户当前目标有关时，用 companion_read_playbook 读正文；不相关就别读。"
+    "条件匹配且与用户当前目标有关时，用 companion_memory_read（action=playbook）读正文；不相关就别读。"
       + "做法由你判断采用、修订或放弃，无需用户批准；暂定不等于已证实。当前要求与材料优先，不搬用旧产物或旧授权。",
   ].join("\n");
 }

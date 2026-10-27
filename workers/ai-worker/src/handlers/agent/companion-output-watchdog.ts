@@ -10,7 +10,9 @@ function configured(value: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 export function companionOutputWatchdogPolicy() {
-  return { firstOutputMs: configured(process.env.COMPANION_PROVIDER_FIRST_OUTPUT_TIMEOUT_MS, 20_000),
+  // 推理模型的上下文预填充可能超过 20 秒。首段等待与输出后的失活检测分开，
+  // 不把健康的长思考或多步工具流程截成固定时长的回合。
+  return { firstOutputMs: configured(process.env.COMPANION_PROVIDER_FIRST_OUTPUT_TIMEOUT_MS, 60_000),
     idleMs: configured(process.env.COMPANION_PROVIDER_IDLE_TIMEOUT_MS, 45_000) };
 }
 

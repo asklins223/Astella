@@ -98,6 +98,8 @@ export interface ChatOptions {
    * Responses 模型若未声明 none，只能降到声明的最低档，不能据此宣称已关闭。
    * 真实档位与消耗需看 provider 请求及返回用量。 */
   disableThinking?: boolean;
+  /** 本步显式思考档位，优先于 disableThinking 与档案默认档。 */
+  reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
   /**
    * native tools 定义（2026-09-19 ④-b）。
    *

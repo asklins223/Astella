@@ -79,6 +79,7 @@ import "./components/surfaces/library/card-detail.css";
 import "./components/surfaces/library/card-study-scene.css";
 import "./components/home-v2/home-v2.css";
 import "./components/desktop-access-gate.css";
+import "./components/account/avatar-presets.css";
 import "./components/render-error-boundary.css";
 
 /* ── 4c. 伴星：交互台在浮层里，带自己的局部 token 表 ─────────────────────── */

@@ -166,7 +166,7 @@ test("A22｜关闭伴星**不挡学习**：那个开关只出现在投递侧", (
 });
 
 test("A22｜关闭伴星推进 epoch 并广播，但不碰已授权安排", () => {
-  assert.match(shell, /globalOffApplied \? row\.epoch \+ 1 : row\.epoch/,
+  assert.match(shell, /globalOffApplied \|\| permissionReduced \? row\.epoch \+ 1 : row\.epoch/,
     "关闭伴星没有推进 epoch —— 在途的那一轮不会被作废");
   // 广播只带 {userId, epoch}：设备据此停掉界面，而不是取消任何安排。
   assert.match(shell, /JSON\.stringify\(\{ userId, epoch \}\)/,

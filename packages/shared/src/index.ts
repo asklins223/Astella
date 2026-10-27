@@ -58,6 +58,7 @@ export * from "./contracts/companion/companion-run-diagnostics.ts";
 export * from "./agent/companion-agent-registry.ts";
 export * from "./companion/companion-host-context.ts";
 export * from "./agent/companion-tool-groups.ts";
+export * from "./agent/companion-domain-tools.ts";
 export * from "./companion/companion-persona.ts";
 export * from "./companion/pet-persona-presets.ts";
 // 2026-10-02：40b §1.4 第 1 条「登记每条要求」的可检验清单。纯数据 + 惰性
@@ -69,6 +70,7 @@ export * from "./contracts/note/note-deepening-contracts.ts";
 export * from "./contracts/desktop/desktop-surface-contracts.ts";
 // 设计 P1-8（2026-09-15 审计）：伴星记忆类 job 的 payload 字段契约唯一来源
 // （写入侧 API 与 4 个 worker handler 共用；纯类型/常量，无 node: 依赖）。
+export * from "./companion/companion-memory-content.ts";
 export * from "./companion/companion-memory-job-payload.ts";
 export * from "./companion/companion-memory-temporal.ts";
 // 稳定 P1（2026-09-15 审计）：作业 payload 契约按作业类型分型。非 companion

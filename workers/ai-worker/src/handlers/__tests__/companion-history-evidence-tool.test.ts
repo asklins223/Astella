@@ -11,7 +11,7 @@ test("读近期历史交付完整原文、序号、来源时间；不把旧记�
     {seq:"1",role:"user",text,createdAt:"2026-10-05T03:14:00Z"},
     {seq:"2",role:"assistant",text:"嗯",createdAt:null}],
     conversationClock:{observedAt:"2026-10-07T10:00:00Z",timezone:"Asia/Shanghai"}},constraints:{visionEnabled:false}} as unknown as AgentEventContext;
-  const result = await executeReadTool(event, getCompanionAgentTool("companion_read_history")!, {limit:10});
+  const result = await executeReadTool(event, { ...getCompanionAgentTool("observe.history")!, name: "observe.history" }, {limit:10});
   const value = result.value as {messages:Array<{seq:string;role:string;text:string;createdAt:string|null}>;
     truncated:boolean;nextFromSeq:string|null;
     source:{kind:string;observedAt:string;timestampMeaning:string}};
@@ -35,7 +35,7 @@ test("一页装得下时如实说没有下一页，不多要一次续读", async
     {seq:"7",role:"user",text:"这条短",createdAt:"2026-10-07T09:00:00Z"},
     {seq:"8",role:"assistant",text:"也短",createdAt:null}],
     conversationClock:{observedAt:"2026-10-07T10:00:00Z",timezone:"Asia/Shanghai"}},constraints:{visionEnabled:false}} as unknown as AgentEventContext;
-  const value = (await executeReadTool(event, getCompanionAgentTool("companion_read_history")!, {limit:10}))
+  const value = (await executeReadTool(event, { ...getCompanionAgentTool("observe.history")!, name: "observe.history" }, {limit:10}))
     .value as {messages:Array<{createdAt:string|null}>;truncated:boolean;nextFromSeq:string|null};
   assert.equal(value.messages.length,2);
   assert.equal(value.messages[1]?.createdAt,null,"没有创建时刻就如实给 null，不补成空串");
@@ -46,7 +46,7 @@ test("一页装得下时如实说没有下一页，不多要一次续读", async
 test("用户明确拒绝资料读取时，执行层阻止模型直接调用笔记搜索", async () => {
   const event = { read: { userId: "test-user" }, constraints: { noteLibraryReadEnabled: false } } as unknown as AgentEventContext;
   await assert.rejects(
-    executeReadTool(event, getCompanionAgentTool("companion_search_notes")!, { query: "欧姆定律" }),
+    executeReadTool(event, { ...getCompanionAgentTool("notes.read.search")!, name: "notes.read.search" }, { query: "欧姆定律" }),
     /要求不读取笔记库/,
   );
 });

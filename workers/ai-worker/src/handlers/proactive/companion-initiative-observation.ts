@@ -115,7 +115,7 @@ export function renderCompanionInitiativeObservation(
   }
   const evidence = evidenceText(facts.observation?.evidence);
   if (evidence) lines.push(evidence);
-  if (input.topic === "reply.finished") lines.push("刚才的回答已经完整送达，包括最后的确认与结论；不要重说它的全文、末段或换一种说法再确认一次。只有确实新增且有用的内容才补充，否则直接调用 companion_finish_participation 安静结束。");
+  if (input.topic === "reply.finished") lines.push("刚才的回答已经完整送达，包括最后的确认与结论；不要重说它的全文、末段或换一种说法再确认一次。只有确实新增且有用的内容才补充，否则直接调用 companion_say（action=finish_participation）安静结束。");
   if (register === "conversation") {
     lines.push("这一次没有新的用户指令。历史中已停止、失败或尚未答完的请求都不是本轮待办，不替旧轮补答、补确认或重新执行；已保存的参与偏好是相处依据，不要再用‘记住了/改好了’当作这次问候。想问近况就自然问现在的近况。");
     /**

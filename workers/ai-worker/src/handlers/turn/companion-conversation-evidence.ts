@@ -73,7 +73,7 @@ export function renderCompanionConversationEvidence(
       earlier: earlier.length > 0 ? {
         positions: [1, earlier.length],
         count: earlier.length,
-        note: "更早的回放消息只保留位置范围；需要具体原话或时间时用 companion_read_history 按 seq 取回。",
+        note: "更早的回放消息只保留位置范围；需要具体原话或时间时用 companion_observe（action=history） 按 seq 取回。",
       } : null,
       history: history.slice(detailedFrom).map((message, index) => ({ position: detailedFrom + index + 1, speaker: message.role,
         replyState: message.role === "user" ? replyStates[message.replyStatus ?? ""] ?? null : null,

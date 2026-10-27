@@ -8,13 +8,15 @@ test("separate message counts use actual publication receipts and never treat fi
   const requested = requirements("分两条跟我说，先问好，再问今天想先做什么。");
   assert.equal(requested.utteranceCount, 2);
   assert.equal(requirements("不要分两条发给我，只说一句。").utteranceCount, undefined);
+  assert.equal(requirements("修改手记并实际保存，成功后分三条简短说明你核对了哪些内容。").utteranceCount, undefined,
+    "three explanation points are not three independently published messages");
   const messages: AgentTurnRequest["messages"] = [
-    { role: "assistant", content: "", toolCalls: [{ id: "first", name: "companion_publish_utterance", arguments: { text: "你好", final: false } }] },
+    { role: "assistant", content: "", toolCalls: [{ id: "first", name: "companion_say", arguments: { action: "publish", text: "你好", final: false } }] },
     { role: "tool", toolCallId: "first", content: '{"ok":true,"data":{"messageId":"message-one","published":true}}' },
   ];
   assert.match(companionUtteranceRequirementIssue(requested, messages)!.instruction, /真实发布只有 1 条/);
   assert.ok(companionUtteranceRequirementIssue({}, messages));
-  messages.push({ role: "assistant", content: "", toolCalls: [{ id: "last", name: "companion_publish_utterance", arguments: { text: "今天想先做什么？", final: true } }] },
+  messages.push({ role: "assistant", content: "", toolCalls: [{ id: "last", name: "companion_say", arguments: { action: "publish", text: "今天想先做什么？", final: true } }] },
     { role: "tool", toolCallId: "last", content: JSON.stringify({ ok: true, resultRef: JSON.stringify({ messageId: "message-two", published: true }) }) });
   assert.equal(companionUtteranceRequirementIssue(requested, messages), null);
   assert.equal(companionUtteranceRequirementIssue({}, messages), null);
@@ -53,8 +55,8 @@ test("three actual note-tool result envelopes fulfill the request before and aft
   assert.equal(issue(requested, "三篇笔记都保存好了。", fresh), null);
   assert.equal(issue(requested, "三篇笔记都保存好了。", replay), null);
   assert.match(issue(requested, "", [fresh[0], replay[0], fresh[1]])!.instruction, /只有 2 篇/);
-  assert.ok(issue(requested, "已完成", fresh.map(message => ({ ...message,
-    content: message.content.replace('"status":"succeeded"', '"status":"executing"') }))));
+  assert.ok(issue(requested, "已完成", saved.map(result => ({ role: "tool" as const,
+    content: JSON.stringify({ ok: true, data: { ...result.value, status: "executing" }, summary: result.safeSummary }) }))));
   assert.ok(issue(requested, "已完成", replay.map(message => ({ ...message,
     content: message.content.replace('"ok":true', '"ok":false') }))));
 });
@@ -79,11 +81,12 @@ test("receipts settle a plain save request but never swallow an additional answe
 });
 
 test("an explicit calculation-tool request requires a successful current-run receipt", () => {
-  const requested = requirements("请用计算工具核对347×29。", false, ["agent_calculate"]);
-  assert.deepEqual(requested.requiredTools, ["agent_calculate"]);
+  const requested = requirements("请用计算工具核对347×29。", false, ["companion_observe"]);
+  assert.deepEqual(requested.requiredTools, ["companion_observe"]);
   assert.ok(issue(requested, "结果是10063，但未核验。"));
-  const calls = [{ id: "calculation", name: "agent_calculate", arguments: {} }];
+  const calls = [{ id: "calculation", name: "companion_observe", arguments: { action: "calculate" } }];
   assert.equal(issue(requested, "结果是10063。", [{ role: "assistant", content: "", toolCalls: calls }, { role: "tool", toolCallId: "calculation", content: '{"ok":true}' }]), null);
   assert.ok(issue(requested, "10063", [{ role: "assistant", content: "", toolCalls: calls }, { role: "tool", toolCallId: "calculation", content: '{"ok":false}' }]));
-  assert.equal(requirements("不要用计算工具，直接说结果。", false, ["agent_calculate"]).requiredTools, undefined);
+  assert.equal(requirements("不要用计算工具，直接说结果。", false, ["companion_observe"]).requiredTools, undefined);
 });
+

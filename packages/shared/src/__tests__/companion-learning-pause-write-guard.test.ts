@@ -35,18 +35,19 @@ const delivery = readFileSync(
 );
 
 test("工具已登记，且只给 `today` / `resume` —— 不让模型自己算哪天", () => {
-  const definition = getCompanionAgentTool("companion_pause_learning_suggestions");
+  const definition = getCompanionAgentTool("companion_attention_write");
   assert.ok(definition, "工具没登记 —— 用户说「今天别催」时她没有入口");
   const props = definition.parameters.properties as Record<string, unknown>;
-  assert.deepEqual(Object.keys(props).sort(), ["reason", "scope"]);
+  assert.ok("scope" in props && "reason" in props, "暂停学习需要 scope 与 reason");
+  assert.deepEqual((props.scope as { enum: string[] }).enum.sort(), ["resume", "today"]);
   // 给一个"暂停到某天"就是让模型算时区，而它一定会算错。
   assert.ok(!("until" in props) && !("localDate" in props) && !("days" in props),
     "工具让模型自己指定到期时间 —— 时区它算不对");
 });
 
 test("执行体**真的存在**且会写 `suggestion_pause`", () => {
-  const start = executor.indexOf('case "companion_pause_learning_suggestions"');
-  assert.ok(start > 0, "执行体里没有这一条 —— 工具会走「未实现」分支");
+  const start = executor.indexOf('case "attention.write.pause"');
+  assert.ok(start > 0, "执行体里没有 attention.write.pause —— 工具会走「未实现」分支");
   const body = executor.slice(start, start + 2600);
   assert.match(body, /suggestionPause/);
   // 本地日由 `localDateIn` 算，而不是从当前时刻加 24 小时。
@@ -57,7 +58,7 @@ test("执行体**真的存在**且会写 `suggestion_pause`", () => {
 });
 
 test("写入侧**只动** suggestion_pause，不碰已授权安排", () => {
-  const start = executor.indexOf('case "companion_pause_learning_suggestions"');
+  const start = executor.indexOf('case "attention.write.pause"');
   const body = executor.slice(start, start + 2600);
   // §8.2：「不会取消已授权安排。」这一段里除了 revision/updated_at 与
   // suggestion_pause，不该出现任何与提醒/安排相关的写。
@@ -69,7 +70,7 @@ test("写入侧**只动** suggestion_pause，不碰已授权安排", () => {
 });
 
 test("恢复（resume）会**清掉** localDate —— 否则明天她又以为还停着", () => {
-  const start = executor.indexOf('case "companion_pause_learning_suggestions"');
+  const start = executor.indexOf('case "attention.write.pause"');
   const body = executor.slice(start, start + 2600);
   assert.match(body, /paused: false/);
   assert.match(body, /localDate: undefined/,
@@ -90,7 +91,7 @@ test("【自证】判据认得出「把本地日写成 now+24h」这个真实退
   const degraded = "const localDate = new Date(Date.now() + 86400000).toISOString().slice(0, 10);";
   assert.ok(degraded.includes("86400000"), "自证样本没造好");
   // 正控制：真执行体走的是 localDateIn。
-  const start = executor.indexOf('case "companion_pause_learning_suggestions"');
+  const start = executor.indexOf('case "attention.write.pause"');
   assert.match(executor.slice(start, start + 2600), /localDateIn\(/,
     "自证：当前确实走 localDateIn，所以判据今天是绿的");
   // 而 localDateIn 按时区算，与 24 小时不同：
@@ -101,8 +102,8 @@ test("【自证】判据认得出「把本地日写成 now+24h」这个真实退
 });
 
 test("【自证】判据认得住「执行体被删掉」这个真实退化", () => {
-  const degraded = 'switch (name) { case "companion_set_activeness": {';
-  assert.ok(!degraded.includes("companion_pause_learning_suggestions"), "自证样本没造好");
-  assert.ok(executor.includes('case "companion_pause_learning_suggestions"'),
+  const degraded = 'switch (name) { case "persona.write.activeness": {';
+  assert.ok(!degraded.includes("attention.write.pause"), "自证样本没造好");
+  assert.ok(executor.includes('case "attention.write.pause"'),
     "自证：当前执行体确实在");
 });

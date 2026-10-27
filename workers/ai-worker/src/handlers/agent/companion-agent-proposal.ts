@@ -15,10 +15,6 @@
  * 提案这一族**不反向依赖** runtime——它要的东西分别在 `companion-read-tools.ts`、
  * `companion-tool-execution.ts`、`companion-agent-events.ts` 里，方向都是单向的。
  * 所以先搬它，环就不成立。账本留到下一刀。
- *
- * ## 这一段是**照搬**的
- *
- * payload 形状、事务边界一个字没改。
  */
 
 import { randomUUID } from "node:crypto";
@@ -36,44 +32,6 @@ import { CompanionToolError } from "../tools/companion-tool-result.ts";
 import { readCompanionMemoryWriteSource } from "../memory/companion-memory-write-source.ts";
 import { describeAgentProposal } from "./companion-proposal-copy.ts";
 import { lockJobLease } from "../../lib/job-lease.ts";
-
-export async function buildActionPayload(
-  _event: AgentEventContext,
-  toolName: string,
-  args: Record<string, unknown>,
-): Promise<Record<string, unknown> | null> {
-  // `noteId`/`runId` **必填**（2026-09-26，W2-1 判据 1 转绿；39b C1 的处方落地）：
-  // consequential 写工具必须能指名对象——伴星入口是语境锚定的"学眼前这一篇"，
-  // noteId/runId 从页面上下文与 <this_turn_facts> 的回填拿；服务端不再"挑最近一条"
-  // （挑错用户看不出为什么——C1 的原诉）。resume 的 runId 在执行侧还有一道
-  // workspace+user 归属校验（learning-action-bridge 的 getRunPublicView）。
-  const map: Record<string, Record<string, unknown>> = {
-    // 工具参数叫 `objectiveId`，网关载荷的字段名仍是 `keyPointId`（内部提案合同的既有
-    // 名字，本轮不改）——改名发生在这一行，读的人一眼能看出是同一个值换了个边界名。
-    // auto-set / auto-fill：guided 档提案确认后由 API decision 分支执行
-    // （learning-action-bridge decideCompanionProposal 的 save_memory /
-    // set_pet_activeness 分支）；full 档不经提案、由 executeDirectTool 直执行。
-    companion_save_memory: {
-      kind: "save_memory",
-      memoryKind: args.kind,
-      content: args.content,
-      sourceQuote: args.sourceQuote ?? null,
-      appliesWhen: args.appliesWhen ?? null,
-      validUntil: args.validUntil ?? null,
-    },
-    companion_revise_memory: {
-      kind: "revise_memory",
-      memoryId: args.memoryId,
-      expectedRevision: args.expectedRevision,
-      content: args.content,
-      ...(args.appliesWhen !== undefined ? { appliesWhen: args.appliesWhen } : {}),
-      ...(args.validFrom !== undefined ? { validFrom: args.validFrom } : {}),
-      ...(args.validUntil !== undefined ? { validUntil: args.validUntil } : {}),
-    },
-    companion_set_activeness: { kind: "set_pet_activeness", activeness: args.activeness },
-  };
-  return map[toolName] ?? null;
-}
 
 export async function createAgentProposal(
   event: AgentEventContext,
@@ -175,8 +133,7 @@ export async function createAgentProposal(
         title,
         targetSummary,
         ...(sourceQuote ? [`依据你的原话：「${sourceQuote}」`] : []),
-        parsedPayload.data.kind === "agent_tool_review" && parsedPayload.data.confirmationStage === "after_preview"
-          ? "结果已准备好，确认后保存；取消会恢复原文。" : "确认后才会执行。",
+        impactSummary,
       ].join("\n");
       const noticeBlocks = [
         { type: "text", text: noticeText },

@@ -12,7 +12,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { diagnoseNoteEditRefusal } from "../companion-edit-dispatch.ts";
+import { diagnoseNoteEditRefusal, companionNoteEditSourceAllowed } from "../companion-edit-dispatch.ts";
 import type { ApiTransaction } from "../../../db/client.ts";
 
 const SCOPE = { workspaceId: "11111111-1111-4111-8111-111111111111", userId: "22222222-2222-4222-8222-222222222222" };
@@ -46,6 +46,7 @@ function baseline(overrides: Record<string, unknown> = {}) {
     operation: "replace_blocks",
     offered: true,
     confirmed: false,
+    source_read_verified: false,
     ...overrides,
   };
 }
@@ -63,16 +64,29 @@ async function reasonFor(row: Record<string, unknown> | undefined): Promise<stri
   return diagnoseNoteEditRefusal(txReturning(row), SCOPE, CALL_ID);
 }
 
-test("页面没打开这篇笔记时，说的是页面，不是「这轮已经停止」", async () => {
+test("没有打开笔记且没有本轮原文时，要求先读取而不是误报轮次停止", async () => {
   const message = await reasonFor(baseline({ page_note_id: null }));
-  assert.match(message, /没有打开这篇笔记/);
+  assert.match(message, /还没有读取目标笔记的完整段落和版本/);
   assert.doesNotMatch(message, /这轮已经停止/,
     "实测那三轮失败的真因是 page_context 为空；把它说成轮次停止会让模型向用户复述假原因");
 });
 
-test("打开了别的笔记时，点名「另一篇」而不是泛泛的页面已变化", async () => {
+test("打开别的笔记不能替目标笔记提供编辑依据", async () => {
   const message = await reasonFor(baseline({ page_note_id: "55555555-5555-4555-8555-555555555555" }));
-  assert.match(message, /另一篇笔记/);
+  assert.match(message, /还没有读取目标笔记/);
+});
+
+test("对话中的段落修改可绑定本轮真实读取；光标和选区仍必须来自目标页", async () => {
+  const source = { operation: "replace_blocks", pageNoteId: null, noteId: NOTE_ID, verifiedRead: true };
+  assert.equal(companionNoteEditSourceAllowed(source), true);
+  assert.equal(companionNoteEditSourceAllowed({ ...source, verifiedRead: false }), false);
+  assert.equal(companionNoteEditSourceAllowed({ ...source, operation: "append" }), false);
+  assert.equal(companionNoteEditSourceAllowed({ ...source, operation: "replace_selection" }), false);
+  assert.equal(companionNoteEditSourceAllowed({ ...source, pageNoteId: NOTE_ID, verifiedRead: false }), true);
+  const guided = await reasonFor(baseline({ page_note_id: null, source_read_verified: true, permission_level: "guided" }));
+  assert.match(guided, /需要你先确认/, "reading a closed note does not grant write permission");
+  const revoked = await reasonFor(baseline({ page_note_id: null, source_read_verified: true, global_enabled: false }));
+  assert.match(revoked, /已关闭/);
 });
 
 test("轮次真的停了才说「这轮已经停止」", async () => {

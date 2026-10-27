@@ -698,7 +698,9 @@ export class OpenAICompatibleProvider implements AIProvider {
       // 思考字段由模型档案驱动（见 thinkingField）；这一轮要不要关由调用方随请求带来
       // （伴星闲聊轮关、提问/任务轮开），档案本身说的仍是"这个模型能思考到哪几档"。
       ...this.extraRequestParams,
-      ...this.thinkingField(request.disableThinking ?? false),
+      ...(request.reasoningEffort && this.modelProfile?.reasoning?.levels.includes(request.reasoningEffort as never)
+        ? { reasoning_effort: request.reasoningEffort }
+        : this.thinkingField(request.disableThinking ?? false)),
     };
 
     this.applyModelSampling(requestBody);

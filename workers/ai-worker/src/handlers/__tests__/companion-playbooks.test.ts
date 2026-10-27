@@ -46,7 +46,7 @@ test("目录渲染**不含正文**——步骤与例外不在目录里", () => {
 
 test("目录告诉模型**怎么展开**，而不是让它猜", () => {
   const rendered = renderPlaybookCatalog([entry()]);
-  assert.match(rendered, /companion_read_playbook/,
+  assert.match(rendered, /companion_memory_read（action=playbook）/,
     "目录必须说明按 ID 展开的入口，否则模型只会直接照着目录猜着做");
   assert.match(rendered, /不相关就别读/,
     "§4.6.10「条件匹配且与用户目标有关时按需读取」——不相关时不许读");

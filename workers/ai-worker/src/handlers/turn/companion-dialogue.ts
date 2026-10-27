@@ -3,7 +3,7 @@ import { reviewCompanionInitiativeSpeech } from "../proactive/companion-initiati
 import { readParticipationPreferences } from "@astella/agent-host";
 import { companionInitiativeInputV1Schema } from "@astella/shared/companion-initiative-contracts";
 import { listCompanionSelfNotes } from "@astella/agent-host";
-import { COMPANION_AGENT_TOOL_LABELS, companionTurnWritesDocumentContent, renderCompanionSelfNotes } from "@astella/shared";
+import { companionToolLabel, companionTurnWritesDocumentContent, renderCompanionSelfNotes } from "@astella/shared";
 import { resolveCompanionPersonaContext } from "../memory/companion-identity-context.ts";
 import { reserveCompanionProviderCall } from "../agent/companion-agent-events.ts";
 import { renderPlaybookCandidates, renderPlaybookCatalog } from "../memory/companion-playbooks.ts";
@@ -62,6 +62,7 @@ import {
 } from "../../lib/tts-segments.ts";
 import { resolveCompanionVoiceInstruction } from "./companion-voice-request-style.ts";
 import { resolveCompanionEntryMode } from "./companion-entry-mode.ts";
+import { judgeCompanionSplitIntent, companionSplitMessageCount, splitCompanionReplyParts } from "./companion-split-intent.ts";
 import { persistCompanionDialectPreference, readCompanionDialectPreference, readCompanionPreferredAddress } from "./companion-voice-preference.ts";
 import { qwenDialectForInstruction } from "@astella/shared/tts-voice-catalog";
 import { companionVoiceExpressionBoundaries, companionVoiceSegmentExpression, projectCompanionVoiceExpression } from "./companion-voice-expression.ts";
@@ -472,7 +473,7 @@ export async function runCompanionDialogue(
     const imageAvailability = !govCtx.policy.sendImageContent
       ? "账号尚未开启图片识别。需要识图时说明可在 AI 设置中开启；不要把未授权说成模型不支持图片。"
       : resolveVisionReader(govCtx)
-        ? "本轮已提供可读取的真实图片，companion_read_image 可用。需要描述画面时先读取对应 assetId；不能因为尚未读取就声称只有文件名或没有看图工具。"
+        ? "本轮已提供可读取的真实图片，companion_visual（action=read_image）可用。需要描述画面时先读取对应 assetId；不能因为尚未读取就声称只有文件名或没有看图工具。"
         : "当前服务尚未配置可用的识图模型，需要明确说明服务配置暂不可用。";
     read.hereAndNow = [read.hereAndNow, imageAvailability].filter(Boolean).join("\n");
   }
@@ -935,6 +936,18 @@ export async function runCompanionDialogue(
   let assistantText: string;
   let ttsRawText: string | null = null;
   let agentResult;
+  /**
+   * Resolve the requested delivery shape before the first step, not after the
+   * reply exists. The judge is one small closed-set call; running it here lets
+   * every step write its paragraphs as the separate messages they will become,
+   * so the model never has to be corrected into a shape it did not know about.
+   * A missing verdict simply means the ordinary single-message reply.
+   */
+  const replyShape = read.initiativeInput ? null : await judgeCompanionSplitIntent({
+    userText: read.userText, provider, signal: ctx.signal, runId: read.runId,
+  }).then(verdict => verdict?.decision === "split"
+    ? { messages: companionSplitMessageCount(verdict) } : null)
+    .catch(() => null);
   try {
     // L1 路由（默认关）：只有显式开启时才建 embedding 出口，且它走治理门（同意 + 外发政策）。
     const releaseRouterMode = resolveCompanionEntryMode() === "classified" ? resolveCompanionReleaseRouterMode() : "off";
@@ -952,6 +965,7 @@ export async function runCompanionDialogue(
       read,
       provider,
       fallbackProvider,
+      ...(replyShape ? { replyShape } : {}),
       // 活跃度决定退化闸的字数线（方案 29 §9.17）：不传就等于忽略用户的设置。
       activeness: read.petProfile?.activeness ?? null,
       // 图片能不能出境是**账号级政策**，不是她这一轮可以自己争取的东西：政策关着、
@@ -971,7 +985,14 @@ export async function runCompanionDialogue(
         // An interrupted input may have an additional committed partial step;
         // its recovery branch preserves that suffix and supplies correction.
         if (delivered.length > projected.text.length && delivered.startsWith(projected.text)) return true;
-        return streamingDelivery.writeTail(projected.text, modelText);
+        if (projected.text.startsWith(delivered)) return streamingDelivery.writeTail(projected.text, modelText);
+        // A confirmed continuation re-projects the same visible prefix against a
+        // context that was reloaded from the database. If the two disagree, do
+        // not kill the whole turn at the checkpoint: the final delivery path
+        // still reconciles the answer against what the user actually received.
+        logger.warn({ runId: read.runId, deliveredChars: delivered.length, projectedChars: projected.text.length },
+          "companion visible checkpoint diverged from delivered text; skipping this checkpoint");
+        return true;
       },
       historyForCompaction: committedHandoff.snapshot,
       compactionCheckpoints: committedHandoff.snapshot.compactions,
@@ -1011,8 +1032,12 @@ export async function runCompanionDialogue(
       }),
       expiresAt,
       continuationProposalId,
-      onProviderDelta: read.initiativeInput ? undefined : (delta) => streamingDelivery.onRawDelta(delta),
+      onProviderDelta: read.initiativeInput ? undefined : async (delta) => {
+        await thinkingDelivery.flush();
+        return streamingDelivery.onRawDelta(delta);
+      },
       onReasoningDelta: thinkingDelivery.onReasoningDelta,
+      flushThinking: thinkingDelivery.flush,
       onTurnInterpretation: async (interpretation) => {
         semanticVoiceStyle = interpretation.voiceStyle;
         turnWritesDocumentContent = companionTurnWritesDocumentContent(interpretation.candidateOperations);
@@ -1084,7 +1109,7 @@ export async function runCompanionDialogue(
       ? "笔记正文修改已保存；这次修改说明的引文没有核对通过，说明未完成。"
       : savedWriteNames.length > 0
         ? `这次引文与已读取的原文对不上，说明没有完成；已经做成的操作仍保留：${
-          savedWriteNames.map((name) => COMPANION_AGENT_TOOL_LABELS[name] ?? name).join("、")}。`
+          savedWriteNames.map((name) => companionToolLabel(name) ?? name).join("、")}。`
         : "这次引文与已读取的原文对不上，答复没有完成。";
     const providerRejected = err instanceof ProviderRequestError;
     const rateLimited = providerRejected && err.status === 429;
@@ -1320,10 +1345,47 @@ export async function runCompanionDialogue(
     deliveredPrefixOnly ? assistantText : ttsRawText, undefined, publishedVoiceChars);
 
 
+  // ── Delivery shape: separate messages ──────────────────────────────────
+  /**
+   * A request for "two messages" is answered by the model as one reply that
+   * already contains both, separated by a blank line (measured: 10/10 with a
+   * blank line, 0/5 without the request). Reading that boundary here is the same
+   * step Muse's parser takes on its `to=user` bodies: the reply is split into
+   * the messages it already holds, and each is stored as its own chat message.
+   *
+   * Only chat replies are split. A turn that wrote something (notes, memory,
+   * reminders) keeps one message: its rich blocks and receipts belong to a
+   * single answer, and cutting it would separate them from the text.
+   */
+  const assistantParts = await (async (): Promise<string[] | undefined> => {
+    if (agentResult.status !== "completed" || agentResult.writesLanded === true) return undefined;
+    if (read.initiativeInput) return undefined;
+    try {
+      const verdict = await judgeCompanionSplitIntent({ userText: read.userText,
+        provider, signal: ctx.signal, runId: read.runId });
+      if (verdict?.decision !== "split") return undefined;
+      const parts = splitCompanionReplyParts(assistantText, companionSplitMessageCount(verdict));
+      if (parts.length < 2) {
+        logger.info({ runId: read.runId, requested: verdict.messages, parts: parts.length },
+          "companion split request produced a single message; delivering it as written");
+        return undefined;
+      }
+      logger.info({ runId: read.runId, parts: parts.length }, "companion reply delivered as separate messages");
+      return parts;
+    } catch (error) {
+      // Delivery shape is an enhancement; failing to resolve it must never cost
+      // the user their answer.
+      logger.warn({ runId: read.runId, error: error instanceof Error ? error.name : "unknown" },
+        "companion split delivery skipped; keeping one message");
+      return undefined;
+    }
+  })();
+
   // 阶段 3c（终态事务）搬到 companion-dialogue-finalization.ts：回答收尾自成一域，
   // 编排文件只保留调用。搬迁是纯搬运——判据、事务边界、事件布局一字未改。
   await finalizeCompanionDialogueTurn({
     ctx, read, runId, provider, agentResult, assistantText, ttsRawText, voiceExpressionEnabled,
+    ...(assistantParts ? { assistantParts } : {}),
     memoryContext, voiceSegmentsWritten, expiresAt, streamingDelivery, notifyCompanionEvent,
   });
 }

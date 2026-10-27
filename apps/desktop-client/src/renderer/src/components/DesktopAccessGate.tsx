@@ -37,6 +37,7 @@ import {
 import type {
   AstellaDesktopApiM2,
   RuntimeSnapshotV1,
+  RememberedDesktopAccountV1,
   WorkspaceSummaryV1,
 } from "@astella/shared/desktop-ipc-contracts";
 import {
@@ -87,6 +88,8 @@ const AuthAmbientCanvas = lazy(() =>
 import type { AuthAmbientLampCue } from "./AuthAmbientCanvas";
 import { MIN_PASSWORD_LENGTH, validateAuthForm, validateEmailCode, validateEmailFormat, validateResetForm } from "./auth-form-validation";
 import { GateUpdateRow } from "./gate-update-row";
+import { RegistrationAvatarPicker } from "./account/avatar-preset-picker";
+import { avatarFileBase64, avatarPresetFile, randomAvatarChoice } from "./account/default-avatars";
 import {
   formatAuthSceneClock,
   resolveAuthScene,
@@ -208,6 +211,7 @@ function GateFrame({
   detail,
   tone = "default",
   variant = "default",
+  centeredBrand = false,
   motionMode = "off",
   requestedScene,
   scenePreference,
@@ -222,6 +226,7 @@ function GateFrame({
   detail: string;
   tone?: "default" | "danger";
   variant?: "default" | "register";
+  centeredBrand?: boolean;
   motionMode?: SceneMotionMode;
   requestedScene: AuthSceneTime;
   scenePreference: AuthScenePreference;
@@ -352,7 +357,7 @@ function GateFrame({
     <main
       ref={frameRef}
       id="main-content"
-      className="desktop-access-gate"
+      className={`desktop-access-gate${centeredBrand ? " desktop-access-gate--returning" : ""}`}
       data-tone={tone}
       data-gate-variant={variant}
       data-gate-scene={visibleScene}
@@ -386,8 +391,10 @@ function GateFrame({
             width={34}
             height={34}
           />
-          <span className="desktop-access-gate__brand-name">拾星笔记</span>
-          <span className="desktop-access-gate__brand-dot" aria-hidden="true" />
+          {centeredBrand ? <span className="desktop-access-gate__brand-type">
+            <span className="desktop-access-gate__brand-name">拾星笔记</span><small>ASTELLA</small>
+          </span> : <><span className="desktop-access-gate__brand-name">拾星笔记</span>
+          <span className="desktop-access-gate__brand-dot" aria-hidden="true" /></>}
         </div>
         <div className="desktop-access-gate__heading">
           <h1 ref={headingRef} id="desktop-gate-title" tabIndex={-1}>{title}</h1>
@@ -436,7 +443,12 @@ export function DesktopAccessGate({
   /** 登录屏的「用验证码登录」开关。 */
   const [loginViaCode, setLoginViaCode] = useState(false);
   /** 注册的两步：先填基础信息，下一步才去邮箱取码（发码是自动的）。 */
-  const [registerStep, setRegisterStep] = useState<"details" | "verify">("details");
+  const [registerStep, setRegisterStep] = useState<"details" | "avatar" | "verify">("details");
+  const [registrationAvatar, setRegistrationAvatar] = useState(randomAvatarChoice);
+  const registrationSessionRef = useRef<number | null>(null);
+  const [registrationCreated, setRegistrationCreated] = useState(false);
+  const [rememberedAccount, setRememberedAccount] = useState<RememberedDesktopAccountV1 | null>(null);
+  const [showRememberedAccount, setShowRememberedAccount] = useState(true);
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [keepSignedIn, setKeepSignedIn] = useState(true);
   const [credentialPersistence, setCredentialPersistence] = useState<"local_file" | "memory">("memory");
@@ -525,6 +537,17 @@ export function DesktopAccessGate({
     });
     return () => { cancelled = true; };
   }, [view.phase, view.phase === "auth" ? view.mode : null]);
+
+  useEffect(() => {
+    if (view.phase !== "auth") return;
+    let active = true;
+    setShowRememberedAccount(true);
+    const api = desktopApi();
+    if (api?.auth.getRememberedAccount) void api.auth.getRememberedAccount({ meta: createRequestMeta() }).then((result) => {
+      if (active && result.ok) setRememberedAccount(result.data);
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, [view.phase, refreshRevision]);
 
   // 重发倒计时：一秒一跳，到 0 放开「发送验证码」。
   useEffect(() => {
@@ -1035,6 +1058,46 @@ export function DesktopAccessGate({
   };
   const endGateAction = () => { gateActionRef.current = false; };
 
+  const enterRoom = () => {
+    setPassword(""); setConfirmPassword(""); setEmailCode(""); setResendIn(0); setCodeNotice(null);
+    registrationSessionRef.current = null; setRegistrationCreated(false);
+    beginRoomReveal(); requestBootstrap();
+  };
+
+  const uploadRegistrationAvatar = async (api: AstellaDesktopApiM2, epoch: number) => {
+    const file = registrationAvatar.file ?? await avatarPresetFile(registrationAvatar.preset);
+    const bytesBase64 = await avatarFileBase64(file);
+    unwrapGatewayResult(await api.auth.uploadAvatar({ meta: createRequestMeta(epoch), request: {
+      version: 1, fileName: file.name, mimeType: file.type, bytesBase64,
+    } }));
+  };
+
+  const handleQuickLogin = async () => {
+    const api = desktopApi();
+    if (!api || !beginGateAction()) return;
+    setFormBusy(true); setFormFailure(null);
+    try {
+      unwrapGatewayResult(await api.auth.resumeRememberedAccount({ meta: createRequestMeta() }));
+      enterRoom();
+    } catch (error) {
+      setFormFailure(gateErrorPolicy(error, "快捷登录没有完成").detail);
+      const result = await api.auth.getRememberedAccount({ meta: createRequestMeta() }).catch(() => null);
+      if (result?.ok && !result.data) { setRememberedAccount(null); setShowRememberedAccount(false); }
+    } finally { setFormBusy(false); endGateAction(); }
+  };
+
+  const forgetRememberedAccount = async () => {
+    const api = desktopApi();
+    if (!api || !beginGateAction()) return;
+    setFormBusy(true);
+    try {
+      unwrapGatewayResult(await api.auth.forgetRememberedAccount({ meta: createRequestMeta() }));
+      setRememberedAccount(null); setShowRememberedAccount(false); setFormFailure(null);
+      setEmail(""); setPassword("");
+    } catch (error) { setFormFailure(gateErrorPolicy(error, "账号没有忘记").detail); }
+    finally { setFormBusy(false); endGateAction(); }
+  };
+
   /** 发一枚验证码。本机只查邮箱格式，限流与通道状态由服务端回答。 */
   const handleSendCode = async () => {
     const api = desktopApi();
@@ -1081,6 +1144,7 @@ export function DesktopAccessGate({
       setFormFailure(localFailure);
       return;
     }
+    if (resendIn > 0) { setRegisterStep("verify"); return; }
     setFormBusy(true);
     setFormFailure(null);
     setCodeNotice(null);
@@ -1103,8 +1167,20 @@ export function DesktopAccessGate({
     const api = desktopApi();
     if (!api || view.phase !== "auth") return;
     if (!beginGateAction()) return;
-    // 注册第一步的「下一步」走发码那条路，不提交注册。
-    if (view.mode === "register" && emailChannelAvailable && registerStep === "details") {
+    if (view.mode === "register" && registerStep === "details" && !registrationCreated) {
+      const failure = validateAuthForm({ mode: "register", email, password, confirmPassword });
+      if (failure) setFormFailure(failure);
+      else { setFormFailure(null); setRegisterStep("avatar"); }
+      endGateAction(); return;
+    }
+    if (view.mode === "register" && registrationSessionRef.current !== null) {
+      setFormBusy(true); setFormFailure(null);
+      try { await uploadRegistrationAvatar(api, registrationSessionRef.current); enterRoom(); }
+      catch (error) { setFormFailure(error instanceof Error ? error.message : "头像没有上传成功，请重试。"); }
+      finally { setFormBusy(false); endGateAction(); }
+      return;
+    }
+    if (view.mode === "register" && emailChannelAvailable && registerStep === "avatar") {
       try {
         await handleRegisterNext();
       } finally {
@@ -1168,14 +1244,18 @@ export function DesktopAccessGate({
               ...(emailChannelAvailable && emailCode.trim() ? { emailCode: emailCode.trim() } : {}),
             })
           : await api.auth.login({ meta: createRequestMeta(), email, password, remember: keepSignedIn });
-      unwrapGatewayResult(response);
-      setPassword("");
-      setConfirmPassword("");
-      setEmailCode("");
-      setResendIn(0);
-      setCodeNotice(null);
-      beginRoomReveal();
-      requestBootstrap();
+      const session = unwrapGatewayResult(response);
+      if (registering) {
+        registrationSessionRef.current = session.workspaceEpoch;
+        setRegistrationCreated(true);
+        try { await uploadRegistrationAvatar(api, session.workspaceEpoch); }
+        catch {
+          setRegisterStep("avatar");
+          setFormFailure("账号已创建，头像还没有上传成功。可以重试，也可以进入书房后再设置。");
+          return;
+        }
+      }
+      enterRoom();
     } catch (error) {
       const policy = gateErrorPolicy(
         error,
@@ -1300,16 +1380,41 @@ export function DesktopAccessGate({
   }
 
   if (view.phase === "auth") {
+    if (view.mode === "login" && showRememberedAccount && rememberedAccount) {
+      const name = rememberedAccount.displayName || rememberedAccount.email.split("@")[0];
+      const [local, domain] = rememberedAccount.email.split("@");
+      return <GateFrame title="欢迎回来" detail="" motionMode={motionMode} centeredBrand
+        backdropUrls={gateBackdropUrls} corner={<GateUpdateRow />} {...gateSceneProps}>
+        <form className="desktop-access-gate__form" aria-busy={formBusy} onSubmit={(event) => { event.preventDefault(); void handleQuickLogin(); }}>
+          <div className="desktop-access-gate__quick-account">
+            <button type="submit" disabled={formBusy} aria-label={`登录${name}`}>
+              {rememberedAccount.avatarDataURL
+                ? <img className="desktop-access-gate__quick-avatar" src={rememberedAccount.avatarDataURL} alt="" />
+                : <span className="desktop-access-gate__quick-avatar desktop-access-gate__quick-initial">{Array.from(name)[0]}</span>}
+            </button>
+            <strong>{name}</strong><p>{local.slice(0, 2)}•••@{domain}</p><p>点击头像登录</p>
+          </div>
+          {formFailure ? <p className="desktop-access-gate__form-error" role="alert">{formFailure}</p> : null}
+          <button className="desktop-access-gate__primary" type="submit" disabled={formBusy}>{formBusy ? "正在登录…" : "登录此账号"}</button>
+          <button className="desktop-access-gate__text-action" type="button" disabled={formBusy} onClick={() => {
+            setShowRememberedAccount(false); setFormFailure(null); setEmail(""); setPassword("");
+          }}>使用其他账号</button>
+          <button className="desktop-access-gate__text-action desktop-access-gate__text-action--quiet" type="button" disabled={formBusy}
+            onClick={() => void forgetRememberedAccount()}>忘记此账号</button>
+        </form>
+      </GateFrame>;
+    }
     const registering = view.mode === "register";
     const resetting = view.mode === "reset";
     const viaCode = view.mode === "login" && loginViaCode;
     // 注册分两步（只在有邮箱通道时）：第一步基础信息，第二步邮箱验证码。
     const registerVerifying = registering && emailChannelAvailable && registerStep === "verify";
-    const registerBasics = !registering || !emailChannelAvailable || registerStep === "details";
+    const choosingAvatar = registering && registerStep === "avatar";
+    const registerBasics = !registering || registerStep === "details";
     const showCodeField = viaCode || resetting || registerVerifying;
     const title = resetting
       ? "重置密码"
-      : registerVerifying
+      : choosingAvatar ? "选一个头像" : registerVerifying
         ? "确认邮箱"
         : registering
           ? "创建账号"
@@ -1318,7 +1423,7 @@ export function DesktopAccessGate({
             : "欢迎回来";
     const detail = resetting
       ? "邮箱收验证码，设置一个新密码。"
-      : registerVerifying
+      : choosingAvatar ? "已随机选好一个头像。也能换表情或上传照片，以后随时更改。" : registerVerifying
         ? `验证码已发到 ${email.trim()}，5 分钟内有效。没收到就看看垃圾邮件。`
         : registering
           ? emailChannelAvailable
@@ -1343,7 +1448,9 @@ export function DesktopAccessGate({
           noValidate
           onSubmit={handleAuthSubmit}
         >
-          <div className={`desktop-access-gate__fields${registering ? " desktop-access-gate__fields--register" : ""}`}>
+          {registering ? <p className="desktop-access-gate__avatar-progress">创建账号 · 第 {registerStep === "details" ? 1 : choosingAvatar ? 2 : 3} 步，共 {emailChannelAvailable ? 3 : 2} 步</p> : null}
+          {choosingAvatar ? <RegistrationAvatarPicker value={registrationAvatar} disabled={formBusy} onChange={setRegistrationAvatar} /> : null}
+          <div className={`desktop-access-gate__fields${registering ? " desktop-access-gate__fields--register" : ""}`} hidden={choosingAvatar}>
           <label className={registering ? "desktop-access-gate__field--wide" : undefined}>
             <span className="desktop-access-gate__field-label">邮箱</span>
             <span className="desktop-access-gate__field-control">
@@ -1401,7 +1508,7 @@ export function DesktopAccessGate({
               </span>
             </label>
           ) : null}
-          {!viaCode && !registerVerifying ? (
+          {!viaCode && !registerVerifying && !choosingAvatar ? (
           <label>
             <span className="desktop-access-gate__field-label">
               {resetting ? "新密码" : "密码"} {registering || resetting ? <small>至少 {MIN_PASSWORD_LENGTH} 位</small> : null}
@@ -1429,7 +1536,7 @@ export function DesktopAccessGate({
             </span>
           </label>
           ) : null}
-          {(registering || resetting) && !registerVerifying ? (
+          {(registering || resetting) && !registerVerifying && !choosingAvatar ? (
             <label>
               <span className="desktop-access-gate__field-label">{resetting ? "确认新密码" : "确认密码"}</span>
               <span className="desktop-access-gate__field-control">
@@ -1502,19 +1609,20 @@ export function DesktopAccessGate({
                   : registering ? <Mail size={17} aria-hidden="true" />
                     : viaCode ? <Mail size={17} aria-hidden="true" />
                       : <LogIn size={17} aria-hidden="true" />}
-            {formBusy
+            {registrationCreated ? (formBusy ? "正在上传头像…" : "重试上传头像") : formBusy
               ? registering
                 ? registerVerifying ? "正在创建账号…" : "正在发送验证码…"
                 : resetting ? "正在重置…" : "正在登录…"
               : resetting ? "重置密码"
                 : registering
-                  ? registerVerifying ? "创建账号" : "下一步"
+                  ? registerVerifying || (choosingAvatar && !emailChannelAvailable) ? "创建账号" : "下一步"
                   : "登录"}
             {/* 登录态不排尾箭头：`→]` 与 `→` 都在说"进入"，而文字已经写了"登录"。
                 尾箭头留给注册的两步——那里说的是"往下一步走"，方向就是它要讲的。 */}
             {!formBusy && registering ? <ArrowRight className="desktop-access-gate__primary-arrow" size={16} aria-hidden="true" /> : null}
           </button>
-          {registerVerifying ? (
+          {registrationCreated ? <button className="desktop-access-gate__text-action" type="button" disabled={formBusy} onClick={enterRoom}>稍后再设置，进入书房</button> : null}
+          {(registerVerifying || choosingAvatar) && !registrationCreated ? (
             <button
               className="desktop-access-gate__text-action desktop-access-gate__text-action--quiet"
               type="button"
@@ -1523,12 +1631,11 @@ export function DesktopAccessGate({
                 setFormFailure(null);
                 setCodeNotice(null);
                 setEmailCode("");
-                setResendIn(0);
-                setRegisterStep("details");
+                setRegisterStep(registerVerifying ? "avatar" : "details");
               }}
             >
               <ArrowLeft size={15} aria-hidden="true" />
-              返回上一步，改邮箱或密码
+              返回上一步
             </button>
           ) : null}
           {!registering && !resetting ? (
@@ -1592,7 +1699,9 @@ export function DesktopAccessGate({
               返回登录
             </button>
           ) : null}
-          {!resetting ? (
+          {!registering && !resetting && rememberedAccount ? <button className="desktop-access-gate__text-action" type="button" disabled={formBusy}
+            onClick={() => { setShowRememberedAccount(true); setFormFailure(null); }}>返回头像登录</button> : null}
+          {!resetting && !registrationCreated ? (
           <button
             className="desktop-access-gate__text-action desktop-access-gate__text-action--mode"
             type="button"
@@ -1608,6 +1717,7 @@ export function DesktopAccessGate({
               setResendIn(0);
               setLoginViaCode(false);
               setRegisterStep("details");
+              setRegistrationAvatar(randomAvatarChoice());
               setView({ phase: "auth", mode: registering ? "login" : "register" });
             }}
           >

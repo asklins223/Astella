@@ -25,6 +25,18 @@ test("assistant history and rejected drafts cannot establish source evidence", (
   assert.equal(unverifiedQuoteClaims(`> ${fabricated}`, sources).length, 1);
 });
 
+test("a material read stays unverified after correction until a real receipt exists", () => {
+  const input = { said: "这篇主要说明记录操作和预期的方法。", contextText: "", messages: [], turnToolUse: "read",
+    pageContext: null, stepCalls: 0, toolCallCount: 0, finalAnswerOnly: false,
+    stepCount: 2, stepBudget: Infinity, nowMs: 1, deadlineAt: 1000, userAskedForAction: false,
+    requestedActionTools: [], actionSteerAttempts: 0, lookupClaimSteered: true,
+    quoteCorrectionUsed: false, requiresReadReceipt: true };
+  const result = reviewCompanionStepCorrection(input);
+  assert.equal(result.lookupClaim, true);
+  assert.equal(result.steerPlan.steer, false, "the correction must not repeat forever");
+  assert.equal(reviewCompanionStepCorrection({ ...input, requiresReadReceipt: false }).lookupClaim, false);
+});
+
 test("compaction retains exact quote evidence privately without treating summary prose as original source", () => {
   const original = "末尾最终更正：颜色仍未决定，旧方案已撤回且从未执行。";
   const invented = "生成摘要里编造出来的那段话没有原文依据，不能成为引用。";
@@ -85,11 +97,12 @@ test("a completed read can correct an invalid quote once, without relaxing final
 });
 
 test("search round limit is distinct from an account toggle or service failure", () => {
-  const exhausted = unavailableCompanionToolSummary("agent_web_search", { webSearchEnabled: true }, { searchLimitReached: true });
+  // 执行层传的是内部动作名（`web.search`），账号开关与额度都按它判。
+  const exhausted = unavailableCompanionToolSummary("web.search", { webSearchEnabled: true }, { searchLimitReached: true });
   assert.match(exhausted!, /本轮搜索次数已用完/);
   assert.doesNotMatch(exhausted!, /关闭|不可用|未能联网核实/);
-  assert.match(unavailableCompanionToolSummary("agent_web_search", { webSearchEnabled: false }, { searchLimitReached: true })!, /关闭/);
-  assert.equal(unavailableCompanionToolSummary("agent_web_search", { webSearchEnabled: true }), null);
+  assert.match(unavailableCompanionToolSummary("web.search", { webSearchEnabled: false }, { searchLimitReached: true })!, /关闭/);
+  assert.equal(unavailableCompanionToolSummary("web.search", { webSearchEnabled: true }), null);
 });
 
 test("只读了她的手册时，讲解正文里「」举的例子不算编造引文；读了用户材料仍严格", () => {

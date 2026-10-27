@@ -78,4 +78,24 @@ describe("session credential storage", () => {
     await store.save("second-account-token");
     await expect(createSessionCredentialStore().load()).resolves.toBe("second-account-token");
   });
+
+  it("keeps quick login separate from the active session, including after a restart", async () => {
+    const saved = { origin: "https://study.test", token: "quick-token", email: "reader@example.com", displayName: "Reader", avatarDataURL: null };
+    const store = createSessionCredentialStore();
+    await store.save("active-token");
+    await store.saveRemembered!(saved);
+    await store.clear();
+    const restarted = createSessionCredentialStore();
+    expect(restarted.hasStored()).toBe(false);
+    await expect(restarted.load()).resolves.toBeNull();
+    await expect(restarted.loadRemembered!()).resolves.toEqual(saved);
+    expect((await stat(join(directory, "quick-login-account-v1.json"))).mode & 0o777).toBe(0o600);
+    await restarted.clearRemembered!();
+    await expect(createSessionCredentialStore().loadRemembered!()).resolves.toBeNull();
+  });
+
+  it("rejects a malformed remembered record", async () => {
+    await writeFile(join(directory, "quick-login-account-v1.json"), JSON.stringify({ token: "secret", origin: "https://study.test", email: "broken" }));
+    await expect(createSessionCredentialStore().loadRemembered!()).resolves.toBeNull();
+  });
 });

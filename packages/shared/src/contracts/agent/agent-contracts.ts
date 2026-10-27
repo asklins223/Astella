@@ -53,9 +53,10 @@ export const agentTurnInterpretationProposalV1Schema = z.object({
   toolUse: z.enum(["none", "read", "act", "uncertain"]),
   // 解释的条目数不在这里收口：提示词要求「窗口里每一条这样的消息都要列出来」，
   // 合同再封顶就是让它在说完之后被判非法。单条描述仍按字段长度校验。
-  subjects: z.array(z.object({ description: z.string().max(120), objectIndex: z.number().int().nonnegative().optional() }).strict()),
+  subjects: z.array(z.preprocess(value => typeof value === "string" ? { description: value } : value,
+    z.object({ description: z.string().max(120), objectIndex: z.number().int().nonnegative().nullish().transform(value => value ?? undefined) }).strict())),
   goalRelation: z.enum(["unrelated", "new", "continue", "revise", "control", "discuss", "unclear"]),
-  goalObjectIndex: z.number().int().nonnegative().optional(),
+  goalObjectIndex: z.number().int().nonnegative().nullish().transform(value => value ?? undefined),
   candidateOperations: z.array(z.string().min(1).max(100)),
   ambiguities: z.array(z.string().max(200)),
   /** Semantic, current-turn TTS direction. `none` never inherits a past request implicitly. */

@@ -1,6 +1,8 @@
 import { agentTurnInterpretationV1Schema } from "@astella/shared/agent-contracts";
 import {
   COMPANION_AGENT_CONTRACT_VERSION,
+  COMPANION_DOMAIN_ACTIONS,
+  companionDomainOperation,
   companionAgentCapabilitySnapshotV1Schema,
   resolveAllCompanionAgentTools,
   resolveCompanionInitialToolNames,
@@ -14,11 +16,9 @@ import { startCompanionSpeculativeFirstSteps } from "../agent/companion-speculat
 import { loadCompanionRuntimeCheckpoint } from "../agent/companion-runtime-checkpoint.ts";
 import { updateRunMeta, readRunMeta } from "../agent/companion-agent-events.ts";
 import { companionExecutionPolicy } from "../agent/companion-execution-policy.ts";
-import { webSearchServiceAvailable } from "../../agent/web-search.ts";
 import type { AgentEventContext } from "../tools/companion-read-tools.ts";
 import type { CompanionAgentLoopArgs } from "../../contracts/companion-agent-loop.ts";
-import { explicitCompanionProductRequest, explicitlyRequestsUtterances } from "../tools/companion-tool-intent.ts";
-import { companionRequestRequirements } from "./companion-request-requirements.ts";
+import { companionRequestsAction } from "./companion-step-plan.ts";
 
 /**
  * 回合前段：投机器出发、注意力落定、历史绑定、工具面与能力快照（44 §3.3 装配回执）。
@@ -41,6 +41,8 @@ export interface CompanionTurnPreambleDeps {
   handlerStartedAtMs: number;
   deadlineAt: number;
   elapsedMsDelta: number;
+  /** Speculation exists to overlap a classifier round-trip. Direct entry has none. */
+  speculationAllowed: boolean;
   getMessages: () => AgentTurnRequest["messages"];
   setMessages: (messages: AgentTurnRequest["messages"]) => void;
 }
@@ -51,12 +53,6 @@ export async function settleCompanionTurnPreamble(deps: CompanionTurnPreambleDep
   } = deps.loopArgs;
   const { event } = deps;
   const pageKind = (read.pageContext as { context?: { pageKind?: string } } | null)?.context?.pageKind ?? null;
-  /**
-   * Speculation must use the same reduced surface as the formal first step.
-   * It starts before the classifier lands, so it cannot see candidate groups;
-   * core + page groups is the honest superset for a clean turn. A prefetched
-   * tool call from a candidate group is admitted by the runtime afterwards.
-   */
   const speculativeNames = resolveCompanionInitialToolNames({
     availableToolNames: deps.availableDefinitions.map(definition => definition.name),
     pageKind,
@@ -65,20 +61,14 @@ export async function settleCompanionTurnPreamble(deps: CompanionTurnPreambleDep
   const speculativeTools = deps.availableDefinitions
     .filter(definition => speculativeNames.has(definition.name))
     .map(({ name, description, parameters }) => ({ name, description, parameters }));
-
-  /**
-   * 两条投机（闲聊形状 + 提问形状）现在就出发，分类器不等。发与收的细节、
-   * 入场条件与"为什么走流式"都写在 `companion-speculative-flights.ts`；
-   * 攒住/作废由 `runStreamingAgentStep` 的 `releaseGate` 执行，留哪一版在下面定。
-   */
+  // Hybrid already owns its fast first request. Cached interpretations also
+  // prevent duplicate speculative requests while that entry is pending.
   const speculativeFlights = startCompanionSpeculativeFirstSteps({
-    allowSpeculation: !read.userImageAttachments?.length && !explicitCompanionProductRequest(read.userText).newNote
-      && !explicitCompanionProductRequest(read.userText).artifact && !companionRequestRequirements(read.userText).characters
-      && !explicitlyRequestsUtterances(read.userText),
-    provider: provider,
+    allowSpeculation: deps.speculationAllowed && !read.userImageAttachments?.length,
+    provider,
     ctxSignal: ctx.signal,
     onProviderDelta: deps.recovered ? undefined : onProviderDelta,
-    ...(onReasoningDelta ? { onReasoningDelta: onReasoningDelta } : {}),
+    ...(onReasoningDelta ? { onReasoningDelta } : {}),
     attention: deps.attentionPromise,
     cachedInterpretation: deps.cachedInterpretation,
     turnPolicy: typeof baseMessages[0]?.content === "string" ? baseMessages[0].content : "",
@@ -87,8 +77,6 @@ export async function settleCompanionTurnPreamble(deps: CompanionTurnPreambleDep
     messages: deps.getMessages(),
     deadlineAt: deps.deadlineAt,
     availableTools: speculativeTools,
-    webSearchAllowed: deps.meta.webSearchEnabled === true && event.constraints.webSearchEnabled === true
-      && (deps.budget.maxWebSearchCalls == null || deps.budget.maxWebSearchCalls > 0) && webSearchServiceAvailable(),
     toolCallCount: deps.meta.toolCallCount,
     releaseRouter: deps.loopArgs.releaseRouter,
   });
@@ -113,9 +101,10 @@ export async function settleCompanionTurnPreamble(deps: CompanionTurnPreambleDep
     attention, runId: read.runId, deadlineAt: deps.deadlineAt, handlerStartedAtMs: deps.handlerStartedAtMs,
   });
   const toolIntent = attention.toolUse === "none" ? false : attention.toolUse === "uncertain" ? null : true;
-  const userRequiresTool = companionStepRequiresTool(toolIntent,
+  const userAskedForAction = companionRequestsAction(attention, deps.availableDefinitions);
+  const userRequiresTool = userAskedForAction || companionStepRequiresTool(toolIntent,
     attention.toolUse === "read" ? attention.candidateOperations : undefined);
-  const userAskedForAction = attention.toolUse === "act";
+  const reminderListAsked = attention.candidateOperations.includes("attention.read.reminders");
   /**
    * 工具面只由声明决定：权限档 + 数据外发政策，也就是 `resolveAllCompanionAgentTools`
    * 给出的那一份（它自己的注释：Exposure is a view of the project catalog, filtered by
@@ -149,8 +138,13 @@ export async function settleCompanionTurnPreamble(deps: CompanionTurnPreambleDep
   // "她声称的动作是否已有回执"，把全部写工具塞进去等于让任意一次写替这次声称作证。
   // 一个都没点名时留空：纠正指令会退回 `steerableActionTools`（见 step-plan 那条 fallback），
   // 宁可多 steer 一次，也不要放过一句没做过的事。
-  const requestedActionTools = attention.candidateOperations.filter(name => definitions.some(
-    definition => definition.name === name && definition.riskClass !== "read"));
+  // Candidate operations are internal operation ids; definitions are domain
+  // tools. Normalize both sides so either shape names the write tool.
+  const writeOperationNames = new Set(definitions
+    .filter(definition => definition.riskClass !== "read")
+    .flatMap(definition => [definition.name, ...(COMPANION_DOMAIN_ACTIONS[definition.name as keyof typeof COMPANION_DOMAIN_ACTIONS] ?? [])
+      .map(action => companionDomainOperation(definition.name, action) ?? definition.name)]));
+  const requestedActionTools = [...new Set(attention.candidateOperations.filter(name => writeOperationNames.has(name)))];
   const providerCapabilities = provider.getCapabilities?.();
   const providerCapabilityFingerprint = sha256Utf8V1(canonicalJsonV1({
     capabilityFingerprint: providerCapabilities?.fingerprint ?? null,
@@ -187,6 +181,7 @@ export async function settleCompanionTurnPreamble(deps: CompanionTurnPreambleDep
     steerableReadTools,
     steerableActionTools,
     requestedActionTools,
+    reminderListAsked,
     capabilitySnapshot,
   };
 }

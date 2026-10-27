@@ -26,7 +26,9 @@ import { readCompanionMemoryWriteSource } from "../memory/companion-memory-write
 
 import { sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
+import { readParticipationPreferences, writeParticipationPreferences } from "@astella/agent-host";
 import {
+  normalizeCompanionMemoryContent,
   type CompanionAgentToolDefinitionV1,
 } from "@astella/shared";
 import {
@@ -63,6 +65,7 @@ import { runWorkerEmbeddingTask } from "../note/worker-ai-task.ts";
 import type { EmbeddingProviderLike } from "../../lib/ai-provider.ts";
 import {
   CompanionToolError,
+  CompanionToolNotExecutedError,
   type AgentToolExecutionResult,
 } from "./companion-tool-result.ts";
 
@@ -82,7 +85,7 @@ export async function executeCompanionMemoryTool(
   toolCallId?: string,
 ): Promise<AgentToolExecutionResult> {
   switch (definition.name) {
-    case "companion_read_memory": {
+    case "memory.read.read": {
       const memoryId = String(args.memoryId);
       const expectedRevision = Number(args.expectedRevision);
       const memory = await withWorkerWorkspaceTransaction(
@@ -152,7 +155,7 @@ export async function executeCompanionMemoryTool(
         safeSummary: "已展开一条仍有效的记忆正文",
       };
     }
-    case "companion_recall_memory": {
+    case "memory.read.recall": {
       // 默认避免重复本轮已注入项；管理已显示的记忆时显式 includeShown，取得其真实 ID、版本与容量层。
       const query = String(args.query).trim();
       const limit = typeof args.limit === "number" ? Math.min(8, Math.max(1, args.limit)) : 5;
@@ -314,7 +317,7 @@ export async function executeCompanionMemoryTool(
     //   user_stated = false（判断永远不是"用户说的"）
     //   scope = 'workspace'（§4.5.5：不通过判断接口绕过跨空间限制）
     //   epistemic_status 由模型如实给，不是我们替它乐观
-    case "companion_remember_judgment": {
+    case "memory.write.judgment": {
       const text = String(args.text);
       const epistemicStatus = String(args.epistemicStatus);
       const claimedIds = Array.isArray(args.sourceEventIds)
@@ -437,7 +440,12 @@ export async function executeCompanionMemoryTool(
           : "记下了她对这一件事的理解（这是她的看法，不是事实）",
       };
     }
-    case "companion_save_memory": {
+    case "memory.write.save": {
+      // "你自己记一下" 是她的记事抽屉，不是用户事实。存进记忆会把这条放错地方，
+      // 还让她对用户说"记下了"而自己的记事里其实没有。
+      if (/(?:你自己|你自己的|记进你自己的|写进你自己的)[^，。！？\n]{0,6}(?:记事|记一下|记下|记录|写一下|写下)|你的记事里/u
+        .test(event.read.userText ?? ""))
+        throw new CompanionToolNotExecutedError("用户这句是要你记进自己的记事，不是存成用户事实；用 self_note 记下，再继续回答。");
       // 写入口径对齐 API memory-service.upsertMemory 的"用户明确陈述"路径：
       // user_stated/user_confirmed=true、candidate=false、embedding_status='pending'
       // （embedding 流水线随后补向量）。参数 schema 显式拒绝 >200 字，不再裁短后写入。
@@ -537,7 +545,7 @@ export async function executeCompanionMemoryTool(
         safeSummary: `已记住（${content.slice(0, 60)}${content.length > 60 ? "…" : ""}）`,
       };
     }
-    case "companion_revise_memory": {
+    case "memory.write.revise": {
       // `guided` 在 proposal decision 链路调用 API correctMemory；`full` 预授权走这里。
       // 保持同一 ID 和来源，由 DB revision trigger 追加旧版本，并用 expectedRevision 做 CAS。
       const memoryId = String(args.memoryId);
@@ -695,7 +703,7 @@ export async function executeCompanionMemoryTool(
           : "记忆内容没有变化",
       };
     }
-    case "companion_move_memory": {
+    case "memory.write.move": {
       // A budget-tier move changes future prompt eligibility, so it belongs with the
       // reversible direct-write tools rather than the read executor.
       const memoryId = String(args.memoryId);
@@ -731,7 +739,7 @@ export async function executeCompanionMemoryTool(
     // 形状与 read_memory 完全一致：**稳定 ID + 确切版本**，版本不符即拒。
     // 手册会随用户纠正升版，所以拿着上一版的 id 来读不能悄悄拿到新内容——
     // 否则「她读的是哪一版」这个问题永远没人答得上来。
-    case "companion_read_playbook": {
+    case "memory.read.playbook": {
       const playbookId = String(args.playbookId);
       const expectedVersion = Number(args.expectedVersion);
       if (!event.read.playbookCatalog.some(entry => entry.playbookId === playbookId && entry.version === expectedVersion)) {
@@ -777,7 +785,7 @@ export async function executeCompanionMemoryTool(
     //     看到的那一版是稳定的；版本不符就说"你看到的那一版已经不在了"，
     //     而不是悄悄拿新版顶上——那会让她对着另一篇东西解释。
     //  3. **撤回/删除后不再读**。`deleted_at IS NULL` 交给 RLS 与 WHERE 双重保证。
-    case "companion_read_diary": {
+    case "memory.read.diary": {
       const date = String(args.date);
       const expectedVersion = Number(args.expectedVersion);
       const diary = await withWorkerWorkspaceTransaction(
@@ -828,7 +836,7 @@ export async function executeCompanionMemoryTool(
         safeSummary: `读到了 ${date} 的那篇日记`,
       };
     }
-    case "companion_forget_memory": {
+    case "memory.write.forget": {
       // 软删（deleted_at）：星图/记忆中心的既有语义就是按 deleted_at 过滤，
       // 硬删会把历史一起抹掉。删除前确认，落库时再核对用户看到的版本。
       //
@@ -839,16 +847,34 @@ export async function executeCompanionMemoryTool(
       //   ② 发现簿遮蔽 —— 用户收藏过这条记忆时，簿子里会留一段点不回去的引文（40 §7）。
       //   ③ 整理结论作废 —— `surface` 是这条记忆的转述，最长会被注入 7 天。
       // 少了这几步不会报错，只是"她看起来忘了，但旧话还从别处回来"。
-      const memoryId = String(args.memoryId);
-      const forgotten = await withWorkerWorkspaceTransaction(
+      const memoryId = String(args.memoryId ?? "");
+      // A query-only call is resolved by the runtime before the ledger freezes
+      // arguments. Reaching here without an id means resolution did not happen
+      // (or was ambiguous); deleting by id is the only safe path, so say so
+      // instead of running the update against an empty uuid.
+      if (!memoryId)
+        throw new CompanionToolNotExecutedError("还没确定要忘哪一条。先用 companion_memory_read（action=recall）找到那一条，再按它的 memoryId 删除。");
+      const said = String(event.read.userText ?? "");
+      const forgetResult = await withWorkerWorkspaceTransaction(
         { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
         async (tx) => {
+          // Forgetting is a destructive act: the memory she deletes must be the
+          // one the user pointed at. A wrong id silently removes an unrelated
+          // fact. The check reads and deletes in one transaction so no edit can
+          // slip between "this is the right one" and the delete.
           await tx.execute(sql`
             SELECT pg_advisory_xact_lock(
               hashtextextended(${companionMemoryMutationLockKey(event.read.userId)}, 0)
             )
           `);
-          const rows = await tx.execute<{ kind: string; sourceEventId: string | null; content: string }>(sql`
+          const [target] = await tx.execute<{ content: string }>(sql`SELECT content FROM assistant_memory_items
+            WHERE id=${memoryId}::uuid AND workspace_id=${event.ctx.workspaceId} AND user_id=${event.read.userId}
+              AND deleted_at IS NULL`);
+          const deictic = /(?:那条|这条|刚才|上面那|之前那)/u.test(said);
+          const overlap = target ? largestCommonRun(said, target.content) >= 4 : false;
+          if (target && !deictic && !overlap)
+            throw new CompanionToolNotExecutedError("要忘的那条和你这次说的对不上；先确认是哪一条，别删错。");
+          const rows = await tx.execute<{ id: string; kind: string; sourceEventId: string | null; content: string }>(sql`
             UPDATE assistant_memory_items
                SET deleted_at = now(),
                    purge_after = now() + ${companionMemoryRecycleBinDays}::int * interval '1 day',
@@ -858,28 +884,88 @@ export async function executeCompanionMemoryTool(
                AND user_id = ${event.read.userId}
                AND deleted_at IS NULL
                AND ${reviewedTargetMatches(event, toolCallId, sql`jsonb_build_object('content',content,'revision',revision)`)}
-            RETURNING kind, source_event_id AS "sourceEventId", left(content, 60) AS content
+            RETURNING id, kind, source_event_id AS "sourceEventId", content
           `);
           const forgotten = (Array.isArray(rows) ? rows : [])[0] ?? null;
           if (!forgotten) return null;
-          if (forgotten.sourceEventId !== null) {
+          /**
+           * The same preference may have been stored twice: once by the direct
+           * write and once by background extraction paraphrasing a later turn.
+           * "Forget that one" must remove the copies that carry the same fact,
+           * not leave a synonym behind. Only active rows of the same kind whose
+           * normalized prose contains, or is contained by, the target qualify.
+           */
+          const targetNorm = normalizeCompanionMemoryContent(forgotten.content);
+          const cascaded: { id: string; kind: string; sourceEventId: string | null; content: string }[] =
+            targetNorm.length < 6 ? [] : await tx.execute<{ id: string; kind: string; sourceEventId: string | null; content: string }>(sql`
+              UPDATE assistant_memory_items
+                 SET deleted_at = now(),
+                     purge_after = now() + ${companionMemoryRecycleBinDays}::int * interval '1 day',
+                     updated_at = now()
+               WHERE workspace_id = ${event.ctx.workspaceId}
+                 AND user_id = ${event.read.userId}
+                 AND kind = ${forgotten.kind}
+                 AND id <> ${memoryId}::uuid
+                 AND deleted_at IS NULL
+                 AND (
+                   position(${targetNorm} in regexp_replace(regexp_replace(lower(content), '[[:space:][:punct:]]', '', 'g'), '^(用户|我)', '')) > 0
+                   OR position(regexp_replace(regexp_replace(lower(content), '[[:space:][:punct:]]', '', 'g'), '^(用户|我)', '') in ${targetNorm}) > 0
+                 )
+               RETURNING id, kind, source_event_id AS "sourceEventId", content
+            `);
+          for (const row of [forgotten, ...cascaded]) {
+            if (row.sourceEventId !== null) {
+              await tx.execute(sql`
+                INSERT INTO assistant_memory_source_suppressions (user_id, kind, source_event_id)
+                VALUES (${event.read.userId}, ${row.kind}, ${row.sourceEventId})
+                ON CONFLICT (user_id, kind, source_event_id) DO NOTHING
+              `);
+            }
+            // 40 §7：撤权或删除后，发现簿里的来源引文同样遮蔽（不删行——"曾经收藏过"这件事
+            // 本身要留着）。worker 对这张表**一个权限都没有**（roles.sql 的 Worker privilege
+            // matrix 就是这么声明的），所以和下面那条 delivery 收尾一样，走一支带
+            // owner/workspace/memory 三重约束的 SECURITY DEFINER 函数（0441）。
             await tx.execute(sql`
-              INSERT INTO assistant_memory_source_suppressions (user_id, kind, source_event_id)
-              VALUES (${event.read.userId}, ${forgotten.kind}, ${forgotten.sourceEventId})
-              ON CONFLICT (user_id, kind, source_event_id) DO NOTHING
+              SELECT public.astella_mask_companion_memory_discovery_entries(
+                ${event.ctx.workspaceId}::uuid,
+                ${event.read.userId}::uuid,
+                ${row.id}::uuid
+              )
+            `);
+            await tx.execute(sql`
+              SELECT public.astella_close_companion_memory_delivery(
+                ${event.ctx.workspaceId}::uuid,
+                ${event.read.userId}::uuid,
+                ${row.id}::uuid,
+                'dismissed'
+              )
             `);
           }
-          // 40 §7：撤权或删除后，发现簿里的来源引文同样遮蔽（不删行——"曾经收藏过"这件事
-          // 本身要留着）。worker 对这张表**一个权限都没有**（roles.sql 的 Worker privilege
-          // matrix 就是这么声明的），所以和下面那条 delivery 收尾一样，走一支带
-          // owner/workspace/memory 三重约束的 SECURITY DEFINER 函数（0441）。
-          await tx.execute(sql`
-            SELECT public.astella_mask_companion_memory_discovery_entries(
-              ${event.ctx.workspaceId}::uuid,
-              ${event.read.userId}::uuid,
-              ${memoryId}::uuid
-            )
-          `);
+          /**
+           * The same preference can also live in the participation settings.
+           * A user who says "forget that" means the behaviour, not one storage
+           * table. Only a long shared phrase qualifies, so an unrelated
+           * participation preference is never disabled by a memory deletion.
+           */
+          let participationCleared = false;
+          if (event.read.userMessageId) {
+            const preferences = await readParticipationPreferences(tx, {
+              workspaceId: event.ctx.workspaceId, userId: event.read.userId,
+            });
+            if (preferences.enabled && largestCommonRun(forgotten.content, preferences.markdown) >= 8) {
+              await writeParticipationPreferences(tx, {
+                workspaceId: event.ctx.workspaceId, userId: event.read.userId,
+              }, {
+                expectedRevision: preferences.revision,
+                markdown: preferences.markdown,
+                enabled: false,
+                source: { kind: "user_message", workspaceId: event.ctx.workspaceId,
+                  messageId: event.read.userMessageId,
+                  quote: (said.trim() || forgotten.content).slice(0, 2_000) },
+              });
+              participationCleared = true;
+            }
+          }
           // 整理结论是这条记忆的转述：正文删了而它留着，等于被忘掉的话还在进 prompt。
           await tx.execute(sql`
             UPDATE companion_memory_organization_state
@@ -887,18 +973,10 @@ export async function executeCompanionMemoryTool(
              WHERE workspace_id = ${event.ctx.workspaceId}
                AND user_id = ${event.read.userId}
           `);
-          await tx.execute(sql`
-            SELECT public.astella_close_companion_memory_delivery(
-              ${event.ctx.workspaceId}::uuid,
-              ${event.read.userId}::uuid,
-              ${memoryId}::uuid,
-              'dismissed'
-            )
-          `);
-          return forgotten;
+          return { forgotten, cascaded, participationCleared };
         },
       );
-      if (!forgotten) {
+      if (!forgetResult) {
         // 这句会**同时**上屏（safeSummary）并回进模型上下文，所以两个读者都要顾到：
         // 屏上这句只说"没找到"；"该先 recall 再删、不许凭印象猜 id"那条指引写在工具自己的
         // 描述里（`companion-agent-registry.ts:144`），每一次请求都带着，比写在错误里更稳。
@@ -907,11 +985,28 @@ export async function executeCompanionMemoryTool(
         );
       }
       return {
-        value: { memoryId },
-        safeSummary: `已忘掉（${forgotten.content}）`,
+        value: { memoryId, alsoForgotten: forgetResult.cascaded.length,
+          participationCleared: forgetResult.participationCleared },
+        safeSummary: `已忘掉（${forgetResult.forgotten.content.slice(0, 60)}）`,
       };
     }
     default:
       throw new CompanionToolError("这一步不是记忆工具，不该走记忆这一族");
   }
+}
+
+/** Longest run of characters shared by both strings (titles and memories are short). */
+function largestCommonRun(left: string, right: string): number {
+  const a = left.replace(/\s+/gu, ""), b = right.replace(/\s+/gu, "");
+  if (!a || !b) return 0;
+  let best = 0;
+  const previous = new Array(b.length + 1).fill(0);
+  for (let i = 1; i <= a.length; i += 1) {
+    for (let j = b.length; j >= 1; j -= 1) {
+      previous[j] = a[i - 1] === b[j - 1] ? previous[j - 1] + 1 : 0;
+      if (previous[j] > best) best = previous[j];
+    }
+    previous[0] = 0;
+  }
+  return best;
 }

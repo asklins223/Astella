@@ -8,7 +8,10 @@ export const noteExpansionBlockV1Schema = z.strictObject({
 
 export const noteExpansionReferenceV1Schema = z.strictObject({
   blockOrdinal: z.number().int().min(0).max(100_000),
-  quote: z.string().trim().min(8).max(500),
+  // Short notes legitimately have short source sentences. The generator checks
+  // the quote against the actual block; the contract must not reject a valid
+  // three-line note before that check runs.
+  quote: z.string().trim().min(1).max(500),
 });
 
 export const noteExpansionDraftV1Schema = z.strictObject({

@@ -1,5 +1,7 @@
 # 55 · 手机交流重设计与两端共用的伴星实时接口
 
+**2026-10-24～25 用户最新决定与实现：** iOS 停用伴星 WebSocket，改用桌面同一套 durable SSE `/companion/conversations/:id/events`，通过 seq / `Last-Event-ID` 续接；提交、取消等命令走原有幂等 HTTP。Android 本轮保持 WebSocket。iOS 语音交互改为整个输入条内的连续通话状态和波形，VAD 停顿后自动发送，支持抢占旧回复与阻止迟到音频，离开所属页面或进入后台结束；内部仍是 MiMo 整段 ASR → Agent → 增量 TTS，不是流式 ASR 或直接音频到音频模型。回复使用气泡，同一回合包含过程与正文，失败且没有正文／成果的空记录过滤。用户要求先用本地 Docker 联调且不启动向量模型，实际结果及硬件未验证项见 [2026-10-25 联调记录](../../testing/ios-sse-local-2026-10-25.md)。下方 WebSocket 与手动转写描述保留为早期方案，不能代替本段的当前状态。
+
 **2026-10-24 approved audit decision:** Workspace owners may explicitly restore an exact saved note version on mobile. This operation switches the current-version pointer; it preserves all saved versions and does not create another version. The endpoint retains owner authorization and optional `baseVersionId` conflict protection. Members remain read-only for restoration, and ordinary mobile freeform body edits / collaboration updates remain forbidden. This supersedes the earlier blanket restriction only for saved-version restore.
 
 **2026-10-23 多图修订：**用户要求图片保持小缩略图、独立于文字气泡，并在覆盖全屏的浮层中浏览本次发送的整组图片。回合合同同步改为「可选首块文字＋最多 9 张图片＋最多一份文件」，取代 2026-10-15 的单附件上限；语音转写仍为唯一文字块。iOS 的系统相册使用有序多选，草稿可逐张预览／移除，发送时逐张上传，失败重试复用已有回执，完整上传后只提交一次用户消息。worker 保留全部九张的资产引用，不再截掉第三张之后的图片；图片归属与文件读取权限仍逐项校验。Android 此轮不重做入口。具体实测见 [记录与卡片验收](../../testing/ios-companion-records-2026-10-23.md)。
