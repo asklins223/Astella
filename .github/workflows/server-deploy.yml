@@ -25,6 +25,7 @@ jobs:
       edge_tts: ${{ steps.edge_tts.outputs.digest }}
       embedding: ${{ steps.embedding.outputs.digest }}
       image_prefix: ${{ steps.names.outputs.prefix }}
+      backup: ${{ steps.backup.outputs.digest }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -102,6 +103,19 @@ jobs:
           cache-from: type=gha,scope=embedding
           cache-to: type=gha,mode=max,scope=embedding
 
+      - name: Build standby object store from pinned upstream source
+        id: backup
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: infra/storage-backup/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.names.outputs.prefix }}-storage-backup:sha-${{ github.sha }}
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          cache-from: type=gha,scope=storage-backup
+          cache-to: type=gha,mode=max,scope=storage-backup
+
   deploy:
     needs: images
     runs-on: ubuntu-latest
@@ -121,9 +135,10 @@ jobs:
           WORKER_DIGEST: ${{ needs.images.outputs.worker }}
           TTS_DIGEST: ${{ needs.images.outputs.edge_tts }}
           EMBEDDING_DIGEST: ${{ needs.images.outputs.embedding }}
+          BACKUP_DIGEST: ${{ needs.images.outputs.backup }}
         run: |
-          printf 'API_IMAGE=%s-api@%s\nWORKER_IMAGE=%s-worker@%s\nEDGE_TTS_IMAGE=%s-edge-tts@%s\nEMBEDDING_IMAGE=%s-embedding@%s\n' \
-            "$PREFIX" "$API_DIGEST" "$PREFIX" "$WORKER_DIGEST" "$PREFIX" "$TTS_DIGEST" "$PREFIX" "$EMBEDDING_DIGEST" > deployment-images.env
+          printf 'API_IMAGE=%s-api@%s\nWORKER_IMAGE=%s-worker@%s\nEDGE_TTS_IMAGE=%s-edge-tts@%s\nEMBEDDING_IMAGE=%s-embedding@%s\nBACKUP_IMAGE=%s-storage-backup@%s\n' \
+            "$PREFIX" "$API_DIGEST" "$PREFIX" "$WORKER_DIGEST" "$PREFIX" "$TTS_DIGEST" "$PREFIX" "$EMBEDDING_DIGEST" "$PREFIX" "$BACKUP_DIGEST" > deployment-images.env
       - name: Deploy exact commit over verified SSH
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
@@ -166,6 +181,7 @@ jobs:
           WORKER_DIGEST: ${{ needs.images.outputs.worker }}
           TTS_DIGEST: ${{ needs.images.outputs.edge_tts }}
           EMBEDDING_DIGEST: ${{ needs.images.outputs.embedding }}
+          BACKUP_DIGEST: ${{ needs.images.outputs.backup }}
         run: |
           set -euo pipefail
           if [ -z "${RELEASE_CENTER_URL:-}" ] || [ -z "${RELEASE_CENTER_TOKEN:-}" ]; then

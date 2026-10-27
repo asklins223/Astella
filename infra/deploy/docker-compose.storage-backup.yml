@@ -26,7 +26,7 @@ services:
       - ./infra/deploy/nginx-storage-backup.conf:/etc/nginx/conf.d/storage-backup.conf:ro
   # Standby object store. Public data plane is TLS/S3 on :9443; console is private.
   backup-minio:
-    image: minio/minio:RELEASE.2024-12-18T13-15-44Z
+    image: ${BACKUP_IMAGE:?CI must provide BACKUP_IMAGE}
     command: server /data --console-address ':9001'
     restart: unless-stopped
     environment:
@@ -42,7 +42,7 @@ services:
       timeout: 5s
       retries: 12
   backup-init:
-    image: minio/mc:RELEASE.2024-11-21T17-21-54Z
+    image: ${API_IMAGE:?CI must provide API_IMAGE}
     user: '0:0'
     depends_on:
       backup-minio: {condition: service_healthy}
@@ -50,16 +50,12 @@ services:
       MINIO_ROOT_USER: ${STORAGE_BACKUP_ACCESS_KEY_ID:?Initialize backup credentials on the host}
       MINIO_ROOT_PASSWORD: ${STORAGE_BACKUP_SECRET_ACCESS_KEY:?Initialize backup credentials on the host}
       S3_BUCKET: ${STORAGE_BACKUP_BUCKET:-astella-backup}
-    entrypoint: ['/bin/sh', '-ec']
-    command:
-      - |
-        mc alias set standby http://backup-minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}" >/dev/null
-        mc mb -p "standby/$${S3_BUCKET}" >/dev/null
-        mc anonymous set none "standby/$${S3_BUCKET}" >/dev/null
-        mkdir -p /queue
-        chown 1000:1000 /queue
-        chmod 700 /queue
-    volumes: [object_backup_queue:/queue]
+    working_dir: /app
+    entrypoint: ['node']
+    command: ['/app/scripts/storage-backup-init.mjs']
+    volumes:
+      - object_backup_queue:/queue
+      - ./infra/deploy/storage-backup-init.mjs:/app/scripts/storage-backup-init.mjs:ro
     networks: [astella_net]
 volumes:
   object_backup_data:
