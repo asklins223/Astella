@@ -4,12 +4,13 @@
  * 用于 URL 来源解析时下载页面内嵌图片并上传到 MinIO，
  * 使图片可通过 /api/uploads/{objectKey} 访问。
  */
-import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, GetObjectCommand, HeadBucketCommand } from "@aws-sdk/client-s3";
 import { NodeHttpHandler } from "@smithy/node-http-handler";
 import { logger } from "./logger.ts";
 import {
   resolveStorageBucket,
   resolveStorageConfig,
+  resolveBackupStorageConfig,
   resolveStorageRequestTimeoutMs,
   type StorageEnv,
 } from "@astella/shared/storage-config";
@@ -81,6 +82,31 @@ function getClient(): S3Client {
 }
 
 
+let secondary: S3Client | undefined;
+let storageHealth: { secondary: boolean; until: number } | undefined;
+function secondaryClient(): S3Client {
+  if (secondary) return secondary;
+  const config = resolveBackupStorageConfig(process.env);
+  if (!config) throw new Error("Backup object storage is not configured");
+  secondary = new S3Client({ endpoint: config.endpoint, region: config.region, forcePathStyle: true,
+    credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, maxAttempts: 1,
+    requestChecksumCalculation: "WHEN_REQUIRED", responseChecksumValidation: "WHEN_REQUIRED",
+    requestHandler: new NodeHttpHandler({ connectionTimeout: 3_000, requestTimeout: config.requestTimeoutMs }) });
+  return secondary;
+}
+async function selectedStorage(): Promise<{ client: S3Client; bucket: string; secondary: boolean }> {
+  const config = resolveBackupStorageConfig(process.env);
+  if (!config) return { client: getClient(), bucket: getBucket(), secondary: false };
+  if (!storageHealth || storageHealth.until < Date.now()) {
+    let secondary = false;
+    try { await getClient().send(new HeadBucketCommand({ Bucket: getBucket() }), { abortSignal: AbortSignal.timeout(2_500) }); }
+    catch { secondary = true; }
+    storageHealth = { secondary, until: Date.now() + (secondary ? 15_000 : 30_000) };
+  }
+  return storageHealth.secondary ? { client: secondaryClient(), bucket: config.bucket, secondary: true }
+    : { client: getClient(), bucket: getBucket(), secondary: false };
+}
+
 const EXT_FROM_MIME: Record<string, string> = {
   "image/png": "png",
   "image/jpeg": "jpg",
@@ -103,13 +129,14 @@ export async function uploadSourceImage(
   const uuid = crypto.randomUUID();
   const objectKey = `${workspaceId}/sources/${sourceId}/${uuid}.${ext}`;
 
+  const storage = await selectedStorage();
   const command = new PutObjectCommand({
-    Bucket: getBucket(),
+    Bucket: storage.bucket,
     Key: objectKey,
     Body: body,
     ContentType: contentType,
   });
-  await getClient().send(command);
+  await storage.client.send(command);
   logger.debug({ objectKey, size: body.length }, "source image uploaded to storage");
   return objectKey;
 }
@@ -125,10 +152,14 @@ export async function getObjectBytes(objectKey: string, maxBytes = 4_000_000): P
   if (!objectKey || objectKey.includes("..")) {
     throw new Error("invalid object key");
   }
-  const response = await getClient().send(new GetObjectCommand({
-    Bucket: getBucket(),
-    Key: objectKey,
-  }));
+  const storage = await selectedStorage();
+  let response;
+  try { response = await storage.client.send(new GetObjectCommand({ Bucket: storage.bucket, Key: objectKey })); }
+  catch (error) {
+    const config = resolveBackupStorageConfig(process.env);
+    if (!config || storage.secondary) throw error;
+    response = await secondaryClient().send(new GetObjectCommand({ Bucket: config.bucket, Key: objectKey }));
+  }
   const stream = response.Body as AsyncIterable<Uint8Array> | undefined;
   if (!stream) throw new Error(`object ${objectKey} returned no body`);
   const chunks: Buffer[] = [];

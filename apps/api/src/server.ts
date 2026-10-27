@@ -1,3 +1,4 @@
+import { contentValidation } from "./modules/storage/content-validators.ts";
 import { companionNoteEditDispatch } from "./modules/note/companion-edit-dispatch.ts";
 import { companionNoteShareDispatch } from "./modules/note/companion-share-dispatch.ts";
 import { objectExportHook } from "./modules/storage/exports.ts";
@@ -385,6 +386,14 @@ async function main() {
   await app.register(importRoutes);
   await app.register(searchRoutes);
   await app.register(exportRoutes);
+  app.addHook("onSend", async (request, reply, payload) => {
+    const validation = contentValidation({ method: request.method, url: request.url, status: reply.statusCode,
+      ifNoneMatch: request.headers["if-none-match"], existingTag: reply.getHeader("ETag") }, payload);
+    if (!validation) return payload;
+    reply.header("ETag", validation.etag).header("Cache-Control", "private, no-cache");
+    if (validation.notModified) { reply.code(304); reply.removeHeader("Content-Length"); return null; }
+    return payload;
+  });
   await app.register(objectTransferRoutes);
   await app.register(auditRoutes);
   await app.register(uploadRoutes);

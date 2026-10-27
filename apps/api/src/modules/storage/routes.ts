@@ -1,15 +1,17 @@
+import { activeStorageLocation, backupEnabled, getBackupQueue, type StorageLocation } from "./replicas.ts";
 import { randomUUID, createHash } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { notes } from "@astella/shared/db-schema/note";
 import { MAX_SOURCE_TEXT_BYTES, objectTransferRequestSchema, objectTransferUploadSchema, type ObjectTransferRequest } from "@astella/shared/object-transfer-contracts";
 import { AVATAR_MAX_BYTES } from "@astella/shared/desktop-ipc-contracts";
+import { COMPANION_FILE_MAX_BYTES, COMPANION_FILE_MIME_TYPES } from "@astella/shared/companion-file-contracts";
 import { SOURCE_IMAGE_MAX_BYTES } from "@astella/shared/source-image-contracts";
 import { db, withWorkspaceTransaction, scopeOfSession, type WorkspaceTransactionContext } from "../../db/client.ts";
 import { requireSession, isWorkspaceOwner } from "../identity/middleware.ts";
 import { parseBody } from "../../lib/validate.ts";
 import { storageTransferOrigins, usesRemoteStorage, signObjectUpload, getObject, headObject, deleteObject, persistObject } from "../../lib/object-storage.ts";
-import { uploadNoteImage, uploadCompanionImage, uploadAvatar, uploadImportedImage } from "../upload/upload-service.ts";
+import { uploadNoteImage, uploadCompanionImage, uploadAvatar, uploadImportedImage, uploadCompanionFile } from "../upload/upload-service.ts";
 import { createSource } from "../source/service.ts";
 import { sourceCreateSchema } from "../source/schema.ts";
 // Share the import payload contract with the established Markdown import domain.
@@ -19,7 +21,7 @@ import { prepareMarkdownImport, importMarkdownNotes, finalizeMarkdownImport } fr
 import { RateLimiter, createRateLimitStoreFromEnv } from "../../lib/rate-limit-store.ts";
 
 type TransferRow = { id: string; staging_key: string; request_json: ObjectTransferRequest;
-  status: "pending" | "verifying" | "completed" | "failed"; result_json: unknown; result_status: number | null; expires_at: Date };
+  status: "pending" | "verifying" | "completed" | "failed"; result_json: unknown; result_status: number | null; expires_at: Date; storage_location: StorageLocation };
 const limiter = new RateLimiter(createRateLimitStoreFromEnv(), { windowMs: 60_000, maxAttempts: 20 });
 const avatarLimiter = new RateLimiter(createRateLimitStoreFromEnv(), { windowMs: 60_000, maxAttempts: 5 });
 /**
@@ -40,7 +42,10 @@ export function validateTransferPurpose(request: ObjectTransferRequest): void {
   const max = request.purpose === "avatar" ? AVATAR_MAX_BYTES
     : request.purpose === "markdown_import_image" ? SOURCE_IMAGE_MAX_BYTES
     : image ? 10 * 1024 * 1024
+    : request.purpose === "companion_file" ? COMPANION_FILE_MAX_BYTES
     : request.purpose === "source_text" ? MAX_SOURCE_TEXT_BYTES : 50 * 1024 * 1024;
+  if (request.purpose === "companion_file" && !COMPANION_FILE_MIME_TYPES.includes(request.mimeType as typeof COMPANION_FILE_MIME_TYPES[number]))
+    throw Object.assign(new Error("unsupported file type"), { statusCode: 415 });
   if (request.byteLength > max) throw Object.assign(new Error("file too large"), { statusCode: 413 });
   if (request.purpose === "note_image" && !request.noteId) throw Object.assign(new Error("noteId is required"), { statusCode: 400 });
   if (request.purpose === "source_text" && request.mimeType !== "text/plain" && request.mimeType !== "text/markdown")
@@ -54,7 +59,7 @@ export function verifyTransferredBytes(bytes: Buffer, request: Pick<ObjectTransf
 }
 
 async function commitTransfer(scope: WorkspaceTransactionContext, request: ObjectTransferRequest,
-  staging: { key: string; etag: string }, bytes: Buffer): Promise<{ status: number; body: unknown }> {
+  staging: { key: string; etag: string; location?: StorageLocation }, bytes: Buffer): Promise<{ status: number; body: unknown }> {
   const file = { mimetype: request.mimeType, toBuffer: async () => bytes };
   if (request.purpose === "note_image" || request.purpose === "companion_image" || request.purpose === "avatar" || request.purpose === "markdown_import_image") {
     const result = request.purpose === "note_image" ? await uploadNoteImage(scope, { noteId: request.noteId!, file, staging })
@@ -66,6 +71,12 @@ async function commitTransfer(scope: WorkspaceTransactionContext, request: Objec
     const status = reason === "note_not_found" ? 404 : reason === "too_large" || reason === "file_read_too_large" ? 413
       : reason === "persist_failed" || reason === "storage_upload_failed" ? 503 : 415;
     return { status, body: { error: reason, message: "文件未通过校验或保存失败" } };
+  }
+  if (request.purpose === "companion_file") {
+    const result = await uploadCompanionFile(scope, { file, requestedName: request.fileName, staging });
+    return result.ok ? { status: 201, body: result.body }
+      : { status: result.reason === "too_large" || result.reason === "file_read_too_large" ? 413
+          : result.reason === "storage_upload_failed" ? 503 : 415, body: { error: result.reason } };
   }
   const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   if (request.purpose === "source_text") {
@@ -90,6 +101,10 @@ async function commitTransfer(scope: WorkspaceTransactionContext, request: Objec
 }
 
 export async function objectTransferRoutes(app: FastifyInstance): Promise<void> {
+  if (backupEnabled()) {
+    getBackupQueue().start();
+    app.addHook("onClose", async () => { await getBackupQueue().stop(); });
+  }
   if (usesRemoteStorage()) {
     const cleanup = setInterval(() => {
       void db.execute(sql`SELECT astella_purge_expired_object_transfers()`)
@@ -106,7 +121,7 @@ export async function objectTransferRoutes(app: FastifyInstance): Promise<void> 
     if (!usesRemoteStorage()) return reply.code(409).send({ error: "direct_storage_disabled" });
     const request = parseBody(app, objectTransferRequestSchema, req.body);
     validateTransferPurpose(request);
-    if (!["companion_image", "avatar"].includes(request.purpose) && !isWorkspaceOwner(req.session))
+    if (!["companion_image", "companion_file", "avatar"].includes(request.purpose) && !isWorkspaceOwner(req.session))
       return reply.code(403).send({ error: "owner role required" });
     const image = request.purpose === "note_image" || request.purpose === "companion_image";
     const bundleImage = request.purpose === "markdown_import_image";
@@ -120,15 +135,17 @@ export async function objectTransferRoutes(app: FastifyInstance): Promise<void> 
     const id = randomUUID();
     const key = `temporary/uploads/${scope.workspaceId}/${scope.userId}/${id}`;
     const expiresAt = new Date(Date.now() + 900_000);
+    if (request.storagePreference === "backup" && !backupEnabled()) return reply.code(503).send({ error: "direct_backup_unavailable" });
+    const location = request.storagePreference === "backup" ? "backup" : await activeStorageLocation();
     await withWorkspaceTransaction(scope, async tx => {
       if (request.purpose === "note_image") {
         const note = await tx.query.notes.findFirst({ columns: { id: true }, where: and(eq(notes.id, request.noteId!), eq(notes.workspaceId, scope.workspaceId), visibleNotesCondition(scope.userId), isNull(notes.deletedAt)) });
         if (!note) throw Object.assign(new Error("note not found"), { statusCode: 404 });
       }
-      await tx.execute(sql`INSERT INTO object_transfers(id,workspace_id,user_id,purpose,staging_key,request_json,expires_at)
-        VALUES(${id}::uuid,${scope.workspaceId}::uuid,${scope.userId}::uuid,${request.purpose},${key},${JSON.stringify(request)}::jsonb,${expiresAt.toISOString()}::timestamptz)`);
+      await tx.execute(sql`INSERT INTO object_transfers(id,workspace_id,user_id,purpose,staging_key,request_json,expires_at,storage_location)
+        VALUES(${id}::uuid,${scope.workspaceId}::uuid,${scope.userId}::uuid,${request.purpose},${key},${JSON.stringify(request)}::jsonb,${expiresAt.toISOString()}::timestamptz,${location})`);
     });
-    const url = await signObjectUpload(key, request.mimeType, request.byteLength);
+    const url = await signObjectUpload(key, request.mimeType, request.byteLength, location);
     return reply.header("Cache-Control", "no-store").send(objectTransferUploadSchema.parse({ version: 1, transferId: id,
       url, method: "PUT", headers: { "Content-Type": request.mimeType, "Content-Length": String(request.byteLength) }, expiresAt: expiresAt.toISOString() }));
   });
@@ -147,21 +164,21 @@ export async function objectTransferRoutes(app: FastifyInstance): Promise<void> 
     if (row.status === "completed" || row.status === "failed") return reply.code(row.result_status ?? 400).send(row.result_json);
     if (new Date(row.expires_at).getTime() < Date.now()) return reply.code(410).send({ error: "transfer_expired" });
     if (row.status === "verifying") return reply.header("Retry-After", "1").code(409).send({ error: "transfer_in_progress" });
-    if (!["companion_image", "avatar"].includes(row.request_json.purpose) && !isWorkspaceOwner(req.session)) {
+    if (!["companion_image", "companion_file", "avatar"].includes(row.request_json.purpose) && !isWorkspaceOwner(req.session)) {
       await withWorkspaceTransaction(scope, tx => tx.execute(sql`UPDATE object_transfers SET status='pending' WHERE id=${row.id}::uuid`));
       return reply.code(403).send({ error: "owner role required" });
     }
     try {
       const request = objectTransferRequestSchema.parse(row.request_json);
       validateTransferPurpose(request);
-      const head = await headObject(row.staging_key);
+      const head = await headObject(row.staging_key, row.storage_location ?? "primary");
       if (!head || head.contentLength !== request.byteLength) throw Object.assign(new Error("uploaded file size mismatch"), { statusCode: 400 });
-      const object = await getObject(row.staging_key);
+      const object = await getObject(row.staging_key, row.storage_location ?? "primary");
       if (!verifyTransferredBytes(object.body, request)) throw Object.assign(new Error("uploaded file hash mismatch"), { statusCode: 400 });
-      const result = await commitTransfer(scope, request, { key: row.staging_key, etag: object.etag }, object.body);
+      const result = await commitTransfer(scope, request, { key: row.staging_key, etag: object.etag, location: row.storage_location ?? "primary" }, object.body);
       await withWorkspaceTransaction(scope, tx => tx.execute(sql`UPDATE object_transfers SET status=${result.status < 300 ? "completed" : "failed"},
         result_status=${result.status},result_json=${JSON.stringify(result.body)}::jsonb,updated_at=now() WHERE id=${row.id}::uuid`));
-      await deleteObject(row.staging_key).catch(() => undefined);
+      await deleteObject(row.staging_key, row.storage_location ?? "primary").catch(() => undefined);
       return reply.code(result.status).send(result.body);
     } catch (error) {
       await withWorkspaceTransaction(scope, tx => tx.execute(sql`UPDATE object_transfers SET status='pending',updated_at=now() WHERE id=${row.id}::uuid`));

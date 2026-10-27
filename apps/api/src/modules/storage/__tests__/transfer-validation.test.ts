@@ -42,3 +42,12 @@ test("avatar upload authorization accepts 10 MB and rejects a byte over the shar
   assert.doesNotThrow(() => validateTransferPurpose({ ...base, purpose: "avatar", byteLength: AVATAR_MAX_BYTES }));
   assert.throws(() => validateTransferPurpose({ ...base, purpose: "avatar", byteLength: AVATAR_MAX_BYTES + 1 }), /too large/);
 });
+
+
+test("companion originals use direct transfer with the existing 20 MiB limit", () => {
+  const file = { ...base, purpose: "companion_file" as const, mimeType: "application/pdf", fileName: "note.pdf" };
+  assert.equal(objectTransferRequestSchema.safeParse(file).success, true);
+  assert.doesNotThrow(() => validateTransferPurpose({ ...file, byteLength: 20 * 1024 * 1024 }));
+  assert.throws(() => validateTransferPurpose({ ...file, byteLength: 20 * 1024 * 1024 + 1 }), /too large/);
+  assert.throws(() => validateTransferPurpose({ ...file, mimeType: "application/octet-stream" }), /unsupported file type/);
+});

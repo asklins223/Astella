@@ -8,7 +8,7 @@ import { readStoredCompanionBlocks } from "./message-blocks.ts";
  * and page messages inside the current internal segment.
  */
 
-import { and, desc, eq, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, lt, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { withWorkspaceTransaction } from "../../../db/client.ts";
 import {
@@ -115,6 +115,7 @@ export async function listCompanionMessages(args: {
   conversationId: string;
   limit: number;
   beforeSeq: number | null;
+  afterSeq?: number | null;
 }): Promise<ListCompanionMessagesResult> {
   const limit = clampLimit(args.limit, 100, 100);
   return withWorkspaceTransaction(
@@ -149,8 +150,9 @@ export async function listCompanionMessages(args: {
         .where(and(
           eq(companionMessages.conversationId, args.conversationId),
           args.beforeSeq == null ? undefined : lt(companionMessages.seq, args.beforeSeq),
+          args.afterSeq == null ? undefined : gt(companionMessages.seq, args.afterSeq),
         ))
-        .orderBy(desc(companionMessages.seq))
+        .orderBy(args.afterSeq == null ? desc(companionMessages.seq) : asc(companionMessages.seq))
         .limit(limit + 1);
       const hasMore = rows.length > limit;
       const paged = rows.slice(0, limit);
@@ -158,7 +160,7 @@ export async function listCompanionMessages(args: {
         statusCode: 200,
         body: {
           version: 1,
-          items: paged.slice().reverse().map((row) => ({
+          items: (args.afterSeq == null ? paged.slice().reverse() : paged).map((row) => ({
             version: 1,
             id: row.id,
             workspaceId: row.workspaceId,

@@ -512,7 +512,7 @@ export async function companionConversationManagementRoutes(app: FastifyInstance
   );
 
   // GET /companion/conversations/:id/messages — §6.4 历史消息（beforeSeq 分页）。
-  app.get<{ Params: { id: string }; Querystring: { limit?: string; beforeSeq?: string } }>(
+  app.get<{ Params: { id: string }; Querystring: { limit?: string; beforeSeq?: string; afterSeq?: string } }>(
     "/companion/conversations/:id/messages",
     { preHandler: [requireSession, requireCompanionDialogue] },
     async (req, reply) => {
@@ -520,11 +520,14 @@ export async function companionConversationManagementRoutes(app: FastifyInstance
       try {
         const limit = parsePaginationInt(req.query?.limit, 50);
         const beforeSeq = req.query?.beforeSeq != null ? parsePaginationInt(req.query.beforeSeq, 0) : null;
+        const afterSeq = req.query?.afterSeq != null ? parsePaginationInt(req.query.afterSeq, 0) : null;
+        if (beforeSeq != null && afterSeq != null) throw new CompanionConversationError("INVALID_REQUEST", 400, "choose beforeSeq or afterSeq");
         const result = await listCompanionMessages({ ...scopeOfSession(req.session),
 userId: req.session.userId,
           conversationId: req.params.id,
           limit,
           beforeSeq,
+          afterSeq,
         });
         return reply.code(result.statusCode).send(result.body);
       } catch (err) {

@@ -27,6 +27,7 @@ class BundleTest(unittest.TestCase):
 
     def test_public_config_is_readable_by_non_root_containers(self):
         self.assertEqual(self.extract('config/ai-platforms.json'), 0)
+        self.assertEqual(self.extract('infra/deploy/docker-compose.storage-backup.yml'), 0)
 
     def test_rejects_traversal_absolute_paths_secrets_and_links(self):
         for name in ('../escape', '/etc/shadow', 'config/.env', 'root/.ssh/authorized_keys'):

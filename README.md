@@ -1,5 +1,8 @@
 <div align="center">
 
+2026-10-27 对象存储直传、笔记版本缓存、对话增量读取与可选的限速备用存储见 [实施与主机启用记录](docs/testing/object-storage-cache-2026-10-27.md)。
+
+
 <img src="docs/guide/assets/astella-logo.png" width="96" height="96" alt="Astella 图标" />
 
 # 拾星笔记 · Astella
@@ -15,7 +18,7 @@
 
 [中文](README.md) · [English](README.en.md) · [使用与开发手册](docs/guide/README.md)
 
-服务端版本：`s-v2.0.0` · [release/version.json](release/version.json)<br />
+服务端版本：`s-v2.0.1` · [release/version.json](release/version.json)<br />
 桌面客户端版本：`c-v2.0.0` · [apps/desktop-client/version.json](apps/desktop-client/version.json)
 
 > 手机端（iOS SwiftUI / Android Compose）已于 2026-10-24 拆分为独立私有仓库 [asklins223/astella-mobile](https://github.com/asklins223/astella-mobile)，本仓库不再包含 `apps/mobile-client`。

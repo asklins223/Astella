@@ -1,3 +1,4 @@
+import { readNoteCacheVersions } from "./cache-versions.ts";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { noteCreateSchema, noteDocUpdateRequestV1Schema, NOTE_DOC_UPDATE_MAX_BYTES } from "./schema.ts";
@@ -16,7 +17,7 @@ import {
   NoteNotDeletedError,
 } from "./service.ts";
 import { requireSession, requireOwner, isWorkspaceOwner, requireNoteContentWrites } from "../identity/middleware.ts";
-import { and, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { notes } from "@astella/shared/db-schema/note";
 import { visibleNotesCondition } from "./visibility.ts";
 import { scopeOfSession, withWorkspaceTransaction } from "../../db/client.ts";
@@ -41,6 +42,16 @@ import { readNotePage } from "./reader-page.ts";
 export async function noteRoutes(app: FastifyInstance) {
   app.addHook("preHandler", requireSession);
 
+  app.get<{ Params: { id: string } }>("/v2/notes/:id/cache-version", async (req, reply) => {
+    const params = uuidParamSchema.safeParse(req.params);
+    if (!params.success) return reply.code(400).send({ error: "invalid_id_format" });
+    const result = await withWorkspaceTransaction(scopeOfSession(req.session), tx =>
+      readNoteCacheVersions(tx, scopeOfSession(req.session), params.data.id));
+    if (!result) return reply.code(404).send({ error: "not_found" });
+    reply.header("Cache-Control", "private, no-cache");
+    return result;
+  });
+
   app.get<{ Params: { id: string } }>("/v2/notes/:id/reader", async (req, reply) => {
     const params = uuidParamSchema.safeParse(req.params);
     if (!params.success) return reply.code(400).send({ error: "invalid_id_format", message: "无效的笔记格式" });
@@ -53,6 +64,15 @@ export async function noteRoutes(app: FastifyInstance) {
     if (!result) return reply.code(404).send({ error: "not_found", message: "这篇笔记或版本已不可读取。" });
     reply.header("Cache-Control", "private, no-store");
     return result;
+  });
+
+  app.get("/client-cache/notes/version", async (req, reply) => {
+    const scope = scopeOfSession(req.session);
+    const [row] = await withWorkspaceTransaction(scope, tx => tx.select({
+      token: sql<string>`concat(count(*), ':', count(*) filter (where ${notes.deletedAt} is null), ':', max(${notes.updatedAt}), ':', max(${notes.deletedAt}))`
+    }).from(notes).where(and(eq(notes.workspaceId, scope.workspaceId), visibleNotesCondition(scope.userId))));
+    reply.header("Cache-Control", "private, no-cache");
+    return { version: 1, tokens: { note: row?.token ?? "0:" } };
   });
 
   app.get("/notes", async (req) => {

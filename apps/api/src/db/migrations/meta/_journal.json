@@ -3158,6 +3158,13 @@
       "when": 1792823674833,
       "tag": "0454_app_release_center",
       "breakpoints": true
+    },
+    {
+      "idx": 451,
+      "version": "7",
+      "when": 1793075780005,
+      "tag": "0460_object_transfer_storage_location",
+      "breakpoints": true
     }
   ]
 }

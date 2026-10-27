@@ -440,6 +440,7 @@ export async function uploadRoutes(
       scopeOfSession(req.session),
       path,
       { direct: req.headers["x-astella-object-transfer-accept"] === "1",
+        preferBackup: req.headers["x-astella-object-transfer-fallback"] === "1",
         ifNoneMatch: req.headers["if-none-match"] },
     );
     if (!outcome.ok) {

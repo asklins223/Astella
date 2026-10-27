@@ -18,6 +18,8 @@ import { NodeHttpHandler } from "@smithy/node-http-handler";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { objectTransferDownloadSchema, type ObjectTransferDownload } from "@astella/shared/object-transfer-contracts";
 import { logger } from "./logger.ts";
+import { createHash } from "node:crypto";
+import { activeStorageLocation, backupEnabled, backupPublicOrigin, locationForObject, replicaClient, replicaBucket, enqueueReplica, type StorageLocation } from "../modules/storage/replicas.ts";
 import {
   resolveStorageBucket as resolveStorageBucketShared,
   resolveStorageConfig,
@@ -131,13 +133,16 @@ export async function uploadObject(
   body: Buffer,
   contentType: string,
 ): Promise<UploadResult> {
+  const location = backupEnabled() ? await activeStorageLocation() : "primary";
   const command = new PutObjectCommand({
-    Bucket: getBucket(),
+    Bucket: location === "primary" ? getBucket() : replicaBucket(location),
     Key: objectKey,
     Body: body,
     ContentType: contentType,
+    Metadata: { "astella-sha256": createHash("sha256").update(body).digest("hex") },
   });
-  const result = await getClient().send(command);
+  const result = await (location === "primary" ? getClient() : replicaClient(location)).send(command);
+  await enqueueReplica(objectKey, location);
   return { etag: result.ETag ?? "" };
 }
 
@@ -159,16 +164,17 @@ export interface DownloadResult {
  */
 const MAX_DOWNLOAD_SIZE_BYTES = 50 * 1024 * 1024;
 
-export async function getObject(objectKey: string): Promise<DownloadResult> {
+export async function getObject(objectKey: string, explicitLocation?: StorageLocation): Promise<DownloadResult> {
   // SEC-30 修复：拒绝包含路径遍历字符的 objectKey
   if (objectKey.includes("..")) {
     throw new Error(`invalid object key: path traversal detected in "${objectKey}"`);
   }
+  const location = explicitLocation ?? (backupEnabled() ? await locationForObject(objectKey) : "primary");
   const command = new GetObjectCommand({
-    Bucket: getBucket(),
+    Bucket: location === "primary" ? getBucket() : replicaBucket(location),
     Key: objectKey,
   });
-  const result = await getClient().send(command);
+  const result = await (location === "primary" ? getClient() : replicaClient(location)).send(command);
 
   // 检查 ContentLength，如果超过限制则提前拒绝
   const contentLength = result.ContentLength ?? 0;
@@ -199,18 +205,20 @@ export async function getObject(objectKey: string): Promise<DownloadResult> {
  */
 export async function headObject(
   objectKey: string,
+  explicitLocation?: StorageLocation,
 ): Promise<{ etag: string | undefined; contentType: string | undefined; contentLength: number | undefined } | null> {
   // 2026-08-12（存储面审计）：与 getObject 同款路径遍历防御（纵深——所有
   // 调用方当前已在路由层校验，新增调用方不易踩坑）。
   if (objectKey.includes("..")) {
     throw new Error(`invalid object key: path traversal detected in "${objectKey}"`);
   }
+  const location = explicitLocation ?? (backupEnabled() ? await locationForObject(objectKey) : "primary");
   const command = new HeadObjectCommand({
-    Bucket: getBucket(),
+    Bucket: location === "primary" ? getBucket() : replicaBucket(location),
     Key: objectKey,
   });
   try {
-    const result = await getClient().send(command);
+    const result = await (location === "primary" ? getClient() : replicaClient(location)).send(command);
     return {
       etag: result.ETag,
       contentType: result.ContentType,
@@ -232,18 +240,20 @@ export async function headObject(
  * Delete a file from object storage.
  * Used for note deletion cleanup and old avatar cleanup.
  */
-export async function deleteObject(objectKey: string): Promise<void> {
+export async function deleteObject(objectKey: string, explicitLocation?: StorageLocation): Promise<void> {
   // SEC 修复（2026-09 后端审查）：与 getObject/headObject 同款路径遍历防御。
   // 此前 deleteObject 无任何校验，而调用方（note 级联清理）的键可能来自客户端
   // 笔记正文，纵深防御必须在此处也拦住 `..`。
   if (objectKey.includes("..")) {
     throw new Error(`invalid object key: path traversal detected in "${objectKey}"`);
   }
+  const location = explicitLocation ?? (backupEnabled() ? await activeStorageLocation() : "primary");
+  if (!explicitLocation) await enqueueReplica(objectKey, location, "delete");
   const command = new DeleteObjectCommand({
-    Bucket: getBucket(),
+    Bucket: location === "primary" ? getBucket() : replicaBucket(location),
     Key: objectKey,
   });
-  await getClient().send(command);
+  await (location === "primary" ? getClient() : replicaClient(location)).send(command);
   logger.debug({ objectKey }, "object deleted from storage");
 }
 
@@ -254,29 +264,35 @@ export function storageTransferOrigins(): string[] {
   if (!usesRemoteStorage()) return [];
   const endpoint = process.env.STORAGE_PUBLIC_ENDPOINT?.trim() || process.env.STORAGE_ENDPOINT?.trim();
   if (!endpoint || new URL(endpoint).protocol !== "https:") throw new Error("Remote transfers require an HTTPS storage endpoint");
-  return [new URL(endpoint).origin];
+  const fallback = backupEnabled() ? backupPublicOrigin() : undefined;
+  return [...new Set([new URL(endpoint).origin, ...(fallback ? [fallback] : [])])];
 }
 
-function publicClient(): S3Client {
+function publicClient(location: StorageLocation = "primary"): S3Client {
   const config = resolveStorageConfig(env());
   if (!config) throw new Error("Object storage configuration is incomplete");
-  return new S3Client({ endpoint: storageTransferOrigins()[0], region: config.region,
-    credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+  const backupOrigin = backupPublicOrigin();
+  if (location === "backup" && !backupOrigin) throw new Error("backup public endpoint is not configured");
+  return new S3Client({ endpoint: location === "primary" ? storageTransferOrigins()[0] : backupOrigin, region: location === "primary" ? config.region : process.env.STORAGE_BACKUP_REGION || "us-east-1",
+    credentials: location === "primary" ? { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }
+      : { accessKeyId: process.env.STORAGE_BACKUP_ACCESS_KEY_ID!, secretAccessKey: process.env.STORAGE_BACKUP_SECRET_ACCESS_KEY! },
     forcePathStyle: true, requestChecksumCalculation: "WHEN_REQUIRED", responseChecksumValidation: "WHEN_REQUIRED" });
 }
 
-export async function signObjectUpload(key: string, mimeType: string, byteLength: number): Promise<string> {
-  const signer = publicClient();
-  try { return await getSignedUrl(signer, new PutObjectCommand({ Bucket: getBucket(), Key: key,
+export async function signObjectUpload(key: string, mimeType: string, byteLength: number, location: StorageLocation = "primary"): Promise<string> {
+  const signer = publicClient(location);
+  try { return await getSignedUrl(signer, new PutObjectCommand({ Bucket: replicaBucket(location), Key: key,
     ContentType: mimeType, ContentLength: byteLength }), { expiresIn: 900, signableHeaders: new Set(["content-type", "content-length"]) }); }
   finally { signer.destroy(); }
 }
 
 export async function signObjectDownload(key: string, contentType: string, byteLength: number,
-  sha256?: string): Promise<ObjectTransferDownload> {
-  const signer = publicClient();
+  sha256?: string, preferred?: StorageLocation): Promise<ObjectTransferDownload> {
+  if (preferred === "backup" && !backupEnabled()) throw new Error("backup object storage is not enabled");
+  const location = preferred ?? (backupEnabled() ? await locationForObject(key) : "primary");
+  const signer = publicClient(location);
   try {
-    const url = await getSignedUrl(signer, new GetObjectCommand({ Bucket: getBucket(), Key: key,
+    const url = await getSignedUrl(signer, new GetObjectCommand({ Bucket: replicaBucket(location), Key: key,
       ResponseContentType: contentType }), { expiresIn: 300 });
     return objectTransferDownloadSchema.parse({ version: 1, kind: "object_download", url, contentType,
       byteLength, ...(sha256 ? { sha256 } : {}), expiresAt: new Date(Date.now() + 300_000).toISOString() });
@@ -284,14 +300,19 @@ export async function signObjectDownload(key: string, contentType: string, byteL
 }
 
 /** Copy to an unsigned final key: replaying the staging PUT cannot alter a committed asset. */
-export async function persistObject(key: string, bytes: Buffer, mimeType: string, staging?: { key: string; etag: string }): Promise<void> {
+export async function persistObject(key: string, bytes: Buffer, mimeType: string, staging?: { key: string; etag: string; location?: StorageLocation }): Promise<void> {
   if (!staging) { await uploadObject(key, bytes, mimeType); return; }
-  await getClient().send(new CopyObjectCommand({ Bucket: getBucket(), Key: key,
-    CopySource: `${getBucket()}/${staging.key.split("/").map(encodeURIComponent).join("/")}`,
-    CopySourceIfMatch: staging.etag,
-    ContentType: mimeType, MetadataDirective: "REPLACE" }));
+  const location = staging.location ?? "primary";
+  const bucket = location === "primary" ? getBucket() : replicaBucket(location);
+  await (location === "primary" ? getClient() : replicaClient(location)).send(new CopyObjectCommand({ Bucket: bucket, Key: key,
+    CopySource: `${bucket}/${staging.key.split("/").map(encodeURIComponent).join("/")}`,
+    CopySourceIfMatch: staging.etag, ContentType: mimeType, MetadataDirective: "REPLACE",
+    Metadata: { "astella-sha256": createHash("sha256").update(bytes).digest("hex") } }));
+  await enqueueReplica(key, location);
 }
 
 export async function uploadObjectFile(key: string, body: import("node:fs").ReadStream, contentType: string, contentLength: number): Promise<void> {
-  await getClient().send(new PutObjectCommand({ Bucket: getBucket(), Key: key, Body: body, ContentType: contentType, ContentLength: contentLength }));
+  const location = backupEnabled() ? await activeStorageLocation() : "primary";
+  await (location === "primary" ? getClient() : replicaClient(location)).send(new PutObjectCommand({ Bucket: location === "primary" ? getBucket() : replicaBucket(location), Key: key, Body: body, ContentType: contentType, ContentLength: contentLength }));
+  await enqueueReplica(key, location);
 }

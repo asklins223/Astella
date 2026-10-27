@@ -645,7 +645,7 @@ export async function uploadAvatar(
 export async function downloadUploadObject(
   scope: WorkspaceTransactionContext,
   path: string,
-  request: { ifNoneMatch?: string; direct?: boolean },
+  request: { ifNoneMatch?: string; direct?: boolean; preferBackup?: boolean },
 ): Promise<UploadDownloadResult> {
   // SEC-21 修复：拒绝包含路径遍历字符的请求，防止跨 workspace 文件访问
   if (path.includes("..") || path.includes("\\")) {
@@ -765,10 +765,10 @@ export async function downloadUploadObject(
 
   if (usesRemoteStorage() && request.direct) {
     try {
-      const head = await headObject(path);
+      const head = await headObject(path, request.preferBackup ? "backup" : undefined);
       if (!head) return { ok: false, reason: "not_found" };
       const contentType = head.contentType ?? "application/octet-stream";
-      const download = await signObjectDownload(path, contentType, head.contentLength ?? 0);
+      const download = await signObjectDownload(path, contentType, head.contentLength ?? 0, undefined, request.preferBackup ? "backup" : undefined);
       return { ok: true, notModified: false, body: Buffer.alloc(0), download, contentType,
         maxAge: path.startsWith("avatars/") ? 604800 : 86400, etag: head.etag ?? "" };
     } catch (err) {

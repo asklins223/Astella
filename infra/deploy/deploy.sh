@@ -9,6 +9,21 @@ test -s /etc/letsencrypt/live/astella-ip/fullchain.pem
 compose=(docker compose --project-name astella --project-directory "$release"
   --env-file "$env_file" --env-file "$release/deployment-images.env"
   -f "$release/docker-compose.yml" -f "$release/docker-compose.deploy.yml")
+backup_enabled=false
+if grep -q '^STORAGE_BACKUP_ENABLED=true$' "$env_file"; then
+  backup_enabled=true
+  # Generate the standby's independent credentials once, on the host. Never echo them.
+  if ! grep -q '^STORAGE_BACKUP_ACCESS_KEY_ID=.' "$env_file"; then
+    printf '\nSTORAGE_BACKUP_ACCESS_KEY_ID=astella-backup\n' >> "$env_file"
+  fi
+  if ! grep -q '^STORAGE_BACKUP_SECRET_ACCESS_KEY=.' "$env_file"; then
+    backup_secret="$(openssl rand -hex 32)"
+    printf 'STORAGE_BACKUP_SECRET_ACCESS_KEY=%s\n' "$backup_secret" >> "$env_file"
+    unset backup_secret
+  fi
+  chmod 600 "$env_file"
+  compose+=(-f "$release/infra/deploy/docker-compose.storage-backup.yml")
+fi
 previous="$(readlink -f /opt/astella/current 2>/dev/null || true)"
 rollback() {
   result=$?
@@ -58,9 +73,14 @@ fi
 # Root-only local preflight can use images transferred with docker save/load.
 # The forced SSH receiver always uses the registry path.
 if [[ ${2:-} != --local-images ]]; then
+  if [[ "$backup_enabled" = true ]]; then "${compose[@]}" pull --quiet backup-minio backup-init; fi
   "${compose[@]}" pull --quiet postgres role-bootstrap role-grants api migrate worker edge-tts embedding nginx
 fi
 "${compose[@]}" up -d --no-build --pull never --wait --wait-timeout 300 postgres edge-tts
+if [[ "$backup_enabled" = true ]]; then
+  "${compose[@]}" up -d --no-build --pull never --wait --wait-timeout 180 backup-minio
+  "${compose[@]}" run --rm --no-deps backup-init
+fi
 
 # Embedding is a fallback, not a dependency: its first start downloads BGE-M3
 # (~2.3 GB). Gating the whole deploy on that would turn a slow mirror into a
