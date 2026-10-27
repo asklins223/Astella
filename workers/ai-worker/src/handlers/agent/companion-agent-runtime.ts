@@ -69,7 +69,6 @@ import { AgentOutputError, CompanionAgentBudgetExceededError, CompanionContextCh
 import { runWithCompanionModelRetries } from "./companion-model-retries.ts";
 import { assembleCompanionFinishText, assembleCompanionHostSettlement,
   settleCompanionLandedWritesOnFailure } from "./companion-host-settlement.ts";
-import { ProviderRequestError } from "../../lib/provider-request-error.ts";
 import { withWorkerWorkspaceTransaction } from "../../db.ts";
 import { retrieveCompanionMemoriesKeyword } from "../memory/companion-memory-vector.ts";
 import { sameCompanionMemoryFact } from "@astella/shared";
@@ -93,7 +92,8 @@ import {
   EAGER_TOOL_DISPATCH_ENABLED,
   createCompanionEagerScheduler,
 } from "./companion-eager-dispatch-config.ts";
-import { canRetryCompanionStream, runStreamingAgentStep, CompanionDegenerateLoopError } from "./companion-agent-streaming-step.ts";
+import { canRetryCompanionStream, runStreamingAgentStep } from "./companion-agent-streaming-step.ts";
+import { recoverCompanionStreamFailure } from "./companion-stream-recovery.ts";
 import { executeWatchedCompanionTurn, CompanionOutputTimeoutError } from "./companion-output-watchdog.ts";
 import { companionNoteNeedsRelatedSearch, companionNoteEditPrerequisite } from "../note/companion-note-authoring-stage.ts";
 import { CompanionStreamStoppedError } from "../turn/companion-dialogue-stream.ts";
@@ -120,7 +120,7 @@ import { companionRecoveryIdentity, openCompanionTurn } from "../turn/companion-
 import { judgeCompanionUnavailableTool } from "../tools/companion-unavailable-tool.ts";
 import { resumeCompanionInterruptedInput } from "./companion-resume-input.ts";
 import { companionToolAuditLabel, rejectUnknownCompanionTool, unofferedToolReceipt, validateCompanionToolCall } from "../tools/companion-tool-call-validation.ts";
-import { attachImagesToLastUserMessage, loadCompanionAttachmentImages } from "./companion-attachment-images.ts";
+import { companionTurnMessagesWithImages, reviewCompanionImageClaim } from "./companion-attachment-images.ts";
 import { applyCompanionToolLoad, createCompanionToolSurface, companionAttachmentReadRequired } from "../tools/companion-tool-surface.ts";
 
 export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promise<CompanionAgentLoopResult> {
@@ -215,23 +215,8 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
   const requirements = directEntry ? {}
     : companionRequestRequirements(args.read.userText ?? "", availableDefinitions.some(tool => tool.name === "companion_notes_write"), availableDefinitions.map(tool => tool.name));
   let messages = opening.messages;
-  /**
-   * Put this turn's pictures in front of the model directly. It declares
-   * vision, so it can look; sending only "image 1: assetId=…" made it answer
-   * from the name, confidently and wrongly. Only the current user message is
-   * decorated, and only on the turn whose pictures these are.
-   */
-  if (args.turnImagesSentDirectly === true && args.read.userImageAttachments?.length) {
-    const images = await loadCompanionAttachmentImages({
-      workspaceId: args.ctx.workspaceId, userId: args.read.userId,
-      attachments: args.read.userImageAttachments, runId: args.read.runId,
-    });
-    if (images.length > 0) {
-      messages = attachImagesToLastUserMessage(messages, images);
-      logger.info({ runId: args.read.runId, attached: images.length,
-        sent: args.read.userImageAttachments.length }, "companion attached images are sent with the turn");
-    }
-  }
+  // The turn's pictures travel with the user message when the model can see.
+  messages = await companionTurnMessagesWithImages({ args, messages });
   const recoveryIdentity = companionRecoveryIdentity({
     args, currentRequest, permissionLevel: meta.permissionLevel,
     definitions: availableDefinitions,
@@ -946,73 +931,14 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
         try {
           result = await attemptStream();
         } catch (error) {
-          if (error instanceof CompanionDegenerateLoopError) {
-            // The model looped instead of finishing. Retry this step on the
-            // configured alternate with the same request; the looped text is
-            // dropped because nothing after the first repeat is new content.
-            logger.warn({ runId: args.read.runId, stepCount, chars: error.text.length },
-              "companion reply degraded into a repetition loop; retrying the step");
-            if (args.fallbackProvider && args.fallbackProvider !== stepProvider
-              && await companionProviderFitsRequest(args.fallbackProvider, stepRequest)) {
-              stepProvider = args.fallbackProvider;
-              protocolFallback = true;
-            }
-            result = await runBuffered(1);
-            if (companionStreamRepeatsItself(String(result.content ?? "")))
-              throw new AgentOutputError("no_progress", "companion reply repeated itself on the retry");
-          } else {
-          if (!canRetryStream(error)) throw error;
-          // 传**错误对象**而不是 message 字符串：序列化器（safeErrorSerializer）
-          // 对非 Error 输入一律投影成 `{name:"Error", code:null}`，等于把唯一
-          // 能区分的字段（真实类名 / provider_http_<status> / stream_empty）
-          // 一并抹掉。传对象才能看出是 HTTP 504 还是"响应体不是 SSE"。
-          logger.warn(
-            { err: error, stepCount },
-            "companion streaming answer failed before any delta",
-          );
-          // A first-output timeout means this route produced nothing, not that
-          // the request is bad. If another configured model can fit it, use that
-          // instead of repeating the same empty wait. One attempt: the fallback
-          // is recovery, not a second retry stack.
-          const switchedOnTimeout = error instanceof CompanionOutputTimeoutError
-            && error.code === "provider_first_output_timeout"
-            && args.fallbackProvider && args.fallbackProvider !== stepProvider
-            && typeof args.fallbackProvider.executeAgentTurn === "function"
-            && await companionProviderFitsRequest(args.fallbackProvider, stepRequest);
-          if (switchedOnTimeout) {
-            logger.warn({ runId: args.read.runId, stepCount, fallbackModelId: args.fallbackProvider!.modelId },
-              "companion first-output timeout switched to a fitting fallback model");
-            stepProvider = args.fallbackProvider!;
-            protocolFallback = true;
-            result = await runBuffered(1);
-          } else if (error instanceof CompanionOutputTimeoutError
-            && error.code === "provider_first_output_timeout") {
-            // No usable alternate route: retry this one once, not the default
-            // three-attempt stack. A stalled route must not hold the turn for
-            // several consecutive first-output waits.
-            result = await runBuffered(1);
-          } else if (error instanceof ProviderRequestError && error.status >= 500) {
-            // A 5xx before any delta is transient: retry the stream once, then
-            // fall back to the buffered turn. Nothing was delivered, so no
-            // duplicate prefix.
-            try {
-              result = await attemptStream();
-            } catch (retryError) {
-              if (!canRetryStream(retryError)) throw retryError;
-              logger.warn(
-                { err: retryError, stepCount },
-                "companion streaming retry failed before any delta; retrying with buffered turn",
-              );
-              result = await runBuffered();
-            }
-          } else {
-            logger.warn(
-              { stepCount },
-              "companion streaming answer failed for a non-transient reason; retrying with buffered turn",
-            );
-            result = await runBuffered();
-          }
-          }
+          result = await recoverCompanionStreamFailure({
+            error, runBuffered, attemptStream, canRetryStream,
+            stepProvider, fallbackProvider: args.fallbackProvider,
+            fitsFallback: async () => args.fallbackProvider !== undefined
+              && await companionProviderFitsRequest(args.fallbackProvider, stepRequest),
+            useFallback: provider => { stepProvider = provider; protocolFallback = true; },
+            stepCount, runId: args.read.runId,
+          });
         }
         // 收口（成功路）：**必须**在循环看到 result.toolCalls 之前把在途等完。
         // 否则循环会拿到还停在 "requested"（可重放）的账本行，于是**再跑一遍**——
@@ -1196,19 +1122,18 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
      * The pictures count as seen when they were sent with this request, or when
      * the turn holds a successful image read.
      */
-    const sawImages = args.turnImagesSentDirectly === true
-      || messages.some(message => message.role === "tool" && typeof message.content === "string"
-        && message.content.includes('"operation":"visual.read_image"') && message.content.includes('"ok":true'));
-    if (!sawImages && calls.length === 0 && args.read.userImageAttachments?.length
-      && claimsImageContent(said) && !imageClaimCorrected) {
+    const imageGate = reviewCompanionImageClaim({
+      said, calls, messages, sentDirectly: args.turnImagesSentDirectly === true,
+      hasAttachments: Boolean(args.read.userImageAttachments?.length),
+      alreadyCorrected: imageClaimCorrected, runId: args.read.runId, stepCount,
+    });
+    if (imageGate) {
       imageClaimCorrected = true;
       messages = dropCompanionInternalCorrections(messages);
       messages.push(...companionStepCorrectionMessages({ currentRequest, alreadyDisplayed: stepEmitted,
-        instruction: "这一轮的图片你还没有真正看到，不能描述图里的内容。"
-          + "要么先用 companion_visual（action=read_image）读图再回答，要么如实说你还没看到；不要凭图名或上下文猜。" }));
+        instruction: imageGate.instruction }));
       await finishBoundary(stepId, "succeeded", sha256Utf8V1(said));
       await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta() });
-      logger.warn({ runId: args.read.runId, stepCount }, "companion described image content without looking");
       return { kind: "continue" };
     }
     const unmet = !directEntry && calls.length === 0
@@ -2100,7 +2025,7 @@ import {
   type CompanionAgentLoopResult,
 } from "../turn/companion-step-plan.ts";
 import { companionSteerCause, judgeCompanionDeliveryGate } from "./companion-delivery-gates.ts";
-import { looksLikeUnfulfilledActionNarration, companionStreamRepeatsItself, claimsImageContent } from "../turn/companion-dialogue-content.ts";
+import { looksLikeUnfulfilledActionNarration } from "../turn/companion-dialogue-content.ts";
 
 // 事件与步进持久化由 companion-agent-events.ts 承担，也在该模块保存运行态模型恢复点。
 import {

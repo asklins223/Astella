@@ -1,4 +1,5 @@
 import { test } from "node:test";
+import { claimsImageContent, companionStreamRepeatsItself } from "../turn/companion-reply-shape.ts";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { companionVoiceSegmentExpression, projectCompanionVoiceExpression } from "../turn/companion-voice-expression.ts";
@@ -18,7 +19,7 @@ import {
   looksLikeJsonEnvelope,
   looksLikeJsonFragment,
   looksTruncatedReply,
-  looksLikeUnfulfilledActionNarration, companionStreamRepeatsItself, claimsImageContent,
+  looksLikeUnfulfilledActionNarration,
   unverifiedNumericClaims,
   claimsLookupThatNeverRan,
   companionOutputRejectionReason,

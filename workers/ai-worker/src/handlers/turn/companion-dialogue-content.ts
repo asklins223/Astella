@@ -46,6 +46,9 @@ export {
   REPLAY_HISTORY_READ_ROWS,
 };
 export type { CompanionContextHandoffSnapshotV1, CompanionContextHandoffInputV1, CompanionRecentHistoryMessage };
+// Reply-shape read-outs live in companion-reply-shape.ts (file-size guard).
+export { claimsImageContent, companionStreamRepeatsItself } from "./companion-reply-shape.ts";
+
 import { COMPANION_VOICE_EXPRESSION_PROTOCOL_V1, COMPANION_VOICE_STYLE_PROTOCOL_V1, readVoiceExpressionTags, stripVoiceExpressionTags, voiceExpressionCue, withholdPartialVoiceExpressionTag } from "@astella/shared/voice-expression-tags";
 import { COMPANION_REPLY_MAX_CHARS } from "@astella/shared";
 import { renderCompanionConversationEvidence, type CompanionConversationClock } from "./companion-conversation-evidence.ts";
@@ -437,28 +440,6 @@ const BARE_DIGIT_TAIL = /\d$/;
 const UNCLOSED_PAIR = /[《「『“（【[][^》」』”）】\]]*$/;
 
 /** 这句话是不是在语法上断了。空串算断——但空输出另由 companionOutputRejectionReason 接。 */
-/**
- * Is this stream stuck repeating itself?
- *
- * A degraded model can loop one sentence for thousands of deltas (2026-10-27
- * soak: one sentence repeated to 3,289 deltas, holding the run open for 426s
- * because every delta reset the idle watchdog). The signal is structural, not
- * lexical: the tail of the reply is built from very few distinct sentences.
- */
-export function companionStreamRepeatsItself(text: string): boolean {
-  // The window starts where a genuine loop is unmistakable. A short repetitive
-  // answer is already covered by the collapse gate and ends on its own; firing
-  // earlier would cut legitimate repetitive content the user asked for.
-  if (text.length < 1_500) return false;
-  const tail = text.slice(-1_000);
-  const sentences = tail.split(/[。！？!?\n]+/u).map(part => part.trim()).filter(part => part.length >= 6);
-  if (sentences.length < 10) return false;
-  const distinct = new Set(sentences).size;
-  // Few distinct sentences across many repeats is a loop; ordinary prose keeps
-  // most of its sentences distinct.
-  return distinct <= Math.max(2, Math.floor(sentences.length / 8));
-}
-
 export function looksTruncatedReply(text: string): boolean {
   const trimmed = text.trim();
   if (trimmed.length === 0) return true;
@@ -500,41 +481,6 @@ export function noteSearchTerms(query: string): string[] {
  */
 const ACTION_NARRATION_TEST = /(这就去|这就帮|这就把|我这就|那我去|我去查|我去翻|我去看|马上|稍等|等我查|先翻翻|我翻翻)/;
 export const ACTION_NARRATION_MAX_CHARS = 24;
-
-/**
- * Does the reply describe what is *in* a picture?
- *
- * The model receives an attachment as a name plus an assetId, not as pixels
- * (only `companion_visual` sends the bytes). Without a read receipt any such
- * description is invented, however confidently it is phrased — the observed
- * failure mode is a fluent, fully made-up account of a screenshot.
- *
- * This is a content-fact question, so it is answered by the presence of an
- * image read receipt in the turn, never by the wording of the request.
- */
-const IMAGE_CONTENT_DESCRIPTION = new RegExp([
-  // Any picture noun followed by a statement about its contents: "图里写的是 X",
-  // "截图里显示答案是 B", "照片上写着公式". The window is generous because the
-  // noun and the verb can be several words apart; questions are excluded by the
-  // caller, so a wide window does not turn "图里写了什么？" into a claim.
-  "(?:图|图片|截屏|截图|照片|画面|图表)[^。！？\\n]{0,10}"
-    + "(?:里|中|上|里面|当中)[^。！？\\n]{0,14}"
-    + "(?:写着|写了|写的是|显示|显示着|是|有|画着|标着|列出|列出的是|包含|内容|文字|答案|标题|公式|表格|数据|数字)",
-  // The content noun carries the claim even without a location word.
-  "(?:图|图片|截屏|截图|照片|画面)[^。！？\\n]{0,6}(?:文字|内容|标题|答案|公式|表格|数据|数字)"
-    + "[^。！？\\n]{0,8}(?:是|为|写着|显示|包含|如下)",
-].join("|"), "gu");
-
-export function claimsImageContent(text: string): boolean {
-  // A question about the picture asks for a read; it does not report one.
-  const statementLines = text.split("\n").filter(line => !/[？?]\s*$/u.test(line.trim()));
-  const statements = statementLines.join("\n").trim();
-  if (!statements) return false;
-  // The pattern carries `g`, so its lastIndex has to be reset: leaving it set
-  // made every second call miss (caught by the unit test, not in production).
-  IMAGE_CONTENT_DESCRIPTION.lastIndex = 0;
-  return IMAGE_CONTENT_DESCRIPTION.test(statements);
-}
 
 export function looksLikeUnfulfilledActionNarration(text: string): boolean {
   const trimmed = text.trim();

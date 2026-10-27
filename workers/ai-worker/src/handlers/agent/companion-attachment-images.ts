@@ -1,7 +1,9 @@
 import { sql } from "drizzle-orm";
+import type { AgentTurnRequest } from "@astella/shared";
 import { logger } from "../../lib/logger.ts";
 import { withWorkerWorkspaceTransaction } from "../../db.ts";
 import { getObjectBytes } from "../../lib/object-storage.ts";
+import { claimsImageContent } from "../turn/companion-reply-shape.ts";
 
 /**
  * Put the user's pictures in front of the model directly.
@@ -118,4 +120,55 @@ export function attachImagesToLastUserMessage<T extends { role: string; content:
     })),
   ];
   return messages.map((message, position) => position === index ? { ...message, content } : message);
+}
+
+/** Decorate this turn's messages with its pictures, when the model can see. */
+export async function companionTurnMessagesWithImages<T extends { role: string; content: unknown }>(input: {
+  args: {
+    ctx: { workspaceId: string };
+    read: {
+      userId: string; runId: string; turnImagesSentDirectly?: boolean;
+      userImageAttachments?: readonly CompanionImageAttachment[];
+    };
+  };
+  messages: readonly T[];
+}): Promise<T[]> {
+  const { read } = input.args;
+  if (read.turnImagesSentDirectly !== true || !read.userImageAttachments?.length) return [...input.messages];
+  const images = await loadCompanionAttachmentImages({
+    workspaceId: input.args.ctx.workspaceId, userId: read.userId,
+    attachments: read.userImageAttachments, runId: read.runId,
+  });
+  if (images.length === 0) return [...input.messages];
+  logger.info({ runId: read.runId, attached: images.length, sent: read.userImageAttachments.length },
+    "companion attached images are sent with the turn");
+  return attachImagesToLastUserMessage(input.messages, images);
+}
+
+/**
+ * The reply describes a picture nobody looked at.
+ *
+ * Facts, not wording: the pictures count as seen when they were sent with this
+ * request, or when the turn holds a successful image read. Without either, a
+ * description of what is in the picture cannot be known and is corrected once.
+ */
+export function reviewCompanionImageClaim(input: {
+  said: string;
+  calls: readonly unknown[];
+  messages: AgentTurnRequest["messages"];
+  sentDirectly: boolean;
+  hasAttachments: boolean;
+  alreadyCorrected: boolean;
+  runId: string;
+  stepCount: number;
+}): { instruction: string } | null {
+  if (input.alreadyCorrected || !input.hasAttachments || input.calls.length > 0) return null;
+  const sawImages = input.sentDirectly
+    || input.messages.some(message => message.role === "tool" && typeof message.content === "string"
+      && message.content.includes('"operation":"visual.read_image"') && message.content.includes('"ok":true'));
+  if (sawImages || !claimsImageContent(input.said)) return null;
+  logger.warn({ runId: input.runId, stepCount: input.stepCount },
+    "companion described image content without looking");
+  return { instruction: "这一轮的图片你还没有真正看到，不能描述图里的内容。"
+    + "要么先用 companion_visual（action=read_image）读图再回答，要么如实说你还没看到；不要凭图名或上下文猜。" };
 }
