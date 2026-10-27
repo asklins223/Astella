@@ -14,7 +14,7 @@ export const MAX_SOURCE_TEXT_BYTES = 10 * 1024 * 1024;
  * 抓回来的字节）。它单独成一个用途而不是复用 `note_image`，是因为那条硬要求一篇**已存在**
  * 的笔记（API 侧按 noteId 校验归属，回执才登记得了资产）——而导入的图此刻还没有笔记。
  */
-export const objectTransferPurposeSchema = z.enum(["note_image", "companion_image", "avatar", "source_text", "markdown_import", "markdown_import_image"]);
+export const objectTransferPurposeSchema = z.enum(["note_image", "companion_image", "companion_file", "avatar", "source_text", "markdown_import", "markdown_import_image"]);
 export type ObjectTransferPurpose = z.infer<typeof objectTransferPurposeSchema>;
 const sha256 = z.string().regex(/^[a-f0-9]{64}$/);
 const httpsUrl = z.string().url().refine(value => {
@@ -23,6 +23,7 @@ const httpsUrl = z.string().url().refine(value => {
 });
 export const objectTransferRequestSchema = z.object({
   purpose: objectTransferPurposeSchema,
+  storagePreference: z.enum(["primary", "backup"]).optional(),
   fileName: z.string().min(1).max(255),
   mimeType: z.string().min(1).max(100),
   byteLength: z.number().int().positive().max(50 * 1024 * 1024),

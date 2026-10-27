@@ -137,3 +137,13 @@ export function resolveStorageRequestTimeoutMs(env: StorageEnv): number {
 }
 
 export const STORAGE_CONNECTION_TIMEOUT_MS = CONNECTION_TIMEOUT_MS;
+
+/** Secondary is independently configured; cloud credentials never become local root credentials. */
+export function resolveBackupStorageConfig(env: StorageEnv): ResolvedStorageConfig | null {
+  if (!isRemoteStorage(env) || env.STORAGE_BACKUP_ENABLED?.trim() !== "true") return null;
+  const endpoint = trimmed(env, "STORAGE_BACKUP_ENDPOINT"), accessKeyId = trimmed(env, "STORAGE_BACKUP_ACCESS_KEY_ID"),
+    secretAccessKey = trimmed(env, "STORAGE_BACKUP_SECRET_ACCESS_KEY");
+  if (!endpoint || !accessKeyId || !secretAccessKey) return null;
+  return { endpoint, accessKeyId, secretAccessKey, bucket: trimmed(env, "STORAGE_BACKUP_BUCKET") ?? "astella-backup",
+    region: trimmed(env, "STORAGE_BACKUP_REGION") ?? "us-east-1", requestTimeoutMs: resolveStorageRequestTimeoutMs(env) };
+}
