@@ -3,6 +3,8 @@ name: astella
 # Production-like stack. All application containers use their `prod` image
 # target, run without source bind mounts and inherit the non-root image user.
 # Local hot-reload defaults live in the standalone docker-compose.dev.yml.
+# Local dev/Alpha use one local object store; production standby is added only by
+# infra/deploy/docker-compose.storage-backup.yml through the deployment script.
 
 x-api-build: &api-build
   context: .
@@ -242,6 +244,7 @@ services:
       EDGE_TTS_AUTH_TOKEN: ${EDGE_TTS_AUTH_TOKEN:?Set EDGE_TTS_AUTH_TOKEN in .env（edge-tts 与 api 必须一致）}
       # Private remote object storage for uploaded resources and exports
       STORAGE_MODE: remote
+      STORAGE_BACKUP_ENABLED: 'false'
       STORAGE_PUBLIC_ENDPOINT: ${STORAGE_PUBLIC_ENDPOINT:-}
       STORAGE_ACCESS_KEY_ID: ${STORAGE_ACCESS_KEY_ID:-}
       STORAGE_SECRET_ACCESS_KEY: ${STORAGE_SECRET_ACCESS_KEY:-}
@@ -315,6 +318,7 @@ services:
       COMPANION_DAILY_SUMMARY_V1: ${COMPANION_DAILY_SUMMARY_V1:-true}
       # Private remote object storage shared with the API
       STORAGE_MODE: remote
+      STORAGE_BACKUP_ENABLED: 'false'
       STORAGE_PUBLIC_ENDPOINT: ${STORAGE_PUBLIC_ENDPOINT:-}
       STORAGE_ACCESS_KEY_ID: ${STORAGE_ACCESS_KEY_ID:-}
       STORAGE_SECRET_ACCESS_KEY: ${STORAGE_SECRET_ACCESS_KEY:-}

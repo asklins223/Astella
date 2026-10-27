@@ -274,7 +274,7 @@ jobs:
   # ─── 运维 shell 脚本自测 ──────────────────────────────────────────────
   #
   # 与 `make verify` 里那一条是同一份：备份/恢复脚本的 53 条断言（卷名、mc 别名、
-  # 禁用库名清单、校验值命令）。只依赖 bash + mktemp，所以不装 Node、不起服务。
+  # 禁用库名清单、校验值命令）。另用 Compose config 校验环境边界，不启动服务。
   # 两边必须同时有它——`ci-workflow-contract` 现在专门盯着这条对账。
   backup-scripts:
     name: Backup scripts
@@ -285,3 +285,6 @@ jobs:
 
       - name: Run backup script self-tests
         run: bash infra/backup/backup-scripts.test.sh
+
+      - name: Check local and production storage topology
+        run: python3 infra/deploy/__tests__/storage-compose.test.py

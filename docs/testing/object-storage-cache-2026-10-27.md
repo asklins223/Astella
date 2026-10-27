@@ -21,15 +21,15 @@
 
 ## 主机启用步骤
 
-正常 CI 发布可先完成。主机当前固定部署脚本不会自行安装新脚本；部署 SSH key 只有 `deploy <sha>` 权限。本机会话没有主机管理员认证，不能代替主机管理员安装。
+The one-time host setup below has been completed using the administrator access explicitly authorized in this session. Subsequent releases use the existing restricted CI deployment key and the checked-in Compose overlay.
 
-待本版实际部署成功后，在服务器执行：
+For a new production host, run after deploying a version containing these files:
 
 ```sh
 sudo bash /opt/astella/current/infra/deploy/enable-storage-backup.sh
 ```
 
-脚本只安装这版的固定部署脚本并启用配置，不输出凭据。随后重新运行本次 CI 部署，主机内生成独立随机密钥、启动备用服务并初始化私有桶与队列。若主机防火墙另有限制，须允许客户端访问 HTTPS 9443。未完成此步骤前，不应把线上备用服务描述为已经启用。
+The script installs the fixed deployment entry point and enables the production overlay without printing credentials. Run the release deployment again to initialize host-generated independent credentials, the private bucket and the persistent queue. HTTPS 9443 must be reachable by clients. This setup does not apply to local development or Alpha.
 
 ## 验证
 
@@ -48,3 +48,13 @@ sudo bash /opt/astella/current/infra/deploy/enable-storage-backup.sh
 第二次部署在停止 API 前被旧 `minio/minio`、`minio/mc` 镜像拉取失败拦住，线上原服务保持健康。Docker Hub 与 Quay 的旧公开镜像均无法拉取，因此 2.0.4 改为 CI 从上游 `9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a` 源码构建，源压缩包另有固定 SHA-256。镜像经当前项目 GHCR 发布并以 digest 部署；初始化用现有 API 镜像的 S3 SDK，去掉 mc 镜像依赖。MinIO 的 AGPLv3 许可证随镜像保留。
 
 初始化器在一次性本地 MinIO 上执行两次均成功，匿名读取桶返回 403。无真实账号／对象参与该测试。
+
+## Production verification and environment boundary
+
+- Server release `s-v2.0.4`, commit `709d4869`, passed [CI and deployment](https://github.com/asklins223/Astella/actions/runs/40486220190). `/app/server-version` returns 2.0.4 and `/ready` returns 200.
+- The cloud primary and server-local standby are both running. The authenticated transfer configuration lists `https://cn-nb1.rains3.com` and `https://103.106.191.159:9443`. The standby health endpoint returns 200 and an anonymous private-object request returns 403; its console is not published.
+- Two synthetic 68-byte objects, an image and a Markdown file, were sent through each location using grant → direct PUT → completion → repeated completion → authorized GET. All four uploads completed with 201 and matching bytes/hashes. No conversation was sent and no AI job was invoked. The four disposable objects, their transfer receipts and image registrations have been removed; all eight primary/standby HEAD checks confirm their absence.
+- The persistent replica queue completed the initial backfill of 135 objects with no pending jobs at readback. It remains a single consumer, at most one object per five seconds and 262,144 bytes/second by default.
+- Local `docker-compose.dev.yml` and the Alpha overlay use exactly one local MinIO, with `STORAGE_MODE=local` and `STORAGE_BACKUP_ENABLED=false` fixed for both API and worker. Inherited production environment variables cannot activate a cloud dependency or replica queue there. Only the production deployment adds `infra/deploy/docker-compose.storage-backup.yml`.
+- Local MinIO and `mc` images now build from pinned, checksum-verified upstream source instead of unavailable public image tags. The Alpha backup runner reuses the pinned client build and continues to use the same local store.
+- Three resolved Compose configuration tests cover development, Alpha and production, and run from both `make verify` and CI. The source-built client initialized a disposable local store twice, round-tripped bytes and preserved anonymous 403 responses. The source-built backup runner also starts successfully; the existing 53 backup-script assertions and two deployment-bundle tests pass. Existing development containers were left running throughout verification.

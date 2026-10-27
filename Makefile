@@ -188,6 +188,8 @@ verify: version-check
 	# 校验值命令）。它以前**只有文档提到、没有任何验证目标跑它**——和当初
 	# agent-core / agent-host "有测试但不在目标里" 是同一类。只依赖 bash + mktemp。
 	bash infra/backup/backup-scripts.test.sh
+	# Resolve storage topology without starting containers or requiring cloud credentials.
+	python3 infra/deploy/__tests__/storage-compose.test.py
 	cd packages/shared && npm run typecheck && npm test
 	# 2026-10-05（方案 44）：agent-core 与 agent-host 此前**不在**验证目标里——
 	# 而上下文预算解析、完整请求计量、压缩冷却与失败学习全在 agent-core，

@@ -13,6 +13,10 @@
 #   docker compose -f docker-compose.alpha.yml run --rm backup-runner backup
 #   docker compose -f docker-compose.alpha.yml run --rm backup-runner restore-verify
 
+FROM golang:1.24.9-alpine3.22 AS mc-build
+COPY infra/storage-backup/build-client.sh /build-client.sh
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build sh /build-client.sh
+
 FROM alpine:3.20
 
 # Install: PostgreSQL client (pg_dump/pg_restore), age (encryption),
@@ -26,21 +30,10 @@ RUN apk add --no-cache \
     python3 \
     coreutils \
     ca-certificates \
-    && \
-    # Install MinIO client (mc)
-    arch="$(uname -m)" && \
-    case "$arch" in \
-      x86_64) mc_arch="amd64" ;; \
-      aarch64) mc_arch="arm64" ;; \
-      *) echo "Unsupported architecture: $arch" >&2; exit 1 ;; \
-    esac && \
-    curl -fsSL "https://dl.min.io/client/mc/release/linux-${mc_arch}/mc" \
-      -o /usr/local/bin/mc && \
-    chmod +x /usr/local/bin/mc && \
-    # Verify tools
-    pg_dump --version && \
-    age --version && \
-    mc --version
+    && pg_dump --version && age --version
+COPY --from=mc-build /out/mc /usr/local/bin/mc
+COPY --from=mc-build /out/LICENSE.mc /usr/share/licenses/mc/LICENSE
+RUN mc --version
 
 # Copy backup scripts
 COPY infra/backup/backup.sh /opt/astella/backup.sh

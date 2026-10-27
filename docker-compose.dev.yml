@@ -41,7 +41,11 @@ services:
       - astella_net
 
   minio:
-    image: minio/minio:RELEASE.2024-12-18T13-15-44Z
+    build:
+      context: .
+      dockerfile: infra/storage-backup/Dockerfile
+    image: astella-local-object-store:source
+    pull_policy: build
     profiles: ["storage"]
     restart: unless-stopped
     command: server /data --console-address ":9001"
@@ -65,18 +69,22 @@ services:
   # for it to exit; stale containers are removed at the start of the next
   # `up`/`storage` run (or manually via `make clean-init`).
   minio-init:
-    image: minio/mc:RELEASE.2024-11-21T17-21-54Z
+    build:
+      context: .
+      dockerfile: infra/storage-backup/Dockerfile.client
+    image: astella-local-object-client:source
+    pull_policy: build
     profiles: ["storage"]
     depends_on:
       minio:
         condition: service_healthy
-    entrypoint: >
-      /bin/sh -c "
-      mc alias set local http://minio:9000 astella astella_dev_secret;
-      mc mb -p local/astella-workspaces || true;
-      mc anonymous set none local/astella-workspaces;
-      echo 'minio init done';
-      "
+    entrypoint: ['/bin/sh', '-ec']
+    command:
+      - |
+        mc alias set local http://minio:9000 astella astella_dev_secret
+        mc mb -p local/astella-workspaces
+        mc anonymous set none local/astella-workspaces
+        echo 'minio init done'
     networks:
       - astella_net
 
@@ -291,6 +299,7 @@ services:
       # Image upload: MinIO/S3 storage endpoint and credentials.
       # Must match the dev minio service's MINIO_ROOT_USER/PASSWORD below.
       STORAGE_MODE: local
+      STORAGE_BACKUP_ENABLED: 'false'
       STORAGE_ENDPOINT: http://minio:9000
       S3_BUCKET: ${S3_BUCKET:-astella-workspaces}
       MINIO_ROOT_USER: astella
@@ -361,6 +370,7 @@ services:
       COMPANION_DAILY_SUMMARY_V1: ${COMPANION_DAILY_SUMMARY_V1:-true}
       # Source image upload: MinIO/S3 storage for embedded images
       STORAGE_MODE: local
+      STORAGE_BACKUP_ENABLED: 'false'
       STORAGE_ENDPOINT: http://minio:9000
       S3_BUCKET: ${S3_BUCKET:-astella-workspaces}
       MINIO_ROOT_USER: astella
