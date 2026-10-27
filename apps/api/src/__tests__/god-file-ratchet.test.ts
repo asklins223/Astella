@@ -121,7 +121,11 @@ const BASELINE: Readonly<Record<string, number>> = {
   // 2026-10-25：单循环容错接线（首字超时重试、域工具回执收尾、编辑终答宿主绑定）
   // 使 1576 → 1749。重试已移入 companion-model-retries.ts；收尾装配与终答去重
   // 移入 companion-host-settlement.ts 后降到 1746。下一轮继续拆交付闸后删掉这一条。
-  "workers/ai-worker/src/handlers/agent/companion-agent-runtime.ts": 1746,
+  // 2026-10-27：算术前置重试（companion-arithmetic-check）、工具回执收尾
+  // （companion-tool-output）、当前页笔记观察（companion-note-observation）三块
+  // 在本文件内接线，1746 → 2053。三者都已各自独立成模块，剩下的增量主要是
+  // 对应的调用点与容错状态机；下一轮把「工具调用校验/回执分派」整段移出后删掉这一条。
+  "workers/ai-worker/src/handlers/agent/companion-agent-runtime.ts": 2053,
   // 2026-10-05：`workers/ai-worker/src/handlers/note/parse-source.ts` 1878 → 1485，
   // 从基线里**删掉**这一条。HTML → 正文/标题的提取（`removeElementsByClass`、
   // 三张 class 模式表、`decodeFormulaAlt`、`imgReplacement`、`extractTextFromHtml`、
