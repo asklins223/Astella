@@ -155,18 +155,23 @@ async function verify(kind: string, round: number): Promise<{ run: Run; ok: bool
       return { run, ok: run.visible.trim().length > 0 && run.calls.length === 0,
         detail: `${run.visible.trim().length} chars, ${run.calls.length} tools`, firstTry: true };
     case "notes": {
-      const ok = succeeded(run, "notes.write.create");
+      // The note exists afterwards, either because this turn created it or
+      // because an earlier round did and she correctly declined to duplicate it.
       const expectedTitle = /《([^》]+)》/u.exec(prompt)?.[1] ?? "";
       const [note] = await db`select title from notes where workspace_id=${workspaceId} and deleted_at is null
         and title = ${expectedTitle} order by created_at desc limit 1`;
-      return { run, ok: ok && Boolean(note),
-        detail: ok ? String(note?.title ?? "") : run.visible.slice(0, 60), firstTry: ok };
+      const created = succeeded(run, "notes.write.create");
+      return { run, ok: Boolean(note),
+        detail: `${note ? String(note.title) : "missing"}${created ? " (created)" : " (already there)"}`,
+        firstTry: Boolean(note) };
     }
     case "memory": {
-      const ok = succeeded(run, "memory.write.save");
+      // Same rule as notes: the fact exists afterwards. Refusing to store a
+      // duplicate is correct behaviour, not a failure.
       const [row] = await db`select content from assistant_memory_items where workspace_id=${workspaceId}
         and user_id=${userId} and deleted_at is null and content like '%十点%' limit 1`;
-      return { run, ok: ok && Boolean(row), detail: ok ? String(row?.content ?? "").slice(0, 40) : run.visible.slice(0, 60), firstTry: ok };
+      return { run, ok: Boolean(row), detail: row ? String(row.content).slice(0, 40) : run.visible.slice(0, 60),
+        firstTry: Boolean(row) };
     }
     case "reminder": {
       const ok = succeeded(run, "attention.write.schedule_reminder");

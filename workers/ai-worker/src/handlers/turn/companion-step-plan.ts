@@ -31,6 +31,15 @@ export const TOOL_FAILURE_SAFE_SUMMARY = "工具执行失败，请稍后再试";
 
 /** Missing object bindings are a discovery problem, not a cancellation of
  * the user's requested write. Execution still resolves and fences identities. */
+/**
+ * Did this turn ask for something the app must do?
+ *
+ * The interpreter's read of the sentence is one signal, not the only one: it
+ * labelled "打开笔记库" and "明早十点叫我复习" as `question/uncertain` (2026-10-27
+ * soak), which let the reply promise the action with no receipt. The other
+ * signal is the agent's own output — a completion claim about an action it did
+ * not perform — which the delivery steer decides by receipt, not by wording.
+ */
 export function companionRequestsAction(attention: { toolUse: string; intent: string; candidateOperations: readonly string[] },
   definitions: readonly { name: string; riskClass: string }[]): boolean {
   // Candidates may be the model-facing domain tool or the internal operation id.

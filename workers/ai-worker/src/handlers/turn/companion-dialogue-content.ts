@@ -437,6 +437,28 @@ const BARE_DIGIT_TAIL = /\d$/;
 const UNCLOSED_PAIR = /[《「『“（【[][^》」』”）】\]]*$/;
 
 /** 这句话是不是在语法上断了。空串算断——但空输出另由 companionOutputRejectionReason 接。 */
+/**
+ * Is this stream stuck repeating itself?
+ *
+ * A degraded model can loop one sentence for thousands of deltas (2026-10-27
+ * soak: one sentence repeated to 3,289 deltas, holding the run open for 426s
+ * because every delta reset the idle watchdog). The signal is structural, not
+ * lexical: the tail of the reply is built from very few distinct sentences.
+ */
+export function companionStreamRepeatsItself(text: string): boolean {
+  // The window starts where a genuine loop is unmistakable. A short repetitive
+  // answer is already covered by the collapse gate and ends on its own; firing
+  // earlier would cut legitimate repetitive content the user asked for.
+  if (text.length < 1_500) return false;
+  const tail = text.slice(-1_000);
+  const sentences = tail.split(/[。！？!?\n]+/u).map(part => part.trim()).filter(part => part.length >= 6);
+  if (sentences.length < 10) return false;
+  const distinct = new Set(sentences).size;
+  // Few distinct sentences across many repeats is a loop; ordinary prose keeps
+  // most of its sentences distinct.
+  return distinct <= Math.max(2, Math.floor(sentences.length / 8));
+}
+
 export function looksTruncatedReply(text: string): boolean {
   const trimmed = text.trim();
   if (trimmed.length === 0) return true;
@@ -478,6 +500,41 @@ export function noteSearchTerms(query: string): string[] {
  */
 const ACTION_NARRATION_TEST = /(这就去|这就帮|这就把|我这就|那我去|我去查|我去翻|我去看|马上|稍等|等我查|先翻翻|我翻翻)/;
 export const ACTION_NARRATION_MAX_CHARS = 24;
+
+/**
+ * Does the reply describe what is *in* a picture?
+ *
+ * The model receives an attachment as a name plus an assetId, not as pixels
+ * (only `companion_visual` sends the bytes). Without a read receipt any such
+ * description is invented, however confidently it is phrased — the observed
+ * failure mode is a fluent, fully made-up account of a screenshot.
+ *
+ * This is a content-fact question, so it is answered by the presence of an
+ * image read receipt in the turn, never by the wording of the request.
+ */
+const IMAGE_CONTENT_DESCRIPTION = new RegExp([
+  // Any picture noun followed by a statement about its contents: "图里写的是 X",
+  // "截图里显示答案是 B", "照片上写着公式". The window is generous because the
+  // noun and the verb can be several words apart; questions are excluded by the
+  // caller, so a wide window does not turn "图里写了什么？" into a claim.
+  "(?:图|图片|截屏|截图|照片|画面|图表)[^。！？\\n]{0,10}"
+    + "(?:里|中|上|里面|当中)[^。！？\\n]{0,14}"
+    + "(?:写着|写了|写的是|显示|显示着|是|有|画着|标着|列出|列出的是|包含|内容|文字|答案|标题|公式|表格|数据|数字)",
+  // The content noun carries the claim even without a location word.
+  "(?:图|图片|截屏|截图|照片|画面)[^。！？\\n]{0,6}(?:文字|内容|标题|答案|公式|表格|数据|数字)"
+    + "[^。！？\\n]{0,8}(?:是|为|写着|显示|包含|如下)",
+].join("|"), "gu");
+
+export function claimsImageContent(text: string): boolean {
+  // A question about the picture asks for a read; it does not report one.
+  const statementLines = text.split("\n").filter(line => !/[？?]\s*$/u.test(line.trim()));
+  const statements = statementLines.join("\n").trim();
+  if (!statements) return false;
+  // The pattern carries `g`, so its lastIndex has to be reset: leaving it set
+  // made every second call miss (caught by the unit test, not in production).
+  IMAGE_CONTENT_DESCRIPTION.lastIndex = 0;
+  return IMAGE_CONTENT_DESCRIPTION.test(statements);
+}
 
 export function looksLikeUnfulfilledActionNarration(text: string): boolean {
   const trimmed = text.trim();
@@ -580,6 +637,16 @@ const ACTION_COMPLETION_CLAIM = new RegExp([
   // The object must be an artifact noun, so "已经生成了想法" stays conversation.
   "(?:图|流程图|图表|脑图|演示|速看|草稿|文档)[^。！？\\n]{0,6}(?:已|已经)?(?:生成|绘制|画好|做好|产出)(?:了|好|完成)?",
   "(?:已|已经|刚刚|刚)[^。！？\\n]{0,8}(?:生成|绘制|画出|做好|产出)(?:了|好)?[^。！？\\n]{0,6}(?:图|流程图|图表|脑图|演示)",
+  // A created artifact named by its own noun: "笔记《X》已经建好了". The pattern
+  // above needs 已/了 adjacent to the verb, which word order defeats here
+  // (2026-10-27 soak: this shipped with zero tool calls twice).
+  "(?:笔记|手记|文档|卡片|目标|速看|脑图)[^。！？\\n]{0,16}(?:已经|已)?(?:建好|写好|存好|整理好|保存好|生成好)(?:了|啦)?",
+  "(?:我)?(?:这就|马上|立刻)(?:去|来)?[^。！？\\n]{0,6}(?:新建|创建|保存|写入|记下|安排|写成|整理成)[^。！？\\n]{0,12}",
+  // An acknowledgement that schedules or opens something the app owns. These
+  // carry no 已/了, so the patterns above miss them (2026-10-27 soak: "好，明早
+  // 十点提醒你复习" and "笔记库打开了" both shipped with zero tool calls).
+  "^(?:好的?|嗯|行|可以|没问题)?[，,]?\\s*(?:明早|明天|后天|今晚|每天|每周|等会|稍后)[^。！？\\n]{0,12}(?:提醒你|叫你|通知你|提醒一下)",
+  "(?:笔记|手记|卡片|首页|设置|页面|界面|库|面板|列表|详情)[^。！？\\n]{0,4}(?:已经|已)?(?:打开|切到|跳到|进入)(?:了|啦)?",
   "(?:图|流程图|图表|脑图|演示)[^。！？\\n]{0,4}(?:已经|已)?(?:画|生成|做)(?:出来|好)?(?:了|啦)?",
 ].join("|"), "giu");
 const ACTION_CLAIM_PREFIX_NEGATIVE = /(?:如果|要是|若|是否|会不会|能不能|可不可以|有没有|要不要|没有|还没|尚未|并未|不是|不会|不能|没法|无法|未能|别|不要|不用)[^。！？\n]{0,6}$/u;
@@ -1399,9 +1466,11 @@ export function renderUserAttachedImagesLine(
 ): string | null {
   if (images.length === 0) return null;
   const list = images.map((image) => `assetId=${image.assetId}（${image.label}）`).join("；");
+  // The pictures themselves travel with this turn when the model can see, so
+  // this line only identifies them. Describing what is *in* a picture is still
+  // forbidden without having looked — that is the receipt gate's job.
   return `用户这一轮自己发了 ${images.length} 张图：${list}。`
-    + "要看图里写了什么就调用 companion_visual（action=read_image）并把 assetId 原样传进去；"
-    + "没看过就说没看，不要凭图名或上下文猜图里的内容。";
+    + "这些图就是这一轮的附件；按用户问的看图回答，图里没有或看不清就直说，不要凭图名或上下文猜图里的内容。";
 }
 
 export function companionSelectionText(value: unknown): string | null {

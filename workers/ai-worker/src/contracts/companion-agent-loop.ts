@@ -42,6 +42,13 @@ export interface CompanionAgentLoopArgs {
    * only tells it that the boundaries matter.
    */
   replyShape?: { messages: number } | null;
+  /**
+   * The conversation model itself can see (declared `vision` on its profile).
+   * When true, this turn's attached pictures are sent with the request so the
+   * model looks at them instead of answering from their file names. Resolved by
+   * the caller from governance, never guessed inside the loop.
+   */
+  turnImagesSentDirectly?: boolean;
   /** Hash/scope-verified committed deltas already shown in this same run. */
   initialVisibleText?: string;
   /** Commit complete, validated visible step text before pausing or resuming. */

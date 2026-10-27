@@ -55,6 +55,7 @@ import {
   canRetryCompanionStream,
   CompanionSpeculativeStepDiscardedError,
   runStreamingAgentStep,
+  CompanionDegenerateLoopError,
 } from "../agent/companion-agent-streaming-step.ts";
 import { classifyCompanionToolFailure } from "../tools/companion-tool-outcome.ts";
 import { CompanionToolUnavailableError } from "../tools/companion-tool-result.ts";
@@ -318,6 +319,18 @@ const STREAM_STEP_REQUEST: AgentTurnRequest = {
   maxTokens: 700,
   temperature: 0.9,
 };
+
+test("循环退化的流按自己的错误收口，交给运行时重跑，而不是当成交付叫停", async () => {
+  // 2026-10-27 soak: one sentence repeated for thousands of deltas held a run
+  // open for 426s. The guard must stop the step AND report a repairable loop;
+  // reporting a delivery-pipeline stop marked the whole turn failed.
+  const loop = Array.from({ length: 120 }, () => "记住了，十点以后不打扰你，有事留到明天。");
+  const { provider } = streamingStubProvider(loop);
+  await assert.rejects(runStreamingAgentStep({
+    provider, stepRequest: STREAM_STEP_REQUEST, ctxSignal: new AbortController().signal,
+    timeoutMs: 5_000, onProviderDelta: async () => true,
+  }), (error: unknown) => error instanceof CompanionDegenerateLoopError);
+});
 
 test("发布前保留完整复核结果：长流不吐字，也不剪掉末尾", async () => {
   const deltas = ["第一段解释。".repeat(900), "第二段解释。".repeat(900), "关键条件在全文末尾。"];

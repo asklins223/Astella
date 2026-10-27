@@ -154,3 +154,36 @@ test("a produced artifact is a delivered result and needs a receipt", () => {
     "要不要生成一张图？",
   ]) assert.deepEqual(claimsApplicationActionCompletion(text), [], text);
 });
+
+test("acknowledging a scheduled action or an opened page is a claim too", () => {
+  // Neither carries 已/了, so the older patterns missed them; both shipped with
+  // zero tool calls in the 2026-10-27 soak.
+  for (const text of [
+    "好，明早十点提醒你复习线性代数。",
+    "笔记库打开了，里面有《复盘甲》《复盘乙》。",
+    "好的，明天九点叫你起床",
+    "设置页面已经打开了",
+  ]) assert.ok(claimsApplicationActionCompletion(text).length > 0, text);
+  for (const text of [
+    "明天记得带伞，路上小心。",
+    "我记得你明天要考试。",
+    "笔记库里有两篇复盘。",
+  ]) assert.deepEqual(claimsApplicationActionCompletion(text), [], text);
+});
+
+test("a created artifact named by its noun, or an imminent creation, is a claim", () => {
+  // 2026-10-27 soak: "笔记《复盘乙》已经建好了" and "我这就把这三点写成一篇新笔记"
+  // both shipped with zero tool calls.
+  for (const text of [
+    "笔记《复盘乙》已经建好了，三点都写进去了。",
+    "好，我这就新建这篇笔记。",
+    "我这就把这三点写成一篇新笔记。",
+    "手记已经整理好了",
+  ]) assert.ok(claimsApplicationActionCompletion(text).length > 0, text);
+  for (const text of [
+    "库里已经有一篇《复盘甲》了",
+    "这篇笔记写得很清楚。",
+    "我这就去看看你的笔记",
+    "我马上告诉你",
+  ]) assert.deepEqual(claimsApplicationActionCompletion(text), [], text);
+});

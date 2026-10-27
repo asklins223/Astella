@@ -93,7 +93,7 @@ import {
   EAGER_TOOL_DISPATCH_ENABLED,
   createCompanionEagerScheduler,
 } from "./companion-eager-dispatch-config.ts";
-import { canRetryCompanionStream, runStreamingAgentStep } from "./companion-agent-streaming-step.ts";
+import { canRetryCompanionStream, runStreamingAgentStep, CompanionDegenerateLoopError } from "./companion-agent-streaming-step.ts";
 import { executeWatchedCompanionTurn, CompanionOutputTimeoutError } from "./companion-output-watchdog.ts";
 import { companionNoteNeedsRelatedSearch, companionNoteEditPrerequisite } from "../note/companion-note-authoring-stage.ts";
 import { CompanionStreamStoppedError } from "../turn/companion-dialogue-stream.ts";
@@ -120,6 +120,7 @@ import { companionRecoveryIdentity, openCompanionTurn } from "../turn/companion-
 import { judgeCompanionUnavailableTool } from "../tools/companion-unavailable-tool.ts";
 import { resumeCompanionInterruptedInput } from "./companion-resume-input.ts";
 import { companionToolAuditLabel, rejectUnknownCompanionTool, unofferedToolReceipt, validateCompanionToolCall } from "../tools/companion-tool-call-validation.ts";
+import { attachImagesToLastUserMessage, loadCompanionAttachmentImages } from "./companion-attachment-images.ts";
 import { applyCompanionToolLoad, createCompanionToolSurface, companionAttachmentReadRequired } from "../tools/companion-tool-surface.ts";
 
 export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promise<CompanionAgentLoopResult> {
@@ -214,6 +215,23 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
   const requirements = directEntry ? {}
     : companionRequestRequirements(args.read.userText ?? "", availableDefinitions.some(tool => tool.name === "companion_notes_write"), availableDefinitions.map(tool => tool.name));
   let messages = opening.messages;
+  /**
+   * Put this turn's pictures in front of the model directly. It declares
+   * vision, so it can look; sending only "image 1: assetId=…" made it answer
+   * from the name, confidently and wrongly. Only the current user message is
+   * decorated, and only on the turn whose pictures these are.
+   */
+  if (args.turnImagesSentDirectly === true && args.read.userImageAttachments?.length) {
+    const images = await loadCompanionAttachmentImages({
+      workspaceId: args.ctx.workspaceId, userId: args.read.userId,
+      attachments: args.read.userImageAttachments, runId: args.read.runId,
+    });
+    if (images.length > 0) {
+      messages = attachImagesToLastUserMessage(messages, images);
+      logger.info({ runId: args.read.runId, attached: images.length,
+        sent: args.read.userImageAttachments.length }, "companion attached images are sent with the turn");
+    }
+  }
   const recoveryIdentity = companionRecoveryIdentity({
     args, currentRequest, permissionLevel: meta.permissionLevel,
     definitions: availableDefinitions,
@@ -392,6 +410,8 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
    * The next step must actually call a tool; the host does not choose which.
    */
   let correctionRequiresTool = false;
+  /** One correction for describing an unseen picture, then the honest note stands. */
+  let imageClaimCorrected = false;
   event.verifyUtterance = text => {
     // The rule exists to stop one reply from being said twice: prose first, then
     // the same sentences again through the speech tool.
@@ -926,6 +946,21 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
         try {
           result = await attemptStream();
         } catch (error) {
+          if (error instanceof CompanionDegenerateLoopError) {
+            // The model looped instead of finishing. Retry this step on the
+            // configured alternate with the same request; the looped text is
+            // dropped because nothing after the first repeat is new content.
+            logger.warn({ runId: args.read.runId, stepCount, chars: error.text.length },
+              "companion reply degraded into a repetition loop; retrying the step");
+            if (args.fallbackProvider && args.fallbackProvider !== stepProvider
+              && await companionProviderFitsRequest(args.fallbackProvider, stepRequest)) {
+              stepProvider = args.fallbackProvider;
+              protocolFallback = true;
+            }
+            result = await runBuffered(1);
+            if (companionStreamRepeatsItself(String(result.content ?? "")))
+              throw new AgentOutputError("no_progress", "companion reply repeated itself on the retry");
+          } else {
           if (!canRetryStream(error)) throw error;
           // 传**错误对象**而不是 message 字符串：序列化器（safeErrorSerializer）
           // 对非 Error 输入一律投影成 `{name:"Error", code:null}`，等于把唯一
@@ -976,6 +1011,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
               "companion streaming answer failed for a non-transient reason; retrying with buffered turn",
             );
             result = await runBuffered();
+          }
           }
         }
         // 收口（成功路）：**必须**在循环看到 result.toolCalls 之前把在途等完。
@@ -1154,6 +1190,27 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     // 是一圈真实的类型推断回路（steer 之后那一步换哪个模型，取决于这一步说了什么）。
     // 少这个注解，tsc 报 TS7022/TS18046 一长串，而看起来最无辜的改法都会"莫名"炸掉整个文件。
     const said: string = String(result.content ?? "").trim() ? String(result.content ?? "") : stepVisibleText;
+    /**
+     * Describing a picture that was never looked at is the same class of failure
+     * as claiming a write with no receipt: the facts say it cannot be known.
+     * The pictures count as seen when they were sent with this request, or when
+     * the turn holds a successful image read.
+     */
+    const sawImages = args.turnImagesSentDirectly === true
+      || messages.some(message => message.role === "tool" && typeof message.content === "string"
+        && message.content.includes('"operation":"visual.read_image"') && message.content.includes('"ok":true'));
+    if (!sawImages && calls.length === 0 && args.read.userImageAttachments?.length
+      && claimsImageContent(said) && !imageClaimCorrected) {
+      imageClaimCorrected = true;
+      messages = dropCompanionInternalCorrections(messages);
+      messages.push(...companionStepCorrectionMessages({ currentRequest, alreadyDisplayed: stepEmitted,
+        instruction: "这一轮的图片你还没有真正看到，不能描述图里的内容。"
+          + "要么先用 companion_visual（action=read_image）读图再回答，要么如实说你还没看到；不要凭图名或上下文猜。" }));
+      await finishBoundary(stepId, "succeeded", sha256Utf8V1(said));
+      await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta() });
+      logger.warn({ runId: args.read.runId, stepCount }, "companion described image content without looking");
+      return { kind: "continue" };
+    }
     const unmet = !directEntry && calls.length === 0
       ? companionRequirementIssue(requirements, said, [...compactedEvidence, ...messages]) : null;
     if (unmet) {
@@ -1227,6 +1284,9 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
             steer: calls.length === 0 && stepCount < stepBudget && Date.now() < deadlineAt
               && actionSteerAttempts < actionSteerBudget({ userAskedForAction })
               && ((userAskedForAction && !companionActionResultRecorded(messages, requestedActionTools))
+                // A turn with no tool call that reports an action is the same
+                // failure whether or not the interpreter recognised the request:
+                // the receipt is missing either way.
                 || (toolCallCount === 0 && (review.unbackedActionClaims.length > 0
                   || looksLikeUnfulfilledActionNarration(said)))),
             consumeAction: true, consumeLookup: false, swapToFallback: false,
@@ -2040,7 +2100,7 @@ import {
   type CompanionAgentLoopResult,
 } from "../turn/companion-step-plan.ts";
 import { companionSteerCause, judgeCompanionDeliveryGate } from "./companion-delivery-gates.ts";
-import { looksLikeUnfulfilledActionNarration } from "../turn/companion-dialogue-content.ts";
+import { looksLikeUnfulfilledActionNarration, companionStreamRepeatsItself, claimsImageContent } from "../turn/companion-dialogue-content.ts";
 
 // 事件与步进持久化由 companion-agent-events.ts 承担，也在该模块保存运行态模型恢复点。
 import {

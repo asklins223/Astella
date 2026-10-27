@@ -11,6 +11,7 @@ import { isTransientCompanionModelError } from "./companion-model-retries.ts";
 import { stripVoiceExpressionTags, withholdPartialVoiceExpressionTag } from "@astella/shared/voice-expression-tags";
 import { containsCompanionToolProtocol,
   withholdPartialCompanionToolProtocol } from "../tools/companion-tool-protocol-output.ts";
+import { companionStreamRepeatsItself } from "../turn/companion-dialogue-content.ts";
 import { CompanionToolOutputRepairError } from "../tools/companion-tool-output-repair.ts";
 import { watchCompanionOutput, CompanionOutputTimeoutError } from "./companion-output-watchdog.ts";
 
@@ -69,6 +70,14 @@ export function canRetryCompanionStream(error: unknown, state: { emitted: boolea
  * 之后按原路径重跑这一步即可。单独一个类是为了不和"交付管线叫停"
  * （`CompanionStreamStoppedError`）混在一起——那一类要按失败收尾。
  */
+/** The model repeated one sentence instead of finishing (see the loop guard). */
+export class CompanionDegenerateLoopError extends Error {
+  constructor(readonly text: string) {
+    super("companion reply degraded into a repetition loop");
+    this.name = "CompanionDegenerateLoopError";
+  }
+}
+
 export class CompanionSpeculativeStepDiscardedError extends Error {
   constructor() {
     super("companion speculative step discarded before any release");
@@ -194,6 +203,8 @@ export async function runStreamingAgentStep(args: {
   let draftText = "";
   let projectedThrough = 0;
   let invalidToolProtocol = false;
+  /** The model looped on itself; stop the stream and let the caller repair. */
+  let degradedLoop = false;
 
   /** 把一段文本交给交付管线。这里是"第一个字符真的下发了"的唯一现场。 */
   const deliver = (text: string): void => {
@@ -398,6 +409,15 @@ export async function runStreamingAgentStep(args: {
           outputActivity();
           args.onRawTextDelta?.(delta);
           consume(delta);
+          // A looping model never goes idle, so the watchdog alone cannot end
+          // it: it kept one run open for 426s emitting 3,289 deltas of the same
+          // sentence (2026-10-27 soak). Stop the step; the turn's repair ladder
+          // decides what the user gets.
+          if (!invalidToolProtocol && companionStreamRepeatsItself(draftText)) {
+            degradedLoop = true;
+            stopped = true;
+            controller.abort();
+          }
         },
         ), signal);
         // A fast provider may finish before classification. Keep this step alive
@@ -411,6 +431,7 @@ export async function runStreamingAgentStep(args: {
     );
     await flushChain.catch(() => undefined);
     if (discarded) throw new CompanionSpeculativeStepDiscardedError();
+    if (degradedLoop) throw new CompanionDegenerateLoopError(draftText);
     if (stopped) throw new CompanionStreamStoppedError("companion stream stopped by delivery pipeline");
     // 纯文本模式下 provider 累积的 content 就是正文。但如果这一轮走了信封解码
     // （头部嗅探判定为信封），解码结果就是**唯一事实来源**——它同时是已下发的
@@ -436,6 +457,9 @@ export async function runStreamingAgentStep(args: {
     };
   } catch (error) {
     await flushChain.catch(() => undefined);
+    // The loop guard aborts the same controller; it must surface as its own
+    // failure so the runtime can retry, not as a delivery-pipeline stop.
+    if (degradedLoop) throw new CompanionDegenerateLoopError(draftText);
     if (discarded) throw new CompanionSpeculativeStepDiscardedError();
     if (stopped && !(error instanceof CompanionStreamStoppedError)) {
       throw new CompanionStreamStoppedError("companion stream stopped by delivery pipeline");

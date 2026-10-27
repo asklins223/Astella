@@ -472,9 +472,12 @@ export async function runCompanionDialogue(
   if (read.userImageAttachments?.length) {
     const imageAvailability = !govCtx.policy.sendImageContent
       ? "账号尚未开启图片识别。需要识图时说明可在 AI 设置中开启；不要把未授权说成模型不支持图片。"
-      : resolveVisionReader(govCtx)
-        ? "本轮已提供可读取的真实图片，companion_visual（action=read_image）可用。需要描述画面时先读取对应 assetId；不能因为尚未读取就声称只有文件名或没有看图工具。"
-        : "当前服务尚未配置可用的识图模型，需要明确说明服务配置暂不可用。";
+      : resolveVisionReader(govCtx)?.source === "main"
+        // The pictures are in this very request: look at them and answer.
+        ? "这一轮的图片随消息一起提供了，你能直接看到；按用户问的看图回答，图里没有或看不清就直说。"
+        : resolveVisionReader(govCtx)
+          ? "本轮图片需要先读取才能看见：描述画面前用 companion_visual（action=read_image）把 assetId 传进去；没读不要凭图名猜内容。"
+          : "当前服务尚未配置可用的识图模型，需要明确说明服务配置暂不可用。";
     read.hereAndNow = [read.hereAndNow, imageAvailability].filter(Boolean).join("\n");
   }
   const contextReceipts = createCompanionContextReceipts();
@@ -966,6 +969,12 @@ export async function runCompanionDialogue(
       provider,
       fallbackProvider,
       ...(replyShape ? { replyShape } : {}),
+      // Only when the conversation model is the one that can see: an auxiliary
+      // vision model still needs the read tool, because the bytes never reach
+      // the main model's request.
+      turnImagesSentDirectly: Boolean(read.userImageAttachments?.length)
+        && govCtx.policy.sendImageContent === true
+        && resolveVisionReader(govCtx)?.source === "main",
       // 活跃度决定退化闸的字数线（方案 29 §9.17）：不传就等于忽略用户的设置。
       activeness: read.petProfile?.activeness ?? null,
       // 图片能不能出境是**账号级政策**，不是她这一轮可以自己争取的东西：政策关着、
@@ -1357,28 +1366,20 @@ export async function runCompanionDialogue(
    * reminders) keeps one message: its rich blocks and receipts belong to a
    * single answer, and cutting it would separate them from the text.
    */
-  const assistantParts = await (async (): Promise<string[] | undefined> => {
+  // The shape was resolved once, before the first step. Asking a second time
+  // produced a different answer inside the same turn (2026-10-27 soak: `split`
+  // before the loop, `unsure` at delivery, so the two halves stayed one bubble).
+  const assistantParts = ((): string[] | undefined => {
+    if (!replyShape) return undefined;
     if (agentResult.status !== "completed" || agentResult.writesLanded === true) return undefined;
-    if (read.initiativeInput) return undefined;
-    try {
-      const verdict = await judgeCompanionSplitIntent({ userText: read.userText,
-        provider, signal: ctx.signal, runId: read.runId });
-      if (verdict?.decision !== "split") return undefined;
-      const parts = splitCompanionReplyParts(assistantText, companionSplitMessageCount(verdict));
-      if (parts.length < 2) {
-        logger.info({ runId: read.runId, requested: verdict.messages, parts: parts.length },
-          "companion split request produced a single message; delivering it as written");
-        return undefined;
-      }
-      logger.info({ runId: read.runId, parts: parts.length }, "companion reply delivered as separate messages");
-      return parts;
-    } catch (error) {
-      // Delivery shape is an enhancement; failing to resolve it must never cost
-      // the user their answer.
-      logger.warn({ runId: read.runId, error: error instanceof Error ? error.name : "unknown" },
-        "companion split delivery skipped; keeping one message");
+    const parts = splitCompanionReplyParts(assistantText, replyShape.messages);
+    if (parts.length < 2) {
+      logger.info({ runId: read.runId, requested: replyShape.messages, parts: parts.length },
+        "companion split request produced a single message; delivering it as written");
       return undefined;
     }
+    logger.info({ runId: read.runId, parts: parts.length }, "companion reply delivered as separate messages");
+    return parts;
   })();
 
   // 阶段 3c（终态事务）搬到 companion-dialogue-finalization.ts：回答收尾自成一域，

@@ -18,7 +18,7 @@ import {
   looksLikeJsonEnvelope,
   looksLikeJsonFragment,
   looksTruncatedReply,
-  looksLikeUnfulfilledActionNarration,
+  looksLikeUnfulfilledActionNarration, companionStreamRepeatsItself, claimsImageContent,
   unverifiedNumericClaims,
   claimsLookupThatNeverRan,
   companionOutputRejectionReason,
@@ -1352,4 +1352,34 @@ test("服务端注进回放的那句降级说明，不会从她嘴里说出来",
     "整条只剩脚手架时交空串，由下游的空回复路径如实报错，不硬凑一句");
   const clean = finalizeCompanionReplyText({ text: "正常的一句话。", runId: "run-echo-3" });
   assert.equal(clean.text, "正常的一句话。", "没带脚手架的回复不该被动过");
+});
+
+test("a stream stuck on one sentence is detected before it can hold the turn open", () => {
+  // 2026-10-27 soak: this exact sentence repeated to 3,289 deltas and the run
+  // stayed "running" for 426s, because every delta reset the idle watchdog.
+  // 100 repetitions ≈ 2,100 chars, the size the real incident reached.
+  assert.equal(companionStreamRepeatsItself("记住了，十点以后不打扰你，有事留到明天。".repeat(100)), true);
+  assert.equal(companionStreamRepeatsItself("好的。"), false, "short replies never trigger");
+  // Below the window the collapse gate already covers it; do not cut valid
+  // repetitive content.
+  assert.equal(companionStreamRepeatsItself("海边的故事慢慢展开。".repeat(60)), false,
+    "a short repetitive fixture stays with the collapse gate");
+  const prose = "先看错题，把卡住的地方标出来。再做两道新题，注意步骤写全。"
+    + "最后写一段总结，说清这轮学到什么、哪里还含糊。明天的安排再说。";
+  assert.equal(companionStreamRepeatsItself(prose.repeat(4)), false, "repeated paragraphs of real prose are not a loop");
+});
+
+test("describing a picture is a claim about something only looking can establish", () => {
+  for (const text of [
+    "图里写的是 12 个苹果。",
+    "截图里显示答案是 B",
+    "照片上有一块白板，写着公式",
+    "图片中的文字是「光合作用」",
+  ]) assert.equal(claimsImageContent(text), true, text);
+  for (const text of [
+    "我看不到这张图",
+    "这张图我看不清",
+    "要我读一下这张图吗？",
+    "图里写了什么？",
+  ]) assert.equal(claimsImageContent(text), false, text);
 });
