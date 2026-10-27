@@ -31,7 +31,7 @@ test("streamed standby, primary outage, new local write, slow recovery and delet
    STORAGE_BACKUP_ENABLED: "true", STORAGE_BACKUP_ENDPOINT: "http://127.0.0.1:19182", STORAGE_BACKUP_BUCKET: "astella-replica-it",
    STORAGE_BACKUP_ACCESS_KEY_ID: credentials.accessKeyId, STORAGE_BACKUP_SECRET_ACCESS_KEY: credentials.secretAccessKey,
    STORAGE_BACKUP_QUEUE_DIR: root, STORAGE_BACKUP_BYTES_PER_SECOND: "131072" });
-  const storage = await import("../lib/object-storage.ts"), replicas = await import("../modules/storage/replicas.ts");
+  const storage = await import("../lib/object-storage.ts"), replicas = await import("../lib/storage/replicas.ts");
   const bytes = Buffer.alloc(256 * 1024, 0x53), key = "room/companion/image.jpg";
   await storage.uploadObject(key, bytes, "image/jpeg");
   assert.equal(await replicas.getBackupQueue().runOnce(), true);

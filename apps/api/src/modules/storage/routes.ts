@@ -1,4 +1,4 @@
-import { activeStorageLocation, backupEnabled, getBackupQueue, type StorageLocation } from "./replicas.ts";
+import { activeStorageLocation, backupEnabled, getBackupQueue, type StorageLocation } from "../../lib/storage/replicas.ts";
 import { randomUUID, createHash } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { and, eq, isNull, sql } from "drizzle-orm";

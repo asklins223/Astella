@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { StorageBackupQueue, throttledObjectBytes } from "../backup-queue.ts";
+import { StorageBackupQueue, throttledObjectBytes } from "../../../lib/storage/replicas.ts";
 const empty = { scan: async () => ({ keys: [] }), remove: async () => undefined };
 const options = { bytesPerSecond: 262144, intervalMs: 5000, warn: (_: unknown) => undefined };
 test("durable enqueue does not wait for copy; restart executes once", async () => {

@@ -19,7 +19,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { objectTransferDownloadSchema, type ObjectTransferDownload } from "@astella/shared/object-transfer-contracts";
 import { logger } from "./logger.ts";
 import { createHash } from "node:crypto";
-import { activeStorageLocation, backupEnabled, backupPublicOrigin, locationForObject, replicaClient, replicaBucket, enqueueReplica, type StorageLocation } from "../modules/storage/replicas.ts";
+import { activeStorageLocation, backupEnabled, backupPublicOrigin, locationForObject, replicaClient, replicaBucket, enqueueReplica, type StorageLocation } from "./storage/replicas.ts";
 import {
   resolveStorageBucket as resolveStorageBucketShared,
   resolveStorageConfig,

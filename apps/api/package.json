@@ -1,6 +1,6 @@
 {
   "name": "@astella/api",
-  "version": "2.0.2",
+  "version": "2.0.3",
   "private": true,
   "type": "module",
   "main": "src/server.ts",
@@ -36,7 +36,8 @@
     "test:plan44-excerpt:postgres": "node --import tsx --test --test-concurrency=1 --test-force-exit src/integration-tests/plan44-past-excerpt-postgres.integration.ts",
     "test:object-storage:s3": "node --import tsx --test --test-concurrency=1 src/integration-tests/object-storage-transfers.integration.ts",
     "test:ai-consent:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/ai-consent-signing-postgres.integration.ts",
-    "test:note-collaboration:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/note-collaboration-postgres.integration.ts"
+    "test:note-collaboration:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/note-collaboration-postgres.integration.ts",
+    "test:object-storage:replicas": "ASTELLA_RUN_STORAGE_REPLICA_TEST=1 node --import tsx --test src/integration-tests/object-storage-replicas.integration.ts"
   },
   "dependencies": {
     "@astella/agent-core": "file:../../packages/agent-core",
