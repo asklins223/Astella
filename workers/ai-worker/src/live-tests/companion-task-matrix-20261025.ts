@@ -124,10 +124,13 @@ async function turn(name: string, text: string, options: { confirm?: boolean } =
   const selected = events.slice(offset).filter(e => e.runId === accepted.runId);
   const visible = selected.filter(e => e.type === "assistant.delta" || e.type === "assistant.utterance")
     .map(e => e.type === "assistant.utterance" ? e.payload.text : e.payload.textDelta).join("");
+  const [messageCountRow] = await db`select count(*)::int as count from companion_messages
+    where run_id=${accepted.runId} and role='assistant'`;
+  const messageCount = Number(messageCountRow?.count ?? 0);
   const record = { name, text, runId: accepted.runId, generation: accepted.generation,
     terminal: terminal.type, elapsedMs: terminal.receivedAt - start,
     firstTextMs: selected.find(e => ["assistant.delta", "assistant.utterance"].includes(e.type))?.receivedAt - start || null,
-    visible, proposalId,
+    visible, messageCount, proposalId,
     streamedTools: selected.filter(e => e.type === "agent.tool").map(e => ({
       name: e.payload?.tool?.name, status: e.payload?.tool?.status })),
     utterances: selected.filter(e => e.type === "assistant.utterance").map(e => e.payload.text),
@@ -219,9 +222,9 @@ try {
   // honest correction. Record it rather than failing the whole matrix.
   recordCheck("open-page", succeeded(navigation, "open.page"), succeeded(navigation, "open.page") ? "tool" : "host-corrected");
 
-  // 9. say.publish (two utterances)
+  // 9. Two separate messages, delivered from the model's own paragraphs.
   const speech = await turn("say-publish", "分两条跟我说：第一条打个招呼，第二条问我今天先做哪件事。");
-  recordCheck("say-publish", speech.utterances.length === 2, `utterances:${speech.utterances.length}`);
+  recordCheck("say-publish", speech.messageCount === 2, `messages:${speech.messageCount}`);
 
   // 10. goals.write.start
   const goal = await turn("goals-start", "给《联调复盘》做一份速看。");

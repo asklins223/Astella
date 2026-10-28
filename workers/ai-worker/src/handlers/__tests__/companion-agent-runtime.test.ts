@@ -908,7 +908,7 @@ test("named edit routing uses the fresh request without treating old saved claim
  * 自相矛盾（或者干脆留下一句没兑现的承诺）。事后闸救不了已经发出去的字，
  * 所以这里改的是**发不发**：动作轮里，一步结束前不落屏。
  */
-test("stepHoldChars：动作轮整段攒住，普通轮仍是 12 字阈值", () => {
+test("stepHoldChars：动作轮整段攒住，普通轮仍是 4 字阈值", () => {
   assert.equal(stepHoldChars({ userAskedForAction: false }), FINAL_ANSWER_HOLD_CHARS);
   const hold = stepHoldChars({ userAskedForAction: true });
   assert.ok(hold > 10_000, "动作轮的阈值要高到一步的正文永远达不到");

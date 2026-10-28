@@ -197,6 +197,11 @@ const imageBlock = (image: { id: string; objectKey: string }, label: string) => 
   type: "image", url: `/api/uploads/${image.objectKey}`, label, assetId: image.id,
 });
 
+// 0. No picture in this conversation yet: the model must not answer from imagination.
+const none = await turn("图里写的是什么？", []);
+const noneOk = !none.visible.toUpperCase().includes(token1) && !none.visible.toUpperCase().includes(token2);
+results.push({ case: "no-image-honest", ok: noneOk, status: none.status, visible: none.visible.slice(0, 160) });
+
 // 1. One picture: the answer must contain the token that is only in the pixels.
 const single = await turn("这张图里写的是什么？只回答那串字母数字。", [
   imageBlock(images[0]!, "第一张"),
@@ -225,11 +230,6 @@ const multi = await turn("这两张图里各写的是什么？分别告诉我。
 const multiOk = multi.visible.toUpperCase().includes(token1) && multi.visible.toUpperCase().includes(token2);
 results.push({ case: "two-images-doc-quote", ok: multiOk, status: multi.status,
   expected: [token1, token2], visible: multi.visible.slice(0, 240) });
-
-// 3. A question about a picture that does not exist must not be answered from imagination.
-const none = await turn("图里写的是什么？", []);
-const noneOk = !none.visible.toUpperCase().includes(token1) && !none.visible.toUpperCase().includes(token2);
-results.push({ case: "no-image-honest", ok: noneOk, status: none.status, visible: none.visible.slice(0, 160) });
 
 for (const row of results) console.log(JSON.stringify(row));
 const passed = results.filter(row => row.ok).length;

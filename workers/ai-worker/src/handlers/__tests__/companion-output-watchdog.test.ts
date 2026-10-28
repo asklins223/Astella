@@ -10,7 +10,7 @@ test("cold-start output budget is independent from idle progress and remains con
   const previous = keys.map(key => process.env[key]);
   try {
     for (const key of keys) delete process.env[key];
-    assert.deepEqual(companionOutputWatchdogPolicy(), { firstOutputMs: 60_000, idleMs: 45_000 });
+    assert.deepEqual(companionOutputWatchdogPolicy(), { firstOutputMs: 12_000, idleMs: 45_000 });
     process.env.COMPANION_PROVIDER_FIRST_OUTPUT_TIMEOUT_MS = "90000";
     process.env.COMPANION_PROVIDER_IDLE_TIMEOUT_MS = "30000";
     assert.deepEqual(companionOutputWatchdogPolicy(), { firstOutputMs: 90_000, idleMs: 30_000 });

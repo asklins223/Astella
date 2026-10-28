@@ -111,7 +111,7 @@ export const companionCapabilityManifest: readonly AgentCapabilityDeclaration[] 
       if (value.action === "cards" && !value.query) context.addIssue({ code: z.ZodIssueCode.custom, path: ["query"], message: "搜索学习卡需要 query" });
     }), { label: "正在读笔记资料" }, { maxOutputChars: 60_000 },
     { shared: ["当前页面给了 noteId/noteVersionId 时，读正文直接 action=read 并原样传入；全文编辑时 includeBlocks=true，未读完按 startOrdinal/startOffset 续读；搜索候选只有摘要，概括前必须 action=read。"] }),
-  tool("companion_notes_write", "写笔记：action=create 新建、edit 修改、share 共享、annotate 原句批注；按 action 给正文与真实 noteId/version。禁止库内读取时 links 留空。", "reversible_low", false,
+  tool("companion_notes_write", "写笔记：create 新建、edit 修改、share 共享、annotate 批注；按 action 给正文与真实 id/version。用户要求保存时必须现在调用，不要先承诺；禁止读库时 links 留空。", "reversible_low", false,
     z.object({
       action: z.enum(["create", "edit", "share", "annotate"]),
       title: z.string().trim().min(1).max(200).optional(),
@@ -289,7 +289,7 @@ export const companionCapabilityManifest: readonly AgentCapabilityDeclaration[] 
       maxChars: z.number().int().min(1).max(32_768).optional(), key: z.string().min(1).max(120).optional(),
       includeArchived: z.boolean().optional() }).strict(),
     { label: "正在读自己的记录" }, { maxOutputChars: 70_000 }),
-  tool("companion_persona_write", "写自己：self_note 记事、identity 身份、style 语气、tags 标签、activeness 活跃度、boundary 行为边界；按 action 给内容。用户让你记进你自己的记事时用 self_note，不要用 boundary。", "reversible_low", false,
+  tool("companion_persona_write", "写自己：self_note 记事、identity 身份、style 语气、tags 标签、activeness 活跃度、boundary 行为边界。用户让你记进记事时必须现在调用 self_note，不要先承诺，不要用 boundary。", "reversible_low", false,
     z.object({ action: z.enum(["self_note", "identity", "style", "tags", "activeness", "boundary"]),
       key: z.string().min(1).max(120).optional(), expectedRevision: z.number().int().nonnegative().optional(),
       title: z.string().min(1).max(120).optional(), body: z.string().min(1).max(60_000).optional(),

@@ -185,12 +185,10 @@ export function companionMessagesAfterToolProgress(messages: AgentTurnRequest["m
 }
 
 /**
- * 终答步攒够这么多字符才开始下发（见 `runStreamingAgentStep.holdUntilChars`）。
- *
- * 12 字是"值不值得流式"的分界：短于它的回复本来一跳就完，省下流式没有任何损失；
- * 长于它的正常回复照旧逐字下发。真正的目的不是省流量，而是让坍缩闸还能有机会拦。
+ * 普通轮攒够 4 字就开始逐字下发。首个可见块越短，首字体感越接近模型真实首包；
+ * 坍缩闸仍看整步终态，极短回复可能先露头后被纠正——用这段延迟换首字，用户已明确要速度。
  */
-export const FINAL_ANSWER_HOLD_CHARS = 12;
+export const FINAL_ANSWER_HOLD_CHARS = 4;
 
 /** 高到一步的正文永远达不到 = **整段攒住**（只有动作轮用）。 */
 export const BUFFERED_STEP_HOLD_CHARS = 1_000_000;
@@ -198,7 +196,7 @@ export const BUFFERED_STEP_HOLD_CHARS = 1_000_000;
 /**
  * 这一步的话什么时候允许落到屏幕上。
  *
- * 普通轮照旧：攒够 12 字就开始逐字下发（流式体验优先，见 `FINAL_ANSWER_HOLD_CHARS`）。
+ * 普通轮照旧：攒够 4 字就开始逐字下发（流式体验优先，见 `FINAL_ANSWER_HOLD_CHARS`）。
  * **动作轮整段攒住**：用户要的是"必须动系统才算做到"的事（改边界、记/忘、排提醒），
  * 这一步结束之前没人知道她到底调没调工具。先落屏的代价实测过（2026-09-22 场景 T）：
  * "嗯，这条早就设好了喵"先到屏幕上，之后哪怕真调了 `companion_set_boundary`，

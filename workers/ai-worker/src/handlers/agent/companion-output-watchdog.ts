@@ -11,8 +11,9 @@ function configured(value: string | undefined, fallback: number): number {
 }
 export function companionOutputWatchdogPolicy() {
   // 推理模型的上下文预填充可能超过 20 秒。首段等待与输出后的失活检测分开，
-  // 不把健康的长思考或多步工具流程截成固定时长的回合。
-  return { firstOutputMs: configured(process.env.COMPANION_PROVIDER_FIRST_OUTPUT_TIMEOUT_MS, 60_000),
+  // 不把健康的长思考或多步工具流程截成固定时长的回合。12 秒是实测的分界：
+  // 正常首字 2–4.5 秒，超过 12 秒基本是网关卡住；此时尽快切备用档，而不是空等 60 秒。
+  return { firstOutputMs: configured(process.env.COMPANION_PROVIDER_FIRST_OUTPUT_TIMEOUT_MS, 12_000),
     idleMs: configured(process.env.COMPANION_PROVIDER_IDLE_TIMEOUT_MS, 45_000) };
 }
 
