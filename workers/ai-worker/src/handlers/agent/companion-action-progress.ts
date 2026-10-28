@@ -1,7 +1,7 @@
 import type { AgentTurnInterpretationV1 } from "@astella/shared/agent-contracts";
 
 /**
- * A short, user-facing progress label for a clearly classified action.
+ * A short, user-facing progress label for an action the turn already named.
  * This is an observable task status, never model reasoning or a completion claim.
  */
 export function companionActionProgressLabel(

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { agentVoiceStyleDecisionV1Schema } from '@astella/shared/agent-contracts';
 import { validateCompanionAgentToolArguments, canUseCompanionAgentTool, getCompanionAgentTool } from '@astella/shared';
-import { companionDirectInterpretation, companionNamedNoteReadRequest, companionExplicitNoteReadInterpretation, createCompanionDirectControls, resolveCompanionEntryMode, startCompanionEntry } from '../turn/companion-entry-mode.ts';
+import { companionDirectInterpretation, createCompanionDirectControls, resolveCompanionEntryMode, settleCompanionAttention } from '../turn/companion-entry-mode.ts';
 import { companionLatestNoteReadCount } from '../note/companion-note-prefetch.ts';
 const fresh = () => companionDirectInterpretation('a'.repeat(64));
 test('explicit newest-note selections resolve counts without guessing broader requests', () => {
@@ -14,45 +14,25 @@ test('explicit newest-note selections resolve counts without guessing broader re
         assert.equal(companionLatestNoteReadCount(text), null, text);
     }
 });
-test('explicit fresh saved-note reads cannot be treated as no-tool casual replies', () => {
-    const names = ['companion_notes_read'];
-    for (const text of ['请只读取最新一篇手记的正文，用两句话概括。', '帮我读取书房最近更新的三篇笔记。', '请查阅《秦朝》这篇手记。']) {
-        const result = companionExplicitNoteReadInterpretation('a'.repeat(64), text, names);
-        assert.equal(result?.toolUse, 'read', text);
-        assert.ok(result?.candidateOperations.includes('companion_notes_read'));
-    }
-    for (const text of ['请不要读取最新笔记。', '最新笔记这个标题怎么写更好？', '今天不想看笔记。']) {
-        assert.equal(companionExplicitNoteReadInterpretation('a'.repeat(64), text, names), null);
-    }
-    assert.equal(companionExplicitNoteReadInterpretation('a'.repeat(64), '读取我的笔记', []), null);
-});
-test('a named saved-note explanation goes to the evidence path unless its note was already prefetched', () => {
-    const text = '请根据《秦朝统一与中央集权制度》这篇已保存笔记，用三句话解释郡县制与分封制的区别；不要创建或修改笔记。';
-    assert.equal(companionNamedNoteReadRequest(text, []), true);
-    assert.equal(companionNamedNoteReadRequest(text, [{ role: 'system', content: '<prefetched_note>已读取的原文</prefetched_note>', hostObservation: true }]), false);
-    assert.equal(companionNamedNoteReadRequest('请用三句话解释郡县制。', []), false);
-    assert.equal(companionNamedNoteReadRequest('《秦朝》这个故事挺好，今天不想看笔记。', []), false);
-});
 test('entry mode is explicit and the unclassified placeholder never invents a tool decision', () => {
-    // Default is the native tool loop. An explicit unknown value still falls
-    // back to the conservative classified path rather than becoming new work.
     assert.equal(resolveCompanionEntryMode(undefined), 'direct_fast');
-    assert.equal(resolveCompanionEntryMode('unknown'), 'classified');
-    assert.equal(resolveCompanionEntryMode('hybrid'), 'hybrid');
-    assert.equal(resolveCompanionEntryMode('classified'), 'classified');
+    // Unknown or retired values fall back to the fast direct entry instead of
+    // silently re-enabling a classifier.
+    assert.equal(resolveCompanionEntryMode('unknown'), 'direct_fast');
+    assert.equal(resolveCompanionEntryMode('hybrid'), 'direct_fast');
+    assert.equal(resolveCompanionEntryMode('classified'), 'direct_fast');
     assert.equal(resolveCompanionEntryMode('direct_thinking'), 'direct_thinking');
     assert.equal(resolveCompanionEntryMode('direct_fast'), 'direct_fast');
     const a = fresh();
     assert.equal(a.toolUse, 'uncertain');
     assert.deepEqual(a.ambiguities, []);
 });
-test('direct entry resolves without invoking the classifier and persists voice callback before returning', async () => {
+test('the attention record settles without invoking a classifier and persists the voice callback before returning', async () => {
     let written = false;
-    const entry = startCompanionEntry({ mode: 'direct_thinking', requestHash: 'a'.repeat(64), cached: null, names: [], relatedGoals: [], pageKind: null, permissionLevel: 'full', deadlineAt: Date.now() + 1000,
-        args: { provider: { chatCompletion: () => { throw new Error('classifier must not run'); } }, onTurnInterpretation: async () => { written = true; return 'not_requested'; } } as never,
-        recorder: { track: (p: Promise<unknown>) => p } as never });
-    assert.ok(entry.cached);
-    assert.equal((await entry.promise).voicePreferenceWrite, 'not_requested');
+    const attention = await settleCompanionAttention({ requestHash: 'a'.repeat(64), cached: null,
+        args: { onTurnInterpretation: async () => { written = true; return 'not_requested'; } } as never });
+    assert.equal(attention.toolUse, 'uncertain');
+    assert.equal(attention.voicePreferenceWrite, 'not_requested');
     assert.equal(written, true);
 });
 test('deepening changes only this turn and recovered deepening stays enabled', async () => {

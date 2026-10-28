@@ -1,4 +1,7 @@
-import type { CompanionTurnThinkingInput } from "./companion-turn-thinking.ts";
+type CompanionResponseAttention = {
+  intent?: string;
+  toolUse?: string;
+} | null | undefined;
 
 /** A generation instruction, not a claim that facts have been independently verified. */
 export const COMPANION_KNOWLEDGE_REVIEW_V1 = [
@@ -13,7 +16,7 @@ export const COMPANION_KNOWLEDGE_REVIEW_V1 = [
 
 /** Intent is resolved once for the turn. A tool-free final step must not turn
  * a knowledge answer into high-variance chat merely because tools were withheld. */
-export function companionResponseStrategy(attention: CompanionTurnThinkingInput): {
+export function companionResponseStrategy(attention: CompanionResponseAttention): {
   mode: "casual" | "knowledge" | "task";
   temperature: number;
   guidance: string;
@@ -33,7 +36,7 @@ export function companionResponseStrategy(attention: CompanionTurnThinkingInput)
 }
 
 /** Offline quality-comparison experiment only; production does not run a reviewer. */
-export function isCompanionExplanation(attention: CompanionTurnThinkingInput,
+export function isCompanionExplanation(attention: CompanionResponseAttention,
   userText: string, offeredTools: number): boolean {
   return offeredTools === 0 && (attention?.intent === "question" || attention?.intent === "mixed")
     && /解释|讲讲|详细|为什么|原理|推导|讲清|理解|\b(?:explain|why|derive|detailed)\b/iu.test(userText);

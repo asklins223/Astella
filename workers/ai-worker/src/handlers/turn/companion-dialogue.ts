@@ -1,4 +1,5 @@
 import { finishCompanionParticipation, companionInitiativeRepeatsSpeech } from "../tools/companion-participation-tools.ts";
+import { isCompanionParticipationClosure } from "../proactive/companion-participation-output.ts";
 import { reviewCompanionInitiativeSpeech } from "../proactive/companion-initiative-speech-review.ts";
 import { readParticipationPreferences } from "@astella/agent-host";
 import { companionInitiativeInputV1Schema } from "@astella/shared/companion-initiative-contracts";
@@ -35,8 +36,6 @@ import {
   resolveVisionReader,
 } from "../../lib/governance.ts";
 import { createCompanionContextReceipts } from "../context/companion-context-receipts.ts";
-import { createCompanionReleaseEmbeddingPort, createCompanionReleaseRouterPort,
-  resolveCompanionReleaseRouterMode } from "../agent/companion-release-router.ts";
 import {
   createCompactionTraceRecorder,
   resolveRouteInputTokens,
@@ -61,8 +60,7 @@ import {
   type CompanionDisplaySegmentState,
 } from "../../lib/tts-segments.ts";
 import { resolveCompanionVoiceInstruction } from "./companion-voice-request-style.ts";
-import { resolveCompanionEntryMode } from "./companion-entry-mode.ts";
-import { judgeCompanionSplitIntent, companionSplitMessageCount, splitCompanionReplyParts } from "./companion-split-intent.ts";
+import { splitCompanionReplyParts, COMPANION_REPLY_SPLIT_MAX } from "./companion-reply-split.ts";
 import { persistCompanionDialectPreference, readCompanionDialectPreference, readCompanionPreferredAddress } from "./companion-voice-preference.ts";
 import { qwenDialectForInstruction } from "@astella/shared/tts-voice-catalog";
 import { companionVoiceExpressionBoundaries, companionVoiceSegmentExpression, projectCompanionVoiceExpression } from "./companion-voice-expression.ts";
@@ -474,9 +472,9 @@ export async function runCompanionDialogue(
       ? "账号尚未开启图片识别。需要识图时说明可在 AI 设置中开启；不要把未授权说成模型不支持图片。"
       : resolveVisionReader(govCtx)?.source === "main"
         // The pictures are in this very request: look at them and answer.
-        ? "这一轮的图片随消息一起提供了，你能直接看到；按用户问的看图回答，图里没有或看不清就直说。"
+        ? "这一轮的图片随消息一起提供了，你能直接看到；按用户问的看图回答，用自然口语说你看到的，不要套“标题/正文大意/配图”的报告模板；图里没有或看不清就直说。"
         : resolveVisionReader(govCtx)
-          ? "本轮图片需要先读取才能看见：描述画面前用 companion_visual（action=read_image）把 assetId 传进去；没读不要凭图名猜内容。"
+          ? "本轮图片需要先读取才能看见：描述画面前用 companion_visual（action=read_image）把 assetId 传进去，用自然口语回答；没读不要凭图名猜内容。"
           : "当前服务尚未配置可用的识图模型，需要明确说明服务配置暂不可用。";
     read.hereAndNow = [read.hereAndNow, imageAvailability].filter(Boolean).join("\n");
   }
@@ -939,36 +937,12 @@ export async function runCompanionDialogue(
   let assistantText: string;
   let ttsRawText: string | null = null;
   let agentResult;
-  /**
-   * Resolve the requested delivery shape before the first step, not after the
-   * reply exists. The judge is one small closed-set call; running it here lets
-   * every step write its paragraphs as the separate messages they will become,
-   * so the model never has to be corrected into a shape it did not know about.
-   * A missing verdict simply means the ordinary single-message reply.
-   */
-  const replyShape = read.initiativeInput ? null : await judgeCompanionSplitIntent({
-    userText: read.userText, provider, signal: ctx.signal, runId: read.runId,
-  }).then(verdict => verdict?.decision === "split"
-    ? { messages: companionSplitMessageCount(verdict) } : null)
-    .catch(() => null);
   try {
-    // L1 路由（默认关）：只有显式开启时才建 embedding 出口，且它走治理门（同意 + 外发政策）。
-    const releaseRouterMode = resolveCompanionEntryMode() === "classified" ? resolveCompanionReleaseRouterMode() : "off";
-    const releaseRouterEmbed = releaseRouterMode === "off" ? undefined
-      : createCompanionReleaseEmbeddingPort({ workspaceId: ctx.workspaceId, userId: read.userId, job: ctx });
-    const releaseRouter = releaseRouterMode !== "enforce" || !releaseRouterEmbed ? undefined
-      : createCompanionReleaseRouterPort({
-        mode: releaseRouterMode, scopeKey: `${ctx.workspaceId}:${read.userId}`, text: read.userText,
-        recentMessages: read.recentMessages,
-        activeLearningTask: false,
-        embed: releaseRouterEmbed, workspaceId: ctx.workspaceId, userId: read.userId,
-      });
     agentResult = await runCompanionAgentLoop({
       ctx,
       read,
       provider,
       fallbackProvider,
-      ...(replyShape ? { replyShape } : {}),
       // Only when the conversation model is the one that can see: an auxiliary
       // vision model still needs the read tool, because the bytes never reach
       // the main model's request.
@@ -983,8 +957,6 @@ export async function runCompanionDialogue(
       toolConstraints: {
         visionEnabled: govCtx.policy.sendImageContent === true && resolveVisionReader(govCtx) !== null,
       },
-      ...(releaseRouterEmbed ? { embedText: releaseRouterEmbed } : {}),
-      ...(releaseRouter ? { releaseRouter } : {}),
       baseMessages: committedMessages,
       initialVisibleText: initialDelivery.text,
       onVisibleCheckpoint: async modelText => {
@@ -1191,6 +1163,15 @@ export async function runCompanionDialogue(
     text: agentResult.text, factSpans: read.factSpans?.values ?? null, runId: read.runId,
   });
   ttsRawText = finalized.text;
+  // A proactive turn that announces its own silence is a quiet finish, not a
+  // message. Models sometimes write "安静结束。" instead of returning empty;
+  // the step guard clears `content`, but the delivered text can still carry it.
+  // Check the finalized text, which is what would actually reach the bubble.
+  if (read.initiativeInput && isCompanionParticipationClosure(ttsRawText)) {
+    await thinkingDelivery.finish();
+    await finishCompanionParticipation(ctx, read, expiresAt);
+    return;
+  }
 
   // A host occasion may end without speech. Providers can return only voice
   // markers instead of an empty string; that still has no visible
@@ -1354,30 +1335,22 @@ export async function runCompanionDialogue(
     deliveredPrefixOnly ? assistantText : ttsRawText, undefined, publishedVoiceChars);
 
 
-  // ── Delivery shape: separate messages ──────────────────────────────────
   /**
-   * A request for "two messages" is answered by the model as one reply that
-   * already contains both, separated by a blank line (measured: 10/10 with a
-   * blank line, 0/5 without the request). Reading that boundary here is the same
-   * step Muse's parser takes on its `to=user` bodies: the reply is split into
-   * the messages it already holds, and each is stored as its own chat message.
+   * The generation owns the delivery shape: a reply written as several
+   * paragraphs is delivered as several messages. There is no separate judge —
+   * the model already wrote the answer; the host only reads its paragraph
+   * boundaries. Code blocks keep their internal blank lines, and excess
+   * paragraphs join the last message so nothing is dropped.
    *
    * Only chat replies are split. A turn that wrote something (notes, memory,
    * reminders) keeps one message: its rich blocks and receipts belong to a
    * single answer, and cutting it would separate them from the text.
    */
-  // The shape was resolved once, before the first step. Asking a second time
-  // produced a different answer inside the same turn (2026-10-27 soak: `split`
-  // before the loop, `unsure` at delivery, so the two halves stayed one bubble).
   const assistantParts = ((): string[] | undefined => {
-    if (!replyShape) return undefined;
+    if (read.initiativeInput) return undefined;
     if (agentResult.status !== "completed" || agentResult.writesLanded === true) return undefined;
-    const parts = splitCompanionReplyParts(assistantText, replyShape.messages);
-    if (parts.length < 2) {
-      logger.info({ runId: read.runId, requested: replyShape.messages, parts: parts.length },
-        "companion split request produced a single message; delivering it as written");
-      return undefined;
-    }
+    const parts = splitCompanionReplyParts(assistantText, COMPANION_REPLY_SPLIT_MAX);
+    if (parts.length < 2) return undefined;
     logger.info({ runId: read.runId, parts: parts.length }, "companion reply delivered as separate messages");
     return parts;
   })();

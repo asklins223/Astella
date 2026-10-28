@@ -3,7 +3,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { parseEnv } from "node:util";
 import postgres from "postgres";
-import { companionVisibleCharacterCount } from "../handlers/turn/companion-request-requirements.ts";
+import { companionVisibleCharacterCount } from "../handlers/turn/companion-note-length.ts";
 
 // Real local HTTP -> queue -> worker -> saved version -> SSE acceptance. The
 // random personal account is synthetic. No existing account or credential is

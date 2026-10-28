@@ -33,7 +33,6 @@ test("全文编辑可以完整取得八千字及精确块边界，过长单块�
 });
 import { boundCompanionRecentHistory } from "../context/companion-context-handoff.ts";
 import { foldReplayUnderSummaryCoverage, replayToMessages } from "../context/companion-compaction.ts";
-import { companionClassifierRecent } from "../tools/companion-tool-intent.ts";
 
 test("服务端接受的长问题完整进入模型，末尾约束不丢", () => {
   const text = "正文".repeat(9000) + "\n关键要求：不要删除原稿。";
@@ -67,14 +66,6 @@ test("摘要缺失或非法起点不能证明覆盖，因此不删除原文", ()
     assert.equal(folded.receipt, null);
     assert.equal(folded.replay.tail.length, 1);
   }
-});
-
-test("分类器仍可看到长回复结尾的未接邀请", () => {
-  const recent = companionClassifierRecent([
-    { role: "assistant", content: "长解释".repeat(2000) + "\n要不要接着讲下一步？" },
-    { role: "user", content: "你好" },
-  ]);
-  assert.ok(recent[0]!.content.endsWith("要不要接着讲下一步？"));
 });
 
 test("一个超长笔记块可在块内续读，拼接后没有遗漏或重复", () => {

@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { readVoiceExpressionTags } from "@astella/shared/voice-expression-tags";
 import { buildCompanionPersonaMessages, sanitizeCompanionVisibleText } from "../handlers/turn/companion-dialogue-content.ts";
 import { resolveCompanionPersonaContext } from "../handlers/memory/companion-identity-context.ts";
-import { buildCasualFirstStepRequest } from "../handlers/agent/companion-speculative-first-step.ts";
+import { buildCasualFirstStepRequest } from "./first-step-request.ts";
 import { runStreamingAgentStep } from "../handlers/agent/companion-agent-streaming-step.ts";
 import { platform, observedProvider, save, safeFailure, type WireReceipt } from "./acceptance-common.ts";
 

@@ -31,7 +31,6 @@ export const COMPANION_CORE_TOOL_NAMES: readonly string[] = Object.freeze([
   "companion_memory_write",
   "companion_attention_read",
   "companion_attention_write",
-  "companion_say",
   "companion_persona_read",
   "companion_persona_write",
   "companion_visual",
@@ -61,8 +60,6 @@ export const COMPANION_COMMON_ACTION_TOOL_NAMES: readonly string[] = Object.free
   // out of the common surface made "draw this as a flowchart" fall back to a
   // code block on pages that did not declare the visual group.
   "companion_visual",
-  // Separate delivery is a general response shape, not a proactive-only tool.
-  "companion_say",
   // Flat aliases: same operations, simpler model-facing choice.
   "companion_self_note_write",
   "companion_memory_forget",

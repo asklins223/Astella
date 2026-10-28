@@ -41,13 +41,13 @@ test("工具面：核心+当前页组先给，装载后只增不减", () => {
   assert.ok(after.includes("web.search"));
 });
 
-test("分条请求把 companion_say 放进初始工具面", () => {
-  const surface = createCompanionToolSurface({
-    definitions, pageKind: null, candidateOperations: [],
-    userText: "分两条跟我说：先说声早，再问我想先做哪件事。",
-  });
-  assert.ok(surface.offered().some(tool => tool.name === "companion_say"),
-    "用户明确要求多条消息时，模型必须能直接调用 companion_say");
+test("companion_say 只属于主动轮，普通轮不常驻发言工具", () => {
+  const ordinary = createCompanionToolSurface({ definitions, pageKind: null, candidateOperations: [] });
+  assert.equal(ordinary.offered().some(tool => tool.name === "companion_say"), false,
+    "回答用户的问题不需要发言工具；分条由宿主按自然段投递");
+  const proactive = createCompanionToolSurface({ definitions, pageKind: null, candidateOperations: [], initiative: true });
+  assert.ok(proactive.offered().some(tool => tool.name === "companion_say"),
+    "主动开口仍然需要发言工具");
 });
 
 test("工具面：候选操作不再改变工具面，未装载的能力由 load_tools 展开", () => {

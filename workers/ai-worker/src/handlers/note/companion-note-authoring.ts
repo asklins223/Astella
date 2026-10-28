@@ -10,7 +10,7 @@ import { lockJobLease } from "../../lib/job-lease.ts";
 import { lockCompanionRunForEventWrite } from "@astella/shared/companion-lock-order";
 import { assertCompanionContextSourcesCurrent } from "../context/companion-context-sources.ts";
 import type { AgentEventContext } from "../tools/companion-read-tools.ts";
-import { companionRequestRequirements, companionRequirementIssue } from "../turn/companion-request-requirements.ts";
+import { companionNoteLengthIssue, companionRequestedNoteLength } from "../turn/companion-note-length.ts";
 import { CompanionToolNotExecutedError, type AgentToolExecutionResult } from "../tools/companion-tool-result.ts";
 
 /** Each durable write has one identity; a task may create multiple notes. */
@@ -64,19 +64,22 @@ export function userForbidsNoteLibraryRead(userText: string | null | undefined):
 }
 
 export async function prepareCompanionGeneratedNote(tx: AgentSqlExecutor, event: CompanionNoteAuthoringEvent, input: CompanionCreateNoteV1) {
-  const characters = companionRequestRequirements(event.read.userText ?? "").noteCharacters;
+  const characters = companionRequestedNoteLength(event.read.userText ?? "");
   const scope = { workspaceId: event.ctx.workspaceId, userId: event.read.userId };
   const links = [...new Map(input.links.map(link => [link.noteId, link])).values()];
   assertGeneratedNoteLinks(input.markdown, new Set(links.map(link => link.noteId)));
   const forbidsLibraryRead = userForbidsNoteLibraryRead(event.read.userText);
   if (forbidsLibraryRead && links.length > 0)
     throw new CompanionToolNotExecutedError("你这轮要求不读取其他资料，因此这篇笔记不添加库内关联。");
-  if (!forbidsLibraryRead) {
+  if (!forbidsLibraryRead && links.length > 0) {
+    // An independent note needs no library evidence; a linked note does. A
+    // blank search turned into a hard rejection would make "write this down"
+    // cost an extra round trip whenever the library has nothing relevant.
     const [searched] = await queryRows<{ found: boolean }>(tx, sql`SELECT EXISTS(SELECT 1 FROM companion_agent_tool_calls
       WHERE run_id=${event.read.runId} AND workspace_id=${scope.workspaceId} AND user_id=${scope.userId}
         AND name='notes.read.search' AND status='succeeded') AS found`);
     if (!searched?.found)
-      throw new CompanionToolNotExecutedError("先搜索库里与这个知识点相关的笔记，再保存；没有相关内容也可以写成独立笔记。");
+      throw new CompanionToolNotExecutedError("正文里带了库内关联，但这一轮没有搜索过笔记库。先搜索并读到真实版本，或者去掉关联、写成独立笔记。");
   }
   const linkedNotes: CompanionCreatedNoteV1["linkedNotes"] = [];
   const readingPaths: string[] = [];
@@ -95,8 +98,8 @@ export async function prepareCompanionGeneratedNote(tx: AgentSqlExecutor, event:
   const markdown = input.markdown + (readingPaths.length ? `\n\n## 相关笔记\n\n${readingPaths.join("\n")}` : "");
   // Count the actual saved body, including the reading paths appended by the
   // host. Link destinations are metadata, not visible prose.
-  const issue = characters ? companionRequirementIssue({ characters }, markdown) : null;
-  if (issue) throw new CompanionToolNotExecutedError(`${issue.instruction} 字数包括保存时附加的相关笔记标题与说明，请相应收短正文。`);
+  const issue = characters ? companionNoteLengthIssue(markdown, characters) : null;
+  if (issue) throw new CompanionToolNotExecutedError(`${issue} 字数包括保存时附加的相关笔记标题与说明，请相应收短正文。`);
   const blocks = markdownToBlocks(markdown);
   return { markdown, blocks, linkedNotes, links };
 }

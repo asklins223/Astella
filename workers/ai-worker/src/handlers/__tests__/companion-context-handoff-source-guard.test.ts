@@ -42,7 +42,6 @@ test("决定窗口的地方只有一处：链上不许有第二个按条数切�
     "turn/companion-dialogue.ts",
     "turn/companion-dialogue-content.ts",
     "context/companion-summarizer.ts",
-    "tools/companion-tool-intent.ts",
   ];
   for (const file of chain) {
     const text = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");

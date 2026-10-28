@@ -3,10 +3,9 @@ import { COMPANION_HOST_PROTOCOL_V8, COMPANION_IDENTITY_BOUNDARY_V4, type AgentT
 import { COMPANION_VOICE_EXPRESSION_PROTOCOL_V1 } from "@astella/shared/voice-expression-tags";
 import type { AgentContextReceipt } from "@astella/agent-core";
 import { buildCompanionPersonaMessages } from "../handlers/turn/companion-dialogue-content.ts";
-import { buildCasualFirstStepRequest } from "../handlers/agent/companion-speculative-first-step.ts";
+import { buildCasualFirstStepRequest } from "./first-step-request.ts";
 import { companionStepRuntimePolicy } from "../handlers/turn/companion-step-plan.ts";
 import { companionResponseStrategy } from "../handlers/turn/companion-response-strategy.ts";
-import { companionTurnThinking } from "../handlers/turn/companion-turn-thinking.ts";
 import { resolveCompanionPersonaContext } from "../handlers/memory/companion-identity-context.ts";
 import { renderCompanionConversationEvidence } from "../handlers/turn/companion-conversation-evidence.ts";
 import type { DialogueGenerationFixture } from "./dialogue-cases.ts";
@@ -60,10 +59,10 @@ export function buildDialogueExperimentRequest(fixture: DialogueGenerationFixtur
     request.systemPrompt = [turnPolicy, companionStepRuntimePolicy({ permissionLevel: "read_only", toolCount: 0,
       stepBudget: 3, finalAnswerOnly: false, attentionIntent: fixture.intent }), strategy.guidance].filter(Boolean).join("\n");
     request.temperature = strategy.temperature;
-    request.disableThinking = companionTurnThinking(attention).disableThinking;
+    request.disableThinking = false;
   }
   return { request, receipts, provenance: {
-    synthetic: true, builder: fixture.intent === "conversation" ? "buildCasualFirstStepRequest" : "pre-resolved knowledge request",
+    synthetic: true, builder: fixture.intent === "conversation" ? "casual-first-step" : "pre-resolved knowledge request",
     interpretation: attention, originalHistoryHash: hashDialogueValue(fixture.history),
     generationFixtureHash: hashDialogueValue(fixture), personaExamples,
     removedSources: condition === "relevant" ? ["here_and_now", "summary", "page_context"] : [],

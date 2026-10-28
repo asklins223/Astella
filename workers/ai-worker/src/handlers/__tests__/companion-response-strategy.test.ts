@@ -1,8 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buildCasualFirstStepRequest } from "../agent/companion-speculative-first-step.ts";
 import { companionResponseStrategy, COMPANION_KNOWLEDGE_REVIEW_V1, isCompanionExplanation } from "../turn/companion-response-strategy.ts";
-import { companionTurnThinking } from "../turn/companion-turn-thinking.ts";
 import { companionStepRuntimePolicy } from "../turn/companion-step-plan.ts";
 import { COMPANION_DIALOGUE_CONTINUATION_GOAL_V1 } from "../turn/companion-conversation-policy.ts";
 
@@ -15,23 +13,16 @@ test("解释、混合与分类失败使用稳定参数，内部检查不冒充�
     assert.match(strategy.guidance, /方向是否颠倒/);
     assert.match(strategy.guidance, /没有可靠依据的细节不要补猜/);
     assert.match(strategy.guidance, /不算独立证据/);
-    assert.equal(companionTurnThinking(attention).disableThinking, false);
   }
 });
 
-test("闲聊预生成和正式闲聊使用同一参数，不附知识检查清单", () => {
+test("闲聊使用稳定参数，不附知识检查清单", () => {
   const strategy = companionResponseStrategy({ intent: "conversation", toolUse: "none" });
-  const request = buildCasualFirstStepRequest({ turnPolicy: "接住当下这句话。", permissionLevel: "read_only",
-    stepBudget: 3, messages: [{ role: "user", content: "今天先歇着" }], maxTokens: 8192 });
   assert.equal(strategy.mode, "casual");
   assert.equal(strategy.guidance, "");
-  assert.equal(request.temperature, strategy.temperature);
-  assert.equal(request.disableThinking, true);
-  assert.ok(!request.systemPrompt.includes(COMPANION_KNOWLEDGE_REVIEW_V1));
-  assert.ok(request.systemPrompt.includes(COMPANION_DIALOGUE_CONTINUATION_GOAL_V1));
   const policy = companionStepRuntimePolicy({ permissionLevel: "read_only", toolCount: 0,
     stepBudget: 3, finalAnswerOnly: false, attentionIntent: "conversation" });
-  assert.ok(request.systemPrompt.includes(policy));
+  assert.ok(!policy.includes(COMPANION_KNOWLEDGE_REVIEW_V1));
   assert.ok(policy.includes(COMPANION_DIALOGUE_CONTINUATION_GOAL_V1));
   // 闲聊姿态按**本轮意图**给，不再按工具面给（2026-10-09）：工具面已经与意图解耦，
   // "这轮有工具"不再等于"这轮要办事"。
@@ -61,7 +52,6 @@ test("动作、控制与带读取的聊天保留工具执行档", () => {
     assert.equal(strategy.temperature, 0.4);
     assert.equal(strategy.guidance, COMPANION_KNOWLEDGE_REVIEW_V1,
       "任务结果可能包含知识解释，不能因动作意图跳过事实约束");
-    assert.equal(companionTurnThinking(attention).disableThinking, false);
   }
 });
 

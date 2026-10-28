@@ -16,7 +16,6 @@ import { loadNoteDoc, applyNoteDocUpdate } from "../../../../apps/api/src/module
 import { projectFragmentBlocks, writeFragmentBlocks } from "../../../../apps/api/src/modules/note/doc-fragment.ts";
 import { persistFailedPartial } from "../handlers/turn/companion-dialogue-failure-retention.ts";
 import { resumeCompanionRun } from "../../../../apps/api/src/modules/companion-conversation/turn/companion-resume.ts";
-import { companionRequirementIssue } from "../handlers/turn/companion-request-requirements.ts";
 
 const dbUrl = testDatabaseUrl("DATABASE_URL_MIGRATOR");
 if (!new URL(dbUrl).pathname.startsWith("/astella_note_authoring_")) throw new Error("Use an isolated astella_note_authoring_* database");
@@ -171,13 +170,16 @@ test("超过旧 2 MiB 的内部笔记写入完整保存，不借用传输帧配�
   });
 });
 
-test("没有相关材料时保存独立笔记，不虚构关联；未搜索时不保存", async () => {
+test("没有相关材料时保存独立笔记，不虚构关联；带链接则仍需先搜索", async () => {
   const f = await fixture();
   await f.mutate(tx => tx`DELETE FROM companion_agent_tool_calls WHERE run_id=${f.event.read.runId} AND name='notes.read.search'`);
-  await assert.rejects(executeCompanionCreateNote(f.event, { title: "电功率", markdown: ARTICLE }, undefined, f.creationCallId), /先搜索库里/);
-  await f.record("notes.read.search", { query: "没有匹配的独立概念" });
   const saved = await executeCompanionCreateNote(f.event, { title: "电功率", markdown: ARTICLE }, undefined, f.creationCallId);
-  assert.deepEqual(saved.value.linkedNotes, []);
+  assert.deepEqual(saved.value.linkedNotes, [], "an independent note needs no search receipt");
+
+  const linked = await fixture({ searchCompleted: false });
+  await assert.rejects(executeCompanionCreateNote(linked.event, { title: "电功率", markdown: ARTICLE,
+    links: [{ noteId: linked.related.note.id, noteVersionId: linked.related.version.id, reason: "提供 U、I、R 的关系" }] },
+  undefined, linked.creationCallId), /库内关联/);
 });
 
 test("用户明确要求不读其他资料时，不暴露或执行库搜索仍可保存独立笔记", async () => {
@@ -256,7 +258,6 @@ test("保存后的最终回复失败，历史仍交付真实笔记入口，重�
 test("保存已提交但外层回执丢失时，只核对原对象与版本，不重新生成或写入", async () => {
   const f = await fixture();
   const saved = await executeCompanionCreateNote(f.event, { title: "电功率", markdown: ARTICLE, links: [] }, undefined, f.creationCallId);
-  assert.equal(companionRequirementIssue({ noteCount: 1 }, "已保存", [{ role: "tool", content: JSON.stringify({ ok: true, data: saved.value }) }]), null);
   await f.mutate(async tx => {
     await tx`UPDATE companion_agent_tool_calls SET status='outcome_unknown' WHERE run_id=${f.event.read.runId} AND tool_call_id=${f.creationCallId}`;
     await tx`UPDATE companion_turn_runs SET status='failed',error_code='PROVIDER_IDLE_TIMEOUT' WHERE id=${f.event.read.runId}`;

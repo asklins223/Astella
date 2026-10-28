@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { companionTimeWakeupConstraint } from "../agent/companion-execution-constraints.ts";
-import { shouldKeepSpeculativeFirstStep, shouldKeepSpeculativeQuestionStep } from "../agent/companion-speculative-first-step.ts";
 import { resolveAgentTurnInterpretation } from "@astella/agent-core";
 
 const prohibited = { executionConstraints: { timeBasedWakeups: "forbid" as const } };
@@ -13,11 +12,6 @@ test("事件触发限制同时覆盖提醒、自己的重评和关注计划时�
     assert.equal(companionTimeWakeupConstraint({}, name!, { [field!]: "2026-10-15T18:00:00+08:00" }), null);
   }
   assert.equal(companionTimeWakeupConstraint(prohibited, "attention.write.save_participation", { enabled: true }), null);
-});
-
-test("新的禁止条件必须进入真实请求，不保留未包含条件的投机回复", () => {
-  assert.equal(shouldKeepSpeculativeFirstStep({ ...prohibited, intent: "conversation", toolUse: "none" }), false);
-  assert.equal(shouldKeepSpeculativeQuestionStep({ ...prohibited, intent: "question", toolUse: "none", goalRelation: "unrelated" }), false);
 });
 
 test("时间禁止必须引用当前原话，不能把上一轮的单轮要求当成当前限制", () => {

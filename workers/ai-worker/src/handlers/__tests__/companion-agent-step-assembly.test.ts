@@ -3,7 +3,6 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { assembleCompanionStepRequest, companionStepPolicyText, companionStepToolSurface } from "../agent/companion-agent-step-assembly.ts";
 import { companionStepOutputCeiling } from "../turn/companion-dialogue-content.ts";
-import type { AgentTurnRequest } from "@astella/shared";
 import { companionStepCorrectionMessages } from "../turn/companion-step-plan.ts";
 
 const READ_TOOL = { name: "companion_read_note", description: "读笔记", parameters: {} };
@@ -68,16 +67,6 @@ test("原句批注与整篇交付各自拿到需要完整交付的那句指引",
   assert.ok(!noteReply.includes("action=annotate 独立写入"));
   const plain = companionStepPolicyText({ ...base, writingAnnotation: false, completeNoteReply: false });
   assert.ok(!plain.includes("批注正文") && !plain.includes("分句发言工具"));
-});
-
-test("投机那一步的请求原样复用，不重新装配一遍", () => {
-  const prefetched = { role: "companion_agent", systemPrompt: "speculative", messages: [], tools: [], maxTokens: 100 } as unknown as AgentTurnRequest;
-  const assembled = assembleCompanionStepRequest({
-    turnPolicy: "policy", runtimePolicy: "runtime", executionGuidance: "", attention,
-    messages: [], tools: [READ_TOOL] as never[], toolChoice: "auto", disableThinking: false,
-    provider: {} as never, temperature: 0.9, prefetchedRequest: prefetched,
-  });
-  assert.equal(assembled, prefetched, "复用必须是同一份请求：改过就等于投机白做");
 });
 
 test("现算的请求把注意力数据转义进系统提示，输出额度只跟档案声明", () => {

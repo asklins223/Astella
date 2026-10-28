@@ -15,15 +15,6 @@ import {
   resolveCompanionToolGroupNames,
   type AgentTurnRequest,
 } from "@astella/shared";
-/**
- * The tool surface is a declaration view: permissions, page context and the
- * common action tools. It must not depend on guessing what the sentence asks
- * for; the model chooses from the tools it can see.
- */
-export function companionTaskSurfaceCandidates(_userText: string | undefined): string[] {
-  return [];
-}
-
 type ToolDefinition = AgentTurnRequest["tools"][number];
 
 export interface CompanionToolSurface {
@@ -40,7 +31,6 @@ export function createCompanionToolSurface(input: {
   pageKind: string | null;
   candidateOperations: readonly string[];
   loadedToolNames?: Iterable<string>;
-  userText?: string;
   initiative?: boolean;
   hasImageAttachments?: boolean;
 }): CompanionToolSurface {
@@ -71,13 +61,6 @@ export function createCompanionToolSurface(input: {
   // Candidate operations and page declarations may add tools. Nothing narrows
   // the declared, permission-filtered surface here: a compound request keeps
   // its reminder, memory, or persona capabilities alongside note authoring.
-  // 分条发言不再只属于主动轮：伴星可以自己决定把回复拆成几条真实消息。
-  // 安静结束仍然只给主动轮。只加入当前宿主上下文已经授权的定义。
-  for (const name of input.initiative
-    ? ["say.publish", "say.finish_participation"]
-    : ["say.publish"]) {
-    if (input.definitions.some(definition => definition.name === name)) initialToolNames.add(name);
-  }
   return {
     initialToolNames,
     loadedToolNames,

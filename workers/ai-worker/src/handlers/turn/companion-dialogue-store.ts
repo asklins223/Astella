@@ -786,8 +786,8 @@ export async function insertStreamEvent(
 /**
  * 补发一条本轮的过程状态（`assistant.status`）。
  *
- * 为什么要有"补发"：这一轮**开不开思考**要等注意力解释跑完才知道（判据在
- * `companion-turn-thinking`），而 provider 调用前那条状态早就发出去了。开着的轮次
+ * 为什么要有"补发"：这一轮**开不开思考**由入口/加深策略在第一步前定下来，
+ * 而 provider 调用前那条状态早就发出去了。开着的轮次
  * 在这里补一条 `thinking`，没开的就不补——界面上因此可以只说真话：
  * 看到「她在想」时，模型确实在思考档上。
  *

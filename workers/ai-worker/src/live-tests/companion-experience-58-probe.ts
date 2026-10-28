@@ -11,7 +11,7 @@ import { createCompanionContextReceipts } from "../handlers/context/companion-co
 import { reserveCompanionProviderCall } from "../handlers/agent/companion-agent-events.ts";
 import { createCompanionStreamDelivery } from "../handlers/turn/companion-dialogue-stream.ts";
 import { stripVoiceExpressionTags } from "@astella/shared/voice-expression-tags";
-import { companionRequestRequirements, companionVisibleCharacterCount } from "../handlers/turn/companion-request-requirements.ts";
+import { companionRequestedNoteLength, companionVisibleCharacterCount } from "../handlers/turn/companion-note-length.ts";
 
 // Full real model/tool loop with synthetic knowledge and a scoped disposable
 // account. HTTP queue/UI evidence is recorded separately.
@@ -110,7 +110,7 @@ try {
   const savedArtifacts = savedEvents.map(event => ({ note: event.payload.tool.noteCreated,
     elapsedMs: Math.max(0, new Date(event.created_at).getTime() - startedWall) }));
   const chars = Array.from(visibleReply.normalize("NFKC").replace(/[\p{P}\p{S}\s]/gu, "")).length;
-  const noteRequirement = companionRequestRequirements(text, true).noteCharacters;
+  const noteRequirement = companionRequestedNoteLength(text);
   const noteCharacterCounts = createdNotes.map(note => ({ noteId: note.id, count: companionVisibleCharacterCount(note.body) }));
   const lengthsPass = !noteRequirement || noteCharacterCounts.every(note => note.count >= noteRequirement.min && note.count <= noteRequirement.max);
   const passed = createdNotes.length === expectedNotes && lengthsPass && (scenario !== "story" || (chars >= 340 && chars <= 460));

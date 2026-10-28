@@ -95,17 +95,6 @@ export async function runStreamingAgentStep(args: {
   onRawTextDelta?: (delta: string) => void;
   /** Opt-in protocol for an entry that streams an envelope reply. */
   responseFormat?: "text" | "json_object";
-  /**
-   * 流中**已完整**的工具调用（40b §4.1-1 / R7）。provider 每判定一格确定完整就调一次。
-   *
-   * 这一层**只做转发**，不执行任何东西：真正的派发在 runtime 那边（要落账本、要连库），
-   * 而账本那一层在流还没结束时多半还拿不到最终结果。
-   *
-   * ⚠️ provider 侧**不 await** 这个回调（它在 SSE 读取循环里，await 会把流按停）。
-   * 所以回调方自己负责排队：拿到一格就开始跑，跑完了在流结束时一并收结果。
-   * 不传 ⇒ 与现在的行为逐字相同。
-   */
-  onToolCallSettled?: (slot: { index: number; id: string; name: string; argsText: string }) => void;
   onToolCallStarted?: (slot: { index: number; id: string; name: string }) => void;
   /** 分段符（见上方说明）：非首段传 "\n\n"，首段传空串。 */
   separatorBefore?: string;
@@ -395,11 +384,6 @@ export async function runStreamingAgentStep(args: {
           onOutputActivity: outputActivity,
           // 只在调用方要了的时候才挂：不挂就是 undefined，provider 不做任何额外工作。
           ...(args.onToolCallStarted ? { onToolCallStarted: args.onToolCallStarted } : {}),
-          ...(args.onToolCallSettled
-            ? { onToolCallSettled: (slot: { index: number; id: string; name: string; argsText: string }) => {
-              if (!invalidToolProtocol) args.onToolCallSettled!(slot);
-            } }
-            : {}),
           // 只在调用方要了的时候才挂：不挂时 provider 一个字都不多做。
           ...(args.onReasoningDelta ? { onReasoningDelta: emitReasoning } : {}),
         },

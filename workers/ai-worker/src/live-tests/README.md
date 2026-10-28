@@ -4,7 +4,6 @@
 
 `companion-initiative-semantic-probe.ts` 验证方案 56 的自由相处约定、实际关注安排与生产内部执行。使用 `astella_initiative_*` 隔离库，`DATABASE_URL_MIGRATOR` 设为实际 migrator，`DATABASE_URL_WORKER`／`DATABASE_URL` 设为实际 worker；不要使用隔离库脚本输出的管理员示例证明权限。运行：`REAL_MODEL_BATCH=1 node --import tsx src/live-tests/companion-initiative-semantic-probe.ts`。默认三个合成约定，另走真实启动、刚开始学习与五十分钟约定下的提醒；51 分钟是受限的合成区间，没有实际等待计时。`INITIATIVE_PROBE_CASE=built-in-defaults-without-preference` 单独验证修订号 0 的新账户仍会真实问候；也可用它选择其他已有案例，空匹配会拒绝运行。结果及各次尝试保存在 `outputs/audits/2026-10-13-initiative/`；[实施记录](../../../../docs/testing/companion-initiative-2026-10-13.md) 区分工具／持久化、窗口、声音与长期自然度。探针不经过 HTTP 提交或实际队列派发，不等同于设备端端到端验收。
 
-`companion-note-generation-routing-probe.ts` 核对速看、拓展草稿与纯聊天请求的分类边界，使用合成当前笔记与旧能力拒绝回复。以 `REAL_MODEL_BATCH=1` 显式运行，输出 `note-generation-routing-20261008.json`；它仅测试分类，不创建任务或读取真实账号数据。真实窗口生成与保存回执另见 `docs/testing/companion-note-generation-routing-2026-10-08.md`。
 
 `learning-artifacts-live-probe.ts` 覆盖 worker 侧五条学习产物生成链：速看、脑图、动态讲解、拓展草稿、段落解析。它用生产 API 服务建任务、按真实 job 行租约、跑生产 handler（由治理层解析真实模型）、再按队列口径收口并读回产物，逐条断言产物已落库且不为空，同时记录每步耗时。需要一次性库名以 `astella_note_authoring_` 开头（`scripts/dev-disposable-db.sh` 可建），显式 `REAL_MODEL_BATCH=1` 运行；结果写 `outputs/audits/2026-10-07-live/artifacts-live-<suffix>.json`。它不经过 HTTP/队列派发/Electron 窗口，动态讲解这类长任务也不带外层 handler 超时，读数需与真机区分。
 
@@ -46,7 +45,6 @@ REAL_MODEL_BATCH=1 LIVE_QUALITY_CURRENT_ONLY=1 LIVE_QUALITY_REVIEW=1 LIVE_QUALIT
 
 `voice-expression-probe.ts` 使用真实人格、首步请求与流式执行器生成安慰、祝贺、解释和轻笑四个合成样本，记录原始标记、干净正文和请求回执到 `voice-expression.json`。它不读取账号历史，不额外调用情绪分类器。标签出现率不能代表全部多轮对话；听感与真人验收记录见 `../handlers/__tests__/voice-expression-experience-qa.md`。
 
-`voice-dialect-semantic-probe.ts` 复用生产结构化注意力提示词与解释合同，以七轮合成对话核对「这一轮怎么说」与「以后默认怎么说」：提到家乡与询问方言词义都不切换、"以后都用河南话"落成长期 set、临时点名四川话只盖那一轮并在此后回到已保存的河南话默认、"以后都用普通话"落 clear、clear 之后的普通轮不再重复 apply。它只调用当前 `agent_turn` 路由，不读账号也不写数据库——账号级那一行的真实读写见 `../integration-tests/companion-voice-dialect-preference-postgres.integration.ts`。成功判据是每轮的 decision/persistentPreference 与「合成侧最终拿到的方言」三者同时符合预期；它证明的是判定语义，不是方言听感。
 
 ### 2026-10-07 研究驱动复验
 

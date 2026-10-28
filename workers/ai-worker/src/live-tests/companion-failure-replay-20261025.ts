@@ -3,7 +3,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { parseEnv } from "node:util";
 import postgres from "postgres";
-import { companionVisibleCharacterCount } from "../handlers/turn/companion-request-requirements.ts";
+import { companionVisibleCharacterCount } from "../handlers/turn/companion-note-length.ts";
 
 /**
  * Replays the two real failure samples from 2026-10-25 against the current

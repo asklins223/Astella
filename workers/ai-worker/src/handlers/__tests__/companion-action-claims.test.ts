@@ -2,8 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { claimsApplicationActionCompletion, claimsFutureApplicationAction } from "../turn/companion-dialogue-content.ts";
 import { buildCompanionStepCorrectionInstruction, companionActionNotExecutedFallback,
-  companionRequirementUnmetFallback, reviewCompanionStepCorrection } from "../turn/companion-step-plan.ts";
-import { explicitlyRequestsCompanionEdit } from "../tools/companion-tool-intent.ts";
+  reviewCompanionStepCorrection } from "../turn/companion-step-plan.ts";
 
 test("action completion claims are detected without reading quoted evidence as her own claim", () => {
   for (const text of [
@@ -69,21 +68,6 @@ test("a future application action promise needs a scheduled receipt", () => {
   assert.match(instruction, /承诺稍后执行/);
 });
 
-test("an explicit edit request spans an ordinary comma but a negated request does not", () => {
-  for (const text of [
-    "周一安排里，中午改成去健身房，其他不用动。",
-    "帮我把拉伸改成十分钟。",
-    "把当前笔记里的“实验组得分72分”改成“实验组得分75分”，其他内容不动。",
-  ]) assert.equal(explicitlyRequestsCompanionEdit(text), true, text);
-
-  for (const text of [
-    "今天有点累，陪我说两句就好，不用给我安排任务。",
-    "先别改，我今天只想聊聊天。",
-    "我现在告诉你这篇笔记写了什么，先不用保存。",
-    "讲个《秦朝》的故事。",
-  ]) assert.equal(explicitlyRequestsCompanionEdit(text), false, text);
-});
-
 test("an unbacked write claim steers with a receipt requirement; a backed claim does not", () => {
   const base = {
     said: "改好了，保存回执 succeeded。",
@@ -120,11 +104,9 @@ test("an unbacked write claim steers with a receipt requirement; a backed claim 
   assert.equal(copiedHostNote.steerPlan.steer, true);
 });
 
-test("host fallback messages are honest about missing receipts and partial requirements", () => {
+test("host fallback messages are honest about missing receipts", () => {
   assert.match(companionActionNotExecutedFallback(false), /没有执行，也没有保存/);
   assert.match(companionActionNotExecutedFallback(true), /已经落下的其他结果保留/);
-  assert.match(companionRequirementUnmetFallback({ noteCount: 3 }, true), /笔记还没有全部保存.*已经保存或完成的部分保留/);
-  assert.match(companionRequirementUnmetFallback({ characters: { min: 340, max: 460 } }, false), /篇幅.*没有落下可确认的写入/);
 });
 
 test("实机口头完成式：已排上/已记进去/已经删掉都算未落地的完成声明", () => {

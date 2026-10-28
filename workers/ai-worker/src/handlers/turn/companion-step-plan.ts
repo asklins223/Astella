@@ -67,23 +67,6 @@ import {
   unverifiedQuoteClaims,
 } from "./companion-dialogue-content.ts";
 import { companionQuoteSourceTexts } from "../context/companion-quote-evidence.ts";
-import { explicitCompanionProductRequest, explicitlyRequestsCalculationTool, explicitlyRequestsUtterances } from "../tools/companion-tool-intent.ts";
-
-/**
- * 这一轮是否值得先攒住正文再交付。
- *
- * 不是意图分类：它只回答“如果模型在这一段里编一个‘已保存/已改好’，现在流出去
- * 还能不能拦”。命中应用对象或写入动词时，把这一步缓冲到核对之后再发；普通闲聊、
- * 知识问答和创作照旧流式。误判方向只有“多等几秒”，不会把没做的事说成做了。
- */
-const APPLICATION_EVIDENCE_HINT = /(?:笔记|手记|卡片|书房|提醒|待办|安排|计划|学习记录|学习统计|学习进度|到期|记忆|偏好|设置|边界|共享|保存|修改|改成|改一下|改好|调整|删除|新建|创建|整理|同步|导出|读取|读一下|读读|查看|查一下|查查|搜一下|搜搜|这篇|那篇|当前这页|当前笔记)/u;
-
-export function companionMayNeedApplicationEvidence(text: string | null | undefined): boolean {
-  if (!text) return false;
-  const request = explicitCompanionProductRequest(text);
-  return request.artifact || request.newNote || explicitlyRequestsUtterances(text)
-    || explicitlyRequestsCalculationTool(text) || APPLICATION_EVIDENCE_HINT.test(text);
-}
 
 /** 重试用尽后仍是无回执的完成声明：由宿主给出如实说明，不把假完成留在用户眼前。 */
 export function companionUnbackedActionFallback(landedWrites: boolean): string {
@@ -97,20 +80,6 @@ export function companionActionNotExecutedFallback(landedWrites: boolean): strin
   return landedWrites
     ? "（宿主核对：这一步要求的那项动作没有取得执行回执；已经落下的其他结果保留。）"
     : "（宿主核对：这一步要求的那项动作没有执行，也没有保存；你可以让我再试一次。）";
-}
-
-export function companionRequirementUnmetFallback(
-  requirements: { characters?: unknown; noteCount?: number; utteranceCount?: number; requiredTools?: readonly string[] },
-  landedWrites: boolean,
-): string {
-  const parts = [
-    requirements.noteCount ? "按要求应有的笔记还没有全部保存" : "",
-    requirements.utteranceCount ? "要求的独立消息没有发完" : "",
-    requirements.characters ? "正文没有达到你要求的篇幅" : "",
-    requirements.requiredTools?.length ? "你明确要求的工具核对没有取得回执" : "",
-  ].filter(Boolean);
-  return `（宿主核对：${parts.join("；") || "当前请求的完整要求还没有满足"}。`
-    + `${landedWrites ? "已经保存或完成的部分保留。" : "这次没有落下可确认的写入。"}）`;
 }
 
 export function companionMaterialReadFallback(): string {

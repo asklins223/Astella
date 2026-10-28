@@ -126,16 +126,18 @@ export function attachImagesToLastUserMessage<T extends { role: string; content:
 export async function companionTurnMessagesWithImages<T extends { role: string; content: unknown }>(input: {
   args: {
     ctx: { workspaceId: string };
+    /** Top-level loop flag: the main model can see and this turn has pictures. */
+    turnImagesSentDirectly?: boolean;
     read: {
-      userId: string; runId: string; turnImagesSentDirectly?: boolean;
+      userId: string; runId: string;
       userImageAttachments?: readonly CompanionImageAttachment[];
     };
   };
   messages: readonly T[];
-}): Promise<T[]> {
+}, load: typeof loadCompanionAttachmentImages = loadCompanionAttachmentImages): Promise<T[]> {
   const { read } = input.args;
-  if (read.turnImagesSentDirectly !== true || !read.userImageAttachments?.length) return [...input.messages];
-  const images = await loadCompanionAttachmentImages({
+  if (input.args.turnImagesSentDirectly !== true || !read.userImageAttachments?.length) return [...input.messages];
+  const images = await load({
     workspaceId: input.args.ctx.workspaceId, userId: read.userId,
     attachments: read.userImageAttachments, runId: read.runId,
   });

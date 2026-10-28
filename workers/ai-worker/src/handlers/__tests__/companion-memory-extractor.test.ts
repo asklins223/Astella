@@ -356,28 +356,17 @@ test("0256 的例外比抽取器更严，方向必须是这样", () => {
 });
 
 // ─── 伴星思考档的归属（2026-10-06 第二次改判，取代「全链路常开最高档」）──────
-// 判据现在是**本轮意图**：闲聊轮关、提问/任务/解释轮按档案开高档（见
-// `companion-turn-thinking`）。因此"谁可以关思考"要守住的是两条：
+// 入口策略在第一步前定下这一轮开不开思考。因此"谁可以关思考"要守住的是两条：
 //   1. 后台 handler（摘要、抽取、日记、制卡…）不在关键路径上，**一律不关**，
 //      思考预留由各自的 maxTokens 承担——这条与上一版守卫同源；
-//   2. 对话链路要关只能通过 `companionTurnThinking`（或每一轮都要跑的分类器），
-//      不许在某个调用点上悄悄写死一个 `disableThinking: true`。
+//   2. 对话链路要关只能通过入口/加深策略，不许在某个调用点上悄悄写死一个
+//      `disableThinking: true`。
 const thinkingSanctioned = new Set([
-  // 判据本体：全链路只有这一处可以说"这一轮关"。
-  "companion-turn-thinking.ts",
-  // 分类器自己在每一轮的关键路径上：它开高档，闲聊轮就先白等十几秒。
-  "companion-tool-intent.ts",
-  // 投机的"闲聊版第一步"（2026-10-07）：它按定义就是不开思考的那一版，且只有
-  // 分类器确认本轮解释为空时结果才会被保留（见 shouldKeepSpeculativeFirstStep）。
-  "companion-speculative-first-step.ts",
-  // Opt-in hybrid entry answers conversation in the fast request itself;
-  // native task handoff returns to companionTurnThinking in the main loop.
-  "companion-hybrid-entry.ts",
   // 2026-10-11：压缩用的**工作状态摘要**。产出是给她自己接续工作的内部件，不是讲给
   // 用户的回复，而这次调用发生在已经紧张的那一次请求里面、卡在 deadlineAt 上——
-  // 开高档等于在她回话的路上再加十几秒。判据与分类器、投机闲聊版同一档。
+  // 开高档等于在她回话的路上再加十几秒。
   // 它被单独挪进这个模块而不是留在运行时里，正是为了让这条守卫仍然管得住对话主链路：
-  // `companion-agent-runtime.ts` 只能经 `companionTurnThinking` 决定思考档。
+  // `companion-agent-runtime.ts` 只能经入口策略决定思考档。
   "companion-active-context-compaction.ts",
   // 2026-10-13：回复终态之后补的可选追问。它不在这条守卫保护的"她回话的路"上，
   // 但它只有一次 3 秒的窗口：开思考档的模型普遍要十几秒，追问就永远赶不到气泡上，
@@ -386,10 +375,6 @@ const thinkingSanctioned = new Set([
   // Narrow publication review compares already written speech and authoritative
   // run status. It never generates a question answer or performs background work.
   "companion-initiative-speech-review.ts",
-  // Delivery-shape judge: one closed-set question about the request ("separate
-  // messages?"), answered alongside the turn. It never writes the reply, and it
-  // only decides how text already asked for gets delivered.
-  "companion-split-intent.ts",
 ]);
 
 test("伴星思考档：对话按本轮意图选择，其余后台按各自预算运行", () => {
@@ -421,13 +406,10 @@ test("伴星思考档：对话按本轮意图选择，其余后台按各自预�
     .map(({ name }) => name);
   assert.deepEqual(offenders, [], `这些 handler 绕开本轮意图判据把思考关死了：${offenders.join(", ")}`);
 
-  // 正向：对话主链路确实经过策略函数，而不是各自决定。
+  // 正向：对话主链路确实经过显式的入口/加深策略，而不是各自决定。
   const runtime = readFileSync(new URL("agent/companion-agent-runtime.ts", dir), "utf8");
-  assert.match(runtime, /companionTurnThinking\(attention\)/,
-    "Agent 运行时不再经过 companionTurnThinking，闲聊/提问两档就会散成各处硬编码");
-  assert.match(runtime,
-    /disableThinking: !directEntry \? turnThinking\.disableThinking \|\| \(readOnlyRequiredStep && !userAskedForAction && actionSteerAttempts === 0\) : directControls\.disableThinking\(\)/,
-    "Classified turns must retain their intent policy; direct turns must use their explicit entry/deepening policy");
+  assert.match(runtime, /disableThinking: directControls\.disableThinking\(\)/,
+    "Agent 运行时不再经过 directControls，快速档与加深档就会散成各处硬编码");
 });
 
 // ─── 跨空间记忆的判据（2026-09-22 裁决 + 收紧）──────────────────────────
