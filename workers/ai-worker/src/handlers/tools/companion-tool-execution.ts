@@ -992,7 +992,6 @@ export async function executeDirectTool(
     case "companion_goals_write":
     case "companion_memory_write":
     case "companion_attention_write":
-    case "companion_say":
     case "companion_notes_write": {
       const operation = companionOperationName({ name: definition.name, arguments: args });
       if (operation === definition.name) throw new CompanionToolError("没有说明要执行哪一类动作。");
@@ -1002,6 +1001,7 @@ export async function executeDirectTool(
       return executeDirectTool(event, { ...definition, name: operation }, operationArgs, signal, toolCallId);
     }
     // Flat aliases carry no `action`; their declared mapping is the action.
+    case "companion_send_message":
     case "companion_self_note_write":
     case "companion_memory_forget":
     case "companion_goal_start":
@@ -1014,7 +1014,6 @@ export async function executeDirectTool(
     case "attention.write.save_participation":
     case "attention.write.arrange":
     case "say.publish":
-    case "say.finish_participation":
       return executeCompanionParticipationTool(event, definition.name, args, toolCallId);
     case "notes.write.annotate": {
       if (!toolCallId) throw new CompanionToolError("解释写入缺少执行身份，没有重复保存。");

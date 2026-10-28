@@ -3,7 +3,7 @@ import { sql } from "drizzle-orm";
 import { readParticipationPreferences, writeParticipationPreferences, readCompanionAwareness,
   listCompanionAttention, arrangeCompanionAttention, enqueueParticipationObservation, AgentStoreError } from "@astella/agent-host";
 import { companionParticipationToolWriteV1Schema, companionAttentionWriteV1Schema,
-  companionPublishUtteranceV1Schema, companionFinishParticipationV1Schema,
+  companionPublishUtteranceV1Schema,
   COMPANION_INITIATIVE_DELIVERY_TTL_HOURS } from "@astella/shared/companion-initiative-contracts";
 import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
 import type { ProviderReasoningHandle } from "@astella/shared";
@@ -12,7 +12,7 @@ import { lockJobLease } from "../../lib/job-lease.ts";
 import { assertCompanionContextSourcesCurrent } from "../context/companion-context-sources.ts";
 import { isCompanionParticipationClosure, repeatsCompanionParentReply } from "../proactive/companion-participation-output.ts";
 import { validateCompanionOutput, finalizeCompanionReplyText, companionAssistantMessageKind, textOfCompanionBlocks } from "../turn/companion-dialogue-content.ts";
-import { insertStreamEvent, enqueueCompanionMemoryJobs, type CompanionDialogueHandlerContext, type ReadContext } from "../turn/companion-dialogue-store.ts";
+import { insertStreamEvent, enqueueCompanionMemoryJobs, enqueueCompanionFollowupSuggestions, type CompanionDialogueHandlerContext, type ReadContext } from "../turn/companion-dialogue-store.ts";
 import { enqueueSystemEventDelivery } from "../agent/companion-delivery-write.ts";
 import type { AgentEventContext } from "./companion-read-tools.ts";
 import { CompanionToolBlockedError, CompanionToolError, CompanionToolNotExecutedError, type AgentToolExecutionResult } from "./companion-tool-result.ts";
@@ -20,11 +20,6 @@ import { CompanionToolBlockedError, CompanionToolError, CompanionToolNotExecuted
 export async function executeCompanionParticipationTool(event: AgentEventContext, name: string,
   args: Record<string, unknown>, toolCallId?: string): Promise<AgentToolExecutionResult> {
   const scope = { workspaceId: event.ctx.workspaceId, userId: event.read.userId };
-  if (name === "say.finish_participation") {
-    if (!event.read.initiativeInput) throw new CompanionToolBlockedError("这是内部主动考虑的结束能力，当前用户提问仍需要完整回答。");
-    companionFinishParticipationV1Schema.parse(args);
-    return { value: { decision: "silent", completed: true }, safeSummary: "本次考虑已结束。" };
-  }
   if (name === "attention.read.participation") {
     const value = await withWorkerWorkspaceTransaction(scope, async tx => ({
       preferences: await readParticipationPreferences(tx, scope), awareness: await readCompanionAwareness(tx, scope),
@@ -53,9 +48,9 @@ export async function executeCompanionParticipationTool(event: AgentEventContext
     if (!validated.ok) throw new CompanionToolError("这条发言未通过正文校验，请修正后再说。");
     const text = validated.text;
     if (await companionInitiativeRepeatsSpeech(event.read, scope, text))
-      throw new CompanionToolNotExecutedError("这段内容已经说过。请换一个实际想说的新内容，或者用 companion_say（action=finish_participation）安静结束。");
+      throw new CompanionToolNotExecutedError("这段内容已经说过。请换一个实际想说的新内容；没有就不要再发消息，直接结束本轮。");
     const review = await event.reviewInitiativeSpeech?.(text);
-    if (review) throw new CompanionToolNotExecutedError(`这条主动发言没有发布：${review}。请换一个有实际新增内容的话题，或安静结束。`);
+    if (review) throw new CompanionToolNotExecutedError(`这条主动发言没有发布：${review}。请换一个有实际新增内容的话题；没有就不要再发消息，直接结束本轮。`);
     event.verifyUtterance?.(text);
     const published = await withWorkerWorkspaceTransaction(scope, async tx => {
       await lockJobLease(tx, event.ctx);
@@ -105,7 +100,8 @@ export async function executeCompanionParticipationTool(event: AgentEventContext
       return { messageId, fresh: true };
     });
     if (published.fresh) await event.onUtterancePublished?.(published.messageId, text, rawText);
-    return { value: { messageId: published.messageId, published: true }, safeSummary: "这条发言已经说出并保留在交流里。" };
+    return { value: { messageId: published.messageId, published: true, delivered: true, visibleToUser: true },
+      safeSummary: "这条发言已经说出并保留在交流里。" };
   }
   const value = await withWorkerWorkspaceTransaction(scope, async tx => {
     await lockJobLease(tx, event.ctx);
@@ -187,6 +183,13 @@ export async function finishCompanionParticipation(ctx: CompanionDialogueHandler
     await tx.execute(sql`UPDATE companion_turn_runs SET last_event_seq=${Number(counter!.seq)} WHERE id=${read.runId}`);
     await tx.execute(sql`SELECT pg_notify('astella_companion_events_v1',${JSON.stringify({ conversationId: read.conversationId, maxSeq: Number(counter!.seq) })})`);
     if (last) await enqueueCompanionMemoryJobs(tx, { ...scope, runId: read.runId, conversationId: read.conversationId, messageSeq: Number(last.seq) });
+    // A turn that answered through published messages ends here, not in the
+    // finalize transaction, so it must enqueue the same follow-ups that a
+    // normal reply does — otherwise split/active turns silently never offer
+    // the next suggestion.
+    if (read.userMessageId && last) await enqueueCompanionFollowupSuggestions(tx, {
+      workspaceId: scope.workspaceId, userId: scope.userId, runId: read.runId, assistantMessageId: last.message_id,
+    });
     if (read.userMessageId && last && !(read.pageContext as { context?: { replyPurpose?: string } } | null)?.context?.replyPurpose) await enqueueParticipationObservation(tx, scope, { topic: "reply.finished",
       dedupeKey: `reply:${read.runId}`, conversationId: read.conversationId, parentRunId: read.runId,
       facts: { messageIds: messages.map(m => m.message_id) }, ttlMs: 120_000 });

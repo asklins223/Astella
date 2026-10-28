@@ -51,7 +51,7 @@ test("终答去重：新的终答正文照常追加", () => {
 
 test("写已经落地、下一代模型失败时不把整轮变成错误卡", () => {
   const definitions = [{ name: "companion_notes_write", riskClass: "reversible_low" },
-    { name: "companion_say", riskClass: "reversible_low" }];
+    { name: "companion_send_message", riskClass: "reversible_low" }];
   const receipt = (operation: string, summary: string, ok = true) => ({ role: "tool", content: JSON.stringify({
     ok, receiptId: "call-1", operation, data: { status: ok ? "succeeded" : "not_executed", summary } }) });
   const settled = settleCompanionLandedWritesOnFailure({ messages: [receipt("notes.write.edit", "已替换指定段落")],

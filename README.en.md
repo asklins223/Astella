@@ -15,8 +15,8 @@ A desktop study room for personal learning. Turn material into notes, understand
 
 [中文](README.md) · [English](README.en.md) · [User and developer guide](docs/guide/README.md)
 
-Server version: `s-v2.0.9` · [release/version.json](release/version.json)<br />
-Desktop client version: `c-v2.0.1` · [apps/desktop-client/version.json](apps/desktop-client/version.json)
+Server version: `s-v2.0.10` · [release/version.json](release/version.json)<br />
+Desktop client version: `c-v2.0.2` · [apps/desktop-client/version.json](apps/desktop-client/version.json)
 
 </div>
 

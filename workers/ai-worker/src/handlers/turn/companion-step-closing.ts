@@ -66,7 +66,6 @@ export function judgeCompanionStepClosing(input: {
 }): CompanionStepClosing {
   const { calls } = input;
   const closingCall = calls.at(-1);
-  const closesSilently = input.initiative && closingCall !== undefined && companionOperationName(closingCall) === "say.finish_participation";
   const closesSpeech = closingCall !== undefined && companionOperationName(closingCall) === "say.publish"
     && (closingCall.arguments as { final?: boolean } | null)?.final !== false
     && calls.every(call => ["say.publish", "notes.write.annotate"].includes(companionOperationName(call)));
@@ -82,7 +81,7 @@ export function judgeCompanionStepClosing(input: {
     // Speech alone is a result only when nothing else was asked for. A published
     // line used to end the turn instead of the reminder/note the person asked
     // for; then the closing gate never saw the missing receipt.
-    : (closesSilently || (closesSpeech && input.actionReceiptMissing !== true)) && allSucceeded ? "silent" as const
+    : (closesSpeech && input.actionReceiptMissing !== true) && allSucceeded ? "silent" as const
       : "none" as const;
   return { settleAs, allSucceeded };
 }

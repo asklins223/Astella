@@ -263,7 +263,7 @@ export function canUseCompanionAgentTool(
     // semantics. Their handler requires current user wording and cannot write
     // notes, launch goals or grant any business capability.
     || ["companion_configure_turn"].includes(definition.name)
-    || definition.name === "companion_say"
+    || definition.name === "companion_send_message"
     || companionDomainActionAutoExecutes(definition.name, arguments_)
     || isCompanionAutonomousAction(definition.name, typeof arguments_.action === "string" ? arguments_.action : undefined)
     ) {

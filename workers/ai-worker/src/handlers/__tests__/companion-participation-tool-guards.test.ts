@@ -32,14 +32,6 @@ test("用户明确请求的回复与真实启动/回前台招呼不会被主动�
   }
 });
 
-test("内部考虑才有安静结束能力，用户提问那一轮不能拿它代替回答", async () => {
-  await assert.rejects(() => executeCompanionParticipationTool(context(), "say.finish_participation", { decision: "silent" }),
-    (error: unknown) => error instanceof CompanionToolBlockedError && /当前用户提问仍需要完整回答/.test(String((error as Error).message)));
-  assert.deepEqual(await executeCompanionParticipationTool(
-    context({}, { initiativeInput: { topic: "attention.due", facts: { canSpeak: true } } }), "say.finish_participation", { decision: "silent" }),
-    { value: { decision: "silent", completed: true }, safeSummary: "本次考虑已结束。" });
-});
-
 test("发言要有真实工具调用身份，没有就不写消息", async () => {
   await assert.rejects(() => executeCompanionParticipationTool(context(), "say.publish", { text: "你好。" }),
     (error: unknown) => error instanceof CompanionToolError && /缺少实际身份/.test(String((error as Error).message)));

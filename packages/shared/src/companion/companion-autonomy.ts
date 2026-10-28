@@ -26,13 +26,13 @@ export type CompanionSelfNoteWriteV1 = z.infer<typeof companionSelfNoteWriteV1Sc
 
 /** These tools affect only the companion's own records, not users' materials. */
 export const COMPANION_AUTONOMOUS_TOOLS = [
-  "companion_persona_read", "companion_say",
+  "companion_persona_read", "companion_send_message",
 ] as const;
 /** Domain tools that contain autonomous actions. The tool as a whole is NOT
  * autonomous: persona writes also carry activeness/boundary, which keep a
  * confirmation gate. Callers that gate the whole tool must check the action. */
 const AUTONOMOUS_DOMAIN_TOOLS: ReadonlySet<string> = new Set([
-  "companion_persona_read", "companion_say",
+  "companion_persona_read", "companion_send_message",
 ]);
 export function isCompanionAutonomousDomainTool(name: string): boolean {
   return AUTONOMOUS_DOMAIN_TOOLS.has(name);

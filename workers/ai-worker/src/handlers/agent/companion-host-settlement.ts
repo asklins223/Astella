@@ -67,7 +67,7 @@ export function settleCompanionLandedWritesOnFailure(input: {
   if (input.stepEmitted) return null;
   const writeNames = new Set(input.definitions
     .filter(definition => definition.riskClass !== "read"
-      && !["companion_say", "companion_configure_turn", "companion_deepen", "companion_load_tools"].includes(definition.name))
+      && !["companion_send_message", "companion_configure_turn", "companion_deepen", "companion_load_tools"].includes(definition.name))
     .map(definition => definition.name));
   const receipts: { id: string; summary: string }[] = [];
   for (const message of input.messages) {

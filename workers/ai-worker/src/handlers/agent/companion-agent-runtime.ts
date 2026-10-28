@@ -1,4 +1,3 @@
-import { CompanionToolNotExecutedError } from "../tools/companion-tool-result.ts";
 import { companionCurrentRequestMessages } from "../turn/companion-step-plan.ts";
 import { companionArithmeticMismatch, type CompanionArithmeticMismatch } from "../turn/companion-arithmetic-check.ts";
 import { companionCallFingerprint, companionMalformedToolExhausted, companionReplayExhausted, companionReplayLimitFor,
@@ -360,12 +359,19 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
   let correctionRequiresTool = false;
   /** One correction for describing an unseen picture, then the honest note stands. */
   let imageClaimCorrected = false;
-  event.verifyUtterance = () => {
-    // The rule exists to stop one reply from being said twice: prose first, then
-    // the same sentences again through the speech tool.
-    if (visibleSegments.some(segment => segment.trim()))
-      throw new CompanionToolNotExecutedError("这轮已经开始连续回复，请接着把当前回复完成。需要分几句交流时，从第一句使用发言能力，避免正文和发言重复。");
-  };
+  /**
+   * A published message is a message even when the same step also wrote prose.
+   *
+   * This used to reject the call outright, to stop one reply being said twice.
+   * The rejection assumed the model would retry through the speech channel from
+   * the first sentence; what actually happens (mimo, 2026-10-28) is that the
+   * model drafts the whole answer as prose, publishes message one, gets refused,
+   * and the turn closes on the prose — one bubble with "第二条：" inside it.
+   * The record-level dedupe (same content hash, same sentence) already prevents
+   * a literal repeat, so publish is allowed and the prose stays a draft: the
+   * client drops it once the published messages exist.
+   */
+  event.verifyUtterance = () => {};
   event.reviewInitiativeSpeech = text => reviewCompanionInitiativeSpeech({ ctx: args.ctx, read: args.read, text, provider: args.provider });
 
   /**
@@ -556,18 +562,21 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     // 入参供探针渲染文案，运行时永远传 false。
     const finalAnswerOnly = false;
     /**
-     * Adaptive-thinking ladder for hosts whose model has no adaptive mode.
-     * It follows facts already true for this step, never the user's wording:
-     *   - first casual step, no tool yet  -> none  (fast chat)
-     *   - this turn has used a tool        -> medium (act on evidence)
+     * The host only raises effort above the model's own default; it never pins
+     * a plain first step to `none`. Deciding "this turn needs no thinking" for
+     * the model is exactly what produced one-prose-message answers to
+     * "分两条" (measured 2026-10-28). The model's default already skips
+     * reasoning on small talk and uses it when the reply needs deciding.
      *   - correcting a failed/unsupported step -> high
-     * Deepen is a user-visible control; it raises the ceiling to high.
+     *   - deepen                                -> high
+     *   - this turn has used a tool            -> medium (act on evidence)
+     *   - otherwise                            -> leave undefined (model default)
      */
-    const stepReasoningEffort = ((): "none" | "medium" | "high" => {
+    const stepReasoningEffort = ((): "medium" | "high" | undefined => {
       if (actionSteerAttempts > 0 || arithmeticCorrectionCount > 0) return "high";
       if (directControls.deepened()) return "high";
       if (toolCallCount > 0) return "medium";
-      return "none";
+      return undefined;
     })();
     const needsAttachedImageRead = toolCallCount === 0 && companionAttachmentReadRequired({
       hasImageAttachments: Boolean(args.read.userImageAttachments?.length),
@@ -1824,7 +1833,14 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
         // Read tools budget and paginate their data before serialization. Cutting
         // an encoded envelope corrupts escapes/cursors; the next complete request
         // is governed by its actual token budget instead.
-        content: JSON.stringify({ ok: true, receiptId: call.id, operation: executedToolName, data: execution.value, summary: execution.safeSummary }),
+        content: JSON.stringify({ ok: true, receiptId: call.id, operation: executedToolName, data: execution.value, summary: execution.safeSummary,
+          // A step's prose is a draft, not a delivered message. When the model
+          // drafts the whole reply and then publishes part of it, the remainder
+          // would be lost: the client drops the draft as soon as a published
+          // message exists. The receipt says both halves — the draft is not
+          // visible, and a published message needs no spoken confirmation.
+          ...(executedToolName === "say.publish"
+            ? { note: "这条已经发给用户看到了。还有内容要发就继续调用本工具，每次一条；全部说完就结束。没通过本工具发出的正文不会出现在对话里，收尾也不用汇报已经发了什么。" } : {}) }),
       });
     }
     const closing = judgeCompanionStepClosing({

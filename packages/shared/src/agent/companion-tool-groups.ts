@@ -31,6 +31,7 @@ export const COMPANION_CORE_TOOL_NAMES: readonly string[] = Object.freeze([
   "companion_memory_write",
   "companion_attention_read",
   "companion_attention_write",
+  "companion_send_message",
   "companion_persona_read",
   "companion_persona_write",
   "companion_visual",
@@ -97,7 +98,7 @@ export const COMPANION_TOOL_GROUPS: Readonly<Record<CompanionToolGroupId, {
     label: "参与、提醒与关注",
     description: "相处偏好、提醒、关注安排、主动发言、暂停学习建议。",
     tools: [
-      "companion_attention_read", "companion_attention_write", "companion_say",
+      "companion_attention_read", "companion_attention_write", "companion_send_message",
     ],
   },
   goals: {

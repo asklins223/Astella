@@ -174,7 +174,7 @@ test("低权限保留写能力供预览，实际业务写入必须等待确认",
       // native entry preserves that account preference behavior. A flat alias
       // follows the gate of the action it stands for: `companion_self_note_write`
       // is `persona.write.self_note`, already auto-executing through its domain tool.
-      assert.equal(auth.requiresConfirmation, definition.riskClass !== "read" && !(isCompanionAutonomousTool(definition.name) || ["attention.write.save_participation", "notes.write.annotate", "companion_configure_turn", "companion_say", "companion_self_note_write"].includes(definition.name)));
+      assert.equal(auth.requiresConfirmation, definition.riskClass !== "read" && !(isCompanionAutonomousTool(definition.name) || ["attention.write.save_participation", "notes.write.annotate", "companion_configure_turn", "companion_send_message", "companion_self_note_write"].includes(definition.name)));
     }
   }
 });
@@ -194,7 +194,7 @@ test("工具解析：guided 的业务写操作都确认，读取与自主记录�
       const autoExecutes = definition.riskClass === "read"
         || isCompanionAutonomousAction(definition.name, action ?? undefined)
         || isCompanionAutonomousTool(definition.name)
-        || ["companion_configure_turn", "companion_say"].includes(definition.name)
+        || ["companion_configure_turn", "companion_send_message"].includes(definition.name)
         || companionDomainActionAutoExecutes(definition.name, args);
       assert.equal(auth.requiresConfirmation, !autoExecutes,
         `${definition.name}:${action ?? "-"}（${definition.riskClass}）在 guided 下的确认要求不符`);
@@ -765,7 +765,7 @@ test("扁平工具面：guided/full 档下写工具与读工具同时在列，�
   for (const name of [
     "companion_notes_read", "companion_notes_write", "companion_open",
     "companion_observe",
-    "companion_attention_read", "companion_attention_write", "companion_say",
+    "companion_attention_read", "companion_attention_write", "companion_send_message",
   ]) {
     assert.ok(guided.includes(name), `guided 必须能看到 ${name}`);
   }
@@ -1516,7 +1516,7 @@ test("工具面只由权限档与数据外发政策装配，不再被本轮判�
   const assemblyStart = source.indexOf("const availableDefinitions = resolveAllCompanionAgentTools(");
   assert.ok(assemblyStart > 0, "找不到工具面装配那一句");
   const surfaceExpression = source.slice(assemblyStart, assemblyStart + 400);
-  for (const name of ["notes.write.annotate", "say.publish", "say.finish_participation"]) {
+  for (const name of ["notes.write.annotate", "say.publish"]) {
     assert.ok(!surfaceExpression.includes(`definition.name === "${name}"`),
       `装配那一句里又出现了按能力名写的成员资格分支（${name}）—— 那是声明层该管的事`);
   }

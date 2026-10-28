@@ -23,18 +23,18 @@ test("三个声明过的能力只在各自宿主上下文里下发", () => {
   const initiative = { ...plain, initiative: true };
 
   // 整篇正文那一轮直接交付正文，不用分句发言（用了反而与正文分叉）。
-  assert.equal(companionCapabilityOfferedInHostContext(read("companion_say"), plain), true);
-  assert.equal(companionCapabilityOfferedInHostContext(read("companion_say"), noteReply), false);
-  assert.equal(companionCapabilityOfferedInHostContext(read("companion_say"), annotation), true,
+  assert.equal(companionCapabilityOfferedInHostContext(read("companion_send_message"), plain), true);
+  assert.equal(companionCapabilityOfferedInHostContext(read("companion_send_message"), noteReply), false);
+  assert.equal(companionCapabilityOfferedInHostContext(read("companion_send_message"), annotation), true,
     "批注轮仍然分句发言");
   // 批注写入仍由工具层放行：动作级前置条件在执行体里判。
   assert.equal(companionCapabilityOfferedInHostContext(read("companion_notes_write"), plain), true);
   assert.equal(companionCapabilityOfferedInHostContext(read("companion_notes_write"), annotation), true);
-  // 主动轮：非自主的写类摘掉（companion_say 属于自主能力，保留）。
+  // 主动轮：非自主的写类摘掉（companion_send_message 属于自主能力，保留）。
   assert.equal(companionCapabilityOfferedInHostContext(read("companion_notes_write"), initiative), false);
   assert.equal(companionCapabilityOfferedInHostContext(read("companion_notes_write"),
     { writingAnnotation: false, completeNoteReply: false, initiative: false }), true);
-  assert.equal(companionCapabilityOfferedInHostContext(read("companion_say"), initiative), true);
+  assert.equal(companionCapabilityOfferedInHostContext(read("companion_send_message"), initiative), true);
 });
 
 test("主动那一轮只剩自主能力与非导航只读能力", () => {

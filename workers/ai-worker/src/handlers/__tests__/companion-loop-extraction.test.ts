@@ -16,7 +16,7 @@ const tool = (name: string) => ({ name, description: "", parameters: {}, toolVer
 const definitions = [
   tool("companion_observe"),
   tool("companion_notes_read"),
-  tool("companion_say"),
+  tool("companion_send_message"),
   tool("companion_open"),
   tool("notes.read.search"),
   tool("web.search"),
@@ -41,13 +41,13 @@ test("工具面：核心+当前页组先给，装载后只增不减", () => {
   assert.ok(after.includes("web.search"));
 });
 
-test("companion_say 只属于主动轮，普通轮不常驻发言工具", () => {
+test("companion_send_message is offered on ordinary and proactive turns", () => {
   const ordinary = createCompanionToolSurface({ definitions, pageKind: null, candidateOperations: [] });
-  assert.equal(ordinary.offered().some(tool => tool.name === "companion_say"), false,
-    "回答用户的问题不需要发言工具；分条由宿主按自然段投递");
+  assert.ok(ordinary.offered().some(tool => tool.name === "companion_send_message"),
+    "用户要求分条时，模型要能逐条发消息");
   const proactive = createCompanionToolSurface({ definitions, pageKind: null, candidateOperations: [], initiative: true });
-  assert.ok(proactive.offered().some(tool => tool.name === "companion_say"),
-    "主动开口仍然需要发言工具");
+  assert.ok(proactive.offered().some(tool => tool.name === "companion_send_message"),
+    "主动开口也需要发言工具");
 });
 
 test("工具面：候选操作不再改变工具面，未装载的能力由 load_tools 展开", () => {

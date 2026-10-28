@@ -105,7 +105,7 @@ test("quiet participation cannot replay an earlier thought across a user turn th
     const run = await runPrepared(f, async () => channel === "final"
       ? { ...(await silentAnswer()), content: text }
       : calls++ > 0 ? silentAnswer() : { ...(await silentAnswer()), finishReason: "tool_calls", toolCalls: [
-        { id: "repeated-old-thought", name: "companion_say", arguments: { action: "publish", text, final: true } },
+        { id: "repeated-old-thought", name: "companion_send_message", arguments: { text } },
       ] });
     assert.equal((await admin`SELECT 1 FROM companion_messages WHERE run_id=${run.id}`).length, 0, channel);
     const events = await admin`SELECT type,payload FROM companion_stream_events WHERE run_id=${run.id}`;
@@ -144,7 +144,7 @@ test("reply-finished publication suppresses an exact parent paragraph through bo
     const followup = await runPrepared(f, async () => channel === "final"
       ? { ...(await silentAnswer()), content: text }
       : attempts++ > 0 ? silentAnswer() : { ...(await silentAnswer()), finishReason: "tool_calls", toolCalls: [
-        { id: "repeated-parent-paragraph", name: "companion_say", arguments: { action: "publish", text, final: true } },
+        { id: "repeated-parent-paragraph", name: "companion_send_message", arguments: { text } },
       ] });
     assert.equal((await admin`SELECT 1 FROM companion_messages WHERE run_id=${followup.id}`).length, 0, channel);
     const events = await admin`SELECT type,payload FROM companion_stream_events WHERE run_id=${followup.id}`;
@@ -189,7 +189,7 @@ test("semantic publication review receives real old speech and unfinished status
       const text = scenario === "repeat" ? oldText.replace("事儿", "事") : scenario === "correction" ? "原文的电压应为9V，电阻仍为3Ω。" : "郡县制那三句话我准备好了，你哪天想听就喊我。";
       const run = await runPrepared(f, async () => channel === "final" ? { ...(await silentAnswer()), content: text }
         : steps++ > 0 ? silentAnswer() : { ...(await silentAnswer()), finishReason: "tool_calls", toolCalls: [
-          { id: "semantic-publication", name: "companion_say", arguments: { action: "publish", text, final: true } },
+          { id: "semantic-publication", name: "companion_send_message", arguments: { text } },
         ] });
       assert.equal(reviewed, 1, `${channel}/${scenario}`);
       const messages = await admin`SELECT blocks FROM companion_messages WHERE run_id=${run.id} AND role='assistant'`;
@@ -214,7 +214,7 @@ test("built-in defaults greet a new account with no saved participation preferen
   const run = await runPrepared(f,async()=>{
     if (greeted) return silentAnswer();
     greeted = true;
-    return { content:"",toolCalls:[{id:"startup-greeting",name:"companion_say",arguments:{ action: "publish",text:"欢迎回来。"}}],
+    return { content:"",toolCalls:[{id:"startup-greeting",name:"companion_send_message",arguments: { text:"欢迎回来。"}}],
       finishReason:"tool_calls",usage:{promptTokens:10,completionTokens:10},providerRequestId:null };
   });
   const [message] = await admin`SELECT blocks FROM companion_messages WHERE run_id=${run.id} AND role='assistant'`;
@@ -248,7 +248,7 @@ test("startup after a failed user turn keeps the history but assembles a host-oc
     assert.equal(timeline.history[0].replyTerminal, true);
     if (checked) return silentAnswer();
     checked = true;
-    return { ...(await silentAnswer()), toolCalls: [{ id: "host-greeting", name: "companion_say", arguments: { action: "publish", text: "欢迎回来，今天怎么样？", final: true } }], finishReason: "tool_calls" };
+    return { ...(await silentAnswer()), toolCalls: [{ id: "host-greeting", name: "companion_send_message", arguments: { text: "欢迎回来，今天怎么样？" } }], finishReason: "tool_calls" };
   });
   assert.ok(checked);
   const [saved] = await admin`SELECT snapshot FROM companion_context_handoff_snapshots WHERE run_id=${current.id}`;
@@ -381,7 +381,7 @@ test("a structured quiet decision finishes without another model call or speech"
     calls++;
     assert.equal(calls,1);
     assert.equal(request.disableThinking,true,"Startup consideration should use the light thinking mode");
-    return { ...(await silentAnswer()),toolCalls:[{id:"done-silently",name:"companion_say",arguments:{ action: "finish_participation",decision:"silent"}}],finishReason:"tool_calls" };
+    return await silentAnswer();
   });
   const [result] = await admin`SELECT status FROM companion_turn_runs WHERE id=${run.id}`;
   assert.equal(result!.status,"succeeded");
@@ -436,7 +436,7 @@ for (const userInitiated of [false, true]) test(`the same agent publishes real u
     const userMessageId = randomUUID();
     await admin`INSERT INTO companion_messages(id,workspace_id,user_id,conversation_id,seq,role,kind,blocks,run_id,content_sha256)
       VALUES(${userMessageId},${f.workspaceId},${f.userId},${f.conversationId},1,'user','text',
-        '[{"type":"text","text":"分两条跟我说：第一条只跟我打个招呼，第二条问我今天想先做哪件事。这一轮请调用 companion_say（action=publish）两次，最后一条 final=true，不要用普通最终正文。"}]'::jsonb,${run.id},${"0".repeat(64)})`;
+        '[{"type":"text","text":"分两条跟我说：第一条只跟我打个招呼，第二条问我今天想先做哪件事。这一轮请调用 companion_send_message两次，最后一条 final=true，不要用普通最终正文。"}]'::jsonb,${run.id},${"0".repeat(64)})`;
     await admin`UPDATE companion_conversations SET next_message_seq=2 WHERE id=${f.conversationId}`;
     await admin`UPDATE companion_turn_runs SET user_message_id=${userMessageId},input_source=NULL WHERE id=${run.id}`;
   }
@@ -455,10 +455,10 @@ for (const userInitiated of [false, true]) test(`the same agent publishes real u
     }
     step++;
     assert.equal(step, 1, "A batch of complete utterances must finish without an extra provider request");
-    assert.ok(request.tools.some(tool => tool.name === "companion_say"), "实际请求必须提供发言工具，不能由 mock 绕过工具面");
+    assert.ok(request.tools.some(tool => tool.name === "companion_send_message"), "实际请求必须提供发言工具，不能由 mock 绕过工具面");
     return { content: "", toolCalls: [
-      { id: "say-first", name: "companion_say", arguments: { action: "publish", text: "你回来啦。", final: false } },
-      { id: "say-last", name: "companion_say", arguments: { action: "publish", text: "今天想从哪里开始，我陪你。", final: true } },
+      { id: "say-first", name: "companion_send_message", arguments: { text: "你回来啦。" } },
+      { id: "say-last", name: "companion_send_message", arguments: { text: "今天想从哪里开始，我陪你。" } },
     ], finishReason: "tool_calls", usage: { promptTokens: 10, completionTokens: 10 }, providerRequestId: null };
   };
   Object.defineProperty(MockProvider.prototype, "chatCompletionStream", { ...stream, value: undefined });
@@ -498,12 +498,12 @@ test("a partial user-requested publication continues through bare prose and prem
     let step = 0;
     const run = await runPrepared(f, async request => {
       step++;
-      assert.ok(request.tools.some(tool => tool.name === "companion_say"));
+      assert.ok(request.tools.some(tool => tool.name === "companion_send_message"));
       if (step === 2) return { ...await silentAnswer(), content: "今天想先做什么？" };
       assert.ok(step <= 3, "only the missing message should be repaired");
       return { ...await silentAnswer(), content: step === 1 ? "我先准备一下。" : "", finishReason: "tool_calls",
-        toolCalls: [{ id: step === 1 ? "first-message" : "remaining-message", name: "companion_say",
-          arguments: { action: "publish", text: step === 1 ? "你好。" : "今天想先做什么？", final: step === 1 ? prematureFinal : true } }] };
+        toolCalls: [{ id: step === 1 ? "first-message" : "remaining-message", name: "companion_send_message",
+          arguments: { text: step === 1 ? "你好。" : "今天想先做什么？", final: step === 1 ? prematureFinal : true } }] };
     });
     assert.equal(step, 3);
     const messages = await admin`SELECT blocks FROM companion_messages WHERE run_id=${run.id} AND role='assistant' ORDER BY seq`;
@@ -599,8 +599,8 @@ test("ordinary complete answer is one message; a useful later thought uses an in
   const child = await runPrepared(f,async request => {
     const observation = request.messages.at(-1)!;
     assert.match(String(observation.content), /刚把用户那一轮答完/, "答后考虑要说清这是接着刚才那一轮");
-    return { content: "", toolCalls: [{ id: "useful-new-thought", name: "companion_say",
-      arguments: { action: "publish", text: "有个容易误用的细节：这个延迟只是最早时间，主线程忙时回调会更晚执行。" } }],
+    return { content: "", toolCalls: [{ id: "useful-new-thought", name: "companion_send_message",
+      arguments: { text: "有个容易误用的细节：这个延迟只是最早时间，主线程忙时回调会更晚执行。" } }],
       finishReason: "tool_calls", usage: { promptTokens: 10, completionTokens: 10 }, providerRequestId: null };
   });
   assert.notEqual(child.id,parent!.id);
@@ -774,8 +774,8 @@ test("a routine opening yields to the account's declared cadence while a greetin
   // 她刚在另一篇笔记上搭过一次话：这一次真的产出了消息，间隔从这一刻开始计。
   await arrive(randomUUID());
   await prepare(f);
-  await runPrepared(f, async () => ({ content: "", toolCalls: [{ id: "first-help", name: "companion_say",
-    arguments: { action: "publish", text: "这篇的开头有个容易混的地方。" } }], finishReason: "tool_calls",
+  await runPrepared(f, async () => ({ content: "", toolCalls: [{ id: "first-help", name: "companion_send_message",
+    arguments: { text: "这篇的开头有个容易混的地方。" } }], finishReason: "tool_calls",
     usage: { promptTokens: 10, completionTokens: 10 }, providerRequestId: null }));
   assert.equal((await admin`SELECT 1 FROM companion_messages WHERE user_id=${f.userId} AND role='assistant'`).length, 1);
   // 换一篇笔记：仍然是「她自己新起的话题」，适中档 30 分钟内不再起一整轮。
@@ -832,8 +832,8 @@ test("a quiet chance below the level's threshold is not an occasion, and silence
   assert.equal(await quiet(240_000), true);
   await prepare(f);
   assert.equal(await runs(), 3);
-  await runPrepared(f, async () => ({ content: "", toolCalls: [{ id: "say-hi", name: "companion_say",
-    arguments: { action: "publish", text: "在呢。今天怎么样？" } }], finishReason: "tool_calls", usage: { promptTokens: 10, completionTokens: 10 }, providerRequestId: null }));
+  await runPrepared(f, async () => ({ content: "", toolCalls: [{ id: "say-hi", name: "companion_send_message",
+    arguments: { text: "在呢。今天怎么样？" } }], finishReason: "tool_calls", usage: { promptTokens: 10, completionTokens: 10 }, providerRequestId: null }));
   assert.equal((await admin`SELECT 1 FROM companion_messages WHERE user_id=${f.userId} AND role='assistant'`).length, 1,
     "她真的开了一次口，这一次才该被算进间隔");
 
@@ -857,8 +857,8 @@ test("a due attention she arranged herself is not pushed away by her own cadence
     context: { foreground: true, unlocked: true, typing: false, learning: false, conversationId: f.conversationId,
       page: { key: `note-read:${randomUUID()}`, label: "笔记", revision: "version-1", context: null } } }));
   await prepare(f);
-  const spoke = await runPrepared(f, async () => ({ content: "", toolCalls: [{ id: "first-help", name: "companion_say",
-    arguments: { action: "publish", text: "这篇的开头有个容易混的地方。" } }], finishReason: "tool_calls",
+  const spoke = await runPrepared(f, async () => ({ content: "", toolCalls: [{ id: "first-help", name: "companion_send_message",
+    arguments: { text: "这篇的开头有个容易混的地方。" } }], finishReason: "tool_calls",
     usage: { promptTokens: 10, completionTokens: 10 }, providerRequestId: null }));
   // 同一次运行里她自己排了一条「回头再看一眼」——这是她答应自己（和用户）的事。
   await transaction(f, tx => arrangeCompanionAttention(tx, f, { key: "own-plan", expectedRevision: 0,

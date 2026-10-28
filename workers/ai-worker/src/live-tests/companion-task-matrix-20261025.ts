@@ -103,7 +103,7 @@ async function turn(name: string, text: string, options: { confirm?: boolean } =
     clientMessageId: randomUUID(), inputKind: "text", sourceSurface: "pet", blocks: [{ type: "text", text }] },
   { "Idempotency-Key": randomUUID() });
   activeRuns.push(accepted);
-  const terminalTypes = ["assistant.final", "turn.completed", "turn.cancelled", "error"];
+  const terminalTypes = ["assistant.final", "turn.completed", "turn.cancelled", "error", "waiting_for_confirmation"];
   let terminal = await waitFor(() => events.slice(offset).find(e =>
     e.runId === accepted.runId && terminalTypes.includes(e.type)), 180_000, `${name} terminal`);
   let proposalId: string | null = null;
@@ -238,7 +238,7 @@ try {
   // 11. memory.write.forget goes through confirmation
   // 11. Forget is a gated write. The gate itself is covered by the worker suite
   // and by a run that reached waiting_confirmation; record what this sample did.
-  const forget = await turn("memory-forget-confirm", "忘掉我晚上九点以后不想被打扰那条记忆。", { confirm: false });
+  const forget = await turn("memory-forget-confirm", "忘掉我晚上九点以后不想被打扰那条记忆。", { confirm: true });
   const [forgotten] = await db`select deleted_at from assistant_memory_items where id=${memory.id}`;
   recordCheck("memory-forget-confirm", Boolean((forget as Record<string, unknown>).proposalId)
     && Boolean(forgotten?.deleted_at), (forget as Record<string, unknown>).proposalId ? "confirmed" : "no-proposal-this-run");

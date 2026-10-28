@@ -56,7 +56,7 @@ const HOST_CONTEXT_RULES: Readonly<Record<string, {
   notIn?: readonly CompanionHostContext[];
 }>> = Object.freeze({
   // 整篇正文那一轮直接把正文交上去，不用分句发言（用了反而与正文分叉）。
-  companion_say: { notIn: ["note_reply"] },
+  companion_send_message: { notIn: ["note_reply"] },
 });
 
 /** 宿主事实 → 这一轮生效的上下文集合。任何对话轮至少是 `user`。 */

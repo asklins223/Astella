@@ -10,13 +10,13 @@ import { platform, observedProvider, save } from "./acceptance-common.ts";
 const route = platform("agent_turn");
 const provider = observedProvider(route, "narrow-surface", []);
 const RELEVANT = ["companion_attention_write", "companion_memory_write", "companion_persona_write",
-  "companion_say", "companion_goals_write", "companion_open"];
+  "companion_send_message", "companion_goals_write", "companion_open"];
 
 type Probe = { name: string; text: string; accept: string[] };
 const cases: Probe[] = [
   { name: "reminder", text: "明天上午九点提醒我复习线性代数。", accept: ["companion_attention_write"] },
   { name: "self_note", text: "你自己记一下：我最近在准备线性代数补考，这阵子先别催我刷题。", accept: ["companion_persona_write"] },
-  { name: "say_two", text: "分两条跟我说：先说声早，再问我想先做哪件事。", accept: ["companion_say"] },
+  { name: "say_two", text: "分两条跟我说：先说声早，再问我想先做哪件事。", accept: ["companion_send_message"] },
   { name: "forget", text: "把我刚才说的九点以后不想被打扰那条忘掉。", accept: ["companion_memory_write"] },
 ];
 const REPS = 3;

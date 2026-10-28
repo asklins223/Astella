@@ -307,7 +307,7 @@ export function companionWriteToolNames(
   // Turn controls and speech are not business writes: they change this turn's
   // presentation or publish text, and they have no ledger receipt to cite. Only
   // real domain writes can release a completion acknowledgement.
-  const notBusinessWrites = new Set(["companion_say", "companion_configure_turn", "companion_deepen", "companion_load_tools"]);
+  const notBusinessWrites = new Set(["companion_send_message", "companion_configure_turn", "companion_deepen", "companion_load_tools"]);
   return definitions.filter(definition => definition.riskClass !== "read" && !notBusinessWrites.has(definition.name))
     .map(definition => definition.name);
 }

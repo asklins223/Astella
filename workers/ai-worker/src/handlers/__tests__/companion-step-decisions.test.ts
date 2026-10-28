@@ -65,7 +65,7 @@ test("收尾判定：明确发布或静默决定都直接结算，失败调用�
   const call = (id: string, name: string, args: Record<string, unknown> = {}) => ({ id, name, arguments: args });
 
   const published = judgeCompanionStepClosing({
-    calls: [call("a", "companion_say", { action: "publish" })],
+    calls: [call("a", "companion_send_message", { text: "先说一句。" })],
     messages: [message("a", true)], initiative: false, writingAnnotation: false,
   });
   assert.equal(published.settleAs, "silent", "发布即结果，不必再问模型一轮");
@@ -73,30 +73,30 @@ test("收尾判定：明确发布或静默决定都直接结算，失败调用�
   // 2026-10-26 实测：用户要“明天九点提醒我”，她只发了一句闲聊就收尾，
   // 收尾判定把 `say.publish` 当成结果，提醒回执的闸再也没被走到。
   const publishedWithPendingAction = judgeCompanionStepClosing({
-    calls: [call("a", "companion_say", { action: "publish" })],
+    calls: [call("a", "companion_send_message", { text: "先说一句。" })],
     messages: [message("a", true)], initiative: false, writingAnnotation: false,
     actionReceiptMissing: true,
   });
   assert.equal(publishedWithPendingAction.settleAs, "none", "动作还欠回执时，发言不能算收尾");
 
   const publishedWithAnnotation = judgeCompanionStepClosing({
-    calls: [call("a", "companion_notes_write", { action: "annotate" }), call("b", "companion_say", { action: "publish" })],
+    calls: [call("a", "companion_notes_write", { action: "annotate" }), call("b", "companion_send_message", { text: "再说一句。" })],
     messages: [message("a", true), message("b", true)], initiative: false, writingAnnotation: true,
   });
   assert.equal(publishedWithAnnotation.settleAs, "annotation", "批注已落地时语音失败不能重开生成");
 
   const failedSpeech = judgeCompanionStepClosing({
-    calls: [call("a", "companion_say", { action: "publish" })],
+    calls: [call("a", "companion_send_message", { text: "先说一句。" })],
     messages: [message("a", false)], initiative: false, writingAnnotation: false,
   });
   assert.equal(failedSpeech.settleAs, "none", "回执失败不能当成已结算");
   assert.equal(failedSpeech.allSucceeded, false);
 
-  const silentInitiative = judgeCompanionStepClosing({
-    calls: [call("a", "companion_say", { action: "finish_participation" })],
+  const spokenInitiative = judgeCompanionStepClosing({
+    calls: [call("a", "companion_send_message", { text: "回来啦。" })],
     messages: [message("a", true)], initiative: true, writingAnnotation: false,
   });
-  assert.equal(silentInitiative.settleAs, "silent");
+  assert.equal(spokenInitiative.settleAs, "silent", "已发布的主动发言就是这一轮的结果");
 
   const toolThenAnswer = judgeCompanionStepClosing({
     calls: [call("a", "companion_notes_read", { action: "read" })],

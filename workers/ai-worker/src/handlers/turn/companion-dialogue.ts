@@ -60,7 +60,6 @@ import {
   type CompanionDisplaySegmentState,
 } from "../../lib/tts-segments.ts";
 import { resolveCompanionVoiceInstruction } from "./companion-voice-request-style.ts";
-import { splitCompanionReplyParts, COMPANION_REPLY_SPLIT_MAX } from "./companion-reply-split.ts";
 import { persistCompanionDialectPreference, readCompanionDialectPreference, readCompanionPreferredAddress } from "./companion-voice-preference.ts";
 import { qwenDialectForInstruction } from "@astella/shared/tts-voice-catalog";
 import { companionVoiceExpressionBoundaries, companionVoiceSegmentExpression, projectCompanionVoiceExpression } from "./companion-voice-expression.ts";
@@ -1334,26 +1333,10 @@ export async function runCompanionDialogue(
   await emitVisibleVoiceSegments(assistantText, true,
     deliveredPrefixOnly ? assistantText : ttsRawText, undefined, publishedVoiceChars);
 
-
-  /**
-   * The generation owns the delivery shape: a reply written as several
-   * paragraphs is delivered as several messages. There is no separate judge —
-   * the model already wrote the answer; the host only reads its paragraph
-   * boundaries. Code blocks keep their internal blank lines, and excess
-   * paragraphs join the last message so nothing is dropped.
-   *
-   * Only chat replies are split. A turn that wrote something (notes, memory,
-   * reminders) keeps one message: its rich blocks and receipts belong to a
-   * single answer, and cutting it would separate them from the text.
-   */
-  const assistantParts = ((): string[] | undefined => {
-    if (read.initiativeInput) return undefined;
-    if (agentResult.status !== "completed" || agentResult.writesLanded === true) return undefined;
-    const parts = splitCompanionReplyParts(assistantText, COMPANION_REPLY_SPLIT_MAX);
-    if (parts.length < 2) return undefined;
-    logger.info({ runId: read.runId, parts: parts.length }, "companion reply delivered as separate messages");
-    return parts;
-  })();
+  // Separate messages are published by the model through companion_send_message; the
+  // host never guesses message boundaries from prose. A normal reply is one
+  // message, regardless of how many paragraphs it contains.
+  const assistantParts: string[] | undefined = undefined;
 
   // 阶段 3c（终态事务）搬到 companion-dialogue-finalization.ts：回答收尾自成一域，
   // 编排文件只保留调用。搬迁是纯搬运——判据、事务边界、事件布局一字未改。

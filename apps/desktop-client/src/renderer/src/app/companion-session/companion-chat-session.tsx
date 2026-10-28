@@ -1578,7 +1578,11 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
               }
               if (args.background) setLiveReply({ messageId: payload.messageId, runId: args.runId, text: utterances,
                 webCitations: [], hasActionBlocks: false, proposalIds: [] });
-              else setDraft({ runId: args.runId, text: [draftRef.current, utterances].filter(Boolean).join("\n\n") });
+              // A published message is the record. Any prose streamed before it
+              // was a draft (the model may have written the whole reply and then
+              // sent only part of it), so it must not be shown next to the
+              // messages — that is where "one bubble, then two" came from.
+              else setDraft({ runId: args.runId, text: utterances });
               void refreshMessages(args.conversationId, args.epoch).catch(() => undefined);
             }
             return;

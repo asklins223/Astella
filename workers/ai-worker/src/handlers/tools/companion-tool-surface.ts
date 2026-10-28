@@ -54,7 +54,7 @@ export function createCompanionToolSurface(input: {
     // gated actions on them (cancel/pause/activeness/boundary) still hit the
     // execution-time confirmation and the initiative business-op block.
     for (const name of ["companion_persona_read", "companion_persona_write", "companion_attention_write",
-      "companion_observe", "companion_notes_read", "companion_say"]) {
+      "companion_observe", "companion_notes_read", "companion_send_message"]) {
       if (input.definitions.some(definition => definition.name === name)) initialToolNames.add(name);
     }
   }

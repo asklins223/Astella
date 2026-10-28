@@ -302,8 +302,7 @@ test("身份和自己的记事在三档均自主执行；权限开关仍控制�
   for (const [name, args] of [
     ["companion_attention_write", { action: "arrange" }],
     ["companion_attention_write", { action: "schedule_wake" }],
-    ["companion_say", { action: "publish" }],
-    ["companion_say", { action: "finish_participation" }],
+    ["companion_send_message", { text: "先用一个小例子说明。" }],
   ] as const) {
     const tool = getCompanionAgentTool(name)!;
     assert.ok(resolveAllCompanionAgentTools("guided").some(item => item.name === name), name);

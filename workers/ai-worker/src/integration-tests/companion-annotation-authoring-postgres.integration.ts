@@ -132,7 +132,7 @@ test("完整写入就是终态，附带的无效发言不再产生额外模型�
     assert.ok(request.tools.some(tool => tool.name === "companion_notes_write"));
     return { content: "", toolCalls: [
       { id: "write-formal-explanation", name: "companion_notes_write", arguments: { action: "annotate", markdown } },
-      { id: "invalid-optional-speech", name: "companion_say", arguments: { action: "publish", text: "（这轮没有需要补充的新内容，安静收尾。）" } },
+      { id: "invalid-optional-speech", name: "companion_send_message", arguments: { text: "（这轮没有需要补充的新内容，安静收尾。）" } },
     ], finishReason: "tool_calls", usage: {promptTokens:10,completionTokens:10}, providerRequestId: null };
   };
   Object.defineProperty(MockProvider.prototype,"chatCompletionStream",{...stream,value:undefined});

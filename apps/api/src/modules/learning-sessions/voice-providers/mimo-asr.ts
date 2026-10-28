@@ -56,9 +56,13 @@ const MIMO_ASR_PROMPT_VERSION = "mimo-asr-v1";
 export type MimoAsrLanguage = "auto" | "zh" | "en";
 
 /**
- * 上游语言参数的夹取。调用方给的是自己的语言标签（伴星语音那条固定 `zh-CN`），
+ * 上游语言参数的夹取。调用方给的是自己的语言标签（伴星语音默认 `auto`），
  * 直接透传会 400；认不出的一律落 `auto`，由上游自己判——猜成 `en` 会让中文录音
  * 被按英文模型解。
+ *
+ * 实测（2026-10-28，16k 单声道 wav）：中英混说与纯英文只有 `auto` 输出干净；
+ * `zh` 会把英文句首改写（"Can you summarize…" → "请你 summarize…"），
+ * `en` 会给中文录音加 `<chinese>` 标记。所以不要把语言标签往 zh/en 收窄。
  */
 export function mimoAsrLanguage(raw: string | null | undefined): MimoAsrLanguage {
   if (!raw) return "auto";

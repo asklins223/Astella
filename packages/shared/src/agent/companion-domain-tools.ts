@@ -21,7 +21,7 @@ export type CompanionDomainToolName =
   | "companion_goals_write"
   | "companion_observe"
   | "companion_visual"
-  | "companion_say"
+  | "companion_send_message"
   // Flat aliases for high-frequency actions. They keep the same executor,
   // confirmation and receipt semantics as their domain action; the only
   // difference is that the model does not have to select an action first.
@@ -47,7 +47,7 @@ export const COMPANION_DOMAIN_ACTIONS: Readonly<Record<CompanionDomainToolName, 
   companion_goals_write: ["start", "revise", "control"],
   companion_observe: ["context", "current_page", "history", "stats", "activity", "calculate"],
   companion_visual: ["read_image", "show_image", "diagram"],
-  companion_say: ["publish", "finish_participation"],
+  companion_send_message: ["publish"],
   companion_self_note_write: ["self_note"],
   companion_memory_forget: ["forget"],
   companion_goal_start: ["start"],
@@ -100,7 +100,7 @@ export const COMPANION_DOMAIN_OPERATIONS: Readonly<Record<CompanionDomainToolNam
     companion_visual: {
       read_image: "visual.read_image", show_image: "visual.show_image", diagram: "visual.diagram",
     },
-    companion_say: { publish: "say.publish", finish_participation: "say.finish_participation" },
+    companion_send_message: { publish: "say.publish" },
     companion_self_note_write: { self_note: "persona.write.self_note" },
     companion_memory_forget: { forget: "memory.write.forget" },
     companion_goal_start: { start: "goals.write.start" },
@@ -111,7 +111,7 @@ export const COMPANION_DOMAIN_OPERATIONS: Readonly<Record<CompanionDomainToolNam
 export const COMPANION_DOMAIN_AUTO_ACTIONS: Readonly<Record<string, readonly string[]>> = Object.freeze({
   companion_notes_write: ["annotate"],
   companion_attention_write: ["save_participation", "arrange", "schedule_wake"],
-  companion_say: ["publish", "finish_participation"],
+  companion_send_message: ["publish"],
   companion_persona_write: ["self_note", "identity", "style", "tags"],
   companion_self_note_write: ["self_note"],
   // activeness/boundary stay gated: they change how often she speaks to the user.
@@ -146,6 +146,7 @@ export function companionDomainAction(args: Record<string, unknown> | undefined 
  * see the same internal operation for the same call.
  */
 export const COMPANION_FLAT_ALIAS_ACTION: Readonly<Record<string, string>> = Object.freeze({
+  companion_send_message: "publish",
   companion_self_note_write: "self_note",
   companion_memory_forget: "forget",
   companion_goal_start: "start",
@@ -216,7 +217,6 @@ const OPERATION_ARGUMENT_FIELDS: Readonly<Record<string, readonly string[]>> = O
   "attention.write.cancel_reminder": ["reminderId"],
   "attention.write.pause": ["scope", "reason"],
   "say.publish": ["text", "final"],
-  "say.finish_participation": ["decision"],
   "persona.write.self_note": ["key", "expectedRevision", "title", "body", "tier",
     "nextReviewAt", "expiresAt", "reason"],
   "persona.write.identity": ["document", "reason"],
@@ -313,8 +313,7 @@ export const COMPANION_OPERATION_LABELS: Readonly<Record<string, string>> = Obje
   "attention.write.cancel_reminder": "正在撤掉那个提醒",
   "attention.write.pause": "正在收一收学习建议",
   "say.publish": "分次发言",
-  "say.finish_participation": "考虑已结束",
-  "persona.read.identity": "正在读自己的身份文档",
+    "persona.read.identity": "正在读自己的身份文档",
   "persona.read.self_notes": "正在翻自己的记事",
   "persona.write.self_note": "正在整理自己的记事",
   "persona.write.identity": "正在修订自己的认识",

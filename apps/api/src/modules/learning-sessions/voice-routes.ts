@@ -976,7 +976,9 @@ userId: session.userId,
                 scope: scopeOfSession(req.session),
                 currentActiveTransaction: currentApiWorkspaceTransaction,
                 signal: aborted.signal,
-                language: companionFields.language,
+                // 不做语种判定交给调用方：伴星对话天然中英混说，实测只有 auto
+                // 不串语种（zh 会把英文句首改写成中文）。
+                language: "auto",
               })),
           },
           asrProviderName: "mimo",

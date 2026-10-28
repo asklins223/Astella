@@ -13,7 +13,7 @@ import { assertCompanionContextSourcesCurrent } from "../context/companion-conte
 import { enqueueSystemEventDelivery } from "../agent/companion-delivery-write.ts";
 import { buildFinalCuePayload, companionAssistantMessageKind, } from "./companion-dialogue-content.ts";
 import { persistFailedPartial } from "./companion-dialogue-failure-retention.ts";
-import { companionReplyMessageDrafts } from "./companion-reply-split.ts";
+import { companionReplyMessageDrafts } from "./companion-reply-drafts.ts";
 import {
   insertStreamEvent,
   recoverCompanionRunFailureSpanInTransaction,
