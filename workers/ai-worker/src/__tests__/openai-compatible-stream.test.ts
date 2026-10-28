@@ -12,6 +12,8 @@ import {
 import type { PublicJsonRequester, PublicStreamingRequester } from "@astella/shared/public-json-http";
 import { MockProvider } from "../lib/providers/mock.ts";
 import { ProviderRequestError } from "../lib/provider-request-error.ts";
+import { AgentOutputError } from "../lib/non-retryable-errors.ts";
+import { AgentRole } from "@astella/shared";
 
 /** 测试专用：把 globalThis.fetch（被 withFetchMock 替换）包成非流式 requester。 */
 function fetchJsonRequester(): PublicJsonRequester {
@@ -216,24 +218,49 @@ test("chatCompletionStream（④-b）：只回 tool_calls、一个字都不说�
 });
 
 test("chatCompletionStream（④-b）：arguments 是坏 JSON 时不当作「空参数成功调用」", async () => {
-  // 截断/损坏的调用必须留下可见痕迹：arguments 保持空对象，由上层 schema 校验
-  // 拒绝并记审计——绝不静默执行一个模型没真正提出的调用。
+  // Even a no-argument tool can accept {}, so only an explicit parse failure
+  // prevents a damaged call from becoming an unintended valid invocation.
   await withFetchMock(async () => sseResponse([
     sseLine(JSON.stringify({
       choices: [{ delta: { tool_calls: [{ index: 0, id: "call_bad", function: { name: "companion_open_card", arguments: "{\"cardId\":" } }] } }],
     })),
     "data: [DONE]\n\n",
   ]), async () => {
-    const result = await makeProvider(undefined, fetchStreamingRequester()).chatCompletionStream(
+    await assert.rejects(makeProvider(undefined, fetchStreamingRequester()).chatCompletionStream(
       CHAT_MESSAGES,
       { responseFormat: "text" },
       undefined,
       () => undefined,
-    );
-    assert.deepEqual(result.toolCalls, [
-      { id: "call_bad", name: "companion_open_card", arguments: {} },
-    ]);
+    ), error => error instanceof AgentOutputError && error.code === "arguments_malformed");
   });
+});
+
+test("observed buffered fallback calls retain reasoning effort, native progress and usage", async () => {
+  let captured: Record<string, unknown> = {};
+  let activities = 0;
+  const provider = new OpenAICompatibleProvider({ apiKey: "synthetic", baseUrl: "https://example.test/v1", model: "synthetic",
+    platformOptions: { thinkingParam: "reasoning_effort" },
+    modelProfile: { reasoning: { levels: ["none", "high"], default: "none" } },
+    streamRequest: async (_url, _headers, body) => {
+      captured = body as Record<string, unknown>;
+      const events = [{ id: "synthetic-request", choices: [] },
+        { choices: [{ delta: { reasoning_content: "synthetic reasoning" } }] },
+        { choices: [{ delta: { content: "done" }, finish_reason: "stop" }],
+          usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } }];
+      return { status: 200, statusText: "OK", cancel() {}, body: (async function* () {
+        for (const event of events) yield new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`);
+        yield new TextEncoder().encode("data: [DONE]\n\n");
+      })() };
+    },
+  });
+  const result = await provider.executeAgentTurn({ role: AgentRole.COMPANION_AGENT, systemPrompt: "synthetic",
+    messages: [{ role: "user", content: "synthetic" }], tools: [], maxTokens: 100, temperature: 0.2,
+    reasoningEffort: "high" }, undefined, { onOutputActivity: () => { activities++; } });
+  assert.equal(captured.reasoning_effort, "high");
+  assert.equal(activities, 2, "metadata and terminal heartbeats are not reasoning progress");
+  assert.equal(result.content, "done");
+  assert.equal(result.usage?.totalTokens, 15);
+  assert.equal(result.providerRequestId, "synthetic-request");
 });
 
 test("chatCompletion：responseFormat=text 在非流式 fallback 也不强制 JSON mode", async () => {

@@ -62,12 +62,12 @@ export async function recoverCompanionStreamFailure(input: {
     logger.warn({ runId, stepCount, fallbackModelId: input.fallbackProvider.modelId },
       "companion first-output timeout switched to a fitting fallback model");
     input.useFallback(input.fallbackProvider);
-    return input.runBuffered(1);
+    return typeof input.fallbackProvider.chatCompletionStream === "function" ? input.attemptStream() : input.runBuffered(1);
   }
   if (firstOutputTimeout) {
     // No usable alternate route: retry once, not the default three-attempt
     // stack. A stalled route must not hold the turn for several empty waits.
-    return input.runBuffered(1);
+    return input.attemptStream();
   }
   if (error instanceof ProviderRequestError && error.status >= 500) {
     // A 5xx before any delta is transient: retry the stream once, then fall
@@ -76,9 +76,14 @@ export async function recoverCompanionStreamFailure(input: {
       return await input.attemptStream();
     } catch (retryError) {
       if (!input.canRetryStream(retryError)) throw retryError;
+      if (input.fallbackProvider && input.fallbackProvider !== input.stepProvider
+        && typeof input.fallbackProvider.chatCompletionStream === "function" && await input.fitsFallback()) {
+        input.useFallback(input.fallbackProvider);
+        return input.attemptStream();
+      }
       logger.warn({ err: retryError, stepCount },
-        "companion streaming retry failed before any delta; retrying with buffered turn");
-      return input.runBuffered();
+        "companion streaming retry failed before any delta; using the last buffered attempt");
+      return input.runBuffered(1);
     }
   }
   logger.warn({ stepCount },

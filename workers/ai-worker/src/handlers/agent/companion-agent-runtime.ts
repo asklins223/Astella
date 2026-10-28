@@ -44,6 +44,9 @@ import { resolveCompanionEntryMode, settleCompanionAttention,
   createCompanionDirectControls, companionDirectGuidance } from "../turn/companion-entry-mode.ts";
 import { companionActionProgressLabel } from "./companion-action-progress.ts";
 import { companionResponseStrategy } from "../turn/companion-response-strategy.ts";
+import { resolveCompanionTurnWorkload, companionStepReasoning, COMPANION_CASUAL_TURN_GUIDANCE } from "../turn/companion-turn-workload.ts";
+import { createCompanionMessageDelivery } from "../turn/companion-message-delivery.ts";
+import { CompanionToolNotExecutedError } from "../tools/companion-tool-outcome.ts";
 import { containsCompanionToolProtocol } from "../tools/companion-tool-protocol-output.ts";
 import { CompanionToolOutputRepairError } from "../tools/companion-tool-output-repair.ts";
 import { companionTimeWakeupConstraint, companionExecutionConstraintGuidance } from "./companion-execution-constraints.ts";
@@ -74,7 +77,7 @@ import {
 } from "../turn/companion-dialogue-store.ts";
 import { settleCompanionTurnPreamble } from "../turn/companion-turn-preamble.ts";
 import { createCompanionStepCompaction } from "../context/companion-step-compaction.ts";
-import { looksTruncatedReply, companionStepOutputCeiling } from "../turn/companion-dialogue-content.ts";
+import { looksTruncatedReply, companionStepOutputCeiling, containsCompanionInternalToken } from "../turn/companion-dialogue-content.ts";
 import { companionNumericEvidenceContext } from "../context/companion-context-evidence.ts";
 import { runCompanionToolExecution } from "../tools/companion-tool-execution-run.ts";
 import { CompanionToolPreparation } from "../tools/companion-tool-preparation.ts";
@@ -85,7 +88,7 @@ import { companionInitiativeInterpretationFields } from "../proactive/companion-
 import { createdNoteToolResult, readCreatedNoteReceipt, userForbidsNoteLibraryRead } from "../note/companion-note-authoring.ts";
 import { canRetryCompanionStream, runStreamingAgentStep } from "./companion-agent-streaming-step.ts";
 import { recoverCompanionStreamFailure } from "./companion-stream-recovery.ts";
-import { executeWatchedCompanionTurn, CompanionOutputTimeoutError } from "./companion-output-watchdog.ts";
+import { executeWatchedCompanionTurn, CompanionOutputTimeoutError, companionOutputWatchdogPolicy } from "./companion-output-watchdog.ts";
 import { companionNoteEditPrerequisite } from "../note/companion-note-authoring-stage.ts";
 import { CompanionStreamStoppedError } from "../turn/companion-dialogue-stream.ts";
 export { runStreamingAgentStep };
@@ -119,6 +122,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     throw new Error("provider does not support companion agent turns");
   }
   let utterancePublished = false;
+  const messageDelivery = createCompanionMessageDelivery(args.read.userText, !args.read.initiativeInput);
   const event: AgentEventContext = {
     ctx: args.ctx,
     read: args.read,
@@ -127,15 +131,17 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     flushThinking: args.flushThinking,
     onUtterancePublished: async (...published) => {
       utterancePublished = true;
+      messageDelivery.record(published[0]);
       await args.onUtterancePublished?.(...published);
     },
   };
   const attemptStartedAt = Date.now();
   const meta = await readRunMeta(event);
   if (meta.stepCount > 0) {
-    const [published] = await withWorkerWorkspaceTransaction({ workspaceId: args.ctx.workspaceId, userId: args.read.userId },
-      tx => tx.execute(sql`SELECT 1 FROM companion_run_utterances WHERE run_id=${args.read.runId} LIMIT 1`));
-    utterancePublished = Boolean(published);
+    const published = await withWorkerWorkspaceTransaction({ workspaceId: args.ctx.workspaceId, userId: args.read.userId },
+      tx => tx.execute<{ message_id: string }>(sql`SELECT message_id FROM companion_run_utterances WHERE run_id=${args.read.runId}`));
+    for (const row of published) messageDelivery.record(row.message_id);
+    utterancePublished = published.length > 0;
   }
   if (!meta.globalEnabled || meta.currentAccountEpoch !== args.read.accountEpoch) {
     throw new Error("companion agent account epoch is stale or globally disabled");
@@ -192,7 +198,6 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     goalRelation: "new", goalReference: null, candidateOperations: ["notes.write.annotate"], ambiguities: [], status: "interpreted",
   }) : meta.turnInterpretation?.requestHash === attentionRequestHash ? meta.turnInterpretation : null;
   // 注意力记录是宿主占位：没有独立分类，也没有等待分类的串行往返。
-  const routeRecorder = createCompanionRouteRecorder({ entryMode });
   const opening = openCompanionTurn(args);
   const dialogueHistory = opening.dialogueHistory;
   const currentRequest = opening.currentRequest;
@@ -223,6 +228,10 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
   }
   const noteObservation = createCompanionNoteObservation(event, Boolean(recovered), notePage?.context);
   const attention = await settleCompanionAttention({ args, requestHash: attentionRequestHash, cached: cachedInterpretation });
+  const workload = resolveCompanionTurnWorkload({ mode: entryMode, userText: args.read.userText, attention,
+    requiresGrounding: writingAnnotation || completeNoteReply || Boolean(args.read.initiativeInput
+      || args.read.userImageAttachments?.length || args.continuationProposalId || currentRequest.hostObservation) });
+  const routeRecorder = createCompanionRouteRecorder({ entryMode, workload });
   // 回合前段（注意力落定、历史绑定、工具面与能力快照）整段在
   // companion-turn-preamble.ts；messages 仍归运行时所有，用访问器接进去。
   const preamble = await settleCompanionTurnPreamble({
@@ -243,7 +252,8 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     steerableReadTools, steerableActionTools, requestedActionTools,
   } = preamble;
   const directControls = createCompanionDirectControls({ mode: entryMode, attention,
-    userText: args.read.userText, deepened: recovered?.state.deepened, onInterpretation: args.onTurnInterpretation });
+    userText: args.read.userText, casual: workload === "casual",
+    deepened: recovered?.state.deepened, onInterpretation: args.onTurnInterpretation });
   if (definitions.length === 0)
     throw new Error(`companion tool surface resolved empty for permission "${String(meta.permissionLevel)}"`);
   const notePrefetch = await noteObservation.read(attention);
@@ -270,7 +280,6 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
    * 调用 companion_deepen 或直接选择深度档时开；工具回来不会另开一档。
    */
   const disableThinking = directControls.disableThinking();
-  const responseStrategy = companionResponseStrategy(attention);
   // 这是调用意图，不是上游实际消耗：不支持 none 的模型仍使用最低思考档。
   logger.info({ runId: args.read.runId, requestedDisableThinking: disableThinking,
     providerId: args.provider.id, modelId: args.provider.modelId, basis: `entry:${entryMode}` },
@@ -371,7 +380,9 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
    * a literal repeat, so publish is allowed and the prose stays a draft: the
    * client drops it once the published messages exist.
    */
-  event.verifyUtterance = () => {};
+  event.verifyUtterance = () => {
+    if (messageDelivery.full()) throw new CompanionToolNotExecutedError("用户指定的消息数量已发完，不再追加额外气泡。请继续完成其他要求或结束本轮。");
+  };
   event.reviewInitiativeSpeech = text => reviewCompanionInitiativeSpeech({ ctx: args.ctx, read: args.read, text, provider: args.provider });
 
   /**
@@ -561,23 +572,6 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     // 上限就抽走工具面逼她作答——那是用计数决定她说什么。纯函数那一侧仍接受这个
     // 入参供探针渲染文案，运行时永远传 false。
     const finalAnswerOnly = false;
-    /**
-     * The host only raises effort above the model's own default; it never pins
-     * a plain first step to `none`. Deciding "this turn needs no thinking" for
-     * the model is exactly what produced one-prose-message answers to
-     * "分两条" (measured 2026-10-28). The model's default already skips
-     * reasoning on small talk and uses it when the reply needs deciding.
-     *   - correcting a failed/unsupported step -> high
-     *   - deepen                                -> high
-     *   - this turn has used a tool            -> medium (act on evidence)
-     *   - otherwise                            -> leave undefined (model default)
-     */
-    const stepReasoningEffort = ((): "medium" | "high" | undefined => {
-      if (actionSteerAttempts > 0 || arithmeticCorrectionCount > 0) return "high";
-      if (directControls.deepened()) return "high";
-      if (toolCallCount > 0) return "medium";
-      return undefined;
-    })();
     const needsAttachedImageRead = toolCallCount === 0 && companionAttachmentReadRequired({
       hasImageAttachments: Boolean(args.read.userImageAttachments?.length),
       visionEnabled: event.constraints.visionEnabled === true,
@@ -608,15 +602,15 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       finalAnswerOnly,
       requiresTool: (userRequiresTool && (userAskedForAction || !notePrefetched || notePrefetch.truncated === true))
         || needsAttachedImageRead || editPrerequisite !== null
-        || requireToolThisStep,
-      toolCallCount: editPrerequisite ? 0 : toolCallCount,
+        || requireToolThisStep || messageDelivery.incomplete(),
+      toolCallCount: editPrerequisite || messageDelivery.incomplete() ? 0 : toolCallCount,
     });
     const runtimePolicy = companionStepPolicyText({
       permissionLevel: currentMeta.permissionLevel,
       toolCount: toolsOfferedThisStep.length,
       stepBudget,
       finalAnswerOnly,
-      attentionIntent: attention.intent,
+      attentionIntent: workload === "casual" ? "conversation" : attention.intent,
       requestSource: currentRequest.hostObservation ? "host_observation" : "user",
       offeredToolNames: toolsOfferedThisStep.map((tool) => tool.name),
       writingAnnotation,
@@ -629,11 +623,17 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
      * answer step still uses the turn's declared thinking level.
      */
     const readOnlyRequiredStep = toolChoiceThisStep === "required"
-      && (needsAttachedImageRead || editPrerequisite !== null || (!userAskedForAction && stepCount === resumedStepCount + 1));
+      && (needsAttachedImageRead || editPrerequisite !== null || pendingMaterialRead);
     if (readOnlyRequiredStep) {
       logger.info({ runId: args.read.runId, stepCount, basis: "read-required-first-step" },
         "companion read-only required step uses the lowest declared thinking level");
     }
+    const stepReasoningEffort = companionStepReasoning({ mode: entryMode, workload,
+      deepened: directControls.deepened(), repairing: actionSteerAttempts > 0 || arithmeticCorrectionCount > 0,
+      readOnlyRequiredStep, toolCallCount });
+    const casualStep = workload === "casual" && stepReasoningEffort === "none";
+    const outputWatchdogPolicy = companionOutputWatchdogPolicy(casualStep ? "casual" : "adaptive");
+    const responseStrategy = companionResponseStrategy(casualStep ? { intent: "conversation", toolUse: "none" } : attention);
     /**
      * 第一步就是普通一步：没有分类器，也没有可复用的闲聊预生成。
      */
@@ -645,7 +645,8 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
         editPrerequisite === "search" ? "现在先用 companion_notes_read（action=search）定位用户指定的已保存手记，取得真实noteId；本步不撰写正文、不猜测ID。" : "",
         editPrerequisite === "read" ? "现在用 companion_notes_read（action=read）读取目标版本，includeBlocks=true、maxChars=20000，取得真实version、blockIndex与完整content。目标ID不确定时先搜索；未读完按游标续读。本步不撰写修改内容。" : "",
         responseStrategy.guidance, companionExecutionConstraintGuidance(attention),
-        companionDirectGuidance(entryMode)].filter(Boolean).join("\n"),
+        casualStep ? COMPANION_CASUAL_TURN_GUIDANCE : companionDirectGuidance(entryMode),
+        messageDelivery.guidance()].filter(Boolean).join("\n"),
       attention,
       currentUserText: currentRequest.hostObservation ? undefined : args.read.userText,
       messages: companionNoteEditRoutingMessages(messages, requestedActionTools.includes("notes.write.edit"), noteObservation.hasResolvedTarget(attention)),
@@ -676,7 +677,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     let stepProvider = args.provider;
     if ((steerSwapToFallback || protocolFallback) && typeof args.fallbackProvider?.executeAgentTurn === "function") {
       const fallbackFits = await companionProviderFitsRequest(args.fallbackProvider, stepRequest);
-      if (fallbackFits) stepProvider = args.fallbackProvider;
+      if (fallbackFits) { stepProvider = args.fallbackProvider; protocolFallback = true; }
       else logger.warn({ runId: args.read.runId, stepCount, fallbackModelId: args.fallbackProvider.modelId },
         "companion steer kept on primary provider: fallback context window cannot fit this request");
     }
@@ -739,7 +740,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
               provider,
               folded,
               callSignal,
-              (taskSignal) => executeWatchedCompanionTurn(provider, folded, taskSignal),
+              (taskSignal) => executeWatchedCompanionTurn(provider, folded, taskSignal, outputWatchdogPolicy),
               providerCallTimeout,
             )),
           onFallback: (error, fallbackProvider) => logger.warn({
@@ -814,6 +815,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
                 stepRequest: folded,
                 ctxSignal: signal,
               timeoutMs: providerCallTimeout,
+              outputWatchdogPolicy,
               onProviderDelta: async text => {
                 stepVisibleText += text;
                 return args.onProviderDelta!(text);
@@ -856,7 +858,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
             stepProvider, fallbackProvider: args.fallbackProvider,
             fitsFallback: async () => args.fallbackProvider !== undefined
               && await companionProviderFitsRequest(args.fallbackProvider, stepRequest),
-            useFallback: provider => { stepProvider = provider; protocolFallback = true; },
+            useFallback: provider => { stepProvider = provider; stepCompaction.setProvider(provider); protocolFallback = true; },
             stepCount, runId: args.read.runId,
           });
         }
@@ -865,6 +867,8 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       }
       if (containsCompanionToolProtocol(String(result.content ?? "")))
         throw new CompanionToolOutputRepairError("", String(result.content ?? ""));
+      if (containsCompanionInternalToken(String(result.content ?? "")))
+        throw new CompanionToolOutputRepairError("", String(result.content ?? ""), "internal_token_leak");
       await preparation.finish(result.toolCalls ?? []);
     } catch (error) {
       await preparation.finish([]).catch(preparationError => logger.warn(
@@ -911,6 +915,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
           alreadyDisplayed: outputRepair.publishedText.length > 0,
           instruction: [outputRepair.code === "arguments_malformed"
             ? "上一版原生工具调用的参数不是合法 JSON，宿主没有执行那次调用。"
+            : outputRepair.code === "internal_token_leak" ? "上一版把内部上下文字段或标识写进了正文，未通过交付校验。"
             : "上一版把工具调用协议写进了正文，宿主没有执行这些文字。",
             "需要工具时只能使用本轮声明的原生工具调用通道和参数结构；不需要工具就直接完成当前任务。此前已取得的真实工具回执继续有效，不重复已完成的操作。已显示的前缀保留，只接续或纠正，不从头重复。"].join("\n"),
         }));
@@ -973,6 +978,18 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     }
     if (args.read.initiativeInput && isCompanionParticipationClosure(result.content)) result = { ...result, content: "" };
     let calls: NonNullable<AgentTurnResult["toolCalls"]> = result.toolCalls ?? [];
+    if (calls.length === 0 && messageDelivery.incomplete()) {
+      if (actionSteerAttempts >= COMPANION_UNBACKED_CLAIM_RETRIES_ALLOWED)
+        throw new AgentOutputError("action_unverified", "requested independent messages were not delivered");
+      actionSteerAttempts += 1;
+      steerSwapToFallback = true;
+      messages = dropCompanionInternalCorrections(messages);
+      messages.push(...companionStepCorrectionMessages({ currentRequest, alreadyDisplayed: stepEmitted,
+        instruction: messageDelivery.guidance() }));
+      await finishBoundary(stepId, "failed", auditHash(result), "ACTION_NOT_EXECUTED");
+      await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta() });
+      return { kind: "continue" };
+    }
     if (calls.length === 0 && (utterancePublished || !String(result.content ?? "").trim())) {
       const [published] = await withWorkerWorkspaceTransaction({ workspaceId: args.ctx.workspaceId, userId: args.read.userId },
         tx => tx.execute(sql`SELECT 1 FROM companion_run_utterances WHERE run_id=${args.read.runId} LIMIT 1`));
@@ -1500,6 +1517,14 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       const executedToolName = companionOperationName({ name: identity.name, arguments: parsedArgs.data });
       const ledgerDefinition = executedToolName === definition.name ? definition : { ...definition, name: executedToolName };
       if (identity.name === "companion_finish") {
+        if (messageDelivery.incomplete()) {
+          messages.push({ role: "tool", toolCallId: call.id,
+            content: JSON.stringify({ ok: false, status: "not_executed", error: messageDelivery.guidance() }) });
+          steerSwapToFallback = true;
+          if (actionSteerAttempts++ >= COMPANION_UNBACKED_CLAIM_RETRIES_ALLOWED)
+            throw new AgentOutputError("action_unverified", "requested independent messages were not delivered");
+          continue;
+        }
         if (calls.length !== 1) {
           messages.push({ role: "tool", toolCallId: call.id,
             content: JSON.stringify({ ok: false, status: "not_executed",
@@ -1840,13 +1865,13 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
           // message exists. The receipt says both halves — the draft is not
           // visible, and a published message needs no spoken confirmation.
           ...(executedToolName === "say.publish"
-            ? { note: "这条已经发给用户看到了。还有内容要发就继续调用本工具，每次一条；全部说完就结束。没通过本工具发出的正文不会出现在对话里，收尾也不用汇报已经发了什么。" } : {}) }),
+            ? { note: "这条已经发给用户看到了。还有内容要发就继续调用本工具，每次一条；全部说完就结束。没通过本工具发出的正文不会出现在对话里，收尾也不用汇报已经发了什么。" + messageDelivery.guidance() } : {}) }),
       });
     }
     const closing = judgeCompanionStepClosing({
       calls, messages, initiative: Boolean(args.read.initiativeInput), writingAnnotation,
-      actionReceiptMissing: userAskedForAction && requestedActionTools.length > 0
-        && !companionActionResultRecorded(messages, requestedActionTools),
+      actionReceiptMissing: messageDelivery.incomplete() || (userAskedForAction && requestedActionTools.length > 0
+        && !companionActionResultRecorded(messages, requestedActionTools)),
     });
     if (closing.settleAs === "annotation") {
       // The independent artifact is already delivered. Optional speech failure cannot turn it into another generation loop.

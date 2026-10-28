@@ -71,6 +71,34 @@ test("factory selects Pi and exposes MiMo text generation for the configured slo
   assert.ok(createCapabilityProvider("mimo_responses", "text_generation", { apiKey: "synthetic-key" }) instanceof PiAgentProvider);
 });
 
+test("per-step effort reaches the wire for native, buffered and streaming calls", async () => {
+  const f = fixture(Array.from({ length: 4 }, () => ({ events: responseEvents([message("done")]) })));
+  const provider = mimo(f);
+  await provider.executeAgentTurn(request({ reasoningEffort: "high" }));
+  await provider.chatCompletion([], { reasoningEffort: "low", responseFormat: "text" });
+  await provider.chatCompletionStream([], { nativeAgentRequest: request({ reasoningEffort: "none" }),
+    responseFormat: "text" }, undefined, () => {});
+  await provider.executeAgentTurn(request({ disableThinking: true, reasoningEffort: "high" }));
+  assert.deepEqual(f.captured.map(call => (call.body.reasoning as { effort: string }).effort),
+    ["high", "low", "none", "high"]);
+});
+
+test("effort is mapped to a supported level without downgrading a harder request", async () => {
+  const f = fixture(Array.from({ length: 2 }, () => ({ events: responseEvents([message("done")]) })));
+  const provider = mimo(f, { modelProfile: { ...profile,
+    reasoning: { levels: ["low", "high"], default: "low" } } });
+  await provider.executeAgentTurn(request({ reasoningEffort: "medium" }));
+  await provider.executeAgentTurn(request({ reasoningEffort: "none" }));
+  assert.deepEqual(f.captured.map(call => (call.body.reasoning as { effort: string }).effort), ["high", "low"]);
+});
+
+test("explicit effort cannot bypass a gateway's required-tool compatibility constraint", async () => {
+  const f = fixture([{ events: chatEvents({ tool_calls: [{ index: 0, id: "required", type: "function",
+    function: { name: "lookup", arguments: '{"query":"synthetic"}' } }] }, "tool_calls") }]);
+  await deepseek(f).executeAgentTurn(request({ tools: [tool], toolChoice: "required", reasoningEffort: "high" }));
+  assert.deepEqual(f.captured[0]!.body.thinking, { type: "disabled" });
+});
+
 test("phase-free Responses delivers first text while the terminal response is still pending", async () => {
   const output = [message("hello")];
   const events = responseEvents(output);

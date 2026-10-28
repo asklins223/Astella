@@ -275,7 +275,7 @@ export function companionOutputRejectionReason(
   options?: { streaming?: boolean },
 ): "empty_output" | "output_too_long" | "internal_token_leak" | "tool_protocol_leak" | null {
   const trimmed = text.trim();
-  if (trimmed.length === 0) return "empty_output";
+  if (trimmed.length === 0) return options?.streaming ? null : "empty_output";
   if (trimmed.length > COMPANION_HARD_MAX_CHARS) return "output_too_long";
   if (containsCompanionInternalToken(trimmed)) return "internal_token_leak";
   if (containsCompanionToolProtocol(trimmed, options?.streaming)) return "tool_protocol_leak";

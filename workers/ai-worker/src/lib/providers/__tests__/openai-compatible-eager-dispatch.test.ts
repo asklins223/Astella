@@ -20,6 +20,7 @@ import test from "node:test";
 
 import { OpenAICompatibleProvider } from "../openai-compatible.ts";
 import type { PublicStreamingRequester } from "@astella/shared/public-json-http";
+import { AgentOutputError } from "../../non-retryable-errors.ts";
 
 /** 把预设的 SSE 文本切成任意边界喂进去（与 opencode-go.test.ts 同一种夹具）。 */
 function streamingRequester(chunks: string[]): PublicStreamingRequester {
@@ -62,7 +63,7 @@ interface Settled { index: number; name: string; argsText: string }
  * 记 `log` 是关键：只断言"回调被调用了"分不出它是在流中途还是流末尾响的，
  * 而那正是 R7 全部收益的来源。
  */
-async function drive(parts: string[]): Promise<{
+async function drive(parts: string[], expectMalformed = false): Promise<{
   settled: Settled[];
   toolCalls: { name: string; arguments: Record<string, unknown> }[];
   log: string[];
@@ -81,7 +82,14 @@ async function drive(parts: string[]): Promise<{
     },
     undefined,
     (delta) => { log.push(`delta:${delta}`); },
-  );
+  ).then(result => {
+    assert.equal(expectMalformed, false, "a malformed terminal call must not become a successful empty-argument call");
+    return result;
+  }, error => {
+    if (!expectMalformed) throw error;
+    assert.ok(error instanceof AgentOutputError && error.code === "arguments_malformed");
+    return { toolCalls: [] };
+  });
   log.push("end");
   return { settled, toolCalls: result.toolCalls, log };
 }
@@ -122,7 +130,7 @@ test("参数还没拼完的调用不会响 —— 不拿半截 JSON 去执行", 
     frag(0, "c0", "companion_read_note", '{"noteId":'),
     frag(1, "c1", "companion_read_context", "{}"),
     done,
-  ]);
+  ], true);
   // 第 1 个是完整的，它**应该**被放行；这里要证明的是半截的那个没有。
   assert.deepEqual(settled.map((s) => s.index), [1]);
   assert.ok(!settled.some((s) => s.index === 0),
@@ -136,7 +144,7 @@ test("同一格不会被派发两次", async () => {
     // 重复片：provider 偶尔会重放最后一片
     frag(0, "c0", "companion_read_note", '{"noteId":"n1"}'),
     done,
-  ]);
+  ], true);
   assert.deepEqual(settled.map((s) => s.index), [0, 1],
     "重放的片让第 0 个被放行了第二次 —— 那个工具会跑两遍");
 });

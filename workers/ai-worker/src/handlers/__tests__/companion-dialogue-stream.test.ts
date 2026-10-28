@@ -15,7 +15,7 @@ import {
   reconcileStreamedText,
   stableVisibleCut,
 } from "../turn/companion-dialogue-stream.ts";
-import { COMPANION_HARD_MAX_CHARS, sanitizeCompanionVisibleText } from "../turn/companion-dialogue-content.ts";
+import { COMPANION_HARD_MAX_CHARS, sanitizeCompanionVisibleText, validateCompanionOutput } from "../turn/companion-dialogue-content.ts";
 import type { ReadContext } from "../turn/companion-dialogue-store.ts";
 
 /** 只用到 runId/generation/conversationId 等字段；注入写入口后不碰数据库。 */
@@ -115,6 +115,14 @@ it("加粗首句在后续正文生成前已经交付；逐拍保持最终正文�
 });
 
 describe("projectCompanionVisible", () => {
+  it("leading whitespace is pending output rather than a terminal empty answer", async () => {
+    const { delivery, written } = deliveryWithRecorder({ flushChars: 1 });
+    assert.equal(await delivery.onRawDelta(" \n"), true);
+    assert.deepEqual(written, []);
+    assert.equal(await delivery.onRawDelta("你好。"), true);
+    assert.deepEqual(await delivery.finish(), { ok: true, text: "你好。" });
+    assert.equal(validateCompanionOutput(" \n").ok, false, "an entirely empty final still fails");
+  });
   it("净化后的稳定前缀：markdown 原样保留（§4.8），且仍是最终文本的前缀", () => {
     const raw = "**你好**，慢慢来。\n";
     const projection = projectCompanionVisible(raw);

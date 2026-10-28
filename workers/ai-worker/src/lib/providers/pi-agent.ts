@@ -40,6 +40,7 @@ import { AgentOutputError } from "../non-retryable-errors.ts";
 import { profileFingerprint } from "./profile-fingerprint.ts";
 import { modelOutputTokenLimit } from "./model-output-budget.ts";
 import { countModelTextTokens } from "../model-tokenizers.ts";
+import { resolveModelReasoningEffort } from "@astella/shared/platform-config";
 import { resolveOpenCodeGoEndpoint, resolveMiMoResponsesEndpoint } from "./opencode-go.ts";
 
 type PiApi = "openai-completions" | "openai-responses";
@@ -182,14 +183,10 @@ function apiFor(providerId: PiProtocolProviderId, model: string, profile?: Model
   return model.startsWith("muse-spark-") ? "openai-responses" : "openai-completions";
 }
 
-function piReasoning(profile: ModelProfile | undefined, disableThinking: boolean | undefined):
+function piReasoning(profile: ModelProfile | undefined, disableThinking: boolean | undefined,
+  requested?: ChatOptions["reasoningEffort"]):
   NonNullable<SimpleStreamOptions["reasoning"]> | undefined {
-  const reasoning = profile?.reasoning;
-  if (!reasoning) return undefined;
-  let effort = reasoning.default;
-  if (disableThinking) {
-    effort = EFFORT_ORDER.find((level) => reasoning.levels.includes(level)) ?? reasoning.levels[0];
-  }
+  const effort = resolveModelReasoningEffort(profile, disableThinking, requested);
   return effort === "none" ? undefined : effort;
 }
 
@@ -420,11 +417,11 @@ export class PiAgentProvider implements AIProvider {
     while (continuationStart > 0 && ["assistant", "system"].includes(history[continuationStart - 1]!.role)) continuationStart--;
     const missingContinuationReasoning = history.slice(continuationStart).some(message => message.role === "assistant"
       && textFromContent(message.content).trim() && !(message.reasoning ?? []).some(handle => reasoningText(handle).trim()));
-    const disableThinking = (native?.disableThinking ?? options.disableThinking)
-      || (this.id === "opencode_go" && this.api === "openai-responses" && tools.length > 0 && missingContinuationReasoning)
+    const protocolRequiresLowestEffort = (this.id === "opencode_go" && this.api === "openai-responses" && tools.length > 0 && missingContinuationReasoning)
       || (this.id === "opencode_go" && this.api === "openai-completions"
         && model.id.startsWith("deepseek-") && choice === "required" && tools.length > 0
         && this.modelProfile?.reasoning?.levels.includes("none"));
+    const disableThinking = (native?.disableThinking ?? options.disableThinking) || protocolRequiresLowestEffort;
     const temperature = native?.temperature ?? options.temperature;
     const wire = new PiWireObservation(this.id, this.api, tools.length > 0, onDelta,
       this.modelProfile?.supportsAssistantPhase);
@@ -434,7 +431,8 @@ export class PiAgentProvider implements AIProvider {
     const streamOptions: SimpleStreamOptions = {
       apiKey: this.apiKey, fetch: transport.fetch, maxRetries: 0, cacheRetention: "none", signal,
       maxTokens: this.maxOutputTokens,
-      reasoning: piReasoning(this.modelProfile, disableThinking),
+      reasoning: piReasoning(this.modelProfile, disableThinking,
+        protocolRequiresLowestEffort ? undefined : native?.reasoningEffort ?? options.reasoningEffort),
       headers: {
         ...(this.platformOptions?.workspace ? { "X-DashScope-WorkSpace": this.platformOptions.workspace } : {}),
         ...this.platformOptions?.extraHeaders,

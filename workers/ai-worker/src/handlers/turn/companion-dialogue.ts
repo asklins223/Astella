@@ -1063,8 +1063,8 @@ export async function runCompanionDialogue(
     // 交付管线主动叫停（增量校验命中泄露/超限、fence 失联）：同样不可重试——
     // 重投不会让"泄露"消失。已下发的部分必然是最终文本的前缀，客户端按 error 收尾。
     const streamStopped = err instanceof CompanionStreamStoppedError;
-    const protocolLeak = (streamStopped && streamingDelivery.failureReason() === "tool_protocol_leak")
-      || (err instanceof AgentOutputError && err.code === "tool_protocol_leak");
+    const protocolLeak = (streamStopped && ["tool_protocol_leak", "internal_token_leak"].includes(streamingDelivery.failureReason() ?? ""))
+      || (err instanceof AgentOutputError && ["tool_protocol_leak", "internal_token_leak"].includes(err.code));
     const invalidReplyFailureText = "这次答复格式异常，已停止输出；已完成的操作仍然保留。";
     const outputIncomplete = err instanceof AgentOutputError && err.code === "output_truncated";
     const outputUnverified = err instanceof AgentOutputError && err.code === "unverified_quote";

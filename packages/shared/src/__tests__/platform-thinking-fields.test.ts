@@ -7,7 +7,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { chatThinkingRequestFields, type ModelProfile, type PlatformOptions } from "../platform/platform-config.ts";
+import { chatThinkingRequestFields, resolveModelReasoningEffort, type ModelProfile, type PlatformOptions } from "../platform/platform-config.ts";
 
 const profile: ModelProfile = { reasoning: { levels: ["none", "low", "medium", "high"], default: "medium" } };
 const noNone: ModelProfile = { reasoning: { levels: ["low", "medium", "high"], default: "high" } };
@@ -32,4 +32,16 @@ test("reasoning_effort 方言：每发下发档案 default，关思考取声明�
 test("reasoning_effort 方言下未声明档位：不下发；只在调用方显式关思考时给 none", () => {
   assert.deepEqual(chatThinkingRequestFields(effortDialect, undefined, false), {});
   assert.deepEqual(chatThinkingRequestFields(effortDialect, undefined, true), { reasoning_effort: "none" });
+});
+
+test("explicit effort survives every gateway dialect and overrides a prior off request", () => {
+  assert.deepEqual(chatThinkingRequestFields(effortDialect, profile, true, "high"), { reasoning_effort: "high" });
+  assert.deepEqual(chatThinkingRequestFields({ thinkingParam: "thinking_type" }, profile, true, "high"), { thinking: { type: "enabled" } });
+  assert.deepEqual(chatThinkingRequestFields({ thinkingParam: "thinking_type" }, profile, false, "none"), { thinking: { type: "disabled" } });
+  assert.deepEqual(chatThinkingRequestFields(undefined, profile, false, "none"), { enable_thinking: false });
+  const sparse = { reasoning: { levels: ["low", "high"], default: "low" } } satisfies ModelProfile;
+  assert.equal(resolveModelReasoningEffort(sparse, false, "medium"), "high");
+  assert.equal(resolveModelReasoningEffort(sparse, false, "max"), "high");
+  assert.equal(resolveModelReasoningEffort(sparse, false, "none"), "low");
+  assert.equal(resolveModelReasoningEffort(undefined, false, "high"), undefined);
 });

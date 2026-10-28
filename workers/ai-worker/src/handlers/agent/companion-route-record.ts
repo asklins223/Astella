@@ -11,14 +11,17 @@ import { logger } from "../../lib/logger.ts";
 import { updateRunMeta } from "./companion-agent-events.ts";
 import type { AgentEventContext } from "../tools/companion-read-tools.ts";
 import type { CompanionEntryMode } from "../turn/companion-entry-mode.ts";
+import type { CompanionTurnWorkload } from "../turn/companion-turn-workload.ts";
 
 export interface CompanionRouteRecordV1 {
   readonly version: 1;
   readonly entryMode?: CompanionEntryMode;
+  readonly workload?: CompanionTurnWorkload;
 }
 
 export interface CompanionRouteRecorderOptions {
   readonly entryMode?: CompanionEntryMode;
+  readonly workload?: CompanionTurnWorkload;
 }
 
 export interface CompanionRouteRecorder {
@@ -41,6 +44,7 @@ export function createCompanionRouteRecorder(
       const route: CompanionRouteRecordV1 = {
         version: 1,
         ...(options.entryMode ? { entryMode: options.entryMode } : {}),
+        ...(options.workload ? { workload: options.workload } : {}),
       };
       void writeMeta(event, { route }).catch((err: unknown) => {
         logger.warn({ runId: event.read.runId, err: err instanceof Error ? err.message : String(err) },

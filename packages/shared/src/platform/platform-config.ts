@@ -103,6 +103,19 @@ export type MaxTokensParam = NonNullable<PlatformOptions["maxTokensParam"]>;
 /** 档位由低到高；"最接近关"的一档取声明 levels 里第一个命中的。 */
 export const REASONING_EFFORT_ORDER: ReasoningEffort[] = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
 
+/** Per-call intent is resolved against the actual target model, including a
+ * fallback with different levels. Prefer the next stronger supported level;
+ * requesting none on a model without off selects its lowest declared level. */
+export function resolveModelReasoningEffort(profile: ModelProfile | undefined,
+  disableThinking = false, requested?: ReasoningEffort): ReasoningEffort | undefined {
+  const reasoning = profile?.reasoning;
+  if (!reasoning) return undefined;
+  const wanted = requested ?? (disableThinking ? "none" : reasoning.default);
+  const levels = REASONING_EFFORT_ORDER.filter(level => reasoning.levels.includes(level));
+  return levels.find(level => REASONING_EFFORT_ORDER.indexOf(level) >= REASONING_EFFORT_ORDER.indexOf(wanted))
+    ?? levels.at(-1);
+}
+
 /**
  * 这一发该带哪个思考字段——**方言与档位都由声明驱动**，调用方只说"要不要关"。
  *
@@ -113,22 +126,19 @@ export function chatThinkingRequestFields(
   options: PlatformOptions | undefined,
   profile: ModelProfile | undefined,
   perCallDisableThinking: boolean,
+  requestedEffort?: ReasoningEffort,
 ): Record<string, unknown> {
+  const effort = resolveModelReasoningEffort(profile, perCallDisableThinking, requestedEffort);
+  const disabled = effort === "none" || (effort === undefined && perCallDisableThinking);
   if (options?.thinkingParam === "thinking_type") {
     // MiMo Chat Completions: thinking is enabled by default. Its API exposes an
     // on/off switch rather than the effort levels accepted by its Responses API.
-    return { thinking: { type: perCallDisableThinking || profile?.reasoning?.default === "none" ? "disabled" : "enabled" } };
+    return { thinking: { type: disabled ? "disabled" : "enabled" } };
   }
   if (options?.thinkingParam === "reasoning_effort") {
-    const levels = profile?.reasoning?.levels;
-    if (perCallDisableThinking) {
-      const off = levels ? REASONING_EFFORT_ORDER.find((level) => levels.includes(level)) : undefined;
-      return { reasoning_effort: off ?? "none" };
-    }
-    if (profile?.reasoning) return { reasoning_effort: profile.reasoning.default };
-    return {};
+    return effort ? { reasoning_effort: effort } : disabled ? { reasoning_effort: "none" } : {};
   }
-  if (perCallDisableThinking || profile?.reasoning?.default === "none") return { enable_thinking: false };
+  if (disabled) return { enable_thinking: false };
   if (profile?.reasoning) return { enable_thinking: true };
   return {};
 }

@@ -64,6 +64,7 @@ type DirectControlState = {
     attention: AgentTurnInterpretationV1;
     userText: string;
     deepened?: boolean;
+    casual?: boolean;
     onInterpretation?: (interpretation: AgentTurnInterpretationV1) => unknown;
 };
 type ControlOutcome = {
@@ -103,19 +104,9 @@ export function createCompanionDirectControls(input: DirectControlState) {
     const state = { ...input, deepened: input.deepened ?? false };
     return {
         deepened: () => state.deepened,
-        /**
-         * Never force reasoning off.
-         *
-         * Forcing `none` (previous `direct_fast` behaviour) looked like the fast
-         * path, but the model decides when a turn is worth thinking about — and
-         * with the switch off it stops making the decisions that need it.
-         * Measured on the production prompt (2026-10-28): forced off answered
-         * "分两条" with one prose message 12/12 times; the model's own default
-         * answered with two sent messages 3/3, while a two-line greeting still
-         * produced its first visible word in about a second because the model
-         * chose not to think there. Deepen still raises the level explicitly.
-         */
-        disableThinking: () => false,
+        // Only a complete, unambiguous casual turn can opt out. Unknown turns,
+        // tool work and explicit deepening retain reasoning.
+        disableThinking: () => state.mode === 'direct_fast' && state.casual === true && !state.deepened,
         apply: (name: string, args: Record<string, unknown>) => executeCompanionEntryControl(state, name, args),
         async observeDocumentWork(names: readonly string[]) {
             if (!companionTurnWritesDocumentContent(names))

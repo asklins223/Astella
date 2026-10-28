@@ -58,3 +58,24 @@ test("app release registration keeps full package metadata and rejects unknown p
   assert.equal(parsed.packages[0]?.kind, "full");
   assert.throws(() => appReleaseRegistrationSchema.parse({ ...parsed, platform: "linux" }));
 });
+
+test("an unsigned mobile build may still be the current release", () => {
+  // "Current" answers which build is newest; installability travels as
+  // `signed` and is enforced by the client. Refusing to activate unsigned
+  // builds made iOS answer release_not_found forever, so a dev-signed phone
+  // could not even learn that a newer build existed (2026-10-28).
+  const registration = appReleaseRegistrationSchema.parse({
+    platform: "ios",
+    version: "2.0.10",
+    build: 13,
+    tag: "i-v2.0.10",
+    releasedAt: "2026-10-28T16:20:00+08:00",
+    signed: false,
+    activate: true,
+    packages: [{ kind: "full", name: "Astella-2.0.10-unsigned.ipa",
+      url: "https://github.com/x/y/releases/download/i-v2.0.10/Astella-2.0.10-unsigned.ipa",
+      sha256: "d".repeat(64), byteLength: 10 }],
+  });
+  assert.equal(registration.activate, true);
+  assert.equal(registration.signed, false);
+});

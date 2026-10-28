@@ -116,8 +116,8 @@ export class OpenAICompatibleProvider implements AIProvider {
    * 每次调用自带的 `disableThinking`
    * （离线评测等需要确定性/低延迟的调用）优先级最高，落到声明档位里最接近关的一档。
    */
-  private thinkingField(perCallDisable: boolean): Record<string, unknown> {
-    return chatThinkingRequestFields(this.platformOptions, this.modelProfile, perCallDisable);
+  private thinkingField(perCallDisable: boolean, effort?: ChatOptions["reasoningEffort"]): Record<string, unknown> {
+    return chatThinkingRequestFields(this.platformOptions, this.modelProfile, perCallDisable, effort);
   }
 
   private outputTokenLimit(): number | undefined {
@@ -195,6 +195,7 @@ export class OpenAICompatibleProvider implements AIProvider {
       options.model ?? this.modelId,
       options.responseFormat,
       options.disableThinking ?? false,
+      options.reasoningEffort,
     );
     return {
       content,
@@ -218,16 +219,20 @@ export class OpenAICompatibleProvider implements AIProvider {
     toolCalls: AgentTurnResult["toolCalls"];
     finishReason: string;
     reasoning?: AgentTurnResult["reasoning"];
+    usage?: AgentTurnResult["usage"];
+    providerRequestId?: string | null;
   }> {
     if (signal?.aborted) throw abortError(signal, "before request");
+    const native = options.nativeAgentRequest;
     const maxTokens = this.outputTokenLimit();
-    const temperature = options.temperature ?? 0.2;
-    const model = options.model ?? this.modelId;
+    const temperature = native?.temperature ?? options.temperature ?? 0.2;
+    const model = native?.model ?? options.model ?? this.modelId;
+    const tools = native?.tools ?? options.tools;
     const disableMaxTokens = this.platformOptions?.disableMaxTokens ?? false;
     const shouldSetMaxTokens = this.maxTokensStrategy === "always" || !disableMaxTokens;
     const body: Record<string, unknown> = {
       model,
-      messages: this.compatibleMessages(messages),
+      messages: native ? this.compatibleMessages(buildAgentTurnMessages(native.systemPrompt, native.messages)) : this.compatibleMessages(messages),
       temperature,
       stream: true,
       // Companion dialogue explicitly requests natural text. Keep the
@@ -238,17 +243,17 @@ export class OpenAICompatibleProvider implements AIProvider {
         : { response_format: { type: "json_object" as const } }),
       // native tools（2026-09-19 ④-b）：与 executeAgentTurn 的 body 同形——带工具
       // 的一步必须把工具列表发出去，否则模型永远不会返回 tool_calls。
-      ...(options.tools && options.tools.length > 0
+      ...(tools && tools.length > 0
         ? {
-            tools: options.tools.map((t) => ({
+            tools: tools.map((t) => ({
               type: "function" as const,
               function: { name: t.name, description: t.description, parameters: t.parameters },
             })),
-            tool_choice: options.toolChoice ?? "auto",
+            tool_choice: native?.toolChoice ?? options.toolChoice ?? "auto",
           }
         : {}),
       ...this.extraRequestParams,
-      ...this.thinkingField(options.disableThinking ?? false),
+      ...this.thinkingField(native?.disableThinking ?? options.disableThinking ?? false, native?.reasoningEffort ?? options.reasoningEffort),
     };
     this.applyModelSampling(body);
     if (shouldSetMaxTokens) this.setOutputTokenLimit(body, maxTokens);
@@ -286,6 +291,8 @@ export class OpenAICompatibleProvider implements AIProvider {
     let finishReason = "stop";
     let sawTerminal = false;
     let responseBytes = 0;
+    let streamUsage: ProviderUsage | null = null;
+    let providerRequestId: string | null = null;
     /** 分片到达的 native tool_calls（按 index 归并，见 consumeData）。 */
     // 累积与「够不够完整」交给已单测的纯类（stream-tool-call-accumulator.ts）。
     // 原来这段就写在下面的 SSE 循环里——**网络循环内部没有夹具**，
@@ -304,9 +311,7 @@ export class OpenAICompatibleProvider implements AIProvider {
       content.trim().length > 0 || streamToolCallSlots.snapshot().some((call) => call.name.length > 0);
     /**
      * 归并后的 tool_calls：`arguments` 必须**先拼完整串再解析**（分片直接 JSON.parse
-     * 必然失败）。解析失败不静默降级成"空参数成功调用"——保留空对象交给上层的
-     * 参数 schema 校验拒绝并记审计，与 parseAgentTurnToolCalls 的
-     * `argumentsMalformed` 同一语义（截断的调用永远不许被执行）。
+     * 必然失败）。解析失败直接拒绝，不能把损坏调用变成一个可能合法的空参数调用。
      */
     const collectToolCalls = (): AgentTurnResult["toolCalls"] => {
       const out: AgentTurnResult["toolCalls"] = [];
@@ -315,11 +320,10 @@ export class OpenAICompatibleProvider implements AIProvider {
         let args: Record<string, unknown> = {};
         try {
           const parsed: unknown = JSON.parse(slot.argsText.length > 0 ? slot.argsText : "{}");
-          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-            args = parsed as Record<string, unknown>;
-          }
+          if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("tool arguments must be an object");
+          args = parsed as Record<string, unknown>;
         } catch {
-          args = {};
+          throw new AgentOutputError("arguments_malformed", "provider stream returned malformed tool arguments");
         }
         out.push({ id: slot.id, name: slot.name, arguments: args });
       }
@@ -330,6 +334,8 @@ export class OpenAICompatibleProvider implements AIProvider {
       toolCalls: AgentTurnResult["toolCalls"];
       finishReason: string;
       reasoning?: AgentTurnResult["reasoning"];
+      usage?: AgentTurnResult["usage"];
+      providerRequestId?: string | null;
     } => {
       if (!sawTerminal) throw new ProviderStreamError(this.id, "stream_incomplete");
       if (finishReason === "length") throw new AgentOutputError("output_truncated", "provider stream exhausted its output limit");
@@ -346,6 +352,8 @@ export class OpenAICompatibleProvider implements AIProvider {
         content,
         toolCalls: collectToolCalls(),
         finishReason,
+        ...(streamUsage ? { usage: streamUsage } : {}),
+        ...(providerRequestId ? { providerRequestId } : {}),
         ...(reasoningContent.length > 0 ? { reasoning: reasoningHandlesFromContent(reasoningContent) } : {}),
       };
     };
@@ -369,6 +377,8 @@ export class OpenAICompatibleProvider implements AIProvider {
       if (data === "[DONE]") { sawTerminal = true; return true; }
       try {
         const parsed = JSON.parse(data) as {
+          id?: unknown;
+          usage?: unknown;
           choices?: Array<{
             delta?: {
               content?: unknown;
@@ -382,6 +392,8 @@ export class OpenAICompatibleProvider implements AIProvider {
             finish_reason?: unknown;
           }>;
         };
+        if (typeof parsed.id === "string") providerRequestId = parsed.id;
+        if (parsed.usage) streamUsage = readUsage(parsed);
         const choice = parsed.choices?.[0];
         if (choice && typeof choice.finish_reason === "string" && choice.finish_reason.length > 0) {
           finishReason = choice.finish_reason;
@@ -389,6 +401,11 @@ export class OpenAICompatibleProvider implements AIProvider {
         }
         const delta = choice?.delta?.content;
         const reasoningDelta = choice?.delta?.reasoning_content;
+        if ((typeof delta === "string" && delta.length > 0)
+          || (typeof reasoningDelta === "string" && reasoningDelta.length > 0)
+          || choice?.delta?.tool_calls?.some(call => typeof call.function?.arguments === "string" && call.function.arguments.length > 0)) {
+          options.onOutputActivity?.();
+        }
         if (typeof reasoningDelta === "string" && reasoningDelta.length > 0) {
           reasoningContent += reasoningDelta;
           options.onReasoningDelta?.(reasoningDelta);
@@ -580,6 +597,7 @@ export class OpenAICompatibleProvider implements AIProvider {
     responseFormat: ChatOptions["responseFormat"] = "json_object",
     /** 2026-08-12+（15a 新反馈）：显式关闭思考模式（enable_thinking: false）。 */
     disableThinking = false,
+    reasoningEffort?: ChatOptions["reasoningEffort"],
   ): Promise<{ content: string; usage: ProviderUsage | null }> {
     if (signal?.aborted) throw abortError(signal, "before request");
     // R1: maxTokensStrategy controls whether the configured output-limit field is sent.
@@ -598,7 +616,7 @@ export class OpenAICompatibleProvider implements AIProvider {
       // 思考字段由模型档案驱动（见 thinkingField）；此处的 disableThinking
       // 参数供离线评测/调试显式关闭，优先级最高。
       ...this.extraRequestParams,
-      ...this.thinkingField(disableThinking),
+      ...this.thinkingField(disableThinking, reasoningEffort),
     };
     this.applyModelSampling(body);
     if (shouldSetMaxTokens) {
@@ -672,8 +690,23 @@ export class OpenAICompatibleProvider implements AIProvider {
   async executeAgentTurn(
     request: AgentTurnRequest,
     signal?: AbortSignal,
+    observation?: { onOutputActivity?: () => void },
   ): Promise<AgentTurnResult> {
     if (signal?.aborted) throw abortError(signal, "before executeAgentTurn");
+
+    // Buffered delivery still needs native progress. Consuming SSE internally
+    // lets the watchdog distinguish healthy reasoning from a stalled socket;
+    // metadata heartbeats never renew it, and no text is published here.
+    if (observation?.onOutputActivity) {
+      const result = await this.chatCompletionStream([], {
+        nativeAgentRequest: request, tools: request.tools, toolChoice: request.toolChoice,
+        model: request.model, maxTokens: request.maxTokens, temperature: request.temperature,
+        disableThinking: request.disableThinking, reasoningEffort: request.reasoningEffort,
+        responseFormat: "text", onOutputActivity: observation.onOutputActivity,
+      }, signal, () => {});
+      return { ...result, toolCalls: result.toolCalls ?? [], finishReason: result.finishReason ?? "stop",
+        usage: result.usage ?? null, providerRequestId: result.providerRequestId ?? null };
+    }
 
     // PERF-09: 使用共享的 messages 构建函数
     const messages = buildAgentTurnMessages(request.systemPrompt, request.messages);
@@ -698,9 +731,7 @@ export class OpenAICompatibleProvider implements AIProvider {
       // 思考字段由模型档案驱动（见 thinkingField）；这一轮要不要关由调用方随请求带来
       // （伴星闲聊轮关、提问/任务轮开），档案本身说的仍是"这个模型能思考到哪几档"。
       ...this.extraRequestParams,
-      ...(request.reasoningEffort && this.modelProfile?.reasoning?.levels.includes(request.reasoningEffort as never)
-        ? { reasoning_effort: request.reasoningEffort }
-        : this.thinkingField(request.disableThinking ?? false)),
+      ...this.thinkingField(request.disableThinking ?? false, request.reasoningEffort),
     };
 
     this.applyModelSampling(requestBody);

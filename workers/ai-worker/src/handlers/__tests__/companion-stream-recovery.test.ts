@@ -59,13 +59,34 @@ test("a first-output timeout switches to the alternate when it fits", async () =
   assert.deepEqual(calls, ["fallback:alternate", "buffered:1"]);
 });
 
-test("a first-output timeout with no fitting alternate retries once, not the full stack", async () => {
+test("a first-output timeout with no fitting alternate retries the stream once", async () => {
   const { calls, input } = harness({
     error: new CompanionOutputTimeoutError("provider_first_output_timeout"),
     fitsFallback: async () => false,
   });
   await recoverCompanionStreamFailure(input);
-  assert.deepEqual(calls, ["buffered:1"]);
+  assert.deepEqual(calls, ["stream"]);
+});
+
+test("failover keeps the answer streaming instead of waiting for a buffered final", async () => {
+  const { calls, input } = harness({ error: new CompanionOutputTimeoutError("provider_first_output_timeout"),
+    fallbackProvider: { ...alternate, chatCompletionStream: async () => ({ content: "streamed" }) } });
+  await recoverCompanionStreamFailure(input);
+  assert.deepEqual(calls, ["fallback:alternate", "stream"]);
+});
+
+test("two failed stream attempts use the alternate once, without a second retry stack", async () => {
+  let attempts = 0;
+  const { calls, input } = harness({ error: new ProviderRequestError({ provider: "primary", status: 503 }),
+    fallbackProvider: { ...alternate, chatCompletionStream: async () => ({ content: "streamed" }) },
+    attemptStream: async () => {
+      attempts++;
+      if (attempts === 1) throw new ProviderRequestError({ provider: "primary", status: 503 });
+      return turnResult("recovered");
+    } });
+  assert.equal((await recoverCompanionStreamFailure(input)).content, "recovered");
+  assert.equal(attempts, 2);
+  assert.deepEqual(calls, ["fallback:alternate"]);
 });
 
 test("a transient 5xx retries the stream before falling back to buffered", async () => {

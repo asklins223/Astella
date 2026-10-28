@@ -33,6 +33,10 @@ test("named-note prefetch only chooses a single explicitly named reading subject
   assert.equal(companionNamedNoteReadTitle("请比较《秦朝》和《唐朝》两篇笔记。"), null);
   assert.equal(companionNamedNoteReadTitle("讲个《秦朝》的故事。"), null);
   assert.equal(companionNamedNoteReadTitle("新建一篇《秦朝》笔记。"), null);
+  assert.equal(companionNamedNoteReadTitle("读取《可靠性验收》，告诉我里面是哪三点。"), "可靠性验收");
+  assert.equal(companionNamedNoteReadTitle("请读一下《周三散步》。"), "周三散步");
+  assert.equal(companionNamedNoteReadTitle("根据《秦朝》解释制度。"), null, "a literary reference is not an explicit saved-note read");
+  assert.equal(companionNamedNoteReadTitle("不要读取《秦朝》。"), null);
   assert.equal(companionMentionedNoteTargetRequest("周一安排里，中午改成去散步，其他不用动。"), true);
   assert.equal(companionMentionedNoteTargetRequest("帮我把拉伸改成十分钟。"), true,
     "这是一句编辑请求；没有标题命中时数据库查询会返回空，仍交给模型搜索");

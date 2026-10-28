@@ -94,10 +94,12 @@ function companionNoteTargetRequest(text: string): boolean {
   // request. This only resolves the target; the classifier still owns intent.
   const edits = /修改|改成|改为|替换|保存|删|整理|追加|插入|调整|更新/u.test(text)
     && !/新建|创建|生成|写一篇|写一份|写个/u.test(text);
-  // A bare title in "根据《…》解释" can be a book or article; require the note
-  // word for reads. An edit request with one title is a saved-note target.
-  if (!noteWord && !edits) return false;
-  return reads || edits;
+  // A direct read of one title may omit the noun "note". The database still
+  // has to resolve exactly one visible saved note; no match is not a read.
+  // A bare reference such as "根据《…》解释" can mean a book or article.
+  const directRead = /^(?:(?:请你?|帮我|麻烦你?)\s*)?(?:读取|查阅|查看|核对|读一下)\s*《[^》]+》/u.test(text.trim());
+  if (!noteWord && !edits && !directRead) return false;
+  return reads || edits || directRead;
 }
 
 /** A bounded, explicit newest-notes selector has no model-owned target choice. */

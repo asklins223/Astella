@@ -9,11 +9,14 @@ function configured(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
-export function companionOutputWatchdogPolicy() {
+export function companionOutputWatchdogPolicy(workload: "casual" | "adaptive" = "adaptive") {
   // 推理模型的上下文预填充可能超过 20 秒。首段等待与输出后的失活检测分开，
   // 不把健康的长思考或多步工具流程截成固定时长的回合。12 秒是实测的分界：
   // 正常首字 2–4.5 秒，超过 12 秒基本是网关卡住；此时尽快切备用档，而不是空等 60 秒。
-  return { firstOutputMs: configured(process.env.COMPANION_PROVIDER_FIRST_OUTPUT_TIMEOUT_MS, 12_000),
+  const firstOutputMs = configured(process.env.COMPANION_PROVIDER_FIRST_OUTPUT_TIMEOUT_MS, 12_000);
+  return { firstOutputMs: workload === "casual"
+    ? configured(process.env.COMPANION_CASUAL_PROVIDER_FIRST_OUTPUT_TIMEOUT_MS,
+      Number.isFinite(firstOutputMs) ? Math.min(firstOutputMs, 5_000) : Infinity) : firstOutputMs,
     idleMs: configured(process.env.COMPANION_PROVIDER_IDLE_TIMEOUT_MS, 45_000) };
 }
 
@@ -45,7 +48,8 @@ import type { AIProvider } from "../../lib/ai-provider.ts";
 
 /** Buffered transports may still observe native reasoning/tool output. For
  * transports without observations, the response itself is the first output. */
-export function executeWatchedCompanionTurn(provider: AIProvider, request: AgentTurnRequest, signal: AbortSignal) {
+export function executeWatchedCompanionTurn(provider: AIProvider, request: AgentTurnRequest, signal: AbortSignal,
+  policy = companionOutputWatchdogPolicy()) {
   return watchCompanionOutput<AgentTurnResult>((attempt, activity) =>
-    provider.executeAgentTurn!(request, attempt, { onOutputActivity: activity }), signal);
+    provider.executeAgentTurn!(request, attempt, { onOutputActivity: activity }), signal, policy);
 }

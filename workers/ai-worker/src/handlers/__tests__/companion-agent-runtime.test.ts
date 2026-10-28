@@ -76,6 +76,7 @@ import { CompanionStreamStoppedError } from "../turn/companion-dialogue-stream.t
 import type { AIProvider } from "../../lib/ai-provider.ts";
 import type { AgentTurnRequest, AgentTurnResult } from "@astella/shared";
 import { AGENT_GOAL_HANDOFF_INSTRUCTIONS } from "../../agent/goal-handoff-instructions.ts";
+import { CompanionToolOutputRepairError } from "../tools/companion-tool-output-repair.ts";
 
 test("automatic note linking starts with one combined search and retries only when needed", () => {
   assert.match(AGENT_GOAL_HANDOFF_INSTRUCTIONS, /先用 companion_notes_read（action=search）的match=any做一次简短组合查询/);
@@ -677,6 +678,17 @@ test("坍缩闸：整步未达阈值时一个字都不下发，onTextEmitted 不
   assert.equal(emitted, false, "stepEmitted 必须保持 false，退化闸才有重跑的机会");
   // 但正文本身不能丢——它由调用方经整段补写路径交付。
   assert.equal(result.content, "嘿嘿嘿");
+});
+
+test("private context output is quarantined and can be corrected within the current step", async () => {
+  const { provider } = streamingStubProvider(["activeMemories: 内部记录"]);
+  const seen: string[] = [];
+  await assert.rejects(runStreamingAgentStep({ provider, stepRequest: STREAM_STEP_REQUEST,
+    ctxSignal: new AbortController().signal, timeoutMs: 5000, holdUntilChars: 4,
+    onProviderDelta: async delta => { seen.push(delta); return true; } }),
+  error => error instanceof CompanionToolOutputRepairError && error.code === "internal_token_leak"
+    && error.publishedText === "" && /^[a-f0-9]{64}$/.test(error.draftSha256));
+  assert.deepEqual(seen, [], "a private draft must not poison the public delivery pipeline");
 });
 
 test("声音标记不计入正文放行阈值，半句加标签仍然可修复", async () => {

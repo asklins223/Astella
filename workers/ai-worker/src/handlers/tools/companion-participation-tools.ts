@@ -51,13 +51,13 @@ export async function executeCompanionParticipationTool(event: AgentEventContext
       throw new CompanionToolNotExecutedError("这段内容已经说过。请换一个实际想说的新内容；没有就不要再发消息，直接结束本轮。");
     const review = await event.reviewInitiativeSpeech?.(text);
     if (review) throw new CompanionToolNotExecutedError(`这条主动发言没有发布：${review}。请换一个有实际新增内容的话题；没有就不要再发消息，直接结束本轮。`);
-    event.verifyUtterance?.(text);
     const published = await withWorkerWorkspaceTransaction(scope, async tx => {
       await lockJobLease(tx, event.ctx);
       await assertCompanionContextSourcesCurrent(tx, scope, event.read.runId);
       const [already] = await tx.execute<{ message_id: string }>(sql`SELECT message_id FROM companion_run_utterances
         WHERE run_id=${event.read.runId} AND tool_call_id=${toolCallId}`);
       if (already) return { messageId: already.message_id, fresh: false };
+      event.verifyUtterance?.(text);
       const [alive] = await tx.execute(sql`UPDATE companion_turn_runs SET updated_at=now()
         WHERE id=${event.read.runId} AND generation=${event.read.generation} AND status IN ('accepted','running')
           AND EXISTS(SELECT 1 FROM user_companion_account_state a WHERE a.user_id=${scope.userId}

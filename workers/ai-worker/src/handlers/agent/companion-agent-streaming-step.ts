@@ -11,7 +11,7 @@ import { isTransientCompanionModelError } from "./companion-model-retries.ts";
 import { stripVoiceExpressionTags, withholdPartialVoiceExpressionTag } from "@astella/shared/voice-expression-tags";
 import { containsCompanionToolProtocol,
   withholdPartialCompanionToolProtocol } from "../tools/companion-tool-protocol-output.ts";
-import { companionStreamRepeatsItself } from "../turn/companion-dialogue-content.ts";
+import { companionStreamRepeatsItself, containsCompanionInternalToken } from "../turn/companion-dialogue-content.ts";
 import { CompanionToolOutputRepairError } from "../tools/companion-tool-output-repair.ts";
 import { watchCompanionOutput, CompanionOutputTimeoutError } from "./companion-output-watchdog.ts";
 
@@ -90,6 +90,7 @@ export async function runStreamingAgentStep(args: {
   stepRequest: AgentTurnRequest;
   ctxSignal: AbortSignal;
   timeoutMs: number;
+  outputWatchdogPolicy?: { firstOutputMs: number; idleMs: number };
   onProviderDelta: (delta: string) => Promise<boolean>;
   /** Internal entry protocol observation, before the existing envelope decoder. */
   onRawTextDelta?: (delta: string) => void;
@@ -192,6 +193,7 @@ export async function runStreamingAgentStep(args: {
   let draftText = "";
   let projectedThrough = 0;
   let invalidToolProtocol = false;
+  let invalidInternalOutput = false;
   /** The model looped on itself; stop the stream and let the caller repair. */
   let degradedLoop = false;
 
@@ -260,7 +262,11 @@ export async function runStreamingAgentStep(args: {
   // shortened answer or blindly replaying a failed transport request.
   const emit = (text: string): void => {
     draftText += text;
-    if (invalidToolProtocol) return;
+    if (invalidToolProtocol || invalidInternalOutput) return;
+    if (containsCompanionInternalToken(draftText)) {
+      invalidInternalOutput = true;
+      return;
+    }
     if (containsCompanionToolProtocol(draftText, true)) {
       invalidToolProtocol = true;
       return;
@@ -361,6 +367,7 @@ export async function runStreamingAgentStep(args: {
           maxTokens: args.stepRequest.maxTokens,
           temperature: args.stepRequest.temperature,
           disableThinking: args.stepRequest.disableThinking,
+          reasoningEffort: args.stepRequest.reasoningEffort,
           // 2026-09-19 ④ 修复：终答步明确要**自然文本**，不再强制 json_object。
           //
           // 曾经强制 JSON 是因为"用户消息是一整份 JSON 文档"，模型于是用文档回文档；
@@ -403,7 +410,7 @@ export async function runStreamingAgentStep(args: {
             controller.abort();
           }
         },
-        ), signal);
+        ), signal, args.outputWatchdogPolicy);
         // A fast provider may finish before classification. Keep this step alive
         // until the gate has released/discarded its held text, under the same
         // abort/deadline budget, then drain delivery before returning its result.
@@ -428,6 +435,8 @@ export async function runStreamingAgentStep(args: {
       // output; never commit that prefix as a successful complete reply.
       throw new ProviderStreamError(args.provider.id, "stream_content_mismatch");
     }
+    if (invalidInternalOutput || containsCompanionInternalToken(decoded.length > 0 ? decoded : content))
+      throw new CompanionToolOutputRepairError(publishedText, draftText || content, "internal_token_leak");
     if (invalidToolProtocol || containsCompanionToolProtocol(decoded.length > 0 ? decoded : content))
       throw new CompanionToolOutputRepairError(publishedText, draftText || content);
     return {
@@ -449,9 +458,10 @@ export async function runStreamingAgentStep(args: {
       throw new CompanionStreamStoppedError("companion stream stopped by delivery pipeline");
     }
     if (!args.ctxSignal.aborted && !stopped && !(error instanceof CompanionToolOutputRepairError)
-      && (invalidToolProtocol || (error instanceof AgentOutputError && error.code === "arguments_malformed"))) {
+      && (invalidToolProtocol || invalidInternalOutput || (error instanceof AgentOutputError && error.code === "arguments_malformed"))) {
       controller.abort();
-      throw new CompanionToolOutputRepairError(publishedText, draftText, invalidToolProtocol ? "tool_protocol_leak" : "arguments_malformed");
+      throw new CompanionToolOutputRepairError(publishedText, draftText,
+        invalidInternalOutput ? "internal_token_leak" : invalidToolProtocol ? "tool_protocol_leak" : "arguments_malformed");
     }
     stopped = true;
     controller.abort();

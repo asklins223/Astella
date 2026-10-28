@@ -90,10 +90,10 @@ const HTTP_401_403_CONTEXT =
  *   的调用才累计，正常推进的每一步都会换调用。
  */
 export class AgentOutputError extends Error {
-  readonly code: "output_truncated" | "arguments_malformed" | "unverified_quote" | "action_unverified" | "tool_protocol_leak" | "no_progress";
+  readonly code: "output_truncated" | "arguments_malformed" | "unverified_quote" | "action_unverified" | "tool_protocol_leak" | "internal_token_leak" | "no_progress";
 
   constructor(
-    code: "output_truncated" | "arguments_malformed" | "unverified_quote" | "action_unverified" | "tool_protocol_leak" | "no_progress",
+    code: "output_truncated" | "arguments_malformed" | "unverified_quote" | "action_unverified" | "tool_protocol_leak" | "internal_token_leak" | "no_progress",
     message: string,
   ) {
     super(message);

@@ -154,11 +154,13 @@ export async function registerAppRelease(input: AppReleaseRegistration): Promise
     RETURNING *`));
   const release = mapAppRelease(rows[0]);
   if (input.activate) {
-    // 移动端必须签名才能安装；桌面端允许 ad-hoc / 未签名安装包（与现有更新链路一致），
-    // 因此只对 iOS/Android 拦截 unsigned。
-    if (!input.signed && (input.platform === "ios" || input.platform === "android")) {
-      throw new ReleaseCenterError(400, "unsigned_release", "未签名版本不能设为当前可安装版本");
-    }
+    // Unsigned mobile builds may be current too. "Current" answers "which
+    // build is the newest release", and hot-update assets ride along with it;
+    // whether the package itself can be installed is a separate fact that
+    // travels as `signed` and is enforced by the client, which only offers a
+    // download for a signed package. Refusing to activate unsigned builds left
+    // iOS permanently at release_not_found — a dev-signed phone could not even
+    // learn that a newer build existed.
     await activateRelease(input.platform, input.channel, input.version);
     return { ...release, isCurrent: true };
   }

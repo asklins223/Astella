@@ -3,17 +3,25 @@ import { test } from "node:test";
 import { watchCompanionOutput, executeWatchedCompanionTurn, companionOutputWatchdogPolicy } from "../agent/companion-output-watchdog.ts";
 import type { AIProvider } from "../../lib/ai-provider.ts";
 import type { AgentTurnRequest, AgentTurnResult } from "@astella/shared";
+import { AgentRole } from "@astella/shared";
+import { createGovernedProvider } from "../../lib/governance.ts";
 
 const flush = () => new Promise<void>(resolve => setImmediate(resolve));
 test("cold-start output budget is independent from idle progress and remains configurable", () => {
-  const keys = ["COMPANION_PROVIDER_FIRST_OUTPUT_TIMEOUT_MS", "COMPANION_PROVIDER_IDLE_TIMEOUT_MS"] as const;
+  const keys = ["COMPANION_PROVIDER_FIRST_OUTPUT_TIMEOUT_MS", "COMPANION_PROVIDER_IDLE_TIMEOUT_MS", "COMPANION_CASUAL_PROVIDER_FIRST_OUTPUT_TIMEOUT_MS"] as const;
   const previous = keys.map(key => process.env[key]);
   try {
     for (const key of keys) delete process.env[key];
     assert.deepEqual(companionOutputWatchdogPolicy(), { firstOutputMs: 12_000, idleMs: 45_000 });
+    assert.deepEqual(companionOutputWatchdogPolicy("casual"), { firstOutputMs: 5_000, idleMs: 45_000 });
     process.env.COMPANION_PROVIDER_FIRST_OUTPUT_TIMEOUT_MS = "90000";
     process.env.COMPANION_PROVIDER_IDLE_TIMEOUT_MS = "30000";
     assert.deepEqual(companionOutputWatchdogPolicy(), { firstOutputMs: 90_000, idleMs: 30_000 });
+    process.env.COMPANION_CASUAL_PROVIDER_FIRST_OUTPUT_TIMEOUT_MS = "2500";
+    assert.deepEqual(companionOutputWatchdogPolicy("casual"), { firstOutputMs: 2_500, idleMs: 30_000 });
+    delete process.env.COMPANION_CASUAL_PROVIDER_FIRST_OUTPUT_TIMEOUT_MS;
+    process.env.COMPANION_PROVIDER_FIRST_OUTPUT_TIMEOUT_MS = "0";
+    assert.equal(companionOutputWatchdogPolicy("casual").firstOutputMs, Infinity);
   } finally {
     keys.forEach((key, index) => {
       if (previous[index] === undefined) delete process.env[key];
@@ -76,5 +84,32 @@ test("buffered native output keeps a healthy long attempt alive and cancellation
     assert.equal(signal?.aborted, false);
     parent.abort(new Error("new topic")); finish({ content: "late", toolCalls: [], finishReason: "stop", usage: null, providerRequestId: null });
     await rejected; assert.equal(signal?.aborted, true);
+  } finally { t.mock.timers.reset(); }
+});
+
+test("the production governance boundary preserves progress on a buffered native call", async t => {
+  t.mock.timers.enable({ apis: ["Date", "setTimeout"], now: 0 });
+  try {
+    let activity: (() => void) | undefined;
+    let finish!: (result: AgentTurnResult) => void;
+    let requestSignal: AbortSignal | undefined;
+    const provider = createGovernedProvider({ id: "synthetic", modelId: "synthetic", promptVersion: "synthetic", visionModelId: "",
+      chatCompletion: async () => ({ content: "", usage: {} }),
+      executeAgentTurn: async (_request, signal, observation) => {
+        requestSignal = signal; activity = observation?.onOutputActivity;
+        return new Promise(resolve => { finish = resolve; });
+      },
+    }, { consentOk: true, policy: { sendToExternal: true, piiDetection: false,
+      sendImageContent: false, auditLogging: false } }, "synthetic-workspace");
+    const pending = executeWatchedCompanionTurn(provider, { role: AgentRole.COMPANION_AGENT,
+      systemPrompt: "synthetic", messages: [{ role: "user", content: "synthetic" }],
+      tools: [], maxTokens: 100, temperature: 0.2 }, new AbortController().signal);
+    // Observe rejection immediately to keep a regression from leaking a promise.
+    const result = pending.then(value => ({ value }), error => ({ error }));
+    await flush();
+    for (let i = 0; i < 10; i++) { activity?.(); t.mock.timers.tick(10_000); await flush(); }
+    assert.equal(requestSignal?.aborted, false, "real progress must survive the first-output deadline through governance");
+    finish({ content: "done", toolCalls: [], finishReason: "stop", usage: null, providerRequestId: null });
+    assert.equal("value" in await result, true);
   } finally { t.mock.timers.reset(); }
 });

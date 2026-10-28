@@ -711,7 +711,7 @@ export function createGovernedProvider(
     };
   }
   if (provider.executeAgentTurn) {
-    governed.executeAgentTurn = async (request, signal) => {
+    governed.executeAgentTurn = async (request, signal, observation) => {
       request = { ...request, maxTokens: provider.resolveOutputTokenLimit?.() ?? request.maxTokens };
       const startedAt = performance.now();
       let data: Record<string, unknown>;
@@ -735,7 +735,7 @@ export function createGovernedProvider(
         throw err;
       }
       try {
-        const result = await provider.executeAgentTurn!(data.request as typeof request, signal);
+        const result = await provider.executeAgentTurn!(data.request as typeof request, signal, observation);
         recordCall("execute_agent_turn", "agent_turn", startedAt, {
           costTokens: result.usage?.totalTokens ?? null,
           promptTokens: result.usage?.promptTokens ?? null,
