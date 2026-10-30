@@ -202,3 +202,20 @@ test("a created artifact named by its noun, or an imminent creation, is a claim"
     "我马上告诉你",
   ]) assert.deepEqual(claimsApplicationActionCompletion(text), [], text);
 });
+
+// 2026-10-30 live matrix: "把复习流程画成流程图" was answered with a textual
+// mermaid block plus "图已经画出来了，你可以在画板上看到" — zero tool calls.
+// The delivery steer used to catch this; it must stay caught.
+test("a textual flow chart claiming it was drawn is an unbacked artifact claim", () => {
+  for (const text of [
+    "图已经画出来了，你可以在画板上看到。",
+    "流程图已经生成，打开画板就能看到。",
+    "稍等，我已经绘制好了这张流程图。",
+  ]) assert.ok(claimsApplicationActionCompletion(text).length > 0, text);
+  // A real diagram receipt clears the claim at the call site (`landedWrites`),
+  // and merely describing a chart the user drew is not a claim about her own work.
+  for (const text of [
+    "这张流程图里先看错题，再做两道新题，最后总结。",
+    "你想把复习流程画成流程图的话，我可以按三步画。",
+  ]) assert.deepEqual(claimsApplicationActionCompletion(text), [], text);
+});

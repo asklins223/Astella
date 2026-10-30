@@ -4,6 +4,7 @@ import { companionCallFingerprint, companionMalformedToolExhausted, companionRep
   COMPANION_INVALID_TOOL_CALLS_ALLOWED, COMPANION_MALFORMED_TOOL_ATTEMPTS_ALLOWED,
   COMPANION_UNBACKED_CLAIM_RETRIES_ALLOWED } from "./companion-progress-guard.ts";
 import { reviewCompanionInitiativeSpeech } from "../proactive/companion-initiative-speech-review.ts";
+import { claimsApplicationActionCompletion } from "../turn/companion-action-claims.ts";
 import { sql } from "drizzle-orm";
 import { agentTurnInterpretationV1Schema, AGENT_GOAL_EVIDENCE_GUIDANCE_V1 } from "@astella/shared/agent-contracts";
 import { companionEditedNoteV1Schema } from "@astella/shared/companion-note-authoring-contracts";
@@ -1105,6 +1106,29 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
           },
           "companion agent repeated an earlier segment in the visible reply",
         );
+      }
+      // A reply may claim work it never did ("图已经画好了", "已保存"). With no
+      // write or deliverable receipt this round, that claim reaches the user as
+      // a finished artifact that does not exist. Structure decides: the claim
+      // matcher reads only completed forms, and a landed write clears it.
+      // Corrections get one shot, the same budget as other unbacked claims.
+      const unbackedClaims = !landedWrites && !stepEmitted
+        ? claimsApplicationActionCompletion(text, { actionRequested: userAskedForAction })
+        : [];
+      if (unbackedClaims.length > 0 && actionSteerAttempts < COMPANION_UNBACKED_CLAIM_RETRIES_ALLOWED) {
+        actionSteerAttempts += 1;
+        const availability = toolSurface.offered().map(tool => tool.name);
+        messages = companionDeliveryRepairMessages({ messages, currentRequest, alreadyDisplayed: false,
+          result: { content: text },
+          instruction: `你刚才的话声称已经完成了这些操作/产出：${unbackedClaims.join("；")}。`
+            + "本轮没有对应的真实工具回执，不能这样说。可用工具："
+            + `${availability.join("、") || "无"}。`
+            + "要做就用工具真的做一次并引用回执；做不到或用户没有要求时，如实说明没有完成，不要编造结果。" });
+        await finishBoundary(stepId, "failed", sha256Utf8V1(text), "ACTION_NOT_EXECUTED");
+        await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta() });
+        logger.warn({ runId: args.read.runId, stepCount, claims: unbackedClaims.length },
+          "companion reply claimed an action with no receipt; asked for a real one");
+        return { kind: "continue" };
       }
       const completedResult = { status: "completed" as const, text, blocks: richBlocks, memoryRefs: [], writesLanded: landedWrites,
         ...(result.reasoning && result.reasoning.length > 0 ? { reasoning: result.reasoning } : {}) };
