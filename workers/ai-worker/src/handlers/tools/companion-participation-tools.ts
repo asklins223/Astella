@@ -137,22 +137,26 @@ export async function executeCompanionParticipationTool(event: AgentEventContext
 export async function companionInitiativeRepeatsSpeech(read: Pick<ReadContext, "initiativeInput" | "conversationId" | "runId">,
   scope: { workspaceId: string; userId: string }, text: string): Promise<boolean> {
   const input = read.initiativeInput;
-  // A fresh greeting may legitimately repeat a short salutation. Explicit user
-  // replies (including requests to repeat something) never use this boundary.
-  if (!input || input.topic === "app.started" || input.topic === "app.foreground") return false;
+  // Explicit user replies (including requests to repeat something) never use this boundary.
+  if (!input) return false;
   const parentRunId = input.topic === "reply.finished" ? input.parentRunId : null;
-  // New user messages do not make an old spontaneous thought new again.
+  // A proactive line must not repeat anything she already said in this
+  // conversation, whatever produced it: an earlier normal reply, a greeting
+  // that ended the previous turn, or an older spontaneous thought. Looking
+  // only at `kind='proactive'` (and exempting greetings) let the exact same
+  // opening be delivered twice; the conversation, not the message kind,
+  // decides whether the words are new.
   // Filter matching historical text in SQL rather than loading the whole chat.
-  const spontaneous = input.topic === "presence.quiet" || input.topic === "study.started";
   const normalizedText = text.trim().replace(/\s+/gu, " ");
   const replies = await withWorkerWorkspaceTransaction(scope, tx => tx.execute<{ blocks: unknown }>(sql`
     SELECT m.blocks FROM companion_messages m WHERE m.workspace_id=${scope.workspaceId} AND m.user_id=${scope.userId}
       AND m.conversation_id=${read.conversationId} AND m.role='assistant' AND m.kind<>'error'
       AND m.run_id IS DISTINCT FROM ${read.runId}::uuid
-      AND (m.run_id=${parentRunId}::uuid OR m.seq>COALESCE((SELECT max(u.seq) FROM companion_messages u
-        WHERE u.workspace_id=${scope.workspaceId} AND u.user_id=${scope.userId}
-          AND u.conversation_id=${read.conversationId} AND u.role='user'),0)
-        OR (${spontaneous} AND m.kind='proactive' AND EXISTS (
+      AND (m.run_id=${parentRunId}::uuid
+        OR m.seq > COALESCE((SELECT max(u.seq) FROM companion_messages u
+          WHERE u.workspace_id=${scope.workspaceId} AND u.user_id=${scope.userId}
+            AND u.conversation_id=${read.conversationId} AND u.role='user'),0)
+        OR (m.created_at > now() - interval '24 hours' AND EXISTS (
           SELECT 1 FROM jsonb_array_elements(m.blocks) b WHERE b->>'type'='text'
             AND btrim(regexp_replace(b->>'text','[[:space:]]+',' ','g'))=${normalizedText}))) ORDER BY m.seq`));
   return repeatsCompanionParentReply(text, replies.map(reply => textOfCompanionBlocks(reply.blocks)));

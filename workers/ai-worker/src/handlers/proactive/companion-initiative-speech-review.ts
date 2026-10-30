@@ -35,14 +35,16 @@ export async function reviewCompanionInitiativeSpeech(input: {
   const { ctx, read, text, provider } = input;
   if (!read.initiativeInput) return null;
   const scope = { workspaceId: ctx.workspaceId, userId: read.userId };
-  const greeting = ["app.started", "app.foreground"].includes(read.initiativeInput.topic);
+  // A greeting is not exempt: "来啦。…" delivered twice reads as a loop even
+  // when the second one follows an ordinary reply. Retrieval covers every
+  // assistant message in this conversation, not only earlier proactive ones.
   const evidence = await withWorkerWorkspaceTransaction(scope, async tx => {
-    const previous = greeting ? [] : await tx.execute<{ id: string; text: string }>(sql`
-      SELECT m.id, body.text FROM companion_messages m JOIN companion_turn_runs r ON r.id=m.run_id
+    const previous = await tx.execute<{ id: string; text: string }>(sql`
+      SELECT m.id, body.text FROM companion_messages m LEFT JOIN companion_turn_runs r ON r.id=m.run_id
       CROSS JOIN LATERAL (SELECT string_agg(b->>'text', E'\n\n') AS text FROM jsonb_array_elements(m.blocks) b WHERE b->>'type'='text') body
       WHERE m.workspace_id=${scope.workspaceId} AND m.user_id=${scope.userId} AND m.conversation_id=${read.conversationId}
-        AND m.role='assistant' AND m.kind<>'error' AND m.run_id<>${read.runId}
-        AND (r.input_source->>'kind'='initiative' OR r.id=${read.initiativeInput?.parentRunId ?? null}::uuid)
+        AND m.role='assistant' AND m.kind<>'error' AND m.run_id IS DISTINCT FROM ${read.runId}::uuid
+        AND m.created_at > now() - interval '24 hours'
         AND similarity(body.text,${text})>=${COMPANION_SPEECH_REPEAT_CANDIDATE_SIMILARITY}
       ORDER BY similarity(body.text,${text}) DESC, m.seq DESC LIMIT 3`);
     const [latest] = await tx.execute<{ status: string; blocks: unknown }>(sql`

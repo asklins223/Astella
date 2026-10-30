@@ -23,13 +23,12 @@ function context(over: Record<string, unknown> = {}, readOver: Record<string, un
   } as unknown as AgentEventContext;
 }
 
-test("用户明确请求的回复与真实启动/回前台招呼不会被主动去重静音", async () => {
-  for (const initiativeInput of [null, { topic: "app.started" }, { topic: "app.foreground" }]) {
-    const event = context({}, { initiativeInput });
-    assert.equal(await companionInitiativeRepeatsSpeech(event.read, {
-      workspaceId: event.ctx.workspaceId, userId: event.read.userId,
-    }, "欢迎回来。"), false);
-  }
+test("用户明确请求的回复不会被主动去重静音", async () => {
+  // No initiative input: an explicit reply (even "repeat that") is never a proactive line.
+  const event = context();
+  assert.equal(await companionInitiativeRepeatsSpeech(event.read, {
+    workspaceId: event.ctx.workspaceId, userId: event.read.userId,
+  }, "欢迎回来。"), false);
 });
 
 test("发言要有真实工具调用身份，没有就不写消息", async () => {
@@ -58,9 +57,13 @@ test("要写进笔记的整段内容不会被逐句发成聊天发言", async ()
 
 test("主动发言的语义核对在任何发布写入之前生效", async () => {
   let called = false;
+  // The repeat guard reads the persisted conversation for every proactive
+  // topic, so this guard test runs without initiative input: the injected
+  // review must still stop the write. Persisted de-duplication is covered by
+  // the PostgreSQL suite.
   await assert.rejects(() => executeCompanionParticipationTool(context({ reviewInitiativeSpeech: async () => {
     called = true; return "repeat：同一问题仅换了语气。";
-  } }, { initiativeInput: { topic: "app.started", facts: { canSpeak: true } } }),
-  "say.publish", { text: "问你个事，打字快慢怎么回事？" }, "reviewed-call"), /主动发言没有发布.*repeat/);
+  } }), "say.publish", { text: "问你个事，打字快慢怎么回事？" }, "reviewed-call"),
+  /主动发言没有发布.*repeat/);
   assert.equal(called, true);
 });

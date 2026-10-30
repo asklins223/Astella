@@ -117,6 +117,40 @@ test("quiet participation cannot replay an earlier thought across a user turn th
   }
 });
 
+test("a proactive line cannot replay the greeting a normal reply already delivered", async () => {
+  const f = await fixture();
+  await observe(f); await prepare(f);
+  const previous = await runPrepared(f, silentAnswer);
+  const greeting = "来啦。刚还在那儿琢磨写字和说话的分岔，你这一声倒把我叫回来了。今儿个怎么样，忙了一天没？";
+  // The duplicate in production was a normal reply (`kind='text'`) followed by a
+  // study.started initiative, so the old guard — which only looked at older
+  // proactive messages and exempted greetings — could not see it.
+  await admin`INSERT INTO companion_messages(id,workspace_id,user_id,conversation_id,seq,role,kind,blocks,content_sha256)
+    VALUES(${randomUUID()},${f.workspaceId},${f.userId},${f.conversationId},1,'user','text',
+      '[{"type":"text","text":"忙得很呐"}]'::jsonb,${"0".repeat(64)})`;
+  await admin`INSERT INTO companion_messages(id,workspace_id,user_id,conversation_id,seq,role,kind,blocks,run_id,content_sha256)
+    VALUES(${randomUUID()},${f.workspaceId},${f.userId},${f.conversationId},2,'assistant','text',
+      ${admin.json([{ type: "text", text: greeting }])},${previous.id},${"1".repeat(64)})`;
+  await admin`UPDATE companion_conversations SET next_message_seq=3 WHERE id=${f.conversationId}`;
+  await transaction(f, tx => recordCompanionAwareness(tx, f, {
+    version: 1, id: randomUUID(), appLaunchId: f.launchId, deviceSessionId: `device:${f.launchId}`,
+    host: "ios", topic: "presence.quiet", occurredAt: new Date().toISOString(), elapsedMs: 0,
+    context: { foreground: true, unlocked: true, typing: false, learning: true, quietForMs: 600_000,
+      conversationId: f.conversationId, page: { key: "note:1", label: "阅读手记", revision: null, context: null } },
+  }));
+  await prepare(f);
+  let calls = 0;
+  const run = await runPrepared(f, async () => calls++ > 0 ? silentAnswer()
+    : { ...(await silentAnswer()), finishReason: "tool_calls", toolCalls: [
+      { id: "replayed-greeting", name: "companion_send_message", arguments: { text: greeting } },
+    ] });
+  assert.equal((await admin`SELECT 1 FROM companion_messages WHERE run_id=${run.id}`).length, 0,
+    "the same opening must not be delivered twice");
+  const events = await admin`SELECT type,payload FROM companion_stream_events WHERE run_id=${run.id}`;
+  assert.ok(events.some(e => e.type === "turn.completed" && e.payload.silent === true));
+  assert.equal((await admin`SELECT status FROM companion_turn_runs WHERE id=${run.id}`)[0]?.status, "succeeded");
+});
+
 test("reply-finished publication suppresses an exact parent paragraph through both final and tool channels", async () => {
   for (const channel of ["final", "tool"] as const) {
     const f = await fixture();
