@@ -51,7 +51,7 @@ RUN mkdir -p node_modules/@astella \
  && rm -rf node_modules/@astella/shared \
  && ln -s /app/packages/shared node_modules/@astella/shared \
  && ln -sf /app/packages/agent-core node_modules/@astella/agent-core \
- && ln -sf /app/packages/agent-host node_modules/@astella/agent-host \
+ && ln -sf /app/packages/agent-host node_modules/@astella/agent-host
 EXPOSE 4000
 CMD ["npm", "run", "dev"]
 

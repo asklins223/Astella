@@ -63,13 +63,20 @@ export class PiWireObservation {
       if (choice.finish_reason === "length") this.failure = new AgentOutputError("output_truncated", "model response exhausted its output limit");
       const delta = record(choice.delta);
       for (const fragment of items(delta?.tool_calls)) {
+        // A stream may carry several calls in one delta, and a gateway may omit
+        // `index`. Falling back to a shared index 0 concatenated two
+        // independent `companion_send_message` calls into one paragraph, so
+        // only a single bubble ever appeared. Key on the provider's call id
+        // when present and fall back to index only while it is missing.
+        const id = typeof fragment.id === "string" ? fragment.id.trim() : "";
         const index = typeof fragment.index === "number" ? fragment.index : 0;
+        const key: string | number = id || index;
+        const slot = this.rawCalls.get(key) ?? { id: "", name: "", arguments: "" };
+        if (!slot.id && id) slot.id = id;
         const fn = record(fragment.function);
-        const slot = this.rawCalls.get(index) ?? { id: "", name: "", arguments: "" };
-        if (!slot.id && typeof fragment.id === "string") slot.id = fragment.id;
         if (typeof fn?.name === "string") slot.name += fn.name;
         if (typeof fn?.arguments === "string") slot.arguments += fn.arguments;
-        this.rawCalls.set(index, slot);
+        this.rawCalls.set(key, slot);
       }
     }
   }
@@ -101,6 +108,12 @@ export class PiWireObservation {
     if (!raw || !raw.name || !argumentsObject(raw.arguments) || this.settled.has(id)) return;
     this.settled.add(id);
     options.onToolCallSettled?.({ index, id, name: raw.name, argsText: raw.arguments });
+  }
+
+  /** Read-only view of accumulated chat-completions calls, for tests and logs.
+   * One entry per real provider call; independent calls are never merged. */
+  observedCalls(): Array<{ id: string; name: string; arguments: string }> {
+    return [...this.rawCalls.values()].map(call => ({ ...call }));
   }
 
   validate(): void {

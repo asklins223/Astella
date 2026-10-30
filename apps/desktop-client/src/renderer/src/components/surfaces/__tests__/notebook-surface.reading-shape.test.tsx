@@ -443,7 +443,10 @@ describe("阅读页画的是编辑器里那一份", () => {
     expect([...paragraph.childNodes].map((node) => node.textContent)).toEqual(["修改笔记。12312", "", "123123123123"]);
   });
 
-  it("批注服务端使用的字符偏移与阅读页每块的 DOM 文本一致", async () => {
+  // Renders six block kinds through the full editor→reader pipeline: ~13s alone,
+  // and it was the first to cross 60s when the whole suite ran in parallel,
+  // which then poisoned the rest of this file (body() was null afterwards).
+  it("批注服务端使用的字符偏移与阅读页每块的 DOM 文本一致", { timeout: 180_000 }, async () => {
     const blocks = [
       block("paragraph", "前 **粗体**\\~\n下一行"),
       block("heading", "<h2>小标题</h2>"),
