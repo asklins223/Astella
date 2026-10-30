@@ -11,7 +11,9 @@ import { measureAgentTurnRequest, resolveContextBudget } from "@astella/agent-co
 import type { AgentTurnRequest } from "@astella/shared";
 
 export interface CompanionProviderCapability {
+  visionModelId?: string;
   getCapabilities?: () => {
+    visionModelId?: string;
     contextWindowTokens?: number;
     outputLimitEnforced?: boolean;
   } | null;
@@ -23,6 +25,12 @@ export async function companionProviderFitsRequest(
   request: AgentTurnRequest,
 ): Promise<boolean> {
   const capability = provider.getCapabilities?.();
+  const hasPixels = request.messages.some(message => Array.isArray(message.content)
+    && message.content.some(part => part.type === "image_url"));
+  // A window that fits does not make a text-only model able to see. Some
+  // transports silently discard images for such models, producing plausible
+  // answers without pixels. Unknown vision is not a usable image fallback.
+  if (hasPixels && !(capability?.visionModelId ?? provider.visionModelId)?.trim()) return false;
   if (!capability || !Number.isSafeInteger(capability.contextWindowTokens)
     || (capability.contextWindowTokens ?? 0) <= 0) {
     return true; // Unknown window: keep the previous behaviour rather than refuse.

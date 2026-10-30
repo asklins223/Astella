@@ -105,14 +105,23 @@ test("deriveNoteTitle 清理 heading 的 Markdown 前缀", () => {
   assert.equal(deriveNoteTitle(blocks), "Markdown 标题");
 });
 
-test("deriveNoteTitle 处理 code block", () => {
+test("deriveNoteTitle 不用代码块当标题", () => {
   const blocks = [{ type: "code" as const, content: "const x = 1;" }];
-  assert.equal(deriveNoteTitle(blocks), "const x = 1;");
+  assert.equal(deriveNoteTitle(blocks), "无标题笔记");
 });
 
-test("deriveNoteTitle 处理 image block", () => {
+test("deriveNoteTitle 跳过只有 Markdown 结构的内容", () => {
+  const blocks = [
+    { type: "paragraph" as const, content: "|  |  |\n| --- | --- |\n|  |  |" },
+    { type: "paragraph" as const, content: "真正的一段话" },
+  ];
+  assert.equal(deriveNoteTitle(blocks), "真正的一段话");
+  assert.equal(deriveNoteTitle([{ type: "paragraph" as const, content: "|  |  |\n| --- | --- |\n|  |  |" }]), "无标题笔记");
+});
+
+test("deriveNoteTitle 跳过 image block", () => {
   const blocks = [{ type: "image" as const, content: "图片描述" }];
-  assert.equal(deriveNoteTitle(blocks), "图片描述");
+  assert.equal(deriveNoteTitle(blocks), "无标题笔记");
 });
 
 test("deriveNoteTitle 跳过空内容的 heading 使用下一个 block", () => {

@@ -25,6 +25,8 @@ export const COMPANION_TTS_WARM_MAX_ENTRIES = 64;
 export const COMPANION_TTS_WARM_MAX_IN_FLIGHT_PER_USER = 3;
 
 export interface WarmSegmentResult {
+  readonly voiceCacheKey?: string;
+  readonly replayCompatible?: boolean;
   readonly statusCode: number;
   readonly audio?: Uint8Array;
   readonly error?: { code: string; message: string };

@@ -50,6 +50,7 @@ import {
 } from "../../lib/file-validation.ts";
 import { logger } from "../../lib/logger.ts";
 import { registerChatUpload, chatUploadExpired } from "../../lib/storage/chat-catalog.ts";
+import { canReadAvatarObject } from "./avatar-access.ts";
 
 // 上传体积上限：路由层用于 multipart limits，服务层用于 toBuffer() 后的双重校验。
 export const MAX_IMAGE_SIZE = COMPANION_IMAGE_MAX_BYTES_V1; // 10MB
@@ -666,8 +667,7 @@ export async function downloadUploadObject(
     // Avatar path: avatars/{userId}/{uuid}.{ext}
     const parts = path.split("/");
     if (parts.length < 3) return { ok: false, reason: "not_found" };
-    const pathUserId = parts[1];
-    if (pathUserId !== scope.userId) {
+    if (!await canReadAvatarObject(scope, path)) {
       return { ok: false, reason: "not_found" };
     }
   } else {

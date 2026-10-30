@@ -1,5 +1,4 @@
 import { finishCompanionParticipation, companionInitiativeRepeatsSpeech } from "../tools/companion-participation-tools.ts";
-import { isCompanionParticipationClosure } from "../proactive/companion-participation-output.ts";
 import { reviewCompanionInitiativeSpeech } from "../proactive/companion-initiative-speech-review.ts";
 import { readParticipationPreferences } from "@astella/agent-host";
 import { companionInitiativeInputV1Schema } from "@astella/shared/companion-initiative-contracts";
@@ -17,7 +16,6 @@ import { listSucceededWriteToolNames } from "../tools/companion-tool-call-ledger
 import { ProviderRequestError } from "../../lib/provider-request-error.ts";
 import { withWorkerWorkspaceTransaction } from "../../db.ts";
 import { loadHereAndNow, renderHereAndNow } from "../proactive/companion-here-and-now.ts";
-import { loadThisTurnFacts } from "./companion-this-turn-facts.ts";
 import { renderSummaryInjection, type SummaryInjectionInput } from "../context/companion-summary-injection.ts";
 import {
   CompanionStreamStoppedError,
@@ -282,26 +280,11 @@ export async function runCompanionDialogue(
           conversationId: run.conversation_id,
           currentRequestSeq: currentUserSeq,
           pageContext: run.page_context,
-          userText,
         });
         const hereAndNow = [
           renderHereAndNow(snapshot),
           renderUserAttachedImagesLine(userImageAttachments),
         ].filter((line): line is string => Boolean(line)).join("\n") || null;
-        // 实体先行解析（39d W2-3）：这句话指到的对象先查出来。同一事务、不新开连接；
-        // 没有指称时它一次查询都不发（`extractTurnReferences` 返回空就直接 null）。
-        const thisTurnFacts = await loadThisTurnFacts(tx, {
-          workspaceId: ctx.workspaceId,
-          userId: run.user_id,
-          conversationId: run.conversation_id,
-          userText,
-          liveView: snapshot.livePageView,
-        });
-        if (thisTurnFacts?.dropped) {
-          // 超预算丢弃是设计内的降级（39b §9.3），但**要留一条读数**：静默丢掉会让人
-          // 以为这块一直没触发，而它其实是每次都超时。
-          logger.warn({ runId: run.id, ms: thisTurnFacts.ms }, "companion turn facts dropped over budget");
-        }
         // 更早那段对话（历史回放只带真正进入 prompt 的尾部）。读**接续链**而不是只读
         // 最新一份（44 §5.2）：压缩分次发生，只取最新一份会把更早的覆盖索引丢掉——
         // 会话看起来「有摘要」，实际中间那段没人读过。不猜旧摘要边界，也不为它单开往返。
@@ -419,8 +402,8 @@ export async function runCompanionDialogue(
           actionLedgerOmitted: actionLedgerRead.omitted,
           hereAndNow,
           userImageAttachments,
-          thisTurnFacts: thisTurnFacts?.block ?? null,
-          factSpans: snapshot.factSpans,
+          thisTurnFacts: null,
+          factSpans: null,
           conversationSummary: null,
           summaryInjection,
 
@@ -471,7 +454,7 @@ export async function runCompanionDialogue(
       ? "账号尚未开启图片识别。需要识图时说明可在 AI 设置中开启；不要把未授权说成模型不支持图片。"
       : resolveVisionReader(govCtx)?.source === "main"
         // The pictures are in this very request: look at them and answer.
-        ? "这一轮的图片随消息一起提供了，你能直接看到；按用户问的看图回答，用自然口语说你看到的，不要套“标题/正文大意/配图”的报告模板；图里没有或看不清就直说。"
+        ? "宿主会尝试把图片字节附在本轮消息里，实际送达的身份以图片送达记录和内联画面为准；按用户问题自然说明画面，图中没有、未送达或看不清的部分如实说明。"
         : resolveVisionReader(govCtx)
           ? "本轮图片需要先读取才能看见：描述画面前用 companion_visual（action=read_image）把 assetId 传进去，用自然口语回答；没读不要凭图名猜内容。"
           : "当前服务尚未配置可用的识图模型，需要明确说明服务配置暂不可用。";
@@ -945,8 +928,7 @@ export async function runCompanionDialogue(
       // Only when the conversation model is the one that can see: an auxiliary
       // vision model still needs the read tool, because the bytes never reach
       // the main model's request.
-      turnImagesSentDirectly: Boolean(read.userImageAttachments?.length)
-        && govCtx.policy.sendImageContent === true
+      turnImagesSentDirectly: govCtx.policy.sendImageContent === true
         && resolveVisionReader(govCtx)?.source === "main",
       // 活跃度决定退化闸的字数线（方案 29 §9.17）：不传就等于忽略用户的设置。
       activeness: read.petProfile?.activeness ?? null,
@@ -1098,7 +1080,7 @@ export async function runCompanionDialogue(
     await markCompanionRunFailed(
       read,
       ctx,
-      contextChanged ? err.code : policyDenied ? "AI_DATA_POLICY_DENIED" : protocolLeak ? "REPLY_FORMAT_INVALID" : actionUnverified ? "ACTION_NOT_EXECUTED" : argumentsInvalid ? "TOOL_ARGUMENTS_INVALID" : noProgress ? "AGENT_NO_PROGRESS" : outputIncomplete ? "REPLY_LENGTH_LIMIT" : budgetExceeded ? "AGENT_BUDGET_EXCEEDED" : outputTimeout ? (err.code === "provider_first_output_timeout" ? "PROVIDER_FIRST_OUTPUT_TIMEOUT" : "PROVIDER_IDLE_TIMEOUT") : rateLimited ? "RATE_LIMITED" : providerRejected ? "PROVIDER_UNAVAILABLE" : "INTERNAL_ERROR",
+      contextChanged ? err.code : policyDenied ? "AI_DATA_POLICY_DENIED" : protocolLeak ? "REPLY_FORMAT_INVALID" : actionUnverified ? "ACTION_NOT_EXECUTED" : argumentsInvalid ? "TOOL_ARGUMENTS_INVALID" : noProgress ? "AGENT_NO_PROGRESS" : outputIncomplete ? "REPLY_LENGTH_LIMIT" : budgetExceeded ? "AGENT_BUDGET_EXCEEDED" : outputTimeout ? (err.code === "provider_first_output_timeout" ? "PROVIDER_FIRST_OUTPUT_TIMEOUT" : err.code === "provider_progress_timeout" ? "PROVIDER_PROGRESS_TIMEOUT" : "PROVIDER_IDLE_TIMEOUT") : rateLimited ? "RATE_LIMITED" : providerRejected ? "PROVIDER_UNAVAILABLE" : "INTERNAL_ERROR",
       !policyDenied && !protocolLeak && !budgetExceeded && !contextChanged && !outputIncomplete && !outputUnverified && !actionUnverified && !argumentsInvalid && !noProgress && !streamStopped && !(providerRejected && [401,402,403].includes(err.status)),
       contextChanged ? err.message : policyDenied ? "请在 AI 数据同意页开启「允许发送到外部模型服务」后继续。" : contextOverflow ? "这次需要带入的内容太多，没法一次读完；可以按段继续。" : protocolLeak ? invalidReplyFailureText : actionUnverified ? "这次没有取得所要求操作的执行或无需变更回执，不能确认完成；已完成的其他操作仍保留。" : outputUnverified ? unverifiedQuoteFailureText : argumentsInvalid ? invalidArgumentsFailureText : noProgress ? noProgressFailureText : outputIncomplete ? "这次答复达到长度上限，已说出的内容保留；可以接着分段讲。" : budgetExceeded
         ? "companion agent budget exceeded"
@@ -1166,11 +1148,7 @@ export async function runCompanionDialogue(
   // message. Models sometimes write "安静结束。" instead of returning empty;
   // the step guard clears `content`, but the delivered text can still carry it.
   // Check the finalized text, which is what would actually reach the bubble.
-  if (read.initiativeInput && isCompanionParticipationClosure(ttsRawText)) {
-    await thinkingDelivery.finish();
-    await finishCompanionParticipation(ctx, read, expiresAt);
-    return;
-  }
+
 
   // A host occasion may end without speech. Providers can return only voice
   // markers instead of an empty string; that still has no visible

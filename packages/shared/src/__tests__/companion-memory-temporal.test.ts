@@ -26,12 +26,12 @@ test("memory temporal metadata keeps only values grounded in the user's source",
   }), { ok: false, reason: "unverifiable_valid_until" });
 });
 
-test("unbounded short-window goals are rejected; episodic events remain historical", () => {
+test("temporal words do not invent a deadline; explicit metadata stays authoritative", () => {
   assert.deepEqual(resolveCompanionMemoryTemporalMetadata({
     kind: "goal",
     content: "下周完成数据库索引复习",
     sourceText: "下周完成数据库索引复习",
-  }), { ok: false, reason: "missing_finite_validity" });
+  }), { ok: true, appliesWhen: null, validUntil: null });
 
   assert.deepEqual(resolveCompanionMemoryTemporalMetadata({
     kind: "episodic",
@@ -50,13 +50,13 @@ test("正文里顺手提到的今天/这次不算短窗口：时间说法只认�
     sourceText: "以后打招呼别盘点笔记",
   }), { ok: true, appliesWhen: "以后打招呼", validUntil: null });
 
-  // 守卫仍然在：用户原话里带了今天/这次，就得给出期限。
+  // Temporal words alone do not establish an expiry requirement.
   assert.deepEqual(resolveCompanionMemoryTemporalMetadata({
     kind: "goal",
     content: "今天先把索引复习完",
     sourceQuote: "今天先把索引复习完",
     sourceText: "今天先把索引复习完",
-  }), { ok: false, reason: "missing_finite_validity" });
+  }), { ok: true, appliesWhen: null, validUntil: null });
 });
 
 test("source quotes are exact; a paraphrased applicability condition is dropped, not allowed to erase the memory", () => {

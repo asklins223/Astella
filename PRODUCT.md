@@ -1,6 +1,9 @@
 # Product
 
 
+**iOS note editing — 2026-10-29 user decision, implemented 2026-10-30:** Workspace owners can create blank notes and edit the rendered document directly, with automatic CRDT saves and durable local drafts. “伴星改写” carries the selected text or the caret's complete paragraph into the existing conversation. Relevant paragraphs stay locked until the run succeeds, fails or is cancelled; other paragraphs remain editable. Shared notes show live reading/editing members and the last editor; members retain read-only access. This supersedes the previous mobile human-write prohibition. Android UI is outside this batch. See [implementation and verification](docs/testing/ios-note-editing-2026-10-29.md).
+
+
 **Desktop learning-card update — 2026-10-20, latest correction:** Each note version still owns one learning card. Its entry opens an independent room page, with its own route and component, the normal directory and page heading, and the companion at bottom right. The notebook's tabs and tools do not remain on this page. Answering uses a separate whole-window, one-question flow with free jumps, explicit skips and saved drafts. Source passages, correctness and AI/companion feedback appear after submission, in a continuous report sheet. Every question counts equally, including skips at zero; incomplete exits create no grade. Celebration and the report retain the normal left directory and upper-right room-control island. Page content follows directory collapse/expansion, and return actions stay inside the paper at its upper left. Completion has sequential earned stars and the normal companion's celebration, while best stars never decrease. These decisions supersede the inline presentation in Plan 57 without restoring a global card library or review queue. See [implementation record](docs/testing/learning-card-desktop-2026-10-20.md).
 
 **伴星主动交流（2026-10-13 用户确认并进一步明确，主动交流基础已实施）：**为同一 Agent 提供自然接续、感知、关注、唤醒与主动发言能力。每个新账户从一开始就自带自然分句与答后补充考虑、相关页面／真实难题帮助、每次应用启动问候、久学休息提醒，以及**人还在前台、安静下来的时候她自己想起点什么就说一句、也可以问问学习之外的近况**；用户不必先保存偏好才能使用。她说话的口吻按参与依据分档：招呼与陪着说话是陪聊，页面和难题是讲解，自己关注的事办完再说，不再一律按讲题的口气开口。用户也可以像指定说话风格、伴星偏好一样，用一句话细化以后怎样相处，例如“每次开启应用都向我问好”“学久了提醒我走走”；自由偏好由她结合当前观察理解和践行，不要求选择固定规则类型或先填分钟数。最新用户输入、正式作答、勿扰、权限与声音边界继续有效，例行主动机会按账号已声明的介入档位排间隔；用户先要过的招呼与答后接续不受这条限制。能力合同、偏好存储、实施链路与验收见 [56](docs/plans/learning-companion/56-companion-initiative-and-natural-exchange-2026-10-13.md)；实现与验证范围见 [实施记录](docs/testing/companion-initiative-2026-10-13.md)。
@@ -142,6 +145,8 @@ Electron 44 + electron-vite 5 + Vite 7 + React 19 + TypeScript（独立桌面客
 **本机设置（2026-10-03）：**设置中心可选择固定日间、固定夜间或随本地时间变化的房间主题，并调整完整、轻量或关闭动效；系统减少动态始终优先。「声音与显示」可以恢复伴星默认座位与 100% 大小，只改变本机摆放。入场引导可从设置分类栏重新打开。当前没有可调用的账号删除能力，设置页不提供占位删除入口；AI 与设备能力的读取状态属于说明，不伪装成可配置开关。
 
 **Windows 安装与维护（2026-10-09 用户决定）：**采用独立自绘的原生 Windows 向导，不复用 NSIS 外壳。新安装支持自定义本机位置，须主动勾选用户使用须知与 PolyForm Noncommercial 1.0.0 许可后继续。更新沿用原位置与资料；卸载页提供本机资料清除勾选，默认关闭。默认资料目录为 `%APPDATA%\astella-desktop-client`，清除不删除账号与云端笔记，安装确认不替代 AI 授权。自有源码与文档统一使用非商用许可，第三方保持原许可。实现和验证范围见 [安装器说明](apps/windows-installer/README.md)。
+
+**共享笔记信息与权限（2026-10-30 用户决定）：**iOS 只在协作空间的共享笔记中显示账户头像、简短称呼、在场状态及最近编辑者；个人笔记不显示这些信息。成员头像读取限于同空间现有成员当前发布的头像，覆盖下方「其他成员仅首字母」的旧限制。「笔记权限」由作者设置仅自己可见或共享给当前空间，编辑权继续跟随 Owner／Member 角色。实现与验证见 [共享笔记身份与权限记录](docs/testing/ios-note-sharing-metadata-2026-10-30.md)。
 
 **账户头像（2026-10-09 用户决定）：**本人在共享笔记中的在场印章跟随账户头像更新，清除头像时恢复首字母。头像上传和读取上限统一为 10 MB（10 × 1024 × 1024 字节）；本机缓存放在 `userData/avatars`，按部署与账号隔离，目录上限 64 MB、按最近读取淘汰，重启复用已缓存字节。缓存读取仍核对本人归属；协作中的其他成员目前保留首字母印章。实现与验证见 [头像体验记录](docs/testing/avatar-cache-and-presence-2026-10-09.md)。
 

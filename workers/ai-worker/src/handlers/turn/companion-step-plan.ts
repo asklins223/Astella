@@ -1,3 +1,5 @@
+import { companionDeliveryDraftMessage, isCompanionDeliveryDraftMessage } from "../tools/companion-delivery-draft.ts";
+import { currentCompanionRequestMessages, currentCompanionSuccessfulReceipts } from "../tools/companion-tool-receipts.ts";
 /**
  * 伴星 agent 的**步进规划**（2026-09-30 拆出，B2）。
  *
@@ -58,14 +60,13 @@ import { AGENT_GOAL_HANDOFF_INSTRUCTIONS } from "../../agent/goal-handoff-instru
 import { COMPANION_CASUAL_NO_TOOLS_POLICY_V4, COMPANION_CASUAL_POLICY_V4,
   COMPANION_HOST_CONVERSATION_POLICY_V1, COMPANION_HOST_OCCASION_GOAL_V1 } from "./companion-conversation-policy.ts";
 import {
-  claimsApplicationActionCompletion,
-  claimsFutureApplicationAction,
   claimsLookupThatNeverRan,
   companionSelectionText,
   looksLikeUnfulfilledActionNarration,
   unverifiedNumericClaims,
   unverifiedQuoteClaims,
 } from "./companion-dialogue-content.ts";
+import { claimsApplicationActionCompletion, claimsFutureApplicationAction } from "./companion-action-claims.ts";
 import { companionQuoteSourceTexts } from "../context/companion-quote-evidence.ts";
 
 /** 重试用尽后仍是无回执的完成声明：由宿主给出如实说明，不把假完成留在用户眼前。 */
@@ -141,7 +142,21 @@ export function isCompanionInternalCorrection(message: AgentTurnRequest["message
 export function dropCompanionInternalCorrections(
   messages: AgentTurnRequest["messages"],
 ): AgentTurnRequest["messages"] {
-  return messages.filter((message) => !isCompanionInternalCorrection(message));
+  return messages.filter((message) => !isCompanionInternalCorrection(message) && !isCompanionDeliveryDraftMessage(message));
+}
+
+/** Preserve the exact candidate for correction or reuse, with its actual
+ * publication state. An unpublished draft must never become assistant history. */
+export function companionDeliveryRepairMessages(input: {
+  messages: AgentTurnRequest["messages"]; result: { content?: string | null; reasoning?: ProviderReasoningHandle[] };
+  currentRequest: AgentTurnRequest["messages"][number]; instruction: string; alreadyDisplayed: boolean;
+}): AgentTurnRequest["messages"] {
+  return [...dropCompanionInternalCorrections(input.messages),
+    ...(input.alreadyDisplayed
+      ? [{ role: "assistant" as const, content: input.result.content ?? "",
+        ...(input.result.reasoning?.length ? { reasoning: input.result.reasoning } : {}) }]
+      : [companionDeliveryDraftMessage(input.currentRequest, input.result.content ?? "")]),
+    ...companionStepCorrectionMessages(input)];
 }
 
 /** Internal repair cannot take the place of the user's current request. */
@@ -151,6 +166,7 @@ export function companionStepCorrectionMessages(input: {
   alreadyDisplayed: boolean;
 }): AgentTurnRequest["messages"] {
   const hostOccasion = input.currentRequest.hostObservation === true;
+  const { requestBoundary: _boundary, ...requestCopy } = input.currentRequest;
   return [
     {
       role: "system",
@@ -168,7 +184,7 @@ export function companionStepCorrectionMessages(input: {
       ].join("\n"),
     },
     markInternalCorrection(
-      { ...input.currentRequest, role: "system", hostObservation: true },
+      { ...requestCopy, role: "system", hostObservation: true },
       hostOccasion,
     ),
   ];
@@ -234,9 +250,7 @@ export function shouldCorrectCompanionQuote(input: {
 
 /** Reads do not satisfy a requested edit. Any recorded action outcome stops automatic nudging/retries. */
 export function companionCurrentRequestMessages(messages: AgentTurnRequest["messages"]): AgentTurnRequest["messages"] {
-  let start = messages.length - 1;
-  while (start >= 0 && messages[start].role !== "user") start -= 1;
-  return start < 0 ? messages : messages.slice(start);
+  return currentCompanionRequestMessages(messages);
 }
 
 /** The interpreter resolves conversational references with the full history.
@@ -252,34 +266,14 @@ export function companionNoteEditRoutingMessages(messages: AgentTurnRequest["mes
 export function companionCurrentToolSuccesses(messages: AgentTurnRequest["messages"]): {
   name: string; arguments: Record<string, unknown>; data: Record<string, unknown>;
 }[] {
-  const current = companionCurrentRequestMessages(messages);
-  const calls = new Map(current.flatMap(message => message.toolCalls ?? []).map(call => [call.id, call]));
-  return current.flatMap(message => {
-    if (message.role !== "tool" || !message.toolCallId || typeof message.content !== "string") return [];
-    const call = calls.get(message.toolCallId);
-    if (!call) return [];
-    try {
-      const receipt = JSON.parse(message.content);
-      const data = receipt.data && typeof receipt.data === "object" ? receipt.data : {};
-      if (receipt.ok !== true || ["failed", "not_executed", "outcome_unknown", "waiting_confirmation", "unavailable"]
-        .includes(data.status ?? receipt.status)) return [];
-      return [{ name: typeof receipt.operation === "string" ? receipt.operation : call.name, arguments: call.arguments, data }];
-    } catch { return []; }
-  });
+  return currentCompanionSuccessfulReceipts(messages).map(receipt => ({
+    name: receipt.operation, arguments: receipt.arguments, data: receipt.data,
+  }));
 }
 
 export function companionActionResultRecorded(messages: AgentTurnRequest["messages"], actionTools: readonly string[]): boolean {
-  messages = companionCurrentRequestMessages(messages);
-  const actionIds = new Set(messages.flatMap(message => message.role === "assistant"
-    ? (message.toolCalls ?? []).filter(call => actionTools.includes(call.name)
-      || actionTools.includes(companionOperationName(call))).map(call => call.id) : []));
-  // A write only "landed" when its receipt says ok=true. A rejected or failed
-  // write call is an attempt, not evidence, and must not force the finalizer to
-  // cite it or count as a completed write.
-  return messages.some(message => {
-    if (message.role !== "tool" || !actionIds.has(message.toolCallId ?? "") || typeof message.content !== "string") return false;
-    try { return JSON.parse(message.content).ok === true; } catch { return false; }
-  });
+  return currentCompanionSuccessfulReceipts(messages).some(receipt =>
+    actionTools.includes(receipt.name) || actionTools.includes(receipt.operation));
 }
 
 /**
@@ -471,9 +465,9 @@ export function companionStepRuntimePolicy(input: {
     // 模型只能按"失败"处理：`not_executed` 被它当成工具坏了，于是绕过工具去编答案；
     // `unavailable` 被它当成临时故障，于是换个说法再调一次同一个读不通的工具。
     // 三档的下一步各不相同，所以要把下一步**写进提示词**，而不是指望模型猜。
-    "工具结果 status=not_executed 表示这一步从未开始执行（参数没对上、预算或时间用完、或这一轮已被取消）：可以按正确参数重新调用一次；若重调仍不成，就照实说这一步没做成，不要编出结果。",
+    "工具结果 status=not_executed 表示这一步没有执行。根据 validationIssues、真实对象和版本修正参数；没有变化的无效调用不构成进展，不能编造结果。",
     "工具结果 status=unavailable 表示这项能力这一轮没有开（例如图片外发未关闭就读不了图）：不要重调同一个工具，按 error 里给出的可用替代继续；替代也没有就照实说这一项做不了，其余部分照常做。",
-    "工具结果 status=blocked 或 failed 表示这一步没有做成（这一条动作不获准，或执行到一半报错）：不要重调同一个工具，换一条路或直接告诉用户这一步没做成。",
+    "工具结果 status=blocked 表示操作不获准，不能绕过权限。failed 表示未取得成功结果；根据具体错误决定是否有可恢复的变化或替代方案，其余部分仍可继续。",
     // 场景指引（编辑、图片、跳转）2026-10-10 起归到各自的能力声明上，由调用方按
     // 这一步真的发下去了哪些工具取来（`sceneGuidance`）。以前它们和这几条工具状态
     // 语义一道写死在每步共用的策略里，于是日常聊天也天天背着「全文编辑先读两万字」。
@@ -489,7 +483,7 @@ export function companionStepRuntimePolicy(input: {
     // 走到这里就一定发下去了工具（上面 `toolCount === 0` 已经 return），所以这句无条件带上。
     // 旧写法 `toolDefinitions.length > 0 ? [...] : []` 与刚判过的条件是同一个命题，
     // 留着只会让下一个读代码的人以为这里还有第三种状态。
-    "只有在你确实要调用工具时，调用之前才用一句话说明打算做什么然后停下，把结论留到工具结果回来之后；如果你这一轮不调用工具，就把答复完整说完，不要为了简短而省略该说的内容。",
+    "需要工具时直接取得结果；过程性开场不是最终答复。已有证据足够时完整回答，避免重复发布已交付内容。",
     AGENT_GOAL_HANDOFF_INSTRUCTIONS,
     "交代目标和后台交付不要求切换页面或开始朗读。",
     Number.isFinite(stepBudget) ? `部署配置允许本次任务最多 ${stepBudget} 步。` : "持续执行当前任务，按实际工具回执核对结果；完成用户要求后自然结束，不因读取或写入次数提前收尾。",
@@ -547,6 +541,7 @@ export function reviewCompanionStepCorrection(input: {
   requiresReminderRead?: boolean;
   /** 本轮是否真的落下过写回执；用户可见的写完成声明只能由它背书。 */
   landedWrites?: boolean;
+  conversationOnly?: boolean;
 }): {
   unverifiedClaims: string[];
   unverifiedQuotes: string[];
@@ -561,7 +556,8 @@ export function reviewCompanionStepCorrection(input: {
   // the free-choice retry can ask for a real answer instead of accepting it.
   const echoedHostNote = /（宿主核对[：:]/.test(input.said);
   const unbackedActionClaims = input.landedWrites === true ? []
-    : [...claimsApplicationActionCompletion(input.said), ...claimsFutureApplicationAction(input.said),
+    : [...claimsApplicationActionCompletion(input.said, { conversationOnly: input.conversationOnly,
+      actionRequested: input.userAskedForAction }), ...claimsFutureApplicationAction(input.said),
       ...(echoedHostNote ? ["宿主核对说明"] : [])];
   // MiMo's Responses adapter rewrites tool_choice=required to auto. When the
   // interpreter named a material read and the model answered without one,
@@ -652,6 +648,7 @@ export function companionClaimRepairTools(
 }
 
 export function buildCompanionStepCorrectionInstruction(input: {
+  rewriteOnly?: boolean;
   missingActionReceipt?: boolean;
   prerequisiteTools?: readonly string[];
   correctQuote: boolean;
@@ -663,6 +660,7 @@ export function buildCompanionStepCorrectionInstruction(input: {
   steerableActionTools: readonly string[];
   requestedActionTools: readonly string[];
 }): string {
+  if (input.rewriteOnly) return "当前用户只是在日常交流，没有要求读取、保存、删除或安排。上一版把交流误写成应用操作承诺；删去没有回执的执行声明，直接自然回应原话。不要为了修正措辞去补做任何操作，也不要触发确认卡。";
   if (input.missingActionReceipt) {
     const tools = input.prerequisiteTools?.length ? input.prerequisiteTools : input.requestedActionTools;
     const actionHint = input.requestedActionTools.includes("companion_memory_write")
@@ -678,7 +676,8 @@ export function buildCompanionStepCorrectionInstruction(input: {
     const tools = companionClaimRepairTools(input.unbackedActionClaims,
       input.requestedActionTools, input.steerableActionTools);
     return `上一段声称已经写入或承诺稍后执行（${input.unbackedActionClaims.join("、")}），但本轮没有对应的写回执，这句话不能作为完成交付。`
-      + `现在按当前请求实际调用 ${tools.join("、")} 取得真实回执；如果用户没有要求写入，就删掉完成声明，改成普通回答。`
+      + "先以用户当前原话判断要做的事：普通问答、推导、在回复里写内容或聊天不需要应用写入，删掉完成声明后直接回答，不为了修正措辞去读写数据或触发确认。"
+      + `只有用户要求实际改变应用数据或安排未来动作时，才调用合适的工具取得真实回执；可用工具包括 ${tools.join("、")}，不需要全部调用。`
       + "此前已显示的话保留，不重复已完成的操作，也不把历史回执当作本轮执行。";
   }
   if (input.correctQuote) {

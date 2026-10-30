@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { assembleCompanionStepRequest, companionStepPolicyText, companionStepToolSurface } from "../agent/companion-agent-step-assembly.ts";
+import { assembleCompanionStepRequest, companionReplayMessages, companionStepPolicyText, companionStepToolSurface } from "../agent/companion-agent-step-assembly.ts";
 import { companionStepOutputCeiling } from "../turn/companion-dialogue-content.ts";
 import { companionStepCorrectionMessages } from "../turn/companion-step-plan.ts";
 
@@ -13,6 +13,22 @@ const attention = {
   goalRelation: "unrelated", goalReference: null, candidateOperations: [], ambiguities: [], status: "interpreted",
   voiceStyle: { decision: "none" },
 } as never;
+
+test("旧轮推理不从历史回放，当前轮的保留", () => {
+  const reasoning = [{ type: "reasoning" as const, summary: [], content: [{ type: "reasoning_text" as const, text: "旧念头" }] }];
+  const messages = [
+    { role: "user" as const, content: "旧问题" },
+    { role: "assistant" as const, content: "旧回答", reasoning },
+    { role: "user" as const, content: "本轮问题", requestBoundary: true },
+    { role: "assistant" as const, content: "", toolCalls: [{ id: "r", name: "companion_notes_read", arguments: {} }], reasoning },
+    { role: "tool" as const, toolCallId: "r", content: "{}" },
+  ] as Parameters<typeof companionReplayMessages>[0];
+  const replayed = companionReplayMessages(messages);
+  assert.equal(replayed[1]!.reasoning, undefined, "上一轮的推理不能回放成上下文");
+  assert.deepEqual(replayed[3]!.reasoning, reasoning, "本轮工具链的推理保留");
+  assert.deepEqual(companionReplayMessages([messages[0]!, messages[1]!]), [messages[0]!, messages[1]!],
+    "没有本轮边界时保持原样");
+});
 
 test("host occasions do not inherit the user-dialogue continuation task", () => {
   const base = { permissionLevel: "full", stepBudget: Infinity, finalAnswerOnly: false,

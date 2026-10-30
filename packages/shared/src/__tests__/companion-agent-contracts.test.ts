@@ -357,3 +357,20 @@ test("确认提案冻结的参数能还原成域调用，再校验回同一形�
       `${operation} 归一化后必须回到提案冻结的那份参数`);
   }
 });
+
+
+test("internal ledger operations retain domain confirmation and autonomy at every permission tier", () => {
+  for (const name of ["memory.write.forget", "memory.write.revise", "attention.write.cancel_reminder", "attention.write.pause", "persona.write.activeness", "persona.write.boundary"]) {
+    const definition = { ...getCompanionAgentTool(name)!, name };
+    for (const permission of ["read_only", "guided", "full"] as const)
+      assert.deepEqual(canUseCompanionAgentTool(permission, definition, {}), { allowed: true, requiresConfirmation: true }, `${name}/${permission}`);
+    assert.equal(companionToolConfirmationStage(definition, {}), "before_execute", name);
+    // A stray action field cannot turn a frozen destructive operation into save.
+    assert.equal(canUseCompanionAgentTool("full", definition, { action: "save" }).requiresConfirmation, true);
+  }
+  for (const name of ["notes.write.annotate", "attention.write.arrange", "persona.write.self_note", "say.publish"]) {
+    const definition = { ...getCompanionAgentTool(name)!, name };
+    for (const permission of ["read_only", "guided", "full"] as const)
+      assert.deepEqual(canUseCompanionAgentTool(permission, definition, {}), { allowed: true, requiresConfirmation: false }, `${name}/${permission}`);
+  }
+});

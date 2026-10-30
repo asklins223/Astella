@@ -82,13 +82,23 @@ export const agentTurnInterpretationV1Schema = agentTurnInterpretationProposalV1
   subjects: z.array(z.object({ description: z.string().max(120), reference: agentAttentionObjectV1Schema.nullable() }).strict()),
   goalReference: agentAttentionObjectV1Schema.nullable(),
   status: z.enum(["interpreted", "uncertain"]),
+  /** Resource preference only; cannot supply an answer or execution plan. */
+  resourceDecision: z.object({
+    version: z.literal(1), path: z.enum(["chat", "answer", "work"]),
+    source: z.enum(["model", "fallback"]), policyHash: z.string().regex(/^[a-f0-9]{64}$/),
+  }).strict().optional(),
+  // Retired classifier/answer envelope is discarded even on checkpoint replay.
+  entryDecision: z.unknown().optional(),
   // Existing experimental rows may carry this key. Discard it before any replay
   // or cached interpretation can influence the active conversation.
   dialogueFrame: z.unknown().optional(),
-}).strict().transform(({ dialogueFrame: _retired, ...current }) => current);
+}).strict().transform(({ dialogueFrame: _retired, entryDecision: _oldEntry, ...current }) => current);
 export type AgentTurnInterpretationV1 = z.infer<typeof agentTurnInterpretationV1Schema>;
 
 export const AGENT_GOAL_DELIVERY_CAPABILITY = "agent_deliver_goal";
+/** One evidence meaning for schema, initial guidance and repair; interpreting
+ * supplied material is not an unperformed external retrieval operation. */
+export const AGENT_GOAL_EVIDENCE_GUIDANCE_V1 = "textOnly=true 表示只需交付回答：分析对话中已有文字、题面，以及宿主确认本次实际提供的原图、文件或观察结果，都可直接据此回答，不为证明已看过再调用工具。textOnly=false 用于用户要求的实际操作或仍需从应用、外部取回的资料，必须引用本轮成功 evidenceCallIds；已有材料不证明尚未执行的保存、修改或外部查询。";
 /**
  * 交付说明是她自己写的那一段话，篇幅不在这里定：一步能说多少由模型档案声明的输出
  * 额度决定。条目数同样不设上限——用户交代了 24 条要求时要能逐条对上，
@@ -101,7 +111,7 @@ export const agentGoalDeliveryV1Schema = z.object({
     requirement: z.string().trim().min(1),
     fulfilled: z.boolean(),
     evidenceCallIds: z.array(z.string().min(1).max(200)).default([]),
-    textOnly: z.boolean().default(false),
+    textOnly: z.boolean().default(false).describe(AGENT_GOAL_EVIDENCE_GUIDANCE_V1),
   }).strict()).min(1),
 }).strict();
 export type AgentGoalDeliveryV1 = z.infer<typeof agentGoalDeliveryV1Schema>;

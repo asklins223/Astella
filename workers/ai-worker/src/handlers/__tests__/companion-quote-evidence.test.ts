@@ -40,15 +40,17 @@ test("a material read stays unverified after correction until a real receipt exi
 test("compaction retains exact quote evidence privately without treating summary prose as original source", () => {
   const original = "末尾最终更正：颜色仍未决定，旧方案已撤回且从未执行。";
   const invented = "生成摘要里编造出来的那段话没有原文依据，不能成为引用。";
-  const json = JSON.stringify([{ role: "tool", toolCallId: "history", content: JSON.stringify({ messages: [{ text: original }] }) }]);
-  const compactedEvidence = compactionSourceMessages({ json, sha256: sha256Utf8V1(json) });
+  const requestMessages = [{ role: "user" as const, content: "核对历史" },
+    { role: "tool" as const, toolCallId: "history", content: JSON.stringify({ messages: [{ text: original }] }) }];
+  const json = JSON.stringify(requestMessages.slice(1));
+  const compactedEvidence = compactionSourceMessages({ json, sha256: sha256Utf8V1(json) }, requestMessages);
   const input = { contextText: "", compactedEvidence, messages: [{ role: "assistant" as const, content: invented }],
     turnToolUse: "read", pageContext: null, stepCalls: 0, toolCallCount: 1,
     finalAnswerOnly: false, stepCount: 2, stepBudget: 10, nowMs: 1, deadlineAt: 1000, userAskedForAction: false,
     requestedActionTools: [], actionSteerAttempts: 0, lookupClaimSteered: false, quoteCorrectionUsed: false };
   assert.deepEqual(reviewCompanionStepCorrection({ ...input, said: `原文：「${original}」。` }).unverifiedQuotes, []);
   assert.equal(reviewCompanionStepCorrection({ ...input, said: `原文：「${invented}」。` }).unverifiedQuotes.length, 1);
-  assert.deepEqual(compactionSourceMessages({ json, sha256: "bad" }), []);
+  assert.deepEqual(compactionSourceMessages({ json, sha256: "bad" }, requestMessages), []);
 });
 
 test("a terminal history excerpt accepts typographic quotes and explicit boundary ellipsis without requiring another read", () => {

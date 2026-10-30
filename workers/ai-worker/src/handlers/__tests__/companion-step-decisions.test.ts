@@ -4,7 +4,6 @@ import type { AgentTurnRequest } from "@astella/shared";
 import { judgeCompanionStepClosing, waitingConfirmationReceipts } from "../turn/companion-step-closing.ts";
 import { judgeCompanionUnavailableTool } from "../tools/companion-unavailable-tool.ts";
 import { companionProviderFitsRequest } from "../agent/companion-provider-fit.ts";
-import { companionNamedNoteReadTitle, companionMentionedNoteTargetRequest, companionSemanticNoteReadTarget, namesCurrentNoteRead } from "../note/companion-note-prefetch.ts";
 import { companionRequestsAction } from '../turn/companion-step-plan.ts';
 import { companionExecutionBlocks } from "../agent/companion-tool-output.ts";
 
@@ -26,36 +25,6 @@ test("明确修改的目标尚待定位时仍须执行核验，不能按无操�
   assert.equal(companionRequestsAction({ ...attention, intent: 'conversation', toolUse: 'none' }, definitions), false);
   assert.equal(companionRequestsAction({ ...attention, candidateOperations: ['companion_search_notes'] }, definitions), false);
   assert.equal(companionRequestsAction(attention, definitions.slice(0, 1)), false);
-});
-
-test("named-note prefetch only chooses a single explicitly named reading subject", () => {
-  assert.equal(companionNamedNoteReadTitle("请根据《秦朝》这篇已保存笔记解释制度。"), "秦朝");
-  assert.equal(companionNamedNoteReadTitle("请比较《秦朝》和《唐朝》两篇笔记。"), null);
-  assert.equal(companionNamedNoteReadTitle("讲个《秦朝》的故事。"), null);
-  assert.equal(companionNamedNoteReadTitle("新建一篇《秦朝》笔记。"), null);
-  assert.equal(companionNamedNoteReadTitle("读取《可靠性验收》，告诉我里面是哪三点。"), "可靠性验收");
-  assert.equal(companionNamedNoteReadTitle("请读一下《周三散步》。"), "周三散步");
-  assert.equal(companionNamedNoteReadTitle("根据《秦朝》解释制度。"), null, "a literary reference is not an explicit saved-note read");
-  assert.equal(companionNamedNoteReadTitle("不要读取《秦朝》。"), null);
-  assert.equal(companionMentionedNoteTargetRequest("周一安排里，中午改成去散步，其他不用动。"), true);
-  assert.equal(companionMentionedNoteTargetRequest("帮我把拉伸改成十分钟。"), true,
-    "这是一句编辑请求；没有标题命中时数据库查询会返回空，仍交给模型搜索");
-  assert.equal(companionMentionedNoteTargetRequest("新建一篇周一安排。"), false);
-  assert.equal(companionMentionedNoteTargetRequest("今天有点累。"), false);
-});
-
-test("semantic note subjects resolve a follow-up without requiring reading keywords in the user prompt", () => {
-  assert.deepEqual(companionSemanticNoteReadTarget([{ description: "《周三散步》这篇手记", reference: null }]),
-    { title: "周三散步" });
-  const id = "32f4172b-aa2d-42d7-b366-865be3fe758e", versionId = "7dc7734b-844f-4c03-8caa-0e019d9a488c";
-  assert.deepEqual(companionSemanticNoteReadTarget([{ description: "刚才这篇", reference: { kind: "note_version", id, versionId } }]),
-    { noteId: id, noteVersionId: versionId });
-  assert.equal(companionSemanticNoteReadTarget([{ description: "刚才那篇", reference: null }]), null);
-  assert.equal(companionSemanticNoteReadTarget([{ description: `noteId=${id}`, reference: null }]), null,
-    "model prose cannot supply an object identity");
-  assert.equal(companionSemanticNoteReadTarget([{ description: "《周一》和《周三》", reference: null }]), null);
-  assert.equal(companionSemanticNoteReadTarget([{ description: "《周一》", reference: null },
-    { description: "《周三》", reference: null }]), null, "several targets stay with the normal multi-note tool flow");
 });
 
 /**
@@ -163,11 +132,18 @@ test("兜底 provider 装不下时不出主槽：能装下才切，窗口未知�
   assert.equal(await companionProviderFitsRequest({}, request), true, "完全没能力声明时放行");
 });
 
-test("当前页读操作：两个读入口都算，其他动作不算", () => {
-  assert.equal(namesCurrentNoteRead(["notes.read.read"]), true);
-  assert.equal(namesCurrentNoteRead(["observe.current_page"]), true,
-    "分类器对「这一页」选的是 current_page，不认它会用上一轮读过的笔记作答");
-  assert.equal(namesCurrentNoteRead(["companion_notes_read"]), true, "域工具名（不带 action）也必须算");
-  assert.equal(namesCurrentNoteRead(["notes.read.search"]), false);
-  assert.equal(namesCurrentNoteRead([]), false);
+test("原图只能降级到明确支持视觉的模型，历史原图也不能静默丢失", async () => {
+  const request = { messages: [
+    { role: "user", content: [{ type: "image_url", image_url: { url: "data:image/png;base64,AAAA" } }] },
+    { role: "assistant", content: "上一轮回答" },
+    { role: "user", content: "再看原图。", requestBoundary: true },
+  ], tools: [] } as unknown as AgentTurnRequest;
+  assert.equal(await companionProviderFitsRequest({ visionModelId: "" }, request), false);
+  assert.equal(await companionProviderFitsRequest({}, request), false, "未知视觉能力不能接原图");
+  assert.equal(await companionProviderFitsRequest({ getCapabilities: () => ({ visionModelId: "" }) }, request), false);
+  assert.equal(await companionProviderFitsRequest({ visionModelId: "declared-vision" }, request), true);
+  assert.equal(await companionProviderFitsRequest({ getCapabilities: () => ({ visionModelId: "declared-vision" }) }, request), true);
+  assert.equal(await companionProviderFitsRequest({ visionModelId: "" }, {
+    ...request, messages: [{ role: "user", content: "已实际读取的视觉结果：纯蓝色。" }],
+  }), true, "只有真实视觉描述的文本请求仍可由原文本备用模型接续");
 });

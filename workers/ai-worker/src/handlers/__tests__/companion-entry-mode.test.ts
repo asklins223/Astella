@@ -3,17 +3,7 @@ import { test } from 'node:test';
 import { agentVoiceStyleDecisionV1Schema } from '@astella/shared/agent-contracts';
 import { validateCompanionAgentToolArguments, canUseCompanionAgentTool, getCompanionAgentTool } from '@astella/shared';
 import { companionDirectInterpretation, createCompanionDirectControls, resolveCompanionEntryMode, settleCompanionAttention } from '../turn/companion-entry-mode.ts';
-import { companionLatestNoteReadCount } from '../note/companion-note-prefetch.ts';
 const fresh = () => companionDirectInterpretation('a'.repeat(64));
-test('explicit newest-note selections resolve counts without guessing broader requests', () => {
-    for (const [text, count] of [
-        ['请读取最新一篇手记的正文。', 1], ['请读取书房最近更新的三篇手记，概括正文。', 3],
-        ['比较最近两篇笔记。', 2], ['查阅最新１０篇笔记。', 10],
-    ] as const) assert.equal(companionLatestNoteReadCount(text), count, text);
-    for (const text of ['最新三篇手记这个标题怎样？', '概括最新20篇笔记', '读取最新一周的笔记', '读取这些手记']) {
-        assert.equal(companionLatestNoteReadCount(text), null, text);
-    }
-});
 test('entry mode is explicit and the unclassified placeholder never invents a tool decision', () => {
     assert.equal(resolveCompanionEntryMode(undefined), 'direct_fast');
     // Unknown or retired values fall back to the fast direct entry instead of
@@ -42,6 +32,8 @@ test('the fast entry never forces reasoning off; the model decides per turn', as
     // on small talk (measured 2026-10-28). Deepening remains an explicit raise.
     const c = createCompanionDirectControls({ mode: 'direct_fast', attention: fresh(), userText: '请严谨推导。' });
     assert.equal(c.disableThinking(), false);
+    const image = createCompanionDirectControls({ mode: 'direct_fast', attention: fresh(), userText: '', imageTurn: true });
+    assert.equal(image.disableThinking(), true, 'a direct image turn uses the vision fast path');
     assert.equal((await c.apply('companion_deepen', {}))?.ok, true);
     assert.equal(c.deepened(), true);
     assert.equal(c.disableThinking(), false);

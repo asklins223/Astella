@@ -121,13 +121,3 @@ export async function applyCompanionToolLoad(input: {
   });
   return loaded;
 }
-
-/** 附图只有资产身份，首轮须真正读取才能回答画面；显式不看图的请求保持原意。 */
-export function companionAttachmentReadRequired(input: {
-  hasImageAttachments: boolean; visionEnabled: boolean; userText: string;
-}): boolean {
-  if (!input.hasImageAttachments || !input.visionEnabled) return false;
-  const declined = /(?:不要|不用|无需|先别|别|不必|不需要)\s*(?:先|再|帮我)?\s*(?:读图|看图|识图|识别图片|分析图片|分析照片|查看图片|查看照片)/u.test(input.userText)
-    || /\b(?:do not|don't|no need to)\s+(?:read|inspect|analy[sz]e|describe)\s+(?:(?:the|these|my)\s+)?(?:images?|pictures?|photos?)\b/iu.test(input.userText);
-  return !declined;
-}

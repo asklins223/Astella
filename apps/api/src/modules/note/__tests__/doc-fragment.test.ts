@@ -10,7 +10,15 @@ import {
   noteDocSchema,
   projectFragmentBlocks,
   writeFragmentBlocks,
+  deriveNoteTitle,
 } from "../doc-fragment.ts";
+
+test("automatic titles use rendered text and ignore empty rich-text structures", () => {
+  assert.equal(deriveNoteTitle([{ type: "paragraph", content: "| | |\n| --- | --- |\n| | |" }]), "无标题笔记");
+  assert.equal(deriveNoteTitle([{ type: "paragraph", content: "**真实标题** [链接](https://example.test)" }]), "真实标题 链接");
+  assert.equal(deriveNoteTitle([{ type: "heading", content: '<h2 style="text-align:center"><strong>实际标题</strong></h2>' }]), "实际标题");
+  assert.equal(deriveNoteTitle([{ type: "image", content: '{"url":"https://example.test/image.png"}' }, { type: "paragraph", content: "下一段" }]), "下一段");
+});
 
 /**
  * CRDT 批次 B：服务端那份 `Y.XmlFragment` 内核。

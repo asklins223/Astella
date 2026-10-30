@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { companionCreateNoteV1Schema } from "@astella/shared/companion-note-authoring-contracts";
-import { assertGeneratedNoteLinks, companionCreatedNoteId, createdNoteToolResult, readCreatedNoteReceipt,
-  userForbidsNoteLibraryRead } from "../note/companion-note-authoring.ts";
+import { assertGeneratedNoteLinks, prepareCompanionGeneratedNote, companionCreatedNoteId, createdNoteToolResult, readCreatedNoteReceipt } from "../note/companion-note-authoring.ts";
 
 const NOTE = "11111111-1111-4111-8111-111111111111";
 const VERSION = "22222222-2222-4222-8222-222222222222";
@@ -34,15 +33,18 @@ test("独立笔记允许没有已有材料，关联必须带读取版本与具�
   assert.equal(companionCreateNoteV1Schema.safeParse({ ...input, links: [{ noteId: NOTE, noteVersionId: VERSION, reason: "提供电流和电压的关系" }] }).success, true);
 });
 
-test("识别用户明确的资料读取限制，但不把正向提醒误判成禁读", () => {
-  for (const text of [
-    "把刚才讨论写成笔记，不要读取其他资料。",
-    "整理成独立笔记，不用搜笔记库。",
-    "Do not read other sources while writing this note.",
-  ]) assert.equal(userForbidsNoteLibraryRead(text), true, text);
-  for (const text of [
-    "不要忘了搜索相关笔记。",
-    "搜索欧姆定律笔记并说明关联。",
-    "不要读错笔记，再核对适用条件。",
-  ]) assert.equal(userForbidsNoteLibraryRead(text), false, text);
+test("save preparation preserves requested content instead of inventing length constraints", async () => {
+  const tx = { execute: async () => { throw new Error("unlinked content must not query another note"); } };
+  for (const [userText, markdown] of [
+    ["新建笔记：三字经的文化背景。", "《三字经》是一部传统启蒙读物，本文记录它的文化背景。"],
+    ["介绍四字成语，字数不限。", "成语保留了历史与语言的变化，需要结合使用语境理解。"],
+    ["写300–500字。", "字".repeat(350)],
+    ["Create a note of exactly 100 words.", "A real note body."],
+  ]) {
+    const event = { ctx: { workspaceId: NOTE }, read: { userId: NOTE, userText } };
+    const input = companionCreateNoteV1Schema.parse({ title: "source", markdown });
+    const prepared = await prepareCompanionGeneratedNote(tx as never, event as never, input);
+    assert.equal(prepared.markdown, markdown);
+    assert.deepEqual(prepared.linkedNotes, []);
+  }
 });

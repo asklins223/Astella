@@ -38,6 +38,8 @@ export function resolveRouteInputTokens(
 export interface CompanionRecentHistoryMessage {
   role: "user" | "assistant";
   text: string;
+  /** Stored user attachments keep their identity through native replay. */
+  imageAttachments?: readonly { assetId: string; label: string }[];
   /** Source message sequence; retained internally to bind summaries to the visible tail. */
   seq?: string;
   /** Server creation instant of this utterance; not the time of a narrated event. */

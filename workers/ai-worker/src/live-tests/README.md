@@ -1,5 +1,9 @@
 # 伴星真实模型验收
 
+## 2026-10-28 HTTP reliability and latency probe
+
+`companion-reliability-probe.ts` 用合成账户验证本地 API、队列、当前 worker、真实 provider、实际工具、数据库与持久化事件。必须显式设置 `REAL_MODEL_BATCH=1`、`RELIABILITY_DATABASE_URL`（仅限本地、库名为 `astella_note_authoring_*` 或 `astella_agent_*`）和相应的 `RELIABILITY_API_BASE_URL`，从 `workers/ai-worker` 运行 `node --import tsx src/live-tests/companion-reliability-probe.ts`。不再默认写共享 dev 数据库。`RELIABILITY_CASES` 选择案例；`RELIABILITY_REPEATS` 在同一会话重复，保留失败，不自动重投。覆盖精确块编辑、多轮同意记忆及其真实事实来源、复合保存、随机秘密值读取、聊天切换。结束禁用自己的账户并删除会话令牌。输出在 `outputs/agent-reliability-2026-10-28/`。`smokeTermMatch` 只是词项冒烟，状态通过不代表内容正确；最新结果与限制见[原生循环实施及验收](../../../../docs/testing/agent-native-loop-implementation-2026-10-28.md)。
+
 这是显式启用的付费网络测试，不被常规单测入口自动运行。只使用合成检索材料、测试图与虚构对话；不取真实笔记、照片或私人记忆，不打印凭据与明文推理。
 
 `companion-initiative-semantic-probe.ts` 验证方案 56 的自由相处约定、实际关注安排与生产内部执行。使用 `astella_initiative_*` 隔离库，`DATABASE_URL_MIGRATOR` 设为实际 migrator，`DATABASE_URL_WORKER`／`DATABASE_URL` 设为实际 worker；不要使用隔离库脚本输出的管理员示例证明权限。运行：`REAL_MODEL_BATCH=1 node --import tsx src/live-tests/companion-initiative-semantic-probe.ts`。默认三个合成约定，另走真实启动、刚开始学习与五十分钟约定下的提醒；51 分钟是受限的合成区间，没有实际等待计时。`INITIATIVE_PROBE_CASE=built-in-defaults-without-preference` 单独验证修订号 0 的新账户仍会真实问候；也可用它选择其他已有案例，空匹配会拒绝运行。结果及各次尝试保存在 `outputs/audits/2026-10-13-initiative/`；[实施记录](../../../../docs/testing/companion-initiative-2026-10-13.md) 区分工具／持久化、窗口、声音与长期自然度。探针不经过 HTTP 提交或实际队列派发，不等同于设备端端到端验收。

@@ -72,8 +72,8 @@ test("createProvider: openai_compatible 使用完整显式配置", () => {
     model: "config-model",
   });
   assert.equal(provider.modelId, "config-model");
-  // 2026-10-06 配置重设计：识图由模型档案 vision + 路由决定，visionModelId 即模型本身。
-  assert.equal(provider.visionModelId, "config-model");
+  // 未声明视觉能力的模型仍可处理文本，不能被当作图片备用模型。
+  assert.equal(provider.visionModelId, "");
 });
 
 test("createProvider: openai_compatible 完整配置返回 provider 实例", () => {

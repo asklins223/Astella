@@ -160,6 +160,7 @@ export interface SynthesizeTtsBytesArgs {
    * 在这里合流。edge 分支不消费它（edge 没有指令参数，也不需要）。
    */
   instruction?: string | null;
+  useCurrentDialect?: boolean;
   /** qwen 降级 edge 时的观测钩子（日志/测试断言）。 */
   onQwenFallback?: (error: unknown) => void;
   /**
@@ -200,7 +201,7 @@ export async function synthesizeTtsBytes(args: SynthesizeTtsBytesArgs): Promise<
   const loadConfig = deps.loadConfig ?? loadTtsEngineConfig;
   const collectStream = deps.collectStream ?? defaultCollectStream;
   const cfg = loadConfig();
-  const profile = resolveTtsSynthesisProfile(cfg, args.selection, args.instruction);
+  const profile = resolveTtsSynthesisProfile(cfg, args.selection, args.instruction, args.useCurrentDialect);
   const { engine, qwenVoice, instruction } = profile;
   if (engine === "qwen") {
     logger.info({

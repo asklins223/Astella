@@ -431,6 +431,8 @@ export const companionVoicePreferenceV1Schema = z.object({
   instruction: z.string().max(VOICE_STYLE_INSTRUCTION_MAX_UNITS * 2).nullable(),
   /** Persistent account-level Qwen dialect; null follows standard Mandarin/default voice behavior. */
   dialect: z.enum(QWEN_TTS_SUPPORTED_DIALECTS).nullable().default(null),
+  /** 合成配置与声音偏好的内容身份；切回同一声音时保持稳定。 */
+  cacheKey: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   /** 用户没有显式保存过时为 null（此时 engine/voice 是 config 默认，不是用户的选择）。 */
   explicit: z.boolean(),
   updatedAt: z.string().datetime().nullable(),

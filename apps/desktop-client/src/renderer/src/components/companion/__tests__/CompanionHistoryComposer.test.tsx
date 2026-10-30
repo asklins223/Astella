@@ -13,8 +13,8 @@ const props = {
   input: "", onInputChange: vi.fn(), onSend: vi.fn(async () => {}), voice,
   voiceEnabled: true, companionName: "小鲸", sending: false, stopping: false,
   onStop: vi.fn(), onVoiceToggle: vi.fn(), onPageActions: vi.fn(),
-  image: null, imageUploading: false, imageError: null,
-  onPickImage: vi.fn(), onRemoveImage: vi.fn(),
+  images: [], imageUploading: false, imageError: null,
+  onPickImages: vi.fn(), onRemoveImage: vi.fn(),
 };
 let contentHeight = 0;
 let limits: CSSStyleDeclaration;
@@ -59,13 +59,13 @@ it("keeps a long draft intact while capping its height at the current reading bu
 });
 
 it("hands the picked file to the upload path and clears the input so the same file can be retried", () => {
-  const onPickImage = vi.fn();
-  const { container } = render(<CompanionHistoryComposer {...props} onPickImage={onPickImage} />);
-  fireEvent.click(screen.getByRole("button", { name: "传一张图给伴星" }));
+  const onPickImages = vi.fn();
+  const { container } = render(<CompanionHistoryComposer {...props} onPickImages={onPickImages} />);
+  fireEvent.click(screen.getByRole("button", { name: "添加图片，最多12张" }));
   const picker = container.querySelector("input[type=file]") as HTMLInputElement;
   const file = new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], "截屏.png", { type: "image/png" });
   fireEvent.change(picker, { target: { files: [file] } });
-  expect(onPickImage).toHaveBeenCalledWith(file);
+  expect(onPickImages).toHaveBeenCalledWith([file]);
   expect(picker.value).toBe("");
 });
 
@@ -73,18 +73,18 @@ it("shows the pending attachment and keeps send off until the upload has an answ
   const onRemoveImage = vi.fn();
   const view = render(<CompanionHistoryComposer {...props} imageUploading />);
   expect(screen.getByRole("status").textContent).toContain("图片上传中");
-  expect(screen.getByRole<HTMLButtonElement>("button", { name: "传一张图给伴星" }).disabled).toBe(true);
+  expect(screen.getByRole<HTMLButtonElement>("button", { name: "添加图片，最多12张" }).disabled).toBe(true);
   expect(screen.getByRole<HTMLButtonElement>("button", { name: "发送" }).disabled).toBe(true);
 
   view.rerender(<CompanionHistoryComposer {...props} input="看看这张"
-    image={{ url: "/api/uploads/11111111-1111-4111-8111-111111111111/companion/22222222-2222-4222-8222-222222222222.png", label: "截屏" }}
+    images={[{ url: "/api/uploads/11111111-1111-4111-8111-111111111111/companion/22222222-2222-4222-8222-222222222222.png", label: "截屏" }]}
     onRemoveImage={onRemoveImage} />);
   expect(screen.getByText("截屏")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "移除这张图" }));
   expect(onRemoveImage).toHaveBeenCalledTimes(1);
 
-  view.rerender(<CompanionHistoryComposer {...props} imageError="图片超过 5MB，请压缩后重试" />);
-  expect(screen.getByRole("status").textContent).toContain("图片超过 5MB");
+  view.rerender(<CompanionHistoryComposer {...props} imageError="图片上传失败，请重试" />);
+  expect(screen.getByRole("status").textContent).toContain("图片上传失败");
 });
 
 /**

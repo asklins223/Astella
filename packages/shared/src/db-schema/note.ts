@@ -76,6 +76,8 @@ export const notes = pgTable(
      */
     shareScope: text("share_scope").notNull().default("private"), // private | shared
     createdBy: uuid("created_by").notNull().references(() => users.id),
+    lastEditedBy: uuid("last_edited_by").references(() => users.id, { onDelete: "set null" }),
+    lastEditedAt: timestamp("last_edited_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
     // CONC-03: 软删除标记，NULL 表示未删除。30 天后由定时任务物理删除。
@@ -199,6 +201,7 @@ export const noteDocumentStates = pgTable(
     workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
     state: bytea("state").notNull(),
     revision: bigint("revision", { mode: "number" }).notNull().default(0),
+    rewriteLocks: jsonb("rewrite_locks").$type<unknown[]>().notNull().default([]),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => ({

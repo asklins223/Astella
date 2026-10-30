@@ -236,7 +236,7 @@ export async function persistNoteDoc(
     : deriveNoteTitle(plain);
   await tx
     .update(notes)
-    .set({ title, titleSource, updatedAt: sql`now()` })
+    .set({ title, titleSource, updatedAt: sql`now()`, lastEditedBy: scope.userId, lastEditedAt: sql`now()` })
     .where(eq(notes.id, noteId));
 
   await upsertSearchDocument(tx, {

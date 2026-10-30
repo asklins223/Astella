@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { companionResponseStrategy, COMPANION_KNOWLEDGE_REVIEW_V1, isCompanionExplanation } from "../turn/companion-response-strategy.ts";
+import { companionResponseStrategy, COMPANION_KNOWLEDGE_REVIEW_V2, isCompanionExplanation } from "../turn/companion-response-strategy.ts";
 import { companionStepRuntimePolicy } from "../turn/companion-step-plan.ts";
 import { COMPANION_DIALOGUE_CONTINUATION_GOAL_V1 } from "../turn/companion-conversation-policy.ts";
 
@@ -10,19 +10,20 @@ test("解释、混合与分类失败使用稳定参数，内部检查不冒充�
     const strategy = companionResponseStrategy(attention);
     assert.equal(strategy.mode, "knowledge");
     assert.equal(strategy.temperature, 0.3);
-    assert.match(strategy.guidance, /方向是否颠倒/);
-    assert.match(strategy.guidance, /没有可靠依据的细节不要补猜/);
-    assert.match(strategy.guidance, /不算独立证据/);
+    assert.match(strategy.guidance, /方向和量纲/);
+    assert.match(strategy.guidance, /未测量的变量保持未知/);
+    assert.match(strategy.guidance, /不算独立验证/);
   }
 });
 
 test("闲聊使用稳定参数，不附知识检查清单", () => {
   const strategy = companionResponseStrategy({ intent: "conversation", toolUse: "none" });
   assert.equal(strategy.mode, "casual");
+  assert.equal(strategy.temperature, 0.4);
   assert.equal(strategy.guidance, "");
   const policy = companionStepRuntimePolicy({ permissionLevel: "read_only", toolCount: 0,
     stepBudget: 3, finalAnswerOnly: false, attentionIntent: "conversation" });
-  assert.ok(!policy.includes(COMPANION_KNOWLEDGE_REVIEW_V1));
+  assert.ok(!policy.includes(COMPANION_KNOWLEDGE_REVIEW_V2));
   assert.ok(policy.includes(COMPANION_DIALOGUE_CONTINUATION_GOAL_V1));
   // 闲聊姿态按**本轮意图**给，不再按工具面给（2026-10-09）：工具面已经与意图解耦，
   // "这轮有工具"不再等于"这轮要办事"。
@@ -50,7 +51,7 @@ test("动作、控制与带读取的聊天保留工具执行档", () => {
     const strategy = companionResponseStrategy(attention);
     assert.equal(strategy.mode, "task");
     assert.equal(strategy.temperature, 0.4);
-    assert.equal(strategy.guidance, COMPANION_KNOWLEDGE_REVIEW_V1,
+    assert.equal(strategy.guidance, COMPANION_KNOWLEDGE_REVIEW_V2,
       "任务结果可能包含知识解释，不能因动作意图跳过事实约束");
   }
 });
@@ -87,7 +88,7 @@ test("场景指引不再写死在每步共用的运行时策略里", () => {
   for (const moved of ["expectedBlocks", "跳转入口已准备好", "取得真实 id"]) {
     assert.equal(policy.includes(moved), false, `${moved} 应归到能力声明，不该在共用策略里`);
   }
-  assert.match(policy, /只有在你确实要调用工具时/, "工具步那句「先说一句再停下」是每步都用得上的，留下");
+  assert.doesNotMatch(policy, /调用之前才用一句话|然后停下/, "过程性开场不应成为所有工具调用的固定步骤");
   const withScene = companionStepRuntimePolicy({
     permissionLevel: "guided", toolCount: 6, stepBudget: 4, finalAnswerOnly: false,
     attentionIntent: "task", sceneGuidance: ["编辑场景：先读正文，再按块位置改。"],

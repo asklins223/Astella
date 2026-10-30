@@ -10,7 +10,7 @@ import type { ProviderReasoningHandle } from "@astella/shared";
 import { withWorkerWorkspaceTransaction } from "../../db.ts";
 import { lockJobLease } from "../../lib/job-lease.ts";
 import { assertCompanionContextSourcesCurrent } from "../context/companion-context-sources.ts";
-import { isCompanionParticipationClosure, repeatsCompanionParentReply } from "../proactive/companion-participation-output.ts";
+import { repeatsCompanionParentReply } from "../proactive/companion-participation-output.ts";
 import { validateCompanionOutput, finalizeCompanionReplyText, companionAssistantMessageKind, textOfCompanionBlocks } from "../turn/companion-dialogue-content.ts";
 import { insertStreamEvent, enqueueCompanionMemoryJobs, enqueueCompanionFollowupSuggestions, type CompanionDialogueHandlerContext, type ReadContext } from "../turn/companion-dialogue-store.ts";
 import { enqueueSystemEventDelivery } from "../agent/companion-delivery-write.ts";
@@ -41,8 +41,6 @@ export async function executeCompanionParticipationTool(event: AgentEventContext
           AND user_id=${scope.userId} AND generation_job_id=${event.ctx.id}`));
       if (!saved) throw new CompanionToolNotExecutedError("先用 companion_notes_write（action=annotate）写入完整解释，再结束这轮交流。发言不能代替批注。");
     }
-    if (isCompanionParticipationClosure(parsed.text))
-      throw new CompanionToolNotExecutedError("执行收尾不需要发给用户。没有新内容时返回空 content 安静结束。");
     const rawText = finalizeCompanionReplyText({ text: parsed.text, factSpans: event.read.factSpans?.values ?? null, runId: event.read.runId }).text;
     const validated = validateCompanionOutput(rawText);
     if (!validated.ok) throw new CompanionToolError("这条发言未通过正文校验，请修正后再说。");

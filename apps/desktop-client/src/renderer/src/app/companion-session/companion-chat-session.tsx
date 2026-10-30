@@ -181,7 +181,7 @@ export interface CompanionChatSendInput {
    * 用户这一轮自己传的图（2026-10-06 输入框传图）：上传回执给的站内地址，
    * 作为第二个内容块随 turn 上抛；服务端按 url 解析成资产并写回权威 assetId。
    */
-  readonly image?: { readonly url: string; readonly label: string } | null;
+  readonly images?: readonly { readonly url: string; readonly label: string }[];
 }
 
 export type CompanionProposalUiState =
@@ -1777,7 +1777,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
 
   const send = useCallback(async (input: CompanionChatSendInput): Promise<boolean> => {
     const text = input.text.trim();
-    if (text.length === 0) return false;
+    if (text.length === 0 && !input.images?.length) return false;
     const providedAttempt = input.noteAnchor?.explanationId
       ? useNoteCompanionExplanations.getState().items.find(item => item.id === input.noteAnchor!.explanationId)
       : null;
@@ -1882,7 +1882,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
         kind: voiceArtifactId ? "voice_transcript" : "text",
         blocks: [
           { type: "text", text },
-          ...(input.image ? [{ type: "image" as const, url: input.image.url, label: input.image.label }] : []),
+          ...(input.images ?? []).map(image => ({ type: "image" as const, url: image.url, label: image.label })),
         ],
         ...(input.selection?.text ? { selection: { text: input.selection.text, sharing: "user_selected" as const } } : {}),
         runId: null,
@@ -1902,7 +1902,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
         inputKind: voiceArtifactId ? ("voice_transcript" as const) : ("text" as const),
         blocks: [
           { type: "text" as const, text },
-          ...(input.image ? [{ type: "image" as const, url: input.image.url, label: input.image.label }] : []),
+          ...(input.images ?? []).map(image => ({ type: "image" as const, url: image.url, label: image.label })),
         ],
         ...(voiceArtifactId ? { voiceArtifactId } : {}),
         sourceSurface: "pet" as const,

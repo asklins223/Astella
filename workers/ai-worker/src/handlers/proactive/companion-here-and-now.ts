@@ -21,10 +21,8 @@ import { sql } from "drizzle-orm";
 import { noteVisibleSqlText } from "@astella/shared/note-visibility";
 import type { WorkerTransaction } from "../../db.ts";
 import { normalizeWorkspaceAIPolicy, visionReaderAvailableFromConfig } from "../../lib/governance.ts";
-import { noteSearchTerms, parsePageContext } from "../turn/companion-dialogue-content.ts";
-import { askableFactSpanKeys, loadFactSpans } from "../turn/companion-fact-spans.ts";
+import { parsePageContext } from "../turn/companion-dialogue-content.ts";
 import { readLivePageView, type LivePageView } from "../turn/companion-live-view.ts";
-import { findNearestNoteTitle } from "../note/companion-note-reads.ts";
 import { getDefaultPersonaPreset } from "@astella/shared/pet-persona-presets";
 
 const FALLBACK_TIMEZONE = "Asia/Shanghai";
@@ -79,56 +77,11 @@ export interface HereAndNowSnapshot {
    * 转头又问用户"你要我提醒什么"——许过约却不记得，比从没答应更伤信任。
    */
   nextReminder: { text: string; fireAtLocal: string } | null;
-  /**
-   * 用户这句话里点名的那篇笔记（《标题》形态）到底存不存在。见
-   * `extractNoteTitleReference` 的实测理由：这是**假阴性**的源头闸。
-   *
-   * `imageCount` 顺带在这里给出，理由与"存不存在"同一条：**不该由她决定去不去查**。
-   * 实机 2026-09-21 她零工具就说"这篇正文读完了，里面没有截图"，而那篇挂着 6 张图——
-   * 因为图不在 `note_blocks` 里，她照实读完正文仍会推出"没有图"这个假阴性。
-   */
-  noteReference: {
-    title: string; found: boolean; noteId: string | null; ageLabel: string | null;
-    imageCount: number; opening: string | null;
-    /**
-     * 这篇笔记上还没结束的轮次（`start`/`resume` 的服务端回填，39b §9.8 的 C1）。
-     * 与事实块里的那一段同源（`findNoteRuns`）——两处各写一条 SQL 迟早一个说 1 轮、
-     * 一个说 2 轮。
-     */
-    /**
-     * 没匹配上时"最接近的一篇"（39b §9.3 那第二行的价值所在：把"库里没有这篇"由服务端
-     * 替她说完，还附赠一个更接近的真东西，她就没有编造的必要）。判据与实体先行解析
-     * 共用一份（`companion-note-reads`）。
-     */
-    nearest: { title: string; score: number } | null;
-  } | null;
   /** 图片现在能不能看（政策开着 **且** 有可用的看图模型——与工具下发面同源）。 */
   imagesReadable: boolean;
   /** 看不了时的原因（措辞用）：政策没开 / 没有可用的看图模型；能看时为 null。 */
   imagesUnreadableReason: "policy_off" | "no_reader" | null;
-  /**
-   * 这一轮**可以报**的读数目录（P2，39d W2-5）：`{ key → 值 }` ＋ 送进 prompt 的块。
-   *
-   * 没问就是 null（`askable` 由用户输入决定）——"没问就不要报数"从此不是叮嘱，
-   * 而是**她没有可报的键**：她写 `{{f:key}}`，值由服务端渲染；目录外的键整句丢掉。
-   */
-  factSpans: { values: Record<string, string>; block: string } | null;
-  /**
-   * 学习统计真值——**只在用户这一轮问到学习数据时**才非空。
-   *
-   * 实机 2026-09-22 场景 B/N：她先说"今天 50 分钟啦，本周累计 107 分钟"（那是昨天
-   * 说过的数，今天已经跨日），再调工具查出 33/154，然后在**同一条消息里**改口。
-   * 事后闸救不了：话是流式说出口的。所以和图数、笔记存在性同一个解法——
-   * 服务端在她开口之前把真值算好放进她的感知里。
-   *
-   * 没问就是 null：把统计常驻注入正是 §9.60 撤掉的东西，不能从这里绕回来。
-   */
-  learningStats: LearningStatsFacts | null;
-  /**
-   * 当前生效的行为边界——**只在用户这一轮要改边界时**才非空。
-   * 理由同 `learningStats`：她得先知道现在是什么状态，才谈得上"帮你改掉了"。
-   */
-  boundaryFacts: BoundaryFacts | null;
+
 }
 
 /** 学习统计的一份真值。取数与摘要都只有这一处，工具与环境块共用。 */
@@ -142,65 +95,6 @@ export interface LearningStatsFacts {
 /** 工具返回给模型的 safeSummary 与环境块那一行共用同一句措辞（两处各写迟早会分叉）。 */
 export function summarizeLearningStats(facts: LearningStatsFacts): string {
   return `今日 ${facts.todayMinutes} 分钟，本周 ${facts.weekMinutes} 分钟，学习卡 ${facts.activeCards} 张`;
-}
-
-/**
- * 用户这句话在要学习数据吗。
- *
- * **判得保守是设计的一部分**：漏了的代价只是她自己再调一次工具（今天就是这样，
- * 多花一步而已）；误判的代价是把"没问也报数"重新请回来——那是 §9.60 刚赶出去的缺陷，
- * 而且这次是系统自己递上去的数字，她不可能不说。
- */
-const LEARNING_STATS_ASK_PATTERNS = [
-  // "我今天一共学了多久" / "这周总共学了多长时间"
-  "(今天|今日|这周|本周|这个星期|最近|这一阵)[^。！？]{0,12}(学|复习|读)[^。！？]{0,6}(多久|多长时间|多少|几分钟|几小时)",
-  // "有多少张活跃卡片、多少篇笔记" / "多少个东西到期该复习"
-  "(多少|几个|几张|几篇|还剩)[^。！？]{0,6}(分钟|小时|张|篇|项|条|题)",
-  "多少[^。！？]{0,4}(到期|复习)",
-  // "最近的学习进度怎么样"
-  "(学习|进度|统计)[^。！？]{0,4}(情况|数据|怎么样|如何)",
-];
-const LEARNING_STATS_ASK_TEST = new RegExp(LEARNING_STATS_ASK_PATTERNS.join("|"));
-
-export function asksForLearningStats(text: string | undefined): boolean {
-  return typeof text === "string" && LEARNING_STATS_ASK_TEST.test(text);
-}
-
-/** Assistance consequences are always eligible, not a request for study statistics.
- * Streaks have their own reader; only these keys consume readLearningStats.
- */
-export function needsCompanionLearningStats(text: string | undefined): boolean {
-  return asksForLearningStats(text) || askableFactSpanKeys(text).some(key =>
-    key === "today_minutes" || key === "week_minutes"
-    || key === "card_count" || key === "note_count");
-}
-
-/**
- * 用户这一轮要改她的行为边界吗（催不催学习、玩趣、语音情绪标签、口头禅）。
- *
- * 为什么要在这里预取当前状态：实机 2026-09-22 场景 T，用户说「以后别主动催我复习」，
- * 她回"嗯，这条早就设好了喵"——而库里 `allowNudgeLearning` 还是 true。
- * 她不是故意骗人，是**不知道自己现在是什么状态**，于是把"应下来"当成了"已经改好"。
- * 同 §9.30/§9.67：服务端一行 SELECT 就知道的事，不该留给模型猜。
- */
-const BOUNDARY_CHANGE_PATTERNS = [
-  "别催|不要催|不准催|别提醒|不要提醒",
-  "以后[^。！？]{0,8}(别|不要|不准)",
-  "口头禅",
-  "(玩趣|语气|情绪标签|语音标签)[^。！？]{0,6}(关掉|关闭|开|去掉|别)",
-  "(关掉|改成|设为|设置成)[^。！？]{0,8}(玩趣|催|提醒|标签)",
-];
-const BOUNDARY_CHANGE_TEST = new RegExp(BOUNDARY_CHANGE_PATTERNS.join("|"));
-
-export function asksForBoundaryChange(text: string | undefined): boolean {
-  return typeof text === "string" && BOUNDARY_CHANGE_TEST.test(text);
-}
-
-/** 当前生效的行为边界（只有用户这一轮要改时才取）。 */
-export interface BoundaryFacts {
-  readonly allowNudgeLearning: boolean;
-  readonly allowPlayful: boolean;
-  readonly allowVoiceTags: boolean;
 }
 
 interface LearningStatsRow extends Record<string, unknown> {
@@ -299,17 +193,6 @@ export function ageLabel(minutes: number): string {
  * 也就是说"要不要查"不能交给它决定：这里先把结果当数据给它，
  * 她只需要负责读和说。
  */
-export function extractNoteTitleReference(userText: string): string | null {
-  // 「X」与《X》同级：中文里带书名号的写法不止一种（39b §9.3 规则① 写的是《X》／「X」）。
-  // 实测 30 天真实流量里「」形态 0 次、只有《》8 次，但两种都得认——只认一种时，
-  // 另一种写法会退化成"她其实手上有这篇却当成没有"。
-  // 篇名长度不在这封顶（{1,30} 会让一篇 31 字的标题整条认不出来，退化成"按标题没找到"，
-  // 而她手上其实有这篇）：只以《》/「」自身为界。
-  const match = userText.match(/《([^》\n]+)》|「([^」\n]+)」/);
-  const title = (match?.[1] ?? match?.[2])?.trim();
-  return title ? title : null;
-}
-
 export async function loadHereAndNow(
   tx: WorkerTransaction,
   scope: {
@@ -324,8 +207,6 @@ export async function loadHereAndNow(
     currentRequestSeq?: string | null;
     /** 本轮 Bridge page context（对象或 JSON 字符串）；缺省就没有"当前界面"这一行。 */
     pageContext?: unknown;
-    /** 用户当下这句话：只用来识别《某篇》形态，见 `extractNoteTitleReference`。 */
-    userText?: string;
   },
 ): Promise<HereAndNowSnapshot> {
   // 时钟与账号：单条 SELECT 常量查询，永远返回一行（账号行缺失时走回落时区）。
@@ -398,48 +279,6 @@ export async function loadHereAndNow(
     WHERE workspace_id = ${scope.workspaceId} AND user_id = ${scope.userId} AND status = 'pending'
   `);
 
-  // 用户点名的那篇笔记。`ILIKE '%标题%'` 而不是 `ILIKE '标题'`——不带百分号的
-  // ILIKE 是全等比较（记忆检索的 keyword 降级路径踩过同一个坑）。
-  //
-  // 但**整串子串**仍然会假阴性：人写《欧姆定律 生成验收》中间一个空格，库里那篇
-  // 叫《欧姆定律生成验收》就匹配不上（实机 2026-09-22 检索工具踩过同一处，见 §12.3）。
-  // 这里的后果比工具更重：这一行决定她开口时手上有没有这篇，匹配不上她就理直气壮地
-  // 说"库里没有这篇"——那是最坏的一种错（可证伪的假阴性）。所以按空格切成词，逐词都要命中。
-  const noteRefTitle = scope.userText ? extractNoteTitleReference(scope.userText) : null;
-  const noteRefTerms = noteRefTitle ? noteSearchTerms(noteRefTitle) : [];
-  const noteRefTitleMatch = noteRefTerms.length === 0
-    ? sql`n.title = ${noteRefTitle ?? ""}`
-    : sql`${sql.join(noteRefTerms.map((term) => sql`n.title ILIKE ${`%${term}%`}`), sql` AND `)}`;
-  const noteRefRows: { id: string; title: string; age_minutes: string; image_count: string; opening: string | null }[] = noteRefTitle
-    ? await tx.execute<{ id: string; title: string; age_minutes: string; image_count: string; opening: string | null }>(sql`
-        SELECT n.id, n.title,
-               EXTRACT(EPOCH FROM (now() - n.updated_at)) / 60 age_minutes,
-               -- 首块的开头（按 ordinal，与 read_note 同一个顺序）：实机 2026-09-22 AC 轮，
-               -- 她零工具交出一段"看着像原文"的课本话——那不是编错的物理，是编的出处。
-               -- 真开头在这一行里，她就没有补的必要了（方案 29 §12.5 的 ①）。
-               (SELECT nb.content FROM note_blocks nb
-                 WHERE nb.version_id = n.current_version_id AND coalesce(nb.content, '') <> ''
-                 ORDER BY nb.ordinal LIMIT 1) AS opening,
-               -- 图挂在另一张表里，不在 note_blocks——所以她"把正文读完了"仍然看不见它们。
-               (SELECT count(*) FROM note_image_assets a
-                 WHERE a.workspace_id = n.workspace_id
-                   AND a.uploaded_for_note_id = n.id
-                   AND a.status = 'ready' AND a.deleted_at IS NULL) AS image_count
-        FROM notes n
-        WHERE n.workspace_id = ${scope.workspaceId} AND n.deleted_at IS NULL
-          AND ${noteRefTitleMatch}
-          AND ${sql.raw(noteVisibleSqlText("n", `'${scope.userId}'::uuid`))}
-        ORDER BY (n.title = ${noteRefTitle}) DESC, n.updated_at DESC
-        LIMIT 1
-      `)
-    : [];
-
-  // 没匹配上时才找"最接近的一篇"（39b §9.3 规则① 的第二行）。放在"没找到"这一支里，
-  // 是因为命中路径本来就不该多付一次查询；而未命中恰恰是她最容易说出假阴性结论的那一刻。
-  const noteRefNearest = noteRefTitle && !noteRefRows[0]
-    ? await findNearestNoteTitle(tx, scope, noteRefTitle)
-    : null;
-
   const reminderRows = await tx.execute<{ text: string; fire_at_local: string }>(sql`
     SELECT text,
            to_char(fire_at AT TIME ZONE ${tzSubquery(scope.userId)}, 'MM-DD HH24:MI') AS fire_at_local
@@ -469,30 +308,7 @@ export async function loadHereAndNow(
     ? null
     : (imagePolicyEnabled ? "no_reader" : "policy_off");
 
-  // P2（39d W2-5）：这一轮她**可以报**的读数目录（没问就没有键）。
-  // 统计读取只由真实问法或消费统计的目录键触发；恒定作答影响键不参与。
-  // `askableFactSpanKeys` 的逐键疑问词＋量词更细，必须并进来，否则
-  // "我笔记有几篇"这种会被判成"要报数"却一次查询都不发、目录空着。
-  const factSpanKeys = askableFactSpanKeys(scope.userText);
-  // 用户这一轮问到学习数据，就在她开口之前把真值算好（见 HereAndNowSnapshot.learningStats）。
-  // 没问到就一次查询都不发——这条支路的开销必须是"问了才付"。
-  const learningStats = needsCompanionLearningStats(scope.userText)
-    ? await readLearningStats(tx, scope)
-    : null;
-  const factSpans = await loadFactSpans(tx, scope, factSpanKeys, learningStats);
-  // 边界缺省按"允许"读，与主动交流入口（`boundaries.allowNudgeLearning !== false`）同一口径：
-  // 两处的默认值不一样时，"她以为关着/其实开着"这类分裂又会回来。
-  const profileBoundaries = (petRow?.boundaries ?? {}) as Record<string, unknown>;
-  const boundaryFacts = asksForBoundaryChange(scope.userText)
-    ? {
-      allowNudgeLearning: profileBoundaries.allowNudgeLearning !== false,
-      allowPlayful: profileBoundaries.allowPlayful !== false,
-      allowVoiceTags: profileBoundaries.allowVoiceTags !== false,
-    }
-    : null;
-
-  // 用户此刻停在哪一屏：**只读一次**，中文标签与判据两份输出都从这一行来
-  // （`resolveCurrentPage` 渲染"用户正在看…"，实体先行解析拿 `items[].ordinal`）。
+  // 当前页只读宿主实时行，作为环境事实提供给模型。
   const livePageView = await readLivePageView(tx, scope);
 
   return {
@@ -511,32 +327,8 @@ export async function loadHereAndNow(
     },
     noteCount: Number(noteCountRows[0]?.n ?? 0),
     pendingProposals: Number(proposalRows[0]?.n ?? 0),
-    noteReference: noteRefTitle
-      ? (noteRefRows[0]
-        ? {
-          title: noteRefRows[0].title,
-          found: true,
-          noteId: noteRefRows[0].id,
-          ageLabel: ageLabel(Number(noteRefRows[0].age_minutes)),
-          imageCount: Number(noteRefRows[0].image_count ?? 0),
-          opening: noteOpeningExcerpt(noteRefRows[0].opening),
-          nearest: null,
-        }
-        : {
-          title: noteRefTitle,
-          found: false,
-          noteId: null,
-          ageLabel: null,
-          imageCount: 0,
-          opening: null,
-          nearest: noteRefNearest,
-        })
-      : null,
     imagesReadable,
     imagesUnreadableReason,
-    learningStats,
-    factSpans: factSpans ? { values: factSpans.values, block: factSpans.block as string } : null,
-    boundaryFacts,
     nextReminder: reminderRows[0]
       ? { text: reminderRows[0].text, fireAtLocal: reminderRows[0].fire_at_local }
       : null,
@@ -621,6 +413,7 @@ async function resolveCurrentPage(
       WHERE id = ${String(noteRef.noteId)}::uuid
         AND workspace_id = ${scope.workspaceId}
         AND deleted_at IS NULL
+        AND ${sql.raw(noteVisibleSqlText("notes", `'${scope.userId}'::uuid`))}
       LIMIT 1
     `);
     return { kind: label, title: rows[0]?.title ?? null, statusLine: null };
@@ -674,21 +467,6 @@ export function renderHereAndNow(snapshot: HereAndNowSnapshot): string | null {
   // 不是台词本；用户真问"我今天学了多久"时她走 companion_get_learning_stats，
   // 那条路实测通（同一口径）。
   //
-  if (snapshot.learningStats) {
-    // 这一行是 §9.66 缺陷① 的解法：她以前先念历史里的旧数、再调工具、再在同一条
-    // 消息里改口。真值必须在**她说之前**就在场，历史里的同类数字要被明确降级。
-    // 39d W2-5：**数值从这里撤出**了——P2 之后它们由 `<fact_spans>` 渲染（一处一个来源），
-    // 她照键写、服务端填。防复读那半句保留：历史里的同类数字仍然是更早的时刻。
-    lines.push("用户这一轮问的是学习数据：可报的读数在 <fact_spans> 里，"
-      + "正文里要报就写 {{f:key}}，不要自己写数值；历史对话里出现过的同类数字是更早的时刻，可能已经变了。");
-  }
-  if (snapshot.boundaryFacts) {
-    const b = snapshot.boundaryFacts;
-    const on = (value: boolean) => (value ? "开着" : "关着");
-    lines.push(`用户这一轮要改的是行为边界，当前生效的状态：催复习=${on(b.allowNudgeLearning)}，`
-      + `玩趣=${on(b.allowPlayful)}，语音情绪标签=${on(b.allowVoiceTags)}。`
-      + "这些开关只有调用 companion_persona_write（action=boundary）才会变；光答\"记下了\"什么都没变。");
-  }
   // An inventory of recent notes made greetings repeat yesterday's work.
   // The current page and explicit note reference remain below; library history
   // is available through the existing read tools when the user asks about it.
@@ -705,36 +483,7 @@ export function renderHereAndNow(snapshot: HereAndNowSnapshot): string | null {
   if (snapshot.nextReminder) {
     lines.push(`你已经答应：${snapshot.nextReminder.fireAtLocal} 提醒用户「${snapshot.nextReminder.text}」`);
   }
-  if (snapshot.noteReference) {
-    const ref = snapshot.noteReference;
-    lines.push(ref.found
-      ? `用户提到的《${ref.title}》在笔记库里，noteId=${ref.noteId}（${ref.ageLabel}写的）；要看正文就调用 companion_notes_read（action=read）用这个 id。`
-      // 没找到时**不把"它不存在"当结论交给她**——那正是实机里她零工具却脱口而出的假阴性。
-      // 39b §9.3：这一行的价值在于"库里没有匹配"由服务端替她说完，还附赠一个更接近的
-      // 真东西——她就没有编造的必要，也不会把"我没查到"说成"库里没有"。
-      : `按标题没找到《${ref.title}》这篇笔记${ref.nearest
-        ? `；最接近的是《${ref.nearest.title}》（相似度 ${ref.nearest.score.toFixed(2)}）`
-        : ""}：标题可能记岔，或者它其实是一张卡片。先调用 companion_notes_read（action=search）换个关键词再查；查不到就照实说没查到，不要替笔记库下"没有这东西"的结论。`);
-    // 只给开头一段，并点名"更长的原文还是要去读"：给全篇等于让她抄一个可能已经
-    // 过期、也没进历史的版本，而那正是要修的东西。
-    if (ref.found && ref.opening) {
-      lines.push(`这篇的开头是：「${ref.opening}」（只到第一句为止；要更长的原文仍然要调用 companion_notes_read（action=read）去读，不要照这段往下补。）`);
-    }
-    // 图的事实在这里给，而不是等她去猜：图片不是 note_blocks 的一部分，她把正文
-    // 读三遍也看不到图，于是"我读完了，里面没有截图"听起来像诚实的回答（实机
-    // 2026-09-21 就是这么一句假阴性）。
-    if (ref.found && ref.imageCount > 0) {
-      lines.push(snapshot.imagesReadable
-        ? `这篇另有 ${ref.imageCount} 张图，图不在正文里。要看图里写了什么就调用 companion_visual（action=read_image）。`
-        : snapshot.imagesUnreadableReason === "no_reader"
-          ? `这篇另有 ${ref.imageCount} 张图，图不在正文里（正文没有图片标记不代表没有图）。`
-            + "现在没有能看图的模型，这些图你看不了：照实说看不了，不要说「我看看这张图」，"
-            + "也不要凭标题猜图里有什么。"
-          : `这篇另有 ${ref.imageCount} 张图，图不在正文里（正文没有图片标记不代表没有图）。`
-            + "图片外发没开启，这些图你看不了：照实说看不了，并告诉用户设置里有个「允许发送图片内容」的开关。"
-            + "不要说「我看看这张图」，也不要凭标题猜图里有什么。");
-    }
-  }
+
   if (lines.length <= 1) return null;
   return ["<here_and_now>", ...lines, "</here_and_now>"].join("\n");
 }

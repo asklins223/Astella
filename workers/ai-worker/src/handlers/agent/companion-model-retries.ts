@@ -17,7 +17,7 @@ export function isTransientCompanionModelError(error: unknown): boolean {
   // No first token means no user-visible output yet: a fresh attempt cannot
   // duplicate text. An idle timeout after output is different and is not retried.
   if (error instanceof CompanionOutputTimeoutError)
-    return error.code === "provider_first_output_timeout";
+    return error.code !== "provider_idle_timeout";
   if (error instanceof CompanionStreamStoppedError || isNonRetryableError(error)) return false;
   if (error instanceof ProviderRequestError) return error.status === 408 || error.status === 429 || error.status >= 500;
   if (error instanceof ProviderStreamError) {
@@ -43,7 +43,7 @@ export async function runWithCompanionModelRetries<T>(
   const retryable = (error: unknown): boolean =>
     isTransientCompanionModelError(error)
     && !(input.switchProviderAvailable === true
-      && error instanceof CompanionOutputTimeoutError && error.code === "provider_first_output_timeout");
+      && error instanceof CompanionOutputTimeoutError && error.code !== "provider_idle_timeout");
   for (let attempt = 1; ; attempt += 1) {
     try {
       return await run();

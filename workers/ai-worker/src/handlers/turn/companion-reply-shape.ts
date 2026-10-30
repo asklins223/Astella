@@ -30,34 +30,3 @@ export function companionStreamRepeatsItself(text: string): boolean {
   // most of its sentences distinct.
   return distinct <= Math.max(2, Math.floor(sentences.length / 8));
 }
-
-const IMAGE_CONTENT_DESCRIPTION = new RegExp([
-  // Any picture noun followed by a statement about its contents: "图里写的是 X",
-  // "截图里显示答案是 B", "照片上写着公式". The window is generous because the
-  // noun and the verb can be several words apart; questions are excluded below,
-  // so a wide window does not turn "图里写了什么？" into a claim.
-  "(?:图|图片|截屏|截图|照片|画面|图表)[^。！？\\n]{0,10}"
-    + "(?:里|中|上|里面|当中)[^。！？\\n]{0,14}"
-    + "(?:写着|写了|写的是|显示|显示着|是|有|画着|标着|列出|列出的是|包含|内容|文字|答案|标题|公式|表格|数据|数字)",
-  // The content noun carries the claim even without a location word.
-  "(?:图|图片|截屏|截图|照片|画面)[^。！？\\n]{0,6}(?:文字|内容|标题|答案|公式|表格|数据|数字)"
-    + "[^。！？\\n]{0,8}(?:是|为|写着|显示|包含|如下)",
-].join("|"), "gu");
-
-/**
- * Does the reply describe what is *in* a picture?
- *
- * The model may receive an attachment as a name plus an assetId rather than as
- * pixels (only a vision turn or a read tool sends the bytes). Without a receipt
- * any such description is invented, however confidently it is phrased — the
- * observed failure mode is a fluent, fully made-up account of a screenshot.
- */
-export function claimsImageContent(text: string): boolean {
-  // A question about the picture asks for a read; it does not report one.
-  const statements = text.split("\n").filter(line => !/[？?]\s*$/u.test(line.trim())).join("\n").trim();
-  if (!statements) return false;
-  // The pattern carries `g`, so its lastIndex has to be reset: leaving it set
-  // made every second call miss (caught by the unit test, not in production).
-  IMAGE_CONTENT_DESCRIPTION.lastIndex = 0;
-  return IMAGE_CONTENT_DESCRIPTION.test(statements);
-}

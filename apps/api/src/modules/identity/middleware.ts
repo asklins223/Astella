@@ -86,35 +86,4 @@ export async function requireOwner(req: FastifyRequest, reply: FastifyReply) {
  */
 export const sessionClientKindSchema = z.enum(SESSION_CLIENT_KINDS).default("desktop");
 
-/**
- * Mobile sessions cannot submit freeform body edits (2026-10-11 rule).
- * 2026-10-24 user-approved exception: an owner may explicitly restore an
- * existing immutable version through the separately owner-guarded restore route.
- *
- * 判据读**会话行**里的 `client_kind`，不是请求头：头是调用方随时可以不带的东西。
- * 伴星那条路本来就没有 HTTP 口（`note/companion-edit-dispatch.ts` 走内部 tool
- * call），所以这道闸挡的只有"拿着手机会话的人"，不会伤到伴星写入。
- *
- * 缺省与未知值按桌面处理（放行）：这一位是收紧用的闸门，不是身份凭据——把它做成
- * "未知即拒绝"会让没读过规则的老调用一起变红，症状看起来像正文写不进去。
- */
-export function isNoteContentWriteForbiddenForSession(ctx: {
-  clientKind?: string | null;
-}): boolean {
-  return ctx.clientKind === "mobile";
-}
-
-/**
- * 自由正文写入的闸：HTTP 增量上送与 WS 的只读判定共用同一条判据。
- * 已保存版本的恢复不使用这道客户端闸，仍需 requireOwner 和版本冲突检查；
- * 见 `note/collaboration.ts` 的 `readOnly`。放在 `requireOwner` **之后**：成员本来
- * 就没有写权限，那条理由更基本，手机只是第二道。
- */
-export async function requireNoteContentWrites(req: FastifyRequest, reply: FastifyReply) {
-  if (isNoteContentWriteForbiddenForSession(req.session)) {
-    return reply.code(403).send({
-      error: "mobile_note_edit_forbidden",
-      message: "手机上不能直接改笔记正文，请回到电脑里编辑；也可以让伴星替你写。",
-    });
-  }
-}
+/** 2026-10-29: 手机和桌面共用空间权限，正文写入不再按客户端种类限制。 */

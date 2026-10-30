@@ -1,133 +1,104 @@
+import { readCompanionDeliveryDraft } from "../tools/companion-delivery-draft.ts";
 import type { AgentTurnRequest } from "@astella/shared";
-import { companionOperationDomainTool, companionOperationName, getCompanionAgentTool } from "@astella/shared";
-import { claimsApplicationActionCompletion } from "../turn/companion-dialogue-content.ts";
+import { stripVoiceExpressionTags } from "@astella/shared/voice-expression-tags";
+import type { AgentGoalDeliveryV1 } from "@astella/shared/agent-contracts";
+import { currentCompanionSuccessfulReceipts } from "../tools/companion-tool-receipts.ts";
+
+export type CompanionFinishRequirement = Omit<AgentGoalDeliveryV1["requirements"][number], "textOnly">;
 
 export type CompanionFinishArguments = {
-  text: string;
+  text?: string;
+  silent?: boolean;
   actions: Array<{ receiptId: string }>;
   evidence: Array<{ receiptId: string }>;
+  outcome?: "completed" | "partial" | "needs_input" | "failed";
+  requirements?: CompanionFinishRequirement[];
 };
-
 export type CompanionFinishVerdict =
   | { ok: true; text: string; writesLanded: boolean }
   | { ok: false; error: string };
 
-/**
- * Successful tool receipts owned by the current request. Host-side finalization
- * uses these when the model wrote the answer but did not call companion_finish:
- * the receipts are already real, so the host can bind them instead of spending
- * another model call (or replacing the answer with a host note).
- */
-export function companionCurrentSuccessfulToolReceipts(
-  messages: AgentTurnRequest["messages"],
-): Array<{ id: string; name: string; riskClass: string; summary: string }> {
-  // A host observation can be appended mid-turn (prefetched note, receipt
-  // correction). The request boundary is still the latest user message; using
-  // the last host observation would hide earlier successful receipts.
+export const companionCurrentSuccessfulToolReceipts = currentCompanionSuccessfulReceipts;
+
+/** A finish that only repeats speech already published in this run is not a
+ * new delivery; the explicit message channel carried it. Exact text only, so
+ * paraphrases and new remarks still deliver. */
+export function companionFinishRepeatsPublished(finishText: string, publishedTexts: readonly string[]): boolean {
+  const normalize = (value: string) => stripVoiceExpressionTags(value).replace(/\s+/gu, " ").trim();
+  const target = normalize(finishText);
+  if (!target) return false;
+  if (publishedTexts.some(text => normalize(text) === target)) return true;
+  return publishedTexts.length > 1 && normalize(publishedTexts.join(" ")) === target;
+}
+const DELIVERABLE_READ_OPERATIONS = new Set(["visual.diagram"]);
+
+/** Reuse an actual body after the current request boundary. A sole finish call
+ * may deliver its accompanying body; business-tool preambles cannot. */
+export function companionLatestDeliveryDraft(messages: AgentTurnRequest["messages"]): string | null {
   let boundary = messages.length - 1;
-  while (boundary >= 0 && messages[boundary].role !== "user") boundary -= 1;
-  const current = boundary < 0 ? messages : messages.slice(boundary);
-  const calls = new Map<string, { name: string }>();
-  for (const message of current) {
-    if (message.role !== "assistant") continue;
-    for (const call of message.toolCalls ?? []) calls.set(call.id, { name: call.name });
+  while (boundary >= 0 && messages[boundary]!.requestBoundary !== true) boundary--;
+  if (boundary < 0) return null;
+  for (let i = messages.length - 1; i > boundary; i--) {
+    const message = messages[i]!;
+    const savedDraft = readCompanionDeliveryDraft(message, messages[boundary]!);
+    if (savedDraft !== null) return savedDraft;
+    const deliveryOnly = !message.toolCalls?.length || (message.toolCalls.length === 1
+      && message.toolCalls[0]!.name === "companion_finish");
+    if (message.role === "assistant" && deliveryOnly && typeof message.content === "string"
+      && message.content.trim()) return message.content;
   }
-  const receipts: Array<{ id: string; name: string; riskClass: string; summary: string }> = [];
-  for (const message of current) {
-    if (message.role !== "tool" || !message.toolCallId || typeof message.content !== "string") continue;
-    const call = calls.get(message.toolCallId);
-    if (!call) continue;
-    let receipt: { summary?: unknown };
-    try {
-      receipt = JSON.parse(message.content);
-      if (receipt && (receipt as { ok?: unknown }).ok !== true) continue;
-    } catch {
-      continue;
-    }
-    receipts.push({ id: message.toolCallId, name: call.name,
-      riskClass: getCompanionAgentTool(companionOperationDomainTool(call.name) ?? call.name)?.riskClass ?? "read",
-      summary: typeof receipt.summary === "string" ? receipt.summary : "" });
-  }
-  return receipts;
+  return null;
 }
 
-/** The final-answer tool is the write boundary.
- *
- * A successful tool message is the only proof that an operation happened in the
- * current request. The model may describe whatever it wants, but actions must
- * point at real successful receipts from this request; a bare "已保存" cannot
- * pass. This replaces prose pattern matching as the primary completion check.
- */
-/** Reads that produce something the user asked to have made. */
-const DELIVERABLE_READ_OPERATIONS: ReadonlySet<string> = new Set(["visual.diagram"]);
-
-export function validateCompanionFinish(
-  input: CompanionFinishArguments,
-  messages: AgentTurnRequest["messages"],
-): CompanionFinishVerdict {
-  // A host observation can be appended mid-turn (prefetched note, receipt
-  // correction). The request boundary is still the latest user message; using
-  // the last host observation would hide earlier successful receipts.
-  let boundary = messages.length - 1;
-  while (boundary >= 0 && messages[boundary].role !== "user") boundary -= 1;
-  const current = boundary < 0 ? messages : messages.slice(boundary);
-  const calls = new Map<string, { name: string; operation: string }>();
-  for (const message of current) {
-    if (message.role !== "assistant") continue;
-    for (const call of message.toolCalls ?? [])
-      // The operation needs the arguments: `companion_visual` alone is a domain
-      // tool, `{action:"diagram"}` is what makes it a deliverable.
-      calls.set(call.id, { name: call.name, operation: companionOperationName({ name: call.name, arguments: call.arguments }) });
+/** Verify declared coverage and references, never infer intent from prose.
+ * Semantic completeness still needs model/evaluation: a ledger cannot prove
+ * that the model understood every goal or that a proof is mathematically sound. */
+export function validateCompanionFinish(input: CompanionFinishArguments, messages: AgentTurnRequest["messages"],
+  options: { requireRequirements?: boolean; allowSilent?: boolean; currentRunEvidence?: AgentTurnRequest["messages"] } = {}): CompanionFinishVerdict {
+  const successful = new Map(currentCompanionSuccessfulReceipts(messages, options.currentRunEvidence).map(receipt => [receipt.id, receipt]));
+  if (input.silent) {
+    if (!options.allowSilent || input.text?.trim() || input.actions?.length || input.evidence?.length
+      || [...successful.values()].some(receipt => receipt.riskClass !== "read"))
+      return { ok: false, error: "安静结束只适用于没有待交付结果的主动参与；用户请求、正文和实际写入不能静默省略。" };
+    return { ok: true, text: "", writesLanded: false };
   }
-  const successful = new Map<string, { name: string; operation: string; riskClass: string }>();
-  for (const message of current) {
-    if (message.role !== "tool" || !message.toolCallId || typeof message.content !== "string") continue;
-    const call = calls.get(message.toolCallId);
-    if (!call) continue;
-    try {
-      if (JSON.parse(message.content).ok !== true) continue;
-    } catch {
-      continue;
-    }
-    successful.set(message.toolCallId, {
-      name: call.name,
-      operation: call.operation,
-      riskClass: getCompanionAgentTool(companionOperationDomainTool(call.operation) ?? call.operation)?.riskClass ?? "read",
-    });
+  const text = input.text === undefined ? companionLatestDeliveryDraft(messages) : input.text;
+  if (!text?.trim() || !stripVoiceExpressionTags(text).trim())
+    return { ok: false, error: "本轮没有可复用的完整草稿；历史回答和工具调用前言不能作为当前正文。请提供 text。" };
+  const aliases = new Map<string, string | null>();
+  for (const receipt of successful.values()) if (receipt.reference) {
+    const existing = aliases.get(receipt.reference);
+    aliases.set(receipt.reference, existing === undefined || existing === receipt.id ? receipt.id : null);
   }
-  const actions = input.actions ?? [];
-  const evidence = input.evidence ?? [];
-  const writeReceipts = [...successful].filter(([, receipt]) => receipt.riskClass !== "read");
-  const writeIds = writeReceipts.map(([id]) => id);
-  // Some reads produce a deliverable (a diagram is drawn for the user). Those
-  // may be cited as actions; an ordinary read still may not, because citing it
-  // would let "改好了" ride on a lookup.
-  const isActionReceipt = (id: string) => writeReceipts.some(([writeId]) => writeId === id)
-    || DELIVERABLE_READ_OPERATIONS.has(successful.get(id)!.operation);
-  const invalidAction = actions.find(action => !successful.has(action.receiptId) || !isActionReceipt(action.receiptId));
-  if (invalidAction) {
-    return { ok: false, error: `回执 ${invalidAction.receiptId} 不是本轮真实成功、可直接交付的工具回执。`
-      + `可引用的回执：${[...successful.keys()].filter(isActionReceipt).join("、") || "无"}。`
-      + "不要引用历史回执，也不要用正文声称已经完成；先实际调用工具，再重新交付。" };
+  const resolve = (reference: string): string | undefined => {
+    const raw = successful.has(reference) ? reference : undefined;
+    const alias = aliases.get(reference);
+    return alias === null || (raw && alias && raw !== alias) ? undefined : raw ?? alias;
+  };
+  const available = [...successful.values()].map(receipt => `${receipt.reference ?? receipt.id} (${receipt.operation})`).join("、") || "无";
+  const writes = [...successful.values()].filter(receipt => receipt.riskClass !== "read");
+  const actions = input.actions ?? [], evidence = input.evidence ?? [];
+  const isActionReceipt = (reference: string) => {
+    const id = resolve(reference);
+    const receipt = id ? successful.get(id) : undefined;
+    return receipt !== undefined && (receipt.riskClass !== "read" || DELIVERABLE_READ_OPERATIONS.has(receipt.operation));
+  };
+  const invalidAction = actions.find(action => !isActionReceipt(action.receiptId));
+  if (invalidAction) return { ok: false, error: `回执 ${invalidAction.receiptId} 不是本轮真实成功、可直接交付的工具回执。`
+    + `可引用的动作回执：${[...successful.values()].filter(receipt => isActionReceipt(receipt.id)).map(receipt => receipt.reference ?? receipt.id).join("、") || "无"}。未执行、失败、结果未知和历史回执不证明完成。` };
+  const invalidEvidence = evidence.find(item => !resolve(item.receiptId));
+  if (invalidEvidence) return { ok: false, error: `证据回执 ${invalidEvidence.receiptId} 不是本轮真实成功的工具回执。可用回执：${available}。` };
+  const missing = writes.filter(receipt => !actions.some(action => resolve(action.receiptId) === receipt.id));
+  if (missing.length) return { ok: false, error: `本轮成功写回执尚未全部引用：${missing.map(receipt => receipt.reference ?? receipt.id).join("、")}。引用已落下的回执，不要重复执行。` };
+  if (options.requireRequirements && (!input.requirements?.length || !input.outcome))
+    return { ok: false, error: "本轮已有写入或待发独立消息，交付需要 outcome 和 requirements：逐项对照当前请求，列出是否满足及本轮 evidenceCallIds。没有完成的目标如实保留，已经成功的部分不要重做。" };
+  for (const requirement of input.requirements ?? []) {
+    if (input.outcome === "completed" && !requirement.fulfilled)
+      return { ok: false, error: `目标“${requirement.requirement}”尚未满足，不能宣布全部完成；继续处理或用 partial/needs_input/failed 如实交付。` };
+    if (requirement.fulfilled && requirement.evidenceCallIds.length === 0)
+      return { ok: false, error: `目标“${requirement.requirement}”需要真实工具回执，文字不能代替执行或读取。` };
+    if (requirement.evidenceCallIds.some(id => !resolve(id)))
+      return { ok: false, error: `目标“${requirement.requirement}”引用了未成功或不属于本轮的依据。可用回执：${available}。核对实际结果；不要重做已经成功的部分。` };
   }
-  const invalidEvidence = evidence.find(item => !successful.has(item.receiptId));
-  if (invalidEvidence) {
-    return { ok: false, error: `证据回执 ${invalidEvidence.receiptId} 不是本轮真实成功的工具回执。先读取真实来源，再重新交付。` };
-  }
-  const claims = claimsApplicationActionCompletion(input.text);
-  if (actions.length === 0 && claims.length > 0) {
-    // A write claim needs a write receipt it can cite. A turn that really wrote
-    // must not describe it in prose while citing nothing.
-    if (writeIds.length > 0) {
-      return { ok: false, error: `正文声称已经写入（${claims.join("、")}），但 actions 为空。`
-        + "把本轮写操作的 receiptId 放进 actions；没有写入就把正文改成如实说明。" };
-    }
-    // No write happened and no tool ran at all: the claim is invented. A turn
-    // that really produced something ("画好了" with a diagram receipt) is fine.
-    if (successful.size === 0) {
-      return { ok: false, error: `正文声称已经完成（${claims.join("、")}），但本轮没有任何工具回执。`
-        + "先实际执行并把回执放进 actions；没有执行就把正文改成如实说明。" };
-    }
-  }
-  return { ok: true, text: input.text, writesLanded: actions.length > 0 };
+  return { ok: true, text, writesLanded: writes.length > 0 || actions.some(action => isActionReceipt(action.receiptId)) };
 }

@@ -20,6 +20,9 @@ import assert from "node:assert/strict";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
 import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
+import type { AgentTurnResult } from "@astella/shared";
+import { MockProvider } from "../lib/providers/mock.ts";
+import { currentCompanionSuccessfulReceipts } from "../handlers/tools/companion-tool-receipts.ts";
 
 const CONN = testDatabaseUrl("DATABASE_URL_API");
 process.env.DATABASE_URL ??= CONN;
@@ -150,6 +153,31 @@ async function invoke(ws: string, uid: string, payload: { runId: string; proposa
     leaseToken: "fixture-lease",
     signal: new AbortController().signal,
   });
+}
+
+/** Script the native author, including discovery, instead of relying on the
+ * removed routing classifier to preload tools for the legacy mock markers. */
+async function invokeScriptedWrite(ws: string, uid: string, payload: { runId: string }, kind: "memory" | "note") {
+  const original = MockProvider.prototype.executeAgentTurn;
+  MockProvider.prototype.executeAgentTurn = async function (request, signal): Promise<AgentTurnResult> {
+    if (request.role !== "companion_agent") return original.call(this, request, signal);
+    const call = (name: string, args: Record<string, unknown>): AgentTurnResult => ({
+      content: "", toolCalls: [{ id: `script_${randomUUID()}`, name, arguments: args }], finishReason: "tool_calls",
+      usage: null, providerRequestId: "scripted-native-write",
+    });
+    const writes = currentCompanionSuccessfulReceipts(request.messages).filter(receipt => receipt.riskClass !== "read");
+    if (writes.length) return call("companion_finish", { text: "已保存这项要求。", outcome: "completed",
+      actions: writes.map(receipt => ({ receiptId: receipt.id })),
+      requirements: [{ requirement: "保存本次要求", fulfilled: true, evidenceCallIds: writes.map(receipt => receipt.id) }] });
+    const name = kind === "memory" ? "companion_memory_save" : "companion_notes_write";
+    if (!request.tools.some(tool => tool.name === name))
+      return call("companion_load_tools", { groups: [kind === "memory" ? "memory" : "notes"] });
+    return kind === "memory"
+      ? call(name, { kind: "preference", content: "打招呼时就只打招呼，不盘点笔记", sourceQuote: "以后打招呼别盘点笔记" })
+      : call(name, { action: "create", title: "代码示例", markdown: "```text\n" + "\\".repeat(9500) + "\n```", links: [] });
+  };
+  try { return await invoke(ws, uid, payload); }
+  finally { MockProvider.prototype.executeAgentTurn = original; }
 }
 
 async function readState(ws: string, uid: string, f: Fixture) {
@@ -365,7 +393,7 @@ test("只回一张确认卡：卡要在历史里留下可读的记录，而不�
     permissionLevel: "guided",
   });
   try {
-    await invoke(workspaceId, userId, { runId: f.runId });
+    await invokeScriptedWrite(workspaceId, userId, { runId: f.runId }, "memory");
     const s = await readState(workspaceId, userId, f);
     assert.equal(s.run.status, "waiting_for_confirmation");
     assert.equal(s.proposals.length, 1, "guided 档下这条写入必须冻结成一张确认卡");
@@ -405,7 +433,7 @@ test("低权限长代码笔记完整到达预览，合法 JSON 转义不受通�
     userText: "写一篇代码示例【mock:wants-tool】【mock:escaped-note】", permissionLevel: "read_only",
   });
   try {
-    await invoke(workspaceId, userId, { runId: f.runId });
+    await invokeScriptedWrite(workspaceId, userId, { runId: f.runId }, "note");
     const state = await readState(workspaceId, userId, f);
     assert.equal(state.run.status, "waiting_for_confirmation");
     const [proposal] = state.proposals;
@@ -1011,11 +1039,11 @@ test("同一句偏好不重复写第二遍：第二次回执指向已有的那�
                 AND deleted_at IS NULL AND dismissed_at IS NULL AND archived_at IS NULL`;
   });
   try {
-    await invoke(workspaceId, userId, { runId: first.runId });
+    await invokeScriptedWrite(workspaceId, userId, { runId: first.runId }, "memory");
     const afterFirst = await readMemories();
     assert.equal(afterFirst.length, 1, "第一遍应当真的写进一条偏好");
 
-    await invoke(workspaceId, userId, { runId: second.runId });
+    await invokeScriptedWrite(workspaceId, userId, { runId: second.runId }, "memory");
     const afterSecond = await readMemories();
     assert.equal(afterSecond.length, 1, "逐字相同的第二条不该落库");
     assert.equal(afterSecond[0].id, afterFirst[0].id, "留下的仍是第一条");

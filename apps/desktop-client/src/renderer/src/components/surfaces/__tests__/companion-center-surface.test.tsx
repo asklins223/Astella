@@ -678,7 +678,7 @@ describe("重构后的伴星中心", () => {
 
   it("合作方式保存失败保留范围与例外，重试按原输入提交", async () => {
     const api = installApi(); api.companion.memory.create.mockRejectedValueOnce(new RendererGatewayError({
-      code: "memory_global_condition_bound", safeMessageKey: "error.memory_global_condition_bound", retry: "never",
+      code: "memory_global_kind_rejected", safeMessageKey: "error.memory_global_kind_rejected", retry: "never",
     }));
     renderCompanionCenter(); fireEvent.click(screen.getByRole("tab", { name: "记忆" }));
     await onlyPreferences();
@@ -689,7 +689,7 @@ describe("重构后的伴星中心", () => {
     fireEvent.click(screen.getByRole("option", { name: "所有书房" }));
     fireEvent.click(screen.getByRole("button", { name: "保存合作方式" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "保存合作方式" }).hasAttribute("disabled")).toBe(false));
-    expect(await screen.findByText(accountPreferenceRejectionMessage("applies_when_workspace_bound"))).toBeTruthy();
+    expect(await screen.findByText(accountPreferenceRejectionMessage("kind_not_preference"))).toBeTruthy();
     expect((screen.getByLabelText("新记忆内容") as HTMLTextAreaElement).value).toBe("讲解时先举例再解释");
     expect((screen.getByLabelText("新记忆适用条件") as HTMLTextAreaElement).value).toBe("正式作答时不要主动提示");
     expect(screen.getByRole("button", { name: "新记忆适用书房" }).textContent).toBe("所有书房");

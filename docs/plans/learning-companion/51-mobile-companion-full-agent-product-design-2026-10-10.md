@@ -1,5 +1,8 @@
 # 51 · 拾星笔记 App：随身伴星与便携书房
 
+
+> **2026-10-29～30 iOS editing decision and implementation:** iOS now supports blank-note creation and direct editing of rendered text, including selection/caret rewrite through the existing companion dialog. Manual writes follow workspace ownership rather than a mobile-client ban. Shared reading/editing presence, last-editor metadata and paragraph rewrite locks are implemented; locks survive an API restart and release on terminal runs. This supersedes older read-only mobile constraints in this plan. See [verification and deployment requirements](../../testing/ios-note-editing-2026-10-29.md). Android UI remains a separate scope.
+
 > **2026-10-18 原生双端实施状态：**当前 iOS SwiftUI 与 Android Kotlin/Compose 工程已经接入共享会话与手记链路、设备本机文件抽取、TTS 播放、Live2D 运行时下载／缓存／原生渲染、选段提案与确认写回、原生前台观察。此状态更正 §12–15 中早于原生重构的移动端缺口；不能仅凭源码宣称真实体验已验收。构建和模拟器／窗口证据以 [手机端 README](../../../apps/mobile-client/README.md) 和[多轮审查记录](../../../apps/mobile-client/MOBILE_AUDIT.md) 为准。多设备同轮流式接续、局部撤回、区域引用和小程序仍属方案明确延后的第二批范围。
 
 > **2026-10-15 最新实施裁决**：视觉采用简约、冰蓝与玻璃，独立重构页面与控件外观；iOS 登录注册保留优化，其他页面与 Android 同步重构。下文历史段落中的系统默认外观、强制 AI 同意才能进入、文件原件不上传、运行时下载规避分发授权，以及“尚无原生客户端／TTS／文件接线”不再代表现状。当前设计、数据流和验证事实分别以 [DESIGN_SPEC](../../../apps/mobile-client/DESIGN_SPEC.md)、[README](../../../apps/mobile-client/README.md) 和 [MOBILE_AUDIT](../../../apps/mobile-client/MOBILE_AUDIT.md) 为准。历史动画愿景不等于已经实现或验收。

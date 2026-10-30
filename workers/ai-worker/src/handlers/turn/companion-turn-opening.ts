@@ -49,8 +49,9 @@ export function openCompanionTurn(args: CompanionAgentLoopArgs): CompanionTurnOp
     } as AgentMessage
     : null;
   const currentRequest = initiativeObservation
-    ?? [...dialogueHistory].reverse().find((message) => message.role === "user");
+    ?? [...dialogueHistory].reverse().find((message) => message.role === "user" && !message.hostObservation);
   if (!currentRequest) throw new Error("companion turn is missing its current user request");
+  currentRequest.requestBoundary = true;
   const messages = initiativeObservation ? [...dialogueHistory, initiativeObservation] : [...dialogueHistory];
   return { dialogueHistory, initiativeObservation, currentRequest, messages };
 }

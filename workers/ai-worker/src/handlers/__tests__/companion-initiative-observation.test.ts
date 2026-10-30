@@ -22,7 +22,7 @@ test("招呼与陪着说话用陪聊档，不再按讲题模式生成", () => {
     assert.equal(attention.intent, "conversation", topic);
     const strategy = companionResponseStrategy(attention);
     assert.equal(strategy.mode, "casual", topic);
-    assert.ok(strategy.temperature > 0.7, `${topic} 不该拿讲题的低温`);
+    assert.equal(strategy.temperature, 0.4, `${topic} 使用已实测的陪聊参数`);
     assert.equal(strategy.guidance, "", `${topic} 不该挂知识复核提示`);
     // 陪聊档同时命中现役的「闲聊关思考」判据，不需要为主动通道另开一档。
     assert.ok(companionInitiativeAttentionIntent(topic).toolUse === "none");

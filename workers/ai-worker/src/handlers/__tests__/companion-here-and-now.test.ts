@@ -1,13 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  asksForBoundaryChange,
-  asksForLearningStats,
-  needsCompanionLearningStats,
-  extractNoteTitleReference,
   noteOpeningExcerpt,
   renderHereAndNow,
-  summarizeLearningStats,
+  loadHereAndNow,
   weekdayLabel,
   type HereAndNowSnapshot,
 } from "../proactive/companion-here-and-now.ts";
@@ -23,14 +19,10 @@ function snapshot(overrides: Partial<HereAndNowSnapshot> = {}): HereAndNowSnapsh
     noteCount: 0,
     pendingProposals: 0,
     nextReminder: null,
-    noteReference: null,
     imagesReadable: false,
     imagesUnreadableReason: "policy_off",
     currentPage: null,
     livePageView: null,
-    learningStats: null,
-    factSpans: null,
-    boundaryFacts: null,
     ...overrides,
   };
 }
@@ -41,105 +33,6 @@ test("答应的提醒会出现在她知道的当下（不记得自己许过约�
   }));
   assert.ok(block?.includes("09-21 09:00"));
   assert.ok(block?.includes("消防笔记"));
-});
-
-test("用户点名的笔记：找到就给 id，没找到也不给她「它不存在」这个结论", () => {
-  const found = renderHereAndNow(snapshot({
-    noteReference: { title: "欧姆定律生成验收", found: true, noteId: "b4ab4749-d888-4b93-9019-e33b74679206", ageLabel: "4 天前", imageCount: 0, opening: null, nearest: null },
-  }));
-  assert.ok(found?.includes("b4ab4749-d888-4b93-9019-e33b74679206"));
-  assert.ok(found?.includes("companion_notes_read") && found.includes("action=read"));
-
-  const missing = renderHereAndNow(snapshot({
-    noteReference: { title: "欧姆定律生成验收", found: false, noteId: null, ageLabel: null, imageCount: 0, opening: null, nearest: null },
-  }));
-  assert.ok(missing?.includes("按标题没找到"));
-  // 关键：这一行必须把她推向"再查一次/照实说"，而不是让她有依据地下假结论
-  assert.ok(missing?.includes("companion_notes_read") && missing.includes("action=search"));
-  assert.ok(!missing?.includes("不存在"));
-});
-
-/**
- * "库里没有匹配"由服务端替她说完，还附赠一个更接近的真东西（39b §9.3 第二行）。
- *
- * 这一行是**未命中**时才有的：没有它，她手上只有一个"没找到"，于是"库里没有这篇"
- * 这句话在她的世界里就是成立的（那正是实机里可证伪的那句假阴性）。
- */
-test("《标题》没对上时给出最接近的一篇，命中时反而不能提", () => {
-  const withNearest = renderHereAndNow(snapshot({
-    noteReference: {
-      title: "欧姆定律生成验收", found: false, noteId: null, ageLabel: null, imageCount: 0, opening: null,
-      nearest: { title: "欧姆定律生成验收稿", score: 0.62 },
-    },
-  }));
-  assert.ok(withNearest?.includes("最接近的是《欧姆定律生成验收稿》"));
-  assert.ok(withNearest?.includes("0.62"), "相似度要一起给，她才能判断该不该信这一条");
-  assert.ok(withNearest?.includes("不要替笔记库下"));
-
-  const found = renderHereAndNow(snapshot({
-    noteReference: {
-      title: "欧姆定律生成验收", found: true, noteId: "b4ab4749-d888-4b93-9019-e33b74679206",
-      ageLabel: "4 天前", imageCount: 0, opening: null, nearest: null,
-    },
-  }));
-  assert.ok(!found?.includes("最接近的是"), "命中时还提最接近的，等于把真对象说成近似的");
-});
-
-/**
- * `start`/`resume` 的服务端回填（39b §9.8 的 C1）：用户说"继续学《X》"，她手上要
- * **先**有"这篇有几轮、什么状态、runId 是哪个"——否则那两个工具只能服务端替她挑最近一条，
- * 挑错了用户看不出为什么动的不是这一篇。
- */
-
-
-/**
- * 图的事实要在她说之前就在场（实机 2026-09-21 场景 Z）。
- *
- * 她零工具的那句"我把这篇笔记的正文读完了，里面没有截图"并不是随口撒谎——她读的是
- * `note_blocks`，而图在另一张表里，所以**照实读正文也会推出"没有图"**。这种假阴性
- * 靠事后闸拦只能救回一次（并且要先付一步假话），把图数当数据注入才是根治。
- */
-test("有图就先把图数交给她：看不了时禁止承诺，能看时指向读图动作", () => {
-  const denied = renderHereAndNow(snapshot({
-    imagesReadable: false,
-    imagesUnreadableReason: "policy_off",
-    noteReference: { title: "IndexTTS 2.5", found: true, noteId: "a7aa823c-f2cf-4b3d-bda1-37a6eca14bce", ageLabel: "3 天前", imageCount: 6, opening: null, nearest: null },
-  }));
-  assert.ok(denied?.includes("6 张图"));
-  assert.ok(denied?.includes("图片外发没开启"));
-  assert.ok(denied?.includes("允许发送图片内容"), "拒绝也要给得出路，否则用户只会听到一句「看不了」");
-  assert.ok(denied?.includes("正文没有图片标记不代表没有图"), "要挡住她由正文推「没有图」的那步推理");
-  assert.ok(denied?.includes("不要说「我看看这张图」"));
-
-  // 政策开着但**没有可用的看图模型**：同样是看不了，但不要把用户支使去拧一个
-  // 拧了也没用的开关（2026-10-06 识图路由：这条与工具下发面同源）。
-  const noReader = renderHereAndNow(snapshot({
-    imagesReadable: false,
-    imagesUnreadableReason: "no_reader",
-    noteReference: { title: "IndexTTS 2.5", found: true, noteId: "a7aa823c-f2cf-4b3d-bda1-37a6eca14bce", ageLabel: "3 天前", imageCount: 6, opening: null, nearest: null },
-  }));
-  assert.ok(noReader?.includes("没有能看图的模型"));
-  assert.ok(!noReader?.includes("允许发送图片内容"), "没有可用模型时别指点用户去拧开关");
-
-  const readable = renderHereAndNow(snapshot({
-    imagesReadable: true,
-    noteReference: { title: "IndexTTS 2.5", found: true, noteId: "a7aa823c-f2cf-4b3d-bda1-37a6eca14bce", ageLabel: "3 天前", imageCount: 2, opening: null, nearest: null },
-  }));
-  assert.ok(readable?.includes("companion_visual") && readable.includes("action=read_image"));
-  assert.ok(!readable?.includes("图片外发没开启"), "政策开着时不能告诉她看不了");
-
-  // 没图时一个字都不提：多出来的那句"另有一张图"本身就是假事实。
-  const none = renderHereAndNow(snapshot({
-    noteReference: { title: "欧姆定律", found: true, noteId: "b4ab4749-d888-4b93-9019-e33b74679206", ageLabel: "4 天前", imageCount: 0, opening: null, nearest: null },
-  }));
-  assert.ok(!none?.includes("张图"));
-});
-
-test("《标题》形态只从用户这句话里取，且限长", () => {
-  assert.equal(extractNoteTitleReference("《欧姆定律生成验收》那篇写了什么？"), "欧姆定律生成验收");
-  assert.equal(extractNoteTitleReference("先看《A》再看《B》"), "A");
-  assert.equal(extractNoteTitleReference("今天好累啊"), null);
-  assert.equal(extractNoteTitleReference("《".repeat(40)), null);
 });
 
 test("DOW → 中文星期：0=周日 … 6=周六（下标写错会天天报错星期）", () => {
@@ -203,96 +96,6 @@ test("久未见面才提示间隔，刚聊过不打扰", () => {
   assert.match(renderHereAndNow(snapshot({ minutesSinceLastSeen: 60 * 26 })) ?? "", /距上次和用户说话：昨天/);
 });
 
-/**
- * 用户这句话在要学习数据吗（实机 2026-09-22 场景 B/N）。
- *
- * 判据必须**保守**：漏了的代价只是她自己再去调一次工具（今天就是这样），
- * 误判的代价是把"没问也报数"重新请回来——那正是 §9.60 刚赶出去的东西。
- */
-test("asksForLearningStats：只认明确在要学习数据的说法", () => {
-  for (const text of [
-    "我今天一共学了多久了？",
-    "我这周总共学了多久？现在有多少张活跃卡片、多少篇笔记？",
-    "今天学了多长时间啦",
-    "我现在有多少个东西到期该复习了？",
-    "最近的学习进度怎么样？",
-  ]) {
-    assert.equal(asksForLearningStats(text), true, `该认出来：${text}`);
-  }
-  for (const text of [
-    "嘿嘿", "哈哈", "你笑什么嘛",
-    "这道题怎么做？",
-    "帮我记住：我习惯在图书馆三楼复习。",
-    "《欧姆定律生成验收》那篇笔记里写了什么？",
-    "把这张卡打开看看",
-    undefined, "",
-  ]) {
-    assert.equal(asksForLearningStats(text), false, `不该误判：${text}`);
-  }
-});
-
-test("恒定的作答影响目录键不代表每一句闲聊都在问学习统计", () => {
-  for (const text of [undefined, "小鱼", "终于弄完了，累死", "报告啊，我自己看着都嫌废话多",
-    "明天才交呢，我先玩会儿", "刚点了蛋炒饭", "你今天有啥有意思的事啊", "我连续学了几天？"])
-    assert.equal(needsCompanionLearningStats(text), false, `不该预取学习统计：${text}`);
-  for (const text of ["我笔记有几篇？", "最近的学习进度怎么样？", "我有几张卡？", "我今天学了多久？"])
-    assert.equal(needsCompanionLearningStats(text), true, `必须仍能提供统计：${text}`);
-});
-
-test("问到学习数据时：环境块只给指路，数值由 <fact_spans> 渲染（一处一个来源）", () => {
-  const stats = {
-    todayMinutes: 33, weekMinutes: 154, activeCards: 16, noteCount: 11,
-  };
-  const asked = renderHereAndNow(snapshot({ learningStats: stats }))!;
-  // 39d W2-5：数值**撤出环境块**，只留指路与防复读那半句（历史里的旧数仍要被降级）。
-  assert.match(asked, /可报的读数在 <fact_spans> 里/);
-  assert.match(asked, /要报就写 \{\{f:key\}\}/);
-  assert.match(asked, /历史对话里.*可能已经变/);
-  assert.doesNotMatch(asked, /33 分钟/, "数值不许在环境块里再渲染一遍（那样就有两处来源了）");
-  assert.doesNotMatch(renderHereAndNow(snapshot()) ?? "", /可报的读数在 <fact_spans> 里/);
-  // 工具与环境块共用同一份摘要，口径不能两份。
-  assert.equal(summarizeLearningStats(stats), "今日 33 分钟，本周 154 分钟，学习卡 16 张");
-});
-
-/**
- * 用户这一轮要改她的行为边界吗（实机 2026-09-22 场景 T）。
- *
- * 判据同样保守，理由与学习数据那条一样：误判只是多一行她用得上的事实，
- * 漏判则让她在不知道"现在到底是什么状态"的情况下张口承诺——
- * 实测她说过"嗯，这条早就设好了喵"，而库里 `allowNudgeLearning` 还是 true。
- */
-test("asksForBoundaryChange：只认明确要改边界/口吻的说法", () => {
-  for (const text of [
-    "以后别主动催我复习，我不问你别说。",
-    "别催我学习了",
-    "给你自己加个口头禅：就这么定了",
-    "把玩趣关掉",
-    "以后不要主动提醒我复习",
-  ]) {
-    assert.equal(asksForBoundaryChange(text), true, `该认出来：${text}`);
-  }
-  for (const text of [
-    "我今天一共学了多久了？",
-    "帮我记住：我习惯在图书馆三楼复习。",
-    "嘿嘿", "哈哈",
-    "这道题怎么做？",
-    undefined, "",
-  ]) {
-    assert.equal(asksForBoundaryChange(text), false, `不该误判：${text}`);
-  }
-});
-
-test("要改边界时，当前状态先摆出来；说「记住了」不等于改了", () => {
-  const asked = renderHereAndNow(snapshot({
-    boundaryFacts: { allowNudgeLearning: true, allowPlayful: true, allowVoiceTags: false },
-  }))!;
-  assert.match(asked, /催复习=开着/);
-  assert.match(asked, /语音情绪标签=关着/);
-  // 这一句是这次要买的后果：她以前把"应下来"当成"已经改好了"。
-  assert.match(asked, /光答"记下了"什么都没变/);
-  assert.doesNotMatch(renderHereAndNow(snapshot()) ?? "", /催复习=/);
-});
-
 // §12.5 ①：她把"原文"编成课本话，是因为手上只有一句"要看正文就调工具"，
 // 而没有任何一段真文本。注进首块开头之后，她不必补，也不该拿这段往下补。
 test("noteOpeningExcerpt：只取第一句、压换行，那一句整句给", () => {
@@ -308,23 +111,6 @@ test("noteOpeningExcerpt：只取第一句、压换行，那一句整句给", ()
   assert.ok(!noteOpeningExcerpt(longSentence)!.includes("…"));
   assert.equal(noteOpeningExcerpt(null), null);
   assert.equal(noteOpeningExcerpt("   \n  "), null);
-});
-
-test("点名的笔记找到时，快照里带出真开头并注明不许往下补", () => {
-  const opening = "欧姆定律说明，在电阻不变时，电流与电压成正比。";
-  const block = renderHereAndNow(snapshot({
-    noteReference: {
-      title: "欧姆定律生成验收", found: true, noteId: "b4ab4749-d888-4b93-9019-e33b74679206",
-      ageLabel: "4 天前", imageCount: 0, opening,
-      nearest: null,
-    },
-  }));
-  assert.ok(block?.includes(`这篇的开头是：「${opening}」`));
-  assert.ok(block?.includes("不要照这段往下补"), "要同时点名边界：只有开头，更长的还得去读");
-  // 开头整句给之后，「这只给到了第一句」这句话更不能少：她是拿这句当全篇还是拿它
-  // 当线索，取决于这句提示还在不在（2026-10-12 取消封顶字数时钉住的就是这一条）。
-  assert.ok(block?.includes("只到第一句为止"), "取消剪字之后仍要说明这只是一句开头");
-  assert.ok(block?.includes("companion_notes_read") && block.includes("action=read"), "要把方向指向读原文，而不是让她自己补");
 });
 
 /**
@@ -362,4 +148,34 @@ test("状态行整条逐字进块：那一屏说什么就说什么", () => {
   assert.ok(block.includes(`用户正在看笔记《${title}》`), "页面标题整条给");
   assert.ok(block.includes(`这一屏：${long}`), "状态行整条逐字进块");
   assert.ok(!block.includes("…"), "不再靠省略号表示这里被剪过");
+});
+
+test("ambient preparation never searches the user's sentence for a note or a statistic", async () => {
+  const queries: string[] = [];
+  const flatten = (value: unknown): string => {
+    if (typeof value === "string") return value;
+    const chunks = (value as { queryChunks?: unknown[] } | null)?.queryChunks;
+    return chunks ? chunks.map(flatten).join("") : "";
+  };
+  const tx = { execute: async (query: unknown) => { queries.push(flatten(query)); return []; } };
+  const observed = await loadHereAndNow(tx as never, {
+    workspaceId: "11111111-1111-4111-8111-111111111111", userId: "22222222-2222-4222-8222-222222222222",
+  });
+  assert.equal(observed.currentPage, null);
+  assert.ok(!queries.some(query => /n[.]title ILIKE|FROM note_blocks|FROM assistant_memory_items/.test(query)));
+  assert.ok(!renderHereAndNow(observed)?.includes("fact_spans"));
+});
+
+
+test("live page facts preserve host ordering and discard malformed items without interpreting labels", async () => {
+  const { readLivePageView } = await import("../turn/companion-live-view.ts");
+  const view = await readLivePageView({ execute: async () => [{
+    page_kind: "note", interaction_state: "editing", readable_view: {
+      title: "SQL 与物理", items: [{ ordinal: 3, label: "第三项", state: "open" },
+        { ordinal: 1, label: "first item" }, { ordinal: "bad", label: "invalid" }, { ordinal: 2 }],
+    },
+  }] } as unknown as Parameters<typeof readLivePageView>[0], { workspaceId: "space", userId: "user" });
+  assert.deepEqual(view?.items, [{ ordinal: 3, label: "第三项", state: "open" }, { ordinal: 1, label: "first item", state: null }]);
+  assert.equal(view?.title, "SQL 与物理");
+  assert.equal(view?.interactionState, "editing");
 });

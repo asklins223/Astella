@@ -6,7 +6,7 @@ import { useCompanionTransient } from "../notify/use-companion-transient";
 import { stopCompanionSpeech } from "../../../app/companion-session/companion-voice-playback";
 
 /** 输入草稿与语音会话各有状态；真实发送回执通过 HUD 绑定，等待和失败不会静默丢掉。 */
-export function useCompanionInteraction(chat: CompanionChatSession, voiceEnabled: boolean, obscured = false, processReading = false) {
+export function useCompanionInteraction(chat: CompanionChatSession, voiceEnabled: boolean, obscured = false, processReading = false, composerActive = false) {
   const input = useRoomStore(state => state.companionComposerDraft);
   const setInput = useRoomStore(state => state.setCompanionComposerDraft);
   const [voiceOpen, setVoiceOpen] = useState(false);
@@ -46,7 +46,7 @@ export function useCompanionInteraction(chat: CompanionChatSession, voiceEnabled
   }, [chat.conversationId, voice.cancel]);
   // 草稿非空时不按"闲置 90 秒"收：打字停下来想一会、或抬头去读回复，输入框不该
   // 自己走掉（审计 F2）。空输入时保留原来的让位节奏。
-  const inputLife = useCompanionTransient(chat.mode === "conversation" ? `${chat.conversationId}:input` : null, 90_000, obscured || input.trim().length > 0);
+  const inputLife = useCompanionTransient(chat.mode === "conversation" ? `${chat.conversationId}:input` : null, 90_000, obscured || composerActive || input.trim().length > 0);
   const menuLife = useCompanionTransient(chat.mode === "actions" ? `${chat.conversationId}:menu` : null, 90_000, obscured);
   // 会话开着的时候不按"闲置 90 秒"收：人在说话，气泡不该自己走掉。
   const voiceLife = useCompanionTransient(voiceOpen && voiceSession > 0 ? `voice:${voiceSession}` : null, 90_000, obscured || voice.phase !== "idle");

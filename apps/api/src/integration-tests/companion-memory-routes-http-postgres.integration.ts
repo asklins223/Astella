@@ -15,7 +15,6 @@ import sensible from "@fastify/sensible";
 // 账号级范围守卫的**同一句**拒绝文案（API 两处路由、伴星工具与提案链共用它）。
 import {
   accountPreferenceRejectionMessage,
-  type AccountPreferenceWriteRejection,
 } from "@astella/shared/companion-memory-scope";
 // 正文上限只有一处声明（§9.4）：这一层既要用它验 400，也要用它造"满载的一条"。
 import { companionMemoryContentMaxLength } from "@astella/shared/companion-memory-desktop-contracts";
@@ -630,112 +629,50 @@ test('已被替代的伴星判断可以修订，旧认识状态与四种作者�
   assert.equal(current[0].revision, revisions[0].revision + 1);
 });
 
-/**
- * 账号级（跨空间）范围守卫的**真实 HTTP 回执**（42 阶段 1 E）。
- *
- * 为什么单测不够：单测钉的是"服务抛了什么、路由怎么映射"，而这一层要证明的是**线上
- * 契约**——用户真的 POST 过去时拿到 422、稳定的 error/reason、以及一句能照着做的中文；
- * 而同一个内容改成 workspace 保存就成功。同样要证明拒绝不是"改成成功"，也不是"悄悄
- * 降级成空间内"：被拒的修订之后，正文、修订号与只追加历史逐字不变。
- *
- * 走真实 session + `app.inject` 打实际路由；不 mock 路由，也不直接调映射函数拿一个
- * 假回执来比较。文案取自共享模块（`@astella/shared/companion-memory-scope`）——那是
- * API、伴星工具与提案链共用的**同一句**，比对着它断言才能守住"入口之间说的是同一句话"。
- */
-test('账号级范围守卫：一般 global 偏好能存，本地内容/条件回 422 且记忆与历史不变', async () => {
-  // 正向对照：一般偏好确实能作为账号级保存。
-  const created = await app.inject(req(tokenA, 'POST', '/companion/memory', {
-    kind: 'preference',
-    content: '习惯晚上九点之后写笔记，白天只做采集',
-    scope: 'global',
-  }));
-  assert.equal(created.statusCode, 201, `一般 global 偏好没能保存：${created.body}`);
-  assert.equal(created.json().scope, 'global');
-  const accountId = created.json().memoryItemId as string;
-  // 这条用户名当前的全部记忆 id，是后面"被拒的写入一条都不该落库"的比对基线。
-  // 用集合而不是绝对条数：本文件前面那些用例造过别的记忆，按总数比会假红。
-  const memoryIds = async (): Promise<string[]> =>
-    (await sql`SELECT id FROM assistant_memory_items
-       WHERE workspace_id=${workspaceId} AND user_id=${userA} AND deleted_at IS NULL
-       ORDER BY id`).map((row: Record<string, unknown>) => String(row.id));
-  const baselineIds = await memoryIds();
-
-  // 负向：四种本地写法都回 422 + 稳定 error/reason + 共享文案。
-  const rejected: Array<{ label: string; body: Record<string, unknown>; reason: string }> = [
-    { label: '科目', body: { kind: 'preference', content: '正在学数据库索引优化', scope: 'global' }, reason: 'content_workspace_bound' },
-    { label: '当前书房材料', body: { kind: 'preference', content: '讲这篇笔记时先给一句结论', scope: 'global' }, reason: 'content_workspace_bound' },
-    { label: '当前书房', body: { kind: 'preference', content: '这个书房的节奏比别的快', scope: 'global' }, reason: 'content_workspace_bound' },
-    { label: '适用条件', body: { kind: 'preference', content: '提醒我先看反例', appliesWhen: '复习这门课时', scope: 'global' }, reason: 'applies_when_workspace_bound' },
-    { label: '非偏好种类', body: { kind: 'goal', content: '习惯晚上九点之后写笔记', scope: 'global' }, reason: 'kind_not_preference' },
-  ];
-  for (const attempt of rejected) {
-    const response = await app.inject(req(tokenA, 'POST', '/companion/memory', attempt.body));
-    assert.equal(response.statusCode, 422, `${attempt.label}：本地内容被当成账号级接受了（${response.statusCode}）`);
-    assert.equal(response.json().error, 'memory_global_scope_rejected', `${attempt.label}：错误码不稳定`);
-    assert.equal(response.json().reason, attempt.reason, `${attempt.label}：理由与判据对不上`);
-    assert.equal(
-      response.json().message,
-      accountPreferenceRejectionMessage(attempt.reason as AccountPreferenceWriteRejection),
-      `${attempt.label}：文案不是共享层那一句`,
-    );
-  }
-
-  // 被拒的那些不能"退一步保存成空间内记忆"，也不能换一条新行落库：一条都不该多出来。
-  assert.deepEqual(await memoryIds(), baselineIds, '被拒的写入仍然被保存了（可能悄悄降级成了别的范围）');
-
-  // 同样的本地内容，存成 workspace 就该成功——守卫只管账号级。
-  const local = await app.inject(req(tokenA, 'POST', '/companion/memory', {
-    kind: 'goal',
-    content: '正在学数据库索引优化',
-    scope: 'workspace',
-  }));
-  assert.equal(local.statusCode, 201, `空间内记忆被账号级守卫拦掉了：${local.body}`);
-  assert.equal(local.json().scope, 'workspace');
-
-  // 修订链路：先做一次合法修订，让基线是"修订之后"的真实库状态。
-  const beforeRow = (await app.inject(req(tokenA, 'GET', '/companion/memory'))).json().items
-    .find((item: { memoryItemId: string }) => item.memoryItemId === accountId);
-  const legal = await app.inject(req(tokenA, 'POST', `/companion/memory/${accountId}/correct`, {
-    content: '习惯晚上九点之后写笔记，白天只做采集，晚上十点前不想被打断',
-    expectedRevision: beforeRow.revision,
-  }));
-  assert.equal(legal.statusCode, 200, `合法的账号级修订被拦了：${legal.body}`);
-  const legalRevision = legal.json().revision as number;
-  const historyBefore = await sql`SELECT revision FROM assistant_memory_item_revisions
-    WHERE memory_id=${accountId} ORDER BY revision`;
-
-  for (const attempt of [
-    { label: '科目', body: { content: '下个月要考日语N3' }, reason: 'content_workspace_bound' },
-    { label: '当前书房材料', body: { content: '先把这篇笔记讲完' }, reason: 'content_workspace_bound' },
-    { label: '适用条件', body: { content: '提醒我先看反例', appliesWhen: '复习这门课时' }, reason: 'applies_when_workspace_bound' },
+/** 用户明确选择的账号级偏好按声明保存；仍拒绝非偏好，并保留修订 CAS。 */
+test('账号级偏好不按主题词否决；类型、修订冲突和跨用户隔离仍有效', async () => {
+  const ids: string[] = [];
+  for (const body of [
+    { kind: 'preference', content: '喜欢用物理类比理解概念', scope: 'global' },
+    { kind: 'preference', content: '讲这篇笔记时先给一句结论', scope: 'global' },
+    { kind: 'preference', content: '提醒我先看反例', appliesWhen: '复习这门课时', scope: 'global' },
+    { kind: 'preference', content: 'Use SQL examples when explaining physics.', scope: 'global' },
   ]) {
-    const response = await app.inject(req(tokenA, 'POST', `/companion/memory/${accountId}/correct`, {
-      ...attempt.body,
-      expectedRevision: legalRevision,
-    }));
-    assert.equal(response.statusCode, 422, `${attempt.label}：修订把本地材料写进了账号级规则（${response.statusCode}）`);
-    assert.equal(response.json().error, 'memory_global_scope_rejected');
-    assert.equal(response.json().reason, attempt.reason);
-    assert.equal(response.json().message, accountPreferenceRejectionMessage(attempt.reason as AccountPreferenceWriteRejection));
+    const created = await app.inject(req(tokenA, 'POST', '/companion/memory', body));
+    assert.equal(created.statusCode, 201, created.body);
+    assert.equal(created.json().content, body.content);
+    assert.equal(created.json().scope, 'global');
+    ids.push(created.json().memoryItemId);
   }
-
-  // 拒绝之后：正文、修订号、只追加历史与合法修订之后逐字相同。
-  const afterRow = (await app.inject(req(tokenA, 'GET', '/companion/memory'))).json().items
-    .find((item: { memoryItemId: string }) => item.memoryItemId === accountId);
-  assert.equal(afterRow.content, legal.json().content, '被拒的修订仍然改了正文');
-  assert.equal(afterRow.scope, 'global', '被拒的修订把账号级规则降级成了别的范围');
-  assert.equal(afterRow.revision, legalRevision, '被拒的修订推进了 CAS 修订号');
-  const historyAfter = await sql`SELECT revision FROM assistant_memory_item_revisions
-    WHERE memory_id=${accountId} ORDER BY revision`;
-  assert.deepEqual(historyAfter.map((row: Record<string, unknown>) => row.revision),
-    historyBefore.map((row: Record<string, unknown>) => row.revision),
-    '被拒的修订仍然写进了只追加历史表');
-
-  // 收尾：把本例造出来的记忆删掉，别留给后面的用例（teardown 也会兜底）。
-  for (const id of [accountId, local.json().memoryItemId as string]) {
-    const removed = await app.inject(req(tokenA, 'DELETE', `/companion/memory/${id}`));
-    assert.equal(removed.statusCode, 204, removed.body);
-  }
+  const rejected = await app.inject(req(tokenA, 'POST', '/companion/memory', {
+    kind: 'goal', content: '正在学数据库索引优化', scope: 'global',
+  }));
+  assert.equal(rejected.statusCode, 422);
+  assert.equal(rejected.json().reason, 'kind_not_preference');
+  assert.equal(rejected.json().message, accountPreferenceRejectionMessage('kind_not_preference'));
+  const id = ids[0]!;
+  const row = (await app.inject(req(tokenA, 'GET', '/companion/memory'))).json().items
+    .find((item: { memoryItemId: string }) => item.memoryItemId === id);
+  const correction = { content: '先把这篇笔记讲完，再用数据库的例子解释', appliesWhen: '复习这门课时', expectedRevision: row.revision };
+  const revised = await app.inject(req(tokenA, 'POST', `/companion/memory/${id}/correct`, correction));
+  assert.equal(revised.statusCode, 200, revised.body);
+  assert.equal(revised.json().content, correction.content);
+  assert.equal(revised.json().scope, 'global');
+  const history = await sql`SELECT revision FROM assistant_memory_item_revisions WHERE memory_id=${id} ORDER BY revision`;
+  assert.equal(history.length, 1);
+  const stale = await app.inject(req(tokenA, 'POST', `/companion/memory/${id}/correct`, correction));
+  assert.equal(stale.statusCode, 409, stale.body);
+  const other = await app.inject(req(tokenB, 'POST', `/companion/memory/${id}/correct`, {
+    content: '别人的修订', expectedRevision: revised.json().revision,
+  }));
+  assert.equal(other.statusCode, 404, other.body);
+  const after = await sql`SELECT revision, content, applies_when FROM assistant_memory_items WHERE id=${id}`;
+  assert.equal(after[0].content, correction.content);
+  assert.equal(after[0].applies_when, correction.appliesWhen);
+  assert.equal(after[0].revision, revised.json().revision);
+  const historyAfter = await sql`SELECT revision FROM assistant_memory_item_revisions WHERE memory_id=${id} ORDER BY revision`;
+  assert.deepEqual(historyAfter.map(row => row.revision), history.map(row => row.revision));
+  for (const id of ids) assert.equal((await app.inject(req(tokenA, 'DELETE', `/companion/memory/${id}`))).statusCode, 204);
 });
 
 test('原生记忆筛选先于分页：旧固定项、争议与忽略候选可达，整组分页无 200 条截断', async () => {

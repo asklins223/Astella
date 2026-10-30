@@ -33,13 +33,13 @@ test("核心工具都在真实目录里", () => {
   for (const name of COMPANION_CORE_TOOL_NAMES) assert.ok(available.includes(name), name);
 });
 
-test("初始工具面 = 核心 + 当前页面组 + 高频动作，远小于 65 个", () => {
+test("初始工具面保留核心和当前页面组，业务能力可按需装载", () => {
   const note = resolveCompanionInitialToolNames({ availableToolNames: available, pageKind: "note" });
   assert.ok(note.has("companion_notes_read"));
   assert.ok(note.has("companion_load_tools"));
   assert.ok(note.has("companion_notes_write"), "高频写动作不随意图分类进出工具面");
   assert.ok(!note.has("agent_web_search"), "笔记页不默认背联网工具");
-  assert.ok(note.size >= 12 && note.size < 40, `笔记页工具数=${note.size}`);
+  assert.ok(note.size >= COMPANION_CORE_TOOL_NAMES.length && note.size < 40, `笔记页工具数=${note.size}`);
   const home = resolveCompanionInitialToolNames({ availableToolNames: available, pageKind: "today" });
   assert.ok(home.size <= note.size, "页面组只能收窄，不能比笔记页更宽");
   assert.ok(home.has("companion_observe"), "首页组保留学习统计");

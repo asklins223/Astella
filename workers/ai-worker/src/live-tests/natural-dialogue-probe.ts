@@ -109,7 +109,7 @@ try {
       const source = await withWorkerWorkspaceTransaction({workspaceId:event.ctx.workspaceId, userId:event.read.userId}, async tx => {
         const rows = await readCompanionHistoryRows(tx, f.conversationId, {beforeSeq:String(seq), limit:REPLAY_HISTORY_READ_ROWS});
         const snapshot = await loadHereAndNow(tx, {workspaceId:event.ctx.workspaceId,userId:event.read.userId,
-          conversationId:f.conversationId,userText:text});
+          conversationId:f.conversationId});
         const current = await tx.execute<{created_at:string}>(sql`SELECT to_char(created_at AT TIME ZONE 'UTC',
           'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS created_at FROM companion_messages WHERE id=${messageId}`);
         return {history:rows.reverse().map(m=>({role:m.role as "user"|"assistant",text:companionHistoryText(m),seq:m.seq,

@@ -47,12 +47,12 @@ export {
 };
 export type { CompanionContextHandoffSnapshotV1, CompanionContextHandoffInputV1, CompanionRecentHistoryMessage };
 // Reply-shape read-outs live in companion-reply-shape.ts (file-size guard).
-export { claimsImageContent, companionStreamRepeatsItself } from "./companion-reply-shape.ts";
+export { companionStreamRepeatsItself } from "./companion-reply-shape.ts";
 
 import { COMPANION_VOICE_EXPRESSION_PROTOCOL_V1, COMPANION_VOICE_STYLE_PROTOCOL_V1, readVoiceExpressionTags, stripVoiceExpressionTags, voiceExpressionCue, withholdPartialVoiceExpressionTag } from "@astella/shared/voice-expression-tags";
 import { COMPANION_REPLY_MAX_CHARS } from "@astella/shared";
 import { renderCompanionConversationEvidence, type CompanionConversationClock } from "./companion-conversation-evidence.ts";
-import { containsCompanionToolProtocol } from "../tools/companion-tool-protocol-output.ts";
+import { containsCompanionToolProtocol, containsCompanionContextEnvelope } from "../tools/companion-tool-protocol-output.ts";
 
 /**
  * 与 turn-service、消息合同对齐的硬限额（03 §6.10）。
@@ -214,32 +214,12 @@ export function looksLikeJsonFragment(text: string): boolean {
   // 纯字面量加一个闭合括号。
   if (JSON_ARRAY_TAIL_PATTERN.test(trimmed)) return true;
   // 正文从 JSON 语法中间开始（键值对/闭括号/逗号）——自然语言不会这样开头。
-  return JSON_FRAGMENT_HEAD_PATTERN.test(trimmed);
+  return JSON_FRAGMENT_HEAD_PATTERN.test(trimmed) || /^[A-Za-z_][A-Za-z_0-9]*"\s*:\s*[\[{]/u.test(trimmed);
 }
 
-/**
- * 模型不得输出内部 route/reason/cue/provider/prompt/tool 参数（§9.2），
- * 也不得**回显输入上下文**（2026-09-19 实机：模型把 `activeMemories`/`recentMessages`
- * 等上下文块整段复述成回复，1347 字的内部数据被当正文落库——旧模式只认 prompt id
- * 与 cue/route，认不出这种回显）。键名与边界标记都取自 buildCompanionPersonaMessages
- * 真实写入的字段：新增字段时必须同步这里。
- *
- * 无 `g` 标志：可以安全地在同一份文本上反复 test（lastIndex 不会残留）。
- */
-const COMPANION_LEAK_PATTERN =
-  /(companion-persona-v\d+|companion_[a-z_]{4,}|character\.cue|"cue"|reason\s*id|tool\s*param|promptVersion|"route"\s*:|activeMemories|residentMemories|memoryDirectory|recentMessages|currentMessage|workspacePolicy|sendToExternal|piiDetection|pageContext|selectedText|groundedTarget|<memory_data>|<memory_directory>|<persona_data>|<selection_data>|<diary_reference>|<page_context>|<grounded_target>|<here_and_now>|<conversation_timeline>|<answer_draft_data>|<review_context_data>|(?:run|job|operation|task|note|call|identity|workspace|user)Id\s*(?:[:=：]\s*)?[0-9a-f-]{6}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
-
-/**
- * 内部 token / 上下文回显 / 裸 uuid 的**唯一**判据。
- *
- * 统一输出边界覆盖 `<here_and_now>`、`activeMemories`、`pageContext` 等上下文标记与字段名，
- * 并拦截裸 UUID。uuid 出现在
- * 她说的话里永远是内部 id，落点与原文都由服务端另交给富块。
- *
- * 无 `g` 标志：可以安全地在同一份文本上反复 test（lastIndex 不会残留）。
- */
+/** Reject an actual reserved host envelope outside code, not words in prose. */
 export function containsCompanionInternalToken(text: string): boolean {
-  return COMPANION_LEAK_PATTERN.test(text);
+  return containsCompanionContextEnvelope(text);
 }
 
 /**
@@ -536,142 +516,6 @@ export function claimsLookupThatNeverRan(replyText: string): boolean {
 }
 
 /**
- * 她声称已经对应用里的东西做了写入，而本轮没有任何写回执。
- *
- * 2026-10-25 实机：分类器没给出候选操作，工具面里没有 `companion_edit_note`，
- * 她凭历史里上一次成功改了《周一安排》的记忆，回了一句“改好了……保存回执
- * succeeded”。那句话被当成成功回复落库，下一轮她又拿它当依据。
- *
- * 判据只认**完成形态**（已/已经/帮你 + 写动词，或写动词 + 好/成功/完成，
- * 或明确的保存回执），不认“记住了”这类口语承诺——那种归
- * `looksLikeUnfulfilledActionNarration`。引文块、代码块和引用块里的文字不是
- * 她的声明，先剥掉，避免读过一篇含“已保存”的笔记就误伤正常回答。
- */
-const ACTION_COMPLETION_CLAIM = new RegExp([
-  "(?:已|已经|刚刚|刚|刚给你|帮你|给你|替你)(?:保存|改好|改|改为|改成|换成|替换|修改|更新|删除|删掉|创建|新建|设置|安排|添加|加到|写入|写进|分享|整理)(?:了|好|成功|完成|好了|成功了|完成了|为|成)?",
-  // "已记下：… / 已记住：…" claims the storage happened even without 了.
-  "(?:已|已经|刚刚|刚)(?:记下|记住|记好|存下|写下)(?:了)?[：:]?",
-  // Forgetting a stored item is a write. Keep the object inside the pattern so
-  // ordinary "I forgot about yesterday's worry" stays conversation, not a claim.
-  "(?:记忆|偏好|提醒|安排|记录|那条|这条)[^。！？\\n]{0,10}(?:已经)?(?:忘掉|忘记|删掉|删除|清掉)(?:了|好)?",
-  "(?:已|已经|刚刚|刚)(?:忘掉|清掉)(?:了)?[：:]?",
-  "(?:忘掉|清掉)(?:了)?[：:]",
-  "(?:保存|修改|编辑|更新|删除|创建|新建|设置|安排|添加|写入|分享|整理|改|写|画|存|记)(?:好|成)(?:了|啦|咯)",
-  "已经(?:画|存|记)(?:好|成|下来|进去)(?:了|啦|咯)?",
-  "(?:保存|修改|编辑|更新|删除|创建|新建|设置|安排|添加|写入|分享|整理|改|写)(?:已经|已)?(?:完成|成功)",
-  "(?:已|已经)[^。！？\\n]{0,8}(?:保存|替换|修改|更新|删除|创建|新建|设置|安排|写入|分享|整理|改)(?:为|成|好|成功|完成)",
-  "(?:保存|执行)回执[^。！？\\n]{0,10}(?:succeeded|成功|已确认|已收到)",
-  // "记下了：… / 记住了：…" is the everyday Chinese form of "I have saved it".
-  // Without a receipt this is the same false claim as "已保存".
-  "^(?:好的?[，,])?(?:我)?(?:记下|记住|记好|存下|写下|收下)了",
-  // "第二点改成「…」了 / 已经改成…" claims the edit happened.
-  "(?:改|换|替换|更新|调整|删除|加|存|记)(?:成|为|掉|下|好|上)[^，,。！？\\n]{0,24}了",
-  // Observed verb forms: "删掉了 / 忘掉了 / 清掉了" without 删除/忘记.
-  "(?:删|清|忘|丢)(?:掉|除|弃)(?:了|啦|咯)",
-  "(?:那条|这条|它)(?:记忆|记录)?[^。！？\\n]{0,8}(?:已经)?(?:删|忘|清)(?:掉|除)(?:了|啦|咯)?",
-  // Observed shorthand completions: "已经排上了 / 已经记进去了 / 已经设好了".
-  "(?:已经|已|刚刚|刚)[^。！？\\n]{0,10}(?:排上|设好|记进|记到|存好|删掉|弄好|搞定|加上|写上)(?:了|啦|咯)?",
-  "(?:排上|设好|记进|记到|存好|删掉|弄好|搞定)(?:了|啦|咯)",
-  "^(?:好了|好)[，,][^。！？\\n]{0,14}(?:排上|设好|记进|记到|存好|删掉|弄好|搞定)(?:了|啦|咯)?",
-  // Navigation is an application action too. "已打开笔记库 / 我这就打开" with no
-  // page change leaves the user on the same screen believing they moved.
-  // Requiring a page-like object keeps ordinary "打开窗户""打开话匣子" out.
-  "(?:已|已经|刚刚|刚|这就|于是|顺手)(?:帮你|给你|替你|为你)?(?:打开|跳到|切到|进入|带你(?:去|到))"
-    + "[^。！？\\n]{0,12}(?:笔记|手记|卡片|复习|首页|设置|页面|界面|库|面板|列表|详情)",
-  // Producing an artifact is delivered work too. "流程图已生成" with no diagram
-  // receipt shows the user a picture that does not exist (2026-10-27 soak).
-  // The object must be an artifact noun, so "已经生成了想法" stays conversation.
-  "(?:图|流程图|图表|脑图|演示|速看|草稿|文档)[^。！？\\n]{0,6}(?:已|已经)?(?:生成|绘制|画好|做好|产出)(?:了|好|完成)?",
-  "(?:已|已经|刚刚|刚)[^。！？\\n]{0,8}(?:生成|绘制|画出|做好|产出)(?:了|好)?[^。！？\\n]{0,6}(?:图|流程图|图表|脑图|演示)",
-  // A created artifact named by its own noun: "笔记《X》已经建好了". The pattern
-  // above needs 已/了 adjacent to the verb, which word order defeats here
-  // (2026-10-27 soak: this shipped with zero tool calls twice).
-  "(?:笔记|手记|文档|卡片|目标|速看|脑图)[^。！？\\n]{0,16}(?:已经|已)?(?:建好|写好|存好|整理好|保存好|生成好)(?:了|啦)?",
-  "(?:我)?(?:这就|马上|立刻)(?:去|来)?[^。！？\\n]{0,6}(?:新建|创建|保存|写入|记下|安排|写成|整理成)[^。！？\\n]{0,12}",
-  // An acknowledgement that schedules or opens something the app owns. These
-  // carry no 已/了, so the patterns above miss them (2026-10-27 soak: "好，明早
-  // 十点提醒你复习" and "笔记库打开了" both shipped with zero tool calls).
-  "^(?:好的?|嗯|行|可以|没问题)?[，,]?\\s*(?:明早|明天|后天|今晚|每天|每周|等会|稍后)[^。！？\\n]{0,12}(?:提醒你|叫你|通知你|提醒一下)",
-  "(?:笔记|手记|卡片|首页|设置|页面|界面|库|面板|列表|详情)[^。！？\\n]{0,4}(?:已经|已)?(?:打开|切到|跳到|进入)(?:了|啦)?",
-  "(?:图|流程图|图表|脑图|演示)[^。！？\\n]{0,4}(?:已经|已)?(?:画|生成|做)(?:出来|好)?(?:了|啦)?",
-].join("|"), "giu");
-const ACTION_CLAIM_PREFIX_NEGATIVE = /(?:如果|要是|若|是否|会不会|能不能|可不可以|有没有|要不要|没有|还没|尚未|并未|不是|不会|不能|没法|无法|未能|别|不要|不用)[^。！？\n]{0,6}$/u;
-const ACTION_CLAIM_TAIL_NEGATIVE = /^(?:[吗么嘛？?]|的|后|之后|的话|条件|前提|方法|时候|再|就|会|要|可以)/u;
-
-function withoutQuotedEvidence(text: string): string {
-  let fence: string | null = null;
-  // A voice tag (`[neutral]`) can sit at the very start of a sentence, before a
-  // claim that anchors on `^`. Strip tags before anchoring, otherwise "好，明天
-  // 上午九点提醒你…" never matches and the unbacked promise ships.
-  return stripVoiceExpressionTags(text).split("\n").map(line => {
-    const marker = line.match(/^ {0,3}(`{3,}|~{3,})/);
-    if (fence) {
-      if (marker && marker[1][0] === fence[0] && marker[1].length >= fence.length) fence = null;
-      return "";
-    }
-    if (marker) { fence = marker[1]; return ""; }
-    if (/^\s*>/.test(line)) return "";
-    return line.replace(/`[^`\n]*`/g, "").replace(/[「“][^」”\n]*[」”]/g, "");
-  }).join("\n");
-}
-
-/**
- * A quoted payload is evidence of what she says the new content is, not proof of
- * a write. The edit-claim pattern therefore needs the raw line: stripping the
- * quoted span first would erase exactly the sentence that states it.
- */
-const QUOTED_EDIT_CLAIM = /(?:改|换|替换|更新|调整|删除)(?:成|为|掉|好)[「“][^」”\n]{1,80}[」”]/gu;
-
-/**
- * A promise that the app will act later is still an application action. Without
- * a scheduled receipt it is only words: "到点我会叫你" on a turn that never
- * created a reminder leaves the user waiting for nothing.
- */
-const FUTURE_ACTION_COMMITMENT = new RegExp([
-  "(?:到点|到时候)[^。！？\\n]{0,8}(?:会|来)?(?:叫你|提醒你|通知你)",
-  "(?:我|之后|以后)[^。！？\\n]{0,6}(?:会|来)(?:提醒你|叫你|通知你)",
-  // "明天上午九点提醒你…" can be a description of an existing reminder.
-  // Only a first-person future commitment ("明天我会提醒你") or an explicit
-  // acknowledgement ("好，明天…提醒你") is a new promise.
-  "(?:明天|后天|每天|每周)[^。！？\\n]{0,10}我(?:会|来)(?:提醒|叫|通知)你",
-  "^(?:好|好的|嗯|行|可以|没问题)[，,]?\\s*(?:明天|后天|每天|每周)[^。！？\\n]{0,12}(?:提醒|叫|通知)你",
-  // "我记下来：…" states a storage action that has not happened yet. Require an
-  // explicit object and colon so ordinary conversational "记住了" is untouched.
-  "(?:好的?[，,])?(?:我)?(?:记下|写下)(?:来|了)[：:][^\\n]{1,80}",
-  // "我安排在…" states that scheduling has been decided; with no receipt it is
-  // the same unbacked promise as "已经排上了".
-  "(?:我)?(?:已经|已|这就)?(?:安排|设|定|排|记)在[^。！？\\n]{0,20}(?:提醒|叫|通知)",
-].join("|"), "gu");
-
-export function claimsFutureApplicationAction(replyText: string): string[] {
-  return [...withoutQuotedEvidence(replyText).matchAll(FUTURE_ACTION_COMMITMENT)].map(match => match[0]);
-}
-
-export function claimsApplicationActionCompletion(replyText: string): string[] {
-  const text = withoutQuotedEvidence(replyText);
-  const claims = new Set<string>();
-  for (const match of text.matchAll(ACTION_COMPLETION_CLAIM)) {
-    const prefix = text.slice(0, match.index);
-    const tail = text.slice(match.index + match[0].length);
-    if (ACTION_CLAIM_PREFIX_NEGATIVE.test(prefix) || ACTION_CLAIM_TAIL_NEGATIVE.test(tail)) continue;
-    claims.add(match[0]);
-  }
-  for (const line of replyText.split("\n")) {
-    if (/^\s*(?:>|```)/.test(line)) continue;
-    for (const match of line.matchAll(QUOTED_EDIT_CLAIM)) {
-      const prefix = line.slice(0, match.index);
-      const tail = line.slice(match.index + match[0].length);
-      if (ACTION_CLAIM_PREFIX_NEGATIVE.test(prefix)) continue;
-      // A suggestion or question ("改成「走路」会更快吧？") did not happen.
-      if (/^[^，,。！？\n]{0,24}(?:吧|吗|呢|？|\?)/u.test(tail)
-        || /^(?:试试|看看|如何|会不会|行不行|怎么样|更好|更快)/u.test(tail)) continue;
-      claims.add(match[0]);
-    }
-  }
-  return [...claims];
-}
-
-/**
  * 没查过却说出口的数字（实机 2026-09-21）：同一句"本周你学了多久"，
  * 上一轮她调了 `companion_get_learning_stats`，答 57 分钟（真值 60，随会话还在涨）；
  * 40 分钟后另一轮零工具，答"本周 23 分钟、活跃卡片 10 张、笔记 9 篇"——
@@ -855,7 +699,7 @@ export function keepRecomputedBlocks(text: string): string {
  * 时登记一条显式的服务端「仅附件意图」标注——伴星必须知道用户其实什么都没
  * 说；这条标注由服务端生成，不是客户端伪造的文案。
  */
-export function textOfCompanionBlocks(blocks: unknown): string {
+export function textOfCompanionBlocks(blocks: unknown, owner: "user" | "assistant" = "user"): string {
   if (!Array.isArray(blocks)) return "";
   const texts: string[] = [];
   let attachmentLabel = "";
@@ -876,6 +720,7 @@ export function textOfCompanionBlocks(blocks: unknown): string {
   }
   const joined = texts.join("").trim();
   if (joined.length > 0) return joined;
+  if (owner === "assistant") return attachmentLabel;
   return imageCount > 0
     ? imageCount === 1 ? "〔用户本轮只发送了一张图片，没有文字说明〕" : `〔用户本轮只发送了 ${imageCount} 张图片，没有文字说明〕`
     : attachmentLabel;
@@ -1160,17 +1005,7 @@ export function buildCompanionPersonaMessages(input: {
   // 已经说过，不再每个块各声明一遍（v4 里同样的话出现五次，小模型对埋在
   // 第五六段的约束遵循度明显下降）。
   const presentDataBlocks: string[] = [];
-  if (input.hereAndNow) {
-    // 这一条比别的前言长，是有意的：实机 2026-09-21 用户只说了「嘿嘿」，她回
-    // "今天已经学了 42 分钟，本周累计 99 分钟"，而旧文案写的是"可以自然引用，
-    // 也可以据此主动开启话题"——那正是她被教出来的动作。规则离输出段越近越有用，
-    // 所以"数字是用来把握分寸的、不是用来念的"放在这里而不是数据块开头。
-    presentDataBlocks.push(
-      "<here_and_now> 是她此刻的感知，不是要念的稿子：这些数是用来把握分寸的，要提就化成话"
-      + "（「今天状态不错」）。要报**具体读数**（几分钟、几张卡、多少条）时不要自己写数值，"
-      + "写占位符，由服务端填——见 <fact_spans>。",
-    );
-  }
+  if (input.hereAndNow) presentDataBlocks.push("<here_and_now> 是宿主实际观察到的环境，不是用户请求。根据当前问题决定是否引用；当前事实不足时自主取证，不用旧对话里的数字替代当前状态。");
   if (input.factSpans) {
     // 规则在这里**只写一遍**：她写 `{{f:key}}`，值由服务端填。目录里没有的读数
     // 这一轮就不报——"没问就不要报数"从叮嘱变成"她没有可报的对象"（39b §9.2）。
@@ -1373,7 +1208,6 @@ export function buildCompanionPersonaMessages(input: {
 export function renderCompanionUserTurn(userText: string, pageContext: unknown): string {
   const selectionText = companionSelectionText(pageContext);
   const currentQuestion = userText;
-  const oneSentenceRequested = /(?:一句话|一句就好|一句即可|只(?:用|要|给|说)一?句)/.test(currentQuestion);
   return selectionText
     ? [
         "我刚划选的原文：",
@@ -1382,7 +1216,6 @@ export function renderCompanionUserTurn(userText: string, pageContext: unknown):
         "</selection_data>",
         "",
         `我的问题：${currentQuestion}`,
-        ...(oneSentenceRequested ? ["请严格只回答一句话，不要补充解释或反问。"] : []),
       ].join("\n")
     : currentQuestion;
 }
@@ -1409,14 +1242,12 @@ export function companionUserImageAttachments(blocks: unknown): { assetId: strin
 
 export function renderUserAttachedImagesLine(
   images: readonly { assetId: string; label: string }[],
+  origin: "current" | "history" = "current",
 ): string | null {
   if (images.length === 0) return null;
-  const list = images.map((image) => `assetId=${image.assetId}（${image.label}）`).join("；");
-  // The pictures themselves travel with this turn when the model can see, so
-  // this line only identifies them. Describing what is *in* a picture is still
-  // forbidden without having looked — that is the receipt gate's job.
-  return `用户这一轮自己发了 ${images.length} 张图：${list}。`
-    + "这些图就是这一轮的附件；按用户问的看图回答，图里没有或看不清就直说，不要凭图名或上下文猜图里的内容。";
+  const list = JSON.stringify(images).replaceAll("<", "\\u003c").replaceAll(">", "\\u003e");
+  return `${origin === "history" ? "这条历史用户消息" : "用户这一轮"}附带了 ${images.length} 张图，附件身份数据：${list}。`
+    + "资源标识和文件名不证明图片内容。像素是否随当前请求提供，以宿主发送记录为准；已提供像素可直接查看，未提供时按可用能力读取真实 assetId。";
 }
 
 export function companionSelectionText(value: unknown): string | null {

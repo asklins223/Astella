@@ -17,10 +17,8 @@ import {
   captionEchoIn,
   clipAtBoundary,
   clockPhrase,
-  countingToneIn,
   dayPartOf,
   diaryImageLabel,
-  diaryAssistantWeight,
   exampleEchoIn,
   groundedDiaryDigest,
   imageShape,
@@ -32,7 +30,6 @@ import {
   repeatedMotifIn,
   repeatedOpeningIn,
   resolveDiaryBlocks,
-  selfPutdownIn,
   stripEmbedRefs,
   DIARY_MAX_TOKENS,
   type DiaryBlock,
@@ -326,28 +323,10 @@ test("线头：她自己说的话优先，同分取最早那条", () => {
   ]), null);
 });
 
-test("线头：她亲口承认没弄懂的片段优先于普通问候", () => {
-  assert.equal(diaryAssistantWeight("你好呀，今天想学点什么？"), 3);
-  assert.equal(diaryAssistantWeight("这个我还真不太清楚，得先翻原文。"), 4);
-  const greeting = { ...herLine, text: "我说：你好呀", at: "09:00" };
-  const stumble = { ...herLine, text: "我说：这个我还真不太清楚", weight: 4, at: "13:16" };
-  assert.equal(pickDiarySubject([greeting, stumble]), stumble);
-});
-
 test("派生记忆只存可核对的线头，不把模型的感想当事实", () => {
   assert.equal(groundedDiaryDigest(material({ pieces: [herLine] })), herLine.text);
   assert.equal(groundedDiaryDigest(material({ pieces: [], subject: null, quietDay: true })), "");
   assert.doesNotMatch(systemOf(), /"digest"/);
-});
-
-test("图注计数检测：识别数字加量词，标题里的数字不误伤", () => {
-  assert.equal(countingToneIn("今天新增学习卡 4 张，收录资料 1 份。"), "4 张");
-  assert.equal(countingToneIn("他学了 45 分钟。"), "45 分钟");
-  assert.equal(countingToneIn("他一共问了 3 个问题"), "3 个");
-  // 用户真的会把这些写进标题；这些必须是可引用的正文素材，不是报数。
-  assert.equal(countingToneIn("他新建了笔记「100 以内加法」"), null);
-  assert.equal(countingToneIn("笔记里那句 F=ma 他念了两遍"), null);
-  assert.equal(countingToneIn("晚上十点他说想慢慢来。"), null);
 });
 
 test("意象去重：跨篇复现的**连续说法**要被挑出来（2026-10-05）", () => {
@@ -445,41 +424,10 @@ test("图注：她自己的一句话拼上出处；写不出来退人话，报�
   // 第二张同笔记的图：没有图注时不能和第一张的标注一字不差。
   assert.equal(diaryImageLabel({ ...anImage, nth: 2 }, ""), "《欧姆定律》里的另一张图");
   assert.equal(diaryImageLabel(anImage, undefined), "《欧姆定律》里的一张图");
-  // 图注里报数（「一共 3 张」）：退人话，不把她自己的数字端上屏幕。
-  assert.equal(diaryImageLabel(anImage, "一共 3 张，看不太懂"), "《欧姆定律》里的一张图");
+  // 图注内容由模型决定，不以计数词替换。
+  assert.equal(diaryImageLabel(anImage, "一共 3 张，看不太懂"), "一共 3 张，看不太懂（《欧姆定律》）");
   // 图注里的编号字面同样剥掉。
   assert.equal(diaryImageLabel(anImage, "就是 引2 那张"), "就是 那张（《欧姆定律》）");
-});
-
-/**
- * 引用候选的清洗。
- *
- * 三次实录的回归：09-18 引到「👉 仓库地址 (记得Star🌟)：网页链接」，
- * 09-21/09-22 引到探针串（表格分隔符堆出来的碎片），09-23 引到 251 字的推广导语
- * 并被硬切在句子中间。这三类都必须进不来。
- */
-test("引用候选：推广行、表情、链接、表格碎片、超长段落都进不来", () => {
-  assert.equal(isQuotableQuote("👉 仓库地址 (记得Star🌟)：网页链接"), false);
-  assert.equal(isQuotableQuote("这段全空间都读得到｜A 加的那句｜实窗量测 22:48:46｜实窗第二量 22:52:17"), false);
-  assert.equal(isQuotableQuote("论文地址：https://arxiv.org/abs/2601.03888"), false);
-  assert.equal(isQuotableQuote("为什么要做 2.5？"), false, "十个字的标题不是一句可引的话");
-  // 用户在笔记里敲的乱码（09-24 真跑被当成原文引用，她还顺着编了段解读）：不成句就不进。
-  assert.equal(isQuotableQuote("aside啊说的哈回电话给啊合适的哈 就啊说的机会啊就回家 科技三等奖哈就是说还是"), false,
-    "没有句末标点的一串字符不是句子");
-  // 有句号也不等于成句：这条是 09-24 第四跑实录（她还顺着编了段"你反复折腾的痕迹"）。
-  assert.equal(isQuotableQuote("修改笔记。12312 123123123123"), false, "占位内容：句号是真的，句子是假的");
-  assert.equal(isQuotableQuote("T2S 模块 RTF 从 0.232 降到 0.119，整体提速约 2.28 倍，主观听感无可感知下降。"), true,
-    "数字密的技术句必须留得住——它最长的一段汉字连串有十个字");
-  // 09-23 引的那条推广导语在本机库里是 251 字。夹具必须真的比 180 长，
-  // 否则这条断言测的是别的东西（夹具短了会让整条规则保持常绿）。
-  const longPromo = "不赶进度、专注打磨！今天想和大家聊聊我们最新发布的 IndexTTS 2.5，支持中/英/日/西/阿五国语言零样本配音。".repeat(4);
-  assert.ok(longPromo.length > 180, `夹具只有 ${longPromo.length} 字，测不到长度上限`);
-  assert.equal(isQuotableQuote(longPromo), false, "超过 180 字整条不要——它正是被切在句子中间的那条");
-  assert.equal(
-    isQuotableQuote("目前最主流的范式是：语言模型先生成承载发音和韵律的语义 token，再由流匹配模块还原声学细节，最后经声码器输出波形。"),
-    true,
-    "同一篇笔记里 113 字的技术段落才是能引的那段",
-  );
 });
 
 test("引用候选：每篇笔记只留一条，最多三条", () => {
@@ -494,48 +442,6 @@ test("引用候选：每篇笔记只留一条，最多三条", () => {
     row("👉 仓库地址 (记得Star🌟)：网页链接", "note-e"),
   ]);
   assert.deepEqual(picked.map((item) => item.note_id), ["note-a", "note-b", "note-c"]);
-});
-
-/**
- * 序号条目排在真句子后面。
- *
- * 09-23 那篇网页笔记的候选池里，最长的两条是岗位要求（「2.深入理解多模态与
- * 生成式模型原理…」「1.负责语音大模型…」），按长度取就会把招聘启事摆进日记。
- */
-test("引用候选：招聘/清单条目排在真句子后面，池子里只剩它们时才用", () => {
-  const row = (content: string, noteId: string) => ({ content, note_id: noteId, note_title: `笔记${noteId}` });
-  const jobBullet = "2.深入理解多模态与生成式模型原理，熟悉大模型底层技术（如 Transformer、Diffusion、Flow Matching），有论文发表经验。";
-  const prose = "T2S 模块 RTF 从 0.232 降到 0.119，整体提速约 2.28 倍，主观听感无可感知下降。";
-  assert.ok(jobBullet.length > prose.length, "夹具要让清单条目比真句子长，否则测不到排序");
-  assert.deepEqual(
-    pickQuoteCandidates([row(jobBullet, "note-a"), row(prose, "note-a")]).map((item) => item.content),
-    [prose],
-    "同一篇里两条都合格时，选真句子那条",
-  );
-  assert.deepEqual(
-    pickQuoteCandidates([row(jobBullet, "note-a")]).map((item) => item.content),
-    [jobBullet],
-    "池子里只有清单条目时还是给它——不然这一天一条引用都没有",
-  );
-});
-
-/**
- * 反报数闸补中文数字。
- *
- * 09-20 实录：正文「今天学了半小时上下」——素材行整句被抄，闸门只认 `\d` 全放行，
- * 而规则里只写了"不出现阿拉伯数字"，她就换中文数字。
- * 量词表刻意比阿拉伯那道窄：「这两天」「一个念头」「几天没见」是正常的话，
- * 误判的代价是一天没有日记。
- */
-test("图注计数检测：中文数字加量词也识别，正常说法不误伤", () => {
-  assert.equal(countingToneIn("今天学了半小时上下，不算多但够踏实。"), "半小时");
-  assert.equal(countingToneIn("你翻了两篇笔记就走了。"), "两篇");
-  assert.equal(countingToneIn("你问了我三次同一件事。"), "三次");
-  assert.equal(countingToneIn("这两天你没怎么来。"), null);
-  assert.equal(countingToneIn("我想到一个念头，又忘了。"), null);
-  assert.equal(countingToneIn("好几天没见你这么安静。"), null);
-  // 「遍」故意不进表：它是日常说法，不是报表口径（上一道阿拉伯闸也不收它）。
-  assert.equal(countingToneIn("那句话他念了两遍"), null);
 });
 
 test("编号泄漏：正文里的 图1/引1 机械剥掉，标点不留空格", () => {
@@ -618,13 +524,6 @@ test("图注照抄闸：抄了转述那句就报出来", () => {
   assert.equal(captionEchoIn(copied, [anImage]), null);
 });
 
-test("自贬闸：道歉与自我批评报出来，平着写失误的不报", () => {
-  assert.equal(selfPutdownIn("这种懒病没救了。"), "没救了");
-  assert.equal(selfPutdownIn("对不起，我今天又什么都没干。"), "对不起");
-  assert.equal(selfPutdownIn("他问我那篇笔记，我头一遍翻漏了。"), null);
-  assert.equal(selfPutdownIn("这条我没答上来，翻到第三遍才说清楚。"), null);
-});
-
 /**
  * 一天里给她的图：每篇笔记最多一张。
  *
@@ -685,4 +584,15 @@ test("图的形状：照实量给她，她就不用猜", () => {
   assert.equal(imageShape(900, 900), "接近方形的");
   // 量不出来就不说，不编一个形状。
   assert.equal(imageShape(0, 0), "");
+});
+
+test("diary quote candidates accept actual source text in any language without a style word list", () => {
+  for (const text of [
+    "A counterexample can reveal a missing assumption.",
+    "这个片段保留了作者的原话和语气🙂。",
+    "论文地址：https://example.com/paper。",
+    "Why?", "日本語の資料も引用できます。", "原文".repeat(250),
+  ]) assert.equal(isQuotableQuote(text), true, text);
+  assert.equal(isQuotableQuote("  "), false);
+  assert.equal(isQuotableQuote("字".repeat(2_001)), false, "shared transport schema still applies");
 });

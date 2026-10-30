@@ -101,21 +101,12 @@ async function rowsIn(workspaceId: string, globalKey: string) {
   `;
 }
 
-test("scope 由种类 + 绑定判据决定（收紧后：只有 preference 可能跨空间）", () => {
-  // 正向：关于"怎么学、怎么相处"的偏好跟人走。
-  assert.equal(memoryScopeForKind("preference", "workspace", "portable", "喜欢在安静时段学习"), "global");
-  assert.equal(memoryScopeForKind("preference", "workspace", "portable", "看新概念时更想先看反例"), "global");
-  // 收紧的那一半：科目/考试/本地指代绑定的偏好留在原空间。
-  assert.equal(memoryScopeForKind("preference", "workspace", "portable", "正在学习数据库索引优化"), "workspace");
-  assert.equal(memoryScopeForKind("preference", "workspace", "portable", "这个班的作业每周三交"), "workspace");
-  // interaction_note 实测记的多半是"用户当前在做什么"，改回本地。
-  assert.equal(memoryScopeForKind("interaction_note", "workspace", "portable", "被追问原因时会先举例"), "workspace");
-  // 其余三类本来就绑定空间内容。
-  assert.equal(memoryScopeForKind("goal", "workspace", "portable", "下个月要考日语N3"), "workspace");
-  assert.equal(memoryScopeForKind("learning_context", "workspace", "portable", "正在学习物理"), "workspace");
-  assert.equal(memoryScopeForKind("episodic", "workspace", "portable", "第一次独立完成微旅程"), "workspace");
-  // 缺省 fail-closed：没给 binding 按本地。
-  assert.equal(memoryScopeForKind("preference", "workspace", undefined, "喜欢在安静时段学习"), "workspace");
+test("scope 由种类与显式绑定决定，不再对主题内容追加否决", () => {
+  assert.equal(memoryScopeForKind("preference", "workspace", "portable"), "global");
+  assert.equal(memoryScopeForKind("preference", "global", "workspace"), "workspace");
+  assert.equal(memoryScopeForKind("preference", "global", undefined), "workspace");
+  for (const kind of ["interaction_note", "goal", "learning_context", "episodic"] as const)
+    assert.equal(memoryScopeForKind(kind, "workspace", "portable"), "workspace");
 });
 
 test("global 记忆被铺到该用户的每个活跃空间，workspace 记忆不铺", async () => {

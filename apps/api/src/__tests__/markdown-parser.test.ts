@@ -154,6 +154,15 @@ describe("markdown-parser block conversion", () => {
     const blocks = markdownToBlocks("## Sub Title\n\nContent");
     assert.equal(extractTitleFromBlocks(blocks), "Sub Title");
   });
+
+  it("extractTitleFromBlocks leaves code-only content untitled", () => {
+    assert.equal(extractTitleFromBlocks(markdownToBlocks("```\nconst x = 1;\n```")), "无标题笔记");
+  });
+
+  it("extractTitleFromBlocks skips Markdown table source without words", () => {
+    const blocks = [{ type: "paragraph" as const, content: "|  |  |\n| --- | --- |\n|  |  |" }];
+    assert.equal(extractTitleFromBlocks(blocks), "无标题笔记");
+  });
 });
 
 describe("markdown-parser parseContent dispatch", () => {

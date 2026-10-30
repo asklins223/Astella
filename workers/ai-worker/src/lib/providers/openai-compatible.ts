@@ -401,11 +401,10 @@ export class OpenAICompatibleProvider implements AIProvider {
         }
         const delta = choice?.delta?.content;
         const reasoningDelta = choice?.delta?.reasoning_content;
-        if ((typeof delta === "string" && delta.length > 0)
-          || (typeof reasoningDelta === "string" && reasoningDelta.length > 0)
-          || choice?.delta?.tool_calls?.some(call => typeof call.function?.arguments === "string" && call.function.arguments.length > 0)) {
-          options.onOutputActivity?.();
-        }
+        if (typeof reasoningDelta === "string" && reasoningDelta.length > 0) options.onOutputActivity?.("reasoning");
+        if (typeof delta === "string" && delta.length > 0) options.onOutputActivity?.("text");
+        if (choice?.delta?.tool_calls?.some(call => typeof call.function?.arguments === "string" && call.function.arguments.length > 0))
+          options.onOutputActivity?.("tool");
         if (typeof reasoningDelta === "string" && reasoningDelta.length > 0) {
           reasoningContent += reasoningDelta;
           options.onReasoningDelta?.(reasoningDelta);
@@ -526,7 +525,7 @@ export class OpenAICompatibleProvider implements AIProvider {
   }) {
     this.apiKey = options.apiKey;
     this.modelId = options.model;
-    this.visionModelId = options.model;
+    this.visionModelId = options.modelProfile?.vision === true ? options.model : "";
     this.embeddingModelId = options.embeddingModel ?? options.model;
     // R1: Use resolveEndpoint if provided (e.g., DashScope URL rewriting)
     const resolveFn = options.resolveEndpoint ?? resolveOpenAIChatCompletionsUrl;
@@ -690,7 +689,7 @@ export class OpenAICompatibleProvider implements AIProvider {
   async executeAgentTurn(
     request: AgentTurnRequest,
     signal?: AbortSignal,
-    observation?: { onOutputActivity?: () => void },
+    observation?: { onOutputActivity?: (kind?: "text" | "reasoning" | "tool") => void },
   ): Promise<AgentTurnResult> {
     if (signal?.aborted) throw abortError(signal, "before executeAgentTurn");
 

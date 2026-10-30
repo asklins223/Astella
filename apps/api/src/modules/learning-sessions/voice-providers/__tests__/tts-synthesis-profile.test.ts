@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { QWEN_TTS_STANDARD_MANDARIN_INSTRUCTION } from '@astella/shared/tts-voice-catalog';
-import { resolveTtsSynthesisProfile } from '../tts-synthesis-profile.ts';
+import { resolveTtsSynthesisProfile, ttsVoiceCacheKey } from '../tts-synthesis-profile.ts';
 import { synthesizeTtsBytes } from '../tts-engine.ts';
 import { resolveTtsSelection, type StoredVoicePreference } from '../tts-preference.ts';
 import type { TtsEngineConfig } from '../tts-config.ts';
@@ -64,4 +64,23 @@ for (const fixture of cases) {
 test('账号选择 Edge 时，冷流式不能因全局默认千问而切回千问', () => {
   const selection = resolveTtsSelection({ engine: 'edge', voice: 'zh-CN-XiaoxiaoNeural' }, config);
   assert.equal(resolveTtsSynthesisProfile(config, selection).engine, 'edge');
+});
+
+test('历史回听保留原语气，方言使用当前选择，切回普通话也不沿用旧方言', () => {
+  const cantonese = resolveTtsSelection({ engine: 'qwen', voice: 'longhua_v3.1', dialect: '广东话' }, config);
+  const replay = resolveTtsSynthesisProfile(config, cantonese, '请用四川话表达。语气轻松', true);
+  assert.match(replay.instruction, /请用广东话表达/u);
+  assert.match(replay.instruction, /语气轻松/u);
+  assert.doesNotMatch(replay.instruction, /四川话/u);
+  const standard = resolveTtsSynthesisProfile(config, resolveTtsSelection(null, config), '请用粤语表达。语气轻松', true);
+  assert.doesNotMatch(standard.instruction, /粤语/u);
+  assert.match(standard.instruction, /语气轻松/u);
+});
+
+test('语音缓存身份按声音内容分版，切回同一方言能复用原身份', () => {
+  const profile = (dialect: string) => resolveTtsSelection({ engine: 'qwen', voice: 'longhua_v3.1', dialect }, config);
+  assert.equal(ttsVoiceCacheKey(config, profile('广东话')), ttsVoiceCacheKey(config, profile('广东话')));
+  assert.notEqual(ttsVoiceCacheKey(config, profile('广东话')), ttsVoiceCacheKey(config, profile('河南话')));
+  assert.notEqual(ttsVoiceCacheKey(config, profile('广东话')),
+    ttsVoiceCacheKey({ ...config, qwen: { ...config.qwen, sampleRate: 24000 } }, profile('广东话')));
 });

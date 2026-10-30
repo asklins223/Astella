@@ -153,7 +153,9 @@ test("MiMo full tool loop preserves reasoning, host observation order and call i
   const body = f.captured[1]!.body;
   const input = body.input as Array<Record<string, unknown>>;
   assert.deepEqual(input.map(item => item.type === "message" ? item.role : item.type ?? item.role),
-    ["system", "user", "reasoning", "function_call", "function_call_output", "assistant", "system"]);
+    ["user", "reasoning", "function_call", "function_call_output", "assistant", "system"]);
+  assert.equal(body.instructions, "trusted policy");
+  assert.equal(input.at(-1)?.content, "actual host observation");
   assert.deepEqual(input.find(item => item.type === "reasoning"), reasoning);
   assert.equal(body.max_output_tokens, 131072);
   assert.equal(body.temperature, undefined);
@@ -253,6 +255,22 @@ test("required tools: MiMo preserves auto results for host verification; DeepSee
   assert.equal(c.captured[0]!.body.temperature, 0.2);
 });
 
+test("native progress distinguishes reasoning from useful text and tool output", async () => {
+  const call = { type: "function_call", id: "fc_progress", call_id: "call_progress", name: "lookup",
+    arguments: '{"query":"synthetic"}', status: "completed" };
+  const events = responseEvents([reasoning, message("done"), call]);
+  const beforeReasoningDone = events.findIndex(event => event.type === "response.output_item.done"
+    && (event.item as { type?: string })?.type === "reasoning");
+  events.splice(beforeReasoningDone, 0, { type: "response.reasoning_text.delta", output_index: 0,
+    content_index: 0, item_id: reasoning.id, delta: "synthetic thought" });
+  const f = fixture([{ events }]), kinds: string[] = [];
+  await mimo(f).executeAgentTurn(request({ tools: [tool] }), undefined,
+    { onOutputActivity: kind => { kinds.push(kind ?? "unknown"); } });
+  assert.ok(kinds.includes("reasoning"));
+  assert.ok(kinds.includes("text"));
+  assert.ok(kinds.includes("tool"));
+});
+
 test("HTTP errors retain privacy-safe status/code and cancel the socket", async () => {
   const f = fixture([{ status: 400, text: JSON.stringify({ error: { type: "invalid_request_error", message: "secret-prompt" } }) }]);
   await assert.rejects(mimo(f).executeAgentTurn(request()), error => error instanceof ProviderRequestError
@@ -317,6 +335,32 @@ test("image markers remain unique across mixed messages and leave ordinary text 
   assert.ok(input.includes('"text":"__ASTELLA_IMAGE_0__"'));
 });
 
+test("native image bytes and explicit detail survive both configured protocol shapes", async () => {
+  const data = Buffer.from("exact original bytes, not an OCR description");
+  const url = "data:image/png;base64," + data.toString("base64");
+  for (const protocol of ["responses", "completions"] as const) {
+    const f = fixture([{ events: protocol === "responses" ? responseEvents([message("seen")]) : chatEvents({ content: "seen" }) }]);
+    const provider = protocol === "responses" ? mimo(f) : deepseek(f);
+    await provider.chatCompletion([{ role: "user", content: [{ type: "text", text: "look at the original" },
+      { type: "image_url", image_url: { url, detail: "high" } },
+      { type: "image_url", image_url: { url, detail: "low" } }] }], { responseFormat: "text" });
+    const parts: Array<Record<string, unknown>> = [];
+    const walk = (value: unknown): void => {
+      if (Array.isArray(value)) { value.forEach(walk); return; }
+      if (!value || typeof value !== "object") return;
+      const row = value as Record<string, unknown>;
+      if (row.type === "input_image") parts.push(row);
+      else if (row.type === "image_url") parts.push(row.image_url as Record<string, unknown>);
+      else Object.values(row).forEach(walk);
+    };
+    walk(f.captured[0]!.body);
+    assert.equal(parts.length, 2);
+    assert.equal(parts[0]!.image_url ?? parts[0]!.url, url);
+    assert.equal(parts[1]!.image_url ?? parts[1]!.url, url);
+    assert.deepEqual(parts.map(part => part.detail), ["high", "low"]);
+  }
+});
+
 test("a response can backfill plaintext reasoning in its terminal snapshot", async () => {
   const events = responseEvents([reasoning, message("done", "final_answer")]);
   const done = events.find(event => event.type === "response.output_item.done" && (event.item as Record<string, unknown>).type === "reasoning")!;
@@ -375,4 +419,16 @@ test("cross-protocol fallback converts a Chat thinking field into a valid Respon
   ] }));
   const item = (f.captured[0]!.body.input as Array<Record<string, unknown>>).find(item => item.type === "reasoning");
   assert.deepEqual(item, { type: "reasoning", summary: [], content: [{ type: "reasoning_text", text: "synthetic cross-provider thought" }] });
+});
+
+
+test("independent short classification honors its own limit without shrinking native agent steps", async () => {
+  const f = fixture([{ events: responseEvents([message('{"path":"chat"}')]) },
+    { events: responseEvents([message("full native answer")]) }]);
+  const provider = mimo(f);
+  await provider.chatCompletion([{ role: "user", content: "classify" }],
+    { maxTokens: 32, disableThinking: true, responseFormat: "json_object" });
+  assert.equal(f.captured[0]!.body.max_output_tokens, 32);
+  await provider.executeAgentTurn(request());
+  assert.equal(f.captured[1]!.body.max_output_tokens, profile.maxOutputTokens);
 });

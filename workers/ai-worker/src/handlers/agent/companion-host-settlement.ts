@@ -1,6 +1,7 @@
-import type { AgentTurnResult } from "@astella/shared";
+import type { AgentTurnRequest, AgentTurnResult } from "@astella/shared";
 import { companionOperationDomainTool } from "@astella/shared";
 import { joinVisibleSegmentsDeduped, VISIBLE_SEGMENT_SEPARATOR } from "../turn/companion-visible-segments.ts";
+import { currentCompanionSuccessfulReceipts } from "../tools/companion-tool-receipts.ts";
 
 /**
  * Final assembly for an honest host settlement: keep everything the user
@@ -44,8 +45,13 @@ export function assembleCompanionFinishText(input: {
   finishText: string;
 }): string {
   const text = input.finishText.trim();
-  const repeat = input.utterancePublished && input.visibleSegments.some(segment => segment.trim() === text);
-  if (repeat || !text) return joinVisibleSegmentsDeduped(input.visibleSegments, input.visibleSegmentDelivered).text;
+  // Explicit publications select the delivery channel. A finish receipt closes
+  // the task; it must not add a confirmation bubble after the requested messages.
+  if (input.utterancePublished) {
+    const delivered = input.visibleSegments.filter((_segment, index) => input.visibleSegmentDelivered[index]);
+    return joinVisibleSegmentsDeduped(delivered, delivered.map(() => true)).text;
+  }
+  if (!text) return joinVisibleSegmentsDeduped(input.visibleSegments, input.visibleSegmentDelivered).text;
   return joinVisibleSegmentsDeduped([...input.visibleSegments, text], [...input.visibleSegmentDelivered, false]).text;
 }
 
@@ -57,7 +63,8 @@ export function assembleCompanionFinishText(input: {
  * nothing to preserve, so the caller keeps its normal failure path.
  */
 export function settleCompanionLandedWritesOnFailure(input: {
-  messages: readonly { role: string; content: unknown }[];
+  messages: AgentTurnRequest["messages"];
+  currentRunEvidence?: AgentTurnRequest["messages"];
   visibleSegments: readonly string[];
   visibleSegmentDelivered: readonly boolean[];
   richBlocks: readonly unknown[];
@@ -69,27 +76,19 @@ export function settleCompanionLandedWritesOnFailure(input: {
     .filter(definition => definition.riskClass !== "read"
       && !["companion_send_message", "companion_configure_turn", "companion_deepen", "companion_load_tools"].includes(definition.name))
     .map(definition => definition.name));
-  const receipts: { id: string; summary: string }[] = [];
-  for (const message of input.messages) {
-    if (message.role !== "tool" || typeof message.content !== "string") continue;
-    try {
-      const receipt = JSON.parse(message.content) as { ok?: unknown; receiptId?: unknown; operation?: unknown; data?: { status?: unknown } };
-      if (receipt.ok !== true || typeof receipt.receiptId !== "string") continue;
-      const operation = typeof receipt.operation === "string" ? receipt.operation : "";
-      const domain = companionOperationDomainTool(operation);
-      if (!domain || !writeNames.has(domain)) continue;
-      const status = receipt.data?.status;
-      if (["failed", "not_executed", "outcome_unknown", "waiting_confirmation", "unavailable"].includes(String(status ?? ""))) continue;
-      receipts.push({ id: receipt.receiptId, summary: typeof receipt.data === "object" && receipt.data
-        ? String((receipt.data as { summary?: unknown }).summary ?? "") : "" });
-    } catch { /* a non-JSON receipt is not evidence of a write */ }
-  }
+  const receipts = currentCompanionSuccessfulReceipts(input.messages, input.currentRunEvidence).filter(receipt => {
+    const domain = companionOperationDomainTool(receipt.operation);
+    return receipt.riskClass !== "read" && domain !== null && writeNames.has(domain);
+  });
   if (receipts.length === 0) return null;
-  const summary = receipts.map(receipt => receipt.summary).filter(Boolean).join("；");
+  // The execution envelope owns safeSummary at its top level. Some legacy
+  // payloads also have data.summary; neither is guaranteed for every write.
+  const summary = receipts.map(receipt => receipt.summary.trim()
+    || (typeof receipt.data.summary === "string" ? receipt.data.summary.trim() : "")).filter(Boolean).join("；");
   const settlement = assembleCompanionHostSettlement({
     visibleSegments: input.visibleSegments, visibleSegmentDelivered: input.visibleSegmentDelivered,
     richBlockCount: input.richBlocks.length, said: "", includeSaid: false,
-    note: summary, landedWrites: true,
+    note: [summary || "已有操作取得成功回执。", "后续回复生成中断，其他要求尚未核对。"].join("\n\n"), landedWrites: true,
   });
   return settlement.empty ? null : { text: settlement.text, receiptIds: receipts.map(receipt => receipt.id) };
 }

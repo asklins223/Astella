@@ -44,16 +44,16 @@ const CAPABILITY_FLAGS = {
     COMPANION_MEMORY_VECTOR_V1: { dev: true, prod: true },
     COMPANION_SUMMARIZER_V1: { dev: true, prod: true },
     COMPANION_DAILY_SUMMARY_V1: { dev: true, prod: true },
-    // 2026-10-17：`lib/hedged-call.ts` 与 `handlers/agent/companion-release-router.ts`
-    // 的读取方。这两个开关从 v1.8.18 起就随分类器对冲与 L1 放行路由进了 compose，
-    // 但本表没跟着登记，`make verify` 于是把它们当成死开关报红（CI 不跑这条脚本，
-    // 所以只有本地基线看得见）。
-    COMPANION_TOOL_INTENT_HEDGE_MS: { dev: "0", prod: "0" },
-    COMPANION_RELEASE_ROUTER: { dev: "enforce", prod: "enforce" },
-    // 2026-10-18：混合入口开关，读取方是
+    // 2026-10-30：输出看门狗的读取方在 `handlers/agent/companion-output-watchdog.ts`。
+    // 这三个开关自 v1.8.18 起就在 compose 里，本表一直没登记；分类器对冲与
+    // L1 路由撤掉后，`COMPANION_TOOL_INTENT_HEDGE_MS` / `COMPANION_RELEASE_ROUTER`
+    // 已没有读取方，从契约和 compose 一起移除。
+    COMPANION_PROVIDER_FIRST_OUTPUT_TIMEOUT_MS: { dev: "12000", prod: "12000" },
+    COMPANION_CASUAL_PROVIDER_FIRST_OUTPUT_TIMEOUT_MS: { dev: "5000", prod: "5000" },
+    COMPANION_PROVIDER_IDLE_TIMEOUT_MS: { dev: "45000", prod: "45000" },
+    // 入口只有 fast / thinking 两档，读取方是
     // `handlers/turn/companion-entry-mode.ts` 的 `resolveCompanionEntryMode`。
-    // 2026-10-18 用户裁决：hybrid 作为默认入口（此前是 classified）。
-    COMPANION_AGENT_ENTRY_MODE: { dev: "hybrid", prod: "hybrid" },
+    COMPANION_AGENT_ENTRY_MODE: { dev: "direct_fast", prod: "direct_fast" },
   },
 };
 

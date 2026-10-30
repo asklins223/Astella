@@ -43,7 +43,8 @@ export function transformCompanionNoteEdit(before: Node, input: CompanionEditNot
         ? Array.from({ length: content.childCount }, (_, index) =>
           preservingBlockStructure(before.child(first + index), content.child(index), Fragment)) : [];
       if (preserved.length === 0 || preserved.some(node => node === null)) throw new NoteEditConflict(
-        "这次替换会改变原文的标题、列表、表格或段落结构，尚未保存。只改文字或数值时，请保留原段落的格式后再替换。",
+        `这次替换会改变原文的标题、列表、表格或段落结构，尚未保存。范围包含 ${last - first + 1} 块，Markdown 解析为 ${content.childCount} 块。`
+        + "独立段落用空行分隔；markdown 只填替换范围，不包含范围外正文。只改文字或数值时保留原段落的类型与格式。",
       );
       content = Fragment.fromArray(preserved as Node[]);
     }

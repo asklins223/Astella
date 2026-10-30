@@ -2,7 +2,6 @@
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
-  NOTE_IMAGE_UPLOAD_MAX_BYTES,
   noteImageUploadFailureMessage,
 } from "@astella/shared/note-image-upload-contracts";
 import {
@@ -44,17 +43,13 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
-it("本地校验先挡住：类型与体积不符都不碰网关", async () => {
+it("本地校验只拒绝不支持的格式，不让用户手动压缩大图", async () => {
   const svg = await picked(new File(["<svg/>"], "图标.svg", { type: "image/svg+xml" }));
   expect(svg.current.error).toBe(noteImageUploadFailureMessage({ httpStatus: 415 }));
-  expect(svg.current.image).toBeNull();
+  expect(svg.current.images).toEqual([]);
   expect(uploadImage).not.toHaveBeenCalled();
 
-  const tooBig = png("大图.png");
-  Object.defineProperty(tooBig, "size", { value: NOTE_IMAGE_UPLOAD_MAX_BYTES + 1 });
-  const over = await picked(tooBig);
-  expect(over.current.error).toBe(noteImageUploadFailureMessage({ httpStatus: 413 }));
-  expect(uploadImage).not.toHaveBeenCalled();
+
 });
 
 it("上传成功后附件就是回执里的站内地址，图名取文件名", async () => {
@@ -64,7 +59,7 @@ it("上传成功后附件就是回执里的站内地址，图名取文件名", a
   const state = await picked(png());
   expect(state.current.uploading).toBe(false);
   expect(state.current.error).toBeNull();
-  expect(state.current.image).toEqual({ url: uploadedUrl, label: "截屏 2026-10-06" });
+  expect(state.current.images).toEqual([{ url: uploadedUrl, label: "截屏 2026-10-06" }]);
   const input = uploadImage.mock.calls[0]?.[0] as {
     request: { fileName: string; mimeType: string; bytesBase64: string };
   };
@@ -96,21 +91,21 @@ it("移除或发送后清干净，失败的那张可以原样重试", async () =
     version: 1, url: uploadedUrl, byteLength: 4, mimeType: "image/png", width: 2, height: 2,
   });
   const state = await picked(png());
-  expect(state.current.image?.url).toBe(uploadedUrl);
+  expect(state.current.images[0]?.url).toBe(uploadedUrl);
   act(() => { state.current.clear(); });
-  expect(state.current.image).toBeNull();
+  expect(state.current.images).toEqual([]);
   expect(state.current.error).toBeNull();
 
   uploadImage.mockRejectedValueOnce(new Error("boom"));
   await act(async () => { await state.current.pick(png("另一张.png")); });
-  expect(state.current.image).toBeNull();
+  expect(state.current.images).toEqual([]);
   expect(state.current.error).toBe(noteImageUploadFailureMessage({}));
 
   uploadImage.mockResolvedValueOnce({
     version: 1, url: uploadedUrl, byteLength: 4, mimeType: "image/png", width: 2, height: 2,
   });
   await act(async () => { await state.current.pick(png("另一张.png")); });
-  expect(state.current.image?.label).toBe("另一张");
+  expect(state.current.images[0]?.label).toBe("另一张");
   expect(state.current.error).toBeNull();
 });
 
@@ -119,4 +114,18 @@ it("图名用文件名去扩展名，过长时截断", () => {
   expect(formatComposerImageLabel("无扩展名")).toBe("无扩展名");
   expect(formatComposerImageLabel("   ")).toBe("图片");
   expect(formatComposerImageLabel("一".repeat(40))).toBe(`${"一".repeat(24)}…`);
+});
+
+it("12张按顺序上传，单张移除保留其余附件，超量只提示总数", async () => {
+  let sequence = 0;
+  uploadImage.mockImplementation(async () => ({version:1,url:uploadedUrl.replace(".png", `-${++sequence}.png`),byteLength:4,mimeType:"image/png",width:2,height:2}));
+  const view=renderHook(()=>useCompanionImageAttachment());
+  await act(async()=>{await view.result.current.pick(Array.from({length:13},(_,i)=>png(`图片-${i}.png`)));});
+  expect(uploadImage).toHaveBeenCalledTimes(12);
+  expect(view.result.current.images.map(image=>image.label)).toEqual(Array.from({length:12},(_,i)=>`图片-${i}`));
+  expect(view.result.current.error).toContain("12");
+  const removed=view.result.current.images[5]!.url;
+  act(()=>view.result.current.remove(removed));
+  expect(view.result.current.images).toHaveLength(11);
+  expect(view.result.current.images.some(image=>image.url===removed)).toBe(false);
 });

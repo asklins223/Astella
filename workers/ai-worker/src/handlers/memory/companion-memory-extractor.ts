@@ -28,7 +28,6 @@ import {
 import { assertJobLease, lockJobLease, withJobTransaction } from "../../lib/job-lease.ts";
 import { resolveProviderCallTimeout } from "../../lib/handler-timeout-config.ts";
 import { MemoryExtractOutputError } from "../../lib/non-retryable-errors.ts";
-import { withoutQuotedNames } from "../turn/companion-dialogue-content.ts";
 // 跨空间作用范围的**唯一**判据：抽取侧与 API 写入端共用（42 阶段 1 E）。
 import { memoryScopeForKind } from "@astella/shared/companion-memory-scope";
 import {
@@ -109,30 +108,8 @@ export function isMemoryExtractConfidenceAccepted(confidence: number): boolean {
  * 它是**唯一**一份：worker 抽取侧与 API 写入端共用（42 阶段 1 E）。这里不再留第二份
  * 正则——同一句产品决定在两处各判一次，早晚漂移，而漂移的方向通常是写入端那份更松。
  *
- * 两道判据任一判本地就本地：`memoryScopeForKind(kind, modelScope, binding, content)`。
+ * 只按种类、显式绑定和任务身份计算范围：`memoryScopeForKind(kind, modelScope, binding)`。
  */
-
-/**
- * "系统随时算得出来的那份统计"不是记忆（实机 2026-09-21）。
- *
- * 抽取器把"截至当前，用户本周累计学习时长为 23 分钟，拥有 10 张活跃卡片和 9 篇笔记"
- * 写成了 `learning_context`——而那个 23 分钟本来就是她当轮**没查工具编出来的**
- * （真值 60）。统计量进记忆有两层害：①数值天天变，存下来就是过期事实；
- * ②她自己的编造从此有了"记忆出处"，下一轮照着复述，谁拦都拦不住。
- *
- * 判据要窄，用户说出口的偏好里也带数字（"每天只能挤出四十分钟"、"每次练习约 10 分钟、
- * 每天总计约 40 分钟"），那些是要留的稳定信息——所以**不含**"累计/总计"这种通用量词，
- * 只认指向"现在这一份"的时间窗：本周/今天/截至。
- */
-const VOLATILE_STAT_WINDOW_TEST = /(本周|这周|今天|今日|截至|这一阵)/;
-const STATISTIC_QUANTITY_TEST = /\d+(?:\.\d+)?\s*(分钟|小时|张|篇|项|题|次|条|%)/;
-
-export function isVolatileStatisticMemory(content: string): boolean {
-  // 名字里的数量词不算统计（「背 3 条法律」是一张真卡的标题也可能长这样）：
-  // 误判的代价是这条记忆**根本没写进去**，比误放难发现得多。
-  const outsideNames = withoutQuotedNames(content);
-  return VOLATILE_STAT_WINDOW_TEST.test(outsideNames) && STATISTIC_QUANTITY_TEST.test(outsideNames);
-}
 
 const memoryExtractCandidateSchema = z.object({
   kind: z.enum(["preference", "goal", "learning_context", "interaction_note", "episodic"]),
@@ -149,7 +126,7 @@ const memoryExtractCandidateSchema = z.object({
    * 这条记忆是"关于我怎么学"（portable）还是"关于我现在在弄什么"（local）。
    *
    * 缺省 **local**（fail-closed）：模型没说就按本地处理。宁可少带一条到别的空间，
-   * 也不要把"这个班的作业"带过去。服务端的确定性规则还能再否决一次 portable。
+   * 也不要把"这个班的作业"带过去。宿主只按这个明确的 binding 与记忆种类决定作用范围。
    */
   binding: z.enum(["portable", "local"]).default("local"),
   // 来源字段先保持解析可选，方便安全处理仍未按新合同输出的模型结果；
@@ -183,7 +160,6 @@ const EXTRACT_PROMPT = [
   "  用户说‘我看到一句“每天都该学习”，但我不认同。’ → candidates=[]；引文不是用户观点或指令。",
   "  用户明确说‘更正：我现在晚上更方便学习。’ → 当前纠正优先；不要追加与旧记录冲突的第二条。若当前流程不能用稳定 ID 与 expectedRevision 安全定位旧记录，就不输出候选。",
   "  用户说‘我希望下周完成数据库索引复习。’ → 这是本地短期 goal，不是 preference；若不能提供可核验的有限期限，就不要写入长期记忆。",
-  // 统计量不是记忆：见 isVolatileStatisticMemory。prompt 先讲清规矩，服务端再拦一道。
   "不要记录系统随时能查出来的当前数字（今天/本周学了多久、卡片数、笔记数、到期数）——它们每天都在变，记下来就成了过期事实；只记用户自己说过的稳定偏好、目标和情况。",
   "每条记忆内容不超过 200 字，只保留核心信息，不要赘述。",
   // 契约必须写进 prompt：schema 单方面要求而模型不知道，等于必然失败。
@@ -193,7 +169,7 @@ const EXTRACT_PROMPT = [
   + '"sourceMessageId":"原消息ID","sourceSpeaker":"user","sourceQuote":"原消息中的连续短引文",'
   + '"sourceBasis":"direct_statement|inferred_from_statement","appliesWhen":"适用条件或 null",'
   + '"validUntil":"原话中逐字出现的 ISO 时间戳，否则为 null"}]}',
-  "kind 可以省略（会有默认值），但必须从上面五个枚举里选。",
+  "kind 必须从上面五个枚举里选。",
   // scope 不再由模型选（产品规则按 kind 定），但 binding 必须问它：只有它在对话现场，
   // 能分辨"这句话是在说我这门课，还是在说我一贯怎么学"。
   "不要输出 scope 字段——记忆的可见范围由系统决定。",
@@ -309,17 +285,14 @@ export async function memorySourceHasActionProposal(
   return rows[0]?.delegated === true;
 }
 
-/**
- * An active memory that already covers this candidate makes the extraction a
- * duplicate. Only the "existing covers candidate" direction is skipped: a
- * candidate that adds a condition is allowed through as a refinement.
- */
+/** Skip only an exact active duplicate. Text containment cannot establish
+ * semantic coverage: a longer record may add an exception or a negation. */
 export async function hasCoveredActiveMemoryTwin(
   tx: WorkerTransaction,
   input: { workspaceId: string; userId: string; kind: string; content: string },
 ): Promise<boolean> {
   const normalized = normalizeCompanionMemoryContent(input.content);
-  if (normalized.length < 6) return false;
+  if (!normalized) return false;
   const rows = await tx.execute<{ id: string }>(sql`
     SELECT id FROM assistant_memory_items
     WHERE workspace_id = ${input.workspaceId}
@@ -330,7 +303,8 @@ export async function hasCoveredActiveMemoryTwin(
       AND archived_at IS NULL
       AND (valid_from IS NULL OR valid_from <= now())
       AND (valid_until IS NULL OR valid_until > now())
-      AND position(${normalized} in regexp_replace(regexp_replace(lower(content), '[[:space:][:punct:]]', '', 'g'), '^(用户|我)', '')) > 0
+      AND candidate = false
+      AND btrim(regexp_replace(content, '[[:space:]]+', ' ', 'g')) = ${normalized}
     LIMIT 1
   `);
   return rows.length > 0;
@@ -636,11 +610,10 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
     }
     sourcedCandidates.push({ ...candidate, ...temporal, source: resolution.source });
   }
-  const nonVolatileCandidates = sourcedCandidates.filter((candidate) => !isVolatileStatisticMemory(candidate.content));
   const dedupedCandidates: typeof sourcedCandidates = [];
   const seenSourceKinds = new Set<string>();
   let duplicateSourceKindDropped = 0;
-  for (const candidate of nonVolatileCandidates) {
+  for (const candidate of sourcedCandidates) {
     const key = `${candidate.source.messageId}:${candidate.kind}`;
     if (seenSourceKinds.has(key)) {
       duplicateSourceKindDropped += 1;
@@ -688,18 +661,6 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
         foldedDuplicateQuotes: admissionPassed.length - candidates.length,
       },
       "memory extract folded repeated (kind, sourceQuote) into one fact",
-    );
-  }
-  if (nonVolatileCandidates.length < sourcedCandidates.length) {
-    logger.warn(
-      {
-        jobId: job.id,
-        runId,
-        dropped: sourcedCandidates
-          .filter((c) => isVolatileStatisticMemory(c.content))
-          .length,
-      },
-      "memory extract dropped volatile-statistic candidates (系统查得到，不该记)",
     );
   }
   if (sourceRejected > 0) {
@@ -781,9 +742,8 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
         continue;
       }
       const userStated = candidate.sourceBasis === "direct_statement";
-      // scope 由种类 + 绑定判据决定，不采信模型给的 scope（见 memoryScopeForKind）。
-      // 两道判据任一判本地就本地，服务端规则可以否决模型的 portable。
-      const derivedScope = memoryScopeForKind(candidate.kind, candidate.scope, candidate.binding, candidate.content);
+      // scope 由种类与显式 binding 决定（见 memoryScopeForKind），不再解析正文主题。
+      const derivedScope = memoryScopeForKind(candidate.kind, candidate.scope, candidate.binding);
       // 任务记忆必须带身份（39b C8）：落不了 memory_links 绑定的 task 记忆降级
       // workspace——"缺绑定不能默认为全任务通用"，而 workspace 是它安全的家。
       let scope = derivedScope;
@@ -923,7 +883,6 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
       sourceRejected,
       invalidValidityRejected,
       sensitiveInferenceRejected,
-      volatileDropped: sourcedCandidates.length - nonVolatileCandidates.length,
       duplicateSourceKindDropped,
       dismissedTwinsSkipped: skippedDismissedTwins,
       coveredTwinsSkipped: skippedCoveredTwins,

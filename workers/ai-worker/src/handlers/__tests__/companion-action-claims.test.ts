@@ -1,8 +1,41 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { claimsApplicationActionCompletion, claimsFutureApplicationAction } from "../turn/companion-dialogue-content.ts";
+import { claimsApplicationActionCompletion, claimsFutureApplicationAction } from "../turn/companion-action-claims.ts";
+
+test("casual acknowledgement of user progress never creates a request to write memory", () => {
+  for (const text of ["今天搞定了一件悬着的事，值得高兴。", "你终于搞定了，歇一会儿吧。", "刚搞定了那件事，值得。"])
+    assert.deepEqual(claimsApplicationActionCompletion(text, { conversationOnly: true }), [], text);
+  assert.ok(claimsApplicationActionCompletion("我已经保存了笔记。", { conversationOnly: true }).length > 0);
+  assert.ok(claimsApplicationActionCompletion("我帮你搞定了。", { conversationOnly: true }).length > 0);
+});
+
+test("transforming a mathematical argument is not an application edit", () => {
+  for (const text of [
+    "这个证法把奇偶引理换成了质因数指数唯一，本质相同。",
+    "把分子分母换成「互素整数」了，再比较平方的奇偶性。",
+    "把这个假设改成了一个更弱的假设。",
+    "我们已经将假设换成了一个更弱的假设。",
+    "我把问题改成了等价形式。",
+  ]) assert.deepEqual(claimsApplicationActionCompletion(text), [], text);
+  for (const text of ["笔记里的第二点换成了新内容。", "我帮你换成了新内容。",
+    "第二点改成「还有三个小问题」了。"])
+    assert.ok(claimsApplicationActionCompletion(text).length > 0, text);
+  assert.ok(claimsApplicationActionCompletion("换成了。", { actionRequested: true }).length > 0);
+});
 import { buildCompanionStepCorrectionInstruction, companionActionNotExecutedFallback,
   reviewCompanionStepCorrection } from "../turn/companion-step-plan.ts";
+
+test("repairing an unrequested action claim in chat must not create an action", () => {
+  const instruction = buildCompanionStepCorrectionInstruction({
+    correctQuote: false, rewriteOnly: true,
+    unbackedActionClaims: ["记住了"], unverifiedQuotes: [], unverifiedClaims: [],
+    lookupClaim: false, steerableReadTools: [],
+    steerableActionTools: ["companion_memory_write"], requestedActionTools: [],
+  });
+  assert.match(instruction, /没有要求读取、保存、删除或安排/);
+  assert.match(instruction, /不要为了修正措辞去补做任何操作/);
+  assert.doesNotMatch(instruction, /companion_memory_write|必须调用/);
+});
 
 test("action completion claims are detected without reading quoted evidence as her own claim", () => {
   for (const text of [

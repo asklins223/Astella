@@ -653,7 +653,7 @@ export class OpenCodeGoProvider implements AIProvider {
     this.promptVersion = this.protocol === "mimo_responses" ? "v1-mimo-responses" : "v6-opencode-go";
     this.apiKey = options.apiKey;
     this.modelId = options.model;
-    this.visionModelId = options.model;
+    this.visionModelId = options.modelProfile?.vision === true ? options.model : "";
     this.endpoint = this.protocol === "mimo_responses"
       ? resolveMiMoResponsesEndpoint(options.baseUrl)
       : resolveOpenCodeGoEndpoint(options.baseUrl);
@@ -931,8 +931,12 @@ export class OpenCodeGoProvider implements AIProvider {
       let parsed: Record<string, unknown>;
       try {
         parsed = JSON.parse(data) as Record<string, unknown>;
-        if (typeof parsed.delta === "string" && parsed.delta.length > 0
-          && typeof parsed.type === "string" && /(?:output_text|reasoning_text|reasoning_summary_text|function_call_arguments)\.delta$/u.test(parsed.type)) options.onOutputActivity?.();
+        if (typeof parsed.delta === "string" && parsed.delta.length > 0 && typeof parsed.type === "string") {
+          if (parsed.type === "response.output_text.delta") options.onOutputActivity?.("text");
+          else if (parsed.type === "response.function_call_arguments.delta") options.onOutputActivity?.("tool");
+          else if (["response.reasoning_text.delta", "response.reasoning_summary_text.delta"].includes(parsed.type))
+            options.onOutputActivity?.("reasoning");
+        }
       } catch {
         return false; // 忽略无法解析的 SSE 行（部分网关会插入空行/注释）
       }

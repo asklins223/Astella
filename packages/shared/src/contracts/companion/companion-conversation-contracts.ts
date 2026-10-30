@@ -74,6 +74,8 @@ export const COMPANION_REPLY_MAX_CHARS = 200_000;
 
 /** 上传与实际识图使用同一上限，不能收下图片后再按另一个阈值拒绝。 */
 export const COMPANION_IMAGE_MAX_BYTES_V1 = 10 * 1024 * 1024;
+/** Clients prepare oversized originals before uploading to object storage. */
+export const COMPANION_IMAGE_UPLOAD_TARGET_BYTES_V1 = 4 * 1024 * 1024;
 
 export const companionTextBlockV1Schema = z.object({
   type: z.literal("text"),
@@ -431,7 +433,7 @@ export type CompanionPageContextV1 = z.infer<typeof companionPageContextV1Schema
 
 // ─── Turn create response（§4.2） ─────────────────────────────────────────
 
-export const COMPANION_TURN_MAX_IMAGES_V1 = 9;
+export const COMPANION_TURN_MAX_IMAGES_V1 = 12;
 
 export const createCompanionTurnRequestV1Schema = z.object({
   version: z.literal(1),

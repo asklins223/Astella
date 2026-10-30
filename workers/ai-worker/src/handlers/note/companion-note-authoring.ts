@@ -10,7 +10,6 @@ import { lockJobLease } from "../../lib/job-lease.ts";
 import { lockCompanionRunForEventWrite } from "@astella/shared/companion-lock-order";
 import { assertCompanionContextSourcesCurrent } from "../context/companion-context-sources.ts";
 import type { AgentEventContext } from "../tools/companion-read-tools.ts";
-import { companionNoteLengthIssue, companionRequestedNoteLength } from "../turn/companion-note-length.ts";
 import { CompanionToolNotExecutedError, type AgentToolExecutionResult } from "../tools/companion-tool-result.ts";
 
 /** Each durable write has one identity; a task may create multiple notes. */
@@ -54,33 +53,12 @@ export type CompanionNoteAuthoringEvent = {
   read: Pick<AgentEventContext["read"], "runId" | "userId" | "accountEpoch" | "generation" | "userText">;
 };
 
-/** A direct, current-turn request to avoid library/source reads disables both search and note reading. */
-export function userForbidsNoteLibraryRead(userText: string | null | undefined): boolean {
-  const text = userText?.normalize("NFKC").trim();
-  if (!text) return false;
-  const chineseOptOut = /(?:不要(?!忘(?:了|记|掉))|别(?!忘(?:了|记|掉))|不用|不必|无需|不想|请勿|切勿|禁止)(?:再|去|继续)?(?:搜索|搜|检索|查找|查阅|查|读取|阅读|读|查看|看|打开|浏览)(?:任何|其他|别的|额外|已有|现有|我的|所有)?(?:笔记库|资料库|知识库|笔记|资料|材料|来源|文档|内容)/u;
-  const englishOptOut = /(?:do not|don't|dont|never|without)\s+(?:search|read|look up|browse)(?:\s+(?:any|other|existing|my|additional))?\s+(?:notes?|materials?|sources?|documents?|library|knowledge base)/iu;
-  return chineseOptOut.test(text) || englishOptOut.test(text);
-}
-
 export async function prepareCompanionGeneratedNote(tx: AgentSqlExecutor, event: CompanionNoteAuthoringEvent, input: CompanionCreateNoteV1) {
-  const characters = companionRequestedNoteLength(event.read.userText ?? "");
   const scope = { workspaceId: event.ctx.workspaceId, userId: event.read.userId };
   const links = [...new Map(input.links.map(link => [link.noteId, link])).values()];
   assertGeneratedNoteLinks(input.markdown, new Set(links.map(link => link.noteId)));
-  const forbidsLibraryRead = userForbidsNoteLibraryRead(event.read.userText);
-  if (forbidsLibraryRead && links.length > 0)
-    throw new CompanionToolNotExecutedError("你这轮要求不读取其他资料，因此这篇笔记不添加库内关联。");
-  if (!forbidsLibraryRead && links.length > 0) {
-    // An independent note needs no library evidence; a linked note does. A
-    // blank search turned into a hard rejection would make "write this down"
-    // cost an extra round trip whenever the library has nothing relevant.
-    const [searched] = await queryRows<{ found: boolean }>(tx, sql`SELECT EXISTS(SELECT 1 FROM companion_agent_tool_calls
-      WHERE run_id=${event.read.runId} AND workspace_id=${scope.workspaceId} AND user_id=${scope.userId}
-        AND name='notes.read.search' AND status='succeeded') AS found`);
-    if (!searched?.found)
-      throw new CompanionToolNotExecutedError("正文里带了库内关联，但这一轮没有搜索过笔记库。先搜索并读到真实版本，或者去掉关联、写成独立笔记。");
-  }
+  // Linking requires visible, versioned content actually read in this run.
+  // How the model learned the ID (page, prior context or search) is irrelevant.
   const linkedNotes: CompanionCreatedNoteV1["linkedNotes"] = [];
   const readingPaths: string[] = [];
   for (const link of links) {
@@ -96,10 +74,8 @@ export async function prepareCompanionGeneratedNote(tx: AgentSqlExecutor, event:
     readingPaths.push(`- [${escapeMarkdown(note.title)}](${noteLinkHref(note.id)})：${escapeMarkdown(link.reason)}`);
   }
   const markdown = input.markdown + (readingPaths.length ? `\n\n## 相关笔记\n\n${readingPaths.join("\n")}` : "");
-  // Count the actual saved body, including the reading paths appended by the
-  // host. Link destinations are metadata, not visible prose.
-  const issue = characters ? companionNoteLengthIssue(markdown, characters) : null;
-  if (issue) throw new CompanionToolNotExecutedError(`${issue} 字数包括保存时附加的相关笔记标题与说明，请相应收短正文。`);
+  // The model owns the requested scope and length. Saving validates actual
+  // links, identities and permissions, never a length inferred from prose.
   const blocks = markdownToBlocks(markdown);
   return { markdown, blocks, linkedNotes, links };
 }

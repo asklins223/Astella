@@ -230,11 +230,15 @@ test("每个 DomainError 子类都显式给了 statusCode（否则静默变 500�
 // 2026-10-20：方案 57 删掉制卡/复习/学习轮次那批路由后，随它们一起消失的错误类
 // 有 10 个（409 少 1、404 少 2、500 少 3、502 少 1、503 少 1、透传少 2）。这是删链
 // 的结果，不是语义漂移；新链路若再增删错误类，仍要回来同步这份清单。
+// 2026-10-30：笔记段落改写锁的两个错误改成领域错——`NoteEditLockedError` 原本自己
+// 挂 423 却不继承 `DomainError`，`NoteRangeStaleError` 替代了路由里
+// `Object.assign(new Error, {statusCode:409})` 的临时写法。数字 19→21（423 与 409 各 +1）。
 const STATUS_INVENTORY = {
   "500": 5,
   // 2026-10-24 Release Center：ManifestValidationError 为字面 400；ReleaseCenterError 透传形参。
   "400": 5,
-  "409": 2,
+  "409": 3,
+  "423": 1,
   "透传（形参）": 7,
 } as const;
 
@@ -254,7 +258,7 @@ test("code→status 分布没有漂移（快照 ratchet）", () => {
       else counts["透传（形参）"] = (counts["透传（形参）"] ?? 0) + 1;
     }
   }
-  assert.equal(checked, 19,
+  assert.equal(checked, 21,
     `DomainError 子类数从 17 变成了 ${checked}——增删了错误类。`
     + "这是好事，但要同步更新 STATUS_INVENTORY 并写明为什么。");
   assert.deepEqual(counts, STATUS_INVENTORY,

@@ -162,7 +162,12 @@ test("预热命中不再合成一次：缓存不制造第二条审计", async ()
   const route = source.slice(routeAt);
   const warmAt = route.indexOf("const warmed = await takeWarmCompanionSegment(");
   assert.ok(warmAt > 0, "没找到预热命中的分支");
-  const warmHit = route.slice(warmAt, route.indexOf("const selection = await resolveSelectionForSynthesis(session, req.log);"));
+  const resolveAt = route.indexOf("resolveCompanionSegmentText(");
+  assert.ok(resolveAt > 0 && resolveAt < warmAt,
+    "整段缓存与流式一样，必须先校验段引用归属");
+  const warmHit = route.slice(warmAt, route.indexOf("const result = await synthesizeCompanionTtsSegment(", warmAt));
+  assert.match(warmHit, /warmed\.voiceCacheKey === voiceCacheKey/,
+    "切换声音后不能沿用旧声音的预热字节");
   assert.doesNotMatch(warmHit, /synthesizeTtsBytes\(/,
     "预热命中后又合成了一遍：同一段音频被外发两次，审计也会记两次");
   assert.doesNotMatch(warmHit, /createGovernedMediaCall\(/,
@@ -209,7 +214,7 @@ test("流式缓存未命中时也读取账号音色，并与预热/整段共用�
   const stream = source.slice(from, through);
   assert.match(stream, /resolveSelectionForSynthesis\(req\.session, req\.log\)/,
     "冷流式合成忽略了账号的引擎、音色和声音偏好");
-  assert.match(stream, /resolveTtsSynthesisProfile\(config, selection, ttsInstruction\)/,
+  assert.match(stream, /resolveTtsSynthesisProfile\(config, selection, ttsInstruction(?:, reference\?\.replay)?\)/,
     "冷流式与整段合成必须共用基础音色/本轮语气/方言的解析");
   assert.doesNotMatch(stream, /ttsInstruction\s*\?\?\s*cfg\.instruction/,
     "不能让本轮语气整条替换基础音色指令");

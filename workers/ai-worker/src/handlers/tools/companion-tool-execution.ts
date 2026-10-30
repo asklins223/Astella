@@ -41,6 +41,7 @@ import {isVisionGatedCompanionTool,
   companionOperationName,
 } from "@astella/shared";
 import { stableStringify, sha256Utf8V1 } from "@astella/shared/content-hash";
+import { COMPANION_TURN_MAX_IMAGES_V1 } from "@astella/shared/companion-conversation-contracts";
 import { withWorkerWorkspaceTransaction, type WorkerTransaction } from "../../db.ts";
 import { applyAssistantPersonaEdit, applyAssistantPersonaEdits } from "../memory/companion-persona-self-edit.ts";
 import type { SwitchableField } from "@astella/shared/pet-persona-merge";
@@ -679,6 +680,20 @@ export async function executeReadTool(
       };
     }
     case "visual.read_image": {
+      if (Array.isArray(args.assetIds)) {
+        const ids = args.assetIds;
+        if (!ids.length || ids.length > COMPANION_TURN_MAX_IMAGES_V1
+          || ids.some(id => typeof id !== "string" || !id) || new Set(ids).size !== ids.length
+          || args.assetId || args.noteId) throw new CompanionToolError("我没能确认这组图片。请重新选择1到12张不同的图片再试。");
+        const images = [];
+        for (const assetId of ids) {
+          event.ctx.signal?.throwIfAborted();
+          // Each member retains the same workspace, consent, asset and cache checks.
+          const result = await executeReadTool(event, definition, { assetId, question: args.question });
+          images.push({ assetId, ...result.value });
+        }
+        return { value: { images, count: images.length }, safeSummary: `已按顺序读取${images.length}张图，每张结果独立列出` };
+      }
       const assetId = typeof args.assetId === "string" && args.assetId ? args.assetId : null;
       const noteId = typeof args.noteId === "string" && args.noteId ? args.noteId : null;
       if (!assetId && !noteId) {
@@ -693,10 +708,17 @@ export async function executeReadTool(
           `这张图有 ${(asset.byte_size / 1_000_000).toFixed(1)}MB，太大发不出去，换张小一点的截图才看得了`,
         );
       }
-      const bytes = await getObjectBytes(asset.object_key, READ_IMAGE_MAX_RAW_BYTES);
       const question = typeof args.question === "string" && args.question.trim()
         ? args.question.trim()
         : "图里写了什么、画了什么";
+      const currentVisual = event.imageReadCache?.get(asset.id);
+      if (currentVisual && (!args.question || question === currentVisual.question)) {
+        return { value: { question, description: currentVisual.description,
+          uncertainties: currentVisual.uncertainties, size: `${asset.width}×${asset.height}`,
+          source: "current_native_image_batch" },
+          safeSummary: "已取回本轮对这张原图的实际读取结果" };
+      }
+      const bytes = await getObjectBytes(asset.object_key, READ_IMAGE_MAX_RAW_BYTES);
       const govCtx = await resolveAIGovernanceContext(event.ctx.workspaceId, event.read.userId);
       // 2026-10-06 识图路由：主模型声明能看图就用主模型，否则用专门的识图模型；
       // 都没有就不看（绝不回落给看不见的模型）。

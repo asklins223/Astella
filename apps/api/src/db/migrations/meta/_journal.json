@@ -3200,6 +3200,27 @@
       "when": 1793096400000,
       "tag": "0461_chat_upload_retention",
       "breakpoints": true
+    },
+    {
+      "idx": 457,
+      "version": "7",
+      "when": 1793096401000,
+      "tag": "0462_companion_memory_maintenance_metadata",
+      "breakpoints": true
+    },
+    {
+      "idx": 458,
+      "version": "7",
+      "when": 1793096402000,
+      "tag": "0463_note_last_editor",
+      "breakpoints": true
+    },
+    {
+      "idx": 459,
+      "version": "7",
+      "when": 1793096403000,
+      "tag": "0464_note_rewrite_locks",
+      "breakpoints": true
     }
   ]
 }

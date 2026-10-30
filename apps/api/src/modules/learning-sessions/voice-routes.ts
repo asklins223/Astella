@@ -24,7 +24,7 @@ import { setCompanionSegmentWarmHook } from "../companion-conversation/turn/comp
 import { assertSafeTtsInput, DEFAULT_VOICE_PROFILE } from "./voice-tts-policy.ts";
 import { edgeTtsSynthesizeStream, EdgeTtsError } from "./voice-providers/edge-tts.ts";
 import { stripVoiceExpressionTags } from "@astella/shared/voice-expression-tags";
-import { resolveTtsSynthesisProfile } from "./voice-providers/tts-synthesis-profile.ts";
+import { resolveTtsSynthesisProfile, ttsVoiceCacheKey } from "./voice-providers/tts-synthesis-profile.ts";
 import { qwenTtsSynthesizeStreamForUser, QwenTtsError, warmQwenTtsConnection } from "./voice-providers/qwen-tts.ts";
 import { loadTtsEngineConfig } from "./voice-providers/tts-config.ts";
 import { guidanceVoiceProfile } from "./voice-providers/guidance-voice-profile.ts";
@@ -226,6 +226,7 @@ async function synthesizeCompanionSegmentBytes(args: {
   voice: string;
   /** 这一轮的说话风格指令（段事件带下来的模型自写值）；缺省回退偏好 → config。 */
   instruction?: string;
+  useCurrentDialect?: boolean;
   selection: ResolvedTtsSelection;
   queueKey: string;
   scope: { workspaceId: string; userId: string; currentActiveTransaction: () => unknown };
@@ -242,6 +243,7 @@ async function synthesizeCompanionSegmentBytes(args: {
       scope: args.scope,
       signal: args.signal,
       selection: args.selection,
+      useCurrentDialect: args.useCurrentDialect,
       ...(args.instruction ? { instruction: args.instruction } : {}),
       onQwenFallback: (error) => {
         attempted = "edge";
@@ -329,6 +331,10 @@ export async function voiceRoutes(app: FastifyInstance) {
     }
     const reference = referenceInput?.success ? referenceInput.data : null;
     const text = textInput?.success ? textInput.data : null;
+    const config = loadTtsEngineConfig();
+    const selection = await resolveSelectionForSynthesis(req.session, req.log);
+    if (text?.engine) selection.engine = text.engine;
+    const voiceCacheKey = ttsVoiceCacheKey(config, selection);
     /**
      * 正文来源（2026-10-17）：带引用时按**段引用**取，其余照旧用请求里的 text。
      *
@@ -384,9 +390,9 @@ export async function voiceRoutes(app: FastifyInstance) {
      * 必须在 `resolveCompanionSegmentText` **之后**：缓存按 segmentId 存，先取缓存
      * 就跳过了"这一段属于这个用户这一轮"的校验，猜中的 id 会把别人的音频读出来。
      */
-    if (reference) {
+    if (reference && !reference.replay) {
       const warmed = await takeWarmCompanionSegment(reference.segmentId);
-      if (warmed && warmed.statusCode === 200 && warmed.audio) {
+      if (warmed && warmed.statusCode === 200 && warmed.audio && warmed.voiceCacheKey === voiceCacheKey) {
         // 与整段那条同口径：预热当时没人要，不算"字节交给了客户端"；现在真的来取了，
         // 才补一条 `stage='synth'`，读数（耗时/引擎/字节数）从缓存带回来。
         await recordCompanionTtsSynthOutcome({
@@ -411,17 +417,22 @@ export async function voiceRoutes(app: FastifyInstance) {
         return reply
           .type("audio/mpeg")
           .header("Cache-Control", "no-store")
+          .headers(warmed.deferred?.engine === selection.engine ? {
+            "X-Astella-Tts-Cache-Key": voiceCacheKey,
+            "X-Astella-Tts-Replay-Compatible": warmed.replayCompatible ? "1" : "0",
+          } : {})
           .send(Buffer.from(warmed.audio));
       }
     }
     try {
-      const config = loadTtsEngineConfig();
-      const selection = await resolveSelectionForSynthesis(req.session, req.log);
-      // 手机原文回听也走增量播放器；与 /voice/tts 的普通朗读保持同一音色与语速。
-      if (!reference) selection.qwenDialect = null;
-      // 段引用沿用账号选择；V1 文本接口保留请求参数优先、配置兜底的约定。
-      if (text?.engine) selection.engine = text.engine;
-      const profile = resolveTtsSynthesisProfile(config, selection, ttsInstruction);
+      const profile = resolveTtsSynthesisProfile(config, selection, ttsInstruction, reference?.replay);
+      const replayProfile = resolveTtsSynthesisProfile(config, selection, ttsInstruction, true);
+      const replayCompatible = profile.engine === replayProfile.engine && profile.qwenVoice === replayProfile.qwenVoice
+        && profile.instruction === replayProfile.instruction;
+      const cacheHeaders = {
+        "X-Astella-Tts-Cache-Key": voiceCacheKey,
+        "X-Astella-Tts-Replay-Compatible": replayCompatible ? "1" : "0",
+      };
       const engine = profile.engine;
       req.log.info({ engine, voice: engine === "qwen" ? profile.qwenVoice : selection.edgeVoice,
         instructionSource: profile.instructionSource }, "companion tts stream profile resolved");
@@ -466,6 +477,7 @@ export async function voiceRoutes(app: FastifyInstance) {
               "Content-Type": tracked.contentType,
               "Cache-Control": "no-store",
               "Transfer-Encoding": "chunked",
+              ...cacheHeaders,
             });
             pipeAudioToReply(reply, tracked.stream, aborted);
             return;
@@ -505,6 +517,7 @@ export async function voiceRoutes(app: FastifyInstance) {
         "Content-Type": tracked.contentType,
         "Cache-Control": "no-store",
         "Transfer-Encoding": "chunked",
+        ...(engine === "edge" ? cacheHeaders : {}),
       });
       pipeAudioToReply(reply, tracked.stream, aborted);
     } catch (err) {
@@ -564,35 +577,46 @@ export async function voiceRoutes(app: FastifyInstance) {
     void (async () => {
       // 一身到底：同一批段共用一次偏好解析（逐段读库既慢又可能在半途换音色）。
       const selection = await resolveSelectionForSynthesis(scope, app.log);
+      const config = loadTtsEngineConfig();
       for (const notice of notices) {
         warmCompanionSegment({
           userId: scope.userId,
           segmentId: notice.segmentId,
           turn: { workspaceId: scope.workspaceId, conversationId: notice.conversationId, runId: notice.runId, generation: notice.generation },
-          run: (signal) => synthesizeCompanionTtsSegment({
-            workspaceId: scope.workspaceId,
-            userId: scope.userId,
-            ref: {
-              conversationId: notice.conversationId,
-              runId: notice.runId,
-              generation: notice.generation,
-              ordinal: notice.ordinal,
-              segmentId: notice.segmentId,
-            },
-            // deferOutcome：预热先不落合成结果，等客户端真来取时补记（见 warm 模块注释）。
-            deferOutcome: true,
-            synthesize: (text, voice, instruction) => synthesizeCompanionSegmentBytes({
-              text,
-              voice,
-              ...(instruction ? { instruction } : {}),
-              selection,
-              queueKey: `${scope.workspaceId}:${scope.userId}`,
-              scope: { ...scope, currentActiveTransaction: currentApiWorkspaceTransaction },
-              log: app.log,
-              ordinal: notice.ordinal,
-              signal,
-            }),
-          }),
+          run: async (signal) => {
+            let replayCompatible = false;
+            const result = await synthesizeCompanionTtsSegment({
+              workspaceId: scope.workspaceId,
+              userId: scope.userId,
+              ref: {
+                conversationId: notice.conversationId,
+                runId: notice.runId,
+                generation: notice.generation,
+                ordinal: notice.ordinal,
+                segmentId: notice.segmentId,
+              },
+              // deferOutcome：预热先不落合成结果，等客户端真来取时补记（见 warm 模块注释）。
+              deferOutcome: true,
+              synthesize: (text, voice, instruction) => {
+                const live = resolveTtsSynthesisProfile(config, selection, instruction);
+                const replay = resolveTtsSynthesisProfile(config, selection, instruction, true);
+                replayCompatible = live.engine === replay.engine && live.qwenVoice === replay.qwenVoice
+                  && live.instruction === replay.instruction;
+                return synthesizeCompanionSegmentBytes({
+                  text,
+                  voice,
+                  ...(instruction ? { instruction } : {}),
+                  selection,
+                  queueKey: `${scope.workspaceId}:${scope.userId}`,
+                  scope: { ...scope, currentActiveTransaction: currentApiWorkspaceTransaction },
+                  log: app.log,
+                  ordinal: notice.ordinal,
+                  signal,
+                });
+              },
+            });
+            return { ...result, voiceCacheKey: ttsVoiceCacheKey(config, selection), replayCompatible };
+          },
         });
       }
     })().catch((err) => {
@@ -616,6 +640,7 @@ export async function voiceRoutes(app: FastifyInstance) {
       voice: selection.engine === "qwen" ? selection.qwenVoice : selection.edgeVoice,
       instruction: storedInstruction,
       dialect: selection.qwenDialect,
+      cacheKey: ttsVoiceCacheKey(loadTtsEngineConfig(), selection),
       explicit: selection.explicit,
       updatedAt: stored ? updatedAt : null,
     };
@@ -628,6 +653,8 @@ export async function voiceRoutes(app: FastifyInstance) {
     const session = req.session!;
     await setVoicePreference(session.userId, session.workspaceId, body.engine, body.voice, body.instruction, body.dialect);
     const { stored, updatedAt } = await getStoredVoicePreference(session.userId, session.workspaceId);
+    const config = loadTtsEngineConfig();
+    const selection = resolveTtsSelection(stored, config);
     const storedInstruction = typeof stored?.instruction === "string" && stored.instruction.trim().length > 0
       ? stored.instruction.trim()
       : null;
@@ -636,7 +663,8 @@ export async function voiceRoutes(app: FastifyInstance) {
       engine: body.engine,
       voice: body.voice,
       instruction: storedInstruction,
-      dialect: resolveTtsSelection(stored, loadTtsEngineConfig()).qwenDialect,
+      dialect: selection.qwenDialect,
+      cacheKey: ttsVoiceCacheKey(config, selection),
       explicit: true,
       updatedAt: updatedAt ?? new Date().toISOString(),
     };
@@ -728,46 +756,47 @@ export async function voiceRoutes(app: FastifyInstance) {
       // 这一整轮分段朗读用同一身：逐段重读偏好会让一次回复里的各段音色不一致
       // （中途另一次会话改了设置就会出现），听起来像她忽男忽女。
       if (!(await rateLimitVoice(reply, req.id, `${session.workspaceId}:${session.userId}:tts`, COMPANION_RATE_LIMITS.ttsPerMinute.limit, COMPANION_RATE_LIMITS.ttsPerMinute.windowMs))) return;
+      const ref = {
+        conversationId: parsed.data.conversationId,
+        runId: parsed.data.runId,
+        generation: parsed.data.generation,
+        ordinal: parsed.data.ordinal,
+        segmentId: parsed.data.segmentId,
+      };
+      const resolved = await resolveCompanionSegmentText(scopeOfSession(session), ref);
+      if ("error" in resolved) return reply.code(resolved.statusCode).send(resolved.error);
+      const selection = await resolveSelectionForSynthesis(session, req.log);
+      const voiceCacheKey = ttsVoiceCacheKey(loadTtsEngineConfig(), selection);
       // 预热命中就直接给字节：这一段已经在服务端合成过（或正在合成），**不再合成第二遍**。
       // 命中只影响"谁来等这一次合成"，不影响鉴权、限流与审计（预热那条路自己记过 outcome）。
-      const warmed = await takeWarmCompanionSegment(parsed.data.segmentId);
-      if (warmed && warmed.statusCode === 200 && warmed.audio) {
-        // 预热那一刻没记账（那时还没人要这段音频）。现在客户端真的来取了，
-        // 才补一条 `stage='synth'`：耗时/引擎/字节数从缓存里带回来，读数不失真。
-        await recordCompanionTtsSynthOutcome({ ...scopeOfSession(session),
-userId: session.userId,
-          ref: {
-            conversationId: parsed.data.conversationId,
-            runId: parsed.data.runId,
-            generation: parsed.data.generation,
-            ordinal: parsed.data.ordinal,
-            segmentId: parsed.data.segmentId,
-          },
-          outcome: "ok",
-          durationMs: warmed.deferred?.durationMs ?? 0,
-          engine: warmed.deferred?.engine,
-          bytes: warmed.deferred?.bytes,
-        });
-        return reply
-          .type("audio/mpeg")
-          .header("Cache-Control", "no-store")
-          .send(Buffer.from(warmed.audio));
+      if (!parsed.data.replay) {
+        const warmed = await takeWarmCompanionSegment(parsed.data.segmentId);
+        if (warmed && warmed.statusCode === 200 && warmed.audio && warmed.voiceCacheKey === voiceCacheKey) {
+          // 预热那一刻没记账（那时还没人要这段音频）。现在客户端真的来取了，
+          // 才补一条 `stage='synth'`：耗时/引擎/字节数从缓存里带回来，读数不失真。
+          await recordCompanionTtsSynthOutcome({ ...scopeOfSession(session),
+            userId: session.userId,
+            ref,
+            outcome: "ok",
+            durationMs: warmed.deferred?.durationMs ?? 0,
+            engine: warmed.deferred?.engine,
+            bytes: warmed.deferred?.bytes,
+          });
+          return reply
+            .type("audio/mpeg")
+            .header("Cache-Control", "no-store")
+            .send(Buffer.from(warmed.audio));
+        }
       }
-      const selection = await resolveSelectionForSynthesis(session, req.log);
       const result = await synthesizeCompanionTtsSegment({ ...scopeOfSession(session),
-userId: session.userId,
-        ref: {
-          conversationId: parsed.data.conversationId,
-          runId: parsed.data.runId,
-          generation: parsed.data.generation,
-          ordinal: parsed.data.ordinal,
-          segmentId: parsed.data.segmentId,
-        },
+        userId: session.userId,
+        ref,
         synthesize: (text, voice, instruction) => synthesizeCompanionSegmentBytes({
           text,
           voice,
           ...(instruction ? { instruction } : {}),
           selection,
+          useCurrentDialect: parsed.data.replay,
           queueKey: `${session.workspaceId}:${session.userId}`,
           scope: { workspaceId: session.workspaceId, userId: session.userId, currentActiveTransaction: currentApiWorkspaceTransaction },
           log: req.log,
@@ -797,9 +826,7 @@ userId: session.userId,
         qwenInstructionExplicit: false, qwenDialect: null, explicit: true }
       : body.purpose === "guidance"
         ? { ...resolveTtsSelection(null, loadTtsEngineConfig()), engine: "qwen" }
-        // 不带 purpose 的朗读念的是用户自己的正文：账号里存的方言是给陪说话用的，
-        // 把课文念成方言就是「文字风格异常」换了个出口。音色与语速照旧跟账号。
-        : { ...await resolveSelectionForSynthesis(req.session!, req.log), qwenDialect: null };
+        : await resolveSelectionForSynthesis(req.session!, req.log);
     try {
       // 2026-09-19 语音链路改造：普通朗读也走「qwen WS 优先 + edge 兜底」——
       // 此前硬编码 edge 容器 HTTP（实测每段 2.3–2.5s），桌面伴星的语音完全

@@ -54,12 +54,15 @@ required_free_kb="${REQUIRED_FREE_KB:-5242880}" # 5 GiB：低于这个数就拒�
 free_kb() { df -Pk / | awk 'NR==2 {print $4}'; }
 echo "Disk before deploy: $(free_kb) KiB free; pruning unused docker state" >&2
 docker container prune -f >/dev/null 2>&1 || true
-docker image prune -af >/dev/null 2>&1 || true
+# 本地镜像已经准备完毕，不能像 registry 发布那样先清理再 pull；清掉后无法重取。
+if [[ ${2:-} != --local-images ]]; then
+  docker image prune -af >/dev/null 2>&1 || true
+fi
 docker builder prune -af >/dev/null 2>&1 || true
-# 旧 release 目录：保留 current 指向的那一个与最近两个（回滚链仍完整）。
+# 复制得到的新目录可能保留旧 mtime；目标 release 也必须显式保留。
 current_release="$(readlink -f /opt/astella/current 2>/dev/null || true)"
 while IFS= read -r stale; do
-  [[ -z "$stale" || "$stale" = "$current_release" ]] && continue
+  [[ -z "$stale" || "$stale" = "$current_release" || "$stale" = "$release" ]] && continue
   rm -rf "$stale"
 done < <(find /opt/astella/releases -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' 2>/dev/null \
   | sort -rn | tail -n +4 | cut -d' ' -f2-)

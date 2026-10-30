@@ -113,18 +113,7 @@ export interface SessionContext {
    */
   workspaceName?: string | null;
   workspaceType?: string | null;
-  /**
-   * 这枚凭据签发给了哪一种客户端（0413：`sessions.client_kind`）。
-   *
-   * 产品规则是「手机上人不改笔记正文，伴星改」。伴星那条路没有 HTTP 入口，
-   * 所以规则在服务端的落点是**按凭据**拒掉手机会话的正文写入——判据写在会话行上，
-   * 不在请求头上：头是调用方随时可以不带的东西。谓词见
-   * `middleware.ts` 的 `isNoteContentWriteForbiddenForSession`。
-   *
-   * 可选：签发路径（登录/注册/切空间）自己会填，列默认值是 `desktop`，
-   * 所以桌面端一次调用都不用改。缺省按桌面放行——这一位是收紧用的闸门，
-   * 不是身份凭据，把它当"未知即拒绝"会让没有 0413 的库直接锁死所有写入。
-   */
+  /** 会话来源客户端；正文权限由空间角色决定，2026-10-29 起手机也可自由编辑。 */
   clientKind?: string | null;
   /**
    * 当前空间的服务端边界令牌（`workspaces.workspace_epoch`，迁移 0261）。

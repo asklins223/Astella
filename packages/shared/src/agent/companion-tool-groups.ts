@@ -4,7 +4,7 @@
  * The full catalog still contains every declared capability. The model only
  * sees a small core + the groups declared for the current page, and can expand
  * the surface itself with `companion_load_tools`. Nothing is removed based on
- * the classifier's guess: candidate operations may only *add* a group.
+ * the classifier's guess. Business schemas are loaded on demand by the model.
  */
 
 export const COMPANION_TOOL_GROUP_IDS = [
@@ -25,30 +25,14 @@ export const COMPANION_DIRECT_ENTRY_TOOL_NAMES = ["companion_deepen", "companion
 export const COMPANION_CORE_TOOL_NAMES: readonly string[] = Object.freeze([
   ...COMPANION_DIRECT_ENTRY_TOOL_NAMES,
   "companion_observe",
-  "companion_notes_read",
-  "companion_notes_write",
-  "companion_memory_read",
-  "companion_memory_write",
-  "companion_attention_read",
-  "companion_attention_write",
   "companion_send_message",
-  "companion_persona_read",
-  "companion_persona_write",
-  "companion_visual",
-  "companion_goals_read",
-  "companion_goals_write",
   "companion_finish",
   "companion_load_tools",
 ]);
 
 /**
- * 高频应用动作，不随本轮意图分类进出工具面。
- *
- * 2026-10-25 实机：分类器一次解析失败，候选操作为空，手机端又没有当前笔记页，
- * 于是 `companion_edit_note` 根本不在工具面里；模型照着历史里上一次成功的编辑，
- * 回了一句“保存回执 succeeded”。工具面按声明给，不按猜测给——这些是已授权
- * 用户最常要求的动作，先把它们放进默认面；其余能力仍可用 `companion_load_tools`
- * 展开。它们只扩大可见视图，执行侧的权限、确认与回执校验不变。
+ * Application actions used by the proactive host's permission filter. They
+ * remain in the complete catalog and discoverable groups, not every prompt.
  */
 export const COMPANION_COMMON_ACTION_TOOL_NAMES: readonly string[] = Object.freeze([
   "companion_notes_write",
@@ -85,13 +69,14 @@ export const COMPANION_TOOL_GROUPS: Readonly<Record<CompanionToolGroupId, {
     description: "保存/修订/忘记记忆，记录判断，检索旧对话，读手册、日记，调整记忆容量层。",
     tools: [
       "companion_memory_read", "companion_memory_write",
+      "companion_memory_save", "companion_memory_forget",
     ],
   },
   persona: {
     label: "她自己的表达与边界",
     description: "写自己的记事、身份、语气、标签，调整活跃度与行为边界。",
     tools: [
-      "companion_persona_read", "companion_persona_write",
+      "companion_persona_read", "companion_persona_write", "companion_self_note_write",
     ],
   },
   attention: {
@@ -105,7 +90,7 @@ export const COMPANION_TOOL_GROUPS: Readonly<Record<CompanionToolGroupId, {
     label: "后台持续目标",
     description: "启动、查看、修改、暂停/继续/停止后台目标，生成速看/脑图/演示/拓展稿。",
     tools: [
-      "companion_goals_read", "companion_goals_write",
+      "companion_goals_read", "companion_goals_write", "companion_goal_start",
     ],
   },
   web: {
@@ -209,11 +194,8 @@ export function resolveCompanionInitialToolNames(input: {
   for (const name of COMPANION_CORE_TOOL_NAMES) {
     if (available.has(name)) names.add(name);
   }
-  // Common application actions are declaration-driven. A wrong or missing
-  // interpretation must not remove the user's ability to act.
-  for (const name of COMPANION_COMMON_ACTION_TOOL_NAMES) {
-    if (available.has(name)) names.add(name);
-  }
+  // Discovery is always present. Deferral is the same for all user turns,
+  // independent of classifier labels, phrasing, language or confidence.
   const groups = new Set<CompanionToolGroupId>(companionPageToolGroups(input.pageKind));
   // Intent candidates do not add or remove groups. The model expands the
   // surface itself with companion_load_tools when it needs another capability.

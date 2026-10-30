@@ -110,8 +110,9 @@ test("后台主动参与不能替用户创建批注", async () => {
   });
 });
 
-test("完整写入就是终态，附带的无效发言不再产生额外模型调用", async () => {
+test("完整写入就是终态：显式发言交付一次，不产生额外模型调用", async () => {
   const f = await fixture();
+  const optionalSpeech = "（这轮没有需要补充的新内容，安静收尾。）";
   await f.tx(async t => {
     await t`INSERT INTO user_ai_settings(user_id,consent_version,consent_at,data_policy)
       VALUES(${f.scope.userId},'integration-test-v1',now(),${t.json({sendToExternal:false,sendImageContent:false,piiDetection:true,auditLogging:true})})`;
@@ -128,11 +129,11 @@ test("完整写入就是终态，附带的无效发言不再产生额外模型�
   const stream = Object.getOwnPropertyDescriptor(MockProvider.prototype, "chatCompletionStream")!;
   let calls = 0;
   MockProvider.prototype.executeAgentTurn = async request => {
-    assert.equal(++calls, 1, "完整产物已写入，不能为了无效的附带发言再次调模型");
+    assert.equal(++calls, 1, "完整产物已写入，不能为了附带的交流再次调模型");
     assert.ok(request.tools.some(tool => tool.name === "companion_notes_write"));
     return { content: "", toolCalls: [
       { id: "write-formal-explanation", name: "companion_notes_write", arguments: { action: "annotate", markdown } },
-      { id: "invalid-optional-speech", name: "companion_send_message", arguments: { text: "（这轮没有需要补充的新内容，安静收尾。）" } },
+      { id: "optional-speech", name: "companion_send_message", arguments: { text: optionalSpeech } },
     ], finishReason: "tool_calls", usage: {promptTokens:10,completionTokens:10}, providerRequestId: null };
   };
   Object.defineProperty(MockProvider.prototype,"chatCompletionStream",{...stream,value:undefined});
@@ -144,6 +145,8 @@ test("完整写入就是终态，附带的无效发言不再产生额外模型�
     const [saved] = await t`SELECT explanation FROM note_annotations WHERE id=${f.requestId}`;
     assert.equal(saved!.explanation,markdown);
     const messages = await t`SELECT blocks FROM companion_messages WHERE run_id=${f.event.read.runId} AND role='assistant'`;
-    assert.equal(messages.length,0);
+    // 模型显式要求发送的短句按原样交付一次；宿主不按措辞猜测“这其实是收尾”。
+    assert.equal(messages.length,1);
+    assert.deepEqual(messages[0]!.blocks, [{ type: "text", text: optionalSpeech }]);
   });
 });

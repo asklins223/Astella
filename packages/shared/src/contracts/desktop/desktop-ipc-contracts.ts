@@ -962,8 +962,6 @@ export const gatewayErrorCodeValues = [
   "not_found",
   "validation",
   "memory_global_kind_rejected",
-  "memory_global_content_bound",
-  "memory_global_condition_bound",
   "conflict",
   "rate_limited",
   "network_timeout",

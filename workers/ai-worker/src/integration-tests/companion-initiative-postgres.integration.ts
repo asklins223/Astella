@@ -364,23 +364,25 @@ test("an attention wake uses the same agent and silence is a successful result",
   const [event] = await admin`SELECT payload FROM companion_stream_events WHERE run_id=${run.id} AND type='turn.completed'`;
   assert.equal(event!.payload.silent,true);
 });
-test("a quiet execution note does not become a conversation message", async () => {
+test("an initiative's spoken prose is delivered as written, not filtered by its wording", async () => {
   const f = await fixture(); await prefs(f,"学久了提醒我休息。"); await observe(f); await prepare(f);
-  const run = await runPrepared(f,async()=>({ ...(await silentAnswer()), content:"（这轮没有需要补充的新内容，安静收尾。）" }));
+  const text = "（这轮没有需要补充的新内容，安静收尾。）";
+  const run = await runPrepared(f,async()=>({ ...(await silentAnswer()), content:text }));
   const [result] = await admin`SELECT status FROM companion_turn_runs WHERE id=${run.id}`;
   assert.equal(result!.status,"succeeded");
-  assert.equal((await admin`SELECT 1 FROM companion_messages WHERE user_id=${f.userId}`).length,0);
-  const events = await admin`SELECT type,payload FROM companion_stream_events WHERE run_id=${run.id} ORDER BY seq`;
-  assert.equal(events.filter(event=>event.type==='assistant.final' || event.type==='assistant.utterance').length,0);
-  assert.equal(events.find(event=>event.type==='turn.completed')!.payload.silent,true);
+  // Explicit speech is speech; only an empty answer or companion_finish(silent)
+  // ends an initiative without a message. The host does not classify wording.
+  const messages = await admin`SELECT blocks FROM companion_messages WHERE run_id=${run.id} AND role='assistant'`;
+  assert.equal(messages.length,1);
+  assert.equal(messages[0]!.blocks[0].type,"text");
+  assert.equal(messages[0]!.blocks[0].text,text);
 });
 test("a structured quiet decision finishes without another model call or speech", async () => {
   const f = await fixture(); await observe(f); await prepare(f);
   let calls = 0;
-  const run = await runPrepared(f,async request=>{
+  const run = await runPrepared(f,async()=>{
     calls++;
     assert.equal(calls,1);
-    assert.equal(request.disableThinking,true,"Startup consideration should use the light thinking mode");
     return await silentAnswer();
   });
   const [result] = await admin`SELECT status FROM companion_turn_runs WHERE id=${run.id}`;
@@ -485,32 +487,28 @@ for (const userInitiated of [false, true]) test(`the same agent publishes real u
       AND o.topic='reply.finished' AND j.status='pending'`).length, 1);
 });
 
-test("a partial user-requested publication continues through bare prose and premature final flags", async () => {
-  for (const prematureFinal of [false, true]) {
-    const f = await fixture(); await observe(f); await prepare(f);
-    const [prepared] = await admin`SELECT id FROM companion_turn_runs WHERE user_id=${f.userId}`;
-    const messageId = randomUUID();
-    await admin`INSERT INTO companion_messages(id,workspace_id,user_id,conversation_id,seq,role,kind,blocks,content_sha256)
-      VALUES(${messageId},${f.workspaceId},${f.userId},${f.conversationId},1,'user','text',
-        '[{"type":"text","text":"分两条跟我说：第一条只问好，第二条问我今天想先做什么。"}]'::jsonb,${"0".repeat(64)})`;
-    await admin`UPDATE companion_conversations SET next_message_seq=2 WHERE id=${f.conversationId}`;
-    await admin`UPDATE companion_turn_runs SET user_message_id=${messageId},input_source=NULL WHERE id=${prepared!.id}`;
-    let step = 0;
-    const run = await runPrepared(f, async request => {
-      step++;
-      assert.ok(request.tools.some(tool => tool.name === "companion_send_message"));
-      if (step === 2) return { ...await silentAnswer(), content: "今天想先做什么？" };
-      assert.ok(step <= 3, "only the missing message should be repaired");
-      return { ...await silentAnswer(), content: step === 1 ? "我先准备一下。" : "", finishReason: "tool_calls",
-        toolCalls: [{ id: step === 1 ? "first-message" : "remaining-message", name: "companion_send_message",
-          arguments: { text: step === 1 ? "你好。" : "今天想先做什么？", final: step === 1 ? prematureFinal : true } }] };
-    });
-    assert.equal(step, 3);
-    const messages = await admin`SELECT blocks FROM companion_messages WHERE run_id=${run.id} AND role='assistant' ORDER BY seq`;
-    assert.deepEqual(messages.map(message => message.blocks[0].text), ["你好。", "今天想先做什么？"]);
-    assert.equal((await admin`SELECT 1 FROM companion_stream_events WHERE run_id=${run.id} AND type IN ('assistant.delta','assistant.final')`).length, 0);
-    assert.equal((await admin`SELECT status FROM companion_turn_runs WHERE id=${run.id}`)[0]!.status, "succeeded");
-  }
+test("the host does not force a message count from the request's wording", async () => {
+  const f = await fixture(); await observe(f); await prepare(f);
+  const [prepared] = await admin`SELECT id FROM companion_turn_runs WHERE user_id=${f.userId}`;
+  const messageId = randomUUID();
+  await admin`INSERT INTO companion_messages(id,workspace_id,user_id,conversation_id,seq,role,kind,blocks,content_sha256)
+    VALUES(${messageId},${f.workspaceId},${f.userId},${f.conversationId},1,'user','text',
+      '[{"type":"text","text":"分两条跟我说：第一条只问好，第二条问我今天想先做什么。"}]'::jsonb,${"0".repeat(64)})`;
+  await admin`UPDATE companion_conversations SET next_message_seq=2 WHERE id=${f.conversationId}`;
+  await admin`UPDATE companion_turn_runs SET user_message_id=${messageId},input_source=NULL WHERE id=${prepared!.id}`;
+  let steps = 0;
+  const run = await runPrepared(f, async request => {
+    steps++;
+    assert.equal(steps,1,"一条显式消息就是终态；宿主不按用户措辞追加条数");
+    assert.ok(request.tools.some(tool => tool.name === "companion_send_message"));
+    return { ...await silentAnswer(), finishReason: "tool_calls",
+      toolCalls: [{ id: "only-message", name: "companion_send_message", arguments: { text: "你好。" } }] };
+  });
+  assert.equal(steps,1);
+  const messages = await admin`SELECT blocks FROM companion_messages WHERE run_id=${run.id} AND role='assistant' ORDER BY seq`;
+  assert.deepEqual(messages.map(message => message.blocks[0].text), ["你好。"]);
+  assert.equal((await admin`SELECT 1 FROM companion_stream_events WHERE run_id=${run.id} AND type IN ('assistant.delta','assistant.final')`).length, 0);
+  assert.equal((await admin`SELECT status FROM companion_turn_runs WHERE id=${run.id}`)[0]!.status, "succeeded");
 });
 
 test("a due intention yields to typing and can wake again at the same revision", async () => {

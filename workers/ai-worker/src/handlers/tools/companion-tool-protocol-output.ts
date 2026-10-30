@@ -1,6 +1,6 @@
 /** Native tool syntax is a transport record, not assistant prose. Code examples
  * remain valid Markdown; an unfinished inline span is held while streaming. */
-function proseOutsideCode(text: string, streaming: boolean): { prose: string; pendingInlineAt: number | null } {
+export function proseOutsideCode(text: string, streaming: boolean): { prose: string; pendingInlineAt: number | null } {
   let fence: { marker: string; length: number } | null = null;
   let masked = text.split(/(?<=\n)/).map(line => {
     const marker = line.match(/^ {0,3}(`{3,}|~{3,})/);
@@ -49,4 +49,11 @@ export function withholdPartialCompanionToolProtocol(text: string): string {
   if (open < 0) return safeText;
   const suffix = prose.slice(open).replace(/\s/g, "").toLowerCase();
   return TOOL_PROTOCOL_HEADS.some(head => head.startsWith(suffix)) ? safeText.slice(0, open) : safeText;
+}
+
+/** Reserved host data envelopes are a protocol shape. Ordinary field names,
+ * UUIDs, quoted examples and code are not evidence of context leakage. */
+export function containsCompanionContextEnvelope(text: string): boolean {
+  const prose = proseOutsideCode(text, false).prose;
+  return /^\s*<(?:memory_data|memory_directory|persona_data|selection_data|diary_reference|page_context|grounded_target|here_and_now|conversation_timeline|answer_draft_data|review_context_data)>/mu.test(prose);
 }

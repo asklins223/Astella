@@ -4,6 +4,7 @@ import { applyCompanionToolLoad, createCompanionToolSurface } from "../tools/com
 import { rejectUnknownCompanionTool, unofferedToolReceipt, validateCompanionToolCall } from "../tools/companion-tool-call-validation.ts";
 import { companionRecoveryIdentity, openCompanionTurn } from "../turn/companion-turn-opening.ts";
 import { resumeCompanionInterruptedInput } from "../agent/companion-resume-input.ts";
+import { COMPANION_TOOL_GROUP_IDS, resolveCompanionToolGroupNames, resolveAllCompanionAgentTools } from "@astella/shared";
 
 /**
  * The surface, validation, opening and resume helpers extracted from the agent
@@ -24,6 +25,19 @@ const definitions = [
   tool("observe.activity"),
   tool("companion_load_tools"),
 ];
+
+test("deferred discovery retains every permission-filtered capability", () => {
+  for (const level of ["read_only", "guided", "full"] as const) {
+    const catalog = resolveAllCompanionAgentTools(level, { visionEnabled: true });
+    const surface = createCompanionToolSurface({ definitions: catalog, pageKind: null, candidateOperations: [] });
+    const initial = surface.offered().map(tool => tool.name);
+    assert.ok(initial.includes("companion_load_tools"));
+    assert.equal(initial.includes("companion_notes_write"), false);
+    for (const name of resolveCompanionToolGroupNames(COMPANION_TOOL_GROUP_IDS))
+      if (catalog.some(tool => tool.name === name)) surface.loadedToolNames.add(name);
+    assert.deepEqual(surface.offered().map(tool => tool.name).sort(), catalog.map(tool => tool.name).sort());
+  }
+});
 
 test("工具面：核心+当前页组先给，装载后只增不减", () => {
   const surface = createCompanionToolSurface({

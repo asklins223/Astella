@@ -196,12 +196,6 @@ export function pickDiarySubject(pieces: DiaryPiece[]): DiaryPiece | null {
   })[0];
 }
 
-/** 有实在的卡壳时优先写它；泛泛的问候与操作回执不该永远抢到日记的开头。 */
-export function diaryAssistantWeight(text: string): number {
-  return /我(?:还真)?(?:不太|不|没)(?:清楚|知道|确定|明白|查过|看过|读到|答上来)|我(?:记错|说错|弄错|翻漏)了?/.test(text)
-    ? 4 : 3;
-}
-
 /** Render the chosen exchange once, in order. Its source records are already
  * bounded by candidate selection and the request governor; do not crop them
  * again here or remove the ending that explains a correction. */
@@ -240,49 +234,11 @@ export function minuteOfDay(at: string): number | null {
 
 
 
-/**
- * 一段原文配不配被她引进日记。
- *
- * 这条链路吃过三次亏，每次都记在这里：
- *   - 09-18：前四条候选里两条是「👉 仓库地址 (记得Star🌟)：网页链接」，她照单引用；
- *   - 09-21/09-22：引的是用户在笔记里留的探针串（「这段全空间都读得到｜A 加的那句｜
- *     实窗量测 export 22:48:46｜…」），她还替它编了一段解读；
- *   - 09-23：引了网页笔记开头那段推广语，还被切断在句子中间。
- * 「按长度取最长的」修不掉这些——推广导语往往正是最长的那段。所以改成：
- * 垃圾在这里挑掉，长度上限交给 SQL（超 180 字整条不要，不再有硬切）。
- */
-const QUOTE_JUNK_TEST = /https?:\/\/|www\.|网页链接|阅读原文|记得\s*Star|求三连/i;
-
+/** Quote admission validates the shared block schema only. Relevance and
+ * tone belong to the model; language, punctuation and emoji are not vetoes. */
 export function isQuotableQuote(text: string): boolean {
-  const body = text.replace(/\s+/g, " ").trim();
-  if (body.length < 20 || body.length > 180) return false;
-  // 得是**一句话**：没有一个句末标点就不是句子，而是清单、表头或一串乱码。
-  // 09-24 真跑实录：用户在笔记里敲的「aside啊说的哈回电话给啊合适的哈…科技三等奖哈」
-  // 被当原文引用摆进日记，她还顺着编出"键盘被猫踩了一脚"——长度、链接、表情三道关
-  // 都拦不住它，因为它唯一的毛病就是**不成句**export 。
-  if (!/[。！？；!?]/.test(body)) return false;
-  // 光有句号还不够：「修改笔记。12312 123123123123」也是用户敲的占位内容，
-  // 句号是真的，句子是假的。真句子至少有八个汉字连成一串——
-  // 那句被我们留下来的好引用（"…整体提速约 2.28 倍，主观听感无可感知下降。"）
-  // 最长连串是十个字，所以这条不会把技术句误杀。
-  if (!/[\u4e00-\u9fff]{8,}/.test(body)) return false;
-  if (QUOTE_JUNK_TEST.test(body)) return false;
-  // 表情符号：👉🔥🌍🌟 这类是推广行的标志，也是"这段不是给人读的句子"的标志。
-  if (/\p{Extended_Pictographic}/u.test(body)) return false;
-  // 表格/分隔符堆出来的碎片（探针串就是这一类）。
-  if ((body.match(/[｜|]/g) ?? []).length >= 2) return false;
-  return true;
+  return companionDailyBlockV1Schema.safeParse({ type: "quote", label: "source", text: text.trim() }).success;
 }
-
-/**
- * 排在序号条目：`1. 硕士及以上学历…`、`- 仓库地址…`。
- *
- * 网页笔记的收尾往往挂着招聘要求和推广清单，它们长度常常压过正文
- * （实测 09-23 那篇候选池里最长的两条就是岗位要求），于是"按长度取"
- * 会把职位描述摆进她的日记。不是删掉——池子里只剩这些时也得有东西可用——
- * 只是排在真句子后面。
- */
-const LIST_ITEM_TEST = /^\s*(?:\d+\s*[.、)）]|[-•·*])\s*/;
 
 /**
  * 从候选池里挑出能进 prompt 的那几条。
@@ -295,13 +251,9 @@ export function pickQuoteCandidates<T extends { content: string; note_id: string
   max = 3,
 ): T[] {
   const quotable = rows.filter((row) => isQuotableQuote(row.content));
-  const ordered = [
-    ...quotable.filter((row) => !LIST_ITEM_TEST.test(row.content)),
-    ...quotable.filter((row) => LIST_ITEM_TEST.test(row.content)),
-  ];
   const seenNotes = new Set<string>();
   const picked: T[] = [];
-  for (const row of ordered) {
+  for (const row of quotable) {
     if (seenNotes.has(row.note_id)) continue;
     seenNotes.add(row.note_id);
     picked.push(row);
@@ -312,35 +264,7 @@ export function pickQuoteCandidates<T extends { content: string; note_id: string
 
 
 
-// ─── prompt 与输出校验 ───────────────────────────────────────────────────
-
-/**
- * 报数检测：日记正文里出现"数字 + 量词"就是流水账。
- *
- * 比记忆链路那道 `isVolatileStatisticMemory` 更严——那道还要求句中带
- * 本周/今天这类时间窗，而日记天天在说今天，窗口条件是白给的。
- * 也不至于误伤标题：「100 以内加法」「F=ma」后面没跟量词。
- */
-const COUNTING_TONE_TEST = /\d+(?:\.\d+)?\s*(?:分钟|小时|张|篇|项|题|次|条|个|页|%)/;
-
-/**
- * 中文数字的同一道闸。
- *
- * 09-20 的实录：正文写着「今天学了半小时上下」——素材行里那句
- * 「今天你学了半小时上下（这只是感觉，别在日记里报数）」被她整句抄走。
- * 规则 2 只说了"不出现阿拉伯数字"，她就换成中文数字，闸门只认 `\d` 于是全放行。
- *
- * 量词表比阿拉伯那道还窄一点：不收「天、周、个、一、几」，也不收「遍」。
- * 「这两天」「一个念头」「几天没见」「那句话他念了两遍」都是正常的话，
- * 把它判成报数会误伤，而误伤一次的代价是一天没有日记（两次不合规矩就判失败）。
- */
-const CHINESE_COUNTING_TONE_TEST =
-  /(?:两|三|四|五|六|七|八|九|十)\s*(?:分钟|小时|钟头|张|篇|项|题|次|条|页)|半\s*(?:分钟|小时|钟头)/;
-
-export function countingToneIn(text: string): string | null {
-  const hit = COUNTING_TONE_TEST.exec(text) ?? CHINESE_COUNTING_TONE_TEST.exec(text);
-  return hit ? hit[0] : null;
-}
+// ─── Prompt and structural output validation ─────────────────────────────
 
 /**
  * 正文里的编号（图1 / 引1）机械剥掉。
@@ -389,20 +313,6 @@ export function exampleEchoIn(prose: string, examples: string[]): string | null 
     }
   }
   return null;
-}
-
-/**
- * 道歉与自贬。
- *
- * 用户裁定"要写她自己没做好的事"——翻漏了、当时没答上来，那是她的一天里最像她的部分。
- * 但记事不是检讨：09-18 那篇的「我不是在敷衍」、09-23 的「这种懒病没救了」都是把一件
- * 小事写成了一场自我批评。只在第一轮退（她坚持要检讨，也不该让这一天没有日记）。
- */
-const SELF_PUTDOWN_TEST = /(对不起|抱歉|辜负|真笨|废物|没救了|拖后腿)/;
-
-export function selfPutdownIn(text: string): string | null {
-  const hit = SELF_PUTDOWN_TEST.exec(text);
-  return hit ? hit[0] : null;
 }
 
 /**
@@ -594,7 +504,7 @@ export function diaryImageLabel(
   const title = `《${embed.noteTitle}》`;
   // 40 字：加上 28 字的标题与「· 」正好在 label 的 80 字上限之内，不会被截。
   const clean = clipAtBoundary(stripEmbedRefs(flattenParagraph(caption ?? "")).text, 40);
-  if (clean && !countingToneIn(clean)) return `${clean}（${title}）`.slice(0, 80);
+  if (clean) return `${clean}（${title}）`.slice(0, 80);
   return embed.nth > 1 ? `${title}里的另一张图` : `${title}里的一张图`;
 }
 

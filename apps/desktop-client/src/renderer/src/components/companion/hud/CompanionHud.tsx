@@ -157,7 +157,12 @@ export function CompanionHud({
   const [goalHistoryTarget, setGoalHistoryTarget] = useState<{ runId: string; visit: number } | null>(null);
   const [replyProcessOpen, setReplyProcessOpen] = useState(false);
   const previewOpen = useCompanionResultPreview(state => Boolean(state.target || state.sourceTarget));
-  const interaction = useCompanionInteraction(chat, voiceEnabled, floatingBlocked || settingsOpen || goalBubbleOpen || chat.mode === "history" || previewOpen, replyProcessOpen);
+  // A native file chooser can stay open longer than the idle bubble lifetime.
+  // Keep its input mounted until selection/cancellation, including uploads.
+  const imageAttachment = useCompanionImageAttachment();
+  const [imagePickerOpen, setImagePickerOpen] = useState(false);
+  const interaction = useCompanionInteraction(chat, voiceEnabled, floatingBlocked || settingsOpen || goalBubbleOpen || chat.mode === "history" || previewOpen,
+    replyProcessOpen, imagePickerOpen || imageAttachment.uploading || imageAttachment.images.length > 0);
   const goals = useAgentGoals(chat.phase, id => {
     interaction.closeVoice(); setSettingsOpen(false); chat.setMode("closed"); setSelectedGoalId(id); setGoalBubbleOpen(true);
   });
@@ -179,8 +184,14 @@ export function CompanionHud({
    * 状态住在这里是因为抽屉是 HUD 的子面板（onSend 也回调到这里），
    * 两处各持一份会出现"在抽屉里选的图，回到气泡发不出去"。
    */
-  const imageAttachment = useCompanionImageAttachment();
   const imageInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const input = imageInputRef.current;
+    if (!input) return;
+    const cancelled = () => setImagePickerOpen(false);
+    input.addEventListener("cancel", cancelled);
+    return () => input.removeEventListener("cancel", cancelled);
+  }, [chat.mode]);
   /** 回合结束后只发布一次的稳定摘要（方案 §3 无障碍）：流式文本不再是持续 live region。 */
   const [turnSummary, setTurnSummary] = useState("");
   const [revealedChars, setRevealedChars] = useState(0);
@@ -923,7 +934,9 @@ export function CompanionHud({
   const sendLimitNote = companionComposerLimitNote(input, chat.feedSelection ?? chat.feedNoteAnchor?.anchor.excerpt);
   const sendText = useCallback(async (textOverride?: string, fromVoice = false) => {
     const text = (textOverride ?? input).trim();
-    if (!text || companionComposerLimitNote(text, chat.feedSelection ?? chat.feedNoteAnchor?.anchor.excerpt)) return false;
+    if ((!text && !imageAttachment.images.length) || imageAttachment.uploading
+      || companionComposerLimitNote(text, chat.feedSelection ?? chat.feedNoteAnchor?.anchor.excerpt)) return false;
+    const sentImages = imageAttachment.images;
     if (!fromVoice) setInput("");
     const sourceConversationId = chat.conversationId;
     if (chat.mode === "conversation") chat.setMode("closed");
@@ -941,13 +954,11 @@ export function CompanionHud({
         ...(requestedVoiceOutputEnabled === true ? { voiceOutput: true } : {}),
         // 输入框传图（2026-10-06）：附件随这一轮走；发送成功才清掉，
         // 失败时留在输入框边——用户点一次重试就够。
-        ...(imageAttachment.image
-          ? { image: { url: imageAttachment.image.url, label: imageAttachment.image.label } }
-          : {}),
+        ...(imageAttachment.images.length ? { images: imageAttachment.images } : {}),
         ...(chat.feedNoteAnchor ? { noteAnchor: chat.feedNoteAnchor } : {}),
         ...(selection ? { selection: { text: selection } } : {}),
       });
-      if (sent) { chat.dismissFeedSelection(); imageAttachment.clear(); }
+      if (sent) { chat.dismissFeedSelection(); sentImages.forEach(image => imageAttachment.remove(image.url)); }
       else if (sendId === preparingSendIdRef.current) {
         noteReplySaveAttemptRef.current = null;
         // 失败时把输入面板放回来（审计 F1）：以前发送一开始就收起输入，
@@ -1348,7 +1359,8 @@ export function CompanionHud({
                 ) : null}
                 {sendLimitNote ? <small role="status">{sendLimitNote}</small> : null}
 
-                {imageAttachment.image ? <CompanionComposerImageChip image={imageAttachment.image} onRemove={imageAttachment.clear} /> : null}
+                {imageAttachment.images.length ? <div className="companion-compose-images">{imageAttachment.images.map(image =>
+                  <CompanionComposerImageChip key={image.url} image={image} onRemove={() => imageAttachment.remove(image.url)} />)}</div> : null}
                 <CompanionComposerImageStatus uploading={imageAttachment.uploading} error={imageAttachment.error} />
 
                 <form
@@ -1376,11 +1388,12 @@ export function CompanionHud({
                     disabled={voice.phase === "closing"}
                   />
                   <div className="companion-hud__compose-tools">
-                  <input ref={imageInputRef} type="file" accept={NOTE_IMAGE_UPLOAD_MIME_TYPES.join(",")} className="companion-compose-image__input"
-                    onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) void imageAttachment.pick(file); }} />
+                  <input ref={imageInputRef} type="file" multiple accept={NOTE_IMAGE_UPLOAD_MIME_TYPES.join(",")} className="companion-compose-image__input"
+                    onClick={() => setImagePickerOpen(true)}
+                    onChange={(event) => { setImagePickerOpen(false); const files = Array.from(event.currentTarget.files ?? []); event.currentTarget.value = ""; if (files.length) void imageAttachment.pick(files); }} />
                   {/* 「＋」= 传一张图给她（2026-10-06）；页面快捷操作挪到右边独立图标。 */}
                   <button type="button" className="companion-hud__compose-action" disabled={imageAttachment.uploading}
-                    onClick={() => imageInputRef.current?.click()} aria-label="传一张图给伴星" title="传一张图给她">
+                    onClick={() => imageInputRef.current?.click()} aria-label="添加图片，最多12张" title="添加图片，最多12张">
                     {imageAttachment.uploading ? <Loader2 className="companion-hud__spin" size={18} /> : <Plus size={20} />}
                   </button>
                   <CompanionAgentPermissionMenu buttonClassName="companion-hud__compose-action" />
@@ -1407,7 +1420,7 @@ export function CompanionHud({
                   ) : null}
                   <button
                     type="submit"
-                    disabled={!input.trim() || Boolean(sendLimitNote) || voice.phase === "closing" || imageAttachment.uploading}
+                    disabled={(!input.trim() && !imageAttachment.images.length) || Boolean(sendLimitNote) || voice.phase === "closing" || imageAttachment.uploading}
                     title={chat.phase === "sending" ? "发送并接替当前回复" : "发送"}
                     aria-label={chat.phase === "sending" ? "发送并接替当前回复" : "发送"}
                   ><Send size={17} /></button>
@@ -1540,11 +1553,11 @@ export function CompanionHud({
         onInputChange={setInput}
         onSend={() => sendText()}
         onVoiceToggle={toggleVoice}
-        image={imageAttachment.image}
+        images={imageAttachment.images}
         imageUploading={imageAttachment.uploading}
         imageError={imageAttachment.error}
-        onPickImage={(file) => { void imageAttachment.pick(file); }}
-        onRemoveImage={imageAttachment.clear}
+        onPickImages={(files) => { void imageAttachment.pick(files); }}
+        onRemoveImage={imageAttachment.remove}
         anchorRef={hudRef}
         side={side}
         onBack={() => {

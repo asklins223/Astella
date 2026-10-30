@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { AgentRole, type AgentTurnRequest } from "@astella/shared";
-import { createCompactionCheckpoint, restoreCompactionCheckpoint } from "../context/companion-compaction-checkpoint.ts";
+import { compactionSourceMessages, createCompactionCheckpoint, restoreCompactionCheckpoint } from "../context/companion-compaction-checkpoint.ts";
 import type { CompactionTraceV1 } from "../context/companion-context-handoff.ts";
 import { boundedStepSender } from "../context/companion-compaction.ts";
 import { AIContextCompactionRequiredError } from "../../lib/context-governor.ts";
-import { canonicalJsonV1 } from "@astella/shared/content-hash";
+import { canonicalJsonV1, stableStringify, sha256Utf8V1 } from "@astella/shared/content-hash";
 
 const scope = { runId: "run-a", conversationId: "conversation-a" };
 const request: AgentTurnRequest = { role: AgentRole.COMPANION_AGENT, systemPrompt: "Original policy.",
@@ -15,6 +15,18 @@ const folded = [{ role: "assistant" as const, content: "A source-bound semantic 
 const trace = (): CompactionTraceV1 => ({ sourceKind: "history_exchanges", foldedFromSeq: "1", foldedThroughSeq: "2", foldedMessageCount: 2,
   summarySourceSha256: "a".repeat(64), remainingFromSeq: "3", uncoveredBeforeSeq: null, modelId: "model", inputTokens: 100,
   triggerTokens: 80, hardInputTokens: 120, reason: "pressure", at: "2026-10-15T10:00:00Z", checkpoint: createCompactionCheckpoint(scope, request, folded) });
+
+test("compacted evidence only preserves exact messages after the current request boundary", () => {
+  const old = { role: "tool" as const, toolCallId: "old", content: '{"ok":true,"receiptId":"r1"}' };
+  const current = { role: "tool" as const, toolCallId: "new", content: '{"ok":true,"receiptId":"r2"}' };
+  const source = { json: stableStringify([old, current]), sha256: "" };
+  source.sha256 = sha256Utf8V1(source.json);
+  const messages = [old, { role: "user" as const, requestBoundary: true as const, content: "当前请求" }, current];
+  assert.deepEqual(compactionSourceMessages(source, messages), [current]);
+  assert.deepEqual(compactionSourceMessages({ ...source, sha256: "0".repeat(64) }, messages), []);
+  assert.deepEqual(compactionSourceMessages(source, [...messages, { role: "user", content: "下一轮" }]), []);
+  assert.deepEqual(compactionSourceMessages(source, [messages[1], { ...current, content: '{"ok":false}' }]), []);
+});
 
 test("a complete private checkpoint restores only this run's identical full request", () => {
   const original = trace();

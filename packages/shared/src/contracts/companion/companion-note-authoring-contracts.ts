@@ -22,9 +22,12 @@ export type CompanionWrittenAnnotationV1 = z.infer<typeof companionWrittenAnnota
  * 字符或条数配额——链接也同理：一篇新笔记引用几篇已有笔记由内容决定
  * （以前 links/linkedNotes 各封顶 6 条，第七个链接会让整次建笔记失败）。
  */
+/** Saving supplied prose and composing new prose are different user goals. */
+export const COMPANION_NOTE_CONTENT_GUIDANCE = "用户给出要保存的正文时，以最小变更原样采用；标题只是文档名称，不是扩写主题。只有用户委托创作、扩写、改写或整理时，才按该要求生成新正文。文档使用用户要求的文体，不混入伴星的聊天口头禅、角色动作或执行说明。";
+
 export const companionCreateNoteV1Schema = z.object({
   title: z.string().trim().min(1).max(200),
-  markdown: z.string().trim().min(1).describe("根据当前讨论整理的完整独立笔记，支持标题、列表、表格、代码与公式"),
+  markdown: z.string().trim().min(1).describe("实际保存的完整 Markdown 正文。" + COMPANION_NOTE_CONTENT_GUIDANCE + "独立段落用空行分隔，支持标题、列表、表格、代码与公式"),
   links: z.array(z.object({
     noteId: z.string().uuid(),
     noteVersionId: z.string().uuid().describe("本轮notes.read.read实际返回的version"),
@@ -54,16 +57,22 @@ export type CompanionNoteEditingContextV1 = z.infer<typeof companionNoteEditingC
 export const companionEditNoteV1Schema = z.object({
   noteId: z.string().uuid(), noteVersionId: z.string().uuid(),
   operation: z.enum(["insert_at_cursor", "append", "replace_selection", "delete_selection", "replace_blocks", "delete_blocks"]),
-  markdown: z.string().optional().describe("要插入或替换的新正文；只改措辞或数值时保留原来的标题、列表、表格与代码结构；表格用GFM，流程图用mermaid围栏"),
+  markdown: z.string().optional().describe("要插入或替换的 Markdown。replace_blocks 只填指定范围的新内容，不放范围外的正文；独立段落之间用空行分隔，单换行仍属同一段。保留原来的标题、列表、表格与代码结构"),
   preserveBlockStructure: z.boolean().optional().describe("replace_blocks默认true，核对原段落的块数、类型与属性不变。只有用户明确要求调整段落结构或格式时设false；普通改字、改数值保持true"),
-  startBlock: z.number().int().nonnegative().optional().describe("复制读取结果首块的blockIndex（0起算），不要传ordinal；只改complete=true的整块"),
-  endBlock: z.number().int().nonnegative().optional().describe("复制读取结果末块的blockIndex（包含该块）"),
-  expectedBlocks: z.array(z.string()).min(1).optional().describe("逐字复制本轮实际读取的各块content，避免覆盖新改动"),
+  startBlock: z.number().int().nonnegative().optional().describe("起始块，复制读取结果的 blockIndex（0 起算，包含该块），不是 ordinal；只改 complete=true 的整块"),
+  endBlock: z.number().int().nonnegative().optional().describe("结束块，复制读取结果的 blockIndex（包含该块）；只改一块时等于 startBlock"),
+  expectedBlocks: z.array(z.string()).min(1).optional().describe("按顺序逐字复制 startBlock 至 endBlock 各块完整 content；长度必须等于 endBlock-startBlock+1，用于校验原文和版本"),
 }).strict().superRefine((value, ctx) => {
   if (!value.operation.startsWith("delete") && !value.markdown?.trim()) ctx.addIssue({ code: "custom", path: ["markdown"], message: "需要新正文" });
-  if (value.operation.endsWith("blocks") && (value.startBlock === undefined || value.endBlock === undefined
-    || value.endBlock < value.startBlock || value.expectedBlocks?.length !== value.endBlock - value.startBlock + 1))
-    ctx.addIssue({ code: "custom", path: ["expectedBlocks"], message: "需要可核对的段落范围和原文" });
+  if (value.operation.endsWith("blocks")) {
+    if (value.startBlock === undefined) ctx.addIssue({ code: "custom", path: ["startBlock"], message: "需要读取结果的起始 blockIndex（0 起算，包含）" });
+    if (value.endBlock === undefined) ctx.addIssue({ code: "custom", path: ["endBlock"], message: "需要读取结果的结束 blockIndex（包含）；单块替换与 startBlock 相等" });
+    if (value.startBlock !== undefined && value.endBlock !== undefined) {
+      if (value.endBlock < value.startBlock) ctx.addIssue({ code: "custom", path: ["endBlock"], message: "endBlock 不能小于 startBlock" });
+      else if (value.expectedBlocks?.length !== value.endBlock - value.startBlock + 1)
+        ctx.addIssue({ code: "custom", path: ["expectedBlocks"], message: `范围包含 ${value.endBlock - value.startBlock + 1} 块，expectedBlocks 需要相同数量的完整原文；当前 ${value.expectedBlocks?.length ?? 0} 块` });
+    }
+  }
   if (value.operation.startsWith("delete") && value.markdown) ctx.addIssue({ code: "custom", path: ["markdown"], message: "删除不接收新正文" });
 });
 export type CompanionEditNoteV1 = z.infer<typeof companionEditNoteV1Schema>;

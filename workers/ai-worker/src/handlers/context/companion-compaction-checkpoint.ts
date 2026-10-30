@@ -2,6 +2,7 @@ import { agentTurnRequestSchema, type AgentTurnRequest } from "@astella/shared";
 import { stableStringify, sha256Utf8V1 } from "@astella/shared/content-hash";
 import type { CompactionTraceV1 } from "./companion-context-handoff.ts";
 import type { FoldedReplay } from "./companion-compaction.ts";
+import { currentCompanionRequestMessages } from "../tools/companion-tool-receipts.ts";
 
 export interface CompanionCompactionCheckpoint {
   runId: string;
@@ -15,11 +16,17 @@ export interface CompanionCompactionCheckpoint {
 
 /** Exact original tool output stays available to verification after its prompt
  * projection becomes a summary. Never promote generated summary prose to source. */
-export function compactionSourceMessages(source: FoldedReplay["source"]): AgentTurnRequest["messages"] {
+export function compactionSourceMessages(source: FoldedReplay["source"],
+  requestMessages: AgentTurnRequest["messages"]): AgentTurnRequest["messages"] {
   if (!source || sha256Utf8V1(source.json) !== source.sha256) return [];
   try {
     const messages = JSON.parse(source.json);
-    return agentTurnRequestSchema.shape.messages.safeParse(messages).success ? messages : [];
+    const parsed = agentTurnRequestSchema.shape.messages.safeParse(messages);
+    if (!parsed.success) return [];
+    // A source can contain older native rounds. Only exact messages present
+    // after this request's boundary can become current execution evidence.
+    const current = new Set(currentCompanionRequestMessages(requestMessages).map(message => stableStringify(message)));
+    return parsed.data.filter(message => current.has(stableStringify(message)));
   } catch { return []; }
 }
 

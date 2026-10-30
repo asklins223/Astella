@@ -52,9 +52,11 @@ test("绕过销毁时错误码与留痕都按闸各自说清，不共用一个",
 test("产出闸的降级判定真的接在交付路径上，不是只住在模块里", () => {
   const runtime = readFileSync(new URL("../agent/companion-agent-runtime.ts", import.meta.url), "utf8");
   const dialogue = readFileSync(new URL("../turn/companion-dialogue.ts", import.meta.url), "utf8");
-  for (const gate of ["output_truncated", "unverified_quote", "action_not_executed"] as const) {
+  for (const gate of ["output_truncated", "action_not_executed"] as const) {
     assert.match(runtime, new RegExp(`gate: "${gate}"`), `${gate} 不再问闸了：它又会一次判错作废整轮`);
   }
+  assert.match(runtime, /validateCompanionFinish\(/, "结构化交付核验必须接入实际循环");
+  assert.doesNotMatch(runtime, /reviewCompanionStepCorrection\(/, "不能恢复按回复词表推测动作的闸");
   assert.match(dialogue, /gate: "stream_validation"/, "流式校验又回到自己 throw：已落库的写会再次被吃掉");
   assert.match(dialogue, /gate: "stream_reconcile"/, "全文对账又回到自己 throw：同上");
   // 降级交付之后有两处必须跟着改：尾巴补不进去（管线已判死），而语音不许念被拦下的原文。

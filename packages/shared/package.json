@@ -1,6 +1,6 @@
 {
   "name": "@astella/shared",
-  "version": "2.0.11",
+  "version": "2.0.12",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
@@ -337,6 +337,7 @@
       "default": "./src/note/note-doc-conformance.ts"
     },
     "./note-markdown": "./src/note/note-markdown.ts",
+    "./note-reader-projection": "./src/note/note-reader-projection.ts",
     "./note-doc-schema": {
       "types": "./src/note/note-doc-schema.ts",
       "import": "./src/note/note-doc-schema.ts",

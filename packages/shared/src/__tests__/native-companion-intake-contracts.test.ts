@@ -16,9 +16,9 @@ test('an attachment-only mobile turn preserves intent and enforces one file',()=
  assert.equal(createCompanionTurnRequestV1Schema.safeParse({...turn,blocks:[file,file]}).success,false);
  assert.equal(createCompanionTurnRequestV1Schema.safeParse({...turn,inputKind:'voice_transcript',voiceArtifactId:id}).success,false);
 });
-test('a native message accepts nine images with one file and optional leading text, but never a tenth image',()=> {
+test('a native message accepts twelve images with one file and optional leading text, but never a thirteenth image',()=> {
  const image={type:'image',url:`/api/uploads/${id}/companion/${id}.jpg`,assetId:id,label:'照片'};
- const images=Array.from({length:9},()=>({...image}));
+ const images=Array.from({length:12},()=>({...image}));
  const turn={version:1,clientMessageId:id,inputKind:'text',sourceSurface:'main',clientSurface:'mobile',blocks:images};
  assert.equal(createCompanionTurnRequestV1Schema.safeParse(turn).success,true);
  assert.equal(createCompanionTurnRequestV1Schema.safeParse({...turn,blocks:[{type:'text',text:'按顺序比较这组图片。'},...images,file]}).success,true);

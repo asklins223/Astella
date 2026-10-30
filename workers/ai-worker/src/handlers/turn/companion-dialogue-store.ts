@@ -26,7 +26,8 @@ import { assertCompanionHandoffSourcesCurrent, assertCompanionContextSourcesCurr
 // 2026-08-25（AI 设计审计修复）：复用 content 模块的同一实现，消除拆分时
 // 复制出的双份 parsePageContext（两份漂移会让编排层与 DB 层对同一
 // page_context 得出不同判定）。content→store 无依赖边，不构成循环。
-import { renderCompanionUserTurn, textOfCompanionBlocks } from "./companion-dialogue-content.ts";
+import { renderCompanionUserTurn, textOfCompanionBlocks, companionUserImageAttachments,
+  renderUserAttachedImagesLine } from "./companion-dialogue-content.ts";
 import type { CompanionContextHandoffSnapshotV1 } from "./companion-dialogue-content.ts";
 import type { CompanionRecentHistoryMessage } from "../context/companion-context-handoff.ts";
 import { REPLAY_HISTORY_READ_ROWS } from "../context/companion-context-handoff.ts";
@@ -339,6 +340,8 @@ export function companionRecentHistoryFromRows(
     seq: row.seq,
     role: row.role,
     text: companionHistoryText(row),
+    ...(row.role === "user" && companionUserImageAttachments(row.blocks).length
+      ? { imageAttachments: companionUserImageAttachments(row.blocks) } : {}),
     createdAt: row.created_at,
     replyStatus: row.run_status,
     reasoning: row.reasoning ?? null,
@@ -356,8 +359,12 @@ export async function countCompanionHistoryMessages(
 }
 
 export function companionHistoryText(row: Pick<CompanionHistoryRow, "role" | "blocks" | "page_context">): string {
-  const text = textOfCompanionBlocks(row.blocks);
-  return row.role === "user" ? renderCompanionUserTurn(text, row.page_context) : text;
+  const text = textOfCompanionBlocks(row.blocks, row.role);
+  if (row.role !== "user") return text;
+  // Both native replay and history retrieval use this projection. Retain the
+  // real asset identity so a later "look again" can read the original picture.
+  const attachments = renderUserAttachedImagesLine(companionUserImageAttachments(row.blocks), "history");
+  return [renderCompanionUserTurn(text, row.page_context), attachments].filter(Boolean).join("\n");
 }
 
 /** Persist once per run. Retries read and reuse the committed prompt snapshot. */

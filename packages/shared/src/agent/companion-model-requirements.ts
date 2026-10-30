@@ -215,8 +215,8 @@ export const MODEL_REQUIREMENTS: readonly ModelRequirement[] = [
   {
     id: "INTERNAL_TOKEN_NOT_VISIBLE",
     purpose:
-      "内部 token、上下文回显与裸 uuid 不得出现在可见正文。uuid 出现在她的话里永远是内部 id，"
-      + "落点与原文由服务端另交给富块。",
+      "保留宿主数据封套和工具传输协议的结构边界；普通字段名、技术说明与 UUID 可以出现在正文中。"
+      + "实际操作仍须引用真实对象与回执。",
     appliesTo: ["companion_dialogue", "companion_proactive"],
     sourceVersion: "COMPANION_LEAK_GATES_V1",
     enforcedBy: "service",
@@ -224,7 +224,7 @@ export const MODEL_REQUIREMENTS: readonly ModelRequirement[] = [
       file: "workers/ai-worker/src/handlers/turn/companion-dialogue-content.ts",
       export: "containsCompanionInternalToken",
       resolve: "source",
-      note: "G7 在表里的 judge 名。判据本体（COMPANION_LEAK_PATTERN）是该模块私有的，"
+      note: "G7 在表里的 judge 名。判据只检查真实数据封套，"
         + "只有判据函数对外；核对名存在即可证明这道闸还在被接线。",
     },
   },

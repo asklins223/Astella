@@ -237,7 +237,7 @@ test("chatCompletionStream（④-b）：arguments 是坏 JSON 时不当作「空
 
 test("observed buffered fallback calls retain reasoning effort, native progress and usage", async () => {
   let captured: Record<string, unknown> = {};
-  let activities = 0;
+  const activities: string[] = [];
   const provider = new OpenAICompatibleProvider({ apiKey: "synthetic", baseUrl: "https://example.test/v1", model: "synthetic",
     platformOptions: { thinkingParam: "reasoning_effort" },
     modelProfile: { reasoning: { levels: ["none", "high"], default: "none" } },
@@ -255,9 +255,9 @@ test("observed buffered fallback calls retain reasoning effort, native progress 
   });
   const result = await provider.executeAgentTurn({ role: AgentRole.COMPANION_AGENT, systemPrompt: "synthetic",
     messages: [{ role: "user", content: "synthetic" }], tools: [], maxTokens: 100, temperature: 0.2,
-    reasoningEffort: "high" }, undefined, { onOutputActivity: () => { activities++; } });
+    reasoningEffort: "high" }, undefined, { onOutputActivity: kind => { activities.push(kind ?? "unknown"); } });
   assert.equal(captured.reasoning_effort, "high");
-  assert.equal(activities, 2, "metadata and terminal heartbeats are not reasoning progress");
+  assert.deepEqual(activities, ["reasoning", "text"], "metadata and terminal heartbeats are not usable progress");
   assert.equal(result.content, "done");
   assert.equal(result.usage?.totalTokens, 15);
   assert.equal(result.providerRequestId, "synthetic-request");

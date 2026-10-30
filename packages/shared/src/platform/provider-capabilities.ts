@@ -67,6 +67,8 @@ export interface ChatMessage {
   /** Host observation/data at its actual transcript position, never a new
    * human utterance. Native adapters preserve its system identity. */
   hostObservation?: true;
+  /** Internal current-request boundary, never sent as model instructions. */
+  requestBoundary?: true;
   /** Original Responses assistant phase, when available. Never attached to user messages. */
   phase?: "commentary" | "final_answer";
   /**
@@ -110,7 +112,7 @@ export interface ChatOptions {
   tools?: AgentTurnRequest["tools"];
   toolChoice?: "auto" | "required";
   /** Actual text, reasoning or native argument output. Heartbeats do not count. */
-  onOutputActivity?: () => void;
+  onOutputActivity?: (kind?: "text" | "reasoning" | "tool") => void;
   /** A named call is being generated; arguments may be incomplete. Display-only:
    * this signal never authorizes execution or claims that a write has started. */
   onToolCallStarted?: (slot: { index: number; id: string; name: string }) => void;

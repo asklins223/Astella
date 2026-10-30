@@ -57,7 +57,6 @@ export async function settleCompanionTurnPreamble(deps: CompanionTurnPreambleDep
   const userAskedForAction = companionRequestsAction(attention, deps.availableDefinitions);
   const userRequiresTool = userAskedForAction || companionStepRequiresTool(toolIntent,
     attention.toolUse === "read" ? attention.candidateOperations : undefined);
-  const reminderListAsked = attention.candidateOperations.includes("attention.read.reminders");
   /**
    * 工具面只由声明决定：权限档 + 数据外发政策，也就是 `resolveAllCompanionAgentTools`
    * 给出的那一份（它自己的注释：Exposure is a view of the project catalog, filtered by
@@ -114,7 +113,6 @@ export async function settleCompanionTurnPreamble(deps: CompanionTurnPreambleDep
     steerableReadTools,
     steerableActionTools,
     requestedActionTools,
-    reminderListAsked,
     capabilitySnapshot,
   };
 }

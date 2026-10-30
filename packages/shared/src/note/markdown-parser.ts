@@ -88,15 +88,21 @@ export function markdownToBlocks(markdown: string): ParsedBlock[] {
 
 /**
  * 从 blocks 中提取标题（第一个 heading 或 paragraph 的内容）。
+ * 代码不是文档名：代码块，以及只剩 Markdown 分隔符的内容（表格源码等）都跳过。
  */
 export function extractTitleFromBlocks(blocks: ParsedBlock[]): string {
-  const heading = blocks.find((b) => b.type === "heading" && b.content.trim());
+  const usable = (block: ParsedBlock): string => {
+    if (block.type === "code" || !block.content.trim()) return "";
+    const clean = cleanTitle(block.content);
+    return /[\p{L}\p{N}]/u.test(clean) ? clean : "";
+  };
+  const heading = blocks.find((b) => b.type === "heading" && usable(b));
   if (heading) {
-    return cleanTitle(heading.content).slice(0, 60);
+    return usable(heading).slice(0, 60);
   }
-  const fallback = blocks.find((b) => b.content.trim());
+  const fallback = blocks.find((b) => usable(b));
   if (fallback) {
-    return cleanTitle(fallback.content).slice(0, 60);
+    return usable(fallback).slice(0, 60);
   }
   return "无标题笔记";
 }

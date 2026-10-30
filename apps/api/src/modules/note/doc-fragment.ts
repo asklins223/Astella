@@ -5,6 +5,7 @@ import {
   noteBlocksToPmNodes,
   noteDocSchemaSpec,
   pmNodesToNoteBlocks,
+  noteBlockRenderedTextV1,
   type NoteDocBlockSpec,
 } from "@astella/shared/note-doc-schema";
 
@@ -272,9 +273,24 @@ export function cleanTitleCandidate(content: string): string {
     .trim();
 }
 
+/** 代码不是文档名：代码块、表格源码这类内容只生成"无标题笔记"；图片同理（内容是地址或属性，不是标题）。 */
+const TITLE_BLOCK_TYPES = new Set(["paragraph", "heading", "list", "quote"]);
+
+function usableTitleCandidate(type: string, content: string): string {
+  if (!TITLE_BLOCK_TYPES.has(type)) return "";
+  const clean = cleanTitleCandidate(noteBlockRenderedTextV1(type, content));
+  // 只有分隔符的 Markdown（例如 `|  |  |` 的表格源码）没有可当名字的字。
+  return /[\p{L}\p{N}]/u.test(clean) ? clean : "";
+}
+
 export function deriveNoteTitle(blocks: readonly { type: string; content: string }[]): string {
-  const heading = blocks.find((block) => block.type === "heading" && cleanTitleCandidate(block.content));
-  const fallback = heading ?? blocks.find((block) => cleanTitleCandidate(block.content));
-  const title = fallback ? cleanTitleCandidate(fallback.content) : "";
-  return title.slice(0, 60) || "无标题笔记";
+  const titleOf = (block: { type: string; content: string }) => usableTitleCandidate(block.type, block.content);
+  for (const block of blocks) {
+    if (block.type !== "heading") continue;
+    const title = titleOf(block); if (title) return title.slice(0, 60);
+  }
+  for (const block of blocks) {
+    const title = titleOf(block); if (title) return title.slice(0, 60);
+  }
+  return "无标题笔记";
 }

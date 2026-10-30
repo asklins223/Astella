@@ -4,6 +4,7 @@ import { resolveProviderCallTimeout } from "../../lib/handler-timeout-config.ts"
 import { runWithAbortBudget } from "../../lib/handler-timeout.ts";
 import { logger } from "../../lib/logger.ts";
 import type { AIProvider } from "../../lib/ai-provider.ts";
+import { companionProviderFitsRequest } from "./companion-provider-fit.ts";
 
 /**
  * 退化回复的修复阶梯（2026-10-13 从 `companion-agent-runtime.ts` 搬出，判据一字未改）。
@@ -60,7 +61,9 @@ export async function repairDegenerateCompanionAnswer(input: CompanionAnswerRepa
   // 降级阶梯（方案 29 §9.6）：只换**另一个模型/provider**——实测主模型退化窗口里
   // 同模型重跑同样会退化（连着两次都吐半截话），唯一有效的是换一个模型。
   const repairLadder: Array<{ label: string; provider: AIProvider }> = [];
-  if (input.fallbackProvider) repairLadder.push({ label: "fallback-model", provider: input.fallbackProvider });
+  if (input.fallbackProvider && await companionProviderFitsRequest(input.fallbackProvider, input.stepRequest))
+    repairLadder.push({ label: "fallback-model", provider: input.fallbackProvider });
+  if (repairLadder.length === 0) return { result, calls, retried: false };
   logger.warn(
     { runId: input.runId, stepCount: input.stepCount, chars: String(result.content).trim().length,
       ladder: repairLadder.map(step => step.label) },

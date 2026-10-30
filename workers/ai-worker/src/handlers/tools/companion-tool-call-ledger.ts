@@ -41,6 +41,7 @@ import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
 import { withWorkerWorkspaceTransaction } from "../../db.ts";
 import { logger } from "../../lib/logger.ts";
 import { ProviderRequestError } from "../../lib/provider-request-error.ts";
+import { companionProviderFitsRequest } from "../agent/companion-provider-fit.ts";
 import type { AIProvider } from "../../lib/ai-provider.ts";
 import { appendAgentEvent, readRunMeta } from "../agent/companion-agent-events.ts";
 import { createAgentProposal } from "../agent/companion-agent-proposal.ts";
@@ -120,11 +121,20 @@ export function companionStepToolShape(args: {
   finalAnswerOnly: boolean;
   requiresTool: boolean;
   toolCallCount: number;
+  requireStructuredResponse?: boolean;
+  deliveryDraftAvailable?: boolean;
 }): { tools: AgentTurnRequest["tools"]; toolChoice: NonNullable<AgentTurnRequest["toolChoice"]> } {
-  const tools = args.finalAnswerOnly ? [] : args.tools;
+  const tools = args.finalAnswerOnly ? [] : args.tools.map(tool => {
+    if (tool.name !== "companion_finish" || args.deliveryDraftAvailable !== false) return tool;
+    const required = Array.isArray(tool.parameters.required) ? tool.parameters.required : [];
+    return { ...tool, parameters: { ...tool.parameters, required: [...new Set([...required, "text"])] } };
+  });
   return {
     tools,
-    toolChoice: tools.length > 0 && args.requiresTool && args.toolCallCount === 0 ? "required" : "auto",
+    // Require the protocol shape, never a particular business operation. Finish
+    // is itself a valid choice for an answer from already supplied material.
+    toolChoice: tools.length > 0 && (args.requireStructuredResponse
+      || (args.requiresTool && args.toolCallCount === 0)) ? "required" : "auto",
   };
 }
 
@@ -159,7 +169,8 @@ export async function executeCompanionAgentTurnWithToolChoiceFallback(args: {
       && typeof fallback?.executeAgentTurn === "function"
       && fallback !== args.provider
       && fallback.modelId !== args.provider.modelId;
-    if (!canRetryOnFallback || !fallback?.executeAgentTurn) throw error;
+    if (!canRetryOnFallback || !fallback?.executeAgentTurn
+      || !await companionProviderFitsRequest(fallback, args.request)) throw error;
 
     args.onFallback?.(error, fallback);
     return {

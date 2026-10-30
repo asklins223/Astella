@@ -66,7 +66,7 @@ export function createCompanionStepCompaction(deps: CompanionStepCompactionDeps)
         const restored = restoreCompactionCheckpoint({ runId: deps.runId, conversationId: deps.conversationId,
           request: compactionRequest, traces: deps.compactionCheckpoints ?? [] });
         if (restored) {
-          deps.compactedEvidence.push(...compactionSourceMessages(restored.source));
+          deps.compactedEvidence.push(...compactionSourceMessages(restored.source, compactionRequest.messages));
           deps.setMessages([...restored.messages]);
           deps.setHistoryFoldApplied(true);
           logger.info({ runId: deps.runId, sourceKind: restored.receipt.sourceKind ?? "summary_coverage" },
@@ -126,7 +126,7 @@ export function createCompanionStepCompaction(deps: CompanionStepCompactionDeps)
     consumeAttempt: () => deps.contextReceipts?.consumeCompactionAttempt(),
     ...(deps.compactionCooldown ? { cooldown: deps.compactionCooldown } : {}),
     onCompacted: async (receipt, foldedMessages, source) => {
-      deps.compactedEvidence.push(...compactionSourceMessages(source));
+      if (compactionRequest) deps.compactedEvidence.push(...compactionSourceMessages(source, compactionRequest.messages));
       const pressure = deps.contextReceipts?.latestPressure() ?? null;
       deps.compactionTrace?.record({
         ...receipt,

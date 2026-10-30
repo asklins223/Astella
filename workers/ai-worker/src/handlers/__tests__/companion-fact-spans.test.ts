@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  askableFactSpanKeys,
   FACT_SPAN_KEYS,
   pickFactSpanValues,
   renderFactSpansBlock,
@@ -9,21 +8,6 @@ import {
   withholdPartialFactSpanTail,
 } from "../turn/companion-fact-spans.ts";
 
-const numericKeys = (userText: string | undefined) => askableFactSpanKeys(userText);
-
-test("askable 要疑问词＋量词同时出现：问了才给键，陈述句不给", () => {
-  assert.deepEqual(numericKeys("我今天学了多久"), ["today_minutes"]);
-  assert.deepEqual(numericKeys("这周学了几个小时了"), ["week_minutes"]);
-  assert.deepEqual(numericKeys("现在有几张卡片"), ["card_count"]);
-  assert.deepEqual(numericKeys("我笔记有几篇"), ["note_count"]);
-  assert.deepEqual(numericKeys("我连续学了几天了"), ["streak_days"]);
-  // 没问就一个键都不给——这一条是"没问不报数"从叮嘱变成机制的落点。
-  assert.deepEqual(numericKeys("今天好累啊"), []);
-  assert.deepEqual(numericKeys("嘿嘿"), []);
-  // 陈述句（有量词、没疑问词）也不算问：她不该主动复述用户刚说过的时间。
-  assert.deepEqual(numericKeys("我今天学了 1 小时，眼睛都花了"), []);
-  assert.deepEqual(numericKeys(undefined), []);
-});
 
 test("目录只收有值的键，且渲染成 <fact_spans> 块", () => {
   const values = pickFactSpanValues({ today_minutes: 42, streak_days: 0, card_count: null }, [
@@ -76,4 +60,18 @@ test("流式扣住半截标记：完整的不动，没写完的切到标记之�
   assert.equal(withholdPartialFactSpanTail("今天学了{{f:today_minutes}}"), "今天学了{{f:today_minutes}}");
   assert.equal(withholdPartialFactSpanTail("今天学了{{f:today_minutes}} 分钟"), "今天学了{{f:today_minutes}} 分钟");
   assert.equal(withholdPartialFactSpanTail("今天学了 42 分钟"), "今天学了 42 分钟");
+});
+
+
+test("ordinary template syntax and reserved syntax inside code remain literal", () => {
+  for (const text of ["模板是 {{name}}。", "Use {{ title }} in Handlebars.", "`{{f:today_minutes}}`", "```js\nconst template = '{{f:missing}}';\n```", "单独的 {{ 也可以作为模板说明。"])
+    assert.deepEqual(resolveFactSpans(text, { today_minutes: "42" }), { text, dropped: [] });
+  assert.equal(withholdPartialFactSpanTail("模板 {{name"), "模板 {{name");
+  assert.equal(withholdPartialFactSpanTail("`{{f:today_min"), "`{{f:today_min");
+});
+
+test("fact replacement changes only prose placeholders and requires an own string value", () => {
+  const text = "值为 {{f:today_minutes}}，例子 `{{f:today_minutes}}`。";
+  assert.equal(resolveFactSpans(text, { today_minutes: "42" }).text, "值为 42，例子 `{{f:today_minutes}}`。");
+  assert.equal(resolveFactSpans("{{f:__proto__}}", {}).text, "");
 });

@@ -45,6 +45,8 @@ import {
 import type { CompanionDialogueHandlerContext, ReadContext } from "../turn/companion-dialogue-store.ts";
 
 export interface AgentEventContext {
+  /** Same-run visual observations, keyed by actual asset identity. */
+  imageReadCache?: ReadonlyMap<string, { question: string; description: string; uncertainties: string[] }>;
   flushThinking?: () => Promise<void>;
   ctx: CompanionDialogueHandlerContext;
   read: ReadContext;

@@ -418,10 +418,7 @@ describe("DesktopGateway", () => {
 
   it.each([
     [422, "kind_not_preference", "memory_global_kind_rejected"],
-    [422, "content_workspace_bound", "memory_global_content_bound"],
-    [422, "applies_when_workspace_bound", "memory_global_condition_bound"],
     [422, "unknown_reason", "validation"],
-    [409, "content_workspace_bound", "conflict"],
   ])("maps memory scope rejection %i/%s to %s without exposing response text", async (status, reason, code) => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
       const url = String(input);

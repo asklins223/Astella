@@ -74,3 +74,16 @@ test("重跑抛错不毁掉这一步已有的答案", async () => {
   }));
   assert.equal(outcome.result.content, HALF, "留痕后照原样交回，不把已生成的半截话换成错误");
 });
+
+test("退化修复不把原图交给纯文本备用模型", async () => {
+  let runs = 0;
+  const outcome = await repairDegenerateCompanionAnswer(repairCase({
+    stepRequest: { messages: [{ role: "user", content: [
+      { type: "image_url", image_url: { url: "data:image/png;base64,AAAA" } },
+    ] }], tools: [] } as unknown as AgentTurnRequest,
+    invokeProvider: async () => { runs++; return answer("全黑。 它没有实际看到图片。"); },
+  }));
+  assert.equal(runs, 0);
+  assert.equal(outcome.retried, false);
+  assert.equal(outcome.result.content, HALF);
+});

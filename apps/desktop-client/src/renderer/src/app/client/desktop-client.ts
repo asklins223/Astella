@@ -186,10 +186,6 @@ export function gatewayErrorMessage(error: unknown): string {
       return "本机识别引擎没能启动，这句话没有识别出来。录音没有离开这台电脑；可以在设置里重新下载语音识别模型，或稍后再试一次。";
     case "memory_global_kind_rejected":
       return accountPreferenceRejectionMessage("kind_not_preference");
-    case "memory_global_content_bound":
-      return accountPreferenceRejectionMessage("content_workspace_bound");
-    case "memory_global_condition_bound":
-      return accountPreferenceRejectionMessage("applies_when_workspace_bound");
     // 2026-09-19 补映射：这些码此前落到 default 兜底句，用户看不出发生了什么。
     case "invalid_request":
     case "validation":

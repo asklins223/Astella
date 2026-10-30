@@ -19,6 +19,7 @@ const state = vi.hoisted(() => ({
 }));
 const voiceToggle = vi.hoisted(() => vi.fn());
 const voiceCancel = vi.hoisted(() => vi.fn());
+const voicePause = vi.hoisted(() => vi.fn());
 vi.mock("../../../app/companion-session/companion-chat-session", async importOriginal => {
   const actual = await importOriginal<typeof import("../../../app/companion-session/companion-chat-session")>();
   return { ...actual, useCompanionChat: () => state.chat };
@@ -28,7 +29,7 @@ vi.mock("../voice/use-companion-voice-input", async importOriginal => {
   return { ...actual, useCompanionVoiceInput: (options: CompanionVoiceInputOptions) => {
     state.voiceOptions = options;
     // toggle 就是"进入／退出对话"：退出时通知会话结束，但不碰 cancel（那是"丢掉这一轮"）。
-    return { activity: state.voice.phase === "open" ? state.voice.caption ? "capturing" : "listening" : state.voice.phase === "closing" ? "transcribing" : state.voice.phase, lastTurn: null, pause: vi.fn(), resume: vi.fn(), interrupt: vi.fn(), sendNow: vi.fn(), phase: state.voice.phase, caption: state.voice.caption, note: null, noteRevision: 0, supported: true,
+    return { activity: state.voice.phase === "open" ? state.voice.caption ? "capturing" : "listening" : state.voice.phase === "closing" ? "transcribing" : state.voice.phase, lastTurn: null, pause: voicePause, resume: vi.fn(), interrupt: vi.fn(), sendNow: vi.fn(), phase: state.voice.phase, caption: state.voice.caption, note: null, noteRevision: 0, supported: true,
       toggle: () => {
         voiceToggle();
         const next = state.voice.phase === "idle" ? "open" : "idle";
@@ -79,11 +80,28 @@ beforeEach(() => {
   state.chat = interactionSession();
   state.speechSession = null;
   state.voice = { phase: "idle", caption: null };
-  voiceToggle.mockClear(); voiceCancel.mockClear();
+  voiceToggle.mockClear(); voiceCancel.mockClear(); voicePause.mockClear();
 });
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe("production companion interaction", () => {
+  it("attachment activity keeps the input alive without pausing image-and-voice conversations", () => {
+    render(<Harness voiceEnabled />);
+    fireEvent.click(document.querySelector<HTMLInputElement>('input[type="file"]')!);
+    setVoice({phase:"open"});
+    expect(voicePause).not.toHaveBeenCalled();
+  });
+  it("keeps the native image chooser mounted past idle expiry and releases it on cancel", () => {
+    render(<Harness />);
+    const input = document.querySelector<HTMLInputElement>('input[type="file"]')!;
+    fireEvent.click(input);
+    advance(100_000);
+    expect(document.contains(input)).toBe(true);
+    expect(screen.getByRole("textbox", { name: /消息$/ })).toBeTruthy();
+    fireEvent(input, new Event("cancel", { bubbles: true }));
+    advance(100_000);
+    expect(document.contains(input)).toBe(false);
+  });
   it("closes a failed draft's voice queue while keeping its partial text visible", () => {
     const stop = vi.fn();
     state.speechSession = { planId: "failed-draft", mode: "voice", stop,

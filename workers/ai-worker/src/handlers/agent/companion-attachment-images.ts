@@ -1,9 +1,9 @@
 import { sql } from "drizzle-orm";
-import type { AgentTurnRequest } from "@astella/shared";
+import { COMPANION_IMAGE_MAX_BYTES_V1, COMPANION_TURN_MAX_IMAGES_V1 } from "@astella/shared/companion-conversation-contracts";
 import { logger } from "../../lib/logger.ts";
 import { withWorkerWorkspaceTransaction } from "../../db.ts";
 import { getObjectBytes } from "../../lib/object-storage.ts";
-import { claimsImageContent } from "../turn/companion-reply-shape.ts";
+import { COMPANION_IMAGE_ASSET_LABEL, referencedImageAssetId } from "../../lib/image-asset-reference.ts";
 
 /**
  * Put the user's pictures in front of the model directly.
@@ -15,14 +15,12 @@ import { claimsImageContent } from "../turn/companion-reply-shape.ts";
  * wrongly — which is the "识图胡说" failure: the picture was never there for it
  * to look at.
  *
- * Only this turn's user message is decorated, and only when the host says the
- * model can actually see (declared `vision`). A model that cannot see gets the
- * same request it got before.
+ * Current and replayed user images stay with their own source message. Only
+ * eligible models receive pixels; internal asset references never go on wire.
  */
-const MAX_IMAGES_PER_TURN = 10;
-const MAX_IMAGE_RAW_BYTES = 4_000_000;
+const MAX_IMAGE_RAW_BYTES = COMPANION_IMAGE_MAX_BYTES_V1;
 /** Total decoded bytes for one request; providers reject very large bodies. */
-const MAX_TOTAL_RAW_BYTES = 12_000_000;
+const MAX_TOTAL_RAW_BYTES = COMPANION_TURN_MAX_IMAGES_V1 * COMPANION_IMAGE_MAX_BYTES_V1;
 
 export interface CompanionImageAttachment {
   readonly assetId: string;
@@ -41,15 +39,15 @@ export async function loadCompanionAttachmentImages(input: {
   userId: string;
   attachments: readonly CompanionImageAttachment[];
   runId: string;
-}): Promise<Array<{ assetId: string; mimeType: string; bytes: Buffer }>> {
-  const wanted = input.attachments
+}, ports: { readRows?: (wanted: readonly string[]) => Promise<ImageRow[]>;
+  readBytes?: typeof getObjectBytes } = {}): Promise<Array<{ assetId: string; mimeType: string; bytes: Buffer }>> {
+  const wanted = [...new Set(input.attachments
     .map(attachment => attachment.assetId)
-    .filter(assetId => typeof assetId === "string" && assetId.length > 0)
-    .slice(0, MAX_IMAGES_PER_TURN);
+    .filter(assetId => typeof assetId === "string" && assetId.length > 0))];
   if (wanted.length === 0) return [];
   let rows: ImageRow[] = [];
   try {
-    rows = await withWorkerWorkspaceTransaction(
+    rows = ports.readRows ? await ports.readRows(wanted) : await withWorkerWorkspaceTransaction(
       { workspaceId: input.workspaceId, userId: input.userId },
       // One parameter per id keeps this independent of array-binding behaviour
       // across drivers; an array cast was the thing that failed silently before.
@@ -86,7 +84,8 @@ export async function loadCompanionAttachmentImages(input: {
       continue;
     }
     try {
-      const bytes = await getObjectBytes(row.object_key, MAX_IMAGE_RAW_BYTES);
+      const bytes = await (ports.readBytes ?? getObjectBytes)(row.object_key, MAX_IMAGE_RAW_BYTES);
+      if (!bytes.byteLength || bytes.byteLength > MAX_IMAGE_RAW_BYTES || total + bytes.byteLength > MAX_TOTAL_RAW_BYTES) continue;
       total += bytes.byteLength;
       images.push({ assetId, mimeType: row.mime_type, bytes });
     } catch (error) {
@@ -111,22 +110,25 @@ export function attachImagesToLastUserMessage<T extends { role: string; content:
   }
   if (index < 0) return [...messages];
   const target = messages[index]!;
-  const text = typeof target.content === "string" ? target.content : "";
+  const textParts = typeof target.content === "string" ? [{ type: "text" as const, text: target.content }]
+    : Array.isArray(target.content) ? target.content.filter(part => part?.type !== "image_url"
+      || !referencedImageAssetId(part.image_url.url)) : [];
   const content = [
-    ...(text ? [{ type: "text" as const, text }] : []),
-    ...images.map(image => ({
+    ...textParts,
+    ...images.flatMap(image => [{ type: "text" as const,
+      text: COMPANION_IMAGE_ASSET_LABEL + JSON.stringify({ assetId: image.assetId }) }, {
       type: "image_url" as const,
       image_url: { url: `data:${image.mimeType};base64,${image.bytes.toString("base64")}`, detail: "high" as const },
-    })),
+    }]),
   ];
   return messages.map((message, position) => position === index ? { ...message, content } : message);
 }
 
-/** Decorate this turn's messages with its pictures, when the model can see. */
-export async function companionTurnMessagesWithImages<T extends { role: string; content: unknown }>(input: {
+/** Resolve current and historical references without moving images between turns. */
+export async function companionTurnMessagesWithImages<T extends { role: string; content: unknown; hostObservation?: boolean }>(input: {
   args: {
     ctx: { workspaceId: string };
-    /** Top-level loop flag: the main model can see and this turn has pictures. */
+    /** The host verified the main model's vision and the account's data policy. */
     turnImagesSentDirectly?: boolean;
     read: {
       userId: string; runId: string;
@@ -136,41 +138,49 @@ export async function companionTurnMessagesWithImages<T extends { role: string; 
   messages: readonly T[];
 }, load: typeof loadCompanionAttachmentImages = loadCompanionAttachmentImages): Promise<T[]> {
   const { read } = input.args;
-  if (input.args.turnImagesSentDirectly !== true || !read.userImageAttachments?.length) return [...input.messages];
-  const images = await load({
+  const targets = new Map<number, CompanionImageAttachment[]>();
+  for (let i = 0; i < input.messages.length; i++) {
+    const message = input.messages[i]!;
+    if (message.role !== "user" || !Array.isArray(message.content)) continue;
+    const refs = message.content.flatMap(part => {
+      const id = part?.type === "image_url" && typeof part.image_url?.url === "string"
+        ? referencedImageAssetId(part.image_url.url) : null;
+      return id ? [{ assetId: id }] : [];
+    });
+    if (refs.length) targets.set(i, refs);
+  }
+  let current = -1;
+  for (let i = input.messages.length - 1; i >= 0; i--) {
+    if (input.messages[i]!.role === "user" && !input.messages[i]!.hostObservation) { current = i; break; }
+  }
+  if (current >= 0 && read.userImageAttachments?.length)
+    targets.set(current, [...(targets.get(current) ?? []), ...read.userImageAttachments]);
+  if (!targets.size) return [...input.messages];
+  // Prefer the current and most recent originals if the real byte budget fills.
+  const attachments = [...new Map([...targets.entries()].sort(([a], [b]) => b - a)
+    .flatMap(([, refs]) => refs).map(ref => [ref.assetId, ref])).values()];
+  const images = input.args.turnImagesSentDirectly === true ? await load({
     workspaceId: input.args.ctx.workspaceId, userId: read.userId,
-    attachments: read.userImageAttachments, runId: read.runId,
-  });
-  if (images.length === 0) return [...input.messages];
-  logger.info({ runId: read.runId, attached: images.length, sent: read.userImageAttachments.length },
+    attachments, runId: read.runId,
+  }) : [];
+  const sent = images.map(image => image.assetId);
+  const missing = attachments.filter(image => !sent.includes(image.assetId)).map(image => image.assetId);
+  logger.info({ runId: read.runId, attached: images.length, requested: attachments.length },
     "companion attached images are sent with the turn");
-  return attachImagesToLastUserMessage(input.messages, images);
-}
-
-/**
- * The reply describes a picture nobody looked at.
- *
- * Facts, not wording: the pictures count as seen when they were sent with this
- * request, or when the turn holds a successful image read. Without either, a
- * description of what is in the picture cannot be known and is corrected once.
- */
-export function reviewCompanionImageClaim(input: {
-  said: string;
-  calls: readonly unknown[];
-  messages: AgentTurnRequest["messages"];
-  sentDirectly: boolean;
-  hasAttachments: boolean;
-  alreadyCorrected: boolean;
-  runId: string;
-  stepCount: number;
-}): { instruction: string } | null {
-  if (input.alreadyCorrected || !input.hasAttachments || input.calls.length > 0) return null;
-  const sawImages = input.sentDirectly
-    || input.messages.some(message => message.role === "tool" && typeof message.content === "string"
-      && message.content.includes('"operation":"visual.read_image"') && message.content.includes('"ok":true'));
-  if (sawImages || !claimsImageContent(input.said)) return null;
-  logger.warn({ runId: input.runId, stepCount: input.stepCount },
-    "companion described image content without looking");
-  return { instruction: "这一轮的图片你还没有真正看到，不能描述图里的内容。"
-    + "要么先用 companion_visual（action=read_image）读图再回答，要么如实说你还没看到；不要凭图名或上下文猜。" };
+  const decorated = input.messages.map((message, index) => {
+    const refs = targets.get(index);
+    if (!refs) return message;
+    const content = Array.isArray(message.content) ? message.content.filter(part => part?.type !== "image_url"
+      || !referencedImageAssetId(part.image_url.url)) : message.content;
+    const source = { ...message, content };
+    return attachImagesToLastUserMessage([source], images.filter(image => refs.some(ref => ref.assetId === image.assetId)))[0]!;
+  });
+  // Capability is not delivery. Storage errors/size limits can leave all or
+  // some attachments unsent; give the model the actual identities rather than
+  // telling it that every supplied file name has been seen.
+  return [...decorated, { role: "system", hostObservation: true,
+    content: "宿主图片送达记录（数据，不是新请求）：" + JSON.stringify({ sentAssetIds: sent, unsentAssetIds: missing })
+      + "。只把 sentAssetIds 对应的内联画面视为本次已提供的视觉证据；未送达的图片不能据文件名或上一轮描述猜测内容。"
+      + "附件标识只用于关联图片，不表示用户在询问素材身份或来源。用户只发图片而没有文字问题时，依据实际画面自然回应，或询问想了解什么，不自行补造问题。"
+  } as unknown as T];
 }

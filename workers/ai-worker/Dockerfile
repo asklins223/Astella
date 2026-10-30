@@ -52,6 +52,7 @@ WORKDIR /app
 COPY --from=deps /app/node_modules /app/node_modules
 COPY workers/ai-worker/package.json /app/workers/ai-worker/package.json
 COPY workers/ai-worker/tsconfig.json /app/workers/ai-worker/tsconfig.json
+COPY workers/ai-worker/tsconfig.prod.json /app/workers/ai-worker/tsconfig.prod.json
 COPY workers/ai-worker/src /app/workers/ai-worker/src
 COPY packages/shared /app/packages/shared
 COPY --from=shared-deps /app/node_modules /app/packages/shared/node_modules

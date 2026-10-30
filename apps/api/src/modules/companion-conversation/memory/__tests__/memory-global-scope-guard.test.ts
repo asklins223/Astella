@@ -195,39 +195,6 @@ describe("新建账号级偏好", () => {
     }
   });
 
-  it("提到科目/当前书房的正文不能写成全局", async () => {
-    for (const content of [
-      "正在学数据库索引优化",
-      "这个班的作业每周三交",
-      "下个月要考日语N3",
-    ]) {
-      const fake = fakeTx({ selects: [[]] });
-      await assert.rejects(
-        upsertMemory(fake.tx, SCOPE, { kind: "preference", content, scope: "global" }),
-        (error: unknown) =>
-          error instanceof MemoryGlobalScopeRejectedError && error.reason === "content_workspace_bound",
-        `「${content}」被写成了账号级`,
-      );
-      assert.equal(fake.ops.some((op) => op.op === "insert"), false);
-      assert.equal(fannedOut(fake), false, "被拒之前就已经铺到别的空间去了");
-    }
-  });
-
-  it("本地适用条件不能挂在账号级偏好上", async () => {
-    const fake = fakeTx({ selects: [[]] });
-    await assert.rejects(
-      upsertMemory(fake.tx, SCOPE, {
-        kind: "preference",
-        content: "提醒我先看反例",
-        appliesWhen: "复习这门课时",
-        scope: "global",
-      }),
-      (error: unknown) =>
-        error instanceof MemoryGlobalScopeRejectedError && error.reason === "applies_when_workspace_bound",
-    );
-    assert.equal(fake.ops.some((op) => op.op === "insert"), false);
-  });
-
   it("workspace / task 记忆照常写入：这条守卫只管账号级", async () => {
     for (const scope of ["workspace", "task", undefined] as const) {
       const fake = fakeTx({ selects: [[]] });
@@ -243,101 +210,9 @@ describe("新建账号级偏好", () => {
 });
 
 describe("同来源更新的两条分支", () => {
-  it("命中既有行：改成涉及当前书房的内容时，一条 UPDATE 都不发", async () => {
-    const existing = memoryRow({ scope: "global", globalKey: "44444444-4444-4444-8444-444444444444" });
-    const fake = fakeTx({ selects: [[existing], [existing]] });
-    await assert.rejects(
-      upsertMemory(fake.tx, SCOPE, {
-        kind: "preference",
-        content: "正在学数据库索引优化",
-        sourceEventId: "evt-1",
-        scope: "global",
-        userStated: true,
-      }),
-      (error: unknown) =>
-        error instanceof MemoryGlobalScopeRejectedError && error.reason === "content_workspace_bound",
-    );
-    assert.equal(fake.ops.some((op) => op.op === "update"), false, "源行被改了");
-    assert.equal(fake.ops.some((op) => op.op === "insert"), false, "另起了一条");
-    assert.equal(fannedOut(fake), false, "拒绝之前已经把副本铺出去了");
-  });
-
-  it("输入省略 scope：也不能把一条 global 行改成新的本地正文", async () => {
-    // 省略 scope = 沿用库里的 global。这条路今天不会抛，但守卫按**最终**形状判，
-    // 所以明天有人调换 coalesce 顺序也照样拦得住。
-    const existing = memoryRow({ scope: "global", globalKey: "55555555-5555-4555-8555-555555555555" });
-    const fake = fakeTx({ selects: [[existing], [existing]] });
-    await assert.rejects(
-      upsertMemory(fake.tx, SCOPE, {
-        kind: "preference",
-        content: "这个班的作业每周三交",
-        sourceEventId: "evt-1",
-        userStated: true,
-      }),
-      (error: unknown) =>
-        error instanceof MemoryGlobalScopeRejectedError && error.reason === "content_workspace_bound",
-    );
-    assert.equal(fake.ops.some((op) => op.op === "update"), false);
-  });
-
-  it("原子 upsert 命中既有 global 行：落库后的最终形状也要过判据", async () => {
-    // 这一格是并发分支：`ON CONFLICT ... DO UPDATE` 的 applies_when 是
-    // `coalesce(excluded.applies_when, 库里旧值)`——写入前看不见那一条旧值。
-    // 只看输入字段的实现会在这里放过"输入干净、库里那条条件绑本地"的情况。
-    const finalRow = memoryRow({
-      scope: "global",
-      content: "提醒我先看反例",
-      appliesWhen: "复习这门课时",
-      globalKey: "66666666-6666-4666-8666-666666666666",
-    });
-    const fake = fakeTx({ selects: [[]], insertedRow: finalRow });
-    await assert.rejects(
-      upsertMemory(fake.tx, SCOPE, {
-        kind: "preference",
-        content: "提醒我先看反例",
-        sourceEventId: "evt-concurrent",
-      }),
-      (error: unknown) =>
-        error instanceof MemoryGlobalScopeRejectedError && error.reason === "applies_when_workspace_bound",
-      "并发分支把一条账号级规则的条件改成了当前书房专属的那条，却没人拦",
-    );
-    assert.equal(fannedOut(fake), false, "拒绝之前就已经铺到别的空间去了");
-  });
 });
 
 describe("修订已有账号级规则", () => {
-  it("改成涉及科目/当前书房的内容：返回领域错误且一条 UPDATE 都不发", async () => {
-    const existing = memoryRow({ scope: "global", globalKey: "77777777-7777-4777-8777-777777777777" });
-    const fake = fakeTx({ selects: [[existing]] });
-    await assert.rejects(
-      correctMemory(fake.tx, SCOPE, existing.id as string, {
-        content: "下个月要考日语N3",
-        expectedRevision: 1,
-      }),
-      (error: unknown) =>
-        error instanceof MemoryGlobalScopeRejectedError && error.reason === "content_workspace_bound",
-    );
-    assert.equal(fake.ops.some((op) => op.op === "update"), false, "源行被改了：revision 与历史都会跟着动");
-  });
-
-  it("省略适用条件时沿用旧条件，旧条件也要判", async () => {
-    const existing = memoryRow({
-      scope: "global",
-      appliesWhen: "复习这门课时",
-      globalKey: "88888888-8888-4888-8888-888888888888",
-    });
-    const fake = fakeTx({ selects: [[existing]] });
-    await assert.rejects(
-      correctMemory(fake.tx, SCOPE, existing.id as string, {
-        content: "提醒我先看反例",
-        expectedRevision: 1,
-      }),
-      (error: unknown) =>
-        error instanceof MemoryGlobalScopeRejectedError && error.reason === "applies_when_workspace_bound",
-      "本次没传条件就绕过了检查——省���不等于免检",
-    );
-    assert.equal(fake.ops.some((op) => op.op === "update"), false);
-  });
 
   it("有效的一般偏好照常修订；条件显式清空按 null 的现役语义判", async () => {
     const existing = memoryRow({ scope: "global", appliesWhen: "我累的时候" });
@@ -366,20 +241,6 @@ describe("修订已有账号级规则", () => {
 });
 
 describe("回执：稳定 4xx + 可读文案", () => {
-  it("三种理由都是 4xx，并带着可执行的下一步", () => {
-    for (const reason of ["kind_not_preference", "content_workspace_bound", "applies_when_workspace_bound"] as const) {
-      const rejection = memoryGlobalScopeRejection(new MemoryGlobalScopeRejectedError(reason));
-      assert.ok(
-        rejection.statusCode >= 400 && rejection.statusCode < 500,
-        `${reason} 回的是 ${rejection.statusCode}：不是 4xx 就没法和"重试就好"区分开`,
-      );
-      assert.equal(rejection.statusCode, MEMORY_GLOBAL_SCOPE_REJECTED_STATUS);
-      assert.equal(rejection.body.error, "memory_global_scope_rejected", "错误码不稳定的回执没法被客户端分支处理");
-      assert.equal(rejection.body.reason, reason, "理由没有原样回传，前端给不出针对性建议");
-      assert.match(rejection.body.message, /当前书房/,
-        `${reason} 的文案没有告诉用户接下来能做什么`);
-    }
-  });
 
   it("两条写入路由都把这个领域错误翻成 4xx，而不是让它冒成 500 或被当成功", () => {
     // 没有数据库就发不出真实请求，所以这里钉的是**映射挂在哪两条路由上**：
@@ -412,42 +273,6 @@ test("守卫的位置不改变既有语义：自动抽取仍不得改写用户�
 });
 
 describe("guided 提案确认链：拒绝也要有可读回执", () => {
-  it("修订账号级规则被拒 → 4xx + 与记忆中心同一句文案，且不发 UPDATE", async () => {
-    const existing = memoryRow({
-      scope: "global",
-      content: "习惯晚上九点之后写笔记",
-      globalKey: "99999999-9999-4999-8999-999999999999",
-    });
-    const fake = fakeTx({ selects: [[existing]] });
-    await assert.rejects(
-      executeCompanionMemoryProposalAction({
-        tx: fake.tx,
-        workspaceId: SCOPE.workspaceId,
-        userId: SCOPE.userId,
-        proposal: { conversation_id: "44444444-4444-4444-8444-444444444444", source_message_id: null },
-        payload: {
-          kind: "revise_memory",
-          memoryId: existing.id,
-          expectedRevision: 1,
-          content: "下个月要考日语N3",
-        },
-      }),
-      (error: unknown) => {
-        assert.ok(error instanceof CompanionConversationError,
-          `提案链抛出的不是 companion 错误合同：${(error as Error)?.name}`);
-        assert.equal(error.statusCode, 422, "不是 4xx 就会按 500 脱敏，用户看不到发生了什么");
-        assert.equal(error.code, "INVALID_REQUEST");
-        assert.equal(
-          error.message,
-          accountPreferenceRejectionMessage("content_workspace_bound"),
-          "提案链的文案与记忆中心不是同一句：同一个拒绝说了两种话",
-        );
-        return true;
-      },
-    );
-    assert.equal(fake.ops.some((op) => op.op === "update"), false, "提案链仍然把内容改了");
-    assert.equal(fake.ops.some((op) => op.op === "insert"), false);
-  });
 
   it("有效的账号级修订仍然走通提案链", async () => {
     const existing = memoryRow({ scope: "global", content: "习惯晚上九点之后写笔记" });
@@ -500,4 +325,32 @@ describe("guided 提案确认链：拒绝也要有可读回执", () => {
       "版本冲突被账号级拒绝的映射顶掉了：客户端会按 422 去重试而不是重新读取",
     );
   });
+});
+
+test("explicit account preferences keep their selected scope regardless of vocabulary", async () => {
+  for (const content of ["任何空间都先用物理类比解释。", "谈这门课时也保持简洁。", "Prefer examples when learning statistics."]) {
+    const fake = fakeTx({ selects: [[]] });
+    const saved = await upsertMemory(fake.tx, SCOPE, { kind: "preference", content, scope: "global", userStated: true });
+    assert.equal(saved.scope, "global");
+    assert.equal(saved.content, content);
+    assert.equal(fannedOut(fake), true);
+  }
+});
+
+test("account preference revision preserves the exact condition without interpreting topic words", async () => {
+  const existing = memoryRow({ scope: "global", appliesWhen: "讨论这门课时" });
+  const fake = fakeTx({ selects: [[existing]] });
+  const updated = await correctMemory(fake.tx, SCOPE, existing.id, {
+    content: "先用物理类比，再解释统计假设。", expectedRevision: 1,
+  });
+  assert.ok(updated);
+  assert.equal(updated.appliesWhen, existing.appliesWhen);
+  assert.ok(fake.ops.some(operation => operation.op === "update"));
+});
+
+test("non-preference scope violations retain their stable client error", () => {
+  const rejection = memoryGlobalScopeRejection(new MemoryGlobalScopeRejectedError("kind_not_preference"));
+  assert.equal(rejection.statusCode, MEMORY_GLOBAL_SCOPE_REJECTED_STATUS);
+  assert.equal(rejection.body.reason, "kind_not_preference");
+  assert.equal(rejection.body.message, accountPreferenceRejectionMessage("kind_not_preference"));
 });

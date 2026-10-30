@@ -78,10 +78,10 @@ import type { AgentTurnRequest, AgentTurnResult } from "@astella/shared";
 import { AGENT_GOAL_HANDOFF_INSTRUCTIONS } from "../../agent/goal-handoff-instructions.ts";
 import { CompanionToolOutputRepairError } from "../tools/companion-tool-output-repair.ts";
 
-test("automatic note linking starts with one combined search and retries only when needed", () => {
-  assert.match(AGENT_GOAL_HANDOFF_INSTRUCTIONS, /先用 companion_notes_read（action=search）的match=any做一次简短组合查询/);
-  assert.match(AGENT_GOAL_HANDOFF_INSTRUCTIONS, /只有一次搜索没有返回有用候选时，才换一个更宽的组合词重试一次/);
-  assert.doesNotMatch(AGENT_GOAL_HANDOFF_INSTRUCTIONS, /分开的查询词/);
+test("note linking remains evidence based without a prescribed search sequence", () => {
+  assert.match(AGENT_GOAL_HANDOFF_INSTRUCTIONS, /links 可为空/);
+  assert.match(AGENT_GOAL_HANDOFF_INSTRUCTIONS, /核对真实笔记正文和版本/);
+  assert.doesNotMatch(AGENT_GOAL_HANDOFF_INSTRUCTIONS, /重试一次|先用 companion_notes_read/);
 });
 
 test("latest-note listing is explicit and preserves keyword search validation", () => {
@@ -366,6 +366,37 @@ test("放行闸：定论前不下发，同意时把已生成的部分一次放�
   const result = await running;
   assert.equal(seen.join(""), "在忙啥呢——刚把熵讲完");
   assert.equal(result.content, "在忙啥呢——刚把熵讲完");
+});
+
+for (const allowed of [true, false]) test(`放行闸也隔离工具准备事件：${allowed ? "保留后才重放" : "作废后全部丢弃"}`, async () => {
+  const { provider } = streamingStubProvider(["这是一份尚未放行的草稿。"]);
+  const stream = provider.chatCompletionStream!;
+  let generated!: () => void;
+  const done = new Promise<void>(resolve => { generated = resolve; });
+  provider.chatCompletionStream = async (messages, options, signal, delta) => {
+    options.onToolCallStarted?.({ index: 0, id: "draft-read", name: "companion_observe" });
+    const result = await stream(messages, options, signal, delta);
+    generated();
+    return result;
+  };
+  let resolveGate!: (allowed: boolean) => void;
+  const gate = new Promise<boolean>(resolve => { resolveGate = resolve; });
+  const seen: string[] = [], tools: unknown[] = [];
+  const running = runStreamingAgentStep({ provider, stepRequest: STREAM_STEP_REQUEST,
+    ctxSignal: new AbortController().signal, timeoutMs: 5_000,
+    releaseGate: () => gate, onProviderDelta: async text => { seen.push(text); return true; },
+    onToolCallStarted: slot => tools.push(slot) });
+  await done;
+  assert.deepEqual(seen, []); assert.deepEqual(tools, []);
+  resolveGate(allowed);
+  if (allowed) {
+    await running;
+    assert.equal(seen.join(""), "这是一份尚未放行的草稿。");
+    assert.deepEqual(tools, [{ index: 0, id: "draft-read", name: "companion_observe" }]);
+  } else {
+    await assert.rejects(running, CompanionSpeculativeStepDiscardedError);
+    assert.deepEqual(seen, []); assert.deepEqual(tools, []);
+  }
 });
 
 /** 会同时吐正文与思考的 provider（思考增量与正文一一交错，模拟真实流的形状）。 */
@@ -681,7 +712,7 @@ test("坍缩闸：整步未达阈值时一个字都不下发，onTextEmitted 不
 });
 
 test("private context output is quarantined and can be corrected within the current step", async () => {
-  const { provider } = streamingStubProvider(["activeMemories: 内部记录"]);
+  const { provider } = streamingStubProvider(["<memory_data>内部记录</memory_data>"]);
   const seen: string[] = [];
   await assert.rejects(runStreamingAgentStep({ provider, stepRequest: STREAM_STEP_REQUEST,
     ctxSignal: new AbortController().signal, timeoutMs: 5000, holdUntilChars: 4,
@@ -1083,23 +1114,21 @@ test("companionWriteToolNames 不带清单上限（截断会把第 11 个写工�
  * 算得对，证明不了循环真的走了它。整条交付闸要跑通 postgres 集成测才碰得到，
  * 而它一旦被人"顺手简化"回各自 throw，线上表现就是活干完了却整轮判死——不报错，只会沉默。
  */
-test("三道交付闸的销毁都必须过统一的后果判定", () => {
+test("工作交付核验接入实际循环，已有成果和结构化错误分别处理", () => {
   const source = readFileSync(new URL("../agent/companion-agent-runtime.ts", import.meta.url), "utf8");
-  assert.match(source,
-    /const landedWrites = companionActionResultRecorded\(messages, companionWriteToolNames\(definitions\)\)/,
-    "权威事实必须来自本轮真实落库的写回执——不是模型的说法、词表、时间或条数上限");
-  for (const gate of ["output_truncated", "unverified_quote", "action_not_executed"]) {
-    assert.equal(source.match(new RegExp(`judgeCompanionDeliveryGate\\(\\{ gate: "${gate}"`, "g"))?.length, 1,
-      `${gate} 没有走统一的后果判定（要么被复制了一份，要么被摘掉了）`);
-  }
-  assert.equal(source.match(/if \((\w+)\.destroysTurn\) \{/g)?.length, 3,
-    "销毁分支的数量变了：多出来的一处就是又复制了一份后果判定，少一处就是闸被绕开");
-  assert.match(source, /companionActionResultRecorded\(messages, requestedActionTools\)/,
-    "补正那一步仍要点名她没调的工具：放宽的是销毁，不是判据");
-  // 降级交付之后，权威事实要跟着结果一起交回交付层（2026-10-16 补的两道流式闸读它）。
-  // 少一处就意味着那条出口绕过了闸：明明落了库的写，到交付层变成"什么都没过"。
-  assert.equal(source.match(/writesLanded: (?:landedWrites|input\.landedWrites)/g)?.length, 4,
-    "四条 settled 出口（终答步、独立成品步、截断降级步、宿主收尾）都要把这份事实交回去");
+  assert.match(source, /validateCompanionFinish\(parsedArgs\.data as CompanionFinishArguments, messages,/);
+  assert.match(source, /const companionDeliveryContractRequired = \(\) => companionActionResultRecorded\(messages, companionWriteNames\)/,
+    "交付合同只由真实写回执或待发独立消息触发");
+  assert.match(source, /requireRequirements: companionActionResultRecorded\(messages, companionWriteNames\)/,
+    "要求逐项目标的判据是真实写回执，不是资源档标签");
+  assert.match(source, /if \(!verdict\.ok\)/);
+  assert.match(source, /const landedWrites = companionActionResultRecorded\(messages, companionWriteToolNames\(definitions\)\)/);
+  assert.match(source, /const canStreamThisStep = !deliveryContractRequired/,
+    "没有待引用回执时回答可以流式下发");
+  assert.match(source, /stripVoiceExpressionTags\(text\)\.trim\(\)\.length === 0/,
+    "只带语音表情标签的回复按空答复处理，不允许静默完成");
+  assert.match(source, /FINISH_CONTRACT_INCOMPLETE/);
+  assert.doesNotMatch(source, /reviewCompanionStepCorrection\(/, "词表产出核对不能重新成为执行循环的决策器");
 });
 
 // ─── #8 终答步 provider 违约的两条 fail-open 出口 ────────────────────────
@@ -1336,6 +1365,9 @@ test("工具兜底只处理 required 能力错误，不吞其他错误或同模�
     },
     { label: "同模型", request: baseRequest, error: unsupported, fallbackModelId: "qwen3.8-flash" },
     { label: "空工具面", request: { ...baseRequest, tools: [] }, error: unsupported, fallbackModelId: "other-model" },
+    { label: "备用模型未声明视觉", request: { ...baseRequest, messages: [{ role: "user", content: [
+      { type: "image_url", image_url: { url: "data:image/png;base64,AAAA" } },
+    ] }] }, error: unsupported, fallbackModelId: "text-only" },
   ];
 
   for (const testCase of cases) {
@@ -1424,6 +1456,26 @@ test("不变量：任何一步都不许同时出现 tools:[] 与 toolChoice:\"re
     }
   }
   assert.equal(pairs, 16);
+});
+
+test("structured delivery stays required after reads without prescribing a business operation", () => {
+  const tools = [
+    { name: "companion_finish", description: "交付", parameters: { type: "object", properties: { text: { type: "string" } }, required: ["outcome"] } },
+    { name: "companion_visual", description: "自主读图", parameters: {} },
+  ];
+  for (const toolCallCount of [0, 1, 7]) {
+    const shape = companionStepToolShape({ tools, finalAnswerOnly: false, requiresTool: false,
+      requireStructuredResponse: true, toolCallCount, deliveryDraftAvailable: false });
+    assert.equal(shape.toolChoice, "required");
+    assert.deepEqual(shape.tools.map(tool => tool.name), ["companion_finish", "companion_visual"]);
+    assert.deepEqual(shape.tools[0].parameters.required, ["outcome", "text"], "a first finish cannot omit both body and draft");
+  }
+  assert.deepEqual(tools[0].parameters.required, ["outcome"], "offered schemas are not mutated across steps");
+  const reuse = companionStepToolShape({ tools, finalAnswerOnly: false, requiresTool: false,
+    requireStructuredResponse: true, toolCallCount: 1, deliveryDraftAvailable: true });
+  assert.deepEqual(reuse.tools[0].parameters.required, ["outcome"], "a real draft still allows exact reuse");
+  assert.equal(companionStepToolShape({ tools: [], finalAnswerOnly: false, requiresTool: false,
+    requireStructuredResponse: true, toolCallCount: 0 }).toolChoice, "auto");
 });
 
 test("mock 守 provider 合同：required 必回工具调用，工具面为空则当场炸", async () => {

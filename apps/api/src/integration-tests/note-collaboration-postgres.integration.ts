@@ -392,6 +392,10 @@ test("只读成员：知道自己只读、上送不落库，但仍能实时看�
   // 4.3/4.4 的编辑器禁用态就以这个为准。
   assert.equal((await authed).scope, "readonly", "member 应被判为只读");
   assert.equal(member.provider.authorizedScope, "readonly");
+  const metadata = await app.inject({ method: "GET", url: `/v2/notes/${noteId}/editing-state`, headers: { authorization: `Bearer ${memberToken}` } });
+  assert.equal(metadata.statusCode, 200, metadata.body);
+  assert.equal(metadata.json().canEdit, false);
+  assert.ok(metadata.json().viewers.some((viewer: { userId: string }) => viewer.userId === userOwner));
 
   const phantom = `${paraB}（成员偷偷改的）`;
   editFragmentBlockText(member.doc, 2, phantom);
@@ -407,44 +411,24 @@ test("只读成员：知道自己只读、上送不落库，但仍能实时看�
   await waitFor(() => collaborationLoad().documents === 0, "文档卸载");
 });
 
-test("手机会话的 owner：实时连接同样只读（0413 clientKind）；同一人桌面会话仍能写", async () => {
-  // 0413 的规则是「手机上人不改正文，伴星改」。HTTP 那两口由
-  // `requireNoteContentWrites` 挡，WS 这半条由 `onAuthenticate` 的
-  // `readOnly = !isWorkspaceOwner(session) || isNoteContentWriteForbiddenForSession(session)`
-  // 挡——判据只有服务端那一份，凭据（token → `decodeToken`）带回来的 `client_kind`
-  // 才是依据。这条测的是 **owner** 的手机会话：归属不是理由，客户端类型才是。
+test("手机 owner 与桌面通过同一份实时文档双向编辑", async () => {
   const mobileOwnerToken = (await issueSession(userOwner, wsCollab, undefined, "mobile")).token;
-
-  const desktop = connect(ownerToken);
-  await desktop.synced;
+  const desktop = connect(ownerToken); await desktop.synced;
   const mobile = connect(mobileOwnerToken);
   const mobileAuthed = once(mobile.provider, "authenticated", "mobile owner 鉴权完成");
-  mobileAuthed.catch(() => {});
-  await mobile.synced;
-
-  // 与只读成员同一条协议面：服务端回 `Authenticated("readonly")`，客户端据此置灰。
-  assert.equal((await mobileAuthed).scope, "readonly", "owner 的手机会话应被判为只读");
-  assert.equal(mobile.provider.authorizedScope, "readonly");
-
-  const phantom = `${paraB}（手机上想改的）`;
-  editFragmentBlockText(mobile.doc, 2, phantom);
-  // 超过 debounce 的一整轮：广播与落盘两处都没有，才说明只读挡的是写入本身。
-  await new Promise((resolve) => setTimeout(resolve, 3_500));
-  assert.ok(!docContents(desktop.doc).includes(phantom), "手机只读连接的更新被广播给了桌面连接");
-  assert.ok(!(await storedBlocks()).includes(phantom), "手机只读连接的更新进了文档快照");
-  assert.ok(!(await projectedRows()).includes(phantom), "手机只读连接的更新进了 note_blocks");
-
-  // 正向对照：同一个人在同一篇上换回桌面 session 必须写得动——否则上面的"被拒"
-  // 可能只是连接或夹具坏了，而不是 client_kind 在起作用。
-  const desktopEdit = `${paraA}（桌面会话改的）`;
+  mobileAuthed.catch(() => {}); await mobile.synced;
+  assert.equal((await mobileAuthed).scope, "read-write");
+  const mobileEdit = `${paraB}（手机编辑）`;
+  editFragmentBlockText(mobile.doc, 2, mobileEdit);
+  await waitFor(() => docContents(desktop.doc).includes(mobileEdit), "手机编辑实时到达桌面");
+  await waitFor(async () => (await projectedRows()).includes(mobileEdit), "手机编辑落盘");
+  const desktopEdit = `${paraA}（桌面编辑）`;
   editFragmentBlockText(desktop.doc, 1, desktopEdit);
-  await waitFor(() => desktop.provider.unsyncedChanges === 0, "服务端确认收到桌面编辑");
-  await waitFor(async () => (await projectedRows()).includes(desktopEdit), "桌面会话的编辑落库");
-  assert.ok(!(await projectedRows()).includes(phantom), "被拒的手机更新在下一次落盘时混进了库");
-
+  await waitFor(() => docContents(mobile.doc).includes(desktopEdit), "桌面编辑实时到达手机");
+  await waitFor(async () => (await projectedRows()).includes(desktopEdit), "桌面编辑落盘");
+  assert.ok((await projectedRows()).includes(mobileEdit));
   await revokeSession(mobileOwnerToken).catch(() => {});
-  destroyProviders();
-  await waitFor(() => collaborationLoad().documents === 0, "文档卸载");
+  destroyProviders(); await waitFor(() => collaborationLoad().documents === 0, "文档卸载");
 });
 
 test("HTTP 上送增量：一条 WS 都没建也能写（personal 与离线队列的口）", async () => {

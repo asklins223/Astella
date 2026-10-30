@@ -12,7 +12,7 @@ import { logger } from "../../lib/logger.ts";
 import { scopeOfSession, withWorkspaceTransaction } from "../../db/client.ts";
 // WebSocket Auth frames reuse the identity domain's canonical session decoder.
 import { decodeToken } from "../identity/session-service.ts";
-import { isWorkspaceOwner, isNoteContentWriteForbiddenForSession } from "../identity/middleware.ts";
+import { isWorkspaceOwner } from "../identity/middleware.ts";
 import {
   loadNoteDoc,
   persistNoteDoc,
@@ -24,6 +24,7 @@ import {
   snapshotOf,
   writeFragmentBlocks,
 } from "./doc-fragment.ts";
+import { assertUnlockedUpdate, pruneCompletedRewriteLocks } from "./edit-locks.ts";
 import { visibleNotesCondition } from "./visibility.ts";
 import { disconnectAndVerifyNoteDocSave } from "./note-doc-save-confirmation.ts";
 
@@ -31,7 +32,7 @@ import { disconnectAndVerifyNoteDocSave } from "./note-doc-save-confirmation.ts"
  * 笔记协同的服务端（批次 4.2）。
  *
  * 一条连接能不能改，判据**只有服务端一份**：`onAuthenticate` 从 token 解出 session，
- * `isWorkspaceOwner` 与 0413 的 `isNoteContentWriteForbiddenForSession`（手机会话只读）
+ * `isWorkspaceOwner`（手机与桌面共用空间权限）
  * 决定 `connectionConfig.readOnly`，服务端此后一律拒收该连接的更新。
  * 界面隐藏按钮不是权限，客户端说什么都不算——这跟这次审查里"服务端可写、UI 判只读"
  * 那类分裂是同一个问题的两面。
@@ -360,11 +361,7 @@ export const noteCollaboration = new Hocuspocus<NoteDocContext>({
       displayName: note.displayName,
     });
 
-    // 0413：手机会话在这一层同样只读。规则是「手机上人不改正文，伴星改」，而伴星
-    // 根本不连这条 WS（她的写入走 `companion-edit-dispatch` 的内部 tool call），
-    // 所以把手机连接设成只读只挡到人，不挡到她。凭据带回来的 `client_kind` 才是
-    // 判据——WS 升级请求带不了 Authorization，头这一路本来就不可用。
-    const readOnly = !isWorkspaceOwner(session) || isNoteContentWriteForbiddenForSession(session);
+    const readOnly = !isWorkspaceOwner(session);
     // 只读要写进 connectionConfig，不是自己挡消息：服务端会据此回一条
     // `Authenticated("readonly")` 让客户端知道自己只读，之后同步/更新一律回
     // `SyncStatus(false)`（否定确认）。在 `beforeHandleMessage` 里抛错会断整条
@@ -379,6 +376,12 @@ export const noteCollaboration = new Hocuspocus<NoteDocContext>({
       readOnly,
       displayName: note.displayName,
     };
+  },
+
+  async beforeSync({ document, context, type, payload }) {
+    if (type === 0 || !context || context.readOnly) return;
+    await pruneCompletedRewriteLocks(context.workspaceId, context.noteId, context.userId);
+    assertUnlockedUpdate(context.noteId, document, payload);
   },
 
   // P1-14：连接断了就还那一格。**没有这一段额度只会单调增长**——
@@ -572,6 +575,16 @@ function hasPendingStructs(doc: Y.Doc): boolean {
  */
 function applyAndReportLanded(document: Y.Doc, update: Uint8Array): boolean {
   const cleanBefore = !hasPendingStructs(document);
+  // A rejected update must not leave unresolved structs in the live document:
+  // they would poison every later save receipt and be broadcast to other clients.
+  if (cleanBefore) {
+    const candidate = new Y.Doc();
+    try {
+      Y.applyUpdate(candidate, Y.encodeStateAsUpdate(document));
+      Y.applyUpdate(candidate, update);
+      if (hasPendingStructs(candidate)) return false;
+    } finally { candidate.destroy(); }
+  }
   Y.applyUpdate(document, update);
   return !cleanBefore || !hasPendingStructs(document);
 }
@@ -617,16 +630,18 @@ export async function applyUploadedDocUpdate(input: {
     workspaceId: input.workspaceId,
     noteId: input.noteId,
     versionId: note.currentVersionId,
-    // 可写性由路由上的 `requireOwner` + `requireNoteContentWrites` 判（与
+    // 可写性由路由上的 `requireOwner` 判（与
     // `onAuthenticate` 同一个谓词）；走到这里就是可写。这里不再判第二次，否则又多一套
     // 可能互相矛盾的判据。
     readOnly: false,
   };
 
   const connection = await noteCollaboration.openDirectConnection(documentNameForNote(input.noteId), context);
+  await pruneCompletedRewriteLocks(input.workspaceId, input.noteId, input.userId);
   let landed = true;
   try {
     await connection.transact((document) => {
+      assertUnlockedUpdate(input.noteId, document, input.update);
       landed = applyAndReportLanded(document, input.update);
     });
   } finally {
@@ -698,7 +713,7 @@ export async function publishRestoredNoteDoc(input: {
     workspaceId: input.workspaceId,
     noteId: input.noteId,
     versionId: input.versionId,
-    // 可写性由路由上的 `requireOwner` 与 `requireNoteContentWrites` 判过（与
+    // 可写性由路由上的 `requireOwner` 判过（与
     // `onAuthenticate` 同一个谓词）；走到这里就是可写。
     readOnly: false,
   };

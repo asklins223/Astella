@@ -33,3 +33,32 @@ test("a memory write requires the current user's scoped message and verifies its
     { kind: "preference", content: "解释概念时先举例", sourceQuote: "以后解释概念时先举例", appliesWhen: "解释概念时" });
   assert.ok(actual.createdAt instanceof Date);
 });
+
+test("a follow-up memory write preserves a uniquely quoted earlier user source", async () => {
+  const event = { ctx: { workspaceId: id }, read: { userId: id, userMessageId: version, conversationId: id } };
+  const earlier = { id, seq: "3", created_at: new Date("2026-10-28T01:00:00Z"), source_text: "我早餐只喝燕麦奶，先别保存" };
+  const current = { id: version, seq: "5", created_at: new Date("2026-10-28T02:00:00Z"), source_text: "可以，帮我记住吧" };
+  const statements: string[] = [];
+  const dialect = new PgDialect();
+  const tx: AgentSqlExecutor = { async execute(statement) {
+    statements.push(dialect.sqlToQuery(statement).sql);
+    return statements.length === 1 ? [current] : [earlier];
+  } };
+  const result = await readCompanionMemoryWriteSource(tx, event,
+    { kind: "preference", content: "早餐只喝燕麦奶", sourceQuote: "我早餐只喝燕麦奶", appliesWhen: "早餐" });
+  assert.equal(result.messageId, id);
+  assert.equal(result.createdAt, earlier.created_at);
+  assert.equal(result.appliesWhen, "早餐");
+  assert.match(statements[1]!, /conversation_id=.*workspace_id=.*user_id=.*role='user'.*seq</s);
+});
+
+test("ambiguous earlier memory sources do not get guessed or replace current authorization", async () => {
+  const event = { ctx: { workspaceId: id }, read: { userId: id, userMessageId: version, conversationId: id } };
+  let count = 0;
+  const tx: AgentSqlExecutor = { async execute() {
+    if (++count === 1) return [{ id: version, seq: "8", created_at: new Date(), source_text: "可以，记住吧" }];
+    return [id, version].map(id => ({ id, seq: "2", created_at: new Date(), source_text: "早餐喝燕麦奶" }));
+  } };
+  await assert.rejects(readCompanionMemoryWriteSource(tx, event,
+    { kind: "preference", content: "早餐喝燕麦奶", sourceQuote: "早餐喝燕麦奶" }), /没有对上/);
+});

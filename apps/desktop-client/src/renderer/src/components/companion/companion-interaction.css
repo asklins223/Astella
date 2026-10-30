@@ -542,6 +542,8 @@
   white-space: nowrap;
   border: 0;
 }
+.companion-compose-images { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; grid-column: 1 / -1; max-height: 180px; overflow-y: auto; }
+.companion-compose-images .companion-compose-image { flex: 1 1 150px; min-width: 0; max-width: 100%; }
 .companion-compose-image { display: flex; align-items: center; gap: 9px; margin: 2px 2px 8px; padding: 7px 9px; border: 1px solid #eae5d5; border-radius: 12px; background: #fffdf6; }
 .companion-compose-image img { width: 40px; height: 40px; border-radius: 9px; object-fit: cover; }
 .companion-compose-image__placeholder { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 9px; background: #f1ecdd; color: #a29783; }

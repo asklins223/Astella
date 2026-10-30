@@ -37,10 +37,12 @@ const completedSchema = z.object({ status: z.literal("completed"), text: z.strin
   reasoning: agentTurnResultSchema.shape.reasoning,
 }).strict();
 const snapshotSchema = z.object({ phase: z.enum(["input", "continue", "waiting", "settled"]), state: companionRuntimeStateSchema,
+  deliveryReviewPolicy: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   proposalId: z.string().uuid().optional(), pendingCallId: z.string().min(1).max(200).optional(),
   result: completedSchema.optional() }).strict().refine(value => (value.phase === "settled") === Boolean(value.result)
     && (value.phase === "waiting") === Boolean(value.proposalId && value.pendingCallId)
-    && (value.phase === "waiting" || (!value.proposalId && !value.pendingCallId)));
+    && (value.phase === "waiting" || (!value.proposalId && !value.pendingCallId))
+    && (!value.deliveryReviewPolicy || value.phase === "settled"));
 export type CompanionRuntimeSnapshot = z.infer<typeof snapshotSchema>;
 const envelopeSchema = z.object({ version: z.literal(1), identitySha256: z.string().regex(/^[a-f0-9]{64}$/),
   stateJson: z.string(), stateSha256: z.string().regex(/^[a-f0-9]{64}$/) }).strict();

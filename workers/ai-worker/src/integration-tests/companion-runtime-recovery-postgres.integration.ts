@@ -32,7 +32,9 @@ class RecoveryProvider extends MockProvider {
     let output: unknown;
     if (prompt.includes("记忆整理器")) {
       output = { candidates: [{
-        kind: "preference", content: "用户以后希望先看例子再看定义。", confidence: 0.95,
+        kind: "preference", content: extractSourceBasis === "direct_statement"
+          ? "用户以后希望先看例子再看定义。"
+          : "用户理解这本书中的内容时，从具体示例入手较顺畅。", confidence: 0.95,
         sourceMessageId: extractSourceId, sourceSpeaker: "user", sourceBasis: extractSourceBasis,
         sourceQuote: extractSourceQuote, binding: "portable",
       }] };

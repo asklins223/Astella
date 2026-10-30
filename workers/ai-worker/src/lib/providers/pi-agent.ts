@@ -423,6 +423,10 @@ export class PiAgentProvider implements AIProvider {
         && this.modelProfile?.reasoning?.levels.includes("none"));
     const disableThinking = (native?.disableThinking ?? options.disableThinking) || protocolRequiresLowestEffort;
     const temperature = native?.temperature ?? options.temperature;
+    // Native agent steps retain the declared model ceiling. Independent short
+    // contracts (for example resource classification) own their output limit.
+    const outputLimit = !native && typeof options.maxTokens === "number" && Number.isFinite(options.maxTokens)
+      && options.maxTokens > 0 ? Math.min(this.maxOutputTokens, Math.floor(options.maxTokens)) : this.maxOutputTokens;
     const wire = new PiWireObservation(this.id, this.api, tools.length > 0, onDelta,
       this.modelProfile?.supportsAssistantPhase);
     const transport = createPiHttpTransport({ providerId: this.id,
@@ -430,7 +434,7 @@ export class PiAgentProvider implements AIProvider {
       request: this.streamRequest });
     const streamOptions: SimpleStreamOptions = {
       apiKey: this.apiKey, fetch: transport.fetch, maxRetries: 0, cacheRetention: "none", signal,
-      maxTokens: this.maxOutputTokens,
+      maxTokens: outputLimit,
       reasoning: piReasoning(this.modelProfile, disableThinking,
         protocolRequiresLowestEffort ? undefined : native?.reasoningEffort ?? options.reasoningEffort),
       headers: {
@@ -446,7 +450,7 @@ export class PiAgentProvider implements AIProvider {
         delete body.max_completion_tokens;
         delete body.max_output_tokens;
         if (!this.platformOptions?.disableMaxTokens) {
-          body[this.api === "openai-responses" ? "max_output_tokens" : this.platformOptions?.maxTokensParam ?? "max_tokens"] = this.maxOutputTokens;
+          body[this.api === "openai-responses" ? "max_output_tokens" : this.platformOptions?.maxTokensParam ?? "max_tokens"] = outputLimit;
         }
         const effort = this.api === "openai-responses" ? record(body.reasoning)?.effort
           : record(body.thinking)?.type === "disabled" ? "none" : body.reasoning_effort;
@@ -465,6 +469,15 @@ export class PiAgentProvider implements AIProvider {
             && effort !== undefined && effort !== "none" ? "auto" : "required";
         }
         if (this.id === "mimo_responses") {
+          // The leading policy belongs in MiMo's dedicated instructions field.
+          // Later system items are host observations, not additional policy:
+          // preserve their position and never promote them into instructions.
+          const input = Array.isArray(body.input) ? [...body.input] : [];
+          const policy = record(input[0]);
+          if (policy?.role === "system" && typeof policy.content === "string") {
+            body.instructions = [body.instructions, policy.content].filter(value => typeof value === "string" && value).join("\n\n");
+            body.input = input.slice(1);
+          }
           delete body.store;
           delete body.prompt_cache_key;
           delete body.prompt_cache_retention;
@@ -482,8 +495,10 @@ export class PiAgentProvider implements AIProvider {
     let finalMessage: PiAssistantMessage | undefined;
     try {
       for await (const event of stream) {
-        if (((event.type === "text_delta" || event.type === "thinking_delta" || event.type === "toolcall_delta") && event.delta.length > 0)
-          || event.type === "toolcall_end") options.onOutputActivity?.();
+        if (event.type === "text_delta" && event.delta.length > 0) options.onOutputActivity?.("text");
+        else if (event.type === "thinking_delta" && event.delta.length > 0) options.onOutputActivity?.("reasoning");
+        else if ((event.type === "toolcall_delta" && event.delta.length > 0) || event.type === "toolcall_end")
+          options.onOutputActivity?.("tool");
         if (event.type === "text_delta") wire.textDelta(event.delta);
         else if (event.type === "thinking_delta") options.onReasoningDelta?.(event.delta);
         else if (event.type === "toolcall_start" || event.type === "toolcall_delta") {
@@ -523,7 +538,7 @@ export class PiAgentProvider implements AIProvider {
   }
 
   executeAgentTurn(request: AgentTurnRequest, signal?: AbortSignal,
-    observation?: { onOutputActivity?: () => void }): Promise<AgentTurnResult> {
+    observation?: { onOutputActivity?: (kind?: "text" | "reasoning" | "tool") => void }): Promise<AgentTurnResult> {
     return this.run([], { nativeAgentRequest: request, responseFormat: "text", onOutputActivity: observation?.onOutputActivity }, signal);
   }
 

@@ -1,3 +1,4 @@
+import { companionQuoteBlockV1Schema } from "@astella/shared/companion-conversation-contracts";
 /**
  * 桌宠日记生成器（22-real-desktop-pet-memory-context-prd-tdd.md §15.4/§15.5）。
  *
@@ -91,9 +92,7 @@ import {
   captionEchoIn,
   clipAtBoundary,
   clockPhrase,
-  countingToneIn,
   dayPartOf,
-  diaryAssistantWeight,
   diaryImageLabel,
   diaryLengthShortfall,
   diaryParagraphCount,
@@ -112,17 +111,16 @@ import {
   renderMaterial,
   resolveDiaryBlocks,
   stripEmbedRefs,
-  selfPutdownIn,
   diaryBlockDraftSchema,
   DIARY_MAX_TOKENS,
 } from "./companion-diary-content.ts";
 import type { DiaryBlock, DiaryDraft, DiaryEmbed, DiaryMaterial, DiaryPersona, DiaryPiece } from "./companion-diary-content.ts";
 export {
-  buildDiaryPrompt, captionEchoIn, clockPhrase, countingToneIn, dayPartOf, diaryAssistantWeight,
+  buildDiaryPrompt, captionEchoIn, clockPhrase, dayPartOf,
   clipAtBoundary, diaryImageLabel, diaryParagraphCount, exampleEchoIn,
   focusDiaryMaterial, groundedDiaryDigest, imageShape, isQuotableQuote,
   pickDiarySubject, pickImagesPerNote, pickQuoteCandidates, repeatedOpeningIn, stripEmbedRefs,
-  renderMaterial, resolveDiaryBlocks, selfPutdownIn, DIARY_MAX_TOKENS,
+  renderMaterial, resolveDiaryBlocks, DIARY_MAX_TOKENS,
 };
 export type { DiaryBlock, DiaryEmbed, DiaryMaterial, DiaryPersona, DiaryPiece };
 
@@ -351,7 +349,7 @@ export async function collectDiaryMaterial(tx: WorkerTransaction, scope: DayScop
   const lengthSense = minutes < 10 ? "一小会儿" : minutes < 40 ? "半小时上下" : minutes < 90 ? "一个来小时" : "好几个小时";
   // 以前这行末尾挂着一句「（这只是感觉，别在日记里报数）」——写给模型的说明写在素材里，
   // 等于请她抄：09-20 的日记原句就是「今天学了半小时上下」，一字不差。
-  // 措辞改成事实口吻，报数由机器闸拦（`countingToneIn`）。
+  // Evidence selection and the prompt own content; no counting-word veto.
   if (minutes >= 1) {
     pieces.push({ text: `今天你坐下来学的时间：${lengthSense}`, group: "his", weight: 1, at: "" });
   }
@@ -445,7 +443,7 @@ export async function collectDiaryMaterial(tx: WorkerTransaction, scope: DayScop
           ? lastUserNote.noteId : undefined
       );
       pieces.push({
-        text: `我说：${row.text}`, group: "her", weight: diaryAssistantWeight(row.text), at: row.at_local, noteId,
+        text: `我说：${row.text}`, group: "her", weight: 3, at: row.at_local, noteId,
         sourceId: row.source_id, sourceType: "companion_message", sourceVersion: row.source_version,
         conversationId: row.conversation_id,
       });
@@ -590,7 +588,7 @@ export async function collectDiaryMaterial(tx: WorkerTransaction, scope: DayScop
         AND ((created_at >= ${dayStart(scope)} AND created_at < ${dayEnd(scope)})
           OR (updated_at >= ${dayStart(scope)} AND updated_at < ${dayEnd(scope)}))
     )
-    -- 只收**一段就能引完**的段落：上限 180 与引用块的长度预算同源，超了整条不要。
+    -- Preserve whole source blocks within the shared quote transport limit.
     -- 旧写法是「取最长的、切 200 字」，于是 09-23 引了那篇笔记 251 字的推广导语，
     -- 还被硬切在「…宁愿推」；同一篇里 113 字的技术段落才是能引的那段。
     -- 同一段原文在库里可能存了好几份（重复导入），先按内容去重。
@@ -599,9 +597,8 @@ export async function collectDiaryMaterial(tx: WorkerTransaction, scope: DayScop
     JOIN touched t ON t.current_version_id = b.version_id
     WHERE b.workspace_id = ${scope.workspaceId}
       AND b.type IN ('quote', 'paragraph')
-      AND length(trim(b.content)) BETWEEN 20 AND 180
-    -- 按长度给候选池（长的更可能有内容），脏东西由 isQuotableQuote 在 TS 侧挑掉：
-    -- 过滤规则要能写单测，也要能一眼读懂，不塞进 SQL 的正则里。
+      AND length(trim(b.content)) BETWEEN 1 AND ${companionQuoteBlockV1Schema.shape.text.maxLength!}
+    -- The model chooses relevance; this pool is not filtered by language or words.
     ORDER BY trim(b.content), length(trim(b.content)) DESC, b.ordinal
     LIMIT 30
   `);
@@ -1043,8 +1040,6 @@ async function composeDiary(
         const firstAttempt = env.retryIndex === 0;
         const echo = exampleEchoIn(prose, persona.examples);
         if (echo && firstAttempt) return retryable(`你把人格例子里的原话搬进来了（「${echo}」）。同一个意思，用你自己的话说。`);
-        const putdown = selfPutdownIn(prose);
-        if (putdown && firstAttempt) return retryable(`你在道歉或自贬（「${putdown}」）。那件事照写，别配上这句。`);
         const captionEcho = captionEchoIn(parsed.data.blocks, prepared.material.embeds);
         if (captionEcho && firstAttempt) return retryable(`图注抄了别人转述给你的那句（「${captionEcho}」）。用你自己的话说一遍图里是什么。`);
         const firstParagraph = blocks.find((block) => block.type === "text");
@@ -1407,7 +1402,7 @@ async function persistDiary(
     // 篇幅由那一个声明源管；这里不再自己剪一刀——剪了就把"被裁过"这件事藏进了
     // 一条看起来完整的记忆，写入那一头的告警也就看不见。
     const memoryContent = `${scope.date} 桌宠日记：${draft.digest}`;
-    if (countingToneIn(draft.digest) || draft.digest.length === 0) return true;
+    if (draft.digest.length === 0) return true;
     await tx.execute(sql`
       INSERT INTO assistant_memory_items
         (workspace_id, user_id, kind, content, source_event_id, user_stated, user_confirmed,

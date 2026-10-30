@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { defineAgentCapability as tool, type AgentCapabilityDeclaration } from "./agent-capability-definition.ts";
-import { companionCreateNoteV1Schema, companionEditNoteV1Schema } from ".././contracts/companion/companion-note-authoring-contracts.ts";
+import { companionCreateNoteV1Schema, companionEditNoteV1Schema, COMPANION_NOTE_CONTENT_GUIDANCE } from ".././contracts/companion/companion-note-authoring-contracts.ts";
 import {
   COMPANION_PAGE_DESTINATIONS_V2,
   companionPageKindValuesV2,
@@ -8,9 +8,10 @@ import {
 } from ".././contracts/companion/companion-bridge-contracts.ts";
 import {
   companionRecommendLearningV1Schema,
+  COMPANION_TURN_MAX_IMAGES_V1,
 } from ".././contracts/companion/companion-conversation-contracts.ts";
-import { COMPANION_TOOL_GROUP_IDS } from "./companion-tool-groups.ts";
-import { agentVoiceStyleDecisionV1Schema } from "../contracts/agent/agent-contracts.ts";
+import { COMPANION_TOOL_GROUP_IDS, COMPANION_TOOL_GROUPS } from "./companion-tool-groups.ts";
+import { agentGoalDeliveryV1Schema, agentVoiceStyleDecisionV1Schema } from "../contracts/agent/agent-contracts.ts";
 
 const emptyArguments = z.object({}).strict();
 const uuid = z.string().uuid();
@@ -37,7 +38,8 @@ const companionPageKindSchemaV2 = z.enum(
  */
 const NOTE_EDITING_SCENE_GUIDANCE = {
   shared: [
-    "用户要求调整笔记格式/排版、标题或代码块时，直接修改正文，读取和分析问题不算完成，不要求用户再说一次‘改’或‘保存’。全文编辑先用 companion_notes_read（action=read）的 maxChars=20000、includeBlocks=true 读正文；truncated=true就保持版本续读。用blocks的完整content核对expectedBlocks，复制0起算blockIndex作为startBlock/endBlock，不能拿body猜块边界。blocks.type给出真实段落类型，body保留Markdown结构；列表的content可能不带项目符号，写回markdown时必须保留列表标记。只改文字或数值保持preserveBlockStructure=true；用户明确要求重排结构或格式时才设false。目标不必已打开：本轮读到固定版本与完整段落后用replace_blocks修改；append、光标和选区操作仍需要目标页提供位置。保留原意与全部内容，将标题和代码转成真正Markdown结构。先读完目标范围，再调用 companion_notes_write（action=edit）；保存后只说明用户能看到的具体改动，不复述工具的机器状态，不在聊天里重复粘贴全文。需要分批时从文末向前修改，每次重新读取最新版本和块位置，不能沿用改动前的序号。",
+    COMPANION_NOTE_CONTENT_GUIDANCE,
+    "笔记编辑使用当前可核对的 noteId、noteVersionId 和完整块原文。已有有效材料可以直接使用；缺少或过期时通过读取补齐。blocks 的 blockIndex 是 0 起算索引，ordinal 是分页序号，Markdown 行数不是块数。truncated/complete 标明材料是否完整。replace_blocks 的 markdown 仅替换选定范围，段落以空行分隔；expectedBlocks 复制对应块的完整 content。preserveBlockStructure 默认保留块数、类型与属性，只有请求确实改变结构时才关闭。光标或选区操作需要页面提供的位置；版本冲突或结构错误未产生保存，按回执修正，不覆盖范围外内容。",
   ],
 };
 
@@ -115,16 +117,16 @@ export const companionCapabilityManifest: readonly AgentCapabilityDeclaration[] 
     z.object({
       action: z.enum(["create", "edit", "share", "annotate"]),
       title: z.string().trim().min(1).max(200).optional(),
-      markdown: z.string().optional(),
+      markdown: z.string().optional().describe("create/annotate 填实际要保存的完整正文，edit 只填指定范围的新正文；" + COMPANION_NOTE_CONTENT_GUIDANCE + "\n" + companionEditNoteV1Schema.innerType().shape.markdown.description),
       links: z.array(z.object({ noteId: uuid, noteVersionId: uuid,
         reason: z.string().trim().min(5).max(240).describe("说明这篇已有笔记与新笔记的具体关系") }).strict()).default([]),
       noteId: uuid.optional(),
       noteVersionId: uuid.optional(),
       operation: z.enum(["insert_at_cursor", "append", "replace_selection", "delete_selection", "replace_blocks", "delete_blocks"]).optional(),
-      preserveBlockStructure: z.boolean().optional(),
-      startBlock: z.number().int().nonnegative().optional(),
-      endBlock: z.number().int().nonnegative().optional(),
-      expectedBlocks: z.array(z.string()).optional(),
+      preserveBlockStructure: companionEditNoteV1Schema.innerType().shape.preserveBlockStructure,
+      startBlock: companionEditNoteV1Schema.innerType().shape.startBlock,
+      endBlock: companionEditNoteV1Schema.innerType().shape.endBlock,
+      expectedBlocks: companionEditNoteV1Schema.innerType().shape.expectedBlocks,
       shareScope: z.enum(["private", "shared"]).optional(),
       final: z.boolean().optional(),
     }).strict().superRefine((value, context) => {
@@ -234,7 +236,7 @@ export const companionCapabilityManifest: readonly AgentCapabilityDeclaration[] 
       memoryId: uuid.optional(), expectedRevision: z.number().int().min(1).optional(),
       kind: z.enum(["preference", "goal", "learning_context", "interaction_note", "episodic"]).optional(),
       content: z.string().min(1).max(200).optional(),
-      sourceQuote: z.string().min(3).max(80).optional(), appliesWhen: z.string().max(200).nullable().optional(),
+      sourceQuote: z.string().min(3).max(80).optional().describe("事实来源的连续用户原话；多轮确认可引用同一会话中唯一可核对的早先用户原话，不能用助手的话作用户事实。当前请求决定是否保存，旧原话只作事实来源"), appliesWhen: z.string().max(200).nullable().optional(),
       validFrom: z.string().datetime({ offset: true }).nullable().optional(),
       validUntil: z.string().datetime({ offset: true }).nullable().optional(),
       tier: z.enum(["resident", "active", "archived"]).optional(),
@@ -313,12 +315,15 @@ export const companionCapabilityManifest: readonly AgentCapabilityDeclaration[] 
       .superRefine((value, context) => {
         if (value.action === "calculate" && !value.expression) context.addIssue({ code: z.ZodIssueCode.custom, path: ["expression"], message: "计算需要 expression" });
       }), { label: "正在看当前状态" }, { maxOutputChars: 60_000 }),
-  tool("companion_visual", "呈现：action=read_image 看图、show_image 在本地显示、diagram 画流程图；按 action 给 noteId/assetId/标题/步骤。", "read", false,
+  tool("companion_visual", "呈现：action=read_image 看图，单图给 noteId/assetId；多图按原顺序一次给 assetIds 数组（最多12张），返回每张独立结果。show_image 在本地显示；diagram 按标题和步骤画流程图。", "read", false,
     z.object({ action: z.enum(["read_image", "show_image", "diagram"]), noteId: uuid.optional(), assetId: uuid.optional(),
+      assetIds: z.array(uuid).min(1).max(COMPANION_TURN_MAX_IMAGES_V1).optional(),
       question: z.string().min(1).max(200).optional(), position: z.number().int().min(1).max(20).optional(),
       title: z.string().min(1).max(60).optional(), steps: z.array(z.object({ label: z.string().min(1), detail: z.string().optional() }).strict()).min(2).optional() }).strict()
       .superRefine((value, context) => {
-        if (value.action === "read_image" && !value.noteId && !value.assetId) context.addIssue({ code: z.ZodIssueCode.custom, path: ["noteId"], message: "看图需要 noteId 或 assetId" });
+        if (value.action === "read_image" && !value.noteId && !value.assetId && !value.assetIds) context.addIssue({ code: z.ZodIssueCode.custom, path: ["noteId"], message: "看图需要 noteId、assetId 或 assetIds" });
+        if (value.assetIds && (value.action !== "read_image" || value.noteId || value.assetId || new Set(value.assetIds).size !== value.assetIds.length))
+          context.addIssue({ code: z.ZodIssueCode.custom, path: ["assetIds"], message: "assetIds 只用于批量看图，身份不可重复，也不可与 noteId/assetId 混用" });
         if (value.action === "show_image" && !value.noteId && !value.assetId) context.addIssue({ code: z.ZodIssueCode.custom, path: ["noteId"], message: "显示图片需要 noteId 或 assetId" });
         if (value.action === "diagram" && (!value.title || !value.steps)) context.addIssue({ code: z.ZodIssueCode.custom, path: ["steps"], message: "画流程图需要 title 与 steps" });
       }), { label: "正在呈现内容" }, { maxOutputChars: 60_000 }),
@@ -474,15 +479,22 @@ export const companionCapabilityManifest: readonly AgentCapabilityDeclaration[] 
     z.object({ goal: z.string().trim().min(1).max(8000),
       inputs: z.array(z.object({ kind: z.literal("note_version"), noteId: uuid, noteVersionId: uuid }).strict()).max(20).optional() }).strict(),
     { label: "正在接下目标" }, { maxInputChars: 20_000, maxOutputChars: 30_000 }),
-  tool("companion_finish", "交付本轮最终回答。actions 只引用本轮真实成功写回执的 receiptId；evidence 引用本轮读取回执；没有写入就留空。", "read", false,
+  // A companion requirement never self-certifies with textOnly: a fulfilled
+  // requirement must cite a real receipt, or the caller can omit the list.
+  tool("companion_finish", "交付本轮最终回答。actions 只引用本轮真实成功写回执的 receiptId；evidence 引用本轮读取回执；没有写入就留空。引用工具结果里的短 receiptId（如 r1），不要自行拼接工具调用 ID。", "read", false,
     z.object({
-      text: z.string().min(1).max(100_000),
-      actions: z.array(z.object({ receiptId: z.string().min(1).max(200) }).strict()).max(20).default([]),
-      evidence: z.array(z.object({ receiptId: z.string().min(1).max(200) }).strict()).max(50).default([]),
+      silent: z.boolean().optional().describe("仅主动参与且没有待交付内容时可设 true，明确安静结束；不能用于省略用户请求、已发布消息或写入结果"),
+      text: z.string().min(1).max(100_000).optional().describe("最终正文；本步仅调用 finish 时可随附完整正文，或复用本轮最近的无业务工具草稿，省略 text 即精确交付原稿，不重抄。无当前草稿或需要修正时提供 text"),
+      outcome: z.enum(["completed", "partial", "needs_input", "failed"]).optional()
+        .describe("本轮整体结果。已有成功写回执或待发独立消息时必须给出；只读材料或普通答复可省略，资源档位不增加要求"),
+      requirements: z.array(agentGoalDeliveryV1Schema.shape.requirements.element.omit({ textOnly: true })).min(0).optional()
+        .describe("逐项列出当前请求的目标、是否完成及 evidenceCallIds（填工具结果的短 receiptId）。已满足的目标必须引用本轮真实成功回执；没有写入或实际动作的普通答复可以省略整个列表。未满足的目标保留，不用一个成功回执代表所有目标"),
+      actions: z.array(z.object({ receiptId: z.string().min(1).max(200) }).strict()).default([]),
+      evidence: z.array(z.object({ receiptId: z.string().min(1).max(200) }).strict()).default([]),
     }).strict(), { label: "整理最终回答" }, { maxInputChars: null, maxOutputChars: null }),
   tool("companion_load_tools", "装载更多工具组：默认只给核心与当前页组，要别的能力先调本工具给 id。", "read", false,
     z.object({ groups: z.array(z.enum(COMPANION_TOOL_GROUP_IDS)).min(1).max(6)
-      .describe("组 id：notes、learning、memory、persona、attention、goals、web、visual、stats、navigation") }).strict(),
+      .describe(COMPANION_TOOL_GROUP_IDS.map(id => `${id}：${COMPANION_TOOL_GROUPS[id].description}`).join("；")) }).strict(),
     { label: "正在打开更多能力" }, { maxOutputChars: null }),
   tool("companion_deepen", "快速档不足以完成严谨推理时调用，切换本轮后续为深度思考。", "read", false,
     emptyArguments, { label: "正在深入推理" }),

@@ -5,7 +5,7 @@ import postgres from "postgres";
 import { getCompanionAgentTool, resolveAllCompanionAgentTools } from "@astella/shared";
 import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 import { createPrivateNoteRecords } from "@astella/agent-host";
-import { executeCompanionCreateNote, companionCreatedNoteId, userForbidsNoteLibraryRead,
+import { executeCompanionCreateNote, companionCreatedNoteId,
   type CompanionNoteAuthoringEvent } from "../handlers/note/companion-note-authoring.ts";
 import { executeReadTool } from "../handlers/tools/companion-tool-execution.ts";
 import type { AgentEventContext } from "../handlers/tools/companion-read-tools.ts";
@@ -23,7 +23,7 @@ const admin = postgres(dbUrl, { max: 2 });
 after(async () => { await admin.end(); await closeDatabase(); await closeApiDatabase(); });
 const ARTICLE = "# 电功率\n\n电功率表示单位时间内转换的电能。直流电路中 P = UI；纯电阻且适用欧姆定律时，也可写成 P = I²R。\n\n不能把恒定电压与恒定电流两个条件混为一谈。";
 
-async function fixture(options: { userText?: string; searchCompleted?: boolean } = {}) {
+async function fixture(options: { userText?: string; searchCompleted?: boolean; noteLibraryReadEnabled?: boolean } = {}) {
   const workspaceId = randomUUID(), userId = randomUUID(), runId = randomUUID(), jobId = randomUUID();
   const conversationId = randomUUID(), messageId = randomUUID(), stepId = randomUUID(), creationCallId = randomUUID();
   const userText = options.userText ?? "把刚才聊的电功率写成一篇笔记，链接相关笔记。";
@@ -44,7 +44,7 @@ async function fixture(options: { userText?: string; searchCompleted?: boolean }
     await tx`INSERT INTO jobs(id,type,workspace_id,requested_by,payload,status,lease_token,started_at)
       VALUES(${jobId},'companion_agent',${workspaceId},${userId},${tx.json({runId})},'running','authoring-lease',now())`;
     const permissionSnapshot = { version: 1, level: 'full', offeredTools: resolveAllCompanionAgentTools('full', {
-      noteLibraryReadEnabled: !userForbidsNoteLibraryRead(userText),
+      noteLibraryReadEnabled: options.noteLibraryReadEnabled !== false,
     }).map(({name,toolVersion,riskClass}) => ({name,toolVersion,riskClass})) };
     await tx`INSERT INTO companion_turn_runs(id,conversation_id,workspace_id,user_id,user_message_id,generation,status,
       idempotency_key_hash,request_body_hash,account_epoch,job_id,permission_level,permission_snapshot)
@@ -170,7 +170,7 @@ test("超过旧 2 MiB 的内部笔记写入完整保存，不借用传输帧配�
   });
 });
 
-test("没有相关材料时保存独立笔记，不虚构关联；带链接则仍需先搜索", async () => {
+test("独立笔记无需检索；关联须读真实版本，已知对象不强制先搜索", async () => {
   const f = await fixture();
   await f.mutate(tx => tx`DELETE FROM companion_agent_tool_calls WHERE run_id=${f.event.read.runId} AND name='notes.read.search'`);
   const saved = await executeCompanionCreateNote(f.event, { title: "电功率", markdown: ARTICLE }, undefined, f.creationCallId);
@@ -179,11 +179,15 @@ test("没有相关材料时保存独立笔记，不虚构关联；带链接则�
   const linked = await fixture({ searchCompleted: false });
   await assert.rejects(executeCompanionCreateNote(linked.event, { title: "电功率", markdown: ARTICLE,
     links: [{ noteId: linked.related.note.id, noteVersionId: linked.related.version.id, reason: "提供 U、I、R 的关系" }] },
-  undefined, linked.creationCallId), /库内关联/);
+  undefined, linked.creationCallId), /关联|读取/);
+  const link = await readRelated(linked);
+  const direct = await executeCompanionCreateNote(linked.event, { title: "直接关联", markdown: ARTICLE, links: [link] }, undefined, linked.creationCallId);
+  assert.equal((direct.value.linkedNotes as unknown[]).length, 1);
+  assert.equal((await linked.mutate(tx => tx`SELECT count(*)::int AS n FROM companion_agent_tool_calls WHERE run_id=${linked.event.read.runId} AND name='notes.read.search'`))[0]?.n, 0);
 });
 
 test("用户明确要求不读其他资料时，不暴露或执行库搜索仍可保存独立笔记", async () => {
-  const f = await fixture({ userText: "把电功率整理成笔记，不要读取其他资料。", searchCompleted: false });
+  const f = await fixture({ userText: "把电功率整理成笔记，不要读取其他资料。", searchCompleted: false, noteLibraryReadEnabled: false });
   const readEvent = { ...f.event, constraints: { noteLibraryReadEnabled: false } } as AgentEventContext;
   assert.equal(resolveAllCompanionAgentTools("full", readEvent.constraints).some(tool => tool.name === "companion_notes_read"), false);
   await assert.rejects(
@@ -333,4 +337,45 @@ test("全局伴星自动执行不扩大空间成员的写权限，个人空间�
   });
   const saved = await executeCompanionCreateNote(f.event, { title: "电功率", markdown: ARTICLE }, undefined, f.creationCallId);
   assert.equal(saved.value.status, "succeeded", "个人空间ownerId成立时沿用既有OR判据");
+});
+
+
+test("真实笔记保存不把标题中的字数词或范围转换成硬限制", async () => {
+  for (const [userText, markdown] of [
+    ["写一篇介绍三字经的笔记", "# 三字经\n\n这是对三字经的介绍，正文不应被要求恰好三个字。"],
+    ["整理四字成语，字数不限", "# 四字成语\n\n此处介绍成语的来源、含义和使用语境。"],
+    ["写一段300–500字的笔记", "文".repeat(350)],
+    ["Save an English note of 300–500 characters.", "A".repeat(350)],
+  ]) {
+    const f = await fixture({ userText, searchCompleted: false });
+    const result = await executeCompanionCreateNote(f.event, { title: "原文保存", markdown, links: [] }, undefined, f.creationCallId);
+    const saved = await withWorkspaceTransaction(f.scope, tx => getNoteWithVersion(tx, String(result.value.noteId), f.scope.workspaceId, f.scope.userId));
+    assert.ok(saved);
+    assert.equal(saved.blocks.map(block => block.content).join("\n\n"), markdown);
+  }
+});
+
+test("记忆维护按实际候选状态和时间执行，不因计数词阻止晋升", async () => {
+  const f = await fixture();
+  const rollback = new Error("rollback test transaction");
+  await assert.rejects(admin.begin(async tx => {
+    await tx`DELETE FROM companion_memory_maintenance_runs WHERE run_date=CURRENT_DATE`;
+    for (const content of ["今天我决定长期每天读30分钟", "每天学习物理", "I plan to keep a 30 minute reading habit."]) {
+      await tx`INSERT INTO assistant_memory_items(workspace_id,user_id,kind,content,candidate,importance,created_at)
+        VALUES(${f.scope.workspaceId},${f.scope.userId},'preference',${content},true,0.8,now()-interval '4 days')`;
+    }
+    const youngId = randomUUID();
+    await tx`INSERT INTO assistant_memory_items(id,workspace_id,user_id,kind,content,candidate,importance)
+      VALUES(${youngId},${f.scope.workspaceId},${f.scope.userId},'preference','recent candidate',true,0.8)`;
+    await tx`SET LOCAL ROLE astella_worker`;
+    const [first] = await tx`SELECT astella_run_companion_memory_maintenance() AS changed`;
+    assert.ok(first.changed >= 3);
+    const [second] = await tx`SELECT astella_run_companion_memory_maintenance() AS changed`;
+    assert.equal(second.changed, 0);
+    await tx`RESET ROLE`;
+    const rows = await tx`SELECT id,candidate FROM assistant_memory_items WHERE workspace_id=${f.scope.workspaceId}`;
+    assert.equal(rows.filter(row => row.id !== youngId && row.candidate === false).length, 3);
+    assert.equal(rows.find(row => row.id === youngId)!.candidate, true);
+    throw rollback;
+  }), error => error === rollback);
 });

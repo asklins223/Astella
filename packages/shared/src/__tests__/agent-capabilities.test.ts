@@ -6,6 +6,18 @@ import { agentToolParameters } from "../agent/agent-tool-parameters.ts";
 import { createAgentRunV1Schema } from "../contracts/agent/agent-contracts.ts";
 import { getCompanionAgentTool, validateCompanionAgentToolArguments } from "../agent/companion-agent-registry.ts";
 
+test("批量看图公开12图数组合同，拒绝重复、超量和含混身份，单图仍可调用", () => {
+  const ids=Array.from({length:13},(_,i)=>`11111111-1111-4111-8111-${String(i).padStart(12,"0")}`);
+  const validate=(args:unknown)=>validateCompanionAgentToolArguments("companion_visual",args).success;
+  assert.equal(validate({action:"read_image",assetIds:ids.slice(0,12)}),true);
+  assert.equal(validate({action:"read_image",assetId:ids[0]}),true);
+  for(const assetIds of [[],[ids[0],ids[0]],ids,["invalid"]]) assert.equal(validate({action:"read_image",assetIds}),false);
+  assert.equal(validate({action:"read_image",assetIds:[ids[0]],assetId:ids[1]}),false);
+  assert.equal(validate({action:"show_image",assetIds:[ids[0]]}),false);
+  const parameters=getCompanionAgentTool("companion_visual")!.parameters as {properties:{assetIds:{maxItems:number}}};
+  assert.equal(parameters.properties.assetIds.maxItems,12);
+});
+
 test("invalid tool arguments expose repair fields without echoing submitted values", () => {
   const result = validateCompanionAgentToolArguments("companion_attention_write", {
     action: "arrange",
@@ -109,4 +121,22 @@ test("companion capabilities derive UUID, variant bounds and refinements from th
   assert.equal(validateCompanionAgentToolArguments("companion_memory_write", { action: "save", kind: "preference", content: "简短", appliesWhen: "今天" }).success, false);
   assert.deepEqual(agentToolParameters(z.union([z.literal(1), z.literal(2), z.literal(3)])), { type: "integer", enum: [1, 2, 3] });
   assert.deepEqual(agentToolParameters(z.string().max(200).nullable().optional()), { anyOf: [{ type: "string", maxLength: 200 }, { type: "null" }] });
+});
+
+test("note editing exposes inclusive block bounds and actionable repair fields", () => {
+  const parameters = getCompanionAgentTool("companion_notes_write")!.parameters as { properties: Record<string, { description?: string }> };
+  assert.match(parameters.properties.endBlock.description ?? "", /包含该块/);
+  assert.match(parameters.properties.expectedBlocks.description ?? "", /endBlock-startBlock\+1/);
+  const base = { action: "edit", noteId: "11111111-1111-4111-8111-111111111111",
+    noteVersionId: "22222222-2222-4222-8222-222222222222", operation: "replace_blocks", markdown: "甲\n\n乙" };
+  const missing = validateCompanionAgentToolArguments("companion_notes_write", base);
+  assert.equal(missing.success, false);
+  if (!missing.success) {
+    assert.ok(missing.issues.some(issue => issue.path.join(".") === "startBlock"));
+    assert.ok(missing.issues.some(issue => issue.path.join(".") === "endBlock"));
+  }
+  const wrong = validateCompanionAgentToolArguments("companion_notes_write", { ...base, startBlock: 1, endBlock: 2, expectedBlocks: ["原文"] });
+  assert.equal(wrong.success, false);
+  if (!wrong.success) assert.ok(wrong.issues.some(issue => issue.path.join(".") === "expectedBlocks" && /2 块/.test(issue.message ?? "")));
+  assert.equal(validateCompanionAgentToolArguments("companion_notes_write", { ...base, startBlock: 1, endBlock: 2, expectedBlocks: ["原甲", "原乙"] }).success, true);
 });

@@ -95,3 +95,13 @@ test("agentTurnRequestSchema: 完整回放真实并行工具与 reasoning，不�
   assert.equal(parsed.messages[1].reasoning?.length, 12);
   assert.deepEqual(parsed.messages[1].toolCalls, calls);
 });
+
+test("request boundaries belong to human requests or actual host observations", () => {
+  for (const message of [{ role: "user", content: "新请求", requestBoundary: true },
+    { role: "system", content: "主动观察", hostObservation: true, requestBoundary: true }]) {
+    assert.equal(agentTurnRequestSchema.safeParse({ ...request({}), messages: [message] }).success, true);
+  }
+  for (const role of ["assistant", "tool", "system"]) {
+    assert.equal(agentTurnRequestSchema.safeParse({ ...request({}), messages: [{ role, content: "材料", requestBoundary: true }] }).success, false);
+  }
+});

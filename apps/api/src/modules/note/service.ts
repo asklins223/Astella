@@ -12,6 +12,7 @@ import { noteShelfStatesByNoteId } from "./shelf-state.ts";
 import { logger } from "../../lib/logger.ts";
 import { DomainError } from "@astella/shared";
 import { createPrivateNoteRecords } from "@astella/agent-host";
+import { noteBlockRenderedTextV1 } from "@astella/shared/note-doc-schema";
 
 /**
  * PERF-10: Chunked select helper for large IN arrays.
@@ -373,10 +374,10 @@ async function versionFactsByVersion(
     // 不算正文（与渲染层 `noteParagraphCount` 同一口径，审计 F37）。
     if (block.type === "image") {
       if (entry.firstImageBlock === null) entry.firstImageBlock = block.content;
-    } else if (block.content.trim().length > 0) {
-      entry.hasBody = true;
+    } else if (block.content.trim() && (!entry.hasBody || (entry.snippet === null && block.type !== "heading"))) {
+      const compact = noteBlockRenderedTextV1(block.type, block.content).replace(/\s+/g, " ").trim();
+      if (compact) entry.hasBody = true;
       if (entry.snippet === null && block.type !== "heading") {
-        const compact = block.content.replace(/\s+/g, " ").trim();
         if (compact) {
           const characters = Array.from(compact);
           entry.snippet = characters.length > 150 ? `${characters.slice(0, 149).join("")}…` : compact;

@@ -17,12 +17,12 @@ import { CompanionAgentPermissionMenu } from "./companion-agent-permission";
  * 页面快捷操作换到它右边的独立图标——原来那个 ＋ 是快捷操作的占位符，
  * 而用户对输入框上 ＋ 的心智模型一直是"加附件"。
  */
-export function CompanionHistoryComposer({ input, onInputChange, onSend, voice, voiceEnabled, companionName, sending, stopping, onStop, onVoiceToggle, onPageActions, image, imageUploading, imageError, onPickImage, onRemoveImage, sendLimitNote }: {
+export function CompanionHistoryComposer({ input, onInputChange, onSend, voice, voiceEnabled, companionName, sending, stopping, onStop, onVoiceToggle, onPageActions, images, imageUploading, imageError, onPickImages, onRemoveImage, sendLimitNote }: {
   input: string; onInputChange: (value: string) => void; onSend: () => Promise<void>;
   voice: CompanionVoiceInput; voiceEnabled: boolean; companionName: string; sending: boolean; stopping: boolean;
   onStop: () => void; onVoiceToggle: () => void; onPageActions: () => void;
-  image: CompanionComposerImage | null; imageUploading: boolean; imageError: string | null;
-  onPickImage: (file: File) => void; onRemoveImage: () => void;
+  images: readonly CompanionComposerImage[]; imageUploading: boolean; imageError: string | null;
+  onPickImages: (files: readonly File[]) => void; onRemoveImage: (url: string) => void;
   sendLimitNote?: string | null;
 }) {
   const composerRef = useRef<HTMLTextAreaElement>(null);
@@ -54,7 +54,7 @@ export function CompanionHistoryComposer({ input, onInputChange, onSend, voice, 
     };
   }, [input]);
   return <form className="companion-history__composer" onSubmit={event => { event.preventDefault(); if (!sendLimitNote) void onSend(); }}>
-    {image ? <CompanionComposerImageChip image={image} onRemove={onRemoveImage} /> : null}
+    {images.length ? <div className="companion-compose-images">{images.map(image => <CompanionComposerImageChip key={image.url} image={image} onRemove={() => onRemoveImage(image.url)} />)}</div> : null}
     <textarea ref={composerRef} rows={1} value={input} onChange={event => onInputChange(event.currentTarget.value)}
       placeholder="想聊哪一句，或只是想说说话…" aria-label={`继续问 ${companionName}`}
       onKeyDown={event => {
@@ -74,10 +74,10 @@ export function CompanionHistoryComposer({ input, onInputChange, onSend, voice, 
       {voice.caption?.text || voiceStatus}
     </p> : null}
     <div className="companion-history__compose-tools">
-      <input ref={imageInputRef} type="file" accept={NOTE_IMAGE_UPLOAD_MIME_TYPES.join(",")} className="companion-compose-image__input"
-        onChange={event => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) onPickImage(file); }} />
+      <input ref={imageInputRef} type="file" multiple accept={NOTE_IMAGE_UPLOAD_MIME_TYPES.join(",")} className="companion-compose-image__input"
+        onChange={event => { const files = Array.from(event.currentTarget.files ?? []); event.currentTarget.value = ""; if (files.length) onPickImages(files); }} />
       <button type="button" className="companion-history__tool" disabled={imageUploading}
-        onClick={() => imageInputRef.current?.click()} aria-label="传一张图给伴星" title="传一张图给她">
+        onClick={() => imageInputRef.current?.click()} aria-label="添加图片，最多12张" title="添加图片，最多12张">
         {imageUploading ? <Loader2 className="companion-hud__spin" size={20} /> : <Plus size={21} />}
       </button>
       <button type="button" className="companion-history__tool" onClick={onPageActions} aria-label="当前页面快捷操作" title="当前页面快捷操作"><MousePointerClick size={19} /></button>
@@ -92,7 +92,7 @@ export function CompanionHistoryComposer({ input, onInputChange, onSend, voice, 
       {sending ? <button type="button" className="button companion-history__composer-stop" disabled={stopping} onClick={onStop} aria-label="停止这一轮">
         {stopping ? <Loader2 className="companion-hud__spin" size={16} /> : <Square size={14} />}停止
       </button> : null}
-      <button className="button primary" type="submit" disabled={!input.trim() || Boolean(sendLimitNote) || voice.phase === "closing" || imageUploading} aria-label={sending ? "发送并接替当前回复" : "发送"}><span>发送</span><Send size={20} /></button>
+      <button className="button primary" type="submit" disabled={(!input.trim() && !images.length) || Boolean(sendLimitNote) || voice.phase === "closing" || imageUploading} aria-label={sending ? "发送并接替当前回复" : "发送"}><span>发送</span><Send size={20} /></button>
     </div>
   </form>;
 }

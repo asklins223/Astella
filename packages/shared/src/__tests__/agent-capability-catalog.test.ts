@@ -30,6 +30,16 @@ test("unknown capabilities, wrong surfaces and expanded authority fail closed", 
   assert.equal(validateAgentCapabilityArguments("agent_calculate", { expression: "12/4", workspaceId: "another" }).success, false);
 });
 
+test("普通答复可以只交付正文，工作档的存在性由运行时核对", () => {
+  // 2026-10-29 生产：模型对流式已经写好的答案调用 {}，旧 schema 因缺少
+  // outcome/requirements 拒收，下一步只好重答整份 12 图列表，同一条消息出现两遍。
+  assert.equal(validateAgentCapabilityArguments("companion_finish", {}).success, true);
+  assert.equal(validateAgentCapabilityArguments("companion_finish", { outcome: "completed" }).success, true);
+  assert.equal(validateAgentCapabilityArguments("companion_finish", { outcome: "completed", requirements: [] }).success, true,
+    "空清单由运行时按工作档拒绝，不在 schema 层给通用错误");
+  assert.equal(validateAgentCapabilityArguments("companion_finish", { outcome: "done" }).success, false);
+});
+
 /**
  * 场景指引的归属（方案 50 §7）。以前「全文编辑的块序号规程」「跳转要不要等点击」
  * 「图片先取真实 id」都写死在**每一步共用**的运行时策略里，于是一次普通招呼的请求
@@ -87,4 +97,11 @@ test("「文案工作」的名单都指向真实登记的能力，改名不会�
   assert.equal(companionTurnWritesDocumentContent(["companion_notes_read", "companion_observe"]), false,
     "读资料与讲解不算文案工作");
   assert.equal(companionTurnWritesDocumentContent(["companion_goals_write"]), true);
+});
+
+test("flat-only publication operations resolve to their actual declaration", () => {
+  assert.equal(getCompanionAgentTool("say.publish")?.name, "companion_send_message");
+  assert.equal(getCompanionAgentTool("say.publish")?.riskClass, "reversible_low");
+  assert.equal(getCompanionAgentTool("memory.write.save")?.name, "companion_memory_write",
+    "domain declarations still take precedence over flat aliases");
 });

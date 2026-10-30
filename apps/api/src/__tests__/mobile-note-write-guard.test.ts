@@ -1,43 +1,24 @@
-/**
- * 0413 那道闸的**纯**判据：`isNoteContentWriteForbiddenForSession` 与登录接口那一格。
- *
- * 路由级的行为不在这里测——`integration-tests/mobile-note-write-scope-postgres.integration.ts`
- * 用真实 Postgres 与真实 session 打真请求：那里要证明的是"判据来自凭据"，
- * 而凭据只有过一遍 decodeToken 才算数（源码里 grep 一个字符串证明不了这件事）。
- */
+// 2026-10-29：正文权限来自空间角色；客户端种类仍校验并记录在会话。
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { z } from "zod";
 import {
-  isNoteContentWriteForbiddenForSession,
+  isWorkspaceOwner,
   sessionClientKindSchema,
 } from "../modules/identity/middleware.ts";
 import { SESSION_CLIENT_KINDS } from "../modules/identity/credentials.ts";
 
-describe("isNoteContentWriteForbiddenForSession", () => {
-  it("手机会话拒改正文", () => {
-    assert.equal(isNoteContentWriteForbiddenForSession({ clientKind: "mobile" }), true);
-  });
-
-  it("桌面会话放行：桌面端一次调用都不用改", () => {
-    assert.equal(isNoteContentWriteForbiddenForSession({ clientKind: "desktop" }), false);
-  });
-
-  // 这一条是**有意**的取舍，不是漏判：缺省按桌面处理。做成"未知即拒绝"会让没读
-  // 过这条规则的旧签发路径（以及库里没有 0413 的那台）一起变红，症状看起来是
-  // "正文写不进去"，而不是"哪一端没带上客户端种类"。
-  it("缺省与未知值按桌面处理", () => {
-    assert.equal(isNoteContentWriteForbiddenForSession({}), false);
-    assert.equal(isNoteContentWriteForbiddenForSession({ clientKind: null }), false);
-    assert.equal(isNoteContentWriteForbiddenForSession({ clientKind: undefined }), false);
-    assert.equal(isNoteContentWriteForbiddenForSession({ clientKind: "tablet" }), false);
-  });
-
-  it("只看这一位，不被相邻字段影响", () => {
-    // 变量而不是字面量：这一条要证的就是"别人塞什么都无所谓"。
-    const ctx = { clientKind: "mobile", membershipRole: "owner", workspaceOwnerId: "u1", userId: "u1" };
-    assert.equal(isNoteContentWriteForbiddenForSession(ctx), true);
-  });
+describe("note ownership is independent of client kind", () => {
+  for (const clientKind of ["mobile", "desktop"]) {
+    it(`${clientKind} owner can edit`, () => {
+      const context = { userId: "owner", workspaceOwnerId: "owner", membershipRole: "owner", clientKind };
+      assert.equal(isWorkspaceOwner(context), true);
+    });
+    it(`${clientKind} member remains read only`, () => {
+      const context = { userId: "member", workspaceOwnerId: "owner", membershipRole: "member", clientKind };
+      assert.equal(isWorkspaceOwner(context), false);
+    });
+  }
 });
 
 describe("sessionClientKindSchema", () => {

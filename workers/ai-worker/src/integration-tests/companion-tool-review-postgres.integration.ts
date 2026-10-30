@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, test } from "node:test";
 import postgres from "postgres";
-import { getCompanionAgentTool, resolveAllCompanionAgentTools, MAX_PENDING_JOBS_PER_WORKSPACE } from "@astella/shared";
+import { getCompanionAgentTool, resolveAllCompanionAgentTools, MAX_PENDING_JOBS_PER_WORKSPACE, companionOperationName, companionOperationAction, companionOperationArguments, validateCompanionAgentToolArguments } from "@astella/shared";
 import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
 import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 import { companionMemoryRecycleBinDays as MEMORY_RECYCLE_BIN_DAYS } from "@astella/shared/companion-memory-desktop-contracts";
@@ -73,10 +73,18 @@ async function fixture(permission: "read_only" | "guided" | "full") {
     return saved!.blocks.map(block => block.content);
   });
   const prepare = async (name: string, arguments_: Record<string, unknown>, id = callId) => {
-    const definition = getCompanionAgentTool(name)!;
-    await ensureAgentToolCall(event, stepId, definition, { id, arguments: arguments_ }, sha256Utf8V1(canonicalJsonV1(arguments_)));
-    return runCompanionToolExecution({ event, definition, arguments: arguments_, operationCallId: id, toolCallId: id,
-      deadlineAt: Date.now() + 30_000, signal: event.ctx.signal, runId, logger: { warn() {} } });
+    const declaration = getCompanionAgentTool(name)!;
+    const action = companionOperationAction(name);
+    const domainArguments = action ? { action, ...arguments_ } : arguments_;
+    const parsed = validateCompanionAgentToolArguments(declaration.name, domainArguments);
+    assert.equal(parsed.success, true, JSON.stringify(parsed));
+    if (!parsed.success) throw new Error("invalid fixture arguments");
+    const operation = companionOperationName({ name: declaration.name, arguments: parsed.data });
+    const definition = { ...declaration, name: operation };
+    const args = companionOperationArguments(operation, parsed.data);
+    const record = await ensureAgentToolCall(event, stepId, definition, { id, arguments: args }, sha256Utf8V1(canonicalJsonV1(parsed.data)));
+    return runCompanionToolExecution({ event, definition, arguments: args, operationCallId: record.toolCallId, toolCallId: id,
+      deadlineAt: Date.now() + 30_000, signal: event.ctx.signal, runId, logger: { warn(bindings, message) { if (bindings.err) console.error(message, String(bindings.err)); } } });
   };
   const proposal = async (id: string) => (await mutate(tx => tx`SELECT payload,payload_sha256,status FROM companion_action_proposals WHERE id=${id}`))[0]!;
   const decide = async (id: string, decision: "confirm" | "reject", key = randomUUID()) => {
@@ -100,31 +108,31 @@ async function fixture(permission: "read_only" | "guided" | "full") {
     finally { clearInterval(timer); while (busy) await new Promise(resolve => setTimeout(resolve, 5)); }
   };
   const editArgs = { noteId: note.note.id, noteVersionId: note.version.id, operation: "replace_blocks",
-    startBlock: 0, endBlock: 0, expectedBlocks: ["原文段落"], markdown: "# 更新后的标题\n\n新内容" };
+    startBlock: 0, endBlock: 0, expectedBlocks: ["原文段落"], markdown: "新内容" };
   return { scope, runId, note, mutate, event, prepare, proposal, decide, resume, content, editArgs };
 }
 
 for (const permission of ["read_only", "guided"] as const) test(`${permission}：完整更新预览先出现，确认保存后仅这一笔获授权`, async () => {
   const f = await fixture(permission);
-  const result = await f.prepare("companion_notes_write", f.editArgs);
-  assert.equal(result.kind, "waiting"); if (result.kind !== "waiting") return;
+  const result = await f.prepare("notes.write.edit", f.editArgs);
+  assert.equal(result.kind, "waiting", JSON.stringify(result)); if (result.kind !== "waiting") return;
   const p = await f.proposal(result.proposalId);
   assert.equal(p.payload.confirmationStage, "after_preview");
-  assert.match(p.payload.preview.markdown, /更新后的标题/);
+  assert.match(p.payload.preview.markdown, /新内容/);
   assert.match(p.payload.preview.markdown, /保留段落/);
   assert.deepEqual(await f.content(), ["原文段落", "保留段落"]);
   const decision = await f.decide(result.proposalId, "confirm") as { status: string };
   assert.equal(decision.status, "accepted", "点保存不冒充已经写入成功");
   await f.resume(result.proposalId);
-  assert.deepEqual(await f.content(), ["# 更新后的标题", "新内容", "保留段落"]);
+  assert.deepEqual(await f.content(), ["新内容", "保留段落"]);
   assert.equal((await f.proposal(result.proposalId)).status, "succeeded");
   const [run] = await f.mutate(tx => tx`SELECT permission_level FROM companion_turn_runs WHERE id=${f.runId}`);
   assert.equal(run.permission_level, permission, "确认不提升全局或整轮权限");
 });
 
 test("取消更新预览不提交；原文和在等待期间的用户修改都保留", async () => {
-  const f = await fixture("read_only"), result = await f.prepare("companion_notes_write", f.editArgs);
-  assert.equal(result.kind, "waiting"); if (result.kind !== "waiting") return;
+  const f = await fixture("read_only"), result = await f.prepare("notes.write.edit", f.editArgs);
+  assert.equal(result.kind, "waiting", JSON.stringify(result)); if (result.kind !== "waiting") return;
   await withWorkspaceTransaction(f.scope, tx => applyNoteDocUpdate(tx, { ...f.scope, noteId: f.note.note.id }, f.note.version.id,
     document => { const blocks = projectFragmentBlocks(document); blocks[1]!.content = "用户后来补写的内容"; writeFragmentBlocks(document, blocks); }));
   await f.decide(result.proposalId, "reject");
@@ -137,8 +145,8 @@ test("取消更新预览不提交；原文和在等待期间的用户修改都�
 test("最高档删除也必须执行前确认；确认后的重放不会再次删除", async () => {
   const f = await fixture("full");
   const args = { ...f.editArgs, operation: "delete_blocks" }; delete (args as { markdown?: string }).markdown;
-  const result = await f.prepare("companion_notes_write", args);
-  assert.equal(result.kind, "waiting"); if (result.kind !== "waiting") return;
+  const result = await f.prepare("notes.write.edit", args);
+  assert.equal(result.kind, "waiting", JSON.stringify(result)); if (result.kind !== "waiting") return;
   assert.equal((await f.proposal(result.proposalId)).payload.confirmationStage, "before_execute");
   assert.deepEqual(await f.content(), ["原文段落", "保留段落"]);
   const key = randomUUID();
@@ -152,9 +160,9 @@ test("最高档删除也必须执行前确认；确认后的重放不会再次�
 
 for (const permission of ["read_only", "guided"] as const) test(`${permission}：新笔记先给完整草稿，保存前不进入笔记列表`, async () => {
   const f = await fixture(permission);
-  assert.equal((await f.prepare("companion_notes_read", { query: "知识点" }, `search_${randomUUID()}`)).kind, "success");
-  const result = await f.prepare("companion_notes_write", { title: "新笔记", markdown: "# 学习笔记\n\n这是完整的新笔记内容，包含独立的解释和结论。", links: [] });
-  assert.equal(result.kind, "waiting"); if (result.kind !== "waiting") return;
+  assert.equal((await f.prepare("notes.read.search", { query: "知识点" }, `search_${randomUUID()}`)).kind, "success");
+  const result = await f.prepare("notes.write.create", { title: "新笔记", markdown: "# 学习笔记\n\n这是完整的新笔记内容，包含独立的解释和结论。", links: [] });
+  assert.equal(result.kind, "waiting", JSON.stringify(result)); if (result.kind !== "waiting") return;
   const count = async () => Number((await f.mutate(tx => tx`SELECT count(*)::int AS count FROM notes WHERE workspace_id=${f.scope.workspaceId}`))[0].count);
   assert.equal(await count(), 1);
   await f.decide(result.proposalId, "confirm"); await f.resume(result.proposalId);
@@ -163,8 +171,8 @@ for (const permission of ["read_only", "guided"] as const) test(`${permission}�
 });
 
 test("修改已经冻结的参数不能借用确认，原笔记保持不变", async () => {
-  const f = await fixture("read_only"), result = await f.prepare("companion_notes_write", f.editArgs);
-  assert.equal(result.kind, "waiting"); if (result.kind !== "waiting") return;
+  const f = await fixture("read_only"), result = await f.prepare("notes.write.edit", f.editArgs);
+  assert.equal(result.kind, "waiting", JSON.stringify(result)); if (result.kind !== "waiting") return;
   await f.decide(result.proposalId, "confirm");
   await f.mutate(tx => tx`UPDATE companion_agent_tool_calls SET arguments=jsonb_set(arguments,'{markdown}','"未经确认的内容"'::jsonb) WHERE run_id=${f.runId}`);
   const messages = await f.resume(result.proposalId);
@@ -176,12 +184,12 @@ test("修改已经冻结的参数不能借用确认，原笔记保持不变", as
 
 test("同一任务可以分别审核并保存多篇笔记，回执和重试都绑定实际操作", async () => {
   const f = await fixture("read_only");
-  await f.prepare("companion_notes_read", { query: "分成两篇" }, `search_${randomUUID()}`);
+  await f.prepare("notes.read.search", { query: "分成两篇" }, `search_${randomUUID()}`);
   const ids: string[] = [];
   for (const title of ["第一篇", "第二篇"]) {
     const callId = `create_${randomUUID()}`;
-    const result = await f.prepare("companion_notes_write", { title, markdown: `# ${title}\n\n这是这一篇独立的正文和结论，不能被另一篇替代。`, links: [] }, callId);
-    assert.equal(result.kind, "waiting"); if (result.kind !== "waiting") return;
+    const result = await f.prepare("notes.write.create", { title, markdown: `# ${title}\n\n这是这一篇独立的正文和结论，不能被另一篇替代。`, links: [] }, callId);
+    assert.equal(result.kind, "waiting", JSON.stringify(result)); if (result.kind !== "waiting") return;
     await f.decide(result.proposalId, "confirm"); await f.resume(result.proposalId);
     const [call] = await f.mutate(tx => tx`SELECT result_ref FROM companion_agent_tool_calls WHERE run_id=${f.runId} AND tool_call_id=${callId}`);
     const receipt = JSON.parse(call.result_ref);
@@ -196,8 +204,8 @@ test("同一任务可以分别审核并保存多篇笔记，回执和重试都�
 test("取消删除保留原文，回合续跑不能把取消冒充成功", async () => {
   const f = await fixture("full");
   const args = { ...f.editArgs, operation: "delete_blocks" }; delete (args as { markdown?: string }).markdown;
-  const result = await f.prepare("companion_notes_write", args);
-  assert.equal(result.kind, "waiting"); if (result.kind !== "waiting") return;
+  const result = await f.prepare("notes.write.edit", args);
+  assert.equal(result.kind, "waiting", JSON.stringify(result)); if (result.kind !== "waiting") return;
   assert.match((await f.proposal(result.proposalId)).payload.preview.markdown, /将从.*删除.*原文段落/s);
   await f.decide(result.proposalId, "reject");
   const messages = await f.resume(result.proposalId);
@@ -206,8 +214,8 @@ test("取消删除保留原文，回合续跑不能把取消冒充成功", async
 });
 
 for (const condition of ["scope", "epoch", "source"] as const) test(`确认保存仍核对实际权限和原文：${condition}`, async () => {
-  const f = await fixture("read_only"), result = await f.prepare("companion_notes_write", f.editArgs);
-  assert.equal(result.kind, "waiting"); if (result.kind !== "waiting") return;
+  const f = await fixture("read_only"), result = await f.prepare("notes.write.edit", f.editArgs);
+  assert.equal(result.kind, "waiting", JSON.stringify(result)); if (result.kind !== "waiting") return;
   await f.decide(result.proposalId, "confirm");
   if (condition === "scope") await f.mutate(async tx => {
     const otherOwner = randomUUID();
@@ -229,8 +237,8 @@ for (const changed of [false, true]) test(`删除记忆前展示实际内容，$
   const f = await fixture("full"), memoryId = randomUUID();
   await f.mutate(tx => tx`INSERT INTO assistant_memory_items(id,workspace_id,user_id,kind,content,user_stated,user_confirmed)
     VALUES(${memoryId},${f.scope.workspaceId},${f.scope.userId},'preference','原来的学习偏好',true,true)`);
-  const result = await f.prepare("companion_memory_write", { memoryId });
-  assert.equal(result.kind, "waiting"); if (result.kind !== "waiting") return;
+  const result = await f.prepare("memory.write.forget", { memoryId });
+  assert.equal(result.kind, "waiting", JSON.stringify(result)); if (result.kind !== "waiting") return;
   assert.equal((await f.proposal(result.proposalId)).payload.preview.markdown, "原来的学习偏好");
   await f.decide(result.proposalId, "confirm");
   if (changed) await f.mutate(tx => tx`UPDATE assistant_memory_items SET content='用户修正的新偏好' WHERE id=${memoryId}`);
@@ -259,8 +267,8 @@ test("遗忘一条记忆：写回收窗口、遮蔽发现簿引文、作废整�
       VALUES(${f.scope.workspaceId},${f.scope.userId},'这条记忆的转述结论',now() - interval '8 days')
       ON CONFLICT (workspace_id,user_id) DO UPDATE SET surface=EXCLUDED.surface,surface_at=EXCLUDED.surface_at`;
   });
-  const result = await f.prepare("companion_memory_write", { memoryId });
-  assert.equal(result.kind, "waiting"); if (result.kind !== "waiting") return;
+  const result = await f.prepare("memory.write.forget", { memoryId });
+  assert.equal(result.kind, "waiting", JSON.stringify(result)); if (result.kind !== "waiting") return;
   await f.decide(result.proposalId, "confirm");
   await f.resume(result.proposalId);
 
@@ -287,8 +295,8 @@ for (const changed of [false, true]) test(`取消提醒展示实际内容与时�
   const f = await fixture("full"), reminderId = randomUUID();
   await f.mutate(tx => tx`INSERT INTO companion_reminders(id,workspace_id,user_id,text,fire_at)
     VALUES(${reminderId},${f.scope.workspaceId},${f.scope.userId},'明天复习这篇笔记',now()+interval '1 day')`);
-  const result = await f.prepare("companion_attention_write", { reminderId });
-  assert.equal(result.kind, "waiting"); if (result.kind !== "waiting") return;
+  const result = await f.prepare("attention.write.cancel_reminder", { reminderId });
+  assert.equal(result.kind, "waiting", JSON.stringify(result)); if (result.kind !== "waiting") return;
   assert.match((await f.proposal(result.proposalId)).payload.preview.markdown, /明天复习这篇笔记.*原定时间/s);
   await f.decide(result.proposalId, "confirm");
   if (changed) await f.mutate(tx => tx`UPDATE companion_reminders SET fire_at=fire_at+interval '1 day' WHERE id=${reminderId}`);
@@ -300,11 +308,11 @@ for (const changed of [false, true]) test(`取消提醒展示实际内容与时�
 
 test("真实笔记容量内的长结果不再被 Agent 的 12000 字限制截断或拒绝", async () => {
   const f = await fixture("read_only");
-  await f.prepare("companion_notes_read", { query: "长笔记" }, `search_${randomUUID()}`);
+  await f.prepare("notes.read.search", { query: "长笔记" }, `search_${randomUUID()}`);
   const markdown = "# 完整长笔记\n\n" + "每一段都有真实完整的说明，不应被单会话工具的字符配额拒绝。\n\n".repeat(800) + "最终结论";
   assert.ok(markdown.length > 20000);
-  const result = await f.prepare("companion_notes_write", { title: "长笔记", markdown, links: [] });
-  assert.equal(result.kind, "waiting"); if (result.kind !== "waiting") return;
+  const result = await f.prepare("notes.write.create", { title: "长笔记", markdown, links: [] });
+  assert.equal(result.kind, "waiting", JSON.stringify(result)); if (result.kind !== "waiting") return;
   assert.equal((await f.proposal(result.proposalId)).payload.preview.markdown, markdown);
   await f.decide(result.proposalId, "confirm"); await f.resume(result.proposalId);
   assert.equal((await f.proposal(result.proposalId)).status, "succeeded");
@@ -315,8 +323,8 @@ test("真实笔记容量内的长结果不再被 Agent 的 12000 字限制截断
 
 
 test("账号行短暂被其他事务锁住时，保存等待锁释放，不误报失权", async () => {
-  const f = await fixture("read_only"), result = await f.prepare("companion_notes_write", f.editArgs);
-  assert.equal(result.kind, "waiting"); if (result.kind !== "waiting") return;
+  const f = await fixture("read_only"), result = await f.prepare("notes.write.edit", f.editArgs);
+  assert.equal(result.kind, "waiting", JSON.stringify(result)); if (result.kind !== "waiting") return;
   await f.decide(result.proposalId, "confirm");
   let release!: () => void, acquired!: () => void;
   const gate = new Promise<void>(resolve => { release = resolve; });
@@ -328,14 +336,14 @@ test("账号行短暂被其他事务锁住时，保存等待锁释放，不误�
   await ready;
   const resumption = f.resume(result.proposalId);
   await new Promise(resolve => setTimeout(resolve, 250)); release(); await lock; await resumption;
-  assert.deepEqual(await f.content(), ["# 更新后的标题", "新内容", "保留段落"]);
+  assert.deepEqual(await f.content(), ["新内容", "保留段落"]);
   assert.equal((await f.proposal(result.proposalId)).status, "succeeded");
 });
 
 
 test("续跑入队失败时撤销整个确认；重试不会留下半确认或错误的任务指针", async () => {
-  const f = await fixture("read_only"), result = await f.prepare("companion_notes_write", f.editArgs);
-  assert.equal(result.kind, "waiting"); if (result.kind !== "waiting") return;
+  const f = await fixture("read_only"), result = await f.prepare("notes.write.edit", f.editArgs);
+  assert.equal(result.kind, "waiting", JSON.stringify(result)); if (result.kind !== "waiting") return;
   await f.mutate(tx => tx`INSERT INTO jobs(type,workspace_id,requested_by,payload,status)
     SELECT 'companion_agent',${f.scope.workspaceId},${f.scope.userId},'{}'::jsonb,'pending' FROM generate_series(1,${MAX_PENDING_JOBS_PER_WORKSPACE})`);
   await assert.rejects(f.decide(result.proposalId, "confirm"), /pending jobs/);
@@ -350,4 +358,49 @@ test("续跑入队失败时撤销整个确认；重试不会留下半确认或�
   assert.equal(published.status, "accepted"); assert.equal(published.proposal_id, result.proposalId);
   await f.resume(result.proposalId);
   assert.equal((await f.proposal(result.proposalId)).status, "succeeded");
+});
+
+
+test("确认遗忘只删除选定记忆，不凭包含关系删除另一条或关闭相处偏好", async () => {
+  const f = await fixture("full"), target = randomUUID(), related = randomUUID();
+  const text = "每天晚上九点提醒我看一眼学习进度";
+  await f.mutate(async tx => {
+    await tx`INSERT INTO assistant_memory_items(id,workspace_id,user_id,kind,content,user_stated,user_confirmed)
+      VALUES(${target},${f.scope.workspaceId},${f.scope.userId},'preference',${text},true,true),
+            (${related},${f.scope.workspaceId},${f.scope.userId},'preference',${text + "，但考试周暂停提醒"},true,true)`;
+    const source = { kind: "user_message", workspaceId: f.scope.workspaceId,
+      messageId: f.event.read.userMessageId, quote: text };
+    await tx`INSERT INTO companion_participation_preferences(user_id,revision,enabled,markdown,source)
+      VALUES(${f.scope.userId},1,true,${text},${tx.json(source)})`;
+  });
+  // The request's prose has no overlap; the accepted preview grants the exact target.
+  const result = await f.prepare("memory.write.forget", { memoryId: target });
+  assert.equal(result.kind, "waiting", JSON.stringify(result)); if (result.kind !== "waiting") return;
+  const [before] = await f.mutate(tx => tx`SELECT deleted_at FROM assistant_memory_items WHERE id=${target}`);
+  assert.equal(before.deleted_at, null);
+  await f.decide(result.proposalId, "confirm"); await f.resume(result.proposalId);
+  assert.equal((await f.proposal(result.proposalId)).status, "succeeded");
+  const rows = await f.mutate(tx => tx`SELECT id,deleted_at FROM assistant_memory_items WHERE id IN (${target},${related})`);
+  assert.ok(rows.find(row => row.id === target)!.deleted_at);
+  assert.equal(rows.find(row => row.id === related)!.deleted_at, null);
+  const [preferences] = await f.mutate(tx => tx`SELECT revision,enabled,markdown FROM companion_participation_preferences WHERE user_id=${f.scope.userId}`);
+  assert.deepEqual({ ...preferences }, { revision: 1, enabled: true, markdown: text });
+});
+
+for (const decision of ["reject", "stale_revision"] as const) test(`记忆遗忘 ${decision} 不会写入删除`, async () => {
+  const f = await fixture("full"), memoryId = randomUUID();
+  await f.mutate(tx => tx`INSERT INTO assistant_memory_items(id,workspace_id,user_id,kind,content,user_stated,user_confirmed)
+    VALUES(${memoryId},${f.scope.workspaceId},${f.scope.userId},'preference','This exact record requires confirmation.',true,true)`);
+  const result = await f.prepare("memory.write.forget", { memoryId });
+  assert.equal(result.kind, "waiting", JSON.stringify(result)); if (result.kind !== "waiting") return;
+  await f.decide(result.proposalId, decision === "reject" ? "reject" : "confirm");
+  if (decision === "stale_revision") {
+    await f.mutate(tx => tx`UPDATE assistant_memory_items SET valid_until=now()+interval '30 days' WHERE id=${memoryId}`);
+    const [updated] = await f.mutate(tx => tx`SELECT revision FROM assistant_memory_items WHERE id=${memoryId}`);
+    assert.equal(updated.revision, 2, "actual metadata change must advance the reviewed revision");
+  }
+  await f.resume(result.proposalId);
+  const [memory] = await f.mutate(tx => tx`SELECT deleted_at FROM assistant_memory_items WHERE id=${memoryId}`);
+  assert.equal(memory.deleted_at, null);
+  assert.equal((await f.proposal(result.proposalId)).status, decision === "reject" ? "rejected" : "failed");
 });

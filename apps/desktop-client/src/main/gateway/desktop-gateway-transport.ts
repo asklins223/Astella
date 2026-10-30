@@ -148,8 +148,6 @@ function domainErrorCode(status: number, body: unknown, path: string): GatewayEr
   if (status === 422 && token === "memory_global_scope_rejected") {
     switch ((body as { reason?: unknown }).reason) {
       case "kind_not_preference": return "memory_global_kind_rejected";
-      case "content_workspace_bound": return "memory_global_content_bound";
-      case "applies_when_workspace_bound": return "memory_global_condition_bound";
       default: return null;
     }
   }

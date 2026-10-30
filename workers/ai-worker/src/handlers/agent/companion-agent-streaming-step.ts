@@ -24,7 +24,7 @@ export function canRetryCompanionStream(error: unknown, state: { emitted: boolea
   if (state.emitted || state.now >= state.deadline) return false;
   // An idle timeout after output means the stream stalled mid-answer; another
   // transport would only append an incoherent continuation.
-  if (error instanceof CompanionOutputTimeoutError && error.code !== "provider_first_output_timeout") return false;
+  if (error instanceof CompanionOutputTimeoutError && error.code === "provider_idle_timeout") return false;
   if (error instanceof ProviderRequestError) {
     return error.status !== 429 && isTransientCompanionModelError(error);
   }
@@ -90,7 +90,7 @@ export async function runStreamingAgentStep(args: {
   stepRequest: AgentTurnRequest;
   ctxSignal: AbortSignal;
   timeoutMs: number;
-  outputWatchdogPolicy?: { firstOutputMs: number; idleMs: number };
+  outputWatchdogPolicy?: { firstOutputMs: number; idleMs: number; firstMeaningfulOutputMs?: number };
   onProviderDelta: (delta: string) => Promise<boolean>;
   /** Internal entry protocol observation, before the existing envelope decoder. */
   onRawTextDelta?: (delta: string) => void;
@@ -187,6 +187,12 @@ export async function runStreamingAgentStep(args: {
   const holdUntilChars = args.holdUntilChars ?? 0;
   /** 放行闸（投机执行）：不传 `releaseGate` 就当作一开始就开着，行为与从前逐字相同。 */
   let gateOpen = args.releaseGate === undefined;
+  const pendingToolStarts: Array<{ index: number; id: string; name: string }> = [];
+  const observeToolStart = (slot: { index: number; id: string; name: string }): void => {
+    if (discarded || stopped) return;
+    if (gateOpen) args.onToolCallStarted?.(slot);
+    else pendingToolStarts.push(slot);
+  };
   let discarded = false;
   let released = holdUntilChars <= 0 && gateOpen;
   let publishedText = "";
@@ -306,6 +312,7 @@ export async function runStreamingAgentStep(args: {
         return;
       }
       gateOpen = true;
+      for (const slot of pendingToolStarts.splice(0)) args.onToolCallStarted?.(slot);
       reasoningGateOpen = true;
       const reasoning = heldReasoning;
       heldReasoning = "";
@@ -390,7 +397,7 @@ export async function runStreamingAgentStep(args: {
           toolChoice: args.stepRequest.toolChoice,
           onOutputActivity: outputActivity,
           // 只在调用方要了的时候才挂：不挂就是 undefined，provider 不做任何额外工作。
-          ...(args.onToolCallStarted ? { onToolCallStarted: args.onToolCallStarted } : {}),
+          ...(args.onToolCallStarted ? { onToolCallStarted: observeToolStart } : {}),
           // 只在调用方要了的时候才挂：不挂时 provider 一个字都不多做。
           ...(args.onReasoningDelta ? { onReasoningDelta: emitReasoning } : {}),
         },

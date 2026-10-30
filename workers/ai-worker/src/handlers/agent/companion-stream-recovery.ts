@@ -56,7 +56,7 @@ export async function recoverCompanionStreamFailure(input: {
   // repeating the same empty wait. One attempt: the fallback is recovery, not a
   // second retry stack.
   const firstOutputTimeout = error instanceof CompanionOutputTimeoutError
-    && error.code === "provider_first_output_timeout";
+    && error.code !== "provider_idle_timeout";
   if (firstOutputTimeout && input.fallbackProvider && input.fallbackProvider !== input.stepProvider
     && typeof input.fallbackProvider.executeAgentTurn === "function" && await input.fitsFallback()) {
     logger.warn({ runId, stepCount, fallbackModelId: input.fallbackProvider.modelId },

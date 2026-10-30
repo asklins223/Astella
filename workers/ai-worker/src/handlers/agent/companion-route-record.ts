@@ -12,16 +12,19 @@ import { updateRunMeta } from "./companion-agent-events.ts";
 import type { AgentEventContext } from "../tools/companion-read-tools.ts";
 import type { CompanionEntryMode } from "../turn/companion-entry-mode.ts";
 import type { CompanionTurnWorkload } from "../turn/companion-turn-workload.ts";
+import type { AgentTurnInterpretationV1 } from "@astella/shared/agent-contracts";
 
 export interface CompanionRouteRecordV1 {
   readonly version: 1;
   readonly entryMode?: CompanionEntryMode;
   readonly workload?: CompanionTurnWorkload;
+  readonly resourceDecision?: AgentTurnInterpretationV1["resourceDecision"];
 }
 
 export interface CompanionRouteRecorderOptions {
   readonly entryMode?: CompanionEntryMode;
   readonly workload?: CompanionTurnWorkload;
+  readonly resourceDecision?: AgentTurnInterpretationV1["resourceDecision"];
 }
 
 export interface CompanionRouteRecorder {
@@ -45,6 +48,7 @@ export function createCompanionRouteRecorder(
         version: 1,
         ...(options.entryMode ? { entryMode: options.entryMode } : {}),
         ...(options.workload ? { workload: options.workload } : {}),
+        ...(options.resourceDecision ? { resourceDecision: options.resourceDecision } : {}),
       };
       void writeMeta(event, { route }).catch((err: unknown) => {
         logger.warn({ runId: event.read.runId, err: err instanceof Error ? err.message : String(err) },

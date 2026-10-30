@@ -181,6 +181,12 @@ export function companionPublicationFinal(args: { name: string; arguments?: Reco
 }
 
 export function companionDomainActionRequiresConfirmation(toolName: string, args: Record<string, unknown>): boolean {
+  // The execution ledger stores an operation id and operation-scoped fields.
+  // Recover its declared action before applying the same model-facing policy.
+  const domain = companionOperationDomainTool(toolName);
+  const operationAction = companionOperationAction(toolName) ?? (domain ? COMPANION_FLAT_ALIAS_ACTION[domain] : undefined);
+  if (domain && operationAction)
+    return companionDomainActionRequiresConfirmation(domain, { ...args, action: operationAction });
   // A flat alias carries no `action`; its single action decides the gate, so a
   // `companion_memory_forget` call is confirmed exactly like `action=forget`.
   const action = companionDomainAction(args) ?? COMPANION_FLAT_ALIAS_ACTION[toolName] ?? null;
@@ -191,6 +197,12 @@ export function companionDomainActionRequiresConfirmation(toolName: string, args
 }
 
 export function companionDomainActionAutoExecutes(toolName: string, args: Record<string, unknown>): boolean {
+  // The execution ledger stores an operation id and operation-scoped fields.
+  // Recover its declared action before applying the same model-facing policy.
+  const domain = companionOperationDomainTool(toolName);
+  const operationAction = companionOperationAction(toolName) ?? (domain ? COMPANION_FLAT_ALIAS_ACTION[domain] : undefined);
+  if (domain && operationAction)
+    return companionDomainActionAutoExecutes(domain, { ...args, action: operationAction });
   const action = companionDomainAction(args) ?? COMPANION_FLAT_ALIAS_ACTION[toolName] ?? null;
   return action !== null && (COMPANION_DOMAIN_AUTO_ACTIONS[toolName] ?? []).includes(action);
 }
@@ -249,6 +261,13 @@ export function companionOperationArguments(operation: string, args: Record<stri
 const OPERATION_DOMAIN_TOOL = new Map<string, CompanionDomainToolName>();
 for (const [domain, actions] of Object.entries(COMPANION_DOMAIN_OPERATIONS)) {
   if (domain in COMPANION_FLAT_ALIAS_ACTION) continue;
+  for (const operation of Object.values(actions)) {
+    if (!OPERATION_DOMAIN_TOOL.has(operation)) OPERATION_DOMAIN_TOOL.set(operation, domain as CompanionDomainToolName);
+  }
+}
+// Prefer a domain declaration when one exists, then retain operations whose
+// only public declaration is a flat tool (notably independent publication).
+for (const [domain, actions] of Object.entries(COMPANION_DOMAIN_OPERATIONS)) {
   for (const operation of Object.values(actions)) {
     if (!OPERATION_DOMAIN_TOOL.has(operation)) OPERATION_DOMAIN_TOOL.set(operation, domain as CompanionDomainToolName);
   }

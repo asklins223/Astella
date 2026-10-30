@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import {
   buildExtractMessages,
-  isVolatileStatisticMemory,
   isMemoryExtractConfidenceAccepted,
   isMemoryValidityRangeUsable,
   memoryExtractOutputSchema,
@@ -27,22 +26,6 @@ test("记忆抽取保留长原话末尾的取消和期限，不把旧偏好前�
   assert.ok(messages[1]!.content.includes(userText));
   assert.ok(messages[1]!.content.includes(assistantText));
   assert.ok(messages[1]!.content.includes(old));
-});
-
-test("isVolatileStatisticMemory：拦『现在这一份』统计，不拦用户说过的带数字偏好", () => {
-  // 实机被写进 learning_context 的那条（里面的 23 分钟本来就是编的）。
-  assert.equal(isVolatileStatisticMemory("截至当前，用户本周累计学习时长为23分钟，拥有10张活跃卡片和9篇笔记。"), true);
-  assert.equal(isVolatileStatisticMemory("用户今天学了 45 分钟。"), true);
-  // 稳定偏好：带数字但不是"当下这份统计"。
-  assert.equal(isVolatileStatisticMemory("每天只能挤出四十分钟学习，希望练习节奏短一点"), false);
-  assert.equal(isVolatileStatisticMemory("用户偏好短节奏学习，每次练习约10分钟，每天总计约40分钟，中间需休息。"), false);
-  assert.equal(isVolatileStatisticMemory("下个月要考日语N3"), false);
-  // 名字里带量词的卡/笔记标题不是统计。误判的后果是**这条记忆根本没写进去**——
-  // 比误放难发现得多；普通对话与主动交流共用同一输出闸。
-  assert.equal(isVolatileStatisticMemory("今天学了「背 3 条法律」那张卡，还没掌握。"), false);
-  assert.equal(isVolatileStatisticMemory("本周把《每天 5 张图》那篇读完了。"), false);
-  // 掩码只洗名字：名字之外的读数照样要拦。
-  assert.equal(isVolatileStatisticMemory("今天学了「背 3 条法律」那张卡，另外累计 45 分钟。"), true);
 });
 
 test("记忆置信度边界与抽取提示一致：0.7 可继续，低于 0.7 拒绝", () => {
@@ -90,7 +73,7 @@ test("有效期只接受来源里的原样绝对时间；未转换的短期状�
       content: "下周完成数据库索引复习",
       validUntil: null,
     }, "我下周完成数据库索引复习"),
-    { ok: false, reason: "missing_finite_validity" },
+    { ok: true, appliesWhen: null, validUntil: null },
   );
   assert.deepEqual(
     resolve({
@@ -308,53 +291,6 @@ test("prompt 用现行准入反例区分临时请求、条件偏好、引用、�
   }
 });
 
-// ─── 候选记忆冷静期（方案 29 §11 C2）：SQL 与 TS 必须是同一个判据 ──────────────
-// 0256 那条迁移里的解禁规则跑在 plpgsql（SECURITY DEFINER，跨用户扫），
-// 判据的正主是这个文件的 isVolatileStatisticMemory。两处各写一份正则，
-// 早晚会漂——这条测试把两边按同一批样本对齐，漂了就红。
-// `readFileSync` / `readdirSync` 见文件头的 import。
-
-function migrationStatTests(): { window: RegExp; quantity: RegExp } {
-  const url = new URL(
-    "../../../../../apps/api/src/db/migrations/0256_companion_candidate_memory_cooling_off.sql",
-    import.meta.url,
-  );
-  const sqlText = readFileSync(url, "utf8");
-  const patterns = [...sqlText.matchAll(/content ~ '([^']+)'/g)].map((m) => m[1]);
-  assert.equal(patterns.length, 2, "迁移里应当有两条 content ~ '…' （时间窗 + 量词）");
-  return { window: new RegExp(patterns[0]), quantity: new RegExp(patterns[1]) };
-}
-
-test("0256 的解禁例外与抽取器的统计判据逐样本一致", () => {
-  const { window, quantity } = migrationStatTests();
-  const sqlBlocks = (content: string) => window.test(content) && quantity.test(content);
-  for (const content of [
-    "截至当前，用户本周累计学习时长为23分钟，拥有10张活跃卡片和9篇笔记。",
-    "用户今天学了 45 分钟。",
-    "这一阵他打开了 12 张卡。",
-    "这周要掌握光合作用的 3 个阶段。",
-    // 下面三条都不该被例外挡住：没有"当前时间窗"，或数字只在名字里。
-    "用户说每天只能挤出 40 分钟。",
-    "卡片「背 3 条法律」还没复习。",
-    "喜欢用语音念题。",
-  ]) {
-    assert.equal(
-      sqlBlocks(content), isVolatileStatisticMemory(content),
-      `判据漂移：${content}`,
-    );
-  }
-});
-
-// 已知且**故意保留**的差异：TS 侧先把「…」/《…》里的内容遮掉再判，SQL 侧没有那一步，
-// 所以"数字只出现在名字里、又恰好带时间窗"的行在 SQL 侧更严——代价只是这条候选
-// 多等一天（手动确认那条路不受影响），反向的误放在这里是要命的那一侧。
-test("0256 的例外比抽取器更严，方向必须是这样", () => {
-  const { window, quantity } = migrationStatTests();
-  const content = "本周的计划写在《背 3 条法律》里。";
-  assert.equal(isVolatileStatisticMemory(content), false, "TS 遮掉名字后不该判成统计");
-  assert.equal(window.test(content) && quantity.test(content), true, "SQL 侧应当更严");
-});
-
 // ─── 伴星思考档的归属（2026-10-06 第二次改判，取代「全链路常开最高档」）──────
 // 入口策略在第一步前定下这一轮开不开思考。因此"谁可以关思考"要守住的是两条：
 //   1. 后台 handler（摘要、抽取、日记、制卡…）不在关键路径上，**一律不关**，
@@ -375,6 +311,9 @@ const thinkingSanctioned = new Set([
   // Narrow publication review compares already written speech and authoritative
   // run status. It never generates a question answer or performs background work.
   "companion-initiative-speech-review.ts",
+  // Independent provenance/status review uses a separate measured JSON contract.
+  // It does not generate or grade the answer, whose effort still follows entry.
+  "companion-completion-guard.ts",
 ]);
 
 test("伴星思考档：对话按本轮意图选择，其余后台按各自预算运行", () => {
@@ -404,11 +343,14 @@ test("伴星思考档：对话按本轮意图选择，其余后台按各自预�
       return text.includes("withThinkingDisabled(") || text.includes("disableThinking: true");
     })
     .map(({ name }) => name);
-  assert.deepEqual(offenders, [], `这些 handler 绕开本轮意图判据把思考关死了：${offenders.join(", ")}`);
+  // Classification and pixel transcription are independent short contracts;
+  // neither generates the final answer or chooses application operations.
+  assert.deepEqual(offenders.filter(name => !["companion-entry-decision.ts", "companion-image-batches.ts"].includes(name)), [],
+    `这些执行 handler 绕开资源策略把思考关死了：${offenders.join(", ")}`);
 
   // 正向：对话主链路确实经过显式的入口/加深策略，而不是各自决定。
   const runtime = readFileSync(new URL("agent/companion-agent-runtime.ts", dir), "utf8");
-  assert.match(runtime, /disableThinking: directControls\.disableThinking\(\)/,
+  assert.match(runtime, /disableThinking: stepReasoningEffort === "none"/,
     "Agent 运行时不再经过 directControls，快速档与加深档就会散成各处硬编码");
 });
 
@@ -420,60 +362,22 @@ test("伴星思考档：对话按本轮意图选择，其余后台按各自预�
 
 test("跨空间判据：只有 preference 可能跨空间，其余留在原空间", () => {
   // 正向：偏好——关于"怎么学、怎么相处"——跟人走。
-  assert.equal(memoryScopeForKind("preference", "workspace", "portable", "喜欢在安静时段学习"), "global");
-  assert.equal(memoryScopeForKind("preference", "workspace", "portable", "看新概念时更想先看反例，再看定义"), "global");
-  assert.equal(memoryScopeForKind("preference", "workspace", "portable", "习惯在晚上九点之后写笔记，白天只做采集"), "global");
-  assert.equal(memoryScopeForKind("preference", "workspace", "portable", "用户曾要求关闭桌宠的声音"), "global");
+  assert.equal(memoryScopeForKind("preference", "workspace", "portable"), "global");
+  assert.equal(memoryScopeForKind("preference", "workspace", "portable"), "global");
+  assert.equal(memoryScopeForKind("preference", "workspace", "portable"), "global");
+  assert.equal(memoryScopeForKind("preference", "workspace", "portable"), "global");
   // 负向：这四类绑定空间内的东西。
-  assert.equal(memoryScopeForKind("interaction_note", "workspace", "portable", "被追问原因时会先举例"), "workspace");
-  assert.equal(memoryScopeForKind("goal", "workspace", "portable", "下个月要考日语N3"), "workspace");
-  assert.equal(memoryScopeForKind("learning_context", "workspace", "portable", "正在学习物理"), "workspace");
-  assert.equal(memoryScopeForKind("episodic", "workspace", "portable", "第一次独立完成三分钟微旅程验证"), "workspace");
-});
-
-test("跨空间判据：提到具体科目/考试的偏好留在原空间（这是收紧的那一半）", () => {
-  // 实测数据里这两条都是 preference，但一条跟人走、一条绑科目。
-  assert.equal(memoryScopeForKind("preference", "workspace", "portable", "偏好短节奏学习，每次约10分钟"), "global");
-  assert.equal(
-    memoryScopeForKind("preference", "workspace", "portable", "用户正在学习数据库索引优化，理解速度较快"),
-    "workspace",
-    "科目绑定的偏好跑到别的空间去了——那个空间里没有这门课",
-  );
-  assert.equal(
-    memoryScopeForKind("preference", "workspace", "portable", "用户之前主要专注于 N3 相关工作"),
-    "workspace",
-  );
-  // 明确的本地指代同样拦下。
-  assert.equal(memoryScopeForKind("preference", "workspace", "portable", "这个班的作业每周三交"), "workspace");
-  assert.equal(memoryScopeForKind("preference", "workspace", "portable", "这门课的期中考试在下周"), "workspace");
-});
-
-test("跨空间判据：服务端规则可以否决模型的 portable；模型说 local 一律 local", () => {
-  // 规则否决模型：模型在对话现场可能把"我在学贝叶斯"当成一贯偏好。
-  assert.equal(
-    memoryScopeForKind("preference", "workspace", "portable", "我正在学贝叶斯统计"),
-    "workspace",
-    "服务端规则必须能挡住模型误判的 portable",
-  );
-  // 模型说 local：即使规则看不出本地信号，也按本地。
-  assert.equal(
-    memoryScopeForKind("preference", "workspace", "local", "喜欢在安静时段学习"),
-    "workspace",
-    "模型明确说这条只在这个空间成立时，规则不该覆盖它",
-  );
-  // 缺省 fail-closed：没给 binding 就是 local。
-  assert.equal(
-    memoryScopeForKind("preference", "workspace", undefined, "喜欢在安静时段学习"),
-    "workspace",
-    "没给 binding 时应当按本地处理（宁可少带，不可错带）",
-  );
+  assert.equal(memoryScopeForKind("interaction_note", "workspace", "portable"), "workspace");
+  assert.equal(memoryScopeForKind("goal", "workspace", "portable"), "workspace");
+  assert.equal(memoryScopeForKind("learning_context", "workspace", "portable"), "workspace");
+  assert.equal(memoryScopeForKind("episodic", "workspace", "portable"), "workspace");
 });
 
 test("跨空间判据：非跨空间种类仍尊重模型给的 task 细分", () => {
-  assert.equal(memoryScopeForKind("episodic", "task", "local", "这一轮的事"), "task");
-  assert.equal(memoryScopeForKind("goal", "task", "local", "这一轮的目标"), "task");
+  assert.equal(memoryScopeForKind("episodic", "task", "local"), "task");
+  assert.equal(memoryScopeForKind("goal", "task", "local"), "task");
   // 跨空间种类不吃 task：偏好不是"这一轮"的东西。
-  assert.equal(memoryScopeForKind("preference", "task", "portable", "喜欢先看反例"), "global");
+  assert.equal(memoryScopeForKind("preference", "task", "portable"), "global");
 });
 
 test("范围判据只有一份：抽取器调用共享层，不自带正则或第二套判定", () => {
@@ -486,5 +390,5 @@ test("范围判据只有一份：抽取器调用共享层，不自带正则或�
     assert.ok(!source.includes(duplicated), `抽取器里又出现了一份 ${duplicated}：判据不再唯一`);
   }
   // 调用点仍要按"两道判据"传参：少传 binding 会让缺省方向翻面（见共享层注释）。
-  assert.match(source, /memoryScopeForKind\(candidate\.kind, candidate\.scope, candidate\.binding, candidate\.content\)/);
+  assert.match(source, /memoryScopeForKind\(candidate\.kind, candidate\.scope, candidate\.binding\)/);
 });

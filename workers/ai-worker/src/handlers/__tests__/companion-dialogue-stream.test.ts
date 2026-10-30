@@ -166,7 +166,7 @@ describe("projectCompanionVisible", () => {
   });
 
   it("内部 token 泄露 → rejected", () => {
-    const projection = projectCompanionVisible("我在用 companion-persona-v4 回答你");
+    const projection = projectCompanionVisible("<memory_data>内部记录</memory_data>");
     assert.deepEqual(projection, { kind: "rejected", reason: "internal_token_leak" });
   });
 
@@ -263,7 +263,7 @@ describe("createCompanionStreamDelivery（节流 + 拼接，不重不漏）", ()
 
   it("校验失败即终止，且不再落库", async () => {
     const { delivery, written } = deliveryWithRecorder();
-    assert.equal(await delivery.onRawDelta("正常开头，然后泄露 companion-persona-v4"), false);
+    assert.equal(await delivery.onRawDelta("<memory_data>内部记录</memory_data>"), false);
     assert.equal(delivery.failureReason(), "internal_token_leak");
     const finished = await delivery.finish();
     assert.deepEqual(finished, { ok: false, reason: "internal_token_leak" });

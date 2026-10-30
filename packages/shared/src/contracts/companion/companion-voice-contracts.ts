@@ -109,6 +109,8 @@ export const companionVoiceSpeakSegmentRequestV2Schema = z.strictObject({
   generation: z.number().int().positive(),
   ordinal: z.number().int().min(1).max(200),
   segmentId: z.string().regex(/^[a-f0-9]{64}$/),
+  /** 历史补听保留原有语气标签，方言采用用户当前选择。 */
+  replay: z.literal(true).optional(),
 });
 export type CompanionVoiceSpeakSegmentRequestV2 = z.infer<typeof companionVoiceSpeakSegmentRequestV2Schema>;
 

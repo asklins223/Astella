@@ -1,5 +1,6 @@
 import type { ChatMessage } from "@astella/shared";
 import type { CompanionRecentHistoryMessage } from "../context/companion-context-handoff.ts";
+import { imageAssetReference } from "../../lib/image-asset-reference.ts";
 
 /** A terminal unanswered turn is shared history, not pending native user input
  * for a host-triggered run. Keep its complete attributed source as data; never
@@ -22,7 +23,11 @@ export function replayCompanionHistory(
             .replaceAll("<", "\\u003c").replaceAll(">", "\\u003e")
           + "\n</historical_turn_outcome>" };
     }
-    return { role: message.role, content: message.text,
+    const content: ChatMessage["content"] = message.role === "user" && message.imageAttachments?.length
+      ? [{ type: "text", text: message.text }, ...message.imageAttachments.map(image => ({
+        type: "image_url" as const, image_url: { url: imageAssetReference(image.assetId), detail: "high" as const },
+      }))] : message.text;
+    return { role: message.role, content,
       ...(message.reasoning?.length ? { reasoning: message.reasoning } : {}) };
   });
 }

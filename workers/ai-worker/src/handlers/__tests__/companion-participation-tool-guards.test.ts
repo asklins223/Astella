@@ -56,12 +56,6 @@ test("要写进笔记的整段内容不会被逐句发成聊天发言", async ()
   }
 });
 
-test("执行收尾不会变成一条对白", async () => {
-  await assert.rejects(() => executeCompanionParticipationTool(
-    context({}, { initiativeInput: { topic: "attention.due", facts: { canSpeak: true } } }),
-    "say.publish", { text: "（安静结束，本轮不发言。）" }, "call-3"),
-    (error: unknown) => error instanceof CompanionToolNotExecutedError && /执行收尾不需要发给用户/.test(String((error as Error).message)));
-});
 test("主动发言的语义核对在任何发布写入之前生效", async () => {
   let called = false;
   await assert.rejects(() => executeCompanionParticipationTool(context({ reviewInitiativeSpeech: async () => {

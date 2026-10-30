@@ -312,76 +312,36 @@ test("full 档记忆修订：CAS 追加旧版本，保留来源与未改的时�
   assert.equal(unchanged[0].content, "新的记忆内容");
 });
 
-/**
- * `full` 档直执行修订与账号级范围守卫（42 阶段 1 E 复审补齐）。
- *
- * `guided` 档走 API 的 `correctMemory`，首轮已经在那里加了守卫；`full` 档预授权走
- * 这一条裸 SQL，它自己也得过一次同一份判据。否则同一条规则，用户点一下确认会被拦、
- * 伴星直接执行就把"这个班的作业"写进了账号级偏好，并被同步到别的书房。
- */
-test("full 档修订：账号级规则改成本书房内容被拒；源行、副本与历史都不动", async () => {
+test("full 档账号级修订不受主题词否决，副本和只追加历史随真实修订同步", async () => {
   const definition = getCompanionAgentTool("companion_memory_write");
   assert.ok(definition);
-  const event = {
-    ctx: { workspaceId },
-    read: { userId },
-  } as unknown as Parameters<typeof executeDirectTool>[0];
-
-  const readAccount = async () => {
-    const [source] = await admin`
-      SELECT revision, content, applies_when FROM assistant_memory_items WHERE id = ${accountMemoryId}
-    `;
-    const [copy] = await admin`
-      SELECT content, revision FROM assistant_memory_items
-       WHERE workspace_id = ${accountWorkspaceId} AND global_key = ${accountMemoryId}
-         AND deleted_at IS NULL
-    `;
-    const history = await admin`
-      SELECT revision FROM assistant_memory_item_revisions
-       WHERE memory_id = ${accountMemoryId} ORDER BY revision
-    `;
-    return { source, copy, history: history.map((row) => row.revision) };
-  };
-
-  // 正向对照：副本确实被铺出来了，否则下面"副本没变"是空转。
-  const seeded = await readAccount();
-  assert.ok(seeded.copy, "账号级规则没有铺到第二个空间：这一格正向对照失效");
-
-  const rejected = [
-    { label: "正文提到科目", args: { content: "正在学数据库索引优化" } },
-    { label: "正文提到本书房材料", args: { content: "先把这篇笔记讲完" } },
-    { label: "正文提到本书房", args: { content: "这个书房的节奏更快" } },
-    { label: "条件绑本书房", args: { content: "先看反例", appliesWhen: "复习这门课时" } },
-  ];
-  for (const attempt of rejected) {
-    await assert.rejects(
-      () => executeDirectTool(event, definition, {
-        action: "revise",
-        memoryId: accountMemoryId,
-        expectedRevision: 1,
-        ...attempt.args,
-      }),
-      (error: unknown) =>
-        error instanceof CompanionToolError && /账号级/.test(error.message) && /当前书房/.test(error.message),
-      `${attempt.label}：账号级规则被改成了本书房专属的内容`,
-    );
+  const event = { ctx: { workspaceId }, read: { userId } } as unknown as Parameters<typeof executeDirectTool>[0];
+  let expectedRevision = 1;
+  for (const args of [
+    { content: "喜欢用物理类比理解概念" },
+    { content: "先把这篇笔记讲完" },
+    { content: "先看反例", appliesWhen: "复习这门课时" },
+  ]) {
+    const revised = await executeDirectTool(event, definition, {
+      action: "revise", memoryId: accountMemoryId, expectedRevision, ...args,
+    });
+    expectedRevision += 1;
+    assert.equal(revised.value.revision, expectedRevision);
+    assert.equal(revised.value.changed, true);
+    const [source] = await admin`SELECT content, revision FROM assistant_memory_items WHERE id=${accountMemoryId}`;
+    const [copy] = await admin`SELECT content, revision FROM assistant_memory_items
+      WHERE workspace_id=${accountWorkspaceId} AND global_key=${accountMemoryId} AND deleted_at IS NULL`;
+    assert.equal(source.content, args.content);
+    assert.equal(copy.content, args.content);
+    assert.equal(source.revision, expectedRevision);
+    assert.equal(copy.revision, expectedRevision);
   }
-  // 拒绝之后：源行、副本、只追加历史三者都与刚才的基线逐字相同。
-  assert.deepEqual(await readAccount(), seeded, "被拒的修订仍然改了源行或副本，或写进了历史表");
-
-  // 正向对照之二：正常的账号级修订仍然能用，而且副本跟着同步。
-  const revised = await executeDirectTool(event, definition, {
-    action: "revise",
-    memoryId: accountMemoryId,
-    expectedRevision: 1,
-    content: "习惯晚上九点之后写笔记，白天只做采集",
-  });
-  assert.equal(revised.value.revision, 2);
-  assert.equal(revised.value.changed, true);
-  const afterLegal = await readAccount();
-  assert.equal(afterLegal.source.content, "习惯晚上九点之后写笔记，白天只做采集");
-  assert.equal(afterLegal.copy.content, afterLegal.source.content, "合法修订没有同步到第二个空间");
-  assert.deepEqual(afterLegal.history, [1], "合法修订没有把旧版本追加进历史表");
+  const history = await admin`SELECT revision FROM assistant_memory_item_revisions
+    WHERE memory_id=${accountMemoryId} ORDER BY revision`;
+  assert.deepEqual(history.map(row => row.revision), [1, 2, 3]);
+  await assert.rejects(() => executeDirectTool(event, definition, {
+    action: "revise", memoryId: accountMemoryId, expectedRevision: 1, content: "过期版本不写入",
+  }), CompanionToolError);
 });
 
 test("full 档修订：空间内记忆不受账号级守卫约束", async () => {
@@ -407,4 +367,20 @@ test("full 档修订：空间内记忆不受账号级守卫约束", async () => 
   assert.equal(row.scope, "workspace");
   assert.equal(row.content, "复习这个班的作业时先看反例");
   assert.equal(row.applies_when, "复习这门课时");
+});
+
+
+test("自动记忆去重只跳过完全相同的 active 正文，不把条件或否定当作同义", async () => {
+  const { hasCoveredActiveMemoryTwin } = await import("../handlers/memory/companion-memory-extractor.ts");
+  const base = `每天晚上九点后不想被打扰 ${randomUUID()}`;
+  const candidate = `候选记录 ${randomUUID()}`;
+  await admin`INSERT INTO assistant_memory_items(workspace_id,user_id,kind,content,candidate)
+    VALUES(${workspaceId},${userId},'preference',${base + "，除非我先开口"},false),
+          (${workspaceId},${userId},'preference',${candidate},true)`;
+  const exists = (content: string) => withWorkerWorkspaceTransaction({ workspaceId, userId }, tx =>
+    hasCoveredActiveMemoryTwin(tx, { workspaceId, userId, kind: "preference", content }));
+  assert.equal(await exists(base), false, "a conditional statement cannot suppress an unconditional candidate");
+  assert.equal(await exists("  " + base + "，除非我先开口  "), true);
+  assert.equal(await exists("用户" + base + "，除非我先开口"), false);
+  assert.equal(await exists(candidate), false, "an unconfirmed candidate is not an active duplicate");
 });

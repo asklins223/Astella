@@ -1,5 +1,5 @@
 import { test } from "node:test";
-import { claimsImageContent, companionStreamRepeatsItself } from "../turn/companion-reply-shape.ts";
+import { companionStreamRepeatsItself } from "../turn/companion-reply-shape.ts";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { companionVoiceSegmentExpression, projectCompanionVoiceExpression } from "../turn/companion-voice-expression.ts";
@@ -22,7 +22,6 @@ import {
   looksLikeUnfulfilledActionNarration,
   unverifiedNumericClaims,
   claimsLookupThatNeverRan,
-  companionOutputRejectionReason,
   containsCompanionInternalToken,
   extractQuotedPassages,
   finalizeCompanionReplyText,
@@ -481,10 +480,10 @@ test("validateCompanionOutput：空/超长/内部 token 泄露拒绝", () => {
   assert.equal(validateCompanionOutput("   ").ok, false);
   assert.equal(validateCompanionOutput("x".repeat(COMPANION_HARD_MAX_CHARS + 1)).ok, false);
   assert.equal(validateCompanionOutput('{"cue": "wave"}').ok, false);
-  assert.equal(validateCompanionOutput("reason id: xyz").ok, false);
-  assert.equal(validateCompanionOutput("companion-persona-v1 泄露").ok, false);
-  // 2026-08-24：prompt id 全版本模式——切到 V4 后回显 v4 同样拒绝
-  assert.equal(validateCompanionOutput("companion-persona-v4 泄露").ok, false);
+  assert.equal(validateCompanionOutput("reason id: xyz").ok, true);
+  assert.equal(validateCompanionOutput("companion-persona-v1 泄露").ok, true);
+  // 普通提示词名称不再作为禁词。
+  assert.equal(validateCompanionOutput("companion-persona-v4 泄露").ok, true);
 });
 
 test("validateCompanionOutput：拒绝回显输入上下文（2026-09-19 实机泄露）", () => {
@@ -499,7 +498,7 @@ test("validateCompanionOutput：拒绝回显输入上下文（2026-09-19 实机�
   ].join("");
   assert.equal(validateCompanionOutput(echoed).ok, false);
   // 口语里提到这些字段名同样按泄露拒绝（fail closed）——它们不会出现在正常回复里。
-  assert.equal(validateCompanionOutput("我的 activeMemories 里记着你喜欢晚上写笔记").ok, false);
+  assert.equal(validateCompanionOutput("我的 activeMemories 里记着你喜欢晚上写笔记").ok, true);
   assert.equal(validateCompanionOutput("<memory_data>[goal] 想搞懂贝叶斯更新").ok, false);
 });
 
@@ -557,7 +556,7 @@ test("多图输入：第三至第九张按顺序进入伴星上下文，不伪�
   assert.deepEqual(received.map((image) => image.assetId), images.map((image) => image.assetId));
   const line = renderUserAttachedImagesLine(received)!;
   assert.match(line, /9 张图/);
-  for (const image of images) assert.ok(line.includes(`assetId=${image.assetId}（${image.label}）`));
+  for (const image of images) assert.ok(line.includes(JSON.stringify({ assetId: image.assetId, label: image.label })));
   assert.equal(textOfCompanionBlocks(images), "〔用户本轮只发送了 9 张图片，没有文字说明〕");
   assert.equal(textOfCompanionBlocks([{ type: "text", text: "比较这些图" }, ...images]), "比较这些图");
   assert.deepEqual(companionUserImageAttachments([null, { type: "image" }, { type: "image", assetId: " " }, { type: "file", assetId: "not-image" }]), []);
@@ -746,7 +745,7 @@ test("划选投喂：选区只随本轮 user 回合进入一次，page_context �
   });
   assert.match(
     contentText(concise[concise.length - 1].content),
-    /我的问题：这段在讲什么？用一句话回答。\n请严格只回答一句话，不要补充解释或反问。$/,
+    /我的问题：这段在讲什么？用一句话回答。$/,
   );
   assert.match(contentText(concise[0].content), /不要因为看到选区就调用工具或带入学习进度/);
 
@@ -811,8 +810,8 @@ test("hereAndNow 注入 <here_and_now> 数据块并点名它的用法", () => {
   // 她就"自然地"回了一句"今天已经学了 42 分钟"。
   // 39d W2-5 起口径再往前走一步：不是"不要报数字"，而是"要报就读目录里的键"——
   // 禁止句换成指针句，因为没问到的键**根本不在目录里**。
-  assert.match(system, /要报\*\*具体读数\*\*/);
-  assert.match(system, /见 <fact_spans>/);
+  assert.match(system, /当前事实不足时自主取证/);
+  assert.doesNotMatch(system, /见 <fact_spans>/);
   assert.doesNotMatch(system, /可以自然引用，也可以据此主动开启话题/);
   // 排在记忆块之前：越靠前的约束对小模型的遵循度越高。
   assert.ok(system.indexOf("<here_and_now>") < system.indexOf("<memory_data>"),
@@ -942,27 +941,12 @@ test("looksTruncatedReply：不误伤正常回复", () => {
  * 统一的输出边界覆盖上下文标记、内部字段与裸 UUID，避免内部 prompt 内容或对象 ID
  * 被当作用户可见的回复。下面的断言固定这些输出边界。
  */
-test("containsCompanionInternalToken：上下文回显与裸 uuid 都算泄露（两条链共用一份）", () => {
-  assert.equal(containsCompanionInternalToken("<here_and_now> 今日已学 12 分钟"), true);
-  assert.equal(containsCompanionInternalToken("我把 activeMemories 里那条念给你听"), true);
-  assert.equal(containsCompanionInternalToken("pageContext 显示你在笔记页"), true);
-  assert.equal(containsCompanionInternalToken("3f2e1369-7595-466c-af76-6cea5ee7440f 这张卡"), true);
-  assert.equal(containsCompanionInternalToken("已完成（runId 5864b838…，版本 1）"), true);
-  assert.equal(containsCompanionInternalToken("刚看到 character.cue 变了"), true);
-  // 正常中文句子、以及她真该说的话，都不许被这条误伤
-  assert.equal(containsCompanionInternalToken("今天想继续昨天那三个公式吗？"), false);
-  assert.equal(containsCompanionInternalToken("F 等于 m a 这条我陪你再过一遍"), false);
-  // 实机 2026-09-22 场景 U：兜底模型在被强制收尾的那一步**用文本假装调用工具**，
-  // 结果整段原始调用文本被当正文落库（run 还是 succeeded）——用户会在气泡里看到
-  // 一个内部标识符，而它会进历史、被下一轮当先例复读。
-  assert.equal(containsCompanionInternalToken('companion_set_boundary\n{"催复习": "关"}'), true,
-    "她自己工具的调用文本不能当正文");
-  assert.equal(containsCompanionInternalToken("我把催复习的开关关掉了，以后你不问就不提。"), false);
-  // 增量校验走同一个判定（拒绝原因要还是 internal_token_leak）
-  assert.equal(
-    companionOutputRejectionReason("<here_and_now> 今日已学 12 分钟"),
-    "internal_token_leak",
-  );
+test("context validation recognizes reserved envelopes and permits ordinary technical text", () => {
+  assert.equal(containsCompanionInternalToken("<here_and_now>\nactual host data\n</here_and_now>"), true);
+  for (const text of ["pageContext 显示当前页面。", "示例 UUID：3f2e1369-7595-466c-af76-6cea5ee7440f。",
+    "activeMemories 是一个字段名。", "character.cue", "companion_set_boundary 是工具名。",
+    "```xml\n<here_and_now>example</here_and_now>\n```"])
+    assert.equal(containsCompanionInternalToken(text), false, text);
 });
 
 test("looksLikeUnfulfilledActionNarration：只说了要做什么、一个工具都没调", () => {
@@ -1370,17 +1354,9 @@ test("a stream stuck on one sentence is detected before it can hold the turn ope
   assert.equal(companionStreamRepeatsItself(prose.repeat(4)), false, "repeated paragraphs of real prose are not a loop");
 });
 
-test("describing a picture is a claim about something only looking can establish", () => {
-  for (const text of [
-    "图里写的是 12 个苹果。",
-    "截图里显示答案是 B",
-    "照片上有一块白板，写着公式",
-    "图片中的文字是「光合作用」",
-  ]) assert.equal(claimsImageContent(text), true, text);
-  for (const text of [
-    "我看不到这张图",
-    "这张图我看不清",
-    "要我读一下这张图吗？",
-    "图里写了什么？",
-  ]) assert.equal(claimsImageContent(text), false, text);
+test("selected questions preserve negation, quotations and language without extra instructions", () => {
+  for (const question of ["不要只用一句话回答，详细解释。", "这里的一句话是什么意思？", "Explain this in detail.", "只说一句也可以，但请解释例外。"] ) {
+    assert.equal(renderCompanionUserTurn(question, { selection: { text: "actual selection" } }),
+      "我刚划选的原文：\n<selection_data>\nactual selection\n</selection_data>\n\n我的问题：" + question);
+  }
 });
