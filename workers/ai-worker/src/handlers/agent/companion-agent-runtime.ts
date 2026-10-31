@@ -5,6 +5,7 @@ import { companionCallFingerprint, companionMalformedToolExhausted, companionRep
   COMPANION_UNBACKED_CLAIM_RETRIES_ALLOWED } from "./companion-progress-guard.ts";
 import { reviewCompanionInitiativeSpeech } from "../proactive/companion-initiative-speech-review.ts";
 import { claimsApplicationActionCompletion } from "../turn/companion-action-claims.ts";
+import { unverifiedArithmeticResults } from "../turn/companion-dialogue-content.ts";
 import { sql } from "drizzle-orm";
 import { agentTurnInterpretationV1Schema, AGENT_GOAL_EVIDENCE_GUIDANCE_V1 } from "@astella/shared/agent-contracts";
 import { companionEditedNoteV1Schema } from "@astella/shared/companion-note-authoring-contracts";
@@ -1112,22 +1113,44 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       // a finished artifact that does not exist. Structure decides: the claim
       // matcher reads only completed forms, and a landed write clears it.
       // Corrections get one shot, the same budget as other unbacked claims.
-      const unbackedClaims = !landedWrites && !stepEmitted
+      const unbackedClaims = !landedWrites
         ? claimsApplicationActionCompletion(text, { actionRequested: userAskedForAction })
         : [];
-      if (unbackedClaims.length > 0 && actionSteerAttempts < COMPANION_UNBACKED_CLAIM_RETRIES_ALLOWED) {
+      // Numbers must come from this turn's host material or tool receipts, not
+      // from the model's own arithmetic. Same rule as the action claim above:
+      // structure decides, and only prose that has not been streamed yet is
+      // corrected (a delivered prefix cannot be retracted).
+      const numericClaims = true
+        ? (() => {
+          const material = [
+            ...(typeof args.read.hereAndNow === "string" ? [args.read.hereAndNow] : []),
+            ...(args.read.pageContext ? [JSON.stringify(args.read.pageContext)] : []),
+            ...messages.filter(message => message.role === "tool").map(message =>
+              typeof message.content === "string" ? message.content : JSON.stringify(message.content)),
+          ].join("\n");
+          return material.trim() ? unverifiedArithmeticResults(text, material) : [];
+        })()
+        : [];
+      if ((unbackedClaims.length > 0 || numericClaims.length > 0)
+        && actionSteerAttempts < COMPANION_UNBACKED_CLAIM_RETRIES_ALLOWED) {
         actionSteerAttempts += 1;
         const availability = toolSurface.offered().map(tool => tool.name);
         messages = companionDeliveryRepairMessages({ messages, currentRequest, alreadyDisplayed: false,
           result: { content: text },
-          instruction: `你刚才的话声称已经完成了这些操作/产出：${unbackedClaims.join("；")}。`
-            + "本轮没有对应的真实工具回执，不能这样说。可用工具："
-            + `${availability.join("、") || "无"}。`
-            + "要做就用工具真的做一次并引用回执；做不到或用户没有要求时，如实说明没有完成，不要编造结果。" });
+          instruction: [
+            unbackedClaims.length > 0
+              ? `你刚才的话声称已经完成了这些操作/产出：${unbackedClaims.join("；")}。本轮没有对应的真实工具回执，不能这样说。`
+              : "",
+            numericClaims.length > 0
+              ? `这些算式的结果在本轮材料里找不到出处：${numericClaims.join("、")}。用 observe.calculate 真的算一次并引用回执，不要心算。`
+              : "",
+            `可用工具：${availability.join("、") || "无"}。`,
+            "要做就用工具真的做一次并引用回执；做不到或用户没有要求时，如实说明没有完成，不要编造结果。",
+          ].filter(Boolean).join("") });
         await finishBoundary(stepId, "failed", sha256Utf8V1(text), "ACTION_NOT_EXECUTED");
         await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta() });
-        logger.warn({ runId: args.read.runId, stepCount, claims: unbackedClaims.length },
-          "companion reply claimed an action with no receipt; asked for a real one");
+        logger.warn({ runId: args.read.runId, stepCount, claims: unbackedClaims.length, numbers: numericClaims.length },
+          "companion reply claimed unverified work; asked for a real receipt");
         return { kind: "continue" };
       }
       const completedResult = { status: "completed" as const, text, blocks: richBlocks, memoryRefs: [], writesLanded: landedWrites,

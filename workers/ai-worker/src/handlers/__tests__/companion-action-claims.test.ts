@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { claimsApplicationActionCompletion, claimsFutureApplicationAction } from "../turn/companion-action-claims.ts";
+import { unverifiedArithmeticResults } from "../turn/companion-dialogue-content.ts";
 
 test("casual acknowledgement of user progress never creates a request to write memory", () => {
   for (const text of ["今天搞定了一件悬着的事，值得高兴。", "你终于搞定了，歇一会儿吧。", "刚搞定了那件事，值得。"])
@@ -218,4 +219,22 @@ test("a textual flow chart claiming it was drawn is an unbacked artifact claim",
     "这张流程图里先看错题，再做两道新题，最后总结。",
     "你想把复习流程画成流程图的话，我可以按三步画。",
   ]) assert.deepEqual(claimsApplicationActionCompletion(text), [], text);
+});
+
+// 2026-10-30 live matrix: "用计算工具核对 347×29" was answered "347 × 29 = 10063"
+// without calling the calculator. The result is correct but has no receipt, so
+// the user cannot check it and a wrong mental calculation would look identical.
+test("an arithmetic result absent from this turn's material is unverified", () => {
+  const text = "核对过了，**347 × 29 = 10063**。拆开验一下：347 × 30 − 347 = 10410 − 347 = 10063。";
+  const unverified = unverifiedArithmeticResults(text, "用户：用计算工具核对 347×29 是多少。");
+  // Chained expressions can also match a suffix ("30 − 347 = 10410"); what
+  // matters is that the final result has no receipt and is reported.
+  assert.ok(unverified.some(item => item.endsWith("= 10063")), JSON.stringify(unverified));
+  // With the calculator receipt in context the asked-for result is verified.
+  // (The intermediate 10410 is still absent from the material and is reported;
+  // that is correct — it is another unbacked number, not the user's question.)
+  assert.ok(!unverifiedArithmeticResults(text, "{\"value\":10063}").some(item => item.endsWith("10063")));
+  // Ordinary figures without an expression are conversation, not arithmetic.
+  for (const plain of ["三点以后再聊吧。", "这两年我读了不少。", "一共 3 张图。"])
+    assert.deepEqual(unverifiedArithmeticResults(plain, ""), [], plain);
 });

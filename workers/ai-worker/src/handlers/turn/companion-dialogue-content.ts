@@ -583,6 +583,29 @@ function normalizeChineseNumericEvidence(text: string): string {
   });
 }
 
+/**
+ * Results the model worked out in prose: `347 × 29 = 10063`, `10410 − 347 = 10063`.
+ * A stated result with a computed operator is arithmetic the host can verify;
+ * when the same value appears nowhere in this turn's material, the model did it
+ * in its head and the user has no receipt to check. Plain figures in ordinary
+ * talk ("三点""两年") are not expressions and stay out.
+ */
+const ARITHMETIC_LINE_TEST = /(\d+(?:\.\d+)?\s*[×x+\-−÷/]\s*\d+(?:\.\d+)?\s*=\s*\d+(?:\.\d+)?)/gu;
+
+export function unverifiedArithmeticResults(replyText: string, contextText: string): string[] {
+  const haystack = normalizeChineseNumericEvidence(contextText.replace(/\s+/g, ""));
+  const results = new Set<string>();
+  // Every stated expression is checked on its own. A reply may chain several
+  // ("347×30−347=10410−347=10063"); each result must be backed by this turn's
+  // material, and each unbacked one is reported.
+  for (const match of replyText.replace(/\r\n?/g, "\n").matchAll(ARITHMETIC_LINE_TEST)) {
+    const expression = match[1]!.replace(/\s+/gu, " ");
+    const value = expression.split("=").at(-1)!.trim();
+    if (!haystack.includes(value)) results.add(expression);
+  }
+  return [...results];
+}
+
 export function unverifiedNumericClaims(replyText: string, contextText: string): string[] {
   const haystack = normalizeChineseNumericEvidence(contextText.replace(/\s+/g, ""));
   const text = replyText.replace(/\r\n?/g, "\n");
