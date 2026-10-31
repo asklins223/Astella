@@ -155,3 +155,41 @@ export function claimsApplicationActionCompletion(replyText: string,
   return [...claims];
 }
 
+
+/**
+ * "系统里没有可用的定时提醒能力" — a capability denial, not a completion claim.
+ *
+ * 2026-10-31 live matrix: the reminder turn was offered
+ * `companion_attention_write` (whose own description names `schedule_reminder`
+ * and `fireAtLocal`) and answered "没有可用的定时提醒能力，所以这次没成功".
+ * The user is told the product cannot do something it can. Only a phrase whose
+ * object this deployment really offers is flagged; saying a feature is not
+ * connected elsewhere stays an honest limitation.
+ */
+const CAPABILITY_DENIAL = /(?:没有|不支持|无法|不能|不具备|暂不支持|尚未接入)[^。！？\n]{0,20}(?:提醒|定时|闹钟|记忆|笔记|新建|创建|搜索|检索|读图|看图|流程图|速看|演示|脑图)/gu;
+const CAPABILITY_OBJECTS: Array<{ pattern: RegExp; tools: readonly string[] }> = [
+  { pattern: /提醒|定时|闹钟/u, tools: ["companion_attention_write", "companion_attention_read"] },
+  { pattern: /记忆/u, tools: ["companion_memory_write", "companion_memory_read"] },
+  { pattern: /笔记|新建|创建/u, tools: ["companion_notes_write"] },
+  { pattern: /搜索|检索/u, tools: ["companion_web_search"] },
+  { pattern: /读图|看图/u, tools: ["companion_visual"] },
+  { pattern: /流程图|速看|演示|脑图/u, tools: ["companion_visual", "companion_goals_write"] },
+];
+
+/** A denial whose object this turn could actually serve. */
+export function unbackedCapabilityDenials(replyText: string, offeredToolNames: readonly string[]): string[] {
+  if (offeredToolNames.length === 0) return [];
+  const offered = new Set(offeredToolNames);
+  const text = withoutQuotedEvidence(replyText);
+  const denials = new Set<string>();
+  for (const match of text.matchAll(CAPABILITY_DENIAL)) {
+    const phrase = match[0];
+    const object = CAPABILITY_OBJECTS.find(entry => entry.pattern.test(phrase));
+    if (!object) continue;
+    // Flag only when every tool that could serve this object is offered;
+    // otherwise the denial may describe a genuinely missing capability.
+    if (!object.tools.some(tool => offered.has(tool))) continue;
+    denials.add(phrase);
+  }
+  return [...denials];
+}

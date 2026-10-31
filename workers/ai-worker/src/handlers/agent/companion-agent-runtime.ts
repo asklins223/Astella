@@ -4,7 +4,7 @@ import { companionCallFingerprint, companionMalformedToolExhausted, companionRep
   COMPANION_INVALID_TOOL_CALLS_ALLOWED, COMPANION_MALFORMED_TOOL_ATTEMPTS_ALLOWED,
   COMPANION_UNBACKED_CLAIM_RETRIES_ALLOWED } from "./companion-progress-guard.ts";
 import { reviewCompanionInitiativeSpeech } from "../proactive/companion-initiative-speech-review.ts";
-import { claimsApplicationActionCompletion } from "../turn/companion-action-claims.ts";
+import { claimsApplicationActionCompletion, unbackedCapabilityDenials } from "../turn/companion-action-claims.ts";
 import { unverifiedArithmeticResults } from "../turn/companion-dialogue-content.ts";
 import { sql } from "drizzle-orm";
 import { agentTurnInterpretationV1Schema, AGENT_GOAL_EVIDENCE_GUIDANCE_V1 } from "@astella/shared/agent-contracts";
@@ -42,7 +42,7 @@ import { resolveCompanionEntryMode,
 import { companionActionProgressLabel } from "./companion-action-progress.ts";
 import { companionResponseStrategy } from "../turn/companion-response-strategy.ts";
 import { companionStepReasoning, COMPANION_CASUAL_TURN_GUIDANCE } from "../turn/companion-turn-workload.ts";
-import { createCompanionMessageDelivery } from "../turn/companion-message-delivery.ts";
+import { createCompanionMessageDelivery, requestedIndependentMessageCount } from "../turn/companion-message-delivery.ts";
 import { CompanionToolNotExecutedError } from "../tools/companion-tool-outcome.ts";
 import { containsCompanionToolProtocol } from "../tools/companion-tool-protocol-output.ts";
 import { CompanionToolOutputRepairError } from "../tools/companion-tool-output-repair.ts";
@@ -120,7 +120,10 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
   }
   let utterancePublished = false;
   const publishedUtteranceTexts: string[] = [];
-  const messageDelivery = createCompanionMessageDelivery();
+  // The user's stated count, if any, becomes the delivery contract: the tool
+  // description already promises to honour it, so the host must check it too.
+  const messageDelivery = createCompanionMessageDelivery(
+    args.read.initiativeInput ? null : requestedIndependentMessageCount(args.read.userText));
   const event: AgentEventContext = {
     ctx: args.ctx,
     read: args.read,
@@ -1134,7 +1137,12 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
           return material.trim() ? unverifiedArithmeticResults(text, material) : [];
         })()
         : [];
-      if ((unbackedClaims.length > 0 || numericClaims.length > 0)
+      // "系统里没有可用的定时提醒能力" while the tool is right there: the user
+      // is told the product cannot do what it can. Same single correction.
+      const deniedCapabilities = !landedWrites
+        ? unbackedCapabilityDenials(text, toolSurface.offered().map(tool => tool.name))
+        : [];
+      if ((unbackedClaims.length > 0 || numericClaims.length > 0 || deniedCapabilities.length > 0)
         && actionSteerAttempts < COMPANION_UNBACKED_CLAIM_RETRIES_ALLOWED) {
         actionSteerAttempts += 1;
         const availability = toolSurface.offered().map(tool => tool.name);
@@ -1147,13 +1155,16 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
             numericClaims.length > 0
               ? `这些算式的结果在本轮材料里找不到出处：${numericClaims.join("、")}。用 observe.calculate 真的算一次并引用回执，不要心算。`
               : "",
+            deniedCapabilities.length > 0
+              ? `你说这项能力不存在：${deniedCapabilities.join("；")}。但本轮工具里就有能做的，先看清楚工具描述并真的调用；确实做不到再说。`
+              : "",
             `可用工具：${availability.join("、") || "无"}。`,
             "要做就用工具真的做一次并引用回执；做不到或用户没有要求时，如实说明没有完成，不要编造结果。",
           ].filter(Boolean).join("") });
         await finishBoundary(stepId, "failed", sha256Utf8V1(text), "ACTION_NOT_EXECUTED");
         await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta() });
-        logger.warn({ runId: args.read.runId, stepCount, claims: unbackedClaims.length, numbers: numericClaims.length,
-          sample: [...unbackedClaims, ...numericClaims].slice(0, 3) },
+        logger.warn({ runId: args.read.runId, stepCount, claims: unbackedClaims.length, numbers: numericClaims.length, denials: deniedCapabilities.length,
+          sample: [...unbackedClaims, ...numericClaims, ...deniedCapabilities].slice(0, 3) },
           "companion reply claimed unverified work; asked for a real receipt");
         return { kind: "continue" };
       }
