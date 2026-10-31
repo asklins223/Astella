@@ -1114,7 +1114,10 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       // matcher reads only completed forms, and a landed write clears it.
       // Corrections get one shot, the same budget as other unbacked claims.
       const unbackedClaims = !landedWrites
-        ? claimsApplicationActionCompletion(text, { actionRequested: userAskedForAction })
+        ? claimsApplicationActionCompletion(text, {
+          conversationOnly: !userAskedForAction && attention.toolUse === "none",
+          actionRequested: userAskedForAction,
+        })
         : [];
       // Numbers must come from this turn's host material or tool receipts, not
       // from the model's own arithmetic. Same rule as the action claim above:
@@ -1149,7 +1152,8 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
           ].filter(Boolean).join("") });
         await finishBoundary(stepId, "failed", sha256Utf8V1(text), "ACTION_NOT_EXECUTED");
         await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta() });
-        logger.warn({ runId: args.read.runId, stepCount, claims: unbackedClaims.length, numbers: numericClaims.length },
+        logger.warn({ runId: args.read.runId, stepCount, claims: unbackedClaims.length, numbers: numericClaims.length,
+          sample: [...unbackedClaims, ...numericClaims].slice(0, 3) },
           "companion reply claimed unverified work; asked for a real receipt");
         return { kind: "continue" };
       }
