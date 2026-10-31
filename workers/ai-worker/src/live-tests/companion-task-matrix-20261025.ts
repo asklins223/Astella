@@ -184,8 +184,15 @@ try {
   const remember = await turn("memory-save", "记住：我晚上九点以后不想被打扰。");
   const memory = (await db`select id,content from assistant_memory_items
     where workspace_id=${workspaceId} and user_id=${userId} and deleted_at is null order by created_at desc limit 1`)[0];
-  recordCheck("memory-save", Boolean(memory) && /九点|打扰/.test(String(memory?.content))
-    && succeeded(remember, "memory.write.save"), memory ? String(memory.content) : "no memory row");
+  // "九点以后别打扰我" is legitimately kept either as a memory item or as a
+  // participation preference; the agent decides which. A row must exist
+  // somewhere and the write must carry a receipt.
+  const participation = (await db`select markdown from companion_participation_preferences
+    where user_id=${userId} limit 1`)[0];
+  const stored = memory ? String(memory.content) : String(participation?.markdown ?? "");
+  recordCheck("memory-save", Boolean(memory || participation) && /九点|打扰|21/.test(stored)
+    && (succeeded(remember, "memory.write.save") || succeeded(remember, "attention.write.save_participation")),
+    stored ? stored.slice(0, 60) : "no memory or preference row");
   const recall = await turn("memory-recall", "我晚上几点以后不想被打扰？");
   recordCheck("memory-recall", /九点/.test(recall.visible), recall.visible.slice(0, 80));
 
