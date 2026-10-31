@@ -43,6 +43,7 @@ function input(): CompanionRunDoctorProjectionInput {
         included: [{ id: "persona", characters: 900 }],
         omitted: [],
       },
+      deliveryReceipt: null,
     },
     job: {
       id: "00000000-0000-4000-8000-000000000003",
@@ -197,4 +198,26 @@ test("没有成长数据时投影成 null：没有证据不说「一切正常」
   const report = projectCompanionRunDoctorV1(input());
   assert.equal(report.growth, null);
   assert.equal(report.markdown.includes("## 成长闭环"), false);
+});
+
+test("the run's own delivery account is projected, and absence stays null", () => {
+  const withReceipt = input();
+  withReceipt.run.deliveryReceipt = {
+    outcome: "completed",
+    settledAt: "2026-10-01T00:00:09.000Z",
+    requirements: [{ requirement: "把复盘写成三条", fulfilled: true, evidenceCallIds: ["call_write"] }],
+    actions: [{ receiptId: "call_write" }],
+    evidence: [],
+  };
+  const report = projectCompanionRunDoctorV1(withReceipt);
+  assert.equal(report.delivery?.outcome, "completed");
+  assert.equal(report.delivery?.requirements[0]?.requirement, "把复盘写成三条");
+  assert.deepEqual(report.delivery?.actionReceiptIds, ["call_write"]);
+
+  // No account is not the same as success: absent or malformed input must read null.
+  for (const value of [null, undefined, {}, { outcome: "invented" }, "text", 42]) {
+    const absent = input();
+    absent.run.deliveryReceipt = value;
+    assert.equal(projectCompanionRunDoctorV1(absent).delivery, null, JSON.stringify(value));
+  }
 });

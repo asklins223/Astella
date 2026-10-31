@@ -272,3 +272,26 @@ test("省略 outcome、requirements 与空清单时只交付当前草稿，工�
   assert.deepEqual(validateCompanionFinish({} as CompanionFinishArguments,messages),{ok:true,text,writesLanded:false});
   assert.equal(validateCompanionFinish({} as CompanionFinishArguments,messages,{requireRequirements:true}).ok,false);
 });
+
+/**
+ * The delivery contract replaced the wording wordlists: the same sentence must
+ * fail without a receipt and pass with one. If this ever breaks, someone has
+ * reintroduced phrase matching — that is the regression this guards.
+ */
+test("the same claim is decided by receipts, not by its wording", () => {
+  const claim = "流程图已经画好了，你可以在画板上看到。";
+  const requirement = "把复习流程画成流程图";
+  const empty = [{ role: "user" as const, content: requirement }];
+  const drawn = [
+    { role: "user" as const, content: requirement },
+    { role: "assistant" as const, content: "", toolCalls: [{ id: "diagram-1", name: "companion_visual", arguments: { action: "diagram" } }] },
+    { role: "tool" as const, toolCallId: "diagram-1", content: JSON.stringify({ ok: true, receiptId: "diagram-1" }) },
+  ];
+  const finish = (evidenceCallIds: string[]) => ({ text: claim, actions: [], evidence: [],
+    outcome: "completed" as const, requirements: [{ requirement, fulfilled: true, evidenceCallIds }] });
+
+  assert.equal(validateCompanionFinish(finish(["diagram-1"]), empty, { requireRequirements: true }).ok, false,
+    "no receipt for the diagram this turn");
+  assert.equal(validateCompanionFinish(finish(["diagram-1"]), drawn, { requireRequirements: true }).ok, true,
+    "the same words are fine once the receipt exists");
+});

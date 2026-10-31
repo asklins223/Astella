@@ -196,6 +196,14 @@ export const companionTurnRuns = pgTable(
      */
     contextPressure: jsonb("context_pressure"),
     /**
+     * `companion_finish` 校验通过后的自述：outcome 与逐条 requirement（含引用的本轮回执 id）。
+     *
+     * 以前这份自述只用来判对错，判完就丢了——「这一轮自己说做了什么、引了哪个回执」只能
+     * 靠翻账本重建。留下它，doctor 才能直接回答「谁干的」。null 表示本轮没有结构化自述
+     * （纯读取或寒暄），不代表全部完成。
+     */
+    deliveryReceipt: jsonb("delivery_receipt").$type<Record<string, unknown> | null>(),
+    /**
      * 每轮放行闸的路由读数（迁移 0442）。开放 JSONB：分类器 source/耗时/是否对冲，
      * 以及首步被放行前等了多久。只记读数，不含任何对话文本；L1 的字段以后加进同一对象。
      */

@@ -3221,6 +3221,13 @@
       "when": 1793096403000,
       "tag": "0464_note_rewrite_locks",
       "breakpoints": true
+    },
+    {
+      "idx": 460,
+      "version": "7",
+      "when": 1793096404000,
+      "tag": "0465_companion_delivery_receipt",
+      "breakpoints": true
     }
   ]
 }

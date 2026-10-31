@@ -188,6 +188,23 @@ export const companionRunDoctorV1Schema = z.object({
     latestRetainedEventSeq: z.number().int().nonnegative().nullable(),
     latestRetainedEventAt: z.string().datetime().nullable(),
   }).strict(),
+  /**
+   * 本轮自己的交付自述（`companion_finish` 校验通过后才写入）。
+   *
+   * null 明确表示「没有结构化自述」——纯读取或寒暄的轮次就是这样，不能读成「全部完成」。
+   * 每条 fulfilled 的 requirement 都带本轮真实回执 id，因此这里可以直接回答
+   * 「谁干了什么、拿什么证明」。
+   */
+  delivery: z.object({
+    outcome: z.enum(["completed", "partial", "needs_input", "failed"]),
+    settledAt: z.string().datetime().nullable(),
+    requirements: z.array(z.object({
+      requirement: z.string().min(1).max(2_000),
+      fulfilled: z.boolean(),
+      evidenceCallIds: z.array(z.string().min(1).max(200)).max(64),
+    }).strict()).max(64),
+    actionReceiptIds: z.array(z.string().min(1).max(200)).max(64),
+  }).strict().nullable(),
   failureSpans: z.array(z.object({
     failureClass: companionRunFailureClassV1Schema,
     startedAt: z.string().datetime(),

@@ -50,6 +50,8 @@ export interface CompanionRunDoctorRunRow {
   personaProfileRevision: number | null;
   /** 44 的装配回执：哪些来源真进了这一次请求。 */
   contextAssemblyReceipt: unknown;
+  /** `companion_finish` 校验通过后的自述（迁移 0465）。 */
+  deliveryReceipt: unknown;
   stepCount: number;
   toolCallCount: number;
   agentElapsedMs: number;
@@ -297,6 +299,32 @@ function describeGrowthLoop(growth: CompanionRunDoctorV1["growth"]): string[] {
  * Raw prompt context, tool arguments/results, checkpoints, reasoning handles,
  * job payloads and provider error text are deliberately never projected.
  */
+/** The stored account was validated at write time; read it defensively so a
+ * shape change degrades to null (no account) instead of claiming success. */
+function projectDeliveryReceipt(value: unknown): CompanionRunDoctorV1["delivery"] {
+  const record = value !== null && typeof value === "object" ? value as Record<string, unknown> : null;
+  if (!record) return null;
+  const outcome = record.outcome;
+  if (outcome !== "completed" && outcome !== "partial" && outcome !== "needs_input" && outcome !== "failed") return null;
+  const requirements = Array.isArray(record.requirements) ? record.requirements.flatMap(item => {
+    const row = item !== null && typeof item === "object" ? item as Record<string, unknown> : null;
+    if (!row || typeof row.requirement !== "string" || typeof row.fulfilled !== "boolean") return [];
+    return [{
+      requirement: row.requirement.slice(0, 2_000),
+      fulfilled: row.fulfilled,
+      evidenceCallIds: Array.isArray(row.evidenceCallIds)
+        ? row.evidenceCallIds.filter((id): id is string => typeof id === "string").slice(0, 64) : [],
+    }];
+  }).slice(0, 64) : [];
+  const receiptIds = (items: unknown) => Array.isArray(items) ? items.flatMap(item => {
+    const row = item !== null && typeof item === "object" ? item as Record<string, unknown> : null;
+    return row && typeof row.receiptId === "string" ? [row.receiptId] : [];
+  }).slice(0, 64) : [];
+  const settledAt = typeof record.settledAt === "string" && Number.isFinite(Date.parse(record.settledAt))
+    ? new Date(record.settledAt).toISOString() : null;
+  return { outcome, settledAt, requirements, actionReceiptIds: receiptIds(record.actions) };
+}
+
 export function projectCompanionRunDoctorV1(input: CompanionRunDoctorProjectionInput): CompanionRunDoctorV1 {
   const budgetResult = companionAgentBudgetSnapshotV1Schema.safeParse(input.run.budgetSnapshot);
   const budget = budgetResult.success
@@ -427,6 +455,7 @@ export function projectCompanionRunDoctorV1(input: CompanionRunDoctorProjectionI
       latestRetainedEventSeq: input.retainedEvent.latestSeq,
       latestRetainedEventAt: iso(input.retainedEvent.latestAt),
     },
+    delivery: projectDeliveryReceipt(input.run.deliveryReceipt),
     failureSpans,
     growth,
     findings,
@@ -468,6 +497,7 @@ export async function loadCompanionRunDoctorV1(
     jobId: companionTurnRuns.jobId,
     personaProfileRevision: companionTurnRuns.personaProfileRevision,
     contextAssemblyReceipt: companionTurnRuns.contextAssemblyReceipt,
+    deliveryReceipt: companionTurnRuns.deliveryReceipt,
   }).from(companionTurnRuns).where(and(
     eq(companionTurnRuns.id, runId),
     eq(companionTurnRuns.workspaceId, scope.workspaceId),

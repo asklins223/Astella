@@ -1365,7 +1365,17 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
           writesLanded: verdict.writesLanded || writesNow,
           ...(result.reasoning && result.reasoning.length > 0 ? { reasoning: result.reasoning } : {}) };
         await finishBoundary(stepId, "succeeded", sha256Utf8V1(text), undefined, completedResult);
+        // Keep the validated account on the run: outcome plus every requirement
+        // with the receipts it cited. This is the answer to "who did what",
+        // which used to require reconstructing from the ledger after the fact.
         await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta(),
+          deliveryReceipt: {
+            outcome: (parsedArgs.data as CompanionFinishArguments).outcome ?? "completed",
+            requirements: (parsedArgs.data as CompanionFinishArguments).requirements ?? [],
+            actions: (parsedArgs.data as CompanionFinishArguments).actions ?? [],
+            evidence: (parsedArgs.data as CompanionFinishArguments).evidence ?? [],
+            settledAt: new Date().toISOString(),
+          },
           ...args.contextReceipts?.runMetaPatch() });
         return { kind: "settled", result: completedResult };
       }

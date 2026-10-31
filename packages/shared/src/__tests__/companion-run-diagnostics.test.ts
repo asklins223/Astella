@@ -58,6 +58,7 @@ const report = {
     latestRetainedEventAt: "2026-10-01T00:00:02.000Z",
   },
   findings: [],
+  delivery: null,
   failureSpans: [],
   growth: null,
   markdown: "# 伴星运行诊断",
@@ -116,4 +117,21 @@ test("成长闭环那一格带出回顾、人格与装配三段事实，且同�
   }).success, false);
   // 三格各自可缺省：读不到就是 null，不投影成「一切正常」。
   assert.equal(companionRunDoctorGrowthV1Schema.parse({ reflection: null, persona: null, context: null }).reflection, null);
+});
+
+/** The run's own account: nullable means "no structured account", never success. */
+test("delivery account is accepted when shaped and rejected when it leaks or overflows", () => {
+  const account = {
+    outcome: "completed" as const,
+    settledAt: "2026-10-01T00:00:09.000Z",
+    requirements: [{ requirement: "把复盘写成三条", fulfilled: true, evidenceCallIds: ["call-1"] }],
+    actionReceiptIds: ["call-1"],
+  };
+  assert.deepEqual(companionRunDoctorV1Schema.parse({ ...report, delivery: account }).delivery, account);
+  assert.equal(companionRunDoctorV1Schema.parse(report).delivery, null);
+  for (const bad of [
+    { ...account, outcome: "done" },
+    { ...account, requirements: [{ requirement: "x", fulfilled: true, evidenceCallIds: [], rawPrompt: "秘密" }] },
+    { ...account, requirements: Array.from({ length: 65 }, () => ({ requirement: "r", fulfilled: false, evidenceCallIds: [] })) },
+  ]) assert.throws(() => companionRunDoctorV1Schema.parse({ ...report, delivery: bad }));
 });
