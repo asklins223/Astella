@@ -4,8 +4,6 @@ import { companionCallFingerprint, companionMalformedToolExhausted, companionRep
   COMPANION_INVALID_TOOL_CALLS_ALLOWED, COMPANION_MALFORMED_TOOL_ATTEMPTS_ALLOWED,
   COMPANION_UNBACKED_CLAIM_RETRIES_ALLOWED } from "./companion-progress-guard.ts";
 import { reviewCompanionInitiativeSpeech } from "../proactive/companion-initiative-speech-review.ts";
-import { claimsApplicationActionCompletion, unbackedCapabilityDenials, claimsEmptyStoredData } from "../turn/companion-action-claims.ts";
-import { unverifiedArithmeticResults } from "../turn/companion-dialogue-content.ts";
 import { sql } from "drizzle-orm";
 import { agentTurnInterpretationV1Schema, AGENT_GOAL_EVIDENCE_GUIDANCE_V1 } from "@astella/shared/agent-contracts";
 import { companionEditedNoteV1Schema } from "@astella/shared/companion-note-authoring-contracts";
@@ -279,6 +277,18 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
    * independent message still needs a finish that cites it. A turn that only
    * read material has nothing to cite and can deliver its prose directly. */
   const companionWriteNames = companionWriteToolNames(definitions);
+  /**
+   * Every turn that could produce work must declare its outcome through
+   * `companion_finish`; prose alone cannot settle it. The signal is the tool
+   * surface, not the wording: if this turn was offered a tool that changes
+   * state or produces an artifact, "I did it" has to cite that tool's receipt.
+   * A read-only or greeting turn has nothing to cite and still answers in
+   * prose, so plain conversation keeps its single round trip.
+   */
+  /** Actions decide the delivery contract: a landed write or a pending
+   * independent message needs a finish that cites it. Whether prose may settle
+   * a work-capable turn is decided at settlement, where the tool surface and
+   * this run's receipts are both known. */
   const companionDeliveryContractRequired = () => companionActionResultRecorded(messages, companionWriteNames)
     || messageDelivery.incomplete();
 
@@ -1056,6 +1066,30 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       logger.warn({ runId: args.read.runId, stepCount }, actionGate.bypassNote);
     }
     if (calls.length === 0) {
+      // Prose cannot settle a turn that had work-capable tools: the model must
+      // declare an outcome through `companion_finish`, where a "completed"
+      // requirement has to cite a receipt from this run. Without this, "图已经
+      // 画好了" with no diagram, or "没有提醒能力" while the tool is offered,
+      // reaches the user as fact. Reads-only and greeting turns cite nothing,
+      // so their finish validates on the first try and no wording is inspected.
+      const workCapableOffered = definitions
+        .some(tool => tool.riskClass !== "read" || DELIVERABLE_READ_TOOL_NAMES.has(tool.name));
+      const finishSettled = messages.some(message => message.role === "tool"
+        && message.toolCalls?.some(call => call.name === "companion_finish"));
+      if (workCapableOffered && !finishSettled && !args.read.initiativeInput) {
+        if (actionSteerAttempts++ < COMPANION_UNBACKED_CLAIM_RETRIES_ALLOWED) {
+          steerSwapToFallback = true;
+          messages = companionDeliveryRepairMessages({ messages, currentRequest, alreadyDisplayed: stepEmitted,
+            result: { content: String(result.content ?? "") },
+            instruction: "交付前先调用 companion_finish 声明本轮结果：outcome 说明整体是否完成，requirements 逐条对照用户要求；"
+              + "标为 fulfilled 的条目必须引用本轮真实成功的工具回执 id，本轮没有做过的事不要标成完成，也不要在正文里声称已经做了。"
+              + AGENT_GOAL_EVIDENCE_GUIDANCE_V1 + "草稿正确时省略 text，宿主保留原稿。" });
+          await finishBoundary(stepId, "failed", sha256Utf8V1(String(result.content ?? "")), "FINISH_CONTRACT_INCOMPLETE");
+          await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta() });
+          logger.warn({ runId: args.read.runId, stepCount }, "prose tried to settle a work-capable turn; required a finish contract");
+          return { kind: "continue" };
+        }
+      }
       // ④-b：可见正文是**每一步 content 的顺序拼接**（工具步前的开场白也在里面）。
       // 拼接口径必须与流式下发的分段符一致，否则已下发前缀与最终正文分叉。
       // 判据用 length（不是 trim）：只要这一步吐出过字符，它的分段符就已经在下发原文里。
@@ -1110,73 +1144,6 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
           },
           "companion agent repeated an earlier segment in the visible reply",
         );
-      }
-      // A reply may claim work it never did ("图已经画好了", "已保存"). With no
-      // write or deliverable receipt this round, that claim reaches the user as
-      // a finished artifact that does not exist. Structure decides: the claim
-      // matcher reads only completed forms, and a landed write clears it.
-      // Corrections get one shot, the same budget as other unbacked claims.
-      const unbackedClaims = !landedWrites
-        ? claimsApplicationActionCompletion(text, {
-          conversationOnly: !userAskedForAction && attention.toolUse === "none",
-          actionRequested: userAskedForAction,
-        })
-        : [];
-      // Numbers must come from this turn's host material or tool receipts, not
-      // from the model's own arithmetic. Same rule as the action claim above:
-      // structure decides, and only prose that has not been streamed yet is
-      // corrected (a delivered prefix cannot be retracted).
-      const numericClaims = true
-        ? (() => {
-          const material = [
-            ...(typeof args.read.hereAndNow === "string" ? [args.read.hereAndNow] : []),
-            ...(args.read.pageContext ? [JSON.stringify(args.read.pageContext)] : []),
-            ...messages.filter(message => message.role === "tool").map(message =>
-              typeof message.content === "string" ? message.content : JSON.stringify(message.content)),
-          ].join("\n");
-          return material.trim() ? unverifiedArithmeticResults(text, material) : [];
-        })()
-        : [];
-      // "系统里没有可用的定时提醒能力" while the tool is right there: the user
-      // is told the product cannot do what it can. Same single correction.
-      const deniedCapabilities = !landedWrites
-        ? unbackedCapabilityDenials(text, toolSurface.offered().map(tool => tool.name))
-        : [];
-      // "没有学习记录" said without reading anything. Only for turns that read
-      // nothing this round; a turn that actually queried has a receipt.
-      const observedReads = messages.some(message => message.role === "tool")
-        || compactedEvidence.some(message => message.role === "tool");
-      const emptyDataClaims = !landedWrites && !observedReads ? claimsEmptyStoredData(text) : [];
-      if ((unbackedClaims.length > 0 || numericClaims.length > 0 || deniedCapabilities.length > 0
-          || emptyDataClaims.length > 0)
-        && actionSteerAttempts < COMPANION_UNBACKED_CLAIM_RETRIES_ALLOWED) {
-        actionSteerAttempts += 1;
-        const availability = toolSurface.offered().map(tool => tool.name);
-        messages = companionDeliveryRepairMessages({ messages, currentRequest, alreadyDisplayed: false,
-          result: { content: text },
-          instruction: [
-            unbackedClaims.length > 0
-              ? `你刚才的话声称已经完成了这些操作/产出：${unbackedClaims.join("；")}。本轮没有对应的真实工具回执，不能这样说。`
-              : "",
-            numericClaims.length > 0
-              ? `这些算式的结果在本轮材料里找不到出处：${numericClaims.join("、")}。用 observe.calculate 真的算一次并引用回执，不要心算。`
-              : "",
-            deniedCapabilities.length > 0
-              ? `你说这项能力不存在：${deniedCapabilities.join("；")}。但本轮工具里就有能做的，先看清楚工具描述并真的调用；确实做不到再说。`
-              : "",
-            emptyDataClaims.length > 0
-              ? `你在没有查询的情况下说没有数据：${emptyDataClaims.join("；")}。先用 observe 读真实统计再回答；读出来是空才是空。`
-              : "",
-            `可用工具：${availability.join("、") || "无"}。`,
-            "要做就用工具真的做一次并引用回执；做不到或用户没有要求时，如实说明没有完成，不要编造结果。",
-          ].filter(Boolean).join("") });
-        await finishBoundary(stepId, "failed", sha256Utf8V1(text), "ACTION_NOT_EXECUTED");
-        await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta() });
-        logger.warn({ runId: args.read.runId, stepCount, claims: unbackedClaims.length, numbers: numericClaims.length, denials: deniedCapabilities.length,
-          emptyData: emptyDataClaims.length,
-          sample: [...unbackedClaims, ...numericClaims, ...deniedCapabilities].slice(0, 3) },
-          "companion reply claimed unverified work; asked for a real receipt");
-        return { kind: "continue" };
       }
       const completedResult = { status: "completed" as const, text, blocks: richBlocks, memoryRefs: [], writesLanded: landedWrites,
         ...(result.reasoning && result.reasoning.length > 0 ? { reasoning: result.reasoning } : {}) };
@@ -1761,4 +1728,9 @@ import {
   readRunMeta,
   resolveAgentStepCountForResume,
   updateRunMeta,
-} from "./companion-agent-events.ts";
+} from "./companion-agent-events.ts";/** Reads that still produce something the user asked to see. A diagram turn
+ * settles through the finish contract like a write, because telling the user a
+ * chart exists is a delivery claim. */
+const DELIVERABLE_READ_TOOL_NAMES = new Set(["companion_visual", "companion_goals_write"]);
+
+
