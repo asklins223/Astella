@@ -4,7 +4,7 @@ import { companionCallFingerprint, companionMalformedToolExhausted, companionRep
   COMPANION_INVALID_TOOL_CALLS_ALLOWED, COMPANION_MALFORMED_TOOL_ATTEMPTS_ALLOWED,
   COMPANION_UNBACKED_CLAIM_RETRIES_ALLOWED } from "./companion-progress-guard.ts";
 import { reviewCompanionInitiativeSpeech } from "../proactive/companion-initiative-speech-review.ts";
-import { claimsApplicationActionCompletion, unbackedCapabilityDenials } from "../turn/companion-action-claims.ts";
+import { claimsApplicationActionCompletion, unbackedCapabilityDenials, claimsEmptyStoredData } from "../turn/companion-action-claims.ts";
 import { unverifiedArithmeticResults } from "../turn/companion-dialogue-content.ts";
 import { sql } from "drizzle-orm";
 import { agentTurnInterpretationV1Schema, AGENT_GOAL_EVIDENCE_GUIDANCE_V1 } from "@astella/shared/agent-contracts";
@@ -1142,7 +1142,13 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       const deniedCapabilities = !landedWrites
         ? unbackedCapabilityDenials(text, toolSurface.offered().map(tool => tool.name))
         : [];
-      if ((unbackedClaims.length > 0 || numericClaims.length > 0 || deniedCapabilities.length > 0)
+      // "没有学习记录" said without reading anything. Only for turns that read
+      // nothing this round; a turn that actually queried has a receipt.
+      const observedReads = messages.some(message => message.role === "tool")
+        || compactedEvidence.some(message => message.role === "tool");
+      const emptyDataClaims = !landedWrites && !observedReads ? claimsEmptyStoredData(text) : [];
+      if ((unbackedClaims.length > 0 || numericClaims.length > 0 || deniedCapabilities.length > 0
+          || emptyDataClaims.length > 0)
         && actionSteerAttempts < COMPANION_UNBACKED_CLAIM_RETRIES_ALLOWED) {
         actionSteerAttempts += 1;
         const availability = toolSurface.offered().map(tool => tool.name);
@@ -1158,12 +1164,16 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
             deniedCapabilities.length > 0
               ? `你说这项能力不存在：${deniedCapabilities.join("；")}。但本轮工具里就有能做的，先看清楚工具描述并真的调用；确实做不到再说。`
               : "",
+            emptyDataClaims.length > 0
+              ? `你在没有查询的情况下说没有数据：${emptyDataClaims.join("；")}。先用 observe 读真实统计再回答；读出来是空才是空。`
+              : "",
             `可用工具：${availability.join("、") || "无"}。`,
             "要做就用工具真的做一次并引用回执；做不到或用户没有要求时，如实说明没有完成，不要编造结果。",
           ].filter(Boolean).join("") });
         await finishBoundary(stepId, "failed", sha256Utf8V1(text), "ACTION_NOT_EXECUTED");
         await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta() });
         logger.warn({ runId: args.read.runId, stepCount, claims: unbackedClaims.length, numbers: numericClaims.length, denials: deniedCapabilities.length,
+          emptyData: emptyDataClaims.length,
           sample: [...unbackedClaims, ...numericClaims, ...deniedCapabilities].slice(0, 3) },
           "companion reply claimed unverified work; asked for a real receipt");
         return { kind: "continue" };

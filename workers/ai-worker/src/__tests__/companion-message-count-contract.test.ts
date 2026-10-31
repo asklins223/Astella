@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createCompanionMessageDelivery, requestedIndependentMessageCount } from "../handlers/turn/companion-message-delivery.ts";
-import { unbackedCapabilityDenials } from "../handlers/turn/companion-action-claims.ts";
+import { unbackedCapabilityDenials, claimsEmptyStoredData } from "../handlers/turn/companion-action-claims.ts";
 
 test("an explicitly stated number of messages becomes the delivery contract", () => {
   for (const [text, expected] of [
@@ -34,4 +34,13 @@ test("a capability denial is flagged only when this turn could serve it", () => 
   // Ordinary talk is not a denial.
   for (const text of ["今天有点累，不想说话。", "这个我记住了。"])
     assert.deepEqual(unbackedCapabilityDenials(text, ["companion_attention_write"]), [], text);
+});
+
+test("claiming the data is empty without reading it is caught", () => {
+  for (const text of [
+    "最近七天没有留下学习记录，掌握度、复习队列和学习时长都是空的。",
+    "我这边查不到你的学习数据。",
+  ]) assert.ok(claimsEmptyStoredData(text).length > 0, text);
+  for (const text of ["今天没留下一句话也没关系。", "这篇笔记我还没读到那一节。"])
+    assert.deepEqual(claimsEmptyStoredData(text), [], text);
 });

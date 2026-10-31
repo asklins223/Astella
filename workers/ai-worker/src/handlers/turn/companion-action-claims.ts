@@ -193,3 +193,21 @@ export function unbackedCapabilityDenials(replyText: string, offeredToolNames: r
   }
   return [...denials];
 }
+
+/**
+ * "最近七天没有留下学习记录" — a negative fact about stored data, stated
+ * without reading it. 2026-10-31 live matrix: the workspace had a note and a
+ * reminder, and the reply told the user everything was empty. A knowledge
+ * question is not a data query: the host cannot know from the sentence alone,
+ * so this only routes the turn back to the observation tool once; the model
+ * still decides what the data says.
+ */
+const EMPTY_DATA_ASSERTION =
+  /(?:没有|没有任何|没有留下|没留下|查不到|看不到|一条也没有)[^。！？\n]{0,12}(?:学习)?(?:记录|数据|笔记|时长|统计|掌握度|复习)/gu;
+
+export function claimsEmptyStoredData(replyText: string): string[] {
+  const text = withoutQuotedEvidence(replyText);
+  const claims = new Set<string>();
+  for (const match of text.matchAll(EMPTY_DATA_ASSERTION)) claims.add(match[0]);
+  return [...claims];
+}
