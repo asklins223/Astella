@@ -18,7 +18,7 @@
 
 [中文](README.md) · [English](README.en.md) · [使用与开发手册](docs/guide/README.md)
 
-服务端版本：`s-v2.0.13` · [release/version.json](release/version.json)<br />
+服务端版本：`s-v2.0.14` · [release/version.json](release/version.json)<br />
 桌面客户端版本：`c-v2.0.2` · [apps/desktop-client/version.json](apps/desktop-client/version.json)
 
 > 手机端（iOS SwiftUI / Android Compose）已于 2026-10-24 拆分为独立私有仓库 [asklins223/astella-mobile](https://github.com/asklins223/astella-mobile)，本仓库不再包含 `apps/mobile-client`。
