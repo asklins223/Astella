@@ -1,4 +1,7 @@
 import { OBJECT_TRANSFER_HEADER } from "@astella/shared/object-transfer-contracts";
+
+/** 413 的那句话说的是**这一条路由自己**的上限，不是一个写死的数字。 */
+const tooLargeMessage = (maxBytes: number) => `file too large (max ${Math.round(maxBytes / 1024 / 1024)}MB)`;
 import { SOURCE_IMAGE_MAX_BYTES } from "@astella/shared/source-image-contracts";
 import { COMPANION_FILE_MAX_BYTES } from "@astella/shared/companion-file-contracts";
 /**
@@ -138,7 +141,7 @@ export async function uploadRoutes(
       file = await req.file({ limits: { fileSize: MAX_IMAGE_SIZE } });
     } catch (err) {
       if (fileTooLargeError(err)) {
-        return reply.code(413).send({ error: "file too large (max 10MB)", code: "FST_REQ_FILE_TOO_LARGE" });
+        return reply.code(413).send({ error: tooLargeMessage(MAX_IMAGE_SIZE), code: "FST_REQ_FILE_TOO_LARGE" });
       }
       throw err;
     }
@@ -171,11 +174,11 @@ export async function uploadRoutes(
         return reply.code(415).send({ error: "unsupported file type" });
       case "file_read_too_large":
         drainMultipartFile(file);
-        return reply.code(413).send({ error: "file too large (max 10MB)", code: "FST_REQ_FILE_TOO_LARGE" });
+        return reply.code(413).send({ error: tooLargeMessage(MAX_IMAGE_SIZE), code: "FST_REQ_FILE_TOO_LARGE" });
       case "content_type_mismatch":
         return reply.code(415).send({ error: "file content does not match declared type" });
       case "too_large":
-        return reply.code(413).send({ error: "file too large (max 10MB)" });
+        return reply.code(413).send({ error: tooLargeMessage(MAX_IMAGE_SIZE) });
       case "dimensions_undecodable":
         return reply.code(415).send({ error: "image dimensions could not be decoded" });
       case "pixel_count_exceeded":
@@ -211,7 +214,7 @@ export async function uploadRoutes(
       file = await req.file({ limits: { fileSize: MAX_IMAGE_SIZE } });
     } catch (err) {
       if (fileTooLargeError(err)) {
-        return reply.code(413).send({ error: "file too large (max 10MB)", code: "FST_REQ_FILE_TOO_LARGE" });
+        return reply.code(413).send({ error: tooLargeMessage(MAX_IMAGE_SIZE), code: "FST_REQ_FILE_TOO_LARGE" });
       }
       throw err;
     }
@@ -227,11 +230,11 @@ export async function uploadRoutes(
         return reply.code(415).send({ error: "unsupported file type" });
       case "file_read_too_large":
         drainMultipartFile(file);
-        return reply.code(413).send({ error: "file too large (max 10MB)", code: "FST_REQ_FILE_TOO_LARGE" });
+        return reply.code(413).send({ error: tooLargeMessage(MAX_IMAGE_SIZE), code: "FST_REQ_FILE_TOO_LARGE" });
       case "content_type_mismatch":
         return reply.code(415).send({ error: "file content does not match declared type" });
       case "too_large":
-        return reply.code(413).send({ error: "file too large (max 10MB)" });
+        return reply.code(413).send({ error: tooLargeMessage(MAX_IMAGE_SIZE) });
       case "dimensions_undecodable":
         return reply.code(415).send({ error: "image dimensions could not be decoded" });
       case "pixel_count_exceeded":
@@ -267,7 +270,7 @@ export async function uploadRoutes(
       file = await req.file({ limits: { fileSize: COMPANION_FILE_MAX_BYTES } });
     } catch (err) {
       if (fileTooLargeError(err)) {
-        return reply.code(413).send({ error: "file too large (max 20MB)", code: "FST_REQ_FILE_TOO_LARGE" });
+        return reply.code(413).send({ error: tooLargeMessage(COMPANION_FILE_MAX_BYTES), code: "FST_REQ_FILE_TOO_LARGE" });
       }
       throw err;
     }
@@ -286,11 +289,11 @@ export async function uploadRoutes(
         return reply.code(415).send({ error: "unsupported file type (pdf/docx/txt/md)" });
       case "file_read_too_large":
         drainMultipartFile(file);
-        return reply.code(413).send({ error: "file too large (max 20MB)", code: "FST_REQ_FILE_TOO_LARGE" });
+        return reply.code(413).send({ error: tooLargeMessage(COMPANION_FILE_MAX_BYTES), code: "FST_REQ_FILE_TOO_LARGE" });
       case "content_type_mismatch":
         return reply.code(415).send({ error: "file content does not match declared type" });
       case "too_large":
-        return reply.code(413).send({ error: "file too large (max 20MB)" });
+        return reply.code(413).send({ error: tooLargeMessage(COMPANION_FILE_MAX_BYTES) });
       case "storage_upload_failed":
         return reply.code(503).send({ error: "failed to upload file" });
     }
@@ -323,7 +326,7 @@ export async function uploadRoutes(
       if (fileTooLargeError(err)) {
         return reply.code(413).send({
           error: "file too large",
-          message: `图片超过 ${Math.floor(SOURCE_IMAGE_MAX_BYTES / 1024 / 1024)} MB，笔记里显示不出来，请先压缩再导入`,
+          message: `图片超过 ${Math.floor(SOURCE_IMAGE_MAX_BYTES / 1024 / 1024)} MB，请先压缩再导入`,
           code: "FST_REQ_FILE_TOO_LARGE",
         });
       }
@@ -343,14 +346,14 @@ export async function uploadRoutes(
         drainMultipartFile(file);
         return reply.code(413).send({
           error: "file too large",
-          message: `图片超过 ${Math.floor(SOURCE_IMAGE_MAX_BYTES / 1024 / 1024)} MB，笔记里显示不出来，请先压缩再导入`,
+          message: `图片超过 ${Math.floor(SOURCE_IMAGE_MAX_BYTES / 1024 / 1024)} MB，请先压缩再导入`,
         });
       case "content_type_mismatch":
         return reply.code(415).send({ error: "file content does not match declared type" });
       case "too_large":
         return reply.code(413).send({
           error: "file too large",
-          message: `图片超过 ${Math.floor(SOURCE_IMAGE_MAX_BYTES / 1024 / 1024)} MB，笔记里显示不出来，请先压缩再导入`,
+          message: `图片超过 ${Math.floor(SOURCE_IMAGE_MAX_BYTES / 1024 / 1024)} MB，请先压缩再导入`,
         });
       case "dimensions_undecodable":
         return reply.code(415).send({ error: "image dimensions could not be decoded" });
@@ -387,7 +390,7 @@ export async function uploadRoutes(
     } catch (err) {
       // R3：req.file() 超限抛 FST_REQ_FILE_TOO_LARGE → 413（非 500）。
       if (fileTooLargeError(err)) {
-        return reply.code(413).send({ error: "file too large (max 10MB)", code: "FST_REQ_FILE_TOO_LARGE" });
+        return reply.code(413).send({ error: tooLargeMessage(MAX_AVATAR_SIZE), code: "FST_REQ_FILE_TOO_LARGE" });
       }
       throw err;
     }
@@ -408,11 +411,11 @@ export async function uploadRoutes(
         return reply.code(415).send({ error: "unsupported file type" });
       case "file_read_too_large":
         drainMultipartFile(file);
-        return reply.code(413).send({ error: "file too large (max 10MB)", code: "FST_REQ_FILE_TOO_LARGE" });
+        return reply.code(413).send({ error: tooLargeMessage(MAX_AVATAR_SIZE), code: "FST_REQ_FILE_TOO_LARGE" });
       case "content_type_mismatch":
         return reply.code(415).send({ error: "file content does not match declared type" });
       case "too_large":
-        return reply.code(413).send({ error: "file too large (max 10MB)" });
+        return reply.code(413).send({ error: tooLargeMessage(MAX_AVATAR_SIZE) });
       case "dimensions_undecodable":
         return reply.code(415).send({ error: "image dimensions could not be decoded" });
       case "pixel_count_exceeded":

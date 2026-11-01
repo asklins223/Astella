@@ -4,10 +4,8 @@ import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { notes } from "@astella/shared/db-schema/note";
-import { MAX_SOURCE_TEXT_BYTES, objectTransferRequestSchema, objectTransferUploadSchema, type ObjectTransferRequest } from "@astella/shared/object-transfer-contracts";
-import { AVATAR_MAX_BYTES } from "@astella/shared/desktop-ipc-contracts";
-import { COMPANION_FILE_MAX_BYTES, COMPANION_FILE_MIME_TYPES } from "@astella/shared/companion-file-contracts";
-import { SOURCE_IMAGE_MAX_BYTES } from "@astella/shared/source-image-contracts";
+import { TRANSFER_MAX_BYTES, objectTransferRequestSchema, objectTransferUploadSchema, type ObjectTransferRequest } from "@astella/shared/object-transfer-contracts";
+import { COMPANION_FILE_MIME_TYPES } from "@astella/shared/companion-file-contracts";
 import { db, withWorkspaceTransaction, scopeOfSession, type WorkspaceTransactionContext } from "../../db/client.ts";
 import { requireSession, isWorkspaceOwner } from "../identity/middleware.ts";
 import { parseBody } from "../../lib/validate.ts";
@@ -39,14 +37,11 @@ export function validateTransferPurpose(request: ObjectTransferRequest): void {
     || request.purpose === "avatar" || request.purpose === "markdown_import_image";
   if (image && !["image/png", "image/jpeg", "image/gif", "image/webp"].includes(request.mimeType))
     throw Object.assign(new Error("unsupported file type"), { statusCode: 415 });
-  // 导入随文图片按**渲染层取得动的体积**收口（SOURCE_IMAGE_MAX_BYTES），而不是按
-  // 笔记图片那条的 10MB：一张 6MB 的图存进对象存储，取图时会被通道上限拒掉，
-  // 结果是「导入说收下了、笔记里永远缺一块」。在这里按能显示的数拦，失败就发生在上传这一刻。
-  const max = request.purpose === "avatar" ? AVATAR_MAX_BYTES
-    : request.purpose === "markdown_import_image" ? SOURCE_IMAGE_MAX_BYTES
-    : image ? 10 * 1024 * 1024
-    : request.purpose === "companion_file" ? COMPANION_FILE_MAX_BYTES
-    : request.purpose === "source_text" ? MAX_SOURCE_TEXT_BYTES : 50 * 1024 * 1024;
+  // 尺寸不再按用途各写一个数：上传、直传票据、取回字节用的是同一个 100 MB
+  // （`TRANSFER_MAX_BYTES`）。过去这里按用途阶梯收窄（导入随文图 5MB、别的图 10MB、
+  // 兜底 50MB），症状正是那条注释写的「导入说收下了、笔记里永远缺一块」——只是现在
+  // 两侧同一个数，这一类错位没有了。要按用途再收紧就改这里，别在各端点另写数字。
+  const max = TRANSFER_MAX_BYTES;
   if (request.purpose === "companion_file" && !COMPANION_FILE_MIME_TYPES.includes(request.mimeType as typeof COMPANION_FILE_MIME_TYPES[number]))
     throw Object.assign(new Error("unsupported file type"), { statusCode: 415 });
   if (request.byteLength > max) throw Object.assign(new Error("file too large"), { statusCode: 413 });

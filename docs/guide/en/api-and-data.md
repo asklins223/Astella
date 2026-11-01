@@ -28,7 +28,7 @@ Plugins and hooks:
 
 | Layer | Content |
 | --- | --- |
-| Plugins | `@fastify/cors` (allowlist from `CORS_ORIGIN`, comma-separated; an empty allowlist means `origin: false`, i.e. no CORS headers at all), `@fastify/sensible` (`httpErrors` plus uniform error serialisation), `@fastify/compress` (`global: true`), `@fastify/multipart` (10MB per file, one file, three non-file fields, 1KB per field value) |
+| Plugins | `@fastify/cors` (allowlist from `CORS_ORIGIN`, comma-separated; an empty allowlist means `origin: false`, i.e. no CORS headers at all), `@fastify/sensible` (`httpErrors` plus uniform error serialisation), `@fastify/compress` (`global: true`), `@fastify/multipart` (100MB per file, one file, three non-file fields, 1KB per field value) |
 | `onRequest` | Puts `request.id` (`genReqId` uses `crypto.randomUUID()`) into AsyncLocalStorage (`lib/request-context.ts`) so job creation can write `payload.traceId`, which is what makes worker logs traceable back to a request across processes |
 | `onSend` | Global security headers `X-Content-Type-Options` / `X-Frame-Options: DENY` / `Referrer-Policy: no-referrer`; responses that already called `hijack()` never reach this |
 | `onResponse` | HTTP counters and latency histogram (route labels use the normalised template, avoiding both high cardinality and parameter leakage), 5xx counter, and one `security event` warn line per 401/403/429 — put here rather than in the error handler because rate limits and explicit rejections never go through the error handler |
@@ -231,16 +231,28 @@ Logging uses pino (`lib/logger.ts`, `LOG_LEVEL`, JSON when not a TTY) and projec
 
 ## Request body limits
 
-The limits are deliberately uneven; change one and look at all of them:
+Since 2026-11-01 there is **one number for what the user uploads and downloads: 100 MB**
+(`TRANSFER_MAX_BYTES`, declared once in
+`packages/shared/src/contracts/desktop/object-transfer-contracts.ts`). Every link in the chain
+used to carry its own figure (source text 10MB, imported markdown images 5MB, avatar 2MB, companion
+files 20MB, global multipart 10MB, one WebSocket frame 256KB, nginx 25m, iOS 3M characters), and
+what actually stopped a user was always **whichever link rejected first** — so the "too large"
+message in the interface usually pointed at a different place than the real reason. The
+per-purpose ladder in `validateTransferPurpose` is gone; tightening anything now means changing
+that one constant.
 
 | Entry point | Limit | Source |
 | --- | --- | --- |
-| multipart (global) | 10MB per file, 1 file, 3 fields, 1KB per field value; oversize is cut during streaming, and `req.file()` throws `FST_REQ_FILE_TOO_LARGE`, mapped to 413 | `server.ts` |
-| `POST /uploads/avatars` | 2MB (override via `req.file({limits})`; `MAX_IMAGE_SIZE` is 10MB and `MAX_AVATAR_SIZE` 2MB in `upload-service.ts`) | `modules/upload/` |
-| `POST /v2/notes/:id/doc-update` | `bodyLimit` 8MB is only a coarse filter; the real rule is **decoded bytes** ≤ 2MB (`NOTE_DOC_UPDATE_MAX_BYTES`), otherwise `update_too_large` | `modules/note/` |
-| `POST /import/markdown` | `bodyLimit` 50MB, aligned with the schema ceiling (100 items × 500KB) | `modules/import/` |
-| `POST /sources` and the `source_text` transfer | One source body is capped at 10 MB (`MAX_SOURCE_TEXT_BYTES`, declared once in the shared contract: the client checks it, the storage purpose checks it, the worker re-verifies it on readback); this route's `bodyLimit` adds 1MB on top because without object storage the body travels as JSON | `modules/source/`, `modules/storage/` |
-| Every other JSON route | Fastify's default 1MiB | — |
+| multipart (global) | 100MB per file, 1 file, three non-file fields, 1KB per field value; oversize is cut during streaming, and `req.file()` throws `FST_REQ_FILE_TOO_LARGE`, mapped to 413 | `server.ts` |
+| `POST /uploads/*` (note image / conversation image / conversation file / imported image / avatar) | The same 100 MB from the shared contract; each endpoint's `req.file({limits})` references those constants, and the number quoted in the 413 message is derived from the same value | `modules/upload/` |
+| `POST /v2/notes/:id/doc-update` | `bodyLimit` is one full-size delta's base64 character ceiling plus 64KB (`NOTE_DOC_UPDATE_BASE64_MAX_CHARS`) — a coarse filter only; the real rule is **decoded bytes** ≤ 100MB (`NOTE_DOC_UPDATE_MAX_BYTES`), otherwise `update_too_large` | `modules/note/` |
+| `POST /import/markdown` | `bodyLimit` 100MB, and one item's body is capped at the same value (`MAX_SOURCE_TEXT_BYTES`) instead of the estimated 50MB ("100 items × 500KB") | `modules/import/` |
+| `POST /sources` and the `source_text` transfer | One source body is capped at 100 MB (`MAX_SOURCE_TEXT_BYTES`, declared once in the shared contract: the client checks it, the storage purpose checks it, the fallback POST checks it, the worker re-verifies it on readback); this route's `bodyLimit` adds 1MB on top because without object storage the body travels as JSON | `modules/source/`, `modules/storage/` |
+| Object storage readback (`getObject`) | Reading a whole object back is capped at the same 100 MB. This used to be 50MB — smaller than what could be stored — so a 60MB image went into the bucket and could **never be fetched**: the image slot in the body stayed empty without an error | `lib/object-storage.ts` |
+| One WebSocket frame | 100 MB plus 64KB for the sync protocol header. The 256KB version was measured on 2026-10-31: pasting 400KB **closed the connection**, nothing was persisted, and the only trace was a connection-status change | `server.ts` |
+| nginx (`infra/deploy/nginx.conf`) | `client_max_body_size 210m`: this layer filters the **envelope**, not the content — the widest body the API itself declares is a whole-document create (source text as JSON, 201MB with escaping slack). Smaller than that and the user gets nginx's reasonless 413 page instead | `infra/deploy/` |
+| One voice transcription upload | 10 MB, declared by this route itself (`VOICE_TRANSCRIBE_MAX_BYTES`) and deliberately **not** lifted to 100MB: the audio is buffered whole in memory before leaving for ASR, and MiMo's published base64 ceiling is 10MB | `modules/learning-sessions/` |
+| Other JSON routes | Fastify's default 1MiB | — |
 
 ## Test entry points on the API side
 

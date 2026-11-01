@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { TRANSFER_BASE64_MAX_CHARS, TRANSFER_MAX_BYTES } from "@astella/shared/object-transfer-contracts";
 
 export const RELEASE_PLATFORMS = ["ios", "android", "macos", "windows"] as const;
 export type ReleasePlatform = (typeof RELEASE_PLATFORMS)[number];
@@ -38,7 +39,8 @@ export type AppReleaseRegistration = z.infer<typeof appReleaseRegistrationSchema
 export const clientAssetFileSchema = z.object({
   path: z.string().trim().min(1).max(300),
   sha256: sha256Schema,
-  byteLength: z.number().int().min(0).max(50 * 1024 * 1024),
+  // 一个资产文件的字节上限：与文件上传/下载同一个 100 MB（登记与上传走的是同一批文件）。
+  byteLength: z.number().int().min(0).max(TRANSFER_MAX_BYTES),
 }).strict();
 export const clientAssetManifestFileSchema = clientAssetFileSchema.extend({
   url: z.string().url().max(2048),
@@ -81,7 +83,8 @@ export type ServerReleaseRegistration = z.infer<typeof serverReleaseRegistration
 export const clientAssetUploadSchema = z.object({
   files: z.array(z.object({
     key: z.string().regex(/^(?:app-assets\/blobs\/[a-f0-9]{64}|app-releases\/(?:ios|android)\/[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+)$/),
-    base64: z.string().min(1).max(8 * 1024 * 1024),
+    // 一个资产文件的 base64 上界：与文件传输同一个 100 MB（展开成字符）。
+    base64: z.string().min(1).max(TRANSFER_BASE64_MAX_CHARS),
   })).min(1).max(500),
 }).strict();
 

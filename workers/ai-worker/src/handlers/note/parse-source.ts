@@ -13,7 +13,7 @@ import {
 import { logger } from "../../lib/logger.ts";
 import * as schema from "@astella/shared/db-schema";
 import { safeErrorMessage, SourceStatus } from "@astella/shared";
-import { MAX_SOURCE_TEXT_BYTES } from "@astella/shared/object-transfer-contracts";
+import { MAX_SOURCE_TEXT_BYTES, TRANSFER_MAX_BYTES } from "@astella/shared/object-transfer-contracts";
 // 稳定 P1（2026-09-15 审计）：parse_source payload 的精确契约 + fail-closed 读取器
 // （与 API 生产端 source/service.ts 同源），替代此前的 `as string | undefined` 弱读。
 import { readParseSourceJobPayload } from "@astella/shared/job-payload-contracts";
@@ -864,7 +864,7 @@ export function correctSourceType(
  * R-014: 图片下载限制
  */
 const IMAGE_FETCH_TIMEOUT_MS = 15_000;
-const IMAGE_MAX_BYTES = 5_000_000; // 5MB
+const IMAGE_MAX_BYTES = TRANSFER_MAX_BYTES; // 100MB：与 shared `SOURCE_IMAGE_MAX_BYTES` 同一个数（同一份合同）
 const IMAGE_ALLOWED_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
 
 /**

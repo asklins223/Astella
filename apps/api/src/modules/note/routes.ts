@@ -1,7 +1,7 @@
 import { readNoteCacheVersions } from "./cache-versions.ts";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { noteCreateSchema, noteDocUpdateRequestV1Schema, NOTE_DOC_UPDATE_MAX_BYTES } from "./schema.ts";
+import { noteCreateSchema, noteDocUpdateRequestV1Schema, NOTE_DOC_UPDATE_BASE64_MAX_CHARS, NOTE_DOC_UPDATE_MAX_BYTES } from "./schema.ts";
 import {
   createNote,
   setNoteShareScope,
@@ -273,17 +273,21 @@ userId: req.session.userId,
   // 2026-10-29：手机与桌面均按空间权限写入。
   app.post<{ Params: { id: string } }>(
     "/v2/notes/:id/doc-update",
-    // bodyLimit 是粗筛（防止无界字符串进 JSON 解析）：合法增量的 base64 约 2.7MB，
-    // 这里留到 8MB。真正的尺寸判据是下面按**解码后字节数**的那条，它才能给出
-    // `update_too_large`——框架的 413 只会说 "Payload Too Large"，客户端无从分辨。
-    { preHandler: [requireOwner], bodyLimit: 8 * 1024 * 1024 },
+    // bodyLimit 是粗筛（防止无界字符串进 JSON 解析）：合法增量的 base64 上界由
+    // `NOTE_DOC_UPDATE_BASE64_MAX_CHARS` 给出，这里在它之上再留一点余量给 JSON 外壳。
+    // 真正的尺寸判据是下面按**解码后字节数**的那条，它才能给出 `update_too_large`——
+    // 框架的 413 只会说 "Payload Too Large"，客户端无从分辨。
+    { preHandler: [requireOwner], bodyLimit: NOTE_DOC_UPDATE_BASE64_MAX_CHARS + 64 * 1024 },
     async (req, reply) => {
       const params = uuidParamSchema.safeParse(req.params);
       if (!params.success) return reply.code(400).send({ error: "invalid_id_format", message: "无效的 id 格式" });
       const body = parseBody(app, noteDocUpdateRequestV1Schema, req.body);
       const decoded = Buffer.from(body.update, "base64");
       if (decoded.byteLength > NOTE_DOC_UPDATE_MAX_BYTES) {
-        return reply.code(413).send({ error: "update_too_large", message: "增量过大，请拆分后重试" });
+        return reply.code(413).send({
+          error: "update_too_large",
+          message: `单次上送的正文增量超过 ${Math.round(NOTE_DOC_UPDATE_MAX_BYTES / 1024 / 1024)} MB`,
+        });
       }
       // `Buffer.from(_, 'base64')` 会静默吃掉非法字符，所以解码结果不能当合法性用；
       // 编码回去比对一次才是。
@@ -482,9 +486,13 @@ actorUserId: req.session.userId,
           await publishRestoredNoteDoc({
             ...scopeOfSession(req.session),
             noteId: req.params.id,
-            versionId: req.params.versionId,
+            // 恢复产出的是**新起的那一版**（被恢复的那一版已经封口，行不能再动）。
+            // 同步给在线文档的必须是这一版的行，否则开着这一篇的人收到的还是旧正文。
+            versionId: result.version.id,
             title: result.note.title,
             titleSource: result.note.titleSource,
+            restoredFromVersionNo: result.restoredFromVersionNo,
+            restoredToVersionNo: result.version.versionNo,
           });
         } catch (error) {
           logger.error({ err: error, noteId: req.params.id }, "恢复已落库，但没能同步到在线文档");

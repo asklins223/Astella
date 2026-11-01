@@ -1,4 +1,5 @@
 import { gemoji } from "gemoji";
+import { TRANSFER_BASE64_MAX_CHARS } from "../contracts/desktop/object-transfer-contracts.ts";
 export const noteEmojiEntries = gemoji.flatMap(entry => entry.names.map(name => ({ name, emoji: entry.emoji })));
 import { unified } from "unified";
 import remarkParse from "remark-parse";
@@ -170,8 +171,10 @@ const processor = unified().use(remarkParse).use(remarkGfm, { singleTilde: false
   .use(remarkFrontmatter).use(noteWritingExtensions).use(noteRichStyles).use(noteWikiLinks).use(noteImageElements).use(mathSource).use(remarkRehype, { allowDangerousHtml: true, footnoteLabel: "脚注", footnoteBackLabel: "返回引用" })
   .use(rehypeRaw).use(sanitizeNoteStyles).use(sanitizeNoteInlineImages).use(rehypeSanitize, { ...sanitizeSchema, protocols: { ...sanitizeSchema.protocols, src: [...(defaultSchema.protocols?.src ?? []), "data", "blob"] } });
 
+/** 行内 data URL 图片的字符上界：与 100 MB 文件展开成 base64 之后的同一个数。 */
+const NOTE_INLINE_DATA_URL_MAX_CHARS = TRANSFER_BASE64_MAX_CHARS;
 function sanitizeNoteInlineImages() { return (tree: Root) => { const walk = (node: Root | RootContent) => {
-  if (node.type === "element" && node.tagName === "img" && String(node.properties.src).startsWith("data:") && (!/^data:image\/(png|jpeg|gif|webp);base64,[a-z\d+/=\s]+$/i.test(String(node.properties.src)) || String(node.properties.src).length > 4_000_000)) delete node.properties.src;
+  if (node.type === "element" && node.tagName === "img" && String(node.properties.src).startsWith("data:") && (!/^data:image\/(png|jpeg|gif|webp);base64,[a-z\d+/=\s]+$/i.test(String(node.properties.src)) || String(node.properties.src).length > NOTE_INLINE_DATA_URL_MAX_CHARS)) delete node.properties.src;
   if ("children" in node) node.children.forEach(walk);
 }; walk(tree); }; }
 

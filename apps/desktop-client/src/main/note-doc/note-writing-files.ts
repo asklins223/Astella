@@ -6,12 +6,23 @@ import { lookup } from "node:dns/promises";
 import { request as httpsRequest } from "node:https";
 import { createRequire } from "node:module";
 import { z } from "zod";
+import { MAX_SOURCE_TEXT_BYTES, TRANSFER_BATCH_BASE64_MAX_CHARS, TRANSFER_MAX_BYTES } from "@astella/shared/object-transfer-contracts";
 import { DESKTOP_IPC_CHANNELS, requestMetaSchema, noteWritingActionSchema, noteWritingResultSchema, type NoteWritingResult } from "@astella/shared/desktop-ipc-contracts";
 import { isNonPublicAIEndpointAddress } from "@astella/shared/public-json-http";
 import { noteImageMarkdown, noteMarkdownSyntax } from "@astella/shared/note-markdown";
 import { noteExportHtml, noteExportDocx } from "./note-writing-export";
 import type { RestChannelDeps } from "../ipc/desktop-ipc-rest";
-const MAX_IMAGE = 12_000_000;
+const MAX_IMAGE = TRANSFER_MAX_BYTES;
+/** 本地 Markdown 文件的读取上限：与一份正文的传输上限同一个数。 */
+const MAX_NOTE_FILE_BYTES = MAX_SOURCE_TEXT_BYTES;
+/**
+ * 一次导出里图片资源的总量上限（base64 字符）：`TRANSFER_BATCH_BASE64_MAX_CHARS`。
+ *
+ * 这一格守的是主进程一次要捏在手里多少字节（导出会把图内联成 data URL），
+ * 不是"笔记里允许存在多少图"。以前写死 80M 字符（界面上说 60 MB），与单张 100 MB 的
+ * 新口径对不上：一篇装着几张 20 MB 图的笔记会导出失败。
+ */
+const MAX_EXPORT_IMAGE_TOTAL_CHARS = TRANSFER_BATCH_BASE64_MAX_CHARS;
 const roots = new Map<number, Set<string>>();
 const mimeFor = (path: string) => ({ ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp" } as Record<string, string>)[extname(path).toLowerCase()];
 type ImageSyntaxNode = { type: string; url?: string; value?: string; alt?: string; title?: string; identifier?: string; children?: ImageSyntaxNode[]; position?: { start: { offset?: number }; end: { offset?: number } } };
@@ -129,7 +140,7 @@ export function registerNoteWritingChannels(deps: Pick<RestChannelDeps, "channel
     if (request.action === "open" || request.action === "read") {
       let path = request.path;
       if (request.action === "open") { const picked = await dialog.showOpenDialog(window, { title: "打开 Markdown", properties: ["openFile"], filters: [{ name: "Markdown", extensions: ["md", "markdown"] }] }); if (picked.canceled || !picked.filePaths[0]) return { canceled: true }; path = picked.filePaths[0]; await grant(dirname(path)); }
-      if (!path) throw new Error("未选择 Markdown 文件"); path = await allowed(path); const info = await stat(path); if (info.size > 4_000_000) throw new Error("笔记文件超过 4 MB");
+      if (!path) throw new Error("未选择 Markdown 文件"); path = await allowed(path); const info = await stat(path); if (info.size > MAX_NOTE_FILE_BYTES) throw new Error(`笔记文件超过 ${Math.round(MAX_NOTE_FILE_BYTES / 1024 / 1024)} MB`);
       return { path, markdown: await readFile(path, "utf8"), revision: info.mtimeMs };
     }
     if (request.action === "image") {
@@ -144,7 +155,7 @@ export function registerNoteWritingChannels(deps: Pick<RestChannelDeps, "channel
     if (path) { path = await allowed(path); if (request.revision !== undefined && (await stat(path)).mtimeMs !== request.revision) throw new Error("本地文件已在其他应用中修改，请重新打开后再保存"); }
     else { const picked = await dialog.showSaveDialog(window, { title: request.action === "save" ? "保存 Markdown" : "导出笔记", defaultPath: `${(request.title || "笔记").replace(/[\\/:*?"<>|]/g, "-")}.${format}`, filters: [{ name: format.toUpperCase(), extensions: [format] }] }); if (picked.canceled || !picked.filePath) return { canceled: true }; path = picked.filePath; await grant(dirname(path)); }
     let markdown = request.markdown ?? ""; const images = new Map((request.images ?? []).map(image => [image.src, `data:${image.mime};base64,${image.base64}`]));
-    if ([...(request.images ?? [])].reduce((sum, image) => sum + image.base64.length, 0) > 80_000_000) throw new Error("图片资源总量超过 60 MB，请分批导出");
+    if ([...(request.images ?? [])].reduce((sum, image) => sum + image.base64.length, 0) > MAX_EXPORT_IMAGE_TOTAL_CHARS) throw new Error(`这一篇的图片在本机一次导出装不下（约 ${Math.round(MAX_EXPORT_IMAGE_TOTAL_CHARS * 3 / 4 / 1024 / 1024)} MB），请分几次导出`);
     if (format === "md") { let assetsPath = join(dirname(path), `${basename(path, extname(path))}.assets`);
       if (request.action === "assets") { const picked = await dialog.showOpenDialog(window, { title: "选择笔记图片资源目录", defaultPath: dirname(path), properties: ["openDirectory", "createDirectory"] }); if (picked.canceled || !picked.filePaths[0]) return { canceled: true }; assetsPath = picked.filePaths[0]; await grant(assetsPath); }
       const replacements = new Map<string, string>();

@@ -41,7 +41,7 @@ import {
   type MarkdownBundleResultV1,
   type MarkdownBundleTaskV1,
 } from "@astella/shared/desktop-ipc-contracts";
-import { MAX_SOURCE_TEXT_BYTES } from "@astella/shared/object-transfer-contracts";
+import { MAX_SOURCE_TEXT_BYTES, TRANSFER_BATCH_MAX_BYTES, TRANSFER_MAX_BYTES } from "@astella/shared/object-transfer-contracts";
 import { sourceImageObjectKeyFromUrl, SOURCE_IMAGE_MAX_BYTES } from "@astella/shared/source-image-contracts";
 import { noteMarkdownSyntax } from "@astella/shared/note-markdown";
 import { downloadImage, markdownImageSources, rewriteNoteImagePaths } from "./note-writing-files";
@@ -56,12 +56,16 @@ const MAX_BUNDLE_DEPTH = 5;
 /** 这些目录不是读者的笔记，翻它们只会把索引挤满。 */
 const IGNORED_SEGMENTS = new Set([".git", "node_modules", "__MACOSX"]);
 /** zip 是整份进内存才解得开的，所以它比文件夹多两道闸。 */
-const MAX_ZIP_BYTES = 120 * 1024 * 1024;
+const MAX_ZIP_BYTES = TRANSFER_BATCH_MAX_BYTES;
 const MAX_ZIP_ENTRY_BYTES = MAX_SOURCE_TEXT_BYTES;
 const MAX_BUNDLE_IMAGES = 600;
-const MAX_BUNDLE_IMAGE_BYTES = 120 * 1024 * 1024;
-/** 一次回给渲染层的正文总量：几百份各几 MB 会把这一次 IPC 撑成几百 MB。 */
-const MAX_BUNDLE_BODY_BYTES = 50 * 1024 * 1024;
+const MAX_BUNDLE_IMAGE_BYTES = TRANSFER_BATCH_MAX_BYTES;
+/**
+ * 一次回给渲染层的正文总量。这一格必须容得下**若干篇满额正文**，否则单份上限抬到
+ * 100 MB 反而让整文件夹导入先撞线（过去是 50 MB：一篇 60 MB 的 .md 直接进不来）。
+ * 再大就是 IPC 信封自己的事，不是内容上限。
+ */
+const MAX_BUNDLE_BODY_BYTES = 2 * TRANSFER_MAX_BYTES;
 /** 与对象存储那侧的镜像下载、服务端预注册同一个数：两边都不打满。 */
 const UPLOAD_CONCURRENCY = 4;
 
@@ -125,13 +129,13 @@ async function readFolderBundle(root: string): Promise<BundleReader> {
     const canonical = await realpath(join(root, ...path.split("/")));
     const inner = relative(root, canonical);
     if (inner === ".." || inner.startsWith(`..${sep}`)) throw new Error("图片路径通过符号链接离开了所选文件夹。");
-    if ((await stat(canonical)).size > MAX_ZIP_ENTRY_BYTES) throw new Error("文件超过 10 MB，请拆分后导入。");
+    if ((await stat(canonical)).size > MAX_ZIP_ENTRY_BYTES) throw new Error(`文件超过 ${megabytes(MAX_ZIP_ENTRY_BYTES)} MB，请拆分后导入。`);
     return readFile(canonical);
   } };
 }
 
 async function readZipBundle(path: string): Promise<BundleReader> {
-  if ((await stat(path)).size > MAX_ZIP_BYTES) throw new Error("这个 zip 超过 120 MB，请拆分后导入。");
+  if ((await stat(path)).size > MAX_ZIP_BYTES) throw new Error(`这个 zip 超过 ${megabytes(MAX_ZIP_BYTES)} MB，请拆分后导入。`);
   const raw = await readFile(path);
   if (raw.byteLength > MAX_ZIP_BYTES) {
     throw new Error(`这个 zip 有 ${megabytes(raw.byteLength)} MB，超过一次能解开的 ${megabytes(MAX_ZIP_BYTES)} MB，请拆开几份再导入。`);
@@ -145,7 +149,7 @@ async function readZipBundle(path: string): Promise<BundleReader> {
       if (name.endsWith("/") || !isSafeEntry(name) || isIgnored(name)) return false;
       if (file.size > MAX_ZIP_ENTRY_BYTES) { skipped.set(name, `它在 zip 里有 ${megabytes(file.size)} MB，超过单个文件 ${megabytes(MAX_ZIP_ENTRY_BYTES)} MB 的取回上限。`); return false; }
       if (kept >= MAX_BUNDLE_ENTRIES) { skipped.set(name, `这个包里的文件超过 ${MAX_BUNDLE_ENTRIES} 个，这一个没有被取回来。`); return false; }
-      if (uncompressedBytes + file.size > MAX_BUNDLE_IMAGE_BYTES) { skipped.set(name, "包解压后累计超过 120 MB，请拆分后导入。"); return false; }
+      if (uncompressedBytes + file.size > MAX_BUNDLE_IMAGE_BYTES) { skipped.set(name, `包解压后累计超过 ${megabytes(MAX_BUNDLE_IMAGE_BYTES)} MB，请拆分后导入。`); return false; }
       uncompressedBytes += file.size;
       kept += 1;
       return true;

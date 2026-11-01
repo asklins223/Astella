@@ -1,13 +1,20 @@
 import { z } from "zod";
+import { MAX_SOURCE_TEXT_BYTES } from "../desktop/object-transfer-contracts.ts";
 import { noteBlockRenderedTextV1 } from "../../note/note-doc-schema.ts";
 
-/** Exact location in the rendered, immutable note version that the learner selected. */
+/**
+ * Exact location in the rendered, immutable note version that the learner selected.
+ *
+ * 偏移与块号的上限**由正文上限推出来**（一块至少占一个字符的位置，字符数又不会超过
+ * 字节数），不是各写一个"看起来够用"的数字：一篇 100 MB 的长文按段切开完全可能超过
+ * 十万块，那种批注被这一格拒掉的形状是"圈了字、存不下"。
+ */
 export const noteAnnotationAnchorV1Schema = z.strictObject({
   noteVersionId: z.string().uuid(),
-  startBlockOrdinal: z.number().int().min(0).max(100_000),
-  startOffset: z.number().int().min(0).max(10_000_000),
-  endBlockOrdinal: z.number().int().min(0).max(100_000),
-  endOffset: z.number().int().min(0).max(10_000_000),
+  startBlockOrdinal: z.number().int().min(0).max(MAX_SOURCE_TEXT_BYTES),
+  startOffset: z.number().int().min(0).max(MAX_SOURCE_TEXT_BYTES),
+  endBlockOrdinal: z.number().int().min(0).max(MAX_SOURCE_TEXT_BYTES),
+  endOffset: z.number().int().min(0).max(MAX_SOURCE_TEXT_BYTES),
   excerpt: z.string().trim().min(1).max(2_000),
   prefix: z.string().max(120),
   suffix: z.string().max(120),

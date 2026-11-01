@@ -8,6 +8,8 @@
  * 写不进去。
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { NOTE_DOC_UPDATE_MAX_CHARS } from "@astella/shared/desktop-ipc-contracts";
+import { TRANSFER_BASE64_MAX_CHARS } from "@astella/shared/object-transfer-contracts";
 type GatewayTransportLike = import("../gateway/desktop-gateway-transport").GatewayTransport;
 import { noteModuleMock, noteStub } from "./ns-note-stubs";
 
@@ -654,7 +656,7 @@ describe("笔记协同的 IPC 通道", () => {
     expect(watchNoteDocument).toHaveBeenCalledTimes(2);
   });
 
-  it("超限的提交不进 gateway：空增量与超上限的增量都在入口被拒", async () => {
+  it("超限的提交不进 gateway：空增量在入口被拒，上限那一格与传输同源", async () => {
     const { event, uploadNoteDocUpdate } = await setup({ workspaceType: "personal", role: "owner" });
     const empty = await handler(DESKTOP_IPC_CHANNELS.noteDocSyncUpdate)(event, {
       meta,
@@ -662,11 +664,18 @@ describe("笔记协同的 IPC 通道", () => {
       noteId: NOTE_ID,
       update: "",
     });
+    expect(empty.ok).toBe(false);
+    expect(uploadNoteDocUpdate).not.toHaveBeenCalled();
+    // 入口那一格以前写死 4 M 字符（≈3 MB 解码后），比服务端能收的还小：症状是"桌面上
+    // 交不出去、手机里同一篇却能存"。现在它与共享合同的 base64 上界同源。
+    // 越界那条支路仍然按真形状测（现造一条比上界多 8 个字符的串）——判据是长度比较，
+    // 造串这一次性分配就是它的代价，测试里跑得过来。
+    expect(NOTE_DOC_UPDATE_MAX_CHARS).toBe(TRANSFER_BASE64_MAX_CHARS);
     const oversized = await handler(DESKTOP_IPC_CHANNELS.noteDocSyncUpdate)(event, {
       meta,
       commandId: "command-oversize",
       noteId: NOTE_ID,
-      update: "A".repeat(4 * 1024 * 1024 + 8),
+      update: "A".repeat(NOTE_DOC_UPDATE_MAX_CHARS + 8),
     });
     expect(oversized.ok).toBe(false);
     expect(uploadNoteDocUpdate).not.toHaveBeenCalled();

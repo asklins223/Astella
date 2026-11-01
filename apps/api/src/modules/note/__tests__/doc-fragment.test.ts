@@ -6,12 +6,54 @@ import { noteDocSchemaSpec, type NoteDocBlockSpec } from "@astella/shared/note-d
 import { markdownToBlocks } from "@astella/shared/markdown-parser";
 import {
   NOTE_DOC_FRAGMENT_KEY,
+  assertNoteDocAnchor,
   emptyFragmentNoteDoc,
+  editFragmentBlockText,
+  noteDocAnchorOfNoteId,
+  noteDocAnchorOfUpdate,
   noteDocSchema,
   projectFragmentBlocks,
+  readNoteDocAnchor,
+  snapshotOf,
+  stampNoteDocAnchor,
   writeFragmentBlocks,
   deriveNoteTitle,
 } from "../doc-fragment.ts";
+
+/**
+ * 归属锚（2026-10-31 实测的 P1：另一篇笔记的**整篇**状态可以上送进这一篇并被 200 合并）。
+ *
+ * 这条判据成立的前提全在这里，缺任何一条它就是个不报错的空判据：
+ *  - 锚是从 noteId **推**出来的，所以老笔记被补写两次也是同一个答案；
+ *  - 整篇状态里**带着**它（`_astella` 那一格进了编码）；
+ *  - 只改正文的增量里**没有**它，因此正常打字永不会被这条判据错拦。
+ */
+test("笔记文档的归属锚：整篇状态带着它，只改正文的增量不带着它", () => {
+  const doc = emptyFragmentNoteDoc();
+  writeFragmentBlocks(doc, [{ type: "paragraph", content: "甲独有的正文" }]);
+
+  const anchor = stampNoteDocAnchor(doc, "note-a");
+  assert.equal(anchor, noteDocAnchorOfNoteId("note-a"), "锚必须由 noteId 推出来");
+  assert.equal(stampNoteDocAnchor(doc, "note-a"), anchor, "补写第二次必须换答案就等于身份在漂");
+  assert.equal(readNoteDocAnchor(doc), anchor);
+
+  const wholeState = snapshotOf(doc);
+  assert.equal(
+    noteDocAnchorOfUpdate(wholeState),
+    anchor,
+    "整篇状态里没有锚 → 跨笔记整篇上送那一条判据永远不会命中，测试就成了摆设",
+  );
+
+  const before = Y.encodeStateVector(doc);
+  editFragmentBlockText(doc, 0, "甲独有的正文，又敲了一句");
+  const increment = Y.encodeStateAsUpdate(doc, before);
+  assert.equal(noteDocAnchorOfUpdate(increment), null, "只改正文的增量不该被要求带锚");
+
+  assert.doesNotThrow(() => assertNoteDocAnchor("note-a", wholeState));
+  assert.doesNotThrow(() => assertNoteDocAnchor("note-a", increment));
+  assert.throws(() => assertNoteDocAnchor("note-b", wholeState), /不属于当前笔记/);
+  doc.destroy();
+});
 
 test("automatic titles use rendered text and ignore empty rich-text structures", () => {
   assert.equal(deriveNoteTitle([{ type: "paragraph", content: "| | |\n| --- | --- |\n| | |" }]), "无标题笔记");

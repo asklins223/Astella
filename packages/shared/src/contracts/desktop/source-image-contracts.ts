@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { TRANSFER_MAX_BYTES } from "./object-transfer-contracts.ts";
 
 /**
  * 站内图片对象读取合同（`source.image.get`）。
@@ -13,8 +14,8 @@ import { z } from "zod";
  * （`companion.voice.speak`）的处理方式。
  */
 
-/** main 侧图片硬上限（字节）：与 worker 侧 `IMAGE_MAX_BYTES` 对齐。 */
-export const SOURCE_IMAGE_MAX_BYTES = 5_000_000;
+/** main 侧图片硬上限（字节）：与 worker 侧同源——`parse-source.ts` 直接引用这一个常量。 */
+export const SOURCE_IMAGE_MAX_BYTES = TRANSFER_MAX_BYTES;
 
 /**
  * 站内图片在**内容**里出现的前缀（worker 改写后的 markdown 引用、上传回执的

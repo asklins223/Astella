@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createHash } from "node:crypto";
 import { AVATAR_MAX_BYTES } from "@astella/shared/desktop-ipc-contracts";
-import { MAX_SOURCE_TEXT_BYTES, objectTransferRequestSchema, objectTransferDownloadSchema } from "@astella/shared/object-transfer-contracts";
+import { MAX_SOURCE_TEXT_BYTES, TRANSFER_MAX_BYTES, objectTransferRequestSchema, objectTransferDownloadSchema } from "@astella/shared/object-transfer-contracts";
+import { SOURCE_IMAGE_MAX_BYTES } from "@astella/shared/source-image-contracts";
+import { COMPANION_FILE_MAX_BYTES } from "@astella/shared/companion-file-contracts";
 import { validateTransferPurpose, verifyTransferredBytes } from "../routes.ts";
 
 const base = { purpose: "companion_image" as const, fileName: "test.png", mimeType: "image/png", byteLength: 100,
@@ -17,8 +19,10 @@ test("direct uploads reject mismatched purpose, missing target, and oversized pa
 test("imported markdown images are capped by what the reading layer can actually fetch", () => {
   const image = { ...base, purpose: "markdown_import_image" as const };
   assert.equal(objectTransferRequestSchema.safeParse(image).success, true);
-  assert.doesNotThrow(() => validateTransferPurpose({ ...image, byteLength: 5_000_000 }));
-  assert.throws(() => validateTransferPurpose({ ...image, byteLength: 5_000_001 }), /too large/);
+  // 数字来自合同本身：这一格与"取回一张图"用的是同一个上限，两边不再各写一个数。
+  assert.equal(SOURCE_IMAGE_MAX_BYTES, TRANSFER_MAX_BYTES);
+  assert.doesNotThrow(() => validateTransferPurpose({ ...image, byteLength: SOURCE_IMAGE_MAX_BYTES }));
+  assert.throws(() => validateTransferPurpose({ ...image, byteLength: SOURCE_IMAGE_MAX_BYTES + 1 }), /too large/);
   assert.throws(() => validateTransferPurpose({ ...image, mimeType: "image/svg+xml" }), /unsupported file type/);
 });
 test("upload confirmation detects modified bytes and truncation", () => {
@@ -44,11 +48,12 @@ test("avatar upload authorization accepts 10 MB and rejects a byte over the shar
 });
 
 
-test("companion originals use direct transfer with the existing 20 MiB limit", () => {
+test("companion originals use direct transfer with the shared file limit", () => {
   const file = { ...base, purpose: "companion_file" as const, mimeType: "application/pdf", fileName: "note.pdf" };
   assert.equal(objectTransferRequestSchema.safeParse(file).success, true);
-  assert.doesNotThrow(() => validateTransferPurpose({ ...file, byteLength: 20 * 1024 * 1024 }));
-  assert.throws(() => validateTransferPurpose({ ...file, byteLength: 20 * 1024 * 1024 + 1 }), /too large/);
+  assert.equal(COMPANION_FILE_MAX_BYTES, TRANSFER_MAX_BYTES);
+  assert.doesNotThrow(() => validateTransferPurpose({ ...file, byteLength: COMPANION_FILE_MAX_BYTES }));
+  assert.throws(() => validateTransferPurpose({ ...file, byteLength: COMPANION_FILE_MAX_BYTES + 1 }), /too large/);
   assert.throws(() => validateTransferPurpose({ ...file, mimeType: "application/octet-stream" }), /unsupported file type/);
 });
 

@@ -1,4 +1,5 @@
 import { contentValidation } from "./modules/storage/content-validators.ts";
+import { TRANSFER_MAX_BYTES } from "@astella/shared/object-transfer-contracts";
 import { companionNoteEditDispatch } from "./modules/note/companion-edit-dispatch.ts";
 import { companionNoteShareDispatch } from "./modules/note/companion-share-dispatch.ts";
 import { objectExportHook } from "./modules/storage/exports.ts";
@@ -316,7 +317,10 @@ app.get("/ready", async (_req, reply) => {
 // G-002: 包装在 async IIFE 中，使 esbuild --format=cjs 能正确构建（CJS 不支持 top-level await）
 async function main() {
   // Register at the root scope before any WebSocket routes are mounted.
-  await app.register(websocket, { options: { maxPayload: 256 * 1024 } });
+  // 单帧上限跟着正文/文件那一个 100 MB 走（`TRANSFER_MAX_BYTES`），再加 64 KB 给 sync
+  // 协议的头：2026-10-31 实测到粘贴 400 KB 时这一格是 256 KB，结局不是报错而是**连接被断开**，
+  // 改动一个字都没落库，界面上只剩一个 connection 状态变化。
+  await app.register(websocket, { options: { maxPayload: TRANSFER_MAX_BYTES + 64 * 1024 } });
   const allowedOrigins = (process.env.CORS_ORIGIN ?? "")
     .split(",")
     .map((origin) => origin.trim())
@@ -338,7 +342,7 @@ async function main() {
   // 在流式读取阶段就拒绝超大文件，防止 OOM
   await app.register(multipart, {
     limits: {
-      fileSize: 10 * 1024 * 1024,  // 10MB — 全局上限；头像端点共用 10MB 上限
+      fileSize: TRANSFER_MAX_BYTES,   // 100MB — 全局上限，与各端点自己声明的同一个数
       files: 1,                     // 每次请求只允许 1 个文件
       fields: 3,                    // 非文件字段上限（noteId 等；CSRF token 通过 header 传递，不计入）
       fieldSize: 1024,              // 单个字段值上限

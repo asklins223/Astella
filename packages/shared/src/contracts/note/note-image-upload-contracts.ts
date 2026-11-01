@@ -62,7 +62,7 @@ export function noteImageUploadFailureMessage(input: {
   readonly httpStatus?: number;
   readonly fileName?: string;
 }): string {
-  if (input.httpStatus === 413) return "图片超过 5MB，请压缩后重试";
+  if (input.httpStatus === 413) return `图片超过 ${Math.round(NOTE_IMAGE_UPLOAD_MAX_BYTES / 1024 / 1024)} MB，请压缩后重试`;
   if (input.httpStatus === 422 || input.httpStatus === 400) return "这张图片的格式或尺寸不受支持";
   if (input.httpStatus === 429) return "上传太频繁，稍后再试一次";
   return "图片上传失败，请重试";

@@ -47,12 +47,14 @@ describe("source-intake", () => {
 
   it("单份正文上限只有一个源，尺寸文案到 MB 一档", () => {
     expect(MAX_CAPTURE_BYTES).toBe(MAX_SOURCE_TEXT_BYTES);
-    expect(MAX_CAPTURE_BYTES).toBe(10 * 1024 * 1024);
+    // 2026-11-01：上传/下载/正文只有一个数字（`TRANSFER_MAX_BYTES`），这里钉住它没被谁另写一个。
+    expect(MAX_CAPTURE_BYTES).toBe(100 * 1024 * 1024);
     expect(captureBytes("a".repeat(1024))).toBe(1024);
     expect(formatCaptureSize(512)).toBe("512 字节");
     expect(formatCaptureSize(2048)).toBe("2.0 KB");
-    expect(formatCaptureSize(MAX_CAPTURE_BYTES)).toBe("10 MB");
-    expect(formatCaptureSize(MAX_DOCUMENT_BYTES)).toBe("40 MB");
+    expect(formatCaptureSize(MAX_CAPTURE_BYTES)).toBe("100 MB");
+    expect(MAX_DOCUMENT_BYTES).toBe(MAX_CAPTURE_BYTES);
+    expect(formatCaptureSize(MAX_DOCUMENT_BYTES)).toBe("100 MB");
   });
 
   it("文本解码：UTF-8 严格优先，其次 GBK，两种都不是就如实说", () => {

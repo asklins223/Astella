@@ -4,7 +4,7 @@
  * 常量（正文上限、能收录的后缀）原来散在来源库的采集栏里，
  * 抽到这里只有一处真相；事件是外部收录完成后通知来源库刷新索引的窄通道。
  */
-import { MAX_SOURCE_TEXT_BYTES } from "@astella/shared/object-transfer-contracts";
+import { MAX_SOURCE_TEXT_BYTES, TRANSFER_MAX_BYTES } from "@astella/shared/object-transfer-contracts";
 
 export const SOURCE_CAPTURED_EVENT = "astella:source-captured";
 
@@ -46,10 +46,11 @@ export const LEGACY_DOCUMENT_FILE_PATTERN = /\.(doc|dot|odt|rtf|wps|pages)$/i;
 /**
  * 交给解析器之前的原始文件上限。
  *
- * 它与正文上限是两件事：一份 40MB 的 PDF 里可能只有几十 KB 文字，正文 10MB 的那一份原文
- * 也许只有 2MB。拦原始字节是为了不在本机把一个巨型文件整份读进内存。
+ * 它与正文上限是两件事：一份大 PDF 里可能只有几十 KB 文字，而正文很小的那一份原文
+ * 也许很大。这一格拦的是"本机一次读进内存多少原始字节"，数字与传输上限取同一个
+ * （`TRANSFER_MAX_BYTES`），不再另估一个 40 MB。
  */
-export const MAX_DOCUMENT_BYTES = 40 * 1024 * 1024;
+export const MAX_DOCUMENT_BYTES = TRANSFER_MAX_BYTES;
 
 export const captureBytes = (text: string): number => new TextEncoder().encode(text).length;
 

@@ -1,4 +1,5 @@
 import { createHash, timingSafeEqual } from "node:crypto";
+import { TRANSFER_BASE64_MAX_CHARS } from "@astella/shared/object-transfer-contracts";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { parseBody } from "../../lib/validate.ts";
 import { uploadObject } from "../../lib/object-storage.ts";
@@ -165,7 +166,8 @@ export async function appReleaseRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(201).send({ release });
     });
 
-    internal.post("/internal/client-assets/upload", { bodyLimit: 32 * 1024 * 1024 }, async (request, reply) => {
+    // 走的是 base64 装进 JSON 的那条路，所以粗筛按字符上界给，不是按原始字节。
+    internal.post("/internal/client-assets/upload", { bodyLimit: TRANSFER_BASE64_MAX_CHARS + 64 * 1024 }, async (request, reply) => {
       const body = parseBody(app, clientAssetUploadSchema, request.body);
       let uploaded = 0;
       for (const file of body.files) {

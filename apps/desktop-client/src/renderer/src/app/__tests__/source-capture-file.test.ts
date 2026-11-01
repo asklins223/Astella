@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { MAX_SOURCE_TEXT_BYTES } from "@astella/shared/object-transfer-contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MAX_CAPTURE_BYTES, MAX_DOCUMENT_BYTES, formatCaptureSize } from "../source/source-intake";
 import { readCaptureFile, readCaptureFiles } from "../source/source-batch-capture";
@@ -89,12 +90,16 @@ describe("文档解析的门与回执", () => {
   });
 
   it("解析出来超正文上限：报真实字节数，不截断", async () => {
-    // 4M 个汉字 = 12,000,000 字节，比 10 MB 的上限多出来那一截要在句子里说得出数。
-    doubles.pdf.mockResolvedValue({ ok: true, markdown: "字".repeat(4_000_000), pages: 900 });
+    // 上限那一截要在句子里说得出数：字节数与上限都按当前的 `MAX_SOURCE_TEXT_BYTES` 算，
+    // 不写死——数字变了（100 MB）这条用例还在测同一件事，而不是跟着文案一起烂掉。
+    const overBy = 1_024 * 1024;
+    // 一个汉字在 UTF-8 里是 3 个字节：要"解析出来的正文"刚好越线上一个兆，字符数按 3 算。
+    const parsedBytes = MAX_SOURCE_TEXT_BYTES + overBy;
+    doubles.pdf.mockResolvedValue({ ok: true, markdown: "字".repeat(Math.ceil(parsedBytes / 3)), pages: 900 });
     const read = await readCaptureFile(file("book.pdf"));
     expect(read.ok).toBe(false);
-    expect(read.ok === false && read.message).toContain("11 MB");
-    expect(read.ok === false && read.message).toContain("10 MB");
+    expect(read.ok === false && read.message).toContain(`${Math.floor(parsedBytes / 1024 / 1024)} MB`);
+    expect(read.ok === false && read.message).toContain(`${Math.floor(MAX_SOURCE_TEXT_BYTES / 1024 / 1024)} MB`);
   });
 
   it("一批里读不进的留下报告，进度按份报出去", async () => {

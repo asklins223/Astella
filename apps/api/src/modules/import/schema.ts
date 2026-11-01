@@ -1,11 +1,14 @@
 import { z } from "zod";
+import { MAX_SOURCE_TEXT_BYTES } from "@astella/shared/object-transfer-contracts";
 
 export const importMarkdownSchema = z.object({
   items: z
     .array(
       z.object({
         title: z.string().max(200).optional().default(""),
-        content: z.string().min(1).max(500_000),
+        // 一份导入正文的上限 = 一份正文的上限（100 MB），不是这里另估一个 50 万字：
+        // 长文被这一格截住的形状是"导入报成功、笔记少一截"，而那正是本批要消灭的错位。
+        content: z.string().min(1).max(MAX_SOURCE_TEXT_BYTES),
       }),
     )
     .min(1)

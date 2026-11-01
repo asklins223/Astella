@@ -16,7 +16,7 @@ import {
 } from "@aws-sdk/client-s3";
 import { NodeHttpHandler } from "@smithy/node-http-handler";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { objectTransferDownloadSchema, type ObjectTransferDownload } from "@astella/shared/object-transfer-contracts";
+import { TRANSFER_MAX_BYTES, objectTransferDownloadSchema, type ObjectTransferDownload } from "@astella/shared/object-transfer-contracts";
 import { logger } from "./logger.ts";
 import { createHash } from "node:crypto";
 import { activeStorageLocation, backupEnabled, backupPublicOrigin, locationForObject, replicaClient, replicaBucket, enqueueReplica, type StorageLocation } from "./storage/replicas.ts";
@@ -155,14 +155,17 @@ export interface DownloadResult {
 /**
  * Download a file from object storage.
  *
- * PERF-58 修复：添加最大下载大小限制（50MB），防止恶意或误操作
- * 下载超大文件导致 API 进程 OOM。对于图片等合法用途，50MB 足够；
- * 如需下载更大文件，应使用流式处理而非全量加载到内存。
+ * PERF-58 修复：给全量读回加一个最大字节数。这个数与上传/取回**同一个** 100 MB
+ * （`TRANSFER_MAX_BYTES`）：以前这里是 50 MB，于是 60 MB 的图**存得进桶**（直传那一侧
+ * 没有这一格）却永远**取不回来**——`getObject` 在读回时抛错，正文里那块图位空着，
+ * 症状是"导入说收下了、笔记里少一块"。判据必须两侧同源。
+ * 代价照实说：这条通道把整份对象读进一个 Buffer，而镜像下载是并发的（并发 4），
+ * 最坏一次捏住 4 × 100 MB；真要紧了该把它换成流式，而不是调回比上传更小的数。
  *
  * SEC-30 修复：校验 objectKey 不包含路径遍历字符（..），
  * 防止通过构造恶意 objectKey 访问其他 workspace 的对象。
  */
-const MAX_DOWNLOAD_SIZE_BYTES = 50 * 1024 * 1024;
+const MAX_DOWNLOAD_SIZE_BYTES = TRANSFER_MAX_BYTES;
 
 export async function getObject(objectKey: string, explicitLocation?: StorageLocation): Promise<DownloadResult> {
   // SEC-30 修复：拒绝包含路径遍历字符的 objectKey

@@ -186,6 +186,7 @@ const WS_ID = "00000000-0000-0000-0000-000000000001";
 const USER_ID = "00000000-0000-0000-0000-000000000002";
 const NOTE_ID = "00000000-0000-0000-0000-000000000003";
 const VERSION_ID = "00000000-0000-0000-0000-000000000004";
+const RESTORED_VERSION_ID = "00000000-0000-0000-0000-000000000009";
 
 // ─── createNote ────────────────────────────────────────────────────────
 
@@ -693,6 +694,41 @@ describe("note/service computeContentHash", () => {
   });
 });
 
+/**
+ * 「恢复历史版本」那条路的桩，按**实际读序**排队列（2026-11-01 的契约变更之后）。
+ *
+ * 恢复现在产出历史末尾新的一版，于是这条链上多了三次读：
+ *  - `notes`：被顶开的那一版要从哪一行指针算起（`insertVersionFromSnapshot`）；
+ *  - `noteVersions`：被顶开的那一版（这里交回 null = 不需要倒回与封口，那一支由
+ *    `note-version-restore-postgres.integration.ts` 在真库上钉）；
+ *  - `notes`：落盘口刷过 `title` / `updated_at`（DB 时钟）之后回读的那一行——回执里的
+ *    note 就是它，不是本机现拼的对象。
+ * 用例只想谈标题、内容与搜索索引，读序由这里管。
+ */
+function restoreFixture(input: {
+  noteRow: Record<string, unknown>;
+  targetVersion: Record<string, unknown> | null;
+  restoredBlocks: Array<{ ordinal: number; type: string; content: string }>;
+  flushedPatch?: Record<string, unknown>;
+}) {
+  const restoredVersion = {
+    id: RESTORED_VERSION_ID,
+    noteId: NOTE_ID,
+    versionNo: Number(input.targetVersion?.versionNo ?? 0) + 1,
+    contentHash: "restored-hash",
+    contentJson: { blocks: input.restoredBlocks.map(({ ordinal: _o, ...block }) => block) },
+  };
+  const flushedNote = { ...input.noteRow, currentVersionId: RESTORED_VERSION_ID, ...input.flushedPatch };
+  return {
+    notesFindFirstQueue: [input.noteRow, input.noteRow, flushedNote],
+    selectResult: [[input.noteRow], [{ versionNo: Number(input.targetVersion?.versionNo ?? 1) }]],
+    noteVersionsFindFirstQueue: [input.targetVersion, null, restoredVersion],
+    insertReturning: [[{ id: RESTORED_VERSION_ID, versionNo: restoredVersion.versionNo }]],
+    // 目标版本的行与文档补齐用的是同一份：恢复读的是快照，行只为那两列服务。
+    noteBlocksFindMany: input.restoredBlocks,
+  };
+}
+
 describe("note/service restoreNoteVersion", () => {
   it("笔记不存在时返回 null", async () => {
     const mock = createMockExecutor({
@@ -723,18 +759,19 @@ describe("note/service restoreNoteVersion", () => {
       contentHash: "hash1",
       contentJson: { blocks: [{ type: "paragraph", content: "old" }] },
     };
-    const mock = createMockExecutor({
-      notesFindFirst: { id: NOTE_ID, currentVersionId: "current-v", workspaceId: WS_ID, title: "Test", titleSource: "manual" },
-      selectResult: [[{ id: NOTE_ID, currentVersionId: "current-v", workspaceId: WS_ID, title: "Test" }]],
-      noteVersionsFindFirstQueue: [targetVersion],
-      noteBlocksFindMany: [{ type: "paragraph", content: "old", ordinal: 0 }],
-    });
+    const mock = createMockExecutor(restoreFixture({
+      noteRow: { id: NOTE_ID, currentVersionId: "current-v", workspaceId: WS_ID, title: "Test", titleSource: "manual" },
+      targetVersion,
+      restoredBlocks: [{ type: "paragraph", content: "old", ordinal: 0 }],
+    }));
 
     const result = await restoreNoteVersion(mock, NOTE_ID, VERSION_ID, WS_ID, USER_ID);
 
     assert.ok(result);
-    assert.equal(result!.version.id, VERSION_ID);
-    assert.equal(result!.note.currentVersionId, VERSION_ID);
+    // 恢复产出新的一版：指针与回执里的版本都是它，被恢复的那一版留在原样。
+    assert.equal(result!.version.id, RESTORED_VERSION_ID);
+    assert.equal(result!.note.currentVersionId, RESTORED_VERSION_ID);
+    assert.equal(result!.restoredFromVersionId, VERSION_ID);
     assert.equal(result!.blocks.length, 1);
     assert.equal((result!.blocks[0] as NoteBlock).content, "old");
   });
@@ -748,10 +785,11 @@ describe("note/service restoreNoteVersion", () => {
       contentJson: { blocks: [{ type: "paragraph", content: "old" }] },
     };
     const mock = createMockExecutor({
-      notesFindFirst: { id: NOTE_ID, currentVersionId: "current-v", workspaceId: WS_ID, title: "Test", titleSource: "manual" },
-      selectResult: [[{ id: NOTE_ID, currentVersionId: "current-v", workspaceId: WS_ID, title: "Test" }]],
-      noteVersionsFindFirstQueue: [targetVersion],
-      noteBlocksFindMany: [{ type: "paragraph", content: "old", ordinal: 0 }],
+      ...restoreFixture({
+        noteRow: { id: NOTE_ID, currentVersionId: "current-v", workspaceId: WS_ID, title: "Test", titleSource: "manual" },
+        targetVersion,
+        restoredBlocks: [{ type: "paragraph", content: "old", ordinal: 0 }],
+      }),
     });
 
     const result = await restoreNoteVersion(mock, NOTE_ID, VERSION_ID, WS_ID, USER_ID);
@@ -810,24 +848,25 @@ describe("note/service restoreNoteVersion", () => {
       contentHash: "hash1",
       contentJson: { blocks: [{ type: "heading", content: "恢复后的标题" }] },
     };
-    const mock = createMockExecutor({
-      notesFindFirst: { id: NOTE_ID, currentVersionId: "current-v", workspaceId: WS_ID, title: "Test", titleSource: "manual" },
-      selectResult: [[{
+    const mock = createMockExecutor(restoreFixture({
+      noteRow: {
         id: NOTE_ID,
         currentVersionId: "current-v",
         workspaceId: WS_ID,
         title: "旧自动标题",
         titleSource: "auto",
-      }]],
-      noteVersionsFindFirstQueue: [targetVersion],
-      noteBlocksFindMany: [{ type: "heading", content: "恢复后的标题", ordinal: 0 }],
-    });
+      },
+      targetVersion,
+      restoredBlocks: [{ type: "heading", content: "恢复后的标题", ordinal: 0 }],
+      // 落盘口把推导出来的标题投影回 `notes`，回执读的就是那一行。
+      flushedPatch: { title: "恢复后的标题", titleSource: "auto" },
+    }));
 
     const result = await restoreNoteVersion(mock, NOTE_ID, VERSION_ID, WS_ID, USER_ID);
 
     assert.ok(result);
     assert.equal(result!.note.title, "恢复后的标题", "auto 标题应从恢复后的版本内容重新推导");
-    assert.equal(result!.note.currentVersionId, VERSION_ID);
+    assert.equal(result!.note.currentVersionId, RESTORED_VERSION_ID);
   });
 
   it("manual 标题模式下恢复后保持用户设定的标题不变", async () => {
@@ -838,18 +877,17 @@ describe("note/service restoreNoteVersion", () => {
       contentHash: "hash1",
       contentJson: { blocks: [{ type: "heading", content: "版本内容标题" }] },
     };
-    const mock = createMockExecutor({
-      notesFindFirst: { id: NOTE_ID, currentVersionId: "current-v", workspaceId: WS_ID, title: "Test", titleSource: "manual" },
-      selectResult: [[{
+    const mock = createMockExecutor(restoreFixture({
+      noteRow: {
         id: NOTE_ID,
         currentVersionId: "current-v",
         workspaceId: WS_ID,
         title: "用户手动标题",
         titleSource: "manual",
-      }]],
-      noteVersionsFindFirstQueue: [targetVersion],
-      noteBlocksFindMany: [{ type: "heading", content: "版本内容标题", ordinal: 0 }],
-    });
+      },
+      targetVersion,
+      restoredBlocks: [{ type: "heading", content: "版本内容标题", ordinal: 0 }],
+    }));
 
     const result = await restoreNoteVersion(mock, NOTE_ID, VERSION_ID, WS_ID, USER_ID);
 
@@ -866,19 +904,22 @@ describe("note/service restoreNoteVersion", () => {
       contentJson: { blocks: [] },
     };
     const oldUpdatedAt = new Date("2020-01-01T00:00:00Z");
-    const mock = createMockExecutor({
-      notesFindFirst: { id: NOTE_ID, currentVersionId: "current-v", workspaceId: WS_ID, title: "Test", titleSource: "manual" },
-      selectResult: [[{
+    const dbUpdatedAt = new Date("2026-11-01T00:00:00Z");
+    const mock = createMockExecutor(restoreFixture({
+      noteRow: {
         id: NOTE_ID,
         currentVersionId: "current-v",
         workspaceId: WS_ID,
         title: "Test",
         titleSource: "manual",
         updatedAt: oldUpdatedAt,
-      }]],
-      noteVersionsFindFirstQueue: [targetVersion],
-      noteBlocksFindMany: [],
-    });
+      },
+      targetVersion,
+      restoredBlocks: [],
+      // 游标列（`notes.updated_at` 进列表排序与翻页游标）必须由 **DB 时钟** 出，
+      // 回执把那一份原样带回去；本机现算一个 Date 就是这条用例要拦的形状。
+      flushedPatch: { updatedAt: dbUpdatedAt },
+    }));
 
     const result = await restoreNoteVersion(mock, NOTE_ID, VERSION_ID, WS_ID, USER_ID);
 
@@ -889,8 +930,9 @@ describe("note/service restoreNoteVersion", () => {
     );
     assert.ok(
       result!.note.updatedAt > oldUpdatedAt,
-      "返回的 updatedAt 应为更新后的时间，而非旧值",
+      "返回的 updatedAt 应为落盘之后库里那一份，而不是恢复前的旧值",
     );
+    assert.equal(result!.note.updatedAt, dbUpdatedAt);
   });
 
   // ─── CONC-05: baseVersionId 乐观并发检查 ─────────────────────────────
@@ -926,23 +968,22 @@ describe("note/service restoreNoteVersion", () => {
       contentHash: "hash1",
       contentJson: { blocks: [{ type: "paragraph", content: "old" }] },
     };
-    const mock = createMockExecutor({
-      notesFindFirst: { id: NOTE_ID, currentVersionId: "current-v", workspaceId: WS_ID, title: "Test", titleSource: "manual" },
-      selectResult: [[{
+    const mock = createMockExecutor(restoreFixture({
+      noteRow: {
         id: NOTE_ID,
         currentVersionId: "current-v",
         workspaceId: WS_ID,
         title: "Test",
         titleSource: "manual",
-      }]],
-      noteVersionsFindFirstQueue: [targetVersion],
-      noteBlocksFindMany: [{ type: "paragraph", content: "old", ordinal: 0 }],
-    });
+      },
+      targetVersion,
+      restoredBlocks: [{ type: "paragraph", content: "old", ordinal: 0 }],
+    }));
 
     const result = await restoreNoteVersion(mock, NOTE_ID, VERSION_ID, WS_ID, USER_ID, "current-v");
 
     assert.ok(result);
-    assert.equal(result!.version.id, VERSION_ID);
+    assert.equal(result!.version.id, RESTORED_VERSION_ID);
   });
 
   // ─── 软删除笔记不可恢复 ─────────────────────────────────────────────

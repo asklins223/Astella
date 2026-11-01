@@ -26,6 +26,7 @@ import { closeDatabase, withWorkspaceTransaction } from "../db/client.ts";
 import { checkpointNote, createNote } from "../modules/note/service.ts";
 import { closeNoteCollaboration, collaborationLoad, documentNameForNote, notePresenceSnapshot } from "../modules/note/collaboration.ts";
 import { docFromSnapshot, editFragmentBlockText, projectFragmentBlocks, writeFragmentBlocks } from "../modules/note/doc-fragment.ts";
+import { NOTE_DOC_UPDATE_BASE64_MAX_CHARS, noteDocUpdateRequestV1Schema } from "../modules/note/schema.ts";
 
 /**
  * 夹具连接用超级用户那条（`DATABASE_URL`），被测应用连接仍是 `astella_api`。
@@ -132,9 +133,19 @@ async function storedBlocks(): Promise<string[]> {
   return contents;
 }
 
+/**
+ * 这一篇**当前版**的投影行。
+ *
+ * 钉住夹具里那个 `versionId` 会看错地方：「提交并确认」与「恢复历史版本」都会产出
+ * 新的一版（恢复那一条自 2026-11-01 起也是——它不再把指针交还给一个有历史内容的版本），
+ * 正文的行跟着 `notes.current_version_id` 走，"投影有没有落上"问的从来就是当前那一版。
+ */
 async function projectedRows(): Promise<string[]> {
   const rows = await sql`
-    SELECT nb.content FROM note_blocks nb WHERE nb.version_id = ${versionId} ORDER BY nb.ordinal
+    SELECT nb.content
+    FROM note_blocks nb
+    WHERE nb.version_id = (SELECT current_version_id FROM notes WHERE id = ${noteId})
+    ORDER BY nb.ordinal
   `;
   return rows.map((row) => String(row.content));
 }
@@ -271,9 +282,11 @@ after(async () => {
   const userIds = [userOwner, userMember, userStranger];
   // 删除顺序有硬约束（同 workspace-collab 那份）：踩错就静默攒脏数据。
   await sql`DELETE FROM note_document_states WHERE note_id = ${noteId}`;
-  await sql`DELETE FROM note_blocks WHERE version_id IN (SELECT id FROM note_versions WHERE note_id = ${noteId})`;
-  await sql`DELETE FROM note_versions WHERE note_id = ${noteId}`;
   await sql`DELETE FROM search_documents WHERE object_id = ${noteId}`;
+  // 被顶开的版本已经封口：`note_blocks_sealed_guard` 与 `note_versions_sealed_guard`
+  // 只放行 `pg_trigger_depth() > 1` 的级联删除，所以这里**不**逐张表删，
+  // 交给下面那句 `DELETE FROM notes` 把版本与行一起带走（同一份形状见
+  // `note-version-restore-postgres.integration.ts` 的 cleanupWorkspace）。
   await sql`UPDATE users SET personal_workspace_id = NULL WHERE id = ANY(${userIds})`;
   await sql`DELETE FROM notes WHERE workspace_id = ANY(${workspaceIds})`;
   await sql`DELETE FROM workspace_members WHERE workspace_id = ANY(${workspaceIds})`;
@@ -528,14 +541,20 @@ test("同一个人从自己另一个空间上送：404，且库里一个字都�
   local.destroy();
 });
 
-test("非法或超限的增量：400 与 413 分得清", async () => {
+test("非法的增量：400 分得清；尺寸判据由契约那条用例钉住", async () => {
   const malformed = await uploadUpdate(ownerToken, "这不是 base64!!");
   assert.equal(malformed.statusCode, 400, `非 base64 应回 400，实际 ${malformed.statusCode}`);
 
-  const oversize = Buffer.alloc(3 * 1024 * 1024, 7).toString("base64");
-  const tooBig = await uploadUpdate(ownerToken, oversize);
-  assert.equal(tooBig.statusCode, 413, `超尺寸应回 413，实际 ${tooBig.statusCode}: ${tooBig.body}`);
-  assert.equal(tooBig.json().error, "update_too_large");
+  // 尺寸那一格**不在这里用真请求量**：上限现在是 100 MB（`NOTE_DOC_UPDATE_MAX_BYTES`），
+  // 要走一遍 413 就得在 CI 里造一条 133 MB 的 base64 字符串再让 Fastify 解一遍 JSON——
+  // 判据本身只是"解码后的字节数比一个常数大"，那条常数与整条链对齐由
+  // `transfer-limit-contract.test.ts` 钉住（含 zod 的字符上界恰是字节上界的 4/3）。
+  const tooLong = "A".repeat(NOTE_DOC_UPDATE_BASE64_MAX_CHARS + 1);
+  assert.equal(
+    noteDocUpdateRequestV1Schema.safeParse({ update: tooLong }).success,
+    false,
+    "超过一条增量字符上界的上送必须在进解析器之前就被拒",
+  );
 });
 
 /** 建一篇**空**笔记（界面上点「新建笔记」就是这条：`blocks: []`，因此没有文档快照）。 */
@@ -733,6 +752,47 @@ test("新建的空笔记：按取到的起点敲字，必须真的落库（2026-
   assert.ok(finalContents.some((content) => content.includes(typedAgain)), "第二次上送没落进快照");
 });
 
+test("另一篇笔记的**整篇**状态上送进来：409，这一篇的正文一个字都不许多", async () => {
+  // 2026-10-31 实测的 P1：把 A 的整篇 `encodeStateAsUpdate` POST 进 B 回的是 **200**，
+  // B 的正文变成「A 的内容 + B 的原内容」。上一条用例拦的是跨笔记的**增量**（缺依赖，
+  // 结构进不来）；整篇状态**进得来**——把两份独立历史并在一起正是 CRDT 的本行，
+  // 所以"这份历史属于哪一篇"必须写在文档里判（`_astella` 那一格，见 `doc-fragment.ts`）。
+  const sourceNoteId = await createEmptyNote(ownerToken);
+  const seeded = await app.inject({
+    method: "GET",
+    url: `/v2/notes/${sourceNoteId}/doc-state`,
+    headers: { authorization: `Bearer ${ownerToken}` },
+  });
+  assert.equal(seeded.statusCode, 200);
+
+  const foreign = docFromSnapshot(Buffer.from((seeded.json() as { update: string }).update, "base64"));
+  const foreignSentence = `只在甲篇里出现的一句 ${tag}`;
+  editFragmentBlockText(foreign, 0, foreignSentence);
+  const wholeState = Buffer.from(Y.encodeStateAsUpdate(foreign)).toString("base64");
+  foreign.destroy();
+
+  const before = await storedBlocks();
+  const rejected = await uploadUpdate(ownerToken, wholeState);
+  assert.equal(rejected.statusCode, 409, `跨笔记的整篇状态必须被拒，实际 ${rejected.statusCode}: ${rejected.body}`);
+  assert.equal(rejected.json().error, "doc_identity_mismatch", "拒绝的理由必须可分辨");
+  assert.deepEqual(await storedBlocks(), before, "被拒的整篇状态还是改了这一篇的正文");
+
+  // 正向对照一：这一篇**自己**的整篇状态再上送一次要成功（幂等重放）。
+  // 没有这一条，上面那个 409 可能只是"整篇上送这条路整体坏了"，而不是"串篇被拦下"。
+  const own = await app.inject({
+    method: "GET",
+    url: `/v2/notes/${noteId}/doc-state`,
+    headers: { authorization: `Bearer ${ownerToken}` },
+  });
+  assert.equal(own.statusCode, 200);
+  const replay = await uploadUpdate(ownerToken, (own.json() as { update: string }).update);
+  assert.equal(replay.statusCode, 200, `本篇自己的整篇状态必须放行，实际 ${replay.statusCode}: ${replay.body}`);
+
+  // 正向对照二：同一串字节交回**它自己那一篇**要成功。
+  const intoSource = await uploadUpdate(ownerToken, wholeState, sourceNoteId);
+  assert.equal(intoSource.statusCode, 200, `回到自己那一篇的整篇上送必须成功，实际 ${intoSource.statusCode}: ${intoSource.body}`);
+});
+
 test("来历不明的增量：409 + doc_identity_mismatch，不许再回 200", async () => {
   // 与库里那份**没有共同历史**的增量（这里拿另一篇笔记的起点造一条）：服务端应用不了它，
   // 必须明确拒绝。报 200 的话客户端会当成"已保存"并清掉本机草稿，而库里一个字没动——
@@ -862,7 +922,7 @@ test("编辑起点必须来自 doc-state：从行重建会复制块", async () =
 });
 
 test("恢复历史版本：开着这一篇的人要跟着变，他之后敲的字不能把恢复顶回去", async () => {
-  /** 某个版本的 `note_blocks` 行。当前版本的行随文档移动，旧版本的行冻在建版那一刻。 */
+  /** 某个版本的 `note_blocks` 行。当前版的行随文档移动；被顶开的那一刻倒回它自己的快照并封口。 */
   const rowsOf = async (version: string): Promise<string[]> =>
     (await sql`SELECT content FROM note_blocks WHERE version_id = ${version} ORDER BY ordinal`)
       .map((row) => String(row.content));
@@ -895,11 +955,20 @@ test("恢复历史版本：开着这一篇的人要跟着变，他之后敲的�
 
   const restored = await app.inject({
     method: "POST",
-    url: `/notes/${noteId}/versions/${versionId}/restore`,
+    url: `/notes/${noteId}/versions/${v2Id}/restore`,
     headers: { authorization: `Bearer ${ownerToken}` },
     payload: {},
   });
   assert.equal(restored.statusCode, 200, `恢复必须成功，实际 ${restored.statusCode}: ${restored.body}`);
+  // 2026-11-01 起恢复**产出新的一版**（内容 = v2 被提交时的那一份），不再把指针交还给 v2：
+  // 挪回指针之后紧接着的自动保存会写进 v2 的行，而那正是"历史被后来的编辑改掉"的形状。
+  const restoredBody = restored.json() as { version: { id: string }; blocks: Array<{ content: string }> };
+  assert.notEqual(restoredBody.version.id, v2Id, "恢复不该把当前指针交还给一个有历史内容的版本");
+  const [sealedV2] = await sql<{ sealed: boolean }[]>`
+    SELECT sealed_at IS NOT NULL AS sealed FROM note_versions WHERE id = ${v2Id}`;
+  assert.equal(sealedV2?.sealed, true, "被顶开的版本要封口");
+  assert.ok((await rowsOf(v2Id)).includes(e1), "被顶开的版本要倒回它自己提交时的那一份");
+  assert.ok(!(await rowsOf(v2Id)).includes(e2), "封口之前那一版的行还带着漂移进去的内容");
 
   // ① 在线的那一屏跟着回去。
   await waitFor(() => docContents(doc).includes(e1), "在线文档收到恢复后的正文");

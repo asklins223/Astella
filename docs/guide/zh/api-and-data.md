@@ -28,7 +28,7 @@
 
 | 层 | 内容 |
 | --- | --- |
-| 插件 | `@fastify/cors`（`CORS_ORIGIN` 逗号分隔白名单；白名单为空时 `origin: false`，即完全不发 CORS 头）、`@fastify/sensible`（`httpErrors` 与统一错误序列化）、`@fastify/compress`（`global: true`）、`@fastify/multipart`（单文件 10MB、每次 1 个文件、3 个非文件字段、字段值 1KB） |
+| 插件 | `@fastify/cors`（`CORS_ORIGIN` 逗号分隔白名单；白名单为空时 `origin: false`，即完全不发 CORS 头）、`@fastify/sensible`（`httpErrors` 与统一错误序列化）、`@fastify/compress`（`global: true`）、`@fastify/multipart`（单文件 100MB、每次 1 个文件、3 个非文件字段、字段值 1KB） |
 | `onRequest` | 把 `request.id`（`genReqId` 用 `crypto.randomUUID()`）放进 AsyncLocalStorage（`lib/request-context.ts`），保证建 job 时能写进 `payload.traceId`，worker 日志因此可跨进程关联 |
 | `onSend` | 全局安全头 `X-Content-Type-Options` / `X-Frame-Options: DENY` / `Referrer-Policy: no-referrer`；已 `hijack()` 的响应不经过这里 |
 | `onResponse` | HTTP 计数与延迟直方图（route 用规范化模板，避免高基数与参数泄漏）、5xx 计数、401/403/429 统一记一条 `security event` 警告日志（放在这里而不是 error handler，因为限流与拒绝路径不走 error handler） |
@@ -231,15 +231,24 @@ hijack 之后的响应**不经过 `onSend`**，所以全局安全头不适用，
 
 ## 请求体上限
 
-几处口径不一致是刻意的，改动时得同时看：
+2026-11-01 起，**用户上传与下载的东西只有一个数字：100 MB**（共享合同 `TRANSFER_MAX_BYTES`，
+在 `packages/shared/src/contracts/desktop/object-transfer-contracts.ts` 声明一次）。
+一条链上每个环节过去各写一个数（正文 10MB、导入随文图 5MB、头像 2MB、对话文件 20MB、
+multipart 全局 10MB、WS 单帧 256KB、nginx 25m、iOS 3M 字符），而实际挡住用户的从来是
+**最先进不来的那一个**，界面上那句"太大了"于是常常指向另一处。现在按用途收窄的那些
+分支（`validateTransferPurpose` 里的阶梯）已经整段删掉，要再收紧就改那一个常数。
 
 | 入口 | 上限 | 出处 |
 | --- | --- | --- |
-| multipart（全局） | 单文件 10MB、1 个文件、3 个字段、字段值 1KB；超限在流式读取阶段就断，`req.file()` 抛 `FST_REQ_FILE_TOO_LARGE` 转 413 | `server.ts` |
-| `POST /uploads/avatars` | 2MB（`req.file({limits})` 覆写；`MAX_IMAGE_SIZE` 10MB、`MAX_AVATAR_SIZE` 2MB 在 `modules/upload/upload-service.ts`） | `modules/upload/` |
-| `POST /v2/notes/:id/doc-update` | `bodyLimit` 8MB 只是粗筛，真正判据是**解码后字节数** ≤ 2MB（`NOTE_DOC_UPDATE_MAX_BYTES`），否则回 `update_too_large` | `modules/note/` |
-| `POST /import/markdown` | `bodyLimit` 50MB，与 schema 上界对齐（100 条 × 500KB） | `modules/import/` |
-| `POST /sources` 与 `source_text` 直传 | 一份正文 10 MB（`MAX_SOURCE_TEXT_BYTES`，只有共享合同那一个源：客户端拦一次、存储用途拦一次、Worker 回读再验一次）；这一发的 `bodyLimit` 是它再加 1MB，因为没配对象存储时正文走 JSON body | `modules/source/`、`modules/storage/` |
+| multipart（全局） | 单文件 100MB、1 个文件、3 个非文件字段、字段值 1KB；超限在流式读取阶段就断，`req.file()` 抛 `FST_REQ_FILE_TOO_LARGE` 转 413 | `server.ts` |
+| `POST /uploads/*`（笔记图 / 对话图 / 对话文件 / 导入随文图 / 头像） | 同一份合同的 100 MB；各端点 `req.file({limits})` 引用的就是那些常数，413 的回话里带的数字与判据同源 | `modules/upload/` |
+| `POST /v2/notes/:id/doc-update` | `bodyLimit` = 一条满额增量的 base64 字符上界再加 64KB（`NOTE_DOC_UPDATE_BASE64_MAX_CHARS`），只是粗筛；真正判据是**解码后字节数** ≤ 100MB（`NOTE_DOC_UPDATE_MAX_BYTES`），否则回 `update_too_large` | `modules/note/` |
+| `POST /import/markdown` | `bodyLimit` 100MB，单条正文上限也是它（`MAX_SOURCE_TEXT_BYTES`，不再是"100 条 × 500KB"那种估出来的 50MB） | `modules/import/` |
+| `POST /sources` 与 `source_text` 直传 | 一份正文 100 MB（`MAX_SOURCE_TEXT_BYTES`，只有共享合同那一个源：客户端拦一次、存储用途拦一次、直传回退那一发 POST 拦一次、Worker 回读再验一次）；这一发的 `bodyLimit` 是它再加 1MB，因为没配对象存储时正文走 JSON body | `modules/source/`、`modules/storage/` |
+| 对象存储取回（`getObject`） | 全量读回一份对象的上限同样是 100 MB。以前这里是 50MB，比存进去的那一侧还小，结局是"60MB 的图存进了桶、永远取不回来"——正文里那块图位空着，没有报错 | `lib/object-storage.ts` |
+| WebSocket 单帧 | 100 MB 再加 64KB 给 sync 协议的头。2026-10-31 实测过 256KB 那一格：粘贴 400KB 时**连接被断开**，改动一个字都没落库，界面上只剩一个连接状态 | `server.ts` |
+| nginx（`infra/deploy/nginx.conf`） | `client_max_body_size 210m`：这一层挡的是**信封**，不是内容——API 自己声明过最宽的一发是「整篇新建」（正文按 JSON 走，201MB 含转义余量）。比它小的话用户拿到的是 nginx 那页没有原因码的 413 | `infra/deploy/` |
+| 一次口述识别的音频 | 10 MB，是这条路由自己声明的判据（`VOICE_TRANSCRIBE_MAX_BYTES`），**没有**跟着抬到 100MB：音频整块进内存再出网给 ASR，而 MiMo 官方写的 base64 上限就是 10MB | `modules/learning-sessions/` |
 | 其他 JSON 路由 | Fastify 默认 1MiB | — |
 
 ## API 侧的测试入口

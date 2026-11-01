@@ -19,9 +19,13 @@ import {
   resolveNoteDocFlushTarget,
 } from "./document-state.ts";
 import {
+  assertNoteDocAnchor,
+  noteDocAnchorOfNoteId,
   noteDocBlocksFromRows,
+  readNoteDocAnchor,
   setNoteTitle,
   snapshotOf,
+  stampNoteDocAnchor,
   writeFragmentBlocks,
 } from "./doc-fragment.ts";
 import { assertUnlockedUpdate, pruneCompletedRewriteLocks } from "./edit-locks.ts";
@@ -280,6 +284,7 @@ export function notePresenceNotes(): string[] {
   return [...presenceByNote.keys()];
 }
 
+
 export const noteCollaboration = new Hocuspocus<NoteDocContext>({
   // 决定 6：空闲后落一次整份快照，不写 update log。
   debounce: 2_000,
@@ -380,6 +385,11 @@ export const noteCollaboration = new Hocuspocus<NoteDocContext>({
 
   async beforeSync({ document, context, type, payload }) {
     if (type === 0 || !context || context.readOnly) return;
+    // 这条通道**不**按归属锚拒收（2026-11-01 实测过才这么定）：把另一篇的内容并进来，
+    // 与用户在编辑器里粘贴另一篇的正文在 CRDT 层是同一件事，量不出区别；而一拒就是
+    // 反复断线——本机那份文档从此每一条增量都带着别人的锚，服务端一条也收不下，
+    // 用户连自己写的字都交不出去。身份在 `onStoreDocument` 那一步改回来并留痕。
+    // HTTP 那条通道（离线队列与草稿重传会走）不一样：整篇推过来本身就说明键串了，那里拒。
     await pruneCompletedRewriteLocks(context.workspaceId, context.noteId, context.userId);
     assertUnlockedUpdate(context.noteId, document, payload);
   },
@@ -434,6 +444,17 @@ export const noteCollaboration = new Hocuspocus<NoteDocContext>({
   // v4 的落盘钩子给的是 `lastContext`（最后一个活跃连接的上下文），不是 `context`。
   async onStoreDocument({ document, lastContext }) {
     const context = lastContext;
+    // 这份内存文档**声称**自己是哪一篇？别的笔记的整篇状态并进来之后，锚那一格可能
+    // 已经被 LWW 换成别人的。内容并进来是 CRDT 的本行（读者把另一篇粘过来也是同一件事），
+    // 身份不能跟着走：它是后面每一条上送能不能进这一篇的判据。修回来，并且留痕——
+    // 不修的话这篇笔记从此接收不到自己人写的增量（它们带着自己的锚），而症状又是"保存失败"。
+    if (readNoteDocAnchor(document) !== noteDocAnchorOfNoteId(context.noteId)) {
+      logger.error(
+        { noteId: context.noteId, workspaceId: context.workspaceId },
+        "笔记文档的归属锚被别的笔记的整篇状态顶掉了，已改回这一篇自己的那一份",
+      );
+      stampNoteDocAnchor(document, context.noteId);
+    }
     const next = snapshotOf(document);
     await withWorkspaceTransaction(
       { workspaceId: context.workspaceId, userId: context.userId },
@@ -625,6 +646,17 @@ export async function applyUploadedDocUpdate(input: {
   if (!note || note.deletedAt !== null) return { status: "not_found" };
   if (!note.currentVersionId) return { status: "no_version" };
 
+  // 这一条更新**声明**自己来自哪一篇笔记？声明了又不是这一篇，就是接错线的整篇状态
+  // （2026-10-31 实测：A 的整篇 `encodeStateAsUpdate` 上送进 B 回的是 200，B 的正文变成
+  // A+B）。判据必须在**应用之前**：并进去之后再问"这篇是谁的"就没有答案了。
+  // 没声明（只改正文的增量、换锚之前攒下的本机副本）一律放行：那条路本来就有
+  // `pendingStructs` 那一格在管"是不是同一份历史"。
+  try {
+    assertNoteDocAnchor(input.noteId, input.update);
+  } catch {
+    return { status: "identity_mismatch" };
+  }
+
   const context: NoteDocContext = {
     userId: input.userId,
     workspaceId: input.workspaceId,
@@ -700,6 +732,13 @@ export async function publishRestoredNoteDoc(input: {
   /** 恢复之后服务端认定的标题。文档的 `meta` 不跟着改，客户端的标题框就会停在旧版本那一个。 */
   title: string;
   titleSource: string;
+  /**
+   * 「谁把这篇恢复到第几版」——同一篇里其他人的屏幕上要说得出这一句（2026-11-01 用户决定：
+   * 观察 4 别再留在"等产品确认"那一栏）。恢复在文字上的效果是别人的编辑突然整段换掉，
+   * 一个字都不说就是"我的字凭空没了还不知道为什么"；名字取自库里那一份，不信对端自报。
+   */
+  restoredFromVersionNo: number;
+  restoredToVersionNo: number;
 }): Promise<void> {
   const rows = await withWorkspaceTransaction(
     { workspaceId: input.workspaceId, userId: input.userId },
@@ -717,12 +756,28 @@ export async function publishRestoredNoteDoc(input: {
     // `onAuthenticate` 同一个谓词）；走到这里就是可写。
     readOnly: false,
   };
+  const editor = await withWorkspaceTransaction(
+    { workspaceId: input.workspaceId, userId: input.userId },
+    (tx) => tx.query.users.findFirst({
+      where: eq(users.id, input.userId),
+      columns: { displayName: true, email: true },
+    }),
+  );
+  const notice = JSON.stringify({
+    type: "noteRestored",
+    fromVersionNo: input.restoredFromVersionNo,
+    toVersionNo: input.restoredToVersionNo,
+    displayName: editor?.displayName || editor?.email || "",
+  });
   const connection = await noteCollaboration.openDirectConnection(documentNameForNote(input.noteId), context);
   try {
     await connection.transact((document) => {
       const blocks = noteDocBlocksFromRows(rows);
       writeFragmentBlocks(document, blocks);
       setNoteTitle(document, input.title, input.titleSource);
+      // 下行只由这份内存文档广播，所以这句话也得从它口里说；`relayStateless` 是给
+      // pubsub 中继用的，这里就是本副本的直发。
+      document.broadcastStateless(notice);
     });
   } finally {
     await disconnectAndConfirmNoteDocSaved(connection, context);

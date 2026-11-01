@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 import {
   FileNoteDocCacheStore,
-  MemoryNoteDocCacheStore,
+  MemoryNoteDocCacheStore, NOTE_DOC_CACHE_ENTRY_MAX_BYTES,
   NOTE_DOC_PENDING_LIMIT,
   type NoteDocCacheEntryV1,
   type NoteDocCacheKey,
@@ -106,10 +106,23 @@ describe("本机笔记文档缓存", () => {
   });
 
   it("一份大到不该占缓存时明说不收，而不是截断正文", async () => {
-    const store = new MemoryNoteDocCacheStore();
+    // 生产的单条上限现在是 100 MB（与传输同一个数）：按那个数测一次"不收"要在测试里现造
+    // 100 MB 字符串，所以这里把上限收窄来钉**这条支路的形状**——拒绝、不留半份，
+    // 而不是截断正文。默认值本身由下面那条用例钉住。
+    const store = new MemoryNoteDocCacheStore(64);
     const huge = "A".repeat(2_100_000);
     expect(await store.set(key(), entry({ docState: huge }))).toBe(false);
     expect(await store.get(key())).toBeNull();
+  });
+
+  it("一篇大笔记不再被本机缓存悄悄拒收（默认上限 = 传输上限）", async () => {
+    // 判据改成"能存下来的那一篇也能离线留在本机"。以前是 2 MB：过了一格的症状不是报错，
+    // 是这一份**不收**——"断网可编辑"对大笔记静默失效，合盖再打开那一段就没了。
+    const store = new MemoryNoteDocCacheStore();
+    const big = "A".repeat(2_100_000);
+    expect(await store.set(key(), entry({ docState: big }))).toBe(true);
+    expect((await store.get(key()))?.docState).toBe(big);
+    expect(NOTE_DOC_CACHE_ENTRY_MAX_BYTES).toBe(100 * 1024 * 1024);
   });
 
   it("超出条数先放下最旧的那一篇，常用的留在原地", async () => {

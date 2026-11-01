@@ -13,12 +13,13 @@
 import { createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { db } from "../db/client.ts";
+import { TRANSFER_MAX_BYTES } from "@astella/shared/object-transfer-contracts";
 import { noteImageAssets } from "@astella/shared/db-schema/note";
 import { getObject } from "./object-storage.ts";
 import { validateImageMagicBytes, readImageDimensions } from "./file-validation.ts";
 import { logger } from "./logger.ts";
 
-const MAX_IMAGE_BUFFER_BYTES = 20 * 1024 * 1024; // 20MB
+const MAX_IMAGE_BUFFER_BYTES = TRANSFER_MAX_BYTES; // 100MB：与上传/下载同一个数
 // N#7-8: 镜像下载的有界并发（防止大导入路径上串行网络往返长链；也不宜过高以免打满 MinIO/内存）。
 const DOWNLOAD_CONCURRENCY = 4;
 // N#7-8: 预注册 INSERT 按 500/批分块，避免 ~6.5k 行时突破 postgres-js ~65535 绑定参数上限。

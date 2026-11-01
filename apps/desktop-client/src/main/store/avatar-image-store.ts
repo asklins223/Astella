@@ -2,7 +2,11 @@ import { AVATAR_MAX_BYTES } from "@astella/shared/desktop-ipc-contracts";
 import type { GatewayTransport } from "../gateway/desktop-gateway-transport";
 import { ImageByteStore, type ImageBytes } from "../note-doc/image-byte-store";
 
-export const AVATAR_CACHE_MAX_BYTES = 64 * 1024 * 1024;
+/**
+ * 头像缓存总量：至少容得下两张满额头像（`AVATAR_MAX_BYTES` 现在等于 100 MB 的传输上限）。
+ * 比单张上限还小的话，一张大头像就永远进不了缓存——每次都重新拉一遍，还没有任何提示。
+ */
+export const AVATAR_CACHE_MAX_BYTES = 2 * AVATAR_MAX_BYTES;
 export class AvatarImageStore extends ImageByteStore {
   constructor(directory: string, maxBytes = AVATAR_CACHE_MAX_BYTES) {
     super(directory, maxBytes, AVATAR_MAX_BYTES);

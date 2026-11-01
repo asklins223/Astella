@@ -195,8 +195,18 @@ test("mobile owner can edit the CRDT body and restore saved versions", async () 
   assert.equal(restore.statusCode, 200, `mobile owner saved-version restore must succeed: ${restore.body}`);
   const [current] = await admin`SELECT current_version_id FROM notes WHERE id = ${restoreNoteId}`;
   const afterVersions = await admin`SELECT count(*)::int AS n FROM note_versions WHERE note_id = ${restoreNoteId}`;
-  assert.equal(current.current_version_id, restoreFirstVersionId);
-  assert.equal(afterVersions[0].n, beforeVersions[0].n, "restore switches the pointer without making a new version");
+  // 2026-11-01 的契约：恢复**产出新的一版**并把指针交给它，被恢复的那一版留在原样。
+  // 以前这里是把指针挪回目标那一版，于是紧接着的自动保存会改写那一版的行——历史被后来的编辑改掉。
+  assert.notEqual(current.current_version_id, restoreFirstVersionId,
+    "restore hands the pointer back to a version that already has history");
+  assert.equal(current.current_version_id, restore.json().version.id);
+  assert.equal(afterVersions[0].n, beforeVersions[0].n + 1, "restore must append exactly one new version");
+  const restoredBody = await admin`
+    SELECT content FROM note_blocks WHERE version_id = ${current.current_version_id} ORDER BY ordinal`;
+  const savedBody = await admin`
+    SELECT content FROM note_blocks WHERE version_id = ${restoreFirstVersionId} ORDER BY ordinal`;
+  assert.deepEqual(restoredBody.map((row) => row.content), savedBody.map((row) => row.content),
+    "the new version must carry the restored version's body");
 
 
 });

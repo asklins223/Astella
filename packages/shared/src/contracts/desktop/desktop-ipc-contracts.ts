@@ -1,3 +1,4 @@
+import { MAX_SOURCE_TEXT_BYTES, TRANSFER_BASE64_MAX_CHARS, TRANSFER_MAX_BYTES } from "./object-transfer-contracts.ts";
 import { companionParticipationPreferencesV1Schema, companionParticipationPreferencesWriteV1Schema, companionAwarenessObservationV1Schema, companionAwarenessReceiptV1Schema, companionAwarenessIdentityV1Schema } from "../companion/companion-initiative-contracts.ts";
 import { companionSelfNoteV1Schema, companionSelfNoteListV1Schema, companionSelfNoteWriteV1Schema, companionSelfNoteControlV1Schema } from "../../companion/companion-autonomy.ts";
 import { createNoteMindMapTaskV1Schema, noteMindMapLatestTaskQueryV1Schema, noteMindMapLatestTaskV1Schema, noteMindMapPageV1Schema, noteMindMapTaskV1Schema, noteMindMapSourceV1Schema } from "../note/note-mind-map-contracts.ts";
@@ -1668,12 +1669,12 @@ export type AuthProfileResultV1 = z.infer<typeof authProfileResultV1Schema>;
 export const rememberedDesktopAccountV1Schema = z.strictObject({
   email: emailSchema,
   displayName: z.string().max(32).nullable(),
-  avatarDataURL: z.string().max(14_000_100).regex(/^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/).nullable(),
+  avatarDataURL: z.string().max(TRANSFER_BASE64_MAX_CHARS).regex(/^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/).nullable(),
 });
 export type RememberedDesktopAccountV1 = z.infer<typeof rememberedDesktopAccountV1Schema>;
 
-/** 头像上传、读取与缓存共用上限：10 MB。 */
-export const AVATAR_MAX_BYTES = 10 * 1024 * 1024;
+/** 头像上传、读取与缓存共用上限：与全部文件传输同一个 100 MB（`TRANSFER_MAX_BYTES`）。 */
+export const AVATAR_MAX_BYTES = TRANSFER_MAX_BYTES;
 export const avatarGetResultV1Schema = sourceImageGetResultV1Schema.extend({
   byteLength: z.number().int().positive().max(AVATAR_MAX_BYTES),
 });
@@ -1991,16 +1992,19 @@ export type CompanionChatStreamEventV1 = z.infer<typeof companionChatStreamEvent
  * 挡不住一条几 MB 的正文穿过 IPC（主进程要为它做一次结构化克隆，渲染进程再解一遍）。
  * 上限与主进程 `note-doc-transport.ts` 用的是同一个常量，两边不能各写一个数。
  */
-export const NOTE_DOC_BLOCKS_MAX_JSON_CHARS = 4 * 1024 * 1024;
+// 这三个数过去是 4 MB / 4 MB / 2000 块，都是"主进程一次结构化克隆要吃多少"的估计数，
+// 结果它们成了**笔记本身**的上限：一篇 2001 块的笔记在桌面端过不了 IPC，症状不是报错，
+// 是那一帧/那一块看不见（2026-11-01 用户决定：笔记大小不要限制，要限就 100 MB）。
+// 现在全部由传输上限推出来，界面上报的"太大"与服务端判据同源，不会再一边放行一边拒收。
+export const NOTE_DOC_BLOCKS_MAX_JSON_CHARS = TRANSFER_BASE64_MAX_CHARS;
 /** 一条 yjs 增量过 IPC 的上限（base64 字符数）。超它不是截断而是明说"这一帧太大"。 */
-export const NOTE_DOC_UPDATE_MAX_CHARS = 4 * 1024 * 1024;
-/** 单篇笔记的块数上限：超它不是"编辑不了"而是形状不对，宁可直接拒。 */
-export const NOTE_DOC_BLOCKS_MAX_COUNT = 2_000;
+export const NOTE_DOC_UPDATE_MAX_CHARS = TRANSFER_BASE64_MAX_CHARS;
 
 /** 界面上行提交的块：数组顺序就是 ordinal，所以不带编号。 */
 export const noteDocSubmittedBlockV1Schema = z.strictObject({
   type: z.string().min(1).max(32),
-  content: z.string().max(200_000),
+  // 一块的正文上限 = 一份正文的上限（UTF-8 下字符数不超过字节数）：不再另写一个 200,000。
+  content: z.string().max(MAX_SOURCE_TEXT_BYTES),
   sourceRef: z.strictObject({ sourceId: uuidSchema.optional(), segmentId: uuidSchema.optional() }).nullable().optional(),
   imageAssetId: uuidSchema.nullable().optional(),
 });

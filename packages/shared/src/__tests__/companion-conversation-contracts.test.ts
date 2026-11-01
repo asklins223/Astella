@@ -15,6 +15,7 @@ import {
   companionSelectionV1Schema,
   type CompanionStreamEventV1,
 } from "../contracts/companion/companion-conversation-contracts.ts";
+import { COMPANION_FILE_MAX_BYTES, COMPANION_FILE_TEXT_MAX_CHARS } from "../contracts/companion/companion-file-contracts.ts";
 import { canonicalJsonV1, sha256Utf8V1, sha256Hex } from "../content/content-hash.ts";
 
 const UUID = "123e4567-e89b-12d3-a456-426614174000";
@@ -676,12 +677,20 @@ test("扩展 A：file 块字段按合同收口（url 站内、mime 白名单、t
   assert.equal(createCompanionTurnRequestV1Schema.safeParse(turnBody({
     blocks: [{ ...FILE_BLOCK, mime: "application/x-msdownload" }],
   })).success, false);
-  // text 超 100,000：拒绝
+  // text 超上限一个字符：拒绝；正好到上限：收。边界两头都要钉——只测"超了被拒"那一半，
+  // 把上限调成无穷大也照样绿。
   assert.equal(createCompanionTurnRequestV1Schema.safeParse(turnBody({
-    blocks: [{ ...FILE_BLOCK, text: "字".repeat(100_001) }],
+    blocks: [{ ...FILE_BLOCK, text: "字".repeat(COMPANION_FILE_TEXT_MAX_CHARS + 1) }],
   })).success, false);
-  // byteLength 超 20MiB：拒绝
   assert.equal(createCompanionTurnRequestV1Schema.safeParse(turnBody({
-    blocks: [{ ...FILE_BLOCK, byteLength: 21 * 1024 * 1024 }],
+    blocks: [{ ...FILE_BLOCK, text: "字".repeat(COMPANION_FILE_TEXT_MAX_CHARS) }],
+  })).success, true);
+  // byteLength 的上限不再写死 20 MiB：那是这一族过去各写一个数的形状，2026-11-01 起
+  // 它跟着 `TRANSFER_MAX_BYTES`（100 MB）走，测试读同一个常量，否则数字一动就是一条假红。
+  assert.equal(createCompanionTurnRequestV1Schema.safeParse(turnBody({
+    blocks: [{ ...FILE_BLOCK, byteLength: COMPANION_FILE_MAX_BYTES + 1 }],
   })).success, false);
+  assert.equal(createCompanionTurnRequestV1Schema.safeParse(turnBody({
+    blocks: [{ ...FILE_BLOCK, byteLength: COMPANION_FILE_MAX_BYTES }],
+  })).success, true);
 });

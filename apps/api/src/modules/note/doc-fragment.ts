@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import * as Y from "yjs";
 import { Schema } from "prosemirror-model";
 import { prosemirrorJSONToYXmlFragment, updateYFragment, yXmlFragmentToProsemirrorJSON } from "y-prosemirror";
@@ -89,6 +90,77 @@ export function snapshotOf(doc: Y.Doc): Uint8Array {
   return Y.encodeStateAsUpdate(doc);
 }
 
+/**
+ * 文档内核自己那一格：既不是正文也不是标题，是"**这份历史属于哪一篇笔记**"。
+ *
+ * 为什么必须有它（2026-10-31 实测的 P1）：把笔记 A 的整篇 `encodeStateAsUpdate` 上送进
+ * `POST /v2/notes/B/doc-update`，返回 **200**，B 的正文变成 A 的内容 + B 的原内容。
+ * `applyAndReportLanded` 那条判据量的是"有没有进不来的结构"，而**整篇状态是进得来的**
+ * ——Yjs 把它当成一份独立历史并进来，那正是 CRDT 的设计目标。CRDT 层没有"这段内容属于
+ * 另一篇"这个概念，跨笔记的**增量**会因为没有共同历史被拦住，跨笔记的**整篇**不会。
+ *
+ * 所以身份不能问 CRDT，要写在文档里：服务端在第一次物化/落盘时往 `_astella` 这一格
+ * 写一个由 `noteId` 推出的锚，之后每一条上送的增量都照它判。锚是**推导**出来的而不是
+ * 随机存的，两个后果都要：
+ *  - 老笔记（库里那一团还没有锚）在任何一次读里补写出来的都是同一个值，不会出现
+ *    "这一次读补 X1、下一次读补 X2，于是拿着 X1 的本机副本永远交不出去"；
+ *  - 判据不需要读库，协同那条高频通道（`beforeHandleMessage`）才用得起它。
+ *
+ * 它挡的是**接错线的客户端**（草稿键串号、离线队列串号、将来"把本机副本推回去"那类
+ * 功能写错），不是拿着有效会话的恶意对端——后者本来就能通过 WS 写任意内容，这里不装。
+ *
+ * 为什么放在一个**独立 Y.Map** 而不是正文 fragment 里：fragment 是编辑器（ProseMirror /
+ * y-prosemirror）直接操作的那棵树，往里塞一个它不认识的节点，症状是编辑器一次写回就把
+ * 锚删掉、或者把它画成正文里的一行。`_astella` 与 `meta`/`content` 一样按 key 取，
+ * 两个编辑器都不碰它，投影也看不见它。
+ */
+export const NOTE_DOC_KERNEL_KEY = "_astella";
+export const NOTE_DOC_ANCHOR_FIELD = "noteAnchor";
+
+/** 这一篇笔记的锚：由 noteId 推出，跨进程、跨重启、跨"补写"都得到同一个值。 */
+export function noteDocAnchorOfNoteId(noteId: string): string {
+  return createHash("sha256").update(`astella-note-doc-anchor:${noteId}`).digest("hex").slice(0, 32);
+}
+
+export function readNoteDocAnchor(doc: Y.Doc): string | null {
+  // `doc.getMap(name)` 不产生操作：没有写过的空类型不会被编码出来（见
+  // `emptyFragmentNoteDoc` 那条评论），所以读它不会让任何一份文档变大。
+  const value = doc.getMap(NOTE_DOC_KERNEL_KEY).get(NOTE_DOC_ANCHOR_FIELD);
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+/** 补写这一篇的锚（已经有了就一个字都不动）。返回当前那一份。 */
+export function stampNoteDocAnchor(doc: Y.Doc, noteId: string): string {
+  const expected = noteDocAnchorOfNoteId(noteId);
+  if (readNoteDocAnchor(doc) === expected) return expected;
+  doc.getMap(NOTE_DOC_KERNEL_KEY).set(NOTE_DOC_ANCHOR_FIELD, expected);
+  return expected;
+}
+
+/**
+ * 这条**上送的编码**里声明的是哪一篇笔记（没有声明就是 `null`：一条只改正文的增量
+ * 不会带上锚，也不该被要求带上）。
+ *
+ * 先用字节筛一次：类型名 `_astella` 只可能在"这条更新里真的写过那一格"时出现，
+ * 逐键输入的增量里根本没有这串字节。筛掉的是工作，不是判据——判据仍然是把这条更新
+ * 解进一份一次性文档再读那一格。
+ */
+export function noteDocAnchorOfUpdate(update: Uint8Array): string | null {
+  const bytes = Buffer.isBuffer(update)
+    ? update
+    : Buffer.from(update.buffer, update.byteOffset, update.byteLength);
+  if (!bytes.includes(NOTE_DOC_KERNEL_KEY)) return null;
+  const probe = new Y.Doc();
+  try {
+    Y.applyUpdate(probe, update);
+    return readNoteDocAnchor(probe);
+  } catch {
+    return null;
+  } finally {
+    probe.destroy();
+  }
+}
+
 /** 空正文也得有一个段落：schema 的 `doc: block+` 不接受零个子节点。 */
 function pmDocJson(blocks: readonly NoteDocBlockSpec[]) {
   const content = blocks.length ? noteBlocksToPmNodes(blocks) : [{ type: "paragraph" }];
@@ -128,6 +200,30 @@ export function projectFragmentBlocks(doc: Y.Doc): ProjectedNoteBlock[] {
   const fragment = doc.getXmlFragment(NOTE_DOC_FRAGMENT_KEY);
   const json = yXmlFragmentToProsemirrorJSON(fragment) as { content?: unknown[] };
   return pmNodesToNoteBlocks((json.content ?? []) as never).map((block, ordinal) => ({ ordinal, ...block }));
+}
+
+/**
+ * 这一条更新声明的是哪一篇笔记的历史？对不上就拒绝。
+ *
+ * **两条写正文的通道用同一个判据**：HTTP 的 `applyUploadedDocUpdate` 与协同的
+ * `beforeSync`（WS 的每一帧同步增量都经过它）。分开写就是两套可能互相矛盾的答案，
+ * 而这条判据的失败形状是"200 + 正文变成别人的"，不是报错。
+ *
+ * 抛出的错误带 `reason`：Hocuspocus 在 `beforeSync` 抛错时按 `reason` 关掉这条连接，
+ * 对端会重连并按服务端那一份重新取起点——这正是接错线的客户端该走的路径。
+ */
+export class NoteDocForeignAnchorError extends Error {
+  readonly reason = "foreign_note_doc_state";
+  constructor(readonly noteId: string, readonly declared: string) {
+    super("这条更新声明的历史不属于当前笔记");
+  }
+}
+
+export function assertNoteDocAnchor(noteId: string, update: Uint8Array): void {
+  const declared = noteDocAnchorOfUpdate(update);
+  if (declared !== null && declared !== noteDocAnchorOfNoteId(noteId)) {
+    throw new NoteDocForeignAnchorError(noteId, declared);
+  }
 }
 
 /**

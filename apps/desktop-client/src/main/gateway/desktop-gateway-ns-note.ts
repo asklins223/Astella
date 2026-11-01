@@ -1,4 +1,5 @@
 import { createNoteMindMapTaskV1Schema, noteMindMapLatestTaskQueryV1Schema, noteMindMapLatestTaskV1Schema, noteMindMapPageV1Schema, noteMindMapTaskV1Schema, noteMindMapSourceV1Schema } from "@astella/shared/note-mind-map-contracts";
+import { TRANSFER_MAX_BYTES } from "@astella/shared/object-transfer-contracts";
 import { uploadRemoteObject } from "../store/desktop-object-transfers";
 import { primeNoteImageCache } from "../note-doc/note-image-cache";
 /**
@@ -37,14 +38,14 @@ const noteDocLocalSessions = new Map<string, NoteDocLocalSession>();
 const NOTE_DOC_PENDING_MAX = NOTE_DOC_PENDING_LIMIT;
 
 /**
- * 单篇笔记 Markdown 的取回上限（5 MB）。
+ * 单篇笔记 Markdown 的取回上限：与一份正文的传输上限同一个数（100 MB）。
  *
  * 按**一篇**给而不是按一批：Markdown 导出的最小单元就是一篇，一篇超限只该是那一篇
  * 算 `failed`，不该把整批都带走（导出回执里 `exported + failed === total` 就是这个意思）。
- * 导入那一侧单篇上限是 500 KB，这里给足十倍余量：同一篇笔记经过多轮编辑后可以更大，
- * 而真到 5 MB 的时候那基本是一本不该用笔记形式读的东西。
+ * 以前这里是 5 MB，而库里的一篇笔记可以更大——症状是"笔记在页面上好好的，导出那一步
+ * 说它太大"，判据来自一条通道而不是内容本身。
  */
-const NOTE_MARKDOWN_MAX_BYTES = 5 * 1024 * 1024;
+const NOTE_MARKDOWN_MAX_BYTES = TRANSFER_MAX_BYTES;
 export type NoteDocSyncOutcome = {
   via: "uploaded" | "unchanged" | "queued";
   revision: number;

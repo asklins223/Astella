@@ -3,15 +3,18 @@ import { visibleNotesCondition } from "./visibility.ts";
 import type { ApiTransaction } from "../../db/client.ts";
 import { noteBlocks, noteDocumentStates, noteVersions, notes } from "@astella/shared/db-schema/note";
 import { computeContentHash } from "./content-hash.ts";
+import { logger } from "../../lib/logger.ts";
 import { upsertSearchDocument } from "./search-projection.ts";
 import {
   deriveNoteTitle,
   docFromSnapshot,
   emptyFragmentNoteDoc,
   projectFragmentBlocks,
+  readNoteDocAnchor,
   readNoteTitle,
   setNoteTitle,
   snapshotOf,
+  stampNoteDocAnchor,
   writeFragmentBlocks,
   type NoteDocBlock,
   type ProjectedNoteBlock,
@@ -62,6 +65,9 @@ async function materializeBackfilledNoteDoc(
   scope: NoteDocScope,
   doc: NoteDoc,
 ): Promise<{ doc: NoteDoc; backfilled: boolean }> {
+  // 补齐出来的这一份**当场定下来**：第一次物化就把这一篇的锚写进去，交出去的那份编码
+  // 里从此带着它（跨笔记整篇上送那条判据的依据，见 `doc-fragment.ts` 的 `_astella`）。
+  stampNoteDocAnchor(doc, scope.noteId);
   const inserted = await tx
     .insert(noteDocumentStates)
     .values({
@@ -113,7 +119,12 @@ export async function loadNoteDoc(
     ),
   });
   if (stored) {
-    return { doc: docFromSnapshot(Uint8Array.from(stored.state)), backfilled: false };
+    const doc = docFromSnapshot(Uint8Array.from(stored.state));
+    // 换锚之前落库的那一团没有锚：在这里补上，读侧与写侧拿到的才是同一份带身份的历史。
+    // 锚是按 noteId **推**出来的，所以两次读补出来的是同一个值，不会出现"客户端手里那一份
+    // 与服务器刚补写的那一份对不上"。
+    stampNoteDocAnchor(doc, scope.noteId);
+    return { doc, backfilled: false };
   }
 
   // notes / note_blocks 的 RLS 还关着（这次审查的既有事实），所以这里必须自己带上
@@ -223,10 +234,15 @@ export async function persistNoteDoc(
   projected?: ProjectedNoteBlock[],
 ): Promise<{ blocks: ProjectedNoteBlock[]; versionId: string }> {
   const { workspaceId, noteId } = scope;
+  // 落盘口是"这一篇的锚一定在文档里"那件事的第二道保证：新建笔记走
+  // `applyNoteDocUpdate(preload)` 那条路时不经过 `loadNoteDoc`，锚在这里补。
+  // 补过一次就意味着调用方预编的那一份 `state` 少了这一条操作——那份丢掉，重新编。
+  const anchorWasMissing = readNoteDocAnchor(doc) === null;
+  stampNoteDocAnchor(doc, noteId);
   const blocks = projected ?? projectFragmentBlocks(doc);
   const plain = blocks.map(({ ordinal: _ordinal, ...block }) => block);
 
-  await saveNoteDoc(tx, { workspaceId, noteId }, doc, state);
+  await saveNoteDoc(tx, { workspaceId, noteId }, doc, anchorWasMissing ? undefined : state);
   await projectBlocksIntoVersion(tx, workspaceId, versionId, blocks);
 
   const meta = readNoteTitle(doc);
@@ -296,21 +312,43 @@ export async function resolveNoteDocFlushTarget(
  * 序列化算——多存一个字段等于换一套哈希，历史版本的去重与"库内外一致"那条集成用例
  * 都会错位。`sourceRef` / `imageAssetId` 是 `note_blocks` 列上的事，不属于快照。
  */
-function versionSnapshotOf(blocks: readonly NoteDocBlock[]) {
+export function versionSnapshotOf(blocks: readonly NoteDocBlock[]) {
   const contentJson = {
     blocks: blocks.map((block) => ({ type: block.type, content: block.content })),
   };
   return { contentJson, contentHash: computeContentHash(contentJson) };
 }
 
-/** 另起一个版本并把当前指针推过来，返回新版本的 id。 */
-async function insertVersionFromSnapshot(
+/**
+ * 另起一个版本并把当前指针推过来，返回新版本的 id。
+ *
+ * **移开的那一版在这里封口**：它不再是当前版之后没人再写它的行，但那些行停的是
+ * "最后一次自动保存"而不是"它自己被提交的那一刻"。不倒回并封住，历史就永远跟着
+ * 最新文档漂移（见 `rewindAndSealNoteVersion`）。
+ *
+ * 落盘口那条 `resolveNoteDocFlushTarget` 只在当前版**已经封过**或没有当前版时走到这里，
+ * 所以那一支的封口是空操作；真正补上封口的是「提交并确认」与「恢复历史版本」两条路。
+ */
+export async function insertVersionFromSnapshot(
   tx: ApiTransaction,
   workspaceId: string,
   noteId: string,
   userId: string,
   snapshot: ReturnType<typeof versionSnapshotOf>,
 ): Promise<string> {
+  const note = await tx.query.notes.findFirst({
+    where: and(
+      eq(notes.id, noteId),
+      eq(notes.workspaceId, workspaceId),
+      // 读点就近带可见性判据（那条结构闸管的就是"按 noteId 读 notes 的那几行"）：
+      // 这一句读的是**要被顶开的那一版**，判据与指针同源。
+      visibleNotesCondition(userId),
+    ),
+    columns: { currentVersionId: true },
+  });
+  const outgoing = note?.currentVersionId
+    ? await tx.query.noteVersions.findFirst({ where: eq(noteVersions.id, note.currentVersionId) })
+    : null;
   const [latest] = await tx
     .select({ versionNo: noteVersions.versionNo })
     .from(noteVersions)
@@ -332,6 +370,7 @@ async function insertVersionFromSnapshot(
     .update(notes)
     .set({ currentVersionId: created.id })
     .where(eq(notes.id, noteId));
+  if (outgoing && outgoing.id !== created.id) await rewindAndSealNoteVersion(tx, workspaceId, outgoing);
   return created.id;
 }
 
@@ -408,6 +447,96 @@ export async function readNoteDocState(
     // 不是界面传进来的说法。
     shareScope: note.shareScope === "shared" ? "shared" as const : "private" as const,
   };
+}
+
+/** 版本快照里的正文形状（`content_json.blocks`）。 */
+type SnapshotBlock = { type: string; content: string };
+
+/**
+ * 读一个版本的快照。形状不对（不是 `{blocks:[{type,content}]}`）就当**读不出来**，
+ * 交给调用方决定——倒回这一步读不出快照时必须什么都不改，宁可留着漂移的行，
+ * 也不能把一版的正文换成空。
+ */
+export function noteVersionSnapshotBlocks(contentJson: unknown): SnapshotBlock[] | null {
+  const blocks = (contentJson as { blocks?: unknown } | null)?.blocks;
+  if (!Array.isArray(blocks)) return null;
+  const parsed: SnapshotBlock[] = [];
+  for (const block of blocks) {
+    const item = block as { type?: unknown; content?: unknown };
+    if (typeof item?.content !== "string" || typeof item.type !== "string") return null;
+    parsed.push({ type: item.type, content: item.content });
+  }
+  return parsed;
+}
+
+/**
+ * 一个版本**停止当当前版**的那一刻：把它的行倒回它自己的提交快照，然后封住它。
+ *
+ * 为什么必须做这两件事（2026-10-31 实测的 P1）：自动保存是把活文档投影进**当前版**的行，
+ * 而 `content_json` 记的是这一版被提交那一刻的样子——所以当前版的行永远比它的快照新。
+ * 一旦指针移开，那些行就停在了"下一版的内容"上：把 v1 恢复成当前版，读到的 `AAAA-B`
+ * 是 v2 提交时的样子，不是 v1 的 `AAAA`；恢复后再敲字，改的还是 v1 那几行。
+ * 所有按版本读正文的口（版本预览、阅读页按 `noteVersionId`、恢复、卡片锚点）读的
+ * 都是行，所以错位不是显示问题，是历史本身长错了。
+ *
+ * 倒回**只按 ordinal 对齐改正文**，两个刻意的取舍：
+ *  - `image_asset_id` / `source_ref` 不在快照里（快照从建表起就是 `{type, content}`，
+ *    多存一个键等于换一套 `content_hash`，历史去重与"库内外一致"那条集成用例都会错位）。
+ *    所以倒回时**保留同序行上那两列**；但图片那一列有数据库约束
+ *    （`CHECK (image_asset_id IS NULL OR type = 'image')`），倒回后那一行不再是图片块时
+ *    必须把它清空，否则那一条 UPDATE 直接报错。
+ *  - 快照读不出来（形状不对）就一行都不动，只封住。理由写在上面。
+ *
+ * 封住（`sealed_at`）之后，`note_blocks_sealed_guard` 与 `note_versions_sealed_guard`
+ * 两个触发器会拒绝再改这一版的行与快照——倒回必须发生在**封之前**，顺序反了就是 55000。
+ */
+export async function rewindAndSealNoteVersion(
+  tx: ApiTransaction,
+  workspaceId: string,
+  version: { id: string; contentJson: unknown; sealedAt: Date | null },
+): Promise<void> {
+  if (version.sealedAt) return;
+  const snapshot = noteVersionSnapshotBlocks(version.contentJson);
+  if (snapshot) {
+    const rows = await tx.query.noteBlocks.findMany({
+      where: and(eq(noteBlocks.versionId, version.id), eq(noteBlocks.workspaceId, workspaceId)),
+      columns: { ordinal: true, type: true, content: true, imageAssetId: true, sourceRef: true },
+    });
+    const byOrdinal = new Map(rows.map((row) => [row.ordinal, row]));
+    await projectBlocksIntoVersion(
+      tx,
+      workspaceId,
+      version.id,
+      snapshot.map((block, ordinal) => {
+        const row = byOrdinal.get(ordinal);
+        return {
+          ordinal,
+          type: block.type,
+          content: block.content,
+          imageAssetId: block.type === "image" ? row?.imageAssetId ?? null : null,
+          sourceRef: row?.sourceRef ?? null,
+        };
+      }),
+    );
+  } else {
+    logger.warn({ versionId: version.id }, "版本快照读不出来：只封口，不动那一版的行");
+  }
+  await tx
+    .update(noteVersions)
+    .set({ sealedAt: sql`now()`, sealedReason: "superseded" })
+    .where(eq(noteVersions.id, version.id));
+}
+
+/** 读一个版本的行（带快照读不出时要用到的那两列）。 */
+export async function loadNoteVersionRows(
+  tx: ApiTransaction,
+  workspaceId: string,
+  versionId: string,
+) {
+  return tx.query.noteBlocks.findMany({
+    where: and(eq(noteBlocks.versionId, versionId), eq(noteBlocks.workspaceId, workspaceId)),
+    orderBy: (b, { asc }) => [asc(b.ordinal)],
+  });
 }
 
 /**

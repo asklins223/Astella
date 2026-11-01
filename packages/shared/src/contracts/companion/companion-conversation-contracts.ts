@@ -10,6 +10,7 @@
  */
 
 import { z } from "zod";
+import { TRANSFER_MAX_BYTES } from "../desktop/object-transfer-contracts.ts";
 import { VOICE_STYLE_INSTRUCTION_MAX_UNITS, voiceStyleInstructionUnits } from "../../companion/voice-expression-tags.ts";
 import { companionNoteEditingContextV1Schema, companionAnnotationTargetV1Schema } from "./companion-note-authoring-contracts.ts";
 import { allowedMainRouteV2Schema } from "./companion-bridge-contracts.ts";
@@ -73,7 +74,7 @@ export type CompanionConversationV1 = z.infer<typeof companionConversationV1Sche
 export const COMPANION_REPLY_MAX_CHARS = 200_000;
 
 /** 上传与实际识图使用同一上限，不能收下图片后再按另一个阈值拒绝。 */
-export const COMPANION_IMAGE_MAX_BYTES_V1 = 10 * 1024 * 1024;
+export const COMPANION_IMAGE_MAX_BYTES_V1 = TRANSFER_MAX_BYTES;
 /** Clients prepare oversized originals before uploading to object storage. */
 export const COMPANION_IMAGE_UPLOAD_TARGET_BYTES_V1 = 4 * 1024 * 1024;
 

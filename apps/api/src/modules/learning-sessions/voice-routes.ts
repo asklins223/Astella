@@ -77,6 +77,15 @@ async function rateLimitVoice(reply: { code(statusCode: number): { send(body: un
   companionRateLimitReply(reply, requestId, result.retryAfterSeconds);
   return false;
 }
+/**
+ * 一次口述识别的音频上限：10 MB。
+ *
+ * 这是这条路由自己的判据（以前它其实是 server.ts 那个全局 multipart 上限顺带给的，
+ * 全局现在跟着文件传输抬到 100 MB）。音频整块进内存再出网给 ASR，按并发乘上去就是
+ * 整个 API 进程，而 ASR 那边也接不下更大的音频。
+ */
+const VOICE_TRANSCRIBE_MAX_BYTES = 10 * 1024 * 1024;
+
 const ttsBodySchema = z.object({
   /** 净化题面纯文本（服务端再校验一次 SSML/URL/脚本） */
   text: z.string().min(1).max(2000),
@@ -908,13 +917,16 @@ userId: session.userId,
     if (!(await rateLimitVoice(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:asr:hour`, COMPANION_RATE_LIMITS.asrPerHour.limit, COMPANION_RATE_LIMITS.asrPerHour.windowMs))) return;
     let part;
     try {
-      part = await req.file();
+      part = await req.file({ limits: { fileSize: VOICE_TRANSCRIBE_MAX_BYTES } });
     } catch (err) {
-      // review should-fix：server.ts 全局 multipart fileSize=10MB——超限在
-      // req.file()/流读抛 FST_REQ_FILE_TOO_LARGE；转 413 而非 500。
+      // 这一格的 10 MB 现在是**这条路由自己声明的**，不再是 server.ts 那个全局
+      // multipart 上限顺带给的（全局已经跟着文件传输抬到 100 MB）。抬上去的理由是
+      // 笔记与文件不该被小数字卡住，但口述音频整块进内存（下面 Buffer.concat 那一条
+      // 标注一直在），按并发乘上去就是整个 API 进程；ASR 出网也接不下 100 MB 的音频。
+      // 超限在 req.file()/流读抛 FST_REQ_FILE_TOO_LARGE；转 413 而非 500。
       const code = err instanceof Error ? (err as { code?: string }).code : undefined;
       if (code === "FST_REQ_FILE_TOO_LARGE") {
-        return reply.code(413).send({ error: "AUDIO_TOO_LARGE", code: "AUDIO_TOO_LARGE", message: "音频超过 10MB 上限" });
+        return reply.code(413).send({ error: "AUDIO_TOO_LARGE", code: "AUDIO_TOO_LARGE", message: `音频超过 ${Math.round(VOICE_TRANSCRIBE_MAX_BYTES / 1024 / 1024)}MB 上限` });
       }
       throw err;
     }

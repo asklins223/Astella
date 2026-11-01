@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { TRANSFER_MAX_BYTES } from "../desktop/object-transfer-contracts.ts";
 
 /**
  * 伴星对话附件——**文件**块的站内地址合同（2026-10-15 移动端全量重构扩展 A）。
@@ -20,8 +21,8 @@ export const COMPANION_FILE_MIME_TYPES = [
 ] as const;
 export type CompanionFileMimeType = (typeof COMPANION_FILE_MIME_TYPES)[number];
 
-/** 对话文件原始字节上限（20 MiB）。 */
-export const COMPANION_FILE_MAX_BYTES = 20 * 1024 * 1024;
+/** 对话文件原始字节上限：与全部文件传输同一个 100 MB。 */
+export const COMPANION_FILE_MAX_BYTES = TRANSFER_MAX_BYTES;
 
 /** 客户端本机抽取正文上限（服务端只透传给模型上下文，不再加工）。 */
 export const COMPANION_FILE_TEXT_MAX_CHARS = 100_000;

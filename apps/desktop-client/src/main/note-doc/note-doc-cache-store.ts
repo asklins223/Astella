@@ -1,6 +1,7 @@
 import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { z } from "zod";
+import { TRANSFER_MAX_BYTES } from "@astella/shared/object-transfer-contracts";
 
 /**
  * 一篇笔记在这台电脑上的那一份文档（决定 7：断网也要能编辑）。
@@ -38,8 +39,16 @@ const base64Schema = z.string().regex(/^[A-Za-z0-9+/]*={0,2}$/);
  */
 export const NOTE_DOC_PENDING_LIMIT = 200;
 const ENTRY_LIMIT = 48;
-const SINGLE_ENTRY_MAX_BYTES = 2_000_000;
-const FILE_MAX_BYTES = 12_000_000;
+/**
+ * 一篇笔记在本机缓存里的字节上限：100 MB，与上传/下载同一个数（`TRANSFER_MAX_BYTES`）。
+ *
+ * 以前是 2 MB，而这条判据的失败方式不是报错，是 `return false`——**这一份不收**。
+ * 症状是"断网可编辑"对大笔记静默失效：合盖再打开，那一段增量不在磁盘上，就没了。
+ * 上限比笔记本身能有多大还小，等于在最不该出声的地方出声。
+ */
+export const NOTE_DOC_CACHE_ENTRY_MAX_BYTES = TRANSFER_MAX_BYTES;
+/** 整个缓存文件的读取闸门：至少容得下两篇满额笔记，否则读回来直接整份丢弃。 */
+export const NOTE_DOC_CACHE_FILE_MAX_BYTES = 2 * TRANSFER_MAX_BYTES;
 
 /**
  * 界面手里那一份**还没交给主进程**的草稿（刷新/崩溃不丢字）。
@@ -142,6 +151,13 @@ const entryKey = (key: NoteDocCacheKey): string =>
 export class MemoryNoteDocCacheStore implements NoteDocCacheStore {
   private readonly entries = new Map<string, { key: NoteDocCacheKey; entry: NoteDocCacheEntryV1 }>();
 
+  /**
+   * 单条上限可以收窄，生产不收窄（默认就是 `NOTE_DOC_CACHE_ENTRY_MAX_BYTES` = 传输上限 100 MB）。
+   * 留这个口子只为一件事：证明"太大那一条是**拒绝**、不是截断正文"这条支路还活着——
+   * 按默认值测一次要在测试里现造 100 MB 的字符串。
+   */
+  constructor(private readonly maxEntryBytes: number = NOTE_DOC_CACHE_ENTRY_MAX_BYTES) {}
+
   snapshot(): Storage["entries"] {
     return [...this.entries.values()].map(({ key, entry }) => ({ ...key, ...entry }));
   }
@@ -163,7 +179,7 @@ export class MemoryNoteDocCacheStore implements NoteDocCacheStore {
   async set(key: NoteDocCacheKey, entry: NoteDocCacheEntryV1): Promise<boolean> {
     const parsed = noteDocCacheEntryV1Schema.parse(entry);
     const bytes = JSON.stringify(parsed).length;
-    if (bytes > SINGLE_ENTRY_MAX_BYTES) return false;
+    if (bytes > this.maxEntryBytes) return false;
     const id = entryKey(key);
     // 落盘本机文档那一次**不顺手抹掉草稿**：草稿是"界面还没交给主进程的那几个操作"，
     // 与 `docState` 是两条时间线。打开一篇笔记时先读起点、再读草稿，两次 IPC 谁先到
@@ -191,7 +207,7 @@ export class MemoryNoteDocCacheStore implements NoteDocCacheStore {
     if (!existing) return false;
     const parsed = noteDocDraftV1Schema.parse(draft);
     const entry: NoteDocCacheEntryV1 = { ...existing.entry, draft: parsed, updatedAt: draft.savedAt };
-    if (JSON.stringify(entry).length > SINGLE_ENTRY_MAX_BYTES) return false;
+    if (JSON.stringify(entry).length > this.maxEntryBytes) return false;
     this.entries.set(id, { key: existing.key, entry });
     return true;
   }
@@ -223,18 +239,22 @@ export class MemoryNoteDocCacheStore implements NoteDocCacheStore {
 }
 
 export class FileNoteDocCacheStore implements NoteDocCacheStore {
-  private readonly memory = new MemoryNoteDocCacheStore();
+  private readonly memory: MemoryNoteDocCacheStore;
   private loaded: Promise<void> | null = null;
   private flushQueue: Promise<void> = Promise.resolve();
+  private readonly maxFileBytes: number;
 
-  constructor(private readonly filePath: string) {}
+  constructor(private readonly filePath: string, limits: { maxEntryBytes?: number; maxFileBytes?: number } = {}) {
+    this.memory = new MemoryNoteDocCacheStore(limits.maxEntryBytes);
+    this.maxFileBytes = limits.maxFileBytes ?? NOTE_DOC_CACHE_FILE_MAX_BYTES;
+  }
 
   private async ensureLoaded(): Promise<void> {
     if (!this.loaded) {
       this.loaded = (async () => {
         try {
           const raw = await readFile(this.filePath, "utf8");
-          if (raw.length > FILE_MAX_BYTES) return;
+          if (raw.length > this.maxFileBytes) return;
           const parsed = storageSchema.safeParse(JSON.parse(raw) as unknown);
           // 解析不上就是"本机没有这一份"。不逐条挑、不部分恢复：那等于把一份没经过
           // 整体校验的正文接回编辑器。
@@ -250,7 +270,7 @@ export class FileNoteDocCacheStore implements NoteDocCacheStore {
 
   /**
    * 收掉历史上带 uuid 的孤儿临时文件（`<file>.<uuid>.tmp`）。固定名之后新流程不会
-   * 再造孤儿，但改法之前留下的那些每人最多 12 MB，没人清就永远躺在 userData 里。
+   * 再造孤儿，但改法之前留下的那些每人最多一个缓存文件的上限，没人清就永远躺在 userData 里。
    * 清失败不影响任何读写路径，所以只吞异常、不打日志刷屏。
    */
   private async pruneStaleTempFiles(): Promise<void> {
@@ -278,7 +298,7 @@ export class FileNoteDocCacheStore implements NoteDocCacheStore {
        * 一遍（含每条的 base64 正则）。但每一条都是走过 `MemoryNoteDocCacheStore.set` 的
        * `noteDocCacheEntryV1Schema.parse`（:160）或 `load` 的整份校验（:234）才进到内存的，
        * 所以这一次是纯粹的重复劳动，而它按"每次自动保存一遍整库"计费（草稿 600ms、
-       * 自动保存 1200ms 各戳一次，额度是 48 条 × 2 MB）。
+       * 自动保存 1200ms 各戳一次，额度是 48 条）。
        * 深度校验摘掉，只留这条 O(1) 的上界守卫——原来那个 `.max()` 挡的就是这个数。
        */
       if (entries.length > ENTRY_LIMIT * 2) {
@@ -288,7 +308,7 @@ export class FileNoteDocCacheStore implements NoteDocCacheStore {
       await mkdir(dirname(this.filePath), { recursive: true });
       /**
        * 固定名（0269 轮 L8）：以前带 `randomUUID()`，进程在 writeFile 与 rename 之间被杀
-       * 就留下一个孤儿 `.tmp`，最大可到 `FILE_MAX_BYTES`，而**没有任何地方**回收它们。
+       * 就留下一个孤儿 `.tmp`，最大可到整份缓存的上限，而**没有任何地方**回收它们。
        * 固定名下最坏情况只有这一个文件、且下一次 flush 直接覆盖它；`ensureLoaded` 顺手
        * 清掉升级前那些带 uuid 的旧残留。
        */

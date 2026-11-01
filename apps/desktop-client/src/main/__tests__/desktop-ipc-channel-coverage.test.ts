@@ -74,17 +74,51 @@ type InvokeHandler = (
 
 const electronMock = vi.hoisted(() => {
   const handlers = new Map<string, InvokeHandler>();
-  const listeners = new Set<string>();
+  // `ipcMain.on` 那一份也要**存下处理函数**，不能只记频道名：豁免名单里
+  // `contractGetSnapshot` 的理由是"它走 on + sendSync"，只记名字等于没验——
+  // 注册错地方（比如哪天把它挪进 `handle`）这里照样是绿的。
+  const listeners = new Map<string, (event: { returnValue?: unknown }) => void>();
   return {
     handlers,
     listeners,
     handle: vi.fn((channel: string, handler: InvokeHandler) => {
       handlers.set(channel, handler);
     }),
-    on: vi.fn((channel: string) => {
-      listeners.add(channel);
+    on: vi.fn((channel: string, listener: (event: { returnValue?: unknown }) => void) => {
+      listeners.set(channel, listener);
     }),
   };
+});
+
+/** 主进程往 renderer 推的字节块（`webContents.send`）在这里换成交接器，用例自己接管。 */
+const outboundStubs = vi.hoisted(() => ({
+  streamVoiceSegment: null as null | ((
+    transport: unknown,
+    request: unknown,
+    requestId: string,
+    onChunk: (chunk: Uint8Array) => void,
+  ) => Promise<{ byteLength: number }>),
+}));
+
+vi.mock("../gateway/desktop-gateway-ns-companion", async (importOriginal) => {
+  // 又是**部分 mock**（理由见 `ns-note-stubs.ts` 头）：只有流式朗读那一条换成可驱动
+  // 的假实现，其余 55 条伴星通道走真模块——写死清单会过时，而这里要验的恰恰是
+  // "清单之外的也没被漏掉"。
+  const real = await importOriginal<typeof import("../gateway/desktop-gateway-ns-companion")>();
+  return new Proxy(real, {
+    get(target, prop: string) {
+      if (prop === "streamCompanionVoiceSegment") {
+        // 两边都按"原样转发"处理：`target[prop]` 的类型是整个模块导出的联合，而桩的
+        // 签名是固定四参，展开一个数组元组过不去——运行时这一层就是转发。
+        type Forward = (...a: never[]) => unknown;
+        return (...args: never[]) => {
+          const stub = outboundStubs.streamVoiceSegment as Forward | null;
+          return (stub ?? (target[prop as keyof typeof target] as Forward))(...args);
+        };
+      }
+      return target[prop as keyof typeof target];
+    },
+  }) as typeof real;
 });
 
 vi.mock("electron", () => ({
@@ -97,6 +131,7 @@ vi.mock("electron", () => ({
   session: { defaultSession: { on: vi.fn(() => true) } },
   app: { on: vi.fn(), whenReady: () => Promise.resolve() },
   nativeTheme: { themeSource: "system", on: vi.fn() },
+  powerMonitor: { on: vi.fn() },
 }));
 
 /**
@@ -186,10 +221,15 @@ async function register(gateway: DesktopGateway = stubGateway()) {
   // 所以每个用例换一份干净的模块实例。
   vi.resetModules();
   const { registerM1DesktopIpc } = await import("../ipc/desktop-ipc");
+  const send = vi.fn();
   const fakeWindow = {
     isDestroyed: () => false,
     once: () => undefined,
-    webContents: { isDestroyed: () => false, once: () => undefined, on: () => undefined, send: vi.fn() },
+    on: () => undefined,
+    focus: () => undefined,
+    isVisible: () => true,
+    isMinimized: () => false,
+    webContents: { isDestroyed: () => false, once: () => undefined, on: () => undefined, send, getURL: () => "astella://renderer/" },
   } as never;
   registerM1DesktopIpc({
     gateway,
@@ -202,12 +242,99 @@ async function register(gateway: DesktopGateway = stubGateway()) {
   const event = { sender: {}, senderFrame: { url: "astella://renderer/" } };
   // 先读一次状态，把主进程的 activeWorkspaceEpoch 立起来（与笔记协同那份集测同一口径）。
   await electronMock.handlers.get(DESKTOP_IPC_CHANNELS.authGetState)!(event, { meta });
-  return { event, gateway };
+  return { event, gateway, send };
 }
 
 function requireData(result: GatewayResultV1<unknown>): Record<string, unknown> {
   if (!result.ok) { throw new Error(`IPC 调用失败：${JSON.stringify(result.error)}`); }
   return result.data as Record<string, unknown>;
 }
+
+const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+/** 契约里声明的全部通道字符串（写成 `string[]`：下面要拿它跟任意注册上来的通道名比）。 */
+const declaredChannels: string[] = Object.values(DESKTOP_IPC_CHANNELS);
+
+describe("IPC 通道覆盖对账", () => {
+  beforeEach(() => {
+    electronMock.handlers.clear();
+    electronMock.listeners.clear();
+    outboundStubs.streamVoiceSegment = null;
+  });
+
+  it("每一条声明过的通道都有归宿：注册成 handler，或在写明理由的那份名单里", async () => {
+    await register();
+    const registered = new Set(electronMock.handlers.keys());
+    const exempt = new Set(Object.keys(NON_INVOKE_CHANNELS));
+
+    // 两条通道撞成同一个字符串时，"少注册一条"会被另一条掩盖掉。
+    expect(declaredChannels.length).toBe(new Set(declaredChannels).size);
+
+    const unhandled = declaredChannels.filter((channel) => !registered.has(channel) && !exempt.has(channel));
+    expect(unhandled, `这些通道契约里有、主进程却没注册，渲染层调用只会静默 reject`).toEqual([]);
+
+    const undeclared = [...registered].filter((channel) => !declaredChannels.includes(channel));
+    expect(undeclared, `这些 handler 注册的通道不在契约里：preload 永远不会调到它们`).toEqual([]);
+
+    // 豁免名单不许慢慢变成垃圾桶：名单里的既不能其实有 handler，也不能指向已删掉的通道。
+    for (const channel of exempt) expect(registered.has(channel), `${channel} 既在名单里又注册了`).toBe(false);
+    expect(declaredChannels.filter((channel) => exempt.has(channel))).toHaveLength(exempt.size);
+  });
+
+  it("contractGetSnapshot 那条同步通道确实绑在 ipcMain.on 上，且答得出一份快照", async () => {
+    await register();
+    const listener = electronMock.listeners.get(DESKTOP_IPC_CHANNELS.contractGetSnapshot);
+    expect(listener, "豁免名单说它走 ipcMain.on，这里要看到那个监听器").toBeTypeOf("function");
+    const event: { sender: unknown; senderFrame: { url: string }; returnValue?: unknown } = {
+      sender: {}, senderFrame: { url: "astella://renderer/" },
+    };
+    listener!(event);
+    expect(event.returnValue).toMatchObject({ contractVersion: DESKTOP_IPC_CONTRACT_VERSION });
+  });
+
+  it("subscriptionsEvent 那条出站通道，事件真的落到 renderer 的 send 上", async () => {
+    noteStub("watchNoteDocument", vi.fn(async () => ({ stop: () => undefined })));
+    const { event, send } = await register();
+    const subscribed = await electronMock.handlers.get(DESKTOP_IPC_CHANNELS.subscriptionsSubscribe)!(event, {
+      meta, topic: { kind: "noteDoc", noteId: NOTE_ID },
+    });
+    const subscriptionId = requireData(subscribed).subscriptionId as string;
+    expect(subscriptionId).toBeTruthy();
+    await settle();
+    send.mockClear();
+
+    // 首参是传输层，`onEvent` 在索引 3（与 `desktop-ipc-note-doc.test.ts` 同一口径）。
+    const onEvent = noteStubOf("watchNoteDocument").mock.calls[0][3] as (payload: unknown) => void;
+    // 状态帧（不是增量）：增量那条分支还要本机文档树，这里要验的只是出站通道有没有口。
+    onEvent({ noteId: NOTE_ID, type: "status", status: "authenticated", authorizedScope: "read-write" });
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0][0]).toBe(DESKTOP_IPC_CHANNELS.subscriptionsEvent);
+    expect(send.mock.calls[0][1]).toMatchObject({ subscriptionId, kind: "note_doc_event", workspaceEpoch: 9 });
+  });
+
+  it("companionVoiceSpeakSegmentChunk 那条出站通道，音频块真的落到 renderer 的 send 上", async () => {
+    outboundStubs.streamVoiceSegment = async (_transport, _request, _requestId, onChunk) => {
+      onChunk(new Uint8Array([1, 2, 3]));
+      return { byteLength: 3 };
+    };
+    const { event, send } = await register();
+    const accepted = await electronMock.handlers.get(DESKTOP_IPC_CHANNELS.companionVoiceSpeakSegmentStream)!(event, {
+      meta,
+      request: {
+        version: 2,
+        conversationId: "44444444-4444-4444-8444-444444444444",
+        runId: "55555555-5555-5555-8555-555555555555",
+        generation: 1,
+        ordinal: 1,
+        segmentId: "a".repeat(64),
+      },
+    });
+    expect(requireData(accepted)).toMatchObject({ accepted: true, requestId: meta.requestId });
+    await settle();
+    const frames = send.mock.calls.filter((call) => call[0] === DESKTOP_IPC_CHANNELS.companionVoiceSpeakSegmentChunk);
+    expect(frames.map((call) => (call[1] as { kind: string }).kind)).toEqual(["chunk", "end"]);
+  });
+});
+
 
 

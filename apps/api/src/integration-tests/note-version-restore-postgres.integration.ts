@@ -5,13 +5,13 @@
  * database, covering scenarios that unit tests with mock executors cannot
  * fully verify:
  *
- *   1. Restore switches currentVersionId without creating a new version
+ *   1. Restore produces a NEW version at the end of history; the restored version stays untouched
  *   2. Restore with mismatched baseVersionId throws RevisionConflictError
  *   3. Restore updates the search index
  *   4. Restore on a soft-deleted note returns null
  *   5. Restore with a non-existent target version returns null
  *   6. Auto title is re-derived from restored version content
- *   7. canUpdateVersionInPlace blocks in-place update when superseded card exists
+ *   7. a superseded version is rewound to its own snapshot and sealed
  *
  * Environment variables:
  *   NOTE_VERSION_RESTORE_TEST_DATABASE_URL — connection string for the test database
@@ -28,6 +28,7 @@ import * as schema from "@astella/shared/db-schema";
 import * as Y from "yjs";
 import {
   RevisionConflictError,
+  checkpointNote,
   restoreNoteVersion,
 } from "../modules/note/service.ts";
 import {
@@ -187,6 +188,8 @@ async function cleanupWorkspace(
   await tx`DELETE FROM note_blocks WHERE workspace_id = ${workspaceId}`;
   await tx`DELETE FROM note_versions WHERE workspace_id = ${workspaceId}`;
   await tx`DELETE FROM workspace_members WHERE workspace_id = ${workspaceId}`;
+  // 图片资产行被 `note_blocks_image_asset_fk`（RESTRICT）指着，要在块与人都没了之后再删。
+  await tx`DELETE FROM note_image_assets WHERE workspace_id = ${workspaceId}`;
   await tx`DELETE FROM workspaces WHERE id = ${workspaceId}`;
   await tx`DELETE FROM users WHERE id = ${userId}`;
 }
@@ -216,58 +219,63 @@ test("restore: an open editor merges the restored content and can submit its nex
     const before = Y.encodeStateVector(client);
     editFragmentBlockText(client, 0, "v1 content · continue editing");
     const update = Y.encodeStateAsUpdate(client, before);
-    await flushLikeCollaboration(workspaceId, userId, noteId, (doc) => {
+    const flushedVersionId = await flushLikeCollaboration(workspaceId, userId, noteId, (doc) => {
       Y.applyUpdate(doc, update);
       assert.equal(doc.store.pendingStructs, null);
       assert.equal(doc.store.pendingDs, null);
     });
-    const rows = await sql`SELECT content FROM note_blocks WHERE version_id = ${v1Id} ORDER BY ordinal`;
+    // 恢复之后接着敲的那个字落在**恢复新起的那一版**上；v1 那一版停在它自己提交时的样子。
+    const rows = await sql`SELECT content FROM note_blocks WHERE version_id = ${flushedVersionId} ORDER BY ordinal`;
     assert.deepEqual(rows.map((row) => row.content), ["v1 content · continue editing"]);
+    const history = await sql`SELECT content FROM note_blocks WHERE version_id = ${v1Id} ORDER BY ordinal`;
+    assert.deepEqual(history.map((row) => row.content), ["v1 content"], "开着的那一份把历史版本的行改掉了");
   } finally {
     client.destroy();
     await cleanupWorkspace(sql, workspaceId, userId, noteId);
   }
 });
 
-test("restore: switches currentVersionId to target version without creating a new version", async () => {
+/**
+ * 契约变更（2026-11-01，缺陷 2）：恢复**不再**把 `currentVersionId` 挪回目标那一版。
+ *
+ * 以前那一条是这么写的：恢复 = 换指针，之后自动保存就往目标那一版的行里写——
+ * 于是"把 v1 恢复成当前版再敲字"改的是 **v1 的行**，而 v1 的快照停在提交那一刻。
+ * 实测到的形状是 v1 快照 `AAAA`、v1 的行 `AAAA-B-C【恢复后又编辑】`：版本预览与库里
+ * 两套内容各说各话，而历史已经被后来的编辑改掉。
+ *
+ * 现在恢复产出历史末尾**新的一版**（内容 = 目标那一版的快照），指针跟上；被恢复的那一版
+ * 一个字都不动。方向仍然双向：v1 → 新一版、v2 → 又新一版。
+ */
+test("restore: 产出历史末尾新的一版，目标那一版留在原样", async () => {
   await withTestSql(async (tx) => {
     const { workspaceId, userId, noteId, v1Id, v2Id } = await seedWorkspaceNoteWithTwoVersions(tx);
 
     try {
-      // Restore to v1
       const result = await withServiceTransaction((serviceTx) =>
         restoreNoteVersion(serviceTx, noteId, v1Id, workspaceId, userId)
       );
 
       assert.ok(result, "restore should return a result");
-      assert.equal(result!.version.id, v1Id, "restored version should be v1");
-      assert.equal(result!.note.currentVersionId, v1Id, "currentVersionId should point to v1");
+      assert.notEqual(result!.version.id, v1Id, "恢复不许再把指针交还给一个有历史内容的版本");
+      assert.equal(result!.version.versionNo, 3, "恢复出来的那一版排在历史末尾");
 
-      // Verify no new version was created (still only 2 versions)
-      const versionCount = await tx<{ count: number }[]>`
-        SELECT count(*)::int AS count FROM note_versions WHERE note_id = ${noteId}
-      `;
-      assert.equal(versionCount[0].count, 2, "no new version should be created");
-
-      // Verify note.currentVersionId in DB is v1Id
       const [noteRow] = await tx<{ current_version_id: string }[]>`
-        SELECT current_version_id FROM notes WHERE id = ${noteId}
-      `;
-      assert.equal(noteRow.current_version_id, v1Id, "DB currentVersionId should be v1");
+        SELECT current_version_id FROM notes WHERE id = ${noteId}`;
+      assert.equal(noteRow.current_version_id, result!.version.id, "DB currentVersionId 要跟上新那一版");
+      const rows = await tx<{ content: string }[]>`
+        SELECT content FROM note_blocks WHERE version_id = ${result!.version.id} ORDER BY ordinal`;
+      assert.deepEqual(rows.map((row) => row.content), ["v1 content"], "新的一版的行要是恢复出来的那一份");
 
-      // Restore back to v2 to verify bidirectional restore
+      // Restore back to v2 to verify the direction works both ways.
       const result2 = await withServiceTransaction((serviceTx) =>
         restoreNoteVersion(serviceTx, noteId, v2Id, workspaceId, userId)
       );
       assert.ok(result2);
-      assert.equal(result2!.version.id, v2Id);
-      assert.equal(result2!.note.currentVersionId, v2Id);
-
-      // Still only 2 versions
-      const versionCount2 = await tx<{ count: number }[]>`
-        SELECT count(*)::int AS count FROM note_versions WHERE note_id = ${noteId}
-      `;
-      assert.equal(versionCount2[0].count, 2, "no new version should be created on second restore");
+      assert.notEqual(result2!.version.id, v2Id);
+      assert.equal(result2!.version.versionNo, 4, "第二次恢复也排到历史末尾");
+      const stillThere = await tx<{ content: string }[]>`
+        SELECT content FROM note_blocks WHERE version_id = ${v1Id} ORDER BY ordinal`;
+      assert.deepEqual(stillThere.map((row) => row.content), ["v1 content"], "第二次恢复动了 v1 的行");
     } finally {
       await cleanupWorkspace(tx, workspaceId, userId, noteId);
     }
@@ -459,6 +467,165 @@ test("restore: manual title is preserved during restore", async () => {
 
       assert.ok(result);
       assert.equal(result!.note.title, "My Manual Title", "manual title should not be overwritten");
+    } finally {
+      await cleanupWorkspace(tx, workspaceId, userId, noteId);
+    }
+  });
+});
+
+/**
+ * 缺陷 2（2026-10-31 实测的 P1）：恢复历史版本读的是**当前行**，不是提交时的快照。
+ *
+ * 自动保存把活文档投影进**当前版**的 `note_blocks` 行（这是设计，见下面那条
+ * 「就地改一个已有块」），而 `note_versions.content_json` 记的是这一版被提交那一刻的样子。
+ * 于是被顶开的那一版的行停的是"下一版当时的样子"：实测到 v1 的快照是 `AAAA`、
+ * v1 的行是 `AAAA-B`。按行读历史 → 恢复出来的不是那一版；恢复后再敲字 → 改的正是
+ * 那一版的行，而它的快照停在原地——版本预览与库里两套内容各说各话。
+ *
+ * 这一条按**生产路径**走完整篇（新建 → 自动保存 → 提交并确认 → 再自动保存 → 恢复 →
+ * 再自动保存），钉四件事，缺一个都还是错位：
+ *  1. 一版被顶开的那一刻，它的行倒回它自己的快照并封口（`sealed_at`）；
+ *  2. 恢复出来的是目标版**快照**的那一份正文；
+ *  3. 恢复产出的是**新的一版**，不是把指针挪回一个有历史内容的版本再往上写；
+ *  4. 恢复之后继续编辑，历史版本的行一个字都不动。
+ */
+test("恢复的是那一版提交时的快照，不是它现在长在库里的那几行", async () => {
+  await withTestSql(async (tx) => {
+    const workspaceId = randomUUID();
+    const userId = randomUUID();
+    const noteId = randomUUID();
+
+    await tx`INSERT INTO users (id, email, password_hash, role) VALUES (${userId}, ${`restore-snapshot-${userId.slice(0, 8)}@example.test`}, 'test-hash', 'owner')`;
+    await tx`INSERT INTO workspaces (id, name, owner_id) VALUES (${workspaceId}, ${`restore-snapshot-${workspaceId.slice(0, 8)}`}, ${userId})`;
+    await tx`INSERT INTO workspace_members (workspace_id, user_id, role) VALUES (${workspaceId}, ${userId}, 'owner')`;
+    await tx`INSERT INTO notes (id, workspace_id, title, title_source, created_by) VALUES (${noteId}, ${workspaceId}, '一篇会改的笔记', 'manual', ${userId})`;
+    // 第一版按原生种子写（`createNote` 走的是安全定义器函数，这条用例要测的不是它），
+    // 但**之后每一步都走生产路径**：自动落盘 → 「提交并确认」→ 恢复 → 再自动落盘。
+    const v1Id = randomUUID();
+    const v1Snapshot = { blocks: [{ type: "paragraph", content: "AAAA" }] };
+    await tx`
+      INSERT INTO note_versions (id, note_id, workspace_id, version_no, content_json, content_hash, created_by)
+      VALUES (${v1Id}, ${noteId}, ${workspaceId}, 1, ${tx.json(v1Snapshot)}, ${computeContentHash(v1Snapshot)}, ${userId})
+    `;
+    await tx`
+      INSERT INTO note_blocks (version_id, workspace_id, ordinal, type, content)
+      VALUES (${v1Id}, ${workspaceId}, 0, 'paragraph', 'AAAA')
+    `;
+    await tx`UPDATE notes SET current_version_id = ${v1Id} WHERE id = ${noteId}`;
+
+    try {
+      // v1 还是当前版的那段时间里，自动保存往它的行里写了 B（快照停在 AAAA）。
+      await flushLikeCollaboration(workspaceId, userId, noteId, (doc) => {
+        editFragmentBlockText(doc, 0, "AAAA-B");
+      });
+      // 「提交并确认」把此刻定成 v2，并把被顶开的 v1 封口。
+      const committed = await withServiceTransaction((serviceTx) =>
+        checkpointNote(serviceTx, noteId, workspaceId, userId, { baseVersionId: v1Id }));
+      const v2Id = committed!.version.id;
+      assert.notEqual(v2Id, v1Id, "内容变了就该出一版，否则这条用例的前提没了");
+
+      const [sealedV1] = await tx<{ sealed: boolean }[]>`SELECT sealed_at IS NOT NULL AS sealed FROM note_versions WHERE id = ${v1Id}`;
+      assert.equal(sealedV1.sealed, true, "被顶开的那一版没有封口：它之后还会被改写");
+      const v1RowsAfterCommit = await tx<{ content: string }[]>`
+        SELECT content FROM note_blocks WHERE version_id = ${v1Id} ORDER BY ordinal`;
+      assert.deepEqual(
+        v1RowsAfterCommit.map((row) => row.content),
+        ["AAAA"],
+        "被顶开的那一版的行没有倒回它自己的快照",
+      );
+
+      // v2 当当前版期间又被自动保存改了一次。
+      await flushLikeCollaboration(workspaceId, userId, noteId, (doc) => {
+        editFragmentBlockText(doc, 0, "AAAA-B-C");
+      });
+
+      const restored = await withServiceTransaction((serviceTx) =>
+        restoreNoteVersion(serviceTx, noteId, v1Id, workspaceId, userId));
+      assert.ok(restored);
+      assert.deepEqual(
+        restored!.blocks.map((block) => block.content),
+        ["AAAA"],
+        "恢复出来的不是 v1 被提交时的那一份正文",
+      );
+      assert.notEqual(restored!.version.id, v1Id, "恢复不许把指针挪回一个有历史内容的版本再往上写");
+      const [pointer] = await tx<{ current_version_id: string }[]>`SELECT current_version_id FROM notes WHERE id = ${noteId}`;
+      assert.equal(pointer.current_version_id, restored!.version.id, "指针要跟上恢复实际写进去的那一版");
+
+      // 恢复之后接着打字：改的是新那一版的行，v1 与 v2 都停在各自提交时的那一份。
+      await flushLikeCollaboration(workspaceId, userId, noteId, (doc) => {
+        editFragmentBlockText(doc, 0, "AAAA 恢复之后又敲的一句");
+      });
+      // 按 uuid 排序会把两版的顺序排成随机的（uuid 就是随机的），所以一版一版问。
+      const v1History = await tx<{ content: string }[]>`
+        SELECT content FROM note_blocks WHERE version_id = ${v1Id} ORDER BY ordinal`;
+      const v2History = await tx<{ content: string }[]>`
+        SELECT content FROM note_blocks WHERE version_id = ${v2Id} ORDER BY ordinal`;
+      assert.deepEqual(v1History.map((row) => row.content), ["AAAA"], "恢复之后继续编辑改到了 v1 的行");
+      assert.deepEqual(v2History.map((row) => row.content), ["AAAA-B"], "恢复之后继续编辑改到了 v2 的行");
+    } finally {
+      await cleanupWorkspace(tx, workspaceId, userId, noteId);
+    }
+  });
+});
+
+/**
+ * 恢复出来的内容**带着证据链那两列**：`source_ref` / `image_asset_id` 活在
+ * `note_blocks` 的列上，而版本快照按形状只存 `{type, content}`。恢复时按同一个 ordinal
+ * 把它们接回来，"来源转笔记"的那条链与那张图才活得过恢复。
+ */
+test("恢复历史版本把来源引用与图片资产一起带回来", async () => {
+  await withTestSql(async (tx) => {
+    const workspaceId = randomUUID();
+    const userId = randomUUID();
+    const noteId = randomUUID();
+    const v1Id = randomUUID();
+    const sourceId = randomUUID();
+    const assetId = randomUUID();
+
+    await tx`INSERT INTO users (id, email, password_hash, role) VALUES (${userId}, ${`restore-cols-${userId.slice(0, 8)}@example.test`}, 'test-hash', 'owner')`;
+    await tx`INSERT INTO workspaces (id, name, owner_id) VALUES (${workspaceId}, ${`restore-cols-${workspaceId.slice(0, 8)}`}, ${userId})`;
+    await tx`INSERT INTO workspace_members (workspace_id, user_id, role) VALUES (${workspaceId}, ${userId}, 'owner')`;
+    await tx`INSERT INTO notes (id, workspace_id, title, title_source, created_by) VALUES (${noteId}, ${workspaceId}, '带来源的一篇', 'manual', ${userId})`;
+    // 图片那一列有真外键（`note_blocks_image_asset_fk` → note_image_assets(workspace_id, id)），
+    // 夹具要先有那一个资产行。
+    await tx`
+      INSERT INTO note_image_assets (id, workspace_id, uploaded_for_note_id, object_key, sha256, mime_type, byte_size, width, height, created_by)
+      VALUES (${assetId}, ${workspaceId}, ${noteId}, ${`${workspaceId}/notes/${userId}/a.png`}, ${'0'.repeat(64)}, 'image/png', 1024, 8, 8, ${userId})
+    `;
+
+    const content = {
+      blocks: [
+        { type: "paragraph", content: "第一段是抄来的" },
+        { type: "image", content: "![配图](/api/uploads/a.png)" },
+      ],
+    };
+    await tx`
+      INSERT INTO note_versions (id, note_id, workspace_id, version_no, content_json, content_hash, created_by)
+      VALUES (${v1Id}, ${noteId}, ${workspaceId}, 1, ${tx.json(content)}, ${computeContentHash(content)}, ${userId})
+    `;
+    await tx`
+      INSERT INTO note_blocks (version_id, workspace_id, ordinal, type, content, source_ref, image_asset_id)
+      VALUES (${v1Id}, ${workspaceId}, 0, 'paragraph', '第一段是抄来的', ${tx.json({ sourceId })}, NULL)
+    `;
+    await tx`
+      INSERT INTO note_blocks (version_id, workspace_id, ordinal, type, content, source_ref, image_asset_id)
+      VALUES (${v1Id}, ${workspaceId}, 1, 'image', '![配图](/api/uploads/a.png)', NULL, ${assetId})
+    `;
+    await tx`UPDATE notes SET current_version_id = ${v1Id} WHERE id = ${noteId}`;
+
+    try {
+      const restored = await withServiceTransaction((serviceTx) =>
+        restoreNoteVersion(serviceTx, noteId, v1Id, workspaceId, userId));
+      assert.ok(restored);
+      assert.equal(restored!.blocks.length, 2, "恢复出来的块数不对");
+      assert.deepEqual(
+        restored!.blocks.map((block) => (block as unknown as { sourceRef?: unknown }).sourceRef),
+        [{ sourceId }, undefined],
+        "恢复之后来源引用没了：证据链在这一版上断了",
+      );
+      const rows = await tx<{ ordinal: number; image_asset_id: string | null }[]>`
+        SELECT ordinal, image_asset_id FROM note_blocks WHERE version_id = ${restored!.version.id} ORDER BY ordinal`;
+      assert.equal(rows[1]?.image_asset_id, assetId, "恢复之后图片资产那一列没了（快照没有它，必须从行接回来）");
     } finally {
       await cleanupWorkspace(tx, workspaceId, userId, noteId);
     }

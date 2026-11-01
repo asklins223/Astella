@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, inArray, isNull, isNotNull, or, sql } from "drizzle-orm";
-import { applyNoteDocUpdate, loadNoteDoc, persistNoteDoc } from "./document-state.ts";
+import { applyNoteDocUpdate, insertVersionFromSnapshot, loadNoteDoc, loadNoteVersionRows, noteVersionSnapshotBlocks, persistNoteDoc, versionSnapshotOf } from "./document-state.ts";
 import { visibleNotesCondition, type NoteShareScope } from "./visibility.ts";
-import { deriveNoteTitle, noteDocBlocksFromRows, projectFragmentBlocks, setNoteTitle, writeFragmentBlocks, type NoteDocBlock } from "./doc-fragment.ts";
+import { deriveNoteTitle, projectFragmentBlocks, setNoteTitle, writeFragmentBlocks, type NoteDocBlock } from "./doc-fragment.ts";
 import { type ApiTransaction } from "../../db/client.ts";
 import { notes, noteVersions, noteBlocks, noteImageAssets } from "@astella/shared/db-schema/note";
 import { searchDocuments } from "@astella/shared/db-schema/search";
@@ -627,32 +627,26 @@ export async function checkpointNote(
       : await tx.query.noteVersions.findFirst({
           where: and(eq(noteVersions.noteId, noteId), eq(noteVersions.contentHash, contentHash)),
         });
-    const existing = hashCandidate?.contentJson
+    // 已被顶开（封过）的那一版**不能**当目标：它的行已经倒回它自己的快照并被 `sealed_at`
+    // 封住，往它身上写落盘会直接撞 `note_blocks_sealed_guard`(55000)。内容与某个老版本
+    // 相同就再建一版——历史按提交顺序往前走，不回头指。
+    const reusable = hashCandidate && !hashCandidate.sealedAt
+      && hashCandidate.contentJson
       && computeContentHash(hashCandidate.contentJson) === contentHash
       ? hashCandidate
       : null;
 
-    // 正文与某个已有版本一致就复用那一版（连按两次「提交并确认」不会多出两个一样的
+    // 正文与**当前那一版**的快照一致就复用它（连按两次「提交并确认」不会多出两个一样的
     // 版本）；否则新建一版。标题不需要单独成版——它在文档的 meta 里，落盘口会投影
     // 回 `notes.title`，而 `content_json` 只装正文。
-    const targetVersion = existing ?? await (async () => {
-      const [latest] = await tx
-        .select({ versionNo: noteVersions.versionNo })
-        .from(noteVersions)
-        .where(eq(noteVersions.noteId, noteId))
-        .orderBy(desc(noteVersions.versionNo))
-        .limit(1);
-      const [created] = await tx
-        .insert(noteVersions)
-        .values({
-          noteId,
-          workspaceId,
-          versionNo: (latest?.versionNo ?? 0) + 1,
-          contentJson,
-          contentHash,
-          createdBy: userId,
-        })
-        .returning();
+    // 新建走 `insertVersionFromSnapshot`：它是"当前指针移开"那一件事唯一的落点，
+    // 被顶开的那一版在那里倒回自己的快照并封口（恢复历史版本读的就是这件事）。
+    const targetVersion = reusable ?? await (async () => {
+      const createdId = await insertVersionFromSnapshot(
+        tx, workspaceId, noteId, userId, versionSnapshotOf(plain),
+      );
+      const created = await tx.query.noteVersions.findFirst({ where: eq(noteVersions.id, createdId) });
+      if (!created) throw new Error("note version insert returned no row");
       return created;
     })();
 
@@ -1090,7 +1084,21 @@ export async function listNoteVersions(
 }
 
 /**
- * 恢复笔记到指定版本（不创建新版本，仅切换 currentVersionId）
+ * 恢复笔记到指定版本。
+ *
+ * **恢复出来的是那一版被提交时的正文，不是它现在长在库里的那几行。**
+ * `note_versions.content_json` 才是"这一版是什么"的定义；`note_blocks` 的行是**当前版**
+ * 的活投影，自动保存一直在原地改它（这是设计，见 `note-version-restore` 用例
+ * 「就地改一个已有块…不动版本快照」）。所以按行读历史，读到的永远是漂移之后的那一份：
+ * 2026-10-31 实测 v1 的快照是 `AAAA`、v1 的行是 `AAAA-B`，把 v1 恢复成当前版得到的是
+ * `AAAA-B`，而且恢复后继续敲字会改写 v1 那几行——历史被后来的编辑污染。
+ *
+ * 于是这里**另起一版**（内容 = 目标版的快照），而不是把指针挪回那一版：
+ *  - 目标版可能已经被封口（`sealed_at`），往它的行里写会被 `note_blocks_sealed_guard`
+ *    直接拒掉（RAISE 55000）；
+ *  - 就算能写，"把 v1 改成当前版再敲字"还是在改历史，正是要修的那件事。
+ * 新那一版接下来当当前版，自动保存往后写在它身上，被恢复的那一版一个字都不动。
+ * 这是对「恢复这一版」的语义补正：它产出的是一条新的当前内容，不是一次时间旅行。
  *
  * CONC-05: 可选传入 baseVersionId 进行乐观并发检查。如果客户端持有的
  * baseVersionId 与服务端 currentVersionId 不一致，说明期间有他人编辑，
@@ -1106,105 +1114,112 @@ export async function restoreNoteVersion(
 ) {
   // QUAL-03 修复：移除 IIFE 模式，executor 即事务执行器，无需额外包装
   const tx = executor;
-    // 锁定 note 行
-    // CONC-03: 只锁定未软删除的笔记
-    const noteRows = await tx
-      .select()
-      .from(notes)
-      .where(and(
-        eq(notes.id, noteId),
-        eq(notes.workspaceId, workspaceId),
-        visibleNotesCondition(userId),
-        isNull(notes.deletedAt),
-      ))
-      .for("update");
-    const note = noteRows[0];
-    if (!note) return null;
+  const noteRows = await tx
+    .select()
+    .from(notes)
+    .where(and(
+      eq(notes.id, noteId),
+      eq(notes.workspaceId, workspaceId),
+      visibleNotesCondition(userId),
+      isNull(notes.deletedAt),
+    ))
+    .for("update");
+  const note = noteRows[0];
+  if (!note) return null;
 
-    // CONC-05: 乐观并发检查 — 如果 baseVersionId 与 currentVersionId 不匹配，拒绝恢复
-    if (baseVersionId && baseVersionId !== note.currentVersionId) {
-      throw new RevisionConflictError(note.currentVersionId);
-    }
-
-    // 验证目标版本存在且属于此 note
-    const targetVersion = await tx.query.noteVersions.findFirst({
-      where: and(
-        eq(noteVersions.id, versionId),
-        eq(noteVersions.noteId, noteId),
-      ),
-    });
-    if (!targetVersion) return null;
-
-    // 返回恢复后的完整数据
-    const blocks = await tx.query.noteBlocks.findMany({
-      where: eq(noteBlocks.versionId, versionId),
-      orderBy: (b, { asc }) => [asc(b.ordinal)],
-    });
-
-    // 当标题来源为 auto 时，从恢复后的版本内容重新推导标题，
-    // 确保 title 与恢复后的内容一致；manual 标题保持用户设定不变。
-    const restoredBlocks = blocks as NoteBlock[];
-    const effectiveTitle = note.titleSource === "auto"
-      ? deriveNoteTitle(restoredBlocks)
-      : note.title;
-    const titleChanged = effectiveTitle !== note.title;
-    const now = new Date();
-
-    // 将 currentVersionId 指向目标版本（不创建新版本），
-    // auto 标题模式下同步更新推导标题
-    await tx
-      .update(notes)
-      .set({
-        currentVersionId: versionId,
-        ...(titleChanged ? { title: effectiveTitle } : {}),
-        updatedAt: now,
-      })
-      .where(eq(notes.id, noteId));
-
-    // 批次 4.1：恢复本身只是把 `currentVersionId` 指回旧版本，但文档必须跟着走。
-    // 否则快照仍是恢复前的正文，而接口已经报"这一版才是当前版"——之后有快照时
-    // `loadNoteDoc` 不再从行补齐，读到的就是两套内容里的另一套。
-    // 用 drizzle 的行类型而不是 NoteDocBlock：后者没有 sourceRef / imageAssetId，
-    // 而这两个字段正是证据链要在恢复后继续活着的东西。
-    const restoredDocBlocks = noteDocBlocksFromRows(blocks as Array<typeof noteBlocks.$inferSelect>);
-    await applyNoteDocUpdate(
-      tx,
-      { workspaceId, noteId, userId },
-      versionId,
-      (noteDoc) => {
-        // Keep the live document's history: an open editor must be able to
-        // merge the restoration and submit its next character from that history.
-        writeFragmentBlocks(noteDoc, restoredDocBlocks);
-        setNoteTitle(noteDoc, effectiveTitle, note.titleSource);
-      },
-    );
-
-    const result = {
-      note: {
-        ...note,
-        currentVersionId: versionId,
-        ...(titleChanged ? { title: effectiveTitle } : {}),
-        updatedAt: now,
-      },
-      version: targetVersion,
-      blocks: restoredBlocks,
-    };
-
-  // 恢复后同步搜索索引——currentVersionId 已切换到旧版本，
-  // 搜索投影需要反映恢复后的标题和正文摘要。
-  if (result) {
-    const body = (result.blocks as NoteBlock[])
-      .filter((b) => b.type !== "image")
-      .map((b) => b.content)
-      .join("\n");
-    await upsertSearchDocument(executor, {
-      workspaceId,
-      objectType: "note",
-      objectId: noteId,
-      title: result.note.title,
-      body,
-    });
+  // CONC-05: 乐观并发检查 — 如果 baseVersionId 与 currentVersionId 不匹配，拒绝恢复
+  if (baseVersionId && baseVersionId !== note.currentVersionId) {
+    throw new RevisionConflictError(note.currentVersionId);
   }
+
+  // 验证目标版本存在且属于此 note
+  const targetVersion = await tx.query.noteVersions.findFirst({
+    where: and(
+      eq(noteVersions.id, versionId),
+      eq(noteVersions.noteId, noteId),
+    ),
+  });
+  if (!targetVersion) return null;
+
+  const targetRows = await loadNoteVersionRows(tx, workspaceId, versionId);
+  // 快照读得出来就用快照；读不出来（形状不对的老数据）退回那一版的行，
+  // 而不是把一版正文换成空——宁可靠旧行为，也不在这里毁内容。
+  const snapshot = noteVersionSnapshotBlocks(targetVersion.contentJson);
+  const contentOf = snapshot ?? targetRows.map((row) => ({ type: row.type, content: row.content }));
+  const rowByOrdinal = new Map(targetRows.map((row) => [row.ordinal, row]));
+  const restoredDocBlocks = contentOf.map((block, ordinal) => {
+    const row = rowByOrdinal.get(ordinal);
+    return {
+      type: block.type,
+      content: block.content,
+      // 快照只存 `{type, content}`（`content_hash` 按它算）。证据链那两列活在行上，
+      // 恢复之后还要继续活着，所以按同一个 ordinal 把它们接回来。图片那一列有约束
+      // （`CHECK (image_asset_id IS NULL OR type = 'image')`），只有仍是图片块才接。
+      ...(row?.sourceRef ? { sourceRef: row.sourceRef } : {}),
+      ...(block.type === "image" && row?.imageAssetId ? { imageAssetId: row.imageAssetId } : {}),
+    } satisfies NoteDocBlock;
+  });
+
+  // 当标题来源为 auto 时，从恢复后的内容重新推导标题；manual 标题保持用户设定不变。
+  const restoredBlocks = restoredDocBlocks as NoteBlock[];
+  const effectiveTitle = note.titleSource === "auto"
+    ? deriveNoteTitle(restoredBlocks)
+    : note.title;
+
+  // 另起一版（并把被顶开的那一版倒回它自己的快照、封口），再把文档换成恢复出来的正文。
+  const restoredVersionId = await insertVersionFromSnapshot(
+    tx,
+    workspaceId,
+    noteId,
+    userId,
+    versionSnapshotOf(restoredDocBlocks),
+  );
+  await applyNoteDocUpdate(
+    tx,
+    { workspaceId, noteId, userId },
+    restoredVersionId,
+    (noteDoc) => {
+      // Keep the live document's history: an open editor must be able to
+      // merge the restoration and submit its next character from that history.
+      writeFragmentBlocks(noteDoc, restoredDocBlocks);
+      setNoteTitle(noteDoc, effectiveTitle, note.titleSource);
+    },
+  );
+
+  const restoredVersion = await tx.query.noteVersions.findFirst({
+    where: eq(noteVersions.id, restoredVersionId),
+  });
+  if (!restoredVersion) return null;
+  // 落盘口刚把 `notes` 的标题与 `updated_at` 用 **DB 时钟** 刷过（游标列不能用应用时钟：
+  // 副本之间有偏差时翻页会漏项），回执要的就是那一份，不是本机现算的时间。
+  const flushedNote = await tx.query.notes.findFirst({
+    where: and(eq(notes.id, noteId), visibleNotesCondition(userId)),
+  });
+
+  const result = {
+    note: flushedNote ?? {
+      ...note,
+      currentVersionId: restoredVersionId,
+      title: effectiveTitle,
+    },
+    version: restoredVersion,
+    restoredFromVersionId: versionId,
+    restoredFromVersionNo: targetVersion.versionNo,
+    blocks: restoredBlocks,
+  };
+
+  // 恢复后同步搜索索引——currentVersionId 已换到恢复出来的那一版，
+  // 搜索投影要反映恢复后的标题与正文摘要。
+  await upsertSearchDocument(executor, {
+    workspaceId,
+    objectType: "note",
+    objectId: noteId,
+    title: result.note.title,
+    body: restoredBlocks
+      .filter((block) => block.type !== "image")
+      .map((block) => block.content)
+      .join("\n"),
+  });
 
   return result;
 }
