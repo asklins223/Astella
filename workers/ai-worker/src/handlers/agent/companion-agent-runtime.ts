@@ -104,7 +104,7 @@ export {
 } from "../tools/companion-tool-outcome.ts";
 
 import { readCompanionWebSearchReceipts, readWebSearchReceipt, webSearchCitationBlocks, webSearchServiceAvailable } from "../../agent/web-search.ts";
-import { companionGroundedReviewMaterial, CompanionGroundedReviewUnavailable } from "./companion-conversation-review.ts";
+import { companionGroundedReviewMaterial, companionCitationReadGuidance, CompanionGroundedReviewUnavailable } from "./companion-conversation-review.ts";
 import { validateCompanionAgentToolArguments } from "@astella/shared";
 import { validateCompanionFinish, companionFinishRepeatsPublished, companionLatestDeliveryDraft, companionCurrentSuccessfulToolReceipts, type CompanionFinishArguments } from "./companion-finish.ts";
 import { withCompanionReceiptReferences } from "../tools/companion-tool-receipts.ts";
@@ -592,7 +592,9 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     // 上限就抽走工具面逼她作答——那是用计数决定她说什么。纯函数那一侧仍接受这个
     // 入参供探针渲染文案，运行时永远传 false。
     const finalAnswerOnly = false;
-    const groundedReview = reviewConversationOpening && companionGroundedReviewMaterial(messages).documents.length > 0;
+    const sourceMaterial = companionGroundedReviewMaterial(messages);
+    const hasSourceMaterial = sourceMaterial.documents.length > 0 || sourceMaterial.searchSources.length > 0;
+    const groundedReview = reviewConversationOpening && hasSourceMaterial;
     messages = withCompanionReceiptReferences(messages, compactedEvidence);
     const currentSuccesses = companionCurrentToolSuccesses(messages);
     const actionReceiptReady = requestedActionTools.length > 0
@@ -892,7 +894,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
               //
               // Resource routing never exempts a body, including a speculative
               // chat draft or the preamble before the first tool executes.
-              deferPublication: stepRequest.toolChoice === "required" || (reviewConversationOpening && toolCallCount === 0) || groundedReview,
+              deferPublication: stepRequest.toolChoice === "required" || (reviewConversationOpening && toolCallCount === 0) || hasSourceMaterial,
               publicationPolicy: publicationPolicy(),
               onToolCallStarted: preparation.observe,
               ...(speculativeStep ? { releaseGate: async () => (await entry.settle()).resourceDecision?.path === "chat" } : {}),
@@ -938,6 +940,8 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
         throw new CompanionToolOutputRepairError("", String(result.content ?? ""));
       if (containsCompanionInternalToken(String(result.content ?? "")))
         throw new CompanionToolOutputRepairError("", String(result.content ?? ""), "internal_token_leak");
+      const citationCorrection = companionCitationReadGuidance(result, messages);
+      if (citationCorrection) throw new CompanionToolOutputRepairError("", String(result.content ?? ""), "unverified_quote", citationCorrection);
       await preparation.finish(result.toolCalls ?? []);
       await entry.settle();
     } catch (error) {
@@ -989,7 +993,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
         // The configured alternate keeps the frozen request, checkpoints and
         // write receipts. Once a native protocol fails, don't bounce later
         // steps back onto the same incompatible route after each saved note.
-        if (stepProvider === args.provider && args.fallbackProvider && args.fallbackProvider !== args.provider
+        if (outputRepair.code !== "unverified_quote" && stepProvider === args.provider && args.fallbackProvider && args.fallbackProvider !== args.provider
           && typeof args.fallbackProvider.executeAgentTurn === "function") protocolFallback = true;
         if (outputRepair.publishedText.length > 0) {
           visibleSegments.push(outputRepair.publishedText);
@@ -998,19 +1002,20 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
         messages = dropCompanionInternalCorrections(messages);
         messages.push(...companionStepCorrectionMessages({ currentRequest,
           alreadyDisplayed: outputRepair.publishedText.length > 0,
-          instruction: [outputRepair.code === "arguments_malformed"
+          instruction: [outputRepair.correction ?? (outputRepair.code === "arguments_malformed"
             ? "上一版原生工具调用的参数不是合法 JSON，宿主没有执行那次调用。"
             : outputRepair.code === "internal_token_leak" ? "上一版把内部上下文字段或标识写进了正文，未通过交付校验。"
-            : "上一版把工具调用协议写进了正文，宿主没有执行这些文字。",
+            : "上一版把工具调用协议写进了正文，宿主没有执行这些文字。"),
             "需要工具时只能使用本轮声明的原生工具调用通道和参数结构；不需要工具就直接完成当前任务。此前已取得的真实工具回执继续有效，不重复已完成的操作。已显示的前缀保留，只接续或纠正，不从头重复。"].join("\n"),
         }));
         await finishBoundary(stepId, "failed", outputRepair.draftSha256,
-          outputRepair.code === "arguments_malformed" ? "TOOL_ARGUMENTS_INVALID" : "REPLY_FORMAT_INVALID");
+          outputRepair.code === "unverified_quote" ? "READ_EVIDENCE_MISSING"
+            : outputRepair.code === "arguments_malformed" ? "TOOL_ARGUMENTS_INVALID" : "REPLY_FORMAT_INVALID");
         await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta(),
           ...args.contextReceipts?.runMetaPatch() });
         logger.warn({ runId: args.read.runId, stepCount, toolCallCount,
           publishedChars: outputRepair.publishedText.length, draftSha256: outputRepair.draftSha256, reason: outputRepair.code },
-        "companion malformed protocol draft quarantined; continuing with explicit correction feedback");
+        "companion draft retained; continuing with explicit correction feedback");
         return { kind: "continue" };
       }
       // 归因：run 预算耗尽（含 handler abort —— 它的 signal 就是 args.ctx.signal）

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { companionConversationReviewMessages, companionGroundedReviewMaterial, companionUnknownWebCitations,
+  companionCitationReadGuidance,
   COMPANION_GROUNDED_REVIEW_POLICY, COMPANION_KNOWLEDGE_COHERENCE_REVIEW_POLICY,
   COMPANION_CONVERSATION_REVIEW_POLICY_V2 } from "../agent/companion-conversation-review.ts";
 
@@ -52,9 +53,28 @@ test("source review receives only actual current reads, their requested URL and 
   assert.equal(data.documents.length, 1);
   assert.equal(data.documents[0].requestedUrl, "https://example.com/paper");
   assert.equal(data.sources[0].citationMarker, "[^web-a123]");
+  assert.equal(data.documents[0].sources[0].citationMarker, "[^web-a123]");
   assert.ok(!JSON.stringify(data).includes("OLD SOURCE"));
   assert.ok(!JSON.stringify(data).includes("FAILED SOURCE"));
   assert.deepEqual(companionUnknownWebCitations(data.draft, data.sources), ["web-7"]);
   assert.deepEqual(companionUnknownWebCitations("限定条件下成立。[^web-a123]", data.sources), []);
   assert.equal(companionGroundedReviewMaterial(request.messages).documents.length, 1);
+});
+
+test("a search hit is not a read receipt for a final or independently published citation", () => {
+  const source = { referenceId: "web-page", citationMarker: "[^web-page]", title: "An original page", url: "https://example.com/original" };
+  const search = { role: "tool" as const, content: JSON.stringify({ ok: true, operation: "web.search", data: { sources: [source] } }) };
+  const result = { content: "这条结论。[^web-page]", toolCalls: [], finishReason: "stop" as const,
+    usage: { promptTokens: 1, completionTokens: 1 }, providerRequestId: null };
+  assert.match(companionCitationReadGuidance(result, [search])!, /https:\/\/example.com\/original/);
+  for (const name of ["companion_finish", "companion_send_message"]) {
+    assert.ok(companionCitationReadGuidance({ ...result, content: "", toolCalls: [{ id: "publish", name,
+      arguments: { text: result.content } }] }, [search]));
+  }
+  assert.ok(companionCitationReadGuidance({ ...result, toolCalls: [{ id: "finish", name: "companion_finish", arguments: {} }] }, [search]));
+  const read = (url: string) => ({ role: "tool" as const, content: JSON.stringify({ ok: true, operation: "web.read_document",
+    data: { status: "succeeded", url, text: "The actually retrieved original paragraph." } }) });
+  assert.ok(companionCitationReadGuidance(result, [search, read("https://example.com/unrelated")]));
+  assert.equal(companionCitationReadGuidance(result, [search, read(source.url)]), null);
+  assert.equal(companionCitationReadGuidance(result, [search, { role: "user", content: "new request", requestBoundary: true }]), null);
 });

@@ -1,5 +1,6 @@
 Current release acceptance: [2026-11-02 batch record](evidence/agent-conversation-fixes-2026-11-01/release-acceptance-2026-11-02.json). The source/native checkpoint below is historical; current release state and remaining checks are in the batch record.
 
+2026-11-02 补充：真实验收新增的主动发言内部收尾泄漏、搜索来源与原位引用错配，见[发布边界复查](agent-initiative-publication-followup-2026-11-02.md)。
 # Agent 对话与交付修复
 
 Latest checkpoint: [source review and native verification](evidence/agent-conversation-fixes-2026-11-01/source-review-and-native-2026-11-02.json). The real task matrix is 14/14; source-grounded delivery and premature preflight cancellation have new fixes. Native source-list collapse and remaining conversational details still require acceptance. Release remains held. Earlier sections retain their original observation scope.

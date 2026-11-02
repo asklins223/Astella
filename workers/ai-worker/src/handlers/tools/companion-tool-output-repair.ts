@@ -6,7 +6,8 @@ import { AgentOutputError } from "../../lib/non-retryable-errors.ts";
 export class CompanionToolOutputRepairError extends AgentOutputError {
   readonly draftSha256: string;
   constructor(readonly publishedText: string, draft: string,
-    code: "tool_protocol_leak" | "arguments_malformed" | "internal_token_leak" = "tool_protocol_leak") {
+    code: "tool_protocol_leak" | "arguments_malformed" | "internal_token_leak" | "unverified_quote" = "tool_protocol_leak",
+    readonly correction?: string) {
     super(code, "companion tool output requires explicit model correction before execution");
     this.name = "CompanionToolOutputRepairError";
     this.draftSha256 = sha256Utf8V1(draft);

@@ -80,6 +80,39 @@ async function runPrepared(f: Fixture, answer: (request: AgentTurnRequest) => Pr
 }
 const silentAnswer = async (): Promise<AgentTurnResult> => ({ content:"",toolCalls:[],finishReason:"stop",usage:{promptTokens:10,completionTokens:0},providerRequestId:null });
 
+test("an internal no-content decision publishes neither a message nor audio through either initiative channel", async () => {
+  for (const channel of ["final", "tool"] as const) {
+    const f = await fixture();
+    await observe(f); await prepare(f);
+    const text = "<silent>已收到，当前没有需要补充的内容。</silent>";
+    const original = MockProvider.prototype.chatCompletion;
+    let reviews = 0, steps = 0;
+    MockProvider.prototype.chatCompletion = async function(messages, options, signal) {
+      if (String(messages[0]?.content).startsWith("核对一条即将主动发出的伴星发言")) {
+        reviews++;
+        assert.equal(JSON.parse(String(messages.at(-1)!.content)).candidate, text);
+        const base = await original.call(this, messages, options, signal);
+        return { ...base, content: JSON.stringify({ decision: "no_new_content", reason: "仅表示本轮没有补充内容，不是新发言。" }) };
+      }
+      return original.call(this, messages, options, signal);
+    };
+    let run: Awaited<ReturnType<typeof runPrepared>>;
+    try {
+      run = await runPrepared(f, async () => channel === "final"
+        ? { ...await silentAnswer(), content: text }
+        : steps++ > 0 ? silentAnswer() : { ...await silentAnswer(), finishReason: "tool_calls", toolCalls: [
+          { id: "internal-no-content", name: "companion_send_message", arguments: { text } },
+        ] });
+    } finally { MockProvider.prototype.chatCompletion = original; }
+    assert.ok(reviews > 0, "a candidate without similar history still crosses publication review");
+    assert.equal((await admin`SELECT 1 FROM companion_messages WHERE run_id=${run!.id}`).length, 0);
+    const events = await admin`SELECT type,payload FROM companion_stream_events WHERE run_id=${run!.id}`;
+    assert.equal(events.filter(e => ["assistant.delta", "assistant.utterance", "assistant.final", "voice.segment.ready"].includes(e.type)).length, 0);
+    assert.ok(events.some(e => e.type === "turn.completed" && e.payload.silent === true));
+    assert.equal((await admin`SELECT status FROM companion_turn_runs WHERE id=${run!.id}`)[0]?.status, "succeeded");
+  }
+});
+
 test("quiet participation cannot replay an earlier thought across a user turn through either publication channel", async () => {
   for (const channel of ["final", "tool"] as const) {
     const f = await fixture();

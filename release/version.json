@@ -1,9 +1,8 @@
 {
-  "version": "2.0.17",
+  "version": "2.0.18",
   "notes": [
-    "Agent replies now keep application claims tied to actual read and execution receipts, retain stable streaming through completion, and use the existing MiMo primary and DeepSeek fallback without duplicate actions.",
-    "Ordinary conversation responds to the current topic with fewer repeated assurances and unsolicited instructions; changing this reply’s voice no longer unnecessarily enables a second reasoning pass.",
-    "Web research reads and checks original source windows, preserves real citation identities and reports unavailable evidence honestly.",
-    "Terminal process steps close consistently; deployment role changes roll back together if reconciliation fails."
+    "Optional companion follow-ups cross semantic review before publication; internal no-content or completion notes no longer become unsolicited messages or audio.",
+    "Inline web citations require a successful read receipt for the named page, with each claim checked against that specific source before final or independent-message publication.",
+    "Keep the existing MiMo primary and DeepSeek fallback pairing and the ordinary user-reply latency path."
   ]
 }

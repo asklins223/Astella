@@ -16,6 +16,9 @@ import { encodeCompanionToolResult } from "../handlers/agent/companion-runtime-c
 import { loadContinuation } from "../handlers/tools/companion-tool-call-ledger.ts";
 import type { AgentEventContext } from "../handlers/tools/companion-read-tools.ts";
 import type { AgentTurnRequest } from "@astella/shared";
+import type { ReadContext } from "../handlers/turn/companion-dialogue-store.ts";
+import { runCompanionAgentLoop } from "../handlers/agent/companion-agent-runtime.ts";
+import { MockProvider } from "../lib/providers/mock.ts";
 
 const admin = postgres(testDatabaseUrl("DATABASE_URL_MIGRATOR"), { max: 2 });
 after(async () => { await admin.end(); await closeDatabase(); });
@@ -61,6 +64,48 @@ async function fixture() {
       await tx`DELETE FROM users WHERE id=${userId}`;
     }) };
 }
+
+test("search-only citation drafts are corrected before either final channel publishes or executes", async () => {
+  for (const channel of ["plain", "finish"] as const) {
+    const f = await fixture();
+    const provider = new MockProvider();
+    Object.defineProperty(provider, "chatCompletionStream", { value: undefined });
+    let calls = 0;
+    const corrected = "这次尚未读取原网页，暂时不能核实这个结论。";
+    provider.executeAgentTurn = async request => {
+      if (calls++ === 0) return { content: channel === "plain" ? "未经原文核对的结论。[^web-unread]" : "",
+        toolCalls: channel === "plain" ? [] : [{ id: "unread-finish", name: "companion_finish",
+          arguments: { text: "未经原文核对的结论。[^web-unread]" } }],
+        finishReason: channel === "plain" ? "stop" : "tool_calls", usage: { promptTokens: 10, completionTokens: 10 }, providerRequestId: null };
+      assert.ok(JSON.stringify(request.messages).includes("https://example.com/unread"));
+      assert.ok(JSON.stringify(request.messages).includes("真实读取回执"));
+      return { content: corrected, toolCalls: [], finishReason: "stop", usage: { promptTokens: 10, completionTokens: 10 }, providerRequestId: null };
+    };
+    const read: ReadContext = { ...f.event.read, conversationId: f.conversationId,
+      userMessageId: (await f.mutate(tx => tx`SELECT user_message_id FROM companion_turn_runs WHERE id=${f.event.read.runId}`))[0]!.user_message_id,
+      runStatus: "running", livePageView: null, pageContext: null, userText: "核对原网页后简短回答并引用。",
+      recentMessages: [], residentMemories: [], memoryDirectory: [], playbookCatalog: [], playbookCandidates: [], deliveryObservation: null,
+      organizationSurface: null, memoryRefs: [], hereAndNow: null, thisTurnFacts: null, factSpans: null, conversationSummary: null,
+      personaProfileRevision: 0, personaExamplesRevision: 0, defaultExpressionVersion: "test", petProfile: null, nextMessageSeq: 2, nextEventSeq: 1 };
+    try {
+      const result = await runCompanionAgentLoop({ ctx: f.event.ctx, read, provider, toolConstraints: { visionEnabled: false },
+        baseMessages: [{ role: "user", content: read.userText, requestBoundary: true },
+          { role: "assistant", content: "", toolCalls: [{ id: "search", name: "companion_web", arguments: { action: "search", query: "original source" } }] },
+          { role: "tool", toolCallId: "search", content: JSON.stringify({ ok: true, operation: "web.search", data: { sources: [
+            { referenceId: "web-unread", citationMarker: "[^web-unread]", title: "A located source", url: "https://example.com/unread" }] } }) }],
+        onProviderDelta: async () => { assert.fail("An unverified citation must never stream before correction"); },
+        expiresAt: new Date(Date.now() + 60_000).toISOString() });
+      assert.equal(result.status, "completed");
+      if (result.status === "completed") assert.equal(result.text, corrected);
+      assert.equal(calls, 2);
+      assert.equal((await f.mutate(tx => tx`SELECT 1 FROM companion_agent_tool_calls WHERE run_id=${read.runId}`)).length, 0);
+      assert.equal((await f.mutate(tx => tx`SELECT 1 FROM companion_agent_steps WHERE run_id=${read.runId} AND error_code='READ_EVIDENCE_MISSING'`)).length, 1);
+    } finally {
+      await f.mutate(async tx => { await tx`DELETE FROM companion_agent_steps WHERE run_id=${read.runId}`; await tx`DELETE FROM companion_stream_events WHERE run_id=${read.runId}`; });
+      await f.cleanup();
+    }
+  }
+});
 
 test("turn attention reads real conversation goals as candidates and round-trips its current interpretation", async () => {
   const f = await fixture(), other = await fixture();
