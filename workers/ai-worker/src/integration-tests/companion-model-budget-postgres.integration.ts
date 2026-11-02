@@ -15,7 +15,11 @@ import { persistCompanionContextHandoffSnapshot } from "../handlers/turn/compani
 import { encodeCompanionToolResult } from "../handlers/agent/companion-runtime-checkpoint.ts";
 import { loadContinuation } from "../handlers/tools/companion-tool-call-ledger.ts";
 import type { AgentEventContext } from "../handlers/tools/companion-read-tools.ts";
-import type { AgentTurnRequest } from "@astella/shared";
+import { companionCapabilityOfferedInHostContext, resolveAllCompanionAgentTools, type AgentTurnRequest } from "@astella/shared";
+import type { CompanionAgentLoopArgs } from "../contracts/companion-agent-loop.ts";
+import { openCompanionTurn, companionRecoveryIdentity } from "../handlers/turn/companion-turn-opening.ts";
+import { resolveCompanionEntryMode } from "../handlers/turn/companion-entry-mode.ts";
+import { companionRuntimeStateSchema, encodeCompanionRuntimeCheckpoint } from "../handlers/agent/companion-runtime-checkpoint.ts";
 import type { ReadContext } from "../handlers/turn/companion-dialogue-store.ts";
 import { runCompanionAgentLoop } from "../handlers/agent/companion-agent-runtime.ts";
 import { MockProvider } from "../lib/providers/mock.ts";
@@ -87,14 +91,35 @@ test("search-only citation drafts are corrected before either final channel publ
       recentMessages: [], residentMemories: [], memoryDirectory: [], playbookCatalog: [], playbookCandidates: [], deliveryObservation: null,
       organizationSurface: null, memoryRefs: [], hereAndNow: null, thisTurnFacts: null, factSpans: null, conversationSummary: null,
       personaProfileRevision: 0, personaExamplesRevision: 0, defaultExpressionVersion: "test", petProfile: null, nextMessageSeq: 2, nextEventSeq: 1 };
+    const args: CompanionAgentLoopArgs = { ctx: f.event.ctx, read, provider, toolConstraints: { visionEnabled: false },
+      baseMessages: [{ role: "user", content: read.userText }],
+      onProviderDelta: async () => { assert.fail("An unverified citation must never stream before correction"); },
+      expiresAt: new Date(Date.now() + 60_000).toISOString() };
+    // Native tool exchanges belong to the private checkpoint, never to the
+    // public dialogue's ChatMessage history. Resume a controlled search receipt.
+    const opening = openCompanionTurn(args);
+    const meta = await readRunMeta(f.event);
+    const definitions = resolveAllCompanionAgentTools(meta.permissionLevel,
+      { visionEnabled: false, webSearchEnabled: false, noteLibraryReadEnabled: true })
+      .filter(definition => companionCapabilityOfferedInHostContext(definition,
+        { writingAnnotation: false, completeNoteReply: false, initiative: false }));
+    const checkpoint = encodeCompanionRuntimeCheckpoint(companionRecoveryIdentity({ args, currentRequest: opening.currentRequest,
+      permissionLevel: meta.permissionLevel, definitions, primary: provider, fallback: null }), { phase: "continue",
+      state: companionRuntimeStateSchema.parse({ messages: [...opening.messages,
+        { role: "assistant", content: "", toolCalls: [{ id: "search", name: "companion_web", arguments: { action: "search", query: "original source" } }] },
+        { role: "tool", toolCallId: "search", content: JSON.stringify({ ok: true, operation: "web.search", data: { sources: [
+          { referenceId: "web-unread", citationMarker: "[^web-unread]", title: "A located source", url: "https://example.com/unread" }] } }) }],
+        compactedEvidence: [], stepCount: 1, toolCallCount: 1, elapsedMs: 0, visibleSegments: [], visibleSegmentDelivered: [], richBlocks: [],
+        webSearchCalls: 1, historyFoldApplied: false, invalidArgumentCalls: [], rejectedExecutionConstraints: [], degenerateRetried: false,
+        outputRepairToolCount: null, actionSteerAttempts: 0, quoteCorrectionUsed: false, lookupClaimSteered: false,
+        steerSwapToFallback: false, utterancePublished: false, entryMode: resolveCompanionEntryMode() }) });
     try {
-      const result = await runCompanionAgentLoop({ ctx: f.event.ctx, read, provider, toolConstraints: { visionEnabled: false },
-        baseMessages: [{ role: "user", content: read.userText, requestBoundary: true },
-          { role: "assistant", content: "", toolCalls: [{ id: "search", name: "companion_web", arguments: { action: "search", query: "original source" } }] },
-          { role: "tool", toolCallId: "search", content: JSON.stringify({ ok: true, operation: "web.search", data: { sources: [
-            { referenceId: "web-unread", citationMarker: "[^web-unread]", title: "A located source", url: "https://example.com/unread" }] } }) }],
-        onProviderDelta: async () => { assert.fail("An unverified citation must never stream before correction"); },
-        expiresAt: new Date(Date.now() + 60_000).toISOString() });
+      await f.mutate(async tx => {
+        await tx`UPDATE companion_turn_runs SET step_count=1,tool_call_count=1 WHERE id=${read.runId}`;
+        await tx`INSERT INTO companion_agent_steps(id,workspace_id,user_id,conversation_id,run_id,step_no,kind,status,request_hash,runtime_checkpoint)
+          VALUES(${randomUUID()},${f.event.ctx.workspaceId},${read.userId},${read.conversationId},${read.runId},1,'model','succeeded',${'0'.repeat(64)},${tx.json(checkpoint)})`;
+      });
+      const result = await runCompanionAgentLoop(args);
       assert.equal(result.status, "completed");
       if (result.status === "completed") assert.equal(result.text, corrected);
       assert.equal(calls, 2);

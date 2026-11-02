@@ -1,5 +1,5 @@
 {
-  "version": "2.0.18",
+  "version": "2.0.19",
   "notes": [
     "Optional companion follow-ups cross semantic review before publication; internal no-content or completion notes no longer become unsolicited messages or audio.",
     "Inline web citations require a successful read receipt for the named page, with each claim checked against that specific source before final or independent-message publication.",

@@ -76,10 +76,16 @@
       "searchSources": 8
     }
   },
-  "delivery": "release_pending",
+  "delivery": "s-v2.0.19_pending",
   "issues": [
     "A host-triggered optional follow-up published its internal no-content decision as ordinary text.",
     "Search-only replies could cite an unread or irrelevant member of a search batch."
   ],
-  "citationFix": "Defer search-grounded publication; require a matching current-turn document-read receipt for every cited source, then semantically check each adjacent claim against that page. Correction preserves successful tools and does not change provider merely for missing reading."
+  "citationFix": "Defer search-grounded publication; require a matching current-turn document-read receipt for every cited source, then semantically check each adjacent claim against that page. Correction preserves successful tools and does not change provider merely for missing reading.",
+  "blockedRelease": {
+    "tag": "s-v2.0.18",
+    "deployed": false,
+    "reason": "New integration fixture used native tool messages in ChatMessage history; CI typecheck correctly blocked deployment.",
+    "repair": "Resume the real private native checkpoint instead; full worker typecheck and 10 PostgreSQL cases passed."
+  }
 }
