@@ -62,6 +62,17 @@ export function validateCompanionToolCall(input: {
   }
   const schemaFields = new Set(Object.keys(definition?.parameters.properties ?? {}));
   const faces = companionToolFailureFaces({ status: "not_executed", safeSummary: parsed.reason });
+  const validationIssues = parsed.issues.map(issue => {
+    if (!["too_big", "too_small"].includes(issue.code)) return issue;
+    let value = input.arguments;
+    for (const key of issue.path) {
+      if (value === null || typeof value !== "object" || !Object.hasOwn(value, key)) return issue;
+      value = (value as Record<string, unknown>)[key];
+    }
+    // Counts help repair near-boundary mistakes without echoing field content.
+    return typeof value === "string" ? { ...issue, inputLength: value.length, lengthUnit: "utf16_code_units" }
+      : Array.isArray(value) ? { ...issue, inputLength: value.length, lengthUnit: "items" } : issue;
+  });
   return {
     rejection: {
       content: JSON.stringify({
@@ -70,11 +81,13 @@ export function validateCompanionToolCall(input: {
         error: parsed.reason,
         code: "invalid_arguments",
         tool: input.name,
-        validationIssues: parsed.issues,
+        validationIssues,
         parameters: definition?.parameters,
         // The model needs the actual contract and the failing fields, not just
         // “invalid arguments”, to repair without guessing.
-        instruction: "按 validationIssues 修正参数；parameters 是完整工具契约。不要重复提交相同无效参数；已经成功的操作不必重做。",
+        instruction: "按 validationIssues 修正参数；parameters 是完整工具契约。长度错误中的 inputLength 是已提交字段的长度：留出明显余量再重试，不只试着减一两个字符。不要重复提交相同无效参数；已经成功的操作不必重做。"
+          + (input.name === "companion_web" && validationIssues.some(issue => issue.path[0] === "query" && issue.code === "too_big")
+            ? "检索词过长时重新选择2–4个简短核心关键词，不继续逐字缩减原句或完整标题。" : ""),
       }),
       reason: parsed.reason,
       // Validation is pure: identical invalid input cannot become valid by

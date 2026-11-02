@@ -42,8 +42,8 @@ export const COMPANION_IDENTICAL_CALL_REPLAYS_ALLOWED = 5;
 export const COMPANION_ACTION_REPLAYS_ALLOWED = 0;
 
 /**
- * A tool may be rejected several times before the host stops offering it.
- * One bad payload is a normal model mistake; five is a broken contract or a
+ * A tool may be rejected several consecutive times before the host stops offering it.
+ * A valid correction resets the streak. Five consecutive failures indicate a
  * dead loop. The run-wide cap below catches alternating tools.
  */
 export const COMPANION_MALFORMED_TOOL_ATTEMPTS_ALLOWED = 5;
@@ -61,7 +61,7 @@ export const COMPANION_REQUIREMENT_RETRIES_ALLOWED = 3;
 export const COMPANION_ACTION_REPLAY_RETRIES_ALLOWED = 3;
 
 /**
- * Count schema rejections per tool, not per exact payload. A model that keeps
+ * Count consecutive schema rejections per tool, not per exact payload. A model that keeps
  * changing invalid arguments otherwise evades the identical-call replay guard
  * and spends the whole turn retrying one broken contract.
  */

@@ -225,7 +225,7 @@ const OPERATION_ARGUMENT_FIELDS: Readonly<Record<string, readonly string[]>> = O
   "attention.write.arrange": ["key", "expectedRevision", "intent", "topics", "state",
     "nextReviewAt", "expiresAt", "preferenceRevision", "selfNote"],
   "attention.write.schedule_wake": ["key", "expectedRevision", "at", "reason"],
-  "attention.write.schedule_reminder": ["text", "fireAtLocal", "noteId"],
+  "attention.write.schedule_reminder": ["text", "reminderTime", "noteId"],
   "attention.write.cancel_reminder": ["reminderId"],
   "attention.write.pause": ["scope", "reason"],
   "say.publish": ["text", "final"],

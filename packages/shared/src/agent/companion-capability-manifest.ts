@@ -15,6 +15,11 @@ import { agentGoalDeliveryV1Schema, agentVoiceStyleDecisionV1Schema } from "../c
 
 const emptyArguments = z.object({}).strict();
 const uuid = z.string().uuid();
+const reminderLocalTime = z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/);
+const reminderLocalDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value => {
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return !value.startsWith("0000-") && Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}, "日期必须是实际存在的本地日历日期");
 
 /** 页面名与别名都取自词表：她嘴里的那个页面，必须是桌面端真有的一页。 */
 function companionOpenPageVocabularyV2(): string {
@@ -254,7 +259,7 @@ export const companionCapabilityManifest: readonly AgentCapabilityDeclaration[] 
   tool("companion_attention_read", "读相处：action=participation 读偏好与关注安排，reminders 看待兑现提醒。", "read", false,
     z.object({ action: z.enum(["participation", "reminders"]) }).strict(),
     { label: "正在读相处安排" }, { maxOutputChars: 32_000 }),
-  tool("companion_attention_write", "安排相处：参与方式、关注、自评、提醒、取消、暂停。记住偏好或事实用 companion_memory_write。要提醒就真的 schedule_reminder 并拿到回执，fireAtLocal 给本地未来时间；只口头说“已安排”不算。", "reversible_low", false,
+  tool("companion_attention_write", "安排相处：参与、关注、自评、提醒、取消、暂停。提醒用 schedule_reminder 和 reminderTime，保留相对日期或延时，不自行换算年月日或UTC；明确年月日才用date，按真实回执确认。", "reversible_low", false,
     z.object({ action: z.enum(["save_participation", "arrange", "schedule_wake", "schedule_reminder", "cancel_reminder", "pause"]),
       expectedRevision: z.number().int().nonnegative().optional(),
       markdown: z.string().max(16_000).optional(), enabled: z.boolean().optional(), sourceQuote: z.string().min(1).max(2_000).optional(),
@@ -267,14 +272,21 @@ export const companionCapabilityManifest: readonly AgentCapabilityDeclaration[] 
       state: z.enum(["active", "completed"]).optional(),
       at: z.string().datetime({ offset: true }).nullable().optional(), reason: z.string().min(1).max(300).optional(),
       text: z.string().min(1).max(200).optional(),
-      fireAtLocal: z.string().regex(/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2})?$/).optional(),
+      reminderTime: z.union([
+        z.object({ daysFromToday: z.number().int().min(0).max(2_147_483_647),
+          time: reminderLocalTime }).strict(),
+        z.object({ date: reminderLocalDate, time: reminderLocalTime }).strict(),
+        z.object({ afterMinutes: z.number().finite().positive() }).strict(),
+        z.object({ weekday: z.number().int().min(1).max(7), weeksFromThisWeek: z.number().int().nonnegative(),
+          time: reminderLocalTime }).strict(),
+      ]).describe("相对用户本条消息的本地日历：明天用daysFromToday=1，几分钟后用afterMinutes；周几用weekday(周一=1)与weeksFromThisWeek(下周=1)；明确年月日才用date。time为本地HH:mm。不要心算或按UTC转换日期。").optional(),
       noteId: uuid.optional(), reminderId: uuid.optional(),
       scope: z.enum(["today", "resume"]).optional() }).strict()
       .superRefine((value, context) => {
         if (value.action === "save_participation" && (!value.markdown || value.enabled === undefined || !value.sourceQuote)) context.addIssue({ code: z.ZodIssueCode.custom, path: ["markdown"], message: "保存相处偏好需要 markdown、enabled、sourceQuote；expectedRevision 可省略，宿主会按当前版本写入" });
         if (value.action === "arrange" && (!value.key || value.expectedRevision === undefined || !value.intent || !value.topics || !value.state)) context.addIssue({ code: z.ZodIssueCode.custom, path: ["key"], message: "安排关注需要 key、expectedRevision、intent、topics、state" });
         if (value.action === "schedule_wake" && (!value.key || !value.expectedRevision || value.at === undefined || !value.reason)) context.addIssue({ code: z.ZodIssueCode.custom, path: ["key"], message: "安排自评需要 key、expectedRevision、at、reason" });
-        if (value.action === "schedule_reminder" && (!value.text || !value.fireAtLocal)) context.addIssue({ code: z.ZodIssueCode.custom, path: ["text"], message: "提醒需要 text 与 fireAtLocal" });
+        if (value.action === "schedule_reminder" && (!value.text || !value.reminderTime)) context.addIssue({ code: z.ZodIssueCode.custom, path: ["text"], message: "提醒需要 text 与 reminderTime；相对日期给 daysFromToday 和本地 time，明确日期给 date 和 time" });
         if (value.action === "cancel_reminder" && !value.reminderId) context.addIssue({ code: z.ZodIssueCode.custom, path: ["reminderId"], message: "取消提醒需要 reminderId" });
         if (value.action === "pause" && (!value.scope || !value.reason)) context.addIssue({ code: z.ZodIssueCode.custom, path: ["scope"], message: "暂停学习建议需要 scope 与 reason" });
       }), { label: "正在安排相处" }, { maxInputChars: 20_000 },
@@ -330,13 +342,15 @@ export const companionCapabilityManifest: readonly AgentCapabilityDeclaration[] 
   tool("companion_goals_read", "读后台目标：action=list 当前空间目标，list_long 长期目标目录；按 action 给 cursor/longGoalMemoryId。", "read", false,
     z.object({ action: z.enum(["list", "list_long"]), cursor: z.string().max(512).optional(), longGoalMemoryId: uuid.optional() }).strict(),
     { label: "正在看后台目标" }, { maxOutputChars: 30_000 }),
-  tool("companion_goals_write", "后台目标：start 启动、revise 修改、control 暂停继续停止，按 action 给对应字段。用户要速看、脑图、演示、拓展时先用 start 取得回执，不要先说“已经排进后台”；只口头说已保存不算。", "reversible_low", false,
+  tool("companion_goals_write", "后台目标：start 用本轮用户原话，不填goal；笔记产物用inputs绑定实际笔记版本，聊天历史不自动充当材料。revise/control给runId和expectedRevision；revise另给goal，control另给control。按真实回执交代状态。", "reversible_low", false,
     z.object({ action: z.enum(["start", "revise", "control"]), goal: z.string().trim().min(1).max(8000).optional(),
       inputs: z.array(z.object({ kind: z.literal("note_version"), noteId: uuid, noteVersionId: uuid }).strict()).max(20).optional(),
       longGoal: z.object({ memoryId: uuid, revision: z.number().int().positive() }).strict().nullable().optional(),
-      expectedRevision: z.number().int().positive().optional(), control: z.enum(["cancel", "pause", "resume"]).optional() }).strict()
+      runId: uuid.optional(), expectedRevision: z.number().int().positive().optional(), control: z.enum(["cancel", "pause", "resume"]).optional() }).strict()
       .superRefine((value, context) => {
-        if ((value.action === "start" || value.action === "revise") && !value.goal) context.addIssue({ code: z.ZodIssueCode.custom, path: ["goal"], message: "启动或修改目标需要 goal" });
+        if (value.action === "start" && value.goal !== undefined) context.addIssue({ code: z.ZodIssueCode.custom, path: ["goal"], message: "start 采用本轮用户原话，不接受 goal；笔记材料用 inputs 绑定真实版本" });
+        if (value.action === "revise" && !value.goal) context.addIssue({ code: z.ZodIssueCode.custom, path: ["goal"], message: "修改目标需要 goal" });
+        if (value.action !== "start" && !value.runId) context.addIssue({ code: z.ZodIssueCode.custom, path: ["runId"], message: "修改或控制目标需要实际 runId，可先读取目标目录" });
         if (value.action === "revise" && !value.expectedRevision) context.addIssue({ code: z.ZodIssueCode.custom, path: ["expectedRevision"], message: "修改目标需要 expectedRevision" });
         if (value.action === "control" && (!value.expectedRevision || !value.control)) context.addIssue({ code: z.ZodIssueCode.custom, path: ["control"], message: "控制目标需要 expectedRevision 与 control" });
       }), { label: "正在处理后台目标" }, { maxInputChars: 20_000, maxOutputChars: 30_000 }),
@@ -443,12 +457,16 @@ export const companionCapabilityManifest: readonly AgentCapabilityDeclaration[] 
   // 十来组、几百 token 的重发。
   // 联网域：搜索与公开文档读取收敛为一个 action 工具；执行体仍复用原来的
   // web 读取分支，联网开关在工具面与执行体各核一次。
-  tool("companion_web", "联网：action=search 搜索公开资料，action=read_document 读用户给出的公开 HTTPS 文档；按 action 给 query 或 url。", "read", false,
+  tool("companion_web", "联网：search 搜索公开资料；read_document 读用户给出的或本轮搜索回执中的 HTTPS 原文。长网页可用 findText 定位原文字词并读周围段落，不必猜 offset 或重新搜索。仅能展开实际返回的链接，不猜网址。按 action 给 query 或 url。", "read", false,
     z.object({ action: z.enum(["search", "read_document"]),
-      query: z.string().trim().min(1).max(70).optional(),
+      query: z.string().trim().min(1).max(70)
+        .describe("选2–4个简短核心检索词，通常40字符以内，接口硬上限70字符。不要提交完整问题、长标题或要求说明；站点另填domain。")
+        .optional(),
       domain: z.string().max(253).optional(),
       recency: z.enum(["oneDay", "oneWeek", "oneMonth", "oneYear", "noLimit"]).optional(),
       url: z.string().url().max(2000).optional(),
+      findText: z.string().trim().min(1).max(300).optional()
+        .describe("read_document 可选：在该页正文中查找的原文字词，非问题或正则表达式；从 offset 起不区分大小写定位，返回实际匹配位置与上下文。"),
       offset: z.number().int().nonnegative().optional() }).strict()
       .superRefine((value, context) => {
         if (value.action === "search" && !value.query) context.addIssue({ code: z.ZodIssueCode.custom, path: ["query"], message: "action=search 需要 query" });
@@ -475,9 +493,8 @@ export const companionCapabilityManifest: readonly AgentCapabilityDeclaration[] 
         if (!value.memoryId && !value.query) context.addIssue({ code: z.ZodIssueCode.custom, path: ["query"], message: "要忘掉一条记忆，需要给 memoryId 或 query" });
       }),
     { label: "正在忘掉那一条" }, { maxInputChars: 8_000 }),
-  tool("companion_goal_start", "启动一个后台目标，产物以后可回看。用户要“存下来、以后再看”的产物时调用；goal 写清要做什么。", "reversible_low", false,
-    z.object({ goal: z.string().trim().min(1).max(8000),
-      inputs: z.array(z.object({ kind: z.literal("note_version"), noteId: uuid, noteVersionId: uuid }).strict()).max(20).optional() }).strict(),
+  tool("companion_goal_start", "启动后台目标，实际要求采用本轮用户原话，不接受goal参数。已有笔记的速看、脑图、演示和拓展必须通过inputs提供实际笔记与版本，可先搜索/读取核对；对话历史不会自动变成冻结材料。完整计算或用户给的网址任务可以不填inputs。", "reversible_low", false,
+    z.object({ inputs: z.array(z.object({ kind: z.literal("note_version"), noteId: uuid, noteVersionId: uuid }).strict()).max(20).optional() }).strict(),
     { label: "正在接下目标" }, { maxInputChars: 20_000, maxOutputChars: 30_000 }),
   // A companion requirement never self-certifies with textOnly: a fulfilled
   // requirement must cite a real receipt, or the caller can omit the list.

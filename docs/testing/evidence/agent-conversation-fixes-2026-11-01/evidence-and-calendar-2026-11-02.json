@@ -1,0 +1,245 @@
+{
+  "reviewedAt": "2026-11-02T08:18:19.996928+08:00",
+  "status": "engineering_pass_quality_incomplete",
+  "selectedPrimaryProtocol": "openai-responses",
+  "modelRoutes": {
+    "agent_turn": "mimo-agent/mimo-v2.6-flash",
+    "companion_fallback": "tokenrhythm/deepseek-v4.1-flash-1017"
+  },
+  "readEvidence": {
+    "policyHash": "2355863ceaa5e74a3170458791627617a692c2d82ca0d8e06eca9342f1da89c9",
+    "design": "Independent application-read requirement only, through the existing governed fallback; overlaps author generation. It cannot answer, grant access or execute tools. Same-run successful operation receipts are required before body/final/publication. Invalidated policy/input/context cannot reuse a cached verdict.",
+    "regressions": [
+      "asynchronous body hold preserves actual tool decisions",
+      "ordinary prefix releases before provider completion",
+      "late decision cannot release after cancel",
+      "unread body and internal finish both require a real stats receipt"
+    ],
+    "limitation": "It does not verify every interpretation after a successful read, or audit all world-knowledge and conversational style."
+  },
+  "calendar": {
+    "foundBy": "Manual substantive review after the earlier task matrix reported 14/14.",
+    "before": "The user asked tomorrow at 09:00 on local 2026-11-02, but the model wrote 2026-11-02 09:00. Old task checks only proved a reminder row existed.",
+    "after": "Model preserves relative days, elapsed minutes, weekday/week offset or explicit local date. PostgreSQL resolves against the accepted user-message calendar in the account timezone. Past/nonexistent times insert no row.",
+    "regressions": [
+      "local midnight and leap day",
+      "year boundary",
+      "daylight-saving calendar day",
+      "elapsed minutes",
+      "next calendar week",
+      "past and nonexistent local times leave no row"
+    ],
+    "realTimeCheck": {
+      "ok": true,
+      "detail": "复习线性代数; calendar matches=true"
+    },
+    "realReadback": {
+      "ok": true,
+      "detail": "目前有 1 条待兑现的提醒：\n\n- **11 月 3 日 上午 9:00** —— 复习线性代数\n\n也就是明天早上那条，没有别的了。"
+    }
+  },
+  "unitTests": {
+    "aiWorker": {
+      "pass": 1955,
+      "fail": 0,
+      "skipped": 0
+    },
+    "shared": {
+      "pass": 540,
+      "fail": 0,
+      "skipped": 0
+    },
+    "api": {
+      "pass": 2035,
+      "fail": 0,
+      "skipped": 1
+    }
+  },
+  "postgresIntegration": {
+    "pass": 76,
+    "fail": 0,
+    "skipped": 0,
+    "migrationsApplied": 462,
+    "connection": "Fresh isolated PostgreSQL 16/pgvector container; explicit administrator fixture URLs. Not restricted-role grant certification."
+  },
+  "typecheck": [
+    "shared",
+    "api",
+    "desktop-client",
+    "ai-worker"
+  ],
+  "currentTaskMatrix": {
+    "result": "pass",
+    "passed": 14,
+    "total": 14,
+    "checks": {
+      "notes-create": {
+        "ok": true,
+        "detail": "联调复盘"
+      },
+      "notes-read": {
+        "ok": true,
+        "detail": "《联调复盘》里写了三行：\n\n今天验证了工具\n发现两个问题\n明天继续"
+      },
+      "memory-save": {
+        "ok": true,
+        "detail": "用户周末喜欢到图书馆看书。"
+      },
+      "memory-recall": {
+        "ok": true,
+        "detail": "按你之前记下的：周末喜欢到**图书馆**看书。"
+      },
+      "reminder-create": {
+        "ok": true,
+        "detail": "复习线性代数; calendar matches=true"
+      },
+      "reminder-list": {
+        "ok": true,
+        "detail": "目前有 1 条待兑现的提醒：\n\n- **11 月 3 日 上午 9:00** —— 复习线性代数\n\n也就是明天早上那条，没有别的了。"
+      },
+      "persona-self-note": {
+        "ok": true,
+        "detail": "linear-algebra-retake"
+      },
+      "observe-stats": {
+        "ok": true,
+        "detail": "tool"
+      },
+      "observe-calculate": {
+        "ok": true,
+        "detail": "347×29 = **10063**（计算工具核对过）。"
+      },
+      "visual-diagram": {
+        "ok": true,
+        "detail": "tool"
+      },
+      "open-page": {
+        "ok": true,
+        "detail": "tool"
+      },
+      "say-publish": {
+        "ok": true,
+        "detail": "messages:2"
+      },
+      "goals-start": {
+        "ok": true,
+        "detail": "running"
+      },
+      "memory-forget-confirm": {
+        "ok": true,
+        "detail": "confirmed"
+      }
+    },
+    "tasks": [
+      {
+        "name": "notes-create",
+        "terminal": "assistant.final",
+        "ms": 11076
+      },
+      {
+        "name": "notes-read",
+        "terminal": "assistant.final",
+        "ms": 9666
+      },
+      {
+        "name": "memory-save",
+        "terminal": "assistant.final",
+        "ms": 12453
+      },
+      {
+        "name": "memory-recall",
+        "terminal": "assistant.final",
+        "ms": 8789
+      },
+      {
+        "name": "reminder-create",
+        "terminal": "assistant.final",
+        "ms": 11132
+      },
+      {
+        "name": "reminder-list",
+        "terminal": "assistant.final",
+        "ms": 9764
+      },
+      {
+        "name": "persona-self-note",
+        "terminal": "assistant.final",
+        "ms": 19728
+      },
+      {
+        "name": "observe-stats",
+        "terminal": "assistant.final",
+        "ms": 14870
+      },
+      {
+        "name": "observe-calculate",
+        "terminal": "assistant.final",
+        "ms": 4183
+      },
+      {
+        "name": "visual-diagram",
+        "terminal": "assistant.final",
+        "ms": 8582
+      },
+      {
+        "name": "open-page",
+        "terminal": "assistant.final",
+        "ms": 7384
+      },
+      {
+        "name": "say-publish",
+        "terminal": "turn.completed",
+        "ms": 3638
+      },
+      {
+        "name": "goals-start",
+        "terminal": "assistant.final",
+        "ms": 21166
+      },
+      {
+        "name": "memory-forget-confirm",
+        "terminal": "assistant.final",
+        "ms": 14264
+      }
+    ]
+  },
+  "realConversations": {
+    "completed": 8,
+    "statsQueriesWithSuccessfulReads": 2,
+    "ordinaryFirstVisibleMedianMs": 3995.5,
+    "ordinaryCompletionMedianMs": 4918.0,
+    "scope": "Six ordinary turns and two record queries. The prior source explanation and unwanted advice still fail quality review; this is not a conversational acceptance pass."
+  },
+  "workingEvidence": [
+    {
+      "path": "outputs/audits/2026-10-25-task-matrix/task-matrix-1793576741068.json",
+      "sha256": "1dda3d5061e5d2073afae64b2712bd7cc30428b91320fa11711b7c0521c7cf5c"
+    },
+    {
+      "path": "outputs/audits/2026-10-25-task-matrix/task-matrix-1793577766152.json",
+      "sha256": "578b210aad3e86a5a63b93008fda5e316467ee039cfb084d2aced016c27da9f8"
+    },
+    {
+      "path": "outputs/audits/2026-11-01-agent-fixes/read-requirements-http-v1.json",
+      "sha256": "01cc0011a02b253a243813e9a31c3a9016150eea062a86c299b26a4038a5cce3",
+      "provenanceStatus": "working_path_overwritten_after_this_checkpoint",
+      "currentlyAvailableSha256": "12a4c4bc500ae86de4ad9dda61fd0ae7f10dba4a321bfe90027034d7ed25a51e",
+      "note": "The temporary HTTP probe reused its working output name. The original hash remains recorded, but this currently available file cannot substantiate that historical transcript. Calendar matrices have their own unchanged evidence paths."
+    }
+  ],
+  "excludedExperiments": [
+    "Generic JSON draft editor and one-verdict publication critics remain offline. They have false positives/negatives and variable latency; no production repair/reviewer was enabled.",
+    "External empirical-evidence requirement classification is an offline probe only."
+  ],
+  "remaining": [
+    "unwanted advice and self-commentary in ordinary dialogue",
+    "unsupported empirical causal explanations",
+    "long research latency and evidence scope"
+  ],
+  "release": {
+    "serverDeployed": false,
+    "productionMigrationApplied": false,
+    "iosPublished": false,
+    "gate": "Held pending quality and performance acceptance. User requested joint publication after all fixes."
+  }
+}

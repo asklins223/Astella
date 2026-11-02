@@ -3228,6 +3228,13 @@
       "when": 1793096404000,
       "tag": "0465_companion_delivery_receipt",
       "breakpoints": true
+    },
+    {
+      "idx": 461,
+      "version": "7",
+      "when": 1793512156587,
+      "tag": "0466_companion_terminal_steps",
+      "breakpoints": true
     }
   ]
 }

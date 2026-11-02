@@ -25,11 +25,9 @@ test('the attention record settles without invoking a classifier and persists th
     assert.equal(attention.voicePreferenceWrite, 'not_requested');
     assert.equal(written, true);
 });
-test('the fast entry never forces reasoning off; the model decides per turn', async () => {
-    // Forcing `none` on the fast entry made "分两条" come back as one prose
-    // message 12/12 times on the production prompt, while the model's own
-    // default answered with two sent messages 3/3 and still skipped reasoning
-    // on small talk (measured 2026-10-28). Deepening remains an explicit raise.
+test('fast-entry presence metadata matches its opening preference and explicit deepening', async () => {
+    // Actual step effort still follows workload and executed tools. Presence
+    // cannot depend on resourceDecision from the removed routing classifier.
     const c = createCompanionDirectControls({ mode: 'direct_fast', attention: fresh(), userText: '请严谨推导。' });
     assert.equal(c.disableThinking(), false);
     const image = createCompanionDirectControls({ mode: 'direct_fast', attention: fresh(), userText: '', imageTurn: true });

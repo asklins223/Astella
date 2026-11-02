@@ -19,10 +19,17 @@ import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
+import { resetPlatformConfigCache } from "@astella/shared/platform-config-node";
 import type { AgentTurnResult } from "@astella/shared";
 import { MockProvider } from "../lib/providers/mock.ts";
+import { registerFactory } from "../lib/provider-factory.ts";
+import { ProviderRequestError, ProviderResponseRefusedError, ProviderResponseUnverifiedError } from "../lib/provider-request-error.ts";
 import { currentCompanionSuccessfulReceipts } from "../handlers/tools/companion-tool-receipts.ts";
+import { readCompanionWebSearchReceipts } from "../agent/web-search.ts";
 
 const CONN = testDatabaseUrl("DATABASE_URL_API");
 process.env.DATABASE_URL ??= CONN;
@@ -180,6 +187,364 @@ async function invokeScriptedWrite(ws: string, uid: string, payload: { runId: st
   finally { MockProvider.prototype.executeAgentTurn = original; }
 }
 
+for (const delivery of ["body", "finish"] as const) test(`unread application records remain private through ${delivery} and recover using a real receipt`, async () => {
+  let authorCalls = 0;
+  registerFactory("mock", "agent_turn", config => {
+    const provider = new MockProvider({ modelProfile: config.modelProfile });
+    const scripted = async (request: import("@astella/shared").AgentTurnRequest): Promise<AgentTurnResult> => {
+      authorCalls++;
+      const success = currentCompanionSuccessfulReceipts(request.messages).some(receipt => receipt.operation === "observe.stats");
+      if (success) return { content: "当前记录里，今日和本周学习时长均为 0 分钟。", toolCalls: [], finishReason: "stop", usage: null, providerRequestId: null };
+      if (authorCalls === 1) return delivery === "body"
+        ? { content: "你在9月17日学习过，掌握度100%。", toolCalls: [], finishReason: "stop", usage: null, providerRequestId: null }
+        : { content: "", toolCalls: [{ id: "unsupported-finish", name: "companion_finish", arguments: {
+          text: "你在9月17日学习过，掌握度100%。", outcome: "completed", actions: [], evidence: [],
+          requirements: [{ requirement: "report current learning records", fulfilled: true, textOnly: true, evidenceCallIds: [] }],
+        } }], finishReason: "tool_calls", usage: null, providerRequestId: null };
+      return { content: "", toolCalls: [{ id: `actual-stats-${authorCalls}`, name: "companion_observe", arguments: { action: "stats" } }],
+        finishReason: "tool_calls", usage: null, providerRequestId: null };
+    };
+    provider.executeAgentTurn = scripted;
+    Object.defineProperty(provider, "chatCompletionStreamToolCalls", { value: true });
+    provider.chatCompletionStream = async (_messages, options, _signal, onDelta) => {
+      const result = await scripted(options.nativeAgentRequest!);
+      const content = result.content ?? "";
+      onDelta(content);
+      return { ...result, content };
+    };
+    return provider;
+  });
+  const { workspaceId, userId } = await seedBase();
+  const fixture = await seedAgentRun(workspaceId, userId, { userText: "我最近的学习数据怎么样？【mock:requires-stats-read】" });
+  try {
+    await invoke(workspaceId, userId, { runId: fixture.runId });
+    const state = await readState(workspaceId, userId, fixture);
+    assert.equal(state.run.status, "succeeded");
+    assert.ok(authorCalls >= 3, "an unsupported final cannot bypass the actual read");
+    assert.ok(state.toolCalls.some(call => call.name === "observe.stats" && call.status === "succeeded"));
+    assert.doesNotMatch(JSON.stringify(state.assistant), /9月17|100%/);
+    assert.doesNotMatch(JSON.stringify(state.events.filter(event => ["assistant.delta", "assistant.final", "assistant.utterance"].includes(String(event.type)))), /9月17|100%/);
+    assert.match(JSON.stringify(state.assistant), /0 分钟/);
+    const [run] = await sql`SELECT turn_interpretation->'readRequirements' AS requirement FROM companion_turn_runs WHERE id=${fixture.runId}`;
+    assert.equal(run.requirement.status, "resolved");
+    assert.deepEqual(run.requirement.requirements[0].operations, ["observe.stats"]);
+    const [opportunity] = await sql`SELECT count(*)::int AS count FROM companion_awareness_observations WHERE parent_run_id=${fixture.runId} AND topic='reply.finished'`;
+    assert.equal(opportunity.count, 1, "a genuinely verified answer keeps its normal participation opportunity");
+  } finally {
+    await fixture.cleanup();
+    registerFactory("mock", "agent_turn", config => new MockProvider({ modelProfile: config.modelProfile }));
+  }
+});
+
+for (const delivery of ["body", "finish"] as const) test(`an unsupported saved-memory ${delivery} cannot settle before the corresponding actual write`, async () => {
+  let calls = 0;
+  registerFactory("mock", "agent_turn", config => {
+    const provider = new MockProvider({ modelProfile: config.modelProfile });
+    const scripted = async (request: import("@astella/shared").AgentTurnRequest): Promise<AgentTurnResult> => {
+      calls++;
+      const call = (name: string, args: Record<string, unknown>): AgentTurnResult => ({ content: "",
+        toolCalls: [{ id: `memory-${calls}`, name, arguments: args }], finishReason: "tool_calls", usage: null, providerRequestId: null });
+      const writes = currentCompanionSuccessfulReceipts(request.messages).filter(receipt => receipt.operation === "memory.write.save");
+      if (writes.length) return call("companion_finish", { text: "记住了：你周末喜欢去图书馆。", outcome: "completed",
+        actions: writes.map(receipt => ({ receiptId: receipt.id })),
+        requirements: [{ requirement: "save the current personal memory", fulfilled: true, evidenceCallIds: writes.map(receipt => receipt.id) }] });
+      if (calls === 1) return delivery === "body" ? { content: "已经保存进长期记忆了。", toolCalls: [], finishReason: "stop", usage: null, providerRequestId: null }
+        : call("companion_finish", { text: "已经保存进长期记忆了。", outcome: "completed", actions: [],
+          requirements: [{ requirement: "save the memory", fulfilled: true, textOnly: true, evidenceCallIds: [] }] });
+      if (!request.tools.some(tool => tool.name === "companion_memory_save")) return call("companion_load_tools", { groups: ["memory"] });
+      return call("companion_memory_save", { kind: "preference", content: "用户周末喜欢去图书馆", sourceQuote: "我周末喜欢去图书馆" });
+    };
+    provider.executeAgentTurn = scripted;
+    Object.defineProperty(provider, "chatCompletionStreamToolCalls", { value: true });
+    provider.chatCompletionStream = async (_messages, options, _signal, delta) => {
+      const result = await scripted(options.nativeAgentRequest!); const content = result.content ?? ""; delta(content); return { ...result, content };
+    };
+    return provider;
+  });
+  const { workspaceId, userId } = await seedBase();
+  const fixture = await seedAgentRun(workspaceId, userId, { userText: "保存为长期记忆：我周末喜欢去图书馆。【mock:requires-memory-write】", permissionLevel: "full" });
+  try {
+    await invoke(workspaceId, userId, { runId: fixture.runId });
+    const state = await readState(workspaceId, userId, fixture);
+    assert.equal(state.run.status, "succeeded");
+    assert.ok(state.toolCalls.some(call => call.name === "memory.write.save" && call.status === "succeeded"));
+    assert.doesNotMatch(JSON.stringify(state.events.filter(event => ["assistant.delta", "assistant.final", "assistant.utterance"].includes(String(event.type)))), /已经保存进长期记忆了/);
+    const [row] = await sql`SELECT count(*)::int AS count FROM assistant_memory_items WHERE workspace_id=${workspaceId} AND user_id=${userId} AND deleted_at IS NULL`;
+    assert.equal(row.count, 1, "repair must save once rather than turn a fake acknowledgment into repeated writes");
+    assert.match(JSON.stringify(state.assistant), /你周末喜欢去图书馆/);
+  } finally {
+    await fixture.cleanup();
+    registerFactory("mock", "agent_turn", config => new MockProvider({ modelProfile: config.modelProfile }));
+  }
+});
+
+test("repeated loading cannot revive a withdrawn malformed tool or grow into a context overflow", async () => {
+  let authorCalls = 0, invalidWrites = 0, loadsAfterWithdrawal = 0;
+  registerFactory("mock", "agent_turn", config => {
+    const provider = new MockProvider({ modelProfile: config.modelProfile });
+    Object.defineProperty(provider, "chatCompletionStreamToolCalls", { value: true });
+    provider.chatCompletionStream = async (_messages, options) => {
+      authorCalls++;
+      const request = options.nativeAgentRequest!;
+      const withdrawn = request.messages.some(message => message.role === "tool"
+        && String(message.content).includes('"toolAvailable":false'));
+      const hasMemory = request.tools.some(tool => tool.name === "companion_memory_save");
+      if (withdrawn) {
+        assert.equal(hasMemory, false, "a loader must not re-enable a tool withdrawn for repeated invalid arguments");
+        loadsAfterWithdrawal++;
+      }
+      const name = hasMemory && !withdrawn ? "companion_memory_save" : "companion_load_tools";
+      if (name === "companion_memory_save") invalidWrites++;
+      return { content: "", toolCalls: [{ id: `loader-loop-${authorCalls}`, name,
+        arguments: name === "companion_memory_save" ? { kind: "unsupported", content: "invalid fixture" } : { groups: ["memory"] } }],
+        finishReason: "tool_calls" };
+    };
+    return provider;
+  });
+  const { workspaceId, userId } = await seedBase();
+  const fixture = await seedAgentRun(workspaceId, userId, { userText: "保存一条记忆。" });
+  try {
+    await invoke(workspaceId, userId, { runId: fixture.runId });
+    const state = await readState(workspaceId, userId, fixture);
+    assert.equal(state.run.status, "succeeded");
+    assert.equal(invalidWrites, 5);
+    assert.ok(loadsAfterWithdrawal > 1 && loadsAfterWithdrawal < 10);
+    assert.ok(authorCalls < 20, "a loop that adds no capability must settle before filling the context");
+    assert.ok(!state.toolCalls.some(call => call.name === "memory.write.save" && call.status === "succeeded"));
+    assert.match(JSON.stringify(state.assistant), /没有保存或修改/);
+    const [row] = await sql`SELECT count(*)::int AS count FROM assistant_memory_items WHERE workspace_id=${workspaceId} AND user_id=${userId} AND deleted_at IS NULL`;
+    assert.equal(row.count, 0);
+    const laterLoads = state.events.filter(event => event.type === "agent.tool" && JSON.stringify(event).includes("本次没有新增能力"));
+    assert.ok(laterLoads.length > 0, "loader receipts must describe existing availability rather than claim new progress");
+  } finally {
+    await fixture.cleanup();
+    registerFactory("mock", "agent_turn", config => new MockProvider({ modelProfile: config.modelProfile }));
+  }
+});
+
+for (const kind of ["chat", "chat-configure", "chat-deepen", "reasoned"] as const) test(`the guarded ${kind} reply uses the same primary with the appropriate reasoning setting`, async () => {
+  const directory = mkdtempSync(join(tmpdir(), "companion-guarded-opening-"));
+  const originalConfig = process.env.AI_PLATFORMS_CONFIG;
+  const configPath = join(directory, "platforms.json");
+  writeFileSync(configPath, JSON.stringify({ platforms: { paired: { type: "mock", models: {
+    primary: { contextWindowTokens: 1_000_000, maxOutputTokens: 32_000, vision: false },
+    reviewer: { contextWindowTokens: 1_000_000, maxOutputTokens: 32_000, vision: false },
+  } } }, capabilities: { agent_turn: { platform: "paired", model: "primary" }, companion_fallback: { platform: "paired", model: "reviewer" } } }));
+  process.env.AI_PLATFORMS_CONFIG = configPath;
+  resetPlatformConfigCache();
+  const efforts: Array<string | undefined> = [];
+  registerFactory("mock", "agent_turn", config => {
+    const provider = new MockProvider({ modelProfile: config.modelProfile });
+    Object.defineProperty(provider, "chatCompletionStreamToolCalls", { value: true });
+    provider.chatCompletionStream = async (_messages, options, _signal, delta) => {
+      efforts.push(options.nativeAgentRequest!.reasoningEffort);
+      if (efforts.length === 1 && (kind === "chat-configure" || kind === "chat-deepen")) {
+        return { content: "", toolCalls: [{ id: `control-${kind}`,
+          name: kind === "chat-deepen" ? "companion_deepen" : "companion_configure_turn",
+          arguments: kind === "chat-deepen" ? {} : { sourceQuote: "轻声说", voiceStyle: {
+            decision: "apply", instruction: "轻声说", persistentPreference: { action: "keep", dialect: null },
+          } } }], finishReason: "tool_calls" };
+      }
+      const content = kind !== "reasoned" ? "嗯嗯。" : "冰的密度比水小，所以能浮在水上。";
+      delta(content); return { content, toolCalls: [], finishReason: "stop" };
+    };
+    return provider;
+  });
+  const { workspaceId, userId } = await seedBase();
+  const fixture = await seedAgentRun(workspaceId, userId, { userText: kind !== "reasoned" ? "嗯，知道了，轻声说。"
+    : "解释一下冰为什么能浮在水上。【mock:requires-reasoning】" });
+  try {
+    await invoke(workspaceId, userId, { runId: fixture.runId });
+    const state = await readState(workspaceId, userId, fixture);
+    assert.equal(state.run.status, "succeeded");
+    assert.deepEqual(efforts, kind === "chat-configure" ? ["none", "none"]
+      : kind === "chat-deepen" ? ["none", "max"] : [kind === "chat" ? "none" : "low"]);
+    assert.equal(state.toolCalls.length, 0);
+  } finally {
+    await fixture.cleanup();
+    if (originalConfig === undefined) delete process.env.AI_PLATFORMS_CONFIG;
+    else process.env.AI_PLATFORMS_CONFIG = originalConfig;
+    resetPlatformConfigCache();
+    registerFactory("mock", "agent_turn", config => new MockProvider({ modelProfile: config.modelProfile }));
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+for (const channel of ["body", "finish", "publish", "unavailable"] as const) test(`source-backed ${channel} delivery is reviewed before any answer reaches SSE or storage`, async () => {
+  const directory = mkdtempSync(join(tmpdir(), "companion-source-review-"));
+  const originalConfig = process.env.AI_PLATFORMS_CONFIG;
+  const configPath = join(directory, "platforms.json");
+  writeFileSync(configPath, JSON.stringify({ platforms: { paired: { type: "mock", models: {
+    primary: { contextWindowTokens: 1_000_000, maxOutputTokens: 32_000, vision: false },
+    reviewer: { contextWindowTokens: 1_000_000, maxOutputTokens: 32_000, vision: false },
+  } } }, capabilities: { agent_turn: { platform: "paired", model: "primary" }, companion_fallback: { platform: "paired", model: "reviewer" } } }));
+  process.env.AI_PLATFORMS_CONFIG = configPath; resetPlatformConfigCache();
+  const sourceId = randomUUID();
+  const bad = "BAD_DRAFT：这项研究证明70°C也成立。";
+  const safe = "这项研究只测量10–37°C，不能据此外推到70°C。";
+  let reviews = 0, sequence = 0;
+  registerFactory("mock", "agent_turn", config => {
+    const provider = new MockProvider({ modelProfile: config.modelProfile });
+    const chat = provider.chatCompletion.bind(provider);
+    provider.chatCompletion = async (messages, options, signal) => {
+      if (messages.some(message => message.role === "system" && String(message.content).startsWith("核对待交付答复与本轮实际读到的资料"))) {
+        reviews++;
+        const data = JSON.parse(String(messages.find(message => message.role === "user")!.content));
+        assert.equal(data.documents[0].operation, "notes.read.source");
+        assert.match(data.documents[0].data.body, /10–37/);
+        if (channel === "unavailable") throw new Error("controlled source review failure");
+        return { content: JSON.stringify({ reply: safe }), usage: {} };
+      }
+      return chat(messages, options, signal);
+    };
+    Object.defineProperty(provider, "chatCompletionStreamToolCalls", { value: true });
+    provider.chatCompletionStream = async (_messages, options, _signal, delta) => {
+      const request = options.nativeAgentRequest!;
+      const call = (name: string, args: Record<string, unknown>) => ({ content: "", toolCalls: [{ id: `source-review-${++sequence}`, name, arguments: args }], finishReason: "tool_calls" });
+      const receipts = request.messages.filter(message => message.role === "tool").flatMap(message => {
+        try { return [JSON.parse(String(message.content))]; } catch { return []; }
+      });
+      if (!request.tools.some(tool => tool.name === "companion_notes_read")) return call("companion_load_tools", { groups: ["notes"] });
+      if (!receipts.some(receipt => receipt.ok && receipt.operation === "notes.read.source")) return call("companion_notes_read", { action: "source", sourceId });
+      if (receipts.some(receipt => receipt.ok && receipt.operation === "say.publish")) return call("companion_finish", { text: safe, actions: [], evidence: [] });
+      if (channel === "finish") return call("companion_finish", { text: bad, actions: [], evidence: [] });
+      if (channel === "publish") return call("companion_send_message", { text: bad });
+      delta(bad); return { content: bad, toolCalls: [], finishReason: "stop" };
+    };
+    return provider;
+  });
+  const scope = await seedBase();
+  const fixture = await seedAgentRun(scope.workspaceId, scope.userId, { userText: `读取来源 ${sourceId}，只根据原文回答。` });
+  try {
+    await sql`INSERT INTO sources(id,workspace_id,type,title,status,created_by)
+      VALUES(${sourceId},${scope.workspaceId},'text','范围实验','ready',${scope.userId})`;
+    await sql`INSERT INTO source_segments(source_id,workspace_id,ordinal,text,char_start,char_end)
+      VALUES(${sourceId},${scope.workspaceId},1,'本实验只测量10–37°C，不包含70°C。',0,24)`;
+    await invoke(scope.workspaceId, scope.userId, { runId: fixture.runId });
+    const state = await readState(scope.workspaceId, scope.userId, fixture);
+    assert.equal(state.run.status, "succeeded");
+    assert.ok(reviews > 0);
+    const displayed = JSON.stringify(state.assistant) + JSON.stringify(state.events.filter(event => ["assistant.delta","assistant.utterance","assistant.final"].includes(event.type)));
+    assert.ok(!displayed.includes("BAD_DRAFT"), "the original draft must never leak into an answer channel");
+    if (channel === "unavailable") {
+      assert.match(displayed, /回答还没有核对完成/);
+      const [receipt] = await sql`SELECT delivery_receipt FROM companion_turn_runs WHERE id=${fixture.runId}`;
+      assert.equal(receipt.delivery_receipt.outcome, "partial");
+    } else assert.ok(displayed.includes(safe));
+  } finally {
+    await sql`DELETE FROM source_segments WHERE source_id=${sourceId}`;
+    await sql`DELETE FROM sources WHERE id=${sourceId}`;
+    await fixture.cleanup();
+    if (originalConfig === undefined) delete process.env.AI_PLATFORMS_CONFIG; else process.env.AI_PLATFORMS_CONFIG = originalConfig;
+    resetPlatformConfigCache(); registerFactory("mock", "agent_turn", config => new MockProvider({ modelProfile: config.modelProfile }));
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("an unavailable evidence check settles before author or tools and cannot start an unsolicited answer retry", async () => {
+  let authorCalls = 0;
+  registerFactory("mock", "agent_turn", config => {
+    const provider = new MockProvider({ modelProfile: config.modelProfile });
+    const chat = provider.chatCompletion.bind(provider);
+    provider.chatCompletion = async (messages, options, signal) => {
+      if (messages.some(message => message.role === "system" && String(message.content).includes("Companion application evidence requirements")))
+        throw new Error("controlled evidence-check transport failure");
+      return chat(messages, options, signal);
+    };
+    Object.defineProperty(provider, "chatCompletionStreamToolCalls", { value: true });
+    provider.chatCompletionStream = async () => { authorCalls++; return { content: "未经核对的答案", toolCalls: [], finishReason: "stop" }; };
+    return provider;
+  });
+  const { workspaceId, userId } = await seedBase();
+  const fixture = await seedAgentRun(workspaceId, userId, { userText: "查一下这个问题，再告诉我结果。" });
+  try {
+    await invoke(workspaceId, userId, { runId: fixture.runId });
+    const state = await readState(workspaceId, userId, fixture);
+    assert.equal(state.run.status, "succeeded", "transport can deliver a truthful partial result");
+    assert.equal(authorCalls, 0, "do not spend a whole native tool loop when its publication check is already unavailable");
+    assert.equal(state.toolCalls.length, 0);
+    assert.match(JSON.stringify(state.assistant), /还没有核对完成/);
+    assert.doesNotMatch(JSON.stringify(state.events), /未经核对的答案/);
+    const [run] = await sql`SELECT delivery_receipt FROM companion_turn_runs WHERE id=${fixture.runId}`;
+    assert.equal(run.delivery_receipt.outcome, "partial");
+    const [opportunity] = await sql`SELECT count(*)::int AS count FROM companion_awareness_observations WHERE parent_run_id=${fixture.runId} AND topic='reply.finished'`;
+    assert.equal(opportunity.count, 0, "an incomplete answer must not be replayed through the unrequested reply.finished channel");
+    const [suggestions] = await sql`SELECT count(*)::int AS count FROM jobs WHERE workspace_id=${workspaceId} AND type='companion_followup_suggestions'`;
+    assert.equal(suggestions.count, 0);
+  } finally {
+    await fixture.cleanup();
+    registerFactory("mock", "agent_turn", config => new MockProvider({ modelProfile: config.modelProfile }));
+  }
+});
+
+test("new required read progress resets the correction streak instead of imposing a task-wide limit", async () => {
+  const actions = ["stats", "activity", "context", "current_page", "history"];
+  let authorCalls = 0;
+  registerFactory("mock", "agent_turn", config => {
+    const provider = new MockProvider({ modelProfile: config.modelProfile });
+    const chat = provider.chatCompletion.bind(provider);
+    provider.chatCompletion = async (messages, options, signal) => {
+      if (messages.some(message => message.role === "system" && String(message.content).includes("Companion application evidence requirements")))
+        return { content: JSON.stringify({ requirements: actions.map(action => ({ description: `Read ${action}`, operations: [`observe.${action}`] })), executionRequirements: [] }), usage: {} };
+      return chat(messages, options, signal);
+    };
+    Object.defineProperty(provider, "chatCompletionStreamToolCalls", { value: true });
+    provider.chatCompletionStream = async (_messages, options, _signal, delta) => {
+      authorCalls++;
+      const receipts = currentCompanionSuccessfulReceipts(options.nativeAgentRequest!.messages);
+      const next = actions.find(action => !receipts.some(receipt => receipt.operation === `observe.${action}`));
+      if (!next) { delta("五项都已按真实回执读过。"); return { content: "五项都已按真实回执读过。", toolCalls: [], finishReason: "stop" }; }
+      if (authorCalls % 2 === 1) { delta("五项全部读完了。"); return { content: "五项全部读完了。", toolCalls: [], finishReason: "stop" }; }
+      return { content: "", toolCalls: [{ id: `required-read-${next}`, name: "companion_observe", arguments: { action: next } }], finishReason: "tool_calls" };
+    };
+    return provider;
+  });
+  const { workspaceId, userId } = await seedBase();
+  const fixture = await seedAgentRun(workspaceId, userId, { userText: "逐项读取这五类资料后再告诉我完成情况。" });
+  try {
+    await invoke(workspaceId, userId, { runId: fixture.runId });
+    const state = await readState(workspaceId, userId, fixture);
+    assert.equal(state.run.status, "succeeded");
+    assert.equal(authorCalls, 11, "five independent unbacked drafts remain correctable when real evidence advances between them");
+    for (const action of actions) assert.ok(state.toolCalls.some(call => call.name === `observe.${action}` && call.status === "succeeded"));
+    assert.match(JSON.stringify(state.assistant), /真实回执读过/);
+    assert.doesNotMatch(JSON.stringify(state.assistant), /五项全部读完了/);
+  } finally {
+    await fixture.cleanup();
+    registerFactory("mock", "agent_turn", config => new MockProvider({ modelProfile: config.modelProfile }));
+  }
+});
+
+test("an unsupported empirical mechanism is not published when no external source is available", async () => {
+  let authorCalls = 0;
+  registerFactory("mock", "agent_turn", config => {
+    const provider = new MockProvider({ modelProfile: config.modelProfile });
+    Object.defineProperty(provider, "chatCompletionStreamToolCalls", { value: true });
+    provider.chatCompletionStream = async (_messages, _options, _signal, delta) => {
+      authorCalls++;
+      const content = "温度降低必然使甜味感知消失，苦味变强。";
+      delta(content);
+      return { content, toolCalls: [], finishReason: "stop" };
+    };
+    return provider;
+  });
+  const { workspaceId, userId } = await seedBase();
+  const fixture = await seedAgentRun(workspaceId, userId, { userText: "为什么咖啡放凉了会更苦？【mock:requires-independent-evidence】" });
+  try {
+    await invoke(workspaceId, userId, { runId: fixture.runId });
+    const state = await readState(workspaceId, userId, fixture);
+    assert.equal(state.run.status, "succeeded");
+    assert.ok(authorCalls <= 1, "known unavailable evidence must not cause serial author retries; it may settle before the author starts");
+    assert.equal(state.toolCalls.length, 0, "an evidence check cannot execute or authorize a search");
+    assert.match(JSON.stringify(state.assistant), /还不能确定/);
+    assert.doesNotMatch(JSON.stringify(state.assistant), /甜味感知消失|苦味变强|搜索失败/);
+    assert.doesNotMatch(JSON.stringify(state.events.filter(event => ["assistant.delta", "assistant.final", "assistant.utterance"].includes(String(event.type)))), /甜味感知消失|苦味变强/);
+  } finally {
+    await fixture.cleanup();
+    registerFactory("mock", "agent_turn", config => new MockProvider({ modelProfile: config.modelProfile }));
+  }
+});
+
 async function readState(ws: string, uid: string, f: Fixture) {
   return sql.begin(async (tx) => {
     await tx`SELECT set_config('app.workspace_id', ${ws}, true)`;
@@ -213,6 +578,58 @@ async function readState(ws: string, uid: string, f: Fixture) {
   });
 }
 
+test("exhausted argument repair returns exactly one receipt for each native tool call", async () => {
+  const { workspaceId, userId } = await seedBase();
+  const f = await seedAgentRun(workspaceId, userId, { userText: "计算这个表达式；参数不合适就说明没有算出来。" });
+  const original = MockProvider.prototype.executeAgentTurn;
+  let calls = 0;
+  MockProvider.prototype.executeAgentTurn = async function (request, signal) {
+    if (request.role !== "companion_agent") return original.call(this, request, signal);
+    calls++;
+    const receiptIds = request.messages.filter(message => message.role === "tool").map(message => message.toolCallId);
+    assert.equal(receiptIds.length, new Set(receiptIds).size, "one native tool call must have one result, including exhaustion");
+    if (calls <= 5) return { content: "", toolCalls: [{ id: `invalid_${calls}`, name: "companion_observe",
+      arguments: { action: "calculate", expression: "1".repeat(501) } }], finishReason: "tool_calls", usage: null, providerRequestId: "argument-exhaustion-test" };
+    assert.ok(!request.tools.some(tool => tool.name === "companion_observe"));
+    const receipt = JSON.parse(String(request.messages.filter(message => message.role === "tool").at(-1)!.content));
+    assert.equal(receipt.status, "not_executed");
+    assert.equal(receipt.toolAvailable, false);
+    return { content: "表达式没有执行，未取得计算结果。", toolCalls: [], finishReason: "stop", usage: null, providerRequestId: "argument-exhaustion-test" };
+  };
+  try {
+    await invoke(workspaceId, userId, { runId: f.runId });
+    const state = await readState(workspaceId, userId, f);
+    assert.equal(state.run.status, "succeeded");
+    assert.equal(calls, 6);
+    assert.equal(state.toolCalls.length, 5);
+    assert.ok(state.toolCalls.every(call => call.status === "not_executed"));
+  } finally { MockProvider.prototype.executeAgentTurn = original; await f.cleanup(); }
+});
+
+test("a valid argument repair resets consecutive failures without withdrawing a working domain tool", async () => {
+  const { workspaceId, userId } = await seedBase();
+  const f = await seedAgentRun(workspaceId, userId, { userText: "计算这些表达式，参数错误时修正后继续。" });
+  const original = MockProvider.prototype.executeAgentTurn;
+  let calls = 0;
+  MockProvider.prototype.executeAgentTurn = async function (request, signal) {
+    if (request.role !== "companion_agent") return original.call(this, request, signal);
+    calls++;
+    assert.ok(request.tools.some(tool => tool.name === "companion_observe"), "successful corrections keep the domain usable");
+    if (calls <= 12) return { content: "", toolCalls: [{ id: `repair_${calls}`, name: "companion_observe",
+      arguments: { action: "calculate", expression: calls % 2 ? "1".repeat(501 + calls) : `${calls}+1` } }],
+      finishReason: "tool_calls", usage: null, providerRequestId: "argument-repair-test" };
+    return { content: "最后一项计算结果是13。", toolCalls: [], finishReason: "stop", usage: null, providerRequestId: "argument-repair-test" };
+  };
+  try {
+    await invoke(workspaceId, userId, { runId: f.runId });
+    const state = await readState(workspaceId, userId, f);
+    assert.equal(state.run.status, "succeeded");
+    assert.equal(calls, 13);
+    assert.equal(state.toolCalls.filter(call => call.status === "not_executed").length, 6);
+    assert.equal(state.toolCalls.filter(call => call.status === "succeeded").length, 6);
+  } finally { MockProvider.prototype.executeAgentTurn = original; await f.cleanup(); }
+});
+
 test("Agent：闲聊轮次正常收尾——有终态答复、不乱冻结确认", async () => {
   const { workspaceId, userId } = await seedBase();
   const f = await seedAgentRun(workspaceId, userId, { userText: "你好呀" });
@@ -239,6 +656,65 @@ test("Agent：闲聊轮次正常收尾——有终态答复、不乱冻结确认
     assert.equal(s.steps[0].kind, "model");
     assert.ok(s.steps[0].request_hash, "步骤记录 request hash");
   } finally {
+    await f.cleanup();
+  }
+});
+
+test("voice-control-only output cannot silently satisfy an ordinary user request", async () => {
+  const { workspaceId, userId } = await seedBase();
+  const f = await seedAgentRun(workspaceId, userId, { userText: "你好呀" });
+  const original = MockProvider.prototype.executeAgentTurn;
+  const stream = Object.getOwnPropertyDescriptor(MockProvider.prototype, "chatCompletionStream")!;
+  MockProvider.prototype.executeAgentTurn = async function (request, signal) {
+    if (request.role !== "companion_agent") return original.call(this, request, signal);
+    return { content: "[neutral]", toolCalls: [], finishReason: "stop", usage: null, providerRequestId: "tag-only-user-response" };
+  };
+  Object.defineProperty(MockProvider.prototype, "chatCompletionStream", { ...stream, value: undefined });
+  try {
+    await invoke(workspaceId, userId, { runId: f.runId });
+    const s = await readState(workspaceId, userId, f);
+    assert.equal(s.assistant.length, 1, "an actual user still receives an honest failure message");
+    const text = JSON.stringify(s.assistant[0]!.blocks);
+    assert.match(text, /这次没有生成有效回复/);
+    assert.doesNotMatch(text, /\[neutral\]/);
+    assert.ok(s.events.some(event => event.type === "assistant.final"));
+    assert.ok(!s.events.some(event => event.type === "turn.completed" && event.payload.silent === true));
+    const [step] = await sql`SELECT status,error_code FROM companion_agent_steps WHERE run_id=${f.runId} ORDER BY step_no DESC LIMIT 1`;
+    assert.equal(step!.status, "failed");
+    assert.equal(step!.error_code, "EMPTY_AGENT_RESPONSE");
+  } finally {
+    MockProvider.prototype.executeAgentTurn = original;
+    Object.defineProperty(MockProvider.prototype, "chatCompletionStream", stream);
+    await f.cleanup();
+  }
+});
+
+for (const Failure of [ProviderResponseRefusedError, ProviderResponseUnverifiedError])
+test(`${Failure.name} terminates once and remains non-recoverable in durable events`, async () => {
+  const { workspaceId, userId } = await seedBase();
+  const f = await seedAgentRun(workspaceId, userId, { userText: "synthetic provider refusal" });
+  const original = MockProvider.prototype.executeAgentTurn;
+  const stream = Object.getOwnPropertyDescriptor(MockProvider.prototype, "chatCompletionStream")!;
+  let calls = 0;
+  MockProvider.prototype.executeAgentTurn = async function (request, signal) {
+    if (request.role !== "companion_agent") return original.call(this, request, signal);
+    calls++;
+    throw new Failure("mock");
+  };
+  Object.defineProperty(MockProvider.prototype, "chatCompletionStream", { ...stream, value: undefined });
+  try {
+    await assert.rejects(invoke(workspaceId, userId, { runId: f.runId }), Failure);
+    const state = await readState(workspaceId, userId, f);
+    assert.equal(calls, 1, "refusal must not enter repair or alternate-model recovery");
+    assert.equal(state.run.status, "failed");
+    const error = state.events.find(event => event.type === "error");
+    assert.equal(error?.payload.code, new Failure("mock").code);
+    assert.equal(error?.payload.recoverable, false);
+    assert.doesNotMatch(JSON.stringify(state.assistant), /provider declined|mock|INTERNAL_ERROR/);
+    assert.equal(state.toolCalls.length, 0);
+  } finally {
+    MockProvider.prototype.executeAgentTurn = original;
+    Object.defineProperty(MockProvider.prototype, "chatCompletionStream", stream);
     await f.cleanup();
   }
 });
@@ -715,6 +1191,97 @@ async function leasedToolEvent(ws: string, uid: string, f: Fixture) {
   return event;
 }
 
+for (const calendar of [
+  { name: "local midnight and leap day", zone: "Asia/Shanghai", acceptedAt: "2032-02-28T16:30:00Z", expected: "2032-03-01T01:00:00.000Z" },
+  { name: "year boundary", zone: "Asia/Shanghai", acceptedAt: "2030-12-31T00:30:00Z", expected: "2031-01-01T01:00:00.000Z" },
+  { name: "daylight-saving calendar day", zone: "America/New_York", acceptedAt: "2032-03-13T15:00:00Z", expected: "2032-03-14T13:00:00.000Z" },
+  { name: "elapsed minutes", zone: "Asia/Shanghai", acceptedAt: "2032-02-28T16:30:00Z", expected: "2032-02-28T18:00:00.000Z",
+    timing: { afterMinutes: 90 }, expectedDay: 0 },
+  { name: "next calendar week", zone: "America/New_York", acceptedAt: "2032-03-13T15:00:00Z", expected: "2032-03-15T13:00:00.000Z",
+    timing: { weekday: 1, weeksFromThisWeek: 1, time: "09:00" }, expectedDay: 2 },
+]) test(`relative reminder uses the accepted local calendar across ${calendar.name}`, async () => {
+  const { workspaceId, userId } = await seedBase();
+  const fixture = await seedAgentRun(workspaceId, userId, { userText: "明天上午九点提醒我" });
+  try {
+    await sql`UPDATE user_companion_account_state SET quiet_hours=${sql.json({ timezone: calendar.zone })} WHERE user_id=${userId}`;
+    await sql`UPDATE companion_messages SET created_at=${calendar.acceptedAt}::timestamptz WHERE id=${fixture.userMessageId}`;
+    const { executeDirectTool } = await import("../handlers/tools/companion-tool-execution.ts");
+    const result = await executeDirectTool(await leasedToolEvent(workspaceId, userId, fixture), getCompanionAgentTool("companion_attention_write")!,
+      { action: "schedule_reminder", text: "复习", reminderTime: calendar.timing ?? { daysFromToday: 1, time: "09:00" } });
+    assert.equal(result.value.daysFromRequest, calendar.expectedDay ?? 1);
+    assert.equal(result.value.timezone, calendar.zone);
+    const [row] = await sql`SELECT fire_at FROM companion_reminders WHERE workspace_id=${workspaceId} AND user_id=${userId}`;
+    assert.equal(new Date(row.fire_at).toISOString(), calendar.expected,
+      "execution time and UTC day must not replace the original user's calendar day");
+  } finally { await fixture.cleanup(); }
+});
+
+test("past and nonexistent local reminder times create no pending or cancelled row", async () => {
+  const { workspaceId, userId } = await seedBase();
+  const fixture = await seedAgentRun(workspaceId, userId, { userText: "设置明确时间的提醒" });
+  try {
+    await sql`UPDATE user_companion_account_state SET quiet_hours=${sql.json({ timezone: "America/New_York" })} WHERE user_id=${userId}`;
+    const { executeDirectTool } = await import("../handlers/tools/companion-tool-execution.ts");
+    const event = await leasedToolEvent(workspaceId, userId, fixture);
+    for (const reminderTime of [{ date: "2000-01-01", time: "09:00" }, { date: "2032-03-14", time: "02:30" }])
+      await assert.rejects(executeDirectTool(event, getCompanionAgentTool("companion_attention_write")!,
+        { action: "schedule_reminder", text: "test", reminderTime }), /已经过去|不存在/);
+    const [row] = await sql`SELECT count(*)::int AS count FROM companion_reminders WHERE workspace_id=${workspaceId} AND user_id=${userId}`;
+    assert.equal(row.count, 0, "invalid schedules must not leave a cancelled side effect behind");
+  } finally { await fixture.cleanup(); }
+});
+
+test("search provenance restores canonical and legacy receipts only from the current successful scoped run", async () => {
+  const scope = await seedBase();
+  const f = await seedAgentRun(scope.workspaceId, scope.userId, { userText: "核对公开来源" });
+  try {
+    await sql.begin(async tx => {
+      await tx`SELECT set_config('app.workspace_id',${scope.workspaceId},true),set_config('app.user_id',${scope.userId},true)`;
+      const stepId = randomUUID();
+      await tx`INSERT INTO companion_agent_steps(id,workspace_id,user_id,conversation_id,run_id,step_no,kind,status)
+        VALUES(${stepId},${scope.workspaceId},${scope.userId},${f.conversationId},${f.runId},1,'model','running')`;
+      for (const [index, name, status] of [[1,"web.search","succeeded"],[2,"agent_web_search","succeeded"],
+        [3,"web.search","failed"],[4,"notes.read.read","succeeded"]] as const) {
+        const ref = JSON.stringify({ status:"succeeded",query:"公开资料",searchedAt:new Date().toISOString(),
+          sources:[{url:`https://example.com/source-${index}`,title:"来源",content:"事实",media:"官网",publishDate:""}] });
+        await tx`INSERT INTO companion_agent_tool_calls(id,workspace_id,user_id,conversation_id,run_id,step_id,
+          tool_call_id,name,tool_version,arguments,arguments_sha256,risk_class,status,result_ref)
+          VALUES(${randomUUID()},${scope.workspaceId},${scope.userId},${f.conversationId},${f.runId},${stepId},${`source-${index}`},
+            ${name},'1.0.0','{}'::jsonb,${"c".repeat(64)},'read',${status},${ref})`;
+      }
+    });
+    const restored = await readCompanionWebSearchReceipts(scope, f.runId);
+    assert.deepEqual(restored.flatMap(result => result.sources.map(source => source.url)).sort(),
+      ["https://example.com/source-1","https://example.com/source-2"]);
+    assert.deepEqual(await readCompanionWebSearchReceipts(scope, randomUUID()), []);
+    assert.deepEqual(await readCompanionWebSearchReceipts({ ...scope,userId:randomUUID() },f.runId), []);
+  } finally { await f.cleanup(); }
+});
+
+test("document redirect provenance restores only successful scoped reads with an intact result receipt", async () => {
+  const scope = await seedBase();
+  const f = await seedAgentRun(scope.workspaceId, scope.userId, { userText: "读取公开网页" });
+  const { readCompanionDocumentRedirects } = await import("../handlers/tools/companion-document-provenance.ts");
+  const { encodeCompanionToolResult } = await import("../handlers/agent/companion-runtime-checkpoint.ts");
+  try {
+    const stepId = randomUUID();
+    await sql`INSERT INTO companion_agent_steps(id,workspace_id,user_id,conversation_id,run_id,step_no,kind,status)
+      VALUES(${stepId},${scope.workspaceId},${scope.userId},${f.conversationId},${f.runId},1,'model','running')`;
+    for (const [index, name, status] of [[1,"web.read_document","succeeded"],[2,"agent_read_public_document","succeeded"],
+      [3,"web.read_document","failed"],[4,"notes.read.read","succeeded"]] as const) {
+      const result = encodeCompanionToolResult({ value: { status: "succeeded", url: `https://example.com/${index}/`, contentHash: "d".repeat(64) }, safeSummary: "Read" });
+      await sql`INSERT INTO companion_agent_tool_calls(id,workspace_id,user_id,conversation_id,run_id,step_id,
+        tool_call_id,name,tool_version,arguments,arguments_sha256,risk_class,status,result_payload)
+        VALUES(${randomUUID()},${scope.workspaceId},${scope.userId},${f.conversationId},${f.runId},${stepId},${`read-${index}`},
+          ${name},'1.0.0',${sql.json({url:`https://example.com/${index}`})},${"c".repeat(64)},'read',${status},${sql.json(result)})`;
+    }
+    const expected = [1,2].map(index => ({ requestedUrl: `https://example.com/${index}`, url: `https://example.com/${index}/` }));
+    assert.deepEqual((await readCompanionDocumentRedirects(scope, f.runId)).sort((a,b) => a.url.localeCompare(b.url)), expected);
+    assert.deepEqual(await readCompanionDocumentRedirects(scope, randomUUID()), []);
+    assert.deepEqual(await readCompanionDocumentRedirects({ ...scope, userId: randomUUID() }, f.runId), []);
+  } finally { await f.cleanup(); }
+});
+
 test("Agent 工具调用：句柄经真实写入 SQL 落库，形状与读回一致（0218 写读往返）", async () => {
   const { workspaceId, userId } = await seedBase();
   const f = await seedAgentRun(workspaceId, userId, { userText: "开始学习" });
@@ -1074,5 +1641,59 @@ test("同一句偏好不重复写第二遍：第二次回执指向已有的那�
       await tx`DELETE FROM workspaces WHERE id = ${workspaceId}`;
       await tx`DELETE FROM users WHERE id = ${userId}`;
     });
+  }
+});
+
+test("primary 429 continues the same durable turn on the configured alternate without retrying the limited account", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "companion-rate-recovery-"));
+  const originalConfig = process.env.AI_PLATFORMS_CONFIG;
+  const configPath = join(directory, "platforms.json");
+  writeFileSync(configPath, JSON.stringify({platforms:{recovery:{type:"mock",models:{
+    limited:{contextWindowTokens:1_000_000,maxOutputTokens:32_000,vision:false},
+    alternate:{contextWindowTokens:1_000_000,maxOutputTokens:32_000,vision:false},
+  }}},capabilities:{agent_turn:{platform:"recovery",model:"limited"},
+    companion_fallback:{platform:"recovery",model:"alternate"}}}));
+  process.env.AI_PLATFORMS_CONFIG = configPath;
+  resetPlatformConfigCache();
+  let primaryCalls = 0, alternateCalls = 0;
+  registerFactory("mock", "agent_turn", config => {
+    const provider = new MockProvider({modelProfile:config.modelProfile});
+    provider.modelId = config.model ?? "mock-v1";
+    Object.defineProperty(provider, "chatCompletionStream", {value:undefined});
+    const original = provider.executeAgentTurn.bind(provider);
+    provider.executeAgentTurn = async (request, signal) => {
+      if (request.role !== "companion_agent") return original(request, signal);
+      if (config.model === "limited") {
+        primaryCalls++;
+        throw new ProviderRequestError({provider:"mock",status:429});
+      }
+      alternateCalls++;
+      assert.equal(request.messages.filter(message => message.role === "user").length, 1);
+      return {content:"[neutral]在呢。",toolCalls:[],finishReason:"stop",usage:null,providerRequestId:"alternate-result"};
+    };
+    return provider;
+  });
+  const {workspaceId,userId} = await seedBase();
+  const fixture = await seedAgentRun(workspaceId,userId,{userText:"你好",permissionLevel:"full"});
+  try {
+    await invoke(workspaceId,userId,{runId:fixture.runId});
+    const [run] = await sql`SELECT status,model_id FROM companion_turn_runs WHERE id=${fixture.runId}`;
+    assert.equal(run.status,"succeeded");
+    assert.equal(run.model_id,"alternate");
+    assert.equal(primaryCalls,1);
+    assert.equal(alternateCalls,1);
+    const steps = await sql`SELECT status,error_code FROM companion_agent_steps WHERE run_id=${fixture.runId} ORDER BY step_no`;
+    assert.equal(steps[0]?.error_code,"PROVIDER_RATE_LIMITED");
+    assert.equal(steps.at(-1)?.status,"succeeded");
+    const messages = await sql`SELECT blocks FROM companion_messages WHERE run_id=${fixture.runId} AND role='assistant'`;
+    assert.equal(messages.length,1);
+    assert.match(JSON.stringify(messages[0]?.blocks),/在呢/);
+  } finally {
+    await fixture.cleanup();
+    if (originalConfig === undefined) delete process.env.AI_PLATFORMS_CONFIG;
+    else process.env.AI_PLATFORMS_CONFIG = originalConfig;
+    resetPlatformConfigCache();
+    registerFactory("mock", "agent_turn", config => new MockProvider({modelProfile:config.modelProfile}));
+    rmSync(directory,{recursive:true,force:true});
   }
 });

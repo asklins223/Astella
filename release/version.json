@@ -1,11 +1,9 @@
 {
-  "version": "2.0.16",
+  "version": "2.0.17",
   "notes": [
-    "手记正文与文件的上传下载统一到 100 MB。这条链上过去每个环节各写一个数（正文 10 MB、随文图 5 MB、头像 2 MB、对话文件 20 MB、对象存储取回 50 MB、单帧 256 KB…），挡住人的从来是最先进不来的那一个，而界面上那句「太大了」指向的往往是另一处；现在只有 100 MB 这一个数，超出时报的也是这个数。",
-    "协作里粘贴大段内容或贴图不再把连接打断：单帧上限跟着放大，那一帧过去之后下一笔仍然落库。",
-    "把另一篇笔记的整篇正文上送到这一篇会被当场拒掉，并说明「这条增量与当前文档不是同一份历史」——不再出现正文变成别人的、而界面上什么提示都没有。笔记的归属写在文档本身里，离线队列或缓存键串号时也进不去别人的笔记。",
-    "历史版本恢复改成读「那一版提交时的快照」：版本被顶开的那一刻，它的行倒回自己的快照并封口；恢复产出历史末尾新的一版，按旧版读回不再被后续编辑改写。",
-    "有人把这一篇恢复了，正开着这一篇的人会在自己屏幕上被明说：谁、从第几版恢复成第几版，正文跟着换过去。",
-    "手机上保存失败会自己按退避重试，不再需要再敲一个字才有下一次；几次都试不动才说「文字仍留在本机」。同时不再因为内容尺寸把失败说成「没有权限」。"
+    "Agent replies now keep application claims tied to actual read and execution receipts, retain stable streaming through completion, and use the existing MiMo primary and DeepSeek fallback without duplicate actions.",
+    "Ordinary conversation responds to the current topic with fewer repeated assurances and unsolicited instructions; changing this reply’s voice no longer unnecessarily enables a second reasoning pass.",
+    "Web research reads and checks original source windows, preserves real citation identities and reports unavailable evidence honestly.",
+    "Terminal process steps close consistently; deployment role changes roll back together if reconciliation fails."
   ]
 }

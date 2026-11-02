@@ -36,11 +36,15 @@ test("explicit operator count limits remain configurable and serializable", () =
 test("user-facing results describe changes instead of narrating internal receipt fields", () => {
   for (const toolCount of [0, 2]) for (const attentionIntent of ["conversation", "task"]) {
     const policy = companionStepRuntimePolicy({ permissionLevel: "full", toolCount, attentionIntent,
-      stepBudget: Infinity, finalAnswerOnly: false });
+      toolCallCount: 1, stepBudget: Infinity, finalAnswerOnly: false });
     assert.match(policy, /面向用户的正文只交代实际结果/);
     assert.match(policy, /用户明确要求技术诊断时再解释/);
     assert.match(policy, /不隐瞒失败/);
   }
+  const conversation = companionStepRuntimePolicy({ permissionLevel: "full", toolCount: 40,
+    attentionIntent: "conversation", toolCallCount: 0, stepBudget: Infinity, finalAnswerOnly: false });
+  assert.match(conversation, /不公开内部字段、回执格式或接话规则/);
+  assert.doesNotMatch(conversation, /修改成功可以说|正文只交代实际结果|请先预览/);
 });
 
 test("unlimited count policy still obeys deadline and immediate cancellation", async () => {

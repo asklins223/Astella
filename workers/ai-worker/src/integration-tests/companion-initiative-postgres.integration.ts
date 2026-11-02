@@ -191,19 +191,20 @@ test("reply-finished publication suppresses an exact parent paragraph through bo
 test("semantic publication review receives real old speech and unfinished status through both channels", async () => {
   const originalChat = MockProvider.prototype.chatCompletion;
   try {
-    for (const channel of ["final", "tool"] as const) for (const scenario of ["repeat", "correction", "failed"] as const) {
+    for (const channel of ["final", "tool"] as const) for (const scenario of ["repeat", "correction", "failed", "partial"] as const) {
       const f = await fixture(); await observe(f); await prepare(f);
       const previous = await runPrepared(f, silentAnswer);
       const oldText = "问你个事儿，你觉得打字速度快慢和脑子转得快慢是一回事吗？";
       await admin`INSERT INTO companion_messages(id,workspace_id,user_id,conversation_id,seq,role,kind,blocks,run_id,content_sha256)
         VALUES(${randomUUID()},${f.workspaceId},${f.userId},${f.conversationId},1,'assistant','text',
           ${admin.json([{ type: "text", text: scenario === "correction" ? "原文的电压为6V，电阻为3Ω。" : oldText }])},${previous.id},${"0".repeat(64)})`;
-      if (scenario === "failed") {
+      if (scenario === "failed" || scenario === "partial") {
         const userMessageId = randomUUID();
         await admin`INSERT INTO companion_messages(id,workspace_id,user_id,conversation_id,seq,role,kind,blocks,content_sha256)
           VALUES(${userMessageId},${f.workspaceId},${f.userId},${f.conversationId},2,'user','text',
             '[{"type":"text","text":"用三句话解释郡县制。"}]'::jsonb,${"1".repeat(64)})`;
-        await admin`UPDATE companion_turn_runs SET user_message_id=${userMessageId},status='failed',input_source=NULL WHERE id=${previous.id}`;
+        await admin`UPDATE companion_turn_runs SET user_message_id=${userMessageId},status=${scenario === "partial" ? "succeeded" : "failed"},
+          delivery_receipt=${scenario === "partial" ? admin.json({ outcome: "partial" }) : null},input_source=NULL WHERE id=${previous.id}`;
       }
       await admin`UPDATE companion_conversations SET next_message_seq=3 WHERE id=${f.conversationId}`;
       await transaction(f, tx => recordCompanionAwareness(tx, f, { version: 1, id: randomUUID(), appLaunchId: f.launchId,
@@ -216,9 +217,9 @@ test("semantic publication review receives real old speech and unfinished status
         if (!messages.some(m => m.role === "system" && String(m.content).includes("核对一条即将主动发出"))) return originalChat.call(this, messages, options, signal);
         reviewed++;
         const data = JSON.parse(String(messages.find(m => m.role === "user")!.content));
-        if (scenario === "failed") assert.equal(data.unfinished.status, "failed");
+        if (scenario === "failed" || scenario === "partial") assert.equal(data.unfinished.status, scenario);
         else assert.ok(data.previous.length > 0, "similarity retrieval must include a real earlier thought");
-        return { content: JSON.stringify({ decision: scenario === "correction" ? "publish" : scenario === "failed" ? "failed_request_replay" : "repeat", reason: "受控判据：核对了事实差异与权威状态。" }), usage: { promptTokens: 20, completionTokens: 20 } };
+        return { content: JSON.stringify({ decision: scenario === "correction" ? "publish" : ["failed", "partial"].includes(scenario) ? "failed_request_replay" : "repeat", reason: "受控判据：核对了事实差异与权威状态。" }), usage: { promptTokens: 20, completionTokens: 20 } };
       };
       const text = scenario === "repeat" ? oldText.replace("事儿", "事") : scenario === "correction" ? "原文的电压应为9V，电阻仍为3Ω。" : "郡县制那三句话我准备好了，你哪天想听就喊我。";
       const run = await runPrepared(f, async () => channel === "final" ? { ...(await silentAnswer()), content: text }
@@ -412,18 +413,25 @@ test("an initiative's spoken prose is delivered as written, not filtered by its 
   assert.equal(messages[0]!.blocks[0].text,text);
 });
 test("a structured quiet decision finishes without another model call or speech", async () => {
-  const f = await fixture(); await observe(f); await prepare(f);
-  let calls = 0;
-  const run = await runPrepared(f,async()=>{
-    calls++;
-    assert.equal(calls,1);
-    return await silentAnswer();
-  });
-  const [result] = await admin`SELECT status FROM companion_turn_runs WHERE id=${run.id}`;
-  assert.equal(result!.status,"succeeded");
-  assert.equal(calls,1);
-  assert.equal((await admin`SELECT 1 FROM companion_messages WHERE run_id=${run.id}`).length,0);
-  assert.equal((await admin`SELECT 1 FROM companion_stream_events WHERE run_id=${run.id} AND type IN ('assistant.final','assistant.delta','assistant.utterance','voice.segment.ready')`).length,0);
+  for (const content of ["", "[neutral]", "[neutral]\n  "]) {
+    const f = await fixture(); await observe(f); await prepare(f);
+    let calls = 0;
+    const run = await runPrepared(f,async()=>{
+      calls++;
+      assert.equal(calls,1);
+      return { ...(await silentAnswer()), content };
+    });
+    const [result] = await admin`SELECT status FROM companion_turn_runs WHERE id=${run.id}`;
+    assert.equal(result!.status,"succeeded", content);
+    assert.equal(calls,1,content);
+    assert.equal((await admin`SELECT 1 FROM companion_messages WHERE run_id=${run.id}`).length,0,content);
+    assert.equal((await admin`SELECT 1 FROM companion_stream_events WHERE run_id=${run.id} AND type IN ('assistant.final','assistant.delta','assistant.utterance','voice.segment.ready')`).length,0,content);
+    const [step] = await admin`SELECT status,error_code FROM companion_agent_steps WHERE run_id=${run.id}`;
+    assert.equal(step!.status,"succeeded",content);
+    assert.equal(step!.error_code,null,content);
+    const [completion] = await admin`SELECT payload FROM companion_stream_events WHERE run_id=${run.id} AND type='turn.completed'`;
+    assert.equal(completion!.payload.silent,true,content);
+  }
 });
 test("a pending page opportunity is dropped after its actual page changes", async () => {
   const f = await fixture(); await prefs(f,"进入资料页时，看到实际失败就帮我排障。");
@@ -521,7 +529,7 @@ for (const userInitiated of [false, true]) test(`the same agent publishes real u
       AND o.topic='reply.finished' AND j.status='pending'`).length, 1);
 });
 
-test("the host does not force a message count from the request's wording", async () => {
+test("an explicitly requested second message cannot disappear after the first publication", async () => {
   const f = await fixture(); await observe(f); await prepare(f);
   const [prepared] = await admin`SELECT id FROM companion_turn_runs WHERE user_id=${f.userId}`;
   const messageId = randomUUID();
@@ -533,14 +541,16 @@ test("the host does not force a message count from the request's wording", async
   let steps = 0;
   const run = await runPrepared(f, async request => {
     steps++;
-    assert.equal(steps,1,"一条显式消息就是终态；宿主不按用户措辞追加条数");
+    assert.ok(steps <= 2, "only the outstanding publication needs another model step");
     assert.ok(request.tools.some(tool => tool.name === "companion_send_message"));
     return { ...await silentAnswer(), finishReason: "tool_calls",
-      toolCalls: [{ id: "only-message", name: "companion_send_message", arguments: { text: "你好。" } }] };
+      toolCalls: [{ id: `message-${steps}`, name: "companion_send_message", arguments: {
+        text: steps === 1 ? "你好。" : "今天想先做什么？",
+      } }] };
   });
-  assert.equal(steps,1);
+  assert.equal(steps,2);
   const messages = await admin`SELECT blocks FROM companion_messages WHERE run_id=${run.id} AND role='assistant' ORDER BY seq`;
-  assert.deepEqual(messages.map(message => message.blocks[0].text), ["你好。"]);
+  assert.deepEqual(messages.map(message => message.blocks[0].text), ["你好。", "今天想先做什么？"]);
   assert.equal((await admin`SELECT 1 FROM companion_stream_events WHERE run_id=${run.id} AND type IN ('assistant.delta','assistant.final')`).length, 0);
   assert.equal((await admin`SELECT status FROM companion_turn_runs WHERE id=${run.id}`)[0]!.status, "succeeded");
 });

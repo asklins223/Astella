@@ -1,3 +1,4 @@
+import { CompanionAIAttribution } from "../content/CompanionAIAttribution";
 // 样式表改由 `styles.ts` 统一按顺序注入（2026-09-29）——见该文件顶部的分层说明。
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type RefObject, type PointerEvent as ReactPointerEvent, type UIEvent as ReactUIEvent } from "react";
 import { createPortal } from "react-dom";
@@ -1278,6 +1279,7 @@ export function CompanionHud({
           runId={chat.processRunId ?? "accepting"} startedAt={currentTrace?.summary.createdAt}
           activityKey={currentTrace?.events?.at(-1)?.seq} /> : null}
         {attachments && outputTone === "reply" ? <CompanionWebSources sources={webSources} /> : null}
+        {attachments && chat.mode !== "conversation" && ["reply", "stopped", "note"].includes(outputTone) ? <CompanionAIAttribution /> : null}
         {attachments && chat.richReply ? <CompanionReplyAttachments key={`attachments:${chat.richReply.messageId}`} chat={chat}
           representedNoteIds={railVisible ? savedNoteIds : undefined}
           followupsReady={readthroughReplyId === chat.richReply.messageId}
@@ -1363,6 +1365,7 @@ export function CompanionHud({
                   <CompanionComposerImageChip key={image.url} image={image} onRemove={() => imageAttachment.remove(image.url)} />)}</div> : null}
                 <CompanionComposerImageStatus uploading={imageAttachment.uploading} error={imageAttachment.error} />
 
+                <CompanionAIAttribution />
                 <form
                   data-sending={chat.phase === "sending" || undefined}
                   onSubmit={(event) => { event.preventDefault(); void sendText(); }}

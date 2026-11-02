@@ -11,7 +11,7 @@ const state = (): CompanionRuntimeState => ({ messages: [{ role: "user", content
   compactedEvidence: [], stepCount: 2, toolCallCount: 1, elapsedMs: 400, visibleSegments: ["already shown"],
   visibleSegmentDelivered: [true], richBlocks: [], webSearchCalls: 0, historyFoldApplied: false,
   invalidArgumentCalls: ["unchanged bad args"], rejectedExecutionConstraints: ["forbidden time arrangement"],
-  degenerateRetried: false, outputRepairToolCount: 1, actionSteerAttempts: 1, quoteCorrectionUsed: true,
+  degenerateRetried: false, outputRepairToolCount: 1, actionSteerAttempts: 1, readRequirementSteerAttempts: 2, quoteCorrectionUsed: true,
   lookupClaimSteered: true, steerSwapToFallback: true, protocolFallback: false, utterancePublished: false, loadedToolNames: [],
   entryMode: "direct_fast", deepened: false });
 
@@ -42,7 +42,7 @@ test("a durable final result is a distinct phase and can finish without a new mo
  */
 test("settled 结果带着 writesLanded 也要编得进去，未登记的键仍然挡", () => {
   const snapshot = { phase: "settled" as const, state: state(), result: { status: "completed" as const,
-    text: "已经做成的事要说给你听", blocks: [], memoryRefs: [], writesLanded: true } };
+    text: "已经做成的事要说给你听", blocks: [], memoryRefs: [], writesLanded: true, deliveryDegraded: true } };
   assert.deepEqual(decodeCompanionRuntimeCheckpoint(encodeCompanionRuntimeCheckpoint("same", snapshot), "same"), snapshot);
   // 故意塞一个没登记的键：要的是运行时挡住，所以这里绕过类型检查（TS 先拦就测不到 schema）。
   const smuggled = { ...snapshot.result, landedSomethingElse: true } as unknown as typeof snapshot.result;

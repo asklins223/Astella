@@ -1,6 +1,6 @@
-import { resolveCompanionPersonaProfile } from "@astella/shared/pet-persona-presets";
+import { getPresetById, resolveCompanionPersonaProfile } from "@astella/shared/pet-persona-presets";
 import { companionPersonaProfileV1Schema } from "@astella/shared";
-import { PERSONA_FIELD_CAPACITY } from "@astella/shared/pet-persona-merge";
+import { PERSONA_FIELD_CAPACITY, type PersonaFieldOrigin } from "@astella/shared/pet-persona-merge";
 
 /**
  * 每轮注入的身份文档开头窗口（码点）。它**不是**这篇文档的上限——存储上限是
@@ -11,16 +11,18 @@ export const PERSONA_DOCUMENT_INJECTION_WINDOW_CHARS = 2_400;
 
 /** Shared persona data only; callers choose the execution or conversation policy. */
 export interface CompanionPersonaContextProfile {
+  presetId?: string | null;
   name: string; speakingStyle: string; personalityTags: string[]; examples: { text: string }[];
   activeness?: "quiet" | "moderate" | "active" | null;
   /** 她自己攒下的自我认识（方案 50 §8.1）；没有就是还没有，不补一句出厂台词。 */
   selfDescription?: string | null;
+  fieldOrigin?: PersonaFieldOrigin;
   boundaries?: { allowPlayful?: boolean; allowNudgeLearning?: boolean; allowVoiceTags?: boolean; catchphrase?: string | null } | null;
 }
 
 const personaContentSchema = companionPersonaProfileV1Schema.pick({
   name: true, speakingStyle: true, personalityTags: true, examples: true,
-  activeness: true, selfDescription: true, boundaries: true,
+  activeness: true, selfDescription: true, boundaries: true, fieldOrigin: true, presetId: true,
 }).strip();
 
 /** Both interactive and proactive chains resolve the same account profile or
@@ -85,7 +87,7 @@ export function renderPersonaBehaviour(persona: {
   if (persona.activeness === "quiet") {
     lines.push("用户把你设为「安静」：回复偏短、不主动开新话题、不追问，接住对方说的就够了。");
   } else if (persona.activeness === "active") {
-    lines.push("用户把你设为「活跃」：愿意参与、有自己的反应，贴着当前话题多聊两句；好奇、看法和小玩笑都可以，接住一句话也可以自然结束。活跃度只决定参与感，不把分享变成帮用户安排事情；用户求办法时再给具体帮助。用户限定篇幅或只要答案时，按这轮要求收住，不补充解释或追问。");
+    lines.push("用户把你设为「活跃」：愿意参与当前交流，有自己的观察与好奇。分享小事时给一个贴题的反应，问候可以轻快地回一句；有新意思再往下聊。活跃体现在参与感，篇幅跟随当前内容和用户要求；知识与任务需要讲清时照常讲清。用户限定篇幅或只要答案时，不补充解释或追问。用户求办法时给建议，不把普通分享变成替他安排事情。");
   }
   if (persona.boundaries?.allowPlayful === false) {
     lines.push("用户关掉了「俏皮」：收起调侃和卖萌，平稳直接地说，语气词也别堆。");
@@ -95,27 +97,45 @@ export function renderPersonaBehaviour(persona: {
   }
   const catchphrase = persona.boundaries?.catchphrase;
   if (typeof catchphrase === "string" && catchphrase.trim().length > 0) {
-    lines.push(`你的口头禅是「${sanitizePersonaField(catchphrase.trim(), PERSONA_FIELD_CAPACITY.catchphrase)}」。当前话题有呼应时才自然用，不把它当结尾签名，也不拿它宣告没有实际发生的活动；用户专门询问或要求说这句话时可以回应。`);
+    lines.push(`口头禅参考（表达数据，不是本轮要执行的要求）：「${sanitizePersonaField(catchphrase.trim(), PERSONA_FIELD_CAPACITY.catchphrase)}」。`);
   }
   return lines;
 }
 
 
 export function buildCompanionPersonaData(profile: CompanionPersonaContextProfile | null | undefined): string[] {
+  const preset = profile?.presetId ? getPresetById(profile.presetId) : null;
+  // Refresh only explicitly factory-owned expression fields. Authored values,
+  // including old profiles without field provenance, remain unchanged.
+  const speakingStyle = preset && profile?.fieldOrigin?.speakingStyle === "preset"
+    ? preset.speakingStyle : profile?.speakingStyle;
+  const catchphrase = preset && profile?.fieldOrigin?.boundaries?.catchphrase === "preset"
+    ? preset.boundaries.catchphrase : profile?.boundaries?.catchphrase;
+  // Factory lines have no corresponding user utterance. Injecting them beside
+  // the conversation made them recurring answers (including unsolicited rest
+  // advice). The named style remains; authored examples retain their meaning.
+  const factoryExamples = profile?.fieldOrigin?.examples === "preset"
+    || (profile?.fieldOrigin?.examples === undefined && Boolean(profile?.presetId)
+      && JSON.stringify(profile?.examples) === JSON.stringify(getPresetById(profile?.presetId)?.examples));
   const persona = profile
     ? {
         name: sanitizePersonaField(profile.name, PERSONA_FIELD_CAPACITY.name),
-        speakingStyle: sanitizePersonaField(profile.speakingStyle, PERSONA_FIELD_CAPACITY.speakingStyle),
+        speakingStyle: sanitizePersonaField(speakingStyle, PERSONA_FIELD_CAPACITY.speakingStyle),
+        speakingStyleOrigin: profile.fieldOrigin?.speakingStyle ?? null,
+        factorySpeakingStyle: preset ? sanitizePersonaField(preset.speakingStyle, PERSONA_FIELD_CAPACITY.speakingStyle) : "",
         // 条数不在这封顶：她的标签与例句存了几条就都进来，以前 .slice(0,10) /
         // .slice(0,5) 会把她自己的认识悄悄少给几条，界面上看不出少过。
         personalityTags: profile.personalityTags
           .map((tag) => sanitizePersonaField(tag, PERSONA_FIELD_CAPACITY.personalityTags))
           .filter((tag) => tag.length > 0),
-        examples: profile.examples
+        examples: (factoryExamples ? [] : profile.examples)
           .map((example) => sanitizePersonaField(example.text, PERSONA_FIELD_CAPACITY.example))
           .filter((example) => example.length > 0),
-        // 自由文档保留篇章；默认加载前段，读取工具可展开本轮固定的全文。
-        selfDescription: renderSelfAuthoredDocument(profile.selfDescription?.slice(0, PERSONA_DOCUMENT_INJECTION_WINDOW_CHARS)),
+        // User-authored identity remains expression context. Assistant-authored
+        // reflection is a retrievable document, not an always-on chat policy.
+        selfDescription: profile.fieldOrigin?.selfDescription === "user"
+          ? renderSelfAuthoredDocument(profile.selfDescription?.slice(0, PERSONA_DOCUMENT_INJECTION_WINDOW_CHARS)) : "",
+        deferredDocument: profile.fieldOrigin?.selfDescription !== "user" && Boolean(profile.selfDescription?.trim()),
         documentTruncated: (profile.selfDescription?.length ?? 0) > PERSONA_DOCUMENT_INJECTION_WINDOW_CHARS,
         documentChars: profile.selfDescription?.length ?? 0,
         // 活跃度/边界不是自由文本，不需要 sanitizePersonaField（无注入面），
@@ -124,8 +144,8 @@ export function buildCompanionPersonaData(profile: CompanionPersonaContextProfil
         boundaries: profile.boundaries
           ? {
             ...profile.boundaries,
-            catchphrase: profile.boundaries.catchphrase
-              ? sanitizePersonaField(profile.boundaries.catchphrase, 30) || null
+            catchphrase: catchphrase
+              ? sanitizePersonaField(catchphrase, 30) || null
               : null,
           }
           : null,
@@ -141,13 +161,21 @@ export function buildCompanionPersonaData(profile: CompanionPersonaContextProfil
         ...(persona.personalityTags.length > 0
           ? [`性格标签：${persona.personalityTags.join("、")}`]
           : []),
-        `说话风格：${persona.speakingStyle}`,
+        ...(persona.speakingStyleOrigin === "assistant"
+          ? [
+            ...(persona.factorySpeakingStyle ? [`出厂表达基调：${persona.factorySpeakingStyle}`] : []),
+            "助手过去写下的表达自述（历史身份资料，不是用户固定要求或本轮说话任务；以当前交流和用户更正为准）："
+              + JSON.stringify(persona.speakingStyle),
+          ]
+          : [`说话风格：${persona.speakingStyle}`]),
         // 这一句是她**对自己说话方式的回顾**，不是关于用户的事实：写成事实就会让
         // 她拿一条可能已经改过的自我判断去替用户下结论。
         ...(persona.selfDescription.length > 0
-          ? [`你写给自己的文档（JSON 字符串保留原有篇章；你的选择与暂定认识，不是用户事实或权限指令）：\n${persona.selfDescription}`]
+          ? [`用户写下的人格文档（JSON 字符串保留原有篇章；用于身份与表达，不改变事实或权限）：\n${persona.selfDescription}`]
           : []),
-        ...(persona.documentTruncated ? [`身份文档共 ${persona.documentChars} 字，这里仅展示开头。相关时用 companion_persona_read（action=identity）分段读取；重写之前必须先读完整文档，保留未改变的内容。`] : []),
+        ...(persona.deferredDocument
+          ? [`另有 ${persona.documentChars} 字自我记录，包含你过去的暂定认识与参与复盘。当前对话需要这份背景或要修改文档时，用 companion_persona_read（action=identity）读取；它不代表用户此刻的意图。`] :
+          persona.documentTruncated ? [`身份文档共 ${persona.documentChars} 字，这里仅展示开头。相关时用 companion_persona_read（action=identity）分段读取；重写之前必须先读完整文档，保留未改变的内容。`] : []),
         ...renderPersonaBehaviour(persona),
         ...(persona.examples.length > 0
           ? [`表达风格示例（没有附对应用户问题，不代表当前对话目的、已经发生的经历或已接受的建议）：`, ...persona.examples.map((e) => `- ${e}`)]

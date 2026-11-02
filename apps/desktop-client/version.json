@@ -1,7 +1,7 @@
 {
-  "version": "2.0.2",
+  "version": "2.0.3",
   "notes": [
-    "分条回复不再重复显示：伴星通过发言工具逐条发出消息时，先前的流式草稿会在第一条消息到达时丢弃，每个气泡只出现一次，也不会在读完后再刷成两条。",
-    "与本次服务端的伴星分条改动配套：消息是否拆成多条由伴星自己按内容判断，客户端只负责如实呈现。"
+    "AI attribution appears with each reply’s playback controls, including the companion drawer.",
+    "Web search settings use clear product wording and retain source citations."
   ]
 }

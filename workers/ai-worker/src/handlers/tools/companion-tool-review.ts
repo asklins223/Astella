@@ -77,7 +77,7 @@ export async function prepareCompanionToolReview(event: AgentEventContext,
       : `${String(expectedTarget.text)}\n\n原定时间：${String(expectedTarget.fireAt)}`;
   } else {
     const labels: Record<string, string> = { content: "内容", text: "内容", title: "标题", activeness: "陪伴频率",
-      tier: "保存位置", fireAtLocal: "提醒时间", allowPlayful: "玩趣", allowNudgeLearning: "学习提醒",
+      tier: "保存位置", reminderTime: "提醒时间", fireAtLocal: "提醒时间", allowPlayful: "玩趣", allowNudgeLearning: "学习提醒",
       allowVoiceTags: "语音情绪", catchphrase: "口头禅", appliesWhen: "适用情况", validFrom: "生效时间", validUntil: "结束时间" };
     const values = Object.entries(arguments_).filter(([key]) => !/id$|revision|sourceQuote/i.test(key));
     preview.markdown = values.map(([key, value]) => `${labels[key] ?? "改动"}：${typeof value === "boolean" ? (value ? "开启" : "关闭") : typeof value === "string" ? value : JSON.stringify(value)}`).join("\n\n");

@@ -1,17 +1,17 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { COMPANION_DEFAULT_PARTICIPATION, COMPANION_DEFAULT_PARTICIPATION_POLICY_V1,
+import { COMPANION_DEFAULT_PARTICIPATION, COMPANION_DEFAULT_PARTICIPATION_POLICY_V2,
   companionParticipationRegister, isCompanionDefaultHelpPage, isCompanionDefaultParticipationOpportunity } from "../companion/companion-default-participation.ts";
 
 test("the shared default behaviour is explicit for every new account", () => {
   assert.deepEqual(COMPANION_DEFAULT_PARTICIPATION.map(item => item.id),
     ["natural-exchange", "page-help", "app-greeting", "study-break", "quiet-presence"]);
-  assert.match(COMPANION_DEFAULT_PARTICIPATION_POLICY_V1, /每个账号自带/);
-  assert.match(COMPANION_DEFAULT_PARTICIPATION_POLICY_V1, /用户明确给出的时长优先/);
+  assert.match(COMPANION_DEFAULT_PARTICIPATION_POLICY_V2, /每个账号自带/);
+  assert.match(COMPANION_DEFAULT_PARTICIPATION_POLICY_V2, /用户明确给出的时长优先/);
   // 问候与闲聊要能问近况，但不知道的事不能说成知道——这两句是同一件事的两面。
-  assert.match(COMPANION_DEFAULT_PARTICIPATION_POLICY_V1, /不知道的事直接问，问近况是相处不是越界/);
-  assert.match(COMPANION_DEFAULT_PARTICIPATION_POLICY_V1, /不要把推测说成知道/);
-  assert.match(COMPANION_DEFAULT_PARTICIPATION_POLICY_V1, /人还在前台、这一阵安静下来时，是一个可以开口的时机/);
+  assert.match(COMPANION_DEFAULT_PARTICIPATION_POLICY_V2, /不知道的事直接问，问近况是相处不是越界/);
+  assert.match(COMPANION_DEFAULT_PARTICIPATION_POLICY_V2, /不要把推测说成知道/);
+  assert.match(COMPANION_DEFAULT_PARTICIPATION_POLICY_V2, /人还在前台、这一阵安静下来时，是一个可以开口的时机/);
 });
 
 test("参与依据决定她的口气，不是内容长度", () => {
@@ -41,5 +41,15 @@ test("only a content-bearing page or an eligible event wakes a default considera
    * 「我不吵你，先在这儿待着」——没给他任何东西，却占掉一次主动开口的机会，
    * 而他那边体感就是"她从不需要我"。所以政策文本要直接点名这一类。
    */
-  assert.match(COMPANION_DEFAULT_PARTICIPATION_POLICY_V1, /不要把「我先不打扰你」「我在旁边待着」说出来占一次主动/);
+  assert.match(COMPANION_DEFAULT_PARTICIPATION_POLICY_V2, /不要把「我先不打扰你」「我在旁边待着」说出来占一次主动/);
+});
+
+
+test("闲聊可主动参与，也可以没有新话题；启动与其他机会的触发条件不变", () => {
+  assert.match(COMPANION_DEFAULT_PARTICIPATION_POLICY_V2, /寒暄、闲聊、分享看法或问近况本身就是相处/);
+  assert.match(COMPANION_DEFAULT_PARTICIPATION_POLICY_V2, /不要求每次找出一个新话题/);
+  assert.match(COMPANION_DEFAULT_PARTICIPATION_POLICY_V2, /没有想说的就直接结束/);
+  assert.doesNotMatch(COMPANION_DEFAULT_PARTICIPATION_POLICY_V2, /开口是常态|安静才是例外/);
+  assert.equal(isCompanionDefaultParticipationOpportunity("app.started", {}), true);
+  assert.equal(isCompanionDefaultParticipationOpportunity("presence.quiet", {}), true);
 });

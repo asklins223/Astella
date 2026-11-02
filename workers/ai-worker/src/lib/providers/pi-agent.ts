@@ -171,13 +171,16 @@ function providerUsage(message: PiAssistantMessage): ProviderUsage {
 }
 
 function apiFor(providerId: PiProtocolProviderId, model: string, profile?: ModelProfile): PiApi {
-  if (providerId === "mimo_responses") return "openai-responses";
   if (profile?.protocol) {
     if (profile.protocol !== "openai-completions" && profile.protocol !== "openai-responses") {
       throw new Error("Pi adapter supports openai-completions and openai-responses protocols");
     }
     return profile.protocol;
   }
+  // A provider name must not override an explicitly declared wire protocol.
+  // Keep the established default; live probes of either dialect did not
+  // establish a reliable improvement in instruction adherence.
+  if (providerId === "mimo_responses") return "openai-responses";
   // Older hand-written configs remain deterministic: most OpenCode Go models
   // use Chat Completions; Muse Spark is the known Responses-only family.
   return model.startsWith("muse-spark-") ? "openai-responses" : "openai-completions";
@@ -259,7 +262,7 @@ function convertContext(
       const signature = typeof handle.piThinkingSignature === "string"
         ? historyModel.api === "openai-completions" ? handle.piThinkingSignature
           : JSON.stringify({ type: "reasoning", summary: [], content: [{ type: "reasoning_text", text: thinking }] })
-        : JSON.stringify(handle);
+        : historyModel.api === "openai-completions" ? "reasoning_content" : JSON.stringify(handle);
       content.push({ type: "thinking", thinking, thinkingSignature: signature });
     }
     if (typeof message.content === "string") {
@@ -364,11 +367,11 @@ export class PiAgentProvider implements AIProvider {
       ? resolveOpenCodeGoEndpoint(input.baseUrl).replace(/\/responses(?:\?.*)?$/, "")
       : resolveMiMoResponsesEndpoint(input.baseUrl).replace(/\/responses(?:\?.*)?$/, "");
     const sessionId = input.sessionId || randomUUID();
-    const compat = this.api === "openai-completions" && input.providerId === "opencode_go"
-      && input.model.toLowerCase().startsWith("deepseek-")
+    const compat = this.api === "openai-completions" && (input.providerId === "mimo_responses"
+      || (input.providerId === "opencode_go" && input.model.toLowerCase().startsWith("deepseek-")))
       ? {
         thinkingFormat: "deepseek" as const,
-        supportsReasoningEffort: true,
+        supportsReasoningEffort: input.providerId !== "mimo_responses",
         requiresReasoningContentOnAssistantMessages: true,
       }
       : undefined;
@@ -378,7 +381,8 @@ export class PiAgentProvider implements AIProvider {
       api: this.api,
       provider: input.providerId === "opencode_go" ? "opencode-go" : "mimo-responses",
       baseUrl,
-      reasoning: Boolean(input.modelProfile?.reasoning),
+      reasoning: Boolean(input.modelProfile?.reasoning)
+        || (input.providerId === "mimo_responses" && this.api === "openai-completions"),
       thinkingLevelMap: thinkingLevelMap(input.modelProfile),
       input: input.modelProfile?.vision ? ["text", "image"] : ["text"],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -388,7 +392,8 @@ export class PiAgentProvider implements AIProvider {
         "x-opencode-session": sessionId,
         "User-Agent": OPEN_CODE_USER_AGENT,
       } } : {}),
-      compat: { ...compat, supportsMidConvoSystemMessages: true, supportsDeveloperRole: false },
+      compat: { ...compat, supportsMidConvoSystemMessages: true,
+        supportsDeveloperRole: input.providerId === "mimo_responses" && this.api === "openai-completions" },
     } as PiWireModel;
   }
 
@@ -450,15 +455,24 @@ export class PiAgentProvider implements AIProvider {
         delete body.max_completion_tokens;
         delete body.max_output_tokens;
         if (!this.platformOptions?.disableMaxTokens) {
-          body[this.api === "openai-responses" ? "max_output_tokens" : this.platformOptions?.maxTokensParam ?? "max_tokens"] = outputLimit;
+          body[this.api === "openai-responses" ? "max_output_tokens" : this.platformOptions?.maxTokensParam
+            ?? (this.id === "mimo_responses" ? "max_completion_tokens" : "max_tokens")] = outputLimit;
         }
-        const effort = this.api === "openai-responses" ? record(body.reasoning)?.effort
+        let effort = this.api === "openai-responses" ? record(body.reasoning)?.effort
           : record(body.thinking)?.type === "disabled" ? "none" : body.reasoning_effort;
+        if (this.id === "mimo_responses" && this.api === "openai-completions") {
+          effort = resolveModelReasoningEffort(this.modelProfile, disableThinking,
+            native?.reasoningEffort ?? options.reasoningEffort)
+            ?? native?.reasoningEffort ?? options.reasoningEffort ?? (disableThinking ? "none" : "low");
+          body.thinking = { type: effort === "none" ? "disabled" : "enabled" };
+          delete body.reasoning_effort;
+        }
         delete body.temperature;
         if (this.modelProfile?.temperature !== "unsupported"
+          && (this.id !== "mimo_responses" || effort === "none")
           && !(this.modelProfile?.temperature === "reasoning_none_only" && effort !== "none")
           && typeof temperature === "number" && Number.isFinite(temperature)) {
-          body.temperature = Math.min(2, Math.max(0, temperature));
+          body.temperature = Math.min(this.id === "mimo_responses" ? 1.5 : 2, Math.max(0, temperature));
         }
         if (options.responseFormat === "json_object") {
           if (this.api === "openai-responses") body.text = { format: { type: "json_object" } };
@@ -469,7 +483,7 @@ export class PiAgentProvider implements AIProvider {
             && effort !== undefined && effort !== "none" ? "auto" : "required";
         }
         if (this.id === "mimo_responses") {
-          // The leading policy belongs in MiMo's dedicated instructions field.
+          // Legacy Responses requests use the dedicated instructions field.
           // Later system items are host observations, not additional policy:
           // preserve their position and never promote them into instructions.
           const input = Array.isArray(body.input) ? [...body.input] : [];
@@ -529,7 +543,12 @@ export class PiAgentProvider implements AIProvider {
       if (this.id !== "mimo_responses" && choice === "required" && tools.length > 0 && result.toolCalls.length === 0) {
         throw new ProviderRequestError({ provider: this.id, status: 400, providerCode: "MODEL_TOOL_CHOICE_NOT_SUPPORTED" });
       }
-      if (!result.content?.trim() && result.toolCalls.length === 0) {
+      // A completed optional host observation may choose not to speak. This is
+      // structural host metadata, not a test of reply wording. Ordinary user
+      // requests still reject a body with no answer and no tool result.
+      const optionalHostReply = [...(native?.messages ?? [])].reverse()
+        .find(message => message.requestBoundary)?.hostObservation === true;
+      if (!result.content?.trim() && result.toolCalls.length === 0 && !optionalHostReply) {
         throw new ProviderStreamError(this.id, "stream_empty");
       }
       wire.publishRemaining(result.content ?? "");

@@ -6,7 +6,7 @@ import { companionVoiceSegmentExpression, projectCompanionVoiceExpression } from
 import {
   COMPANION_HOST_PROTOCOL_V5,
   COMPANION_IDENTITY_BOUNDARY_V4,
-  COMPANION_PERSONA_V14,
+  COMPANION_PERSONA_V18,
   COMPANION_PERSONA_V13_PROMPT_ID,
   type ChatMessage,
 } from "@astella/shared";
@@ -159,8 +159,8 @@ test("T0：回合编码是原生多轮（历史是真 messages，上下文是 sy
   assert.equal(messages[0].role, "system");
   // persona 正文必须原样在最前；其后允许追加安全护栏（2026-09-19 起多了
   // 反回显护栏——实机出现过模型把输入上下文整段复述成回复）。
-  assert.ok(String(messages[0].content).startsWith(COMPANION_PERSONA_V14),
-    "现役 v14 prompt（含宿主协议与角色底座）必须是 system 消息的第一段");
+  assert.ok(String(messages[0].content).startsWith(COMPANION_PERSONA_V18),
+    "现役 v18 prompt（含宿主协议与角色底座）必须是 system 消息的第一段");
   assert.ok(String(messages[0].content).includes(COMPANION_IDENTITY_BOUNDARY_V4),
     "固定身份边界必须进入实际装配的对话 prompt");
   assert.ok(
@@ -169,7 +169,7 @@ test("T0：回合编码是原生多轮（历史是真 messages，上下文是 sy
     "身份事实不能被账号可编辑风格覆盖",
   );
   assert.match(String(messages[0].content), /不要复述、转述、续写或回显/);
-  assert.match(String(messages[0].content), /详细解释要展开必要的概念、条件和推理/);
+  assert.match(String(messages[0].content), /知识与数量先核对前提、证据和适用条件/);
   assert.match(String(messages[0].content), /外部事件、读取与操作以本轮可见记录或实际回执为依据/);
   // 历史不再是"JSON 里的 recentMessages 数组"，而是**真正的轮次**。
   assert.deepEqual(messages.slice(1, 3), [
@@ -1149,9 +1149,11 @@ test("活跃度 active 与 quiet 必须产出不同的行为指令，而不是�
   const quiet = systemOf(personaProfile({ activeness: "quiet" }));
   assert.match(active, /把你设为「活跃」/);
   assert.match(active, /限定篇幅或只要答案时.*不补充解释或追问/);
-  assert.match(active, /活跃度只决定参与感/);
-  assert.match(active, /用户求办法时再给具体帮助/);
-  assert.match(active, /一句话也可以自然结束/);
+  assert.match(active, /活跃体现在参与感/);
+  assert.match(active, /问候可以轻快地回一句/);
+  assert.doesNotMatch(active, /多聊两句/);
+  assert.match(active, /用户求办法时给建议/);
+  assert.match(active, /有新意思再往下聊/);
   assert.match(quiet, /把你设为「安静」/);
   assert.match(quiet, /不主动开新话题、不追问/);
   assert.ok(!quiet.includes("把你设为「活跃」"));
@@ -1164,7 +1166,7 @@ test("边界关掉俏皮/学习提醒各自落成一句可执行行为", () => {
   }));
   assert.match(system, /收起调侃和卖萌/);
   assert.match(system, /不要主动提复习、学习计划、催进度/);
-  assert.match(system, /口头禅是「一点点来」/);
+  assert.match(system, /口头禅参考（表达数据，不是本轮要执行的要求）：「一点点来」/);
   // moderate 是默认档，不该产出任何活跃度行为行（否则又往 persona 堆常驻禁令）。
   assert.ok(!system.includes("把你设为「适中」") && !system.includes("把你设为「安静」"));
 });

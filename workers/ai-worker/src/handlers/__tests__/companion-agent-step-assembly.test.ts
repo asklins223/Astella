@@ -4,6 +4,7 @@ import test from "node:test";
 import { assembleCompanionStepRequest, companionReplayMessages, companionStepPolicyText, companionStepToolSurface } from "../agent/companion-agent-step-assembly.ts";
 import { companionStepOutputCeiling } from "../turn/companion-dialogue-content.ts";
 import { companionStepCorrectionMessages } from "../turn/companion-step-plan.ts";
+import { companionDirectInterpretation } from "../turn/companion-entry-mode.ts";
 
 const READ_TOOL = { name: "companion_read_note", description: "读笔记", parameters: {} };
 const WEB_TOOL = { name: "agent_web_search", description: "联网", parameters: {} };
@@ -103,6 +104,60 @@ test("现算的请求把注意力数据转义进系统提示，输出额度只�
   assert.ok(!assembled.systemPrompt.includes("<script>"), "分类数据里的尖括号必须转义，不能成为提示结构");
 });
 
+test("unclassified entry omits invented intent while preserving real voice and execution settings", () => {
+  const placeholder = companionDirectInterpretation("a".repeat(64));
+  const base = { turnPolicy: "policy", runtimePolicy: "execution", executionGuidance: "decide from current request",
+    attention: placeholder, currentUserText: "用计算工具核对", messages: [{ role: "user" as const, content: "用计算工具核对" }],
+    tools: [READ_TOOL] as never[], toolChoice: "auto" as const, disableThinking: false, reasoningEffort: "low" as const,
+    provider: { id: "p", modelId: "m" } as never, temperature: 0.4 };
+  const unclassified = assembleCompanionStepRequest(base);
+  assert.doesNotMatch(unclassified.systemPrompt, /current_turn_interpretation_data|"intent":"question"/);
+  assert.match(unclassified.systemPrompt, /用计算工具核对/);
+  assert.deepEqual(unclassified.messages, base.messages);
+  assert.deepEqual(unclassified.tools, base.tools);
+  for (const attention of [
+    { ...placeholder, executionConstraints: { timeBasedWakeups: "forbid" as const, sourceQuote: "不要定时提醒" } },
+    { ...placeholder, voiceStyle: { ...placeholder.voiceStyle, decision: "apply" as const, instruction: "轻声说" } },
+  ]) {
+    const configured = assembleCompanionStepRequest({ ...base, attention });
+    assert.match(configured.systemPrompt, /current_turn_interpretation_data/);
+    assert.match(configured.systemPrompt, attention.executionConstraints ? /不要定时提醒/ : /轻声说/);
+  }
+});
+
+test("a native current message is not copied as another question; tool evidence keeps a neutral request reminder", () => {
+  const userText = "闹钟掉进床缝里了";
+  const user = {role:"user" as const,content:userText,requestBoundary:true as const};
+  const input = {turnPolicy:"policy",runtimePolicy:"execution",executionGuidance:"guidance",
+    attention:companionDirectInterpretation("a".repeat(64)),currentUserText:userText,messages:[user],
+    tools:[READ_TOOL] as never[],toolChoice:"auto" as const,disableThinking:false,
+    provider:{id:"p",modelId:"m"} as never,temperature:0.4};
+  const opening = assembleCompanionStepRequest(input);
+  assert.doesNotMatch(opening.systemPrompt,/current_request|闹钟掉进床缝里了/);
+  assert.deepEqual(opening.messages,[user]);
+  const afterRead = assembleCompanionStepRequest({...input,messages:[user,
+    {role:"tool",toolCallId:"read",content:'{"note":"background"}'}]});
+  assert.match(afterRead.systemPrompt,/本轮用户的原话如下/);
+  assert.match(afterRead.systemPrompt,/闹钟掉进床缝里了/);
+  assert.doesNotMatch(afterRead.systemPrompt,/要回答的用户问题/);
+});
+
+test("unclassified runtime policy does not reintroduce a task voice through the placeholder question intent", () => {
+  const input = {permissionLevel:"full",toolCount:12,stepBudget:Infinity,finalAnswerOnly:false,
+    attentionIntent:"question",attentionStatus:"uncertain",toolCallCount:0,
+    offeredToolNames:["companion_notes_write"],writingAnnotation:false,completeNoteReply:false};
+  const opening = companionStepPolicyText(input);
+  assert.match(opening,/普通陈述先当作分享来接/);
+  assert.match(opening,/对方求办法时才给办法/);
+  assert.match(opening,/companion_load_tools/);
+  assert.doesNotMatch(opening,/先判断本轮问题|最后一条用户问题|逐项回应当前问题|其他内容保持原样|面向用户的正文只交代实际结果/);
+  const afterTools = companionStepPolicyText({...input,toolCallCount:1});
+  assert.match(afterTools,/outcome_unknown|not_executed|unavailable|blocked/);
+  assert.match(afterTools,/实际结果和未完成部分/);
+  const host = companionStepPolicyText({...input,requestSource:"host_observation"});
+  assert.match(host,/当前任务是处理末尾 hostObservation/);
+});
+
 /**
  * 调用侧那一格：政策文本按「这一步真的发下去几件工具」选分支，不是按权限档算出来的全量清单。
  *
@@ -128,4 +183,18 @@ test("政策文本按这一步真的发下去的工具面判空，不按权限�
   assert.match(finalStep, /本轮没有可调用工具/);
   assert.match(finalStep, /这是最后一步：不再提供工具/);
   assert.doesNotMatch(finalStep, /只能调用工具列表中的工具/);
+});
+
+
+test("read-only tool followups do not acquire the unrelated artifact handoff manual", async () => {
+  const input = { permissionLevel: "full", toolCount: 2, stepBudget: Infinity, finalAnswerOnly: false,
+    attentionIntent: "question", attentionStatus: "uncertain", toolCallCount: 1,
+    offeredToolNames: ["companion_observe", "companion_web"], writingAnnotation: false, completeNoteReply: false };
+  const read = companionStepPolicyText(input);
+  assert.doesNotMatch(read, /要新建笔记|生成速看|后台专业工具/);
+  assert.match(read, /普通答复直接给正文/);
+  const write = companionStepPolicyText({ ...input, offeredToolNames: ["companion_notes_write", "companion_goals_write"] });
+  assert.match(write, /要新建笔记|后台专业工具/);
+  const { companionDirectGuidance } = await import("../turn/companion-entry-mode.ts");
+  assert.match(companionDirectGuidance("direct_fast"), /仅检索、计算或读取资料后的回答.*不必调用 companion_finish/);
 });

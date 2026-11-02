@@ -1,3 +1,4 @@
+import { CompanionAIAttribution } from "../../companion/content/CompanionAIAttribution";
 import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 import type { CompanionHistoryItemV1 } from "@astella/shared/companion-memory-desktop-contracts";
 import { useLayoutEffect,useMemo,useRef } from "react";
@@ -104,6 +105,7 @@ export function DialoguePanel(props: DialoguePanelProps) {
   }, [keepLine, props.companionName, props.error, props.items, props.query, props.appliedQuery, props.initialLoading, props.searching, props.section]);
   usePageReadableView(dialogueReadableView);
   return <div className="cc-dialogue">
+    <CompanionAIAttribution />
     <div className="cc-dialogue__tools"><CenterSearch value={props.query} onChange={props.onQuery} placeholder="搜索说过的话…" label="搜索全部对话正文" onSubmit={props.onSearch} busy={props.searching} />{props.onLatest ? <button type="button" className="cc-link" onClick={props.onLatest}>返回最新对话</button> : null}</div>
     <CenterFeedback error={props.error} />
     {dialogueResultLine(props) ? <p className="cc-result" aria-live="polite">{dialogueResultLine(props)}</p> : null}

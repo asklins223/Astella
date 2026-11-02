@@ -42,6 +42,7 @@ test("跨本地午夜仍按绝对时间计算间隔，原文和角色保持完�
   assert.equal(timeline.history[1]?.speaker, "assistant");
   assert.equal(timeline.current.elapsedMs, 1_000);
   assert.equal(timeline.timezone, "Asia/Shanghai");
+  assert.equal((timeline as unknown as { localObservedAt: string }).localObservedAt, "2026-10-08 00:01:00");
 });
 
 test("a host occasion is never labeled as a fresh user utterance and failed history is terminal", () => {

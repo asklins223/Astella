@@ -26,27 +26,36 @@ function repairCase(over: Partial<CompanionAnswerRepairInput> = {}): CompanionAn
 
 test("半截话换另一个模型重跑一次，结构补全就算值", async () => {
   let runs = 0;
+  const deliveredBy: unknown[] = [];
   const outcome = await repairDegenerateCompanionAnswer(repairCase({
     invokeProvider: async () => { runs++; return answer(WHOLE); },
+    onProviderUsed: provider => { deliveredBy.push({ id: provider.id, modelId: provider.modelId }); },
   }));
   assert.equal(runs, 1, "降级阶梯只换模型重跑，不多跑");
   assert.equal(outcome.retried, true);
   assert.equal(outcome.result.content, WHOLE);
+  assert.deepEqual(deliveredBy, [{ id: "fallback", modelId: "other-model" }]);
 });
 
 test("重跑带回工具调用就弃用，那是要走工具循环的信号", async () => {
+  const deliveredBy: unknown[] = [];
   const outcome = await repairDegenerateCompanionAnswer(repairCase({
     invokeProvider: async () => answer("我先看看你的笔记。", [{ id: "call-1", name: "companion_read_note", arguments: {} }]),
+    onProviderUsed: provider => { deliveredBy.push(provider); },
   }));
   assert.equal(outcome.retried, true, "确实跑过这一次");
   assert.equal(outcome.result.content, HALF, "没有把带工具调用的那一版当成终答");
+  assert.deepEqual(deliveredBy, [], "没有交付的重跑不能覆盖正文供应商归属");
 });
 
 test("重跑还是半截、也没更长时不换掉原来那一版", async () => {
+  const deliveredBy: unknown[] = [];
   const outcome = await repairDegenerateCompanionAnswer(repairCase({
     invokeProvider: async () => answer("学了1"),
+    onProviderUsed: provider => { deliveredBy.push(provider); },
   }));
   assert.equal(outcome.result.content, HALF);
+  assert.deepEqual(deliveredBy, []);
 });
 
 for (const [name, over] of [

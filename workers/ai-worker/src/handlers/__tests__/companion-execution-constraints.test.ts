@@ -6,11 +6,14 @@ import { resolveAgentTurnInterpretation } from "@astella/agent-core";
 const prohibited = { executionConstraints: { timeBasedWakeups: "forbid" as const } };
 test("事件触发限制同时覆盖提醒、自己的重评和关注计划时间，仍允许取消时间", () => {
   for (const [name, field] of [["attention.write.arrange", "nextReviewAt"],
-    ["attention.write.schedule_wake", "at"], ["attention.write.schedule_reminder", "fireAtLocal"]]) {
+    ["attention.write.schedule_wake", "at"]]) {
     assert.ok(companionTimeWakeupConstraint(prohibited, name!, { [field!]: "2026-10-15T18:00:00+08:00" }));
     assert.equal(companionTimeWakeupConstraint(prohibited, name!, { [field!]: null }), null);
     assert.equal(companionTimeWakeupConstraint({}, name!, { [field!]: "2026-10-15T18:00:00+08:00" }), null);
   }
+  for (const args of [{ reminderTime: { daysFromToday: 1, time: "09:00" } },
+    { fireAtLocal: "2026-10-15 18:00" }, { reminderTime: null }])
+    assert.ok(companionTimeWakeupConstraint(prohibited, "attention.write.schedule_reminder", args), "a time-based action cannot bypass the restriction through its payload shape");
   assert.equal(companionTimeWakeupConstraint(prohibited, "attention.write.save_participation", { enabled: true }), null);
 });
 

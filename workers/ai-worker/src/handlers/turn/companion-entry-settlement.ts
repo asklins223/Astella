@@ -15,11 +15,12 @@ export function createCompanionEntrySettlement(input: {
   requiresGrounding: boolean; recovered: boolean;
 }, commit: typeof updateRunMeta = updateRunMeta) {
   const started = startCompanionAttention({ args: input.args, requestHash: input.requestHash,
-    cached: input.cached, preserveHostInterpretation: input.writingAnnotation });
+    cached: input.cached, preserveHostInterpretation: input.writingAnnotation || Boolean(input.args.read.initiativeInput) });
   const { attention } = started;
   let settlement: Promise<AgentTurnInterpretationV1> | undefined;
   const workload = () => resolveCompanionTurnWorkload({ mode: input.mode, attention,
-    requiresGrounding: input.requiresGrounding });
+    requiresGrounding: input.requiresGrounding && !(input.args.read.initiativeInput
+      && attention.intent === "conversation" && attention.toolUse === "none") });
   return {
     attention,
     speculative: false,

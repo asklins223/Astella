@@ -11,21 +11,23 @@ function configured(value: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 export function companionOutputWatchdogPolicy(workload: "casual" | "adaptive" = "adaptive",
-  attempt: "primary" | "recovery" = "primary") {
-  // 推理模型的上下文预填充可能超过 20 秒。首段等待与输出后的失活检测分开，
-  // 不把健康的长思考或多步工具流程截成固定时长的回合。12 秒是实测的分界：
-  // 正常首字 2–4.5 秒，超过 12 秒基本是网关卡住；此时尽快切备用档，而不是空等 60 秒。
+  attempt: "primary" | "recovery" = "primary", options: { deepThinking?: boolean } = {}) {
+  // First observed output, idle progress and first text/tool progress are
+  // distinct attempt deadlines. They do not cap the entire multi-step task or
+  // diagnose whether a slow first event came from prefill, generation or transport.
   const firstOutputMs = configured(process.env.COMPANION_PROVIDER_FIRST_OUTPUT_TIMEOUT_MS, 12_000);
-  // Recovery may use a reasoning-only model. Repeating the short primary
-  // deadline there rejected a healthy fallback before its first real output.
+  // Disabling reasoning does not eliminate prefill. Actual native requests
+  // were cancelled at exactly five seconds, followed by a complete fallback
+  // and a second review. Use the measured general first-output window here,
+  // too; an explicit deployment override remains available.
   return { firstOutputMs: workload === "casual" && attempt === "primary"
-    ? configured(process.env.COMPANION_CASUAL_PROVIDER_FIRST_OUTPUT_TIMEOUT_MS,
-      Number.isFinite(firstOutputMs) ? Math.min(firstOutputMs, 5_000) : Infinity) : firstOutputMs,
+    ? configured(process.env.COMPANION_CASUAL_PROVIDER_FIRST_OUTPUT_TIMEOUT_MS, firstOutputMs) : firstOutputMs,
     idleMs: configured(process.env.COMPANION_PROVIDER_IDLE_TIMEOUT_MS, 45_000),
-    // Thinking has no wall-clock cap: reasoning keeps the attempt alive. The
-    // idle timer above only catches a transport that stops sending bytes.
-    // A deployment that explicitly wants the old behavior can set the env var.
-    firstMeaningfulOutputMs: configured(process.env.COMPANION_PROVIDER_FIRST_MEANINGFUL_OUTPUT_TIMEOUT_MS, Infinity) };
+    // Fast entry must eventually produce an answer or tool, even if reasoning
+    // bytes keep arriving. Explicit deepening retains the longer thinking
+    // path. Healthy text/tool streams have no added lifetime cap.
+    firstMeaningfulOutputMs: configured(process.env.COMPANION_PROVIDER_FIRST_MEANINGFUL_OUTPUT_TIMEOUT_MS,
+      options.deepThinking ? Infinity : attempt === "primary" ? 30_000 : 45_000) };
 }
 
 export interface CompanionOutputWatchdogPolicy {

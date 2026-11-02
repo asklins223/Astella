@@ -1,0 +1,154 @@
+{
+  "reviewedAt": "2026-11-02T11:48:32.688648+00:00",
+  "status": "engineering_acceptance_passed_release_pending",
+  "modelRoutes": {
+    "primary": "mimo-agent/mimo-v2.6-flash",
+    "protocol": "openai-responses",
+    "fallback": "tokenrhythm/deepseek-v4.1-flash-1017",
+    "modelChanged": false
+  },
+  "changesSinceSourceReviewCheckpoint": [
+    "Independent knowledge and conversation checks keep simple acknowledgments out of the explanation path.",
+    "A settled non-reasoning conversation keeps its effort across expression-control calls. Actual business tools, repairs and explicit deepening still raise effort. PostgreSQL regression covers none→none and none→max.",
+    "Conversation review distinguishes ordinary object traits and metaphors from invented events, unearned frequency and unconditional factual extensions. This remains a model-based check, not a universal factual guarantee."
+  ],
+  "tests": {
+    "shared": {
+      "tests": 540,
+      "pass": 540,
+      "fail": 0,
+      "skipped": 0
+    },
+    "ai-worker": {
+      "tests": 1973,
+      "pass": 1973,
+      "fail": 0,
+      "skipped": 0
+    },
+    "api": {
+      "tests": 2033,
+      "pass": 2032,
+      "fail": 0,
+      "skipped": 1
+    },
+    "postgres": {
+      "tests": 91,
+      "pass": 91,
+      "fail": 0,
+      "skipped": 0
+    },
+    "swift": {
+      "pass": 230
+    },
+    "workerFinalPolicy": {
+      "pass": 1973,
+      "fail": 0,
+      "log": "/tmp/astella-agent-release-1102/worker-final-policy-tests.log"
+    },
+    "desktop": {
+      "pass": 2956,
+      "skip": 1,
+      "filesPassed": 367,
+      "builtOutputRequired": true,
+      "boundedWorkers": 2,
+      "log": "/tmp/astella-agent-release-1102/desktop-built-tests.log"
+    },
+    "terminalMigration": {
+      "pass": 1,
+      "fail": 0,
+      "log": "/tmp/astella-agent-release-1102/api-terminal-integration.log"
+    }
+  },
+  "typechecks": [
+    {
+      "package": "packages/shared",
+      "exit": 0,
+      "seconds": 67.93
+    },
+    {
+      "package": "workers/ai-worker",
+      "exit": 0,
+      "seconds": 231.37
+    },
+    {
+      "package": "apps/api",
+      "exit": 0,
+      "seconds": 243.07
+    },
+    {
+      "package": "apps/desktop-client",
+      "exit": 0,
+      "seconds": 129.07
+    }
+  ],
+  "realHttp": {
+    "conversationTurns": 24,
+    "completed": 24,
+    "partial": 0,
+    "presenceFirstVisibleMedianMs": 10765,
+    "presenceFirstVisibleMaxMs": 22152,
+    "naturalFirstVisibleMedianMs": 9171.5,
+    "naturalFirstVisibleMaxMs": 17785,
+    "timingScope": "Concurrent native builds and regressions. Several primary attempts reached the 12-second first-output boundary and recovered on the existing fallback. These are observed end-to-end times, not a speed guarantee.",
+    "sourceResearch": {
+      "runId": "6c3697ff-7385-4671-a0c1-66814f2af954",
+      "status": "succeeded",
+      "totalMs": 181211,
+      "actualDocumentReads": 2,
+      "reviewChangedDraft": true,
+      "reviewMs": 18653,
+      "assessment": "The answer distinguishes a PubMed abstract from a read secondary report, keeps temperature intervals separate and does not retain the previous out-of-range extrapolation or invented citation identities. Multi-step original-source research is still substantially slower than ordinary conversation.",
+      "scope": "Successful scoped current-run reader receipts and a real pre-publication source check; not exhaustive literature review."
+    }
+  },
+  "native": {
+    "swiftTests": 230,
+    "simulatorScopedBuildSeconds": 366.86,
+    "simulatorBuild": "passed",
+    "physicalSignedBuild": "passed_using_existing_development_team",
+    "physicalInstall": "pending_final_release",
+    "uiAcceptanceReference": "source-review-and-native-2026-11-02.json",
+    "scopeIsolation": "Android, avatar/upload limits, note editor work and the independent admin-panel changes are excluded. The native editor is generated at build time from unchanged committed editor source.",
+    "physicalSignedBuildSeconds": 176.8
+  },
+  "artifacts": [
+    {
+      "path": "outputs/audits/2026-11-01-agent-fixes/final-control-stable-presence.json",
+      "sha256": "8277571a2cc51b76bef860d97b37ffd27c6922efa07ab7a189f816846067b0af",
+      "records": 10,
+      "completed": 10,
+      "partial": 0
+    },
+    {
+      "path": "outputs/audits/2026-11-01-agent-fixes/final-control-stable-natural.json",
+      "sha256": "a993b686403e6df9301186614f355b1b36e10f75c431e5955f9e3ce2506e7ed5",
+      "records": 10,
+      "completed": 10,
+      "partial": 0
+    },
+    {
+      "path": "outputs/audits/2026-11-01-agent-fixes/final-relative-boundary-presence.json",
+      "sha256": "816d1da2ef66a5c8f34c4ce77c65c04b35b15c0abb1fb012751f830073ef9038",
+      "records": 4,
+      "completed": 4,
+      "partial": 0
+    },
+    {
+      "path": "outputs/audits/2026-11-01-agent-fixes/final-source-checked-http-v1.json",
+      "sha256": "2d163172df84cbfedfb6b41baec5b65dc146b58c5a68864a48613604c7a8a3a4",
+      "records": 5,
+      "completed": 5,
+      "partial": 0
+    },
+    {
+      "path": "outputs/audits/2026-11-01-agent-fixes/conversation-final-boundary.json",
+      "sha256": "9fc5e01af610e0374bf96e1b33b726fddd03f8de888541513f38df1f0bd2dfde",
+      "records": 7
+    }
+  ],
+  "remaining": [
+    "Publish through tag workflows and verify production health, unchanged model routes and actual source-backed conversation.",
+    "Install and launch the signed iOS batch on the paired phone."
+  ],
+  "qualityLimit": "Naturalness and source review are model-based. Fixed samples and real conversation runs are bounded evidence, not a promise of error-free future wording."
+}

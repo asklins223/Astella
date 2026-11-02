@@ -21,6 +21,7 @@ export const companionRuntimeStateSchema = z.object({
   invalidArgumentCalls: z.array(z.string()), rejectedExecutionConstraints: z.array(z.string()),
   degenerateRetried: z.boolean(), outputRepairToolCount: count.nullable(),
   actionSteerAttempts: count, quoteCorrectionUsed: z.boolean(), lookupClaimSteered: z.boolean(),
+  readRequirementSteerAttempts: count.default(0),
   steerSwapToFallback: z.boolean(), utterancePublished: z.boolean(),
   protocolFallback: z.boolean().default(false),
   /** Extra tools the model expanded via companion_load_tools. Default keeps old checkpoints readable. */
@@ -34,6 +35,7 @@ const completedSchema = z.object({ status: z.literal("completed"), text: z.strin
   // 交付闸要的权威事实（本轮是否真落下写回执）要跟着终答一起过检查点：
   // 少这一行，`finishBoundary` 编码快照时 strict() 直接抛 `unrecognized_keys`，每一轮都跑不完。
   writesLanded: z.boolean().optional(),
+  deliveryDegraded: z.boolean().optional(),
   reasoning: agentTurnResultSchema.shape.reasoning,
 }).strict();
 const snapshotSchema = z.object({ phase: z.enum(["input", "continue", "waiting", "settled"]), state: companionRuntimeStateSchema,

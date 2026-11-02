@@ -54,15 +54,15 @@ test("预设文字过得了人格净化：无尖括号、无 emoji", () => {
   }
 });
 
-test("爱吃白饭的大肥鱼：系统默认人格，话多且边界全开", () => {
+test("爱吃白饭的大肥鱼保留活跃与能力边界，不预装每轮复用的收尾台词", () => {
   const fish = getPresetById("hungry-fish");
   assert.equal(fish?.name, "爱吃白饭的大肥鱼");
   assert.equal(fish?.activeness, "active", "表达分量＝活跃（用户 2026-10-05 定的默认）");
-  // 边界全部打开：开着玩笑、可以主动提醒、允许语气标签，只留口头禅。
+  // 玩笑、主动提醒和语气标签仍可用；不强加出厂收尾台词。
   assert.equal(fish?.boundaries.allowPlayful, true);
   assert.equal(fish?.boundaries.allowNudgeLearning, true, "默认人格不关掉学习提醒");
   assert.equal(fish?.boundaries.allowVoiceTags, true);
-  assert.equal(typeof fish?.boundaries.catchphrase, "string", "口头禅是「我去吃饭了」");
+  assert.equal(fish?.boundaries.catchphrase, null);
   assert.match(visibleText("hungry-fish"), /吃|饭/, "人格锚在干饭上");
 });
 

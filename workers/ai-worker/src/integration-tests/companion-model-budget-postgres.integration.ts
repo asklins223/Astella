@@ -10,6 +10,12 @@ import { memorySourceHasActionProposal } from "../handlers/memory/companion-memo
 import { writeBatchedDeltas } from "../handlers/turn/companion-dialogue-deltas.ts";
 import { CompanionContextChangedError } from "../lib/non-retryable-errors.ts";
 import { createHash } from "node:crypto";
+import { canonicalJsonV1 } from "@astella/shared/content-hash";
+import { persistCompanionContextHandoffSnapshot } from "../handlers/turn/companion-dialogue-store.ts";
+import { encodeCompanionToolResult } from "../handlers/agent/companion-runtime-checkpoint.ts";
+import { loadContinuation } from "../handlers/tools/companion-tool-call-ledger.ts";
+import type { AgentEventContext } from "../handlers/tools/companion-read-tools.ts";
+import type { AgentTurnRequest } from "@astella/shared";
 
 const admin = postgres(testDatabaseUrl("DATABASE_URL_MIGRATOR"), { max: 2 });
 after(async () => { await admin.end(); await closeDatabase(); });
@@ -41,6 +47,7 @@ async function fixture() {
   return { event, mutate, conversationId, count: async () => Number((await mutate(tx => tx`SELECT model_call_count FROM companion_turn_runs WHERE id=${runId}`))[0].model_call_count),
     cleanup: () => mutate(async tx => {
       await tx`SET LOCAL app.allow_history_mutation = 'on'`;
+      await tx`DELETE FROM companion_agent_tool_calls WHERE run_id=${runId}`;
       await tx`DELETE FROM companion_action_proposals WHERE conversation_id=${conversationId}`;
       await tx`DELETE FROM agent_runs WHERE workspace_id=${workspaceId} AND user_id=${userId}`;
       await tx`DELETE FROM companion_turn_runs WHERE id=${runId}`;
@@ -167,7 +174,7 @@ async function memorySnapshot(f: Awaited<ReturnType<typeof fixture>>, versioned 
       ...(versioned?{memorySourceVersions:[{memoryId,revision:Number(memory.revision)}]}:{}) };
     await tx`INSERT INTO companion_context_handoff_snapshots(run_id,workspace_id,user_id,conversation_id,snapshot,snapshot_sha256,snapshot_version)
       VALUES(${runId},${workspaceId},${userId},${f.conversationId},${tx.json(snapshot)},
-        ${createHash('sha256').update(JSON.stringify(snapshot)).digest('hex')},1)`;
+        ${createHash('sha256').update(canonicalJsonV1(snapshot)).digest('hex')},1)`;
   });
   return memoryId;
 }
@@ -183,6 +190,83 @@ test("current memory version permits calls; exposure bookkeeping is harmless, co
     await f.mutate(tx=>tx`UPDATE assistant_memory_items SET content='改成直接给公式' WHERE id=${memoryId}`);
     await assert.rejects(()=>reserveCompanionProviderCall(f.event),CompanionContextChangedError);
     assert.equal(await f.count(),2,"a withdrawn prompt never spends another provider call");
+  } finally { await f.cleanup(); }
+});
+
+test("confirmed own memory writes resume the frozen snapshot; external changes and unsuccessful receipts still fence it", async () => {
+  for (const action of ["forget", "revise"] as const) {
+    const f = await fixture();
+    const { workspaceId } = f.event.ctx, { userId, runId } = f.event.read;
+    try {
+      const memoryId = await memorySnapshot(f);
+      const [saved] = await f.mutate(tx => tx`SELECT snapshot,snapshot_sha256 FROM companion_context_handoff_snapshots WHERE run_id=${runId}`);
+      const replay = () => persistCompanionContextHandoffSnapshot({ workspaceId, userId, runId,
+        snapshot: saved!.snapshot, sha256: saved!.snapshot_sha256 });
+      await replay();
+      await f.mutate(async tx => {
+        const stepId = randomUUID();
+        await tx`INSERT INTO companion_agent_steps(id,workspace_id,user_id,conversation_id,run_id,step_no,kind,status)
+          VALUES(${stepId},${workspaceId},${userId},${f.conversationId},${runId},1,'model','succeeded')`;
+        await tx`INSERT INTO companion_agent_tool_calls(id,workspace_id,user_id,conversation_id,run_id,step_id,tool_call_id,
+          name,tool_version,arguments,arguments_sha256,risk_class,status,result_payload)
+          VALUES(${randomUUID()},${workspaceId},${userId},${f.conversationId},${runId},${stepId},'confirmed-memory-write',
+            ${'memory.write.'+action},'1.0.0',${tx.json({ memoryId })},${'a'.repeat(64)},'irreversible','failed',
+            ${tx.json(encodeCompanionToolResult({value:{memoryId,revision:2},safeSummary:'confirmed write'}))})`;
+        if (action === "forget") await tx`UPDATE assistant_memory_items SET deleted_at=now() WHERE id=${memoryId}`;
+        else await tx`UPDATE assistant_memory_items SET content='修订后的偏好' WHERE id=${memoryId}`;
+      });
+      await assert.rejects(replay, CompanionContextChangedError, "an unsuccessful receipt cannot authorize changed sources");
+      await f.mutate(tx => tx`UPDATE companion_agent_tool_calls SET status='succeeded' WHERE run_id=${runId}`);
+      const restored = await replay();
+      assert.deepEqual(restored.snapshot, saved!.snapshot, "the original prompt remains frozen, including its hash");
+      await reserveCompanionProviderCall(f.event);
+      assert.equal(await f.count(), 1);
+      // A later user correction/withdrawal is not covered by this action.
+      if (action === "revise") {
+        await f.mutate(tx => tx`UPDATE assistant_memory_items SET content='用户又修改了偏好' WHERE id=${memoryId}`);
+        await assert.rejects(replay, CompanionContextChangedError);
+        await assert.rejects(() => reserveCompanionProviderCall(f.event), CompanionContextChangedError);
+        assert.equal(await f.count(), 1);
+      }
+    } finally { await f.cleanup(); }
+  }
+});
+
+test("a confirmed continuation accepts registered flat/domain aliases and rejects a different operation or call id", async () => {
+  const f = await fixture();
+  const { workspaceId } = f.event.ctx, { userId, runId } = f.event.read;
+  const stepId = randomUUID(), proposalId = randomUUID(), memoryId = randomUUID(), callId = "confirmed-forget";
+  try {
+    await f.mutate(async tx => {
+      await tx`INSERT INTO companion_agent_steps(id,workspace_id,user_id,conversation_id,run_id,step_no,kind,status)
+        VALUES(${stepId},${workspaceId},${userId},${f.conversationId},${runId},1,'model','waiting')`;
+      await tx`INSERT INTO companion_agent_tool_calls(id,workspace_id,user_id,conversation_id,run_id,step_id,tool_call_id,
+        name,tool_version,arguments,arguments_sha256,risk_class,status,proposal_id,result_payload)
+        VALUES(${randomUUID()},${workspaceId},${userId},${f.conversationId},${runId},${stepId},${callId},'memory.write.forget',
+          '1.0.0',${tx.json({memoryId})},${'a'.repeat(64)},'reversible_low','succeeded',${proposalId},
+          ${tx.json(encodeCompanionToolResult({value:{memoryId},safeSummary:'已忘掉'}))})`;
+      await tx`INSERT INTO companion_action_proposals(id,workspace_id,user_id,conversation_id,source_message_id,source_generation,
+        payload,payload_sha256,title,target_summary,impact_summary,status,decision,idempotency_key_hash,expires_at)
+        SELECT ${proposalId},${workspaceId},${userId},${f.conversationId},user_message_id,1,'{"kind":"agent_tool_review"}',
+          ${'b'.repeat(64)},'忘记记忆','测试记忆','删除这条记忆','succeeded','confirm',${'c'.repeat(64)},now()+interval '1 hour'
+        FROM companion_turn_runs WHERE id=${runId}`;
+    });
+    const event: AgentEventContext = { ctx: f.event.ctx,
+      read: { ...f.event.read, conversationId: f.conversationId } as AgentEventContext['read'],
+      expiresAt: new Date(Date.now()+60_000).toISOString(), constraints: {} };
+    const replay = (name: string, args: Record<string, unknown>, id = callId) => loadContinuation(event, [
+      {role:'assistant',content:'',toolCalls:[{id,name,arguments:args}]},
+      {role:'tool',toolCallId:id,content:'{"status":"waiting_confirmation"}'},
+    ] as AgentTurnRequest['messages'], proposalId, Infinity, {pendingCallId:id,onExecution:()=>{}});
+    for (const [name,args] of [
+      ['companion_memory_forget',{memoryId}], ['companion_memory_write',{action:'forget',memoryId}],
+      ['memory.write.forget',{memoryId}],
+    ] as const) {
+      const restored = await replay(name,args);
+      assert.equal(JSON.parse(String(restored[1]!.content)).ok, true, name);
+    }
+    await assert.rejects(() => replay('companion_memory_write',{action:'save',content:'other operation'}), CompanionContextChangedError);
+    await assert.rejects(() => replay('companion_memory_forget',{memoryId},'different-call'), CompanionContextChangedError);
   } finally { await f.cleanup(); }
 });
 

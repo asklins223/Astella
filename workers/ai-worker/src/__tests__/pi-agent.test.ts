@@ -5,7 +5,7 @@ import type { PublicStreamingRequester } from "@astella/shared/public-json-http"
 import { PiAgentProvider } from "../lib/providers/pi-agent.ts";
 import { createProvider } from "../lib/ai-provider.ts";
 import { createCapabilityProvider } from "../lib/provider-factory.ts";
-import { ProviderRequestError, ProviderStreamError } from "../lib/provider-request-error.ts";
+import { ProviderRequestError, ProviderResponseRefusedError, ProviderResponseUnverifiedError, ProviderStreamError } from "../lib/provider-request-error.ts";
 import { AgentOutputError } from "../lib/non-retryable-errors.ts";
 
 const tool = { name: "lookup", description: "Read a value", parameters: {
@@ -69,6 +69,69 @@ test("factory selects Pi and exposes MiMo text generation for the configured slo
     assert.ok(createProvider(provider, { apiKey: "synthetic-key" }) instanceof PiAgentProvider);
   }
   assert.ok(createCapabilityProvider("mimo_responses", "text_generation", { apiKey: "synthetic-key" }) instanceof PiAgentProvider);
+});
+
+test("a completed empty host observation is valid silence while an empty user answer remains an error", async () => {
+  const f = fixture(Array.from({ length: 3 }, () => ({ events: responseEvents([]) })));
+  const provider = mimo(f);
+  const quiet = await provider.executeAgentTurn(request({ messages: [
+    { role: "system", content: "synthetic host observation", hostObservation: true, requestBoundary: true },
+  ] }));
+  assert.equal(quiet.content, null);
+  assert.deepEqual(quiet.toolCalls, []);
+  assert.equal(quiet.finishReason, "stop");
+  await assert.rejects(provider.executeAgentTurn(request()), error => error instanceof ProviderStreamError && error.code === "stream_empty");
+  await assert.rejects(provider.executeAgentTurn(request({ messages: [
+    { role: "system", content: "older host observation", hostObservation: true, requestBoundary: true },
+    { role: "assistant", content: "older response" },
+    { role: "user", content: "current request", requestBoundary: true },
+  ] })), error => error instanceof ProviderStreamError && error.code === "stream_empty");
+  assert.equal(f.captured.length, 3);
+});
+
+test("explicit refusal events are terminal metadata and never streamed as a successful answer", async () => {
+  const refused = { ...message(""), content: [{ type: "refusal", refusal: "synthetic private refusal detail" }] };
+  const events = [
+    { type: "response.output_item.added", output_index: 0, item: { ...refused, content: [] } },
+    { type: "response.refusal.delta", output_index: 0, content_index: 0, delta: "synthetic private refusal detail" },
+    { type: "response.output_item.done", output_index: 0, item: refused },
+    { type: "response.completed", response: { id: "refused", status: "completed", output: [refused] } },
+  ];
+  const f = fixture([{ events }]);
+  const deltas: string[] = [];
+  await assert.rejects(mimo(f).chatCompletionStream([], { nativeAgentRequest: request() }, undefined, delta => deltas.push(delta)),
+    error => error instanceof ProviderResponseRefusedError && !error.message.includes("private refusal"));
+  assert.deepEqual(deltas, []);
+  assert.equal(f.captured.length, 1);
+});
+
+test("a content-filter terminal cannot become an empty successful initiative", async () => {
+  const f = fixture([{ events: responseEvents([], "incomplete", { incomplete_details: { reason: "content_filter" } }) }]);
+  await assert.rejects(mimo(f).executeAgentTurn(request({ messages: [
+    { role: "system", content: "synthetic host observation", hostObservation: true, requestBoundary: true },
+  ] })), error => error instanceof ProviderResponseRefusedError);
+});
+
+test("ordinary output text is preserved even when it mentions rejection", async () => {
+  const text = "The request was rejected because it was considered high risk";
+  const f = fixture([{ events: responseEvents([message(text)]) }]);
+  assert.equal((await mimo(f).executeAgentTurn(request())).content, text);
+  assert.equal(f.captured.length, 1, "no wording-based reroute or retry");
+});
+
+test("explicit all-zero MiMo generation usage is unverified output regardless of wording", async () => {
+  for (const text of ["ordinary synthetic answer", "The request was rejected because it was considered high risk"]) {
+    const f = fixture([{ events: responseEvents([message(text)], "completed", {
+      usage: { input_tokens: 0, output_tokens: 0, total_tokens: 0 },
+    }) }]);
+    await assert.rejects(mimo(f).executeAgentTurn(request()), ProviderResponseUnverifiedError);
+    assert.equal(f.captured.length, 1);
+  }
+  for (const usage of [undefined, { input_tokens: 0, output_tokens: 2, total_tokens: 2 }]) {
+    const f = fixture([{ events: responseEvents([message("normal")], "completed", { usage }) }]);
+    assert.equal((await mimo(f).executeAgentTurn(request())).content, "normal",
+      "missing usage or nonzero generation must not be classified by billing assumptions");
+  }
 });
 
 test("per-step effort reaches the wire for native, buffered and streaming calls", async () => {
@@ -162,6 +225,77 @@ test("MiMo full tool loop preserves reasoning, host observation order and call i
   assert.equal(body.store, undefined);
   assert.equal(body.prompt_cache_key, undefined);
   assert.equal(f.cancels, 2);
+});
+
+test("MiMo honors the declared Chat protocol with system policy, tool calls and full reasoning replay", async () => {
+  const f = fixture([{ events: chatEvents({ reasoning_content: "synthetic thought", tool_calls: [{ index: 0, id: "call_mimo_chat", type: "function",
+    function: { name: "lookup", arguments: '{"query":"hello"}' } }] }, "tool_calls") }, { events: chatEvents({ content: "done" }) }]);
+  const provider = mimo(f, { modelProfile: { ...profile, protocol: "openai-completions" } });
+  const thoughtDeltas: string[] = [];
+  const first = await provider.chatCompletionStream([], { nativeAgentRequest: request({ tools: [tool], reasoningEffort: "low" }),
+    onReasoningDelta: text => thoughtDeltas.push(text) }, undefined, () => undefined);
+  assert.deepEqual(first.toolCalls, [{ id: "call_mimo_chat", name: "lookup", arguments: { query: "hello" } }]);
+  assert.equal(thoughtDeltas.join(""), "synthetic thought");
+  await provider.executeAgentTurn(request({ reasoningEffort: "low", messages: [
+    { role: "user", content: "hello" },
+    { role: "assistant", content: "", reasoning: first.reasoning, toolCalls: first.toolCalls },
+    { role: "tool", toolCallId: "call_mimo_chat", content: "found" },
+    { role: "system", hostObservation: true, content: "current host observation" },
+  ] }));
+  assert.ok(f.captured.every(call => call.url === "https://api.xiaomimimo.com/v1/chat/completions"));
+  const body = f.captured[1]!.body;
+  const messages = body.messages as Array<Record<string, unknown>>;
+  assert.equal(messages[0]!.role, "developer");
+  assert.equal(messages[0]!.content, "trusted policy");
+  assert.equal(messages.at(-1)!.role, "developer");
+  assert.equal(messages.at(-1)!.content, "current host observation");
+  assert.equal(messages.find(message => message.role === "assistant")!.reasoning_content, "synthetic thought");
+  assert.deepEqual(body.thinking, { type: "enabled" });
+  assert.equal(body.reasoning_effort, undefined);
+  assert.equal(body.instructions, undefined);
+  assert.equal(body.max_completion_tokens, 131072);
+  assert.equal(body.max_tokens, undefined);
+  assert.equal(body.temperature, undefined);
+});
+
+test("an explicitly selected MiMo Chat route keeps developer policy without optional reasoning details", async () => {
+  const f = fixture([{ events: chatEvents({ content: "done" }) }, { events: chatEvents({ content: "plain" }) }]);
+  const provider = mimo(f, { modelProfile: { protocol: "openai-completions" } });
+  await provider.executeAgentTurn(request());
+  assert.ok(f.captured[0]!.url.endsWith("/chat/completions"));
+  const body = f.captured[0]!.body;
+  assert.equal((body.messages as Array<Record<string, unknown>>)[0]!.role, "developer");
+  assert.deepEqual(body.thinking, { type: "enabled" });
+  assert.equal(body.temperature, undefined);
+  await provider.executeAgentTurn(request({ reasoningEffort: "none" }));
+  assert.deepEqual(f.captured[1]!.body.thinking, { type: "disabled" });
+  assert.equal(f.captured[1]!.body.temperature, 0.2);
+});
+
+test("MiMo Chat accepts ordinary index-only argument continuation and settles exactly once", async () => {
+  const f = fixture([{ events: [
+    ...chatEvents({ tool_calls: [{ index: 0, id: "call_fragments", type: "function", function: { name: "lookup", arguments: '{"query":' } }] }, null),
+    ...chatEvents({ tool_calls: [{ index: 0, function: { arguments: '"fragmented"}' } }] }, null),
+    ...chatEvents({}, "tool_calls"),
+  ] }]);
+  const settled: unknown[] = [];
+  const result = await mimo(f, { modelProfile: { ...profile, protocol: "openai-completions" } }).chatCompletionStream([], {
+    nativeAgentRequest: request({ tools: [tool], reasoningEffort: "low" }), onToolCallSettled: call => settled.push(call),
+  }, undefined, () => undefined);
+  assert.deepEqual(result.toolCalls, [{ id: "call_fragments", name: "lookup", arguments: { query: "fragmented" } }]);
+  assert.equal(settled.length, 1);
+});
+
+test("MiMo Chat disables thinking with the documented dialect and retains terminal metadata checks", async () => {
+  const f = fixture([{ events: chatEvents({ content: "plain answer" }) },
+    { events: [{ id: "chat_zero", choices: [{ index: 0, delta: { content: "unverified output" }, finish_reason: "stop" }] },
+      { id: "chat_zero", choices: [], usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 } }] }]);
+  const provider = mimo(f, { modelProfile: { ...profile, protocol: "openai-completions" } });
+  await provider.executeAgentTurn(request({ disableThinking: true, reasoningEffort: "none", temperature: 0.4 }));
+  assert.deepEqual(f.captured[0]!.body.thinking, { type: "disabled" });
+  assert.equal(f.captured[0]!.body.temperature, 0.4);
+  assert.equal(f.captured[0]!.body.reasoning_effort, undefined);
+  await assert.rejects(provider.executeAgentTurn(request()), ProviderResponseUnverifiedError);
 });
 
 test("DeepSeek Chat uses stable session, strict tool arguments and plaintext reasoning replay", async () => {

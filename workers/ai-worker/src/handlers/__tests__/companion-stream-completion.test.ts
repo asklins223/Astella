@@ -6,6 +6,7 @@ import { AgentOutputError } from "../../lib/non-retryable-errors.ts";
 import { canRetryCompanionStream, runStreamingAgentStep } from "../agent/companion-agent-streaming-step.ts";
 import type { AgentTurnRequest } from "@astella/shared";
 import type { AIProvider } from "../../lib/ai-provider.ts";
+import { CompanionOutputTimeoutError } from "../agent/companion-output-watchdog.ts";
 
 const request: AgentTurnRequest = { role: "companion_agent", systemPrompt: "答复眼前的话。",
   messages: [{ role: "user", content: "那句后来呢？" }], tools: [], maxTokens: 8000, temperature: 0.9, disableThinking: true };
@@ -56,6 +57,55 @@ function envelopeProvider(raw: string, chunks = [raw]): AIProvider {
   } };
 }
 
+test("a settled provider cannot append late speech, thinking or tool-start events to another step", async () => {
+  const fixture = envelopeProvider("fresh");
+  const visible: string[] = [], thinking: string[] = [], tools: string[] = [];
+  let late = () => {};
+  fixture.chatCompletionStream = async (_messages, options, _signal, onDelta) => {
+    options.onReasoningDelta?.("current thought");
+    onDelta("fresh");
+    late = () => {
+      options.onReasoningDelta?.("orphan thought");
+      options.onToolCallStarted?.({ index: 0, id: "late", name: "companion_finish" });
+      onDelta("orphan speech");
+    };
+    return { content: "fresh", toolCalls: [], finishReason: "stop", usage: {} };
+  };
+  await runStreamingAgentStep({ provider: fixture, stepRequest: request,
+    ctxSignal: new AbortController().signal, timeoutMs: 1000,
+    onProviderDelta: async text => { visible.push(text); return true; },
+    onReasoningDelta: text => thinking.push(text), onToolCallStarted: tool => tools.push(tool.id) });
+  late();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(visible, ["fresh"]);
+  assert.deepEqual(thinking, ["current thought"]);
+  assert.deepEqual(tools, []);
+});
+
+test("a provider's synchronous abort callbacks cannot publish a stale answer or tool start", async () => {
+  const fixture = envelopeProvider("");
+  const visible: string[] = [], thinking: string[] = [], tools: string[] = [];
+  fixture.chatCompletionStream = async (_messages, options, signal, onDelta) => new Promise(resolve => {
+    options.onReasoningDelta?.("current thought");
+    options.onOutputActivity?.("reasoning");
+    signal!.addEventListener("abort", () => {
+      options.onReasoningDelta?.("orphan thought");
+      options.onToolCallStarted?.({ index: 0, id: "late", name: "companion_finish" });
+      onDelta("orphan speech");
+      resolve({ content: "orphan speech", toolCalls: [], finishReason: "stop", usage: {} });
+    }, { once: true });
+  });
+  await assert.rejects(runStreamingAgentStep({ provider: fixture, stepRequest: request,
+    ctxSignal: new AbortController().signal, timeoutMs: 1000,
+    outputWatchdogPolicy: { firstOutputMs: 100, idleMs: 100, firstMeaningfulOutputMs: 10 },
+    onProviderDelta: async text => { visible.push(text); return true; },
+    onReasoningDelta: text => thinking.push(text), onToolCallStarted: tool => tools.push(tool.id) }),
+  error => error instanceof CompanionOutputTimeoutError && error.code === "provider_progress_timeout");
+  assert.deepEqual(visible, []);
+  assert.deepEqual(thinking, ["current thought"]);
+  assert.deepEqual(tools, []);
+});
+
 test("malformed envelope quotes cannot silently turn a complete story into a successful prefix", async () => {
   const raw = '{"reply":"有个哥子减肥，晚上躺在床上发誓："明天开始，不吃饭了！"第二天他还是吃了早饭。"}';
   await assert.rejects(() => runStreamingAgentStep({ provider: envelopeProvider(raw), stepRequest: request,
@@ -69,6 +119,21 @@ test("a provider stop cannot certify an unfinished JSON envelope", async () => {
       ctxSignal: new AbortController().signal, timeoutMs: 1000, onProviderDelta: async () => true }),
       (error: unknown) => error instanceof ProviderStreamError && error.code === "stream_content_mismatch");
   }
+});
+
+test("an empty envelope body never releases its internal metadata as conversation text", async () => {
+  const malformed = '{"reply":"","delivery":{"outcome":"completed","evidence":}}';
+  const shown: string[] = [];
+  await assert.rejects(runStreamingAgentStep({ provider: envelopeProvider(malformed), stepRequest: request,
+    ctxSignal: new AbortController().signal, timeoutMs: 1000,
+    onProviderDelta: async delta => { shown.push(delta); return true; } }),
+    (error: unknown) => error instanceof ProviderStreamError && error.code === "stream_content_mismatch");
+  assert.equal(shown.length, 0);
+  const empty = await runStreamingAgentStep({ provider: envelopeProvider('{"reply":"","delivery":{"actions":[]}}'),
+    stepRequest: request, ctxSignal: new AbortController().signal, timeoutMs: 1000,
+    onProviderDelta: async delta => { shown.push(delta); return true; } });
+  assert.equal(empty.content, "");
+  assert.equal(shown.length, 0);
 });
 
 test("valid escaped story dialogue remains complete at every stream split", async () => {

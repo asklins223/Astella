@@ -17,15 +17,16 @@ test("cold-start output budget is independent from idle progress and remains con
   const previous = keys.map(key => process.env[key]);
   try {
     for (const key of keys) delete process.env[key];
-    assert.deepEqual(companionOutputWatchdogPolicy(), { firstOutputMs: 12_000, idleMs: 45_000, firstMeaningfulOutputMs: Infinity });
-    assert.deepEqual(companionOutputWatchdogPolicy("casual"), { firstOutputMs: 5_000, idleMs: 45_000, firstMeaningfulOutputMs: Infinity });
-    assert.deepEqual(companionOutputWatchdogPolicy("casual", "recovery"), { firstOutputMs: 12_000, idleMs: 45_000, firstMeaningfulOutputMs: Infinity });
+    assert.deepEqual(companionOutputWatchdogPolicy(), { firstOutputMs: 12_000, idleMs: 45_000, firstMeaningfulOutputMs: 30_000 });
+    assert.deepEqual(companionOutputWatchdogPolicy("casual"), { firstOutputMs: 12_000, idleMs: 45_000, firstMeaningfulOutputMs: 30_000 });
+    assert.deepEqual(companionOutputWatchdogPolicy("casual", "recovery"), { firstOutputMs: 12_000, idleMs: 45_000, firstMeaningfulOutputMs: 45_000 });
+    assert.equal(companionOutputWatchdogPolicy("adaptive", "primary", { deepThinking: true }).firstMeaningfulOutputMs, Infinity);
     process.env.COMPANION_PROVIDER_FIRST_OUTPUT_TIMEOUT_MS = "90000";
     process.env.COMPANION_PROVIDER_IDLE_TIMEOUT_MS = "30000";
-    assert.deepEqual(companionOutputWatchdogPolicy(), { firstOutputMs: 90_000, idleMs: 30_000, firstMeaningfulOutputMs: Infinity });
+    assert.deepEqual(companionOutputWatchdogPolicy(), { firstOutputMs: 90_000, idleMs: 30_000, firstMeaningfulOutputMs: 30_000 });
     process.env.COMPANION_CASUAL_PROVIDER_FIRST_OUTPUT_TIMEOUT_MS = "2500";
-    assert.deepEqual(companionOutputWatchdogPolicy("casual"), { firstOutputMs: 2_500, idleMs: 30_000, firstMeaningfulOutputMs: Infinity });
-    assert.deepEqual(companionOutputWatchdogPolicy("casual", "recovery"), { firstOutputMs: 90_000, idleMs: 30_000, firstMeaningfulOutputMs: Infinity });
+    assert.deepEqual(companionOutputWatchdogPolicy("casual"), { firstOutputMs: 2_500, idleMs: 30_000, firstMeaningfulOutputMs: 30_000 });
+    assert.deepEqual(companionOutputWatchdogPolicy("casual", "recovery"), { firstOutputMs: 90_000, idleMs: 30_000, firstMeaningfulOutputMs: 45_000 });
     delete process.env.COMPANION_CASUAL_PROVIDER_FIRST_OUTPUT_TIMEOUT_MS;
     process.env.COMPANION_PROVIDER_FIRST_OUTPUT_TIMEOUT_MS = "0";
     assert.equal(companionOutputWatchdogPolicy("casual").firstOutputMs, Infinity);
@@ -55,6 +56,20 @@ test("first output and idle expiry abort the provider with distinct reasons", as
     }
   } finally { t.mock.timers.reset(); }
 });
+test("a healthy non-reasoning primary keeps its answer through a prefill longer than five seconds", async t => {
+  t.mock.timers.enable({ apis: ["Date", "setTimeout"], now: 0 });
+  try {
+    let signal!: AbortSignal, activity = () => {}, finish: (value: string) => void = () => {};
+    const output = watchCompanionOutput((s, a) => { signal = s; activity = a;
+      return new Promise<string>(resolve => { finish = resolve; }); }, new AbortController().signal, companionOutputWatchdogPolicy("casual"));
+    await flush();
+    t.mock.timers.tick(8_000);
+    assert.equal(signal.aborted, false, "non-reasoning still has real prefill/transport latency");
+    activity(); finish("the original primary answer");
+    assert.equal(await output, "the original primary answer");
+  } finally { t.mock.timers.reset(); }
+});
+
 test("a stalled casual primary can recover on a model whose first output takes more than five seconds", { timeout: 5_000 }, async t => {
   t.mock.timers.enable({ apis: ["Date", "setTimeout"], now: 0 });
   const parent = new AbortController();
@@ -80,7 +95,7 @@ test("a stalled casual primary can recover on a model whose first output takes m
     }));
     const observed = pending.then(value => ({ value }), error => ({ error }));
     await started;
-    t.mock.timers.tick(5_000);
+    t.mock.timers.tick(12_000);
     // The recovery crosses several promise boundaries. Observe the actual
     // fallback start; a missing start must fail, never await an unresolved
     // promise while the only deadlines are on a paused fake clock.

@@ -104,6 +104,10 @@ test("search round limit is distinct from an account toggle or service failure",
   assert.match(exhausted!, /本轮搜索次数已用完/);
   assert.doesNotMatch(exhausted!, /关闭|不可用|未能联网核实/);
   assert.match(unavailableCompanionToolSummary("web.search", { webSearchEnabled: false }, { searchLimitReached: true })!, /关闭/);
+  const service = unavailableCompanionToolSummary("web.search", { webSearchEnabled: false },
+    { webSearchUnavailableReason: "service_unavailable" });
+  assert.match(service!, /服务暂时不可用/);
+  assert.doesNotMatch(service!, /关闭/);
   assert.equal(unavailableCompanionToolSummary("web.search", { webSearchEnabled: true }), null);
 });
 

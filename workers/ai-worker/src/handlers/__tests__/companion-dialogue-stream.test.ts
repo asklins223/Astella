@@ -14,6 +14,7 @@ import {
   projectCompanionVisible,
   reconcileStreamedText,
   stableVisibleCut,
+  finishCompanionStreamDelivery,
 } from "../turn/companion-dialogue-stream.ts";
 import { COMPANION_HARD_MAX_CHARS, sanitizeCompanionVisibleText, validateCompanionOutput } from "../turn/companion-dialogue-content.ts";
 import type { ReadContext } from "../turn/companion-dialogue-store.ts";
@@ -86,6 +87,18 @@ describe("stableVisibleCut", () => {
     }
     for (const raw of ["**还没闭合", "链接[笔记](https://", "有一个(例子"]) assert.equal(stableVisibleCut(raw), 0);
   });
+});
+
+it("finalization and degradation snapshot include a short throttled tail exactly as emitted", async () => {
+  const { delivery, written } = deliveryWithRecorder({ flushChars: 1000, flushIntervalMs: 60_000 });
+  await delivery.onRawDelta("在呢，聊");
+  const before = delivery.deliveredText();
+  await delivery.onRawDelta("点什么？");
+  assert.equal(delivery.deliveredText(), before, "tail is still inside the throttle window");
+  const completed = await finishCompanionStreamDelivery(delivery);
+  assert.equal(completed.delivered, "在呢，聊点什么？");
+  assert.equal(completed.deliverablePrefix, written.join(""));
+  assert.deepEqual(completed.streamed, { ok: true, text: written.join("") });
 });
 
 it("resumes the committed stream prefix without repeating its deltas or resetting append offsets", async () => {

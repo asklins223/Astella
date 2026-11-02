@@ -28,6 +28,17 @@
 
 import type { CompanionContentBlockV1 } from "@astella/shared";
 
+/** A failed lookup cannot fulfill a request for verified external evidence. */
+export const WEB_SEARCH_MISSING_EVIDENCE_GUIDANCE = "本次没有取得新的联网证据。依据已有材料判断要求查证的部分是否完成；未核实的答案、数字或机制不以猜测代替，也不拿它们举例说明不能查。资料足够的部分照常完成。";
+export const WEB_SEARCH_NOT_OPEN_SUMMARY = "本轮联网搜索已关闭，未执行这次检索。";
+export function webSearchUnavailableSummary(reason: string): string {
+  const prefix = reason === "disabled" ? "联网搜索已关闭，未执行检索。"
+    : reason === "not_configured" ? "联网搜索尚未配置，本次没有取得网页。"
+      : reason === "quota_exhausted" ? "联网搜索额度不足，本次没有取得网页。"
+        : "联网搜索服务暂时不可用，本次没有取得网页。";
+  return prefix;
+}
+
 /** 工具报错分两级：能被用户看见的，与必须停在工具面的。 */
 export class CompanionToolError extends Error {
   constructor(message: string) {

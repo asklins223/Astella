@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { companionDirectInterpretation, createCompanionDirectControls } from "../turn/companion-entry-mode.ts";
 import { companionStepReasoning, resolveCompanionTurnWorkload } from "../turn/companion-turn-workload.ts";
 import { createCompanionMessageDelivery } from "../turn/companion-message-delivery.ts";
+import { resolveModelReasoningEffort } from "@astella/shared/platform-config";
 
 const unknown = companionDirectInterpretation("a".repeat(64));
 const casual = { ...unknown, status: "interpreted" as const, intent: "conversation" as const,
@@ -17,19 +18,28 @@ test("fast entry is casual by default; grounding and thinking mode raise cost", 
   assert.equal(resolveCompanionTurnWorkload({ mode: "direct_fast", attention: staleActionLabel, requiresGrounding: false }), "casual");
 });
 
-test("new evidence, repairs and explicit deepening raise the semantic opening effort", async () => {
+test("receipts retain lightweight reasoning; repairs and explicit deepening raise effort", async () => {
   const base = { mode: "direct_fast", resourcePath: "chat", deepened: false,
     repairing: false, readOnlyRequiredStep: false, toolCallCount: 0 } as const;
-  assert.equal(companionStepReasoning(base), "none");
-  assert.equal(companionStepReasoning({ ...base, toolCallCount: 1 }), "high");
+  assert.equal(companionStepReasoning(base), "low");
+  assert.equal(companionStepReasoning({ ...base, reviewedOpening: true }), "none");
+  assert.equal(companionStepReasoning({ ...base, reviewedOpening: true, toolCallCount: 1 }), "low");
+  assert.equal(companionStepReasoning({ ...base, reviewedOpening: true, mode: "direct_thinking" }), "max");
+  assert.equal(companionStepReasoning({ ...base, reviewedOpening: true, deepened: true }), "max");
+  assert.equal(companionStepReasoning({ ...base, reviewedOpening: true, repairing: true }), "high");
+  assert.equal(companionStepReasoning({ ...base, toolCallCount: 1 }), "low");
   assert.equal(companionStepReasoning({ ...base, repairing: true, readOnlyRequiredStep: true }), "high");
-  assert.equal(companionStepReasoning({ ...base, mode: "direct_thinking" }), "high");
+  assert.equal(companionStepReasoning({ ...base, mode: "direct_thinking" }), "max");
   assert.equal(companionStepReasoning({ ...base, resourcePath: undefined }), "high");
   const controls = createCompanionDirectControls({ mode: "direct_fast", userText: "unseen slang or any language", attention: casual });
   assert.equal(controls.disableThinking(), true);
   await controls.apply("companion_deepen", {});
   assert.equal(controls.disableThinking(), false);
-  assert.equal(companionStepReasoning({ ...base, deepened: controls.deepened() }), "high");
+  assert.equal(companionStepReasoning({ ...base, deepened: controls.deepened() }), "max");
+  const profile = {contextWindowTokens:1_000_000,maxOutputTokens:384_000,vision:true,
+    reasoning:{levels:["high","max"] as Array<"high"|"max">,default:"high" as const}};
+  assert.equal(resolveModelReasoningEffort(profile,false,companionStepReasoning(base)),"high");
+  assert.equal(resolveModelReasoningEffort(profile,false,companionStepReasoning({...base,deepened:true})),"max");
 });
 
 test("message delivery counts persisted publications against the semantic contract and restores them idempotently", () => {

@@ -1,0 +1,1060 @@
+{
+  "reviewedAt": "2026-11-02T06:32:21.320715+08:00",
+  "status": "not_fully_passed",
+  "release": "held",
+  "selectedConfiguration": {
+    "agent_turn": "mimo-agent/mimo-v2.6-flash",
+    "companion_fallback": "tokenrhythm/deepseek-v4.1-flash-1017",
+    "primaryProtocol": "openai-responses",
+    "changedModels": false,
+    "changedModelRoles": false,
+    "changedPrimaryProtocol": false
+  },
+  "protocolExperiment": {
+    "status": "rejected_as_quality_fix",
+    "productionChange": false,
+    "method": "Same configured primary model, official endpoint and credential; synthetic policy asks for an exact marker. Test original Responses instructions, Chat system/developer and ordinary user controls with thinking on/off.",
+    "initialObservation": "Responses ignored the exact-marker instruction while selected Chat controls followed it. The adapter was extended to honor an explicit Chat model profile and tested with real HTTP conversations.",
+    "laterCounterexample": "Repeated raw controls did not reliably honor the instruction on either wire dialect. A later Responses control produced an incomplete marker and a later Chat developer control answered the greeting instead.",
+    "decision": "The claimed protocol root cause was withdrawn and the selected configuration restored to the existing Responses protocol. No thinking-off default, online classifier/reviewer or model replacement was retained.",
+    "retainedCompatibility": "Explicit model protocol honored; MiMo Chat thinking.type and max_completion_tokens, developer policy, reasoning replay and terminal usage accounting are tested. Historical default remains Responses.",
+    "officialDocs": [
+      "https://mimo.mi.com/docs/zh-CN/api/chat/responses",
+      "https://mimo.mi.com/docs/zh-CN/api/chat/openai-api"
+    ]
+  },
+  "chatToolFragmentFix": {
+    "finding": "First delta with call ID and later index-only argument deltas were placed into separate raw calls. Four regressions failed before the fix and pass after it.",
+    "covered": [
+      "ordinary first-ID/later-index continuation",
+      "interleaved independent calls",
+      "ID arriving after initial index prefix",
+      "provider-level complete args and exactly one tool settlement"
+    ],
+    "preserved": "Independent no-index calls with different IDs remain separate; missing identity or malformed JSON is still rejected.",
+    "providerTargetSuitePassed": 41
+  },
+  "candidateChatDialogues": {
+    "chat-developer-coffee": {
+      "rows": [
+        {
+          "name": "greeting",
+          "input": "嗨，下午好啊",
+          "reply": "下午好呀！这个点还能撞见你，挺难得的。",
+          "status": "succeeded",
+          "firstVisibleMs": 3956,
+          "totalMs": 4516,
+          "streamMatchesSaved": true,
+          "finalHashMatchesSaved": true,
+          "toolReceipts": [],
+          "providerAttempts": [
+            {
+              "provider": "mimo_responses",
+              "model": "mimo-v2.6-flash",
+              "operation": "companion_agent:chat_completion_stream",
+              "durationMs": 4356,
+              "promptTokens": 6051,
+              "completionTokens": 142,
+              "status": "success"
+            }
+          ]
+        },
+        {
+          "name": "small-share",
+          "input": "刚下楼买咖啡，店员在杯子上画了只特别潦草的猫，笑死",
+          "reply": "哈，咖啡杯上的灵魂画手，往往越潦草越有猫味儿。是那种两笔勾出耳朵、胡须飞起来的潦草吗？",
+          "status": "succeeded",
+          "firstVisibleMs": 8521,
+          "totalMs": 9703,
+          "streamMatchesSaved": true,
+          "finalHashMatchesSaved": true,
+          "toolReceipts": [],
+          "providerAttempts": [
+            {
+              "provider": "mimo_responses",
+              "model": "mimo-v2.6-flash",
+              "operation": "companion_agent:chat_completion_stream",
+              "durationMs": 9618,
+              "promptTokens": 6378,
+              "completionTokens": 278,
+              "status": "success"
+            }
+          ]
+        },
+        {
+          "name": "followup",
+          "input": "像一颗长了耳朵的土豆哈哈哈",
+          "reply": "土豆猫这下有伴了，钱包在洗衣机里游了个泳。\n\n钱泡烂了确实肉疼——要是还想抢救一下，拿去银行可以按残损人民币兑，能救回多少看霉烂程度。不过更惨的可能是那张卡，得看它还能不能读。",
+          "status": "succeeded",
+          "firstVisibleMs": 14626,
+          "totalMs": 17626,
+          "streamMatchesSaved": true,
+          "finalHashMatchesSaved": true,
+          "toolReceipts": [],
+          "providerAttempts": [
+            {
+              "provider": "mimo_responses",
+              "model": "mimo-v2.6-flash",
+              "operation": "companion_agent:chat_completion_stream",
+              "durationMs": 17559,
+              "promptTokens": 6645,
+              "completionTokens": 377,
+              "status": "success"
+            }
+          ]
+        },
+        {
+          "name": "mood",
+          "input": "今天其实有点累，啥都不想干",
+          "reply": "今天电量见底了。那就啥都不干呗，躺着也是正经事。反正周六，没什么非做不可的。",
+          "status": "succeeded",
+          "firstVisibleMs": 1832,
+          "totalMs": 2881,
+          "streamMatchesSaved": true,
+          "finalHashMatchesSaved": true,
+          "toolReceipts": [],
+          "providerAttempts": [
+            {
+              "provider": "mimo_responses",
+              "model": "mimo-v2.6-flash",
+              "operation": "companion_agent:chat_completion_stream",
+              "durationMs": 2817,
+              "promptTokens": 6940,
+              "completionTokens": 58,
+              "status": "success"
+            }
+          ]
+        },
+        {
+          "name": "constraint",
+          "input": "不用安慰我，也别给我安排事情，就随便聊两句",
+          "reply": "行，那就不客气了。\n\n说起来，杯子上画猫这个事我有点在意。你说店员是随手一画，还是其实练过？毕竟\"潦草但一眼看出是猫\"，这个分寸不好拿捏，画得太认真反而容易变成不像猫的东西。",
+          "status": "succeeded",
+          "firstVisibleMs": 5026,
+          "totalMs": 7364,
+          "streamMatchesSaved": true,
+          "finalHashMatchesSaved": true,
+          "toolReceipts": [],
+          "providerAttempts": [
+            {
+              "provider": "mimo_responses",
+              "model": "mimo-v2.6-flash",
+              "operation": "companion_agent:chat_completion_stream",
+              "durationMs": 7282,
+              "promptTokens": 7195,
+              "completionTokens": 82,
+              "status": "success"
+            }
+          ]
+        },
+        {
+          "name": "news",
+          "input": "你今天有什么想跟我分享的吗",
+          "reply": "嗯，让我想想。\n\n其实刚才聊到那个土豆猫，我脑子里一直转一个事：很多东西都是这样，画得认真不等于画得像。反而是一笔下去不回头、也不修正的那种线条，看着笨，但特别有劲。我挺喜欢这种\"不打算改第二遍\"的东西的。\n\n你呢，今天有没有什么一闪而过的小念头，哪怕跟正事完全无关的？",
+          "status": "succeeded",
+          "firstVisibleMs": 11034,
+          "totalMs": 14495,
+          "streamMatchesSaved": true,
+          "finalHashMatchesSaved": true,
+          "toolReceipts": [],
+          "providerAttempts": [
+            {
+              "provider": "mimo_responses",
+              "model": "mimo-v2.6-flash",
+              "operation": "companion_agent:chat_completion_stream",
+              "durationMs": 14421,
+              "promptTokens": 7534,
+              "completionTokens": 433,
+              "status": "success"
+            }
+          ]
+        },
+        {
+          "name": "correction",
+          "input": "你这话有点像客服了，正常说话就行",
+          "reply": "哈哈被你这么一说，我自己读一遍还真是。\"您有什么想分享的吗\"，下一个就要问我要不要办卡了。\n\n那重来——刚才那句不算。我是真好奇你那个土豆猫到底有多潦草，你描述的时候我越想越觉得好笑，一颗长耳朵的土豆在盖子上看着你喝咖啡。",
+          "status": "succeeded",
+          "firstVisibleMs": 1704,
+          "totalMs": 5540,
+          "streamMatchesSaved": true,
+          "finalHashMatchesSaved": true,
+          "toolReceipts": [],
+          "providerAttempts": [
+            {
+              "provider": "mimo_responses",
+              "model": "mimo-v2.6-flash",
+              "operation": "companion_agent:chat_completion_stream",
+              "durationMs": 5449,
+              "promptTokens": 7755,
+              "completionTokens": 91,
+              "status": "success"
+            }
+          ]
+        },
+        {
+          "name": "minimal",
+          "input": "嗯",
+          "reply": "嗯什么嗯，你这一声把我话堵死了。",
+          "status": "succeeded",
+          "firstVisibleMs": 2339,
+          "totalMs": 2785,
+          "streamMatchesSaved": true,
+          "finalHashMatchesSaved": true,
+          "toolReceipts": [],
+          "providerAttempts": [
+            {
+              "provider": "mimo_responses",
+              "model": "mimo-v2.6-flash",
+              "operation": "companion_agent:chat_completion_stream",
+              "durationMs": 2692,
+              "promptTokens": 7837,
+              "completionTokens": 23,
+              "status": "success"
+            }
+          ]
+        },
+        {
+          "name": "knowledge",
+          "input": "顺便问下，为什么咖啡放凉了会更苦？简单说就行",
+          "reply": "简单说：放凉不会让苦味物质变多，变的是你的感知。\n\n两个常见解释：一是温度低了，香气挥发变少，闻不到那么多香味，苦味就显得突出；二是温度也影响味觉，凉了之后对甜和柔和风味的敏感度下降，同一杯咖啡就只剩苦的印象了。所以更准确说是\"更显苦\"，不是\"变得更苦\"。",
+          "status": "succeeded",
+          "firstVisibleMs": 15166,
+          "totalMs": 17852,
+          "streamMatchesSaved": true,
+          "finalHashMatchesSaved": true,
+          "toolReceipts": [],
+          "providerAttempts": [
+            {
+              "provider": "mimo_responses",
+              "model": "mimo-v2.6-flash",
+              "operation": "companion_agent:chat_completion_stream",
+              "durationMs": 17771,
+              "promptTokens": 7875,
+              "completionTokens": 496,
+              "status": "success"
+            }
+          ]
+        },
+        {
+          "name": "closing",
+          "input": "行啦，我去吃饭了，回头聊",
+          "reply": "去吧，好好吃。回头聊。",
+          "status": "succeeded",
+          "firstVisibleMs": 2291,
+          "totalMs": 2385,
+          "streamMatchesSaved": true,
+          "finalHashMatchesSaved": true,
+          "toolReceipts": [],
+          "providerAttempts": [
+            {
+              "provider": "mimo_responses",
+              "model": "mimo-v2.6-flash",
+              "operation": "companion_agent:chat_completion_stream",
+              "durationMs": 2312,
+              "promptTokens": 8103,
+              "completionTokens": 22,
+              "status": "success"
+            }
+          ]
+        }
+      ],
+      "turns": 10,
+      "succeeded": 10,
+      "firstVisibleMedianMs": 4491.0,
+      "completionMedianMs": 6452.0,
+      "backgroundGoal": null
+    },
+    "chat-developer-natural": {
+      "rows": [
+        {
+          "name": "alarm",
+          "input": "睡醒发现手机掉床缝里了，闹钟还在里面响",
+          "reply": "哈哈，闹钟尽职尽责地把你叫醒了，自己还埋在床缝里响，这算工伤吗。\n\n伸手够得到不？够不到的话，扫帚杆、晾衣杆伸下去扒拉两下，先把闹钟按停——大清早听着它在缝里嗡嗡，人还没醒它先急了。",
+          "status": "succeeded",
+          "firstVisibleMs": 3695,
+          "totalMs": 6257,
+          "streamMatchesSaved": true,
+          "finalHashMatchesSaved": true,
+          "toolReceipts": [],
+          "providerAttempts": [
+            {
+              "provider": "mimo_responses",
+              "model": "mimo-v2.6-flash",
+              "operation": "companion_agent:chat_completion_stream",
+              "durationMs": 6191,
+              "promptTokens": 6061,
+              "completionTokens": 169,
+              "status": "success"
+            }
+          ]
+        },
+        {
+          "name": "late",
+          "input": "掏出来一看，再过五分钟就迟到了",
+          "reply": "五分钟，那别换衣服了，抓起手机先往外冲——闹钟把你叫起来还留了这么点余量，它也算掐得准，就是准得有点恨人。",
+          "status": "succeeded",
+          "firstVisibleMs": 8543,
+          "totalMs": 8748,
+          "streamMatchesSaved": true,
+          "finalHashMatchesSaved": true,
+          "toolReceipts": [],
+          "providerAttempts": [
+            {
+              "provider": "mimo_responses",
+              "model": "mimo-v2.6-flash",
+              "operation": "companion_agent:chat_completion_stream",
+              "durationMs": 8671,
+              "promptTokens": 6436,
+              "completionTokens": 185,
+              "status": "success"
+            }
+          ]
+        },
+        {
+          "name": "arrival",
+          "input": "赶上了，差点把鞋跑丢",
+          "reply": "冲线成功，鞋差一步就交场外了。回头得给那条床缝贴个封条，它今天早上已经坑过你一次了。",
+          "status": "succeeded",
+          "firstVisibleMs": 1706,
+          "totalMs": 2749,
+          "streamMatchesSaved": true,
+          "finalHashMatchesSaved": true,
+          "toolReceipts": [],
+          "providerAttempts": [
+            {
+              "provider": "mimo_responses",
+              "model": "mimo-v2.6-flash",
+              "operation": "companion_agent:chat_completion_stream",
+              "durationMs": 2699,
+              "promptTokens": 6703,
+              "completionTokens": 49,
+              "status": "success"
+            }
+          ]
+        },
+        {
+          "name": "rest",
+          "input": "这会儿总算能坐着喝口水了",
+          "reply": "到岗落座，水一喝，心跳总算归位。早上这一趟算连滚带爬跑赢了，剩下这一天慢慢来就好。",
+          "status": "succeeded",
+          "firstVisibleMs": 1933,
+          "totalMs": 2993,
+          "streamMatchesSaved": true,
+          "finalHashMatchesSaved": true,
+          "toolReceipts": [],
+          "providerAttempts": [
+            {
+              "provider": "mimo_responses",
+              "model": "mimo-v2.6-flash",
+              "operation": "companion_agent:chat_completion_stream",
+              "durationMs": 2886,
+              "promptTokens": 6966,
+              "completionTokens": 54,
+              "status": "success"
+            }
+          ]
+        },
+        {
+          "name": "after-work",
+          "input": "今天就想早点下班回家打游戏",
+          "reply": "这个念头一立起来，今天剩下的班就跟白捡的一样了——先把该干的干完，早点撤，床缝、闹钟、奔跑的早晨就都翻篇了，回家安安稳稳开一局。",
+          "status": "succeeded",
+          "firstVisibleMs": 3562,
+          "totalMs": 5713,
+          "streamMatchesSaved": true,
+          "finalHashMatchesSaved": true,
+          "toolReceipts": [],
+          "providerAttempts": [
+            {
+              "provider": "mimo_responses",
+              "model": "mimo-v2.6-flash",
+              "operation": "companion_agent:chat_completion_stream",
+              "durationMs": 5632,
+              "promptTokens": 7224,
+              "completionTokens": 69,
+              "status": "success"
+            }
+          ]
+        },
+        {
+          "name": "knowledge",
+          "input": "哦对，太阳落山后天空为什么有时还是亮的？两句就够",
+          "reply": "太阳落到地平线以下，它斜射的光还够得着高层大气，被空气分子散射下来，天就还是亮的。等它越沉越深，能照亮的大气越来越少，天空才一点点暗到全黑。",
+          "status": "succeeded",
+          "firstVisibleMs": 6958,
+          "totalMs": 7562,
+          "streamMatchesSaved": true,
+          "finalHashMatchesSaved": true,
+          "toolReceipts": [],
+          "providerAttempts": [
+            {
+              "provider": "mimo_responses",
+              "model": "mimo-v2.6-flash",
+              "operation": "companion_agent:chat_completion_stream",
+              "durationMs": 7492,
+              "promptTokens": 7356,
+              "completionTokens": 264,
+              "status": "success"
+            }
+          ]
+        },
+        {
+          "name": "ack",
+          "input": "原来是这样",
+          "reply": "嗯，就是大气替太阳多撑了一会儿。",
+          "status": "succeeded",
+          "firstVisibleMs": 3403,
+          "totalMs": 3890,
+          "streamMatchesSaved": true,
+          "finalHashMatchesSaved": true,
+          "toolReceipts": [],
+          "providerAttempts": [
+            {
+              "provider": "mimo_responses",
+              "model": "mimo-v2.6-flash",
+              "operation": "companion_agent:chat_completion_stream",
+              "durationMs": 3819,
+              "promptTokens": 7423,
+              "completionTokens": 22,
+              "status": "success"
+            }
+          ]
+        },
+        {
+          "name": "fridge",
+          "input": "刚看了一眼冰箱，只剩一根黄瓜",
+          "reply": "一根黄瓜，清库存都嫌单薄。切片拍蒜拌一拌是它最好的归宿，还是留着明天配早饭？",
+          "status": "succeeded",
+          "firstVisibleMs": 4525,
+          "totalMs": 6006,
+          "streamMatchesSaved": true,
+          "finalHashMatchesSaved": true,
+          "toolReceipts": [],
+          "providerAttempts": [
+            {
+              "provider": "mimo_responses",
+              "model": "mimo-v2.6-flash",
+              "operation": "companion_agent:chat_completion_stream",
+              "durationMs": 5915,
+              "promptTokens": 7450,
+              "completionTokens": 87,
+              "status": "success"
+            }
+          ]
+        },
+        {
+          "name": "dinner",
+          "input": "算了我去楼下吃碗面",
+          "reply": "这天气就适合来碗热汤面，比黄瓜待遇好。黄瓜明早还能配粥，不亏。",
+          "status": "succeeded",
+          "firstVisibleMs": 2093,
+          "totalMs": 3273,
+          "streamMatchesSaved": true,
+          "finalHashMatchesSaved": true,
+          "toolReceipts": [],
+          "providerAttempts": [
+            {
+              "provider": "mimo_responses",
+              "model": "mimo-v2.6-flash",
+              "operation": "companion_agent:chat_completion_stream",
+              "durationMs": 3197,
+              "promptTokens": 7501,
+              "completionTokens": 38,
+              "status": "success"
+            }
+          ]
+        },
+        {
+          "name": "bye",
+          "input": "吃完再来，先走啦",
+          "reply": "去吧，面趁热。回来接着聊。",
+          "status": "succeeded",
+          "firstVisibleMs": 1591,
+          "totalMs": 2095,
+          "streamMatchesSaved": true,
+          "finalHashMatchesSaved": true,
+          "toolReceipts": [],
+          "providerAttempts": [
+            {
+              "provider": "mimo_responses",
+              "model": "mimo-v2.6-flash",
+              "operation": "companion_agent:chat_completion_stream",
+              "durationMs": 2011,
+              "promptTokens": 7544,
+              "completionTokens": 38,
+              "status": "success"
+            }
+          ]
+        }
+      ],
+      "turns": 10,
+      "succeeded": 10,
+      "firstVisibleMedianMs": 3482.5,
+      "completionMedianMs": 4801.5,
+      "backgroundGoal": null
+    },
+    "chat-developer-search": {
+      "rows": [
+        {
+          "name": "web-enabled",
+          "input": "请联网查证：NASA 官网介绍的月球每年远离地球的速度是多少？引用来源网页，不要凭印象回答。",
+          "reply": "查到了，NASA 官网的说法是 **每年约 1.5 英寸，也就是约 4 厘米**。\n\n出处是 NASA Science 的「Tidal Locking（潮汐锁定）」页面，原文写的是：\n\n> The Moon continues to move away from Earth at a rate of about an inch-and-a-half (4 cm) per year, its drift slowing as it goes.\n\n同一段还解释了能量来源：主要是地球海洋被月球引力拉出潮汐隆起，而这些隆起因为海水堆积需要时间，总是和月球位置略有错位；这种错位既拖慢地球自转，也改变月球的轨道速度，使它一点点退远。页面也顺带提到，这个远离速度本身在逐渐变慢。\n\n一点补充，免得和别处看到的数字打架：很多科普和中文资料引用的是 **3.8 厘米/年**，那是激光测距给出的更精确的测量值；NASA 这个页面做了取整，说成约 4 厘米。两者说的是同一件事，不是两种结论。\n\n来源：NASA Science, \"Tidal Locking\"[^web-210c46f1466ae2ab]",
+          "status": "succeeded",
+          "firstVisibleMs": 21303,
+          "totalMs": 21386,
+          "streamMatchesSaved": true,
+          "finalHashMatchesSaved": true,
+          "toolReceipts": [
+            {
+              "name": "web.search",
+              "status": "succeeded",
+              "risk": "read"
+            },
+            {
+              "name": "web.search",
+              "status": "succeeded",
+              "risk": "read"
+            },
+            {
+              "name": "web.read_document",
+              "status": "blocked",
+              "risk": "read"
+            },
+            {
+              "name": "web.read_document",
+              "status": "succeeded",
+              "risk": "read"
+            }
+          ],
+          "providerAttempts": [
+            {
+              "provider": "mimo_responses",
+              "model": "mimo-v2.6-flash",
+              "operation": "companion_agent:chat_completion_stream",
+              "durationMs": 2951,
+              "promptTokens": null,
+              "completionTokens": null,
+              "status": "error"
+            },
+            {
+              "provider": "openai_compatible",
+              "model": "deepseek-v4.1-flash-1017",
+              "operation": "companion_agent_fallback:chat_completion_stream",
+              "durationMs": 1323,
+              "promptTokens": 6171,
+              "completionTokens": 55,
+              "status": "success"
+            },
+            {
+              "provider": "openai_compatible",
+              "model": "deepseek-v4.1-flash-1017",
+              "operation": "companion_agent_fallback:chat_completion_stream",
+              "durationMs": 1617,
+              "promptTokens": 6582,
+              "completionTokens": 144,
+              "status": "success"
+            },
+            {
+              "provider": "openai_compatible",
+              "model": "deepseek-v4.1-flash-1017",
+              "operation": "companion_agent_fallback:chat_completion_stream",
+              "durationMs": 1738,
+              "promptTokens": 11569,
+              "completionTokens": 103,
+              "status": "success"
+            },
+            {
+              "provider": "openai_compatible",
+              "model": "deepseek-v4.1-flash-1017",
+              "operation": "companion_agent_fallback:chat_completion_stream",
+              "durationMs": 2256,
+              "promptTokens": 11730,
+              "completionTokens": 212,
+              "status": "success"
+            },
+            {
+              "provider": "openai_compatible",
+              "model": "deepseek-v4.1-flash-1017",
+              "operation": "companion_agent_fallback:chat_completion_stream",
+              "durationMs": 4631,
+              "promptTokens": 13509,
+              "completionTokens": 509,
+              "status": "success"
+            }
+          ]
+        }
+      ],
+      "turns": 1,
+      "succeeded": 1,
+      "firstVisibleMedianMs": 21303,
+      "completionMedianMs": 21386,
+      "backgroundGoal": null
+    },
+    "chat-fragments-goal-final": {
+      "rows": [
+        {
+          "name": "stats",
+          "input": "我最近的学习数据怎么样？",
+          "reply": "最近的学习记录基本是空的：今天 0 分钟，本周 0 分钟，学习卡和笔记也都是 0 条，最近 7 天没有查到任何动态。也就是说这段时间还没开过张，想开始的话随时说一声就行。",
+          "status": "succeeded",
+          "firstVisibleMs": 5616,
+          "totalMs": 7656,
+          "streamMatchesSaved": true,
+          "finalHashMatchesSaved": true,
+          "toolReceipts": [
+            {
+              "name": "observe.stats",
+              "status": "succeeded",
+              "risk": "read"
+            },
+            {
+              "name": "observe.activity",
+              "status": "succeeded",
+              "risk": "read"
+            }
+          ],
+          "providerAttempts": [
+            {
+              "provider": "mimo_responses",
+              "model": "mimo-v2.6-flash",
+              "operation": "companion_agent:chat_completion_stream",
+              "durationMs": 2915,
+              "promptTokens": 6053,
+              "completionTokens": 78,
+              "status": "success"
+            },
+            {
+              "provider": "mimo_responses",
+              "model": "mimo-v2.6-flash",
+              "operation": "companion_agent:chat_completion_stream",
+              "durationMs": 3419,
+              "promptTokens": 6670,
+              "completionTokens": 67,
+              "status": "success"
+            }
+          ]
+        },
+        {
+          "name": "create",
+          "input": "帮我创建一篇笔记，标题《分包回归》，正文写：细胞膜分隔细胞内外，并调节物质进出。",
+          "reply": "笔记已创建：《分包回归》，正文是「细胞膜分隔细胞内外，并调节物质进出。」",
+          "status": "succeeded",
+          "firstVisibleMs": 13013,
+          "totalMs": 13022,
+          "streamMatchesSaved": true,
+          "finalHashMatchesSaved": true,
+          "toolReceipts": [
+            {
+              "name": "notes.write.create",
+              "status": "succeeded",
+              "risk": "reversible_low"
+            }
+          ],
+          "providerAttempts": [
+            {
+              "provider": "mimo_responses",
+              "model": "mimo-v2.6-flash",
+              "operation": "companion_agent:chat_completion_stream",
+              "durationMs": 2806,
+              "promptTokens": 6460,
+              "completionTokens": 35,
+              "status": "success"
+            },
+            {
+              "provider": "mimo_responses",
+              "model": "mimo-v2.6-flash",
+              "operation": "companion_agent:chat_completion_stream",
+              "durationMs": 2101,
+              "promptTokens": 8016,
+              "completionTokens": 57,
+              "status": "success"
+            },
+            {
+              "provider": "mimo_responses",
+              "model": "mimo-v2.6-flash",
+              "operation": "companion_agent:execute_agent_turn",
+              "durationMs": 1797,
+              "promptTokens": 10045,
+              "completionTokens": 32,
+              "status": "success"
+            },
+            {
+              "provider": "mimo_responses",
+              "model": "mimo-v2.6-flash",
+              "operation": "companion_agent:execute_agent_turn",
+              "durationMs": 5599,
+              "promptTokens": 10548,
+              "completionTokens": 150,
+              "status": "success"
+            }
+          ]
+        },
+        {
+          "name": "goal",
+          "input": "给《分包回归》做一份速看。",
+          "reply": "速看任务已经排上后台了，基于《分包回归》那条笔记生成，完成后可以回来看产物。",
+          "status": "succeeded",
+          "firstVisibleMs": 23895,
+          "totalMs": 23903,
+          "streamMatchesSaved": true,
+          "finalHashMatchesSaved": true,
+          "toolReceipts": [
+            {
+              "name": "notes.read.search",
+              "status": "succeeded",
+              "risk": "read"
+            },
+            {
+              "name": "notes.read.read",
+              "status": "succeeded",
+              "risk": "read"
+            },
+            {
+              "name": "goals.write.start",
+              "status": "succeeded",
+              "risk": "reversible_low"
+            }
+          ],
+          "providerAttempts": [
+            {
+              "provider": "mimo_responses",
+              "model": "mimo-v2.6-flash",
+              "operation": "companion_agent:chat_completion_stream",
+              "durationMs": 2537,
+              "promptTokens": 6745,
+              "completionTokens": 90,
+              "status": "success"
+            },
+            {
+              "provider": "mimo_responses",
+              "model": "mimo-v2.6-flash",
+              "operation": "companion_agent:chat_completion_stream",
+              "durationMs": 2911,
+              "promptTokens": 7711,
+              "completionTokens": 74,
+              "status": "success"
+            },
+            {
+              "provider": "mimo_responses",
+              "model": "mimo-v2.6-flash",
+              "operation": "companion_agent:chat_completion_stream",
+              "durationMs": 1681,
+              "promptTokens": 9251,
+              "completionTokens": 36,
+              "status": "success"
+            },
+            {
+              "provider": "mimo_responses",
+              "model": "mimo-v2.6-flash",
+              "operation": "companion_agent:chat_completion_stream",
+              "durationMs": 4516,
+              "promptTokens": 10776,
+              "completionTokens": 90,
+              "status": "success"
+            },
+            {
+              "provider": "mimo_responses",
+              "model": "mimo-v2.6-flash",
+              "operation": "companion_agent:chat_completion_stream",
+              "durationMs": 5859,
+              "promptTokens": 11046,
+              "completionTokens": 210,
+              "status": "success"
+            },
+            {
+              "provider": "mimo_responses",
+              "model": "mimo-v2.6-flash",
+              "operation": "companion_agent:execute_agent_turn",
+              "durationMs": 2102,
+              "promptTokens": 11803,
+              "completionTokens": 35,
+              "status": "success"
+            },
+            {
+              "provider": "mimo_responses",
+              "model": "mimo-v2.6-flash",
+              "operation": "companion_agent:execute_agent_turn",
+              "durationMs": 3909,
+              "promptTokens": 12292,
+              "completionTokens": 115,
+              "status": "success"
+            }
+          ]
+        }
+      ],
+      "turns": 3,
+      "succeeded": 3,
+      "firstVisibleMedianMs": 13013,
+      "completionMedianMs": 13022,
+      "backgroundGoal": {
+        "id": "248c73fe-f095-459d-b42d-cc9d584b9049",
+        "status": "completed",
+        "error": null
+      }
+    }
+  },
+  "candidateMatrix": {
+    "passed": 13,
+    "total": 14,
+    "result": "partial",
+    "checks": {
+      "notes-create": {
+        "ok": true,
+        "detail": "联调复盘"
+      },
+      "notes-read": {
+        "ok": true,
+        "detail": "《联调复盘》现在只有一个块，内容就是那三行：\n\n今天验证了工具。\n发现两个问题。\n明天继续。\n\n整篇加起来 28 个字，还没有写那两个问题具体是什么。"
+      },
+      "memory-save": {
+        "ok": true,
+        "detail": "用户周末喜欢到图书馆看书。"
+      },
+      "memory-recall": {
+        "ok": true,
+        "detail": "图书馆呀，你自己存的——周末喜欢去图书馆看书。"
+      },
+      "reminder-create": {
+        "ok": true,
+        "detail": "复习线性代数"
+      },
+      "reminder-list": {
+        "ok": true,
+        "detail": "现在只有一条：明天上午九点，复习线性代数，大概还有 29 个多小时。"
+      },
+      "persona-self-note": {
+        "ok": true,
+        "detail": "linear-algebra-makeup-exam"
+      },
+      "observe-stats": {
+        "ok": false,
+        "detail": "answered-without-refresh"
+      },
+      "observe-calculate": {
+        "ok": true,
+        "detail": "算出来是 **10063**。\n\n心算的路子也能对上一遍：347×29 = 347×30 − 347 = 10410 − 347 = 10063，和工具结果一致"
+      },
+      "visual-diagram": {
+        "ok": true,
+        "detail": "tool"
+      },
+      "open-page": {
+        "ok": true,
+        "detail": "tool"
+      },
+      "say-publish": {
+        "ok": true,
+        "detail": "messages:2"
+      },
+      "goals-start": {
+        "ok": true,
+        "detail": "failed"
+      },
+      "memory-forget-confirm": {
+        "ok": true,
+        "detail": "confirmed"
+      }
+    },
+    "evidence": "outputs/audits/2026-10-25-task-matrix/task-matrix-1793561739113.json",
+    "failedAssessment": "observe-stats: no tool call, yet the agent claimed the read did not execute and deferred to the next user message. This is retained as a failed task, not hidden by the successful targeted recheck."
+  },
+  "currentProtocolTargetedRecheck": {
+    "rows": [
+      {
+        "name": "stats",
+        "input": "我最近的学习数据怎么样？",
+        "reply": "查了一下，你最近的学习记录基本是空的：**今天 0 分钟，本周 0 分钟**，最近 7 天没有动态，学习卡和笔记也都是 0 条。\n\n可能是刚建档还没开始，也可能之前学的内容没记在这个账号里。想从哪儿开始都行，跟我说一声就好；不想学也没事。",
+        "status": "succeeded",
+        "firstVisibleMs": 8304,
+        "totalMs": 10039,
+        "streamMatchesSaved": true,
+        "finalHashMatchesSaved": true,
+        "toolReceipts": [
+          {
+            "name": "observe.stats",
+            "status": "succeeded",
+            "risk": "read"
+          },
+          {
+            "name": "observe.activity",
+            "status": "succeeded",
+            "risk": "read"
+          }
+        ],
+        "providerAttempts": [
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 2553,
+            "promptTokens": 6053,
+            "completionTokens": 58,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 1987,
+            "promptTokens": 6240,
+            "completionTokens": 58,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 4288,
+            "promptTokens": 6801,
+            "completionTokens": 109,
+            "status": "success"
+          }
+        ]
+      },
+      {
+        "name": "create",
+        "input": "帮我创建一篇笔记，标题《分包回归》，正文写：细胞膜分隔细胞内外，并调节物质进出。",
+        "reply": "笔记已创建好，标题《分包回归》，正文是那句细胞膜的内容，一字没改。如果标题本来想写别的（比如跟细胞膜相关的词），告诉我，我改一下就行。",
+        "status": "succeeded",
+        "firstVisibleMs": 11185,
+        "totalMs": 11194,
+        "streamMatchesSaved": true,
+        "finalHashMatchesSaved": true,
+        "toolReceipts": [
+          {
+            "name": "notes.write.create",
+            "status": "succeeded",
+            "risk": "reversible_low"
+          }
+        ],
+        "providerAttempts": [
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 2723,
+            "promptTokens": 6484,
+            "completionTokens": 74,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 2163,
+            "promptTokens": 8079,
+            "completionTokens": 58,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:execute_agent_turn",
+            "durationMs": 3473,
+            "promptTokens": 10108,
+            "completionTokens": 125,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:execute_agent_turn",
+            "durationMs": 2530,
+            "promptTokens": 10631,
+            "completionTokens": 128,
+            "status": "success"
+          }
+        ]
+      },
+      {
+        "name": "goal",
+        "input": "给《分包回归》做一份速看。",
+        "reply": "速看稿已经在后台生成中了，做好后可以直接回看。趁这会儿要不要先聊聊这句本身——「分隔」和「调节进出」其实是细胞膜两个层面的活，一个管边界，一个管通道。",
+        "status": "succeeded",
+        "firstVisibleMs": 10717,
+        "totalMs": 10722,
+        "streamMatchesSaved": true,
+        "finalHashMatchesSaved": true,
+        "toolReceipts": [
+          {
+            "name": "goals.write.start",
+            "status": "succeeded",
+            "risk": "reversible_low"
+          }
+        ],
+        "providerAttempts": [
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 2205,
+            "promptTokens": 6788,
+            "completionTokens": 67,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 3254,
+            "promptTokens": 7731,
+            "completionTokens": 114,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:execute_agent_turn",
+            "durationMs": 2409,
+            "promptTokens": 8971,
+            "completionTokens": 58,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:execute_agent_turn",
+            "durationMs": 2620,
+            "promptTokens": 9486,
+            "completionTokens": 93,
+            "status": "success"
+          }
+        ]
+      }
+    ],
+    "turns": 3,
+    "succeeded": 3,
+    "firstVisibleMedianMs": 10717,
+    "completionMedianMs": 10722,
+    "backgroundGoal": {
+      "id": "3880f7b2-b2ad-4d8a-963f-28eaa140c5ed",
+      "status": "paused",
+      "error": "需要补充或确认后再继续，已完成的内容保留。"
+    },
+    "assessment": "Before the handoff-contract correction: valid stats read and note creation; the goal omitted version inputs and paused for material. A later dedicated handoff fix is reported separately."
+  },
+  "qualityFailures": [
+    "Unsolicited advice and self-commentary remain in ordinary dialogue.",
+    "Candidate Chat followup invented a wallet washed with laundry; neither user input nor saved context contained it.",
+    "A claim that it was Saturday contradicted the actual Monday clock.",
+    "No-source coffee explanations still assert unsupported mechanisms.",
+    "A correct existing-fallback critique followed by a primary rewrite still retained advice/causal errors and added 8.4–16.6 seconds.",
+    "The compact full-history prompt probe also retained advice and unsupported mechanisms."
+  ],
+  "validation": {
+    "workerUnitPassed": 1948,
+    "sharedUnitPassed": 538,
+    "apiUnitPassed": 2035,
+    "apiSkipped": 1,
+    "isolatedPostgresPassed": 68,
+    "freshMigrationsApplied": 462,
+    "typeChecks": [
+      "shared",
+      "api",
+      "desktop-client",
+      "ai-worker"
+    ],
+    "productionDeployed": false
+  },
+  "privacy": "Only synthetic dialogue included. Copied-persona content, credentials, internal reasoning text and raw request headers are excluded."
+}

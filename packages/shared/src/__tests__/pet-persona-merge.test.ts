@@ -86,9 +86,10 @@ test("保留之后与新预设其实一样的项，changes 为 false —— 不�
   assert.equal(nudge.current, "true");
   assert.equal(nudge.next, "false");
   assert.equal(nudge.changes, true);
-  // 口头禅两边都是"我去吃饭了" → 勾不勾都一样。
-  const catchphrase = withAssistantEditedField(personaFromDefaultPreset(FISH), "boundaries.catchphrase", "我去吃饭了");
-  const same = planPersonaSwitch(catchphrase, FISH).options.find((o) => o.field === "boundaries.catchphrase")!;
+  // 来源发生变化，但值与目标预设相同，仍然不构成配置变更。
+  const target = { ...FISH, boundaries: { ...FISH.boundaries, catchphrase: "共同口头禅" } };
+  const catchphrase = withAssistantEditedField(personaFromDefaultPreset(target), "boundaries.catchphrase", "共同口头禅");
+  const same = planPersonaSwitch(catchphrase, target).options.find((o) => o.field === "boundaries.catchphrase")!;
   assert.equal(same.changes, false);
 });
 

@@ -389,7 +389,9 @@ export type CompanionAgentLoopResult =
    */
   | { status: "completed"; text: string; blocks: CompanionContentBlockV1[]; memoryRefs: unknown[];
       /** 本轮是否真落下写回执（与三道产出闸同一份权威事实，见 `companion-delivery-gates`）。 */
-      writesLanded?: boolean; reasoning?: ProviderReasoningHandle[] }
+      writesLanded?: boolean;
+      /** Honest partial/host settlement, not a fully verified answer. */
+      deliveryDegraded?: boolean; reasoning?: ProviderReasoningHandle[] }
   | { status: "waiting_for_confirmation"; proposalId: string; memoryRefs: unknown[] };
 
 /**
@@ -407,6 +409,8 @@ export function companionStepRuntimePolicy(input: {
   finalAnswerOnly: boolean;
   /** 本轮注意力解释的 intent；conversation 表示用户此刻在聊生活或休息。 */
   attentionIntent: string;
+  toolCallCount?: number;
+  goalHandoffAvailable?: boolean;
   requestSource?: "user" | "host_observation";
   /**
    * 这一步的工具面自带那些场景指引（方案 50 §7）。由调用方按**真的发下去了哪些工具**
@@ -416,6 +420,28 @@ export function companionStepRuntimePolicy(input: {
 }): string {
   const { toolCount, stepBudget, finalAnswerOnly, attentionIntent } = input;
   const hostOccasion = input.requestSource === "host_observation";
+  if (attentionIntent === "unclassified") {
+    // A host placeholder is not a request to solve a problem. Keep tool
+    // capability and factual boundaries without making every utterance an
+    // execution report or injecting all editing scenes before any tool is used.
+    return [
+      ...(hostOccasion ? [COMPANION_HOST_OCCASION_GOAL_V1] : []),
+      "结合当前输入和完整对话理解对方在分享、提问、求助还是要求操作。普通陈述先当作分享来接，给一个贴题的反应；对方求办法时才给办法，不替他安排下一步。有疑问时讲清，有执行请求时取得真实结果。回应完成即可交回话轮。",
+      "名字、说话习惯与看事情的角度按当前人格表达；相处约定落实在接话中，不逐轮汇报自己的原则或写法。",
+      ...(toolCount > 0 ? [
+        "本轮工具保留完整可用能力；需要资料或操作时直接调用声明中的工具，所需能力不在本轮列表时用 companion_load_tools 装载。只在确实需要时使用，能力目录不等于本轮待办。",
+        "工具结果是数据，完成操作以真实回执为依据；已有成功写回执时通过 companion_finish 交付并引用，普通答复直接给正文。未知副作用先核对，不重复执行。",
+      ] : ["本步没有可调用工具，只基于当前已提供的材料回应，不声称新增读取或执行。"]),
+      ...((input.toolCallCount ?? 0) > 0 ? [
+        "回到当前请求核对工具结果。outcome_unknown 表示结果待核对；not_executed 表示尚未执行，须按真实对象与校验信息修正；unavailable 表示当前不可用，不原样重试；blocked 不得绕过；failed 不代表完成。",
+        "如果本轮做了操作，简洁交代实际结果和未完成部分，不把内部字段、机器回执或执行规则念给用户。",
+        ...(input.sceneGuidance ?? []),
+        ...(input.goalHandoffAvailable ? [AGENT_GOAL_HANDOFF_INSTRUCTIONS] : []),
+      ] : []),
+      ...(finalAnswerOnly ? ["这是最后一步：不再提供工具，按当前话题用已有材料完整回应，不重复已交付内容。"] : []),
+      ...(Number.isFinite(stepBudget) ? [`本次运行允许最多 ${stepBudget} 步。`] : []),
+    ].join("\n\n");
+  }
   /**
    * 终答步那一句必须**每个分支都带**。
    *
@@ -425,8 +451,10 @@ export function companionStepRuntimePolicy(input: {
    * 陪聊、陪聊＋宿主场合、以及工具面为空。
    */
   const withFinalAnswerStep = (policy: string): string => [policy,
-    "面向用户的正文只交代实际结果与仍要做的事，不叙述内部字段或回执格式；用户明确要求技术诊断时再解释后台细节；不隐瞒失败，也不把未完成说成完成。",
-    "用日常语言直接交代用户要的结果。修改成功可以说“已改好并保存，其他内容保持原样”，接着说明具体改动；等待确认就说“请先预览，确认后再保存”；未完成时明确说哪一项没完成、已保留什么。正文不附带机器回执、英文执行码、版本或内部规则，自检留在过程里。用户要求核对点时说明内容如何核对；仅在用户主动问相关技术细节时解释后台字段。",
+    ...(attentionIntent === "conversation" && !input.toolCallCount
+      ? ["正文就是当前这条发言，不公开内部字段、回执格式或接话规则。"]
+      : ["面向用户的正文只交代实际结果与仍要做的事，不叙述内部字段或回执格式；用户明确要求技术诊断时再解释后台细节；不隐瞒失败，也不把未完成说成完成。",
+        "用日常语言直接交代用户要的结果。修改成功可以说“已改好并保存，其他内容保持原样”，接着说明具体改动；等待确认就说“请先预览，确认后再保存”；未完成时明确说哪一项没完成、已保留什么。正文不附带机器回执、英文执行码、版本或内部规则，自检留在过程里。用户要求核对点时说明内容如何核对；仅在用户主动问相关技术细节时解释后台字段。"]),
     ...(finalAnswerOnly ? ["这是最后一步：不再提供工具，请直接用已有信息给出最终答复。不要把前面步骤已经对用户说过的话原样再说一遍——这里要给出结论或补充新信息。"] : []),
   ].filter(Boolean).join("\n\n");
   if (attentionIntent === "conversation") {
@@ -484,7 +512,7 @@ export function companionStepRuntimePolicy(input: {
     // 旧写法 `toolDefinitions.length > 0 ? [...] : []` 与刚判过的条件是同一个命题，
     // 留着只会让下一个读代码的人以为这里还有第三种状态。
     "需要工具时直接取得结果；过程性开场不是最终答复。已有证据足够时完整回答，避免重复发布已交付内容。",
-    AGENT_GOAL_HANDOFF_INSTRUCTIONS,
+    ...(input.goalHandoffAvailable ? [AGENT_GOAL_HANDOFF_INSTRUCTIONS] : []),
     "交代目标和后台交付不要求切换页面或开始朗读。",
     Number.isFinite(stepBudget) ? `部署配置允许本次任务最多 ${stepBudget} 步。` : "持续执行当前任务，按实际工具回执核对结果；完成用户要求后自然结束，不因读取或写入次数提前收尾。",
   ].filter(Boolean).join("\n\n"));
@@ -666,7 +694,7 @@ export function buildCompanionStepCorrectionInstruction(input: {
     const actionHint = input.requestedActionTools.includes("companion_memory_write")
       ? " 记忆写入的参数形状：{\"action\":\"save\",\"kind\":\"preference\",\"content\":\"<要记住的原话要点>\"}。"
       : input.requestedActionTools.includes("companion_attention_write")
-        ? " 提醒的参数形状：{\"action\":\"schedule_reminder\",\"text\":\"<提醒内容>\",\"fireAtLocal\":\"<YYYY-MM-DD HH:mm>\"}。"
+        ? " 提醒的参数形状：{\"action\":\"schedule_reminder\",\"text\":\"<提醒内容>\",\"reminderTime\":{\"daysFromToday\":1,\"time\":\"09:00\"}}（示意明天九点；按用户原意给相对天数，不自行换算年月日或UTC）。"
         : "";
     return `本轮要求的操作还没有执行回执，上一段“已保存/已修改”不能交付。现在先实际调用当前提供的工具：${tools.join("、")}。`
       + "如果这一步只提供检索或读取，它是修改前置步骤：先定位、读取，后续会提供写入工具。不要把读取当作修改完成；最终必须以本轮写入成功或已核验的无需变更回执回答。"

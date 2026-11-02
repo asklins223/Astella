@@ -99,15 +99,20 @@ export async function applyCompanionToolLoad(input: {
   recordAudit: (tool: { toolCallId: string; name: string; toolVersion: string;
     riskClass: "read"; status: "succeeded"; safeLabel: string; safeSummary: string }) => Promise<void>;
 }): Promise<string[]> {
+  const before = new Set(input.surface.offered().map(tool => tool.name));
   const loaded = loadCompanionToolGroups(input.surface, {
     groups: input.groups, definitions: input.definitions,
   });
-  const summary = `已装载 ${loaded.length} 个工具`;
+  const added = loaded.filter(name => !before.has(name));
+  const summary = added.length ? `新增装载 ${added.length} 个工具`
+    : loaded.length ? "这些工具已可用，本次没有新增能力" : "所请求的工具当前不可用，本次没有新增能力";
   input.pushReceipt(JSON.stringify({
     ok: true,
     data: {
       loadedGroups: [...input.groups],
       tools: loaded,
+      addedTools: added,
+      alreadyAvailableTools: loaded.filter(name => before.has(name)),
       // 每组装了什么、能办什么：只在这次回执里说一次。
       // 放进工具描述会顶穿每轮的工具面预算（单条 150 字符、总量 4000，实测只剩 6 字符），
       // 而回执只在装载那一步出现，之后不再进请求。

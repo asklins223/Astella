@@ -20,6 +20,13 @@ export async function acceptCompanionToolReview(tx: ApiTransaction,
   const ledgerArguments = review.arguments;
   const action = companionOperationAction(ledgerName);
   const domainArguments = action === null ? ledgerArguments : { action, ...ledgerArguments };
+  // The flat forget tool resolves a query to one immutable memory id before
+  // freezing the card. Keep that original payload for the ledger equality
+  // check below, but revalidate the concrete action using its domain schema.
+  // A query without a resolved id is still rejected and cannot expand a target.
+  if (ledgerName === "memory.write.forget" && typeof domainArguments.memoryId === "string") {
+    delete domainArguments.query;
+  }
   const validated = definition ? validateCompanionAgentToolArguments(definition.name, domainArguments) : null;
   const offeredName = companionOperationDomainTool(ledgerName) ?? review.toolName;
   // 扩展 C（2026-10-15）：mobile 发起的正文修改在 worker 侧按 before_execute 出提案，

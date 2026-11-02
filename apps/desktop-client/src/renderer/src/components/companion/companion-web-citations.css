@@ -24,3 +24,5 @@
 .companion-web-source__actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .companion-web-source__actions button { display: flex; align-items: center; gap: 6px; min-height: 34px; padding: 6px 10px; border: 1px solid #d7d2c6; border-radius: 8px; background: #f6f5ed; color: inherit; font: inherit; cursor: pointer; }
 .companion-web-source > [role="status"] { margin-top: 9px; }
+
+.companion-ai-attribution { margin: 6px 0 0; color: var(--hud-muted, #73756a); font: 11px/1.6 var(--font-sans, sans-serif); text-align: center; overflow-wrap: anywhere; user-select: text; }

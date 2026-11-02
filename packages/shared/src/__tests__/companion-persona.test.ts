@@ -216,3 +216,11 @@ test("历史 v5 保留旧定义，现役 v6 移除固定长度与固定回应词
   assert.match(COMPANION_CHARACTER_BASE_V6, /它比通用风格更优先/);
   assert.equal(COMPANION_PERSONA_V5, COMPANION_HOST_PROTOCOL_V5 + "\n\n" + COMPANION_CHARACTER_BASE_V5);
 });
+
+test("the current dialogue persona hash identifies its exact immutable text", async () => {
+  const { COMPANION_PERSONA_V17, COMPANION_PERSONA_V17_SHA256, COMPANION_PERSONA_V18, COMPANION_PERSONA_V18_SHA256,
+    COMPANION_CHARACTER_BASE_V18 } = await import('../companion/companion-persona.ts');
+  assert.equal(createHash('sha256').update(COMPANION_PERSONA_V17).digest('hex'), COMPANION_PERSONA_V17_SHA256);
+  assert.equal(createHash('sha256').update(COMPANION_PERSONA_V18).digest('hex'), COMPANION_PERSONA_V18_SHA256);
+  assert.doesNotMatch(COMPANION_CHARACTER_BASE_V18, /用户：下午好/);
+});

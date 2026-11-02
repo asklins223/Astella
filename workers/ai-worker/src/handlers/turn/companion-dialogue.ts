@@ -1,5 +1,7 @@
 import { finishCompanionParticipation, companionInitiativeRepeatsSpeech } from "../tools/companion-participation-tools.ts";
 import { reviewCompanionInitiativeSpeech } from "../proactive/companion-initiative-speech-review.ts";
+import { resolveCompanionReadRequirements, COMPANION_READ_REQUIREMENTS_POLICY_HASH } from "../agent/companion-read-requirements.ts";
+import { reviewCompanionConversation, COMPANION_CONVERSATION_REVIEW_HASH } from "../agent/companion-conversation-review.ts";
 import { readParticipationPreferences } from "@astella/agent-host";
 import { companionInitiativeInputV1Schema } from "@astella/shared/companion-initiative-contracts";
 import { listCompanionSelfNotes } from "@astella/agent-host";
@@ -13,7 +15,7 @@ import { sql } from "drizzle-orm";
 import { logger } from "../../lib/logger.ts";
 import { companionSavedNoteEditExists } from "../note/companion-note-edit.ts";
 import { listSucceededWriteToolNames } from "../tools/companion-tool-call-ledger.ts";
-import { ProviderRequestError } from "../../lib/provider-request-error.ts";
+import { ProviderRequestError, ProviderResponseRefusedError, ProviderResponseUnverifiedError } from "../../lib/provider-request-error.ts";
 import { withWorkerWorkspaceTransaction } from "../../db.ts";
 import { loadHereAndNow, renderHereAndNow } from "../proactive/companion-here-and-now.ts";
 import { renderSummaryInjection, type SummaryInjectionInput } from "../context/companion-summary-injection.ts";
@@ -23,6 +25,7 @@ import {
   readCompanionDeliveredPrefix,
   projectCompanionVisible,
   reconcileStreamedText,
+  finishCompanionStreamDelivery,
 } from "./companion-dialogue-stream.ts";
 import { companionStreamFallbackText } from "../agent/companion-delivery-gates.ts";
 import { createCompanionThinkingDelivery } from "./companion-thinking-stream.ts";
@@ -471,6 +474,7 @@ export async function runCompanionDialogue(
     contextGate: contextReceipts.pressureGate,
     reserveCall: () => reserveCompanionProviderCall({ ctx, read }),
   });
+  let deliveredBy: Pick<typeof provider, "id" | "modelId"> = provider;
 
   // Replace only complete older exchanges represented by a verified summary.
   // Uncovered history is kept whole, even above the pressure target; the full
@@ -925,6 +929,14 @@ export async function runCompanionDialogue(
       read,
       provider,
       fallbackProvider,
+      readEvidence: { policyHash: COMPANION_READ_REQUIREMENTS_POLICY_HASH,
+        resolve: input => resolveCompanionReadRequirements({ ...input, ctx, read, provider: fallbackProvider ?? provider }) },
+      ...(fallbackProvider ? { conversationReview: { policyHash: COMPANION_CONVERSATION_REVIEW_HASH,
+        review: input => reviewCompanionConversation({ ...input, ctx, read, provider: fallbackProvider,
+          expressionInstruction: semanticVoiceStyle?.decision === "apply" ? semanticVoiceStyle.instruction ?? undefined
+            : accountVoiceDialect ? `正文保持账号已保存的方言「${accountVoiceDialect}」。` : undefined,
+          onProviderUsed: actual => { deliveredBy = actual; } }) } } : {}),
+      onProviderUsed: actual => { deliveredBy = actual; },
       // Only when the conversation model is the one that can see: an auxiliary
       // vision model still needs the read tool, because the bytes never reach
       // the main model's request.
@@ -1074,20 +1086,22 @@ export async function runCompanionDialogue(
           savedWriteNames.map((name) => companionToolLabel(name) ?? name).join("、")}。`
         : "这次引文与已读取的原文对不上，答复没有完成。";
     const providerRejected = err instanceof ProviderRequestError;
+    const providerRefused = err instanceof ProviderResponseRefusedError || err instanceof ProviderResponseUnverifiedError;
     const rateLimited = providerRejected && err.status === 429;
     const policyDenied = err instanceof AIDataPolicyDeniedError;
     const outputTimeout = err instanceof CompanionOutputTimeoutError;
     await markCompanionRunFailed(
       read,
       ctx,
-      contextChanged ? err.code : policyDenied ? "AI_DATA_POLICY_DENIED" : protocolLeak ? "REPLY_FORMAT_INVALID" : actionUnverified ? "ACTION_NOT_EXECUTED" : argumentsInvalid ? "TOOL_ARGUMENTS_INVALID" : noProgress ? "AGENT_NO_PROGRESS" : outputIncomplete ? "REPLY_LENGTH_LIMIT" : budgetExceeded ? "AGENT_BUDGET_EXCEEDED" : outputTimeout ? (err.code === "provider_first_output_timeout" ? "PROVIDER_FIRST_OUTPUT_TIMEOUT" : err.code === "provider_progress_timeout" ? "PROVIDER_PROGRESS_TIMEOUT" : "PROVIDER_IDLE_TIMEOUT") : rateLimited ? "RATE_LIMITED" : providerRejected ? "PROVIDER_UNAVAILABLE" : "INTERNAL_ERROR",
-      !policyDenied && !protocolLeak && !budgetExceeded && !contextChanged && !outputIncomplete && !outputUnverified && !actionUnverified && !argumentsInvalid && !noProgress && !streamStopped && !(providerRejected && [401,402,403].includes(err.status)),
+      contextChanged ? err.code : policyDenied ? "AI_DATA_POLICY_DENIED" : providerRefused ? err.code : protocolLeak ? "REPLY_FORMAT_INVALID" : actionUnverified ? "ACTION_NOT_EXECUTED" : argumentsInvalid ? "TOOL_ARGUMENTS_INVALID" : noProgress ? "AGENT_NO_PROGRESS" : outputIncomplete ? "REPLY_LENGTH_LIMIT" : budgetExceeded ? "AGENT_BUDGET_EXCEEDED" : outputTimeout ? (err.code === "provider_first_output_timeout" ? "PROVIDER_FIRST_OUTPUT_TIMEOUT" : err.code === "provider_progress_timeout" ? "PROVIDER_PROGRESS_TIMEOUT" : "PROVIDER_IDLE_TIMEOUT") : rateLimited ? "RATE_LIMITED" : providerRejected ? "PROVIDER_UNAVAILABLE" : "INTERNAL_ERROR",
+      !providerRefused && !policyDenied && !protocolLeak && !budgetExceeded && !contextChanged && !outputIncomplete && !outputUnverified && !actionUnverified && !argumentsInvalid && !noProgress && !streamStopped && !(providerRejected && [401,402,403].includes(err.status)),
       contextChanged ? err.message : policyDenied ? "请在 AI 数据同意页开启「允许发送到外部模型服务」后继续。" : contextOverflow ? "这次需要带入的内容太多，没法一次读完；可以按段继续。" : protocolLeak ? invalidReplyFailureText : actionUnverified ? "这次没有取得所要求操作的执行或无需变更回执，不能确认完成；已完成的其他操作仍保留。" : outputUnverified ? unverifiedQuoteFailureText : argumentsInvalid ? invalidArgumentsFailureText : noProgress ? noProgressFailureText : outputIncomplete ? "这次答复达到长度上限，已说出的内容保留；可以接着分段讲。" : budgetExceeded
         ? "companion agent budget exceeded"
         : streamStopped
           ? `companion stream stopped: ${streamingDelivery.failureReason() ?? "delivery pipeline"}`.slice(0, 240)
           : outputTimeout ? `${err.message}；已完成的操作仍保留，可以从这次任务继续。`
           : rateLimited ? "模型服务暂时繁忙，请稍后重试；已经完成的操作仍保留。"
+            : providerRefused ? "这次请求未能得到正常答复；已经完成的操作仍保留。"
             : providerRejected ? "模型服务暂时无法完成这次请求，已经完成的操作仍保留。"
               : "companion agent execution failed",
       policyDenied ? "state" : protocolLeak ? "output" : streamStopped ? "delivery" : outputUnverified || actionUnverified || argumentsInvalid || noProgress ? "output" : budgetExceeded || outputIncomplete || contextChanged ? "execution" : "transport",
@@ -1177,15 +1191,9 @@ export async function runCompanionDialogue(
   // run `fb2da98f` 那类事故的收尾版。只有交付管线真的断了（`delta_stream_lost`，
   // 此时没有任何文本还发得出去）或前缀也拿不出手时，才按权威事实作废整轮。
   const landedWrites = agentResult.writesLanded === true;
-  const alreadyDelivered = streamingDelivery.deliveredText();
-  const stablePrefix = validateCompanionOutput(alreadyDelivered);
-  // 降级只能交付**客户端已经看到的那一份**，一字不差：净化若还会剥掉字符，
-  // 存下来的正文就与气泡里的流式内容不等，`assistant.final` 与 delta 会指两种文本。
-  const deliverablePrefix = stablePrefix.ok && stablePrefix.text.length > 0
-    && stablePrefix.text === alreadyDelivered ? alreadyDelivered : "";
+  const { streamed, delivered: alreadyDelivered, deliverablePrefix } = await finishCompanionStreamDelivery(streamingDelivery);
   let deliveredPrefixOnly = false;
   let finalVisibleText = "";
-  const streamed = await streamingDelivery.finish();
   if (!streamed.ok) {
     const fallback = companionStreamFallbackText({ gate: "stream_validation", landedWrites,
       reason: streamed.reason, deliveredPrefix: deliverablePrefix });
@@ -1319,7 +1327,8 @@ export async function runCompanionDialogue(
   // 阶段 3c（终态事务）搬到 companion-dialogue-finalization.ts：回答收尾自成一域，
   // 编排文件只保留调用。搬迁是纯搬运——判据、事务边界、事件布局一字未改。
   await finalizeCompanionDialogueTurn({
-    ctx, read, runId, provider, agentResult, assistantText, ttsRawText, voiceExpressionEnabled,
+    ctx, read, runId, provider: deliveredBy, agentResult, assistantText, ttsRawText, voiceExpressionEnabled,
+    deliveryDegraded: deliveredPrefixOnly || agentResult.deliveryDegraded === true,
     ...(assistantParts ? { assistantParts } : {}),
     memoryContext, voiceSegmentsWritten, expiresAt, streamingDelivery, notifyCompanionEvent,
   });

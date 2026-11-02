@@ -69,7 +69,7 @@ export function renderCompanionConversationEvidence(
   return [
     "<conversation_timeline>",
     "服务器消息记录：时间指消息发送时间，不代表消息中叙述的外部事件时间。位置只对应下方原样回放的近期消息；窗口不是全部经历，两条消息相隔多久也不证明期间一直在线或一直在做某事。",
-    JSON.stringify({ observedAt, timezone,
+    JSON.stringify({ localObservedAt: stamp(observedAt).localDateTime, timezone, observedAt,
       earlier: earlier.length > 0 ? {
         positions: [1, earlier.length],
         count: earlier.length,

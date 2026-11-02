@@ -20,12 +20,55 @@ test("the续读起点 goes straight to the reader, so a long page can be read to
   assert.deepEqual(seen, [6000]);
 });
 
+test("literal document lookup reaches the governed reader and cannot authorize another URL", async () => {
+  const seen: unknown[] = [];
+  const deps: ExternalCapabilityDependencies = {
+    governance: async () => ({ consentOk: true, policy: normalizeWorkspaceAIPolicy({ sendToExternal: true, auditLogging: false }) }),
+    read: async (_url, _signal, _deps, options) => { seen.push(options); return document; },
+  };
+  const lookup = { name: call.name, arguments: { url, offset: 6000, findText: "consumption temperature" } };
+  await executeExternalCapability(scope, lookup, [url], new AbortController().signal, deps);
+  assert.deepEqual(seen, [{ offset: 6000, findText: "consumption temperature" }]);
+  await assert.rejects(executeExternalCapability(scope, { ...lookup, arguments: { ...lookup.arguments, url: "https://example.com/other" } },
+    [url], new AbortController().signal, deps), { code: "document_url_not_authorized" });
+  assert.equal(seen.length, 1);
+});
+
 test("only an exact user-provided URL grants access, including its query", () => {
   assert.equal(requireUserDocumentUrl(url, [`请读 [这份文档](${url})。`]), url);
   assert.equal(requireUserDocumentUrl(`${url}#section`, [url]), url);
-  assert.throws(() => requireUserDocumentUrl(url, ["请你找一份材料"]), /提供/);
-  assert.throws(() => requireUserDocumentUrl("https://example.com/notes?chapter=3", [url]), /提供/);
-  assert.throws(() => requireUserDocumentUrl("https://other.example/notes?chapter=2", [url]), /提供/);
+  assert.throws(() => requireUserDocumentUrl(url, ["请你找一份材料"]), /真实搜索结果/);
+  assert.throws(() => requireUserDocumentUrl("https://example.com/notes?chapter=3", [url]), /真实搜索结果/);
+  assert.throws(() => requireUserDocumentUrl("https://other.example/notes?chapter=2", [url]), /真实搜索结果/);
+});
+
+test("host-verified search links grant only that exact document, not a domain or links embedded in its text", async () => {
+  const deps: ExternalCapabilityDependencies = {
+    verifiedSearchResultUrls: [url],
+    governance: async () => ({ consentOk: true, policy: normalizeWorkspaceAIPolicy({ sendToExternal: true, auditLogging: false }) }),
+    read: async requested => { assert.equal(requested, url); return document; },
+  };
+  assert.equal((await executeExternalCapability(scope, call, [], new AbortController().signal, deps)).status, "succeeded");
+  for (const other of ["https://example.com/notes?chapter=3", "https://example.com/other", "https://other.example/"])
+    await assert.rejects(executeExternalCapability(scope, { ...call, arguments: { url: other } }, [],
+      new AbortController().signal, deps), { code: "document_url_not_authorized" });
+  assert.throws(() => requireUserDocumentUrl(url, [], ["not a url", "http://example.com/notes?chapter=2"]));
+});
+
+test("actual redirect receipts extend only a still-authorized exact root", () => {
+  const initial = "https://example.com/article";
+  const canonical = "https://example.com/article/";
+  const mirror = "https://papers.example/actual-target";
+  const receipts = [{ requestedUrl: initial, url: canonical }, { requestedUrl: canonical, url: mirror }];
+  assert.equal(requireUserDocumentUrl(canonical, [], [initial], receipts), canonical);
+  assert.equal(requireUserDocumentUrl(mirror, [initial], [], receipts), mirror);
+  assert.throws(() => requireUserDocumentUrl(canonical, [], [], receipts), /真实搜索结果/,
+    "turning search off removes a search-only root and its derived redirects");
+  assert.throws(() => requireUserDocumentUrl("https://example.com/other", [], [initial], receipts));
+  assert.throws(() => requireUserDocumentUrl(canonical, [], [initial]), /真实搜索结果/,
+    "a guessed trailing slash has no redirect receipt");
+  assert.throws(() => requireUserDocumentUrl(mirror, [], [initial], [{ requestedUrl: "https://unknown.example/", url: mirror }]));
+  assert.throws(() => requireUserDocumentUrl("http://example.com/plain", [initial], [], [{ requestedUrl: initial, url: "http://example.com/plain" }]));
 });
 
 test("policy and consent deny the actual network callback", async () => {

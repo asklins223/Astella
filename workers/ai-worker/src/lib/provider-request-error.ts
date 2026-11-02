@@ -33,6 +33,26 @@ export class ProviderRequestError extends Error {
   }
 }
 
+/** Explicit provider refusal metadata, never inferred from reply wording.
+ * A refusal is terminal and must not be retried or routed around. */
+export class ProviderResponseRefusedError extends Error {
+  readonly code = "PROVIDER_RESPONSE_REFUSED" as const;
+  constructor(readonly provider: string) {
+    super("The provider declined this response");
+    this.name = "ProviderResponseRefusedError";
+  }
+}
+
+/** The wire contains text but explicitly reports no generated tokens. This
+ * does not identify a refusal or authorize retrying on a different provider. */
+export class ProviderResponseUnverifiedError extends Error {
+  readonly code = "PROVIDER_RESPONSE_UNVERIFIED" as const;
+  constructor(readonly provider: string) {
+    super("The provider returned output without verifiable generation usage");
+    this.name = "ProviderResponseUnverifiedError";
+  }
+}
+
 /** Terminal protocol status only; never includes an upstream error body. */
 export class ProviderStreamError extends Error {
   constructor(readonly provider: string,

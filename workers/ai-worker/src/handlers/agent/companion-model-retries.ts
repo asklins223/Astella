@@ -26,6 +26,13 @@ export function isTransientCompanionModelError(error: unknown): boolean {
   return false;
 }
 
+/** Failure classification only. Switching also requires an unpublished step,
+ * a live lease/deadline and a configured alternate that fits the request. */
+export function companionProviderRecoveryReason(error: unknown): "provider_rate_limited" | CompanionOutputTimeoutError["code"] | null {
+  if (error instanceof ProviderRequestError && error.status === 429) return "provider_rate_limited";
+  return error instanceof CompanionOutputTimeoutError ? error.code : null;
+}
+
 export async function runWithCompanionModelRetries<T>(
   run: () => Promise<T>,
   input: {
@@ -33,8 +40,8 @@ export async function runWithCompanionModelRetries<T>(
     /**
      * 这一轮还有另一档 provider 可换（`fallbackProvider`）。
      *
-     * 首字超时说明**这一档**没接上：换一档比把同一档再问两遍更可能真的拿到输出，
-     * 所以那时不在这里重试，让上层切到兜底档。没有可换的档才按瞬时故障重试。
+     * 首字超时或配额拒绝时，不反复请求同一账号，让上层切到已配置的备用档。
+     * 没有可换的档才按瞬时故障重试。
      */
     switchProviderAvailable?: boolean;
   },
@@ -42,8 +49,7 @@ export async function runWithCompanionModelRetries<T>(
   const attempts = input.attempts ?? 3;
   const retryable = (error: unknown): boolean =>
     isTransientCompanionModelError(error)
-    && !(input.switchProviderAvailable === true
-      && error instanceof CompanionOutputTimeoutError && error.code !== "provider_idle_timeout");
+    && !(input.switchProviderAvailable === true && companionProviderRecoveryReason(error) !== null);
   for (let attempt = 1; ; attempt += 1) {
     try {
       return await run();

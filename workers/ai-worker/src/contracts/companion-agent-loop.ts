@@ -1,5 +1,5 @@
-import type { AgentTurnRequest, ChatMessage, CompanionAgentToolExecutionConstraints } from "@astella/shared";
-import type { AgentTurnInterpretationV1, AgentVoicePreferenceWriteStatusV1 } from "@astella/shared/agent-contracts";
+import type { AgentTurnRequest, AgentTurnResult, ChatMessage, CompanionAgentToolExecutionConstraints } from "@astella/shared";
+import type { AgentReadRequirementsV1, AgentTurnInterpretationV1, AgentVoicePreferenceWriteStatusV1 } from "@astella/shared/agent-contracts";
 import type { AIProvider } from "../lib/ai-provider.ts";
 import type { CompanionDialogueHandlerContext, ReadContext } from "../handlers/turn/companion-dialogue-store.ts";
 import type { CompanionContextReceipts } from "../handlers/context/companion-context-receipts.ts";
@@ -20,6 +20,16 @@ export interface CompanionAgentLoopArgs {
    * 唯一有效的是**换模型**。未配置时退化闸整个跳过。
    */
   fallbackProvider?: AIProvider;
+  /** Host evidence policy, using the same governed configured providers. It
+   * runs alongside generation and cannot select/execute tools or write prose. */
+  readEvidence?: { policyHash: string; resolve: (input: { messages: AgentTurnRequest["messages"];
+    operations: { name: string; description: string }[]; executionOperations: { name: string; description: string }[];
+    cached?: AgentReadRequirementsV1 }) => Promise<AgentReadRequirementsV1> };
+  conversationReview?: { policyHash: string; review: (input: { request: AgentTurnRequest; result: AgentTurnResult;
+    requiresReasoning?: boolean }) => Promise<AgentTurnResult> };
+  /** Actual response provider, including a recovery route; diagnostic metadata
+   * must not attribute the fallback's answer to the configured primary. */
+  onProviderUsed?: (provider: Pick<AIProvider, "id" | "modelId">) => void;
   /**
    * 用户配置的活跃度（抱怨 #2「配置没生效」）。它决定退化闸的字数线：
    * "安静"档要的就是三个字的答案，按活跃档的 6 字拦等于每轮白烧一次重跑，

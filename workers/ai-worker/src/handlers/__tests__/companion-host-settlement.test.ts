@@ -86,6 +86,15 @@ const settleMemory = (messages: AgentTurnRequest["messages"]) => settleCompanion
   definitions: memoryDefinitions,
 });
 
+test("metadata-only completion does not repeat a short already streamed reply", () => {
+  for (const text of ["嗯。", "好呀。", "在呢。"]) {
+    assert.equal(assembleCompanionFinishText({ visibleSegments: [text], visibleSegmentDelivered: [true],
+      utterancePublished: false, finishText: text }), text);
+  }
+  assert.equal(assembleCompanionFinishText({ visibleSegments: ["在呢。"], visibleSegmentDelivered: [true],
+    utterancePublished: false, finishText: "在呢。今天怎么样？" }), "在呢。今天怎么样？");
+});
+
 test("真实记忆回执的摘要在顶层，后续模型失败仍必须交付可见结果", () => {
   const settled = settleMemory(memoryMessages);
   assert.ok(settled);

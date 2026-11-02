@@ -1,5 +1,11 @@
 {
  "platforms": {
+  "bigmodel": {
+   "type": "openai_compatible",
+   "apiKey": "${BIGMODEL_API_KEY}",
+   "baseUrl": "https://open.bigmodel.cn/api/paas/v4",
+   "models": {}
+  },
   "siliconflow": {
    "type": "siliconflow",
    "apiKey": "${SILICONFLOW_API_KEY}",

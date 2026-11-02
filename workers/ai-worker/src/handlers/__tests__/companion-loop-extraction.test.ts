@@ -89,9 +89,15 @@ test("装载工具组：回执只说装了什么，审计同步记一条", async
   });
   assert.deepEqual(loaded, ["companion_web"]);
   assert.equal(JSON.parse(receipts[0]!).data.loadedGroups[0], "web");
-  assert.match(receipts[0]!, /已装载 1 个工具/);
+  assert.match(receipts[0]!, /新增装载 1 个工具/);
   assert.deepEqual(audits, ["已装载更多能力"]);
   assert.ok(surface.offered().some(tool => tool.name === "companion_web"));
+  await applyCompanionToolLoad({ surface, groups: ["web"], definitions,
+    callId: "call-2", toolName: "companion_load_tools", toolVersion: "1",
+    pushReceipt: content => receipts.push(content), recordAudit: async () => {} });
+  assert.deepEqual(JSON.parse(receipts[1]!).data.addedTools, []);
+  assert.deepEqual(JSON.parse(receipts[1]!).data.alreadyAvailableTools, ["companion_web"]);
+  assert.match(receipts[1]!, /本次没有新增能力/);
 });
 
 test("参数校验：无效参数给出完整契约与可修字段，重复提交仍可继续修正", () => {
@@ -120,6 +126,19 @@ test("参数校验：无效参数给出完整契约与可修字段，重复提�
   });
   assert.ok(ok.accepted, "合法参数应当通过");
   assert.equal(ok.rejection, null);
+});
+
+test("oversized search parameters report their submitted length without echoing their text", () => {
+  const query = "private_search_term_".repeat(4);
+  const result = validateCompanionToolCall({ name: "companion_web", arguments: { action: "search", query },
+    alreadyRejected: new Set(), identity: "long-search" });
+  const receipt = JSON.parse(result.rejection!.content);
+  const issue = receipt.validationIssues.find((item: { path: string[] }) => item.path[0] === "query");
+  assert.equal(issue.maximum, 70);
+  assert.equal(issue.inputLength, query.length);
+  assert.equal(result.accepted, null);
+  assert.ok(!result.rejection!.content.includes(query));
+  assert.ok(!JSON.stringify(result.logFields).includes(query));
 });
 
 test("未下发工具：回执点名该先装载，并列出当前可用", () => {

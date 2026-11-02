@@ -289,7 +289,7 @@ test("日记 prompt：保留调侃边界，聊天的口头禅和催学规则不�
     persona: persona({ boundaries: { allowPlayful: false, catchphrase: "一点点来" } }),
   });
   assert.match(system, /收起调侃和卖萌/);
-  assert.doesNotMatch(system, /你的口头禅是「一点点来」/);
+  assert.doesNotMatch(system, /口头禅(?:是|参考).*一点点来/);
   // 活跃度那句「回复偏短」不进来：日记的长短由篇幅档管（一处真相）。
   assert.doesNotMatch(system, /回复偏短/);
 });

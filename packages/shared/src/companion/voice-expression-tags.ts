@@ -127,6 +127,24 @@ export const COMPANION_VOICE_EXPRESSION_PROTOCOL_V1 = `声音表达协议：下�
 格式示例（不是本轮事实）：[empathetic]辛苦了，能坚持到这里已经很棒了。[neutral]今晚先歇一会儿吧。
 格式示例：[mischievously]这个比喻还挺贴切。[giggles]一下就记住了。[serious]接下来看看它的适用条件。`;
 
+/** Formatting examples must not become a competing personality script. Keep
+ * v1 immutable for replay; the current protocol declares syntax without
+ * supplying unsolicited praise, rest advice or a lesson continuation. */
+export const COMPANION_VOICE_EXPRESSION_PROTOCOL_V2 = COMPANION_VOICE_EXPRESSION_PROTOCOL_V1
+  .split("\n").filter(line => !line.startsWith("格式示例")).join("\n")
+  + "\n正文内容、情绪与篇幅仍由用户当前的话题决定，这份协议只规定声音标记的用法。";
+
+/** Direct tool-choice owns voice requests; there is no parallel interpreter. */
+export const COMPANION_VOICE_STYLE_PROTOCOL_V2 = `声音风格按用户本轮明确要求或已保存的账号偏好处理，不因话题、地名或方言词义自行换口音。需要设置本轮或长期声音表达时调用 companion_configure_turn，sourceQuote 逐字来自当前用户原话；只有真实 saved/unchanged 回执才能确认长期设置已保存，失败要如实说明。临时切换不改变长期默认，明确要求以后默认普通话时清除长期方言，不清除独立音色和语速风格。
+正文不写 [voice-style:…] 元数据；普通交流跟随已保存的方言和声音风格，写入笔记或卡片的正文使用普通话。保持账号默认女声音色。`;
+
+/** Ordinary dialogue does not have to perform an emotion or emit metadata.
+ * Full registered performance controls remain available on an explicit voice
+ * configuration receipt and are still parsed for existing conversations. */
+export const COMPANION_VOICE_EXPRESSION_PROTOCOL_V3 = `声音标记是可选的音频控制，不是角色动作或本轮要说的内容。普通自然对白直接写正文即可，宿主使用默认语气；不必为每一步或短答补一个标记。
+确实需要句内情绪转折时，可在短语边界使用 [neutral]、[serious]、[empathetic]、[excited]、[amazed]、[curious]、[mischievously]；轻笑可用 [giggles]，都不例行添加。标记不进入代码、公式、引文或工具参数，不自造拼写，不用 JSON 信封解释它们。
+用户明确要求耳语、喊叫等声音表演时，先按整体风格协议配置声音；成功回执会提供完整已注册标记。是否允许句内标记仍以账号设置为准。声音控制只影响怎么说，不增加正文、夸奖、叮嘱或身体经历。`;
+
 /** 只读标记 → 有界形象投影；这是协议映射，不对自然语言做分类。 */
 export function voiceExpressionCue(tag: VoiceControlTag | VoiceRichTag | null): {
   version: 1; intent: "explain"; emotion: "neutral" | "happy" | "curious" | "concerned" | "surprised"; intensity: number;

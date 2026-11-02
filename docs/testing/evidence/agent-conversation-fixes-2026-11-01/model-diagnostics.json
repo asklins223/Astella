@@ -1,0 +1,30 @@
+{
+  "scope": "Earlier model comparisons were stopped at the user request. Raw rejected candidates remain in ignored local diagnostics; they are not final acceptance evidence.",
+  "modelRoutes": {
+    "agent_turn": "mimo-agent/mimo-v2.6-flash",
+    "companion_fallback": "tokenrhythm/deepseek-v4.1-flash-1017",
+    "decision": "Preserve the existing routes at the user request; no release or model replacement."
+  },
+  "reasoning": "Initial and post-tool low; repairs high; explicit deepening resolves to each configured provider maximum. No global thinking disable or extra online router retained.",
+  "rejectedExperiments": [
+    "Universal JSON reply envelope caused protocol/tool regressions and was removed.",
+    "An online resource classifier added cold-start delays and was removed.",
+    "A six-turn real HTTP first-step-none canary used the real calculator receipt, but did not reliably solve the expression issues. The low-reasoning source was restored byte for byte.",
+    "Extra online classifier/reviewer/editor not deployed: offline authoring probes still inferred schedules, supplied advice or repeated unsupported mechanisms.",
+    "A correct independent semantic classification alone did not fix the main author output.",
+    "No source-specific canned answer, prose blacklist, hidden phrase deletion, model-role swap or universal JSON reply protocol was adopted.",
+    "MiMo Chat protocol candidate: selected initial controls followed instructions, repeated controls failed; kept the existing Responses configuration.",
+    "Same-pair critique then primary rewrite retained errors and added latency; not adopted.",
+    "Compact full-history prompt and first-step-none Chat probes retained advice and unsupported mechanisms; not adopted."
+  ],
+  "currentPrompt": {
+    "id": "companion-persona-v17",
+    "sha256": "f726fcaea2e8d2bc1bf972d31d5bb27165900a3eb97491a596bfa8ddd82c7e14",
+    "factoryPresetVersion": 5,
+    "voiceExpression": "v3",
+    "voiceStyle": "v2",
+    "knowledgeReview": "v5"
+  },
+  "latestEvidence": "latest-2026-11-02.json",
+  "selectedPrimaryProtocol": "openai-responses"
+}

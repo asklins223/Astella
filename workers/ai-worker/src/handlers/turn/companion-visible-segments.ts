@@ -55,9 +55,9 @@ export function joinVisibleSegmentsDeduped(
       continue;
     }
     const key = segment.trim();
-    // Repeat the same segment (even if it was already streamed) is one answer,
-    // not two. Keep the first occurrence and drop later copies.
-    if (key.length >= 8 && keptKeys.has(key)) {
+    // Published text is immutable. Only an unpublished draft can be dropped;
+    // deleting an already streamed repeat would fork SSE from saved history.
+    if (!delivered[index] && key.length >= 8 && keptKeys.has(key)) {
       dropped.push(segment);
       continue;
     }

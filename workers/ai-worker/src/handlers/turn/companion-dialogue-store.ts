@@ -424,7 +424,11 @@ export async function persistCompanionContextHandoffSnapshot(args: {
       if (sha256Utf8V1(canonicalJsonV1(row.snapshot)) !== row.snapshot_sha256) {
         throw new Error("committed companion context handoff snapshot failed content verification");
       }
-      await assertCompanionHandoffSourcesCurrent(tx, args, row.snapshot);
+      // Confirmation resumes the same frozen prompt after its action has
+      // already landed. Apply the same own-write receipts used at provider,
+      // streaming and commit boundaries; a direct snapshot check would treat
+      // this run's confirmed forget/revise as an external context change.
+      await assertCompanionContextSourcesCurrent(tx, args, args.runId);
       return { snapshot: row.snapshot, sha256: row.snapshot_sha256 };
     },
   );

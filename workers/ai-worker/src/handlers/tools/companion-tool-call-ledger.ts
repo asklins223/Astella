@@ -1,3 +1,4 @@
+import { webSearchProcessDetail } from "../../agent/web-search.ts";
 import { isCompanionAutonomousTool } from "@astella/shared/companion-autonomy";
 /**
  * 伴星 agent 的**工具调用账本**（2026-09-30 拆出，B2）。
@@ -31,6 +32,7 @@ import {
   canUseCompanionAgentTool,
   companionOperationAction,
   companionOperationDomainTool,
+  companionOperationName,
   companionDomainActionAutoExecutes,
   getCompanionAgentTool,
   companionToolLabel,
@@ -339,6 +341,7 @@ export async function executeTool(
       toolVersion: definition.toolVersion,
       riskClass: definition.riskClass,
       status: "executing",
+      webSearch: webSearchProcessDetail(definition.name, call.arguments),
       ...(confirmedProposalId ? { proposalId: confirmedProposalId } : {}),
       ...(definition.name === "notes.write.edit" ? { noteEditTarget: companionNoteEditTarget(call.arguments, event.read.pageContext) } : {}),
       safeLabel: companionToolLabel(definition.name) ?? definition.description.slice(0, 240),
@@ -392,6 +395,7 @@ export async function executeTool(
       ...(definition.name === "notes.write.annotate" && result.resultRef ? { noteAnnotation: companionWrittenAnnotationV1Schema.parse(JSON.parse(result.resultRef)) } : {}),
       safeLabel: companionToolLabel(definition.name) ?? definition.description.slice(0, 240),
       safeSummary: result.safeSummary,
+      webSearch: webSearchProcessDetail(definition.name, call.arguments, result.resultRef ?? null),
       occurredAt: new Date().toISOString(),
       ...(noteCreated ? { noteCreated } : {}),
       ...(result.route ? { route: result.route } : {}),
@@ -723,13 +727,14 @@ export async function loadContinuation(
       : row.result_safe_summary ?? "操作尚未得到保存回执，请先核对结果。" };
   if (recovery) {
     const index = baseMessages.findIndex(message => message.role === "tool" && message.toolCallId === recovery.pendingCallId);
-    // The pending call may be named by its operation or by the domain tool it
-    // belongs to; both identify the same frozen call.
-    const domainName = companionOperationDomainTool(row.name) ?? row.name;
-    const pendingName = baseMessages.find(message => message.role === "assistant"
+    // Flat aliases, domain actions and internal operation names identify the
+    // same call. Compare their registered operation, preserving the call-id
+    // fence; spelling an alias must not invalidate an already confirmed write.
+    const pending = baseMessages.find(message => message.role === "assistant"
       && message.toolCalls?.some(call => call.id === recovery.pendingCallId))?.toolCalls
-      ?.find(call => call.id === recovery.pendingCallId)?.name;
-    if (index < 0 || (pendingName !== row.name && pendingName !== domainName))
+      ?.find(call => call.id === recovery.pendingCallId);
+    if (index < 0 || row.tool_call_id !== recovery.pendingCallId || !pending
+      || companionOperationName(pending) !== row.name)
       throw new CompanionContextChangedError();
     const finish = row.status === "succeeded" ? withCompanionRecoveryTransaction : withCompanionFailureTransaction;
     await finish(event, async tx => {

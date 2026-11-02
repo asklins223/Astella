@@ -3,7 +3,7 @@ import { sql } from "drizzle-orm";
 import { enqueueParticipationObservation } from "@astella/agent-host";
 import { COMPANION_INITIATIVE_DELIVERY_TTL_HOURS } from "@astella/shared/companion-initiative-contracts";
 import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
-import { COMPANION_PERSONA_V14_PROMPT_ID, COMPANION_PERSONA_V14_SHA256 } from "@astella/shared";
+import { COMPANION_PERSONA_V18_PROMPT_ID, COMPANION_PERSONA_V18_SHA256 } from "@astella/shared";
 import { lockCompanionRunForEventWrite } from "@astella/shared/companion-lock-order";
 import { logger } from "../../lib/logger.ts";
 import { withWorkerWorkspaceTransaction } from "../../db.ts";
@@ -43,6 +43,7 @@ export async function finalizeCompanionDialogueTurn(args: {
   provider: { id: string; modelId: string };
   agentResult: Extract<CompanionAgentLoopResult, { status: "completed" }>;
   assistantText: string;
+  deliveryDegraded?: boolean;
   /**
    * The reply cut into the separate messages it already contains. When a turn
    * asks for several messages, each part becomes its own chat message so the
@@ -203,12 +204,15 @@ export async function finalizeCompanionDialogueTurn(args: {
         const finished = await tx.execute<{ id: string }>(sql`
           UPDATE companion_turn_runs
           SET status = 'succeeded',
+              delivery_receipt = CASE WHEN ${args.deliveryDegraded === true}
+                THEN jsonb_set(COALESCE(delivery_receipt, '{}'::jsonb), '{outcome}', '"partial"'::jsonb)
+                ELSE delivery_receipt END,
               assistant_message_id = ${assistantMessageId},
               waiting_proposal_id = NULL,
               provider_id = ${provider.id},
               model_id = ${provider.modelId},
-              prompt_version = ${COMPANION_PERSONA_V14_PROMPT_ID},
-              prompt_hash = ${COMPANION_PERSONA_V14_SHA256},
+              prompt_version = ${COMPANION_PERSONA_V18_PROMPT_ID},
+              prompt_hash = ${COMPANION_PERSONA_V18_SHA256},
               finished_at = now()
           WHERE id = ${read.runId}
             AND status IN ('accepted', 'running')
@@ -245,12 +249,14 @@ export async function finalizeCompanionDialogueTurn(args: {
           text: assistantText, ttlHours: COMPANION_INITIATIVE_DELIVERY_TTL_HOURS, initiative: { conversationId: read.conversationId,
             messageId: assistantMessageId, runId: read.runId, generation: read.generation, deviceSessionId: read.initiativeInput.deviceSessionId },
         });
-        if (read.userMessageId && !(read.pageContext as { context?: { replyPurpose?: string } } | null)?.context?.replyPurpose) await enqueueParticipationObservation(tx, { workspaceId: ctx.workspaceId, userId: read.userId }, {
+        // A partial settlement is a truthful delivery, not a completed answer
+        // that an unsolicited follow-up may replay without the original checks.
+        if (!args.deliveryDegraded && read.userMessageId && !(read.pageContext as { context?: { replyPurpose?: string } } | null)?.context?.replyPurpose) await enqueueParticipationObservation(tx, { workspaceId: ctx.workspaceId, userId: read.userId }, {
           topic: "reply.finished", dedupeKey: `reply:${read.runId}`, conversationId: read.conversationId,
           parentRunId: read.runId, facts: { messageIds: [assistantMessageId] }, ttlMs: 120_000,
         });
         // 22 方案：终态事务内异步入队记忆提取/摘要任务。
-        if (read.userMessageId) await enqueueCompanionFollowupSuggestions(tx, {
+        if (!args.deliveryDegraded && read.userMessageId) await enqueueCompanionFollowupSuggestions(tx, {
           workspaceId: ctx.workspaceId,
           userId: read.userId,
           runId: read.runId,

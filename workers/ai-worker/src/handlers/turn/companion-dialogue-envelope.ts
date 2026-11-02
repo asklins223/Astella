@@ -67,6 +67,7 @@ export interface CompanionEnvelopeDecoder {
   push(delta: string): CompanionEnvelopeChunk[];
   /** 已解码出的正文（累积；形状不认识时为空串）。 */
   text(): string;
+  recognized(): boolean;
 }
 
 type DecoderMode = "seeking" | "decoding" | "completed" | "unrecognized";
@@ -184,6 +185,9 @@ export function createCompanionEnvelopeDecoder(): CompanionEnvelopeDecoder {
 
     text(): string {
       return decoded;
+    },
+    recognized(): boolean {
+      return mode === "decoding" || mode === "completed";
     },
   };
 }

@@ -25,6 +25,7 @@ retry_delay_seconds=1
 
 while :; do
   if psql \
+    --single-transaction \
     --host "$POSTGRES_HOST" \
     --username "$POSTGRES_USER" \
     --dbname "$POSTGRES_DB" \

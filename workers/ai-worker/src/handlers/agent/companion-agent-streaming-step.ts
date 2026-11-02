@@ -119,6 +119,9 @@ export async function runStreamingAgentStep(args: {
   /** Retain the entire result until the caller's semantic guards pass. This
    * defers delivery, never clips or stops upstream generation. */
   deferPublication?: boolean;
+  /** An independent evidence check may finish during generation. Retaining
+   * prose never discards the model result, reasoning, or its real tool calls. */
+  publicationPolicy?: Promise<"stream" | "retain">;
   /** 本步**真正下发**了第一个字符时回调（不是"模型吐了字"，见 holdUntilChars）。 */
   onTextEmitted?: () => void;
   /**
@@ -194,7 +197,10 @@ export async function runStreamingAgentStep(args: {
     else pendingToolStarts.push(slot);
   };
   let discarded = false;
-  let released = holdUntilChars <= 0 && gateOpen;
+  let publicationReady = args.publicationPolicy === undefined;
+  let deferPublication = args.deferPublication === true;
+  let publicationError: unknown;
+  let released = holdUntilChars <= 0 && gateOpen && publicationReady;
   let publishedText = "";
   let draftText = "";
   let projectedThrough = 0;
@@ -205,7 +211,7 @@ export async function runStreamingAgentStep(args: {
 
   /** 把一段文本交给交付管线。这里是"第一个字符真的下发了"的唯一现场。 */
   const deliver = (text: string): void => {
-    if (text.length === 0 || args.deferPublication) return;
+    if (text.length === 0 || deferPublication) return;
     publishedText += text;
     if (pendingSeparator.length > 0) {
       text = pendingSeparator + text;
@@ -243,7 +249,7 @@ export async function runStreamingAgentStep(args: {
    * 长到值得发（坍缩闸的可达性靠它）。
    */
   const releaseHeld = (): void => {
-    if (released || !gateOpen || discarded || stopped) return;
+    if (released || !gateOpen || !publicationReady || discarded || stopped) return;
     if (stripVoiceExpressionTags(withholdPartialVoiceExpressionTag(held)).length < holdUntilChars) return;
     if (args.holdWhile?.(held)) return;
     released = true;
@@ -324,6 +330,16 @@ export async function runStreamingAgentStep(args: {
       controller.abort();
     }) : Promise.resolve();
 
+  const publicationSettled = args.publicationPolicy?.then(policy => {
+    if (discarded || stopped || controller.signal.aborted || args.ctxSignal.aborted) return;
+    publicationReady = true;
+    deferPublication ||= policy === "retain";
+    releaseHeld();
+  }).catch(error => {
+    publicationError = error;
+    controller.abort();
+  }) ?? Promise.resolve();
+
   const feedDecoder = (text: string): void => {
     for (const chunk of envelopeDecoder.push(text)) {
       if (chunk.kind === "text") emit(chunk.text);
@@ -368,60 +384,74 @@ export async function runStreamingAgentStep(args: {
   try {
     const { content, toolCalls, finishReason, phase, reasoning, usage, providerRequestId } = await runWithAbortBudget(
       async (signal) => {
-        const result = await watchCompanionOutput((outputSignal, outputActivity) => args.provider.chatCompletionStream!(
-        messages,
-        {
-          maxTokens: args.stepRequest.maxTokens,
-          temperature: args.stepRequest.temperature,
-          disableThinking: args.stepRequest.disableThinking,
-          reasoningEffort: args.stepRequest.reasoningEffort,
-          // 2026-09-19 ④ 修复：终答步明确要**自然文本**，不再强制 json_object。
-          //
-          // 曾经强制 JSON 是因为"用户消息是一整份 JSON 文档"，模型于是用文档回文档；
-          // 输入改成原生多轮之后（T0）这个理由已经消失，而代价一直留着：
-          // - 流式信封解码器只认 6 个正文键名（response/text/content/message/reply/answer），
-          //   模型换个键（`{"emotion":"happy","reply":"…"}`）就判 unrecognized →
-          //   整段守住不发 → 退化成"憋一大口再吐出来"（库里 30 个 run 里 28 个只有
-          //   1 条 delta、时间跨度 0.00 秒）；
-          // - 认不出→整段 JSON 落库→`json_envelope_leak` 成为失败原因第一名（8 次），
-          //   且 11:49 那次"不再强制 json_object"只改了 executeAgentTurn，流式这条路没改。
-          //
-          // 改成纯文本后增量本身就是正文：不需要解码器、不存在认错键名的退化，
-          // 且下游仍有两道防线（projectCompanionVisible 的信封守卫 + 全文校验）。
-          responseFormat: args.responseFormat ?? "text",
-          nativeAgentRequest: args.stepRequest,
-          // ④-b：带工具的一步也必须把工具列表发出去，否则模型永远不返回 tool_calls。
-          // 与 executeAgentTurn 的 body 完全同形（那里同样是 tools + tool_choice=auto、
-          // 不传 response_format）。终答步的 tools 已在 stepRequest 里被清空。
-          tools: args.stepRequest.tools,
-          toolChoice: args.stepRequest.toolChoice,
-          onOutputActivity: outputActivity,
-          // 只在调用方要了的时候才挂：不挂就是 undefined，provider 不做任何额外工作。
-          ...(args.onToolCallStarted ? { onToolCallStarted: observeToolStart } : {}),
-          // 只在调用方要了的时候才挂：不挂时 provider 一个字都不多做。
-          ...(args.onReasoningDelta ? { onReasoningDelta: emitReasoning } : {}),
-        },
-        outputSignal,
-        (delta) => {
-          if (stopped || delta.length === 0) return;
-          outputActivity();
-          args.onRawTextDelta?.(delta);
-          consume(delta);
-          // A looping model never goes idle, so the watchdog alone cannot end
-          // it: it kept one run open for 426s emitting 3,289 deltas of the same
-          // sentence (2026-10-27 soak). Stop the step; the turn's repair ladder
-          // decides what the user gets.
-          if (!invalidToolProtocol && companionStreamRepeatsItself(draftText)) {
-            degradedLoop = true;
-            stopped = true;
-            controller.abort();
+        const result = await watchCompanionOutput(async (outputSignal, outputActivity) => {
+          let acceptingCallbacks = true;
+          const live = () => acceptingCallbacks && !outputSignal.aborted && !controller.signal.aborted
+            && !args.ctxSignal.aborted && !stopped && !discarded;
+          const observeLiveToolStart: typeof observeToolStart = slot => { if (live()) observeToolStart(slot); };
+          const emitLiveReasoning: typeof emitReasoning = text => { if (live()) emitReasoning(text); };
+          try {
+            return await args.provider.chatCompletionStream!(
+              messages,
+              {
+                maxTokens: args.stepRequest.maxTokens,
+                temperature: args.stepRequest.temperature,
+                disableThinking: args.stepRequest.disableThinking,
+                reasoningEffort: args.stepRequest.reasoningEffort,
+                // 2026-09-19 ④ 修复：终答步明确要**自然文本**，不再强制 json_object。
+                //
+                // 曾经强制 JSON 是因为"用户消息是一整份 JSON 文档"，模型于是用文档回文档；
+                // 输入改成原生多轮之后（T0）这个理由已经消失，而代价一直留着：
+                // - 流式信封解码器只认 6 个正文键名（response/text/content/message/reply/answer），
+                //   模型换个键（`{"emotion":"happy","reply":"…"}`）就判 unrecognized →
+                //   整段守住不发 → 退化成"憋一大口再吐出来"（库里 30 个 run 里 28 个只有
+                //   1 条 delta、时间跨度 0.00 秒）；
+                // - 认不出→整段 JSON 落库→`json_envelope_leak` 成为失败原因第一名（8 次），
+                //   且 11:49 那次"不再强制 json_object"只改了 executeAgentTurn，流式这条路没改。
+                //
+                // 改成纯文本后增量本身就是正文：不需要解码器、不存在认错键名的退化，
+                // 且下游仍有两道防线（projectCompanionVisible 的信封守卫 + 全文校验）。
+                responseFormat: args.responseFormat ?? "text",
+                nativeAgentRequest: args.stepRequest,
+                // ④-b：带工具的一步也必须把工具列表发出去，否则模型永远不返回 tool_calls。
+                // 与 executeAgentTurn 的 body 完全同形（那里同样是 tools + tool_choice=auto、
+                // 不传 response_format）。终答步的 tools 已在 stepRequest 里被清空。
+                tools: args.stepRequest.tools,
+                toolChoice: args.stepRequest.toolChoice,
+                onOutputActivity: kind => { if (live()) outputActivity(kind); },
+                // 只在调用方要了的时候才挂：不挂就是 undefined，provider 不做任何额外工作。
+                ...(args.onToolCallStarted ? { onToolCallStarted: observeLiveToolStart } : {}),
+                // 只在调用方要了的时候才挂：不挂时 provider 一个字都不多做。
+                ...(args.onReasoningDelta ? { onReasoningDelta: emitLiveReasoning } : {}),
+              },
+              outputSignal,
+              (delta) => {
+                if (!live() || delta.length === 0) return;
+                outputActivity();
+                args.onRawTextDelta?.(delta);
+                consume(delta);
+                // A looping model never goes idle, so the watchdog alone cannot end
+                // it: it kept one run open for 426s emitting 3,289 deltas of the same
+                // sentence (2026-10-27 soak). Stop the step; the turn's repair ladder
+                // decides what the user gets.
+                if (!invalidToolProtocol && companionStreamRepeatsItself(draftText)) {
+                  degradedLoop = true;
+                  stopped = true;
+                  controller.abort();
+                }
+              },
+            );
+          } finally {
+            // Completing or abandoning one request closes every callback from
+            // that request, even when an SDK emits after resolve/abort.
+            acceptingCallbacks = false;
           }
-        },
-        ), signal, args.outputWatchdogPolicy);
+        }, signal, args.outputWatchdogPolicy);
         // A fast provider may finish before classification. Keep this step alive
         // until the gate has released/discarded its held text, under the same
         // abort/deadline budget, then drain delivery before returning its result.
-        await gateSettled;
+        await Promise.all([gateSettled, publicationSettled]);
+        if (publicationError) throw publicationError;
         return result;
       },
       controller.signal,
@@ -436,7 +466,7 @@ export async function runStreamingAgentStep(args: {
     // 前缀，下游 `reconcileStreamedText` 要求"最终正文以已下发内容开头"，
     // 返回原始 JSON 会把这个不变量交给 unwrap 的运气去赌。
     const decoded = envelopeDecoder.text();
-    if (decoded.length > 0 && !companionEnvelopeMatchesBody(content, decoded)) {
+    if (envelopeDecoder.recognized() && !companionEnvelopeMatchesBody(content, decoded)) {
       // An unescaped story quote used to end decoding early while the rest of
       // the answer disappeared. Preserve any delivered prefix as interrupted
       // output; never commit that prefix as a successful complete reply.
@@ -447,7 +477,7 @@ export async function runStreamingAgentStep(args: {
     if (invalidToolProtocol || containsCompanionToolProtocol(decoded.length > 0 ? decoded : content))
       throw new CompanionToolOutputRepairError(publishedText, draftText || content);
     return {
-      content: decoded.length > 0 ? decoded : content,
+      content: envelopeDecoder.recognized() ? decoded : content,
       toolCalls: toolCalls ?? [],
       finishReason: finishReason ?? "stop",
       ...(phase ? { phase } : {}),
@@ -457,6 +487,7 @@ export async function runStreamingAgentStep(args: {
     };
   } catch (error) {
     await flushChain.catch(() => undefined);
+    if (publicationError) throw publicationError;
     // The loop guard aborts the same controller; it must surface as its own
     // failure so the runtime can retry, not as a delivery-pipeline stop.
     if (degradedLoop) throw new CompanionDegenerateLoopError(draftText);

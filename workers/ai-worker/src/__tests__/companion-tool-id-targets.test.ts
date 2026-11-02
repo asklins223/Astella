@@ -40,6 +40,7 @@ const PARAM_TARGETS: Readonly<Record<string, Readonly<Record<string, IdTarget>>>
   agent_list_goals: { longGoalMemoryId: { table: "assistant_memory_items", column: "id" } },
   agent_list_long_goals: { memoryId: { table: "assistant_memory_items", column: "id" } },
   companion_goals_read: { longGoalMemoryId: { table: "assistant_memory_items", column: "id" } },
+  companion_goals_write: { runId: { table: "agent_runs", column: "id" } },
   agent_revise_goal: { runId: { table: "agent_runs", column: "id" } },
   agent_control_goal: { runId: { table: "agent_runs", column: "id" } },
   companion_read_note: {

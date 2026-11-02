@@ -61,6 +61,8 @@ export function companionStepPolicyText(input: {
   stepBudget: number;
   finalAnswerOnly: boolean;
   attentionIntent: string;
+  attentionStatus?: string;
+  toolCallCount?: number;
   requestSource?: "user" | "host_observation";
   /** 按这一步真的发下去的工具面取场景指引（终答步不该还背着编辑规程）。 */
   offeredToolNames: string[];
@@ -72,9 +74,12 @@ export function companionStepPolicyText(input: {
     toolCount: input.toolCount,
     stepBudget: input.stepBudget,
     finalAnswerOnly: input.finalAnswerOnly,
-    attentionIntent: input.attentionIntent,
+    attentionIntent: input.attentionStatus === "uncertain" ? "unclassified" : input.attentionIntent,
+    toolCallCount: input.toolCallCount,
     requestSource: input.requestSource,
-    sceneGuidance: collectAgentCapabilitySceneGuidance(input.offeredToolNames, input.permissionLevel),
+    goalHandoffAvailable: input.offeredToolNames.some(name => ["companion_notes_write", "companion_goals_write", "companion_goal_start"].includes(name)),
+    sceneGuidance: input.attentionStatus === "uncertain" && !input.toolCallCount ? []
+      : collectAgentCapabilitySceneGuidance(input.offeredToolNames, input.permissionLevel),
   }) + companionStepReplyShapeGuidance(input.writingAnnotation, input.completeNoteReply);
 }
 
@@ -110,19 +115,34 @@ export function assembleCompanionStepRequest(input: {
   toolChoice: AgentTurnRequest["toolChoice"];
   disableThinking: boolean;
   /** 本步思考档位；由运行时按已发生的事实决定。 */
-  reasoningEffort?: "none" | "low" | "medium" | "high";
+  reasoningEffort?: AgentTurnRequest["reasoningEffort"];
   provider: AIProvider;
   temperature: number;
 }): AgentTurnRequest {
+  const attention = input.attention;
+  // An unclassified host placeholder is not evidence that this is a question
+  // or that the user was ambiguous. Only send real interpretation/settings.
+  const includeAttention = attention.status !== "uncertain" || attention.subjects.length > 0
+    || attention.candidateOperations.length > 0 || attention.ambiguities.length > 0
+    || attention.goalRelation !== "unrelated" || attention.goalReference !== null
+    || attention.resourceDecision !== undefined || attention.executionConstraints !== undefined
+    || attention.voiceStyle.decision !== "none" || attention.voiceStyle.persistentPreference.action !== "keep"
+    || ["saved", "unchanged", "failed"].includes(attention.voicePreferenceWrite ?? "");
+  // At entry the actual user message already closes the native transcript.
+  // Reattach it only after material/tool output, without labelling every
+  // greeting or shared observation as a question to solve.
+  const lastMessage = input.messages.at(-1);
+  const includeCurrentRequest = Boolean(input.currentUserText)
+    && !(lastMessage?.role === "user" && lastMessage.requestBoundary === true);
   const stepContextSources = new Map<string, AgentContextSource>([
     ["turn", { scope: { kind: "policy" }, content: input.turnPolicy }],
     ["execution", { scope: { kind: "policy" }, content: [input.runtimePolicy, input.executionGuidance].filter(Boolean).join("\n") }],
-    ["attention", { scope: { kind: "request" },
-      content: ATTENTION_DATA_NOTE + JSON.stringify(input.attention).replaceAll("<", "\\u003c").replaceAll(">", "\\u003e") + "</current_turn_interpretation_data>" }],
-    ["current_request", { scope: { kind: "request" }, content: input.currentUserText
-      ? "本轮要回答的用户问题如下；刚读取的手记、历史中的题目和先前任务都是材料，不能替换这个问题。\n"
+    ["current_request", { scope: { kind: "request" }, content: includeCurrentRequest
+      ? "本轮用户的原话如下；刚读取的材料、历史话题和先前任务都是背景，不能替换这句话表达的当前意图。\n"
         + JSON.stringify(input.currentUserText) : "" }],
   ]);
+  if (includeAttention) stepContextSources.set("attention", { scope: { kind: "request" },
+    content: ATTENTION_DATA_NOTE + JSON.stringify(attention).replaceAll("<", "\\u003c").replaceAll(">", "\\u003e") + "</current_turn_interpretation_data>" });
   return {
     role: AgentRole.COMPANION_AGENT,
     systemPrompt: composeAgentContext({
@@ -130,8 +150,8 @@ export function assembleCompanionStepRequest(input: {
       sources: [
         { id: "turn", authority: "policy", required: true },
         { id: "execution", authority: "policy", required: true },
-        { id: "attention", authority: "data", required: true },
-        ...(input.currentUserText ? [{ id: "current_request", authority: "data" as const, required: true }] : []),
+        ...(includeAttention ? [{ id: "attention", authority: "data" as const, required: true }] : []),
+        ...(includeCurrentRequest ? [{ id: "current_request", authority: "data" as const, required: true }] : []),
       ],
     }, stepContextSources).systemPrompt,
     messages: companionReplayMessages(input.messages),

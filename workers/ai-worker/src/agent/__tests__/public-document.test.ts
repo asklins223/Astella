@@ -16,6 +16,8 @@ import { createHash } from "node:crypto";
 
 import {
   AgentPublicDocumentError,
+  AgentPublicDocumentEmptyError,
+  publicDocumentUnavailableSummary,
   PUBLIC_DOCUMENT_ACCEPTED_CONTENT_TYPES,
   isSupportedDocumentContentType,
   PUBLIC_DOCUMENT_MAX_TEXT,
@@ -23,8 +25,26 @@ import {
   readAgentPublicDocument,
 } from "../public-document.ts";
 import { fetchUrlContentOnce, type FetchUrlDependencies } from "../../handlers/note/parse-source.ts";
+import { SourceFetchHttpError } from "../../handlers/note/source-fetch-errors.ts";
 
 const PUBLIC_IP = { address: "93.184.216.34", family: 4 as const };
+
+test("actual HTTP and empty-body outcomes stay distinguishable without exposing upstream text", async () => {
+  for (const status of [403, 404, 429, 503]) {
+    let observed: unknown;
+    try { await fetchUrlContentOnce("https://example.com/document", new AbortController().signal, {
+      resolveAddress: async () => PUBLIC_IP,
+      request: async () => ({ status, statusText: "PRIVATE_UPSTREAM_DETAIL", contentType: "text/html", body: Buffer.from("PRIVATE_PAGE_BODY") }),
+    }); } catch (error) { observed = error; }
+    assert.ok(observed instanceof SourceFetchHttpError);
+    assert.equal(observed.status, status);
+    const summary = publicDocumentUnavailableSummary(observed);
+    assert.ok(summary?.includes(`HTTP ${status}`));
+    assert.doesNotMatch(summary!, /PRIVATE_UPSTREAM_DETAIL|PRIVATE_PAGE_BODY/);
+  }
+  assert.match(publicDocumentUnavailableSummary(new AgentPublicDocumentEmptyError("private URL detail"))!, /没有返回可读取的正文/);
+  assert.equal(publicDocumentUnavailableSummary(new Error("HTTP 403: text is not a structured network outcome")), null);
+});
 
 /**
  * 用真实的 `fetchUrlContentOnce` 跑，只是把 DNS 与 HTTP 换成注入实现。
@@ -59,6 +79,18 @@ function offlineFetch(
 }
 
 const neverAborted = () => new AbortController().signal;
+
+test("a complete known cookie access interstitial is not successful article evidence", async () => {
+  const hostname = "pubmed.ncbi.nlm.nih.gov";
+  const interstitial = `${hostname}\n\nCookies must be enabled\n\nEnable cookies for ${hostname} and reload this page to continue.`;
+  await assert.rejects(readAgentPublicDocument(`https://${hostname}/28119357/`, neverAborted(), {
+    fetch: async () => ({ url: `https://${hostname}/28119357/`, title: hostname, text: interstitial }),
+  }), /访问验证页面|没有取得正文/);
+  const article = await readAgentPublicDocument(`https://${hostname}/article`, neverAborted(), {
+    fetch: async () => ({ title: "How browser cookies work", text: `An article explains: ${interstitial}\nThe article continues with actual content.` }),
+  });
+  assert.match(article.text, /article continues/, "an article discussing the template must not be rejected");
+});
 
 // ── URL 准入：每个 hop 都过一遍 ────────────────────────────────────────────
 
@@ -198,6 +230,33 @@ test("includeResponseMetadata 置位才带实际 url / content-type，未置位�
 const fakeFetch = (text: string, extra: Record<string, unknown> = {}) =>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (async () => ({ text, title: "标题", url: "https://example.com/final", contentType: "text/html", ...extra })) as any;
+
+test("literal page lookup locates distant text with exact Unicode offsets and the original source hash", async () => {
+  const prefix = "😀前言".repeat(3000);
+  const phrase = "Consumption temperature (20°C) [trial]";
+  const body = prefix + phrase + "\nActual study details.\n" + phrase;
+  const document = await readAgentPublicDocument("https://example.com/x", neverAborted(), { fetch: fakeFetch(body) },
+    { findText: phrase.toLowerCase() });
+  const first = Array.from(prefix).length;
+  assert.equal(document.find?.matchOffset, first);
+  assert.equal(document.find?.fromOffset, 0);
+  assert.ok(document.offset > PUBLIC_DOCUMENT_MAX_TEXT);
+  assert.ok(document.text.includes(phrase));
+  assert.equal(document.contentHash, createHash("sha256").update(body, "utf8").digest("hex"));
+  const next = await readAgentPublicDocument("https://example.com/x", neverAborted(), { fetch: fakeFetch(body) },
+    { findText: phrase, offset: first + 1 });
+  assert.equal(next.find?.matchOffset, first + Array.from(phrase + "\nActual study details.\n").length);
+  assert.equal(next.contentHash, document.contentHash);
+});
+
+test("lookup treats metacharacters literally and reports a missing match without inventing text", async () => {
+  const body = "A study compared temperature and taste. Another paragraph follows.";
+  const document = await readAgentPublicDocument("https://example.com/x", neverAborted(), { fetch: fakeFetch(body) },
+    { findText: ".*", offset: 5 });
+  assert.deepEqual(document.find, { text: ".*", fromOffset: 5, matchOffset: null });
+  assert.equal(document.text, body.slice(5));
+  assert.equal(document.offset, 5);
+});
 
 test("返回实际 URL、ISO 时间与 64 位内容哈希；哈希取完整正文", async () => {
   const full = "A".repeat(PUBLIC_DOCUMENT_MAX_TEXT + 500);

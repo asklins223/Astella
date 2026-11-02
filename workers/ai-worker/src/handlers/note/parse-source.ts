@@ -33,6 +33,7 @@ import {
 } from "../../lib/job-lease.ts";
 import type { JobPayload } from ".././index.ts";
 import { extractHtmlTitle, extractTextFromHtml } from "./parse-source-html.ts";
+import { SourceFetchHttpError } from "./source-fetch-errors.ts";
 
 // R-014: URL 抓取限制
 const FETCH_TIMEOUT_MS = 20_000; // 从 15s 延长到 20s
@@ -654,7 +655,7 @@ export async function fetchUrlContentOnce(
       }
 
       if (res.status < 200 || res.status >= 300) {
-        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+        throw new SourceFetchHttpError(res.status, res.statusText);
       }
 
       // content-type 准入在读取正文之前：不被接受的类型根本不会进入内存。

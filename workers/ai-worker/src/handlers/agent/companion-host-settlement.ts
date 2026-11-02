@@ -51,7 +51,11 @@ export function assembleCompanionFinishText(input: {
     const delivered = input.visibleSegments.filter((_segment, index) => input.visibleSegmentDelivered[index]);
     return joinVisibleSegmentsDeduped(delivered, delivered.map(() => true)).text;
   }
-  if (!text) return joinVisibleSegmentsDeduped(input.visibleSegments, input.visibleSegmentDelivered).text;
+  const existing = joinVisibleSegmentsDeduped(input.visibleSegments, input.visibleSegmentDelivered).text;
+  // A metadata-only finish reuses the current draft, including one-word
+  // confirmations. It is not a new segment, regardless of its character count.
+  if (!text || input.visibleSegments.some(segment => segment.trim() === text)) return existing;
+  if (existing && text.startsWith(existing)) return text;
   return joinVisibleSegmentsDeduped([...input.visibleSegments, text], [...input.visibleSegmentDelivered, false]).text;
 }
 

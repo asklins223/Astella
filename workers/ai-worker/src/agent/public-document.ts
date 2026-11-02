@@ -30,6 +30,7 @@
 import { createHash } from "node:crypto";
 
 import { fetchUrlContentOnce } from "../handlers/note/parse-source.ts";
+import { SourceFetchHttpError } from "../handlers/note/source-fetch-errors.ts";
 
 /** 单次交回的正文窗口宽度；读到底靠 `offset` 续读，不是"只许看前这么多"。 */
 export const PUBLIC_DOCUMENT_MAX_TEXT = 6000;
@@ -66,6 +67,8 @@ export interface AgentPublicDocument {
    * 所以分段续读时各次拿到的 hash 必须一致——不一致就是页面换了。
    */
   contentHash: string;
+  /** Literal page-text lookup, not a semantic search or a new source. */
+  find?: { text: string; fromOffset: number; matchOffset: number | null };
 }
 
 export class AgentPublicDocumentError extends Error {
@@ -73,6 +76,20 @@ export class AgentPublicDocumentError extends Error {
     super(message);
     this.name = "AgentPublicDocumentError";
   }
+}
+export class AgentPublicDocumentAccessError extends AgentPublicDocumentError {}
+export class AgentPublicDocumentEmptyError extends AgentPublicDocumentError {}
+
+/** Only structured outcomes become safe explanations. Arbitrary upstream
+ * error messages/bodies are never copied into the model or the UI. */
+export function publicDocumentUnavailableSummary(error: unknown): string | null {
+  if (error instanceof AgentPublicDocumentAccessError)
+    return "该网页本次返回访问验证，未取得正文。它不构成已读取的原始资料；可以稍后重试同一链接，或使用已授权的其他可读来源。";
+  if (error instanceof AgentPublicDocumentEmptyError)
+    return "该网页本次没有返回可读取的正文，未取得其中资料。搜索摘要不能补成读过的全文；可使用本轮已有的其他可读来源。";
+  if (error instanceof SourceFetchHttpError)
+    return `该网页本次返回 HTTP ${error.status}，没有取得正文。不要改路径或反复请求来绕过访问限制；按已有资料的真实范围回答，需要时选择其他已授权来源。`;
+  return null;
 }
 
 export interface AgentPublicDocumentDependencies {
@@ -140,6 +157,8 @@ export interface AgentPublicDocumentReadOptions {
   readonly offset?: number;
   /** 这一次最多交回多少码点（默认 {@link PUBLIC_DOCUMENT_MAX_TEXT}）。 */
   readonly maxChars?: number;
+  /** Find these literal words, ignoring case, from offset and return their context. */
+  readonly findText?: string;
 }
 
 /**
@@ -210,8 +229,16 @@ export async function readAgentPublicDocument(
   // 注入 fetch 时它可能不回报 content-type；那就不在这里编一个，
   // 但也不因为缺它就放行二进制——正文是否可读由下面的正文校验兜底。
   const body = typeof fetched.text === "string" ? fetched.text : "";
+  // A known access-interstitial template is not article text. Match the
+  // complete vendor response, not words such as "cookies" inside an article.
+  // Do not solve a challenge or import browser/user cookies to bypass it.
+  const hostname = new URL(finalUrl).hostname;
+  const normalizedBody = body.replace(/\s+/g, " ").trim();
+  if (normalizeTitle(fetched.title) === hostname && normalizedBody
+    === `${hostname} Cookies must be enabled Enable cookies for ${hostname} and reload this page to continue.`)
+    throw new AgentPublicDocumentAccessError("网站返回了访问验证页面，没有取得正文；不要把验证提示当作原始资料。");
   if (body.trim().length === 0) {
-    throw new AgentPublicDocumentError(
+    throw new AgentPublicDocumentEmptyError(
       `正文是空白：${finalUrl}（content-type=${fetched.contentType ?? "未知"}）`,
     );
   }
@@ -224,8 +251,20 @@ export async function readAgentPublicDocument(
   // 切点按码点，emoji 与代理对不会被劈成半个。
   const chars = Array.from(body);
   const totalChars = chars.length;
-  const offset = Math.min(Math.max(0, Math.trunc(options.offset ?? 0)), totalChars);
+  const fromOffset = Math.min(Math.max(0, Math.trunc(options.offset ?? 0)), totalChars);
   const windowChars = Math.max(1, Math.trunc(options.maxChars ?? PUBLIC_DOCUMENT_MAX_TEXT));
+  let offset = fromOffset;
+  let find: AgentPublicDocument["find"];
+  if (options.findText) {
+    // Escape every regexp metacharacter: model/source text is a literal lookup,
+    // never an executable pattern. Translate UTF-16 positions back to the same
+    // code-point offsets used by pagination (including astral characters).
+    const pattern = options.findText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const match = new RegExp(pattern, "iu").exec(chars.slice(fromOffset).join(""));
+    const matchOffset = match ? fromOffset + Array.from(match.input.slice(0, match.index)).length : null;
+    find = { text: options.findText, fromOffset, matchOffset };
+    if (matchOffset !== null) offset = Math.max(fromOffset, matchOffset - Math.floor(windowChars / 4));
+  }
   const end = Math.min(totalChars, offset + windowChars);
   const nextOffset = end < totalChars ? end : null;
 
@@ -239,5 +278,6 @@ export async function readAgentPublicDocument(
     truncated: nextOffset !== null,
     fetchedAt: new Date().toISOString(),
     contentHash,
+    ...(find ? { find } : {}),
   };
 }

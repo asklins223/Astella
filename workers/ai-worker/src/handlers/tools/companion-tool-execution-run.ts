@@ -1,3 +1,4 @@
+import { webSearchProcessDetail } from "../../agent/web-search.ts";
 /**
  * 一次工具调用的**执行段**（40b §4.1-1 / §4.1-2 / R7）。
  *
@@ -175,6 +176,7 @@ export async function runCompanionToolExecution(args: ToolExecutionRunArgs): Pro
         status: failure.ledgerStatus,
         safeLabel: companionToolLabel(definition.name) ?? definition.description.slice(0, 240),
         safeSummary: publicSummary,
+        webSearch: webSearchProcessDetail(definition.name, args.arguments),
       },
     });
     await recordCompanionRunFailureSpanBestEffort({

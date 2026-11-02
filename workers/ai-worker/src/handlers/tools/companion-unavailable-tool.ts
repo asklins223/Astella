@@ -10,6 +10,7 @@
 
 import type { CompanionAgentToolExecutionConstraints } from "@astella/shared";
 import { unavailableCompanionToolSummary } from "./companion-tool-outcome.ts";
+import { WEB_SEARCH_MISSING_EVIDENCE_GUIDANCE } from "./companion-tool-result.ts";
 import { companionToolFailureFaces } from "./companion-tool-failure-faces.ts";
 
 export interface CompanionUnavailableTool {
@@ -26,9 +27,11 @@ export function judgeCompanionUnavailableTool(input: {
   toolName: string;
   constraints: CompanionAgentToolExecutionConstraints;
   searchLimitReached: boolean;
+  webSearchUnavailableReason?: string;
 }): CompanionUnavailableTool | null {
   const summary = unavailableCompanionToolSummary(input.toolName, input.constraints, {
     searchLimitReached: input.searchLimitReached,
+    webSearchUnavailableReason: input.webSearchUnavailableReason,
   });
   if (!summary) return null;
   const faces = companionToolFailureFaces({
@@ -39,7 +42,8 @@ export function judgeCompanionUnavailableTool(input: {
   return {
     ledgerStatus: faces.ledgerStatus,
     safeSummary: faces.safeSummary,
-    receipt: JSON.stringify({ ok: false, status: faces.modelStatus, error: faces.safeSummary }),
+    receipt: JSON.stringify({ ok: false, status: faces.modelStatus, error: faces.safeSummary,
+      ...(["web.search", "agent_web_search"].includes(input.toolName) ? { note: WEB_SEARCH_MISSING_EVIDENCE_GUIDANCE } : {}) }),
     quotaReached: input.searchLimitReached,
   };
 }

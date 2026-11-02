@@ -47,12 +47,12 @@ export async function reviewCompanionInitiativeSpeech(input: {
         AND m.created_at > now() - interval '24 hours'
         AND similarity(body.text,${text})>=${COMPANION_SPEECH_REPEAT_CANDIDATE_SIMILARITY}
       ORDER BY similarity(body.text,${text}) DESC, m.seq DESC LIMIT 3`);
-    const [latest] = await tx.execute<{ status: string; blocks: unknown }>(sql`
-      SELECT r.status,m.blocks FROM companion_messages m LEFT JOIN companion_turn_runs r ON r.user_message_id=m.id
+    const [latest] = await tx.execute<{ status: string; delivery_outcome: string | null; blocks: unknown }>(sql`
+      SELECT r.status,r.delivery_receipt->>'outcome' AS delivery_outcome,m.blocks FROM companion_messages m LEFT JOIN companion_turn_runs r ON r.user_message_id=m.id
       WHERE m.workspace_id=${scope.workspaceId} AND m.user_id=${scope.userId} AND m.conversation_id=${read.conversationId} AND m.role='user'
       ORDER BY m.seq DESC LIMIT 1`);
-    const unfinished = latest && ["failed", "cancelled", "superseded", "cancel_requested"].includes(latest.status)
-      ? { status: latest.status, text: textOfCompanionBlocks(latest.blocks) } : null;
+    const unfinished = latest && (["failed", "cancelled", "superseded", "cancel_requested"].includes(latest.status) || latest.delivery_outcome === "partial")
+      ? { status: latest.delivery_outcome === "partial" ? "partial" : latest.status, text: textOfCompanionBlocks(latest.blocks) } : null;
     return { previous, unfinished };
   });
   if (!evidence.previous.length && !evidence.unfinished) return null;

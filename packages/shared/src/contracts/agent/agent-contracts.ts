@@ -73,6 +73,20 @@ export const agentTurnInterpretationProposalV1Schema = z.object({
    */
   pendingOfferIndexes: z.array(z.number().int().nonnegative()).default([]),
 }).strict();
+/** Evidence obligations only: this cannot answer, execute, or grant access. */
+export const agentReadRequirementsV1Schema = z.object({
+  version: z.literal(1), inputHash: z.string().regex(/^[a-f0-9]{64}$/),
+  policyHash: z.string().regex(/^[a-f0-9]{64}$/), status: z.enum(["resolved", "unavailable"]),
+  requiresIndependentEvidence: z.boolean().default(false),
+  // Older decisions cannot authorize a fast answer to an unclassified
+  // knowledge question. Only an explicit current verdict permits that path.
+  requiresReasoning: z.boolean().default(true),
+  requirements: z.array(z.object({ description: z.string().trim().min(1).max(500),
+    operations: z.array(z.string().min(1).max(100)).min(1) }).strict()),
+  executionRequirements: z.array(z.object({ description: z.string().trim().min(1).max(500),
+    operations: z.array(z.string().min(1).max(100)).min(1) }).strict()).default([]),
+}).strict();
+export type AgentReadRequirementsV1 = z.infer<typeof agentReadRequirementsV1Schema>;
 export const agentTurnInterpretationV1Schema = agentTurnInterpretationProposalV1Schema.omit({ subjects: true, goalObjectIndex: true }).extend({
   // Older persisted turn interpretations predate voiceStyle; safely replay them as no request.
   voiceStyle: agentVoiceStyleDecisionV1WithDefaultSchema,
@@ -87,6 +101,7 @@ export const agentTurnInterpretationV1Schema = agentTurnInterpretationProposalV1
     version: z.literal(1), path: z.enum(["chat", "answer", "work"]),
     source: z.enum(["model", "fallback"]), policyHash: z.string().regex(/^[a-f0-9]{64}$/),
   }).strict().optional(),
+  readRequirements: agentReadRequirementsV1Schema.optional(),
   // Retired classifier/answer envelope is discarded even on checkpoint replay.
   entryDecision: z.unknown().optional(),
   // Existing experimental rows may carry this key. Discard it before any replay

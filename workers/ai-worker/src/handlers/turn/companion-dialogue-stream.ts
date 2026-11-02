@@ -20,6 +20,7 @@ import { lockJobLease, type JobLeaseContext } from "../../lib/job-lease.ts";
 import {
   chunkTextIntoDeltas,
   companionOutputRejectionReason,
+  validateCompanionOutput,
   looksLikeJsonFragment,
   sanitizeCompanionVisibleText,
 } from "./companion-dialogue-content.ts";
@@ -423,4 +424,17 @@ export function reconcileStreamedText(args: {
     return { ok: false, reason: "stream_full_text_diverged" };
   }
   return { ok: true, text: args.validated.text };
+}
+
+/** A completion/fallback snapshot must include the last throttled characters.
+ * Keep the flush and snapshot together so callers cannot preserve a stale
+ * prefix after the public event stream already contains the full sentence. */
+export async function finishCompanionStreamDelivery(delivery: {
+  finish(): Promise<CompanionStreamFinish>; deliveredText(): string;
+}) {
+  const streamed = await delivery.finish();
+  const delivered = delivery.deliveredText();
+  const safe = validateCompanionOutput(delivered);
+  const deliverablePrefix = safe.ok && safe.text.length > 0 && safe.text === delivered ? delivered : "";
+  return { streamed, delivered, deliverablePrefix };
 }

@@ -119,7 +119,7 @@ test("语境示例只替换无语境样例，不改变原生消息、人格其�
   assert.deepEqual({ ...a.request, systemPrompt: "" }, { ...b.request, systemPrompt: "" });
   assert.match(b.request.systemPrompt, /情境：|快捷键|表格导入/);
   assert.match(b.request.systemPrompt, /爱吃白饭/);
-  assert.match(b.request.systemPrompt, /不是事实或待复述的台词/);
+  assert.match(b.request.systemPrompt, /不作为事实、固定台词或回复签名/);
   for (const criterion of dialogueCases.find(c => c.id === "resume")!.criteria)
     assert.ok(!b.request.systemPrompt.includes(criterion));
 });

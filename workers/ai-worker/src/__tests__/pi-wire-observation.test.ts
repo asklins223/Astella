@@ -56,3 +56,35 @@ test("calls without ids keep their index and are rejected by validation", () => 
   assert.deepEqual(wire.observedCalls().map(call => JSON.parse(call.arguments).query), ["a", "b"]);
   assert.throws(() => wire.validate(), /malformed tool arguments/);
 });
+
+test("an initial call ID binds later index-only argument fragments to the same call", () => {
+  const calls = parse([
+    chatDelta([{ index: 0, id: "call_streamed", function: { name: "lookup", arguments: '{"query":' } }]),
+    chatDelta([{ index: 0, function: { arguments: '"fragmented' } }]),
+    chatDelta([{ index: 0, function: { arguments: ' query"}' } }]),
+    finish,
+  ]);
+  assert.deepEqual(calls, [{ id: "call_streamed", name: "lookup", arguments: '{"query":"fragmented query"}' }]);
+});
+
+test("interleaved index-only fragments retain their independent initial IDs", () => {
+  const calls = parse([
+    chatDelta([
+      { index: 0, id: "call_a", function: { name: "lookup", arguments: '{"query":"' } },
+      { index: 1, id: "call_b", function: { name: "lookup", arguments: '{"query":"' } },
+    ]),
+    chatDelta([{ index: 1, function: { arguments: 'b"}' } }, { index: 0, function: { arguments: 'a"}' } }]),
+    finish,
+  ]);
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls.map(call => [call.id, JSON.parse(call.arguments).query]), [["call_a", "a"], ["call_b", "b"]]);
+});
+
+test("an ID arriving after the initial index fragment promotes the existing call", () => {
+  const calls = parse([
+    chatDelta([{ index: 0, function: { name: "look", arguments: '{"query":' } }]),
+    chatDelta([{ index: 0, id: "call_late_id", function: { name: "up", arguments: '"x"}' } }]),
+    finish,
+  ]);
+  assert.deepEqual(calls, [{ id: "call_late_id", name: "lookup", arguments: '{"query":"x"}' }]);
+});

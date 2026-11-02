@@ -1,0 +1,172 @@
+{
+  "status": "not_fully_passed",
+  "modelRoutes": {
+    "agent_turn": "mimo-agent/mimo-v2.6-flash",
+    "companion_fallback": "tokenrhythm/deepseek-v4.1-flash-1017",
+    "decision": "Preserve the existing routes at the user request; no release or model replacement."
+  },
+  "method": "Manual review of the current-model real HTTP conversations, separate from delivery and receipt checks. Copied-persona response text stays private.",
+  "improvements": [
+    "All 24 V17 ordinary/private-persona dialogue turns completed; 25 audited model attempts including one existing-fallback recovery. All streamed/saved texts and final hashes match.",
+    "The private copied-persona four-turn recheck no longer staged physical character activity or added a closing admonition. Four turns do not establish universal naturalness.",
+    "The latest real 14-task matrix passed task/receipt checks, including writes, reads, separate messages and confirmed deletion.",
+    "SDK callbacks after completion/abort are rejected, and native argument-exhaustion emits one result per call. Both defects failed black-box regression before the fix and pass after it.",
+    "An official NASA search and original-page read completed with a trusted in-place citation; an actual 30-second no-meaningful-output attempt continued on the already configured fallback.",
+    "Four fragmented-tool regression cases fail before the correction and pass after it; an actual created-note overview target reached completed, beyond its start receipt.",
+    "The current Responses-route handoff now supplies one real frozen note input and reaches actual completed status; a separate real HTTP cancel changes the target to cancelled. Native goal start/control schema defects are fixed.",
+    "Application evidence is checked before publishing unread claims; the current 14-task matrix has successful stats reads. Calendar-relative reminders resolve to the accepted user-message local day; the new real time check passes."
+  ],
+  "latencyAssessment": "Latest 10-turn presence cohort: first-visible median 6046.0 ms, maximum 22006 ms. Research v4/v5 still exceeded the observer window. Not an SLA or full performance pass.",
+  "releaseAssessment": "Held. Conversational quality, research completion/latency, reader changes and current device delivery still require final acceptance.",
+  "latestRecheck": {
+    "reviewedAt": "2026-11-02T12:17:57.802352+08:00",
+    "status": "not_fully_passed",
+    "evidence": "execution-and-reader-2026-11-02.json"
+  },
+  "historicalFailures": [
+    {
+      "group": "final-mimo-coffee",
+      "cases": [
+        "greeting",
+        "constraint",
+        "correction",
+        "news"
+      ],
+      "kind": "scripted_or_self_commentary",
+      "assessment": "The greeting adds an unsolicited food transition; constraints and corrections are still sometimes answered by describing how the agent will speak; news recaps the user instead of contributing a natural conversational turn."
+    },
+    {
+      "group": "final-mimo-natural",
+      "cases": [
+        "rest",
+        "after-work"
+      ],
+      "kind": "unsolicited_advice_or_inferred_schedule",
+      "assessment": "Ordinary sharing still sometimes becomes an instruction or assumes how much time remains in the day."
+    },
+    {
+      "group": "final-mimo-persona",
+      "cases": [
+        "call-name",
+        "plain-chat",
+        "new-topic",
+        "closing"
+      ],
+      "kind": "overperformed_persona",
+      "assessment": "The privately retained copied-persona arm still adds staged character activity, extra choices or a closing admonition. Removing learned participation retrospectives alone did not establish naturalness."
+    },
+    {
+      "group": "final-mimo-coffee",
+      "cases": [
+        "knowledge"
+      ],
+      "kind": "unsupported_causal_explanation",
+      "assessment": "The answer presents an unmeasured change in aroma, sweetness and acidity as a settled general cause of perceived bitterness. The question did not establish those conditions. No fixed answer was added for this test question.",
+      "factCheckSources": [
+        "https://pubmed.ncbi.nlm.nih.gov/28119357/"
+      ]
+    },
+    {
+      "group": "fixed-model-web-search",
+      "cases": [
+        "web-disabled"
+      ],
+      "kind": "incorrect_knowledge",
+      "assessment": "With search disabled, the response confuses Martian solar and sidereal days and is internally inconsistent. The network gate correctly denied search; transport success does not make the numerical answer correct.",
+      "factCheckSources": [
+        "https://www.giss.nasa.gov/tools/mars24/help/notes.html"
+      ]
+    },
+    {
+      "group": "fixed-model-web-search",
+      "cases": [
+        "web-enabled"
+      ],
+      "kind": "upstream_rejection_as_text",
+      "assessment": "A real MiMo response delivered an English rejection with zero reported token usage. The request was not satisfied. The available audit metadata does not establish whether an upstream structured refusal/error was present; no phrase blacklist or automatic safety-refusal bypass was added."
+    }
+  ],
+  "reviewedAt": "2026-11-02T12:17:57.802352+08:00",
+  "remainingFailures": [
+    {
+      "group": "v17-preset5-low-coffee",
+      "cases": [
+        "greeting",
+        "mood",
+        "constraint",
+        "correction",
+        "minimal"
+      ],
+      "kind": "inference_advice_or_self_commentary",
+      "assessment": "Greeting invents mood; fatigue becomes an unsolicited rest instruction; corrections still announce how the agent will speak; a short acknowledgment receives a teasing challenge."
+    },
+    {
+      "group": "current-runtime-natural",
+      "cases": [
+        "rest",
+        "fridge",
+        "bye"
+      ],
+      "kind": "unsolicited_advice",
+      "assessment": "Ordinary sharing still triggers invented physiology, meal instructions or a closing admonition."
+    },
+    {
+      "group": "v17-preset5-low-coffee",
+      "cases": [
+        "knowledge"
+      ],
+      "kind": "unsupported_causal_explanation",
+      "assessment": "The main author still states unmeasured temperature/aroma/sweetness mechanisms as settled causes without sources. More instructions and an independent evidence-type classification did not establish a fix.",
+      "factCheckSources": [
+        "https://pubmed.ncbi.nlm.nih.gov/28119357/"
+      ]
+    },
+    {
+      "group": "repair-receipts-final",
+      "cases": [
+        "taste-on"
+      ],
+      "kind": "research_latency_and_evidence_scope",
+      "assessment": "Transport completes in 123983 ms, but the answer is too long for the requested short response, fails to retrieve the requested original study, and overstates this search gap as missing literature. Three overlong query rejections remain."
+    },
+    {
+      "group": "repair-receipts-final",
+      "cases": [
+        "casual-after-tools"
+      ],
+      "kind": "unsolicited_advice_after_topic_change",
+      "assessment": "A simple cactus purchase becomes a multi-part care guide; the user did not ask for care advice."
+    },
+    {
+      "group": "chat-developer-coffee",
+      "cases": [
+        "followup",
+        "mood"
+      ],
+      "kind": "invented_context",
+      "assessment": "A wallet/laundry episode absent from the input and a Saturday assumption unsupported by the Monday host clock. This candidate is not selected."
+    },
+    {
+      "group": "candidate-chat-task-matrix",
+      "cases": [
+        "observe-stats"
+      ],
+      "kind": "fake_failed_execution",
+      "assessment": "The model reported an unexecuted read and deferred instead of invoking the available tool. A subsequent targeted stats read succeeded, which does not erase this failure."
+    },
+    {
+      "group": "final-selected-task-matrix",
+      "cases": [
+        "observe-stats"
+      ],
+      "kind": "fabricated_personal_history_without_read",
+      "assessment": "Failed: no stats/activity read, yet a specific September date, August activity and mastery history are asserted. None of these dates or the mastery percentage occurs in the frozen handoff or native input messages. Matching text in the settled checkpoint belongs to the generated final result, not the model input. No evidence of another account record being loaded was found in this inspection; it is not a complete privacy certification.",
+      "status": "historical failure; application read gate and new successful real matrices recorded in evidence-and-calendar-2026-11-02.json"
+    }
+  ],
+  "goalHandoffRecheck": "goal-handoff-2026-11-02.json",
+  "evidenceAndCalendarRecheck": "evidence-and-calendar-2026-11-02.json",
+  "currentSourceReviewRecord": "source-review-and-native-2026-11-02.json",
+  "releaseStatus": "held",
+  "currentReleaseRecord": "release-acceptance-2026-11-02.json"
+}

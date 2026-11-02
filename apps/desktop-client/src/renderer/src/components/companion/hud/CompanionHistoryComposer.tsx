@@ -1,3 +1,4 @@
+import { CompanionAIAttribution } from "../content/CompanionAIAttribution";
 import { useLayoutEffect, useRef } from "react";
 import { Loader2, Mic, MousePointerClick, Plus, Send, Square } from "lucide-react";
 import type { CompanionVoiceInput } from "../voice/use-companion-voice-input";
@@ -54,6 +55,7 @@ export function CompanionHistoryComposer({ input, onInputChange, onSend, voice, 
     };
   }, [input]);
   return <form className="companion-history__composer" onSubmit={event => { event.preventDefault(); if (!sendLimitNote) void onSend(); }}>
+    <CompanionAIAttribution />
     {images.length ? <div className="companion-compose-images">{images.map(image => <CompanionComposerImageChip key={image.url} image={image} onRemove={() => onRemoveImage(image.url)} />)}</div> : null}
     <textarea ref={composerRef} rows={1} value={input} onChange={event => onInputChange(event.currentTarget.value)}
       placeholder="想聊哪一句，或只是想说说话…" aria-label={`继续问 ${companionName}`}

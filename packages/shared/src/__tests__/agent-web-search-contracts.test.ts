@@ -34,3 +34,12 @@ test("saved search citations retain identity and the exact destination through t
   assert.deepEqual(companionContentBlockV1Schema.parse(block), block);
   assert.equal(companionContentBlockV1Schema.safeParse({ ...block, target: { kind: "external_https", href: "javascript:alert(1)" } }).success, false);
 });
+
+
+test("tool process contract preserves receipt-backed search metadata through SSE and archives", async () => {
+  const { companionAgentToolEventV1Schema } = await import("../contracts/companion/companion-agent-contracts.ts");
+  const tool = { toolCallId: "search", name: "web.search", toolVersion: "1", riskClass: "read", status: "succeeded", safeLabel: "搜索网页",
+    webSearch: { query: "官方说明", outcome: "succeeded", sources: [{ referenceId: "web-1234567890abcdef", title: "标题", url: "https://example.com/a", media: "官网", publishDate: "" }] } };
+  assert.deepEqual(companionAgentToolEventV1Schema.parse(tool), tool);
+  assert.equal(companionAgentToolEventV1Schema.safeParse({ ...tool, webSearch: { ...tool.webSearch, sources: [{ ...tool.webSearch.sources[0], url: "javascript:alert(1)" }] } }).success, false);
+});

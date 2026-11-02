@@ -15,8 +15,8 @@ export function companionTimeWakeupConstraint(
   if (attention.executionConstraints?.timeBasedWakeups !== "forbid") return null;
   const field = name === "attention.write.arrange" ? "nextReviewAt"
     : name === "attention.write.schedule_wake" ? "at"
-      : name === "attention.write.schedule_reminder" ? "fireAtLocal" : null;
-  if (!field || args[field] === null || args[field] === undefined) return null;
+      : name === "attention.write.schedule_reminder" ? "reminderTime" : null;
+  if (!field || (name !== "attention.write.schedule_reminder" && (args[field] === null || args[field] === undefined))) return null;
   return { key: `timeBasedWakeups:${name}:${field}`,
     instruction: name === "attention.write.schedule_reminder"
       ? "本轮禁止定时唤醒，没有创建提醒。保留已完成的操作，不改用其他时间安排绕过限制。"

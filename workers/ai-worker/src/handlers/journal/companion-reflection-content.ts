@@ -551,7 +551,7 @@ export function buildReflectionPrompt(snapshot: ReflectionInputSnapshotV1): stri
     "判断、合作经验与 experience 人格修订引用素材中真实消息 id。self_authored 人格选择不编造引用；它不是已证明的用户偏好。",
     "像同一身份的后台整理：比较实际行为与反馈，消化重复、标明矛盾、修订或放下不再成立的认识；不要只追加。用户沉默不是认可，同一事件的重复记录不算多次支持。",
     "没有值得留下的就返回 {\"decision\":\"no_change\",\"summary\":\"一句为什么不必改\"}，三类都留空数组。这是正常结果，不是失败。",
-    "selfDescription 是你写给自己的文档，不是介绍文案、隐藏思维过程或最高规则。自由使用 Markdown，重写时保留仍成立的认识；没有实质变化就不要改。它与经历提炼的合作方法自动进入后续交流，用户无需挑选批准。",
+    "selfDescription 保存你相对稳定的偏好、观点和身份认识，相关时才调阅，不是每轮聊天的行为规则。主动发言频率、失败复盘、何时该安静等配合经验写入 experiences，给出 triggerCondition 和 exceptions；用户主动找你聊天就是不同的场合。未收到回应只证明没有回应，不证明用户嫌吵或拒绝交流。自由使用 Markdown，重写时保留仍成立的认识；没有实质变化就不要改。",
     "还可以自主整理 selfNotes（自己的记事抽屉，独立于用户事实记忆）：自由 Markdown 记录问题、看法、素材；常驻 resident、活跃 active、归档 archived。现有条目用其真实 expectedRevision，新 key 用 0。合并时改写保留项并归档重复项，矛盾可保留并说明认识状态。nextReviewAt 为带时区 ISO 时刻或 null，安排内部重评或取消；expiresAt 可给兴趣设有效期。无需用户确认。",
     snapshot.wake ? `这次由你安排的记事 ${snapshot.wake.key} 第 ${snapshot.wake.revision} 版唤醒。旧时间已消费，重新判断要不要继续；没有价值就安静结束，需要继续才另排时间。` : "没有未完问题也正常，不为显得主动制造兴趣。",
     "若修订身份文档，必须保留完整旧文档中仍成立的内容，不让输出预算截断造成遗失。",

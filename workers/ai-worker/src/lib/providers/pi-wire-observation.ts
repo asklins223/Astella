@@ -1,7 +1,7 @@
 import type { AgentTurnResult, ChatOptions } from "@astella/shared";
 import type { ToolCall } from "@earendil-works/pi-ai";
 import { AgentOutputError } from "../non-retryable-errors.ts";
-import { ProviderStreamError } from "../provider-request-error.ts";
+import { ProviderResponseRefusedError, ProviderResponseUnverifiedError, ProviderStreamError } from "../provider-request-error.ts";
 import { parseResponsesAgentTurn, readResponsesReasoningHandles, readResponsesUsage } from "./opencode-go.ts";
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -24,9 +24,11 @@ export class PiWireObservation {
   private readonly phases = new Map<number, unknown>();
   private readonly deltaPhases: unknown[] = [];
   private readonly rawCalls = new Map<string | number, { id: string; name: string; arguments: string }>();
+  private readonly chatCallKeys = new Map<number, string | number>();
   private readonly started = new Set<string>();
   private readonly settled = new Set<string>();
   private streamed = "";
+  private chatUsage?: Record<string, unknown>;
   private sawFinish = false;
   private failure?: Error;
 
@@ -39,6 +41,10 @@ export class PiWireObservation {
     if (!event) return;
     if (this.api === "openai-responses") {
       const item = record(event.item);
+      if (event.type === "response.refusal.delta" || event.type === "response.refusal.done"
+        || items(item?.content).some(part => part.type === "refusal")) {
+        this.failure = new ProviderResponseRefusedError(this.provider);
+      }
       if (typeof event.output_index === "number" && item?.type === "message") this.phases.set(event.output_index, item.phase);
       if (event.type === "response.output_text.delta" || event.type === "response.refusal.delta") {
         this.deltaPhases.push(this.phases.has(event.output_index as number)
@@ -50,18 +56,28 @@ export class PiWireObservation {
       }
       if (event.type === "response.completed" || event.type === "response.incomplete") {
         this.terminal = record(event.response) ?? undefined;
-        if (event.type === "response.incomplete") {
+        if (items(this.terminal?.output).some(output => items(output.content).some(part => part.type === "refusal"))
+          || record(this.terminal?.incomplete_details)?.reason === "content_filter") {
+          this.failure = new ProviderResponseRefusedError(this.provider);
+        } else if (event.type === "response.incomplete" && !(this.failure instanceof ProviderResponseRefusedError)) {
           this.failure = record(this.terminal?.incomplete_details)?.reason === "max_output_tokens"
             ? new AgentOutputError("output_truncated", "model response exhausted its output limit")
             : new ProviderStreamError(this.provider, "stream_incomplete");
         }
-      } else if (event.type === "response.failed" || event.type === "error") this.failure = new ProviderStreamError(this.provider, "stream_failed");
+      } else if ((event.type === "response.failed" || event.type === "error")
+        && !(this.failure instanceof ProviderResponseRefusedError)) this.failure = new ProviderStreamError(this.provider, "stream_failed");
     } else {
+      // Chat's final usage chunk can have choices: []; retain it before the
+      // choice guard so terminal accounting is checked on both wire dialects.
+      if (record(event.usage)) this.chatUsage = record(event.usage)!;
       const choice = items(event.choices)[0];
       if (!choice) return;
       if (typeof choice.finish_reason === "string" && choice.finish_reason) this.sawFinish = true;
       if (choice.finish_reason === "length") this.failure = new AgentOutputError("output_truncated", "model response exhausted its output limit");
       const delta = record(choice.delta);
+      if (choice.finish_reason === "content_filter" || typeof delta?.refusal === "string") {
+        this.failure = new ProviderResponseRefusedError(this.provider);
+      }
       for (const fragment of items(delta?.tool_calls)) {
         // A stream may carry several calls in one delta, and a gateway may omit
         // `index`. Falling back to a shared index 0 concatenated two
@@ -69,8 +85,22 @@ export class PiWireObservation {
         // only a single bubble ever appeared. Key on the provider's call id
         // when present and fall back to index only while it is missing.
         const id = typeof fragment.id === "string" ? fragment.id.trim() : "";
-        const index = typeof fragment.index === "number" ? fragment.index : 0;
-        const key: string | number = id || index;
+        const index = typeof fragment.index === "number" ? fragment.index : undefined;
+        const previousKey = index === undefined ? undefined : this.chatCallKeys.get(index) ?? index;
+        const key: string | number = id || (previousKey ?? index ?? 0);
+        if (index !== undefined) {
+          // IDs commonly appear only on the first delta; subsequent deltas
+          // identify the call by index. An ID can also arrive after an initial
+          // index-only prefix. Promote that prefix instead of splitting it.
+          if (id && previousKey !== undefined && previousKey !== id) {
+            const pending = this.rawCalls.get(previousKey);
+            if (pending && !pending.id) {
+              this.rawCalls.delete(previousKey);
+              this.rawCalls.set(id, pending);
+            }
+          }
+          this.chatCallKeys.set(index, key);
+        }
         const slot = this.rawCalls.get(key) ?? { id: "", name: "", arguments: "" };
         if (!slot.id && id) slot.id = id;
         const fn = record(fragment.function);
@@ -88,7 +118,7 @@ export class PiWireObservation {
     // routes still wait for the terminal selection; explicit private phases are
     // always withheld, even if the profile claims not to use them.
     const phaseFreeText = phase === undefined && this.supportsAssistantPhase === false;
-    if (!delta || (this.api === "openai-responses" && (!publicPhase(phase)
+    if (this.failure instanceof ProviderResponseRefusedError || !delta || (this.api === "openai-responses" && (!publicPhase(phase)
       || (!this.hasTools && !phaseFreeText && phase !== "final" && phase !== "final_answer")))) return;
     this.streamed += delta;
     this.onDelta?.(delta);
@@ -119,6 +149,18 @@ export class PiWireObservation {
   validate(): void {
     if (this.failure) throw this.failure;
     if (this.api === "openai-responses" ? !this.terminal : !this.sawFinish) throw new ProviderStreamError(this.provider, "stream_incomplete");
+    const usage = this.api === "openai-responses" ? record(this.terminal?.usage) : this.chatUsage;
+    // MiMo can mark a pre-generation gateway response as completed text. The
+    // explicit all-zero counters cannot establish a generated answer. Missing
+    // counters and zero billed/cache-miss tokens are deliberately not enough.
+    // Do not infer a refusal from prose and do not try an alternate provider.
+    const hasOutput = this.api === "openai-responses" ? items(this.terminal?.output).some(item => item.type === "function_call"
+      || items(item.content).some(part => part.type === "output_text" && typeof part.text === "string" && part.text.trim()))
+      : Boolean(this.streamed.trim()) || this.rawCalls.size > 0;
+    if (this.provider === "mimo_responses" && (usage?.input_tokens ?? usage?.prompt_tokens) === 0
+      && (usage?.output_tokens ?? usage?.completion_tokens) === 0 && usage?.total_tokens === 0 && hasOutput) {
+      throw new ProviderResponseUnverifiedError(this.provider);
+    }
     for (const call of this.rawCalls.values()) {
       if (!call.id || !call.name || !argumentsObject(call.arguments)) throw new AgentOutputError("arguments_malformed", "model returned malformed tool arguments");
     }

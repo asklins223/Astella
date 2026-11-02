@@ -72,6 +72,8 @@ export function companionRecoveryIdentity(input: {
     conversationId: input.args.read.conversationId,
     baseMessages: input.args.baseMessages,
     currentRequest: input.currentRequest,
+    readEvidencePolicy: input.args.readEvidence?.policyHash ?? null,
+    conversationReviewPolicy: input.args.conversationReview?.policyHash ?? null,
     permissionLevel: input.permissionLevel,
     definitions: input.definitions.map(({ name, toolVersion, parameters }) => ({ name, toolVersion, parameters })),
     provider: {

@@ -17,6 +17,34 @@ import {
   validateCompanionAgentToolArguments,
 } from "../agent/companion-agent-registry.ts";
 
+test("goal start exposes frozen materials rather than a goal field discarded by execution", () => {
+  const inputs = [{ kind: "note_version", noteId: "55555555-5555-4555-8555-555555555555",
+    noteVersionId: "66666666-6666-4666-8666-666666666666" }];
+  for (const name of ["companion_goal_start", "companion_goals_write"]) {
+    const args = name === "companion_goals_write" ? { action: "start", inputs } : { inputs };
+    const parsed = validateCompanionAgentToolArguments(name, args);
+    assert.equal(parsed.success, true, "start uses the current user request and actual version refs");
+    if (parsed.success) assert.deepEqual(companionOperationArguments("goals.write.start", parsed.data), { inputs });
+    assert.equal(validateCompanionAgentToolArguments(name, { ...args, goal: "extra material must not disappear" }).success, false);
+    assert.equal(validateCompanionAgentToolArguments(name, name === "companion_goals_write" ? { action: "start" } : {}).success, true,
+      "a self-contained calculation or public URL request may have no frozen note input");
+  }
+});
+
+test("goal revision and control carry the target run identity through the domain contract", () => {
+  const runId = "77777777-7777-4777-8777-777777777777";
+  for (const args of [
+    { action: "revise", runId, expectedRevision: 1, goal: "改为只生成脑图" },
+    { action: "control", runId, expectedRevision: 1, control: "cancel" },
+  ]) {
+    const parsed = validateCompanionAgentToolArguments("companion_goals_write", args);
+    assert.equal(parsed.success, true);
+    if (parsed.success) assert.equal(companionOperationArguments(`goals.write.${args.action}`, parsed.data).runId, runId);
+    const { runId: _target, ...missingTarget } = args;
+    assert.equal(validateCompanionAgentToolArguments("companion_goals_write", missingTarget).success, false);
+  }
+});
+
 test("Agent permission levels keep hard confirmation boundaries", () => {
   const read = { name: "synthetic_read", riskClass: "read" as const, requiresConfirmation: false };
   const reversible = { name: "synthetic_reversible", riskClass: "reversible_low" as const, requiresConfirmation: false };

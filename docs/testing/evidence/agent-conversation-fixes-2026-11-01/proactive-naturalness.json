@@ -1,0 +1,535 @@
+{
+  "reviewedAt": "2026-11-01T22:38:52.223689+08:00",
+  "status": "functional_fix_verified_quality_still_held",
+  "modelDecision": "Original MiMo primary and existing DeepSeek recovery retained; no configuration/model replacement or production release.",
+  "changes": [
+    "Remove job-ID-based topic rotation and the obligation to invent a new thought at every conversational opportunity. Startup greeting can stand alone; spontaneous conversation remains enabled.",
+    "Replay recent assistant utterances inside an escaped data envelope; continuing a topic is permitted.",
+    "Treat a successfully completed voice-control-only initiative like an empty quiet decision. Do not retry it on the recovery route or publish an empty-reply host note. Actual user requests, pending deliveries/writes and truncated output keep their delivery guards."
+  ],
+  "ordinaryConversationRecheck": {
+    "summary": {
+      "turns": 10,
+      "firstVisibleMedianMs": 3097.0,
+      "completionMedianMs": 4940.5,
+      "completionMaxMs": 12243,
+      "auditedProviderCalls": 10,
+      "stepErrors": []
+    },
+    "assessment": "Not passed. Greeting corrects a social time greeting, constraints/corrections become self-commentary, minimal acknowledgment is treated as ending the chat, and the coffee explanation still asserts unmeasured causal details. This is a new sample, not evidence of an improvement caused by this patch.",
+    "records": [
+      {
+        "name": "greeting",
+        "input": "嗨，下午好啊",
+        "status": "succeeded",
+        "reply": "晚上好呀，这会儿都十点多了，还说下午好呢。刚摸完鱼准备吃饭还是已经吃过了？",
+        "firstVisibleMs": 7860,
+        "totalMs": 9108,
+        "providerCalls": [
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 8765,
+            "promptTokens": 6496,
+            "completionTokens": 82,
+            "status": "success"
+          }
+        ],
+        "steps": [
+          {
+            "step": 1,
+            "status": "succeeded",
+            "error": null,
+            "ms": 8848
+          }
+        ]
+      },
+      {
+        "name": "small-share",
+        "input": "刚下楼买咖啡，店员在杯子上画了只特别潦草的猫，笑死",
+        "status": "succeeded",
+        "reply": "潦草猫也是猫，能认出是猫就算成功了。比画个歪歪扭扭的强，至少店员是真心想画点什么的。这杯咖啡瞬间比平时值钱了。",
+        "firstVisibleMs": 2581,
+        "totalMs": 5063,
+        "providerCalls": [
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 4934,
+            "promptTokens": 6837,
+            "completionTokens": 66,
+            "status": "success"
+          }
+        ],
+        "steps": [
+          {
+            "step": 1,
+            "status": "succeeded",
+            "error": null,
+            "ms": 4968
+          }
+        ]
+      },
+      {
+        "name": "followup",
+        "input": "像一颗长了耳朵的土豆哈哈哈",
+        "status": "succeeded",
+        "reply": "长耳朵的土豆，猫看了都要愣一下。不过这种杯子反而舍不得扔，摆着看都比正经拉花有意思。",
+        "firstVisibleMs": 1744,
+        "totalMs": 3366,
+        "providerCalls": [
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 3272,
+            "promptTokens": 7109,
+            "completionTokens": 53,
+            "status": "success"
+          }
+        ],
+        "steps": [
+          {
+            "step": 1,
+            "status": "succeeded",
+            "error": null,
+            "ms": 3298
+          }
+        ]
+      },
+      {
+        "name": "mood",
+        "input": "今天其实有点累，啥都不想干",
+        "status": "succeeded",
+        "reply": "累成这样就别干了，躺着也是一种正经事。买杯咖啡还收获了只土豆猫，今天额度已经够了。",
+        "firstVisibleMs": 3466,
+        "totalMs": 4818,
+        "providerCalls": [
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 4726,
+            "promptTokens": 7366,
+            "completionTokens": 84,
+            "status": "success"
+          }
+        ],
+        "steps": [
+          {
+            "step": 1,
+            "status": "succeeded",
+            "error": null,
+            "ms": 4748
+          }
+        ]
+      },
+      {
+        "name": "constraint",
+        "input": "不用安慰我，也别给我安排事情，就随便聊两句",
+        "status": "succeeded",
+        "reply": "行，那就不劝了。这个点还醒着的人，多半也不是真想干活的。你那只土豆猫现在是不是已经喝完了？",
+        "firstVisibleMs": 2728,
+        "totalMs": 4343,
+        "providerCalls": [
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 4239,
+            "promptTokens": 7840,
+            "completionTokens": 65,
+            "status": "success"
+          }
+        ],
+        "steps": [
+          {
+            "step": 1,
+            "status": "succeeded",
+            "error": null,
+            "ms": 4273
+          }
+        ]
+      },
+      {
+        "name": "news",
+        "input": "你今天有什么想跟我分享的吗",
+        "status": "succeeded",
+        "reply": "我没有你那种可以拿出来分享的一天，没下过楼也没喝到过咖啡。今天我这边有的东西，全是你带过来的——比如那只土豆猫，现在它也算我见过的猫了。\n\n要说真有点什么，就是你累成这样还记得回来聊两句，行，猫和人都算被你记住了。",
+        "firstVisibleMs": 8073,
+        "totalMs": 11736,
+        "providerCalls": [
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 11548,
+            "promptTokens": 7945,
+            "completionTokens": 268,
+            "status": "success"
+          }
+        ],
+        "steps": [
+          {
+            "step": 1,
+            "status": "succeeded",
+            "error": null,
+            "ms": 11586
+          }
+        ]
+      },
+      {
+        "name": "correction",
+        "input": "你这话有点像客服了，正常说话就行",
+        "status": "succeeded",
+        "reply": "好，那就不绕了。我今天没什么可分享的，整天都在这儿待着，倒是你，累了还撑着聊，图什么呢。",
+        "firstVisibleMs": 2236,
+        "totalMs": 3341,
+        "providerCalls": [
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 3224,
+            "promptTokens": 8134,
+            "completionTokens": 38,
+            "status": "success"
+          }
+        ],
+        "steps": [
+          {
+            "step": 1,
+            "status": "succeeded",
+            "error": null,
+            "ms": 3257
+          }
+        ]
+      },
+      {
+        "name": "minimal",
+        "input": "嗯",
+        "status": "succeeded",
+        "reply": "行，那我也不说话了，你该干嘛干嘛去。土豆猫替我陪你。",
+        "firstVisibleMs": 4711,
+        "totalMs": 5336,
+        "providerCalls": [
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 3739,
+            "promptTokens": 8173,
+            "completionTokens": 90,
+            "status": "success"
+          }
+        ],
+        "steps": [
+          {
+            "step": 1,
+            "status": "succeeded",
+            "error": null,
+            "ms": 3767
+          }
+        ]
+      },
+      {
+        "name": "knowledge",
+        "input": "顺便问下，为什么咖啡放凉了会更苦？简单说就行",
+        "status": "succeeded",
+        "reply": "简单说：凉了以后，咖啡里的香气挥发掉了，甜感也变弱，就剩苦味最扛冻，于是显得更苦。其实苦味物质没变多，是配菜都撤了，主角就显眼了。",
+        "firstVisibleMs": 10391,
+        "totalMs": 12243,
+        "providerCalls": [
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 12147,
+            "promptTokens": 8223,
+            "completionTokens": 369,
+            "status": "success"
+          }
+        ],
+        "steps": [
+          {
+            "step": 1,
+            "status": "succeeded",
+            "error": null,
+            "ms": 12183
+          }
+        ]
+      },
+      {
+        "name": "closing",
+        "input": "行啦，我去吃饭了，回头聊",
+        "status": "succeeded",
+        "reply": "去吧，吃点好的。回头聊。",
+        "firstVisibleMs": 1653,
+        "totalMs": 1902,
+        "providerCalls": [
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 1800,
+            "promptTokens": 8304,
+            "completionTokens": 25,
+            "status": "success"
+          }
+        ],
+        "steps": [
+          {
+            "step": 1,
+            "status": "succeeded",
+            "error": null,
+            "ms": 1833
+          }
+        ]
+      }
+    ]
+  },
+  "initiativeBeforeSilenceFix": {
+    "summary": {
+      "turns": 3,
+      "firstVisibleMedianMs": 6432.0,
+      "completionMedianMs": 6692,
+      "completionMaxMs": 16344,
+      "auditedProviderCalls": 5,
+      "stepErrors": [
+        "EMPTY_AGENT_RESPONSE",
+        "EMPTY_AGENT_RESPONSE"
+      ]
+    },
+    "records": [
+      {
+        "name": "startup-1",
+        "input": "[宿主真实启动观察；没有用户消息]",
+        "status": "succeeded",
+        "reply": "晚上好，刚打开就撞见我了。今天怎么样？",
+        "firstVisibleMs": 6621,
+        "totalMs": 6692,
+        "providerCalls": [
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:execute_agent_turn",
+            "durationMs": 6185,
+            "promptTokens": 9186,
+            "completionTokens": 159,
+            "status": "success"
+          }
+        ],
+        "steps": [
+          {
+            "step": 1,
+            "status": "succeeded",
+            "error": null,
+            "ms": 6366
+          }
+        ]
+      },
+      {
+        "name": "startup-2",
+        "input": "[新的应用启动；没有用户消息]",
+        "status": "succeeded",
+        "reply": "（宿主核对：这次没有生成有效回复；你可以再说一次，或让我重试。）",
+        "firstVisibleMs": 6243,
+        "totalMs": 6285,
+        "providerCalls": [
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:execute_agent_turn",
+            "durationMs": 3566,
+            "promptTokens": 9451,
+            "completionTokens": 52,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:execute_agent_turn",
+            "durationMs": 2053,
+            "promptTokens": 9220,
+            "completionTokens": 121,
+            "status": "success"
+          }
+        ],
+        "steps": [
+          {
+            "step": 1,
+            "status": "failed",
+            "error": "EMPTY_AGENT_RESPONSE",
+            "ms": 5858
+          }
+        ]
+      },
+      {
+        "name": "startup-3",
+        "input": "[新的应用启动；没有用户消息]",
+        "status": "succeeded",
+        "reply": "",
+        "firstVisibleMs": null,
+        "totalMs": 16344,
+        "providerCalls": [
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:execute_agent_turn",
+            "durationMs": 13832,
+            "promptTokens": 9605,
+            "completionTokens": 339,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:execute_agent_turn",
+            "durationMs": 2005,
+            "promptTokens": 9354,
+            "completionTokens": 164,
+            "status": "success"
+          }
+        ],
+        "steps": [
+          {
+            "step": 1,
+            "status": "failed",
+            "error": "EMPTY_AGENT_RESPONSE",
+            "ms": 15995
+          }
+        ]
+      }
+    ]
+  },
+  "initiativeAfterSilenceFix": {
+    "summary": {
+      "turns": 3,
+      "firstVisibleMedianMs": 5886,
+      "completionMedianMs": 5906,
+      "completionMaxMs": 9079,
+      "auditedProviderCalls": 3,
+      "stepErrors": []
+    },
+    "records": [
+      {
+        "name": "startup-1",
+        "input": "[宿主真实启动观察；没有用户消息]",
+        "status": "succeeded",
+        "reply": "晚上好，这个点才打开，是刚忙完还是准备熬一会儿？",
+        "firstVisibleMs": 5886,
+        "totalMs": 5906,
+        "providerCalls": [
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:execute_agent_turn",
+            "durationMs": 5284,
+            "promptTokens": 9186,
+            "completionTokens": 142,
+            "status": "success"
+          }
+        ],
+        "steps": [
+          {
+            "step": 1,
+            "status": "succeeded",
+            "error": null,
+            "ms": 5360
+          }
+        ]
+      },
+      {
+        "name": "startup-2",
+        "input": "[新的应用启动；没有用户消息]",
+        "status": "succeeded",
+        "reply": "",
+        "firstVisibleMs": null,
+        "totalMs": 9079,
+        "providerCalls": [
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:execute_agent_turn",
+            "durationMs": 8968,
+            "promptTokens": 9457,
+            "completionTokens": 13,
+            "status": "success"
+          }
+        ],
+        "steps": [
+          {
+            "step": 1,
+            "status": "succeeded",
+            "error": null,
+            "ms": 9018
+          }
+        ]
+      },
+      {
+        "name": "startup-3",
+        "input": "[新的应用启动；没有用户消息]",
+        "status": "succeeded",
+        "reply": "",
+        "firstVisibleMs": null,
+        "totalMs": 5853,
+        "providerCalls": [
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:execute_agent_turn",
+            "durationMs": 5777,
+            "promptTokens": 9456,
+            "completionTokens": 66,
+            "status": "success"
+          }
+        ],
+        "steps": [
+          {
+            "step": 1,
+            "status": "succeeded",
+            "error": null,
+            "ms": 5796
+          }
+        ]
+      }
+    ],
+    "assessment": "No empty-reply error or unnecessary recovery call in these three actual HTTP startup observations. The first greeting still speculates about the user evening schedule; expression quality and all launch intervals are not certified. Two rapid repeated synthetic launches chose silence."
+  },
+  "validation": {
+    "aiWorkerUnitTests": {
+      "passed": 1926,
+      "failed": 0
+    },
+    "sharedUnitTests": {
+      "passed": 537,
+      "failed": 0
+    },
+    "typecheck": [
+      "shared",
+      "api",
+      "desktop-client",
+      "ai-worker"
+    ],
+    "freshPostgresContainer": {
+      "migrationsApplied": 462,
+      "lastMigration": "0466_companion_terminal_steps.sql",
+      "scopedIntegrationTestsPassed": 2,
+      "testCases": [
+        "ordinary user control-only output is not successful silence",
+        "initiative empty / control-only / whitespace-control output is successful silence with no extra call or speech"
+      ],
+      "connection": "Explicit administrator fixture connection; this does not certify restricted-role grants."
+    },
+    "environmentNote": "The first disposable-database attempts on the old local PostgreSQL instance encountered stuck GRANT/policy statements and unrelated note-expansion catalog drift. Those attempts are not passing evidence. A new standalone PostgreSQL container completed every migration and both scoped integration tests, then was removed. No production database was touched.",
+    "environmentCleanup": "Fresh test container removed. After verifying there were no other active SQL transactions, running jobs or running conversation turns, restarted only the local development PostgreSQL container to end the stuck test statements; removed the three task-owned disposable databases. Local API, worker and PostgreSQL report healthy. Production was not restarted or modified."
+  },
+  "release": {
+    "serverDeployed": false,
+    "productionMigrationApplied": false,
+    "iosPublished": false,
+    "gate": "held: casual expression, factual accuracy and latency acceptance remain unresolved"
+  }
+}

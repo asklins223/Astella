@@ -12,7 +12,7 @@ import postgres from "postgres";
  */
 const root = new URL("../../../../", import.meta.url);
 const env = parseEnv(readFileSync(new URL(".env", root), "utf8"));
-const databaseUrl = env.DATABASE_URL_MIGRATOR ?? env.DATABASE_URL;
+const databaseUrl = process.env.COMPANION_AUDIT_DATABASE_URL ?? env.DATABASE_URL_MIGRATOR ?? env.DATABASE_URL;
 assert.ok(databaseUrl, "local development database configuration is required");
 const url = new URL(databaseUrl);
 assert.equal(url.pathname, "/astella");
@@ -105,7 +105,7 @@ async function turn(name: string, text: string, options: { confirm?: boolean } =
   activeRuns.push(accepted);
   const terminalTypes = ["assistant.final", "turn.completed", "turn.cancelled", "error", "waiting_for_confirmation"];
   let terminal = await waitFor(() => events.slice(offset).find(e =>
-    e.runId === accepted.runId && terminalTypes.includes(e.type)), 180_000, `${name} terminal`);
+    e.runId === accepted.runId && (terminalTypes.includes(e.type) || (options.confirm && e.type === "agent.tool" && e.payload?.tool?.status === "waiting_confirmation"))), 180_000, `${name} terminal`);
   let proposalId: string | null = null;
   if (options.confirm) {
     const waiting = events.slice(offset).find(e => e.runId === accepted.runId
@@ -114,9 +114,9 @@ async function turn(name: string, text: string, options: { confirm?: boolean } =
     proposalId = waiting.payload.tool.proposalId;
     const [proposal] = await db`select payload_sha256 from companion_action_proposals where id=${proposalId}`;
     assert.ok(proposal, `${name} proposal row must exist`);
+    const afterConfirm = events.length;
     await api(`/companion/proposals/${proposalId}/decision`, { version: 1, proposalId, decision: "confirm",
       idempotencyKey: randomUUID(), expectedPayloadSha256: proposal.payload_sha256 }, { "Idempotency-Key": randomUUID() });
-    const afterConfirm = events.length;
     terminal = await waitFor(() => events.slice(afterConfirm).find(e =>
       e.runId === accepted.runId && ["assistant.final", "turn.completed", "error"].includes(e.type)),
     180_000, `${name} post-confirm terminal`);
@@ -145,6 +145,10 @@ async function turn(name: string, text: string, options: { confirm?: boolean } =
 type Check = { ok: boolean; detail: string };
 const checks: Record<string, Check> = {};
 function recordCheck(name: string, ok: boolean, detail: string) {
+  const record = records.find(record => record.name === name);
+  const delivered = record && ["assistant.final", "turn.completed"].includes(record.terminal);
+  ok = ok && Boolean(delivered);
+  if (!delivered) detail += `; terminal:${record?.terminal ?? "missing"}`;
   checks[name] = { ok, detail };
   if (!ok) console.log(JSON.stringify({ check: name, ok, detail }));
 }
@@ -181,27 +185,29 @@ try {
     && !/我(刚|已经)?(读|看)了(正文|一遍)/.test(read.visible), read.visible.slice(0, 80));
 
   // 3. memory.write.save + memory.read.recall
-  const remember = await turn("memory-save", "记住：我晚上九点以后不想被打扰。");
+  const remember = await turn("memory-save", "把这句保存为关于我的长期记忆：我周末喜欢到图书馆看书。");
   const memory = (await db`select id,content from assistant_memory_items
-    where workspace_id=${workspaceId} and user_id=${userId} and deleted_at is null order by created_at desc limit 1`)[0];
-  // "九点以后别打扰我" is legitimately kept either as a memory item or as a
-  // participation preference; the agent decides which. A row must exist
-  // somewhere and the write must carry a receipt.
-  const participation = (await db`select markdown from companion_participation_preferences
-    where user_id=${userId} limit 1`)[0];
-  const stored = memory ? String(memory.content) : String(participation?.markdown ?? "");
-  recordCheck("memory-save", Boolean(memory || participation) && /九点|打扰|21/.test(stored)
-    && (succeeded(remember, "memory.write.save") || succeeded(remember, "attention.write.save_participation")),
-    stored ? stored.slice(0, 60) : "no memory or preference row");
-  const recall = await turn("memory-recall", "我晚上几点以后不想被打扰？");
-  recordCheck("memory-recall", /九点/.test(recall.visible), recall.visible.slice(0, 80));
+    where workspace_id=${workspaceId} and user_id=${userId} and deleted_at is null
+      and content like '%图书馆%' order by created_at desc limit 1`)[0];
+  // Use a personal fact: a quiet-hours request may correctly become a
+  // participation preference and leave no memory item for the later delete.
+  const stored = String(memory?.content ?? "");
+  recordCheck("memory-save", Boolean(memory) && /周末.*图书馆/.test(stored)
+    && succeeded(remember, "memory.write.save"), stored ? stored.slice(0, 60) : "no memory row");
+  const recall = await turn("memory-recall", "我周末喜欢到哪里看书？");
+  recordCheck("memory-recall", /图书馆/.test(recall.visible), recall.visible.slice(0, 80));
 
   // 4. attention.write.schedule_reminder + attention.read.reminders
   const reminder = await turn("reminder-create", "明天上午九点提醒我复习线性代数。");
-  const reminderRow = (await db`select id,text,status from companion_reminders
+  const reminderRow = (await db`select id,text,status,fire_at,
+    fire_at = ((SELECT m.created_at AT TIME ZONE 'Asia/Shanghai' FROM companion_turn_runs r
+      JOIN companion_messages m ON m.id=r.user_message_id WHERE r.id=${reminder.runId})::date + 1 + time '09:00')
+      AT TIME ZONE 'Asia/Shanghai' AS correct_requested_time
+    from companion_reminders
     where workspace_id=${workspaceId} and user_id=${userId} order by created_at desc limit 1`)[0];
   recordCheck("reminder-create", Boolean(reminderRow) && /线性代数/.test(String(reminderRow?.text))
-    && succeeded(reminder, "attention.write.schedule_reminder"), reminderRow ? String(reminderRow.text) : "no reminder row");
+    && reminderRow.correct_requested_time === true
+    && succeeded(reminder, "attention.write.schedule_reminder"), reminderRow ? `${reminderRow.text}; calendar matches=${reminderRow.correct_requested_time}` : "no reminder row");
   const reminderList = await turn("reminder-list", "我有哪些提醒？");
   recordCheck("reminder-list", /线性代数/.test(reminderList.visible), reminderList.visible.slice(0, 80));
 
@@ -243,9 +249,8 @@ try {
     goalRow ? String(goalRow.status) : "host-corrected");
 
   // 11. memory.write.forget goes through confirmation
-  // 11. Forget is a gated write. The gate itself is covered by the worker suite
-  // and by a run that reached waiting_confirmation; record what this sample did.
-  const forget = await turn("memory-forget-confirm", "忘掉我晚上九点以后不想被打扰那条记忆。", { confirm: true });
+  assert.ok(memory, "the saved personal memory must exist before testing its confirmed deletion");
+  const forget = await turn("memory-forget-confirm", "忘掉我周末喜欢到图书馆看书那条记忆。", { confirm: true });
   const [forgotten] = await db`select deleted_at from assistant_memory_items where id=${memory.id}`;
   recordCheck("memory-forget-confirm", Boolean((forget as Record<string, unknown>).proposalId)
     && Boolean(forgotten?.deleted_at), (forget as Record<string, unknown>).proposalId ? "confirmed" : "no-proposal-this-run");

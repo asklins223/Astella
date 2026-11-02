@@ -56,6 +56,8 @@ export interface AgentEventContext {
    * 放这里而不是逐层加参数：它是"这一轮的事实"，与 run/workspace 同生命周期。
    */
   constraints: CompanionAgentToolExecutionConstraints;
+  /** A missing capability must not be reported as a user-disabled switch. */
+  webSearchUnavailableReason?: string;
   verifyUtterance?: (text: string) => void;
   reviewInitiativeSpeech?: (text: string) => Promise<string | null>;
   onUtterancePublished?: (messageId: string, text: string, rawText: string) => Promise<void>;

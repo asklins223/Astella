@@ -369,6 +369,25 @@ fingerprint: `mock:${this.modelId}:${this.visionModelId}:native_tools`,
       .filter((message) => message.role === "system")
       .map((message) => String(message.content ?? ""))
       .join("\n");
+    if (systemContent.includes("你只核对下一条日常聊天消息的交流分寸")
+      || systemContent.startsWith("你只核对知识答复")
+      || systemContent.startsWith("核对待交付答复与本轮实际读到的资料")) {
+      const content = JSON.stringify({ reply: null });
+      return { content, usage: this.estimateUsage(userContent, content) };
+    }
+
+    if (systemContent.includes("Companion application evidence requirements (v1)")) {
+      const requirements = userContent.includes("【mock:requires-stats-read】")
+        ? [{ description: "Actual current learning statistics", operations: ["observe.stats"] }] : [];
+      const content = JSON.stringify({ requirements, executionRequirements: userContent.includes("【mock:requires-memory-write】")
+        ? [{ description: "Save the requested personal memory", operations: ["memory.write.save"] }] : [] });
+      return { content, usage: this.estimateUsage(userContent, content) };
+    }
+    if (systemContent.includes("Determine whether answering the user's CURRENT question needs independent external evidence")) {
+      const content = JSON.stringify({ requiresIndependentEvidence: userContent.includes("【mock:requires-independent-evidence】"),
+        requiresReasoning: userContent.includes("【mock:requires-reasoning】") });
+      return { content, usage: this.estimateUsage(userContent, content) };
+    }
 
     // Default fixture verdict preserves normal greeting/publication paths.
     // Semantic rejection and correction cases supply their own scripted verdicts.

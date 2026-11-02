@@ -11,14 +11,24 @@ test("提醒与导航工具的参数边界：时刻只收挂钟，页面只收�
   assert.equal(validateCompanionAgentToolArguments("companion_attention_write", {
     action: "schedule_reminder",
     text: "把疏散路线过一遍",
-    fireAtLocal: "2026-09-22 09:00",
+    reminderTime: { date: "2026-09-22", time: "09:00" },
   }).success, true);
+  for (const reminderTime of [{ afterMinutes: 1.5 }, { weekday: 1, weeksFromThisWeek: 1, time: "09:00" }])
+    assert.equal(validateCompanionAgentToolArguments("companion_attention_write", { action: "schedule_reminder", text: "test", reminderTime }).success, true);
   // 模型自己换算成 UTC/ISO-Z 一定会差八小时，格式上直接挡住。
   assert.equal(validateCompanionAgentToolArguments("companion_attention_write", {
     action: "schedule_reminder",
     text: "早九点",
     fireAtLocal: "2026-09-22T01:00:00.000Z",
   }).success, false);
+  assert.equal(validateCompanionAgentToolArguments("companion_attention_write", {
+    action: "schedule_reminder", text: "明天九点", reminderTime: { daysFromToday: 1, time: "09:00" },
+  }).success, true);
+  for (const reminderTime of [{ date: "2026-02-30", time: "09:00" }, { date: "0000-01-01", time: "09:00" },
+    { daysFromToday: -1, time: "09:00" }, { daysFromToday: 1, time: "25:00" },
+    { daysFromToday: 1, time: "09:60" }, { daysFromToday: 1, date: "2026-09-22", time: "09:00" },
+    { afterMinutes: 0 }, { afterMinutes: -1 }, { weekday: 8, weeksFromThisWeek: 1, time: "09:00" }])
+    assert.equal(validateCompanionAgentToolArguments("companion_attention_write", { action: "schedule_reminder", text: "test", reminderTime }).success, false);
   assert.equal(validateCompanionAgentToolArguments("companion_open", { target: "page", page: "note_library" }).success, true);
   assert.equal(validateCompanionAgentToolArguments("companion_open", { target: "page", page: "admin" }).success, false);
   // open_page 不接受任何实体 id：带实体的跳转各有工具做归属校验。

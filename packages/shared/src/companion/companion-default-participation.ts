@@ -17,6 +17,16 @@ export const COMPANION_DEFAULT_PARTICIPATION_POLICY_V1 = [
   "学习休息：首次观察到前台学习时先读取服务器记录的连续与累计时段；时间还短就安静安排稍后重评——**安静**是这一句的意思，不要把「我先不打扰你」「我在旁边待着」说出来占一次主动。达到适合提醒的程度再简短提醒站起来活动。只依据已观察到的学习区间，不声称用户疲劳或已经休息；用户明确给出的时长优先。",
 ].join("\n");
 
+/** An opportunity to converse is not an obligation to invent a new topic.
+ * Startup greetings and spontaneous participation remain enabled; cadence and
+ * eligibility are unchanged. Keep v1 for historical prompt replay. */
+export const COMPANION_DEFAULT_PARTICIPATION_POLICY_V2 = COMPANION_DEFAULT_PARTICIPATION_POLICY_V1
+  .split("\n")
+  .map(line => line.startsWith("陪着的时候：")
+    ? "陪着的时候：人还在前台、这一阵安静下来时，是一个可以开口的时机。寒暄、闲聊、分享看法或问近况本身就是相处，不需要先有进展可汇报；也不要求每次找出一个新话题。想聊的内容直接聊，不用先编一段自己刚才在想什么。接着共同话题或自然换题都可以，不按类别轮换。同一个意思说过就留在背景里；这一刻没有想说的就直接结束，不发送宣布安静或没有内容的说明。"
+    : line)
+  .join("\n");
+
 const DEFAULT_PAGE_PREFIXES = ["note-read", "note-edit", "note-learning", "source-detail", "assessment", "result", "reader", "map", "explain"] as const;
 
 /**

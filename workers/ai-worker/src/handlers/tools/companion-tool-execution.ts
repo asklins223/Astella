@@ -7,7 +7,9 @@ import { reserveCompanionProviderCall } from "../agent/companion-agent-events.ts
 import { executeAgentGoalTool } from "../../agent/companion-tools.ts";
 import { executeBasicCapability } from "../../agent/basic-capabilities.ts";
 import { executeExternalCapability } from "../../agent/external-capabilities.ts";
-import { executeWebSearch, webSearchCitationBlocks } from "../../agent/web-search.ts";
+import { readCompanionDocumentRedirects } from "./companion-document-provenance.ts";
+import { publicDocumentUnavailableSummary } from "../../agent/public-document.ts";
+import { executeWebSearch, readCompanionWebSearchReceipts, readWebSearchEnabled, webSearchCitationBlocks, webSearchMaterialProgress } from "../../agent/web-search.ts";
 /**
  * 伴星 agent 的**工具执行**（2026-09-30 拆出，B2）。
  *
@@ -39,6 +41,7 @@ import {isVisionGatedCompanionTool,
   COMPANION_CARD_BLOCK_PREVIEW_MAX_CHARS,
   companionOperationArguments,
   companionOperationName,
+  validateCompanionAgentToolArguments,
 } from "@astella/shared";
 import { stableStringify, sha256Utf8V1 } from "@astella/shared/content-hash";
 import { COMPANION_TURN_MAX_IMAGES_V1 } from "@astella/shared/companion-conversation-contracts";
@@ -98,6 +101,9 @@ import {
   CompanionToolBlockedError,
   CompanionToolNotExecutedError,
   CompanionToolUnavailableError,
+  WEB_SEARCH_NOT_OPEN_SUMMARY,
+  WEB_SEARCH_MISSING_EVIDENCE_GUIDANCE,
+  webSearchUnavailableSummary,
   type AgentToolExecutionResult,
 } from "./companion-tool-result.ts";
 import { executeCompanionMemoryTool } from "./companion-memory-tools.ts";
@@ -167,7 +173,8 @@ export async function executeReadTool(
       const operation = companionOperationName({ name: definition.name, arguments: args });
       if (operation === definition.name) throw new CompanionToolError("没有说明要执行哪一类动作。");
       if (operation === "web.search" && event.constraints.webSearchEnabled !== true) {
-        throw new CompanionToolUnavailableError("这轮没有开启联网搜索；继续回答，但无法联网核实。");
+        throw new CompanionToolUnavailableError(event.webSearchUnavailableReason && event.webSearchUnavailableReason !== "disabled"
+          ? webSearchUnavailableSummary(event.webSearchUnavailableReason) : WEB_SEARCH_NOT_OPEN_SUMMARY);
       }
       return executeReadTool(event, { ...definition, name: operation },
         companionOperationArguments(operation, args));
@@ -190,21 +197,43 @@ export async function executeReadTool(
         safeSummary: args.key ? "已展开自己的记事。" : "已读取自己的记事目录。" };
     }
     case "web.search": {
-      const value = await executeWebSearch({ workspaceId: event.ctx.workspaceId, userId: event.read.userId },
+      const scope = { workspaceId: event.ctx.workspaceId, userId: event.read.userId };
+      const value = await executeWebSearch(scope,
         args as Parameters<typeof executeWebSearch>[1], event.ctx.signal);
-      return { value, resultRef: JSON.stringify(value), blocks: webSearchCitationBlocks(value), safeSummary: value.status === "succeeded"
+      const progress = value.status === "succeeded" ? webSearchMaterialProgress(value,
+        await readCompanionWebSearchReceipts(scope, event.read.runId)) : undefined;
+      return { value: { ...value, ...(progress ? { progress } : {}),
+        ...(value.status === "unavailable" ? { note: WEB_SEARCH_MISSING_EVIDENCE_GUIDANCE } : {}) },
+        resultRef: JSON.stringify(value), blocks: webSearchCitationBlocks(value), safeSummary: value.status === "succeeded"
         ? `搜索到 ${value.sources.length} 个网页`
-        : value.reason === "quota_exhausted" ? "搜索额度不足，已暂时停用联网搜索；继续回答，但无法联网核实"
-          : "本次联网搜索不可用；继续回答，但无法联网核实" };
+        : webSearchUnavailableSummary(value.reason) };
     }
     case "web.read_document": {
       // 窗口里**所有**用户说过的话都算授权依据：只认最近 3 条时，用户四轮前贴过的链接
       // 会被判成"没给过"，她会去要一个已经给过的东西。窗口本身已由声明预算收边。
       const userTexts = [event.read.userText,
         ...event.read.recentMessages.filter(message => message.role === "user").map(message => message.text)];
-      const value = await executeExternalCapability({ workspaceId: event.ctx.workspaceId, userId: event.read.userId },
-        { name: INTERNAL_CAPABILITY[definition.name] ?? definition.name, arguments: args }, userTexts, event.ctx.signal);
-      return { value, safeSummary: ("truncated" in value && value.truncated) ? "已读取公开文档的一部分，来源与覆盖范围已保留" : "已读取公开文档，来源与正文已核对" };
+      const scope = { workspaceId: event.ctx.workspaceId, userId: event.read.userId };
+      // A search-enabled user asked the agent to find public sources. Follow
+      // only exact links in this run's actual successful receipts, never a URL
+      // fabricated in the reply, a different run or retrieved page text.
+      const receipts = event.constraints.webSearchEnabled === true && await readWebSearchEnabled(scope)
+        ? await readCompanionWebSearchReceipts(scope, event.read.runId) : [];
+      let value;
+      try {
+        value = await executeExternalCapability(scope,
+          { name: INTERNAL_CAPABILITY[definition.name] ?? definition.name, arguments: args }, userTexts, event.ctx.signal,
+          { verifiedSearchResultUrls: receipts.flatMap(receipt => receipt.sources.map(source => source.url)),
+            verifiedDocumentRedirects: await readCompanionDocumentRedirects(scope, event.read.runId) });
+      } catch (error) {
+        if (error instanceof AgentStoreError && error.code === "document_url_not_authorized")
+          throw new CompanionToolBlockedError(error.message);
+        const unavailable = publicDocumentUnavailableSummary(error);
+        if (unavailable) throw new CompanionToolUnavailableError(unavailable);
+        throw error;
+      }
+      return { value: { ...value, readingGuidance: "这是实际取得的网页文本窗口。是否续读由当前结论缺少的资料决定；网页还有未返回的尾部，不等于当前相关段落不能使用。需要正文后面的某处内容时，可用同一 url 与 findText 定位原文字词，不必猜 offset 或重新搜索。find.matchOffset=null 表示从该起点没有匹配，不表示相关事实不存在。原始论文摘要可支持摘要明确给出的有限结论，不能冒充全文或扩展实验条件；资料足够就完成本轮核对。" },
+        safeSummary: ("truncated" in value && value.truncated) ? "已取得网页的部分正文，保留来源与覆盖范围" : "已取得网页正文，保留来源与内容指纹" };
     }
     case "observe.calculate": {
       try {
@@ -1319,17 +1348,30 @@ export async function executeDirectTool(
     }
     case "attention.write.schedule_reminder": {
       const text = String(args.text).slice(0, 200);
+      const validatedTime = validateCompanionAgentToolArguments("companion_attention_write", { ...args, action: "schedule_reminder" });
+      if (!validatedTime.success) throw new CompanionToolNotExecutedError("提醒时间没有形成有效的本地日历条件，这次没有创建提醒。");
+      const timing = validatedTime.data.reminderTime as { time?: string; date?: string; daysFromToday?: number;
+        afterMinutes?: number; weekday?: number; weeksFromThisWeek?: number };
       // 39d W5-6 刀三（§16.13）：模型说这条提醒是在说哪篇笔记时，把那个 noteId 记下来。
       // 兑现闸据此在共享撤回后不再投递（迁移 0299）。**服务端校验它**：模型可能给
       // 一篇他此刻读不到的笔记，或者干脆编一个 id——那两种都要在这里挡掉，
       // 否则就是"我给了一条指向受保护内容的提醒"当成合法的。读不到就当没传
       // （落 NULL），**不报错**：用户要的是一句提醒，不是被权限问题拦住。
       const noteId = typeof args.noteId === "string" ? args.noteId : null;
-      // "YYYY-MM-DD HH:MM"[:SS] → 该用户时区的挂钟时间 → UTC 绝对时刻。
-      // 时区算术全交给 Postgres（AT TIME ZONE 对 timestamp 恰好产出 timestamptz）：
-      // 模型给的"明早九点"如果被按 UTC 解释，提醒会差八个小时——那是这条能力
-      // 最刺眼的失效方式。
-      const local = String(args.fireAtLocal).trim().replace("T", " ");
+      // Relative dates use the accepted message's calendar day, not the UTC
+      // date or the day a delayed/recovered worker happens to execute.
+      const anchor = sql`(SELECT coalesce(m.created_at,r.created_at) FROM companion_turn_runs r
+        LEFT JOIN companion_messages m ON m.id=r.user_message_id AND m.workspace_id=r.workspace_id AND m.user_id=r.user_id
+        WHERE r.id=${event.read.runId} AND r.workspace_id=${event.ctx.workspaceId} AND r.user_id=${event.read.userId})`;
+      const localDate = timing.date ? sql`${timing.date}::date`
+        : timing.weekday !== undefined ? sql`(date_trunc('week',${anchor} AT TIME ZONE ${tzSubquery(event.read.userId)})::date
+          + (${timing.weeksFromThisWeek}::integer * 7 + ${timing.weekday}::integer - 1))`
+        : sql`((${anchor} AT TIME ZONE ${tzSubquery(event.read.userId)})::date + ${timing.daysFromToday}::integer)`;
+      const local = sql`(${localDate} + ${timing.time}::time)`;
+      const fireAt = timing.afterMinutes !== undefined ? sql`(${anchor} + ${timing.afterMinutes}::double precision * interval '1 minute')`
+        : sql`(${local} AT TIME ZONE ${tzSubquery(event.read.userId)})`;
+      const validLocalTime = timing.afterMinutes !== undefined ? sql`true`
+        : sql`(${fireAt} AT TIME ZONE ${tzSubquery(event.read.userId)}) = ${local}`;
       const created = await withWorkerWorkspaceTransaction(
         { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
         async (tx) => {
@@ -1345,39 +1387,28 @@ export async function executeDirectTool(
             `);
             subjectNoteId = (Array.isArray(visible) ? visible : [])[0]?.id ?? null;
           }
-          const rows = await tx.execute<{ id: string; fire_at_local: string; in_minutes: number }>(sql`
+          const rows = await tx.execute<{ id: string; fire_at_local: string; day_offset: number; timezone: string }>(sql`
             INSERT INTO companion_reminders (workspace_id, user_id, text, fire_at, note_id)
-            VALUES (
+            SELECT
               ${event.ctx.workspaceId},
               ${event.read.userId},
               ${text},
-              (${local}::timestamp AT TIME ZONE ${tzSubquery(event.read.userId)}),
+              ${fireAt},
               ${subjectNoteId}::uuid
-            )
+            WHERE ${fireAt} > now() AND ${validLocalTime}
             RETURNING id::text AS id,
                       to_char(fire_at AT TIME ZONE ${tzSubquery(event.read.userId)},
-                              'MM-DD HH24:MI') AS fire_at_local,
-                      (EXTRACT(EPOCH FROM (fire_at - now())) / 60)::int AS in_minutes
+                              'YYYY-MM-DD HH24:MI') AS fire_at_local,
+                      (fire_at AT TIME ZONE ${tzSubquery(event.read.userId)})::date
+                        - (${anchor} AT TIME ZONE ${tzSubquery(event.read.userId)})::date AS day_offset,
+                      ${tzSubquery(event.read.userId)} AS timezone
           `);
           return (Array.isArray(rows) ? rows : [])[0] ?? null;
         },
       );
-      if (!created) throw new CompanionToolError("提醒没能记下，这次没有改动任何东西");
-      if (created.in_minutes < 0) {
-        // 已经过去的时刻：把刚插的那行作废掉再报错，否则会留下一条永不兑现的
-        // pending（兑现函数只认 fire_at <= now()，它会被立刻当作 missed 烧掉，
-        // 但dedupe/列表里会看见一条噪音）。
-        await withWorkerWorkspaceTransaction(
-          { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
-          async (tx) => tx.execute(sql`
-            UPDATE companion_reminders SET status = 'cancelled', updated_at = now()
-            WHERE id = ${created.id}::uuid
-          `),
-        );
-        throw new CompanionToolError(`提醒时间 ${created.fire_at_local} 已经过去了`);
-      }
+      if (!created) throw new CompanionToolNotExecutedError("这个本地时刻已经过去，或因夏令时切换不存在；没有创建提醒，请核对时间。");
       return {
-        value: { reminderId: created.id, fireAtLocal: created.fire_at_local },
+        value: { reminderId: created.id, fireAtLocal: created.fire_at_local, timezone: created.timezone, daysFromRequest: created.day_offset },
         safeSummary: `已安排提醒：${created.fire_at_local}「${text.slice(0, 40)}」`,
       };
     }

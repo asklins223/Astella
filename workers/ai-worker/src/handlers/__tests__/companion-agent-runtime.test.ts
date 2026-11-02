@@ -77,6 +77,7 @@ import type { AIProvider } from "../../lib/ai-provider.ts";
 import type { AgentTurnRequest, AgentTurnResult } from "@astella/shared";
 import { AGENT_GOAL_HANDOFF_INSTRUCTIONS } from "../../agent/goal-handoff-instructions.ts";
 import { CompanionToolOutputRepairError } from "../tools/companion-tool-output-repair.ts";
+import { CompanionIndependentEvidenceUnavailable } from "../agent/companion-read-requirements.ts";
 
 test("note linking remains evidence based without a prescribed search sequence", () => {
   assert.match(AGENT_GOAL_HANDOFF_INSTRUCTIONS, /links 可为空/);
@@ -331,6 +332,87 @@ test("发布前保留完整复核结果：长流不吐字，也不剪掉末尾",
   assert.equal(emitted, false);
   assert.equal(state.emitted, deltas.length);
   assert.equal(state.aborted, false);
+});
+
+test("an asynchronous evidence hold retains prose while preserving the model's actual tool result", async () => {
+  const calls = [{ id: "stats", name: "companion_observe", arguments: { action: "stats" } }];
+  const { provider, state } = streamingStubProvider(["Invented learning dates."], calls);
+  let resolvePolicy!: (policy: "stream" | "retain") => void;
+  let generated!: () => void;
+  const ready = new Promise<void>(resolve => { generated = resolve; });
+  const stream = provider.chatCompletionStream!;
+  provider.chatCompletionStream = async (...args) => { const result = await stream(...args); generated(); return result; };
+  const seen: string[] = [];
+  const running = runStreamingAgentStep({ provider, stepRequest: STREAM_STEP_REQUEST,
+    ctxSignal: new AbortController().signal, timeoutMs: 5000,
+    publicationPolicy: new Promise(resolve => { resolvePolicy = resolve; }),
+    onProviderDelta: async delta => { seen.push(delta); return true; } });
+  await ready;
+  assert.deepEqual(seen, []);
+  resolvePolicy("retain");
+  const result = await running;
+  assert.deepEqual(seen, []);
+  assert.deepEqual(result.toolCalls, calls);
+  assert.equal(result.content, "Invented learning dates.");
+  assert.equal(state.aborted, false, "retaining prose must not discard or rerun a valid tool decision");
+});
+
+test("ordinary speech releases its held prefix as soon as evidence settles, before the provider completes", async () => {
+  let resolvePolicy!: (policy: "stream" | "retain") => void;
+  let prefixReady!: () => void, complete!: () => void;
+  const prefix = new Promise<void>(resolve => { prefixReady = resolve; });
+  const completion = new Promise<void>(resolve => { complete = resolve; });
+  const { provider } = streamingStubProvider([]);
+  provider.chatCompletionStream = async (_messages, _options, _signal, delta) => {
+    delta("Hello"); prefixReady(); await completion; delta(" again."); return { content: "Hello again." };
+  };
+  const seen: string[] = [];
+  const running = runStreamingAgentStep({ provider, stepRequest: STREAM_STEP_REQUEST,
+    ctxSignal: new AbortController().signal, timeoutMs: 5000,
+    publicationPolicy: new Promise(resolve => { resolvePolicy = resolve; }),
+    onProviderDelta: async delta => { seen.push(delta); return true; } });
+  await prefix;
+  assert.deepEqual(seen, []);
+  resolvePolicy("stream");
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(seen.join(""), "Hello");
+  complete();
+  assert.equal((await running).content, "Hello again.");
+  assert.equal(seen.join(""), "Hello again.");
+});
+
+test("an evidence decision arriving after cancellation cannot release a held reply", async () => {
+  const { provider } = streamingStubProvider(["Private draft."]);
+  let resolvePolicy!: (policy: "stream" | "retain") => void;
+  const seen: string[] = [], controller = new AbortController();
+  const running = runStreamingAgentStep({ provider, stepRequest: STREAM_STEP_REQUEST,
+    ctxSignal: controller.signal, timeoutMs: 5000,
+    publicationPolicy: new Promise(resolve => { resolvePolicy = resolve; }),
+    onProviderDelta: async delta => { seen.push(delta); return true; } });
+  const rejected = assert.rejects(running);
+  controller.abort(); await rejected;
+  resolvePolicy("stream"); await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(seen, []);
+});
+
+test("settled source unavailability aborts an unpublished author immediately and is never retried as transport", async () => {
+  const seen: string[] = [];
+  const { provider } = streamingStubProvider([]);
+  let aborted = false;
+  provider.chatCompletionStream = async (_messages, _options, signal, delta) => {
+    delta("An unverified cause.");
+    return new Promise((_resolve, reject) => {
+      if (signal?.aborted) { aborted = true; reject(signal.reason); }
+      else signal?.addEventListener("abort", () => { aborted = true; reject(signal.reason); }, { once: true });
+    });
+  };
+  const unavailable = new CompanionIndependentEvidenceUnavailable();
+  await assert.rejects(runStreamingAgentStep({ provider, stepRequest: STREAM_STEP_REQUEST,
+    ctxSignal: new AbortController().signal, timeoutMs: 5000, publicationPolicy: Promise.reject(unavailable),
+    onProviderDelta: async text => { seen.push(text); return true; } }), error => error === unavailable);
+  assert.equal(aborted, true);
+  assert.deepEqual(seen, []);
+  assert.equal(canRetryCompanionStream(unavailable, { emitted: false, now: 1, deadline: 5000 }), false);
 });
 
 /**

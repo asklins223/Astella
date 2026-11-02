@@ -38,6 +38,9 @@ export type CompanionAnswerRepairInput = {
   isTruncated: (text: string) => boolean;
   /** 由运行侧提供「拿这个 provider 把这一步再跑一次」，含超时与租约那一套。 */
   invokeProvider: (args: { provider: AIProvider; request: AgentTurnRequest; signal: AbortSignal; timeoutMs: number }) => Promise<AgentTurnResult>;
+  /** Attribute only a replacement actually selected for delivery, not a
+   * discarded retry that happened to return successfully. */
+  onProviderUsed?: (provider: Pick<AIProvider, "id" | "modelId">) => void;
 };
 
 export type CompanionAnswerRepairOutcome = {
@@ -94,6 +97,7 @@ export async function repairDegenerateCompanionAnswer(input: CompanionAnswerRepa
         "companion degenerate-answer repair rung produced a better answer");
         repaired = retryResult;
         repairedCalls = retryCalls;
+        input.onProviderUsed?.(rung.provider);
       }
     } catch (retryError) {
       logger.warn({ err: retryError, stepCount: input.stepCount, rung: rung.label },

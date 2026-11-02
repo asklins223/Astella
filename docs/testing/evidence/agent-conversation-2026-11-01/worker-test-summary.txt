@@ -1,0 +1,12 @@
+Command: node --import tsx --test src/handlers/__tests__/companion-dialogue-stream.test.ts src/handlers/__tests__/companion-stream-completion.test.ts src/handlers/__tests__/companion-finish.test.ts src/handlers/__tests__/companion-host-settlement.test.ts src/handlers/__tests__/companion-agent-runtime.test.ts src/handlers/__tests__/companion-delivery-gates.test.ts
+Working directory: workers/ai-worker
+
+1..127
+# tests 148
+# suites 5
+# pass 148
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2069.934625

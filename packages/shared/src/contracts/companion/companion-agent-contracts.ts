@@ -178,6 +178,25 @@ export type CompanionAgentToolDefinitionV1 = z.infer<
   typeof companionAgentToolDefinitionV1Schema
 >;
 
+/** Search provenance emitted by the host, separate from model-authored text. */
+export const companionWebSearchProcessV1Schema = z.object({
+  query: z.string().min(1).max(70),
+  domain: z.string().max(253).optional(),
+  searchedAt: z.string().datetime({ offset: true }).optional(),
+  outcome: z.enum(["succeeded", "unavailable"]).optional(),
+  sources: z.array(z.object({
+    referenceId: z.string().regex(/^web-[a-f0-9]{16}$/),
+    title: z.string().min(1).max(200),
+    url: z.string().url().max(2000).refine(value => {
+      const url = new URL(value);
+      return url.protocol === "https:" && !url.username && !url.password;
+    }),
+    media: z.string().max(100),
+    publishDate: z.string().max(80),
+  }).strict()).max(8),
+}).strict();
+export type CompanionWebSearchProcessV1 = z.infer<typeof companionWebSearchProcessV1Schema>;
+
 export const companionAgentToolEventV1Schema = z.object({
   toolCallId: z.string().min(1).max(200),
   /** A streamed preparation may resolve to an existing durable operation. */
@@ -189,6 +208,7 @@ export const companionAgentToolEventV1Schema = z.object({
   safeLabel: z.string().min(1).max(240),
   proposalId: z.string().uuid().optional(),
   safeSummary: z.string().max(240).optional(),
+  webSearch: companionWebSearchProcessV1Schema.optional(),
   /** A durable receipt, published as soon as the save commits, before the final reply. */
   noteCreated: companionCreatedNoteV1Schema.optional(),
   occurredAt: z.string().datetime({ offset: true }).optional(),

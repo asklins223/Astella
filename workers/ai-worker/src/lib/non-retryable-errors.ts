@@ -18,6 +18,7 @@ import { AIContextOverflowError } from "./context-governor.ts";
 import { AgentContextError } from "@astella/agent-core";
 // 稳定 P1（2026-09-15 审计）：作业 payload 与类型不符是确定性失败。
 import { JobPayloadContractError } from "@astella/shared/job-payload-contracts";
+import { ProviderResponseRefusedError, ProviderResponseUnverifiedError } from "./provider-request-error.ts";
 
 /**
  * Patterns that identify non-retryable errors.
@@ -203,6 +204,7 @@ export class NoteExpansionOutputError extends Error {
  * 只有当错误不是结构化 ProviderRequestError 时，才回退到文本模式匹配。
  */
 export function isNonRetryableError(error: unknown): boolean {
+  if (error instanceof ProviderResponseRefusedError || error instanceof ProviderResponseUnverifiedError) return true;
   // 输出协议错误（截断/参数损坏）是确定性失败：重试不会改变输出预算，
   // 重投只会空转。必须直接标记 dead，交给用户重新生成。
   if (error instanceof AgentOutputError) return true;

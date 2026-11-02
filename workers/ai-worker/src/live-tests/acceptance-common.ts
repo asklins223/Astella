@@ -52,7 +52,7 @@ export function observedProvider(p:ResolvedPlatform, sessionId:string, receipts:
     const b = obj(body);
     return { ...b,
       ...(mapInstructions && typeof b.instructions === "string" ? { instructions: mapInstructions(b.instructions) } : {}),
-      ...(mapInstructions && Array.isArray(b.messages) ? { messages: b.messages.map(m => obj(m).role === "system"
+      ...(mapInstructions && Array.isArray(b.messages) ? { messages: b.messages.map(m => ["system", "developer"].includes(String(obj(m).role))
         && typeof obj(m).content === "string" ? { ...obj(m), content: mapInstructions(String(obj(m).content)) } : m) } : {}),
       ...(experiment?.casualEffort && b.temperature === 0.9 && obj(b.reasoning).effort === "none"
         ? { reasoning: { ...obj(b.reasoning), effort: experiment.casualEffort } } : {}),
@@ -62,12 +62,12 @@ export function observedProvider(p:ResolvedPlatform, sessionId:string, receipts:
     onSyntheticRequestBody?.(body);
     const b=obj(body);
     const instructions=typeof b.instructions==="string"?b.instructions:
-      Array.isArray(b.messages)?b.messages.filter(m=>obj(m).role==="system").map(m=>String(obj(m).content??"")).join("\n\n"):"";
+      Array.isArray(b.messages)?b.messages.filter(m=>["system","developer"].includes(String(obj(m).role))).map(m=>String(obj(m).content??"")).join("\n\n"):"";
     onInstructions?.(instructions);
     const receipt={model:b.model,effort:obj(b.reasoning).effort??b.reasoning_effort??null,
       instructionHash:createHash("sha256").update(instructions).digest("hex"),
       enableThinking:b.enable_thinking??obj(b.thinking).type??null,
-      outputLimit:b.max_output_tokens??b.max_tokens??null,temperature:num(b.temperature),inputTokens:null,outputTokens:null,reasoningTokens:null,
+      outputLimit:b.max_output_tokens??b.max_completion_tokens??b.max_tokens??null,temperature:num(b.temperature),inputTokens:null,outputTokens:null,reasoningTokens:null,
       elapsedMs:0,transport} as WireReceipt;
     receipts.push(receipt);return receipt;
   };

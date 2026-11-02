@@ -40,7 +40,7 @@ async function memoryWritesByRun(tx: AgentSqlExecutor, scope: AgentScopeV1, runI
   const rows = await queryRows<{ name: string; id: string | null; revision: number | null }>(tx, sql`
     SELECT name, arguments->>'memoryId' AS id,
            CASE WHEN name='memory.write.revise'
-             THEN (result_payload->'json'->'value'->>'revision')::int END AS revision
+             THEN ((result_payload->>'json')::jsonb->'value'->>'revision')::int END AS revision
       FROM companion_agent_tool_calls
      WHERE run_id=${runId} AND workspace_id=${scope.workspaceId} AND user_id=${scope.userId}
        AND status='succeeded' AND name IN ('memory.write.forget','memory.write.revise')
