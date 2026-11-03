@@ -279,14 +279,18 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     historyBinding, userRequiresTool, userAskedForAction, definitions,
     requestedActionTools,
   } = preamble;
+  // Vision capability is not an image input. Include replayed user images, but
+  // never exempt a text-only turn from review merely because its model can see.
+  const hasTurnImageInput = Boolean(args.read.userImageAttachments?.length || messages.some(message =>
+    message.role === "user" && Array.isArray(message.content) && message.content.some(part => part.type === "image_url")));
   const directControls = createCompanionDirectControls({ mode: entryMode, attention,
-    userText: args.read.userText, imageTurn: Boolean(args.turnImagesSentDirectly || args.read.userImageAttachments?.length),
+    userText: args.read.userText, imageTurn: hasTurnImageInput,
     deepened: recovered?.state.deepened, onInterpretation: args.onTurnInterpretation });
   if (definitions.length === 0)
     throw new Error(`companion tool surface resolved empty for permission "${String(meta.permissionLevel)}"`);
   const companionWriteNames = companionWriteToolNames(definitions);
   const reviewConversationOpening = Boolean(args.conversationReview && !args.read.initiativeInput
-    && !writingAnnotation && !completeNoteReply && !args.turnImagesSentDirectly && !args.read.userImageAttachments?.length);
+    && !writingAnnotation && !completeNoteReply && !hasTurnImageInput);
   /** Actions decide the delivery contract: a landed write or a pending
    * independent message needs a finish that cites it. Merely offering a write
    * capability does not require a second model call for an ordinary answer. */
@@ -687,7 +691,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
         responseStrategy.guidance, companionExecutionConstraintGuidance(attention),
         toolCallCount > 0 ? companionDirectGuidance(entryMode) : companionDirectEntryGuidance(entryMode),
         evidenceGuidance(),
-        args.turnImagesSentDirectly ? "宿主已实际随本次输入提供的原图或分批视觉结果可以直接用于回答，无需为证明看过再逐张调用工具。对这些当前输入的解释可以直接回答；尚未提供的库内材料仍需真实读取回执。看不清的内容保留不确定，不根据旧答案补全。" : "",
+        args.turnImagesSentDirectly && hasTurnImageInput ? "宿主已实际随本次输入提供的原图或分批视觉结果可以直接用于回答，无需为证明看过再逐张调用工具。对这些当前输入的解释可以直接回答；尚未提供的库内材料仍需真实读取回执。看不清的内容保留不确定，不根据旧答案补全。" : "",
         messageDelivery.guidance()].filter(Boolean).join("\n"),
       attention,
       currentUserText: currentRequest.hostObservation ? undefined : args.read.userText,
@@ -1577,7 +1581,11 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
         // explicit channel already carried them. New or corrected text still delivers.
         let finishText = companionFinishRepeatsPublished(assembledFinishText, publishedUtteranceTexts) ? "" : assembledFinishText;
         if (finishText && reviewConversationOpening && companionGroundedReviewMaterial(messages).documents.length > 0) {
-          const review = await reviewForDelivery({ ...result, content: finishText, toolCalls: [] });
+          // A validated, read-only finish can deliver verified paragraphs too.
+          // Writes and already-visible prose retain their atomic final contract.
+          const streamFinish = !writesNow && !companionActionResultRecorded(messages, companionWriteNames)
+            && !utterancePublished && !visibleSegmentDelivered.some(Boolean);
+          const review = await reviewForDelivery({ ...result, content: finishText, toolCalls: [] }, streamFinish);
           if (review.settlement) return { kind: "settled", result: review.settlement };
           finishText = review.reviewed!.content ?? "";
         }

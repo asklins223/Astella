@@ -1,7 +1,7 @@
 {
   "version": 1,
   "date": "2026-11-03",
-  "serverVersion": "2.0.21",
+  "serverVersion": "2.0.22",
   "releaseState": "prepared_not_yet_deployed",
   "sameModelConfigurationSha256": "1f5b3f0b0c5aab86b915a4e169147d2935926507a757aa9447952cf0697eaf22",
   "comparability": "Same public prompts and sequence, separate temporary local QA accounts, real HTTP/worker/providers. Small repeated sample with upstream and shared-host variability, not a statistical guarantee or a competitor benchmark.",
@@ -2104,5 +2104,757 @@
         "status": "success"
       }
     ]
-  }
+  },
+  "release2021": {
+    "commit": "b04a18ba85019b65471281fcc4d3384eecfcdd32",
+    "tag": "s-v2.0.21",
+    "ci": "https://github.com/asklins223/Astella/actions/runs/41643791400",
+    "conclusion": "success",
+    "healthHttp": 200,
+    "readyHttp": 200,
+    "configurationSha256": "1f5b3f0b0c5aab86b915a4e169147d2935926507a757aa9447952cf0697eaf22",
+    "remainingWiringBug": "Vision-capable primary incorrectly excluded text-only turns from conversation/source review. Its quick samples prove retrieval and history, not source-review integration. Repaired for 2.0.22."
+  },
+  "production2021": {
+    "records": [
+      {
+        "name": "greeting",
+        "status": "succeeded",
+        "totalMs": 7527,
+        "firstVisibleMs": 5741,
+        "observedCompletionMs": 10542,
+        "sourceVerification": {
+          "actualDocuments": [],
+          "citedReferenceIds": [],
+          "unreadCitedIds": []
+        },
+        "historyHttpStatus": 200,
+        "maxMessageBlocks": 1,
+        "toolWrites": 0
+      },
+      {
+        "name": "nasa-simple",
+        "status": "succeeded",
+        "totalMs": 19295,
+        "firstVisibleMs": 19603,
+        "observedCompletionMs": 24253,
+        "sourceVerification": {
+          "actualDocuments": [
+            {
+              "referenceId": "web-9a6863a9118e45d9",
+              "requestedUrl": "https://moon.nasa.gov/",
+              "url": "https://science.nasa.gov/moon/",
+              "contentHash": "11ed4e9a6145645ed800a5716f9dba8599b89adff44445051498b089eb4aebb8",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-008b1027b36774d3",
+              "requestedUrl": "https://science.nasa.gov/?p=142269",
+              "url": "https://science.nasa.gov/resource/wrinkle-ridge-in-mare-crisium/",
+              "contentHash": "422ea3f061f9c3f546ae6dcbeaa61328eca05df1bcc67c03621be4232329c24a",
+              "offset": 0,
+              "characters": 1590
+            },
+            {
+              "referenceId": "web-6808bb2465cd9156",
+              "requestedUrl": "https://go.nasa.gov/3pf6FK5",
+              "url": "https://science.nasa.gov/moon/observe-the-moon-night/moon-map/",
+              "contentHash": "88313e65890b9645e0fb037cab29d714656e6426faba8d0d0c9a6ff336d76a2b",
+              "offset": 0,
+              "characters": 3000
+            }
+          ],
+          "citedReferenceIds": [
+            "web-008b1027b36774d3",
+            "web-6808bb2465cd9156"
+          ],
+          "unreadCitedIds": []
+        },
+        "historyHttpStatus": 200,
+        "maxMessageBlocks": 9,
+        "toolWrites": 0
+      },
+      {
+        "name": "nasa-complex",
+        "status": "succeeded",
+        "totalMs": 36016,
+        "firstVisibleMs": 40892,
+        "observedCompletionMs": 47138,
+        "sourceVerification": {
+          "actualDocuments": [
+            {
+              "referenceId": "web-1a58c2264caad3a5",
+              "requestedUrl": "https://nasa.gov/content/goddard/ladee-lunar-neon",
+              "url": "https://www.nasa.gov/missions/nasas-ladee-spacecraft-finds-neon-in-lunar-atmosphere/",
+              "contentHash": "ab98f68cdca56749654441ae905dfa996eecefe325127121900aedfce352823a",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-89565b4b432157e2",
+              "requestedUrl": "https://nasa.gov/moon",
+              "url": "https://science.nasa.gov/moon/",
+              "contentHash": "11ed4e9a6145645ed800a5716f9dba8599b89adff44445051498b089eb4aebb8",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-3841f7ac43ed4222",
+              "requestedUrl": "https://nasa.gov/podcasts/gravity-assist/gravity-assist-podcast-your-moon-questions-answered",
+              "url": "https://www.nasa.gov/podcasts/gravity-assist/gravity-assist-podcast-your-moon-questions-answered/",
+              "contentHash": "bd4f2f10ba994dcff1a8ebd7b6e1b959c6310c19c5f5bf8eb445c2bb9e38e53b",
+              "offset": 16628,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-565509b818767934",
+              "requestedUrl": "https://nasa.gov/humans-in-space/humans-to-mars",
+              "url": "https://www.nasa.gov/humans-in-space/humans-to-mars/",
+              "contentHash": "ea3c4f0a53bab1b3dbacae2cde417b110c45e9cfcc240bbe80249db4cd547b7b",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-551aa55159ae2873",
+              "requestedUrl": "https://nasa.gov/press-release/nasa-s-perseverance-mars-rover-extracts-first-oxygen-from-red-planet",
+              "url": "https://www.nasa.gov/news-release/nasas-perseverance-mars-rover-extracts-first-oxygen-from-red-planet/",
+              "contentHash": "445291ed7ff142869136236cae8952c59ea008318087b32d25b07c97666752cf",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-212351e4f84381fc",
+              "requestedUrl": "https://nasa.gov/solar-system/nine-reasons-were-grateful-to-live-on-earth",
+              "url": "https://www.nasa.gov/solar-system/nine-reasons-were-grateful-to-live-on-earth/",
+              "contentHash": "b03e7f2d4432fbdf63d8a3274338b1b894881ae40197370e1cb875c0b04d6281",
+              "offset": 1218,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-1494a9fb79ab3cfe",
+              "requestedUrl": "https://esa.int/ESA_Multimedia/Images/2021/09/Moon_facts_A_day_on_the_Moon",
+              "url": "https://www.esa.int/ESA_Multimedia/Images/2021/09/Moon_facts_A_day_on_the_Moon",
+              "contentHash": "d50ffff115ed547f4b154ceee0cb639be335c3a9da846ed3290ba39ab966ed6a",
+              "offset": 0,
+              "characters": 2078
+            },
+            {
+              "referenceId": "web-761a755cad46e589",
+              "requestedUrl": "https://esa.int/ESA_Multimedia/Images/2017/11/Look_at_the_Moon",
+              "url": "https://www.esa.int/ESA_Multimedia/Images/2017/11/Look_at_the_Moon",
+              "contentHash": "10d7e07f18035a305ff51dede9a79cde707d7f233d5864c4ec001e8870f09a62",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-4e0fe5dc4ec57611",
+              "requestedUrl": "https://esa.int/ESA_Multimedia/Images/2026/04/Earth_from_Space_Eyes_on_our_Moon",
+              "url": "https://www.esa.int/ESA_Multimedia/Images/2026/04/Earth_from_Space_Eyes_on_our_Moon",
+              "contentHash": "e66d942ce2ce60a089e2bd13d6aa631d2f716e4dd2c61f8d5a951878be512125",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-6f0bb53062fc9a50",
+              "requestedUrl": "https://esa.int/Science_Exploration/Space_Science/Mars_Express/Mars_Express_studies_possible_aurorae_above_Mars",
+              "url": "https://www.esa.int/Science_Exploration/Space_Science/Mars_Express/Mars_Express_studies_possible_aurorae_above_Mars",
+              "contentHash": "c866e19dd8f3a83060de4083fb7662215ea78bf38553eef7345403298d1b8076",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-df86a7f878fa699c",
+              "requestedUrl": "https://esa.int/ESA_Multimedia/Images/2016/05/Mars_mystery_plume",
+              "url": "https://www.esa.int/ESA_Multimedia/Images/2016/05/Mars_mystery_plume",
+              "contentHash": "61dd7fa661c3868dce643ab682b2496ddfbb595aceb7ca81feb8c162e52e96e7",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-d26ccbfefbcc3024",
+              "requestedUrl": "https://esa.int/ESA_Multimedia/Videos/2018/02/Aerobraking_completed",
+              "url": "https://www.esa.int/ESA_Multimedia/Videos/2018/02/Aerobraking_completed",
+              "contentHash": "624cdd7832b7eaa47f7476637a42b95e5d84496008267c9125a651598ee38a0a",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-4466e75b7f4af8be",
+              "requestedUrl": "https://esa.int/Applications/Observing_the_Earth/Meteorological_missions/Meteosat/Space_and_daily_life_in_45_years",
+              "url": "https://www.esa.int/Applications/Observing_the_Earth/Meteorological_missions/Meteosat/Space_and_daily_life_in_45_years",
+              "contentHash": "17db8d5ca09ed91a54cf549018c4afc221fef328229120bdb63a07fe23d1c402",
+              "offset": 1479,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-2136bf82e883dc1b",
+              "requestedUrl": "https://esa.int/ESA_Multimedia/Images/2003/05/Earth-based_view_of_Mars",
+              "url": "https://www.esa.int/ESA_Multimedia/Images/2003/05/Earth-based_view_of_Mars",
+              "contentHash": "21e63ae9c801e50462ea6b29882e8fc86da50e617fa90b6028d05a664704d629",
+              "offset": 0,
+              "characters": 2668
+            },
+            {
+              "referenceId": "web-19f64b9bb941a189",
+              "requestedUrl": "https://esa.int/Science_Exploration/Space_Science/Seasons_on_other_planets",
+              "url": "https://www.esa.int/Science_Exploration/Space_Science/Seasons_on_other_planets",
+              "contentHash": "7983b820440d8f162ecfe7670cc1ed1a96267de3e0adb56a89153b12ca03f45b",
+              "offset": 0,
+              "characters": 3000
+            }
+          ],
+          "citedReferenceIds": [
+            "web-1494a9fb79ab3cfe",
+            "web-1a58c2264caad3a5",
+            "web-212351e4f84381fc",
+            "web-4466e75b7f4af8be",
+            "web-565509b818767934"
+          ],
+          "unreadCitedIds": []
+        },
+        "historyHttpStatus": 200,
+        "maxMessageBlocks": 33,
+        "toolWrites": 0
+      }
+    ],
+    "timingNote": "totalMs is server run duration; firstVisibleMs is client receipt measured from HTTP request start, a different origin. They are not directly subtractable.",
+    "cleanup": [
+      "restored_original_ai_data_policy_authorization_record_retained",
+      "restored_original_search_preference",
+      "removed_only_new_test_workspace",
+      "revoked_only_this_session"
+    ]
+  },
+  "production2021StreamingFailure": {
+    "status": "succeeded",
+    "totalMs": 90238,
+    "serverFirstVisibleMs": 90003,
+    "bodyEvents": [
+      {
+        "seq": 245,
+        "type": "assistant.delta",
+        "ms": 90003,
+        "characters": 0
+      },
+      {
+        "seq": 246,
+        "type": "assistant.delta",
+        "ms": 90003,
+        "characters": 0
+      },
+      {
+        "seq": 247,
+        "type": "assistant.delta",
+        "ms": 90003,
+        "characters": 0
+      },
+      {
+        "seq": 248,
+        "type": "assistant.delta",
+        "ms": 90003,
+        "characters": 0
+      },
+      {
+        "seq": 249,
+        "type": "assistant.delta",
+        "ms": 90081,
+        "characters": 0
+      },
+      {
+        "seq": 276,
+        "type": "assistant.final",
+        "ms": 90238,
+        "characters": 0
+      }
+    ],
+    "providerCalls": [
+      {
+        "provider": "openai_compatible",
+        "model": "deepseek-v4.1-flash-1017",
+        "operation": "companion_agent_fallback:chat_completion",
+        "durationMs": 1624,
+        "createdAt": "2026-11-03T14:02:06.307288+00:00",
+        "promptTokens": 2258,
+        "completionTokens": 54,
+        "status": "success"
+      },
+      {
+        "provider": "openai_compatible",
+        "model": "deepseek-v4.1-flash-1017",
+        "operation": "companion_agent_fallback:chat_completion",
+        "durationMs": 2509,
+        "createdAt": "2026-11-03T14:02:07.190768+00:00",
+        "promptTokens": 511,
+        "completionTokens": 130,
+        "status": "success"
+      },
+      {
+        "provider": "mimo_responses",
+        "model": "mimo-v2.6-flash",
+        "operation": "companion_agent:chat_completion_stream",
+        "durationMs": 12584,
+        "createdAt": "2026-11-03T14:02:19.876136+00:00",
+        "promptTokens": 6907,
+        "completionTokens": 190,
+        "status": "success"
+      },
+      {
+        "provider": "mimo_responses",
+        "model": "mimo-v2.6-flash",
+        "operation": "companion_agent:chat_completion_stream",
+        "durationMs": 13211,
+        "createdAt": "2026-11-03T14:02:36.220149+00:00",
+        "promptTokens": 21726,
+        "completionTokens": 316,
+        "status": "success"
+      },
+      {
+        "provider": "mimo_responses",
+        "model": "mimo-v2.6-flash",
+        "operation": "companion_agent:chat_completion_stream",
+        "durationMs": 30009,
+        "createdAt": "2026-11-03T14:03:09.432397+00:00",
+        "promptTokens": null,
+        "completionTokens": null,
+        "status": "error"
+      },
+      {
+        "provider": "openai_compatible",
+        "model": "deepseek-v4.1-flash-1017",
+        "operation": "companion_agent_fallback:chat_completion_stream",
+        "durationMs": 4602,
+        "createdAt": "2026-11-03T14:03:14.056767+00:00",
+        "promptTokens": 28236,
+        "completionTokens": 678,
+        "status": "success"
+      },
+      {
+        "provider": "openai_compatible",
+        "model": "deepseek-v4.1-flash-1017",
+        "operation": "companion_agent_fallback:chat_completion_stream",
+        "durationMs": 4357,
+        "createdAt": "2026-11-03T14:03:21.501266+00:00",
+        "promptTokens": 35144,
+        "completionTokens": 667,
+        "status": "success"
+      },
+      {
+        "provider": "openai_compatible",
+        "model": "deepseek-v4.1-flash-1017",
+        "operation": "companion_agent_fallback:chat_completion_stream",
+        "durationMs": 9966,
+        "createdAt": "2026-11-03T14:03:34.391028+00:00",
+        "promptTokens": 39039,
+        "completionTokens": 1424,
+        "status": "success"
+      }
+    ],
+    "historyHttpStatus": 200,
+    "deliveryReceipt": {
+      "actions": [],
+      "outcome": "completed",
+      "evidence": [],
+      "settledAt": "2026-11-03T14:03:34.474Z",
+      "requirements": []
+    },
+    "reason": "Vision capability excluded this text-only turn from review; finish buffered prose. Body arrived only at 90.003s of a 90.238s run, including a 30s primary stall. This is not an early-stream pass.",
+    "cleanup": [
+      "restored_original_ai_data_policy_authorization_record_retained",
+      "restored_original_search_preference",
+      "removed_only_new_test_workspace",
+      "revoked_only_this_session"
+    ]
+  },
+  "finalLocal2022": {
+    "records": [
+      {
+        "name": "nasa-simple-1",
+        "input": "请联网搜索并实际打开 NASA 官方原文，核对月海是否真的是海。只用两句话回答并标注引用，不要读取笔记或保存记忆。",
+        "status": "succeeded",
+        "totalMs": 37461,
+        "firstVisibleMs": 37415,
+        "deliveryReceipt": null,
+        "reply": "月海不是海：NASA 原文说明月海是月球上大面积的深色凝固熔岩流 [^web-6b1daa6f9aab700e]。\"maria\"是拉丁语“海”的意思，古人曾以为这些区域是海洋 [^web-6b1daa6f9aab700e]。",
+        "providerCalls": [
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 999,
+            "promptTokens": 2246,
+            "completionTokens": 107,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 2467,
+            "promptTokens": 499,
+            "completionTokens": 161,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 3112,
+            "promptTokens": 6831,
+            "completionTokens": 51,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 5653,
+            "promptTokens": 10911,
+            "completionTokens": 101,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 2906,
+            "promptTokens": 3052,
+            "completionTokens": 350,
+            "status": "success"
+          }
+        ],
+        "bodyEvents": [
+          {
+            "type": "assistant.delta",
+            "ms": 37415
+          },
+          {
+            "type": "assistant.final",
+            "ms": 37461
+          }
+        ],
+        "sourceVerification": {
+          "actualDocuments": [
+            {
+              "referenceId": "web-7eb5a8d638774aad",
+              "url": "https://science.nasa.gov/moon/",
+              "contentHash": "11ed4e9a6145645ed800a5716f9dba8599b89adff44445051498b089eb4aebb8",
+              "offset": 2897,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-6b1daa6f9aab700e",
+              "url": "https://www.nasa.gov/solar-system/lunar-pits-could-shelter-astronauts-reveal-details-of-how-man-in-the-moon-formed/",
+              "contentHash": "0af0f04cab7cebc41efaaa4fe06c1c167ea885af4818a6fd70f4f0604fa362a3",
+              "offset": 0,
+              "characters": 3000
+            }
+          ],
+          "citedReferenceIds": [
+            "web-6b1daa6f9aab700e"
+          ],
+          "unreadIds": []
+        },
+        "toolWrites": 0
+      },
+      {
+        "name": "nasa-complex-1",
+        "input": "请查 NASA 和 ESA 的官网原文，比较月球与火星的大气和昼夜长度。四个要点，每点附实际原文引用，约200字。只查这些，不读取笔记或保存记忆。",
+        "status": "succeeded",
+        "totalMs": 84354,
+        "firstVisibleMs": 68046,
+        "deliveryReceipt": null,
+        "reply": "1. **月球大气**：NASA 称月球有大气，但“Yes, but just barely”，即只有极其稀薄的外逸层 [^web-7eb5a8d638774aad]。\n\n2. **火星大气**：ESA 指出火星大气以二氧化碳为主但极薄，\"the atmosphere (mostly carbon dioxide) is very thin\"，气压低到液态水难以形成 [^web-262f49b84df5b707]。\n\n3. **月球昼夜**：NASA 说明 \"a single lunar day is about 29.5 Earth days\"，一个昼夜周期约为 29.5 个地球日 [^web-75470ab13c562415]。\n\n4. **火星昼夜**：ESA 称火星日（sol）比地球日略长，原文为“24 hours, 39 minutes and 35 seconds long”，即 24 小时 39 分 35 秒 [^web-042c526dc8ebcdea]。",
+        "providerCalls": [
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 1155,
+            "promptTokens": 635,
+            "completionTokens": 125,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 3250,
+            "promptTokens": 2405,
+            "completionTokens": 98,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 9028,
+            "promptTokens": 7276,
+            "completionTokens": 98,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 5649,
+            "promptTokens": 15919,
+            "completionTokens": 172,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 6991,
+            "promptTokens": 20675,
+            "completionTokens": 427,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 3392,
+            "promptTokens": 9428,
+            "completionTokens": 299,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 8028,
+            "promptTokens": 9483,
+            "completionTokens": 829,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 8117,
+            "promptTokens": 9477,
+            "completionTokens": 482,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 14359,
+            "promptTokens": 9496,
+            "completionTokens": 1069,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 27186,
+            "promptTokens": 9493,
+            "completionTokens": 4451,
+            "status": "success"
+          }
+        ],
+        "bodyEvents": [
+          {
+            "type": "assistant.delta",
+            "ms": 68046
+          },
+          {
+            "type": "assistant.delta",
+            "ms": 68105
+          },
+          {
+            "type": "assistant.delta",
+            "ms": 68163
+          },
+          {
+            "type": "assistant.delta",
+            "ms": 84304
+          },
+          {
+            "type": "assistant.final",
+            "ms": 84354
+          }
+        ],
+        "sourceVerification": {
+          "actualDocuments": [
+            {
+              "referenceId": "web-7c7c9ac0ddd587e0",
+              "url": "https://nasa.gov/wp-content/uploads/static/history/alsj/WOTM/WOTM-EnviroIntro.html",
+              "contentHash": "b88d438b14821e5a4be5d13c1cb5991f53786e1b7e21a837578fcd2b8309a09d",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-7eb5a8d638774aad",
+              "url": "https://science.nasa.gov/moon/",
+              "contentHash": "11ed4e9a6145645ed800a5716f9dba8599b89adff44445051498b089eb4aebb8",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-3841f7ac43ed4222",
+              "url": "https://www.nasa.gov/podcasts/gravity-assist/gravity-assist-podcast-your-moon-questions-answered/",
+              "contentHash": "a067e14de4fd1d7811192e47dc7d4f6c24c5abcf5e7cbf3ffd94a35e49d28233",
+              "offset": 32291,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-042c526dc8ebcdea",
+              "url": "https://www.esa.int/ESA_Multimedia/Images/2020/07/Return_of_the_extremely_elongated_cloud_on_Mars",
+              "contentHash": "16a7abae416c01aaccaadc5c0028740cd7fb78bcd91547d2dcf663fae8bcbb30",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-262f49b84df5b707",
+              "url": "https://www.esa.int/Science_Exploration/Space_Science/Mars_Express/Francois_Forget",
+              "contentHash": "487f6696fa6907f1495345dd59cc928773c6e621e0c184830876cfd3259f14f6",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-75470ab13c562415",
+              "url": "https://www.nasa.gov/podcasts/houston-we-have-a-podcast/telling-time-on-other-worlds/",
+              "contentHash": "1127b5625d8558467d9b76313a994dfe4636e33c44334ef9ad2263f4b8a51f01",
+              "offset": 22483,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-f5f7a43c05560dac",
+              "url": "https://www.nasa.gov/blogs/watch-the-skies/2011/07/28/traveling-to-the-dark-side/",
+              "contentHash": "2979a8a10d5e6be0faf00be984978d94c58873893478a12ff4e7833f2b94f6b1",
+              "offset": 0,
+              "characters": 2874
+            }
+          ],
+          "citedReferenceIds": [
+            "web-042c526dc8ebcdea",
+            "web-262f49b84df5b707",
+            "web-75470ab13c562415",
+            "web-7eb5a8d638774aad"
+          ],
+          "unreadIds": []
+        },
+        "toolWrites": 0
+      },
+      {
+        "name": "app-reads",
+        "input": "请读取近期活动、学习统计和当前对话历史，三句话概括记录里实际有什么。不要保存或修改任何内容。",
+        "status": "succeeded",
+        "totalMs": 33806,
+        "firstVisibleMs": 33070,
+        "deliveryReceipt": null,
+        "reply": "最近 7 天没有记录到任何动态，学习统计也全是零：今日 0 分钟、本周 0 分钟，学习卡和笔记各 0 条。当前对话历史共 4 条消息，也就是你发来的两条请求和我分别给出的两条回答。这两轮内容都围绕月球与火星：一轮核对月海是否为海，另一轮比较两者的大气与昼夜长度。\n\n我没有保存或修改任何内容。",
+        "providerCalls": [
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 1971,
+            "promptTokens": 896,
+            "completionTokens": 132,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 8582,
+            "promptTokens": 2689,
+            "completionTokens": 527,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 10604,
+            "promptTokens": 7893,
+            "completionTokens": 58,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 12006,
+            "promptTokens": null,
+            "completionTokens": null,
+            "status": "error"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 2254,
+            "promptTokens": 9085,
+            "completionTokens": 151,
+            "status": "success"
+          }
+        ],
+        "bodyEvents": [
+          {
+            "type": "assistant.delta",
+            "ms": 33070
+          },
+          {
+            "type": "assistant.delta",
+            "ms": 33190
+          },
+          {
+            "type": "assistant.delta",
+            "ms": 33289
+          },
+          {
+            "type": "assistant.delta",
+            "ms": 33368
+          },
+          {
+            "type": "assistant.delta",
+            "ms": 33539
+          },
+          {
+            "type": "assistant.delta",
+            "ms": 33637
+          },
+          {
+            "type": "assistant.delta",
+            "ms": 33660
+          },
+          {
+            "type": "assistant.final",
+            "ms": 33806
+          }
+        ],
+        "sourceVerification": {
+          "actualDocuments": [],
+          "citedReferenceIds": [],
+          "unreadIds": []
+        },
+        "toolWrites": 0
+      }
+    ],
+    "scope": "Real same-config API/worker calls after actual-image-input and read-only-finish streaming wiring fixes; isolated local QA account is disabled and its sessions removed. Small sample, no stable-latency guarantee."
+  },
+  "checks2022": {
+    "workerTests": {
+      "pass": 1997,
+      "fail": 0
+    },
+    "workerPostgres": {
+      "pass": 70,
+      "fail": 0
+    },
+    "actualImageAndCompletionPostgres": {
+      "pass": 10,
+      "fail": 0
+    },
+    "typecheckWorker": "passed",
+    "earlierGuardFailure": "The completion suite correctly refused the general test DB. Re-run on its required isolated astella_note_authoring_permission_* clone passed 10/10; the guard was not changed."
+  },
+  "earlierTimingScopeCorrection": "2.0.21 real probes use the old vision-capability guard. Read-provenance checks remain valid, but their timings cannot certify that paragraph source reviews actually ran. finalLocal2022 and future production2022 supersede that integration claim."
 }

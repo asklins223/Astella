@@ -376,12 +376,12 @@ for (const kind of ["chat", "chat-configure", "chat-deepen", "reasoned"] as cons
   }
 });
 
-for (const channel of ["body", "finish", "publish", "unavailable", "stream", "stream-interrupted"] as const) test(`source-backed ${channel} delivery is reviewed before any answer reaches SSE or storage`, async () => {
+for (const channel of ["body", "finish", "publish", "unavailable", "stream", "stream-interrupted", "stream-finish", "stream-finish-interrupted"] as const) test(`source-backed ${channel} delivery is reviewed before any answer reaches SSE or storage`, async () => {
   const directory = mkdtempSync(join(tmpdir(), "companion-source-review-"));
   const originalConfig = process.env.AI_PLATFORMS_CONFIG;
   const configPath = join(directory, "platforms.json");
   writeFileSync(configPath, JSON.stringify({ platforms: { paired: { type: "mock", models: {
-    primary: { contextWindowTokens: 1_000_000, maxOutputTokens: 32_000, vision: false },
+    primary: { contextWindowTokens: 1_000_000, maxOutputTokens: 32_000, vision: true },
     reviewer: { contextWindowTokens: 1_000_000, maxOutputTokens: 32_000, vision: false },
   } } }, capabilities: { agent_turn: { platform: "paired", model: "primary" }, companion_fallback: { platform: "paired", model: "reviewer" } } }));
   process.env.AI_PLATFORMS_CONFIG = configPath; resetPlatformConfigCache();
@@ -411,7 +411,7 @@ for (const channel of ["body", "finish", "publish", "unavailable", "stream", "st
             await new Promise(resolve => setTimeout(resolve, 20));
           }
           assert.equal(published, true, "the first verified paragraph must reach durable SSE before the second verdict returns");
-          if (channel === "stream-interrupted") throw new Error("controlled interruption after a verified paragraph");
+          if (channel.endsWith("interrupted")) throw new Error("controlled interruption after a verified paragraph");
         }
         return { content: JSON.stringify({ reply: channel.startsWith("stream")
           ? data.paragraphIndex === 0 ? firstParagraph : "需要区分实验结果与尚未测量的条件。" : safe }), usage: {} };
@@ -428,7 +428,8 @@ for (const channel of ["body", "finish", "publish", "unavailable", "stream", "st
       if (!request.tools.some(tool => tool.name === "companion_notes_read")) return call("companion_load_tools", { groups: ["notes"] });
       if (!receipts.some(receipt => receipt.ok && receipt.operation === "notes.read.source")) return call("companion_notes_read", { action: "source", sourceId });
       if (receipts.some(receipt => receipt.ok && receipt.operation === "say.publish")) return call("companion_finish", { text: safe, actions: [], evidence: [] });
-      if (channel === "finish") return call("companion_finish", { text: bad, actions: [], evidence: [] });
+      if (channel === "finish" || channel.startsWith("stream-finish")) return call("companion_finish", {
+        text: channel.startsWith("stream") ? bad + "\n\nBAD_DRAFT：这是尚未核实的第二段。" : bad, actions: [], evidence: [] });
       if (channel === "publish") return call("companion_send_message", { text: bad });
       const content = channel.startsWith("stream") ? bad + "\n\nBAD_DRAFT：这是尚未核实的第二段。" : bad;
       delta(content); return { content, toolCalls: [], finishReason: "stop" };
@@ -449,16 +450,16 @@ for (const channel of ["body", "finish", "publish", "unavailable", "stream", "st
     assert.ok(reviews > 0);
     const displayed = JSON.stringify(state.assistant) + JSON.stringify(state.events.filter(event => ["assistant.delta","assistant.utterance","assistant.final"].includes(event.type)));
     assert.ok(!displayed.includes("BAD_DRAFT"), "the original draft must never leak into an answer channel");
-    if (channel === "unavailable" || channel === "stream-interrupted") {
+    if (channel === "unavailable" || channel.endsWith("interrupted")) {
       assert.match(displayed, channel === "unavailable" ? /回答还没有核对完成/ : /后续内容这次没有核对完成/);
       const [receipt] = await sql`SELECT delivery_receipt FROM companion_turn_runs WHERE id=${fixture.runId}`;
       assert.equal(receipt.delivery_receipt.outcome, "partial");
-      if (channel === "stream-interrupted") {
+      if (channel.endsWith("interrupted")) {
         assert.ok(displayed.includes(firstParagraph));
         assert.ok(!displayed.includes("需要区分实验结果"));
       }
     } else assert.ok(displayed.includes(safe));
-    if (channel === "stream") {
+    if (channel === "stream" || channel === "stream-finish") {
       const text = state.assistant.map(message => message.blocks.filter((block: { type: string }) => block.type === "text")
         .map((block: { text: string }) => block.text).join("")).join("");
       assert.equal(text, streamed, "final storage must match the streamed prefix plus its remainder exactly once");

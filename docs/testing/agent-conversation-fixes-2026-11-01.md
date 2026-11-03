@@ -1,4 +1,4 @@
-2026-11-03 追加修复待发布：联网首轮可用、独立读取并发、搜读合并与逐段核验，以及多来源历史 500，见[性能修复与实际验收](agent-search-performance-2026-11-03.md)。原有 MiMo / DeepSeek 搭配保留；复杂查询仍有上游延时与生成质量波动，不将早期整个质量审计误标为全通过。
+2026-11-03 追加：s-v2.0.21 并发与历史修复已发布，追加线上探针发现看图能力误跳过纯文字核验，正在准备 2.0.22 修正及只读 finish 逐段交付，见[性能修复与实际验收](agent-search-performance-2026-11-03.md)。原有 MiMo / DeepSeek 搭配保留；速度与生成质量波动均按实测记录，不将整个审计误标为全通过。
 
 2026-11-03 当前交付：[线上与原生发布核验](evidence/agent-conversation-fixes-2026-11-01/release-verification-2026-11-03.json)。s-v2.0.20 已由 [41592409346](https://github.com/asklins223/Astella/actions/runs/41592409346) 成功部署，线上 API／worker 确认为 `6e531a77`，health／ready 均 200；七条能力路由、六个 worker 开关和配置文件与本地一致。原有 MiMo 主模型／DeepSeek 回退保持不变。worker 全量 1,975 项通过。iOS 2.0.15 / build 21 已完成签名手机覆盖安装与启动、236 项测试及正式云端出包；unsigned 发布产物不冒充可直接安装的更新。界面手势回归在真实 API 支持的原生模拟器完成，见[原生验收](https://github.com/asklins223/astella-mobile/blob/main/docs/testing/ios-live-process-motion-2026-11-03.md)。
 

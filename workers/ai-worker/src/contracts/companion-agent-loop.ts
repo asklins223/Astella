@@ -51,6 +51,8 @@ export interface CompanionAgentLoopArgs {
    * When true, this turn's attached pictures are sent with the request so the
    * model looks at them instead of answering from their file names. Resolved by
    * the caller from governance, never guessed inside the loop.
+   * This routing capability does not assert that the turn contains any image;
+   * actual current/replayed inputs and delivery receipts establish that.
    */
   turnImagesSentDirectly?: boolean;
   /** Hash/scope-verified committed deltas already shown in this same run. */
