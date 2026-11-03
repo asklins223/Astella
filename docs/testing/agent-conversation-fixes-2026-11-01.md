@@ -1,4 +1,6 @@
-2026-11-03 当前补充：[公开网页读取范围回归](evidence/agent-conversation-fixes-2026-11-01/web-read-scope-2026-11-03.json)。候选 s-v2.0.20 修正公开网页研究被应用数据核验器误映射为必须读取笔记的问题；混合请求仍核验实际保存的笔记，网页原文和引用核验继续独立执行。现有 MiMo 主模型／DeepSeek 回退未改变。真实四例范围判断与六段 NASA 回合通过，后者实际读取三篇原文，但耗时 121.524 秒，不能计作速度通过。最终 worker 全量 1,975 项通过、类型检查通过；该候选的部署仍待正式流水线。
+2026-11-03 当前交付：[线上与原生发布核验](evidence/agent-conversation-fixes-2026-11-01/release-verification-2026-11-03.json)。s-v2.0.20 已由 [41592409346](https://github.com/asklins223/Astella/actions/runs/41592409346) 成功部署，线上 API／worker 确认为 `6e531a77`，health／ready 均 200；七条能力路由、六个 worker 开关和配置文件与本地一致。原有 MiMo 主模型／DeepSeek 回退保持不变。worker 全量 1,975 项通过。iOS 2.0.15 / build 21 已完成签名手机覆盖安装与启动、236 项测试及正式云端出包；unsigned 发布产物不冒充可直接安装的更新。界面手势回归在真实 API 支持的原生模拟器完成，见[原生验收](https://github.com/asklins223/astella-mobile/blob/main/docs/testing/ios-live-process-motion-2026-11-03.md)。
+
+[网页范围修正](evidence/agent-conversation-fixes-2026-11-01/web-read-scope-2026-11-03.json) 将公开网页研究与应用内笔记读取分开，混合请求仍核验实际笔记。四例真实范围判断与六段 NASA 本地回合通过；后者读取三篇原文但耗时 121.524 秒。部署后独立线上搜索、原文读取、引用与交付通过，测试账号外发和联网偏好恢复、仅新建书房移除、仅本次会话退出。线上联网回合耗时 52.906 秒，正文另有中文译名和句数问题，保留为质量失败；这些功能验证不代表速度、知识和自然度已全部通过。
 
 Earlier release acceptance: [2026-11-02 batch record](evidence/agent-conversation-fixes-2026-11-01/release-acceptance-2026-11-02.json). The source/native checkpoints below retain their original observation scope; they do not supersede the dated follow-ups.
 
