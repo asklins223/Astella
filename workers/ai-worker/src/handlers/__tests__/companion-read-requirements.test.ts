@@ -73,6 +73,21 @@ test("empirical/current evidence needs an actual original source, not a loaded t
   assert.equal(companionIndependentEvidenceMissing(decision, [request]), false, "ordinary app/physical-principle turns need no external source");
 });
 
+test("mixed web research and saved-note requests keep their independent evidence obligations", () => {
+  const mixed = { ...decision, requiresIndependentEvidence: true,
+    requirements: [{ description: "the user's actual saved lunar note", operations: ["notes.read.read"] }] };
+  const web: AgentTurnRequest["messages"] = [request,
+    { role: "assistant", content: "", toolCalls: [{ id: "web", name: "companion_web", arguments: { action: "read_document", url: "https://science.nasa.gov/moon/" } }] },
+    { role: "tool", toolCallId: "web", content: JSON.stringify({ ok: true, data: { text: "original public material" } }) }];
+  assert.equal(companionIndependentEvidenceMissing(mixed, web), false);
+  assert.deepEqual(missingCompanionReadRequirements(mixed, web), mixed.requirements,
+    "reading a public page cannot stand in for the saved note");
+  const complete: AgentTurnRequest["messages"] = [...web,
+    { role: "assistant", content: "", toolCalls: [{ id: "note", name: "companion_notes_read", arguments: { action: "read", noteId: "owned-note" } }] },
+    { role: "tool", toolCallId: "note", content: JSON.stringify({ ok: true, data: { text: "actual saved note" } }) }];
+  assert.deepEqual(missingCompanionReadRequirements(mixed, complete), []);
+});
+
 test("an explicit save needs its corresponding actual successful write, never a read or unrelated self-note", () => {
   const save = { ...decision, requirements: [], executionRequirements: [{ description: "save personal preference", operations: ["memory.write.save"] }] };
   assert.deepEqual(missingCompanionExecutionRequirements(save, [request, ...read("stats")]), save.executionRequirements);

@@ -1,8 +1,7 @@
 {
-  "version": "2.0.19",
+  "version": "2.0.20",
   "notes": [
-    "Optional companion follow-ups cross semantic review before publication; internal no-content or completion notes no longer become unsolicited messages or audio.",
-    "Inline web citations require a successful read receipt for the named page, with each claim checked against that specific source before final or independent-message publication.",
-    "Keep the existing MiMo primary and DeepSeek fallback pairing and the ordinary user-reply latency path."
+    "修正公开网页查询被误判为必须读取应用内笔记，避免已读取官方原文仍提示缺少真实记录。",
+    "保留当前 MiMo 主模型与 DeepSeek 回退模型；网页原文、应用笔记和实际执行回执继续独立核验。"
   ]
 }

@@ -1,4 +1,6 @@
-Current release acceptance: [2026-11-02 batch record](evidence/agent-conversation-fixes-2026-11-01/release-acceptance-2026-11-02.json). The source/native checkpoint below is historical; current release state and remaining checks are in the batch record.
+2026-11-03 当前补充：[公开网页读取范围回归](evidence/agent-conversation-fixes-2026-11-01/web-read-scope-2026-11-03.json)。候选 s-v2.0.20 修正公开网页研究被应用数据核验器误映射为必须读取笔记的问题；混合请求仍核验实际保存的笔记，网页原文和引用核验继续独立执行。现有 MiMo 主模型／DeepSeek 回退未改变。真实四例范围判断与六段 NASA 回合通过，后者实际读取三篇原文，但耗时 121.524 秒，不能计作速度通过。最终 worker 全量 1,975 项通过、类型检查通过；该候选的部署仍待正式流水线。
+
+Earlier release acceptance: [2026-11-02 batch record](evidence/agent-conversation-fixes-2026-11-01/release-acceptance-2026-11-02.json). The source/native checkpoints below retain their original observation scope; they do not supersede the dated follow-ups.
 
 2026-11-02 补充：真实验收新增的主动发言内部收尾泄漏、搜索来源与原位引用错配，见[发布边界复查](agent-initiative-publication-followup-2026-11-02.md)。
 # Agent 对话与交付修复
