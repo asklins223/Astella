@@ -457,20 +457,23 @@ export const companionCapabilityManifest: readonly AgentCapabilityDeclaration[] 
   // 十来组、几百 token 的重发。
   // 联网域：搜索与公开文档读取收敛为一个 action 工具；执行体仍复用原来的
   // web 读取分支，联网开关在工具面与执行体各核一次。
-  tool("companion_web", "联网：search 搜索公开资料；read_document 读用户给出的或本轮搜索回执中的 HTTPS 原文。长网页可用 findText 定位原文字词并读周围段落，不必猜 offset 或重新搜索。仅能展开实际返回的链接，不猜网址。按 action 给 query 或 url。", "read", false,
+  tool("companion_web", "联网：search 搜索，readTopResults 可同时取得前几项真实原文；read_document 续读实际链接。按证据缺口选择读取量，资料足够就回答。findText 定位原文字词，不猜网址或 offset。按 action 给 query 或 url。", "read", false,
     z.object({ action: z.enum(["search", "read_document"]),
       query: z.string().trim().min(1).max(70)
         .describe("选2–4个简短核心检索词，通常40字符以内，接口硬上限70字符。不要提交完整问题、长标题或要求说明；站点另填domain。")
         .optional(),
       domain: z.string().max(253).optional(),
       recency: z.enum(["oneDay", "oneWeek", "oneMonth", "oneYear", "noLimit"]).optional(),
+      readTopResults: z.number().int().min(0).max(8).optional()
+        .describe("search 默认并读前2项真实原文，返回逐页结果。按核验缺口设读取数量，0 为只搜索后另选网页；资料不足仍可继续搜索或续读。"),
       url: z.string().url().max(2000).optional(),
       findText: z.string().trim().min(1).max(300).optional()
-        .describe("read_document 可选：在该页正文中查找的原文字词，非问题或正则表达式；从 offset 起不区分大小写定位，返回实际匹配位置与上下文。"),
+        .describe("可选：并读或 read_document 在原文中定位的字词，非问题或正则；忽略大小写，返回实际位置与上下文。未指定时，并读会按搜索词选取真实正文窗口，可继续读取其他位置。"),
       offset: z.number().int().nonnegative().optional() }).strict()
       .superRefine((value, context) => {
         if (value.action === "search" && !value.query) context.addIssue({ code: z.ZodIssueCode.custom, path: ["query"], message: "action=search 需要 query" });
         if (value.action === "read_document" && !value.url) context.addIssue({ code: z.ZodIssueCode.custom, path: ["url"], message: "action=read_document 需要 url" });
+        if (value.action !== "search" && value.readTopResults !== undefined) context.addIssue({ code: z.ZodIssueCode.custom, path: ["readTopResults"], message: "readTopResults 仅用于 search" });
       }), { label: "正在联网查资料" }, { maxOutputChars: 16_000 }),
   // 最终交付契约：有写回执时必须通过它交卷，actions 逐条引用本轮收据身份。
   // 这样“完成”由回执验收，不再由正文措辞自证。

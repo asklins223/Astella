@@ -20,3 +20,12 @@ test('rejects corrupted blocks instead of silently making an empty response', ()
   assert.throws(() => readStoredCompanionBlocks([{ type: 'quote', text: '缺少来源标题' }]));
   assert.throws(() => readStoredCompanionBlocks({ blocks: [] }));
 });
+
+test('a research answer with more than 32 source blocks remains intact and readable', () => {
+  const blocks = [{ type: 'text', text: '实际查阅后的研究答复。' }, ...Array.from({ length: 48 }, (_, index) => ({
+    type: 'citation', label: `来源 ${index + 1}`, referenceId: `web-${index.toString(16).padStart(16, '0')}`,
+    target: { kind: 'external_https', href: `https://example.com/source/${index}` },
+  }))];
+  assert.deepEqual(readStoredCompanionBlocks(blocks), blocks);
+  assert.deepEqual(readStoredCompanionBlocks({ blocks }), blocks);
+});

@@ -111,7 +111,7 @@ test("conversation schema rejects unknown kind/titleSource", () => {
   );
 });
 
-test("message schema: exactly one text block for user turn", () => {
+test("message schema retains complete stored output and rejects empty blocks", () => {
   const ok = companionMessageV1Schema.safeParse({
     version: 1,
     id: UUID,
@@ -145,7 +145,7 @@ test("message schema: exactly one text block for user turn", () => {
     editedAt: null,
   });
   assert.equal(empty.success, false);
-  // 拒绝超过 32 blocks
+  // 已持久化的答复不因块数较多而无法读取；新回合输入另行限制。
   const tooMany = companionMessageV1Schema.safeParse({
     version: 1,
     id: UUID,
@@ -161,7 +161,7 @@ test("message schema: exactly one text block for user turn", () => {
     createdAt: TIME,
     editedAt: null,
   });
-  assert.equal(tooMany.success, false);
+  assert.equal(tooMany.success, true);
 });
 
 test("citation href 只允许 https", () => {

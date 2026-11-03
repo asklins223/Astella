@@ -79,7 +79,8 @@ import {
 import { settleCompanionTurnPreamble } from "../turn/companion-turn-preamble.ts";
 import { createCompanionStepCompaction } from "../context/companion-step-compaction.ts";
 import { looksTruncatedReply, companionStepOutputCeiling, containsCompanionInternalToken } from "../turn/companion-dialogue-content.ts";
-import { runCompanionToolExecution } from "../tools/companion-tool-execution-run.ts";
+import { runCompanionToolExecution, type ToolExecutionRun } from "../tools/companion-tool-execution-run.ts";
+import { CompanionReadBatch, companionParallelReadOperation } from "../tools/companion-read-batch.ts";
 import { CompanionToolPreparation } from "../tools/companion-tool-preparation.ts";
 import { companionExecutionPolicy } from "./companion-execution-policy.ts";
 import { repairDegenerateCompanionAnswer } from "./companion-answer-repair.ts";
@@ -298,6 +299,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     definitions,
     initiative: Boolean(args.read.initiativeInput),
     hasImageAttachments: Boolean(args.read.userImageAttachments?.length),
+    webSearchEnabled: event.constraints.webSearchEnabled === true,
     pageKind: notePage?.context?.pageKind ?? null,
     candidateOperations: attention.candidateOperations,
     loadedToolNames: recovered?.state.loadedToolNames ?? [],
@@ -599,6 +601,12 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     const currentSuccesses = companionCurrentToolSuccesses(messages);
     const actionReceiptReady = requestedActionTools.length > 0
       && requestedActionTools.every(name => currentSuccesses.some(tool => tool.name === name));
+    // A resolved requirement for source retrieval is not yet the reasoning
+    // answer. Use the primary's declared fast level to obtain those receipts;
+    // interpretation and final source-grounded reasoning retain their levels.
+    const preparingReadEvidence = readRequirements?.status === "resolved" && !hasSourceMaterial
+      && missingEvidence() && missingExecutions().length === 0 && !userAskedForAction
+      && !companionDeliveryContractRequired();
     // 工具面、执行政策与请求装配这三样的判据在 `companion-agent-step-assembly.ts`。
     const { tools: toolsOfferedThisStep, toolChoice: toolChoiceThisStep } = companionStepToolSurface({
       toolDefinitions: offeredToolDefinitions().filter(tool => !malformedTools.has(tool.name))
@@ -631,7 +639,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       && toolCallCount === 0 && readRequirements?.status === "resolved" && !readRequirements.requiresReasoning && !missingEvidence());
     const stepReasoningEffort = companionStepReasoning({ mode: entryMode, resourcePath: speculativeStep || entry.workload === "casual" ? "chat" : "work",
       deepened: directControls.deepened(), repairing: actionSteerAttempts > 0,
-      readOnlyRequiredStep: false, toolCallCount, reviewedOpening });
+      readOnlyRequiredStep: preparingReadEvidence, toolCallCount, reviewedOpening });
     // The short first-output timeout is for a genuinely non-reasoning call.
     // Applying it to low reasoning discarded healthy primary responses.
     const casualStep = (speculativeStep || entry.workload === "casual") && stepReasoningEffort === "none";
@@ -692,22 +700,33 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       temperature: responseStrategy.temperature,
     });
     const stepId = await persistStep(event, stepCount, auditHash(stepRequest));
-    const reviewForDelivery = async (candidate: AgentTurnResult) => {
+    const reviewForDelivery = async (candidate: AgentTurnResult, streamReviewedParagraphs = false) => {
+      let reviewedPrefix = "";
       try {
         if (companionGroundedReviewMaterial(messages).documents.length > 0)
           await emitCompanionAssistantStatus({ workspaceId: args.ctx.workspaceId, read: args.read, expiresAt: args.expiresAt,
             status: "thinking", safeLabel: "正在核对回答与来源" });
         const reviewed = await args.conversationReview!.review({ request: { ...stepRequest, messages }, result: candidate,
-          requiresReasoning: readRequirements?.requiresReasoning });
+          requiresReasoning: readRequirements?.requiresReasoning,
+          ...(streamReviewedParagraphs && args.onProviderDelta ? { onReviewedDelta: async (delta: string) => {
+            args.ctx.signal.throwIfAborted();
+            const separator = !reviewedPrefix && visibleSegmentDelivered.some(Boolean) ? VISIBLE_SEGMENT_SEPARATOR : "";
+            if (!await args.onProviderDelta!(separator + delta)) return false;
+            reviewedPrefix += delta;
+            stepVisibleText += delta;
+            stepEmitted = true;
+            return true;
+          } } : {}) });
         if (containsCompanionToolProtocol(String(reviewed.content ?? "")) || containsCompanionInternalToken(String(reviewed.content ?? "")))
           throw new AgentOutputError("internal_token_leak", "answer review returned internal protocol");
         return { reviewed };
       } catch (error) {
         if (!(error instanceof CompanionGroundedReviewUnavailable)) throw error;
-        return { settlement: await settleWithHostNote({ stepId, said: "", saidHash: sha256Utf8V1(""),
-          errorCode: "SOURCE_REVIEW_UNAVAILABLE", includeSaid: false,
+        return { settlement: await settleWithHostNote({ stepId, said: reviewedPrefix, saidHash: sha256Utf8V1(reviewedPrefix),
+          errorCode: "SOURCE_REVIEW_UNAVAILABLE", includeSaid: reviewedPrefix.length > 0,
           landedWrites: companionActionResultRecorded(messages, companionWriteNames), reasoning: candidate.reasoning,
-          note: "资料已经读到，但这次回答还没有核对完成，请稍后再试。" }) };
+          note: reviewedPrefix ? "后续内容这次没有核对完成，以上是已经核对的部分。"
+            : "资料已经读到，但这次回答还没有核对完成，请稍后再试。" }) };
       }
     };
     stepCompaction.setStepId(stepId);
@@ -1165,7 +1184,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     // Task meaning belongs to the model; prose cannot create an operation.
     if (calls.length === 0 && !stepEmitted && (toolCallCount === 0 || groundedReview) && reviewConversationOpening
       && !companionDeliveryContractRequired()) {
-      const review = await reviewForDelivery(result);
+      const review = await reviewForDelivery(result, true);
       if (review.settlement) return { kind: "settled", result: review.settlement };
       result = review.reviewed!;
     }
@@ -1297,7 +1316,61 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       ...(result.reasoning ? { reasoning: result.reasoning } : {}),
       ...(result.phase ? { phase: result.phase } : {}),
     });
+    // Only fully validated consecutive reads overlap. A write, loader, control
+    // or search-dependent page read remains a barrier. The normal loop below
+    // still owns receipt order, replay handling and all mutable delivery state.
+    const readPlan = (index: number) => {
+      const call = calls[index];
+      if (!call || !boundedToolCallIdentity(call)) return null;
+      if (!toolsOfferedThisStep.some(tool => tool.name === call.name)
+        && !(loadedThisStep.has(call.name) && offeredToolDefinitions().some(tool => tool.name === call.name))) return null;
+      const definition = getCompanionAgentTool(call.name);
+      const parsed = validateCompanionAgentToolArguments(call.name, call.arguments);
+      if (!definition || !parsed.success || malformedTools.has(call.name)) return null;
+      const operation = companionOperationName({ name: call.name, arguments: parsed.data });
+      if (!companionParallelReadOperation(operation, definition.riskClass)
+        || companionTimeWakeupConstraint(attention, call.name, parsed.data)) return null;
+      const argsHash = sha256Utf8V1(canonicalJsonV1(parsed.data));
+      // Planning is a pure eligibility check. The normal receipt-consumption
+      // branch alone increments replay counts; incrementing here would label
+      // the first real search/calculation as an already completed operation.
+      if ((successfulCallReceipts.get(companionCallFingerprint(call.name, argsHash)) ?? 0)
+        >= companionReplayLimitFor(operation, definition.riskClass) + 1) return null;
+      return { call, definition, operation, arguments: parsed.data, argsHash,
+        ledgerDefinition: { ...definition, name: operation }, ledgerArguments: companionOperationArguments(operation, parsed.data) };
+    };
+    const reservedReads = new Set<string>();
+    const preparedReadPlans = new Map<number, NonNullable<ReturnType<typeof readPlan>>>();
+    const parallelReads = new CompanionReadBatch<Awaited<ReturnType<typeof ensureAgentToolCall>>, ToolExecutionRun>({
+      count: calls.length, signal: args.ctx.signal,
+      operation: index => readPlan(index)?.operation ?? null,
+      prepare: async index => {
+        const plan = readPlan(index);
+        if (!plan || judgeCompanionUnavailableTool({ toolName: plan.operation, constraints: event.constraints,
+          webSearchUnavailableReason: event.webSearchUnavailableReason,
+          searchLimitReached: plan.operation === "web.search" && budget.maxWebSearchCalls != null
+            && webSearchCalls >= budget.maxWebSearchCalls })) return null;
+        const record = await ensureAgentToolCall(event, stepId, plan.ledgerDefinition,
+          { id: plan.call.id, arguments: plan.ledgerArguments }, plan.argsHash, result.reasoning);
+        preparedReadPlans.set(index, plan);
+        if (record.isNew) toolCallCount += 1;
+        if (!reservedReads.has(record.toolCallId) && ["requested", "executing"].includes(record.status)) {
+          reservedReads.add(record.toolCallId);
+          if (plan.operation === "web.search") webSearchCalls += 1;
+        }
+        return record;
+      },
+      key: record => record.toolCallId,
+      execute: async (index, record, signal) => {
+        const plan = preparedReadPlans.get(index)!;
+        if (!["requested", "executing"].includes(record.status)) return { kind: "failure",
+          ledgerStatus: record.status as CompanionAgentToolStatus, modelStatus: "not_executed", safeSummary: record.safeSummary ?? "已有执行回执" };
+        return runCompanionToolExecution({ event, definition: plan.definition, operationCallId: record.toolCallId,
+          toolCallId: plan.call.id, arguments: plan.arguments, deadlineAt, signal, runId: args.read.runId, logger });
+      },
+    });
     let remainingEvidenceBeforeCalls = missingReads().length + missingExecutions().length + Number(missingIndependentEvidence());
+    try {
     for (const [callIndex, call] of calls.entries()) {
       // The card and the entire paused batch must commit together: a fast
       // confirmation or worker crash cannot observe a card without its state.
@@ -1576,7 +1649,9 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       // Field/range limits come from the capability's actual schema. A second
       // generic JSON character cap rejects valid escaped Markdown and evidence.
       const ledgerArguments = companionOperationArguments(executedToolName, parsedArgs.data);
-      const record = await ensureAgentToolCall(
+      const parallelRead = await parallelReads.at(callIndex);
+      args.ctx.signal.throwIfAborted();
+      const record = parallelRead?.value ?? await ensureAgentToolCall(
         event,
         stepId,
         ledgerDefinition,
@@ -1684,7 +1759,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       }
       // 工具调用总数不再有上限（2026-10-16）：那个计数只保证"问得多的被砍掉"。
       // 计数仍如实累加，因为 run 回执与诊断读数要看它。
-      if (record.isNew) toolCallCount += 1;
+      if (record.isNew && !parallelRead) toolCallCount += 1;
       /**
        * 受数据外发政策管的能力（读图）这一轮**没有**（40b §3.2 `unavailable`）。
        *
@@ -1698,11 +1773,14 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
        * `ensureAgentToolCall` 建好了——doctor 那边要看的正是"她答应过、结果没发生"——
        * 所以直接把它终结成 `blocked`，精确词只给模型。
        */
-      const unavailable = judgeCompanionUnavailableTool({
+      // A sibling can discover an upstream outage while this registered read
+      // is already executing successfully. Its actual receipt owns the result;
+      // never overwrite it using the later sibling's availability observation.
+      const unavailable = parallelRead ? null : judgeCompanionUnavailableTool({
         toolName: executedToolName,
         constraints: event.constraints,
         webSearchUnavailableReason: event.webSearchUnavailableReason,
-        searchLimitReached: executedToolName === "web.search"
+        searchLimitReached: !parallelRead && executedToolName === "web.search"
           && budget.maxWebSearchCalls != null && webSearchCalls >= budget.maxWebSearchCalls,
       });
       if (unavailable) {
@@ -1748,8 +1826,8 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
         malformedTools.add(definition.name);
         continue;
       }
-      if (executedToolName === "web.search") webSearchCalls++;
-      const run = await runCompanionToolExecution({
+      if (executedToolName === "web.search" && !parallelRead) webSearchCalls++;
+      const run = parallelRead ? await parallelRead.result : await runCompanionToolExecution({
         event,
         definition,
         operationCallId,
@@ -1834,6 +1912,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       if (remainingEvidence < remainingEvidenceBeforeCalls) readRequirementSteerAttempts = 0;
       remainingEvidenceBeforeCalls = remainingEvidence;
     }
+    } finally { await parallelReads.close(); }
     const closing = judgeCompanionStepClosing({
       calls, messages, initiative: Boolean(args.read.initiativeInput), writingAnnotation,
       // A work turn cannot end on a bare published line: the model may have

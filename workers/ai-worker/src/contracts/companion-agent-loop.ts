@@ -26,6 +26,7 @@ export interface CompanionAgentLoopArgs {
     operations: { name: string; description: string }[]; executionOperations: { name: string; description: string }[];
     cached?: AgentReadRequirementsV1 }) => Promise<AgentReadRequirementsV1> };
   conversationReview?: { policyHash: string; review: (input: { request: AgentTurnRequest; result: AgentTurnResult;
+    onReviewedDelta?: (delta: string) => Promise<boolean>;
     requiresReasoning?: boolean }) => Promise<AgentTurnResult> };
   /** Actual response provider, including a recovery route; diagnostic metadata
    * must not attribute the fallback's answer to the configured primary. */

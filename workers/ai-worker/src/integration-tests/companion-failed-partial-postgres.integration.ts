@@ -19,7 +19,7 @@ import postgres from "postgres";
 import { randomUUID } from "node:crypto";
 import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
-const CONN = testDatabaseUrl("DATABASE_URL_API");
+const CONN = testDatabaseUrl("DATABASE_URL_MIGRATOR");
 process.env.DATABASE_URL ??= CONN;
 
 const sql = postgres(CONN, { max: 2 });

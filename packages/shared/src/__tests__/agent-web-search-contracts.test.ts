@@ -3,7 +3,24 @@ import { test } from "node:test";
 import { resolveAllCompanionAgentTools } from "../agent/companion-agent-registry.ts";
 import { companionAgentSettingsV1Schema } from "../contracts/companion/companion-agent-contracts.ts";
 import { companionAccountPatchSchema } from "../contracts/companion/companion-shell-contracts.ts";
-import { companionContentBlockV1Schema } from "../contracts/companion/companion-conversation-contracts.ts";
+import { companionContentBlockV1Schema, companionMessageV1Schema, createCompanionTurnRequestV1Schema } from "../contracts/companion/companion-conversation-contracts.ts";
+import { validateCompanionAgentToolArguments } from "../agent/companion-agent-registry.ts";
+import { resolveCompanionInitialToolNames } from "../agent/companion-tool-groups.ts";
+
+test("authorized search is initially available without a loading round, while catalog permission still wins", () => {
+  const availableToolNames = ["companion_web", "companion_load_tools", "companion_observe"];
+  assert.equal(resolveCompanionInitialToolNames({ availableToolNames, webSearchEnabled: true }).has("companion_web"), true);
+  assert.equal(resolveCompanionInitialToolNames({ availableToolNames, webSearchEnabled: false }).has("companion_web"), false);
+  assert.equal(resolveCompanionInitialToolNames({ availableToolNames: [], webSearchEnabled: true }).has("companion_web"), false);
+});
+
+test("search may request real top-page reads while direct reads retain their distinct schema", () => {
+  const parse = (args: Record<string, unknown>) => validateCompanionAgentToolArguments("companion_web", args).success;
+  assert.equal(parse({ action: "search", query: "original paper", readTopResults: 3 }), true);
+  assert.equal(parse({ action: "search", query: "original paper", readTopResults: 0 }), true);
+  for (const readTopResults of [-1, 9, 1.5, "3"]) assert.equal(parse({ action: "search", query: "paper", readTopResults }), false);
+  assert.equal(parse({ action: "read_document", url: "https://example.com", readTopResults: 2 }), false);
+});
 
 test("web search defaults off in old accounts and requires explicit exposure", () => {
   assert.notEqual(companionAgentSettingsV1Schema.parse({ version: 1, permissionLevel: "guided" }).webSearchEnabled, true);
@@ -33,6 +50,15 @@ test("saved search citations retain identity and the exact destination through t
     target: { kind: "external_https", href: "https://example.com/docs?q=2" } };
   assert.deepEqual(companionContentBlockV1Schema.parse(block), block);
   assert.equal(companionContentBlockV1Schema.safeParse({ ...block, target: { kind: "external_https", href: "javascript:alert(1)" } }).success, false);
+});
+
+test("persisted research output retains every citation while upload/input limits stay separate", () => {
+  const blocks = [{ type: "text", text: "Research answer" }, ...Array.from({ length: 48 }, (_, index) => ({
+    type: "citation", label: `Source ${index}`, referenceId: `web-${index.toString(16).padStart(16, "0")}`, target: { kind: "external_https", href: `https://example.com/${index}` },
+  }))];
+  assert.deepEqual(companionMessageV1Schema.shape.blocks.parse(blocks), blocks);
+  assert.equal(createCompanionTurnRequestV1Schema.safeParse({ version: 1,
+    clientMessageId: "11111111-1111-4111-8111-111111111111", inputKind: "text", sourceSurface: "pet", blocks }).success, false);
 });
 
 

@@ -47,6 +47,8 @@ export interface ExternalCapabilityDependencies {
    * search receipts with the account web switch still enabled. Never model args. */
   verifiedSearchResultUrls?: readonly string[];
   verifiedDocumentRedirects?: readonly VerifiedDocumentRedirect[];
+  /** A host-selected excerpt width/query does not change read authorization. */
+  documentReadOptions?: { maxChars?: number; searchText?: string };
   read?: typeof readAgentPublicDocument;
   governance?: (workspaceId: string, userId: string) => Promise<Pick<Awaited<ReturnType<typeof resolveAIGovernanceContext>>, "policy" | "consentOk">>;
   audit?: typeof logAICall;
@@ -70,7 +72,8 @@ export async function executeExternalCapability(scope: AgentScopeV1, call: { nam
   const started = performance.now();
   let status: "success" | "error" | "cancelled" = "error";
   try {
-    const document = await (deps.read ?? readAgentPublicDocument)(url, signal, {}, { offset: input.offset, findText: input.findText });
+    const document = await (deps.read ?? readAgentPublicDocument)(url, signal, {}, {
+      ...deps.documentReadOptions, offset: input.offset, findText: input.findText });
     signal.throwIfAborted(); status = "success";
     return { status: "succeeded" as const, ...document };
   } catch (error) { status = signal.aborted ? "cancelled" : "error"; throw error; }

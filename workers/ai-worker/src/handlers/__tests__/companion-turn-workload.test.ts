@@ -28,6 +28,9 @@ test("receipts retain lightweight reasoning; repairs and explicit deepening rais
   assert.equal(companionStepReasoning({ ...base, reviewedOpening: true, deepened: true }), "max");
   assert.equal(companionStepReasoning({ ...base, reviewedOpening: true, repairing: true }), "high");
   assert.equal(companionStepReasoning({ ...base, toolCallCount: 1 }), "low");
+  assert.equal(companionStepReasoning({ ...base, resourcePath: "work", readOnlyRequiredStep: true }), "none");
+  assert.equal(companionStepReasoning({ ...base, resourcePath: "work", readOnlyRequiredStep: true, toolCallCount: 1 }), "none");
+  assert.equal(companionStepReasoning({ ...base, readOnlyRequiredStep: true, deepened: true }), "max");
   assert.equal(companionStepReasoning({ ...base, repairing: true, readOnlyRequiredStep: true }), "high");
   assert.equal(companionStepReasoning({ ...base, mode: "direct_thinking" }), "max");
   assert.equal(companionStepReasoning({ ...base, resourcePath: undefined }), "high");

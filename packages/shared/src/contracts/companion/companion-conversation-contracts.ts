@@ -340,7 +340,10 @@ export const companionMessageV1Schema = z.object({
      */
     "cancelled",
   ]),
-  blocks: z.array(companionContentBlockV1Schema).min(1).max(32),
+  // This is a persisted/output message, not a user upload. A research answer
+  // can carry more than 32 source blocks; all actual source identities must
+  // remain readable. Turn input has its own separate attachment limit below.
+  blocks: z.array(companionContentBlockV1Schema).min(1),
   /** Optional continuation prompts are presentation metadata, stored outside the hashed content blocks. */
   followUpPrompts: z.array(z.string().min(4).max(120)).max(3).optional(),
   selection: companionSelectionV1Schema.optional(),

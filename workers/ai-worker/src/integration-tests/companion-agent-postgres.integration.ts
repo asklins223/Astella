@@ -31,7 +31,9 @@ import { ProviderRequestError, ProviderResponseRefusedError, ProviderResponseUnv
 import { currentCompanionSuccessfulReceipts } from "../handlers/tools/companion-tool-receipts.ts";
 import { readCompanionWebSearchReceipts } from "../agent/web-search.ts";
 
-const CONN = testDatabaseUrl("DATABASE_URL_API");
+// Fixtures create/delete complete scoped records; the runtime still connects
+// through DATABASE_URL_WORKER and exercises its actual restricted role.
+const CONN = testDatabaseUrl("DATABASE_URL_MIGRATOR");
 process.env.DATABASE_URL ??= CONN;
 // 强制 mock provider：验证 DB 编排与预算/fence，不产生外部模型调用或费用。
 delete process.env.TOKENRHYTHM_API_KEY;
@@ -194,6 +196,10 @@ for (const delivery of ["body", "finish"] as const) test(`unread application rec
     const scripted = async (request: import("@astella/shared").AgentTurnRequest): Promise<AgentTurnResult> => {
       authorCalls++;
       const success = currentCompanionSuccessfulReceipts(request.messages).some(receipt => receipt.operation === "observe.stats");
+      if (authorCalls === 1) {
+        assert.equal(request.reasoningEffort, "none", "retrieving an independently required record uses the primary's fast level");
+        assert.equal(request.toolChoice, "auto", "source requirements stay host-checked without adding an unsupported forced-choice request");
+      }
       if (success) return { content: "当前记录里，今日和本周学习时长均为 0 分钟。", toolCalls: [], finishReason: "stop", usage: null, providerRequestId: null };
       if (authorCalls === 1) return delivery === "body"
         ? { content: "你在9月17日学习过，掌握度100%。", toolCalls: [], finishReason: "stop", usage: null, providerRequestId: null }
@@ -370,7 +376,7 @@ for (const kind of ["chat", "chat-configure", "chat-deepen", "reasoned"] as cons
   }
 });
 
-for (const channel of ["body", "finish", "publish", "unavailable"] as const) test(`source-backed ${channel} delivery is reviewed before any answer reaches SSE or storage`, async () => {
+for (const channel of ["body", "finish", "publish", "unavailable", "stream", "stream-interrupted"] as const) test(`source-backed ${channel} delivery is reviewed before any answer reaches SSE or storage`, async () => {
   const directory = mkdtempSync(join(tmpdir(), "companion-source-review-"));
   const originalConfig = process.env.AI_PLATFORMS_CONFIG;
   const configPath = join(directory, "platforms.json");
@@ -382,6 +388,9 @@ for (const channel of ["body", "finish", "publish", "unavailable"] as const) tes
   const sourceId = randomUUID();
   const bad = "BAD_DRAFT：这项研究证明70°C也成立。";
   const safe = "这项研究只测量10–37°C，不能据此外推到70°C。";
+  const firstParagraph = safe + "所给原文没有包含70°C这个实验条件，已有结果也不足以证明该温度下同样成立；答复只能保留实际测量范围内的结论。";
+  const streamed = firstParagraph + "\n\n需要区分实验结果与尚未测量的条件。";
+  let reviewScope: { workspaceId: string; userId: string; runId: string };
   let reviews = 0, sequence = 0;
   registerFactory("mock", "agent_turn", config => {
     const provider = new MockProvider({ modelProfile: config.modelProfile });
@@ -393,7 +402,19 @@ for (const channel of ["body", "finish", "publish", "unavailable"] as const) tes
         assert.equal(data.documents[0].operation, "notes.read.source");
         assert.match(data.documents[0].data.body, /10–37/);
         if (channel === "unavailable") throw new Error("controlled source review failure");
-        return { content: JSON.stringify({ reply: safe }), usage: {} };
+        if (channel.startsWith("stream") && data.paragraphIndex === 1) {
+          const deadline = Date.now() + 5000;
+          let published = false;
+          while (Date.now() < deadline) {
+            const rows = await sql`SELECT payload FROM companion_stream_events WHERE run_id=${reviewScope.runId} AND type='assistant.delta' ORDER BY seq`;
+            if (JSON.stringify(rows).includes(firstParagraph)) { published = true; break; }
+            await new Promise(resolve => setTimeout(resolve, 20));
+          }
+          assert.equal(published, true, "the first verified paragraph must reach durable SSE before the second verdict returns");
+          if (channel === "stream-interrupted") throw new Error("controlled interruption after a verified paragraph");
+        }
+        return { content: JSON.stringify({ reply: channel.startsWith("stream")
+          ? data.paragraphIndex === 0 ? firstParagraph : "需要区分实验结果与尚未测量的条件。" : safe }), usage: {} };
       }
       return chat(messages, options, signal);
     };
@@ -409,12 +430,14 @@ for (const channel of ["body", "finish", "publish", "unavailable"] as const) tes
       if (receipts.some(receipt => receipt.ok && receipt.operation === "say.publish")) return call("companion_finish", { text: safe, actions: [], evidence: [] });
       if (channel === "finish") return call("companion_finish", { text: bad, actions: [], evidence: [] });
       if (channel === "publish") return call("companion_send_message", { text: bad });
-      delta(bad); return { content: bad, toolCalls: [], finishReason: "stop" };
+      const content = channel.startsWith("stream") ? bad + "\n\nBAD_DRAFT：这是尚未核实的第二段。" : bad;
+      delta(content); return { content, toolCalls: [], finishReason: "stop" };
     };
     return provider;
   });
   const scope = await seedBase();
   const fixture = await seedAgentRun(scope.workspaceId, scope.userId, { userText: `读取来源 ${sourceId}，只根据原文回答。` });
+  reviewScope = { ...scope, runId: fixture.runId };
   try {
     await sql`INSERT INTO sources(id,workspace_id,type,title,status,created_by)
       VALUES(${sourceId},${scope.workspaceId},'text','范围实验','ready',${scope.userId})`;
@@ -426,11 +449,20 @@ for (const channel of ["body", "finish", "publish", "unavailable"] as const) tes
     assert.ok(reviews > 0);
     const displayed = JSON.stringify(state.assistant) + JSON.stringify(state.events.filter(event => ["assistant.delta","assistant.utterance","assistant.final"].includes(event.type)));
     assert.ok(!displayed.includes("BAD_DRAFT"), "the original draft must never leak into an answer channel");
-    if (channel === "unavailable") {
-      assert.match(displayed, /回答还没有核对完成/);
+    if (channel === "unavailable" || channel === "stream-interrupted") {
+      assert.match(displayed, channel === "unavailable" ? /回答还没有核对完成/ : /后续内容这次没有核对完成/);
       const [receipt] = await sql`SELECT delivery_receipt FROM companion_turn_runs WHERE id=${fixture.runId}`;
       assert.equal(receipt.delivery_receipt.outcome, "partial");
+      if (channel === "stream-interrupted") {
+        assert.ok(displayed.includes(firstParagraph));
+        assert.ok(!displayed.includes("需要区分实验结果"));
+      }
     } else assert.ok(displayed.includes(safe));
+    if (channel === "stream") {
+      const text = state.assistant.map(message => message.blocks.filter((block: { type: string }) => block.type === "text")
+        .map((block: { text: string }) => block.text).join("")).join("");
+      assert.equal(text, streamed, "final storage must match the streamed prefix plus its remainder exactly once");
+    }
   } finally {
     await sql`DELETE FROM source_segments WHERE source_id=${sourceId}`;
     await sql`DELETE FROM sources WHERE id=${sourceId}`;
@@ -614,7 +646,8 @@ test("a valid argument repair resets consecutive failures without withdrawing a 
   MockProvider.prototype.executeAgentTurn = async function (request, signal) {
     if (request.role !== "companion_agent") return original.call(this, request, signal);
     calls++;
-    assert.ok(request.tools.some(tool => tool.name === "companion_observe"), "successful corrections keep the domain usable");
+    assert.ok(request.tools.some(tool => tool.name === "companion_observe"), "successful corrections keep the domain usable: "
+      + JSON.stringify({ calls, tools: request.tools.map(tool => tool.name), choice: request.toolChoice, last: request.messages.at(-1) }));
     if (calls <= 12) return { content: "", toolCalls: [{ id: `repair_${calls}`, name: "companion_observe",
       arguments: { action: "calculate", expression: calls % 2 ? "1".repeat(501 + calls) : `${calls}+1` } }],
       finishReason: "tool_calls", usage: null, providerRequestId: "argument-repair-test" };
@@ -801,6 +834,49 @@ test("§16.39(a)：闲聊那一圈不许留下任何正式学习记录的行", a
     );
   } finally {
     await f.cleanup();
+  }
+});
+
+test("a blocked independent read does not block sibling reads; durable receipts stay in native call order", async () => {
+  const { workspaceId, userId } = await seedBase();
+  const f = await seedAgentRun(workspaceId, userId, { userText: "读取近期活动和本轮对话历史，简短告诉我。" });
+  const lock = await sql.reserve();
+  let locked = false;
+  registerFactory("mock", "agent_turn", config => {
+    const provider = new MockProvider({ modelProfile: config.modelProfile });
+    provider.executeAgentTurn = async request => {
+      const receipts = request.messages.filter(message => message.role === "tool" && message.toolCallId?.startsWith("parallel-"));
+      if (receipts.length) {
+        assert.deepEqual(receipts.map(message => message.toolCallId), ["parallel-activity", "parallel-history", "parallel-context"]);
+        return { content: "近期没有活动，本轮对话历史已读取。", toolCalls: [], finishReason: "stop", usage: null, providerRequestId: null };
+      }
+      await lock`BEGIN`; await lock`LOCK TABLE notes IN ACCESS EXCLUSIVE MODE`; locked = true;
+      return { content: "", toolCalls: ["activity", "history", "context"].map(action => ({ id: `parallel-${action}`,
+        name: "companion_observe", arguments: { action } })), finishReason: "tool_calls", usage: null, providerRequestId: null };
+    };
+    return provider;
+  });
+  const invocation = invoke(workspaceId, userId, { runId: f.runId });
+  void invocation.catch(() => undefined);
+  try {
+    const deadline = Date.now() + 12_000;
+    let observed = false;
+    while (Date.now() < deadline) {
+      const rows = await sql`SELECT name,status FROM companion_agent_tool_calls WHERE run_id=${f.runId}`;
+      if (["observe.history", "observe.context"].every(name => rows.some(row => row.name === name && row.status === "succeeded"))) {
+        assert.ok(rows.some(row => row.name === "observe.activity" && row.status === "executing"));
+        observed = true; break;
+      }
+      await new Promise(resolve => setTimeout(resolve, 30));
+    }
+    assert.equal(observed, true, "siblings must finish while the activity query is still held by the test lock");
+  } finally {
+    if (locked) await lock`COMMIT`;
+    lock.release();
+    try { await invocation; } finally {
+      registerFactory("mock", "agent_turn", config => new MockProvider({ modelProfile: config.modelProfile }));
+      await f.cleanup();
+    }
   }
 });
 
@@ -1268,14 +1344,18 @@ test("document redirect provenance restores only successful scoped reads with an
     await sql`INSERT INTO companion_agent_steps(id,workspace_id,user_id,conversation_id,run_id,step_no,kind,status)
       VALUES(${stepId},${scope.workspaceId},${scope.userId},${f.conversationId},${f.runId},1,'model','running')`;
     for (const [index, name, status] of [[1,"web.read_document","succeeded"],[2,"agent_read_public_document","succeeded"],
-      [3,"web.read_document","failed"],[4,"notes.read.read","succeeded"]] as const) {
-      const result = encodeCompanionToolResult({ value: { status: "succeeded", url: `https://example.com/${index}/`, contentHash: "d".repeat(64) }, safeSummary: "Read" });
+      [3,"web.read_document","failed"],[4,"notes.read.read","succeeded"],[5,"web.search","succeeded"],[6,"web.search","succeeded"]] as const) {
+      const document = { status: "succeeded", url: `https://example.com/${index}/`, contentHash: "d".repeat(64), text: "Actually read paragraph" };
+      const result = encodeCompanionToolResult({ value: name === "web.search" ? { status: "succeeded",
+        sources: [{ referenceId: `web-${index}`, url: `https://example.com/${index}` }],
+        documents: [{ referenceId: index === 6 ? "wrong-source" : `web-${index}`, requestedUrl: `https://example.com/${index}`, document }] }
+        : document, safeSummary: "Read" });
       await sql`INSERT INTO companion_agent_tool_calls(id,workspace_id,user_id,conversation_id,run_id,step_id,
         tool_call_id,name,tool_version,arguments,arguments_sha256,risk_class,status,result_payload)
         VALUES(${randomUUID()},${scope.workspaceId},${scope.userId},${f.conversationId},${f.runId},${stepId},${`read-${index}`},
           ${name},'1.0.0',${sql.json({url:`https://example.com/${index}`})},${"c".repeat(64)},'read',${status},${sql.json(result)})`;
     }
-    const expected = [1,2].map(index => ({ requestedUrl: `https://example.com/${index}`, url: `https://example.com/${index}/` }));
+    const expected = [1,2,5].map(index => ({ requestedUrl: `https://example.com/${index}`, url: `https://example.com/${index}/` }));
     assert.deepEqual((await readCompanionDocumentRedirects(scope, f.runId)).sort((a,b) => a.url.localeCompare(b.url)), expected);
     assert.deepEqual(await readCompanionDocumentRedirects(scope, randomUUID()), []);
     assert.deepEqual(await readCompanionDocumentRedirects({ ...scope, userId: randomUUID() }, f.runId), []);

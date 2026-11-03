@@ -111,6 +111,7 @@ import { executeCompanionCreateNote } from "../note/companion-note-authoring.ts"
 import { executeCompanionNoteEdit } from "../note/companion-note-edit.ts";
 import { executeCompanionShareNote } from "../note/companion-note-share.ts";
 import { executeCompanionLearningDiscoveryTool } from "../note/companion-learning-discovery.ts";
+import { readCompanionSearchSources, compactCompanionSearchResult } from "./companion-search-reads.ts";
 
 
 
@@ -141,10 +142,13 @@ const INTERNAL_CAPABILITY: Readonly<Record<string, string>> = Object.freeze({
 });
 
 
+type CurrentSearchProvenance = { sources: readonly { url: string }[]; query: string };
+
 export async function executeReadTool(
   event: AgentEventContext,
   definition: CompanionAgentToolDefinitionV1,
   args: Record<string, unknown>,
+  currentSearch?: CurrentSearchProvenance,
 ): Promise<AgentToolExecutionResult> {
   if (false) return executeAgentGoalTool(event, "", args);
   // 外发政策门禁。工具面本来已经把受管工具摘掉了（见 resolveAllCompanionAgentTools），
@@ -200,12 +204,20 @@ export async function executeReadTool(
       const scope = { workspaceId: event.ctx.workspaceId, userId: event.read.userId };
       const value = await executeWebSearch(scope,
         args as Parameters<typeof executeWebSearch>[1], event.ctx.signal);
+      const readTopResults = Number(args.readTopResults ?? 2);
+      if (value.status === "succeeded" && readTopResults > 0) {
+        value.documents = await readCompanionSearchSources({ result: value, count: readTopResults, signal: event.ctx.signal,
+          read: async (source, signal) => (await executeReadTool({ ...event, ctx: { ...event.ctx, signal } },
+            { ...definition, name: "web.read_document" }, { url: source.url,
+              ...(typeof args.findText === "string" ? { findText: args.findText } : {}) },
+            { sources: value.sources, query: value.query })).value });
+      }
       const progress = value.status === "succeeded" ? webSearchMaterialProgress(value,
         await readCompanionWebSearchReceipts(scope, event.read.runId)) : undefined;
-      return { value: { ...value, ...(progress ? { progress } : {}),
+      return { value: { ...compactCompanionSearchResult(value), ...(progress ? { progress } : {}),
         ...(value.status === "unavailable" ? { note: WEB_SEARCH_MISSING_EVIDENCE_GUIDANCE } : {}) },
         resultRef: JSON.stringify(value), blocks: webSearchCitationBlocks(value), safeSummary: value.status === "succeeded"
-        ? `搜索到 ${value.sources.length} 个网页`
+        ? `搜索到 ${value.sources.length} 个网页${value.documents ? `，取得 ${value.documents.filter(item => item.document.status === "succeeded").length} 篇原文` : ""}`
         : webSearchUnavailableSummary(value.reason) };
     }
     case "web.read_document": {
@@ -217,13 +229,16 @@ export async function executeReadTool(
       // A search-enabled user asked the agent to find public sources. Follow
       // only exact links in this run's actual successful receipts, never a URL
       // fabricated in the reply, a different run or retrieved page text.
-      const receipts = event.constraints.webSearchEnabled === true && await readWebSearchEnabled(scope)
+      const searchEnabled = event.constraints.webSearchEnabled === true && await readWebSearchEnabled(scope);
+      const receipts = searchEnabled
         ? await readCompanionWebSearchReceipts(scope, event.read.runId) : [];
       let value;
       try {
         value = await executeExternalCapability(scope,
           { name: INTERNAL_CAPABILITY[definition.name] ?? definition.name, arguments: args }, userTexts, event.ctx.signal,
-          { verifiedSearchResultUrls: receipts.flatMap(receipt => receipt.sources.map(source => source.url)),
+          { verifiedSearchResultUrls: [...receipts.flatMap(receipt => receipt.sources.map(source => source.url)),
+              ...(searchEnabled ? currentSearch?.sources.map(source => source.url) ?? [] : [])],
+            ...(currentSearch ? { documentReadOptions: { maxChars: 3000, searchText: currentSearch.query } } : {}),
             verifiedDocumentRedirects: await readCompanionDocumentRedirects(scope, event.read.runId) });
       } catch (error) {
         if (error instanceof AgentStoreError && error.code === "document_url_not_authorized")

@@ -23,6 +23,10 @@ export function companionStepReasoning(input: {
   // requesting high again would make an explicit deepen call a no-op.
   if (input.deepened || input.mode === "direct_thinking") return "max";
   if (input.repairing) return "high";
+  // The independently settled evidence contract requires actual reads before
+  // an answer. Tool discovery/retrieval can use a declared non-reasoning level;
+  // explicit thinking and repairs above always retain precedence.
+  if (input.readOnlyRequiredStep) return "none";
   // A receipt is evidence, not a reason to spend high effort on every saved
   // note or confirmation. The agent can deepen when that evidence needs work.
   if (input.toolCallCount > 0) return "low";

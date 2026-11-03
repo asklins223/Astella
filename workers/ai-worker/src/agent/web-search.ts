@@ -25,8 +25,21 @@ export type WebSearchSource = {
   content: string; media: string; publishDate: string;
 };
 export type WebSearchResult =
-  | { status: "succeeded"; query: string; searchedAt: string; sources: WebSearchSource[] }
+  | { status: "succeeded"; query: string; searchedAt: string; sources: WebSearchSource[]; documents?: WebSearchDocument[] }
   | { status: "unavailable"; reason: "disabled" | "not_configured" | "quota_exhausted" | "service_unavailable"; sources: [] };
+
+export type WebSearchDocument = { referenceId: string; requestedUrl: string; citationMarker?: string; document: Record<string, unknown> };
+
+/** A search snippet cannot stand in for a page read. Embedded document receipts
+ * must match this exact search's source identity and carry a real text/hash. */
+export function successfulWebSearchDocuments(data: Record<string, unknown>): WebSearchDocument[] {
+  if (data.status !== "succeeded" || !Array.isArray(data.sources) || !Array.isArray(data.documents)) return [];
+  return data.documents.filter((item): item is WebSearchDocument => item !== null && typeof item === "object"
+    && typeof item.referenceId === "string" && typeof item.requestedUrl === "string"
+    && data.sources instanceof Array && data.sources.some(source => source?.referenceId === item.referenceId && source.url === item.requestedUrl)
+    && item.document?.status === "succeeded" && typeof item.document.text === "string" && item.document.text.trim().length > 0
+    && typeof item.document.contentHash === "string" && /^[a-f0-9]{64}$/.test(item.document.contentHash));
+}
 
 /** Report actual new material, not whether the query string changed. This
  * leaves source selection to the Agent and never limits a research task. */
@@ -111,7 +124,11 @@ export function readWebSearchReceipt(ref: string | null): WebSearchResult | null
     const sources = normalizeWebSearchSources(data.sources.map((source: WebSearchSource) => ({
       link: source.url, title: source.title, content: source.content, media: source.media, publish_date: source.publishDate,
     })));
-    return { status: "succeeded", query: data.query, searchedAt: data.searchedAt, sources };
+    const documents = Array.isArray(data.documents) ? data.documents.filter((item: WebSearchDocument) =>
+      item && typeof item.referenceId === "string" && typeof item.requestedUrl === "string"
+      && sources.some(source => source.referenceId === item.referenceId && source.url === item.requestedUrl)
+      && item.document && typeof item.document === "object") : undefined;
+    return { status: "succeeded", query: data.query, searchedAt: data.searchedAt, sources, ...(documents ? { documents } : {}) };
   } catch { return null; }
 }
 

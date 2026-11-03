@@ -33,12 +33,14 @@ export function createCompanionToolSurface(input: {
   loadedToolNames?: Iterable<string>;
   initiative?: boolean;
   hasImageAttachments?: boolean;
+  webSearchEnabled?: boolean;
 }): CompanionToolSurface {
   const loadedToolNames = new Set(input.loadedToolNames ?? []);
   const initialToolNames = resolveCompanionInitialToolNames({
     availableToolNames: input.definitions.map(definition => definition.name),
     pageKind: input.pageKind,
     hasImageAttachments: input.hasImageAttachments,
+    webSearchEnabled: input.webSearchEnabled,
     candidateOperations: [...input.candidateOperations],
   });
   // Proactive turns keep the earlier, narrower surface: common writes are for

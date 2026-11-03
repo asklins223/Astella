@@ -188,6 +188,7 @@ export function resolveCompanionInitialToolNames(input: {
   pageKind?: string | null;
   candidateOperations?: readonly string[];
   hasImageAttachments?: boolean;
+  webSearchEnabled?: boolean;
 }): Set<string> {
   const available = new Set(input.availableToolNames);
   const names = new Set<string>();
@@ -205,6 +206,9 @@ export function resolveCompanionInitialToolNames(input: {
   // A validated image attached to this turn is a host fact, independent of
   // page or intent classification. The policy-filtered catalog still owns permission.
   if (input.hasImageAttachments && available.has("companion_visual")) names.add("companion_visual");
+  // Account authorization is a host fact, not a guessed intent. An enabled
+  // public read tool need not spend a model round trip loading its own schema.
+  if (input.webSearchEnabled && available.has("companion_web")) names.add("companion_web");
   // The loader itself must always be reachable; otherwise the surface is closed.
   if (available.has("companion_load_tools")) names.add("companion_load_tools");
   return names;

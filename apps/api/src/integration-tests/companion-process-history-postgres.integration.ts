@@ -4,6 +4,8 @@ import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 import { listCompanionRunNodes } from "../modules/companion-conversation/turn/companion-events.ts";
 import { closeDatabase } from "../db/client.ts";
+import { listCompanionMessages } from "../modules/companion-conversation/turn/companion-conversations-service.ts";
+import { listContinuousHistory } from "../modules/companion-conversation/memory/continuous-history-service.ts";
 
 const databaseUrl = process.env.DATABASE_URL_API ?? process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("companion process history requires a real Postgres database");
@@ -15,6 +17,10 @@ test.after(async () => { await closeDatabase(); await db.end({ timeout: 2 }); })
 test("worker 写入的思考和工具随对话保留：清理实时事件、超过最近 20 轮后仍能回读", async () => {
   const workspaceId = randomUUID(), userId = randomUUID(), conversationId = randomUUID();
   const userMessageId = randomUUID(), assistantMessageId = randomUUID(), runId = randomUUID();
+  const blocks = [{ type: "text", text: "正文已生成。" }, ...Array.from({ length: 48 }, (_, index) => ({
+    type: "citation", referenceId: `web-${index.toString(16).padStart(16, "0")}`, label: `官方来源 ${index + 1}`,
+    target: { kind: "external_https", href: `https://example.com/original/${index}` },
+  }))];
   const entries = [
     { type: "assistant.thinking", payload: { index: 0, text: "先查阅这篇笔记。" } },
     { type: "agent.tool", payload: { tool: { toolCallId: "read", name: "companion_open", status: "requested", safeLabel: "打开笔记", privateDiagnostic: "不进入手记档案" } } },
@@ -52,11 +58,16 @@ test("worker 写入的思考和工具随对话保留：清理实时事件、超�
     await db.begin(async tx => {
       await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true), set_config('app.user_id', ${userId}, true)`;
       await tx`INSERT INTO companion_messages (id,conversation_id,workspace_id,user_id,role,seq,kind,blocks,content_sha256,run_id)
-        VALUES (${assistantMessageId},${conversationId},${workspaceId},${userId},'assistant',2,'text',${tx.json([{ type: "text", text: "正文已生成。" }])},${"0".repeat(64)},${runId})`;
+        VALUES (${assistantMessageId},${conversationId},${workspaceId},${userId},'assistant',2,'text',${tx.json(blocks)},${"0".repeat(64)},${runId})`;
       await tx`UPDATE companion_turn_runs SET status='succeeded', assistant_message_id=${assistantMessageId}, step_count=2, tool_call_count=1 WHERE id=${runId}`;
       await tx`DELETE FROM companion_stream_events WHERE conversation_id=${conversationId}`;
     });
     const recent = await listCompanionRunNodes({ workspaceId,userId,conversationId,after: 0 });
+    const messages = await listCompanionMessages({ workspaceId, userId, conversationId, limit: 50, beforeSeq: null });
+    assert.equal(messages.statusCode, 200);
+    assert.deepEqual(messages.body.items.find(message => message.id === assistantMessageId)?.blocks, blocks);
+    const history = await listContinuousHistory({ workspaceId, userId, limit: 50 });
+    assert.deepEqual(history.value?.items.find(message => message.messageId === assistantMessageId)?.blocks, blocks);
     assert.ok(recent.ok && !recent.runs.some(run => run.runId === runId));
     const archived = await listCompanionRunNodes({ workspaceId,userId,conversationId,after: 0,includeThinking: true,runIds: [runId] });
     assert.ok(archived.ok);

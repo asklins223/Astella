@@ -376,7 +376,8 @@ fingerprint: `mock:${this.modelId}:${this.visionModelId}:native_tools`,
       return { content, usage: this.estimateUsage(userContent, content) };
     }
 
-    if (systemContent.includes("Companion application evidence requirements (v1)")) {
+    if (systemContent.includes("Companion application evidence requirements (v1)")
+      || systemContent.includes("Companion application evidence requirements (v2)")) {
       const requirements = userContent.includes("【mock:requires-stats-read】")
         ? [{ description: "Actual current learning statistics", operations: ["observe.stats"] }] : [];
       const content = JSON.stringify({ requirements, executionRequirements: userContent.includes("【mock:requires-memory-write】")

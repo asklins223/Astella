@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { companionConversationReviewMessages, companionGroundedReviewMaterial, companionUnknownWebCitations,
   companionCitationReadGuidance,
+  companionGroundedParagraphReviewMessages,
   COMPANION_GROUNDED_REVIEW_POLICY, COMPANION_KNOWLEDGE_COHERENCE_REVIEW_POLICY,
   COMPANION_CONVERSATION_REVIEW_POLICY_V2 } from "../agent/companion-conversation-review.ts";
 
@@ -10,6 +11,23 @@ test("the settled reasoning decision selects one review responsibility without c
     systemPrompt: "", maxTokens: 1000, temperature: 0.4, tools: [], messages: [] } };
   assert.equal(companionConversationReviewMessages({ ...input, requiresReasoning: true })[0]!.content, COMPANION_KNOWLEDGE_COHERENCE_REVIEW_POLICY);
   assert.equal(companionConversationReviewMessages({ ...input, requiresReasoning: false })[0]!.content, COMPANION_CONVERSATION_REVIEW_POLICY_V2);
+});
+
+test("paragraph verification retains whole-draft context and every actually read page for contradiction and attribution checks", () => {
+  const documents = ["a", "b"].map(id => ({ operation: "web.read_document", sources: [{ referenceId: `web-${id}` }], data: { text: `Original ${id}` } }));
+  const sources = ["a", "b"].map(id => ({ referenceId: `web-${id}` }));
+  const draft = "前提。[^web-a]\n\n基于前提的结论。[^web-b]";
+  const baseMessages = [{ role: "system" as const, content: "policy" }, { role: "user" as const,
+    content: JSON.stringify({ currentUser: "核对两个要点", draft, documents, sources, outcomes: [] }) }];
+  const focused = companionGroundedParagraphReviewMessages({ baseMessages, paragraph: "前提。[^web-a]", index: 0 });
+  const data = JSON.parse(String(focused[1]!.content));
+  assert.equal(data.draft, draft);
+  assert.equal(data.targetParagraph, "前提。[^web-a]");
+  assert.deepEqual(data.documents, documents);
+  assert.deepEqual(data.sources, sources);
+  assert.deepEqual(data.focusReferenceIds, ["web-a"]);
+  const uncited = companionGroundedParagraphReviewMessages({ baseMessages, paragraph: "尚未标注的事实", index: 1 });
+  assert.deepEqual(JSON.parse(String(uncited[1]!.content)).documents, documents, "uncited claims cannot discard inconvenient actual evidence");
 });
 
 test("conversation correction sees the current utterance as the request and historical drafts only as context", () => {
@@ -40,6 +58,7 @@ test("a text-only expression review never forwards historical image bytes or ass
 test("source review receives only actual current reads, their requested URL and real citation identities", () => {
   const request = { role: "companion_agent" as const, systemPrompt: "", maxTokens: 1000, temperature: 0.4, tools: [], messages: [
     { role: "tool" as const, content: JSON.stringify({ ok: true, operation: "web.read_document", data: { text: "OLD SOURCE" } }) },
+    { role: "assistant" as const, content: "An earlier answer claimed an unmeasured 90°C result." },
     { role: "user" as const, content: "核对这项研究", requestBoundary: true as const },
     { role: "assistant" as const, content: "", toolCalls: [{ id: "read", name: "companion_web", arguments: { action: "read_document", url: "https://example.com/paper" } }] },
     { role: "tool" as const, toolCallId: "search", content: JSON.stringify({ ok: true, operation: "web.search", data: { sources: [
@@ -51,6 +70,8 @@ test("source review receives only actual current reads, their requested URL and 
   assert.equal(messages[0]!.content, COMPANION_GROUNDED_REVIEW_POLICY);
   const data = JSON.parse(String(messages[1]!.content));
   assert.equal(data.documents.length, 1);
+  assert.deepEqual(data.recent, []);
+  assert.ok(!JSON.stringify(data).includes("90°C"), "previous assistant claims are not evidence or new review obligations");
   assert.equal(data.documents[0].requestedUrl, "https://example.com/paper");
   assert.equal(data.sources[0].citationMarker, "[^web-a123]");
   assert.equal(data.documents[0].sources[0].citationMarker, "[^web-a123]");

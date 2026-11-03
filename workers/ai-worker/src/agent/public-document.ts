@@ -31,6 +31,7 @@ import { createHash } from "node:crypto";
 
 import { fetchUrlContentOnce } from "../handlers/note/parse-source.ts";
 import { SourceFetchHttpError } from "../handlers/note/source-fetch-errors.ts";
+import { selectPublicDocumentQueryWindow } from "./public-document-window.ts";
 
 /** 单次交回的正文窗口宽度；读到底靠 `offset` 续读，不是"只许看前这么多"。 */
 export const PUBLIC_DOCUMENT_MAX_TEXT = 6000;
@@ -69,6 +70,7 @@ export interface AgentPublicDocument {
   contentHash: string;
   /** Literal page-text lookup, not a semantic search or a new source. */
   find?: { text: string; fromOffset: number; matchOffset: number | null };
+  selection?: { kind: "query_window"; matchedTerms: string[] };
 }
 
 export class AgentPublicDocumentError extends Error {
@@ -159,6 +161,8 @@ export interface AgentPublicDocumentReadOptions {
   readonly maxChars?: number;
   /** Find these literal words, ignoring case, from offset and return their context. */
   readonly findText?: string;
+  /** Host-owned search query, used locally to select one actual text window. */
+  readonly searchText?: string;
 }
 
 /**
@@ -255,6 +259,7 @@ export async function readAgentPublicDocument(
   const windowChars = Math.max(1, Math.trunc(options.maxChars ?? PUBLIC_DOCUMENT_MAX_TEXT));
   let offset = fromOffset;
   let find: AgentPublicDocument["find"];
+  let selection: AgentPublicDocument["selection"];
   if (options.findText) {
     // Escape every regexp metacharacter: model/source text is a literal lookup,
     // never an executable pattern. Translate UTF-16 positions back to the same
@@ -264,6 +269,13 @@ export async function readAgentPublicDocument(
     const matchOffset = match ? fromOffset + Array.from(match.input.slice(0, match.index)).length : null;
     find = { text: options.findText, fromOffset, matchOffset };
     if (matchOffset !== null) offset = Math.max(fromOffset, matchOffset - Math.floor(windowChars / 4));
+  }
+  // In a combined search, a guessed literal may be absent from an otherwise
+  // relevant page. Preserve find.matchOffset=null, but still select an actual
+  // query-matching window instead of quietly returning site navigation.
+  if ((!options.findText || find?.matchOffset === null) && options.searchText && fromOffset === 0) {
+    const selected = selectPublicDocumentQueryWindow(body, options.searchText, windowChars);
+    if (selected) { offset = selected.offset; selection = { kind: "query_window", matchedTerms: selected.matchedTerms }; }
   }
   const end = Math.min(totalChars, offset + windowChars);
   const nextOffset = end < totalChars ? end : null;
@@ -279,5 +291,6 @@ export async function readAgentPublicDocument(
     fetchedAt: new Date().toISOString(),
     contentHash,
     ...(find ? { find } : {}),
+    ...(selection ? { selection } : {}),
   };
 }
