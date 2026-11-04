@@ -5565,7 +5565,10 @@
         "file": "workers/ai-worker/src/handlers/agent/companion-review-stream.ts",
         "equal": true
       }
-    ]
+    ],
+    "standaloneDevelopmentSearchConfig": "passed",
+    "capabilityConfigurationGuard": "passed",
+    "rootUnrelatedPathsPreserved": 232
   },
   "searchQuotaProbe": {
     "sameProductionCredential": true,
@@ -5577,8 +5580,994 @@
     ]
   },
   "production": {
-    "status": "local_verified_pending_deployment",
-    "currentVersion": "2.0.22"
+    "status": "verified_live",
+    "version": "2.0.23",
+    "tag": "s-v2.0.23",
+    "commit": "3666cab1972e2e68474f63286bec1dc1c0617fb7",
+    "ci": {
+      "runId": 41784745642,
+      "jobsPassed": 10,
+      "url": "https://github.com/asklins223/Astella/actions/runs/41784745642"
+    },
+    "runtime": {
+      "hostConfigurationSha256": "0b39c2cb30a46aebcc434aca6f72c6ef403751e12b3b56f616846718417876af",
+      "currentRelease": "/opt/astella/releases/3666cab1972e2e68474f63286bec1dc1c0617fb7-ffd2046209eb",
+      "sourceHashes": {
+        "workers/ai-worker/src/agent/web-search.ts": "ee94039ec4bed1c66fa4cc34421770cd4ec79e5d8bc2153f413a17c0531f0874",
+        "workers/ai-worker/src/handlers/turn/companion-dialogue-content.ts": "09ceb20fa27f76473d98d09a3032bf8f391fdbb8c10c43ec50199030ba8fc102",
+        "workers/ai-worker/src/handlers/agent/companion-review-stream.ts": "eace306ae1d4312eb1353e6dcd3f0935504944c054444fa5f61edec6e137df26",
+        "workers/ai-worker/src/handlers/agent/companion-conversation-review.ts": "21105bd603b5c3c68d7de1fdfeb85b3640d53854b8897dcbdb14514eca2382f2"
+      },
+      "services": {
+        "astella-api-1": {
+          "configurationSha256": "0b39c2cb30a46aebcc434aca6f72c6ef403751e12b3b56f616846718417876af",
+          "health": "healthy",
+          "provider": "tavily",
+          "credentialMatches": true
+        },
+        "astella-worker-1": {
+          "configurationSha256": "0b39c2cb30a46aebcc434aca6f72c6ef403751e12b3b56f616846718417876af",
+          "health": "healthy",
+          "provider": "tavily",
+          "credentialMatches": true
+        }
+      }
+    },
+    "cases": [
+      {
+        "status": "succeeded",
+        "error": null,
+        "firstVisibleMs": 6888,
+        "totalMs": 6946,
+        "modelCallCount": 5,
+        "toolCallCount": 0,
+        "deliveryReceipt": null,
+        "maxMessageBlocks": 1,
+        "providerCalls": [
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 1931,
+            "promptTokens": 483,
+            "completionTokens": 75,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 2152,
+            "promptTokens": 2230,
+            "completionTokens": 28,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 2539,
+            "promptTokens": 6009,
+            "completionTokens": 14,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 1450,
+            "promptTokens": 1037,
+            "completionTokens": 131,
+            "status": "success"
+          }
+        ],
+        "bodyEvents": [
+          {
+            "seq": 5,
+            "type": "assistant.delta",
+            "ms": 6888
+          },
+          {
+            "seq": 7,
+            "type": "assistant.final",
+            "ms": 6946
+          }
+        ],
+        "input": null,
+        "replySha256": "41656246affe900be0a43c3fb98371522cf082b8753178e14d50b04c70b7dd33",
+        "replyCharactersWithoutCitationMarkers": 4,
+        "toolWrites": 0,
+        "complete": true,
+        "calls": [],
+        "sourceVerification": {
+          "actualDocuments": [],
+          "citedReferenceIds": [],
+          "unreadCitedIds": []
+        },
+        "case": "greeting",
+        "prompt": "你好，随便打个招呼就好，不用介绍自己，也别问我要聊什么。",
+        "wireEvents": [
+          {
+            "type": "turn.accepted",
+            "seq": 1,
+            "ms": 797
+          },
+          {
+            "type": "assistant.status",
+            "seq": 2,
+            "ms": 798
+          },
+          {
+            "type": "character.cue",
+            "seq": 3,
+            "ms": 798
+          },
+          {
+            "type": "assistant.status",
+            "seq": 4,
+            "ms": 890
+          },
+          {
+            "type": "assistant.delta",
+            "seq": 5,
+            "ms": 7372
+          },
+          {
+            "type": "voice.segment.ready",
+            "seq": 6,
+            "ms": 7411
+          },
+          {
+            "type": "assistant.final",
+            "seq": 7,
+            "ms": 7466
+          },
+          {
+            "type": "character.cue",
+            "seq": 8,
+            "ms": 7466
+          }
+        ],
+        "searchAudits": [],
+        "historyHttpStatus": 200
+      },
+      {
+        "status": "succeeded",
+        "error": null,
+        "firstVisibleMs": 32345,
+        "totalMs": 32471,
+        "modelCallCount": 6,
+        "toolCallCount": 1,
+        "deliveryReceipt": null,
+        "maxMessageBlocks": 9,
+        "providerCalls": [
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 1725,
+            "promptTokens": 2305,
+            "completionTokens": 80,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 2235,
+            "promptTokens": 534,
+            "completionTokens": 147,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 3538,
+            "promptTokens": 7185,
+            "completionTokens": 50,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 16162,
+            "promptTokens": 11584,
+            "completionTokens": 171,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 5224,
+            "promptTokens": 3884,
+            "completionTokens": 571,
+            "status": "success"
+          }
+        ],
+        "bodyEvents": [
+          {
+            "seq": 27,
+            "type": "assistant.delta",
+            "ms": 32345
+          },
+          {
+            "seq": 34,
+            "type": "assistant.final",
+            "ms": 32471
+          }
+        ],
+        "input": null,
+        "replySha256": "ffdd1ab7848001c7f0f619779c07b2e2f453a9a4cc268985b8ea5f22ce1c688e",
+        "replyCharactersWithoutCitationMarkers": 175,
+        "toolWrites": 0,
+        "complete": true,
+        "calls": [
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          }
+        ],
+        "sourceVerification": {
+          "actualDocuments": [
+            {
+              "referenceId": "web-242bcecef0885499",
+              "requestedUrl": "https://science.nasa.gov/resource/wrinkle-ridge-in-mare-crisium",
+              "url": "https://science.nasa.gov/resource/wrinkle-ridge-in-mare-crisium/",
+              "contentHash": "422ea3f061f9c3f546ae6dcbeaa61328eca05df1bcc67c03621be4232329c24a",
+              "offset": 0,
+              "characters": 1590
+            },
+            {
+              "referenceId": "web-8155ed82e82e2669",
+              "requestedUrl": "https://science.nasa.gov/moon/viewing-tips",
+              "url": "https://science.nasa.gov/moon/viewing-tips/",
+              "contentHash": "2a719ea9d9d292f36f4e9462563ff352d706059509e1550e86ef89b2573d8865",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-5ff0ace8b1485156",
+              "requestedUrl": "https://science.nasa.gov/moon/lunar-craters",
+              "url": "https://science.nasa.gov/moon/lunar-craters/",
+              "contentHash": "3ed5109fbcedada6e76bd7946ee38f004304292bd4f3ac50779a24a170c2063f",
+              "offset": 12735,
+              "characters": 3000
+            }
+          ],
+          "citedReferenceIds": [
+            "web-242bcecef0885499"
+          ],
+          "unreadCitedIds": []
+        },
+        "case": "nasa-simple",
+        "prompt": "请联网搜索并实际打开 NASA 官方原文，核对月海是否真的是海。只用两句话回答并标注引用，不要读取笔记或保存记忆。",
+        "wireEvents": [
+          {
+            "type": "turn.accepted",
+            "seq": 10,
+            "ms": 432
+          },
+          {
+            "type": "assistant.status",
+            "seq": 11,
+            "ms": 432
+          },
+          {
+            "type": "character.cue",
+            "seq": 12,
+            "ms": 432
+          },
+          {
+            "type": "assistant.status",
+            "seq": 13,
+            "ms": 498
+          },
+          {
+            "type": "agent.tool",
+            "seq": 14,
+            "ms": 6492
+          },
+          {
+            "type": "agent.tool",
+            "seq": 15,
+            "ms": 6541
+          },
+          {
+            "type": "agent.tool",
+            "seq": 16,
+            "ms": 11027
+          },
+          {
+            "type": "assistant.thinking",
+            "seq": 17,
+            "ms": 21493
+          },
+          {
+            "type": "assistant.thinking",
+            "seq": 18,
+            "ms": 21670
+          },
+          {
+            "type": "assistant.thinking",
+            "seq": 19,
+            "ms": 21853
+          },
+          {
+            "type": "assistant.thinking",
+            "seq": 20,
+            "ms": 22037
+          },
+          {
+            "type": "assistant.thinking",
+            "seq": 21,
+            "ms": 22213
+          },
+          {
+            "type": "assistant.thinking",
+            "seq": 22,
+            "ms": 22393
+          },
+          {
+            "type": "assistant.thinking",
+            "seq": 23,
+            "ms": 22569
+          },
+          {
+            "type": "assistant.thinking",
+            "seq": 24,
+            "ms": 22758
+          },
+          {
+            "type": "assistant.thinking",
+            "seq": 25,
+            "ms": 22933
+          },
+          {
+            "type": "assistant.status",
+            "seq": 26,
+            "ms": 27341
+          },
+          {
+            "type": "assistant.delta",
+            "seq": 27,
+            "ms": 32620
+          },
+          {
+            "type": "voice.segment.ready",
+            "seq": 28,
+            "ms": 32646
+          },
+          {
+            "type": "voice.segment.ready",
+            "seq": 29,
+            "ms": 32646
+          },
+          {
+            "type": "voice.segment.ready",
+            "seq": 30,
+            "ms": 32646
+          },
+          {
+            "type": "voice.segment.ready",
+            "seq": 31,
+            "ms": 32646
+          },
+          {
+            "type": "voice.segment.ready",
+            "seq": 32,
+            "ms": 32660
+          },
+          {
+            "type": "voice.segment.ready",
+            "seq": 33,
+            "ms": 32721
+          },
+          {
+            "type": "assistant.final",
+            "seq": 34,
+            "ms": 32797
+          },
+          {
+            "type": "character.cue",
+            "seq": 35,
+            "ms": 32797
+          }
+        ],
+        "searchAudits": [
+          {
+            "provider": "tavily",
+            "model": "tavily-basic",
+            "status": "success",
+            "durationMs": 2501
+          }
+        ],
+        "historyHttpStatus": 200
+      },
+      {
+        "status": "succeeded",
+        "error": null,
+        "firstVisibleMs": 70673,
+        "totalMs": 70824,
+        "modelCallCount": 9,
+        "toolCallCount": 5,
+        "deliveryReceipt": null,
+        "maxMessageBlocks": 25,
+        "providerCalls": [
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 1604,
+            "promptTokens": 2510,
+            "completionTokens": 48,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 1808,
+            "promptTokens": 715,
+            "completionTokens": 126,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 13899,
+            "promptTokens": 7814,
+            "completionTokens": 405,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 2670,
+            "promptTokens": 7800,
+            "completionTokens": 212,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 3718,
+            "promptTokens": 14222,
+            "completionTokens": 346,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 2989,
+            "promptTokens": 16383,
+            "completionTokens": 251,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 5723,
+            "promptTokens": 19833,
+            "completionTokens": 709,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 27625,
+            "promptTokens": 9922,
+            "completionTokens": 3861,
+            "status": "success"
+          }
+        ],
+        "bodyEvents": [
+          {
+            "seq": 90,
+            "type": "assistant.delta",
+            "ms": 70673
+          },
+          {
+            "seq": 91,
+            "type": "assistant.delta",
+            "ms": 70673
+          },
+          {
+            "seq": 104,
+            "type": "assistant.final",
+            "ms": 70824
+          }
+        ],
+        "input": null,
+        "replySha256": "3bb1531716f6733eb3403af6aa9dfc58adf66e263cd39f6737922e259887a13f",
+        "replyCharactersWithoutCitationMarkers": 195,
+        "toolWrites": 0,
+        "complete": true,
+        "calls": [
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.read_document",
+            "status": "blocked"
+          },
+          {
+            "name": "web.read_document",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          }
+        ],
+        "sourceVerification": {
+          "actualDocuments": [
+            {
+              "referenceId": "web-7f3549aa5c0c9110",
+              "requestedUrl": "https://www.nasa.gov/missions/nasas-ladee-spacecraft-finds-neon-in-lunar-atmosphere",
+              "url": "https://www.nasa.gov/missions/nasas-ladee-spacecraft-finds-neon-in-lunar-atmosphere/",
+              "contentHash": "ab98f68cdca56749654441ae905dfa996eecefe325127121900aedfce352823a",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-bbcf858ba65543b4",
+              "requestedUrl": "https://science.nasa.gov/moon/lunar-atmosphere",
+              "url": "https://science.nasa.gov/moon/lunar-atmosphere/",
+              "contentHash": "0200ca4069c6bd9f044451b4c91ebd228393818885d95c849f8d0bbe912248ff",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-2fce2475160930da",
+              "requestedUrl": "https://www.esa.int/Science_Exploration/Space_Science/Mars_Express/Facts_about_Mars",
+              "url": "https://www.esa.int/Science_Exploration/Space_Science/Mars_Express/Facts_about_Mars",
+              "contentHash": "83a8ccfc90c9323a46f1a6d720a041000e320a5007713680d48d6a880e84c033",
+              "offset": 0,
+              "characters": 1168
+            },
+            {
+              "referenceId": "web-3b5655defc006b9f",
+              "requestedUrl": "https://sci.esa.int/web/mars/-/48523-trace-gas-orbiter-instruments",
+              "url": "https://exploration.esa.int/web/mars/-/48523-trace-gas-orbiter-instruments",
+              "contentHash": "3c943ed4c8b5a065571a4294323a16ea8a3a412af3c9671f286428c608bba81b",
+              "offset": 6660,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-4eef022464ed85d4",
+              "requestedUrl": "https://svs.gsfc.nasa.gov/12739",
+              "url": "https://svs.gsfc.nasa.gov/12739",
+              "contentHash": "377e3ef30f992f61a8c6a0032f8aae197475b04468f83cc8d5894ec7d9268ee1",
+              "offset": 1504,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-83a8aabba1b064d6",
+              "requestedUrl": "https://science.nasa.gov/moon/top-moon-questions",
+              "url": "https://science.nasa.gov/moon/top-moon-questions/",
+              "contentHash": "517ba14f634d5ab4dcf96315b2035e46e0dcfa3de8b6a9c6c886bc09314f4852",
+              "offset": 0,
+              "characters": 3000
+            }
+          ],
+          "citedReferenceIds": [
+            "web-2fce2475160930da",
+            "web-4eef022464ed85d4",
+            "web-bbcf858ba65543b4"
+          ],
+          "unreadCitedIds": []
+        },
+        "case": "nasa-complex",
+        "prompt": "请查 NASA 和 ESA 的官网原文，比较月球与火星的大气和昼夜长度。四个要点，每点附实际原文引用，约200字。只查这些，不读取笔记或保存记忆。",
+        "wireEvents": [
+          {
+            "type": "turn.accepted",
+            "seq": 37,
+            "ms": 898
+          },
+          {
+            "type": "assistant.status",
+            "seq": 38,
+            "ms": 898
+          },
+          {
+            "type": "character.cue",
+            "seq": 39,
+            "ms": 898
+          },
+          {
+            "type": "assistant.status",
+            "seq": 40,
+            "ms": 950
+          },
+          {
+            "type": "assistant.thinking",
+            "seq": 41,
+            "ms": 18905
+          },
+          {
+            "type": "assistant.thinking",
+            "seq": 42,
+            "ms": 18906
+          },
+          {
+            "type": "assistant.thinking",
+            "seq": 43,
+            "ms": 18942
+          },
+          {
+            "type": "agent.tool",
+            "seq": 44,
+            "ms": 19684
+          },
+          {
+            "type": "agent.tool",
+            "seq": 45,
+            "ms": 19695
+          },
+          {
+            "type": "agent.tool",
+            "seq": 46,
+            "ms": 19748
+          },
+          {
+            "type": "agent.tool",
+            "seq": 47,
+            "ms": 19766
+          },
+          {
+            "type": "agent.tool",
+            "seq": 48,
+            "ms": 23181
+          },
+          {
+            "type": "agent.tool",
+            "seq": 49,
+            "ms": 26382
+          },
+          {
+            "type": "assistant.thinking",
+            "seq": 50,
+            "ms": 27780
+          },
+          {
+            "type": "assistant.thinking",
+            "seq": 51,
+            "ms": 27957
+          },
+          {
+            "type": "assistant.thinking",
+            "seq": 52,
+            "ms": 28144
+          },
+          {
+            "type": "assistant.thinking",
+            "seq": 53,
+            "ms": 28320
+          },
+          {
+            "type": "assistant.thinking",
+            "seq": 54,
+            "ms": 28500
+          },
+          {
+            "type": "assistant.thinking",
+            "seq": 55,
+            "ms": 28677
+          },
+          {
+            "type": "assistant.thinking",
+            "seq": 56,
+            "ms": 28862
+          },
+          {
+            "type": "assistant.thinking",
+            "seq": 57,
+            "ms": 29043
+          },
+          {
+            "type": "assistant.thinking",
+            "seq": 58,
+            "ms": 29220
+          },
+          {
+            "type": "assistant.thinking",
+            "seq": 59,
+            "ms": 29725
+          },
+          {
+            "type": "assistant.thinking",
+            "seq": 60,
+            "ms": 29725
+          },
+          {
+            "type": "agent.tool",
+            "seq": 61,
+            "ms": 30723
+          },
+          {
+            "type": "agent.tool",
+            "seq": 62,
+            "ms": 30724
+          },
+          {
+            "type": "agent.tool",
+            "seq": 63,
+            "ms": 30845
+          },
+          {
+            "type": "agent.tool",
+            "seq": 64,
+            "ms": 30845
+          },
+          {
+            "type": "agent.tool",
+            "seq": 65,
+            "ms": 30845
+          },
+          {
+            "type": "agent.tool",
+            "seq": 66,
+            "ms": 30845
+          },
+          {
+            "type": "assistant.thinking",
+            "seq": 67,
+            "ms": 31880
+          },
+          {
+            "type": "assistant.thinking",
+            "seq": 68,
+            "ms": 32060
+          },
+          {
+            "type": "assistant.thinking",
+            "seq": 69,
+            "ms": 32238
+          },
+          {
+            "type": "assistant.thinking",
+            "seq": 70,
+            "ms": 32420
+          },
+          {
+            "type": "assistant.thinking",
+            "seq": 71,
+            "ms": 32599
+          },
+          {
+            "type": "assistant.thinking",
+            "seq": 72,
+            "ms": 32781
+          },
+          {
+            "type": "assistant.thinking",
+            "seq": 73,
+            "ms": 32961
+          },
+          {
+            "type": "assistant.thinking",
+            "seq": 74,
+            "ms": 33148
+          },
+          {
+            "type": "assistant.thinking",
+            "seq": 75,
+            "ms": 33325
+          },
+          {
+            "type": "agent.tool",
+            "seq": 76,
+            "ms": 33747
+          },
+          {
+            "type": "agent.tool",
+            "seq": 77,
+            "ms": 33785
+          },
+          {
+            "type": "agent.tool",
+            "seq": 78,
+            "ms": 37782
+          },
+          {
+            "type": "assistant.thinking",
+            "seq": 79,
+            "ms": 39786
+          },
+          {
+            "type": "assistant.thinking",
+            "seq": 80,
+            "ms": 39973
+          },
+          {
+            "type": "assistant.thinking",
+            "seq": 81,
+            "ms": 40153
+          },
+          {
+            "type": "assistant.thinking",
+            "seq": 82,
+            "ms": 40333
+          },
+          {
+            "type": "assistant.thinking",
+            "seq": 83,
+            "ms": 40520
+          },
+          {
+            "type": "assistant.thinking",
+            "seq": 84,
+            "ms": 40697
+          },
+          {
+            "type": "assistant.thinking",
+            "seq": 85,
+            "ms": 40878
+          },
+          {
+            "type": "assistant.thinking",
+            "seq": 86,
+            "ms": 41049
+          },
+          {
+            "type": "assistant.thinking",
+            "seq": 87,
+            "ms": 41233
+          },
+          {
+            "type": "assistant.thinking",
+            "seq": 88,
+            "ms": 41413
+          },
+          {
+            "type": "assistant.status",
+            "seq": 89,
+            "ms": 43735
+          },
+          {
+            "type": "assistant.delta",
+            "seq": 90,
+            "ms": 71431
+          },
+          {
+            "type": "assistant.delta",
+            "seq": 91,
+            "ms": 71431
+          },
+          {
+            "type": "voice.segment.ready",
+            "seq": 92,
+            "ms": 71493
+          },
+          {
+            "type": "voice.segment.ready",
+            "seq": 93,
+            "ms": 71493
+          },
+          {
+            "type": "voice.segment.ready",
+            "seq": 94,
+            "ms": 71493
+          },
+          {
+            "type": "voice.segment.ready",
+            "seq": 95,
+            "ms": 71493
+          },
+          {
+            "type": "voice.segment.ready",
+            "seq": 96,
+            "ms": 71556
+          },
+          {
+            "type": "voice.segment.ready",
+            "seq": 97,
+            "ms": 71556
+          },
+          {
+            "type": "voice.segment.ready",
+            "seq": 98,
+            "ms": 71556
+          },
+          {
+            "type": "voice.segment.ready",
+            "seq": 99,
+            "ms": 71556
+          },
+          {
+            "type": "voice.segment.ready",
+            "seq": 100,
+            "ms": 71617
+          },
+          {
+            "type": "voice.segment.ready",
+            "seq": 101,
+            "ms": 71617
+          },
+          {
+            "type": "voice.segment.ready",
+            "seq": 102,
+            "ms": 71617
+          },
+          {
+            "type": "voice.segment.ready",
+            "seq": 103,
+            "ms": 71617
+          },
+          {
+            "type": "assistant.final",
+            "seq": 104,
+            "ms": 71617
+          },
+          {
+            "type": "character.cue",
+            "seq": 105,
+            "ms": 71617
+          },
+          {
+            "type": "assistant.followups.ready",
+            "seq": 106,
+            "ms": 74309
+          }
+        ],
+        "searchAudits": [
+          {
+            "provider": "tavily",
+            "model": "tavily-basic",
+            "status": "success",
+            "durationMs": 2501
+          },
+          {
+            "provider": "tavily",
+            "model": "tavily-basic",
+            "status": "success",
+            "durationMs": 2686
+          },
+          {
+            "provider": "tavily",
+            "model": "tavily-basic",
+            "status": "success",
+            "durationMs": 2582
+          },
+          {
+            "provider": "tavily",
+            "model": "tavily-basic",
+            "status": "success",
+            "durationMs": 2707
+          }
+        ],
+        "historyHttpStatus": 200
+      }
+    ],
+    "cleanup": {
+      "dataPolicyRestored": true,
+      "dataPolicyVerified": true,
+      "searchPreferenceRestored": true,
+      "originalWorkspaceRestored": true,
+      "isolatedWorkspaceDeleted": true,
+      "ownSessionLoggedOut": true
+    },
+    "postCleanupVerification": {
+      "remainingTestWorkspaces": 0,
+      "activeTestRuns": 0,
+      "sendToExternal": false,
+      "webSearchEnabled": false
+    }
   },
   "topology": {
     "stable-metrics-low-1": {
