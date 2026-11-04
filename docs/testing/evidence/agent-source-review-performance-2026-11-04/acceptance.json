@@ -1703,6 +1703,515 @@
           "unreadCitedIds": []
         }
       }
+    ],
+    "tavily-final-1": [
+      {
+        "status": "succeeded",
+        "error": null,
+        "firstVisibleMs": 50586,
+        "totalMs": 50619,
+        "modelCallCount": 7,
+        "toolCallCount": 1,
+        "deliveryReceipt": null,
+        "maxMessageBlocks": 9,
+        "providerCalls": [
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 779,
+            "promptTokens": 2246,
+            "completionTokens": 104,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 3583,
+            "promptTokens": 499,
+            "completionTokens": 152,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 12025,
+            "promptTokens": null,
+            "completionTokens": null,
+            "status": "error"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 2639,
+            "promptTokens": 6713,
+            "completionTokens": 167,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 2481,
+            "promptTokens": 10837,
+            "completionTokens": 133,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 5851,
+            "promptTokens": 3441,
+            "completionTokens": 579,
+            "status": "success"
+          }
+        ],
+        "bodyEvents": [
+          {
+            "seq": 19,
+            "type": "assistant.delta",
+            "ms": 50586
+          },
+          {
+            "seq": 24,
+            "type": "assistant.final",
+            "ms": 50619
+          }
+        ],
+        "input": null,
+        "replySha256": "38c47b413b4e997c15655bae10ef189aa41733b08e6ab03e02eaf8c86fcc1842",
+        "replyCharactersWithoutCitationMarkers": 95,
+        "toolWrites": 0,
+        "complete": true,
+        "calls": [
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          }
+        ],
+        "sourceVerification": {
+          "actualDocuments": [
+            {
+              "referenceId": "web-8d6f69935c9172df",
+              "requestedUrl": "https://spaceplace.nasa.gov/all-about-the-moon/en",
+              "url": "https://spaceplace.nasa.gov/all-about-the-moon/en/",
+              "contentHash": "b252e18c1f0611d5bd84aea02f53191496ab886cbd68de147bf80c1e976b734a",
+              "offset": 3359,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-77e871353ce348eb",
+              "requestedUrl": "https://svs.gsfc.nasa.gov/10931",
+              "url": "https://svs.gsfc.nasa.gov/10931",
+              "contentHash": "f885cfcda088f7659226de5ed6eda668abbef53be9360bc8c3612ec55a98b1fe",
+              "offset": 1864,
+              "characters": 3000
+            }
+          ],
+          "citedReferenceIds": [
+            "web-77e871353ce348eb",
+            "web-8d6f69935c9172df"
+          ],
+          "unreadCitedIds": []
+        }
+      },
+      {
+        "status": "succeeded",
+        "error": null,
+        "firstVisibleMs": 84551,
+        "totalMs": 84653,
+        "modelCallCount": 6,
+        "toolCallCount": 4,
+        "deliveryReceipt": null,
+        "maxMessageBlocks": 29,
+        "providerCalls": [
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 2498,
+            "promptTokens": 2414,
+            "completionTokens": 129,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 2575,
+            "promptTokens": 644,
+            "completionTokens": 148,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 6074,
+            "promptTokens": 7336,
+            "completionTokens": 153,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 29685,
+            "promptTokens": 20511,
+            "completionTokens": 999,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 33858,
+            "promptTokens": 9071,
+            "completionTokens": 11852,
+            "status": "success"
+          }
+        ],
+        "bodyEvents": [
+          {
+            "seq": 148,
+            "type": "assistant.delta",
+            "ms": 84551
+          },
+          {
+            "seq": 149,
+            "type": "assistant.delta",
+            "ms": 84551
+          },
+          {
+            "seq": 162,
+            "type": "assistant.final",
+            "ms": 84653
+          }
+        ],
+        "input": null,
+        "replySha256": "d4c807b5a9a14686c5c11dd50bb4a60a47e467a5437f59c1e84b8fb39f047206",
+        "replyCharactersWithoutCitationMarkers": 254,
+        "toolWrites": 0,
+        "complete": true,
+        "calls": [
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          }
+        ],
+        "sourceVerification": {
+          "actualDocuments": [
+            {
+              "referenceId": "web-2326032f605101f9",
+              "requestedUrl": "https://spaceplace.nasa.gov/all-about-mars/en",
+              "url": "https://spaceplace.nasa.gov/all-about-mars/en/",
+              "contentHash": "7e0b51aafa6f5b6b31815d6856af67cccd5f7b6fefc69bb2125eaad0febfd615",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-ce63700ed7980596",
+              "requestedUrl": "https://en.wikipedia.org/wiki/Timekeeping_on_Mars",
+              "url": "https://en.wikipedia.org/wiki/Timekeeping_on_Mars",
+              "contentHash": "ddd81ef60ac2b5be0289815cdfa7f1b45abe43bbf0688fde75bd02296c2c01f4",
+              "offset": 2175,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-2f7dfb869019bb17",
+              "requestedUrl": "https://www.esa.int/ESA_Multimedia/Images/2021/09/Ten_things_you_didn_t_know_about_the_Moon_Atmosphere",
+              "url": "https://www.esa.int/ESA_Multimedia/Images/2021/09/Ten_things_you_didn_t_know_about_the_Moon_Atmosphere",
+              "contentHash": "b1be99520080efb052d59c0fda409335a93e0396c8a23e932ee6a26ecd660af3",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-bbcf858ba65543b4",
+              "requestedUrl": "https://science.nasa.gov/moon/lunar-atmosphere",
+              "url": "https://science.nasa.gov/moon/lunar-atmosphere/",
+              "contentHash": "0200ca4069c6bd9f044451b4c91ebd228393818885d95c849f8d0bbe912248ff",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-6c7323b30d0ee4d8",
+              "requestedUrl": "https://www1.grc.nasa.gov/beginners-guide-to-aeronautics/moon",
+              "url": "https://www1.grc.nasa.gov/beginners-guide-to-aeronautics/moon/",
+              "contentHash": "14f942b97f516e073f1a7bef5e6e3fb03caa96c00c54ec853e4922dbac592487",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-fcc55b91f0ccec44",
+              "requestedUrl": "https://link.springer.com/article/10.1007/s11214-025-01155-9",
+              "url": "https://link.springer.com/article/10.1007/s11214-025-01155-9",
+              "contentHash": "452f9a042feeef2f30aba17dcb5fa9696b8a87a1d64a748c14c2288e2d449502",
+              "offset": 0,
+              "characters": 227
+            },
+            {
+              "referenceId": "web-26cbd3c10b6e61be",
+              "requestedUrl": "https://www.esa.int/ESA_Multimedia/Images/2018/04/Comparing_the_atmospheres_of_Mars_and_Earth",
+              "url": "https://www.esa.int/ESA_Multimedia/Images/2018/04/Comparing_the_atmospheres_of_Mars_and_Earth",
+              "contentHash": "a96d4f47d2fdb80efae605a37682afc37096bfd0ba5e617b0382e107227ab8ec",
+              "offset": 0,
+              "characters": 3000
+            }
+          ],
+          "citedReferenceIds": [
+            "web-2326032f605101f9",
+            "web-26cbd3c10b6e61be",
+            "web-2f7dfb869019bb17",
+            "web-6c7323b30d0ee4d8"
+          ],
+          "unreadCitedIds": []
+        }
+      },
+      {
+        "status": "succeeded",
+        "error": null,
+        "firstVisibleMs": 33144,
+        "totalMs": 38708,
+        "modelCallCount": 5,
+        "toolCallCount": 3,
+        "deliveryReceipt": null,
+        "maxMessageBlocks": 1,
+        "providerCalls": [
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 2541,
+            "promptTokens": 855,
+            "completionTokens": 147,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 23586,
+            "promptTokens": 2649,
+            "completionTokens": 2712,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 3867,
+            "promptTokens": 7893,
+            "completionTokens": 67,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 10846,
+            "promptTokens": 9482,
+            "completionTokens": 185,
+            "status": "success"
+          }
+        ],
+        "bodyEvents": [
+          {
+            "seq": 182,
+            "type": "assistant.delta",
+            "ms": 33144
+          },
+          {
+            "seq": 184,
+            "type": "assistant.delta",
+            "ms": 33239
+          },
+          {
+            "seq": 185,
+            "type": "assistant.delta",
+            "ms": 33672
+          },
+          {
+            "seq": 186,
+            "type": "assistant.delta",
+            "ms": 33924
+          },
+          {
+            "seq": 187,
+            "type": "assistant.delta",
+            "ms": 34078
+          },
+          {
+            "seq": 189,
+            "type": "assistant.delta",
+            "ms": 34242
+          },
+          {
+            "seq": 192,
+            "type": "assistant.delta",
+            "ms": 34344
+          },
+          {
+            "seq": 193,
+            "type": "assistant.delta",
+            "ms": 34496
+          },
+          {
+            "seq": 194,
+            "type": "assistant.delta",
+            "ms": 34908
+          },
+          {
+            "seq": 195,
+            "type": "assistant.delta",
+            "ms": 35073
+          },
+          {
+            "seq": 196,
+            "type": "assistant.delta",
+            "ms": 35167
+          },
+          {
+            "seq": 197,
+            "type": "assistant.delta",
+            "ms": 35276
+          },
+          {
+            "seq": 198,
+            "type": "assistant.delta",
+            "ms": 35373
+          },
+          {
+            "seq": 199,
+            "type": "assistant.delta",
+            "ms": 35523
+          },
+          {
+            "seq": 200,
+            "type": "assistant.delta",
+            "ms": 35633
+          },
+          {
+            "seq": 203,
+            "type": "assistant.delta",
+            "ms": 35797
+          },
+          {
+            "seq": 204,
+            "type": "assistant.delta",
+            "ms": 35916
+          },
+          {
+            "seq": 205,
+            "type": "assistant.delta",
+            "ms": 36073
+          },
+          {
+            "seq": 206,
+            "type": "assistant.delta",
+            "ms": 36226
+          },
+          {
+            "seq": 207,
+            "type": "assistant.delta",
+            "ms": 36327
+          },
+          {
+            "seq": 208,
+            "type": "assistant.delta",
+            "ms": 36462
+          },
+          {
+            "seq": 209,
+            "type": "assistant.delta",
+            "ms": 36573
+          },
+          {
+            "seq": 210,
+            "type": "assistant.delta",
+            "ms": 36728
+          },
+          {
+            "seq": 211,
+            "type": "assistant.delta",
+            "ms": 36861
+          },
+          {
+            "seq": 212,
+            "type": "assistant.delta",
+            "ms": 37004
+          },
+          {
+            "seq": 215,
+            "type": "assistant.delta",
+            "ms": 38144
+          },
+          {
+            "seq": 216,
+            "type": "assistant.delta",
+            "ms": 38166
+          },
+          {
+            "seq": 220,
+            "type": "assistant.delta",
+            "ms": 38266
+          },
+          {
+            "seq": 221,
+            "type": "assistant.delta",
+            "ms": 38425
+          },
+          {
+            "seq": 222,
+            "type": "assistant.delta",
+            "ms": 38699
+          },
+          {
+            "seq": 224,
+            "type": "assistant.final",
+            "ms": 38708
+          }
+        ],
+        "input": null,
+        "replySha256": "4d2f73f39d5766212016dd1b85f33fe899e55244758466fd4ac57cd9a89f4ab4",
+        "replyCharactersWithoutCitationMarkers": 223,
+        "toolWrites": 0,
+        "complete": true,
+        "calls": [
+          {
+            "name": "observe.activity",
+            "status": "succeeded"
+          },
+          {
+            "name": "observe.stats",
+            "status": "succeeded"
+          },
+          {
+            "name": "observe.history",
+            "status": "succeeded"
+          }
+        ],
+        "sourceVerification": {
+          "actualDocuments": [],
+          "citedReferenceIds": [],
+          "unreadCitedIds": []
+        }
+      }
     ]
   },
   "candidateTrials": {
@@ -5019,7 +5528,7 @@
   "checks": {
     "workerTypecheck": "passed",
     "workerFullUnit": {
-      "pass": 1999,
+      "pass": 2003,
       "fail": 0
     },
     "postgres": {
@@ -5068,7 +5577,7 @@
     ]
   },
   "production": {
-    "status": "held_until_search_replacement_is_verified",
+    "status": "local_verified_pending_deployment",
     "currentVersion": "2.0.22"
   },
   "topology": {
@@ -5092,6 +5601,18 @@
       "watcher": false,
       "workerPidBefore": 15972,
       "workerPidAfter": 15972,
+      "restartCount": 0
+    },
+    "tavily-final-1": {
+      "label": "tavily-final-1",
+      "runIds": [
+        "0c586e3c-4656-44a1-aad9-9ea5276df8c2",
+        "447233aa-a36c-47a5-b65e-6e7a841d6a97",
+        "51f70cac-82de-4507-982b-275eff5b2c7a"
+      ],
+      "watcher": false,
+      "workerPidBefore": 16585,
+      "workerPidAfter": 16585,
       "restartCount": 0
     }
   }
