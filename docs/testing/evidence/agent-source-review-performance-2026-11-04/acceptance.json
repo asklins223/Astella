@@ -1,0 +1,5098 @@
+{
+  "release": "s-v2.0.23",
+  "modelPairUnchanged": true,
+  "defaultReviewerEffort": "high",
+  "supportedReviewerEfforts": [
+    "low",
+    "high",
+    "max"
+  ],
+  "configurationSha256": "0b39c2cb30a46aebcc434aca6f72c6ef403751e12b3b56f616846718417876af",
+  "limitations": "Small live samples do not establish a stable speedup. Source download failures, main-route fallback and model reasoning still cause latency variation.",
+  "local": {
+    "stable-control-1": [
+      {
+        "status": "succeeded",
+        "error": null,
+        "firstVisibleMs": 31611,
+        "totalMs": 32580,
+        "modelCallCount": 8,
+        "toolCallCount": 1,
+        "deliveryReceipt": null,
+        "maxMessageBlocks": 9,
+        "providerCalls": [
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 1978,
+            "promptTokens": 2246,
+            "completionTokens": 67,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 2116,
+            "promptTokens": 499,
+            "completionTokens": 121,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 3522,
+            "promptTokens": 6832,
+            "completionTokens": 51,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 12009,
+            "promptTokens": null,
+            "completionTokens": null,
+            "status": "error"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 2443,
+            "promptTokens": 11026,
+            "completionTokens": 173,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 5867,
+            "promptTokens": 3841,
+            "completionTokens": 485,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 6785,
+            "promptTokens": 3808,
+            "completionTokens": 735,
+            "status": "success"
+          }
+        ],
+        "bodyEvents": [
+          {
+            "seq": 13,
+            "type": "assistant.delta",
+            "ms": 31611
+          },
+          {
+            "seq": 17,
+            "type": "assistant.delta",
+            "ms": 32525
+          },
+          {
+            "seq": 20,
+            "type": "assistant.final",
+            "ms": 32580
+          }
+        ],
+        "input": null,
+        "replySha256": "18e8f50ba525f0c46019ea3eacaace56ef87333838c3aa684e069090f371f6e6",
+        "replyCharactersWithoutCitationMarkers": 130,
+        "toolWrites": 0,
+        "complete": true,
+        "calls": [
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          }
+        ],
+        "sourceVerification": {
+          "actualDocuments": [
+            {
+              "referenceId": "web-7eb5a8d638774aad",
+              "requestedUrl": "https://nasa.gov/Moon",
+              "url": "https://science.nasa.gov/moon/",
+              "contentHash": "11ed4e9a6145645ed800a5716f9dba8599b89adff44445051498b089eb4aebb8",
+              "offset": 2897,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-6b1daa6f9aab700e",
+              "requestedUrl": "https://nasa.gov/solar-system/lunar-pits-could-shelter-astronauts-reveal-details-of-how-man-in-the-moon-formed",
+              "url": "https://www.nasa.gov/solar-system/lunar-pits-could-shelter-astronauts-reveal-details-of-how-man-in-the-moon-formed/",
+              "contentHash": "0af0f04cab7cebc41efaaa4fe06c1c167ea885af4818a6fd70f4f0604fa362a3",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-6736c3cae1ad6fab",
+              "requestedUrl": "https://nasa.gov/image-detail/amf-art002e009276",
+              "url": "https://www.nasa.gov/image-detail/amf-art002e009276/",
+              "contentHash": "21d2b291d682444854600c290fef78434cc2be1ac8bcf9858f531f311e309b53",
+              "offset": 0,
+              "characters": 1159
+            }
+          ],
+          "citedReferenceIds": [
+            "web-6736c3cae1ad6fab",
+            "web-6b1daa6f9aab700e"
+          ],
+          "unreadCitedIds": []
+        }
+      },
+      {
+        "status": "succeeded",
+        "error": null,
+        "firstVisibleMs": 48534,
+        "totalMs": 69566,
+        "modelCallCount": 13,
+        "toolCallCount": 4,
+        "deliveryReceipt": null,
+        "maxMessageBlocks": 17,
+        "providerCalls": [
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 1381,
+            "promptTokens": 668,
+            "completionTokens": 112,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 1543,
+            "promptTokens": 2438,
+            "completionTokens": 63,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 7554,
+            "promptTokens": 7306,
+            "completionTokens": 97,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 12015,
+            "promptTokens": null,
+            "completionTokens": null,
+            "status": "error"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 5699,
+            "promptTokens": 16293,
+            "completionTokens": 648,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 8183,
+            "promptTokens": 20456,
+            "completionTokens": 900,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 4760,
+            "promptTokens": 11566,
+            "completionTokens": 1361,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 1391,
+            "promptTokens": 11577,
+            "completionTokens": 330,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 6790,
+            "promptTokens": 11571,
+            "completionTokens": 1642,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 8259,
+            "promptTokens": 11530,
+            "completionTokens": 729,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 2123,
+            "promptTokens": 11539,
+            "completionTokens": 606,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 29166,
+            "promptTokens": 11586,
+            "completionTokens": 3243,
+            "status": "success"
+          }
+        ],
+        "bodyEvents": [
+          {
+            "seq": 89,
+            "type": "assistant.delta",
+            "ms": 48534
+          },
+          {
+            "seq": 92,
+            "type": "assistant.delta",
+            "ms": 48573
+          },
+          {
+            "seq": 97,
+            "type": "assistant.delta",
+            "ms": 69445
+          },
+          {
+            "seq": 103,
+            "type": "assistant.delta",
+            "ms": 69493
+          },
+          {
+            "seq": 110,
+            "type": "assistant.final",
+            "ms": 69566
+          }
+        ],
+        "input": null,
+        "replySha256": "edde40969fcba0e509b9a4575f46d8c4be2d5dac2c4d1e20f3cb634c4800ff8f",
+        "replyCharactersWithoutCitationMarkers": 472,
+        "toolWrites": 0,
+        "complete": true,
+        "calls": [
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.read_document",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.read_document",
+            "status": "succeeded"
+          }
+        ],
+        "sourceVerification": {
+          "actualDocuments": [
+            {
+              "referenceId": "web-75470ab13c562415",
+              "requestedUrl": "https://nasa.gov/podcasts/houston-we-have-a-podcast/telling-time-on-other-worlds",
+              "url": "https://www.nasa.gov/podcasts/houston-we-have-a-podcast/telling-time-on-other-worlds/",
+              "contentHash": "3ecefb2bb8e667dbd391d0a31fc09a8bec3716cda96f76b08f84c2e0d677bec5",
+              "offset": 1508,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-7c7c9ac0ddd587e0",
+              "requestedUrl": "https://nasa.gov/wp-content/uploads/static/history/alsj/WOTM/WOTM-EnviroIntro.html",
+              "url": "https://nasa.gov/wp-content/uploads/static/history/alsj/WOTM/WOTM-EnviroIntro.html",
+              "contentHash": "b88d438b14821e5a4be5d13c1cb5991f53786e1b7e21a837578fcd2b8309a09d",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-4cdbee560fb1df61",
+              "requestedUrl": "https://nasa.gov/wp-content/uploads/static/history/alsj/WOTM/WOTM-DustAdhesion.html",
+              "url": "https://nasa.gov/wp-content/uploads/static/history/alsj/WOTM/WOTM-DustAdhesion.html",
+              "contentHash": "b4b6f52fa29f85dc74111b8e5f55a9c223c863722baa16ee305c576114541c81",
+              "offset": 547,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-042c526dc8ebcdea",
+              "requestedUrl": "https://esa.int/ESA_Multimedia/Images/2020/07/Return_of_the_extremely_elongated_cloud_on_Mars",
+              "url": "https://www.esa.int/ESA_Multimedia/Images/2020/07/Return_of_the_extremely_elongated_cloud_on_Mars",
+              "contentHash": "16a7abae416c01aaccaadc5c0028740cd7fb78bcd91547d2dcf663fae8bcbb30",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-262f49b84df5b707",
+              "requestedUrl": "https://esa.int/Science_Exploration/Space_Science/Mars_Express/Francois_Forget",
+              "url": "https://www.esa.int/Science_Exploration/Space_Science/Mars_Express/Francois_Forget",
+              "contentHash": "487f6696fa6907f1495345dd59cc928773c6e621e0c184830876cfd3259f14f6",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-591d995f637e7479",
+              "requestedUrl": "https://esa.int/About_Us/ESAC/ExoMars_spots_unique_green_glow_at_the_Red_Planet",
+              "url": "https://www.esa.int/About_Us/ESAC/ExoMars_spots_unique_green_glow_at_the_Red_Planet",
+              "contentHash": "d0b88f6bf89a71fac4d47671bc3549e5a06ce2840a1806d1bd851323f27efd55",
+              "offset": 1145,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-4cdbee560fb1df61",
+              "url": "https://nasa.gov/wp-content/uploads/static/history/alsj/WOTM/WOTM-DustAdhesion.html",
+              "contentHash": "b4b6f52fa29f85dc74111b8e5f55a9c223c863722baa16ee305c576114541c81",
+              "offset": 1499,
+              "characters": 6000
+            }
+          ],
+          "citedReferenceIds": [
+            "web-042c526dc8ebcdea",
+            "web-262f49b84df5b707",
+            "web-75470ab13c562415",
+            "web-7c7c9ac0ddd587e0"
+          ],
+          "unreadCitedIds": []
+        }
+      },
+      {
+        "status": "succeeded",
+        "error": null,
+        "firstVisibleMs": 15539,
+        "totalMs": 16460,
+        "modelCallCount": 5,
+        "toolCallCount": 3,
+        "deliveryReceipt": null,
+        "maxMessageBlocks": 1,
+        "providerCalls": [
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 2533,
+            "promptTokens": 931,
+            "completionTokens": 160,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 3745,
+            "promptTokens": 2725,
+            "completionTokens": 1116,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 3898,
+            "promptTokens": 7942,
+            "completionTokens": 67,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 8275,
+            "promptTokens": 9598,
+            "completionTokens": 102,
+            "status": "success"
+          }
+        ],
+        "bodyEvents": [
+          {
+            "seq": 128,
+            "type": "assistant.delta",
+            "ms": 15539
+          },
+          {
+            "seq": 129,
+            "type": "assistant.delta",
+            "ms": 15630
+          },
+          {
+            "seq": 131,
+            "type": "assistant.delta",
+            "ms": 15691
+          },
+          {
+            "seq": 132,
+            "type": "assistant.delta",
+            "ms": 15805
+          },
+          {
+            "seq": 134,
+            "type": "assistant.delta",
+            "ms": 15907
+          },
+          {
+            "seq": 135,
+            "type": "assistant.delta",
+            "ms": 16003
+          },
+          {
+            "seq": 136,
+            "type": "assistant.delta",
+            "ms": 16119
+          },
+          {
+            "seq": 138,
+            "type": "assistant.delta",
+            "ms": 16218
+          },
+          {
+            "seq": 140,
+            "type": "assistant.delta",
+            "ms": 16409
+          },
+          {
+            "seq": 142,
+            "type": "assistant.final",
+            "ms": 16460
+          }
+        ],
+        "input": null,
+        "replySha256": "52b4068ff13b511949073c45a6fd60c5d4c115e4f1eb558aaaf3548ca66dc746",
+        "replyCharactersWithoutCitationMarkers": 142,
+        "toolWrites": 0,
+        "complete": true,
+        "calls": [
+          {
+            "name": "observe.activity",
+            "status": "succeeded"
+          },
+          {
+            "name": "observe.stats",
+            "status": "succeeded"
+          },
+          {
+            "name": "observe.history",
+            "status": "succeeded"
+          }
+        ],
+        "sourceVerification": {
+          "actualDocuments": [],
+          "citedReferenceIds": [],
+          "unreadCitedIds": []
+        }
+      }
+    ],
+    "stable-control-low": [
+      {
+        "status": "succeeded",
+        "error": null,
+        "firstVisibleMs": 25521,
+        "totalMs": 25590,
+        "modelCallCount": 7,
+        "toolCallCount": 1,
+        "deliveryReceipt": null,
+        "maxMessageBlocks": 9,
+        "providerCalls": [
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 1194,
+            "promptTokens": 2246,
+            "completionTokens": 136,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 1649,
+            "promptTokens": 499,
+            "completionTokens": 220,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 2015,
+            "promptTokens": 6831,
+            "completionTokens": 52,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 6149,
+            "promptTokens": 11906,
+            "completionTokens": 201,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 2453,
+            "promptTokens": 4314,
+            "completionTokens": 188,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 8770,
+            "promptTokens": 4366,
+            "completionTokens": 979,
+            "status": "success"
+          }
+        ],
+        "bodyEvents": [
+          {
+            "seq": 12,
+            "type": "assistant.delta",
+            "ms": 25521
+          },
+          {
+            "seq": 17,
+            "type": "assistant.final",
+            "ms": 25590
+          }
+        ],
+        "input": null,
+        "replySha256": "fee65eec22bd351c7b61e5f73cb73dc8f303a2675febad540ab46144e7791073",
+        "replyCharactersWithoutCitationMarkers": 91,
+        "toolWrites": 0,
+        "complete": true,
+        "calls": [
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          }
+        ],
+        "sourceVerification": {
+          "actualDocuments": [
+            {
+              "referenceId": "web-6b1daa6f9aab700e",
+              "requestedUrl": "https://nasa.gov/solar-system/lunar-pits-could-shelter-astronauts-reveal-details-of-how-man-in-the-moon-formed",
+              "url": "https://www.nasa.gov/solar-system/lunar-pits-could-shelter-astronauts-reveal-details-of-how-man-in-the-moon-formed/",
+              "contentHash": "0af0f04cab7cebc41efaaa4fe06c1c167ea885af4818a6fd70f4f0604fa362a3",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-e54d27bcd244c7ba",
+              "requestedUrl": "https://nasa.gov/mediacast/mysteries-of-the-moon",
+              "url": "https://www.nasa.gov/podcasts/curious-universe/mysteries-of-the-moon/",
+              "contentHash": "9b4ef8e9946762e2353653550ff15154b8460c16139fed746a07e69c39a88054",
+              "offset": 14743,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-7eb5a8d638774aad",
+              "requestedUrl": "https://nasa.gov/Moon",
+              "url": "https://science.nasa.gov/moon/",
+              "contentHash": "11ed4e9a6145645ed800a5716f9dba8599b89adff44445051498b089eb4aebb8",
+              "offset": 2897,
+              "characters": 3000
+            }
+          ],
+          "citedReferenceIds": [
+            "web-6b1daa6f9aab700e"
+          ],
+          "unreadCitedIds": []
+        }
+      },
+      {
+        "status": "succeeded",
+        "error": null,
+        "firstVisibleMs": 45974,
+        "totalMs": 63924,
+        "modelCallCount": 13,
+        "toolCallCount": 5,
+        "deliveryReceipt": null,
+        "maxMessageBlocks": 31,
+        "providerCalls": [
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 2060,
+            "promptTokens": 2425,
+            "completionTokens": 89,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 2243,
+            "promptTokens": 655,
+            "completionTokens": 162,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 2857,
+            "promptTokens": 7292,
+            "completionTokens": 100,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 12009,
+            "promptTokens": null,
+            "completionTokens": null,
+            "status": "error"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 3615,
+            "promptTokens": 16486,
+            "completionTokens": 379,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 4299,
+            "promptTokens": 23128,
+            "completionTokens": 336,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 4850,
+            "promptTokens": 27791,
+            "completionTokens": 490,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 2614,
+            "promptTokens": 17373,
+            "completionTokens": 158,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 9680,
+            "promptTokens": 17398,
+            "completionTokens": 1065,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 10240,
+            "promptTokens": 17326,
+            "completionTokens": 1228,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 14482,
+            "promptTokens": 17356,
+            "completionTokens": 1416,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 20452,
+            "promptTokens": 17367,
+            "completionTokens": 2017,
+            "status": "success"
+          }
+        ],
+        "bodyEvents": [
+          {
+            "seq": 76,
+            "type": "assistant.delta",
+            "ms": 45974
+          },
+          {
+            "seq": 80,
+            "type": "assistant.delta",
+            "ms": 63801
+          },
+          {
+            "seq": 84,
+            "type": "assistant.delta",
+            "ms": 63829
+          },
+          {
+            "seq": 86,
+            "type": "assistant.delta",
+            "ms": 63848
+          },
+          {
+            "seq": 90,
+            "type": "assistant.delta",
+            "ms": 63876
+          },
+          {
+            "seq": 95,
+            "type": "assistant.final",
+            "ms": 63924
+          }
+        ],
+        "input": null,
+        "replySha256": "020586b7e097be8c80a396fa0d8860ef13c9540be96a6267de486c6406c5ec36",
+        "replyCharactersWithoutCitationMarkers": 489,
+        "toolWrites": 0,
+        "complete": true,
+        "calls": [
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.read_document",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          }
+        ],
+        "sourceVerification": {
+          "actualDocuments": [
+            {
+              "referenceId": "web-7c7c9ac0ddd587e0",
+              "requestedUrl": "https://nasa.gov/wp-content/uploads/static/history/alsj/WOTM/WOTM-EnviroIntro.html",
+              "url": "https://nasa.gov/wp-content/uploads/static/history/alsj/WOTM/WOTM-EnviroIntro.html",
+              "contentHash": "b88d438b14821e5a4be5d13c1cb5991f53786e1b7e21a837578fcd2b8309a09d",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-7eb5a8d638774aad",
+              "requestedUrl": "https://nasa.gov/Moon",
+              "url": "https://science.nasa.gov/moon/",
+              "contentHash": "11ed4e9a6145645ed800a5716f9dba8599b89adff44445051498b089eb4aebb8",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-3841f7ac43ed4222",
+              "requestedUrl": "https://nasa.gov/podcasts/gravity-assist/gravity-assist-podcast-your-moon-questions-answered",
+              "url": "https://www.nasa.gov/podcasts/gravity-assist/gravity-assist-podcast-your-moon-questions-answered/",
+              "contentHash": "9bc7368ea7c1574a64ef01bc52df505fc6bd85359a84edb8d35ac608d2bdf711",
+              "offset": 790,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-262f49b84df5b707",
+              "requestedUrl": "https://esa.int/Science_Exploration/Space_Science/Mars_Express/Francois_Forget",
+              "url": "https://www.esa.int/Science_Exploration/Space_Science/Mars_Express/Francois_Forget",
+              "contentHash": "487f6696fa6907f1495345dd59cc928773c6e621e0c184830876cfd3259f14f6",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-2e04be649f43edf9",
+              "requestedUrl": "https://esa.int/ESA_Multimedia/Images/2019/05/Ten_things_you_did_not_know_about_Mars_8._Aurora",
+              "url": "https://www.esa.int/ESA_Multimedia/Images/2019/05/Ten_things_you_did_not_know_about_Mars_8._Aurora",
+              "contentHash": "582a6a088840b09043583ec4f0b6974d7d67cb8aded16d49b122b4b731014ae6",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-89a6675fe34b7390",
+              "requestedUrl": "https://esa.int/ESA_Multimedia/Images/2015/06/The_effect_of_the_winds_of_Mars",
+              "url": "https://www.esa.int/ESA_Multimedia/Images/2015/06/The_effect_of_the_winds_of_Mars",
+              "contentHash": "f776f613735c77e400650e76322fbaaf82bfdbcfb4292920de593969973edcee",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-4466e75b7f4af8be",
+              "requestedUrl": "https://esa.int/Applications/Observing_the_Earth/Meteorological_missions/Meteosat/Space_and_daily_life_in_45_years",
+              "url": "https://www.esa.int/Applications/Observing_the_Earth/Meteorological_missions/Meteosat/Space_and_daily_life_in_45_years",
+              "contentHash": "17db8d5ca09ed91a54cf549018c4afc221fef328229120bdb63a07fe23d1c402",
+              "offset": 1237,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-2136bf82e883dc1b",
+              "requestedUrl": "https://esa.int/ESA_Multimedia/Images/2003/05/Earth-based_view_of_Mars",
+              "url": "https://www.esa.int/ESA_Multimedia/Images/2003/05/Earth-based_view_of_Mars",
+              "contentHash": "21e63ae9c801e50462ea6b29882e8fc86da50e617fa90b6028d05a664704d629",
+              "offset": 0,
+              "characters": 2668
+            },
+            {
+              "referenceId": "web-19f64b9bb941a189",
+              "requestedUrl": "https://esa.int/Science_Exploration/Space_Science/Seasons_on_other_planets",
+              "url": "https://www.esa.int/Science_Exploration/Space_Science/Seasons_on_other_planets",
+              "contentHash": "7983b820440d8f162ecfe7670cc1ed1a96267de3e0adb56a89153b12ca03f45b",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-89565b4b432157e2",
+              "requestedUrl": "https://nasa.gov/moon",
+              "url": "https://science.nasa.gov/moon/",
+              "contentHash": "11ed4e9a6145645ed800a5716f9dba8599b89adff44445051498b089eb4aebb8",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-e54d27bcd244c7ba",
+              "requestedUrl": "https://nasa.gov/mediacast/mysteries-of-the-moon",
+              "url": "https://www.nasa.gov/podcasts/curious-universe/mysteries-of-the-moon/",
+              "contentHash": "51e054dbca05b61532a28b7440f4fb94534528efbd2991dfb08a145be467b557",
+              "offset": 22657,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-f5f7a43c05560dac",
+              "requestedUrl": "https://nasa.gov/blogs/watch-the-skies/2011/07/28/traveling-to-the-dark-side",
+              "url": "https://www.nasa.gov/blogs/watch-the-skies/2011/07/28/traveling-to-the-dark-side/",
+              "contentHash": "2979a8a10d5e6be0faf00be984978d94c58873893478a12ff4e7833f2b94f6b1",
+              "offset": 0,
+              "characters": 2874
+            }
+          ],
+          "citedReferenceIds": [
+            "web-262f49b84df5b707",
+            "web-4466e75b7f4af8be",
+            "web-7eb5a8d638774aad",
+            "web-f5f7a43c05560dac"
+          ],
+          "unreadCitedIds": []
+        }
+      },
+      {
+        "status": "succeeded",
+        "error": null,
+        "firstVisibleMs": 25961,
+        "totalMs": 27059,
+        "modelCallCount": 6,
+        "toolCallCount": 3,
+        "deliveryReceipt": null,
+        "maxMessageBlocks": 1,
+        "providerCalls": [
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 1882,
+            "promptTokens": 1065,
+            "completionTokens": 110,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 4146,
+            "promptTokens": 2858,
+            "completionTokens": 447,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 12008,
+            "promptTokens": null,
+            "completionTokens": null,
+            "status": "error"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 2759,
+            "promptTokens": 7828,
+            "completionTokens": 218,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 7684,
+            "promptTokens": 9577,
+            "completionTokens": 425,
+            "status": "success"
+          }
+        ],
+        "bodyEvents": [
+          {
+            "seq": 136,
+            "type": "assistant.delta",
+            "ms": 25961
+          },
+          {
+            "seq": 137,
+            "type": "assistant.delta",
+            "ms": 26151
+          },
+          {
+            "seq": 140,
+            "type": "assistant.delta",
+            "ms": 26232
+          },
+          {
+            "seq": 143,
+            "type": "assistant.delta",
+            "ms": 26334
+          },
+          {
+            "seq": 144,
+            "type": "assistant.delta",
+            "ms": 26432
+          },
+          {
+            "seq": 147,
+            "type": "assistant.delta",
+            "ms": 26567
+          },
+          {
+            "seq": 148,
+            "type": "assistant.delta",
+            "ms": 26726
+          },
+          {
+            "seq": 150,
+            "type": "assistant.delta",
+            "ms": 26866
+          },
+          {
+            "seq": 152,
+            "type": "assistant.delta",
+            "ms": 27050
+          },
+          {
+            "seq": 154,
+            "type": "assistant.final",
+            "ms": 27059
+          }
+        ],
+        "input": null,
+        "replySha256": "2778337a0b30861caaec1cecca6db844ef2daf37149e9497e22551399632ed19",
+        "replyCharactersWithoutCitationMarkers": 173,
+        "toolWrites": 0,
+        "complete": true,
+        "calls": [
+          {
+            "name": "observe.activity",
+            "status": "succeeded"
+          },
+          {
+            "name": "observe.stats",
+            "status": "succeeded"
+          },
+          {
+            "name": "observe.history",
+            "status": "succeeded"
+          }
+        ],
+        "sourceVerification": {
+          "actualDocuments": [],
+          "citedReferenceIds": [],
+          "unreadCitedIds": []
+        }
+      }
+    ],
+    "stable-metrics-low-1": [
+      {
+        "status": "succeeded",
+        "error": null,
+        "firstVisibleMs": 46498,
+        "totalMs": 46568,
+        "modelCallCount": 8,
+        "toolCallCount": 3,
+        "deliveryReceipt": null,
+        "maxMessageBlocks": 17,
+        "providerCalls": [
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 2337,
+            "promptTokens": 2246,
+            "completionTokens": 118,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 2831,
+            "promptTokens": 499,
+            "completionTokens": 166,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 3137,
+            "promptTokens": 6875,
+            "completionTokens": 50,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 2528,
+            "promptTokens": 12039,
+            "completionTokens": 83,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 3232,
+            "promptTokens": 14186,
+            "completionTokens": 88,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 6914,
+            "promptTokens": 18457,
+            "completionTokens": 198,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 13419,
+            "promptTokens": 9501,
+            "completionTokens": 1676,
+            "status": "success"
+          }
+        ],
+        "bodyEvents": [
+          {
+            "seq": 27,
+            "type": "assistant.delta",
+            "ms": 46498
+          },
+          {
+            "seq": 33,
+            "type": "assistant.final",
+            "ms": 46568
+          }
+        ],
+        "input": null,
+        "replySha256": "a9d30ec59819bf91051e8741ee3d04714b03cd537c115632002494c8a1a9798e",
+        "replyCharactersWithoutCitationMarkers": 127,
+        "toolWrites": 0,
+        "complete": true,
+        "calls": [
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.read_document",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          }
+        ],
+        "sourceVerification": {
+          "actualDocuments": [
+            {
+              "referenceId": "web-e54d27bcd244c7ba",
+              "requestedUrl": "https://nasa.gov/mediacast/mysteries-of-the-moon",
+              "url": "https://www.nasa.gov/podcasts/curious-universe/mysteries-of-the-moon/",
+              "contentHash": "db57cd841676c21f5530b451aacc2dd306c6753d38f89785a5c0a08c12fb123b",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-55e7358f6d4489c5",
+              "requestedUrl": "https://nasa.gov/wp-content/uploads/static/history/alsj/WOTM/WOTM-Terrain.html",
+              "url": "https://nasa.gov/wp-content/uploads/static/history/alsj/WOTM/WOTM-Terrain.html",
+              "contentHash": "c750ca3fe58a32592bdb8c7a914e38b448e7ca02fe57d5240aeed3b8788028c7",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-89565b4b432157e2",
+              "requestedUrl": "https://nasa.gov/moon",
+              "url": "https://science.nasa.gov/moon/",
+              "contentHash": "11ed4e9a6145645ed800a5716f9dba8599b89adff44445051498b089eb4aebb8",
+              "offset": 2897,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-dd192103a580a32d",
+              "requestedUrl": "https://science.nasa.gov/moon/moon-water-and-ices",
+              "url": "https://science.nasa.gov/moon/moon-water-and-ices/",
+              "contentHash": "8ff61bf339890134a316337762999fe0dfb70d5caaf0a39a95398d029e98ae53",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-a2ce872681681132",
+              "requestedUrl": "https://science.nasa.gov/?p=895338",
+              "url": "https://science.nasa.gov/resource/first-photo-of-the-lunar-far-side/",
+              "contentHash": "8d9c0cc4423376e52611eddf2972b994911c065da9f3010c21e12c26b33cb4fc",
+              "offset": 0,
+              "characters": 2596
+            },
+            {
+              "referenceId": "web-6c10a044cf883a94",
+              "requestedUrl": "https://science.nasa.gov/?p=301502",
+              "url": "https://science.nasa.gov/image-detail/20100528/",
+              "contentHash": "f6717e4b91a8607bd27af067e7a444e4a48a423c38ecb7719d96914bc3d8c3fb",
+              "offset": 0,
+              "characters": 1459
+            }
+          ],
+          "citedReferenceIds": [
+            "web-6c10a044cf883a94",
+            "web-dd192103a580a32d"
+          ],
+          "unreadCitedIds": []
+        }
+      },
+      {
+        "status": "succeeded",
+        "error": null,
+        "firstVisibleMs": 70470,
+        "totalMs": 70543,
+        "modelCallCount": 7,
+        "toolCallCount": 6,
+        "deliveryReceipt": null,
+        "maxMessageBlocks": 33,
+        "providerCalls": [
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 1707,
+            "promptTokens": 659,
+            "completionTokens": 111,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 2256,
+            "promptTokens": 2429,
+            "completionTokens": 95,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 2823,
+            "promptTokens": 7393,
+            "completionTokens": 196,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 5941,
+            "promptTokens": 26564,
+            "completionTokens": 360,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 12315,
+            "promptTokens": 35671,
+            "completionTokens": 988,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 31045,
+            "promptTokens": 22361,
+            "completionTokens": 4028,
+            "status": "success"
+          }
+        ],
+        "bodyEvents": [
+          {
+            "seq": 117,
+            "type": "assistant.delta",
+            "ms": 70470
+          },
+          {
+            "seq": 118,
+            "type": "assistant.delta",
+            "ms": 70470
+          },
+          {
+            "seq": 131,
+            "type": "assistant.final",
+            "ms": 70543
+          }
+        ],
+        "input": null,
+        "replySha256": "1283d8b90f66f7b65147b284627f0afe101883a00fb04944f9ef8776d32acfa0",
+        "replyCharactersWithoutCitationMarkers": 186,
+        "toolWrites": 0,
+        "complete": true,
+        "calls": [
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          }
+        ],
+        "sourceVerification": {
+          "actualDocuments": [
+            {
+              "referenceId": "web-7c7c9ac0ddd587e0",
+              "requestedUrl": "https://nasa.gov/wp-content/uploads/static/history/alsj/WOTM/WOTM-EnviroIntro.html",
+              "url": "https://nasa.gov/wp-content/uploads/static/history/alsj/WOTM/WOTM-EnviroIntro.html",
+              "contentHash": "b88d438b14821e5a4be5d13c1cb5991f53786e1b7e21a837578fcd2b8309a09d",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-7eb5a8d638774aad",
+              "requestedUrl": "https://nasa.gov/Moon",
+              "url": "https://science.nasa.gov/moon/",
+              "contentHash": "11ed4e9a6145645ed800a5716f9dba8599b89adff44445051498b089eb4aebb8",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-3841f7ac43ed4222",
+              "requestedUrl": "https://nasa.gov/podcasts/gravity-assist/gravity-assist-podcast-your-moon-questions-answered",
+              "url": "https://www.nasa.gov/podcasts/gravity-assist/gravity-assist-podcast-your-moon-questions-answered/",
+              "contentHash": "9b139e67d833b711abc1293050c8224b5e6f6b06abcdbcbca25b3e95c32438c9",
+              "offset": 32268,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-1b7c7abffdbf66fe",
+              "requestedUrl": "https://nasa.gov/audience/forstudents/5-8/features/nasa-knows/what-is-mars-58.html",
+              "url": "https://spaceplace.nasa.gov/all-about-mars/en/",
+              "contentHash": "7e0b51aafa6f5b6b31815d6856af67cccd5f7b6fefc69bb2125eaad0febfd615",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-565509b818767934",
+              "requestedUrl": "https://nasa.gov/humans-in-space/humans-to-mars",
+              "url": "https://www.nasa.gov/humans-in-space/humans-to-mars/",
+              "contentHash": "98975a2d929168450b6a72ce6ffcd709227756d3aa732bb0ff6da9122c8af4f2",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-9f8a6b55b28f1738",
+              "requestedUrl": "https://nasa.gov/learning-resources/for-kids-and-students/what-is-mars-grades-k-4",
+              "url": "https://www.nasa.gov/learning-resources/for-kids-and-students/what-is-mars-grades-k-4/",
+              "contentHash": "49e0ad03e562fbb06af952ed4f6cf4f35881c7036a953dbab49faca2a724e549",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-14e36172aece9043",
+              "requestedUrl": "https://esa.int/ESA_Multimedia/Images/2021/09/Ten_things_you_didn_t_know_about_the_Moon_Atmosphere",
+              "url": "https://www.esa.int/ESA_Multimedia/Images/2021/09/Ten_things_you_didn_t_know_about_the_Moon_Atmosphere",
+              "contentHash": "b1be99520080efb052d59c0fda409335a93e0396c8a23e932ee6a26ecd660af3",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-ed3a157319df0f26",
+              "requestedUrl": "https://esa.int/Science_Exploration/Human_and_Robotic_Exploration/Exploration/The_Moon_-_our_neighbour",
+              "url": "https://www.esa.int/Science_Exploration/Human_and_Robotic_Exploration/Exploration/The_Moon_-_our_neighbour",
+              "contentHash": "24fe91e3f2d8b743461979dcaf980f3ee8b23f6578aff51610605a1c168b971b",
+              "offset": 0,
+              "characters": 2224
+            },
+            {
+              "referenceId": "web-66968d80ec3c8a7e",
+              "requestedUrl": "https://esa.int/ESA_Multimedia/Images/2023/11/Mini_mass_spectrometer_ready_for_Moon_mission",
+              "url": "https://www.esa.int/ESA_Multimedia/Images/2023/11/Mini_mass_spectrometer_ready_for_Moon_mission",
+              "contentHash": "73aa37edb26f846226625bf9ae16ed49d3af8b252d3a8ff69b4385e582613d40",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-042c526dc8ebcdea",
+              "requestedUrl": "https://esa.int/ESA_Multimedia/Images/2020/07/Return_of_the_extremely_elongated_cloud_on_Mars",
+              "url": "https://www.esa.int/ESA_Multimedia/Images/2020/07/Return_of_the_extremely_elongated_cloud_on_Mars",
+              "contentHash": "16a7abae416c01aaccaadc5c0028740cd7fb78bcd91547d2dcf663fae8bcbb30",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-262f49b84df5b707",
+              "requestedUrl": "https://esa.int/Science_Exploration/Space_Science/Mars_Express/Francois_Forget",
+              "url": "https://www.esa.int/Science_Exploration/Space_Science/Mars_Express/Francois_Forget",
+              "contentHash": "487f6696fa6907f1495345dd59cc928773c6e621e0c184830876cfd3259f14f6",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-591d995f637e7479",
+              "requestedUrl": "https://esa.int/About_Us/ESAC/ExoMars_spots_unique_green_glow_at_the_Red_Planet",
+              "url": "https://www.esa.int/About_Us/ESAC/ExoMars_spots_unique_green_glow_at_the_Red_Planet",
+              "contentHash": "d0b88f6bf89a71fac4d47671bc3549e5a06ce2840a1806d1bd851323f27efd55",
+              "offset": 1145,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-f5f7a43c05560dac",
+              "requestedUrl": "https://nasa.gov/blogs/watch-the-skies/2011/07/28/traveling-to-the-dark-side",
+              "url": "https://www.nasa.gov/blogs/watch-the-skies/2011/07/28/traveling-to-the-dark-side/",
+              "contentHash": "2979a8a10d5e6be0faf00be984978d94c58873893478a12ff4e7833f2b94f6b1",
+              "offset": 0,
+              "characters": 2874
+            },
+            {
+              "referenceId": "web-139c52c469930e6d",
+              "requestedUrl": "https://nasa.gov/solar-system/nasas-lro-finds-lunar-pits-harbor-comfortable-temperatures",
+              "url": "https://www.nasa.gov/solar-system/nasas-lro-finds-lunar-pits-harbor-comfortable-temperatures/",
+              "contentHash": "602025a67f27d429ac2b769e57f2e4f11eca00638fdccb06ff6e048fdfe04a8d",
+              "offset": 2114,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-b288384d0bf98c0d",
+              "requestedUrl": "https://nasa.gov/viper/overview",
+              "url": "https://science.nasa.gov/mission/viper/in-depth/",
+              "contentHash": "17d7673576f42039453897bf13e0a81f097c5b41faa17a19acf61b9f90bfbf97",
+              "offset": 619,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-9f1d420a090e2d82",
+              "requestedUrl": "https://esa.int/Enabling_Support/Space_Engineering_Technology/Surviving_the_long_dark_night_of_the_Moon",
+              "url": "https://www.esa.int/Enabling_Support/Space_Engineering_Technology/Surviving_the_long_dark_night_of_the_Moon",
+              "contentHash": "3c16bb2c798e1cd71d4f7f9fd73dc74449190b4dd70f88d63c0bc902358dab21",
+              "offset": 0,
+              "characters": 2467
+            },
+            {
+              "referenceId": "web-36716177ece21625",
+              "requestedUrl": "https://esa.int/ESA_Multimedia/Images/2020/10/Testing_lunar_4G_operations",
+              "url": "https://www.esa.int/ESA_Multimedia/Images/2020/10/Testing_lunar_4G_operations",
+              "contentHash": "493c859d939c0f6aea10e5fe9576d8fefa0908d16c128c6a0fc6b4440838deb5",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-edb8319aa387131e",
+              "requestedUrl": "https://esa.int/ESA_Multimedia/Images/2021/09/Moon_facts_Temperature",
+              "url": "https://www.esa.int/ESA_Multimedia/Images/2021/09/Moon_facts_Temperature",
+              "contentHash": "41969e36a3eb8512f66b85b1b5715cdd399574c8943ec0b31a9bfaff8907a634",
+              "offset": 0,
+              "characters": 2340
+            }
+          ],
+          "citedReferenceIds": [
+            "web-042c526dc8ebcdea",
+            "web-139c52c469930e6d",
+            "web-14e36172aece9043",
+            "web-1b7c7abffdbf66fe"
+          ],
+          "unreadCitedIds": []
+        }
+      },
+      {
+        "status": "succeeded",
+        "error": null,
+        "firstVisibleMs": 12844,
+        "totalMs": 13706,
+        "modelCallCount": 6,
+        "toolCallCount": 3,
+        "deliveryReceipt": null,
+        "maxMessageBlocks": 1,
+        "providerCalls": [
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 1832,
+            "promptTokens": 853,
+            "completionTokens": 145,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 6099,
+            "promptTokens": 2646,
+            "completionTokens": 375,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 3415,
+            "promptTokens": 8033,
+            "completionTokens": 118,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 1762,
+            "promptTokens": 8064,
+            "completionTokens": 163,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 1984,
+            "promptTokens": 9204,
+            "completionTokens": 105,
+            "status": "success"
+          }
+        ],
+        "bodyEvents": [
+          {
+            "seq": 150,
+            "type": "assistant.delta",
+            "ms": 12844
+          },
+          {
+            "seq": 151,
+            "type": "assistant.delta",
+            "ms": 12912
+          },
+          {
+            "seq": 153,
+            "type": "assistant.delta",
+            "ms": 12993
+          },
+          {
+            "seq": 154,
+            "type": "assistant.delta",
+            "ms": 13067
+          },
+          {
+            "seq": 156,
+            "type": "assistant.delta",
+            "ms": 13163
+          },
+          {
+            "seq": 157,
+            "type": "assistant.delta",
+            "ms": 13301
+          },
+          {
+            "seq": 159,
+            "type": "assistant.delta",
+            "ms": 13328
+          },
+          {
+            "seq": 161,
+            "type": "assistant.delta",
+            "ms": 13430
+          },
+          {
+            "seq": 163,
+            "type": "assistant.delta",
+            "ms": 13693
+          },
+          {
+            "seq": 165,
+            "type": "assistant.final",
+            "ms": 13706
+          }
+        ],
+        "input": null,
+        "replySha256": "89c9d2483a7f1282673d9de35eb8c278b4c8e1434ff0a19dcdb4250820279f80",
+        "replyCharactersWithoutCitationMarkers": 171,
+        "toolWrites": 0,
+        "complete": true,
+        "calls": [
+          {
+            "name": "observe.activity",
+            "status": "succeeded"
+          },
+          {
+            "name": "observe.stats",
+            "status": "succeeded"
+          },
+          {
+            "name": "observe.history",
+            "status": "succeeded"
+          }
+        ],
+        "sourceVerification": {
+          "actualDocuments": [],
+          "citedReferenceIds": [],
+          "unreadCitedIds": []
+        }
+      }
+    ],
+    "stable-metrics-low-2": [
+      {
+        "status": "succeeded",
+        "error": null,
+        "firstVisibleMs": 6878,
+        "totalMs": 6888,
+        "modelCallCount": 3,
+        "toolCallCount": 4,
+        "deliveryReceipt": {
+          "outcome": "partial"
+        },
+        "maxMessageBlocks": 1,
+        "providerCalls": [
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 1807,
+            "promptTokens": 2258,
+            "completionTokens": 63,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 3050,
+            "promptTokens": 511,
+            "completionTokens": 206,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 3145,
+            "promptTokens": 6885,
+            "completionTokens": 203,
+            "status": "success"
+          }
+        ],
+        "bodyEvents": [
+          {
+            "seq": 17,
+            "type": "assistant.delta",
+            "ms": 6878
+          },
+          {
+            "seq": 19,
+            "type": "assistant.final",
+            "ms": 6888
+          }
+        ],
+        "input": null,
+        "replySha256": "58ba49c19c281ea7d2800d97ede1e1750b14d2d4387b91e5714e0f730693da9f",
+        "replyCharactersWithoutCitationMarkers": 9,
+        "toolWrites": 0,
+        "complete": false,
+        "calls": [
+          {
+            "name": "web.search",
+            "status": "succeeded",
+            "unavailableReason": "quota_exhausted"
+          },
+          {
+            "name": "web.search",
+            "status": "succeeded",
+            "unavailableReason": "quota_exhausted"
+          },
+          {
+            "name": "web.search",
+            "status": "succeeded",
+            "unavailableReason": "quota_exhausted"
+          },
+          {
+            "name": "web.search",
+            "status": "succeeded",
+            "unavailableReason": "quota_exhausted"
+          }
+        ],
+        "sourceVerification": {
+          "actualDocuments": [],
+          "citedReferenceIds": [],
+          "unreadCitedIds": []
+        }
+      }
+    ]
+  },
+  "candidateTrials": {
+    "stable-candidate-1": [
+      {
+        "status": "succeeded",
+        "error": null,
+        "firstVisibleMs": 22573,
+        "totalMs": 22737,
+        "modelCallCount": 6,
+        "toolCallCount": 1,
+        "deliveryReceipt": null,
+        "maxMessageBlocks": 9,
+        "providerCalls": [
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 1834,
+            "promptTokens": 2246,
+            "completionTokens": 87,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 3258,
+            "promptTokens": 499,
+            "completionTokens": 173,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 2313,
+            "promptTokens": 6831,
+            "completionTokens": 49,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 3511,
+            "promptTokens": 11599,
+            "completionTokens": 113,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 7502,
+            "promptTokens": 4016,
+            "completionTokens": 527,
+            "status": "success"
+          }
+        ],
+        "bodyEvents": [
+          {
+            "seq": 16,
+            "type": "assistant.delta",
+            "ms": 22573
+          },
+          {
+            "seq": 20,
+            "type": "assistant.final",
+            "ms": 22737
+          }
+        ],
+        "input": null,
+        "replySha256": "9908047324aca20f01d30b53685cf7cee98f5afb8a2fca7567c6a864791a6c6e",
+        "replyCharactersWithoutCitationMarkers": 78,
+        "toolWrites": 0,
+        "complete": true,
+        "calls": [
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          }
+        ],
+        "sourceVerification": {
+          "actualDocuments": [
+            {
+              "referenceId": "web-6b1daa6f9aab700e",
+              "requestedUrl": "https://nasa.gov/solar-system/lunar-pits-could-shelter-astronauts-reveal-details-of-how-man-in-the-moon-formed",
+              "url": "https://www.nasa.gov/solar-system/lunar-pits-could-shelter-astronauts-reveal-details-of-how-man-in-the-moon-formed/",
+              "contentHash": "0af0f04cab7cebc41efaaa4fe06c1c167ea885af4818a6fd70f4f0604fa362a3",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-7eb5a8d638774aad",
+              "requestedUrl": "https://nasa.gov/Moon",
+              "url": "https://science.nasa.gov/moon/",
+              "contentHash": "11ed4e9a6145645ed800a5716f9dba8599b89adff44445051498b089eb4aebb8",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-6736c3cae1ad6fab",
+              "requestedUrl": "https://nasa.gov/image-detail/amf-art002e009276",
+              "url": "https://www.nasa.gov/image-detail/amf-art002e009276/",
+              "contentHash": "21d2b291d682444854600c290fef78434cc2be1ac8bcf9858f531f311e309b53",
+              "offset": 0,
+              "characters": 1159
+            }
+          ],
+          "citedReferenceIds": [
+            "web-6b1daa6f9aab700e"
+          ],
+          "unreadCitedIds": []
+        }
+      },
+      {
+        "status": "succeeded",
+        "error": null,
+        "firstVisibleMs": 125033,
+        "totalMs": 125066,
+        "modelCallCount": 6,
+        "toolCallCount": 7,
+        "deliveryReceipt": {
+          "outcome": "partial"
+        },
+        "maxMessageBlocks": 33,
+        "providerCalls": [
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 908,
+            "promptTokens": 2415,
+            "completionTokens": 91,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 2217,
+            "promptTokens": 644,
+            "completionTokens": 123,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 3679,
+            "promptTokens": 7285,
+            "completionTokens": 156,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 7468,
+            "promptTokens": 19878,
+            "completionTokens": 189,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 13757,
+            "promptTokens": 26402,
+            "completionTokens": 571,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 89999,
+            "promptTokens": null,
+            "completionTokens": null,
+            "status": "error"
+          }
+        ],
+        "bodyEvents": [
+          {
+            "seq": 76,
+            "type": "assistant.delta",
+            "ms": 125033
+          },
+          {
+            "seq": 78,
+            "type": "assistant.final",
+            "ms": 125066
+          }
+        ],
+        "input": null,
+        "replySha256": "1174efbd684d20b1d0de3328aee07381c23e4a46b9e76f0a7de7157df589d384",
+        "replyCharactersWithoutCitationMarkers": 26,
+        "toolWrites": 0,
+        "complete": false,
+        "calls": [
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.read_document",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.read_document",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          }
+        ],
+        "sourceVerification": {
+          "actualDocuments": [
+            {
+              "referenceId": "web-24a8a80a349ebd6f",
+              "requestedUrl": "https://kepuchina.cn/more/202109/t20210901_3026778.shtml",
+              "url": "https://www.kepuchina.cn/more/202109/t20210901_3026778.shtml",
+              "contentHash": "8c3f31f30144b7e257ca83a49f74ee5e90abb4e4fe3f504445393c85165b75ad",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-d8e421293cb139e6",
+              "requestedUrl": "https://go.nasa.gov/3yGvkbs",
+              "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/marsfact.html",
+              "contentHash": "02e80474e1f26a486e6dc82862584c3875b6e036beba8081bbb360e0e1d1881a",
+              "offset": 1792,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-49f1b87cc4c1cfcf",
+              "requestedUrl": "https://mars.nasa.gov/?cfid=01f97bba-a528-4a81-8169-0378a217504b&cftoken=0",
+              "url": "https://science.nasa.gov/mars/",
+              "contentHash": "87dc9da09735a52e4f4d2602e0c3e14a88c398fcf4814c61ac4e36194987d2f6",
+              "offset": 1370,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-76b22a2d59c961e9",
+              "requestedUrl": "https://www.esa.int/Science_Exploration/Human_and_Robotic_Exploration/Happy_New_Year_on_Mars",
+              "url": "https://www.esa.int/Science_Exploration/Human_and_Robotic_Exploration/Happy_New_Year_on_Mars",
+              "contentHash": "373058b8e9386c11b54ec4bed987944e521cccc51eb58a28205cda52807fc8de",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-349841171ec1cbee",
+              "requestedUrl": "https://inconstantmoon.com/",
+              "url": "https://inconstantmoon.com/",
+              "contentHash": "f79daba2099a9cf86687eea05bf367e4e61238601ee92dd48f8689374d2657d2",
+              "offset": 0,
+              "characters": 1340
+            },
+            {
+              "referenceId": "web-1494a9fb79ab3cfe",
+              "requestedUrl": "https://esa.int/ESA_Multimedia/Images/2021/09/Moon_facts_A_day_on_the_Moon",
+              "url": "https://www.esa.int/ESA_Multimedia/Images/2021/09/Moon_facts_A_day_on_the_Moon",
+              "contentHash": "d50ffff115ed547f4b154ceee0cb639be335c3a9da846ed3290ba39ab966ed6a",
+              "offset": 0,
+              "characters": 2078
+            },
+            {
+              "referenceId": "web-bbcf858ba65543b4",
+              "url": "https://science.nasa.gov/moon/lunar-atmosphere/",
+              "contentHash": "0200ca4069c6bd9f044451b4c91ebd228393818885d95c849f8d0bbe912248ff",
+              "offset": 0,
+              "characters": 6000
+            },
+            {
+              "referenceId": "web-14e36172aece9043",
+              "url": "https://www.esa.int/ESA_Multimedia/Images/2021/09/Ten_things_you_didn_t_know_about_the_Moon_Atmosphere",
+              "contentHash": "b1be99520080efb052d59c0fda409335a93e0396c8a23e932ee6a26ecd660af3",
+              "offset": 0,
+              "characters": 3055
+            }
+          ],
+          "citedReferenceIds": [],
+          "unreadCitedIds": []
+        }
+      },
+      {
+        "status": "succeeded",
+        "error": null,
+        "firstVisibleMs": 7282,
+        "totalMs": 10921,
+        "modelCallCount": 5,
+        "toolCallCount": 3,
+        "deliveryReceipt": null,
+        "maxMessageBlocks": 1,
+        "providerCalls": [
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 2978,
+            "promptTokens": 702,
+            "completionTokens": 224,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 3085,
+            "promptTokens": 2497,
+            "completionTokens": 311,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 2612,
+            "promptTokens": 7773,
+            "completionTokens": 58,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 4817,
+            "promptTokens": 9122,
+            "completionTokens": 136,
+            "status": "success"
+          }
+        ],
+        "bodyEvents": [
+          {
+            "seq": 97,
+            "type": "assistant.delta",
+            "ms": 7282
+          },
+          {
+            "seq": 98,
+            "type": "assistant.delta",
+            "ms": 7442
+          },
+          {
+            "seq": 100,
+            "type": "assistant.delta",
+            "ms": 7594
+          },
+          {
+            "seq": 102,
+            "type": "assistant.delta",
+            "ms": 7758
+          },
+          {
+            "seq": 103,
+            "type": "assistant.delta",
+            "ms": 7910
+          },
+          {
+            "seq": 104,
+            "type": "assistant.delta",
+            "ms": 8061
+          },
+          {
+            "seq": 105,
+            "type": "assistant.delta",
+            "ms": 8157
+          },
+          {
+            "seq": 106,
+            "type": "assistant.delta",
+            "ms": 8961
+          },
+          {
+            "seq": 108,
+            "type": "assistant.delta",
+            "ms": 8980
+          },
+          {
+            "seq": 109,
+            "type": "assistant.delta",
+            "ms": 9090
+          },
+          {
+            "seq": 110,
+            "type": "assistant.delta",
+            "ms": 9178
+          },
+          {
+            "seq": 111,
+            "type": "assistant.delta",
+            "ms": 9276
+          },
+          {
+            "seq": 112,
+            "type": "assistant.delta",
+            "ms": 9424
+          },
+          {
+            "seq": 114,
+            "type": "assistant.delta",
+            "ms": 9647
+          },
+          {
+            "seq": 115,
+            "type": "assistant.delta",
+            "ms": 9816
+          },
+          {
+            "seq": 116,
+            "type": "assistant.delta",
+            "ms": 9965
+          },
+          {
+            "seq": 117,
+            "type": "assistant.delta",
+            "ms": 10123
+          },
+          {
+            "seq": 118,
+            "type": "assistant.delta",
+            "ms": 10277
+          },
+          {
+            "seq": 119,
+            "type": "assistant.delta",
+            "ms": 10367
+          },
+          {
+            "seq": 121,
+            "type": "assistant.delta",
+            "ms": 10534
+          },
+          {
+            "seq": 122,
+            "type": "assistant.delta",
+            "ms": 10699
+          },
+          {
+            "seq": 123,
+            "type": "assistant.delta",
+            "ms": 10800
+          },
+          {
+            "seq": 125,
+            "type": "assistant.final",
+            "ms": 10921
+          }
+        ],
+        "input": null,
+        "replySha256": "7285f38dca9e98dfe0a21dedea462ad0f0f8487ac5fdafafe83d3e45fda891c5",
+        "replyCharactersWithoutCitationMarkers": 157,
+        "toolWrites": 0,
+        "complete": true,
+        "calls": [
+          {
+            "name": "observe.activity",
+            "status": "succeeded"
+          },
+          {
+            "name": "observe.stats",
+            "status": "succeeded"
+          },
+          {
+            "name": "observe.history",
+            "status": "succeeded"
+          }
+        ],
+        "sourceVerification": {
+          "actualDocuments": [],
+          "citedReferenceIds": [],
+          "unreadCitedIds": []
+        }
+      }
+    ],
+    "stable-candidate-low": [
+      {
+        "status": "succeeded",
+        "error": null,
+        "firstVisibleMs": 42201,
+        "totalMs": 42495,
+        "modelCallCount": 7,
+        "toolCallCount": 1,
+        "deliveryReceipt": null,
+        "maxMessageBlocks": 9,
+        "providerCalls": [
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 709,
+            "promptTokens": 2246,
+            "completionTokens": 69,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 947,
+            "promptTokens": 499,
+            "completionTokens": 80,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 5845,
+            "promptTokens": 6831,
+            "completionTokens": 53,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 12009,
+            "promptTokens": null,
+            "completionTokens": null,
+            "status": "error"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 3600,
+            "promptTokens": 11586,
+            "completionTokens": 171,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 13682,
+            "promptTokens": 4582,
+            "completionTokens": 1626,
+            "status": "success"
+          }
+        ],
+        "bodyEvents": [
+          {
+            "seq": 13,
+            "type": "assistant.delta",
+            "ms": 42201
+          },
+          {
+            "seq": 18,
+            "type": "assistant.delta",
+            "ms": 42346
+          },
+          {
+            "seq": 21,
+            "type": "assistant.final",
+            "ms": 42495
+          }
+        ],
+        "input": null,
+        "replySha256": "1772cb624404c31257ee074121f42a4cb51b3947efa3102ad0422c3d350b4e96",
+        "replyCharactersWithoutCitationMarkers": 129,
+        "toolWrites": 0,
+        "complete": true,
+        "calls": [
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          }
+        ],
+        "sourceVerification": {
+          "actualDocuments": [
+            {
+              "referenceId": "web-6b1daa6f9aab700e",
+              "requestedUrl": "https://nasa.gov/solar-system/lunar-pits-could-shelter-astronauts-reveal-details-of-how-man-in-the-moon-formed",
+              "url": "https://www.nasa.gov/solar-system/lunar-pits-could-shelter-astronauts-reveal-details-of-how-man-in-the-moon-formed/",
+              "contentHash": "0af0f04cab7cebc41efaaa4fe06c1c167ea885af4818a6fd70f4f0604fa362a3",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-7eb5a8d638774aad",
+              "requestedUrl": "https://nasa.gov/Moon",
+              "url": "https://science.nasa.gov/moon/",
+              "contentHash": "11ed4e9a6145645ed800a5716f9dba8599b89adff44445051498b089eb4aebb8",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-7c7c9ac0ddd587e0",
+              "requestedUrl": "https://nasa.gov/wp-content/uploads/static/history/alsj/WOTM/WOTM-EnviroIntro.html",
+              "url": "https://nasa.gov/wp-content/uploads/static/history/alsj/WOTM/WOTM-EnviroIntro.html",
+              "contentHash": "b88d438b14821e5a4be5d13c1cb5991f53786e1b7e21a837578fcd2b8309a09d",
+              "offset": 0,
+              "characters": 3000
+            }
+          ],
+          "citedReferenceIds": [
+            "web-6b1daa6f9aab700e"
+          ],
+          "unreadCitedIds": []
+        }
+      },
+      {
+        "status": "succeeded",
+        "error": null,
+        "firstVisibleMs": 88516,
+        "totalMs": 89613,
+        "modelCallCount": 10,
+        "toolCallCount": 8,
+        "deliveryReceipt": null,
+        "maxMessageBlocks": 33,
+        "providerCalls": [
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 1483,
+            "promptTokens": 677,
+            "completionTokens": 142,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 2014,
+            "promptTokens": 2447,
+            "completionTokens": 149,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 3305,
+            "promptTokens": 7314,
+            "completionTokens": 200,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 12004,
+            "promptTokens": null,
+            "completionTokens": null,
+            "status": "error"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 3619,
+            "promptTokens": 25146,
+            "completionTokens": 389,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 2840,
+            "promptTokens": 30841,
+            "completionTokens": 161,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 4708,
+            "promptTokens": 35517,
+            "completionTokens": 481,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 9503,
+            "promptTokens": 39288,
+            "completionTokens": 869,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 33588,
+            "promptTokens": 25478,
+            "completionTokens": 4222,
+            "status": "success"
+          }
+        ],
+        "bodyEvents": [
+          {
+            "seq": 108,
+            "type": "assistant.delta",
+            "ms": 88516
+          },
+          {
+            "seq": 112,
+            "type": "assistant.delta",
+            "ms": 88621
+          },
+          {
+            "seq": 116,
+            "type": "assistant.delta",
+            "ms": 88960
+          },
+          {
+            "seq": 121,
+            "type": "assistant.delta",
+            "ms": 89354
+          },
+          {
+            "seq": 127,
+            "type": "assistant.final",
+            "ms": 89613
+          }
+        ],
+        "input": null,
+        "replySha256": "81fc7bbe8bb1ea886351ef37175e85968f934b653e3dc2535de75fac16d4d9fb",
+        "replyCharactersWithoutCitationMarkers": 453,
+        "toolWrites": 0,
+        "complete": true,
+        "calls": [
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.read_document",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          }
+        ],
+        "sourceVerification": {
+          "actualDocuments": [
+            {
+              "referenceId": "web-1a58c2264caad3a5",
+              "requestedUrl": "https://nasa.gov/content/goddard/ladee-lunar-neon",
+              "url": "https://www.nasa.gov/missions/nasas-ladee-spacecraft-finds-neon-in-lunar-atmosphere/",
+              "contentHash": "ab98f68cdca56749654441ae905dfa996eecefe325127121900aedfce352823a",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-89565b4b432157e2",
+              "requestedUrl": "https://nasa.gov/moon",
+              "url": "https://science.nasa.gov/moon/",
+              "contentHash": "11ed4e9a6145645ed800a5716f9dba8599b89adff44445051498b089eb4aebb8",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-3841f7ac43ed4222",
+              "requestedUrl": "https://nasa.gov/podcasts/gravity-assist/gravity-assist-podcast-your-moon-questions-answered",
+              "url": "https://www.nasa.gov/podcasts/gravity-assist/gravity-assist-podcast-your-moon-questions-answered/",
+              "contentHash": "a68bfc22d2e22d0753ada2643b50f035497163cbe0df862fd1b495884e775ad0",
+              "offset": 16602,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-ed1a509119608ec5",
+              "requestedUrl": "https://esa.int/ESA_Multimedia/Images/2018/04/Comparing_the_atmospheres_of_Mars_and_Earth",
+              "url": "https://www.esa.int/ESA_Multimedia/Images/2018/04/Comparing_the_atmospheres_of_Mars_and_Earth",
+              "contentHash": "a96d4f47d2fdb80efae605a37682afc37096bfd0ba5e617b0382e107227ab8ec",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-a913e4fb9d5eeb8d",
+              "requestedUrl": "https://esa.int/About_Us/ESAC/How_Venus_and_Mars_can_teach_us_about_Earth",
+              "url": "https://www.esa.int/About_Us/ESAC/How_Venus_and_Mars_can_teach_us_about_Earth",
+              "contentHash": "f8a39de4f061acbf8b7d4e9f39219cab9329eec79e40915b95c26ee48ff87e9a",
+              "offset": 2828,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-d390b4e00ed24095",
+              "requestedUrl": "https://esa.int/Science_Exploration/Space_Science/Mars_Express/Martian_dust_storms_churn_up_Earth-like_clouds",
+              "url": "https://www.esa.int/Science_Exploration/Space_Science/Mars_Express/Martian_dust_storms_churn_up_Earth-like_clouds",
+              "contentHash": "bb81d8ec9b01e066f54fac7652cceebf47c4589f71da4519fe56c6323720e27b",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-75470ab13c562415",
+              "requestedUrl": "https://nasa.gov/podcasts/houston-we-have-a-podcast/telling-time-on-other-worlds",
+              "url": "https://www.nasa.gov/podcasts/houston-we-have-a-podcast/telling-time-on-other-worlds/",
+              "contentHash": "5d7aac38e101db57ed89606b68609c4be437cbb181df70b6088dcd54f450e2ad",
+              "offset": 27606,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-7c7c9ac0ddd587e0",
+              "requestedUrl": "https://nasa.gov/wp-content/uploads/static/history/alsj/WOTM/WOTM-EnviroIntro.html",
+              "url": "https://nasa.gov/wp-content/uploads/static/history/alsj/WOTM/WOTM-EnviroIntro.html",
+              "contentHash": "b88d438b14821e5a4be5d13c1cb5991f53786e1b7e21a837578fcd2b8309a09d",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-7eb5a8d638774aad",
+              "requestedUrl": "https://nasa.gov/Moon",
+              "url": "https://science.nasa.gov/moon/",
+              "contentHash": "11ed4e9a6145645ed800a5716f9dba8599b89adff44445051498b089eb4aebb8",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-565509b818767934",
+              "requestedUrl": "https://nasa.gov/humans-in-space/humans-to-mars",
+              "url": "https://www.nasa.gov/humans-in-space/humans-to-mars/",
+              "contentHash": "98975a2d929168450b6a72ce6ffcd709227756d3aa732bb0ff6da9122c8af4f2",
+              "offset": 43,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-75470ab13c562415",
+              "requestedUrl": "https://nasa.gov/podcasts/houston-we-have-a-podcast/telling-time-on-other-worlds",
+              "url": "https://www.nasa.gov/podcasts/houston-we-have-a-podcast/telling-time-on-other-worlds/",
+              "contentHash": "5d7aac38e101db57ed89606b68609c4be437cbb181df70b6088dcd54f450e2ad",
+              "offset": 27625,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-1b7c7abffdbf66fe",
+              "requestedUrl": "https://nasa.gov/audience/forstudents/5-8/features/nasa-knows/what-is-mars-58.html",
+              "url": "https://spaceplace.nasa.gov/all-about-mars/en/",
+              "contentHash": "7e0b51aafa6f5b6b31815d6856af67cccd5f7b6fefc69bb2125eaad0febfd615",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-4466e75b7f4af8be",
+              "requestedUrl": "https://esa.int/Applications/Observing_the_Earth/Meteorological_missions/Meteosat/Space_and_daily_life_in_45_years",
+              "url": "https://www.esa.int/Applications/Observing_the_Earth/Meteorological_missions/Meteosat/Space_and_daily_life_in_45_years",
+              "contentHash": "17db8d5ca09ed91a54cf549018c4afc221fef328229120bdb63a07fe23d1c402",
+              "offset": 1237,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-2136bf82e883dc1b",
+              "requestedUrl": "https://esa.int/ESA_Multimedia/Images/2003/05/Earth-based_view_of_Mars",
+              "url": "https://www.esa.int/ESA_Multimedia/Images/2003/05/Earth-based_view_of_Mars",
+              "contentHash": "21e63ae9c801e50462ea6b29882e8fc86da50e617fa90b6028d05a664704d629",
+              "offset": 0,
+              "characters": 2668
+            },
+            {
+              "referenceId": "web-f2221897c42480b3",
+              "requestedUrl": "https://nasa.gov/blogs/watch-the-skies/2024/11/12/you-woodnt-want-to-miss-the-beaver-moon-last-supermoon-of-2024",
+              "url": "https://www.nasa.gov/blogs/watch-the-skies/2024/11/12/you-woodnt-want-to-miss-the-beaver-moon-last-supermoon-of-2024/",
+              "contentHash": "ee27a0bae61a876813e5a398d84cdd82fb06f80d4339cf0febce3d4fda086897",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-f5f7a43c05560dac",
+              "requestedUrl": "https://nasa.gov/blogs/watch-the-skies/2011/07/28/traveling-to-the-dark-side",
+              "url": "https://www.nasa.gov/blogs/watch-the-skies/2011/07/28/traveling-to-the-dark-side/",
+              "contentHash": "2979a8a10d5e6be0faf00be984978d94c58873893478a12ff4e7833f2b94f6b1",
+              "offset": 0,
+              "characters": 2874
+            },
+            {
+              "referenceId": "web-7eb5a8d638774aad",
+              "requestedUrl": "https://nasa.gov/Moon",
+              "url": "https://science.nasa.gov/moon/",
+              "contentHash": "11ed4e9a6145645ed800a5716f9dba8599b89adff44445051498b089eb4aebb8",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-8d55e4ac6af3dfab",
+              "requestedUrl": "https://nasa.gov/solar-system/the-apollo-experiment-that-keeps-on-giving",
+              "url": "https://www.nasa.gov/solar-system/the-apollo-experiment-that-keeps-on-giving/",
+              "contentHash": "676052f58c47adcf7079a319d35ee016f5474609b44b5bb62765b6b5dac2d66f",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-5f563b9d6653ac66",
+              "requestedUrl": "https://nasa.gov/press-release/correction-apollo-astronaut-james-mcdivitt-dies-at-age-93",
+              "url": "https://www.nasa.gov/news-release/correction-apollo-astronaut-james-mcdivitt-dies-at-age-93/",
+              "contentHash": "98b9c7dccdaacf47fd0f179004d3b3c15fe35158dccc013cb1e7a7bb27fcefb9",
+              "offset": 1576,
+              "characters": 3000
+            }
+          ],
+          "citedReferenceIds": [
+            "web-1a58c2264caad3a5",
+            "web-1b7c7abffdbf66fe",
+            "web-4466e75b7f4af8be",
+            "web-ed1a509119608ec5",
+            "web-f5f7a43c05560dac"
+          ],
+          "unreadCitedIds": []
+        }
+      },
+      {
+        "status": "succeeded",
+        "error": null,
+        "firstVisibleMs": 18669,
+        "totalMs": 19669,
+        "modelCallCount": 6,
+        "toolCallCount": 3,
+        "deliveryReceipt": null,
+        "maxMessageBlocks": 1,
+        "providerCalls": [
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 2166,
+            "promptTokens": 981,
+            "completionTokens": 192,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 3196,
+            "promptTokens": 2774,
+            "completionTokens": 278,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 12005,
+            "promptTokens": null,
+            "completionTokens": null,
+            "status": "error"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 1832,
+            "promptTokens": 7813,
+            "completionTokens": 172,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 1995,
+            "promptTokens": 9419,
+            "completionTokens": 116,
+            "status": "success"
+          }
+        ],
+        "bodyEvents": [
+          {
+            "seq": 149,
+            "type": "assistant.delta",
+            "ms": 18669
+          },
+          {
+            "seq": 150,
+            "type": "assistant.delta",
+            "ms": 18777
+          },
+          {
+            "seq": 152,
+            "type": "assistant.delta",
+            "ms": 18845
+          },
+          {
+            "seq": 153,
+            "type": "assistant.delta",
+            "ms": 18938
+          },
+          {
+            "seq": 155,
+            "type": "assistant.delta",
+            "ms": 19028
+          },
+          {
+            "seq": 156,
+            "type": "assistant.delta",
+            "ms": 19101
+          },
+          {
+            "seq": 158,
+            "type": "assistant.delta",
+            "ms": 19182
+          },
+          {
+            "seq": 159,
+            "type": "assistant.delta",
+            "ms": 19347
+          },
+          {
+            "seq": 161,
+            "type": "assistant.delta",
+            "ms": 19473
+          },
+          {
+            "seq": 162,
+            "type": "assistant.delta",
+            "ms": 19644
+          },
+          {
+            "seq": 164,
+            "type": "assistant.final",
+            "ms": 19669
+          }
+        ],
+        "input": null,
+        "replySha256": "c4c8d300ac81f28ae4af563a94328c373e8a20ab2136cd1a73c6aac00d36df15",
+        "replyCharactersWithoutCitationMarkers": 177,
+        "toolWrites": 0,
+        "complete": true,
+        "calls": [
+          {
+            "name": "observe.activity",
+            "status": "succeeded"
+          },
+          {
+            "name": "observe.stats",
+            "status": "succeeded"
+          },
+          {
+            "name": "observe.history",
+            "status": "succeeded"
+          }
+        ],
+        "sourceVerification": {
+          "actualDocuments": [],
+          "citedReferenceIds": [],
+          "unreadCitedIds": []
+        }
+      }
+    ],
+    "stable-scoped-low-1": [
+      {
+        "status": "succeeded",
+        "error": null,
+        "firstVisibleMs": 25098,
+        "totalMs": 38507,
+        "modelCallCount": 7,
+        "toolCallCount": 1,
+        "deliveryReceipt": null,
+        "maxMessageBlocks": 9,
+        "providerCalls": [
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 1722,
+            "promptTokens": 2246,
+            "completionTokens": 98,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 2211,
+            "promptTokens": 499,
+            "completionTokens": 166,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 4916,
+            "promptTokens": 6832,
+            "completionTokens": 53,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 4291,
+            "promptTokens": 11917,
+            "completionTokens": 233,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 8041,
+            "promptTokens": 4414,
+            "completionTokens": 1030,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 21387,
+            "promptTokens": 4362,
+            "completionTokens": 2386,
+            "status": "success"
+          }
+        ],
+        "bodyEvents": [
+          {
+            "seq": 13,
+            "type": "assistant.delta",
+            "ms": 25098
+          },
+          {
+            "seq": 19,
+            "type": "assistant.delta",
+            "ms": 38454
+          },
+          {
+            "seq": 26,
+            "type": "assistant.final",
+            "ms": 38507
+          }
+        ],
+        "input": null,
+        "replySha256": "77161cc3df00fb7f1be283e919ebae20bc31a84319d250bb8ba184f7d205bd7b",
+        "replyCharactersWithoutCitationMarkers": 213,
+        "toolWrites": 0,
+        "complete": true,
+        "calls": [
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          }
+        ],
+        "sourceVerification": {
+          "actualDocuments": [
+            {
+              "referenceId": "web-6b1daa6f9aab700e",
+              "requestedUrl": "https://nasa.gov/solar-system/lunar-pits-could-shelter-astronauts-reveal-details-of-how-man-in-the-moon-formed",
+              "url": "https://www.nasa.gov/solar-system/lunar-pits-could-shelter-astronauts-reveal-details-of-how-man-in-the-moon-formed/",
+              "contentHash": "0af0f04cab7cebc41efaaa4fe06c1c167ea885af4818a6fd70f4f0604fa362a3",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-e54d27bcd244c7ba",
+              "requestedUrl": "https://nasa.gov/mediacast/mysteries-of-the-moon",
+              "url": "https://www.nasa.gov/podcasts/curious-universe/mysteries-of-the-moon/",
+              "contentHash": "51e054dbca05b61532a28b7440f4fb94534528efbd2991dfb08a145be467b557",
+              "offset": 14670,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-7eb5a8d638774aad",
+              "requestedUrl": "https://nasa.gov/Moon",
+              "url": "https://science.nasa.gov/moon/",
+              "contentHash": "11ed4e9a6145645ed800a5716f9dba8599b89adff44445051498b089eb4aebb8",
+              "offset": 2897,
+              "characters": 3000
+            }
+          ],
+          "citedReferenceIds": [
+            "web-6b1daa6f9aab700e"
+          ],
+          "unreadCitedIds": []
+        }
+      },
+      {
+        "status": "succeeded",
+        "error": null,
+        "firstVisibleMs": 22685,
+        "totalMs": 57900,
+        "modelCallCount": 9,
+        "toolCallCount": 2,
+        "deliveryReceipt": null,
+        "maxMessageBlocks": 17,
+        "providerCalls": [
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 1246,
+            "promptTokens": 2532,
+            "completionTokens": 182,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 4774,
+            "promptTokens": 762,
+            "completionTokens": 172,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 4446,
+            "promptTokens": 7419,
+            "completionTokens": 101,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 4424,
+            "promptTokens": 17047,
+            "completionTokens": 536,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 2715,
+            "promptTokens": 7906,
+            "completionTokens": 195,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 3341,
+            "promptTokens": 7916,
+            "completionTokens": 365,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 7728,
+            "promptTokens": 7915,
+            "completionTokens": 1537,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 38443,
+            "promptTokens": 7916,
+            "completionTokens": 3483,
+            "status": "success"
+          }
+        ],
+        "bodyEvents": [
+          {
+            "seq": 51,
+            "type": "assistant.delta",
+            "ms": 22685
+          },
+          {
+            "seq": 56,
+            "type": "assistant.delta",
+            "ms": 57787
+          },
+          {
+            "seq": 60,
+            "type": "assistant.delta",
+            "ms": 57817
+          },
+          {
+            "seq": 66,
+            "type": "assistant.delta",
+            "ms": 57854
+          },
+          {
+            "seq": 71,
+            "type": "assistant.final",
+            "ms": 57900
+          }
+        ],
+        "input": null,
+        "replySha256": "1bfa9fd8fca2ea122b74c10f3af6d07382afc71abdb500b4bba07cfb2ee2b873",
+        "replyCharactersWithoutCitationMarkers": 473,
+        "toolWrites": 0,
+        "complete": true,
+        "calls": [
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          }
+        ],
+        "sourceVerification": {
+          "actualDocuments": [
+            {
+              "referenceId": "web-1b7c7abffdbf66fe",
+              "requestedUrl": "https://nasa.gov/audience/forstudents/5-8/features/nasa-knows/what-is-mars-58.html",
+              "url": "https://spaceplace.nasa.gov/all-about-mars/en/",
+              "contentHash": "7e0b51aafa6f5b6b31815d6856af67cccd5f7b6fefc69bb2125eaad0febfd615",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-9f8a6b55b28f1738",
+              "requestedUrl": "https://nasa.gov/learning-resources/for-kids-and-students/what-is-mars-grades-k-4",
+              "url": "https://www.nasa.gov/learning-resources/for-kids-and-students/what-is-mars-grades-k-4/",
+              "contentHash": "49e0ad03e562fbb06af952ed4f6cf4f35881c7036a953dbab49faca2a724e549",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-773017a8fddf5ec3",
+              "requestedUrl": "https://nasa.gov/press-release/goddard/2020/mars-nightglow",
+              "url": "https://www.nasa.gov/news-release/nasas-maven-observes-martian-night-sky-pulsing-in-ultraviolet-light/",
+              "contentHash": "b856f93a9d9bf4929ee68ca1d8446770b98759f04b9966147fbe8b7c84dcb7d4",
+              "offset": 1648,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-1494a9fb79ab3cfe",
+              "requestedUrl": "https://esa.int/ESA_Multimedia/Images/2021/09/Moon_facts_A_day_on_the_Moon",
+              "url": "https://www.esa.int/ESA_Multimedia/Images/2021/09/Moon_facts_A_day_on_the_Moon",
+              "contentHash": "d50ffff115ed547f4b154ceee0cb639be335c3a9da846ed3290ba39ab966ed6a",
+              "offset": 0,
+              "characters": 2078
+            },
+            {
+              "referenceId": "web-ed3a157319df0f26",
+              "requestedUrl": "https://esa.int/Science_Exploration/Human_and_Robotic_Exploration/Exploration/The_Moon_-_our_neighbour",
+              "url": "https://www.esa.int/Science_Exploration/Human_and_Robotic_Exploration/Exploration/The_Moon_-_our_neighbour",
+              "contentHash": "24fe91e3f2d8b743461979dcaf980f3ee8b23f6578aff51610605a1c168b971b",
+              "offset": 0,
+              "characters": 2224
+            },
+            {
+              "referenceId": "web-14e36172aece9043",
+              "requestedUrl": "https://esa.int/ESA_Multimedia/Images/2021/09/Ten_things_you_didn_t_know_about_the_Moon_Atmosphere",
+              "url": "https://www.esa.int/ESA_Multimedia/Images/2021/09/Ten_things_you_didn_t_know_about_the_Moon_Atmosphere",
+              "contentHash": "b1be99520080efb052d59c0fda409335a93e0396c8a23e932ee6a26ecd660af3",
+              "offset": 0,
+              "characters": 3000
+            }
+          ],
+          "citedReferenceIds": [
+            "web-1494a9fb79ab3cfe",
+            "web-14e36172aece9043",
+            "web-1b7c7abffdbf66fe"
+          ],
+          "unreadCitedIds": []
+        }
+      },
+      {
+        "status": "succeeded",
+        "error": null,
+        "firstVisibleMs": 17997,
+        "totalMs": 18410,
+        "modelCallCount": 6,
+        "toolCallCount": 3,
+        "deliveryReceipt": null,
+        "maxMessageBlocks": 1,
+        "providerCalls": [
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 1556,
+            "promptTokens": 1045,
+            "completionTokens": 107,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 3628,
+            "promptTokens": 2839,
+            "completionTokens": 411,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 12020,
+            "promptTokens": null,
+            "completionTokens": null,
+            "status": "error"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 1061,
+            "promptTokens": 7755,
+            "completionTokens": 173,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 1204,
+            "promptTokens": 9416,
+            "completionTokens": 121,
+            "status": "success"
+          }
+        ],
+        "bodyEvents": [
+          {
+            "seq": 91,
+            "type": "assistant.delta",
+            "ms": 17997
+          },
+          {
+            "seq": 92,
+            "type": "assistant.delta",
+            "ms": 18039
+          },
+          {
+            "seq": 94,
+            "type": "assistant.delta",
+            "ms": 18084
+          },
+          {
+            "seq": 95,
+            "type": "assistant.delta",
+            "ms": 18122
+          },
+          {
+            "seq": 97,
+            "type": "assistant.delta",
+            "ms": 18179
+          },
+          {
+            "seq": 98,
+            "type": "assistant.delta",
+            "ms": 18195
+          },
+          {
+            "seq": 100,
+            "type": "assistant.delta",
+            "ms": 18231
+          },
+          {
+            "seq": 102,
+            "type": "assistant.delta",
+            "ms": 18398
+          },
+          {
+            "seq": 104,
+            "type": "assistant.final",
+            "ms": 18410
+          }
+        ],
+        "input": null,
+        "replySha256": "725afe36fe9fea0d1c5bc635fa1640f8b803ab1ba5cb4b1f95abfc16dbc997be",
+        "replyCharactersWithoutCitationMarkers": 178,
+        "toolWrites": 0,
+        "complete": true,
+        "calls": [
+          {
+            "name": "observe.activity",
+            "status": "succeeded"
+          },
+          {
+            "name": "observe.stats",
+            "status": "succeeded"
+          },
+          {
+            "name": "observe.history",
+            "status": "succeeded"
+          }
+        ],
+        "sourceVerification": {
+          "actualDocuments": [],
+          "citedReferenceIds": [],
+          "unreadCitedIds": []
+        }
+      }
+    ],
+    "stable-short-low-1": [
+      {
+        "status": "succeeded",
+        "error": null,
+        "firstVisibleMs": 88215,
+        "totalMs": 91664,
+        "modelCallCount": 6,
+        "toolCallCount": 1,
+        "deliveryReceipt": null,
+        "maxMessageBlocks": 9,
+        "providerCalls": [
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 2033,
+            "promptTokens": 2246,
+            "completionTokens": 58,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 2193,
+            "promptTokens": 499,
+            "completionTokens": 188,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 3809,
+            "promptTokens": 6831,
+            "completionTokens": 51,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 14384,
+            "promptTokens": 10488,
+            "completionTokens": 227,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 11775,
+            "promptTokens": 2884,
+            "completionTokens": 1180,
+            "status": "success"
+          }
+        ],
+        "bodyEvents": [
+          {
+            "seq": 24,
+            "type": "assistant.delta",
+            "ms": 88215
+          },
+          {
+            "seq": 32,
+            "type": "assistant.final",
+            "ms": 91664
+          }
+        ],
+        "input": null,
+        "replySha256": "80bc85eb2851ed45f88fb8301872a7868ac4391fd735e53cabe8bf02fb02edd4",
+        "replyCharactersWithoutCitationMarkers": 168,
+        "toolWrites": 0,
+        "complete": true,
+        "calls": [
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          }
+        ],
+        "sourceVerification": {
+          "actualDocuments": [
+            {
+              "referenceId": "web-6b1daa6f9aab700e",
+              "requestedUrl": "https://nasa.gov/solar-system/lunar-pits-could-shelter-astronauts-reveal-details-of-how-man-in-the-moon-formed",
+              "url": "https://www.nasa.gov/solar-system/lunar-pits-could-shelter-astronauts-reveal-details-of-how-man-in-the-moon-formed/",
+              "contentHash": "0af0f04cab7cebc41efaaa4fe06c1c167ea885af4818a6fd70f4f0604fa362a3",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-6736c3cae1ad6fab",
+              "requestedUrl": "https://nasa.gov/image-detail/amf-art002e009276",
+              "url": "https://www.nasa.gov/image-detail/amf-art002e009276/",
+              "contentHash": "21d2b291d682444854600c290fef78434cc2be1ac8bcf9858f531f311e309b53",
+              "offset": 0,
+              "characters": 1159
+            }
+          ],
+          "citedReferenceIds": [
+            "web-6b1daa6f9aab700e"
+          ],
+          "unreadCitedIds": []
+        }
+      },
+      {
+        "status": "cancelled",
+        "error": null,
+        "firstVisibleMs": 114742,
+        "totalMs": 176231,
+        "modelCallCount": 6,
+        "toolCallCount": 4,
+        "deliveryReceipt": null,
+        "maxMessageBlocks": 1,
+        "providerCalls": [
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 3626,
+            "promptTokens": 692,
+            "completionTokens": 123,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 4538,
+            "promptTokens": 2462,
+            "completionTokens": 187,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 17464,
+            "promptTokens": 7337,
+            "completionTokens": 334,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 3761,
+            "promptTokens": 7405,
+            "completionTokens": 416,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 9367,
+            "promptTokens": 21056,
+            "completionTokens": 935,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 30598,
+            "promptTokens": 11144,
+            "completionTokens": 3279,
+            "status": "success"
+          }
+        ],
+        "bodyEvents": [
+          {
+            "seq": 75,
+            "type": "assistant.delta",
+            "ms": 114742
+          },
+          {
+            "seq": 76,
+            "type": "assistant.delta",
+            "ms": 114742
+          },
+          {
+            "seq": 77,
+            "type": "assistant.delta",
+            "ms": 114742
+          },
+          {
+            "seq": 78,
+            "type": "assistant.delta",
+            "ms": 114742
+          }
+        ],
+        "input": null,
+        "replySha256": "2ab5ccc3feebc4e805d61c359373cc4536f3d4041131c86178b51b3430550eab",
+        "replyCharactersWithoutCitationMarkers": 564,
+        "toolWrites": 0,
+        "complete": false,
+        "calls": [
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          }
+        ],
+        "sourceVerification": {
+          "actualDocuments": [
+            {
+              "referenceId": "web-1a58c2264caad3a5",
+              "requestedUrl": "https://nasa.gov/content/goddard/ladee-lunar-neon",
+              "url": "https://www.nasa.gov/missions/nasas-ladee-spacecraft-finds-neon-in-lunar-atmosphere/",
+              "contentHash": "ab98f68cdca56749654441ae905dfa996eecefe325127121900aedfce352823a",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-89565b4b432157e2",
+              "requestedUrl": "https://nasa.gov/moon",
+              "url": "https://science.nasa.gov/moon/",
+              "contentHash": "11ed4e9a6145645ed800a5716f9dba8599b89adff44445051498b089eb4aebb8",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-75470ab13c562415",
+              "requestedUrl": "https://nasa.gov/podcasts/houston-we-have-a-podcast/telling-time-on-other-worlds",
+              "url": "https://www.nasa.gov/podcasts/houston-we-have-a-podcast/telling-time-on-other-worlds/",
+              "contentHash": "5d7aac38e101db57ed89606b68609c4be437cbb181df70b6088dcd54f450e2ad",
+              "offset": 22457,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-7c7c9ac0ddd587e0",
+              "requestedUrl": "https://nasa.gov/wp-content/uploads/static/history/alsj/WOTM/WOTM-EnviroIntro.html",
+              "url": "https://nasa.gov/wp-content/uploads/static/history/alsj/WOTM/WOTM-EnviroIntro.html",
+              "contentHash": "b88d438b14821e5a4be5d13c1cb5991f53786e1b7e21a837578fcd2b8309a09d",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-7610a5dbae04d3c5",
+              "requestedUrl": "https://esa.int/About_Us/ESAC/ExoMars_finds_new_gas_signatures_in_the_martian_atmosphere",
+              "url": "https://www.esa.int/About_Us/ESAC/ExoMars_finds_new_gas_signatures_in_the_martian_atmosphere",
+              "contentHash": "e7f686eb7f4709105b2480b68a282bedbf5e79f767bdb694abf175dde331025c",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-cb7d2d3fd0ee5b47",
+              "requestedUrl": "https://esa.int/Science_Exploration/Space_Science/Mars_Express/Holiday_weather_on_Mars",
+              "url": "https://www.esa.int/Science_Exploration/Space_Science/Mars_Express/Holiday_weather_on_Mars",
+              "contentHash": "8fb990c67a3824c5474870ea273c648825552c746137e19f827e868d3603e86b",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-4466e75b7f4af8be",
+              "requestedUrl": "https://esa.int/Applications/Observing_the_Earth/Meteorological_missions/Meteosat/Space_and_daily_life_in_45_years",
+              "url": "https://www.esa.int/Applications/Observing_the_Earth/Meteorological_missions/Meteosat/Space_and_daily_life_in_45_years",
+              "contentHash": "17db8d5ca09ed91a54cf549018c4afc221fef328229120bdb63a07fe23d1c402",
+              "offset": 1479,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-2136bf82e883dc1b",
+              "requestedUrl": "https://esa.int/ESA_Multimedia/Images/2003/05/Earth-based_view_of_Mars",
+              "url": "https://www.esa.int/ESA_Multimedia/Images/2003/05/Earth-based_view_of_Mars",
+              "contentHash": "21e63ae9c801e50462ea6b29882e8fc86da50e617fa90b6028d05a664704d629",
+              "offset": 0,
+              "characters": 2668
+            }
+          ],
+          "citedReferenceIds": [
+            "web-1a58c2264caad3a5",
+            "web-4466e75b7f4af8be",
+            "web-75470ab13c562415",
+            "web-7610a5dbae04d3c5",
+            "web-cb7d2d3fd0ee5b47"
+          ],
+          "unreadCitedIds": []
+        }
+      }
+    ],
+    "stable-final-low-1": [
+      {
+        "status": "succeeded",
+        "error": null,
+        "firstVisibleMs": 35259,
+        "totalMs": 35413,
+        "modelCallCount": 6,
+        "toolCallCount": 1,
+        "deliveryReceipt": null,
+        "maxMessageBlocks": 9,
+        "providerCalls": [
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 2256,
+            "promptTokens": 2246,
+            "completionTokens": 170,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 2277,
+            "promptTokens": 499,
+            "completionTokens": 111,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 3183,
+            "promptTokens": 6875,
+            "completionTokens": 51,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 15203,
+            "promptTokens": 12260,
+            "completionTokens": 137,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 5117,
+            "promptTokens": 4564,
+            "completionTokens": 428,
+            "status": "success"
+          }
+        ],
+        "bodyEvents": [
+          {
+            "seq": 17,
+            "type": "assistant.delta",
+            "ms": 35259
+          },
+          {
+            "seq": 21,
+            "type": "assistant.final",
+            "ms": 35413
+          }
+        ],
+        "input": null,
+        "replySha256": "695f0d32355f3adc7935175481e5beb4254d2c12cc4cceab5390c48d7be0d93f",
+        "replyCharactersWithoutCitationMarkers": 74,
+        "toolWrites": 0,
+        "complete": true,
+        "calls": [
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          }
+        ],
+        "sourceVerification": {
+          "actualDocuments": [
+            {
+              "referenceId": "web-6b1daa6f9aab700e",
+              "requestedUrl": "https://nasa.gov/solar-system/lunar-pits-could-shelter-astronauts-reveal-details-of-how-man-in-the-moon-formed",
+              "url": "https://www.nasa.gov/solar-system/lunar-pits-could-shelter-astronauts-reveal-details-of-how-man-in-the-moon-formed/",
+              "contentHash": "0af0f04cab7cebc41efaaa4fe06c1c167ea885af4818a6fd70f4f0604fa362a3",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-e54d27bcd244c7ba",
+              "requestedUrl": "https://nasa.gov/mediacast/mysteries-of-the-moon",
+              "url": "https://www.nasa.gov/podcasts/curious-universe/mysteries-of-the-moon/",
+              "contentHash": "51e054dbca05b61532a28b7440f4fb94534528efbd2991dfb08a145be467b557",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-89565b4b432157e2",
+              "requestedUrl": "https://nasa.gov/moon",
+              "url": "https://science.nasa.gov/moon/",
+              "contentHash": "11ed4e9a6145645ed800a5716f9dba8599b89adff44445051498b089eb4aebb8",
+              "offset": 0,
+              "characters": 3000
+            }
+          ],
+          "citedReferenceIds": [
+            "web-6b1daa6f9aab700e"
+          ],
+          "unreadCitedIds": []
+        }
+      },
+      {
+        "status": "succeeded",
+        "error": null,
+        "firstVisibleMs": 73712,
+        "totalMs": 73907,
+        "modelCallCount": 8,
+        "toolCallCount": 6,
+        "deliveryReceipt": null,
+        "maxMessageBlocks": 33,
+        "providerCalls": [
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 1384,
+            "promptTokens": 2411,
+            "completionTokens": 61,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 3293,
+            "promptTokens": 640,
+            "completionTokens": 146,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 9702,
+            "promptTokens": 7324,
+            "completionTokens": 252,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 4595,
+            "promptTokens": 7391,
+            "completionTokens": 478,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 3863,
+            "promptTokens": 21160,
+            "completionTokens": 432,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 7391,
+            "promptTokens": 24950,
+            "completionTokens": 818,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 30639,
+            "promptTokens": 13091,
+            "completionTokens": 4286,
+            "status": "success"
+          }
+        ],
+        "bodyEvents": [
+          {
+            "seq": 88,
+            "type": "assistant.delta",
+            "ms": 73712
+          },
+          {
+            "seq": 89,
+            "type": "assistant.delta",
+            "ms": 73712
+          },
+          {
+            "seq": 96,
+            "type": "assistant.final",
+            "ms": 73907
+          }
+        ],
+        "input": null,
+        "replySha256": "0bfbbd894f733f82779a7ca1e92ba55c049272bb3a47e73ca810ec7a3f14e001",
+        "replyCharactersWithoutCitationMarkers": 179,
+        "toolWrites": 0,
+        "complete": true,
+        "calls": [
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.read_document",
+            "status": "blocked"
+          },
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          }
+        ],
+        "sourceVerification": {
+          "actualDocuments": [
+            {
+              "referenceId": "web-1a58c2264caad3a5",
+              "requestedUrl": "https://nasa.gov/content/goddard/ladee-lunar-neon",
+              "url": "https://www.nasa.gov/missions/nasas-ladee-spacecraft-finds-neon-in-lunar-atmosphere/",
+              "contentHash": "ab98f68cdca56749654441ae905dfa996eecefe325127121900aedfce352823a",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-89565b4b432157e2",
+              "requestedUrl": "https://nasa.gov/moon",
+              "url": "https://science.nasa.gov/moon/",
+              "contentHash": "11ed4e9a6145645ed800a5716f9dba8599b89adff44445051498b089eb4aebb8",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-565509b818767934",
+              "requestedUrl": "https://nasa.gov/humans-in-space/humans-to-mars",
+              "url": "https://www.nasa.gov/humans-in-space/humans-to-mars/",
+              "contentHash": "98975a2d929168450b6a72ce6ffcd709227756d3aa732bb0ff6da9122c8af4f2",
+              "offset": 4302,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-c45697b533fab412",
+              "requestedUrl": "https://nasa.gov/news-release/nasas-perseverance-mars-rover-extracts-first-oxygen-from-red-planet",
+              "url": "https://www.nasa.gov/news-release/nasas-perseverance-mars-rover-extracts-first-oxygen-from-red-planet/",
+              "contentHash": "445291ed7ff142869136236cae8952c59ea008318087b32d25b07c97666752cf",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-1494a9fb79ab3cfe",
+              "requestedUrl": "https://esa.int/ESA_Multimedia/Images/2021/09/Moon_facts_A_day_on_the_Moon",
+              "url": "https://www.esa.int/ESA_Multimedia/Images/2021/09/Moon_facts_A_day_on_the_Moon",
+              "contentHash": "d50ffff115ed547f4b154ceee0cb639be335c3a9da846ed3290ba39ab966ed6a",
+              "offset": 0,
+              "characters": 2078
+            },
+            {
+              "referenceId": "web-761a755cad46e589",
+              "requestedUrl": "https://esa.int/ESA_Multimedia/Images/2017/11/Look_at_the_Moon",
+              "url": "https://www.esa.int/ESA_Multimedia/Images/2017/11/Look_at_the_Moon",
+              "contentHash": "10d7e07f18035a305ff51dede9a79cde707d7f233d5864c4ec001e8870f09a62",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-a913e4fb9d5eeb8d",
+              "requestedUrl": "https://esa.int/About_Us/ESAC/How_Venus_and_Mars_can_teach_us_about_Earth",
+              "url": "https://www.esa.int/About_Us/ESAC/How_Venus_and_Mars_can_teach_us_about_Earth",
+              "contentHash": "f8a39de4f061acbf8b7d4e9f39219cab9329eec79e40915b95c26ee48ff87e9a",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-3fb0724006084632",
+              "requestedUrl": "https://esa.int/ESA_Multimedia/Videos/2016/12/ExoMars_first_year_in_orbit/(lang)/en",
+              "url": "https://www.esa.int/ESA_Multimedia/Videos/2016/12/ExoMars_first_year_in_orbit/(lang)/en",
+              "contentHash": "c2a131586570c458a00fa367a708e3fdf4b43127a1302f6b9875a1e052254926",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-565509b818767934",
+              "requestedUrl": "https://nasa.gov/humans-in-space/humans-to-mars",
+              "url": "https://www.nasa.gov/humans-in-space/humans-to-mars/",
+              "contentHash": "98975a2d929168450b6a72ce6ffcd709227756d3aa732bb0ff6da9122c8af4f2",
+              "offset": 43,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-9f8a6b55b28f1738",
+              "requestedUrl": "https://nasa.gov/learning-resources/for-kids-and-students/what-is-mars-grades-k-4",
+              "url": "https://www.nasa.gov/learning-resources/for-kids-and-students/what-is-mars-grades-k-4/",
+              "contentHash": "49e0ad03e562fbb06af952ed4f6cf4f35881c7036a953dbab49faca2a724e549",
+              "offset": 0,
+              "characters": 3000
+            }
+          ],
+          "citedReferenceIds": [
+            "web-1494a9fb79ab3cfe",
+            "web-1a58c2264caad3a5",
+            "web-565509b818767934",
+            "web-9f8a6b55b28f1738"
+          ],
+          "unreadCitedIds": []
+        }
+      },
+      {
+        "status": "succeeded",
+        "error": null,
+        "firstVisibleMs": 17468,
+        "totalMs": 21577,
+        "modelCallCount": 5,
+        "toolCallCount": 3,
+        "deliveryReceipt": null,
+        "maxMessageBlocks": 1,
+        "providerCalls": [
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 2484,
+            "promptTokens": 816,
+            "completionTokens": 210,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 3444,
+            "promptTokens": 2610,
+            "completionTokens": 286,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 5313,
+            "promptTokens": 7927,
+            "completionTokens": 58,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 11684,
+            "promptTokens": 9414,
+            "completionTokens": 99,
+            "status": "success"
+          }
+        ],
+        "bodyEvents": [
+          {
+            "seq": 115,
+            "type": "assistant.delta",
+            "ms": 17468
+          },
+          {
+            "seq": 116,
+            "type": "assistant.delta",
+            "ms": 17572
+          },
+          {
+            "seq": 117,
+            "type": "assistant.delta",
+            "ms": 17691
+          },
+          {
+            "seq": 118,
+            "type": "assistant.delta",
+            "ms": 17789
+          },
+          {
+            "seq": 119,
+            "type": "assistant.delta",
+            "ms": 17887
+          },
+          {
+            "seq": 121,
+            "type": "assistant.delta",
+            "ms": 17993
+          },
+          {
+            "seq": 122,
+            "type": "assistant.delta",
+            "ms": 18089
+          },
+          {
+            "seq": 123,
+            "type": "assistant.delta",
+            "ms": 18193
+          },
+          {
+            "seq": 124,
+            "type": "assistant.delta",
+            "ms": 18306
+          },
+          {
+            "seq": 125,
+            "type": "assistant.delta",
+            "ms": 18429
+          },
+          {
+            "seq": 127,
+            "type": "assistant.delta",
+            "ms": 18554
+          },
+          {
+            "seq": 128,
+            "type": "assistant.delta",
+            "ms": 18663
+          },
+          {
+            "seq": 129,
+            "type": "assistant.delta",
+            "ms": 18765
+          },
+          {
+            "seq": 130,
+            "type": "assistant.delta",
+            "ms": 18882
+          },
+          {
+            "seq": 131,
+            "type": "assistant.delta",
+            "ms": 19066
+          },
+          {
+            "seq": 132,
+            "type": "assistant.delta",
+            "ms": 19168
+          },
+          {
+            "seq": 133,
+            "type": "assistant.delta",
+            "ms": 19271
+          },
+          {
+            "seq": 134,
+            "type": "assistant.delta",
+            "ms": 19372
+          },
+          {
+            "seq": 135,
+            "type": "assistant.delta",
+            "ms": 19475
+          },
+          {
+            "seq": 136,
+            "type": "assistant.delta",
+            "ms": 19643
+          },
+          {
+            "seq": 137,
+            "type": "assistant.delta",
+            "ms": 19873
+          },
+          {
+            "seq": 139,
+            "type": "assistant.delta",
+            "ms": 20071
+          },
+          {
+            "seq": 140,
+            "type": "assistant.delta",
+            "ms": 20254
+          },
+          {
+            "seq": 141,
+            "type": "assistant.delta",
+            "ms": 20350
+          },
+          {
+            "seq": 142,
+            "type": "assistant.delta",
+            "ms": 20462
+          },
+          {
+            "seq": 143,
+            "type": "assistant.delta",
+            "ms": 20584
+          },
+          {
+            "seq": 144,
+            "type": "assistant.delta",
+            "ms": 20708
+          },
+          {
+            "seq": 145,
+            "type": "assistant.delta",
+            "ms": 20881
+          },
+          {
+            "seq": 146,
+            "type": "assistant.delta",
+            "ms": 20979
+          },
+          {
+            "seq": 147,
+            "type": "assistant.delta",
+            "ms": 21117
+          },
+          {
+            "seq": 148,
+            "type": "assistant.delta",
+            "ms": 21245
+          },
+          {
+            "seq": 149,
+            "type": "assistant.delta",
+            "ms": 21346
+          },
+          {
+            "seq": 151,
+            "type": "assistant.final",
+            "ms": 21577
+          }
+        ],
+        "input": null,
+        "replySha256": "ade146150c2456aeae4f6306038714a77c160fb7558a0765f6838d7f2f98d3b4",
+        "replyCharactersWithoutCitationMarkers": 130,
+        "toolWrites": 0,
+        "complete": true,
+        "calls": [
+          {
+            "name": "observe.activity",
+            "status": "succeeded"
+          },
+          {
+            "name": "observe.stats",
+            "status": "succeeded"
+          },
+          {
+            "name": "observe.history",
+            "status": "succeeded"
+          }
+        ],
+        "sourceVerification": {
+          "actualDocuments": [],
+          "citedReferenceIds": [],
+          "unreadCitedIds": []
+        }
+      }
+    ],
+    "stable-release-low-1": [
+      {
+        "status": "succeeded",
+        "error": null,
+        "firstVisibleMs": 105090,
+        "totalMs": 105154,
+        "modelCallCount": 10,
+        "toolCallCount": 5,
+        "deliveryReceipt": null,
+        "maxMessageBlocks": 11,
+        "providerCalls": [
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 2219,
+            "promptTokens": 499,
+            "completionTokens": 163,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 2317,
+            "promptTokens": 2246,
+            "completionTokens": 132,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 2981,
+            "promptTokens": 6874,
+            "completionTokens": 49,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 8762,
+            "promptTokens": 8919,
+            "completionTokens": 87,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 3389,
+            "promptTokens": 9032,
+            "completionTokens": 64,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 5015,
+            "promptTokens": 9152,
+            "completionTokens": 107,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 9491,
+            "promptTokens": 9285,
+            "completionTokens": 99,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 12868,
+            "promptTokens": 15193,
+            "completionTokens": 167,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 4279,
+            "promptTokens": 6283,
+            "completionTokens": 381,
+            "status": "success"
+          }
+        ],
+        "bodyEvents": [
+          {
+            "seq": 65,
+            "type": "assistant.delta",
+            "ms": 105090
+          },
+          {
+            "seq": 70,
+            "type": "assistant.final",
+            "ms": 105154
+          }
+        ],
+        "input": null,
+        "replySha256": "611eb1e63a4a9eea5d727ca521c8f50afd325068646c920dce79b61138ae4038",
+        "replyCharactersWithoutCitationMarkers": 91,
+        "toolWrites": 0,
+        "complete": true,
+        "calls": [
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.read_document",
+            "status": "failed"
+          },
+          {
+            "name": "web.read_document",
+            "status": "blocked"
+          },
+          {
+            "name": "web.read_document",
+            "status": "failed"
+          },
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          }
+        ],
+        "sourceVerification": {
+          "actualDocuments": [
+            {
+              "referenceId": "web-7eb5a8d638774aad",
+              "requestedUrl": "https://nasa.gov/Moon",
+              "url": "https://science.nasa.gov/moon/",
+              "contentHash": "11ed4e9a6145645ed800a5716f9dba8599b89adff44445051498b089eb4aebb8",
+              "offset": 2933,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-6b1daa6f9aab700e",
+              "requestedUrl": "https://nasa.gov/solar-system/lunar-pits-could-shelter-astronauts-reveal-details-of-how-man-in-the-moon-formed",
+              "url": "https://www.nasa.gov/solar-system/lunar-pits-could-shelter-astronauts-reveal-details-of-how-man-in-the-moon-formed/",
+              "contentHash": "0af0f04cab7cebc41efaaa4fe06c1c167ea885af4818a6fd70f4f0604fa362a3",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-5c065cc8b749c51f",
+              "requestedUrl": "https://nasa.gov/specials/ocean-worlds",
+              "url": "https://www.nasa.gov/specials/ocean-worlds/",
+              "contentHash": "5f6ebc8902dbc219abc78a809d1f8813e354ed866d40510f758efa4c3b458614",
+              "offset": 6909,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-55e7358f6d4489c5",
+              "requestedUrl": "https://nasa.gov/wp-content/uploads/static/history/alsj/WOTM/WOTM-Terrain.html",
+              "url": "https://nasa.gov/wp-content/uploads/static/history/alsj/WOTM/WOTM-Terrain.html",
+              "contentHash": "c750ca3fe58a32592bdb8c7a914e38b448e7ca02fe57d5240aeed3b8788028c7",
+              "offset": 0,
+              "characters": 3000
+            }
+          ],
+          "citedReferenceIds": [
+            "web-6b1daa6f9aab700e"
+          ],
+          "unreadCitedIds": []
+        }
+      },
+      {
+        "status": "succeeded",
+        "error": null,
+        "firstVisibleMs": 63381,
+        "totalMs": 76000,
+        "modelCallCount": 13,
+        "toolCallCount": 6,
+        "deliveryReceipt": null,
+        "maxMessageBlocks": 33,
+        "providerCalls": [
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 1739,
+            "promptTokens": 2421,
+            "completionTokens": 62,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 2066,
+            "promptTokens": 650,
+            "completionTokens": 118,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 9714,
+            "promptTokens": 7393,
+            "completionTokens": 154,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 12007,
+            "promptTokens": null,
+            "completionTokens": null,
+            "status": "error"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 3391,
+            "promptTokens": 20702,
+            "completionTokens": 408,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 7592,
+            "promptTokens": 24225,
+            "completionTokens": 694,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 2956,
+            "promptTokens": 13189,
+            "completionTokens": 90,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 8011,
+            "promptTokens": 13172,
+            "completionTokens": 678,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 9927,
+            "promptTokens": 13109,
+            "completionTokens": 949,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 5502,
+            "promptTokens": 13149,
+            "completionTokens": 1124,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 21125,
+            "promptTokens": 13204,
+            "completionTokens": 2636,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 30703,
+            "promptTokens": 13226,
+            "completionTokens": 3364,
+            "status": "success"
+          }
+        ],
+        "bodyEvents": [
+          {
+            "seq": 123,
+            "type": "assistant.delta",
+            "ms": 63381
+          },
+          {
+            "seq": 128,
+            "type": "assistant.delta",
+            "ms": 63401
+          },
+          {
+            "seq": 132,
+            "type": "assistant.delta",
+            "ms": 75942
+          },
+          {
+            "seq": 141,
+            "type": "assistant.delta",
+            "ms": 75980
+          },
+          {
+            "seq": 147,
+            "type": "assistant.final",
+            "ms": 76000
+          }
+        ],
+        "input": null,
+        "replySha256": "d267977a964c6adc49c4e120cea1b0e843820e2b7a52b8c9559307d706d12ef5",
+        "replyCharactersWithoutCitationMarkers": 612,
+        "toolWrites": 0,
+        "complete": true,
+        "calls": [
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.read_document",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.read_document",
+            "status": "succeeded"
+          }
+        ],
+        "sourceVerification": {
+          "actualDocuments": [
+            {
+              "referenceId": "web-95980f5576415af8",
+              "requestedUrl": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/moonfact.html",
+              "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/moonfact.html",
+              "contentHash": "05aca7c0ac41a8547f38edd78cbac43d593a0676a3b228a1038b4c79e5c06ae5",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-7efd968b1f1045ed",
+              "requestedUrl": "https://science.nasa.gov/moon/facts",
+              "url": "https://science.nasa.gov/moon/facts/",
+              "contentHash": "b15e281c23dc5efe5a00cc87dfed5e3a5cd5d75e53fba37ca3bb523bd38cf73b",
+              "offset": 2951,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-b55cdca219c3b953",
+              "requestedUrl": "https://science.nasa.gov/mars/facts?trk=public_post_comment-text",
+              "url": "https://science.nasa.gov/mars/facts/?trk=public_post_comment-text",
+              "contentHash": "5e2c6d36f999c8e66a68a3c49cfdf668a62b7b06cf24d30506c6f5f56fb8e13c",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-0ffbff49c8371eee",
+              "requestedUrl": "https://science.nasa.gov/?p=354773",
+              "url": "https://science.nasa.gov/blog/a-sol-in-the-life-of-a-rover/",
+              "contentHash": "58085977c403f50dcb0625afe0883140ffdad5a5082e66ff0eb9cc0a25f708d1",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-bbcf858ba65543b4",
+              "requestedUrl": "https://science.nasa.gov/moon/lunar-atmosphere",
+              "url": "https://science.nasa.gov/moon/lunar-atmosphere/",
+              "contentHash": "0200ca4069c6bd9f044451b4c91ebd228393818885d95c849f8d0bbe912248ff",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-7e3502bdc343cb74",
+              "requestedUrl": "https://www.esa.int/Our_Activities/Human_and_Robotic_Exploration/Exploration/ExoMars/Meet_Mars",
+              "url": "https://www.esa.int/Science_Exploration/Human_and_Robotic_Exploration/Exploration/ExoMars/Meet_Mars",
+              "contentHash": "ca000290867d0e5249842a5b4036dc8f18b6775153402de44e51f6962f6f7a7a",
+              "offset": 0,
+              "characters": 1102
+            },
+            {
+              "referenceId": "web-2fce2475160930da",
+              "requestedUrl": "https://www.esa.int/Science_Exploration/Space_Science/Mars_Express/Facts_about_Mars",
+              "url": "https://www.esa.int/Science_Exploration/Space_Science/Mars_Express/Facts_about_Mars",
+              "contentHash": "83a8ccfc90c9323a46f1a6d720a041000e320a5007713680d48d6a880e84c033",
+              "offset": 0,
+              "characters": 1168
+            },
+            {
+              "referenceId": "web-e848f3041bbfc0ae",
+              "requestedUrl": "https://sci.esa.int/web/home/-/30215-the-martian-atmosphere",
+              "url": "https://sci.esa.int/web/home/-/30215-the-martian-atmosphere",
+              "contentHash": "54d7c7288efca3b4e96cbc974737e63fcc1a9343764991f71dc39fa49e1867f3",
+              "offset": 0,
+              "characters": 2922
+            },
+            {
+              "referenceId": "web-14e36172aece9043",
+              "url": "https://www.esa.int/ESA_Multimedia/Images/2021/09/Ten_things_you_didn_t_know_about_the_Moon_Atmosphere",
+              "contentHash": "b1be99520080efb052d59c0fda409335a93e0396c8a23e932ee6a26ecd660af3",
+              "offset": 0,
+              "characters": 3055
+            },
+            {
+              "referenceId": "web-95980f5576415af8",
+              "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/moonfact.html",
+              "contentHash": "05aca7c0ac41a8547f38edd78cbac43d593a0676a3b228a1038b4c79e5c06ae5",
+              "offset": 0,
+              "characters": 4022
+            }
+          ],
+          "citedReferenceIds": [
+            "web-14e36172aece9043",
+            "web-7e3502bdc343cb74",
+            "web-95980f5576415af8"
+          ],
+          "unreadCitedIds": []
+        }
+      },
+      {
+        "status": "succeeded",
+        "error": null,
+        "firstVisibleMs": 13281,
+        "totalMs": 16778,
+        "modelCallCount": 5,
+        "toolCallCount": 3,
+        "deliveryReceipt": null,
+        "maxMessageBlocks": 1,
+        "providerCalls": [
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 7036,
+            "promptTokens": 1022,
+            "completionTokens": 89,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 7594,
+            "promptTokens": 2817,
+            "completionTokens": 599,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 3042,
+            "promptTokens": 8205,
+            "completionTokens": 58,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 5734,
+            "promptTokens": 9950,
+            "completionTokens": 115,
+            "status": "success"
+          }
+        ],
+        "bodyEvents": [
+          {
+            "seq": 165,
+            "type": "assistant.delta",
+            "ms": 13281
+          },
+          {
+            "seq": 166,
+            "type": "assistant.delta",
+            "ms": 13290
+          },
+          {
+            "seq": 168,
+            "type": "assistant.delta",
+            "ms": 13412
+          },
+          {
+            "seq": 169,
+            "type": "assistant.delta",
+            "ms": 13512
+          },
+          {
+            "seq": 170,
+            "type": "assistant.delta",
+            "ms": 13635
+          },
+          {
+            "seq": 171,
+            "type": "assistant.delta",
+            "ms": 13745
+          },
+          {
+            "seq": 172,
+            "type": "assistant.delta",
+            "ms": 13838
+          },
+          {
+            "seq": 173,
+            "type": "assistant.delta",
+            "ms": 14045
+          },
+          {
+            "seq": 175,
+            "type": "assistant.delta",
+            "ms": 14140
+          },
+          {
+            "seq": 176,
+            "type": "assistant.delta",
+            "ms": 14235
+          },
+          {
+            "seq": 177,
+            "type": "assistant.delta",
+            "ms": 14339
+          },
+          {
+            "seq": 178,
+            "type": "assistant.delta",
+            "ms": 14432
+          },
+          {
+            "seq": 179,
+            "type": "assistant.delta",
+            "ms": 14533
+          },
+          {
+            "seq": 180,
+            "type": "assistant.delta",
+            "ms": 14630
+          },
+          {
+            "seq": 181,
+            "type": "assistant.delta",
+            "ms": 14729
+          },
+          {
+            "seq": 182,
+            "type": "assistant.delta",
+            "ms": 14840
+          },
+          {
+            "seq": 183,
+            "type": "assistant.delta",
+            "ms": 14931
+          },
+          {
+            "seq": 184,
+            "type": "assistant.delta",
+            "ms": 15032
+          },
+          {
+            "seq": 185,
+            "type": "assistant.delta",
+            "ms": 15127
+          },
+          {
+            "seq": 186,
+            "type": "assistant.delta",
+            "ms": 15222
+          },
+          {
+            "seq": 187,
+            "type": "assistant.delta",
+            "ms": 15319
+          },
+          {
+            "seq": 188,
+            "type": "assistant.delta",
+            "ms": 15411
+          },
+          {
+            "seq": 190,
+            "type": "assistant.delta",
+            "ms": 15507
+          },
+          {
+            "seq": 191,
+            "type": "assistant.delta",
+            "ms": 15618
+          },
+          {
+            "seq": 192,
+            "type": "assistant.delta",
+            "ms": 15715
+          },
+          {
+            "seq": 193,
+            "type": "assistant.delta",
+            "ms": 15851
+          },
+          {
+            "seq": 194,
+            "type": "assistant.delta",
+            "ms": 15981
+          },
+          {
+            "seq": 195,
+            "type": "assistant.delta",
+            "ms": 16105
+          },
+          {
+            "seq": 196,
+            "type": "assistant.delta",
+            "ms": 16210
+          },
+          {
+            "seq": 197,
+            "type": "assistant.delta",
+            "ms": 16311
+          },
+          {
+            "seq": 198,
+            "type": "assistant.delta",
+            "ms": 16538
+          },
+          {
+            "seq": 201,
+            "type": "assistant.final",
+            "ms": 16778
+          }
+        ],
+        "input": null,
+        "replySha256": "eba52828ef669baf388156268867ca582cb424c7b3b0425261d70922c572c8ad",
+        "replyCharactersWithoutCitationMarkers": 149,
+        "toolWrites": 0,
+        "complete": true,
+        "calls": [
+          {
+            "name": "observe.activity",
+            "status": "succeeded"
+          },
+          {
+            "name": "observe.stats",
+            "status": "succeeded"
+          },
+          {
+            "name": "observe.history",
+            "status": "succeeded"
+          }
+        ],
+        "sourceVerification": {
+          "actualDocuments": [],
+          "citedReferenceIds": [],
+          "unreadCitedIds": []
+        }
+      }
+    ],
+    "stable-release-low-2": [
+      {
+        "status": "succeeded",
+        "error": null,
+        "firstVisibleMs": 31010,
+        "totalMs": 31075,
+        "modelCallCount": 7,
+        "toolCallCount": 4,
+        "deliveryReceipt": null,
+        "maxMessageBlocks": 32,
+        "providerCalls": [
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 1825,
+            "promptTokens": 2258,
+            "completionTokens": 85,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion",
+            "durationMs": 1973,
+            "promptTokens": 511,
+            "completionTokens": 78,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 749,
+            "promptTokens": 6886,
+            "completionTokens": 96,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 1057,
+            "promptTokens": 16690,
+            "completionTokens": 134,
+            "status": "success"
+          },
+          {
+            "provider": "mimo_responses",
+            "model": "mimo-v2.6-flash",
+            "operation": "companion_agent:chat_completion_stream",
+            "durationMs": 2406,
+            "promptTokens": 23896,
+            "completionTokens": 424,
+            "status": "success"
+          },
+          {
+            "provider": "openai_compatible",
+            "model": "deepseek-v4.1-flash-1017",
+            "operation": "companion_agent_fallback:chat_completion_stream",
+            "durationMs": 14242,
+            "promptTokens": 13228,
+            "completionTokens": 2651,
+            "status": "success"
+          }
+        ],
+        "bodyEvents": [
+          {
+            "seq": 25,
+            "type": "assistant.delta",
+            "ms": 31010
+          },
+          {
+            "seq": 26,
+            "type": "assistant.delta",
+            "ms": 31010
+          },
+          {
+            "seq": 27,
+            "type": "assistant.delta",
+            "ms": 31010
+          },
+          {
+            "seq": 41,
+            "type": "assistant.final",
+            "ms": 31075
+          }
+        ],
+        "input": null,
+        "replySha256": "42d9dcabbdab80aa70910139973d8e684bf72e78fc301cb00f8b80851467e77c",
+        "replyCharactersWithoutCitationMarkers": 527,
+        "toolWrites": 0,
+        "complete": true,
+        "calls": [
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          },
+          {
+            "name": "web.search",
+            "status": "succeeded"
+          }
+        ],
+        "sourceVerification": {
+          "actualDocuments": [
+            {
+              "referenceId": "web-1a58c2264caad3a5",
+              "requestedUrl": "https://nasa.gov/content/goddard/ladee-lunar-neon",
+              "url": "https://www.nasa.gov/missions/nasas-ladee-spacecraft-finds-neon-in-lunar-atmosphere/",
+              "contentHash": "ab98f68cdca56749654441ae905dfa996eecefe325127121900aedfce352823a",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-89565b4b432157e2",
+              "requestedUrl": "https://nasa.gov/moon",
+              "url": "https://science.nasa.gov/moon/",
+              "contentHash": "11ed4e9a6145645ed800a5716f9dba8599b89adff44445051498b089eb4aebb8",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-3841f7ac43ed4222",
+              "requestedUrl": "https://nasa.gov/podcasts/gravity-assist/gravity-assist-podcast-your-moon-questions-answered",
+              "url": "https://www.nasa.gov/podcasts/gravity-assist/gravity-assist-podcast-your-moon-questions-answered/",
+              "contentHash": "a68bfc22d2e22d0753ada2643b50f035497163cbe0df862fd1b495884e775ad0",
+              "offset": 991,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-042c526dc8ebcdea",
+              "requestedUrl": "https://esa.int/ESA_Multimedia/Images/2020/07/Return_of_the_extremely_elongated_cloud_on_Mars",
+              "url": "https://www.esa.int/ESA_Multimedia/Images/2020/07/Return_of_the_extremely_elongated_cloud_on_Mars",
+              "contentHash": "16a7abae416c01aaccaadc5c0028740cd7fb78bcd91547d2dcf663fae8bcbb30",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-262f49b84df5b707",
+              "requestedUrl": "https://esa.int/Science_Exploration/Space_Science/Mars_Express/Francois_Forget",
+              "url": "https://www.esa.int/Science_Exploration/Space_Science/Mars_Express/Francois_Forget",
+              "contentHash": "487f6696fa6907f1495345dd59cc928773c6e621e0c184830876cfd3259f14f6",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-591d995f637e7479",
+              "requestedUrl": "https://esa.int/About_Us/ESAC/ExoMars_spots_unique_green_glow_at_the_Red_Planet",
+              "url": "https://www.esa.int/About_Us/ESAC/ExoMars_spots_unique_green_glow_at_the_Red_Planet",
+              "contentHash": "d0b88f6bf89a71fac4d47671bc3549e5a06ce2840a1806d1bd851323f27efd55",
+              "offset": 1145,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-75470ab13c562415",
+              "requestedUrl": "https://nasa.gov/podcasts/houston-we-have-a-podcast/telling-time-on-other-worlds",
+              "url": "https://www.nasa.gov/podcasts/houston-we-have-a-podcast/telling-time-on-other-worlds/",
+              "contentHash": "2afd34764d5cdc905b8113c0910158a42d8f7170345c9dd50fedaf6fb7e05d64",
+              "offset": 22460,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-7c7c9ac0ddd587e0",
+              "requestedUrl": "https://nasa.gov/wp-content/uploads/static/history/alsj/WOTM/WOTM-EnviroIntro.html",
+              "url": "https://nasa.gov/wp-content/uploads/static/history/alsj/WOTM/WOTM-EnviroIntro.html",
+              "contentHash": "b88d438b14821e5a4be5d13c1cb5991f53786e1b7e21a837578fcd2b8309a09d",
+              "offset": 0,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-a913e4fb9d5eeb8d",
+              "requestedUrl": "https://esa.int/About_Us/ESAC/How_Venus_and_Mars_can_teach_us_about_Earth",
+              "url": "https://www.esa.int/About_Us/ESAC/How_Venus_and_Mars_can_teach_us_about_Earth",
+              "contentHash": "f8a39de4f061acbf8b7d4e9f39219cab9329eec79e40915b95c26ee48ff87e9a",
+              "offset": 3470,
+              "characters": 3000
+            },
+            {
+              "referenceId": "web-ed1a509119608ec5",
+              "requestedUrl": "https://esa.int/ESA_Multimedia/Images/2018/04/Comparing_the_atmospheres_of_Mars_and_Earth",
+              "url": "https://www.esa.int/ESA_Multimedia/Images/2018/04/Comparing_the_atmospheres_of_Mars_and_Earth",
+              "contentHash": "a96d4f47d2fdb80efae605a37682afc37096bfd0ba5e617b0382e107227ab8ec",
+              "offset": 0,
+              "characters": 3000
+            }
+          ],
+          "citedReferenceIds": [
+            "web-042c526dc8ebcdea",
+            "web-1a58c2264caad3a5",
+            "web-75470ab13c562415",
+            "web-ed1a509119608ec5"
+          ],
+          "unreadCitedIds": []
+        }
+      }
+    ]
+  },
+  "quality": [
+    {
+      "name": "units",
+      "expectedMeaning": "A更快30秒",
+      "reply": "任务A更快。任务B耗时2分钟，也就是120秒，所以任务A比任务B快30秒。",
+      "semanticReview": "passed",
+      "actualSourceRead": true,
+      "toolWrites": 0,
+      "status": "succeeded"
+    },
+    {
+      "name": "range",
+      "expectedMeaning": "不能外推至70摄氏度",
+      "reply": "不能。材料只在10至37摄氏度区间测量，70摄氏度没有测试数据；该结论只适用于已测区间，不能据此推断70摄氏度同样成立。",
+      "semanticReview": "passed",
+      "actualSourceRead": true,
+      "toolWrites": 0,
+      "status": "succeeded"
+    },
+    {
+      "name": "correction",
+      "expectedMeaning": "最终9条",
+      "reply": "最终应按 9 条计算。材料说明初版的 12 条中剔除了 3 条重复，且最终记录替代初版，所以不按 12 条算。",
+      "semanticReview": "passed",
+      "actualSourceRead": true,
+      "toolWrites": 0,
+      "status": "succeeded"
+    },
+    {
+      "name": "causality",
+      "expectedMeaning": "相关尚未证明因果",
+      "reply": "没有证明甲导致乙，材料只观察到甲与乙相关。由于没有随机对照，也没有排除共同因素，因果关系尚未证实。",
+      "semanticReview": "passed",
+      "actualSourceRead": true,
+      "toolWrites": 0,
+      "status": "succeeded"
+    },
+    {
+      "name": "bit-byte",
+      "expectedMeaning": "B=6.25 MB/s，A=5 MB/s，B更快",
+      "reply": "换算后方案B更快：50 Mb/s除以8等于6.25 MB/s，高于方案A的5 MB/s。两者分别是方案B 6.25 MB/s、方案A 5 MB/s。",
+      "semanticReview": "passed",
+      "actualSourceRead": true,
+      "toolWrites": 0,
+      "status": "succeeded"
+    },
+    {
+      "name": "no-write",
+      "expectedMeaning": "无成功回执不能断言已保存",
+      "reply": "不能断言笔记已经保存。这份材料只有问题描述和记录日期，没有处理结果，也没有保存笔记的成功回执。",
+      "semanticReview": "passed",
+      "actualSourceRead": true,
+      "toolWrites": 0,
+      "status": "succeeded"
+    }
+  ],
+  "checks": {
+    "workerTypecheck": "passed",
+    "workerFullUnit": {
+      "pass": 1999,
+      "fail": 0
+    },
+    "postgres": {
+      "pass": 68,
+      "fail": 0
+    },
+    "recoveryCompiledParity": [
+      {
+        "file": "workers/ai-worker/src/integration-tests/companion-agent-postgres.integration.ts",
+        "equal": true,
+        "normalization": "Removed tsx-generated dynamic-import interop wrappers from cache before comparison"
+      },
+      {
+        "file": "workers/ai-worker/src/handlers/__tests__/companion-conversation-review.test.ts",
+        "equal": true
+      },
+      {
+        "file": "workers/ai-worker/src/handlers/agent/companion-conversation-review.ts",
+        "equal": true
+      },
+      {
+        "file": "workers/ai-worker/src/handlers/turn/companion-dialogue-content.ts",
+        "equal": true
+      },
+      {
+        "file": "workers/ai-worker/src/handlers/__tests__/companion-review-effort.test.ts",
+        "equal": true
+      },
+      {
+        "file": "workers/ai-worker/src/handlers/__tests__/companion-review-stream.test.ts",
+        "equal": true
+      },
+      {
+        "file": "workers/ai-worker/src/handlers/agent/companion-review-stream.ts",
+        "equal": true
+      }
+    ]
+  },
+  "searchQuotaProbe": {
+    "sameProductionCredential": true,
+    "httpStatus": 429,
+    "errorCode": "1113",
+    "engines": [
+      "search_pro_sogou",
+      "search_std"
+    ]
+  },
+  "production": {
+    "status": "held_until_search_replacement_is_verified",
+    "currentVersion": "2.0.22"
+  },
+  "topology": {
+    "stable-metrics-low-1": {
+      "label": "stable-metrics-low-1",
+      "runIds": [
+        "21b5fe16-5f91-4bc5-a241-09b1a3913fa6",
+        "9f4783a0-d4a1-48c5-abeb-70b6893d5a4c",
+        "0063e71c-4612-49d4-9bc8-c822f0ac2972"
+      ],
+      "watcher": false,
+      "workerPidBefore": 15972,
+      "workerPidAfter": 15972,
+      "restartCount": 0
+    },
+    "stable-metrics-low-2": {
+      "label": "stable-metrics-low-2",
+      "runIds": [
+        "20da8610-aa1d-4175-a115-dc2c1dd69360"
+      ],
+      "watcher": false,
+      "workerPidBefore": 15972,
+      "workerPidAfter": 15972,
+      "restartCount": 0
+    }
+  }
+}

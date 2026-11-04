@@ -11,12 +11,13 @@ import { withWorkerWorkspaceTransaction } from "../db.ts";
 import { resolveAIGovernanceContext, logAICall } from "../lib/governance.ts";
 
 const SEARCH_URL = "https://open.bigmodel.cn/api/paas/v4/web_search";
+const TAVILY_SEARCH_URL = "https://api.tavily.com/search";
 const QUOTA_COOLDOWN_MS = 30 * 60_000;
 const QUOTA_CODES = new Set(["1113", "1308", "1310", "1316", "1317", "1318", "1319", "1320", "1321"]);
 const unavailableUntil = new Map<string, number>();
 type SearchInput = { query: string; domain?: string; recency?: "oneDay" | "oneWeek" | "oneMonth" | "oneYear" | "noLimit" };
-type SearchConfig = { apiKey: string };
-type SearchEngine = "search_std" | "search_pro_sogou";
+type SearchConfig = { provider?: "bigmodel" | "tavily"; apiKey: string };
+type SearchEngine = "search_std" | "search_pro_sogou" | "tavily-basic";
 // Paired live queries found the original research immediately here while the
 // basic index returned mirrors and exam pages. Same provider and credential.
 const DEFAULT_SEARCH_ENGINE: SearchEngine = "search_pro_sogou";
@@ -59,15 +60,23 @@ export function webSearchMaterialProgress(result: Extract<WebSearchResult, { sta
       ? { note: "与本轮先前成功检索相比，本次没有取得新的网页或摘要材料。查询文字变化不等于证据增加。按尚缺的具体资料决定是否继续检索或读取已有来源；不要把反复未检出当成相关研究不存在。摘要只用于定位，原文是否支持结论仍需实际读取核对。" } : {}) };
 }
 
-/** Reuse the existing BigModel platform credential without exposing it to clients. */
-export function resolveWebSearchConfig(platforms = loadPlatformConfig()?.platforms ?? {}): SearchConfig | null {
+/** Search is independent of the chat-model route. A selected provider with a
+ * missing credential cannot silently switch to another billing account. */
+export function resolveWebSearchConfig(platforms = loadPlatformConfig()?.platforms ?? {},
+  env: Record<string, string | undefined> = process.env): SearchConfig | null {
+  const provider = env.WEB_SEARCH_PROVIDER?.trim() || "bigmodel";
+  if (provider === "tavily") {
+    const apiKey = env.TAVILY_API_KEY?.trim();
+    return apiKey && !apiKey.includes("${") ? { provider, apiKey } : null;
+  }
+  if (provider !== "bigmodel") return null;
   const platform = platforms.bigmodel ?? Object.values(platforms).find(item => {
     try { return new URL(item.baseUrl ?? "").hostname === "open.bigmodel.cn"; } catch { return false; }
   });
   return platform?.apiKey && !platform.apiKey.includes("${") ? { apiKey: platform.apiKey } : null;
 }
-const credentialId = (config: SearchConfig, engine: SearchEngine = DEFAULT_SEARCH_ENGINE) =>
-  createHash("sha256").update(config.apiKey).update(engine).digest("hex");
+const credentialId = (config: SearchConfig, engine: SearchEngine = config.provider === "tavily" ? "tavily-basic" : DEFAULT_SEARCH_ENGINE) =>
+  createHash("sha256").update(config.provider ?? "bigmodel").update(config.apiKey).update(engine).digest("hex");
 export function webSearchServiceAvailable(config = resolveWebSearchConfig(), now = Date.now()): boolean {
   return config !== null && (unavailableUntil.get(credentialId(config)) ?? 0) <= now;
 }
@@ -173,48 +182,61 @@ export async function executeWebSearch(scope: AgentScopeV1, input: SearchInput, 
   const now = deps.now ?? Date.now;
   if (!webSearchServiceAvailable(config, now())) return unavailable("quota_exhausted");
   assertOutsideRegisteredTransactions({ boundary: "Agent web search", caller: "agent_web_search" });
+  const tavily = config.provider === "tavily";
+  const provider = tavily ? "tavily" : "bigmodel";
   const search = async (engine: SearchEngine): Promise<WebSearchResult> => {
     signal.throwIfAborted();
     if ((unavailableUntil.get(credentialId(config, engine)) ?? 0) > now()) return unavailable("quota_exhausted");
     // A second request gets fresh consent/egress checks, too. The same service,
     // credential, query, domain and recency constraints apply to both engines.
     const governance = await (deps.governance ?? resolveAIGovernanceContext)(scope.workspaceId, scope.userId);
-    const body = { search_query: input.query, search_engine: engine, search_intent: false,
+    const timeRange = { oneDay: "day", oneWeek: "week", oneMonth: "month", oneYear: "year" } as const;
+    const body: Record<string, unknown> = tavily ? {
+      query: input.query, search_depth: "basic", max_results: 8, auto_parameters: false,
+      include_answer: false, include_raw_content: false,
+      ...(input.domain ? { include_domains: [input.domain] } : {}),
+      ...(input.recency && input.recency !== "noLimit" ? { time_range: timeRange[input.recency] } : {}),
+    } : { search_query: input.query, search_engine: engine, search_intent: false,
       count: engine === "search_pro_sogou" ? 10 : 8, content_size: "medium", search_recency_filter: input.recency ?? "noLimit",
       ...(input.domain ? { search_domain_filter: input.domain } : {}) };
-    const governedBody = prepareGovernedAIPayload({ context: governance, workspaceId: scope.workspaceId, providerName: "bigmodel",
+    const governedBody = prepareGovernedAIPayload({ context: governance, workspaceId: scope.workspaceId, providerName: provider,
       dataCategories: ["user_answer", "note_content"], payload: body });
     const started = now();
     let status: "success" | "error" | "cancelled" = "error";
     try {
-      const response = await (deps.fetch ?? globalThis.fetch)(SEARCH_URL, {
+      const response = await (deps.fetch ?? globalThis.fetch)(tavily ? TAVILY_SEARCH_URL : SEARCH_URL, {
         method: "POST", headers: { Authorization: `Bearer ${config.apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify(governedBody), signal: AbortSignal.any([signal, AbortSignal.timeout(8000)]),
+        body: JSON.stringify(governedBody), redirect: "error",
+        signal: AbortSignal.any([signal, AbortSignal.timeout(8000)]),
       });
       const raw = await response.text();
       signal.throwIfAborted();
       if (raw.length > 2_000_000) return unavailable("service_unavailable");
-      const data = JSON.parse(raw) as { error?: { code?: string | number }; search_result?: unknown };
-      if (QUOTA_CODES.has(String(data.error?.code))) {
+      const data = JSON.parse(raw) as { error?: { code?: string | number }; search_result?: unknown; results?: unknown };
+      if (tavily ? [432, 433].includes(response.status) : QUOTA_CODES.has(String(data.error?.code))) {
         unavailableUntil.set(credentialId(config, engine), now() + QUOTA_COOLDOWN_MS);
         return unavailable("quota_exhausted");
       }
-      if (!response.ok || data.error || !Array.isArray(data.search_result)) return unavailable("service_unavailable");
+      const rows = tavily ? data.results : data.search_result;
+      if (!response.ok || data.error || !Array.isArray(rows)) return unavailable("service_unavailable");
       status = "success";
       return { status: "succeeded", query: input.query, searchedAt: new Date(now()).toISOString(),
-        sources: normalizeWebSearchSources(data.search_result, input.domain) };
+        sources: normalizeWebSearchSources(tavily ? rows.map(row => {
+          const item = row && typeof row === "object" ? row as Record<string, unknown> : {};
+          return { link: item.url, title: item.title, content: item.content, publish_date: item.published_date };
+        }) : rows, input.domain) };
     } catch {
       if (signal.aborted) { status = "cancelled"; signal.throwIfAborted(); }
       return unavailable("service_unavailable");
     } finally {
       if (governance.policy.auditLogging) await (deps.audit ?? logAICall)({ workspaceId: scope.workspaceId, userId: scope.userId,
-        provider: "bigmodel", modelId: engine, operation: "agent_web_search", dataCategories: ["user_answer", "note_content"],
+        provider, modelId: engine, operation: "agent_web_search", dataCategories: ["user_answer", "note_content"],
         dataSizeBytes: Buffer.byteLength(JSON.stringify(governedBody), "utf8"), costTokens: null,
         durationMs: Math.max(0, now() - started), status, errorMessage: null }, { policy: governance.policy }).catch(() => undefined);
     }
   };
-  const primary = await search(DEFAULT_SEARCH_ENGINE);
-  if (primary.status !== "succeeded" || primary.sources.length > 0) return primary;
+  const primary = await search(tavily ? "tavily-basic" : DEFAULT_SEARCH_ENGINE);
+  if (tavily || primary.status !== "succeeded" || primary.sources.length > 0) return primary;
   // An index can miss an entire requested site. One alternate index
   // supplies actual pages without another model round. Errors, quota failures
   // and denials never enter this path; filtering and receipt provenance stay.
