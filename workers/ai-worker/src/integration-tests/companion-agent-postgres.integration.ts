@@ -376,7 +376,7 @@ for (const kind of ["chat", "chat-configure", "chat-deepen", "reasoned"] as cons
   }
 });
 
-for (const channel of ["body", "finish", "publish", "unavailable", "stream", "stream-interrupted", "stream-finish", "stream-finish-interrupted"] as const) test(`source-backed ${channel} delivery is reviewed before any answer reaches SSE or storage`, async () => {
+for (const channel of ["body", "finish", "publish", "unavailable", "truncated", "malformed", "stream", "stream-interrupted", "stream-finish", "stream-finish-interrupted"] as const) test(`source-backed ${channel} delivery is reviewed before any answer reaches SSE or storage`, async () => {
   const directory = mkdtempSync(join(tmpdir(), "companion-source-review-"));
   const originalConfig = process.env.AI_PLATFORMS_CONFIG;
   const configPath = join(directory, "platforms.json");
@@ -388,6 +388,9 @@ for (const channel of ["body", "finish", "publish", "unavailable", "stream", "st
   const sourceId = randomUUID();
   const bad = "BAD_DRAFT：这项研究证明70°C也成立。";
   const safe = "这项研究只测量10–37°C，不能据此外推到70°C。";
+  // Long inert content keeps stream cases on the parallel paragraph path.
+  // Short multi-paragraph answers intentionally share one coherent verdict.
+  const fixtureCode = "\n```text\n" + Array.from({ length: 30 }, (_, index) => `range_fixture_${index}: untested_condition`).join("\n") + "\n```";
   const firstParagraph = safe + "所给原文没有包含70°C这个实验条件，已有结果也不足以证明该温度下同样成立；答复只能保留实际测量范围内的结论。";
   const streamed = firstParagraph + "\n\n需要区分实验结果与尚未测量的条件。";
   let reviewScope: { workspaceId: string; userId: string; runId: string };
@@ -395,6 +398,7 @@ for (const channel of ["body", "finish", "publish", "unavailable", "stream", "st
   registerFactory("mock", "agent_turn", config => {
     const provider = new MockProvider({ modelProfile: config.modelProfile });
     const chat = provider.chatCompletion.bind(provider);
+    const jsonStream = provider.chatCompletionStream.bind(provider);
     provider.chatCompletion = async (messages, options, signal) => {
       if (messages.some(message => message.role === "system" && String(message.content).startsWith("核对待交付答复与本轮实际读到的资料"))) {
         reviews++;
@@ -407,7 +411,7 @@ for (const channel of ["body", "finish", "publish", "unavailable", "stream", "st
           let published = false;
           while (Date.now() < deadline) {
             const rows = await sql`SELECT payload FROM companion_stream_events WHERE run_id=${reviewScope.runId} AND type='assistant.delta' ORDER BY seq`;
-            if (JSON.stringify(rows).includes(firstParagraph)) { published = true; break; }
+            if (rows.map(row => row.payload.textDelta ?? "").join("").includes(firstParagraph)) { published = true; break; }
             await new Promise(resolve => setTimeout(resolve, 20));
           }
           assert.equal(published, true, "the first verified paragraph must reach durable SSE before the second verdict returns");
@@ -420,6 +424,14 @@ for (const channel of ["body", "finish", "publish", "unavailable", "stream", "st
     };
     Object.defineProperty(provider, "chatCompletionStreamToolCalls", { value: true });
     provider.chatCompletionStream = async (_messages, options, _signal, delta) => {
+      if (!options.nativeAgentRequest) {
+        const result = await jsonStream(_messages, options, _signal, delta);
+        // Even a valid JSON prefix must not be published when the provider
+        // reports truncation; broken JSON also cannot approve the author's draft.
+        if (channel === "truncated") return { ...result, finishReason: "length" };
+        if (channel === "malformed") return { ...result, content: '{"reply":"unfinished' };
+        return result;
+      }
       const request = options.nativeAgentRequest!;
       const call = (name: string, args: Record<string, unknown>) => ({ content: "", toolCalls: [{ id: `source-review-${++sequence}`, name, arguments: args }], finishReason: "tool_calls" });
       const receipts = request.messages.filter(message => message.role === "tool").flatMap(message => {
@@ -429,9 +441,9 @@ for (const channel of ["body", "finish", "publish", "unavailable", "stream", "st
       if (!receipts.some(receipt => receipt.ok && receipt.operation === "notes.read.source")) return call("companion_notes_read", { action: "source", sourceId });
       if (receipts.some(receipt => receipt.ok && receipt.operation === "say.publish")) return call("companion_finish", { text: safe, actions: [], evidence: [] });
       if (channel === "finish" || channel.startsWith("stream-finish")) return call("companion_finish", {
-        text: channel.startsWith("stream") ? bad + "\n\nBAD_DRAFT：这是尚未核实的第二段。" : bad, actions: [], evidence: [] });
+        text: channel.startsWith("stream") ? bad + fixtureCode + "\n\nBAD_DRAFT：这是尚未核实的第二段。" : bad, actions: [], evidence: [] });
       if (channel === "publish") return call("companion_send_message", { text: bad });
-      const content = channel.startsWith("stream") ? bad + "\n\nBAD_DRAFT：这是尚未核实的第二段。" : bad;
+      const content = channel.startsWith("stream") ? bad + fixtureCode + "\n\nBAD_DRAFT：这是尚未核实的第二段。" : bad;
       delta(content); return { content, toolCalls: [], finishReason: "stop" };
     };
     return provider;
@@ -450,12 +462,13 @@ for (const channel of ["body", "finish", "publish", "unavailable", "stream", "st
     assert.ok(reviews > 0);
     const displayed = JSON.stringify(state.assistant) + JSON.stringify(state.events.filter(event => ["assistant.delta","assistant.utterance","assistant.final"].includes(event.type)));
     assert.ok(!displayed.includes("BAD_DRAFT"), "the original draft must never leak into an answer channel");
-    if (channel === "unavailable" || channel.endsWith("interrupted")) {
-      assert.match(displayed, channel === "unavailable" ? /回答还没有核对完成/ : /后续内容这次没有核对完成/);
+    if (["unavailable", "truncated", "malformed"].includes(channel) || channel.endsWith("interrupted")) {
+      assert.match(displayed, channel.endsWith("interrupted") ? /后续内容这次没有核对完成/ : /回答还没有核对完成/);
       const [receipt] = await sql`SELECT delivery_receipt FROM companion_turn_runs WHERE id=${fixture.runId}`;
       assert.equal(receipt.delivery_receipt.outcome, "partial");
       if (channel.endsWith("interrupted")) {
-        assert.ok(displayed.includes(firstParagraph));
+        assert.ok(state.events.filter(event => event.type === "assistant.delta")
+          .map(event => (event.payload as { textDelta?: string }).textDelta ?? "").join("").includes(firstParagraph));
         assert.ok(!displayed.includes("需要区分实验结果"));
       }
     } else assert.ok(displayed.includes(safe));

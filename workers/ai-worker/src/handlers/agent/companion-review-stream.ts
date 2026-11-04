@@ -31,6 +31,23 @@ export function splitCompanionReviewParagraphs(draft: string): CompanionReviewPa
   return parts;
 }
 
+/** Actual Unicode character count, excluding interface-only citation markers. */
+export function companionReviewProseLength(draft: string): number {
+  return Array.from(draft.replace(/\[\^web-[^\]\s]+\]/g, "")).length;
+}
+
+/** Short answers need one coherent verdict: independently rewriting each
+ * sentence can repeat the whole answer and cannot enforce a total word count.
+ * Long answers retain parallel paragraph review and early verified delivery.
+ * This only groups complete text; it never clips source material or a draft. */
+export function companionReviewUnits(draft: string): CompanionReviewParagraph[] {
+  const parts = splitCompanionReviewParagraphs(draft);
+  const proseLength = companionReviewProseLength(draft);
+  return parts.length > 1 && proseLength <= 800
+    ? [{ text: parts.map(part => part.separator + part.text).join(""), separator: "" }]
+    : parts;
+}
+
 /** Verify independent units concurrently but publish only the next verified
  * paragraph in original order. A later failure cannot erase an earlier body.
  * Each review returns a parsed complete verdict, never an unfinished JSON key. */

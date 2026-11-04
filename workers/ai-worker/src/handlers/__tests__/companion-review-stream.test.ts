@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { reviewCompanionParagraphs, splitCompanionReviewParagraphs } from "../agent/companion-review-stream.ts";
+import { companionReviewProseLength, companionReviewUnits, reviewCompanionParagraphs, splitCompanionReviewParagraphs } from "../agent/companion-review-stream.ts";
 
 const parts = splitCompanionReviewParagraphs("第一段。\n\n第二段。\n\n第三段。");
 const gate = <T>() => { let resolve!: (value: T) => void; const promise = new Promise<T>(yes => { resolve = yes; }); return { promise, resolve }; };
@@ -19,6 +19,16 @@ test("top-level list items are separate verification units with their original s
   assert.equal(split.length, 4);
   assert.equal(split[1]!.text, "1. 第一个事实。\n续行仍属同一点。");
   assert.equal(split.map(part => part.separator + part.text).join(""), draft);
+});
+
+test("short multi-paragraph answers share one verdict for total length and cross-sentence coherence", () => {
+  const short = "第一句[^web-one]。\n\n第二句[^web-two]。";
+  assert.deepEqual(companionReviewUnits(short), [{ text: short, separator: "" }]);
+  const long = "长答第一段".repeat(170) + "。\n\n第二段。";
+  assert.deepEqual(companionReviewUnits(long), splitCompanionReviewParagraphs(long));
+  const list = "1. 月球大气。\n2. 火星大气。\n3. 月球昼夜。\n4. 火星昼夜。";
+  assert.deepEqual(companionReviewUnits(list), [{ text: list, separator: "" }], "short lists share the total-length verdict");
+  assert.equal(companionReviewProseLength("中🙂 NASA[^web-one]"), 7, "foreign letters count, citation markers do not, and emoji count as one character");
 });
 
 test("independent verifications overlap but publish in original order before the last review completes", async () => {

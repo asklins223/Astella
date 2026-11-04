@@ -19,14 +19,17 @@ test("paragraph verification retains whole-draft context and every actually read
   const draft = "前提。[^web-a]\n\n基于前提的结论。[^web-b]";
   const baseMessages = [{ role: "system" as const, content: "policy" }, { role: "user" as const,
     content: JSON.stringify({ currentUser: "核对两个要点", draft, documents, sources, outcomes: [] }) }];
-  const focused = companionGroundedParagraphReviewMessages({ baseMessages, paragraph: "前提。[^web-a]", index: 0 });
+  const focused = companionGroundedParagraphReviewMessages({ baseMessages, paragraph: "前提。[^web-a]", index: 0, paragraphCount: 2 });
   const data = JSON.parse(String(focused[1]!.content));
-  assert.equal(data.draft, draft);
-  assert.equal(data.targetParagraph, "前提。[^web-a]");
+  assert.equal(data.wholeDraft, draft);
+  assert.equal(data.draft, "前提。[^web-a]", "the task cannot mistake the full answer for its current correction target");
+  assert.equal(data.paragraphCount, 2);
+  assert.equal(data.draftCharacters, 3);
+  assert.equal(data.wholeDraftCharacters, 13);
   assert.deepEqual(data.documents, documents);
   assert.deepEqual(data.sources, sources);
   assert.deepEqual(data.focusReferenceIds, ["web-a"]);
-  const uncited = companionGroundedParagraphReviewMessages({ baseMessages, paragraph: "尚未标注的事实", index: 1 });
+  const uncited = companionGroundedParagraphReviewMessages({ baseMessages, paragraph: "尚未标注的事实", index: 1, paragraphCount: 2 });
   assert.deepEqual(JSON.parse(String(uncited[1]!.content)).documents, documents, "uncited claims cannot discard inconvenient actual evidence");
 });
 
