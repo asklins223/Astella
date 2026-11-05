@@ -39,6 +39,27 @@ const SSE_POLL_MAX_MS = 30_000;
 const conversationSlots = new Map<string, number>();
 const userSlots = new Map<string, number>();
 
+/** Keep a wake-up received during a database read; one reader drains in order. */
+export function createCompanionEventPump(readBatch: () => Promise<boolean>, isClosed: () => boolean): () => Promise<void> {
+  let running = false;
+  let requested = false;
+  return async () => {
+    if (isClosed()) return;
+    requested = true;
+    if (running) return;
+    running = true;
+    try {
+      do {
+        requested = false;
+        const more = await readBatch();
+        requested ||= more;
+      } while (requested && !isClosed());
+    } finally {
+      running = false;
+    }
+  };
+}
+
 function acquireCompanionSlot(conversationId: string, userId: string): boolean {
   const convCount = conversationSlots.get(conversationId) ?? 0;
   if (convCount >= SLOTS_PER_CONVERSATION) return false;
@@ -683,7 +704,6 @@ export async function openCompanionEventStream(args: {
 
   let started = false;
   let cursor = resolved.after;
-  let pumping = false;
   // F10（round-5 审计）：live 阶段 TTL 清理仍可能删除窗口中间的 stream_event 行。
   // 打开时的 validateCompanionCursor 只校验开局窗口连续；live 中若中间行被 TTL 删除，
   // 后续 pump 的 seq>cursor 续读会产生静默缺口。这里在每次 pump 校验 seq 连续性，
@@ -694,11 +714,10 @@ export async function openCompanionEventStream(args: {
   // 后续 start/live 阶段的同一个断开回调会切换到 dispose()，保证释放幂等。
   streamReady = true;
 
-  async function pump(): Promise<void> {
-    if (pumping || closed || gapDetected) return;
-    pumping = true;
+  const pump = createCompanionEventPump(async () => {
     try {
       const events = await loadCompanionEvents(args.conversationId, args.workspaceId, args.userId, cursor);
+      if (closed || gapDetected) return false;
       // 一到事件就把兜底拉回基准，空转则指数退到封顶（30s）。放在这里而不是调用方，
       // 是因为 NOTIFY 唤醒也走同一个 pump：那一次真的读到了东西，同样该把下一拍拉快。
       pollDelayMs = events.length > 0
@@ -723,7 +742,7 @@ export async function openCompanionEventStream(args: {
           gapDetected = true;
           // 关闭流（dispose 幂等）；客户端重连时校验/409 闭环接管缺口降级。
           dispose();
-          return;
+          return false;
         }
         // 本回合允许出声时，先把这一批段交给预热再推流：客户端收到事件时合成已经在跑，
         // 它来取就是命中（同一段不会被合成两次，见 companion-tts-warm）。静音回合不合成。
@@ -735,11 +754,14 @@ export async function openCompanionEventStream(args: {
           if (args.writer.write(formatCompanionSse(event)) === false) {
             // 不推进 cursor；客户端重连时从上一条确认过的事件继续，允许重复但不丢失。
             dispose();
-            return;
+            return false;
           }
           cursor = Number(event.seq);
         }
       }
+      // A full window may have a tail already committed without another
+      // notification. Drain it now instead of waiting for the poll timer.
+      return events.length === COMPANION_EVENT_BATCH;
     } catch (err) {
       // poll 失败静默（下轮重试）；NOTIFY/poll 均为 hint，SSE 不因瞬时错误断开。
       // 但记录 debug 级日志，避免轮询持续失败时无任何可诊断信息。
@@ -747,10 +769,9 @@ export async function openCompanionEventStream(args: {
         { err: err instanceof Error ? err.message : String(err), conversationId: args.conversationId },
         "companion SSE poll failed",
       );
-    } finally {
-      pumping = false;
     }
-  }
+    return false;
+  }, () => closed || gapDetected);
 
   const handle: CompanionEventStreamHandle = {
     start() {
@@ -769,12 +790,11 @@ export async function openCompanionEventStream(args: {
       // NOTIFY 是即时唤醒主路径，poll 仅作兜底（防通知丢失/重启间隙），
       // 频率从 1s 降至 2.5s 以减少长连接群体的持续 DB 背景负载
       // （每用户最多 10 连接，1s 轮询峰值 10 qps/用户）。
-      unsubscribe = subscribeCompanionEvents(args.conversationId, () => {
-        if (!closed) void pump();
-      });
       // 自排程而不是 setInterval：间隔要随空闲长度变（见 pollDelayMs）。Node 里
       // clearInterval/clearTimeout 是同一个清理入口，dispose 里那句照旧有效。
       const schedulePoll = (): void => {
+        if (closed) return;
+        if (pollTimer) clearTimeout(pollTimer);
         pollTimer = setTimeout(() => {
           pollTimer = null;
           if (closed) return;
@@ -783,7 +803,15 @@ export async function openCompanionEventStream(args: {
           });
         }, pollDelayMs);
       };
-      schedulePoll();
+      unsubscribe = subscribeCompanionEvents(args.conversationId, ({ maxSeq }) => {
+        if (closed || maxSeq <= cursor) return;
+        pollDelayMs = SSE_POLL_BASE_MS;
+        // Reset an idle 30s timer as soon as the conversation becomes active.
+        // The pump remembers notifications received while a read is pending.
+        void pump().finally(schedulePoll);
+      });
+      // Close the gap between prefetching replay and installing the listener.
+      void pump().finally(schedulePoll);
       heartbeatTimer = setInterval(() => {
         if (!closed && args.writer.write(`: heartbeat ${Date.now()}\n\n`) === false) dispose();
       }, 15_000);

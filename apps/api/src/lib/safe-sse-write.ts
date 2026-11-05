@@ -1,3 +1,5 @@
+import type { IncomingMessage, ServerResponse } from "node:http";
+
 /**
  * SSE 写安全工具。
  *
@@ -23,6 +25,21 @@ export function safeSseWrite(
   } catch {
     return false;
   }
+}
+
+/** A completed GET request is not the lifetime of its streaming response. */
+export function onSseDisconnect(request: IncomingMessage, response: ServerResponse, callback: () => void): void {
+  let closed = false;
+  const finish = () => {
+    if (closed) return;
+    closed = true;
+    request.removeListener("aborted", finish);
+    response.removeListener("close", finish);
+    callback();
+  };
+  request.once("aborted", finish);
+  response.once("close", finish);
+  if (request.aborted || response.destroyed || response.writableEnded) finish();
 }
 
 type EventedWritable = {

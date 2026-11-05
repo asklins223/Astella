@@ -57,6 +57,36 @@ function envelopeProvider(raw: string, chunks = [raw]): AIProvider {
   } };
 }
 
+test("a retained finish body streams reasoning and tool preparation before the model step completes", async () => {
+  const fixture = envelopeProvider("");
+  const visible: string[] = [], thinking: string[] = [], tools: string[] = [];
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  let started!: () => void;
+  const reasoningArrived = new Promise<void>(resolve => { started = resolve; });
+  fixture.chatCompletionStream = async (_messages, options, _signal, delta) => {
+    options.onReasoningDelta?.("正在核对真实回执");
+    options.onToolCallStarted?.({ index: 0, id: "finish", name: "companion_finish" });
+    delta("尚未核验的完成文案");
+    started();
+    await pending;
+    return { content: "尚未核验的完成文案", toolCalls: [{ id: "finish", name: "companion_finish", arguments: {} }], finishReason: "tool_calls" };
+  };
+  const running = runStreamingAgentStep({ provider: fixture, stepRequest: request,
+    ctxSignal: new AbortController().signal, timeoutMs: 1000, deferPublication: true,
+    onProviderDelta: async text => { visible.push(text); return true; },
+    onReasoningDelta: text => thinking.push(text), onToolCallStarted: tool => tools.push(tool.id) });
+  await reasoningArrived;
+  assert.deepEqual(thinking, ["正在核对真实回执"]);
+  assert.deepEqual(tools, ["finish"]);
+  assert.deepEqual(visible, [], "progress cannot publish the retained body early");
+  release();
+  const result = await running;
+  assert.deepEqual(visible, []);
+  assert.equal(result.toolCalls?.[0]?.id, "finish");
+  assert.equal(result.content, "尚未核验的完成文案");
+});
+
 test("a settled provider cannot append late speech, thinking or tool-start events to another step", async () => {
   const fixture = envelopeProvider("fresh");
   const visible: string[] = [], thinking: string[] = [], tools: string[] = [];

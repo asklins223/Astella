@@ -7,6 +7,7 @@ import { requireSession } from "../identity/middleware.ts";
 import { parseBody } from "../../lib/validate.ts";
 import {
   beginSseResponse,
+  onSseDisconnect,
   safeSseWrite,
   safeWriteWithBackpressure,
   SSE_RECONNECT_INSTRUCTION,
@@ -240,7 +241,7 @@ userId: req.session.userId,
             return safeSseWrite(reply.raw, chunk);
           },
           onAbort: (cb) => {
-            req.raw.on("close", cb);
+            onSseDisconnect(req.raw, reply.raw, cb);
           },
           close: () => {
             if (!reply.raw.writableEnded && !reply.raw.destroyed) reply.raw.end();
