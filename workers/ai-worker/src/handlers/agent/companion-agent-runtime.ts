@@ -707,9 +707,9 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     const reviewForDelivery = async (candidate: AgentTurnResult, streamReviewedParagraphs = false) => {
       let reviewedPrefix = "";
       try {
-        if (companionGroundedReviewMaterial(messages).documents.length > 0)
-          await emitCompanionAssistantStatus({ workspaceId: args.ctx.workspaceId, read: args.read, expiresAt: args.expiresAt,
-            status: "thinking", safeLabel: "正在核对回答与来源" });
+        await emitCompanionAssistantStatus({ workspaceId: args.ctx.workspaceId, read: args.read, expiresAt: args.expiresAt,
+          status: "thinking", safeLabel: companionGroundedReviewMaterial(messages).documents.length > 0
+            ? "正在核对回答与来源" : "正在整理回复" });
         const reviewed = await args.conversationReview!.review({ request: { ...stepRequest, messages }, result: candidate,
           requiresReasoning: readRequirements?.requiresReasoning,
           ...(streamReviewedParagraphs && args.onProviderDelta ? { onReviewedDelta: async (delta: string) => {
@@ -846,9 +846,12 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
        *   未声明的实现那一步仍走整段取回；opencode_go 已解析流式工具回执。
        */
       const deliveryContractRequired = companionDeliveryContractRequired();
-      const canStreamThisStep = !deliveryContractRequired && Boolean(args.onProviderDelta)
+      const streamsBody = !deliveryContractRequired && !utterancePublished && Boolean(args.onProviderDelta);
+      // A retained body still has live reasoning and tool preparation. Falling
+      // back to a buffered request here silenced all progress after a write or
+      // the first independent message, until the entire next step completed.
+      const canStreamThisStep = (streamsBody || Boolean(args.onReasoningDelta))
         && !resumingInput
-        && !utterancePublished
         && typeof stepProvider.chatCompletionStream === "function"
         && (finalAnswerOnly || stepRequest.tools.length === 0 || stepProvider.chatCompletionStreamToolCalls === true);
       // A decision may settle during checkpoint I/O. Never run the speculative
@@ -872,8 +875,8 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
         );
 
       if (canStreamThisStep) {
-        // Ordinary replies stream directly. Required execution/finish steps
-        // retain their buffered delivery contract and actual receipt checks.
+        // Required execution/finish steps retain their body publication
+        // contract while reasoning and tool preparation continue streaming.
         // 分段符与最终正文的拼接口径必须一致（非首段 "\n\n"），否则已下发前缀
         // 与最终正文会分叉——见 joinVisibleSegmentsDeduped。
         // "非首段"要按**实际下发过**判断，不能按分段数组长度：被 hold 攒住、从没发出去
@@ -905,6 +908,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
               timeoutMs: providerCallTimeout,
               outputWatchdogPolicy: outputWatchdogPolicy(stepProvider),
               onProviderDelta: async text => {
+                if (!streamsBody) return true;
                 stepVisibleText += text;
                 return args.onProviderDelta!(text);
               },
@@ -917,7 +921,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
               //
               // Resource routing never exempts a body, including a speculative
               // chat draft or the preamble before the first tool executes.
-              deferPublication: stepRequest.toolChoice === "required" || (reviewConversationOpening && toolCallCount === 0) || hasSourceMaterial,
+              deferPublication: !streamsBody || stepRequest.toolChoice === "required" || (reviewConversationOpening && toolCallCount === 0) || hasSourceMaterial,
               publicationPolicy: publicationPolicy(),
               onToolCallStarted: preparation.observe,
               ...(speculativeStep ? { releaseGate: async () => (await entry.settle()).resourceDecision?.path === "chat" } : {}),

@@ -20,6 +20,7 @@ import type { FastifyInstance } from "fastify";
 import { parseBody } from "../../lib/validate.ts";
 import {
   beginSseResponse,
+  onSseDisconnect,
   safeSseWrite,
   sseConnectionDead,
   SSE_RECONNECT_INSTRUCTION,
@@ -121,7 +122,7 @@ userId: req.session.userId,
           write: (chunk) => {
             return safeSseWrite(reply.raw, chunk);
           },
-          onAbort: (cb) => req.raw.on("close", cb),
+          onAbort: (cb) => onSseDisconnect(req.raw, reply.raw, cb),
           close: () => {
             if (!reply.raw.writableEnded && !reply.raw.destroyed) reply.raw.end();
           },

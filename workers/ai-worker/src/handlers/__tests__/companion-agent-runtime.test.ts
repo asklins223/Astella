@@ -1205,8 +1205,12 @@ test("工作交付核验接入实际循环，已有成果和结构化错误分�
     "要求逐项目标的判据是真实写回执，不是资源档标签");
   assert.match(source, /if \(!verdict\.ok\)/);
   assert.match(source, /const landedWrites = companionActionResultRecorded\(messages, companionWriteToolNames\(definitions\)\)/);
-  assert.match(source, /const canStreamThisStep = !deliveryContractRequired/,
-    "没有待引用回执时回答可以流式下发");
+  assert.match(source, /const streamsBody = !deliveryContractRequired && !utterancePublished/,
+    "真实写回执和独立消息仍按各自的正文交付合同核验");
+  assert.match(source, /const canStreamThisStep = \(streamsBody \|\| Boolean\(args\.onReasoningDelta\)\)/,
+    "正文待发布不应关闭思考与工具准备的流式通道");
+  assert.match(source, /deferPublication: !streamsBody \|\|/,
+    "只流式展示过程时，正文仍必须留到交付核验后");
   assert.match(source, /stripVoiceExpressionTags\(text\)\.trim\(\)\.length === 0/,
     "只带语音表情标签的回复按空答复处理，不允许静默完成");
   assert.match(source, /FINISH_CONTRACT_INCOMPLETE/);

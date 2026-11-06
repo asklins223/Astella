@@ -3,9 +3,67 @@ import assert from "node:assert/strict";
 import {
   resolveCompanionCursor,
   formatCompanionSse,
+  createCompanionEventPump,
 } from "../companion-events.ts";
 
 const CONVERSATION_ID = "123e4567-e89b-12d3-a456-426614174000";
+
+test("a notification during a pending read drains the next committed event immediately", async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  let reads = 0;
+  let concurrent = 0;
+  let maximumConcurrent = 0;
+  const delivered: number[] = [];
+  const pump = createCompanionEventPump(async () => {
+    const batch = ++reads;
+    maximumConcurrent = Math.max(maximumConcurrent, ++concurrent);
+    if (batch === 1) await gate;
+    delivered.push(batch);
+    concurrent--;
+    return false;
+  }, () => false);
+  const pendingRead = pump();
+  await pump();
+  await pump(); // coalesce repeated hints while the snapshot is in flight
+  release();
+  await pendingRead;
+  assert.deepEqual(delivered, [1, 2]);
+  assert.equal(maximumConcurrent, 1);
+});
+
+test("a full replay window drains its tail without waiting for another notification", async () => {
+  let reads = 0;
+  const pump = createCompanionEventPump(async () => ++reads < 3, () => false);
+  await pump();
+  assert.equal(reads, 3);
+});
+
+test("closing a stream during its read cancels queued wake-ups", async () => {
+  let closed = false;
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  let reads = 0;
+  const pump = createCompanionEventPump(async () => { reads++; await gate; return true; }, () => closed);
+  const pendingRead = pump();
+  await pump();
+  closed = true;
+  release();
+  await pendingRead;
+  await pump();
+  assert.equal(reads, 1);
+});
+
+test("a failed read releases the pump for the next durable retry", async () => {
+  let reads = 0;
+  const pump = createCompanionEventPump(async () => {
+    if (++reads === 1) throw new Error("temporary database failure");
+    return false;
+  }, () => false);
+  await assert.rejects(pump(), /temporary database failure/);
+  await pump();
+  assert.equal(reads, 2);
+});
 
 test("cursor 解析：无参 → after=0", () => {
   const r = resolveCompanionCursor({ afterRaw: null, lastEventId: null, conversationId: CONVERSATION_ID });
