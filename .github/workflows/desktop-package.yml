@@ -197,9 +197,9 @@ jobs:
 
   macos:
     name: macOS ${{ inputs.mac_arch || 'arm64' }} (dmg + zip)
-    # macos-14 是 Apple Silicon runner，本机架构就是 arm64；x64 产物靠
+    # macos-15 是 Apple Silicon runner，本机架构就是 arm64；x64 产物靠
     # electron-builder 另下一份 x64 的 Electron 来交叉打，不需要 Rosetta 跑构建。
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 120
     outputs:
       version: ${{ steps.version.outputs.version }}
