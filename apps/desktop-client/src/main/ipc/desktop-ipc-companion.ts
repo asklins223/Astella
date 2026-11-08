@@ -14,11 +14,13 @@ import * as ns_auth from "../gateway/desktop-gateway-ns-auth";
 import * as ns_runtime from "../gateway/desktop-gateway-ns-runtime";import { app, BrowserWindow, type IpcMainInvokeEvent } from "electron";
 import { saveCompanionExportFile } from "../store/companion-export-file";
 import { z } from "zod";import { DESKTOP_IPC_CHANNELS, companionBridgeStateV1Schema, type RequestMetaV1, requestMetaSchema, uuidSchema } from "@astella/shared/desktop-ipc-contracts";
+import { companionFileUploadRequestV1Schema, companionFileUploadResultV1Schema } from "@astella/shared/desktop-ipc-contracts";
 import { mainPageContextInputV2Schema } from "@astella/shared/companion-bridge-contracts";import { desktopSourceCreateRequestSchema, desktopSourceUpdateRequestSchema } from "@astella/shared/desktop-surface-contracts";
 import {
   companionAccountPatchSchema,
   companionAccountStateV1Schema,
   companionAnswerModePreferenceV1Schema,
+  companionModelCatalogV1Schema,
   companionVoicePreferenceV1Schema,
   companionOverviewSchema,
   onboardingTransitionRequestSchema,
@@ -130,6 +132,7 @@ import * as ns_invite from "../gateway/desktop-gateway-ns-invite";
 
 import * as ns_artifact from "../gateway/desktop-gateway-ns-artifact";
 import { DesktopGatewayFailure } from "../gateway/desktop-gateway-failure";
+import { isNoteWritingPathGranted } from "../note-doc/note-writing-files";
 
 /**
  * 伴星这一族的 IPC 通道（2026-09-30 从 `desktop-ipc.ts` 搬出，第②步）。
@@ -253,6 +256,10 @@ const companionChatSendTurnInputSchema = z.strictObject({
 const companionImageUploadInputSchema = z.strictObject({
   ...m1InputBase,
   request: noteImageUploadRequestV1Schema,
+});
+const companionFileUploadInputSchema = z.strictObject({
+  ...m1InputBase,
+  request: companionFileUploadRequestV1Schema,
 });
 const companionChatListMessagesInputSchema = z.strictObject({
   ...m1InputBase,
@@ -450,6 +457,12 @@ channel(DESKTOP_IPC_CHANNELS.companionAnswerModeGet, runtimeInputSchema, async (
     return ns_companion.getCompanionVoicePreference(gateway.gatewayTransport, input.meta.requestId);
   }, companionVoicePreferenceV1Schema);
 
+  channel(DESKTOP_IPC_CHANNELS.companionModelCatalogGet, runtimeInputSchema, async (_event, _window, input) => {
+    requireM2Route(contract, "settings.section");
+    assertEpoch(input.meta, getActiveWorkspaceEpoch());
+    return ns_companion.getCompanionModelCatalog(gateway.gatewayTransport, input.meta.requestId);
+  }, companionModelCatalogV1Schema);
+
   channel(DESKTOP_IPC_CHANNELS.companionVoicePreferencePatch, voicePreferencePatchInputSchema, async (_event, _window, input) => {
     requireM2Route(contract, "settings.section");
     assertEpoch(input.meta, getActiveWorkspaceEpoch());
@@ -636,6 +649,20 @@ channel(DESKTOP_IPC_CHANNELS.companionHomeGetProjection, runtimeInputSchema, asy
     assertEpoch(input.meta, getActiveWorkspaceEpoch());
     return ns_companion.uploadCompanionImage(gateway.gatewayTransport, input.request, input.meta.requestId);
   }, noteImageUploadResultV1Schema);
+
+  /**
+   * 本地稿纸交给伴星读（2026-11 文件关联）：原件上传为对话文件。
+   * 路径必须先在这个窗口的授权表里——文件关联打开时由主进程授予其所在目录；
+   * 渲染层不能凭一条任意路径读用户磁盘。
+   */
+  channel(DESKTOP_IPC_CHANNELS.companionFileUpload, companionFileUploadInputSchema, async (_event, window, input) => {
+    requireM2Route(contract, "room.home");
+    assertEpoch(input.meta, getActiveWorkspaceEpoch());
+    if (!(await isNoteWritingPathGranted(window, input.request.path))) {
+      throw new DesktopGatewayFailure("forbidden", "never");
+    }
+    return ns_companion.uploadCompanionFile(gateway.gatewayTransport, input.request, input.meta.requestId);
+  }, companionFileUploadResultV1Schema);
 
   channel(DESKTOP_IPC_CHANNELS.companionChatListMessages, companionChatListMessagesInputSchema, async (_event, _window, input) => {
     requireM2Route(contract, "room.home");

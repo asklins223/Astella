@@ -143,6 +143,8 @@ const NON_INVOKE_CHANNELS: Record<string, string> = {
   [DESKTOP_IPC_CHANNELS.subscriptionsEvent]: "主进程 → renderer 的出站事件，用 `webContents.send`",
   [DESKTOP_IPC_CHANNELS.companionVoiceSpeakSegmentChunk]:
     "主进程 → renderer 的逐块音频事件（2026-10-17），用 `webContents.send`；配对入口是 `companionVoiceSpeakSegmentStream`",
+  [DESKTOP_IPC_CHANNELS.openedFileIncoming]:
+    "系统文件关联的主进程 → renderer 推送（2026-11），用 `webContents.send`；配对入口是 `openedFileTake` 的首帧补读",
 };
 
 const meta: RequestMetaV1 = {
@@ -233,6 +235,8 @@ async function register(gateway: DesktopGateway = stubGateway()) {
   } as never;
   registerM1DesktopIpc({
     gateway,
+    // 文件关联只在这条通道族里用到 broker；覆盖对账只需要它存在，不驱动推送。
+    openedFileBroker: { take: () => null } as never,
     noteDocCache: new MemoryNoteDocCacheStore(),
     env: { ASTELLA_DOMAIN_SCHEMA_REVISION: "domain-v2-test" },
     resolveWindow: () => fakeWindow,

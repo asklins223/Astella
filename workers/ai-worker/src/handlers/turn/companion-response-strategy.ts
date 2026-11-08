@@ -3,8 +3,6 @@ type CompanionResponseAttention = {
   toolUse?: string;
   status?: string;
 } | null | undefined;
-import { COMPANION_CASUAL_TURN_GUIDANCE } from "./companion-turn-workload.ts";
-
 /** A generation instruction, not a claim that facts have been independently verified. */
 export const COMPANION_KNOWLEDGE_REVIEW_V1 = [
   "围绕用户当前问题先给直接结论，再给最短的充分论证与必要条件；用户要求详细时再展开。满足问题即可收住，未要求概括更一般的条件时，不主动扩大命题或补写旁枝。",
@@ -45,6 +43,18 @@ export const COMPANION_KNOWLEDGE_REVIEW_V6 = [
   "味觉、感官、情绪和行为的经验性因果解释需要相应证据。取得可读原始资料后，按研究对象、条件与结果的实际范围回答；尚未测量或证实的机制保持未知。",
 ].join("\n");
 
+/** Stable across steps. Per-step receipts stay out of this text so the provider
+ * can reuse the instruction prefix. */
+export const COMPANION_TURN_CONTRACT = [
+  "按对方这一句的实际意思回应，用当前人格说，说完即止。",
+  "对方说的是别人、角色或作品里的事时，按那个人来接，不要改写成对方自己刚做的事，除非对方明确说是自己。",
+  "闲聊先接具体的事：分享给一个贴题的反应；对方求办法时才给办法。不替对方安排下一步，不把确认或认同当成继续讲课。只提对方说过或实际看到的近况，不补写经历、身体、日程或物件位置。短应答按交流含义接，「嗯」可以回「嗯嗯」，不把短句当成质问或告别，也不解释自己准备怎么改语气。",
+  "问你自己刚才做了什么时，没有本轮观察到的动作就直接说没有，不要为了找一个动作去检索或编造。",
+  "写作请求按对方指定的体裁和篇幅写完。",
+  "对方要求保存、修改、查询、安排或核对材料时，用本轮工具去做。完成与否只看真实回执，不把口头承诺当成已经做成。需要的能力不在列表里时用 companion_load_tools 装载。",
+  "回答知识、数量或因果时核对前提、方向和量纲；需要计算或外部材料时用工具。没有回执的机制、数值和来源不要写成已经证实。",
+].join("\n");
+
 /** Intent is resolved once for the turn. A tool-free final step must not turn
  * a knowledge answer into high-variance chat merely because tools were withheld. */
 export function companionResponseStrategy(attention: CompanionResponseAttention,
@@ -53,11 +63,11 @@ export function companionResponseStrategy(attention: CompanionResponseAttention,
   temperature: number;
   guidance: string;
 } {
-  // A settled, independently guarded non-reasoning opening does not need an
-  // empirical-research protocol. Keep creative/user-directed output possible;
-  // this is neither a tool restriction nor a label inferred from reply wording.
-  if (capabilities.plainResponse === true) return { mode: "adaptive", temperature: 0.4,
-    guidance: "按当前输入的实际意思直接回应，写作请求按用户指定形式完整写出。用当前人格的措辞回应具体事情，不先给对方的描述作总评。确认与认同不自动变成继续讲解的邀请；有贴题的反应就说，不为了续话再加教学、安排、问题或新情节。" };
+  // Direct entry has no classifier. The same contract covers chat and tasks;
+  // web-search state must not rewrite it, or the instruction prefix changes every turn.
+  if (capabilities.plainResponse === true || attention?.status === "uncertain") {
+    return { mode: "adaptive", temperature: 0.4, guidance: COMPANION_TURN_CONTRACT };
+  }
   const searchState = capabilities.webSearch === "disabled"
     ? "宿主已确认联网搜索当前关闭，无须装载或试调工具来确认这个状态。缺少经验因果依据时直接说明当前不能确定，不编机制，也不把不能查证写成执行汇报或未来承诺。"
     : capabilities.webSearch === "unavailable"
@@ -70,16 +80,6 @@ export function companionResponseStrategy(attention: CompanionResponseAttention,
         "每次继续检索前，先明确还缺哪项会影响当前结论的资料。已有原文足以支持限定结论就交付，优先原始研究不等于穷尽文献；实际取得的论文摘要能够支持的结论可以据摘要交付，并说明其范围，不为把摘要升级成全文而一直重试。未取得的部分说明范围，不把检索未命中说成不存在。不要为同一核对点反复换同义词搜相同材料，也不扩展用户没有问的研究分支。最终篇幅仍按本轮要求。",
       ].join("\n") : "";
   const knowledgeGuidance = [COMPANION_KNOWLEDGE_REVIEW_V6, searchState].filter(Boolean).join("\n");
-  // Direct entry deliberately has no classifier. An opening cost profile
-  // cannot stand in for a semantic judgment about the user's request.
-  if (attention?.status === "uncertain") {
-    return { mode: "adaptive", temperature: 0.4, guidance: [
-      "按当前请求选择表达：日常交流直接接话；操作请求取得真实结果再交付。需要推理或核对时使用本轮工具与 companion_deepen。",
-      "当回答涉及知识、数量或因果解释时，先核对提问前提，并适用以下事实与推理规则；它们不是闲聊的格式或内容清单：",
-      knowledgeGuidance,
-      `用户在日常交流时，按交流含义回应，知识核对规则留在内部，不作为聊天格式：${COMPANION_CASUAL_TURN_GUIDANCE}简短应答不自动当成告别。`,
-    ].join("\n") };
-  }
   if (attention?.intent === "conversation" && attention.toolUse === "none") {
     return { mode: "casual", temperature: 0.4, guidance: "" };
   }

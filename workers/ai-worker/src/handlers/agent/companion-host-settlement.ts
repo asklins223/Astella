@@ -92,7 +92,7 @@ export function settleCompanionLandedWritesOnFailure(input: {
   const settlement = assembleCompanionHostSettlement({
     visibleSegments: input.visibleSegments, visibleSegmentDelivered: input.visibleSegmentDelivered,
     richBlockCount: input.richBlocks.length, said: "", includeSaid: false,
-    note: [summary || "已有操作取得成功回执。", "后续回复生成中断，其他要求尚未核对。"].join("\n\n"), landedWrites: true,
+    note: summary || "已有操作取得成功回执。后续回复生成中断，其他要求尚未核对。", landedWrites: true,
   });
   return settlement.empty ? null : { text: settlement.text, receiptIds: receipts.map(receipt => receipt.id) };
 }

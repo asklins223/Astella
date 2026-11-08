@@ -33,9 +33,12 @@ export async function runNoteLearningCardGrade(job: JobPayload): Promise<void> {
     const selected = resolveProviderForTask(governance, "note_learning_grading");
     const provider = createGovernedProvider(createProvider(selected.providerName, selected.providerConfig), governance, job.workspaceId,
       { userId: job.requestedBy!, operation: "note_learning_card_grade", jobId: job.id, dataCategories: ["note_content"] });
-    const parameters = { temperature: 0.1, disableThinking: input.subjective.length === 0, maxTokens: provider.resolveOutputTokenLimit?.() ?? AI_UNDECLARED_OUTPUT_TOKENS, responseFormat: "json_object" as const };
-    const messages: ChatMessage[] = [{ role: "system", content: "你是伴星，按原文依据和rubric批改简答题，并为整张学习卡写总评。客观题由系统评分，不重新判分。\n" + input.instruction },
-      { role: "user", content: JSON.stringify({ questions: input.questions, subjective: input.subjective }) }];
+    const parameters = { temperature: 0.1, maxTokens: provider.resolveOutputTokenLimit?.() ?? AI_UNDECLARED_OUTPUT_TOKENS, responseFormat: "json_object" as const };
+    const messages: ChatMessage[] = [
+      { role: "system", content: "你是伴星，按原文依据和rubric批改简答题，并为整张学习卡写总评。客观题由系统评分，不重新判分。\n" + input.instruction },
+      ...(input.correction ? [{ role: "system" as const, hostObservation: true as const, content: input.correction }] : []),
+      { role: "user", content: JSON.stringify({ questions: input.questions, subjective: input.subjective }) },
+    ];
     await governContextPressure({ provider, operation: "note_learning_card_grade", requestedOutputTokens: parameters.maxTokens, measure: (ports) => measureChatRequest(messages, parameters, ports) });
     return (await provider.chatCompletion(messages, parameters, job.signal)).content;
   };

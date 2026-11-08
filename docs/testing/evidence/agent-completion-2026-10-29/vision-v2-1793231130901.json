@@ -1,0 +1,450 @@
+{
+  "version": 1,
+  "label": "vision-v2",
+  "startedAt": "2026-10-28T23:45:30.901Z",
+  "workspaceId": "86a654d7-abab-40db-addc-2b5f6e1844c5",
+  "userId": "cba581e2-11c8-4057-bd34-63420d7d680e",
+  "note": "Synthetic local HTTP acceptance; structural checks are not a semantic quality certification.",
+  "records": [
+    {
+      "id": "v-single",
+      "repeat": 0,
+      "prompt": "这张图片实际写了什么？只抄图里的字母数字。",
+      "runId": "49e38657-f847-4b64-8a7b-b81d049420bd",
+      "ok": true,
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "actualPixels": true
+      },
+      "elapsedMs": 11366,
+      "firstVisibleMs": 9904,
+      "run": {
+        "status": "succeeded",
+        "error_code": null,
+        "step_count": 2,
+        "model_call_count": 3,
+        "route": {
+          "version": 1,
+          "workload": "adaptive",
+          "entryMode": "direct_fast"
+        },
+        "created_at": "2026-10-28T23:45:33.666Z",
+        "started_at": "2026-10-28T23:45:34.907Z",
+        "actual_steps": "2"
+      },
+      "calls": [
+        {
+          "name": "visual.read_image",
+          "status": "succeeded",
+          "risk_class": "read"
+        }
+      ],
+      "hostReads": [],
+      "providerCalls": [
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:chat_completion_stream",
+          "duration_ms": 1918,
+          "prompt_tokens": 14199,
+          "completion_tokens": 119,
+          "cached_tokens": 4096,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "visual.read_image:chat_completion",
+          "duration_ms": 2084,
+          "prompt_tokens": 231,
+          "completion_tokens": 21,
+          "cached_tokens": 0,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:chat_completion_stream",
+          "duration_ms": 1102,
+          "prompt_tokens": 14392,
+          "completion_tokens": 20,
+          "cached_tokens": 14080,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "69ACEA"
+      ],
+      "qualityRubric": [
+        "答案只能来自当前随机像素，不来自文件名"
+      ],
+      "semanticReview": "pending",
+      "expectedPixelText": [
+        "69ACEA"
+      ]
+    },
+    {
+      "id": "v-switch",
+      "repeat": 0,
+      "prompt": "换一张。这张图片实际写了什么？只抄图片内容。",
+      "runId": "91ec5ef2-000e-471a-b3b7-bedbad381adb",
+      "ok": false,
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "actualPixels": false
+      },
+      "elapsedMs": 14718,
+      "firstVisibleMs": 14440,
+      "run": {
+        "status": "succeeded",
+        "error_code": null,
+        "step_count": 2,
+        "model_call_count": 4,
+        "route": {
+          "version": 1,
+          "workload": "adaptive",
+          "entryMode": "direct_fast"
+        },
+        "created_at": "2026-10-28T23:45:44.900Z",
+        "started_at": "2026-10-28T23:45:45.996Z",
+        "actual_steps": "2"
+      },
+      "calls": [
+        {
+          "name": "visual.read_image",
+          "status": "succeeded",
+          "risk_class": "read"
+        }
+      ],
+      "hostReads": [],
+      "providerCalls": [
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:chat_completion_stream",
+          "duration_ms": 6794,
+          "prompt_tokens": 14580,
+          "completion_tokens": 554,
+          "cached_tokens": 4224,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "visual.read_image:chat_completion",
+          "duration_ms": 2302,
+          "prompt_tokens": 235,
+          "completion_tokens": 59,
+          "cached_tokens": 0,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:chat_completion_stream",
+          "duration_ms": 880,
+          "prompt_tokens": 15212,
+          "completion_tokens": 4,
+          "cached_tokens": 14464,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "DB9076"
+      ],
+      "qualityRubric": [
+        "识别新图，不沿用上一张编号"
+      ],
+      "semanticReview": "pending",
+      "expectedPixelText": [
+        "DB9D76"
+      ]
+    },
+    {
+      "id": "v-pair",
+      "repeat": 0,
+      "prompt": "对比这两张图，按发送顺序分别抄出编号。",
+      "runId": "3f9be805-c842-4e3c-b204-cb50f00ee7e3",
+      "ok": false,
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "actualPixels": false
+      },
+      "elapsedMs": 12614,
+      "firstVisibleMs": 11891,
+      "run": {
+        "status": "succeeded",
+        "error_code": null,
+        "step_count": 2,
+        "model_call_count": 5,
+        "route": {
+          "version": 1,
+          "workload": "adaptive",
+          "entryMode": "direct_fast"
+        },
+        "created_at": "2026-10-28T23:45:59.215Z",
+        "started_at": "2026-10-28T23:45:59.310Z",
+        "actual_steps": "2"
+      },
+      "calls": [
+        {
+          "name": "visual.read_image",
+          "status": "succeeded",
+          "risk_class": "read"
+        },
+        {
+          "name": "visual.read_image",
+          "status": "succeeded",
+          "risk_class": "read"
+        }
+      ],
+      "hostReads": [],
+      "providerCalls": [
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:chat_completion_stream",
+          "duration_ms": 6400,
+          "prompt_tokens": 14926,
+          "completion_tokens": 419,
+          "cached_tokens": 4224,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "visual.read_image:chat_completion",
+          "duration_ms": 2281,
+          "prompt_tokens": 233,
+          "completion_tokens": 32,
+          "cached_tokens": 0,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "visual.read_image:chat_completion",
+          "duration_ms": 1683,
+          "prompt_tokens": 233,
+          "completion_tokens": 71,
+          "cached_tokens": 0,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:chat_completion_stream",
+          "duration_ms": 1290,
+          "prompt_tokens": 15499,
+          "completion_tokens": 62,
+          "cached_tokens": 14848,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "按发送顺序，两张图上的编号分别是：\n\n1. 第一张：`69ACEA`\n2. 第二张：`DB9076`\n\n两张都是同一尺寸的六位编号，只是内容不一样，没有重复的字符。"
+      ],
+      "qualityRubric": [
+        "两图身份及顺序正确"
+      ],
+      "semanticReview": "pending",
+      "expectedPixelText": [
+        "69ACEA",
+        "DB9D76"
+      ]
+    },
+    {
+      "id": "v-recheck",
+      "repeat": 0,
+      "prompt": "你再仔细看上一条用户消息附的那张图，重新读编号，不要沿用刚才的描述。",
+      "runId": "52d8d1be-530b-4a20-b35c-33318d15adec",
+      "ok": true,
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "actualPixels": true
+      },
+      "elapsedMs": 14831,
+      "firstVisibleMs": 14674,
+      "run": {
+        "status": "succeeded",
+        "error_code": null,
+        "step_count": 4,
+        "model_call_count": 7,
+        "route": {
+          "version": 1,
+          "workload": "adaptive",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "work",
+            "source": "model",
+            "version": 1,
+            "policyHash": "d16669dd64dc80a8779b6f77ca1fb43cf51aef9a3169b485d964578bdfbc9c5f"
+          }
+        },
+        "created_at": "2026-10-28T23:46:11.847Z",
+        "started_at": "2026-10-28T23:46:11.936Z",
+        "actual_steps": "4"
+      },
+      "calls": [
+        {
+          "name": "visual.read_image",
+          "status": "succeeded",
+          "risk_class": "read"
+        }
+      ],
+      "hostReads": [],
+      "providerCalls": [
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:chat_completion",
+          "duration_ms": 773,
+          "prompt_tokens": 601,
+          "completion_tokens": 5,
+          "cached_tokens": 0,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:chat_completion_stream",
+          "duration_ms": 710,
+          "prompt_tokens": null,
+          "completion_tokens": null,
+          "cached_tokens": null,
+          "status": "error"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:execute_agent_turn",
+          "duration_ms": 2251,
+          "prompt_tokens": 14689,
+          "completion_tokens": 202,
+          "cached_tokens": 4096,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "visual.read_image:chat_completion",
+          "duration_ms": 4474,
+          "prompt_tokens": 249,
+          "completion_tokens": 183,
+          "cached_tokens": 0,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:execute_agent_turn",
+          "duration_ms": 2292,
+          "prompt_tokens": 15104,
+          "completion_tokens": 123,
+          "cached_tokens": 14592,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:execute_agent_turn",
+          "duration_ms": 4224,
+          "prompt_tokens": 15432,
+          "completion_tokens": 393,
+          "cached_tokens": 15104,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "这次读清楚了，图里没有书，也没有「后梁建立」这几个字。刚才那份描述不对，我改回来。\n\n图上只有一行像素风的字符，连起来是 `69ACEA`，六个字符依次是 `6`、`9`、`A`、`C`、`E`、`A`。它是一整个字符串，没有分条编号，也没有其他标注或文字。\n\n如果你是想按某个规则去读它，比如当成坐标、十六进制串或代号，把规则说一下，我按那个再拆一次。"
+      ],
+      "qualityRubric": [
+        "主动读取历史真实assetId，推翻伪造旧描述，实际编号正确"
+      ],
+      "semanticReview": "pending",
+      "expectedPixelText": [
+        "69ACEA"
+      ]
+    },
+    {
+      "id": "v-missing",
+      "repeat": 0,
+      "prompt": "这张图里写了什么？",
+      "runId": "6388afd9-bad4-491f-bed9-36bdc4baebca",
+      "ok": true,
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "noUnrequestedWrites": true
+      },
+      "elapsedMs": 8107,
+      "firstVisibleMs": 8009,
+      "run": {
+        "status": "succeeded",
+        "error_code": null,
+        "step_count": 3,
+        "model_call_count": 4,
+        "route": {
+          "version": 1,
+          "workload": "adaptive",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "work",
+            "source": "model",
+            "version": 1,
+            "policyHash": "d16669dd64dc80a8779b6f77ca1fb43cf51aef9a3169b485d964578bdfbc9c5f"
+          }
+        },
+        "created_at": "2026-10-28T23:46:26.701Z",
+        "started_at": "2026-10-28T23:46:26.804Z",
+        "actual_steps": "3"
+      },
+      "calls": [
+        {
+          "name": "observe.current_page",
+          "status": "succeeded",
+          "risk_class": "read"
+        }
+      ],
+      "hostReads": [],
+      "providerCalls": [
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:chat_completion",
+          "duration_ms": 685,
+          "prompt_tokens": 444,
+          "completion_tokens": 5,
+          "cached_tokens": 0,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:chat_completion_stream",
+          "duration_ms": 610,
+          "prompt_tokens": null,
+          "completion_tokens": null,
+          "cached_tokens": null,
+          "status": "error"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:execute_agent_turn",
+          "duration_ms": 1976,
+          "prompt_tokens": 14151,
+          "completion_tokens": 163,
+          "cached_tokens": 4096,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:execute_agent_turn",
+          "duration_ms": 4765,
+          "prompt_tokens": 14369,
+          "completion_tokens": 383,
+          "cached_tokens": 14080,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "图我这边没收到，屏幕上也没有正在打开的图片页，眼下能看到的就是空空的对话。"
+      ],
+      "qualityRubric": [
+        "没有图片时说明未看到或询问，不描述不存在的画面"
+      ],
+      "semanticReview": "pending"
+    }
+  ]
+}

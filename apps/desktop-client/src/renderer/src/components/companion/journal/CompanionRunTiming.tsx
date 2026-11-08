@@ -6,7 +6,7 @@ export function companionElapsedLabel(seconds: number): string {
 }
 
 /** Wall-clock waiting and idle time for one run, observed rather than estimated. */
-function useRunElapsed({ runId, startedAt, latestActivityAt, activityKey, active }: {
+export function useRunElapsed({ runId, startedAt, latestActivityAt, activityKey, active }: {
   runId: string; startedAt?: string; latestActivityAt?: string; activityKey?: string | number; active: boolean;
 }) {
   const seenAt = useMemo(() => Date.now(), [runId]);

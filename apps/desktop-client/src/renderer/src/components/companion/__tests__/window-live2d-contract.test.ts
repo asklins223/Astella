@@ -1,6 +1,10 @@
 import { readFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_WINDOW_LIVE2D_BODY_FORM,
+  DEFAULT_WINDOW_LIVE2D_FRAMING,
+  DEFAULT_WINDOW_LIVE2D_MODEL_ID,
   WINDOW_LIVE2D_ASSETS,
   WINDOW_LIVE2D_MODEL_REGISTRY,
   WINDOW_LIVE2D_TOOL_ATTENTION_DURATION_MS,
@@ -11,6 +15,7 @@ import {
   motionForWindowLive2DEmotion,
   motionForWindowLive2D,
   momentCueForWindowLive2D,
+  fatfishIdleHead,
   parameterValuesForWindowLive2D,
   presentationForCharacterCueIntent,
   propParameterValuesForWindowLive2D,
@@ -71,15 +76,53 @@ describe("window Live2D policy", () => {
     }, whale)).toBe(false);
   });
 
-  it("only accepts the one registered form and silently falls back off it", () => {
+  it("只接受注册表里登记过的形态，其它值静默回到默认", () => {
     expect(isWindowLive2DModelId("whale")).toBe(true);
+    // 2026-11-05 接入「公皮」后，注册表里是两条形态；默认仍是 whale。
+    expect(isWindowLive2DModelId("fatfish")).toBe(true);
     // 2026-10-04 删除 mao / 小彩 后，旧 localStorage 里的这两个值必须判为非法，
-    // 由 room-store 的 merge 静默打回大肥鱼，不能让伴星进不可用状态。
+    // 由 room-store 的 merge 静默打回默认形态，不能让伴星进不可用状态。
     expect(isWindowLive2DModelId("mao-pro")).toBe(false);
     expect(isWindowLive2DModelId("seethrough")).toBe(false);
     expect(isWindowLive2DModelId("orb")).toBe(false);
     expect(isWindowLive2DModelId(undefined)).toBe(false);
-    expect(Object.keys(WINDOW_LIVE2D_MODEL_REGISTRY)).toEqual(["whale"]);
+    expect(Object.keys(WINDOW_LIVE2D_MODEL_REGISTRY)).toEqual(["whale", "fatfish"]);
+    expect(DEFAULT_WINDOW_LIVE2D_MODEL_ID).toBe("whale");
+  });
+
+  it("公皮的体型三选一与隐藏部件都和资产对得上", async () => {
+    const descriptor = WINDOW_LIVE2D_MODEL_REGISTRY.fatfish;
+    const parts = JSON.parse(await readFile(
+      new URL("../../../../public/assets/companion/live2d-v4/fatfish/fatfish.cdi3.json", import.meta.url),
+      "utf8",
+    )).Parts as { Id: string; Name: string }[];
+    // 登记的隐藏部件必须真的存在于这个模型里，而且就是作者那块黑鼻子。
+    for (const id of descriptor.hiddenParts ?? []) {
+      const part = parts.find(entry => entry.Id === id);
+      expect(part, id).toBeDefined();
+      expect(part!.Name).toContain("鼻");
+    }
+    // 三档取值互不相同，且「大」避开会露出黑鼻子的 0。
+    const forms = descriptor.bodyForms!;
+    expect(new Set(Object.values(forms)).size).toBe(3);
+    expect(forms.large).toBeGreaterThan(0);
+    expect(forms.small).toBeGreaterThan(forms.medium!);
+    // 默认体型是小的（用户 2026-11-05 裁决）。
+    expect(DEFAULT_WINDOW_LIVE2D_BODY_FORM).toBe("small");
+    // 取景默认半身（同一裁决）。
+    expect(DEFAULT_WINDOW_LIVE2D_FRAMING).toBe("bust");
+    // 头部部件也是真 ID。
+    for (const id of descriptor.layoutHeadParts ?? []) {
+      expect(parts.some(part => part.Id === id), id).toBe(true);
+    }
+    // 公皮固定上半身，脸的中心单独对齐，不用宽度约束把整只缩回来。
+    expect(descriptor.bustHeightRatio).toBe(0.5);
+    expect(descriptor.bustWindows?.large.bottom).toBeLessThan(descriptor.bustWindows?.small.bottom ?? 0);
+    expect(descriptor.fullWindows?.large.bottom).toBeLessThan(descriptor.bustWindows?.large.bottom ?? 0);
+    expect(descriptor.bustFitWidth).toBeUndefined();
+    for (const id of descriptor.layoutFaceParts ?? []) {
+      expect(parts.some(part => part.Id === id), id).toBe(true);
+    }
   });
 
   it("maps whale to its own motion groups and expressions", () => {
@@ -143,12 +186,41 @@ describe("window Live2D policy", () => {
       lipSyncParameter: WINDOW_LIVE2D_MODEL_REGISTRY.whale.lipSyncParameter,
     });
     expect(values.find((value) => value.parameter === "ParamMouthOpenY")?.value).toBeCloseTo(0.6);
+    const fatfish = parameterValuesForWindowLive2D({
+      presentation: "speak",
+      nowMs: 1_000,
+      voiceLevel: 0.35,
+      modelId: "fatfish",
+      lipSyncParameter: WINDOW_LIVE2D_MODEL_REGISTRY.fatfish.lipSyncParameter,
+    });
+    // 公皮开口挤在后半段，0.35 的电平要拉开，并带上下巴。
+    expect(fatfish.find((value) => value.parameter === "ParamMouthOpenY")?.value).toBeGreaterThan(0.7);
+    expect(fatfish.find((value) => value.parameter === "JawOpen")?.value).toBeGreaterThan(0.7);
     // whale 的模型里根本没有 ParamA（mao 才有）；写它等于往 Cubism Core 塞野参数。
     expect(values.some((value) => value.parameter === "ParamA")).toBe(false);
     // 缺省口型参数跟随注册表，不是写死的字面量。
     expect(parameterValuesForWindowLive2D({
       presentation: "speak", nowMs: 1_000, voiceLevel: 0.6,
     }).some((value) => value.parameter === "ParamMouthOpenY")).toBe(true);
+  });
+
+  it("fatfish idle head nods and tilts on the whale breath periods", () => {
+    let maxX = 0;
+    let maxY = 0;
+    let maxZ = 0;
+    for (let nowMs = 0; nowMs < 20_000; nowMs += 50) {
+      const head = fatfishIdleHead(nowMs);
+      maxX = Math.max(maxX, Math.abs(head.x));
+      maxY = Math.max(maxY, Math.abs(head.y));
+      maxZ = Math.max(maxZ, Math.abs(head.z));
+    }
+    expect(maxY).toBeGreaterThan(maxX * 0.9);
+    expect(maxZ).toBeGreaterThan(3);
+    expect(maxX).toBeLessThan(8);
+    const values = parameterValuesForWindowLive2D({
+      presentation: "idle", nowMs: 2_200, voiceLevel: 0, modelId: "fatfish",
+    });
+    expect(values.find((value) => value.parameter === "ParamAngleY")?.value).toBeCloseTo(fatfishIdleHead(2_200).y);
   });
 
   it("只声明所有形态共用的运行时；模型自身路径归注册表管", () => {

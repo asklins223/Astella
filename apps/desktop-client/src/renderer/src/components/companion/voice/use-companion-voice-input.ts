@@ -6,6 +6,7 @@ import { guideVoiceModelDownload } from "./voice-model-notifications";
 import { holdCompanionMicrophone } from "./companion-notification-voice";
 import { isAsrModelMissing, isLocalAsrReady, transcribeRecording } from "./local-speech-recognition";
 import { CompanionVoiceSegmenter } from "./companion-voice-segmenter";
+import { companionSpeechEvidence, companionSpokenUnits } from "./companion-voice-evidence";
 import { COMPANION_VAD_INITIAL_STATE, COMPANION_VAD_TUNING, companionVadStep, type CompanionVadState } from "./companion-voice-vad";
 
 export type CompanionVoicePhase = "idle" | "starting" | "open" | "closing" | "paused";
@@ -60,6 +61,10 @@ interface VoiceSession {
   guardUntil: number;
   text: string;
   decodeFailed: boolean;
+  /** 这一段被判定成"不像人说话"（背景声、外放的音乐），不计入这一轮。 */
+  rejected: boolean;
+  /** 已经按段结算过的有声时长；下一段的有声时长是 `turnSpeechMs` 相对它的增量。 */
+  voicedCountedMs: number;
   inFlight: number;
   turn: number;
   queue: Promise<void>;
@@ -67,7 +72,7 @@ interface VoiceSession {
 const newVoiceSession = (): VoiceSession => ({
   recorder: null, releaseMicrophone: null, segmenter: new CompanionVoiceSegmenter(), vad: COMPANION_VAD_INITIAL_STATE,
   closing: false, waiting: false, ignoreReply: false, speechActive: false, speechPlaying: false, guardUntil: 0,
-  text: "", decodeFailed: false, inFlight: 0, turn: 0, queue: Promise.resolve(),
+  text: "", decodeFailed: false, rejected: false, voicedCountedMs: 0, inFlight: 0, turn: 0, queue: Promise.resolve(),
 });
 
 /** 本机分段识别 → 自动送出 → 回复/播放 → 恢复收音。音量不能证明是人声，插话用明确操作。 */
@@ -119,7 +124,14 @@ export function useCompanionVoiceInput(options: CompanionVoiceInputOptions): Com
     optionsRef.current.onSessionEnd?.();
   }, [releaseSession, setSessionPhase]);
 
-  const enqueueDecode = useCallback((session: VoiceSession, samples: Float32Array) => {
+  /** 这一段的有声时长 = 这一轮累计的有声时长 - 已经结算过的部分。 */
+  const takeVoicedMs = (session: VoiceSession): number => {
+    const voiced = Math.max(0, session.vad.turnSpeechMs - session.voicedCountedMs);
+    session.voicedCountedMs = session.vad.turnSpeechMs;
+    return voiced;
+  };
+
+  const enqueueDecode = useCallback((session: VoiceSession, samples: Float32Array, voicedMs: number) => {
     const turn = session.turn;
     session.inFlight++;
     session.queue = session.queue.then(async () => {
@@ -127,6 +139,10 @@ export function useCompanionVoiceInput(options: CompanionVoiceInputOptions): Com
       try {
         const result = await transcribeRecording({ sampleRate: 16000, samples });
         if (sessionRef.current !== session || session.turn !== turn) return;
+        // 模型在静音和房间噪声上也会吐字（见 companion-voice-evidence）：正文跟这段音频
+        // 里的有声时长对不上时，不当成他说的话，也不进字幕。
+        const units = companionSpokenUnits(result.text);
+        if (units > 0 && !companionSpeechEvidence(units, voicedMs)) { session.rejected = true; return; }
         session.text = joinSegments(session.text, result.text);
         publishCaption(session);
       } catch (error) {
@@ -145,8 +161,8 @@ export function useCompanionVoiceInput(options: CompanionVoiceInputOptions): Com
   const finalizeTurn = useCallback((session: VoiceSession, explicit = false) => {
     if (session.closing || sessionRef.current !== session) return;
     const tail = session.segmenter.drain();
-    if (tail && (explicit || session.vad.turnSpeechMs >= COMPANION_VAD_TUNING.minSpeechMs)) enqueueDecode(session, tail);
-    if (!session.text && session.inFlight === 0) { session.segmenter.reset(); session.vad = COMPANION_VAD_INITIAL_STATE; refreshActivity(); return; }
+    if (tail && (explicit || session.vad.turnSpeechMs >= COMPANION_VAD_TUNING.minSpeechMs)) enqueueDecode(session, tail, takeVoicedMs(session));
+    if (!session.text && session.inFlight === 0) { session.segmenter.reset(); session.vad = COMPANION_VAD_INITIAL_STATE; session.voicedCountedMs = 0; refreshActivity(); return; }
     session.closing = true;
     setSessionPhase("closing"); publishCaption(session);
     const turn = session.turn;
@@ -154,11 +170,13 @@ export function useCompanionVoiceInput(options: CompanionVoiceInputOptions): Com
       if (sessionRef.current !== session || session.turn !== turn) return;
       const text = session.text.trim();
       const failed = session.decodeFailed;
-      session.text = ""; session.closing = false; session.decodeFailed = false;
-      session.segmenter.reset(); session.vad = COMPANION_VAD_INITIAL_STATE;
+      const rejected = session.rejected;
+      session.text = ""; session.closing = false; session.decodeFailed = false; session.rejected = false;
+      session.segmenter.reset(); session.vad = COMPANION_VAD_INITIAL_STATE; session.voicedCountedMs = 0;
       setCaption(null); setSessionPhase("open");
       if (!text || failed) {
-        if (!failed) showNote("这一句没有听清，请再说一次");
+        // 只听到背景声时说清楚是"没当成一句话"，别让他以为是自己没说清。
+        if (!failed) showNote(rejected ? "只听到背景声，没有当成一句话发出去。" : "这一句没有听清，请再说一次");
         refreshActivity(); return;
       }
       // 先关收音闸，再交给真实发送 Promise。旧轮的迟到回执不能修改新轮。
@@ -216,12 +234,12 @@ export function useCompanionVoiceInput(options: CompanionVoiceInputOptions): Com
           if (!session.segmenter.isOpen && level >= COMPANION_VAD_TUNING.threshold) session.segmenter.openSegment();
           if (step.verdict === "end") finalizeTurn(session);
           else if (step.verdict === "cut" || session.segmenter.isOpen && session.segmenter.pendingDurationMs >= FORCE_CUT_MS) {
-            const segment = session.segmenter.drain(); if (segment) enqueueDecode(session, segment);
+            const segment = session.segmenter.drain(); if (segment) enqueueDecode(session, segment, takeVoicedMs(session));
           }
           // 很短的杂响也要清空，不让未武装的段积累整场静音。
           if (session.vad.lastVoiceAt !== null && session.vad.turnSpeechMs < COMPANION_VAD_TUNING.minSpeechMs
             && Date.now() - session.vad.lastVoiceAt >= COMPANION_VAD_TUNING.turnEndSilenceMs) {
-            session.segmenter.reset(); session.vad = COMPANION_VAD_INITIAL_STATE;
+            session.segmenter.reset(); session.vad = COMPANION_VAD_INITIAL_STATE; session.voicedCountedMs = 0;
           }
           refreshActivity();
         },
@@ -254,7 +272,7 @@ export function useCompanionVoiceInput(options: CompanionVoiceInputOptions): Com
       const active = isCompanionSpeechActive();
       if (session.speechActive !== active) {
         session.speechActive = active; session.speechPlaying = false;
-        session.segmenter.reset(); session.vad = COMPANION_VAD_INITIAL_STATE;
+        session.segmenter.reset(); session.vad = COMPANION_VAD_INITIAL_STATE; session.voicedCountedMs = 0;
         if (!active) session.guardUntil = Date.now() + ECHO_TAIL_MS;
         emitLevel(0);
       }
@@ -283,7 +301,7 @@ export function useCompanionVoiceInput(options: CompanionVoiceInputOptions): Com
     session.turn++; session.waiting = false; session.ignoreReply = true;
     stopCompanionSpeech(); optionsRef.current.onInterrupt?.();
     session.speechActive = false; session.speechPlaying = false;
-    session.segmenter.reset(); session.vad = COMPANION_VAD_INITIAL_STATE;
+    session.segmenter.reset(); session.vad = COMPANION_VAD_INITIAL_STATE; session.voicedCountedMs = 0;
     session.guardUntil = Date.now() + ECHO_TAIL_MS;
     setCaption(null); setNote(null); refreshActivity();
   }, [refreshActivity]);

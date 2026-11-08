@@ -1,0 +1,651 @@
+{
+  "scope": "actual native loop, configured models, isolated PostgreSQL, synthetic user data; no UI or production deployment",
+  "identities": [
+    {
+      "capability": "agent_turn",
+      "platform": "mimo-agent",
+      "model": "mimo-v2.6-flash"
+    },
+    {
+      "capability": "companion_fallback",
+      "platform": "tokenrhythm",
+      "model": "deepseek-v4.1-flash-1017"
+    }
+  ],
+  "results": [
+    {
+      "id": "private-note-native",
+      "request": "读取我的私人实验记录，告诉我最终口令。 笔记 noteId=cf27f80f-bf99-4b28-95a7-b355d9a86329。",
+      "elapsedMs": 17542,
+      "success": true,
+      "result": {
+        "status": "completed",
+        "text": "已读取你的私人实验记录。笔记共 1 段，内容是：\n\n> 实验最后一步确认：最终口令为 code-3b67d431-b8e0-4ce9-bb5a-2f51ea5aecb3。\n\n最终口令：`code-3b67d431-b8e0-4ce9-bb5a-2f51ea5aecb3`",
+        "blocks": [
+          {
+            "type": "quote",
+            "label": "《私人实验记录》· 刚刚",
+            "text": "实验最后一步确认：最终口令为 code-3b67d431-b8e0-4ce9-bb5a-2f51ea5aecb3。",
+            "sourceRef": {
+              "kind": "note",
+              "noteId": "cf27f80f-bf99-4b28-95a7-b355d9a86329",
+              "noteVersionId": "c6e23615-9a45-4aea-b5d9-a51d6ecc239f",
+              "blockOrdinal": 1
+            }
+          }
+        ],
+        "memoryRefs": [],
+        "writesLanded": false
+      },
+      "error": null,
+      "expectedSecret": "code-3b67d431-b8e0-4ce9-bb5a-2f51ea5aecb3",
+      "published": [],
+      "counts": {
+        "memories": 0,
+        "notes": 1
+      },
+      "calls": [
+        {
+          "tool_call_id": "call_db47c8b287774b868b652258",
+          "name": "notes.read.read",
+          "status": "succeeded"
+        }
+      ],
+      "stepErrors": [
+        {
+          "status": "succeeded",
+          "errorCode": null
+        },
+        {
+          "status": "succeeded",
+          "errorCode": null
+        },
+        {
+          "status": "succeeded",
+          "errorCode": null
+        }
+      ],
+      "trace": [
+        {
+          "route": "agent_turn",
+          "method": "chatCompletion",
+          "phase": "resource",
+          "elapsedMs": 747,
+          "content": "{\"path\": \"work\"}",
+          "usage": {
+            "totalTokens": 596,
+            "promptTokens": 589,
+            "completionTokens": 7,
+            "requestId": "resp_01723348d89a420a9be7ecfbc2bc305e"
+          }
+        },
+        {
+          "route": "agent_turn",
+          "method": "executeAgentTurn",
+          "phase": null,
+          "elapsedMs": 1387,
+          "content": null,
+          "calls": [
+            {
+              "id": "call_0b74a3f97b0b45358395794b",
+              "name": "companion_load_tools",
+              "arguments": {
+                "groups": [
+                  "notes"
+                ]
+              }
+            }
+          ],
+          "usage": {
+            "totalTokens": 4665,
+            "promptTokens": 4623,
+            "completionTokens": 42,
+            "requestId": "resp_f97b1ab3c153497eac7b28ad89321c46"
+          }
+        },
+        {
+          "route": "agent_turn",
+          "method": "executeAgentTurn",
+          "phase": null,
+          "elapsedMs": 5256,
+          "content": null,
+          "calls": [
+            {
+              "id": "call_db47c8b287774b868b652258",
+              "name": "companion_notes_read",
+              "arguments": {
+                "action": "read",
+                "noteId": "cf27f80f-bf99-4b28-95a7-b355d9a86329",
+                "includeBlocks": true,
+                "maxChars": 20000
+              }
+            }
+          ],
+          "usage": {
+            "totalTokens": 6656,
+            "promptTokens": 6551,
+            "completionTokens": 105,
+            "requestId": "resp_d7440338fdf34e5d8d85540399824706"
+          }
+        },
+        {
+          "route": "agent_turn",
+          "method": "executeAgentTurn",
+          "phase": null,
+          "elapsedMs": 4322,
+          "content": "已读取你的私人实验记录。笔记共 1 段，内容是：\n\n> 实验最后一步确认：最终口令为 code-3b67d431-b8e0-4ce9-bb5a-2f51ea5aecb3。\n\n最终口令：`code-3b67d431-b8e0-4ce9-bb5a-2f51ea5aecb3`",
+          "calls": [],
+          "usage": {
+            "totalTokens": 6992,
+            "promptTokens": 6854,
+            "completionTokens": 138,
+            "requestId": "resp_6143b940f43f4d52b5951a612a5b4d0a",
+            "cacheHitTokens": 6528
+          }
+        },
+        {
+          "route": "companion_fallback",
+          "method": "chatCompletion",
+          "phase": "completion",
+          "elapsedMs": 4976,
+          "content": "{\"checks\":[{\"requestSpan\":\"读取我的私人实验记录，告诉我最终口令。\",\"status\":\"satisfied\",\"basis\":[{\"sourceId\":\"tool/call_db47c8b287774b868b652258\",\"quote\":\"\\\"ok\\\":true,\\\"receiptId\\\":\\\"r2\\\",\\\"operation\\\":\\\"notes.read.read\\\"\"},{\"sourceId\":\"tool/call_db47c8b287774b868b652258\",\"quote\":\"实验最后一步确认：最终口令为 code-3b67d431-b8e0-4ce9-bb5a-2f51ea5aecb3。\"}],\"conclusion\":\"笔记读取成功，回执中包含最终口令。\"},{\"requestSpan\":\"笔记 noteId=cf27f80f-bf99-4b28-95a7-b355d9a86329。\",\"status\":\"satisfied\",\"basis\":[{\"sourceId\":\"tool/call_db47c8b287774b868b652258\",\"quote\":\"\\\"noteId\\\":\\\"cf27f80f-bf99-4b28-95a7-b355d9a86329\\\"\"}],\"conclusion\":\"读取操作使用的 noteId 与用户指定的一致。\"}],\"findings\":[],\"decision\":\"release\"}",
+          "usage": {
+            "totalTokens": 2907,
+            "promptTokens": 1727,
+            "completionTokens": 1180,
+            "requestId": "chatcmpl-6ae3d1556d04baa10bd4ab11",
+            "cacheHitTokens": 0,
+            "cacheMissTokens": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "three-independent-native",
+      "request": "请分别发三条独立消息，第一条只写清晨，第二条只写午后，第三条只写入夜。",
+      "elapsedMs": 19270,
+      "success": true,
+      "result": {
+        "status": "completed",
+        "text": "",
+        "blocks": [],
+        "memoryRefs": [],
+        "writesLanded": true
+      },
+      "error": null,
+      "expectedSecret": null,
+      "published": [
+        "清晨",
+        "午后",
+        "入夜"
+      ],
+      "counts": {
+        "memories": 0,
+        "notes": 0
+      },
+      "calls": [
+        {
+          "tool_call_id": "call_e26887dbaea440c7aa9d17bc",
+          "name": "say.publish",
+          "status": "succeeded"
+        },
+        {
+          "tool_call_id": "call_c7b808cdeec54bbfabf8372b",
+          "name": "say.publish",
+          "status": "succeeded"
+        },
+        {
+          "tool_call_id": "call_73b04193d9ce4585983ccd36",
+          "name": "say.publish",
+          "status": "succeeded"
+        }
+      ],
+      "stepErrors": [
+        {
+          "status": "succeeded",
+          "errorCode": null
+        },
+        {
+          "status": "succeeded",
+          "errorCode": null
+        }
+      ],
+      "trace": [
+        {
+          "route": "agent_turn",
+          "method": "chatCompletion",
+          "phase": "resource",
+          "elapsedMs": 898,
+          "content": "{\"path\": \"work\"}",
+          "usage": {
+            "totalTokens": 542,
+            "promptTokens": 535,
+            "completionTokens": 7,
+            "requestId": "resp_cba7ca63c3d446cdad1428aa2a5e5c6c"
+          }
+        },
+        {
+          "route": "agent_turn",
+          "method": "executeAgentTurn",
+          "phase": null,
+          "elapsedMs": 3538,
+          "content": null,
+          "calls": [
+            {
+              "id": "call_e26887dbaea440c7aa9d17bc",
+              "name": "companion_send_message",
+              "arguments": {
+                "text": "清晨"
+              }
+            },
+            {
+              "id": "call_c7b808cdeec54bbfabf8372b",
+              "name": "companion_send_message",
+              "arguments": {
+                "text": "午后"
+              }
+            },
+            {
+              "id": "call_73b04193d9ce4585983ccd36",
+              "name": "companion_send_message",
+              "arguments": {
+                "text": "入夜"
+              }
+            }
+          ],
+          "usage": {
+            "totalTokens": 4719,
+            "promptTokens": 4568,
+            "completionTokens": 151,
+            "requestId": "resp_0fb68b1de9ea4e7dbd903f972896f07e",
+            "cacheHitTokens": 4096
+          }
+        },
+        {
+          "route": "companion_fallback",
+          "method": "chatCompletion",
+          "phase": "effects",
+          "elapsedMs": 7960,
+          "content": "{\"checks\":[{\"requestSpan\":\"请分别发三条独立消息\",\"status\":\"pending\",\"basis\":[{\"sourceId\":\"request\",\"quote\":\"请分别发三条独立消息\"},{\"sourceId\":\"execution_ledger\",\"quote\":\"\\\"successful\\\":[],\\\"outcomeSourceIds\\\":[],\\\"publishedSourceIds\\\":[],\\\"publishedCount\\\":0\"}],\"conclusion\":\"候选中是三次独立发送调用；台账显示尚未发布，处于待执行状态。\"},{\"requestSpan\":\"第一条只写清晨\",\"status\":\"pending\",\"basis\":[{\"sourceId\":\"request\",\"quote\":\"第一条只写清晨\"}],\"conclusion\":\"对应发送内容为“清晨”，符合只写该词的要求，尚未执行。\"},{\"requestSpan\":\"第二条只写午后\",\"status\":\"pending\",\"basis\":[{\"sourceId\":\"request\",\"quote\":\"第二条只写午后\"}],\"conclusion\":\"对应发送内容为“午后”，符合只写该词的要求，尚未执行。\"},{\"requestSpan\":\"第三条只写入夜\",\"status\":\"pending\",\"basis\":[{\"sourceId\":\"request\",\"quote\":\"第三条只写入夜\"}],\"conclusion\":\"对应发送内容为“入夜”，符合只写该词的要求，尚未执行。\"}],\"findings\":[],\"decision\":\"release\"}",
+          "usage": {
+            "totalTokens": 1897,
+            "promptTokens": 929,
+            "completionTokens": 968,
+            "requestId": "021793315166705023c86cf9fdd5b616907ba6841dcfa8a5616ee",
+            "cacheHitTokens": 0,
+            "cacheMissTokens": null
+          }
+        },
+        {
+          "route": "agent_turn",
+          "method": "executeAgentTurn",
+          "phase": null,
+          "elapsedMs": 3159,
+          "content": null,
+          "calls": [
+            {
+              "id": "call_7cf049f73bf047b08d68869b",
+              "name": "companion_finish",
+              "arguments": {
+                "actions": [
+                  {
+                    "receiptId": "r1"
+                  },
+                  {
+                    "receiptId": "r2"
+                  },
+                  {
+                    "receiptId": "r3"
+                  }
+                ],
+                "outcome": "completed",
+                "requirements": [
+                  {
+                    "requirement": "发三条独立消息，第一条只写“清晨”",
+                    "fulfilled": true,
+                    "evidenceCallIds": [
+                      "r1"
+                    ]
+                  },
+                  {
+                    "requirement": "第二条只写“午后”",
+                    "fulfilled": true,
+                    "evidenceCallIds": [
+                      "r2"
+                    ]
+                  },
+                  {
+                    "requirement": "第三条只写“入夜”",
+                    "fulfilled": true,
+                    "evidenceCallIds": [
+                      "r3"
+                    ]
+                  }
+                ],
+                "text": "三条消息已按顺序发出。"
+              }
+            }
+          ],
+          "usage": {
+            "totalTokens": 5307,
+            "promptTokens": 5127,
+            "completionTokens": 180,
+            "requestId": "resp_ffbeaf6941a7445d956700aea430b833",
+            "cacheHitTokens": 4544
+          }
+        },
+        {
+          "route": "companion_fallback",
+          "method": "chatCompletion",
+          "phase": "completion",
+          "elapsedMs": 2897,
+          "content": "{\"checks\":[{\"requestSpan\":\"请分别发三条独立消息\",\"status\":\"satisfied\",\"basis\":[{\"sourceId\":\"execution_ledger\",\"quote\":\"\\\"publishedCount\\\":3\"}],\"conclusion\":\"执行记录显示已发布三条独立消息。\"},{\"requestSpan\":\"第一条只写清晨\",\"status\":\"satisfied\",\"basis\":[{\"sourceId\":\"published/0\",\"quote\":\"清晨\"}],\"conclusion\":\"第一条已发布消息内容为“清晨”。\"},{\"requestSpan\":\"第二条只写午后\",\"status\":\"satisfied\",\"basis\":[{\"sourceId\":\"published/1\",\"quote\":\"午后\"}],\"conclusion\":\"第二条已发布消息内容为“午后”。\"},{\"requestSpan\":\"第三条只写入夜\",\"status\":\"satisfied\",\"basis\":[{\"sourceId\":\"published/2\",\"quote\":\"入夜\"}],\"conclusion\":\"第三条已发布消息内容为“入夜”。\"}],\"findings\":[],\"decision\":\"release\"}",
+          "usage": {
+            "totalTokens": 2430,
+            "promptTokens": 1846,
+            "completionTokens": 584,
+            "requestId": "chatcmpl-6ae3d16ac2fb8e62a59d0461",
+            "cacheHitTokens": 0,
+            "cacheMissTokens": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "provided-material-native",
+      "request": "原文是：浅滩上共有七只白鹭。请只回答原文中的数量。",
+      "elapsedMs": 23065,
+      "success": true,
+      "result": {
+        "status": "completed",
+        "text": "七只。",
+        "blocks": [],
+        "memoryRefs": [],
+        "writesLanded": false
+      },
+      "error": null,
+      "expectedSecret": null,
+      "published": [],
+      "counts": {
+        "memories": 0,
+        "notes": 0
+      },
+      "calls": [],
+      "stepErrors": [
+        {
+          "status": "failed",
+          "errorCode": "PROVIDER_FIRST_OUTPUT_TIMEOUT"
+        },
+        {
+          "status": "succeeded",
+          "errorCode": null
+        }
+      ],
+      "trace": [
+        {
+          "route": "companion_fallback",
+          "method": "executeAgentTurn",
+          "phase": null,
+          "elapsedMs": 2647,
+          "content": "七只。",
+          "calls": [],
+          "usage": {
+            "totalTokens": 4666,
+            "promptTokens": 4512,
+            "completionTokens": 154,
+            "requestId": "021793315198835b71a54db2718758900f1b5b7cc45ea6553991a",
+            "cacheHitTokens": 0,
+            "cacheMissTokens": null
+          }
+        },
+        {
+          "route": "companion_fallback",
+          "method": "chatCompletion",
+          "phase": "completion",
+          "elapsedMs": 3092,
+          "content": "{\"checks\":[{\"requestSpan\":\"请只回答原文中的数量。\",\"status\":\"satisfied\",\"basis\":[{\"sourceId\":\"request\",\"quote\":\"原文是：浅滩上共有七只白鹭。请只回答原文中的数量。\"}],\"conclusion\":\"候选仅回答“七只”，对应原文提供的数量。\"}],\"findings\":[],\"decision\":\"release\"}",
+          "usage": {
+            "totalTokens": 1146,
+            "promptTokens": 867,
+            "completionTokens": 279,
+            "requestId": "021793315201329c307614e525f20fb46bf280deeb3243deec39a",
+            "cacheHitTokens": 640,
+            "cacheMissTokens": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "save-and-private-native",
+      "request": "请记住我喜欢热茶。再读取我的私人实验记录，告诉我最终口令。 笔记 noteId=fed649a0-59b9-4bba-886f-32f6270b16ba。",
+      "elapsedMs": 31528,
+      "success": true,
+      "result": {
+        "status": "completed",
+        "text": "两件事都办好了：\n\n1. **已记住你喜欢热茶**，以后会按这个偏好来。\n2. **已读取你的《私人实验记录》**，内容只有一条：\n\n> 实验最后一步确认：最终口令为 `code-fbfaae79-4adc-4bd6-bea2-82d245e08bc5`\n\n所以最终口令是 **code-fbfaae79-4adc-4bd6-bea2-82d245e08bc5**。",
+        "blocks": [
+          {
+            "type": "quote",
+            "label": "《私人实验记录》· 刚刚",
+            "text": "实验最后一步确认：最终口令为 code-fbfaae79-4adc-4bd6-bea2-82d245e08bc5。",
+            "sourceRef": {
+              "kind": "note",
+              "noteId": "fed649a0-59b9-4bba-886f-32f6270b16ba",
+              "noteVersionId": "cbcde0b3-363f-481f-8674-134b92abc427",
+              "blockOrdinal": 1
+            }
+          }
+        ],
+        "memoryRefs": [],
+        "writesLanded": true
+      },
+      "error": null,
+      "expectedSecret": "code-fbfaae79-4adc-4bd6-bea2-82d245e08bc5",
+      "published": [],
+      "counts": {
+        "memories": 1,
+        "notes": 1
+      },
+      "calls": [
+        {
+          "tool_call_id": "call_52c3e7fb0a13485099baa765",
+          "name": "memory.write.save",
+          "status": "succeeded"
+        },
+        {
+          "tool_call_id": "call_eddb7ff9cca348cf9705d200",
+          "name": "notes.read.read",
+          "status": "succeeded"
+        }
+      ],
+      "stepErrors": [
+        {
+          "status": "succeeded",
+          "errorCode": null
+        },
+        {
+          "status": "succeeded",
+          "errorCode": null
+        },
+        {
+          "status": "failed",
+          "errorCode": "FINISH_CONTRACT_INCOMPLETE"
+        },
+        {
+          "status": "succeeded",
+          "errorCode": null
+        }
+      ],
+      "trace": [
+        {
+          "route": "agent_turn",
+          "method": "chatCompletion",
+          "phase": "resource",
+          "elapsedMs": 770,
+          "content": "{\"path\": \"work\"}",
+          "usage": {
+            "totalTokens": 608,
+            "promptTokens": 601,
+            "completionTokens": 7,
+            "requestId": "resp_34024cf59b184f17a2cd8e55d1244a7f"
+          }
+        },
+        {
+          "route": "agent_turn",
+          "method": "executeAgentTurn",
+          "phase": null,
+          "elapsedMs": 2843,
+          "content": null,
+          "calls": [
+            {
+              "id": "call_7f9277965c01430692d184f6",
+              "name": "companion_load_tools",
+              "arguments": {
+                "groups": [
+                  "memory",
+                  "notes"
+                ]
+              }
+            }
+          ],
+          "usage": {
+            "totalTokens": 4765,
+            "promptTokens": 4634,
+            "completionTokens": 131,
+            "requestId": "resp_654104ebed9d40c3b09a6680a034a3a4"
+          }
+        },
+        {
+          "route": "agent_turn",
+          "method": "executeAgentTurn",
+          "phase": null,
+          "elapsedMs": 3239,
+          "content": null,
+          "calls": [
+            {
+              "id": "call_52c3e7fb0a13485099baa765",
+              "name": "companion_memory_save",
+              "arguments": {
+                "content": "用户喜欢热茶。",
+                "sourceQuote": "请记住我喜欢热茶。",
+                "kind": "preference"
+              }
+            },
+            {
+              "id": "call_eddb7ff9cca348cf9705d200",
+              "name": "companion_notes_read",
+              "arguments": {
+                "action": "read",
+                "noteId": "fed649a0-59b9-4bba-886f-32f6270b16ba"
+              }
+            }
+          ],
+          "usage": {
+            "totalTokens": 8077,
+            "promptTokens": 7927,
+            "completionTokens": 150,
+            "requestId": "resp_15d4bbf371984ad0a9083d1751698429",
+            "cacheHitTokens": 1024
+          }
+        },
+        {
+          "route": "companion_fallback",
+          "method": "chatCompletion",
+          "phase": "effects",
+          "elapsedMs": 12358,
+          "content": "{\"checks\":[{\"requestSpan\":\"请记住我喜欢热茶。\",\"status\":\"pending\",\"basis\":[{\"sourceId\":\"request\",\"quote\":\"请记住我喜欢热茶。\"}],\"conclusion\":\"候选 effect 拟保存该偏好，尚未执行，内容与用户要求一致。\"}],\"findings\":[],\"decision\":\"release\"}",
+          "usage": {
+            "totalTokens": 3326,
+            "promptTokens": 1322,
+            "completionTokens": 2004,
+            "requestId": "c825cd44-df64-44c4-9b03-6446e2b8601d",
+            "cacheHitTokens": 128,
+            "cacheMissTokens": 1194
+          }
+        },
+        {
+          "route": "agent_turn",
+          "method": "executeAgentTurn",
+          "phase": null,
+          "elapsedMs": 3349,
+          "content": "两件事都办好了：\n\n1. **已记住你喜欢热茶**，以后会按这个偏好来。\n2. **已读取你的《私人实验记录》**，内容只有一条：\n\n> 实验最后一步确认：最终口令为 `code-fbfaae79-4adc-4bd6-bea2-82d245e08bc5`\n\n所以最终口令是 **code-fbfaae79-4adc-4bd6-bea2-82d245e08bc5**。",
+          "calls": [],
+          "usage": {
+            "totalTokens": 8492,
+            "promptTokens": 8336,
+            "completionTokens": 156,
+            "requestId": "resp_9cc7d96c80cd4c17a6da8d8a782332da",
+            "cacheHitTokens": 6144
+          }
+        },
+        {
+          "route": "companion_fallback",
+          "method": "executeAgentTurn",
+          "phase": null,
+          "elapsedMs": 4878,
+          "content": "",
+          "calls": [
+            {
+              "id": "call_19e3987ce7ba49ab82362060",
+              "name": "companion_finish",
+              "arguments": {
+                "actions": [
+                  {
+                    "receiptId": "r2"
+                  }
+                ],
+                "evidence": [
+                  {
+                    "receiptId": "r3"
+                  }
+                ],
+                "outcome": "completed",
+                "requirements": [
+                  {
+                    "evidenceCallIds": [
+                      "r2"
+                    ],
+                    "fulfilled": true,
+                    "requirement": "记住用户喜欢热茶",
+                    "textOnly": false
+                  },
+                  {
+                    "evidenceCallIds": [
+                      "r3"
+                    ],
+                    "fulfilled": true,
+                    "requirement": "读取笔记 fed649a0-59b9-4bba-886f-32f6270b16ba 并告知最终口令",
+                    "textOnly": false
+                  }
+                ]
+              }
+            }
+          ],
+          "usage": {
+            "totalTokens": 9014,
+            "promptTokens": 8794,
+            "completionTokens": 220,
+            "requestId": "chatcmpl-6ae3d19c3a7ba8bb8d24b428",
+            "cacheHitTokens": 0,
+            "cacheMissTokens": null
+          }
+        },
+        {
+          "route": "companion_fallback",
+          "method": "chatCompletion",
+          "phase": "completion",
+          "elapsedMs": 3176,
+          "content": "{\"checks\":[{\"requestSpan\":\"请记住我喜欢热茶。\",\"status\":\"satisfied\",\"basis\":[{\"sourceId\":\"tool/call_52c3e7fb0a13485099baa765\",\"quote\":\"已记住（用户喜欢热茶。）\"}],\"conclusion\":\"记忆保存回执确认已记住用户喜欢热茶。\"},{\"requestSpan\":\"再读取我的私人实验记录\",\"status\":\"satisfied\",\"basis\":[{\"sourceId\":\"tool/call_eddb7ff9cca348cf9705d200\",\"quote\":\"已读出笔记《私人实验记录》（第 1–1 块，共 1 块，57 字）\"}],\"conclusion\":\"笔记读取回执确认已读取《私人实验记录》。\"},{\"requestSpan\":\"笔记 noteId=fed649a0-59b9-4bba-886f-32f6270b16ba。\",\"status\":\"satisfied\",\"basis\":[{\"sourceId\":\"tool/call_eddb7ff9cca348cf9705d200\",\"quote\":\"\\\"noteId\\\":\\\"fed649a0-59b9-4bba-886f-32f6270b16ba\\\"\"}],\"conclusion\":\"读取回执中的 noteId 与用户指定笔记一致。\"},{\"requestSpan\":\"告诉我最终口令。\",\"status\":\"satisfied\",\"basis\":[{\"sourceId\":\"tool/call_eddb7ff9cca348cf9705d200\",\"quote\":\"实验最后一步确认：最终口令为 code-fbfaae79-4adc-4bd6-bea2-82d245e08bc5。\"}],\"conclusion\":\"读取结果包含最终口令，候选答复已如实告知。\"}],\"findings\":[],\"decision\":\"release\"}",
+          "usage": {
+            "totalTokens": 2780,
+            "promptTokens": 2063,
+            "completionTokens": 717,
+            "requestId": "chatcmpl-6ae3d1a1b4f8cbfe0bce1d7d",
+            "cacheHitTokens": 0,
+            "cacheMissTokens": null
+          }
+        }
+      ]
+    }
+  ]
+}

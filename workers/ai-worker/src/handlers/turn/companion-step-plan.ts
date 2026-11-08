@@ -201,10 +201,10 @@ export function companionMessagesAfterToolProgress(messages: AgentTurnRequest["m
 }
 
 /**
- * 普通轮攒够 4 字就开始逐字下发。首个可见块越短，首字体感越接近模型真实首包；
- * 坍缩闸仍看整步终态，极短回复可能先露头后被纠正——用这段延迟换首字，用户已明确要速度。
+ * 普通轮第一个可见字就下发。短过 4 字的整句（「嗯嗯。」「收到。」）以前要等这步
+ * 结束才出现，首字时间等于整段生成。坍缩修复看的是终态是否断句，不靠这段攒字。
  */
-export const FINAL_ANSWER_HOLD_CHARS = 4;
+export const FINAL_ANSWER_HOLD_CHARS = 1;
 
 /** 高到一步的正文永远达不到 = **整段攒住**（只有动作轮用）。 */
 export const BUFFERED_STEP_HOLD_CHARS = 1_000_000;
@@ -212,7 +212,7 @@ export const BUFFERED_STEP_HOLD_CHARS = 1_000_000;
 /**
  * 这一步的话什么时候允许落到屏幕上。
  *
- * 普通轮照旧：攒够 4 字就开始逐字下发（流式体验优先，见 `FINAL_ANSWER_HOLD_CHARS`）。
+ * 普通轮从第一个可见字开始下发（见 `FINAL_ANSWER_HOLD_CHARS`）。
  * **动作轮整段攒住**：用户要的是"必须动系统才算做到"的事（改边界、记/忘、排提醒），
  * 这一步结束之前没人知道她到底调没调工具。先落屏的代价实测过（2026-09-22 场景 T）：
  * "嗯，这条早就设好了喵"先到屏幕上，之后哪怕真调了 `companion_set_boundary`，
@@ -222,8 +222,10 @@ export const BUFFERED_STEP_HOLD_CHARS = 1_000_000;
  * delta=1 批 73 字就是这条路径），代价是动作轮开头会有几秒安静——
  * 按用户口径（"说了没做"是最重的一类抱怨），这个方向值。
  */
-export function stepHoldChars(input: { userAskedForAction: boolean }): number {
-  return input.userAskedForAction ? BUFFERED_STEP_HOLD_CHARS : FINAL_ANSWER_HOLD_CHARS;
+export function stepHoldChars(input: { userAskedForAction: boolean; unreadSearchHits?: boolean }): number {
+  // A search hit is not a page read. Buffer the whole step until its citations
+  // are checked, or the first sentence streams and the repaired answer repeats it.
+  return input.userAskedForAction || input.unreadSearchHits ? BUFFERED_STEP_HOLD_CHARS : FINAL_ANSWER_HOLD_CHARS;
 }
 
 /**
@@ -516,6 +518,20 @@ export function companionStepRuntimePolicy(input: {
     "交代目标和后台交付不要求切换页面或开始朗读。",
     Number.isFinite(stepBudget) ? `部署配置允许本次任务最多 ${stepBudget} 步。` : "持续执行当前任务，按实际工具回执核对结果；完成用户要求后自然结束，不因读取或写入次数提前收尾。",
   ].filter(Boolean).join("\n\n"));
+}
+
+/** Facts that change after a tool call. They follow the transcript so the
+ * stable instruction prefix can stay byte-identical across steps. */
+export function companionStepProgressNote(input: {
+  sceneGuidance?: readonly string[];
+  goalHandoffAvailable?: boolean;
+}): string {
+  return [
+    "回到当前请求核对工具结果。outcome_unknown 表示结果待核对；not_executed 表示尚未执行，须按真实对象与校验信息修正；unavailable 表示当前不可用，不原样重试；blocked 不得绕过；failed 不代表完成。",
+    "如果本轮做了操作，简洁交代实际结果和未完成部分，不把内部字段、机器回执或执行规则念给用户。",
+    ...(input.sceneGuidance ?? []),
+    ...(input.goalHandoffAvailable ? [AGENT_GOAL_HANDOFF_INSTRUCTIONS] : []),
+  ].join("\n\n");
 }
 
 /**

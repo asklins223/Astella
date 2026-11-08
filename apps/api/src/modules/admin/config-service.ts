@@ -43,7 +43,7 @@ import { constants as fsConstants } from "node:fs";
 import { access, mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, resolve } from "node:path";
 import type { AIPlatformConfig, PlatformDefinition } from "@astella/shared";
-import { REASONING_EFFORT_ORDER } from "@astella/shared";
+import { CAPABILITY_KINDS, PROVIDER_METADATA, REASONING_EFFORT_ORDER } from "@astella/shared";
 import {
   loadPlatformConfig,
   resetPlatformConfigCache,
@@ -56,26 +56,16 @@ const DEFAULT_CONFIG_PATH = "config/ai-platforms.json";
 const ENV_REF_PATTERN = /^\$\{([A-Z_][A-Z0-9_]*)\}$/;
 
 /** 已知能力。用于校验配置的 capability 键是不是拼错了。 */
-const KNOWN_CAPABILITIES = [
-  "text_generation",
-  "agent_turn",
-  "note_generation",
-  "companion_fallback",
-  "embedding",
-  "rerank",
-  "speech_recognition",
-  "image_generation",
-] as const;
+const KNOWN_CAPABILITIES: readonly string[] = CAPABILITY_KINDS;
 
-/** 已注册的 provider 协议实现。新增一种要改 provider-registry，这里随之。 */
-const KNOWN_PLATFORM_TYPES = [
-  "mock",
-  "dashscope",
-  "openai_compatible",
-  "siliconflow",
-  "opencode_go",
-  "mimo_responses",
-] as const;
+/**
+ * 已注册的 provider 协议实现。
+ *
+ * 由 `PROVIDER_METADATA` 派生而不是在这里抄一份：抄写的清单漏掉一种实现时，
+ * 面板会把**完全正确**的配置报成「未知平台类型」，而那条提示会被运维当成
+ * 「配置坏了」的线索去查——假的告警比没有告警更贵。
+ */
+const KNOWN_PLATFORM_TYPES: readonly string[] = PROVIDER_METADATA.map((provider) => provider.id);
 
 /**
  * 平台 options 里**已迁到模型档案**的旧字段（2026-10-06 配置重设计）。
@@ -219,7 +209,7 @@ export function validateConfig(raw: unknown): ConfigIssue[] {
       const type = typeof definition.type === "string" ? definition.type.trim() : "";
       if (type.length === 0) {
         issues.push({ path: `platforms.${id}.type`, message: "缺少 type", blocking: true });
-      } else if (!(KNOWN_PLATFORM_TYPES as readonly string[]).includes(type)) {
+      } else if (!KNOWN_PLATFORM_TYPES.includes(type)) {
         // 非阻断：provider-registry 可以有面板这份清单之外的实现。
         issues.push({
           path: `platforms.${id}.type`,
@@ -347,7 +337,7 @@ export function validateConfig(raw: unknown): ConfigIssue[] {
     platforms && typeof platforms === "object" ? Object.keys(platforms as Record<string, unknown>) : [],
   );
   for (const [capability, mapping] of Object.entries(capabilities as Record<string, { platform?: string; model?: string }>)) {
-    if (!(KNOWN_CAPABILITIES as readonly string[]).includes(capability)) {
+    if (!KNOWN_CAPABILITIES.includes(capability)) {
       issues.push({
         path: `capabilities.${capability}`,
         message: `未知能力 "${capability}"（已知：${KNOWN_CAPABILITIES.join(" / ")}）`,
@@ -383,7 +373,7 @@ export function validateConfig(raw: unknown): ConfigIssue[] {
       : undefined;
     const platformType = String(platformDefinition?.type ?? "").trim().toLowerCase();
     if (platformDefinition && platformType !== "" && platformType !== "mock"
-      && (KNOWN_PLATFORM_TYPES as readonly string[]).includes(platformType)) {
+      && KNOWN_PLATFORM_TYPES.includes(platformType)) {
       const declared = Boolean(
         platformDefinition.models
         && Object.prototype.hasOwnProperty.call(platformDefinition.models, mapping.model),

@@ -146,7 +146,7 @@ export const PROVIDER_METADATA: readonly ProviderDescriptor[] = [
   },
   {
     id: "mimo_responses",
-    label: "Xiaomi MiMo Responses API",
+    label: "Xiaomi MiMo",
     capabilities: ["agent_turn", "text_generation"],
     defaults: {
       agent_turn: {

@@ -58,6 +58,7 @@ import {
 import { taskEntityFromPersistedPageContext } from "../memory/companion-task-memory.ts";
 import { readPlaybookById } from "../memory/companion-playbooks.ts";
 import { enqueueCompanionMemoryEmbeddingRebuild } from "../memory/companion-memory-embedding-jobs.ts";
+import { memoryEmbeddingBlockedByExternalSend } from "../memory/companion-memory-embedding.ts";
 import type { AgentEventContext } from "./companion-read-tools.ts";
 import { runWorkerEmbeddingTask } from "../note/worker-ai-task.ts";
 import type { EmbeddingProviderLike } from "../../lib/ai-provider.ts";
@@ -175,7 +176,7 @@ export async function executeCompanionMemoryTool(
         const govCtx = await resolveAIGovernanceContext(event.ctx.workspaceId, event.read.userId);
         if (govCtx.consentOk) {
           const rawProvider = await createEmbeddingProvider(govCtx);
-          provider = rawProvider
+          provider = rawProvider && !memoryEmbeddingBlockedByExternalSend(rawProvider.id, govCtx.policy.sendToExternal)
             ? createGovernedEmbeddingProvider(rawProvider, govCtx, event.ctx.workspaceId, {
               // 送出去的是用户自己打的那句话：`user_answer`。
               // `event.ctx.id` 是 jobs 行（伴星对话 job），不是 run id。

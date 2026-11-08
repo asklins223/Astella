@@ -1033,8 +1033,11 @@ test("named edit routing uses the fresh request without treating old saved claim
  * 自相矛盾（或者干脆留下一句没兑现的承诺）。事后闸救不了已经发出去的字，
  * 所以这里改的是**发不发**：动作轮里，一步结束前不落屏。
  */
-test("stepHoldChars：动作轮整段攒住，普通轮仍是 4 字阈值", () => {
+test("stepHoldChars：动作轮整段攒住，普通轮从第一个字下发", () => {
+  assert.equal(FINAL_ANSWER_HOLD_CHARS, 1);
   assert.equal(stepHoldChars({ userAskedForAction: false }), FINAL_ANSWER_HOLD_CHARS);
+  assert.ok(stepHoldChars({ userAskedForAction: false, unreadSearchHits: true }) > 10_000,
+    "未读完的搜索结果不能先把引用句流出去");
   const hold = stepHoldChars({ userAskedForAction: true });
   assert.ok(hold > 10_000, "动作轮的阈值要高到一步的正文永远达不到");
   assert.ok("嗯，这条早就设好了喵——你不问，我一个字都不提。".length < hold);
@@ -1214,7 +1217,9 @@ test("工作交付核验接入实际循环，已有成果和结构化错误分�
   assert.match(source, /stripVoiceExpressionTags\(text\)\.trim\(\)\.length === 0/,
     "只带语音表情标签的回复按空答复处理，不允许静默完成");
   assert.match(source, /FINISH_CONTRACT_INCOMPLETE/);
-  assert.doesNotMatch(source, /reviewCompanionStepCorrection\(/, "词表产出核对不能重新成为执行循环的决策器");
+  assert.doesNotMatch(source, /reviewCompanionStepCorrection\(/, "整段词表核对不能重新成为执行循环的决策器");
+  assert.doesNotMatch(source, /claimsApplicationActionCompletion\(/,
+    "完成不扫描回复里的词。动作是否做成只看工具回执和 companion_finish 的引用。");
 });
 
 // ─── #8 终答步 provider 违约的两条 fail-open 出口 ────────────────────────

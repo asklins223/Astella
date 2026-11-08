@@ -130,7 +130,7 @@ test("a provider's synchronous abort callbacks cannot publish a stale answer or 
     outputWatchdogPolicy: { firstOutputMs: 100, idleMs: 100, firstMeaningfulOutputMs: 10 },
     onProviderDelta: async text => { visible.push(text); return true; },
     onReasoningDelta: text => thinking.push(text), onToolCallStarted: tool => tools.push(tool.id) }),
-  error => error instanceof CompanionOutputTimeoutError && error.code === "provider_progress_timeout");
+  error => error instanceof CompanionOutputTimeoutError && error.code === "provider_idle_timeout");
   assert.deepEqual(visible, []);
   assert.deepEqual(thinking, ["current thought"]);
   assert.deepEqual(tools, []);

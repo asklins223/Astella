@@ -48,9 +48,10 @@ const CAPABILITY_FLAGS = {
     // 输出期限由同一策略读取；分类器对冲与
     // L1 路由撤掉后，`COMPANION_TOOL_INTENT_HEDGE_MS` / `COMPANION_RELEASE_ROUTER`
     // 已没有读取方，从契约和 compose 一起移除。
-    COMPANION_PROVIDER_FIRST_OUTPUT_TIMEOUT_MS: { dev: "12000", prod: "12000" },
-    COMPANION_CASUAL_PROVIDER_FIRST_OUTPUT_TIMEOUT_MS: { dev: "12000", prod: "12000" },
-    COMPANION_PROVIDER_IDLE_TIMEOUT_MS: { dev: "45000", prod: "45000" },
+    // Silence, not total turn length: thinking and tool calls count as output,
+    // so one minute is the switch window for both dev and production.
+    COMPANION_PROVIDER_FIRST_OUTPUT_TIMEOUT_MS: { dev: "60000", prod: "60000" },
+    COMPANION_PROVIDER_IDLE_TIMEOUT_MS: { dev: "60000", prod: "60000" },
     // Empty lets the watchdog choose primary/recovery and explicit deep-thinking deadlines.
     COMPANION_PROVIDER_FIRST_MEANINGFUL_OUTPUT_TIMEOUT_MS: { dev: "", prod: "" },
     // 入口只有 fast / thinking 两档，读取方是

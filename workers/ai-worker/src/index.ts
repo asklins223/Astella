@@ -317,11 +317,13 @@ export async function processJob(job: ClaimedJob): Promise<void> {
           traceId,
           error: safeError,
           reason: "non-retryable",
+          errorName: err instanceof Error ? err.name : undefined,
+          contextReason: err instanceof Error && "reason" in err ? (err as { reason?: unknown }).reason ?? null : null,
           ...(process.env.NODE_ENV === "development"
             ? { detail: err instanceof Error ? err.message : String(err) }
             : {}),
         },
-        "job marked dead — non-retryable error (billing/auth/config)",
+        "job marked dead — non-retryable error",
       );
       return;
     }

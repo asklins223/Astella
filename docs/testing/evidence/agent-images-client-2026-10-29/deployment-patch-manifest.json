@@ -1,0 +1,5 @@
+{
+  "path": "infra/deploy/deploy.sh",
+  "sha256": "0a4981cfecd307004356e73e45547859dfd97601e36d0ec1d35e5b1e840538fc",
+  "reason": "Retain incoming release regardless of inherited mtime; preserve prepared images during local-image deployment."
+}

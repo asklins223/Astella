@@ -1,0 +1,54 @@
+date: 2026-10-29 16:48 (UTC+8)
+scope: historical companion-agent runtime images on the production host
+removed:
+- 26 release-hold containers (astella-image-release-hold-*)
+- 26 old agent image tags (astella-agent-api:* and astella-agent-worker:* except da8a24b31518)
+kept:
+- astella-agent-api:da8a24b31518 (running)
+- astella-agent-worker:da8a24b31518 (running)
+- astella-agent-image-base-api:20261029 (build base)
+- astella-agent-image-base-worker:20261029 (build base)
+verification:
+- astella-api-1 healthy, astella-worker-1 healthy
+- hold containers left: 0
+- root filesystem 65% -> 64% (11G free)
+note: releases older than da8a24b31518 can no longer be rolled back by image tag.
+
+second pass: 2026-10-29 17:43 (UTC+8)
+removed:
+- release-hold containers for da8a24b31518
+- astella-agent-api:da8a24b31518, astella-agent-worker:da8a24b31518
+kept:
+- astella-agent-api:ad2075e7a5b9 (running)
+- astella-agent-worker:ad2075e7a5b9 (running)
+- astella-agent-image-base-api/worker:20261029 (build base)
+verification:
+- astella-api-1 healthy, astella-worker-1 healthy
+- hold containers left: 0
+- root filesystem 64% (11G free)
+
+third pass: 2026-10-29 18:01 (UTC+8)
+removed:
+- release-hold containers for ad2075e7a5b9
+- astella-agent-api:ad2075e7a5b9, astella-agent-worker:ad2075e7a5b9
+kept:
+- astella-agent-api:994f58b51e2e (running)
+- astella-agent-worker:994f58b51e2e (running)
+- astella-agent-image-base-api/worker:20261029 (build base)
+verification:
+- astella-api-1 healthy, astella-worker-1 healthy
+- hold containers left: 0
+- root filesystem 64% (11G free)
+
+fourth pass: 2026-10-29 18:57 (UTC+8)
+removed:
+- release-hold containers for 994f58b51e2e
+- astella-agent-api:994f58b51e2e, astella-agent-worker:994f58b51e2e
+kept:
+- astella-agent-api:a2f0cf4b6597 (running)
+- astella-agent-worker:a2f0cf4b6597 (running)
+- astella-agent-image-base-api/worker:20261029 (build base)
+verification:
+- astella-api-1 healthy, astella-worker-1 healthy
+- hold containers left: 0
+- root filesystem 64% (11G free)

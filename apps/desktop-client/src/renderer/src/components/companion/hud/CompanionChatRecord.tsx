@@ -14,6 +14,7 @@ import { CompanionCardBlock, CompanionCodeBlock, CompanionDiagramBlock, Companio
 export { CompanionRecordImage } from "../journal/companion-rich-content";
 import { CompanionWebSources, companionWebCitations } from "../content/companion-web-citations";
 import { renderCompanionMarkdown } from "../content/companion-markdown";
+import { renderCompanionStreamingMarkdown } from "../content/companion-markdown-reveal";
 import { openExternalLink } from "../../../app/client/external-link";
 import { copyText } from "../../../app/client/clipboard";
 import { companionMessageCopyText } from "../journal/companion-message-copy";
@@ -335,6 +336,8 @@ export function CompanionChatRecordArticle({
   bubble = false,
   groupEnd = true,
   representedNoteIds,
+  responseText,
+  responseBusy = false,
 }: {
   readonly message: CompanionMessageV1;
   readonly chat: CompanionChatSession;
@@ -346,6 +349,8 @@ export function CompanionChatRecordArticle({
   readonly groupEnd?: boolean;
   /** 这一轮成果条已经逐篇列出、并给了预览/打开入口的笔记。重复的导航块不再画第二遍。 */
   readonly representedNoteIds?: ReadonlySet<string>;
+  readonly responseText?: string;
+  readonly responseBusy?: boolean;
 }) {
   const [copyNote, setCopyNote] = useState<string | null>(null);
   const runSpeechMessages = message.runId ? chat.messages.filter(m => m.role === "assistant" && m.runId === message.runId) : [];
@@ -354,6 +359,7 @@ export function CompanionChatRecordArticle({
   // 分段到达的中间消息不再各挂一份。
   const ownsRunArtifacts = message.role === "assistant" && (runSpeechMessages.length <= 1 || runSpeechMessages.at(-1)?.id === message.id);
   const selection = message.role === "user" ? message.selection : undefined;
+  const attachedFiles = message.role === "user" ? message.blocks.flatMap(block => block.type === "file" ? [block.name] : []) : [];
   // 追问建议是当前回合的快捷入口。用户开始下一轮后，旧入口从手记中退场，
   // 但历史消息本身仍保留，避免改写已经保存的对话。
   const hasLaterUserMessage = chat.messages.some(candidate => candidate.role === "user" && candidate.seq > message.seq);
@@ -374,7 +380,8 @@ export function CompanionChatRecordArticle({
   const hiddenNoteIds = representedNoteIds ?? (savedNoteIds.size ? savedNoteIds : undefined);
   const ownsRunTrace = !message.runId || chat.messages.find(item => item.role === "assistant" && item.runId === message.runId)?.id === message.id;
   const sources = companionWebCitations(message.blocks);
-  const bodyText = companionMessageText({ ...message, blocks: message.blocks.filter(block => block.type === "text") });
+  const sourceText = companionMessageText({ ...message, blocks: message.blocks.filter(block => block.type === "text") });
+  const bodyText = responseText ?? sourceText;
   const references = richBlocks.filter(block => block.type === "quote" || (block.type === "citation" && !block.referenceId));
   const results = richBlocks.filter(block => block.type !== "quote" && block.type !== "citation");
   const proposalIds = message.role === "assistant" ? [...new Set([
@@ -388,14 +395,17 @@ export function CompanionChatRecordArticle({
     onDecide={decision => { void chat.decideProposal(id, decision); }} onRetry={() => chat.retryProposal(id)} />);
   return (
     <article className={richBlocks.length > 0 ? "companion-record__turn companion-record__rich-turn" : "companion-record__turn"} data-message-id={message.id} data-role={message.role} data-kind={message.kind} data-bubble={bubble || undefined} data-headerless={!showHeader || undefined} data-cancelled={message.kind === "cancelled" || undefined}>
-      {showHeader ? <header><span className="companion-record__author"><i className="companion-record__avatar" aria-hidden="true">{message.role === "user" ? <UserRound size={15} /> : <Sparkles size={15} />}</i><strong>{message.role === "user" ? "你" : chat.companionName}{message.kind === "voice_transcript" ? " · 语音" : ""}</strong></span><span className="companion-record__meta">{message.role === "assistant" && ownsRunAudio ? <CompanionMessageAudioButton runId={message.runId} exchange={runSpeechMessages.length > 1} /> : null}<time>{messageTime(message.createdAt)}</time></span></header> : null}
+      {showHeader ? <header><span className="companion-record__author"><i className="companion-record__avatar" aria-hidden="true">{message.role === "user" ? <UserRound size={15} /> : <Sparkles size={15} />}</i><strong>{message.role === "user" ? "你" : chat.companionName}{message.kind === "voice_transcript" ? " · 语音" : ""}</strong></span><span className="companion-record__meta">{message.role === "assistant" && ownsRunAudio && !responseBusy ? <CompanionMessageAudioButton runId={message.runId} exchange={runSpeechMessages.length > 1} /> : null}<time>{messageTime(message.createdAt)}</time></span></header> : null}
       {showTrace && ownsRunTrace && trace && shouldShowRunTrace(trace) ? <CompanionRunTraceView trace={trace} /> : null}
+      {attachedFiles.length ? <p className="companion-record__file-attachment">附件：{attachedFiles.join("、")}</p> : null}
       {selection ? <details className="companion-record__selection"><summary><Quote size={14} aria-hidden="true" /><span>引用的原文</span><q>{selection.text.slice(0, 96)}</q></summary><CompanionQuoteBlock block={{ type: "quote", label: "当时选中的原文", text: selection.text }} /></details> : null}
       {/* 正文从 §4.8 起保留 markdown，由这里排版（抽屉与记录页共用本组件）。 */}
-      <div className={bubble ? "companion-record__body companion-record__body--bubble" : "companion-record__body"}>{renderCompanionMarkdown(bodyText, sources)}</div>
-      <CompanionWebSources sources={sources} />
+      <div className={bubble ? "companion-record__body companion-record__body--bubble" : "companion-record__body"} aria-busy={responseBusy || undefined}>
+        {responseText !== undefined ? renderCompanionStreamingMarkdown(sourceText, bodyText, sources) : renderCompanionMarkdown(bodyText, sources)}
+      </div>
+      {!responseBusy ? <CompanionWebSources sources={sources} /> : null}
       {/* 朗读与复制属于这条回复本身，紧贴正文；成果清单在它们后面。 */}
-      {groupEnd ? <div className="companion-record__actions">
+      {groupEnd && !responseBusy ? <div className="companion-record__actions">
         {message.role === "assistant" && ownsRunAudio && !showHeader
           ? <CompanionMessageAudioButton runId={message.runId} exchange={runSpeechMessages.length > 1} /> : null}
         <button type="button" className="text-action" onClick={() => {
@@ -405,7 +415,7 @@ export function CompanionChatRecordArticle({
       {groupEnd && message.role === "assistant" && trace && ownsRunArtifacts ? <CompanionSavedArtifacts trace={trace} chat={chat} /> : null}
       {results.filter(block => !(block.type === "nav" && block.route.kind === "note" && hiddenNoteIds?.has(block.route.noteId))).length
         ? <div className="companion-record__results"><CompanionMessageRichBlocks blocks={results.filter(block => !(block.type === "nav" && block.route.kind === "note" && hiddenNoteIds?.has(block.route.noteId)))} chat={chat} runId={message.runId ?? undefined} /></div> : null}
-      {groupEnd && followups.length > 0 ? <CompanionFollowupPrompts prompts={followups} chat={chat} /> : null}
+      {groupEnd && !responseBusy && followups.length > 0 ? <CompanionFollowupPrompts prompts={followups} chat={chat} /> : null}
       {message.kind === "cancelled" ? <p className="companion-record__stopped">你在这里停下了{stopSummary(trace)}</p> : null}
       {message.kind === "error" ? <p className="companion-record__stopped">这一轮没能说完{stopSummary(trace)}</p> : null}
       {groupEnd && pending.length ? <div className="companion-record__decisions">{choices(pending)}</div> : null}

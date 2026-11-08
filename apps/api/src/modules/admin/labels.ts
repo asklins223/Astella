@@ -21,6 +21,8 @@
  * 测试变红。
  */
 
+import { PROVIDER_METADATA } from "@astella/shared";
+
 export interface SeriesMeta {
   key: keyof {
     requestsPerMinute: number | null;
@@ -247,10 +249,30 @@ export const CAPABILITY_KIND_LABELS: Record<string, string> = {
   note_generation: "笔记生成",
   companion_fallback: "伴星备用",
   embedding: "向量检索",
+  // 兜底槽也是能力：配置里真实存在 `capabilities.embedding_fallback`。
+  // 漏掉它，面板会把一个正常工作的用途显示成原始代号——和「假告警」是同一类观感问题。
+  embedding_fallback: "向量兜底",
   rerank: "结果重排",
   speech_recognition: "语音识别",
   image_generation: "生成图片",
 };
+
+/**
+ * Provider 协议实现的用户可见名，由 `PROVIDER_METADATA` 派生。
+ *
+ * 不在面板侧另抄一份：新增一种实现时，抄写的清单会静默漏掉它，页面上只剩
+ * `local_embedding` 这种原始代号，运维会以为配置写错了类型（见 config-service
+ * 的 KNOWN_PLATFORM_TYPES 注释里同一条教训）。
+ */
+export const PROVIDER_TYPE_LABELS: Record<string, string> = Object.fromEntries(
+  PROVIDER_METADATA.map((provider) => [provider.id, provider.label]),
+);
+
+/** 取协议实现的人话名；未知类型原样返回（真的写错时要看得见原始值）。 */
+export function providerTypeLabel(type: string | null | undefined): string {
+  if (!type) return "—";
+  return PROVIDER_TYPE_LABELS[type] ?? type;
+}
 
 /** 取人话名；没有对应说法时**原样返回标识**（见本文件头部的理由）。 */
 export function humanize(map: Record<string, string>, id: string | null | undefined): string {

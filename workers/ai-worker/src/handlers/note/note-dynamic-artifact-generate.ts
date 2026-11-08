@@ -255,11 +255,10 @@ function jsonArtifactProvider(
           message: `动态页面大纲不符合约定（${plannedParsed.error.issues.slice(0, 3).map(issue => `${issue.path.join(".") || "root"}:${issue.code}`).join(", ")}）` };
       }
       const planned = plannedParsed.data;
-      // 第二发：整页书写（关思考）。长文输出不再等待推理。
       await context.reserveModelCall();
       const documentResult = await provider.chatCompletion(
         [{ role: "system", content: context.instructions }, { role: "user", content: artifactDocumentPrompt(input, planned) }],
-        { temperature: 0.4, maxTokens: maxOutputTokens, responseFormat: "json_object", disableThinking: true },
+        { temperature: 0.4, maxTokens: maxOutputTokens, responseFormat: "json_object" },
         step.signal,
       );
       let page: unknown;

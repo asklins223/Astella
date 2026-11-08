@@ -19,8 +19,13 @@ import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts"
 import type { SourceStatusTab } from "../../components/surfaces/source/source-index.ts";
 import type { NoteBodyMode } from "../../components/surfaces/notebook/document/note-document-mode.ts";
 import {
+  DEFAULT_WINDOW_LIVE2D_BODY_FORM,
+  DEFAULT_WINDOW_LIVE2D_FRAMING,
   DEFAULT_WINDOW_LIVE2D_MODEL_ID,
+  isWindowLive2DBodyForm,
   isWindowLive2DModelId,
+  type WindowLive2DBodyForm,
+  type WindowLive2DFraming,
   type WindowLive2DModelId,
 } from "../../components/companion/live2d/window-live2d-contract";
 
@@ -231,6 +236,19 @@ type RoomStore = {
    */
   companionModelId: WindowLive2DModelId;
   /**
+   * 体型形态（2026-11-05「大肥鱼 公皮」接入）。只有登记了 `bodyForms` 的形态
+   * 才吃这个值；同样持久化到 partialize，非法值在 merge 时打回默认（小的）。
+   *
+   * 缺省写成 `null` = 用户还没选过。不用"默认值"占位：切回没有体型切换的形态
+   * 时不该把这档记忆清掉。
+   */
+  companionBodyForm: WindowLive2DBodyForm | null;
+  /**
+   * 取景（2026-11-05 用户裁决：桌面与 iOS 默认半身）。本机偏好，持久化。
+   * 任务页仍按 HUD 注册表固定半身；这里管的是首页那种"她自己占一块地方"的取景。
+   */
+  companionFraming: WindowLive2DFraming;
+  /**
    * 页面级存在感控制（2026-09-16 裁决 3）。三者都是**会话级**：不写入
    * partialize，重启回到默认；账号级设置由服务端保存。
    */
@@ -283,6 +301,9 @@ type RoomStore = {
    */
   invoke: (intent: RoomIntent, options?: { readonly returnTo?: ReturnTarget }) => void;
   closeSurface: () => void;
+  /** 本地稿纸是全窗口覆盖，不在 surface 路由里；这个开关让外壳隐藏书房控件、拦住全局快捷键。 */
+  localPaperOpen: boolean;
+  setLocalPaperOpen: (open: boolean) => void;
   toggleTheme: () => void;
   setTheme: (theme: RoomTheme) => void;
   followTimeTheme: () => void;
@@ -327,6 +348,8 @@ type RoomStore = {
   setCompanionUserPlacement: (anchor: CompanionNormalizedAnchor) => void;
   setCompanionScale: (scale: number) => void;
   setCompanionModelId: (modelId: WindowLive2DModelId) => void;
+  setCompanionBodyForm: (bodyForm: WindowLive2DBodyForm) => void;
+  setCompanionFraming: (framing: WindowLive2DFraming) => void;
   setCompanionSceneMuted: (sceneKey: string, muted: boolean) => void;
   setCompanionFocusUntilTaskEnd: (value: boolean) => void;
   setCompanionTemporarilyHidden: (value: boolean) => void;
@@ -363,6 +386,7 @@ export const useRoomStore = create<RoomStore>()(
       settingsSection: "account",
       settingsAttention: null,
       hudPage: "home",
+      localPaperOpen: false,
       hudSpaceEntry: null,
       pageReadableView: null,
       spaceIdentity: null,
@@ -383,6 +407,8 @@ export const useRoomStore = create<RoomStore>()(
       companionUserAnchor: null,
       companionScale: DEFAULT_COMPANION_SCALE,
       companionModelId: DEFAULT_WINDOW_LIVE2D_MODEL_ID,
+      companionBodyForm: DEFAULT_WINDOW_LIVE2D_BODY_FORM,
+      companionFraming: DEFAULT_WINDOW_LIVE2D_FRAMING,
       mutedCompanionSceneKeys: [],
       companionFocusUntilTaskEnd: false,
       companionTemporarilyHidden: false,
@@ -425,6 +451,7 @@ export const useRoomStore = create<RoomStore>()(
         settingsSection: "account",
         settingsAttention: null,
         hudPage: "home",
+        localPaperOpen: false,
         hudSpaceEntry: null,
         pageReadableView: null,
         onboardingOpen: false,
@@ -479,6 +506,7 @@ export const useRoomStore = create<RoomStore>()(
           companionMoment: "idle",
         });
       },
+      setLocalPaperOpen: (open) => set({ localPaperOpen: open }),
       closeSurface: () => set((state) => ({
         ...initialViewState,
         scenePhase: state.surface ? "returning" : "idle",
@@ -648,6 +676,8 @@ export const useRoomStore = create<RoomStore>()(
         companionScale: Math.min(MAX_COMPANION_SCALE, Math.max(MIN_COMPANION_SCALE, companionScale)),
       }),
       setCompanionModelId: (companionModelId) => set({ companionModelId }),
+      setCompanionBodyForm: (companionBodyForm) => set({ companionBodyForm }),
+      setCompanionFraming: (companionFraming) => set({ companionFraming }),
       setCompanionSceneMuted: (sceneKey, muted) => set((state) => ({
         mutedCompanionSceneKeys: muted
           ? (state.mutedCompanionSceneKeys.includes(sceneKey)
@@ -690,6 +720,8 @@ export const useRoomStore = create<RoomStore>()(
         onboardingSeen: state.onboardingSeen,
         companionScale: state.companionScale,
         companionModelId: state.companionModelId,
+        companionBodyForm: state.companionBodyForm,
+        companionFraming: state.companionFraming,
         companionHomeZone: state.companionHomeZone,
         companionPlacementOwner: state.companionPlacementOwner,
         companionUserAnchor: state.companionUserAnchor,
@@ -717,6 +749,13 @@ export const useRoomStore = create<RoomStore>()(
           companionModelId: isWindowLive2DModelId(persisted.companionModelId)
             ? persisted.companionModelId
             : DEFAULT_WINDOW_LIVE2D_MODEL_ID,
+          // 体型同理：只认登记过的三档，其它一律回到默认（小的）。
+          companionBodyForm: isWindowLive2DBodyForm(persisted.companionBodyForm)
+            ? persisted.companionBodyForm
+            : DEFAULT_WINDOW_LIVE2D_BODY_FORM,
+          companionFraming: persisted.companionFraming === "full" || persisted.companionFraming === "bust"
+            ? persisted.companionFraming
+            : DEFAULT_WINDOW_LIVE2D_FRAMING,
           navigationGuard: null,
           returnTarget: null,
         };

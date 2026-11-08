@@ -1,0 +1,12 @@
+{
+  "isolatedAcceptanceContainer": "removed",
+  "ownApiAndWorker": "stopped",
+  "resolvedCredentialFixtures": "deleted",
+  "syntheticDatabaseSnapshot": "ignored private dump, mode 0600",
+  "originalDevContainers": "left running",
+  "earlyScratchDatabase": {
+    "name": "astella_agent_impl_20261028_c83f",
+    "status": "remains; shared PostgreSQL reports one other session despite targeted termination of our pid 394682",
+    "scope": "empty early test setup, no production data; unrelated shared sessions and dev PostgreSQL were not restarted"
+  }
+}

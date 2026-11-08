@@ -28,6 +28,7 @@ import { buildRepairAttempt, repairInstruction } from "../../lib/model-repair-at
 import { NoteExpansionOutputError } from "../../lib/non-retryable-errors.ts";
 import { runWorkerAiTask } from "./worker-ai-task.ts";
 import { noteLearningSnapshotHash } from "./note-learning-snapshot.ts";
+import { reviewNoteExpansionDrafts } from "./note-expansion-review.ts";
 import {
   buildNoteExpansionCandidatePrompt,
   buildNoteExpansionPrompt,
@@ -256,7 +257,7 @@ export async function runNoteExpansionGenerate(job: JobPayload): Promise<void> {
   };
   const systemMessages: ChatMessage[] = [
     { role: "system", content: "你是笔记旁的知识拓展助手。忠实引用用户给出的笔记来解释为什么拓展方向相关；区分原文与补充理解，不伪造来源。" },
-    { role: "system", content: agentContext.instructions },
+    { role: "system", hostObservation: true, content: agentContext.instructions },
   ];
   const draftingMessages = (blocks: readonly SourceBlock[], candidates?: readonly NoteExpansionCandidate[]): ChatMessage[] => [
     ...systemMessages,
@@ -447,7 +448,7 @@ export async function runNoteExpansionGenerate(job: JobPayload): Promise<void> {
     inputSnapshotRef: { kind: "note_version", id: source.noteVersionId, hash: inputSnapshotHash },
     input: messages,
     modelId: provider.modelId,
-    promptVersion: `${provider.promptVersion}:note-expansion-draft-v3`,
+    promptVersion: `${provider.promptVersion}:note-expansion-draft-v4`,
     resourceClass: "interactive_ai",
     timeoutMs: resolveProviderCallTimeout("note_expansion_generate"),
     // 同上：草稿这一发的修正重试也要有模型调用额度。
@@ -480,7 +481,12 @@ export async function runNoteExpansionGenerate(job: JobPayload): Promise<void> {
       }
     },
   });
-  const drafts: NoteExpansionDraftV1[] = draftsFromResponse(generated);
+  const reviewer = createGovernedProvider(createProvider(selected.providerName, selected.providerConfig),
+    governance, job.workspaceId,
+    { userId: job.requestedBy, operation: "note_expansion_review", jobId: job.id, dataCategories: ["note_content"] });
+  const drafts = await reviewNoteExpansionDrafts({ job, userId: job.requestedBy, noteVersionId: source.noteVersionId,
+    sources: draftingBlocks, drafts: draftsFromResponse(generated), provider: reviewer,
+    maxTokens: generationParameters.maxTokens, reserveModelCall: agentContext.reserveModelCall });
 
   await withJobTransaction(job, async (tx) => {
     await lockJobLease(tx, job);

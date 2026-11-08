@@ -15,19 +15,16 @@ export function companionOutputWatchdogPolicy(workload: "casual" | "adaptive" = 
   // First observed output, idle progress and first text/tool progress are
   // distinct attempt deadlines. They do not cap the entire multi-step task or
   // diagnose whether a slow first event came from prefill, generation or transport.
-  const firstOutputMs = configured(process.env.COMPANION_PROVIDER_FIRST_OUTPUT_TIMEOUT_MS, 12_000);
-  // Disabling reasoning does not eliminate prefill. Actual native requests
-  // were cancelled at exactly five seconds, followed by a complete fallback
-  // and a second review. Use the measured general first-output window here,
-  // too; an explicit deployment override remains available.
-  return { firstOutputMs: workload === "casual" && attempt === "primary"
-    ? configured(process.env.COMPANION_CASUAL_PROVIDER_FIRST_OUTPUT_TIMEOUT_MS, firstOutputMs) : firstOutputMs,
-    idleMs: configured(process.env.COMPANION_PROVIDER_IDLE_TIMEOUT_MS, 45_000),
-    // Fast entry must eventually produce an answer or tool, even if reasoning
-    // bytes keep arriving. Explicit deepening retains the longer thinking
-    // path. Healthy text/tool streams have no added lifetime cap.
-    firstMeaningfulOutputMs: configured(process.env.COMPANION_PROVIDER_FIRST_MEANINGFUL_OUTPUT_TIMEOUT_MS,
-      options.deepThinking ? Infinity : attempt === "primary" ? 30_000 : 45_000) };
+  // One silence budget for every step, including a casual opening and the
+  // recovery attempt. Switch only after a full minute with no output at all.
+  // Thinking tokens and tool calls are output. A shorter casual cut is not
+  // applied. COMPANION_PROVIDER_FIRST_OUTPUT_TIMEOUT_MS=0 disables the switch.
+  void workload;
+  void attempt;
+  void options;
+  return { firstOutputMs: configured(process.env.COMPANION_PROVIDER_FIRST_OUTPUT_TIMEOUT_MS, 60_000),
+    idleMs: configured(process.env.COMPANION_PROVIDER_IDLE_TIMEOUT_MS, 60_000),
+    firstMeaningfulOutputMs: configured(process.env.COMPANION_PROVIDER_FIRST_MEANINGFUL_OUTPUT_TIMEOUT_MS, Infinity) };
 }
 
 export interface CompanionOutputWatchdogPolicy {
@@ -59,9 +56,10 @@ export async function watchCompanionOutput<T>(operation: (signal: AbortSignal,
   if (policy.firstMeaningfulOutputMs !== undefined && Number.isFinite(policy.firstMeaningfulOutputMs))
     meaningfulTimer = setTimeout(() => fail(new CompanionOutputTimeoutError("provider_progress_timeout")),
       Math.min(policy.firstMeaningfulOutputMs, 2_147_483_647));
-  const activity = (kind?: "text" | "reasoning" | "tool") => {
-    // Untyped legacy callbacks represent their existing progress contract.
-    if (kind !== "reasoning") clearTimeout(meaningfulTimer);
+  const activity = (_kind?: "text" | "reasoning" | "tool") => {
+    // Thinking tokens and tool calls are output. Any of them satisfies the
+    // silence budget and restarts the idle wait.
+    clearTimeout(meaningfulTimer);
     arm(policy.idleMs, "provider_idle_timeout");
   };
   try { return await Promise.race([Promise.resolve().then(() => operation(controller.signal, activity)), watch]); }

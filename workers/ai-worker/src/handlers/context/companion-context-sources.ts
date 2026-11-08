@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { agentMemoryContextSourcesCurrent, queryRows, type AgentSqlExecutor } from "@astella/agent-host";
 import { agentMemoryContextSourceV1Schema, type AgentScopeV1 } from "@astella/shared/agent-contracts";
+import { logger } from "../../lib/logger.ts";
 import { CompanionContextChangedError } from "../../lib/non-retryable-errors.ts";
 import type { CompanionContextHandoffSnapshotV1 } from "./companion-context-handoff.ts";
 import { isWithinQuietHours, type CompanionQuietHours } from "@astella/shared/companion-proactive-policy";
@@ -97,16 +98,30 @@ export async function assertCompanionContextSourcesCurrent(tx: AgentSqlExecutor,
         ? (input.facts.observation as { context?: { quietEpisodeId?: string } } | null)?.context?.quietEpisodeId : undefined;
       const [typing] = await queryRows(tx,sql`SELECT 1 FROM companion_awareness_sessions WHERE workspace_id=${scope.workspaceId}
         AND user_id=${scope.userId} AND updated_at>now()-interval '45 seconds' AND typing_until>now()`);
-      if (typing) throw new CompanionContextChangedError();
-      const [present] = await queryRows(tx, sql`SELECT 1 FROM companion_awareness_sessions
-        WHERE workspace_id=${scope.workspaceId} AND user_id=${scope.userId} AND device_session_id=${input.deviceSessionId}
-          AND updated_at>now()-interval '45 seconds' AND context->>'foreground'='true' AND context->>'unlocked'='true'
-          AND coalesce(context->>'participationAllowed','true')='true'
-          AND (${quietEpisodeId ?? null}::text IS NULL OR context->>'quietEpisodeId'=${quietEpisodeId ?? null}::text)
-          AND (typing_until IS NULL OR typing_until<=now())
-          AND (${input.facts.currentPageKey ?? null}::text IS NULL OR context->'page'->>'key'=${input.facts.currentPageKey ?? null}::text)
-          AND (${input.facts.currentPageRevision ?? null}::text IS NULL OR context->'page'->>'revision'=${input.facts.currentPageRevision ?? null}::text)`);
-      if (!present) throw new CompanionContextChangedError();
+      if (typing) throw stale("another_session_typing", runId);
+      // 心跳 15 秒一续，调度只要求决定开口时仍在 45 秒内。发布若仍用 now()-45s，
+      // 排队或一次十几秒的生成就会把“当时还在”判成离开。锚到本回合更早的
+      // created_at / started_at，同一条会话可以读完；离开、翻页、正在输入仍由下面的字段拦住。
+      // 三分钟是绝对上限，客户端已经没了不能靠一次长回合继续开口。
+      // 条件与原先的 AND 相同，只是失败时留下第一个不成立的原因。
+      const [presence] = await queryRows<{ reason: string }>(tx, sql`SELECT CASE
+          WHEN s.device_session_id IS NULL THEN 'session_missing'
+          WHEN s.updated_at <= COALESCE((SELECT LEAST(created_at, COALESCE(started_at, created_at)) FROM companion_turn_runs
+            WHERE id=${runId} AND workspace_id=${scope.workspaceId} AND user_id=${scope.userId}), now()) - interval '45 seconds' THEN 'heartbeat_before_turn'
+          WHEN s.updated_at <= now() - interval '3 minutes' THEN 'heartbeat_older_than_3m'
+          WHEN coalesce(s.context->>'foreground','') <> 'true' THEN 'background'
+          WHEN coalesce(s.context->>'unlocked','') <> 'true' THEN 'locked'
+          WHEN coalesce(s.context->>'participationAllowed','true') <> 'true' THEN 'participation_off'
+          WHEN ${quietEpisodeId ?? null}::text IS NOT NULL AND s.context->>'quietEpisodeId' IS DISTINCT FROM ${quietEpisodeId ?? null}::text THEN 'quiet_episode'
+          WHEN s.typing_until > now() THEN 'typing'
+          WHEN ${input.facts.currentPageKey ?? null}::text IS NOT NULL AND s.context->'page'->>'key' IS DISTINCT FROM ${input.facts.currentPageKey ?? null}::text THEN 'page'
+          WHEN ${input.facts.currentPageRevision ?? null}::text IS NOT NULL AND s.context->'page'->>'revision' IS DISTINCT FROM ${input.facts.currentPageRevision ?? null}::text THEN 'page_revision'
+          ELSE 'present'
+        END AS reason
+        FROM (SELECT 1) AS probe
+        LEFT JOIN companion_awareness_sessions s
+          ON s.workspace_id=${scope.workspaceId} AND s.user_id=${scope.userId} AND s.device_session_id=${input.deviceSessionId}`);
+      if (presence?.reason !== "present") throw stale(presence?.reason ?? "session_missing", runId);
     }
   }
   const [saved] = await queryRows<{ snapshot: CompanionContextHandoffSnapshotV1 }>(tx, sql`
@@ -120,4 +135,9 @@ export async function assertCompanionContextSourcesCurrent(tx: AgentSqlExecutor,
     await assertCompanionHandoffSourcesCurrent(tx, scope, saved.snapshot,
       { allowMissingIds: ownWrites.missing, allowRevisions: ownWrites.revisions });
   }
+}
+
+function stale(reason: string, runId: string): CompanionContextChangedError {
+  logger.warn({ runId, contextReason: reason }, "companion initiative context no longer current");
+  return new CompanionContextChangedError(reason);
 }

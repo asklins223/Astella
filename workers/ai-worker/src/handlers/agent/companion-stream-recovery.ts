@@ -1,11 +1,13 @@
 import type { AgentTurnResult } from "@astella/shared";
 import type { AIProvider } from "../../lib/ai-provider.ts";
 import { logger } from "../../lib/logger.ts";
-import { ProviderRequestError } from "../../lib/provider-request-error.ts";
+import { ProviderRequestError, ProviderStreamError } from "../../lib/provider-request-error.ts";
 import { AgentOutputError } from "../../lib/non-retryable-errors.ts";
+import { isTransientCompanionModelError } from "./companion-model-retries.ts";
 import { CompanionOutputTimeoutError } from "./companion-output-watchdog.ts";
 import { CompanionDegenerateLoopError } from "./companion-agent-streaming-step.ts";
 import { companionStreamRepeatsItself } from "../turn/companion-reply-shape.ts";
+import { CompanionRunInactiveError } from "../turn/companion-dialogue-store.ts";
 
 /**
  * What to do after a streaming attempt failed before delivering anything.
@@ -30,6 +32,8 @@ export async function recoverCompanionStreamFailure(input: {
   runId: string;
 }): Promise<AgentTurnResult> {
   const { error, stepCount, runId } = input;
+  const canRetry = (failure: unknown) => !(failure instanceof CompanionRunInactiveError)
+    && input.canRetryStream(failure);
 
   if (error instanceof CompanionDegenerateLoopError) {
     // The model looped instead of finishing. Retry this step on the configured
@@ -45,7 +49,7 @@ export async function recoverCompanionStreamFailure(input: {
     return retried;
   }
 
-  if (!input.canRetryStream(error)) throw error;
+  if (!canRetry(error)) throw error;
   // Pass the error object, not its message: the serializer projects anything
   // else down to `{name:"Error"}`, erasing whether this was a 504 or "the body
   // is not SSE".
@@ -69,13 +73,26 @@ export async function recoverCompanionStreamFailure(input: {
     // stack. A stalled route must not hold the turn for several empty waits.
     return input.attemptStream();
   }
+  if (error instanceof ProviderStreamError && isTransientCompanionModelError(error)) {
+    // An empty or broken stream before any character is the same kind of
+    // transport miss as a 5xx. Retrying it through the buffered turn hides
+    // the second attempt until the whole reply is done.
+    try {
+      return await input.attemptStream();
+    } catch (retryError) {
+      if (!canRetry(retryError)) throw retryError;
+      logger.warn({ err: retryError, stepCount },
+        "companion empty stream retry failed before any delta; using the last buffered attempt");
+      return input.runBuffered(1);
+    }
+  }
   if (error instanceof ProviderRequestError && error.status >= 500) {
     // A 5xx before any delta is transient: retry the stream once, then fall
     // back to the buffered turn. Nothing was delivered, so no duplicate prefix.
     try {
       return await input.attemptStream();
     } catch (retryError) {
-      if (!input.canRetryStream(retryError)) throw retryError;
+      if (!canRetry(retryError)) throw retryError;
       if (input.fallbackProvider && input.fallbackProvider !== input.stepProvider
         && typeof input.fallbackProvider.chatCompletionStream === "function" && await input.fitsFallback()) {
         input.useFallback(input.fallbackProvider);

@@ -1,0 +1,261 @@
+{
+  "version": 1,
+  "environment": "production",
+  "workspaceId": "5831ad03-11be-4fdb-b1c7-cd27079f09cf",
+  "userId": "3a727ccc-909a-4a6f-b76d-f3d234c7163d",
+  "sourceHash": "bb97864d7fc2cb7c9616bfbb0e7c151856da4950a6246401d2c9e45e799f6e6d",
+  "records": [
+    {
+      "id": "offer-first",
+      "prompt": "我早餐只喝燕麦奶。先不要保存；你先问我是否要记住这一点。",
+      "runId": "1387ffb0-f477-40d2-a2ba-2915516b3d70",
+      "run": {
+        "status": "succeeded",
+        "errorCode": null,
+        "route": {
+          "version": 1,
+          "workload": "casual",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "chat",
+            "source": "model",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "stepCount": 1,
+        "modelCallCount": 3
+      },
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "noWrites": true,
+        "noPrematureMemory": true
+      },
+      "ok": true,
+      "elapsedMs": 5325,
+      "firstVisibleMs": 4237,
+      "calls": [],
+      "messages": [
+        [
+          {
+            "text": "好，先不保存。要我把「早餐只喝燕麦奶」记成长期习惯吗？记下来以后聊到吃的我会知道，不记也完全没关系。",
+            "type": "text",
+            "emotion": "neutral"
+          }
+        ]
+      ],
+      "providerCalls": [
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 3043,
+          "promptTokens": 8021,
+          "completionTokens": 41,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 4054,
+          "promptTokens": 525,
+          "completionTokens": 7,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "好，先不保存。要我把「早餐只喝燕麦奶」记成长期习惯吗？记下来以后聊到吃的我会知道，不记也完全没关系。"
+      ],
+      "observedMemory": []
+    },
+    {
+      "id": "accept-followup",
+      "prompt": "可以，把刚才说的这个偏好记住吧。",
+      "runId": "0c227a4f-e0b8-48bf-a3e4-95ca00c1a270",
+      "run": {
+        "status": "succeeded",
+        "errorCode": null,
+        "route": {
+          "version": 1,
+          "workload": "adaptive",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "work",
+            "source": "model",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "stepCount": 5,
+        "modelCallCount": 7
+      },
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "originalFactSource": true
+      },
+      "ok": true,
+      "elapsedMs": 24980,
+      "firstVisibleMs": 23048,
+      "calls": [
+        {
+          "name": "companion_memory_write",
+          "status": "not_executed",
+          "riskClass": "reversible_low"
+        },
+        {
+          "name": "memory.write.save",
+          "status": "succeeded",
+          "riskClass": "reversible_low"
+        }
+      ],
+      "messages": [
+        [
+          {
+            "text": "好啦，已经记住：你早餐只喝燕麦奶。以后聊吃的我会按这个来。",
+            "type": "text",
+            "emotion": "neutral"
+          }
+        ]
+      ],
+      "providerCalls": [
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 3674,
+          "promptTokens": 578,
+          "completionTokens": 8,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 3596,
+          "promptTokens": null,
+          "completionTokens": null,
+          "status": "error"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 2996,
+          "promptTokens": 9833,
+          "completionTokens": 67,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 3994,
+          "promptTokens": 11214,
+          "completionTokens": 81,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 3685,
+          "promptTokens": 11704,
+          "completionTokens": 76,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 7785,
+          "promptTokens": 11873,
+          "completionTokens": 123,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "好啦，已经记住：你早餐只喝燕麦奶。以后聊吃的我会按这个来。"
+      ],
+      "observedMemory": [
+        {
+          "content": "用户早餐只喝燕麦奶。",
+          "appliesWhen": null,
+          "sourceBlocks": [
+            {
+              "text": "我早餐只喝燕麦奶。先不要保存；你先问我是否要记住这一点。",
+              "type": "text"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "quote-no-action",
+      "prompt": "朋友今天说“干脆都删掉重来”，我只是跟你吐槽，不是让你做操作。",
+      "runId": "51fc6ea6-e351-412f-804e-8464bca0eadd",
+      "run": {
+        "status": "succeeded",
+        "errorCode": null,
+        "route": {
+          "version": 1,
+          "workload": "adaptive",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "work",
+            "source": "fallback",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "stepCount": 2,
+        "modelCallCount": 4
+      },
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "noWrites": true
+      },
+      "ok": true,
+      "elapsedMs": 12146,
+      "firstVisibleMs": 9033,
+      "calls": [],
+      "messages": [
+        [
+          {
+            "text": "明白，就是听你吐槽两句，我不会去动任何东西。朋友那句\"都删掉重来\"听着是挺解气的，话说出口那一下最痛快。",
+            "type": "text",
+            "emotion": "neutral"
+          }
+        ]
+      ],
+      "providerCalls": [
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 3375,
+          "promptTokens": 8867,
+          "completionTokens": 62,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 5004,
+          "promptTokens": null,
+          "completionTokens": null,
+          "status": "error"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 5517,
+          "promptTokens": 10342,
+          "completionTokens": 128,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "明白，就是听你吐槽两句，我不会去动任何东西。朋友那句\"都删掉重来\"听着是挺解气的，话说出口那一下最痛快。"
+      ]
+    }
+  ],
+  "note": "Synthetic account only. Public replies and real receipts. Structural pass is not an overall semantic success rate. firstVisibleMs measures server acceptance to first durable visible event."
+}

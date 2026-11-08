@@ -12,7 +12,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { diagnoseNoteEditRefusal, companionNoteEditSourceAllowed } from "../companion-edit-dispatch.ts";
+import { diagnoseNoteEditRefusal, companionNoteEditSourceAllowed, companionNoteEditReceiptSummary } from "../companion-edit-dispatch.ts";
 import type { ApiTransaction } from "../../../db/client.ts";
 
 const SCOPE = { workspaceId: "11111111-1111-4111-8111-111111111111", userId: "22222222-2222-4222-8222-222222222222" };
@@ -122,6 +122,16 @@ test("权限与账号各有自己的话，不和轮次、页面混成一句", as
   for (const message of [disabled, epoch, permission, membership, deleted, job, unoffered]) {
     assert.doesNotMatch(message, /这轮已经停止/);
   }
+});
+
+test("编辑回执带上落下来的正文摘录，删除没有新正文时只留操作", () => {
+  assert.equal(companionNoteEditReceiptSummary("replace_blocks", "潮汐表在船上。"), "已替换指定段落：潮汐表在船上。");
+  assert.equal(companionNoteEditReceiptSummary("delete_blocks"), "已删除指定段落");
+  const long = "段".repeat(200);
+  const summary = companionNoteEditReceiptSummary("append", long);
+  assert.ok(summary.startsWith("已追加到笔记末尾："));
+  assert.ok(summary.length <= 240);
+  assert.match(summary, /…$/);
 });
 
 test("删除类操作即使 full 档也要确认，没确认就照实说", async () => {

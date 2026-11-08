@@ -83,6 +83,8 @@ test("已声明的大输出模型不被固定65536护栏缩小", async () => {
       body:{choices:[{message:{content:"完整答复。"},finish_reason:"stop"}]}};}});
   await provider.executeAgentTurn({role:"companion_agent",systemPrompt:"答复。",messages,tools:[],maxTokens:131072,temperature:0.2});
   assert.equal(sent.max_tokens,131072);
+  await provider.executeAgentTurn({role:"companion_agent",systemPrompt:"答复。",messages,tools:[],maxTokens:16384,temperature:0.2});
+  assert.equal(sent.max_tokens,16384);
 });
 
 test("按轮关闭思考的参数优先于旧网关额外参数", async () => {

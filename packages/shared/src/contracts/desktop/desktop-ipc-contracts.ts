@@ -175,6 +175,7 @@ import {
   companionAccountStateV1Schema,
   companionOverviewSchema,
   companionAnswerModePreferenceV1Schema,
+  companionModelCatalogV1Schema,
   companionVoicePreferenceV1Schema,
   onboardingTransitionResponseSchema,
   type CompanionAccountPatch,
@@ -310,6 +311,7 @@ export const DESKTOP_IPC_CHANNELS = {
   // 设置 → 语音与伴星：引擎/音色偏好，以及"点一下听这一身"。
   companionVoicePreferenceGet: "astella.v1.companion.voicePreference.get",
   companionVoicePreferencePatch: "astella.v1.companion.voicePreference.patch",
+  companionModelCatalogGet: "astella.v1.companion.modelCatalog.get",
   capabilitiesGet: "astella.v1.capabilities.get",
   windowGetState: "astella.v1.window.getState",
   windowSetTitlebarTheme: "astella.v1.window.setTitlebarTheme",
@@ -448,6 +450,8 @@ export const DESKTOP_IPC_CHANNELS = {
   companionChatListMessages: "astella.v1.companion.chat.listMessages",
   // 对话图片上传（2026-10-06 输入框传图）：与笔记图片同一份 request/result 合同。
   companionImageUpload: "astella.v1.companion.image.upload",
+  /** 对话文件上传（2026-11 文件关联）：本地稿纸交给伴星读时走这里。 */
+  companionFileUpload: "astella.v1.companion.file.upload",
   // 提案确认 + agent 导航 route 轮询（2026-09-18 补接线）。
   companionChatProposalGet: "astella.v1.companion.chat.proposal.get",
   companionChatProposalDecide: "astella.v1.companion.chat.proposal.decide",
@@ -593,6 +597,15 @@ export const DESKTOP_IPC_CHANNELS = {
   workspaceExport: "astella.v1.workspace.export",
   clipboardReadLinks: "astella.v1.clipboard.readLinks",
   noteWriting: "astella.v1.note.writing",
+  /**
+   * 系统文件关联（2026-11）：双击 .md / 从 Finder、资源管理器拖到应用图标时，
+   * 路径先由主进程收下，再交给渲染层的「本地稿纸」。事件是单方面推送，
+   * `take` 只用于首帧补读（渲染层挂载前主进程可能已经收到路径）。
+   */
+  openedFileTake: "astella.v1.openedFile.take",
+  openedFileIncoming: "astella.v1.openedFile.incoming",
+  openedFilePrepareImport: "astella.v1.openedFile.prepareImport",
+  openedFileReveal: "astella.v1.openedFile.reveal",
   clipboardWriteText: "astella.v1.clipboard.writeText",
   shellOpenExternal: "astella.v1.shell.openExternal",
   // 自动更新：检查 → 下载 → 重启安装。更新源是 GitHub Releases（直连，不过服务端）。
@@ -1642,6 +1655,84 @@ export const markdownBundleResultV1Schema = z.union([
 ]);
 export type MarkdownBundleResultV1 = z.infer<typeof markdownBundleResultV1Schema>;
 
+/**
+ * 系统文件关联交给渲染层的那一批文件（2026-11）。
+ *
+ * 只带身份与盘上事实，不带正文：正文由渲染层按既有 `noteWriting.read` 读取，
+ * 那条路已经做了授权目录检查、大小上限与编码处理，不必再开第二个读盘口。
+ * `id` 在一次投递内稳定，用来在渲染层去重与做 key。
+ */
+export const OPENED_FILE_BATCH_MAX_FILES = 20;
+export const openedFileV1Schema = z.strictObject({
+  version: z.literal(1),
+  id: uuidSchema,
+  path: z.string().min(1).max(4_096),
+  name: z.string().min(1).max(300),
+  size: nonNegativeIntSchema,
+  modifiedAt: z.number(),
+});
+export type OpenedFileV1 = z.infer<typeof openedFileV1Schema>;
+
+export const openedFileBatchV1Schema = z.strictObject({
+  version: z.literal(1),
+  batchId: uuidSchema,
+  files: z.array(openedFileV1Schema).min(1).max(OPENED_FILE_BATCH_MAX_FILES),
+});
+export type OpenedFileBatchV1 = z.infer<typeof openedFileBatchV1Schema>;
+
+/**
+ * 「收进来源库 / 转成笔记」之前的一步：把正文里指向本机的图片读出来、传进对象存储，
+ * 再把引用改写成站内地址。与 `source.bundleImport` 共用同一套上传用途与改写规则，
+ * 区别只是输入是一份正在编辑的正文，而不是一个文件夹。
+ */
+export const openedFilePrepareImportRequestV1Schema = z.strictObject({
+  version: z.literal(1),
+  /** 正在编辑的那一份文件的绝对路径；主进程只认系统刚交给它、且授权仍在的那个文件。 */
+  path: z.string().min(1).max(4_096),
+  markdown: z.string().min(1).max(10_000_000),
+});
+export type OpenedFilePrepareImportRequestV1 = z.infer<typeof openedFilePrepareImportRequestV1Schema>;
+
+export const openedFilePrepareImportResultV1Schema = z.strictObject({
+  version: z.literal(1),
+  markdown: z.string().max(10_000_000),
+  uploaded: nonNegativeIntSchema,
+  /** 没能变成站内地址的引用；收录/建笔记照常进行，只是那几张图缺位。 */
+  issues: z.array(markdownBundleImageIssueV1Schema).max(50),
+});
+export type OpenedFilePrepareImportResultV1 = z.infer<typeof openedFilePrepareImportResultV1Schema>;
+
+export const openedFileRevealRequestV1Schema = z.strictObject({
+  version: z.literal(1),
+  path: z.string().min(1).max(4_096),
+});
+export type OpenedFileRevealRequestV1 = z.infer<typeof openedFileRevealRequestV1Schema>;
+
+export const openedFileRevealResultV1Schema = z.strictObject({
+  version: z.literal(1),
+  revealed: z.boolean(),
+});
+export type OpenedFileRevealResultV1 = z.infer<typeof openedFileRevealResultV1Schema>;
+
+/**
+ * 本地稿纸交给伴星读之前的上传：正文（`text`）由渲染层随回合上送，
+ * 这里只把原件留档到对话文件用途，回一个可写进 file block 的站内地址。
+ */
+export const companionFileUploadRequestV1Schema = z.strictObject({
+  version: z.literal(1),
+  /** 系统打开或文件选择器授权过的本地 Markdown；主进程复核授权后才读。 */
+  path: z.string().min(1).max(4_096),
+  name: z.string().min(1).max(200),
+});
+export type CompanionFileUploadRequestV1 = z.infer<typeof companionFileUploadRequestV1Schema>;
+
+export const companionFileUploadResultV1Schema = z.strictObject({
+  version: z.literal(1),
+  url: z.string().min(1).max(2_000).startsWith("/api/uploads/"),
+  byteLength: z.number().int().positive(),
+});
+export type CompanionFileUploadResultV1 = z.infer<typeof companionFileUploadResultV1Schema>;
+
 const workspaceSummaryShape = {
   version: z.literal(1),
   workspaceId: uuidSchema,
@@ -2430,6 +2521,16 @@ export interface AstellaDesktopApiM2 extends AstellaDesktopApiM1 {
    * 由主进程读出并只交出其中像目标链接的地址（原文永不过桥）。
    */
   readonly noteWriting: { perform(input: { meta: RequestMetaV1; request: NoteWritingAction }): Promise<GatewayResultV1<NoteWritingResult>> };
+  /**
+   * 系统文件关联。`onIncoming` 是主进程单方面推的（双击文件、拖到 Dock/任务栏图标），
+   * 其余三个是渲染层主动调用：首帧补读、把本地图片传成站内地址、在文件夹中显示。
+   */
+  readonly openedFile: {
+    take(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<OpenedFileBatchV1 | null>>;
+    prepareImport(input: { meta: RequestMetaV1; request: OpenedFilePrepareImportRequestV1 }): Promise<GatewayResultV1<OpenedFilePrepareImportResultV1>>;
+    reveal(input: { meta: RequestMetaV1; request: OpenedFileRevealRequestV1 }): Promise<GatewayResultV1<OpenedFileRevealResultV1>>;
+    onIncoming(listener: (batch: OpenedFileBatchV1) => void): () => void;
+  };
   readonly clipboard: {
     readLinks(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<ClipboardReadLinksResult>>;
     writeText(input: { meta: RequestMetaV1; request: ClipboardWriteTextRequestV1 }): Promise<GatewayResultV1<ClipboardWriteTextResultV1>>;
@@ -2593,6 +2694,11 @@ export interface AstellaDesktopApiM2 extends AstellaDesktopApiM1 {
       meta: RequestMetaV1;
       request: import("../note/note-image-upload-contracts.ts").NoteImageUploadRequestV1;
     }): Promise<GatewayResultV1<z.infer<typeof noteImageUploadResultV1Schema>>>;
+    /** 本地稿纸交给伴星读：原件上传为对话文件（正文随 turn 的 file block 走）。 */
+    uploadFile(input: {
+      meta: RequestMetaV1;
+      request: CompanionFileUploadRequestV1;
+    }): Promise<GatewayResultV1<CompanionFileUploadResultV1>>;
     /**
      * 聊天发送链路（2026-09-18 接线）：建/复用 dialogue → 发 turn → 轮询
      * messages 拿回复。此前桌面端只有只读的对话历史。
@@ -2802,6 +2908,10 @@ export interface AstellaDesktopApiM2 extends AstellaDesktopApiM1 {
       get(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<z.infer<typeof companionVoicePreferenceV1Schema>>>;
       /** `instruction` 缺省 = 不动这条偏好；null = 清除（回 config 默认）。 */
       patch(input: { meta: RequestMetaV1; engine: TtsEngineV1; voice: string; instruction?: string | null }): Promise<GatewayResultV1<z.infer<typeof companionVoicePreferenceV1Schema>>>;
+    };
+    /** 服务端开放下载的形象。名字、介绍和名单都在这一份里。 */
+    readonly models: {
+      catalog(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<z.infer<typeof companionModelCatalogV1Schema>>>;
     };
   };
   readonly note: {

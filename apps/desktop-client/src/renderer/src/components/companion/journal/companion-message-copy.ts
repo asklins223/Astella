@@ -4,7 +4,9 @@ import type { CompanionMessageV1 } from "@astella/shared/companion-conversation-
 /** 复制手记中可阅读的文字，包括选文和富内容；不把内部动作身份带进剪贴板。 */
 export function companionMessageCopyText(message: CompanionMessageV1): string {
   const sources = companionWebCitations(message.blocks);
-  const readable = (text: string) => text.replace(/\[\^(web-[a-zA-Z0-9_-]+)\]/g, (_marker, id: string) => {
+  const readable = (text: string) => text
+    .replace(/(^|\n\n?)\[\^web-[a-zA-Z0-9_-]+\]:[^\n]*/g, "")
+    .replace(/\[\^(web-[a-zA-Z0-9_-]+)\]/g, (_marker, id: string) => {
     const index = sources.findIndex(source => source.referenceId === id);
     return index < 0 ? "" : `[${index + 1}]`;
   });

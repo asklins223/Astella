@@ -3235,6 +3235,13 @@
       "when": 1793512156587,
       "tag": "0466_companion_terminal_steps",
       "breakpoints": true
+    },
+    {
+      "idx": 462,
+      "version": "7",
+      "when": 1793512156588,
+      "tag": "0467_companion_review_confirmation_window",
+      "breakpoints": true
     }
   ]
 }

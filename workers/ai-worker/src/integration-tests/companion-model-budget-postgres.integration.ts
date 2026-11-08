@@ -23,6 +23,8 @@ import { companionRuntimeStateSchema, encodeCompanionRuntimeCheckpoint } from ".
 import type { ReadContext } from "../handlers/turn/companion-dialogue-store.ts";
 import { runCompanionAgentLoop } from "../handlers/agent/companion-agent-runtime.ts";
 import { MockProvider } from "../lib/providers/mock.ts";
+import { CompanionRunInactiveError } from "../handlers/turn/companion-dialogue-store.ts";
+import { withCompanionRecoveryTransaction, withCompanionReceiptTransaction } from "../handlers/agent/companion-runtime-checkpoint.ts";
 
 const admin = postgres(testDatabaseUrl("DATABASE_URL_MIGRATOR"), { max: 2 });
 after(async () => { await admin.end(); await closeDatabase(); });
@@ -69,6 +71,28 @@ async function fixture() {
     }) };
 }
 
+for (const status of ["cancel_requested", "cancelled", "superseded", "succeeded", "failed"]) {
+  test(`a ${status} run stops recovery without losing ownership of factual receipts`, async () => {
+    const f = await fixture();
+    const event = { ...f.event,
+      read: { ...f.event.read, conversationId: f.conversationId } as ReadContext,
+      expiresAt: new Date(Date.now() + 60_000).toISOString(), constraints: { visionEnabled: false } };
+    try {
+      assert.equal(await withCompanionRecoveryTransaction(event, async () => "active"), "active");
+      await f.mutate(tx => tx`UPDATE companion_turn_runs SET status=${status} WHERE id=${event.read.runId}`);
+      let executions = 0;
+      await assert.rejects(withCompanionRecoveryTransaction(event, async () => { executions++; }),
+        error => error instanceof CompanionRunInactiveError && error.status === status);
+      assert.equal(executions, 0);
+      assert.equal(await withCompanionReceiptTransaction(event, async () => "existing receipt"), "existing receipt");
+      assert.equal(await f.count(), 0);
+      const [run] = await f.mutate(tx => tx`SELECT status,error_code FROM companion_turn_runs WHERE id=${event.read.runId}`);
+      assert.equal(run.status, status);
+      assert.equal(run.error_code, null);
+    } finally { await f.cleanup(); }
+  });
+}
+
 test("search-only citation drafts are corrected before either final channel publishes or executes", async () => {
   for (const channel of ["plain", "finish"] as const) {
     const f = await fixture();
@@ -87,7 +111,7 @@ test("search-only citation drafts are corrected before either final channel publ
     };
     const read: ReadContext = { ...f.event.read, conversationId: f.conversationId,
       userMessageId: (await f.mutate(tx => tx`SELECT user_message_id FROM companion_turn_runs WHERE id=${f.event.read.runId}`))[0]!.user_message_id,
-      runStatus: "running", livePageView: null, pageContext: null, userText: "核对原网页后简短回答并引用。",
+      runStatus: "running", livePageView: null, pageContext: null, userText: "核对原网页 https://example.com/unread 后简短回答并引用。",
       recentMessages: [], residentMemories: [], memoryDirectory: [], playbookCatalog: [], playbookCandidates: [], deliveryObservation: null,
       organizationSurface: null, memoryRefs: [], hereAndNow: null, thisTurnFacts: null, factSpans: null, conversationSummary: null,
       personaProfileRevision: 0, personaExamplesRevision: 0, defaultExpressionVersion: "test", petProfile: null, nextMessageSeq: 2, nextEventSeq: 1 };

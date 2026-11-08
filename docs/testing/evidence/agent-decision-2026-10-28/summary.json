@@ -1,0 +1,326 @@
+{
+  "screen": {
+    "alternate_high": {
+      "trials": 14,
+      "durationMs": {
+        "n": 14,
+        "p50": 5441.0,
+        "p95NearestRank": 29538,
+        "max": 29538
+      },
+      "errors": 0,
+      "structuralPass": 13,
+      "normalTask": {
+        "passed": 5,
+        "n": 6
+      }
+    },
+    "native_high": {
+      "trials": 14,
+      "durationMs": {
+        "n": 14,
+        "p50": 11216.0,
+        "p95NearestRank": 90010,
+        "max": 90010
+      },
+      "errors": 1,
+      "structuralPass": 13,
+      "normalTask": {
+        "passed": 6,
+        "n": 6
+      }
+    },
+    "native_none": {
+      "trials": 14,
+      "durationMs": {
+        "n": 14,
+        "p50": 5585.0,
+        "p95NearestRank": 54145,
+        "max": 54145
+      },
+      "errors": 0,
+      "structuralPass": 13,
+      "normalTask": {
+        "passed": 5,
+        "n": 6
+      }
+    },
+    "production_high": {
+      "trials": 14,
+      "durationMs": {
+        "n": 14,
+        "p50": 15551.0,
+        "p95NearestRank": 47323,
+        "max": 47323
+      },
+      "errors": 0,
+      "structuralPass": 14,
+      "normalTask": {
+        "passed": 6,
+        "n": 6
+      }
+    }
+  },
+  "control": {
+    "production_none": {
+      "trials": 14,
+      "durationMs": {
+        "n": 14,
+        "p50": 4341.0,
+        "p95NearestRank": 14777,
+        "max": 14777
+      },
+      "errors": 0,
+      "structuralPass": 12,
+      "normalTask": {
+        "passed": 4,
+        "n": 6
+      }
+    }
+  },
+  "quality": {
+    "alternate_high": {
+      "trials": 3,
+      "durationMs": {
+        "n": 3,
+        "p50": 10639,
+        "p95NearestRank": 39522,
+        "max": 39522
+      },
+      "errors": 0,
+      "structuralPass": 3,
+      "normalTask": {
+        "passed": 0,
+        "n": 0
+      }
+    },
+    "native_high": {
+      "trials": 3,
+      "durationMs": {
+        "n": 3,
+        "p50": 18757,
+        "p95NearestRank": 44811,
+        "max": 44811
+      },
+      "errors": 0,
+      "structuralPass": 3,
+      "normalTask": {
+        "passed": 0,
+        "n": 0
+      }
+    },
+    "production_high": {
+      "trials": 3,
+      "durationMs": {
+        "n": 3,
+        "p50": 44631,
+        "p95NearestRank": 90013,
+        "max": 90013
+      },
+      "errors": 1,
+      "structuralPass": 2,
+      "normalTask": {
+        "passed": 0,
+        "n": 0
+      }
+    },
+    "production_none": {
+      "trials": 3,
+      "durationMs": {
+        "n": 3,
+        "p50": 15232,
+        "p95NearestRank": 16473,
+        "max": 16473
+      },
+      "errors": 0,
+      "structuralPass": 3,
+      "normalTask": {
+        "passed": 0,
+        "n": 0
+      }
+    }
+  },
+  "protocol": {
+    "input_system": {
+      "trials": 16,
+      "durationMs": {
+        "n": 16,
+        "p50": 921.5,
+        "p95NearestRank": 20003,
+        "max": 20003
+      },
+      "errors": 1,
+      "matched": 11
+    },
+    "instructions": {
+      "trials": 16,
+      "durationMs": {
+        "n": 16,
+        "p50": 1442.5,
+        "p95NearestRank": 3721,
+        "max": 3721
+      },
+      "errors": 0,
+      "matched": 14
+    }
+  },
+  "routing-holdout": {
+    "few": {
+      "trials": 60,
+      "durationMs": {
+        "n": 60,
+        "p50": 847.0,
+        "p95NearestRank": 15002,
+        "max": 15005
+      },
+      "errors": 4,
+      "matched": 56,
+      "wrongFast": {
+        "n": 36,
+        "count": 0
+      },
+      "unavailable": 4
+    },
+    "zero": {
+      "trials": 60,
+      "durationMs": {
+        "n": 60,
+        "p50": 991.5,
+        "p95NearestRank": 7828,
+        "max": 15004
+      },
+      "errors": 4,
+      "matched": 49,
+      "wrongFast": {
+        "n": 36,
+        "count": 7
+      },
+      "unavailable": 4
+    }
+  },
+  "parallel-chat": {
+    "parallel": {
+      "trials": 5,
+      "durationMs": {
+        "n": 5,
+        "p50": 9322,
+        "p95NearestRank": 13638,
+        "max": 13638
+      },
+      "errors": 0,
+      "firstPublishedMs": {
+        "n": 5,
+        "p50": 6602,
+        "p95NearestRank": 8595,
+        "max": 8595
+      },
+      "fallback": 2
+    },
+    "serial": {
+      "trials": 5,
+      "durationMs": {
+        "n": 5,
+        "p50": 8387,
+        "p95NearestRank": 20908,
+        "max": 20908
+      },
+      "errors": 0,
+      "firstPublishedMs": {
+        "n": 5,
+        "p50": 4881,
+        "p95NearestRank": 17510,
+        "max": 17510
+      },
+      "fallback": 4
+    }
+  },
+  "review": {
+    "review": {
+      "trials": 10,
+      "durationMs": {
+        "n": 10,
+        "p50": 6587.0,
+        "p95NearestRank": 22994,
+        "max": 22994
+      },
+      "errors": 0
+    }
+  },
+  "contract": {
+    "contract_base": {
+      "trials": 3,
+      "durationMs": {
+        "n": 3,
+        "p50": 10629,
+        "p95NearestRank": 10954,
+        "max": 10954
+      },
+      "errors": 0,
+      "structuralPass": 2,
+      "normalTask": {
+        "passed": 2,
+        "n": 3
+      }
+    },
+    "contract_clear": {
+      "trials": 3,
+      "durationMs": {
+        "n": 3,
+        "p50": 13110,
+        "p95NearestRank": 19802,
+        "max": 19802
+      },
+      "errors": 0,
+      "structuralPass": 2,
+      "normalTask": {
+        "passed": 2,
+        "n": 3
+      }
+    }
+  },
+  "contract-real": {
+    "contract_base": {
+      "trials": 3,
+      "durationMs": {
+        "n": 3,
+        "p50": 11420,
+        "p95NearestRank": 90002,
+        "max": 90002
+      },
+      "errors": 1,
+      "structuralPass": 2,
+      "normalTask": {
+        "passed": 2,
+        "n": 3
+      }
+    },
+    "contract_clear": {
+      "trials": 3,
+      "durationMs": {
+        "n": 3,
+        "p50": 11197,
+        "p95NearestRank": 18233,
+        "max": 18233
+      },
+      "errors": 0,
+      "structuralPass": 3,
+      "normalTask": {
+        "passed": 3,
+        "n": 3
+      }
+    }
+  },
+  "integrity": {
+    "headAtSummary": "9ac7d098dd8ba2a4e82b49495f920bf3e99109d8",
+    "frozenSelectedSourcesUnchanged": {
+      "workers/ai-worker/src/lib/providers/pi-agent.ts": true,
+      "workers/ai-worker/src/lib/providers/openai-compatible.ts": true,
+      "workers/ai-worker/src/handlers/turn/companion-dialogue-content.ts": true,
+      "workers/ai-worker/src/handlers/turn/companion-entry-mode.ts": true,
+      "packages/shared/src/agent/companion-capability-manifest.ts": true
+    },
+    "providerRequestAttempts": 401,
+    "trialCount": 266,
+    "scope": "Provider-level synthetic experiments plus real pure document transformer; not production HTTP/DB/client acceptance. Counts include cancellation/timeouts. Structural pass does not certify semantics."
+  }
+}

@@ -10,15 +10,13 @@ export type NoteExpansionCandidate = {
 
 const JSON_SHAPE = [
   "只返回 JSON，顶层只含 drafts 数组，包含 2 到 4 篇草稿。每篇只含 title、relationship、sourceReferences、blocks 四个字段。title 为 2 到 120 字；relationship 必须是 12 到 500 字的 JSON 字符串，不是对象或数组；直接写一两句关系说明，不要使用 relationType、description 等嵌套字段。",
-  "sourceReferences 包含 1 到 3 个对象，每个只含 blockOrdinal（使用下方标注的整数 blockOrdinal，从 0 开始）和 quote（对应段落中 8 到 320 字的逐字摘录）。每条引用必须对应自己的拓展方向。关系说明与正文用原文的主题或引句说明来处，不使用内部段落编号。",
+  "sourceReferences 包含 1 到 3 个对象，每个只含 blockOrdinal（使用下方标注的整数 blockOrdinal，不重新编号）和 quote（对应段落中 8 到 320 字的逐字摘录）。每条引用必须对应自己的拓展方向。关系说明与正文用原文的主题或引句说明来处，不使用内部段落编号。",
   "blocks 包含 2 到 30 个正文块，每块只含 type 和 content。type 必须是 paragraph、heading、list、quote、code 中的一个具体值，不要把多个类型用竖线拼在一起。列表使用 list，每项一行，不带项目符号；标题使用 heading，不带井号；代码使用 code，不带围栏。不要把整段 Markdown 列表塞入 paragraph。content 为非空字符串，每块不超过 8000 字，每篇正文总长不超过 20000 字。不要输出 Markdown 围栏或额外字段。",
 ].join("\n\n");
 
 /** 起草用的说明：内容纪律与引用要求都在这一处写，分段那一条路径也复用同一段。 */
 const DRAFTING_RULES = [
   "每篇必须是能单独读懂的知识草稿，不要只写概念名称或学习计划。relationship 用一两句说明它和原笔记的具体关系。sourceReferences 必须引用下方原文中确实存在的句子，作为这条拓展关系的来处。拓展正文可以增加原文之外的常识，但请把不确定或超出原文的内容用‘补充理解’等自然措辞标明，不能假装它是原文事实。",
-  "标题、关系说明和正文都要保留原文的条件与替代方案。原文介绍某一种实现，不代表它是唯一实现；有可行的替代方案时，应比较各自条件和优势，不能写成‘必须如此’。例如原文允许半开区间与闭区间两种二分查找写法，就不能命名为‘为什么二分查找必须用半开区间’。‘必须、唯一、总是’等结论需要明确依据，标题也不能预设原文不支持的结论。提交前检查标题与正文是否互相矛盾。",
-  "涉及算法、循环不变量或错误示例时，先用小规模输入逐步核验初始状态、每次更新和结束状态。空区间中的全称断言成立，不代表元素都落在另一侧。声称错误更新会让结果偏前或偏后时，必须有具体输入和演算支持；不能确认方向时只说明会错过候选位置，不猜测偏移方向。检查正文的初始化解释是否与后面的不变量一致。",
 ];
 
 export function buildNoteExpansionPrompt(
@@ -26,7 +24,7 @@ export function buildNoteExpansionPrompt(
   focused: boolean,
   candidates?: readonly NoteExpansionCandidate[],
 ): string {
-  const source = blocks.map((block) => `[原文第 ${block.ordinal + 1} 段，blockOrdinal=${block.ordinal}]\n${noteBlockRenderedTextV1(block.type, block.content)}`).join("\n\n");
+  const source = blocks.map((block) => `[原文 blockOrdinal=${block.ordinal}]\n${noteBlockRenderedTextV1(block.type, block.content)}`).join("\n\n");
   return [
     "请从用户正在读的笔记出发，写 2 到 4 篇真正有助于继续理解的短拓展笔记。用自然、通俗的中文，不用学习理论术语。",
     focused ? "用户选中了一段，因此围绕这处概念向前置知识、相邻概念、实际用法或边界继续展开。" : "从整篇笔记中选择最值得继续了解的不同方向。",
@@ -55,13 +53,13 @@ export function buildNoteExpansionCandidatePrompt(
   focused: boolean,
   part: { index: number; total: number },
 ): string {
-  const source = lines.map((line) => `[原文第 ${line.ordinal + 1} 段，blockOrdinal=${line.ordinal}]\n${line.text}`).join("\n\n");
+  const source = lines.map((line) => `[原文 blockOrdinal=${line.ordinal}]\n${line.text}`).join("\n\n");
   return [
     `这篇笔记的正文超出当前模型一次能读的预算，所以按段来读。这是第 ${part.index + 1}/${part.total} 部分，只看这一部分，不要假装读过其他部分。`,
     focused ? "用户选中了一段，候选方向要服务于这处概念的前置知识、相邻概念、实际用法或边界。" : "从这一部分里挑出最值得继续了解的不同方向。",
     "每个方向给：title（2 到 120 字）、relationship（12 到 500 字，说明它和这一段原文的具体关系）、reference（blockOrdinal 用下方标注的整数，quote 从对应段落逐字摘录 8 到 320 字）。方向条数由这一部分的内容决定，能给出几个真正不同的就写几个，宁少勿凑；引用不到的句子不要写。",
     "只返回 JSON，顶层只含 candidates 数组，每个元素只含 title、relationship、reference 三个字段。不要输出 Markdown 围栏或额外文本。",
-    "relationship 要说明它和这一段原文的具体关系，不能只复述标题。原文只介绍一种做法时，不要把它写成唯一做法；‘必须、唯一、总是’这类结论需要原文支持。超出原文的理解在 relationship 里用‘补充’这类自然措辞标明。",
+    "relationship 说明它和这一段原文的具体关系；原文支持的结论与补充理解按各自依据表达。",
     "这一部分的原文：",
     source,
   ].join("\n\n");

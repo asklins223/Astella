@@ -20,6 +20,7 @@ const ok = <T,>(data: T) => ({ version: 1 as const, ok: true as const, data, req
 let chat!: CompanionChatSession;
 let streamEvent: ((event: GatewayEventV1) => void) | null = null;
 let items: CompanionMessageV1[] = [];
+let eventSeq = 0;
 const page = () => ok({ items, total: items.length, oldestSeq: items[0]?.seq ?? null, hasMore: false });
 const listMessages = vi.fn(async () => page());
 
@@ -37,7 +38,7 @@ function emit(eventType: string, payload: Record<string, unknown> = {}) {
   act(() => streamEvent?.({
     version: 1, subscriptionId: id(7), workspaceEpoch: 1, cursor: "1", eventRevision: 1,
     kind: "companion_chat_event", schemaRevision: "desktop-ipc-v1",
-    data: { kind: "companion_chat_event", conversationId: id(5), event: { runId: id(6), generation: 1, seq: 1, eventType, payload } },
+    data: { kind: "companion_chat_event", conversationId: id(5), event: { runId: id(6), generation: 1, seq: ++eventSeq, eventType, payload } },
   }));
 }
 
@@ -56,7 +57,7 @@ async function sendAndSettle(blocks: CompanionMessageV1["blocks"]) {
 }
 
 beforeEach(() => {
-  streamEvent = null; items = [];
+  streamEvent = null; items = []; eventSeq = 0;
   listMessages.mockReset().mockImplementation(async () => page());
   useRoomStore.setState({ hudPage: "home", activeNoteRef: null, pageReadableView: null });
   Object.defineProperty(window, "astella", { configurable: true, value: {
@@ -120,4 +121,19 @@ describe("迟到的追问要能挂到这一条回复上", () => {
     emit("assistant.followups.ready", { messageId: id(99), messageContentSha256: "0".repeat(64), followUpPrompts: ["属于另一条回复的追问"] });
     expect(chat.richReply).toBeNull();
   });
+});
+
+it("正式分句之后的新增量按零偏移续写，前文始终在新段之前", async () => {
+  let sending!: Promise<boolean>;
+  act(() => { sending = chat.send({ text: "请分两段解释" }); });
+  await waitFor(() => expect(streamEvent).not.toBeNull());
+  emit("assistant.delta", { appendFrom: 0, textDelta: "第一段。" });
+  expect(chat.draft?.text).toBe("第一段。");
+  emit("assistant.utterance", { messageId: id(9), text: "第一段。" });
+  emit("assistant.delta", { appendFrom: 0, textDelta: "第二段。" });
+  expect(chat.draft?.text).toBe("第一段。\n\n第二段。");
+  items = [assistantMessage([{ type: "text", text: "第一段。" }]),
+    { ...assistantMessage([{ type: "text", text: "第二段。" }]), id: id(19), seq: 3 }];
+  emit("turn.completed");
+  await act(async () => { await sending; });
 });

@@ -1,0 +1,95 @@
+{
+  "startedAt": "2026-11-07T10:20:49.012Z",
+  "results": [
+    {
+      "id": "native-progress-conversation",
+      "input": "刚收好桌上的书，我准备放松一会儿，随便聊两句就好。",
+      "runId": "c8633f54-acdb-4612-a0b8-b02119c93e4c",
+      "status": "succeeded",
+      "error": null,
+      "steps": 1,
+      "firstSignalMs": 924,
+      "firstTextMs": 1309,
+      "finalMs": 2284,
+      "totalMs": 2550,
+      "tools": [],
+      "audit": [
+        {
+          "operation": "companion_agent:chat_completion_stream",
+          "provider": "mimo_responses",
+          "model_id": "mimo-v2.6-flash",
+          "duration_ms": 2142,
+          "prompt_tokens": 7301,
+          "cached_tokens": 6656,
+          "status": "success"
+        }
+      ],
+      "reply": "收工了啊，挺好。书一摞一摞挪走，桌面空出来的那一刻最舒服。想聊点什么，还是就这么有一搭没一搭地待着也行。",
+      "followUps": [],
+      "eventTypes": [
+        "turn.accepted",
+        "assistant.status",
+        "character.cue",
+        "assistant.thinking",
+        "assistant.delta",
+        "voice.segment.ready",
+        "assistant.final"
+      ],
+      "sseEvents": 23,
+      "issues": []
+    },
+    {
+      "id": "native-progress-tool",
+      "input": "请用计算工具核对 47 × 68 的结果，再告诉我。",
+      "runId": "641bf36a-b98f-4631-81fb-d7eae96d1533",
+      "status": "succeeded",
+      "error": null,
+      "steps": 2,
+      "firstSignalMs": 913,
+      "firstTextMs": 4310,
+      "finalMs": 7587,
+      "totalMs": 7830,
+      "tools": [
+        {
+          "id": "bf131c79-8f5b-4289-b97a-27f972e81694",
+          "name": "observe.calculate",
+          "status": "succeeded"
+        }
+      ],
+      "audit": [
+        {
+          "operation": "companion_agent:chat_completion_stream",
+          "provider": "mimo_responses",
+          "model_id": "mimo-v2.6-flash",
+          "duration_ms": 2139,
+          "prompt_tokens": 7650,
+          "cached_tokens": 6144,
+          "status": "success"
+        },
+        {
+          "operation": "companion_agent:chat_completion_stream",
+          "provider": "mimo_responses",
+          "model_id": "mimo-v2.6-flash",
+          "duration_ms": 5242,
+          "prompt_tokens": 9069,
+          "cached_tokens": 6144,
+          "status": "success"
+        }
+      ],
+      "reply": "核对过了，**47 × 68 = 3196**。",
+      "followUps": [],
+      "eventTypes": [
+        "turn.accepted",
+        "assistant.status",
+        "character.cue",
+        "assistant.thinking",
+        "agent.tool",
+        "assistant.delta",
+        "voice.segment.ready",
+        "assistant.final"
+      ],
+      "sseEvents": 27,
+      "issues": []
+    }
+  ]
+}

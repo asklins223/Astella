@@ -63,6 +63,11 @@
   overflow: hidden;
   cursor: pointer;
 }
+/* 公皮上半身跟手机舞台同一道底边：0.82 处才开始淡，避免盒子把衣服切成一条直线。 */
+.companion-presence[data-framing="bust"] .companion-visual-shell {
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 82%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 0%, #000 82%, transparent 100%);
+}
 .desktop-app[data-surface-open="true"] .companion-presence .companion-visual-shell {
   cursor: default;
 }

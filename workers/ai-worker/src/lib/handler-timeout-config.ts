@@ -28,7 +28,9 @@ const DEFAULT_TIMEOUTS: Record<string, number> = {
   // A renewable, user-cancellable agent task has no guessed total wall-clock
   // deadline. Deployment overrides and individual provider timeouts still apply.
   companion_agent: Infinity,
-  companion_followup_suggestions: 15_000,
+  // The reply is already delivered. This budget covers one thinking call
+  // (the generator aborts at 20s) plus the interactive-lane wait and the write.
+  companion_followup_suggestions: 45_000,
   agent_run_advance: DEFAULT_AI_TASK_TIMEOUT_MS,
   companion_memory_extract: DEFAULT_AI_TASK_TIMEOUT_MS,
   companion_summarizer: DEFAULT_AI_TASK_TIMEOUT_MS,

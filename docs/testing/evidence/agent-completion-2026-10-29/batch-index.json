@@ -1,0 +1,83 @@
+{
+  "batches": [
+    {
+      "file": "completion-first-1793230084028.json",
+      "records": 8,
+      "executionChecksPassed": 8,
+      "executionChecksMeasured": 8
+    },
+    {
+      "file": "natural-a-1793230630630.json",
+      "records": 12,
+      "executionChecksPassed": 12,
+      "executionChecksMeasured": 12
+    },
+    {
+      "file": "natural-b-1793230781802.json",
+      "records": 12,
+      "executionChecksPassed": 12,
+      "executionChecksMeasured": 12
+    },
+    {
+      "file": "quality-a-1793230630629.json",
+      "records": 10,
+      "executionChecksPassed": 10,
+      "executionChecksMeasured": 10
+    },
+    {
+      "file": "vision-1793230607744.json",
+      "records": 1,
+      "executionChecksPassed": 0,
+      "executionChecksMeasured": 0
+    },
+    {
+      "file": "vision-v2-1793231130901.json",
+      "records": 5,
+      "executionChecksPassed": 3,
+      "executionChecksMeasured": 5
+    },
+    {
+      "file": "vision-v2-1793231130901.json",
+      "records": 5,
+      "executionChecksPassed": 3,
+      "executionChecksMeasured": 5
+    },
+    {
+      "file": "long-cancel-1793231130908.json",
+      "records": 3,
+      "executionChecksPassed": 3,
+      "executionChecksMeasured": 3
+    },
+    {
+      "file": "quality-scope-final-1793231718680.json",
+      "records": 6,
+      "executionChecksPassed": 6,
+      "executionChecksMeasured": 6
+    },
+    {
+      "file": "mimo-current-1793232071586.json",
+      "records": 8,
+      "executionChecksPassed": 8,
+      "executionChecksMeasured": 8
+    },
+    {
+      "file": "discovery-native-1793232531467.json",
+      "records": 14,
+      "executionChecksPassed": 14,
+      "executionChecksMeasured": 14
+    },
+    {
+      "file": "answer-native-1793232837511.json",
+      "records": 11,
+      "executionChecksPassed": 11,
+      "executionChecksMeasured": 11
+    },
+    {
+      "file": "final-actions-1793232838691.json",
+      "records": 13,
+      "executionChecksPassed": 13,
+      "executionChecksMeasured": 13
+    }
+  ],
+  "note": "Repeated and evolving experiments; execution/content checks do not constitute a semantic accuracy rate."
+}

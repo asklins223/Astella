@@ -12,6 +12,41 @@ const chatDelta = (toolCalls: unknown[]) => ({
 });
 const finish = { choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }] };
 
+test("decoded chat deltas report text, reasoning and native tool progress only when nonempty", () => {
+  const activity: string[] = [];
+  const wire = new PiWireObservation("mimo-agent", "openai-completions", true, undefined, undefined,
+    kind => activity.push(kind ?? "unknown"));
+  wire.observe({ choices: [{ delta: { role: "assistant", content: "", reasoning_content: "",
+    tool_calls: [{ id: "pending", function: { name: "", arguments: "" } }] } }] });
+  wire.observe({ choices: [], usage: { total_tokens: 1 } });
+  assert.equal(activity.length, 0);
+  wire.observe({ choices: [{ delta: { content: "answer", reasoning_content: "working",
+    tool_calls: [{ function: { name: "lookup" } }] } }] });
+  assert.deepEqual(activity, ["text", "reasoning", "tool"]);
+});
+
+test("Responses activity supports deltas and whole output items without treating starts as reasoning", () => {
+  const activity: string[] = [];
+  const wire = new PiWireObservation("mimo-agent", "openai-responses", true, undefined, undefined,
+    kind => activity.push(kind ?? "unknown"));
+  for (const event of [
+    { type: "response.created" },
+    { type: "response.output_item.added", item: { type: "reasoning", summary: [], content: [] } },
+    { type: "response.output_text.delta", delta: "" },
+    { type: "response.function_call_arguments.delta", delta: "" },
+  ]) wire.observe(event);
+  assert.equal(activity.length, 0);
+  for (const event of [
+    { type: "response.output_text.delta", delta: "text" },
+    { type: "response.reasoning_summary_text.delta", delta: "reason" },
+    { type: "response.function_call_arguments.delta", delta: "{" },
+    { type: "response.output_item.done", item: { type: "message", content: [{ type: "output_text", text: "answer" }] } },
+    { type: "response.output_item.done", item: { type: "reasoning", encrypted_content: "opaque-provider-handle" } },
+    { type: "response.completed", response: { output: [{ type: "function_call", name: "lookup", arguments: "{}" }] } },
+  ]) wire.observe(event);
+  assert.deepEqual(activity, ["text", "reasoning", "tool", "text", "reasoning", "tool"]);
+});
+
 function parse(events: unknown[]) {
   const wire = new PiWireObservation("mimo-agent", "openai-completions", true, () => {}, undefined);
   for (const event of events) wire.observe(event);

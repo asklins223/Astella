@@ -7,6 +7,7 @@ import { SourceIntakeHost } from "./components/SourceIntake";
 import { CompanionPresence } from "./components/companion/bubble/CompanionPresence";
 import { CompanionFeedMenu } from "./components/companion/hud/CompanionFeedMenu";
 import { DesktopAccessGate } from "./components/DesktopAccessGate";
+import { OpenedFileHost } from "./components/OpenedFileHost";
 import { CompanionChatProvider } from "./app/companion-session/companion-chat-session";
 import { RenderErrorBoundary } from "./components/RenderErrorBoundary";
 import { useRoomStore } from "./app/home/room-store";
@@ -69,6 +70,7 @@ export const RoomExperience = memo(function RoomExperience() {
   const invoke = useRoomStore((state) => state.invoke);
   const setInputFocused = useRoomStore((state) => state.setInputFocused);
   const onboardingOpen = useRoomStore((state) => state.onboardingOpen);
+  const localPaperOpen = useRoomStore((state) => state.localPaperOpen);
   const returnTarget = useRoomStore((state) => state.returnTarget);
   useEffect(() => {
     const onFocusIn = (event: FocusEvent) => setInputFocused(isTypingTarget(event.target));
@@ -93,6 +95,7 @@ export const RoomExperience = memo(function RoomExperience() {
       })) return;
       if (event.key === "Escape") {
         if (notebookFullscreen) return;
+        if (localPaperOpen) return;
         if (document.querySelector('.companion-hud:not([data-mode="closed"])')) return;
         event.preventDefault();
         // Esc 与页面上那颗返回胶囊同一条路：先回到这趟跳转来的地方，
@@ -101,6 +104,8 @@ export const RoomExperience = memo(function RoomExperience() {
         if (surface) (returnTarget?.run ?? (() => invoke("home")))();
         return;
       }
+      // 本地稿纸是整页编辑器，快捷键交给它自己（⌘S 写回、⌘K 链接等）。
+      if (localPaperOpen) return;
       // 首页快捷键只有一条路：把按键翻成首页上的功能 id，交给 v2 首页去跑。
       // （旧 v1 那套"按 primaryIntent 分支 + 合同没签发路由就说入口已保留"的写法
       // 跟着 v1 首页一起删掉了；它的 9 个 tile 与这套快捷键是同一个入口的两份实现。）
@@ -114,7 +119,7 @@ export const RoomExperience = memo(function RoomExperience() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [invoke, onboardingOpen, surface, notebookFullscreen, returnTarget]);
+  }, [invoke, localPaperOpen, onboardingOpen, surface, notebookFullscreen, returnTarget]);
 
   const room = (
     <>
@@ -127,8 +132,9 @@ export const RoomExperience = memo(function RoomExperience() {
         <RoomStage />
       </div>
       <CompanionPresence />
+      <OpenedFileHost />
       <CompanionFeedMenu />
-      <div className="room-chrome" hidden={notebookFullscreen} inert={notebookFullscreen}>
+      <div className="room-chrome" hidden={notebookFullscreen || localPaperOpen} inert={notebookFullscreen || localPaperOpen}>
         <DirectoryRail />
         <HudRoomControl />
         {surface && surface !== "note-card"
@@ -156,6 +162,7 @@ export function App() {
   const viewPreset = useRoomStore((state) => state.viewPreset);
   const scenePhase = useRoomStore((state) => state.scenePhase);
   const onboardingOpen = useRoomStore((state) => state.onboardingOpen);
+  const localPaperOpen = useRoomStore((state) => state.localPaperOpen);
   const resetWorkspaceScope = useRoomStore((state) => state.resetWorkspaceScope);
   const setReducedMotion = useRoomStore((state) => state.setReducedMotion);
   const setWindowState = useRoomStore((state) => state.setWindowState);
@@ -194,6 +201,7 @@ export function App() {
       data-surface-open={Boolean(surface)}
       data-notebook-fullscreen={notebookFullscreen || undefined}
       data-onboarding-open={onboardingOpen}
+      data-local-paper={localPaperOpen || undefined}
       data-view-preset={viewPreset}
       data-scene-phase={scenePhase}
       data-scene-renderer="poster-live2d"

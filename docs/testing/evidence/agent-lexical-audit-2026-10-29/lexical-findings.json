@@ -1,0 +1,107 @@
+{
+  "scope": "Local synthetic inputs; no model, database, account, or production mutation.",
+  "results": [
+    {
+      "case": "note_save",
+      "request": "新建一篇笔记：三字经的文化背景。",
+      "parsedLength": {
+        "min": 3,
+        "max": 3
+      },
+      "accepted": false,
+      "error": "当前笔记正文按不含标点与空白统计为 27 字，未满足当前请求的篇幅（3–3 字）。请当场交付符合篇幅的完整正文和结尾。 字数包括保存时附加的相关笔记标题与说明，请相应收短正文。"
+    },
+    {
+      "case": "note_save",
+      "request": "新建一篇笔记，介绍四字成语的起源，字数不限。",
+      "parsedLength": {
+        "min": 4,
+        "max": 4
+      },
+      "accepted": false,
+      "error": "当前笔记正文按不含标点与空白统计为 30 字，未满足当前请求的篇幅（4–4 字）。请当场交付符合篇幅的完整正文和结尾。 字数包括保存时附加的相关笔记标题与说明，请相应收短正文。"
+    },
+    {
+      "case": "note_save",
+      "request": "新建笔记，写300–500字。",
+      "parsedLength": {
+        "min": 425,
+        "max": 575
+      },
+      "accepted": false,
+      "error": "当前笔记正文按不含标点与空白统计为 350 字，未满足当前请求的篇幅（425–575 字）。请当场交付符合篇幅的完整正文和结尾。 字数包括保存时附加的相关笔记标题与说明，请相应收短正文。"
+    },
+    {
+      "case": "selected_question",
+      "request": "不要只用一句话回答，详细解释。",
+      "rendered": "我刚划选的原文：\n<selection_data>\nThis is synthetic selected text.\n</selection_data>\n\n我的问题：不要只用一句话回答，详细解释。\n请严格只回答一句话，不要补充解释或反问。"
+    },
+    {
+      "case": "temporal_memory",
+      "request": "记住我的长期偏好：写日记时不要盘点今天学了多少。",
+      "resolution": {
+        "ok": false,
+        "reason": "missing_finite_validity"
+      }
+    },
+    {
+      "case": "portable_memory",
+      "content": "无论在哪个书房，我都更喜欢用物理类比理解抽象概念。",
+      "scope": "workspace",
+      "write": {
+        "ok": false,
+        "reason": "content_workspace_bound"
+      }
+    },
+    {
+      "case": "stable_memory_as_statistic",
+      "content": "今天我决定长期每天读30分钟。",
+      "rejectedAsVolatile": true
+    },
+    {
+      "case": "diary_quote",
+      "text": "A counterexample can reveal a missing assumption in an otherwise plausible argument.",
+      "eligible": false
+    },
+    {
+      "case": "diary_quote",
+      "text": "这段原文完整说明了例外条件为什么会影响结论，同时保留了作者的语气🙂。",
+      "eligible": false
+    },
+    {
+      "case": "stats_prefetch",
+      "request": "我想知道学习进度如何。",
+      "willPrefetch": true,
+      "availableSpanKeys": []
+    },
+    {
+      "case": "proactive_closure",
+      "text": "本轮没有新内容，明天我会提醒你。",
+      "suppressedAsQuiet": true
+    },
+    {
+      "case": "ordinary_technical_text",
+      "text": "请在 JavaScript 中读取 pageContext 字段。",
+      "verdict": {
+        "ok": false,
+        "reason": "internal_token_leak"
+      }
+    },
+    {
+      "case": "ordinary_technical_text",
+      "text": "示例 UUID 为 11111111-1111-4111-8111-111111111111。",
+      "verdict": {
+        "ok": false,
+        "reason": "internal_token_leak"
+      }
+    },
+    {
+      "case": "semantic_coverage_boundary",
+      "verdict": {
+        "ok": true,
+        "text": "笔记中的暗号是 SYNTHETIC-INVENTED。",
+        "writesLanded": false
+      }
+    }
+  ]
+}

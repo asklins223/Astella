@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { resetCompanionTypewriters } from "../../../app/companion-session/companion-typewriter-state";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CompanionMessageV1 } from "@astella/shared/companion-conversation-contracts";
 import { buildCompanionRunTraces, mergeCompanionRunTraces, recordCompanionRunEvent, type CompanionRunTrace } from "../../../app/companion-session/companion-agent-nodes";
@@ -11,7 +12,7 @@ import { useCompanionResultPreview } from "../journal/companion-result-preview";
 import { interactionSession } from "./companion-interaction-fixtures";
 
 vi.mock("../voice/CompanionMessageAudioButton", () => ({ CompanionMessageAudioButton: () => null }));
-afterEach(cleanup);
+afterEach(() => { cleanup(); resetCompanionTypewriters(); });
 const runId = "11111111-1111-4111-8111-111111111111";
 const messageId = "22222222-2222-4222-8222-222222222222";
 const event = (seq: number, eventType: string, payload: unknown) => ({ runId, generation: 1, seq, eventType, payload });
@@ -72,18 +73,21 @@ describe("手记的思考与操作时间线", () => {
   it("等待正文时直接展示真实宿主进度，后续思考不会把它藏进过程折叠中", () => {
     let traces = recordCompanionRunEvent([], event(1, "assistant.status", { status: "thinking", safeLabel: "已读到指定笔记，正在整理回答。" }));
     traces = recordCompanionRunEvent(traces, event(2, "assistant.thinking", { index: 0, text: "核对概念之间的关系。" }));
-    const view = render(<CompanionJournalTimeline chat={interactionSession({ phase: "sending", processRunId: runId, runTraces: traces })} draftText="" />);
-    expect(view.container.querySelector("header time")?.textContent).toBe("已读到指定笔记，正在整理回答。");
-    expect(view.container.querySelector("header time")?.textContent).not.toContain("核对概念之间的关系");
+    const view = render(<CompanionJournalTimeline chat={interactionSession({ phase: "sending", processRunId: runId, runTraces: traces })} />);
+    // 实时状态收在过程摘要里（iOS 同一处），名字旁边不再挂一条会跳动的状态字。
+    const summary = view.container.querySelector(".companion-history__trace > summary");
+    expect(summary?.textContent).toContain("已读到指定笔记，正在整理回答。");
+    expect(summary?.textContent).not.toContain("核对概念之间的关系");
+    expect(view.container.querySelector("header time")?.textContent).toBeFalsy();
   });
   it("恢复成功后只移除旧的空失败占位，保留真实部分回答", () => {
     const current = trace();
     const completed: CompanionRunTrace = { ...current, summary: { ...current.summary, status: "succeeded", assistantMessageId: messageId } };
     const old: CompanionMessageV1 = { ...message(), id: "33333333-3333-4333-8333-333333333333", seq: 1, kind: "error", blocks: [{ type: "text", text: "这条回复暂时没能完成。" }] };
-    const view = render(<CompanionJournalTimeline chat={interactionSession({ messages: [old, message()], runTraces: [completed] })} draftText="" />);
+    const view = render(<CompanionJournalTimeline chat={interactionSession({ messages: [old, message()], runTraces: [completed] })} />);
     expect(view.queryByText("这条回复暂时没能完成。")).toBeNull();
     expect(view.getByText("这是最终正文。")).toBeTruthy();
-    view.rerender(<CompanionJournalTimeline chat={interactionSession({ messages: [{ ...old, blocks: [{ type: "text", text: "中断前实际生成的部分回答仍然保留。" }] }, message()], runTraces: [completed] })} draftText="" />);
+    view.rerender(<CompanionJournalTimeline chat={interactionSession({ messages: [{ ...old, blocks: [{ type: "text", text: "中断前实际生成的部分回答仍然保留。" }] }, message()], runTraces: [completed] })} />);
     expect(view.getByText("中断前实际生成的部分回答仍然保留。")).toBeTruthy();
   });
   it("一段运行的多条发言只留一个名字，每条正文各在一个气泡里", () => {
@@ -91,7 +95,7 @@ describe("手记的思考与操作时间线", () => {
       blocks: [{ type: "text", text: "第一句。" }] };
     const second: CompanionMessageV1 = { ...message(), id: "55555555-5555-4555-8555-555555555555", seq: 3,
       blocks: [{ type: "text", text: "第二句。" }] };
-    const view = render(<CompanionJournalTimeline chat={interactionSession({ messages: [first, second] })} draftText="" />);
+    const view = render(<CompanionJournalTimeline chat={interactionSession({ messages: [first, second] })} />);
     // 过程标题是这一组唯一的名字；两条正文都不再各自带头像和名字。
     expect(view.container.querySelectorAll(".companion-record__author strong")).toHaveLength(1);
     const bubbles = [...view.container.querySelectorAll<HTMLElement>("[data-bubble='true']")];
@@ -138,24 +142,20 @@ describe("手记的思考与操作时间线", () => {
     expect(mergeCompanionRunTraces(merged, [])).toHaveLength(1);
   });
 
-  it("过程默认可读，思考默认折叠、可自由展开，答复在过程之后；手动选择从流式到完成保持", async () => {
+  it("活动日志实时可读，答复逐字出现在其后；手动选择跨完成保持", async () => {
     const current = trace();
     const view = render(<CompanionJournalTimeline chat={interactionSession({ phase: "sending", processRunId: runId,
-      draft: { runId, text: "正文正在生成。" }, runTraces: [current] })} draftText="正文正在生成。" />);
+      draft: { runId, text: "正文正在生成。" }, runTraces: [current] })} />);
     const panel = view.container.querySelector<HTMLDetailsElement>(".companion-history__trace")!;
     expect(panel.open).toBe(true);
+    await waitFor(() => expect(view.container.querySelector(".companion-record__body")).not.toBeNull());
     // 名字先出现，过程在名字下面，回复正文在过程之后。
     expect(view.container.querySelector("header")!.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(panel.compareDocumentPosition(view.container.querySelector(".companion-record__body")!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    // 思考块默认收起；要用时自己打开，完整原文在展开的详情里。
-    const thoughts = [...panel.querySelectorAll<HTMLDetailsElement>(".companion-history__trace-thinking")];
+    // 运行中思考直接进入统一的限高日志，不藏在第二层折叠内。
+    const thoughts = [...panel.querySelectorAll(".companion-history__trace-thinking")];
     expect(thoughts).toHaveLength(2);
-    expect(thoughts.every(thought => !thought.open)).toBe(true);
-    fireEvent.click(thoughts[0]!.querySelector("summary")!);
-    expect(thoughts[0]!.open).toBe(true);
     expect(thoughts[0]!.textContent).toContain("先读原文。");
-    fireEvent.click(thoughts[1]!.querySelector("summary")!);
-    expect(thoughts[1]!.open).toBe(true);
     expect(thoughts[1]!.textContent).toContain("再核对这个例子。");
     const operation = panel.querySelector<HTMLDetailsElement>(".companion-history__trace-tool")!;
     expect(operation.open).toBe(false);
@@ -169,16 +169,16 @@ describe("手记的思考与操作时间线", () => {
     expect(panel.open).toBe(true);
     const settled = recordCompanionRunEvent([current], event(5, "assistant.final", { messageId }));
     view.rerender(<CompanionJournalTimeline chat={interactionSession({ phase: "ready", processRunId: runId,
-      messages: [message()], runTraces: settled })} draftText="" />);
+      messages: [message()], runTraces: settled })} />);
     expect(view.container.querySelector(".companion-history__trace")).toBe(panel);
     expect(panel.open).toBe(true);
     expect(panel.textContent).toContain("先读原文。");
     expect(panel.textContent).toContain("再核对这个例子。");
-    expect(view.container.querySelector(".companion-record__body")?.textContent).toBe("这是最终正文。");
+    await waitFor(() => expect(view.container.querySelector(".companion-record__body")?.textContent).toBe("这是最终正文。"));
     view.unmount();
     // 新会话/新打开没有显式选择，历史过程回到默认收起。
     useCompanionResultPreview.setState({ disclosures: new Map() });
-    const history = render(<CompanionJournalTimeline chat={interactionSession({ messages: [message()], runTraces: settled })} draftText="" />);
+    const history = render(<CompanionJournalTimeline chat={interactionSession({ messages: [message()], runTraces: settled })} />);
     // 历史消息默认收起；要读思考得自己展开。
     expect(history.container.querySelector<HTMLDetailsElement>(".companion-history__trace")?.open).toBe(false);
   });
@@ -187,27 +187,38 @@ describe("手记的思考与操作时间线", () => {
     const current = trace();
     const chat = interactionSession({ messages: [message()], runTraces: [current] });
     const choices = new Map<string, boolean>();
-    const view = render(<CompanionJournalViewState choices={choices}><CompanionJournalTimeline chat={chat} draftText="" /></CompanionJournalViewState>);
+    const view = render(<CompanionJournalViewState choices={choices}><CompanionJournalTimeline chat={chat} /></CompanionJournalViewState>);
     const panel = view.container.querySelector<HTMLDetailsElement>(".companion-history__trace")!;
     expect(panel.open).toBe(false);
     fireEvent.click(panel.querySelector("summary")!);
     expect(panel.open).toBe(true);
     expect(panel.textContent).toContain("先读原文。");
     view.rerender(<CompanionJournalViewState choices={choices}>{null}</CompanionJournalViewState>);
-    view.rerender(<CompanionJournalViewState choices={choices}><CompanionJournalTimeline chat={chat} draftText="" /></CompanionJournalViewState>);
+    view.rerender(<CompanionJournalViewState choices={choices}><CompanionJournalTimeline chat={chat} /></CompanionJournalViewState>);
     const reopened = view.container.querySelector<HTMLDetailsElement>(".companion-history__trace")!;
     expect(reopened.open).toBe(true);
-    view.rerender(<CompanionJournalViewState choices={new Map()}><CompanionJournalTimeline chat={chat} draftText="" /></CompanionJournalViewState>);
+    view.rerender(<CompanionJournalViewState choices={new Map()}><CompanionJournalTimeline chat={chat} /></CompanionJournalViewState>);
     expect(reopened.open).toBe(false);
   });
 
-  it("已经存下的分句在实时聚合正文中只展示一次，收尾后共用一个过程面板", () => {
+  it("分句保留稳定气泡，发布不会重挂正文或跳到全文", async () => {
     const value = trace();
     const first = { ...message(), id: "33333333-3333-4333-8333-333333333333", blocks: [{ type: "text" as const, text: "第一句。" }] };
     const view = render(<CompanionJournalTimeline chat={interactionSession({ phase: "sending", processRunId: runId,
-      messages: [first], runTraces: [value], draft: { runId, text: "第一句。第二句。" } })} draftText="第一句。第二句。" />);
-    expect(view.container.querySelectorAll(".companion-record__body")).toHaveLength(1);
-    view.rerender(<CompanionJournalTimeline chat={interactionSession({ messages: [first, message()], runTraces: [value] })} draftText="" />);
+      messages: [first], runTraces: [value], draft: { runId, text: "第一句。第二句。" } })} />);
+    await waitFor(() => expect(view.container.querySelector(".companion-record__body")?.textContent).toContain("第一句"));
+    const firstBody = view.container.querySelector(".companion-record__body");
+    view.rerender(<CompanionJournalTimeline chat={interactionSession({ messages: [first, message()], runTraces: [value] })} />);
     expect(view.container.querySelectorAll(".companion-history__trace")).toHaveLength(1);
+    expect(view.container.querySelector(".companion-record__body")).toBe(firstBody);
+    await waitFor(() => expect(view.container.querySelectorAll(".companion-record__body")).toHaveLength(2));
   });
+  it("换会话立即移除尚未落地的上一轮正文", async () => {
+    const view = render(<CompanionJournalTimeline chat={interactionSession({ conversationId: runId,
+      phase: "sending", processRunId: runId, draft: { runId, text: "这段只属于原会话。" } })} />);
+    await waitFor(() => expect(view.container.textContent).toContain("这段"));
+    view.rerender(<CompanionJournalTimeline chat={interactionSession({ conversationId: messageId, phase: "ready", messages: [] })} />);
+    expect(view.container.textContent).not.toContain("这段");
+  });
+
 });

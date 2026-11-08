@@ -31,6 +31,27 @@ export const COMPANION_CORE_TOOL_NAMES: readonly string[] = Object.freeze([
 ]);
 
 /**
+ * Writes a conversation asks for often enough that discovering them costs a
+ * whole model round and changes the tool list mid-turn, which drops the
+ * provider prefix cache. They stay on every user turn. Proactive turns still
+ * remove {@link COMPANION_COMMON_ACTION_TOOL_NAMES}.
+ */
+export const COMPANION_READY_WRITE_TOOL_NAMES: readonly string[] = Object.freeze([
+  "companion_memory_save",
+  "companion_notes_write",
+]);
+
+/**
+ * Reads and forgets a conversation asks for in the same breath as a write.
+ * Leaving them for companion_load_tools adds a model round and changes the
+ * tool list after the first call, which drops the prefix cache.
+ */
+export const COMPANION_READY_RECORD_TOOL_NAMES: readonly string[] = Object.freeze([
+  "companion_notes_read",
+  "companion_memory_forget",
+]);
+
+/**
  * Application actions used by the proactive host's permission filter. They
  * remain in the complete catalog and discoverable groups, not every prompt.
  */
@@ -192,7 +213,7 @@ export function resolveCompanionInitialToolNames(input: {
 }): Set<string> {
   const available = new Set(input.availableToolNames);
   const names = new Set<string>();
-  for (const name of COMPANION_CORE_TOOL_NAMES) {
+  for (const name of [...COMPANION_CORE_TOOL_NAMES, ...COMPANION_READY_WRITE_TOOL_NAMES, ...COMPANION_READY_RECORD_TOOL_NAMES]) {
     if (available.has(name)) names.add(name);
   }
   // Discovery is always present. Deferral is the same for all user turns,

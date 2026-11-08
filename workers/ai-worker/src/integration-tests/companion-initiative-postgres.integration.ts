@@ -311,7 +311,11 @@ test("startup after a failed user turn keeps the history but assembles a host-oc
     assert.equal(request.messages.filter(message => message.role === "user").length, 0, "no invented or pending user request is appended");
     assert.match(request.systemPrompt, /当前任务是处理末尾 hostObservation/);
     assert.doesNotMatch(request.systemPrompt, /把最后一条消息作为对方向你说的话来接|当前用户请求仍以最后一条 user 消息为准|当前问题以最后一条 user 消息为准/);
-    const timeline = JSON.parse(request.systemPrompt.slice(request.systemPrompt.indexOf("<conversation_timeline>")).split("\n")[2]!);
+    const timelineMessage = request.messages.find(message => message.role === "system"
+      && String(message.content).includes("<conversation_timeline>"));
+    assert.ok(timelineMessage, "per-turn timing remains data after the stable instruction prefix");
+    const timelineText = String(timelineMessage.content);
+    const timeline = JSON.parse(timelineText.slice(timelineText.indexOf("<conversation_timeline>")).split("\n")[2]!);
     assert.equal(timeline.current.speaker, "host");
     assert.equal(timeline.history[0].replyTerminal, true);
     if (checked) return silentAnswer();
@@ -387,6 +391,11 @@ test("renderer reload, reconnect and second window cannot create a second launch
   await transaction(f, tx => tx.execute(sql`SELECT astella_enqueue_companion_attention()`));
   assert.equal(await observe(f), false);
   await admin`UPDATE companion_awareness_observations SET expires_at=now()+interval '2 minutes' WHERE user_id=${f.userId}`;
+  await prepare(f);
+  assert.equal((await admin`SELECT 1 FROM companion_turn_runs WHERE user_id=${f.userId}`).length, 0,
+    "restoring an observation's expiry cannot revive its already-expired delivery");
+  f.launchId = randomUUID();
+  assert.equal(await observe(f), true, "a genuine new launch creates a distinct opportunity");
   await prepare(f);
   const runs = await admin`SELECT user_message_id,input_source FROM companion_turn_runs WHERE user_id=${f.userId}`;
   assert.equal(runs.length, 1); assert.equal(runs[0]!.user_message_id, null);
@@ -466,6 +475,36 @@ test("a structured quiet decision finishes without another model call or speech"
     assert.equal(completion!.payload.silent,true,content);
   }
 });
+test("a study start is dropped once the reader has left that page", async () => {
+  const f = await fixture();
+  await prefs(f, "看到我在读笔记时，可以轻轻接一句。");
+  const noteId = randomUUID();
+  const versionId = randomUUID();
+  const base = { version: 1 as const, appLaunchId: f.launchId, deviceSessionId: `device:${f.launchId}`, host: "desktop" as const,
+    occurredAt: new Date().toISOString(), elapsedMs: 0 };
+  await awarenessTransaction(f, tx => recordCompanionAwareness(tx, f, { ...base, id: randomUUID(), topic: "context.updated",
+    context: { foreground: true, unlocked: true, typing: false, learning: true, conversationId: f.conversationId,
+      page: { key: `note-read:${noteId}:companion`, label: "笔记", revision: versionId, context: null } } }));
+  await awarenessTransaction(f, tx => recordCompanionAwareness(tx, f, { ...base, id: randomUUID(), topic: "context.updated",
+    occurredAt: new Date(Date.now() + 1_000).toISOString(),
+    context: { foreground: true, unlocked: true, typing: false, learning: false, conversationId: f.conversationId,
+      page: { key: "settings:companion", label: "设置", revision: null, context: null } } }));
+  const [job] = await admin`SELECT id FROM jobs WHERE requested_by=${f.userId} AND type='companion_initiative' AND status='pending'`;
+  assert.ok(job, "leaving the note still has the original study observation to re-check");
+  await prepare(f);
+  assert.equal((await admin`SELECT 1 FROM companion_turn_runs WHERE user_id=${f.userId}`).length, 0);
+  const stayed = await fixture();
+  await prefs(stayed, "看到我在读笔记时，可以轻轻接一句。");
+  const stayNote = randomUUID();
+  const stayVersion = randomUUID();
+  await awarenessTransaction(stayed, tx => recordCompanionAwareness(tx, stayed, {
+    version: 1, id: randomUUID(), appLaunchId: stayed.launchId, deviceSessionId: `device:${stayed.launchId}`, host: "desktop",
+    topic: "context.updated", occurredAt: new Date().toISOString(), elapsedMs: 0,
+    context: { foreground: true, unlocked: true, typing: false, learning: true, conversationId: stayed.conversationId,
+      page: { key: `note-read:${stayNote}:companion`, label: "笔记", revision: stayVersion, context: null } } }));
+  await prepare(stayed);
+  assert.equal((await admin`SELECT 1 FROM companion_turn_runs WHERE user_id=${stayed.userId}`).length, 1);
+});
 test("a pending page opportunity is dropped after its actual page changes", async () => {
   const f = await fixture(); await prefs(f,"进入资料页时，看到实际失败就帮我排障。");
   const base = {version:1 as const,appLaunchId:f.launchId,deviceSessionId:`device:${f.launchId}`,host:"desktop" as const,
@@ -476,6 +515,33 @@ test("a pending page opportunity is dropped after its actual page changes", asyn
   await transaction(f, tx => recordCompanionAwareness(tx,f,{...base,id:randomUUID(),topic:"context.updated",occurredAt:new Date().toISOString(),
     context:{...base.context,page:{...base.context.page,key:"home"}}}));
   await prepare(f); assert.equal((await admin`SELECT 1 FROM companion_turn_runs WHERE user_id=${f.userId}`).length,0);
+});
+test("a session that was fresh when the turn started stays publishable after the 45 second heartbeat window", async () => {
+  const f = await fixture(); await prefs(f,"每次启动问好。"); await observe(f); await prepare(f);
+  const [run] = await admin`SELECT id FROM companion_turn_runs WHERE user_id=${f.userId}`;
+  assert.ok(run);
+  await admin`UPDATE companion_turn_runs SET started_at=now()-interval '20 seconds' WHERE id=${run.id}`;
+  await admin`UPDATE companion_awareness_sessions SET updated_at=now()-interval '50 seconds' WHERE user_id=${f.userId}`;
+  await transaction(f, tx => assertCompanionContextSourcesCurrent(tx, f, run.id));
+  await admin`UPDATE companion_turn_runs SET started_at=NULL, created_at=now()-interval '20 seconds' WHERE id=${run.id}`;
+  await transaction(f, tx => assertCompanionContextSourcesCurrent(tx, f, run.id));
+  await admin`UPDATE companion_awareness_sessions SET updated_at=now()-interval '4 minutes' WHERE user_id=${f.userId}`;
+  await assert.rejects(
+    () => transaction(f, tx => assertCompanionContextSourcesCurrent(tx, f, run.id)),
+    (error: unknown) => error instanceof CompanionContextChangedError && error.reason === "heartbeat_before_turn",
+  );
+  await admin`UPDATE companion_turn_runs SET created_at=now()-interval '4 minutes', started_at=now()-interval '4 minutes' WHERE id=${run.id}`;
+  await admin`UPDATE companion_awareness_sessions SET updated_at=now()-interval '3 minutes 30 seconds' WHERE user_id=${f.userId}`;
+  await assert.rejects(
+    () => transaction(f, tx => assertCompanionContextSourcesCurrent(tx, f, run.id)),
+    (error: unknown) => error instanceof CompanionContextChangedError && error.reason === "heartbeat_older_than_3m",
+  );
+  await admin`UPDATE companion_turn_runs SET created_at=now(), started_at=now() WHERE id=${run.id}`;
+  await admin`UPDATE companion_awareness_sessions SET updated_at=now(), context=jsonb_set(context, '{page,key}', '"home:elsewhere"') WHERE user_id=${f.userId}`;
+  await assert.rejects(
+    () => transaction(f, tx => assertCompanionContextSourcesCurrent(tx, f, run.id)),
+    (error: unknown) => error instanceof CompanionContextChangedError && error.reason === "page",
+  );
 });
 test("preference and live presence changes stop an accepted initiative before it publishes", async () => {
   const f = await fixture(); await prefs(f,"每次启动问好。"); await observe(f); await prepare(f);

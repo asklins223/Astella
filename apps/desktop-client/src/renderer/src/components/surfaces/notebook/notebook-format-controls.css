@@ -64,7 +64,6 @@
 .note-table-alignment [aria-pressed=true] { background: #e1e7d4; color: #436347; }
 .note-table-dimensions input { appearance: textfield; border: 1px solid #d6ccb8; border-radius: 5px; background: #fffcf2; padding: 5px; color: inherit; font: inherit; }
 .note-table-dimensions input::-webkit-inner-spin-button { appearance: none; }
-.notebook-local-dialog .local-note-format-tools { padding-inline: 20px; }
 .notebook-workspace[data-writing-focus=true] .note-source-editor .cm-line:not(.cm-activeLine) { opacity: .3; }
 .notebook-workspace[data-typewriter=true] .note-source-editor .cm-content { padding-bottom: 40vh; }
 .ProseMirror sup[data-note-ref] button { border: 0; padding: 0 2px; color: #6c8059; background: transparent; font: inherit; cursor: pointer; }

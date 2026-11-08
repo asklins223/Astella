@@ -3,10 +3,12 @@ import { test } from "node:test";
 import { AgentRole, type AgentTurnRequest, type ModelProfile } from "@astella/shared";
 import type { PublicStreamingRequester } from "@astella/shared/public-json-http";
 import { PiAgentProvider } from "../lib/providers/pi-agent.ts";
+import { createPiHttpTransport } from "../lib/providers/pi-http-transport.ts";
 import { createProvider } from "../lib/ai-provider.ts";
 import { createCapabilityProvider } from "../lib/provider-factory.ts";
 import { ProviderRequestError, ProviderResponseRefusedError, ProviderResponseUnverifiedError, ProviderStreamError } from "../lib/provider-request-error.ts";
 import { AgentOutputError } from "../lib/non-retryable-errors.ts";
+import { watchCompanionOutput } from "../handlers/agent/companion-output-watchdog.ts";
 
 const tool = { name: "lookup", description: "Read a value", parameters: {
   type: "object", properties: { query: { type: "string" } }, required: ["query"], additionalProperties: false,
@@ -204,7 +206,7 @@ test("MiMo full tool loop preserves reasoning, host observation order and call i
   assert.deepEqual(first.reasoning, [reasoning]);
   assert.deepEqual(first.toolCalls, [{ id: "call_probe", name: "lookup", arguments: { query: "hello" } }]);
   assert.equal(first.usage?.promptTokens, 120);
-  const second = await provider.executeAgentTurn(request({ messages: [
+  const second = await provider.executeAgentTurn(request({ maxTokens: profile.maxOutputTokens, messages: [
     { role: "user", content: "hello" },
     { role: "assistant", content: "", reasoning: first.reasoning, toolCalls: first.toolCalls },
     { role: "tool", toolCallId: "call_probe", content: "found" },
@@ -236,7 +238,7 @@ test("MiMo honors the declared Chat protocol with system policy, tool calls and 
     onReasoningDelta: text => thoughtDeltas.push(text) }, undefined, () => undefined);
   assert.deepEqual(first.toolCalls, [{ id: "call_mimo_chat", name: "lookup", arguments: { query: "hello" } }]);
   assert.equal(thoughtDeltas.join(""), "synthetic thought");
-  await provider.executeAgentTurn(request({ reasoningEffort: "low", messages: [
+  await provider.executeAgentTurn(request({ maxTokens: profile.maxOutputTokens, reasoningEffort: "low", messages: [
     { role: "user", content: "hello" },
     { role: "assistant", content: "", reasoning: first.reasoning, toolCalls: first.toolCalls },
     { role: "tool", toolCallId: "call_mimo_chat", content: "found" },
@@ -306,7 +308,7 @@ test("DeepSeek Chat uses stable session, strict tool arguments and plaintext rea
   assert.equal(first.usage?.promptTokens, 120);
   assert.equal(first.usage?.cacheMissTokens, 56);
   assert.ok(first.reasoning?.length);
-  await provider.executeAgentTurn(request({ messages: [
+  await provider.executeAgentTurn(request({ maxTokens: 384000, messages: [
     { role: "user", content: "hello" },
     { role: "assistant", content: "", reasoning: first.reasoning, toolCalls: first.toolCalls },
     { role: "tool", toolCallId: first.toolCalls[0]!.id, content: "found" },
@@ -387,6 +389,84 @@ test("required tools: MiMo preserves auto results for host verification; DeepSee
   assert.deepEqual(c.captured[0]!.body.thinking, { type: "disabled" });
   assert.equal(c.captured[0]!.body.tool_choice, "required");
   assert.equal(c.captured[0]!.body.temperature, 0.2);
+});
+
+test("the HTTP transport preserves SSE status frames without classifying them as model output", async () => {
+  const endpoint = "https://api.xiaomimimo.com/v1/responses";
+  const transport = createPiHttpTransport({
+    providerId: "mimo_responses", endpoint,
+    request: async () => ({ status: 200, statusText: "OK", cancel() {},
+      body: (async function* () {
+        yield new TextEncoder().encode("data: {\"type\":\"response.created\"}\n\n");
+      })() }),
+  });
+  const response = await transport.fetch(endpoint, { method: "POST", body: "{}" });
+  assert.equal(await response.text(), "data: {\"type\":\"response.created\"}\n\n");
+});
+
+for (const protocol of ["openai-responses", "openai-completions"] as const) {
+  test(`${protocol} heartbeats and empty output items cannot satisfy the silence watchdog`, async () => {
+    let release!: () => void, parked!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const waiting = new Promise<void>(resolve => { parked = resolve; });
+    const kinds: string[] = [];
+    const f = fixture([]);
+    const streamRequest: PublicStreamingRequester = async () => ({ status: 200, statusText: "OK", cancel() {},
+      body: (async function* () {
+        const statuses = protocol === "openai-responses"
+          ? [{ type: "response.created", response: { id: "pending", status: "in_progress", output: [] } },
+            { type: "response.in_progress", response: { id: "pending", status: "in_progress", output: [] } },
+            { type: "response.output_item.added", output_index: 0,
+              item: { id: "rs_pending", type: "reasoning", content: [], summary: [] } },
+            { type: "response.reasoning_text.delta", output_index: 0, content_index: 0, item_id: "rs_pending", delta: "" }]
+          : chatEvents({ role: "assistant", content: "", reasoning_content: "" }, null);
+        yield new TextEncoder().encode(": keep-alive\n\n" + statuses.map(event => `data: ${JSON.stringify(event)}\n\n`).join(""));
+        parked(); await gate;
+        const output = protocol === "openai-responses" ? responseEvents([message("done")]) : chatEvents({ content: "done" });
+        yield new TextEncoder().encode(output.map(event => `data: ${JSON.stringify(event)}\n\n`).join(""));
+      })() });
+    const pending = mimo(f, { streamRequest, modelProfile: { ...profile, protocol } }).executeAgentTurn(request(), undefined,
+      { onOutputActivity: kind => kinds.push(kind ?? "unknown") });
+    try {
+      await waiting;
+      await new Promise<void>(resolve => setImmediate(resolve));
+      assert.deepEqual([...kinds], [], "receipt of data frames and empty SDK starts is transport activity, not model output");
+      release();
+      assert.equal((await pending).content, "done");
+      assert.ok(kinds.includes("text"));
+      assert.ok(!kinds.includes("reasoning"));
+    } finally { release(); await pending.catch(() => undefined); }
+  });
+}
+
+test("a live SSE connection containing only status frames still times out after a minute of no model output", async t => {
+  t.mock.timers.enable({ apis: ["Date", "setTimeout"], now: 0 });
+  let release!: () => void, parked!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const waiting = new Promise<void>(resolve => { parked = resolve; });
+  const streamRequest: PublicStreamingRequester = async () => ({ status: 200, statusText: "OK", cancel() {},
+    body: (async function* () {
+      yield new TextEncoder().encode(`data: ${JSON.stringify({ type: "response.created", response: { id: "pending", status: "in_progress", output: [] } })}\n\n`);
+      parked(); await gate;
+    })() });
+  const provider = mimo(fixture([]), { streamRequest });
+  const pending = watchCompanionOutput((signal, onOutputActivity) => provider.executeAgentTurn(request(), signal,
+    { onOutputActivity }), new AbortController().signal, { firstOutputMs: 60_000, idleMs: 60_000 });
+  const rejected = assert.rejects(pending, { code: "provider_first_output_timeout" });
+  try {
+    await waiting;
+    await new Promise<void>(resolve => setImmediate(resolve));
+    t.mock.timers.tick(60_000);
+    await rejected;
+  } finally { release(); t.mock.timers.reset(); }
+});
+
+test("a reasoning item with no deltas still counts as model output", async () => {
+  const f = fixture([{ events: responseEvents([reasoning, message("done")]) }]);
+  const kinds: string[] = [];
+  await mimo(f).executeAgentTurn(request(), undefined, { onOutputActivity: kind => { kinds.push(kind ?? "unknown"); } });
+  assert.ok(kinds.includes("reasoning"));
+  assert.ok(kinds.includes("text"));
 });
 
 test("native progress distinguishes reasoning from useful text and tool output", async () => {
@@ -556,13 +636,19 @@ test("cross-protocol fallback converts a Chat thinking field into a valid Respon
 });
 
 
-test("independent short classification honors its own limit without shrinking native agent steps", async () => {
+test("a step budget is sent on the wire and cannot exceed the model profile", async () => {
   const f = fixture([{ events: responseEvents([message('{"path":"chat"}')]) },
-    { events: responseEvents([message("full native answer")]) }]);
+    { events: responseEvents([message("full native answer")]) },
+    { events: responseEvents([message("bounded")]) },
+    { events: responseEvents([message("clamped")]) }]);
   const provider = mimo(f);
   await provider.chatCompletion([{ role: "user", content: "classify" }],
     { maxTokens: 32, disableThinking: true, responseFormat: "json_object" });
   assert.equal(f.captured[0]!.body.max_output_tokens, 32);
-  await provider.executeAgentTurn(request());
+  await provider.executeAgentTurn(request({ maxTokens: profile.maxOutputTokens }));
   assert.equal(f.captured[1]!.body.max_output_tokens, profile.maxOutputTokens);
+  await provider.executeAgentTurn(request({ maxTokens: 16_384 }));
+  assert.equal(f.captured[2]!.body.max_output_tokens, 16_384);
+  await provider.executeAgentTurn(request({ maxTokens: 9_999_999 }));
+  assert.equal(f.captured[3]!.body.max_output_tokens, profile.maxOutputTokens);
 });

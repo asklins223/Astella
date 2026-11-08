@@ -70,7 +70,9 @@ function CitationButton({ source, number, label }: { source: WebCitation; number
 export function WebCitationText({ text }: { text: string }) {
   const sources = useContext(WebCitationContext);
   // Streaming and the reading clock can end halfway through a marker.
-  const visibleText = text.replace(/\[\^(?:w|we|web|web-[a-zA-Z0-9_-]*)?$/, "");
+  const visibleText = text
+    .replace(/(^|\n\n?)\[\^web-[a-zA-Z0-9_-]+\]:[^\n]*/g, "")
+    .replace(/\[\^(?:w|we|web|web-[a-zA-Z0-9_-]*)?$/, "");
   const nodes: ReactNode[] = [];
   const prose = (value: string, key: string) => value.split("\n").flatMap((line, index) => index ? [<br key={`${key}-${index}`} />, line] : [line]);
   let end = 0;

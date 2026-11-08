@@ -24,6 +24,12 @@ import type { JobPayload } from ".././index.ts";
 
 const BATCH_LIMIT = 200;
 
+/** A policy denial is not a bad vector. Mock stays local; every other provider
+ * is refused by the same gate, so the rebuild must stop before it marks rows failed. */
+export function memoryEmbeddingBlockedByExternalSend(providerId: string, sendToExternal: boolean): boolean {
+  return providerId.toLowerCase() !== "mock" && sendToExternal !== true;
+}
+
 export async function runCompanionMemoryEmbeddingRebuild(job: JobPayload): Promise<void> {
   // 设计 P1-8（2026-09-15 审计）：字段名走共享契约（见 @astella/shared 的
   // companion-memory-job-payload），改名由编译器兜住。
@@ -34,21 +40,23 @@ export async function runCompanionMemoryEmbeddingRebuild(job: JobPayload): Promi
   const govCtx = await resolveAIGovernanceContext(job.workspaceId, userId);
   if (!govCtx.consentOk) throw new AIConsentRequiredError();
   const rawProvider = await createEmbeddingProvider(govCtx);
-  // 与主 provider 同一份审计口径：owner / operation / job / 带出去的类别。
-  // 类别取 `user_answer`——这些行是 `companion_memory_extract` 从用户与伴星
-  // 对话里抽出来的（抽取那侧声明的也是 `user_answer`），向量文本就是它们的正文。
-  const provider = rawProvider
-    ? createGovernedEmbeddingProvider(rawProvider, govCtx, job.workspaceId, {
-      userId,
-      operation: "companion_memory_embedding_rebuild",
-      jobId: job.id,
-      dataCategories: ["user_answer"],
-    })
-    : null;
-  if (!provider) {
+  if (!rawProvider) {
     logger.info({ jobId: job.id }, "memory embedding rebuild skipped: no embedding provider");
     return;
   }
+  if (memoryEmbeddingBlockedByExternalSend(rawProvider.id, govCtx.policy.sendToExternal)) {
+    logger.info({ jobId: job.id }, "memory embedding rebuild skipped: account has not allowed sending content to an external model");
+    return;
+  }
+  // 与主 provider 同一份审计口径：owner / operation / job / 带出去的类别。
+  // 类别取 `user_answer`——这些行是 `companion_memory_extract` 从用户与伴星
+  // 对话里抽出来的（抽取那侧声明的也是 `user_answer`），向量文本就是它们的正文。
+  const provider = createGovernedEmbeddingProvider(rawProvider, govCtx, job.workspaceId, {
+    userId,
+    operation: "companion_memory_embedding_rebuild",
+    jobId: job.id,
+    dataCategories: ["user_answer"],
+  });
 
   const rows = await withJobTransaction(job, async (tx) => {
     const result = await tx.execute<{

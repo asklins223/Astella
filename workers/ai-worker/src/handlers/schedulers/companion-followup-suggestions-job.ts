@@ -9,6 +9,7 @@ import {
 } from "../../lib/governance.ts";
 import { assertJobLease, lockJobLease, withJobTransaction } from "../../lib/job-lease.ts";
 import { logger } from "../../lib/logger.ts";
+import { runWhenInteractiveProviderIdle } from "../../lib/interactive-provider-lane.ts";
 import { reserveCompanionFollowupProviderCall } from "../agent/companion-agent-events.ts";
 import { textOfCompanionBlocks } from "../turn/companion-dialogue-content.ts";
 import { generateCompanionFollowupPrompts } from "../proactive/companion-followup-suggestions.ts";
@@ -23,6 +24,7 @@ interface FollowupContext {
   accountEpoch: number;
   userText: string;
   assistantText: string;
+  completedWrites: string[];
 }
 
 function companionJobContext(job: JobPayload) {
@@ -78,6 +80,13 @@ export async function runCompanionFollowupSuggestions(job: JobPayload): Promise<
     if ((Array.isArray(row.follow_up_prompts) && row.follow_up_prompts.length > 0)
       || assistantBlocks.some((block) => block && typeof block === "object"
       && (block as { type?: unknown }).type === "follow_up_suggestions")) return null;
+    const writes = await tx.execute<{ result_safe_summary: string }>(sql`
+      SELECT result_safe_summary FROM companion_agent_tool_calls
+      WHERE run_id = ${runId} AND workspace_id = ${job.workspaceId} AND user_id = ${userId}
+        AND status = 'succeeded' AND risk_class <> 'read'
+        AND coalesce(result_safe_summary, '') <> ''
+      ORDER BY created_at
+    `);
     return {
       conversationId: row.conversation_id,
       userMessageId: row.user_message_id,
@@ -86,6 +95,7 @@ export async function runCompanionFollowupSuggestions(job: JobPayload): Promise<
       accountEpoch: row.account_epoch,
       userText: textOfCompanionBlocks(row.user_blocks),
       assistantText: textOfCompanionBlocks(row.assistant_blocks),
+      completedWrites: writes.map(write => write.result_safe_summary),
     } satisfies FollowupContext;
   });
   if (!context || !context.userText.trim() || !context.assistantText.trim()) return;
@@ -124,12 +134,13 @@ export async function runCompanionFollowupSuggestions(job: JobPayload): Promise<
       },
     );
     try {
-      prompts = await generateCompanionFollowupPrompts({
+      prompts = await runWhenInteractiveProviderIdle(signal => generateCompanionFollowupPrompts({
         provider,
         userText: context.userText,
         assistantText: context.assistantText,
-        signal: job.signal ?? new AbortController().signal,
-      });
+        completedWrites: context.completedWrites,
+        signal,
+      }), job.signal ?? new AbortController().signal);
     } catch (error) {
       if (job.signal?.aborted) throw error;
       logger.info({

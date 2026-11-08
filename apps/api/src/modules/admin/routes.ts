@@ -69,6 +69,7 @@ import {
   JOB_STATUS_LABELS,
   JOB_TYPE_LABELS,
   METRIC_SERIES_META,
+  providerTypeLabel,
 } from "./labels.ts";
 import { logger } from "../../lib/logger.ts";
 import { readReleaseOverview } from "../app-release/service.ts";
@@ -515,6 +516,10 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       ...snapshot,
       platforms: snapshot.platforms.map((platform) => ({
         ...platform,
+        // 协议实现的人话名：面板上写 `openai_compatible` 对运维没有意义，
+        // 但把 id 悄悄换成人话又会让「配置文件里那一行」对不上号——
+        // 所以两个都给，由视图决定主次（id 等宽、人话名做主标题）。
+        typeLabel: providerTypeLabel(platform.type),
         usedByCapabilities: platform.usedByCapabilities.map(
           (capability) => CAPABILITY_KIND_LABELS[capability] ?? capability,
         ),

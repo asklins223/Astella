@@ -4,11 +4,15 @@ import { NoteSourceEditor, type NoteSourceEditorHandle } from "./note-source-edi
 import type { NoteBodyMode } from "./note-document-mode.ts";
 
 /** Both views stay attached to the same document for this note's whole visit. */
-export function NoteDocumentEditor({ mode, ref, ...props }: ComponentProps<typeof NoteMarkdownEditor> & { readonly mode: NoteBodyMode }) {
+export function NoteDocumentEditor({ mode, ref, onReady, ...props }: ComponentProps<typeof NoteMarkdownEditor> & { readonly mode: NoteBodyMode }) {
   const richRef = useRef<NoteMarkdownEditorHandle | null>(null);
   const sourceRef = useRef<NoteSourceEditorHandle | null>(null);
   const [editor, setEditor] = useState<NoteMarkdownEditorHandle | null>(null);
-  const onReady = useCallback((handle: NoteMarkdownEditorHandle | null) => { richRef.current = handle; setEditor(handle); }, []);
+  const ready = useCallback((handle: NoteMarkdownEditorHandle | null) => {
+    richRef.current = handle;
+    setEditor(handle);
+    onReady?.(handle);
+  }, [onReady]);
   const latest = useRef({ mode, onChange: props.onChange });
   latest.current = { mode, onChange: props.onChange };
   const onChange = useCallback((value: string) => {
@@ -56,7 +60,7 @@ export function NoteDocumentEditor({ mode, ref, ...props }: ComponentProps<typeo
 
   return <div className="note-document-editor" data-body-mode={mode}>
     <div hidden={mode !== "live-preview"}>
-      <NoteMarkdownEditor {...props} disabled={props.disabled || mode !== "live-preview"} onChange={onChange} onReady={onReady} />
+      <NoteMarkdownEditor {...props} disabled={props.disabled || mode !== "live-preview"} onChange={onChange} onReady={ready} />
     </div>
     <div hidden={mode !== "source"}>
       {editor ? <NoteSourceEditor editor={editor} handleRef={sourceRef} disabled={Boolean(props.disabled) || mode !== "source"}

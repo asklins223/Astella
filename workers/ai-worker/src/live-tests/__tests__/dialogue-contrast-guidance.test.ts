@@ -12,7 +12,7 @@ test("对照指导仅替换闲聊执行块，保留人格、完整纠正和出�
   const candidate = contrastDialogueGuidance(input);
   assert.deepEqual({ ...candidate, systemPrompt: "" }, { ...original, systemPrompt: "" });
   assert.ok(candidate.systemPrompt.includes("<persona_data>"));
-  assert.ok(candidate.systemPrompt.includes("<conversation_timeline>"));
+  assert.ok(candidate.messages.some(message => typeof message.content === "string" && message.content.includes("<conversation_timeline>")));
   assert.deepEqual(input, original);
   candidate.messages[0]!.content = "mutated";
   assert.deepEqual(input, original);

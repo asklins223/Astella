@@ -20,6 +20,9 @@ test("创建身份稳定，保存回执含可打开的新笔记入口，恢复�
   assert.notEqual(companionCreatedNoteId(NOTE, "call-a"), companionCreatedNoteId(VERSION, "call-a"));
   assert.notEqual(companionCreatedNoteId(NOTE, "call-a"), companionCreatedNoteId(NOTE, "call-b"));
   const result = createdNoteToolResult(receipt);
+  assert.equal(result.safeSummary, "已保存笔记《欧姆定律》，可打开继续编辑");
+  const linked = createdNoteToolResult({ ...receipt, linkedNotes: [{ noteId: VERSION, title: "电流" }] });
+  assert.equal(linked.safeSummary, "已保存笔记《欧姆定律》，含 1 个库内链接，可打开继续编辑");
   assert.deepEqual(result.blocks, [{ type: "nav", label: "打开《欧姆定律》", route: { kind: "note", noteId: NOTE, noteVersionId: VERSION } }]);
   assert.deepEqual(readCreatedNoteReceipt(result.resultRef!), receipt);
   assert.equal(readCreatedNoteReceipt(JSON.stringify({ kind: "created_note", noteId: NOTE })), null);

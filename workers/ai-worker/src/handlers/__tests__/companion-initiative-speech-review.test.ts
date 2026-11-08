@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { initiativeSpeechReviewMessages, parseInitiativeSpeechReview, reviewCompanionInitiativeSpeech } from "../proactive/companion-initiative-speech-review.ts";
 test("publication review preserves a substantive correction and rejects semantic repetition or failed-request deferral", () => {
@@ -11,6 +12,11 @@ test("publication review preserves a substantive correction and rejects semantic
   assert.match(messages[0]!.content, /纠错即使只改一个数字也是新内容/);
   assert.match(messages[0]!.content, /不能把简短等同于无内容/);
 });
+test("initiative review counts streamed thinking as output for the silence budget", () => {
+  const source = readFileSync(new URL("../proactive/companion-initiative-speech-review.ts", import.meta.url), "utf8");
+  assert.match(source, /onOutputActivity: activity/);
+});
+
 test("ordinary user requests do not spend a publication-review call", async () => {
   const result = await reviewCompanionInitiativeSpeech({ read: { initiativeInput: null }, provider: { chatCompletion: () => { throw new Error("must not call"); } } } as never);
   assert.equal(result, null);

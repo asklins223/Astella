@@ -75,13 +75,11 @@ const BASELINE_UNTESTED: ReadonlySet<string> = new Set([
   // 2026-10-14：`companion-memory-embedding` 已被 companion-memory-embedding-jobs.test.ts
   // 引用，覆盖写入事务的幂等入队与 rebuild 的当前模型 revision 判据，故从未测基线移除。
   "companion-reminder-scheduler",
-  "note-expansion-generate",
   // Plan 57：新学习卡链路与伴星恢复链新拆出的 handler，尚未补行为单测。
   "companion-compaction-progress",
   "companion-delivery-write",
   "companion-note-reads",
   "frozen-note-for-generation",
-  "note-learning-card-generate",
   "note-learning-card-grade",
 ]);
 
@@ -171,9 +169,10 @@ test("【自证】本文件的判据真的能区分「有测试」与「没测�
   const tested = handlers.filter((h) => blob.includes(h));
   assert.ok(tested.length > 0,
     "一个 handler 都没判成有测试——收集器或判据坏了，这条棘轮会变成空跑");
-  // 反向自证：基线里那几个确实测不到
-  // 换一个**确实还没测**的 handler 来做反向自证：
-  // note-dynamic-artifact-generate 在 2026-09-29 补了锚点漂移用例后已出基线。
-  assert.ok(!blob.includes("note-expansion-generate"),
-    "note-expansion-generate 已经有测试了？那基线和自证都该更新");
+  // Use a remaining baseline member as the negative witness. Expansion now
+  // has real publication and review coverage; completing it must not break
+  // this guard's own test of an unrelated uncovered module.
+  const witness = [...BASELINE_UNTESTED][0];
+  if (witness) assert.ok(!blob.includes(witness), `${witness} has coverage; tighten the baseline`);
+  else assert.equal(handlers.filter(handler => !blob.includes(handler)).length, 0);
 });

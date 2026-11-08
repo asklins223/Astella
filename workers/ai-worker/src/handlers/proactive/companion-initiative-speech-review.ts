@@ -59,8 +59,9 @@ export async function reviewCompanionInitiativeSpeech(input: {
   try {
     // This is the existing governed provider: consent, context limits, cancellation,
     // the run's model-call ledger and audit metadata remain in force.
-    const response = await watchCompanionOutput((signal) => provider.chatCompletion(initiativeSpeechReviewMessages(text, evidence),
-      { temperature: 0, responseFormat: "json_object", disableThinking: true, maxTokens: provider.resolveOutputTokenLimit?.() ?? undefined }, signal), ctx.signal);
+    const response = await watchCompanionOutput((signal, activity) => provider.chatCompletion(initiativeSpeechReviewMessages(text, evidence),
+      { temperature: 0, responseFormat: "json_object", maxTokens: provider.resolveOutputTokenLimit?.() ?? undefined,
+        onOutputActivity: activity }, signal), ctx.signal);
     const reason = parseInitiativeSpeechReview(response.content);
     logger.info({ runId: read.runId, candidates: evidence.previous.length, unfinished: Boolean(evidence.unfinished), withheld: Boolean(reason) }, "initiative publication review completed");
     return reason;

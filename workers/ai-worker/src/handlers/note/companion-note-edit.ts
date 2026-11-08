@@ -45,6 +45,22 @@ export async function executeCompanionNoteEdit(event: AgentEventContext, callId:
   }
 }
 
+/**
+ * A note edit rewrites the current version in place, so the version id on the
+ * read quote stays the same while its text is the sentence just replaced.
+ * Drop that note's quotes. A later read in this turn can attach the new text.
+ */
+export function dropSupersededNoteQuotes<T extends {
+  type: string;
+  sourceRef?: { kind?: string; noteId?: string; noteVersionId?: string };
+}>(blocks: readonly T[], edit: { noteId?: unknown }): T[] {
+  if (typeof edit.noteId !== "string") return [...blocks];
+  return blocks.filter(block => {
+    const ref = block.sourceRef;
+    return !(block.type === "quote" && ref?.kind === "note" && ref.noteId === edit.noteId);
+  });
+}
+
 /** A failed explanation must not imply that a previously confirmed edit was undone. */
 export async function companionSavedNoteEditExists(scope: { workspaceId: string; userId: string }, runId: string): Promise<boolean> {
   const rows = await withWorkerWorkspaceTransaction(scope, tx => tx.execute<{ result_ref: string | null }>(sql`

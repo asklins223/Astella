@@ -34,7 +34,7 @@
 .companion-history__heading { flex: 1; min-width: 0; }
 .companion-history__heading h2 { margin: 0; padding: 0; color: var(--hud-ink); font: 730 23px/1.5 "Noto Sans SC Variable", sans-serif; letter-spacing: -.045em; }
 .companion-history__heading p { margin: 4px 0 0; color: var(--hud-soft); font-size: 11px; line-height: 1.6; }
-.companion-history__heading p > span { padding-inline: 4px; }
+.companion-history__heading .companion-ai-attribution { margin: 3px 0 0; color: var(--hud-soft); font-size: 11px; line-height: 1.6; text-align: left; user-select: text; }
 .companion-history__header-actions { display: flex; flex: none; align-items: center; gap: 2px; }
 .companion-history__header-actions button { display: grid; place-items: center; width: 36px; height: 40px; padding: 0; border: 0; border-radius: 12px; background: transparent; color: var(--hud-soft); cursor: pointer; }
 .companion-journal__workspace { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); flex: 1; min-height: 0; gap: 14px; }

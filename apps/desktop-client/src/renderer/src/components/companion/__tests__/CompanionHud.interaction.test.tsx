@@ -366,11 +366,11 @@ describe("production companion interaction", () => {
   });
   /**
    * 2026-10-07：语音从"转成文字等你点发送"改成**说完直接进对话**。
-   *
-   * 那一次点击在对话里是纯粹的损失——话已经说出口了。所以这一格锁的是"界面上
-   * 根本没有可编辑的东西和发送按钮"，而不是旧契约里"改完再发"。打字的草稿不受影响。
+   * 2026-11-07：用户要「只要球」，识别中的字不再铺在球上——它只作为这一轮的内容
+   * 直接发出去。这一格锁的是"语音层里没有可编辑的东西、没有发送按钮、没有字幕"，
+   * 打字的草稿不受影响。
    */
-  it("说完一轮直接进对话：字幕只读，没有任何东西要点", async () => {
+  it("说完一轮直接进对话：球上没有可点的东西，识别结果只走发送", async () => {
     const send = vi.fn(async () => true);
     state.chat = interactionSession({ send });
     render(<Harness voiceEnabled />);
@@ -382,7 +382,7 @@ describe("production companion interaction", () => {
     const voice = screen.getByRole("region", { name: "语音对话" });
     expect(within(voice).queryByRole("textbox")).toBeNull();
     expect(within(voice).queryByRole("button", { name: "发送" })).toBeNull();
-    expect(within(voice).getByText("真实识别的文字")).toBeTruthy();
+    expect(within(voice).queryByText("真实识别的文字")).toBeNull();
 
     await act(async () => { (state.voiceOptions as CompanionVoiceInputOptions).onTurn("真实识别的文字"); });
     expect(send).toHaveBeenCalledTimes(1);

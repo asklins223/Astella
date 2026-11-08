@@ -1,0 +1,26 @@
+{
+  "ownNativePortsClosed": true,
+  "ownContainersRemoved": [
+    "astella-agent-completion-test-db",
+    "astella-agent-completion-storage"
+  ],
+  "localDatabaseSnapshot": {
+    "file": "outputs/agent-completion-2026-10-29/isolated-acceptance.dump",
+    "bytes": 2566267,
+    "mode": "0600"
+  },
+  "privateServiceFixtureRemoved": true,
+  "productionSyntheticAccounts": {
+    "syntheticAccountsDisabled": 2,
+    "remainingSessions": 0,
+    "activeTurns": 0
+  },
+  "remoteBuildContexts": {
+    "removedOwnedBuildContexts": [
+      "/opt/astella/agent-build-0c735a83526e",
+      "/opt/astella/agent-build-df2a149b30d4"
+    ]
+  },
+  "sharedDevelopmentContainersUnchanged": true,
+  "previousPhaseEmptyDatabase": "astella_agent_impl_20261028_c83f: previous documented retained empty database; not modified this phase"
+}

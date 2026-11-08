@@ -111,7 +111,7 @@ export async function createAgentProposal(
            ${event.read.userMessageId}, ${event.read.generation}, ${JSON.stringify(parsedPayload.data)},
            ${payloadSha256}, ${title}, ${targetSummary}, ${impactSummary}, 'pending',
            ${sha256Utf8V1(`agent:${event.read.runId}:${call.id}`)},
-           CASE WHEN ${parsedPayload.data.kind}='agent_tool_review' THEN NULL ELSE now() + interval '5 minutes' END,
+           now() + interval '5 minutes',
            'agent_tool', ${event.read.runId}, ${call.id},
            ${definition.toolVersion}, ${definition.riskClass})
       `);

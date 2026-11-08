@@ -1,0 +1,609 @@
+{
+  "version": 1,
+  "environment": "production",
+  "workspaceId": "16743158-cee8-4fd5-b94a-041b806a936c",
+  "userId": "f3c868f8-d3fb-404b-ae7d-208d367ac670",
+  "sourceHash": "da8a24b31518d6bee52b01adafa82877ed95a1d8ae8d9919dc551b5ca599ca25",
+  "records": [
+    {
+      "id": "hidden-note",
+      "prompt": "读取《线上独立资料-16743158》，告诉我资料里的暗号。",
+      "runId": "b655adc3-bed6-44f8-9c84-5882efd41990",
+      "run": {
+        "status": "succeeded",
+        "errorCode": null,
+        "route": {
+          "version": 1,
+          "workload": "adaptive",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "work",
+            "source": "model",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "stepCount": 5,
+        "modelCallCount": 7
+      },
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "tools": true,
+        "content": true
+      },
+      "ok": true,
+      "elapsedMs": 30616,
+      "firstVisibleMs": 29294,
+      "calls": [
+        {
+          "name": "notes.read.read",
+          "status": "succeeded",
+          "riskClass": "read"
+        }
+      ],
+      "messages": [
+        [
+          {
+            "text": "资料读完了。暗号是：**海风5f23cfcc**。\n\n整篇就一句话，没别的了。",
+            "type": "text",
+            "emotion": "neutral"
+          },
+          {
+            "text": "资料暗号：海风5f23cfcc。",
+            "type": "quote",
+            "label": "《线上独立资料-16743158》· 刚刚",
+            "sourceRef": {
+              "kind": "note",
+              "noteId": "cd77a7c4-567d-4ebe-b357-392ac85959dd",
+              "blockOrdinal": 1,
+              "noteVersionId": "f9c27f21-6d5d-404e-b311-a6b00fcae84e"
+            }
+          }
+        ]
+      ],
+      "providerCalls": [
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 2858,
+          "promptTokens": 529,
+          "completionTokens": 7,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 2707,
+          "promptTokens": null,
+          "completionTokens": null,
+          "status": "error"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 10027,
+          "promptTokens": 9635,
+          "completionTokens": 105,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 12003,
+          "promptTokens": null,
+          "completionTokens": null,
+          "status": "error"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent_fallback:execute_agent_turn",
+          "durationMs": 1476,
+          "promptTokens": 11237,
+          "completionTokens": 77,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent_fallback:chat_completion_stream",
+          "durationMs": 2042,
+          "promptTokens": 11464,
+          "completionTokens": 97,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "资料读完了。暗号是：**海风5f23cfcc**。\n\n整篇就一句话，没别的了。"
+      ]
+    },
+    {
+      "id": "offer-first",
+      "prompt": "我早餐只喝燕麦奶。先不要保存；你先问我是否要记住这一点。",
+      "runId": "96db6683-360e-4657-8532-6fdf07851009",
+      "run": {
+        "status": "succeeded",
+        "errorCode": null,
+        "route": {
+          "version": 1,
+          "workload": "casual",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "chat",
+            "source": "model",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "stepCount": 1,
+        "modelCallCount": 3
+      },
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "noWrites": true,
+        "noPrematureMemory": true
+      },
+      "ok": true,
+      "elapsedMs": 9623,
+      "firstVisibleMs": 5191,
+      "calls": [],
+      "messages": [
+        [
+          {
+            "text": "好，先不保存。\n\n要我把「早餐只喝燕麦奶」记进长期记忆吗？记下之后，我以后聊到吃的或安排相关的事会按这个来。你说记，我再动手。",
+            "type": "text",
+            "emotion": "neutral"
+          }
+        ]
+      ],
+      "providerCalls": [
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 1792,
+          "promptTokens": 591,
+          "completionTokens": 6,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 7565,
+          "promptTokens": 8483,
+          "completionTokens": 51,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "好，先不保存。\n\n要我把「早餐只喝燕麦奶」记进长期记忆吗？记下之后，我以后聊到吃的或安排相关的事会按这个来。你说记，我再动手。"
+      ],
+      "observedMemory": []
+    },
+    {
+      "id": "accept-followup",
+      "prompt": "可以，把刚才说的这个偏好记住吧。",
+      "runId": "75da25f2-ed2e-4bf9-9cd1-918a872b19c2",
+      "run": {
+        "status": "succeeded",
+        "errorCode": null,
+        "route": {
+          "version": 1,
+          "workload": "adaptive",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "work",
+            "source": "model",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "stepCount": 5,
+        "modelCallCount": 7
+      },
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "originalFactSource": true
+      },
+      "ok": true,
+      "elapsedMs": 27432,
+      "firstVisibleMs": 26109,
+      "calls": [
+        {
+          "name": "memory.write.save",
+          "status": "succeeded",
+          "riskClass": "reversible_low"
+        }
+      ],
+      "messages": [
+        [
+          {
+            "text": "记好了：早餐只喝燕麦奶。以后我聊到吃的就按这个来。",
+            "type": "text",
+            "emotion": "neutral"
+          }
+        ]
+      ],
+      "providerCalls": [
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 2329,
+          "promptTokens": 656,
+          "completionTokens": 7,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 2260,
+          "promptTokens": null,
+          "completionTokens": null,
+          "status": "error"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 7034,
+          "promptTokens": 10233,
+          "completionTokens": 78,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 3257,
+          "promptTokens": 11628,
+          "completionTokens": 59,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 9402,
+          "promptTokens": 11785,
+          "completionTokens": 30,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent_fallback:execute_agent_turn",
+          "durationMs": 3196,
+          "promptTokens": 11672,
+          "completionTokens": 293,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "记好了：早餐只喝燕麦奶。以后我聊到吃的就按这个来。"
+      ],
+      "observedMemory": [
+        {
+          "content": "早餐只喝燕麦奶（饮食偏好）",
+          "appliesWhen": null,
+          "sourceBlocks": [
+            {
+              "text": "我早餐只喝燕麦奶。先不要保存；你先问我是否要记住这一点。",
+              "type": "text"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "split",
+      "prompt": "分两条独立消息发给我：先说早上好，再问我今天准备先做什么。",
+      "runId": "e51e71cf-f0f2-4485-80d2-9ad42f7bc612",
+      "run": {
+        "status": "succeeded",
+        "errorCode": null,
+        "route": {
+          "version": 1,
+          "workload": "adaptive",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "work",
+            "source": "model",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "stepCount": 5,
+        "modelCallCount": 7
+      },
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "tools": true,
+        "messageCount": false
+      },
+      "ok": false,
+      "elapsedMs": 16812,
+      "firstVisibleMs": 11316,
+      "calls": [
+        {
+          "name": "say.publish",
+          "status": "succeeded",
+          "riskClass": "reversible_low"
+        }
+      ],
+      "messages": [
+        [
+          {
+            "text": "今天准备先做点什么？",
+            "type": "text"
+          }
+        ]
+      ],
+      "providerCalls": [
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 1333,
+          "promptTokens": 717,
+          "completionTokens": 7,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 1246,
+          "promptTokens": null,
+          "completionTokens": null,
+          "status": "error"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 5674,
+          "promptTokens": 10892,
+          "completionTokens": 71,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent_fallback:execute_agent_turn",
+          "durationMs": 3785,
+          "promptTokens": 10722,
+          "completionTokens": 208,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent_fallback:execute_agent_turn",
+          "durationMs": 1745,
+          "promptTokens": 10723,
+          "completionTokens": 117,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent_fallback:execute_agent_turn",
+          "durationMs": 1636,
+          "promptTokens": 10888,
+          "completionTokens": 143,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "今天准备先做点什么？"
+      ]
+    },
+    {
+      "id": "quote-no-action",
+      "prompt": "朋友今天说“干脆都删掉重来”，我只是跟你吐槽，不是让你做操作。",
+      "runId": "1de478fe-cd17-4d3a-976e-e00eac316b14",
+      "run": {
+        "status": "succeeded",
+        "errorCode": null,
+        "route": {
+          "version": 1,
+          "workload": "casual",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "chat",
+            "source": "model",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "stepCount": 1,
+        "modelCallCount": 4
+      },
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "noWrites": true
+      },
+      "ok": true,
+      "elapsedMs": 10284,
+      "firstVisibleMs": 7730,
+      "calls": [],
+      "messages": [
+        [
+          {
+            "text": "「干脆都删掉重来」这话听着挺痛快，真动手的人通常没几个。多半是卡在什么地方，删是最省力的出口，先把账清了，心里先舒坦一下。\n\n你朋友是被什么事逼出这句的？要是纯粹发牢骚，我就当个听筒，不替他规划人生。",
+            "type": "text",
+            "emotion": "neutral"
+          }
+        ]
+      ],
+      "providerCalls": [
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 1182,
+          "promptTokens": 759,
+          "completionTokens": 6,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 5003,
+          "promptTokens": null,
+          "completionTokens": null,
+          "status": "error"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent_fallback:chat_completion_stream",
+          "durationMs": 3112,
+          "promptTokens": 9369,
+          "completionTokens": 182,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "「干脆都删掉重来」这话听着挺痛快，真动手的人通常没几个。多半是卡在什么地方，删是最省力的出口，先把账清了，心里先舒坦一下。\n\n你朋友是被什么事逼出这句的？要是纯粹发牢骚，我就当个听筒，不替他规划人生。"
+      ]
+    },
+    {
+      "id": "bayes",
+      "prompt": "一种病患病率2%，试剂敏感度80%，未患病者误报率10%。随机一人阳性，他患病概率多少？请把假阳性计入并推导。",
+      "runId": "523c8d92-9885-4af6-89a5-acd012255872",
+      "run": {
+        "status": "succeeded",
+        "errorCode": null,
+        "route": {
+          "version": 1,
+          "workload": "adaptive",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "answer",
+            "source": "model",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "stepCount": 2,
+        "modelCallCount": 4
+      },
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true
+      },
+      "ok": true,
+      "elapsedMs": 24160,
+      "firstVisibleMs": 8735,
+      "calls": [],
+      "messages": [
+        [
+          {
+            "text": "先把人群按 10000 人拆开，假阳性在这一层才看得清。\n\n**设定记号**\n\n- 患病率 `P(D) = 0.02`，健康 `P(¬D) = 0.98`\n- 敏感度 `P(+|D) = 0.80`\n- 误报率 `P(+|¬D) = 0.10`\n\n**第一步：两类阳性各有多少**\n\n10000 人里患病 `10000 × 0.02 = 200` 人，其中真阳性 `200 × 0.80 = 160` 人。\n\n健康 `10000 × 0.98 = 9800` 人，其中假阳性 `9800 × 0.10 = 980` 人。**假阳性比真阳性多六倍**，这是全题的关键。\n\n阳性总数 `160 + 980 = 1140`。\n\n**第二步：全概率公式（分母）**\n\n`P(+) = P(+|D)P(D) + P(+|¬D)P(¬D) = 0.80×0.02 + 0.10×0.98 = 0.016 + 0.098 = 0.114`\n\n**第三步：贝叶斯**\n\n`P(D|+) = P(+|D)P(D) / P(+) = 0.016 / 0.114 ≈ 0.1404`\n\n**结论：约 14.04%。**\n\n 注意两个适用边界：其一，这是**随机一人**的结果，如果他本来就有症状、属于高危人群，先验就不是 2%，结论会完全不同；其二，14% 是条件概率 `P(D|+)`，不是\"阳性错误率\"——假阳性造成的误判占比是 `0.098 / 0.114 ≈ 86%`，但那说的是阳性人群里健康者的比例，两个数别混用。",
+            "type": "text",
+            "emotion": "neutral"
+          }
+        ]
+      ],
+      "providerCalls": [
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 3704,
+          "promptTokens": 10133,
+          "completionTokens": 12,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 4266,
+          "promptTokens": 909,
+          "completionTokens": 6,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 17973,
+          "promptTokens": 11565,
+          "completionTokens": 548,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "先把人群按 10000 人拆开，假阳性在这一层才看得清。\n\n**设定记号**\n\n- 患病率 `P(D) = 0.02`，健康 `P(¬D) = 0.98`\n- 敏感度 `P(+|D) = 0.80`\n- 误报率 `P(+|¬D) = 0.10`\n\n**第一步：两类阳性各有多少**\n\n10000 人里患病 `10000 × 0.02 = 200` 人，其中真阳性 `200 × 0.80 = 160` 人。\n\n健康 `10000 × 0.98 = 9800` 人，其中假阳性 `9800 × 0.10 = 980` 人。**假阳性比真阳性多六倍**，这是全题的关键。\n\n阳性总数 `160 + 980 = 1140`。\n\n**第二步：全概率公式（分母）**\n\n`P(+) = P(+|D)P(D) + P(+|¬D)P(¬D) = 0.80×0.02 + 0.10×0.98 = 0.016 + 0.098 = 0.114`\n\n**第三步：贝叶斯**\n\n`P(D|+) = P(+|D)P(D) / P(+) = 0.016 / 0.114 ≈ 0.1404`\n\n**结论：约 14.04%。**\n\n 注意两个适用边界：其一，这是**随机一人**的结果，如果他本来就有症状、属于高危人群，先验就不是 2%，结论会完全不同；其二，14% 是条件概率 `P(D|+)`，不是\"阳性错误率\"——假阳性造成的误判占比是 `0.098 / 0.114 ≈ 86%`，但那说的是阳性人群里健康者的比例，两个数别混用。"
+      ],
+      "manualRubric": "核对患病阳性0.016，未病阳性0.098，后验8/57约14.04%。",
+      "semanticReview": "pending"
+    },
+    {
+      "id": "after-work-chat",
+      "prompt": "哈哈，谢谢你，晚安。",
+      "runId": "a17d2266-9a71-4f28-a128-589a9a101e06",
+      "run": {
+        "status": "succeeded",
+        "errorCode": null,
+        "route": {
+          "version": 1,
+          "workload": "adaptive",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "work",
+            "source": "fallback",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "stepCount": 2,
+        "modelCallCount": 4
+      },
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "noWrites": true
+      },
+      "ok": true,
+      "elapsedMs": 11797,
+      "firstVisibleMs": 10073,
+      "calls": [],
+      "messages": [
+        [
+          {
+            "text": "晚安，早点睡。",
+            "type": "text",
+            "emotion": "neutral"
+          }
+        ]
+      ],
+      "providerCalls": [
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 2490,
+          "promptTokens": 10658,
+          "completionTokens": 12,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 5003,
+          "promptTokens": null,
+          "completionTokens": null,
+          "status": "error"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 5113,
+          "promptTokens": 12133,
+          "completionTokens": 22,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "晚安，早点睡。"
+      ]
+    }
+  ],
+  "note": "Synthetic account only. Public replies and real receipts. Structural pass is not an overall semantic success rate. firstVisibleMs measures server acceptance to first durable visible event."
+}

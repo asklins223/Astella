@@ -1,4 +1,5 @@
 import { postSseToPublicEndpoint, type PublicStreamingRequester } from "@astella/shared/public-json-http";
+import { logger } from "../logger.ts";
 import { ProviderRequestError, ProviderStreamError } from "../provider-request-error.ts";
 
 /** Pi/OpenAI SDK transport backed exclusively by the project's pinned HTTPS gate. */
@@ -11,8 +12,8 @@ export function createPiHttpTransport(input: {
   const transport: { fetch: typeof globalThis.fetch; failure?: unknown; close(): void } = {
     close: () => { for (const cancel of active) cancel(); active.clear(); },
     fetch: async (resource, init) => {
+      const request = new Request(resource, init);
       try {
-        const request = new Request(resource, init);
         if (request.url !== input.endpoint || request.method !== "POST") {
           throw new Error("Pi attempted an unexpected provider endpoint or method");
         }
@@ -53,6 +54,11 @@ export function createPiHttpTransport(input: {
         }
         const iterator = response.body[Symbol.asyncIterator]();
         let bytes = 0;
+        const noteAbort = () => {
+          if (request.signal.aborted && bytes === 0) logger.warn({ providerId: input.providerId, status: response.status },
+            "provider stream aborted before any SSE body bytes");
+        };
+        request.signal.addEventListener("abort", noteAbort, { once: true });
         const stream = new ReadableStream<Uint8Array>({
           async pull(controller) {
             try {
@@ -73,6 +79,8 @@ export function createPiHttpTransport(input: {
         return new Response(stream, { status: response.status, headers: { "content-type": "text/event-stream" } });
       } catch (error) {
         transport.failure = error;
+        if (request.signal.aborted) logger.warn({ providerId: input.providerId },
+          "provider stream aborted before the SSE response");
         throw error;
       }
     },

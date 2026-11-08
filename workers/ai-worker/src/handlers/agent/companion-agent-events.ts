@@ -39,7 +39,7 @@ import type {
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { withWorkerWorkspaceTransaction } from "../../db.ts";
-import { insertStreamEvent } from "../turn/companion-dialogue-store.ts";
+import { companionStepClosedError, CompanionRunInactiveError, insertStreamEvent } from "../turn/companion-dialogue-store.ts";
 import { lockJobLease } from "../../lib/job-lease.ts";
 import { CompanionAgentBudgetExceededError, CompanionContextChangedError } from "../../lib/non-retryable-errors.ts";
 import type { AgentEventContext } from "../tools/companion-read-tools.ts";
@@ -81,7 +81,15 @@ export async function reserveCompanionProviderCall(event: {
         AND a.user_id=r.user_id AND a.global_enabled AND a.epoch=r.account_epoch
         AND (${modelCallLimit}::int IS NULL OR r.model_call_count<${modelCallLimit}::int)
       RETURNING r.model_call_count`);
-    if (!rows.length) throw new CompanionAgentBudgetExceededError("companion provider budget exhausted or turn obsolete");
+    if (!rows.length) {
+      const [run] = await tx.execute<{ status: string }>(sql`
+        SELECT status FROM companion_turn_runs WHERE id=${event.read.runId}
+      `);
+      if (run && run.status !== "accepted" && run.status !== "running" && run.status !== "waiting_for_confirmation") {
+        throw new CompanionRunInactiveError(run.status);
+      }
+      throw new CompanionAgentBudgetExceededError("companion provider budget exhausted or turn obsolete");
+    }
   });
 }
 
@@ -466,7 +474,15 @@ export function createCompanionAgentStepCheckpointPort(
             RETURNING id
           `);
           if (!rows[0]) {
-            throw new Error("companion agent checkpoint lost its running step");
+            const [closed] = await tx.execute<{ step_status: string | null; run_status: string | null }>(sql`
+              SELECT s.status AS step_status, r.status AS run_status
+              FROM companion_turn_runs r
+              LEFT JOIN companion_agent_steps s
+                ON s.id = ${stepId} AND s.run_id = r.id
+              WHERE r.id = ${event.read.runId}
+              LIMIT 1
+            `);
+            throw companionStepClosedError(closed?.step_status ?? null, closed?.run_status ?? null);
           }
         },
       );

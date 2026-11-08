@@ -117,7 +117,12 @@ export function normalizeWebSearchSources(value: unknown, domain?: string): WebS
 }
 
 export function webSearchCitationBlocks(result: WebSearchResult): CompanionContentBlockV1[] {
-  return result.sources.map(source => ({ type: "citation", referenceId: source.referenceId, label: source.title,
+  if (result.status !== "succeeded") return [];
+  // A search list is only a locator. Once this receipt records page reads, a
+  // citation card is a page that was actually read.
+  const read = new Set(successfulWebSearchDocuments(result).map(item => item.referenceId));
+  const sources = result.documents ? result.sources.filter(source => read.has(source.referenceId)) : result.sources;
+  return sources.map(source => ({ type: "citation", referenceId: source.referenceId, label: source.title,
     target: { kind: "external_https", href: source.url }, media: source.media,
     ...(source.publishDate ? { publishDate: source.publishDate } : {}) }));
 }

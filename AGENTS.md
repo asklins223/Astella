@@ -4,6 +4,14 @@ Use English for all subsequent project communication and documentation updates u
 
 Understand the experience the user wants to achieve in the current task, and follow the actual call chain through to completion. The user's latest decisions take precedence over older documents and general skills; when conflicts arise, update the relevant guidance and explain the tradeoffs. Existing pages are a starting point for understanding the product and may be restructured.
 
+## Companion replies: no word lists, no per-sentence restrictions
+
+2026-11-07 decision. Stacking word lists does not fix the companion. Do not add another list, and do not extend the lists already in the loop.
+
+A wrong reply is not a reason to add a regex, a forbidden-phrase list, a sentence-specific step note, or any other wording restriction aimed at that sample. Matching the last bad sentence only catches that sentence. The model routes around the new words or repeats the prohibition back to the user. That is not a fix.
+
+Change the shared behavior of a turn: what the model is for, when a tool is called, and what the ledger records. Do not encode the latest sample as a special case. Permission checks and schema validation are not word lists. An action is complete only when its tool receipt succeeded. `companion_finish` may deliver that result only by citing those receipts. A reply with no tool call is conversation, and the host does not scan it for phrases that mean done, looked up, or promised.
+
 ## Repository Split
 
 The mobile client (iOS SwiftUI / Android Compose) was split out of this repository on 2026-10-24 into the private repository [asklins223/astella-mobile](https://github.com/asklins223/astella-mobile). This repository no longer contains `apps/mobile-client`; mobile product/design/testing work now lives there. `project-archive/` and `reference-projects/` are intentionally untracked and ignored in this repository.

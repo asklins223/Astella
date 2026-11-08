@@ -39,6 +39,7 @@ internal sealed class WindowsRegistration : IInstallationRegistration
         uninstall.SetValue("NoRepair", 1, RegistryValueKind.DWord);
         uninstall.SetValue("EstimatedSize", (int)Math.Min(int.MaxValue, installation.Files.Sum(f => f.Size) / 1024), RegistryValueKind.DWord);
         WindowsShortcut.Create(StartShortcut, executable);
+        MarkdownFileAssociation.Register(executable, install);
         if (installation.DesktopShortcut) WindowsShortcut.Create(DesktopShortcut, executable);
         else
         {
@@ -54,6 +55,8 @@ internal sealed class WindowsRegistration : IInstallationRegistration
                 throw new IOException("安装登记已发生变化，已停止移除。");
         WindowsShortcut.DeleteIfOwned(StartShortcut, installDirectory);
         WindowsShortcut.DeleteIfOwned(DesktopShortcut, installDirectory);
+        using (var install = Registry.CurrentUser.OpenSubKey(InstallKey))
+            MarkdownFileAssociation.Remove(install);
         Registry.CurrentUser.DeleteSubKeyTree(UninstallKey, false);
         Registry.CurrentUser.DeleteSubKeyTree(InstallKey, false);
     });

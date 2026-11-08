@@ -426,6 +426,61 @@ describe("语音对话会话", () => {
     expect(onTurn).toHaveBeenCalledWith("恢复后这一句");
   });
 
+  /**
+   * 2026-11-07 用户实测：说完第一轮后，界面自己多出一条「. The. I. The.」。
+   *
+   * 本机模型在纯静音和房间噪声上也会吐字（见 `companion-voice-evidence` 里的实测表），
+   * 而能量 VAD 只能证明"有响声"。这一格钉的是：正文撑不起这段有声时长的，不进字幕、
+   * 不发出去，并把原因说出来——不能悄悄把那句话当成用户说的。
+   */
+  it("背景声攒出来的一两个词不会被当成用户说的话发出去", async () => {
+    transcribe.mockResolvedValue({ route: "local", text: "The." });
+    const onTurn = vi.fn();
+    const { result } = renderHook(() => useCompanionVoiceInput({ onTurn }));
+    await act(async () => { result.current.toggle(); });
+    await flush();
+
+    say(0.3, 60); // 约 3 秒持续有声：音乐、风扇、外放的声音都长这样
+    endSilence();
+    await flush();
+
+    expect(onTurn).not.toHaveBeenCalled();
+    expect(result.current.caption).toBeNull();
+    expect(result.current.note).toContain("背景声");
+    expect(result.current.phase).toBe("open");
+  });
+
+  /** 反向：一两个字的短回答本来就是真人说的，不能被门槛误伤。 */
+  it("一两个字的短回答仍然发得出去", async () => {
+    transcribe.mockResolvedValue({ route: "local", text: "好。" });
+    const onTurn = vi.fn();
+    const { result } = renderHook(() => useCompanionVoiceInput({ onTurn }));
+    await act(async () => { result.current.toggle(); });
+    await flush();
+
+    say(0.3, 10);
+    endSilence();
+    await flush();
+
+    expect(onTurn).toHaveBeenCalledWith("好。");
+    expect(result.current.note).toBeNull();
+  });
+
+  /** 正常一句话的字数足够撑起它的时长，门槛不能把它误判成背景声。 */
+  it("正常的一句话不会被门槛拦下", async () => {
+    transcribe.mockResolvedValue({ route: "local", text: "我刚整理好书桌上的书，想放松一会儿。" });
+    const onTurn = vi.fn();
+    const { result } = renderHook(() => useCompanionVoiceInput({ onTurn }));
+    await act(async () => { result.current.toggle(); });
+    await flush();
+
+    say(0.3, 80);
+    endSilence();
+    await flush();
+
+    expect(onTurn).toHaveBeenCalledWith("我刚整理好书桌上的书，想放松一会儿。");
+  });
+
   it("一段识别失败不会把残缺的指令送给伴星", async () => {
     transcribe.mockResolvedValueOnce({ route: "local", text: "删除" }).mockRejectedValue(new Error("引擎断开"));
     const onTurn = vi.fn();

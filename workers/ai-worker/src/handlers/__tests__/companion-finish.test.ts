@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { AgentTurnRequest } from "@astella/shared";
-import { companionLatestDeliveryDraft, companionFinishRepeatsPublished, validateCompanionFinish, type CompanionFinishArguments } from "../agent/companion-finish.ts";
+import { companionLatestDeliveryDraft, companionFinishRepeatsPublished, repairCompanionFinishCitations, validateCompanionFinish, type CompanionFinishArguments } from "../agent/companion-finish.ts";
 import { withCompanionReceiptReferences } from "../tools/companion-tool-receipts.ts";
 
 function writeReceipt(id = "edit-1"): AgentTurnRequest["messages"] {
@@ -44,6 +44,20 @@ test("finish rejects a historical or fabricated write receipt", () => {
 
   const fabricated = validateCompanionFinish({ text: "改好了。", actions: [{ receiptId: "made-up" }], evidence: [] }, messages);
   assert.equal(fabricated.ok, false);
+});
+
+test("a wrong receipt id is replaced from the ledger when the write already landed", () => {
+  const repaired = repairCompanionFinishCitations({
+    text: "《港口》的正文已改成一行。", outcome: "completed",
+    actions: [{ receiptId: "r1" }], evidence: [{ receiptId: "r1" }],
+    requirements: [{ requirement: "改成指定的一行", fulfilled: true, evidenceCallIds: ["r1"] }],
+  }, writeReceipt("edit-1"), { requireRequirements: true });
+  assert.ok(repaired);
+  assert.deepEqual(repaired?.actions, [{ receiptId: "edit-1" }]);
+  assert.equal(validateCompanionFinish(repaired!, writeReceipt("edit-1"), { requireRequirements: true }).ok, true);
+  assert.equal(repairCompanionFinishCitations({
+    text: "改好了。", actions: [{ receiptId: "made-up" }], evidence: [],
+  }, [{ role: "user", content: "聊聊" }]), null);
 });
 
 test("all landed write receipts must be cited regardless of the reply's wording", () => {

@@ -937,8 +937,11 @@
     transform: none;
   }
 
+  /* 减少动态：spinner 停转，只保留一个静态的"进行中"字形（与 beUI 加载态同原则：
+     去掉旋转/位移，信息靠文案与状态色），不再用减速旋转冒充减少动态。 */
   .companion-hud__spin {
-    animation-duration: 1.4s;
+    animation: none;
+    opacity: .6;
   }
 }
 

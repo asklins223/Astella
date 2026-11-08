@@ -12,7 +12,7 @@ import postgres from "postgres";
  */
 const root = new URL("../../../../", import.meta.url);
 const env = parseEnv(readFileSync(new URL(".env", root), "utf8"));
-const databaseUrl = env.DATABASE_URL_MIGRATOR ?? env.DATABASE_URL;
+const databaseUrl = process.env.DATABASE_URL_MIGRATOR ?? process.env.DATABASE_URL ?? env.DATABASE_URL_MIGRATOR ?? env.DATABASE_URL;
 assert.ok(databaseUrl);
 const url = new URL(databaseUrl);
 url.pathname = "/astella";

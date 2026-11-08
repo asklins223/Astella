@@ -4,7 +4,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { isNonRetryableError, AgentOutputError, CompanionAgentBudgetExceededError, NoteDynamicArtifactAttemptExhaustedError } from "../lib/non-retryable-errors.ts";
+import { isNonRetryableError, AgentOutputError, CompanionAgentBudgetExceededError, CompanionContextChangedError, NoteDynamicArtifactAttemptExhaustedError } from "../lib/non-retryable-errors.ts";
 import { JobPayloadContractError } from "@astella/shared/job-payload-contracts";
 import { JobType } from "@astella/shared";
 import { AgentContextError } from "@astella/agent-core";
@@ -32,6 +32,14 @@ test("detects AgentOutputError (output_truncated) as non-retryable", () => {
 
 test("原文引文纠正后仍不匹配时，队列不重复整轮生成", () => {
   assert.equal(isNonRetryableError(new AgentOutputError("unverified_quote", "unverified source quote")), true);
+});
+
+test("上下文变化仍是同一句用户可见说明，失败原因只留在错误上", () => {
+  const error = new CompanionContextChangedError("page");
+  assert.equal(isNonRetryableError(error), true);
+  assert.equal(error.reason, "page");
+  assert.equal(error.message, "这一轮依据的上下文已经变化，原来的回复已停止；需要继续时请重新发送。");
+  assert.equal(new CompanionContextChangedError().reason, null);
 });
 
 test("detects CompanionAgentBudgetExceededError as non-retryable (预算跨重投累计)", () => {

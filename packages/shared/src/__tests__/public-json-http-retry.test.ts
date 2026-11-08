@@ -8,6 +8,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  awaitWithDeadline,
   EgressTotalTimeoutError,
   isRetryableEgressStatus,
   isRetryUnsafeError,
@@ -99,4 +100,25 @@ test("attempts 可调；sleepWithSignal 在 abort 时提前结束等待", async 
   const pending = sleepWithSignal(30_000, controller.signal);
   controller.abort();
   await pending; // 不 abort 的话这里会挂 30s——测的就是它立刻返回。
+});
+
+test("DNS 式等待有连接时限，调用方取消不等到时限", async () => {
+  let settled = false;
+  const hanging = new Promise<string>(() => {});
+  await assert.rejects(
+    () => awaitWithDeadline(hanging, 30, "dns deadline"),
+    (error: unknown) => error instanceof Error && error.message === "dns deadline",
+  );
+  const controller = new AbortController();
+  const aborted = awaitWithDeadline(hanging, 30_000, "dns deadline", controller.signal);
+  controller.abort();
+  await assert.rejects(aborted, (error: unknown) => error instanceof Error && error.name === "AbortError");
+  const finished = awaitWithDeadline(
+    Promise.resolve("pinned"),
+    30,
+    "dns deadline",
+  );
+  assert.equal(await finished, "pinned");
+  settled = true;
+  assert.equal(settled, true);
 });

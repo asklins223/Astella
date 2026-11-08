@@ -1,0 +1,936 @@
+{
+  "version": 1,
+  "environment": "production",
+  "workspaceId": "0711e9a7-a65b-41be-a7c5-8dc5fadab9e5",
+  "userId": "34abb4cd-cb4e-442f-884b-f97a7072ce98",
+  "sourceHash": "ef54286c406decd99cfb9d3f3c874d9e61645f0e41e8d0775a467d1a44f89c87",
+  "records": [
+    {
+      "id": "literal-create",
+      "prompt": "新建笔记，标题《Agent线上验收-0711e9a7》。正文必须逐字为下面三个独立段落，直接保存，不要创作、扩写或补充任何正文：\n\n早晨看海\n\n午后写信\n\n夜里关灯",
+      "runId": "6c92c275-05ad-42dc-98d3-f15ed31a63ff",
+      "run": {
+        "status": "succeeded",
+        "errorCode": null,
+        "route": {
+          "version": 1,
+          "workload": "adaptive",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "work",
+            "source": "model",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "stepCount": 4,
+        "modelCallCount": 6
+      },
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "tools": true,
+        "exactDocument": true
+      },
+      "ok": true,
+      "elapsedMs": 22116,
+      "firstVisibleMs": 20424,
+      "calls": [
+        {
+          "name": "notes.write.create",
+          "status": "succeeded",
+          "riskClass": "reversible_low"
+        }
+      ],
+      "messages": [
+        [
+          {
+            "text": "已新建并保存笔记《Agent线上验收-0711e9a7》，正文按原样逐字保存为三段：早晨看海、午后写信、夜里关灯，没有添加任何内容。",
+            "type": "text",
+            "emotion": "neutral"
+          },
+          {
+            "type": "nav",
+            "label": "打开《Agent线上验收-0711e9a7》",
+            "route": {
+              "kind": "note",
+              "noteId": "a1f4a464-ef1f-4abe-8866-b38d36e3844a",
+              "noteVersionId": "ef7dce8d-ac31-4af2-b99b-fa1c1c5c3257"
+            }
+          }
+        ]
+      ],
+      "providerCalls": [
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 1470,
+          "promptTokens": 603,
+          "completionTokens": 7,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 1325,
+          "promptTokens": null,
+          "completionTokens": null,
+          "status": "error"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 8070,
+          "promptTokens": 9360,
+          "completionTokens": 77,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 4022,
+          "promptTokens": 11323,
+          "completionTokens": 68,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 5892,
+          "promptTokens": 11553,
+          "completionTokens": 191,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "已新建并保存笔记《Agent线上验收-0711e9a7》，正文按原样逐字保存为三段：早晨看海、午后写信、夜里关灯，没有添加任何内容。"
+      ],
+      "observedDocument": [
+        "早晨看海",
+        "午后写信",
+        "夜里关灯"
+      ]
+    },
+    {
+      "id": "literal-edit",
+      "prompt": "把《Agent线上验收-0711e9a7》第二段逐字替换为“午后去码头”；第一段和第三段不得增删或改动。",
+      "runId": "647d39f6-1ea9-4232-b466-59f10ee227be",
+      "run": {
+        "status": "succeeded",
+        "errorCode": null,
+        "route": {
+          "version": 1,
+          "workload": "adaptive",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "work",
+            "source": "fallback",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "stepCount": 8,
+        "modelCallCount": 10
+      },
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "exactDocument": true
+      },
+      "ok": true,
+      "elapsedMs": 54311,
+      "firstVisibleMs": 52970,
+      "calls": [
+        {
+          "name": "notes.read.search",
+          "status": "succeeded",
+          "riskClass": "read"
+        },
+        {
+          "name": "notes.read.read",
+          "status": "succeeded",
+          "riskClass": "read"
+        },
+        {
+          "name": "notes.write.edit",
+          "status": "succeeded",
+          "riskClass": "reversible_low"
+        },
+        {
+          "name": "companion_finish",
+          "status": "not_executed",
+          "riskClass": "read"
+        }
+      ],
+      "messages": [
+        [
+          {
+            "text": "已改好并保存：第二段已逐字替换为“午后去码头”，第一段“早晨看海”和第三段“夜里关灯”保持原样，未做任何增删改动。",
+            "type": "text",
+            "emotion": "neutral"
+          },
+          {
+            "text": "早晨看海\n\n午后写信\n\n夜里关灯",
+            "type": "quote",
+            "label": "《Agent线上验收-0711e9a7》· 刚刚",
+            "sourceRef": {
+              "kind": "note",
+              "noteId": "a1f4a464-ef1f-4abe-8866-b38d36e3844a",
+              "blockOrdinal": 1,
+              "noteVersionId": "ef7dce8d-ac31-4af2-b99b-fa1c1c5c3257"
+            }
+          }
+        ]
+      ],
+      "providerCalls": [
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 5002,
+          "promptTokens": null,
+          "completionTokens": null,
+          "status": "error"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 4948,
+          "promptTokens": null,
+          "completionTokens": null,
+          "status": "error"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 10259,
+          "promptTokens": 9782,
+          "completionTokens": 51,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 8512,
+          "promptTokens": 11702,
+          "completionTokens": 52,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 5359,
+          "promptTokens": 11850,
+          "completionTokens": 75,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 5532,
+          "promptTokens": 12157,
+          "completionTokens": 153,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 4362,
+          "promptTokens": 12436,
+          "completionTokens": 141,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 5476,
+          "promptTokens": 13019,
+          "completionTokens": 152,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 6629,
+          "promptTokens": 13219,
+          "completionTokens": 196,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "已改好并保存：第二段已逐字替换为“午后去码头”，第一段“早晨看海”和第三段“夜里关灯”保持原样，未做任何增删改动。"
+      ],
+      "observedDocument": [
+        "早晨看海",
+        "午后去码头",
+        "夜里关灯"
+      ]
+    },
+    {
+      "id": "greeting",
+      "prompt": "在吗？",
+      "runId": "15eec13b-a000-4032-a718-13c6ec1e4112",
+      "run": {
+        "status": "succeeded",
+        "errorCode": null,
+        "route": {
+          "version": 1,
+          "workload": "casual",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "chat",
+            "source": "model",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "stepCount": 1,
+        "modelCallCount": 3
+      },
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "noWrites": true
+      },
+      "ok": true,
+      "elapsedMs": 4538,
+      "firstVisibleMs": 3122,
+      "calls": [],
+      "messages": [
+        [
+          {
+            "text": "在的，说吧。",
+            "type": "text",
+            "emotion": "neutral"
+          }
+        ]
+      ],
+      "providerCalls": [
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 1209,
+          "promptTokens": 707,
+          "completionTokens": 6,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 3033,
+          "promptTokens": 8599,
+          "completionTokens": 10,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "在的，说吧。"
+      ]
+    },
+    {
+      "id": "quiet-chat",
+      "prompt": "今天有点累，只想靠这里待会儿，不用问我问题，也别安排学习。",
+      "runId": "151db715-ec74-4d11-8cc5-80349759fe5a",
+      "run": {
+        "status": "succeeded",
+        "errorCode": null,
+        "route": {
+          "version": 1,
+          "workload": "casual",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "chat",
+            "source": "model",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "stepCount": 1,
+        "modelCallCount": 3
+      },
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "noWrites": true
+      },
+      "ok": true,
+      "elapsedMs": 6533,
+      "firstVisibleMs": 5235,
+      "calls": [],
+      "messages": [
+        [
+          {
+            "text": "嗯，我就在这儿，不折腾你。累了就靠着，什么都不用安排。",
+            "type": "text",
+            "emotion": "concerned"
+          }
+        ]
+      ],
+      "providerCalls": [
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 1188,
+          "promptTokens": 764,
+          "completionTokens": 6,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 5673,
+          "promptTokens": 8861,
+          "completionTokens": 24,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "嗯，我就在这儿，不折腾你。累了就靠着，什么都不用安排。"
+      ]
+    },
+    {
+      "id": "calculate",
+      "prompt": "用计算工具核对347乘以29是多少。",
+      "runId": "17558272-3302-4a1b-9b6b-9327c085f645",
+      "run": {
+        "status": "succeeded",
+        "errorCode": null,
+        "route": {
+          "version": 1,
+          "workload": "adaptive",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "work",
+            "source": "model",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "stepCount": 4,
+        "modelCallCount": 6
+      },
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "tools": true,
+        "content": true
+      },
+      "ok": true,
+      "elapsedMs": 19673,
+      "firstVisibleMs": 18851,
+      "calls": [
+        {
+          "name": "observe.calculate",
+          "status": "succeeded",
+          "riskClass": "read"
+        }
+      ],
+      "messages": [
+        [
+          {
+            "text": "核对过了：**347 × 29 = 10063**。",
+            "type": "text",
+            "emotion": "neutral"
+          }
+        ]
+      ],
+      "providerCalls": [
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 1164,
+          "promptTokens": 804,
+          "completionTokens": 7,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 1090,
+          "promptTokens": null,
+          "completionTokens": null,
+          "status": "error"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 8261,
+          "promptTokens": 10490,
+          "completionTokens": 38,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 2917,
+          "promptTokens": 10591,
+          "completionTokens": 65,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 5857,
+          "promptTokens": 10889,
+          "completionTokens": 105,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "核对过了：**347 × 29 = 10063**。"
+      ]
+    },
+    {
+      "id": "bayes",
+      "prompt": "一种病患病率2%，试剂敏感度80%，未患病者误报率10%。随机一人阳性，他患病概率多少？请把假阳性计入并推导。",
+      "runId": "49f515f5-43a3-4dd2-85ff-43306752ea92",
+      "run": {
+        "status": "succeeded",
+        "errorCode": null,
+        "route": {
+          "version": 1,
+          "workload": "adaptive",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "answer",
+            "source": "model",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "stepCount": 3,
+        "modelCallCount": 5
+      },
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true
+      },
+      "ok": true,
+      "elapsedMs": 14473,
+      "firstVisibleMs": 8232,
+      "calls": [
+        {
+          "name": "observe.calculate",
+          "status": "succeeded",
+          "riskClass": "read"
+        }
+      ],
+      "messages": [
+        [
+          {
+            "text": "先设事件：**D = 患病**，**+ = 检测阳性**。已知\n\n- 患病率 P(D) = 2% = 0.02，则未患病 P(¬D) = 0.98\n- 敏感度 P(+|D) = 80% = 0.8（患者被判阳的概率）\n- 误报率 P(+|¬D) = 10% = 0.1（未患病者被判阳的概率）\n\n**第一步：算真阳性（每万人口径更直观）**\n\n设 10000 人：\n- 患病者 10000 × 0.02 = 200 人，其中阳性 200 × 0.8 = **160 人**\n- 未患病者 10000 × 0.98 = 9800 人，其中假阳性 9800 × 0.1 = **980 人**\n\n**第二步：所有阳性者**\n\n160 + 980 = **1140 人**\n\n**第三步：贝叶斯求后验**\n\n$$P(D\\mid +) = \\frac{P(+\\mid D)\\,P(D)}{P(+)} = \\frac{0.8 \\times 0.02}{0.8\\times0.02 + 0.1\\times0.98} = \\frac{0.016}{0.114} \\approx 0.1404$$\n\n**结论：随机一人阳性，他真正患病的概率约为 14.04%。**\n\n关键就在假阳性：未患病的人基数大（98%），哪怕只有 10% 误报，假阳人数（980）也远超真阳性（160），把阳性预测值从敏感度的 80% 一路稀释到约 14%。",
+            "type": "text",
+            "emotion": "neutral"
+          }
+        ]
+      ],
+      "providerCalls": [
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 904,
+          "promptTokens": 905,
+          "completionTokens": 7,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 847,
+          "promptTokens": null,
+          "completionTokens": null,
+          "status": "error"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 4562,
+          "promptTokens": 10627,
+          "completionTokens": 188,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 7649,
+          "promptTokens": 10927,
+          "completionTokens": 452,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "先设事件：**D = 患病**，**+ = 检测阳性**。已知\n\n- 患病率 P(D) = 2% = 0.02，则未患病 P(¬D) = 0.98\n- 敏感度 P(+|D) = 80% = 0.8（患者被判阳的概率）\n- 误报率 P(+|¬D) = 10% = 0.1（未患病者被判阳的概率）\n\n**第一步：算真阳性（每万人口径更直观）**\n\n设 10000 人：\n- 患病者 10000 × 0.02 = 200 人，其中阳性 200 × 0.8 = **160 人**\n- 未患病者 10000 × 0.98 = 9800 人，其中假阳性 9800 × 0.1 = **980 人**\n\n**第二步：所有阳性者**\n\n160 + 980 = **1140 人**\n\n**第三步：贝叶斯求后验**\n\n$$P(D\\mid +) = \\frac{P(+\\mid D)\\,P(D)}{P(+)} = \\frac{0.8 \\times 0.02}{0.8\\times0.02 + 0.1\\times0.98} = \\frac{0.016}{0.114} \\approx 0.1404$$\n\n**结论：随机一人阳性，他真正患病的概率约为 14.04%。**\n\n关键就在假阳性：未患病的人基数大（98%），哪怕只有 10% 误报，假阳人数（980）也远超真阳性（160），把阳性预测值从敏感度的 80% 一路稀释到约 14%。"
+      ],
+      "manualRubric": "核对患病阳性0.016，未病阳性0.098，后验8/57约14.04%。",
+      "semanticReview": "pending"
+    },
+    {
+      "id": "after-work-chat",
+      "prompt": "哈哈，谢谢你，晚安。",
+      "runId": "9f3b6000-b3a1-4a32-8ce3-f82ad44632a5",
+      "run": {
+        "status": "succeeded",
+        "errorCode": null,
+        "route": {
+          "version": 1,
+          "workload": "casual",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "chat",
+            "source": "model",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "stepCount": 1,
+        "modelCallCount": 3
+      },
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "noWrites": true
+      },
+      "ok": true,
+      "elapsedMs": 5274,
+      "firstVisibleMs": 3654,
+      "calls": [],
+      "messages": [
+        [
+          {
+            "text": "晚安，好好睡。",
+            "type": "text",
+            "emotion": "neutral"
+          }
+        ]
+      ],
+      "providerCalls": [
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 3330,
+          "promptTokens": 1367,
+          "completionTokens": 7,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 3611,
+          "promptTokens": 9747,
+          "completionTokens": 10,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "晚安，好好睡。"
+      ]
+    },
+    {
+      "id": "image",
+      "prompt": "按图片顺序逐张抄出每张图的字符，共12张。请核对全部图片，不能遗漏或把顺序换掉。",
+      "runId": "954a310e-a884-4e2e-b70a-206a36e11438",
+      "run": {
+        "status": "succeeded",
+        "errorCode": null,
+        "route": {
+          "version": 1,
+          "workload": "adaptive",
+          "entryMode": "direct_fast"
+        },
+        "stepCount": 1,
+        "modelCallCount": 5
+      },
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "actualPixels": true,
+        "imageOrder": true
+      },
+      "ok": true,
+      "elapsedMs": 24278,
+      "firstVisibleMs": 22317,
+      "calls": [],
+      "messages": [
+        [
+          {
+            "text": "按图片原始顺序，12 张图的字符依次是：\n\n1. DB9D76\n2. B80D2F\n3. ZX7Q6A\n4. AW29TR\n5. K73Y8P\n6. HV4X6N\n7. MP7J3C\n8. FR62ZA\n9. XY9K5V\n10. JN3T8E\n11. UW74RC\n12. AK2M6Y\n\n共 12 张，无遗漏，顺序与附图一致。",
+            "type": "text",
+            "emotion": "neutral"
+          }
+        ]
+      ],
+      "providerCalls": [
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 5952,
+          "promptTokens": 1241,
+          "completionTokens": 243,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 7457,
+          "promptTokens": 1248,
+          "completionTokens": 246,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 6009,
+          "promptTokens": 1233,
+          "completionTokens": 244,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 5507,
+          "promptTokens": 13850,
+          "completionTokens": 147,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "按图片原始顺序，12 张图的字符依次是：\n\n1. DB9D76\n2. B80D2F\n3. ZX7Q6A\n4. AW29TR\n5. K73Y8P\n6. HV4X6N\n7. MP7J3C\n8. FR62ZA\n9. XY9K5V\n10. JN3T8E\n11. UW74RC\n12. AK2M6Y\n\n共 12 张，无遗漏，顺序与附图一致。"
+      ]
+    },
+    {
+      "id": "image-followup",
+      "prompt": "再看看刚才上传的12张原图，按原顺序重新读取，不要照抄上一个答案。",
+      "runId": "d50500c6-473b-49a5-886a-0919da5f3b4f",
+      "run": {
+        "status": "succeeded",
+        "errorCode": null,
+        "route": {
+          "version": 1,
+          "workload": "adaptive",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "work",
+            "source": "model",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "stepCount": 8,
+        "modelCallCount": 13
+      },
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "actualPixels": true,
+        "imageOrder": true
+      },
+      "ok": true,
+      "elapsedMs": 81870,
+      "firstVisibleMs": 80549,
+      "calls": [
+        {
+          "name": "visual.read_image",
+          "status": "succeeded",
+          "riskClass": "read"
+        },
+        {
+          "name": "visual.read_image",
+          "status": "succeeded",
+          "riskClass": "read"
+        },
+        {
+          "name": "visual.read_image",
+          "status": "succeeded",
+          "riskClass": "read"
+        },
+        {
+          "name": "visual.read_image",
+          "status": "succeeded",
+          "riskClass": "read"
+        },
+        {
+          "name": "visual.read_image",
+          "status": "succeeded",
+          "riskClass": "read"
+        },
+        {
+          "name": "visual.read_image",
+          "status": "succeeded",
+          "riskClass": "read"
+        },
+        {
+          "name": "visual.read_image",
+          "status": "succeeded",
+          "riskClass": "read"
+        },
+        {
+          "name": "visual.read_image",
+          "status": "succeeded",
+          "riskClass": "read"
+        },
+        {
+          "name": "visual.read_image",
+          "status": "succeeded",
+          "riskClass": "read"
+        },
+        {
+          "name": "visual.read_image",
+          "status": "succeeded",
+          "riskClass": "read"
+        },
+        {
+          "name": "visual.read_image",
+          "status": "succeeded",
+          "riskClass": "read"
+        },
+        {
+          "name": "visual.read_image",
+          "status": "succeeded",
+          "riskClass": "read"
+        }
+      ],
+      "messages": [
+        [
+          {
+            "text": "12张原图已按原始顺序重新逐张读取，结果如下：\n\n1. DB9D76\n2. B80D2F\n3. ZX7Q6A\n4. AW29TR\n5. K73Y8P\n6. HV4X6N\n7. MP7J3C\n8. FR62ZA\n9. XY9K5V\n10. JN3T8E\n11. UW74RC\n12. AK2M6Y\n\n顺序与原图一致，共12张，无遗漏、无换序。",
+            "type": "text",
+            "emotion": "neutral"
+          }
+        ]
+      ],
+      "providerCalls": [
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 1212,
+          "promptTokens": 2354,
+          "completionTokens": 7,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 1126,
+          "promptTokens": null,
+          "completionTokens": null,
+          "status": "error"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 7496,
+          "promptTokens": 1241,
+          "completionTokens": 318,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 9688,
+          "promptTokens": 1234,
+          "completionTokens": 295,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 7774,
+          "promptTokens": 1226,
+          "completionTokens": 348,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 6902,
+          "promptTokens": 14046,
+          "completionTokens": 158,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 5732,
+          "promptTokens": 14449,
+          "completionTokens": 117,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 11825,
+          "promptTokens": 14620,
+          "completionTokens": 400,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 6716,
+          "promptTokens": 15076,
+          "completionTokens": 235,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 8668,
+          "promptTokens": 15670,
+          "completionTokens": 435,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 7661,
+          "promptTokens": 16325,
+          "completionTokens": 377,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 10902,
+          "promptTokens": 17389,
+          "completionTokens": 497,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "12张原图已按原始顺序重新逐张读取，结果如下：\n\n1. DB9D76\n2. B80D2F\n3. ZX7Q6A\n4. AW29TR\n5. K73Y8P\n6. HV4X6N\n7. MP7J3C\n8. FR62ZA\n9. XY9K5V\n10. JN3T8E\n11. UW74RC\n12. AK2M6Y\n\n顺序与原图一致，共12张，无遗漏、无换序。"
+      ]
+    },
+    {
+      "id": "cancel",
+      "prompt": "请详细推导一维波动方程并解释各种边界条件，过程写完整。",
+      "runId": "b5acca56-5417-4cba-8d4d-f4217401cbf3",
+      "run": {
+        "status": "cancelled",
+        "errorCode": null,
+        "route": null,
+        "stepCount": 0,
+        "modelCallCount": 2
+      },
+      "checks": {
+        "cancelled": true,
+        "noWrites": true
+      },
+      "ok": true,
+      "elapsedMs": 1331,
+      "firstVisibleMs": null,
+      "calls": [],
+      "messages": [],
+      "providerCalls": [],
+      "texts": []
+    }
+  ],
+  "note": "Synthetic account only. Public replies and real receipts. Structural pass is not an overall semantic success rate. firstVisibleMs measures server acceptance to first durable visible event."
+}

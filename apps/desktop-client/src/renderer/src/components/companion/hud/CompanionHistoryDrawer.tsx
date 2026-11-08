@@ -13,6 +13,7 @@ import { CompanionChatRecordArticle, MonthCalendar, highlightText, messageDayKey
 import { visibleTurnFailure } from "./companion-hud-state";
 import { CompanionProposalChoice } from "../journal/CompanionProposalChoice";
 import { CompanionHistoryComposer } from "./CompanionHistoryComposer";
+import { CompanionAIAttribution } from "../content/CompanionAIAttribution";
 import { companionComposerLimitNote } from "../content/companion-composer-limits";
 import type { CompanionComposerImage } from "../content/companion-composer-image";
 import { isCompanionComposition } from "../content/companion-composer-key";
@@ -23,6 +24,7 @@ import { plainCompanionBubbleText, renderCompanionMarkdown } from "../content/co
 import { feedSelectionToCompanion } from "./companion-feed";
 import { useTactileSurface } from "../../motion/use-tactile-surface";
 import { useCompanionJournalMotion } from "../journal/use-companion-journal-motion";
+import { useRoomStore } from "../../../app/home/room-store";
 import { CompanionJournalTimeline } from "../journal/CompanionJournalTimeline";
 import { CompanionJournalViewState, useCompanionJournalViewState } from "../journal/companion-journal-view-state";
 import { useCompanionResultPreview } from "../journal/companion-result-preview";
@@ -89,12 +91,6 @@ export function CompanionHistoryDrawer({
   const renderArticle = useCallback((message: CompanionMessageV1) => (
     <CompanionChatRecordArticle message={message} chat={chat} />
   ), [chat]);
-  // 抽屉里"正在说…"的平滑打字机（2026-09-19 流式卡顿）：气泡有显现驱动器，
-  // 抽屉此前是裸渲染 draft.text——服务端的 delta 是 24 字/90ms 的节流块，
-  // 裸渲染就是一跳一跳的大块。这里按与气泡同一条阅读钟推进，落后太多时
-  // 加速追赶，视觉上是连续打字而不是整块砸出来。
-  const smoothedDraftText = useSmoothedDraftText(chat.draft);
-
   // ── 历史浏览（2026-09-19 微信式，二次返工） ───────────────────────────
   // 「聊天记录」不再是第二个窗口：recordOpen 时**同一个抽屉**切换到记录视图
   // （搜索 / 月历筛选 / 时间线），返回箭头回到对话视图——微信的聊天记录就是
@@ -321,7 +317,7 @@ export function CompanionHistoryDrawer({
         <span className="companion-journal__cover-mark" aria-hidden="true"><BookHeart size={24} /></span>
         <div className="companion-history__heading">
           <h2 id="companion-history-title">对话手记</h2>
-          <p>{chat.companionName} <span>·</span> 交流、进展与留下的成果</p>
+          <CompanionAIAttribution />
         </div>
         <div className="companion-history__header-actions">
           {!recordOpen ? <button ref={backButtonRef} type="button" onClick={onBack} aria-label="返回气泡轻聊" title="气泡轻聊"><MessageCircle size={19} /></button> : null}
@@ -421,7 +417,7 @@ export function CompanionHistoryDrawer({
               {chat.historyLoadingOlder ? <p className="companion-history__system"><Loader2 className="companion-hud__spin" size={14} />正在加载更早的对话…</p> : null}
               {chat.historyOlderError ? <p className="companion-history__system" role="status">{chat.historyOlderError}<button type="button" className="companion-record__retry" onClick={() => { prevScrollHeightRef.current = listRef.current?.scrollHeight ?? null; void chat.loadOlderMessages(); }}>重试加载</button></p> : null}
               {!chat.messages.length && chat.phase !== "loading" ? <div className="companion-journal__empty"><MessageCircle size={38} aria-hidden="true" /><strong>从一句话开始</strong><p>想说的、想问的，都可以写在下面。</p></div> : null}
-              <CompanionJournalTimeline chat={chat} draftText={smoothedDraftText} />
+              <CompanionJournalTimeline chat={chat} />
             </>
           ) : (
             /* ── 聊天记录视图：只负责「找」。选中搜索命中或日期后回到上面的对话时间线定位 ── */
@@ -492,64 +488,4 @@ export function CompanionHistoryDrawer({
     </>,
     document.body,
   );
-}
-
-
-/**
- * 抽屉"正在说…"的平滑打字机（2026-09-19 流式卡顿）。
- *
- * 服务端交付是节流块（24 字 / 90ms，实测一轮只有 2–5 块），裸渲染 `draft.text`
- * 就是文字一跳一跳地砸出来。这里把显现收进一条时间线：
- * - 正常一拍（60ms，与气泡阅读钟同一节奏）推进一个字；
- * - 落后超过 `DRAFT_SMOOTH_MAX_LAG_CHARS`（≈3 秒阅读量）就按比例加速追赶，
- *   保证不滞后生成太远——文字到达快的轮次会自动提速，不会越攒越多；
- * - 换轮（runId 变化）从零起算；文本回退（服务端 appendFrom 回写）时切片
- *   天然收短，不额外处理。
- */
-const DRAFT_SMOOTH_TICK_MS = 60;
-
-const DRAFT_SMOOTH_MAX_LAG_CHARS = 48;
-
-
-function useSmoothedDraftText(draft: { runId: string; text: string } | null): string {
-  const [shownLength, setShownLength] = useState(0);
-  const stateRef = useRef({ runId: "", target: 0, shown: 0 });
-
-  useEffect(() => {
-    const state = stateRef.current;
-    if (!draft) {
-      if (state.target !== 0 || state.shown !== 0) {
-        state.target = 0;
-        state.shown = 0;
-        setShownLength(0);
-      }
-      return;
-    }
-    if (state.runId !== draft.runId) {
-      state.runId = draft.runId;
-      state.target = 0;
-      state.shown = 0;
-      setShownLength(0);
-    }
-    state.target = draft.text.length;
-  }, [draft]);
-
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      const state = stateRef.current;
-      if (state.shown >= state.target) return;
-      const lag = state.target - state.shown;
-      const step = lag > DRAFT_SMOOTH_MAX_LAG_CHARS ? Math.ceil(lag / 12) : 1;
-      state.shown = Math.min(state.target, state.shown + step);
-      setShownLength(state.shown);
-    }, DRAFT_SMOOTH_TICK_MS);
-    return () => window.clearInterval(timer);
-    // 依赖是**闸门**，不是读数（钟面只碰 `stateRef`，那里永远现值）。以前这里是 `[]`：
-    // 本组件在抽屉里无条件挂载，于是这条 60ms 的钟从应用启动一直跑到退出——没有草稿、
-    // 没有回包、抽屉从没打开过的时候也在按 16Hz 唤醒主线程。按 `runId` 挂/摘之后，
-    // 没有进行中的一轮就没有钟；换轮从零起算的语义不变。
-  }, [draft?.runId]);
-
-  const text = draft?.text ?? "";
-  return stateRef.current.runId === draft?.runId ? text.slice(0, shownLength) : "";
 }

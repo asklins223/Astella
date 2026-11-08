@@ -298,22 +298,9 @@ test("prompt 用现行准入反例区分临时请求、条件偏好、引用、�
 //   2. 对话链路要关只能通过入口/加深策略，不许在某个调用点上悄悄写死一个
 //      `disableThinking: true`。
 const thinkingSanctioned = new Set([
-  // 2026-10-11：压缩用的**工作状态摘要**。产出是给她自己接续工作的内部件，不是讲给
-  // 用户的回复，而这次调用发生在已经紧张的那一次请求里面、卡在 deadlineAt 上——
-  // 开高档等于在她回话的路上再加十几秒。
-  // 它被单独挪进这个模块而不是留在运行时里，正是为了让这条守卫仍然管得住对话主链路：
-  // `companion-agent-runtime.ts` 只能经入口策略决定思考档。
+  // 工作状态摘要发生在用户还在等的这一轮里，卡在 deadline 上。它整理已有回执，
+  // 不生成给用户看的正文。其余后台生成和核对都走模型默认思考。
   "companion-active-context-compaction.ts",
-  // 2026-10-13：回复终态之后补的可选追问。它不在这条守卫保护的"她回话的路"上，
-  // 但它只有一次 3 秒的窗口：开思考档的模型普遍要十几秒，追问就永远赶不到气泡上，
-  // 而这件事本身只是"要不要再问一句"的判断，不是给她组织的正文。
-  "companion-followup-suggestions.ts",
-  // Narrow publication review compares already written speech and authoritative
-  // run status. It never generates a question answer or performs background work.
-  "companion-initiative-speech-review.ts",
-  // Independent provenance/status review uses a separate measured JSON contract.
-  // It does not generate or grade the answer, whose effort still follows entry.
-  "companion-completion-guard.ts",
 ]);
 
 test("伴星思考档：对话按本轮意图选择，其余后台按各自预算运行", () => {
@@ -328,7 +315,8 @@ test("伴星思考档：对话按本轮意图选择，其余后台按各自预�
         if (entry.name !== "__tests__") collect(new URL(`${entry.name}/`, base));
         continue;
       }
-      if (entry.name.startsWith("companion-") && entry.name.endsWith(".ts") && !entry.name.includes(".test.")) {
+      if ((entry.name.startsWith("companion-") || entry.name.startsWith("note-"))
+        && entry.name.endsWith(".ts") && !entry.name.includes(".test.")) {
         files.push({ name: entry.name, url: new URL(entry.name, base) });
       }
     }
@@ -338,20 +326,25 @@ test("伴星思考档：对话按本轮意图选择，其余后台按各自预�
     .filter(({ name }) => !thinkingSanctioned.has(name))
     .filter(({ url }) => {
       const text = readFileSync(url, "utf8");
+      // 学习卡审题在源文件里标了 REVIEW_THINKING_MEASURED_OFF：实测开思考会交回残缺结果。
+      if (text.includes("REVIEW_THINKING_MEASURED_OFF")) return false;
       // 两条历史路径都算：包 provider 的 withThinkingDisabled、每次调用写死的
       // disableThinking: true（走策略函数算出来的布尔值不在此列）。
       return text.includes("withThinkingDisabled(") || text.includes("disableThinking: true");
     })
     .map(({ name }) => name);
-  // Classification and pixel transcription are independent short contracts;
-  // neither generates the final answer or chooses application operations.
-  assert.deepEqual(offenders.filter(name => !["companion-entry-decision.ts", "companion-image-batches.ts"].includes(name)), [],
+  // 资源分类只输出 32 token 的 path，思考痕迹放不进这个合同。它不生成正文。
+  assert.deepEqual(offenders.filter(name => name !== "companion-entry-decision.ts"), [],
     `这些执行 handler 绕开资源策略把思考关死了：${offenders.join(", ")}`);
 
   // 正向：对话主链路确实经过显式的入口/加深策略，而不是各自决定。
   const runtime = readFileSync(new URL("agent/companion-agent-runtime.ts", dir), "utf8");
   assert.match(runtime, /disableThinking: stepReasoningEffort === "none"/,
     "Agent 运行时不再经过 directControls，快速档与加深档就会散成各处硬编码");
+  assert.match(runtime, /maxTokens: Math\.min\(stepRequest\.maxTokens, COMPANION_FAST_STEP_OUTPUT_TOKENS\)/,
+    "普通步骤先用有限输出预算，避免按整段档案上限预留");
+  assert.doesNotMatch(runtime, /if \(stepReasoningEffort === "none"\) \{\s*stepRequest = \{ \.\.\.stepRequest, maxTokens: Math\.min/,
+    "有限输出预算不能只在关掉思考时才用");
 });
 
 // ─── 跨空间记忆的判据（2026-09-22 裁决 + 收紧）──────────────────────────

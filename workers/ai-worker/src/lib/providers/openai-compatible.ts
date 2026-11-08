@@ -124,6 +124,14 @@ export class OpenAICompatibleProvider implements AIProvider {
     return this.resolveOutputTokenLimit();
   }
 
+  /** The step budget is sent, and it cannot rise above the model profile. */
+  private boundedOutputTokens(requested: number | undefined): number | undefined {
+    const ceiling = this.outputTokenLimit();
+    if (typeof requested !== "number" || !Number.isFinite(requested) || requested <= 0) return ceiling;
+    const budget = Math.floor(requested);
+    return ceiling === undefined ? budget : Math.min(ceiling, budget);
+  }
+
   resolveOutputTokenLimit(): number | undefined {
     // 天花板来自档案声明；拿不到声明时用那一个有实测依据的平台兜底。
     // handler 报的 maxTokens 不参与这里——那些数各写一遍，档案缺失时就成了砍话的刀。
@@ -196,6 +204,7 @@ export class OpenAICompatibleProvider implements AIProvider {
       options.responseFormat,
       options.disableThinking ?? false,
       options.reasoningEffort,
+      options.maxTokens,
     );
     return {
       content,
@@ -224,7 +233,7 @@ export class OpenAICompatibleProvider implements AIProvider {
   }> {
     if (signal?.aborted) throw abortError(signal, "before request");
     const native = options.nativeAgentRequest;
-    const maxTokens = this.outputTokenLimit();
+    const maxTokens = this.boundedOutputTokens(native?.maxTokens ?? options.maxTokens);
     const temperature = native?.temperature ?? options.temperature ?? 0.2;
     const model = native?.model ?? options.model ?? this.modelId;
     const tools = native?.tools ?? options.tools;
@@ -597,6 +606,7 @@ export class OpenAICompatibleProvider implements AIProvider {
     /** 2026-08-12+（15a 新反馈）：显式关闭思考模式（enable_thinking: false）。 */
     disableThinking = false,
     reasoningEffort?: ChatOptions["reasoningEffort"],
+    maxTokens?: number,
   ): Promise<{ content: string; usage: ProviderUsage | null }> {
     if (signal?.aborted) throw abortError(signal, "before request");
     // R1: maxTokensStrategy controls whether the configured output-limit field is sent.
@@ -619,7 +629,7 @@ export class OpenAICompatibleProvider implements AIProvider {
     };
     this.applyModelSampling(body);
     if (shouldSetMaxTokens) {
-      this.setOutputTokenLimit(body, this.outputTokenLimit());
+      this.setOutputTokenLimit(body, this.boundedOutputTokens(maxTokens));
     }
     // R1: Merge extra headers (e.g., X-DashScope-WorkSpace)
     const headers: Record<string, string> = {
@@ -739,7 +749,7 @@ export class OpenAICompatibleProvider implements AIProvider {
     const shouldSetMaxTokens = this.maxTokensStrategy === "always" || !disableMaxTokens;
     if (shouldSetMaxTokens) {
       // AI P2 #25：出口夹取；非法/缺失即省略字段（用 provider 默认），不发垃圾值。
-      const maxTokens = this.outputTokenLimit();
+      const maxTokens = this.boundedOutputTokens(request.maxTokens);
       this.setOutputTokenLimit(requestBody, maxTokens);
     }
 

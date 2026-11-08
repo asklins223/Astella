@@ -7,9 +7,11 @@ import {
 } from "react";
 import { WindowLive2DDriver } from "./WindowLive2DDriver";
 import {
+  DEFAULT_WINDOW_LIVE2D_BODY_FORM,
   DEFAULT_WINDOW_LIVE2D_MODEL_ID,
   WINDOW_LIVE2D_ASSETS,
   type WindowLive2DCharacterMoment,
+  type WindowLive2DBodyForm,
   type WindowLive2DModelId,
   type WindowLive2DMotionMode,
   type WindowLive2DFraming,
@@ -28,6 +30,8 @@ export interface WindowLive2DProps {
   readonly motionMode: WindowLive2DMotionMode;
   /** 伴星形态（模型注册表 id）；运行时切换走驱动器内淡出/淡入，不重挂组件。 */
   readonly modelId?: WindowLive2DModelId;
+  /** 体型形态（只有登记了 `bodyForms` 的模型生效）；缺省用注册表的默认形态。 */
+  readonly bodyForm?: WindowLive2DBodyForm;
   readonly presentation?: WindowLive2DPresentation;
   /** `full` keeps the whole character visible; `bust` frames head and torso. */
   readonly framing?: WindowLive2DFraming;
@@ -77,6 +81,7 @@ export function WindowLive2D({
   paused = false,
   motionMode,
   modelId = DEFAULT_WINDOW_LIVE2D_MODEL_ID,
+  bodyForm = DEFAULT_WINDOW_LIVE2D_BODY_FORM,
   presentation = "idle",
   framing = "full",
   className,
@@ -197,6 +202,12 @@ export function WindowLive2D({
   useEffect(() => {
     driverRef.current?.setFraming(framing);
   }, [framing, status]);
+
+  // 体型切换：不重挂组件、不重新加载模型，只把 `Clothes2` 写进当前模型。
+  useEffect(() => {
+    if (status !== "ready") return;
+    driverRef.current?.setBodyForm(bodyForm);
+  }, [bodyForm, status]);
 
   useEffect(() => {
     driverRef.current?.setVoiceLevel(voiceLevel);

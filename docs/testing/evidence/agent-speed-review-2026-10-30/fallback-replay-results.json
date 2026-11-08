@@ -1,0 +1,35 @@
+{
+  "scope": "Byte-identical replay of the captured fallback body; only structure removed in variants; oracle fixed as 蓝色",
+  "results": [
+    {
+      "label": "captured-full-1",
+      "httpStatus": 200,
+      "elapsedMs": 2335,
+      "content": ""
+    },
+    {
+      "label": "captured-full-2",
+      "httpStatus": 200,
+      "elapsedMs": 4185,
+      "content": ""
+    },
+    {
+      "label": "without-tools",
+      "httpStatus": 200,
+      "elapsedMs": 2707,
+      "content": "图片收到啦，不过画面是一整片白色，没有看到文字或图表内容，可能是上传时没渲染出来，或者本来就是一张空白截图。\n\n如果是想让我看某段内容或题目，可以再发一次，或者直接把文字贴过来；也顺便说下你想让我做什么（比如讲解、核对、整理），我就能直接接着做。"
+    },
+    {
+      "label": "without-reasoning-effort",
+      "httpStatus": 200,
+      "elapsedMs": 5307,
+      "content": "这张图我看到了，是一片很淡的浅蓝到白的渐变，基本是空白的，没有文字、图形或其它内容可读。\n\n如果你是想让我分析图里的东西，可能是传错了图或者图片没渲染出来，可以重新发一次。要是你本来就想问关于这个纯色背景的事（比如配色、用它做背景之类的），直接说想了解什么就行。"
+    },
+    {
+      "label": "minimal-with-same-image",
+      "httpStatus": 200,
+      "elapsedMs": 2145,
+      "content": "蓝色"
+    }
+  ]
+}

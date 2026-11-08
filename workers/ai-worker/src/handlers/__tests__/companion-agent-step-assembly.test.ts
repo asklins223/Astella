@@ -112,8 +112,10 @@ test("unclassified entry omits invented intent while preserving real voice and e
     provider: { id: "p", modelId: "m" } as never, temperature: 0.4 };
   const unclassified = assembleCompanionStepRequest(base);
   assert.doesNotMatch(unclassified.systemPrompt, /current_turn_interpretation_data|"intent":"question"/);
-  assert.match(unclassified.systemPrompt, /用计算工具核对/);
-  assert.deepEqual(unclassified.messages, base.messages);
+  assert.doesNotMatch(unclassified.systemPrompt, /用计算工具核对/);
+  const reminder = unclassified.messages.at(-1);
+  assert.equal(reminder?.role, "system");
+  assert.match(String(reminder?.content), /用计算工具核对/);
   assert.deepEqual(unclassified.tools, base.tools);
   for (const attention of [
     { ...placeholder, executionConstraints: { timeBasedWakeups: "forbid" as const, sourceQuote: "不要定时提醒" } },
@@ -137,9 +139,22 @@ test("a native current message is not copied as another question; tool evidence 
   assert.deepEqual(opening.messages,[user]);
   const afterRead = assembleCompanionStepRequest({...input,messages:[user,
     {role:"tool",toolCallId:"read",content:'{"note":"background"}'}]});
-  assert.match(afterRead.systemPrompt,/本轮用户的原话如下/);
-  assert.match(afterRead.systemPrompt,/闹钟掉进床缝里了/);
-  assert.doesNotMatch(afterRead.systemPrompt,/要回答的用户问题/);
+  assert.equal(afterRead.systemPrompt, opening.systemPrompt, "工具回执不改写可缓存的指令前缀");
+  const note = afterRead.messages.at(-1);
+  assert.equal(note?.role, "system");
+  assert.equal((note as { hostObservation?: boolean }).hostObservation, true);
+  assert.match(String(note?.content), /本轮用户的原话如下/);
+  assert.match(String(note?.content), /这一轮新的回执/);
+  assert.match(String(note?.content), /闹钟掉进床缝里了/);
+  assert.doesNotMatch(String(note?.content), /要回答的用户问题/);
+  const followUp = assembleCompanionStepRequest({...input,currentUserText:"把那篇正文读出来。",messages:[
+    user,{role:"assistant",content:"上一轮只是说过。"},
+    {role:"user",content:"把那篇正文读出来。",requestBoundary:true}]});
+  assert.equal(followUp.systemPrompt, opening.systemPrompt, "上一轮对话不改写可缓存的指令前缀");
+  const followUpNote = followUp.messages.at(-1);
+  assert.equal(followUpNote?.role, "system");
+  assert.match(String(followUpNote?.content), /把那篇正文读出来/);
+  assert.match(String(followUpNote?.content), /历史回复和上一轮回执只说明过去发生过什么/);
 });
 
 test("unclassified runtime policy does not reintroduce a task voice through the placeholder question intent", () => {

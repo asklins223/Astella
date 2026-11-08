@@ -62,7 +62,14 @@ test("上下文对照仅移除声明的合成背景，原生历史、人格、�
   const c = dialogueGenerationFixture(dialogueCases.find(c => c.id === "song")!);
   const a = buildDialogueExperimentRequest(c, "full", 131072);
   const b = buildDialogueExperimentRequest(c, "relevant", 131072);
-  assert.deepEqual(a.request.messages, b.request.messages);
+  const spoken = (messages: typeof a.request.messages) => messages.filter(message => message.role === "user" || message.role === "assistant");
+  assert.deepEqual(spoken(a.request.messages), spoken(b.request.messages));
+  const observed = (messages: typeof a.request.messages) => messages.find(message => message.hostObservation)?.content;
+  assert.match(String(observed(a.request.messages)), /页面为笔记库/);
+  assert.match(String(observed(a.request.messages)), /<page_context>/);
+  assert.match(String(observed(a.request.messages)), /<conversation_timeline>/);
+  assert.match(String(observed(b.request.messages)), /<conversation_timeline>/);
+  assert.doesNotMatch(String(observed(b.request.messages)), /页面为笔记库|<page_context>|更早的合成会话/);
   for (const key of ["tools", "disableThinking", "temperature", "maxTokens", "role"] as const)
     assert.deepEqual(a.request[key], b.request[key]);
   assert.equal(a.provenance.originalHistoryHash, b.provenance.originalHistoryHash);

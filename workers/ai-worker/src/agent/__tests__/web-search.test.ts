@@ -21,6 +21,12 @@ test("a different query reports actual new, changed and repeated source material
   assert.match(same.note!, /没有取得新的网页或摘要材料/);
   assert.match(same.note!, /不要把反复未检出当成相关研究不存在/);
   assert.equal(webSearchCitationBlocks(next).length, 3);
+  const readId = next.sources[0]!.referenceId;
+  const withReads = { ...next, documents: [
+    { referenceId: readId, requestedUrl: next.sources[0]!.url, document: { status: "succeeded", text: "原文", contentHash: "a".repeat(64) } },
+    { referenceId: next.sources[1]!.referenceId, requestedUrl: next.sources[1]!.url, document: { status: "unavailable", reason: "empty" } },
+  ] };
+  assert.deepEqual(webSearchCitationBlocks(withReads).flatMap(block => block.type === "citation" ? [block.referenceId] : []), [readId]);
   assert.equal(webSearchMaterialProgress(result("empty", []), []).note, undefined, "a first empty query has no preceding success to compare");
   assert.equal(webSearchMaterialProgress(earlier, [{ status: "unavailable", reason: "disabled", sources: [] }]).repeatedSourceCount, 0);
 });

@@ -370,6 +370,22 @@ export type CompanionOverview = z.infer<typeof companionOverviewSchema>;
 export const answerModePreferenceV1Schema = z.enum(["voice", "silent", "text", "any"]).default("any");
 export type AnswerModePreferenceV1 = z.infer<typeof answerModePreferenceV1Schema>;
 
+/**
+ * 服务端开放下载的一只形象。名字和介绍由发布目录给出，客户端只渲染自己认得的 modelId。
+ */
+export const companionModelCatalogEntryV1Schema = z.object({
+  modelId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
+  displayName: z.string().min(1).max(80),
+  detail: z.string().max(400),
+}).strict();
+export type CompanionModelCatalogEntryV1 = z.infer<typeof companionModelCatalogEntryV1Schema>;
+
+export const companionModelCatalogV1Schema = z.object({
+  version: z.literal(1),
+  models: z.array(companionModelCatalogEntryV1Schema).max(32),
+}).strict();
+export type CompanionModelCatalogV1 = z.infer<typeof companionModelCatalogV1Schema>;
+
 export const companionAnswerModePreferenceV1Schema = z.object({
   version: z.literal(1),
   /** 显式偏好；"any" = 未设置（Supervisor 默认编排）。 */

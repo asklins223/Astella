@@ -28,8 +28,9 @@
 }
 
 .desktop-app[data-home-scene-variant="v2"] .companion-presence[data-surface="room"] .companion-scene-anchor {
-  width: clamp(214px, 17vw, 286px);
-  height: clamp(300px, 42vh, 400px);
+  /* 全身站在地毯上时，17vw 的座位把头缩到大约九十像素。放大到能看清脸，脚仍落在原地。 */
+  width: clamp(300px, 24vw, 420px);
+  height: clamp(420px, 60vh, 580px);
 }
 
 .desktop-app[data-home-scene-variant="v2"] .companion-presence[data-surface="room"] .companion-visual-shell {

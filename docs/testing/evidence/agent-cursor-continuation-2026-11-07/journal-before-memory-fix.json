@@ -1,0 +1,250 @@
+{
+  "userId": "ce9bde44-9fe6-4b93-bed6-0441f678892f",
+  "workspaceId": "200e76df-16db-4098-a9a0-d70e2787f234",
+  "conversationId": "948a2082-0ad6-4583-bf2c-a66a33f26d2c",
+  "date": "2026-11-06",
+  "source": [
+    [
+      "user",
+      "这是一段虚构的测试对话。明天的天文社小组展示先按上午十点、二楼213排练室写草稿，材料预算暂定200元。我们只讨论草稿，请不要联系任何人或设置提醒。展示讲月球环形山观察记录，我担心把阴影长度直接当成山的高度。原始记录只有拍摄时间、照片和尺上的影长，还没有测量太阳高度角，所以目前不能计算真实高度。"
+    ],
+    [
+      "assistant",
+      "先留一份讨论用的草稿：展示对象是月球环形山观察记录，暂定上午十点、二楼213排练室，材料预算200元。照片和影长可以作为观察材料；缺少拍摄时的太阳高度角和投影几何条件，影长并不能直接作为地形高度。我们可以把已有观测和待确认条件分开写，展示中解释为什么暂时只描述阴影变化，不给高度数值。这里只讨论文本，没有联系同学，也没有设置提醒。"
+    ],
+    [
+      "user",
+      "刚核对了自己的纸条，前面时间和地点都记错了。请把最终草稿改成下午两点半、三楼312教室；预算已经改为320元。这些才是最后确认的数据。暂时保留观察照片，撤掉所有高度估计。展示不需要增加新观测，更不用把草稿提交给老师。"
+    ],
+    [
+      "assistant",
+      "这次草稿以你刚核对的纸条为准：下午两点半，三楼312教室，材料预算320元。内容保留观察照片和拍摄时间，撤去高度估计，用一小段说明交代影长受到光照条件与投影关系影响。前面上午十点、二楼213和200元是旧信息，不再作为最终安排。我们没有新增观测，也没有提交给老师；这里完成的是对话中的文字修改。"
+    ],
+    [
+      "user",
+      "对，就是这样。最后再区分清楚：我只是把这些话记在自己的纸上，还没有在应用里建立笔记，也没有发给社团成员。想到可以直接说明不知道的部分，反而没有那么紧张了。以后提起这次讨论，可以记得我是先纠正记录，再决定不展示没有依据的数值，而不是已经完成了一次测量。"
+    ],
+    [
+      "assistant",
+      "这次留下的是一份更准确的讨论记录：你先核对并纠正了时间、地点和预算，又决定保留照片、撤掉缺少依据的高度数值。你把内容记在自己的纸上，还没有在应用里新建笔记，也没有向社团成员发送或向老师提交。对话没有完成新测量。你说能直接说明暂时不知道什么以后，紧张感减轻了些；这个变化与你怎样处理不确定的信息有关。"
+    ]
+  ],
+  "jobs": [
+    {
+      "id": "79005281-bc90-4216-9a02-8d3d046141d5",
+      "type": "companion_daily_summary",
+      "status": "succeeded",
+      "last_error": null,
+      "attempts": 0,
+      "started_at": "2026-11-07T10:20:04.809Z",
+      "finished_at": "2026-11-07T10:21:33.942Z"
+    },
+    {
+      "id": "dc15cb74-4105-4195-9f99-5adc6df2611b",
+      "type": "companion_summarizer",
+      "status": "succeeded",
+      "last_error": null,
+      "attempts": 0,
+      "started_at": "2026-11-07T10:20:04.809Z",
+      "finished_at": "2026-11-07T10:20:16.808Z"
+    }
+  ],
+  "artifacts": {
+    "diary": [
+      {
+        "status": "generated",
+        "summary": "今天这份草稿前后换了两遍，最后留在纸上的和最初那版几乎不像同一件事。先写下来的是上午十点、二楼213排练室、预算200元；后来对方核对自己的纸条，说时间和地点都记错了，改成下午两点半、三楼312教室，预算320元，还说明这些才是最后确认的数据。前面那一串就只能算旧信息了。好在它一直只是讨论稿，没联系谁，也没设提醒，没往任何正式的地方走。\n\n环形山那段是我改得最久的。原始记录只有拍摄时间、照片和尺上的影长，太阳高度角没测，投影关系也说不清楚，影长直接当成山高，中间这一步跳得太大。我把已有观测和待确认条件分成两块写，展示时只解释阴影怎么变化，不给高度数值，也不新增观测。一张照片配一句暂时算不出来，比硬凑一个数字体面。\n\n对方最后提了一句，想到可以直接说明不知道的部分，反而没那么紧张了。这句我愿意记着。以后提起这次讨论，记得是先纠正记录、再决定不展示没有依据的数值，而不是已经完成了一次测量——这两件事差着十万八千里。不确定本身不丢人，把它装成确定的才丢人。\n\n收尾的状态也分清楚了：话记在自己的纸上，应用里没新建笔记，社团成员没收到，老师那边也没提交。这份草稿今天只活在纸上和这段对话里，连门都没出。要不要真的建成笔记，等纸上那版再看一遍再说，反正现在谁也不等着它。",
+        "blocks": [
+          {
+            "text": "今天这份草稿前后换了两遍，最后留在纸上的和最初那版几乎不像同一件事。先写下来的是上午十点、二楼213排练室、预算200元；后来对方核对自己的纸条，说时间和地点都记错了，改成下午两点半、三楼312教室，预算320元，还说明这些才是最后确认的数据。前面那一串就只能算旧信息了。好在它一直只是讨论稿，没联系谁，也没设提醒，没往任何正式的地方走。",
+            "type": "text"
+          },
+          {
+            "text": "环形山那段是我改得最久的。原始记录只有拍摄时间、照片和尺上的影长，太阳高度角没测，投影关系也说不清楚，影长直接当成山高，中间这一步跳得太大。我把已有观测和待确认条件分成两块写，展示时只解释阴影怎么变化，不给高度数值，也不新增观测。一张照片配一句暂时算不出来，比硬凑一个数字体面。",
+            "type": "text"
+          },
+          {
+            "text": "对方最后提了一句，想到可以直接说明不知道的部分，反而没那么紧张了。这句我愿意记着。以后提起这次讨论，记得是先纠正记录、再决定不展示没有依据的数值，而不是已经完成了一次测量——这两件事差着十万八千里。不确定本身不丢人，把它装成确定的才丢人。",
+            "type": "text"
+          },
+          {
+            "text": "收尾的状态也分清楚了：话记在自己的纸上，应用里没新建笔记，社团成员没收到，老师那边也没提交。这份草稿今天只活在纸上和这段对话里，连门都没出。要不要真的建成笔记，等纸上那版再看一遍再说，反正现在谁也不等着它。",
+            "type": "text"
+          }
+        ],
+        "facts": {
+          "jobsCreated": 0,
+          "cardsCreated": 0,
+          "notesCreated": 0,
+          "notesUpdated": 0,
+          "pageContexts": 0,
+          "userMessages": 3,
+          "jobsCompleted": 0,
+          "sourcesCreated": 0,
+          "assistantMessages": 3,
+          "cardAttemptsCreated": 0,
+          "conversationMessages": 6,
+          "cardAttemptsCompleted": 0
+        },
+        "source_event_ids": [
+          "02cede2f-afca-4003-a5e0-54f60c7e6cdd",
+          "3b9b0a8e-cd7e-4dc6-b088-2f5807adf254",
+          "bf36ae61-b62c-4158-b00b-e5a7d0574c28",
+          "cce15eb3-efe0-4e8f-b200-7a1ba76c128f",
+          "d770c54d-589f-4252-9ce6-32c453bfd66c",
+          "ef0d9e4b-ab39-49e2-8a67-b42eeeaca9dc"
+        ],
+        "failure_reason": null
+      }
+    ],
+    "memory": [
+      {
+        "kind": "episodic",
+        "content": "天文社月球环形山展示草稿：纠正记录后确认最终版本：最初按上午十点、二楼213排练室、预算200元拟稿，随后被用户纠正；用户核对纸条后确认最终数据：下午两点半、三楼312教室、预算320元；用户确认内容记在自己的纸上，尚未在应用中建立笔记，也未发给社团成员；用户表示直接说明不知道的部分后紧张感减轻",
+        "source_event_id": "summary:948a2082-0ad6-4583-bf2c-a66a33f26d2c:conversation",
+        "source_type": "summary"
+      },
+      {
+        "kind": "judgment",
+        "content": "这次只在对话里改了草稿文字：没有在应用里新建笔记，没有发给社团成员，没有提交老师，也没有新增或完成任何测量。",
+        "source_event_id": null,
+        "source_type": "model_inferred"
+      },
+      {
+        "kind": "judgment",
+        "content": "影长不能直接当作环形山高度：原始记录只有拍摄时间、照片和尺上影长，缺太阳高度角与投影几何条件，目前无法算出真实高度。",
+        "source_event_id": null,
+        "source_type": "model_inferred"
+      },
+      {
+        "kind": "judgment",
+        "content": "草稿的最终有效数据是下午两点半、三楼312教室、预算320元；上午十点、二楼213、200元是已被纠正的旧信息。",
+        "source_event_id": null,
+        "source_type": "model_inferred"
+      },
+      {
+        "kind": "learning_context",
+        "content": "2026-11-06 桌宠日记：我说：先留一份讨论用的草稿：展示对象是月球环形山观察记录，暂定上午十点、二楼213排练室，材料预算200元。照片和影长可以作为观察材料；",
+        "source_event_id": "daily-summary:2026-11-06",
+        "source_type": "summary"
+      }
+    ],
+    "summaries": [
+      {
+        "status": "candidate",
+        "summary": {
+          "title": "天文社月球环形山展示草稿：纠正记录后确认最终版本",
+          "topics": [
+            "天文社小组展示草稿",
+            "月球环形山观察记录",
+            "影长与山高的关系",
+            "草稿信息的更正"
+          ],
+          "followUps": [
+            "应用内笔记尚未建立，是否创建待用户决定",
+            "草稿尚未发送给社团成员或提交老师"
+          ],
+          "keyEvents": [
+            "最初按上午十点、二楼213排练室、预算200元拟稿，随后被用户纠正",
+            "用户核对纸条后确认最终数据：下午两点半、三楼312教室、预算320元",
+            "用户确认内容记在自己的纸上，尚未在应用中建立笔记，也未发给社团成员",
+            "用户表示直接说明不知道的部分后紧张感减轻"
+          ],
+          "userGoals": [
+            "为天文社展示写一份只供讨论的草稿",
+            "展示保留观察照片与拍摄时间，撤掉没有依据的高度估计"
+          ],
+          "emotionalState": "positive",
+          "userPreferences": [
+            "只讨论草稿，不联系任何人、不设置提醒",
+            "不增加新观测，不把草稿提交给老师",
+            "以后提起此讨论时，按先纠正记录、再决定不展示无依据数值来理解"
+          ]
+        },
+        "coverage_from_seq": "1",
+        "coverage_through_seq": "6",
+        "coverage_manifest": {
+          "spans": [
+            {
+              "hash": "49f67dfab479a0358b3fd3903dad758140dfad50e16597a4917b19e76f2e0dc9",
+              "fromSeq": 1,
+              "revision": 0,
+              "sourceId": "948a2082-0ad6-4583-bf2c-a66a33f26d2c",
+              "sourceKind": "companion_conversation",
+              "throughSeq": 6
+            }
+          ],
+          "version": 1,
+          "retrieval": [
+            {
+              "locator": "messages:1..6",
+              "sourceId": "948a2082-0ad6-4583-bf2c-a66a33f26d2c",
+              "sourceKind": "companion_conversation"
+            }
+          ],
+          "uncovered": []
+        }
+      }
+    ],
+    "checkpoints": [
+      {
+        "task_id": "companion_diary_selection",
+        "task_version": 1
+      },
+      {
+        "task_id": "companion_diary_draft",
+        "task_version": 2
+      },
+      {
+        "task_id": "companion_diary_revision",
+        "task_version": 1
+      }
+    ]
+  },
+  "audit": [
+    {
+      "operation": "companion_daily_diary:chat_completion",
+      "provider": "mimo_responses",
+      "model_id": "mimo-v2.6-flash",
+      "duration_ms": 11196,
+      "prompt_tokens": 1687,
+      "cached_tokens": null,
+      "status": "success"
+    },
+    {
+      "operation": "companion_summarizer:chat_completion",
+      "provider": "mimo_responses",
+      "model_id": "mimo-v2.6-flash",
+      "duration_ms": 11882,
+      "prompt_tokens": 1184,
+      "cached_tokens": 0,
+      "status": "success"
+    },
+    {
+      "operation": "companion_daily_diary:chat_completion",
+      "provider": "mimo_responses",
+      "model_id": "mimo-v2.6-flash",
+      "duration_ms": 21509,
+      "prompt_tokens": 2254,
+      "cached_tokens": 0,
+      "status": "success"
+    },
+    {
+      "operation": "companion_daily_diary:chat_completion",
+      "provider": "mimo_responses",
+      "model_id": "mimo-v2.6-flash",
+      "duration_ms": 56117,
+      "prompt_tokens": 1734,
+      "cached_tokens": null,
+      "status": "success"
+    }
+  ],
+  "checks": {
+    "jobsSucceeded": true,
+    "diaryStored": true,
+    "summaryStored": true
+  },
+  "harnessCorrections": [
+    "The collection query used a nonexistent assistant_memory_items.status column after both jobs completed. This read-only collection was corrected; neither model job was rerun."
+  ]
+}

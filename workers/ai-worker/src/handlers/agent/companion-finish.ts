@@ -102,3 +102,32 @@ export function validateCompanionFinish(input: CompanionFinishArguments, message
   }
   return { ok: true, text, writesLanded: writes.length > 0 || actions.some(action => isActionReceipt(action.receiptId)) };
 }
+
+/**
+ * A finish that names the wrong receipt still has the ledger. Cite the receipts
+ * that actually succeeded instead of spending another model step on the ids.
+ * Returns null when there is no landed write, or the repaired arguments still
+ * do not satisfy the delivery contract.
+ */
+export function repairCompanionFinishCitations(input: CompanionFinishArguments, messages: AgentTurnRequest["messages"],
+  options: { requireRequirements?: boolean; allowSilent?: boolean; currentRunEvidence?: AgentTurnRequest["messages"] } = {}): CompanionFinishArguments | null {
+  if (input.silent) return null;
+  const successful = currentCompanionSuccessfulReceipts(messages, options.currentRunEvidence);
+  const writes = successful.filter(receipt => receipt.riskClass !== "read" || DELIVERABLE_READ_OPERATIONS.has(receipt.operation));
+  if (!writes.length) return null;
+  const cite = (receipt: { id: string; reference?: string }) => receipt.reference ?? receipt.id;
+  const known = new Set(successful.flatMap(receipt => [receipt.id, receipt.reference].filter((id): id is string => Boolean(id))));
+  const writeIds = writes.map(cite);
+  const repaired: CompanionFinishArguments = {
+    ...input,
+    actions: writeIds.map(receiptId => ({ receiptId })),
+    evidence: successful.map(receipt => ({ receiptId: cite(receipt) })),
+    requirements: input.requirements?.map(requirement => ({
+      ...requirement,
+      evidenceCallIds: requirement.fulfilled
+        ? writeIds
+        : requirement.evidenceCallIds.filter(id => known.has(id)),
+    })),
+  };
+  return validateCompanionFinish(repaired, messages, options).ok ? repaired : null;
+}

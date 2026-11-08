@@ -1,5 +1,6 @@
 import { registerNoteWritingChannels } from "../note-doc/note-writing-files";
 import { registerMarkdownBundleChannels } from "../note-doc/markdown-bundle-import";
+import { registerOpenedFileChannels, type OpenedFileBroker } from "../note-doc/opened-file";
 import * as ns_source from "../gateway/desktop-gateway-ns-source";
 import { registerRestChannels } from "./desktop-ipc-rest";import { registerSourceChannels } from "./desktop-ipc-source";
 import { closedSubscriptionOutputSchema, focusOutputSchema, shellOpenExternalInputSchema, subscribeInputSchema, subscriptionOutputSchema, titlebarThemeOutputSchema, unsubscribeInputSchema, windowThemeInputSchema } from "./desktop-ipc-input-schemas";
@@ -62,6 +63,8 @@ export type DesktopIpcRegistrationOptions = {
    * 读不到别处去拿一个"应该有"的模型，那正是把 239 MB 偷偷塞回安装包的老路。
    */
   readonly voiceAsrModelStore?: VoiceAsrModelStore;
+  /** 系统文件关联：主进程收下的路径靠它交给渲染层（首帧补读与后续推送共用）。 */
+  readonly openedFileBroker?: OpenedFileBroker;
 };
 
 const m1InputBase = { meta: requestMetaSchema };
@@ -999,6 +1002,18 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): As
     getActiveWorkspaceEpoch: () => activeWorkspaceEpoch,
     gateway: gateway as never,
   });
+  // 系统文件关联：双击 .md 进来的路径。首帧补读不做路由门控（只是把路径交回去），
+  // 真正动网络的 prepareImport 与带图导入同一道门。
+  if (options.openedFileBroker) {
+    registerOpenedFileChannels({
+      channel: channel as never,
+      requireM2Route: requireM2Route as never,
+      assertEpoch: assertEpoch as never,
+      contract,
+      getActiveWorkspaceEpoch: () => activeWorkspaceEpoch,
+      gateway: gateway as never,
+    }, options.openedFileBroker);
+  }
   registerRestChannels({
     channel: channel as never,
     installHandler: installHandler as never,

@@ -1,0 +1,105 @@
+{
+  "hash": "sha256",
+  "files": [
+    {
+      "path": "README.md",
+      "bytes": 1422,
+      "sha256": "8f925562f364f1b0003a8ee44d99e6b750fbb3ae4b7c79d4d0632deab447f072"
+    },
+    {
+      "path": "changed-files.json",
+      "bytes": 2417,
+      "sha256": "bcd45af197da855c6183fe6d7d7c180cfaf85da6f152623b81e38440ef1119e1"
+    },
+    {
+      "path": "focused-unit.log",
+      "bytes": 9190,
+      "sha256": "e9ddda609102a39b26a0b5a99af06e5b41a410766c185f1b02aa4ed4c1bfb93a"
+    },
+    {
+      "path": "image-only.png",
+      "bytes": 168,
+      "sha256": "fb59293297bbed4792e45b1e8a353c63f942d86ac3b235a8c5c38b81ab75e09a"
+    },
+    {
+      "path": "no-bypass.patch",
+      "bytes": 43659,
+      "sha256": "22c78d1039f540dc8181880f7f11cfb11c657d1a13c617c05e052c2e1c68a305"
+    },
+    {
+      "path": "postgres-after-first-fix.log",
+      "bytes": 29951,
+      "sha256": "641d1d3523fc921fbd339b3b9e267c3c8a67f7f0f9bd18812e68bfddab2a272d"
+    },
+    {
+      "path": "postgres-before.log",
+      "bytes": 34443,
+      "sha256": "0b085f01868976e5bae1df8ed6c823d9e8e31c6b51a54f66fa9d3eafc7c519a1"
+    },
+    {
+      "path": "postgres-final-after-last-edit.log",
+      "bytes": 32456,
+      "sha256": "3092e414401c68ecaa48f0bf83cde78787b3acb27ff690d8cf4092e44aa342f6"
+    },
+    {
+      "path": "postgres-final-before-last-edit.log",
+      "bytes": 32480,
+      "sha256": "700a1852da05efe787e966e0bddace2d5cd8d2ffcf3323539e558c406b7157c6"
+    },
+    {
+      "path": "postgres-first-fixture-iteration.log",
+      "bytes": 36184,
+      "sha256": "f4df2a3b0de374343efcddfa84affe07dbdffca3b6e1b01b32ff1d28f8197553"
+    },
+    {
+      "path": "postgres-fixture-iteration-2.log",
+      "bytes": 36457,
+      "sha256": "069aa4652f59bbe5bca2cd23ae30c7bb567842019c83073ef0505556a8dfb27f"
+    },
+    {
+      "path": "postgres-fixture-iteration-3.log",
+      "bytes": 32284,
+      "sha256": "05cf4265c319738418d15cfc850401618a8ec8e5289094ee4dad431cec2891b5"
+    },
+    {
+      "path": "postgres-related.log",
+      "bytes": 63194,
+      "sha256": "290778f3807dfd1ccbf13f67e956cf0fee6c09b3d3f93ff832886f1c3b370ce4"
+    },
+    {
+      "path": "run-runtime-live.mts",
+      "bytes": 12551,
+      "sha256": "65eae8a306311173f46a1e9d806281d38f817286416e764e8d3095548837d757"
+    },
+    {
+      "path": "run-runtime-live.sh",
+      "bytes": 889,
+      "sha256": "a30a87c3b14d91abc95423e6de04ea095b513fc5ba5fb5e6d1c861390a36cd6b"
+    },
+    {
+      "path": "runtime-live-results.json",
+      "bytes": 20802,
+      "sha256": "ecc15ae04bd73fa760cf21ec334a673a006cd8fe497be44c072009e5e845f0d4"
+    },
+    {
+      "path": "runtime-live.log",
+      "bytes": 4328,
+      "sha256": "2c47ffcfd75abfa48eb51c6fa257a180868db12b9758caf0327b44b043685c14"
+    },
+    {
+      "path": "structure.log",
+      "bytes": 3984,
+      "sha256": "4a42759e522a746b3c3d1a792d4475e56e3591ac5969260ae935498d91ecd2f6"
+    },
+    {
+      "path": "verification.json",
+      "bytes": 10602,
+      "sha256": "ab3b919e5fc00fc76cd60dac5a0d83c90ed5ff2dbafcd7a947891941de45e873"
+    },
+    {
+      "path": "worker-typecheck.log",
+      "bytes": 55,
+      "sha256": "337691a80ce0df2b3984dc12cb15bab955ea110e04f537873f51291f452d2539"
+    }
+  ]
+}

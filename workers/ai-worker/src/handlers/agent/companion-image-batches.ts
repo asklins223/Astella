@@ -21,7 +21,7 @@ export const COMPANION_IMAGE_BATCH_HEDGE_MS = 12_000;
 const BATCH_CONCURRENCY = 3;
 /** Perception only; the main agent still owns reasoning, actions and reply. */
 export const COMPANION_IMAGE_BATCH_OPTIONS: ChatOptions = Object.freeze({
-  responseFormat: "json_object", temperature: 0.1, disableThinking: true, reasoningEffort: "none",
+  responseFormat: "json_object", temperature: 0.1,
 });
 const visualResult = z.object({ images: z.array(z.object({
   assetId: z.string().min(1), description: z.string().min(1),

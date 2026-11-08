@@ -2,6 +2,13 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { enqueueCompanionMemoryEmbeddingRebuild } from "../memory/companion-memory-embedding-jobs.ts";
+import { memoryEmbeddingBlockedByExternalSend } from "../memory/companion-memory-embedding.ts";
+
+test("外部向量在未允许外发时整批跳过，不把每条记忆标成失败", () => {
+  assert.equal(memoryEmbeddingBlockedByExternalSend("mimo_responses", false), true);
+  assert.equal(memoryEmbeddingBlockedByExternalSend("mock", false), false);
+  assert.equal(memoryEmbeddingBlockedByExternalSend("mimo_responses", true), false);
+});
 
 test("vector rebuild enqueue is feature gated and writes an idempotent maintenance job", async () => {
   const previous = process.env.COMPANION_MEMORY_VECTOR_V1;

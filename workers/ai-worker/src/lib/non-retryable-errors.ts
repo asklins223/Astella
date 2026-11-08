@@ -122,9 +122,12 @@ export class CompanionAgentBudgetExceededError extends Error {
 /** A source change requires a fresh user turn, never a replay of its old prompt. */
 export class CompanionContextChangedError extends Error {
   readonly code = "CONTEXT_STALE" as const;
-  constructor() {
+  /** Which check failed. The user-facing message stays the same. */
+  readonly reason: string | null;
+  constructor(reason?: string) {
     super("这一轮依据的上下文已经变化，原来的回复已停止；需要继续时请重新发送。");
     this.name = "CompanionContextChangedError";
+    this.reason = reason ?? null;
   }
 }
 

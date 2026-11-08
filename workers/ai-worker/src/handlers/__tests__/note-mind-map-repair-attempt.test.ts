@@ -1,11 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildMindMapRepairAttempt } from "../note/note-mind-map-output.ts";
+import { MIND_MAP_SHAPE } from "../note/note-mind-map-generate.ts";
 
 const base = [
   { role: "system" as const, content: "只依据用户笔记整理。" },
   { role: "user" as const, content: "[原文段落 2]\n## 现象\n\n[原文段落 3]\n- 大白天抬头，天空是蓝的。" },
 ];
+
+test("脑图示例的段落号跟材料标签同一套，不从 0 起编", () => {
+  assert.match(MIND_MAP_SHAPE, /"blockOrdinal":1/);
+  assert.match(MIND_MAP_SHAPE, /原文段落 N/);
+  assert.doesNotMatch(MIND_MAP_SHAPE, /"blockOrdinal":0/);
+});
 
 test("repair 那一发带着被拒的那版图：不然「其余保持不变」没有所指", () => {
   const rejected = '{"rootId":"root","nodes":[{"id":"n1","references":[{"blockOrdinal":2,"quote":"大白天抬头"}]}]}';

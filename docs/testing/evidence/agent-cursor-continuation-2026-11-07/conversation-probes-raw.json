@@ -1,0 +1,749 @@
+{
+  "startedAt": "2026-11-07T09:20:13.032Z",
+  "results": [
+    {
+      "id": "casual-scene",
+      "input": "今天在路边听见有人用口琴吹走调的歌，忍不住笑了一下。",
+      "runId": "484052e0-d315-45d8-8300-d9d81e8b72eb",
+      "status": "succeeded",
+      "error": null,
+      "steps": 1,
+      "firstSignalMs": 9598,
+      "firstTextMs": 11339,
+      "finalMs": 12985,
+      "totalMs": 13530,
+      "tools": [],
+      "audit": [
+        {
+          "operation": "companion_agent:chat_completion_stream",
+          "provider": "mimo_responses",
+          "model_id": "mimo-v2.6-flash",
+          "duration_ms": 8298,
+          "prompt_tokens": 7303,
+          "cached_tokens": 6144,
+          "status": "success"
+        }
+      ],
+      "reply": "走调的口琴比准的更有味道，准了就像机器在放，走调才听得出来是个人在认真吹。你笑的那下，吹的人听见没？",
+      "followUps": [],
+      "eventTypes": [
+        "turn.accepted",
+        "assistant.status",
+        "character.cue",
+        "assistant.thinking",
+        "assistant.delta",
+        "voice.segment.ready",
+        "assistant.final"
+      ],
+      "sseEvents": 32,
+      "issues": []
+    },
+    {
+      "id": "fiction-subject",
+      "input": "我看的小说里，邮差把一封信送到旧地址去了，真替他着急。",
+      "runId": "7d440058-8d17-4a90-92bb-a248ce3aea2a",
+      "status": "succeeded",
+      "error": null,
+      "steps": 1,
+      "firstSignalMs": 792,
+      "firstTextMs": 3328,
+      "finalMs": 5667,
+      "totalMs": 5975,
+      "tools": [],
+      "audit": [
+        {
+          "operation": "companion_agent:chat_completion_stream",
+          "provider": "mimo_responses",
+          "model_id": "mimo-v2.6-flash",
+          "duration_ms": 5533,
+          "prompt_tokens": 7657,
+          "cached_tokens": 6144,
+          "status": "success"
+        }
+      ],
+      "reply": "送错了地方，信大概率会退回来或者卡在那儿，收信人还蒙在鼓里——你着急的多半是这个时间差。写到这儿作者多半就是要让邮差或收信人绕一大圈才能知道，不然故事就不好看了。后面是不是有人开始找这封信了？",
+      "followUps": [],
+      "eventTypes": [
+        "turn.accepted",
+        "assistant.status",
+        "character.cue",
+        "assistant.thinking",
+        "assistant.delta",
+        "voice.segment.ready",
+        "assistant.final"
+      ],
+      "sseEvents": 38,
+      "issues": []
+    },
+    {
+      "id": "explain-new",
+      "input": "保温杯为什么能让热水凉得慢？用两三句话说明主要原理。",
+      "runId": "5d4f4598-8346-4847-a6d1-bc34c6073dfe",
+      "status": "succeeded",
+      "error": null,
+      "steps": 1,
+      "firstSignalMs": 888,
+      "firstTextMs": 1321,
+      "finalMs": 4389,
+      "totalMs": 4605,
+      "tools": [],
+      "audit": [
+        {
+          "operation": "companion_agent:chat_completion_stream",
+          "provider": "mimo_responses",
+          "model_id": "mimo-v2.6-flash",
+          "duration_ms": 4276,
+          "prompt_tokens": 7955,
+          "cached_tokens": 6144,
+          "status": "success"
+        }
+      ],
+      "reply": "主要是保温杯用真空夹层阻断了热传导和对流，热量很难通过杯壁传出去；内壁镀反光层又把热量以红外辐射的形式反射回来。再加上盖子密封，几乎堵住了散热最快的杯口，热水自然凉得慢。",
+      "followUps": [],
+      "eventTypes": [
+        "turn.accepted",
+        "assistant.status",
+        "character.cue",
+        "assistant.thinking",
+        "assistant.delta",
+        "voice.segment.ready",
+        "assistant.final"
+      ],
+      "sseEvents": 32,
+      "issues": []
+    },
+    {
+      "id": "causal-limits",
+      "input": "我换了绿色桌布后做题快了些，能确定是桌布的颜色造成的吗？说清能下什么结论。",
+      "runId": "37e42920-2cec-4cf8-94f3-cbcc30493f29",
+      "status": "succeeded",
+      "error": null,
+      "steps": 1,
+      "firstSignalMs": 847,
+      "firstTextMs": 3846,
+      "finalMs": 10866,
+      "totalMs": 11208,
+      "tools": [],
+      "audit": [
+        {
+          "operation": "companion_agent:chat_completion_stream",
+          "provider": "mimo_responses",
+          "model_id": "mimo-v2.6-flash",
+          "duration_ms": 10697,
+          "prompt_tokens": 8272,
+          "cached_tokens": 6144,
+          "status": "success"
+        }
+      ],
+      "reply": "不能确定。你现在只观察到「换桌布」和「变快」两件事同时发生，这最多算相关，不是因果。中间至少有几种解释：\n\n- **练习效应**：题做多了本来就快，桌布只是恰好在那个时间点换的。\n- **别的同时变化**：那天心情、睡眠、题目难度、计时方式都可能不同。\n- **期望效应**：你知道自己换了桌布，可能因此更专注或更愿意快点做完。\n\n要下「颜色造成」的结论，至少得做对照：同一段时间里交替用绿桌布和原桌布（或别的颜色），题目难度和数量一致，各测多次，看速度差是否稳定跟颜色走。如果换了颜色就变快、换回来就变慢，重复几轮都这样，因果才站得住。\n\n现在能下的结论只有一句：**换绿色桌布之后他做题快了，但没有证据说明是颜色导致的。**",
+      "followUps": [],
+      "eventTypes": [
+        "turn.accepted",
+        "assistant.status",
+        "character.cue",
+        "assistant.thinking",
+        "assistant.delta",
+        "voice.segment.ready",
+        "assistant.final"
+      ],
+      "sseEvents": 67,
+      "issues": []
+    },
+    {
+      "id": "calculation",
+      "input": "用计算工具算 32 乘 33，只给结果。",
+      "runId": "d8375c3e-4929-4a08-a294-b6259eaa99f1",
+      "status": "succeeded",
+      "error": null,
+      "steps": 2,
+      "firstSignalMs": 1016,
+      "firstTextMs": 2709,
+      "finalMs": 2955,
+      "totalMs": 3198,
+      "tools": [
+        {
+          "id": "054ea05f-9c02-4e53-b172-85fdcbf8f9b3",
+          "name": "observe.calculate",
+          "status": "succeeded"
+        }
+      ],
+      "audit": [
+        {
+          "operation": "companion_agent:chat_completion_stream",
+          "provider": "mimo_responses",
+          "model_id": "mimo-v2.6-flash",
+          "duration_ms": 1664,
+          "prompt_tokens": 8714,
+          "cached_tokens": 6144,
+          "status": "success"
+        },
+        {
+          "operation": "companion_agent:chat_completion_stream",
+          "provider": "mimo_responses",
+          "model_id": "mimo-v2.6-flash",
+          "duration_ms": 869,
+          "prompt_tokens": 10117,
+          "cached_tokens": 8192,
+          "status": "success"
+        }
+      ],
+      "reply": "1056",
+      "followUps": [],
+      "eventTypes": [
+        "turn.accepted",
+        "assistant.status",
+        "character.cue",
+        "assistant.thinking",
+        "agent.tool",
+        "assistant.delta",
+        "voice.segment.ready",
+        "assistant.final"
+      ],
+      "sseEvents": 16,
+      "issues": []
+    },
+    {
+      "id": "save-new-memory",
+      "input": "记住一个虚构测试信息：我的行李箱编号是 C-081d53。",
+      "runId": "7e78fd37-df9d-42e6-8047-763b03ec67c4",
+      "status": "succeeded",
+      "error": null,
+      "steps": 2,
+      "firstSignalMs": 1136,
+      "firstTextMs": 13313,
+      "finalMs": 13410,
+      "totalMs": 13778,
+      "tools": [
+        {
+          "id": "94814d32-6b5d-4791-b2b2-8ecf85583481",
+          "name": "memory.write.save",
+          "status": "succeeded"
+        }
+      ],
+      "audit": [
+        {
+          "operation": "companion_agent:chat_completion_stream",
+          "provider": "mimo_responses",
+          "model_id": "mimo-v2.6-flash",
+          "duration_ms": 8495,
+          "prompt_tokens": 8810,
+          "cached_tokens": 6144,
+          "status": "success"
+        },
+        {
+          "operation": "companion_agent:chat_completion_stream",
+          "provider": "mimo_responses",
+          "model_id": "mimo-v2.6-flash",
+          "duration_ms": 4297,
+          "prompt_tokens": 10585,
+          "cached_tokens": 8192,
+          "status": "success"
+        }
+      ],
+      "reply": "记住了：C-081d53，标成虚构测试信息存着。",
+      "followUps": [],
+      "eventTypes": [
+        "turn.accepted",
+        "assistant.status",
+        "character.cue",
+        "assistant.thinking",
+        "agent.tool",
+        "assistant.delta",
+        "voice.segment.ready",
+        "assistant.final"
+      ],
+      "sseEvents": 38,
+      "issues": []
+    },
+    {
+      "id": "recall-new-memory",
+      "input": "刚才的虚构测试行李箱编号是什么？",
+      "runId": "9fd2e834-88bb-42df-b527-5b9458ee6fb5",
+      "status": "succeeded",
+      "error": null,
+      "steps": 4,
+      "firstSignalMs": 1163,
+      "firstTextMs": 11623,
+      "finalMs": 12348,
+      "totalMs": 12820,
+      "tools": [
+        {
+          "id": "20d6a926-6048-4fb7-9c19-e6518b352017",
+          "name": "companion_memory_read",
+          "status": "not_executed"
+        },
+        {
+          "id": "e3be3e90-44b1-4356-a4d4-cf43e84a2ab9",
+          "name": "memory.read.read",
+          "status": "succeeded"
+        }
+      ],
+      "audit": [
+        {
+          "operation": "companion_agent:chat_completion_stream",
+          "provider": "mimo_responses",
+          "model_id": "mimo-v2.6-flash",
+          "duration_ms": 5380,
+          "prompt_tokens": 9115,
+          "cached_tokens": null,
+          "status": "success"
+        },
+        {
+          "operation": "companion_agent:chat_completion_stream",
+          "provider": "mimo_responses",
+          "model_id": "mimo-v2.6-flash",
+          "duration_ms": 2392,
+          "prompt_tokens": 10249,
+          "cached_tokens": 1024,
+          "status": "success"
+        },
+        {
+          "operation": "companion_agent:chat_completion_stream",
+          "provider": "mimo_responses",
+          "model_id": "mimo-v2.6-flash",
+          "duration_ms": 2242,
+          "prompt_tokens": 10636,
+          "cached_tokens": 8192,
+          "status": "success"
+        },
+        {
+          "operation": "companion_agent:chat_completion_stream",
+          "provider": "mimo_responses",
+          "model_id": "mimo-v2.6-flash",
+          "duration_ms": 1657,
+          "prompt_tokens": 12244,
+          "cached_tokens": 10240,
+          "status": "success"
+        }
+      ],
+      "reply": "虚构测试的行李箱编号是 **C-081d53**。",
+      "followUps": [],
+      "eventTypes": [
+        "turn.accepted",
+        "assistant.status",
+        "character.cue",
+        "assistant.thinking",
+        "agent.tool",
+        "assistant.delta",
+        "voice.segment.ready",
+        "assistant.final"
+      ],
+      "sseEvents": 48,
+      "issues": [
+        "unexpected tool call"
+      ]
+    },
+    {
+      "id": "create-new-note",
+      "input": "新建一篇笔记《渡口-c1451》，正文只写：末班船在日落前靠岸。",
+      "runId": "ec98c5a4-a337-4d8e-939e-02f77d9978b6",
+      "status": "succeeded",
+      "error": null,
+      "steps": 3,
+      "firstSignalMs": 11436,
+      "firstTextMs": 21943,
+      "finalMs": 22142,
+      "totalMs": 23245,
+      "tools": [
+        {
+          "id": "f41cf43f-fc4f-40f7-8e7a-7d1eee502cf0",
+          "name": "notes.write.create",
+          "status": "succeeded"
+        }
+      ],
+      "audit": [
+        {
+          "operation": "companion_agent:chat_completion_stream",
+          "provider": "mimo_responses",
+          "model_id": "mimo-v2.6-flash",
+          "duration_ms": 2600,
+          "prompt_tokens": 9213,
+          "cached_tokens": 6144,
+          "status": "success"
+        },
+        {
+          "operation": "companion_agent:chat_completion_stream",
+          "provider": "mimo_responses",
+          "model_id": "mimo-v2.6-flash",
+          "duration_ms": 1573,
+          "prompt_tokens": 9696,
+          "cached_tokens": 6144,
+          "status": "success"
+        },
+        {
+          "operation": "companion_agent:chat_completion_stream",
+          "provider": "mimo_responses",
+          "model_id": "mimo-v2.6-flash",
+          "duration_ms": 4529,
+          "prompt_tokens": 11775,
+          "cached_tokens": 6144,
+          "status": "success"
+        }
+      ],
+      "reply": "已保存笔记《渡口-c1451》，可打开继续编辑",
+      "followUps": [],
+      "eventTypes": [
+        "turn.accepted",
+        "assistant.status",
+        "character.cue",
+        "assistant.thinking",
+        "agent.tool",
+        "assistant.delta",
+        "voice.segment.ready",
+        "assistant.final"
+      ],
+      "sseEvents": 18,
+      "issues": [
+        "missing receipt:notes.write"
+      ]
+    },
+    {
+      "id": "read-new-note",
+      "input": "去笔记里读取《渡口-c1451》，告诉我里面写了什么。",
+      "runId": "9696687e-588c-442a-a8bb-e55086a7e37d",
+      "status": "succeeded",
+      "error": null,
+      "steps": 3,
+      "firstSignalMs": 8386,
+      "firstTextMs": 14265,
+      "finalMs": 14696,
+      "totalMs": 15135,
+      "tools": [
+        {
+          "id": "92efdd0e-57b6-4d23-a81d-7e6b5eb5c8a2",
+          "name": "notes.read.search",
+          "status": "succeeded"
+        },
+        {
+          "id": "3fd8319a-472e-4f32-95f2-8c4290bd5dfa",
+          "name": "notes.read.read",
+          "status": "succeeded"
+        }
+      ],
+      "audit": [
+        {
+          "operation": "companion_agent:chat_completion_stream",
+          "provider": "mimo_responses",
+          "model_id": "mimo-v2.6-flash",
+          "duration_ms": 1774,
+          "prompt_tokens": 9276,
+          "cached_tokens": 6144,
+          "status": "success"
+        },
+        {
+          "operation": "companion_agent:chat_completion_stream",
+          "provider": "mimo_responses",
+          "model_id": "mimo-v2.6-flash",
+          "duration_ms": 2229,
+          "prompt_tokens": 10716,
+          "cached_tokens": 8192,
+          "status": "success"
+        },
+        {
+          "operation": "companion_agent:chat_completion_stream",
+          "provider": "mimo_responses",
+          "model_id": "mimo-v2.6-flash",
+          "duration_ms": 1556,
+          "prompt_tokens": 10951,
+          "cached_tokens": 8192,
+          "status": "success"
+        }
+      ],
+      "reply": "《渡口-c1451》里就一句话：\n\n**末班船在日落前靠岸。**",
+      "followUps": [],
+      "eventTypes": [
+        "turn.accepted",
+        "assistant.status",
+        "character.cue",
+        "assistant.thinking",
+        "agent.tool",
+        "assistant.delta",
+        "voice.segment.ready",
+        "assistant.final"
+      ],
+      "sseEvents": 25,
+      "issues": [
+        "missing receipt:notes.read"
+      ]
+    },
+    {
+      "id": "edit-new-note",
+      "input": "把《渡口-c1451》正文改成一句：末班船在月升后靠岸。",
+      "runId": "afd67749-ecac-4ec2-92c6-4dd5ed32e1c6",
+      "status": "succeeded",
+      "error": null,
+      "steps": 4,
+      "firstSignalMs": 4681,
+      "firstTextMs": 24375,
+      "finalMs": 24456,
+      "totalMs": 24865,
+      "tools": [
+        {
+          "id": "6e983ecb-ce3d-4a3c-875c-4fe1d075c534",
+          "name": "notes.read.search",
+          "status": "succeeded"
+        },
+        {
+          "id": "b8fdb257-4ae0-473f-81a7-f8f94c2f0623",
+          "name": "notes.read.read",
+          "status": "succeeded"
+        },
+        {
+          "id": "8eeed490-e1f4-407c-a8f6-30ca154ad01c",
+          "name": "notes.write.edit",
+          "status": "succeeded"
+        }
+      ],
+      "audit": [
+        {
+          "operation": "companion_agent:chat_completion_stream",
+          "provider": "mimo_responses",
+          "model_id": "mimo-v2.6-flash",
+          "duration_ms": 5203,
+          "prompt_tokens": 9397,
+          "cached_tokens": 6144,
+          "status": "success"
+        },
+        {
+          "operation": "companion_agent:chat_completion_stream",
+          "provider": "mimo_responses",
+          "model_id": "mimo-v2.6-flash",
+          "duration_ms": 3104,
+          "prompt_tokens": 10943,
+          "cached_tokens": 8192,
+          "status": "success"
+        },
+        {
+          "operation": "companion_agent:chat_completion_stream",
+          "provider": "mimo_responses",
+          "model_id": "mimo-v2.6-flash",
+          "duration_ms": 5057,
+          "prompt_tokens": 11219,
+          "cached_tokens": 8192,
+          "status": "success"
+        },
+        {
+          "operation": "companion_agent:chat_completion_stream",
+          "provider": "mimo_responses",
+          "model_id": "mimo-v2.6-flash",
+          "duration_ms": 4560,
+          "prompt_tokens": 12031,
+          "cached_tokens": 6144,
+          "status": "success"
+        }
+      ],
+      "reply": "已改好。《渡口-c1451》的正文现在是：末班船在月升后靠岸。",
+      "followUps": [],
+      "eventTypes": [
+        "turn.accepted",
+        "assistant.status",
+        "character.cue",
+        "assistant.thinking",
+        "agent.tool",
+        "assistant.delta",
+        "voice.segment.ready",
+        "assistant.final"
+      ],
+      "sseEvents": 50,
+      "issues": [
+        "missing receipt:notes.write"
+      ]
+    },
+    {
+      "id": "after-write-chat",
+      "input": "好，我去听会儿音乐。",
+      "runId": "4f0295c6-a754-4cdd-9cf2-99c3c643864e",
+      "status": "succeeded",
+      "error": null,
+      "steps": 1,
+      "firstSignalMs": 1232,
+      "firstTextMs": 1637,
+      "finalMs": 2217,
+      "totalMs": 2559,
+      "tools": [],
+      "audit": [
+        {
+          "operation": "companion_agent:chat_completion_stream",
+          "provider": "mimo_responses",
+          "model_id": "mimo-v2.6-flash",
+          "duration_ms": 1795,
+          "prompt_tokens": 9510,
+          "cached_tokens": 6144,
+          "status": "success"
+        }
+      ],
+      "reply": "去吧，正好傍晚，听点舒服的。",
+      "followUps": [],
+      "eventTypes": [
+        "turn.accepted",
+        "assistant.status",
+        "character.cue",
+        "assistant.thinking",
+        "assistant.delta",
+        "voice.segment.ready",
+        "assistant.final"
+      ],
+      "sseEvents": 14,
+      "issues": []
+    },
+    {
+      "id": "cancel-generating",
+      "input": "详细推导二维热传导方程的变量分离解，再写三道带完整解答的习题。",
+      "runId": "4667c1c7-989d-44ed-885b-05d9b7de3d68",
+      "status": "cancelled",
+      "error": null,
+      "steps": 0,
+      "firstSignalMs": null,
+      "firstTextMs": null,
+      "finalMs": null,
+      "totalMs": 1173,
+      "tools": [],
+      "audit": [],
+      "reply": "",
+      "followUps": [],
+      "eventTypes": [
+        "turn.accepted",
+        "assistant.status",
+        "character.cue",
+        "turn.cancelled"
+      ],
+      "sseEvents": 5,
+      "issues": []
+    },
+    {
+      "id": "after-cancel",
+      "input": "刚才那题不用了，聊点轻松的吧。",
+      "runId": "18676c17-922c-4f77-b886-437433bdaf34",
+      "status": "succeeded",
+      "error": null,
+      "steps": 1,
+      "firstSignalMs": 14599,
+      "firstTextMs": 16896,
+      "finalMs": 18867,
+      "totalMs": 19147,
+      "tools": [],
+      "audit": [
+        {
+          "operation": "companion_agent:chat_completion_stream",
+          "provider": "mimo_responses",
+          "model_id": "mimo-v2.6-flash",
+          "duration_ms": 5137,
+          "prompt_tokens": 9783,
+          "cached_tokens": 4096,
+          "status": "success"
+        }
+      ],
+      "reply": "好，不推方程了。你刚说去听音乐——听到什么了？还是说其实只是把播放列表打开放着，人已经瘫在沙发上了？",
+      "followUps": [],
+      "eventTypes": [
+        "turn.accepted",
+        "assistant.status",
+        "character.cue",
+        "assistant.thinking",
+        "assistant.delta",
+        "voice.segment.ready",
+        "assistant.final"
+      ],
+      "sseEvents": 31,
+      "issues": []
+    },
+    {
+      "id": "6b4f046f-d1ff-4b31-87cc-67dd7f6b7455",
+      "title": "渡口-c1451",
+      "body": "末班船在月升后靠岸。",
+      "issues": []
+    },
+    {
+      "id": "guided-create",
+      "input": "新建一篇笔记《确认窗口测试》，正文写：确认以后再保存。",
+      "runId": "bc1843a5-628f-4ea5-bd07-a296af57699a",
+      "status": "waiting_for_confirmation",
+      "error": null,
+      "steps": 1,
+      "firstSignalMs": 1009,
+      "firstTextMs": null,
+      "finalMs": null,
+      "totalMs": 3402,
+      "tools": [
+        {
+          "id": "80372aae-5fa0-4046-a09a-7388013e1a99",
+          "name": "notes.write.create",
+          "status": "waiting_confirmation"
+        }
+      ],
+      "audit": [
+        {
+          "operation": "companion_agent:chat_completion_stream",
+          "provider": "mimo_responses",
+          "model_id": "mimo-v2.6-flash",
+          "duration_ms": 2618,
+          "prompt_tokens": 7299,
+          "cached_tokens": 6144,
+          "status": "success"
+        }
+      ],
+      "reply": "保存这篇手记？\n确认窗口测试\n确认后保存为新手记；取消不会创建。",
+      "followUps": [],
+      "eventTypes": [
+        "turn.accepted",
+        "assistant.status",
+        "character.cue",
+        "assistant.thinking",
+        "agent.tool",
+        "action.proposed"
+      ],
+      "sseEvents": 12,
+      "issues": []
+    },
+    {
+      "id": "guided-no-write",
+      "notes": 0,
+      "issues": []
+    },
+    {
+      "id": "guided-after-cancel",
+      "input": "不用建了，先休息。",
+      "runId": "dcd07fc9-e6e0-4836-b6d5-99814263cfc3",
+      "status": "succeeded",
+      "error": null,
+      "steps": 1,
+      "firstSignalMs": 2168,
+      "firstTextMs": 2635,
+      "finalMs": 2790,
+      "totalMs": 3096,
+      "tools": [],
+      "audit": [
+        {
+          "operation": "companion_agent:chat_completion_stream",
+          "provider": "mimo_responses",
+          "model_id": "mimo-v2.6-flash",
+          "duration_ms": 2218,
+          "prompt_tokens": 7617,
+          "cached_tokens": 6144,
+          "status": "success"
+        }
+      ],
+      "reply": "好，不建了。",
+      "followUps": [],
+      "eventTypes": [
+        "turn.accepted",
+        "assistant.status",
+        "character.cue",
+        "assistant.thinking",
+        "assistant.delta",
+        "voice.segment.ready",
+        "assistant.final"
+      ],
+      "sseEvents": 12,
+      "issues": []
+    },
+    {
+      "id": "fixture-ready",
+      "userId": "23b01d1d-5b05-4058-acb5-ef60f0397ad5",
+      "workspaceId": "5707ded4-262c-4dec-9194-92f25c2cf35d",
+      "email": "continuation-23b01d1d@test.invalid",
+      "conversationId": "ed2342a3-78b3-4f07-bb57-f4953c860ead",
+      "issues": []
+    }
+  ]
+}

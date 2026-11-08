@@ -127,12 +127,28 @@ test("diary length follows material density and is independent of chat activenes
   assert.equal(diaryWritingSize(material(tea)).minChars, 120, "sparse real exchanges can be shorter");
 });
 
+test("diary rules stay fixed when the day, name and rewrite reason change", () => {
+  const first = buildDiaryPrompt({ date: "2026-10-05", persona, material: material(tea), rejection: null });
+  const second = buildDiaryPrompt({
+    date: "2026-11-07",
+    persona: { ...persona, name: "另一位" },
+    material: material(tea),
+    rejection: "正文太短",
+  });
+  assert.equal(first[0].content, second[0].content);
+  assert.match(second[1].content, /另一位/);
+  assert.match(second[1].content, /2026-11-07/);
+  assert.doesNotMatch(first[0].content, /2026-10-05/);
+});
+
 test("private prose keeps shared voice without inventing hidden past psychology or a listener", () => {
   const prompt = buildDiaryPrompt({ date: "2026-10-05", persona, material: material(tea), rejection: "正文太短" });
   assert.ok(prompt[0].content.includes(COMPANION_VOICE_STYLE_LINES_V2));
   assert.match(prompt[0].content, /用第一人称写给自己/);
   assert.match(prompt[0].content, /不能假称还原了当时未记下的秘密心理/);
-  assert.match(prompt[0].content, /上一稿需要修正：正文太短/);
+  assert.doesNotMatch(prompt[0].content, /2026-10-05|上一稿需要修正/);
+  assert.match(prompt[1].content, /上一稿需要修正：正文太短/);
+  assert.match(prompt[1].content, /2026-10-05/);
   assert.doesNotMatch(prompt[0].content, /全文最多|全程用「你」|心里怎么绕的|必须写出来/);
   assert.doesNotMatch(prompt[0].content, /workspace、job、run|不出现计数/);
   assert.doesNotMatch(prompt[0].content, /<day_material>/, "untrusted source is separate from system instructions");

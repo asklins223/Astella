@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { companionResponseStrategy, COMPANION_KNOWLEDGE_REVIEW_V2, COMPANION_KNOWLEDGE_REVIEW_V6, isCompanionExplanation } from "../turn/companion-response-strategy.ts";
+import { companionResponseStrategy, COMPANION_KNOWLEDGE_REVIEW_V2, COMPANION_KNOWLEDGE_REVIEW_V6, COMPANION_TURN_CONTRACT, isCompanionExplanation } from "../turn/companion-response-strategy.ts";
 import { companionStepRuntimePolicy } from "../turn/companion-step-plan.ts";
 import { COMPANION_DIALOGUE_CONTINUATION_GOAL_V1 } from "../turn/companion-conversation-policy.ts";
 import { companionDirectInterpretation } from "../turn/companion-entry-mode.ts";
@@ -10,9 +10,10 @@ test("an explicitly guarded plain opening omits research instructions while reta
   const plain = companionResponseStrategy(attention, { plainResponse: true, webSearch: "enabled" });
   assert.equal(plain.mode, "adaptive");
   assert.equal(plain.temperature, 0.4);
+  assert.equal(plain.guidance, COMPANION_TURN_CONTRACT);
   assert.ok(!plain.guidance.includes(COMPANION_KNOWLEDGE_REVIEW_V6));
-  assert.match(plain.guidance, /写作请求按用户指定形式完整写出/);
-  assert.ok(companionResponseStrategy(attention, { plainResponse: false }).guidance.includes(COMPANION_KNOWLEDGE_REVIEW_V6));
+  assert.match(plain.guidance, /写作请求按对方指定的体裁和篇幅写完/);
+  assert.equal(companionResponseStrategy(attention, { plainResponse: false }).guidance, COMPANION_TURN_CONTRACT);
 });
 
 test("unclassified direct entry chooses neither casual nor knowledge intent from opening cost", () => {
@@ -20,11 +21,12 @@ test("unclassified direct entry chooses neither casual nor knowledge intent from
   const strategy = companionResponseStrategy(attention);
   assert.equal(strategy.mode, "adaptive");
   assert.equal(strategy.temperature, 0.4);
-  assert.match(strategy.guidance, /日常交流/);
-  assert.match(strategy.guidance, /操作请求/);
-  assert.match(strategy.guidance, /当回答涉及知识、数量或因果解释时/);
-  assert.ok(strategy.guidance.includes(COMPANION_KNOWLEDGE_REVIEW_V2));
-  assert.notEqual(strategy.guidance, COMPANION_KNOWLEDGE_REVIEW_V2);
+  assert.equal(strategy.guidance, COMPANION_TURN_CONTRACT);
+  assert.match(strategy.guidance, /闲聊先接具体的事/);
+  assert.match(strategy.guidance, /不要改写成对方自己刚做的事/);
+  assert.match(strategy.guidance, /没有本轮观察到的动作就直接说没有/);
+  assert.match(strategy.guidance, /用本轮工具去做/);
+  assert.ok(!strategy.guidance.includes(COMPANION_KNOWLEDGE_REVIEW_V2));
   const policy = companionStepRuntimePolicy({ permissionLevel: "full", toolCount: 40,
     stepBudget: 3, finalAnswerOnly: false, attentionIntent: attention.intent });
   assert.ok(!policy.includes(COMPANION_DIALOGUE_CONTINUATION_GOAL_V1));
@@ -83,12 +85,17 @@ test("动作、控制与带读取的聊天保留工具执行档", () => {
 });
 
 test("research guidance follows actual missing evidence and source constraints without a task-wide search cap", () => {
-  const on = companionResponseStrategy(companionDirectInterpretation("a".repeat(64)), { webSearch: "enabled" });
+  const task = { intent: "task" as const, toolUse: "act" as const, status: "interpreted" as const };
+  const opening = companionResponseStrategy(companionDirectInterpretation("a".repeat(64)), { webSearch: "enabled" });
+  const alsoOff = companionResponseStrategy(companionDirectInterpretation("a".repeat(64)), { webSearch: "disabled" });
+  assert.equal(opening.guidance, alsoOff.guidance, "联网开关不改写直接入口的稳定合同");
+  assert.doesNotMatch(opening.guidance, /domain 限定/);
+  const on = companionResponseStrategy(task, { webSearch: "enabled" });
   assert.match(on.guidance, /原始网页/);
   assert.match(on.guidance, /已有原文足以支持限定结论就交付/);
   assert.match(on.guidance, /最终篇幅仍按本轮要求/);
   assert.doesNotMatch(on.guidance, /最多.*次搜索|只搜索.*次|仅能搜索.*次/);
-  const off = companionResponseStrategy(companionDirectInterpretation("a".repeat(64)), { webSearch: "disabled" });
+  const off = companionResponseStrategy(task, { webSearch: "disabled" });
   assert.doesNotMatch(off.guidance, /domain 限定/);
 });
 

@@ -1,0 +1,29 @@
+{
+  "userId": "ac75fd39-5439-4ef6-b830-70317caf88f8",
+  "workspaceId": "59788a67-e34c-4446-b9cd-d9282bc9f46b",
+  "results": [
+    {
+      "case": "no-image-honest",
+      "ok": true,
+      "status": "succeeded",
+      "visible": "这轮我这边没有收到图片，可能是没发成功或者没附上。你重新发一下，或者告诉我是哪张图，我再看。"
+    },
+    {
+      "case": "single-image",
+      "ok": true,
+      "status": "succeeded",
+      "expected": "B3C0",
+      "visible": "B3C0"
+    },
+    {
+      "case": "two-images-doc-quote",
+      "ok": true,
+      "status": "succeeded",
+      "expected": [
+        "B3C0",
+        "2C12"
+      ],
+      "visible": "第一张：**B3C0**\n\n第二张：**2C12**"
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { companionConversationReviewMessages, companionGroundedReviewMaterial, companionUnknownWebCitations,
-  companionCitationReadGuidance,
+  companionCitationReadGuidance, companionHasUnreadSearchHit, stripUnreadWebCitationMarkers,
   companionGroundedParagraphReviewMessages,
   COMPANION_GROUNDED_REVIEW_POLICY, COMPANION_KNOWLEDGE_COHERENCE_REVIEW_POLICY,
   COMPANION_CONVERSATION_REVIEW_POLICY_V2 } from "../agent/companion-conversation-review.ts";
@@ -90,7 +90,10 @@ test("a search hit is not a read receipt for a final or independently published 
   const search = { role: "tool" as const, content: JSON.stringify({ ok: true, operation: "web.search", data: { sources: [source] } }) };
   const result = { content: "这条结论。[^web-page]", toolCalls: [], finishReason: "stop" as const,
     usage: { promptTokens: 1, completionTokens: 1 }, providerRequestId: null };
+  assert.equal(companionHasUnreadSearchHit([search]), true);
   assert.match(companionCitationReadGuidance(result, [search])!, /https:\/\/example.com\/original/);
+  assert.equal(stripUnreadWebCitationMarkers(result.content, new Set()), "这条结论。");
+  assert.equal(stripUnreadWebCitationMarkers(result.content, new Set(["web-page"])), result.content);
   for (const name of ["companion_finish", "companion_send_message"]) {
     assert.ok(companionCitationReadGuidance({ ...result, content: "", toolCalls: [{ id: "publish", name,
       arguments: { text: result.content } }] }, [search]));
@@ -100,5 +103,6 @@ test("a search hit is not a read receipt for a final or independently published 
     data: { status: "succeeded", url, text: "The actually retrieved original paragraph." } }) });
   assert.ok(companionCitationReadGuidance(result, [search, read("https://example.com/unrelated")]));
   assert.equal(companionCitationReadGuidance(result, [search, read(source.url)]), null);
+  assert.equal(companionHasUnreadSearchHit([search, read(source.url)]), false);
   assert.equal(companionCitationReadGuidance(result, [search, { role: "user", content: "new request", requestBoundary: true }]), null);
 });

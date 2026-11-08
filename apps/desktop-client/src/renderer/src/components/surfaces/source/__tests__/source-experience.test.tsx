@@ -203,7 +203,7 @@ describe("少一步的材料录入", () => {
     const api = installApi(); api.source.create.mockResolvedValueOnce(ok({ source: sources[0], segments,
       duplicateOf: { sourceId: "first", title: "记忆研究", createdAt: sources[0].createdAt, status: "ready" } }));
     render(<SourceLibrarySurface />); await waitFor(() => expect(cards()).toHaveLength(2)); paste(document, "重复正文");
-    fireEvent.click(screen.getByRole("button", { name: "开始解析" }));
+    fireEvent.click(await screen.findByRole("button", { name: "开始解析" }));
     const open = await screen.findByRole("button", { name: "打开已有来源" });
     expect(screen.queryByRole("button", { name: "开始解析" })).toBeNull();
     fireEvent.submit(document.querySelector(".capture-form")!); expect(api.source.create).toHaveBeenCalledTimes(1);

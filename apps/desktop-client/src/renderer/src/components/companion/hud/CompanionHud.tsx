@@ -13,8 +13,10 @@ import { companionMessageText, useCompanionChat } from "../../../app/companion-s
 import { beginCompanionSpeechLine, stopCompanionSpeech, subscribeCompanionSpeech, type CompanionServerVoiceSegment, type CompanionSpeechSession } from "../../../app/companion-session/companion-voice-playback";
 import { COMPANION_VOICE_SEGMENT_READY_EVENT, drainCompanionVoiceSegments, type CompanionVoiceSegmentReadyDetail } from "../../../app/companion-session/companion-voice-segment-queue";
 import { COMPANION_REVEAL_TICK_MS, createCompanionRevealDriver, type CompanionRevealDriver } from "../../../app/companion-session/companion-reveal-driver";
+import { stableCompanionMarkdownPrefix } from "../../../app/companion-session/companion-markdown-boundary";
 import { subscribeHomeV2VoiceLevel } from "../../../app/companion-session/companion-voice-level";
 import { companionTurnProcessLine, nodeLabel, savedCompanionNote } from "../../../app/companion-session/companion-agent-nodes";
+import { clearPendingCompanionFile, usePendingCompanionFile } from "../../../app/companion-session/companion-file-attachment";
 import type { CompanionAgentNode, CompanionAgentNodeState } from "../../../app/companion-session/companion-agent-nodes";
 import { CompanionAgentRail, type CompanionAgentRailProgress, type CompanionAgentRailTurnState } from "./companion-agent-rail";
 import { COMPANION_AGENT_PERMISSION_OPTIONS, COMPANION_INTERVENTION_OPTIONS, COMPANION_PRESENCE_OPTIONS, companionInterventionHint, quietHoursPatch, quietHoursWithBoundary, type QuietHoursBoundary } from "../bubble/companion-account-presence";
@@ -161,6 +163,7 @@ export function CompanionHud({
   // A native file chooser can stay open longer than the idle bubble lifetime.
   // Keep its input mounted until selection/cancellation, including uploads.
   const imageAttachment = useCompanionImageAttachment();
+  const pendingFile = usePendingCompanionFile();
   const [imagePickerOpen, setImagePickerOpen] = useState(false);
   const interaction = useCompanionInteraction(chat, voiceEnabled, floatingBlocked || settingsOpen || goalBubbleOpen || chat.mode === "history" || previewOpen,
     replyProcessOpen, imagePickerOpen || imageAttachment.uploading || imageAttachment.images.length > 0);
@@ -618,7 +621,7 @@ export function CompanionHud({
       seenVoiceSegmentIdsRef.current.clear();
       for (const segment of pendingVoiceSegmentsRef.current) seenVoiceSegmentIdsRef.current.add(segment.segmentId);
     }
-    reveal.noteArrived(draft.text.length);
+    reveal.noteArrived(plainCompanionBubbleText(stableCompanionMarkdownPrefix(draft.text), true).length);
     setBubbleStage("visible");
 
     if (!voiceOutputEnabled) {
@@ -695,7 +698,7 @@ export function CompanionHud({
         // 失败/超时：文本不会再长了，剩下的字交给驱动器按阅读节奏露完。
         // **不** noteTurnFinal：这条留档要留在视野里（用户要看清她说到哪儿了），
         // 由下一次发送或新的回复来收掉。
-        reveal.noteArrived(partial.length);
+        reveal.noteArrived(plainCompanionBubbleText(partial).length);
         reveal.noteSession("unavailable");
         setBubbleStage("visible");
         // 稳定摘要只发这一次（方案 §3 无障碍）：流式期间不逐字播报。
@@ -709,7 +712,7 @@ export function CompanionHud({
       draftRunIdRef.current = null;
       return;
     }
-    const text = companionHudReplyText(reply);
+    const text = plainCompanionBubbleText(companionHudReplyText(reply), true);
     const total = text.trim().length;
     // 朗读收尾：正文只能通过服务端签发的片段引用播放（strictSegments），自由文本
     // TTS 的终态兜底链路已删除。流式阶段开过口的会话在这里收尾；没开过口的
@@ -935,7 +938,7 @@ export function CompanionHud({
   const sendLimitNote = companionComposerLimitNote(input, chat.feedSelection ?? chat.feedNoteAnchor?.anchor.excerpt);
   const sendText = useCallback(async (textOverride?: string, fromVoice = false) => {
     const text = (textOverride ?? input).trim();
-    if ((!text && !imageAttachment.images.length) || imageAttachment.uploading
+    if ((!text && !imageAttachment.images.length && !pendingFile) || imageAttachment.uploading
       || companionComposerLimitNote(text, chat.feedSelection ?? chat.feedNoteAnchor?.anchor.excerpt)) return false;
     const sentImages = imageAttachment.images;
     if (!fromVoice) setInput("");
@@ -980,7 +983,7 @@ export function CompanionHud({
     } finally {
       if (sendId === preparingSendIdRef.current) setPreparingSend(false);
     }
-  }, [chat, input, imageAttachment, requestedVoiceOutputEnabled]);
+  }, [chat, input, imageAttachment, pendingFile, requestedVoiceOutputEnabled]);
 
   // 同轮复用的清理会跳过会话 stop；HUD 真正卸载时要单独把声音收掉。
   useEffect(() => () => stopCompanionSpeech(), []);
@@ -1018,7 +1021,7 @@ export function CompanionHud({
   );
   const webSources = useMemo(() => companionWebCitations(chat.liveReply?.webCitations ?? []), [chat.liveReply]);
   const draftText = useMemo(
-    () => plainCompanionBubbleText(chat.draft?.text ?? "", true),
+    () => plainCompanionBubbleText(stableCompanionMarkdownPrefix(chat.draft?.text ?? ""), true),
     [chat.draft?.text],
   );
   /**
@@ -1279,7 +1282,7 @@ export function CompanionHud({
           runId={chat.processRunId ?? "accepting"} startedAt={currentTrace?.summary.createdAt}
           activityKey={currentTrace?.events?.at(-1)?.seq} /> : null}
         {attachments && outputTone === "reply" ? <CompanionWebSources sources={webSources} /> : null}
-        {attachments && chat.mode !== "conversation" && ["reply", "stopped", "note"].includes(outputTone) ? <CompanionAIAttribution /> : null}
+        {attachments && ["reply", "stopped", "note"].includes(outputTone) ? <CompanionAIAttribution /> : null}
         {attachments && chat.richReply ? <CompanionReplyAttachments key={`attachments:${chat.richReply.messageId}`} chat={chat}
           representedNoteIds={railVisible ? savedNoteIds : undefined}
           followupsReady={readthroughReplyId === chat.richReply.messageId}
@@ -1313,9 +1316,12 @@ export function CompanionHud({
   };
 
   return (
-    <div ref={hudRef} className="companion-hud" data-mode={chat.mode} data-motion={motionMode} data-side={side} data-controls-side={controlsSide}>
+    <div ref={hudRef} className="companion-hud" data-mode={chat.mode} data-motion={motionMode} data-side={side} data-controls-side={controlsSide} data-voice={interaction.voiceOpen || undefined}>
       {createPortal(
         <div ref={floatingRef} className="companion-hud--floating hud-surface" data-companion-owned="true" data-motion={motionMode} data-mode={chat.mode} data-side={side} data-blocked={floatingBlocked || settingsOpen || goalBubbleOpen || chat.mode === "history" || cardPage && chat.mode === "closed" && !interaction.voiceOpen && chat.phase !== "sending" || undefined}>
+          {/* 语音烟球不进气泡列：它按角色自己的位置定位，也不参与气泡的高度计算。 */}
+          {interaction.voiceOpen ? <CompanionVoiceConversation voice={voice} onClose={interaction.closeVoice}
+            onActivity={interaction.voiceActivity} onModelSettings={openVoiceModelSettings} failure={turnFailure} /> : null}
           <div ref={headRef} className="companion-hud__head" aria-label="伴星的轻量交互">
             {railVisible || outputText || chat.richReply ? <div className="companion-hud__exchange">
             {railVisible ? (
@@ -1364,8 +1370,12 @@ export function CompanionHud({
                 {imageAttachment.images.length ? <div className="companion-compose-images">{imageAttachment.images.map(image =>
                   <CompanionComposerImageChip key={image.url} image={image} onRemove={() => imageAttachment.remove(image.url)} />)}</div> : null}
                 <CompanionComposerImageStatus uploading={imageAttachment.uploading} error={imageAttachment.error} />
+                {pendingFile ? <div className="companion-compose-file">
+                  <span>随这条带上</span>
+                  <strong>{pendingFile.name}</strong>
+                  <button type="button" onClick={clearPendingCompanionFile} aria-label="不移交这个文件" title="不移交这个文件">×</button>
+                </div> : null}
 
-                <CompanionAIAttribution />
                 <form
                   data-sending={chat.phase === "sending" || undefined}
                   onSubmit={(event) => { event.preventDefault(); void sendText(); }}
@@ -1423,7 +1433,7 @@ export function CompanionHud({
                   ) : null}
                   <button
                     type="submit"
-                    disabled={(!input.trim() && !imageAttachment.images.length) || Boolean(sendLimitNote) || voice.phase === "closing" || imageAttachment.uploading}
+                    disabled={(!input.trim() && !imageAttachment.images.length && !pendingFile) || Boolean(sendLimitNote) || voice.phase === "closing" || imageAttachment.uploading}
                     title={chat.phase === "sending" ? "发送并接替当前回复" : "发送"}
                     aria-label={chat.phase === "sending" ? "发送并接替当前回复" : "发送"}
                   ><Send size={17} /></button>
@@ -1443,9 +1453,6 @@ export function CompanionHud({
                 ) : null}
               </section>
             ) : null}
-            {interaction.voiceOpen ? <CompanionVoiceConversation voice={voice} onClose={interaction.closeVoice}
-              onText={() => { interaction.closeVoice(); chat.setMode("conversation"); }} onActivity={interaction.voiceActivity}
-              onModelSettings={openVoiceModelSettings} failure={turnFailure} /> : null}
             {chat.mode === "actions" ? (
               <section className="companion-hud__panel companion-hud__more" aria-label="伴星更多功能" onPointerMove={interaction.menuActivity} onWheel={interaction.menuActivity} onKeyDown={interaction.menuActivity} onFocus={interaction.menuActivity}>
                 <header>

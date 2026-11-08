@@ -12,13 +12,14 @@ function harness(): { driver: CompanionRevealDriver; advance: (ms: number) => vo
   let at = 0;
   const revealed: number[] = [];
   const driver = createCompanionRevealDriver({
-    now: () => at,
+    now: () => at, msPerChar: 60,
     onReveal: (value) => revealed.push(value),
   });
   return {
     driver,
     advance: (ms: number) => {
-      at += ms;
+      const end = at + ms;
+      while (at < end) { at = Math.min(end, at + 16); driver.tick(); }
     },
     revealed,
   };
@@ -184,8 +185,8 @@ describe("companion-reveal-driver", () => {
     expect(completions).toBe(1);
   });
 
-  it("音频 finished 直接补满并收尾", () => {
-    const { driver } = harness();
+  it("音频 finished 不冲掉剩余文字，阅读钟继续到末尾", () => {
+    const { driver, advance } = harness();
     let completions = 0;
     driver.onComplete(() => { completions += 1; });
     driver.noteSession("voice");
@@ -193,7 +194,10 @@ describe("companion-reveal-driver", () => {
     driver.noteAudioPosition(20);
     driver.noteTurnFinal();
     expect(completions).toBe(0);
+    const before = driver.revealed;
     driver.noteAudioFinished();
+    expect(driver.revealed).toBe(before);
+    advance(4_000);
     expect(driver.revealed).toBe(64);
     expect(completions).toBe(1);
   });
@@ -235,4 +239,14 @@ describe("companion-reveal-driver", () => {
     driver.tick();
     expect(driver.revealed).toBe(10);
   });
+});
+
+it("主线程长时间停顿及等包都不能换成下一包的显示额度", () => {
+  let now = 0;
+  const driver = createCompanionRevealDriver({ now: () => now, msPerChar: 10 });
+  driver.noteSession("silent"); driver.noteArrived(2); driver.tick();
+  now = 20; driver.tick(); expect(driver.revealed).toBe(2);
+  now = 10_000; driver.tick();
+  driver.noteArrived(500); driver.tick(); expect(driver.revealed).toBe(2);
+  now += 10_000; driver.tick(); expect(driver.revealed).toBeLessThanOrEqual(6);
 });

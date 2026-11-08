@@ -32,7 +32,7 @@ test("deferred discovery retains every permission-filtered capability", () => {
     const surface = createCompanionToolSurface({ definitions: catalog, pageKind: null, candidateOperations: [] });
     const initial = surface.offered().map(tool => tool.name);
     assert.ok(initial.includes("companion_load_tools"));
-    assert.equal(initial.includes("companion_notes_write"), false);
+    assert.equal(initial.includes("companion_notes_write"), true);
     for (const name of resolveCompanionToolGroupNames(COMPANION_TOOL_GROUP_IDS))
       if (catalog.some(tool => tool.name === name)) surface.loadedToolNames.add(name);
     assert.deepEqual(surface.offered().map(tool => tool.name).sort(), catalog.map(tool => tool.name).sort());

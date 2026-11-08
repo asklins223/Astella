@@ -25,6 +25,57 @@ const MAX_NOTE_FILE_BYTES = MAX_SOURCE_TEXT_BYTES;
 const MAX_EXPORT_IMAGE_TOTAL_CHARS = TRANSFER_BATCH_BASE64_MAX_CHARS;
 const roots = new Map<number, Set<string>>();
 const mimeFor = (path: string) => ({ ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp" } as Record<string, string>)[extname(path).toLowerCase()];
+
+/**
+ * 授权一个目录给这个窗口读写。文件关联打开的那份 .md 走这里：系统把路径交给我们，
+ * 等于用户已经选了它，不必再弹一次文件选择器；随文的同级图片也在同一个目录里。
+ */
+export async function grantNoteWritingRoot(window: BrowserWindow, directory: string): Promise<void> {
+  let granted = roots.get(window.id);
+  if (!granted) {
+    granted = new Set<string>();
+    window.once("closed", () => roots.delete(window.id));
+    roots.set(window.id, granted);
+  }
+  granted.add(await realpath(directory));
+}
+
+/** 这个窗口有没有权利读这份文件（及其同级资源）。判据与通道里的 `allowed()` 同一套。 */
+export async function isNoteWritingPathGranted(window: BrowserWindow, path: string): Promise<boolean> {
+  const granted = roots.get(window.id);
+  if (!granted) return false;
+  const canonical = await realpath(path).catch(() => "");
+  if (!canonical) return false;
+  const directory = dirname(canonical);
+  return [...granted].some(root => {
+    const rel = relative(root, directory);
+    return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
+  });
+}
+
+/**
+ * 本地 Markdown 的编码：先按 UTF-8 严格读，读不动再按 GBK 试一次。
+ * 与来源采集那份解码同一个理由：Windows 记事本的「ANSI」是 GBK，静默解成
+ * 替换字符等于把坏正文写回用户的原文件。
+ */
+export function decodeNoteFileText(bytes: Uint8Array): { ok: true; text: string } | { ok: false; message: string } {
+  const stripBom = (text: string) => (text.startsWith("\uFEFF") ? text.slice(1) : text);
+  try {
+    return { ok: true, text: stripBom(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) };
+  } catch {
+    // 不是 UTF-8：往下按 GBK 试。
+  }
+  let gbk = "";
+  try {
+    gbk = new TextDecoder("gbk").decode(bytes);
+  } catch {
+    // 连 GBK 都解不出来。
+  }
+  if (!gbk || gbk.includes("\uFFFD")) {
+    return { ok: false, message: "这份文件既不是 UTF-8 也不是 GBK 能读出来的编码，先在原程序里另存为 UTF-8 再打开。" };
+  }
+  return { ok: true, text: stripBom(gbk) };
+}
 type ImageSyntaxNode = { type: string; url?: string; value?: string; alt?: string; title?: string; identifier?: string; children?: ImageSyntaxNode[]; position?: { start: { offset?: number }; end: { offset?: number } } };
 function imageDefinitions(tree: ImageSyntaxNode): Map<string, ImageSyntaxNode> {
   const definitions = new Map<string, ImageSyntaxNode>();
@@ -120,7 +171,7 @@ export function registerNoteWritingChannels(deps: Pick<RestChannelDeps, "channel
     deps.requireM2Route(deps.contract, "note.detail");
     const request = input.request, granted = roots.get(window.id) ?? new Set<string>();
     if (!roots.has(window.id)) window.once("closed", () => roots.delete(window.id)); roots.set(window.id, granted);
-    const grant = async (path: string) => { granted.add(await realpath(path)); };
+    const grant = (path: string) => grantNoteWritingRoot(window, path);
     const allowed = async (path: string, directory = false) => { const canonical = await realpath(directory ? path : dirname(path));
       if (![...granted].some(root => { const rel = relative(root, canonical); return rel === "" || rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel); })) throw new Error("请先通过文件选择器打开这个目录");
       const target = resolve(canonical, directory ? "." : basename(path));
@@ -141,7 +192,9 @@ export function registerNoteWritingChannels(deps: Pick<RestChannelDeps, "channel
       let path = request.path;
       if (request.action === "open") { const picked = await dialog.showOpenDialog(window, { title: "打开 Markdown", properties: ["openFile"], filters: [{ name: "Markdown", extensions: ["md", "markdown"] }] }); if (picked.canceled || !picked.filePaths[0]) return { canceled: true }; path = picked.filePaths[0]; await grant(dirname(path)); }
       if (!path) throw new Error("未选择 Markdown 文件"); path = await allowed(path); const info = await stat(path); if (info.size > MAX_NOTE_FILE_BYTES) throw new Error(`笔记文件超过 ${Math.round(MAX_NOTE_FILE_BYTES / 1024 / 1024)} MB`);
-      return { path, markdown: await readFile(path, "utf8"), revision: info.mtimeMs };
+      const decoded = decodeNoteFileText(await readFile(path));
+      if (!decoded.ok) throw new Error(decoded.message);
+      return { path, markdown: decoded.text, revision: info.mtimeMs };
     }
     if (request.action === "image") {
       const src = request.src ?? ""; if (/^https:\/\//.test(src)) return downloadImage(src);

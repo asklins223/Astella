@@ -12,7 +12,7 @@ process.env.AI_PLATFORMS_CONFIG = "/nonexistent/diary-writing-model-fixture.json
 const admin = postgres(testDatabaseUrl("DATABASE_URL_MIGRATOR"), { max: 1 });
 after(async () => { await admin.end(); await closeDatabase(); });
 
-async function fixture() {
+async function fixture(lines = ["请核对初稿，尤其是结尾的限定。", "初稿核对。".repeat(40) + "最后确认：只存初稿，没有提交。"]) {
   const userId = randomUUID(), workspaceId = randomUUID(), conversationId = randomUUID(), id = randomUUID();
   const date = "2026-10-05", leaseToken = randomUUID();
   const mutate = <T>(fn: (tx: postgres.TransactionSql) => Promise<T>) => admin.begin(async (tx) => {
@@ -29,7 +29,6 @@ async function fixture() {
       VALUES(${userId},${tx.json({ presetId: "custom", name: "书虫", activeness: "quiet", personalityTags: [], speakingStyle: "平实自然", examples: [], boundaries: {} })},1)`;
     await tx`INSERT INTO companion_conversations(id,workspace_id,user_id,kind,title,title_source,status)
       VALUES(${conversationId},${workspaceId},${userId},'dialogue','正文回归','system','active')`;
-    const lines = ["请核对初稿，尤其是结尾的限定。", "初稿核对。".repeat(40) + "最后确认：只存初稿，没有提交。"];
     for (let index = 0; index < lines.length; index += 1) {
       await tx`INSERT INTO companion_messages(id,workspace_id,user_id,conversation_id,role,seq,kind,blocks,content_sha256,created_at)
         VALUES(${randomUUID()},${workspaceId},${userId},${conversationId},${index ? "assistant" : "user"},${index + 1},'text',
@@ -42,6 +41,7 @@ async function fixture() {
     job: { id, workspaceId, requestedBy: userId, leaseToken, payload: { date, timezone: "Asia/Shanghai", userId } },
     mutate,
     read: () => mutate(tx => tx`SELECT status,summary,blocks,failure_reason FROM companion_daily_summaries WHERE workspace_id=${workspaceId} AND user_id=${userId} AND date=${date}`),
+    readMemory: () => mutate(tx => tx`SELECT content,source_event_ids FROM assistant_memory_items WHERE workspace_id=${workspaceId} AND source_event_id=${`daily-summary:${date}`}`),
     cleanup: () => mutate(async tx => {
       await tx`DELETE FROM companion_diary_generation_checkpoints WHERE job_id=${id}`;
       await tx`DELETE FROM companion_daily_summaries WHERE workspace_id=${workspaceId}`;
@@ -157,7 +157,40 @@ test("quiet chat settings preserve all five diary paragraphs and the late source
     assert.ok(row.summary.endsWith(blocks[4].text));
     assert.equal(draftCalls, 1);
     const [checkpoint] = await f.mutate(tx => tx`SELECT task_version,output FROM companion_diary_generation_checkpoints WHERE job_id=${f.job.id} AND task_id='companion_diary_draft'`);
-    assert.equal(checkpoint.task_version, 2);
+    assert.equal(checkpoint.task_version, 3);
     assert.deepEqual(checkpoint.output.blocks, blocks);
+  } finally { restore(); await f.cleanup(); }
+});
+
+test("derived diary memory preserves a whole short exchange with exact source identities", async () => {
+  const lines = ["这次候选值先用17。", "核对后改成29，17已撤销。"];
+  const f = await fixture(lines);
+  const draft = [{ type: "text" as const, text: "讨论从初步方案走到了核对后的结论，前后的限定需要一起留下。".repeat(8) },
+    { type: "text" as const, text: "这里只保留这次对话中的经过，没有增加别的事情。".repeat(8) }];
+  const restore = modelFixture(draft, () => {});
+  try {
+    await runCompanionDailySummary(f.job);
+    const [memory] = await f.readMemory();
+    assert.ok(memory);
+    assert.equal(memory.content, `2026-10-05 桌宠日记：你说：${lines[0]}\n我说：${lines[1]}`);
+    assert.equal(memory.source_event_ids.length, 2);
+    const sources = await f.mutate(tx => tx`SELECT id FROM companion_messages WHERE workspace_id=${f.job.workspaceId}`);
+    assert.deepEqual([...memory.source_event_ids].sort(), sources.map(row => row.id).sort());
+  } finally { restore(); await f.cleanup(); }
+});
+
+test("long exchanges publish the diary without a clipped memory; retries cannot attach a different excerpt", async () => {
+  const f = await fixture();
+  const draft = [{ type: "text" as const, text: "这篇日记保留了讨论的经过以及最后的限定，不能只取最早说过的那一段。".repeat(8) },
+    { type: "text" as const, text: "后来的核对与更正同样属于这一段经历。".repeat(8) }];
+  const restore = modelFixture(draft, () => {});
+  try {
+    await runCompanionDailySummary(f.job);
+    assert.equal((await f.read())[0].status, "generated");
+    assert.equal((await f.readMemory()).length, 0);
+    await f.mutate(tx => tx`UPDATE companion_messages SET blocks=${tx.json([{ type: "text", text: "另一个简短的讨论片段。" }])},
+      content_sha256=${"2".repeat(64)} WHERE workspace_id=${f.job.workspaceId}`);
+    await runCompanionDailySummary(f.job);
+    assert.equal((await f.readMemory()).length, 0, "a preserved publication cannot gain a later run's excerpt");
   } finally { restore(); await f.cleanup(); }
 });

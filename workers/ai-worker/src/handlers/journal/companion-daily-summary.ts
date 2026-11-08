@@ -15,10 +15,9 @@ import { companionQuoteBlockV1Schema } from "@astella/shared/companion-conversat
  *
  * 两件事没变、也不能变：
  *   - `facts` 那 12 个计数继续写库（界面不再显示），供日记与学习进度汇总使用。
- *   - 派生记忆的 `source_event_id = 'daily-summary:<date>'` 与 ≤200 字上限，
- *     「查看关联记忆」按这个键找。存的是**事实备忘**（digest），不是日记正文：
- *     候选记忆一旦确认就每轮注入，把主观创作存成记忆等于让她把自己的情绪
- *     当成回忆引用——这个仓库已经吃过一次"她的谎自己长出引用"。
+ *   - Derived memory keeps the complete selected source exchange within the
+ *     shared memory limit. Larger exchanges remain linked by source_event_ids
+ *     on the diary; neither an opening fragment nor creative prose becomes memory.
  */
 
 import { z } from "zod";
@@ -26,6 +25,7 @@ import { createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
 import {
   companionDailyBlockV1Schema,
+  companionMemoryContentMaxLength,
   companionPersonaActivenessV1Schema,
   companionPersonaBoundariesV1Schema,
   readJobPayloadString,
@@ -654,7 +654,7 @@ const DIARY_TASK_MODEL_CALLS = 7;
 const DIARY_SELECTION_TASK_ID = "companion_diary_selection";
 const DIARY_SELECTION_TASK_VERSION = 1;
 const DIARY_DRAFT_TASK_ID = "companion_diary_draft";
-const DIARY_DRAFT_TASK_VERSION = 2;
+const DIARY_DRAFT_TASK_VERSION = 3;
 
 const diarySelectionCheckpointOutputSchema = z.object({
   selection: companionDiarySelectionSchema,
@@ -1015,7 +1015,8 @@ async function composeDiary(
           return { ok: false, class: "output_shape", message: "日记 JSON 结构无效" };
         }
         const { blocks, droppedRefs, strippedRefs } = resolveDiaryBlocks(parsed.data, prepared.material.embeds);
-        const digest = groundedDiaryDigest(prepared.material);
+        const digest = groundedDiaryDigest(prepared.material,
+          companionMemoryContentMaxLength - `${date} 桌宠日记：`.length);
         // `droppedRefs` 现在有三类来源：不存在的编号、同一个编号重复用、以及每篇一图一引
         // 的额度用满（§5.4）。文案按"丢掉了"写，不要只说"不认识的编号"——那样这条日志
         // 在额度生效时会报一件没发生的事。
@@ -1372,6 +1373,7 @@ export function diarySummaryUpsertSql(input: {
     -- 成稿连同它的选中 id 一起换成新的那一份，否则"正文与选中 ID 一致"会被重跑
     -- 自己改写成"与重跑那次的 ID 一致"。
     WHERE companion_daily_summaries.status <> 'generated'
+    RETURNING id
   `;
 }
 
@@ -1394,22 +1396,23 @@ async function persistDiary(
       const current = await readCurrentDiarySelectionSnapshot(tx, scope, guard.provider, guard.govCtx);
       if (!current || current.hash !== guard.expectedHash) return false;
     }
-    await tx.execute(diarySummaryUpsertSql({ scope, facts, draft, failureReason, guard }));
+    const published = await tx.execute(diarySummaryUpsertSql({ scope, facts, draft, failureReason, guard }));
+    // A retry that preserved an existing diary cannot attach a different
+    // selected exchange as that published work's derived memory.
+    if (published.length === 0) return false;
     if (!draft) return true;
-    // §9.4：写入端即限制 ≤200 字，确保读取注入时不需截断、不丢失信息。
-    // 存 digest（事实备忘）而不是 diary 正文：候选一旦被确认就每轮注入，
-    // 让主观创作进记忆等于给她下一轮的引用提供一个"出处"。
-    // 篇幅由那一个声明源管；这里不再自己剪一刀——剪了就把"被裁过"这件事藏进了
-    // 一条看起来完整的记忆，写入那一头的告警也就看不见。
+    // The digest is a complete source exchange, never a clipped opening or diary
+    // prose. Full sources remain on the diary when the memory contract cannot fit them.
     const memoryContent = `${scope.date} 桌宠日记：${draft.digest}`;
-    if (draft.digest.length === 0) return true;
+    if (draft.digest.length === 0 || memoryContent.length > companionMemoryContentMaxLength) return true;
     await tx.execute(sql`
       INSERT INTO assistant_memory_items
         (workspace_id, user_id, kind, content, source_event_id, user_stated, user_confirmed,
-         candidate, importance, confidence, scope, source_type, embedding_status, created_at, updated_at)
+         candidate, importance, confidence, scope, source_type, source_event_ids, embedding_status, created_at, updated_at)
       VALUES
         (${scope.workspaceId}, ${scope.userId}, 'learning_context', ${memoryContent},
-         ${`daily-summary:${scope.date}`}, false, false, true, 0.5, 0.7, 'workspace', 'summary', 'pending', now(), now())
+         ${`daily-summary:${scope.date}`}, false, false, true, 0.5, 0.7, 'workspace', 'summary',
+         ${toTextArrayLiteral(guard?.sourceEventIds ?? [])}::text[], 'pending', now(), now())
       ON CONFLICT (workspace_id, user_id, kind, source_event_id)
         WHERE deleted_at IS NULL AND source_event_id IS NOT NULL
       DO NOTHING

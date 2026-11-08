@@ -12,9 +12,11 @@ import {
   UPDATE_STATE_CHANNEL,
   desktopContractSnapshotSchema,
   gatewayEventSchema,
+  openedFileBatchV1Schema,
   updateStateV1Schema,
   type AstellaDesktopApiM2,
-  type GatewayEventV1
+  type GatewayEventV1,
+  type OpenedFileBatchV1
 } from '@astella/shared/desktop-ipc-contracts'
 import {
   companionVoiceSpeakChunkEventV1Schema,
@@ -215,6 +217,19 @@ const desktopApi: AstellaDesktopApiM2 = {
     get: (input) => invoke(DESKTOP_IPC_CHANNELS.capabilitiesGet, input)
   },
   noteWriting: { perform: input => invoke(DESKTOP_IPC_CHANNELS.noteWriting, input) },
+  openedFile: {
+    take: input => invoke(DESKTOP_IPC_CHANNELS.openedFileTake, input),
+    prepareImport: input => invoke(DESKTOP_IPC_CHANNELS.openedFilePrepareImport, input),
+    reveal: input => invoke(DESKTOP_IPC_CHANNELS.openedFileReveal, input),
+    onIncoming: (listener: (batch: OpenedFileBatchV1) => void) => {
+      const handle = (_event: Electron.IpcRendererEvent, raw: unknown): void => {
+        const parsed = openedFileBatchV1Schema.safeParse(raw)
+        if (parsed.success) listener(parsed.data)
+      }
+      ipcRenderer.on(DESKTOP_IPC_CHANNELS.openedFileIncoming, handle)
+      return () => ipcRenderer.removeListener(DESKTOP_IPC_CHANNELS.openedFileIncoming, handle)
+    }
+  },
   clipboard: {
     readLinks: (input) => invoke(DESKTOP_IPC_CHANNELS.clipboardReadLinks, input),
     writeText: (input) => invoke(DESKTOP_IPC_CHANNELS.clipboardWriteText, input)
@@ -341,6 +356,7 @@ const desktopApi: AstellaDesktopApiM2 = {
     // 聊天发送链路（2026-09-18）：建/复用 dialogue → 发 turn → 轮询消息。
     // 对话图片上传（2026-10-06 输入框传图）与它们同族：图随下一轮 turn 的 blocks 走。
     uploadImage: (input) => invoke(DESKTOP_IPC_CHANNELS.companionImageUpload, input),
+    uploadFile: (input) => invoke(DESKTOP_IPC_CHANNELS.companionFileUpload, input),
     chat: {
       ensureConversation: (input) => invoke(DESKTOP_IPC_CHANNELS.companionChatEnsureConversation, input),
       sendTurn: (input) => invoke(DESKTOP_IPC_CHANNELS.companionChatSendTurn, input),
@@ -451,6 +467,9 @@ const desktopApi: AstellaDesktopApiM2 = {
     voicePreference: {
       get: (input) => invoke(DESKTOP_IPC_CHANNELS.companionVoicePreferenceGet, input),
       patch: (input) => invoke(DESKTOP_IPC_CHANNELS.companionVoicePreferencePatch, input)
+    },
+    models: {
+      catalog: (input) => invoke(DESKTOP_IPC_CHANNELS.companionModelCatalogGet, input)
     }
   },
   note: {

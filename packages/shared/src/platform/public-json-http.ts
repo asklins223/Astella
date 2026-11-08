@@ -103,7 +103,45 @@ export function isNonPublicAIEndpointAddress(ip: string): boolean {
   )) || first === 0x2002 || (first === 0x3fff && (second & 0xf000) === 0);
 }
 
-async function resolvePublicAddress(hostname: string): Promise<PinnedAddress> {
+function abortedError(signal: AbortSignal): Error {
+  const reason = signal.reason;
+  if (reason instanceof Error && reason.name === "AbortError") return reason;
+  const error = new Error(reason instanceof Error ? reason.message : "This operation was aborted");
+  error.name = "AbortError";
+  if (reason instanceof Error) error.cause = reason;
+  return error;
+}
+
+/**
+ * Bound a step that `AbortSignal` cannot cancel, such as `dns.lookup`.
+ * The underlying work may keep running; the caller stops waiting.
+ */
+export async function awaitWithDeadline<T>(
+  work: Promise<T>,
+  timeoutMs: number,
+  timeoutMessage: string,
+  signal?: AbortSignal,
+): Promise<T> {
+  if (signal?.aborted) throw abortedError(signal);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let onAbort: (() => void) | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
+  });
+  const aborted = new Promise<never>((_, reject) => {
+    if (!signal) return;
+    onAbort = () => reject(abortedError(signal));
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+  try {
+    return await Promise.race(signal ? [work, deadline, aborted] : [work, deadline]);
+  } finally {
+    clearTimeout(timer);
+    if (signal && onAbort) signal.removeEventListener("abort", onAbort);
+  }
+}
+
+async function resolvePublicAddress(hostname: string, signal?: AbortSignal): Promise<PinnedAddress> {
   const clean = hostname.replace(/^\[|\]$/g, "").replace(/\.$/, "").toLowerCase();
   if (!clean || clean === "localhost" || clean.endsWith(".local") || clean.endsWith(".internal")) {
     throw new Error("AI endpoint is not a public hostname");
@@ -118,7 +156,14 @@ async function resolvePublicAddress(hostname: string): Promise<PinnedAddress> {
   // 只从公网地址中选择。如果全部地址都是私有/内网，仍然拒绝。
   // CDN 域名 DNS 可能返回混合公网/内网地址（如负载均衡器内部地址），
   // 旧策略"任何一个私有就拒绝整个 hostname"会误杀合法 CDN 域名。
-  const addresses = await dnsLookup(clean, { all: true, verbatim: true });
+  // lookup 本身不接受 AbortSignal，也不在后面的 TCP 连接计时里。
+  // 不限时的话，解析卡住会把「模型一分钟没输出」的看门狗整段吃掉。
+  const addresses = await awaitWithDeadline(
+    dnsLookup(clean, { all: true, verbatim: true }),
+    CONNECT_TIMEOUT_MS,
+    `AI endpoint DNS lookup did not finish within ${CONNECT_TIMEOUT_MS}ms — check container DNS, or a fake-IP VPN DNS resolver (198.18.x.x)`,
+    signal,
+  );
   if (addresses.length === 0) throw new Error("AI endpoint hostname has no address");
 
   const publicAddresses = addresses.filter(
@@ -335,8 +380,10 @@ export const postJsonToPublicEndpoint: PublicJsonRequester = async (
   const encodedBody = Buffer.from(JSON.stringify(body));
 
   const attemptOnce = async (): Promise<PublicJsonResponse> => {
+    // 熔断放在 DNS 之前：解析本身也是一次往返，open 时一个字节都不该等。
+    sharedAiCircuitBreaker.assertCanAttempt(parsed.host);
     // 每次尝试都重新解析并固定地址：重试时 DNS 可能已恢复或换到健康地址。
-    const pinned = await resolvePublicAddress(parsed.hostname);
+    const pinned = await resolvePublicAddress(parsed.hostname, signal);
     const options: RequestOptions = {
       method: "POST",
       family: pinned.family,
@@ -352,11 +399,6 @@ export const postJsonToPublicEndpoint: PublicJsonRequester = async (
     if (!isIP(parsed.hostname)) {
       (options as RequestOptions & { servername: string }).servername = parsed.hostname;
     }
-
-    // P0-14 熔断门卫：open 状态下直接抛，**一个字节都不发**。
-    // 放在 DNS 解析之前是有意的：解析本身也是一次往返，而熔断要省的正是这段。
-    // （2026-10-06：熔断拒绝属"别再试了"信号，重试层不会重试它。）
-    sharedAiCircuitBreaker.assertCanAttempt(parsed.host);
 
     return new Promise<PublicJsonResponse>((resolve, reject) => {
       const request = httpsRequest(parsed, options, (response) => {
@@ -464,7 +506,9 @@ export const postSseToPublicEndpoint: PublicStreamingRequester = async (
   const encodedBody = Buffer.from(JSON.stringify(body));
 
   const attemptOnce = async (): Promise<PublicStreamingResponse> => {
-    const pinned = await resolvePublicAddress(parsed.hostname);
+    // 与 JSON 出口同一道门：JSON 失败打开的熔断在这里生效，open 时不再等 DNS。
+    sharedAiCircuitBreaker.assertCanAttempt(parsed.host);
+    const pinned = await resolvePublicAddress(parsed.hostname, signal);
     const options: RequestOptions = {
       method: "POST",
       family: pinned.family,

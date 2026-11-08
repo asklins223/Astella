@@ -1,0 +1,55 @@
+{
+  "services": {
+    "edge-tts": {
+      "imageId": "sha256:efd7a571dba8c307a004edceb7effd6c0fe835fab3c304b95938f47504cb3c58",
+      "health": "healthy"
+    },
+    "worker": {
+      "imageId": "sha256:1f0b2c306412e2bf3afbf55932215ec24757080876258156c29afd0f0efe3867",
+      "health": "healthy"
+    },
+    "embedding": {
+      "imageId": "sha256:f15653b4aed0d62bb849c543d945f1893b405a23a30f6d2b14adbb8b44bc1f5e",
+      "health": "healthy"
+    },
+    "postgres": {
+      "imageId": "sha256:f1447071e6c8449dcf4056aa0994c81d3566ce5ee232de36b04dc25696a116dd",
+      "health": "healthy"
+    },
+    "nginx": {
+      "imageId": "sha256:dc73b49f5124cf2ee538dfbdfbd121f0b4ccdcb20fea30f3a81bd477c02e2bb5",
+      "health": "healthy"
+    },
+    "backup-minio": {
+      "imageId": "sha256:1b306e6f38b4b96fe92500af2f8d26337466b0db1fdf82322ad471872bdc6366",
+      "health": "healthy"
+    },
+    "api": {
+      "imageId": "sha256:8d739c3036cd231cb7c7b489bd506d752e88290f5e3ece4b4719cb477c7aeaf6",
+      "health": "healthy"
+    }
+  },
+  "deploymentPatch": {
+    "reason": "Retain incoming release regardless of inherited mtime; preserve prepared images during local-image deployment.",
+    "path": "infra/deploy/deploy.sh",
+    "sha256": "0a4981cfecd307004356e73e45547859dfd97601e36d0ec1d35e5b1e840538fc"
+  },
+  "release": "/opt/astella/releases/9ac7d098dd8ba2a4e82b49495f920bf3e99109d8-4099a6e806f7",
+  "sourceHash": "4099a6e806f7c0631d5ddf2d18a2906600e1f5d44e0dd6897b2dad6e5697ffd9",
+  "originalModelConfigurationPreserved": true,
+  "models": {
+    "agent_turn": {
+      "model": "mimo-v2.6-flash",
+      "platform": "mimo-agent"
+    },
+    "text_generation": {
+      "model": "mimo-v2.6-flash",
+      "platform": "mimo-agent"
+    },
+    "companion_fallback": {
+      "model": "deepseek-v4.1-flash-1017",
+      "platform": "tokenrhythm"
+    }
+  },
+  "configSha256": "7a48ce0f5ff870961e352d31f837b770d323d0e0ba9216919c8f793630e7d92d"
+}

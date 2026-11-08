@@ -66,6 +66,11 @@ function catalogOf(modelId: WindowLive2DModelId) {
 
 describe("Live2D 表演清单来自各形态自己的资产", () => {
   const whale = catalogOf("whale");
+  const fatfish = catalogOf("fatfish");
+  /** 每一轮"资产里必须真有"的断言都跑全部形态，而不是只跑默认那个。 */
+  const catalogs = Object.entries(WINDOW_LIVE2D_MODEL_REGISTRY).map(
+    ([modelId, descriptor]) => [modelId, catalogOf(modelId as WindowLive2DModelId), descriptor] as const,
+  );
 
   it("完整原包与记笔记组合全部进池：9 个非待机动作、44 个表情／道具", () => {
     expect(whale.performanceCues.filter((cue) => cue.kind === "motion")
@@ -152,17 +157,17 @@ describe("Live2D 表演清单来自各形态自己的资产", () => {
   });
 
   it("时刻表引用的动作组与道具名，资产里必须真有", () => {
-    for (const [modelId, descriptor] of Object.entries(WINDOW_LIVE2D_MODEL_REGISTRY)) {
+    for (const [modelId, catalog, descriptor] of catalogs) {
       for (const [moment, cue] of Object.entries(descriptor.momentCue)) {
         if (cue?.motion) {
-          expect(whale.hasMotionGroup(cue.motion.group), `${modelId}.${moment} 的动作组`)
+          expect(catalog.hasMotionGroup(cue.motion.group), `${modelId}.${moment} 的动作组`)
             .toBe(true);
         }
         for (const prop of [cue?.costume, cue?.overlay]) {
           if (typeof prop !== "string") continue;
           expect(prop in descriptor.propRoles, `${modelId}.${moment} 的 ${prop} 不是已登记道具`)
             .toBe(true);
-          expect(whale.expressionWrites[prop]?.length, `${modelId}.${prop} 资产里读不到`)
+          expect(catalog.expressionWrites[prop]?.length, `${modelId}.${prop} 资产里读不到`)
             .toBeGreaterThan(0);
         }
       }
@@ -195,12 +200,37 @@ describe("Live2D 表演清单来自各形态自己的资产", () => {
   });
 
   it("情绪表情表里的名字，资产里必须真有这个表情", () => {
-    for (const [modelId, descriptor] of Object.entries(WINDOW_LIVE2D_MODEL_REGISTRY)) {
+    for (const [modelId, catalog, descriptor] of catalogs) {
       const dead = Object.values(descriptor.emotionExpression).filter(
-        (name) => !whale.hasExpression(name),
+        (name) => !catalog.hasExpression(name),
       );
       expect(dead, `${modelId} 引用了资产里不存在的表情`).toEqual([]);
     }
+  });
+
+  it("呈现动作表引用的动作组，资产里必须真有", () => {
+    for (const [modelId, catalog, descriptor] of catalogs) {
+      // Idle 是待机组，表演清单按设计不把它算进"动作组"，别把它当缺失。
+      const idleGroup = descriptor.presentationMotion.idle?.group;
+      for (const [presentation, cue] of Object.entries(descriptor.presentationMotion)) {
+        if (!cue || cue.group === idleGroup) continue;
+        expect(catalog.hasMotionGroup(cue.group), `${modelId}.${presentation} 的动作组`).toBe(true);
+      }
+      for (const [emotion, cue] of Object.entries(descriptor.emotionMotion)) {
+        expect(catalog.hasMotionGroup(cue.group), `${modelId}.${emotion} 的情绪动作组`).toBe(true);
+      }
+    }
+  });
+
+  it("公皮的三个体型节点互不相同，且「大」不是会露出黑鼻子的 0", () => {
+    const bodyForms = WINDOW_LIVE2D_MODEL_REGISTRY.fatfish.bodyForms;
+    expect(bodyForms).toBeDefined();
+    expect(new Set(Object.values(bodyForms ?? {})).size).toBe(3);
+    // 作者原包在 Clothes2 === 0 时画的是纯黑鼻子贴图；「大」必须避开 0。
+    expect(bodyForms?.large).toBeGreaterThan(0);
+    expect(bodyForms?.small).toBeGreaterThan(bodyForms?.medium ?? 0);
+    // 「公皮」的鼻子部件被登记成永不显示，双保险。
+    expect(WINDOW_LIVE2D_MODEL_REGISTRY.fatfish.hiddenParts).toContain("Part46");
   });
 
   it("表情写过的参数由表情接管；中性写入的不接管", () => {

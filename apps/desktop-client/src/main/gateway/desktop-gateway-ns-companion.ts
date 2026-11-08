@@ -143,6 +143,7 @@ import {  CompanionAccountPatch,
   OnboardingTransitionResponse,
   companionAccountStateV1Schema,
   companionAnswerModePreferenceV1Schema,
+  companionModelCatalogV1Schema,
   companionOverviewSchema,
   companionVoicePreferenceV1Schema,
   onboardingTransitionResponseSchema,
@@ -161,9 +162,13 @@ import {  COMPANION_VOICE_SPEAK_VOICE,
 import {
   companionDiscoveryBookV1Schema,
   type CompanionDiscoveryEntryV1,
+  type CompanionFileUploadRequestV1,
+  type CompanionFileUploadResultV1,
   type DiscoveryCollectRequestV1,
   type DiscoveryIdentityV1,
 } from "@astella/shared/desktop-ipc-contracts";
+import { COMPANION_FILE_MAX_BYTES, companionFileObjectKeyFromUrl } from "@astella/shared/companion-file-contracts";
+import { readFile } from "node:fs/promises";
 import {  uuidSchema,
 } from "@astella/shared/desktop-ipc-contracts";
 import {  TtsEngineV1,
@@ -396,6 +401,14 @@ export async function ensureCompanionConversation(t: GatewayTransport,
     if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
     return parsed.data;
   }
+
+export async function getCompanionModelCatalog(t: GatewayTransport, requestId?: string) {
+  await t.ensureConnected(requestId);
+  const result = await t.request("/companion/model/catalog", { method: "GET" }, true, true, requestId);
+  const parsed = companionModelCatalogV1Schema.safeParse(result.body);
+  if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+  return parsed.data;
+}
 
 export async function getAnswerModePreference(t: GatewayTransport, requestId?: string) {
     await t.ensureConnected(requestId);
@@ -1281,6 +1294,78 @@ async function resolveCachedVoiceProfile(
   if (profile === null) return null;
   if (t.currentSession?.status !== "authenticated" || t.currentSession.user.userId !== userId || t.token !== token) return null;
   return profile;
+}
+
+/**
+ * 本地稿纸交给伴星读：原件走 `/uploads/companion-files`（PDF/DOCX/txt/md 那一档）。
+ * 正文不在这里解析——渲染层把当前编辑器里的 Markdown 随 turn 的 file block 上送，
+ * 原件只用于留档。路径已经由 IPC 层复核过授权，这里只负责读字节与 multipart 上传。
+ */
+export async function uploadCompanionFile(
+  t: GatewayTransport,
+  request: CompanionFileUploadRequestV1,
+  requestId?: string,
+): Promise<CompanionFileUploadResultV1> {
+  await t.ensureConnected(requestId);
+  const configuration = t.configuration;
+  if (!configuration) throw new DesktopGatewayFailure("configuration_error", "user_action");
+
+  let bytes: Buffer;
+  try {
+    bytes = await readFile(request.path);
+  } catch {
+    throw new DesktopGatewayFailure("not_found", "user_action");
+  }
+  if (bytes.byteLength === 0 || bytes.byteLength > COMPANION_FILE_MAX_BYTES) {
+    throw new DesktopGatewayFailure("validation", "user_action");
+  }
+
+  const form = new FormData();
+  form.set("file", new Blob([bytes], { type: "text/markdown" }), request.name);
+  form.set("name", request.name);
+
+  const headers = new Headers();
+  if (t.token) headers.set("Authorization", `Bearer ${t.token}`);
+  const controller = requestId ? new AbortController() : undefined;
+  if (requestId && controller) t.activeRequests.set(requestId, controller);
+  let response: Response;
+  try {
+    response = await fetch(new URL("/uploads/companion-files", `${configuration.config.apiOrigin}/`), {
+      method: "POST",
+      headers,
+      body: form,
+      signal: controller?.signal,
+      redirect: "manual",
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new DesktopGatewayFailure("cancelled", "never", { localEffect: "request_cancelled" });
+    }
+    t.connection = { version: 1, kind: "api_unavailable" };
+    throw new DesktopGatewayFailure("api_unavailable", "safe_retry");
+  } finally {
+    if (requestId && controller && t.activeRequests.get(requestId) === controller) t.activeRequests.delete(requestId);
+  }
+  if (response.status >= 300 && response.status < 400 && response.status !== 304) {
+    t.connection = { version: 1, kind: "api_untrusted", reason: "wrong_service" };
+    throw new DesktopGatewayFailure("api_untrusted", "user_action");
+  }
+  let body: unknown = null;
+  try {
+    body = await response.json();
+  } catch {
+    body = null;
+  }
+  if (!response.ok && response.status === 401 && t.tokenIsRestored) await t.discardStoredCredential();
+  if (!response.ok) throw t.mapResponseError(response.status, response.headers, undefined, body);
+
+  const payload = (body ?? {}) as Record<string, unknown>;
+  const url = typeof payload.url === "string" ? payload.url : "";
+  const byteLength = typeof payload.byteLength === "number" ? payload.byteLength : 0;
+  if (!companionFileObjectKeyFromUrl(url) || byteLength <= 0) {
+    throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+  }
+  return { version: 1, url, byteLength };
 }
 
 /**

@@ -126,7 +126,7 @@ export async function reclaimExpiredCompanionProposals(
     UPDATE companion_action_proposals
     SET status = 'expired', updated_at = now()
     WHERE conversation_id = ${args.conversationId} AND status = 'pending'
-      AND expires_at < now()
+      AND (expires_at < now() OR (expires_at IS NULL AND created_at < now() - interval '5 minutes'))
     RETURNING ${EXPIRED_PROPOSAL_RETURNING}
   `) as ExpiredProposalRow[];
   await appendActionExpiredEventsBatch(tx, args.workspaceId, args.userId, args.conversationId, expired);

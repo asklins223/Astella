@@ -19,8 +19,12 @@ export function companionCreatedNoteId(runId: string, toolCallId: string): strin
 }
 
 export function createdNoteToolResult(receipt: CompanionCreatedNoteV1): AgentToolExecutionResult {
+  const title = receipt.title.slice(0, 36);
+  const links = receipt.linkedNotes.length;
   return { value: { ...receipt, status: "succeeded" }, resultRef: JSON.stringify(receipt),
-    safeSummary: `已保存笔记《${receipt.title.slice(0, 36)}》，含 ${receipt.linkedNotes.length} 个库内链接，可打开继续编辑`,
+    safeSummary: links > 0
+      ? `已保存笔记《${title}》，含 ${links} 个库内链接，可打开继续编辑`
+      : `已保存笔记《${title}》，可打开继续编辑`,
     blocks: [{ type: "nav", label: `打开《${receipt.title.slice(0, 60)}》`, route: { kind: "note", noteId: receipt.noteId, noteVersionId: receipt.noteVersionId } }] };
 }
 

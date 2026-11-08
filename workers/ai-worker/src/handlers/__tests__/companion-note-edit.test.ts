@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { companionNoteEditTarget } from "../note/companion-note-edit.ts";
+import { companionNoteEditTarget, dropSupersededNoteQuotes } from "../note/companion-note-edit.ts";
 
 const noteId = "11111111-1111-4111-8111-111111111111";
 const noteVersionId = "22222222-2222-4222-8222-222222222222";
@@ -22,4 +22,12 @@ test("指定段落直接使用本次工具范围；无对应页面或位置不�
   assert.equal(companionNoteEditTarget({ ...base, operation: "replace_selection" }, null), undefined);
   assert.equal(companionNoteEditTarget({ ...base, operation: "append" }, { context: { ...page.context, noteId: noteVersionId } }), undefined);
   assert.equal(companionNoteEditTarget({ ...base, operation: "delete_blocks" }, page), undefined);
+});
+
+test("改写之后不再附上刚读到的旧句，版本号不变也丢掉", () => {
+  const oldQuote = { type: "quote", text: "潮汐表在抽屉里。", sourceRef: { kind: "note", noteId, noteVersionId, blockOrdinal: 1 } };
+  const other = { type: "quote", text: "另一篇。", sourceRef: { kind: "note", noteId: noteVersionId, noteVersionId, blockOrdinal: 1 } };
+  const kept = { type: "nav", label: "打开" };
+  assert.deepEqual(dropSupersededNoteQuotes([oldQuote, kept, other], { noteId }), [kept, other]);
+  assert.deepEqual(dropSupersededNoteQuotes([oldQuote], {}), [oldQuote]);
 });

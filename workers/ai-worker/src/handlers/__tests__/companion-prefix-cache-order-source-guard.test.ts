@@ -24,11 +24,19 @@ const source = readFileSync(
   "utf8",
 );
 
-test("前台学习时段块排在稳定块之后（prefix cache 的可复用前缀不被它截断）", () => {
-  const stableBlock = source.indexOf('add("here_and_now"');
-  const volatileBlock = source.indexOf('add("participation_awareness"');
-  assert.ok(stableBlock > 0, "找不到 here_and_now 的装配点（形状变了，这条判据要先跟着改）");
-  assert.ok(volatileBlock > 0, "找不到 participation_awareness 的装配点");
-  assert.ok(stableBlock < volatileBlock,
-    "participation_awareness 又排到稳定块前面了：它每轮都变，站在前面会把整份工具面推出可复用前缀");
+test("每轮会变的现场数据不进入可缓存的指令前缀", () => {
+  const local = source.slice(source.indexOf("const TURN_LOCAL_CONTEXT_SOURCES"), source.indexOf("export function buildCompanionPersonaMessages"));
+  for (const id of ["here_and_now", "conversation_timeline", "participation_awareness", "delivery_observation"]) {
+    assert.match(local, new RegExp(`"${id}"`), `${id} 必须留在本轮现场，不能回到稳定指令前缀`);
+  }
+  assert.match(source, /hostObservation: true as const/);
+});
+
+test("后台任务的当次材料不写进可缓存的出题和回顾规则", () => {
+  const card = readFileSync(new URL("../note/note-learning-card-generate.ts", import.meta.url), "utf8");
+  const reflection = readFileSync(new URL("../journal/companion-reflection-content.ts", import.meta.url), "utf8");
+  assert.match(card, /role: "system", content: CARD_RULES/);
+  assert.doesNotMatch(card, /role: "system", content: agentContext\.instructions/);
+  assert.match(reflection, /role: "system", content: REFLECTION_RULES/);
+  assert.match(reflection, /reflectionSnapshotHeader\(snapshot\)/);
 });

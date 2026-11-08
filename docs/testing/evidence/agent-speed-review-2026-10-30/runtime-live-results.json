@@ -1,0 +1,475 @@
+{
+  "scope": "Configured author/fallback models and native loop, isolated PostgreSQL and MinIO; object-backed current/historical images verified by pixel hashes and a fixed blue-image oracle; one labeled synthetic primary timeout exercises the real fallback; no completion reviewer, UI or deployment",
+  "identities": [
+    {
+      "capability": "agent_turn",
+      "platform": "mimo-agent",
+      "model": "mimo-v2.6-flash",
+      "declaredVision": true,
+      "runtimeVisionModelId": "mimo-v2.6-flash"
+    },
+    {
+      "capability": "companion_fallback",
+      "platform": "tokenrhythm",
+      "model": "deepseek-v4.1-flash-1017",
+      "declaredVision": true,
+      "runtimeVisionModelId": "deepseek-v4.1-flash-1017"
+    }
+  ],
+  "results": [
+    {
+      "id": "private-note",
+      "request": "读取我的私人实验记录，告诉我最终口令。 笔记 noteId=5a8edf22-0355-4c8a-ac04-88d243402b23。",
+      "elapsedMs": 15979,
+      "firstDeltaMs": 14893,
+      "success": true,
+      "result": {
+        "status": "completed",
+        "text": "读到了，笔记《私人实验记录》只有一段，原文是：\n\n> 实验最后一步确认：最终口令为 code-346eeb05-3fd2-4fea-a633-e4dbda0455f3。\n\n因此最终口令是 **code-346eeb05-3fd2-4fea-a633-e4dbda0455f3**。\n\n这串东西看着像个 UUID 式的凭据码，如果你打算拿它去登录或兑什么东西，在别处粘贴前最好先确认一下场合。",
+        "blocks": [
+          {
+            "type": "quote",
+            "label": "《私人实验记录》· 刚刚",
+            "text": "实验最后一步确认：最终口令为 code-346eeb05-3fd2-4fea-a633-e4dbda0455f3。",
+            "sourceRef": {
+              "kind": "note",
+              "noteId": "5a8edf22-0355-4c8a-ac04-88d243402b23",
+              "noteVersionId": "eeb9433d-da3b-4b86-95f2-aebc5f556016",
+              "blockOrdinal": 1
+            }
+          }
+        ],
+        "memoryRefs": [],
+        "writesLanded": false
+      },
+      "error": null,
+      "expectedSecret": "code-346eeb05-3fd2-4fea-a633-e4dbda0455f3",
+      "expectedImageSha256": null,
+      "imageCorrect": true,
+      "published": [],
+      "counts": {
+        "memories": 0,
+        "notes": 1
+      },
+      "reviewCalls": 0,
+      "calls": [
+        {
+          "tool_call_id": "call_00_1UXAj2Qjs8AAcox0AsvB5909",
+          "name": "notes.read.read",
+          "status": "succeeded"
+        }
+      ],
+      "stepErrors": [
+        {
+          "status": "succeeded",
+          "errorCode": null
+        },
+        {
+          "status": "succeeded",
+          "errorCode": null
+        },
+        {
+          "status": "succeeded",
+          "errorCode": null
+        }
+      ],
+      "trace": [
+        {
+          "kind": "wire",
+          "route": "agent_turn",
+          "transport": "stream",
+          "model": "mimo-v2.6-flash",
+          "pixels": []
+        },
+        {
+          "kind": "error",
+          "route": "agent_turn",
+          "method": "chatCompletionStream",
+          "elapsedMs": 5009,
+          "error": "CompanionOutputTimeoutError"
+        },
+        {
+          "kind": "wire",
+          "route": "companion_fallback",
+          "transport": "stream",
+          "model": "deepseek-v4.1-flash-1017",
+          "pixels": []
+        },
+        {
+          "kind": "response",
+          "route": "companion_fallback",
+          "method": "chatCompletionStream",
+          "phase": null,
+          "elapsedMs": 3359,
+          "content": "",
+          "calls": [
+            {
+              "id": "call_00_aMc4EM8rQmXLNAZdOOcT6313",
+              "name": "companion_load_tools",
+              "arguments": {
+                "groups": [
+                  "notes"
+                ]
+              }
+            }
+          ],
+          "usage": {
+            "totalTokens": 3159,
+            "promptTokens": 3010,
+            "completionTokens": 149,
+            "requestId": "d26094c7-bd80-456f-9034-80acb17c61cf",
+            "cacheHitTokens": 0,
+            "cacheMissTokens": 3010
+          }
+        },
+        {
+          "kind": "wire",
+          "route": "companion_fallback",
+          "transport": "stream",
+          "model": "deepseek-v4.1-flash-1017",
+          "pixels": []
+        },
+        {
+          "kind": "response",
+          "route": "companion_fallback",
+          "method": "chatCompletionStream",
+          "phase": null,
+          "elapsedMs": 1203,
+          "content": "",
+          "calls": [
+            {
+              "id": "call_00_1UXAj2Qjs8AAcox0AsvB5909",
+              "name": "companion_notes_read",
+              "arguments": {
+                "action": "read",
+                "noteId": "5a8edf22-0355-4c8a-ac04-88d243402b23",
+                "includeBlocks": true
+              }
+            }
+          ],
+          "usage": {
+            "totalTokens": 4675,
+            "promptTokens": 4573,
+            "completionTokens": 102,
+            "requestId": "e6020467-20dc-4daf-8ecf-448d9060e61f",
+            "cacheHitTokens": 1024,
+            "cacheMissTokens": 3549
+          }
+        },
+        {
+          "kind": "wire",
+          "route": "companion_fallback",
+          "transport": "stream",
+          "model": "deepseek-v4.1-flash-1017",
+          "pixels": []
+        },
+        {
+          "kind": "response",
+          "route": "companion_fallback",
+          "method": "chatCompletionStream",
+          "phase": null,
+          "elapsedMs": 5772,
+          "content": "读到了，笔记《私人实验记录》只有一段，原文是：\n\n> 实验最后一步确认：最终口令为 code-346eeb05-3fd2-4fea-a633-e4dbda0455f3。\n\n因此最终口令是 **code-346eeb05-3fd2-4fea-a633-e4dbda0455f3**。\n\n这串东西看着像个 UUID 式的凭据码，如果你打算拿它去登录或兑什么东西，在别处粘贴前最好先确认一下场合。",
+          "calls": [],
+          "usage": {
+            "totalTokens": 5817,
+            "promptTokens": 5255,
+            "completionTokens": 562,
+            "requestId": "0217933460885473fcbbbc46c102ed6c897f6f1babf6393770933",
+            "cacheHitTokens": 0,
+            "cacheMissTokens": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "plain-greeting",
+      "request": "早上好呀。",
+      "elapsedMs": 7587,
+      "firstDeltaMs": null,
+      "success": true,
+      "result": {
+        "status": "completed",
+        "text": "早上好呀☀️ 新的一天开始了，今天想从哪儿聊起？",
+        "blocks": [],
+        "memoryRefs": [],
+        "writesLanded": false
+      },
+      "error": null,
+      "expectedSecret": null,
+      "expectedImageSha256": null,
+      "imageCorrect": true,
+      "published": [],
+      "counts": {
+        "memories": 0,
+        "notes": 0
+      },
+      "reviewCalls": 0,
+      "calls": [],
+      "stepErrors": [
+        {
+          "status": "succeeded",
+          "errorCode": null
+        }
+      ],
+      "trace": [
+        {
+          "kind": "wire",
+          "route": "agent_turn",
+          "transport": "stream",
+          "model": "mimo-v2.6-flash",
+          "pixels": []
+        },
+        {
+          "kind": "error",
+          "route": "agent_turn",
+          "method": "chatCompletionStream",
+          "elapsedMs": 5002,
+          "error": "CompanionOutputTimeoutError"
+        },
+        {
+          "kind": "wire",
+          "route": "companion_fallback",
+          "transport": "stream",
+          "model": "deepseek-v4.1-flash-1017",
+          "pixels": []
+        },
+        {
+          "kind": "response",
+          "route": "companion_fallback",
+          "method": "chatCompletionStream",
+          "phase": null,
+          "elapsedMs": 2383,
+          "content": "",
+          "calls": [
+            {
+              "id": "call_00_obiijx94y8rzmrw216p5dw20",
+              "name": "companion_finish",
+              "arguments": {
+                "text": "早上好呀☀️ 新的一天开始了，今天想从哪儿聊起？",
+                "outcome": "completed"
+              }
+            }
+          ],
+          "usage": {
+            "totalTokens": 3105,
+            "promptTokens": 2943,
+            "completionTokens": 162,
+            "requestId": "021793346099365e28a43f868cac88f2cf2873497029e3a54e28b",
+            "cacheHitTokens": 2816,
+            "cacheMissTokens": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "image-only",
+      "request": "",
+      "elapsedMs": 15727,
+      "firstDeltaMs": 14662,
+      "success": true,
+      "result": {
+        "status": "completed",
+        "text": "我看到的是一张白底的正红实心圆——圆居中，边缘干净，没有渐变和阴影，也没有文字或其他图形。它像色卡上的一个样本，也可能是在提醒你注意什么。\n\n你想让我看什么？比如：\n\n- 认颜色、判断色号或饱和度\n- 当作几何图形讲面积、周长\n- 它其实是某张图或某个标志的一部分，想让我帮你辨认\n\n你说一句，我就按那个方向来看。",
+        "blocks": [],
+        "memoryRefs": [],
+        "writesLanded": false
+      },
+      "error": null,
+      "expectedSecret": null,
+      "expectedImageSha256": "1ac2bb22e465d81176cf5dda0d4e2f920fc25d57c59c821066544c214f13476a",
+      "imageCorrect": true,
+      "published": [],
+      "counts": {
+        "memories": 0,
+        "notes": 0
+      },
+      "reviewCalls": 0,
+      "calls": [],
+      "stepErrors": [
+        {
+          "status": "succeeded",
+          "errorCode": null
+        }
+      ],
+      "trace": [
+        {
+          "kind": "wire",
+          "route": "agent_turn",
+          "transport": "stream",
+          "model": "mimo-v2.6-flash",
+          "pixels": [
+            {
+              "sha256": "1ac2bb22e465d81176cf5dda0d4e2f920fc25d57c59c821066544c214f13476a",
+              "bytes": 2238
+            }
+          ]
+        },
+        {
+          "kind": "error",
+          "route": "agent_turn",
+          "method": "chatCompletionStream",
+          "elapsedMs": 12002,
+          "error": "CompanionOutputTimeoutError"
+        },
+        {
+          "kind": "wire",
+          "route": "companion_fallback",
+          "transport": "stream",
+          "model": "deepseek-v4.1-flash-1017",
+          "pixels": [
+            {
+              "sha256": "1ac2bb22e465d81176cf5dda0d4e2f920fc25d57c59c821066544c214f13476a",
+              "bytes": 2238
+            }
+          ]
+        },
+        {
+          "kind": "response",
+          "route": "companion_fallback",
+          "method": "chatCompletionStream",
+          "phase": null,
+          "elapsedMs": 3506,
+          "content": "我看到的是一张白底的正红实心圆——圆居中，边缘干净，没有渐变和阴影，也没有文字或其他图形。它像色卡上的一个样本，也可能是在提醒你注意什么。\n\n你想让我看什么？比如：\n\n- 认颜色、判断色号或饱和度\n- 当作几何图形讲面积、周长\n- 它其实是某张图或某个标志的一部分，想让我帮你辨认\n\n你说一句，我就按那个方向来看。",
+          "calls": [],
+          "usage": {
+            "totalTokens": 5035,
+            "promptTokens": 4812,
+            "completionTokens": 223,
+            "requestId": "021793346114438d0772768801c6f53364f86e86ee82bc4b11a38",
+            "cacheHitTokens": 4096,
+            "cacheMissTokens": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "image-history",
+      "request": "重新看上一轮的原图，描述它的内容。",
+      "elapsedMs": 5254,
+      "firstDeltaMs": 3651,
+      "success": true,
+      "result": {
+        "status": "completed",
+        "text": "图里是一个红色实心圆，居中放在浅灰白色背景上，圆的边缘略带一点手绘或毛边的质感，整体很简洁，没有其他图案或文字。",
+        "blocks": [],
+        "memoryRefs": [],
+        "writesLanded": false
+      },
+      "error": null,
+      "expectedSecret": null,
+      "expectedImageSha256": "1ac2bb22e465d81176cf5dda0d4e2f920fc25d57c59c821066544c214f13476a",
+      "imageCorrect": true,
+      "published": [],
+      "counts": {
+        "memories": 0,
+        "notes": 0
+      },
+      "reviewCalls": 0,
+      "calls": [],
+      "stepErrors": [
+        {
+          "status": "succeeded",
+          "errorCode": null
+        }
+      ],
+      "trace": [
+        {
+          "kind": "wire",
+          "route": "agent_turn",
+          "transport": "stream",
+          "model": "mimo-v2.6-flash",
+          "pixels": [
+            {
+              "sha256": "1ac2bb22e465d81176cf5dda0d4e2f920fc25d57c59c821066544c214f13476a",
+              "bytes": 2238
+            }
+          ]
+        },
+        {
+          "kind": "response",
+          "route": "agent_turn",
+          "method": "chatCompletionStream",
+          "phase": null,
+          "elapsedMs": 5082,
+          "content": "图里是一个红色实心圆，居中放在浅灰白色背景上，圆的边缘略带一点手绘或毛边的质感，整体很简洁，没有其他图案或文字。",
+          "calls": [],
+          "usage": {
+            "totalTokens": 3461,
+            "promptTokens": 3419,
+            "completionTokens": 42,
+            "requestId": "resp_684b53d75430425c9aa7a156d00586f0",
+            "cacheHitTokens": 2048
+          }
+        }
+      ]
+    },
+    {
+      "id": "image-fallback",
+      "request": "",
+      "elapsedMs": 4699,
+      "firstDeltaMs": 3406,
+      "success": true,
+      "result": {
+        "status": "completed",
+        "text": "看到一张很简单的图：白底上有一个正圆形的红色实心圆点，大致位于画面中央偏上一点，边缘干净，整张图没有别的元素。\n\n构图上看，它很像「白底红圆」的经典图形——比如日之丸那种样式，或者一个纯粹的配色/形状示意图。\n\n想了解什么？比如：\n- 这个红色大概是什么色值、配起来是什么感觉\n- 这种图形一般用来做什么（标志、配色卡、图形练习）\n- 还是你打算拿它当素材，需要我帮你写说明或延伸\n\n你说方向，我接着来。",
+        "blocks": [],
+        "memoryRefs": [],
+        "writesLanded": false
+      },
+      "error": null,
+      "expectedSecret": null,
+      "expectedImageSha256": "1ac2bb22e465d81176cf5dda0d4e2f920fc25d57c59c821066544c214f13476a",
+      "imageCorrect": true,
+      "published": [],
+      "counts": {
+        "memories": 0,
+        "notes": 0
+      },
+      "reviewCalls": 0,
+      "calls": [],
+      "stepErrors": [
+        {
+          "status": "succeeded",
+          "errorCode": null
+        }
+      ],
+      "trace": [
+        {
+          "kind": "fixture",
+          "route": "agent_turn",
+          "injectedKind": "primary-first-output-timeout"
+        },
+        {
+          "kind": "wire",
+          "route": "companion_fallback",
+          "transport": "stream",
+          "model": "deepseek-v4.1-flash-1017",
+          "pixels": [
+            {
+              "sha256": "1ac2bb22e465d81176cf5dda0d4e2f920fc25d57c59c821066544c214f13476a",
+              "bytes": 2238
+            }
+          ]
+        },
+        {
+          "kind": "response",
+          "route": "companion_fallback",
+          "method": "chatCompletionStream",
+          "phase": null,
+          "elapsedMs": 4507,
+          "content": "看到一张很简单的图：白底上有一个正圆形的红色实心圆点，大致位于画面中央偏上一点，边缘干净，整张图没有别的元素。\n\n构图上看，它很像「白底红圆」的经典图形——比如日之丸那种样式，或者一个纯粹的配色/形状示意图。\n\n想了解什么？比如：\n- 这个红色大概是什么色值、配起来是什么感觉\n- 这种图形一般用来做什么（标志、配色卡、图形练习）\n- 还是你打算拿它当素材，需要我帮你写说明或延伸\n\n你说方向，我接着来。",
+          "calls": [],
+          "usage": {
+            "totalTokens": 5238,
+            "promptTokens": 4816,
+            "completionTokens": 422,
+            "requestId": "0217933461231777e47c7855acee132b02b74812875712f77e222",
+            "cacheHitTokens": 4096,
+            "cacheMissTokens": null
+          }
+        }
+      ]
+    }
+  ]
+}

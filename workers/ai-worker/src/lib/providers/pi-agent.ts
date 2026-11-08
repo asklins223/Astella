@@ -428,12 +428,14 @@ export class PiAgentProvider implements AIProvider {
         && this.modelProfile?.reasoning?.levels.includes("none"));
     const disableThinking = (native?.disableThinking ?? options.disableThinking) || protocolRequiresLowestEffort;
     const temperature = native?.temperature ?? options.temperature;
-    // Native agent steps retain the declared model ceiling. Independent short
-    // contracts (for example resource classification) own their output limit.
-    const outputLimit = !native && typeof options.maxTokens === "number" && Number.isFinite(options.maxTokens)
-      && options.maxTokens > 0 ? Math.min(this.maxOutputTokens, Math.floor(options.maxTokens)) : this.maxOutputTokens;
+    // The step's own budget wins, and it cannot exceed the model profile.
+    // A missing budget keeps the profile ceiling. Pi's estimate is removed
+    // below so it cannot shrink this number.
+    const requested = native?.maxTokens ?? options.maxTokens;
+    const outputLimit = typeof requested === "number" && Number.isFinite(requested) && requested > 0
+      ? Math.min(this.maxOutputTokens, Math.floor(requested)) : this.maxOutputTokens;
     const wire = new PiWireObservation(this.id, this.api, tools.length > 0, onDelta,
-      this.modelProfile?.supportsAssistantPhase);
+      this.modelProfile?.supportsAssistantPhase, options.onOutputActivity);
     const transport = createPiHttpTransport({ providerId: this.id,
       endpoint: `${model.baseUrl}/${this.api === "openai-responses" ? "responses" : "chat/completions"}`,
       request: this.streamRequest });
@@ -483,20 +485,23 @@ export class PiAgentProvider implements AIProvider {
             && effort !== undefined && effort !== "none" ? "auto" : "required";
         }
         if (this.id === "mimo_responses") {
-          // Legacy Responses requests use the dedicated instructions field.
-          // Later system items are host observations, not additional policy:
-          // preserve their position and never promote them into instructions.
+          // Pi emits the stable policy as the first input item. On a reasoning
+          // model that role is "developer", not "system". MiMo's automatic
+          // prefix cache covers `instructions` plus the tool list, so the
+          // policy has to live there. Later system items are host observations
+          // and stay in input, in order, so a per-step note cannot bust the prefix.
           const input = Array.isArray(body.input) ? [...body.input] : [];
           const policy = record(input[0]);
-          if (policy?.role === "system" && typeof policy.content === "string") {
+          if ((policy?.role === "system" || policy?.role === "developer")
+            && typeof policy.content === "string") {
             body.instructions = [body.instructions, policy.content].filter(value => typeof value === "string" && value).join("\n\n");
             body.input = input.slice(1);
           }
           delete body.store;
           delete body.prompt_cache_key;
           delete body.prompt_cache_retention;
-          // MiMo implements automatic selection only. Return its real result;
-          // the host checks action receipts and corrects omissions before delivery.
+          // MiMo implements automatic selection only. Return its real result.
+          // Completion is the tool ledger and companion_finish, not a scan of the reply.
           if (tools.length) body.tool_choice = "auto";
           else delete body.tool_choice;
         }
@@ -509,10 +514,8 @@ export class PiAgentProvider implements AIProvider {
     let finalMessage: PiAssistantMessage | undefined;
     try {
       for await (const event of stream) {
-        if (event.type === "text_delta" && event.delta.length > 0) options.onOutputActivity?.("text");
-        else if (event.type === "thinking_delta" && event.delta.length > 0) options.onOutputActivity?.("reasoning");
-        else if ((event.type === "toolcall_delta" && event.delta.length > 0) || event.type === "toolcall_end")
-          options.onOutputActivity?.("tool");
+        // Wire observations own activity. SDK start/end events can represent
+        // empty items, so they cannot satisfy the host's silence watchdog.
         if (event.type === "text_delta") wire.textDelta(event.delta);
         else if (event.type === "thinking_delta") options.onReasoningDelta?.(event.delta);
         else if (event.type === "toolcall_start" || event.type === "toolcall_delta") {

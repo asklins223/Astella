@@ -27,28 +27,38 @@ export function useCodeHighlight(source: string, fence?: string): CodeHighlight 
 }
 
 /** 一行行带 class 的片段；行与行之间那个换行是文本本身，不另起元素。 */
-export function CodeLines({ highlight, source, start = 0, renderText }: {
+export function CodeLines({ highlight, source, start = 0, renderText, visibleCharacters = source.length }: {
   readonly highlight: CodeHighlight | null;
   readonly source: string;
   readonly start?: number;
   readonly renderText?: CodeTextRender;
+  readonly visibleCharacters?: number;
 }): ReactNode {
   const text = renderText ?? ((value: string) => value);
-  const lines = highlight?.source === source ? highlight.lines : null;
-  if (!lines) return text(source, start);
-  return lines.map((line, index) => <Fragment key={index}>
-    {line.map((piece, at) => piece.classes
-      ? <span key={`${index}-${at}`} className={piece.classes}>{text(piece.text, start + piece.start)}</span>
-      : <Fragment key={`${index}-${at}`}>{text(piece.text, start + piece.start)}</Fragment>)}
-    {index < lines.length - 1 ? "\n" : null}
-  </Fragment>);
+  const limit = Math.max(0, Math.min(source.length, visibleCharacters));
+  const lines = highlight && source.startsWith(highlight.source) ? highlight.lines : null;
+  if (!lines || !highlight) return text(source.slice(0, limit), start);
+  const rawLines = highlight.source.split("\n");
+  let lineEnd = -1;
+  return <>{lines.map((line, index) => {
+    lineEnd += rawLines[index]!.length + 1;
+    return <Fragment key={index}>
+      {line.map(piece => {
+        const visible = piece.text.slice(0, Math.max(0, limit - piece.start));
+        return visible ? <span key={piece.start} className={piece.classes || undefined}>{text(visible, start + piece.start)}</span> : null;
+      })}
+      {index < lines.length - 1 && limit > lineEnd ? "\n" : null}
+    </Fragment>;
+  })}{limit > highlight.source.length ? text(source.slice(highlight.source.length, limit), start + highlight.source.length) : null}</>;
 }
 
-export function CodePaper({ source, fence, start = 0, renderText }: {
+export function CodePaper({ source, fence, start = 0, renderText, visibleCharacters }: {
   readonly source: string;
   readonly fence?: string;
   readonly start?: number;
   readonly renderText?: CodeTextRender;
+  /** 高亮只解析收到的源码，逐字显示只裁既有 token，不重启解析器。 */
+  readonly visibleCharacters?: number;
 }) {
   const highlight = useCodeHighlight(source, fence);
   const [copied, setCopied] = useState<"idle" | "done" | "failed">("idle");
@@ -59,14 +69,14 @@ export function CodePaper({ source, fence, start = 0, renderText }: {
   }, [copied]);
 
   // 语言名与颜色出自同一次匹配：换了语言的这一帧先空着，别拿上一门的名字顶着。
-  const fresh = highlight?.source === source ? highlight : null;
+  const fresh = highlight && source.startsWith(highlight.source) ? highlight : null;
   return <figure className="code-paper" data-language={fence}>
     <figcaption className="code-paper__rail" data-note-decoration="true">
-      <span className="code-paper__language">{fresh?.label ?? ""}</span>
+      <span className="code-paper__language">{fresh?.label ?? fence ?? "纯文本"}</span>
       <button type="button" className="code-paper__copy" aria-label="复制这段代码" onClick={async () => {
         setCopied(await copyText(source) ? "done" : "failed");
       }}>{copied === "done" ? "已复制" : copied === "failed" ? "复制失败" : "复制"}</button>
     </figcaption>
-    <pre className="code-body"><code><CodeLines highlight={highlight} source={source} start={start} renderText={renderText} /></code></pre>
+    <pre className="code-body"><code><CodeLines highlight={highlight} source={source} start={start} renderText={renderText} visibleCharacters={visibleCharacters} /></code></pre>
   </figure>;
 }

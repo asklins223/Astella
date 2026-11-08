@@ -36,8 +36,8 @@ test("跨本地午夜仍按绝对时间计算间隔，原文和角色保持完�
   assert.equal(messages[1]?.content, text);
   assert.equal(messages[2]?.content, history[1]!.text);
   assert.equal(messages.at(-1)?.content, "还没交呢");
-  const system = String(messages[0]!.content);
-  const timeline = payload(system.slice(system.indexOf("<conversation_timeline>")));
+  const local = String(messages.find(message => message.hostObservation)?.content);
+  const timeline = payload(local.slice(local.indexOf("<conversation_timeline>")));
   assert.equal(timeline.history[0]?.elapsedMs, 90_000);
   assert.equal(timeline.history[1]?.speaker, "assistant");
   assert.equal(timeline.current.elapsedMs, 1_000);
@@ -76,8 +76,8 @@ test("消息序号决定回放位置；隔几天的记录不被压成连续的�
     createdAt: index < 21 ? "2026-10-03T04:00:00Z" : "2026-10-07T16:00:00Z",
   }));
   const messages = buildCompanionPersonaMessages({ userText: "你今天有什么有意思的事？", recentMessages: history, pageContext: null, conversationClock: clock });
-  const system = String(messages[0]!.content);
-  const data = payload(system.slice(system.indexOf("<conversation_timeline>")));
+  const local = String(messages.find(message => message.hostObservation)?.content);
+  const data = payload(local.slice(local.indexOf("<conversation_timeline>")));
   // 22 条整条进来，位置仍由 seq 顺序给出；时间明细只给窗口内最近 8 条，
   // 更早的只保留位置范围，避免 69 条历史把 system 撑到 1.8 万字符。
   assert.equal(data.history.length, 8);
@@ -103,11 +103,12 @@ test("同一话题连发的补充保留原文、秒级间隔和被接替状态�
   const messages = buildCompanionPersonaMessages({ userText: "电阻是 4 欧姆", recentMessages: history, pageContext: null, conversationClock: clock });
   assert.equal(messages[1]?.content, "讲讲欧姆定律");
   assert.equal(messages[2]?.content, "举个 12 伏电源的例子");
-  assert.equal(messages[3]?.content, "电阻是 4 欧姆");
+  assert.equal(messages.at(-1)?.content, "电阻是 4 欧姆");
   const system = String(messages[0]?.content);
   assert.match(system, /将几句一起理解并正常回应/);
   assert.doesNotMatch(system, /本轮只回应最后一条/);
-  const data = payload(system.slice(system.indexOf("<conversation_timeline>")));
+  const local = String(messages.find(message => message.hostObservation)?.content);
+  const data = payload(local.slice(local.indexOf("<conversation_timeline>")));
   assert.equal(data.history[1]?.gapFromPreviousMs, 4000);
   assert.equal(data.history[1]?.replyState, "回复被后续消息接替");
   assert.equal(data.current.gapFromPreviousMs, 4000);

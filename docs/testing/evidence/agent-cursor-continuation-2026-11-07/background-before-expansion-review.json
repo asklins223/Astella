@@ -1,0 +1,534 @@
+{
+  "workspaceId": "45efba13-6c8b-4b17-ad09-049ee4446811",
+  "userId": "41d09be6-d2c5-41b1-b727-394ba5d27fbc",
+  "noteId": "8a7d7af1-866b-4eb6-93cc-9f594cfe1edd",
+  "versionId": "7d8a53d4-599a-4008-92f2-5159eff4e1c2",
+  "article": "光从一种透明介质进入另一种透明介质时，传播方向可能发生变化，这种现象叫折射。入射角和折射角均从法线量起，满足斯涅尔定律 n₁sinθ₁=n₂sinθ₂。\n\n在同一频率下，介质的折射率 n 等于光在真空中的速度 c 与光在该介质中的相速度 v 之比，即 n=c/v。光跨越静止介质界面时频率不变，速度和波长可以改变。\n\n全反射要求光从折射率较大的介质射向折射率较小的介质，并且入射角大于临界角。临界角满足 sinθc=n₂/n₁，只有在 n₁>n₂ 时才存在这样的临界角。\n\n以可见光从折射率约为1.5的玻璃射向空气为例，临界角约为41.8度。入射角为30度时仍有折射光；入射角为50度时，在理想平整界面模型下发生全反射。",
+  "checks": {
+    "background-overview": {
+      "ok": true,
+      "detail": "succeeded / 188 chars, 4 points"
+    },
+    "background-mind-map": {
+      "ok": true,
+      "detail": "succeeded / 折射与全反射（新材料） (14 labels)"
+    },
+    "background-expansion": {
+      "ok": true,
+      "detail": "succeeded / drafts 3"
+    },
+    "background-learning-cards": {
+      "ok": true,
+      "detail": "succeeded / 6 questions"
+    }
+  },
+  "artifacts": {
+    "overview": [
+      {
+        "body": "这段笔记讲光在两种透明介质界面上的行为，从最基础的折射现象和斯涅尔定律出发，接着定义折射率并说明跨越界面时哪些量会变、哪些不变，然后给出发生全反射的两个条件和临界角公式，最后用玻璃射向空气的可见光算了一组具体数值，演示入射角从30度变到50度时光的走向如何由折射转为全反射。四段是层层递进的关系：前两段建立折射的基本语言，第三段给出全反射的判据，第四段用数字把判据落到实例上。",
+        "overview_points": [
+          {
+            "quote": "光从一种透明介质进入另一种透明介质时，传播方向可能发生变化，这种现象叫折射。",
+            "explanation": "折射指的是光斜着穿过两种透明介质的交界时方向发生偏折。判断偏折多少要先定两个角：入射角和折射角都从法线（垂直于界面的那条线）量起，两者满足 n₁sinθ₁=n₂sinθ₂，即斯涅尔定律——这个公式是后面所有计算的出发点。",
+            "blockOrdinal": 1
+          },
+          {
+            "quote": "光跨越静止介质界面时频率不变，速度和波长可以改变。",
+            "explanation": "折射率 n 衡量介质让光变慢的程度，定义为真空光速 c 与介质中相速度 v 之比，所以 n 越大光走得越慢。跨过界面时要分清哪些量守恒：频率由光源决定、保持不变，而速度和波长会跟着改变；记住这一点才不会把波长当成不变量去套公式。",
+            "blockOrdinal": 2
+          },
+          {
+            "quote": "全反射要求光从折射率较大的介质射向折射率较小的介质，并且入射角大于临界角。",
+            "explanation": "全反射是折射的一种极端情形：光一点都射不出去，全部弹回原介质。它需要同时满足两个条件——方向必须是从光密介质射向光疏介质（n₁>n₂），且入射角超过临界角 θc，临界角按 sinθc=n₂/n₁ 算。方向不满足时根本不存在临界角，这正是公式里要求 n₁>n₂ 的原因。",
+            "blockOrdinal": 3
+          },
+          {
+            "quote": "入射角为30度时仍有折射光；入射角为50度时，在理想平整界面模型下发生全反射。",
+            "explanation": "拿折射率约1.5的玻璃射向空气做例子，临界角约41.8度，这就是判据的具体刻度：入射角30度小于它，光还能折射出去；入射角50度超过它，光全部反射回玻璃。注意这是在界面绝对平整的理想模型下说的，条件缺一不可。",
+            "blockOrdinal": 4
+          }
+        ]
+      }
+    ],
+    "mindMap": [
+      {
+        "title": "折射与全反射（新材料）",
+        "content": {
+          "nodes": [
+            {
+              "id": "c0_n0",
+              "kind": "root",
+              "label": "光的折射与全反射",
+              "parentId": null,
+              "references": [],
+              "explanation": null
+            },
+            {
+              "id": "c0_n1",
+              "kind": "group",
+              "label": "折射的基本规律",
+              "parentId": "c0_n0",
+              "references": [],
+              "explanation": null
+            },
+            {
+              "id": "c0_n2",
+              "kind": "concept",
+              "label": "折射现象与斯涅尔定律",
+              "parentId": "c0_n1",
+              "references": [
+                {
+                  "quote": "光从一种透明介质进入另一种透明介质时，传播方向可能发生变化，这种现象叫折射。入射角和折射角均从法线量起，满足斯涅尔定律 n₁sinθ₁=n₂sinθ₂。",
+                  "blockOrdinal": 1
+                }
+              ],
+              "explanation": "光从一种透明介质进入另一种透明介质时传播方向可能改变，这就是折射。入射角和折射角都从法线量起，两者满足 n₁sinθ₁=n₂sinθ₂。"
+            },
+            {
+              "id": "c0_n3",
+              "kind": "concept",
+              "label": "折射率定义与跨越界面时不变的量",
+              "parentId": "c0_n1",
+              "references": [
+                {
+                  "quote": "在同一频率下，介质的折射率 n 等于光在真空中的速度 c 与光在该介质中的相速度 v 之比，即 n=c/v。光跨越静止介质界面时频率不变，速度和波长可以改变。",
+                  "blockOrdinal": 2
+                }
+              ],
+              "explanation": "同一频率下，折射率 n 是真空中光速 c 与介质中相速度 v 之比，即 n=c/v。光跨越静止介质界面时频率不变，速度和波长可以改变。"
+            },
+            {
+              "id": "c0_n4",
+              "kind": "group",
+              "label": "全反射的条件与判据",
+              "parentId": "c0_n0",
+              "references": [],
+              "explanation": null
+            },
+            {
+              "id": "c0_n5",
+              "kind": "concept",
+              "label": "全反射的两个必要条件与临界角公式",
+              "parentId": "c0_n4",
+              "references": [
+                {
+                  "quote": "全反射要求光从折射率较大的介质射向折射率较小的介质，并且入射角大于临界角。临界角满足 sinθc=n₂/n₁，只有在 n₁>n₂ 时才存在这样的临界角。",
+                  "blockOrdinal": 3
+                }
+              ],
+              "explanation": "必须同时满足：光从折射率较大的介质射向折射率较小的介质，且入射角大于临界角。临界角由 sinθc=n₂/n₁ 给出，只有 n₁>n₂ 时才存在这样的临界角。"
+            },
+            {
+              "id": "c0_n6",
+              "kind": "concept",
+              "label": "玻璃射向空气的算例",
+              "parentId": "c0_n4",
+              "references": [
+                {
+                  "quote": "以可见光从折射率约为1.5的玻璃射向空气为例，临界角约为41.8度。入射角为30度时仍有折射光；入射角为50度时，在理想平整界面模型下发生全反射。",
+                  "blockOrdinal": 4
+                }
+              ],
+              "explanation": "可见光从折射率约 1.5 的玻璃射向空气，临界角约 41.8 度：入射角 30 度时仍有折射光；入射角 50 度时，在理想平整界面模型下发生全反射。"
+            }
+          ],
+          "rootId": "c0_n0",
+          "schemaVersion": 1
+        }
+      }
+    ],
+    "expansion": [
+      {
+        "drafts": [
+          {
+            "title": "临界角是让折射角贴着界面时算出来的入射角",
+            "blocks": [
+              {
+                "type": "heading",
+                "content": "临界角是怎么解出来的"
+              },
+              {
+                "type": "paragraph",
+                "content": "斯涅尔定律写出来是 n₁sinθ₁=n₂sinθ₂，两个角都从法线量起。所谓临界角，指的是一个特殊的入射角：折射角恰好达到 90 度，也就是折射光贴着两种介质的界面走。"
+              },
+              {
+                "type": "paragraph",
+                "content": "把 θ₂=90 度代进斯涅尔定律，sin90°=1，式子变成 n₁sinθ₁=n₂，于是 sinθ₁=n₂/n₁。这个入射角就是临界角 θc，所以有 sinθc=n₂/n₁，和原笔记给的公式一致。"
+              },
+              {
+                "type": "code",
+                "content": "n1 = 1.5（玻璃）, n2 = 1.0（空气）\nsin(θc) = n2 / n1 = 1.0 / 1.5 = 0.6667\nθc = arcsin(0.6667) ≈ 41.8°\n核验：sin(41.8°) ≈ 0.6666，回到 1/1.5，闭合。"
+              },
+              {
+                "type": "paragraph",
+                "content": "这里能看出为什么原笔记强调 n₁>n₂：只有光从折射率大的介质射向折射率小的介质，n₂/n₁ 才小于 1，arcsin 才有实数解。反过来让光从空气射向玻璃，n₂/n₁ 大于 1，同样的推导会得到 sinθc>1，这样的入射角不存在，因此那个方向上没有全反射这回事（这一句是对公式条件的读法，属于补充理解）。"
+              },
+              {
+                "type": "heading",
+                "content": "入射角越过临界角之后"
+              },
+              {
+                "type": "paragraph",
+                "content": "按原笔记，入射角大于临界角时发生全反射。用推导过程看会更直观：入射角从 0 度慢慢增大时，折射角跟着增大，但始终比入射角小（在 n₁>n₂ 的情形下）；折射角先逼近 90 度，对应的入射角就是临界角；入射角再大，斯涅尔定律就解不出折射角了，界面上只剩反射光。上面的推导默认两种介质都透明、界面静止且平整，这是原笔记的条件范围。"
+              },
+              {
+                "type": "list",
+                "content": "临界角只对光从高折射率介质进入低折射率介质的情形定义。\n入射角小于临界角时既有反射光也有折射光，不是只有折射光。\n公式里的 n₁ 是入射侧介质的折射率，n₂ 是出射侧的，代错位置会得到不同的角。"
+              }
+            ],
+            "selected": false,
+            "requestId": "ab4f8c31-f468-4039-8f7e-628d22b0126b",
+            "candidateId": "a7dbb259-13f6-4031-a62e-eb539c0684e3",
+            "relationship": "原笔记直接给出临界角公式 sinθc=n₂/n₁，并强调只有 n₁>n₂ 时才存在。这条拓展顺着斯涅尔定律把公式推一遍，说明临界角的来处，再用玻璃射向空气的数值核验原笔记第4段的条件。",
+            "sourceReferences": [
+              {
+                "quote": "入射角和折射角均从法线量起，满足斯涅尔定律 n₁sinθ₁=n₂sinθ₂。",
+                "blockOrdinal": 1
+              },
+              {
+                "quote": "全反射要求光从折射率较大的介质射向折射率较小的介质，并且入射角大于临界角。临界角满足 sinθc=n₂/n₁，只有在 n₁>n₂ 时才存在这样的临界角。",
+                "blockOrdinal": 3
+              }
+            ]
+          },
+          {
+            "title": "折射时频率不变，速度和波长跟着介质变",
+            "blocks": [
+              {
+                "type": "heading",
+                "content": "不变的是频率，变的是速度和波长"
+              },
+              {
+                "type": "paragraph",
+                "content": "原笔记给出两件事：一是折射率的定义 n=c/v，光在介质里的相速度 v 比真空中的 c 慢多少，折射率就是几倍；二是光跨越静止介质界面时频率不变，速度和波长可以改变。频率不变这条是关键，因为波速、频率、波长三者满足 v=fλ，频率被锁住之后，速度一变，波长就必须跟着变。"
+              },
+              {
+                "type": "paragraph",
+                "content": "把这两条合起来就能算波长怎么变。真空中 λ₀=c/f，介质里 λ=v/f=(c/n)/f=λ₀/n。也就是说波长按折射率等比例缩短，频率从头到尾没动。（这一段的波长公式是对原笔记两条结论的合并推导，属于补充理解；原笔记只写了频率不变、波长可以改变。）"
+              },
+              {
+                "type": "code",
+                "content": "已知：f = 5.0×10^14 Hz（原笔记未给具体频率，此处取值仅为演算示例）\n真空：λ0 = c / f = 3.0×10^8 / 5.0×10^14 = 6.0×10^-7 m = 600 nm\n玻璃 n = 1.5：v = c / n = 3.0×10^8 / 1.5 = 2.0×10^8 m/s\n玻璃中：λ = λ0 / n = 600 / 1.5 = 400 nm\n核验：v·f = 2.0×10^8 × 5.0×10^14 = 1.0×10^23？换算回波长 4.0×10^-7 m，与 λ0/n 一致。"
+              },
+              {
+                "type": "paragraph",
+                "content": "数值上可以看到三件事同时成立：频率 5.0×10^14 Hz 在两个介质里相同；速度从 3.0×10^8 m/s 降到 2.0×10^8 m/s；波长从 600 nm 缩到 400 nm，比值正好是 1.5，与 n 对得上。"
+              },
+              {
+                "type": "heading",
+                "content": "这些结论的适用条件"
+              },
+              {
+                "type": "list",
+                "content": "n=c/v 里的 v 是相速度，且针对同一频率（原笔记写明“在同一频率下”）。\n频率不变的结论限定在光跨越静止介质界面的情形，原笔记对运动界面没有给结论。\n“速度和波长可以改变”说的是可以改变，不是每一处都在同一时刻测到同样的变化量。\n补充理解：不同颜色的光频率不同，同一块玻璃对它们的折射率略有差别，所以棱镜能分开颜色；原笔记没有涉及色散，这一句仅供延伸。"
+              }
+            ],
+            "selected": false,
+            "requestId": "a6f375df-7f21-4f53-8836-1336feeb37ee",
+            "candidateId": "e83fa771-c5e3-44b6-a0f3-e0ee84d114ff",
+            "relationship": "原笔记指出折射率 n=c/v，并说明光跨越静止介质界面时频率不变、速度和波长可以改变。这条拓展围绕这一段展开，解释三者的关系，并用一个具体波长算一遍速度与波长的变化，同时标明哪些是原文之外的补充理解。",
+            "sourceReferences": [
+              {
+                "quote": "在同一频率下，介质的折射率 n 等于光在真空中的速度 c 与光在该介质中的相速度 v 之比，即 n=c/v。光跨越静止介质界面时频率不变，速度和波长可以改变。",
+                "blockOrdinal": 2
+              }
+            ]
+          },
+          {
+            "title": "玻璃射向空气：30度、41.8度、50度各算一遍",
+            "blocks": [
+              {
+                "type": "heading",
+                "content": "先把已知条件摆出来"
+              },
+              {
+                "type": "paragraph",
+                "content": "入射侧是玻璃，n₁≈1.5；出射侧是空气，n₂≈1.0。因为 n₁>n₂，满足原笔记里存在临界角的条件。斯涅尔定律为 n₁sinθ₁=n₂sinθ₂，两角都从法线量起。"
+              },
+              {
+                "type": "heading",
+                "content": "入射角 30 度：解出折射角"
+              },
+              {
+                "type": "code",
+                "content": "θ1 = 30°, sin(30°) = 0.500\nsin(θ2) = n1·sin(θ1) / n2 = 1.5 × 0.500 / 1.0 = 0.750\nθ2 = arcsin(0.750) ≈ 48.6°\n核验：1.5 × sin(48.6°) ≈ 1.5 × 0.7498 ≈ 1.125？不对，取 sin(48.6°)=0.7500 则 1.5×0.7500=1.125≠0.75。\n修正核验：应写 n1·sinθ1 = 1.5×0.500 = 0.750，n2·sinθ2 = 1.0×0.750 = 0.750，两边相等，成立。"
+              },
+              {
+                "type": "paragraph",
+                "content": "0.750 小于 1，折射角有实数解，约 48.6 度，所以界面上确实还有折射光射入空气，与原笔记“入射角为30度时仍有折射光”一致。30 度小于临界角 41.8 度，这正是它还有折射光的原因。"
+              },
+              {
+                "type": "heading",
+                "content": "入射角 41.8 度：临界角本身"
+              },
+              {
+                "type": "code",
+                "content": "sin(θc) = n2 / n1 = 1.0 / 1.5 = 0.6667\nθc ≈ 41.8°\nsin(41.8°) ≈ 0.6666，回到 1/1.5，闭合。"
+              },
+              {
+                "type": "paragraph",
+                "content": "此时折射角正好 90 度，折射光贴着界面。原笔记写的是“入射角大于临界角”才发生全反射，所以恰好等于临界角这一档，按字面读仍不算进入全反射区间（这是对原笔记措辞的读法，属于补充理解）。"
+              },
+              {
+                "type": "heading",
+                "content": "入射角 50 度：方程无解"
+              },
+              {
+                "type": "code",
+                "content": "θ1 = 50°, sin(50°) ≈ 0.766\nsin(θ2) = 1.5 × 0.766 / 1.0 = 1.149\n1.149 > 1，arcsin 无实数解 → 不存在满足折射定律的折射角\n与临界角比较：50° > 41.8°，符合“入射角大于临界角”。"
+              },
+              {
+                "type": "paragraph",
+                "content": "算不出折射角，意味着这个入射角下没有折射光进入空气，光全部按反射定律回到玻璃一侧，也就是原笔记说的全反射。两个判断——解不出方程、入射角超过临界角——指向同一件事。"
+              },
+              {
+                "type": "paragraph",
+                "content": "原笔记特意写了“在理想平整界面模型下”，这是结论的前提：界面要平整、两种介质要透明稳定，上面的计算才按理想情况处理。补充理解：真实玻璃表面有微小起伏，光束也有一定粗细，实际测到的过渡会比理想模型模糊一些；原笔记没有讨论这种情况，仅供参照。"
+              }
+            ],
+            "selected": false,
+            "requestId": "ddf18d31-9f9c-4882-aad5-447d305c11de",
+            "candidateId": "719dcfc0-a90e-4b8e-a079-d3bdd33661bf",
+            "relationship": "原笔记用折射率约1.5的玻璃射向空气做例子，给出临界角约41.8度，并说30度入射还有折射光、50度入射发生全反射。这条拓展按斯涅尔定律逐步演算这三个角度，核验原笔记的判断在什么条件下成立。",
+            "sourceReferences": [
+              {
+                "quote": "以可见光从折射率约为1.5的玻璃射向空气为例，临界角约为41.8度。入射角为30度时仍有折射光；入射角为50度时，在理想平整界面模型下发生全反射。",
+                "blockOrdinal": 4
+              },
+              {
+                "quote": "全反射要求光从折射率较大的介质射向折射率较小的介质，并且入射角大于临界角。临界角满足 sinθc=n₂/n₁，只有在 n₁>n₂ 时才存在这样的临界角。",
+                "blockOrdinal": 3
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "questions": [
+      {
+        "question": {
+          "id": "e3539ca2-493a-40b6-aa62-42768aa8e01d",
+          "card_id": "8d2c3198-1933-4191-bf11-135ebfca00a8",
+          "ordinal": 0,
+          "question_type": "single_choice",
+          "stem": "光从一种透明介质进入另一种透明介质时，入射角和折射角均从什么量起？",
+          "options": [
+            "法线",
+            "介质界面",
+            "入射光线",
+            "折射光线"
+          ],
+          "answer": {
+            "correctOptionId": "0"
+          },
+          "rubric": null,
+          "grounding": {
+            "note": [
+              {
+                "quote": "入射角和折射角均从法线量起，满足斯涅尔定律 n₁sinθ₁=n₂sinθ₂。",
+                "blockOrdinal": 1
+              }
+            ]
+          },
+          "operation_artifact_id": null,
+          "created_at": "2026-11-07T09:34:04.285392+00:00"
+        }
+      },
+      {
+        "question": {
+          "id": "6df29a51-ef54-4ba5-8927-c714b4acad46",
+          "card_id": "8d2c3198-1933-4191-bf11-135ebfca00a8",
+          "ordinal": 1,
+          "question_type": "multi_choice",
+          "stem": "关于同一频率下折射率与光速、频率、波长的关系，哪些说法符合原文？",
+          "options": [
+            "折射率 n 等于光在真空中的速度 c 与光在该介质中的相速度 v 之比，即 n=c/v",
+            "光跨越静止介质界面时频率不变",
+            "光跨越静止介质界面时速度和波长都不改变",
+            "光跨越静止介质界面时速度和波长可以改变"
+          ],
+          "answer": {
+            "correctOptionIds": [
+              "0",
+              "1",
+              "3"
+            ]
+          },
+          "rubric": null,
+          "grounding": {
+            "note": [
+              {
+                "quote": "在同一频率下，介质的折射率 n 等于光在真空中的速度 c 与光在该介质中的相速度 v 之比，即 n=c/v。光跨越静止介质界面时频率不变，速度和波长可以改变。",
+                "blockOrdinal": 2
+              }
+            ]
+          },
+          "operation_artifact_id": null,
+          "created_at": "2026-11-07T09:34:04.285392+00:00"
+        }
+      },
+      {
+        "question": {
+          "id": "52bb6d3a-8764-40b4-a7e8-ba04ea0a1459",
+          "card_id": "8d2c3198-1933-4191-bf11-135ebfca00a8",
+          "ordinal": 2,
+          "question_type": "true_false",
+          "stem": "原文中的全反射是否要求光从折射率较小的介质射向折射率较大的介质？",
+          "options": null,
+          "answer": {
+            "correct": false
+          },
+          "rubric": null,
+          "grounding": {
+            "note": [
+              {
+                "quote": "全反射要求光从折射率较大的介质射向折射率较小的介质，并且入射角大于临界角。",
+                "blockOrdinal": 3
+              }
+            ]
+          },
+          "operation_artifact_id": null,
+          "created_at": "2026-11-07T09:34:04.285392+00:00"
+        }
+      },
+      {
+        "question": {
+          "id": "ed908972-aeb5-46c5-8e23-6a9e13654630",
+          "card_id": "8d2c3198-1933-4191-bf11-135ebfca00a8",
+          "ordinal": 3,
+          "question_type": "fill_blank",
+          "stem": "以可见光从折射率约为1.5的玻璃射向空气为例，临界角约为多少度（____）？",
+          "options": null,
+          "answer": {
+            "blanks": [
+              [
+                "41.8度"
+              ]
+            ]
+          },
+          "rubric": null,
+          "grounding": {
+            "note": [
+              {
+                "quote": "以可见光从折射率约为1.5的玻璃射向空气为例，临界角约为41.8度。",
+                "blockOrdinal": 4
+              }
+            ]
+          },
+          "operation_artifact_id": null,
+          "created_at": "2026-11-07T09:34:04.285392+00:00"
+        }
+      },
+      {
+        "question": {
+          "id": "71f1e57c-1b92-483a-bf80-8d1756cae492",
+          "card_id": "8d2c3198-1933-4191-bf11-135ebfca00a8",
+          "ordinal": 4,
+          "question_type": "short_answer",
+          "stem": "为什么只有在 n₁>n₂ 时才存在这样的临界角？",
+          "options": null,
+          "answer": null,
+          "rubric": [
+            {
+              "points": 1,
+              "keyword": "临界角由 sinθc=n₂/n₁ 定义"
+            },
+            {
+              "points": 1,
+              "keyword": "只有当光从折射率较大的介质射向折射率较小的介质（n₁>n₂）时，该条件才成立"
+            }
+          ],
+          "grounding": {
+            "note": [
+              {
+                "quote": "临界角满足 sinθc=n₂/n₁，只有在 n₁>n₂ 时才存在这样的临界角。",
+                "blockOrdinal": 3
+              }
+            ]
+          },
+          "operation_artifact_id": null,
+          "created_at": "2026-11-07T09:34:04.285392+00:00"
+        }
+      },
+      {
+        "question": {
+          "id": "57469cac-dcb5-4b47-b72b-302fe9f4e78d",
+          "card_id": "8d2c3198-1933-4191-bf11-135ebfca00a8",
+          "ordinal": 5,
+          "question_type": "ordering",
+          "stem": "可见光从玻璃射向空气时，入射角从30度增大到50度的过程中，现象出现的顺序应如何排列？",
+          "options": [
+            "入射角为30度时仍有折射光",
+            "入射角达到约为41.8度的临界角",
+            "入射角为50度时在理想平整界面模型下发生全反射"
+          ],
+          "answer": {
+            "order": [
+              "0",
+              "1",
+              "2"
+            ]
+          },
+          "rubric": null,
+          "grounding": {
+            "note": [
+              {
+                "quote": "入射角为30度时仍有折射光；入射角为50度时，在理想平整界面模型下发生全反射。",
+                "blockOrdinal": 4
+              }
+            ]
+          },
+          "operation_artifact_id": null,
+          "created_at": "2026-11-07T09:34:04.285392+00:00"
+        }
+      }
+    ],
+    "audit": [
+      {
+        "operation": "note_learning_overview:chat_completion",
+        "provider": "mimo_responses",
+        "model_id": "mimo-v2.6-flash",
+        "duration_ms": 20835,
+        "prompt_tokens": 845,
+        "cached_tokens": null,
+        "status": "success"
+      },
+      {
+        "operation": "note_learning_mind_map:chat_completion",
+        "provider": "mimo_responses",
+        "model_id": "mimo-v2.6-flash",
+        "duration_ms": 17787,
+        "prompt_tokens": 861,
+        "cached_tokens": null,
+        "status": "success"
+      },
+      {
+        "operation": "note_expansion_draft:chat_completion",
+        "provider": "mimo_responses",
+        "model_id": "mimo-v2.6-flash",
+        "duration_ms": 119961,
+        "prompt_tokens": 1216,
+        "cached_tokens": null,
+        "status": "success"
+      },
+      {
+        "operation": "note_learning_card_generate:chat_completion",
+        "provider": "mimo_responses",
+        "model_id": "mimo-v2.6-flash",
+        "duration_ms": 51710,
+        "prompt_tokens": 1514,
+        "cached_tokens": null,
+        "status": "success"
+      },
+      {
+        "operation": "note_learning_card_review:execute_agent_turn",
+        "provider": "mimo_responses",
+        "model_id": "mimo-v2.6-flash",
+        "duration_ms": 21952,
+        "prompt_tokens": 2609,
+        "cached_tokens": null,
+        "status": "success"
+      }
+    ]
+  }
+}

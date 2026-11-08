@@ -2,11 +2,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { AgentTurnResult } from "@astella/shared";
 import type { AIProvider } from "../../lib/ai-provider.ts";
-import { ProviderRequestError } from "../../lib/provider-request-error.ts";
+import { ProviderRequestError, ProviderStreamError } from "../../lib/provider-request-error.ts";
 import { AgentOutputError } from "../../lib/non-retryable-errors.ts";
 import { CompanionOutputTimeoutError } from "../agent/companion-output-watchdog.ts";
 import { CompanionDegenerateLoopError } from "../agent/companion-agent-streaming-step.ts";
 import { recoverCompanionStreamFailure } from "../agent/companion-stream-recovery.ts";
+import { CompanionRunInactiveError, companionStepClosedError } from "../turn/companion-dialogue-store.ts";
 
 const provider = { id: "primary", modelId: "primary", executeAgentTurn: async () => ({}) } as unknown as AIProvider;
 const alternate = { id: "alternate", modelId: "alternate", executeAgentTurn: async () => ({}) } as unknown as AIProvider;
@@ -94,6 +95,47 @@ test("a transient 5xx retries the stream before falling back to buffered", async
   const result = await recoverCompanionStreamFailure(input);
   assert.equal(result.content, "streamed");
   assert.deepEqual(calls, ["stream"]);
+});
+
+test("an empty stream retries the stream before the buffered turn", async () => {
+  const { calls, input } = harness({ error: new ProviderStreamError("mimo_responses", "stream_empty") });
+  const result = await recoverCompanionStreamFailure(input);
+  assert.equal(result.content, "streamed");
+  assert.deepEqual(calls, ["stream"]);
+});
+
+test("a turn that was already superseded is not retried as a transport failure", async () => {
+  const { calls, input } = harness({ error: new CompanionRunInactiveError("superseded") });
+  await assert.rejects(recoverCompanionStreamFailure(input), CompanionRunInactiveError);
+  assert.deepEqual(calls, []);
+});
+
+for (const initialError of [new ProviderRequestError({ provider: "primary", status: 503 }),
+  new ProviderStreamError("primary", "stream_empty")]) {
+  test(`a turn superseded during ${initialError.name} recovery stops before any further attempt`, async () => {
+    const inactive = new CompanionRunInactiveError("superseded");
+    const { calls, input } = harness({ error: initialError });
+    input.attemptStream = async () => { calls.push("stream"); throw inactive; };
+    await assert.rejects(recoverCompanionStreamFailure(input), error => error === inactive);
+    assert.deepEqual(calls, ["stream"]);
+  });
+}
+
+test("a closed step is the run leaving, not a missing checkpoint", () => {
+  assert.ok(companionStepClosedError("cancelled", "superseded") instanceof CompanionRunInactiveError);
+  assert.ok(companionStepClosedError("running", "cancelled") instanceof CompanionRunInactiveError);
+  assert.equal(companionStepClosedError("running", "running").message, "companion agent checkpoint lost its running step");
+  assert.equal(companionStepClosedError(null, "waiting_for_confirmation").message, "companion agent checkpoint lost its running step");
+});
+
+test("a closed step alone cannot silently stop an active run", () => {
+  for (const runStatus of ["accepted", "running", "waiting_for_confirmation"]) {
+    for (const stepStatus of ["cancelled", "failed", "succeeded"]) {
+      const error = companionStepClosedError(stepStatus, runStatus);
+      assert.ok(!(error instanceof CompanionRunInactiveError), `${runStatus}/${stepStatus}`);
+      assert.equal(error.message, "companion agent checkpoint lost its running step");
+    }
+  }
 });
 
 test("a non-transient failure goes straight to the buffered turn", async () => {

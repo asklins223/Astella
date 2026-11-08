@@ -139,7 +139,9 @@ export function NotebookDesk(props: Props) {
   };
   useLayoutEffect(() => {
     if (showDirectory && (!directoryWasOpen.current || document.activeElement?.closest("[hidden], [inert]"))) {
-      indexPaper.ref.current?.querySelector<HTMLElement>('[aria-current="location"]')?.focus({ preventScroll: true });
+      const index = indexPaper.ref.current;
+      (index?.querySelector<HTMLElement>('[aria-current="location"]')
+        ?? index?.querySelector<HTMLElement>(".notebook-desk__index-scroll button"))?.focus({ preventScroll: true });
       directoryWasOpen.current = true;
     } else if (!showDirectory && directoryWasOpen.current) {
       if (!props.sidePage) restoreFocus(directoryTriggerRef.current);
@@ -248,12 +250,11 @@ export function NotebookDesk(props: Props) {
             <button type="button" className="text-action" aria-label="收起目录" onClick={() => setDirectoryOpen(false)}><X size={17} aria-hidden="true" /></button>
           </header>
           <nav className="notebook-desk__index-scroll" aria-label="大小标题">
-            <button type="button" className="text-action" aria-current={currentBlock === 0 ? "location" : undefined} onClick={() => locate(0)}>开篇</button>
             {props.outline.length ? <ol>{props.outline.map((entry) => <li key={entry.block} data-heading-level={entry.level}>
-              <button type="button" className="text-action" aria-current={entry.block === currentBlock ? "location" : undefined} onClick={() => locate(entry.block)}>{entry.title}</button>
+              <button type="button" className="text-action" aria-current={entry.block === currentBlock ? "location" : undefined} onClick={() => locate(entry.block)}><span>{entry.title}</span></button>
             </li>)}</ol> : <p>这篇还没有小节标题。</p>}
           </nav>
-          <div className="notebook-desk__index-foot">笔记 v{props.version}<span>{props.outline.find((entry) => entry.block === currentBlock)?.title ?? "正在读 · 开篇"}</span></div>
+          <div className="notebook-desk__index-foot">笔记 v{props.version}<span>{props.outline.find((entry) => entry.block === currentBlock)?.title ?? "正在读"}</span></div>
         </aside> : null}
 
         <div className="notebook-volume__leaf" inert={coveringPage} aria-hidden={coveringPage || undefined}>

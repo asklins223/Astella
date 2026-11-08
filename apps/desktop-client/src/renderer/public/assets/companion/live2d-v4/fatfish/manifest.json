@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 1,
+  "modelId": "companion-live2d-fatfish-v4",
+  "displayName": "大肥鱼二号",
+  "detail": "蓝发女仆，白围裙，领口系着黑蝴蝶结。",
+  "status": "production",
+  "ownerApproved": {
+    "by": "Owner",
+    "date": "2026-11-05",
+    "note": "用户提供原包并要求接入为可切换形态；三种体型节点拆成三个可选形态，默认最小形态"
+  },
+  "source": {
+    "origin": "user-provided archive",
+    "sourcePath": "DeepSeek免费公皮/DeepSeek",
+    "author": "原画及拆分：神宫凉子；Live2D 建模：霓虹猫_NeonNeko",
+    "usageNotesFile": "使用须知.txt（保存在用户原目录，未随仓库分发）"
+  },
+  "modelLicense": {
+    "name": "作者免费公开配布许可：允许直播／视频创作与平台收益、允许调整模型参数，禁止重新分发与二次销售",
+    "acceptanceRequired": true,
+    "commercialReleaseAllowed": true,
+    "redistributionAllowed": false,
+    "usage": "作者《使用须知》允许个人直播、视频创作与平台收益、参数调整与个人二创，禁止重新分发模型文件、二次销售与冒充原作者；Owner 2026-11-05 裁决按可商用登记，与既有 DS鲸鱼娘 同一口径。公开署名：原画 神宫凉子 / 建模 霓虹猫_NeonNeko。"
+  },
+  "runtime": {
+    "model3": "/assets/companion/live2d-v4/fatfish/fatfish.model3.json",
+    "moc3": "/assets/companion/live2d-v4/fatfish/fatfish.moc3",
+    "textures": [
+      "/assets/companion/live2d-v4/fatfish/fatfish.4096/texture_00.png",
+      "/assets/companion/live2d-v4/fatfish/fatfish.4096/texture_01.png",
+      "/assets/companion/live2d-v4/fatfish/fatfish.4096/texture_02.png",
+      "/assets/companion/live2d-v4/fatfish/fatfish.4096/texture_03.png",
+      "/assets/companion/live2d-v4/fatfish/fatfish.4096/texture_04.png"
+    ],
+    "physics": "/assets/companion/live2d-v4/fatfish/fatfish.physics3.json",
+    "displayInfo": "/assets/companion/live2d-v4/fatfish/fatfish.cdi3.json",
+    "motions": {
+      "Idle": "/assets/companion/live2d-v4/fatfish/motions/idle.motion3.json",
+      "RaiseHand": "/assets/companion/live2d-v4/fatfish/motions/raise-hand.motion3.json",
+      "RaiseHandBack": "/assets/companion/live2d-v4/fatfish/motions/raise-hand-back.motion3.json",
+      "PointFinger": "/assets/companion/live2d-v4/fatfish/motions/point-finger.motion3.json",
+      "PointFingerBack": "/assets/companion/live2d-v4/fatfish/motions/point-finger-back.motion3.json",
+      "Grass": "/assets/companion/live2d-v4/fatfish/motions/grass.motion3.json",
+      "GrassBack": "/assets/companion/live2d-v4/fatfish/motions/grass-back.motion3.json"
+    }
+  },
+  "bodyForms": {
+    "large": 0,
+    "medium": 0.4,
+    "small": 1
+  },
+  "fileSha256": {
+    "expressions/black-face.exp3.json": "3d330063223ac4dbc75fada9b2c3a3a7879806ea1c108ac1ec86aefd6c72ded7",
+    "expressions/blush.exp3.json": "e3635793957a02c90664a421802ac0cb9cd69de17177ead69f6d4983786e8a94",
+    "expressions/buck-tooth.exp3.json": "4fb766662fb43f3cd7d6acc1564f517677adfdb1149d792e78ff499b9bad3f5b",
+    "expressions/chest-cover.exp3.json": "dcdb769f2560a6502ce4ea11e7c163e72f629a2992ba1b3b7a4b58d88f5c3ff0",
+    "expressions/cold-sweat.exp3.json": "4e069f8a58c6e4c839cf0b0a818b0de79c104560ed31ca511b379a0efb9b3413",
+    "expressions/crying.exp3.json": "b80d6122b4c70ba3451ccee2797605deaafe6a636ee92bcb826bdb15a063d76d",
+    "expressions/dizzy-eyes.exp3.json": "2087d2e5be3d624998ad7a5aaf8bd62479fa712be5606b492ee416b1fcaccd67",
+    "expressions/glasses-square.exp3.json": "4de2454cd6e01bb4594da6d39c9eb4d9198126d561f4023f79a028d0789742fa",
+    "expressions/heart-eyes.exp3.json": "36b6d496f24a0642d418232ee84c8c2e7d683987c06f5d0b9a646a0a5fdc5150",
+    "expressions/lean-forward.exp3.json": "6d2b8c1922119317d2725b52af1359b16aadadafcd7b252a6d82e561b68593ac",
+    "expressions/loading.exp3.json": "965dc13aa095a765247373e0f03777f2acee7ee1562984a91e2e9d33ee3c612f",
+    "expressions/monocle.exp3.json": "6a6b3251543e08e8da1c9f19713c015605baf5a3798c0bf46644bd290ae5bd4b",
+    "expressions/point-finger-off.exp3.json": "9edfbb7a34b919b0f61a0661ef08d85778bdc55171f35e91c7630dbf809f5c92",
+    "expressions/point-finger-on.exp3.json": "f3c9245a20dd4d553aaa673495d0b050f69b79813e4ac50e4bdcf39e25c1b5e4",
+    "expressions/shoes-off.exp3.json": "9a9f28bb637ec403efef793771cbb5dc8c3d1c7281fe9ea1f1952f8da0aab023",
+    "expressions/skirt-long.exp3.json": "87fed5381b4bcf0442d2b251b4b094769b4d9e659e9d970b688325790f0c0113",
+    "expressions/smug-eyes.exp3.json": "fcd4f3cb045721f61358762cbdda2b8650fa4a75fcd741bf2089ec6d798c986e",
+    "expressions/squeezed-eyes.exp3.json": "9bb5caaf4d4aaa152676f6d3acb9a64db1d15211c703db57208cbf154003832a",
+    "expressions/steel-bowl.exp3.json": "f5e158aa9b1eba1366f435c0a9101abb84a98a0a5fd1a02af7043b55268f5682",
+    "expressions/tail-off.exp3.json": "143bf827617b5ced86ed051a43c2b78ee8f46a575ebe05b029342e9db0d3121b",
+    "fatfish.model3.json": "b596fcfa324c9fd2a3efaa42c1b2db95a42b9e25afaccbf7c7ed3c7f7986ed9f",
+    "motions/grass-back.motion3.json": "c99837f80d1502375f94d380970d18ca5e3e614c7f21794dcef3df2e068b9e8e",
+    "motions/grass.motion3.json": "a917ac75a2c44b9d9eba7be5f460cb0712fac3acfc7fd4cfe6ad3c71b772bc39",
+    "motions/idle.motion3.json": "4eb477316098251380a42618ca3de8cd9137649c760bf157554d334ce3053791",
+    "motions/point-finger-back.motion3.json": "2cdf0f36323cbaee0f0d23b6651fff1cbd6ede21205ef1fdfb2dd75cbc8724f4",
+    "motions/point-finger.motion3.json": "8271de69494d365cd8bc899f8751abd9cbb3c55eea21ed6f5406005f131f82c8",
+    "motions/raise-hand-back.motion3.json": "a6b1bfe8229cdea4dc882a99274df981205842b7e80976c14f1901ff47c86bab",
+    "motions/raise-hand.motion3.json": "deec7a6a35bcdd58cca8eeb7054fd6ab79e3963dfd2b2fc4ec05c22c5445e755",
+    "fatfish.4096/texture_00.png": "a94e61d0f5a857b0c860b65d6c844b3f7dbb9e0dd53a72c21bc29a544ae48652",
+    "fatfish.4096/texture_01.png": "b2e32a429ed8cf37570959a4cddff9d1e5b83f70996317423da8fb6cf4c85e0d",
+    "fatfish.4096/texture_02.png": "48b3ed2c2217cbe2c3dfe966eb40e9fadf364d3f1cb9b4a231552c07766269ba",
+    "fatfish.4096/texture_03.png": "735e75a1b8fd56a936152d9a3510a361ebe369658ac43e6210a2fd06dcbc79b8",
+    "fatfish.4096/texture_04.png": "02c90105162388eb2cd37c8171a4dd569b4c3a044d3451de4d62c0c816fbafc2",
+    "fatfish.moc3": "b708e7953db9deeb5bf783643255dee1f3bf20d24786bc287e72d07e1b1052e6",
+    "fatfish.physics3.json": "eb5f6cac515123a8b90ba476c898ffea28ed8b560e7be5fe82e096c5d7e21415",
+    "fatfish.cdi3.json": "24d1a66f530153b2b4c0c528b4bdf305f18ce6aa790d5b8d2612dbb641b0d746"
+  }
+}

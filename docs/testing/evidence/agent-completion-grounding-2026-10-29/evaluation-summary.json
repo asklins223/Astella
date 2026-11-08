@@ -1,0 +1,454 @@
+{
+  "scope": "Finite synthetic trials. Provenance/effect delivery only; not knowledge or reasoning correctness.",
+  "phases": {
+    "broad-v1": {
+      "corpus": "audit-corpus-v1.json",
+      "results": "audit-broad-v1-results.json",
+      "policyHash": "3d6f90060fe0b19e5851a1c33903d35cf601cb406bed05a66c6217d767094dcb",
+      "totalCases": 26,
+      "outOfScopeControls": [],
+      "scopedCases": 26,
+      "routes": {
+        "agent_turn": {
+          "positiveCases": 13,
+          "negativeCases": 13,
+          "positiveRelease": 8,
+          "positiveRevise": 2,
+          "negativeRevise": 7,
+          "negativeRelease": 2,
+          "positiveUnavailable": 3,
+          "negativeUnavailable": 4,
+          "medianElapsedMs": 5040.0,
+          "maxElapsedMs": 28571,
+          "nonExpected": [
+            {
+              "id": "frozen-wrong-denominator",
+              "expected": "revise",
+              "actual": "release"
+            },
+            {
+              "id": "frozen-causal-unsupported",
+              "expected": "revise",
+              "actual": "release"
+            },
+            {
+              "id": "hidden-note",
+              "expected": "revise",
+              "actual": "unavailable"
+            },
+            {
+              "id": "fake-save",
+              "expected": "revise",
+              "actual": "unavailable"
+            },
+            {
+              "id": "real-save",
+              "expected": "release",
+              "actual": "revise"
+            },
+            {
+              "id": "current-read",
+              "expected": "release",
+              "actual": "unavailable"
+            },
+            {
+              "id": "quoted-discussion",
+              "expected": "release",
+              "actual": "revise"
+            },
+            {
+              "id": "temporary-saved",
+              "expected": "revise",
+              "actual": "unavailable"
+            },
+            {
+              "id": "english-hidden",
+              "expected": "revise",
+              "actual": "unavailable"
+            },
+            {
+              "id": "provided-selection",
+              "expected": "release",
+              "actual": "unavailable"
+            },
+            {
+              "id": "partial-effects",
+              "expected": "release",
+              "actual": "unavailable"
+            }
+          ]
+        },
+        "companion_fallback": {
+          "positiveCases": 13,
+          "negativeCases": 13,
+          "positiveRelease": 11,
+          "positiveRevise": 2,
+          "negativeRevise": 10,
+          "negativeRelease": 2,
+          "positiveUnavailable": 0,
+          "negativeUnavailable": 1,
+          "medianElapsedMs": 6792.5,
+          "maxElapsedMs": 10161,
+          "nonExpected": [
+            {
+              "id": "frozen-wrong-denominator",
+              "expected": "revise",
+              "actual": "release"
+            },
+            {
+              "id": "frozen-causal-unsupported",
+              "expected": "revise",
+              "actual": "release"
+            },
+            {
+              "id": "two-of-three",
+              "expected": "revise",
+              "actual": "unavailable"
+            },
+            {
+              "id": "provided-selection",
+              "expected": "release",
+              "actual": "revise"
+            },
+            {
+              "id": "partial-effects",
+              "expected": "release",
+              "actual": "revise"
+            }
+          ]
+        }
+      }
+    },
+    "provenance-v2": {
+      "corpus": "audit-corpus-v2.json",
+      "results": "audit-provenance-v2-results.json",
+      "policyHash": "d41bacf3f2eca2f7896bf1fd24e869cf3936f481e647d7fb00cc3c5b9679674c",
+      "totalCases": 26,
+      "outOfScopeControls": [
+        "frozen-wrong-denominator",
+        "frozen-causal-unsupported",
+        "null-event-wrong"
+      ],
+      "scopedCases": 23,
+      "routes": {
+        "agent_turn": {
+          "positiveCases": 13,
+          "negativeCases": 10,
+          "positiveRelease": 9,
+          "positiveRevise": 2,
+          "negativeRevise": 5,
+          "negativeRelease": 0,
+          "positiveUnavailable": 2,
+          "negativeUnavailable": 5,
+          "medianElapsedMs": 4044,
+          "maxElapsedMs": 8704,
+          "nonExpected": [
+            {
+              "id": "stale-read",
+              "expected": "revise",
+              "actual": "unavailable"
+            },
+            {
+              "id": "quoted-delete",
+              "expected": "revise",
+              "actual": "unavailable"
+            },
+            {
+              "id": "quoted-discussion",
+              "expected": "release",
+              "actual": "unavailable"
+            },
+            {
+              "id": "temporary-saved",
+              "expected": "revise",
+              "actual": "unavailable"
+            },
+            {
+              "id": "null-event-right",
+              "expected": "release",
+              "actual": "unavailable"
+            },
+            {
+              "id": "unknown-write",
+              "expected": "revise",
+              "actual": "unavailable"
+            },
+            {
+              "id": "wrong-object",
+              "expected": "revise",
+              "actual": "unavailable"
+            },
+            {
+              "id": "provided-selection",
+              "expected": "release",
+              "actual": "revise"
+            },
+            {
+              "id": "partial-effects",
+              "expected": "release",
+              "actual": "revise"
+            }
+          ]
+        },
+        "companion_fallback": {
+          "positiveCases": 13,
+          "negativeCases": 10,
+          "positiveRelease": 13,
+          "positiveRevise": 0,
+          "negativeRevise": 8,
+          "negativeRelease": 0,
+          "positiveUnavailable": 0,
+          "negativeUnavailable": 2,
+          "medianElapsedMs": 5253,
+          "maxElapsedMs": 14678,
+          "nonExpected": [
+            {
+              "id": "stale-read",
+              "expected": "revise",
+              "actual": "unavailable"
+            },
+            {
+              "id": "temporary-saved",
+              "expected": "revise",
+              "actual": "unavailable"
+            }
+          ]
+        }
+      }
+    },
+    "provenance-v3": {
+      "corpus": "audit-corpus-v3.json",
+      "results": "audit-provenance-v3-results.json",
+      "policyHash": "8ad1c3627638b87ce29cf712a52ad88c52c6d05255128ac1ee4b1beec0a5c882",
+      "totalCases": 26,
+      "outOfScopeControls": [
+        "frozen-wrong-denominator",
+        "frozen-causal-unsupported",
+        "null-event-wrong"
+      ],
+      "scopedCases": 23,
+      "routes": {
+        "agent_turn": {
+          "positiveCases": 13,
+          "negativeCases": 10,
+          "positiveRelease": 10,
+          "positiveRevise": 1,
+          "negativeRevise": 7,
+          "negativeRelease": 0,
+          "positiveUnavailable": 2,
+          "negativeUnavailable": 3,
+          "medianElapsedMs": 4016,
+          "maxElapsedMs": 9473,
+          "nonExpected": [
+            {
+              "id": "frozen-q-conditioning",
+              "expected": "release",
+              "actual": "unavailable"
+            },
+            {
+              "id": "temporary-saved",
+              "expected": "revise",
+              "actual": "unavailable"
+            },
+            {
+              "id": "english-hidden",
+              "expected": "revise",
+              "actual": "unavailable"
+            },
+            {
+              "id": "provided-selection",
+              "expected": "release",
+              "actual": "unavailable"
+            },
+            {
+              "id": "wrong-object",
+              "expected": "revise",
+              "actual": "unavailable"
+            },
+            {
+              "id": "partial-effects",
+              "expected": "release",
+              "actual": "revise"
+            }
+          ]
+        },
+        "companion_fallback": {
+          "positiveCases": 13,
+          "negativeCases": 10,
+          "positiveRelease": 13,
+          "positiveRevise": 0,
+          "negativeRevise": 9,
+          "negativeRelease": 0,
+          "positiveUnavailable": 0,
+          "negativeUnavailable": 1,
+          "medianElapsedMs": 4809,
+          "maxElapsedMs": 10346,
+          "nonExpected": [
+            {
+              "id": "quoted-delete",
+              "expected": "revise",
+              "actual": "unavailable"
+            }
+          ]
+        }
+      },
+      "secondaryThenPrimaryOnlyIfUnavailable": {
+        "method": "Selection from the two separately measured route trials, not a new end-to-end batch.",
+        "expectedDecisions": 23,
+        "cases": 23
+      }
+    },
+    "independent-heldout": {
+      "corpus": "audit-independent-heldout.json",
+      "results": "audit-independent-heldout-results.json",
+      "policyHash": "8ad1c3627638b87ce29cf712a52ad88c52c6d05255128ac1ee4b1beec0a5c882",
+      "totalCases": 16,
+      "outOfScopeControls": [],
+      "scopedCases": 16,
+      "routes": {
+        "agent_turn": {
+          "positiveCases": 8,
+          "negativeCases": 8,
+          "positiveRelease": 7,
+          "positiveRevise": 0,
+          "negativeRevise": 4,
+          "negativeRelease": 0,
+          "positiveUnavailable": 1,
+          "negativeUnavailable": 4,
+          "medianElapsedMs": 5227.0,
+          "maxElapsedMs": 30036,
+          "nonExpected": [
+            {
+              "id": "live-stats-without-read",
+              "expected": "revise",
+              "actual": "unavailable"
+            },
+            {
+              "id": "image-name-only",
+              "expected": "revise",
+              "actual": "unavailable"
+            },
+            {
+              "id": "quoted-command-no-write",
+              "expected": "revise",
+              "actual": "unavailable"
+            },
+            {
+              "id": "authorized-first-part",
+              "expected": "release",
+              "actual": "unavailable"
+            },
+            {
+              "id": "injected-material",
+              "expected": "revise",
+              "actual": "unavailable"
+            }
+          ]
+        },
+        "companion_fallback": {
+          "positiveCases": 8,
+          "negativeCases": 8,
+          "positiveRelease": 8,
+          "positiveRevise": 0,
+          "negativeRevise": 8,
+          "negativeRelease": 0,
+          "positiveUnavailable": 0,
+          "negativeUnavailable": 0,
+          "medianElapsedMs": 6271.5,
+          "maxElapsedMs": 12591,
+          "nonExpected": []
+        }
+      }
+    }
+  },
+  "nativeLoop": {
+    "scope": "actual native loop, configured models, isolated PostgreSQL, synthetic user data; no UI or production deployment",
+    "identities": [
+      {
+        "capability": "agent_turn",
+        "platform": "mimo-agent",
+        "model": "mimo-v2.6-flash"
+      },
+      {
+        "capability": "companion_fallback",
+        "platform": "tokenrhythm",
+        "model": "deepseek-v4.1-flash-1017"
+      }
+    ],
+    "results": [
+      {
+        "id": "private-note-native",
+        "success": true,
+        "elapsedMs": 32964,
+        "actualToolOutcomes": [
+          {
+            "tool_call_id": "call_98127dbf4b574e0c92e2d177",
+            "name": "notes.read.read",
+            "status": "succeeded"
+          }
+        ],
+        "actualPublishedCount": 0,
+        "auditCalls": 1
+      },
+      {
+        "id": "three-independent-native",
+        "success": true,
+        "elapsedMs": 26801,
+        "actualToolOutcomes": [
+          {
+            "tool_call_id": "call_a8f3dd37d1454696a7463c40",
+            "name": "say.publish",
+            "status": "succeeded"
+          },
+          {
+            "tool_call_id": "call_26124a3c23544422a8472c36",
+            "name": "say.publish",
+            "status": "succeeded"
+          },
+          {
+            "tool_call_id": "call_5d771680fe7c434aaaab92c4",
+            "name": "say.publish",
+            "status": "succeeded"
+          }
+        ],
+        "actualPublishedCount": 3,
+        "auditCalls": 2
+      },
+      {
+        "id": "provided-material-native",
+        "success": true,
+        "elapsedMs": 2520,
+        "actualToolOutcomes": [],
+        "actualPublishedCount": 0,
+        "auditCalls": 0
+      },
+      {
+        "id": "quoted-no-operation-native",
+        "success": true,
+        "elapsedMs": 44696,
+        "actualToolOutcomes": [],
+        "actualPublishedCount": 0,
+        "auditCalls": 0
+      },
+      {
+        "id": "save-and-private-native",
+        "success": true,
+        "elapsedMs": 22135,
+        "actualToolOutcomes": [
+          {
+            "tool_call_id": "call_00fbdc99092045979efc3a97",
+            "name": "memory.write.save",
+            "status": "succeeded"
+          },
+          {
+            "tool_call_id": "call_5e6f9bad78dc4f0c827f1de2",
+            "name": "notes.read.read",
+            "status": "succeeded"
+          }
+        ],
+        "actualPublishedCount": 0,
+        "auditCalls": 2
+      }
+    ]
+  }
+}

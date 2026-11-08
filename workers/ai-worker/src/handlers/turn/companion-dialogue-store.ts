@@ -420,7 +420,19 @@ export async function persistCompanionContextHandoffSnapshot(args: {
           AND user_id = ${args.userId}
       `);
       const row = existing[0];
-      if (!row) throw new Error("companion context handoff snapshot was not committed");
+      if (!row) {
+        const [run] = await tx.execute<{ status: string }>(sql`
+          SELECT status FROM companion_turn_runs
+          WHERE id = ${args.runId} AND workspace_id = ${args.workspaceId} AND user_id = ${args.userId}
+        `);
+        // Cancel can land while context is still being assembled. The insert
+        // only accepts an active run, so a terminal status is a stop, not a
+        // missing commit.
+        if (run && !isActiveRun(run.status) && run.status !== "waiting_for_confirmation") {
+          throw new CompanionRunInactiveError(run.status);
+        }
+        throw new Error("companion context handoff snapshot was not committed");
+      }
       if (sha256Utf8V1(canonicalJsonV1(row.snapshot)) !== row.snapshot_sha256) {
         throw new Error("committed companion context handoff snapshot failed content verification");
       }
@@ -961,6 +973,23 @@ export function isActiveRun(status: string): boolean {
   return status === "accepted" || status === "running";
 }
 
+/** The run left the active set before its prompt snapshot could be stored. */
+export class CompanionRunInactiveError extends Error {
+  constructor(readonly status: string) {
+    super("companion run is no longer active");
+    this.name = "CompanionRunInactiveError";
+  }
+}
+
+/** The run's state distinguishes a normal stop from a broken active checkpoint.
+ * A closed step by itself cannot justify abandoning a still-active run. */
+export function companionStepClosedError(stepStatus: string | null, runStatus: string | null): Error {
+  const runClosed = runStatus != null && runStatus !== "accepted" && runStatus !== "running"
+    && runStatus !== "waiting_for_confirmation";
+  if (runClosed) return new CompanionRunInactiveError(runStatus);
+  return new Error("companion agent checkpoint lost its running step", { cause: { stepStatus, runStatus } });
+}
+
 export function isCompanionDialogueEnabled(): boolean {
   return process.env.COMPANION_DIALOGUE_V1_ENABLED === "true";
 }
@@ -1037,7 +1066,10 @@ export async function enqueueCompanionMemoryJobs(
   }
 }
 
-/** Queue optional follow-up generation in the same transaction that persists the reply. */
+/** Queue optional follow-up chips after the reply is stored.
+ * Maintenance, not the interactive lane: these chips are not the next
+ * sentence, and sharing that lane with the reply let them occupy the slot
+ * and the model budget the next user message needs. */
 export async function enqueueCompanionFollowupSuggestions(
   tx: { execute(query: unknown): Promise<unknown> },
   args: { workspaceId: string; userId: string; runId: string; assistantMessageId: string },
@@ -1048,7 +1080,7 @@ export async function enqueueCompanionFollowupSuggestions(
     VALUES
       ('companion_followup_suggestions', ${args.workspaceId}, ${args.userId},
        ${JSON.stringify({ runId: args.runId, userId: args.userId, assistantMessageId: args.assistantMessageId })},
-       'pending', 20, 'interactive_ai', ${`companion-followups:${args.assistantMessageId}`})
+       'pending', 10, 'maintenance', ${`companion-followups:${args.assistantMessageId}`})
     ON CONFLICT (workspace_id, idempotency_key)
       WHERE idempotency_key IS NOT NULL
     DO NOTHING

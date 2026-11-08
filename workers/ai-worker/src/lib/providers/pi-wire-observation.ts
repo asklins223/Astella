@@ -34,11 +34,48 @@ export class PiWireObservation {
 
   constructor(private readonly provider: string, private readonly api: "openai-completions" | "openai-responses",
     private readonly hasTools: boolean, private readonly onDelta?: (text: string) => void,
-    private readonly supportsAssistantPhase?: boolean) {}
+    private readonly supportsAssistantPhase?: boolean,
+    private readonly onOutputActivity?: ChatOptions["onOutputActivity"]) {}
+
+  /** Native output can arrive as a complete item rather than a delta. Empty
+   * start/status events and transport heartbeats cannot prolong a silent call. */
+  private observeOutput(event: Record<string, unknown>): void {
+    const nonempty = (value: unknown): value is string => typeof value === "string" && value.length > 0;
+    if (this.api === "openai-completions") {
+      for (const choice of items(event.choices)) {
+        const delta = record(choice.delta);
+        if (nonempty(delta?.content)) this.onOutputActivity?.("text");
+        if ([delta?.reasoning_content, delta?.reasoning, delta?.reasoning_text].some(nonempty))
+          this.onOutputActivity?.("reasoning");
+        if (items(delta?.tool_calls).some(call => {
+          const fn = record(call.function);
+          return nonempty(fn?.name) || nonempty(fn?.arguments);
+        })) this.onOutputActivity?.("tool");
+      }
+      return;
+    }
+    if (nonempty(event.delta)) {
+      if (event.type === "response.output_text.delta") this.onOutputActivity?.("text");
+      else if (event.type === "response.reasoning_text.delta" || event.type === "response.reasoning_summary_text.delta")
+        this.onOutputActivity?.("reasoning");
+      else if (event.type === "response.function_call_arguments.delta") this.onOutputActivity?.("tool");
+    }
+    const output = event.type === "response.output_item.added" || event.type === "response.output_item.done"
+      ? items([event.item]) : event.type === "response.completed" ? items(record(event.response)?.output) : [];
+    for (const item of output) {
+      if (item.type === "function_call" && (nonempty(item.name) || nonempty(item.arguments))) this.onOutputActivity?.("tool");
+      else if (item.type === "message" && items(item.content).some(part => part.type === "output_text" && nonempty(part.text)))
+        this.onOutputActivity?.("text");
+      else if (item.type === "reasoning" && (nonempty(item.encrypted_content)
+        || [...items(item.content), ...items(item.summary)].some(part => nonempty(part.text))))
+        this.onOutputActivity?.("reasoning");
+    }
+  }
 
   observe(value: unknown): void {
     const event = record(value);
     if (!event) return;
+    this.observeOutput(event);
     if (this.api === "openai-responses") {
       const item = record(event.item);
       if (event.type === "response.refusal.delta" || event.type === "response.refusal.done"

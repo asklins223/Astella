@@ -192,6 +192,92 @@ export function confirmDialog({ title, body, confirmLabel = "确定", tone = "pr
   });
 }
 
+/* ── 详情抽屉 ──────────────────────────────────────────────
+   点一行看细节，不跳页、也不占常驻一列。材质与 .modal 同一套，
+   交互也照抄：scrim / Esc 关闭、焦点陷阱、关闭后焦点回到原按钮。
+   ──────────────────────────────────────────────────────── */
+
+let activeDrawer = null;
+
+export function dismissDrawer() { activeDrawer?.close(); }
+
+/**
+ * @param {{title:string, eyebrow?:string, sub?:string, body?:Node|Node[], foot?:Node[]}} options
+ * @returns {{close:()=>void}}
+ */
+export function openDrawer({ title, eyebrow = "", sub = "", body = [], foot = [] }) {
+  dismissDrawer();
+  const root = document.querySelector("#drawer");
+  const eyebrowNode = document.querySelector("#drawer-eyebrow");
+  const subNode = document.querySelector("#drawer-sub");
+  const bodyNode = document.querySelector("#drawer-body");
+  const footNode = document.querySelector("#drawer-foot");
+  const shell = document.querySelector("#shell");
+  const returnFocus = document.activeElement;
+
+  document.querySelector("#drawer-title").textContent = title;
+  eyebrowNode.textContent = eyebrow;
+  eyebrowNode.hidden = !eyebrow;
+  subNode.textContent = sub;
+  subNode.hidden = !sub;
+  bodyNode.replaceChildren(...[body].flat().filter(Boolean));
+  const footNodes = [foot].flat().filter(Boolean);
+  footNode.replaceChildren(...footNodes);
+  footNode.hidden = footNodes.length === 0;
+
+  const releaseFocus = trapFocus(root);
+  shell.inert = true;
+  root.hidden = false;
+  // 焦点移进面板但不显示聚焦环：这是程序化落焦，不是用户 Tab 过来的，
+  // 一进来就亮一圈蓝环会被误读成"这个按钮被选中了"。
+  // 焦点落在面板本身而不是关闭键：程序化落焦不该先点亮某个按钮的聚焦环。
+  root.querySelector(".drawer__panel").focus({ preventScroll: true });
+
+  let closed = false;
+  function close() {
+    if (closed) return;
+    closed = true;
+    activeDrawer = null;
+    root.hidden = true;
+    shell.inert = shell.hidden;
+    releaseFocus();
+    document.removeEventListener("keydown", onKey, true);
+    if (returnFocus?.isConnected) returnFocus.focus({ preventScroll: true });
+  }
+  function onKey(event) {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    event.stopPropagation();
+    close();
+  }
+  document.addEventListener("keydown", onKey, true);
+  document.querySelector("#drawer-close").onclick = close;
+  root.querySelectorAll("[data-drawer-close]").forEach((node) => { node.onclick = close; });
+
+  activeDrawer = { close };
+  return activeDrawer;
+}
+
+/** 抽屉里的「键 → 值」行；值可以是节点。 */
+export function drawerFacts(rows) {
+  return el("div", { class: "facts" }, ...rows.filter(Boolean).map(([key, value, { mono = false } = {}]) =>
+    el("div", { class: "facts__row" },
+      el("span", { class: "facts__k", text: key }),
+      el("span", { class: `facts__v${mono ? " mono" : ""}` }, value instanceof Node ? value : String(value ?? "—")),
+    )));
+}
+
+/** 抽屉内的分区。 */
+export function drawerSection(title, note, ...children) {
+  return el("section", { class: "drawer__section" },
+    el("header", { class: "drawer__section-head" },
+      el("h3", { class: "drawer__section-title", text: title }),
+      note ? el("span", { class: "drawer__section-note", text: note }) : null,
+    ),
+    ...children.flat().filter(Boolean),
+  );
+}
+
 /* ── 提示条 ────────────────────────────────────────────── */
 
 let toastTimer = null;

@@ -33,6 +33,7 @@ export type HudPageId =
   | "graph"
   | "companion"
   | "settings"
+  | "local-paper"
 ;
 
 export type HudPlate =
@@ -87,6 +88,8 @@ export const HUD_PAGE_DESTINATIONS: Readonly<Record<HudPageId, string | null>> =
   graph: "star_map",
   companion: "conversation",
   settings: "settings",
+  // 本地稿纸是文件关联打开的整页编辑面，没有对应的伴星跳转落点。
+  "local-paper": null,
 };
 
 export type HudPageDefinition = {
@@ -251,6 +254,17 @@ export const HUD_PAGES: Readonly<Record<HudPageId, HudPageDefinition>> = {
     companion: {
       mode: "ambient", seat: "right", framing: "bust", interaction: "on-demand", proactive: "silent", draggable: false,
       starter: "今晚想回看哪段学习经历？记忆写入前会先确认。",
+    },
+  },
+  "local-paper": {
+    id: "local-paper",
+    number: "22",
+    title: "本地稿纸",
+    subtitle: "从 Finder 打开的 Markdown：先读、可改，再决定去处",
+    plate: "writing",
+    wide: true,
+    companion: {
+      mode: "ambient", seat: "right", framing: "bust", interaction: "on-demand", proactive: "silent", draggable: false,
     },
   },
   settings: {

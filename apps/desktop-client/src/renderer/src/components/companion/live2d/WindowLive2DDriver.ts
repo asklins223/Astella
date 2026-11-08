@@ -1,4 +1,5 @@
 import {
+  DEFAULT_WINDOW_LIVE2D_BODY_FORM,
   DEFAULT_WINDOW_LIVE2D_MODEL_ID,
   WINDOW_LIVE2D_ASSETS,
   WINDOW_LIVE2D_BUST_HEIGHT_RATIO,
@@ -12,9 +13,11 @@ import {
   isApprovedWindowLive2DManifest,
   motionForWindowLive2DEmotion,
   motionForWindowLive2D,
+  fatfishIdleHead,
   parameterValuesForWindowLive2D,
   windowLive2DModelDescriptor,
   type WindowLive2DModelDescriptor,
+  type WindowLive2DBodyForm,
   type WindowLive2DModelId,
   type WindowLive2DFraming,
   type WindowLive2DMotionCue,
@@ -63,6 +66,7 @@ interface PixiPoint {
 interface Live2DCoreModel {
   setParameterValueById?: (parameter: string, value: number, weight?: number) => void;
   getDrawableCount?: () => number;
+  getDrawableId?: (index: number) => unknown;
   getDrawableOpacity?: (index: number) => number;
   getDrawableDynamicFlagIsVisible?: (index: number) => boolean;
   getModel?: () => Live2DPartHierarchy;
@@ -73,6 +77,12 @@ interface Live2DCoreModel {
    */
   getParameterIndex?: (parameter: string) => number;
   getParameterDefaultValue?: (index: number) => number;
+  /**
+   * 部件（Part）透明度：`hiddenParts` 用它在逐帧层把资产里本来就画错的部件
+   * 关掉（作者原包的鼻子贴图只在部分体型里是透明的）。
+   */
+  getPartIndex?: (partId: string) => number;
+  setPartOpacityByIndex?: (index: number, opacity: number) => void;
 }
 
 interface Live2DDrawableBounds {
@@ -96,6 +106,8 @@ interface Live2DInternalModel {
    */
   on?: (event: string, listener: () => void) => unknown;
   off?: (event: string, listener: () => void) => unknown;
+  /** Cubism WebGL 渲染器。公皮只在绘制前藏掉一块会涂黑领口的网格。 */
+  renderer?: FatfishDrawRenderer;
   /** 表情管理器（model3.json 声明了 Expressions 时存在）；情绪过期时用它复位。 */
   motionManager?: {
     stopAllMotions?: () => void;
@@ -111,6 +123,12 @@ interface Live2DContentBox {
   readonly bottom: number;
   readonly left: number;
   readonly right: number;
+}
+
+interface FatfishDrawRenderer {
+  fatfishNeckHidden?: boolean;
+  doDrawModel?: () => void;
+  getModel?: () => { _model?: { drawables?: { opacities?: Float32Array } } };
 }
 
 interface Live2DModel {
@@ -316,6 +334,34 @@ export interface WindowLive2DDriverOptions {
  * Live2D runtime scoped to one renderer DOM node. It cannot create or move a
  * native window, and it never talks to Electron main/preload APIs.
  */
+/**
+ * ArtMesh341 是挂在头上的倒过来正片叠底，遮罩只罩住脸。身体前倾时它滑到领口，
+ * 领口在遮罩外面，整块乘成黑。绘制前把这块网格的不透明度清掉。
+ * 遮罩仍走运行时原来的一次打包绘制。逐组重画 1024 缓冲在这台机器上把一帧绘制
+ * 从 2.7 毫秒拉到 8.3 毫秒，而且清掉这块网格之后黑领口已经不在。
+ */
+function hideFatfishNeckMesh(model: Live2DModel): void {
+  const renderer = model.internalModel?.renderer;
+  if (!renderer?.doDrawModel || renderer.fatfishNeckHidden) return;
+  renderer.fatfishNeckHidden = true;
+  const loaded = model.internalModel?.coreModel;
+  const drawableCount = loaded?.getDrawableCount?.() ?? 0;
+  let neck = -1;
+  for (let index = 0; index < drawableCount; index += 1) {
+    if (String(loaded?.getDrawableId?.(index)) === "ArtMesh341") {
+      neck = index;
+      break;
+    }
+  }
+  if (neck < 0) return;
+  const drawModel = renderer.doDrawModel.bind(renderer);
+  renderer.doDrawModel = () => {
+    const opacities = renderer.getModel?.()?._model?.drawables?.opacities;
+    if (opacities) opacities[neck] = 0;
+    drawModel();
+  };
+}
+
 export class WindowLive2DDriver {
   private readonly canvas: HTMLCanvasElement;
   private readonly container: HTMLElement;
@@ -351,7 +397,9 @@ export class WindowLive2DDriver {
   // high-refresh display, competing with every page and HUD animation.
   private readonly advanceModel = (): void => {
     if (this.disposed || this.paused) return;
-    this.model?.update?.(this.app?.ticker?.deltaMS ?? 1000 / 60);
+    const delta = this.app?.ticker?.deltaMS ?? 1000 / 60;
+    // 公皮的手势原片大约 1 秒。整段模型时间放慢，收回段才能接上，而不是抽一下。
+    this.model?.update?.(this.modelId === "fatfish" ? delta * 0.55 : delta);
   };
   private disposed = false;
   private paused = false;
@@ -361,8 +409,19 @@ export class WindowLive2DDriver {
   private lastEmotionMotionAt = 0;
   private lastMotionKey = "";
   private presentation: WindowLive2DPresentation = "idle";
+  /** 页面要的取景。鲸鱼娘上场时仍整身，公皮按这个值：首页全身，其余页半身。 */
+  private requestedFraming: WindowLive2DFraming = "full";
   private framing: WindowLive2DFraming = "full";
+  /**
+   * 当前体型形态（2026-11-05）。`null` = 这个形态没有体型切换（whale）。
+   * 应用时才落到 `Clothes2`，见 `applyBodyForm`。
+   */
+  private bodyForm: WindowLive2DBodyForm | null = null;
+  /** 已解析出的隐藏部件索引；模型换掉就作废。 */
+  private hiddenPartIndices: readonly number[] | null = null;
   private contentBox: Live2DContentBox | null = null;
+  /** 脸的内容盒（归一化，y 向下）。上半身取景用它的水平中心。 */
+  private faceBox: Live2DContentBox | null = null;
   /** Model-local shape from its first real frame; poses and temporary props never move UI. */
   private layoutDrawables: readonly Live2DDrawableBox[] | null = null;
   private layoutHeadDrawables: readonly Live2DDrawableBox[] | null = null;
@@ -419,6 +478,16 @@ export class WindowLive2DDriver {
     for (const { parameter, value } of this.gagParameterResets) {
       core?.setParameterValueById?.(parameter, value);
     }
+    // 物理读的是 AngleX/Y/Z，并且会用它们覆盖 ParamAngle*。写在 motion 之前，
+    // 这一帧的 save 才会把输入交到物理；脸上的 ParamAngle 在物理之后再写。
+    if (this.modelId === "fatfish" && core?.setParameterValueById) {
+      const nowMs = typeof performance === "undefined" ? Date.now() : performance.now();
+      const head = fatfishIdleHead(nowMs);
+      const set = core.setParameterValueById.bind(core);
+      if (!this.playingGagParameters.has("AngleX")) set("AngleX", head.x);
+      if (!this.playingGagParameters.has("AngleY")) set("AngleY", head.y);
+      if (!this.playingGagParameters.has("AngleZ")) set("AngleZ", head.z);
+    }
   };
 
   private readonly handleModelUpdate = (): void => {
@@ -449,10 +518,12 @@ export class WindowLive2DDriver {
         emotion,
         toolAttentionAtMs: this.toolAttentionAtMs ?? undefined,
         lipSyncParameter: this.descriptor.lipSyncParameter,
+        modelId: this.modelId,
         expressionOwnedParameters: this.activeExpressionOwnedParameters(),
         motionOwnedParameters: this.playingGagParameters,
       }));
       write(this.propParameterValues());
+      this.applyBodyForm();
     } catch (error) {
       console.warn("[WindowLive2D] parameter update failed; disabling the companion canvas", error);
       this.onStatus?.("failed");
@@ -578,7 +649,12 @@ export class WindowLive2DDriver {
    */
   async setModel(modelId: WindowLive2DModelId): Promise<void> {
     if (this.disposed || !this.app) return;
-    if (modelId === this.modelId && this.model) return;
+    if (modelId === this.modelId && this.model) {
+      // 切走又切回来的旧实现会在这里直接 return，正在加载的另一个形态
+      // 仍然完成并把它顶掉——用户看到的就是「换角色无效」。让迟到者作废。
+      this.switchToken = {};
+      return;
+    }
 
     const token = this.switchToken = {};
     const descriptor = windowLive2DModelDescriptor(modelId);
@@ -671,7 +747,12 @@ export class WindowLive2DDriver {
   ): void {
     this.model = model;
     this.modelId = modelId;
+    // 取景跟着已经画出来的这只走。半身请求先到时，不能把窗口套到还在淡出的鲸鱼娘上。
+    this.framing = modelId === "whale" ? "full" : this.requestedFraming;
     this.descriptor = descriptor;
+    // 新模型 = 新的部件索引；旧索引在新模型上指向别的部件。
+    this.hiddenPartIndices = null;
+    if (this.bodyForm === null && descriptor.bodyForms) this.bodyForm = DEFAULT_WINDOW_LIVE2D_BODY_FORM;
     this.layoutDrawables = null;
     this.layoutHeadDrawables = null;
     for (const edge of ["left", "right", "top", "bottom"]) this.container.style.removeProperty(`--companion-model-head-${edge}`);
@@ -704,6 +785,7 @@ export class WindowLive2DDriver {
     // 归位先于 motion；自然输入、口型和道具仲裁在 motion 之后落位。
     model.internalModel?.on?.("beforeMotionUpdate", this.handleMotionUpdate);
     model.internalModel?.on?.("beforeModelUpdate", this.handleModelUpdate);
+    if (modelId === "fatfish") hideFatfishNeckMesh(model);
     this.measureContentBox();
     this.fitModel();
     this.renderCurrentFrame();
@@ -751,7 +833,23 @@ export class WindowLive2DDriver {
    * 邀请期间不抢戏。动作放完由 motion manager 自己落回 Idle；表情是粘性的，
    * 到点显式复位（见 performanceExpressionUntilMs）。
    */
+  private pendingRelease: { cue: WindowLive2DMotionCue; atMs: number } | null = null;
+
+  private motionScale(): number {
+    return this.modelId === "fatfish" ? 0.55 : 1;
+  }
+
+  private scaledMotionMs(cue: WindowLive2DMotionCue): number {
+    const spec = this.catalog.motionSpecs[motionSpecKey(cue.group, cue.index)];
+    return (spec?.durationMs ?? 0) / this.motionScale();
+  }
+
   private tickPerformance(nowMs: number, emotion: { emotion: string | null; intensity: number }): void {
+    if (this.pendingRelease && nowMs >= this.pendingRelease.atMs) {
+      const cue = this.pendingRelease.cue;
+      this.pendingRelease = null;
+      void this.startGagMotion(cue, nowMs, this.scaledMotionMs(cue));
+    }
     // 随机动作演完：把姿势交还给呈现状态机（这期间 setPresentation 只记不改）。
     if (this.performanceMotionUntilMs !== null && nowMs >= this.performanceMotionUntilMs) {
       this.performanceMotionUntilMs = null;
@@ -944,10 +1042,14 @@ export class WindowLive2DDriver {
 
   /** 演一条不循环的动作，并按它的真实时长占用姿势。 */
   private playOneShotMotion(cue: WindowLive2DMotionCue, nowMs: number): void {
-    const spec = this.catalog.motionSpecs[motionSpecKey(cue.group, cue.index)];
+    const forward = this.scaledMotionMs(cue);
+    const release = cue.release;
+    const back = release ? this.scaledMotionMs(release) : 0;
+    const hold = release ? 500 : 0;
     this.performanceMotionUntilMs = nowMs
-      + Math.max(WINDOW_LIVE2D_PERFORMANCE_MOTION_HOLD_MS, spec?.durationMs ?? 0);
-    void this.startGagMotion(cue, nowMs).catch((error: unknown) => {
+      + Math.max(WINDOW_LIVE2D_PERFORMANCE_MOTION_HOLD_MS, forward + hold + back);
+    this.pendingRelease = release ? { cue: release, atMs: nowMs + forward + hold } : null;
+    void this.startGagMotion(cue, nowMs, forward + hold + back).catch((error: unknown) => {
       console.warn("[WindowLive2D] performance motion failed", { cue, error });
     });
   }
@@ -960,11 +1062,15 @@ export class WindowLive2DDriver {
    * 起一条 motion，并按资产时长让开它自己的整活参数。
    * 返回模型的 motion promise 只为兼容调用方的收尾，不用于判定"还在演"。
    */
-  private startGagMotion(cue: WindowLive2DMotionCue, nowMs: number): Promise<unknown> {
+  private startGagMotion(cue: WindowLive2DMotionCue, nowMs: number, occupiedMs?: number): Promise<unknown> {
     const spec = this.catalog.motionSpecs[motionSpecKey(cue.group, cue.index)];
-    this.playingGagParameters = new Set(spec?.parameters ?? []);
+    this.playingGagParameters = new Set([
+      ...this.playingGagParameters,
+      ...(spec?.parameters ?? []),
+    ]);
     // 尾巴上多给半秒：淡出期间 motion 还在写值，提前归位会看到她"啪"地收回。
-    this.gagWindowUntilMs = nowMs + (spec?.durationMs ?? 0) + 500;
+    const until = nowMs + (occupiedMs ?? (spec?.durationMs ?? 0) / this.motionScale()) + 500;
+    this.gagWindowUntilMs = Math.max(this.gagWindowUntilMs ?? 0, until);
     return Promise.resolve(this.model?.motion?.(cue.group, cue.index, 2));
   }
 
@@ -1008,12 +1114,78 @@ export class WindowLive2DDriver {
   }
 
   setFraming(framing: WindowLive2DFraming): void {
-    if (this.framing === framing) return;
-    this.framing = framing;
+    // 请求可以先于模型到达。鲸鱼娘不被提前改成半身；公皮用页面给出的取景。
+    this.requestedFraming = framing;
+    const committed: WindowLive2DFraming = this.modelId === "whale" ? "full" : framing;
+    if (this.framing === committed) return;
+    this.framing = committed;
     if (!this.disposed && this.model) {
       if (!this.contentBox) this.measureContentBox();
       this.fitModel();
       this.renderCurrentFrame();
+    }
+  }
+
+  /**
+   * 切换体型形态（2026-11-05）。不支持体型的形态静默忽略，而不是把参数写坏。
+   *
+   * 写入落在 `applyBodyForm`（每帧、在 motion/物理之后），所以动作里带的
+   * `Clothes2` 曲线不会把体型抢回去。
+   */
+  setBodyForm(bodyForm: WindowLive2DBodyForm): void {
+    if (this.bodyForm === bodyForm) return;
+    this.bodyForm = bodyForm;
+    if (this.disposed) return;
+    this.applyBodyForm();
+    // 体型直接改变角色可见高度，取景必须跟着重算，否则小形态会缩在角落里。
+    if (this.model) {
+      this.layoutDrawables = null;
+      this.layoutHeadDrawables = null;
+      this.measureContentBox();
+      this.fitModel();
+      this.renderCurrentFrame();
+    }
+  }
+
+  /**
+   * 体型与「永不显示」部件的实际写入点（每帧）。
+   *
+   * `Part46「鼻子」` 这类部件在部分体型取值下画的是纯黑贴图，登记在
+   * `descriptor.hiddenParts` 里，这里每帧置 0——不依赖资产本身是否干净。
+   */
+  private applyBodyForm(): void {
+    const core = this.model?.internalModel?.coreModel;
+    if (!core?.setParameterValueById) return;
+    const value = this.bodyForm === null ? undefined : this.descriptor.bodyForms?.[this.bodyForm];
+    if (typeof value === "number" && Number.isFinite(value)) {
+      core.setParameterValueById("Clothes2", value);
+      // Param34 是两套五官的透明度开关。中间值会把脸插在半道上；物理又把任意
+      // 非零 Clothes2 收到 1，大号和中号就会叠上小号五官，皮肤颜色和眨眼都不对。
+      // 小号用 1，中号和大号用 0。鲸鱼娘没有这条参数，写失败就跳过。
+      try {
+        core.setParameterValueById("Param34", value >= 0.7 ? 1 : 0);
+      } catch {
+        // 这个模型没有 Param34。
+      }
+    }
+    const setPartOpacity = core.setPartOpacityByIndex;
+    if (!setPartOpacity) return;
+    if (this.hiddenPartIndices === null) {
+      const resolvePart = core.getPartIndex;
+      this.hiddenPartIndices = resolvePart
+        ? (this.descriptor.hiddenParts ?? [])
+          .map((id) => {
+            try {
+              return resolvePart.call(core, id);
+            } catch {
+              return -1;
+            }
+          })
+          .filter((index): index is number => typeof index === "number" && index >= 0)
+        : [];
+    }
+    for (const index of this.hiddenPartIndices) {
+      setPartOpacity.call(core, index, 0);
     }
   }
 
@@ -1048,6 +1220,7 @@ export class WindowLive2DDriver {
       const nowMs = typeof performance === "undefined" ? Date.now() : performance.now();
       const hadPerformanceExpression = this.performanceExpressionName !== null;
       this.model.internalModel?.motionManager?.stopAllMotions?.();
+      this.pendingRelease = null;
       this.performanceMotionUntilMs = null;
       this.playingGagParameters = new Set();
       this.gagWindowUntilMs = null;
@@ -1189,7 +1362,28 @@ export class WindowLive2DDriver {
     const box = this.contentBox ?? { top: 0, bottom: 1, left: 0, right: 1 };
     const boxWidth = Math.max(0.05, box.right - box.left) * modelWidth;
     const boxHeight = Math.max(0.05, box.bottom - box.top) * modelHeight;
-    const boxCenterX = ((box.left + box.right) / 2) * modelWidth;
+    const face = this.faceBox;
+    const boxCenterX = ((face ? (face.left + face.right) / 2 : (box.left + box.right) / 2)) * modelWidth;
+
+    const formWindow = this.modelId === "fatfish" && this.bodyForm
+      ? (this.framing === "bust" ? this.descriptor.bustWindows : this.descriptor.fullWindows)?.[this.bodyForm]
+      : undefined;
+    if (formWindow) {
+      // 画布原点在中心，1 个模型单位等于画布宽度。窗口顶边贴容器顶边。
+      const aspect = modelWidth / modelHeight;
+      const top = 0.5 - formWindow.top * aspect;
+      const bottom = 0.5 - formWindow.bottom * aspect;
+      const visible = Math.max(0.02, bottom - top);
+      const scale = (height * 0.98) / (visible * modelHeight);
+      const center = modelWidth / 2 + formWindow.centerX * modelWidth;
+      this.model.scale.set(scale);
+      this.model.position.set(
+        width / 2 + (modelWidth * scale) / 2 - center * scale,
+        height * 0.02 - top * modelHeight * scale + (modelHeight * scale) / 2,
+      );
+      this.publishInkTop(0.02);
+      return;
+    }
 
     if (this.framing === "bust") {
       // Half-body framing: the top `bustHeightRatio` of the character
@@ -1301,16 +1495,25 @@ export class WindowLive2DDriver {
    */
   private measureContentBox(): void {
     this.contentBox = null;
+    this.faceBox = null;
     const internal = this.model?.internalModel;
     const count = internal?.coreModel?.getDrawableCount?.();
     if (!internal?.getDrawableBounds || typeof count !== "number" || count <= 0) return;
 
     const out: Live2DDrawableBounds = { x: 0, y: 0, width: 0, height: 0 };
+    const core = internal.coreModel;
+    const faceIndices = live2DHeadDrawableIndices(core?.getModel?.(), this.descriptor.layoutFaceParts ?? []);
     let minX = Number.POSITIVE_INFINITY;
     let minY = Number.POSITIVE_INFINITY;
     let maxX = Number.NEGATIVE_INFINITY;
     let maxY = Number.NEGATIVE_INFINITY;
+    let faceMinX = Number.POSITIVE_INFINITY;
+    let faceMinY = Number.POSITIVE_INFINITY;
+    let faceMaxX = Number.NEGATIVE_INFINITY;
+    let faceMaxY = Number.NEGATIVE_INFINITY;
     for (let index = 0; index < count; index += 1) {
+      if ((core?.getDrawableOpacity?.(index) ?? 1) < 0.02) continue;
+      if (core?.getDrawableDynamicFlagIsVisible?.(index) === false) continue;
       let bounds: Live2DDrawableBounds | undefined;
       try {
         bounds = internal.getDrawableBounds(index, out);
@@ -1326,6 +1529,12 @@ export class WindowLive2DDriver {
       minY = Math.min(minY, bounds.y);
       maxX = Math.max(maxX, bounds.x + bounds.width);
       maxY = Math.max(maxY, bounds.y + bounds.height);
+      if (faceIndices.has(index)) {
+        faceMinX = Math.min(faceMinX, bounds.x);
+        faceMinY = Math.min(faceMinY, bounds.y);
+        faceMaxX = Math.max(faceMaxX, bounds.x + bounds.width);
+        faceMaxY = Math.max(faceMaxY, bounds.y + bounds.height);
+      }
     }
 
     const modelWidth = internal.originalWidth ?? 0;
@@ -1340,6 +1549,14 @@ export class WindowLive2DDriver {
       top: clamp01(1 - maxY / modelHeight),
       bottom: clamp01(1 - minY / modelHeight),
     };
+    if (faceMinX < faceMaxX && faceMinY < faceMaxY) {
+      this.faceBox = {
+        left: clamp01(faceMinX / modelWidth),
+        right: clamp01(faceMaxX / modelWidth),
+        top: clamp01(1 - faceMaxY / modelHeight),
+        bottom: clamp01(1 - faceMinY / modelHeight),
+      };
+    }
   }
 
   private renderCurrentFrame(): void {

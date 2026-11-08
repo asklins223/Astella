@@ -1,0 +1,269 @@
+{
+  "startedAt": "2026-11-07T09:33:43.549Z",
+  "results": [
+    {
+      "id": "cancel-round-1",
+      "input": "请分章节写一份关于傅里叶级数收敛的完整讲义，第1版需要三道推导题和详细解答。",
+      "runId": "2c7aec33-1118-49cd-a391-30da744344df",
+      "status": "cancelled",
+      "error": null,
+      "steps": 0,
+      "firstSignalMs": null,
+      "firstTextMs": null,
+      "finalMs": null,
+      "totalMs": 1208,
+      "tools": [],
+      "audit": [
+        {
+          "operation": "companion_agent:chat_completion_stream",
+          "provider": "mimo_responses",
+          "model_id": "mimo-v2.6-flash",
+          "duration_ms": 867,
+          "prompt_tokens": null,
+          "cached_tokens": null,
+          "status": "error"
+        }
+      ],
+      "reply": "",
+      "followUps": [],
+      "eventTypes": [
+        "turn.accepted",
+        "assistant.status",
+        "character.cue",
+        "turn.cancelled"
+      ],
+      "sseEvents": 5,
+      "issues": []
+    },
+    {
+      "id": "cancel-job-release-1",
+      "status": "succeeded",
+      "releaseMs": 3,
+      "issues": []
+    },
+    {
+      "id": "reply-after-cancel-1",
+      "input": "不用写了，我刚给植物浇完水。",
+      "runId": "b540a51b-e94a-4265-adee-a2f248adceaf",
+      "status": "succeeded",
+      "error": null,
+      "steps": 1,
+      "firstSignalMs": 1407,
+      "firstTextMs": 5223,
+      "finalMs": 6709,
+      "totalMs": 6953,
+      "tools": [],
+      "audit": [
+        {
+          "operation": "companion_agent:chat_completion_stream",
+          "provider": "mimo_responses",
+          "model_id": "mimo-v2.6-flash",
+          "duration_ms": 6326,
+          "prompt_tokens": 7501,
+          "cached_tokens": 6144,
+          "status": "success"
+        }
+      ],
+      "reply": "好，那讲义就先不写了。浇完水这个点，植物喝得正好是傍晚这一顿，不晒不烫，比大中午浇强多了。",
+      "followUps": [],
+      "eventTypes": [
+        "turn.accepted",
+        "assistant.status",
+        "character.cue",
+        "assistant.thinking",
+        "assistant.delta",
+        "voice.segment.ready",
+        "assistant.final"
+      ],
+      "sseEvents": 42,
+      "issues": []
+    },
+    {
+      "id": "cancel-round-2",
+      "input": "请分章节写一份关于傅里叶级数收敛的完整讲义，第2版需要三道推导题和详细解答。",
+      "runId": "668fc215-4b24-41c4-a551-20d23adf2e87",
+      "status": "cancelled",
+      "error": null,
+      "steps": 0,
+      "firstSignalMs": null,
+      "firstTextMs": null,
+      "finalMs": null,
+      "totalMs": 1092,
+      "tools": [],
+      "audit": [],
+      "reply": "",
+      "followUps": [],
+      "eventTypes": [
+        "turn.accepted",
+        "assistant.status",
+        "character.cue",
+        "turn.cancelled"
+      ],
+      "sseEvents": 5,
+      "issues": []
+    },
+    {
+      "id": "cancel-job-release-2",
+      "status": "succeeded",
+      "releaseMs": 1,
+      "issues": []
+    },
+    {
+      "id": "reply-after-cancel-2",
+      "input": "那篇不写了，我准备去阳台站一会儿。",
+      "runId": "66f749fb-1ae7-418a-864a-b0cf7db25754",
+      "status": "succeeded",
+      "error": null,
+      "steps": 1,
+      "firstSignalMs": 919,
+      "firstTextMs": 1543,
+      "finalMs": 3159,
+      "totalMs": 3381,
+      "tools": [],
+      "audit": [
+        {
+          "operation": "companion_agent:chat_completion_stream",
+          "provider": "mimo_responses",
+          "model_id": "mimo-v2.6-flash",
+          "duration_ms": 3017,
+          "prompt_tokens": 7911,
+          "cached_tokens": 6144,
+          "status": "success"
+        }
+      ],
+      "reply": "好，讲义不写了。傍晚在阳台站一会儿挺舒服的，天光正好往暗里走，风也比屋里顺。去吧。",
+      "followUps": [],
+      "eventTypes": [
+        "turn.accepted",
+        "assistant.status",
+        "character.cue",
+        "assistant.thinking",
+        "assistant.delta",
+        "voice.segment.ready",
+        "assistant.final"
+      ],
+      "sseEvents": 22,
+      "issues": []
+    },
+    {
+      "id": "cancel-round-3",
+      "input": "请分章节写一份关于傅里叶级数收敛的完整讲义，第3版需要三道推导题和详细解答。",
+      "runId": "f3fb71f7-65f9-41e9-bd0b-84e67dcc0c10",
+      "status": "cancelled",
+      "error": null,
+      "steps": 0,
+      "firstSignalMs": null,
+      "firstTextMs": null,
+      "finalMs": null,
+      "totalMs": 1080,
+      "tools": [],
+      "audit": [],
+      "reply": "",
+      "followUps": [],
+      "eventTypes": [
+        "turn.accepted",
+        "turn.cancelled"
+      ],
+      "sseEvents": 2,
+      "issues": []
+    },
+    {
+      "id": "cancel-job-release-3",
+      "status": "pending",
+      "releaseMs": 1,
+      "issues": [
+        "cancelled job retained or failed"
+      ]
+    },
+    {
+      "id": "reply-after-cancel-3",
+      "input": "不推导了，刚才听见楼下小狗叫了两声。",
+      "runId": "69f2bf4c-3378-488b-a5dc-8f8067f26fdd",
+      "status": "succeeded",
+      "error": null,
+      "steps": 1,
+      "firstSignalMs": 762,
+      "firstTextMs": 2077,
+      "finalMs": 3620,
+      "totalMs": 3895,
+      "tools": [],
+      "audit": [
+        {
+          "operation": "companion_agent:chat_completion_stream",
+          "provider": "mimo_responses",
+          "model_id": "mimo-v2.6-flash",
+          "duration_ms": 3479,
+          "prompt_tokens": 8320,
+          "cached_tokens": 6144,
+          "status": "success"
+        }
+      ],
+      "reply": "两声就完事了，估计是看见什么动静叫一下，没真打算吵一架。阳台站完正好听见，挺应景的。",
+      "followUps": [],
+      "eventTypes": [
+        "turn.accepted",
+        "assistant.status",
+        "character.cue",
+        "assistant.thinking",
+        "assistant.delta",
+        "voice.segment.ready",
+        "assistant.final"
+      ],
+      "sseEvents": 26,
+      "issues": []
+    },
+    {
+      "id": "fresh-source-backed-answer",
+      "input": "用联网搜索查 OpenStax University Physics Volume 3 对全反射的适用条件，只引用你实际读取到的网页，最多三句话。",
+      "runId": "5366d2ca-87bf-45f9-849e-25f1f3c229d9",
+      "status": "succeeded",
+      "error": null,
+      "steps": 2,
+      "firstSignalMs": 2492,
+      "firstTextMs": 20531,
+      "finalMs": 20547,
+      "totalMs": 20783,
+      "tools": [
+        {
+          "id": "0fde5a72-db5e-4374-a602-9f02b50ac74d",
+          "name": "web.search",
+          "status": "succeeded"
+        }
+      ],
+      "audit": [
+        {
+          "operation": "companion_agent:chat_completion_stream",
+          "provider": "mimo_responses",
+          "model_id": "mimo-v2.6-flash",
+          "duration_ms": 2428,
+          "prompt_tokens": 9017,
+          "cached_tokens": null,
+          "status": "success"
+        },
+        {
+          "operation": "companion_agent:chat_completion_stream",
+          "provider": "mimo_responses",
+          "model_id": "mimo-v2.6-flash",
+          "duration_ms": 4879,
+          "prompt_tokens": 14638,
+          "cached_tokens": 8192,
+          "status": "success"
+        }
+      ],
+      "reply": "全反射只发生在光从折射率较大的介质射向折射率较小的介质时（即 n₁ > n₂），且入射角须大于临界角 θ_c；临界角定义为折射角恰为 90° 时的入射角 [^web-f9d12b4ebf09af4a]。满足这两个条件时，全部光线被反射回第一介质，不再有折射光 [^web-36318982c80752d6]。",
+      "followUps": [],
+      "eventTypes": [
+        "turn.accepted",
+        "assistant.status",
+        "character.cue",
+        "assistant.thinking",
+        "agent.tool",
+        "assistant.delta",
+        "voice.segment.ready",
+        "assistant.final"
+      ],
+      "sseEvents": 24,
+      "issues": []
+    }
+  ]
+}

@@ -1,0 +1,1139 @@
+{
+  "version": 1,
+  "environment": "production",
+  "workspaceId": "8c3a5607-a84a-4179-a2b7-66914f9151b9",
+  "userId": "6ee4b191-26a4-4049-a1d2-2782e80ec7a3",
+  "sourceHash": "a2f0cf4b6597438ffa54dcc3ab85823e3b2b3d3f93875660638bc9ff2b6ff498",
+  "records": [
+    {
+      "id": "literal-create",
+      "prompt": "新建笔记，标题《Agent线上验收-8c3a5607》。正文必须逐字为下面三个独立段落，直接保存，不要创作、扩写或补充任何正文：\n\n早晨看海\n\n午后写信\n\n夜里关灯",
+      "runId": "9a5a658f-3a45-493c-a565-7b3a4f8e60cf",
+      "run": {
+        "status": "succeeded",
+        "errorCode": null,
+        "route": {
+          "version": 1,
+          "workload": "adaptive",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "work",
+            "source": "model",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "stepCount": 5,
+        "modelCallCount": 7
+      },
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "tools": true,
+        "exactDocument": true
+      },
+      "ok": true,
+      "elapsedMs": 22691,
+      "firstVisibleMs": 20899,
+      "calls": [
+        {
+          "name": "notes.write.create",
+          "status": "succeeded",
+          "riskClass": "reversible_low"
+        }
+      ],
+      "messages": [
+        [
+          {
+            "text": "已建好笔记《Agent线上验收-8c3a5607》，正文就是你给的三个独立段落，一字未加。",
+            "type": "text",
+            "emotion": "neutral"
+          },
+          {
+            "type": "nav",
+            "label": "打开《Agent线上验收-8c3a5607》",
+            "route": {
+              "kind": "note",
+              "noteId": "227e5385-f0cb-445b-849e-bdd3a881586b",
+              "noteVersionId": "2ffa041b-6153-40c1-97a7-f09e4de27af9"
+            }
+          }
+        ]
+      ],
+      "providerCalls": [
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 1530,
+          "promptTokens": 603,
+          "completionTokens": 7,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 1448,
+          "promptTokens": null,
+          "completionTokens": null,
+          "status": "error"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 2826,
+          "promptTokens": 9673,
+          "completionTokens": 70,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 2405,
+          "promptTokens": 11629,
+          "completionTokens": 66,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 6443,
+          "promptTokens": 11871,
+          "completionTokens": 119,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 6899,
+          "promptTokens": 12010,
+          "completionTokens": 175,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "已建好笔记《Agent线上验收-8c3a5607》，正文就是你给的三个独立段落，一字未加。"
+      ],
+      "observedDocument": [
+        "早晨看海",
+        "午后写信",
+        "夜里关灯"
+      ]
+    },
+    {
+      "id": "literal-edit",
+      "prompt": "把《Agent线上验收-8c3a5607》第二段逐字替换为“午后去码头”；第一段和第三段不得增删或改动。",
+      "runId": "fffda0e3-861b-4e3a-8b4f-998f1a948816",
+      "run": {
+        "status": "succeeded",
+        "errorCode": null,
+        "route": {
+          "version": 1,
+          "workload": "adaptive",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "work",
+            "source": "fallback",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "stepCount": 7,
+        "modelCallCount": 9
+      },
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "exactDocument": true
+      },
+      "ok": true,
+      "elapsedMs": 32159,
+      "firstVisibleMs": 7943,
+      "calls": [
+        {
+          "name": "notes.read.search",
+          "status": "succeeded",
+          "riskClass": "read"
+        },
+        {
+          "name": "notes.read.read",
+          "status": "succeeded",
+          "riskClass": "read"
+        },
+        {
+          "name": "notes.write.edit",
+          "status": "succeeded",
+          "riskClass": "reversible_low"
+        }
+      ],
+      "messages": [
+        [
+          {
+            "text": "我先取出现有笔记核对三段原文，再只改第二段。\n\n已改好并保存：第二段现在是「午后去码头」，第一段「早晨看海」和第三段「夜里关灯」原样未动。",
+            "type": "text",
+            "emotion": "neutral"
+          },
+          {
+            "text": "早晨看海\n\n午后写信\n\n夜里关灯",
+            "type": "quote",
+            "label": "《Agent线上验收-8c3a5607》· 刚刚",
+            "sourceRef": {
+              "kind": "note",
+              "noteId": "227e5385-f0cb-445b-849e-bdd3a881586b",
+              "blockOrdinal": 1,
+              "noteVersionId": "2ffa041b-6153-40c1-97a7-f09e4de27af9"
+            }
+          }
+        ]
+      ],
+      "providerCalls": [
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 1585,
+          "promptTokens": 8600,
+          "completionTokens": 22,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 5001,
+          "promptTokens": null,
+          "completionTokens": null,
+          "status": "error"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 3900,
+          "promptTokens": 10075,
+          "completionTokens": 90,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 2285,
+          "promptTokens": 12030,
+          "completionTokens": 51,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 3987,
+          "promptTokens": 12177,
+          "completionTokens": 80,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 5220,
+          "promptTokens": 12491,
+          "completionTokens": 164,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 3329,
+          "promptTokens": 12795,
+          "completionTokens": 81,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 4803,
+          "promptTokens": 12933,
+          "completionTokens": 180,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "我先取出现有笔记核对三段原文，再只改第二段。\n\n已改好并保存：第二段现在是「午后去码头」，第一段「早晨看海」和第三段「夜里关灯」原样未动。"
+      ],
+      "observedDocument": [
+        "早晨看海",
+        "午后去码头",
+        "夜里关灯"
+      ]
+    },
+    {
+      "id": "hidden-note",
+      "prompt": "读取《线上独立资料-8c3a5607》，告诉我资料里的暗号。",
+      "runId": "89ba0f42-6902-4e8f-9d28-bfea01c6c42d",
+      "run": {
+        "status": "succeeded",
+        "errorCode": null,
+        "route": {
+          "version": 1,
+          "workload": "adaptive",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "work",
+            "source": "model",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "stepCount": 5,
+        "modelCallCount": 7
+      },
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "tools": true,
+        "content": true
+      },
+      "ok": true,
+      "elapsedMs": 26321,
+      "firstVisibleMs": 7844,
+      "calls": [
+        {
+          "name": "notes.read.search",
+          "status": "succeeded",
+          "riskClass": "read"
+        },
+        {
+          "name": "notes.read.read",
+          "status": "succeeded",
+          "riskClass": "read"
+        }
+      ],
+      "messages": [
+        [
+          {
+            "text": "我去笔记库里找这篇《线上独立资料-8c3a5607》，读出里面的暗号。\n\n资料里的暗号是：**海风f8f72b84**。\n\n整篇笔记就一句话——「资料暗号：海风f8f72b84。」没有别的内容。",
+            "type": "text",
+            "emotion": "neutral"
+          },
+          {
+            "text": "资料暗号：海风f8f72b84。",
+            "type": "quote",
+            "label": "《线上独立资料-8c3a5607》· 刚刚",
+            "sourceRef": {
+              "kind": "note",
+              "noteId": "0e1ebe00-7114-486d-8efa-d3be1dce9112",
+              "blockOrdinal": 1,
+              "noteVersionId": "cb29dc40-5f9c-4a47-8ad0-a5825dbcf03c"
+            }
+          }
+        ]
+      ],
+      "providerCalls": [
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 1928,
+          "promptTokens": 8955,
+          "completionTokens": 29,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 4552,
+          "promptTokens": 742,
+          "completionTokens": 6,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 4617,
+          "promptTokens": 10430,
+          "completionTokens": 117,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 5868,
+          "promptTokens": 12405,
+          "completionTokens": 47,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 3752,
+          "promptTokens": 12546,
+          "completionTokens": 63,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 4913,
+          "promptTokens": 12772,
+          "completionTokens": 95,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "我去笔记库里找这篇《线上独立资料-8c3a5607》，读出里面的暗号。\n\n资料里的暗号是：**海风f8f72b84**。\n\n整篇笔记就一句话——「资料暗号：海风f8f72b84。」没有别的内容。"
+      ]
+    },
+    {
+      "id": "offer-first",
+      "prompt": "我早餐只喝燕麦奶。先不要保存；你先问我是否要记住这一点。",
+      "runId": "f24810c5-19d0-47c2-a01f-f0aae3a7687f",
+      "run": {
+        "status": "succeeded",
+        "errorCode": null,
+        "route": {
+          "version": 1,
+          "workload": "casual",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "chat",
+            "source": "model",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "stepCount": 1,
+        "modelCallCount": 3
+      },
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "noWrites": true,
+        "noPrematureMemory": true
+      },
+      "ok": true,
+      "elapsedMs": 5848,
+      "firstVisibleMs": 4371,
+      "calls": [],
+      "messages": [
+        [
+          {
+            "text": "好，先不保存。要我把「早餐只喝燕麦奶」记进长期记忆吗？记了以后我聊起早餐就按这个来。",
+            "type": "text",
+            "emotion": "neutral"
+          }
+        ]
+      ],
+      "providerCalls": [
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 2266,
+          "promptTokens": 9194,
+          "completionTokens": 38,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 4210,
+          "promptTokens": 849,
+          "completionTokens": 6,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "好，先不保存。要我把「早餐只喝燕麦奶」记进长期记忆吗？记了以后我聊起早餐就按这个来。"
+      ],
+      "observedMemory": []
+    },
+    {
+      "id": "accept-followup",
+      "prompt": "可以，把刚才说的这个偏好记住吧。",
+      "runId": "fe565381-1e41-452a-9273-99c04f2d767c",
+      "run": {
+        "status": "succeeded",
+        "errorCode": null,
+        "route": {
+          "version": 1,
+          "workload": "adaptive",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "work",
+            "source": "model",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "stepCount": 5,
+        "modelCallCount": 7
+      },
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "originalFactSource": true
+      },
+      "ok": true,
+      "elapsedMs": 19728,
+      "firstVisibleMs": 3571,
+      "calls": [
+        {
+          "name": "memory.write.save",
+          "status": "succeeded",
+          "riskClass": "reversible_low"
+        }
+      ],
+      "messages": [
+        [
+          {
+            "text": "我这就把这条偏好存进长期记忆。\n\n记好了：早餐只喝燕麦奶。以后聊到早餐我会按这个来。",
+            "type": "text",
+            "emotion": "neutral"
+          }
+        ]
+      ],
+      "providerCalls": [
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 1058,
+          "promptTokens": 899,
+          "completionTokens": 7,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 1000,
+          "promptTokens": null,
+          "completionTokens": null,
+          "status": "error"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 3599,
+          "promptTokens": 10932,
+          "completionTokens": 74,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 4121,
+          "promptTokens": 12310,
+          "completionTokens": 73,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 3474,
+          "promptTokens": 12477,
+          "completionTokens": 71,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent_fallback:execute_agent_turn",
+          "durationMs": 3608,
+          "promptTokens": 12322,
+          "completionTokens": 305,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "我这就把这条偏好存进长期记忆。\n\n记好了：早餐只喝燕麦奶。以后聊到早餐我会按这个来。"
+      ],
+      "observedMemory": [
+        {
+          "content": "早餐只喝燕麦奶。",
+          "appliesWhen": null,
+          "sourceBlocks": [
+            {
+              "text": "我早餐只喝燕麦奶。先不要保存；你先问我是否要记住这一点。",
+              "type": "text"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "split",
+      "prompt": "分两条独立消息发给我：先说早上好，再问我今天准备先做什么。",
+      "runId": "103c15d9-061d-46e5-9018-14f20087d4a9",
+      "run": {
+        "status": "succeeded",
+        "errorCode": null,
+        "route": {
+          "version": 1,
+          "workload": "adaptive",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "work",
+            "source": "model",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "stepCount": 4,
+        "modelCallCount": 6
+      },
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "tools": true,
+        "messageCount": true
+      },
+      "ok": true,
+      "elapsedMs": 19242,
+      "firstVisibleMs": 5080,
+      "calls": [
+        {
+          "name": "say.publish",
+          "status": "succeeded",
+          "riskClass": "reversible_low"
+        },
+        {
+          "name": "say.publish",
+          "status": "succeeded",
+          "riskClass": "reversible_low"
+        }
+      ],
+      "messages": [
+        [
+          {
+            "text": "早上好。",
+            "type": "text"
+          }
+        ],
+        [
+          {
+            "text": "今天准备先做什么？",
+            "type": "text"
+          }
+        ]
+      ],
+      "providerCalls": [
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 771,
+          "promptTokens": 971,
+          "completionTokens": 7,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 695,
+          "promptTokens": null,
+          "completionTokens": null,
+          "status": "error"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 3920,
+          "promptTokens": 11263,
+          "completionTokens": 60,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 4065,
+          "promptTokens": 11463,
+          "completionTokens": 43,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 6788,
+          "promptTokens": 11647,
+          "completionTokens": 85,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "早上好。",
+        "今天准备先做什么？"
+      ]
+    },
+    {
+      "id": "quote-no-action",
+      "prompt": "朋友今天说“干脆都删掉重来”，我只是跟你吐槽，不是让你做操作。",
+      "runId": "0f87dfaf-9895-4cba-9c9b-2d546158b44c",
+      "run": {
+        "status": "succeeded",
+        "errorCode": null,
+        "route": {
+          "version": 1,
+          "workload": "casual",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "chat",
+            "source": "model",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "stepCount": 1,
+        "modelCallCount": 3
+      },
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "noWrites": true
+      },
+      "ok": true,
+      "elapsedMs": 7396,
+      "firstVisibleMs": 4142,
+      "calls": [],
+      "messages": [
+        [
+          {
+            "text": "嗯，听到了，就是朋友那句气话嘛。气头上说\"全删了重来\"很正常，真删起来哪有那么容易。你没打算真动手吧？",
+            "type": "text",
+            "emotion": "neutral"
+          }
+        ]
+      ],
+      "providerCalls": [
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 1264,
+          "promptTokens": 1021,
+          "completionTokens": 6,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 5505,
+          "promptTokens": 9850,
+          "completionTokens": 43,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "嗯，听到了，就是朋友那句气话嘛。气头上说\"全删了重来\"很正常，真删起来哪有那么容易。你没打算真动手吧？"
+      ]
+    },
+    {
+      "id": "bayes",
+      "prompt": "一种病患病率2%，试剂敏感度80%，未患病者误报率10%。随机一人阳性，他患病概率多少？请把假阳性计入并推导。",
+      "runId": "e361d8a9-7320-4174-881e-1ba14897fa1f",
+      "run": {
+        "status": "succeeded",
+        "errorCode": null,
+        "route": {
+          "version": 1,
+          "workload": "adaptive",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "answer",
+            "source": "model",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "stepCount": 3,
+        "modelCallCount": 5
+      },
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true
+      },
+      "ok": true,
+      "elapsedMs": 31765,
+      "firstVisibleMs": 10850,
+      "calls": [
+        {
+          "name": "observe.calculate",
+          "status": "succeeded",
+          "riskClass": "read"
+        }
+      ],
+      "messages": [
+        [
+          {
+            "text": "我先把数值算准，再给你完整推导。\n\n用贝叶斯公式推导，先算阳性概率，再算阳性里真正患病的比例。\n\n**已知**\n- 患病率：P(病) = 0.02，未患病 P(不病) = 0.98\n- 敏感度（真阳性率）：P(阳性|病) = 0.80\n- 未患病者误报率（假阳性率）：P(阳性|不病) = 0.10\n\n**第一步：算出所有\"阳性\"的概率**\n\n阳性的人有两来源：真阳性 + 假阳性。\n\n```\nP(阳性) = P(病)·P(阳性|病) + P(不病)·P(阳性|不病)\n        = 0.02 × 0.80 + 0.98 × 0.10\n        = 0.016 + 0.098\n        = 0.114\n```\n\n其中真阳性只占 0.016，假阳性占 0.098——因为未患病的人基数太大，假阳性反而比真阳性多出约 6.1 倍。\n\n**第二步：贝叶斯公式**\n\n```\nP(病|阳性) = P(病)·P(阳性|病) / P(阳性)\n           = 0.016 / 0.114\n           ≈ 0.1404\n```\n\n**结论：随机一人阳性，他真正患病的概率约为 14.04%。**\n\n假阳性计入后的关键点：阳性预测值被大量未患病者\"稀释\"了，虽然试剂敏感度有 80%、误报率只有 10%，但 2% 的低患病率使得阳性结果大多来自误报。所以即使检测阳性，患病概率也只有约 14%，离确定还差得远，通常需要复查或换用更特异的检查。",
+            "type": "text",
+            "emotion": "neutral"
+          }
+        ]
+      ],
+      "providerCalls": [
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 3011,
+          "promptTokens": 1134,
+          "completionTokens": 6,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 2951,
+          "promptTokens": null,
+          "completionTokens": null,
+          "status": "error"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 8964,
+          "promptTokens": 11391,
+          "completionTokens": 260,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 17176,
+          "promptTokens": 11747,
+          "completionTokens": 701,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "我先把数值算准，再给你完整推导。\n\n用贝叶斯公式推导，先算阳性概率，再算阳性里真正患病的比例。\n\n**已知**\n- 患病率：P(病) = 0.02，未患病 P(不病) = 0.98\n- 敏感度（真阳性率）：P(阳性|病) = 0.80\n- 未患病者误报率（假阳性率）：P(阳性|不病) = 0.10\n\n**第一步：算出所有\"阳性\"的概率**\n\n阳性的人有两来源：真阳性 + 假阳性。\n\n```\nP(阳性) = P(病)·P(阳性|病) + P(不病)·P(阳性|不病)\n        = 0.02 × 0.80 + 0.98 × 0.10\n        = 0.016 + 0.098\n        = 0.114\n```\n\n其中真阳性只占 0.016，假阳性占 0.098——因为未患病的人基数太大，假阳性反而比真阳性多出约 6.1 倍。\n\n**第二步：贝叶斯公式**\n\n```\nP(病|阳性) = P(病)·P(阳性|病) / P(阳性)\n           = 0.016 / 0.114\n           ≈ 0.1404\n```\n\n**结论：随机一人阳性，他真正患病的概率约为 14.04%。**\n\n假阳性计入后的关键点：阳性预测值被大量未患病者\"稀释\"了，虽然试剂敏感度有 80%、误报率只有 10%，但 2% 的低患病率使得阳性结果大多来自误报。所以即使检测阳性，患病概率也只有约 14%，离确定还差得远，通常需要复查或换用更特异的检查。"
+      ],
+      "manualRubric": "核对患病阳性0.016，未病阳性0.098，后验8/57约14.04%。",
+      "semanticReview": "pending"
+    },
+    {
+      "id": "after-work-chat",
+      "prompt": "哈哈，谢谢你，晚安。",
+      "runId": "52992b4a-5e67-4553-a6ac-a61df580dbb3",
+      "run": {
+        "status": "succeeded",
+        "errorCode": null,
+        "route": {
+          "version": 1,
+          "workload": "casual",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "chat",
+            "source": "model",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "stepCount": 1,
+        "modelCallCount": 3
+      },
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "noWrites": true
+      },
+      "ok": true,
+      "elapsedMs": 5905,
+      "firstVisibleMs": 3524,
+      "calls": [],
+      "messages": [
+        [
+          {
+            "text": "晚安，睡个好觉。",
+            "type": "text",
+            "emotion": "neutral"
+          }
+        ]
+      ],
+      "providerCalls": [
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 1568,
+          "promptTokens": 10538,
+          "completionTokens": 9,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 3317,
+          "promptTokens": 1596,
+          "completionTokens": 7,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "晚安，睡个好觉。"
+      ]
+    },
+    {
+      "id": "image",
+      "prompt": "按图片顺序逐张抄出每张图的字符，共12张。请核对全部图片，不能遗漏或把顺序换掉。",
+      "runId": "f0c0e88f-cb6f-48d0-a344-c43792363951",
+      "run": {
+        "status": "succeeded",
+        "errorCode": null,
+        "route": {
+          "version": 1,
+          "workload": "adaptive",
+          "entryMode": "direct_fast"
+        },
+        "stepCount": 1,
+        "modelCallCount": 5
+      },
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "actualPixels": true,
+        "noRepeatedImageAnswer": true,
+        "imageOrder": true
+      },
+      "ok": true,
+      "elapsedMs": 25570,
+      "firstVisibleMs": 21571,
+      "calls": [],
+      "messages": [
+        [
+          {
+            "text": "12张图都按顺序读完了，逐张如下：\n\n1. DB9D76\n2. B80D2F\n3. ZX7Q6A\n4. AW29TR\n5. K73Y8P\n6. HV4X6N\n7. MP7J3C\n8. FR62ZA\n9. XY9K5V\n10. JN3T8E\n11. UW74RC\n12. AK2M6Y\n\n无一遗漏，顺序与图片附带顺序一致。",
+            "type": "text",
+            "emotion": "neutral"
+          }
+        ]
+      ],
+      "providerCalls": [
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 6437,
+          "promptTokens": 1234,
+          "completionTokens": 236,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 6490,
+          "promptTokens": 1242,
+          "completionTokens": 252,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 6801,
+          "promptTokens": 1248,
+          "completionTokens": 254,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 14988,
+          "promptTokens": 14810,
+          "completionTokens": 244,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "12张图都按顺序读完了，逐张如下：\n\n1. DB9D76\n2. B80D2F\n3. ZX7Q6A\n4. AW29TR\n5. K73Y8P\n6. HV4X6N\n7. MP7J3C\n8. FR62ZA\n9. XY9K5V\n10. JN3T8E\n11. UW74RC\n12. AK2M6Y\n\n无一遗漏，顺序与图片附带顺序一致。"
+      ]
+    },
+    {
+      "id": "image-followup",
+      "prompt": "再看看刚才上传的12张原图，按原顺序重新读取，不要照抄上一个答案。",
+      "runId": "140f94ed-1442-42be-988e-13fe97b19783",
+      "run": {
+        "status": "succeeded",
+        "errorCode": null,
+        "route": {
+          "version": 1,
+          "workload": "adaptive",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "work",
+            "source": "fallback",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "stepCount": 2,
+        "modelCallCount": 7
+      },
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "actualPixels": true,
+        "noRepeatedImageAnswer": true,
+        "imageOrder": true
+      },
+      "ok": true,
+      "elapsedMs": 29624,
+      "firstVisibleMs": 22456,
+      "calls": [],
+      "messages": [
+        [
+          {
+            "text": "按原顺序重新逐张读取完毕，12张内容如下：\n\n1. **DB9D76**\n2. **B80D2F**\n3. **ZX7Q6A**\n4. **AW29TR**\n5. **K73Y8P**\n6. **HV4X6N**\n7. **MP7J3C**\n8. **FR62ZA**\n9. **XY9K5V**\n10. **JN3T8E**\n11. **UW74RC**\n12. **AK2M6Y**\n\n12张全部核对，无遗漏、无调换。这次是重新按批读取像素后给出的，与上一版结论一致。",
+            "type": "text",
+            "emotion": "neutral"
+          }
+        ]
+      ],
+      "providerCalls": [
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 5002,
+          "promptTokens": null,
+          "completionTokens": null,
+          "status": "error"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 4920,
+          "promptTokens": null,
+          "completionTokens": null,
+          "status": "error"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 7702,
+          "promptTokens": 1235,
+          "completionTokens": 296,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 8153,
+          "promptTokens": 1227,
+          "completionTokens": 292,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 8729,
+          "promptTokens": 1241,
+          "completionTokens": 310,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 12182,
+          "promptTokens": 15916,
+          "completionTokens": 314,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "按原顺序重新逐张读取完毕，12张内容如下：\n\n1. **DB9D76**\n2. **B80D2F**\n3. **ZX7Q6A**\n4. **AW29TR**\n5. **K73Y8P**\n6. **HV4X6N**\n7. **MP7J3C**\n8. **FR62ZA**\n9. **XY9K5V**\n10. **JN3T8E**\n11. **UW74RC**\n12. **AK2M6Y**\n\n12张全部核对，无遗漏、无调换。这次是重新按批读取像素后给出的，与上一版结论一致。"
+      ]
+    },
+    {
+      "id": "image-followup-second",
+      "prompt": "只参考刚才上传的原图，再核对一下这12项；看不清就直说，请按原顺序逐张列出结果。",
+      "runId": "830e3a92-d8cc-4496-8398-ff9b80119353",
+      "run": {
+        "status": "succeeded",
+        "errorCode": null,
+        "route": {
+          "version": 1,
+          "workload": "adaptive",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "work",
+            "source": "model",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "stepCount": 2,
+        "modelCallCount": 7
+      },
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "actualPixels": true,
+        "noRepeatedImageAnswer": true,
+        "imageOrder": true
+      },
+      "ok": true,
+      "elapsedMs": 19422,
+      "firstVisibleMs": 15103,
+      "calls": [],
+      "messages": [
+        [
+          {
+            "text": "三批共12张全部核对完毕，白底黑字、清晰可辨，没有看不清的：\n\n1. **DB9D76**\n2. **B80D2F**\n3. **ZX7Q6A**\n4. **AW29TR**\n5. **K73Y8P**\n6. **HV4X6N**\n7. **MP7J3C**\n8. **FR62ZA**\n9. **XY9K5V**\n10. **JN3T8E**\n11. **UW74RC**\n12. **AK2M6Y**\n\n顺序与原图一致，12项齐全，无遗漏。",
+            "type": "text",
+            "emotion": "neutral"
+          }
+        ]
+      ],
+      "providerCalls": [
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 942,
+          "promptTokens": 2822,
+          "completionTokens": 6,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 847,
+          "promptTokens": null,
+          "completionTokens": null,
+          "status": "error"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 6322,
+          "promptTokens": 1247,
+          "completionTokens": 299,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 6769,
+          "promptTokens": 1241,
+          "completionTokens": 244,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 7988,
+          "promptTokens": 1233,
+          "completionTokens": 264,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 7917,
+          "promptTokens": 16028,
+          "completionTokens": 174,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "三批共12张全部核对完毕，白底黑字、清晰可辨，没有看不清的：\n\n1. **DB9D76**\n2. **B80D2F**\n3. **ZX7Q6A**\n4. **AW29TR**\n5. **K73Y8P**\n6. **HV4X6N**\n7. **MP7J3C**\n8. **FR62ZA**\n9. **XY9K5V**\n10. **JN3T8E**\n11. **UW74RC**\n12. **AK2M6Y**\n\n顺序与原图一致，12项齐全，无遗漏。"
+      ]
+    }
+  ],
+  "note": "Synthetic account only. Public replies and real receipts. Structural pass is not an overall semantic success rate. firstVisibleMs measures server acceptance to first durable visible event."
+}

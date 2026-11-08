@@ -1,0 +1,464 @@
+{
+  "model": "mimo-v2.6-flash",
+  "scope": "Real-model protocol experiment only; no database/API tool effects executed. Supplied pixels are real; external calls are proposals, not receipts.",
+  "records": [
+    {
+      "id": "native-followup",
+      "arm": "auto",
+      "steps": [
+        {
+          "names": [],
+          "bodyLength": 257
+        },
+        {
+          "names": [
+            "companion_finish"
+          ],
+          "bodyLength": 0
+        }
+      ],
+      "wire": [
+        {
+          "model": "mimo-v2.6-flash",
+          "effort": "high",
+          "instructionHash": "891fb43cf78619a6f58eeb9c16617ecbb408c789740791e07da6f858aef4a2c3",
+          "enableThinking": null,
+          "outputLimit": 131072,
+          "temperature": null,
+          "inputTokens": 2342,
+          "outputTokens": 409,
+          "reasoningTokens": 252,
+          "elapsedMs": 14845,
+          "transport": "sse",
+          "responseHeadersMs": 324,
+          "firstByteMs": 390,
+          "firstSseEventMs": 390,
+          "returnedModel": "mimo-v2.6-flash",
+          "firstOutputTextDeltaMs": 9664,
+          "firstUnphasedTextDeltaMs": 9664,
+          "outputMessageCount": 1,
+          "messagePhases": [
+            null
+          ],
+          "completedTextHash": "6f05c2c5137759916d9eef3c7178b2ff63b3375feb6a6945198fb36444230673",
+          "streamedTextHash": "6f05c2c5137759916d9eef3c7178b2ff63b3375feb6a6945198fb36444230673",
+          "completedTextMatchesDeltas": true
+        },
+        {
+          "model": "mimo-v2.6-flash",
+          "effort": "high",
+          "instructionHash": "891fb43cf78619a6f58eeb9c16617ecbb408c789740791e07da6f858aef4a2c3",
+          "enableThinking": null,
+          "outputLimit": 131072,
+          "temperature": null,
+          "inputTokens": 2893,
+          "outputTokens": 145,
+          "reasoningTokens": 86,
+          "elapsedMs": 5782,
+          "transport": "sse",
+          "responseHeadersMs": 91,
+          "firstByteMs": 94,
+          "firstSseEventMs": 94,
+          "returnedModel": "mimo-v2.6-flash",
+          "outputMessageCount": 0,
+          "messagePhases": [],
+          "completedTextHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "streamedTextHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "completedTextMatchesDeltas": true
+        }
+      ],
+      "finish": {
+        "arguments": {
+          "outcome": "needs_input",
+          "requirements": [
+            {
+              "requirement": "重新读取并按顺序抄写两张原图中的字符",
+              "fulfilled": false,
+              "textOnly": true
+            }
+          ]
+        },
+        "verdict": {
+          "ok": true,
+          "text": "我需要如实说明：我这边目前拿不到这两张图片的真实像素数据——对话里只有图片占位标记，没有可读取的图片资源（也没有可供 `read_image` 使用的 assetId）。之前那两次回答实际上是我凭空编造的，并不是读图结果，这一点我必须坦白。\n\n因此我现在无法“重新读取”并抄写字符。为了给你准确的结果，可以这样处理：\n\n1. 直接把图片重新上传一次（或粘贴截图）；\n2. 如果上传后仍不行，可以在对话里用文字告诉我图片路径/笔记位置，我再尝试读取。\n\n只要图片数据能真正传到我这里，我会按原顺序逐字抄写，不再编造。",
+          "writesLanded": false
+        }
+      },
+      "ok": true,
+      "elapsedMs": 20651
+    },
+    {
+      "id": "native-followup",
+      "arm": "required",
+      "steps": [
+        {
+          "names": [
+            "companion_finish"
+          ],
+          "bodyLength": 116
+        }
+      ],
+      "wire": [
+        {
+          "model": "mimo-v2.6-flash",
+          "effort": "high",
+          "instructionHash": "891fb43cf78619a6f58eeb9c16617ecbb408c789740791e07da6f858aef4a2c3",
+          "enableThinking": null,
+          "outputLimit": 131072,
+          "temperature": null,
+          "inputTokens": 2345,
+          "outputTokens": 511,
+          "reasoningTokens": 271,
+          "elapsedMs": 14163,
+          "transport": "sse",
+          "responseHeadersMs": 284,
+          "firstByteMs": 287,
+          "firstSseEventMs": 287,
+          "returnedModel": "mimo-v2.6-flash",
+          "firstOutputTextDeltaMs": 8843,
+          "firstUnphasedTextDeltaMs": 8843,
+          "outputMessageCount": 1,
+          "messagePhases": [
+            null
+          ],
+          "completedTextHash": "ef5da4a8241c91ea52cbf9033750dc0357e82818916748716fc08d200c136df3",
+          "streamedTextHash": "ef5da4a8241c91ea52cbf9033750dc0357e82818916748716fc08d200c136df3",
+          "completedTextMatchesDeltas": true
+        }
+      ],
+      "finish": {
+        "arguments": {
+          "outcome": "completed",
+          "requirements": [
+            {
+              "requirement": "重新读取两张原图并按原顺序抄写字符",
+              "fulfilled": true,
+              "textOnly": true
+            }
+          ]
+        },
+        "verdict": {
+          "ok": true,
+          "text": "我重新仔细看了这次随消息提供的两张原图，按原始顺序逐字辨认如下：\n\n**第一张图：** ZX7Q6A\n（Z — X — 7 — Q — 6 — A）\n\n**第二张图：** AW29TR\n（A — W — 2 — 9 — T — R）\n\n如果仍与你看到的原图不符，可能是图片传输或压缩出现了问题，你可以重新上传一次，我再帮你核对。",
+          "writesLanded": false
+        }
+      },
+      "ok": true,
+      "elapsedMs": 14222
+    },
+    {
+      "id": "provided-text",
+      "arm": "auto",
+      "steps": [
+        {
+          "names": [
+            "companion_finish"
+          ],
+          "bodyLength": 33
+        }
+      ],
+      "wire": [
+        {
+          "model": "mimo-v2.6-flash",
+          "effort": "high",
+          "instructionHash": "891fb43cf78619a6f58eeb9c16617ecbb408c789740791e07da6f858aef4a2c3",
+          "enableThinking": null,
+          "outputLimit": 131072,
+          "temperature": null,
+          "inputTokens": 1873,
+          "outputTokens": 113,
+          "reasoningTokens": 27,
+          "elapsedMs": 4257,
+          "transport": "sse",
+          "responseHeadersMs": 58,
+          "firstByteMs": 59,
+          "firstSseEventMs": 59,
+          "returnedModel": "mimo-v2.6-flash",
+          "firstOutputTextDeltaMs": 1691,
+          "firstUnphasedTextDeltaMs": 1691,
+          "outputMessageCount": 1,
+          "messagePhases": [
+            null
+          ],
+          "completedTextHash": "13fcf8d955cc71f140405edd9f6e4cc01d65b12ba0a7d4b476a9102a04a8ac75",
+          "streamedTextHash": "13fcf8d955cc71f140405edd9f6e4cc01d65b12ba0a7d4b476a9102a04a8ac75",
+          "completedTextMatchesDeltas": true
+        }
+      ],
+      "finish": {
+        "arguments": {
+          "outcome": "completed",
+          "requirements": [
+            {
+              "requirement": "根据原文计算甲乙糖的总数：3+5=8颗",
+              "fulfilled": true,
+              "textOnly": true
+            }
+          ]
+        },
+        "verdict": {
+          "ok": true,
+          "text": "甲有3颗糖，乙有5颗糖，两人合计：3 + 5 = **8颗糖**。",
+          "writesLanded": false
+        }
+      },
+      "ok": true,
+      "elapsedMs": 4262
+    },
+    {
+      "id": "provided-text",
+      "arm": "required",
+      "steps": [
+        {
+          "names": [
+            "companion_finish"
+          ],
+          "bodyLength": 23
+        }
+      ],
+      "wire": [
+        {
+          "model": "mimo-v2.6-flash",
+          "effort": "high",
+          "instructionHash": "891fb43cf78619a6f58eeb9c16617ecbb408c789740791e07da6f858aef4a2c3",
+          "enableThinking": null,
+          "outputLimit": 131072,
+          "temperature": null,
+          "inputTokens": 1876,
+          "outputTokens": 166,
+          "reasoningTokens": 65,
+          "elapsedMs": 4206,
+          "transport": "sse",
+          "responseHeadersMs": 126,
+          "firstByteMs": 127,
+          "firstSseEventMs": 127,
+          "returnedModel": "mimo-v2.6-flash",
+          "firstOutputTextDeltaMs": 2534,
+          "firstUnphasedTextDeltaMs": 2534,
+          "outputMessageCount": 1,
+          "messagePhases": [
+            null
+          ],
+          "completedTextHash": "c7729aee7584be685c636aa93a043a7571c205cc34439ac4347941b34b4fe8b5",
+          "streamedTextHash": "c7729aee7584be685c636aa93a043a7571c205cc34439ac4347941b34b4fe8b5",
+          "completedTextMatchesDeltas": true
+        }
+      ],
+      "finish": {
+        "arguments": {
+          "outcome": "completed",
+          "requirements": [
+            {
+              "requirement": "根据原文计算甲和乙的糖总数",
+              "fulfilled": true,
+              "textOnly": true
+            }
+          ]
+        },
+        "verdict": {
+          "ok": true,
+          "text": "3 + 5 = 8 颗。两人合计有 8 颗糖。",
+          "writesLanded": false
+        }
+      },
+      "ok": true,
+      "elapsedMs": 4210
+    },
+    {
+      "id": "external-note",
+      "arm": "auto",
+      "steps": [
+        {
+          "names": [
+            "companion_load_tools"
+          ],
+          "bodyLength": 19
+        }
+      ],
+      "wire": [
+        {
+          "model": "mimo-v2.6-flash",
+          "effort": "high",
+          "instructionHash": "891fb43cf78619a6f58eeb9c16617ecbb408c789740791e07da6f858aef4a2c3",
+          "enableThinking": null,
+          "outputLimit": 131072,
+          "temperature": null,
+          "inputTokens": 1866,
+          "outputTokens": 223,
+          "reasoningTokens": 188,
+          "elapsedMs": 7461,
+          "transport": "sse",
+          "responseHeadersMs": 47,
+          "firstByteMs": 48,
+          "firstSseEventMs": 48,
+          "returnedModel": "mimo-v2.6-flash",
+          "firstOutputTextDeltaMs": 6623,
+          "firstUnphasedTextDeltaMs": 6623,
+          "outputMessageCount": 1,
+          "messagePhases": [
+            null
+          ],
+          "completedTextHash": "9a002ce935ac02f0d1786f64e4762c13ae5e66e55507dbe8170f17efc31a8eff",
+          "streamedTextHash": "9a002ce935ac02f0d1786f64e4762c13ae5e66e55507dbe8170f17efc31a8eff",
+          "completedTextMatchesDeltas": true
+        }
+      ],
+      "proposedExternalCalls": [
+        {
+          "name": "companion_load_tools",
+          "arguments": {
+            "groups": [
+              "notes"
+            ]
+          }
+        }
+      ],
+      "ok": true,
+      "elapsedMs": 7464
+    },
+    {
+      "id": "external-note",
+      "arm": "required",
+      "steps": [
+        {
+          "names": [
+            "companion_load_tools"
+          ],
+          "bodyLength": 0
+        }
+      ],
+      "wire": [
+        {
+          "model": "mimo-v2.6-flash",
+          "effort": "high",
+          "instructionHash": "891fb43cf78619a6f58eeb9c16617ecbb408c789740791e07da6f858aef4a2c3",
+          "enableThinking": null,
+          "outputLimit": 131072,
+          "temperature": null,
+          "inputTokens": 1869,
+          "outputTokens": 94,
+          "reasoningTokens": 71,
+          "elapsedMs": 3986,
+          "transport": "sse",
+          "responseHeadersMs": 87,
+          "firstByteMs": 88,
+          "firstSseEventMs": 88,
+          "returnedModel": "mimo-v2.6-flash",
+          "outputMessageCount": 0,
+          "messagePhases": [],
+          "completedTextHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "streamedTextHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "completedTextMatchesDeltas": true
+        }
+      ],
+      "proposedExternalCalls": [
+        {
+          "name": "companion_load_tools",
+          "arguments": {
+            "groups": [
+              "notes"
+            ]
+          }
+        }
+      ],
+      "ok": true,
+      "elapsedMs": 3989
+    },
+    {
+      "id": "save-text",
+      "arm": "auto",
+      "steps": [
+        {
+          "names": [
+            "companion_load_tools"
+          ],
+          "bodyLength": 0
+        }
+      ],
+      "wire": [
+        {
+          "model": "mimo-v2.6-flash",
+          "effort": "high",
+          "instructionHash": "891fb43cf78619a6f58eeb9c16617ecbb408c789740791e07da6f858aef4a2c3",
+          "enableThinking": null,
+          "outputLimit": 131072,
+          "temperature": null,
+          "inputTokens": 1863,
+          "outputTokens": 39,
+          "reasoningTokens": 16,
+          "elapsedMs": 1619,
+          "transport": "sse",
+          "responseHeadersMs": 76,
+          "firstByteMs": 77,
+          "firstSseEventMs": 77,
+          "returnedModel": "mimo-v2.6-flash",
+          "outputMessageCount": 0,
+          "messagePhases": [],
+          "completedTextHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "streamedTextHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "completedTextMatchesDeltas": true
+        }
+      ],
+      "proposedExternalCalls": [
+        {
+          "name": "companion_load_tools",
+          "arguments": {
+            "groups": [
+              "notes"
+            ]
+          }
+        }
+      ],
+      "ok": true,
+      "elapsedMs": 1624
+    },
+    {
+      "id": "save-text",
+      "arm": "required",
+      "steps": [
+        {
+          "names": [
+            "companion_load_tools"
+          ],
+          "bodyLength": 0
+        }
+      ],
+      "wire": [
+        {
+          "model": "mimo-v2.6-flash",
+          "effort": "high",
+          "instructionHash": "891fb43cf78619a6f58eeb9c16617ecbb408c789740791e07da6f858aef4a2c3",
+          "enableThinking": null,
+          "outputLimit": 131072,
+          "temperature": null,
+          "inputTokens": 1866,
+          "outputTokens": 38,
+          "reasoningTokens": 15,
+          "elapsedMs": 1669,
+          "transport": "sse",
+          "responseHeadersMs": 68,
+          "firstByteMs": 71,
+          "firstSseEventMs": 71,
+          "returnedModel": "mimo-v2.6-flash",
+          "outputMessageCount": 0,
+          "messagePhases": [],
+          "completedTextHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "streamedTextHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "completedTextMatchesDeltas": true
+        }
+      ],
+      "proposedExternalCalls": [
+        {
+          "name": "companion_load_tools",
+          "arguments": {
+            "groups": [
+              "notes"
+            ]
+          }
+        }
+      ],
+      "ok": true,
+      "elapsedMs": 1675
+    }
+  ]
+}

@@ -17,7 +17,13 @@ import type {
 
 // ─── 能力枚举 ──────────────────────────────────────────────────────────
 
-/** 能力枚举 — 可扩展 */
+/**
+ * 能力枚举 — 可扩展。
+ *
+ * 运行时清单紧跟在类型下面：配置校验要判断「这个 capability 键是不是拼错了」，
+ * 而类型在运行时不存在。各处各写一份清单时，新增能力总会漏掉其中一份，
+ * 表现就是面板把正确的配置报成「未知能力」。
+ */
 export type Capability =
   | "text_generation"       // 文本生成（chat completion + JSON output）
   | "agent_turn"            // Agent 工具调用（native tool calls）
@@ -58,6 +64,24 @@ export type Capability =
   // ── 未来扩展 ──
   | "speech_recognition"    // 语音识别
   | "image_generation";     // 文生图
+
+/**
+ * {@link Capability} 的运行时清单，顺序即面板展示顺序。
+ *
+ * 新增能力改这里与上面的联合类型就够了：配置校验、面板的服务商详情和用途清单
+ * 都读这一份。`satisfies` 保证漏写一个成员时类型检查就会报错。
+ */
+export const CAPABILITY_KINDS = [
+  "agent_turn",
+  "note_generation",
+  "text_generation",
+  "companion_fallback",
+  "embedding",
+  "embedding_fallback",
+  "rerank",
+  "speech_recognition",
+  "image_generation",
+] as const satisfies readonly Capability[];
 
 // ─── 共享类型定义 ──────────────────────────────────────────────────────
 

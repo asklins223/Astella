@@ -1,0 +1,160 @@
+{
+  "clientDate": "2026-10-30",
+  "clientTimezone": "Asia/Shanghai",
+  "recordedAtUtc": "2026-10-29T23:19:15.558272+00:00",
+  "scope": "Local Worker optimization; no deployment, production migration or client UI acceptance.",
+  "baseline": {
+    "snapshotFiles": 478,
+    "snapshotSha256": "22b049a82a346a1a834aa15634c86e14cd2b6af4836878ca6ac9f6d9381241bb",
+    "previousPhaseSourceMismatches": [],
+    "worker": {
+      "log": "outputs/agent-completion-optimization-2026-10-30/worker-baseline.log",
+      "logSha256": "38772eac37573fffeee4ae952074778e99881803fe9ed681adc3a9768563d2e5",
+      "tests": 1899,
+      "pass": 1899,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+    }
+  },
+  "workerFinal": {
+    "command": "npm test",
+    "cwd": "workers/ai-worker",
+    "exitCode": 0,
+    "log": "outputs/agent-completion-optimization-2026-10-30/worker-regression-verified.log",
+    "logSha256": "dcb73c27a4cacc2db7497b582277acf7f54e9da513bb30af2acfd19da5f10371",
+    "tests": 1901,
+    "pass": 1901,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 0,
+    "todo": 0
+  },
+  "postgresFinal": {
+    "exitCode": 0,
+    "suites": 8,
+    "currentCompletionSuiteCases": 15,
+    "newThisPhase": 2,
+    "relatedCases": 72,
+    "realDatabaseAndNativeLoop": true,
+    "scriptedModelAndReviewer": true,
+    "log": "outputs/agent-completion-optimization-2026-10-30/postgres-verified.log",
+    "logSha256": "9f13d1b81c9f8b3252b5bce927a9a8e8da18b4070afdd43ac8e21d36fb5847db",
+    "tests": 87,
+    "pass": 87,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 0,
+    "todo": 0
+  },
+  "structure": {
+    "exitCode": 0,
+    "checks": [
+      "god-file-ratchet",
+      "directory-fanout-ratchet",
+      "companion-layer-boundaries"
+    ],
+    "log": "outputs/agent-completion-optimization-2026-10-30/structure.log",
+    "logSha256": "bb99ec795995389f39168109b2fd8decfa6f487e6e40c09a098af8653c2a13b1",
+    "tests": 17,
+    "pass": 17,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 0,
+    "todo": 0
+  },
+  "workerTypecheck": {
+    "command": "npm run typecheck",
+    "exitCode": 0,
+    "log": "outputs/agent-completion-optimization-2026-10-30/worker-typecheck-delivery.log",
+    "logSha256": "337691a80ce0df2b3984dc12cb15bab955ea110e04f537873f51291f452d2539"
+  },
+  "watchdogFixture": {
+    "exitCode": 0,
+    "log": "outputs/agent-completion-optimization-2026-10-30/watchdog-focused.log",
+    "logSha256": "1fd64bc7aa181c6eafd1bd873c837c500ab85e1b2a6e9d021dfad3dc38eba066",
+    "tests": 9,
+    "pass": 9,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 0,
+    "todo": 0
+  },
+  "preservedFailedIterations": {
+    "beforeFixPostgres": {
+      "log": "outputs/agent-completion-optimization-2026-10-30/postgres-before.log",
+      "logSha256": "5b83f5c0972918a89261d7541bcf10ed7eb51b7886d1d69df9d7e493f2670172",
+      "tests": 15,
+      "pass": 13,
+      "fail": 2,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    "firstWorkerRegression": {
+      "log": "outputs/agent-completion-optimization-2026-10-30/worker-regression.log",
+      "logSha256": "74e94ef4c35b089b2d155d8a6842ce3038c75c627b34a4d3e7bdf2aef210744f",
+      "tests": 1901,
+      "pass": 1900,
+      "fail": 1,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    "stalledProcessRun": {
+      "log": "outputs/agent-completion-optimization-2026-10-30/worker-regression-final.log",
+      "logSha256": "43cb4747f6aeabfc94a7636fa71822dc2aa2af21e02c6127154f8023003548ac",
+      "tests": 1902,
+      "pass": 1901,
+      "fail": 1,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    "manualStop": "Only the task-owned stalled watchdog child was terminated; that run is a failure. Final complete regression exited normally.",
+    "initialTypecheckLogSha256": "6072ae108096afee46785e1553f7f93792b03422ecf8f2274f4afb01aefdc1d0",
+    "rootCauseLimit": "Fixture start/wait/cleanup was hardened; a unique underlying cause for the intermittent process hang is not proven."
+  },
+  "configuration": {
+    "sha256": "375f560bbb1036594c816fa35165bb3f58c0af42b163f7480e3638056a86097b",
+    "unchanged": true,
+    "primary": "mimo-agent / mimo-v2.6-flash",
+    "secondary": "tokenrhythm / deepseek-v4.1-flash-1017"
+  },
+  "modelPolicyHash": "8ad1c3627638b87ce29cf712a52ad88c52c6d05255128ac1ee4b1beec0a5c882",
+  "modelEvaluation": "evaluation-summary.json",
+  "modelProbeVsFinalSource": {
+    "identity": "model-probe-source-identity.json",
+    "changedSinceProbe": [
+      "workers/ai-worker/src/handlers/tools/companion-tool-receipts.ts"
+    ],
+    "auditPolicyAndSourceIndexUnchanged": true,
+    "frozenEightInputsRegeneratedIdentically": true,
+    "finalRequestBoundaryBehaviorCoveredByUnitAndPostgres": true
+  },
+  "sourceChanges": {
+    "files": "changed-files.json",
+    "patch": "optimization.patch",
+    "count": 7,
+    "relativeToDirtyPrePhaseWorkingTree": true,
+    "otherObservedSnapshotChanges": []
+  },
+  "testRegistration": {
+    "dedicatedScript": "test:companion-completion:postgres",
+    "existingSuite": "test:companion-integration:postgres",
+    "fullExistingSuiteNotExecuted": true,
+    "registrationOnlyUpdateAfterFinalUnitRun": true
+  },
+  "diffCheckExitCode": 0,
+  "temporaryDatabase": {
+    "container": "astella-completion-optimization-20261030",
+    "removed": true,
+    "otherDevelopmentSessionsTerminated": false
+  },
+  "deployment": {
+    "performed": false,
+    "commitOrPushPerformed": false,
+    "productionMigrationsPerformed": false
+  }
+}

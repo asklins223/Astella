@@ -107,7 +107,7 @@ export function createCompanionCompletionGuard(input: {
         },
         execute: async (messages, requestSignal) => {
           const result = await provider.chatCompletion(messages, {
-            temperature: 0, disableThinking: true, reasoningEffort: "none", responseFormat: "json_object",
+            temperature: 0, responseFormat: "json_object",
             maxTokens: provider.resolveOutputTokenLimit?.(),
           }, requestSignal);
           return { ok: true, output: result.content, promptTokens: result.usage?.promptTokens ?? undefined,

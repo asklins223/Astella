@@ -33,8 +33,10 @@ function generate(content: string | (() => Promise<string>), args: { userText?: 
 }
 
 test("AI 判断不值得延伸时给空数组，这是正常结果不是失败", async () => {
-  const { prompts } = await generate('{"prompts":[]}');
+  const { prompts, calls } = await generate('{"prompts":[]}');
   assert.deepEqual(prompts, []);
+  assert.ok(Number((calls[0]?.options as { maxTokens?: number }).maxTokens) >= 1_500,
+    "追问要给思考留出输出预算，不能把 JSON 挤掉");
 });
 
 test("输出不是合法 JSON 或形状不对时收成空数组，不许抛", async () => {
@@ -65,16 +67,35 @@ test("模型多给两条时留下前面三条，不是整批丢掉", async () =>
   assert.deepEqual(prompts, ["第一条追问方向", "第二条追问方向", "第三条追问方向"]);
 });
 
-test("对话材料以 JSON 传入并要求 JSON 输出、关思考档", async () => {
+test("对话材料以 JSON 传入并要求 JSON 输出，思考留给模型默认", async () => {
   const { calls } = await generate('{"prompts":["冰的密度是多少"]}');
   assert.equal(calls.length, 1);
   const options = calls[0]!.options as Record<string, unknown>;
   assert.equal(options.responseFormat, "json_object");
-  assert.equal(options.disableThinking, true);
+  assert.equal(options.disableThinking, undefined);
   const messages = calls[0]!.messages as { role: string; content: string }[];
-  const material = JSON.parse(messages[1]!.content) as Record<string, string>;
+  const material = JSON.parse(messages[1]!.content) as { userMessage: string; assistantReply: string; completedWrites: string[] };
   assert.equal(material.userMessage, "冰为什么比水轻？");
   assert.equal(material.assistantReply, "因为结冰时水分子排成空的六方格子。");
+  assert.deepEqual(material.completedWrites, []);
+  assert.doesNotMatch(messages[0]!.content, /已经记住/);
+});
+
+test("写入回执只进本轮材料，规则本身不随回执变化", async () => {
+  const plain = providerReturning('{"prompts":[]}');
+  const written = providerReturning('{"prompts":[]}');
+  const signal = new AbortController().signal;
+  await generateCompanionFollowupPrompts({
+    provider: plain.provider, userText: "冰为什么比水轻？", assistantText: "因为六方格子。", signal,
+  });
+  await generateCompanionFollowupPrompts({
+    provider: written.provider, userText: "记住雨伞是蓝色的", assistantText: "记住了。",
+    completedWrites: ["已经记住：雨伞是蓝色的。"], signal,
+  });
+  const system = (calls: { messages: unknown }[]) => (calls[0]!.messages as { content: string }[])[0]!.content;
+  assert.equal(system(plain.calls), system(written.calls));
+  const material = JSON.parse((written.calls[0]!.messages as { content: string }[])[1]!.content) as { completedWrites: string[] };
+  assert.deepEqual(material.completedWrites, ["已经记住：雨伞是蓝色的。"]);
 });
 
 test("超长的一边只留首尾，送出去的材料有界", async () => {
@@ -86,9 +107,16 @@ test("超长的一边只留首尾，送出去的材料有界", async () => {
 });
 
 test("外部模型慢到超过预算时放弃这一批追问", async () => {
-  await assert.rejects(generate(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 3_500));
+  const { provider } = providerReturning(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 80));
     return '{"prompts":["太迟的追问"]}';
+  });
+  await assert.rejects(generateCompanionFollowupPrompts({
+    provider,
+    userText: "冰为什么比水轻？",
+    assistantText: "因为六方格子。",
+    signal: new AbortController().signal,
+    timeoutMs: 30,
   }));
 });
 

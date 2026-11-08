@@ -42,6 +42,12 @@ it("deduplicates sources and includes numbered original URLs when copying a repl
   render(<CompanionWebSources sources={sources} />); expect(screen.getByText("搜索到 1 个网页")).toBeTruthy();
   expect(companionMessageCopyText({ role: "assistant", blocks: [{ type: "text", text: `说明[^${source.referenceId}]` }, source] } as never))
     .toBe(`说明[1]\n\n[1] 官方说明\n${source.target.href}`);
+  const defined = `说明[^${source.referenceId}]\n\n[^${source.referenceId}]: 官方说明`;
+  expect(companionMessageCopyText({ role: "assistant", blocks: [{ type: "text", text: defined }, source] } as never))
+    .toBe(`说明[1]\n\n[1] 官方说明\n${source.target.href}`);
+  const view = render(<div data-testid="defined">{renderCompanionMarkdown(defined, companionWebCitations([source]))}</div>);
+  expect(screen.getByTestId("defined").textContent).not.toContain("官方说明:");
+  view.unmount();
   expect(companionMessageText({ blocks: [{ type: "text", text: "正文" }, source] } as never)).toBe("正文");
 });
 

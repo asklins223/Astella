@@ -17,8 +17,8 @@ const SEARCH = {
   logs: "日志 实时 报错 请求 logs",
   metrics: "指标 耗时 性能 曲线 metrics",
   infra: "基础设施 容器 数据库 存储 重启 docker infra",
-  config: "模型 配置 密钥 AI config",
-  releases: "版本 发布 历史 tag 客户端 release versions",
+  config: "模型 配置 密钥 AI 用途 能力 服务商 模型档案 语音 provider config",
+  releases: "版本 发布 历史 tag 发布线 服务端 桌面 iOS Android 热更 资产 客户端 release versions",
 };
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -143,7 +143,6 @@ async function switchView(name, { force = false, preserve = false, focus = false
   moveSelection(activeItem);
   const head = el("div", { class: "page-head" },
     el("div", { class: "page-head__inner" },
-      el("span", { class: "eyebrow", text: meta.eyebrow ?? "ASTELLA CONTROL CENTER" }),
       el("h1", { class: "page-head__title", text: meta.title }),
       el("p", { class: "page-head__lede", text: meta.lede }),
       el("div", { id: "head-extra", hidden: true }),

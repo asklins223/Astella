@@ -18,22 +18,24 @@ test("fast entry is casual by default; grounding and thinking mode raise cost", 
   assert.equal(resolveCompanionTurnWorkload({ mode: "direct_fast", attention: staleActionLabel, requiresGrounding: false }), "casual");
 });
 
-test("receipts retain lightweight reasoning; repairs and explicit deepening raise effort", async () => {
+test("ordinary steps keep the model default; repairs and explicit deepening raise it", async () => {
   const base = { mode: "direct_fast", resourcePath: "chat", deepened: false,
     repairing: false, readOnlyRequiredStep: false, toolCallCount: 0 } as const;
-  assert.equal(companionStepReasoning(base), "low");
-  assert.equal(companionStepReasoning({ ...base, reviewedOpening: true }), "none");
-  assert.equal(companionStepReasoning({ ...base, reviewedOpening: true, toolCallCount: 1 }), "low");
-  assert.equal(companionStepReasoning({ ...base, reviewedOpening: true, mode: "direct_thinking" }), "max");
-  assert.equal(companionStepReasoning({ ...base, reviewedOpening: true, deepened: true }), "max");
-  assert.equal(companionStepReasoning({ ...base, reviewedOpening: true, repairing: true }), "high");
-  assert.equal(companionStepReasoning({ ...base, toolCallCount: 1 }), "low");
-  assert.equal(companionStepReasoning({ ...base, resourcePath: "work", readOnlyRequiredStep: true }), "none");
-  assert.equal(companionStepReasoning({ ...base, resourcePath: "work", readOnlyRequiredStep: true, toolCallCount: 1 }), "none");
-  assert.equal(companionStepReasoning({ ...base, readOnlyRequiredStep: true, deepened: true }), "max");
-  assert.equal(companionStepReasoning({ ...base, repairing: true, readOnlyRequiredStep: true }), "high");
+  assert.equal(companionStepReasoning(base), undefined);
+  assert.equal(companionStepReasoning({ ...base, toolCallCount: 1 }), undefined);
   assert.equal(companionStepReasoning({ ...base, mode: "direct_thinking" }), "max");
-  assert.equal(companionStepReasoning({ ...base, resourcePath: undefined }), "high");
+  assert.equal(companionStepReasoning({ ...base, deepened: true }), "max");
+  assert.equal(companionStepReasoning({ ...base, repairing: true }), "low");
+  assert.equal(companionStepReasoning({ ...base, repairing: true, evidenceRepair: true }), "high");
+  assert.equal(companionStepReasoning({ ...base, resourcePath: "work", readOnlyRequiredStep: true }), undefined);
+  assert.equal(companionStepReasoning({ ...base, resourcePath: "work", readOnlyRequiredStep: true, toolCallCount: 1 }), undefined);
+  assert.equal(companionStepReasoning({ ...base, readOnlyRequiredStep: true, deepened: true }), "max");
+  assert.equal(companionStepReasoning({ ...base, repairing: true, readOnlyRequiredStep: true }), "low");
+  assert.equal(companionStepReasoning({ ...base, mode: "direct_thinking" }), "max");
+  assert.equal(companionStepReasoning({ ...base, resourcePath: undefined }), undefined);
+  const mimo = { contextWindowTokens: 1_000_000, maxOutputTokens: 131_072, vision: true,
+    reasoning: { levels: ["none", "low", "medium", "high"] as Array<"none" | "low" | "medium" | "high">, default: "medium" as const } };
+  assert.equal(resolveModelReasoningEffort(mimo, false, companionStepReasoning(base)), "medium");
   const controls = createCompanionDirectControls({ mode: "direct_fast", userText: "unseen slang or any language", attention: casual });
   assert.equal(controls.disableThinking(), true);
   await controls.apply("companion_deepen", {});

@@ -7,6 +7,21 @@ appId: com.asklins.astella
 #   - Windows 开始菜单与"已安装的应用"：apps/windows-installer/WindowsRegistration.cs
 #   - 窗口标题与界面文案：渲染层自己的品牌名
 productName: Astella
+
+# 系统文件关联（2026-11）：双击 .md 用拾星笔记打开。
+# 同一份声明给 macOS 的 CFBundleDocumentTypes 与 Linux 的 desktop entry；
+# Windows 的自定义安装器单独写注册表（见 apps/windows-installer/WindowsRegistration.cs）。
+# `.mdx` 不在这里：它是组件语法，不是这个产品承诺能原样读写的 Markdown 文档。
+fileAssociations:
+  - ext:
+      - md
+      - markdown
+      - mdown
+      - mkd
+    name: Markdown
+    description: Markdown 文档
+    mimeType: text/markdown
+    role: Editor
 copyright: Copyright © 2026 Astella
 
 # electron-updater 的**兜底**更新源。2026-10-10 改判（服务端下发）：客户端检查时

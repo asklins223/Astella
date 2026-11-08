@@ -176,8 +176,12 @@ test("记忆召回的查询向量要走治理出口，不能裸建 provider", ()
   // 不是"建了再降级"——降级本身已经把原话送出去了。
   const consentGate = source.indexOf("govCtx.consentOk");
   const build = source.indexOf("createEmbeddingProvider(govCtx)");
+  const externalSendGate = source.indexOf("memoryEmbeddingBlockedByExternalSend(rawProvider.id");
+  const governed = source.indexOf("createGovernedEmbeddingProvider(");
   assert.ok(consentGate > 0, "召回向量出口没有同意闸");
   assert.ok(build > consentGate, "建向量 provider 的动作不在同意闸之后");
+  assert.ok(externalSendGate > build && governed > externalSendGate,
+    "未允许外发时仍会包一层治理再去请求，拒绝被记成这一次召回的失败");
 
   // 与重建那条路同口径：治理拿不到就整段跳过，关键词检索本来就是既定降级
   // （`retrieveCompanionMemories` 的 `!opts.provider` 分支），不是把召回整条判失败。

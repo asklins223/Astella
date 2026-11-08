@@ -67,6 +67,11 @@ test("② 同一会话已有待确认提案时抛错，而不是插第二条", (
   );
 });
 
+test("工具确认也有 5 分钟窗口，不能把会话永久停在等待确认", () => {
+  assert.match(code, /now\(\) \+ interval '5 minutes'/);
+  assert.doesNotMatch(code, /agent_tool_review' THEN NULL/);
+});
+
 test("③ 落库的 payload 必须过 schema", () => {
   // 实际用的是 safeParse——所以判据是「用了 schema 且失败时**不落库**」，
   // 而不是「用了 parse」（第一版写死 parse，判据在第一版就红了）。

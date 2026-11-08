@@ -154,8 +154,8 @@ test("T0：回合编码是原生多轮（历史是真 messages，上下文是 sy
     pageContext: { pageKind: "today" },
     continuationData: "<continuation_data>ledger snapshot</continuation_data>",
   });
-  // system + 历史两条 + 当前问句
-  assert.equal(messages.length, 4);
+  // 稳定 system + 历史两条 + 本轮现场观察 + 当前问句
+  assert.equal(messages.length, 5);
   assert.equal(messages[0].role, "system");
   // persona 正文必须原样在最前；其后允许追加安全护栏（2026-09-19 起多了
   // 反回显护栏——实机出现过模型把输入上下文整段复述成回复）。
@@ -177,10 +177,13 @@ test("T0：回合编码是原生多轮（历史是真 messages，上下文是 sy
     { role: "assistant", content: "嗯嗯，光合作用。" },
   ]);
   // 用户当下那句话是最后一条 user 消息，也不再是 JSON 的 currentMessage 字段。
-  assert.deepEqual(messages[3], { role: "user", content: "你好" });
-  // 上下文数据以带边界的 system 数据块承载。
-  assert.match(String(messages[0].content), /<page_context>/);
-  assert.match(String(messages[0].content), /<continuation_data>ledger snapshot<\/continuation_data>/);
+  assert.deepEqual(messages[4], { role: "user", content: "你好" });
+  const observation = messages[3];
+  assert.equal(observation?.role, "system");
+  assert.equal(observation?.hostObservation, true);
+  assert.match(String(observation?.content), /<page_context>/);
+  assert.match(String(observation?.content), /<continuation_data>ledger snapshot<\/continuation_data>/);
+  assert.doesNotMatch(String(messages[0].content), /ledger snapshot|pageKind/);
   // 内部字段名不再进 prompt：泄露检测本来就把 sendToExternal / piiDetection 当内部词拦，
   // 而旧 prompt 天天把这两个串喂给模型——是自伤，不是信息。
   assert.doesNotMatch(String(messages[0].content), /sendToExternal|piiDetection/);
@@ -229,11 +232,12 @@ test("超大页面与旧摘要整块纳入、不切片，当前问题和确定�
   assert.deepEqual(receipts.filter(item => item.status === "budget_omitted").map(item => item.id), [],
     "容量派生之后不该有任何一条被 budget 挤掉");
   const system = String(messages[0].content);
-  // 不切片：整块在，边界完整。数原文里的字符总量，不比 substring——页面块是 JSON 封装的。
-  assert.ok((system.match(/x/g) ?? []).length >= 20_000, "页面原文整块可见，不是半截");
+  const local = messages.filter(message => message.hostObservation).map(message => String(message.content)).join("\n");
+  // 不切片：整块在，边界完整。页面是本轮现场，摘要留在可缓存的稳定前缀。
+  assert.ok((local.match(/x/g) ?? []).length >= 20_000, "页面原文整块可见，不是半截");
   assert.ok((system.match(/旧任务/g) ?? []).length >= 6_000,
     "摘要整块纳入，不被裁掉尾部（多出来的一次是 C 层前言点名它）");
-  assert.match(system, /<continuation_data>current watermark<\/continuation_data>/);
+  assert.match(local, /<continuation_data>current watermark<\/continuation_data>/);
   assert.deepEqual(messages.at(-1), { role: "user", content: "今晚想做什么菜？" });
 });
 
@@ -441,14 +445,13 @@ test("persona 输入边界：recent 整条给，当前合法问句不截断", ()
     recentMessages: many,
     pageContext: { big: "y".repeat(3_000) },
   });
-  // system + 30 条历史（整条）+ 当前问句：装配这一层不再按条数收边，
-  // 完整请求能不能发出去由调用前的上下文压力闸判定。
-  assert.equal(messages.length, 1 + 30 + 1);
+  // 稳定 system + 30 条历史 + 本轮页面观察 + 当前问句。
+  assert.equal(messages.length, 1 + 30 + 1 + 1);
   assert.equal(String(messages[1]?.content), "m0", "留下的不再是被剪掉前 10 条之后的那批");
   assert.equal(String(messages.at(-1)?.content).length, 5_000);
   // 记忆/上下文不再截断（截断的残缺上下文会产生误导；6bf2ac3）：
   // pageContext 以完整 canonical JSON 注入 system 数据块。
-  assert.match(String(messages[0].content), /y{3000}/);
+  assert.match(messages.filter(message => message.hostObservation).map(message => String(message.content)).join("\n"), /y{3000}/);
   assert.doesNotMatch(String(messages[0].content), /sendToExternal/, "策略不靠 prompt 传达，由服务端强制执行");
 });
 
@@ -786,6 +789,14 @@ test("可见文本净化：剥掉标签后不留孤立标点（2026-09-19 实机
     sanitizeCompanionVisibleText("第一段。\n\n。第二段。"),
     "第一段。\n\n第二段。",
   );
+  assert.equal(
+    sanitizeCompanionVisibleText("光反应在类囊体膜上。[^web-9f64765b044847b5]\n\n[^web-9f64765b044847b5]: 一篇已读网页"),
+    "光反应在类囊体膜上。[^web-9f64765b044847b5]",
+  );
+  assert.equal(
+    sanitizeCompanionVisibleText("光反应在类囊体膜上。[^web-9f64765b044847b5]\n\n[^web-9f64765b"),
+    "光反应在类囊体膜上。[^web-9f64765b044847b5]",
+  );
 });
 
 // ─── 环境快照与历史消毒（2026-09-20 方案 29 §4.1 / 坍缩闸配套）───────────
@@ -805,17 +816,17 @@ test("hereAndNow 注入 <here_and_now> 数据块并点名它的用法", () => {
     hereAndNow: block,
   });
   const system = String(messages[0].content);
-  assert.match(system, /现在：2026-09-20 19:17 周日（晚上）/);
+  const local = String(messages.find(message => message.hostObservation)?.content);
+  assert.match(local, /现在：2026-09-20 19:17 周日（晚上）/);
+  assert.doesNotMatch(system, /2026-09-20 19:17/, "时钟不进可缓存的指令前缀");
   // 「可以自然引用、据此主动开启话题」是被实测否决的旧说法：用户只说「嘿嘿」，
   // 她就"自然地"回了一句"今天已经学了 42 分钟"。
-  // 39d W2-5 起口径再往前走一步：不是"不要报数字"，而是"要报就读目录里的键"——
-  // 禁止句换成指针句，因为没问到的键**根本不在目录里**。
   assert.match(system, /当前事实不足时自主取证/);
+  assert.match(system, /现在几点只说明时间/);
   assert.doesNotMatch(system, /见 <fact_spans>/);
   assert.doesNotMatch(system, /可以自然引用，也可以据此主动开启话题/);
-  // 排在记忆块之前：越靠前的约束对小模型的遵循度越高。
-  assert.ok(system.indexOf("<here_and_now>") < system.indexOf("<memory_data>"),
-    "环境快照必须在记忆块之前");
+  assert.ok(messages.at(-1)?.role === "user" && messages.at(-2)?.hostObservation,
+    "现场数据紧挨当前问题，不插进稳定前缀");
 });
 
 // §11 C1：摘要接入。历史回放只带最近 20 条，更早的对话她本来完全看不见，
@@ -879,7 +890,9 @@ test("事实块作为独立数据块进 system，C 层前言点它的用处与�
     thisTurnFacts: "<this_turn_facts>\n- 「第四张」：学习卡《索引的选择性》（cardId=abc）。\n</this_turn_facts>",
   });
   const system = String(messages[0]?.content ?? "");
-  assert.match(system, /cardId=abc/);
+  const local = String(messages.find(message => message.hostObservation)?.content ?? "");
+  assert.match(local, /cardId=abc/);
+  assert.doesNotMatch(system, /cardId=abc/);
   assert.match(system, /<this_turn_facts>/, "前言里没点名这块，模型不知道它是什么");
   assert.match(system, /不代表库里没有/, "没有挡住「服务端没解析出来」被她读成「库里没有」");
 });

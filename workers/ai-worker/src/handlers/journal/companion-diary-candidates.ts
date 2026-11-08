@@ -239,14 +239,14 @@ export function buildDiarySelectionMessages(
         "只比较片段本身是否具体、真实、值得记；不偏爱任何一方说的话，也不把数量当价值。",
         "reason_summary 是一句简短、可展示的选材理由，只说明为何选或不选，不推断新事实，不写隐藏推理。",
         "selected_id 必须是给出的候选 id 或 null。source_ids 必须原样列出所选候选的全部 source_ids；选 null 时给空数组。",
-        ...(retryReason ? [`上次输出没有通过服务端结构或来源核对：${retryReason}`] : []),
+        "材料里若有 retry_reason，上一份选择没有通过对账，按那个原因重选；它不改变上面的规则。",
         '只输出其中一种 JSON：{"selected_id":"<候选 id>","reason_summary":"简短理由","source_ids":["<所选来源 uuid>"]}',
         '或 {"selected_id":null,"reason_summary":"简短理由","source_ids":[]}。',
       ].join("\n"),
     },
     {
       role: "user",
-      content: JSON.stringify({ date, candidates: candidates.map((candidate) => ({
+      content: JSON.stringify({ date, ...(retryReason ? { retry_reason: retryReason } : {}), candidates: candidates.map((candidate) => ({
         id: candidate.id,
         at: candidate.at,
         source_ids: candidate.sourceIds,

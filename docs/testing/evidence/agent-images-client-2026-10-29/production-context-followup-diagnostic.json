@@ -1,0 +1,123 @@
+[
+  {
+    "id": "image-followup",
+    "steps": [
+      {
+        "step": 1,
+        "status": "cancelled",
+        "errorCode": "SPECULATIVE_DRAFT_DISCARDED"
+      },
+      {
+        "step": 2,
+        "status": "succeeded",
+        "errorCode": null
+      },
+      {
+        "step": 3,
+        "status": "failed",
+        "errorCode": "FINISH_CONTRACT_INCOMPLETE"
+      },
+      {
+        "step": 4,
+        "status": "succeeded",
+        "errorCode": null
+      },
+      {
+        "step": 5,
+        "status": "succeeded",
+        "errorCode": null
+      }
+    ],
+    "controlTrace": [
+      {
+        "name": "companion_load_tools",
+        "arguments": {
+          "groups": [
+            "visual"
+          ]
+        },
+        "hasText": false
+      },
+      {
+        "toolResponse": "call_038122a7e1244d0394147f9e",
+        "ok": true,
+        "error": null,
+        "summary": "已装载 1 个工具"
+      },
+      {
+        "name": "companion_finish",
+        "arguments": {
+          "outcome": "completed",
+          "requirements": [
+            {
+              "evidenceCallIds": [],
+              "fulfilled": true,
+              "requirement": "按原顺序重新读取12张原图并逐张抄录字符",
+              "textOnly": true
+            }
+          ],
+          "textOnly": "true"
+        },
+        "hasText": false
+      },
+      {
+        "toolResponse": "call_21122ed5b0d04f5188e6f674",
+        "ok": false,
+        "error": "这一步要填的内容没有对上，没有执行",
+        "summary": null
+      },
+      {
+        "name": "companion_finish",
+        "arguments": {
+          "outcome": "completed",
+          "requirements": [
+            {
+              "evidenceCallIds": [],
+              "fulfilled": true,
+              "requirement": "按原顺序重新读取12张原图并逐张抄录字符，不照抄上一个答案",
+              "textOnly": true
+            }
+          ]
+        },
+        "hasText": false
+      },
+      {
+        "toolResponse": "call_e948dc92c3934635932b25ff",
+        "ok": true,
+        "error": null,
+        "summary": "最终回答已交付"
+      }
+    ]
+  },
+  {
+    "id": "image-followup-second",
+    "steps": [
+      {
+        "step": 1,
+        "status": "cancelled",
+        "errorCode": "SPECULATIVE_DRAFT_DISCARDED"
+      },
+      {
+        "step": 2,
+        "status": "failed",
+        "errorCode": "FINISH_CONTRACT_INCOMPLETE"
+      },
+      {
+        "step": 3,
+        "status": "failed",
+        "errorCode": "FINISH_CONTRACT_INCOMPLETE"
+      },
+      {
+        "step": 4,
+        "status": "failed",
+        "errorCode": "FINISH_CONTRACT_INCOMPLETE"
+      },
+      {
+        "step": 5,
+        "status": "failed",
+        "errorCode": "FINISH_CONTRACT_INCOMPLETE"
+      }
+    ],
+    "controlTrace": []
+  }
+]

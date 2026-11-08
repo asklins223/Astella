@@ -218,3 +218,34 @@ describe("链接（方案 35 F7）", () => {
     expect(plainCompanionBubbleText("详见[疏散手册](https://example.com/a)")).toBe("详见疏散手册");
   });
 });
+
+describe("流式解析缓存", () => {
+  it("同一段静态正文重复渲染命中缓存，不再重解析", () => {
+    const text = "海水吸收红光，散射蓝光。\n\n所以海看起来是蓝色的。";
+    const first = renderCompanionMarkdown(text);
+    const second = renderCompanionMarkdown(text);
+    expect(second).toBe(first);
+  });
+
+  it("带来源引用的渲染不缓存，避免引用晚到时拿到旧节点", () => {
+    const text = "见来源[^web-abcdef0123456789]。";
+    const sources = [{ id: "web-abcdef0123456789", title: "来源", url: "https://example.com" }] as never;
+    const first = renderCompanionMarkdown(text, sources);
+    const second = renderCompanionMarkdown(text, sources);
+    expect(second).not.toBe(first);
+  });
+
+  it("缓存有界：持续命中的静态条目留住，一次性草稿前缀最先被淘汰", () => {
+    const kept = "静态条目保持命中。";
+    const keptNodes = renderCompanionMarkdown(kept);
+    let draft0Nodes: ReturnType<typeof renderCompanionMarkdown> | undefined;
+    for (let i = 0; i < 140; i++) {
+      const nodes = renderCompanionMarkdown(`一次性草稿前缀 ${i}`);
+      if (i === 0) draft0Nodes = nodes;
+      if (i % 10 === 0) renderCompanionMarkdown(kept);
+    }
+    // 静态条目因持续命中仍留在缓存；最早那条草稿前缀不再命中、已被淘汰。
+    expect(renderCompanionMarkdown(kept)).toBe(keptNodes);
+    expect(renderCompanionMarkdown("一次性草稿前缀 0")).not.toBe(draft0Nodes);
+  });
+});

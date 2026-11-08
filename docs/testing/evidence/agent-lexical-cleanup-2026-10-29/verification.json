@@ -1,0 +1,122 @@
+{
+  "date": "2026-10-29",
+  "scope": "Local implementation and source/real isolated PostgreSQL validation; no deployment or paid model calls.",
+  "checks": {
+    "workerRegression": {
+      "command": "workers/ai-worker: npm test",
+      "exitCode": 0,
+      "tests": 1892,
+      "pass": 1892,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "logSha256": "ef310db25ed46f090e9fa458b4f8c678b5fd810cc1a91806b6c271df29112f6c"
+    },
+    "sharedRegression": {
+      "command": "packages/shared: npm test",
+      "exitCode": 0,
+      "tests": 534,
+      "pass": 534,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "logSha256": "70f1b10b3fc78ac6b51851ec7c2cf82d3af136b6ec5199e338f6484dca90f0c5"
+    },
+    "workerPostgres": {
+      "command": "isolated PostgreSQL: six worker integration suites",
+      "exitCode": 0,
+      "tests": 65,
+      "pass": 65,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "logSha256": "3eb539e0388b751fe5e95977a8ee8df10c5c8ab17c659bd71c38e137dd187c4c"
+    },
+    "apiPostgres": {
+      "command": "isolated PostgreSQL: companion memory HTTP routes",
+      "exitCode": 0,
+      "tests": 21,
+      "pass": 21,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "logSha256": "dfb9d28879f03b2c5cda99192a47f9b7a5179c6e41cf445697b1ce0b7b653157"
+    },
+    "apiStructuralAndMemory": {
+      "command": "API memory and migration/structural checks",
+      "exitCode": 0,
+      "tests": 30,
+      "pass": 30,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "logSha256": "d67ee01dda14015caee68ee97a4ea10ab9f958197ee2cd23a97b0167edb6f0b8"
+    },
+    "desktopFocused": {
+      "command": "npm test -- src/main/__tests__/desktop-gateway.test.ts src/renderer/src/components/surfaces/__tests__/companion-center-surface.test.tsx",
+      "exitCode": 0,
+      "tests": 116,
+      "pass": 116
+    },
+    "sharedTypecheck": {
+      "command": "npm run typecheck",
+      "exitCode": 0,
+      "logSha256": "1c6dd37ffdf82440e1766719de8833272c1d156ad380710ab216ffff2ae611db"
+    },
+    "apiTypecheck": {
+      "command": "npm run typecheck",
+      "exitCode": 0,
+      "logSha256": "365cca6f5d6ce2407b4c9f54cb3ea81928b712fb2e077e75e70e10546a6bc690"
+    },
+    "desktopTypecheck": {
+      "command": "npm run typecheck",
+      "exitCode": 0,
+      "logSha256": "4ed3a62715adda5918a677760b590131cc7218d6ad9f1ed5336677c2155260e6"
+    },
+    "workerTypecheck": {
+      "command": "npm run typecheck",
+      "exitCode": 0,
+      "logSha256": "337691a80ce0df2b3984dc12cb15bab955ea110e04f537873f51291f452d2539"
+    },
+    "protocolTemplateFocused": {
+      "command": "fact-spans, voice-expression, dialogue-stream focused regression",
+      "exitCode": 0,
+      "tests": 49,
+      "pass": 49
+    }
+  },
+  "syntheticProbe": {
+    "cases": 14,
+    "noteSavesRejected": 0,
+    "semanticCoverageNegativeControlStillAccepted": true
+  },
+  "baseline": {
+    "worker": {
+      "tests": 1919,
+      "pass": 1918,
+      "fail": 1,
+      "explanation": "Pre-edit worker run required termination of a non-exiting watchdog test process. No baseline assertion failure preceded that termination."
+    },
+    "shared": {
+      "tests": 543,
+      "pass": 543,
+      "fail": 0
+    }
+  },
+  "retiredPolicyTests": "Only tests for removed lexical semantics were retired/replaced. Final npm test commands used their unfiltered package scripts, with no force-exit or test filtering.",
+  "database": {
+    "engine": "pgvector/pgvector:pg16",
+    "isolatedCluster": true,
+    "workerRole": "astella_worker",
+    "apiRole": "astella_api",
+    "forwardMigration": "0462_companion_memory_maintenance_metadata",
+    "migrationApplyExitCode": 0,
+    "ephemeralContainerRemoved": true,
+    "initialDevelopmentClusterAttempt": "Blocked before migrations by existing local role-grant waits. Task-owned backend did not terminate within 1000 ms; empty astella_note_authoring_lexical20261029_1b36d547 database may remain. No unrelated backend was terminated and no development service restarted."
+  },
+  "configSha256": "375f560bbb1036594c816fa35165bb3f58c0af42b163f7480e3638056a86097b",
+  "gitDiffCheckExitCode": 0,
+  "changedManifestSha256": "656c1a3d4bca561236da771e0972d384a96045ab98b2215aa91c4d23ebadd144",
+  "sourceFilesChanged": 62,
+  "reviewPatch": "cleanup-redacted.patch (connection URL literals redacted; exact patch stays under outputs/)"
+}

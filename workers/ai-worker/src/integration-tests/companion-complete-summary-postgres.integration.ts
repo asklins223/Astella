@@ -73,7 +73,19 @@ test("an oversized single message is fully consumed before its whole exchange re
     };
     await f.run();
     assert.ok(parts.length > 2, "the source is actually larger than the provider input window");
-    assert.equal(parts.join(""), frozen.transcript, "every source character reaches a model request, in order");
+    let through = 0;
+    const sourceParts = parts.map(part => {
+      const range = /原文 UTF-16 区间 \[(\d+), (\d+)\)/.exec(part);
+      assert.ok(range, "each request identifies the exact source range beside its summary context");
+      const start = Number(range[1]), end = Number(range[2]);
+      assert.equal(start, through, "source ranges are contiguous and ordered");
+      const source = part.slice(-(end - start));
+      assert.equal(source, frozen.transcript.slice(start, end));
+      through = end;
+      return source;
+    });
+    assert.equal(through, frozen.transcript.length);
+    assert.equal(sourceParts.join(""), frozen.transcript, "every source character reaches a model request, in order");
     const rows = await f.summaries();
     assert.equal(rows.length, 1);
     assert.equal(String(rows[0]!.coverage_from_seq), "1");

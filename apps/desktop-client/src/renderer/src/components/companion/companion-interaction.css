@@ -46,6 +46,9 @@
 .companion-hud__head::-webkit-scrollbar { display: none; }
 .companion-hud__exchange { display: flex; flex: 0 0 auto; flex-direction: column; gap: 12px; min-width: 0; pointer-events: none; }
 .companion-hud__head > * { flex: 0 0 auto; }
+/* 回复气泡收窄（2026-11-07 用户：「回复气泡太宽了」「缩小宽度即可」）。
+   以前两张纸一律 `width: 100%`，一句话的回复也撑满整列（434px），短句看着像一块空板。
+   现在回复纸固定跟输入面板同宽（320px），不再随内容伸缩；输入面板保持原样。 */
 .companion-hud--floating .companion-hud__output,
 .companion-hud--floating .companion-hud__panel {
   position: relative;
@@ -69,6 +72,12 @@
   animation: companion-interaction-pop 560ms cubic-bezier(.22,.74,.25,1) both;
   pointer-events: auto;
 }
+.companion-hud--floating .companion-hud__output {
+  width: min(320px, 100%);
+  align-self: center;
+}
+.companion-hud--floating[data-head-dock="left"] .companion-hud__output { align-self: flex-end; }
+.companion-hud--floating[data-head-dock="right"] .companion-hud__output { align-self: flex-start; }
 .companion-hud--floating .companion-hud__output::after,
 .companion-hud--floating .companion-hud__composer::after {
   content: "";
@@ -94,7 +103,7 @@
 .companion-hud--floating[data-head-dock="left"] :is(.companion-hud__output, .companion-hud__composer) { transform-origin: 100% 50%; }
 .companion-hud--floating[data-head-dock="right"] :is(.companion-hud__output, .companion-hud__composer) { transform-origin: 0 50%; }
 .companion-hud--floating[data-head-dock="below"] :is(.companion-hud__output, .companion-hud__composer) { transform-origin: 50% 0; }
-.companion-hud--floating .companion-hud__voice { background: #f5f2df; }
+/* 语音层不再是纸张面板（2026-11-07）：一层很薄的在场感，没有纸底、没有标题栏。 */
 .companion-hud__reply-heading,
 .companion-hud--floating .companion-hud__panel > header,
 .companion-hud__paper > header {
@@ -145,7 +154,6 @@
   text-align: left;
 }
 .companion-hud--floating .companion-hud__composer > header strong { background: var(--hud-paper-deep); color: #684831; }
-.companion-hud--floating .companion-hud__voice > header strong,
 .companion-hud--floating .companion-hud__more > header strong { background: var(--hud-mint); color: #314c37; }
 .companion-hud__reply-heading button,
 .companion-hud--floating .companion-hud__panel > header button,
@@ -201,6 +209,7 @@
   vertical-align: -1px;
 }
 @keyframes companion-hud-thinking-caret { 50% { opacity: 0; } }
+.companion-hud__output .companion-ai-attribution { margin: 6px 0 0; text-align: left; }
 .companion-hud__output-retry { margin-top: 5px; min-height: 32px; padding: 3px 0; }
 .companion-hud--floating .companion-hud__output-stop { position: static; display: inline-flex; align-items: center; gap: 5px; min-height: 32px; margin: 5px 0 0; font-size: 11px; }
 .companion-hud--floating .companion-hud__composer form { display: block; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
@@ -256,7 +265,6 @@
 .companion-hud__quote-remove:hover { background: #e3d2a4; }
 .companion-hud__quote-remove:active { background: #d8c492; }
 .companion-hud--floating .companion-hud__composer:focus-within,
-.companion-hud__voice:focus-within,
 .companion-history .companion-record__search:focus-within { box-shadow: inset 0 0 0 2px var(--hud-green); }
 .companion-hud--floating textarea:focus-visible,
 .companion-history input:focus-visible,
@@ -444,26 +452,108 @@
 .companion-reply-attachments .companion-record__quote-text { max-height: none; line-height: 1.75; }
 .companion-record__citation { margin: 10px 0; color: var(--hud-green); font-size: 13px; }
 .companion-record__code { max-width: 100%; margin: 10px 0; padding: 12px; overflow: auto; color: var(--hud-ink); background: #efe3bd; border-radius: 14px 18px 16px 13px; font: 12px/1.7 ui-monospace, monospace; }
-.companion-hud__voice > p { display: flex; gap: 8px; line-height: 1.7; }
-.companion-hud__voice > footer { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 10px; }
-.companion-voice-status { display: flex; align-items: center; gap: 12px; padding: 10px 0; }
-.companion-voice-status > div:last-child { min-width: 0; }
-.companion-voice-status p { margin: 0 0 3px; color: #314c37; font-size: 15px; font-weight: 700; line-height: 1.5; }
-.companion-voice-status span { display: block; color: #6b715d; font-size: 12px; line-height: 1.65; }
-.companion-voice-meter { --input-level: 0; display: flex; flex: 0 0 46px; width: 46px; height: 46px; align-items: center; justify-content: center; gap: 3px; color: #58764c; border-radius: 50%; background: #dfe8ce; }
-.companion-voice-meter i { display: block; width: 3px; height: calc(5px + var(--input-level) * 16px); border-radius: 3px; background: currentColor; }
-.companion-voice-meter i:nth-child(2n) { height: calc(7px + var(--input-level) * 24px); }
-.companion-voice-meter i:nth-child(3) { height: calc(9px + var(--input-level) * 28px); }
-.companion-hud__voice[data-activity="paused"] .companion-voice-meter { color: #897c64; background: #eae3d2; }
-.companion-hud__voice[data-activity="speaking"] .companion-voice-meter { color: #476a79; background: #dce8e9; }
-.companion-voice-transcript { padding: 8px 0 8px 11px; border-left: 2px solid #a7ba8e; }
-.companion-voice-transcript small { color: #768068; font-size: 10px; }
-.companion-voice-transcript p { margin: 3px 0 0; max-height: 108px; overflow: auto; overflow-wrap: anywhere; color: var(--hud-ink); font-size: 13px; line-height: 1.75; }
-.companion-voice-transcript[data-sent] { border-left-color: #c9c8aa; }
-.companion-hud__voice > .companion-voice-note { display: block; margin: 7px 0; color: #805c37; font-size: 12px; }
-.companion-hud__voice > footer { flex-wrap: wrap; justify-content: flex-start; gap: 4px 10px; border-top: 1px solid #dcdcc6; padding-top: 8px; }
-.companion-hud__voice > footer .text-action { display: inline-flex; align-items: center; gap: 4px; min-height: 36px; font-size: 12px; }
-.companion-hud__voice > footer button:active { transform: scale(.97); }
+/* ── 语音对话：一颗会呼吸的烟球，浮在她头边（2026-11-07 用户决定） ───────────
+   用户的原话：「我只要球」「不要搞成一整块屏幕的遮罩」。所以没有遮罩、没有底板、
+   没有对话记录、没有按钮行：球就浮在伴星头部外侧（回复气泡的另一侧），球下一行
+   状态字。位置由 `use-companion-floating-placement` 按角色真实盒量出来发布，
+   房间、气泡、控件都照常可见可用。 */
+.companion-voice {
+  --voice-level: 0;
+  position: fixed;
+  left: var(--companion-voice-x, 70vw);
+  top: var(--companion-voice-y, 40vh);
+  z-index: 10;
+  width: 96px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  animation: companion-voice-in 260ms var(--hud-ease-out) both;
+}
+@keyframes companion-voice-in { from { opacity: 0; } }
+.companion-voice__stage { position: relative; display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: auto; }
+/* 语音开着时控制轨让位给烟球：球就接管麦克风按钮那一列，不并排两套控件。 */
+.companion-hud[data-voice] .companion-hud__controls { visibility: hidden; }
+
+/* 球：边缘清晰的整颗球，里面是一整片会流动的云；不是玻璃珠，也不加高光。 */
+.companion-voice__orb {
+  display: grid;
+  place-items: center;
+  width: 96px;
+  height: 96px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  filter: drop-shadow(0 8px 18px rgba(6, 12, 24, .38));
+}
+.companion-voice__orb:focus-visible { outline: 2px solid #dfe6ff; outline-offset: 8px; border-radius: 50%; }
+.companion-voice__shell { display: block; width: 100%; height: 100%; border-radius: 50%; animation: companion-voice-breathe 5s ease-in-out infinite; }
+@keyframes companion-voice-breathe { 0%, 100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-3px) scale(1.02); } }
+.companion-voice__ball {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 50%;
+  background: linear-gradient(178deg, #2746e8 0%, #3a63ff 34%, #7b9bff 62%, #bdd0ff 82%, #e9efff 100%);
+  isolation: isolate;
+}
+/* 云图是画布实时画的（CompanionVoiceOrb）：云团持续横穿球面，振幅只温和地推流速。
+   球体本身不随音量缩放——之前按播放振幅逐帧缩放，整颗球一直在颤（2026-11-07 用户反馈）。 */
+.companion-voice__canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; border-radius: 50%; }
+.companion-voice__ball::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 46%, rgba(255,255,255,.92) 0%, rgba(255,255,255,0) 64%);
+  opacity: .12;
+  mix-blend-mode: screen;
+  pointer-events: none;
+}
+
+/* 球下只有一行状态；直接压在场景上，不垫任何底板。 */
+.companion-voice__status { margin: 0; min-height: 19px; color: rgba(255, 255, 255, .84); font: 600 12px/1.6 "Noto Sans SC Variable", "PingFang SC", sans-serif; letter-spacing: .03em; text-align: center; white-space: nowrap; text-shadow: 0 1px 3px rgba(8, 14, 24, .7); }
+.companion-voice__status[data-tone="note"] { color: #ffd08a; }
+.companion-voice__hint { margin: 0; color: rgba(255, 255, 255, .84); font-size: 11.5px; text-align: center; text-shadow: 0 1px 3px rgba(8, 14, 24, .7); }
+.companion-voice__hint .text-action { color: #cfe0ff; }
+
+/* 关闭：平时没有；指针移到球上或键盘聚焦时才从球角上浮出来。 */
+.companion-voice__close {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(8, 10, 14, .55);
+  color: #d4d9e2;
+  cursor: pointer;
+  opacity: 0;
+  transform: scale(.9);
+  transition: opacity 160ms ease, transform 160ms ease, background-color 120ms ease;
+}
+.companion-voice__stage:hover .companion-voice__close,
+.companion-voice__close:focus-visible { opacity: 1; transform: none; }
+.companion-voice__close:hover { background: rgba(22, 26, 34, .85); }
+.companion-voice__close:focus-visible { outline: 2px solid #dfe6ff; outline-offset: 2px; }
+
+.companion-hud--floating[data-motion="lite"] .companion-voice__shell,
+.companion-hud--floating[data-motion="off"] .companion-voice__shell { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+  .companion-voice,
+  .companion-voice__shell { animation: none; }
+}
 /* 44px input target; only the inner 34px circle occupies visual space. */
 .desktop-app .companion-presence .companion-hud__controls { left: -4px; right: auto; top: 57%; gap: 1px; }
 /* Home and task controls share the projected visible body + props boundary. */
@@ -543,6 +633,19 @@
   border: 0;
 }
 .companion-compose-images { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; grid-column: 1 / -1; max-height: 180px; overflow-y: auto; }
+.companion-compose-file {
+  display: inline-flex; align-items: center; gap: 7px; width: fit-content; max-width: 100%;
+  padding: 4px 7px 4px 10px; margin-block: 2px 4px; border: 1px solid #d8c8ae; border-radius: 7px;
+  background: #fff9ed; color: #403629; font-size: 12px; line-height: 1.3;
+}
+.companion-compose-file span { color: #7a6a56; }
+.companion-compose-file strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.companion-compose-file button {
+  flex: none; display: grid; place-items: center; width: 19px; height: 19px; padding: 0;
+  border: 0; border-radius: 5px; background: none; color: #7a6a56; font: inherit; line-height: 1; cursor: pointer;
+}
+.companion-compose-file button:hover { background: #efe2cd; color: #403629; }
+.companion-record__file-attachment { margin: 2px 0 6px; color: #7a6a56; font-size: 11px; }
 .companion-compose-images .companion-compose-image { flex: 1 1 150px; min-width: 0; max-width: 100%; }
 .companion-compose-image { display: flex; align-items: center; gap: 9px; margin: 2px 2px 8px; padding: 7px 9px; border: 1px solid #eae5d5; border-radius: 12px; background: #fffdf6; }
 .companion-compose-image img { width: 40px; height: 40px; border-radius: 9px; object-fit: cover; }

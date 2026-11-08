@@ -37,6 +37,8 @@ export const WINDOW_LIVE2D_BUST_HEIGHT_RATIO = 0.7;
 export interface WindowLive2DMotionCue {
   readonly group: string;
   readonly index: number;
+  /** 成对动作的收回段，例如举手之后的 RaiseHandBack。不单独进轮播。 */
+  readonly release?: { readonly group: string; readonly index: number };
 }
 
 /** Amplitude of the idle body sway the `idle` layer keeps emitting, in degrees. */
@@ -86,9 +88,38 @@ export const WINDOW_LIVE2D_ASSETS = {
  * 伴星可选的 Live2D 形态。注册表是唯一真话，切换能力见 `WindowLive2DDriver.setModel`。
  *
  * 2026-10-04 Owner 裁决：mao / 小彩 两条形态连同资产整条删除，只留大肥鱼。
- * 类型保留联合形态，新增角色 = 注册表加一条 + 补资产，不是改这里的结构。
+ * 2026-11-05 Owner 提供「大肥鱼 免费公皮」并要求接入为可切换形态：`whale` 仍是
+ * 默认，新形态 `fatfish` 并列可选。新增角色 = 注册表加一条 + 补资产，
+ * 不是改这里的结构。
  */
-export type WindowLive2DModelId = "whale";
+export type WindowLive2DModelId = "whale" | "fatfish";
+
+/**
+ * 同一份 moc3 内由 `Clothes2` 控制的体型节点（2026-11-05 接入）。
+ *
+ * 作者原包把「大小变」做成一根 0..1 的滑杆：0=原尺寸、约 0.4=中间档、1=最小的
+ * Q 版。用户要求把它拆成三个可选形态而不是一根滑杆，所以这里只登记**三个离散
+ * 取值**，由设置里的三选一写入。
+ *
+ * **不能用 0**：`Part46「鼻子」`（ArtMesh246 / ArtMesh682）在 `Clothes2 === 0`
+ * 时画出的是一块纯黑贴图——作者只给另外两档做了透明。所以「大」取 0 与 0.4
+ * 之间**最大的干净值**，不是原尺寸。逐帧实测见
+ * `docs/testing/companion-fatfish-2026-11-05.md`。
+ */
+export type WindowLive2DBodyForm = "small" | "medium" | "large";
+
+/** 体型形态 → `Clothes2` 的离散取值。缺登记 = 该形态没有体型切换。 */
+export type WindowLive2DBodyFormMap = Readonly<Partial<Record<WindowLive2DBodyForm, number>>>;
+
+/**
+ * 默认体型形态。用户 2026-11-05 裁决：新形态默认用小的、不用大的。
+ * `whale` 没有登记体型表，这个默认值对它不生效。
+ */
+export const DEFAULT_WINDOW_LIVE2D_BODY_FORM: WindowLive2DBodyForm = "small";
+
+export function isWindowLive2DBodyForm(value: unknown): value is WindowLive2DBodyForm {
+  return value === "small" || value === "medium" || value === "large";
+}
 
 /**
  * 每个模型的许可验收要求：manifest 必须逐字段匹配（fail closed）。
@@ -261,7 +292,37 @@ export interface WindowLive2DModelDescriptor {
   readonly bustSinkRatio?: number;
   /** Real model parts protecting head, hair and headwear from nearby UI. */
   readonly layoutHeadParts?: readonly string[];
+  /**
+   * 脸的部件。公皮上半身取景用它们的水平中心，避免鲸尾把整只内容盒的中心拽偏。
+   */
+  readonly layoutFaceParts?: readonly string[];
+  /**
+   * 同一份模型的体型形态 → `Clothes2` 取值（2026-11-05 接入）。
+   * 未登记 = 该形态没有体型切换，设置里不出现三选一。
+   */
+  readonly bodyForms?: WindowLive2DBodyFormMap;
+  /**
+   * 公皮每一档自己的上半身窗口，模型坐标 Y 朝上。
+   * 不按内容盒比例切：大号的裙子会把内容盒拉得很长，半身比例会切到围裙上。
+   */
+  readonly bustWindows?: Readonly<Record<WindowLive2DBodyForm, { readonly top: number; readonly bottom: number; readonly centerX: number }>>;
+  /**
+   * 公皮每一档的全身窗口，模型坐标 Y 朝上。首页用它把头发到脚放进座位。
+   * 内容盒会把大号的裙子当成整段高度，按盒子适配会只剩裙子和鞋。
+   */
+  readonly fullWindows?: Readonly<Record<WindowLive2DBodyForm, { readonly top: number; readonly bottom: number; readonly centerX: number }>>;
+  /**
+   * 无论体型为何都保持隐藏的部件（2026-11-05）。
+   *
+   * 作者原包的「鼻子」部件 `Part46` 只在部分体型里被做成透明，原尺寸下画的是一块
+   * 纯黑贴图。这是资产本身的问题，不是我们的设置，所以按形态登记成"永不显示"，
+   * 而不是在每个体型取值上碰运气。
+   */
+  readonly hiddenParts?: readonly string[];
 }
+
+/** 桌面端默认取景。2026-11-05 用户裁决：桌面与 iOS 默认半身。 */
+export const DEFAULT_WINDOW_LIVE2D_FRAMING: WindowLive2DFraming = "bust";
 
 /**
  * whale 的展示动作和完整道具组合从资产自动进池；任务开始另用记笔记场景。
@@ -354,6 +415,100 @@ const WHALE_MOMENT_CUE: Readonly<Partial<Record<WindowLive2DCharacterMoment, Win
   run_failed: { overlay: "soul", costume: null, holdMs: 3_200 },
 };
 
+/**
+ * 「大肥鱼 免费公皮」的三个体型节点（2026-11-05 接入）。
+ * 用户裁决：拆成三个选项，默认最小形态。
+ *
+ * 值来自逐帧实测（见 `docs/testing/companion-fatfish-2026-11-05.md`）：
+ * `Clothes2` 越大越接近 Q 版；0.05 是**鼻子不再发黑**的最小值，所以用它当「大」。
+ */
+const FATFISH_BODY_FORMS: WindowLive2DBodyFormMap = { large: 0.05, medium: 0.4, small: 1 };
+
+/**
+ * 「公皮」的表演映射。作者原包的表情是一个个「按键」开关
+ * （key1…key13 / Clothes1…5 / Movement1…3），没有语义分组，所以情绪映射只挑
+ * 语义真的对得上的那几张脸；对不上的情绪留在参数层（FACS），不硬凑一张意思
+ * 不同的脸。
+ */
+const FATFISH_PRESENTATION_MOTION: PresentationMotionMap = {
+  hidden: null,
+  // 作者的 Idle 是惊吓、出汗和哭，不是休息姿势。休息交给呼吸和身体参数层。
+  idle: null,
+  invite: { group: "RaiseHand", index: 0 },
+  listen: null,
+  speak: null,
+  think: null,
+  analyze: null,
+  navigate: { group: "PointFinger", index: 0 },
+  encourage: { group: "RaiseHand", index: 0 },
+  celebrate: { group: "RaiseHand", index: 0 },
+  uncertain: null,
+};
+
+const FATFISH_EMOTION_EXPRESSION: EmotionExpressionMap = {
+  happy: "blush",
+  excited: "heart-eyes",
+  amazed: "squeezed-eyes",
+  surprised: "squeezed-eyes",
+  panicked: "cold-sweat",
+  mischievously: "smug-eyes",
+  curious: "smug-eyes",
+  think: "loading",
+  analyze: "loading",
+  empathetic: "crying",
+  encouraged: "heart-eyes",
+  celebrate: "heart-eyes",
+  uncertain: "dizzy-eyes",
+  angry: "black-face",
+  sad: "crying",
+};
+
+/** 受惊时唯一对得上的身体反应：把举起的那只手放回去。 */
+const FATFISH_EMOTION_MOTION: Readonly<Record<string, WindowLive2DMotionCue>> = {
+  surprised: { group: "RaiseHandBack", index: 0 },
+};
+
+/**
+ * 「公皮」的穿戴物 / 贴纸。作者原包把它们都做成开关参数，
+ * 所以眼镜能戴上再摘下、尾巴能收起再放出。
+ */
+const FATFISH_PROP_ROLES: Readonly<Record<string, WindowLive2DPropKind>> = {
+  "glasses-square": "costume",
+  monocle: "costume",
+  "steel-bowl": "costume",
+  "skirt-long": "costume",
+  "chest-cover": "costume",
+  "shoes-off": "costume",
+  "tail-off": "costume",
+  "buck-tooth": "overlay",
+  "black-face": "overlay",
+  "cold-sweat": "overlay",
+  "dizzy-eyes": "overlay",
+  "heart-eyes": "overlay",
+  "squeezed-eyes": "overlay",
+  "smug-eyes": "overlay",
+};
+
+const FATFISH_MOMENT_CUE: Readonly<Partial<Record<WindowLive2DCharacterMoment, WindowLive2DMomentCue>>> = {
+  task_started: { motion: { group: "PointFinger", index: 0 } },
+  working: { costume: "glasses-square" },
+  tool_succeeded: { motion: { group: "RaiseHand", index: 0 }, overlay: "heart-eyes", costume: null, holdMs: 3_000 },
+  tool_failed: { overlay: "cold-sweat", costume: null, holdMs: 3_200 },
+  awaiting_confirmation: { overlay: "smug-eyes", holdMs: 6_000 },
+  reply_completed: { costume: null },
+  space_arrived: { motion: { group: "Grass", index: 0 }, costume: null },
+  reminder: { overlay: "squeezed-eyes", holdMs: 3_000 },
+  celebration: { overlay: "heart-eyes", costume: null, holdMs: 3_000 },
+  run_failed: { overlay: "cold-sweat", costume: null, holdMs: 3_200 },
+};
+
+/** 服务端 catalog 的 modelId → 这台客户端能渲染的本地 id。不认识的不进选项。 */
+export function windowLive2DModelForPublishedId(modelId: string): WindowLive2DModelId | null {
+  const found = (Object.entries(WINDOW_LIVE2D_MODEL_REGISTRY) as Array<[WindowLive2DModelId, WindowLive2DModelDescriptor]>)
+    .find(([, descriptor]) => descriptor.manifestExpectation.modelId === modelId);
+  return found?.[0] ?? null;
+}
+
 export const WINDOW_LIVE2D_MODEL_REGISTRY: Readonly<
   Record<WindowLive2DModelId, WindowLive2DModelDescriptor>
 > = {
@@ -384,6 +539,50 @@ export const WINDOW_LIVE2D_MODEL_REGISTRY: Readonly<
     // 正好顶在控制列上（2026-09-20 用户标注「模型往下、按钮往旁边」）。
     // 再往下沉一档，把头顶让给天空，控制列也就能挪到盒子外侧不压到人。
     bustSinkRatio: 0.14,
+  },
+  /**
+   * 大肥鱼 免费公皮（2026-11-05 接入）。默认形态仍是 whale，这条并列可选。
+   *
+   * 三档体型全部来自同一份 moc3 的 `Clothes2`。「大」不是作者的 0：0 会露出
+   * `Part46` 那块纯黑鼻子贴图（见 `WindowLive2DBodyForm` 注释）。实测内容盒
+   * 高度：大 0.05 → 6471、中 0.4 → 4587、小 1.0 → 1992；鼻子网格在 0.05 起
+   * 就完全透明，跑 20 秒待机与播放动作都不反弹。
+   */
+  fatfish: {
+    displayName: "大肥鱼二号",
+    layoutHeadParts: ["Part99", "Part2", "Part47", "Part161", "Part3", "Part4", "Part147", "Part162"],
+    manifest: "assets/companion/live2d-v4/fatfish/manifest.json",
+    model: "assets/companion/live2d-v4/fatfish/fatfish.model3.json",
+    manifestExpectation: {
+      modelId: "companion-live2d-fatfish-v4",
+      status: "production",
+      commercialReleaseAllowed: true,
+    },
+    lipSyncParameter: "ParamMouthOpenY",
+    presentationMotion: FATFISH_PRESENTATION_MOTION,
+    emotionMotion: FATFISH_EMOTION_MOTION,
+    emotionExpression: FATFISH_EMOTION_EXPRESSION,
+    propRoles: FATFISH_PROP_ROLES,
+    momentCue: FATFISH_MOMENT_CUE,
+    fadeInMs: 240,
+    fadeOutMs: 200,
+    bodyForms: FATFISH_BODY_FORMS,
+    bustWindows: {
+      small: { top: 0.89, bottom: 0.45, centerX: 0 },
+      medium: { top: 0.93, bottom: 0.36, centerX: 0 },
+      large: { top: 0.92, bottom: 0.26, centerX: 0 },
+    },
+    fullWindows: {
+      small: { top: 0.88, bottom: 0.28, centerX: 0 },
+      medium: { top: 0.92, bottom: -0.40, centerX: 0 },
+      large: { top: 0.92, bottom: -0.90, centerX: 0 },
+    },
+    // 作者原包的鼻子部件在原尺寸下是纯黑贴图；登记成永不显示，
+    // 这样即使有人把 Clothes2 写成 0，脸也不会坏。
+    hiddenParts: ["Part46"],
+    layoutFaceParts: ["Part15", "Part9", "Part154", "Part111", "Part10"],
+    // 公皮只展示上半身（2026-11-06）：内容盒上半段铺满，不按宽度把整只（含腿）缩回来。
+    bustHeightRatio: 0.5,
   },
 };
 
@@ -581,6 +780,9 @@ type ParameterRange = { readonly min: number; readonly max: number };
  * values are clamped before reaching Cubism Core.
  */
 const PARAMETER_ALLOWLIST: Readonly<Record<string, ParameterRange>> = {
+  ParamAngleX: { min: -30, max: 30 },
+  ParamAngleY: { min: -30, max: 30 },
+  ParamAngleZ: { min: -30, max: 30 },
   ParamBodyAngleX: { min: -10, max: 10 },
   ParamBreath: { min: 0, max: 1 },
   ParamBrowLY: { min: -1, max: 1 },
@@ -592,7 +794,25 @@ const PARAMETER_ALLOWLIST: Readonly<Record<string, ParameterRange>> = {
   ParamEyeRSmile: { min: 0, max: 1 },
   ParamMouthUp: { min: 0, max: 1 },
   ParamMouthOpenY: { min: 0, max: 1 },
+  JawOpen: { min: 0, max: 1 },
+  ParamEyeBallX: { min: -1, max: 1 },
+  ParamEyeBallY: { min: -1, max: 1 },
 };
+
+/**
+ * 公皮待机的头。鲸鱼娘的晃动来自 Cubism 呼吸层（X/Y/Z 三个不同周期，权重 0.5）。
+ * 公皮的物理会用静止的 `AngleX/Y/Z` 把 `ParamAngle*` 盖回 0，所以这里直接给出
+ * 画上去的角度：左右放慢，点头和歪头跟鲸鱼娘同一量级，再叠一段更慢的波，避免单摆。
+ */
+export function fatfishIdleHead(nowMs: number): { x: number; y: number; z: number } {
+  const seconds = nowMs / 1_000;
+  const wave = (peak: number, cycle: number) => 0.5 * peak * Math.sin((2 * Math.PI * seconds) / cycle);
+  return {
+    x: wave(9, 6.5345) + wave(3, 14.2),
+    y: wave(12, 4.15) + wave(4, 9.6),
+    z: wave(10, 5.5345) + wave(3, 12.8),
+  };
+}
 
 export interface WindowLive2DParameterValue {
   readonly parameter: string;
@@ -623,6 +843,8 @@ export function parameterValuesForWindowLive2D(input: {
   readonly toolAttentionAtMs?: number;
   /** 当前模型的口型参数；缺省 = 注册表里的默认形态（whale 的 `ParamMouthOpenY`）。 */
   readonly lipSyncParameter?: string;
+  /** 公皮的张嘴关键帧挤在后半段，电平要先拉开再写入。 */
+  readonly modelId?: WindowLive2DModelId;
   /**
    * 当前生效的表情**自己写了**哪些 Cubism 参数（来自表情的 exp3，见
    * `live2d-performance-catalog.ts`）。
@@ -642,9 +864,19 @@ export function parameterValuesForWindowLive2D(input: {
   const eyeOpen = blinkPhase >= 3_600 && blinkPhase < 3_750
     ? Math.abs((blinkPhase - 3_675) / 75)
     : 1;
-  const idleBodyAngleX = Math.sin(input.nowMs / 2_400) * IDLE_BODY_ANGLE_SWAY_DEGREES;
+  const seconds = input.nowMs / 1_000;
+  const fatfishRest = input.modelId === "fatfish";
+  const idleBodyAngleX = fatfishRest
+    ? Math.sin(seconds / 2.6) * 5 + Math.sin(seconds / 6.4) * 2
+    : Math.sin(input.nowMs / 2_400) * IDLE_BODY_ANGLE_SWAY_DEGREES;
   const requests: Live2DParameterRequest[] = [
-    { layer: "idle", parameter: "ParamBreath", value: 0.5 + Math.sin(input.nowMs / 900) * 0.25 },
+    {
+      layer: "idle",
+      parameter: "ParamBreath",
+      value: fatfishRest
+        ? 0.5 + Math.sin(seconds / 1.7) * 0.22 + Math.sin(seconds / 3.9) * 0.08
+        : 0.5 + Math.sin(input.nowMs / 900) * 0.25,
+    },
     { layer: "idle", parameter: "ParamBodyAngleX", value: idleBodyAngleX },
     { layer: "blink", parameter: "ParamEyeLOpen", value: eyeOpen },
     { layer: "blink", parameter: "ParamEyeROpen", value: eyeOpen },
@@ -653,6 +885,17 @@ export function parameterValuesForWindowLive2D(input: {
   // The impulse rides on top of the idle sway instead of replacing it, so the
   // `gaze` layer can hand `ParamBodyAngleX` back without a visible jump.
   const toolAttention = toolAttentionBodyAngleOffset(input.toolAttentionAtMs, input.nowMs);
+  if (fatfishRest) {
+    const head = fatfishIdleHead(input.nowMs);
+    requests.push(
+      { layer: "idle", parameter: "ParamAngleX", value: head.x },
+      { layer: "idle", parameter: "ParamAngleY", value: head.y },
+      { layer: "idle", parameter: "ParamAngleZ", value: head.z },
+      { layer: "idle", parameter: "ParamEyeBallX", value: head.x / 40 },
+      { layer: "idle", parameter: "ParamEyeBallY", value: head.y / 40 },
+    );
+  }
+
   if (toolAttention !== null) {
     requests.push({
       layer: "gaze",
@@ -693,11 +936,15 @@ export function parameterValuesForWindowLive2D(input: {
 
   if (input.presentation === "speak" || input.voiceLevel > 0) {
     const voiceLevel = Math.min(1, Math.max(0, input.voiceLevel));
+    const open = input.modelId === "fatfish" && voiceLevel > 0 ? voiceLevel ** 0.28 : voiceLevel;
     const lipSyncParameter = input.lipSyncParameter ?? WINDOW_LIVE2D_MODEL_REGISTRY.whale.lipSyncParameter;
     requests.push(
-      { layer: "lipsync", parameter: lipSyncParameter, value: voiceLevel },
+      { layer: "lipsync", parameter: lipSyncParameter, value: open },
       { layer: "lipsync", parameter: "ParamMouthUp", value: voiceLevel * 0.2 },
     );
+    if (input.modelId === "fatfish") {
+      requests.push({ layer: "lipsync", parameter: "JawOpen", value: open });
+    }
   }
 
   return arbitrateLive2DParameters(requests.filter((request) =>

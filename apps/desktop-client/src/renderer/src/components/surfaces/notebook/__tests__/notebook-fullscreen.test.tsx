@@ -75,7 +75,8 @@ it("目录与资料袋先接住 Escape，合起后焦点回到折签，全屏仍
   fireEvent.click(screen.getByRole("button", { name: "展开笔记工具" }));
   fireEvent.click(screen.getByRole("button", { name: /^目录$/ }));
   const index = screen.getByRole("complementary", { name: "笔记目录" });
-  fireEvent.keyDown(within(index).getByRole("button", { name: "开篇" }), { key: "Escape" });
+  expect(within(index).queryByRole("button", { name: "开篇" })).toBeNull();
+  fireEvent.keyDown(within(index).getByRole("button", { name: "第二节" }), { key: "Escape" });
   expect(document.activeElement).toBe(screen.getByRole("button", { name: "展开笔记工具" }));
   expect(useNotebookFullscreenState.getState().active).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "展开笔记工具" }));

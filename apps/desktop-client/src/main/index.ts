@@ -55,12 +55,15 @@ import {
   HOME_WINDOW_MINIMUM_SIZE
 } from '../shared/window-geometry'
 import { registerM1DesktopIpc } from './ipc/desktop-ipc'
+import { OpenedFileBroker, openedMarkdownPathsFromArgv } from './note-doc/opened-file'
+import { grantNoteWritingRoot } from './note-doc/note-writing-files'
 import { desktopDeploymentEnvironment } from './window/desktop-deployment'
 import { FileNoteDocCacheStore } from './note-doc/note-doc-cache-store'
 import { guardProcessOutputStreams } from './artifact/output-stream-guard'
 import { configureDesktopAppIdentity } from './window/desktop-app-identity'
 import { DesktopRenderingPreferences, registerDesktopRenderingHealthMonitor, registerDesktopRenderingIpc } from './window/desktop-rendering'
 import { DESKTOP_RENDERING_STATE_CHANNEL } from '../shared/desktop-rendering'
+import { DESKTOP_IPC_CHANNELS, type OpenedFileBatchV1 } from '@astella/shared/desktop-ipc-contracts'
 
 // 主进程的第一件事：stdout/stderr 的写失败（终端关掉后的 EIO/EPIPE）不能再升级成
 // 未捕获异常——那会弹出一个阻塞整个应用的模态框，而原因只是"没人再读日志"。
@@ -78,6 +81,30 @@ registerDesktopRenderingHealthMonitor(app, desktopRendering, traceBoot)
 const APP_SCHEME = 'astella-app'
 const APP_HOST = 'bundle'
 const APP_URL = `${APP_SCHEME}://${APP_HOST}/index.html`
+
+/**
+ * 系统文件关联（2026-11）：双击 .md 交来的路径先落在这里。
+ *
+ * 渲染层挂载前只攒着，`take` 时才交出去；那一次调用同时声明「后续可以推了」。
+ * 投递前先把这个文件所在目录记进 noteWriting 的授权表——系统把路径交给我们，
+ * 等于用户已经选过它；随文的同级图片也在这个目录里。
+ */
+const openedFiles = new OpenedFileBroker(async (window, batch: OpenedFileBatchV1) => {
+  await Promise.all(batch.files.map(async file => {
+    try {
+      await grantNoteWritingRoot(window, dirname(file.path))
+    } catch {
+      // 目录读不到时渲染层会看到真实的读取失败；这里不必再弹一次错误。
+    }
+  }))
+  window.webContents.send(DESKTOP_IPC_CHANNELS.openedFileIncoming, batch)
+})
+
+// macOS 的 open-file 可能早于 ready；必须在这一层就接住，不能等到窗口建好。
+app.on('open-file', (event, path) => {
+  event.preventDefault()
+  void openedFiles.receive([path])
+})
 
 // Chromium cannot initialize its own sandbox from inside a restricted
 // environment (CI containers, sandboxed agent shells): every child process then
@@ -705,6 +732,7 @@ async function createMainWindow(): Promise<BrowserWindow> {
   installWindowZoomShortcuts(window.webContents, process.platform)
 
   registerWindowLifecycle(window)
+  openedFiles.attachWindow(window)
 
   window.on('ready-to-show', () => traceBoot('renderer-ready-to-show'))
   window.on('closed', () => traceBoot('window-closed'))
@@ -744,12 +772,17 @@ if (!singleInstanceLock) {
   traceBoot('quit-because-single-instance-lock-lost')
   app.quit()
 } else {
-  app.on('second-instance', () => {
+  app.on('second-instance', (_event, argv, workingDirectory) => {
     const [window] = BrowserWindow.getAllWindows()
-    if (!window) return
-    if (window.isMinimized()) window.restore()
-    window.show()
-    window.focus()
+    if (window) {
+      if (window.isMinimized()) window.restore()
+      window.show()
+      window.focus()
+    }
+    // 第二个实例可能带着一条要打开的文件路径：先交给我们这一份窗口。
+    void openedMarkdownPathsFromArgv(argv, workingDirectory).then(paths => {
+      if (paths.length) void openedFiles.receive(paths)
+    })
   })
 }
 
@@ -904,7 +937,8 @@ app.whenReady()
     artifactUserDataDir: () => app.getPath('userData'),
     // 语音识别模型的仓库。与协议层那一条路由共用**同一个 store 实例**：
     // 下载写进去的与 worker 读出来的必须是同一个目录，不能各拼一次路径。
-    voiceAsrModelStore: voiceAsrModel
+    voiceAsrModelStore: voiceAsrModel,
+    openedFileBroker: openedFiles
   })
 
   app.on('web-contents-created', (_event, contents) => {
@@ -935,6 +969,12 @@ app.whenReady()
   traceBoot('ipc-registered')
   await createMainWindow()
   traceBoot('main-window-created-and-loaded')
+
+  // Windows / Linux 从命令行或「打开方式」启动时，文件路径在 argv 里；
+  // macOS 走上面的 open-file。dev 模式下 argv 里的入口脚本会被后缀过滤掉。
+  void openedMarkdownPathsFromArgv(process.argv.slice(1), process.cwd()).then(paths => {
+    if (paths.length) void openedFiles.receive(paths)
+  })
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) void createMainWindow()

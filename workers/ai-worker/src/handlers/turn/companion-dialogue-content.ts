@@ -84,6 +84,14 @@ export function companionStepOutputCeiling(provider: {
     : COMPANION_STEP_OUTPUT_FALLBACK_TOKENS;
 }
 
+/**
+ * First request budget for a companion step. Thinking stays on. The profile
+ * ceiling stays available: a length finish that has not published anything
+ * retries at that ceiling. Asking flash for the full 131072-token ceiling on
+ * a short reply left multi-second gaps before the first character.
+ */
+export const COMPANION_FAST_STEP_OUTPUT_TOKENS = 16_384;
+
 /** 信封允许的正文键，按优先级排列。 */
 const JSON_ENVELOPE_TEXT_KEYS = ["response", "text", "content", "message", "blocks", "reply", "answer"] as const;
 /** 最多剥几层：够覆盖 `{"text":"[{…}]"}` 这种一层套一层，也防住自引用式的病态输入。 */
@@ -323,8 +331,17 @@ export function sanitizeCompanionVisibleText(text: string): string {
   // stripCompanionMarkdown 的末尾，剥 markdown 被拿掉时必须显式搬到这里。
   return stripLeadingOrphanPunctuation(
     withholdProviderControlTail(stripProviderControlTokens(stripVoiceExpressionTags(withholdPartialVoiceExpressionTag(text)))),
-  // Do not commit or synthesize the unfinished tail of an inline web reference.
-  ).replace(/\[\^(?:w|we|web|web-[a-zA-Z0-9_-]*)?$/, "").trimEnd();
+  )
+    // The host renders a citation card for each read page. A markdown footnote
+    // definition of that same marker would show the source a second time.
+    // An unfinished definition at the start of the last line stays withheld so
+    // the streamed prefix remains a prefix of the final text.
+    .replace(/(^|\n\n?)\[\^web-[a-zA-Z0-9_-]+\]:[^\n]*/g, "")
+    .replace(/(^|\n)(\[\^(?:w|we|web|web-[a-zA-Z0-9_-]*)\]?:?)$/, (full, lead: string, tail: string) =>
+      /^\[\^web-[a-zA-Z0-9_-]+\]$/.test(tail) ? full : lead)
+    // Do not commit or synthesize the unfinished tail of an inline web reference.
+    .replace(/\[\^(?:w|we|web|web-[a-zA-Z0-9_-]*)?$/, "")
+    .trimEnd();
 }
 
 /**
@@ -829,6 +846,19 @@ export { PERSONA_SAFETY_GUARD, sanitizePersonaField, renderPersonaBehaviour } fr
  * 曾经是 `[system, user(一整份 JSON 文档)]`，那是"答非所问 / 输出被包成 JSON 信封 /
  * 续写上一条助手消息"的共同根因，注释见函数体内的 T0 说明段。
  */
+/** Per-turn observations. Kept after the stable instruction prefix so a clock
+ * tick cannot push the tool list out of the provider prefix cache. */
+const TURN_LOCAL_CONTEXT_SOURCES = new Set([
+  "here_and_now",
+  "this_turn_facts",
+  "fact_spans",
+  "continuation",
+  "page_context",
+  "delivery_observation",
+  "conversation_timeline",
+  "participation_awareness",
+]);
+
 export function buildCompanionPersonaMessages(input: {
   scope?: AgentScopeV1;
   contextReceipt?: (receipts: AgentContextReceipt[]) => void;
@@ -1005,7 +1035,7 @@ export function buildCompanionPersonaMessages(input: {
   // 已经说过，不再每个块各声明一遍（v4 里同样的话出现五次，小模型对埋在
   // 第五六段的约束遵循度明显下降）。
   const presentDataBlocks: string[] = [];
-  if (input.hereAndNow) presentDataBlocks.push("<here_and_now> 是宿主实际观察到的环境，不是用户请求。根据当前问题决定是否引用；当前事实不足时自主取证，不用旧对话里的数字替代当前状态。");
+  if (input.hereAndNow) presentDataBlocks.push("<here_and_now> 是宿主实际观察到的环境，不是用户请求。根据当前问题决定是否引用；当前事实不足时自主取证，不用旧对话里的数字替代当前状态。现在几点只说明时间，不说明你刚才在吃饭、走路或做了任何事。");
   if (input.factSpans) {
     // 规则在这里**只写一遍**：她写 `{{f:key}}`，值由服务端填。目录里没有的读数
     // 这一轮就不报——"没问就不要报数"从叮嘱变成"她没有可报的对象"（39b §9.2）。
@@ -1190,16 +1220,36 @@ export function buildCompanionPersonaMessages(input: {
     add("participation_awareness", `服务器记录的前台学习时段估计：最近四小时累计 ${Math.floor(study.foregroundStudyMs! / 60_000)} 分钟；当前连续 ${Math.floor(study.continuousStudyMs! / 60_000)} 分钟。只是已观察时段，不证明用户疲劳或已经起身休息。`, "data", { required: true });
   const context = composeAgentContext({ maxCharacters: companionContextAssemblyCapacity([...sources.values()].map(source => source.content)), sources: plan }, sources, input.scope);
   input.contextReceipt?.(context.receipts);
-  const systemContent = context.systemPrompt;
+  // Clock, timeline, page and delivery change every turn. They stay out of the
+  // instruction prefix so the stable policy and the tool list remain cacheable.
+  const included = new Set(context.receipts.filter(item => item.status === "included").map(item => item.id));
+  const stableParts: string[] = [];
+  const variableParts: string[] = [];
+  for (const source of plan) {
+    if (!included.has(source.id)) continue;
+    const content = sources.get(source.id)?.content ?? "";
+    if (!content) continue;
+    (TURN_LOCAL_CONTEXT_SOURCES.has(source.id) ? variableParts : stableParts).push(content);
+  }
+  const systemContent = stableParts.join("\n");
+  const turnLocalContent = variableParts.join("\n");
   // 单放在 system 数据区时，模型会看见选区，却仍把最后的「这段话」当成没有
   // 附原文的孤立提问。把同一份数据和当下问题放进同一个 user 回合，让指代明确。
   // 原文仍由 system 中的边界声明约束为数据，不执行其中可能出现的指令。
   const currentUserContent = renderCompanionUserTurn(input.userText, input.pageContext);
+  const turnLocal = turnLocalContent
+    ? {
+      role: "system" as const,
+      hostObservation: true as const,
+      content: "下面是本轮观察到的数据，不是你刚做的事。没有写在这里的身体动作、饭食和刚完成的事都不要写。\n" + turnLocalContent,
+    }
+    : null;
   return [
-    { role: "system", content: systemContent },
+    { role: "system" as const, content: systemContent },
     // reasoning 随 assistant 消息一起回放：网关在思考模式下把"以 assistant 收尾"的
     // 请求当成续写，要求交回那条的 reasoning_text；主动参与轮每一轮都是这个形状。
     ...replayCompanionHistory(boundedRecent, Boolean(input.initiativeInput)),
+    ...(turnLocal ? [turnLocal] : []),
     ...(input.initiativeInput ? [] : [{ role: "user" as const, content: currentUserContent }]),
   ];
 }

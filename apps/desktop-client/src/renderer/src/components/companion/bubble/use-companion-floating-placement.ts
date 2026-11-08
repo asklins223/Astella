@@ -96,9 +96,20 @@ export function useCompanionFloatingPlacement(
       const preferredWidth = inputOnly ? Math.min(preferredHeadWidth ?? 280, 320)
         : preferredHeadWidth ?? (output?.dataset.tone === "note" || output?.dataset.tone === "process" ? 280
           : output && textLength < 80 ? 300 : 340);
+      // 语音烟球接管控制轨：落在麦克风按钮那一列的外侧，跟着她走、不压到脸，
+      // 并作为障碍物让回复气泡主动让开。球径 96 与样式一致。
+      const voiceSize = 96;
+      const voiceActive = Boolean(floating.querySelector(".companion-voice"));
+      const controlsEl = hud?.querySelector<HTMLElement>(".companion-hud__controls");
+      const railWidth = controlsEl?.offsetWidth || 44;
+      const rail = companionControlsBounds(role, viewport, { width: railWidth, height: controlsEl?.offsetHeight || 179 }, body);
+      const outward = (voiceSize - railWidth) / 2;
+      const voiceX = Math.min(Math.max((rail.left + rail.right) / 2 + (rail.side === "left" ? -outward : outward), 16 + voiceSize / 2), viewport.width - 16 - voiceSize / 2);
+      const voiceY = Math.min(Math.max((rail.top + rail.bottom) / 2, 16 + voiceSize / 2), viewport.height - 40 - voiceSize / 2);
+      const voiceObstacle = { left: voiceX - voiceSize / 2 - 12, right: voiceX + voiceSize / 2 + 12, top: voiceY - voiceSize / 2 - 12, bottom: voiceY + voiceSize / 2 + 30 };
       const options = {
         role,
-        controls: hud ? companionHudControlBounds(hud) : [],
+        controls: [...(hud ? companionHudControlBounds(hud) : []), ...(voiceActive ? [voiceObstacle] : [])],
         viewport,
         headWidth: preferredWidth,
         hasPapers: Boolean(floating.querySelector('.companion-hud__papers > .companion-hud__paper:not([hidden])')),
@@ -122,6 +133,8 @@ export function useCompanionFloatingPlacement(
         "head-max-h": placement.head.height, "papers-x": placement.papers.left,
         "papers-y": placement.papers.top, "papers-w": placement.papers.width, "papers-max-h": placement.papers.height,
       })) publish(name, value);
+      publish("voice-x", voiceX);
+      publish("voice-y", voiceY);
       floating.dataset.headDock = placement.headDock;
       floating.dataset.placementReady = "true";
       setSide(old => old === placement.side ? old : placement.side);

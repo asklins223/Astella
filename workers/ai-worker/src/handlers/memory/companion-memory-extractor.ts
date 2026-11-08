@@ -18,6 +18,7 @@ import { normalizeCompanionMemoryContent, readJobPayloadString,
   resolveCompanionMemoryTemporalMetadata } from "@astella/shared";
 import { stableStringify, sha256Utf8V1 } from "@astella/shared/content-hash";
 import { logger } from "../../lib/logger.ts";
+import { runWhenInteractiveProviderIdle } from "../../lib/interactive-provider-lane.ts";
 import { createProvider } from "../../lib/ai-provider.ts";
 import {
   AIConsentRequiredError,
@@ -555,7 +556,8 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
         }
         // 2026-08-24（AI 设计审查 §4.2）：responseFormat "text" → "json_object"，
         // provider 层先保证 JSON 合法性，容错解析退为二道防线。
-        const result = await provider.chatCompletion(request, generationParameters, signal);
+        const result = await runWhenInteractiveProviderIdle(
+          lane => provider.chatCompletion(request, generationParameters, lane), signal);
         let candidate: z.SafeParseReturnType<unknown, ExtractOutput> | null = null;
         try {
           candidate = memoryExtractOutputSchema.safeParse(parseMemoryExtractJson(result.content));

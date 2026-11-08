@@ -101,9 +101,21 @@ export function companionGroundedReviewMaterial(messages: AgentTurnRequest["mess
     searchSources: sources, outcomes };
 }
 
+/** Search results are on the transcript, and at least one hit has not been read. */
+export function companionHasUnreadSearchHit(messages: AgentTurnRequest["messages"]): boolean {
+  const material = companionGroundedReviewMaterial(messages);
+  const read = new Set(material.sources.map(source => source.referenceId));
+  return material.searchSources.some(source => !read.has(source.referenceId));
+}
+
 export function companionUnknownWebCitations(text: string, sources: readonly { referenceId: string }[]): string[] {
   const known = new Set(sources.map(source => source.referenceId));
   return [...new Set(Array.from(text.matchAll(/\[\^(web-[^\]\s]+)\]/g), match => match[1]!).filter(id => !known.has(id)))];
+}
+
+/** A search hit can supply a title. The [^web-] marker means that page was read. */
+export function stripUnreadWebCitationMarkers(text: string, readReferenceIds: ReadonlySet<string>): string {
+  return text.replace(/\[\^(web-[^\]\s]+)\]/g, (marker, id: string) => readReferenceIds.has(id) ? marker : "");
 }
 
 /** A citation names one actual source, not the search batch as a whole. Keep

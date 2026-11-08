@@ -11,6 +11,16 @@ import { logger } from "../../lib/logger.ts";
 const summaries: Record<string, string> = { append: "已追加到笔记末尾", insert_at_cursor: "已插入到光标后",
   replace_selection: "已替换选中的内容", delete_selection: "已删除选中的内容", replace_blocks: "已替换指定段落", delete_blocks: "已删除指定段落" };
 
+/** The receipt names the operation and a short excerpt of the text that landed. */
+export function companionNoteEditReceiptSummary(operation: string, markdown?: string): string {
+  const base = summaries[operation] ?? "笔记已更新";
+  const excerpt = markdown?.replace(/\s+/g, " ").trim();
+  if (!excerpt) return base;
+  const clipped = excerpt.length > 120 ? `${excerpt.slice(0, 120)}…` : excerpt;
+  const summary = `${base}：${clipped}`;
+  return summary.length <= 240 ? summary : `${summary.slice(0, 239)}…`;
+}
+
 // A closed note has no cursor or selection. Block edits can instead bind to a
 // successful full-block read of that exact version in this same live run.
 const verifiedBlockRead = sql`(c.arguments->>'operation' IN ('replace_blocks','delete_blocks') AND EXISTS (
@@ -176,7 +186,7 @@ export async function processCompanionNoteEdit(scope: { workspaceId: string; use
           }
           editApplied = true;
           receipt = { kind: "edited_note", noteId: row.note_id, noteVersionId: row.current_version_id,
-            operation: input.operation, summary: summaries[input.operation]!, update: Buffer.from(Y.encodeStateAsUpdate(document)).toString("base64") };
+            operation: input.operation, summary: companionNoteEditReceiptSummary(input.operation, input.markdown), update: Buffer.from(Y.encodeStateAsUpdate(document)).toString("base64") };
         });
       } catch (error) {
         if (!(error instanceof NoteEditConflict)) throw error;

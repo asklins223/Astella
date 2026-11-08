@@ -1,6 +1,6 @@
 {
   "name": "@astella/ai-worker",
-  "version": "2.0.24",
+  "version": "2.0.25",
   "private": true,
   "type": "module",
   "main": "src/index.ts",
@@ -22,6 +22,7 @@
     "test:public-http-gate:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/public-http-gate-postgres.integration.ts",
     "test:long-job-lease:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/long-job-lease-postgres.integration.ts",
     "test:note-mind-map:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/note-mind-map-postgres.integration.ts",
+    "test:note-expansion:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/note-expansion-review-postgres.integration.ts",
     "test:companion-tool-review:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/companion-tool-review-postgres.integration.ts",
     "test:companion-completion:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/companion-completion-postgres.integration.ts",
     "test:queue:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/queue-postgres.integration.ts"

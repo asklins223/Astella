@@ -100,14 +100,23 @@ test("方法与判断的同一条来源可以同时用，但同一条消息只�
   assert.deepEqual(result.citedSources, [{ kind: "user_message", id: userTwo, revision: "c".repeat(64) }]);
 });
 
-test("系统带当时人格与规则，素材消息单独提供真实 id", () => {
-  const prompt = buildReflectionPrompt(snapshot());
-  assert.match(prompt, /当前人格第 3 版/);
-  assert.match(prompt, /她已有的自我描述：我讲机制时爱举例/);
-  assert.doesNotMatch(prompt, new RegExp(userTwo));
-  assert.match(buildReflectionMessages(snapshot())[1].content, new RegExp(userTwo));
-  assert.match(prompt, /没有值得留下的就返回/);
-  assert.match(prompt, /不能做的/);
+test("系统规则不随快照变化，人格和时间跟素材走", () => {
+  const first = buildReflectionMessages(snapshot());
+  const second = buildReflectionMessages(snapshot({
+    now: "2020-01-01T00:00:00.000Z",
+    persona: { ...snapshot().persona, revision: 9, name: "另一位" },
+  }));
+  assert.equal(first[0].content, second[0].content);
+  assert.match(first[0].content, /没有值得留下的就返回/);
+  assert.match(first[0].content, /不能做的/);
+  assert.doesNotMatch(first[0].content, /当前人格第|本次快照时间/);
+  assert.match(first[1].content, /当前人格第 3 版/);
+  assert.match(first[1].content, /她已有的自我描述：我讲机制时爱举例/);
+  assert.match(second[1].content, /另一位/);
+  assert.match(second[1].content, /2020-01-01T00:00:00.000Z/);
+  assert.doesNotMatch(first[0].content, new RegExp(userTwo));
+  assert.match(first[1].content, new RegExp(userTwo));
+  assert.match(buildReflectionPrompt(snapshot()), /当前人格第 3 版/);
 });
 
 test("提示词把消息内容里的尖括号之外原样带着，但不带入哈希这类内部字段", () => {
@@ -241,6 +250,7 @@ test("长记事按整篇选入档案声明的容量，唤醒条目优先，未�
 test("当前时刻和消息时刻写入冻结快照，用于绝对日期与自主重评", () => {
   const input = snapshot({ now: "2026-10-10T00:00:00Z", messages: snapshot().messages.map(m => ({ ...m, createdAt: "2026-10-09T00:00:00Z" })) });
   const messages = buildReflectionMessages(input);
-  assert.match(messages[0].content, /本次快照时间：2026-10-10T00:00:00Z/);
+  assert.doesNotMatch(messages[0].content, /2026-10-10T00:00:00Z/);
+  assert.match(messages[1].content, /本次快照时间：2026-10-10T00:00:00Z/);
   assert.match(messages[1].content, /时间=2026-10-09T00:00:00Z/);
 });

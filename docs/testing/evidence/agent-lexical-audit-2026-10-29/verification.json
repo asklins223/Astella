@@ -1,0 +1,125 @@
+{
+  "date": "2026-10-29",
+  "timezone": "Asia/Shanghai",
+  "scope": "Local source and synthetic behavior only; not deployed; no new live-model or device acceptance run.",
+  "workerBaseline": {
+    "log": "outputs/agent-audit-2026-10-29/worker-baseline.log",
+    "sha256": "a41c71cf8e4691215abca44f3e1fabd177879469e99352c11dd10f5972845db1",
+    "tests": 1913,
+    "pass": 1913,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 0
+  },
+  "addedImageRegressionBeforeFix": {
+    "log": "outputs/agent-audit-2026-10-29/image-batches-before.log",
+    "sha256": "689903fdf1a8674aa686e8107f0d7ba2faed70941bf535d63d4f7693bcf4845e",
+    "tests": 12,
+    "pass": 7,
+    "fail": 5,
+    "cancelled": 0,
+    "skipped": 0
+  },
+  "focusedAfterInitialFix": {
+    "log": "outputs/agent-audit-2026-10-29/targeted-after.log",
+    "sha256": "009aa4dba044f51e42ef4d47e359de6a017a43aedd417c10ad30e1ef0e890571",
+    "tests": 46,
+    "pass": 46,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 0
+  },
+  "workerFinal": {
+    "log": "outputs/agent-audit-2026-10-29/worker-after.log",
+    "sha256": "7206becc65d871ba6c4691d6f257df137cecc06d1a34cfc4fcc43ee3f7d4d9fc",
+    "tests": 1918,
+    "pass": 1918,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 0
+  },
+  "sharedFinal": {
+    "log": "outputs/agent-audit-2026-10-29/shared-after.log",
+    "sha256": "4afe20db584dc552ea1f298fe916b1c2377476ad16e929244e2ccbed9b0b796c",
+    "tests": 543,
+    "pass": 543,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 0
+  },
+  "typeChecks": {
+    "shared": {
+      "status": "passed",
+      "log": "outputs/agent-audit-2026-10-29/shared-typecheck.log",
+      "sha256": "1c6dd37ffdf82440e1766719de8833272c1d156ad380710ab216ffff2ae611db"
+    },
+    "api": {
+      "status": "passed",
+      "log": "outputs/agent-audit-2026-10-29/api-typecheck.log",
+      "sha256": "365cca6f5d6ce2407b4c9f54cb3ea81928b712fb2e077e75e70e10546a6bc690"
+    },
+    "desktop": {
+      "status": "passed",
+      "log": "outputs/agent-audit-2026-10-29/desktop-typecheck.log",
+      "sha256": "4ed3a62715adda5918a677760b590131cc7218d6ad9f1ed5336677c2155260e6"
+    },
+    "worker": {
+      "status": "passed",
+      "log": "outputs/agent-audit-2026-10-29/worker-typecheck-final.log",
+      "sha256": "337691a80ce0df2b3984dc12cb15bab955ea110e04f537873f51291f452d2539"
+    }
+  },
+  "syntheticProbeCases": 14,
+  "baselineIdentity": {
+    "recordedBaseCommit": "9ac7d098dd8ba2a4e82b49495f920bf3e99109d8",
+    "checkedFiles": 91,
+    "baselineMismatches": [],
+    "configSha256": "375f560bbb1036594c816fa35165bb3f58c0af42b163f7480e3638056a86097b",
+    "modelRoutes": {
+      "agent_turn": {
+        "platform": "mimo-agent",
+        "model": "mimo-v2.6-flash"
+      },
+      "text_generation": {
+        "platform": "mimo-agent",
+        "model": "mimo-v2.6-flash"
+      },
+      "companion_fallback": {
+        "platform": "tokenrhythm",
+        "model": "deepseek-v4.1-flash-1017"
+      }
+    }
+  },
+  "changes": [
+    {
+      "path": "packages/shared/src/agent/companion-capability-manifest.ts",
+      "beforeSha256": "97069ad397c46883a4da36381ddff3306a2793e62a6de84a805dae2d2dbdc8de",
+      "afterSha256": "03a679c067e62118c7a8160fa35f01a6ec00ad2119034628a8538aa6672600c7"
+    },
+    {
+      "path": "workers/ai-worker/src/handlers/__tests__/companion-image-batches.test.ts",
+      "beforeSha256": "ba6b2e00b763986713b92853566dd36a532ce5cfbdc61f47fd00cd10805d335c",
+      "afterSha256": "7aa81bf9b07bb7417a0ded2510367d42d73366c613b678ac51765677e42d8d40"
+    },
+    {
+      "path": "workers/ai-worker/src/handlers/agent/companion-agent-runtime.ts",
+      "beforeSha256": "0b4137a75c00c1b59ada9d27e06c4278eadf754fd1838ffc775c7756932d2cc1",
+      "afterSha256": "17094e153e8f66c6ac3187c82e19c9e71acb67e9ef5cd39536a46a820f4decd1"
+    },
+    {
+      "path": "workers/ai-worker/src/handlers/agent/companion-finish.ts",
+      "beforeSha256": "bdee5dc46fc37bd8e55b3d2c84136c0f7203c50e164a8daa6e2049d7e279daee",
+      "afterSha256": "00b0d1c5fd2a6f1bebcfb7b598f5c71aee41cf84f18995af50e65472544a0de4"
+    },
+    {
+      "path": "workers/ai-worker/src/handlers/agent/companion-image-batches.ts",
+      "beforeSha256": "f238e4c7f9cdc90453284f554e238536c0db5ce58f7a3545fab3c83c98afaeb0",
+      "afterSha256": "3c901e557198b84ce9f97e4ae64ec5d07bc29e0dcabcf459cbe38d98aab3d8cf"
+    },
+    {
+      "path": "workers/ai-worker/src/handlers/turn/companion-entry-mode.ts",
+      "beforeSha256": "f33322c3faac4c3ef747bbf6019f5dfca26472aeaf9b883298874859d4670ac3",
+      "afterSha256": "1495f68fd31811271fc8335d2b7529b4c7ff2ff789aae825e94ab4c365cb8598"
+    }
+  ]
+}

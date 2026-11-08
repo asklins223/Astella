@@ -18,6 +18,8 @@ build/
 .env.local
 *.log
 .DS_Store
+# macOS AppleDouble metadata written when archives are copied/unpacked.
+._*
 coverage/
 .turbo/
 *.tsbuildinfo

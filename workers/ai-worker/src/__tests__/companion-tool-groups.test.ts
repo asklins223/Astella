@@ -45,6 +45,14 @@ test("初始工具面保留核心和当前页面组，业务能力可按需装�
   assert.ok(home.has("companion_observe"), "首页组保留学习统计");
   assert.ok(note.has("companion_observe"), "观察域是跨页核心读能力，笔记页也保留");
   assert.ok(note.has("companion_visual"), "笔记页保留图片能力");
+  assert.ok(note.has("companion_memory_save"), "记住不必先装载一组工具");
+  const pet = resolveCompanionInitialToolNames({ availableToolNames: available, pageKind: "conversation" });
+  assert.ok(pet.has("companion_memory_save"));
+  assert.ok(pet.has("companion_notes_write"), "对话里新建笔记不必先装载");
+  assert.ok(pet.has("companion_notes_read"), "对话里读笔记不必先装载");
+  assert.ok(pet.has("companion_memory_forget"), "对话里忘掉一条记忆不必先装载");
+  assert.ok(home.has("companion_memory_save"));
+  assert.ok(home.has("companion_notes_write"));
 });
 
 test("候选操作不再增删工具面；能力由声明与 load_tools 决定", () => {

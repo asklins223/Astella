@@ -17,16 +17,16 @@ test("cold-start output budget is independent from idle progress and remains con
   const previous = keys.map(key => process.env[key]);
   try {
     for (const key of keys) delete process.env[key];
-    assert.deepEqual(companionOutputWatchdogPolicy(), { firstOutputMs: 12_000, idleMs: 45_000, firstMeaningfulOutputMs: 30_000 });
-    assert.deepEqual(companionOutputWatchdogPolicy("casual"), { firstOutputMs: 12_000, idleMs: 45_000, firstMeaningfulOutputMs: 30_000 });
-    assert.deepEqual(companionOutputWatchdogPolicy("casual", "recovery"), { firstOutputMs: 12_000, idleMs: 45_000, firstMeaningfulOutputMs: 45_000 });
+    const minute = { firstOutputMs: 60_000, idleMs: 60_000, firstMeaningfulOutputMs: Infinity };
+    assert.deepEqual(companionOutputWatchdogPolicy(), minute);
+    assert.deepEqual(companionOutputWatchdogPolicy("casual"), minute);
+    assert.deepEqual(companionOutputWatchdogPolicy("casual", "recovery"), minute);
     assert.equal(companionOutputWatchdogPolicy("adaptive", "primary", { deepThinking: true }).firstMeaningfulOutputMs, Infinity);
     process.env.COMPANION_PROVIDER_FIRST_OUTPUT_TIMEOUT_MS = "90000";
     process.env.COMPANION_PROVIDER_IDLE_TIMEOUT_MS = "30000";
-    assert.deepEqual(companionOutputWatchdogPolicy(), { firstOutputMs: 90_000, idleMs: 30_000, firstMeaningfulOutputMs: 30_000 });
+    assert.deepEqual(companionOutputWatchdogPolicy(), { firstOutputMs: 90_000, idleMs: 30_000, firstMeaningfulOutputMs: Infinity });
     process.env.COMPANION_CASUAL_PROVIDER_FIRST_OUTPUT_TIMEOUT_MS = "2500";
-    assert.deepEqual(companionOutputWatchdogPolicy("casual"), { firstOutputMs: 2_500, idleMs: 30_000, firstMeaningfulOutputMs: 30_000 });
-    assert.deepEqual(companionOutputWatchdogPolicy("casual", "recovery"), { firstOutputMs: 90_000, idleMs: 30_000, firstMeaningfulOutputMs: 45_000 });
+    assert.equal(companionOutputWatchdogPolicy("casual").firstOutputMs, 90_000, "a casual label does not shorten the silence budget");
     delete process.env.COMPANION_CASUAL_PROVIDER_FIRST_OUTPUT_TIMEOUT_MS;
     process.env.COMPANION_PROVIDER_FIRST_OUTPUT_TIMEOUT_MS = "0";
     assert.equal(companionOutputWatchdogPolicy("casual").firstOutputMs, Infinity);
@@ -56,15 +56,15 @@ test("first output and idle expiry abort the provider with distinct reasons", as
     }
   } finally { t.mock.timers.reset(); }
 });
-test("a healthy non-reasoning primary keeps its answer through a prefill longer than five seconds", async t => {
+test("a casual primary that speaks inside two seconds keeps its answer", async t => {
   t.mock.timers.enable({ apis: ["Date", "setTimeout"], now: 0 });
   try {
     let signal!: AbortSignal, activity = () => {}, finish: (value: string) => void = () => {};
     const output = watchCompanionOutput((s, a) => { signal = s; activity = a;
       return new Promise<string>(resolve => { finish = resolve; }); }, new AbortController().signal, companionOutputWatchdogPolicy("casual"));
     await flush();
-    t.mock.timers.tick(8_000);
-    assert.equal(signal.aborted, false, "non-reasoning still has real prefill/transport latency");
+    t.mock.timers.tick(2_000);
+    assert.equal(signal.aborted, false, "a live opening speaks inside the casual window");
     activity(); finish("the original primary answer");
     assert.equal(await output, "the original primary answer");
   } finally { t.mock.timers.reset(); }
@@ -95,7 +95,7 @@ test("a stalled casual primary can recover on a model whose first output takes m
     }));
     const observed = pending.then(value => ({ value }), error => ({ error }));
     await started;
-    t.mock.timers.tick(12_000);
+    t.mock.timers.tick(60_000);
     // The recovery crosses several promise boundaries. Observe the actual
     // fallback start; a missing start must fail, never await an unresolved
     // promise while the only deadlines are on a paused fake clock.
@@ -128,7 +128,7 @@ test("parent cancellation wins even when an uncooperative provider returns later
   assert.equal(signal?.aborted, true);
 });
 
-test("continuous reasoning alone cannot postpone usable output forever", async t => {
+test("reasoning and tool calls count as output, and only a full minute of silence switches", async t => {
   t.mock.timers.enable({ apis: ["Date", "setTimeout"], now: 0 });
   let finish!: (value: string) => void;
   try {
@@ -136,16 +136,17 @@ test("continuous reasoning alone cannot postpone usable output forever", async t
     let signal!: AbortSignal;
     const output = watchCompanionOutput((s, a) => {
       signal = s; activity = a; return new Promise<string>(resolve => { finish = resolve; });
-    }, new AbortController().signal, { firstOutputMs: 30, idleMs: 30, firstMeaningfulOutputMs: 60 });
-    const observed = output.then(value => ({ value }), error => ({ error }));
+    }, new AbortController().signal, companionOutputWatchdogPolicy());
     await flush();
-    for (let i = 0; i < 3; i++) { activity("reasoning"); t.mock.timers.tick(20); await flush(); }
-    const aborted = signal.aborted;
-    finish("late");
-    const result = await observed;
-    assert.equal(aborted, true);
-    assert.ok("error" in result);
-    assert.equal(result.error.code, "provider_progress_timeout");
+    t.mock.timers.tick(59_000);
+    assert.equal(signal.aborted, false);
+    activity("reasoning");
+    t.mock.timers.tick(59_000);
+    activity("tool");
+    t.mock.timers.tick(59_000);
+    assert.equal(signal.aborted, false);
+    finish("still the primary");
+    assert.equal(await output, "still the primary");
   } finally { finish?.("cleanup"); t.mock.timers.reset(); }
 });
 

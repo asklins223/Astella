@@ -6,6 +6,7 @@ import { lockCompanionRunForEventWrite } from "@astella/shared/companion-lock-or
 import { withWorkerWorkspaceTransaction, type WorkerTransaction } from "../../db.ts";
 import { lockJobLease, JobLeaseLostError } from "../../lib/job-lease.ts";
 import { CompanionContextChangedError } from "../../lib/non-retryable-errors.ts";
+import { CompanionRunInactiveError, isActiveRun } from "../turn/companion-dialogue-store.ts";
 import { assertCompanionContextSourcesCurrent } from "../context/companion-context-sources.ts";
 import type { AgentEventContext } from "../tools/companion-read-tools.ts";
 import type { AgentToolExecutionResult } from "../tools/companion-tool-result.ts";
@@ -109,19 +110,24 @@ async function withCompanionOwnedTransaction<T>(event: AgentEventContext,
     return await withWorkerWorkspaceTransaction(scope, async tx => {
       await lockCompanionRunForEventWrite(tx, event.read.runId);
       await lockJobLease(tx, requireCurrentContext ? event.ctx : { ...event.ctx, signal: undefined });
-      if (requireCurrentContext) await assertCompanionContextSourcesCurrent(tx, scope, event.read.runId);
-      const [active] = await tx.execute(sql`SELECT r.id FROM companion_turn_runs r
+      const [owned] = await tx.execute<{ status: string; account_current: boolean }>(sql`SELECT r.status,
+          EXISTS (SELECT 1 FROM user_companion_account_state a
+            WHERE a.user_id=r.user_id AND a.epoch=r.account_epoch AND a.global_enabled) AS account_current
+        FROM companion_turn_runs r
         WHERE r.id=${event.read.runId} AND r.workspace_id=${scope.workspaceId} AND r.user_id=${scope.userId}
           AND (r.job_id IS NULL OR r.job_id=${event.ctx.id})
-          AND r.generation=${event.read.generation} AND r.account_epoch=${event.read.accountEpoch}
-          AND (${!requireCurrentContext} OR (r.status IN ('accepted','running')
-            AND EXISTS (SELECT 1 FROM user_companion_account_state a
-              WHERE a.user_id=r.user_id AND a.epoch=r.account_epoch AND a.global_enabled)))`);
-      if (!active) throw new CompanionContextChangedError();
+          AND r.generation=${event.read.generation} AND r.account_epoch=${event.read.accountEpoch}`);
+      if (!owned) throw new CompanionContextChangedError();
+      if (requireCurrentContext) {
+        if (!isActiveRun(owned.status)) throw new CompanionRunInactiveError(owned.status);
+        if (!owned.account_current) throw new CompanionContextChangedError();
+        await assertCompanionContextSourcesCurrent(tx, scope, event.read.runId);
+      }
       return run(tx);
     });
   } catch (error) {
-    if (error instanceof JobLeaseLostError || error instanceof CompanionContextChangedError) throw error;
+    if (error instanceof JobLeaseLostError || error instanceof CompanionContextChangedError
+      || error instanceof CompanionRunInactiveError) throw error;
     // 这句 "private recovery storage unavailable" 原本会把**任何**内部异常都盖成存储坏了
     // （2026-10-16 本地主动轮全挂，真因是一条校验错误，被这句挡了三轮排查）。
     // 消息照旧给外面，真凶挂成 cause，别再让人猜。

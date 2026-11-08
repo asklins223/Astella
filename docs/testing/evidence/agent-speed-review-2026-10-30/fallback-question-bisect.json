@@ -1,0 +1,24 @@
+{
+  "results": [
+    {
+      "label": "full_context_plus_color_question",
+      "saysBlue": true,
+      "content": "是蓝色，一整块纯蓝色，没有渐变、也没有别的杂色，整体偏中等明亮，接近屏幕上的“亮蓝”或“宝蓝色”。因为只是看图判断，具体色值（比如十六进制代码）我没法测量，只能说是这种偏饱和的蓝。"
+    },
+    {
+      "label": "image_first_in_content",
+      "saysBlue": false,
+      "content": ""
+    },
+    {
+      "label": "full_context_512px",
+      "saysBlue": false,
+      "content": "这张图我这边打开看是一片纯白，看不出任何内容，可能是传错了或者截图时没截到东西。  你想问的是什么？可以重新发一张清楚的，或者直接说问题，我按文字来答。"
+    },
+    {
+      "label": "full_context_512px_repeat",
+      "saysBlue": false,
+      "content": ""
+    }
+  ]
+}

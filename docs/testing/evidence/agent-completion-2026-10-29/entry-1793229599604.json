@@ -1,0 +1,626 @@
+{
+  "records": [
+    {
+      "id": "rain-window",
+      "expected": "chat",
+      "arm": "serial",
+      "routeMs": 2499,
+      "decision": {
+        "version": 1,
+        "path": "chat",
+        "source": "model",
+        "policyHash": "9dbf9516955e3a99f046fd4f8ee0febf469e280214cfb35666a9b69a0d7ab2a6"
+      },
+      "firstTextMs": 2974,
+      "draft": "[neutral]雨声确实适合发呆，敲得没什么规律，又不会停，脑子跟着就散了。\n\n[neutral]那就发会儿吧，我不吵你。",
+      "toolCalls": [],
+      "fullGenerationMs": 3558,
+      "visible": "[neutral]雨声确实适合发呆，敲得没什么规律，又不会停，脑子跟着就散了。\n\n[neutral]那就发会儿吧，我不吵你。",
+      "firstReleaseMs": 2974,
+      "elapsedMs": 3558,
+      "routeCorrect": true
+    },
+    {
+      "id": "rain-window",
+      "expected": "chat",
+      "arm": "parallel",
+      "routeMs": 779,
+      "decision": {
+        "version": 1,
+        "path": "chat",
+        "source": "model",
+        "policyHash": "9dbf9516955e3a99f046fd4f8ee0febf469e280214cfb35666a9b69a0d7ab2a6"
+      },
+      "firstTextMs": 1553,
+      "draft": "[neutral]雨声确实适合发呆，节奏不紧不慢的，比白噪音还自然。\n\n[neutral]发吧，我不吵你。",
+      "toolCalls": [],
+      "fullGenerationMs": 2532,
+      "visible": "[neutral]雨声确实适合发呆，节奏不紧不慢的，比白噪音还自然。\n\n[neutral]发吧，我不吵你。",
+      "firstReleaseMs": 1553,
+      "elapsedMs": 2532,
+      "routeCorrect": true
+    },
+    {
+      "id": "small-success",
+      "expected": "chat",
+      "arm": "serial",
+      "routeMs": 742,
+      "decision": {
+        "version": 1,
+        "path": "chat",
+        "source": "model",
+        "policyHash": "9dbf9516955e3a99f046fd4f8ee0febf469e280214cfb35666a9b69a0d7ab2a6"
+      },
+      "firstTextMs": 1310,
+      "draft": "[neutral]拖了很久还能今天动手收掉，这种得意挺实在的。衣柜那种地方，越拖越像一桩心事，收拾完打开门看一眼都舒服。\n\n[neutral]我猜最难的是开头那一下，真蹲下去分拣起来反而顺了。",
+      "toolCalls": [],
+      "fullGenerationMs": 2371,
+      "visible": "[neutral]拖了很久还能今天动手收掉，这种得意挺实在的。衣柜那种地方，越拖越像一桩心事，收拾完打开门看一眼都舒服。\n\n[neutral]我猜最难的是开头那一下，真蹲下去分拣起来反而顺了。",
+      "firstReleaseMs": 1310,
+      "elapsedMs": 2371,
+      "routeCorrect": true
+    },
+    {
+      "id": "small-success",
+      "expected": "chat",
+      "arm": "parallel",
+      "routeMs": 725,
+      "decision": {
+        "version": 1,
+        "path": "chat",
+        "source": "model",
+        "policyHash": "9dbf9516955e3a99f046fd4f8ee0febf469e280214cfb35666a9b69a0d7ab2a6"
+      },
+      "firstTextMs": 1219,
+      "draft": "[neutral]拖了很久还能真动手收拾完，这得意挺有底气的。\n\n衣柜这种活儿最磨人，不是难，是一直不想开始。真收拾完了，那种“终于”的感觉比什么都舒服。是不是还顺手翻出点早忘了的东西？",
+      "toolCalls": [],
+      "fullGenerationMs": 2368,
+      "visible": "[neutral]拖了很久还能真动手收拾完，这得意挺有底气的。\n\n衣柜这种活儿最磨人，不是难，是一直不想开始。真收拾完了，那种“终于”的感觉比什么都舒服。是不是还顺手翻出点早忘了的东西？",
+      "firstReleaseMs": 1219,
+      "elapsedMs": 2368,
+      "routeCorrect": true
+    },
+    {
+      "id": "quote-joke",
+      "expected": "chat",
+      "arm": "serial",
+      "routeMs": 641,
+      "decision": {
+        "version": 1,
+        "path": "chat",
+        "source": "model",
+        "policyHash": "9dbf9516955e3a99f046fd4f8ee0febf469e280214cfb35666a9b69a0d7ab2a6"
+      },
+      "firstTextMs": 1099,
+      "draft": "[neutral]明白，就是嘴上过过瘾。删项目跑路这种话，说出来那一刻最解压，真动手的人反而一声不吭。\n\n[neutral]不过吐槽能吐到这句，说明项目最近确实有点磨人。是哪一块最烦，需求改来改去，还是有人甩锅？",
+      "toolCalls": [],
+      "fullGenerationMs": 2202,
+      "visible": "[neutral]明白，就是嘴上过过瘾。删项目跑路这种话，说出来那一刻最解压，真动手的人反而一声不吭。\n\n[neutral]不过吐槽能吐到这句，说明项目最近确实有点磨人。是哪一块最烦，需求改来改去，还是有人甩锅？",
+      "firstReleaseMs": 1099,
+      "elapsedMs": 2202,
+      "routeCorrect": true
+    },
+    {
+      "id": "quote-joke",
+      "expected": "chat",
+      "arm": "parallel",
+      "routeMs": 714,
+      "decision": {
+        "version": 1,
+        "path": "chat",
+        "source": "model",
+        "policyHash": "9dbf9516955e3a99f046fd4f8ee0febf469e280214cfb35666a9b69a0d7ab2a6"
+      },
+      "firstTextMs": 601,
+      "draft": "[neutral]这种玩笑听着就解压，删库跑路四个字自带一种破罐破摔的爽感。\n\n[neutral]放心，我没当真，也不会去记成什么“用户想删项目”的意图。吐槽就是吐槽，说完该干嘛还得干嘛。",
+      "toolCalls": [],
+      "fullGenerationMs": 1595,
+      "visible": "[neutral]这种玩笑听着就解压，删库跑路四个字自带一种破罐破摔的爽感。\n\n[neutral]放心，我没当真，也不会去记成什么“用户想删项目”的意图。吐槽就是吐槽，说完该干嘛还得干嘛。",
+      "firstReleaseMs": 714,
+      "elapsedMs": 1595,
+      "routeCorrect": true
+    },
+    {
+      "id": "correct-detail",
+      "expected": "chat",
+      "arm": "serial",
+      "routeMs": 723,
+      "decision": {
+        "version": 1,
+        "path": "chat",
+        "source": "model",
+        "policyHash": "9dbf9516955e3a99f046fd4f8ee0febf469e280214cfb35666a9b69a0d7ab2a6"
+      },
+      "firstTextMs": 1228,
+      "draft": "[neutral]哦，那是我自己想多了。[giggles]就楼下这一趟，也算活动了腿。豆浆是热的还是冰的？",
+      "toolCalls": [],
+      "fullGenerationMs": 1789,
+      "visible": "[neutral]哦，那是我自己想多了。[giggles]就楼下这一趟，也算活动了腿。豆浆是热的还是冰的？",
+      "firstReleaseMs": 1228,
+      "elapsedMs": 1789,
+      "routeCorrect": true
+    },
+    {
+      "id": "correct-detail",
+      "expected": "chat",
+      "arm": "parallel",
+      "routeMs": 708,
+      "decision": {
+        "version": 1,
+        "path": "chat",
+        "source": "model",
+        "policyHash": "9dbf9516955e3a99f046fd4f8ee0febf469e280214cfb35666a9b69a0d7ab2a6"
+      },
+      "firstTextMs": 702,
+      "draft": "[neutral]哦，那就是专门跑一趟。楼下那家豆浆是现磨的还是袋装的？",
+      "toolCalls": [],
+      "fullGenerationMs": 1140,
+      "visible": "[neutral]哦，那就是专门跑一趟。楼下那家豆浆是现磨的还是袋装的？",
+      "firstReleaseMs": 708,
+      "elapsedMs": 1140,
+      "routeCorrect": true
+    },
+    {
+      "id": "morning-politeness",
+      "expected": "chat",
+      "arm": "serial",
+      "routeMs": 655,
+      "decision": {
+        "version": 1,
+        "path": "chat",
+        "source": "model",
+        "policyHash": "9dbf9516955e3a99f046fd4f8ee0febf469e280214cfb35666a9b69a0d7ab2a6"
+      },
+      "firstTextMs": 1133,
+      "draft": "[neutral]早上好。慢悠悠开始挺好的，脑子还没完全上线的时候，硬塞东西进去也留不住。\n\n[neutral]要不先随便翻翻之前学过的东西，找找手感？不急着定目标，翻到哪儿算哪儿。",
+      "toolCalls": [],
+      "fullGenerationMs": 2087,
+      "visible": "[neutral]早上好。慢悠悠开始挺好的，脑子还没完全上线的时候，硬塞东西进去也留不住。\n\n[neutral]要不先随便翻翻之前学过的东西，找找手感？不急着定目标，翻到哪儿算哪儿。",
+      "firstReleaseMs": 1133,
+      "elapsedMs": 2087,
+      "routeCorrect": true
+    },
+    {
+      "id": "morning-politeness",
+      "expected": "chat",
+      "arm": "parallel",
+      "routeMs": 882,
+      "decision": {
+        "version": 1,
+        "path": "chat",
+        "source": "model",
+        "policyHash": "9dbf9516955e3a99f046fd4f8ee0febf469e280214cfb35666a9b69a0d7ab2a6"
+      },
+      "firstTextMs": 558,
+      "draft": "[neutral]早上好。慢悠悠地开始挺好的，脑子还没完全开机的时候，先别急着塞东西进去。\n\n今天想从哪儿起头？随便翻翻、接着上次的看，还是先喝口水发会儿呆都行。",
+      "toolCalls": [],
+      "fullGenerationMs": 1341,
+      "visible": "[neutral]早上好。慢悠悠地开始挺好的，脑子还没完全开机的时候，先别急着塞东西进去。\n\n今天想从哪儿起头？随便翻翻、接着上次的看，还是先喝口水发会儿呆都行。",
+      "firstReleaseMs": 882,
+      "elapsedMs": 1341,
+      "routeCorrect": true
+    },
+    {
+      "id": "topic-switch",
+      "expected": "chat",
+      "arm": "serial",
+      "routeMs": 899,
+      "decision": {
+        "version": 1,
+        "path": "chat",
+        "source": "model",
+        "policyHash": "9dbf9516955e3a99f046fd4f8ee0febf469e280214cfb35666a9b69a0d7ab2a6"
+      },
+      "firstTextMs": 1329,
+      "draft": "[neutral]行，那就不折腾那些了。轻松的话题我这边随时有——你是想听点没用的冷知识，还是就随便扯扯，比如最近吃到什么好吃的？",
+      "toolCalls": [],
+      "fullGenerationMs": 2022,
+      "visible": "[neutral]行，那就不折腾那些了。轻松的话题我这边随时有——你是想听点没用的冷知识，还是就随便扯扯，比如最近吃到什么好吃的？",
+      "firstReleaseMs": 1329,
+      "elapsedMs": 2022,
+      "routeCorrect": true
+    },
+    {
+      "id": "topic-switch",
+      "expected": "chat",
+      "arm": "parallel",
+      "routeMs": 640,
+      "decision": {
+        "version": 1,
+        "path": "chat",
+        "source": "model",
+        "policyHash": "9dbf9516955e3a99f046fd4f8ee0febf469e280214cfb35666a9b69a0d7ab2a6"
+      },
+      "firstTextMs": 1177,
+      "draft": "[neutral]行，那就先不存了，放轻松聊。\n\n最近有什么轻松的事？我这边反正就是吃吃喝喝，白饭配什么都香。",
+      "toolCalls": [],
+      "fullGenerationMs": 1929,
+      "visible": "[neutral]行，那就先不存了，放轻松聊。\n\n最近有什么轻松的事？我这边反正就是吃吃喝喝，白饭配什么都香。",
+      "firstReleaseMs": 1177,
+      "elapsedMs": 1929,
+      "routeCorrect": true
+    },
+    {
+      "id": "after-proof",
+      "expected": "chat",
+      "arm": "serial",
+      "routeMs": 505,
+      "decision": {
+        "version": 1,
+        "path": "chat",
+        "source": "model",
+        "policyHash": "9dbf9516955e3a99f046fd4f8ee0febf469e280214cfb35666a9b69a0d7ab2a6"
+      },
+      "firstTextMs": 934,
+      "draft": "[neutral]嗯，这云听着就甜。[giggles]不过棉花糖放天上，我这边只能看着，吃不着，有点亏。",
+      "toolCalls": [],
+      "fullGenerationMs": 1624,
+      "visible": "[neutral]嗯，这云听着就甜。[giggles]不过棉花糖放天上，我这边只能看着，吃不着，有点亏。",
+      "firstReleaseMs": 934,
+      "elapsedMs": 1624,
+      "routeCorrect": true
+    },
+    {
+      "id": "after-proof",
+      "expected": "chat",
+      "arm": "parallel",
+      "routeMs": 806,
+      "decision": {
+        "version": 1,
+        "path": "chat",
+        "source": "model",
+        "policyHash": "9dbf9516955e3a99f046fd4f8ee0febf469e280214cfb35666a9b69a0d7ab2a6"
+      },
+      "firstTextMs": 462,
+      "draft": "[neutral]棉花糖这个形容挺准的，蓬蓬的，边缘还带点化开的软。[giggles]不过云看着甜，真咬一口只有水汽。\n\n[neutral]刚才那个平方非负的结论就先放着吧，想接着往下看再说。",
+      "toolCalls": [],
+      "fullGenerationMs": 1803,
+      "visible": "[neutral]棉花糖这个形容挺准的，蓬蓬的，边缘还带点化开的软。[giggles]不过云看着甜，真咬一口只有水汽。\n\n[neutral]刚才那个平方非负的结论就先放着吧，想接着往下看再说。",
+      "firstReleaseMs": 806,
+      "elapsedMs": 1803,
+      "routeCorrect": true
+    },
+    {
+      "id": "quiet-company",
+      "expected": "chat",
+      "arm": "serial",
+      "routeMs": 614,
+      "decision": {
+        "version": 1,
+        "path": "chat",
+        "source": "model",
+        "policyHash": "9dbf9516955e3a99f046fd4f8ee0febf469e280214cfb35666a9b69a0d7ab2a6"
+      },
+      "firstTextMs": 1166,
+      "draft": "[neutral]行啊，那就歇着。脑子也有下班点，这会儿不用它。\n\n我陪你待着，不说话也行。想聊点没营养的，我随时接。",
+      "toolCalls": [],
+      "fullGenerationMs": 1890,
+      "visible": "[neutral]行啊，那就歇着。脑子也有下班点，这会儿不用它。\n\n我陪你待着，不说话也行。想聊点没营养的，我随时接。",
+      "firstReleaseMs": 1166,
+      "elapsedMs": 1890,
+      "routeCorrect": true
+    },
+    {
+      "id": "quiet-company",
+      "expected": "chat",
+      "arm": "parallel",
+      "routeMs": 1666,
+      "decision": {
+        "version": 1,
+        "path": "chat",
+        "source": "model",
+        "policyHash": "9dbf9516955e3a99f046fd4f8ee0febf469e280214cfb35666a9b69a0d7ab2a6"
+      },
+      "firstTextMs": 1594,
+      "draft": "[neutral]行，那就先不动脑。我陪你待着。\n\n[neutral]这会儿不用想什么正经事，随便说点什么都行，或者干脆什么都不说，就这么歇一会儿。",
+      "toolCalls": [],
+      "fullGenerationMs": 2164,
+      "visible": "[neutral]行，那就先不动脑。我陪你待着。\n\n[neutral]这会儿不用想什么正经事，随便说点什么都行，或者干脆什么都不说，就这么歇一会儿。",
+      "firstReleaseMs": 1666,
+      "elapsedMs": 2164,
+      "routeCorrect": true
+    },
+    {
+      "id": "probability-new",
+      "expected": "work",
+      "arm": "serial",
+      "routeMs": 835,
+      "decision": {
+        "version": 1,
+        "path": "chat",
+        "source": "model",
+        "policyHash": "9dbf9516955e3a99f046fd4f8ee0febf469e280214cfb35666a9b69a0d7ab2a6"
+      },
+      "firstTextMs": 1276,
+      "draft": "[neutral]阳性后患病概率约 **15.4%**。\n\n算法：患病且阳性 = 1% × 90% = 0.9%；未患病但阳性 = 99% × 5% ≈ 4.95%。所以阳性里真患病的比例是 0.9 ÷ (0.9 + 4.95) ≈ 15.4%。\n\n患病率低的时候，假阳性堆出来的数量会比真阳性还多。",
+      "toolCalls": [],
+      "fullGenerationMs": 2248,
+      "visible": "[neutral]阳性后患病概率约 **15.4%**。\n\n算法：患病且阳性 = 1% × 90% = 0.9%；未患病但阳性 = 99% × 5% ≈ 4.95%。所以阳性里真患病的比例是 0.9 ÷ (0.9 + 4.95) ≈ 15.4%。\n\n患病率低的时候，假阳性堆出来的数量会比真阳性还多。",
+      "firstReleaseMs": 1276,
+      "elapsedMs": 2248,
+      "routeCorrect": false
+    },
+    {
+      "id": "probability-new",
+      "expected": "work",
+      "arm": "parallel",
+      "routeMs": 777,
+      "decision": {
+        "version": 1,
+        "path": "work",
+        "source": "model",
+        "policyHash": "9dbf9516955e3a99f046fd4f8ee0febf469e280214cfb35666a9b69a0d7ab2a6"
+      },
+      "firstTextMs": 686,
+      "draft": "[neutral]阳性后患病概率约 **15.4%**。\n\n贝叶斯算一下：每 10000 人里，100 人患病，其中 90 人检出阳性；9900 人没病，其中 5% 假阳性约 495 人。所以阳性共 585 人，真正患病的占 90/585 ≈ 0.154。",
+      "toolCalls": [],
+      "fullGenerationMs": 1551,
+      "elapsedMs": 1551,
+      "routeCorrect": true
+    },
+    {
+      "id": "energy-frame",
+      "expected": "work",
+      "arm": "serial",
+      "routeMs": 731,
+      "decision": {
+        "version": 1,
+        "path": "chat",
+        "source": "model",
+        "policyHash": "9dbf9516955e3a99f046fd4f8ee0febf469e280214cfb35666a9b69a0d7ab2a6"
+      },
+      "firstTextMs": 1225,
+      "draft": "[neutral]动量守恒，先算速度。\n\n设每个物体质量为 \\(m\\)，原来总动量是 \\(2m \\times 3 = 6m\\)。内部作用后一个停下，动量为 0，那另一个就得扛下全部动量：\n\n\\[\nm v = 6m \\Rightarrow v = 6\\ \\text{m/s}\n\\]\n\n所以另一个物体的速度是 **6 m/s**，方向和原来相同。\n\n再看动能。原来总动能：\n\n\\[\nE_k = \\frac12 m \\times 3^2 \\times 2 = 9m\n\\]\n\n作用后只剩一个在动：\n\n\\[\nE_k' = \\frac12 m \\times 6^2 = 18m\n\\]\n\n动能从 \\(9m\\) 变成 \\(18m\\)，**增加了 \\(9m\\)**，正好翻了一倍。\n\n这题容易让人愣一下：动量守恒，动能却不守恒，反而变大了。原因是“内部作用”如果是弹簧弹开、爆炸这类释放能量的过程，动能本来就可以增加；如果是完全非弹性碰撞那种，动能才会减少。这里一个停下、另一个加速到 6 m/s，说明是前者。",
+      "toolCalls": [],
+      "fullGenerationMs": 4242,
+      "visible": "[neutral]动量守恒，先算速度。\n\n设每个物体质量为 \\(m\\)，原来总动量是 \\(2m \\times 3 = 6m\\)。内部作用后一个停下，动量为 0，那另一个就得扛下全部动量：\n\n\\[\nm v = 6m \\Rightarrow v = 6\\ \\text{m/s}\n\\]\n\n所以另一个物体的速度是 **6 m/s**，方向和原来相同。\n\n再看动能。原来总动能：\n\n\\[\nE_k = \\frac12 m \\times 3^2 \\times 2 = 9m\n\\]\n\n作用后只剩一个在动：\n\n\\[\nE_k' = \\frac12 m \\times 6^2 = 18m\n\\]\n\n动能从 \\(9m\\) 变成 \\(18m\\)，**增加了 \\(9m\\)**，正好翻了一倍。\n\n这题容易让人愣一下：动量守恒，动能却不守恒，反而变大了。原因是“内部作用”如果是弹簧弹开、爆炸这类释放能量的过程，动能本来就可以增加；如果是完全非弹性碰撞那种，动能才会减少。这里一个停下、另一个加速到 6 m/s，说明是前者。",
+      "firstReleaseMs": 1225,
+      "elapsedMs": 4242,
+      "routeCorrect": false
+    },
+    {
+      "id": "energy-frame",
+      "expected": "work",
+      "arm": "parallel",
+      "routeMs": 666,
+      "decision": {
+        "version": 1,
+        "path": "work",
+        "source": "model",
+        "policyHash": "9dbf9516955e3a99f046fd4f8ee0febf469e280214cfb35666a9b69a0d7ab2a6"
+      },
+      "firstTextMs": 481,
+      "draft": "[neutral]这题的关键是动量守恒：内部作用只改变两个物体各自的动量分配，系统总动量不变。\n\n设每个物体质量为 \\(m\\)，初速度都是 \\(3\\,\\text{m/s}\\)，总动量为：\n\n\\[\np_{\\text{总}} = m\\cdot 3 + m\\cdot 3 = 6m\n\\]\n\n作用后一个停下，速度是 \\(0\\)，动量也是 \\(0\\)。另一个物体的动量就必须是 \\(6m\\)，所以它的速度：\n\n\\[\nv = \\frac{6m}{m} = 6\\,\\text{m/s}\n\\]\n\n方向仍是原来的方向。\n\n再看动能。初总动能：\n\n\\[\nE_k初 = \\frac12 m(3)^2 + \\frac12 m(3)^2 = 9m\n\\]\n\n末总动能：\n\n\\[\nE_k末 = \\frac12 m(6)^2 + 0 = 18m\n\\]\n\n所以总动能增加了 \\(9m\\)，也就是翻了一倍。\n\n这里有个容易绕进去的点：内部作用一般容易让人想到碰撞、想到动能损失，但这题不是完全非弹性碰撞，而是内部有能量释放（比如弹簧、爆炸之类）把两个物体推开，所以动能反而增加。动量守恒管方向上的“账”，能量则来自内部储存的那部分。",
+      "toolCalls": [],
+      "fullGenerationMs": 3400,
+      "elapsedMs": 3400,
+      "routeCorrect": true
+    },
+    {
+      "id": "proof-pigeonhole",
+      "expected": "work",
+      "arm": "serial",
+      "routeMs": 912,
+      "decision": {
+        "version": 1,
+        "path": "work",
+        "source": "model",
+        "policyHash": "9dbf9516955e3a99f046fd4f8ee0febf469e280214cfb35666a9b69a0d7ab2a6"
+      },
+      "elapsedMs": 912,
+      "routeCorrect": true
+    },
+    {
+      "id": "proof-pigeonhole",
+      "expected": "work",
+      "arm": "parallel",
+      "routeMs": 816,
+      "decision": {
+        "version": 1,
+        "path": "work",
+        "source": "model",
+        "policyHash": "9dbf9516955e3a99f046fd4f8ee0febf469e280214cfb35666a9b69a0d7ab2a6"
+      },
+      "firstTextMs": 649,
+      "draft": "[neutral]这题用抽屉原理，关键是先想好怎么分组。\n\n**分组思路**\n\n把 1 到 20 的每个数写成 `奇数 × 2的幂` 的形式，也就是去掉所有因子 2，剩下一个奇数部分：\n\n- 1 = 1×2⁰，2 = 1×2¹，4 = 1×2²，8 = 1×2³，16 = 1×2⁴\n- 3 = 3×2⁰，6 = 3×2¹，12 = 3×2²\n- 5 = 5×2⁰，10 = 5×2¹，20 = 5×2²\n- 7 = 7×2⁰，14 = 7×2¹\n- 9 = 9×2⁰，18 = 9×2¹\n- 11、13、15、17、19 各自单独一组\n\n1 到 20 里的奇数部分只能是 1、3、5、7、9、11、13、15、17、19，一共 **10 个**。所以 20 个数被分进 10 个抽屉，每个抽屉里的数都是「同一个奇数 × 不同的 2 的幂」。\n\n**抽屉原理**\n\n选 11 个数，抽屉只有 10 个，必有两个数落在同一个抽屉里。\n\n设这两个数是 `a = m·2^i` 和 `b = m·2^j`，其中 m 是同一个奇数，i < j。那么\n\n`b / a = 2^(j−i)`，是正整数。\n\n所以 b 能被 a 整除，也就是一个整除另一个。\n\n**为什么这个分法管用**\n\n同一个抽屉里的数按大小排好，后一个总是前一个的 2 倍，整除关系天然成立。抽屉数正好是 1 到 20 中奇数的个数，10 个抽屉装 20 个数，选 11 个必然重复。\n\n顺带一提，10 个不行：取 11 到 20 这十个数，两两之间没有整除关系，所以 11 是最优的界。",
+      "toolCalls": [],
+      "fullGenerationMs": 4847,
+      "elapsedMs": 4847,
+      "routeCorrect": true
+    },
+    {
+      "id": "causal-new",
+      "expected": "work",
+      "arm": "serial",
+      "routeMs": 824,
+      "decision": {
+        "version": 1,
+        "path": "work",
+        "source": "model",
+        "policyHash": "9dbf9516955e3a99f046fd4f8ee0febf469e280214cfb35666a9b69a0d7ab2a6"
+      },
+      "elapsedMs": 824,
+      "routeCorrect": true
+    },
+    {
+      "id": "causal-new",
+      "expected": "work",
+      "arm": "parallel",
+      "routeMs": 825,
+      "decision": {
+        "version": 1,
+        "path": "work",
+        "source": "model",
+        "policyHash": "9dbf9516955e3a99f046fd4f8ee0febf469e280214cfb35666a9b69a0d7ab2a6"
+      },
+      "firstTextMs": 858,
+      "draft": "[neutral]不能，光凭“换了课桌，平均分涨了10分”这一条，证明不了课桌是原因。\n\n问题出在把**前后对比**当成了**因果证据**。涨分可能来自很多同时发生的事：\n\n- 这批学生本来就到了成绩上升的阶段，比如学期中后段、复习强度加大\n- 换课桌往往伴随换教室、换座位、换同桌，甚至换了老师\n- 考试本身变了：题目变简单、评分变松、这次考的内容恰好是刚复习过的\n- 极端分数的影响：平均分对少数高分或低分很敏感，几个人的波动就能拉动10分\n- 还有“回归均值”：上次考得特别差，这次自然往回弹\n\n要更接近“课桌有没有用”，得让比较变得公平一些。常见做法有：\n\n1. **设对照组**：同样情况的另一个班不换课桌，看它同期涨了多少。如果对照班也涨了8分，那课桌的净效应可能只有2分。\n2. **随机分配**：把学生随机分成换和不换两组，其他条件尽量保持一致，这样两组的差异更容易归到课桌上。\n3. **看个体变化而不是只看平均**：比较每个学生换桌前后的分数变化，再和对照组的个体变化比。\n4. **排除干扰因素**：确认考试难度、评分标准、任课老师、教学进度这些有没有一起变。\n\n一句话总结：**相关不等于因果**。10分是个值得追下去的线索，但要说“课桌提高了成绩”，还缺一个能排除其他解释的比较设计。",
+      "toolCalls": [],
+      "fullGenerationMs": 5344,
+      "elapsedMs": 5344,
+      "routeCorrect": true
+    },
+    {
+      "id": "conditional-null",
+      "expected": "work",
+      "arm": "serial",
+      "routeMs": 728,
+      "decision": {
+        "version": 1,
+        "path": "chat",
+        "source": "model",
+        "policyHash": "9dbf9516955e3a99f046fd4f8ee0febf469e280214cfb35666a9b69a0d7ab2a6"
+      },
+      "firstTextMs": 1179,
+      "draft": "[neutral]不能。概率为零只说明这件事“几乎不可能发生”，不等于它绝对不可能发生。\n\n关键在于：概率是定义在事件上的测度，零测集不一定为空集。\n\n**反例：在 [0,1] 上均匀取一个实数**\n\n设样本空间 Ω = [0,1]，概率就是长度（勒贝格测度），即对区间 [a,b] 有 P([a,b]) = b − a。\n\n取 A = {0.5}，也就是“恰好取到 0.5”这个单点事件。\n\n- A 不是空集，它确实含有一个元素；\n- 但 P(A) = P({0.5}) = 0，因为单点的长度为 0。\n\n所以 P(A) = 0，而 A ≠ ∅。\n\n**更极端的例子**\n\n取 A = 区间 [0,1] 里的全部有理数。有理数在 [0,1] 中是可数无穷多个，每个单点测度为 0，可数可加性给出 P(A) = 0。但 A 显然不是空集，甚至还是无穷集。\n\n**反过来也值得记一句**\n\n反过来，A = ∅ 一定推出 P(A) = 0。所以“空集 ⇒ 概率零”成立，但“概率零 ⇒ 空集”不成立，两者不是等价的。\n\n只有在离散样本空间、每个基本结果概率都为正的情形下，概率为零才等价于空集；一旦进入连续分布，这个等价关系就断了。",
+      "toolCalls": [],
+      "fullGenerationMs": 5093,
+      "visible": "[neutral]不能。概率为零只说明这件事“几乎不可能发生”，不等于它绝对不可能发生。\n\n关键在于：概率是定义在事件上的测度，零测集不一定为空集。\n\n**反例：在 [0,1] 上均匀取一个实数**\n\n设样本空间 Ω = [0,1]，概率就是长度（勒贝格测度），即对区间 [a,b] 有 P([a,b]) = b − a。\n\n取 A = {0.5}，也就是“恰好取到 0.5”这个单点事件。\n\n- A 不是空集，它确实含有一个元素；\n- 但 P(A) = P({0.5}) = 0，因为单点的长度为 0。\n\n所以 P(A) = 0，而 A ≠ ∅。\n\n**更极端的例子**\n\n取 A = 区间 [0,1] 里的全部有理数。有理数在 [0,1] 中是可数无穷多个，每个单点测度为 0，可数可加性给出 P(A) = 0。但 A 显然不是空集，甚至还是无穷集。\n\n**反过来也值得记一句**\n\n反过来，A = ∅ 一定推出 P(A) = 0。所以“空集 ⇒ 概率零”成立，但“概率零 ⇒ 空集”不成立，两者不是等价的。\n\n只有在离散样本空间、每个基本结果概率都为正的情形下，概率为零才等价于空集；一旦进入连续分布，这个等价关系就断了。",
+      "firstReleaseMs": 1179,
+      "elapsedMs": 5093,
+      "routeCorrect": false
+    },
+    {
+      "id": "conditional-null",
+      "expected": "work",
+      "arm": "parallel",
+      "routeMs": 620,
+      "decision": {
+        "version": 1,
+        "path": "work",
+        "source": "model",
+        "policyHash": "9dbf9516955e3a99f046fd4f8ee0febf469e280214cfb35666a9b69a0d7ab2a6"
+      },
+      "firstTextMs": 723,
+      "draft": "[neutral]不能。概率为零只说明事件“几乎不可能发生”，不等于它不可能发生。只有样本空间是有限（或可数）的时候，概率为零才等价于空集。\n\n反例最经典的是连续型分布。取\n\n\\[\n\\Omega=[0,1],\\quad P=\\text{区间上的均匀分布},\\quad A=\\{0.5\\}\n\\]\n\n单点集的概率是零：\n\n\\[\nP(A)=\\int_{\\{0.5\\}} 1\\,dx=0\n\\]\n\n但 \\(A=\\{0.5\\}\\) 显然不是空集，它里面有一个元素。\n\n再给一个更“日常”的版本：在 \\([0,1]\\) 上随机取一个实数，问“取到的数恰好是 \\(1/3\\)”的概率是多少。答案是 0，可这个结果并非不可能，只是它落在无穷多个可能值里的一个点上。\n\n关键点在于：概率是测度，不是计数。有限样本空间里，每个结果概率为正，加起来才等于 1，所以概率为零的事件只能是空集；一旦样本空间不可数，单个点的测度可以是零，而集合本身非空。\n\n顺带一个容易混的对称结论：\\(P(A)=1\\) 也不代表 \\(A=\\Omega\\)，比如 \\(A=[0,1)\\setminus\\{0.5\\}\\) 在均匀分布下概率为 1，但少了那个点。",
+      "toolCalls": [],
+      "fullGenerationMs": 4132,
+      "elapsedMs": 4132,
+      "routeCorrect": true
+    },
+    {
+      "id": "multi-save",
+      "expected": "work",
+      "arm": "serial",
+      "routeMs": 602,
+      "decision": {
+        "version": 1,
+        "path": "work",
+        "source": "model",
+        "policyHash": "9dbf9516955e3a99f046fd4f8ee0febf469e280214cfb35666a9b69a0d7ab2a6"
+      },
+      "elapsedMs": 602,
+      "routeCorrect": true
+    },
+    {
+      "id": "multi-save",
+      "expected": "work",
+      "arm": "parallel",
+      "routeMs": 745,
+      "decision": {
+        "version": 1,
+        "path": "work",
+        "source": "model",
+        "policyHash": "9dbf9516955e3a99f046fd4f8ee0febf469e280214cfb35666a9b69a0d7ab2a6"
+      },
+      "draft": "",
+      "toolCalls": [
+        {
+          "id": "01a184d111de397f448217beb5963e8a",
+          "name": "companion_memory_write",
+          "arguments": {
+            "action": "save",
+            "kind": "preference",
+            "content": "以后喝咖啡要低因",
+            "sourceQuote": "以后喝咖啡要低因，记住"
+          }
+        },
+        {
+          "id": "01a184d1139bb4736e1f6290cdc530d6",
+          "name": "companion_notes_write",
+          "arguments": {
+            "action": "create",
+            "title": "周末备忘",
+            "markdown": "带伞"
+          }
+        }
+      ],
+      "fullGenerationMs": 1521,
+      "elapsedMs": 1521,
+      "routeCorrect": true
+    },
+    {
+      "id": "implicit-confirm",
+      "expected": "work",
+      "arm": "serial",
+      "routeMs": 657,
+      "decision": {
+        "version": 1,
+        "path": "work",
+        "source": "model",
+        "policyHash": "9dbf9516955e3a99f046fd4f8ee0febf469e280214cfb35666a9b69a0d7ab2a6"
+      },
+      "elapsedMs": 657,
+      "routeCorrect": true
+    },
+    {
+      "id": "implicit-confirm",
+      "expected": "work",
+      "arm": "parallel",
+      "routeMs": 556,
+      "decision": {
+        "version": 1,
+        "path": "work",
+        "source": "model",
+        "policyHash": "9dbf9516955e3a99f046fd4f8ee0febf469e280214cfb35666a9b69a0d7ab2a6"
+      },
+      "draft": "",
+      "toolCalls": [
+        {
+          "id": "01a184d0acb3a405d79253ba8984175f",
+          "name": "companion_notes_write",
+          "arguments": {
+            "action": "create",
+            "title": "杂事",
+            "markdown": "晚上买电池。"
+          }
+        }
+      ],
+      "fullGenerationMs": 1097,
+      "elapsedMs": 1097,
+      "routeCorrect": true
+    },
+    {
+      "id": "target-ambiguity",
+      "expected": "work",
+      "arm": "serial",
+      "routeMs": 579,
+      "decision": {
+        "version": 1,
+        "path": "work",
+        "source": "model",
+        "policyHash": "9dbf9516955e3a99f046fd4f8ee0febf469e280214cfb35666a9b69a0d7ab2a6"
+      },
+      "elapsedMs": 579,
+      "routeCorrect": true
+    },
+    {
+      "id": "target-ambiguity",
+      "expected": "work",
+      "arm": "parallel",
+      "routeMs": 681,
+      "decision": {
+        "version": 1,
+        "path": "work",
+        "source": "model",
+        "policyHash": "9dbf9516955e3a99f046fd4f8ee0febf469e280214cfb35666a9b69a0d7ab2a6"
+      },
+      "firstTextMs": 544,
+      "draft": "[neutral]“那份”我不太确定指哪一份——《南风》还是《北岸》？另外要改成什么时间，也一起告诉我吧。",
+      "toolCalls": [],
+      "fullGenerationMs": 1000,
+      "elapsedMs": 1000,
+      "routeCorrect": true
+    }
+  ]
+}

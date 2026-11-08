@@ -147,7 +147,7 @@ describe("CompanionRunTraceView", () => {
     expect(document.body.textContent).not.toContain("companion_do_something_new");
   });
 
-  it("流式时过程展开、完成后收起；思考默认折叠，需要时再打开", () => {
+  it("流式时过程展开、完成后收起；思考直接给出当前段落", () => {
     const old = traceWith({ key: "tool:read", kind: "tool", label: "读笔记", state: "succeeded",
       toolName: "notes.read.read", summary: "已读完", proposalId: null });
     const trace: CompanionRunTrace = { ...old, summary: { ...old.summary, status: "running" }, events: [
@@ -157,35 +157,36 @@ describe("CompanionRunTraceView", () => {
     ] };
     const view = render(<CompanionRunTraceView trace={trace} />);
     const outer = () => view.container.querySelector<HTMLDetailsElement>(".companion-history__trace")!;
-    const thoughts = () => [...view.container.querySelectorAll<HTMLDetailsElement>(".companion-history__trace-thinking")];
+    const thoughts = () => [...view.container.querySelectorAll(".companion-history__trace-thinking")];
     expect(outer().open).toBe(false);
     view.rerender(<CompanionRunTraceView trace={trace} live />);
     expect(outer().open).toBe(true);
     expect(thoughts()).toHaveLength(2);
-    expect(thoughts().every(step => !step.open)).toBe(true);
+    expect(thoughts().every(step => step.tagName !== "DETAILS")).toBe(true);
     expect(view.container.querySelectorAll(".companion-history__trace-tool")).toHaveLength(1);
-    fireEvent.click(thoughts()[0]!.querySelector("summary")!);
-    expect(thoughts()[0]!.open).toBe(true);
     expect(screen.getByText("第一段")).toBeTruthy();
+    expect(screen.getByText("当前这一段")).toBeTruthy();
     view.rerender(<CompanionRunTraceView trace={{ ...trace, summary: { ...trace.summary, status: "succeeded" } }} live />);
     expect(outer().open).toBe(false);
   });
 
   it("流式增量不重开手动收起的步骤，手动展开的回看选择跨重开保留", () => {
-    const old = traceWith({ key: "thinking:active", kind: "thinking", label: "思考中", state: "running", toolName: null, summary: "当前进展", proposalId: null });
+    const old = traceWith({ key: "tool:read", kind: "tool", label: "读笔记", state: "running",
+      toolName: "notes.read.read", summary: "当前进展", proposalId: null });
     const trace = { ...old, summary: { ...old.summary, status: "running" as const } };
     const view = render(<CompanionRunTraceView trace={trace} live />);
     const step = view.container.querySelector<HTMLDetailsElement>(".companion-history__trace-step")!;
-    expect(step.open).toBe(true);
-    fireEvent.click(step.querySelector("summary")!);
-    view.rerender(<CompanionRunTraceView trace={{ ...trace, nodes: [{ ...trace.nodes[0]!, summary: "又一段进展" }] }} live />);
     expect(step.open).toBe(false);
+    fireEvent.click(step.querySelector("summary")!);
+    expect(step.open).toBe(true);
+    view.rerender(<CompanionRunTraceView trace={{ ...trace, nodes: [{ ...trace.nodes[0]!, summary: "又一段进展" }] }} live />);
+    expect(step.open).toBe(true);
     const completed = { ...trace, summary: { ...trace.summary, status: "succeeded" as const } };
     view.rerender(<CompanionRunTraceView trace={completed} />);
     const outer = view.container.querySelector<HTMLDetailsElement>(".companion-history__trace")!;
     expect(outer.open).toBe(false);
     fireEvent.click(outer.querySelector("summary")!);
-    fireEvent.click(step.querySelector("summary")!);
+    expect(step.open).toBe(true);
     view.unmount();
     const reopened = render(<CompanionRunTraceView trace={completed} />);
     expect(reopened.container.querySelector<HTMLDetailsElement>(".companion-history__trace")?.open).toBe(true);

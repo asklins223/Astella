@@ -8,7 +8,7 @@ import { logger } from "../../lib/logger.ts";
 export type CardAssessmentQuestion = { id: string; questionType: NoteLearningCardQuestionTypeV1; stem: string; options: string[] | null; answer: unknown; rubric: unknown; grounding: unknown };
 export type CardAssessmentAnswer = { questionId: string; answer: unknown; score?: number | null; feedback?: unknown };
 export type CardQuestionResult = { questionId: string; score: number; feedback: { kind: string; text?: string } };
-export type AskCardCompanion = (input: { instruction: string; questions: unknown[]; subjective: unknown[] }) => Promise<string>;
+export type AskCardCompanion = (input: { instruction: string; correction?: string; questions: unknown[]; subjective: unknown[] }) => Promise<string>;
 const resultsSchema = z.array(z.strictObject({ questionId: z.string().uuid(), score: z.number().int().min(0).max(100), feedback: z.string().trim().min(1).max(2000) }));
 const summarySchema = z.strictObject({
   items: z.array(z.strictObject({ questionId: z.string().uuid(), observation: z.string().trim().min(4).max(500) })).min(1).max(8),
@@ -44,7 +44,7 @@ export function parseCardCompanionAssessment(raw: string, expectedIds: readonly 
 
 export async function summarizeGradedCard(questions: readonly CardAssessmentQuestion[], answers: readonly CardAssessmentAnswer[], ask: AskCardCompanion, maxAttempts = 2): Promise<string | null> {
   for (let attempt = 0; attempt < maxAttempts; attempt++) try {
-    const raw = await ask({ instruction: instruction + (attempt ? " 上一份总评没有通过身份覆盖或文字校验：逐一返回每个真实questionId，observation不要写题号。仅修正总评，results必须为空数组。" : ""), questions: questions.map((question, index) => {
+    const raw = await ask({ instruction, correction: attempt ? "上一份总评没有通过身份覆盖或文字校验：逐一返回每个真实questionId，observation不要写题号。仅修正总评，results必须为空数组。" : undefined, questions: questions.map((question, index) => {
       const answer = answers.find((item) => item.questionId === question.id);
       const { id: questionId, ...content } = question;
       return { ...content, questionId, questionNumber: index + 1, submitted: answer?.answer, score: answer?.score, feedback: answer?.feedback };

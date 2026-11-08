@@ -115,8 +115,12 @@ export function parseWindowLive2DCatalog(
         if (!entries[index]) continue;
         const key = motionSpecKey(group, index);
         motionSpecs[key] = motionFileToSpec(motionFiles.get(key));
-        if (group === idleMotionGroup) continue;
-        cues.push({ kind: "motion", cue: { group, index } });
+        if (group === idleMotionGroup || group.endsWith("Back")) continue;
+        const releaseGroup = `${group}Back`;
+        const release = Array.isArray(motions[releaseGroup])
+          ? { group: releaseGroup, index: 0 }
+          : undefined;
+        cues.push({ kind: "motion", cue: { group, index, release } });
       }
     }
   }

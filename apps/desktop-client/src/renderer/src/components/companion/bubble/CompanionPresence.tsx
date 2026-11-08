@@ -89,8 +89,8 @@ const HOME_V2_FLOOR_POLYGON = normalizedHomeFloorPolygon();
  * commits a user-owned world anchor (persisted across restarts by the room
  * store). Task pages receive a fixed registry seat (`HUD_PAGES[*].seat`) with
  * on-demand interaction; the seat's side and position are tracked in a ref
- * that survives page switches. Side changes crossfade in place so the actor
- * never travels across the page's reading or answer content.
+ * that survives page switches. A side change places her on the new seat
+ * directly, still fully opaque, so she does not dissolve across the page.
  */
 function durationFor(mode: "full" | "lite" | "off", full: number) {
   return mode === "off" ? 0 : mode === "lite" ? full * 0.55 : full;
@@ -122,6 +122,7 @@ export function CompanionPresence() {
   const companionUserAnchor = useRoomStore((state) => state.companionUserAnchor);
   const companionScale = useRoomStore((state) => state.companionScale);
   const companionModelId = useRoomStore((state) => state.companionModelId);
+  const companionBodyForm = useRoomStore((state) => state.companionBodyForm);
   // 滑条刻度语义不变（100% = 基准），渲染时统一乘基准倍率：100% 的实际观感 =
   // 改造前的 120%（2026-09-19 用户裁决）。滑条 UI、持久化值仍用原刻度。
   const companionVisualScale = companionScale * COMPANION_SCALE_BASE;
@@ -193,8 +194,8 @@ export function CompanionPresence() {
    * so this ref — not component state, not a per-page cache — is what makes
    * the seat (side, coordinates) survive page switches without any
    * re-initialization. `key` guards the animation: a same-side page switch
-   * reuses the exact current position, while a side change crossfades through
-   * `seatTravelRef` without moving across the reading surface.
+   * reuses the exact current position. A side change places the new seat
+   * directly and keeps her opaque.
    */
   const seatPlacementRef = useRef<{ key: string; x: number; y: number } | null>(null);
   const seatTravelRef = useRef<gsap.core.Timeline | null>(null);
@@ -319,13 +320,23 @@ export function CompanionPresence() {
   const notebookFullscreen = useNotebookFullscreenActive();
   const cardScene = useLearningCardPresentation(state => state.scene);
   const cardReward = useLearningCardPresentation(state => state.reward);
-  const companionPolicy = guideFilm ? { ...HUD_PAGES[hudPage].companion,
+  let companionPolicy = guideFilm ? { ...HUD_PAGES[hudPage].companion,
     mode: "ambient" as const, seat: "right" as const, framing: "full" as const,
     interaction: "none" as const, proactive: "silent" as const, draggable: false,
   } : isImmersiveCardScene(cardScene) ? { ...HUD_PAGES[hudPage].companion,
     mode: cardScene === "practice" || cardScene === "grading" ? "hidden" as const : "ambient" as const,
     seat: "right" as const, framing: "bust" as const, proactive: "silent" as const, draggable: false,
-  } : notebookFullscreen ? { ...HUD_PAGES[hudPage].companion, seat: "right" as const, framing: "bust" as const, draggable: false } : HUD_PAGES[hudPage].companion;
+  } : notebookFullscreen ? { ...HUD_PAGES[hudPage].companion, seat: "right" as const, framing: "bust" as const, draggable: false }
+    : { ...HUD_PAGES[hudPage].companion };
+  // 鲸鱼娘在哪一页都整身入画。公皮只在首页全身，其余页面用上半身窗口。
+  companionPolicy = {
+    ...companionPolicy,
+    framing: companionModelId === "whale"
+      ? "full"
+      : companionModelId === "fatfish"
+        ? (hudPage === "home" ? "full" : "bust")
+        : companionPolicy.framing,
+  };
   const homeMode = companionPolicy.mode === "home";
   const sceneKey = surface ?? "room";
   const assessmentMode = companionPolicy.mode === "assessment";
@@ -833,15 +844,15 @@ export function CompanionPresence() {
         { width: anchor.offsetWidth, height: anchor.offsetHeight },
       );
       // One rule for every path — page switch, first entry from home, resize,
-      // or a placement re-run. Page switches crossfade between seats so the
-      // actor never walks over reading or answer content; viewport corrections
-      // may use a short positional nudge because they do not change context.
+      // or a placement re-run. Page switches place the new seat at once and
+      // stay opaque; viewport corrections may use a short positional nudge
+      // because they do not change context.
       const startX = Number(gsap.getProperty(anchor, "x")) || 0;
       const startY = Number(gsap.getProperty(anchor, "y")) || 0;
       const distance = Math.hypot(target.x - startX, target.y - startY);
       const previous = seatPlacementRef.current;
       // A null record is the first-ever surface entry (leaving home): it is a
-      // real page switch and therefore uses the same seat crossfade.
+      // real page switch and therefore lands on the new seat without a fade.
       const pageSwitched = (previous === null || previous.key !== seatKey)
         && !homeMode;
       const canAnimate = !notebookFullscreen && distance > 3
@@ -891,26 +902,16 @@ export function CompanionPresence() {
       });
       const fullDuration = companionSemanticTravelDuration(distance, motionModeRef.current);
       if (pageSwitched) {
-        const travel = gsap.timeline({
-          onComplete: () => {
-            seatTravelRef.current = null;
-            clampVisibleCompanion();
-          },
-        });
-        seatTravelRef.current = travel;
-        travel.to(anchor, {
-          autoAlpha: 0,
-          duration: 0.1,
-          ease: "power2.out",
-          overwrite: "auto",
-        });
-        travel.set(anchor, { x: target.x, y: target.y, force3D: true });
-        travel.to(anchor, {
+        gsap.killTweensOf(anchor, "x,y,autoAlpha");
+        gsap.set(anchor, {
+          x: target.x,
+          y: target.y,
           autoAlpha: 1,
-          duration: 0.16,
-          ease: "power2.out",
+          force3D: true,
         });
+        seatTravelRef.current = null;
         seatPlacementRef.current = { key: seatKey, x: target.x, y: target.y };
+        clampVisibleCompanion();
         return;
       }
       const duration = Math.min(fullDuration, 0.3);
@@ -1470,6 +1471,7 @@ export function CompanionPresence() {
       data-touch-kind={touchKind ?? undefined}
       data-formal-silent={assessmentMode || undefined}
       data-policy-mode={companionPolicy.mode}
+      data-framing={companionPolicy.framing}
       data-chat-mode={mode}
       data-companion-model-id={companionModelId}
       data-engaged={engaged || undefined}
@@ -1506,6 +1508,7 @@ export function CompanionPresence() {
               key={live2dAttempt}
               active={!presenceHidden && !companionUnavailable}
               modelId={companionModelId}
+              bodyForm={companionBodyForm ?? undefined}
               // 2026-09-16 追加裁决：任务页保留原地动作（低幅呼吸与眨眼，不位移、
               // 不出气泡），不再冻结当前帧。真正停止 ticker 的只有隐藏/弹窗/窗口不可见
               // 与用户自己的 motionMode（lite/off）或 reduced-motion。

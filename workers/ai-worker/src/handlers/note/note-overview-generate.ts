@@ -263,7 +263,7 @@ export async function runNoteOverviewGenerate(job: JobPayload): Promise<void> {
     lines: readonly { ordinal: number; text: string }[],
   ): ChatMessage[] => [
     { role: "system", content: "你是笔记里的白话讲解助手。忠实依据用户笔记，引用必须原样来自提供的段落。" },
-    { role: "system", content: agentContext.instructions },
+    { role: "system", hostObservation: true, content: agentContext.instructions },
     { role: "user", content: buildPrompt(chunkIndex, chunkCount, lines) },
   ];
   // 段宽来自这一次实际路由的声明预算：整篇装得下就一段读完，装不下才对半细分，段数不设上限。

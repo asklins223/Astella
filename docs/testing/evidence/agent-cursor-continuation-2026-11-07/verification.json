@@ -1,0 +1,389 @@
+{
+  "recordedAt": "2026-11-07T18:30:10.620882+08:00",
+  "cursorTaskId": "0a285ca8-73d6-4d08-a95b-ca1af9611e63",
+  "baseRevision": "eff5f628d45156ca63ffe6a96281ec49875b19da",
+  "baseline": {
+    "workerUnitTests": 2021,
+    "typecheckPackages": [
+      "packages/shared",
+      "apps/api",
+      "apps/desktop-client",
+      "workers/ai-worker"
+    ],
+    "allPassed": true
+  },
+  "finalChecks": {
+    "workerUnit": {
+      "tests": 2034,
+      "pass": 2034,
+      "fail": 0
+    },
+    "companionPostgres": {
+      "suites": 26,
+      "tests": 233,
+      "pass": 233,
+      "fail": 0,
+      "latestDiarySubset": {
+        "suites": 3,
+        "tests": 12,
+        "pass": 12,
+        "fail": 0
+      }
+    },
+    "expansionReviewPostgres": {
+      "tests": 5,
+      "pass": 5,
+      "fail": 0
+    },
+    "apiFocused": {
+      "tests": 15,
+      "pass": 15,
+      "fail": 0
+    },
+    "sharedFocused": {
+      "tests": 31,
+      "pass": 31,
+      "fail": 0
+    },
+    "workerTypecheck": "passed"
+  },
+  "live": {
+    "httpTextTurns": 24,
+    "statuses": {
+      "cancelled": 4,
+      "succeeded": 19,
+      "waiting_for_confirmation": 1
+    },
+    "visionTurns": 3,
+    "visionPassed": 3,
+    "backgroundJobTypesCompleted": 6,
+    "newReviewedExpansionDrafts": 3,
+    "previousFaultyDraftsCorrected": 3,
+    "knownPrefixCacheReceipts": 32,
+    "cacheHitTokenRange": [
+      1024,
+      10240
+    ],
+    "runningCancelJobReleaseMs": [
+      282,
+      307
+    ],
+    "queuedCancelJobReleaseMs": 1765,
+    "turnEvaluation": [
+      {
+        "id": "casual-scene",
+        "runId": "484052e0-d315-45d8-8300-d9d81e8b72eb",
+        "status": "succeeded",
+        "remainingIssues": [],
+        "harnessCorrections": []
+      },
+      {
+        "id": "fiction-subject",
+        "runId": "7d440058-8d17-4a90-92bb-a248ce3aea2a",
+        "status": "succeeded",
+        "remainingIssues": [],
+        "harnessCorrections": []
+      },
+      {
+        "id": "explain-new",
+        "runId": "5d4f4598-8346-4847-a6d1-bc34c6073dfe",
+        "status": "succeeded",
+        "remainingIssues": [],
+        "harnessCorrections": []
+      },
+      {
+        "id": "causal-limits",
+        "runId": "37e42920-2cec-4cf8-94f3-cbcc30493f29",
+        "status": "succeeded",
+        "remainingIssues": [],
+        "harnessCorrections": []
+      },
+      {
+        "id": "calculation",
+        "runId": "d8375c3e-4929-4a08-a294-b6259eaa99f1",
+        "status": "succeeded",
+        "remainingIssues": [],
+        "harnessCorrections": []
+      },
+      {
+        "id": "save-new-memory",
+        "runId": "7e78fd37-df9d-42e6-8047-763b03ec67c4",
+        "status": "succeeded",
+        "remainingIssues": [],
+        "harnessCorrections": []
+      },
+      {
+        "id": "recall-new-memory",
+        "runId": "9fd2e834-88bb-42df-b527-5b9458ee6fb5",
+        "status": "succeeded",
+        "remainingIssues": [],
+        "harnessCorrections": [
+          "The model legitimately retrieved the saved memory. The harness had incorrectly required a tool-free recall."
+        ]
+      },
+      {
+        "id": "create-new-note",
+        "runId": "ec98c5a4-a337-4d8e-939e-02f77d9978b6",
+        "status": "succeeded",
+        "remainingIssues": [],
+        "harnessCorrections": [
+          "The harness expected a domain prefix as an exact operation name; the canonical domain operation receipt succeeded."
+        ]
+      },
+      {
+        "id": "read-new-note",
+        "runId": "9696687e-588c-442a-a8bb-e55086a7e37d",
+        "status": "succeeded",
+        "remainingIssues": [],
+        "harnessCorrections": [
+          "The harness expected a domain prefix as an exact operation name; the canonical domain operation receipt succeeded."
+        ]
+      },
+      {
+        "id": "edit-new-note",
+        "runId": "afd67749-ecac-4ec2-92c6-4dd5ed32e1c6",
+        "status": "succeeded",
+        "remainingIssues": [],
+        "harnessCorrections": [
+          "The harness expected a domain prefix as an exact operation name; the canonical domain operation receipt succeeded."
+        ]
+      },
+      {
+        "id": "after-write-chat",
+        "runId": "4f0295c6-a754-4cdd-9cf2-99c3c643864e",
+        "status": "succeeded",
+        "remainingIssues": [],
+        "harnessCorrections": []
+      },
+      {
+        "id": "cancel-generating",
+        "runId": "4667c1c7-989d-44ed-885b-05d9b7de3d68",
+        "status": "cancelled",
+        "remainingIssues": [],
+        "harnessCorrections": []
+      },
+      {
+        "id": "after-cancel",
+        "runId": "18676c17-922c-4f77-b886-437433bdaf34",
+        "status": "succeeded",
+        "remainingIssues": [],
+        "harnessCorrections": []
+      },
+      {
+        "id": "guided-create",
+        "runId": "bc1843a5-628f-4ea5-bd07-a296af57699a",
+        "status": "waiting_for_confirmation",
+        "remainingIssues": [],
+        "harnessCorrections": []
+      },
+      {
+        "id": "guided-after-cancel",
+        "runId": "dcd07fc9-e6e0-4836-b6d5-99814263cfc3",
+        "status": "succeeded",
+        "remainingIssues": [],
+        "harnessCorrections": []
+      },
+      {
+        "id": "cancel-round-1",
+        "runId": "2c7aec33-1118-49cd-a391-30da744344df",
+        "status": "cancelled",
+        "remainingIssues": [],
+        "harnessCorrections": []
+      },
+      {
+        "id": "reply-after-cancel-1",
+        "runId": "b540a51b-e94a-4265-adee-a2f248adceaf",
+        "status": "succeeded",
+        "remainingIssues": [],
+        "harnessCorrections": []
+      },
+      {
+        "id": "cancel-round-2",
+        "runId": "668fc215-4b24-41c4-a551-20d23adf2e87",
+        "status": "cancelled",
+        "remainingIssues": [],
+        "harnessCorrections": []
+      },
+      {
+        "id": "reply-after-cancel-2",
+        "runId": "66f749fb-1ae7-418a-864a-b0cf7db25754",
+        "status": "succeeded",
+        "remainingIssues": [],
+        "harnessCorrections": []
+      },
+      {
+        "id": "cancel-round-3",
+        "runId": "f3fb71f7-65f9-41e9-bd0b-84e67dcc0c10",
+        "status": "cancelled",
+        "remainingIssues": [],
+        "harnessCorrections": []
+      },
+      {
+        "id": "reply-after-cancel-3",
+        "runId": "69f2bf4c-3378-488b-a5dc-8f8067f26fdd",
+        "status": "succeeded",
+        "remainingIssues": [],
+        "harnessCorrections": []
+      },
+      {
+        "id": "fresh-source-backed-answer",
+        "runId": "5366d2ca-87bf-45f9-849e-25f1f3c229d9",
+        "status": "succeeded",
+        "remainingIssues": [],
+        "harnessCorrections": []
+      }
+    ],
+    "additionalNativeTransport": {
+      "startedAt": "2026-11-07T10:20:49.012Z",
+      "results": [
+        {
+          "id": "native-progress-conversation",
+          "input": "刚收好桌上的书，我准备放松一会儿，随便聊两句就好。",
+          "runId": "c8633f54-acdb-4612-a0b8-b02119c93e4c",
+          "status": "succeeded",
+          "error": null,
+          "steps": 1,
+          "firstSignalMs": 924,
+          "firstTextMs": 1309,
+          "finalMs": 2284,
+          "totalMs": 2550,
+          "tools": [],
+          "audit": [
+            {
+              "operation": "companion_agent:chat_completion_stream",
+              "provider": "mimo_responses",
+              "model_id": "mimo-v2.6-flash",
+              "duration_ms": 2142,
+              "prompt_tokens": 7301,
+              "cached_tokens": 6656,
+              "status": "success"
+            }
+          ],
+          "reply": "收工了啊，挺好。书一摞一摞挪走，桌面空出来的那一刻最舒服。想聊点什么，还是就这么有一搭没一搭地待着也行。",
+          "followUps": [],
+          "eventTypes": [
+            "turn.accepted",
+            "assistant.status",
+            "character.cue",
+            "assistant.thinking",
+            "assistant.delta",
+            "voice.segment.ready",
+            "assistant.final"
+          ],
+          "sseEvents": 23,
+          "issues": []
+        },
+        {
+          "id": "native-progress-tool",
+          "input": "请用计算工具核对 47 × 68 的结果，再告诉我。",
+          "runId": "641bf36a-b98f-4631-81fb-d7eae96d1533",
+          "status": "succeeded",
+          "error": null,
+          "steps": 2,
+          "firstSignalMs": 913,
+          "firstTextMs": 4310,
+          "finalMs": 7587,
+          "totalMs": 7830,
+          "tools": [
+            {
+              "id": "bf131c79-8f5b-4289-b97a-27f972e81694",
+              "name": "observe.calculate",
+              "status": "succeeded"
+            }
+          ],
+          "audit": [
+            {
+              "operation": "companion_agent:chat_completion_stream",
+              "provider": "mimo_responses",
+              "model_id": "mimo-v2.6-flash",
+              "duration_ms": 2139,
+              "prompt_tokens": 7650,
+              "cached_tokens": 6144,
+              "status": "success"
+            },
+            {
+              "operation": "companion_agent:chat_completion_stream",
+              "provider": "mimo_responses",
+              "model_id": "mimo-v2.6-flash",
+              "duration_ms": 5242,
+              "prompt_tokens": 9069,
+              "cached_tokens": 6144,
+              "status": "success"
+            }
+          ],
+          "reply": "核对过了，**47 × 68 = 3196**。",
+          "followUps": [],
+          "eventTypes": [
+            "turn.accepted",
+            "assistant.status",
+            "character.cue",
+            "assistant.thinking",
+            "agent.tool",
+            "assistant.delta",
+            "voice.segment.ready",
+            "assistant.final"
+          ],
+          "sseEvents": 27,
+          "issues": []
+        }
+      ]
+    },
+    "diarySourceMemory": {
+      "before": "journal-before-memory-fix.json",
+      "after": "journal-after-memory-fix.json",
+      "finalSourceLinks": 6,
+      "summaryCoverage": [
+        "1",
+        "6"
+      ],
+      "summaryUncovered": [],
+      "clippedDiaryMemories": 0,
+      "draftTaskVersion": 3,
+      "revisionTaskVersion": 2
+    }
+  },
+  "limits": [
+    "Local Docker and Electron validation; no production deployment.",
+    "Automatic reasoning remains enabled; model and queue latency still vary.",
+    "Content review is a model judgment rather than a proof of every possible generated fact.",
+    "Microphone capture, ASR and hardware barge-in were not revalidated in this continuation."
+  ],
+  "sourceSha256": {
+    "workers/ai-worker/package.json": "ac01ebb5d90fa2925c77bb74f9c35f0680c68daeae9fe54903981a26b650485b",
+    "workers/ai-worker/src/__tests__/worker-handler-test-coverage-ratchet.test.ts": "929d2b62af4b1fc4cb962f6ec857b1b7dbe55b0c4d212f623648e8e0dba91294",
+    "workers/ai-worker/src/handlers/agent/companion-agent-runtime.ts": "bea1d6c2e97d64888c414d03029de4072a456d5cdd59dd55f6b31c865262c69f",
+    "workers/ai-worker/src/handlers/agent/companion-stream-recovery.ts": "c685c58a1723bccadb11f28713d0d2039c8edafdf7c13f9a8481a1108e43ce52",
+    "workers/ai-worker/src/handlers/agent/companion-runtime-checkpoint.ts": "0e58d83510283ede06dd9520ae19c49c56efb12d20121d288d3251ce8c15fa6b",
+    "workers/ai-worker/src/handlers/turn/companion-dialogue.ts": "1d1f538d0dba2d72efe9a7077c07ec7b127f7eed9fbfd195afaaf1b38d7a24c5",
+    "workers/ai-worker/src/handlers/turn/companion-dialogue-store.ts": "697ccf2173478457bb09d57a262bb623e6fecd3069adf4c8229a05897c7c215c",
+    "workers/ai-worker/src/handlers/__tests__/companion-stream-recovery.test.ts": "e02b2a524b8f529fe52a93092ff07040b17fed79d44bf1455e2b2e83927761ba",
+    "workers/ai-worker/src/handlers/__tests__/note-expansion-prompt.test.ts": "83208772795510a1d8dc8c2ed21113e99acb461d31dbc1ec27d566fa27bb0c26",
+    "workers/ai-worker/src/handlers/__tests__/note-expansion-review.test.ts": "79ec7992f4fa1df9d585aecd37d8f95744b3a8bde307151dfe00673ba9f094dc",
+    "workers/ai-worker/src/handlers/note/note-expansion-generate.ts": "390e0209c01d93a04b9e48b55a96c30e60047cd39eeb2f91daf44c9bd2495d1f",
+    "workers/ai-worker/src/handlers/note/note-expansion-prompt.ts": "ecd25fa2221705f0e71f368f217aff9cab00de4c361bbcc7fe6ac0ce39d2e567",
+    "workers/ai-worker/src/handlers/note/note-expansion-review.ts": "14497238e5e3b6b52d20c6b5cfb789a952c84691c576326042502e456fffdba0",
+    "workers/ai-worker/src/integration-tests/companion-agent-postgres.integration.ts": "1f54640194152ffdc37c2c373a9a11795d2e109d359a807d3ae9dda41c5f7d01",
+    "workers/ai-worker/src/integration-tests/companion-model-budget-postgres.integration.ts": "4721ce74b6b88875370bd2abbc1e096453a324d177b01adf60b70d7eb7726cf6",
+    "workers/ai-worker/src/integration-tests/companion-complete-summary-postgres.integration.ts": "c3673116dc35507e0f1ec3ccd746c62dda28e71331ff6ec59da7a0f10b8f5243",
+    "workers/ai-worker/src/integration-tests/companion-initiative-postgres.integration.ts": "8ff15e1019d4628585c98753cb6b5db9996cc0aa366dc9b882aeff7f7a4af127",
+    "workers/ai-worker/src/integration-tests/note-expansion-review-postgres.integration.ts": "54a4020b98c4fd2464e59c07e243c8af6f852acfbd883db83c2015c03a3236ca",
+    "workers/ai-worker/src/lib/providers/pi-agent.ts": "abeba59c48ec0a73ab064f08ca39808530998cd74a0a90638186613ecec37985",
+    "workers/ai-worker/src/lib/providers/pi-http-transport.ts": "f0859335882fa7dfb891b51237983c50300da2e0d45b464a374f7fd55aa9cda4",
+    "workers/ai-worker/src/lib/providers/pi-wire-observation.ts": "a423785df3b05761b03a6c6b261e12cefe3c1981e8805a729891877ba30348f8",
+    "workers/ai-worker/src/__tests__/pi-agent.test.ts": "cbaf2bdaab39cfbaea8e8a4e20bc94185fdfb32a892fd23dc950b7d4024f0a13",
+    "workers/ai-worker/src/__tests__/pi-wire-observation.test.ts": "3fbc420b54a841440c9577aad5d65a471a50f5db10f30056aec5c6191113fb4c",
+    "workers/ai-worker/src/handlers/journal/companion-diary-content.ts": "78bd1addb94161eacb2645df78d08d54c05140c8dbfd1f30a0811cc2c45afe9a",
+    "workers/ai-worker/src/handlers/journal/companion-daily-summary.ts": "5b418cc8c94a47660476929f68a4ea4e9d6187d242cad7077ed83b397c1ac7a4",
+    "workers/ai-worker/src/handlers/journal/companion-diary-revision.ts": "7f842b18f3dbd577c9c0f67f2edd36c73cc65b9a2ae0f2fa87c7e390c877d470",
+    "workers/ai-worker/src/handlers/__tests__/companion-daily-summary.test.ts": "5e035f09d1118c8408217b8423f9c43dcedac54cba5b0e9805f2d87b393e9601",
+    "workers/ai-worker/src/integration-tests/companion-diary-writing-postgres.integration.ts": "e295acabf6f59b5d3fcb0bd340cdf22ec3db079e50e4607e62264b21585ac0b8"
+  },
+  "testLogSha256": {
+    "worker-suite-final.log": "1331c13b4200193c87e0634361481f0d1c9da31f25ec2ffdbac89e2960b3ee30",
+    "worker-typecheck-final.log": "5b3a3cc7c0ecf854da080f16661d4e38cd33d829c86e923bf30326466960e41b",
+    "diary-integrations.log": "1182233a3b7ae0913c76158fccdb25e59cc0c1625583f5000f24be4867aea6f1",
+    "native-activity-green.log": "ecea9fba624b67accef37f3e1fbcf077892a44f32eea49e63ae7943f2af2c6de",
+    "diary-memory-red.log": "8eff2355cbae02d912e8dcc7a760a3369c26ee12e23be18c602565433738b2e9",
+    "diary-memory-green.log": "5b7f5b108d5a0173b23f279528b83a3281fdc6eae641209f8595417a3fe6fbdd"
+  }
+}

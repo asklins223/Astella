@@ -107,6 +107,7 @@ export function createCompanionRevealDriver(
   /** 阅读钟的起算点；null = 钟没在走（音频正在说话）。 */
   let clockStartedAt: number | null = null;
   let clockBase = 0;
+  let lastTickAt = now();
   let arrivedAt: number | null = null;
   let turnFinal = false;
   let completed = false;
@@ -143,6 +144,9 @@ export function createCompanionRevealDriver(
    */
   const tick = (): void => {
     const at = now();
+    const elapsed = Math.min(32, Math.max(0, at - lastTickAt));
+    lastTickAt = at;
+    const readingCeiling = revealed + Math.ceil(elapsed / msPerChar);
     if (audioLive(at)) {
       // 位置刚更新过：音频是唯一权威。钟挂起，等它真停了再从头起算（不回退计数）。
       clockStartedAt = null;
@@ -177,16 +181,18 @@ export function createCompanionRevealDriver(
       // 起算的那一拍先给到提前量（字幕总得先露一个字），之后按阅读钟走。
       // 只在这一支给：silent 模式没有"等音频"的语义，直接按钟从 0 起。
       const floor = Math.min(arrived, leadChars);
-      commit(Math.max(revealed, floor, clockBase + Math.floor((at - clockStartedAt) / msPerChar)));
+      commit(Math.max(revealed, floor, Math.min(readingCeiling, clockBase + Math.floor((at - clockStartedAt) / msPerChar))));
     } else if (audioPending) {
-      // 原地等（见上面那段注释）。
+      // 空等不积攒可显现字数，恢复时仍从当前游标走。
+      clockStartedAt = null; clockBase = revealed;
     } else {
       if (clockStartedAt === null) {
         clockStartedAt = at;
         clockBase = revealed;
       }
-      commit(Math.max(revealed, clockBase + Math.floor((at - clockStartedAt) / msPerChar)));
+      commit(Math.max(revealed, Math.min(readingCeiling, clockBase + Math.floor((at - clockStartedAt) / msPerChar))));
     }
+    if (revealed >= arrived) { clockStartedAt = at; clockBase = revealed; }
     completeIfDone();
   };
 
@@ -205,7 +211,7 @@ export function createCompanionRevealDriver(
       audioCeiling = 0;
       audioGaveUp = false;
       clockStartedAt = null;
-      clockBase = 0;
+      clockBase = 0; lastTickAt = now();
       arrivedAt = null;
       turnFinal = false;
       completed = false;
@@ -215,7 +221,10 @@ export function createCompanionRevealDriver(
       const next = Math.max(0, Math.floor(chars));
       // `arrived` 是"已知文本的最大值"：服务端回写（appendFrom 回退）会让草稿短暂变短，
       // 但那不会让已经显现的字收回去——显示端按**当前**文本切片，天然不会露出多余的尾巴。
-      if (next > arrived) arrived = next;
+      if (next > arrived) {
+        if (revealed >= arrived) { clockStartedAt = now(); clockBase = revealed; }
+        arrived = next;
+      }
       if (arrivedAt === null) arrivedAt = now();
       completeIfDone();
     },
@@ -234,8 +243,8 @@ export function createCompanionRevealDriver(
     noteAudioFinished(): void {
       audioAt = now();
       audioGaveUp = true;
-      clockStartedAt = null;
-      commit(arrived);
+      clockStartedAt = now(); clockBase = revealed;
+      // 音频结束也不把尚未显示的正文整块冲出来，余下文字交回阅读钟。
       completeIfDone();
     },
     noteAudioStopped(): void {

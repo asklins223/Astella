@@ -1,0 +1,166 @@
+{
+  "Version": 3,
+  "FileReferences": {
+    "Moc": "fatfish.moc3",
+    "Textures": [
+      "fatfish.4096/texture_00.png",
+      "fatfish.4096/texture_01.png",
+      "fatfish.4096/texture_02.png",
+      "fatfish.4096/texture_03.png",
+      "fatfish.4096/texture_04.png"
+    ],
+    "Physics": "fatfish.physics3.json",
+    "DisplayInfo": "fatfish.cdi3.json",
+    "Expressions": [
+      {
+        "Name": "black-face",
+        "File": "expressions/black-face.exp3.json"
+      },
+      {
+        "Name": "crying",
+        "File": "expressions/crying.exp3.json"
+      },
+      {
+        "Name": "dizzy-eyes",
+        "File": "expressions/dizzy-eyes.exp3.json"
+      },
+      {
+        "Name": "heart-eyes",
+        "File": "expressions/heart-eyes.exp3.json"
+      },
+      {
+        "Name": "squeezed-eyes",
+        "File": "expressions/squeezed-eyes.exp3.json"
+      },
+      {
+        "Name": "smug-eyes",
+        "File": "expressions/smug-eyes.exp3.json"
+      },
+      {
+        "Name": "blush",
+        "File": "expressions/blush.exp3.json"
+      },
+      {
+        "Name": "loading",
+        "File": "expressions/loading.exp3.json"
+      },
+      {
+        "Name": "buck-tooth",
+        "File": "expressions/buck-tooth.exp3.json"
+      },
+      {
+        "Name": "steel-bowl",
+        "File": "expressions/steel-bowl.exp3.json"
+      },
+      {
+        "Name": "glasses-square",
+        "File": "expressions/glasses-square.exp3.json"
+      },
+      {
+        "Name": "monocle",
+        "File": "expressions/monocle.exp3.json"
+      },
+      {
+        "Name": "cold-sweat",
+        "File": "expressions/cold-sweat.exp3.json"
+      },
+      {
+        "Name": "skirt-long",
+        "File": "expressions/skirt-long.exp3.json"
+      },
+      {
+        "Name": "chest-cover",
+        "File": "expressions/chest-cover.exp3.json"
+      },
+      {
+        "Name": "shoes-off",
+        "File": "expressions/shoes-off.exp3.json"
+      },
+      {
+        "Name": "tail-off",
+        "File": "expressions/tail-off.exp3.json"
+      },
+      {
+        "Name": "point-finger-on",
+        "File": "expressions/point-finger-on.exp3.json"
+      },
+      {
+        "Name": "point-finger-off",
+        "File": "expressions/point-finger-off.exp3.json"
+      },
+      {
+        "Name": "lean-forward",
+        "File": "expressions/lean-forward.exp3.json"
+      }
+    ],
+    "Motions": {
+      "Idle": [
+        {
+          "File": "motions/idle.motion3.json",
+          "FadeInTime": 0.5,
+          "FadeOutTime": 0.5
+        }
+      ],
+      "RaiseHand": [
+        {
+          "File": "motions/raise-hand.motion3.json",
+          "FadeInTime": 0.3,
+          "FadeOutTime": 0.4
+        }
+      ],
+      "RaiseHandBack": [
+        {
+          "File": "motions/raise-hand-back.motion3.json",
+          "FadeInTime": 0.3,
+          "FadeOutTime": 0.4
+        }
+      ],
+      "PointFinger": [
+        {
+          "File": "motions/point-finger.motion3.json",
+          "FadeInTime": 0.3,
+          "FadeOutTime": 0.4
+        }
+      ],
+      "PointFingerBack": [
+        {
+          "File": "motions/point-finger-back.motion3.json",
+          "FadeInTime": 0.3,
+          "FadeOutTime": 0.4
+        }
+      ],
+      "Grass": [
+        {
+          "File": "motions/grass.motion3.json",
+          "FadeInTime": 0.3,
+          "FadeOutTime": 0.4
+        }
+      ],
+      "GrassBack": [
+        {
+          "File": "motions/grass-back.motion3.json",
+          "FadeInTime": 0.3,
+          "FadeOutTime": 0.4
+        }
+      ]
+    }
+  },
+  "Groups": [
+    {
+      "Target": "Parameter",
+      "Name": "EyeBlink",
+      "Ids": [
+        "ParamEyeLOpen",
+        "ParamEyeROpen"
+      ]
+    },
+    {
+      "Target": "Parameter",
+      "Name": "LipSync",
+      "Ids": [
+        "ParamMouthOpenY"
+      ]
+    }
+  ],
+  "HitAreas": []
+}

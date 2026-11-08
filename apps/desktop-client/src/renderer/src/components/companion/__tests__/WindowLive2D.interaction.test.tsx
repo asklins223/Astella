@@ -15,6 +15,7 @@ vi.mock("../live2d/WindowLive2DDriver", () => ({
     setPaused() {}
     setModel() {}
     setFraming() {}
+    setBodyForm() {}
     pushEmotion() {}
   },
 }));

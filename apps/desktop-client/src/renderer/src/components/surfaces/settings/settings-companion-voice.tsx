@@ -1,7 +1,7 @@
 import { useEffect,useState } from "react";
 import { gatewayErrorMessage,unwrapGatewayResult } from "../../../app/client/desktop-client";
 import { DEFAULT_COMPANION_SCALE,MAX_COMPANION_SCALE,MIN_COMPANION_SCALE,useRoomStore } from "../../../app/home/room-store";
-import { WINDOW_LIVE2D_MODEL_REGISTRY,type WindowLive2DModelId } from "../../companion/live2d/window-live2d-contract";
+import { WINDOW_LIVE2D_MODEL_REGISTRY,type WindowLive2DBodyForm,type WindowLive2DModelId } from "../../companion/live2d/window-live2d-contract";
 import { HudSegmented,HudSlider,HudSwitch } from "../../hud/HudControls";
 import { useCompanionResource } from "../companion/use-companion-resource";
 import { SettingsAnswerModeRow } from "./settings-answer-mode-row";
@@ -20,6 +20,8 @@ export function SettingsCompanionVoice(props: { onReadable: (value: SettingsRead
   const resetPosition = useRoomStore(state => state.resetCompanionPosition);
   const model = useRoomStore(state => state.companionModelId);
   const setModel = useRoomStore(state => state.setCompanionModelId);
+  const bodyForm = useRoomStore(state => state.companionBodyForm);
+  const setBodyForm = useRoomStore(state => state.setCompanionBodyForm);
   const masterMuted = useRoomStore(state => state.masterMuted);
   const setMasterMuted = useRoomStore(state => state.setMasterMuted);
   const voiceResource = useCompanionResource(meta => window.astella.companion.voicePreference.get({ meta }));
@@ -33,7 +35,15 @@ export function SettingsCompanionVoice(props: { onReadable: (value: SettingsRead
     voice.setVoicePreferenceRead(!voiceResource.loading);
   }, [voiceResource.section, voiceResource.loading, voice.setVoicePreference, voice.setVoicePreferenceRead]);
   const answerMode = answer.section?.ok ? answer.section.value : null;
-  const models = Object.entries(WINDOW_LIVE2D_MODEL_REGISTRY).map(([value, entry]) => [value as WindowLive2DModelId, entry.displayName] as const);
+  // 桌面端的模型打在安装包里。手机端才向服务端要对象存储链接，再在手机上下载。
+  const models = (Object.entries(WINDOW_LIVE2D_MODEL_REGISTRY) as Array<[WindowLive2DModelId, { displayName: string }]>).map(
+    ([id, descriptor]) => [id, descriptor.displayName] as const,
+  );
+  // 体型三选一只有登记了 `bodyForms` 的形态才有（目前是新接入的「公皮」）。
+  const bodyFormOptions: ReadonlyArray<readonly [WindowLive2DBodyForm, string]> = [
+    ["small", "小"], ["medium", "中"], ["large", "大"],
+  ];
+  const supportsBodyForm = WINDOW_LIVE2D_MODEL_REGISTRY[model].bodyForms !== undefined;
   const changeAnswer = async (preference: NonNullable<typeof answerMode>["preference"]) => {
     if (answerSaving) return;
     setAnswerSaving(true); setError(null);
@@ -53,6 +63,7 @@ export function SettingsCompanionVoice(props: { onReadable: (value: SettingsRead
     ],
     filters: [{ label: "伴星声音", value: masterMuted ? "已关闭" : "已开启" }, { label: "书桌上的形象", value: WINDOW_LIVE2D_MODEL_REGISTRY[model].displayName }],
     items: [
+      ...(supportsBodyForm ? [{ label: "体型号", state: bodyForm === "small" ? "小" : bodyForm === "medium" ? "中" : "大" }] : []),
       { label: "默认作答方式", state: answerMode ? ANSWER_MODE_OPTIONS.find(option => option[0] === answerMode.preference)?.[1] : pendingReadLine(!answer.loading) },
       { label: "用哪套声音合成", state: voice.voicePreference ? TTS_ENGINE_OPTIONS.find(option => option[0] === voice.voicePreference?.engine)?.[1] : pendingReadLine(voice.voicePreferenceRead) },
       ...voicesForEngine(voice.voicePreference?.engine).map(option => ({ label: option.name, ...(voice.voicePreference?.voice === option.voice ? { state: "在用" } : {}) })),
@@ -68,7 +79,12 @@ export function SettingsCompanionVoice(props: { onReadable: (value: SettingsRead
     {/* 审计 F11：保存失败贴顶常驻（与陪伴规则同一口径），滚动里也看得见。 */}
     {error ? <div className="settings-companion-sticky"><SettingsInlineState title="这次设置没有保存" detail={error} tone="error" /></div> : null}
     <section className="settings-companion-chapter"><header><h3>书桌上的伴星</h3><p>这台设备上的形象、大小与声音。</p></header>
-      <SettingRow title="书桌上的形象" detail="只改变显示的角色模型，人格和记忆仍然保留。"><HudSegmented label="书桌上的形象" value={model} options={models} onChange={setModel} compact /></SettingRow>
+      <SettingRow title="书桌上的形象" detail="这台电脑安装包里的形象。人格和记忆仍然保留。">
+        <HudSegmented label="书桌上的形象" value={model} options={models} onChange={setModel} compact />
+      </SettingRow>
+      {/* 2026-11-05：新增的「公皮」把作者的体型滑杆拆成三档，默认小的。
+          只有登记了 bodyForms 的形态出现这一行——没有体型的形态不显示空选项。 */}
+      {supportsBodyForm ? <SettingRow title="体型" detail="同一个形象的大、中、小三档，只影响显示大小与比例。"><HudSegmented label="体型" value={bodyForm ?? "small"} options={bodyFormOptions} onChange={next => setBodyForm(next as WindowLive2DBodyForm)} compact /></SettingRow> : null}
       <div className="settings-companion-size"><b>伴星大小</b><HudSlider label="伴星大小" value={scale} min={MIN_COMPANION_SCALE} max={MAX_COMPANION_SCALE} step={0.05} onChange={setScale} format={percentLine} hint="位置可以在书桌和页面里拖动调整。" /></div>
       <SettingRow title="让伴星回到默认位置" detail="拖到边缘或挡住纸面时，恢复默认座位与 100% 大小。"><button type="button" className="button" disabled={placementOwner === "semantic" && scale === DEFAULT_COMPANION_SCALE} onClick={() => { resetPosition(); setScale(DEFAULT_COMPANION_SCALE); }}>恢复位置与大小</button></SettingRow>
       <SettingRow title="伴星声音" detail="本机总静音，同时管界面提示音和伴星语音。"><HudSwitch checked={!masterMuted} onChange={next => setMasterMuted(!next)} label="伴星声音" /></SettingRow>

@@ -1,0 +1,110 @@
+{
+  "scope": "Local synthetic host-boundary probes. No model call, database I/O or account mutation. Removed-export checks document retirement and do not measure end-to-end semantics.",
+  "results": [
+    {
+      "case": "note_save",
+      "request": "新建一篇笔记：三字经的文化背景。",
+      "accepted": true
+    },
+    {
+      "case": "note_save",
+      "request": "新建一篇笔记，介绍四字成语的起源，字数不限。",
+      "accepted": true
+    },
+    {
+      "case": "note_save",
+      "request": "新建笔记，写300–500字。",
+      "accepted": true
+    },
+    {
+      "case": "selected_question",
+      "request": "不要只用一句话回答，详细解释。",
+      "rendered": "我刚划选的原文：\n<selection_data>\nThis is synthetic selected text.\n</selection_data>\n\n我的问题：不要只用一句话回答，详细解释。"
+    },
+    {
+      "case": "temporal_memory",
+      "request": "记住我的长期偏好：写日记时不要盘点今天学了多少。",
+      "resolution": {
+        "ok": true,
+        "appliesWhen": null,
+        "validUntil": null
+      }
+    },
+    {
+      "case": "portable_memory",
+      "content": "无论在哪个书房，我都更喜欢用物理类比理解抽象概念。",
+      "scope": "global",
+      "write": {
+        "ok": true
+      }
+    },
+    {
+      "case": "stable_memory_as_statistic",
+      "content": "今天我决定长期每天读30分钟。",
+      "wordGateExportPresent": false,
+      "temporal": {
+        "ok": true,
+        "appliesWhen": null,
+        "validUntil": null
+      }
+    },
+    {
+      "case": "diary_quote",
+      "text": "A counterexample can reveal a missing assumption in an otherwise plausible argument.",
+      "eligible": true
+    },
+    {
+      "case": "diary_quote",
+      "text": "这段原文完整说明了例外条件为什么会影响结论，同时保留了作者的语气🙂。",
+      "eligible": true
+    },
+    {
+      "case": "stats_prefetch",
+      "request": "我想知道学习进度如何。",
+      "wordPrefetchExportPresent": false,
+      "wordKeySelectorExportPresent": false
+    },
+    {
+      "case": "proactive_closure",
+      "text": "本轮没有新内容，明天我会提醒你。",
+      "wordSuppressionExportPresent": false,
+      "output": {
+        "ok": true,
+        "text": "本轮没有新内容，明天我会提醒你。"
+      },
+      "explicitQuiet": {
+        "ok": true,
+        "text": "",
+        "writesLanded": false
+      },
+      "userQuiet": {
+        "ok": false,
+        "error": "安静结束只适用于没有待交付结果的主动参与；用户请求、正文和实际写入不能静默省略。"
+      }
+    },
+    {
+      "case": "ordinary_technical_text",
+      "text": "请在 JavaScript 中读取 pageContext 字段。",
+      "verdict": {
+        "ok": true,
+        "text": "请在 JavaScript 中读取 pageContext 字段。"
+      }
+    },
+    {
+      "case": "ordinary_technical_text",
+      "text": "示例 UUID 为 11111111-1111-4111-8111-111111111111。",
+      "verdict": {
+        "ok": true,
+        "text": "示例 UUID 为 11111111-1111-4111-8111-111111111111。"
+      }
+    },
+    {
+      "case": "semantic_coverage_boundary",
+      "verdict": {
+        "ok": true,
+        "text": "笔记中的暗号是 SYNTHETIC-INVENTED。",
+        "writesLanded": false
+      }
+    }
+  ]
+}

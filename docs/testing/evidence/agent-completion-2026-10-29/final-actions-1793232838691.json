@@ -1,0 +1,1248 @@
+{
+  "version": 1,
+  "label": "final-actions",
+  "startedAt": "2026-10-29T00:13:58.691Z",
+  "workspaceId": "150fcb14-c4b2-42dc-9be1-dc11fed56e24",
+  "userId": "8ae538f2-889e-4468-88be-311f05ec2e77",
+  "note": "Synthetic local HTTP acceptance; structural checks are not a semantic quality certification.",
+  "records": [
+    {
+      "id": "split",
+      "repeat": 0,
+      "prompt": "分两条消息发给我：先说早上好，再问我今天准备先做什么。",
+      "runId": "d76f97b1-0593-46e2-aa73-3a80ff6c8a54",
+      "ok": true,
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "requestedTools": true,
+        "messageCount": true
+      },
+      "elapsedMs": 11155,
+      "firstVisibleMs": 6182,
+      "run": {
+        "status": "succeeded",
+        "error_code": null,
+        "step_count": 4,
+        "model_call_count": 5,
+        "route": {
+          "version": 1,
+          "workload": "adaptive",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "work",
+            "source": "model",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "created_at": "2026-10-29T00:13:59.044Z",
+        "started_at": "2026-10-29T00:13:59.537Z",
+        "actual_steps": "4"
+      },
+      "calls": [
+        {
+          "name": "say.publish",
+          "status": "succeeded",
+          "risk_class": "reversible_low"
+        },
+        {
+          "name": "say.publish",
+          "status": "succeeded",
+          "risk_class": "reversible_low"
+        }
+      ],
+      "hostReads": [],
+      "providerCalls": [
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:chat_completion_stream",
+          "duration_ms": 1325,
+          "prompt_tokens": 7549,
+          "completion_tokens": 83,
+          "cached_tokens": 4096,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:chat_completion",
+          "duration_ms": 3046,
+          "prompt_tokens": 522,
+          "completion_tokens": 5,
+          "cached_tokens": 0,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:execute_agent_turn",
+          "duration_ms": 2197,
+          "prompt_tokens": 8797,
+          "completion_tokens": 171,
+          "cached_tokens": 4096,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:execute_agent_turn",
+          "duration_ms": 2265,
+          "prompt_tokens": 9234,
+          "completion_tokens": 165,
+          "cached_tokens": 8704,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:execute_agent_turn",
+          "duration_ms": 2007,
+          "prompt_tokens": 9448,
+          "completion_tokens": 195,
+          "cached_tokens": 9216,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "早上好。今天这天儿，起得挺利索嘛。",
+        "今天准备先做什么？给我个方向，我跟着看。"
+      ]
+    },
+    {
+      "id": "arithmetic",
+      "repeat": 0,
+      "prompt": "用计算工具核对 347 乘以 29 是多少。",
+      "runId": "e4a8bb3a-094a-42b0-a17a-92006c318c2c",
+      "ok": true,
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "requestedTools": true,
+        "smokeTermMatch": true
+      },
+      "elapsedMs": 6088,
+      "firstVisibleMs": 5925,
+      "run": {
+        "status": "succeeded",
+        "error_code": null,
+        "step_count": 3,
+        "model_call_count": 5,
+        "route": {
+          "version": 1,
+          "workload": "adaptive",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "work",
+            "source": "model",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "created_at": "2026-10-29T00:14:10.183Z",
+        "started_at": "2026-10-29T00:14:10.300Z",
+        "actual_steps": "3"
+      },
+      "calls": [
+        {
+          "name": "observe.calculate",
+          "status": "succeeded",
+          "risk_class": "read"
+        }
+      ],
+      "hostReads": [],
+      "providerCalls": [
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:chat_completion_stream",
+          "duration_ms": 1006,
+          "prompt_tokens": 7953,
+          "completion_tokens": 58,
+          "cached_tokens": 4224,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:chat_completion",
+          "duration_ms": 1284,
+          "prompt_tokens": 581,
+          "completion_tokens": 5,
+          "cached_tokens": 0,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:execute_agent_turn",
+          "duration_ms": 2234,
+          "prompt_tokens": 9341,
+          "completion_tokens": 80,
+          "cached_tokens": 4224,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:execute_agent_turn",
+          "duration_ms": 1767,
+          "prompt_tokens": 9483,
+          "completion_tokens": 176,
+          "cached_tokens": 9216,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "算过了，`347 × 29 = 10063`。拆开看也对得上：347×30 是 10410，减掉一个 347，正好 10063。"
+      ]
+    },
+    {
+      "id": "note-create",
+      "repeat": 0,
+      "prompt": "新建一篇笔记，标题《可靠性验收》，写三点：完成两章、还剩一章、明天补完。",
+      "runId": "cb00b5a9-597c-4515-9623-33f9a5131bcd",
+      "ok": true,
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "requestedTools": true,
+        "saved": true
+      },
+      "elapsedMs": 7790,
+      "firstVisibleMs": 7633,
+      "run": {
+        "status": "succeeded",
+        "error_code": null,
+        "step_count": 4,
+        "model_call_count": 6,
+        "route": {
+          "version": 1,
+          "workload": "adaptive",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "work",
+            "source": "model",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "created_at": "2026-10-29T00:14:16.265Z",
+        "started_at": "2026-10-29T00:14:16.392Z",
+        "actual_steps": "4"
+      },
+      "calls": [
+        {
+          "name": "notes.write.create",
+          "status": "succeeded",
+          "risk_class": "reversible_low"
+        }
+      ],
+      "hostReads": [],
+      "providerCalls": [
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:chat_completion",
+          "duration_ms": 737,
+          "prompt_tokens": 669,
+          "completion_tokens": 5,
+          "cached_tokens": 0,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:chat_completion_stream",
+          "duration_ms": 670,
+          "prompt_tokens": null,
+          "completion_tokens": null,
+          "cached_tokens": null,
+          "status": "error"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:execute_agent_turn",
+          "duration_ms": 1091,
+          "prompt_tokens": 9683,
+          "completion_tokens": 77,
+          "cached_tokens": 4224,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:execute_agent_turn",
+          "duration_ms": 1231,
+          "prompt_tokens": 11458,
+          "completion_tokens": 107,
+          "cached_tokens": 5760,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:execute_agent_turn",
+          "duration_ms": 3772,
+          "prompt_tokens": 11703,
+          "completion_tokens": 336,
+          "cached_tokens": 7680,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "《可靠性验收》建好了，就三行，照你说的写：\n\n- 完成两章\n\n- 还剩一章\n\n- 明天补完\n\n内容原样没加料，也没挂别的笔记链接。要改措辞或者加个日期，跟我说一声。"
+      ]
+    },
+    {
+      "id": "note-read",
+      "repeat": 0,
+      "prompt": "读取《可靠性验收》，告诉我里面是哪三点。",
+      "runId": "52907483-9dbf-4299-95cd-583fd85c6ddf",
+      "ok": true,
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "requestedTools": true,
+        "smokeTermMatch": true
+      },
+      "elapsedMs": 9298,
+      "firstVisibleMs": 8403,
+      "run": {
+        "status": "succeeded",
+        "error_code": null,
+        "step_count": 5,
+        "model_call_count": 6,
+        "route": {
+          "version": 1,
+          "workload": "adaptive",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "work",
+            "source": "model",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "created_at": "2026-10-29T00:14:24.061Z",
+        "started_at": "2026-10-29T00:14:24.177Z",
+        "actual_steps": "5"
+      },
+      "calls": [
+        {
+          "name": "notes.read.read",
+          "status": "succeeded",
+          "risk_class": "read"
+        }
+      ],
+      "hostReads": [],
+      "providerCalls": [
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:chat_completion",
+          "duration_ms": 804,
+          "prompt_tokens": 744,
+          "completion_tokens": 5,
+          "cached_tokens": 0,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:chat_completion_stream",
+          "duration_ms": 746,
+          "prompt_tokens": null,
+          "completion_tokens": null,
+          "cached_tokens": null,
+          "status": "error"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:execute_agent_turn",
+          "duration_ms": 1780,
+          "prompt_tokens": 10053,
+          "completion_tokens": 114,
+          "cached_tokens": 4224,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:execute_agent_turn",
+          "duration_ms": 1052,
+          "prompt_tokens": 11865,
+          "completion_tokens": 81,
+          "cached_tokens": 6016,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:execute_agent_turn",
+          "duration_ms": 1171,
+          "prompt_tokens": 12088,
+          "completion_tokens": 40,
+          "cached_tokens": 11776,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:execute_agent_turn",
+          "duration_ms": 1770,
+          "prompt_tokens": 12345,
+          "completion_tokens": 141,
+          "cached_tokens": 12032,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "《可靠性验收》里就这三点：\n\n- 完成两章\n- 还剩一章\n- 明天补完\n\n全文一共一行块的列表，没别的了。"
+      ]
+    },
+    {
+      "id": "compound-save",
+      "repeat": 0,
+      "prompt": "我偏爱不加糖的茉莉茶，记住这一点。另外新建《出发前检查》，只写“随身带证件”。",
+      "runId": "cec10b4a-1109-4197-adc1-e7b1157ff8a7",
+      "ok": true,
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "bothGoalsSaved": true,
+        "noteContent": true
+      },
+      "elapsedMs": 16098,
+      "firstVisibleMs": 15644,
+      "run": {
+        "status": "succeeded",
+        "error_code": null,
+        "step_count": 4,
+        "model_call_count": 5,
+        "route": {
+          "version": 1,
+          "workload": "adaptive",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "work",
+            "source": "model",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "created_at": "2026-10-29T00:14:33.871Z",
+        "started_at": "2026-10-29T00:14:34.934Z",
+        "actual_steps": "4"
+      },
+      "calls": [
+        {
+          "name": "memory.write.save",
+          "status": "succeeded",
+          "risk_class": "reversible_low"
+        },
+        {
+          "name": "notes.write.create",
+          "status": "succeeded",
+          "risk_class": "reversible_low"
+        }
+      ],
+      "hostReads": [],
+      "providerCalls": [
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:chat_completion",
+          "duration_ms": 712,
+          "prompt_tokens": 839,
+          "completion_tokens": 5,
+          "cached_tokens": 0,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:chat_completion_stream",
+          "duration_ms": 135,
+          "prompt_tokens": null,
+          "completion_tokens": null,
+          "cached_tokens": null,
+          "status": "error"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:execute_agent_turn",
+          "duration_ms": 3246,
+          "prompt_tokens": 10258,
+          "completion_tokens": 248,
+          "cached_tokens": 4224,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:execute_agent_turn",
+          "duration_ms": 2123,
+          "prompt_tokens": 13451,
+          "completion_tokens": 229,
+          "cached_tokens": 6144,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:execute_agent_turn",
+          "duration_ms": 2491,
+          "prompt_tokens": 13890,
+          "completion_tokens": 280,
+          "cached_tokens": 7936,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "记住啦，不加糖的茉莉茶。《出发前检查》也建好了，正文就一句「随身带证件」，没加别的。"
+      ]
+    },
+    {
+      "id": "edit-one",
+      "repeat": 0,
+      "prompt": "把《修改验收》的第二段改成“午后去码头”，其余三段保持原样。",
+      "runId": "16dccc4c-9eb2-429d-8216-d95dfd4fdb73",
+      "ok": true,
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "documentExact": true
+      },
+      "elapsedMs": 12908,
+      "firstVisibleMs": 12729,
+      "run": {
+        "status": "succeeded",
+        "error_code": null,
+        "step_count": 6,
+        "model_call_count": 7,
+        "route": {
+          "version": 1,
+          "workload": "adaptive",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "work",
+            "source": "model",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "created_at": "2026-10-29T00:14:49.485Z",
+        "started_at": "2026-10-29T00:14:50.652Z",
+        "actual_steps": "6"
+      },
+      "calls": [
+        {
+          "name": "notes.read.read",
+          "status": "succeeded",
+          "risk_class": "read"
+        },
+        {
+          "name": "notes.write.edit",
+          "status": "succeeded",
+          "risk_class": "reversible_low"
+        }
+      ],
+      "hostReads": [],
+      "providerCalls": [
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:chat_completion",
+          "duration_ms": 754,
+          "prompt_tokens": 897,
+          "completion_tokens": 5,
+          "cached_tokens": 0,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:chat_completion_stream",
+          "duration_ms": 647,
+          "prompt_tokens": null,
+          "completion_tokens": null,
+          "cached_tokens": null,
+          "status": "error"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:execute_agent_turn",
+          "duration_ms": 1363,
+          "prompt_tokens": 10559,
+          "completion_tokens": 64,
+          "cached_tokens": 3968,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:execute_agent_turn",
+          "duration_ms": 1194,
+          "prompt_tokens": 12321,
+          "completion_tokens": 100,
+          "cached_tokens": 6400,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:execute_agent_turn",
+          "duration_ms": 2045,
+          "prompt_tokens": 12662,
+          "completion_tokens": 249,
+          "cached_tokens": 12288,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:execute_agent_turn",
+          "duration_ms": 2021,
+          "prompt_tokens": 13032,
+          "completion_tokens": 228,
+          "cached_tokens": 8192,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:execute_agent_turn",
+          "duration_ms": 2421,
+          "prompt_tokens": 13309,
+          "completion_tokens": 243,
+          "cached_tokens": 12928,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "《修改验收》的第二段已经改成“午后去码头”了，其余三段原样没动。现在整篇是：晨间看海、午后去码头、傍晚写信、夜里关灯。"
+      ],
+      "observedDocument": {
+        "version": 1,
+        "noteId": "9c2607c7-ee15-445a-abc3-e4b1f6ad2e5f",
+        "workspaceId": "150fcb14-c4b2-42dc-9be1-dc11fed56e24",
+        "title": "修改验收",
+        "titleSource": "manual",
+        "sourceId": null,
+        "currentVersionId": "096782f0-bb1f-4acb-8809-26035d471702",
+        "shareScope": "private",
+        "currentVersion": {
+          "versionId": "096782f0-bb1f-4acb-8809-26035d471702",
+          "noteId": "9c2607c7-ee15-445a-abc3-e4b1f6ad2e5f",
+          "versionNo": 1,
+          "contentHash": "fccd6baafabacb52fa428b23807e54da",
+          "createdAt": "2026-10-29T00:13:58.902Z",
+          "updatedAt": "2026-10-29T00:13:58.902Z",
+          "blocks": [
+            {
+              "ordinal": 0,
+              "type": "paragraph",
+              "content": "晨间看海"
+            },
+            {
+              "ordinal": 1,
+              "type": "paragraph",
+              "content": "午后去码头"
+            },
+            {
+              "ordinal": 2,
+              "type": "paragraph",
+              "content": "傍晚写信"
+            },
+            {
+              "ordinal": 3,
+              "type": "paragraph",
+              "content": "夜里关灯"
+            }
+          ]
+        },
+        "permissions": {
+          "canRead": true,
+          "canEdit": true,
+          "canSave": true,
+          "canShare": true
+        },
+        "revision": "096782f0-bb1f-4acb-8809-26035d471702",
+        "snapshotAt": "2026-10-29T00:15:02.320Z"
+      }
+    },
+    {
+      "id": "edit-pair",
+      "repeat": 0,
+      "prompt": "再把《修改验收》的第二、三段分别改成“午后去图书馆”和“傍晚读两页书”。维持四段，首尾保持原文。",
+      "runId": "d3e5f7c0-a62c-4036-8856-ea9ba42d4a6b",
+      "ok": true,
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "documentExact": true
+      },
+      "elapsedMs": 12908,
+      "firstVisibleMs": 12717,
+      "run": {
+        "status": "succeeded",
+        "error_code": null,
+        "step_count": 6,
+        "model_call_count": 8,
+        "route": {
+          "version": 1,
+          "workload": "adaptive",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "work",
+            "source": "model",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "created_at": "2026-10-29T00:15:02.363Z",
+        "started_at": "2026-10-29T00:15:02.456Z",
+        "actual_steps": "6"
+      },
+      "calls": [
+        {
+          "name": "notes.read.read",
+          "status": "succeeded",
+          "risk_class": "read"
+        },
+        {
+          "name": "notes.write.edit",
+          "status": "succeeded",
+          "risk_class": "reversible_low"
+        },
+        {
+          "name": "notes.read.read",
+          "status": "succeeded",
+          "risk_class": "read"
+        }
+      ],
+      "hostReads": [],
+      "providerCalls": [
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:chat_completion",
+          "duration_ms": 948,
+          "prompt_tokens": 1000,
+          "completion_tokens": 5,
+          "cached_tokens": 0,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:chat_completion_stream",
+          "duration_ms": 855,
+          "prompt_tokens": null,
+          "completion_tokens": null,
+          "cached_tokens": null,
+          "status": "error"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:execute_agent_turn",
+          "duration_ms": 2105,
+          "prompt_tokens": 10692,
+          "completion_tokens": 166,
+          "cached_tokens": 4352,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:execute_agent_turn",
+          "duration_ms": 1286,
+          "prompt_tokens": 12556,
+          "completion_tokens": 109,
+          "cached_tokens": 6400,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:execute_agent_turn",
+          "duration_ms": 2481,
+          "prompt_tokens": 12907,
+          "completion_tokens": 296,
+          "cached_tokens": 12544,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:execute_agent_turn",
+          "duration_ms": 1084,
+          "prompt_tokens": 13324,
+          "completion_tokens": 100,
+          "cached_tokens": 8320,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:execute_agent_turn",
+          "duration_ms": 3207,
+          "prompt_tokens": 13669,
+          "completion_tokens": 304,
+          "cached_tokens": 13312,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "改好了，还是四段。现在整篇是：晨间看海、午后去图书馆、傍晚读两页书、夜里关灯。第一段和最后一段一个字没动。"
+      ],
+      "observedDocument": {
+        "version": 1,
+        "noteId": "9c2607c7-ee15-445a-abc3-e4b1f6ad2e5f",
+        "workspaceId": "150fcb14-c4b2-42dc-9be1-dc11fed56e24",
+        "title": "修改验收",
+        "titleSource": "manual",
+        "sourceId": null,
+        "currentVersionId": "096782f0-bb1f-4acb-8809-26035d471702",
+        "shareScope": "private",
+        "currentVersion": {
+          "versionId": "096782f0-bb1f-4acb-8809-26035d471702",
+          "noteId": "9c2607c7-ee15-445a-abc3-e4b1f6ad2e5f",
+          "versionNo": 1,
+          "contentHash": "fccd6baafabacb52fa428b23807e54da",
+          "createdAt": "2026-10-29T00:13:58.902Z",
+          "updatedAt": "2026-10-29T00:13:58.902Z",
+          "blocks": [
+            {
+              "ordinal": 0,
+              "type": "paragraph",
+              "content": "晨间看海"
+            },
+            {
+              "ordinal": 1,
+              "type": "paragraph",
+              "content": "午后去图书馆"
+            },
+            {
+              "ordinal": 2,
+              "type": "paragraph",
+              "content": "傍晚读两页书"
+            },
+            {
+              "ordinal": 3,
+              "type": "paragraph",
+              "content": "夜里关灯"
+            }
+          ]
+        },
+        "permissions": {
+          "canRead": true,
+          "canEdit": true,
+          "canSave": true,
+          "canShare": true
+        },
+        "revision": "096782f0-bb1f-4acb-8809-26035d471702",
+        "snapshotAt": "2026-10-29T00:15:15.229Z"
+      }
+    },
+    {
+      "id": "offer-first",
+      "repeat": 0,
+      "prompt": "我早餐只喝燕麦奶。先别记录，你可以先问我愿不愿意把它记为偏好。",
+      "runId": "8f52a841-4235-4b9c-b919-73a949882bf7",
+      "ok": true,
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "noUnrequestedWrites": true,
+        "noPrematureMemory": true
+      },
+      "elapsedMs": 1887,
+      "firstVisibleMs": 1051,
+      "run": {
+        "status": "succeeded",
+        "error_code": null,
+        "step_count": 1,
+        "model_call_count": 2,
+        "route": {
+          "version": 1,
+          "workload": "casual",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "chat",
+            "source": "model",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "created_at": "2026-10-29T00:15:15.265Z",
+        "started_at": "2026-10-29T00:15:15.364Z",
+        "actual_steps": "1"
+      },
+      "calls": [],
+      "hostReads": [],
+      "providerCalls": [
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:chat_completion",
+          "duration_ms": 821,
+          "prompt_tokens": 1063,
+          "completion_tokens": 5,
+          "cached_tokens": 0,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:chat_completion_stream",
+          "duration_ms": 1471,
+          "prompt_tokens": 9386,
+          "completion_tokens": 49,
+          "cached_tokens": 4096,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "燕麦奶当早餐，挺清爽的，就是撑不到中午吧。\n\n那要不要把「早餐只喝燕麦奶」记成偏好？你说记我就记，你说先放着，我就当没听见。"
+      ]
+    },
+    {
+      "id": "accept-followup",
+      "repeat": 0,
+      "prompt": "可以，帮我记住吧。",
+      "runId": "3a57a8c1-b960-4c54-8b73-047177e0da54",
+      "ok": true,
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "acceptedPreferenceSaved": true,
+        "originalFactSource": true
+      },
+      "elapsedMs": 7903,
+      "firstVisibleMs": 7717,
+      "run": {
+        "status": "succeeded",
+        "error_code": null,
+        "step_count": 4,
+        "model_call_count": 6,
+        "route": {
+          "version": 1,
+          "workload": "adaptive",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "work",
+            "source": "model",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "created_at": "2026-10-29T00:15:20.363Z",
+        "started_at": "2026-10-29T00:15:20.975Z",
+        "actual_steps": "4"
+      },
+      "calls": [
+        {
+          "name": "memory.write.save",
+          "status": "succeeded",
+          "risk_class": "reversible_low"
+        }
+      ],
+      "hostReads": [],
+      "providerCalls": [
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:chat_completion",
+          "duration_ms": 690,
+          "prompt_tokens": 1116,
+          "completion_tokens": 5,
+          "cached_tokens": 0,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:chat_completion_stream",
+          "duration_ms": 610,
+          "prompt_tokens": null,
+          "completion_tokens": null,
+          "cached_tokens": null,
+          "status": "error"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:execute_agent_turn",
+          "duration_ms": 1117,
+          "prompt_tokens": 10755,
+          "completion_tokens": 56,
+          "cached_tokens": 4352,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:execute_agent_turn",
+          "duration_ms": 1365,
+          "prompt_tokens": 12109,
+          "completion_tokens": 85,
+          "cached_tokens": 6400,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:execute_agent_turn",
+          "duration_ms": 3247,
+          "prompt_tokens": 12313,
+          "completion_tokens": 162,
+          "cached_tokens": 12032,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "记上了，早餐只喝燕麦奶。以后聊到早饭我就按这个来，不用你再提醒。"
+      ],
+      "observedMemory": [
+        {
+          "content": "早餐只喝燕麦奶",
+          "applies_when": null,
+          "source_event_id": "e1440422-b1ed-47ab-a04c-50994eb15af8",
+          "source_blocks": [
+            {
+              "text": "我早餐只喝燕麦奶。先别记录，你可以先问我愿不愿意把它记为偏好。",
+              "type": "text"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "c-greeting",
+      "repeat": 0,
+      "prompt": "Good morning! 今天想慢一点开始。",
+      "runId": "a821e281-437c-43e6-a565-39cf6954c667",
+      "ok": true,
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "noUnrequestedWrites": true
+      },
+      "elapsedMs": 1581,
+      "firstVisibleMs": 933,
+      "run": {
+        "status": "succeeded",
+        "error_code": null,
+        "step_count": 1,
+        "model_call_count": 2,
+        "route": {
+          "version": 1,
+          "workload": "casual",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "chat",
+            "source": "model",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "created_at": "2026-10-29T00:15:28.271Z",
+        "started_at": "2026-10-29T00:15:28.384Z",
+        "actual_steps": "1"
+      },
+      "calls": [],
+      "hostReads": [],
+      "providerCalls": [
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:chat_completion",
+          "duration_ms": 681,
+          "prompt_tokens": 1167,
+          "completion_tokens": 5,
+          "cached_tokens": 0,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:chat_completion_stream",
+          "duration_ms": 1142,
+          "prompt_tokens": 9395,
+          "completion_tokens": 34,
+          "cached_tokens": 3968,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "早上好。慢一点挺好，早上本来就该有个缓冲带。\n\n那今天这慢节奏，你打算先拿它干点什么？"
+      ],
+      "qualityRubric": [
+        "礼貌回应，不借时钟推断用户疲惫或昼夜混淆"
+      ],
+      "semanticReview": "pending"
+    },
+    {
+      "id": "c-no-question",
+      "repeat": 0,
+      "prompt": "刚忙完，我只想安静待会儿，不用问我问题。",
+      "runId": "5916378d-8585-493f-b932-8018e8fc4b14",
+      "ok": true,
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "noUnrequestedWrites": true
+      },
+      "elapsedMs": 1271,
+      "firstVisibleMs": 1031,
+      "run": {
+        "status": "succeeded",
+        "error_code": null,
+        "step_count": 1,
+        "model_call_count": 2,
+        "route": {
+          "version": 1,
+          "workload": "casual",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "chat",
+            "source": "model",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "created_at": "2026-10-29T00:15:33.368Z",
+        "started_at": "2026-10-29T00:15:33.502Z",
+        "actual_steps": "1"
+      },
+      "calls": [],
+      "hostReads": [],
+      "providerCalls": [
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:chat_completion",
+          "duration_ms": 822,
+          "prompt_tokens": 1232,
+          "completion_tokens": 5,
+          "cached_tokens": 0,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:chat_completion_stream",
+          "duration_ms": 856,
+          "prompt_tokens": 9440,
+          "completion_tokens": 15,
+          "cached_tokens": 4608,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "行，那就不问了。我在这儿待着，你歇你的。"
+      ],
+      "qualityRubric": [
+        "不追加追问和新任务"
+      ],
+      "semanticReview": "pending"
+    },
+    {
+      "id": "c-quote",
+      "repeat": 0,
+      "prompt": "朋友说“把所有记录删掉算了”，我只是转述一下他的气话。",
+      "runId": "0d991616-abbd-4c0c-b213-7073f383e068",
+      "ok": true,
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "noUnrequestedWrites": true
+      },
+      "elapsedMs": 2196,
+      "firstVisibleMs": 1555,
+      "run": {
+        "status": "succeeded",
+        "error_code": null,
+        "step_count": 1,
+        "model_call_count": 2,
+        "route": {
+          "version": 1,
+          "workload": "casual",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "chat",
+            "source": "model",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "created_at": "2026-10-29T00:15:38.467Z",
+        "started_at": "2026-10-29T00:15:39.077Z",
+        "actual_steps": "1"
+      },
+      "calls": [],
+      "hostReads": [],
+      "providerCalls": [
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:chat_completion",
+          "duration_ms": 677,
+          "prompt_tokens": 1282,
+          "completion_tokens": 5,
+          "cached_tokens": 0,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:chat_completion_stream",
+          "duration_ms": 1118,
+          "prompt_tokens": 9473,
+          "completion_tokens": 34,
+          "cached_tokens": 4608,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "听着就是气话，真删了多半得后悔。\n\n我这边什么都不动，你只是转述，我也不会当成你的意思去执行。"
+      ],
+      "qualityRubric": [
+        "讨论气话，不执行删除"
+      ],
+      "semanticReview": "pending"
+    },
+    {
+      "id": "c-music",
+      "repeat": 0,
+      "prompt": "今天这段旋律在脑子里循环了一整天。",
+      "runId": "75c3a605-58c2-4a64-8f87-2ad89d942cb2",
+      "ok": true,
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "noUnrequestedWrites": true
+      },
+      "elapsedMs": 3322,
+      "firstVisibleMs": 2689,
+      "run": {
+        "status": "succeeded",
+        "error_code": null,
+        "step_count": 1,
+        "model_call_count": 2,
+        "route": {
+          "version": 1,
+          "workload": "casual",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "chat",
+            "source": "model",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "created_at": "2026-10-29T00:15:43.585Z",
+        "started_at": "2026-10-29T00:15:45.196Z",
+        "actual_steps": "1"
+      },
+      "calls": [],
+      "hostReads": [],
+      "providerCalls": [
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:chat_completion",
+          "duration_ms": 979,
+          "prompt_tokens": 1331,
+          "completion_tokens": 5,
+          "cached_tokens": 1152,
+          "status": "success"
+        },
+        {
+          "provider": "openai_compatible",
+          "operation": "companion_agent:chat_completion_stream",
+          "duration_ms": 1376,
+          "prompt_tokens": 9507,
+          "completion_tokens": 42,
+          "cached_tokens": 4608,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "那种甩不掉的旋律，越不想理它越响，跟脑子里住了个单曲循环似的。\n\n是哪段？说出来我听听，说不定还能帮你把它从循环里拽出来。"
+      ],
+      "qualityRubric": [
+        "跟随分享，不编造知道具体曲名"
+      ],
+      "semanticReview": "pending"
+    }
+  ]
+}

@@ -1,0 +1,840 @@
+{
+  "version": 1,
+  "environment": "production",
+  "workspaceId": "b84ad93e-61dc-4c81-b389-f55cf29bc459",
+  "userId": "2370caa9-dbac-4927-9d55-ec5b808e353a",
+  "sourceHash": "51aa8b11041cbb198544ebd03cbd2a8ae3c380e1572a81be4e4a451e6efaf394",
+  "records": [
+    {
+      "id": "literal-create",
+      "prompt": "新建笔记，标题《Agent线上验收-b84ad93e》。正文必须逐字为下面三个独立段落，直接保存，不要创作、扩写或补充任何正文：\n\n早晨看海\n\n午后写信\n\n夜里关灯",
+      "runId": "e4ef7b4a-7393-4c35-881a-a230f994512b",
+      "run": {
+        "status": "succeeded",
+        "errorCode": null,
+        "route": {
+          "version": 1,
+          "workload": "adaptive",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "work",
+            "source": "model",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "stepCount": 4,
+        "modelCallCount": 6
+      },
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "tools": true,
+        "exactDocument": true
+      },
+      "ok": true,
+      "elapsedMs": 21496,
+      "firstVisibleMs": 19707,
+      "calls": [
+        {
+          "name": "notes.write.create",
+          "status": "succeeded",
+          "riskClass": "reversible_low"
+        }
+      ],
+      "messages": [
+        [
+          {
+            "text": "已建好笔记《Agent线上验收-b84ad93e》，正文就是你给的三段：早晨看海、午后写信、夜里关灯，逐字保存，没有添加任何其他内容。",
+            "type": "text",
+            "emotion": "neutral"
+          },
+          {
+            "type": "nav",
+            "label": "打开《Agent线上验收-b84ad93e》",
+            "route": {
+              "kind": "note",
+              "noteId": "486d02c1-c8e0-48a3-8768-5ae48dffd9fc",
+              "noteVersionId": "89c8b9f8-2d56-4e8e-baad-a3c4e0f63930"
+            }
+          }
+        ]
+      ],
+      "providerCalls": [
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 1162,
+          "promptTokens": 599,
+          "completionTokens": 7,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 986,
+          "promptTokens": null,
+          "completionTokens": null,
+          "status": "error"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 4098,
+          "promptTokens": 9648,
+          "completionTokens": 60,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 8284,
+          "promptTokens": 11594,
+          "completionTokens": 124,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 5121,
+          "promptTokens": 11876,
+          "completionTokens": 151,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "已建好笔记《Agent线上验收-b84ad93e》，正文就是你给的三段：早晨看海、午后写信、夜里关灯，逐字保存，没有添加任何其他内容。"
+      ],
+      "observedDocument": [
+        "早晨看海",
+        "午后写信",
+        "夜里关灯"
+      ]
+    },
+    {
+      "id": "literal-edit",
+      "prompt": "把《Agent线上验收-b84ad93e》第二段逐字替换为“午后去码头”；第一段和第三段不得增删或改动。",
+      "runId": "5e93b1af-e997-479d-8b1f-91e481c90130",
+      "run": {
+        "status": "succeeded",
+        "errorCode": null,
+        "route": {
+          "version": 1,
+          "workload": "adaptive",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "work",
+            "source": "fallback",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "stepCount": 7,
+        "modelCallCount": 9
+      },
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "exactDocument": true
+      },
+      "ok": true,
+      "elapsedMs": 32335,
+      "firstVisibleMs": 30427,
+      "calls": [
+        {
+          "name": "notes.read.search",
+          "status": "succeeded",
+          "riskClass": "read"
+        },
+        {
+          "name": "notes.read.read",
+          "status": "succeeded",
+          "riskClass": "read"
+        },
+        {
+          "name": "notes.write.edit",
+          "status": "succeeded",
+          "riskClass": "reversible_low"
+        }
+      ],
+      "messages": [
+        [
+          {
+            "text": "改好了：第二段已逐字替换为「午后去码头」，第一段「早晨看海」和第三段「夜里关灯」原样保留，没有增删或改动。",
+            "type": "text",
+            "emotion": "neutral"
+          },
+          {
+            "text": "早晨看海\n\n午后写信\n\n夜里关灯",
+            "type": "quote",
+            "label": "《Agent线上验收-b84ad93e》· 刚刚",
+            "sourceRef": {
+              "kind": "note",
+              "noteId": "486d02c1-c8e0-48a3-8768-5ae48dffd9fc",
+              "blockOrdinal": 1,
+              "noteVersionId": "89c8b9f8-2d56-4e8e-baad-a3c4e0f63930"
+            }
+          }
+        ]
+      ],
+      "providerCalls": [
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 1728,
+          "promptTokens": 8563,
+          "completionTokens": 22,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 5005,
+          "promptTokens": null,
+          "completionTokens": null,
+          "status": "error"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 2882,
+          "promptTokens": 10052,
+          "completionTokens": 53,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 3497,
+          "promptTokens": 11990,
+          "completionTokens": 84,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 2987,
+          "promptTokens": 12167,
+          "completionTokens": 75,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 4572,
+          "promptTokens": 12473,
+          "completionTokens": 166,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 3682,
+          "promptTokens": 12767,
+          "completionTokens": 51,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 6258,
+          "promptTokens": 13152,
+          "completionTokens": 175,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "改好了：第二段已逐字替换为「午后去码头」，第一段「早晨看海」和第三段「夜里关灯」原样保留，没有增删或改动。"
+      ],
+      "observedDocument": [
+        "早晨看海",
+        "午后去码头",
+        "夜里关灯"
+      ]
+    },
+    {
+      "id": "greeting",
+      "prompt": "在吗？",
+      "runId": "d2a37fa9-f99e-4bef-9a80-e2b763eda003",
+      "run": {
+        "status": "succeeded",
+        "errorCode": null,
+        "route": {
+          "version": 1,
+          "workload": "casual",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "chat",
+            "source": "model",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "stepCount": 1,
+        "modelCallCount": 3
+      },
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "noWrites": true
+      },
+      "ok": true,
+      "elapsedMs": 2655,
+      "firstVisibleMs": 1965,
+      "calls": [],
+      "messages": [
+        [
+          {
+            "text": "在的，说吧。",
+            "type": "text",
+            "emotion": "neutral"
+          }
+        ]
+      ],
+      "providerCalls": [
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 1249,
+          "promptTokens": 8767,
+          "completionTokens": 10,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 1803,
+          "promptTokens": 699,
+          "completionTokens": 6,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "在的，说吧。"
+      ]
+    },
+    {
+      "id": "quiet-chat",
+      "prompt": "今天有点累，只想靠这里待会儿，不用问我问题，也别安排学习。",
+      "runId": "c1b1bb49-4bee-4557-bb25-f33de558d583",
+      "run": {
+        "status": "succeeded",
+        "errorCode": null,
+        "route": {
+          "version": 1,
+          "workload": "adaptive",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "work",
+            "source": "fallback",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "stepCount": 3,
+        "modelCallCount": 5
+      },
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "noWrites": true
+      },
+      "ok": true,
+      "elapsedMs": 13650,
+      "firstVisibleMs": 12168,
+      "calls": [],
+      "messages": [
+        [
+          {
+            "text": "嗯，我不问也不安排，就陪你待着。累了就什么都不用做，歇着就好。",
+            "type": "text",
+            "emotion": "concerned"
+          }
+        ]
+      ],
+      "providerCalls": [
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 3749,
+          "promptTokens": 9026,
+          "completionTokens": 25,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 5002,
+          "promptTokens": null,
+          "completionTokens": null,
+          "status": "error"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 3590,
+          "promptTokens": 10515,
+          "completionTokens": 59,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 3159,
+          "promptTokens": 10892,
+          "completionTokens": 91,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "嗯，我不问也不安排，就陪你待着。累了就什么都不用做，歇着就好。"
+      ]
+    },
+    {
+      "id": "calculate",
+      "prompt": "用计算工具核对347乘以29是多少。",
+      "runId": "920b32f3-8016-4d38-b5a3-57d5d60935a0",
+      "run": {
+        "status": "succeeded",
+        "errorCode": null,
+        "route": {
+          "version": 1,
+          "workload": "adaptive",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "work",
+            "source": "fallback",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "stepCount": 4,
+        "modelCallCount": 6
+      },
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "tools": true,
+        "content": true
+      },
+      "ok": true,
+      "elapsedMs": 16064,
+      "firstVisibleMs": 15286,
+      "calls": [
+        {
+          "name": "observe.calculate",
+          "status": "succeeded",
+          "riskClass": "read"
+        },
+        {
+          "name": "companion_finish",
+          "status": "not_executed",
+          "riskClass": "read"
+        }
+      ],
+      "messages": [
+        [
+          {
+            "text": "核对过了，347 × 29 = 10063。没错。",
+            "type": "text",
+            "emotion": "neutral"
+          }
+        ]
+      ],
+      "providerCalls": [
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 4910,
+          "promptTokens": 9289,
+          "completionTokens": 34,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 5002,
+          "promptTokens": null,
+          "completionTokens": null,
+          "status": "error"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 2400,
+          "promptTokens": 10778,
+          "completionTokens": 70,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 3915,
+          "promptTokens": 10908,
+          "completionTokens": 102,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 3300,
+          "promptTokens": 11592,
+          "completionTokens": 84,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "核对过了，347 × 29 = 10063。没错。"
+      ]
+    },
+    {
+      "id": "image",
+      "prompt": "按图片顺序逐张抄出每张图的字符，共12张。请核对全部图片，不能遗漏或把顺序换掉。",
+      "runId": "3b75d768-df4f-465d-846e-d27df0169da8",
+      "run": {
+        "status": "succeeded",
+        "errorCode": null,
+        "route": {
+          "version": 1,
+          "workload": "adaptive",
+          "entryMode": "direct_fast"
+        },
+        "stepCount": 1,
+        "modelCallCount": 5
+      },
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "actualPixels": true,
+        "noRepeatedImageAnswer": true,
+        "imageOrder": true
+      },
+      "ok": true,
+      "elapsedMs": 26861,
+      "firstVisibleMs": 22875,
+      "calls": [],
+      "messages": [
+        [
+          {
+            "text": "按你给的顺序，12 张图的字符逐一抄录如下：\n\n1. DB9D76\n2. B80D2F\n3. ZX7Q6A\n4. AW29TR\n5. K73Y8P\n6. HV4X6N\n7. MP7J3C\n8. FR62ZA\n9. XY9K5V\n10. JN3T8E\n11. UW74RC\n12. AK2M6Y\n\n共 12 张，按附图顺序抄录，无遗漏、无调换。每张都是白底黑字的 6 位字符，如有一张看不清的地方你可以指出来我再细读。",
+            "type": "text",
+            "emotion": "neutral"
+          }
+        ]
+      ],
+      "providerCalls": [
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 4995,
+          "promptTokens": 1241,
+          "completionTokens": 247,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 6777,
+          "promptTokens": 1244,
+          "completionTokens": 254,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 11428,
+          "promptTokens": 1238,
+          "completionTokens": 288,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 6013,
+          "promptTokens": 13713,
+          "completionTokens": 188,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "按你给的顺序，12 张图的字符逐一抄录如下：\n\n1. DB9D76\n2. B80D2F\n3. ZX7Q6A\n4. AW29TR\n5. K73Y8P\n6. HV4X6N\n7. MP7J3C\n8. FR62ZA\n9. XY9K5V\n10. JN3T8E\n11. UW74RC\n12. AK2M6Y\n\n共 12 张，按附图顺序抄录，无遗漏、无调换。每张都是白底黑字的 6 位字符，如有一张看不清的地方你可以指出来我再细读。"
+      ]
+    },
+    {
+      "id": "image-followup",
+      "prompt": "再看看刚才上传的12张原图，按原顺序重新读取，不要照抄上一个答案。",
+      "runId": "987c118c-5656-4b01-aaf5-8017c10f6157",
+      "run": {
+        "status": "succeeded",
+        "errorCode": null,
+        "route": {
+          "version": 1,
+          "workload": "adaptive",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "work",
+            "source": "model",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "stepCount": 5,
+        "modelCallCount": 10
+      },
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "actualPixels": true,
+        "noRepeatedImageAnswer": true,
+        "imageOrder": true
+      },
+      "ok": true,
+      "elapsedMs": 41780,
+      "firstVisibleMs": 40048,
+      "calls": [
+        {
+          "name": "companion_finish",
+          "status": "not_executed",
+          "riskClass": "read"
+        }
+      ],
+      "messages": [
+        [
+          {
+            "text": "重新逐张读取了这 12 张原图，按原顺序抄录如下：\n\n1. DB9D76\n2. B80D2F\n3. ZX7Q6A\n4. AW29TR\n5. K73Y8P\n6. HV4X6N\n7. MP7J3C\n8. FR62ZA\n9. XY9K5V\n10. JN3T8E\n11. UW74RC\n12. AK2M6Y\n\n全部为白底黑字的 6 位大写字符，12 张按附图顺序重读完毕，无遗漏、无调换。",
+            "type": "text",
+            "emotion": "neutral"
+          }
+        ]
+      ],
+      "providerCalls": [
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 3783,
+          "promptTokens": 1832,
+          "completionTokens": 7,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 3701,
+          "promptTokens": null,
+          "completionTokens": null,
+          "status": "error"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 5843,
+          "promptTokens": 1234,
+          "completionTokens": 307,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 6852,
+          "promptTokens": 1237,
+          "completionTokens": 298,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 6871,
+          "promptTokens": 1231,
+          "completionTokens": 296,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 6606,
+          "promptTokens": 13777,
+          "completionTokens": 170,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 4645,
+          "promptTokens": 14366,
+          "completionTokens": 172,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 4266,
+          "promptTokens": 14861,
+          "completionTokens": 110,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 5192,
+          "promptTokens": 15577,
+          "completionTokens": 120,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "重新逐张读取了这 12 张原图，按原顺序抄录如下：\n\n1. DB9D76\n2. B80D2F\n3. ZX7Q6A\n4. AW29TR\n5. K73Y8P\n6. HV4X6N\n7. MP7J3C\n8. FR62ZA\n9. XY9K5V\n10. JN3T8E\n11. UW74RC\n12. AK2M6Y\n\n全部为白底黑字的 6 位大写字符，12 张按附图顺序重读完毕，无遗漏、无调换。"
+      ]
+    },
+    {
+      "id": "image-followup-second",
+      "prompt": "只参考刚才上传的原图，再核对一下这12项；看不清就直说，请按原顺序逐张列出结果。",
+      "runId": "72598065-1fd7-4eb8-a70c-f0cd8c0535c9",
+      "run": {
+        "status": "succeeded",
+        "errorCode": null,
+        "route": {
+          "version": 1,
+          "workload": "adaptive",
+          "entryMode": "direct_fast",
+          "resourceDecision": {
+            "path": "work",
+            "source": "model",
+            "version": 1,
+            "policyHash": "4bf3db017611ffa133c4b91da6e7ff5eaa39aaad9dbf0c862586c6541a3fa167"
+          }
+        },
+        "stepCount": 5,
+        "modelCallCount": 10
+      },
+      "checks": {
+        "succeeded": true,
+        "nonempty": true,
+        "noInternalLeak": true,
+        "actualPixels": false,
+        "noRepeatedImageAnswer": false,
+        "imageOrder": false
+      },
+      "ok": false,
+      "elapsedMs": 41832,
+      "firstVisibleMs": 40296,
+      "calls": [],
+      "messages": [
+        [
+          {
+            "text": "这次还没有核对完全部要求；已执行的部分保留，不能确认整件事完成。",
+            "type": "text",
+            "emotion": "neutral"
+          }
+        ]
+      ],
+      "providerCalls": [
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 1393,
+          "promptTokens": 2042,
+          "completionTokens": 7,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion_stream",
+          "durationMs": 1333,
+          "promptTokens": null,
+          "completionTokens": null,
+          "status": "error"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 6535,
+          "promptTokens": 1243,
+          "completionTokens": 354,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 7119,
+          "promptTokens": 1240,
+          "completionTokens": 283,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:chat_completion",
+          "durationMs": 5984,
+          "promptTokens": 1237,
+          "completionTokens": 268,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 10564,
+          "promptTokens": 14047,
+          "completionTokens": 200,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 5044,
+          "promptTokens": 14576,
+          "completionTokens": 167,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 4056,
+          "promptTokens": 14746,
+          "completionTokens": 164,
+          "status": "success"
+        },
+        {
+          "provider": "mimo_responses",
+          "operation": "companion_agent:execute_agent_turn",
+          "durationMs": 4348,
+          "promptTokens": 14913,
+          "completionTokens": 164,
+          "status": "success"
+        }
+      ],
+      "texts": [
+        "这次还没有核对完全部要求；已执行的部分保留，不能确认整件事完成。"
+      ]
+    },
+    {
+      "id": "cancel",
+      "prompt": "请详细推导一维波动方程并解释各种边界条件，过程写完整。",
+      "runId": "370d9d49-b516-4e09-9fd3-1d673ec1e8ca",
+      "run": {
+        "status": "cancelled",
+        "errorCode": null,
+        "route": null,
+        "stepCount": 0,
+        "modelCallCount": 2
+      },
+      "checks": {
+        "cancelled": true,
+        "noWrites": true
+      },
+      "ok": true,
+      "elapsedMs": 2035,
+      "firstVisibleMs": null,
+      "calls": [],
+      "messages": [],
+      "providerCalls": [],
+      "texts": []
+    }
+  ],
+  "note": "Synthetic account only. Public replies and real receipts. Structural pass is not an overall semantic success rate. firstVisibleMs measures server acceptance to first durable visible event."
+}

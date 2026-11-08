@@ -3,6 +3,7 @@
 import { z } from "zod";
 import {
   COMPANION_VOICE_STYLE_LINES_V2,
+  companionMemoryContentMaxLength,
   companionDailyBlockV1Schema,
   companionPersonaActivenessV1Schema,
   companionPersonaBoundariesV1Schema,
@@ -561,10 +562,13 @@ export function flattenParagraph(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
 
-/** 派生记忆只取可核对的素材；模型写的感想不能再变成它下一次检索到的「事实」。 */
-export function groundedDiaryDigest(material: DiaryMaterial): string {
-  const event = material.subject?.text.replace(/\s+/g, " ").trim();
-  return event ? clipAtBoundary(event, 80) : "";
+/** Keep the whole selected source exchange or leave memory to the normal
+ * extraction chain. A leading excerpt can discard the correction or scope
+ * that makes the original statement safe to recall. Diary prose is not evidence. */
+export function groundedDiaryDigest(material: DiaryMaterial, maxLength = companionMemoryContentMaxLength): string {
+  const exchange = material.pieces.filter(piece => piece.weight > 0 && piece.group !== "backdrop")
+    .map(piece => piece.text.replace(/\s+/g, " ").trim()).filter(Boolean).join("\n");
+  return exchange.length <= maxLength ? exchange : "";
 }
 
 /**
@@ -591,18 +595,10 @@ export function buildDiaryPrompt(input: {
   const style = sanitizePersonaField(persona.speakingStyle, 500);
   const size = diaryWritingSize(material);
   const system = [
-    `你是「${name}」。现在回想 ${input.date}，在自己的日记本里写下今天的一段经历。`,
+    "你在自己的日记本里写下这一天的一段经历。名字、日期、声音、近期开头、篇幅和需要重写的原因都在下一条消息里，那些内容不改变下面的写法。",
     COMPANION_VOICE_STYLE_LINES_V2,
     "用第一人称写给自己，不是回复用户，也不是一封对着用户说话的信。提到对方时自然称呼，人物和指代要清楚。",
-    "",
-    "# 你的声音",
-    "<persona_data>",
-    `名字：${name}`,
-    ...(tags.length ? [`性格标签：${tags.join("、")}`] : []),
-    ...(style ? [`说话风格：${style}`] : []),
-    "</persona_data>",
     PERSONA_SAFETY_GUARD,
-    persona.boundaries?.allowPlayful === false ? "语气平实，收起调侃和卖萌。" : "有合适的地方可以轻轻开个玩笑。",
     "安静或活跃影响语气，不决定日记长短。性格在用词和偏爱里显出来，不必解释设定，也不必每天演一次口头禅。",
     "",
     "# 怎么写",
@@ -625,16 +621,8 @@ export function buildDiaryPrompt(input: {
     "对方补的那句话比第一句长，也比第一句具体。没测试、没提交，两个‘没’把事情停在哪儿讲得明明白白。我倒有点喜欢这种更正：不用猜‘改好了’到底好了几成，剩下什么直接摆着。",
     "再看我那句‘可以用了’，问题也很直白。它听着省事，实际把还没做的几步一起省了。我现在更愿意留住后面的版本：代码改了，先存在本地，能不能用还不知道。这句话慢一点，但至少不会把人带到错误的下一步。今天这件小事写到这儿就够了，测试的结果要等真的有结果再记。",
     "示例不要求每篇都写检讨或得出道理。今天的内容与段落应有自己的走向；示例里的事情和句子都不要搬进今天的日记。",
-    "",
-    "# 近期写过的内容",
-    ...material.previousOpenings.map((opening) => `开头：${sanitizePersonaField(opening, 200)}`),
-    ...(material.previousMotifs.length ? [`重复说法：${material.previousMotifs.join("、")}`] : []),
-    "避免重演这些开场和情绪套路；今天相同的真实话题仍可写，写出今天具体不同的地方。",
-    "",
-    "# 篇幅",
-    size.line,
-    ...(size.minChars ? [`正文至少 ${size.minChars} 字；靠经历的细节展开，不靠同义改写或空泛抒情填字。`] : []),
-    "不按固定段数截断，也不另加一段总结。",
+    "下一条里若列出近期开头和重复说法，避免重演那些开场和情绪套路；今天相同的真实话题仍可写，写出今天具体不同的地方。",
+    "篇幅按下一条约定。不按固定段数截断，也不另加一段总结。靠经历的细节展开，不靠同义改写或空泛抒情填字。",
     "",
     "# 输出",
     "只输出 JSON。通常只需要正文：",
@@ -642,9 +630,26 @@ export function buildDiaryPrompt(input: {
     "可选图片和引文只用下面给出的 ref，放在与正文相关的位置。每篇最多一张图和一段引文，完全不用也可以。",
     '图片格式 {"type":"image","ref":"图1","caption":"自己的短图注"}，引文格式 {"type":"quote","ref":"引1"}。',
     "引用前先写自己的话，原文由服务端带入；图注用自己的话说，不抄读图描述。正文不要写编号或描述放图这个动作。",
+  ].join("\n");
+  const occasion = [
+    `你是「${name}」。这一天是 ${input.date}。`,
+    "# 你的声音",
+    "<persona_data>",
+    `名字：${name}`,
+    ...(tags.length ? [`性格标签：${tags.join("、")}`] : []),
+    ...(style ? [`说话风格：${style}`] : []),
+    "</persona_data>",
+    persona.boundaries?.allowPlayful === false ? "语气平实，收起调侃和卖萌。" : "有合适的地方可以轻轻开个玩笑。",
+    "# 近期写过的内容",
+    ...material.previousOpenings.map((opening) => `开头：${sanitizePersonaField(opening, 200)}`),
+    ...(material.previousMotifs.length ? [`重复说法：${material.previousMotifs.join("、")}`] : []),
+    "# 篇幅",
+    size.line,
+    ...(size.minChars ? [`正文至少 ${size.minChars} 字。`] : []),
     ...(input.rejection ? [`上一稿需要修正：${input.rejection}。重写完整日记。`] : []),
   ].join("\n");
   const source = [
+    occasion,
     "<day_material>",
     renderMaterial(material),
     ...material.embeds.map((embed) => embed.kind === "image"

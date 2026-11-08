@@ -106,7 +106,10 @@ export async function runCompanionInitiative(ctx: CompanionDialogueHandlerContex
     if (!observation && !present) { await deferParticipation(tx, ctx, 60_000); return; }
     const observedPage = (observation?.facts.context as { page?: { key?: string; revision?: string | null } } | undefined)?.page;
     const presentPage = (present?.context as { page?: { key?: string; revision?: string | null } } | undefined)?.page;
-    if (observation && ["page.arrived", "help.available", "result.available"].includes(observation.topic)
+    // The fence otherwise freezes whatever page is current at preparation, so a
+    // study start or launch greeting is cancelled at once or delivered on a page
+    // the person has already left. Those opportunities stay on the page that raised them.
+    if (observation && ["page.arrived", "help.available", "result.available", "study.started", "app.started", "app.foreground"].includes(observation.topic)
       && (!observedPage || observedPage.key !== presentPage?.key || observedPage.revision !== presentPage?.revision)) return;
     /**
      * 「陪着的时候」的安静门槛按账号档位算（shared 的 COMPANION_QUIET_PRESENCE_MIN_MS）。

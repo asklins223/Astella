@@ -151,8 +151,31 @@ function renderList(lines: string[], start: number, key: string, depth: number):
     : <ul className="companion-md__list" key={key}>{children}</ul>, next };
 }
 
+/** 流式草稿每拍都会带来一段新前缀，若每次全量重解析并把结果丢弃，长回复会
+ * 持续占用主线程；而时间线在任意 store 变化时又会重渲染所有静态消息。这里用
+ * 一个有界 LRU 缓存解析结果：静态消息命中缓存不再重解析，草稿的一次性前缀
+ * 因为不再命中会最先被淘汰，不会挤掉静态条目。带来源引用的渲染不缓存，避免
+ * 引用回执晚到时拿到旧节点。 */
+const markdownCache = new Map<string, ReactNode[]>();
+const MARKDOWN_CACHE_LIMIT = 128;
+
 export function renderCompanionMarkdown(text: string, sources: readonly WebCitation[] = []): ReactNode[] {
-  return [<WebCitationContext.Provider key="markdown" value={sources}>{renderBlocks(visibleParagraphs(text), 0)}</WebCitationContext.Provider>];
+  if (sources.length > 0) {
+    return [<WebCitationContext.Provider key="markdown" value={sources}>{renderBlocks(visibleParagraphs(text), 0)}</WebCitationContext.Provider>];
+  }
+  const hit = markdownCache.get(text);
+  if (hit) {
+    markdownCache.delete(text);
+    markdownCache.set(text, hit);
+    return hit;
+  }
+  const nodes: ReactNode[] = [<WebCitationContext.Provider key="markdown" value={sources}>{renderBlocks(visibleParagraphs(text), 0)}</WebCitationContext.Provider>];
+  markdownCache.set(text, nodes);
+  if (markdownCache.size > MARKDOWN_CACHE_LIMIT) {
+    const oldest = markdownCache.keys().next().value;
+    if (oldest !== undefined) markdownCache.delete(oldest);
+  }
+  return nodes;
 }
 
 function renderBlocks(text: string, depth: number): ReactNode[] {
@@ -212,7 +235,9 @@ function renderBlocks(text: string, depth: number): ReactNode[] {
       const table = parseMarkdownTable(rows.join("\n"));
       if (table) {
         blocks.push(<div className="companion-md__table-scroll" role="region" aria-label="回复中的表格" tabIndex={0} key={`b${key++}`}>
-          <table className="companion-md__table"><thead><tr>{table[0].map((cell, col) =>
+          <table className="companion-md__table" style={{ minWidth: table[0].length * 112 }}>
+            <colgroup>{table[0].map((_, col) => <col key={col} />)}</colgroup>
+            <thead><tr>{table[0].map((cell, col) =>
             <th scope="col" key={col}>{renderInline(cell, `t${key}-h${col}`)}</th>)}</tr></thead>
             <tbody>{table.slice(2).map((row, r) => <tr key={r}>{row.map((cell, col) =>
               <td key={col}>{renderInline(cell, `t${key}-${r}-${col}`)}</td>)}</tr>)}</tbody></table>

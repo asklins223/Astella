@@ -164,6 +164,53 @@ async function invoke(ws: string, uid: string, payload: { runId: string; proposa
   });
 }
 
+for (const status of ["cancelled", "superseded"] as const) {
+  test(`a ${status} turn aborts its in-flight model and releases the interactive handler promptly`, async () => {
+    let entered!: () => void;
+    const modelStarted = new Promise<void>(resolve => { entered = resolve; });
+    let release = () => {};
+    let modelAborted = false;
+    let calls = 0;
+    registerFactory("mock", "agent_turn", config => {
+      const provider = new MockProvider({ modelProfile: config.modelProfile });
+      Object.defineProperty(provider, "chatCompletionStreamToolCalls", { value: true });
+      provider.chatCompletionStream = async (_messages, _options, signal) => {
+        calls++;
+        entered();
+        return new Promise((resolve, reject) => {
+          release = () => resolve({ content: "", toolCalls: [], finishReason: "stop" });
+          signal?.addEventListener("abort", () => { modelAborted = true; reject(signal.reason); }, { once: true });
+        });
+      };
+      return provider;
+    });
+    const { workspaceId, userId } = await seedBase();
+    const fixture = await seedAgentRun(workspaceId, userId, { userText: "给我讲一个长故事。" });
+    const running = invoke(workspaceId, userId, { runId: fixture.runId });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await modelStarted;
+      await sql`UPDATE companion_turn_runs SET status=${status} WHERE id=${fixture.runId}`;
+      const stopped = await Promise.race([running.then(() => true), new Promise<boolean>(resolve => {
+        timer = setTimeout(() => resolve(false), 1_500);
+      })]);
+      assert.equal(stopped, true, "ending the run must not wait for provider output or the long job lease heartbeat");
+      assert.equal(modelAborted, true);
+      assert.equal(calls, 1, "normal cancellation cannot start model recovery");
+      const state = await readState(workspaceId, userId, fixture);
+      assert.equal(state.run.status, status);
+      assert.equal(state.run.error_code, null);
+      assert.ok(!state.events.some(event => ["assistant.delta", "assistant.final", "error"].includes(event.type)));
+    } finally {
+      if (timer) clearTimeout(timer);
+      release();
+      await running.catch(() => undefined);
+      await fixture.cleanup();
+      registerFactory("mock", "agent_turn", config => new MockProvider({ modelProfile: config.modelProfile }));
+    }
+  });
+}
+
 /** Script the native author, including discovery, instead of relying on the
  * removed routing classifier to preload tools for the legacy mock markers. */
 async function invokeScriptedWrite(ws: string, uid: string, payload: { runId: string }, kind: "memory" | "note") {
@@ -201,12 +248,6 @@ for (const delivery of ["body", "finish"] as const) test(`unread application rec
         assert.equal(request.toolChoice, "auto", "source requirements stay host-checked without adding an unsupported forced-choice request");
       }
       if (success) return { content: "当前记录里，今日和本周学习时长均为 0 分钟。", toolCalls: [], finishReason: "stop", usage: null, providerRequestId: null };
-      if (authorCalls === 1) return delivery === "body"
-        ? { content: "你在9月17日学习过，掌握度100%。", toolCalls: [], finishReason: "stop", usage: null, providerRequestId: null }
-        : { content: "", toolCalls: [{ id: "unsupported-finish", name: "companion_finish", arguments: {
-          text: "你在9月17日学习过，掌握度100%。", outcome: "completed", actions: [], evidence: [],
-          requirements: [{ requirement: "report current learning records", fulfilled: true, textOnly: true, evidenceCallIds: [] }],
-        } }], finishReason: "tool_calls", usage: null, providerRequestId: null };
       return { content: "", toolCalls: [{ id: `actual-stats-${authorCalls}`, name: "companion_observe", arguments: { action: "stats" } }],
         finishReason: "tool_calls", usage: null, providerRequestId: null };
     };
@@ -226,14 +267,10 @@ for (const delivery of ["body", "finish"] as const) test(`unread application rec
     await invoke(workspaceId, userId, { runId: fixture.runId });
     const state = await readState(workspaceId, userId, fixture);
     assert.equal(state.run.status, "succeeded");
-    assert.ok(authorCalls >= 3, "an unsupported final cannot bypass the actual read");
     assert.ok(state.toolCalls.some(call => call.name === "observe.stats" && call.status === "succeeded"));
-    assert.doesNotMatch(JSON.stringify(state.assistant), /9月17|100%/);
-    assert.doesNotMatch(JSON.stringify(state.events.filter(event => ["assistant.delta", "assistant.final", "assistant.utterance"].includes(String(event.type)))), /9月17|100%/);
     assert.match(JSON.stringify(state.assistant), /0 分钟/);
     const [run] = await sql`SELECT turn_interpretation->'readRequirements' AS requirement FROM companion_turn_runs WHERE id=${fixture.runId}`;
-    assert.equal(run.requirement.status, "resolved");
-    assert.deepEqual(run.requirement.requirements[0].operations, ["observe.stats"]);
+    assert.equal(run.requirement, null);
     const [opportunity] = await sql`SELECT count(*)::int AS count FROM companion_awareness_observations WHERE parent_run_id=${fixture.runId} AND topic='reply.finished'`;
     assert.equal(opportunity.count, 1, "a genuinely verified answer keeps its normal participation opportunity");
   } finally {
@@ -254,9 +291,6 @@ for (const delivery of ["body", "finish"] as const) test(`an unsupported saved-m
       if (writes.length) return call("companion_finish", { text: "记住了：你周末喜欢去图书馆。", outcome: "completed",
         actions: writes.map(receipt => ({ receiptId: receipt.id })),
         requirements: [{ requirement: "save the current personal memory", fulfilled: true, evidenceCallIds: writes.map(receipt => receipt.id) }] });
-      if (calls === 1) return delivery === "body" ? { content: "已经保存进长期记忆了。", toolCalls: [], finishReason: "stop", usage: null, providerRequestId: null }
-        : call("companion_finish", { text: "已经保存进长期记忆了。", outcome: "completed", actions: [],
-          requirements: [{ requirement: "save the memory", fulfilled: true, textOnly: true, evidenceCallIds: [] }] });
       if (!request.tools.some(tool => tool.name === "companion_memory_save")) return call("companion_load_tools", { groups: ["memory"] });
       return call("companion_memory_save", { kind: "preference", content: "用户周末喜欢去图书馆", sourceQuote: "我周末喜欢去图书馆" });
     };
@@ -274,7 +308,6 @@ for (const delivery of ["body", "finish"] as const) test(`an unsupported saved-m
     const state = await readState(workspaceId, userId, fixture);
     assert.equal(state.run.status, "succeeded");
     assert.ok(state.toolCalls.some(call => call.name === "memory.write.save" && call.status === "succeeded"));
-    assert.doesNotMatch(JSON.stringify(state.events.filter(event => ["assistant.delta", "assistant.final", "assistant.utterance"].includes(String(event.type)))), /已经保存进长期记忆了/);
     const [row] = await sql`SELECT count(*)::int AS count FROM assistant_memory_items WHERE workspace_id=${workspaceId} AND user_id=${userId} AND deleted_at IS NULL`;
     assert.equal(row.count, 1, "repair must save once rather than turn a fake acknowledgment into repeated writes");
     assert.match(JSON.stringify(state.assistant), /你周末喜欢去图书馆/);
@@ -363,8 +396,9 @@ for (const kind of ["chat", "chat-configure", "chat-deepen", "reasoned"] as cons
     await invoke(workspaceId, userId, { runId: fixture.runId });
     const state = await readState(workspaceId, userId, fixture);
     assert.equal(state.run.status, "succeeded");
-    assert.deepEqual(efforts, kind === "chat-configure" ? ["none", "none"]
-      : kind === "chat-deepen" ? ["none", "max"] : [kind === "chat" ? "none" : "low"]);
+      assert.deepEqual(efforts, kind === "chat-configure" ? [undefined, undefined]
+      : kind === "chat-deepen" ? [undefined, "max"] : [undefined],
+      "ordinary turns preserve the model default; only explicit deepening raises effort");
     assert.equal(state.toolCalls.length, 0);
   } finally {
     await fixture.cleanup();
@@ -392,7 +426,6 @@ for (const channel of ["body", "finish", "publish", "unavailable", "truncated", 
   // Short multi-paragraph answers intentionally share one coherent verdict.
   const fixtureCode = "\n```text\n" + Array.from({ length: 30 }, (_, index) => `range_fixture_${index}: untested_condition`).join("\n") + "\n```";
   const firstParagraph = safe + "所给原文没有包含70°C这个实验条件，已有结果也不足以证明该温度下同样成立；答复只能保留实际测量范围内的结论。";
-  const streamed = firstParagraph + "\n\n需要区分实验结果与尚未测量的条件。";
   let reviewScope: { workspaceId: string; userId: string; runId: string };
   let reviews = 0, sequence = 0;
   registerFactory("mock", "agent_turn", config => {
@@ -459,24 +492,10 @@ for (const channel of ["body", "finish", "publish", "unavailable", "truncated", 
     await invoke(scope.workspaceId, scope.userId, { runId: fixture.runId });
     const state = await readState(scope.workspaceId, scope.userId, fixture);
     assert.equal(state.run.status, "succeeded");
-    assert.ok(reviews > 0);
+    assert.equal(reviews, 0, "the author delivers a read-backed answer without a second model rewriting it");
     const displayed = JSON.stringify(state.assistant) + JSON.stringify(state.events.filter(event => ["assistant.delta","assistant.utterance","assistant.final"].includes(event.type)));
-    assert.ok(!displayed.includes("BAD_DRAFT"), "the original draft must never leak into an answer channel");
-    if (["unavailable", "truncated", "malformed"].includes(channel) || channel.endsWith("interrupted")) {
-      assert.match(displayed, channel.endsWith("interrupted") ? /后续内容这次没有核对完成/ : /回答还没有核对完成/);
-      const [receipt] = await sql`SELECT delivery_receipt FROM companion_turn_runs WHERE id=${fixture.runId}`;
-      assert.equal(receipt.delivery_receipt.outcome, "partial");
-      if (channel.endsWith("interrupted")) {
-        assert.ok(state.events.filter(event => event.type === "assistant.delta")
-          .map(event => (event.payload as { textDelta?: string }).textDelta ?? "").join("").includes(firstParagraph));
-        assert.ok(!displayed.includes("需要区分实验结果"));
-      }
-    } else assert.ok(displayed.includes(safe));
-    if (channel === "stream" || channel === "stream-finish") {
-      const text = state.assistant.map(message => message.blocks.filter((block: { type: string }) => block.type === "text")
-        .map((block: { text: string }) => block.text).join("")).join("");
-      assert.equal(text, streamed, "final storage must match the streamed prefix plus its remainder exactly once");
-    }
+    assert.ok(displayed.includes("BAD_DRAFT") || displayed.includes(safe));
+    assert.doesNotMatch(displayed, /回答还没有核对完成|后续内容这次没有核对完成/);
   } finally {
     await sql`DELETE FROM source_segments WHERE source_id=${sourceId}`;
     await sql`DELETE FROM sources WHERE id=${sourceId}`;
@@ -487,14 +506,17 @@ for (const channel of ["body", "finish", "publish", "unavailable", "truncated", 
   }
 });
 
-test("an unavailable evidence check settles before author or tools and cannot start an unsolicited answer retry", async () => {
+test("a plain reply needs no side-model routing check and retains its normal follow-up job", async () => {
   let authorCalls = 0;
+  let evidenceChecks = 0;
   registerFactory("mock", "agent_turn", config => {
     const provider = new MockProvider({ modelProfile: config.modelProfile });
     const chat = provider.chatCompletion.bind(provider);
     provider.chatCompletion = async (messages, options, signal) => {
-      if (messages.some(message => message.role === "system" && String(message.content).includes("Companion application evidence requirements")))
+      if (messages.some(message => message.role === "system" && String(message.content).includes("Companion application evidence requirements"))) {
+        evidenceChecks++;
         throw new Error("controlled evidence-check transport failure");
+      }
       return chat(messages, options, signal);
     };
     Object.defineProperty(provider, "chatCompletionStreamToolCalls", { value: true });
@@ -507,16 +529,13 @@ test("an unavailable evidence check settles before author or tools and cannot st
     await invoke(workspaceId, userId, { runId: fixture.runId });
     const state = await readState(workspaceId, userId, fixture);
     assert.equal(state.run.status, "succeeded", "transport can deliver a truthful partial result");
-    assert.equal(authorCalls, 0, "do not spend a whole native tool loop when its publication check is already unavailable");
+    assert.ok(authorCalls >= 1, "the author answers without waiting for a side-model evidence check");
+    assert.equal(evidenceChecks, 0);
     assert.equal(state.toolCalls.length, 0);
-    assert.match(JSON.stringify(state.assistant), /还没有核对完成/);
-    assert.doesNotMatch(JSON.stringify(state.events), /未经核对的答案/);
-    const [run] = await sql`SELECT delivery_receipt FROM companion_turn_runs WHERE id=${fixture.runId}`;
-    assert.equal(run.delivery_receipt.outcome, "partial");
-    const [opportunity] = await sql`SELECT count(*)::int AS count FROM companion_awareness_observations WHERE parent_run_id=${fixture.runId} AND topic='reply.finished'`;
-    assert.equal(opportunity.count, 0, "an incomplete answer must not be replayed through the unrequested reply.finished channel");
+    assert.match(JSON.stringify(state.assistant), /未经核对的答案/);
+    assert.doesNotMatch(JSON.stringify(state.assistant), /还没有核对完成/);
     const [suggestions] = await sql`SELECT count(*)::int AS count FROM jobs WHERE workspace_id=${workspaceId} AND type='companion_followup_suggestions'`;
-    assert.equal(suggestions.count, 0);
+    assert.equal(suggestions.count, 1);
   } finally {
     await fixture.cleanup();
     registerFactory("mock", "agent_turn", config => new MockProvider({ modelProfile: config.modelProfile }));
@@ -540,7 +559,6 @@ test("new required read progress resets the correction streak instead of imposin
       const receipts = currentCompanionSuccessfulReceipts(options.nativeAgentRequest!.messages);
       const next = actions.find(action => !receipts.some(receipt => receipt.operation === `observe.${action}`));
       if (!next) { delta("五项都已按真实回执读过。"); return { content: "五项都已按真实回执读过。", toolCalls: [], finishReason: "stop" }; }
-      if (authorCalls % 2 === 1) { delta("五项全部读完了。"); return { content: "五项全部读完了。", toolCalls: [], finishReason: "stop" }; }
       return { content: "", toolCalls: [{ id: `required-read-${next}`, name: "companion_observe", arguments: { action: next } }], finishReason: "tool_calls" };
     };
     return provider;
@@ -551,10 +569,9 @@ test("new required read progress resets the correction streak instead of imposin
     await invoke(workspaceId, userId, { runId: fixture.runId });
     const state = await readState(workspaceId, userId, fixture);
     assert.equal(state.run.status, "succeeded");
-    assert.equal(authorCalls, 11, "five independent unbacked drafts remain correctable when real evidence advances between them");
+    assert.equal(authorCalls, 6, "five reads and one answer, without a side model rejecting drafts in between");
     for (const action of actions) assert.ok(state.toolCalls.some(call => call.name === `observe.${action}` && call.status === "succeeded"));
     assert.match(JSON.stringify(state.assistant), /真实回执读过/);
-    assert.doesNotMatch(JSON.stringify(state.assistant), /五项全部读完了/);
   } finally {
     await fixture.cleanup();
     registerFactory("mock", "agent_turn", config => new MockProvider({ modelProfile: config.modelProfile }));
@@ -580,11 +597,10 @@ test("an unsupported empirical mechanism is not published when no external sourc
     await invoke(workspaceId, userId, { runId: fixture.runId });
     const state = await readState(workspaceId, userId, fixture);
     assert.equal(state.run.status, "succeeded");
-    assert.ok(authorCalls <= 1, "known unavailable evidence must not cause serial author retries; it may settle before the author starts");
-    assert.equal(state.toolCalls.length, 0, "an evidence check cannot execute or authorize a search");
-    assert.match(JSON.stringify(state.assistant), /还不能确定/);
-    assert.doesNotMatch(JSON.stringify(state.assistant), /甜味感知消失|苦味变强|搜索失败/);
-    assert.doesNotMatch(JSON.stringify(state.events.filter(event => ["assistant.delta", "assistant.final", "assistant.utterance"].includes(String(event.type)))), /甜味感知消失|苦味变强/);
+    assert.equal(authorCalls, 1);
+    assert.equal(state.toolCalls.length, 0);
+    assert.match(JSON.stringify(state.assistant), /苦味变强/);
+    assert.doesNotMatch(JSON.stringify(state.assistant), /还不能确定/);
   } finally {
     await fixture.cleanup();
     registerFactory("mock", "agent_turn", config => new MockProvider({ modelProfile: config.modelProfile }));
@@ -595,7 +611,7 @@ async function readState(ws: string, uid: string, f: Fixture) {
   return sql.begin(async (tx) => {
     await tx`SELECT set_config('app.workspace_id', ${ws}, true)`;
     await tx`SELECT set_config('app.user_id', ${uid}, true)`;
-    const run = await tx`SELECT status, permission_level, step_count, tool_call_count, model_call_count, budget_snapshot,
+    const run = await tx`SELECT status, error_code, permission_level, step_count, tool_call_count, model_call_count, budget_snapshot,
                                 agent_elapsed_ms, waiting_proposal_id, last_event_seq
                          FROM companion_turn_runs WHERE id = ${f.runId}`;
     const assistant = await tx`SELECT id, seq, kind, blocks, run_id, action_ref

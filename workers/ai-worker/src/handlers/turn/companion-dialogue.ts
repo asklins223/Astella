@@ -1,7 +1,5 @@
 import { finishCompanionParticipation, companionInitiativeRepeatsSpeech } from "../tools/companion-participation-tools.ts";
 import { reviewCompanionInitiativeSpeech } from "../proactive/companion-initiative-speech-review.ts";
-import { resolveCompanionReadRequirements, COMPANION_READ_REQUIREMENTS_POLICY_HASH } from "../agent/companion-read-requirements.ts";
-import { reviewCompanionConversation, COMPANION_CONVERSATION_REVIEW_HASH } from "../agent/companion-conversation-review.ts";
 import { readParticipationPreferences } from "@astella/agent-host";
 import { companionInitiativeInputV1Schema } from "@astella/shared/companion-initiative-contracts";
 import { listCompanionSelfNotes } from "@astella/agent-host";
@@ -13,6 +11,8 @@ import { renderCompanionDeliveryObservation } from "@astella/shared";
 import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
 import { sql } from "drizzle-orm";
 import { logger } from "../../lib/logger.ts";
+import { enterInteractiveProviderLane, leaveInteractiveProviderLane } from "../../lib/interactive-provider-lane.ts";
+import { runWithLeaseHeartbeat } from "../../lib/lease-heartbeat.ts";
 import { companionSavedNoteEditExists } from "../note/companion-note-edit.ts";
 import { listSucceededWriteToolNames } from "../tools/companion-tool-call-ledger.ts";
 import { ProviderRequestError, ProviderResponseRefusedError, ProviderResponseUnverifiedError } from "../../lib/provider-request-error.ts";
@@ -98,6 +98,7 @@ import {
   countCompanionHistoryMessages,
   companionRecentHistoryFromRows,
   persistCompanionContextHandoffSnapshot,
+  CompanionRunInactiveError,
 } from "./companion-dialogue-store.ts";
 import {
   writeBatchedDeltas,
@@ -111,6 +112,45 @@ import { CompanionOutputTimeoutError } from "../agent/companion-output-watchdog.
 // ─── run 编排 ─────────────────────────────────────────────────────────────
 
 export async function runCompanionDialogue(
+  ctx: CompanionDialogueHandlerContext,
+): Promise<void> {
+  enterInteractiveProviderLane();
+  try {
+    // The job lease remains valid after a user cancels or a newer turn takes
+    // over. Observe the run independently so a silent/thinking provider does
+    // not retain the interactive slot until it next produces output.
+    const runId = typeof ctx.payload.runId === "string" ? ctx.payload.runId : null;
+    await runWithLeaseHeartbeat({
+      signal: ctx.signal,
+      intervalMs: 500,
+      renew: async signal => {
+        signal.throwIfAborted();
+        if (!runId) return;
+        const [run] = await withWorkerWorkspaceTransaction(
+          { workspaceId: ctx.workspaceId, userId: ctx.requestedBy },
+          tx => tx.execute<{ status: string }>(sql`SELECT status FROM companion_turn_runs
+            WHERE id=${runId} AND workspace_id=${ctx.workspaceId} AND user_id=${ctx.requestedBy}`),
+        );
+        signal.throwIfAborted();
+        if (run && !isActiveRun(run.status) && run.status !== "waiting_for_confirmation")
+          throw new CompanionRunInactiveError(run.status);
+      },
+      operation: signal => runCompanionDialogueTurn({ ...ctx, signal }),
+      onLateError: error => {
+        if (!(error instanceof CompanionRunInactiveError))
+          logger.debug({ runId, err: error }, "stopped companion handler finished unwinding");
+      },
+    });
+  } catch (error) {
+    if (!(error instanceof CompanionRunInactiveError)) throw error;
+    logger.info({ runId: ctx.payload.runId, status: error.status },
+      "companion turn already left the active set; released its interactive slot");
+  } finally {
+    leaveInteractiveProviderLane();
+  }
+}
+
+async function runCompanionDialogueTurn(
   ctx: CompanionDialogueHandlerContext,
 ): Promise<void> {
   // job 超时（runWithAbortTimeout）在进入 handler 前就已开始计时；Agent loop 用
@@ -667,10 +707,15 @@ export async function runCompanionDialogue(
     snapshot: proposedHandoffSnapshot,
     sha256: proposedHandoffSha256,
   }).catch(async error => {
+    if (error instanceof CompanionRunInactiveError) return null;
     if (error instanceof CompanionContextChangedError)
       await markCompanionRunFailed(read, ctx, error.code, true, error.message, "execution");
     throw error;
   });
+  if (!committedHandoff) {
+    logger.info({ runId: read.runId }, "companion run left the active set before the prompt snapshot");
+    return;
+  }
   // A retry must replay the exact committed messages and memory receipt set, even if
   // background memory maintenance changed what a fresh retrieval would return.
   const committedMessages = committedHandoff.snapshot.modelMessages as ChatMessage[];
@@ -929,13 +974,6 @@ export async function runCompanionDialogue(
       read,
       provider,
       fallbackProvider,
-      readEvidence: { policyHash: COMPANION_READ_REQUIREMENTS_POLICY_HASH,
-        resolve: input => resolveCompanionReadRequirements({ ...input, ctx, read, provider: fallbackProvider ?? provider }) },
-      ...(fallbackProvider ? { conversationReview: { policyHash: COMPANION_CONVERSATION_REVIEW_HASH,
-        review: input => reviewCompanionConversation({ ...input, ctx, read, provider: fallbackProvider,
-          expressionInstruction: semanticVoiceStyle?.decision === "apply" ? semanticVoiceStyle.instruction ?? undefined
-            : accountVoiceDialect ? `正文保持账号已保存的方言「${accountVoiceDialect}」。` : undefined,
-          onProviderUsed: actual => { deliveredBy = actual; } }) } } : {}),
       onProviderUsed: actual => { deliveredBy = actual; },
       // Only when the conversation model is the one that can see: an auxiliary
       // vision model still needs the read tool, because the bytes never reach
@@ -1036,6 +1074,11 @@ export async function runCompanionDialogue(
       handlerStartedAtMs,
     });
   } catch (err) {
+    if (err instanceof CompanionRunInactiveError) {
+      logger.info({ runId: read.runId, status: err.status },
+        "companion turn already left the active set; stopping without a failure");
+      return;
+    }
     // 兜底那条 INTERNAL_ERROR 过去只留下「companion agent execution failed」，
     // 到底是哪一支抛的没人知道（2026-10-16 查本地主动轮全挂时白绕了两圈）。
     // 只记日志，不改用户看到的那句实话。
@@ -1043,6 +1086,7 @@ export async function runCompanionDialogue(
       runId: read.runId,
       errorName: err instanceof Error ? err.name : typeof err,
       errorMessage: err instanceof Error ? String(err.message).slice(0, 240) : undefined,
+      contextReason: err instanceof CompanionContextChangedError ? err.reason : undefined,
       // 有一层把什么都盖成「存储不可用」，所以 `cause` 必须一起打出来。
       causeName: err instanceof Error && err.cause instanceof Error ? err.cause.name : undefined,
       causeMessage: err instanceof Error && err.cause instanceof Error

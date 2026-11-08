@@ -1,3 +1,4 @@
+import { prepareCompanionTypewriter, resetCompanionTypewriters } from "./companion-typewriter-state";
 import { stopCompanionSpeech } from "./companion-voice-playback";
 import { COMPANION_VOICE_SEGMENT_READY_EVENT, queueCompanionVoiceSegment } from "./companion-voice-segment-queue";
 import { redriveCompanionRunVoice } from "./companion-run-voice-redrive";
@@ -418,6 +419,7 @@ type CompanionReplyStreamOutcome =
 // 它们一个 hook 都没有，留在 Provider 文件里只是当初图省事。
 // 本文件内部也要调其中几个，所以是「导入 + 再导出」。
 import { desktopRouteFromAgentRoute, companionMessageText, applyRouteToRoom, navChipSharesTarget, navChipsStillOutsideMessages, readCompleteCompanionHistory, isCompanionRunConflict, companionTurnErrorMessage, companionReplyFailureMessage } from "./companion-chat-routing";
+import { clearPendingCompanionFile, peekPendingCompanionFile } from "./companion-file-attachment";
 export { desktopRouteFromAgentRoute, companionMessageText, applyRouteToRoom, navChipSharesTarget, navChipsStillOutsideMessages, readCompleteCompanionHistory, isCompanionRunConflict, companionTurnErrorMessage } from "./companion-chat-routing";
 
 const CompanionChatContext = createContext<CompanionChatSession | null>(null);
@@ -638,6 +640,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
    * 有这条会话」之后唯一能让下一次发送重新对上收件箱的地方。
    */
   const dropConversationCache = useCallback(() => {
+    resetCompanionTypewriters();
     ++sendGenerationRef.current;
     pendingSendRef.current = null;
     activeTurnRef.current = null;
@@ -1246,6 +1249,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     /** 订阅建立后迟迟没有任何帧：通知调用方把兜底赛道提速（**不要**退订）。 */
     onIdle?: () => void;
   }): { promise: Promise<CompanionReplyStreamOutcome>; cancel: () => void; watchFollowups: (messageId: string) => void } => {
+    prepareCompanionTypewriter(`${args.conversationId}:${args.runId}`);
     const subscriptions = window.astella?.subscriptions;
     if (!subscriptions) {
       return { promise: Promise.resolve({ kind: "unavailable" }), cancel: () => undefined, watchFollowups: () => undefined };
@@ -1559,7 +1563,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
               ? current + payload.textDelta
               : current.slice(0, appendFrom) + payload.textDelta;
             draftRef.current = next;
-            setDraft({ runId: args.runId, text: [next, utteranceTextRef.current.get(args.runId) ?? ""].filter(Boolean).join("\n\n") });
+            setDraft({ runId: args.runId, text: [utteranceTextRef.current.get(args.runId) ?? "", next].filter(Boolean).join("\n\n") });
             const pending = pendingSendRef.current;
             return;
           }
@@ -1572,6 +1576,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
               const previous = utteranceTextRef.current.get(args.runId) ?? "";
               const utterances = previous ? previous + "\n\n" + payload.text : payload.text;
               utteranceTextRef.current.set(args.runId, utterances);
+              draftRef.current = "";
               while (utteranceTextRef.current.size > 20) {
                 const oldest = utteranceTextRef.current.keys().next().value!;
                 utteranceTextRef.current.delete(oldest); utteranceIdsRef.current.delete(oldest);
@@ -1847,6 +1852,27 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
         }
       }
       if (generation !== sendGenerationRef.current) return pendingSend.cancelled;
+      /**
+       * 稿纸交给伴星的那一份：正文随这一轮上送，原件只留档。
+       * 上传失败就不建这一轮——输入与稿子都还在，用户点一次重试就够。
+       */
+      const pendingFile = peekPendingCompanionFile();
+      let fileBlock: CompanionContentBlockV1 | null = null;
+      if (pendingFile) {
+        const uploaded = unwrapGatewayResult(await window.astella.companion.uploadFile({
+          meta: createRequestMeta(epoch),
+          request: { version: 1, path: pendingFile.path, name: pendingFile.name },
+        }));
+        if (generation !== sendGenerationRef.current) return pendingSend.cancelled;
+        fileBlock = {
+          type: "file",
+          url: uploaded.url,
+          name: pendingFile.name,
+          mime: "text/markdown",
+          byteLength: uploaded.byteLength,
+          text: pendingFile.text.trim() ? pendingFile.text.slice(0, 100_000) : "（空文件）",
+        };
+      }
       const voiceArtifactId = input.voiceArtifactId ?? null;
       const clientMessageId = crypto.randomUUID();
       optimisticId = crypto.randomUUID();
@@ -1883,6 +1909,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
         blocks: [
           { type: "text", text },
           ...(input.images ?? []).map(image => ({ type: "image" as const, url: image.url, label: image.label })),
+          ...(fileBlock ? [fileBlock] : []),
         ],
         ...(input.selection?.text ? { selection: { text: input.selection.text, sharing: "user_selected" as const } } : {}),
         runId: null,
@@ -1903,6 +1930,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
         blocks: [
           { type: "text" as const, text },
           ...(input.images ?? []).map(image => ({ type: "image" as const, url: image.url, label: image.label })),
+          ...(fileBlock ? [fileBlock] : []),
         ],
         ...(voiceArtifactId ? { voiceArtifactId } : {}),
         sourceSurface: "pet" as const,
@@ -1936,6 +1964,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
           if (generation === sendGenerationRef.current) {
             activeTurnRef.current = { runId: sent.runId, generation: sent.generation, conversationId: active.id, explanationId: explanation?.id ?? null };
             setProcessRunId(sent.runId);
+            if (fileBlock) clearPendingCompanionFile();
           } else {
             // Stop may arrive before the turn receipt: cancel its eventual run without reviving the UI.
             cancelRunInBackground(sent.runId, sent.generation, epoch);

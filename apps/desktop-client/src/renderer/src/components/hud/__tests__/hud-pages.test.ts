@@ -15,6 +15,7 @@ const EXPECTED_PAGES: readonly HudPageId[] = [
   "search",
   "graph",
   "companion",
+  "local-paper",
   "settings",
 ] as const;
 
