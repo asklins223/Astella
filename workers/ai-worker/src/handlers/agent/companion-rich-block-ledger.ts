@@ -7,7 +7,6 @@
 import type { CompanionContentBlockV1 } from "@astella/shared";
 import { canonicalJsonV1 } from "@astella/shared/content-hash";
 import { readCompanionWebSearchReceipts, webSearchCitationBlocks } from "../../agent/web-search.ts";
-import type { AgentEventContext } from "../tools/companion-read-tools.ts";
 
 export type CompanionRichBlockLedger = {
   readonly blocks: CompanionContentBlockV1[];
@@ -37,7 +36,10 @@ export function createCompanionRichBlockLedger(initial: readonly CompanionConten
 }
 
 /** 搜索回执说明服务不可用时，关掉这一轮的联网工具并记下原因。 */
-export function markCompanionWebSearchUnavailable(event: AgentEventContext, reason: unknown): void {
+export function markCompanionWebSearchUnavailable(
+  event: { constraints: { webSearchEnabled?: boolean }; webSearchUnavailableReason?: string },
+  reason: unknown,
+): void {
   event.constraints.webSearchEnabled = false;
   event.webSearchUnavailableReason = typeof reason === "string" ? reason : "service_unavailable";
 }
