@@ -87,5 +87,33 @@
     "versionContract": "passed",
     "companionCapabilityContract": "passed"
   },
-  "credentialsIncluded": false
+  "credentialsIncluded": false,
+  "ci": {
+    "id": 42464969981,
+    "url": "https://github.com/asklins223/Astella/actions/runs/42464969981",
+    "implementationCommit": "c6a2686e9d20161042492ff729ff7a63f281521c",
+    "conclusion": "success",
+    "successfulJobs": [
+      "Desktop client",
+      "API",
+      "Backup scripts",
+      "Worker",
+      "Agent host",
+      "Agent core",
+      "Shared contracts",
+      "AI quality (PR mock)"
+    ],
+    "skippedJobs": [
+      "Deploy server on release tags"
+    ],
+    "attempt": 2,
+    "firstAttempt": {
+      "serverSharedBackupJobs": "all seven passed",
+      "desktopFailure": "GitHub HTTP 504 while downloading Electron 44.7.0; note-markdown-export.test.ts failed during suite loading",
+      "otherDesktopTestsPassed": 2984,
+      "desktopTestsSkipped": 5,
+      "desktopSourceUnchangedFromSuccessfulBaseline": "cb5a43d4b8388304f465964f317041e5f4f053a7"
+    },
+    "failedJobRetry": "passed without changing desktop source"
+  }
 }

@@ -38,5 +38,8 @@ Root-only rollback materials remain at `/opt/astella/ops-backups/20261108T084924
 | Authenticated overview | Version and commit match the running release |
 | Provider configuration | All seven routes resolve; no validation issue or unresolved environment reference |
 | Container health | All seven long-running services healthy, zero restarts |
+| Main-branch CI | [42464969981](https://github.com/asklins223/Astella/actions/runs/42464969981) passed after retrying the desktop job |
 
-This was an operations and deployment-configuration change. No application TypeScript changed, so package type checks and complete application suites were not repeated. No new conversation or voice acceptance run was generated. Sanitized receipts are in [verification.json](evidence/production-ops-cleanup-2026-11-08/verification.json).
+This was an operations and deployment-configuration change. Local checks focused on deployment contracts; the normal main-branch CI also runs package type checks and application suites after push. No new conversation or voice acceptance run was generated. Sanitized receipts are in [verification.json](evidence/production-ops-cleanup-2026-11-08/verification.json).
+
+The first CI attempt passed all seven server/shared/backup jobs. Desktop's `note-markdown-export.test.ts` could not load because downloading Electron 44.7.0 from GitHub returned HTTP 504; 2,984 other tests passed and five were skipped. Desktop source was unchanged from the preceding successful `cb5a43d4` CI baseline. Retrying only the failed job succeeded at **17:05:50 Asia/Shanghai**, and the overall workflow is green. The first failure is retained here as an external download failure, rather than an application assertion regression.
