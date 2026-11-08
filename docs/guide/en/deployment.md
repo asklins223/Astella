@@ -10,9 +10,11 @@ After its test jobs pass, CI calls Server deploy to build Linux amd64 API, Worke
 
 ## Private configuration
 
-The GitHub `production` Environment admits `v*` tags and holds `DEPLOY_HOST`, `DEPLOY_PORT`, `DEPLOY_USER`, `DEPLOY_SSH_KEY` and `DEPLOY_KNOWN_HOSTS`. SSH verifies the pre-registered host key. Its authorized key is restricted to the forced command `deploy <40-character commit SHA>`, without interactive shell, port forwarding or SCP. The deployment receiver and scripts are installed under `/usr/local/lib/astella` and updated by the server administrator.
+The GitHub `production` Environment admits `s-v*` tags and holds `DEPLOY_HOST`, `DEPLOY_PORT`, `DEPLOY_USER`, `DEPLOY_SSH_KEY` and `DEPLOY_KNOWN_HOSTS`. SSH verifies the pre-registered host key. Its authorized key is restricted to the forced command `deploy <40-character commit SHA>`, without interactive shell, port forwarding or SCP. The deployment receiver and scripts are installed under `/usr/local/lib/astella` and updated by the server administrator.
 
 Application environment values stay in `/etc/astella/production.env` with mode `600`. Real API keys belong outside GitHub, images, artifacts and installers. A deployment-job GitHub Token pulls GHCR images through a temporary Docker login directory removed on exit. Repository scripts contain variable names and generic logic; avoid `set -x` and printing expanded Compose configuration.
+
+CI writes the public build identity into each release's `deployment-images.env`: `APP_VERSION` comes from that checkout's `release/version.json`, and `GIT_COMMIT` comes from `GITHUB_SHA`. The production overlay requires both and injects them into API and Worker together with the exact image digests. Keep these values with the release rather than setting a permanent host-wide version; rollback then restores the corresponding identity. The admin overview reads the running API's identity, while Release Center records the published server release.
 
 Repository Secrets `DESKTOP_API_ORIGIN` and `ASTELLA_DOMAIN_SCHEMA_REVISION` supply installers' public connection configuration: an HTTPS address, domain revision and configuration version. The client must know its server address, which is observable in the installer and network traffic. API keys, database passwords and SSH private keys remain private. HTTPS IP addresses are supported without disabling certificate verification.
 

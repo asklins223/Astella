@@ -40,6 +40,7 @@ jobs:
       - name: Test deployment scripts
         run: |
           python3 infra/deploy/__tests__/bundle.test.py
+          node --test infra/deploy/__tests__/*.test.mjs
           shellcheck infra/deploy/*.sh
       - name: Resolve lowercase image names
         id: names
@@ -128,7 +129,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-      - name: Write image digests
+      - name: Write image digests and release metadata
         env:
           PREFIX: ${{ needs.images.outputs.image_prefix }}
           API_DIGEST: ${{ needs.images.outputs.api }}
@@ -137,7 +138,10 @@ jobs:
           EMBEDDING_DIGEST: ${{ needs.images.outputs.embedding }}
           BACKUP_DIGEST: ${{ needs.images.outputs.backup }}
         run: |
-          printf 'API_IMAGE=%s-api@%s\nWORKER_IMAGE=%s-worker@%s\nEDGE_TTS_IMAGE=%s-edge-tts@%s\nEMBEDDING_IMAGE=%s-embedding@%s\nBACKUP_IMAGE=%s-storage-backup@%s\n' \
+          set -euo pipefail
+          server_version="$(node -p 'require("./release/version.json").version')"
+          printf 'APP_VERSION=%s\nGIT_COMMIT=%s\nAPI_IMAGE=%s-api@%s\nWORKER_IMAGE=%s-worker@%s\nEDGE_TTS_IMAGE=%s-edge-tts@%s\nEMBEDDING_IMAGE=%s-embedding@%s\nBACKUP_IMAGE=%s-storage-backup@%s\n' \
+            "$server_version" "${GITHUB_SHA:?Source commit is required}" \
             "$PREFIX" "$API_DIGEST" "$PREFIX" "$WORKER_DIGEST" "$PREFIX" "$TTS_DIGEST" "$PREFIX" "$EMBEDDING_DIGEST" "$PREFIX" "$BACKUP_DIGEST" > deployment-images.env
       - name: Deploy exact commit over verified SSH
         env:

@@ -1,0 +1,91 @@
+{
+  "checkedAt": "2026-11-08T16:53:24.667230+08:00",
+  "application": {
+    "allApplicationImageIdsPreserved": true,
+    "backup": "/opt/astella/ops-backups/20261108T084924Z-release-metadata",
+    "candidate": "/opt/astella/releases/7d9454b5a29aa745dcf1a4cdf5d1936daf43bba8-4b608c341117",
+    "containers": {
+      "api": {
+        "commit": "7d9454b5a29aa745dcf1a4cdf5d1936daf43bba8",
+        "health": "healthy",
+        "image": "ghcr.io/asklins223/astella-api@sha256:c78cb394945abfdbff0aa8f2d4a37aff448d66a91ef7041d59446e4db24bb871",
+        "restartCount": 0,
+        "startedAt": "2026-11-08T08:51:44.422464175Z",
+        "version": "2.0.25"
+      },
+      "nginx": {
+        "commit": null,
+        "health": "healthy",
+        "image": "nginx:1.28-alpine",
+        "restartCount": 0,
+        "startedAt": "2026-11-08T08:51:43.402774059Z",
+        "version": null
+      },
+      "worker": {
+        "commit": "7d9454b5a29aa745dcf1a4cdf5d1936daf43bba8",
+        "health": "healthy",
+        "image": "ghcr.io/asklins223/astella-worker@sha256:25fec38d946211ce1919edd8b5cbae67d6056e0b74b26957effdb3def85d5e33",
+        "restartCount": 0,
+        "startedAt": "2026-11-08T08:51:16.820539836Z",
+        "version": "2.0.25"
+      }
+    },
+    "finishedAtUtc": "2026-11-08T08:51:50.401677Z",
+    "hostEnvironmentMode": "0o600",
+    "installedHelperSha256": "0a4981cfecd307004356e73e45547859dfd97601e36d0ec1d35e5b1e840538fc",
+    "onlyMetadataAddedToActualContainerEnvironments": true,
+    "previous": "/opt/astella/releases/7d9454b5a29aa745dcf1a4cdf5d1936daf43bba8-dc8892743a39",
+    "startedAtUtc": "2026-11-08T08:51:15.451063Z",
+    "status": "succeeded"
+  },
+  "hostAndProcessVerification": {
+    "actualPid1Identity": {
+      "api": {
+        "commit": "7d9454b5a29aa745dcf1a4cdf5d1936daf43bba8",
+        "configSha256": "0b39c2cb30a46aebcc434aca6f72c6ef403751e12b3b56f616846718417876af",
+        "version": "2.0.25"
+      },
+      "worker": {
+        "commit": "7d9454b5a29aa745dcf1a4cdf5d1936daf43bba8",
+        "configSha256": "0b39c2cb30a46aebcc434aca6f72c6ef403751e12b3b56f616846718417876af",
+        "version": "2.0.25"
+      }
+    },
+    "currentRelease": "/opt/astella/releases/7d9454b5a29aa745dcf1a4cdf5d1936daf43bba8-4b608c341117",
+    "deploymentOverlaySha256": "719b049d3fe8dc82a0f218d0e590716d25eb2ed1ce611153dce6bb3ca08e3697",
+    "hostModelConfigSha256": "0b39c2cb30a46aebcc434aca6f72c6ef403751e12b3b56f616846718417876af",
+    "installedHelperMatchesLatest": true,
+    "installedHelperSha256": "0a4981cfecd307004356e73e45547859dfd97601e36d0ec1d35e5b1e840538fc",
+    "productionEnvMode": "0o600",
+    "retiredHostKeysAbsent": true
+  },
+  "httpVerification": {
+    "serviceVersion": "2.0.25",
+    "release": {
+      "version": "2.0.25",
+      "commit": "7d9454b5a29aa745dcf1a4cdf5d1936daf43bba8",
+      "migrations": null
+    },
+    "modelConfiguration": {
+      "allSevenCapabilitiesResolvable": true,
+      "issues": [],
+      "unresolvedEnvRefs": []
+    },
+    "allContainersHealthy": true,
+    "allRestartCountsZero": true,
+    "publicEndpointStatuses": {
+      "health": 200,
+      "ready": 200,
+      "app/server-version": 200
+    }
+  },
+  "tests": {
+    "nodeDeploymentTests": 3,
+    "bundleTests": 2,
+    "shellcheck": "passed",
+    "bashSyntax": "passed",
+    "versionContract": "passed",
+    "companionCapabilityContract": "passed"
+  },
+  "credentialsIncluded": false
+}

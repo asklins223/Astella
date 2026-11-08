@@ -10,9 +10,11 @@
 
 ## 私有配置
 
-GitHub 的 `production` Environment 只允许 `v*` tag，存放 `DEPLOY_HOST`、`DEPLOY_PORT`、`DEPLOY_USER`、`DEPLOY_SSH_KEY`、`DEPLOY_KNOWN_HOSTS`。SSH 必须验证预先登记的服务器主机密钥；授权密钥限制为 `deploy <40位提交SHA>` 强制命令，禁止交互式 shell、端口转发和 SCP。部署接收器及部署程序安装在 `/usr/local/lib/astella`，由服务器管理员更新。
+GitHub 的 `production` Environment 允许服务端的 `s-v*` tag，存放 `DEPLOY_HOST`、`DEPLOY_PORT`、`DEPLOY_USER`、`DEPLOY_SSH_KEY`、`DEPLOY_KNOWN_HOSTS`。SSH 必须验证预先登记的服务器主机密钥；授权密钥限制为 `deploy <40位提交SHA>` 强制命令，禁止交互式 shell、端口转发和 SCP。部署接收器及部署程序安装在 `/usr/local/lib/astella`，由服务器管理员更新。
 
 应用 `.env` 只保存在服务器 `/etc/astella/production.env`，权限 `600`；真实 API Key 不进入 GitHub、镜像、artifact 或安装包。GitHub Token 仅在部署 job 内用于拉取 GHCR 镜像，临时 Docker 登录目录在退出时删除。公开仓库中的脚本只有变量名和通用逻辑；不要开启 `set -x` 或输出 Compose 展开后的配置。
+
+CI 将公开的构建身份写入每个发布目录的 `deployment-images.env`：`APP_VERSION` 读取该提交的 `release/version.json`，`GIT_COMMIT` 读取 `GITHUB_SHA`。正式部署配置要求这两项存在，并与确切的镜像 digest 一起注入 API 和 Worker。版本身份随发布目录保存，不设置宿主机固定版本值，因此回滚会恢复对应版本身份。管理面板总览读取实际 API 进程的身份，Release Center 记录已发布的服务端版本。
 
 仓库 Secrets 的 `DESKTOP_API_ORIGIN` 与 `ASTELLA_DOMAIN_SCHEMA_REVISION` 提供正式安装包的公开连接配置。安装包只包含 HTTPS 地址、协议修订和配置版本。**客户端必须知道服务器地址，因此地址最终能从安装包和网络连接中读取；API Key、数据库密码、SSH 私钥才是需要保密的凭据。** HTTPS IP 地址受支持，不需要关闭证书验证。
 

@@ -3,6 +3,8 @@ services:
   api:
     image: ${API_IMAGE:?CI must provide API_IMAGE}
     environment:
+      APP_VERSION: ${APP_VERSION:?CI must provide the server version}
+      GIT_COMMIT: ${GIT_COMMIT:?CI must provide the source commit}
       TRUST_PROXY: '1'
       # The production panel manages only its own Compose project. Keep the
       # socket private and let the non-root API user access its owning group.
@@ -25,6 +27,8 @@ services:
   worker:
     image: ${WORKER_IMAGE:?CI must provide WORKER_IMAGE}
     environment:
+      APP_VERSION: ${APP_VERSION:?CI must provide the server version}
+      GIT_COMMIT: ${GIT_COMMIT:?CI must provide the source commit}
       STORAGE_MODE: remote
       STORAGE_ENDPOINT: ${STORAGE_ENDPOINT:?Set production object storage endpoint}
       STORAGE_PUBLIC_ENDPOINT: ${STORAGE_PUBLIC_ENDPOINT:-https://cn-nb1.rains3.com}
