@@ -217,7 +217,7 @@ Screenshots, tests and source reading each give one kind of evidence, but only a
 
 ## Current state and limits
 
-Full-screen notes, annotations and companion edits have implementation, tests and selected window evidence. Check notebook `__tests__/` experience records and [note-edit validation](../../testing/companion-note-editing-2026-10-08.md) for scope. New-account tours, microphones and cross-device listening still need separate acceptance.
+Full-screen notes, annotations and companion edits have implementation, tests and selected window evidence. Check notebook `__tests__/` experience records for scope. New-account tours, microphones and cross-device listening still need separate acceptance.
 
 Context governance has database, real-model comparison and selected window samples; “never verified” is outdated. Review compaction continuity and long-term effects in [plan 44](../../plans/learning-companion/44-unified-context-window-and-compaction-2026-10-05.md). Screenshots and code tests do not replace continuous interaction checks.
 

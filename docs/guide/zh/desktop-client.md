@@ -221,7 +221,7 @@ Windows 更新使用 `WindowsInstallerUpdater` 完整下载与 SHA-512 校验，
 
 ## 现状与边界
 
-笔记全屏、批注与伴星编辑均已有实现及相关测试／窗口记录；各自覆盖范围见 notebook 的 `__tests__/` 体验记录和 [笔记编辑验证](../../testing/companion-note-editing-2026-10-08.md)。带路的新账号全程、真实麦克风和跨设备听感仍需单独验收。
+笔记全屏、批注与伴星编辑均已有实现及相关测试／窗口记录；各自覆盖范围见 notebook 的 `__tests__/` 体验记录。带路的新账号全程、真实麦克风和跨设备听感仍需单独验收。
 
 上下文治理已有实库、真实模型对照与部分窗口样本，不再是「从未验证」。压缩接续与长期效果按 [方案 44](../../plans/learning-companion/44-unified-context-window-and-compaction-2026-10-05.md) 核对。截图或代码测试不代替连续操作体验。
 

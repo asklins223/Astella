@@ -68,7 +68,7 @@
 
 相关单测 201 项、实库 25 项、四包类型检查与差异检查通过。最后的普通输入仍有顺手提醒、自述时长失真和自我说明，**拟人化未通过整体验收**；不把链路绿灯当作质量通过。原始失败与修复后记录、出网协议及窗口检查见 [自然对话报告](/Users/asklins/Documents/asklins_workspace/study/outputs/audits/2026-10-07-live/natural-dialogue-report.md)。
 
-2026-10-08 后续：未证明收益的发布前审校已经从生产循环移除，旧开关不能重新启用；只保留 `live-tests/diagnostics/` 下的离线诊断。完整来源、受限角色数据库回归和 HTTP/SSE 记录见 [后续验证记录](../../live-tests/companion-integration-and-final-validation-2026-10-08.md)。前阶段开关说明不能作为当前生产行为依据。
+2026-10-08 后续：未证明收益的发布前审校已经从生产循环移除，旧开关不能重新启用；只保留 `live-tests/diagnostics/` 下的离线诊断。完整来源、受限角色数据库回归和 HTTP/SSE 记录见 后续验证记录 (`workers/ai-worker/src/live-tests/companion-integration-and-final-validation-2026-10-08.md` in the local archive)。前阶段开关说明不能作为当前生产行为依据。
 
 ## 2026-10-08：原文从窗口到模型的补齐
 
@@ -86,7 +86,7 @@
 
 真实长故事在流式中止后只有事件、没有历史消息。API 取消/接替事务现按 appendFrom 原样还原已提交正文并保存一次，空正文不造消息；移除 worker 在迟到完整生成返回后写 cancelled 消息的旧分支，避免补写未交付正文。受限数据库两项修复前失败、修复后通过；桌面相关 90、Worker 1481 和数据库 261 项回归通过。
 
-纯故事曾被解释为 task/act，人物对白触发无来源引文纠正，再切备用小窗口档而超限。分类 v7 区分直接文本创作 task/none 和保存/生成项目对象；无读取来源的直接回复允许没有来源声明的引号，明确用户/笔记/教材原话以及资料读取仍核对。实际分类六项中三项创作均 task/none，保存未指明正文时仍 uncertain。不是关闭所有来源核查，也不是拟人化已通过。完整证据见 [本轮验证记录](../../live-tests/companion-integration-and-final-validation-2026-10-08.md)。
+纯故事曾被解释为 task/act，人物对白触发无来源引文纠正，再切备用小窗口档而超限。分类 v7 区分直接文本创作 task/none 和保存/生成项目对象；无读取来源的直接回复允许没有来源声明的引号，明确用户/笔记/教材原话以及资料读取仍核对。实际分类六项中三项创作均 task/none，保存未指明正文时仍 uncertain。不是关闭所有来源核查，也不是拟人化已通过。完整证据见 本轮验证记录 (`workers/ai-worker/src/live-tests/companion-integration-and-final-validation-2026-10-08.md` in the local archive)。
 
 
 最后引文回归补齐相邻人物对白含“你”、未声明来源的引用排版、无需工具但已附选区的核对，以及一次纠正后仍不匹配的完整 handler 失败终态。最后 Worker 单元 1484、三组数据库 100 + 152 + 11 = 263 项通过；桌面 90 项和 shared 合同 28 项沿前述回执，worker 类型检查再次通过。真实失败输出的新 guard 回放与原生中止正文关闭/重开读回均保存证据；新引文终态是受限实库脚本模型测试，不能冒充另一次真实供应方验收。失败片段的 12 字兜底阈值仍保留，仅用于 failed 回合；cancel/supersede 已保存全部已提交非空正文，不经过该阈值。详见本轮验证记录。

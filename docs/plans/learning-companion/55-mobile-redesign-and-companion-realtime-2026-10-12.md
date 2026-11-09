@@ -4,14 +4,14 @@
 
 **2026-10-24 approved audit decision:** Workspace owners may explicitly restore an exact saved note version on mobile. This operation switches the current-version pointer; it preserves all saved versions and does not create another version. The endpoint retains owner authorization and optional `baseVersionId` conflict protection. Members remain read-only for restoration, and ordinary mobile freeform body edits / collaboration updates remain forbidden. This supersedes the earlier blanket restriction only for saved-version restore.
 
-**2026-10-23 多图修订：**用户要求图片保持小缩略图、独立于文字气泡，并在覆盖全屏的浮层中浏览本次发送的整组图片。回合合同同步改为「可选首块文字＋最多 9 张图片＋最多一份文件」，取代 2026-10-15 的单附件上限；语音转写仍为唯一文字块。iOS 的系统相册使用有序多选，草稿可逐张预览／移除，发送时逐张上传，失败重试复用已有回执，完整上传后只提交一次用户消息。worker 保留全部九张的资产引用，不再截掉第三张之后的图片；图片归属与文件读取权限仍逐项校验。Android 此轮不重做入口。具体实测见 [记录与卡片验收](../../testing/ios-companion-records-2026-10-23.md)。
+**2026-10-23 多图修订：**用户要求图片保持小缩略图、独立于文字气泡，并在覆盖全屏的浮层中浏览本次发送的整组图片。回合合同同步改为「可选首块文字＋最多 9 张图片＋最多一份文件」，取代 2026-10-15 的单附件上限；语音转写仍为唯一文字块。iOS 的系统相册使用有序多选，草稿可逐张预览／移除，发送时逐张上传，失败重试复用已有回执，完整上传后只提交一次用户消息。worker 保留全部九张的资产引用，不再截掉第三张之后的图片；图片归属与文件读取权限仍逐项校验。Android 此轮不重做入口。具体实测见 记录与卡片验收 (`docs/testing/ios-companion-records-2026-10-23.md` in the local archive)。
 
 
-**2026-10-22 iOS 新决定与实施：**用户选择大伴星＋当前句气泡的「贴近说话」，长讲解自然分句完整朗读并可打断。iOS 已接 `voice.segment.ready` V2、真实 `/voice/tts/stream` 增量播放、大小形态的语义表情与电平口型、同一 Agent 的选段写入与回应。原生日志确认音频在响应体收齐前开始播放；完整范围和剩余真机验收见 [实施记录](../../testing/ios-companion-delivery-2026-10-22.md)。这条决定覆盖下文 iOS「不做流式 TTS」与「离开对话页停止声音」的旧范围；Android 与 MiMo 整段 ASR 保持原样。
+**2026-10-22 iOS 新决定与实施：**用户选择大伴星＋当前句气泡的「贴近说话」，长讲解自然分句完整朗读并可打断。iOS 已接 `voice.segment.ready` V2、真实 `/voice/tts/stream` 增量播放、大小形态的语义表情与电平口型、同一 Agent 的选段写入与回应。原生日志确认音频在响应体收齐前开始播放；完整范围和剩余真机验收见 实施记录 (`docs/testing/ios-companion-delivery-2026-10-22.md` in the local archive)。这条决定覆盖下文 iOS「不做流式 TTS」与「离开对话页停止声音」的旧范围；Android 与 MiMo 整段 ASR 保持原样。
 
-**2026-10-18 原生接入状态更正：**当前双端客户端已将服务端 MiMo 整段 ASR、`POST /voice/tts` 分段朗读、图片／文件附件、Live2D manifest 下载与本地缓存，以及伴星 WebSocket 订阅接入真实页面；朗读支持暂停／继续／停止，进入后台会停止录音与播放。手机端仍不做流式 ASR，也不把服务端 TTS 分段调用描述成流式播放。具体客户端链路与剩余运行验收见 [手机端 README](../../../apps/mobile-client/README.md) 和[多轮审查记录](../../../apps/mobile-client/MOBILE_AUDIT.md)。
+**2026-10-18 原生接入状态更正：**当前双端客户端已将服务端 MiMo 整段 ASR、`POST /voice/tts` 分段朗读、图片／文件附件、Live2D manifest 下载与本地缓存，以及伴星 WebSocket 订阅接入真实页面；朗读支持暂停／继续／停止，进入后台会停止录音与播放。手机端仍不做流式 ASR，也不把服务端 TTS 分段调用描述成流式播放。具体客户端链路与剩余运行验收见 [astella-mobile](https://github.com/asklins223/astella-mobile)。
 
-**2026-10-14 原生双端决定：**用户明确取代手机 React 客户端，使用 iOS SwiftUI 与 Android Kotlin/Jetpack Compose 两套原生工程，iOS 视觉与动效作为 Android 的共同标尺。用户之后明确采用 Apple 系统中性色与单一系统蓝，移除多色装饰渐变，并适配深浅色外观。共享 `/companion/inbox/ensure`、`/companion/realtime`、`/voice/transcribe` 和消息合同；图片上传仍由用户发送动作触发。两端已有登录、WebSocket 会话／回执、MiMo 整段转写和手记读取代码。React 描述是 2026-10-12 历史实现状态；桌面仍使用 SSE 与本机 ASR，移动端也没有流式 ASR/TTS。当前工程和未迁移能力见 [`apps/mobile-client/README.md`](../../../apps/mobile-client/README.md) 与 [界面规范](../../../apps/mobile-client/DESIGN_SPEC.md)。
+**2026-10-14 原生双端决定：**用户明确取代手机 React 客户端，使用 iOS SwiftUI 与 Android Kotlin/Jetpack Compose 两套原生工程，iOS 视觉与动效作为 Android 的共同标尺。用户之后明确采用 Apple 系统中性色与单一系统蓝，移除多色装饰渐变，并适配深浅色外观。共享 `/companion/inbox/ensure`、`/companion/realtime`、`/voice/transcribe` 和消息合同；图片上传仍由用户发送动作触发。两端已有登录、WebSocket 会话／回执、MiMo 整段转写和手记读取代码。React 描述是 2026-10-12 历史实现状态；桌面仍使用 SSE 与本机 ASR，移动端也没有流式 ASR/TTS。当前工程和未迁移能力见 [astella-mobile](https://github.com/asklins223/astella-mobile)。
 
 **2026-10-15 修订：**①回合消息合同扩展：turn 输入放宽为「文字＋至多一个附件（图片或文件）」或「仅附件」；新增 file 块，携带客户端本机抽取的 text 摘要与 assetId／name／mime／size；无文字时登记显式「仅附件意图」，不伪造文案。仍按方案 55 既有规则：新增消息类型与合同变更集中在 `packages/shared` 合同并由客户端与 API 共用校验，zod 测试同步更新。②移动端接入 TTS：复用已有 `POST /voice/tts`（返回 audio/mpeg）与 `POST /voice/tts/stream`，承载粒子波动与口型，受 AI 同意＋部署开关双门控（`COMPANION_VOICE_DIALOGUE_V1_ENABLED`／`COMPANION_STREAMING_VOICE_V1_ENABLED` 生产默认关闭，移动端完整语音体验需开启）。③Live2D 模型分发：新增鉴权接口下发版本清单与对象存储临时签名下载 URL（复用 `signObjectDownload` 基建），模型运行时下载、不随安装包分发，加载失败降级静态图。④「流式 ASR 不做」不变，本修订只补 TTS 播放链路，不改变 ASR 仍为 MiMo 整段上传的事实。
 
@@ -19,9 +19,9 @@
 
 首轮分析记录：真实手机交流页的构图调整、独立语音状态示意、接口与迁移建议。以下是后续实现状态（2026-10-12）：手机已有鉴权伴星 WebSocket，负责订阅持久事件和提交文字回合；麦克风录音通过现有 `/voice/transcribe` 上传服务端，由小米 MiMo `mimo-v2.5-asr` 做整段识别，结果回填可编辑草稿。服务端语音开关默认关闭，且需要用户语音识别同意与 MiMo 配置。当前没有流式 ASR、WS 二进制音频、移动端 TTS/播放或桌面 WebSocket 迁移；ASR 容器建议已由用户选择小米 MiMo 的决定取代。
 
-后续手机实屏审计中，本机 `/health` 返回 HTTP 200；登录态页面读取了共享会话历史，WebSocket 客户端未显示重连提示，符合已收到 `subscribed` 的状态。没有发送新回合，因此 `turn.submit` 与事件回流尚未在本轮实屏验证；也没有请求麦克风或调用 MiMo 上游。其余代码级、类型、构建和离线测试证据见[窗口记录](../../testing/mobile-realtime-redesign-2026-10-12.md)。
+后续手机实屏审计中，本机 `/health` 返回 HTTP 200；登录态页面读取了共享会话历史，WebSocket 客户端未显示重连提示，符合已收到 `subscribed` 的状态。没有发送新回合，因此 `turn.submit` 与事件回流尚未在本轮实屏验证；也没有请求麦克风或调用 MiMo 上游。其余代码级、类型、构建和离线测试证据见窗口记录 (`docs/testing/mobile-realtime-redesign-2026-10-12.md` in the local archive)。
 
-**手机图片输入后续补充（2026-10-12）：** 真实 React 客户端现已接通照片／相册选择、鉴权上传、同回合文字提问、历史消息图片和私有图片鉴权读取；其状态与验证证据记录在[手机图片输入记录](../../testing/mobile-image-intake-2026-10-12.md)。这项 HTTP 图片能力不改变本文的 WS／ASR／TTS 状态：语音示意依旧不是生产语音链路。
+**手机图片输入后续补充（2026-10-12）：** 真实 React 客户端现已接通照片／相册选择、鉴权上传、同回合文字提问、历史消息图片和私有图片鉴权读取；其状态与验证证据记录在手机图片输入记录 (`docs/testing/mobile-image-intake-2026-10-12.md` in the local archive)。这项 HTTP 图片能力不改变本文的 WS／ASR／TTS 状态：语音示意依旧不是生产语音链路。
 
 ## 1. 改造前基线与当前状态
 
@@ -206,7 +206,7 @@ ASR 容器只负责识别，TTS 只负责声音，网关只负责连接、路由
 
 ## 8. 验证与指标
 
-**首轮 UI 验证范围及限制见[窗口记录](../../testing/mobile-realtime-redesign-2026-10-12.md)。** 手机 WS / MiMo 接线后的代码验证和未完成的线上验收也记录在该文件。尚需完成：
+**首轮 UI 验证范围及限制见窗口记录 (`docs/testing/mobile-realtime-redesign-2026-10-12.md` in the local archive)。** 手机 WS / MiMo 接线后的代码验证和未完成的线上验收也记录在该文件。尚需完成：
 
 - 手机中文短句、长停顿、没有声音、撤销未提交转写、断线未定稿、权限拒绝。
 - 发送成功但 ack 丢失、相同 clientMessageId 重试、事件游标过期、账号／空间切换后的迟到帧。

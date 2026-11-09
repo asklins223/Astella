@@ -11,7 +11,7 @@ const ports = { transaction: withWorkspaceTransaction, id: randomUUID };
 export const agentMethodStore = createAgentMethodStore(ports);
 export const agentStore = createAgentStore({ ...ports,
   assertExecutionAllowed: requireAiExecutionConsent,
-  ensureIdentity: async (tx, scope) => { await tx.execute(sql`INSERT INTO user_companion_account_state(user_id) VALUES(${scope.userId}) ON CONFLICT(user_id) DO NOTHING`); },
+  ensureIdentity: async (tx, scope) => { await tx.execute(sql`INSERT INTO user_companion_account_state(user_id, diary_enabled_since) VALUES(${scope.userId}, now()) ON CONFLICT(user_id) DO NOTHING`); },
   acceptDirectCapability: async (tx, scope, run, call) => {
     const ref = agentInputRefV1Schema.parse({ kind: "note_version", ...call.arguments });
     return startAgentNoteOperation(tx, scope, run, call, ref);

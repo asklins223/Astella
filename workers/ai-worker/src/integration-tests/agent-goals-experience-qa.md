@@ -218,7 +218,7 @@ API 与 worker 的制卡领域包开发/生产构建均通过。修复 worker �
 
 ## 阶段 1 制卡接入（2026-10-04）
 
-P/Q/R 三个实际 DeepSeek Harness 会话（space-bunny-free · Max）并行实现，主会话负责前端和严格审查。Q 未形成最终报告时主会话接手关键绑定/围栏/真实事务端口；R 按审查修正夹具并运行真实专用库，不以类型检查代替整链。具体范围、问题与最终证据见 [制卡主会话验收](../../../outputs/agent-42-implementation/phase1-card-root-acceptance.md)。
+P/Q/R 三个实际 DeepSeek Harness 会话（space-bunny-free · Max）并行实现，主会话负责前端和严格审查。Q 未形成最终报告时主会话接手关键绑定/围栏/真实事务端口；R 按审查修正夹具并运行真实专用库，不以类型检查代替整链。具体范围、问题与最终证据见 制卡主会话验收 (`outputs/agent-42-implementation/phase1-card-root-acceptance.md`, historical reference)。
 
 已合入：公共 operation 的 execution/result、真实 card run + 初始 outbox、能力 manifest 与领域创建适配、note/card 共同上下文与逐次 provider 预算、受控初始绑定和父围栏、取消/修订/持久恢复/结果核对；零推荐是正常结果。候选需要用户审核保存，不自动激活或排复习。轻气泡提供指定批次入口，详细结果 Markdown 在手记显示。
 

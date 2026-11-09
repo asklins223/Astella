@@ -50,7 +50,7 @@ async function stagePendingDelivery() {
   /**
    * 用 `result.available`（宿主报告刚产生了一个学习结果）而不是 `app.started`：
    * 启动问候现在会在下一次真实启动时被**作废**（见
-   * docs/testing/companion-launch-greeting-supersede-2026-10-16.md），拿它当"上一次没被看见的
+   * companion-launch-greeting-supersede-2026-10-16.md, local archive），拿它当"上一次没被看见的
    * 主动消息"测不出这条补声链。`result.available` 是触发式话题（不受档位节奏闸门），
    * 不带页面身份要求以外的门槛，正好是"窗口之外产生的主动消息"。
    */

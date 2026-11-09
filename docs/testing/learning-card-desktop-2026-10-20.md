@@ -1,6 +1,6 @@
 # Desktop learning-card implementation — 2026-10-20
 
-> **Follow-up, 2026-10-21:** The [Plans 57/58 audit](plan-57-58-audit-2026-10-21.md) adds real model generation/grading, all-question-type fixtures, summary-only recovery, version selection, exact-source return and zoom-layout fixes. It removes legacy contracts/readers and records remaining acceptance limits. The verification boundaries below describe the original revision.
+> **Follow-up, 2026-10-21:** The Plans 57/58 audit (`docs/testing/plan-57-58-audit-2026-10-21.md` in the local archive) adds real model generation/grading, all-question-type fixtures, summary-only recovery, version selection, exact-source return and zoom-layout fixes. It removes legacy contracts/readers and records remaining acceptance limits. The verification boundaries below describe the original revision.
 
 ## Scope and decisions
 

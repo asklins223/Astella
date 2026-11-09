@@ -195,11 +195,11 @@ chat/completions 没有统一的思考开关字段，Responses API 有档位，�
 
 ## 联网搜索与来源
 
-`agent_web_search` 同时用于对话和持续目标。`agent/web-search.ts` 复用 `bigmodel` 平台凭据调用智谱 Web Search API；账号的 `webSearchEnabled` 默认为 false，工具下发与执行都检查开关、服务可用性及 AI 治理。
+`agent_web_search` 同时用于对话和持续目标。账号的 `webSearchEnabled` 默认为 false，工具下发与执行都检查开关、服务可用性及 AI 治理。
 
 每轮最多 3 次搜索，返回有界摘要与 HTTPS 来源；网址生成稳定来源身份与引用标记。工具回执持久化，重放能恢复来源而无需重新搜索。轻聊、手记与历史复用来源块，标题／网址／日期放在来源列表和弹层，不进入朗读正文。
 
-额度不足时当前 Worker 按凭据冷却 30 分钟，本轮可以继续作答但不得声称已联网核实。冷却是进程内状态，重启或另一副本不共享，不能当成全局配额控制。测试与边界见 [联网搜索](../../testing/agent-web-search-2026-10-08.md)。
+额度不足时当前 Worker 按凭据冷却 30 分钟，本轮可以继续作答但不得声称已联网核实。冷却是进程内状态，重启或另一副本不共享，不能当成全局配额控制。测试与边界见 [联网搜索](../../testing/agent-source-review-performance-2026-11-04.md)。
 
 ## 治理与同意
 
@@ -307,7 +307,7 @@ make verify                                  # 已包含 typecheck + test + pr-g
 
 handler 优先级：`WORKER_TIMEOUT_<TYPE>_MS` → `WORKER_MODEL_TIMEOUT_MS` → 类型默认 → 全局默认。供应商优先级：`WORKER_PROVIDER_TIMEOUT_<TYPE>_MS` → `WORKER_PROVIDER_TIMEOUT_MS` → 15 分钟默认，再受 handler 可用时间约束。新增覆盖变量需在 Compose 中显式透传；仅写 `.env` 不代表进程一定读得到。
 
-输出预算在 `lib/providers/model-output-budget.ts` 解析，正常生成使用模型档案声明的输出上限；不再把少量正文 token 当作包括推理在内的总额度。上下文预算仍为输出预留空间，任务合同仍限制正文与结构。取消、租约丢失、有限调用次数和重试约束继续生效。实现与验证见 [预算调整](../../testing/ai-execution-budgets-2026-10-08.md)。
+输出预算在 `lib/providers/model-output-budget.ts` 解析，正常生成使用模型档案声明的输出上限；不再把少量正文 token 当作包括推理在内的总额度。上下文预算仍为输出预留空间，任务合同仍限制正文与结构。取消、租约丢失、有限调用次数和重试约束继续生效。
 
 ## 相关分册
 

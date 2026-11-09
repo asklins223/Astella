@@ -14,15 +14,15 @@
 
 | 环节 | 实施内容 |
 | --- | --- |
-| [共享合同](../../packages/shared/src/contracts/companion-initiative-contracts.ts) | 账号自由偏好、CAS 版本、真实情境、领域事实、事件订阅、自由意图和下次重评；不是封闭的规则种类 |
+| [共享合同](../../packages/shared/src/contracts/companion/companion-initiative-contracts.ts) | 账号自由偏好、CAS 版本、真实情境、领域事实、事件订阅、自由意图和下次重评；不是封闭的规则种类 |
 | [宿主存取](../../packages/agent-host/src/participation.ts) | 本人作用域、原话来源、版本历史、观察幂等、学习区间并集、有限关注和撤回 |
 | [迁移 0423](../../apps/api/src/db/migrations/0423_companion_initiative.sql) | 偏好／观察／关注／发言关系表、RLS、到期入队、内部运行输入身份与真实消息关系 |
 | [API](../../apps/api/src/modules/companion-shell/participation-routes.ts) | 鉴权读取／修改约定与记录观察，偏好修改唤起理解；新用户提交接替内部考虑 |
-| [主动准备](../../workers/ai-worker/src/handlers/companion-initiative.ts) | 有效租约、来源版本、同意、勿扰、正式作答、输入／播放与累计预算核对，然后使用现役 `companion_agent` |
-| [工具与发布](../../workers/ai-worker/src/handlers/companion-participation-tools.ts) | 同一 Agent 读取／保存约定、安排关注和发布真实 assistant 消息；内部执行不能替用户改偏好或写业务数据 |
-| [桌面观察](../../apps/desktop-client/src/renderer/src/app/use-companion-awareness.ts) | 主进程提供真实启动与锁屏／窗口状态；渲染层提供已就绪页面、学习、输入和声音状态，相关资料／学习结果提供有版本的事实 |
-| [桌面消息](../../apps/desktop-client/src/renderer/src/app/companion-chat-session.tsx) | 首条主动消息通过现役收件箱引用接入 SSE，后续同一运行接续；真实消息去重、历史和整段交流回听 |
-| [手机消息与观察](../../apps/mobile-client/src/state/companion.ts) | 可见文档及已加载笔记观察、现役鉴权 WS、多发言与静默终态；输入、拍照或语音起步接替内部运行 |
+| [主动准备](../../workers/ai-worker/src/handlers/proactive/companion-initiative.ts) | 有效租约、来源版本、同意、勿扰、正式作答、输入／播放与累计预算核对，然后使用现役 `companion_agent` |
+| [工具与发布](../../workers/ai-worker/src/handlers/tools/companion-participation-tools.ts) | 同一 Agent 读取／保存约定、安排关注和发布真实 assistant 消息；内部执行不能替用户改偏好或写业务数据 |
+| [桌面观察](../../apps/desktop-client/src/renderer/src/app/companion-pages/use-companion-awareness.ts) | 主进程提供真实启动与锁屏／窗口状态；渲染层提供已就绪页面、学习、输入和声音状态，相关资料／学习结果提供有版本的事实 |
+| [桌面消息](../../apps/desktop-client/src/renderer/src/app/companion-session/companion-chat-session.tsx) | 首条主动消息通过现役收件箱引用接入 SSE，后续同一运行接续；真实消息去重、历史和整段交流回听 |
+| Historical React mobile observations | 可见文档及已加载笔记观察、现役鉴权 WS、多发言与静默终态；输入、拍照或语音起步接替内部运行 |
 
 到点只重新给 Agent 一次判断机会。
 

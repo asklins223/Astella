@@ -1,7 +1,7 @@
 # App Release Center：iOS / Android / 桌面统一发布、版本与热更新（设计方案）
 
 日期：2026-10-24，Asia/Shanghai。
-状态：**已按用户 2026-10-24 决定进入实施**。最终版在本文 §16；实施记录见 `docs/testing/ios-release-center-2026-10-24.md`（待生成）。
+For current release and deployment procedures, see the [operations guide](../guide/en/operations.md) and [deployment guide](../guide/en/deployment.md).
 
 ## 1. 用户诉求
 

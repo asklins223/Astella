@@ -1,6 +1,6 @@
 # 方案 58 实施与验收记录
 
-> **Latest audit, 2026-10-21: acceptance remains open.** See the [Plans 57/58 audit](plan-57-58-audit-2026-10-21.md) for current fixes, full package checks, real HTTP successes and retained failures, and native UI limits. Later fixes supersede the historical card-candidate fallback and type-check limitations recorded below; a completed implementation item does not establish the performance or semantic-quality targets.
+> **Latest audit, 2026-10-21: acceptance remains open.** See the Plans 57/58 audit (`docs/testing/plan-57-58-audit-2026-10-21.md` in the local archive) for current fixes, full package checks, real HTTP successes and retained failures, and native UI limits. Later fixes supersede the historical card-candidate fallback and type-check limitations recorded below; a completed implementation item does not establish the performance or semantic-quality targets.
 
 日期：2026-10-19；最近更新：2026-10-20。用户授权：结合已产出的 OpenDesign Cloud 设计，将方案 58 全部实施；持续目标已建立。本文维护实际进度，完成须有对应代码与验证证据。
 
@@ -102,7 +102,7 @@ HTTP证据在 `http-acceptance-1792453226126.json`。这批使用随机合成个
 
 ## 当前边界
 
-- 已保存[设计原型](../prototypes/companion-agent-58/index.html)和[设计说明](../prototypes/companion-agent-58/design-guide.md)。原型演示数据不代表真实接口和模型效果。
+- 已保存设计原型 (`docs/prototypes/companion-agent-58/index.html` in the local archive)和设计说明 (`docs/prototypes/companion-agent-58/design-guide.md` in the local archive)。原型演示数据不代表真实接口和模型效果。
 - 保留工作区中方案 57 等其他任务的所有改动；不恢复旧卡库、复习、今日学习和旧学习轮次。
 - 实施前差异备份：`outputs/companion-agent-58/before-implementation.patch`。四包类型检查基线分别保存到该目录，后续区分既有错误与本次新增错误。
 - 当前实施中，尚未宣称性能目标、长期稳定性或全部跨平台体验达标。

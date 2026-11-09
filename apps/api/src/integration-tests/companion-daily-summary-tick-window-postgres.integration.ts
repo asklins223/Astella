@@ -9,6 +9,9 @@
  */
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync, readdirSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
@@ -41,6 +44,21 @@ const OFFSETS = Array.from({ length: 26 }, (_unused, i) => i - 12);
 const widenedZone = OFFSETS.map(zoneAtOffset).find((z) => { const h = localHour(z); return h >= 2 && h <= 6; });
 const outsideZone = OFFSETS.map(zoneAtOffset).find((z) => { const h = localHour(z); return h < 1 || h > 6; });
 assert.ok(widenedZone && outsideZone, "时区表必须同时覆盖放宽段与窗口外");
+
+/**
+ * 调度函数会被后续迁移原地替换，结构断言必须读**最新**那份定义，而不是当初
+ * 引入它形状的 0333——否则 0449 删表之后这条守卫仍然判绿。
+ */
+function effectiveDiaryMigration(): string {
+  const dir = join(fileURLToPath(import.meta.url), "..", "..", "db", "migrations");
+  const file = readdirSync(dir)
+    .filter((name) => /^\d+_[a-z0-9_]+\.sql$/.test(name))
+    .sort()
+    .filter((name) => readFileSync(join(dir, name), "utf8").includes("FUNCTION public.astella_enqueue_companion_daily_summaries()"))
+    .pop();
+  assert.ok(file, "没有任何迁移定义日记调度函数");
+  return readFileSync(join(dir, file), "utf8");
+}
 
 /** 和调度器同一句算法，不在 JS 里重算时区。 */
 async function yesterdayLocal(zone: string): Promise<string> {
@@ -188,13 +206,7 @@ test("不自喂：活动判据必须排除日记 job 自己", async () => {
   //
   // 所以这里改成**结构**断言：判据必须显式排除 `companion_daily_summary`。
   // 行为侧仍然另跑三次 tick 做回归兜底，但不再指望它守住这一条。
-  const { readFileSync } = await import("node:fs");
-  const { fileURLToPath } = await import("node:url");
-  const { join } = await import("node:path");
-  const migration = readFileSync(
-    join(fileURLToPath(import.meta.url), "..", "..", "db", "migrations", "0333_companion_diary_pause_cutoff.sql"),
-    "utf8",
-  );
+  const migration = effectiveDiaryMigration();
   assert.ok(
     /type\s*<>\s*'companion_daily_summary'/.test(migration),
     "当前调度函数没有排除 companion_daily_summary，自身 job 不能成为用户活动素材",
@@ -245,17 +257,17 @@ test("窗口内（本地 2–6 点）：首次 tick 入队，之后的 tick 靠�
  * 正确写法 `d::date::timestamp AT TIME ZONE tz` 才是"该地零点的那一刻"。
  */
 test("本地日窗口：边界必须是 timestamptz，且上海时区的 09-20 从 UTC 16:00 起算", async () => {
-  const { readFileSync } = await import("node:fs");
-  const { fileURLToPath } = await import("node:url");
-  const { join } = await import("node:path");
-  const migration = readFileSync(
-    join(fileURLToPath(import.meta.url), "..", "..", "db", "migrations", "0333_companion_diary_pause_cutoff.sql"),
-    "utf8",
-  );
+  const migration = effectiveDiaryMigration();
   assert.match(migration, /local_date::date::timestamp AT TIME ZONE tz/,
     "真实 scheduler 必须用本地日期墙上零点构造 timestamptz 边界");
   assert.doesNotMatch(migration, /local_date::date AT TIME ZONE tz/,
     "date 直接 AT TIME ZONE 会按会话时区先转换，导致窗口错位");
+  // 0449 删掉了 learning_runs / learning_cards_v2：函数体里再出现它们就是整条 tick 抛错。
+  const executable = migration.replace(/--[^\n]*/g, "");
+  for (const table of ["learning_runs", "learning_cards_v2", "note_learning_rounds"]) {
+    assert.doesNotMatch(executable, new RegExp(`\\b${table}\\b`),
+      `调度函数仍在查询已删除的 ${table}`);
+  }
 
   const rows = await sql`
     SELECT pg_typeof(('2026-09-20'::date::timestamp AT TIME ZONE 'Asia/Shanghai'))::text right_type,

@@ -106,6 +106,6 @@ ASTELLA_CAPTURE_CDP=http://127.0.0.1:9222 node scripts/capture-pages-v3.mjs
 
 Some capture scripts launch another instance without CDP; distinguish it from the user's window. Packaged builds use `package:smoke`/`package:evidence`. Fixture manifests validate format rather than actual operation.
 
-Keep implementation/debug records near tests, `docs/testing/` or live-tests. Establish existing failures before broad regression, fix newly introduced failures and report executed scope and unverified items. Accumulated test counts do not substitute for conclusions.
+Establish existing failures before broad regression, fix newly introduced failures and report executed scope and unverified items. Accumulated test counts do not substitute for conclusions.
 
 [Guide index](../README.md) · [Development](development.md) · [Operations](operations.md) · [Server deployment](deployment.md)

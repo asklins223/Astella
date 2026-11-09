@@ -254,7 +254,13 @@ const REGRANT_EXCEPTIONS: Record<string, string> = {
   astella_user_in_workspace: "只有 api 调用，同上",
   // 全仓（含迁移、SQL、脚本）没有任何调用点，已不是功能面。
   astella_bump_workspace_epoch: "0261 之后无人调用",
-  astella_release_run_processing: "0121 之后无人调用",
+  // 0469 退役：学习运行 / 笔记轮次链路已删。迁移按所有权动态 DROP，
+  // 源码扫描看不到 `DROP FUNCTION` 字面量，所以这里显式登记，
+  // 免得它们被当成"迁移授了、roles.sql 没重授"而假红。
+  astella_release_run_processing: "0469 退役（学习运行链路已删）",
+  astella_claim_run_processing: "0469 退役（学习运行链路已删）",
+  astella_mark_run_processing_processed: "0469 退役（学习运行链路已删）",
+  astella_note_rounds_idle_for_pause: "0469 退役（笔记轮次链路已删）",
 };
 
 test("迁移授给 api/worker 的函数，role-grants 重跑后必须仍在（roles.sql 需重授）", () => {

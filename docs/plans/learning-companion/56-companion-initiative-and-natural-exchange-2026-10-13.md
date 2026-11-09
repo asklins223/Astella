@@ -2,7 +2,7 @@
 
 日期：2026-10-13，Asia/Shanghai。
 
-**2026-10-15 审查补充：**桌面为每段真实前台停顿提供 `quietEpisodeId`，心跳仍可持续上报以跨过账号门槛，同一片段成功考虑后不因静默每 90 秒重启模型。真实操作更新片段身份，撤销排队中及已运行的旧安静机会；下一片段与自主安排的唤醒各自可用。未上报片段身份的旧客户端沿用既有节奏判据。主动任务优先选择明确的交流落点，其次使用现役 inbox；观察的领域证据按实际持久化结构读取。验证见 [本次审查记录](../../testing/agent-context-initiative-review-2026-10-15.md)。
+**2026-10-15 审查补充：**桌面为每段真实前台停顿提供 `quietEpisodeId`，心跳仍可持续上报以跨过账号门槛，同一片段成功考虑后不因静默每 90 秒重启模型。真实操作更新片段身份，撤销排队中及已运行的旧安静机会；下一片段与自主安排的唤醒各自可用。未上报片段身份的旧客户端沿用既有节奏判据。主动任务优先选择明确的交流落点，其次使用现役 inbox；观察的领域证据按实际持久化结构读取。验证见 本次审查记录 (`docs/testing/agent-context-initiative-review-2026-10-15.md` in the local archive)。
 
 **状态：主动交流基础已实施并接入 shared、agent-host、API、worker、桌面与手机浏览器端。** 自由偏好、真实观察、关注唤醒、同一 Agent 的多发言与答后考虑已贯通；实际数据库角色、真实模型和桌面偏好窗口已有验证。声音协议已检查，实际听感、跨日陪伴和手机后台能力不在本次已验证范围。证据和限制见 [实施记录](../../testing/companion-initiative-2026-10-13.md)；工作区实现不等于已发布安装包。
 
@@ -33,13 +33,13 @@
 | --- | --- | --- |
 | 已退役的念想链 | 旧四小时任务、候选表、历史 API 与独立页面；迁移 0428 删除服务端旧数据 | 完全迁移到基于真实观察与同一 Agent 对话消息的主动交流，不保留只读念想回看 |
 | [自己的记事](../../../packages/agent-host/src/self-notes.ts)、[内部唤醒](../../../apps/api/src/db/migrations/0405_companion_autonomous_self_notes.sql) | 自主记事、版本、停用与到点重评 | 条件唤醒、实际查阅与构思、成果进入主动交流机会 |
-| [后台反思](../../../workers/ai-worker/src/handlers/companion-reflection.ts) | 对固定快照做有界结构化整理，提交人格、判断、方法与记事 | 未完关注的主动推进；现有反思不等同于自主工具执行 |
-| [追问建议](../../../workers/ai-worker/src/handlers/companion-followup-suggestions.ts)、[异步任务](../../../workers/ai-worker/src/handlers/companion-followup-suggestions-job.ts) | 回答完成后提供用户可点击发送的问题 | 伴星自己补充发言；建议按钮仍属于用户发起入口 |
-| [消息与运行 schema](../../../packages/shared/src/db-schema/companion-conversations.ts)、[交流合同](../../../packages/shared/src/contracts/companion-conversation-contracts.ts) | 运行绑定一条用户消息和一个主要伴星消息；delta、final、语音段与取消 | 非用户来源输入、一轮多个发言、回答后追加、明确的交流关联 |
-| [页面上下文](../../../apps/desktop-client/src/renderer/src/app/companion-chat-session-page.ts)、[桥服务](../../../apps/api/src/modules/companion-bridge/context-service.ts) | 路由、实体、版本、可读视图与有期限上下文 | 页面到达、困难线索、用户正在输入等主动参与观察 |
-| [观察合同](../../../packages/shared/src/contracts/companion-observation-contracts.ts) | 带来源、时刻、信任和用途；首批实际只接朗读交付 | 真实页面、应用会话、学习时段及领域结果观察 |
+| [后台反思](../../../workers/ai-worker/src/handlers/journal/companion-reflection.ts) | 对固定快照做有界结构化整理，提交人格、判断、方法与记事 | 未完关注的主动推进；现有反思不等同于自主工具执行 |
+| [追问建议](../../../workers/ai-worker/src/handlers/proactive/companion-followup-suggestions.ts)、[异步任务](../../../workers/ai-worker/src/handlers/schedulers/companion-followup-suggestions-job.ts) | 回答完成后提供用户可点击发送的问题 | 伴星自己补充发言；建议按钮仍属于用户发起入口 |
+| [消息与运行 schema](../../../packages/shared/src/db-schema/companion-conversations.ts)、[交流合同](../../../packages/shared/src/contracts/companion/companion-conversation-contracts.ts) | 运行绑定一条用户消息和一个主要伴星消息；delta、final、语音段与取消 | 非用户来源输入、一轮多个发言、回答后追加、明确的交流关联 |
+| [页面上下文](../../../apps/desktop-client/src/renderer/src/app/companion-session/companion-chat-session-page.ts)、[桥服务](../../../apps/api/src/modules/companion-bridge/context-service.ts) | 路由、实体、版本、可读视图与有期限上下文 | 页面到达、困难线索、用户正在输入等主动参与观察 |
+| [观察合同](../../../packages/shared/src/contracts/companion/companion-observation-contracts.ts) | 带来源、时刻、信任和用途；首批实际只接朗读交付 | 真实页面、应用会话、学习时段及领域结果观察 |
 | [页面伴星策略](../../../apps/desktop-client/src/renderer/src/components/hud/hud-pages.ts) | 大多数纸页的主动提示为 silent，正式作答保持静默 | 按页面情境判断帮助机会，取代“任务页一律不参与” |
-| [提醒调度](../../../workers/ai-worker/src/handlers/companion-reminder-scheduler.ts) | 一次性指定时刻提醒、幂等投递 | 主动偏好的相关观察与自主参与；具体时刻提醒继续是已有专业能力 |
+| [提醒调度](../../../workers/ai-worker/src/handlers/schedulers/companion-reminder-scheduler.ts) | 一次性指定时刻提醒、幂等投递 | 主动偏好的相关观察与自主参与；具体时刻提醒继续是已有专业能力 |
 | [SSE](../../../apps/api/src/modules/companion-conversation/turn/companion-events.ts)、[WS](../../../apps/api/src/modules/companion-conversation/realtime-routes.ts) | 桌面 SSE、手机鉴权 WS；按会话恢复事件 | 未发送用户消息时也可接收主动发言，多发言与跨端展示归属 |
 
 当前例行主动机会按账号介入档位使用共享节奏判据；用户先发起的招呼、答后接续与已等待的结果不受该判据拦截。旧“一次使用一条”的候选限制已删除。
@@ -165,7 +165,7 @@ next_review_at 是一种内部唤醒条件，还应支持“相关材料更新�
 
 notebook、run、settings、library、source、space、companion、review、study 各自登记可产生的语义观察与帮助入口。登记描述来源引用、版本、何时有效、可用帮助能力和失效条件；公共层负责来源核对、机会归并、偏好、接续和呈现，不堆页面名称条件分支。
 
-实际端口见 [shared 合同](../../../packages/shared/src/contracts/companion-initiative-contracts.ts) 和 [领域观察入口](../../../apps/desktop-client/src/renderer/src/app/companion-help-opportunity.ts)。页面提交 `topic` 与 `evidence { domain, entityId, revision, description }`；宿主附上设备、发生时刻和当前页面，服务端确定权限范围、有效期、去重与版本围栏。不能执行页面提供的任意脚本或将字符串当规则。“他是不是遇到了困难”是可撤回的解释，不是观察字段。
+实际端口见 [shared 合同](../../../packages/shared/src/contracts/companion/companion-initiative-contracts.ts) 和 [领域观察入口](../../../apps/desktop-client/src/renderer/src/app/companion-pages/companion-help-opportunity.ts)。页面提交 `topic` 与 `evidence { domain, entityId, revision, description }`；宿主附上设备、发生时刻和当前页面，服务端确定权限范围、有效期、去重与版本围栏。不能执行页面提供的任意脚本或将字符串当规则。“他是不是遇到了困难”是可撤回的解释，不是观察字段。
 
 首批真实领域接线是资料处理／操作失败的 `help.available` 和学习结果的 `result.available`；笔记、任务、设置等到达由公共页面观察接入。其他领域可沿同一端口扩展，当前不宣称已感知每一种困难。手机首批接应用前台、对话和已加载笔记观察，尚未逐域接入桌面的失败入口。
 
@@ -530,8 +530,8 @@ Agent 能收到应用就绪观察，读取本次有关偏好和当前交流，�
 
 ### 2026-10-15: startup after failed or cancelled turns
 
-Host occasions use their own current-task policy and source identity. Completed dialogue remains native history. Only trailing terminal user turns are projected as complete host historical data; no assistant reply or human request is fabricated. The handoff preserves that provenance and runtime/Pi retain its original system identity. A copied failed-turn fixture reproduced the old resumption bug; after this repair, native Electron run `e5708077-2021-4603-a17f-508f09a6bab0` greeted while retaining all 19 eligible history messages with zero omissions. See [validation and limitations](../../testing/agent-host-recovery-2026-10-15.md). Quiet-presence, device and long-run acceptance remain open.
+Host occasions use their own current-task policy and source identity. Completed dialogue remains native history. Only trailing terminal user turns are projected as complete host historical data; no assistant reply or human request is fabricated. The handoff preserves that provenance and runtime/Pi retain its original system identity. A copied failed-turn fixture reproduced the old resumption bug; after this repair, native Electron run `e5708077-2021-4603-a17f-508f09a6bab0` greeted while retaining all 19 eligible history messages with zero omissions. See validation and limitations (`docs/testing/agent-host-recovery-2026-10-15.md` in the local archive). Quiet-presence, device and long-run acceptance remain open.
 
 ### 2026-10-15: desktop host pressure and quiet output
 
-Native desktop follow-up and quiet-presence runs exposed an additional history binding mismatch: the current host observation was counted as part of the frozen historical prefix. Binding now excludes only that appended current observation, while the request retains it verbatim. A host reply consisting only of voice-control markers also finishes silently before empty-body validation can create an unsolicited failure card; empty human replies remain failures. PostgreSQL covers both behaviors and the current related suite passes 82 cases. Real quiet participation after both repairs still requires a continuously foreground desktop episode; the last observation after the rerun was background, which correctly cannot qualify. See [native evidence and remaining verification](../../testing/agent-history-retrieval-decisions-2026-10-15.md). This audit covers desktop only, per the user's latest scope decision.
+Native desktop follow-up and quiet-presence runs exposed an additional history binding mismatch: the current host observation was counted as part of the frozen historical prefix. Binding now excludes only that appended current observation, while the request retains it verbatim. A host reply consisting only of voice-control markers also finishes silently before empty-body validation can create an unsolicited failure card; empty human replies remain failures. PostgreSQL covers both behaviors and the current related suite passes 82 cases. Real quiet participation after both repairs still requires a continuously foreground desktop episode; the last observation after the rerun was background, which correctly cannot qualify. See native evidence and remaining verification (`docs/testing/agent-history-retrieval-decisions-2026-10-15.md` in the local archive). This audit covers desktop only, per the user's latest scope decision.

@@ -106,6 +106,6 @@ ASTELLA_CAPTURE_CDP=http://127.0.0.1:9222 node scripts/capture-pages-v3.mjs
 
 未提供 CDP 时部分 capture 脚本另启实例；必须区分该副本与用户正在看的窗口。安装包验证另用 `npm run package:smoke`／`package:evidence`；fixture manifest 只证明格式，不证明真实运行。
 
-实现与排障记录留在对应 `__tests__/`、`docs/testing/` 或 live-tests。既有失败记基线，新引入问题修复；交付写明实际执行、通过范围和未验证项，不用累计测试数量代替结论。
+既有失败记基线，新引入问题修复；交付写明实际执行、通过范围和未验证项，不用累计测试数量代替结论。
 
 [手册索引](../README.md) · [开发环境](development.md) · [运行与发布](operations.md) · [服务器部署](deployment.md)

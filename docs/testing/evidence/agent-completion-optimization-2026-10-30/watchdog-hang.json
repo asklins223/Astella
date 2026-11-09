@@ -1,9 +1,0 @@
-{
-  "test": "companion-output-watchdog.test.ts",
-  "ownChildPid": 9092,
-  "observedElapsedSecondsAtLeast": 131,
-  "lastEvent": "last observed output: fallback model selected",
-  "terminatedOnlyThisTestChild": true,
-  "completedAssertionsInStoppedRun": 1901,
-  "extraProcessFailureAfterStop": 1
-}

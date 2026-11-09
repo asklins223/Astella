@@ -195,11 +195,11 @@ The budget line itself (`B_hard = max(0, min(C − O, I) − M)`, trigger 0.80 /
 
 ## Web search and sources
 
-`agent_web_search` serves both conversation and ongoing goals. `agent/web-search.ts` reuses the `bigmodel` credential for BigModel Web Search. Account `webSearchEnabled` defaults to false, and exposure/execution check opt-in, service availability and AI governance.
+`agent_web_search` serves both conversation and ongoing goals. `agent/web-search.ts` selects the server's search provider using `WEB_SEARCH_PROVIDER`. Tavily uses `TAVILY_API_KEY`, and BigModel uses its configured platform credential. Account `webSearchEnabled` defaults to false, and exposure/execution check opt-in, service availability and AI governance.
 
 Each turn has at most 3 searches, returning bounded excerpts and HTTPS sources. URLs determine stable source identities and citation markers. Durable receipts restore sources on replay without searching again. Chat, journal and history share citation blocks; titles, URLs and dates stay in source lists/popovers and outside spoken text.
 
-Exhausted quota starts a 30-minute credential cooldown in the current Worker. The turn can continue but cannot claim online verification. Cooldown is process-local, so restarts and other replicas do not share it; it is not global quota enforcement. See [search validation](../../testing/agent-web-search-2026-10-08.md).
+Exhausted quota starts a 30-minute credential cooldown in the current Worker. The turn can continue but cannot claim online verification. Cooldown is process-local, so restarts and other replicas do not share it; it is not global quota enforcement. See [search validation](../../testing/agent-source-review-performance-2026-11-04.md).
 
 ## Governance and consent
 
@@ -307,7 +307,7 @@ Execution deadlines and crash recovery are separate. Defaults come from `package
 
 Handler priority: `WORKER_TIMEOUT_<TYPE>_MS` → `WORKER_MODEL_TIMEOUT_MS` → per-type default → global default. Provider priority: `WORKER_PROVIDER_TIMEOUT_<TYPE>_MS` → `WORKER_PROVIDER_TIMEOUT_MS` → 15-minute default, then constrained by available handler time. New overrides must be forwarded in Compose; a value in `.env` alone may not reach the process.
 
-`lib/providers/model-output-budget.ts` resolves output limits. Normal generation uses the model profile's declared ceiling; a small visible-text allowance is not a reasoning-plus-output total. Context budgeting still reserves output capacity and task contracts limit structure/content. Cancellation, lease loss, bounded call counts and retries remain enforced. See [budget validation](../../testing/ai-execution-budgets-2026-10-08.md).
+`lib/providers/model-output-budget.ts` resolves output limits. Normal generation uses the model profile's declared ceiling; a small visible-text allowance is not a reasoning-plus-output total. Context budgeting still reserves output capacity and task contracts limit structure/content. Cancellation, lease loss, bounded call counts and retries remain enforced.
 
 ## Related volumes
 

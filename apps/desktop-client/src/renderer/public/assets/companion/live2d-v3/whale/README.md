@@ -25,6 +25,6 @@
 - `node scripts/sync-companion-performances.mjs` 从本目录原始表达式生成依赖组合、记笔记动作、
   model3 注册和 SHA-256 清单；`--check` 检查是否同步。不要直接编辑生成的 `presets/` 与
   `motions/taking-notes*.motion3.json`。桌面打包使用本目录，iOS 通过既有模型分发与版本缓存下载同一份。
-- 本轮调用链、窗口验证和分发范围见 [完整动作记录](../../../../../../../../../docs/testing/companion-full-performances-2026-10-24.md)。
+- 本轮调用链、窗口验证和分发范围见 完整动作记录 (`docs/testing/companion-full-performances-2026-10-24.md` in the local archive)。
 - 完整 SHA-256 清单见同目录 `manifest.json`。原作者的《使用须知.txt》《按键表.txt》
   保存在用户提供的原目录（`~/Downloads/DS鲸鱼娘/`），本目录以 `manifest.json` 记录许可要点。

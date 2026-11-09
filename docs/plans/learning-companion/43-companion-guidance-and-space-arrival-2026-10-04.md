@@ -1,10 +1,10 @@
 # 43｜伴星带路：首次使用、新空间认识与空间到达体验
 
-> **2026-10-24 iOS 分工：**用户已确认手机端采用一篇预生成示例完成主线体验，加入四处联想交互、方言试听与对话，并要求全程支持快进、跳章和跳过，详见 [59 · iOS 伴星联想交互与首次相伴引导](./59-ios-companion-suggestions-and-first-journey-2026-10-24.md)。59 目前仅为方案，未实施；其 iOS 本地示例不以外部 AI 授权为前置，进入真实请求时再接现有授权流程。本文的桌面影片、岛内入口与前置流程继续适用于桌面，新空间权限与真实数据边界继续有效。
+> This plan covers desktop onboarding and space arrival. Native onboarding is maintained in [astella-mobile](https://github.com/asklins223/astella-mobile).
 
 > **2026-10-13 主动交流分工：**用户自由表达的“每次开启应用打招呼”等参与偏好与日常页面帮助按 [56](./56-companion-initiative-and-natural-exchange-2026-10-13.md) 的通用 Agent 能力设计。首次邀请与空间到达仍使用本文的真实身份和去重；偏好不会让开场影片每次重播。56 的主动基础已实施，开场期间抑制自动呈现，尚未将旧带路与问候合成同一条发言。
 
-> 日期：2026-10-04；2026-10-05 按用户新决定实施。验证与当前限制记录在 [43 实施验证](./43-companion-guidance-implementation-2026-10-05.md)。
+> 日期：2026-10-04；2026-10-05 按用户新决定实施。验证与当前限制记录在 43 实施验证 (`docs/plans/learning-companion/43-companion-guidance-implementation-2026-10-05.md` in the local archive)。
 >
 > 2026-10-05 用户明确修正：引导在全局窗口绘制动画，由伴星旁解；岛内只保留选主题的入口，不承载册内讲解。用户主动开始后默认使用千问语音，复用现有播放与嘴型通道，保留总静音、正式作答和声道优先级。以下布局和声音描述同步以此决定为准。
 

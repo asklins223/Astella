@@ -4,7 +4,7 @@
 
 ## 实际问题和修改
 
-- GLM 搜索实际返回 429 / 1113，线上与本地凭据一致。用户提供 Tavily Key 后，新增独立搜索配置：`WEB_SEARCH_PROVIDER=tavily` 与服务端 `TAVILY_API_KEY`。实际账户是 Researcher、每月 1,000 积分；默认 basic、关闭自动升档，每次搜索 1 积分，不调用额外的 Research / Extract API。密钥不进入仓库或客户端，额度不足不自动转去另一付费账号。参见 [搜索方案评估](search-provider-evaluation-2026-11-04.md)。
+- GLM 搜索实际返回 429 / 1113，线上与本地凭据一致。用户提供 Tavily Key 后，新增独立搜索配置：`WEB_SEARCH_PROVIDER=tavily` 与服务端 `TAVILY_API_KEY`。实际账户是 Researcher、每月 1,000 积分；默认 basic、关闭自动升档，每次搜索 1 积分，不调用额外的 Research / Extract API。密钥不进入仓库或客户端，额度不足不自动转去另一付费账号。参见 搜索方案评估 (`docs/testing/search-provider-evaluation-2026-11-04.md` in the local archive)。
 - Tavily 定位结果统一为现有来源合同，域名过滤、稳定引用身份、真实原文读取、权限、外发同意和取消边界保留。过程展示与引用所用字段不变，不把搜索摘要标为已读网页。生产 Compose 与独立开发 Compose 均向 API / worker 显式传入配置，避免两边不一致。
 - 核验、分类等调用已请求 `reasoningEffort: low`，但回退模型的旧能力档案只声明 `high / max`，实际会被提升为 `high`。补入 `low`，默认仍为 `high`，显式 `high / max` 保留；其余配置字段逐项比较一致。[DeepSeek 官方文档](https://api-docs.deepseek.com/guides/thinking_mode/) 列出这三个档位，原网关已完成真实调用。
 - 每次来源核验的 `draft` 只放当前交付单元，全文另作跨段前提、单位和矛盾检查的背景。全部实际读到的材料和回执保留，不能仅按草稿引用过滤证据。
@@ -52,4 +52,4 @@ Tavily 最终本地全链路三轮均完整完成，历史接口返回 200，wor
 
 部署后补齐本地独立开发 Compose 的配置传递，并验证开发 API / worker 实际选择 Tavily、凭据一致且健康。另同步旧的能力配置守护表：实际运行早已使用 12 秒首输出期限并读取首个正文/工具期限，守护表仍按旧的 5 秒和缺失键误报；此次只更新校验表，没有改变运行策略。校验通过，本地 232 个无关用户修改文件的内容和模式保持一致。
 
-实际时间、来源读取指纹、被否决候选与部署验收见 [验收数据](evidence/agent-source-review-performance-2026-11-04/acceptance.json)。上一版本见 [11 月 3 日记录](agent-search-performance-2026-11-03.md)。发布状态已由实际版本接口、源码与配置指纹和流水线核实。
+实际时间、来源读取指纹、被否决候选与部署验收见 [验收数据](evidence/agent-source-review-performance-2026-11-04/acceptance.json)。上一版本见 11 月 3 日记录 (`docs/testing/agent-search-performance-2026-11-03.md` in the local archive)。发布状态已由实际版本接口、源码与配置指纹和流水线核实。

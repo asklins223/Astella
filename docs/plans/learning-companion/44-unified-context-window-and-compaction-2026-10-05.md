@@ -1,22 +1,22 @@
 > **2026-10-15 scope correction:** This audit and its acceptance criteria cover the desktop client and its dependent Agent/backend chain only. The user explicitly excluded unreleased mobile clients; earlier audit references to required mobile validation no longer apply.
 
-> **2026-10-15 working-state recovery:** Migration 0440 persists complete tool results, correction state, delivered-prefix recovery and mixed-batch confirmation context. A native SIGKILL run resumed the same request without resubmission; late failure bookkeeping now checks the current lease. See [implementation, evidence and remaining acceptance](../../testing/agent-runtime-recovery-2026-10-15.md). This supersedes the earlier statement that ordinary multi-step recovery is wholly missing; native confirmation, mid-write, background and long-running acceptance remain open.
+> **2026-10-15 working-state recovery:** Migration 0440 persists complete tool results, correction state, delivered-prefix recovery and mixed-batch confirmation context. A native SIGKILL run resumed the same request without resubmission; late failure bookkeeping now checks the current lease. See implementation, evidence and remaining acceptance (`docs/testing/agent-runtime-recovery-2026-10-15.md` in the local archive). This supersedes the earlier statement that ordinary multi-step recovery is wholly missing; native confirmation, mid-write, background and long-running acceptance remain open.
 
-> **2026-10-15 partial source recovery:** Pressure compaction can now persist a schema/hash-bound cumulative state on the private running step. A native SIGKILL test resumed at UTF-16 offset 155,713, read the remaining 20,291 code units once, and completed the same run with the final corrections intact. See [implementation, migration 0439, verification and recovery boundaries](../../testing/agent-semantic-progress-recovery-2026-10-15.md). General tool-transcript reconstruction, format-correction state and background-job progress remain open.
+> **2026-10-15 partial source recovery:** Pressure compaction can now persist a schema/hash-bound cumulative state on the private running step. A native SIGKILL test resumed at UTF-16 offset 155,713, read the remaining 20,291 code units once, and completed the same run with the final corrections intact. See implementation, migration 0439, verification and recovery boundaries (`docs/testing/agent-semantic-progress-recovery-2026-10-15.md` in the local archive). General tool-transcript reconstruction, format-correction state and background-job progress remain open.
 
-> **2026-10-15 desktop continuation:** A valid native worker-crash run resumed its complete checkpoint and finished without a second user submission. Pure historical retrieval hints no longer force an extra read before the main Agent can assess its complete context. Native samples and additional host pressure/quiet-output defects are recorded in [retrieval decisions and host pressure](../../testing/agent-history-retrieval-decisions-2026-10-15.md); remaining acceptance work is explicit there.
+> **2026-10-15 desktop continuation:** A valid native worker-crash run resumed its complete checkpoint and finished without a second user submission. Pure historical retrieval hints no longer force an extra read before the main Agent can assess its complete context. Native samples and additional host pressure/quiet-output defects are recorded in retrieval decisions and host pressure (`docs/testing/agent-history-retrieval-decisions-2026-10-15.md` in the local archive); remaining acceptance work is explicit there.
 
-> **2026-10-15 implementation continuation:** Background history and active read-tool compaction now consume complete source through measured parts before accepting replacement coverage. See [complete-source implementation and real-provider verification](../../testing/agent-complete-source-compaction-2026-10-15.md). Pre-runtime overflow recovery, oversized protected current exchanges and native quiet/long-run acceptance remain open.
+> **2026-10-15 implementation continuation:** Background history and active read-tool compaction now consume complete source through measured parts before accepting replacement coverage. See complete-source implementation and real-provider verification (`docs/testing/agent-complete-source-compaction-2026-10-15.md` in the local archive). Pre-runtime overflow recovery, oversized protected current exchanges and native quiet/long-run acceptance remain open.
 
-> **2026-10-15 pressure/recovery continuation:** First-answer history pressure and oversized historical tool reads now have complete-source compaction and private request-bound checkpoints. Native Electron completed the valid 175k-character fixture, but first visible output was 118.6 seconds; latency is not accepted. See [pressure, persistence, restart limits and native evidence](../../testing/agent-history-pressure-recovery-2026-10-15.md). Protected current exchanges, intermediate checkpoint resumption and the remaining native acceptance cases are still open.
+> **2026-10-15 pressure/recovery continuation:** First-answer history pressure and oversized historical tool reads now have complete-source compaction and private request-bound checkpoints. Native Electron completed the valid 175k-character fixture, but first visible output was 118.6 seconds; latency is not accepted. See pressure, persistence, restart limits and native evidence (`docs/testing/agent-history-pressure-recovery-2026-10-15.md` in the local archive). Protected current exchanges, intermediate checkpoint resumption and the remaining native acceptance cases are still open.
 
-> **2026-10-15 user decision:** Do not use hard truncation to fix context or latency. Durable originals, verified semantic summaries/checkpoints, complete recent exchanges and retrievable source references are the governing design. The fixed 2,048-token replay target and 1,600-character summary rendering cutoff have been removed. Read the current [implementation and verification record](../../testing/agent-context-mature-agents-2026-10-15.md); remaining overflow recovery and autonomy defects are explicitly open. Older quota/omission descriptions below are historical where they conflict with this decision.
+> **2026-10-15 user decision:** Do not use hard truncation to fix context or latency. Durable originals, verified semantic summaries/checkpoints, complete recent exchanges and retrievable source references are the governing design. The fixed 2,048-token replay target and 1,600-character summary rendering cutoff have been removed. Read the current implementation and verification record (`docs/testing/agent-context-mature-agents-2026-10-15.md` in the local archive); remaining overflow recovery and autonomy defects are explicitly open. Older quota/omission descriptions below are historical where they conflict with this decision.
 
 # 44 · 全系统上下文治理、可靠压缩与经验接续
 
-> **2026-10-15 审查修正：**只有链头实际继承的父摘要可计入本轮覆盖；同会话的兄弟摘要未注入正文，不能仅按区间合并成已读。0436 将父摘要的失效传播到派生后代，区间内明确未覆盖的消息与动作回执继续保留。摘要递增输入使用父摘要完整结构，显示投影的容量不再影响后续摘要。策略升至 v4，重试键绑定完整输入快照。验证与限制见 [本次审查记录](../../testing/agent-context-initiative-review-2026-10-15.md)。
+> **2026-10-15 审查修正：**只有链头实际继承的父摘要可计入本轮覆盖；同会话的兄弟摘要未注入正文，不能仅按区间合并成已读。0436 将父摘要的失效传播到派生后代，区间内明确未覆盖的消息与动作回执继续保留。摘要递增输入使用父摘要完整结构，显示投影的容量不再影响后续摘要。策略升至 v4，重试键绑定完整输入快照。验证与限制见 本次审查记录 (`docs/testing/agent-context-initiative-review-2026-10-15.md` in the local archive)。
 
-> **2026-10-11 用户决定与伴星修复：**上下文计量管理实际模型窗口，不能用固定字符预算、步数或工具次数替代任务完成。伴星装配已撤去独立的 100,000 字符和来源局部字符截断；压力压缩已扩展到当前任务的已完成读取回合，保留用户要求、最新证据、写回执与未完成调用。新增长请求可以再次压缩，同一失败请求不反复重发。真实模型接续语义和发布后窗口仍需验收，范围见[本次修复记录](../../../workers/ai-worker/src/live-tests/companion-agent-reliability-2026-10-12.md)。
+> **2026-10-11 用户决定与伴星修复：**上下文计量管理实际模型窗口，不能用固定字符预算、步数或工具次数替代任务完成。伴星装配已撤去独立的 100,000 字符和来源局部字符截断；压力压缩已扩展到当前任务的已完成读取回合，保留用户要求、最新证据、写回执与未完成调用。新增长请求可以再次压缩，同一失败请求不反复重发。真实模型接续语义和发布后窗口仍需验收，范围见本次修复记录 (`workers/ai-worker/src/live-tests/companion-agent-reliability-2026-10-12.md`, historical reference)。
 
 > 日期：2026-10-05
 >
@@ -26,7 +26,7 @@
 >
 > 用户最新决定：整个系统共用持续存在的 Agent；后台任务也参与同一经验体系，使之后的合作与执行逐步改善。本文将设计评审与这一决定写入实施合同。
 >
-> 依据：[42](./42-unified-agent-and-companion-experience-2026-10-04.md) §3.3／§6.4–§6.9／§12.2–§12.4、[40](./40-companion-long-term-experience-and-diary-prd-2026-09-25.md) 的记忆与 Procedural 手册合同、[40b](./40b-companion-runtime-and-observability-2026-09-27.md)、[41a](./41a-unified-agent-foundation-2026-09-28.md)、[40c](./40c-three-legacy-items-review-2026-10-05.md) §1.3。
+> 依据：[42](./42-unified-agent-and-companion-experience-2026-10-04.md) §3.3／§6.4–§6.9／§12.2–§12.4、[40](./40-companion-long-term-experience-and-diary-prd-2026-09-25.md) 的记忆与 Procedural 手册合同、[40b](./40b-companion-runtime-and-observability-2026-09-27.md)、[41a](./41a-unified-agent-foundation-2026-09-28.md)、40c (`docs/plans/learning-companion/40c-three-legacy-items-review-2026-10-05.md` in the local archive) §1.3。
 >
 > 与 42 的关系：保留持续身份、状态所有权、来源、权限、版本和成长准入；本文补齐完整请求计量、压缩覆盖、跨会话检索与后台经验应用/产出的工程合同。实际用量与质量效果按证据验收。
 
@@ -68,7 +68,7 @@ Hermes 的借鉴点是会话压缩、跨会话记忆与历史检索、可复用�
 | 方法基础 | agent-host 已有方法版本、候选/停用、来源检查、阅读关联与具体用户反馈；从已完成运行提议的方法主要按能力目录生成步骤 | 需要提炼实际做法、错误原因、有效替代和适用条件 |
 | 注入遗漏 | 40c 核对到部分 budget_omitted 仅进日志，部分选材静默折叠 | 预算放大不能替代覆盖回执和恢复入口 |
 
-源码入口：[provider 能力](../../../workers/ai-worker/src/lib/providers/opencode-go.ts)、[对话装配](../../../workers/ai-worker/src/handlers/companion-dialogue-content.ts)、[公共装配](../../../packages/agent-core/src/context/assemble-context.ts)、[摘要器](../../../workers/ai-worker/src/handlers/companion-summarizer.ts)、[摘要读取与排队](../../../workers/ai-worker/src/handlers/companion-dialogue-store.ts)、[后台上下文](../../../workers/ai-worker/src/agent/execution-context.ts)、[方法生命周期](../../../packages/agent-host/src/methods.ts)。
+源码入口：[provider 能力](../../../workers/ai-worker/src/lib/providers/opencode-go.ts)、[对话装配](../../../workers/ai-worker/src/handlers/turn/companion-dialogue-content.ts)、[公共装配](../../../packages/agent-core/src/context/assemble-context.ts)、[摘要器](../../../workers/ai-worker/src/handlers/context/companion-summarizer.ts)、[摘要读取与排队](../../../workers/ai-worker/src/handlers/turn/companion-dialogue-store.ts)、[后台上下文](../../../workers/ai-worker/src/agent/execution-context.ts)、[方法生命周期](../../../packages/agent-host/src/methods.ts)。
 
 这些是源码层结论，不代表后台语义质量、长期成长效果或新增压缩链路已验收。
 
@@ -367,13 +367,13 @@ P >= T 时尝试有界压缩；压缩后重新装配并测量。保留当前已�
 
 **验收状态**：实库证据已取得一批（迁移 0382–0389 的行为、SQL 过真实 parser、
 取回闭环、冷却并发、方法链——见 §11 末尾的清单）；**真实模型接续样本与窗口验收仍然没有**。
-逐轮的补齐与排障经过在 [实施日志](./44-implementation-log.md)，不在这里堆叠。
+逐轮的补齐与排障经过在 实施日志 (`docs/plans/learning-companion/44-implementation-log.md` in the local archive)，不在这里堆叠。
 
 ### 阶段 1：作用域与完整计量 —— 已在真实调用链接线
 
 | 落点 | 内容 |
 | --- | --- |
-| [shared 预算合同](../../../packages/shared/src/contracts/context-budget-contracts.ts) | 预算快照、完整请求计量、调用前压力判定、跨来源覆盖区间与覆盖清单五组 zod 合同（§3.3／§4／§5.5） |
+| [shared 预算合同](../../../packages/shared/src/contracts/agent/context-budget-contracts.ts) | 预算快照、完整请求计量、调用前压力判定、跨来源覆盖区间与覆盖清单五组 zod 合同（§3.3／§4／§5.5） |
 | [agent-core 预算解析](../../../packages/agent-core/src/context/context-budget.ts) | §4.1 的唯一权威：`B_hard = max(0, min(C − O, I) − M)`、`T = 0.8·B_hard`、`G = 0.6·B_hard`。I 缺省时由 C − O 单独表达，派生值不再二次扣减；请求声明的输出上限未被下发时改用保守预留；能力不可获知时抛 `budget_unresolved` 而不是沿用与本路由无关的护栏 |
 | [agent-core 完整请求计量](../../../packages/agent-core/src/context/measure-request.ts) | P 覆盖 system + 历史 + 当前输入 + 工具 schema + 工具调用参数与结果；多模态与不透明 reasoning 句柄按**保守地板**计价并写进 `unmeasured`，不记零。计数端口按 tokenizer → provider 计数 → usage 锚点 → 保守估算的顺序注入 |
 | [worker 上下文闸](../../../workers/ai-worker/src/lib/context-governor.ts) | 接线点是 `createGovernedProvider` —— 所有外发模型的唯一边界，因此首步、每个工具回合、补取材料、后台继续、重试与备用模型切换都覆盖到（§4.3）。超硬上限抛 `AIContextOverflowError`（不可重试，给出可行动限制）；超触发线且声明了压缩额度时抛 `AIContextCompactionRequiredError`，交回工作上下文所有者 |
@@ -393,10 +393,10 @@ P >= T 时尝试有界压缩；压缩后重新装配并测量。保留当前已�
 
 ### 阶段 2：可靠压缩 —— 摘要链 + 调用前压缩（2026-10-06 补齐）
 
-已落地（[摘要器](../../../workers/ai-worker/src/handlers/companion-summarizer.ts)、
+已落地（[摘要器](../../../workers/ai-worker/src/handlers/context/companion-summarizer.ts)、
 [0382 迁移](../../../apps/api/src/db/migrations/0382_summary_coverage_chain.sql)、
-[摘要读取](../../../workers/ai-worker/src/handlers/companion-dialogue-store.ts)、
-[压缩执行](../../../workers/ai-worker/src/handlers/companion-compaction.ts)）：
+[摘要读取](../../../workers/ai-worker/src/handlers/turn/companion-dialogue-store.ts)、
+[压缩执行](../../../workers/ai-worker/src/handlers/context/companion-compaction.ts)）：
 
 - **父摘要作为递增输入**：新摘要接到上一份摘要上，并明确要求保留仍有效的约束与纠正
   （§5.1）。此前每份摘要都默认代表「全部更早历史」，实际只代表自己读过的那一段。
@@ -768,7 +768,7 @@ typecheck 立刻报 `',' expected`。这条已经记过一次了，还是踩了�
 ### 实施状态（收尾，2026-10-06）
 
 下面这份清单是**当前状态判断**，不属于过程记录，所以留在这里；
-逐轮的补齐与排障经过在 [实施日志](./44-implementation-log.md)。
+逐轮的补齐与排障经过在 实施日志 (`docs/plans/learning-companion/44-implementation-log.md` in the local archive)。
 
 - 失效传播现覆盖三处：会话内容修订号（0384，读取侧过滤）、手册依据（0374 既有的触发器）、
   以及摘要→记忆的**反向引用**（0388）。最后一处补的是一个具体的漏：摘要器写 episodic
@@ -817,4 +817,4 @@ typecheck 立刻报 `',' expected`。这条已经记过一次了，还是踩了�
 
 ### 2026-10-15: pressure projection and host terminal history
 
-The pressure fallback now reuses the whole-exchange history projection. Verified summary coverage cannot remove only part of a user/assistant exchange; gaps, the latest answered exchange, and later user additions remain complete. Terminal unanswered questions in host-origin runs remain complete attributed historical records, with original source role and terminal status, rather than pending native user inputs. See [host/recovery validation](../../testing/agent-host-recovery-2026-10-15.md) for native evidence, rejected approaches and remaining unsummarized-history compaction/retrieval work. No hard replay or summary-rendering cutoff was restored.
+The pressure fallback now reuses the whole-exchange history projection. Verified summary coverage cannot remove only part of a user/assistant exchange; gaps, the latest answered exchange, and later user additions remain complete. Terminal unanswered questions in host-origin runs remain complete attributed historical records, with original source role and terminal status, rather than pending native user inputs. See host/recovery validation (`docs/testing/agent-host-recovery-2026-10-15.md` in the local archive) for native evidence, rejected approaches and remaining unsummarized-history compaction/retrieval work. No hard replay or summary-rendering cutoff was restored.

@@ -1,12 +1,8 @@
 /**
  * 治理文档点名的构建期变量，源码里必须真有人读（doc 34 L32）。
  *
- * 触发这件事的是一条写在 `PRODUCT.md` / `DESIGN.md` / `docs/feature-flag-inventory.md`
- * 里的合同：`VITE_HOME_SCENE_VARIANT=v2` 启用「魔法伴星小屋」，发布门禁全绿前
- * 保留 V1 回退分支。**代码里没有那个旗标**——全仓 `SCENE_VARIANT` 唯一的命中是
- * `package.json` 里一条截图脚本给它赋值，`HomeV2Provider` 在 `App.tsx:145` 无条件挂载；
- * inventory 还写着"dev 的 `.env.development` 为 v2"，而 `apps/desktop-client` 下
- * 根本没有 `.env*` 文件。
+ * The current product and design documents own the desktop configuration claims.
+ * The historical flag inventory is kept in the local archive.
  *
  * 为什么值得一条断言：文档是这个项目的合同来源（视觉确认、权限边界、发布门禁都靠它），
  * 一句"由旗标控制"会让人以为存在回退路径，进而把"改门禁"当成安全的决定。
@@ -24,7 +20,7 @@ const repoRoot = process.cwd().endsWith("apps/desktop-client")
 const docPath = (relative: string) =>
   existsSync(join(repoRoot, relative)) ? join(repoRoot, relative) : null;
 
-const DOCS = ["PRODUCT.md", "DESIGN.md", "docs/feature-flag-inventory.md"];
+const DOCS = ["PRODUCT.md", "DESIGN.md"];
 
 /**
  * 文档可以点名一个**不存在**的开关（我们已经把它写进校正句，防止有人再去找它），
@@ -73,7 +69,7 @@ describe("文档点名的 VITE_* 变量必须真有读取点", () => {
     }
   }
 
-  it("三份文档都读得到（少一份就可能悄悄把空集当成通过）", () => {
+  it("reads both current documents and finds at least one named variable", () => {
     expect(missingDocs, `读不到：${missingDocs.join(", ")}`).toEqual([]);
     expect(named.size).toBeGreaterThan(0);
   });

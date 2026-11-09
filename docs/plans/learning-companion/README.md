@@ -1,91 +1,16 @@
-# learning-companion 现行文档
+# Active plans
 
-> **2026-10-28 voice replay update:** Ordinary reading respects the saved dialect; historical replay keeps original expression data under the current voice, and configuration identities isolate persistent audio variants. Local API/native verification and the production-release boundary are recorded in [iOS voice replay and cache identity](../../testing/ios-voice-replay-dialect-cache-2026-10-28.md).
+Start with [Product](../../../PRODUCT.md), [Design](../../../DESIGN.md) or the [user and developer guide](../../guide/README.md). Use these plans for the decisions behind a change and verify implementation against the current code and tests.
 
-> **2026-10-21 窗口复查：** 方案 57、58 的放大布局、焦点、成果返回及只读请求修复见[真实窗口检查记录](../../testing/plan-57-58-window-check-2026-10-21.md)。整体仍有未完成验收项。
-
-> **2026-10-21 evening follow-up:** A further pass fixed note-library markdown leakage, duplicate note titles in reading and result previews, the journal "回到最新" overlap, mixed-run trace copy and companion contrast, and implemented Plan 57's documented per-question discard with the "N 道题没有收录" notice (plus three red source guards). See [defects, fixes and evidence](../../testing/plan-57-58-followup-2026-10-21.md). Generation reliability, semantic duplicate/semantic correctness, content quality and the native/zoom matrix remain open.
-
-> **本目录保留已登记的现行合同与单独列出的待决策候选方案。** 其余 141 份历史文档已于 2026-09-29 移出，存放在本机 `project-archive/docs-2026-09-29/learning-companion/`（该目录被 `.gitignore` 忽略，不随仓库分发）。
->
-> **给实施 Agent：不要在本目录外搜索方案文档。** 这里列出的就是全部现行依据。
-
-> **2026-10-21 audit of Plans 57 and 58:** See the [current implementation audit](../../testing/plan-57-58-audit-2026-10-21.md) for corrected functional/UI gaps, actual regression and model evidence, and acceptance that remains open.
-
-## 现行合同（按任务查）
-
-| 你要做的事 | 唯一依据 |
+| Area | Plans |
 | --- | --- |
-| Agent 原生循环、快慢调度、真实回执与生产验收 | [2026-10-28 · 历史复盘与收敛方案](./agent-routing-review-and-proposal-2026-10-28.md)、[第一阶段实施](../../testing/agent-native-loop-implementation-2026-10-28.md)与[2026-10-29 · 原模型恢复、双端图片与最终验收](../../testing/agent-images-client-and-model-restore-2026-10-29.md)。三档资源判断与生成并行，工具由模型发现并选择，实际操作按真实回执交付；保留用户配置的主副模型，桌面与 iOS 上传前压缩、每轮最多 12 图、服务端自动分批。当前发布状态、速度和验证边界以最新记录为准；[早期发布快照](../../testing/agent-completion-and-release-2026-10-29.md)不代表当前模型及延迟。 |
-| 桌面每一页的伴星座位、工作页纸面、长文阅读、搜索句子与回到当前笔记 | [60 · 桌面客户端完成度：问题与改法](./60-desktop-client-finish-2026-11-07.md)（2026-11-07 用户确认：伴星贯穿每一页，座位在这页纸的页边，纸在座位前停住；没有进行中的事不挂「交给我的事」；工作页上半身，整身留在首页。同次走查的四套骨架、长文阅读、疏密、搜索标记、跳不回当前笔记、三扇门、空态和较小读法都写了改法。首页房间保持，工作页以纸面为这一页。方案，未实施） |
-| iOS 四处联想交互、预生成示例的新用户引导、方言体验与全程快进／跳过 | [59 · iOS 伴星联想交互与首次相伴引导](./59-ios-companion-suggestions-and-first-journey-2026-10-24.md)（2026-10-24 用户已要求实施；客户端、接口与示例资产已接线，窗口和硬件验证范围见 [实施记录](../../testing/ios-first-journey-59-2026-10-24.md)。大伴星、记录、右下角按钮与展开面板共享有效建议；通过一篇版本对应的示例认识设置、方言、写改笔记与学习能力；任意步骤可快进、跳章、跳过或稍后继续，不代保存、不代交卷。正式示例会话与 Debug 验收样例、真实账户数据分别管理） |
-| Agent 的速度、质量与稳定性整改；伴星气泡与手记的交互优化 | [58 · Agent 速度、质量与稳定性整改方案](./58-agent-experience-diagnosis-and-recovery-2026-10-19.md)（实施中。2026-10-20 用户澄清：OpenDesign Cloud 只作为交互参考，不一比一还原。正式气泡、手记、预览、原路返回及执行恢复已改造；真实模型与 HTTP 链路仍有耗时和质量未达标样本，完整验收见[实施记录](../../testing/agent-experience-58-implementation-2026-10-19.md)） |
-| 通用主动交流能力：用户自然语言偏好、分句与续答、感知、关注和唤醒 | [56 · 伴星主动交流：自然接话、持续关注与用户自定义偏好](./56-companion-initiative-and-natural-exchange-2026-10-13.md)（自然分句与答后补充考虑、相关页面／难题帮助、启动问候和久学休息是所有账号自带的默认方式；自由偏好用于细化，不是启用前提。两端前台观察、同一 Agent 唤醒与多发言已接入；迁移与验收见 §13–§15） |
-| 学习卡并入笔记、取消复习/今日、伴星计划 | [57 · 学习卡并入笔记与取消复习/今日](./57-learning-card-and-review-reset-2026-10-19.md)（2026-10-19 用户决定：一篇笔记一张学习卡、卡内多题、固定题型、题干疑问句、每题原文依据、拓展题最多 1–2 道；星星按整卡得分、最佳一次、0★ 也点亮、按版本保留；复习/今日/到期队列/催促提醒取消，改为伴星按意向提醒或生成计划。**旧链路硬删除**：旧卡库/卡生成/review/objective/learning_runs/这一轮学习/首次验证整条移除，删完再搭新链，不做双轨；星图/笔记架/伴星统计改接新卡） |
-| App：伴星操作、已有笔记便携阅读、同一份数据与聊天 | [51 · 随身伴星与便携书房](./51-mobile-companion-full-agent-product-design-2026-10-10.md) · [2026-10-29～30 iOS editing implementation](../../testing/ios-note-editing-2026-10-29.md)（2026-10-10 用户确认复核修订与连贯前端 Demo；首版已有笔记阅读、图片加文字／独立语音与创建／修改，一级三入口、详情就地问与原路返回；小程序、PDF／Word、精确接力和流式跨端后续。2026-10-11 Demo 05 补齐本机账号、个人中心、设置与伴星中心并重做整套视觉，既有动效保留；Demo 06 默认动态 Live2D 与粒子语音，可切换保留的记录并记住偏好；实际本机模型已接入，语音输入仍为样例，未实现移动宿主及真实互通；2026-10-11 并入通义千问与豆包的竞品核对（§16）与据此改写的差异依据（§1.3）、现状缺口（§12 导出与拟人化合规）和结论（§17）。**2026-10-11 工程审计（§19）：前端原型不能作为移动客户端起点**——脱离评审实验台无法启动、业务侧零模型调用、与桌面零共享 token 与组件；§14.1 两条验收声明（字体 150%／44px 热区、键盘态看到上一条回复）与实际不符，已在 §14.1 更正。**待用户裁决三件**：① 宿主／分发／合规前置（§13 阶段 0、§15，阻塞其余全部）；② 手机首屏是「书房」还是「角色」（与 AGENTS.md「纸面与旁边的伴星」的冲突）；③ 两处内部冲突（「复习提醒」vs §2.4 不做定时提醒；「原件不出本机」vs 移动端 PDF 解析）。**裁决前不再扩写 §4–§8 界面细节。** 证据见[工程审计](../../testing/mobile-companion-prototype-audit-2026-10-11.md)与[桌面身份基线](../../testing/mobile-companion-desktop-identity-baseline-2026-10-11.md)） |
-| 笔记学习的页面、流程、状态与验收 | [41 · 从一篇笔记出发的轻量学习体验](./41-note-companion-learning-experience-2026-09-28.md) |
-| 速看中的 AI 思维导图：入口、结构、原文回跳与实施链路 | [47 · 在笔记速看中生成思维导图](./47-note-mind-map-in-overview-2026-10-08.md)（2026-10-08 用户提出需求；本轮为设计示意与实施建议，业务生成及正式页面尚未接入） |
-| 把笔记从一个空间搬到另一个空间：什么跟着走、跨空间口子的判据与两个未实测前提 | [48 · 把笔记搬到另一个空间](./48-note-cross-space-migration-2026-10-10.md)（2026-10-10 用户决定：复制还是移走每次选、只搬当前版本、学习状态不搬、走服务端一次跨空间请求而非切空间导入导出；**本轮为方案，未实施**，其 §7 两个前提未实测，结论会回头收窄范围） |
-| 手机交流重设计、手机服务端 ASR/TTS、桌面本机 ASR 与共用实时接口 | [55 · 手机交流重设计与两端共用的伴星实时接口](./55-mobile-redesign-and-companion-realtime-2026-10-12.md)（2026-10-12 用户要求复核手机实施并提出共用 WS；真实交流页已调整，语音交互示意已提供，网关与 ASR 容器仍为实施建议） |
-| 模型执行、重试、检查点、提交与后台隔离 | [41a · 统一 Agent 基础](./41a-unified-agent-foundation-2026-09-28.md) |
-| 伴星重构与优化：工程分层、观察与在场、后台反思、人格发展及行为验收 | [50 · 伴星重构与优化：持续人格、事件参与和可靠成长](./50-companion-persona-presence-and-growth-refactor-2026-10-10.md)（阶段 1–3 基础接线已实施，§19 记录提交、来源、恢复与调度缺陷的复核修复；同日用户改判见 §20：身份文档、自己的记事与到点重评放开为自主，变化自动生效、用户事后可纠正或停用，验证与缺口见[自主阶段验证记录](../../testing/companion-autonomy-self-notes-2026-10-10.md)。存取闭环与自然度分开验收，原阶段 4 的完整体验尚未验收；2026-10-13 的实际关注推进与对外发言基础按 56 接入。沿现役运行时推进，Pi 接入不属于前置条件或交付范围） |
-| 全项目 Agent：代码分层、上下文、持续身份、目标/能力、成长闭环与 UI | [42 · 统一 Agent 系统与伴星成长](./42-unified-agent-and-companion-experience-2026-10-04.md)（2026-10-05 本轮架构缺口已修复并验收；实际证据与长期效果限制见 §14.6，设备与心跳窗口验收保持有效） |
-| 桌面首次使用、新空间认识、空间切换到达、预制指引动画与岛内重看 | [43 · 伴星带路与空间到达](./43-companion-guidance-and-space-arrival-2026-10-04.md)（桌面实现与限制见 [43 实施验证](./43-companion-guidance-implementation-2026-10-05.md)；iOS 首次引导按 [59](./59-ios-companion-suggestions-and-first-journey-2026-10-24.md) 的独立示例演练，验证范围见其实施记录） |
-| 伴星人格、记忆准入、日记 | [40 · 伴星长期陪伴与日记产品设计](./40-companion-long-term-experience-and-diary-prd-2026-09-25.md) |
-| 伴星运行时分层、失败表达、可观测性 | [40b · 伴星运行时、部署与可观测性](./40b-companion-runtime-and-observability-2026-09-27.md) |
-| 聊天面工具太多：先量清这一面，再把说明收到该有的分量 | [52 · 工具面说明预算](./52-companion-tool-surface-description-budget-2026-10-11.md)（2026-10-11 实测：聊天面 57 个工具，`agent_turn` 真 tokenizer 计 8,800 token/步，分类器原来再付 4,480。**§4.5 已实施**：分类器载荷换成 catalog 里现成的 `label`／`discovery`，4,480→1,456 token，`TASK_VERSION` 12→13，30 条两臂对照＋两组现役探针全绿（面外名字 0、uncertain 不升）。**§4 也已实施**：57 条说明 6,229→3,961 字符（−36%），超 150 的 16 条清零，工具面 8,800→7,741 token；四条守卫进 shared 测试，语义对照打在 **agent 步**（真实改笔记链前后同结果）而不是分类器——§4.5 之后分类器已经不吃 description。两项实测合计 **≈4,083 token/轮**，不是 5,200～5,600。**§9 上限审计已按用户判据处置完（2026-10-12）**：读路径不按 `maxOutputChars` 截断是设计，问题是 4 格声明与自己字段契约矛盾——修法是**分页游标 ＋ 契约派生上界**（一条消息/一个块整条给或整条不给，绝不切半条），`PAST_MESSAGES_MAX_CHARS`／`DIARY_*` 从 worker 提升为声明层唯一来源，第 5 条守卫断这四格等于派生值；`read_history` 尾部那一支原本**没有任何字符上界**（单条正文合同上限 20 万字），现在与取回原文同一份预算分页并回 `nextFromSeq`。**§4.7**：按族补了 12 条 × 两臂真实对照（24 次调用），四项判据两臂全为 0；旧文案由 `git show HEAD:` 现取，不落进仓库 |
-| 模型驱动声音表达、情感与富语言标签、分段与播放表情 | [45 · 模型驱动的伴星声音表达](./45-model-authored-voice-expression-2026-10-07.md)（2026-10-07 用户决定：移除关键词判情绪；实际链路与验收入口见该文） |
-| 伴星普通聊天自然度：新增研究、原因对照、人格表达与验收设计 | [46 · 伴星自然对话研究与调整方案](./46-companion-natural-conversation-research-and-design-2026-10-07.md)（表达诊断累计 554 次可观测请求，含隔离话题 80 次；失败审校撤下，模型额度对齐；2026-10-08 补齐长选区与日记来源、装配失败回执，实库 263 项通过；补修中止串回复、正文留档及创作分类/引文误伤及错误引文终态，真实窗口长选区/超限发送已核对；固定 DeepSeek 的锚点/示例候选未采用；补齐同模型模式及无身份诊断 30 次，复现定位到正文生成，再补接口/既有网关八项诊断仍复现，模型/网关底层机制尚未证实；续接目标/交流动作及 low 组合新增十八项未达采用标准；用户接受局限后正式启用最小续接目标，主/备用统一 DeepSeek，服务健康；176 项相关测试与四包类型检查通过；自然度与等待稳定性仍有局限） |
-| 三项遗留（记忆分类/记忆重整/缺失表达）的核查结论与已确认未闭合项 | [40c · 三项遗留的核查结论](./40c-three-legacy-items-review-2026-10-05.md) |
-| 全系统上下文作用域、完整请求预算、可靠压缩、跨会话检索与后台经验接续 | [44 · 全系统上下文治理、可靠压缩与经验接续](./44-unified-context-window-and-compaction-2026-10-05.md)（2026-10-05 用户确认 Hermes 式长期 Agent 方向；共享身份、治理与经验，各次执行保持工作边界。§11 已记录迁移行为、压缩提交和权限围栏的实库证据，以及真实模型对照和窗口样本；压缩接续、并发恢复及成长效果仍按各项证据核对，不能沿用“从未跑过”或整体已完成的概括。进度与限制以该文 §8 与 §11 为准；逐轮的补齐与排障经过在 [实施日志](./44-implementation-log.md)） |
+| Desktop paper surfaces, reading, search and companion placement | [60 · Desktop experience](60-desktop-client-finish-2026-11-07.md) |
+| Learning from a note, learning cards, mind maps and moving notes between spaces | [41 · Note learning](41-note-companion-learning-experience-2026-09-28.md), [57 · Learning cards](57-learning-card-and-review-reset-2026-10-19.md), [47 · Mind maps](47-note-mind-map-in-overview-2026-10-08.md), [48 · Moving notes](48-note-cross-space-migration-2026-10-10.md) |
+| First use and arriving in a space on desktop | [43 · Guidance and space arrival](43-companion-guidance-and-space-arrival-2026-10-04.md) |
+| Initiative, natural conversation and participation preferences | [56 · Proactive companion](56-companion-initiative-and-natural-exchange-2026-10-13.md) |
+| Identity, memory, diary and voice | [40 · Long-term companionship](40-companion-long-term-experience-and-diary-prd-2026-09-25.md), [50 · Persona and presence](50-companion-persona-presence-and-growth-refactor-2026-10-10.md), [45 · Voice expression](45-model-authored-voice-expression-2026-10-07.md) |
+| Agent execution, context and recovery | [41a · Agent foundation](41a-unified-agent-foundation-2026-09-28.md), [42 · Unified Agent](42-unified-agent-and-companion-experience-2026-10-04.md), [44 · Context and compaction](44-unified-context-window-and-compaction-2026-10-05.md), [58 · Agent experience](58-agent-experience-diagnosis-and-recovery-2026-10-19.md), [40b · Runtime and observability](40b-companion-runtime-and-observability-2026-09-27.md) |
+| Shared conversation and voice APIs | [55 · Realtime and voice](55-mobile-redesign-and-companion-realtime-2026-10-12.md), [iOS stream recovery](../../testing/ios-stream-recovery-2026-11-06.md) |
+| Server and client releases | [Release Center](../app-release-center-2026-10-24.md), [deployment guide](../../guide/en/deployment.md) |
 
-仓库根的 `AGENTS.md`（协作入口）、`DESIGN.md`（设计方向与实现参考）、`PRODUCT.md`（产品边界）同样有效。用户的新决定优先，发现冲突时同步相关文档。
-
-## 待决策候选方案
-
-资源调度已在 10 月 29 日发布，主副模型按用户要求保留原配置；当前结果与限制见[原模型恢复、双端图片与最终验收](../../testing/agent-images-client-and-model-restore-2026-10-29.md)。早先的[第二轮真实模型决策报告](../../testing/agent-capability-decision-2026-10-28.md)保留当时实验，不代表当前实现或质量准入证明。
-
-[49 · Pi Agent 接入与功能插件化](./49-pi-agent-and-domain-plugins-2026-10-10.md)保留技术研究与条件性迁移设计。用户尚未确定是否采用或实施 Pi；本文不列入已确认的现行合同，不作为 50 或当前伴星优化的实施依据。
-
-[53 · 聊天面工具动词合并](./53-companion-tool-verb-consolidation-2026-10-11.md)记录 6 个动词 + target 判别式的合并方案与实测。**已实施过试点并已回滚，不推荐重试（2026-10-11）。** 真实模型在 16 路 target 上 14 次编造 `companion_read`，执行侧一律挡为未注册工具；合并前基线 0 次。§4.4 的扁平形状因此只剩理论价值。原结论一句：「语义不丢的合并必然更贵（＋3%）」只对 `anyOf` 成立——换成**扁平参数**（`target` 枚举＋属性并集，每格完整说明挂在 target 上）后是 **−15%**，`agent_read` 单独合并 −23.5%，所以它可以同时按 token 与可维护性立项；代价是 wire 不再逐支强制 `required`（权威校验本在执行侧 zod）与同名字段跨格形状要有归属判据。主要障碍不变：风险级不齐导致 read_only 档**双向**出错（要么只读档获得写能力，要么读能力掉出只读档），以及分类器词表那条 2026-10-09 事故链（`companion-tool-intent.ts` → `attention.ts:28-30,39`；§4.5 落地后分类器读的是 label，合并要给它的是 target 短说法）。该试点**已做**（§6.5：14/16 编造面外名字，回滚），后续动词的推进顺序没有启动；重新提议前先答 §6.5 末尾的前置问题。
-
-[54 · 内核两项：每步引擎合一的可行性，与每轮数据挪出 system](./54-agent-kernel-step-engine-and-prefix-ceiling-2026-10-11.md)两项都只有实测与可行性结论，**未实施**。①「一份执行驱动」只有一半是真的：外层 `executeTurn` 共用，每步引擎有两个（`advance.ts` 139 行走 `executeAgentStep` 端口，聊天在 `companion-agent-runtime.ts` 1,478 行里约 1,000 行内联）。合一是可行的，但端口缺四件事：步内重新装配、流式与发布闸、请求内压缩、准备/进度事件。其中一条是**真冲突**：端口保证「先 `saveResponse` 才可能有副作用」，而 eager dispatch 故意在响应结束前发起只读工具——答不出投机派发在端口合同里怎么表达，就不要动这一项，否则要么两套循环换个摆放，要么悄悄丢掉检查点语义。建议的第一刀只做「步内重新装配」，不碰发布与副作用次序。② 前缀缓存实测天花板：`instructions`＋tools 逐字相同时跨轮命中 12,288/12,455＝**98.7%**，现役生产布局只有 2,944/12,891＝**23%**，差约 **9,300 token/轮**；上游把 tools 排在 instructions 之后，所以 system 内任何一处每轮变化会连工具面一起重付（当天两段重排把这一项从 17% 提到 23%，救不到工具面那块）。命中数按 256 token 一块量化。**卡点不是排版是注入防护**：那些块现在靠 system 里的边界声明约束为「数据不是指令」，挪进 user 回合需要先有一个等价约束，四条覆盖条件见该文 §5。
-
-## 本次新增体验的实施顺序
-
-先交付 **42 的统一 Agent 与伴星升级，再实施 43 的带路与空间到达体验**。43 接续 42 的持续身份、真实能力、任务与注意力合同，不成为 42 的前置工程；开始实施时按代码和窗口核对可用基础。
-
-## 已归档的 141 份文档
-
-全部位于 `project-archive/docs-2026-09-29/learning-companion/`。**按需追溯时才读，且只取结论**——不取实施顺序、待办清单、批次状态或「已完成」声明。
-
-### 分层
-
-| 类别 | 内容 | 怎么用 |
-| --- | --- | --- |
-| **取证来源** | 〔已归档〕22 记忆与上下文、29 伴星 Agent 内核重构、36 日记语气与嵌入物、39b 伴星能力调研、33 HUD 语汇审计 | 40／40b／DESIGN.md 在正文中引用过它们的具体章节。只按被引用的章节读 |
-| **2026-08 冻结系列** | `00-*`～`10-*` 共 78 份，曾标「Frozen（已冻结）」却带完整祈使句 | 不再派活。它们描述的是被 41 取代的学习流程（长轮次、术语化阶段、卡片优先） |
-| **39 系列** | 19 份，方案 39 主方案已废弃 | 仅作排障证据 |
-| **桌宠形态系列** | 13 号及 `desktop-pet-handoff/` 5 份 | **已整体失效**。主张的独立透明置顶桌宠窗口在代码中不存在：`apps/desktop-client/src/main/index.ts` 仅剩 1 个 `BrowserWindow`，`transparent`／`alwaysOnTop`／`setIgnoreMouseEvents` 零命中 |
-| **审计与复查** | `*-audit-*`、`*-review-*`、`*-redraw-*`、`*-fix-report*` | 记录当时状态与批次结论，不是当前现状 |
-
-### 已知冲突（历史文档与现行方向）
-
-归档文档里若读到下列说法，一律以现行合同为准：
-
-| 历史文档的说法 | 现行裁决 |
-| --- | --- |
-| 05-4：安静锚点是「静态小立绘…**只提供召唤入口**、不播放 idle 动画」 | 伴星在所有已进入学习空间的页面**默认可见**，保留低幅呼吸与眨眼；不得只留导航按钮 |
-| 01-1：冻结的组件职责与禁止项矩阵（2026-08-07） | 该表已归档；当前设计方向与布局参考在 `DESIGN.md`，页面可以随任务演进 |
-| 20 号（4625 行）：学习卡是主线 | 学习卡是**用户主动选择的独立能力**，不是笔记学习的前置条件 |
-| 16／23 号：固定学习顺序与目标拓扑 | 由 41 的四种按需需求取代 |
-| 13 号：「实施 Agent **必须完整读取** `desktop-pet-handoff/` 01–04 合同」 | **该指令已作废**，它曾把 Agent 引向不存在的窗口架构 |
-| 任何文档写「按窗口比例切换底图分支」「持续鼠标视差」「自由相机」 | 固定镜头 2.5D，无视差、无漫游 |
-
-## 维护规则
-
-1. **新增方案文档必须在本目录创建，并在上表登记**「什么时候读」。不要写到 `docs/plans/` 其他位置。
-2. **文档失效时移出本目录**到 `project-archive/docs-2026-09-29/learning-companion/`，不要留在原地靠横幅说明——留在原地就会被扫到。
-3. **不要用「Frozen／已冻结／Approved／Proposed／待实施／Open／Executed」描述现行文档**。这些词在本项目已失去区分力；有效性只看是否在上表。
-4. **归档文档若与现行合同冲突，改现行文档**，不要去扩写归档件。
-5. `project-archive/` 不受版本控制。换机器或重新克隆后归档内容不在，需要时从 Git 历史取回。
+For native client design and implementation, see [astella-mobile](https://github.com/asklins223/astella-mobile). Superseded plans, experiments and past evidence are stored locally under `project-archive/`.

@@ -1,8 +1,8 @@
 # 41a｜统一 Agent 基础：独立保留的技术方案
 
-> **2026-10-15 模型层实施：**用户确认引入 Pi 的模型/协议层；用户随后决定现役对话与文本生成仅使用小米、移除 OpenCode Go 模型及独立备用槽；Worker 的 MiMo Agent 与文本生成已通过 `@earendil-works/pi-ai` 统一消息和流事件，现役生成统一使用 MiMo Responses（MiMo ASR 仍走其专用 Chat 输入），仍使用原有出网闸、权限、工具执行、上下文预算和持久化。实现与真实验证范围见 [Pi 适配器验收](../../testing/pi-model-adapter-2026-10-15.md)。[49 · Pi Agent 接入与功能插件化](./49-pi-agent-and-domain-plugins-2026-10-10.md)中的原生 Extensions 和完整运行时迁移仍是候选设计，本次没有替换宿主 Agent 循环。
+> **2026-10-15 模型层实施：**用户确认引入 Pi 的模型/协议层；用户随后决定现役对话与文本生成仅使用小米、移除 OpenCode Go 模型及独立备用槽；Worker 的 MiMo Agent 与文本生成已通过 `@earendil-works/pi-ai` 统一消息和流事件，现役生成统一使用 MiMo Responses（MiMo ASR 仍走其专用 Chat 输入），仍使用原有出网闸、权限、工具执行、上下文预算和持久化。实现与真实验证范围见 Pi 适配器验收 (`docs/testing/pi-model-adapter-2026-10-15.md` in the local archive)。49 · Pi Agent 接入与功能插件化 (`docs/plans/learning-companion/49-pi-agent-and-domain-plugins-2026-10-10.md` in the local archive)中的原生 Extensions 和完整运行时迁移仍是候选设计，本次没有替换宿主 Agent 循环。
 
-> **2026-10-08 用户预算纠偏：**正常推理与生成应获得模型声明的输出空间和充足时间。任务运行中持续续租，租约窗口只用于失联回收；不再由两分钟租约决定生成 deadline。工具调用数、有限重试、取消与业务围栏继续有效。现行默认与验证见 [执行预算调整](../../testing/ai-execution-budgets-2026-10-08.md)。
+> **2026-10-08 用户预算纠偏：**正常推理与生成应获得模型声明的输出空间和充足时间。任务运行中持续续租，租约窗口只用于失联回收；不再由两分钟租约决定生成 deadline。工具调用数、有限重试、取消与业务围栏继续有效。现行默认与验证见 执行预算调整 (`docs/testing/ai-execution-budgets-2026-10-08.md` in the local archive)。
 
 > 日期：2026-09-28  
 > 状态：当前技术方向；实现覆盖度按调用图和测试核对  

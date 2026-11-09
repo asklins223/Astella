@@ -60,4 +60,4 @@ The script installs the fixed deployment entry point and enables the production 
 - Three resolved Compose configuration tests cover development, Alpha and production, and run from both `make verify` and CI. The source-built client initialized a disposable local store twice, round-tripped bytes and preserved anonymous 403 responses. The source-built backup runner also starts successfully; the existing 53 backup-script assertions and two deployment-bundle tests pass. Existing development containers were left running throughout verification.
 
 
-The retention scope and schedule above were superseded by the accepted 30-day chat / nightly durable-media policy; see [chat upload retention](chat-upload-retention-2026-10-27.md) for the deployed behavior and later upload-verification optimization.
+The retention scope and schedule above were superseded by the accepted 30-day chat / nightly durable-media policy; see chat upload retention (`docs/testing/chat-upload-retention-2026-10-27.md` in the local archive) for the deployed behavior and later upload-verification optimization.

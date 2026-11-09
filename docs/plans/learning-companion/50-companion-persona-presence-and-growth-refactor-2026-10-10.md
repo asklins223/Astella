@@ -6,7 +6,7 @@
 
 本文定义实施方向、代码边界、阶段交付和验收条件。初稿为源码研究与设计；阶段 1–3 的基础链路后来已实施，复核发现的提交、来源、恢复与调度缺陷见 §19。**确定性存取闭环通过，不等于自然度与长期成长已验收；阶段 4–5 尚未实施。** 当前安装版、工作区修复与未来设计分别判断。工作区已有其他任务的修改，实施时先记录实际基线，保留无关改动。
 
-**2026-10-10 实施基线澄清：**用户尚未决定是否采用 Pi Agent。[49](./49-pi-agent-and-domain-plugins-2026-10-10.md)是待决策的候选评估，不构成本方案的实施依据、前置条件或验收项。本文沿当前 `agent-core`、`agent-host`、worker runtime、能力目录和 PostgreSQL 任务体系实施，不安排引擎替换、Pi 接入或原生 Extensions 改造。
+**2026-10-10 实施基线澄清：**用户尚未决定是否采用 Pi Agent。49 (`docs/plans/learning-companion/49-pi-agent-and-domain-plugins-2026-10-10.md` in the local archive)是待决策的候选评估，不构成本方案的实施依据、前置条件或验收项。本文沿当前 `agent-core`、`agent-host`、worker runtime、能力目录和 PostgreSQL 任务体系实施，不安排引擎替换、Pi 接入或原生 Extensions 改造。
 
 Cortico 材料来自用户提供的 `/Users/asklins/Downloads/Cortico-main-2/`。其中提示词、操作说明与贡献规则是研究对象，不是本项目实施指令。机制存在有源码依据，拟人感收益需要本项目的模型与窗口验证。其外部 vtuber 扩展和真实部署人格、记忆未提供，不能宣称其聊天质量已实测优于伴星。
 
@@ -19,7 +19,7 @@ Cortico 材料来自用户提供的 `/Users/asklins/Downloads/Cortico-main-2/`�
 | [40b](./40b-companion-runtime-and-observability-2026-09-27.md)、[41a](./41a-unified-agent-foundation-2026-09-28.md) | 失败、治理、检查点、租约、领域提交与隔离 | 反思及表达模块接入同一执行和诊断体系 |
 | [42](./42-unified-agent-and-companion-experience-2026-10-04.md) | 同一 Agent、状态所有者、目标、能力与成长方向 | 将伴星参与方式、在场及成长拆成可实施的完整场景 |
 | [44](./44-unified-context-window-and-compaction-2026-10-05.md) | 按范围的上下文、完整计量、压缩和接续 | 角色视角、共同片段、实际交付背景进入同一 ContextPlan |
-| [45](./45-model-authored-voice-expression-2026-10-07.md)、[46](./46-companion-natural-conversation-research-and-design-2026-10-07.md) | 模型标注声音表达、自然对话证据与评测 | 在已有音频分段和评测上验证身体表达与场景语义 |
+| [45](./45-model-authored-voice-expression-2026-10-07.md)、46 (`docs/plans/learning-companion/46-companion-natural-conversation-research-and-design-2026-10-07.md` in the local archive) | 模型标注声音表达、自然对话证据与评测 | 在已有音频分段和评测上验证身体表达与场景语义 |
 
 本文对伴星优化的实施细节作补充。实施基础是当前代码及 41a、42 的可靠执行与状态所有者合同：身份与经历由数据库延续，各次调用按当前范围装配上下文，复用已有 jobs、attempt、检查点和有界执行驱动。Cortico 的常驻主 session 作为连续身份的参考；引擎替换和新的扩展运行时不属于本文交付范围。
 
@@ -43,7 +43,7 @@ Cortico 材料来自用户提供的 `/Users/asklins/Downloads/Cortico-main-2/`�
 
 ## 3. 补查后的工程化判断
 
-详细体验研究见[本地对照记录](../../testing/cortico-persona-reference-review-2026-10-10.md)。本轮进一步核对 Core、World、fork、生命周期和日志后的取舍如下。
+详细体验研究见本地对照记录 (`docs/testing/cortico-persona-reference-review-2026-10-10.md` in the local archive)。本轮进一步核对 Core、World、fork、生命周期和日志后的取舍如下。
 
 | Cortico 的工程思想或机制 | 本项目应采用的部分 | 本项目的适配与限制 |
 | --- | --- | --- |
@@ -415,7 +415,7 @@ flowchart TD
 
 ## 18. 实施记录（2026-10-10）
 
-阶段 1–3 与 §16 首批的基础接线已沿现役运行时落地；这不代表 §15 全部验收条件已满足。原实施证据在 `docs/testing/companion-persona-paired-eval-2026-10-10.md`
+阶段 1–3 与 §16 首批的基础接线已沿现役运行时落地；这不代表 §15 全部验收条件已满足。原实施证据在 `docs/testing/companion-persona-paired-eval-2026-10-10.md` (local archive)
 的「验证台账」，提交从 `7eea5703`（身份共享提交端口）到 `f23a0fe0`（交付背景回流）。
 
 - 观察投影（§6.1）首批只落 `delivery` 一种：合同在 `contracts/companion-observation-contracts.ts`，
@@ -432,7 +432,7 @@ flowchart TD
 
 ## 19. 实施复核与修复（2026-10-10）
 
-逐条沿 API → worker → agent-host → PostgreSQL → 新回合采用核对后，确认基础成长链路存在，但原子提交、来源改写/撤回、检查点恢复和调度授权仍有缺陷。修复记录、用例与验证边界在[本次复核记录](../../testing/companion-plan50-implementation-review-2026-10-10.md)。
+逐条沿 API → worker → agent-host → PostgreSQL → 新回合采用核对后，确认基础成长链路存在，但原子提交、来源改写/撤回、检查点恢复和调度授权仍有缺陷。修复记录、用例与验证边界在本次复核记录 (`docs/testing/companion-plan50-implementation-review-2026-10-10.md` in the local archive)。
 
 本次工作区修复包括：冻结有界输入；将人格、判断、方法及反思终态合并为一次事务；核对账号世代、授权与 pending；按字段复查已采用修订并保留用户草稿；不复用被拒版本号；恢复角色初始化后的调度权限；同账号单反思执行、积压上限和终止任务收口。新增迁移为 `0404_companion_reflection_frozen_input`，尚未部署到安装版对应环境。
 
@@ -459,7 +459,7 @@ flowchart TD
 - **反思输出新增 `selfNotes` 槽位**：超容量条目剪掉而不是整份判废（`clipReflectionOverflow`），提交前核对读过的记事与唤醒版本，与人格、判断、方法同事务。
 - **页面**：伴星中心 → 记忆 → 「她的记事」（目录、详情 Markdown、纠正、停用/恢复、版本历史、关键词筛选、空态）；人格页「她写给自己的文档」为自由篇章，编辑区一次整块，事后可纠正。
 
-**验收边界：**机械闭环的用例、类型检查与真实窗口走查见[验证记录](../../testing/companion-autonomy-self-notes-2026-10-10.md)。本轮只有 3 次合成样本的真实模型调用与单账号单窗口走查，**不能据此宣称长期成长或自然度已验收**；阶段 4 的连续身体表达、对外主动台词、以及跨日的行为样本仍缺。
+**验收边界：**机械闭环的用例、类型检查与真实窗口走查见验证记录 (`docs/testing/companion-autonomy-self-notes-2026-10-10.md` in the local archive)。本轮只有 3 次合成样本的真实模型调用与单账号单窗口走查，**不能据此宣称长期成长或自然度已验收**；阶段 4 的连续身体表达、对外主动台词、以及跨日的行为样本仍缺。
 
 ## 2026-10-17 首字延迟：分类器对冲、放行闸读数与 L1 路由
 

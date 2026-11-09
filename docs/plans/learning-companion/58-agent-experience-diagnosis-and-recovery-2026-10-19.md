@@ -1,8 +1,8 @@
 # 58 · Agent 速度、质量与稳定性整改方案
 
-> **2026-10-21 窗口复查补充：** 修复了否定请求被当作写入、点名笔记缺少真实读取、预览返回、恢复入口及主动原句复读，主动运行从第一步准备发言／静默结束能力；真实超时、近似复读和内容质量反例仍保留。见[窗口检查、运行证据与未完成项](../../testing/plan-57-58-window-check-2026-10-21.md)，不据此宣称整体通过。
+> **2026-10-21 窗口复查补充：** 修复了否定请求被当作写入、点名笔记缺少真实读取、预览返回、恢复入口及主动原句复读，主动运行从第一步准备发言／静默结束能力；真实超时、近似复读和内容质量反例仍保留。见窗口检查、运行证据与未完成项 (`docs/testing/plan-57-58-window-check-2026-10-21.md` in the local archive)，不据此宣称整体通过。
 
-> **2026-10-21 implementation audit: not fully accepted.** The execution/progress/recovery chain exists and concrete defects have been corrected. Real HTTP samples still retain slow delivery, provider timeout and content-quality failures. Successful repeats do not establish p95 or the ≥95% completeness target. See the [current audit, fixes and evidence](../../testing/plan-57-58-audit-2026-10-21.md).
+> **2026-10-21 implementation audit: not fully accepted.** The execution/progress/recovery chain exists and concrete defects have been corrected. Real HTTP samples still retain slow delivery, provider timeout and content-quality failures. Successful repeats do not establish p95 or the ≥95% completeness target. See the current audit, fixes and evidence (`docs/testing/plan-57-58-audit-2026-10-21.md` in the local archive).
 
 > **2026-10-21 evening follow-up:** Companion UI defects (duplicate title in saved-note preview, "回到最新" covering content, mixed-run trace copy contradicting the rail, failed/amber paper contrast and the reply-heading clock) were found and fixed, with real-component Chromium probes and live-window measurements. Recovery/watchdog/fallback code was re-verified; the discard/reliability change lives in Plan 57. See [defects, fixes and evidence](../../testing/plan-57-58-followup-2026-10-21.md). Speed/quality targets remain open.
 
@@ -28,7 +28,7 @@
 
 前一轮检查了真实 Electron 开发窗口 `localhost:5173`，打开实际对话手记并展开既有任务过程，同时以只读事务查询本地开发数据库。审计没有发送新消息、发起新模型调用、修改笔记或设置、部署服务。
 
-[原始基线](../../testing/agent-experience-baseline-2026-10-19.json)保留三个选定既有运行的事件时间、步骤状态、模型审计与工具回执。它们是问题样本，不能推算生产总体错误率。服务端事件时间也不等于画面呈现或人耳听到声音的时间。
+原始基线 (`docs/testing/agent-experience-baseline-2026-10-19.json` in the local archive)保留三个选定既有运行的事件时间、步骤状态、模型审计与工具回执。它们是问题样本，不能推算生产总体错误率。服务端事件时间也不等于画面呈现或人耳听到声音的时间。
 
 | 样本 | 实际结果 | 对三项目标的影响 |
 | --- | --- | --- |
@@ -79,7 +79,7 @@
 ## 4. 质量：以满足当前要求为准
 
 - 保留唯一权威的当前请求、材料与版本引用；转交、内部纠正、压缩、恢复和换话题都不能把旧问题变成当前问题。
-- 现有工作区已包含纠正消息去重、新建笔记路由与分类器候选修复，实施时保留这些改动，再验证实际入口闭环。[此前调查](../../testing/learning-artifacts-live-probe-2026-10-19.md)记录过内部重附用户原话导致“你重复说了几遍”的误判，以及后台目标只交付摘要、实际没有创建笔记的问题；本轮没有重新独立复现这些生产事件，不能把已有修复记录当作部署后验收。
+- 现有工作区已包含纠正消息去重、新建笔记路由与分类器候选修复，实施时保留这些改动，再验证实际入口闭环。此前调查 (`docs/testing/learning-artifacts-live-probe-2026-10-19.md` in the local archive)记录过内部重附用户原话导致“你重复说了几遍”的误判，以及后台目标只交付摘要、实际没有创建笔记的问题；本轮没有重新独立复现这些生产事件，不能把已有修复记录当作部署后验收。
 - 内部纠正必须保留宿主身份。现有带标记的重附件仍使用 `user` 角色，需要验证模型是否稳定地区分真实用户发言与内部修复。
 - 固定检查当前对象、问题各点、篇数、近似篇幅、结尾完整性、事实依据和实际保存结果。大幅不符合要求的回答即使格式正确，也算质量失败。
 - 解释、创作与执行分别评价。教学不能遗漏关键条件；故事不能只有开头；创建笔记不能仅在总结里写“已完成”。人格和语气服务内容，主动补充不承担原本应在本轮完成的后半段回答。
@@ -135,7 +135,7 @@
 
 实施时运行相应行为测试和真实窗口检查。涉及共享事件或执行合同，按包运行shared、API、desktop-client、ai-worker及受影响agent包的 `npm run typecheck`；原生投影改动另做平台检查。全量回归先记录基线，保留无关工作，区分既有失败与本次新增问题。
 
-[10月13日过程手记记录](../../testing/companion-process-journal-2026-10-13.md)保留为旧默认的历史证据，不能覆盖本次要求。[10月18日入口比较](../../testing/companion-entry-comparison-2026-10-18.md)与[聊天修复记录](../../testing/desktop-companion-chat-repair-2026-10-18.md)仍只说明各自样本范围，不能据其测试数量判定当前整体体验合格。
+10月13日过程手记记录 (`docs/testing/companion-process-journal-2026-10-13.md` in the local archive)保留为旧默认的历史证据，不能覆盖本次要求。10月18日入口比较 (`docs/testing/companion-entry-comparison-2026-10-18.md` in the local archive)与聊天修复记录 (`docs/testing/desktop-companion-chat-repair-2026-10-18.md` in the local archive)仍只说明各自样本范围，不能据其测试数量判定当前整体体验合格。
 
 ## 9. OpenDesign Cloud：伴星与手记的完整交互设计任务
 
@@ -231,7 +231,7 @@ OpenDesign Cloud 需交付：可点击且有动效的关联流程原型；布局
 
 设计生成流程沿同一次需求确认继续，使用同一项目与运行，不重复发起相同任务。生成开始后跟进到终态，取得可用预览/设计链接并打开核对。需求确认、账户状态或额度若需要用户操作，准确说明所处边界，不把“已打开需求卡”说成“设计已生成”。
 
-OpenDesign Cloud 已交付“拾星书房 · 伴星与手记跨平台核心流程”的[设计工作区](http://127.0.0.1:62745/projects/project-4220/conversations/d137d52d-59c2-430b-8cc9-ec75c5a488b4/files/shixing-study-prototype.html)与[可点击预览](http://127.0.0.1:62707/api/projects/project-4220/raw/shixing-study-prototype.html)。这些是本次服务会话返回的本机链接；持久副本在[交互原型](../../prototypes/companion-agent-58/index.html)和[中文设计说明](../../prototypes/companion-agent-58/design-guide.md)。服务返回成功并标记仍有未收尾工作，故未直接据此判定全部设计验收通过。
+OpenDesign Cloud 已交付“拾星书房 · 伴星与手记跨平台核心流程”的[设计工作区](http://127.0.0.1:62745/projects/project-4220/conversations/d137d52d-59c2-430b-8cc9-ec75c5a488b4/files/shixing-study-prototype.html)与[可点击预览](http://127.0.0.1:62707/api/projects/project-4220/raw/shixing-study-prototype.html)。这些是本次服务会话返回的本机链接；持久副本在交互原型 (`docs/prototypes/companion-agent-58/index.html` in the local archive)和中文设计说明 (`docs/prototypes/companion-agent-58/design-guide.md` in the local archive)。服务返回成功并标记仍有未收尾工作，故未直接据此判定全部设计验收通过。
 
 补充浏览器验证已走通：预览→手记→正式笔记→原路返回且未发送草稿保留；部分失败后仅重试剩余部分并完成三篇；旧手记遇到新成果保持原阅读；390px 手机投影及保存结果未知时核对接续；完整动效连续开合、关闭动效与 Esc 关闭。修复了手记定位使整个画布被隐藏滚动带走的问题，复测画布 scrollTop 为 0 且返回入口可见。上述均为演示数据；缩放矩阵、系统减少动态、原生设备和真实执行仍须在实施中分别验收。
 

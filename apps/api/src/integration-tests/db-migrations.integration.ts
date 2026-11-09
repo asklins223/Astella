@@ -38,8 +38,38 @@ const RETIRED_TABLES = [
   // 2026-10-20：0449 用 CASCADE 删掉 note_learning_rounds 后，这张表只剩
   // RLS 开着、没有策略，全新库引导自检直接 RAISE；它已没有读者，0450 一并退役。
   "note_learning_reflections",
+  // 0469 清掉的那批空壳函数引用过的表：留在清单里，函数体一旦重新提到它们就报红。
+  "note_learning_round_artifacts",
+  "note_learning_round_teachings",
+  "note_learning_round_plan_revisions",
+  "note_learning_round_targets",
+  "note_learning_round_artifact_failures",
+  "learning_run_processing_outbox",
+  "card_generation_run_outbox_v2",
+  "card_generation_runs_v2",
+  "learning_objective_revisions_v2",
+  "learning_card_publication_revisions_v2",
+  "evidence_snapshots_v2",
+  "learning_target_snapshots_v2",
 ];
-const RETIRED_FUNCTIONS = ["astella_enqueue_companion_thoughts"];
+const RETIRED_FUNCTIONS = [
+  "astella_enqueue_companion_thoughts",
+  // 0469：学习运行 / 制卡 / 笔记轮次链路退役后留下的空壳函数。
+  "astella_card_generation_outbox_notify",
+  "astella_claim_run_processing",
+  "astella_mark_run_processing_processed",
+  "astella_release_run_processing",
+  "astella_note_rounds_idle_for_pause",
+  "guard_note_learning_round_artifact_failure",
+  "prevent_immutable_v2_row_mutation",
+  "prevent_note_learning_round_artifact_mutation",
+  "prevent_note_learning_round_ownership_mutation",
+  "prevent_note_learning_round_plan_mutation",
+  "prevent_note_learning_round_target_mutation",
+  "prevent_note_learning_round_teaching_mutation",
+  "prevent_objective_revision_mutation",
+  "prevent_publication_revision_mutation",
+];
 
 test("学习卡核心表存在且退役表与调度函数已删除", async (t) => {
   if (!CONN) {
@@ -74,6 +104,23 @@ test("学习卡核心表存在且退役表与调度函数已删除", async (t) =
       retiredFunctions.rows,
       [],
       `退役调度函数仍存在：${retiredFunctions.rows.map((row) => row.function_name).join(", ")}`,
+    );
+    // 函数体里的注释可以讲历史，可执行语句不许再提退役表：0468 之前日记调度
+    // 正是栽在这里——表删了、函数还在查，整条 tick 每早抛错。
+    const leaking = await pool.query(
+      `SELECT p.oid::regprocedure::text AS function_name
+       FROM pg_proc p
+       JOIN pg_namespace n ON n.oid = p.pronamespace
+       WHERE n.nspname = 'public'
+         AND p.prokind = 'f'
+         AND regexp_replace(coalesce(p.prosrc, ''), '--[^' || chr(10) || ']*', '', 'g') ~ ANY($1::text[])
+       ORDER BY 1`,
+      [RETIRED_TABLES.map((table) => `\\m${table}\\M`)],
+    );
+    assert.deepEqual(
+      leaking.rows,
+      [],
+      `这些函数仍在查询已删除的表：${leaking.rows.map((row) => row.function_name).join(", ")}`,
     );
   } finally {
     await pool.end();

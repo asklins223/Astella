@@ -12,17 +12,17 @@
 
 **伴星回复的交付与查阅材料（2026-10-09 体验修订）：**一轮回复共用一张交付纸，新笔记等目标入口直接可用；查阅片段按需展开，不逐块产生通知；「做事经过」独立放在回复上方，只在本轮真实调用工具时出现，当前动作随工具事件实时更新；消息文字和工具进展各自更新，允许伴星边说边调用工具，完成后保留紧凑摘要，全部操作按需展开。读取笔记或来源时带出的截短快照称为「查阅的材料」，与联网回答的编号引用区分；展开片段不宣称取得全文。交付与正文一起收起，阅读已展开内容或过程时暂停，下一轮不积累旧纸。工具过程在回复展示期间保留；关闭成功回复时一起收起，异常和待确认仍可独立查看及收起。完整内容、原始块和真实目标仍留在手记，待确认与异常保留明确反馈。
 
-**伴星图片与其他内容（2026-10-09 追加优化）：**图片、步骤图、题面和代码在本轮回复里直接预览，多份内容逐份切换，不再统一藏进附件标题。图片保留完整比例和图注，可用键盘或点击进入全屏查看，载入与失败在原位说明，手动重试可再次发起；步骤图按顺序排布，题面按 Markdown 阅读，代码保留语言、缩进与真实复制结果。展开阅读或全屏看图暂停回复收起，下一轮从第一份内容开始；文字、内容与工具过程同时可见。手记和日记复用相同图片展示。窗口验证与边界见 [内容气泡验收](docs/testing/companion-rich-bubbles-2026-10-09.md)。
+**伴星图片与其他内容（2026-10-09 追加优化）：**图片、步骤图、题面和代码在本轮回复里直接预览，多份内容逐份切换，不再统一藏进附件标题。图片保留完整比例和图注，可用键盘或点击进入全屏查看，载入与失败在原位说明，手动重试可再次发起；步骤图按顺序排布，题面按 Markdown 阅读，代码保留语言、缩进与真实复制结果。展开阅读或全屏看图暂停回复收起，下一轮从第一份内容开始；文字、内容与工具过程同时可见。手记和日记复用相同图片展示。
 
-**客户端更新（2026-10-09 用户决定）：**macOS 在没有 Apple Developer ID 证书时仍可在应用内下载并重启安装。通过现有 GitHub 更新源下载完整 ZIP、校验摘要与新包身份和完整性，暂存后等待旧进程退出，同卷替换应用并重新启动；替换或启动命令失败时恢复旧应用。安装意图保存到本机，新版实际启动并核对版本后，伴星用纸片和随包携带的语音提醒更新成功；展示后确认回执，后续启动不重复播报。更新后丢弃旧运行版本的检查缓存，设置显示真实当前版本。首次手动安装的系统打开确认仍按 macOS 规则处理。验证见 [Mac 更新记录](docs/testing/macos-update-and-companion-receipt-2026-10-09.md)。
+**客户端更新（2026-10-09 用户决定）：**macOS 在没有 Apple Developer ID 证书时仍可在应用内下载并重启安装。通过现有 GitHub 更新源下载完整 ZIP、校验摘要与新包身份和完整性，暂存后等待旧进程退出，同卷替换应用并重新启动；替换或启动命令失败时恢复旧应用。安装意图保存到本机，新版实际启动并核对版本后，伴星用纸片和随包携带的语音提醒更新成功；展示后确认回执，后续启动不重复播报。更新后丢弃旧运行版本的检查缓存，设置显示真实当前版本。首次手动安装的系统打开确认仍按 macOS 规则处理。
 
 **伴星编辑当前笔记（2026-10-08 用户决定）：**用户可以在正文保留插入光标后交给伴星补写，也可以要求追加到末尾、删除指定段落或将原文替换为新文字、表格和 Mermaid 流程图。阅读选区提供「让伴星改这段」，保留原句与位置供本轮核对。发送前同步本地正文，编辑通过现有协同文档保存并更新搜索投影；原文或版本已经变化时停止替换。处理中锁定相关段落并显示纸面光带，其他段落仍可编辑；「发给伴星」与「原句解读」共用这种反馈。完成、失败与停止解除锁定，Off 和系统减少动态保留静态状态。普通提问与原句解释不自动改正文。
 
 **对话生成笔记与库内链接（2026-10-08 用户决定）：**用户可以先与伴星讨论知识点，再明确要求整理成一篇新笔记；新笔记按当前权限自动保存或先展示完整草稿等用户确认，保存到当前空间、默认仅自己可见，之后使用现有编辑器修改。生成时检索库内相关笔记、读取正文并核对可见性与版本，在正文或「相关笔记」中附真实身份链接及关系说明；没有相关内容时保存为独立笔记，不虚构链接。知识问答和闲聊本身不自动创建笔记。这与已有笔记的速看、拓展草稿不同，拓展仍由用户逐篇收下。
 
-**AI 执行预算（2026-10-08 用户决定）：**正常推理与生成使用模型档案声明的输出上限，内容篇幅由任务输出合同控制；不再把少量正文 token 配额作为含推理的总额度。后台模型调用默认可等待 15 分钟，任务默认 30 分钟，多阶段制卡默认 60 分钟，部署可覆盖。运行中持续续租，租约用于失联回收；重复调用、有限重试、取消、权限与来源核对继续生效。实现与验证见 [执行预算调整](docs/testing/ai-execution-budgets-2026-10-08.md)。
+**AI 执行预算（2026-10-08 用户决定）：**正常推理与生成使用模型档案声明的输出上限，内容篇幅由任务输出合同控制；不再把少量正文 token 配额作为含推理的总额度。后台模型调用默认可等待 15 分钟，任务默认 30 分钟，多阶段制卡默认 60 分钟，部署可覆盖。运行中持续续租，租约用于失联回收；重复调用、有限重试、取消、权限与来源核对继续生效。
 
-**联网搜索与引用（2026-10-08 用户决定及修正）：**统一 Agent 可按需使用智谱 Web Search API，复用服务端既有智谱凭据；伴星设置的账号级「联网搜索」默认关闭。搜索结果保留真实网址和稳定来源身份，聊天正文通过编号角标查看来源、复制链接和系统浏览器打开，轻聊、手记和中心历史共用这份来源。网页标题、网址、日期与摘要只在折叠来源列表和点击后的来源弹层里展示，不拼进气泡正文、不逐字显示、不朗读；引用标记不参与语音合成。额度不足时当前轮继续回答并停用搜索，当前 worker 对同一凭据冷却 30 分钟后再允许探测；不改写用户开关，也不声称已联网核实。验证与边界见 [联网搜索验证记录](docs/testing/agent-web-search-2026-10-08.md)。
+The companion can use the configured web search provider when the account enables web search. The switch defaults to off. Search results retain their URLs and source identities, and citations link to the same sources in chat, the journal and conversation history. Titles, URLs, dates and snippets appear in the source panel. Speech skips citation markers. On quota exhaustion the turn can continue and report that online verification could not finish. See [search deployment and verification](docs/testing/agent-source-review-performance-2026-11-04.md).
 
 **伴星声音表达（2026-10-07 用户决定与接线）：**语气和轻笑、叹息等富语言表达由同一次回复生成按语境标注，移除正文关键词判情绪。标签只进入支持的 Qwen 语音合成，显示与历史正文保持干净；语气转折按正文区间切段，Live2D 采用当前实际播放段的表达。人格页「声音表达」关闭后禁用两类标签；模型缺少或给出无效标记时保持自然语气。后台通知继续使用既有 Edge 声道，正式作答与勿扰规则继续生效。真实模型样本及窗口合成/播放证据、真人听感限制见 [方案 45](docs/plans/learning-companion/45-model-authored-voice-expression-2026-10-07.md)。
 
@@ -38,31 +38,15 @@
 
 **伴星实时语音（2026-10-07 体验修复）：**开麦后按自然停顿自动送出，短停顿只推进本机识别字幕，完整一轮与最新说过的话在伴星身边可读。识别、等待回复、伴星说话和暂停分别呈现；回复期间收音让路，播放结束后自动恢复，插话由「我想说」立即停止旧回复并接续新一句，避免音量阈值把扬声器回声误判成用户。可以「说好了」提前送出、暂停并继续收音、改用文字；关闭与再次点麦克风均立即结束，不自动发送未完成的内容。隐藏窗口暂停收音，正式作答或语音不可用时结束会话。实时会话压住背景播报但允许回复发声，普通单段录音仍独占音频。尚未完成真人麦克风与扬声器的连续多轮听感验收。
 
-**Complete speech delivery (2026-10-19 user decision):** when reply speech is enabled, issue every speakable segment through the reply's ending. The former 200-character spoken-prefix budget and its environment override have been removed. Segment length bounds individual synthesis requests, never the amount of the reply read aloud. Existing formal-answer, voice, cancellation and participation controls still apply. A new greeting or name after a companion question can use the hybrid conversation path; acknowledgements, refusals and references that continue a pending offer retain the task handoff. Verification: [startup latency and complete speech](docs/testing/desktop-startup-latency-and-complete-speech-2026-10-19.md).
+**Complete speech delivery (2026-10-19 user decision):** when reply speech is enabled, issue every speakable segment through the reply's ending. The former 200-character spoken-prefix budget and its environment override have been removed. Segment length bounds individual synthesis requests, never the amount of the reply read aloud. Existing formal-answer, voice, cancellation and participation controls still apply.
 
 **历史消息的本机原声（2026-10-07 用户决定）：**伴星实时回复生成的 MP3 分段按同一条回复保存到客户端 `userData/companion-message-audio`，按部署与账号隔离，空间与回复身份使用哈希。每个账号在本机合计最多保留最近 100 条有音频的回复，一条回复的多段音频只占一条额度；回听不延长保留顺序。手记与伴星中心的对话历史在录音存在时显示「播放音频」，按原顺序播放当时生成的声音，不重新合成；缺失、未生成或超出额度的消息保留文字。停止、切换消息和离开页面释放播放，清除当前空间的对话同时删除该空间的缓存，并阻止清除前的迟到请求写回。引导旁白的既有缓存独立保留。
 
 ## Platform
 
-Electron desktop
+The desktop client uses Electron on macOS, Windows and Linux. The native SwiftUI and Kotlin/Compose clients share this backend for notes, companion sessions and permissions. Their UI, builds and device validation are maintained in [astella-mobile](https://github.com/asklins223/astella-mobile).
 
-Electron desktop UI，覆盖 macOS / Windows / Linux；不再提供浏览器端产品。
-
-**移动端方向（2026-10-10 用户决定与复核修订；交付产品方案和连贯前端 Demo，未实现移动客户端）：**App 以伴星为统一操作入口，与桌面共用对象、聊天、能力合同和业务逻辑，小程序宿主押后。首版保证桌面已有笔记可直接搜索、打开和就地提问，并完成图片加文字／独立语音捕捉、真实创建和修改笔记两条闭环；PDF／Word、同轮图加语音、精确段落接力与流式跨端属后续。三个入口在一级页面保留，详情独立阅读，返回实际来源与位置。首版共享的是已持久化的数据，手机不依赖桌面进程。用户录音用于转写但不持久保存，不能宣称不上传或由此推出不参与模型训练；伴星历史朗读另有桌面本机缓存，首版不跨端回听。前端 Demo 的手机与桌面预览共用本机样例 Store，不等于真实互通。2026-10-11 Demo 05 补齐本机模拟登录／注册、账号隔离、资料与使用偏好，以及连接当前交流的伴星中心、表达设定、已有记忆修正和日记来源回跳；整套视觉重做，既有动效保留。2026-10-11 Demo 06 按最新决定默认展示大幅动态 Live2D 与最新短气泡，粒子音波承载语音反馈；原聊天记录可自由切换并记住账号偏好，两种视图共用当前交流。已接入项目本机 Live2D；演示输入不采集麦克风，回复使用浏览器本机中文声音，口型按播报时序估计。暂停、打断、结束与改用文字分开处理，普通语音问答不自动存笔记。正式 ASR、账号、持续身份与跨端链路仍须接入现役服务。详见 [方案 51](docs/plans/learning-companion/51-mobile-companion-full-agent-product-design-2026-10-10.md)。
-
-**2026-10-14 原生手机客户端重构决定与实现：**用户要求彻底停用 React 手机客户端，拆成 iOS SwiftUI 与 Android Kotlin/Jetpack Compose 两个独立原生工程，并以 iOS 原生系统层级、克制中性色和单一系统蓝强调作为双端共同视觉标尺；之后明确不采用装饰性多色渐变或撞色。两端适配系统浅色／深色外观。一级导航是“对话／手边／手记”，个人页由右上角进入；两端保留各自系统的导航、键盘、权限和选择器。已落地邮箱登录、同一伴星会话、鉴权 WebSocket、图片同回合输入、MiMo 整段语音转写、手记搜索／只读阅读和进行中 run。旧 React 源码与构建入口已移除；未迁移页面、构建和真机验收状态见 [`apps/mobile-client/README.md`](apps/mobile-client/README.md) 与 [原生界面规范](apps/mobile-client/DESIGN_SPEC.md)。
-
-**2026-10-14 手机图片入口：**手记架可直接打开相机／相册选图，并把图片与可编辑提问一起放到同一条伴星交流中；选图后先预览，不自动上传或发送，只有用户在对话里主动发送时才走现有鉴权图片上传。正文阅读、版本记录、动态讲解与思维图沿用各自任务布局，不套用同一张卡片模板。
-
-**2026-10-15 移动端体验升级与产品规则修订：**双端原生全量重构，体验基线为 Telegram 级动效——默认弹性可中断，iOS／Android 两端参数同值，规格见 [`apps/mobile-client/DESIGN_TOKENS.md`](apps/mobile-client/DESIGN_TOKENS.md)。伴星形态改为 Live2D 模型运行时下载：服务端下发版本清单并给出对象存储临时签名下载链接，模型不随安装包分发，加载失败降级为静态图；动作映射吸收说话口型与思考等表达，对话时完整在场，其他页面提供轻量形态可召唤，事件用全屏浮层。输入区提供「+」二级菜单：加图片、加文件、引用手记。对话可发文件、文件可导入手记；文件正文在手机本机抽取，「原件不出本机」条款同样适用于移动端本机解析，抽取正文入合同、原件同时作资产留档；回合附件合同扩展为「文字＋至多一个附件（图片或文件）」或「仅附件」，仅附件时登记显式意图、不伪造文案。移动端接入 TTS 播放，配合粒子波动与口型；AI 外发同意是移动端进入门槛——新用户注册后强制签署方可进入，老用户未签先补签；完整语音体验还需部署开关 `COMPANION_VOICE_DIALOGUE_V1_ENABLED`／`COMPANION_STREAMING_VOICE_V1_ENABLED` 开启（生产默认关）。正文写入规则：「手机上人不改正文，伴星改」——手机会话直接写正文被服务端 403 拒绝（`requireNoteContentWrites`，判据为会话 `clientKind`）；选段改写是生成建议、前后对照，确认后由伴星写入通道（companion-edit-dispatch）落库，不放宽闸门。原生双端尚未接入方案 56 观察端口，需按既有合同调用 `POST /me/companion/awareness`（前台／启动／页面到达／安静），列为原生重构实现待办。
-
-**2026-10-11 工程审计结论（修正上面 Demo 部分的读法）：** 前端原型**不能作为移动客户端的工程起点**——它硬依赖评审实验台 DOM（脱离实验台连构造器都无法执行），业务侧没有任何模型调用（意图靠正则、进度靠定时器、回复是写死文案表），与桌面零共享设计 token、零共享组件、零共享数据契约。它另有会销毁本机数据（schema 不匹配时静默回落并回写）与切后台后永久失去 Live2D 的缺陷。**因此"Demo 05／06 已实现"一律只读作"原型里可演示"，不构成能力事实。**
-
-同时，方案 51 §14.1 的两条验收声明与实际不符：字体放大 150% 只作用于 308 处 `font-size` 中的 14 处、章节标题被封顶 120%、多处热区 30–38px；"抬起键盘后仍能看到上一条回复"在默认伴星视图下被 `display:none`，而 capture 脚本只量了记录视图。**§14.1 在补上真机与真实链路证据前不作为发布判断依据。**
-
-**尚需核对的移动前提：**宿主／分发条件与方案 51 中“复习提醒／不做定时提醒”“原件不出本机／移动端 PDF 解析”的冲突仍见 §19；手机首屏已由用户选择角色优先，随后又授权开始实施与重新设计，旧“裁决前不扩写界面”不再阻止本次工作。证据见[工程审计](docs/testing/mobile-companion-prototype-audit-2026-10-11.md)与[桌面身份基线](docs/testing/mobile-companion-desktop-identity-baseline-2026-10-11.md)。
-
-**手机实施复核与实时交流建议（2026-10-12 历史基线，已由 10-14 原生实现取代）：**当时的 `apps/mobile-client/src` 是独立 React 浏览器工程，接真实身份、共用伴星会话与笔记 API，与样例原型区分；尚无原生 App。用户要求重做实施效果，并提出手机服务端 ASR/TTS、ASR 独立容器、伴星共用 WebSocket、桌面保留本机 ASR。当时重做了真实交流页的伴星／记录切换与输入空间，移除无音频时的文字驱动口型；语音状态示意没有录音与发声，WS、ASR 容器及桌面迁移仍为方案建议。当前原生实现见本节首条及 [手机端 README](apps/mobile-client/README.md)。详见 [55](docs/plans/learning-companion/55-mobile-redesign-and-companion-realtime-2026-10-12.md)。
+iOS uses the durable conversation event stream shared with desktop. Android uses the companion WebSocket. Mobile voice uses server-side transcription and synthesis. See [Plan 55](docs/plans/learning-companion/55-mobile-redesign-and-companion-realtime-2026-10-12.md) for the shared contracts and [Release Center](docs/plans/app-release-center-2026-10-24.md) for release registration and version lines.
 
 ## Stack
 
@@ -148,7 +132,7 @@ Electron 44 + electron-vite 5 + Vite 7 + React 19 + TypeScript（独立桌面客
 
 **共享笔记信息与权限（2026-10-30 用户决定）：**iOS 只在协作空间的共享笔记中显示账户头像、简短称呼、在场状态及最近编辑者；个人笔记不显示这些信息。成员头像读取限于同空间现有成员当前发布的头像，覆盖下方「其他成员仅首字母」的旧限制。「笔记权限」由作者设置仅自己可见或共享给当前空间，编辑权继续跟随 Owner／Member 角色。实现与验证见 [共享笔记身份与权限记录](docs/testing/ios-note-sharing-metadata-2026-10-30.md)。
 
-**账户头像（2026-10-09 用户决定）：**本人在共享笔记中的在场印章跟随账户头像更新，清除头像时恢复首字母。头像上传和读取上限统一为 10 MB（10 × 1024 × 1024 字节）；本机缓存放在 `userData/avatars`，按部署与账号隔离，目录上限 64 MB、按最近读取淘汰，重启复用已缓存字节。缓存读取仍核对本人归属；协作中的其他成员目前保留首字母印章。实现与验证见 [头像体验记录](docs/testing/avatar-cache-and-presence-2026-10-09.md)。
+**账户头像（2026-10-09 用户决定）：**本人在共享笔记中的在场印章跟随账户头像更新，清除头像时恢复首字母。头像上传和读取上限统一为 10 MB（10 × 1024 × 1024 字节）；本机缓存放在 `userData/avatars`，按部署与账号隔离，目录上限 64 MB、按最近读取淘汰，重启复用已缓存字节。缓存读取仍核对本人归属；协作中的其他成员目前保留首字母印章。
 
 ## Capabilities and Constraints
 
@@ -176,7 +160,7 @@ Electron 44 + electron-vite 5 + Vite 7 + React 19 + TypeScript（独立桌面客
 - 媒体是渐进增强：资产或 WebGL 失败时才回退到同构图 poster 与完整 DOM 操作；声音失败独立回到静音，`prefers-reduced-motion` 保留静态 D0–D4 分层但即时完成状态转换；重型研究册模型（V2+ 3D 研究资产）不得进入首包
 - 当前学习房间素材仍标记 `reviewOnly / IN_REVIEW`，授权与发布验收完成前不得作为生产素材宣称
 
-**文件存储（2026-10-07 用户决定）：**线上使用私有 S3 兼容对象存储，覆盖当前文本／Markdown／代码来源原文、笔记插图、伴星图片、头像、Markdown 导入与文件导出。本地开发仍使用 MinIO 容器，不读取线上存储凭据。桌面主进程先向 API 申请授权，再通过短期签名 URL 直传／下载，完成时校验长度、摘要与图片格式；渲染进程不接触对象存储密钥。解析由 Worker 从对象存储读取原文，解析结果与笔记仍存 PostgreSQL。暂存上传与导出在一天后清理。一份正文的上限是 10 MB，桌面端、存储用途授权与 Worker 回读共用同一个常量。**PDF 与 Word（.docx）在 2026-10-09 接入，解析发生在桌面端本机**：拖进来的原文只在本机变成正文，收进来源的是正文和提取出的图片，原文件不上传。PDF 取文字层及实际绘制的位图，扫描页可保留图像但不自动识别文字；Word 取文档声明的段落样式（标题、列表、表格落成 Markdown），保留段落和表格内的图片。图片按内容去重后复用随文图片上传用途，正文引用改为站内地址；不支持或上传失败的图在原位置保留提示。PDF 的矢量图不转成图片，图像掩膜给出未能独立导入的说明。旧版 .doc、.odt、.rtf 等不解析，界面给出另存为 .docx 或导出 PDF 的下一步。历史回复音频仍遵循前述本机保留规则。 Markdown 可从文件夹或 ZIP 连同图片导入，支持内联、引用式及带尺寸的 HTML 图片；导出笔记时图片一起写入 assets，地址换成本地相对路径。本机图片缓存在 userData/note-images，按部署与账号隔离，全目录上限 256 MB、按最近读取淘汰；缓存命中仍复核读取权限，复用字节不再次下载对象体。实现与验证见 [导入导出记录](docs/testing/import-assets-and-cache-2026-10-09.md)。
+**文件存储（2026-10-07 用户决定）：**线上使用私有 S3 兼容对象存储，覆盖当前文本／Markdown／代码来源原文、笔记插图、伴星图片、头像、Markdown 导入与文件导出。本地开发仍使用 MinIO 容器，不读取线上存储凭据。桌面主进程先向 API 申请授权，再通过短期签名 URL 直传／下载，完成时校验长度、摘要与图片格式；渲染进程不接触对象存储密钥。解析由 Worker 从对象存储读取原文，解析结果与笔记仍存 PostgreSQL。暂存上传与导出在一天后清理。一份正文的上限是 10 MB，桌面端、存储用途授权与 Worker 回读共用同一个常量。**PDF 与 Word（.docx）在 2026-10-09 接入，解析发生在桌面端本机**：拖进来的原文只在本机变成正文，收进来源的是正文和提取出的图片，原文件不上传。PDF 取文字层及实际绘制的位图，扫描页可保留图像但不自动识别文字；Word 取文档声明的段落样式（标题、列表、表格落成 Markdown），保留段落和表格内的图片。图片按内容去重后复用随文图片上传用途，正文引用改为站内地址；不支持或上传失败的图在原位置保留提示。PDF 的矢量图不转成图片，图像掩膜给出未能独立导入的说明。旧版 .doc、.odt、.rtf 等不解析，界面给出另存为 .docx 或导出 PDF 的下一步。历史回复音频仍遵循前述本机保留规则。 Markdown 可从文件夹或 ZIP 连同图片导入，支持内联、引用式及带尺寸的 HTML 图片；导出笔记时图片一起写入 assets，地址换成本地相对路径。本机图片缓存在 userData/note-images，按部署与账号隔离，全目录上限 256 MB、按最近读取淘汰；缓存命中仍复核读取权限，复用字节不再次下载对象体。
 
 **Feature Flag 体系：**服务端既有 feature flag 与 fail-closed 合同继续保留；首页没有构建期或运行期的版本切换旗标。新桌面客户端按领域接入，不默认继承旧 Web 构建时 flag，也不在尚未连通的场景中伪造领域结果。
 

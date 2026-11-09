@@ -1,9 +1,0 @@
-{
-  "phase": "before",
-  "syntheticMaterialChars": 60026,
-  "proofBytes": 541230,
-  "materialCopies": 3,
-  "currentMessagesAfterHostUserObservation": 1,
-  "successfulReadsAfterHostUserObservation": 0,
-  "receiptSourceStillContainsExactFullMaterial": true
-}

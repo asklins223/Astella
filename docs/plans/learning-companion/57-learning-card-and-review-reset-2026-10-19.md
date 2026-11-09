@@ -1,8 +1,8 @@
 # 57 · 学习卡并入笔记与取消复习/今日
 
-> **2026-10-21 窗口复查补充：** 已检查并修复放大布局、练习退出焦点、原文预览、题号精确跳转及报告／庆祝返回焦点，补充应用内关闭动效的连续窗口验证；题目语义等完整验收仍未结束。见[真实窗口检查记录](../../testing/plan-57-58-window-check-2026-10-21.md)。
+> **2026-10-21 窗口复查补充：** 已检查并修复放大布局、练习退出焦点、原文预览、题号精确跳转及报告／庆祝返回焦点，补充应用内关闭动效的连续窗口验证；题目语义等完整验收仍未结束。见真实窗口检查记录 (`docs/testing/plan-57-58-window-check-2026-10-21.md` in the local archive)。
 
-> **2026-10-21 implementation audit:** The note-card flow is implemented, but earlier completion records did not cover all active contracts, grading paths or source/version navigation. Those gaps and remaining formal-answer/tutor stubs have now been corrected, with real model/API and desktop-window checks. Broader semantic-content and UI/platform acceptance remains open. See the [current audit, fixes and evidence](../../testing/plan-57-58-audit-2026-10-21.md).
+> **2026-10-21 implementation audit:** The note-card flow is implemented, but earlier completion records did not cover all active contracts, grading paths or source/version navigation. Those gaps and remaining formal-answer/tutor stubs have now been corrected, with real model/API and desktop-window checks. Broader semantic-content and UI/platform acceptance remains open. See the current audit, fixes and evidence (`docs/testing/plan-57-58-audit-2026-10-21.md` in the local archive).
 
 > **2026-10-21 evening follow-up:** The documented per-question discard ("校验失败先重试一次；仍失败则丢弃该题，并在卡上报告有 N 道题未通过校验，没有收录；有效题少于 4 道才整卡失败") is now implemented end to end (worker generation/review, `omitted_question_count`, API contract, card-front notice), together with note-preview/title and tab-semantics fixes. Live probe still produced a 6/6 card; generation reliability and semantic duplicate detection remain open. See [defects, fixes and evidence](../../testing/plan-57-58-followup-2026-10-21.md).
 
