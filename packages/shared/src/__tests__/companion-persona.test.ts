@@ -219,8 +219,11 @@ test("历史 v5 保留旧定义，现役 v6 移除固定长度与固定回应词
 
 test("the current dialogue persona hash identifies its exact immutable text", async () => {
   const { COMPANION_PERSONA_V17, COMPANION_PERSONA_V17_SHA256, COMPANION_PERSONA_V18, COMPANION_PERSONA_V18_SHA256,
-    COMPANION_CHARACTER_BASE_V18 } = await import('../companion/companion-persona.ts');
+    COMPANION_PERSONA_V19, COMPANION_PERSONA_V19_SHA256,
+    COMPANION_CHARACTER_BASE_V19 } = await import('../companion/companion-persona.ts');
   assert.equal(createHash('sha256').update(COMPANION_PERSONA_V17).digest('hex'), COMPANION_PERSONA_V17_SHA256);
   assert.equal(createHash('sha256').update(COMPANION_PERSONA_V18).digest('hex'), COMPANION_PERSONA_V18_SHA256);
-  assert.doesNotMatch(COMPANION_CHARACTER_BASE_V18, /用户：下午好/);
+  assert.equal(createHash('sha256').update(COMPANION_PERSONA_V19).digest('hex'), COMPANION_PERSONA_V19_SHA256);
+  assert.doesNotMatch(COMPANION_CHARACTER_BASE_V19, /用户：下午好/);
+  assert.match(COMPANION_CHARACTER_BASE_V19, /companion_persona_write/);
 });

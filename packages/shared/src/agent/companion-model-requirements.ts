@@ -68,9 +68,9 @@ export type ModelRequirementEnforcement = (typeof MODEL_REQUIREMENT_ENFORCEMENTS
 export const MODEL_REQUIREMENT_SOURCE_VERSIONS = [
   "COMPANION_HOST_PROTOCOL_V9",
   "COMPANION_IDENTITY_BOUNDARY_V4",
-  "COMPANION_CHARACTER_BASE_V18",
+  "COMPANION_CHARACTER_BASE_V19",
   "COMPANION_VOICE_STYLE_LINES_V2",
-  "COMPANION_PERSONA_V18_PROMPT_ID",
+  "COMPANION_PERSONA_V19_PROMPT_ID",
   "COMPANION_LEAK_GATES_V1",
   "COMPANION_AGENT_CONTRACT_VERSION",
   "COMPANION_HARD_MAX_CHARS",
@@ -154,13 +154,13 @@ export const MODEL_REQUIREMENTS: readonly ModelRequirement[] = [
       "默认角色表达：篇幅跟随问题与用户要求、不套模板、拒绝时不追问。它是**可被账号表达"
       + "整体替换**的那一层，所以合同只约束「怎么说话」，不碰输出形状与安全边界。",
     appliesTo: DIALOGUE_AND_FRIENDS,
-    sourceVersion: "COMPANION_CHARACTER_BASE_V18",
+    sourceVersion: "COMPANION_CHARACTER_BASE_V19",
     enforcedBy: "prompt",
     evidence: {
       file: "packages/shared/src/companion/companion-persona.ts",
-      export: "COMPANION_CHARACTER_BASE_V18",
+      export: "COMPANION_CHARACTER_BASE_V19",
       resolve: "module",
-      note: "v15 按当前话题自然接话；相处约定体现在行为，角色表达与暂定复盘分开；保留声音表达协议。",
+      note: "v19 按手机上熟人的口气接话：普通段落、先接具体那一点、知识默认短答、不列框架、不例行追问；陪伴与复盘仍分开，保留声音表达协议。",
     },
   },
   {
@@ -185,7 +185,7 @@ export const MODEL_REQUIREMENTS: readonly ModelRequirement[] = [
       "装配版本身份：一次调用要能说出自己用的是哪一版固定协议/默认表达/账号 revision，"
       + "否则 40b §5.3「已发生调用可按合法保留的版本复现装配」无从谈起。",
     appliesTo: DIALOGUE_AND_FRIENDS,
-    sourceVersion: "COMPANION_PERSONA_V18_PROMPT_ID",
+    sourceVersion: "COMPANION_PERSONA_V19_PROMPT_ID",
     enforcedBy: "db_constraint",
     evidence: {
       file: "packages/shared/src/db-schema/companion-conversations.ts",

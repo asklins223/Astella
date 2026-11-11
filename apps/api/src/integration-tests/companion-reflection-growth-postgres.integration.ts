@@ -30,7 +30,7 @@ import { upsertAgentMethodCandidate, adoptPendingPersonaForNewTurn, pendingPerso
 import { closeDatabase as closeWorkerDatabase, withWorkerWorkspaceTransaction }
   from "../../../../workers/ai-worker/src/db.ts";
 import { closeDatabase, withWorkspaceTransaction } from "../db/client.ts";
-import { getPetProfileState, stagePetProfileRevision, upsertPetProfile }
+import { activatePetProfilePendingRevision, getPetProfileState, stagePetProfileRevision, upsertPetProfile }
   from "../modules/companion-conversation/pet-profile-service.ts";
 import { personaFromDefaultPreset } from "@astella/shared/pet-persona-merge";
 import { getDefaultPersonaPreset } from "@astella/shared/pet-persona-presets";
@@ -451,6 +451,36 @@ test("依据被删除后不采用：清掉排队、写下原因，历史那一�
   }
 });
 
+test("手动采用也会撤回依据已失效的待生效人格", async () => {
+  const f = await fixture();
+  const scope = { workspaceId: f.workspaceId, userId: f.userId };
+  const restore = reflectionModelFixture({
+    persona: { selfDescription: "我正在改一上来就数笔记的习惯。",
+      reason: "对方明确说过招呼不要盘点笔记", sourceMessageIds: [f.correctionMessageId] },
+  });
+  try {
+    await f.runReflection();
+    const { profileRevision, pending } = await f.persona();
+    assert.ok(pending);
+    await f.deleteMessage(f.correctionMessageId);
+
+    const activated = await withWorkspaceTransaction(scope, tx => activatePetProfilePendingRevision(tx, scope, {
+      expectedRevision: profileRevision, expectedPendingRevision: pending.revision,
+    }));
+    assert.equal(activated, null);
+    const current = await f.persona();
+    assert.equal(current.profileRevision, profileRevision);
+    assert.equal(current.pending, null);
+    assert.equal((await f.readReflection())[0].decision, "source_invalid");
+    const history = await admin`SELECT revision FROM companion_persona_profile_versions
+      WHERE user_id=${f.userId} AND revision=${pending.revision}`;
+    assert.equal(history.length, 1);
+  } finally {
+    restore();
+    await f.cleanup();
+  }
+});
+
 test("基线在回顾期间被推走：不提交，把冲突写在结论上", async () => {
   const f = await fixture();
   // 模型还在答的时候，用户自己动了人格：她这次回顾看到的是第 0 版，
@@ -766,6 +796,49 @@ test("另一空间的新回合采用账号人格只查来源有效性，不泄�
   }
 });
 
+test("前台人格的工具回执跨空间可核对，回执移除后撤回待生效版本", async () => {
+  const f = await fixture();
+  const source = { workspaceId: f.workspaceId, userId: f.userId };
+  const target = { workspaceId: randomUUID(), userId: f.userId };
+  const stepId = randomUUID(), receiptId = randomUUID();
+  try {
+    await admin`INSERT INTO workspaces(id,name,owner_id) VALUES(${target.workspaceId},'第二空间',${f.userId})`;
+    await admin`INSERT INTO workspace_members(workspace_id,user_id,role) VALUES(${target.workspaceId},${f.userId},'owner')`;
+    const runId = await f.newTurn("以后说话直接一点");
+    await admin`INSERT INTO companion_agent_steps (id,workspace_id,user_id,conversation_id,run_id,step_no,kind,status)
+      VALUES (${stepId},${f.workspaceId},${f.userId},${f.conversationId},${runId},1,'tool','succeeded')`;
+    await admin`INSERT INTO companion_agent_tool_calls
+      (id,workspace_id,user_id,conversation_id,run_id,step_id,tool_call_id,name,tool_version,arguments,
+       arguments_sha256,risk_class,status)
+      VALUES (${receiptId},${f.workspaceId},${f.userId},${f.conversationId},${runId},${stepId},
+        'persona-style','persona.write.style','1','{}',${HASH},'reversible_low','succeeded')`;
+    const stage = (style: string, expectedRevision: number) =>
+      withWorkerWorkspaceTransaction(source, tx => applyAssistantPersonaEdit(tx, f.userId, "speakingStyle",
+        style, "调整表达", { stage: true, expectedRevision, sourceWorkspaceId: f.workspaceId,
+          proposal: { kind: "assistant_tool", proposalId: runId } }));
+    const first = await stage("说话直接一点", 0);
+    assert.equal(first.kind, "changed");
+    const activated = await withWorkspaceTransaction(target, tx => activatePetProfilePendingRevision(tx, target, {
+      expectedRevision: 0, expectedPendingRevision: first.revision,
+    }));
+    assert.equal(activated?.revision, first.revision);
+
+    const second = await stage("先说自己的看法", first.revision);
+    assert.equal(second.kind, "changed");
+    await admin`DELETE FROM companion_agent_tool_calls WHERE id=${receiptId}`;
+    const outcome = await withWorkspaceTransaction(target, tx => adoptPendingPersonaForNewTurn(tx, f.userId,
+      pending => pendingPersonaProposalSources(tx, f.userId, pending)));
+    assert.equal(outcome?.kind, "source_invalid");
+    const current = await f.persona();
+    assert.equal(current.profileRevision, first.revision);
+    assert.equal(current.pending, null);
+  } finally {
+    await admin`DELETE FROM workspace_members WHERE workspace_id=${target.workspaceId}`;
+    await admin`DELETE FROM workspaces WHERE id=${target.workspaceId}`;
+    await f.cleanup();
+  }
+});
+
 test("角色初始化后受限 worker 仍有调度权限", async () => {
   const f = await fixture();
   try {
@@ -1008,6 +1081,31 @@ test("自己的记事保留不可变版本，CAS 与 RLS 隔离生效；用户�
       { key: "question", expectedRevision: stopped.revision, action: "restore" }));
     assert.equal(resumed.userDisabled, false); assert.equal(resumed.revision, 4);
   } finally { await f.cleanup(); await other.cleanup(); }
+});
+
+test("反思跳过已停用的成长块，同时提交其他记事", async () => {
+  const f = await fixture();
+  const scope = { workspaceId: f.workspaceId, userId: f.userId };
+  const growthBlock = ownNote("growth:voice", "resident");
+  const restore = reflectionModelFixture({
+    selfNotes: [{ ...growthBlock, body: "已停用的内容不能被后台覆盖" }, ownNote("next-question")],
+  });
+  try {
+    const first = await withWorkerWorkspaceTransaction(scope, tx => writeCompanionSelfNote(tx, scope, growthBlock));
+    const disabled = await withWorkspaceTransaction(scope, tx => controlCompanionSelfNote(tx, scope,
+      { key: first.key, expectedRevision: first.revision, action: "disable" }));
+
+    await f.runReflection();
+    assert.equal((await f.readReflection())[0].decision, "committed");
+    const notes = await withWorkerWorkspaceTransaction(scope, tx => listCompanionSelfNotes(tx, scope, { includeArchived: true }));
+    assert.deepEqual(notes.find(note => note.key === first.key), disabled);
+    assert.equal(notes.find(note => note.key === "next-question")?.revision, 1);
+    const [row] = await admin`SELECT result_ref FROM companion_reflections WHERE user_id=${f.userId}`;
+    assert.deepEqual((row.result_ref as { dropped: string[] }).dropped, [`selfNotes:${first.key}:self_note_retired`]);
+  } finally {
+    restore();
+    await f.cleanup();
+  }
 });
 
 test("记事分层按资源容量整理，归档释放常驻位，重评时间允许带时区", async () => {

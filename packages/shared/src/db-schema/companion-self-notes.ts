@@ -12,7 +12,9 @@ export const companionSelfNotes = pgTable("companion_self_notes", {
   title: text("title").notNull(), body: text("body").notNull(),
   tier: text("tier").$type<"resident" | "active" | "archived">().notNull(),
   nextReviewAt: timestamp("next_review_at", { withTimezone: true }),
-  expiresAt: timestamp("expires_at", { withTimezone: true }), reason: text("reason").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  /** Last turn where a resident note was put in front of the model; not a content revision. */
+  lastUsedAt: timestamp("last_used_at", { withTimezone: true }), reason: text("reason").notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, table => ({
   pk: primaryKey({ columns: [table.workspaceId, table.userId, table.entryKey] }),

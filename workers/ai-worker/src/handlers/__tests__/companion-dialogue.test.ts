@@ -6,7 +6,7 @@ import { companionVoiceSegmentExpression, projectCompanionVoiceExpression } from
 import {
   COMPANION_HOST_PROTOCOL_V5,
   COMPANION_IDENTITY_BOUNDARY_V4,
-  COMPANION_PERSONA_V18,
+  COMPANION_PERSONA_V19,
   COMPANION_PERSONA_V13_PROMPT_ID,
   type ChatMessage,
 } from "@astella/shared";
@@ -144,6 +144,19 @@ test("交接快照绑定输入水位并按账本状态区分完成、未决和�
   assert.match(block, /建议不等于授权/);
 });
 
+test("growth blocks sit before the ordinary self-note drawer", () => {
+  const messages = buildCompanionPersonaMessages({
+    userText: "你好",
+    recentMessages: [],
+    pageContext: { pageKind: "today" },
+    growthBlocks: "你自己的成长块：\n- 说话方式：先说结论。",
+    selfNotes: "你自己的记事抽屉：\n- 其他。",
+  });
+  const system = String(messages[0].content);
+  assert.ok(system.includes("先说结论"));
+  assert.ok(system.indexOf("先说结论") < system.indexOf("你自己的记事抽屉"));
+});
+
 test("T0：回合编码是原生多轮（历史是真 messages，上下文是 system 数据块）", () => {
   const messages = buildCompanionPersonaMessages({
     userText: "你好",
@@ -159,8 +172,8 @@ test("T0：回合编码是原生多轮（历史是真 messages，上下文是 sy
   assert.equal(messages[0].role, "system");
   // persona 正文必须原样在最前；其后允许追加安全护栏（2026-09-19 起多了
   // 反回显护栏——实机出现过模型把输入上下文整段复述成回复）。
-  assert.ok(String(messages[0].content).startsWith(COMPANION_PERSONA_V18),
-    "现役 v18 prompt（含宿主协议与角色底座）必须是 system 消息的第一段");
+  assert.ok(String(messages[0].content).startsWith(COMPANION_PERSONA_V19),
+    "现役 v19 prompt（含宿主协议与角色底座）必须是 system 消息的第一段");
   assert.ok(String(messages[0].content).includes(COMPANION_IDENTITY_BOUNDARY_V4),
     "固定身份边界必须进入实际装配的对话 prompt");
   assert.ok(

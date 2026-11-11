@@ -755,11 +755,23 @@ async function commitReflection(
           return !current || current.userDisabled || current.revision !== note.revision || current.tier === "archived"
             || (current.expiresAt !== null && Date.parse(current.expiresAt) <= Date.now());
         })) return { decision: "commit_conflict" as const, summary: "读过的自己的记事已变化或停用，没有沿旧内容提交。" };
+        const writableNotes: typeof verified.output.selfNotes = [];
+        const dropped = verified.rejected.map((item) => `${item.slot}#${item.index}:${item.reason}`);
         for (const note of verified.output.selfNotes) {
           const [existing] = await listCompanionSelfNotes(tx, input, { key: note.key, includeArchived: true, lock: true });
+          // Retired notes are absent from the snapshot. An attempted insert must not
+          // overwrite them or discard independent outputs from the same reflection.
+          if (note.expectedRevision === 0 && existing && (
+            existing.userDisabled || existing.tier === "archived"
+            || (existing.expiresAt !== null && Date.parse(existing.expiresAt) <= Date.now())
+          )) {
+            dropped.push(`selfNotes:${note.key}:self_note_retired`);
+            continue;
+          }
           if ((existing?.revision ?? 0) !== note.expectedRevision) {
             return { decision: "commit_conflict" as const, summary: "自己的记事版本已变化，没有覆盖。" };
           }
+          writableNotes.push(note);
         }
         const current = await readPersona(tx, input.userId);
         if (current.revision !== reflection.baselinePersonaRevision) {
@@ -839,7 +851,7 @@ async function commitReflection(
           });
         }
         const writtenNotes: { key: string; revision: number }[] = [];
-        for (const note of verified.output.selfNotes) {
+        for (const note of writableNotes) {
           const saved = await writeCompanionSelfNote(tx, input, note);
           if (saved.revision !== note.expectedRevision) writtenNotes.push({ key: saved.key, revision: saved.revision });
         }
@@ -852,7 +864,7 @@ async function commitReflection(
             selfNotes: writtenNotes,
             judgments: verified.output.judgments.length,
             experiences: verified.output.experiences.length,
-            dropped: verified.rejected.map((drop) => `${drop.slot}#${drop.index}:${drop.reason}`),
+            dropped,
             personaBasis: persona?.basis ?? null,
             personaSources: persona && persona.basis !== "self_authored"
               ? sources.filter(source => persona.sourceMessageIds.includes(source.id)) : [],

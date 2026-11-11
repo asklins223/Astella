@@ -25,16 +25,16 @@ test("diary round-trip script selects only an offered candidate and its exact so
 
 test("diary round-trip script returns a valid grounded draft while ordinary mock calls stay generic", async () => {
   const draft = await provider.chatCompletion([
-    { role: "system", content: `只输出 JSON。通常只需要正文：\n素材：${fixtureMarker} 一起核对了利息并入本金的步骤。` },
-    { role: "user", content: "写今天这篇。" },
+    { role: "system", content: "写今天的日记。" },
+    { role: "user", content: `<day_material>\n${fixtureMarker} 一起核对了利息并入本金的步骤。\n</day_material>` },
   ], { responseFormat: "json_object", maxTokens: 200 });
   const parsedDraft = JSON.parse(String(draft.content)) as { blocks?: Array<{ type?: string; text?: string }> };
   assert.equal(parsedDraft.blocks?.[0]?.type, "text");
   assert.ok(parsedDraft.blocks?.[0]?.text?.length && parsedDraft.blocks[0].text.length >= 24);
 
   const ordinary = await provider.chatCompletion([
-    { role: "system", content: "只输出 JSON。通常只需要正文：" },
-    { role: "user", content: "没有测试标记。" },
+    { role: "system", content: "写今天的日记。" },
+    { role: "user", content: "<day_material>\n没有测试标记。\n</day_material>" },
   ], { responseFormat: "json_object", maxTokens: 200 });
   assert.deepEqual(JSON.parse(String(ordinary.content)), {
     status: "mock",

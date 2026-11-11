@@ -2,8 +2,8 @@ import { finishCompanionParticipation, companionInitiativeRepeatsSpeech } from "
 import { reviewCompanionInitiativeSpeech } from "../proactive/companion-initiative-speech-review.ts";
 import { readParticipationPreferences } from "@astella/agent-host";
 import { companionInitiativeInputV1Schema } from "@astella/shared/companion-initiative-contracts";
-import { listCompanionSelfNotes } from "@astella/agent-host";
-import { companionToolLabel, companionTurnWritesDocumentContent, renderCompanionSelfNotes } from "@astella/shared";
+import { listCompanionSelfNotes, touchCompanionSelfNotes } from "@astella/agent-host";
+import { COMPANION_GROWTH_BLOCK_KEYS, companionToolLabel, companionTurnWritesDocumentContent, renderCompanionGrowthBlocks, renderCompanionSelfNotes } from "@astella/shared";
 import { resolveCompanionPersonaContext } from "../memory/companion-identity-context.ts";
 import { reserveCompanionProviderCall } from "../agent/companion-agent-events.ts";
 import { renderPlaybookCandidates, renderPlaybookCatalog } from "../memory/companion-playbooks.ts";
@@ -639,6 +639,7 @@ async function runCompanionDialogueTurn(
   const selfNotes = await withWorkerWorkspaceTransaction(
     { workspaceId: ctx.workspaceId, userId: read.userId }, tx => listCompanionSelfNotes(tx,
       { workspaceId: ctx.workspaceId, userId: read.userId }));
+  const growthBlocks = renderCompanionGrowthBlocks(selfNotes);
   // 上一轮说过「以后都用河南话」之后，账号里那一行就是这一轮的声音身份；正文也要
   // 跟着它，否则她开口是方言、写出来还是普通话。
   const accountVoiceDialect = await readCompanionDialectPreference({
@@ -649,6 +650,7 @@ async function runCompanionDialogueTurn(
   try {
     messages = buildCompanionPersonaMessages({
       scope: { workspaceId: ctx.workspaceId, userId: read.userId },
+      growthBlocks,
       selfNotes: renderCompanionSelfNotes(selfNotes),
       methodCatalog: renderPlaybookCatalog(read.playbookCatalog),
       methodCandidates: renderPlaybookCandidates(read.playbookCandidates),
@@ -719,6 +721,13 @@ async function runCompanionDialogueTurn(
   // A retry must replay the exact committed messages and memory receipt set, even if
   // background memory maintenance changed what a fresh retrieval would return.
   const committedMessages = committedHandoff.snapshot.modelMessages as ChatMessage[];
+  // Only credit the versions present in this request. A retry may be replaying
+  // an older snapshot whose self-note versions cannot be inferred from today's list.
+  let notesToMarkUsed = committedHandoff.sha256 === proposedHandoffSha256
+    ? selfNotes.filter(note => note.tier === "resident" && note.body.trim() && admitted.has(
+      COMPANION_GROWTH_BLOCK_KEYS.has(note.key) ? "companion_growth" : "companion_self_notes",
+    ))
+    : [];
   replayTailSeqs = committedHandoff.snapshot.historyTail.map(message => message.seq);
   // A retry can recover an older frozen replay after background maintenance.
   // Fresh summary bounds/gaps do not describe that committed replay.
@@ -974,7 +983,16 @@ async function runCompanionDialogueTurn(
       read,
       provider,
       fallbackProvider,
-      onProviderUsed: actual => { deliveredBy = actual; },
+      onProviderUsed: actual => {
+        deliveredBy = actual;
+        if (notesToMarkUsed.length === 0) return;
+        const notes = notesToMarkUsed;
+        notesToMarkUsed = [];
+        const scope = { workspaceId: ctx.workspaceId, userId: read.userId };
+        // Optional usage metadata must not block delivery during a rolling upgrade.
+        void withWorkerWorkspaceTransaction(scope, tx => touchCompanionSelfNotes(tx, scope, notes))
+          .catch(() => logger.warn({ runId: read.runId }, "companion self-note usage update failed"));
+      },
       // Only when the conversation model is the one that can see: an auxiliary
       // vision model still needs the read tool, because the bytes never reach
       // the main model's request.

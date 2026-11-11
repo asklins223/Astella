@@ -273,10 +273,9 @@ describe("桌面端这三条通道接齐了", () => {
     }
   });
 
-  it("「现在生效」传的是**当前** revision，不是待生效那一版的号", () => {
-    // 服务端 `activatePetProfilePendingRevision` 按 `expectedRevision` 与当前版本做 CAS。
-    // 传待生效那一版的号会让每一次点击都变成 409，面板只能显示「请刷新后重试」。
+  it("「现在生效」校验当前版本和所选的待生效版本", () => {
     const surface = read("src", "renderer", "src", "components", "surfaces", "companion", "companion-persona-page.tsx");
     expect(surface).toMatch(/persona\.activate\(\{[\s\S]*revision: pendingValue\.currentRevision/);
+    expect(surface).toContain("pendingRevision: proposal.revision");
   });
 });

@@ -341,16 +341,28 @@ test("HTTP：排队 → 待生效可见 → 生效，CAS 与坏 body 分别落 4
   assert.equal(pendingBody.pending.author, "user", "接口的调用方是本人，作者不得由 body 自称");
   assert.equal(pendingBody.pending.effectiveWhen, "下一轮未开始的调用生效");
 
+  const replacement = await app.inject({
+    method: "POST", url: "/companion/pet-profile/stage", headers: auth,
+    payload: profile({ revision: state.profileRevision, speakingStyle: "第二份草稿" }),
+  });
+  assert.equal(replacement.statusCode, 200);
+  const replacementRevision = replacement.json().pendingRevision;
+  const stale = await app.inject({
+    method: "POST", url: "/companion/pet-profile/activate", headers: auth,
+    payload: { revision: state.profileRevision, pendingRevision: stagedBody.pendingRevision },
+  });
+  assert.equal(stale.statusCode, 409);
+
   const activated = await app.inject({
     method: "POST",
     url: "/companion/pet-profile/activate",
     headers: auth,
-    payload: { revision: state.profileRevision },
+    payload: { revision: state.profileRevision, pendingRevision: replacementRevision },
   });
   assert.equal(activated.statusCode, 200);
   const activatedBody = activated.json() as { profileRevision: number; profile: { speakingStyle: string } };
-  assert.equal(activatedBody.profileRevision, stagedBody.pendingRevision);
-  assert.equal(activatedBody.profile.speakingStyle, "接口排的队");
+  assert.equal(activatedBody.profileRevision, replacementRevision);
+  assert.equal(activatedBody.profile.speakingStyle, "第二份草稿");
 
   const again = await app.inject({
     method: "POST",

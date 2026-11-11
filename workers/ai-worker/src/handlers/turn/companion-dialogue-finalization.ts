@@ -3,7 +3,7 @@ import { sql } from "drizzle-orm";
 import { enqueueParticipationObservation } from "@astella/agent-host";
 import { COMPANION_INITIATIVE_DELIVERY_TTL_HOURS } from "@astella/shared/companion-initiative-contracts";
 import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
-import { COMPANION_PERSONA_V18_PROMPT_ID, COMPANION_PERSONA_V18_SHA256 } from "@astella/shared";
+import { COMPANION_PERSONA_V19_PROMPT_ID, COMPANION_PERSONA_V19_SHA256 } from "@astella/shared";
 import { lockCompanionRunForEventWrite } from "@astella/shared/companion-lock-order";
 import { logger } from "../../lib/logger.ts";
 import { withWorkerWorkspaceTransaction } from "../../db.ts";
@@ -211,8 +211,8 @@ export async function finalizeCompanionDialogueTurn(args: {
               waiting_proposal_id = NULL,
               provider_id = ${provider.id},
               model_id = ${provider.modelId},
-              prompt_version = ${COMPANION_PERSONA_V18_PROMPT_ID},
-              prompt_hash = ${COMPANION_PERSONA_V18_SHA256},
+              prompt_version = ${COMPANION_PERSONA_V19_PROMPT_ID},
+              prompt_hash = ${COMPANION_PERSONA_V19_SHA256},
               finished_at = now()
           WHERE id = ${read.runId}
             AND status IN ('accepted', 'running')

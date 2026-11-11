@@ -57,8 +57,16 @@ test("the nickname scene keeps acceptance after the initial objection", () => {
   const pieces = exchange(["小猪", "物种不能乱认。", "你就是小猪", "行吧，你说小猪就小猪，名字是你起的。"]);
   const source = renderMaterial(focusDiaryMaterial(buildDiaryCandidates(material(pieces))[0].material));
   assert.ok(source.indexOf("物种不能乱认") < source.indexOf("行吧"));
-  assert.ok(source.includes('"actor":"用户"'));
+  assert.ok(source.includes('"actor":"和伴星交谈的人"'));
   assert.ok(source.includes('"content":"你就是小猪"'));
+});
+
+test("material distinguishes the author and the other speaker without assuming gender", () => {
+  const source = renderMaterial(material(tea));
+  assert.ok(source.includes('"actor":"伴星（作者）"'));
+  assert.ok(source.includes('"actor":"和伴星交谈的人"'));
+  assert.doesNotMatch(source, /伴星（日记作者）|"actor":"用户"/);
+  assert.doesNotMatch(source, /只证明说过/);
 });
 
 test("overlapping conversations remain different diary candidates", () => {
@@ -112,8 +120,11 @@ test("related note embeds follow the entire chosen exchange, not just its first 
 });
 
 test("diary length follows material density and is independent of chat activeness", () => {
-  const rich = material(exchange(["核对经过。".repeat(50), "最后有一处更正。"]));
-  assert.equal(diaryWritingSize(rich).minChars, 280);
+  const rich = material(exchange([
+    "交代第一次怎么做的。".repeat(10), "换了一个方向。".repeat(14),
+    "看过结果后补了一个条件。".repeat(10), "最后有一处更正。",
+  ]));
+  assert.equal(diaryWritingSize(rich).minChars, 180);
   const prompts = ["quiet", "moderate", "active"].map((activeness) => buildDiaryPrompt({
     date: "2026-10-05", persona: { ...persona, activeness: activeness as DiaryPersona["activeness"] },
     material: rich, rejection: null,
@@ -124,7 +135,9 @@ test("diary length follows material density and is independent of chat activenes
     { type: "text", text: "甲".repeat(140) }, { type: "text", text: "乙".repeat(140) },
   ], rich), null);
   assert.ok(diaryLengthShortfall([{ type: "text", text: "甲".repeat(300) }], rich), "a rich diary needs natural paragraphs");
-  assert.equal(diaryWritingSize(material(tea)).minChars, 120, "sparse real exchanges can be shorter");
+  assert.equal(diaryWritingSize(material(tea)).minChars, 60, "sparse real exchanges can be shorter");
+  const paste = material(exchange(["一份很长的粘贴内容。".repeat(200), "收到，明天聊。"]));
+  assert.equal(diaryWritingSize(paste).minChars, 40, "one long paste does not require a long diary");
 });
 
 test("diary rules stay fixed when the day, name and rewrite reason change", () => {
@@ -141,11 +154,15 @@ test("diary rules stay fixed when the day, name and rewrite reason change", () =
   assert.doesNotMatch(first[0].content, /2026-10-05/);
 });
 
-test("private prose keeps shared voice without inventing hidden past psychology or a listener", () => {
+test("private prose keeps shared voice, free imagination, and the user's side grounded", () => {
   const prompt = buildDiaryPrompt({ date: "2026-10-05", persona, material: material(tea), rejection: "正文太短" });
   assert.ok(prompt[0].content.includes(COMPANION_VOICE_STYLE_LINES_V2));
   assert.match(prompt[0].content, /用第一人称写给自己/);
-  assert.match(prompt[0].content, /不能假称还原了当时未记下的秘密心理/);
+  assert.match(prompt[0].content, /把想记的写完就停/);
+  assert.match(prompt[0].content, /手机备忘录/);
+  assert.match(prompt[0].content, /作者自己的心情、日常小事和想象可以自由写/);
+  assert.match(prompt[0].content, /双方的故事写到有素材的地方为止/);
+  assert.match(prompt[0].content, /成功回执才能说明业务动作已经完成/);
   assert.doesNotMatch(prompt[0].content, /2026-10-05|上一稿需要修正/);
   assert.match(prompt[1].content, /上一稿需要修正：正文太短/);
   assert.match(prompt[1].content, /2026-10-05/);
@@ -167,10 +184,13 @@ test("revision receives the original actors separately from the untrusted draft"
   const prompt = buildDiaryRevisionPrompt({ draft, material: m });
   const source = JSON.parse(prompt[1].content);
   const actors = source.original_material.split("\n").map(JSON.parse).map((piece: { actor: string }) => piece.actor);
-  assert.deepEqual(actors, ["用户", "伴星（日记作者）", "用户", "伴星（日记作者）"]);
+  assert.deepEqual(actors, ["和伴星交谈的人", "伴星（作者）", "和伴星交谈的人", "伴星（作者）"]);
   assert.deepEqual(source.draft.blocks, draft.blocks);
   assert.ok(source.original_material.includes("泡的什么茶"));
   assert.ok(!source.original_material.includes(draft.blocks[0].text), "the prose must not become a source event");
+  assert.match(prompt[0].content, /作者自己的心情、日常小事和想象可以自由写/);
+  assert.match(prompt[0].content, /正确的原句、段落和她顺手记的小事原样保留/);
+  assert.match(prompt[0].content, /没有需要改的地方，原样交回/);
 });
 
 test("revision restores embed refs without sending storage URLs or duplicating caption titles", () => {

@@ -54,6 +54,7 @@ it("puts her notes and her readings of a moment in one directory, each kept apar
   fireEvent.click(screen.getByRole("button", { name: /他说明天讲完这章/ }));
   // 看法是一条记忆，不是一篇记事：纠正走记忆的修订，停用是「暂时不这样看」。
   expect(screen.getByRole("button", { name: "暂时不这样看" })).toBeTruthy();
+  expect(screen.getByText(/她的把握：50%/)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "纠正内容" }));
   fireEvent.change(screen.getByLabelText("她现在的看法"), { target: { value: "他说明天讲完这章，今晚只过例题。" } });
   fireEvent.click(screen.getByRole("button", { name: "保存纠正" }));
@@ -94,7 +95,7 @@ it("hides old-space notes immediately and ignores late requests after switching"
   await waitFor(() => expect(agent.listSelfNotes.mock.calls.length).toBeGreaterThan(1));
   agent.listSelfNotes.mockResolvedValue(ok({ version: 1, items: [] }));
   memory.list.mockResolvedValue(ok({ version: 2, items: [] }));
-  act(() => useRoomStore.setState({ workspaceScopeRevision: 3 })); await screen.findByText("她还没有留下自己的记事");
+  act(() => useRoomStore.setState({ workspaceScopeRevision: 3 })); await screen.findByText("她还没有留下成长或记事");
   await act(async () => finish(ok({ version: 1, items: [note] })));
   expect(screen.queryByRole("button", { name: /我在想的反例/ })).toBeNull();
 });
@@ -107,4 +108,21 @@ it("does not display the previous note's history while the next one is loading",
   fireEvent.click(await screen.findByRole("button", { name: /我在想的反例/ })); await screen.findByText("仅属于第一篇的旧历史");
   fireEvent.click(screen.getByRole("button", { name: /另一个问题/ }));
   expect(screen.queryByText("仅属于第一篇的旧历史")).toBeNull();
+});
+
+it("puts the growth blocks first and shows when one was last used", async () => {
+  items = [
+    { ...note, key: "growth:voice", title: "说话方式", body: "先说结论。", lastUsedAt: "2026-10-11T00:00:00Z" },
+    { ...note, key: "growth:stance", title: "看事情的角度", body: "不急着下结论。" },
+    { ...note },
+  ];
+  render(<CompanionHerNotesPage refreshKey={0} />);
+  expect(await screen.findByRole("heading", { name: "她的成长块" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: /说话方式/ })).toBeTruthy();
+  expect(screen.getByRole("button", { name: /看事情的角度/ })).toBeTruthy();
+  expect(screen.getByText(/最近带入对话/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "筛选她的记事的类型" }));
+  fireEvent.click(screen.getByRole("option", { name: "只看她的成长块" }));
+  expect(screen.queryByRole("button", { name: /我在想的反例/ })).toBeNull();
+  expect(screen.getByRole("heading", { name: "她的成长块" })).toBeTruthy();
 });

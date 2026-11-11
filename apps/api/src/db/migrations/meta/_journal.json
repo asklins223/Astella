@@ -3256,6 +3256,20 @@
       "when": 1794227899712,
       "tag": "0469_retire_dead_learning_procedure_functions",
       "breakpoints": true
+    },
+    {
+      "idx": 465,
+      "version": "7",
+      "when": 1794370437063,
+      "tag": "0470_companion_self_note_usage",
+      "breakpoints": true
+    },
+    {
+      "idx": 466,
+      "version": "7",
+      "when": 1794396900000,
+      "tag": "0471_companion_persona_tool_basis",
+      "breakpoints": true
     }
   ]
 }

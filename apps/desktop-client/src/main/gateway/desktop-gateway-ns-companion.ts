@@ -1034,11 +1034,12 @@ export async function stageCompanionPersonaRevision(t: GatewayTransport, request
  * 口径一致（`mapResponseError` 收成 `conflict`）——界面据此重新读一次待生效
  * 列表，而**不**假装已经生效。
  */
-export async function activateCompanionPersonaPending(t: GatewayTransport, revision: number, requestId?: string): Promise<CompanionPersonaActivatedV1> {
+export async function activateCompanionPersonaPending(t: GatewayTransport,
+  request: { revision: number; pendingRevision?: number }, requestId?: string): Promise<CompanionPersonaActivatedV1> {
     await t.ensureConnected(requestId);
     const result = await t.request(
       "/companion/pet-profile/activate",
-      { method: "POST", body: JSON.stringify({ revision }) },
+      { method: "POST", body: JSON.stringify(request) },
       true,
       true,
       requestId,

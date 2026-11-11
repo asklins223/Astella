@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 import type { CompanionMemoryItemV1 } from "@astella/shared/companion-memory-desktop-contracts";
-import type { CompanionSelfNoteV1 } from "@astella/shared";
+import { COMPANION_GROWTH_BLOCKS, type CompanionSelfNoteV1 } from "@astella/shared";
 import { usePageReadableView } from "../../hud/use-page-readable-view";
 import { HUD_PAGES } from "../../hud/hud-pages";
 import { gatewayErrorMessage, unwrapGatewayResult } from "../../../app/client/desktop-client";
@@ -13,13 +13,17 @@ import { memoryState } from "./companion-center-model";
 import { publishCompanionRecordsChanged, useCompanionRecordsRefresh, useCompanionResource } from "./use-companion-resource";
 
 const tiers = { resident: "常放在手边", active: "还在关注", archived: "已归档" };
+const GROWTH_LABELS: ReadonlyMap<string, string> = new Map(COMPANION_GROWTH_BLOCKS.map(block => [block.key, block.title]));
 const noteState = (note: CompanionSelfNoteV1) => note.userDisabled ? "你已停用"
   : note.expiresAt && Date.parse(note.expiresAt) <= Date.now() ? "已过期" : tiers[note.tier];
 function judgmentState(item: CompanionMemoryItemV1): string {
   const state = memoryState(item);
   if (state === "archived") return "她已经收回";
   if (state === "expired") return "已过期";
-  return item.userConfirmed ? "她确定这样看" : "她还在琢磨";
+  if (item.epistemicStatus === "disputed") return "有争议";
+  if (item.epistemicStatus === "superseded") return "已被替代";
+  if (item.userConfirmed) return "你已确认";
+  return item.epistemicStatus === "supported" ? "有依据" : "待核对";
 }
 
 /**
@@ -27,18 +31,19 @@ function judgmentState(item: CompanionMemoryItemV1): string {
  * 跨表没有去重，所以放在同一张清单里由她自己的口吻呈现，而不是分成两档。
  */
 type HerRow = {
-  id: string; group: "她的记事" | "她的看法"; title: string; body: string;
-  state: string; revision: number; updatedAt: string; wake: string | null;
-  note: CompanionSelfNoteV1 | null; memory: CompanionMemoryItemV1 | null;
+  id: string; group: "她的成长" | "她的记事" | "她的看法"; title: string; body: string;
+  state: string; revision: number; updatedAt: string; lastUsedAt: string | null; confidence: number | null;
+  wake: string | null; note: CompanionSelfNoteV1 | null; memory: CompanionMemoryItemV1 | null;
 };
 
 const GROUP_OPTIONS: ReadonlyArray<CompanionSelectOption<HerGroup>> = [
-  { value: "all", label: "两类都看" },
+  { value: "all", label: "三类都看" },
+  { value: "她的成长", label: "只看她的成长块" },
   { value: "她的记事", label: "只看她写下的记事" },
   { value: "她的看法", label: "只看她的看法" },
 ];
 
-type HerGroup = "all" | "她的记事" | "她的看法";
+type HerGroup = "all" | "她的成长" | "她的记事" | "她的看法";
 
 export function CompanionHerNotesPage({ refreshKey }: { refreshKey: number }) {
   const scope = useRoomStore(state => state.workspaceScopeRevision);
@@ -58,17 +63,22 @@ export function CompanionHerNotesPage({ refreshKey }: { refreshKey: number }) {
     setQuery(""); setGroup("all"); setError(null); setNotice(null); }, [scope]);
   const rows = useMemo<HerRow[]>(() => [
     ...(notes.section?.ok ? notes.section.value.items : []).map(note => ({
-      id: `note:${note.key}`, group: "她的记事" as const, title: note.title, body: note.body,
-      state: noteState(note), revision: note.revision, updatedAt: note.updatedAt,
+      id: `note:${note.key}`, group: GROWTH_LABELS.has(note.key) ? "她的成长" as const : "她的记事" as const,
+      title: GROWTH_LABELS.get(note.key) ?? note.title, body: note.body,
+      state: noteState(note), revision: note.revision, updatedAt: note.updatedAt, lastUsedAt: note.lastUsedAt ?? null,
+      confidence: null,
       wake: note.nextReviewAt ? `她打算 ${new Date(note.nextReviewAt).toLocaleString("zh-CN")} 再看看` : null,
       note, memory: null,
     })),
     ...(memories.section?.ok ? memories.section.value.items : []).filter(item => item.kind === "judgment").map(item => ({
       id: `judgment:${item.memoryItemId}`, group: "她的看法" as const, title: item.content, body: item.content,
-      state: judgmentState(item), revision: item.revision, updatedAt: item.updatedAt, wake: null,
-      note: null, memory: item,
+      state: judgmentState(item), revision: item.revision, updatedAt: item.updatedAt, lastUsedAt: null,
+      confidence: item.confidence, wake: null, note: null, memory: item,
     })),
-  ].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)), [notes.section, memories.section]);
+  ].sort((a, b) => {
+    const order = { "她的成长": 0, "她的记事": 1, "她的看法": 2 } as const;
+    return order[a.group] - order[b.group] || b.updatedAt.localeCompare(a.updatedAt);
+  }), [notes.section, memories.section]);
   const visible = rows.filter(row => (group === "all" || row.group === group) && `${row.title} ${row.body}`.toLowerCase().includes(query.trim().toLowerCase()));
   const selected = visible.find(row => row.id === selectedId) ?? null;
   useEffect(() => { if (visible.length && !visible.some(row => row.id === selectedId)) setSelectedId(visible[0].id); }, [visible, selectedId]);
@@ -136,23 +146,23 @@ export function CompanionHerNotesPage({ refreshKey }: { refreshKey: number }) {
   if (!notes.section.ok) return <SectionState message="她的记事暂时读不到" detail={notes.section.message} onRetry={() => void notes.reload()} />;
   if (!memories.section.ok) return <SectionState message="她的看法暂时读不到" detail={memories.section.message} onRetry={() => void memories.reload()} />;
   return <section className="cc-methods" aria-label="她的记事">
-    <p className="cc-rule-intro">记事是她整理过的一段，看法是她对某一件事的理解；两条都会在她下次开口时带上。</p>
+    <p className="cc-rule-intro">她会在对话里参考常驻成长块，也会按需要读回其他记事和看法。</p>
     <CenterFeedback error={error} notice={notice} />
     <div className="cc-toolbar"><CenterSearch value={query} onChange={setQuery} placeholder="找她记下的判断或素材…" label="筛选她的记事" /></div>
     <div className="cc-filter-line" role="group" aria-label="她的记事筛选"><CompanionSelect paper ariaLabel="筛选她的记事的类型" value={group} options={GROUP_OPTIONS} onChange={setGroup} /><span>{visible.length} 条</span></div>
     <div className={`cc-methods-workspace${selected ? " has-selection" : ""}`}>
       <div className="cc-methods-index" aria-label="她的记事目录">
-        {visible.length ? ([{ key: "她的记事", label: "她写下的记事" }, { key: "她的看法", label: "她的看法" }] as const).map(group => {
+        {visible.length ? ([{ key: "她的成长", label: "她的成长块" }, { key: "她的记事", label: "她写下的记事" }, { key: "她的看法", label: "她的看法" }] as const).map(group => {
           const groupRows = visible.filter(row => row.group === group.key);
           if (!groupRows.length) return null;
           return <section key={group.key} aria-label={group.label}>
             <h3>{group.label}</h3>
             {groupRows.map(row => <button type="button" key={row.id} data-note-key={row.note?.key} data-memory-id={row.memory?.memoryItemId}
               aria-pressed={row.id === selectedId} disabled={busy} onClick={() => { setSelectedId(row.id); setDraft(null); setError(null); requestAnimationFrame(() => detail.current?.focus({ preventScroll: true })); }}>
-              <small>{row.state} · 第 {row.revision} 版</small><strong>{row.title}</strong>{row.wake ? <span>{row.wake}</span> : null}
+              <small>{row.state} · 第 {row.revision} 版{row.confidence !== null ? ` · 把握 ${Math.round(row.confidence * 100)}%` : ""}{row.lastUsedAt ? ` · 最近带入对话 ${new Date(row.lastUsedAt).toLocaleDateString("zh-CN")}` : ""}</small><strong>{row.title}</strong>{row.wake ? <span>{row.wake}</span> : null}
             </button>)}
           </section>;
-        }) : <SectionState message={rows.length ? "没有找到她记下的这一条" : "她还没有留下自己的记事"}
+        }) : <SectionState message={rows.length ? "没有找到她记下的这一条" : "她还没有留下成长或记事"}
           detail={rows.length ? "可以换个词看看。" : "她会根据相处和自己的关注自主整理，不需要你逐条选择。"} />}
       </div>
       {selected ? <article ref={detail} className="cc-method-detail" tabIndex={-1} aria-label="自己的记事详情">
@@ -168,6 +178,8 @@ export function CompanionHerNotesPage({ refreshKey }: { refreshKey: number }) {
             <button type="submit" className="cc-button is-primary" disabled={busy || !draft.body.trim()}>保存纠正</button></div>
         </form> : <>{selected.note ? <><h3>{selected.title}</h3><div className="cc-persona-prose">{renderCompanionMarkdown(selected.body)}</div></>
           : <p className="cc-memory-detail__body">{selected.body}</p>}
+          {selected.lastUsedAt ? <p className="cc-muted">最近进入对话：{new Date(selected.lastUsedAt).toLocaleString("zh-CN")}</p> : null}
+          {selected.memory ? <p className="cc-muted">她的把握：{Math.round(selected.memory.confidence * 100)}% · {selected.state}</p> : null}
           {selected.memory?.candidate ? <div className="cc-actions"><button type="button" className="cc-button is-primary" disabled={busy}
             onClick={() => void write(async () => unwrapGatewayResult(await window.astella.companion.memory.confirm({ meta: notes.meta(), memoryId: selected.memory!.memoryItemId })), "已确认，她会把这个看法带进后续合作。")}>确认采用</button></div> : null}
           <div className="cc-actions">

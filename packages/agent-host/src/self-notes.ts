@@ -1,17 +1,19 @@
 import { sql } from "drizzle-orm";
-import { COMPANION_SELF_NOTE_BUDGET, companionSelfNoteWriteV1Schema, companionSelfNoteControlV1Schema,
+import { COMPANION_GROWTH_BLOCK_KEYS, COMPANION_SELF_NOTE_BUDGET, companionSelfNoteWriteV1Schema, companionSelfNoteControlV1Schema,
   type CompanionSelfNoteV1, type CompanionSelfNoteWriteV1 } from "@astella/shared";
 import type { AgentScopeV1 } from "@astella/shared/agent-contracts";
 import { AgentStoreError, queryRows, type AgentSqlExecutor } from "./store.ts";
 
 interface NoteRow { user_disabled: boolean; entry_key: string; revision: number; title: string; body: string;
   tier: CompanionSelfNoteV1["tier"]; next_review_at: Date | string | null;
-  expires_at: Date | string | null; reason: string; updated_at: Date | string }
-const iso = (value: Date | string | null) => value === null ? null : new Date(value).toISOString();
+  expires_at: Date | string | null; last_used_at?: Date | string | null; reason: string; updated_at: Date | string }
+// During a rolling deploy the column may not exist yet; treat a missing value
+// as "never used" instead of failing the whole note list.
+const iso = (value: Date | string | null | undefined) => value == null ? null : new Date(value).toISOString();
 export function projectCompanionSelfNote(row: NoteRow): CompanionSelfNoteV1 {
   return { userDisabled: row.user_disabled, key: row.entry_key, revision: Number(row.revision), title: row.title, body: row.body,
     tier: row.tier, nextReviewAt: iso(row.next_review_at), expiresAt: iso(row.expires_at),
-    reason: row.reason, updatedAt: iso(row.updated_at)! };
+    lastUsedAt: iso(row.last_used_at), reason: row.reason, updatedAt: iso(row.updated_at)! };
 }
 export async function listCompanionSelfNotes(tx: AgentSqlExecutor, scope: AgentScopeV1,
   options: { key?: string; includeArchived?: boolean; offset?: number; limit?: number; lock?: boolean } = {}): Promise<CompanionSelfNoteV1[]> {
@@ -24,6 +26,20 @@ export async function listCompanionSelfNotes(tx: AgentSqlExecutor, scope: AgentS
     ${options.lock ? sql`FOR UPDATE` : sql``}`);
   return rows.map(projectCompanionSelfNote);
 }
+/** Record that a resident note was actually put in front of the model.
+ * Throttled per note so ordinary chat does not hammer the row; does not bump
+ * revision, so the version history stays about content, not reads. */
+export async function touchCompanionSelfNotes(tx: AgentSqlExecutor, scope: AgentScopeV1,
+  notes: readonly Pick<CompanionSelfNoteV1, "key" | "revision">[]): Promise<void> {
+  if (notes.length === 0) return;
+  const versions = sql.join(notes.map(note => sql`(${note.key}, ${note.revision})`), sql`, `);
+  await tx.execute(sql`UPDATE companion_self_notes SET last_used_at=now()
+    WHERE workspace_id=${scope.workspaceId} AND user_id=${scope.userId}
+      AND (entry_key, revision) IN (${versions})
+      AND NOT user_disabled AND tier='resident' AND (expires_at IS NULL OR expires_at>now())
+      AND (last_used_at IS NULL OR last_used_at < now() - interval '1 hour')`);
+}
+
 export async function lockCompanionSelfNotes(tx: AgentSqlExecutor, scope: AgentScopeV1): Promise<void> {
   await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(
     ${`companion-self-notes:${scope.workspaceId}:${scope.userId}`},0))`);
@@ -77,15 +93,17 @@ export async function controlCompanionSelfNote(tx: AgentSqlExecutor, scope: Agen
   const [current] = await listCompanionSelfNotes(tx, scope, { key: input.key, includeArchived: true, lock: true });
   if (!current || current.revision !== input.expectedRevision)
     throw new AgentStoreError(409, "self_note_revision_conflict", "记事已有新版本，请重新读取。");
+  const restoredTier = COMPANION_GROWTH_BLOCK_KEYS.has(input.key) ? "resident" : "active";
   if (input.action === "restore") {
     const [{ count }] = await queryRows<{ count: number }>(tx, sql`SELECT count(*)::int AS count FROM companion_self_notes
-      WHERE workspace_id=${scope.workspaceId} AND user_id=${scope.userId} AND tier='active'
+      WHERE workspace_id=${scope.workspaceId} AND user_id=${scope.userId} AND tier=${restoredTier}
         AND entry_key<>${input.key} AND NOT user_disabled AND (expires_at IS NULL OR expires_at>now())`);
-    if (count >= COMPANION_SELF_NOTE_BUDGET.active)
-      throw new AgentStoreError(422, "self_note_capacity", "活跃记事已满，可以先停用另一条。");
+    if (count >= COMPANION_SELF_NOTE_BUDGET[restoredTier])
+      throw new AgentStoreError(422, "self_note_capacity", restoredTier === "resident"
+        ? "常驻记事已满，可以先停用另一条常驻记事。" : "活跃记事已满，可以先停用另一条。");
   }
   const [row] = await queryRows<NoteRow>(tx, sql`UPDATE companion_self_notes SET user_disabled=${input.action === "disable"},
-    tier=${input.action === "disable" ? "archived" : "active"},next_review_at=NULL,
+    tier=${input.action === "disable" ? "archived" : restoredTier},next_review_at=NULL,
     expires_at=CASE WHEN ${input.action === "restore"} THEN NULL ELSE expires_at END,revision=revision+1,updated_at=now(),
     reason=${input.action === "disable" ? "用户停用，不再自主恢复。" : "用户恢复，后续由伴星自行整理。"}
     WHERE workspace_id=${scope.workspaceId} AND user_id=${scope.userId} AND entry_key=${input.key} RETURNING *`);

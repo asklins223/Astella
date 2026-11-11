@@ -20,8 +20,11 @@ const context = browser.contexts()[0]
 const page = context.pages().find(p => p.url().includes('localhost')) ?? context.pages()[0]
 
 if (await page.locator('.desktop-access-gate input[type="email"]').count()) {
-  await page.locator('.desktop-access-gate input[type="email"]').fill('companion-probe@astella.local')
-  await page.locator('.desktop-access-gate input[type="password"]').first().fill('probe-c37bpcz4')
+  const email = process.env.ASTELLA_PROBE_EMAIL ?? process.env.OWNER_EMAIL
+  const password = process.env.ASTELLA_PROBE_PASSWORD ?? process.env.OWNER_PASSWORD
+  if (!email || !password) throw new Error('Set ASTELLA_PROBE_EMAIL and ASTELLA_PROBE_PASSWORD for the local account with self-note fixtures.')
+  await page.locator('.desktop-access-gate input[type="email"]').fill(email)
+  await page.locator('.desktop-access-gate input[type="password"]').first().fill(password)
   await page.getByRole('button', { name: '登录', exact: true }).click()
   await page.waitForSelector('.hud-rail', { timeout: 90_000 })
 }
@@ -38,7 +41,7 @@ await page.evaluate(() => document.querySelector('#companion-tab-memory')?.click
 await page.waitForSelector('.cc-memory-views', { timeout: 30_000 })
 await page.getByRole('button', { name: '她的记事', exact: true }).click()
 await page.waitForSelector('section[aria-label="她的记事"] .cc-methods-index', { timeout: 30_000 })
-await page.getByRole('button', { name: '全部记忆', exact: true }).click()
+await page.getByRole('button', { name: '关于你的', exact: true }).click()
 await page.waitForTimeout(400)
 await page.getByRole('button', { name: '她的记事', exact: true }).click()
 await page.waitForSelector('section[aria-label="她的记事"] .cc-methods-index', { timeout: 30_000 })

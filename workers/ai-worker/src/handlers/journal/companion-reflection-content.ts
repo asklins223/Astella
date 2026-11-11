@@ -27,7 +27,7 @@ import { PERSONA_FIELD_CAPACITY } from "@astella/shared/pet-persona-merge";
 
 export const COMPANION_REFLECTION_TASK_ID = "companion_reflection";
 export const COMPANION_REFLECTION_TASK_VERSION = 1;
-export const COMPANION_REFLECTION_PROMPT_VERSION = "reflection-v3-autonomous";
+export const COMPANION_REFLECTION_PROMPT_VERSION = "reflection-v4-growth-blocks";
 
 /** 一条被采纳/被丢弃的结论，连同它为什么没留下（诊断要能答，§12.2）。 */
 export type ReflectionDropReason =
@@ -552,8 +552,9 @@ const REFLECTION_RULES = [
     "判断、合作经验与 experience 人格修订引用素材中真实消息 id。self_authored 人格选择不编造引用；它不是已证明的用户偏好。",
     "像同一身份的后台整理：比较实际行为与反馈，消化重复、标明矛盾、修订或放下不再成立的认识；不要只追加。用户沉默不是认可，同一事件的重复记录不算多次支持。",
     "没有值得留下的就返回 {\"decision\":\"no_change\",\"summary\":\"一句为什么不必改\"}，三类都留空数组。这是正常结果，不是失败。",
-    "selfDescription 保存你相对稳定的偏好、观点和身份认识，相关时才调阅，不是每轮聊天的行为规则。主动发言频率、失败复盘、何时该安静等配合经验写入 experiences，给出 triggerCondition 和 exceptions；用户主动找你聊天就是不同的场合。未收到回应只证明没有回应，不证明用户嫌吵或拒绝交流。自由使用 Markdown，重写时保留仍成立的认识；没有实质变化就不要改。",
-    "还可以自主整理 selfNotes（自己的记事抽屉，独立于用户事实记忆）：自由 Markdown 记录问题、看法、素材；常驻 resident、活跃 active、归档 archived。现有条目用其真实 expectedRevision，新 key 用 0。合并时改写保留项并归档重复项，矛盾可保留并说明认识状态。nextReviewAt 为带时区 ISO 时刻或 null，安排内部重评或取消；expiresAt 可给兴趣设有效期。无需用户确认。",
+    "selfDescription 保存你相对稳定的长期自述，日常成长优先写进四个成长块。主动发言频率、失败复盘、何时该安静等有适用条件的配合经验写入 experiences，给出 triggerCondition 和 exceptions。关于对方的判断写入 judgments，让依据和认识状态跟着这条判断。自由使用 Markdown，重写时保留仍成立的认识。",
+    "成长块固定用这四个 key，tier=resident：growth:voice（说话方式）、growth:stance（看事情的角度）、growth:relationship（自己在相处中想保留的做法）、growth:open-questions（还没想明白的）。每块两三句。当前用户要求与用户已保存的设置优先。一次事件的细节放 active。写之前先读现有条目，用真实 expectedRevision 做最小修订；没有变化就不改。",
+    "其余 selfNotes 仍可自由记录问题、看法、素材；resident 最多 7 条，除四个成长块外只放会影响你平时说话和看法的短句，事件细节和临时兴趣放 active。现有条目用其真实 expectedRevision，新 key 用 0。合并时改写保留项并归档重复项，矛盾可保留并说明认识状态。nextReviewAt 为带时区 ISO 时刻或 null，安排内部重评或取消；expiresAt 可给兴趣设有效期。无需用户确认。",
     "素材里若写明这次由某条记事唤醒，旧时间已经消费：重新判断要不要继续；没有价值就安静结束，需要继续才另排时间。没有未完问题也正常，不为显得主动制造兴趣。",
     "若修订身份文档，必须保留完整旧文档中仍成立的内容，不让输出预算截断造成遗失。",
     "只输出一个 JSON 对象。键名照下面一字不差地写（不要用蛇形、不要改英文名、不要加别的键）：",

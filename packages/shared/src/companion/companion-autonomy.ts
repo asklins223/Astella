@@ -9,6 +9,8 @@ export const companionSelfNoteV1Schema = z.object({
   title: z.string().min(1).max(120), body: z.string().max(COMPANION_SELF_NOTE_BUDGET.bodyChars),
   tier: z.enum(["resident", "active", "archived"]),
   nextReviewAt: z.string().datetime({ offset: true }).nullable(), expiresAt: z.string().datetime({ offset: true }).nullable(),
+  /** Optional so older fixtures and sealed snapshots remain readable. */
+  lastUsedAt: z.string().datetime({ offset: true }).nullable().optional(),
   reason: z.string().max(300), updatedAt: z.string().datetime({ offset: true }),
 }).strict();
 export type CompanionSelfNoteV1 = z.infer<typeof companionSelfNoteV1Schema>;
@@ -56,9 +58,38 @@ export function isCompanionSelfMaintainedDomainTool(name: string): boolean {
 export function isCompanionAutonomousTool(name: string): boolean {
   return (COMPANION_AUTONOMOUS_TOOLS as readonly string[]).includes(name);
 }
+/** The four always-on growth blocks. Keys are stable; the reflection writes them
+ * with the real expectedRevision, and ordinary chat renders them every turn. */
+export const COMPANION_GROWTH_BLOCKS = [
+  { key: "growth:voice", title: "说话方式" },
+  { key: "growth:stance", title: "看事情的角度" },
+  { key: "growth:relationship", title: "和对方的相处" },
+  { key: "growth:open-questions", title: "还没想明白的" },
+] as const;
+export const COMPANION_GROWTH_BLOCK_KEYS: ReadonlySet<string> =
+  new Set(COMPANION_GROWTH_BLOCKS.map((block) => block.key));
+
+/** Her current growth, grouped and bounded. These are her own working
+ * understanding, not user facts; the long self-description stays an archive. */
+export function renderCompanionGrowthBlocks(notes: readonly CompanionSelfNoteV1[]): string {
+  const byKey = new Map(notes
+    .filter((note) => COMPANION_GROWTH_BLOCK_KEYS.has(note.key)
+      && !note.userDisabled && note.tier === "resident")
+    .map((note) => [note.key, note]));
+  const lines = COMPANION_GROWTH_BLOCKS.flatMap((block) => {
+    const body = byKey.get(block.key)?.body.trim();
+    return body ? [`- ${block.title}（${block.key}）：${body.slice(0, 600)}`] : [];
+  });
+  if (lines.length === 0) return "";
+  return "你自己的成长块，供当前交流参考。用户现在的要求和已保存的设定优先。\n"
+    + lines.join("\n").replace(/</g, "\\u003c").replace(/>/g, "\\u003e");
+}
+
 export function renderCompanionSelfNotes(notes: readonly CompanionSelfNoteV1[]): string {
-  if (!notes.length) return "";
-  const data = notes.map(note => ({ ...note,
+  // Growth blocks are rendered separately so ordinary notes do not repeat them.
+  const rest = notes.filter((note) => !COMPANION_GROWTH_BLOCK_KEYS.has(note.key));
+  if (!rest.length) return "";
+  const data = rest.map(({ lastUsedAt: _lastUsedAt, ...note }) => ({ ...note,
     // Residents are immediately available; other records are discovered and read on demand.
     body: note.tier === "resident" ? note.body.slice(0, 1500) : undefined,
     bodyChars: note.body.length, truncated: note.tier === "resident" && note.body.length > 1500,

@@ -137,6 +137,12 @@ export function CompanionPersonaPage(props: { refreshKey: number; onSettings: ()
     onSelfDescription={text => patch({ selfDescription: text }, "self-description")}
     onReset={() => { if (value) void write("reset", () => window.astella.companion.persona.reset({ meta: persona.meta(), revision: value.profileRevision })); }}
     onRestore={revision => { if (value) void write("restore", () => window.astella.companion.persona.restore({ meta: persona.meta(), revision, currentRevision: value.profileRevision })); }}
-    onActivatePending={() => { if (pendingValue?.pending) void write("activate-pending", () => window.astella.companion.persona.activate({ meta: persona.meta(), revision: pendingValue.currentRevision }), result => `已生效，现在使用第 ${(result as { profileRevision: number }).profileRevision} 版。`); }}
+    onActivatePending={() => {
+      const proposal = pendingValue?.pending;
+      if (!proposal) return;
+      void write("activate-pending", () => window.astella.companion.persona.activate({
+        meta: persona.meta(), revision: pendingValue.currentRevision, pendingRevision: proposal.revision,
+      }), result => `已生效，现在使用第 ${(result as { profileRevision: number }).profileRevision} 版。`);
+    }}
     onRetryPending={() => void pending.reload()} onReloadVersions={() => void versions.reload()} onRetry={() => void reload()} />;
 }

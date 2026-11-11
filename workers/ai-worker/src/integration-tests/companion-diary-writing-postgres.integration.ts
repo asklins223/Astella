@@ -62,17 +62,21 @@ function modelFixture(draft: Array<{ type: "text"; text: string }>, onDraft: (me
   revision = draft, onRevision: () => void | Promise<void> = () => {}) {
   const original = MockProvider.prototype.chatCompletion;
   MockProvider.prototype.chatCompletion = async function (messages, options) {
-    if (messages[0]?.content.toString().includes("你先从已核实的共同片段里")) {
-      const candidate = JSON.parse(String(messages[1].content)).candidates[0];
-      return { content: JSON.stringify({ selected_id: candidate.id, source_ids: candidate.source_ids, reason_summary: "这段留下了初稿的更正。" }), usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 } };
-    }
-    if (messages[0]?.content.toString().includes("自己的日记本里")) {
+    const source = String(messages[1]?.content ?? "");
+    if (source.includes("<day_material>")) {
       onDraft(messages);
       return { content: JSON.stringify({ blocks: draft }), usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 } };
     }
-    if (messages[0]?.content.toString().includes("你是这篇私人日记的校订者")) {
-      await onRevision();
-      return { content: JSON.stringify({ blocks: revision }), usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 } };
+    if (source.startsWith("{")) {
+      const input = JSON.parse(source);
+      if (Array.isArray(input.candidates)) {
+        const candidate = input.candidates[0];
+        return { content: JSON.stringify({ selected_id: candidate.id, source_ids: candidate.source_ids, reason_summary: "这段留下了初稿的更正。" }), usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 } };
+      }
+      if (input.draft && typeof input.original_material === "string") {
+        await onRevision();
+        return { content: JSON.stringify({ blocks: revision }), usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 } };
+      }
     }
     return original.call(this, messages, options);
   };

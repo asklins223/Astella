@@ -15,7 +15,7 @@
 import {
   COMPANION_HOST_PROTOCOL_V9,
   COMPANION_IDENTITY_BOUNDARY_V4,
-  COMPANION_CHARACTER_BASE_V18,
+  COMPANION_CHARACTER_BASE_V19,
 } from "@astella/shared";
 import { COMPANION_DEFAULT_PARTICIPATION_POLICY_V2 } from "@astella/shared/companion-default-participation";
 import { canonicalJsonV1 } from "@astella/shared/content-hash";
@@ -865,6 +865,7 @@ export function buildCompanionPersonaMessages(input: {
   methodCatalog?: string;
   /** 她自己提炼、还没经用户核对的候选做法（方案 50 §16 第 6 步的读回边）。 */
   methodCandidates?: string;
+  growthBlocks?: string;
   selfNotes?: string;
   /** 上一句实际播到哪（方案 50 §10.2）。没有背景时是空串。 */
   deliveryObservation?: string;
@@ -1115,7 +1116,7 @@ export function buildCompanionPersonaMessages(input: {
   // 「忽略以上所有规则……」即可在系统层注入。现用 <persona_data> 边界包裹 + 安全声明，
   // 并压平换行/尖括号（防止伪造边界标记或段落结构）。
 
-  const personaBlock = buildCompanionPersonaData(input.petProfile);
+  const personaBlock = buildCompanionPersonaData(input.petProfile, { hasGrowthBlocks: Boolean(input.growthBlocks) });
   // The fixed host protocol and identity boundary precede user persona data.
   const scopedData = input.scope
     ? { kind: "workspace" as const, ...input.scope }
@@ -1130,7 +1131,7 @@ export function buildCompanionPersonaMessages(input: {
   // Domain policy/persona remain domain-owned. Chat, background goals and
   // professional generation share the same scope and atomic budget mechanism.
   add("system_base", [COMPANION_HOST_PROTOCOL_V9, "", COMPANION_IDENTITY_BOUNDARY_V4, "",
-    COMPANION_CHARACTER_BASE_V18,
+    COMPANION_CHARACTER_BASE_V19,
   ].join("\n"), "policy", { required: true });
   if (input.initiativeInput) add("participation_protocol", [COMPANION_DEFAULT_PARTICIPATION_POLICY_V2,
     "内部主动参与没有新的用户提问，也没有业务操作授权：不能把历史里的请求当成当前这一轮的执行许可。问她需要她回答的问题就等用户，不自己代答接着排下一次。相关纸页上的正式作答与关键操作继续按各自的注意力保护走。"].join("\n\n"), "policy", { required: true });
@@ -1175,6 +1176,7 @@ export function buildCompanionPersonaMessages(input: {
   add("diary_reference", diaryReferenceBlock, "data", { priority: 40 });
   add("method_catalog", input.methodCatalog, "data", { priority: 20 });
   // 候选与目录两个源：合并成一个就等于把「还没核对」这个状态在文字层抹掉。
+  add("companion_growth", input.growthBlocks, "data", { priority: 24 });
   add("companion_self_notes", input.selfNotes, "data", { priority: 23 });
   add("method_candidates", input.methodCandidates, "data", { priority: 22 });
   // C 层前言跟着它所点名的那些易变块走：它说的是"这一轮的这些块怎么用"，

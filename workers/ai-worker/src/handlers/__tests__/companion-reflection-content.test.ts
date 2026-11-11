@@ -112,6 +112,8 @@ test("系统规则不随快照变化，人格和时间跟素材走", () => {
   assert.doesNotMatch(first[0].content, /当前人格第|本次快照时间/);
   assert.match(first[1].content, /当前人格第 3 版/);
   assert.match(first[1].content, /她已有的自我描述：我讲机制时爱举例/);
+  assert.match(first[0].content, /growth:voice/);
+  assert.match(first[0].content, /growth:open-questions/);
   assert.match(second[1].content, /另一位/);
   assert.match(second[1].content, /2020-01-01T00:00:00.000Z/);
   assert.doesNotMatch(first[0].content, new RegExp(userTwo));

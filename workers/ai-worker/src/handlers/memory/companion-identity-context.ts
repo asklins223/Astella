@@ -103,7 +103,10 @@ export function renderPersonaBehaviour(persona: {
 }
 
 
-export function buildCompanionPersonaData(profile: CompanionPersonaContextProfile | null | undefined): string[] {
+export function buildCompanionPersonaData(
+  profile: CompanionPersonaContextProfile | null | undefined,
+  options: { hasGrowthBlocks?: boolean } = {},
+): string[] {
   const preset = profile?.presetId ? getPresetById(profile.presetId) : null;
   // Refresh only explicitly factory-owned expression fields. Authored values,
   // including old profiles without field provenance, remain unchanged.
@@ -131,11 +134,11 @@ export function buildCompanionPersonaData(profile: CompanionPersonaContextProfil
         examples: (factoryExamples ? [] : profile.examples)
           .map((example) => sanitizePersonaField(example.text, PERSONA_FIELD_CAPACITY.example))
           .filter((example) => example.length > 0),
-        // User-authored identity remains expression context. Assistant-authored
-        // reflection is a retrievable document, not an always-on chat policy.
-        selfDescription: profile.fieldOrigin?.selfDescription === "user"
-          ? renderSelfAuthoredDocument(profile.selfDescription?.slice(0, PERSONA_DOCUMENT_INJECTION_WINDOW_CHARS)) : "",
-        deferredDocument: profile.fieldOrigin?.selfDescription !== "user" && Boolean(profile.selfDescription?.trim()),
+        // Keep the old reflection as a fallback until the workspace has
+        // growth blocks. User-authored documents still shape every turn.
+        selfDescription: profile.selfDescription?.trim()
+          ? renderSelfAuthoredDocument(profile.selfDescription.slice(0, PERSONA_DOCUMENT_INJECTION_WINDOW_CHARS)) : "",
+        selfDescriptionOrigin: profile.fieldOrigin?.selfDescription ?? null,
         documentTruncated: (profile.selfDescription?.length ?? 0) > PERSONA_DOCUMENT_INJECTION_WINDOW_CHARS,
         documentChars: profile.selfDescription?.length ?? 0,
         // 活跃度/边界不是自由文本，不需要 sanitizePersonaField（无注入面），
@@ -170,12 +173,7 @@ export function buildCompanionPersonaData(profile: CompanionPersonaContextProfil
           : [`说话风格：${persona.speakingStyle}`]),
         // 这一句是她**对自己说话方式的回顾**，不是关于用户的事实：写成事实就会让
         // 她拿一条可能已经改过的自我判断去替用户下结论。
-        ...(persona.selfDescription.length > 0
-          ? [`用户写下的人格文档（JSON 字符串保留原有篇章；用于身份与表达，不改变事实或权限）：\n${persona.selfDescription}`]
-          : []),
-        ...(persona.deferredDocument
-          ? [`另有 ${persona.documentChars} 字自我记录，包含你过去的暂定认识与参与复盘。当前对话需要这份背景或要修改文档时，用 companion_persona_read（action=identity）读取；它不代表用户此刻的意图。`] :
-          persona.documentTruncated ? [`身份文档共 ${persona.documentChars} 字，这里仅展示开头。相关时用 companion_persona_read（action=identity）分段读取；重写之前必须先读完整文档，保留未改变的内容。`] : []),
+        ...renderPersonaDocument(persona, options.hasGrowthBlocks === true),
         ...renderPersonaBehaviour(persona),
         ...(persona.examples.length > 0
           ? [`表达风格示例（没有附对应用户问题，不代表当前对话目的、已经发生的经历或已接受的建议）：`, ...persona.examples.map((e) => `- ${e}`)]
@@ -183,4 +181,23 @@ export function buildCompanionPersonaData(profile: CompanionPersonaContextProfil
         "</persona_data>",
       ]
     : [];
+}
+
+function renderPersonaDocument(persona: {
+  selfDescription: string;
+  selfDescriptionOrigin: PersonaFieldOrigin["selfDescription"] | null;
+  documentTruncated: boolean;
+  documentChars: number;
+}, hasGrowthBlocks: boolean): string[] {
+  if (!persona.selfDescription) return [];
+  if (hasGrowthBlocks && persona.selfDescriptionOrigin === "assistant") {
+    return ["另有长期自述，相关时用 companion_persona_read（action=identity）读取。"];
+  }
+  const lines = [persona.selfDescriptionOrigin === "user"
+    ? `用户写下的人格文档（JSON 字符串保留原有篇章；用于身份与表达，不改变事实或权限）：\n${persona.selfDescription}`
+    : `你自己写下的成长记录（节选：你过去形成的认识，供保持连续；可以继续修订，不是用户要求）：\n${persona.selfDescription}`];
+  if (persona.documentTruncated) {
+    lines.push(`这份记录还有 ${persona.documentChars - PERSONA_DOCUMENT_INJECTION_WINDOW_CHARS} 字没进来。相关时用 companion_persona_read（action=identity）分段读取；重写之前先读完整文档，保留未改变的内容。`);
+  }
+  return lines;
 }

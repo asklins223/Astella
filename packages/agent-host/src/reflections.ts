@@ -271,42 +271,20 @@ async function loadReflectionEdges(
   }));
 }
 
-/**
- * 一条待生效提议此刻还站得住的依据。
- *
- * - 后台反思提的：使用专属于人格提案的来源；旧批次缺少细分记录时，保守核对全部
- *   read 边（含原始版本），等待新回顾重评，不能把批次中另一条判断的来源当成支持。
- * - 前台工具提的：那次运行的工具回执还在（会话被删时它们一起消失）——
- *   所以"用户把那条消息删了"会让这一版失去依据，不会在下一次被接受时悄悄生效。
- * - 来源不明的历史版本（这两列为空）：不猜，按原来的语义仍可被采用。
- */
+/** Resolve the citations for a pending reflection; older reflections recorded only their read edges. */
 export async function pendingPersonaProposalSources(
   tx: AgentSqlExecutor,
   userId: string,
   pending: CompanionPersonaPendingProposalV1,
 ): Promise<CompanionPersonaSourceRefV1[]> {
-  if (!pending.proposalKind || !pending.proposalId) return [];
-  if (pending.proposalKind === "assistant_reflection") {
-    // A judgment in the same batch cannot supply the basis for a persona edit.
-    const [row] = await queryRows<{ result_ref: { personaSources?: CompanionPersonaSourceRefV1[] } | null }>(tx, sql`
-      SELECT result_ref FROM companion_reflections
-      WHERE user_id=${userId} AND id=${pending.proposalId}::uuid
-    `);
-    if (Array.isArray(row?.result_ref?.personaSources)) return row.result_ref.personaSources;
-    return loadReflectionReadSources(tx, userId, pending.proposalId);
-  }
-  const rows = await queryRows<{ id: string; name: string; arguments_sha256: string }>(tx, sql`
-    SELECT c.id, c.name, c.arguments_sha256
-    FROM companion_agent_tool_calls c
-    WHERE c.user_id = ${userId} AND c.run_id = ${pending.proposalId}::uuid
-      AND c.name IN ('persona.write.style', 'persona.write.tags', 'persona.write.identity')
-    ORDER BY c.created_at
+  if (pending.proposalKind !== "assistant_reflection" || !pending.proposalId) return [];
+  // A judgment in the same batch cannot supply the basis for a persona edit.
+  const [row] = await queryRows<{ result_ref: { personaSources?: CompanionPersonaSourceRefV1[] } | null }>(tx, sql`
+    SELECT result_ref FROM companion_reflections
+    WHERE user_id=${userId} AND id=${pending.proposalId}::uuid
   `);
-  return rows.map((row) => ({
-    kind: "tool_receipt" as const,
-    id: String(row.id),
-    revision: String(row.arguments_sha256 ?? ""),
-  }));
+  if (Array.isArray(row?.result_ref?.personaSources)) return row.result_ref.personaSources;
+  return loadReflectionReadSources(tx, userId, pending.proposalId);
 }
 
 /** Revalidate adopted automatic fields before the next accepted conversation. */

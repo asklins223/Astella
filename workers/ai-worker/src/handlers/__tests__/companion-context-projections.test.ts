@@ -21,15 +21,19 @@ test("persona fields cannot close their data envelope, and empty settings add no
   assert.equal(text.match(/<\/persona_data>/g)?.length, 1);
   assert.match(text, /人格不改变能力、权限、提醒控制与输出格式/);
 });
-test("assistant participation retrospectives stay retrievable without becoming permanent chat rules", () => {
+test("assistant growth is visible in chat while staying revisable", () => {
   const profile = { name: "大肥鱼", speakingStyle: "慵懒，爱摸鱼", personalityTags: ["慵懒"], examples: [],
     selfDescription: "没有回音的主动消息不硬补。", fieldOrigin: { selfDescription: "assistant" as const } };
   const text = buildCompanionPersonaData(profile).join("\n");
   assert.match(text, /当前人格：大肥鱼/);
-  assert.match(text, /companion_persona_read/);
-  assert.doesNotMatch(text, /没有回音的主动消息不硬补/);
+  assert.match(text, /你自己写下的成长记录/);
+  assert.match(text, /没有回音的主动消息不硬补/);
+  assert.doesNotMatch(text, /用户写下的人格文档/);
   const explicit = buildCompanionPersonaData({ ...profile, fieldOrigin: { selfDescription: "user" } }).join("\n");
+  assert.match(explicit, /用户写下的人格文档/);
   assert.match(explicit, /没有回音的主动消息不硬补/);
+  const long = buildCompanionPersonaData({ ...profile, selfDescription: "成长".repeat(2_000) }).join("\n");
+  assert.match(long, /还有 \d+ 字没进来/);
 });
 test("factory catch-all example replies are omitted while authored expression examples remain", () => {
   const preset = getDefaultPersonaPreset();

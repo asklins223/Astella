@@ -419,6 +419,38 @@ export async function personaProposalHasLiveBasis(
   return dead.current;
 }
 
+/** Check the assistant proposal while the profile row is locked. Keep withdrawn revisions in history. */
+export async function withdrawPendingPersonaWithInvalidBasis(
+  tx: AgentSqlExecutor,
+  userId: string,
+  pending: CompanionPersonaPendingProposalV1,
+  sources: readonly CompanionPersonaSourceRefV1[],
+): Promise<boolean> {
+  if (pending.author !== "assistant_tool") return false;
+  if (pending.proposalKind === "assistant_tool") {
+    const [receipt] = await queryRows<{ current: boolean }>(tx, sql`
+      SELECT astella_companion_persona_tool_current(${userId}::uuid, ${pending.revision}) AS current
+    `);
+    if (receipt?.current) return false;
+  } else if (sources.length > 0) {
+    if (await personaProposalHasLiveBasis(tx, userId, sources)) return false;
+  } else {
+    if (pending.proposalKind !== "assistant_reflection") return false;
+    const [selfAuthored] = await queryRows<{ autonomous: boolean }>(tx, sql`
+      SELECT true AS autonomous FROM companion_reflections
+      WHERE user_id=${userId} AND id=${pending.proposalId}::uuid AND decision='committed'
+        AND pending_persona_revision=${pending.revision} AND result_ref->>'personaBasis'='self_authored'
+    `);
+    if (selfAuthored?.autonomous) return false;
+  }
+
+  await tx.execute(sql`
+    UPDATE companion_persona_profiles SET pending_revision = NULL
+    WHERE user_id = ${userId} AND pending_revision = ${pending.revision}
+  `);
+  return true;
+}
+
 /**
  * 下一条被接受的新用户消息采用排队那一版（40 §4.8.4 / 方案 50 §9.4）。
  *
@@ -451,18 +483,7 @@ export async function adoptPendingPersonaForNewTurn(
   if (pending.author !== "assistant_tool") return null;
 
   const sources = resolveSources ? await resolveSources(pending) : [];
-  const [selfAuthored] = pending.proposalKind === "assistant_reflection" && sources.length === 0
-    ? await queryRows<{ autonomous: boolean }>(tx, sql`SELECT true AS autonomous FROM companion_reflections
-        WHERE user_id=${userId} AND id=${pending.proposalId}::uuid AND decision='committed'
-          AND pending_persona_revision=${pending.revision} AND result_ref->>'personaBasis'='self_authored'`)
-    : [];
-  if ((pending.proposalKind === "assistant_reflection" && sources.length === 0 && !selfAuthored?.autonomous)
-    || (sources.length > 0 && !await personaProposalHasLiveBasis(tx, userId, sources))) {
-    // 失去依据：不采用，也不把这一版留在排队里（历史行不动，用户仍可查、可恢复）。
-    await tx.execute(sql`
-      UPDATE companion_persona_profiles SET pending_revision = NULL
-      WHERE user_id = ${userId} AND pending_revision = ${pending.revision}
-    `);
+  if (await withdrawPendingPersonaWithInvalidBasis(tx, userId, pending, sources)) {
     return { kind: "source_invalid", pending };
   }
 

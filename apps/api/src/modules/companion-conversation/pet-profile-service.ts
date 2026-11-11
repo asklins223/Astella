@@ -20,7 +20,10 @@ import {
   markReflectionProposalWithdrawn,
   pendingPersonaProposalSources,
   nextAvailablePersonaRevision,
+  readPendingPersonaProposal,
   reconcileReflectedPersonaSources,
+  withdrawPendingPersonaWithInvalidBasis,
+  type CompanionPersonaPendingProposalV1,
 } from "@astella/agent-host";
 import { getPresetById } from "@astella/shared/pet-persona-presets";
 export {
@@ -650,24 +653,22 @@ async function setPendingPointer(
   if (inserted.length === 0) throw new PetProfileCasConflictError(expectedCurrentRevision);
 }
 
-/**
- * 让排队中的那一版生效：把它提升为当前版本，指针清空。
- *
- * ## 一条语句完成，不读正文进内存再写回
- *
- * `profile` 直接从那条不可变版本行里取（`UPDATE … FROM versions`），
- * 于是「指针指的那一版」与「真正被提升的那一版」在结构上不可能是两份东西：
- * 想提升错的一版，得先改版本表，而版本表是 append-only 的。
- *
- * ## 没有排队时返回 null
- *
- * 这是「请求已过期」而不是错误：调用方多半拿着一个还没排队的界面点了生效。
- * 路由把它映射成 409（与 CAS 冲突同一类：客户端手上的状态已不是服务端的状态）。
- */
+async function recordPendingPersonaWithdrawal(
+  executor: ApiTransaction,
+  userId: string,
+  pending: CompanionPersonaPendingProposalV1,
+): Promise<void> {
+  if (pending.proposalKind === "assistant_reflection" && pending.proposalId) {
+    await markReflectionProposalWithdrawn(executor, userId, pending.proposalId,
+      "排队那一版的依据在采用前已经不可读，这一版自我修订没有生效");
+  }
+}
+
+/** Promote the previewed revision after rechecking its basis under the profile lock. */
 export async function activatePetProfilePendingRevision(
   executor: ApiTransaction,
   scope: PetProfileScope,
-  input: { expectedRevision: number },
+  input: { expectedRevision: number; expectedPendingRevision?: number },
   now: Date = new Date(),
 ): Promise<PetProfileActivation | null> {
   await lockAccount(executor, scope.userId);
@@ -675,6 +676,19 @@ export async function activatePetProfilePendingRevision(
   if (!existing) return null;
   const currentRevision = existing.revision;
   if (input.expectedRevision !== currentRevision) throw new PetProfileCasConflictError(currentRevision);
+  if (input.expectedPendingRevision !== undefined && input.expectedPendingRevision !== existing.pendingRevision) {
+    throw new PetProfileCasConflictError(currentRevision);
+  }
+  if (existing.pendingRevision === null) return null;
+  const pending = await readPendingPersonaProposal(executor, scope.userId);
+  if (!pending) return null;
+  if (pending.author === "assistant_tool") {
+    const sources = await pendingPersonaProposalSources(executor, scope.userId, pending);
+    if (await withdrawPendingPersonaWithInvalidBasis(executor, scope.userId, pending, sources)) {
+      await recordPendingPersonaWithdrawal(executor, scope.userId, pending);
+      return null;
+    }
+  }
   const promoted = await executor.execute<{
     id: string;
     user_id: string;
@@ -693,11 +707,10 @@ export async function activatePetProfilePendingRevision(
        AND v.user_id = p.user_id
        AND v.revision = p.pending_revision
        AND p.revision = ${input.expectedRevision}
+       AND p.pending_revision = ${pending.revision}
     RETURNING p.id, p.user_id, p.revision, p.profile, p.created_at, p.updated_at
   `);
   const row = promoted[0];
-  // 指针为空 = 没有排队；CAS 已经被别人推走 = 这一句自然不命中。两种都交给调用方
-  // 按"你手上的状态已过期"处理（路由 409），不静默成功。
   if (!row) return null;
   const profile = row.profile ?? null;
   return {
@@ -739,12 +752,6 @@ export async function activateAssistantPersonaForNewTurn(
   );
   if (!outcome) return null;
   if (outcome.kind === "adopted") return outcome.revision;
-  const pending = outcome.pending;
-  if (pending.proposalKind === "assistant_reflection" && pending.proposalId) {
-    // 那一次回顾的结论本身不改写（她确实得出过那一版）；只把"这一版永远不会生效"
-    // 记在撤回上——留在 `committed`，排查的人会以为人格里已经有了它。
-    await markReflectionProposalWithdrawn(executor, scope.userId, pending.proposalId,
-      "排队那一版的依据在采用前已经不可读，这一版自我修订没有生效");
-  }
+  await recordPendingPersonaWithdrawal(executor, scope.userId, outcome.pending);
   return null;
 }

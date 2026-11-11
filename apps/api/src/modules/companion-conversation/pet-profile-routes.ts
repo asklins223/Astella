@@ -249,13 +249,19 @@ export async function petProfileRoutes(app: FastifyInstance) {
     "/companion/pet-profile/activate",
     { preHandler: [requireSession] },
     async (req, reply) => {
-      const body = z.object({ revision: z.number().int().nonnegative() }).strict().safeParse(req.body ?? {});
+      const body = z.object({
+        revision: z.number().int().nonnegative(),
+        pendingRevision: z.number().int().positive().optional(),
+      }).strict().safeParse(req.body ?? {});
       if (!body.success) throw app.httpErrors.badRequest("pet profile activate body 非法");
       const scope = scopeOfSession(req.session);
       let activation: Awaited<ReturnType<typeof activatePetProfilePendingRevision>>;
       try {
         activation = await withWorkspaceTransaction(scope, (tx) =>
-          activatePetProfilePendingRevision(tx, scope, { expectedRevision: body.data.revision }));
+          activatePetProfilePendingRevision(tx, scope, {
+            expectedRevision: body.data.revision,
+            expectedPendingRevision: body.data.pendingRevision,
+          }));
       } catch (err) {
         if (err instanceof PetProfileCasConflictError) {
           return casConflict(reply, err.currentRevision, "PROFILE_CAS_CONFLICT", "人格档案已被修改，请刷新后重试");

@@ -421,10 +421,15 @@ fingerprint: `mock:${this.modelId}:${this.visionModelId}:native_tools`,
     // retain the generic mock response below.
     const diaryRoundTripFixture = messages.some((message) =>
       String(typeof message.content === "string" ? message.content : "").includes("【mock:diary-roundtrip】"));
-    if (diaryRoundTripFixture && systemContent.includes("你先从已核实的共同片段里")) {
+    if (diaryRoundTripFixture && userContent.startsWith("{")) {
       const parsed = JSON.parse(userContent) as {
         candidates?: Array<{ id?: unknown; source_ids?: unknown }>;
+        draft?: unknown;
       };
+      if (parsed.draft) {
+        const content = JSON.stringify(parsed.draft);
+        return { content, usage: this.estimateUsage(userContent, content) };
+      }
       const candidate = parsed.candidates?.[0];
       if (typeof candidate?.id !== "string" || !Array.isArray(candidate.source_ids)) {
         throw new Error("mock diary selection fixture received no grounded candidate");
@@ -436,12 +441,7 @@ fingerprint: `mock:${this.modelId}:${this.visionModelId}:native_tools`,
       });
       return { content, usage: this.estimateUsage(userContent, content) };
     }
-    if (diaryRoundTripFixture && systemContent.includes("你是这篇私人日记的校订者")) {
-      const parsed = JSON.parse(userContent) as { draft: unknown };
-      const content = JSON.stringify(parsed.draft);
-      return { content, usage: this.estimateUsage(userContent, content) };
-    }
-    if (diaryRoundTripFixture && systemContent.includes("只输出 JSON。通常只需要正文：")) {
+    if (diaryRoundTripFixture && userContent.includes("<day_material>")) {
       const content = JSON.stringify({
         blocks: [{
           type: "text",

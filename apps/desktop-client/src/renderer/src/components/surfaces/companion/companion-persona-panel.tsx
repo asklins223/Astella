@@ -323,7 +323,7 @@ export function PersonaPanel(props: PersonaPanelProps) {
     </CenterSection>
     </details>
     <div className="cc-persona-expression">
-      <CenterSection title="表达分量" detail="决定她一次说多少、日记写多细。">
+      <CenterSection title="表达分量" detail="决定她平时回复的分量。">
         <div className="cc-segments" role="group" aria-label="人格表达分量">{(["quiet", "moderate", "active"] as const).map(value => <button key={value} type="button" aria-pressed={profile?.activeness === value} disabled={props.busy !== null} onClick={() => props.onActiveness(value)}>{activenessLabel(value)}</button>)}</div>
         <p className="cc-muted cc-origin-line"><OriginBadge origin={personaOriginOf(fieldOrigin, "activeness")} />她可以自己调这一档，你也可以。</p>
         <p className="cc-muted">主动介入的时机和间隔在伴星设置里管理。</p>{props.onSettings ? <button type="button" className="cc-link" onClick={props.onSettings}>调整主动介入</button> : null}

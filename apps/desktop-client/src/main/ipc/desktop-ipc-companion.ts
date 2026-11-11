@@ -384,8 +384,8 @@ const companionPersonaStageInputSchema = z.strictObject({
 });
 const companionPersonaActivateInputSchema = z.strictObject({
   ...m1InputBase,
-  /** 当前 revision（CAS）。注意不是待生效那一版的号——服务端按当前版本做锁。 */
   revision: z.number().int().nonnegative(),
+  pendingRevision: z.number().int().positive().optional(),
 });
 const companionMemoryDeleteOutputSchema = z.strictObject({ memoryItemId: uuidSchema });
 export const sourceListInputSchema = z.strictObject({ ...m1InputBase, cursor: z.string().min(1).max(128).optional(), limit: z.number().int().min(1).max(100).optional(), status: z.string().min(1).max(32).optional() });
@@ -984,7 +984,8 @@ channel(DESKTOP_IPC_CHANNELS.companionMemoryCreate, companionMemoryCreateInputSc
   channel(DESKTOP_IPC_CHANNELS.companionPersonaActivate, companionPersonaActivateInputSchema, async (_event, _window, input) => {
     requireM2Route(contract, "room.home");
     assertEpoch(input.meta, getActiveWorkspaceEpoch());
-    return ns_companion.activateCompanionPersonaPending(gateway.gatewayTransport, input.revision, input.meta.requestId);
+    return ns_companion.activateCompanionPersonaPending(gateway.gatewayTransport,
+      { revision: input.revision, pendingRevision: input.pendingRevision }, input.meta.requestId);
   }, companionPersonaActivatedV1Schema);
 
   channel(DESKTOP_IPC_CHANNELS.companionHistoryList, companionHistoryListInputSchema, async (_event, _window, input) => {

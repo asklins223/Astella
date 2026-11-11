@@ -2868,7 +2868,7 @@ export interface AstellaDesktopApiM2 extends AstellaDesktopApiM1 {
         meta: RequestMetaV1;
         request: CompanionPersonaPatchV1;
       }): Promise<GatewayResultV1<z.infer<typeof companionPersonaStagedV1Schema>>>;
-      activate(input: { meta: RequestMetaV1; revision: number }): Promise<GatewayResultV1<z.infer<typeof companionPersonaActivatedV1Schema>>>;
+      activate(input: { meta: RequestMetaV1; revision: number; pendingRevision?: number }): Promise<GatewayResultV1<z.infer<typeof companionPersonaActivatedV1Schema>>>;
     };
     /** 产品层唯一的连续历史；内部 conversation 分段不会跨过 IPC。 */
     readonly history: {
