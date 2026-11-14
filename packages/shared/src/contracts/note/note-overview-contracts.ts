@@ -8,13 +8,15 @@ export const noteOverviewV1Schema = z.strictObject({
   noteVersionNumber: z.number().int().positive(),
   body: z.string().min(1),
   points: z.array(z.strictObject({
-    explanation: z.string().min(8),
+    // Generation already grounds each quote against its source. Short headings
+    // and concise explanations must survive API, gateway and IPC reads too.
+    explanation: z.string().min(1),
     blockOrdinal: z.number().int().min(0).max(100_000),
-    quote: z.string().min(8),
+    quote: z.string().min(1),
   })).min(1).nullable().optional(),
   references: z.array(z.strictObject({
     blockOrdinal: z.number().int().min(0).max(100_000),
-    quote: z.string().min(8),
+    quote: z.string().min(1),
   })),
   coverage: z.strictObject({
     totalBlocks: z.number().int().nonnegative().max(100_000),

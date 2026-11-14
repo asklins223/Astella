@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   createNoteOverviewTaskV1Schema,
+  noteOverviewLatestTaskV1Schema,
+  noteOverviewPageV1Schema,
+  noteOverviewTaskV1Schema,
   noteOverviewV1Schema,
 } from "../contracts/note/note-overview-contracts.ts";
 
@@ -54,4 +57,45 @@ test("速览引用要可定位到具体原文块", () => {
   };
   assert.equal(noteOverviewV1Schema.safeParse({ ...base, references: [] }).success, true);
   assert.equal(noteOverviewV1Schema.safeParse({ ...base, references: [{ blockOrdinal: -1, quote: "短句" }] }).success, false);
+});
+
+test("saved short citations and explanations remain readable through every overview response", () => {
+  const overview = {
+    overviewId: "55555555-5555-4555-8555-555555555555",
+    noteId,
+    noteVersionId: versionId,
+    noteVersionNumber: 1,
+    body: "联调通过，明天收尾。",
+    points: [{ blockOrdinal: 2, quote: "明天继续。", explanation: "收尾。" }],
+    references: [{ blockOrdinal: 2, quote: "明天继续。" }],
+    coverage: { totalBlocks: 3, textBlocksRead: 3, imageBlocksNotRead: 0 },
+    generationJobId: jobId,
+    sourceMessageId: null,
+    conversationId: null,
+    versionState: "current" as const,
+    createdAt: "2026-11-14T05:37:26.000Z",
+  };
+  const task = {
+    taskId: jobId,
+    noteId,
+    noteVersionId: versionId,
+    status: "ready" as const,
+    overview,
+    failureReason: null,
+    createdAt: overview.createdAt,
+  };
+
+  assert.deepEqual(noteOverviewV1Schema.parse(overview), overview);
+  assert.deepEqual(noteOverviewTaskV1Schema.parse(task).overview, overview);
+  assert.deepEqual(noteOverviewLatestTaskV1Schema.parse({ version: 1, task }).task?.overview, overview);
+  assert.deepEqual(noteOverviewPageV1Schema.parse({ version: 1, items: [overview], nextCursor: null }).items, [overview]);
+
+  for (const field of ["quote", "explanation"] as const) {
+    assert.equal(noteOverviewV1Schema.safeParse({
+      ...overview, points: [{ ...overview.points[0], [field]: "" }],
+    }).success, false, `empty ${field} is still invalid`);
+  }
+  assert.equal(noteOverviewV1Schema.safeParse({
+    ...overview, references: [{ blockOrdinal: 2, quote: "" }],
+  }).success, false);
 });

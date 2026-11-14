@@ -15,6 +15,7 @@ import {
   resolveOverviewPoints,
 } from "../note/note-overview-generate.ts";
 import { NoteOverviewOutputError } from "../../lib/non-retryable-errors.ts";
+import { noteOverviewV1Schema } from "@astella/shared/note-overview-contracts";
 
 const SOURCE = "把复习安排在快要忘记的时候，比反复重读同一段材料更有效。间隔越长，回忆越费力，记住的也越牢。";
 
@@ -111,6 +112,37 @@ test("三行短笔记：整句引用与短解释照收，不拿长文的字数�
     points: [{ blockOrdinal: 2, quote: "明天继续。", explanation: "收尾。" }],
   }));
   assert.equal(parsed.points[0]!.explanation, "收尾。", "短解释是内容判断，不是字数判断");
+});
+
+test("grounded seven-character headings survive the API and desktop overview contract", () => {
+  const parsed = parseOverviewChunk(chunk([
+    { blockOrdinal: 45, quote: "八、易混点单列", explanation: "把容易混淆的概念放在一起比较。" },
+    { blockOrdinal: 46, quote: "明天继续。", explanation: "收尾。" },
+  ]));
+  const resolved = resolveOverviewPoints(parsed.points, [
+    { ordinal: 45, type: "heading", content: "## 八、易混点单列" },
+    { ordinal: 46, type: "paragraph", content: "明天继续。" },
+  ]);
+  assert.equal(resolved.dropped, 0);
+  assert.equal(resolved.points[0]!.quote.length, 7);
+  const saved = {
+    overviewId: "11111111-1111-4111-8111-111111111111",
+    noteId: "22222222-2222-4222-8222-222222222222",
+    noteVersionId: "33333333-3333-4333-8333-333333333333",
+    noteVersionNumber: 1,
+    body: parsed.gist,
+    points: resolved.points,
+    references: resolved.points.map(({ blockOrdinal, quote }) => ({ blockOrdinal, quote })),
+    coverage: { totalBlocks: 47, textBlocksRead: 47, imageBlocksNotRead: 0, pointsDropped: 0 },
+    generationJobId: "44444444-4444-4444-8444-444444444444",
+    sourceMessageId: null,
+    conversationId: null,
+    versionState: "current",
+    createdAt: "2026-11-14T05:37:26.000Z",
+  };
+  const response = noteOverviewV1Schema.parse(saved);
+  assert.deepEqual(response.points, resolved.points);
+  assert.deepEqual(response.references, saved.references);
 });
 
 test("该拒的照拒：不是可核对的结构化内容、或者一条重点都没有", () => {

@@ -1,9 +1,6 @@
 {
-  "version": "2.0.27",
+  "version": "2.0.28",
   "notes": [
-    "新写和重写的伴星日记使用第一人称，并核对事实来源及行动归属。",
-    "伴星在日常对话中参考常驻的说话方式、看事情的角度、相处方式和待解问题，并记录模型实际读到的记事版本。",
-    "采用待生效人格时重新核对依据和预览版本。依据失效时撤回提案，保留历史记录。",
-    "反思跳过已停用、归档或过期的记事键，继续提交当次有效的其他成果。"
+    "Fixed completed quick overviews failing to load when a grounded citation or explanation contains fewer than eight characters."
   ]
 }

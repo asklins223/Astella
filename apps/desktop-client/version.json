@@ -1,14 +1,6 @@
 {
-  "version": "2.0.5",
+  "version": "2.0.6",
   "notes": [
-    "Her growth is visible in her notes: voice, stance, relationship, and open questions are grouped first, with revision and last-used dates.",
-    "The persona page previews pending proposals and activates the revision you reviewed.",
-    "Her judgments show how confident she is, next to her notes and four growth blocks.",
-    "Chat replies use a shorter, more conversational register.",
-    "Replies reveal word by word at reading pace; publishing, reopening, or finishing audio no longer flushes the remaining text in one block.",
-    "Thinking and tool activity share one height-limited log, while the preparing line shows the real current status.",
-    "Voice conversation is a single orb beside the companion: tap to talk, interrupt, or resume, and press Esc to close.",
-    "Markdown files open in a local paper surface, and the open note can be handed to the companion as an attachment before you send.",
-    "The fatfish companion form is selectable, with page seats that keep her off reading and control areas."
+    "Fixed quick overviews staying in the generating state when a saved result contains a short heading citation or concise explanation."
   ]
 }
