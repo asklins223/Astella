@@ -221,6 +221,12 @@ jobs:
           } else {
             Write-Warning 'PDF export file missing'
           }
+          $env:ASTELLA_CLIPBOARD_REHEARSAL = '1'
+          $clipProc = Start-Process -FilePath $exe -PassThru -WorkingDirectory (Split-Path $exe)
+          Wait-Process -Id $clipProc.Id -Timeout 60 -ErrorAction SilentlyContinue
+          Remove-Item Env:ASTELLA_CLIPBOARD_REHEARSAL
+          Write-Host 'startup.log (after clipboard):'
+          Get-Content $logPath | ForEach-Object { Write-Host "  $_" }
           $uninstall = Join-Path $env:LOCALAPPDATA 'Astella\uninstall.exe'
           if (Test-Path $uninstall) { Start-Process -FilePath $uninstall -ArgumentList '/S' -Wait }
       - name: Upload artifacts

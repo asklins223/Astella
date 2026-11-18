@@ -119,6 +119,21 @@ fn main() {
                     handle.exit(0);
                 });
             }
+            // 剪贴板演练（仅显式设置时）：写入 HTML+文本再读回，结果写 startup.log 后退出。
+            if std::env::var_os("ASTELLA_CLIPBOARD_REHEARSAL").is_some() {
+                let outcome = arboard::Clipboard::new()
+                    .and_then(|mut board| {
+                        board.set_html("<b>astella</b>", Some("astella-clip"))?;
+                        board.get_text()
+                    });
+                let marker = match outcome {
+                    Ok(text) if text == "astella-clip" => "ok".to_string(),
+                    Ok(text) => format!("mismatch:{text}"),
+                    Err(error) => format!("error:{error}"),
+                };
+                startup_log(&format!("clipboard-rehearsal:{marker}"));
+                std::process::exit(0);
+            }
             // 升级演练钩子：只在显式设置该环境变量时触发（CI/本地演练），生产不会设置。
             if std::env::var("ASTELLA_UPDATE_REHEARSAL").is_ok() {
                 let data = user_data.clone();
