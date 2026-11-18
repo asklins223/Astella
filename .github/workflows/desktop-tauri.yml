@@ -81,6 +81,10 @@ jobs:
         working-directory: apps/desktop-tauri
         shell: bash
         run: mkdir -p target/debug/deps target/debug/examples target/release/deps target/release/examples
+      - name: Stub renderer dist (compile check only)
+        working-directory: apps/desktop-client
+        shell: bash
+        run: mkdir -p out/renderer && printf '<!doctype html><meta charset="utf-8"><title>stub</title>' > out/renderer/index.html
       - name: Cargo check (all targets)
         working-directory: apps/desktop-tauri
         run: cargo check --all-targets --features voice-engine
