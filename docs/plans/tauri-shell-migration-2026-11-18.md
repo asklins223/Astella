@@ -296,7 +296,7 @@ expectedDomainSchemaRevision/configRevision），启动时在 env 缺项处补�
 - NSIS 静默安装成功（`%LOCALAPPDATA%\Astella\astella-desktop-tauri.exe`）；
   进程可启动并存活，但 120s 后仍无窗口、无 WebView2 子进程、CPU=0、线程=2，
   且 `main()` 首行的 startup.log（`ASTELLA_STARTUP_LOG=1`）都未产生——卡在 Rust 入口之前，
-  排除 Defender（已加排除路径）。判定为托管 Windows runner 的桌面会话限制，**不能替代真机**；
+  排除 Defender（已加排除路径）。**根因已找到（2026-11-18 深夜）**：voice-engine 构建让 exe 导入 `sherpa-onnx-c-api.dll`，但 NSIS 包未带任何 sherpa DLL（解包校验：只有 exe、make_patch.exe、uninstall 与 NSIS 插件），加载期即失败、main 不执行。处置：Windows 包**暂时不带 voice-engine**（ASR 仍由 check job 的 feature 编译覆盖），先拿到可运行安装包；后续把 sherpa 运行时 DLL 打进安装包再恢复 ASR。另发现 `make_patch.exe` 被顺带打包，后续用 `--bins` 裁剪。此前判定“托管会话限制”作废；
   `main.rs` 保留 env 门控的 `startup_log` 便于真机定位。真机验收清单不变。
 
 发布准备（未上架）：`apps/desktop-tauri/dist/2.0.6/` 已备 `Astella_2.0.6_aarch64.dmg` 与 `Astella_2.0.6_x64-setup.exe`，附 `SHA256SUMS`（dmg `7ca25bf6…`、setup `846776df…`）；等 Owner 决定是否上架。发布助手 `scripts/publish-release.mjs`（预览默认；`--execute` 才执行；`c-v2.0.6` 已有 Electron 正式 Release，资产名 `astella-2.0.6-mac-arm64.dmg`/`astella-2.0.6-win-x64.exe`，与本端 `Astella_2.0.6_*` 不重名；向已发布 Release 追加需显式 `--allow-existing`）。Electron 打包无需模型资产（运行时下载），搬目录未影响并行发布。
