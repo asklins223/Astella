@@ -68,7 +68,7 @@ jobs:
           CI: "true"
         run: |
           VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
-          node scripts/package-release.mjs --version "$VERSION" --skip-renderer --features voice-engine
+          node scripts/package-release.mjs --version "$VERSION" --skip-renderer
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -139,7 +139,7 @@ jobs:
         shell: bash
         run: |
           VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
-          node scripts/package-release.mjs --version "$VERSION" --skip-renderer --features voice-engine
+          node scripts/package-release.mjs --version "$VERSION" --skip-renderer
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
