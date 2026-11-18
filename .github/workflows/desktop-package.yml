@@ -154,7 +154,7 @@ jobs:
             echo "signed=false" >> "$GITHUB_OUTPUT"
             echo "Windows code signing: 未配置，产物将未签名"
           fi
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: "10.0.x"
       - name: Test independent installer core
