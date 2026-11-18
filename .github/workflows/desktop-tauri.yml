@@ -140,13 +140,6 @@ jobs:
         run: |
           VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
           node scripts/package-release.mjs --version "$VERSION" --skip-renderer
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: astella-tauri-windows
-          path: apps/desktop-tauri/dist/**
-          if-no-files-found: error
-          retention-days: 14
       - name: Smoke test installed app
         working-directory: apps/desktop-tauri
         shell: pwsh
@@ -190,7 +183,24 @@ jobs:
             Write-Warning 'WebView2 processes not found (runtime/session issue?)'
             Get-WinEvent -FilterHashtable @{LogName='Application'; StartTime=(Get-Date).AddMinutes(-5)} -ErrorAction SilentlyContinue | Where-Object { $_.Message -like '*astella*' } | Select-Object -First 3 | Format-List | Out-String | Write-Host
           }
+          try {
+            Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+            $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+            $bitmap = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
+            $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+            $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+            $shot = Join-Path (Get-Location) 'dist\smoke-screen.png'
+            $bitmap.Save($shot, [System.Drawing.Imaging.ImageFormat]::Png)
+            Write-Host "Screenshot: $shot"
+          } catch { Write-Warning "screenshot failed: $_" }
           Stop-Process -Id $proc.Id -Force
           Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -like '*msedgewebview2*' } | Stop-Process -Force
           $uninstall = Join-Path $env:LOCALAPPDATA 'Astella\uninstall.exe'
           if (Test-Path $uninstall) { Start-Process -FilePath $uninstall -ArgumentList '/S' -Wait }
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: astella-tauri-windows
+          path: apps/desktop-tauri/dist/**
+          if-no-files-found: error
+          retention-days: 14
