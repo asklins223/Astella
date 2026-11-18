@@ -147,3 +147,33 @@ jobs:
           path: apps/desktop-tauri/dist/**
           if-no-files-found: error
           retention-days: 14
+      - name: Smoke test installed app
+        working-directory: apps/desktop-tauri
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $setup = Get-ChildItem -Path dist -Recurse -Filter '*setup.exe' | Select-Object -First 1
+          if (-not $setup) { throw 'installer artifact missing' }
+          Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait
+          $candidates = @(
+            (Join-Path $env:LOCALAPPDATA 'Astella\Astella.exe'),
+            (Join-Path $env:LOCALAPPDATA 'Astella\astella-desktop-tauri.exe'),
+            (Join-Path $env:ProgramFiles 'Astella\Astella.exe'),
+            (Join-Path $env:ProgramFiles 'Astella\astella-desktop-tauri.exe')
+          )
+          $exe = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $exe) { throw 'installed exe not found' }
+          Write-Host "Installed: $exe"
+          $proc = Start-Process -FilePath $exe -PassThru
+          Start-Sleep -Seconds 25
+          $live = Get-Process -Id $proc.Id -ErrorAction SilentlyContinue
+          if (-not $live) { throw 'app exited during startup' }
+          $ws = [math]::Round($live.WorkingSet64 / 1MB, 1)
+          Write-Host "Running: pid=$($proc.Id) workingSet=${ws}MiB"
+          $webview = Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -like '*msedgewebview2*' }
+          if (-not $webview) { throw 'WebView2 processes not found' }
+          $webview | Select-Object ProcessName, Id, WorkingSet64 | Format-Table | Out-String | Write-Host
+          Stop-Process -Id $proc.Id -Force
+          Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -like '*msedgewebview2*' } | Stop-Process -Force
+          $uninstall = Join-Path $env:LOCALAPPDATA 'Astella\uninstall.exe'
+          if (Test-Path $uninstall) { Start-Process -FilePath $uninstall -ArgumentList '/S' -Wait }
