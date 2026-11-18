@@ -16,7 +16,7 @@
   },
   "devDependencies": {
     "tsx": "^4.20.5",
-    "typescript": "^5.9.3",
+    "typescript": "^7.0.2",
     "@types/node": "^24.0.0"
   },
   "license": "PolyForm-Noncommercial-1.0.0"
