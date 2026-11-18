@@ -561,10 +561,10 @@
     "./learning/note-learning-card-quality": "./src/learning/note-learning-card-quality.ts"
   },
   "dependencies": {
-    "drizzle-orm": "^0.45.2",
+    "drizzle-orm": "^0.45.4",
     "gemoji": "^8.1.0",
-    "prosemirror-model": "1.25.11",
-    "prosemirror-transform": "1.12.1",
+    "prosemirror-model": "1.25.13",
+    "prosemirror-transform": "1.12.5",
     "rehype-raw": "^7.0.0",
     "rehype-sanitize": "^6.0.0",
     "remark-frontmatter": "^5.0.0",
@@ -584,7 +584,7 @@
     "@types/mdast": "4.0.4",
     "@types/node": "^22.10.1",
     "jsdom": "^26.1.0",
-    "tsx": "^4.19.2",
+    "tsx": "^4.23.15",
     "typescript": "^5.7.2"
   },
   "license": "PolyForm-Noncommercial-1.0.0"
