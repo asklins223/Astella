@@ -49,6 +49,9 @@ jobs:
       - name: Build renderer
         working-directory: apps/desktop-client
         run: npm run build
+      - name: Prepare target dirs (sherpa build script expects deps/)
+        working-directory: apps/desktop-tauri
+        run: mkdir -p target/debug/deps target/debug/examples target/release/deps target/release/examples
       - name: Rust tests
         working-directory: apps/desktop-tauri
         run: cargo test --features voice-engine
