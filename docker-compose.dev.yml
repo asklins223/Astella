@@ -228,7 +228,6 @@ services:
       # Dev 栈放宽登录限流（E2E 多 spec 连续登录）；生产 compose 保持默认 5 次。
       AUTH_RATE_LIMIT_MAX_ATTEMPTS: ${AUTH_RATE_LIMIT_MAX_ATTEMPTS:-100}
       AUTH_LEGACY_PASSWORD_POLICY: ${AUTH_LEGACY_PASSWORD_POLICY:-allow}
-      AUTH_LEGACY_PASSWORD_POLICY: ${AUTH_LEGACY_PASSWORD_POLICY:-allow}
       # 邮箱验证码发信通道（可选）。注册默认强制验证码，只有这里显式声明
       # EMAIL_VERIFICATION_DISABLED=true 才跳过（生产 compose 不透传该变量）。
       EMAIL_VERIFICATION_DISABLED: ${EMAIL_VERIFICATION_DISABLED:-}
