@@ -3,18 +3,18 @@ import { z } from "zod";
 export const noteRecallSelfReportV1Schema = z.enum(["remembered", "partly", "not_yet"]);
 
 export const noteRecallRecordV1Schema = z.strictObject({
-  recallId: z.string().uuid(),
-  noteId: z.string().uuid(),
-  noteVersionId: z.string().uuid(),
+  recallId: z.string().guid(),
+  noteId: z.string().guid(),
+  noteVersionId: z.string().guid(),
   noteVersionNumber: z.number().int().positive(),
   sectionOrdinal: z.number().int().positive().nullable(),
   sectionTitle: z.string().max(200).nullable(),
   question: z.string().min(1).max(500),
   hint: z.string().min(1).max(1_000).optional(),
-  sourceMessageId: z.string().uuid().nullable(),
-  conversationId: z.string().uuid().nullable(),
-  hintSourceMessageId: z.string().uuid().nullable(),
-  hintConversationId: z.string().uuid().nullable(),
+  sourceMessageId: z.string().guid().nullable(),
+  conversationId: z.string().guid().nullable(),
+  hintSourceMessageId: z.string().guid().nullable(),
+  hintConversationId: z.string().guid().nullable(),
   answer: z.string().min(1).max(20_000).optional(),
   answerTruncated: z.boolean(),
   selfReport: noteRecallSelfReportV1Schema.nullable(),
@@ -31,15 +31,15 @@ export type NoteRecallRecordV1 = z.infer<typeof noteRecallRecordV1Schema>;
 export const noteRecallPageV1Schema = z.strictObject({
   version: z.literal(1),
   items: z.array(noteRecallRecordV1Schema).max(100),
-  nextCursor: z.string().uuid().nullable(),
+  nextCursor: z.string().guid().nullable(),
 });
 
-export const noteRecallListQueryV1Schema = z.strictObject({ before: z.string().uuid().optional() });
+export const noteRecallListQueryV1Schema = z.strictObject({ before: z.string().guid().optional() });
 export const noteRecallStartInputV1Schema = z.strictObject({
-  requestId: z.string().uuid(),
-  noteVersionId: z.string().uuid(),
-  sourceMessageId: z.string().uuid().optional(),
-  conversationId: z.string().uuid().optional(),
+  requestId: z.string().guid(),
+  noteVersionId: z.string().guid(),
+  sourceMessageId: z.string().guid().optional(),
+  conversationId: z.string().guid().optional(),
 }).refine((input) => Boolean(input.sourceMessageId) === Boolean(input.conversationId), {
   message: "伴星来源需要同时提供消息与对话标识",
 });
@@ -48,8 +48,8 @@ export const noteRecallStartResultV1Schema = noteRecallRecordV1Schema;
 export const noteRecallActionV1Schema = z.union([
   z.strictObject({
     kind: z.literal("hint"),
-    sourceMessageId: z.string().uuid().optional(),
-    conversationId: z.string().uuid().optional(),
+    sourceMessageId: z.string().guid().optional(),
+    conversationId: z.string().guid().optional(),
   }),
   z.strictObject({ kind: z.literal("reveal") }),
   z.strictObject({

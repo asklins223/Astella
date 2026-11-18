@@ -182,6 +182,7 @@ export async function executeCompanionMemoryTool(
               // `event.ctx.id` 是 jobs 行（伴星对话 job），不是 run id。
               userId: event.read.userId,
               operation: "companion_memory_recall_embedding",
+              resolveGovernance: () => resolveAIGovernanceContext(event.ctx.workspaceId, event.read.userId),
               reserveCall: () => reserveCompanionProviderCall(event),
               jobId: event.ctx.id,
               dataCategories: ["user_answer"],

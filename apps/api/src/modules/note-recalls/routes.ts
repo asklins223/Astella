@@ -16,7 +16,7 @@ export async function noteRecallRoutes(app: FastifyInstance) {
   app.addHook("preHandler", requireSession);
   app.get("/v2/notes/:noteId/recalls", async (req, reply) => {
     reply.header("Cache-Control", "private, no-store");
-    const params = z.strictObject({ noteId: z.string().uuid() }).safeParse(req.params);
+    const params = z.strictObject({ noteId: z.string().guid() }).safeParse(req.params);
     const query = noteRecallListQueryV1Schema.safeParse(req.query);
     if (!params.success || !query.success) return reply.code(400).send({ error: "invalid_request", message: "回想记录位置无效，请重新读取。" });
     const scope = scopeOfSession(req.session);
@@ -30,7 +30,7 @@ export async function noteRecallRoutes(app: FastifyInstance) {
 
   app.post("/v2/notes/:noteId/recalls", async (req, reply) => {
     reply.header("Cache-Control", "private, no-store");
-    const params = z.strictObject({ noteId: z.string().uuid() }).safeParse(req.params);
+    const params = z.strictObject({ noteId: z.string().guid() }).safeParse(req.params);
     const body = noteRecallStartInputV1Schema.safeParse(req.body);
     if (!params.success || !body.success) return reply.code(400).send({ error: "invalid_request", message: "回想这次没有开始，请重试。" });
     const scope = scopeOfSession(req.session);
@@ -49,7 +49,7 @@ export async function noteRecallRoutes(app: FastifyInstance) {
 
   app.post("/v2/notes/:noteId/recalls/:recallId/actions", async (req, reply) => {
     reply.header("Cache-Control", "private, no-store");
-    const params = z.strictObject({ noteId: z.string().uuid(), recallId: z.string().uuid() }).safeParse(req.params);
+    const params = z.strictObject({ noteId: z.string().guid(), recallId: z.string().guid() }).safeParse(req.params);
     const body = noteRecallActionV1Schema.safeParse(req.body);
     if (!params.success || !body.success) return reply.code(400).send({ error: "invalid_request", message: "这一步没有记下来，请重试。" });
     const scope = scopeOfSession(req.session);

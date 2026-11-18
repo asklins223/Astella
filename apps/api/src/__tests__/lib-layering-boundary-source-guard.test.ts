@@ -126,6 +126,7 @@ const CROSS_MODULE_BASELINE: ReadonlySet<string> = new Set([
   "modules/audit/service.ts",
   "modules/companion-journey/journey-hook.ts",
   "modules/identity/ai-consent-service.ts", // 账号级 AI 边界供伴星记忆提交校验，不能各域另造一份设置。
+  "modules/identity/credentials.ts", // 种子账号与协同会话共同使用身份域的密码/令牌原语，避免出现第二种算法。
   "modules/identity/middleware.ts",
   "modules/identity/session-service.ts", // NoteDoc and companion realtime authenticate WebSocket sessions through the canonical token decoder.
   "modules/storage/exports.ts", // Common signed export/spool contract used by companion and workspace export routes.

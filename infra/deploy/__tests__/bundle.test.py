@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 
 EXTRACT = Path(__file__).resolve().parents[1] / 'extract-bundle.py'
+DEPLOY = Path(__file__).resolve().parents[1] / 'deploy.sh'
 
 class BundleTest(unittest.TestCase):
     def extract(self, name, kind=tarfile.REGTYPE):
@@ -27,6 +28,7 @@ class BundleTest(unittest.TestCase):
 
     def test_public_config_is_readable_by_non_root_containers(self):
         self.assertEqual(self.extract('config/ai-platforms.json'), 0)
+        self.assertEqual(self.extract('infra/deploy/docker-compose.admin.yml'), 0)
         self.assertEqual(self.extract('infra/deploy/docker-compose.storage-backup.yml'), 0)
         self.assertEqual(self.extract('infra/deploy/storage-backup-init.mjs'), 0)
 
@@ -37,6 +39,36 @@ class BundleTest(unittest.TestCase):
         for kind in (tarfile.SYMTYPE, tarfile.LNKTYPE, tarfile.FIFOTYPE):
             with self.subTest(kind=kind):
                 self.assertNotEqual(self.extract('config/unsafe', kind), 0)
+
+class DeploymentRollbackTest(unittest.TestCase):
+    def test_rollback_restores_storage_overlay_only_when_enabled(self):
+        source = DEPLOY.read_text()
+        rollback = source[source.index('rollback() {'):source.index('\ntrap rollback EXIT')]
+        overlay = '/opt/astella/releases/previous/infra/deploy/docker-compose.storage-backup.yml'
+        for enabled in ('true', 'false'):
+            with self.subTest(backup_enabled=enabled), tempfile.TemporaryDirectory() as directory:
+                log = Path(directory) / 'calls'
+                script = r'''
+docker() { printf '%s\n' "$*" >> "$TEST_LOG"; }
+release=/opt/astella/releases/next
+previous=/opt/astella/releases/previous
+env_file=/etc/astella/production.env
+backup_enabled="$TEST_BACKUP_ENABLED"
+admin_compose_enabled=false
+''' + rollback + r'''
+false
+rollback
+'''
+                result = subprocess.run(['bash', '-c', script], env={**os.environ, 'TEST_LOG': str(log),
+                                                                         'TEST_BACKUP_ENABLED': enabled},
+                                        capture_output=True, text=True)
+                self.assertEqual(result.returncode, 1)
+                calls = log.read_text().splitlines()
+                self.assertEqual(len(calls), 2)
+                self.assertIn(' up -d ', ' ' + calls[0] + ' ')
+                self.assertIn(' exec -T nginx nginx -s reload', calls[1])
+                for call in calls:
+                    self.assertEqual(overlay in call, enabled == 'true')
 
 if __name__ == '__main__':
     unittest.main()

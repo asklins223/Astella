@@ -131,6 +131,7 @@ async function setup(session: {
   workspaceType: "personal" | "collaborative";
   role: "owner" | "member";
   noteDocCache?: NoteDocCacheStore;
+  via?: "uploaded" | "queued";
   /** 把建连按住，用来量"订阅回执比连接早"那一段窗口里的行为。 */
   deferStream?: boolean;
 }) {
@@ -178,7 +179,7 @@ async function setup(session: {
   };
   const restored: Array<{ noteId: string; snapshot: Record<string, unknown> }> = [];
   const noteDocLocalSnapshot = vi.fn(() => ({ ...localDoc }));
-  const syncViaGateway = vi.fn(async () => ({ via: "uploaded" as const, revision: 11, savedAt: "2026-09-21T00:00:00.000Z" }));
+  const syncViaGateway = vi.fn(async () => ({ via: session.via ?? "uploaded", revision: 11, savedAt: "2026-09-21T00:00:00.000Z" }));
   const send = vi.fn();
   const fakeWindow = {
     isDestroyed: () => false,
@@ -738,6 +739,15 @@ describe("笔记协同的 IPC 通道", () => {
       update: makeUpdate("offline"),
     });
     expect(await store.get(cacheKey)).not.toBeNull();
+  });
+
+  it("离线写入未能落盘时不返回 queued 成功回执", async () => {
+    const store = new MemoryNoteDocCacheStore(1);
+    const { event } = await setup({ workspaceType: "personal", role: "owner", noteDocCache: store, via: "queued" });
+    const result = await handler(DESKTOP_IPC_CHANNELS.noteDocSyncUpdate)(event, {
+      meta, commandId: "command-sync-storage-failed", noteId: NOTE_ID, update: makeUpdate("offline"),
+    });
+    expect(result).toMatchObject({ ok: false, error: { code: "local_storage_unavailable" } });
   });
 
   it("退登把这台机器上的正文清掉", async () => {

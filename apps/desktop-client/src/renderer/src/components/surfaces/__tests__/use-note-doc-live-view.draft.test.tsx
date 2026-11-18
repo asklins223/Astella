@@ -55,8 +55,10 @@ function mergeUpdates(updates: readonly string[]): string {
 function stubNoteDocApi(options: {
   readonly seedFor: (noteId: string) => string;
   readonly via?: "uploaded" | "queued" | "stream" | "unchanged";
+  readonly rejectFirstDraft?: boolean;
 }) {
   const drafts = new Map<string, { update: string; savedAt: string }>();
+  let rejectFirstDraft = options.rejectFirstDraft ?? false;
   const docApi = {
     state: vi.fn(async (input: { noteId: string }) => noteDocResult({ update: options.seedFor(input.noteId) })),
     // 入参写成显式形状：用例要读 `calls[i][0].update`（"这一次交的是哪几条"），
@@ -67,6 +69,10 @@ function stubNoteDocApi(options: {
       data: { via: options.via ?? "uploaded", revision: 2, savedAt: "2026-09-21T00:11:00.000Z" },
     })),
     draftSave: vi.fn(async (input: { noteId: string; update: string }) => {
+      if (rejectFirstDraft) {
+        rejectFirstDraft = false;
+        return { ok: true as const, workspaceEpoch: 1, data: { saved: false } };
+      }
       drafts.set(input.noteId, { update: input.update, savedAt: DRAFT_SAVED_AT });
       return { ok: true as const, workspaceEpoch: 1, data: { saved: true } };
     }),
@@ -162,6 +168,21 @@ describe("笔记正文的本机草稿", () => {
     const text = doc.getXmlFragment(FRAGMENT_KEY).toString();
     doc.destroy();
     expect(text).toContain("卸载前的一句");
+  });
+
+  it("草稿回执拒绝后提示失败，并重试同一份草稿", async () => {
+    vi.useFakeTimers();
+    const { docApi, drafts } = stubNoteDocApi({ seedFor: () => seedUpdate(), rejectFirstDraft: true });
+    render(<Probe noteId={NOTE_ID} />);
+    await settle();
+    act(() => { type("需要恢复的内容"); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(700); });
+    expect(live?.draftSaveFailed).toBe(true);
+    expect(drafts.has(NOTE_ID)).toBe(false);
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(docApi.draftSave).toHaveBeenCalledTimes(2);
+    expect(drafts.has(NOTE_ID)).toBe(true);
+    expect(live?.draftSaveFailed).toBe(false);
   });
 
   it("刷新（重挂载）之后草稿还在：没交出去的那几个字接回来，并说一句", async () => {

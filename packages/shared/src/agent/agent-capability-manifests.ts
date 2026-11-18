@@ -6,7 +6,7 @@ function manifest(name: string, description: string, riskClass: "read" | "revers
   return defineAgentCapability(name, description, riskClass, false, argumentSchema, presentation, { maxInputChars: 8000, maxOutputChars });
 }
 
-const runSchema = z.object({ runId: z.string().uuid(), expectedRevision: z.number().int().positive() });
+const runSchema = z.object({ runId: z.string().guid(), expectedRevision: z.number().int().positive() });
 
 /** The executor takes the current user request; the model supplies only material references. */
 const startGoalArgs = createAgentRunV1Schema.omit({ requestId: true, conversationId: true, goal: true });
@@ -14,22 +14,22 @@ const startGoalArgs = createAgentRunV1Schema.omit({ requestId: true, conversatio
 /** The same capability entry supplies the model description and its argument validator. */
 export const agentGoalToolManifest = [
   manifest("agent_start_goal", "把用户本轮明确交代的目标交给后台处理，可对已有笔记生成速看、脑图、演示、拓展稿或待审卡。闲聊/提问不启动；新建笔记用对话里的笔记写入（action=create），不走这里（后台目标不能新建笔记）；回执只代表接受，卡片需用户审核。", "reversible_low", startGoalArgs, { label: "交给伴星" }),
-  manifest("agent_list_goals", "读取当前空间持续任务的简短目录。问进度或回到上次任务时先核对，不凭旧历史猜 runId；nextCursor 不为空时用 cursor 续读。", "read", z.object({cursor:z.string().max(512).optional(),longGoalMemoryId:z.string().uuid().optional()}).strict(), { label: "查看交代的事" }),
+  manifest("agent_list_goals", "读取当前空间持续任务的简短目录。问进度或回到上次任务时先核对，不凭旧历史猜 runId；nextCursor 不为空时用 cursor 续读。", "read", z.object({cursor:z.string().max(512).optional(),longGoalMemoryId:z.string().guid().optional()}).strict(), { label: "查看交代的事" }),
   manifest("agent_list_long_goals", "读取已确认的长期目标目录与任务数。接续时先核对，再用目录身份/版本调用 agent_start_goal；不主动开无关任务。交付不等于掌握或完成目标。", "read", agentLongGoalsQueryV1Schema.omit({limit:true}), { label: "查看长期目标" }),
-  manifest("agent_revise_goal", "用户明确修改某个持续目标时更新要求；旧版本未完成操体会停止，已有产物保留。先核对 runId 与 revision；闲聊或一句「好」不算修改。显式 null 解绑长期目标。", "reversible_low", reviseAgentRunV1Schema.extend({ runId: z.string().uuid() }).strict(), { label: "修改要求" }),
+  manifest("agent_revise_goal", "用户明确修改某个持续目标时更新要求；旧版本未完成操体会停止，已有产物保留。先核对 runId 与 revision；闲聊或一句「好」不算修改。显式 null 解绑长期目标。", "reversible_low", reviseAgentRunV1Schema.extend({ runId: z.string().guid() }).strict(), { label: "修改要求" }),
   manifest("agent_control_goal", "按用户当前明确要求暂停、继续或停止指定持续目标。继续前核对最新版本，不自动重做结果未知的操作；不停止聊天，不删除已有产物。", "reversible_low", runSchema.extend({ action: z.enum(["cancel","pause","resume"]) }).strict(), { label: "调整这件事" }),
 ] as const;
 
 // 拓展只冻结整篇 noteId/noteVersionId：选区语义要靠笔记自己的锚点校验，
 // 这里放开等于让模型凭空圈一段原文。
-const noteArgs = z.object({ noteId: z.string().uuid(), noteVersionId: z.string().uuid() }).strict();
+const noteArgs = z.object({ noteId: z.string().guid(), noteVersionId: z.string().guid() }).strict();
 
 // 位置是「第几篇 · 第几段 · 段内第几个字」，三段合起来唯一确定一页，延续 note_read 的 1 起算。
 // 段内位置是必需的：一个块最多 20000 字，只按块翻页会把长块的尾部永久截掉，读侧再也够不到。
 // draftsUpdatedAt 是这批草稿的版本令牌：续读要原样带回，位置越界或草稿中途被改过都会明确报错。
 // 上界照领域合同取：note_expansion_tasks.drafts 最多 4 篇，每篇 blocks 最多 100 块。
 const expansionReadArgs = noteArgs.extend({
-  taskId: z.string().uuid(),
+  taskId: z.string().guid(),
   startCandidateOrdinal: z.number().int().positive().max(4).optional(),
   startBlockOrdinal: z.number().int().positive().max(100).optional(),
   startBlockOffset: z.number().int().nonnegative().max(20_000).optional(),
@@ -52,7 +52,7 @@ export const noteAgentCapabilityManifest = [
 //
 export const methodAgentCapabilityManifest = [
   manifest("agent_read_method", "按本轮方法目录中的真实 methodId 与 revision 读取用户已确认的方法，记录这次查阅。只有当前条件相关时读取；方法只是合作指引，不代表旧材料、旧产物或旧授权适用于新目标。依据被纠正、停用、遗忘或能力变化时拒绝使用。", "read",
-    z.object({ methodId: z.string().uuid(), expectedRevision: z.number().int().positive() }).strict(), { label: "查阅合作方法" }, null),
+    z.object({ methodId: z.string().guid(), expectedRevision: z.number().int().positive() }).strict(), { label: "查阅合作方法" }, null),
 ] as const;
 
 export const basicAgentCapabilityManifest = [

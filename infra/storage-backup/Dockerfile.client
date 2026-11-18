@@ -1,7 +1,7 @@
-FROM golang:1.24.9-alpine3.22 AS build
+FROM golang:1.26.11-alpine3.24@sha256:ecb67f987aa1a57794c91d19ade7ae0209f2f0f5496aaef9e6ae85ddf92d02ab AS build
 COPY infra/storage-backup/build-client.sh /build-client.sh
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build sh /build-client.sh
-FROM alpine:3.22
+FROM alpine:3.24.4@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
 RUN apk add --no-cache ca-certificates
 COPY --from=build /out/mc /usr/bin/mc
 COPY --from=build /out/LICENSE.mc /usr/share/licenses/mc/LICENSE

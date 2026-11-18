@@ -2,8 +2,8 @@ import { z } from "zod";
 import { noteAnnotationAnchorV1Schema } from "./note-annotation-contracts.ts";
 
 export const createNoteDynamicArtifactTaskV1Schema = z.strictObject({
-  noteVersionId: z.string().uuid(),
-  requestId: z.string().uuid(),
+  noteVersionId: z.string().guid(),
+  requestId: z.string().guid(),
   sourceKind: z.enum(["overview", "annotation"]),
   selectionAnchor: noteAnnotationAnchorV1Schema.optional(),
 }).refine((input) => input.sourceKind === "annotation"
@@ -15,10 +15,10 @@ export const createNoteDynamicArtifactTaskV1Schema = z.strictObject({
 
 export const noteLearningArtifactTaskStatusV1Schema = z.enum(["queued", "running", "ready", "failed"]);
 export const noteLearningArtifactTaskV1Schema = z.strictObject({
-  taskId: z.string().uuid(),
-  agentRunId: z.string().uuid().optional(),
-  noteId: z.string().uuid(),
-  noteVersionId: z.string().uuid(),
+  taskId: z.string().guid(),
+  agentRunId: z.string().guid().optional(),
+  noteId: z.string().guid(),
+  noteVersionId: z.string().guid(),
   sourceKind: z.enum(["overview", "annotation"]),
   selectionAnchor: noteAnnotationAnchorV1Schema.nullable(),
   status: noteLearningArtifactTaskStatusV1Schema,
@@ -45,13 +45,13 @@ export const noteLearningArtifactOutlineV1Schema = z.strictObject({
 });
 
 export const noteLearningArtifactV1Schema = z.strictObject({
-  artifactId: z.string().uuid(),
-  noteId: z.string().uuid(),
-  noteVersionId: z.string().uuid(),
+  artifactId: z.string().guid(),
+  noteId: z.string().guid(),
+  noteVersionId: z.string().guid(),
   noteVersionNumber: z.number().int().positive(),
-  generationJobId: z.string().uuid().nullable(),
-  sourceMessageId: z.string().uuid().nullable(),
-  conversationId: z.string().uuid().nullable(),
+  generationJobId: z.string().guid().nullable(),
+  sourceMessageId: z.string().guid().nullable(),
+  conversationId: z.string().guid().nullable(),
   sourceKind: z.enum(["overview", "annotation"]),
   selectionText: z.string().nullable(),
   selectionAnchor: noteAnnotationAnchorV1Schema.nullable(),
@@ -73,9 +73,9 @@ export type CreateNoteDynamicArtifactTaskV1 = z.infer<typeof createNoteDynamicAr
 export const noteLearningArtifactPageV1Schema = z.strictObject({
   version: z.literal(1),
   items: z.array(noteLearningArtifactV1Schema).max(100),
-  nextCursor: z.string().uuid().nullable(),
+  nextCursor: z.string().guid().nullable(),
 });
-export const noteLearningArtifactListQueryV1Schema = z.strictObject({ before: z.string().uuid().optional() });
+export const noteLearningArtifactListQueryV1Schema = z.strictObject({ before: z.string().guid().optional() });
 export const noteLearningArtifactWriteResultV1Schema = noteLearningArtifactV1Schema;
 
-export const noteLearningArtifactTaskListQueryV1Schema = z.strictObject({ noteVersionId: z.string().uuid() });
+export const noteLearningArtifactTaskListQueryV1Schema = z.strictObject({ noteVersionId: z.string().guid() });

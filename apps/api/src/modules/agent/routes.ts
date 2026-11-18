@@ -11,7 +11,7 @@ import { requireSession } from "../identity/middleware.ts";
 import { buildSimpleErrorBody } from "../../lib/error-envelope.ts";
 import { agentStore } from "./service.ts";
 
-const runParams = z.object({ runId: z.string().uuid() });
+const runParams = z.object({ runId: z.string().guid() });
 /** Workspace packages can resolve distinct Zod instances. */
 function isZodError(error: unknown): boolean {
   return error instanceof z.ZodError

@@ -100,7 +100,7 @@ export type RestChannelDeps = {
   getActiveWorkspaceEpoch: () => number;
   setActiveWorkspaceEpoch: (value: number) => void;
   noteDocCacheKey: (noteId: string) => NoteDocCacheKey | null;
-  persistNoteDocLocal: (noteId: string) => Promise<void>;
+  persistNoteDocLocal: (noteId: string) => Promise<boolean>;
   noteDocStreams: Map<string, NoteDocStreamEntry>;
   noteDocPresenceToReplay: Map<string, string>;
   noteDocCache: NoteDocCacheStore;
@@ -526,7 +526,9 @@ installHandler(DESKTOP_IPC_CHANNELS.noteGet, noteGetInputSchema, options, async 
     requireM2Route(contract, "note.detail");
     assertEpoch(input.meta, getActiveWorkspaceEpoch());
     const cacheKey = noteDocCacheKey(input.noteId);
-    const cached = cacheKey ? await noteDocCache.get(cacheKey) : null;
+    const cached = cacheKey ? await noteDocCache.get(cacheKey).catch(() => {
+      throw new DesktopGatewayFailure("local_storage_unavailable", "user_action");
+    }) : null;
     // 编辑起点必须有共同祖先：用 note.detail 的 blocks 自己拼一棵文档树，与库里那份
     // 没有祖先关系，两边一改就复制块。本机那份是从服务端编码长出来的，所以先把它
     // 接回来，再让服务端这次给的起点并进去。
@@ -554,7 +556,10 @@ installHandler(DESKTOP_IPC_CHANNELS.noteGet, noteGetInputSchema, options, async 
       input.meta.requestId,
     );
     // 落盘跟着这次写走：`queued` 的那几条不留在内存里过夜就又没了。
-    await persistNoteDocLocal(input.noteId);
+    const persisted = await persistNoteDocLocal(input.noteId).catch(() => false);
+    if (receipt.via === "queued" && !persisted) {
+      throw new DesktopGatewayFailure("local_storage_unavailable", "user_action");
+    }
     return { via: receipt.via, revision: receipt.revision, savedAt: receipt.savedAt };
   }, noteDocWriteResultV1Schema);
 
@@ -577,7 +582,10 @@ installHandler(DESKTOP_IPC_CHANNELS.noteGet, noteGetInputSchema, options, async 
       input.meta.requestId,
     );
     // 与正文同一条落盘口径：改名同样可能停在 `queued`，不留在内存里过夜就又没了。
-    await persistNoteDocLocal(input.noteId);
+    const persisted = await persistNoteDocLocal(input.noteId).catch(() => false);
+    if (receipt.via === "queued" && !persisted) {
+      throw new DesktopGatewayFailure("local_storage_unavailable", "user_action");
+    }
     return { via: receipt.via, revision: receipt.revision, savedAt: receipt.savedAt };
   }, noteDocWriteResultV1Schema);
 

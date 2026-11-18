@@ -51,12 +51,12 @@ export { usesRemoteStorage };
 
 /** Runs before compression; old clients still receive their established body format. */
 export async function objectExportHook(req: FastifyRequest, reply: FastifyReply, payload: unknown): Promise<unknown> {
-  if (!usesRemoteStorage() || reply.statusCode !== 200 || !req.session
+  if (req.headers["x-astella-object-transfer-accept"] !== "1"
+    || !usesRemoteStorage() || reply.statusCode !== 200 || !req.session
     || !/^(\/export\/workspace|\/export\/notes\/[a-f0-9-]+|\/companion\/memory\/export|\/me\/companion\/audit\/export)(\?|$)/.test(req.url)
     || (typeof payload !== "string" && !Buffer.isBuffer(payload))) return payload;
   const type = String(reply.getHeader("Content-Type") ?? "application/json").split(";")[0];
   const descriptor = await storeExport({ workspaceId: req.session.workspaceId, userId: req.session.userId }, type, Buffer.from(payload));
-  if (req.headers["x-astella-object-transfer-accept"] !== "1") return payload;
   reply.header(OBJECT_TRANSFER_HEADER, "1").header("Cache-Control", "no-store").header("Content-Type", "application/json")
     .removeHeader("Content-Encoding").removeHeader("Content-Length");
   return JSON.stringify(descriptor);

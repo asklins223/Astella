@@ -6,7 +6,7 @@ import {
   createCompanionTurnResponseV1Schema,
 } from "./companion-conversation-contracts.ts";
 
-const uuid = z.string().uuid();
+const uuid = z.string().guid();
 
 export const companionRealtimeClientMessageV1Schema = z.discriminatedUnion("type", [
   z.object({ version: z.literal(1), type: z.literal("auth"), token: z.string().min(1).max(4096) }).strict(),

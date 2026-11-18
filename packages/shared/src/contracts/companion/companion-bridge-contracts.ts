@@ -281,24 +281,24 @@ export type MainCommandResultV2 = {
 // ─── zod schemas（strict）────────────────────────────────────────────────
 
 export const entityRefV2Schema = z.discriminatedUnion("kind", [
-  z.strictObject({ kind: z.literal("source"), sourceId: z.string().uuid() }),
-  z.strictObject({ kind: z.literal("note"), noteId: z.string().uuid(), noteVersionId: z.string().uuid().optional() }),
-  z.strictObject({ kind: z.literal("companion_journey"), journeyId: z.string().uuid() }),
-  z.strictObject({ kind: z.literal("assistant_session"), assistantSessionId: z.string().uuid() }),
+  z.strictObject({ kind: z.literal("source"), sourceId: z.string().guid() }),
+  z.strictObject({ kind: z.literal("note"), noteId: z.string().guid(), noteVersionId: z.string().guid().optional() }),
+  z.strictObject({ kind: z.literal("companion_journey"), journeyId: z.string().guid() }),
+  z.strictObject({ kind: z.literal("assistant_session"), assistantSessionId: z.string().guid() }),
 ]);
 
 export const allowedMainRouteV2Schema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("home") }),
-  z.strictObject({ kind: z.literal("source"), sourceId: z.string().uuid().optional() }),
-  z.strictObject({ kind: z.literal("note"), noteId: z.string().uuid(), noteVersionId: z.string().uuid().optional() }),
+  z.strictObject({ kind: z.literal("source"), sourceId: z.string().guid().optional() }),
+  z.strictObject({ kind: z.literal("note"), noteId: z.string().guid(), noteVersionId: z.string().guid().optional() }),
   z.strictObject({ kind: z.literal("note_library") }),
   z.strictObject({
     kind: z.literal("learning_artifact"),
     artifactKind: z.enum(COMPANION_LEARNING_ARTIFACT_KINDS_V2),
-    artifactId: z.string().uuid(),
-    taskId: z.string().uuid(),
-    noteId: z.string().uuid(),
-    noteVersionId: z.string().uuid(),
+    artifactId: z.string().guid(),
+    taskId: z.string().guid(),
+    noteId: z.string().guid(),
+    noteVersionId: z.string().guid(),
   }),
   z.strictObject({ kind: z.literal("search") }),
   z.strictObject({ kind: z.literal("star_map") }),
@@ -364,7 +364,7 @@ export function companionPageLabelV2(kind: string): string {
 
 export const uiTargetRefV2Schema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("quick_capture") }),
-  z.strictObject({ kind: z.literal("source_generate_note"), sourceId: z.string().uuid() }),
+  z.strictObject({ kind: z.literal("source_generate_note"), sourceId: z.string().guid() }),
 ]);
 
 /**
@@ -456,8 +456,8 @@ export const assistantContextSnapshotV2Schema = mainPageContextInputV2Schema
     contextId: z.string().min(1),
     accountSessionId: z.string().min(1),
     deviceSessionId: z.string().min(1),
-    workspaceId: z.string().uuid(),
-    userId: z.string().uuid(),
+    workspaceId: z.string().guid(),
+    userId: z.string().guid(),
     pageInstanceId: z.string().min(1),
     revision: z.string().min(1),
     issuedAt: z.string().min(1),
@@ -504,8 +504,8 @@ export const companionSystemEventV2Schema = z.strictObject({
   eventId: z.string().min(1),
   sequence: z.number().int().min(0),
   source: z.enum(["journey", "generation_job"]),
-  workspaceId: z.string().uuid(),
-  userId: z.string().uuid(),
+  workspaceId: z.string().guid(),
+  userId: z.string().guid(),
   commandId: z.string().min(1).optional(),
   eventType: z.enum([
     "journey.step_changed", "journey.completed",
@@ -513,17 +513,17 @@ export const companionSystemEventV2Schema = z.strictObject({
   ]),
   occurredAt: z.string().min(1),
   payloadRef: z.discriminatedUnion("kind", [
-    z.strictObject({ kind: z.literal("journey"), journeyId: z.string().uuid(), stepRevision: z.number().int().min(0) }),
-    z.strictObject({ kind: z.literal("generation_job"), jobId: z.string().uuid(), sourceId: z.string().uuid().optional(), noteId: z.string().uuid().optional() }),
+    z.strictObject({ kind: z.literal("journey"), journeyId: z.string().guid(), stepRevision: z.number().int().min(0) }),
+    z.strictObject({ kind: z.literal("generation_job"), jobId: z.string().guid(), sourceId: z.string().guid().optional(), noteId: z.string().guid().optional() }),
   ]),
 });
 
 export const assistantDeliveryV2Schema = z.strictObject({
   version: z.literal(2),
   deliveryId: z.string().min(1),
-  assistantSessionId: z.string().uuid().nullable(),
-  userId: z.string().uuid(),
-  workspaceId: z.string().uuid(),
+  assistantSessionId: z.string().guid().nullable(),
+  userId: z.string().guid(),
+  workspaceId: z.string().guid(),
   inboxSequence: z.number().int().min(0),
   dedupeKey: z.string().min(1),
   state: z.enum([
@@ -531,11 +531,11 @@ export const assistantDeliveryV2Schema = z.strictObject({
   ]),
   kind: z.enum(ASSISTANT_DELIVERY_KIND_VALUES),
   payloadRef: z.discriminatedUnion("kind", [
-    z.strictObject({ kind: z.literal("message"), messageId: z.string().uuid() }),
-    z.strictObject({ kind: z.literal("proposal"), proposalId: z.string().uuid() }),
-    z.strictObject({ kind: z.literal("action_result"), proposalId: z.string().uuid() }),
+    z.strictObject({ kind: z.literal("message"), messageId: z.string().guid() }),
+    z.strictObject({ kind: z.literal("proposal"), proposalId: z.string().guid() }),
+    z.strictObject({ kind: z.literal("action_result"), proposalId: z.string().guid() }),
     z.strictObject({ kind: z.literal("system_event"), systemEventId: z.string().min(1), text: z.string().min(1).max(240).optional(), initiative: companionInitiativeDeliveryRefV1Schema.optional() }),
-    z.strictObject({ kind: z.literal("memory_item"), memoryItemId: z.string().uuid(), contentPreview: z.string().min(1).max(80).optional() }),
+    z.strictObject({ kind: z.literal("memory_item"), memoryItemId: z.string().guid(), contentPreview: z.string().min(1).max(80).optional() }),
   ]),
   displayLease: z
     .strictObject({
@@ -564,10 +564,10 @@ export const petMainCommandV2Schema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("focus_ui_target"), target: uiTargetRefV2Schema }),
   z.strictObject({
     kind: z.literal("graph.focus"),
-    keyPointId: z.string().uuid(),
+    keyPointId: z.string().guid(),
   }),
-  z.strictObject({ kind: z.literal("graph.present_route"), routePlanId: z.string().uuid(), revision: z.string().min(1) }),
-  z.strictObject({ kind: z.literal("graph.advance_route"), routePlanId: z.string().uuid(), ordinal: z.number().int().min(0) }),
+  z.strictObject({ kind: z.literal("graph.present_route"), routePlanId: z.string().guid(), revision: z.string().min(1) }),
+  z.strictObject({ kind: z.literal("graph.advance_route"), routePlanId: z.string().guid(), ordinal: z.number().int().min(0) }),
   z.strictObject({ kind: z.literal("graph.reveal_delta"), changeSetId: z.string().min(1) }),
 ]);
 

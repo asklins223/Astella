@@ -785,6 +785,7 @@ export async function executeReadTool(
         {
           userId: event.read.userId,
           operation: "visual.read_image",
+          resolveGovernance: () => resolveAIGovernanceContext(event.ctx.workspaceId, event.read.userId),
           reserveCall: () => reserveCompanionProviderCall(event),
           jobId: event.ctx.id,
           dataCategories: ["image_content"],

@@ -25,7 +25,7 @@ export async function noteMindMapRoutes(app: FastifyInstance) {
 
   app.get("/v2/notes/:noteId/mind-maps", async (req, reply) => {
     reply.header("Cache-Control", "private, no-store");
-    const params = z.object({ noteId: z.string().uuid() }).safeParse(req.params);
+    const params = z.object({ noteId: z.string().guid() }).safeParse(req.params);
     const query = noteMindMapListQueryV1Schema.safeParse(req.query);
     if (!params.success || !query.success) return reply.code(400).send({ error: "invalid_request", message: "脑图记录位置无效，请重新读取。" });
     const scope = scopeOfSession(req.session);
@@ -40,7 +40,7 @@ export async function noteMindMapRoutes(app: FastifyInstance) {
 
   app.get("/v2/notes/:noteId/mind-maps/:mindMapId/source", async (req, reply) => {
     reply.header("Cache-Control", "private, no-store");
-    const params = z.object({ noteId: z.string().uuid(), mindMapId: z.string().uuid() }).safeParse(req.params);
+    const params = z.object({ noteId: z.string().guid(), mindMapId: z.string().guid() }).safeParse(req.params);
     if (!params.success) return reply.code(400).send({ error: "invalid_request" });
     const scope = scopeOfSession(req.session);
     try { return noteMindMapSourceV1Schema.parse(await withWorkspaceTransaction(scope, tx => getNoteMindMapSource(tx, scope, params.data.noteId, params.data.mindMapId))); }
@@ -49,7 +49,7 @@ export async function noteMindMapRoutes(app: FastifyInstance) {
 
   app.post("/v2/notes/:noteId/mind-map-tasks", async (req, reply) => {
     reply.header("Cache-Control", "private, no-store");
-    const params = z.object({ noteId: z.string().uuid() }).safeParse(req.params);
+    const params = z.object({ noteId: z.string().guid() }).safeParse(req.params);
     const body = createNoteMindMapTaskV1Schema.safeParse(req.body);
     if (!params.success || !body.success) return reply.code(400).send({ error: "invalid_request", message: "这次脑图请求不完整，请从笔记正文重新开始。" });
     const scope = scopeOfSession(req.session);
@@ -64,7 +64,7 @@ export async function noteMindMapRoutes(app: FastifyInstance) {
 
   app.get("/v2/notes/:noteId/mind-map-tasks/latest", async (req, reply) => {
     reply.header("Cache-Control", "private, no-store");
-    const params = z.object({ noteId: z.string().uuid() }).safeParse(req.params);
+    const params = z.object({ noteId: z.string().guid() }).safeParse(req.params);
     const query = noteMindMapLatestTaskQueryV1Schema.safeParse(req.query);
     if (!params.success || !query.success) return reply.code(400).send({ error: "invalid_request", message: "脑图记录位置无效，请重新读取。" });
     const scope = scopeOfSession(req.session);
@@ -79,7 +79,7 @@ export async function noteMindMapRoutes(app: FastifyInstance) {
 
   app.get("/v2/notes/:noteId/mind-map-tasks/:taskId", async (req, reply) => {
     reply.header("Cache-Control", "private, no-store");
-    const params = z.object({ noteId: z.string().uuid(), taskId: z.string().uuid() }).safeParse(req.params);
+    const params = z.object({ noteId: z.string().guid(), taskId: z.string().guid() }).safeParse(req.params);
     if (!params.success) return reply.code(400).send({ error: "invalid_request", message: "脑图任务位置无效，请重新读取。" });
     const scope = scopeOfSession(req.session);
     try {

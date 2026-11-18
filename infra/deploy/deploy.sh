@@ -9,6 +9,14 @@ test -s /etc/letsencrypt/live/astella-ip/fullchain.pem
 compose=(docker compose --project-name astella --project-directory "$release"
   --env-file "$env_file" --env-file "$release/deployment-images.env"
   -f "$release/docker-compose.yml" -f "$release/docker-compose.deploy.yml")
+# The container page of the admin panel needs the host Docker socket, which is
+# root-equivalent. Keep it out of the default production overlay; opt in only
+# when the host explicitly declares the socket group.
+admin_compose_enabled=false
+if grep -q '^ADMIN_DOCKER_GID=.' "$env_file"; then
+  compose+=(-f "$release/infra/deploy/docker-compose.admin.yml")
+  admin_compose_enabled=true
+fi
 backup_enabled=false
 if grep -q '^STORAGE_BACKUP_ENABLED=true$' "$env_file"; then
   backup_enabled=true
@@ -32,7 +40,15 @@ rollback() {
     previous_compose=(docker compose --project-name astella --project-directory "$previous" \
       --env-file "$env_file" --env-file "$previous/deployment-images.env" \
       -f "$previous/docker-compose.yml" -f "$previous/docker-compose.deploy.yml")
-    "${previous_compose[@]}" up -d --no-build --pull never --no-deps --wait --wait-timeout 180 api worker nginx || true
+    # Restore the standby storage port and mount together with the old release.
+    # If the old overlay is missing, fail rather than silently dropping it.
+    if [[ "$backup_enabled" = true ]]; then
+      previous_compose+=(-f "$previous/infra/deploy/docker-compose.storage-backup.yml")
+    fi
+    if [[ "$admin_compose_enabled" = true && -f "$previous/infra/deploy/docker-compose.admin.yml" ]]; then
+      previous_compose+=(-f "$previous/infra/deploy/docker-compose.admin.yml")
+    fi
+    "${previous_compose[@]}" up -d --no-build --pull never --no-deps --scale api=1 --wait --wait-timeout 180 api worker nginx || true
     "${previous_compose[@]}" exec -T nginx nginx -s reload || true
   fi
   exit "$result"
@@ -105,7 +121,9 @@ test -s "$backup"
 for service in role-bootstrap migrate role-grants; do
   "${compose[@]}" run --rm --no-deps "$service"
 done
-"${compose[@]}" up -d --no-build --pull never --no-deps --wait --wait-timeout 180 api worker nginx
+# Collaboration documents live in one API process. Keep the managed Compose
+# project at one replica; this does not fence independently deployed hosts.
+"${compose[@]}" up -d --no-build --pull never --no-deps --scale api=1 --wait --wait-timeout 180 api worker nginx
 # Nginx resolves the API container address when loading its configuration.
 # A recreated API may receive another address even if Nginx itself is unchanged.
 "${compose[@]}" exec -T nginx nginx -t

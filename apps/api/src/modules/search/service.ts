@@ -1,9 +1,9 @@
-import { and, asc, desc, eq, ne, sql, inArray, lt, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, ne, sql, inArray, gt, isNull } from "drizzle-orm";
 import type { ApiTransaction } from "../../db/client.ts";
 import { SEARCH_DOCUMENT_CONFLICT_TARGET } from "../../lib/search-index-upsert.ts";
-import { notes, noteBlocks, sources, sourceSegments } from "@astella/shared/db-schema/note";
+import { notes, noteBlocks, sources } from "@astella/shared/db-schema/note";
 import { searchDocuments } from "@astella/shared/db-schema/search";
-import { searchDocumentsVisibleSql } from "../note/visibility.ts";
+import { searchDocumentsVisibleSql, visibleNotesCondition } from "../note/visibility.ts";
 import { SourceStatus } from "@astella/shared";
 import { logger } from "../../lib/logger.ts";
 import { escapeLikePattern } from "../../lib/like-escape.ts";
@@ -30,14 +30,10 @@ const SEARCH_COUNT_CACHE_MAX_ENTRIES = 500;
 // total/nextCursor 口径可能短期漂移（≤TTL 30s）。total 为展示性数字，可接受短暂不一致；
 // 若未来需要强一致，应迁至副本感知的 TTL/版本号策略或移除缓存。
 
-// N#7-1: reindex 读阶段每表的行上限，防止单工作区整表无界装载导致内存压力。
-// 超出上限时记告警并截断处理（超限部分不会进入投影），避免 OOM。
+// Drift reporting remains a bounded sample; rebuild uses keyset pagination.
 const REINDEX_MAX_ROWS_PER_TABLE = 50_000;
 
-// N#8-1: reindex 与 drift 共用同一个"前 LIMIT 子集"的截断边界，避免两路径各取任意子集。
-// 关键：两处顶层表读都用完全相同的确定排序 + 同一上限。于是 reindex 建立的索引与
-// drift 读取的业务表都覆盖同一确定子集（按 updatedAt DESC → 最近写入优先），
-// 超出截断线的实体两侧都不会读取 → 不再被误判为 missing。
+// Drift uses a bounded, deterministically ordered sample.
 // DB 排序规则约定：notes/sources 均存在 (workspace_id, updated_at desc) 或等价索引。
 const reindexTopOrder: Record<string, any> = (() => {
   return {
@@ -46,11 +42,6 @@ const reindexTopOrder: Record<string, any> = (() => {
   };
 })();
 
-// N#8-1: 进程内记录"该工作区上一次 reindex 是否因单表行数上限被截断"。当域名表真实超过
-// REINDEX_MAX_ROWS_PER_TABLE 时，reindex 必然只索引确定前 LIMIT 子集，drift 也不会读超线实体，
-// 因而"超线实体不在索引中"是截断的既定结果而非漂移。auto-fix 借由此标记避免在该场景反复
-// 触发 reindex（进程内无跨副本同步；与 search count 缓存同一级的声明，见下方 autoFix 注释）。
-const lastReindexCapped = new Map<string, boolean>();
 interface SearchCountCacheEntry {
   value: number;
   insertedAt: number;
@@ -380,250 +371,113 @@ export interface SearchReindexResult {
     note: number;
     source: number;
   };
-  /** N#8-1: 本次 reindex 是否因单表行数上限被截断（投影可能只含确定的前 LIMIT 子集） */
+  /** Retained for API compatibility; rebuild no longer truncates. */
   capped: boolean;
 }
 
 /**
- * Workspace 级搜索投影重建（R-017: 原子化）。
- *
- * 整个 reindex 在单个事务内执行：先删除旧索引，再逐项重建。
- * 如果任何 INSERT 失败，事务回滚，旧索引保留，不会留下空/半索引。
- *
- * 只索引当前可用对象：笔记、未归档来源，以及 V2 Objective（Plan 23 CS-03）。
+ * Rebuild the workspace in stable ID order with bounded pages, inside one
+ * savepoint. Parent rows are locked in ID order before content is read so a
+ * concurrent edit either commits first or updates the index after this rebuild.
+ * Failures roll back every page.
+ * Unrelated projection types remain intact.
  */
 export async function reindexWorkspaceSearch(
   executor: ApiTransaction,
   workspaceId: string,
 ): Promise<SearchReindexResult & { errors: number }> {
-  let deletedCount = 0;
-  let indexed = { note: 0, source: 0 };
-  let errors = 0;
-  const projectionStartedAt = new Date();
-
-  // Collect top-level entities in parallel, then hydrate each child table in
-  // one query per entity type.
-  //
-  // 这里**故意不按查看者过滤**（批次 4.5）：`search_documents` 是全空间共用的一份数据，
-  // 建索引时按某个人可见的范围裁剪，等于把他的视角烧进共用的那份里——下一次换成 owner
-  // 触发重索引，私有笔记就谁也都搜不到了，连作者自己。所以索引收全量，
-  // "发不发给这个人"由查询侧那一次 join `notes` 判（`search()` 与 `getSearchTotal`）。
-  const [noteRows, sourceRows] = await Promise.all([
-    // CONC-03: 软删除的笔记不应被重新索引到搜索文档中
-    executor.query.notes.findMany({
-      where: and(eq(notes.workspaceId, workspaceId), isNull(notes.deletedAt)),
-      limit: REINDEX_MAX_ROWS_PER_TABLE,
-      // N#8-1: 与 drift 用同一确定排序建立确定性截断子集（最近写入优先）。
-      orderBy: reindexTopOrder.notes(notes),
-    }),
-    executor.query.sources.findMany({
-      where: and(eq(sources.workspaceId, workspaceId), ne(sources.status, SourceStatus.ARCHIVED)),
-      limit: REINDEX_MAX_ROWS_PER_TABLE,
-      orderBy: reindexTopOrder.sources(sources),
-    }),
-  ]);
-
-  // N#7-1: 每表读阶段加行上限，超出记告警（超限部分不进入投影）。
-  // N#8-1: 顺带记录"本次 reindex 是否截断"，供 auto-fix 判断是否应继续自动重索引。
-  let wasCapped =
-    noteRows.length >= REINDEX_MAX_ROWS_PER_TABLE ||
-    sourceRows.length >= REINDEX_MAX_ROWS_PER_TABLE;
-  if (wasCapped) {
-    logger.warn(
-      { workspaceId, limit: REINDEX_MAX_ROWS_PER_TABLE, counts: { notes: noteRows.length, sources: sourceRows.length } },
-      "reindexWorkspaceSearch 达到单表行数上限，投影可能不完整",
-    );
-  }
-  lastReindexCapped.set(workspaceId, wasCapped);
-  // PERF: bound this bookkeeping map so it cannot grow without bound with the
-  // number of distinct workspaces ever reindexed. The Map preserves insertion
-  // order, so evicting the oldest entry when over the cap is a cheap LRU.
-  const MAX_REINDEX_CAPPED_ENTRIES = 10_000;
-  if (lastReindexCapped.size > MAX_REINDEX_CAPPED_ENTRIES) {
-    const oldestKey = lastReindexCapped.keys().next().value;
-    if (oldestKey !== undefined) lastReindexCapped.delete(oldestKey);
-  }
-
-  const currentVersionIds = noteRows.flatMap((note) =>
-    note.currentVersionId ? [note.currentVersionId] : [],
-  );
-  const sourceIds = sourceRows.map((source) => source.id);
-  const [blockRows, segmentRows] = await Promise.all([
-    currentVersionIds.length > 0
-      ? chunkedInArraySelect(
-          (chunk) => executor.query.noteBlocks.findMany({
-            where: inArray(noteBlocks.versionId, chunk),
-            orderBy: [asc(noteBlocks.versionId), asc(noteBlocks.ordinal)],
-          }),
-          currentVersionIds,
-        )
-      : Promise.resolve([]),
-    sourceIds.length > 0
-      ? chunkedInArraySelect(
-          (chunk) => executor.query.sourceSegments.findMany({
-            where: inArray(sourceSegments.sourceId, chunk),
-            orderBy: [asc(sourceSegments.sourceId), asc(sourceSegments.ordinal)],
-          }),
-          sourceIds,
-        )
-      : Promise.resolve([]),
-  ]);
-
-  const blockContentsByVersion = new Map<string, string[]>();
-  for (const block of blockRows) {
-    const contents = blockContentsByVersion.get(block.versionId) ?? [];
-    contents.push(block.content);
-    blockContentsByVersion.set(block.versionId, contents);
-  }
-  const segmentContentsBySource = new Map<string, string[]>();
-  for (const segment of segmentRows) {
-    const contents = segmentContentsBySource.get(segment.sourceId) ?? [];
-    contents.push(segment.text);
-    segmentContentsBySource.set(segment.sourceId, contents);
-  }
-
-  const noteData = noteRows.flatMap((note) => note.currentVersionId
-    ? [{
-        id: note.id,
-        title: note.title,
-        body: (blockContentsByVersion.get(note.currentVersionId) ?? []).join("\n"),
-      }]
-    : []);
-  const sourceData = sourceRows.map((source) => {
-    const metadata = source.metadata as Record<string, unknown> | null;
-    const fallbackBody = [
-      source.origin,
-      typeof metadata?.rawContent === "string" ? metadata.rawContent : "",
-      typeof metadata?.url === "string" ? metadata.url : "",
-    ].filter(Boolean).join("\n");
-    const segmentContents = segmentContentsBySource.get(source.id) ?? [];
-    return {
-      id: source.id,
-      title: source.title,
-      body: segmentContents.length > 0 ? segmentContents.join("\n") : fallbackBody,
-      type: source.type,
-    };
-  });
-
-  // R-017: 原子事务 — 删除 + 重建在同一事务内
+  const pageSize = 100;
+  const indexed = { note: 0, source: 0 };
+  let deleted = 0;
   try {
     await executor.transaction(async (tx) => {
-      // Do not delete a projection updated after this rebuild started. On a
-      // conflict below, the same timestamp fence prevents stale snapshot data
-      // from overwriting a newer request-path upsert.
-      const deletedRows = await tx
-        .delete(searchDocuments)
-        .where(and(
-          eq(searchDocuments.workspaceId, workspaceId),
-          lt(searchDocuments.indexedAt, projectionStartedAt),
-        ))
-        .returning({ id: searchDocuments.id });
-      deletedCount = deletedRows.length;
-
-      // PERF: 逐实体类型流式批量插入，而非先物化整份 documents 数组再插入。
-      // 每类文档数组有界（顶层实体已受 REINDEX_MAX_ROWS_PER_TABLE 限制），
-      // 避免一次性把所有文档对象放入内存。
-      const INSERT_BATCH_SIZE = 500;
-      const insertBatch = async (docs: Array<typeof searchDocuments.$inferInsert>): Promise<void> => {
-        for (let start = 0; start < docs.length; start += INSERT_BATCH_SIZE) {
-          await tx
-            .insert(searchDocuments)
-            .values(docs.slice(start, start + INSERT_BATCH_SIZE))
-            .onConflictDoUpdate({
-              // 冲突键从共享常量取（2026-09-29，P2-15）。"同一篇文档的身份"必须
-              // 只有一处——这里的 `set:` 用 `excluded.*`（整批重灌，与请求路径的
-              // 单条投影语义不同），但**键是一样的**，键重复的后果见共享模块的文件头。
-              target: [...SEARCH_DOCUMENT_CONFLICT_TARGET],
-              set: {
-                title: sql`excluded.title`,
-                body: sql`excluded.body`,
-                metadata: sql`excluded.metadata`,
-                indexedAt: sql`excluded.indexed_at`,
-              },
-              // Prefer a request-path projection when both writes happen in the
-              // same timestamp tick; strict comparison avoids overwriting it.
-              setWhere: lt(searchDocuments.indexedAt, projectionStartedAt),
-            });
-        }
-      };
-
-      // notes
-      await insertBatch(noteData.map((note) => ({
-        workspaceId,
-        objectType: "note",
-        objectId: note.id,
-        title: note.title,
-        body: note.body,
-        metadata: {},
-        indexedAt: projectionStartedAt,
-      })));
-
-      // sources
-      await insertBatch(sourceData.map((source) => ({
-        workspaceId,
-        objectType: "source",
-        objectId: source.id,
-        title: source.title,
-        body: source.body,
-        metadata: { type: source.type },
-        indexedAt: projectionStartedAt,
-      })));
-
-      // A domain row can be deleted or archived after the snapshot was read
-      // but before this transaction starts. Reconcile the freshly inserted
-      // projection against the current domain tables so such a race cannot
-      // resurrect a ghost search result. Request-path projections newer than
-      // the rebuild fence remain untouched.
-      //
-      // PERF-08: This ghost cleanup was previously inside the transaction,
-      // holding locks for a long time on large workspaces (10000+ docs).
-      // Moving it after the transaction commit reduces lock duration at the
-      // cost of a brief window where ghost docs may be visible. This is
-      // acceptable for a manual reindex operation — the ghosts will be
-      // cleaned within seconds of the commit.
-    });
-
-    // PERF-08: Post-commit ghost cleanup — runs after the transaction has
-    // released its locks, reducing blocking on concurrent writes.
-    indexed = {
-      note: noteData.length,
-      source: sourceData.length,
-    };
-
-    await executor.execute(sql`
-        DELETE FROM search_documents AS search_document
-        WHERE search_document.workspace_id = ${workspaceId}
-          AND search_document.indexed_at <= ${projectionStartedAt.toISOString()}::timestamptz
-          AND (
-            (
-              search_document.object_type = 'note'
-              AND NOT EXISTS (
-                SELECT 1 FROM notes AS domain_note
-                WHERE domain_note.id = search_document.object_id
-                  AND domain_note.workspace_id = ${workspaceId}
-              )
-            )
-            OR (
-              search_document.object_type = 'source'
-              AND NOT EXISTS (
-                SELECT 1 FROM sources AS domain_source
-                WHERE domain_source.id = search_document.object_id
-                  AND domain_source.workspace_id = ${workspaceId}
-                  AND domain_source.status <> ${SourceStatus.ARCHIVED}
-              )
-            )
-          )
+      const conflictTarget = sql.join(
+        SEARCH_DOCUMENT_CONFLICT_TARGET.map((column) => sql.identifier(column.name)), sql`, `,
+      );
+      // Aggregate content in PostgreSQL so Node holds only 100 IDs at once,
+      // even when a page contains many large notes or sources.
+      let noteCursor: string | undefined;
+      while (true) {
+        const page = await tx.query.notes.findMany({
+          where: and(eq(notes.workspaceId, workspaceId),
+            noteCursor ? gt(notes.id, noteCursor) : undefined),
+          columns: { id: true, currentVersionId: true }, orderBy: [asc(notes.id)], limit: pageSize,
+        });
+        if (!page.length) break;
+        const ids = page.map((note) => note.id);
+        // Lock all parent rows, including tombstones. A restore or update must
+        // wait until this snapshot and its search projection have committed.
+        await tx.execute(sql`SELECT id FROM notes WHERE ${and(eq(notes.workspaceId, workspaceId), inArray(notes.id, ids))} ORDER BY id FOR UPDATE`);
+        const changed = await tx.execute<{ count: string }>(sql`
+          WITH changed AS (INSERT INTO search_documents (workspace_id, object_type, object_id, title, body, metadata, indexed_at)
+          SELECT notes.workspace_id, 'note', notes.id, notes.title,
+            COALESCE((SELECT string_agg(note_blocks.content, E'\\n' ORDER BY note_blocks.ordinal)
+              FROM note_blocks WHERE note_blocks.version_id = notes.current_version_id
+                AND note_blocks.type <> 'image'), ''), '{}'::jsonb, clock_timestamp()
+          FROM notes WHERE ${and(eq(notes.workspaceId, workspaceId), isNull(notes.deletedAt), inArray(notes.id, ids))}
+            AND notes.current_version_id IS NOT NULL
+          ON CONFLICT (${conflictTarget}) DO UPDATE SET title = excluded.title, body = excluded.body,
+            metadata = excluded.metadata, indexed_at = excluded.indexed_at
+          RETURNING 1) SELECT count(*)::text AS count FROM changed
+        `);
+        indexed.note += Number(changed[0]?.count ?? 0);
+        noteCursor = page[page.length - 1]!.id;
+        if (page.length < pageSize) break;
+      }
+      let sourceCursor: string | undefined;
+      while (true) {
+        const page = await tx.query.sources.findMany({
+          where: and(eq(sources.workspaceId, workspaceId),
+            sourceCursor ? gt(sources.id, sourceCursor) : undefined),
+          columns: { id: true }, orderBy: [asc(sources.id)], limit: pageSize,
+        });
+        if (!page.length) break;
+        const ids = page.map((source) => source.id);
+        await tx.execute(sql`SELECT id FROM sources WHERE ${and(eq(sources.workspaceId, workspaceId), inArray(sources.id, ids))} ORDER BY id FOR UPDATE`);
+        const changed = await tx.execute<{ count: string }>(sql`
+          WITH changed AS (INSERT INTO search_documents (workspace_id, object_type, object_id, title, body, metadata, indexed_at)
+          SELECT sources.workspace_id, 'source', sources.id, sources.title,
+            COALESCE((SELECT string_agg(source_segments.text, E'\\n' ORDER BY source_segments.ordinal)
+              FROM source_segments WHERE source_segments.source_id = sources.id),
+              concat_ws(E'\\n', NULLIF(sources.origin, ''),
+                CASE WHEN jsonb_typeof(sources.metadata->'rawContent') = 'string' THEN NULLIF(sources.metadata->>'rawContent', '') END,
+                CASE WHEN jsonb_typeof(sources.metadata->'url') = 'string' THEN NULLIF(sources.metadata->>'url', '') END)),
+            jsonb_build_object('type', sources.type), clock_timestamp()
+          FROM sources WHERE ${and(eq(sources.workspaceId, workspaceId), ne(sources.status, SourceStatus.ARCHIVED), inArray(sources.id, ids))}
+          ON CONFLICT (${conflictTarget}) DO UPDATE SET title = excluded.title, body = excluded.body,
+            metadata = excluded.metadata, indexed_at = excluded.indexed_at
+          RETURNING 1) SELECT count(*)::text AS count FROM changed
+        `);
+        indexed.source += Number(changed[0]?.count ?? 0);
+        sourceCursor = page[page.length - 1]!.id;
+        if (page.length < pageSize) break;
+      }
+      // Remove only genuinely orphaned projections after locking existing parents.
+      // SQL counts deleted rows without returning all identifiers to Node.
+      const removed = await tx.execute<{ count: string }>(sql`
+        WITH removed AS (
+          DELETE FROM search_documents AS document
+          WHERE document.workspace_id = ${workspaceId}
+            AND (
+              (document.object_type = 'note' AND NOT EXISTS (
+                SELECT 1 FROM notes AS note WHERE note.id = document.object_id
+                  AND note.workspace_id = ${workspaceId} AND note.deleted_at IS NULL
+                  AND note.current_version_id IS NOT NULL
+              )) OR
+              (document.object_type = 'source' AND NOT EXISTS (
+                SELECT 1 FROM sources AS source WHERE source.id = document.object_id
+                  AND source.workspace_id = ${workspaceId} AND source.status <> ${SourceStatus.ARCHIVED}
+              ))
+            ) RETURNING 1
+        ) SELECT count(*)::text AS count FROM removed
       `);
+      deleted = Number(removed[0]?.count ?? 0);
+    });
+    return { deleted, indexed, errors: 0, capped: false };
   } catch (err) {
-    // A rolled-back rebuild changed neither the old index nor the reported
-    // counters. The old code leaked pre-rollback counts as if work succeeded.
-    deletedCount = 0;
-    indexed = { note: 0, source: 0 };
     logger.error({ err, workspaceId }, "reindex transaction failed — old index preserved");
-    errors = 1;
+    return { deleted: 0, indexed: { note: 0, source: 0 }, errors: 1, capped: false };
   }
-
-  return { deleted: deletedCount, indexed, errors, capped: lastReindexCapped.get(workspaceId) ?? false };
 }
 
 /**
@@ -663,6 +517,52 @@ export interface SearchDriftResult {
   capped: Record<"note" | "source", boolean>;
 }
 
+/** The repair operates on the shared workspace index, but its diagnostics
+ * must never disclose another member's private note to the requesting owner. */
+export async function searchDriftForViewer(
+  executor: ApiTransaction,
+  workspaceId: string,
+  userId: string,
+  drift: SearchDriftResult,
+): Promise<SearchDriftResult> {
+  const noteIds = [...new Set([
+    ...drift.ghosts, ...drift.missing, ...drift.staleTitles, ...drift.staleBodies,
+  ].filter((item) => item.objectType === "note").map((item) => item.objectId))];
+  const visibleRows = await chunkedInArraySelect((chunk) => executor.query.notes.findMany({
+    where: and(eq(notes.workspaceId, workspaceId), isNull(notes.deletedAt),
+      visibleNotesCondition(userId), inArray(notes.id, chunk)),
+    columns: { id: true },
+  }), noteIds);
+  const visibleIds = new Set(visibleRows.map((row) => row.id));
+  const visible = (item: { objectType: string; objectId: string }) =>
+    item.objectType !== "note" || visibleIds.has(item.objectId);
+  const [expected] = await executor.execute<{ count: string }>(sql`
+    SELECT count(*)::text AS count FROM notes
+    WHERE ${and(eq(notes.workspaceId, workspaceId), isNull(notes.deletedAt), visibleNotesCondition(userId))}
+      AND ${notes.currentVersionId} IS NOT NULL
+  `);
+  const [actual] = await executor.execute<{ count: string }>(sql`
+    SELECT count(*)::text AS count FROM search_documents AS search_document
+    CROSS JOIN (SELECT ${userId}::uuid AS viewer) v
+    WHERE search_document.workspace_id = ${workspaceId} AND search_document.object_type = 'note'
+      AND ${sql.raw(searchDocumentsVisibleSql())}
+  `);
+  const expectedNote = Number(expected?.count ?? 0);
+  const actualNote = Number(actual?.count ?? 0);
+  const ghosts = drift.ghosts.filter(visible);
+  const missing = drift.missing.filter(visible);
+  const staleTitles = drift.staleTitles.filter(visible);
+  const staleBodies = drift.staleBodies.filter(visible);
+  return {
+    ...drift,
+    expected: { ...drift.expected, note: Math.min(expectedNote, REINDEX_MAX_ROWS_PER_TABLE) },
+    actual: { ...drift.actual, note: Math.min(actualNote, REINDEX_MAX_ROWS_PER_TABLE) },
+    capped: { ...drift.capped, note: expectedNote >= REINDEX_MAX_ROWS_PER_TABLE },
+    ghosts, missing, staleTitles, staleBodies,
+    hasDrift: ghosts.length + missing.length + staleTitles.length + staleBodies.length > 0,
+  };
+}
+
 export async function detectSearchDrift(
   executor: ApiTransaction,
   workspaceId: string,
@@ -674,7 +574,7 @@ export async function detectSearchDrift(
   // PERF-07: Parallelize queries across entity types.
   // Previously 12 serial DB round-trips; now a small parallel batch.
   // ── Batch 1: notes + sources 业务表与索引查询 ──
-  const [noteRows, indexedNotes, sourceRows, indexedSources] = await Promise.all([
+  const [noteRows, sampledIndexedNotes, sourceRows, sampledIndexedSources] = await Promise.all([
     // 1a. Notes business table (CONC-03: exclude soft-deleted)
     // N#8-1: 与 reindex 用同一上限 + 同一确定排序，读取同一确定截断子集，避免把超线实体误判 missing。
     executor.query.notes.findMany({
@@ -706,16 +606,27 @@ export async function detectSearchDrift(
     }),
   ]);
 
-  // N#8-1: 记录各顶层业务域表读是否命中行数上限（截断）。截断意味着域名表真实超过
-  // REINDEX_MAX_ROWS_PER_TABLE，能进入索引的只是确定的前 LIMIT 子集。此时：
-  //  - missing 只对"已读入窗口内但索引缺失"的实体报告（真实窗口内漂移，保持）；
-  //  - ghost 对"索引有而业务读窗口无"的实体不再报告（超线实体可能仍合法存在于业务表中，
-  //    只是未进入当前确定窗口，把它们当 ghost 会误报），并记告警。
-  // 这样 auto-fix 只在真实漂移时触发，截断场景不反复重索引。
+  // A full rebuild and a business-table sample do not have matching order.
+  // Compare the sampled business IDs to their actual projections, not to an
+  // unrelated top-N index page: otherwise large workspaces report false gaps.
   const capped: Record<"note" | "source", boolean> = {
     note: noteRows.length >= REINDEX_MAX_ROWS_PER_TABLE,
     source: sourceRows.length >= REINDEX_MAX_ROWS_PER_TABLE,
   };
+  const noteSampleIds = noteRows.map((row) => row.id);
+  const sourceSampleIds = sourceRows.map((row) => row.id);
+  const [matchedNotes, matchedSources] = await Promise.all([
+    chunkedInArraySelect((chunk) => executor.query.searchDocuments.findMany({
+      where: and(eq(searchDocuments.workspaceId, workspaceId), eq(searchDocuments.objectType, "note"), inArray(searchDocuments.objectId, chunk)),
+      columns: { objectId: true, title: true, body: true },
+    }), noteSampleIds),
+    chunkedInArraySelect((chunk) => executor.query.searchDocuments.findMany({
+      where: and(eq(searchDocuments.workspaceId, workspaceId), eq(searchDocuments.objectType, "source"), inArray(searchDocuments.objectId, chunk)),
+      columns: { objectId: true, title: true },
+    }), sourceSampleIds),
+  ]);
+  const indexedNotes = [...new Map([...sampledIndexedNotes, ...matchedNotes].map((row) => [row.objectId, row])).values()];
+  const indexedSources = [...new Map([...sampledIndexedSources, ...matchedSources].map((row) => [row.objectId, row])).values()];
 
   // Process notes drift
   const noteIds = new Set(noteRows.filter((n) => n.currentVersionId).map((n) => n.id));
@@ -804,8 +715,8 @@ export async function detectSearchDrift(
     source: sourceIds.size,
   };
   const actual = {
-    note: indexedNotes.length,
-    source: indexedSources.length,
+    note: sampledIndexedNotes.length,
+    source: sampledIndexedSources.length,
   };
 
   return {
@@ -869,8 +780,8 @@ export async function autoFixSearchDrift(
       },
       "搜索索引漂移超过阈值，自动触发 reindex 补偿（ARCH-01）",
     );
-    await reindexWorkspaceSearch(executor, workspaceId);
-    return { drift, autoFixed: true };
+    const result = await reindexWorkspaceSearch(executor, workspaceId);
+    return { drift, autoFixed: result.errors === 0 && !result.capped };
   }
 
   // 漂移量较小，仅记录信息日志

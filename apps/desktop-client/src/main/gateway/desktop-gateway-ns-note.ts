@@ -282,7 +282,7 @@ export async function createNote(t: GatewayTransport, request: DesktopNoteCreate
       true,
       requestId,
     );
-    const created = z.object({ note: z.object({ id: z.string().uuid() }).passthrough() }).passthrough().safeParse(result.body);
+    const created = z.object({ note: z.object({ id: z.string().guid() }).passthrough() }).passthrough().safeParse(result.body);
     if (!created.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
     try {
       return await getNote(t, created.data.note.id, requestId);
@@ -535,7 +535,7 @@ export async function listNoteVersions(t: GatewayTransport,
     );
     const parsed = z.object({
       items: z.array(z.object({
-        id: z.string().uuid(),
+        id: z.string().guid(),
         versionNo: z.number().int().min(1),
         createdAt: z.string(),
         updatedAt: z.string(),

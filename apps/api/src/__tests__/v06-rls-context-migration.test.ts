@@ -69,19 +69,12 @@ test("0043 remains registered immediately before the generation-run bridge", () 
     breakpoints: true,
   });
   assert.equal(journal.entries[entry0043.idx + 1]?.tag, "0044_card_generation_run_bridge");
-  assert.match(
-    server,
-    /MIN_READY_MIGRATION_CREATED_AT \?\? "1786683800000"/,
-  );
-  // QUAL-08 后 /ready 不再硬编码表名：改为动态查询 information_schema.tables
-  // （覆盖所有已迁移表）+ 迁移时间戳门槛（0043，即引入 v0.6 新表的迁移）。
-  // 因此断言：
-  // 1. /ready 动态查询 information_schema
-  // 2. 迁移门槛时间戳等于 0043 迁移的 when（上面已断言）
+});
+
+test("readiness requires the current release migration even when the database has a later marker", () => {
   assert.match(server, /information_schema\.tables/);
-  assert.ok(server.includes("coreTables"), "/ready 应检查核心表存在");
-  assert.ok(
-    server.includes("MIN_READY_MIGRATION_CREATED_AT"),
-    "/ready 应使用迁移时间戳门槛覆盖 v0.6 新表",
-  );
+  assert.match(server, /migrationJournal\.entries\.at\(-1\)/);
+  assert.match(server, /bool_or\(created_at = \$\{releaseMigration\}\)/);
+  assert.match(server, /\|\| !releaseMigrationPresent \|\|/);
+  assert.match(server, /Math\.max\(releaseMigration, minimumMigration\)/);
 });

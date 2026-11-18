@@ -9,9 +9,9 @@ export type CardAssessmentQuestion = { id: string; questionType: NoteLearningCar
 export type CardAssessmentAnswer = { questionId: string; answer: unknown; score?: number | null; feedback?: unknown };
 export type CardQuestionResult = { questionId: string; score: number; feedback: { kind: string; text?: string } };
 export type AskCardCompanion = (input: { instruction: string; correction?: string; questions: unknown[]; subjective: unknown[] }) => Promise<string>;
-const resultsSchema = z.array(z.strictObject({ questionId: z.string().uuid(), score: z.number().int().min(0).max(100), feedback: z.string().trim().min(1).max(2000) }));
+const resultsSchema = z.array(z.strictObject({ questionId: z.string().guid(), score: z.number().int().min(0).max(100), feedback: z.string().trim().min(1).max(2000) }));
 const summarySchema = z.strictObject({
-  items: z.array(z.strictObject({ questionId: z.string().uuid(), observation: z.string().trim().min(4).max(500) })).min(1).max(8),
+  items: z.array(z.strictObject({ questionId: z.string().guid(), observation: z.string().trim().min(4).max(500) })).min(1).max(8),
   nextStep: z.string().trim().min(4).max(800),
 });
 const instruction = '返回严格 JSON：{results:[{questionId,score,feedback}],summary:{items:[{questionId,observation}],nextStep}}。只给 subjective 中的简答题判分，questionId 必须原样返回且逐一覆盖；score 是0–100百分制。subjective为空时results必须为[]。questions 中已有分数不得重判。summary.items 必须逐一覆盖 questions 和 subjective 的所有题，questionId 原样对应，observation 写这道题的具体表现、失分或遗漏；nextStep 写一两个具体下一步，全客观题也必须总结。不写已掌握/未掌握。题号由宿主按 questionId 添加，observation、nextStep 和 feedback 只写自然内容，不要写第几题、题号、内部ID或其缩写，也不出现 subjective、questionId 等字段名。';

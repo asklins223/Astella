@@ -1,17 +1,21 @@
 {
   "name": "@astella/api",
-  "version": "2.0.28",
+  "version": "2.0.29",
   "private": true,
   "type": "module",
   "main": "src/server.ts",
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "start": "node --import tsx src/server.ts",
-    "build": "esbuild src/server.ts --bundle --platform=node --format=cjs --outfile=dist/server.cjs && node scripts/copy-admin-assets.mjs",
+    "build": "esbuild src/server.ts --bundle --platform=node --format=cjs --external:bcrypt --outfile=dist/server.cjs && node scripts/copy-admin-assets.mjs",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test --test-concurrency=8 $(find src -name '*.test.ts' | sort)",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts",
+    "db:check-workspace-fks": "node scripts/workspace-fk-validation.mjs",
+    "db:legacy-password-sessions": "node scripts/legacy-password-sessions.mjs",
+    "email:verify-smtp": "node --import tsx src/scripts/verify-smtp.ts",
+    "test:legacy-password-sessions:isolated-postgres": "node --import tsx --test src/integration-tests/legacy-password-sessions-postgres.integration.ts",
     "db:seed": "tsx src/db/seed.ts",
     "test:companion:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/companion-migration-postgres.integration.ts src/integration-tests/companion-conversation-postgres.integration.ts src/integration-tests/companion-memory-long-run-postgres.integration.ts src/integration-tests/companion-longrun-context-hole-postgres.integration.ts src/integration-tests/companion-memory-recall-quality-postgres.integration.ts src/integration-tests/companion-memory-embedding-pipeline-postgres.integration.ts",
     "test:companion-guidance:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/companion-guidance-postgres.integration.ts",
@@ -19,17 +23,18 @@
     "test:reminder-subject-gate:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/reminder-note-subject-gate-postgres.integration.ts",
     "test:companion-home-profile:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/companion-home-profile-rls-postgres.integration.ts",
     "test:companion-runtime-fence:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/companion-runtime-fence-postgres.integration.ts",
-    "test:users-rls:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/auth-me-rls-postgres.integration.ts src/integration-tests/users-rls-postgres.integration.ts src/integration-tests/rls-policies-postgres.integration.ts src/integration-tests/schema-isolation-gate-postgres.integration.ts src/integration-tests/account-settings-rls-postgres.integration.ts",
+    "test:users-rls:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/auth-me-rls-postgres.integration.ts src/integration-tests/users-rls-postgres.integration.ts src/integration-tests/rls-policies-postgres.integration.ts src/integration-tests/schema-isolation-gate-postgres.integration.ts src/integration-tests/account-settings-rls-postgres.integration.ts src/integration-tests/legacy-password-policy-postgres.integration.ts",
     "test:companion-actions:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/companion-action-migration-postgres.integration.ts src/integration-tests/companion-action-rls-postgres.integration.ts",
     "test:companion-integration:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/companion-terminal-steps-postgres.integration.ts src/integration-tests/companion-private-turn-replay-postgres.integration.ts src/integration-tests/companion-answer-mode-preference-postgres.integration.ts src/integration-tests/companion-account-epoch-postgres.integration.ts src/integration-tests/companion-memory-star-map-postgres.integration.ts src/integration-tests/companion-audit-export-delete-postgres.integration.ts src/integration-tests/companion-persona-pending-revision-postgres.integration.ts src/integration-tests/companion-persona-self-edit-postgres.integration.ts src/integration-tests/companion-reflection-growth-postgres.integration.ts src/integration-tests/companion-pet-profile-postgres.integration.ts src/integration-tests/companion-memory-routes-http-postgres.integration.ts src/integration-tests/companion-migration-postgres.integration.ts src/integration-tests/companion-conversation-postgres.integration.ts src/integration-tests/companion-run-nodes-window-postgres.integration.ts src/integration-tests/companion-home-profile-rls-postgres.integration.ts src/integration-tests/companion-runtime-fence-postgres.integration.ts src/integration-tests/companion-action-migration-postgres.integration.ts src/integration-tests/companion-action-rls-postgres.integration.ts src/integration-tests/companion-journey-postgres.integration.ts src/integration-tests/companion-daily-summary-tick-window-postgres.integration.ts src/integration-tests/companion-proposal-expiry-sweep-postgres.integration.ts src/integration-tests/assistant-deliveries-postgres.integration.ts src/integration-tests/assistant-deliveries-kind-constraint.integration.ts src/integration-tests/history-search-postgres.integration.ts src/integration-tests/proactive-hook-postgres.integration.ts src/integration-tests/companion-message-selection-postgres.integration.ts src/integration-tests/companion-web-search-settings-postgres.integration.ts src/integration-tests/companion-note-edit-postgres.integration.ts src/integration-tests/companion-process-history-postgres.integration.ts src/integration-tests/companion-run-resume-postgres.integration.ts",
     "test:plan44:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/plan44-invalidation-fencing-postgres.integration.ts",
     "test:plan44-coverage:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/plan44-coverage-evidence-postgres.integration.ts",
     "test:db-integrity:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/db-migrations.integration.ts src/integration-tests/content-hash-consistency-postgres.integration.ts src/integration-tests/rate-limit-postgres.integration.ts",
+    "test:workspace-fk-validation:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/workspace-fk-validation-postgres.integration.ts",
     "test:database-session-timeouts:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/database-session-timeouts.integration.ts",
     "test:note-document-state:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/note-version-restore-postgres.integration.ts",
     "test:mobile-note-write-scope:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/mobile-note-write-scope-postgres.integration.ts",
     "test:workspace-lifecycle:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/workspace-dissolve-postgres.integration.ts src/integration-tests/workspace-dissolve-route-postgres.integration.ts src/integration-tests/workspace-departure-memory-retirement-postgres.integration.ts src/integration-tests/sec02-invites-onboarding-postgres.integration.ts",
-    "test:email-verification:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/email-verification-postgres.integration.ts",
+    "test:email-verification:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/email-verification-postgres.integration.ts src/integration-tests/email-code-concurrency-postgres.integration.ts",
     "test:learning-objective-topology:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/learning-objective-content-topology-w1.integration.ts",
     "test:companion-discovery-http:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/companion-discovery-http-postgres.integration.ts",
     "test:plan44-sql:postgres": "node --import tsx --test --test-concurrency=1 --test-force-exit src/integration-tests/plan44-sql-parses-postgres.integration.ts",
@@ -37,6 +42,7 @@
     "test:object-storage:s3": "node --import tsx --test --test-concurrency=1 src/integration-tests/object-storage-transfers.integration.ts",
     "test:ai-consent:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/ai-consent-signing-postgres.integration.ts",
     "test:note-collaboration:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/note-collaboration-postgres.integration.ts",
+    "test:note-search-safety:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/note-collaboration-leader-postgres.integration.ts src/integration-tests/search-reindex-postgres.integration.ts src/integration-tests/search-reindex-rls-postgres.integration.ts",
     "test:object-storage:replicas": "ASTELLA_RUN_STORAGE_REPLICA_TEST=1 node --import tsx --test src/integration-tests/object-storage-replicas.integration.ts",
     "test:chat-upload-retention": "ASTELLA_RUN_CHAT_RETENTION_TEST=1 node --import tsx --test src/integration-tests/chat-upload-retention.integration.ts"
   },
@@ -54,12 +60,13 @@
     "@hocuspocus/server": "^4.7.0",
     "@smithy/node-http-handler": "^4.9.7",
     "@types/ws": "^8.18.1",
+    "bcrypt": "^6.0.0",
     "bcryptjs": "^2.4.3",
     "dotenv": "^16.4.7",
     "drizzle-orm": "^0.45.2",
-    "fastify": "^5.12.5",
+    "fastify": "^5.12.8",
     "lib0": "^0.2.117",
-    "nodemailer": "^7.0.13",
+    "nodemailer": "^10.6.0",
     "pino": "^9.5.0",
     "postgres": "^3.4.5",
     "prom-client": "^15.1.0",
@@ -70,10 +77,11 @@
     "y-prosemirror": "1.3.7",
     "y-protocols": "^1.0.7",
     "yjs": "^13.6.32",
-    "zod": "^3.23.8"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@hocuspocus/provider": "^4.7.0",
+    "@types/bcrypt": "^6.0.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^22.10.1",
     "@types/nodemailer": "^8.0.2",
@@ -88,7 +96,8 @@
   "overrides": {
     "@esbuild-kit/core-utils": {
       "esbuild": "^0.25.12"
-    }
+    },
+    "fast-uri": "^3.1.9"
   },
   "license": "PolyForm-Noncommercial-1.0.0"
 }

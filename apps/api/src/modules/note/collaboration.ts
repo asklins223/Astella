@@ -1,17 +1,19 @@
 import * as Y from "yjs";
 import { projectFragmentBlocks } from "./doc-fragment.ts";
-import { Hocuspocus } from "@hocuspocus/server";
+import { Hocuspocus, type Connection } from "@hocuspocus/server";
 // Load Fastify's websocket route type augmentation for consumers that typecheck this route directly.
 import "@fastify/websocket";
 import type { FastifyInstance } from "fastify";
 import type { WebSocket as WsSocket, RawData } from "ws";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { noteBlocks, noteDocumentStates, notes } from "@astella/shared/db-schema/note";
 import { users } from "@astella/shared/db-schema/identity";
 import { logger } from "../../lib/logger.ts";
-import { scopeOfSession, withWorkspaceTransaction } from "../../db/client.ts";
+import { db, scopeOfSession, withWorkspaceTransaction, type ApiTransaction } from "../../db/client.ts";
 // WebSocket Auth frames reuse the identity domain's canonical session decoder.
-import { decodeToken } from "../identity/session-service.ts";
+import { decodeToken, decodeSessionTokenHash } from "../identity/session-service.ts";
+import { hashToken, type SessionContext } from "../identity/credentials.ts";
+import { onSessionRevoked } from "../identity/session-revocations.ts";
 import { isWorkspaceOwner } from "../identity/middleware.ts";
 import {
   loadNoteDoc,
@@ -31,6 +33,9 @@ import {
 import { assertUnlockedUpdate, pruneCompletedRewriteLocks } from "./edit-locks.ts";
 import { visibleNotesCondition } from "./visibility.ts";
 import { disconnectAndVerifyNoteDocSave } from "./note-doc-save-confirmation.ts";
+import { createNoteConnectionBudget, createNoteMessageBudget } from "./connection-budget.ts";
+import { fenceNoteCollaborationWrite } from "./collaboration-leader.ts";
+import { holdNoteMessageFence } from "./message-fence.ts";
 
 /**
  * 笔记协同的服务端（批次 4.2）。
@@ -44,9 +49,8 @@ import { disconnectAndVerifyNoteDocSave } from "./note-doc-save-confirmation.ts"
  * 一条 WS 可以服务多篇笔记：文档名来自协议首条消息而不是 URL 路径，所以每次换文档都会
  * 重跑一遍 `onAuthenticate`，"这篇笔记属于我当前这个空间"是逐文档判的。
  *
- * 空间切换的 epoch 不在这里判——它是客户端 IPC 的概念（服务端 `workspaceEpoch` 恒为 1），
- * 由批次 1 收口的 `assertEpoch` 在主进程边界挡，本机缓存键 `(workspaceId, epoch, noteId)`
- * 负责切换后不串正文。
+ * 空间切换的 epoch 不在这里判——它由客户端 IPC 的 `assertEpoch` 在请求边界挡；
+ * 本机缓存按 `(subjectId, workspaceId, noteId)` 持久化，切换后不串正文。
  *
  * 持久化按决定 6 是 snapshot-on-idle：`debounce` 之后再落盘，不追每一次按键。
  * 落盘同时把文档投影成当前版本的 `note_blocks` 行，关系表因此只有一个生产者。
@@ -65,12 +69,68 @@ export type NoteDocContext = {
    * 只有 WS 连接会带它；`openDirectConnection` 那两条 HTTP 路没有对端可广播。
    */
   displayName?: string;
+  /** Hash only; never retain or log the bearer token. Direct connections omit it. */
+  sessionTokenHash?: string;
+  markAuthenticated?: () => void;
 };
+
+const authenticatedConnections = new Set<Connection<NoteDocContext>>();
+const messageFences = new WeakMap<Connection<NoteDocContext>, () => Promise<void>>();
+const watchedMessageConnections = new WeakSet<Connection<NoteDocContext>>();
+
+async function releaseMessageFence(connection: Connection<NoteDocContext>): Promise<void> {
+  const release = messageFences.get(connection);
+  messageFences.delete(connection);
+  if (release) await release();
+}
+export function trackNoteConnectionForRevocation(connection: Connection<NoteDocContext>): () => void {
+  authenticatedConnections.add(connection);
+  return () => { authenticatedConnections.delete(connection); };
+}
+onSessionRevoked((event) => {
+  for (const connection of authenticatedConnections) {
+    const context = connection.context;
+    if ("tokenHash" in event ? context.sessionTokenHash === event.tokenHash
+      : context.userId === event.userId && (!event.workspaceId || context.workspaceId === event.workspaceId)) {
+      connection.close();
+    }
+  }
+});
+
+async function connectionStillAuthorized(
+  context: NoteDocContext,
+  afterCheck?: (tx: ApiTransaction) => Promise<void>,
+): Promise<boolean> {
+  if (!context.sessionTokenHash) return false;
+  let authorized = false;
+  await decodeSessionTokenHash(context.sessionTokenHash, false, async (tx, session) => {
+    if (!matchesNoteSession(context, session)) return;
+    const note = await tx.query.notes.findFirst({
+      where: and(eq(notes.id, context.noteId), eq(notes.workspaceId, context.workspaceId),
+        eq(notes.shareScope, "shared"), isNull(notes.deletedAt)),
+      columns: { id: true },
+    });
+    if (!note) return;
+    authorized = true;
+    await afterCheck?.(tx);
+  });
+  return authorized;
+}
+
+function matchesNoteSession(context: NoteDocContext, session: SessionContext | null): boolean {
+  return session !== null && session.userId === context.userId && session.workspaceId === context.workspaceId
+    && (!isWorkspaceOwner(session)) === context.readOnly;
+}
 
 export const NOTE_DOC_PREFIX = "note:";
 
 export function documentNameForNote(noteId: string): string {
   return `${NOTE_DOC_PREFIX}${noteId}`;
+}
+
+/** Call after committing a change that closes the shared document. */
+export function closeNoteDocConnections(noteId: string): void {
+  noteCollaboration.closeConnections(documentNameForNote(noteId));
 }
 
 export function noteIdFromDocumentName(documentName: string): string {
@@ -288,6 +348,9 @@ export function notePresenceNotes(): string[] {
 export const noteCollaboration = new Hocuspocus<NoteDocContext>({
   // 决定 6：空闲后落一次整份快照，不写 update log。
   debounce: 2_000,
+  // Broadcast from the message handler while its handover fence is held.
+  // The library's default queues a later flush on the event loop.
+  flushDelay: false,
   quiet: true,
   // P1-14：把「最后一个连接断开就立刻卸载文档」写成**显式**配置。
   //
@@ -305,7 +368,7 @@ export const noteCollaboration = new Hocuspocus<NoteDocContext>({
   // 单副本约束（决定 6）：doc 常驻本进程内存，多副本需要外部 pubsub。
   // 扩到多副本之前必须先在这里换成共享 store，见 docs/ 的扩展前置说明。
 
-  async onAuthenticate({ documentName, token, requestHeaders, connectionConfig }) {
+  async onAuthenticate({ context, documentName, token, requestHeaders, connectionConfig }) {
     const credential = token || bearerFrom(requestHeaders);
     const session = credential ? await decodeToken(credential) : null;
     if (!session) {
@@ -372,6 +435,7 @@ export const noteCollaboration = new Hocuspocus<NoteDocContext>({
     // `SyncStatus(false)`（否定确认）。在 `beforeHandleMessage` 里抛错会断整条
     // 连接，那等于把"只读成员能实时看到别人的编辑"这条要求一起杀掉。
     connectionConfig.readOnly = readOnly;
+    context.markAuthenticated?.();
 
     return {
       userId: session.userId,
@@ -380,10 +444,67 @@ export const noteCollaboration = new Hocuspocus<NoteDocContext>({
       versionId: noteRow.currentVersionId,
       readOnly,
       displayName: note.displayName,
+      sessionTokenHash: hashToken(credential),
     };
   },
 
-  async beforeSync({ document, context, type, payload }) {
+  async connected({ connection, context }) {
+    const untrack = trackNoteConnectionForRevocation(connection);
+    let checking = false;
+    const timer = setInterval(() => {
+      if (checking) return;
+      checking = true;
+      void connectionStillAuthorized(context).then((valid) => {
+        if (!valid) connection.close();
+      }).catch(() => connection.close()).finally(() => { checking = false; });
+    }, 10_000);
+    timer.unref();
+    connection.onClose(() => { clearInterval(timer); untrack(); });
+    // Covers revocation between the authentication and connection hooks.
+    try {
+      if (!await connectionStillAuthorized(context)) connection.close();
+    } catch {
+      connection.close();
+    }
+  },
+
+  async beforeHandleMessage({ connection, context }) {
+    // A later beforeHandleMessage extension can fail before Hocuspocus enters
+    // its afterHandleMessage finally block. On close, release after the queued
+    // handler ends; never accumulate a callback for every message.
+    if (!watchedMessageConnections.has(connection)) {
+      watchedMessageConnections.add(connection);
+      connection.onClose(() => {
+        void connection.waitForPendingMessages()
+          .finally(() => releaseMessageFence(connection))
+          .catch(() => {});
+      });
+    }
+
+    try {
+      // Revalidate after waiting for a slot and keep the barrier in the same
+      // transaction as the session lookup, using a single pool connection.
+      const release = await holdNoteMessageFence(
+        async hold => { await connectionStillAuthorized(context, hold); },
+        () => connection.close(),
+      );
+      if (connection.webSocket.readyState !== 1 || !connection.document.hasConnection(connection)) {
+        await release();
+        throw new Error("connection closed before message handling");
+      }
+      messageFences.set(connection, release);
+    } catch {
+      connection.close();
+      throw new Error("note message authorization failed");
+    }
+  },
+
+  async afterHandleMessage({ connection }) {
+    try { await releaseMessageFence(connection); } catch (error) { connection.close(); throw error; }
+  },
+
+  async beforeSync({ connection, document, context, type, payload }) {
+    if (!document.hasConnection(connection)) throw new Error("note connection closed");
     if (type === 0 || !context || context.readOnly) return;
     // 这条通道**不**按归属锚拒收（2026-11-01 实测过才这么定）：把另一篇的内容并进来，
     // 与用户在编辑器里粘贴另一篇的正文在 CRDT 层是同一件事，量不出区别；而一拒就是
@@ -391,6 +512,7 @@ export const noteCollaboration = new Hocuspocus<NoteDocContext>({
     // 用户连自己写的字都交不出去。身份在 `onStoreDocument` 那一步改回来并留痕。
     // HTTP 那条通道（离线队列与草稿重传会走）不一样：整篇推过来本身就说明键串了，那里拒。
     await pruneCompletedRewriteLocks(context.workspaceId, context.noteId, context.userId);
+    if (!document.hasConnection(connection)) throw new Error("note connection closed");
     assertUnlockedUpdate(context.noteId, document, payload);
   },
 
@@ -459,6 +581,7 @@ export const noteCollaboration = new Hocuspocus<NoteDocContext>({
     await withWorkspaceTransaction(
       { workspaceId: context.workspaceId, userId: context.userId },
       async (tx) => {
+        await fenceNoteCollaborationWrite(tx);
         // 内容没变就一个字节都不写。Hocuspocus 的直连 disconnect 会**无条件**跑这个
         // 钩子，离线队列重放同一条 update、或连上又断开都会进来一次；不挡这里的话
         // revision 凭空 +1，而正文的行被重写一遍。
@@ -532,6 +655,9 @@ export async function noteCollaborationRoutes(app: FastifyInstance) {
   });
 }
 
+const noteConnectionBudget = createNoteConnectionBudget(256);
+const NOTE_AUTH_TIMEOUT_MS = 15_000;
+
 /**
  * 交给 Fastify 的 websocket 路由：升级由 `@fastify/websocket` 完成，握手后本函数把
  * `ws` 的 socket 接到本服务上。
@@ -548,6 +674,17 @@ function toBytes(data: RawData): Uint8Array {
 }
 
 export function handleNoteDocConnection(socket: WsSocket, request: import("node:http").IncomingMessage) {
+  const release = noteConnectionBudget.acquire();
+  if (!release) {
+    socket.close(1013, "connection_limit");
+    return null;
+  }
+  const authTimer = setTimeout(() => socket.close(1008, "authentication_timeout"), NOTE_AUTH_TIMEOUT_MS);
+  authTimer.unref();
+  const cleanup = () => { clearTimeout(authTimer); release(); };
+  const markAuthenticated = () => clearTimeout(authTimer);
+  socket.once("close", cleanup);
+  socket.once("error", () => { cleanup(); socket.terminate(); });
   const headers = new Headers();
   for (const [name, value] of Object.entries(request.headers)) {
     // IncomingHttpHeaders 的值可以是 number 或数组，逐个收成字符串才能进 Headers。
@@ -557,8 +694,13 @@ export function handleNoteDocConnection(socket: WsSocket, request: import("node:
   const host = headers.get("host") ?? "localhost";
   const url = new URL(request.url ?? "/", `http://${host}`);
   const webRequest = new Request(url, { method: "GET", headers });
-  const client = noteCollaboration.handleConnection(socket, webRequest, {} as NoteDocContext);
-  socket.on("message", (data: RawData) => client.handleMessage(toBytes(data)));
+  const client = noteCollaboration.handleConnection(socket, webRequest, { markAuthenticated } as NoteDocContext);
+  const allowMessage = createNoteMessageBudget();
+  socket.on("message", (data: RawData) => {
+    const bytes = toBytes(data);
+    if (!allowMessage(bytes.byteLength)) { socket.close(1008, "message_limit"); return; }
+    client.handleMessage(bytes);
+  });
   socket.on("close", (code: number, reason: Buffer) =>
     client.handleClose({ code, reason: reason.toString("utf8") }),
   );
@@ -672,9 +814,12 @@ export async function applyUploadedDocUpdate(input: {
   await pruneCompletedRewriteLocks(input.workspaceId, input.noteId, input.userId);
   let landed = true;
   try {
-    await connection.transact((document) => {
-      assertUnlockedUpdate(input.noteId, document, input.update);
-      landed = applyAndReportLanded(document, input.update);
+    await db.transaction(async (tx) => {
+      await fenceNoteCollaborationWrite(tx);
+      await connection.transact((document) => {
+        assertUnlockedUpdate(input.noteId, document, input.update);
+        landed = applyAndReportLanded(document, input.update);
+      });
     });
   } finally {
     // The store hook can fail silently; only the persisted CRDT confirms the upload.
@@ -771,13 +916,16 @@ export async function publishRestoredNoteDoc(input: {
   });
   const connection = await noteCollaboration.openDirectConnection(documentNameForNote(input.noteId), context);
   try {
-    await connection.transact((document) => {
-      const blocks = noteDocBlocksFromRows(rows);
-      writeFragmentBlocks(document, blocks);
-      setNoteTitle(document, input.title, input.titleSource);
-      // 下行只由这份内存文档广播，所以这句话也得从它口里说；`relayStateless` 是给
-      // pubsub 中继用的，这里就是本副本的直发。
-      document.broadcastStateless(notice);
+    await db.transaction(async (tx) => {
+      await fenceNoteCollaborationWrite(tx);
+      await connection.transact((document) => {
+        const blocks = noteDocBlocksFromRows(rows);
+        writeFragmentBlocks(document, blocks);
+        setNoteTitle(document, input.title, input.titleSource);
+        // 下行只由这份内存文档广播，所以这句话也得从它口里说；`relayStateless` 是给
+        // pubsub 中继用的，这里就是本副本的直发。
+        document.broadcastStateless(notice);
+      });
     });
   } finally {
     await disconnectAndConfirmNoteDocSaved(connection, context);

@@ -405,6 +405,18 @@ function governedPayload(
   return prepareGovernedAIPayload({ context, workspaceId, providerName, payload });
 }
 
+/** Fail closed if consent changed while a request was being prepared or queued. */
+async function ensureGovernanceUnchanged(
+  checked: Pick<AIGovernanceContext, "consentOk" | "policy">,
+  audit?: GovernedProviderAuditContext,
+): Promise<void> {
+  if (!audit?.resolveGovernance) return;
+  const current = await audit.resolveGovernance();
+  if (current.consentOk !== checked.consentOk || JSON.stringify(current.policy) !== JSON.stringify(checked.policy)) {
+    throw new AIDataPolicyDeniedError("AI consent or data policy changed while preparing the request; retry with the current settings");
+  }
+}
+
 /**
  * Enforce workspace governance at the provider boundary.  Handlers may still
  * resolve consent earlier for better UX, but every actual external call goes
@@ -434,6 +446,8 @@ function governedPayload(
  */
 export interface GovernedProviderAuditContext {
   userId: string;
+  /** Refresh consent and policy immediately before constructing each outbound request. */
+  resolveGovernance?: () => Promise<Pick<AIGovernanceContext, "consentOk" | "policy">>;
   /** The owning turn reserves every real attempt, including fallbacks and auxiliary models. */
   reserveCall?: () => Promise<void>;
   /** 能力/操作名前缀（如 "companion_agent"），与方法名合成 operation 落库。 */
@@ -621,7 +635,8 @@ export function createGovernedProvider(
       const startedAt = performance.now();
       let data: Record<string, unknown>;
       try {
-        data = governedPayload(context, workspaceId, provider.id, { messages });
+        const checked = await audit?.resolveGovernance?.() ?? context;
+        data = governedPayload(checked, workspaceId, provider.id, { messages });
         signal?.throwIfAborted();
         await checkContextPressure("chat_completion", {
           requestedOutputTokens: options.maxTokens ?? null,
@@ -629,6 +644,7 @@ export function createGovernedProvider(
         });
         signal?.throwIfAborted();
         await audit?.reserveCall?.();
+        await ensureGovernanceUnchanged(checked, audit);
       } catch (err) {
         recordCall("chat_completion", "chat", startedAt, {
           status: "blocked",
@@ -662,7 +678,8 @@ export function createGovernedProvider(
       const startedAt = performance.now();
       let data: Record<string, unknown>;
       try {
-        data = governedPayload(context, workspaceId, provider.id, {
+        const checked = await audit?.resolveGovernance?.() ?? context;
+        data = governedPayload(checked, workspaceId, provider.id, {
           messages, ...(options.nativeAgentRequest ? { request: options.nativeAgentRequest } : {}),
         });
         if (options.nativeAgentRequest) options = { ...options,
@@ -676,6 +693,7 @@ export function createGovernedProvider(
         });
         signal?.throwIfAborted();
         await audit?.reserveCall?.();
+        await ensureGovernanceUnchanged(checked, audit);
       } catch (err) {
         recordCall("chat_completion_stream", "stream", startedAt, {
           status: "blocked",
@@ -716,7 +734,8 @@ export function createGovernedProvider(
       const startedAt = performance.now();
       let data: Record<string, unknown>;
       try {
-        data = governedPayload(context, workspaceId, provider.id, { request });
+        const checked = await audit?.resolveGovernance?.() ?? context;
+        data = governedPayload(checked, workspaceId, provider.id, { request });
         signal?.throwIfAborted();
         // 工具循环的**每一个回合**都从这里出去：工具结果回来后请求被重新计量，
         // 而不是只在对话入口查一次（44 §4.3）。
@@ -726,6 +745,7 @@ export function createGovernedProvider(
         });
         signal?.throwIfAborted();
         await audit?.reserveCall?.();
+        await ensureGovernanceUnchanged(checked, audit);
       } catch (err) {
         recordCall("execute_agent_turn", "agent_turn", startedAt, {
           status: "blocked",
@@ -758,9 +778,11 @@ export function createGovernedProvider(
       const startedAt = performance.now();
       let data: Record<string, unknown>;
       try {
-        data = governedPayload(context, workspaceId, provider.id, { text });
+        const checked = await audit?.resolveGovernance?.() ?? context;
+        data = governedPayload(checked, workspaceId, provider.id, { text });
         signal?.throwIfAborted();
         await audit?.reserveCall?.();
+        await ensureGovernanceUnchanged(checked, audit);
       } catch (err) {
         recordCall("embed", "embed", startedAt, {
           status: "blocked",
@@ -830,9 +852,11 @@ export function createGovernedEmbeddingProvider(
       const startedAt = performance.now();
       let data: Record<string, unknown>;
       try {
-        data = governedPayload(context, workspaceId, provider.id, { text });
+        const checked = await audit?.resolveGovernance?.() ?? context;
+        data = governedPayload(checked, workspaceId, provider.id, { text });
         signal?.throwIfAborted();
         await audit?.reserveCall?.();
+        await ensureGovernanceUnchanged(checked, audit);
       } catch (err) {
         recordCall("embed", "embed", startedAt, {
           status: "blocked",

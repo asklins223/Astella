@@ -20,7 +20,7 @@ export async function noteAnnotationRoutes(app: FastifyInstance) {
   app.addHook("preHandler", requireSession);
   app.post("/v2/notes/:noteId/annotation-tasks", async (req, reply) => {
     reply.header("Cache-Control", "private, no-store");
-    const params = z.object({ noteId: z.string().uuid() }).safeParse(req.params);
+    const params = z.object({ noteId: z.string().guid() }).safeParse(req.params);
     const body = createNoteAnnotationTaskV1Schema.safeParse(req.body);
     if (!params.success || !body.success) return reply.code(400).send({ error: "invalid_request", message: "请从笔记正文重新选中要讲解的原句。" });
     const scope = scopeOfSession(req.session);
@@ -33,7 +33,7 @@ export async function noteAnnotationRoutes(app: FastifyInstance) {
   });
   app.get("/v2/notes/:noteId/annotation-tasks/latest", async (req, reply) => {
     reply.header("Cache-Control", "private, no-store");
-    const params = z.object({ noteId: z.string().uuid() }).safeParse(req.params);
+    const params = z.object({ noteId: z.string().guid() }).safeParse(req.params);
     const query = noteAnnotationLatestTaskQueryV1Schema.safeParse(req.query);
     if (!params.success || !query.success) return reply.code(400).send({ error: "invalid_request", message: "批注记录位置无效，请重新读取。" });
     const scope = scopeOfSession(req.session);
@@ -46,7 +46,7 @@ export async function noteAnnotationRoutes(app: FastifyInstance) {
   });
   app.get("/v2/notes/:noteId/annotation-tasks/:taskId", async (req, reply) => {
     reply.header("Cache-Control", "private, no-store");
-    const params = z.object({ noteId: z.string().uuid(), taskId: z.string().uuid() }).safeParse(req.params);
+    const params = z.object({ noteId: z.string().guid(), taskId: z.string().guid() }).safeParse(req.params);
     if (!params.success) return reply.code(400).send({ error: "invalid_request", message: "批注任务位置无效，请重新读取。" });
     const scope = scopeOfSession(req.session);
     try {
@@ -56,7 +56,7 @@ export async function noteAnnotationRoutes(app: FastifyInstance) {
       throw err;
     }
   });
-  const paramsSchema = z.object({ noteId: z.string().uuid(), annotationId: z.string().uuid().optional() });
+  const paramsSchema = z.object({ noteId: z.string().guid(), annotationId: z.string().guid().optional() });
   const base = "/v2/notes/:noteId/annotations";
   const status: Record<string, number> = {
     note_not_found: 404,

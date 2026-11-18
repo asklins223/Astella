@@ -620,7 +620,7 @@ const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/;
 const OPAQUE_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 const BASE64URL_32_BYTES_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 
-export const uuidSchema = z.string().uuid();
+export const uuidSchema = z.string().guid();
 export type Uuid = z.infer<typeof uuidSchema>;
 
 export const uuidV4Schema = uuidSchema.refine(
@@ -949,6 +949,7 @@ export const gatewayErrorCodeValues = [
   "invalid_navigation",
   "route_not_available",
   "configuration_error",
+  "local_storage_unavailable",
   "api_unavailable",
   "api_untrusted",
   "unsupported_contract",
@@ -1446,7 +1447,7 @@ const actionCapabilityShape = Object.fromEntries(
 ) as unknown as Record<ActionCapability, z.ZodTypeAny>;
 const featureAvailabilityShape = Object.fromEntries(
   featureNameValues.map((key) => [key, featureAvailabilitySchema]),
-) as unknown as Record<FeatureName, z.ZodTypeAny>;
+) as unknown as Record<FeatureName, typeof featureAvailabilitySchema>;
 
 export const capabilityProjectionSchema = z.strictObject({
   version: z.literal(1),
@@ -1810,7 +1811,7 @@ export type RenameWorkspaceResultV1 = z.infer<typeof renameWorkspaceResultV1Sche
  */
 export const dissolveWorkspaceResultV1Schema = z.strictObject({
   version: z.literal(1),
-  workspaceId: z.string().uuid(),
+  workspaceId: z.string().guid(),
   counts: z.record(z.string(), z.number().int().min(0)),
 });
 export type DissolveWorkspaceResultV1 = z.infer<typeof dissolveWorkspaceResultV1Schema>;
@@ -1822,7 +1823,7 @@ export type DissolveWorkspaceResultV1 = z.infer<typeof dissolveWorkspaceResultV1
  */
 export const dissolvePreviewResultV1Schema = z.strictObject({
   version: z.literal(1),
-  workspaceId: z.string().uuid(),
+  workspaceId: z.string().guid(),
   counts: z.strictObject({
     notes: z.number().int().min(0),
     sources: z.number().int().min(0),
@@ -1840,8 +1841,8 @@ export type DissolvePreviewResultV1 = z.infer<typeof dissolvePreviewResultV1Sche
  */
 export const transferWorkspaceOwnershipResultV1Schema = z.strictObject({
   version: z.literal(1),
-  workspaceId: z.string().uuid(),
-  newOwnerUserId: z.string().uuid(),
+  workspaceId: z.string().guid(),
+  newOwnerUserId: z.string().guid(),
 });
 export type TransferWorkspaceOwnershipResultV1 = z.infer<typeof transferWorkspaceOwnershipResultV1Schema>;
 
@@ -2072,7 +2073,7 @@ export const companionChatStreamEventV1Schema = z.strictObject({
   runId: uuidSchema.nullable(),
   generation: nonNegativeIntSchema,
   eventType: nonEmptyStringSchema,
-  payload: z.record(z.unknown()),
+  payload: z.record(z.string(), z.unknown()),
 });
 export type CompanionChatStreamEventV1 = z.infer<typeof companionChatStreamEventV1Schema>;
 
@@ -2124,7 +2125,7 @@ export const noteDocStreamEventV1Schema = z.discriminatedUnion("type", [
   z.strictObject({
     type: z.literal("presence"),
     // awareness 状态由界面自定义，这里只保证是对象；clientId 是本机 Yjs 的 client id。
-    states: z.array(z.strictObject({ clientId: z.number().int().nonnegative(), state: z.record(z.unknown()) })).max(64),
+    states: z.array(z.strictObject({ clientId: z.number().int().nonnegative(), state: z.record(z.string(), z.unknown()) })).max(64),
   }),
 ]);
 export type NoteDocStreamEventV1 = z.infer<typeof noteDocStreamEventV1Schema>;

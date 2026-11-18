@@ -8,21 +8,21 @@ export const agentOperationStatusV1Schema = z.enum([
   "accepted", "running", "succeeded", "failed", "cancelled", "outcome_unknown",
 ]);
 export const agentScopeV1Schema = z.object({
-  workspaceId: z.string().uuid(), userId: z.string().uuid(),
+  workspaceId: z.string().guid(), userId: z.string().guid(),
 }).strict();
 export const agentMemoryContextSourceV1Schema = z.object({
-  memoryId: z.string().uuid(), revision: z.number().int().positive(),
+  memoryId: z.string().guid(), revision: z.number().int().positive(),
 }).strict();
 export type AgentMemoryContextSourceV1 = z.infer<typeof agentMemoryContextSourceV1Schema>;
 export const agentInputRefV1Schema = z.object({
-  kind: z.literal("note_version"), noteId: z.string().uuid(), noteVersionId: z.string().uuid(),
+  kind: z.literal("note_version"), noteId: z.string().guid(), noteVersionId: z.string().guid(),
 }).strict();
-export const agentLongGoalRefV1Schema = z.object({ memoryId:z.string().uuid(),revision:z.number().int().positive() }).strict();
+export const agentLongGoalRefV1Schema = z.object({ memoryId:z.string().guid(),revision:z.number().int().positive() }).strict();
 
 /** Current-turn attention is an interpretation, never a grant to execute. */
 export const agentAttentionObjectV1Schema = z.object({
   kind: z.enum(["note", "note_version", "card", "agent_run", "memory"]),
-  id: z.string().uuid(), revision: z.number().int().positive().optional(), versionId: z.string().uuid().optional(),
+  id: z.string().guid(), revision: z.number().int().positive().optional(), versionId: z.string().guid().optional(),
 }).strict();
 export type AgentAttentionObjectV1 = z.infer<typeof agentAttentionObjectV1Schema>;
 export const agentPersistentVoicePreferenceV1Schema = z.object({
@@ -132,23 +132,23 @@ export const agentGoalDeliveryV1Schema = z.object({
 export type AgentGoalDeliveryV1 = z.infer<typeof agentGoalDeliveryV1Schema>;
 
 /** Plan 57: operations and saved note artifacts use the current job chain. */
-export const agentExecutionRefV1Schema = z.object({ kind: z.literal("job"), id: z.string().uuid() }).strict();
+export const agentExecutionRefV1Schema = z.object({ kind: z.literal("job"), id: z.string().guid() }).strict();
 export type AgentExecutionRefV1 = z.infer<typeof agentExecutionRefV1Schema>;
 
 /** Saved note artifacts carry the identity of their current job. */
 export const agentArtifactRefV1Schema = z.discriminatedUnion("kind", [
-  z.object({kind:z.literal("note_mind_map"),id:z.string().uuid(),jobId:z.string().uuid(),noteId:z.string().uuid(),noteVersionId:z.string().uuid()}).strict(),
+  z.object({kind:z.literal("note_mind_map"),id:z.string().guid(),jobId:z.string().guid(),noteId:z.string().guid(),noteVersionId:z.string().guid()}).strict(),
   z.object({
     kind: z.literal("note_overview"),
-    id: z.string().uuid(), jobId: z.string().uuid(), noteId: z.string().uuid(), noteVersionId: z.string().uuid(),
+    id: z.string().guid(), jobId: z.string().guid(), noteId: z.string().guid(), noteVersionId: z.string().guid(),
   }).strict(),
   z.object({
     kind: z.literal("note_dynamic_artifact"),
-    id: z.string().uuid(), jobId: z.string().uuid(), noteId: z.string().uuid(), noteVersionId: z.string().uuid(),
+    id: z.string().guid(), jobId: z.string().guid(), noteId: z.string().guid(), noteVersionId: z.string().guid(),
   }).strict(),
   z.object({
     kind: z.literal("note_expansion"),
-    id: z.string().uuid(), jobId: z.string().uuid(), noteId: z.string().uuid(), noteVersionId: z.string().uuid(),
+    id: z.string().guid(), jobId: z.string().guid(), noteId: z.string().guid(), noteVersionId: z.string().guid(),
   }).strict(),
 ]);
 
@@ -179,7 +179,7 @@ export function agentOperationResultMatchesExecutionV1(
 }
 
 export const agentOperationV1Schema = z.object({
-  operationId: z.string().uuid(), runId: z.string().uuid(), revision: z.number().int().positive(),
+  operationId: z.string().guid(), runId: z.string().guid(), revision: z.number().int().positive(),
   scope: agentScopeV1Schema, capability: z.string().min(1).max(100),
   execution: agentExecutionRefV1Schema,
   status: agentOperationStatusV1Schema, lastEventSeq: z.number().int().nonnegative(),
@@ -192,16 +192,16 @@ export const agentOperationV1Schema = z.object({
   }
 });
 export const agentOperationEventV1Schema = z.object({
-  operationId: z.string().uuid(), runId: z.string().uuid(), revision: z.number().int().positive(),
+  operationId: z.string().guid(), runId: z.string().guid(), revision: z.number().int().positive(),
   scope: agentScopeV1Schema, execution: agentExecutionRefV1Schema, seq: z.number().int().positive(),
   status: agentOperationStatusV1Schema,
   result: agentOperationResultV1Schema.nullable(), error: z.string().max(1000).nullable(),
   authoritative: z.boolean(),
 }).strict();
 export const agentRunV1Schema = z.object({
-  version: z.literal(1), runId: z.string().uuid(), identityId: z.string().uuid(),
+  version: z.literal(1), runId: z.string().guid(), identityId: z.string().guid(),
   revision: z.number().int().positive(), goal: z.string().min(1).max(8000),
-  status: agentRunStatusV1Schema, conversationId: z.string().uuid().nullable(),
+  status: agentRunStatusV1Schema, conversationId: z.string().guid().nullable(),
   inputs: z.array(agentInputRefV1Schema).max(20),
   longGoal:agentLongGoalRefV1Schema.nullable().optional(),
   // A run's own trajectory is never capped here: the operations and artifacts it
@@ -227,16 +227,16 @@ export const AGENT_RUN_LIST_MAX_LIMIT = 50;
  */
 export const agentRunListCursorV1Schema = z.object({
   version: z.literal(1),
-  workspaceId: z.string().uuid(),
-  userId: z.string().uuid(),
+  workspaceId: z.string().guid(),
+  userId: z.string().guid(),
   updatedAt: z.string().datetime(),
-  runId: z.string().uuid(),
-  longGoalMemoryId: z.string().uuid().optional(),
+  runId: z.string().guid(),
+  longGoalMemoryId: z.string().guid().optional(),
 }).strict();
 export const agentRunListQueryV1Schema = z.object({
   limit: z.coerce.number().int().min(1).max(AGENT_RUN_LIST_MAX_LIMIT).optional().default(AGENT_RUN_LIST_DEFAULT_LIMIT),
   cursor: z.string().min(1).max(512).optional(),
-  longGoalMemoryId: z.string().uuid().optional(),
+  longGoalMemoryId: z.string().guid().optional(),
 }).strict();
 export const agentRunListV1Schema = z.object({
   version: z.literal(1),
@@ -245,8 +245,8 @@ export const agentRunListV1Schema = z.object({
   nextCursor: z.string().min(1).max(512).nullable(),
 }).strict();
 export const createAgentRunV1Schema = z.object({
-  requestId: z.string().uuid(), goal: z.string().trim().min(1).max(8000),
-  conversationId: z.string().uuid().optional(), inputs: z.array(agentInputRefV1Schema).max(20).default([]),
+  requestId: z.string().guid(), goal: z.string().trim().min(1).max(8000),
+  conversationId: z.string().guid().optional(), inputs: z.array(agentInputRefV1Schema).max(20).default([]),
   longGoal:agentLongGoalRefV1Schema.optional(),
 }).strict();
 export const reviseAgentRunV1Schema = z.object({
@@ -266,9 +266,9 @@ export const AGENT_RUN_HISTORY_DEFAULT_LIMIT = 20;
 export const AGENT_RUN_HISTORY_MAX_LIMIT = 50;
 
 export const agentRunRevisionV1Schema = z.object({
-  version: z.literal(1), runId: z.string().uuid(), revision: z.number().int().positive(),
+  version: z.literal(1), runId: z.string().guid(), revision: z.number().int().positive(),
   goal: z.string().min(1).max(8000), status: agentRunStatusV1Schema,
-  conversationId: z.string().uuid().nullable(),
+  conversationId: z.string().guid().nullable(),
   inputs: z.array(agentInputRefV1Schema).max(20),
   longGoal:agentLongGoalRefV1Schema.nullable().optional(),
   operations: z.array(agentOperationV1Schema),
@@ -294,7 +294,7 @@ export const agentRunHistoryQueryV1Schema = z.object({
 }).strict();
 
 export const agentRunHistoryV1Schema = z.object({
-  version: z.literal(1), runId: z.string().uuid(), currentRevision: z.number().int().positive(),
+  version: z.literal(1), runId: z.string().guid(), currentRevision: z.number().int().positive(),
   // 按 revision 倒序；第一页的第一项是当前版，之后的页只含更早的存档。
   items: z.array(agentRunRevisionV1Schema).max(AGENT_RUN_HISTORY_MAX_LIMIT),
   nextBeforeRevision: z.number().int().positive().nullable(),

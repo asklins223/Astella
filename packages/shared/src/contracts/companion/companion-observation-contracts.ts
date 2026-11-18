@@ -22,7 +22,7 @@
  */
 import { z } from "zod";
 
-const uuidSchema = z.string().uuid();
+const uuidSchema = z.string().guid();
 const isoTimestampSchema = z.string().datetime();
 
 /** 这条观察要被拿去干什么。首批只投到"当前上下文线索"这一档。 */

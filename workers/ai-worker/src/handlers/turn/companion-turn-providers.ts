@@ -1,5 +1,6 @@
 import {
   createGovernedProvider,
+  resolveAIGovernanceContext,
   resolveProviderForTask,
   type AIGovernanceContext,
   type GovernedProviderAuditContext,
@@ -39,15 +40,18 @@ export function resolveCompanionTurnProviders(input: {
   // AI P0-8（2026-09-15 审计）：ai_audit_log 的唯一写入口 logAICall —— 此前全仓零
   // 生产调用，而 DEFAULT_AI_DATA_POLICY.auditLogging 默认为 true，等于审计/成本
   // 记录完全空转。只写元数据，不写内容。`ctx.id` 是 jobs 行，不是 run id。
-  const audit = (operation: string): GovernedProviderAuditContext => ({
+  const audit = (operation: string, providerName: string): GovernedProviderAuditContext => ({
     userId: read.userId, operation, jobId: ctx.id, reserveCall,
+    ...(providerName.toLowerCase() === "mock" ? {} : {
+      resolveGovernance: () => resolveAIGovernanceContext(ctx.workspaceId, read.userId),
+    }),
     dataCategories: ["user_answer", "note_content"],
   });
   return {
     textProvider,
     provider: createGovernedProvider(
       createProvider(textProvider.providerName, { ...textProvider.providerConfig, sessionId: read.conversationId }),
-      governance, ctx.workspaceId, audit("companion_agent"), contextGate,
+      governance, ctx.workspaceId, audit("companion_agent", textProvider.providerName), contextGate,
     ),
     fallbackProvider: governance.companionFallbackProviderName && governance.companionFallbackProviderConfig
       ? createGovernedProvider(
@@ -55,7 +59,7 @@ export function resolveCompanionTurnProviders(input: {
           governance.companionFallbackProviderName,
           { ...governance.companionFallbackProviderConfig, sessionId: read.conversationId },
         ),
-        governance, ctx.workspaceId, audit("companion_agent_fallback"), contextGate,
+        governance, ctx.workspaceId, audit("companion_agent_fallback", governance.companionFallbackProviderName), contextGate,
       )
       : undefined,
   };

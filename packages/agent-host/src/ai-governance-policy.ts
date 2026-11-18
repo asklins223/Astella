@@ -160,20 +160,26 @@ export function detectAndSanitizePII(text: string): PIIDetectionResult {
 }
 
 /**
- * N-011: 对对象中的所有字符串值进行 PII 脱敏。
- * 递归遍历对象，对所有字符串字段进行 PII 检测和脱敏。
+ * Sanitize text without corrupting wire-format values. Image data is opaque:
+ * this check does not inspect pixels for PII. Structural URLs/domains cannot
+ * safely be rewritten, so reject them if the text detector finds PII instead.
  */
 export function sanitizePIIInObject<T>(obj: T): { data: T; detectedTypes: string[] } {
   const allDetectedTypes = new Set<string>();
 
-  function sanitizeValue(value: unknown): unknown {
+  const structuralKeys = new Set(["url", "image_url", "imageUrl", "search_domain_filter", "include_domains"]);
+  function sanitizeValue(value: unknown, structural = false): unknown {
     if (typeof value === "string") {
+      if (structural && value.startsWith("data:image/")) return value;
       const result = detectAndSanitizePII(value);
+      if (structural && result.hasPII) {
+        throw new AIDataPolicyDeniedError("结构化地址包含敏感信息，无法在保持地址不变的同时脱敏。");
+      }
       for (const t of result.detectedTypes) allDetectedTypes.add(t);
       return result.sanitizedText;
     }
     if (Array.isArray(value)) {
-      return value.map(sanitizeValue);
+      return value.map((item) => sanitizeValue(item, structural));
     }
     if (value !== null && typeof value === "object") {
       // QUAL-07 fix: Preserve Date instances and other non-plain objects.
@@ -184,7 +190,7 @@ export function sanitizePIIInObject<T>(obj: T): { data: T; detectedTypes: string
       }
       const result: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(value)) {
-        result[k] = sanitizeValue(v);
+        result[k] = sanitizeValue(v, structural || structuralKeys.has(k));
       }
       return result;
     }

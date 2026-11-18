@@ -196,10 +196,10 @@ hijack 之后的响应**不经过 `onSend`**，所以全局安全头不适用，
 | 端点 | 语义 |
 | --- | --- |
 | `GET /health` | 存活探针：只证明进程和事件循环能回 HTTP，不碰数据库——依赖抖动不该让编排器杀掉一个本来健康的 API |
-| `GET /ready` | `SELECT 1` + 查 `information_schema.tables` 比对一组核心表名（`users`、`workspaces`、`notes`、`jobs`、`sessions`、`learning_runs`、`learning_run_private_contracts`、`learning_tasks`、`learning_task_variants`）+ 取 `drizzle.__drizzle_migrations` 的 `max(created_at)` 与 `MIN_READY_MIGRATION_CREATED_AT` 比较；任一不满足回 503 并带上缺口 |
+| `GET /ready` | 检查数据库连通性、用户、工作区、笔记、来源、作业、会话和学习卡的核心表，以及当前版本的迁移标记。任一检查失败返回 HTTP 503。 |
 | `GET /metrics` | Prometheus 文本，**刻意不鉴权**——边界在网络策略（只让抓取方 reachable），不在应用层加一道"抓 metrics 要令牌" |
 
-就绪那条形如"迁移完成度"的检查其实是**时间戳下限**：它只证明已应用迁移的最大 `created_at`（journal 的 `when`）不小于门槛，不证明每一条迁移都跑过；门槛默认 `1786683800000`，需要随版本上调，忘了调就会让"只有早期核心表"的库报 ready。这条口径写在这里，是因为它很容易被误读成 schema 校验。
+API 要求迁移记录中存在当前版本迁移日志末条记录的确切时间戳。通过 `MIN_READY_MIGRATION_CREATED_AT` 可提高最大迁移时间戳的门槛。迁移程序执行前会逐条核对 SQL 文件的哈希记录。
 
 值得知道的 `astella_*` 指标族（完整清单在 `lib/metrics.ts`）：
 

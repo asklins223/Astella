@@ -34,6 +34,62 @@ Initialization runs **role-bootstrap → migrate → role-grants → API/Worker*
 
 Production learning, card and voice defaults differ from development. Follow executable Compose environment and `verify-companion-capability-config.mjs`; an unforwarded `.env` value does not establish availability.
 
+Deploy one API replica per database. Collaboration documents live in that process. A PostgreSQL leader lock rejects a second API process on the same database, and in-flight edits hold a shared lock through broadcasting during handover. Concurrent active replicas would require a shared document protocol and validation across database failovers.
+
+## Retire legacy password hashes
+
+New and explicitly changed or email-reset passwords use scrypt. Existing bcrypt
+hashes cannot establish the full original password beyond 72 bytes. A matching
+short candidate is not reliable proof of the original either, because bcrypt
+can also match a longer NUL-containing input. The server therefore never
+silently rewrites a legacy hash on password login.
+
+The default `AUTH_LEGACY_PASSWORD_POLICY=allow` preserves existing access but
+continues to accept bcrypt's legacy equivalences. To remove that exposure:
+
+1. Use the deployment's Compose files and environment to count the affected
+   accounts and their session rows. The command requires a migrator role with
+   `BYPASSRLS` and reports aggregate counts.
+
+   ```bash
+   docker compose run --rm --no-deps migrate npm run db:legacy-password-sessions
+   ```
+
+2. Configure an outbound email provider and check its TLS and authentication
+   with the deployed API environment. The command reports each provider and
+   succeeds when at least one authenticates.
+
+   ```bash
+   docker compose run --rm --no-deps api npm run email:verify-smtp
+   ```
+
+   Complete an email password reset with a controlled test account to verify
+   delivery and mailbox access separately. Arrange a support
+   recovery process for users who cannot access their registered mailbox.
+   Notify users that the existing “Forgot password” flow sets a new password.
+3. Set `AUTH_LEGACY_PASSWORD_POLICY=require_reset` and restart the API. Startup
+   rejects this mode when no email channel is configured. In this mode all
+   bcrypt password logins fail with the normal generic login error; scrypt
+   logins and email-code logins continue working. An already authenticated user
+   may instead change the password in account settings. Password changes and
+   email resets revoke that user's sessions.
+4. After every API instance enforces the new policy and requests from the
+   previous version have finished, revoke sessions that belong to accounts still
+   using bcrypt. This also signs those users out of sessions created through
+   email codes. They can sign in again through email recovery.
+
+   ```bash
+   docker compose run --rm --no-deps migrate npm run db:legacy-password-sessions -- --revoke
+   ```
+
+   Recount to track how many accounts still need a new password. Existing
+   collaboration sockets observe database revocation on their next message or
+   periodic session check.
+
+Do not enable forced reset until a workable recovery route exists. Setting the
+policy back to `allow` restores access for legacy accounts, but also restores
+the legacy bcrypt risk; document and monitor any rollback.
+
 ## Unified versions and publication
 
 `release/version.json` (server) and `apps/desktop-client/version.json` (desktop) each maintain `version` and `notes`. After a one-time root `npm ci`:
@@ -53,7 +109,7 @@ Commit prepared changes and use an annotated `v<version>` tag. Passing server CI
 | Windows | `package:win:x64`, independent .NET / WPF installer | Covered |
 | Linux | `package:linux:x64`, AppImage | Separate packaging; not in current unified release workflow |
 
-Packaging uses `electron-builder.config.cjs` plus YAML. Assets use ASCII `astella-`; updates go directly to GitHub Releases and do not depend on API health. Without an Apple certificate, ad-hoc signing may require first-launch authorization. Valid signatures do not accept actual cross-version replacement.
+Packaging uses `electron-builder.config.cjs` plus YAML. Assets use ASCII `astella-`; updates go directly to GitHub Releases and do not depend on API health. Public desktop tags require the repository Actions secrets `WIN_CSC_LINK`, `MAC_CSC_LINK`, `APPLE_ID`, `APPLE_TEAM_ID` and `APPLE_APP_SPECIFIC_PASSWORD`. Set `WIN_CSC_KEY_PASSWORD` and `MAC_CSC_KEY_PASSWORD` when the certificate files are password protected. The workflow checks the built installers and macOS notarization before publishing. Verify cross-version installation on both platforms in a release rehearsal.
 
 `make release-check` covers release inputs, verify, coverage and manifest checks; run skip/todo separately. Existing RC manifest tools do not automatically receive tag-deployment image digests. Placeholder fields are not evidence. See [Testing and quality](testing-and-quality.md).
 
@@ -93,7 +149,45 @@ It permanently deletes the development database and restarts. MinIO and ordinary
 
 `infra/postgres/roles.sql` grants ownership/DDL and BYPASSRLS to migrator. API/Worker have no DDL and use NOBYPASSRLS plus verified actor/workspace transactions. Migration GRANT statements do not replace post-migration grants.
 
+### Workspace foreign keys after migration 0472
+
+Migration 0472 enforces its five workspace foreign keys for new writes. If existing rows refer to missing workspaces, it preserves them and leaves the affected constraints `NOT VALID`. Check the actual deployment after migration, using the same Compose files and environment as the deployment:
+
+```bash
+docker compose run --rm --no-deps migrate npm run db:check-workspace-fks
+```
+
+The check requires the configured `DATABASE_URL_MIGRATOR` role to have `BYPASSRLS` (or be a superuser), so row-level security cannot hide orphans. It reports counts and validation state, without printing row contents. It exits nonzero when any constraint is missing, incorrectly defined, unvalidated, or has orphans. It never deletes rows. For each reported table, the data owner must inspect and reconcile its rows against a verified backup; for example, the following query identifies the affected workspace IDs for `companion_reflections`:
+
+```sql
+SELECT t.workspace_id, count(*) FROM public.companion_reflections t
+LEFT JOIN public.workspaces w ON w.id = t.workspace_id
+WHERE t.workspace_id IS NOT NULL AND w.id IS NULL
+GROUP BY t.workspace_id;
+```
+
+Treat those IDs as sensitive and choose recovery for each table based on its data; do not delete them merely to make a check pass. After **all** reported orphans are reconciled, explicitly validate all remaining constraints in one transaction and repeat the read-only check:
+
+```bash
+docker compose run --rm --no-deps migrate npm run db:check-workspace-fks -- --validate
+docker compose run --rm --no-deps migrate npm run db:check-workspace-fks
+```
+
+Validation scans existing tables and can wait on locks; schedule it according to table size and operational requirements. A concurrent database error rolls back the validation transaction. The tool cannot determine whether a business-specific recovery was correct, so verify restored records separately.
+
 ## Monitoring and admin
+
+The deployment Nginx writes privacy-limited JSON access records to its container log for the API and standby object-store proxy. To summarize completed requests by bounded route group over the past hour, run with the same Compose files and environment used by the deployment, and the script from this checkout:
+
+```bash
+docker compose logs --no-log-prefix --since 1h nginx | python3 infra/deploy/traffic-summary.py
+```
+
+Pass the correct `-f` files or Compose project options for the installation. Records contain no raw path, query, user identifier, or token. `request_bytes` includes the request line, headers, and bytes received; `response_body_bytes` is the transmitted response body after compression; `response_bytes` also includes HTTP response headers, but neither includes TLS overhead. Streams and WebSockets appear only when their request closes, so this is not a live rate or complete account of open connections. Direct transfers to the external primary object store bypass this proxy; the `storage_backup` group covers the local standby proxy. Use host network counters for total ingress and egress, including model-provider and other traffic.
+
+Nginx emits one record per completed request. Check the host's Docker logging driver and rotation settings with `docker inspect`; this Compose file does not set its own limits. `--since` cannot recover rotated logs. Ship the records to a collector if the retained window is too short for capacity analysis, and reserve disk space for the chosen retention.
+
+The worker already exposes `astella_job_oldest_pending_age_seconds` and queue depth; API and worker default process metrics include resident memory. Alpha's Prometheus setup does not establish that production scrapes or retains these metrics. Restrict `/metrics` to trusted networks and configure collection and alert delivery before relying on them. For a peak over a test, take repeated RSS and network-counter samples throughout the run, not just before and after.
 
 Alpha Prometheus scrapes API, Worker, backup sidecar and itself. Alertmanager currently sends webhooks only to sidecar logs, without paging/email receivers. Check rule metric producers: some provider-error/search-drift rules lack production metrics. Silence is not proof of health.
 

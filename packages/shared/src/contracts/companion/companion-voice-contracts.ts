@@ -104,8 +104,8 @@ export type CompanionVoiceSpeakChunkEventV1 = z.infer<typeof companionVoiceSpeak
  */
 export const companionVoiceSpeakSegmentRequestV2Schema = z.strictObject({
   version: z.literal(2),
-  conversationId: z.string().uuid(),
-  runId: z.string().uuid(),
+  conversationId: z.string().guid(),
+  runId: z.string().guid(),
   generation: z.number().int().positive(),
   ordinal: z.number().int().min(1).max(200),
   segmentId: z.string().regex(/^[a-f0-9]{64}$/),
@@ -126,9 +126,9 @@ export type CompanionVoiceSpeakSegmentRequestV2 = z.infer<typeof companionVoiceS
  */
 export const companionRunVoiceSegmentsResultV1Schema = z.strictObject({
   version: z.literal(1),
-  runId: z.string().uuid(),
+  runId: z.string().guid(),
   /** 与 `generation` 同源：这一轮没有留档时两个都是 null。 */
-  conversationId: z.string().uuid().nullable(),
+  conversationId: z.string().guid().nullable(),
   /** 没有留档时是 null（`items` 也必为空）——"这一轮没有可补的音频"是正常结论，不是错误。 */
   generation: z.number().int().positive().nullable(),
   items: z.array(z.strictObject({
@@ -138,7 +138,7 @@ export const companionRunVoiceSegmentsResultV1Schema = z.strictObject({
     displayStart: z.number().int().nonnegative(),
     displayEnd: z.number().int().nonnegative(),
     /** 这条音频属于哪一条助手消息；旧留档没有时省略，客户端据此分辨消息边界。 */
-    messageId: z.string().uuid().optional(),
+    messageId: z.string().guid().optional(),
     cue: z.unknown(),
   })).max(200),
 });
@@ -149,24 +149,24 @@ export const companionRunVoiceSegmentsRequestV1Schema = z.strictObject({
   // 只带 runId：会话身份由服务端从这一轮本身取（`companion_stream_events.conversation_id`）。
   // 原来要求客户端传 conversationId，而**连续对话历史按产品层不暴露 conversation**，
   // 于是伴星中心与手记那两处根本没有 conversationId 可传——入口给了也永远取不到。
-  runId: z.string().uuid(),
+  runId: z.string().guid(),
 });
 export type CompanionRunVoiceSegmentsRequestV1 = z.infer<typeof companionRunVoiceSegmentsRequestV1Schema>;
 
 /** 本机原声按回复身份保留，分段不单独占用消息额度，回听不产生合成请求。 */
 export const COMPANION_MESSAGE_AUDIO_LIMIT = 100;
 export const companionCachedVoiceListRequestV1Schema = z.strictObject({
-  runIds: z.array(z.string().uuid()).max(COMPANION_MESSAGE_AUDIO_LIMIT),
+  runIds: z.array(z.string().guid()).max(COMPANION_MESSAGE_AUDIO_LIMIT),
 });
 export const companionCachedVoiceListResultV1Schema = z.strictObject({
   version: z.literal(1),
   items: z.array(z.strictObject({
-    runId: z.string().uuid(),
+    runId: z.string().guid(),
     ordinals: z.array(z.number().int().min(1).max(200)).min(1).max(200),
   })).max(COMPANION_MESSAGE_AUDIO_LIMIT),
 });
 export const companionCachedVoiceReadRequestV1Schema = z.strictObject({
-  runId: z.string().uuid(),
+  runId: z.string().guid(),
   ordinal: z.number().int().min(1).max(200),
 });
 export type CompanionCachedVoiceListResultV1 = z.infer<typeof companionCachedVoiceListResultV1Schema>;
@@ -209,8 +209,8 @@ export const COMPANION_TTS_PLAYBACK_REASON_TO_OUTCOME: Record<
 
 export const companionVoicePlaybackOutcomeRequestV1Schema = z.strictObject({
   version: z.literal(1),
-  conversationId: z.string().uuid(),
-  runId: z.string().uuid(),
+  conversationId: z.string().guid(),
+  runId: z.string().guid(),
   generation: z.number().int().positive(),
   ordinal: z.number().int().min(1).max(200),
   segmentId: z.string().regex(/^[a-f0-9]{64}$/),

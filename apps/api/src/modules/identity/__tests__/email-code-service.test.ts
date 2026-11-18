@@ -39,10 +39,10 @@ function stub(row: Row | null) {
       }),
     }),
     delete: () => ({
-      where: async () => {
+      where: () => ({ returning: async () => {
         calls.deleted += 1;
-        return [];
-      },
+        return row ? [{ id: row.id }] : [];
+      } }),
     }),
     update: () => ({
       set: (values: Record<string, unknown>) => ({
@@ -89,7 +89,7 @@ test("错码：返回 invalid 且 attempts +1，行留着继续试", async () =>
   });
   const result = await verifyEmailCode(NORMALIZED, "login", "000000", database);
   assert.deepEqual(result, { ok: false, error: "invalid" });
-  assert.equal(calls.updated?.attempts, 3);
+  assert.ok(calls.updated?.attempts, "wrong attempts must be updated by the database");
   assert.equal(calls.deleted, 0, "没到上限不该作废整枚码");
 });
 

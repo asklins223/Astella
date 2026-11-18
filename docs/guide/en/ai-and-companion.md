@@ -52,7 +52,7 @@ On SIGTERM/SIGINT the worker stops claiming, first returns any in-flight V2 outb
 
 The metrics server listens on `WORKER_METRICS_PORT`, default 9100, and exposes `/metrics` and `/ready`. `/ready` is a real dependency probe (`SELECT 1`); when no probe is wired it fails closed with 503. Queue depth and oldest-pending age refresh every 5 seconds from `astella_queue_job_depth()` / `astella_queue_oldest_pending_age()`. The DSN comes from `DATABASE_URL_WORKER`, which is required — and throws when missing — under `NODE_ENV=production`.
 
-The image `workers/ai-worker/Dockerfile` builds on `node:22.11.0-alpine3.20`; the prod stage bundles to `dist/index.cjs` with esbuild, runs as `USER node`, and `EXPOSE 9100`.
+The Worker Dockerfile pins a Node 22 Alpine image. The production stage uses esbuild to create `dist/index.cjs`, runs as `USER node` and exposes port 9100.
 
 ## Job type inventory
 

@@ -248,6 +248,11 @@ BEGIN
   IF to_regprocedure('public.astella_purge_expired_object_transfers()') IS NOT NULL THEN
     ALTER FUNCTION public.astella_purge_expired_object_transfers() OWNER TO astella_migrator;
   END IF;
+  -- Forward migrations must be able to repair the admin function on databases
+  -- originally bootstrapped by the superuser as well as fresh installations.
+  IF to_regprocedure('public.astella_admin_platform_counts()') IS NOT NULL THEN
+    ALTER FUNCTION public.astella_admin_platform_counts() OWNER TO astella_migrator;
+  END IF;
   -- Chat retention maintenance functions must bypass actor RLS only as this fixed role.
   FOR obj IN SELECT p.oid::regprocedure AS signature FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
     WHERE n.nspname='public' AND p.proname = ANY(ARRAY[

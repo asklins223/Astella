@@ -43,7 +43,8 @@ const GUARD_TOKENS = [
  *
  * - `note/maintenance.ts`、`scripts/cleanup-soft-deleted-notes.ts`：定时物理清理，
  *   跨所有用户跑。带上按人判据反而会把已过期的私有笔记永久留在库里。
- * - `search/service.ts` 的前 3 处：`reindexWorkspaceSearch` 建索引与漂移检测。索引是
+ * - `search/service.ts` 的 5 处：`reindexWorkspaceSearch` 分页、行锁、投影、孤儿清理
+ *   与漂移检测。索引是
  *   全空间共用的一份数据，按某个人裁等于把他的视角烧进共用数据（下一次 owner 重索引，
  *   私有笔记连作者自己都搜不到）。发不发结果由查询侧那次 join 判，那一处有守卫。
  *   数字对不上时会红，改这里必须同步看 `search()` 里的那一次 join 还在不在。
@@ -58,8 +59,9 @@ const SYSTEM_LEVEL_READS: Record<string, number> = {
   // 定时清理与 CLI：跨所有用户跑，带上按人判据会把已过期的私有笔记永久留在库里。
   "modules/note/maintenance.ts": 1,
   "scripts/cleanup-soft-deleted-notes.ts": 1,
-  // 建索引、索引清理与漂移检测三处：索引是全空间共用的一份，见 `search()` 里的 join。
-  "modules/search/service.ts": 3,
+  // 分页取 ID、父行锁、SQL 聚合、孤儿清理与系统漂移检测：全空间共用索引；
+  // 用户查询及 drift / auto-fix 输出按 viewer 过滤，修复判定仍使用全空间数据。
+  "modules/search/service.ts": 5,
   // `onAuthenticate` 按 `shareScope` + 空间拒连接，那是比"按人可见"更强的要求。
   "modules/note/collaboration.ts": 1,
   // 受保护的写路径已验权；这里只取旧标题作变更比较，不返回或投影旧标题。

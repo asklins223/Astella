@@ -1,14 +1,11 @@
 /*
- * 验收：登录态跨进程保持，且全程不需要任何系统授权交互（2026-10-09）。
+ * 验收：系统安全存储可用且已授权时，登录态能够跨进程恢复。
  *
- * 这是把凭据从 Electron `safeStorage`（macOS 走钥匙串）换成 userData 下的 0600
- * 本地文件之后，用户要的那句话的直接检验：
+ * 首次使用时操作系统可能要求用户授权；本探针不能代替该交互的人工验收。
  *
- * 1. 构建出来的主进程产物里不再有 safeStorage 调用（弹窗的唯一来源）。
+ * 1. 构建出来的主进程产物使用 safeStorage 加密。
  * 2. 全新 profile 登录一次 → 凭据文件出现、权限 0600、`credentialPersistence` 报 `local_file`。
  * 3. 关掉进程再用同一个 profile 启动 → 不再碰表单就回到已登录状态。
- *
- * 三步都跑在无人值守的脚本里：任何一次需要人点「允许」，第 3 步就回不到已登录。
  *
  * 用法：npm run build && node scripts/check-session-remembered-without-prompt.mjs
  *   ASTELLA_PROBE_EMAIL / ASTELLA_PROBE_PASSWORD 覆盖探测账号。
@@ -34,8 +31,8 @@ const email = process.env.ASTELLA_PROBE_EMAIL ?? 'companion-probe@astella.local'
 const password = process.env.ASTELLA_PROBE_PASSWORD ?? 'probe-c37bpcz4'
 
 const mainBundle = readFileSync(resolve(appRoot, 'out/main/index.js'), 'utf8')
-check(!mainBundle.includes('isEncryptionAvailable'), '主进程产物里没有 safeStorage 可用性探测')
-check(!mainBundle.includes('encryptString') && !mainBundle.includes('decryptString'), '主进程产物里没有加解密调用')
+check(mainBundle.includes('isEncryptionAvailable'), '主进程产物检查安全存储可用性')
+check(mainBundle.includes('encryptString') && mainBundle.includes('decryptString'), '主进程产物使用安全存储加解密')
 check(mainBundle.includes(credentialName), '主进程产物按新文件名保存凭据', credentialName)
 
 const profile = mkdtempSync(join(tmpdir(), 'astella-session-check-'))
@@ -85,6 +82,7 @@ try {
   check(afterSignIn.persistence === 'local_file', '运行时把持久化报成 local_file', afterSignIn.persistence)
   const written = readFileSync(credentialPath, 'utf8')
   check(!written.includes(password), '落盘的凭据里没有密码本身', `长度 ${written.trim().length}`)
+  check(written.startsWith('astella-safe-storage-v1:'), '凭据使用安全存储密文格式')
 } finally {
   await app.close().catch(() => {})
 }

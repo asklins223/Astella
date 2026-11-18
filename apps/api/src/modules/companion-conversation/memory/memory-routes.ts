@@ -92,7 +92,7 @@ export function memoryGlobalScopeRejection(error: MemoryGlobalScopeRejectedError
   };
 }
 
-const memoryParamsSchema = z.object({ id: z.string().uuid() });
+const memoryParamsSchema = z.object({ id: z.string().guid() });
 
 /** 在排队前反馈不可执行的原因，避免用户收到“已开始”后任务才因权限失败。 */
 async function canQueueMemoryAi(scope: { workspaceId: string; userId: string }, reply: FastifyReply): Promise<boolean> {
@@ -150,7 +150,7 @@ const listQuerySchema = z.object({
   offset: z.coerce.number().int().min(0).optional().default(0),
   kinds: z.string().regex(/^(preference|goal|learning_context|interaction_note|episodic|judgment)(,(preference|goal|learning_context|interaction_note|episodic|judgment))*$/).optional(),
   state: z.enum(["active", "candidate", "pinned", "disputed", "archived", "ignored", "superseded"]).optional(),
-  focusMemoryId: z.string().uuid().optional(),
+  focusMemoryId: z.string().guid().optional(),
   kind: memoryKindSchema.optional(),
   q: z.string().min(1).max(200).optional(),
   scope: z.enum(["global", "workspace", "task"]).optional(),
@@ -163,7 +163,7 @@ const createMemoryBodySchema = z.object({
   // §9.4/§25：写入端统一限制 ≤200 字。
   content: z.string().min(1).max(200),
   sourceEventId: z.string().min(1).max(240).optional(),
-  sourceSessionId: z.string().uuid().optional(),
+  sourceSessionId: z.string().guid().optional(),
   importance: z.number().min(0).max(1).optional(),
   confidence: z.number().min(0).max(1).optional(),
   scope: z.enum(["global", "workspace", "task"]).optional(),
@@ -239,7 +239,7 @@ export async function memoryRoutes(app: FastifyInstance) {
     "/companion/conversations/:id/summarize",
     { preHandler: [requireSession] },
     async (req, reply) => {
-      const params = z.object({ id: z.string().uuid() }).safeParse(req.params);
+      const params = z.object({ id: z.string().guid() }).safeParse(req.params);
       if (!params.success) throw app.httpErrors.badRequest("conversationId 非法");
       if (process.env.COMPANION_SUMMARIZER_V1 !== "true") {
         return reply.code(404).send({ error: "companion_summarizer_disabled", message: "会话摘要当前未开放" });
@@ -292,7 +292,7 @@ export async function memoryRoutes(app: FastifyInstance) {
     { preHandler: [requireSession] },
     async (req, reply) => {
       const params = memoryParamsSchema.safeParse(req.params);
-      const body = z.object({ removeId: z.string().uuid() }).safeParse(req.body ?? {});
+      const body = z.object({ removeId: z.string().guid() }).safeParse(req.body ?? {});
       if (!params.success || !body.success) throw app.httpErrors.badRequest("resolve body 非法");
       const scope = scopeOfSession(req.session);
       const ok = await withWorkspaceTransaction(scope, (tx) =>

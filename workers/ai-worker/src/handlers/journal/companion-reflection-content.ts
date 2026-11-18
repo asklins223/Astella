@@ -117,14 +117,14 @@ export const companionReflectionOutputV1Schema = z.strictObject({
     text: z.string().min(4),
     appliesWhen: z.string().min(1).max(200).optional(),
     epistemicStatus: z.enum(["tentative", "supported"]),
-    sourceMessageIds: z.array(z.string().uuid()),
+    sourceMessageIds: z.array(z.string().guid()),
   })).default([]),
   experiences: z.array(z.strictObject({
     title: z.string().min(2).max(60),
     triggerCondition: z.string().min(2).max(200),
     steps: z.array(z.string().min(2)).min(1),
     exceptions: z.array(z.string().min(2)).default([]),
-    sourceMessageIds: z.array(z.string().uuid()),
+    sourceMessageIds: z.array(z.string().guid()),
   })).default([]),
   selfNotes: z.array(companionSelfNoteWriteV1Schema).default([]),
   persona: z.strictObject({
@@ -133,7 +133,7 @@ export const companionReflectionOutputV1Schema = z.strictObject({
     /** Own choices need authorship, not an invented user endorsement. */
     basis: z.enum(["experience", "self_authored"]).default("experience"),
     reason: z.string().min(2),
-    sourceMessageIds: z.array(z.string().uuid()).default([]),
+    sourceMessageIds: z.array(z.string().guid()).default([]),
   }).nullable().optional(),
 });
 
@@ -166,13 +166,13 @@ export const reflectionInputSnapshotV1Schema = z.object({
   wake: z.object({ key: z.string(), revision: z.number().int().positive() }).optional(),
   accountEpoch: z.number().int().nonnegative().optional(),
   pendingPersonaRevision: z.number().int().nonnegative().nullable().optional(),
-  conversationId: z.string().uuid(), fromSeq: z.number().int(), toSeq: z.number().int(),
+  conversationId: z.string().guid(), fromSeq: z.number().int(), toSeq: z.number().int(),
   persona: z.object({ revision: z.number().int(), name: z.string(), speakingStyle: z.string(),
     selfDescription: z.string().nullable(), personalityTags: z.array(z.string()) }),
-  messages: z.array(z.object({ id: z.string().uuid(), seq: z.number().int(), role: z.enum(["user", "assistant"]),
+  messages: z.array(z.object({ id: z.string().guid(), seq: z.number().int(), role: z.enum(["user", "assistant"]),
     kind: z.string(), text: z.string(), contentHash: z.string().optional(), createdAt: z.string().datetime({ offset: true }).optional() })),
-  toolReceipts: z.array(z.object({ id: z.string().uuid(), name: z.string(), status: z.string(), safeSummary: z.string() })),
-  relatedMemories: z.array(z.object({ id: z.string().uuid(), kind: z.string(), content: z.string(),
+  toolReceipts: z.array(z.object({ id: z.string().guid(), name: z.string(), status: z.string(), safeSummary: z.string() })),
+  relatedMemories: z.array(z.object({ id: z.string().guid(), kind: z.string(), content: z.string(),
     epistemicStatus: z.string(), revision: z.number().int() })),
   inputOmitted: z.object({ messages: z.number().int().nonnegative(), toolReceipts: z.number().int().nonnegative(),
     relatedMemories: z.number().int().nonnegative(), selfNotes: z.number().int().nonnegative(),

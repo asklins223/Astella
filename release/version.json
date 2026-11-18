@@ -1,6 +1,8 @@
 {
-  "version": "2.0.28",
+  "version": "2.0.29",
   "notes": [
-    "Fixed completed quick overviews failing to load when a grounded citation or explanation contains fewer than eight characters."
+    "Hardened password recovery, session revocation, account isolation and AI data handling.",
+    "Improved note collaboration, search consistency and readiness checks for database upgrades.",
+    "Updated production runtimes and added deployment, migration and recovery regression checks."
   ]
 }

@@ -42,7 +42,7 @@ export async function noteEditingRoutes(app: FastifyInstance) {
   app.post<{ Params: { id: string } }>("/v2/notes/:id/edit-locks", { preHandler: [requireOwner] }, async (req, reply) => {
     const params = uuidParamSchema.safeParse(req.params);
     if (!params.success) return reply.code(400).send({ error: "invalid_id_format" });
-    const body = parseBody(app, z.object({ id: z.string().uuid(), startBlock: z.number().int().min(0), endBlock: z.number().int().min(0), expectedBlocks: z.array(z.string()).min(1) }), req.body);
+    const body = parseBody(app, z.object({ id: z.string().guid(), startBlock: z.number().int().min(0), endBlock: z.number().int().min(0), expectedBlocks: z.array(z.string()).min(1) }), req.body);
     const note = await visible(req.session, params.data.id);
     if (!note?.currentVersionId) return reply.code(404).send({ error: "not_found" });
     await pruneCompletedRewriteLocks(req.session.workspaceId, note.id, req.session.userId);
@@ -60,17 +60,17 @@ export async function noteEditingRoutes(app: FastifyInstance) {
     } finally { await connection.disconnect(); }
   });
   app.patch<{ Params: { id: string; lockId: string } }>("/v2/notes/:id/edit-locks/:lockId", { preHandler: [requireOwner] }, async (req, reply) => {
-    if (!z.object({ id: z.string().uuid(), lockId: z.string().uuid() }).safeParse(req.params).success) return reply.code(400).send({ error: "invalid_id_format" });
+    if (!z.object({ id: z.string().guid(), lockId: z.string().guid() }).safeParse(req.params).success) return reply.code(400).send({ error: "invalid_id_format" });
     if (!await visible(req.session, req.params.id)) return reply.code(404).send({ error: "not_found" });
     await pruneCompletedRewriteLocks(req.session.workspaceId, req.params.id, req.session.userId);
-    const body = parseBody(app, z.object({ runId: z.string().uuid() }), req.body);
+    const body = parseBody(app, z.object({ runId: z.string().guid() }), req.body);
     const run = await withWorkspaceTransaction(scopeOfSession(req.session), tx => tx.query.companionTurnRuns.findFirst({ where: and(eq(companionTurnRuns.id, body.runId), eq(companionTurnRuns.userId, req.session.userId)) }));
     if (!run || !bindRewriteLock(req.params.id, req.params.lockId, req.session.userId, run.id)) return reply.code(404).send({ error: "not_found" });
     await persistRewriteLocks(req.session.workspaceId, req.params.id, req.session.userId);
     return { bound: true };
   });
   app.delete<{ Params: { id: string; lockId: string } }>("/v2/notes/:id/edit-locks/:lockId", { preHandler: [requireOwner] }, async (req, reply) => {
-    if (!z.object({ id: z.string().uuid(), lockId: z.string().uuid() }).safeParse(req.params).success) return reply.code(400).send({ error: "invalid_id_format" });
+    if (!z.object({ id: z.string().guid(), lockId: z.string().guid() }).safeParse(req.params).success) return reply.code(400).send({ error: "invalid_id_format" });
     if (!await visible(req.session, req.params.id)) return reply.code(404).send({ error: "not_found" });
     await pruneCompletedRewriteLocks(req.session.workspaceId, req.params.id, req.session.userId);
     releaseRewriteLock(req.params.id, req.params.lockId, req.session.userId);

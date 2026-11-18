@@ -4,7 +4,7 @@
 
 发布线已拆分：服务端推送 `s-v<版本>` tag 触发部署，桌面客户端推送 `c-v<版本>` tag 触发发布；iOS/Android 在手机端独立仓库分别用 `i-v*`/`a-v*` tag。服务端版本来源为 `release/version.json`，桌面客户端版本来源为 `apps/desktop-client/version.json`。
 
-桌面端：Windows x64 与 macOS 构建安装包，同时验证桌面质量与打包启动；全部成功并检查更新清单后才公开 GitHub Release。单独手动运行 Desktop package 仍可取得测试安装包。没有 Apple 证书时使用完整 ad-hoc 签名和稳定的跨版本更新要求，macOS 首次打开仍可能需要在隐私与安全中允许；Windows 覆盖安装分支仍未在无头 runner 上验证。
+桌面端：Windows x64 与 macOS 构建安装包，同时验证桌面质量与打包启动；全部成功并检查更新清单与发布者签名后才公开 GitHub Release。单独手动运行 Desktop package 仍可取得未签名或 ad-hoc 测试安装包，但不能作为正式发布。Windows 覆盖安装分支仍未在无头 runner 上验证。
 
 服务端：现有 CI 的测试全部成功后调用 Server deploy，构建 Linux amd64 的 API、Worker 和 TTS 镜像推送 GHCR，以 digest 记录镜像，再通过 SSH 部署该 tag 的确切提交。版本必须与对应 version 文件一致；打 tag 前运行 `npm run release:prepare` 同步两条版本线副本并预览发布说明，再运行 `npm run release:check`。部署串行执行，不打断正在迁移的任务。重新部署可在 GitHub 重跑该 tag 的 CI。
 
@@ -17,6 +17,8 @@ GitHub 的 `production` Environment 允许服务端的 `s-v*` tag，存放 `DEPL
 CI 将公开的构建身份写入每个发布目录的 `deployment-images.env`：`APP_VERSION` 读取该提交的 `release/version.json`，`GIT_COMMIT` 读取 `GITHUB_SHA`。正式部署配置要求这两项存在，并与确切的镜像 digest 一起注入 API 和 Worker。版本身份随发布目录保存，不设置宿主机固定版本值，因此回滚会恢复对应版本身份。管理面板总览读取实际 API 进程的身份，Release Center 记录已发布的服务端版本。
 
 仓库 Secrets 的 `DESKTOP_API_ORIGIN` 与 `ASTELLA_DOMAIN_SCHEMA_REVISION` 提供正式安装包的公开连接配置。安装包只包含 HTTPS 地址、协议修订和配置版本。**客户端必须知道服务器地址，因此地址最终能从安装包和网络连接中读取；API Key、数据库密码、SSH 私钥才是需要保密的凭据。** HTTPS IP 地址受支持，不需要关闭证书验证。
+
+正式桌面 tag 会在构建前检查仓库 Actions Secrets 中的 `WIN_CSC_LINK`、`MAC_CSC_LINK`、`APPLE_ID`、`APPLE_TEAM_ID` 和 `APPLE_APP_SPECIFIC_PASSWORD`。证书文件有密码时同时配置对应的 `WIN_CSC_KEY_PASSWORD` 或 `MAC_CSC_KEY_PASSWORD`。发布前还会验签并验证 macOS 更新 ZIP 的公证票据。
 
 ## 单机部署生命周期
 
@@ -34,7 +36,7 @@ CI 将公开的构建身份写入每个发布目录的 `deployment-images.env`�
 - 已经堆满的机器需要管理员先跑一次 `infra/ops/prune-host-disk.sh`（root；保留最近 5 个 release 与 10 份备份，可用 `KEEP_RELEASES` / `KEEP_BACKUPS` 调整）。
 - 部署脚本安装在 `/usr/local/lib/astella`，由管理员更新。每个 release 的 bundle 现在都带上这一份 `infra/deploy/`，所以更新就是一条命令：`install -m 0755 /opt/astella/releases/<发布目录>/infra/deploy/deploy.sh /usr/local/lib/astella/deploy.sh`（接收器 `ssh-receive.sh` 与 `extract-bundle.py` 同理）。
 
-正式部署的运维面板已接入 Docker：`docker-compose.deploy.yml` 将宿主机 `/var/run/docker.sock` 挂给 API，并设置 `ADMIN_DOCKER_SOCKET`。将 `stat -c '%g' /var/run/docker.sock` 的结果写为服务器环境文件里的 `ADMIN_DOCKER_GID`（默认 `0`），API 继续以 `node` 用户运行，通过附加组访问 socket。只重建 API 即可应用这项配置，随后重载 Nginx，以更新其记录的 API 容器地址。
+正式部署的运维面板容器页使用可选的 `infra/deploy/docker-compose.admin.yml`。启用时，将 `stat -c '%g' /var/run/docker.sock` 的结果记入服务器环境的 `ADMIN_DOCKER_GID`。如果宿主仍使用旧脚本，按上文安装此发行版的 `infra/deploy/deploy.sh` 后重新部署。API 继续以 `node` 用户运行，通过附加组访问 socket。
 
 面板可读取本 Compose 项目的容器状态、日志、CPU 与内存，并执行启动、停止和重启；所有接口仍需运维令牌，目标服务须属于 API 自己的 Compose 项目。Docker socket 的权限等同于宿主机管理权限，因此只挂给 API，不开放 Docker TCP 端口，也不要公开或复用面板令牌。这里的项目范围检查限制面板操作，并不将原始 socket 变为受限 Docker 凭证。
 
@@ -76,7 +78,11 @@ Worker 解析文本来源时读取远程原文并验证 SHA-256。工作区 JSON
 
 打包使用 `electron-builder.config.cjs`，在 ZIP 和 DMG 创建之前完成签名。有 Developer ID 时保留证书签名；没有时先由 electron-builder 签完整嵌套包体，再把主应用指定要求固定为 `identifier "com.asklins.astella"`。`scripts/check-macos-update-signature.cjs` 用两份内容不同的真实二进制验证跨版本要求，并确认篡改签名后的资源会失败；最终 ZIP 与 DMG 中的应用都必须通过签名检查。
 
-签名完整性、跨版本要求和系统首次启动许可是不同的检查。ad-hoc 不提供 Apple 开发者认证，也不会消除首次打开的用户确认。流程修复不会自动改变历史已发布资产。旧包签名损坏时可能需要手动安装修复包；真实更新替换的结果应单独记录，不能用 `codesign` 通过代替。
+签名完整性、跨版本要求和系统首次启动许可是不同的检查。ad-hoc 不提供 Apple 开发者认证，也不会消除首次打开的用户确认。自动更新只接受与已安装程序同一 Developer ID 团队的包；Windows 要求签名有效且公钥相同。未签名旧版、Windows 换签名密钥或 macOS 更换开发者团队时，应从可信发布页核验并手动安装新版本。流程修复不会自动改变历史已发布资产；真实更新替换的结果应单独记录，不能用 `codesign` 通过代替。
+
+## 协同服务副本限制
+
+笔记实时协同状态驻留在 API 进程中。受管部署脚本以 `--scale api=1` 启动和回滚。同一数据库的 PostgreSQL 领导锁会拒绝第二个 API 实例，交接期间在途编辑持有共享锁直至广播完成。要让多个副本同时提供协同编辑，需要共享文档协议，并验证数据库故障切换。
 
 ## 相关文档
 

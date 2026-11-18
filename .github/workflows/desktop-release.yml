@@ -54,21 +54,27 @@ jobs:
 
       - name: Resolve and verify the release version
         id: resolve
+        env:
+          REQUESTED_DESKTOP_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
           node .github/scripts/desktop-version.mjs --check
 
-          requested="${{ inputs.version }}"
+          requested="$REQUESTED_DESKTOP_VERSION"
           is_tag="false"
-          if [ "${{ github.ref_type }}" = "tag" ]; then
-            tag_version="$(node .github/scripts/desktop-version.mjs --tag "${{ github.ref_name }}")"
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            tag_version="$(node .github/scripts/desktop-version.mjs --tag "$GITHUB_REF_NAME")"
             is_tag="true"
-            if [ -z "$requested" ]; then requested="$tag_version"; fi
+            if [ -n "$requested" ] && [ "$requested" != "$tag_version" ]; then
+              echo '::error::Requested version does not match the release tag' >&2
+              exit 1
+            fi
+            requested="$tag_version"
             # tag 与唯一来源不一致时直接停：继续下去只会得到一个"标题写 c-v1.2.0、
             # 产物里却是另一个版本"的 Release，而更新器读到的是后者。
             source_version="$(node -e "console.log(require('./apps/desktop-client/version.json').version)")"
             if [ "$tag_version" != "$source_version" ]; then
-              echo "::error::tag ${{ github.ref_name }} 指向 $tag_version，但 apps/desktop-client/version.json 是 $source_version。请先改版本号再打 tag。" >&2
+              echo "::error::tag $GITHUB_REF_NAME 指向 $tag_version，但 apps/desktop-client/version.json 是 $source_version。请先改版本号再打 tag。" >&2
               exit 1
             fi
           fi
@@ -80,12 +86,28 @@ jobs:
           node .github/scripts/desktop-version.mjs --check
 
           tag="c-v${version}"
-          if [ "${{ github.ref_type }}" = "tag" ]; then tag="${{ github.ref_name }}"; fi
+          if [ "$is_tag" = "true" ]; then tag="$GITHUB_REF_NAME"; fi
 
-          echo "version=${version}" >> "$GITHUB_OUTPUT"
-          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
-          echo "from_tag=${is_tag}" >> "$GITHUB_OUTPUT"
+          printf 'version=%s\ntag=%s\nfrom_tag=%s\n' "$version" "$tag" "$is_tag" >> "$GITHUB_OUTPUT"
           echo "release tag: ${tag}  version: ${version}"
+
+      - name: Check release signing credentials
+        if: github.event_name == 'push' && steps.resolve.outputs.from_tag == 'true'
+        env:
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          missing=()
+          for name in WIN_CSC_LINK MAC_CSC_LINK APPLE_ID APPLE_TEAM_ID APPLE_APP_SPECIFIC_PASSWORD; do
+            if [ -z "${!name}" ]; then missing+=("$name"); fi
+          done
+          if [ "${#missing[@]}" -ne 0 ]; then
+            echo "::error::Configure desktop release secrets before publishing: ${missing[*]}" >&2
+            exit 1
+          fi
 
   build:
     name: Build both platforms
@@ -105,7 +127,7 @@ jobs:
     name: Publish release
     needs: [resolve, build, quality]
     # 只有带 tag 的那次才发 Release。手动触发的是"打个包看看"，不该改写公开的发布页。
-    if: needs.resolve.outputs.from_tag == 'true'
+    if: github.event_name == 'push' && needs.resolve.outputs.from_tag == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -117,6 +139,15 @@ jobs:
       RELEASE_S3_BUCKET: ${{ secrets.RELEASE_S3_BUCKET }}
     steps:
       - uses: actions/checkout@v4
+      - name: Require verified publisher signatures
+        env:
+          WINDOWS_SIGNED: ${{ needs.build.outputs.windows_signed }}
+          MACOS_SIGNED: ${{ needs.build.outputs.macos_signed }}
+          MACOS_NOTARIZED: ${{ needs.build.outputs.macos_notarized }}
+        run: |
+          test "$WINDOWS_SIGNED" = true || { echo '::error::Windows release is not signed and verified'; exit 1; }
+          test "$MACOS_SIGNED" = true || { echo '::error::macOS release is not Developer ID signed and verified'; exit 1; }
+          test "$MACOS_NOTARIZED" = true || { echo '::error::macOS release has no verified notarization ticket'; exit 1; }
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}

@@ -1,11 +1,17 @@
 import type { CompanionAgentBudgetSnapshotV1 } from "@astella/shared";
 import { resolveCompanionAgentBudget } from "../../lib/handler-timeout-config.ts";
 
-/** A run ends on completion, on the wall-clock slice, or on a real error — never
- * because a count was reached. 2026-10-16: the companion agent enforces no count
- * ceiling at all, so these optional operator numbers are **recorded** in the run
- * receipt for diagnostics and are not consulted by the loop; historical numeric
- * receipts stay readable. */
+/** Emit periodic cost warnings without interrupting a user-directed long run. */
+export function shouldWarnCompanionModelCalls(count: number, env: NodeJS.ProcessEnv = process.env): boolean {
+  const raw = env.WORKER_COMPANION_CALL_WARNING_INTERVAL?.trim();
+  const parsed = raw ? Number(raw) : 50;
+  const interval = Number.isSafeInteger(parsed) && parsed > 0 ? parsed : 50;
+  return Number.isSafeInteger(count) && count > 0 && count % interval === 0;
+}
+
+/** Defaults do not truncate long-running tasks. Operators can set model-call,
+ * web-search and deadline budgets; the remaining counts are receipt diagnostics.
+ * Historical numeric receipts remain readable. */
 export function companionExecutionPolicy(env: NodeJS.ProcessEnv = process.env): CompanionAgentBudgetSnapshotV1 {
   const limit = (key: string): number | null => {
     const value = env[key]?.trim();

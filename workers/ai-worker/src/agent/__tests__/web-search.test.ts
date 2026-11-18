@@ -57,6 +57,35 @@ test("consent and egress policy are enforced before search", async () => {
   assert.equal(requests, 0);
 });
 
+test("search receipt and process show the actual governed query", async () => {
+  let sent = "";
+  const result = await executeWebSearch(scope, { query: "电话 13812345678" }, signal(), deps({
+    fetch: async (_url, options) => {
+      sent = JSON.parse(String(options?.body)).search_query;
+      return Response.json({ search_result: [{ link: "https://example.com/" }] });
+    },
+  }));
+  assert.equal(sent, "电话 1***8");
+  assert.equal(result.status, "succeeded");
+  if (result.status !== "succeeded") return;
+  assert.equal(result.query, sent);
+  const { webSearchProcessDetail } = await import("../web-search.ts");
+  assert.equal(webSearchProcessDetail("web.search", { query: "电话 13812345678" }, JSON.stringify(result))?.query, sent);
+});
+
+test("oversized streamed search response is cancelled before it is buffered", async () => {
+  let cancelled = false;
+  const body = new ReadableStream<Uint8Array>({
+    pull(controller) { controller.enqueue(new Uint8Array(1_100_000)); },
+    cancel() { cancelled = true; },
+  });
+  const result = await executeWebSearch(scope, { query: "public" }, signal(), deps({
+    fetch: async () => new Response(body),
+  }));
+  assert.equal(result.status, "unavailable");
+  assert.equal(cancelled, true);
+});
+
 test("uses the documented API and retains stable, deduplicated, safe sources", async () => {
   const audits: unknown[] = [];
   const result = await executeWebSearch(scope, { query: "公开资料", recency: "oneWeek" }, signal(), deps({

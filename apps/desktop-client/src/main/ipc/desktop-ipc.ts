@@ -1,4 +1,5 @@
 import { registerNoteWritingChannels } from "../note-doc/note-writing-files";
+import { isBoundedIpcShape } from "./ipc-shape-limit";
 import { registerMarkdownBundleChannels } from "../note-doc/markdown-bundle-import";
 import { registerOpenedFileChannels, type OpenedFileBroker } from "../note-doc/opened-file";
 import * as ns_source from "../gateway/desktop-gateway-ns-source";
@@ -266,6 +267,7 @@ function asWindowState(snapshot: WindowStateSnapshot): WindowStateSnapshotV1 {
 }
 
 function readPayload<T>(input: unknown, schema: InputSchema<T>): { ok: true; value: T } | { ok: false; meta: RequestMetaV1 } {
+  if (!isBoundedIpcShape(input)) return { ok: false, meta: readMeta(input) };
   const parsed = schema.safeParse(input);
   return parsed.success ? { ok: true, value: parsed.data } : { ok: false, meta: readMeta(input) };
 }
@@ -389,12 +391,12 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): As
   const noteDocCacheKey = (noteId: string): NoteDocCacheKey | null =>
     activeSubjectId && activeWorkspaceId ? { subjectId: activeSubjectId, workspaceId: activeWorkspaceId, noteId } : null;
 
-  const persistNoteDocLocal = async (noteId: string): Promise<void> => {
+  const persistNoteDocLocal = async (noteId: string): Promise<boolean> => {
     const key = noteDocCacheKey(noteId);
-    if (!key) return;
+    if (!key) return false;
     const snapshot = ns_note.noteDocLocalSnapshot(gateway.gatewayTransport, noteId);
-    if (!snapshot) return;
-    await noteDocCache.set(key, { ...snapshot, epochAtRest: activeWorkspaceEpoch, updatedAt: new Date().toISOString() });
+    if (!snapshot) return false;
+    return noteDocCache.set(key, { ...snapshot, epochAtRest: activeWorkspaceEpoch, updatedAt: new Date().toISOString() });
   };
   /**
    * 产物往哪个 userData 写（39d W4-6 刀五）。缺注入就是接线错误：当场喊

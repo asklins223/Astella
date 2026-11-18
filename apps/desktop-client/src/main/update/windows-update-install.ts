@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto'
 import { constants, createReadStream } from 'node:fs'
 import { access, open } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
+import { verifyWindowsUpdateSignature } from './windows-update-signature'
 
 export async function prepareWindowsInstaller(installer: { path: string; version: string; sha512: string }): Promise<{ launch: () => Promise<void> }> {
   const directory = dirname(app.getPath('exe'))
@@ -18,6 +19,7 @@ export async function prepareWindowsInstaller(installer: { path: string; version
     await binary.read(header, 0, 2, 0)
     if (header.toString('ascii') !== 'MZ') throw new Error('Invalid Windows update executable')
   } finally { await binary.close() }
+  await verifyWindowsUpdateSignature(app.getPath('exe'), installer.path)
   return { launch: async () => {
     const child = spawn(installer.path, ['--update', '--install-dir', directory, '--wait-pid', String(process.pid),
       '--receipt', join(app.getPath('userData'), 'update-install.json'), '--from-version', app.getVersion(),

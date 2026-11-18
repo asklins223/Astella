@@ -18,7 +18,7 @@ import { sourceCreateSchema } from "../source/schema.ts";
 // Share the import payload contract with the established Markdown import domain.
 import { importMarkdownSchema } from "../import/schema.ts";
 import { visibleNotesCondition } from "../note/visibility.ts";
-import { prepareMarkdownImport, importMarkdownNotes, finalizeMarkdownImport } from "../import/markdown-import-service.ts";
+import { prepareMarkdownImport, importMarkdownNotes } from "../import/markdown-import-service.ts";
 import { RateLimiter, createRateLimitStoreFromEnv } from "../../lib/rate-limit-store.ts";
 
 type TransferRow = { id: string; staging_key: string; request_json: ObjectTransferRequest;
@@ -91,7 +91,7 @@ async function commitTransfer(scope: WorkspaceTransactionContext, request: Objec
   await persistObject(key, bytes, request.mimeType, staging);
   try {
     const outcome = await withWorkspaceTransaction(scope, tx => importMarkdownNotes(tx, scope, { items, importId: body.importId ?? null }));
-    return { status: 200, body: await finalizeMarkdownImport(outcome) };
+    return { status: 200, body: outcome.response };
   } catch (error) { await deleteObject(key).catch(() => undefined); throw error; }
 }
 

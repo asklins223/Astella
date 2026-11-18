@@ -14,7 +14,7 @@ import { COMPANION_TOOL_GROUP_IDS, COMPANION_TOOL_GROUPS } from "./companion-too
 import { agentGoalDeliveryV1Schema, agentVoiceStyleDecisionV1Schema } from "../contracts/agent/agent-contracts.ts";
 
 const emptyArguments = z.object({}).strict();
-const uuid = z.string().uuid();
+const uuid = z.string().guid();
 const reminderLocalTime = z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/);
 const reminderLocalDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value => {
   const date = new Date(`${value}T00:00:00.000Z`);
@@ -122,16 +122,16 @@ export const companionCapabilityManifest: readonly AgentCapabilityDeclaration[] 
     z.object({
       action: z.enum(["create", "edit", "share", "annotate"]),
       title: z.string().trim().min(1).max(200).optional(),
-      markdown: z.string().optional().describe("create/annotate 填实际要保存的完整正文，edit 只填指定范围的新正文；" + COMPANION_NOTE_CONTENT_GUIDANCE + "\n" + companionEditNoteV1Schema.innerType().shape.markdown.description),
+      markdown: z.string().optional().describe("create/annotate 填实际要保存的完整正文，edit 只填指定范围的新正文；" + COMPANION_NOTE_CONTENT_GUIDANCE + "\n" + companionEditNoteV1Schema.shape.markdown.description),
       links: z.array(z.object({ noteId: uuid, noteVersionId: uuid,
         reason: z.string().trim().min(5).max(240).describe("说明这篇已有笔记与新笔记的具体关系") }).strict()).default([]),
       noteId: uuid.optional(),
       noteVersionId: uuid.optional(),
       operation: z.enum(["insert_at_cursor", "append", "replace_selection", "delete_selection", "replace_blocks", "delete_blocks"]).optional(),
-      preserveBlockStructure: companionEditNoteV1Schema.innerType().shape.preserveBlockStructure,
-      startBlock: companionEditNoteV1Schema.innerType().shape.startBlock,
-      endBlock: companionEditNoteV1Schema.innerType().shape.endBlock,
-      expectedBlocks: companionEditNoteV1Schema.innerType().shape.expectedBlocks,
+      preserveBlockStructure: companionEditNoteV1Schema.shape.preserveBlockStructure,
+      startBlock: companionEditNoteV1Schema.shape.startBlock,
+      endBlock: companionEditNoteV1Schema.shape.endBlock,
+      expectedBlocks: companionEditNoteV1Schema.shape.expectedBlocks,
       shareScope: z.enum(["private", "shared"]).optional(),
       final: z.boolean().optional(),
     }).strict().superRefine((value, context) => {

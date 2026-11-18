@@ -23,7 +23,7 @@ export async function noteOverviewRoutes(app: FastifyInstance) {
 
   app.get("/v2/notes/:noteId/overviews", async (req, reply) => {
     reply.header("Cache-Control", "private, no-store");
-    const params = z.object({ noteId: z.string().uuid() }).safeParse(req.params);
+    const params = z.object({ noteId: z.string().guid() }).safeParse(req.params);
     const query = noteOverviewListQueryV1Schema.safeParse(req.query);
     if (!params.success || !query.success) return reply.code(400).send({ error: "invalid_request", message: "速看记录位置无效，请重新读取。" });
     const scope = scopeOfSession(req.session);
@@ -38,7 +38,7 @@ export async function noteOverviewRoutes(app: FastifyInstance) {
 
   app.post("/v2/notes/:noteId/overview-tasks", async (req, reply) => {
     reply.header("Cache-Control", "private, no-store");
-    const params = z.object({ noteId: z.string().uuid() }).safeParse(req.params);
+    const params = z.object({ noteId: z.string().guid() }).safeParse(req.params);
     const body = createNoteOverviewTaskV1Schema.safeParse(req.body);
     if (!params.success || !body.success) return reply.code(400).send({ error: "invalid_request", message: "这次速看请求不完整，请从笔记正文重新开始。" });
     const scope = scopeOfSession(req.session);
@@ -53,7 +53,7 @@ export async function noteOverviewRoutes(app: FastifyInstance) {
 
   app.get("/v2/notes/:noteId/overview-tasks/latest", async (req, reply) => {
     reply.header("Cache-Control", "private, no-store");
-    const params = z.object({ noteId: z.string().uuid() }).safeParse(req.params);
+    const params = z.object({ noteId: z.string().guid() }).safeParse(req.params);
     const query = noteOverviewLatestTaskQueryV1Schema.safeParse(req.query);
     if (!params.success || !query.success) return reply.code(400).send({ error: "invalid_request", message: "速看记录位置无效，请重新读取。" });
     const scope = scopeOfSession(req.session);
@@ -68,7 +68,7 @@ export async function noteOverviewRoutes(app: FastifyInstance) {
 
   app.get("/v2/notes/:noteId/overview-tasks/:taskId", async (req, reply) => {
     reply.header("Cache-Control", "private, no-store");
-    const params = z.object({ noteId: z.string().uuid(), taskId: z.string().uuid() }).safeParse(req.params);
+    const params = z.object({ noteId: z.string().guid(), taskId: z.string().guid() }).safeParse(req.params);
     if (!params.success) return reply.code(400).send({ error: "invalid_request", message: "速看任务位置无效，请重新读取。" });
     const scope = scopeOfSession(req.session);
     try {

@@ -49,3 +49,31 @@ test("checkExportSize 的每条计数查询只引用 FROM/JOIN 里的表", () =>
     }
   }
 });
+
+/**
+ * 私有笔记的正文、历史版本与派生产物都不能只按 workspace_id 导出。
+ *
+ * 2026-11-16 审查发现：`notes` 那一支带 `visibleNotesCondition(userId)`，而
+ * `note_versions` / `note_blocks` / `ai_artifacts` 只按 workspace_id 取，导致协作空间
+ * owner 导出时能拿到其他成员 `share_scope='private'` 的正文与历史。这条守卫把
+ * “必须回连 notes 并套同一可见性谓词”钉在查询形状上。
+ */
+test("导出的版本、块与产物都回连 notes 可见性", () => {
+  const start = source.indexOf("export async function exportWorkspace");
+  assert.ok(start >= 0, "exportWorkspace 不见了：更新导出可见性守卫时必须同步本测试");
+  const body = source.slice(start);
+
+  for (const [table, label] of [
+    ["noteVersions", "note_versions"],
+    ["noteBlocks", "note_blocks"],
+    ["aiArtifacts", "ai_artifacts"],
+  ] as const) {
+    const index = body.indexOf(`from(${table})`);
+    assert.ok(index >= 0, `${label} 导出查询不见了`);
+    const query = body.slice(index, index + 2000);
+    assert.match(query, /visibleNotesCondition\(userId\)/,
+      `${label} 导出没有套笔记可见性：私有笔记会跟着 workspace_id 一起被导出`);
+    assert.match(query, /\.(?:inner|left)Join\(notes/,
+      `${label} 导出没有回连 notes，无法判断它属于哪篇笔记`);
+  }
+});

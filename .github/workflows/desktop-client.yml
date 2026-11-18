@@ -175,7 +175,11 @@ jobs:
           # 文件里，去掉沙箱、crashpad 与所有 .so，剩下的就是应用本体。
           app_bin="$(find apps/desktop-client/release/linux-unpacked -maxdepth 1 -type f -executable \
             ! -name 'chrome-sandbox' ! -name 'chrome_crashpad_handler' ! -name '*.so*' -print -quit)"
-          test -n "$app_bin" || { echo >&2 "没找到应用本体（linux-unpacked 里有什么：）"; ls -la apps/desktop-client/release/linux-unpacked | head -24; exit 1; }
+          if [ -z "$app_bin" ]; then
+            echo "没找到 Linux 应用本体" >&2
+            find apps/desktop-client/release/linux-unpacked -maxdepth 1 -print >&2
+            exit 1
+          fi
           app_bin="$(realpath "$app_bin")"
           echo "ASTELLA_PACKAGED_APP=$app_bin" >> "$GITHUB_ENV"
           echo "Linux 应用本体 = $app_bin"

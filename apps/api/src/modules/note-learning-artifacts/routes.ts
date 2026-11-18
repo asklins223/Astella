@@ -18,9 +18,9 @@ import {
   startNoteLearningArtifactTask,
 } from "./service.ts";
 
-const noteParams = z.object({ noteId: z.string().uuid() });
-const taskParams = z.object({ noteId: z.string().uuid(), taskId: z.string().uuid() });
-const artifactParams = z.object({ artifactId: z.string().uuid() });
+const noteParams = z.object({ noteId: z.string().guid() });
+const taskParams = z.object({ noteId: z.string().guid(), taskId: z.string().guid() });
+const artifactParams = z.object({ artifactId: z.string().guid() });
 
 function sendError(reply: FastifyReply, error: unknown) {
   if (!(error instanceof NoteLearningArtifactError)) throw error;

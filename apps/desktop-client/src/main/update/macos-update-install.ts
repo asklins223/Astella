@@ -8,6 +8,25 @@ import { promisify } from 'node:util'
 
 const run = promisify(execFile)
 
+export function macosDeveloperIdTeam(signature: string): string | null {
+  if (!/^Authority=Developer ID Application: /m.test(signature)) return null
+  return /^TeamIdentifier=([A-Z0-9]{10})$/m.exec(signature)?.[1] ?? null
+}
+
+async function verifyMacosUpdateSignature(installed: string, staged: string): Promise<void> {
+  try {
+    const current = await run('/usr/bin/codesign', ['--display', '--verbose=4', installed], { timeout: 60_000 })
+    const team = macosDeveloperIdTeam(current.stdout + current.stderr)
+    if (!team) throw new Error('installed app has no Developer ID')
+    const requirement = `=anchor apple generic and identifier "com.asklins.astella" and certificate leaf[subject.OU] = "${team}" and certificate leaf[field.1.2.840.113635.100.6.1.13] exists`
+    for (const bundle of [installed, staged]) {
+      await run('/usr/bin/codesign', ['--verify', '--deep', '--strict', '-R', requirement, bundle], { timeout: 60_000 })
+    }
+  } catch {
+    throw new Error('macOS update signature verification failed; install a trusted release manually')
+  }
+}
+
 /** Read Mach-O headers directly; users do not need Xcode's lipo tool. */
 export function macosExecutableSupportsArchitecture(header: Buffer, arch: string): boolean {
   if (header.length < 8) return false
@@ -101,8 +120,7 @@ export async function prepareMacosArchiveInstall(archive: { path: string; versio
       const { bytesRead } = await binary.read(header, 0, header.length, 0)
       if (!macosExecutableSupportsArchitecture(header.subarray(0, bytesRead), process.arch)) throw new Error('Update architecture mismatch')
     } finally { await binary.close() }
-    // An ad-hoc seal needs no Apple certificate and still detects damaged resources.
-    await run('/usr/bin/codesign', ['--verify', '--deep', '--strict', staged], { timeout: 60_000 })
+    await verifyMacosUpdateSignature(target, staged)
     const script = join(staging, 'install.sh')
     await writeFile(script, MACOS_INSTALL_SCRIPT, { mode: 0o700 })
     const receipt = join(app.getPath('userData'), 'update-install.json')

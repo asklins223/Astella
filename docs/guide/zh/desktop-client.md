@@ -179,11 +179,11 @@ Windows 不再复用 NSIS 的外壳或安装脚本。`apps/windows-installer/` �
 
 向导先展示使用须知与 PolyForm Noncommercial 非商用许可全文，须主动勾选同意才可继续。新安装可选择本机位置，已有安装与更新沿用原位置；更新先校验并暂存文件，再替换整目录，提交失败时恢复旧程序。本机资料保存在 `%APPDATA%\astella-desktop-client`，安装确认不替代账号内的 AI 授权。Windows「已安装的应用」与程序目录中的卸载器均可进入卸载界面，清除资料的勾选默认关闭。
 
-Windows 更新使用 `WindowsInstallerUpdater` 完整下载与 SHA-512 校验，并在退出应用前启动独立安装器。安装器等待旧进程退出，保留安装目录与本机资料；应用重启后沿用统一更新回执。构建与实际验证范围见 [安装器说明](../../../apps/windows-installer/README.md)。产物继续使用 ASCII 名称 `astella-${version}-win-x64.exe`，版本来自统一发布配置。
+Windows 更新使用 `WindowsInstallerUpdater` 完整下载与 SHA-512 校验，并在退出应用前验证当前程序与安装器的 Authenticode 签名有效且公钥一致。安装器等待旧进程退出，保留安装目录与本机资料；应用重启后沿用统一更新回执。构建与实际验证范围见 [安装器说明](../../../apps/windows-installer/README.md)。产物继续使用 ASCII 名称 `astella-${version}-win-x64.exe`，版本来自统一发布配置。
 
 更新信息与下载地址由**服务端下发**（2026-10-10 改判，实现 `src/main/desktop-update.ts` 与 `apps/api` 的 `GET /updates/desktop/latest[-mac].yml`）：客户端先问自家 API，服务端现场从 GitHub 拉最新清单并按服务端规则改写下载地址——想换直连、换镜像或换包源，改服务端一处即可。自家清单探不通时退回打包配置里的 GitHub 更新源（`publish: provider github, owner asklins223, repo Astella`，发布时上传资产也是它），所以自家 API 挂了照样能更新。**安装包的字节仍不走自家服务器**：清单给的是外部地址，下载直连 GitHub，失败再自动改走 GH-Proxy（`https://v4.gh-proxy.org/`）的加速地址，指向同一个文件、校验码一致；手动下载时仓库 README 的「下载」表里两条地址都有。
 
-> macOS 无 Apple 证书时使用完整 ad-hoc 签名与稳定的 designated requirement，供跨版本更新校验；首次打开仍可能需要用户在隐私与安全中允许。配置 Developer ID 后改用开发者签名与公证。
+> 自动安装更新要求当前 macOS 程序和更新包均由同一 Apple Developer ID 团队签名。旧的 ad-hoc 或未签名安装、Windows 签名密钥轮换以及 macOS 团队变更，需要先从可信发布页手动安装经过核验的正式版本。测试包仍可使用 ad-hoc 签名；正式发布要求 Windows 和 macOS 签名验证通过。
 
 ## 测试与源码守卫
 

@@ -16,17 +16,22 @@
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { createConnection, createServer, type Socket } from "node:net";
 import postgres from "postgres";
 import * as Y from "yjs";
 import Fastify, { type FastifyInstance } from "fastify";
 import websocket from "@fastify/websocket";
 import sensible from "@fastify/sensible";
 import { HocuspocusProvider } from "@hocuspocus/provider";
-import { closeDatabase, withWorkspaceTransaction } from "../db/client.ts";
+import { messageYjsUpdate } from "y-protocols/sync";
+import { closeDatabase, db, withWorkspaceTransaction } from "../db/client.ts";
+import { sql as drizzleSql } from "drizzle-orm";
 import { checkpointNote, createNote } from "../modules/note/service.ts";
-import { closeNoteCollaboration, collaborationLoad, documentNameForNote, notePresenceSnapshot } from "../modules/note/collaboration.ts";
+import { closeNoteCollaboration, collaborationLoad, documentNameForNote, notePresenceSnapshot, noteCollaboration } from "../modules/note/collaboration.ts";
 import { docFromSnapshot, editFragmentBlockText, projectFragmentBlocks, writeFragmentBlocks } from "../modules/note/doc-fragment.ts";
 import { NOTE_DOC_UPDATE_BASE64_MAX_CHARS, noteDocUpdateRequestV1Schema } from "../modules/note/schema.ts";
+import { acquireNoteCollaborationLeader, installNoteCollaborationLeader } from "../modules/note/collaboration-leader.ts";
+import { processCompanionNoteShare } from "../modules/note/companion-share-dispatch.ts";
 
 /**
  * 夹具连接用超级用户那条（`DATABASE_URL`），被测应用连接仍是 `astella_api`。
@@ -107,9 +112,9 @@ function once(emitter: HocuspocusProvider, event: string, what: string, timeoutM
   });
 }
 
-function connect(token: string, name = documentNameForNote(noteId)) {
+function connect(token: string, name = documentNameForNote(noteId), sessionAwareness = false) {
   const doc = new Y.Doc();
-  const provider = new HocuspocusProvider({ url: wsUrl, name, document: doc, token });
+  const provider = new HocuspocusProvider({ url: wsUrl, name, document: doc, token, sessionAwareness });
   liveProviders.push(provider);
   // `synced` 在构造之后、连接完成之前挂上才不漏；provider 的连接是异步的。
   // 失败路径（鉴权被拒）永远不会同步，这里预挂一个 catch，否则超时会留下
@@ -422,6 +427,30 @@ test("只读成员：知道自己只读、上送不落库，但仍能实时看�
 
   destroyProviders();
   await waitFor(() => collaborationLoad().documents === 0, "文档卸载");
+});
+
+test("撤销已连接成员的会话后断开连接，不再收到共享笔记更新", async () => {
+  const token = (await issueSession(userMember, wsCollab)).token;
+  const owner = connect(ownerToken);
+  const member = connect(token);
+  try {
+    await Promise.all([owner.synced, member.synced]);
+    // Hocuspocus closes an individual document over the multiplexed socket;
+    // the provider emits `close`, not the transport-level `disconnect` event.
+    const disconnected = once(member.provider, "close", "撤权后断开文档");
+    await revokeSession(token);
+    await disconnected;
+    // Disable automatic reconnect before publishing the owner's next edit.
+    member.provider.disconnect();
+    const marker = `撤权后内容 ${randomUUID()}`;
+    editFragmentBlockText(owner.doc, 2, marker);
+    await waitFor(async () => (await projectedRows()).includes(marker), "撤权后的 owner 更新落盘");
+    assert.ok(!docContents(member.doc).includes(marker));
+  } finally {
+    await revokeSession(token).catch(() => {});
+    destroyProviders();
+    await waitFor(() => collaborationLoad().documents === 0, "文档卸载");
+  }
 });
 
 test("手机 owner 与桌面通过同一份实时文档双向编辑", async () => {
@@ -1133,3 +1162,266 @@ test("在场：另一个空间的人读不到这一间的名单，自己的那�
   destroyProviders();
   await waitFor(() => collaborationLoad().documents === 0, "文档卸载");
 });
+
+test("companion unsharing closes existing viewers after the scope change commits", async () => {
+  const scope = { workspaceId: wsCollab, userId: userOwner };
+  const created = await withWorkspaceTransaction(scope, tx => createNote(tx, wsCollab, userOwner, {
+    title: "Share withdrawal test", blocks: [{ type: "paragraph", content: "Synthetic shared text." }],
+  }));
+  assert.ok(created);
+  const target = created.note.id;
+  const name = documentNameForNote(target);
+  const [conversation, message, job, run, step, call] = Array.from({ length: 6 }, () => randomUUID());
+
+  try {
+    await sql.begin(async tx => {
+      await tx`UPDATE notes SET share_scope = 'shared' WHERE id = ${target}`;
+      await tx`INSERT INTO user_companion_account_state(user_id, epoch, global_enabled)
+        VALUES (${userOwner}, 0, true) ON CONFLICT (user_id) DO NOTHING`;
+      await tx`INSERT INTO companion_conversations(id, workspace_id, user_id, kind, title, title_source, status)
+        VALUES (${conversation}, ${wsCollab}, ${userOwner}, 'dialogue', 'Share test', 'auto', 'active')`;
+      await tx`INSERT INTO companion_messages(id, conversation_id, workspace_id, user_id, role, seq, kind, blocks, content_sha256)
+        VALUES (${message}, ${conversation}, ${wsCollab}, ${userOwner}, 'user', 1, 'text', '[]', ${"0".repeat(64)})`;
+      await tx`INSERT INTO jobs(id, type, workspace_id, requested_by, payload, status, lease_token, started_at)
+        VALUES (${job}, 'companion_agent', ${wsCollab}, ${userOwner}, ${tx.json({ runId: run })}, 'running', 'share-fixture', now())`;
+      await tx`INSERT INTO companion_turn_runs(id, conversation_id, workspace_id, user_id, user_message_id, generation, status,
+        idempotency_key_hash, request_body_hash, account_epoch, job_id, permission_level, permission_snapshot)
+        VALUES (${run}, ${conversation}, ${wsCollab}, ${userOwner}, ${message}, 1, 'running',
+          ${"a".repeat(64)}, ${"b".repeat(64)}, 0, ${job}, 'full',
+          ${tx.json({ version: 1, level: "full", offeredTools: [{ name: "companion_notes_write" }] })})`;
+      await tx`INSERT INTO companion_agent_steps(id, workspace_id, user_id, conversation_id, run_id, step_no, kind, status)
+        VALUES (${step}, ${wsCollab}, ${userOwner}, ${conversation}, ${run}, 1, 'model', 'running')`;
+      await tx`INSERT INTO companion_agent_tool_calls(id, workspace_id, user_id, conversation_id, run_id, step_id, tool_call_id,
+        name, tool_version, arguments, arguments_sha256, risk_class, status)
+        VALUES (${call}, ${wsCollab}, ${userOwner}, ${conversation}, ${run}, ${step}, ${randomUUID()},
+          'notes.write.share', '1.0.0', ${tx.json({ noteId: target, shareScope: "private" })}, ${"c".repeat(64)},
+          'reversible_low', 'executing')`;
+    });
+    const viewer = connect(memberToken, name);
+    await viewer.synced;
+    await processCompanionNoteShare(scope, call);
+    const [receipt] = await sql`SELECT result_ref FROM companion_agent_tool_calls WHERE id = ${call}`;
+    assert.ok(receipt?.result_ref, "the dispatch must record its committed result");
+    assert.equal(JSON.parse(receipt.result_ref).shareScope, "private");
+    await waitFor(() => !viewer.provider.isAuthenticated && !noteCollaboration.documents.has(name),
+      "revoked viewer is disconnected and its document is unloaded");
+    const retry = connect(memberToken, name);
+    await once(retry.provider, "authenticationFailed", "the former viewer cannot reopen a private note");
+  } finally {
+    destroyProviders();
+    await sql.begin(async tx => {
+      await tx`SET LOCAL app.allow_history_mutation = 'on'`;
+      await tx`DELETE FROM companion_agent_tool_calls WHERE id = ${call}`;
+      await tx`DELETE FROM companion_agent_steps WHERE id = ${step}`;
+      await tx`DELETE FROM companion_turn_runs WHERE id = ${run}`;
+      await tx`DELETE FROM companion_messages WHERE id = ${message}`;
+      await tx`DELETE FROM companion_conversations WHERE id = ${conversation}`;
+      await tx`DELETE FROM jobs WHERE id = ${job}`;
+    });
+  }
+});
+
+test("a stale half-open leader rejects a WS edit before its heartbeat notices the loss", async () => {
+  const runtimeUrl = process.env.DATABASE_URL_API ?? CONN;
+  const target = new URL(runtimeUrl);
+  const upstream = { host: target.hostname, port: Number(target.port || 5432) };
+  const sockets = new Set<Socket>();
+  let blackhole = false;
+  const proxy = createServer(client => {
+    const remote = createConnection(upstream);
+    sockets.add(client); sockets.add(remote);
+    const close = () => { client.destroy(); remote.destroy(); sockets.delete(client); sockets.delete(remote); };
+    client.on("error", close); remote.on("error", () => { if (!blackhole) close(); });
+    client.on("close", close); remote.on("close", () => { if (!blackhole) close(); });
+    client.on("data", data => { if (!blackhole) remote.write(data); });
+    remote.on("data", data => { if (!blackhole) client.write(data); });
+  });
+  await new Promise<void>((resolve, reject) => {
+    proxy.once("error", reject);
+    proxy.listen(0, "127.0.0.1", () => resolve());
+  });
+  const address = proxy.address();
+  assert.ok(address && typeof address !== "string");
+  target.hostname = "127.0.0.1";
+  target.port = String(address.port);
+  let leader: Awaited<ReturnType<typeof acquireNoteCollaborationLeader>> | undefined;
+  try {
+    const owner = connect(ownerToken);
+    const viewer = connect(memberToken);
+    await Promise.all([owner.synced, viewer.synced]);
+    let heartbeatLost = false;
+    leader = await acquireNoteCollaborationLeader(target.toString(), () => { heartbeatLost = true; }, {
+      heartbeatIntervalMs: 60_000, heartbeatTimeoutMs: 60_000,
+    });
+    installNoteCollaborationLeader(leader);
+    const [row] = await sql<{ pid: number }[]>`
+      select activity.pid from pg_stat_activity activity
+      join pg_locks lock on lock.pid = activity.pid
+      where activity.datname = current_database() and activity.application_name = 'astella_note_leader'
+        and lock.locktype = 'advisory' and lock.granted and lock.objsubid = 2
+        and lock.classid = 1096600321::oid and lock.objid = 1::oid`;
+    assert.ok(row?.pid);
+    blackhole = true;
+    await sql`select pg_terminate_backend(${row.pid})`;
+    assert.equal(heartbeatLost, false, "test must exercise lock verification before heartbeat detects loss");
+    const closed = once(owner.provider, "close", "stale leader closes the editor");
+    const marker = `stale leader must not broadcast ${randomUUID()}`;
+    editFragmentBlockText(owner.doc, 1, marker);
+    await closed;
+    owner.provider.disconnect();
+    assert.equal(heartbeatLost, false);
+    assert.ok(!docContents(viewer.doc).includes(marker));
+    assert.ok(!(await storedBlocks()).includes(marker));
+  } finally {
+    installNoteCollaborationLeader(null);
+    destroyProviders();
+    for (const socket of sockets) socket.destroy();
+    await leader?.close();
+    await new Promise<void>(resolve => proxy.close(() => resolve()));
+    await waitFor(() => collaborationLoad().documents === 0, "document unload");
+  }
+});
+
+test("a successor cannot take over while an accepted WS message is being applied", async () => {
+  const runtimeUrl = process.env.DATABASE_URL_API ?? CONN!;
+  const name = documentNameForNote(noteId);
+  const owner = connect(ownerToken, name, true);
+  const viewer = connect(memberToken, name, true);
+  await Promise.all([owner.synced, viewer.synced]);
+  const document = noteCollaboration.documents.get(name);
+  assert.ok(document);
+  await Promise.all(document.getConnections().map(connection => connection.waitForPendingMessages()));
+  let leader: Awaited<ReturnType<typeof acquireNoteCollaborationLeader>> | undefined;
+  let successor: Awaited<ReturnType<typeof acquireNoteCollaborationLeader>> | undefined;
+  let resume!: () => void;
+  const hold = new Promise<void>(resolve => { resume = resolve; });
+  let armed = true;
+  const extension: (typeof noteCollaboration.configuration.extensions)[number] = {
+    async beforeSync({ type, connection }) {
+      if (armed && type === messageYjsUpdate && connection.sessionId === owner.provider.sessionId) {
+        armed = false;
+        await hold;
+      }
+    },
+  };
+  try {
+    leader = await acquireNoteCollaborationLeader(runtimeUrl, () => {});
+    installNoteCollaborationLeader(leader);
+    noteCollaboration.configuration.extensions.push(extension);
+    const marker = `handover fence ${randomUUID()}`;
+    editFragmentBlockText(owner.doc, 1, marker);
+    await waitFor(() => !armed, "message reaches beforeSync");
+    const [row] = await sql<{ pid: number }[]>`
+      select activity.pid from pg_stat_activity activity join pg_locks lock on lock.pid = activity.pid
+      where activity.datname = current_database() and activity.application_name = 'astella_note_leader'
+        and lock.locktype = 'advisory' and lock.granted and lock.objsubid = 2
+        and lock.classid = 1096600321::oid and lock.objid = 1::oid`;
+    assert.ok(row?.pid);
+    await sql`select pg_terminate_backend(${row.pid})`;
+    let acquired = false;
+    const next = acquireNoteCollaborationLeader(runtimeUrl, () => {}).then(value => {
+      acquired = true; successor = value; return value;
+    });
+    await new Promise(resolve => setTimeout(resolve, 150));
+    assert.equal(acquired, false, "handover must wait for the in-flight message");
+    resume();
+    await waitFor(() => docContents(viewer.doc).includes(marker), "fenced message broadcast");
+    await next;
+  } finally {
+    resume();
+    const index = noteCollaboration.configuration.extensions.indexOf(extension);
+    if (index !== -1) noteCollaboration.configuration.extensions.splice(index, 1);
+    installNoteCollaborationLeader(null);
+    destroyProviders();
+    await leader?.close();
+    await successor?.close();
+    await waitFor(() => collaborationLoad().documents === 0, "document unload");
+  }
+});
+
+test("message handover fences leave a pool connection available under saturation", async () => {
+  const clients = Array.from({ length: 20 }, () => connect(ownerToken));
+  await Promise.all(clients.map(client => client.synced));
+  let releaseBlockers!: () => void;
+  const unblock = new Promise<void>(resolve => { releaseBlockers = resolve; });
+  let occupied = 0;
+  const blockers = Array.from({ length: 20 }, () => db.transaction(async tx => {
+    await tx.execute(drizzleSql`select 1`);
+    occupied += 1;
+    await unblock;
+  }));
+  let resume!: () => void;
+  const hold = new Promise<void>(resolve => { resume = resolve; });
+  let held = 0;
+  const extension = { async beforeSync({ type }: { type: number }) {
+    if (type !== 0) { held += 1; await hold; }
+  } };
+  try {
+    await waitFor(() => occupied === 20, "twenty occupied API pool connections");
+    noteCollaboration.configuration.extensions.push(extension);
+    for (let index = 0; index < clients.length; index++) {
+      clients[index].doc.getArray("fence-stress").push([index]);
+    }
+    await waitFor(() => held === 4, "four in-flight fenced messages");
+    // Four message fences and twenty other transactions occupy 24 of 25 API
+    // connections. The remaining one must still serve ordinary API work.
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      await Promise.race([
+        db.execute(drizzleSql`select 1`),
+        new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("API pool exhausted")), 3_000); }),
+      ]);
+    } finally { if (timer) clearTimeout(timer); }
+    resume();
+    await waitFor(() => clients.every(client => client.provider.unsyncedChanges === 0), "twenty messages acknowledged");
+    await waitFor(() => clients.every(client => client.doc.getArray("fence-stress").length === clients.length), "twenty updates propagated");
+  } finally {
+    resume();
+    releaseBlockers();
+    await Promise.allSettled(blockers);
+    const index = noteCollaboration.configuration.extensions.indexOf(extension);
+    if (index !== -1) noteCollaboration.configuration.extensions.splice(index, 1);
+    destroyProviders();
+    await waitFor(() => collaborationLoad().documents === 0, "document unload");
+  }
+});
+
+for (const hook of ["beforeSync", "beforeHandleMessage"] as const) {
+  test(`message handover fences are released when a ${hook} extension throws`, async () => {
+    const name = documentNameForNote(noteId);
+    const clients = Array.from({ length: 5 }, () => connect(ownerToken, name, true));
+    await Promise.all(clients.map(client => client.synced));
+    const failedClients = clients.slice(0, 4);
+    const targets = new Set(failedClients.map(client => client.provider.sessionId));
+    const failed = new Set<string>();
+    const extension: (typeof noteCollaboration.configuration.extensions)[number] = {
+      async [hook]({ connection }: { connection: { sessionId: string | null } }) {
+        const id = connection.sessionId;
+        if (id && targets.has(id)) {
+          failed.add(id);
+          throw new Error("injected message hook failure");
+        }
+      },
+    };
+    try {
+      // A later beforeHandleMessage extension fails before the library enters
+      // its afterHandleMessage finally block.
+      noteCollaboration.configuration.extensions.push(extension);
+      for (const [index, client] of failedClients.entries()) {
+        client.doc.getArray("fence-failure").push([index]);
+      }
+      await waitFor(() => {
+        const connections = noteCollaboration.documents.get(name)?.getConnections() ?? [];
+        return failed.size === targets.size
+          && !connections.some(connection => connection.sessionId && targets.has(connection.sessionId));
+      }, "four failed document connections removed");
+      clients[4].doc.getArray("fence-after-failure").push([1]);
+      await waitFor(() => clients[4].provider.unsyncedChanges === 0, "later message after four hook failures");
+    } finally {
+      const index = noteCollaboration.configuration.extensions.indexOf(extension);
+      if (index !== -1) noteCollaboration.configuration.extensions.splice(index, 1);
+      destroyProviders();
+      await waitFor(() => collaborationLoad().documents === 0, "document unload");
+    }
+  });
+}

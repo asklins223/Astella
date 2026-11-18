@@ -31,8 +31,7 @@ import {
   applyUploadedDocUpdate,
   notePresenceSnapshot,
   publishRestoredNoteDoc,
-  noteCollaboration,
-  documentNameForNote,
+  closeNoteDocConnections,
 } from "./collaboration.ts";
 import { readNoteDocState } from "./document-state.ts";
 import { noteSaveRequestV1Schema } from "@astella/shared/note-save-contracts";
@@ -60,7 +59,7 @@ export async function noteRoutes(app: FastifyInstance) {
   app.get<{ Params: { id: string } }>("/v2/notes/:id/reader", async (req, reply) => {
     const params = uuidParamSchema.safeParse(req.params);
     if (!params.success) return reply.code(400).send({ error: "invalid_id_format", message: "无效的笔记格式" });
-    const query = parseQuery(app, z.object({ noteVersionId: z.string().uuid().optional(),
+    const query = parseQuery(app, z.object({ noteVersionId: z.string().guid().optional(),
       afterOrdinal: z.coerce.number().int().min(0).optional(), beforeOrdinal: z.coerce.number().int().min(0).optional(),
       limit: z.coerce.number().int().min(1).max(32).default(24) })
       .refine(q => q.afterOrdinal === undefined || q.beforeOrdinal === undefined, "只能选择一个读取方向"), req.query);
@@ -253,7 +252,7 @@ userId: req.session.userId,
     );
     if (!result) return reply.code(404).send({ error: "not_found", message: "资源不存在" });
     if (result.changed && result.note.shareScope === "private") {
-      noteCollaboration.closeConnections(documentNameForNote(params.data.id));
+      closeNoteDocConnections(params.data.id);
     }
     reply.header("Cache-Control", "private, no-store");
     return {
@@ -355,6 +354,7 @@ userId: req.session.userId,
       (transaction) => deleteNote(transaction, req.params.id, req.session.workspaceId, req.session.userId),
     );
     if (!result) return reply.code(404).send({ error: "not_found", message: "资源不存在" });
+    closeNoteDocConnections(req.params.id);
     return reply.code(204).send();
   });
 
@@ -448,7 +448,7 @@ actorUserId: req.session.userId,
   // 2026-10-24 审计确认：拥有者在手机上也可显式恢复已保存的版本。
   // 正文编辑按空间权限；恢复额外由 baseVersionId 保护。
   const restoreSchema = z.object({
-    baseVersionId: z.string().uuid().optional(),
+    baseVersionId: z.string().guid().optional(),
   }).default({});
   app.post<{ Params: { id: string; versionId: string } }>(
     "/notes/:id/versions/:versionId/restore",
@@ -457,7 +457,7 @@ actorUserId: req.session.userId,
       const params = uuidParamSchema.safeParse(req.params);
       if (!params.success) return reply.code(400).send({ error: "invalid_id_format", message: "无效的 id 格式" });
       // versionId 也必须是合法 UUID，否则返回 400 而非进入 DB 查询
-      if (!z.string().uuid().safeParse(req.params.versionId).success) {
+      if (!z.string().guid().safeParse(req.params.versionId).success) {
         return reply.code(400).send({ error: "invalid versionId format" });
       }
       const body = parseBody(app, restoreSchema, req.body);

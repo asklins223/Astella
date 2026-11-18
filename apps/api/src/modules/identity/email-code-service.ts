@@ -16,8 +16,8 @@
  * 但**可注入**这一条不能丢——不连库的单测靠它。
  */
 
-import { createHash, randomInt, timingSafeEqual } from "node:crypto";
-import { and, eq, lt } from "drizzle-orm";
+import { createHash, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
+import { and, eq, gt, lt, sql } from "drizzle-orm";
 import { db } from "../../db/client.ts";
 import { emailVerificationCodes } from "@astella/shared/db-schema/identity";
 import {
@@ -87,6 +87,7 @@ export async function issueEmailCode(
   emailInput: string,
   purpose: EmailCodePurpose,
   database: EmailCodeDatabase = db,
+  sendEmail: typeof sendOutboundEmail = sendOutboundEmail,
 ): Promise<IssueEmailCodeResult> {
   // 落库与摘要都用归一化形态：发码与校验可能来自不同端点，字符串必须一致。
   const email = emailInput.trim().toLowerCase();
@@ -100,36 +101,32 @@ export async function issueEmailCode(
 
   const code = generateCode();
   const now = new Date();
+  const id = randomUUID();
+  const codeHash = hashCode(purpose, email, code);
+  const expiresAt = new Date(now.getTime() + EMAIL_CODE_TTL_MS);
   // 顺手清掉全表已过期的码：这张表的行生命周期 ≤ TTL，不该有常驻垃圾。
   await database.delete(emailVerificationCodes).where(lt(emailVerificationCodes.expiresAt, now));
-  await database
-    .delete(emailVerificationCodes)
-    .where(
-      and(
-        eq(emailVerificationCodes.email, email),
-        eq(emailVerificationCodes.purpose, purpose),
-      ),
-    );
   await database.insert(emailVerificationCodes).values({
+    id,
     email,
     purpose,
-    codeHash: hashCode(purpose, email, code),
-    expiresAt: new Date(now.getTime() + EMAIL_CODE_TTL_MS),
+    codeHash,
+    expiresAt,
+  }).onConflictDoUpdate({
+    target: [emailVerificationCodes.email, emailVerificationCodes.purpose],
+    // A new ID prevents an earlier failed send or in-flight verification
+    // from deleting/consuming the replacement code.
+    set: { id, codeHash, expiresAt, attempts: 0, createdAt: now },
   });
 
   try {
     const mail = buildVerificationEmail(purpose, code);
-    await sendOutboundEmail({ to: email, ...mail });
+    await sendEmail({ to: email, ...mail });
   } catch (error) {
     // 发不出去的码不能留在库里：它对用户不可见，只会让下次重发白覆盖一次。
     await database
       .delete(emailVerificationCodes)
-      .where(
-        and(
-          eq(emailVerificationCodes.email, email),
-          eq(emailVerificationCodes.purpose, purpose),
-        ),
-      );
+      .where(eq(emailVerificationCodes.id, id));
     if (error instanceof EmailChannelUnavailableError) return { ok: false, error: "channel_unavailable" };
     if (error instanceof EmailSendFailedError) return { ok: false, error: "send_failed" };
     throw error;
@@ -160,7 +157,8 @@ export async function verifyEmailCode(
   const consume = () =>
     database
       .delete(emailVerificationCodes)
-      .where(eq(emailVerificationCodes.id, row.id));
+      .where(eq(emailVerificationCodes.id, row.id))
+      .returning({ id: emailVerificationCodes.id });
 
   if (row.expiresAt.getTime() <= Date.now()) {
     await consume();
@@ -177,11 +175,24 @@ export async function verifyEmailCode(
   if (!matched) {
     await database
       .update(emailVerificationCodes)
-      .set({ attempts: row.attempts + 1 })
-      .where(eq(emailVerificationCodes.id, row.id));
+      .set({ attempts: sql`${emailVerificationCodes.attempts} + 1` })
+      .where(and(
+        eq(emailVerificationCodes.id, row.id),
+        eq(emailVerificationCodes.codeHash, row.codeHash),
+        lt(emailVerificationCodes.attempts, EMAIL_CODE_MAX_ATTEMPTS),
+        gt(emailVerificationCodes.expiresAt, sql`clock_timestamp()`),
+      ));
     return { ok: false, error: "invalid" };
   }
 
-  await consume();
-  return { ok: true };
+  // The preliminary read is only for timing-safe comparison. The database
+  // must decide the winner: simultaneous correct requests may have read the
+  // same row, while wrong guesses may have exhausted it in the meantime.
+  const consumed = await database.delete(emailVerificationCodes).where(and(
+    eq(emailVerificationCodes.id, row.id),
+    eq(emailVerificationCodes.codeHash, row.codeHash),
+    lt(emailVerificationCodes.attempts, EMAIL_CODE_MAX_ATTEMPTS),
+    gt(emailVerificationCodes.expiresAt, sql`clock_timestamp()`),
+  )).returning({ id: emailVerificationCodes.id });
+  return consumed.length === 1 ? { ok: true } : { ok: false, error: "invalid" };
 }

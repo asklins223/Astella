@@ -23,8 +23,8 @@ import {
   updateNoteExpansionTaskDrafts,
 } from "./service.ts";
 
-const noteParams = z.strictObject({ noteId: z.string().uuid() });
-const taskParams = z.strictObject({ noteId: z.string().uuid(), taskId: z.string().uuid() });
+const noteParams = z.strictObject({ noteId: z.string().guid() });
+const taskParams = z.strictObject({ noteId: z.string().guid(), taskId: z.string().guid() });
 
 function sendError(reply: FastifyReply, error: unknown) {
   if (!(error instanceof NoteExpansionError)) throw error;

@@ -47,7 +47,9 @@ test("全新账号无 AI 设置行仍可读取并保持未授权，不影响另�
   const response = await app.inject({method:"GET",url:"/me/ai-settings",headers:headers()});
   assert.equal(response.statusCode,200,response.body);
   assert.equal(response.json().consentAt,null); assert.equal(response.json().consentVersion,null);
-  assert.deepEqual(response.json().dataPolicy,{sendToExternal:false,sendImageContent:false,piiDetection:true,auditLogging:true});
+  // Migration 0392 enables image inclusion once a user opts into external
+  // calls. A fresh account still has no consent and external calls are off.
+  assert.deepEqual(response.json().dataPolicy,{sendToExternal:false,sendImageContent:true,piiDetection:true,auditLogging:true});
   const rows = await admin`SELECT user_id FROM user_ai_settings WHERE user_id IN (${owner},${member})`;
   assert.deepEqual(rows.map(row=>row.user_id),[owner]);
 });
@@ -66,7 +68,7 @@ test("个人空间与协作空间的所有者都可以改名，成员不能改�
   assert.equal(denied.statusCode,403,denied.body);
   const preview = await app.inject({method:"GET",url:`/workspaces/${shared}/dissolve-preview`,headers:headers()});
   assert.equal(preview.statusCode,200,preview.body);
-  assert.deepEqual(preview.json().counts,{notes:0,sources:0,cards:0,schedules:0});
+  assert.deepEqual(preview.json().counts,{notes:0,sources:0});
   const memberPreview = await app.inject({method:"GET",url:`/workspaces/${shared}/dissolve-preview`,headers:{authorization:`Bearer ${memberToken}`}});
   assert.equal(memberPreview.statusCode,403,memberPreview.body);
 });

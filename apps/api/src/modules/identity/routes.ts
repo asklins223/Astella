@@ -31,6 +31,7 @@ import {
   type RateLimitStore,
 } from "../../lib/rate-limit-store.ts";
 import { isEmailChannelConfigured } from "../../lib/outbound-email.ts";
+import { resolveLegacyPasswordPolicy } from "./credentials.ts";
 import { EMAIL_CODE_VERIFY_MESSAGES, emailVerificationDisabled, verifyEmailCode } from "./email-code-service.ts";
 import { buildDesktopCapabilityProjection } from "./capability-projection.ts";
 
@@ -106,6 +107,9 @@ function retryAfterSeconds(resetAt: number): number {
 }
 
 export async function authRoutes(app: FastifyInstance, options: AuthRoutesOptions = {}) {
+  // Refuse a forced-reset rollout without a configured recovery channel; this
+  // checks configuration only, so actual email delivery must be tested first.
+  const legacyPasswordPolicy = resolveLegacyPasswordPolicy(process.env, isEmailChannelConfigured());
   const limiter = new RateLimiter(options.rateLimitStore ?? defaultRateLimitStore, {
     windowMs: options.rateLimitWindowMs ?? positiveIntegerEnv(
       "AUTH_RATE_LIMIT_WINDOW_MS",
@@ -134,7 +138,7 @@ export async function authRoutes(app: FastifyInstance, options: AuthRoutesOption
       reply.header("Retry-After", retryAfterSeconds(emailDecision.resetAt));
       return reply.code(429).send({ error: "rate_limited", message: "该账号登录尝试过于频繁，请稍后重试" });
     }
-    const result = await loginWithPassword(body.email, body.password, body.clientKind);
+    const result = await loginWithPassword(body.email, body.password, body.clientKind, legacyPasswordPolicy);
     if (!result) {
       throw app.httpErrors.unauthorized("invalid credentials");
     }
@@ -184,11 +188,15 @@ export async function authRoutes(app: FastifyInstance, options: AuthRoutesOption
 
   // POST /auth/leave-workspace — 用户主动退出协作工作区
   const leaveWorkspaceSchema = z.object({
-    workspaceId: z.string().uuid(),
+    workspaceId: z.string().guid(),
   });
   app.post("/auth/leave-workspace", { preHandler: [requireSession] }, async (req, reply) => {
     const body = parseBody(app, leaveWorkspaceSchema, req.body);
-    const result = await leaveWorkspace(req.session.userId, body.workspaceId);
+    const credential = getRequestCredential(req);
+    if (!credential) return reply.code(401).send({ error: "invalid_session" });
+    const result = await leaveWorkspace(req.session.userId, body.workspaceId, {
+      token: credential.token, workspaceId: req.session.workspaceId, clientKind: req.session.clientKind,
+    });
     if (!result.ok) {
       const statusMap: Record<string, number> = {
         not_found: 404,
@@ -196,6 +204,7 @@ export async function authRoutes(app: FastifyInstance, options: AuthRoutesOption
         owner_cannot_leave: 409,
         personal_workspace_cannot_leave: 400,
         personal_workspace_missing: 409,
+        invalid_session: 401,
       };
       return reply.code(statusMap[result.error] ?? 400).send({ error: result.error });
     }
@@ -206,9 +215,7 @@ export async function authRoutes(app: FastifyInstance, options: AuthRoutesOption
     }
 
     // 换 token 不换客户端种类（0413）：手机上的会话退到个人空间之后仍该被同一道闸看着。
-    const switchResult = await switchWorkspace(
-      req.session.userId, result.personalWorkspaceId, null, req.session.clientKind,
-    );
+    const switchResult = result.replacement;
     if (!switchResult) {
       // 理论上不会发生，但保护性处理
       clearSessionCookies(reply);
@@ -359,15 +366,16 @@ export async function authRoutes(app: FastifyInstance, options: AuthRoutesOption
 
   // N-013: 切换工作区
   const switchWorkspaceSchema = z.object({
-    workspaceId: z.string().uuid(),
+    workspaceId: z.string().guid(),
   });
   app.post("/auth/switch-workspace", { preHandler: [requireSession] }, async (req, reply) => {
     const body = parseBody(app, switchWorkspaceSchema, req.body);
     const previousCredential = getRequestCredential(req);
+    if (!previousCredential) return reply.code(401).send({ error: "invalid_session" });
     // 0413：这一条会**撤销旧 token 并签一枚新的**，所以旧凭据上的客户端种类必须跟过去。
     // 不带上它，手机上的会话换个空间就洗成桌面会话——那道正文写入的闸只在换空间之前有效。
     const result = await switchWorkspace(
-      req.session.userId, body.workspaceId, previousCredential?.token ?? null, req.session.clientKind,
+      req.session.userId, body.workspaceId, previousCredential.token, req.session.clientKind,
     );
     if (!result) {
       return reply.code(403).send({ error: "not a member of this workspace" });
@@ -397,12 +405,12 @@ export async function authRoutes(app: FastifyInstance, options: AuthRoutesOption
   );
 
   // 转让协作空间的所有权（审查附录 C：owner 此前既不能退也不能交）。
-  const transferOwnershipSchema = z.object({ toUserId: z.string().uuid() });
+  const transferOwnershipSchema = z.object({ toUserId: z.string().guid() });
   app.post<{ Params: { id: string } }>(
     "/workspaces/:id/transfer-ownership",
     { preHandler: [requireSession, requireOwner] },
     async (req, reply) => {
-      const params = parseQuery(app, z.object({ id: z.string().uuid() }), req.params);
+      const params = parseQuery(app, z.object({ id: z.string().guid() }), req.params);
       const body = parseBody(app, transferOwnershipSchema, req.body);
       const result = await transferWorkspaceOwnership(
         req.session.userId,
@@ -423,7 +431,7 @@ export async function authRoutes(app: FastifyInstance, options: AuthRoutesOption
     },
   );
 
-  const recoveredPasswordParamsSchema = z.object({ userId: z.string().uuid() });
+  const recoveredPasswordParamsSchema = z.object({ userId: z.string().guid() });
   const recoveredPasswordBodySchema = z.object({
     password: z.string().min(12).max(200),
   });
@@ -447,7 +455,7 @@ export async function authRoutes(app: FastifyInstance, options: AuthRoutesOption
 
   // ─── N-011: AI 隐私治理路由 ────────────────────────────────────
 
-  // 2026-08-11（安全加固）：修改密码——验证旧密码 + 更新 bcrypt + 撤销全部
+  // 修改密码——验证旧密码 + 更新 scrypt 哈希 + 撤销全部
   // 会话（全端注销，泄露凭据可自轮换）。
   const changePasswordSchema = z.object({
     currentPassword: z.string().min(1).max(200),
@@ -455,7 +463,9 @@ export async function authRoutes(app: FastifyInstance, options: AuthRoutesOption
   });
   app.post("/auth/change-password", { preHandler: [requireSession] }, async (req, reply) => {
     const body = parseBody(app, changePasswordSchema, req.body);
-    const changed = await changePassword(req.session.userId, body.currentPassword, body.newPassword);
+    const credential = getRequestCredential(req);
+    if (!credential) return reply.code(401).send({ error: "invalid_session" });
+    const changed = await changePassword(req.session.userId, body.currentPassword, body.newPassword, credential.token);
     if (!changed) {
       return reply.code(403).send({ error: "invalid_password", message: "当前密码不正确" });
     }

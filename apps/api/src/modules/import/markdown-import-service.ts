@@ -1,10 +1,10 @@
 /**
  * POST /import/markdown 的业务实现（批量导入 Markdown 笔记，F-033/G-006）。
  *
- * 路由只保留 HTTP 关注点（schema 校验、事务边界、事务后投影刷新）；本模块负责
+ * 路由只保留 HTTP 关注点（schema 校验和事务边界）；本模块负责
  * itemKey 计算、图片资产预注册、advisory lock + 幂等去重、逐篇写入与响应整形。
  * 预处理（解析/itemKey/图片预注册）在业务事务外完成，避免网络 IO 占持事务连接；
- * 搜索索引在业务事务提交后刷新（可重建投影，索引失败不回滚业务写入）。
+ * 搜索索引在工作区事务内更新（可重建投影，索引失败不回滚业务写入）。
  */
 
 import { createHash } from "node:crypto";
@@ -19,7 +19,7 @@ import { writeFragmentBlocks, setNoteTitle } from "../note/doc-fragment.ts";
 import { preRegisterImageAssetsForImport } from "../../lib/image-asset.ts";
 import { markdownToBlocks, extractTitleFromBlocks, type ParsedBlock } from "@astella/shared/markdown-parser";
 import { extractObjectKeyFromMarkdownImage } from "../../lib/markdown-image.ts";
-import { upsertSearchDocument } from "./search-index.ts";
+import { upsertSearchDocument } from "../note/search-projection.ts";
 import { logger } from "../../lib/logger.ts";
 
 export interface MarkdownImportScope {
@@ -59,10 +59,9 @@ export interface MarkdownImportResponse {
   errors?: MarkdownImportItemError[];
 }
 
-/** 事务内产出：响应体 + 待事务提交后刷新的搜索索引文档。 */
+/** 事务内产出：可以在事务提交后直接返回的响应体。 */
 export interface MarkdownImportOutcome {
   response: MarkdownImportResponse;
-  searchDocuments: PendingSearchDocument[];
 }
 
 /** G-006: 计算稳定的 item key，用于幂等去重 */
@@ -83,14 +82,6 @@ type ImportTransaction = ApiTransaction;
 
 interface ImportedItem extends MarkdownImportNoteEntry {
   itemKey: string;
-}
-
-interface PendingSearchDocument {
-  workspaceId: string;
-  objectType: "note";
-  objectId: string;
-  title: string;
-  body: string;
 }
 
 /**
@@ -161,11 +152,9 @@ async function importItems(
   importId: string | null,
 ): Promise<{
   records: ImportedItem[];
-  searchDocuments: PendingSearchDocument[];
   errors?: Array<{ index: number; title: string; error: string }>;
 }> {
   const records: ImportedItem[] = [];
-  const searchDocuments: PendingSearchDocument[] = [];
   const errors: Array<{ index: number; title: string; error: string }> = [];
 
   // F16·③（round-4）：保持逐篇串行。每一项是外层主事务内的 SAVEPOINT
@@ -257,6 +246,16 @@ async function importItems(
           .set({ currentVersionId: version.id, updatedAt: new Date() })
           .where(eq(notes.id, note.id));
 
+        // Non-empty documents project their own final title/body through
+        // applyNoteDocUpdate. Empty imports still need an index entry. The
+        // projection helper uses a savepoint, so an index failure does not
+        // roll back the imported note or poison the surrounding transaction.
+        if (blocks.length === 0) {
+          await upsertSearchDocument(itemTx as ApiTransaction, {
+            workspaceId, objectType: "note", objectId: note.id, title, body: "",
+          });
+        }
+
         return { note, version };
       });
 
@@ -266,15 +265,6 @@ async function importItems(
         version: { id: result.version.id, versionNo: result.version.versionNo },
       });
 
-      // BUG-69 修复：过滤 image 类型 block，与 note service 保持一致，避免 drift 检测误报
-      const bodyText = blocks.filter((b) => b.type !== "image").map((b) => b.content).join("\n");
-      searchDocuments.push({
-        workspaceId,
-        objectType: "note",
-        objectId: result.note.id,
-        title: result.note.title,
-        body: bodyText,
-      });
     } catch (err) {
       // F-033: 记录失败项，继续处理后续笔记
       logger.error(
@@ -294,40 +284,13 @@ async function importItems(
 
   return {
     records,
-    searchDocuments,
     ...(errors.length > 0 ? { errors } : {}),
   };
 }
 
-async function updateImportedNoteSearchIndexes(documents: PendingSearchDocument[]) {
-  // 搜索索引是可重建投影：必须等业务事务提交后再更新，失败仅记录日志。
-  // BUG-47/PERF-20/PERF-39 修复：原代码使用串行 for 循环逐个更新搜索索引，
-  // 对于 100 篇笔记的批量导入会产生 100 次串行 DB 往返。
-  // PERF-BN5 修复：原并发版本用 Promise.allSettled 一次性并发 100 篇 upsert，
-  // 压 max:10 连接池。现改为按 25/批分批，每批内并行、批间顺序等待，
-  // 既保留一定并行度又避免 100 并发尖峰。单篇失败仍隔离，不影响其他笔记。
-  const BATCH_SIZE = 25;
-  for (let start = 0; start < documents.length; start += BATCH_SIZE) {
-    const batch = documents.slice(start, start + BATCH_SIZE);
-    const results = await Promise.allSettled(
-      batch.map((doc) => upsertSearchDocument(doc)),
-    );
-    for (let i = 0; i < results.length; i++) {
-      const result = results[i]!;
-      if (result.status === "rejected") {
-        logger.error(
-          { err: result.reason, objectId: batch[i]!.objectId, title: batch[i]!.title },
-          "import: 搜索索引更新失败（单篇隔离，不影响其他笔记）",
-        );
-      }
-    }
-  }
-}
-
 /**
  * 导入主流程（必须由路由在 withWorkspaceTransaction 内调用）：
- * advisory lock → 幂等查询 → 逐篇写入 → 响应整形。返回值需再交给
- * finalizeMarkdownImport 在事务提交后刷新搜索索引。
+ * advisory lock → 幂等查询 → 逐篇写入及索引 → 响应整形。
  */
 export async function importMarkdownNotes(
   tx: ApiTransaction,
@@ -347,7 +310,6 @@ export async function importMarkdownNotes(
         notes: imported.records.map(({ note, version }) => ({ note, version })),
         ...(imported.errors && imported.errors.length > 0 ? { errors: imported.errors } : {}),
       },
-      searchDocuments: imported.searchDocuments,
     };
   }
   const importId = input.importId;
@@ -445,7 +407,6 @@ export async function importMarkdownNotes(
   }
 
   let importedErrors: Array<{ index: number; title: string; error: string }> | undefined;
-  const searchDocuments: PendingSearchDocument[] = [];
 
   if (itemsToImport.length > 0) {
     const importResult = await importItems(
@@ -456,7 +417,6 @@ export async function importMarkdownNotes(
       importId,
     );
     for (const record of importResult.records) resultByKey.set(record.itemKey, record);
-    searchDocuments.push(...importResult.searchDocuments);
     importedErrors = importResult.errors;
 
     logger.info(
@@ -489,17 +449,5 @@ export async function importMarkdownNotes(
       idempotent: hadRequestedExisting,
       ...(importedErrors && importedErrors.length > 0 ? { errors: importedErrors } : {}),
     },
-    searchDocuments,
   };
-}
-
-/**
- * 业务事务提交后调用：刷新搜索索引投影，并返回路由响应体。
- * 索引是可重建投影，写入失败只记录日志，不影响已提交的导入结果。
- */
-export async function finalizeMarkdownImport(
-  outcome: MarkdownImportOutcome,
-): Promise<MarkdownImportResponse> {
-  await updateImportedNoteSearchIndexes(outcome.searchDocuments);
-  return outcome.response;
 }

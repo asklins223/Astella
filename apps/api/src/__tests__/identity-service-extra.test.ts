@@ -190,10 +190,10 @@ test("RECOVERED_PASSWORD_SENTINEL 不以 $2 开头（不是 bcrypt 哈希）", (
 
 // ─── hashPassword ────────────────────────────────────────────────────────
 
-test("hashPassword 返回 bcrypt 哈希字符串", async () => {
+test("hashPassword 返回带版本的 scrypt 哈希字符串", async () => {
   const hash = await hashPassword("testpassword123");
   assert.equal(typeof hash, "string");
-  assert.ok(hash.startsWith("$2a$") || hash.startsWith("$2b$"), "应以 $2a$ 或 $2b$ 开头");
+  assert.ok(hash.startsWith("$scrypt$v1$"));
 });
 
 test("hashPassword 相同密码产生不同哈希（盐随机）", async () => {

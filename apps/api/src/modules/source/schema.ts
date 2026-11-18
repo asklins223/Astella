@@ -8,7 +8,7 @@ export const sourceCreateSchema = z.object({
   url: z.string().url().optional(),
   // 审计 F8：文件采进来时的来路（`文件 X.pdf`）。不传时退回 url ?? null。
   origin: z.string().max(500).optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
   // 审计 F33：用户明确说"再采一次"时才绕过同网址查重。
   force: z.boolean().optional(),
 }).refine(
@@ -25,7 +25,7 @@ export const sourceUpdateSchema = z.object({
   title: z.string().min(1).max(500).optional(),
   // F-021: 状态只允许服务端状态机改变，客户端不能直接设置 status
   // status 字段从 schema 中移除
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 export const sourceListQuerySchema = paginationQuerySchema.extend({

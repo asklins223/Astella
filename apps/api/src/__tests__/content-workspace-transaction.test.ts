@@ -42,8 +42,9 @@ const MODULE_CONTRACTS: ModuleContract[] = [
   // `export async function (executor: ApiTransaction, …)` 形状（`normalizeSourceUrl`
   // 是同步纯函数，不计入这条"每个导出服务都显式收事务执行器"的口径）。
   { name: "source", handlers: 9, services: 10 },
-  // v0.6 新增 /search/drift 与 /search/auto-fix 后：4 路由 / 4 服务
-  { name: "search", handlers: 4, services: 4 },
+  // searchDriftForViewer is an additional transaction-bound service that
+  // filters private note details before either drift route returns them.
+  { name: "search", handlers: 4, services: 5 },
 ];
 
 function readModuleFile(moduleName: string, fileName: "routes.ts" | "service.ts"): string {

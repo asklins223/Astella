@@ -4,6 +4,7 @@ import { companionShareNoteV1Schema, noteShareScopeReceiptV1Schema } from "@aste
 import { db, withWorkspaceTransaction } from "../../db/client.ts";
 import { logger } from "../../lib/logger.ts";
 import { setNoteShareScope } from "./service.ts";
+import { closeNoteDocConnections } from "./collaboration.ts";
 
 /**
  * 伴星那一句「把这篇共享给空间」在这里落地（2026-10-09）。
@@ -16,7 +17,7 @@ import { setNoteShareScope } from "./service.ts";
  */
 export async function processCompanionNoteShare(scope: { workspaceId: string; userId: string }, callId: string): Promise<void> {
   try {
-    await withWorkspaceTransaction(scope, async tx => {
+    const privateNoteId = await withWorkspaceTransaction(scope, async tx => {
       const rows = await tx.execute<{ arguments: unknown }>(sql`
         SELECT c.arguments FROM companion_agent_tool_calls c
           JOIN companion_turn_runs r ON r.id=c.run_id
@@ -51,7 +52,9 @@ export async function processCompanionNoteShare(scope: { workspaceId: string; us
       },updated_at=now()
         WHERE id=${callId} AND workspace_id=${scope.workspaceId} AND user_id=${scope.userId}
           AND name='notes.write.share' AND status='executing' AND result_ref IS NULL`);
+      return receipt?.changed && receipt.shareScope === "private" ? receipt.noteId : undefined;
     });
+    if (privateNoteId) closeNoteDocConnections(privateNoteId);
   } catch (error) {
     logger.error({ err: error, callId }, "companion note share dispatch failed");
     // 事务可能已经回滚，而那一列到底改没改**不确定**——留一条待核对，

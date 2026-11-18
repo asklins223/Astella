@@ -589,25 +589,10 @@ function readOpenCodeGoErrorCode(body: unknown): string | undefined {
   return typeof code === "string" || typeof code === "number" ? String(code) : undefined;
 }
 
-/** 网关错误体里的那句话（`error.message`）。code 只到 `invalid_request_error` 这一层， */
-/** 具体哪一句非法只能从这里读。 */
-function readOpenCodeGoErrorMessage(body: unknown): string | undefined {
-  const message = asRecord(asRecord(body)?.error)?.message ?? asRecord(body)?.message;
-  if (typeof message !== "string" || !message.trim()) return undefined;
-  return message.replace(/\s+/g, " ").slice(0, 400);
-}
-
-/**
- * 网关拒绝这一发时，先把**它自己说的理由**留下再抛。
- *
- * 失败入库只剩 `category/name/code`（`provider-request-error.ts` 的注释写了这件事），
- * 而 code 只到错误类型名——2026-10-14 实测 10 条 `provider_http_400` 里，"到底哪句非法"
- * 一条都没留，只能靠人肉重放猜。日志是这一层唯一的完整通道：400 是那种必须能回答
- * 「我请求里哪一行不对」的失败，没有那句话就修不了。
- */
-function logOpenCodeRejection(provider: string, status: number, body: unknown): void {
+/** The remote error body may echo prompts, credentials or user data. */
+function logOpenCodeRejection(provider: string, status: number, _body: unknown): void {
   if (status < 400 || status > 499) return;
-  logger.warn({ provider, status, code: readOpenCodeGoErrorCode(body), gateway: readOpenCodeGoErrorMessage(body) },
+  logger.warn({ provider, status },
     "OpenAI Responses request rejected");
 }
 

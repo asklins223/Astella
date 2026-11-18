@@ -23,9 +23,8 @@
  * 再拿它**逐个问**每个符号还用不用——不是启发式，是看真实使用。
  */
 
-import bcrypt from "bcryptjs";
+import { notifySessionRevoked } from "./session-revocations.ts";
 import {
-  DUMMY_PASSWORD_HASH,
   SESSION_TTL_MS,
   canonicalizeEmail,
   generateToken,
@@ -33,6 +32,8 @@ import {
   hashToken,
   nextSessionExpiry,
   verifyPassword,
+  verifyPasswordForLogin,
+  type LegacyPasswordPolicy,
   type SessionClientKind,
   type SessionContext,
 } from "./credentials.ts";
@@ -162,12 +163,18 @@ export async function findLoginUserByEmail(email: string): Promise<LoginUser | n
 export async function establishLoginSession(
   user: LoginUser,
   clientKind: SessionClientKind = "desktop",
+  verifiedPasswordHash?: string,
 ): Promise<{ token: string; ctx: SessionContext; workspaces: WorkspaceInfo[] } | null> {
   // 空间建立之前的 actor 事务：这条路的**第一件事**就是把"这个人属于哪些空间"
   // 读出来，而 RLS 的租户守卫要的正是"当前空间"。所以用 actor 上下文
   // （`app.user_id`）而不是 workspace 上下文——`workspace_members` /
   // `workspaces` 上的 actor 读策略就是为这一条路装的（迁移 0257）。
   return withActorTransaction({ userId: user.id }, async (tx) => {
+    // Serialize session creation with password resets and bulk revocation.
+    // A password login must also prove its earlier verification is up to date.
+    const [current] = await tx.select({ passwordHash: users.passwordHash }).from(users)
+      .where(eq(users.id, user.id)).for("update");
+    if (!current || (verifiedPasswordHash !== undefined && current.passwordHash !== verifiedPasswordHash)) return null;
     // ADR-0009: 查询所有活跃工作区（left_at IS NULL），排除已退出的
     const memberships = await tx.query.workspaceMembers.findMany({
       where: and(
@@ -221,14 +228,15 @@ export async function loginWithPassword(
   email: string,
   password: string,
   clientKind: SessionClientKind = "desktop",
+  legacyPolicy: LegacyPasswordPolicy = "allow",
 ): Promise<{ token: string; ctx: SessionContext; workspaces: WorkspaceInfo[] } | null> {
   const user = await findLoginUserByEmail(email);
-  if (!user) {
-    await bcrypt.compare(password, DUMMY_PASSWORD_HASH);
-    return null;
-  }
-  if (!(await verifyPassword(password, user.passwordHash))) return null;
-  return establishLoginSession(user, clientKind);
+  const verified = await verifyPasswordForLogin(password, user?.passwordHash ?? null, legacyPolicy);
+  if (!user || !verified) return null;
+  // A legacy hash cannot prove whether a submitted 72-byte prefix was the
+  // user's entire password. Do not silently turn that prefix into a new secret;
+  // explicit password change or verified reset creates a versioned scrypt hash.
+  return establishLoginSession(user, clientKind, user.passwordHash);
 }
 
 /**
@@ -249,9 +257,15 @@ export async function loginWithPassword(
  * 真正的边界：任何"按 token 查会话"的语句都只能拿到自己手里那一个令牌的行。
  */
 export async function decodeToken(token: string): Promise<SessionContext | null> {
-  // R-011: 查询时使用 token 哈希
-  const tokenHash = hashToken(token);
+  return decodeSessionTokenHash(hashToken(token));
+}
 
+/** Revalidate an existing connection without extending its idle lifetime. */
+export async function decodeSessionTokenHash(
+  tokenHash: string,
+  renew = true,
+  beforeAccept?: (tx: ApiTransaction, context: SessionContext) => Promise<void>,
+): Promise<SessionContext | null> {
   return withActorTransaction({ userId: SYSTEM_USER_ID, sessionToken: tokenHash }, async (tx) => {
     const session = await tx.query.sessions.findFirst({
       where: eq(sessions.token, tokenHash),
@@ -357,11 +371,11 @@ export async function decodeToken(token: string): Promise<SessionContext | null>
 
     // 滑动续期：桌面端把凭据存在本机，只要用户还在用就一直有效，直到绝对上限。
     // 低频写入由 nextSessionExpiry 的阈值保证（见常量注释）。
-    const renewed = nextSessionExpiry({ createdAt: session.createdAt, expiresAt: session.expiresAt, now: new Date() });
+    const renewed = renew ? nextSessionExpiry({ createdAt: session.createdAt, expiresAt: session.expiresAt, now: new Date() }) : null;
     if (renewed) {
       await tx.update(sessions).set({ expiresAt: renewed }).where(eq(sessions.token, tokenHash));
     }
-    return {
+    const context: SessionContext = {
       userId: session.userId,
       workspaceId: session.workspaceId,
       membershipRole,
@@ -377,6 +391,10 @@ export async function decodeToken(token: string): Promise<SessionContext | null>
       workspaceName,
       workspaceType,
     };
+    // Keep an optional caller guard in this transaction after session scope
+    // resolution. Collaboration uses it to hold the handover lock.
+    await beforeAccept?.(tx, context);
+    return context;
   });
 }
 
@@ -386,6 +404,7 @@ export async function revokeSession(token: string): Promise<void> {
   await withActorTransaction({ userId: SYSTEM_USER_ID, sessionToken: tokenHash }, (tx) =>
     tx.delete(sessions).where(eq(sessions.token, tokenHash)),
   );
+  notifySessionRevoked({ tokenHash });
 }
 
 export async function cleanupExpiredSessions(): Promise<number> {
@@ -432,7 +451,7 @@ export async function cleanupExpiredSessions(): Promise<number> {
  * 而不是报错。`workspaceId` 只用于设置事务上下文，不参与这张表的隔离。
  */
 /**
- * 2026-08-11（安全加固）：修改密码——验证旧密码后更新 bcrypt 哈希，
+ * 修改密码——验证旧密码后更新 scrypt 哈希，
  * 并在同一事务内撤销该用户**全部** session（改密后强制全端重新登录）。
  * 返回 false 表示旧密码错误（不区分其他原因，避免枚举）。
  *
@@ -444,17 +463,30 @@ export async function cleanupExpiredSessions(): Promise<number> {
  * `loginWithPassword` 必须走 `astella_find_user_by_email` 是同一件事的两面：
  * 都是"没有 `app.user_id` 就看不见自己那一行"。
  *
- * 放进同一个事务也就顺带关掉了"核对通过之后、写回之前密码被别处改掉"的窗口；
- * bcrypt 只在旧密码核对通过后才算新哈希，猜错的人不会替我们多做一次哈希。
+ * 用户行锁覆盖核对和写入，避免旧密码在并发重置后覆盖新密码；
+ * 只在旧密码核对通过后才算新哈希。
  */
 export async function changePassword(
   userId: string,
   currentPassword: string,
   newPassword: string,
+  requestToken?: string,
 ): Promise<boolean> {
-  return withActorTransaction({ userId }, async (tx) => {
-    const user = await tx.query.users.findFirst({ where: eq(users.id, userId) });
-    if (!user || !(await verifyPassword(currentPassword, user.passwordHash))) return false;
+  const changed = await withActorTransaction({ userId }, async (tx) => {
+    const [user] = await tx.select({ passwordHash: users.passwordHash }).from(users)
+      .where(eq(users.id, userId)).for("update");
+    if (!user) return false;
+    if (requestToken) {
+      // Middleware can authenticate before a concurrent reset or revocation.
+      // Recheck inside the same user lock before applying the change.
+      const [session] = await tx.select({ token: sessions.token }).from(sessions).where(and(
+        eq(sessions.userId, userId),
+        eq(sessions.token, hashToken(requestToken)),
+        sql`${sessions.expiresAt} > clock_timestamp()`,
+      )).for("update");
+      if (!session) return false;
+    }
+    if (!(await verifyPassword(currentPassword, user.passwordHash))) return false;
     const newHash = await hashPassword(newPassword);
     await tx.update(users).set({ passwordHash: newHash, updatedAt: new Date() }).where(eq(users.id, userId));
     // 撤销"这个人的全部会话"是改密的语义本身，所以 actor 就是这个人，
@@ -462,6 +494,8 @@ export async function changePassword(
     await tx.delete(sessions).where(eq(sessions.userId, userId));
     return true;
   });
+  if (changed) notifySessionRevoked({ userId });
+  return changed;
 }
 
 /**
@@ -470,22 +504,26 @@ export async function changePassword(
  * actor 事务与 RLS 的原因同 changePassword 见上。
  */
 export async function resetPassword(userId: string, newPassword: string): Promise<boolean> {
-  return withActorTransaction({ userId }, async (tx) => {
-    const user = await tx.query.users.findFirst({ where: eq(users.id, userId) });
-    if (!user) return false;
-    const newHash = await hashPassword(newPassword);
-    await tx.update(users).set({ passwordHash: newHash, updatedAt: new Date() }).where(eq(users.id, userId));
+  const newHash = await hashPassword(newPassword);
+  const changed = await withActorTransaction({ userId }, async (tx) => {
+    const [updated] = await tx.update(users).set({ passwordHash: newHash, updatedAt: new Date() })
+      .where(eq(users.id, userId)).returning({ id: users.id });
+    if (!updated) return false;
     // 改密即全端重新登录：这条与 changePassword 相同，是语义本身。
     await tx.delete(sessions).where(eq(sessions.userId, userId));
     return true;
   });
+  if (changed) notifySessionRevoked({ userId });
+  return changed;
 }
 
 /**
  * 2026-08-11（安全加固）：撤销用户全部会话（"退出所有设备"）。
  */
 export async function revokeAllSessionsForUser(userId: string): Promise<void> {
-  await withActorTransaction({ userId }, (tx) =>
-    tx.delete(sessions).where(eq(sessions.userId, userId)),
-  );
+  await withActorTransaction({ userId }, async (tx) => {
+    await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).for("update");
+    await tx.delete(sessions).where(eq(sessions.userId, userId));
+  });
+  notifySessionRevoked({ userId });
 }

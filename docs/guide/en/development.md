@@ -22,7 +22,7 @@ What this covers: from a clean checkout to a window you can actually operate —
 | --- | --- | --- |
 | Docker + Compose v2 | Everything the stack depends on (postgres, minio, edge-tts, api, worker) is in `docker-compose.dev.yml`; PostgreSQL does **not** need to be installed locally | `docker compose version` |
 | `make` | Every entry point is a Make target; bare `make` means `make up` (`.DEFAULT_GOAL := up`) | `make -v` |
-| Node 22 | Both service images are `node:22.11.0-alpine3.20` (`apps/api/Dockerfile:4`, `workers/ai-worker/Dockerfile:3`); CI pins `NODE_VERSION: "22"` (`.github/workflows/main-ci.yml`) | `node -v` |
+| Node 22 | The API and Worker Dockerfiles pin Node 22 on Alpine. CI uses the current Node 22 patch release. | `node -v` |
 | `npm ci` once per package | Nine packages each carry their own `package-lock.json`; `@astella/*` are `file:` symlinks, but `tsc` resolves `zod` / `drizzle-orm` from the **imported package's own** `node_modules` | `ls package-lock.json packages/*/package-lock.json apps/*/package-lock.json workers/*/package-lock.json` |
 | `python3` | Several live probes (`scripts/companion-inbox-sse-probe.py` and friends) and the edge-tts service script are Python | `python3 -V` |
 
@@ -79,7 +79,7 @@ The Makefile `up` target performs four steps:
 3. `compose --profile storage up -d --build --remove-orphans`: build the `target: dev` images and start postgres / minio / api / worker / edge-tts. The dev stack **includes the storage profile by default** (`DEV_PROFILES`), so avatar and note-image upload work without a separate `make storage`.
 4. `docker wait` on each of `role-bootstrap`, `migrate`, `role-grants` and `minio-init`.
 
-Get step 4's semantics right, because it is where a green command lies. `docker wait` **blocks until the container exits and prints its exit code**, but the CLI itself exits 0 (measured on this machine 2026-10-06: a container exiting with code 3 made `docker wait` print `3` while `$?` stayed `0`), and the Makefile redirects that output to `/dev/null`. So "waits for init to finish" is true; **"a failed migration aborts `make up`" is not**. `make up` will complete successfully, and you find out another way: `GET /ready`, or `docker compose -p astella-dev -f docker-compose.dev.yml logs migrate`.
+Step 4 checks the container exit code printed by `docker wait`. A failed initialization makes `make up` fail and prints that service's logs. Check `/ready` after startup to confirm runtime dependencies are ready.
 
 `migrate`, `role-bootstrap` and `role-grants` run on every start (idempotent no-ops when nothing changed) — they are not first-time-only. `minio-init` and `seed-*` are the genuinely one-time ones.
 
@@ -114,10 +114,10 @@ make desktop-client-dev       # cd apps/desktop-client && npm run dev
 | Endpoint | What it checks | What a failure means |
 | --- | --- | --- |
 | `GET /health` | the process is alive and the event loop can answer HTTP. `server.ts` returns only `{status:"ok",service:"api",timestamp}` | the process itself is broken |
-| `GET /ready` | `SELECT 1`; the nine core tables present in `information_schema.tables` (`users`, `workspaces`, `notes`, `jobs`, `sessions`, `learning_runs`, `learning_run_private_contracts`, `learning_tasks`, `learning_task_variants`); and `max(created_at)` from `drizzle.__drizzle_migrations` ≥ `MIN_READY_MIGRATION_CREATED_AT` (default `1786683800000`) | the database is reachable but its schema is incomplete — migrations never ran, or ran half way |
+| `GET /ready` | The API checks database connectivity, core tables and the final migration marker bundled with the release. The Worker checks database connectivity. | The database is unavailable, or the API database needs migrations. |
 | `GET /metrics` | Prometheus text exposition | says nothing about liveness or readiness |
 
-`/ready` is what the compose healthcheck for api targets. **Worker is asymmetric**: `/ready` exists in code (`workers/ai-worker/src/lib/metrics.ts`, probing `db.execute(sql`SELECT 1`)`), but the healthcheck in `docker-compose.dev.yml` still polls `/metrics` — so a dead database will not mark the worker container unhealthy. Read "compose says worker is healthy" as "worker can serve metrics", nothing more.
+The development and production Compose health checks use each service's `/ready` endpoint.
 
 ## Port table
 
@@ -247,7 +247,7 @@ Only the three that self-resolve at the command-and-configuration layer; the res
 
 - `make up` fails during compose interpolation with `Set EDGE_TTS_AUTH_TOKEN in .env`: that line is still commented out. Fill in any local token and re-validate cheaply with `make config`.
 - The window opens but login reports a connection-configuration problem: `ASTELLA_DESKTOP_PAIRING_*` / `ASTELLA_DOMAIN_SCHEMA_REVISION` are unset, or you edited `.env` without restarting the main process (`electron.vite.config.ts` calls `loadDotenv` once at startup).
-- Migrations or role grants clearly did not apply, yet `make up` was green: see the `docker wait` paragraph in [The one-shot container convention](#the-one-shot-container-convention) — `docker compose -p astella-dev -f docker-compose.dev.yml logs migrate` and `GET /ready` are the evidence.
+- If migrations or role grants fail, check the `make up` output and `docker compose -p astella-dev -f docker-compose.dev.yml logs migrate`; use `GET /ready` to check runtime readiness.
 
 The full symptom → cause → fix list lives in [faq-and-troubleshooting.md](faq-and-troubleshooting.md); this page deliberately does not duplicate it.
 

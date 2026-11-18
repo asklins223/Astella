@@ -7,7 +7,7 @@ export const companionParticipationPreferencesV1Schema = z.object({
   updatedAt: z.string().datetime({ offset: true }).nullable(),
   source: z.object({
     kind: z.enum(["user_message", "settings"]),
-    workspaceId: z.string().uuid(), messageId: z.string().uuid().nullable(),
+    workspaceId: z.string().guid(), messageId: z.string().guid().nullable(),
     quote: z.string().max(20_000).nullable(),
   }).strict().nullable(),
 }).strict();
@@ -45,8 +45,8 @@ export const companionAttentionWriteV1Schema = z.object({
 }).strict();
 export type CompanionAttentionWriteV1 = z.infer<typeof companionAttentionWriteV1Schema>;
 export const companionAttentionV1Schema = companionAttentionWriteV1Schema.omit({ expectedRevision: true }).extend({
-  revision: z.number().int().positive(), conversationId: z.string().uuid().nullable(),
-  parentRunId: z.string().uuid().nullable(), updatedAt: z.string().datetime({ offset: true }),
+  revision: z.number().int().positive(), conversationId: z.string().guid().nullable(),
+  parentRunId: z.string().guid().nullable(), updatedAt: z.string().datetime({ offset: true }),
 }).strict();
 export type CompanionAttentionV1 = z.infer<typeof companionAttentionV1Schema>;
 
@@ -62,18 +62,18 @@ export const companionAwarenessContextV1Schema = z.object({
    */
   quietForMs: z.number().int().min(90_000).max(86_400_000).optional(),
   /** Same foreground pause keeps its identity across heartbeat thresholds. */
-  quietEpisodeId: z.string().uuid().optional(),
-  conversationId: z.string().uuid().nullable(),
+  quietEpisodeId: z.string().guid().optional(),
+  conversationId: z.string().guid().nullable(),
   page: z.object({
     key: z.string().min(1).max(240), label: z.string().min(1).max(120),
     revision: z.string().min(1).max(200).nullable(),
-    context: z.record(z.unknown()).nullable(),
+    context: z.record(z.string(), z.unknown()).nullable(),
   }).strict().nullable(),
 }).strict();
 export type CompanionAwarenessContextV1 = z.infer<typeof companionAwarenessContextV1Schema>;
 export const companionAwarenessObservationV1Schema = z.object({
-  version: z.literal(1), id: z.string().uuid(),
-  deviceSessionId: z.string().min(1).max(200), appLaunchId: z.string().uuid(),
+  version: z.literal(1), id: z.string().guid(),
+  deviceSessionId: z.string().min(1).max(200), appLaunchId: z.string().guid(),
   host: z.enum(["desktop", "browser", "ios", "android"]),
   topic: z.enum(["app.started", "app.foreground", "page.arrived", "help.available", "result.available", "context.updated", "presence.quiet"]),
   occurredAt: z.string().datetime({ offset: true }),
@@ -96,14 +96,14 @@ export const companionAwarenessObservationV1Schema = z.object({
 });
 export type CompanionAwarenessObservationV1 = z.infer<typeof companionAwarenessObservationV1Schema>;
 export const companionAwarenessReceiptV1Schema = z.object({
-  version: z.literal(1), accepted: z.boolean(), observationId: z.string().uuid(),
+  version: z.literal(1), accepted: z.boolean(), observationId: z.string().guid(),
 }).strict();
 export const companionAwarenessIdentityV1Schema = z.object({
-  version: z.literal(1), appLaunchId: z.string().uuid(), deviceSessionId: z.string().min(1).max(200),
+  version: z.literal(1), appLaunchId: z.string().guid(), deviceSessionId: z.string().min(1).max(200),
   host: z.enum(["desktop", "browser", "ios", "android"]),
 }).strict();
 export const companionInitiativeDeliveryRefV1Schema = z.object({
-  conversationId: z.string().uuid(), messageId: z.string().uuid(), runId: z.string().uuid(),
+  conversationId: z.string().guid(), messageId: z.string().guid(), runId: z.string().guid(),
   generation: z.number().int().positive(), deviceSessionId: z.string().max(200).nullable(),
 }).strict();
 export type CompanionInitiativeDeliveryRefV1 = z.infer<typeof companionInitiativeDeliveryRefV1Schema>;
@@ -122,17 +122,17 @@ export type CompanionInitiativeDeliveryRefV1 = z.infer<typeof companionInitiativ
 export const COMPANION_INITIATIVE_DELIVERY_TTL_HOURS = 2;
 export const companionInitiativeInputV1Schema = z.object({
   version: z.literal(1), kind: z.literal("initiative"),
-  preparationJobId: z.string().uuid(),
-  observationId: z.string().uuid().nullable(), attentionKey: z.string().max(120).nullable(),
+  preparationJobId: z.string().guid(),
+  observationId: z.string().guid().nullable(), attentionKey: z.string().max(120).nullable(),
   attentionRevision: z.number().int().positive().nullable(),
   preferenceRevision: z.number().int().nonnegative(),
-  parentRunId: z.string().uuid().nullable(), deviceSessionId: z.string().max(200).nullable(),
+  parentRunId: z.string().guid().nullable(), deviceSessionId: z.string().max(200).nullable(),
   topic: z.string().min(1).max(80),
   // 同一时刻到点的多条关注合起来送给她。这里只留一个防失控的尺寸上界，
   // 不再按 4_000 裁尾——那会静默丢掉后半件她本来要接着想的事。
   // 真正装不下时由上下文装配的声明闸门处理。
   intent: z.string().max(64_000),
-  facts: z.record(z.unknown()),
+  facts: z.record(z.string(), z.unknown()),
 }).strict();
 export type CompanionInitiativeInputV1 = z.infer<typeof companionInitiativeInputV1Schema>;
 

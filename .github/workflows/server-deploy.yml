@@ -197,7 +197,7 @@ jobs:
           node --input-type=module -e '
             import { readFileSync, writeFileSync } from "node:fs";
             const source = JSON.parse(readFileSync("release/version.json", "utf8"));
-            writeFileSync("server-release-payload.json", `${JSON.stringify({
+            const payload = {
               version: source.version,
               tag: process.env.RELEASE_TAG,
               commit: process.env.GITHUB_SHA,
@@ -209,7 +209,8 @@ jobs:
               },
               releasedAt: new Date().toISOString(),
               notes: source.notes.join("\n\n"),
-            }, null, 2)}\n`);
+            };
+            writeFileSync("server-release-payload.json", JSON.stringify(payload, null, 2) + "\n");
           '
           if curl -fsS -X POST "${base}/internal/server-releases" \
               -H "Authorization: Bearer ${RELEASE_CENTER_TOKEN}" \

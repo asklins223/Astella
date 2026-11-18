@@ -132,7 +132,7 @@ const memoryExtractCandidateSchema = z.object({
   binding: z.enum(["portable", "local"]).default("local"),
   // 来源字段先保持解析可选，方便安全处理仍未按新合同输出的模型结果；
   // 写入前由 resolveMemoryExtractSource 要求三项齐全并逐项核验。
-  sourceMessageId: z.string().uuid().optional(),
+  sourceMessageId: z.string().guid().optional(),
   sourceSpeaker: z.enum(["user", "assistant"]).optional(),
   sourceQuote: z.string().trim().min(3).max(80).optional(),
   sourceBasis: z.enum(["direct_statement", "inferred_from_statement"]).optional(),
@@ -558,7 +558,7 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
         // provider 层先保证 JSON 合法性，容错解析退为二道防线。
         const result = await runWhenInteractiveProviderIdle(
           lane => provider.chatCompletion(request, generationParameters, lane), signal);
-        let candidate: z.SafeParseReturnType<unknown, ExtractOutput> | null = null;
+        let candidate: ReturnType<typeof memoryExtractOutputSchema.safeParse> | null = null;
         try {
           candidate = memoryExtractOutputSchema.safeParse(parseMemoryExtractJson(result.content));
         } catch {

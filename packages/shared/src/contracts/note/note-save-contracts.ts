@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 
-const uuidSchema = z.string().uuid();
+const uuidSchema = z.string().guid();
 const positiveIntSchema = z.number().int().min(1);
 const isoTimestampSchema = z.string().datetime({ offset: true });
 const noteBlockTypeSchema = z.enum([

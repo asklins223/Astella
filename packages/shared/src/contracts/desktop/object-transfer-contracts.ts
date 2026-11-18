@@ -58,16 +58,16 @@ export const objectTransferRequestSchema = z.object({
   mimeType: z.string().min(1).max(100),
   byteLength: z.number().int().positive().max(TRANSFER_MAX_BYTES),
   sha256,
-  noteId: z.string().uuid().optional(),
+  noteId: z.string().guid().optional(),
   source: z.object({ type: z.enum(["text", "markdown", "code", "url"]).optional(), title: z.string().max(500).optional(), url: z.string().url().optional(), origin: z.string().max(500).optional(), force: z.boolean().optional() }).strict().optional(),
 }).strict();
 export type ObjectTransferRequest = z.infer<typeof objectTransferRequestSchema>;
 export const objectTransferUploadSchema = z.object({
   version: z.literal(1),
-  transferId: z.string().uuid(),
+  transferId: z.string().guid(),
   url: httpsUrl,
   method: z.literal("PUT"),
-  headers: z.record(z.string()),
+  headers: z.record(z.string(), z.string()),
   expiresAt: z.string().datetime(),
 }).strict();
 export const objectTransferDownloadSchema = z.object({

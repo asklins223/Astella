@@ -20,18 +20,22 @@ REAL_MODEL_BATCH=1 node --import tsx src/live-tests/context-probe.ts
 REAL_MODEL_BATCH=1 node --import tsx src/live-tests/platform-probe.ts
 REAL_MODEL_BATCH=1 node --import tsx src/live-tests/quality-repeat.ts
 REAL_MODEL_BATCH=1 node --import tsx src/live-tests/voice-expression-probe.ts
-REAL_MODEL_BATCH=1 LIVE_QUALITY_CURRENT_ONLY=1 LIVE_QUALITY_REVIEW=1 LIVE_QUALITY_REPEATS=1 LIVE_QUALITY_SUFFIX=reviewed node --import tsx src/live-tests/quality-comparison.ts
+REAL_MODEL_BATCH=1 LIVE_QUALITY_MAX_REQUESTS=30 LIVE_QUALITY_CURRENT_ONLY=1 LIVE_QUALITY_REVIEW=1 LIVE_QUALITY_REPEATS=1 LIVE_QUALITY_SUFFIX=reviewed node --import tsx src/live-tests/quality-comparison.ts
 ```
 
 `context-probe` 默认检索 20K、128K、920K、1.03M 填充 token 附近的五个随机标记，输出上限 512。它特意直接探测平台容量，另行记录应用预算的判断；不能把平台接受的输入量当作应用在当前路由完整输出预留下的可用输入量。设 `LIVE_CONTEXT_EXACT=1` 可比较接入后的本地 tokenizer，`LIVE_CONTEXT_UNITS=128000` 可缩小样本。超过声明窗口的探测是独立的合成验收，不绕过业务请求的预算闸。
 
 `platform-probe` 覆盖主模型/专用模型两条识图路线、完整/裁剪图、兜底工具往返和思考开关。`quality-repeat` 复测漏读、知识方向与嵌入维度/相似度。图片由测试方生成，有确定答案；先在本机生成 `outputs/audits/2026-10-07-live/vision-full.png` 和 `vision-crop.png`。
 
-`runtime-probe.ts` 使用真实模型、生产 Agent 循环、生产 delta 交付管线与一次性 PostgreSQL。必须先用仓库脚本建立 `astella_companion_live_20261007`，并显式把 `DATABASE_URL*` 指向它；程序会拒绝其他数据库名。测试调用治理层时使用测试用户与合成数据，未修改真实账号的同意或权限状态。
+`runtime-probe.ts` 使用真实模型、生产 Agent 循环、生产 delta 交付管线和一次性 PostgreSQL。必须先用仓库脚本建立 `astella_companion_live_20261007`（或代码允许的独立 note-authoring / initiative 数据库），并显式把 `DATABASE_URL*` 指向它。设置 `LIVE_RUNTIME_MAX_REQUESTS`（1–100）限制实际请求，`LIVE_RUNTIME_CASES=correlation` 选择固定案例。生成模型接收案例问题和合成历史。报告记录请求预算、用量、版本、入口模式、延迟和失败，范围截至 Agent 循环与流式交付。
+
+运行固定案例时可设 `LIVE_RUNTIME_REVIEW=1`，由独立评审请求对照标准核对交付的正文。评审与生成共用请求额度，额外的生成步骤也会计入，参考事实只进入评审请求。报告记录 `deliveryOk` 和 `contentReview`，并用 `budget_exhausted` 标记额度用完时未进行的评审。启用内容评测后，未通过或未评审的案例都会使进程返回非零。原始回答仍供人工复核。
 
 隔离库脚本输出中，夹具连接选 RLS 组的迁移角色 URL，赋给 `DATABASE_URL_MIGRATOR`；运行时选 RLS 组的 worker 角色 URL，赋给 `DATABASE_URL_WORKER` 和 `DATABASE_URL`。API 连接使用 API 角色 URL。不要使用脚本末尾的超级用户示例来证明受限 worker 权限；循环与内容测试的结构通过也不代替权限回归。
 
-`quality-comparison.ts` 对完整咖啡解释、作用力与反作用力、相关与因果、自述有无记录和普通闲聊进行评测。参考事实只交给评审，不注入生成请求；评审必须引用回答中的连续原文，标准缺失、引文编造或 JSON 不完整不能算通过。原始回答仍需人工核对，模型评分不代表事实认证。默认旧底座/当前底座各两次，顺序交替；`LIVE_QUALITY_CURRENT_ONLY=1` 只测当前版，`LIVE_QUALITY_REVIEW=1` 显式启用实验审校，`LIVE_QUALITY_CASES` 可选逗号分隔的案例 id，`LIVE_QUALITY_SUFFIX` 区分产物。该对照同时改变了提示词、采样和自述路由，不能据此把效果归因于单独一个参数；baseline 仅模拟旧底座、身份边界和参数，并非完整旧生产环境。
+`quality-comparison.ts` 对完整咖啡解释、作用力与反作用力、相关与因果、自述有无记录和普通闲聊进行评测。参考事实只交给评审，不注入生成请求；评审必须引用回答中的连续原文，标准缺失、引文编造或 JSON 不完整不能算通过。原始回答仍需人工核对，模型评分不代表事实认证。这是**无工具诊断**：知识案例直接指定 question 意图与 0.3 温度，不经过当前生产的 direct-fast 入口、工具循环和加深决策，不能将结果当成生产端到端通过率。默认旧底座/当前底座各两次，顺序交替；`LIVE_QUALITY_CURRENT_ONLY=1` 只测当前版，`LIVE_QUALITY_REVIEW=1` 显式启用实验审校，`LIVE_QUALITY_CASES` 可选逗号分隔的案例 id（拼写错误或重复会直接拒绝），`LIVE_QUALITY_SUFFIX` 区分产物。该对照同时改变了提示词、采样和自述路由，不能据此把效果归因于单独一个参数；baseline 仅模拟旧底座、身份边界和参数，并非完整旧生产环境。2026-11-17 前 baseline 仍替换 V12，但生成消息已使用 V19，旧底座替换因此没有发生；当时的 baseline 结果不适用于该底座的对照结论。
+
+该探针必须显式设置 `LIVE_QUALITY_MAX_REQUESTS`（1–100），在每次实际请求前扣减额度，并将额度、请求数、模型、Git revision 和启动时间写入报告；每次输出至多 4096 token。任一案例失败或额度耗尽时进程返回非零。额度只是请求数上限，实际费用仍取决于模型定价与输入长度；人工复核仍是独立步骤。
 
 运行实库回归时可设 `LIVE_RUNTIME_SUFFIX=reviewed-final` 保留旧产物；`LIVE_RUNTIME_EMPTY_SELF=1` 只测没有历史记录的自述，验证真实读取与无结果表达。`quality-comparison-harness-error.json` 是测试入口误用 JSON 默认格式的拒绝，`quality-comparison-incomplete-review.json` 是修复评审额度之前的中间采样，都不能当作最终质量结论。
 

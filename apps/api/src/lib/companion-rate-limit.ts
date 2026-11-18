@@ -28,13 +28,26 @@
  * 不是**怎么判**。`companion-rate-limit.test.ts` 里的既有用例继续适用。
  */
 
-import { MemoryRateLimitStore, type RateLimitStore } from "./rate-limit-store.ts";
+import {
+  MemoryRateLimitStore,
+  createRateLimitStoreFromEnv,
+  type RateLimitStore,
+} from "./rate-limit-store.ts";
 
 /**
- * 进程内默认 store。**只建一次**——每次调用 new 一个会让计数归零，
- * 那等于没有限流。
+ * 默认 store **只建一次**——每次调用 new 一个会让计数归零，那等于没有限流。
+ *
+ * 生产默认与 identity 侧同源：`createRateLimitStoreFromEnv()` 读到
+ * `AUTH_RATE_LIMIT_STORE=postgres` 时用共享桶，多副本下限额才正确。
+ * 测试进程显式退回进程内实现：共享桶会让单测依赖真实数据库并互相污染计数。
  */
-const defaultStore: RateLimitStore = new MemoryRateLimitStore();
+let defaultStore: RateLimitStore | null = null;
+function resolveDefaultStore(): RateLimitStore {
+  if (defaultStore) return defaultStore;
+  const underTest = process.env.NODE_ENV === "test" || process.env.NODE_TEST_CONTEXT !== undefined;
+  defaultStore = underTest ? new MemoryRateLimitStore() : createRateLimitStoreFromEnv();
+  return defaultStore;
+}
 
 export type CompanionRateLimitStore = RateLimitStore;
 
@@ -56,7 +69,7 @@ export async function companionRateLimit(args: {
    */
   store?: RateLimitStore;
 }): Promise<{ allowed: boolean; retryAfterSeconds: number }> {
-  const store = args.store ?? defaultStore;
+  const store = args.store ?? resolveDefaultStore();
   const now = Date.now();
   const entry = await store.increment(args.key, args.windowMs, now);
 

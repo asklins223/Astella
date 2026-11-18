@@ -4,14 +4,14 @@ import {agentLongGoalRefV1Schema,agentRunStatusV1Schema} from "./agent-contracts
 export const agentLongGoalsQueryV1Schema=z.object({
   limit:z.coerce.number().int().min(1).max(50).default(20),
   cursor:z.string().min(1).max(1024).optional(),
-  query:z.string().trim().max(200).optional(),memoryId:z.string().uuid().optional(),
+  query:z.string().trim().max(200).optional(),memoryId:z.string().guid().optional(),
 }).strict();
 export type AgentLongGoalsQueryV1=z.input<typeof agentLongGoalsQueryV1Schema>;
 
 export const agentLongGoalV1Schema=z.object({
   ref:agentLongGoalRefV1Schema,content:z.string().min(1).max(8000),
   appliesWhen:z.string().max(200).nullable(),updatedAt:z.string().datetime(),
-  tasks:z.array(z.object({runId:z.string().uuid(),revision:z.number().int().positive(),
+  tasks:z.array(z.object({runId:z.string().guid(),revision:z.number().int().positive(),
     goalRevision:z.number().int().positive(),goal:z.string().max(8000),status:agentRunStatusV1Schema,
     summary:z.string().nullable(),updatedAt:z.string().datetime()}).strict()).max(5),
   taskCount:z.number().int().nonnegative().default(0),

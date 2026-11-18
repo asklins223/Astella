@@ -13,6 +13,7 @@ import { resolveAIGovernanceContext, logAICall } from "../lib/governance.ts";
 const SEARCH_URL = "https://open.bigmodel.cn/api/paas/v4/web_search";
 const TAVILY_SEARCH_URL = "https://api.tavily.com/search";
 const QUOTA_COOLDOWN_MS = 30 * 60_000;
+const MAX_SEARCH_RESPONSE_BYTES = 2_000_000;
 const QUOTA_CODES = new Set(["1113", "1308", "1310", "1316", "1317", "1318", "1319", "1320", "1321"]);
 const unavailableUntil = new Map<string, number>();
 type SearchInput = { query: string; domain?: string; recency?: "oneDay" | "oneWeek" | "oneMonth" | "oneYear" | "noLimit" };
@@ -151,12 +152,40 @@ export function webSearchProcessDetail(operation: string, args: Record<string, u
   const resolved = companionOperationName({ name: operation, arguments: args });
   if (!["web.search", "agent_web_search"].includes(resolved) || typeof args.query !== "string" || !args.query.trim()) return undefined;
   const result = readWebSearchReceipt(resultRef);
-  return { query: args.query.trim().slice(0, 70),
+  return { query: (result?.status === "succeeded" ? result.query : args.query).trim().slice(0, 70),
     ...(typeof args.domain === "string" ? { domain: args.domain.slice(0, 253) } : {}),
     ...(result ? { outcome: result.status } : {}),
     ...(result?.status === "succeeded" ? { searchedAt: result.searchedAt } : {}),
     sources: result?.sources.map(({ referenceId, title, url, media, publishDate }) => ({ referenceId, title, url, media, publishDate })) ?? [],
   };
+}
+
+/** Bound bytes while reading, rather than buffering an untrusted response first. */
+async function readSearchResponse(response: Response): Promise<string> {
+  const declared = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > MAX_SEARCH_RESPONSE_BYTES) {
+    await response.body?.cancel();
+    throw new Error("search response exceeds byte limit");
+  }
+  if (!response.body) return "";
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let size = 0;
+  let text = "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) return text + decoder.decode();
+      size += value.byteLength;
+      if (size > MAX_SEARCH_RESPONSE_BYTES) {
+        await reader.cancel();
+        throw new Error("search response exceeds byte limit");
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+  } finally {
+    reader.releaseLock();
+  }
 }
 
 export async function readCompanionWebSearchReceipts(scope: AgentScopeV1, runId: string): Promise<WebSearchResult[]> {
@@ -214,9 +243,8 @@ export async function executeWebSearch(scope: AgentScopeV1, input: SearchInput, 
         body: JSON.stringify(governedBody), redirect: "error",
         signal: AbortSignal.any([signal, AbortSignal.timeout(8000)]),
       });
-      const raw = await response.text();
+      const raw = await readSearchResponse(response);
       signal.throwIfAborted();
-      if (raw.length > 2_000_000) return unavailable("service_unavailable");
       const data = JSON.parse(raw) as { error?: { code?: string | number }; search_result?: unknown; results?: unknown };
       if (tavily ? [432, 433].includes(response.status) : QUOTA_CODES.has(String(data.error?.code))) {
         unavailableUntil.set(credentialId(config, engine), now() + QUOTA_COOLDOWN_MS);
@@ -225,7 +253,7 @@ export async function executeWebSearch(scope: AgentScopeV1, input: SearchInput, 
       const rows = tavily ? data.results : data.search_result;
       if (!response.ok || data.error || !Array.isArray(rows)) return unavailable("service_unavailable");
       status = "success";
-      return { status: "succeeded", query: input.query, searchedAt: new Date(now()).toISOString(),
+      return { status: "succeeded", query: String(tavily ? governedBody.query : governedBody.search_query), searchedAt: new Date(now()).toISOString(),
         sources: normalizeWebSearchSources(tavily ? rows.map(row => {
           const item = row && typeof row === "object" ? row as Record<string, unknown> : {};
           return { link: item.url, title: item.title, content: item.content, publish_date: item.published_date };

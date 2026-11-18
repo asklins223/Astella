@@ -85,7 +85,7 @@ export async function createNoteFromSource(t: GatewayTransport,
     if (result.status === 409) {
       const conflict = z.object({
         error: z.enum(["duplicate_content", "source_not_ready"]),
-        existingNoteId: z.string().uuid().optional(),
+        existingNoteId: z.string().guid().optional(),
         existingNoteTitle: z.string().optional(),
       }).passthrough().safeParse(result.body);
       if (!conflict.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
@@ -103,8 +103,8 @@ export async function createNoteFromSource(t: GatewayTransport,
     }
 
     const created = z.object({
-      note: z.object({ id: z.string().uuid(), title: z.string() }).passthrough(),
-      version: z.object({ id: z.string().uuid() }).passthrough(),
+      note: z.object({ id: z.string().guid(), title: z.string() }).passthrough(),
+      version: z.object({ id: z.string().guid() }).passthrough(),
     }).passthrough().safeParse(result.body);
     if (!created.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
     return {

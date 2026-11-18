@@ -20,8 +20,8 @@ const historySearchQuerySchema = z.object({
 
 const historyListQuerySchema = z.object({
   before: z.string().max(2_000).optional(),
-  throughMessageId: z.string().uuid().optional(),
-  runId: z.string().uuid().optional(),
+  throughMessageId: z.string().guid().optional(),
+  runId: z.string().guid().optional(),
   limit: z.coerce.number().int().min(1).max(100).optional().default(50),
 });
 

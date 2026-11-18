@@ -101,10 +101,10 @@ export const companionDerivedDataClearResultV1Schema = z.strictObject({
 });
 
 export const companionMemoryBudgetMoveV1Schema = z.discriminatedUnion("status", [
-  z.strictObject({ status: z.literal("moved"), memoryId: z.string().uuid(), fromTier: companionMemoryBudgetTierV1Schema, tier: companionMemoryBudgetTierV1Schema, revision: z.number().int().positive(), residentUsage: companionMemoryBudgetUsageV1Schema }),
-  z.strictObject({ status: z.literal("unchanged"), memoryId: z.string().uuid(), tier: companionMemoryBudgetTierV1Schema, revision: z.number().int().positive() }),
+  z.strictObject({ status: z.literal("moved"), memoryId: z.string().guid(), fromTier: companionMemoryBudgetTierV1Schema, tier: companionMemoryBudgetTierV1Schema, revision: z.number().int().positive(), residentUsage: companionMemoryBudgetUsageV1Schema }),
+  z.strictObject({ status: z.literal("unchanged"), memoryId: z.string().guid(), tier: companionMemoryBudgetTierV1Schema, revision: z.number().int().positive() }),
   z.strictObject({ status: z.enum(["missing", "not_eligible"]) }),
-  z.strictObject({ status: z.literal("capacity"), memoryId: z.string().uuid(), requestedTier: z.literal("resident"), current: companionMemoryBudgetUsageV1Schema, requested: companionMemoryBudgetUsageV1Schema, limits: companionMemoryResidentLimitsV1Schema, suggestedDowngrades: z.array(z.strictObject({ memoryId: z.string().uuid(), title: z.string(), revision: z.number().int().positive(), tokenEstimate: z.number().int().nonnegative(), byteCount: z.number().int().nonnegative() })) }),
+  z.strictObject({ status: z.literal("capacity"), memoryId: z.string().guid(), requestedTier: z.literal("resident"), current: companionMemoryBudgetUsageV1Schema, requested: companionMemoryBudgetUsageV1Schema, limits: companionMemoryResidentLimitsV1Schema, suggestedDowngrades: z.array(z.strictObject({ memoryId: z.string().guid(), title: z.string(), revision: z.number().int().positive(), tokenEstimate: z.number().int().nonnegative(), byteCount: z.number().int().nonnegative() })) }),
 ]);
 
 export const companionMemorySourceTypeV1Schema = z.enum([
@@ -171,12 +171,12 @@ export const companionMemoryContentMaxLength = 200;
 export const companionMemoryRecycleBinDays = 30;
 
 export const companionMemoryItemV1Schema = z.strictObject({
-  memoryItemId: z.string().uuid(),
+  memoryItemId: z.string().guid(),
   kind: companionMemoryKindV1Schema,
   content: z.string().min(1).max(companionMemoryContentMaxLength),
   sourceEventId: z.string().max(240).nullable(),
   sourceEventIds: z.array(z.string().max(240)).max(100),
-  sourceSessionId: z.string().uuid().nullable(),
+  sourceSessionId: z.string().guid().nullable(),
   sourceSpeaker: companionMemorySourceSpeakerV1Schema.nullable(),
   sourceBasis: companionMemorySourceBasisV1Schema.nullable(),
   appliesWhen: z.string().max(200).nullable(),
@@ -194,14 +194,14 @@ export const companionMemoryItemV1Schema = z.strictObject({
   pinned: z.boolean(),
   archived: z.boolean(),
   dismissedAt: isoTimestampSchema.nullable(),
-  conflictGroup: z.string().uuid().nullable(),
+  conflictGroup: z.string().guid().nullable(),
   embeddingStatus: companionMemoryEmbeddingStatusV1Schema,
   sourceType: companionMemorySourceTypeV1Schema,
   revision: z.number().int().min(1),
   authorType: companionMemoryAuthorTypeV1Schema,
-  authorId: z.string().uuid().nullable(),
+  authorId: z.string().guid().nullable(),
   epistemicStatus: companionMemoryEpistemicStatusV1Schema,
-  supersededById: z.string().uuid().nullable(),
+  supersededById: z.string().guid().nullable(),
   createdAt: isoTimestampSchema,
   updatedAt: isoTimestampSchema,
 });
@@ -213,7 +213,7 @@ export const companionMemoryRevisionV1Schema = z.strictObject({
   content: z.string().min(1).max(companionMemoryContentMaxLength),
   sourceEventId: z.string().max(240).nullable(),
   sourceEventIds: z.array(z.string().max(240)).max(100),
-  sourceSessionId: z.string().uuid().nullable(),
+  sourceSessionId: z.string().guid().nullable(),
   sourceSpeaker: companionMemorySourceSpeakerV1Schema.nullable(),
   sourceBasis: companionMemorySourceBasisV1Schema.nullable(),
   appliesWhen: z.string().max(200).nullable(),
@@ -227,15 +227,15 @@ export const companionMemoryRevisionV1Schema = z.strictObject({
   scope: companionMemoryScopeV1Schema,
   sourceType: companionMemorySourceTypeV1Schema,
   authorType: companionMemoryAuthorTypeV1Schema,
-  authorId: z.string().uuid().nullable(),
+  authorId: z.string().guid().nullable(),
   epistemicStatus: companionMemoryEpistemicStatusV1Schema,
-  supersededById: z.string().uuid().nullable(),
+  supersededById: z.string().guid().nullable(),
   supersededAt: isoTimestampSchema,
 });
 export type CompanionMemoryRevisionV1 = z.infer<typeof companionMemoryRevisionV1Schema>;
 export const companionMemoryRevisionListV1Schema = z.strictObject({
   version: z.literal(1),
-  memoryItemId: z.string().uuid(),
+  memoryItemId: z.string().guid(),
   items: z.array(companionMemoryRevisionV1Schema).max(200),
 });
 export type CompanionMemoryRevisionListV1 = z.infer<typeof companionMemoryRevisionListV1Schema>;
@@ -250,7 +250,7 @@ export type CompanionMemoryListV1 = z.infer<typeof companionMemoryListV1Schema>;
 export const companionMemoryRecycleListV1Schema = z.strictObject({
   version: z.literal(1),
   items: z.array(z.strictObject({
-    id: z.string().uuid(),
+    id: z.string().guid(),
     kind: companionMemoryKindV1Schema,
     content: z.string().max(200),
     deletedAt: isoTimestampSchema,
@@ -269,14 +269,14 @@ export const companionMemoryEntityTypeV2Schema = z.enum([
 export type CompanionMemoryEntityTypeV2 = z.infer<typeof companionMemoryEntityTypeV2Schema>;
 
 export const companionMemoryEntityTargetV2Schema = z.discriminatedUnion("kind", [
-  z.strictObject({ kind: z.literal("note"), noteId: z.string().uuid() }),
-  z.strictObject({ kind: z.literal("source"), sourceId: z.string().uuid() }),
+  z.strictObject({ kind: z.literal("note"), noteId: z.string().guid() }),
+  z.strictObject({ kind: z.literal("source"), sourceId: z.string().guid() }),
 ]);
 export type CompanionMemoryEntityTargetV2 = z.infer<typeof companionMemoryEntityTargetV2Schema>;
 
 const companionMemoryEntityLinkV2Schema = z.strictObject({
   entityType: companionMemoryEntityTypeV2Schema,
-  entityId: z.string().uuid(),
+  entityId: z.string().guid(),
   /** 服务端解析后的可读名称；失效实体也必须返回稳定的说明，禁止显示裸 UUID。 */
   label: z.string().min(1).max(240),
   target: companionMemoryEntityTargetV2Schema.nullable(),
@@ -292,7 +292,7 @@ const companionMemoryEntityLinkV2Schema = z.strictObject({
 });
 
 export const companionMemoryStarNodeV2Schema = z.strictObject({
-  memoryId: z.string().uuid(),
+  memoryId: z.string().guid(),
   kind: companionMemoryKindV1Schema,
   content: z.string().min(1).max(companionMemoryContentMaxLength),
   state: z.enum(["active", "pinned"]),
@@ -382,7 +382,7 @@ export const companionDailySummaryV1Schema = z.strictObject({
   blocks: z.array(companionDailyBlockV1Schema),
   /** 该日日记派生出的记忆条目（可能是候选，等确认）。 */
   memory: z.strictObject({
-    memoryItemId: z.string().uuid(),
+    memoryItemId: z.string().guid(),
     candidate: z.boolean(),
   }).nullable(),
   /**
@@ -475,8 +475,8 @@ export type PersonaFieldOriginV1 = z.infer<typeof personaFieldOriginV1Schema>;
 
 /** Account-scoped persona override. Workspace relationship metrics travel separately. */
 export const companionPersonaProfileV1Schema = z.strictObject({
-  id: z.string().uuid(),
-  userId: z.string().uuid(),
+  id: z.string().guid(),
+  userId: z.string().guid(),
   presetId: z.string().max(80).nullable(),
   name: z.string().min(1).max(60),
   personalityTags: z.array(z.string().min(1).max(20)).max(10),
@@ -560,7 +560,7 @@ export const companionPersonaResetV1Schema = z.strictObject({
 export type CompanionPersonaResetV1 = z.infer<typeof companionPersonaResetV1Schema>;
 
 export const companionPersonaProfileVersionV1Schema = z.strictObject({
-  id: z.string().uuid(),
+  id: z.string().guid(),
   revision: z.number().int().positive(),
   examplesRevision: z.number().int().positive(),
   author: z.enum(["user", "assistant_tool", "restore", "migration"]),
@@ -764,13 +764,13 @@ export function companionPersonaPatchFromPresetSwitch(
 
 export const companionHistoryItemV1Schema = z.strictObject({
   version: z.literal(1),
-  messageId: z.string().uuid(),
+  messageId: z.string().guid(),
   role: z.enum(["user", "assistant", "system"]),
   kind: z.enum(["text", "voice_transcript", "proactive", "action", "result", "error", "cancelled"]),
   blocks: z.array(companionContentBlockV1Schema).min(1).max(32),
   selection: companionSelectionV1Schema.optional(),
   inputReference: companionInputReferenceV1Schema.optional(),
-  runId: z.string().uuid().nullable(),
+  runId: z.string().guid().nullable(),
   createdAt: isoTimestampSchema,
   editedAt: isoTimestampSchema.nullable(),
 });
@@ -800,8 +800,8 @@ export type CompanionHistoryClearResultV1 = z.infer<typeof companionHistoryClear
 
 export const companionHistoryQueryV1Schema = z.strictObject({
   before: z.string().max(2000).optional(),
-  throughMessageId: z.string().uuid().optional(),
-  runId: z.string().uuid().optional(),
+  throughMessageId: z.string().guid().optional(),
+  runId: z.string().guid().optional(),
   limit: z.number().int().min(1).max(100).optional(),
 });
 export type CompanionHistoryQueryV1 = z.infer<typeof companionHistoryQueryV1Schema>;
@@ -815,13 +815,13 @@ export type CompanionHistorySearchQueryV1 = z.infer<typeof companionHistorySearc
 // ─── 记忆写操作请求 ─────────────────────────────────────────────────────
 
 export const companionMemoryIdInputSchema = z.strictObject({
-  memoryId: z.string().uuid(),
+  memoryId: z.string().guid(),
 });
 export type CompanionMemoryIdInput = z.infer<typeof companionMemoryIdInputSchema>;
 
 /** 星图与列表共用的读取筛选；candidate / archived 默认都不进主视图。 */
 export const companionMemoryListQuerySchema = z.strictObject({
-  focusMemoryId: z.string().uuid().optional(),
+  focusMemoryId: z.string().guid().optional(),
   kind: companionMemoryKindV1Schema.optional(),
   q: z.string().min(1).max(200).optional(),
   scope: companionMemoryScopeV1Schema.optional(),
@@ -871,15 +871,15 @@ export const companionMemoryClearResultV1Schema = z.strictObject({
 
 export const companionActivityDeliveryV1Schema = z.strictObject({
   version: z.literal(1),
-  deliveryId: z.string().uuid(),
+  deliveryId: z.string().guid(),
   inboxSequence: z.number().int().min(0),
   state: z.enum(["queued", "delivered", "displayed", "acted", "dismissed", "snoozed", "expired", "suppressed"]),
   kind: z.enum(["message", "proposal", "action_result", "system_event", "memory_candidate"]),
   label: z.string().min(1).max(240),
   target: z.discriminatedUnion("kind", [
-    z.strictObject({ kind: z.literal("dialogue"), messageId: z.string().uuid() }),
-    z.strictObject({ kind: z.literal("proposal"), proposalId: z.string().uuid() }),
-    z.strictObject({ kind: z.literal("memory"), memoryId: z.string().uuid() }),
+    z.strictObject({ kind: z.literal("dialogue"), messageId: z.string().guid() }),
+    z.strictObject({ kind: z.literal("proposal"), proposalId: z.string().guid() }),
+    z.strictObject({ kind: z.literal("memory"), memoryId: z.string().guid() }),
     z.strictObject({ kind: z.literal("none") }),
   ]),
   expired: z.boolean(),
@@ -897,7 +897,7 @@ export const companionActivityTimelineV1Schema = z.strictObject({
 export type CompanionActivityTimelineV1 = z.infer<typeof companionActivityTimelineV1Schema>;
 
 export const companionActivityAckRequestV1Schema = z.strictObject({
-  deliveryId: z.string().uuid(),
+  deliveryId: z.string().guid(),
   inboxSequence: z.number().int().min(0),
   transition: z.enum(["displayed", "acted", "dismissed"]),
 });

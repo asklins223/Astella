@@ -3,7 +3,7 @@ import { noteAnnotationAnchorV1Schema, noteAnnotationV1Schema } from "../note/no
 
 /** The host binds the exact saved quote and operation identity before the agent starts writing. */
 export const companionAnnotationTargetV1Schema = z.object({
-  requestId: z.string().uuid(),
+  requestId: z.string().guid(),
   anchor: noteAnnotationAnchorV1Schema,
 }).strict();
 export const companionWriteAnnotationV1Schema = z.object({
@@ -12,7 +12,7 @@ export const companionWriteAnnotationV1Schema = z.object({
 }).strict();
 export const companionWrittenAnnotationV1Schema = z.object({
   kind: z.literal("written_annotation"),
-  requestId: z.string().uuid(),
+  requestId: z.string().guid(),
   annotation: noteAnnotationV1Schema,
 }).strict();
 export type CompanionWrittenAnnotationV1 = z.infer<typeof companionWrittenAnnotationV1Schema>;
@@ -29,8 +29,8 @@ export const companionCreateNoteV1Schema = z.object({
   title: z.string().trim().min(1).max(200),
   markdown: z.string().trim().min(1).describe("实际保存的完整 Markdown 正文。" + COMPANION_NOTE_CONTENT_GUIDANCE + "独立段落用空行分隔，支持标题、列表、表格、代码与公式"),
   links: z.array(z.object({
-    noteId: z.string().uuid(),
-    noteVersionId: z.string().uuid().describe("本轮notes.read.read实际返回的version"),
+    noteId: z.string().guid(),
+    noteVersionId: z.string().guid().describe("本轮notes.read.read实际返回的version"),
     reason: z.string().trim().min(5).max(240).describe("说明这篇已有笔记与新笔记的具体关系，不能只凭标题猜测"),
   }).strict()).default([]),
 }).strict();
@@ -38,8 +38,8 @@ export type CompanionCreateNoteV1 = z.infer<typeof companionCreateNoteV1Schema>;
 
 export const companionCreatedNoteV1Schema = z.object({
   kind: z.literal("created_note"),
-  noteId: z.string().uuid(), noteVersionId: z.string().uuid(), title: z.string().min(1).max(200),
-  linkedNotes: z.array(z.object({ noteId: z.string().uuid(), title: z.string().max(200) }).strict()),
+  noteId: z.string().guid(), noteVersionId: z.string().guid(), title: z.string().min(1).max(200),
+  linkedNotes: z.array(z.object({ noteId: z.string().guid(), title: z.string().max(200) }).strict()),
 }).strict();
 export type CompanionCreatedNoteV1 = z.infer<typeof companionCreatedNoteV1Schema>;
 
@@ -55,7 +55,7 @@ export const companionNoteEditingContextV1Schema = z.object({
 export type CompanionNoteEditingContextV1 = z.infer<typeof companionNoteEditingContextV1Schema>;
 
 export const companionEditNoteV1Schema = z.object({
-  noteId: z.string().uuid(), noteVersionId: z.string().uuid(),
+  noteId: z.string().guid(), noteVersionId: z.string().guid(),
   operation: z.enum(["insert_at_cursor", "append", "replace_selection", "delete_selection", "replace_blocks", "delete_blocks"]),
   markdown: z.string().optional().describe("要插入或替换的 Markdown。replace_blocks 只填指定范围的新内容，不放范围外的正文；独立段落之间用空行分隔，单换行仍属同一段。保留原来的标题、列表、表格与代码结构"),
   preserveBlockStructure: z.boolean().optional().describe("replace_blocks默认true，核对原段落的块数、类型与属性不变。只有用户明确要求调整段落结构或格式时设false；普通改字、改数值保持true"),
@@ -78,7 +78,7 @@ export const companionEditNoteV1Schema = z.object({
 export type CompanionEditNoteV1 = z.infer<typeof companionEditNoteV1Schema>;
 
 export const companionEditedNoteV1Schema = z.object({
-  kind: z.literal("edited_note"), noteId: z.string().uuid(), noteVersionId: z.string().uuid(),
+  kind: z.literal("edited_note"), noteId: z.string().guid(), noteVersionId: z.string().guid(),
   operation: z.string(), summary: z.string().max(240), update: z.string().max(3_000_000),
 }).strict();
 export type CompanionEditedNoteV1 = z.infer<typeof companionEditedNoteV1Schema>;

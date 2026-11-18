@@ -461,7 +461,7 @@ export const companionReleaseRouterSamples = pgTable(
   "companion_release_router_samples",
   {
     id: uuid("id").primaryKey(),
-    workspaceId: uuid("workspace_id").notNull(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
     userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
     /** 规范化原话的 sha256；与 (intent, tool_use) 一起构成去重键。 */
     textSha256: char("text_sha256", { length: 64 }).notNull(),

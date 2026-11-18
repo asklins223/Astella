@@ -10,7 +10,7 @@ vi.mock('electron', () => ({ app: {
   getAppPath: () => join(fixture.target, 'Contents/Resources/app.asar'),
   getPath: () => fixture.userData, getVersion: () => '1.0.0',
 } }))
-import { prepareMacosArchiveInstall, verifyMacosInstallLocation, macosExecutableSupportsArchitecture } from '../update/macos-update-install'
+import { MACOS_INSTALL_SCRIPT, prepareMacosArchiveInstall, verifyMacosInstallLocation, macosExecutableSupportsArchitecture, macosDeveloperIdTeam } from '../update/macos-update-install'
 
 const roots: string[] = []
 afterEach(() => roots.splice(0).forEach(root => rmSync(root, { recursive: true, force: true })))
@@ -42,10 +42,17 @@ function setup(tamper = false) {
   return { root, archive: { path: zip, version: '2.0.0', sha512 } }
 }
 
+function stageForScript(root: string, zip: string): { stagingDirectory: string } {
+  const stagingDirectory = mkdtempSync(join(root, 'staging-'))
+  execFileSync('/usr/bin/ditto', ['-x', '-k', zip, stagingDirectory])
+  writeFileSync(join(stagingDirectory, 'install.sh'), MACOS_INSTALL_SCRIPT, { mode: 0o700 })
+  return { stagingDirectory }
+}
+
 describe.skipIf(process.platform !== 'darwin')('native Mac archive installation (no Apple certificate)', () => {
   it('waits for the old process, replaces the whole bundle and launches the new executable', async () => {
     const { root, archive } = setup()
-    const prepared = await prepareMacosArchiveInstall(archive)
+    const prepared = stageForScript(root, archive.path)
     const oldProcess = spawn('/bin/sleep', ['1'])
     const script = spawn('/bin/sh', [join(prepared.stagingDirectory, 'install.sh'), String(oldProcess.pid), fixture.target,
       join(prepared.stagingDirectory, '书房 new.app'), join(prepared.stagingDirectory, 'previous.app'),
@@ -62,7 +69,7 @@ describe.skipIf(process.platform !== 'darwin')('native Mac archive installation 
 
   it('restores the old bundle if the replacement cannot be moved into place', async () => {
     const { root, archive } = setup()
-    const prepared = await prepareMacosArchiveInstall(archive)
+    const prepared = stageForScript(root, archive.path)
     const script = spawn('/bin/sh', [join(prepared.stagingDirectory, 'install.sh'), '2147483647', fixture.target,
       join(root, 'missing.app'), join(prepared.stagingDirectory, 'previous.app'),
       join(fixture.userData, 'update-install.json'), '{"status":"failed"}'], { stdio: 'ignore' })
@@ -82,10 +89,22 @@ describe.skipIf(process.platform !== 'darwin')('native Mac archive installation 
     expect(readFileSync(join(fixture.target, 'Contents/Resources/version.txt'), 'utf8')).toBe('1.0.0')
   })
 
+  it('requires a trusted installed publisher instead of accepting ad-hoc signatures', async () => {
+    const { archive } = setup()
+    await expect(prepareMacosArchiveInstall(archive)).rejects.toThrow('signature verification failed')
+    expect(readFileSync(join(fixture.target, 'Contents/Resources/version.txt'), 'utf8')).toBe('1.0.0')
+  })
+
   it('explains read-only disk images and translocated launches before replacing files', async () => {
     await expect(verifyMacosInstallLocation('/Volumes/Astella/Astella.app')).rejects.toThrow('应用程序')
     await expect(verifyMacosInstallLocation('/private/var/AppTranslocation/token/Astella.app')).rejects.toThrow('应用程序')
   })
+})
+
+it('accepts only an explicit Developer ID team in signing details', () => {
+  expect(macosDeveloperIdTeam('Authority=Developer ID Application: Example (AB12345678)\nTeamIdentifier=AB12345678\n')).toBe('AB12345678')
+  expect(macosDeveloperIdTeam('Signature=adhoc\nTeamIdentifier=not set\n')).toBeNull()
+  expect(macosDeveloperIdTeam('Authority=Apple Development: Example\nTeamIdentifier=AB12345678\n')).toBeNull()
 })
 
 it('recognizes arm64, Intel and universal Mach-O headers without developer tools', () => {

@@ -191,8 +191,8 @@ function retryAfterFromHeaders(headers: Headers): string | undefined {
 // `/auth/me` 与工作区列表的回信形状（2026-09-30 第六刀）：
 // `loadSession` / `toWorkspaceSummary` 要用，跟着一起搬。
 export const rawAuthMeSchema = z.strictObject({
-  userId: z.string().uuid(),
-  workspaceId: z.string().uuid(),
+  userId: z.string().guid(),
+  workspaceId: z.string().guid(),
   email: emailSchema,
   role: z.enum(["owner", "member"]),
   displayName: nonEmptyStringSchema.nullable(),
@@ -200,7 +200,7 @@ export const rawAuthMeSchema = z.strictObject({
   workspaceName: nonEmptyStringSchema,
   workspaceType: z.enum(["personal", "collaborative"]),
   isPersonal: z.boolean(),
-  personalWorkspaceId: z.string().uuid().nullable(),
+  personalWorkspaceId: z.string().guid().nullable(),
   // 0261：服务端边界令牌。**必填**——它是本机 epoch 的权威值，缺了就该按契约不符
   // 拒掉，而不是悄悄退回本地计数（那正是审查说的"数字只活在客户端"）。
   workspaceEpoch: z.number().int().positive(),
@@ -208,7 +208,7 @@ export const rawAuthMeSchema = z.strictObject({
 
 export const rawWorkspaceListSchema = z.strictObject({
   workspaces: z.array(z.strictObject({
-    workspaceId: z.string().uuid(),
+    workspaceId: z.string().guid(),
     workspaceName: nonEmptyStringSchema,
     role: z.enum(["owner", "member"]),
     workspaceType: z.enum(["personal", "collaborative"]),

@@ -119,7 +119,7 @@ export function collectNoteLearningCardGenerationIssues(
       true_false: z.object({ correct: z.boolean() }),
       fill_blank: z.object({ blanks: z.array(z.array(z.string().trim().min(1)).min(1)).min(1).max(12) }),
       ordering: z.object({ order: z.array(id).refine((values) => values.length === ids.length && new Set(values).size === ids.length) }),
-      matching: z.object({ pairs: z.record(z.string()), rightOptions: z.array(z.string().trim().min(1)).min(2) }).refine((value) =>
+      matching: z.object({ pairs: z.record(z.string(), z.string()), rightOptions: z.array(z.string().trim().min(1)).min(2) }).refine((value) =>
         Object.keys(value.pairs).length === ids.length && ids.every((key) => value.rightOptions.includes(value.pairs[key]!))
         && new Set(value.rightOptions).size === value.rightOptions.length && new Set(Object.values(value.pairs)).size === ids.length),
       operation: operationSpecV1Schema,

@@ -52,7 +52,7 @@
 
 指标服务默认 `WORKER_METRICS_PORT = 9100`，暴露 `/metrics` 与 `/ready`；`/ready` 是真依赖探测（`SELECT 1`），未接探测时 fail-closed 返回 503。队列深度与最老 pending 年龄由 `astella_queue_job_depth()` / `astella_queue_oldest_pending_age()` 每 5 秒刷一次。数据库连接串走 `DATABASE_URL_WORKER`，`NODE_ENV=production` 时缺失直接抛错。
 
-镜像 `workers/ai-worker/Dockerfile` 基于 `node:22.11.0-alpine3.20`，prod 阶段 esbuild 打包成 `dist/index.cjs`、`USER node` 非 root 运行、`EXPOSE 9100`。
+Worker 的 Dockerfile 锁定 Node 22 Alpine 镜像。生产阶段用 esbuild 生成 `dist/index.cjs`，以 `USER node` 运行并声明端口 9100。
 
 ## Job 类型清单
 

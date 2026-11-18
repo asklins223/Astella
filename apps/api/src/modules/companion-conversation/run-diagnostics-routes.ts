@@ -14,7 +14,7 @@ import { loadCompanionRunListV1 } from "./run-list.ts";
 import { loadCompanionRunIssueBundleV1 } from "./run-issue-bundle.ts";
 import { loadCompanionTurnReplayV1 } from "./run-turn-replay.ts";
 
-const runParamsSchema = z.object({ id: z.string().uuid() }).strict();
+const runParamsSchema = z.object({ id: z.string().guid() }).strict();
 
 export async function companionRunDiagnosticsRoutes(app: FastifyInstance) {
   app.get(

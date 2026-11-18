@@ -20,11 +20,11 @@ import {
   NoteLearningCardError,
 } from "./service.ts";
 
-const noteParams = z.strictObject({ noteId: z.string().uuid() });
-const cardParams = z.strictObject({ cardId: z.string().uuid() });
-const attemptParams = z.strictObject({ cardId: z.string().uuid(), attemptId: z.string().uuid() });
+const noteParams = z.strictObject({ noteId: z.string().guid() });
+const cardParams = z.strictObject({ cardId: z.string().guid() });
+const attemptParams = z.strictObject({ cardId: z.string().guid(), attemptId: z.string().guid() });
 const answerBody = z.strictObject({
-  questionId: z.string().uuid(),
+  questionId: z.string().guid(),
   answer: z.unknown(),
   usedHint: z.boolean().optional(),
 });
@@ -45,7 +45,7 @@ export async function noteLearningCardRoutes(app: FastifyInstance) {
   app.get("/v2/notes/:noteId/learning-card", async (req, reply) => {
     reply.header("Cache-Control", "private, no-store");
     const params = noteParams.safeParse(req.params);
-    const query = z.strictObject({ cardId: z.string().uuid().optional() }).safeParse(req.query);
+    const query = z.strictObject({ cardId: z.string().guid().optional() }).safeParse(req.query);
     if (!params.success || !query.success) return reply.code(400).send({ error: "invalid_request", message: "学习卡位置无效。" });
     const scope = scopeOfSession(req.session);
     try {
@@ -56,7 +56,7 @@ export async function noteLearningCardRoutes(app: FastifyInstance) {
   app.post("/v2/notes/:noteId/learning-card/generate", async (req, reply) => {
     reply.header("Cache-Control", "private, no-store");
     const params = noteParams.safeParse(req.params);
-    const body = z.strictObject({ noteVersionId: z.string().uuid(), options: noteLearningCardGenerationOptionsV1Schema.optional() }).safeParse(req.body);
+    const body = z.strictObject({ noteVersionId: z.string().guid(), options: noteLearningCardGenerationOptionsV1Schema.optional() }).safeParse(req.body);
     if (!params.success || !body.success) return reply.code(400).send({ error: "invalid_request", message: "学习卡生成参数无效。" });
     const scope = scopeOfSession(req.session);
     try {
@@ -112,7 +112,7 @@ export async function noteLearningCardRoutes(app: FastifyInstance) {
 
   app.get("/v2/note-learning-card-operation-artifacts/:artifactId", async (req, reply) => {
     reply.header("Cache-Control", "private, no-store");
-    const params = z.strictObject({ artifactId: z.string().uuid() }).safeParse(req.params);
+    const params = z.strictObject({ artifactId: z.string().guid() }).safeParse(req.params);
     if (!params.success) return reply.code(400).send({ error: "invalid_request", message: "操作题编号无效。" });
     const scope = scopeOfSession(req.session);
     const [row] = await withWorkspaceTransaction(scope, (tx) => tx.select({ html: noteLearningCardOperationArtifacts.html })

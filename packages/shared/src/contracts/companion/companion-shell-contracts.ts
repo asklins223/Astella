@@ -80,7 +80,7 @@ export const companionOnboardingActiveRunSchema = z.object({
   /** 服务端签发的不透明恢复令牌引用；resume 时必须与行内值一致才放行。 */
   resumeTokenRef: z.string().min(1).max(200),
   /** 签发 run 时的 workspace；resume 必须同 workspace，跨 workspace 不复用。 */
-  resumeWorkspaceRef: z.string().uuid().optional(),
+  resumeWorkspaceRef: z.string().guid().optional(),
   /** resume token 过期时间（ISO-8601）；过期后只能被动恢复入口/重播，不能自动续接。 */
   expiresAt: z.string().datetime(),
 }).strict();
@@ -100,7 +100,7 @@ export type CompanionOnboardingLastRun = z.infer<
 export const companionOnboardingStateV1Schema = z.object({
   onboardingVersion: z.string().min(1).max(100),
   scope: companionGuideScopeSchema.optional(),
-  workspaceId: z.string().uuid().optional(),
+  workspaceId: z.string().guid().optional(),
   visitedStepIds: z.array(z.string().min(1).max(64)).max(100).optional(),
   /** 乐观并发版本：每次写入 +1；客户端提交 base revision 做 CAS。 */
   revision: z.number().int().min(0),
@@ -280,7 +280,7 @@ export type CompanionAccountStateV1 = z.infer<typeof companionAccountStateV1Sche
 export const companionAccountGlobalOffEventV1Schema = z.object({
   version: z.literal(1),
   type: z.literal("account.global_off"),
-  userId: z.string().uuid(),
+  userId: z.string().guid(),
   epoch: z.number().int().min(0),
 }).strict();
 export type CompanionAccountGlobalOffEventV1 = z.infer<

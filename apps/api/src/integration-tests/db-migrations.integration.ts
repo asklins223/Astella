@@ -71,6 +71,17 @@ const RETIRED_FUNCTIONS = [
   "prevent_publication_revision_mutation",
 ];
 
+test("admin counts remain callable after the legacy learning-run tables retire", async (t) => {
+  if (!CONN) { t.skip("DATABASE_URL_API 未配置"); return; }
+  const pool = new Pool({ connectionString: CONN, connectionTimeoutMillis: 5_000 });
+  try {
+    const { rows } = await pool.query("SELECT * FROM public.astella_admin_platform_counts()");
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].runs_total, 0);
+    assert.ok(Number.isInteger(rows[0].notes_active));
+  } finally { await pool.end(); }
+});
+
 test("学习卡核心表存在且退役表与调度函数已删除", async (t) => {
   if (!CONN) {
     t.skip("DATABASE_URL_API 未配置——跳过 DB 集成测试");

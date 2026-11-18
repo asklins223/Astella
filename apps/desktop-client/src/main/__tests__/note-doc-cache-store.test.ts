@@ -1,4 +1,4 @@
-import { mkdtemp, rm, stat as statFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat as statFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -80,13 +80,16 @@ describe("本机笔记文档缓存", () => {
     expect((await store.get(key()))?.savedAt).toBe("A 的那一份");
   });
 
-  it("坏文件等于本机没有这一份，不部分恢复", async () => {
+  it("坏文件阻止覆盖，并保留原件供恢复", async () => {
     await writeFile(
       filePath,
       JSON.stringify({ version: 2, entries: [{ ...key(), ...entry(), docState: "不是 base64 !!!" }] }),
     );
     const store = new FileNoteDocCacheStore(filePath);
-    expect(await store.get(key())).toBeNull();
+    const original = await readFile(filePath, "utf8");
+    await expect(store.get(key())).rejects.toThrow("original file was preserved");
+    await expect(store.set(key(), entry())).rejects.toThrow("original file was preserved");
+    expect(await readFile(filePath, "utf8")).toBe(original);
   });
 
   it("上一版（数组形状）的那一份整机不接回来，哪怕它自己完全合法", async () => {
@@ -98,11 +101,10 @@ describe("本机笔记文档缓存", () => {
       JSON.stringify({ version: 1, entries: [{ ...key(), ...entry({ savedAt: "数组形状那一份" }) }] }),
     );
     const store = new FileNoteDocCacheStore(filePath);
-    expect(await store.get(key())).toBeNull();
-    // 同一个文件位置一旦被新版本写过，旧的那一份就再也回不来（不是"读到一半混着用"）。
-    expect(await store.set(key(), entry({ savedAt: "新形状那一份" }))).toBe(true);
-    const reopened = new FileNoteDocCacheStore(filePath);
-    expect((await reopened.get(key()))?.savedAt).toBe("新形状那一份");
+    const original = await readFile(filePath, "utf8");
+    await expect(store.get(key())).rejects.toThrow("original file was preserved");
+    await expect(store.set(key(), entry({ savedAt: "新形状那一份" }))).rejects.toThrow();
+    expect(await readFile(filePath, "utf8")).toBe(original);
   });
 
   it("一份大到不该占缓存时明说不收，而不是截断正文", async () => {
@@ -129,6 +131,7 @@ describe("本机笔记文档缓存", () => {
     const store = new MemoryNoteDocCacheStore();
     for (let i = 0; i <= 48; i += 1) {
       await store.set(key({ noteId: randomUUID() }), entry({
+        pending: [],
         updatedAt: `2026-01-01T00:00:${String(i % 60).padStart(2, "0")}.000Z`,
         savedAt: `#${i}`,
       }));
@@ -137,6 +140,45 @@ describe("本机笔记文档缓存", () => {
     expect(snapshot.length).toBeLessThanOrEqual(48);
     expect(snapshot.some((row) => row.savedAt === "#48")).toBe(true);
     expect(snapshot.some((row) => row.savedAt === "#0")).toBe(false);
+  });
+
+  it("缓存满时不淘汰待同步更新或草稿，无法安全容纳时拒绝新写入", async () => {
+    const store = new MemoryNoteDocCacheStore();
+    const dirtyKeys = Array.from({ length: 48 }, () => key({ noteId: randomUUID() }));
+    for (const dirtyKey of dirtyKeys) expect(await store.set(dirtyKey, entry())).toBe(true);
+    const extra = key({ noteId: randomUUID() });
+    expect(await store.set(extra, entry())).toBe(false);
+    expect(await store.get(extra)).toBeNull();
+    for (const dirtyKey of dirtyKeys) expect((await store.get(dirtyKey))?.pending).toEqual(entry().pending);
+  });
+
+  it("容量不足不覆盖磁盘中待同步的内容，重启后依然能恢复", async () => {
+    const store = new FileNoteDocCacheStore(filePath, { maxFileBytes: 700 });
+    expect(await store.set(key(), entry())).toBe(true);
+    const other = key({ noteId: randomUUID() });
+    expect(await store.set(other, entry({ docState: "A".repeat(500) }))).toBe(false);
+    const reopened = new FileNoteDocCacheStore(filePath, { maxFileBytes: 700 });
+    expect((await reopened.get(key()))?.pending).toEqual(entry().pending);
+    expect(await reopened.get(other)).toBeNull();
+  });
+
+  it("旧版写出的超限文件仍可读取，拒绝覆盖它直到空间足够", async () => {
+    const payload = JSON.stringify({ version: 2, entries: [{ ...key(), ...entry() }] });
+    await writeFile(filePath, payload);
+    const store = new FileNoteDocCacheStore(filePath, { maxFileBytes: 100 });
+    expect((await store.get(key()))?.pending).toEqual(entry().pending);
+    expect(await store.set(key({ noteId: randomUUID() }), entry())).toBe(false);
+    const reopened = new FileNoteDocCacheStore(filePath, { maxFileBytes: 100 });
+    expect((await reopened.get(key()))?.pending).toEqual(entry().pending);
+  });
+
+  it("超出安全恢复内存预算时不读取或覆盖原文件", async () => {
+    const original = JSON.stringify({ version: 2, entries: [{ ...key(), ...entry() }] });
+    await writeFile(filePath, original);
+    const store = new FileNoteDocCacheStore(filePath, { maxFileBytes: 80, maxRecoveryBytes: 100 });
+    await expect(store.get(key())).rejects.toThrow("original file was preserved");
+    await expect(store.set(key(), entry())).rejects.toThrow();
+    expect(await readFile(filePath, "utf8")).toBe(original);
   });
 
   it("退出这个空间 / 换账号时那一段一起清掉", async () => {

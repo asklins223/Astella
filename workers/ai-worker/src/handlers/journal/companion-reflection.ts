@@ -80,9 +80,9 @@ import type { JobPayload } from ".././index.ts";
 const REFLECTION_MAX_OUTPUT_TOKENS = 8_000;
 
 const jobPayloadSchema = z.strictObject({
-  userId: z.string().uuid(),
-  workspaceId: z.string().uuid(),
-  conversationId: z.string().uuid(),
+  userId: z.string().guid(),
+  workspaceId: z.string().guid(),
+  conversationId: z.string().guid(),
   fromSeq: z.number().int().nonnegative(),
   toSeq: z.number().int().positive(),
   selfNoteKey: z.string().min(1).max(120).optional(),
@@ -612,7 +612,7 @@ function parseReflectionCheckpointOutput(value: unknown): ReflectionVerifiedV1 |
         "missing_user_utterance", "unchanged_from_current", "self_note_not_read", "duplicate_self_note"]),
     })).max(16),
     citedSources: z.array(z.strictObject({
-      kind: z.enum(["user_message", "assistant_message"]), id: z.string().uuid(),
+      kind: z.enum(["user_message", "assistant_message"]), id: z.string().guid(),
       revision: z.string().nullable().optional(),
     })).max(24),
   }).safeParse(value);

@@ -20,7 +20,7 @@ import {
   real,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import { users } from "./identity.ts";
+import { users, workspaces } from "./identity.ts";
 import { jobs } from "./job.ts";
 
 /** pgvector 派生索引：只由 Worker 写入；Drizzle 中以 jsonb 占位 vector(1024)。 */
@@ -188,7 +188,7 @@ export const companionReflections = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-    workspaceId: uuid("workspace_id").notNull(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
     conversationId: uuid("conversation_id").notNull(),
     jobId: uuid("job_id"),
     triggerKind: text("trigger_kind").$type<"exchange_segment">().notNull(),
@@ -231,7 +231,7 @@ export const companionReflectionSources = pgTable(
       () => companionReflections.id, { onDelete: "cascade" },
     ),
     userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-    workspaceId: uuid("workspace_id").notNull(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
     /**
      * `read` = 这次回顾读过的全部素材；`cited` = 某条结论**点名引用**的依据；
      * `produced` = 这次产出的版本。三者必须分开：撤回一条被删掉的原话时，
@@ -265,7 +265,7 @@ export const companionReflectionCheckpoints = pgTable(
   "companion_reflection_checkpoints",
   {
     jobId: uuid("job_id").notNull(),
-    workspaceId: uuid("workspace_id").notNull(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
     userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
     taskId: text("task_id").notNull(),
     taskVersion: integer("task_version").notNull(),

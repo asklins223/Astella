@@ -100,12 +100,25 @@ describe("CI workflow contract", () => {
     }
   });
 
+  it("desktop 构建步骤在本地与 CI 两边都在", () => {
+    // 资产守卫读 out/；只跑 test 不构建会在干净工作树上空转通过。
+    assert.ok(
+      makefile.includes("cd apps/desktop-client && npm run build"),
+      "make verify 不再构建 desktop-client——资产守卫会读不到 out/",
+    );
+    assert.ok(
+      /^\s+run:\s*npm run build$/m.test(codeLines(workflow)),
+      "CI 不再构建 desktop-client——本地与 CI 测的不是同一份产物",
+    );
+  });
+
   it("仓库级脚本闸在本地与 CI 两边都在（缺一边就是假绿）", () => {
     const code = codeLines(workflow);
     // 这些不是"某个包的 typecheck+test"，上面那个矩阵对账看不见它们。
     // 备份脚本自测就是例子：53 条断言长期只有文档提到，没有任何目标跑它。
     const repoLevelGates = [
       { name: "备份脚本自测", path: "infra/backup/backup-scripts.test.sh" },
+      { name: "桌面发布签名检查", path: ".github/scripts/desktop-signature-release.test.mjs" },
     ];
     for (const gate of repoLevelGates) {
       const inMakefile = makefile.includes(gate.path);
@@ -119,7 +132,9 @@ describe("CI workflow contract", () => {
   });
 
   it("工作流没有跑任何 make verify 不跑的门禁", () => {
-    const code = codeLines(workflow);
+    // The coverage helper's unit tests are in the local baseline; they are
+    // not the coverage gate itself. Ignore only that exact test path.
+    const code = codeLines(workflow).replaceAll(".github/scripts/coverage-gate-lib.test.mjs", "");
     for (const gate of GATES_THAT_LEFT_CI) {
       assert.ok(
         !code.toLowerCase().includes(gate.toLowerCase()),
@@ -128,11 +143,13 @@ describe("CI workflow contract", () => {
     }
   });
 
-  it("工作流不在 pg 上建集成测试库（postgres 集测已退出 CI）", () => {
-    assert.ok(
-      !/services:\s*\n\s+postgres:/.test(workflow),
-      "工作流又起了 postgres service——postgres 集测已退出 CI，本地基线不需要它",
-    );
+  it("发布前调用真实 PostgreSQL 隔离与迁移检查", () => {
+    assert.match(codeLines(workflow), /uses:\s*\.\/\.github\/workflows\/nightly-database-guard\.yml/);
+    assert.match(codeLines(workflow), /needs:\s*\[[^\]]*database-guard[^\]]*\]/);
+    const databaseGuard = readFileSync(join(repositoryRoot, ".github/workflows/nightly-database-guard.yml"), "utf8");
+    assert.match(codeLines(databaseGuard), /workflow_call:/);
+    assert.match(codeLines(databaseGuard), /schema-isolation-gate-postgres\.integration\.ts/);
+    assert.match(codeLines(databaseGuard), /npm run test:workspace-fk-validation:postgres/);
   });
 
   it("工作流仍然会在 main 的推送上跑（否则本地绿了很久、CI 一次没跑过）", () => {

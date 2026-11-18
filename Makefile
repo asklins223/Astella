@@ -34,7 +34,7 @@ DEV_PROFILES := --profile storage
 	companion-model \
 	shell-api shell-worker version-check verify release-check \
 	coverage-gate skip-todo-gate release-manifest \
-	test-postgres test-companion-home-profile-postgres \
+	test-postgres test-workspace-fk-validation-postgres test-companion-home-profile-postgres \
 	alpha-up alpha-down alpha-backup alpha-restore-verify alpha-status alpha-metrics \
 	desktop-client-install desktop-client-dev desktop-client-build desktop-client-dist \
 	desktop-client-dist-arm64 desktop-client-dist-linux desktop-client-dist-win \
@@ -60,7 +60,8 @@ up: ensure-db-volume
 	@set -e; for svc in $(INIT_SERVICES) $(STORAGE_INIT_SERVICES); do \
 		cid="$$( $(COMPOSE) ps -aq $$svc )"; \
 		if [ -z "$$cid" ]; then echo "Missing required init service: $$svc" >&2; exit 1; fi; \
-		docker wait $$cid >/dev/null; \
+		status="$$(docker wait $$cid)"; \
+		if [ "$$status" != 0 ]; then echo "Init service $$svc failed (exit $$status)" >&2; $(COMPOSE) logs --no-color $$svc >&2 || true; exit 1; fi; \
 	done
 
 storage: ensure-db-volume
@@ -69,7 +70,8 @@ storage: ensure-db-volume
 	@set -e; for svc in $(INIT_SERVICES) $(STORAGE_INIT_SERVICES); do \
 		cid="$$( $(COMPOSE) ps -aq $$svc )"; \
 		if [ -z "$$cid" ]; then echo "Missing required init service: $$svc" >&2; exit 1; fi; \
-		docker wait $$cid >/dev/null; \
+		status="$$(docker wait $$cid)"; \
+		if [ "$$status" != 0 ]; then echo "Init service $$svc failed (exit $$status)" >&2; $(COMPOSE) logs --no-color $$svc >&2 || true; exit 1; fi; \
 	done
 
 # 把桌面端随包的 Live2D 模型发布到本地对象存储：手机端
@@ -82,7 +84,7 @@ COMPANION_MODEL_DIR ?= ../desktop-client/src/renderer/public/assets/companion/li
 COMPANION_MODEL_ID ?= companion-live2d-whale-v3
 companion-model:
 	@test -x apps/api/node_modules/.bin/tsx || { \
-		echo "apps/api/node_modules is missing; run pnpm install first" >&2; exit 1; }
+		echo "apps/api/node_modules is missing; run npm ci in apps/api first" >&2; exit 1; }
 	@$(COMPOSE) --profile storage up -d minio
 	@set -e; \
 	cid="$$( $(COMPOSE) ps -q minio )"; \
@@ -181,7 +183,7 @@ version-check:
 # 两个门禁脚本都还在，需要时按下面两个独立目标显式调用；它们不再是这条基线
 # 的一部分，所以 CI 也不再要求它们过。
 verify: version-check
-	node --test .github/scripts/version-contract.test.mjs .github/scripts/release-manifest-contract.test.mjs .github/scripts/coverage-gate-lib.test.mjs .github/scripts/ci-workflow-contract.test.mjs .github/scripts/postgres-integration-lifecycle.test.mjs .github/scripts/compose-init-order.test.mjs
+	node --test .github/scripts/version-contract.test.mjs .github/scripts/release-manifest-contract.test.mjs .github/scripts/coverage-gate-lib.test.mjs .github/scripts/ci-workflow-contract.test.mjs .github/scripts/postgres-integration-lifecycle.test.mjs .github/scripts/compose-init-order.test.mjs .github/scripts/desktop-signature-release.test.mjs
 	node .github/scripts/verify-schema-mirror.mjs
 	node .github/scripts/verify-companion-capability-config.mjs
 	# 备份/恢复那组 shell 脚本的自测（53 条断言：卷名、mc 别名、禁用库名清单、
@@ -199,14 +201,16 @@ verify: version-check
 	# pr-gate 是 AI 质量层的 **PR Mock** 闸：固定数据集、固定桩，不访问付费网络。
 	cd packages/ai-quality && npm run typecheck && npm test && npm run pr-gate
 	cd apps/api && npm run typecheck && npm test
-	cd apps/desktop-client && npm run typecheck && npm test
+	# 资产守卫读 out/：先构建再测，和 CI 的 desktop job 保持同一顺序。
+	cd apps/desktop-client && npm run build && npm run typecheck && npm test
 	cd workers/ai-worker && npm run typecheck && npm test
 
 # Coverage gate with threshold enforcement (blocks release-check, not PRs).
 coverage-gate:
 	node .github/scripts/coverage-gate.mjs
 
-# Skip/todo allowlist gate (blocks verify and release-check).
+# Skip/todo allowlist gate. Independent target: verify 与 release-check 都不调用它
+# （两者已经很长）；改动 skip/todo 或发布前手动跑一次。
 skip-todo-gate:
 	node .github/scripts/skip-todo-gate.mjs
 
@@ -261,7 +265,7 @@ IT_WORKER_URL = postgres://astella_worker:$(IT_WORKER_PASSWORD)@$(IT_HOST):$(IT_
 test-postgres:
 	@for pkg in apps/api workers/ai-worker; do \
 		echo "════════ $$pkg ════════"; \
-		scripts=$$(cd $$pkg && node -e 'const p=require("./package.json");console.log(Object.keys(p.scripts).filter(k=>k.startsWith("test:")&&k.endsWith(":postgres")).sort().join("\n"))'); \
+		scripts=$$(cd $$pkg && node -e 'const p=require("./package.json");console.log(Object.keys(p.scripts).filter(k=>k.startsWith("test:")&&k.endsWith(":postgres")&&k!=="test:workspace-fk-validation:postgres").sort().join("\n"))'); \
 		for s in $$scripts; do \
 			echo "── $$s"; \
 			(cd $$pkg && NODE_ENV=test \
@@ -281,9 +285,19 @@ test-postgres:
 				CONTENT_HASH_TEST_DATABASE_URL="$(IT_SUPERUSER_URL)" \
 				SEC02_TEST_DATABASE_URL="$(IT_SUPERUSER_URL)" \
 				NOTE_VERSION_RESTORE_TEST_DATABASE_URL="$(IT_SUPERUSER_URL)" \
+				NOTE_LEADER_TEST_DATABASE_URL="$(IT_SUPERUSER_URL)" \
+				NOTE_LEADER_TEST_RUNTIME_DATABASE_URL="$(IT_API_URL)" \
+				SEARCH_REINDEX_TEST_DATABASE_URL="$(IT_SUPERUSER_URL)" \
+				SEARCH_REINDEX_ADMIN_DATABASE_URL="$(IT_SUPERUSER_URL)" \
 				npm run --silent $$s) || exit 1; \
 		done; \
 	done
+
+# This test creates an intentionally incompatible public schema and roles. It
+# must use its own empty database, never the migrated database used above.
+test-workspace-fk-validation-postgres:
+	@test -n "$$DATABASE_URL_FK_TEST" || { echo "Set DATABASE_URL_FK_TEST to an empty astella_workspace_fk_test_* database using a superuser." >&2; exit 2; }
+	@cd apps/api && npm run test:workspace-fk-validation:postgres
 
 shell-api:
 	$(COMPOSE) exec api sh

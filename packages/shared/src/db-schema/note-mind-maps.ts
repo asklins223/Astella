@@ -27,7 +27,7 @@ export const noteMindMaps = pgTable("note_mind_maps", {
 
 /** Completed model stages survive a worker lease retry; immutable hash identifies the input. */
 export const noteMindMapStages = pgTable("note_mind_map_stages", {
-  jobId:uuid("job_id").notNull(),workspaceId:uuid("workspace_id").notNull(),userId:uuid("user_id").notNull(),
+  jobId:uuid("job_id").notNull(),workspaceId:uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),userId:uuid("user_id").notNull(),
   stage:text("stage").notNull(),inputHash:text("input_hash").notNull(),output:jsonb("output").$type<MindMapContentV1>().notNull(),
 }, t => ({
   identity:uniqueIndex("note_mind_map_stages_key").on(t.jobId,t.stage,t.inputHash),

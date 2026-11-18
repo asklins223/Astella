@@ -15,8 +15,8 @@ export const agentMethodCapabilityV1Schema = z.object({
   name: z.string().min(1).max(100), version: z.string().min(1).max(40),
 }).strict();
 export const agentMethodEvidenceV1Schema = z.object({
-  memoryId: z.string().uuid().optional(), memoryRevision: z.number().int().positive().optional(),
-  runId: z.string().uuid().optional(), runRevision: z.number().int().positive().optional(),
+  memoryId: z.string().guid().optional(), memoryRevision: z.number().int().positive().optional(),
+  runId: z.string().guid().optional(), runRevision: z.number().int().positive().optional(),
   eventId: z.string().min(1).max(240).optional(), note: z.string().optional(),
 }).strict().refine(value => !!(value.memoryId || value.runId || value.eventId), "缺少经验来源");
 /**
@@ -26,7 +26,7 @@ export const agentMethodEvidenceV1Schema = z.object({
 export const AGENT_METHOD_TITLE_MAX_CHARS = 120;
 export const AGENT_METHOD_APPLIES_WHEN_MAX_CHARS = 200;
 export const agentMethodV1Schema = z.object({
-  version: z.literal(1), methodId: z.string().uuid(), revision: z.number().int().positive(),
+  version: z.literal(1), methodId: z.string().guid(), revision: z.number().int().positive(),
   title: z.string().min(1).max(AGENT_METHOD_TITLE_MAX_CHARS),
   appliesWhen: z.string().min(1).max(AGENT_METHOD_APPLIES_WHEN_MAX_CHARS),
   steps: z.array(z.string().min(1)),
@@ -41,7 +41,7 @@ export const agentMethodV1Schema = z.object({
   epistemicStatus: agentMethodEpistemicStatusV1Schema,
   availability: z.enum(["available", "pending", "disabled", "source_changed", "capability_changed", "previous_version"]),
   author: z.enum(["user", "companion", "extractor", "maintenance"]),
-  changeReason: z.string().max(500).nullable(), sourceRunId: z.string().uuid().nullable(), sourceRunRevision: z.number().int().positive().nullable(),
+  changeReason: z.string().max(500).nullable(), sourceRunId: z.string().guid().nullable(), sourceRunRevision: z.number().int().positive().nullable(),
   // §6.3：三个计数各自独立。`offeredCount` 是**目录被提供**的次数——它不等于被读过，
   // 更不等于有用；`consultedCount` 只算真正读过正文的那些。
   offeredCount: z.number().int().nonnegative(), adoptedCount: z.number().int().nonnegative(),
@@ -51,7 +51,7 @@ export const agentMethodV1Schema = z.object({
 export const agentMethodListV1Schema = z.object({ version: z.literal(1), items: z.array(agentMethodV1Schema).max(100) }).strict();
 export const agentMethodHistoryV1Schema = z.object({ version: z.literal(1), items: z.array(agentMethodV1Schema).max(30) }).strict();
 export const proposeAgentMethodV1Schema = z.object({
-  runId: z.string().uuid(), expectedRunRevision: z.number().int().positive(),
+  runId: z.string().guid(), expectedRunRevision: z.number().int().positive(),
   title: z.string().trim().min(1).max(120), appliesWhen: z.string().trim().min(1).max(200),
 }).strict();
 export const reviseAgentMethodV1Schema = z.object({
@@ -66,13 +66,13 @@ export const controlAgentMethodV1Schema = z.object({
   reason: z.string().trim().max(500).optional(),
 }).strict();
 export const agentMethodUseV1Schema = z.object({
-  useId: z.string().uuid(), methodId: z.string().uuid(), methodRevision: z.number().int().positive(),
+  useId: z.string().guid(), methodId: z.string().guid(), methodRevision: z.number().int().positive(),
   /**
    * 这次记录处在哪一步（§6.3）：`offered` 只是出现在目录里，`read` 是读过正文，
    * `adopted` 是被实际采用。**效果评价只能挂在前两者之后**——没读过就判不了好坏。
    */
   stage: z.enum(["offered", "read", "adopted"]),
-  contextKind: z.enum(["agent_goal", "conversation"]), contextId: z.string().uuid(), contextRevision: z.number().int().positive(),
+  contextKind: z.enum(["agent_goal", "conversation"]), contextId: z.string().guid(), contextRevision: z.number().int().positive(),
   feedback: z.enum(["helpful", "unhelpful"]).nullable(), comment: z.string().max(500).nullable(),
   createdAt: z.string().datetime(), feedbackAt: z.string().datetime().nullable(),
 }).strict();

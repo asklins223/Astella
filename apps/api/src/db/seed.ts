@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import bcrypt from "bcryptjs";
+import { hashPassword } from "../modules/identity/credentials.ts";
 import { eq, sql } from "drizzle-orm";
 import { db, withActorTransaction } from "./client.ts";
 import { users, workspaces, workspaceMembers } from "@astella/shared/db-schema/identity";
@@ -7,10 +7,6 @@ import { users, workspaces, workspaceMembers } from "@astella/shared/db-schema/i
 const DEMO_OWNER_EMAIL = "owner@astella.local";
 const DEMO_OWNER_PASSWORD = "astella_owner";
 const DEMO_WORKSPACE_NAME = "Personal Beta";
-
-function hashPassword(plain: string): string {
-  return bcrypt.hashSync(plain, 10);
-}
 
 function required(name: "OWNER_EMAIL" | "OWNER_PASSWORD"): string {
   const value = process.env[name]?.trim();
@@ -76,6 +72,7 @@ async function main() {
   }
 
   const ownerId = randomUUID();
+  const passwordHash = await hashPassword(ownerPassword);
   // 写入包在 actor 事务里：`sec02_users_self_insert` 只放行
   // `app.user_id` 等于新行 id 的插入，而 actor 上下文允许"还没有空间"
   // ——那正是 workspaces / workspace_members 守卫让开的分支（迁移 0257）。
@@ -85,7 +82,7 @@ async function main() {
       .values({
         id: ownerId,
         email: ownerEmail,
-        passwordHash: hashPassword(ownerPassword),
+        passwordHash,
         role: "owner",
         ...(displayName ? { displayName } : {}),
         ...(avatarUrl ? { avatarUrl } : {}),

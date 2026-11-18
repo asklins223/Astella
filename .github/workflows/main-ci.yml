@@ -20,20 +20,14 @@ name: CI
 # 移出 CI、但脚本与配置都留在仓库里、需要时按原样接回的：
 #   · 覆盖率门禁       `make coverage-gate`
 #   · skip/todo 门禁   `make skip-todo-gate`
-#   · postgres 集测    `make test-postgres`（要本地库；154 份仍在 package.json 脚本里）
+#   · postgres 集测    完整套件 `make test-postgres`；高风险子集由 database-guard 执行
 #   · 发布 / compose / Alpha 巡检：脚本与 compose 文件原封不动，只是不再自动跑
 #
 # 涉及 AI 的部分只跑逻辑：所有用例都是桩 / 固定数据集，不发任何付费网络请求
 # （`packages/ai-quality` 的 `pr-gate` 就是 PR 层的固定 Mock 闸）。
 #
-# 唯一一件"看起来像运维、其实进 CI"的：`backup-scripts` 这一档跑的是
-# `infra/backup/backup-scripts.test.sh`——备份/恢复脚本**自身的纯 bash 断言**
-# （manifest 形状、rotate 保留策略、restore 的 allowlist 拒绝、schema 校验），
-# 不起容器、不连库、也不需要 `age`（那些 `*.dump.age` 只是期望值里的文件名）。
-# 上面"移出 CI"的那条指的是**真做一遍备份还原**（要 Docker、MinIO、真库），
-# 两者不是一回事。这份纯脚本套件此前只有文档提到、没有任何链路调用它，
-# 2026-10-07 起本地 `make verify` 与这里同时跑，缺一侧由
-# `ci-workflow-contract` 判红。
+# `backup-scripts` 同时运行本地基线里的仓库脚本测试、备份脚本自测和存储拓扑检查。
+# 纯脚本测试不代表实际备份还原；后者仍需 Docker、MinIO 和真实数据库。
 on:
   push:
     branches: [main]
@@ -55,12 +49,16 @@ jobs:
   deploy:
     name: Deploy server on release tags
     if: github.ref_type == 'tag' && startsWith(github.ref_name, 's-v')
-    needs: [packages, api, worker, desktop, backup-scripts]
+    needs: [packages, api, worker, desktop, backup-scripts, database-guard]
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/server-deploy.yml
     secrets: inherit
+
+  database-guard:
+    name: PostgreSQL isolation and migrations
+    uses: ./.github/workflows/nightly-database-guard.yml
 
   # ─── packages/：四个共享包 ──────────────────────────────────────────────
   #
@@ -282,6 +280,18 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install repository tools
+        run: npm ci --no-audit --no-fund
+
+      - name: Test repository scripts
+        run: node --test .github/scripts/version-contract.test.mjs .github/scripts/release-manifest-contract.test.mjs .github/scripts/coverage-gate-lib.test.mjs .github/scripts/ci-workflow-contract.test.mjs .github/scripts/postgres-integration-lifecycle.test.mjs .github/scripts/compose-init-order.test.mjs .github/scripts/desktop-signature-release.test.mjs
 
       - name: Run backup script self-tests
         run: bash infra/backup/backup-scripts.test.sh

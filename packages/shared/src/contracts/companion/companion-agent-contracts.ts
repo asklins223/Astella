@@ -166,7 +166,7 @@ export const companionAgentToolDefinitionV1Schema = z.object({
   name: z.string().regex(/^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$/).max(80),
   toolVersion: z.string().min(1).max(40),
   description: z.string().min(1).max(800),
-  parameters: z.record(z.unknown()),
+  parameters: z.record(z.string(), z.unknown()),
   riskClass: companionAgentRiskClassSchema,
   requiresConfirmation: z.boolean(),
   confirmationStage: z.enum(["before_execute", "after_preview"]).optional(),
@@ -206,7 +206,7 @@ export const companionAgentToolEventV1Schema = z.object({
   riskClass: companionAgentRiskClassSchema,
   status: companionAgentToolStatusSchema,
   safeLabel: z.string().min(1).max(240),
-  proposalId: z.string().uuid().optional(),
+  proposalId: z.string().guid().optional(),
   safeSummary: z.string().max(240).optional(),
   webSearch: companionWebSearchProcessV1Schema.optional(),
   /** A durable receipt, published as soon as the save commits, before the final reply. */
@@ -214,8 +214,8 @@ export const companionAgentToolEventV1Schema = z.object({
   occurredAt: z.string().datetime({ offset: true }).optional(),
   noteEdit: companionEditedNoteV1Schema.optional(),
   noteAnnotation: companionWrittenAnnotationV1Schema.optional(),
-  noteEditTarget: z.object({ noteId: z.string().uuid(), startBlock: z.number().int().nonnegative(), endBlock: z.number().int().nonnegative() }).strict().optional(),
-  route: z.record(z.unknown()).optional(),
+  noteEditTarget: z.object({ noteId: z.string().guid(), startBlock: z.number().int().nonnegative(), endBlock: z.number().int().nonnegative() }).strict().optional(),
+  route: z.record(z.string(), z.unknown()).optional(),
   /**
    * 客户端可直接执行（2026-09-19 对齐权限分级原设计）。
    *

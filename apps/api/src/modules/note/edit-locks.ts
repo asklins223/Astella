@@ -4,6 +4,7 @@ import { DomainError } from "@astella/shared";
 import { companionTurnRuns } from "@astella/shared/db-schema/companion-conversations";
 import { noteDocumentStates } from "@astella/shared/db-schema/note";
 import { withWorkspaceTransaction } from "../../db/client.ts";
+import { fenceNoteCollaborationWrite } from "./collaboration-leader.ts";
 
 // Relative positions keep the same paragraphs protected when text is inserted
 // above them. Persisted locks are rehydrated before accepting any manual write.
@@ -47,8 +48,13 @@ export async function persistRewriteLocks(workspaceId: string, noteId: string, u
     const stored: StoredRewriteLock[] = activeRewriteLocks(noteId).map(lock => ({ ...lock,
       items: lock.items.map(item => ({ source: item.source, position: Buffer.from(Y.encodeRelativePosition(item.position)).toString("base64") })),
     }));
-    await withWorkspaceTransaction({ workspaceId, userId }, tx => tx.update(noteDocumentStates)
-      .set({ rewriteLocks: stored }).where(and(eq(noteDocumentStates.noteId, noteId), eq(noteDocumentStates.workspaceId, workspaceId))));
+    await withWorkspaceTransaction({ workspaceId, userId }, async tx => {
+      // A lost leader must not replace a successor's locks with its old
+      // process-local snapshot, even if its ordinary DB pool is still alive.
+      await fenceNoteCollaborationWrite(tx);
+      await tx.update(noteDocumentStates).set({ rewriteLocks: stored })
+        .where(and(eq(noteDocumentStates.noteId, noteId), eq(noteDocumentStates.workspaceId, workspaceId)));
+    });
   });
   writes.set(noteId, pending);
   try { await pending; } finally { if (writes.get(noteId) === pending) writes.delete(noteId); }

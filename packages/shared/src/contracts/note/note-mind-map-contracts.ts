@@ -54,27 +54,27 @@ export const mindMapCoverageV1Schema = z.strictObject({
   allTextRead: z.literal(true),
 });
 export const noteMindMapV1Schema = z.strictObject({
-  mindMapId: z.string().uuid(), noteId: z.string().uuid(), noteVersionId: z.string().uuid(),
+  mindMapId: z.string().guid(), noteId: z.string().guid(), noteVersionId: z.string().guid(),
   noteVersionNumber: z.number().int().positive(),
   title: z.string().min(1).max(500), contentHash: z.string().min(1).max(128),
   content: mindMapContentV1Schema, coverage: mindMapCoverageV1Schema,
-  generationJobId: z.string().uuid(), modelId: z.string().min(1).max(200), promptVersion: z.string().min(1).max(200),
+  generationJobId: z.string().guid(), modelId: z.string().min(1).max(200), promptVersion: z.string().min(1).max(200),
   versionState: z.enum(["current", "older"]), createdAt: z.string().datetime({ offset: true }),
 });
-export const noteMindMapPageV1Schema = z.strictObject({version:z.literal(1),items:z.array(noteMindMapV1Schema).max(100),nextCursor:z.string().uuid().nullable()});
-export const noteMindMapListQueryV1Schema = z.strictObject({before:z.string().uuid().optional()});
-export const createNoteMindMapTaskV1Schema = z.strictObject({noteVersionId:z.string().uuid(),requestId:z.string().uuid()});
+export const noteMindMapPageV1Schema = z.strictObject({version:z.literal(1),items:z.array(noteMindMapV1Schema).max(100),nextCursor:z.string().guid().nullable()});
+export const noteMindMapListQueryV1Schema = z.strictObject({before:z.string().guid().optional()});
+export const createNoteMindMapTaskV1Schema = z.strictObject({noteVersionId:z.string().guid(),requestId:z.string().guid()});
 export const noteMindMapTaskV1Schema = z.strictObject({
-  taskId:z.string().uuid(),agentRunId:z.string().uuid().optional(),noteId:z.string().uuid(),noteVersionId:z.string().uuid(),
+  taskId:z.string().guid(),agentRunId:z.string().guid().optional(),noteId:z.string().guid(),noteVersionId:z.string().guid(),
   status:z.enum(["queued","running","ready","failed"]),mindMap:noteMindMapV1Schema.nullable(),
   failureReason:z.enum(["ai_consent_required","ai_data_policy_denied","generation_incomplete","unknown"]).nullable(),
   failureMessage:z.string().max(500).nullable(),createdAt:z.string().datetime({offset:true}),
 });
 export const noteMindMapLatestTaskV1Schema = z.strictObject({version:z.literal(1),task:noteMindMapTaskV1Schema.nullable()});
-export const noteMindMapLatestTaskQueryV1Schema = z.strictObject({noteVersionId:z.string().uuid()});
+export const noteMindMapLatestTaskQueryV1Schema = z.strictObject({noteVersionId:z.string().guid()});
 /** Read-only snapshot reached through an owned artifact, never restores the live note. */
 export const noteMindMapSourceV1Schema = z.strictObject({
-  noteId:z.string().uuid(),noteVersionId:z.string().uuid(),noteVersionNumber:z.number().int().positive(),title:z.string(),
+  noteId:z.string().guid(),noteVersionId:z.string().guid(),noteVersionNumber:z.number().int().positive(),title:z.string(),
   blocks:z.array(z.strictObject({ordinal:z.number().int().nonnegative(),type:z.string(),content:z.string()})).max(100_000),
 });
 export type MindMapContentV1 = z.infer<typeof mindMapContentV1Schema>;

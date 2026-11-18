@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -61,6 +63,29 @@ function findGrantStep(blocks) {
 }
 
 describe("compose init 顺序契约", () => {
+  it("make up reports a failed init container instead of succeeding", () => {
+    const dir = mkdtempSync(join(tmpdir(), "astella-init-test-"));
+    try {
+      writeFileSync(join(dir, "Makefile"), read("Makefile"));
+      const docker = join(dir, "docker");
+      writeFileSync(docker, `#!/bin/sh
+case "$1" in
+  volume) exit 0 ;;
+  wait) if [ "$2" = migrate ]; then echo 7; else echo 0; fi; exit 0 ;;
+  compose)
+    case " $* " in
+      *" ps -aq "*) for arg in "$@"; do last="$arg"; done; echo "$last" ;;
+      *" logs "*) echo 'migration failed' ;;
+    esac ;;
+esac
+`);
+      chmodSync(docker, 0o755);
+      const result = spawnSync("make", ["up"], { cwd: dir, encoding: "utf8", env: { ...process.env, PATH: `${dir}:${process.env.PATH}` } });
+      assert.notEqual(result.status, 0);
+      assert.match(result.stderr, /migrate failed \(exit 7\)/);
+      assert.match(result.stderr, /migration failed/);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
   for (const file of ["docker-compose.yml", "docker-compose.dev.yml"]) {
     describe(file, () => {
       const blocks = parseServices(read(file));
@@ -68,6 +93,10 @@ describe("compose init 顺序契约", () => {
       it("解析到了服务清单（守卫本身别静默失效）", () => {
         assert.ok(Object.keys(blocks).length > 3, `${file} 没解析出服务块`);
         assert.ok(blocks.migrate, `${file} 缺少 migrate 服务`);
+      });
+
+      it("forwards the legacy password policy to the API", () => {
+        assert.match(blocks.api, /AUTH_LEGACY_PASSWORD_POLICY:\s*\$\{AUTH_LEGACY_PASSWORD_POLICY:-allow\}/);
       });
 
       it("migrate 之前有 role bootstrap（迁移要 GRANT EXECUTE 给 worker）", () => {

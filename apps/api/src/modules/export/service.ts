@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, gt, inArray, isNull, lt, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { withWorkspaceTransaction, type ApiTransaction } from "../../db/client.ts";
 import { notes, noteVersions, noteBlocks, sources, sourceSegments } from "@astella/shared/db-schema/note";
 import { visibleNotesCondition } from "../note/visibility.ts";
@@ -287,46 +287,70 @@ export async function exportWorkspace(
           )).orderBy(desc(notes.updatedAt), desc(notes.id)).limit(EXPORT_BATCH),
         cursorFrom: (last) => ({ updatedAt: last.updatedAt, id: last.id }),
       }),
-      // asc(noteId, versionNo) + id 上界
+      // asc(noteId, versionNo) + id 上界。
+      // 版本与块必须回连 notes 的可见性：只按 workspace_id 取会把其他成员的
+      // 私有笔记（正文历史与当前块）一起导出。判据与 notes 那一支逐字同源。
       loadInBatches({
-        load: (c: NoteIdVersionCursor | null) =>
-          tx.select().from(noteVersions).where(and(
-            eq(noteVersions.workspaceId, workspaceId),
-            c
-              ? or(
-                  or(
-                    gt(noteVersions.noteId, c.noteId),
-                    and(eq(noteVersions.noteId, c.noteId), gt(noteVersions.versionNo, c.versionNo)),
-                  ),
-                  and(
-                    eq(noteVersions.noteId, c.noteId),
-                    eq(noteVersions.versionNo, c.versionNo),
-                    gt(noteVersions.id, c.id),
-                  ),
-                )
-              : undefined,
-          )).orderBy(asc(noteVersions.noteId), asc(noteVersions.versionNo), asc(noteVersions.id)).limit(EXPORT_BATCH),
+        load: async (c: NoteIdVersionCursor | null) => {
+          const rows = await tx.select().from(noteVersions)
+            .innerJoin(notes, and(
+              eq(notes.id, noteVersions.noteId),
+              eq(notes.workspaceId, noteVersions.workspaceId),
+              isNull(notes.deletedAt),
+              visibleNotesCondition(userId),
+            ))
+            .where(and(
+              eq(noteVersions.workspaceId, workspaceId),
+              c
+                ? or(
+                    or(
+                      gt(noteVersions.noteId, c.noteId),
+                      and(eq(noteVersions.noteId, c.noteId), gt(noteVersions.versionNo, c.versionNo)),
+                    ),
+                    and(
+                      eq(noteVersions.noteId, c.noteId),
+                      eq(noteVersions.versionNo, c.versionNo),
+                      gt(noteVersions.id, c.id),
+                    ),
+                  )
+                : undefined,
+            )).orderBy(asc(noteVersions.noteId), asc(noteVersions.versionNo), asc(noteVersions.id)).limit(EXPORT_BATCH);
+          return rows.map((row) => row.note_versions);
+        },
         cursorFrom: (last) => ({ noteId: last.noteId, versionNo: last.versionNo, id: last.id }),
       }),
-      // asc(versionId, ordinal) + id 上界
+      // asc(versionId, ordinal) + id 上界。块没有 note_id，借 version → note 回连。
       loadInBatches({
-        load: (c: { versionId: string; ordinal: number; id: string } | null) =>
-          tx.select().from(noteBlocks).where(and(
-            eq(noteBlocks.workspaceId, workspaceId),
-            c
-              ? or(
-                  or(
-                    gt(noteBlocks.versionId, c.versionId),
-                    and(eq(noteBlocks.versionId, c.versionId), gt(noteBlocks.ordinal, c.ordinal)),
-                  ),
-                  and(
-                    eq(noteBlocks.versionId, c.versionId),
-                    eq(noteBlocks.ordinal, c.ordinal),
-                    gt(noteBlocks.id, c.id),
-                  ),
-                )
-              : undefined,
-          )).orderBy(asc(noteBlocks.versionId), asc(noteBlocks.ordinal), asc(noteBlocks.id)).limit(EXPORT_BATCH),
+        load: async (c: { versionId: string; ordinal: number; id: string } | null) => {
+          const rows = await tx.select().from(noteBlocks)
+            .innerJoin(noteVersions, and(
+              eq(noteVersions.id, noteBlocks.versionId),
+              eq(noteVersions.workspaceId, noteBlocks.workspaceId),
+            ))
+            .innerJoin(notes, and(
+              eq(notes.id, noteVersions.noteId),
+              eq(notes.workspaceId, noteVersions.workspaceId),
+              isNull(notes.deletedAt),
+              visibleNotesCondition(userId),
+            ))
+            .where(and(
+              eq(noteBlocks.workspaceId, workspaceId),
+              c
+                ? or(
+                    or(
+                      gt(noteBlocks.versionId, c.versionId),
+                      and(eq(noteBlocks.versionId, c.versionId), gt(noteBlocks.ordinal, c.ordinal)),
+                    ),
+                    and(
+                      eq(noteBlocks.versionId, c.versionId),
+                      eq(noteBlocks.ordinal, c.ordinal),
+                      gt(noteBlocks.id, c.id),
+                    ),
+                  )
+                : undefined,
+            )).orderBy(asc(noteBlocks.versionId), asc(noteBlocks.ordinal), asc(noteBlocks.id)).limit(EXPORT_BATCH);
+          return rows.map((row) => row.note_blocks);
+        },
         cursorFrom: (last) => ({ versionId: last.versionId, ordinal: last.ordinal, id: last.id }),
       }),
       // desc(createdAt) + id 下界
@@ -364,18 +388,32 @@ export async function exportWorkspace(
           )).orderBy(asc(sourceSegments.sourceId), asc(sourceSegments.ordinal), asc(sourceSegments.id)).limit(EXPORT_BATCH),
         cursorFrom: (last) => ({ sourceId: last.sourceId, ordinal: last.ordinal, id: last.id }),
       }),
-      // desc(createdAt) + id 下界
+      // desc(createdAt) + id 下界。
+      // 产物若挂在某篇笔记上，就继承那篇笔记的可见性；没有 noteId 的空间级产物
+      // 照常导出。`input_refs->>'noteId'` 用文本比较，非法值只会被排除，不会抛错。
       loadInBatches({
-        load: (c: CreatedIdCursor | null) =>
-          tx.select().from(aiArtifacts).where(and(
-            eq(aiArtifacts.workspaceId, workspaceId),
-            c
-              ? or(
-                  lt(aiArtifacts.createdAt, c.createdAt),
-                  and(eq(aiArtifacts.createdAt, c.createdAt), lt(aiArtifacts.id, c.id)),
-                )
-              : undefined,
-          )).orderBy(desc(aiArtifacts.createdAt), desc(aiArtifacts.id)).limit(EXPORT_BATCH),
+        load: async (c: CreatedIdCursor | null) => {
+          const artifactNoteId = sql`${aiArtifacts.inputRefs}->>'noteId'`;
+          const rows = await tx.select().from(aiArtifacts)
+            .leftJoin(notes, and(
+              eq(notes.workspaceId, aiArtifacts.workspaceId),
+              sql`${notes.id}::text = ${artifactNoteId}`,
+            ))
+            .where(and(
+              eq(aiArtifacts.workspaceId, workspaceId),
+              or(
+                sql`${artifactNoteId} IS NULL`,
+                and(visibleNotesCondition(userId), isNull(notes.deletedAt)),
+              ),
+              c
+                ? or(
+                    lt(aiArtifacts.createdAt, c.createdAt),
+                    and(eq(aiArtifacts.createdAt, c.createdAt), lt(aiArtifacts.id, c.id)),
+                  )
+                : undefined,
+            )).orderBy(desc(aiArtifacts.createdAt), desc(aiArtifacts.id)).limit(EXPORT_BATCH);
+          return rows.map((row) => row.ai_artifacts);
+        },
         cursorFrom: (last) => ({ createdAt: last.createdAt, id: last.id }),
       }),
       // onboarding states (SEC-02/ALPHA-01) — per-user onboarding progress.

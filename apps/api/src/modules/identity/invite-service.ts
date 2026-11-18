@@ -28,6 +28,7 @@ import {
 } from "./invitation-token.ts";
 import { issueSession } from "../identity/session-service.ts";
 import { canonicalizeEmail, hashPassword, type SessionContext } from "./service.ts";
+import { notifySessionRevoked } from "./session-revocations.ts";
 // 0413：会话的客户端种类。从**原语那一族**直接取，不绕 service.ts 的转出。
 import { toSessionClientKind } from "./credentials.ts";
 import { resolveSystemProviderForCapability } from "@astella/shared/task-router";
@@ -648,6 +649,7 @@ export async function removeMember(
     },
   );
 
+  if (result.ok) notifySessionRevoked({ userId: targetUserId, workspaceId });
   return result;
 }
 

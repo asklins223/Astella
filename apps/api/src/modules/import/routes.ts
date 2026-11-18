@@ -9,7 +9,6 @@ import { TRANSFER_MAX_BYTES } from "@astella/shared/object-transfer-contracts";
 import {
   prepareMarkdownImport,
   importMarkdownNotes,
-  finalizeMarkdownImport,
 } from "./markdown-import-service.ts";
 
 
@@ -36,7 +35,6 @@ export async function importRoutes(app: FastifyInstance) {
     const items = await prepareMarkdownImport(scope, body.items);
     const outcome = await withWorkspaceTransaction(scope, (tx) =>
       importMarkdownNotes(tx, scope, { items, importId: body.importId ?? null }));
-    // 搜索索引是可重建投影，事务提交后再刷新。
-    return finalizeMarkdownImport(outcome);
+    return outcome.response;
   });
 }

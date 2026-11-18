@@ -3270,6 +3270,13 @@
       "when": 1794396900000,
       "tag": "0471_companion_persona_tool_basis",
       "breakpoints": true
+    },
+    {
+      "idx": 467,
+      "version": "7",
+      "when": 1794874578000,
+      "tag": "0472_workspace_foreign_keys_and_admin_counts",
+      "breakpoints": true
     }
   ]
 }

@@ -53,7 +53,7 @@ export type NoteLearningQuestionTypeV1 = z.infer<typeof noteLearningQuestionType
 
 /** One question of the note's card, with this user's best result. */
 export const noteDeepeningQuestionV3Schema = z.strictObject({
-  questionId: z.string().uuid(),
+  questionId: z.string().guid(),
   ordinal: z.number().int().min(0),
   questionType: noteLearningQuestionTypeV1Schema,
   stem: z.string().min(1).max(2000),
@@ -64,7 +64,7 @@ export type NoteDeepeningQuestionV3 = z.infer<typeof noteDeepeningQuestionV3Sche
 
 /** One completed (or grading) attempt on this card. */
 export const noteDeepeningAttemptV3Schema = z.strictObject({
-  attemptId: z.string().uuid(),
+  attemptId: z.string().guid(),
   status: z.enum(["in_progress", "grading", "completed", "grading_failed", "abandoned"]),
   score: z.number().int().min(0).max(100).nullable(),
   stars: z.number().int().min(0).max(5).nullable(),
@@ -78,7 +78,7 @@ export type NoteDeepeningAttemptV3 = z.infer<typeof noteDeepeningAttemptV3Schema
  * "nothing here", never a synthesized one.
  */
 export const noteDeepeningCardV3Schema = z.strictObject({
-  cardId: z.string().uuid(),
+  cardId: z.string().guid(),
   status: z.enum(["active", "stale", "archived"]),
   bestStars: z.number().int().min(0).max(5).nullable(),
   bestScore: z.number().int().min(0).max(100).nullable(),
@@ -89,10 +89,10 @@ export type NoteDeepeningCardV3 = z.infer<typeof noteDeepeningCardV3Schema>;
 
 export const noteDeepeningV3Schema = z.strictObject({
   version: z.literal(3),
-  noteId: z.string().uuid(),
+  noteId: z.string().guid(),
   noteTitle: z.string().min(1).max(500),
   hasBody: z.boolean(),
-  sourceId: z.string().uuid().nullable(),
+  sourceId: z.string().guid().nullable(),
   axes: noteStateAxesV3Schema,
   card: noteDeepeningCardV3Schema.nullable(),
   attempts: z.array(noteDeepeningAttemptV3Schema).max(200),

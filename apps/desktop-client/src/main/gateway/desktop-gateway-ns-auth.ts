@@ -24,8 +24,8 @@ import { randomUUID } from "node:crypto";
 const rawAuthResponseSchema = z.strictObject({
   token: nonEmptyStringSchema,
   ctx: z.strictObject({
-    userId: z.string().uuid(),
-    workspaceId: z.string().uuid(),
+    userId: z.string().guid(),
+    workspaceId: z.string().guid(),
     membershipRole: z.string().nullable().optional(),
     // The API includes the server-authoritative workspace boundary in every
     // newly issued session. Session loading reads it again from /auth/me, but
@@ -42,7 +42,7 @@ const rawAuthResponseSchema = z.strictObject({
   // 之所以还声明着而不是删掉：`strictObject` 要能收下服务端完整的登录信封，
   // 而这个数组在本文件里没有任何读取方。
   workspaces: z.array(z.strictObject({
-    workspaceId: z.string().uuid(),
+    workspaceId: z.string().guid(),
     workspaceName: nonEmptyStringSchema,
     role: z.enum(["owner", "member"]),
     workspaceType: z.enum(["personal", "collaborative"]),

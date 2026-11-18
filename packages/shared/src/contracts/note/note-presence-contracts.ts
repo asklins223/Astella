@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 
-const uuidSchema = z.string().uuid();
+const uuidSchema = z.string().guid();
 
 export const notePresenceModesV1 = ["reading", "editing"] as const;
 export type NotePresenceModeV1 = (typeof notePresenceModesV1)[number];

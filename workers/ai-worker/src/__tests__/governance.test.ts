@@ -162,6 +162,18 @@ test("detectAndSanitizePII: 大小写不敏感的邮箱检测", () => {
 
 // ─── sanitizePIIInObject ─────────────────────────────────────────────────
 
+test("PII governance preserves image bytes and fails closed on sensitive structural URLs", () => {
+  const image = "data:image/png;base64,+13812345678+";
+  const payload = { messages: [{ content: [
+    { type: "text", text: "电话 13812345678" },
+    { type: "image_url", image_url: { url: image, detail: "high" } },
+  ] }] };
+  const result = sanitizePIIInObject(payload);
+  assert.equal(result.data.messages[0].content[1].image_url?.url, image);
+  assert.equal(result.data.messages[0].content[0].text, "电话 1***8");
+  assert.throws(() => sanitizePIIInObject({ url: "https://example.com/?phone=13812345678" }), /结构化地址/);
+});
+
 test("sanitizePIIInObject: 对普通对象的所有字符串字段进行 PII 检测和脱敏", () => {
   const obj = {
     name: "张三",

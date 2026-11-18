@@ -82,7 +82,7 @@ const generatedResponseSchema = z.strictObject({ drafts: z.array(generatedDraftS
 type SourceBlock = NoteExpansionSourceBlock;
 
 /** 把校验问题写成"字段:类型"的小清单：重试提示要靠它指出该改哪一处。 */
-function issueFields(error: { readonly issues: readonly { path: (string | number)[], code: string; message?: string }[] }): string {
+function issueFields(error: { readonly issues: readonly { path: PropertyKey[], code: string; message?: string }[] }): string {
   return error.issues.slice(0, 4)
     .map((issue) => `${issue.path.join(".") || "root"}:${issue.code}${issue.message ? ` (${issue.message.slice(0, 160)})` : ""}`).join(", ");
 }

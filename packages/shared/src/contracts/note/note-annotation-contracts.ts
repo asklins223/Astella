@@ -10,7 +10,7 @@ import { noteBlockRenderedTextV1 } from "../../note/note-doc-schema.ts";
  * 十万块，那种批注被这一格拒掉的形状是"圈了字、存不下"。
  */
 export const noteAnnotationAnchorV1Schema = z.strictObject({
-  noteVersionId: z.string().uuid(),
+  noteVersionId: z.string().guid(),
   startBlockOrdinal: z.number().int().min(0).max(MAX_SOURCE_TEXT_BYTES),
   startOffset: z.number().int().min(0).max(MAX_SOURCE_TEXT_BYTES),
   endBlockOrdinal: z.number().int().min(0).max(MAX_SOURCE_TEXT_BYTES),
@@ -59,12 +59,12 @@ export function noteAnchorBlockRangeV1(block: AnchorBlock, anchor: NoteAnnotatio
 }
 
 export const noteAnnotationV1Schema = z.strictObject({
-  annotationId: z.string().uuid(),
-  noteId: z.string().uuid(),
+  annotationId: z.string().guid(),
+  noteId: z.string().guid(),
   anchor: noteAnnotationAnchorV1Schema,
   explanation: z.string(),
   sourceMessageId: z.string().max(160).nullable(),
-  generationJobId: z.string().uuid().nullable(),
+  generationJobId: z.string().guid().nullable(),
   revision: z.number().int().min(1),
   versionState: z.enum(["current", "older"]),
   createdAt: z.string().datetime({ offset: true }),
@@ -75,11 +75,11 @@ export type NoteAnnotationV1 = z.infer<typeof noteAnnotationV1Schema>;
 export const noteAnnotationPageV1Schema = z.strictObject({
   version: z.literal(1),
   items: z.array(noteAnnotationV1Schema).max(200),
-  nextCursor: z.string().uuid().nullable(),
+  nextCursor: z.string().guid().nullable(),
 });
 export const noteAnnotationListQueryV1Schema = z.strictObject({
-  noteVersionId: z.string().uuid().optional(),
-  before: z.string().uuid().optional(),
+  noteVersionId: z.string().guid().optional(),
+  before: z.string().guid().optional(),
 });
 export const createNoteAnnotationV1Schema = z.strictObject({
   anchor: noteAnnotationAnchorV1Schema,
@@ -88,12 +88,12 @@ export const createNoteAnnotationV1Schema = z.strictObject({
 });
 export const createNoteAnnotationTaskV1Schema = z.strictObject({
   anchor: noteAnnotationAnchorV1Schema,
-  requestId: z.string().uuid(),
+  requestId: z.string().guid(),
 });
 export const noteAnnotationTaskV1Schema = z.strictObject({
-  taskId: z.string().uuid(),
-  noteId: z.string().uuid(),
-  noteVersionId: z.string().uuid(),
+  taskId: z.string().guid(),
+  noteId: z.string().guid(),
+  noteVersionId: z.string().guid(),
   anchor: noteAnnotationAnchorV1Schema,
   status: z.enum(["queued", "running", "ready", "failed"]),
   annotation: noteAnnotationV1Schema.nullable(),
@@ -101,7 +101,7 @@ export const noteAnnotationTaskV1Schema = z.strictObject({
   createdAt: z.string().datetime({ offset: true }),
 });
 export type NoteAnnotationTaskV1 = z.infer<typeof noteAnnotationTaskV1Schema>;
-export const noteAnnotationLatestTaskQueryV1Schema = z.strictObject({ noteVersionId: z.string().uuid() });
+export const noteAnnotationLatestTaskQueryV1Schema = z.strictObject({ noteVersionId: z.string().guid() });
 export const noteAnnotationLatestTaskV1Schema = z.strictObject({ version: z.literal(1), task: noteAnnotationTaskV1Schema.nullable() });
 export const updateNoteAnnotationV1Schema = z.strictObject({
   expectedRevision: z.number().int().min(1),
@@ -112,8 +112,8 @@ export const deleteNoteAnnotationV1Schema = z.strictObject({
 });
 export const noteAnnotationCommandV1Schema = z.discriminatedUnion("kind", [
   createNoteAnnotationV1Schema.extend({ kind: z.literal("create") }),
-  updateNoteAnnotationV1Schema.extend({ kind: z.literal("update"), annotationId: z.string().uuid() }),
-  deleteNoteAnnotationV1Schema.extend({ kind: z.literal("remove"), annotationId: z.string().uuid() }),
+  updateNoteAnnotationV1Schema.extend({ kind: z.literal("update"), annotationId: z.string().guid() }),
+  deleteNoteAnnotationV1Schema.extend({ kind: z.literal("remove"), annotationId: z.string().guid() }),
 ]);
 export const noteAnnotationWriteResultV1Schema = z.union([
   noteAnnotationV1Schema,

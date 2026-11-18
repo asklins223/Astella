@@ -71,7 +71,7 @@ docker compose -p astella-dev -f docker-compose.dev.yml logs role-bootstrap migr
 docker compose -p astella-dev -f docker-compose.dev.yml ps -a
 ```
 
-One-shot containers should show `Exited (0)`. `make up` waits for exit but does not check exit codes printed by `docker wait`, so command completion cannot replace readiness and log inspection. Creating tables alone or skipping grants is insufficient. See [API and data](api-and-data.md).
+One-shot containers should show `Exited (0)`. `make up` checks the exit codes printed by `docker wait` and prints logs on failure; successful completion still does not replace a readiness check. Creating tables alone or skipping grants is insufficient. See [API and data](api-and-data.md).
 
 ## The companion does not reply or keeps generating
 

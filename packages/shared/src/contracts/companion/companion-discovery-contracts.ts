@@ -92,7 +92,7 @@ export interface CompanionDiscoveryEntryV1 {
 }
 
 export const companionDiscoveryEntryV1Schema = z.strictObject({
-  entryId: z.string().uuid(),
+  entryId: z.string().guid(),
   kind: companionDiscoveryKindSchema,
   source: companionDiscoverySourceSchema,
   sourceId: z.string().min(1).max(200),

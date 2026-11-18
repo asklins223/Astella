@@ -32,10 +32,10 @@ export const companionRunFailureClassV1Schema = z.enum([
 export type CompanionRunFailureClassV1 = z.infer<typeof companionRunFailureClassV1Schema>;
 
 export const companionRunListQueryV1Schema = z.object({
-  conversationId: z.string().uuid().optional(),
+  conversationId: z.string().guid().optional(),
   status: companionRunStatusSchema.optional(),
   beforeCreatedAt: z.string().datetime().optional(),
-  beforeId: z.string().uuid().optional(),
+  beforeId: z.string().guid().optional(),
   limit: z.coerce.number().int().min(1).max(50).default(20),
 }).strict().refine(
   (query) => (query.beforeCreatedAt === undefined) === (query.beforeId === undefined),
@@ -47,8 +47,8 @@ export type CompanionRunListQueryV1 = z.infer<typeof companionRunListQueryV1Sche
 export const companionRunListV1Schema = z.object({
   version: z.literal(1),
   items: z.array(z.object({
-    id: z.string().uuid(),
-    conversationId: z.string().uuid(),
+    id: z.string().guid(),
+    conversationId: z.string().guid(),
     status: companionRunStatusSchema,
     generation: z.number().int().positive(),
     createdAt: z.string().datetime(),
@@ -65,7 +65,7 @@ export const companionRunListV1Schema = z.object({
   }).strict()).max(50),
   nextCursor: z.object({
     beforeCreatedAt: z.string().datetime(),
-    beforeId: z.string().uuid(),
+    beforeId: z.string().guid(),
   }).strict().nullable(),
 }).strict();
 
@@ -102,7 +102,7 @@ export const companionRunDoctorFindingCodeV1Schema = z.enum([
  */
 export const companionRunDoctorGrowthV1Schema = z.object({
   reflection: z.object({
-    id: z.string().uuid(),
+    id: z.string().guid(),
     createdAt: z.string().datetime(),
     decision: z.string().max(40),
     decisionSummary: z.string().nullable(),
@@ -114,7 +114,7 @@ export const companionRunDoctorGrowthV1Schema = z.object({
     /** 被核对丢掉的那几条（不静默），来自 `result_ref.dropped`。 */
     droppedCount: z.number().int().nonnegative(),
     /** 这条结论由哪个后台任务产出；队列那一格要看它。 */
-    jobId: z.string().uuid().nullable(),
+    jobId: z.string().guid().nullable(),
     jobStatus: companionRunJobStatusV1Schema.nullable(),
   }).strict().nullable(),
   persona: z.object({
@@ -138,8 +138,8 @@ export type CompanionRunDoctorGrowthV1 = z.infer<typeof companionRunDoctorGrowth
 export const companionRunDoctorV1Schema = z.object({
   version: z.literal(1),
   run: z.object({
-    id: z.string().uuid(),
-    conversationId: z.string().uuid(),
+    id: z.string().guid(),
+    conversationId: z.string().guid(),
     status: companionRunStatusSchema,
     generation: z.number().int().positive(),
     createdAt: z.string().datetime(),
@@ -162,7 +162,7 @@ export const companionRunDoctorV1Schema = z.object({
     elapsedMs: z.number().int().nonnegative(),
   }).strict(),
   queue: z.object({
-    jobId: z.string().uuid().nullable(),
+    jobId: z.string().guid().nullable(),
     status: companionRunJobStatusV1Schema.nullable(),
     attempts: z.number().int().nonnegative().nullable(),
     hasLease: z.boolean().nullable(),
@@ -210,10 +210,10 @@ export const companionRunDoctorV1Schema = z.object({
     startedAt: z.string().datetime(),
     lastFailureAt: z.string().datetime(),
     failureCount: z.number().int().min(1).max(1_000_000_000),
-    firstRunId: z.string().uuid().nullable(),
-    lastRunId: z.string().uuid().nullable(),
+    firstRunId: z.string().guid().nullable(),
+    lastRunId: z.string().guid().nullable(),
     recoveredAt: z.string().datetime().nullable(),
-    recoveryRunId: z.string().uuid().nullable(),
+    recoveryRunId: z.string().guid().nullable(),
   }).strict()).max(7),
   growth: companionRunDoctorGrowthV1Schema.nullable(),
   findings: z.array(z.object({
@@ -256,8 +256,8 @@ export type CompanionDiagnosticEventTypeV1 = (typeof COMPANION_DIAGNOSTIC_EVENT_
 export const companionTurnReplayV1Schema = z.object({
   version: z.literal(1),
   run: z.object({
-    id: z.string().uuid(),
-    conversationId: z.string().uuid(),
+    id: z.string().guid(),
+    conversationId: z.string().guid(),
     status: companionRunStatusSchema,
     generation: z.number().int().positive(),
     createdAt: z.string().datetime(),
@@ -278,7 +278,7 @@ export const companionTurnReplayV1Schema = z.object({
     snapshotVersion: z.number().int().positive().nullable(),
     watermark: replayContextWatermarkV1Schema.nullable(),
     currentRequest: z.object({
-      messageId: z.string().uuid().nullable(),
+      messageId: z.string().guid().nullable(),
       messageSeq: z.string().regex(/^\d{1,20}$/),
       contentSha256: z.string().regex(/^[a-f0-9]{64}$/),
     }).strict().nullable(),
@@ -289,7 +289,7 @@ export const companionTurnReplayV1Schema = z.object({
       sourceSha256: z.string().regex(/^[a-f0-9]{64}$/).nullable(),
     }).strict().nullable(),
     memoryRefs: z.array(z.object({
-      memoryId: z.string().uuid(),
+      memoryId: z.string().guid(),
       kind: z.string().min(1).max(64),
       content: z.string().max(80),
     }).strict()).max(3),
@@ -302,7 +302,7 @@ export const companionTurnReplayV1Schema = z.object({
     }).strict(),
   }).strict(),
   messages: z.array(z.object({
-    id: z.string().uuid(),
+    id: z.string().guid(),
     seq: z.number().int().positive(),
     role: z.enum(["user", "assistant", "system"]),
     kind: z.enum(["text", "voice_transcript", "proactive", "action", "result", "error", "cancelled"]),
@@ -326,7 +326,7 @@ export const companionTurnReplayV1Schema = z.object({
     toolVersion: z.string().min(1).max(40),
     riskClass: companionAgentRiskClassSchema,
     status: companionAgentToolStatusSchema,
-    proposalId: z.string().uuid().nullable(),
+    proposalId: z.string().guid().nullable(),
     argumentsSha256: z.string().regex(/^[a-f0-9]{64}$/).nullable(),
     safeSummary: z.string().max(240).nullable(),
     createdAt: z.string().datetime(),
@@ -439,11 +439,11 @@ const handoffReplayContentPartV1Schema = z.union([
 /** Worker snapshot input accepted by the private replay projector; never an HTTP response type. */
 export const companionHandoffReplaySourceV1Schema = z.object({
   version: z.literal(1),
-  runId: z.string().uuid(),
-  conversationId: z.string().uuid(),
+  runId: z.string().guid(),
+  conversationId: z.string().guid(),
   watermark: replayContextWatermarkV1Schema,
   currentRequest: z.object({
-    messageId: z.string().uuid().nullable(),
+    messageId: z.string().guid().nullable(),
     messageSeq: z.string().regex(/^\d{1,20}$/),
     contentSha256: z.string().regex(/^[a-f0-9]{64}$/),
   }).strict(),
@@ -454,7 +454,7 @@ export const companionHandoffReplaySourceV1Schema = z.object({
     sourceSha256: z.string().regex(/^[a-f0-9]{64}$/).nullable(),
   }).strict().nullable(),
   memoryRefs: z.array(z.object({
-    memoryId: z.string().uuid(),
+    memoryId: z.string().guid(),
     kind: z.string().min(1).max(64),
     content: z.string().max(80),
   }).strict()).max(3),

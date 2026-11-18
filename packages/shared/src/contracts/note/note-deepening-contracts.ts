@@ -30,7 +30,7 @@ export type UnderstandingEdgeKindV3 = z.infer<
 
 export const understandingNodeRefV3Schema = z.strictObject({
   kind: understandingNodeKindV3Schema,
-  id: z.string().uuid(),
+  id: z.string().guid(),
 });
 export type UnderstandingNodeRefV3 = z.infer<
   typeof understandingNodeRefV3Schema
@@ -39,7 +39,7 @@ export type UnderstandingNodeRefV3 = z.infer<
 export const sourceNodeProjectionV3Schema = z.strictObject({
   nodeRef: z.strictObject({
     kind: z.literal("source"),
-    sourceId: z.string().uuid(),
+    sourceId: z.string().guid(),
   }),
   label: z.string().min(1).max(500),
   modality: z.string().min(1).max(50),
@@ -49,11 +49,11 @@ export const sourceNodeProjectionV3Schema = z.strictObject({
 export const noteNodeProjectionV3Schema = z.strictObject({
   nodeRef: z.strictObject({
     kind: z.literal("note"),
-    noteId: z.string().uuid(),
+    noteId: z.string().guid(),
   }),
   label: z.string().min(1).max(500),
   /** 尚未保存过正文的笔记没有版本；不能用 noteId 伪装成版本 id。 */
-  currentVersionId: z.string().uuid().nullable(),
+  currentVersionId: z.string().guid().nullable(),
   /** 该笔记是否由某个来源收录而来（即 `notes.source_id` 非空）。 */
   hasSource: z.boolean(),
 });
@@ -66,9 +66,9 @@ export const noteNodeProjectionV3Schema = z.strictObject({
 export const cardQuestionNodeProjectionV3Schema = z.strictObject({
   nodeRef: z.strictObject({
     kind: z.literal("card_question"),
-    cardId: z.string().uuid(),
-    questionId: z.string().uuid(),
-    noteId: z.string().uuid(),
+    cardId: z.string().guid(),
+    questionId: z.string().guid(),
+    noteId: z.string().guid(),
   }),
   label: z.string().min(1).max(500),
   questionType: noteLearningQuestionTypeV1Schema,
@@ -104,7 +104,7 @@ export type UnderstandingEdgeProjectionV3 = z.infer<
 
 export const understandingTopologySnapshotV3Schema = z.strictObject({
   version: z.literal(3),
-  workspaceId: z.string().uuid(),
+  workspaceId: z.string().guid(),
   topologyRevision: z.string().min(1).max(200),
   checkpointToken: z.string().min(1).max(200),
   nodes: z.array(understandingNodeProjectionV3Schema),

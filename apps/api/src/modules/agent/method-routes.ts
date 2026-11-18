@@ -11,8 +11,8 @@ import { requireSession } from "../identity/middleware.ts";
 import { agentRequestScope, respondToAgentRequest } from "./routes.ts";
 import { agentMethodStore } from "./service.ts";
 
-const methodParams = z.object({ methodId: z.string().uuid() });
-const useParams = z.object({ useId: z.string().uuid() });
+const methodParams = z.object({ methodId: z.string().guid() });
+const useParams = z.object({ useId: z.string().guid() });
 export function createAgentMethodRouteHandlers(store: typeof agentMethodStore) {
   const handle = (action: (req: FastifyRequest) => Promise<unknown>) => (req: FastifyRequest, reply: FastifyReply) =>
     respondToAgentRequest(reply, () => action(req));

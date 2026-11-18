@@ -41,7 +41,7 @@ const completedSchema = z.object({ status: z.literal("completed"), text: z.strin
 }).strict();
 const snapshotSchema = z.object({ phase: z.enum(["input", "continue", "waiting", "settled"]), state: companionRuntimeStateSchema,
   deliveryReviewPolicy: z.string().regex(/^[a-f0-9]{64}$/).optional(),
-  proposalId: z.string().uuid().optional(), pendingCallId: z.string().min(1).max(200).optional(),
+  proposalId: z.string().guid().optional(), pendingCallId: z.string().min(1).max(200).optional(),
   result: completedSchema.optional() }).strict().refine(value => (value.phase === "settled") === Boolean(value.result)
     && (value.phase === "waiting") === Boolean(value.proposalId && value.pendingCallId)
     && (value.phase === "waiting" || (!value.proposalId && !value.pendingCallId))
@@ -50,8 +50,8 @@ export type CompanionRuntimeSnapshot = z.infer<typeof snapshotSchema>;
 const envelopeSchema = z.object({ version: z.literal(1), identitySha256: z.string().regex(/^[a-f0-9]{64}$/),
   stateJson: z.string(), stateSha256: z.string().regex(/^[a-f0-9]{64}$/) }).strict();
 export type CompanionRuntimeCheckpoint = z.infer<typeof envelopeSchema>;
-const toolResultSchema = z.object({ value: z.record(z.unknown()), safeSummary: z.string(), resultRef: z.string().optional(),
-  route: z.record(z.unknown()).optional(), routeLabel: z.string().optional(), blocks: z.array(companionContentBlockV1Schema).optional() }).strict();
+const toolResultSchema = z.object({ value: z.record(z.string(), z.unknown()), safeSummary: z.string(), resultRef: z.string().optional(),
+  route: z.record(z.string(), z.unknown()).optional(), routeLabel: z.string().optional(), blocks: z.array(companionContentBlockV1Schema).optional() }).strict();
 export function encodeCompanionToolResult(result: AgentToolExecutionResult) {
   const json = stableStringify(toolResultSchema.parse(result));
   return { version: 1, json, sha256: sha256Utf8V1(json) };

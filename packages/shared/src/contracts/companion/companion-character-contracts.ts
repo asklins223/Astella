@@ -165,7 +165,7 @@ export const spriteManifestV1Schema = z
     poseOrder: z
       .array(spritePoseV1Schema)
       .length(SPRITE_POSE_ORDER_V1.length),
-    poses: z.record(spritePoseV1Schema, spritePoseEntryV1Schema),
+    poses: z.partialRecord(spritePoseV1Schema, spritePoseEntryV1Schema),
   })
   .strict();
 export type SpriteManifestV1 = z.infer<typeof spriteManifestV1Schema>;

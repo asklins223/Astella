@@ -1,4 +1,5 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { fenceNoteCollaborationWrite } from "./collaboration-leader.ts";
 import { visibleNotesCondition } from "./visibility.ts";
 import type { ApiTransaction } from "../../db/client.ts";
 import { noteBlocks, noteDocumentStates, noteVersions, notes } from "@astella/shared/db-schema/note";
@@ -65,6 +66,9 @@ async function materializeBackfilledNoteDoc(
   scope: NoteDocScope,
   doc: NoteDoc,
 ): Promise<{ doc: NoteDoc; backfilled: boolean }> {
+  // Materialization creates a durable CRDT identity even on a read path. It
+  // must not race a successor after the old leader's database session is lost.
+  await fenceNoteCollaborationWrite(tx);
   // 补齐出来的这一份**当场定下来**：第一次物化就把这一篇的锚写进去，交出去的那份编码
   // 里从此带着它（跨笔记整篇上送那条判据的依据，见 `doc-fragment.ts` 的 `_astella`）。
   stampNoteDocAnchor(doc, scope.noteId);
@@ -104,7 +108,7 @@ async function materializeBackfilledNoteDoc(
  * `state` 是 `Y.Array<Y.Map>` 那套编码，用 fragment 内核解它会投影出 **0 块**（实测），
  * 而下一次落盘就把那 0 行写回 `note_blocks`——静默清空正文。所以库里已有的
  * `note_document_states` 行必须清掉，让下面这条补齐路从 `note_blocks` 的行重建。
- * 本项目未上线、没有真实用户数据，这是开发库重建的一次成本，不是要写兼容分支的理由。
+ * 这次形状切换发生在开发库重建阶段，没有需要兼容的线上数据；不该为它保留兼容分支。
  */
 export async function loadNoteDoc(
   tx: ApiTransaction,
@@ -179,6 +183,7 @@ export async function saveNoteDoc(
   doc: NoteDoc,
   state: Uint8Array = snapshotOf(doc),
 ): Promise<void> {
+  await fenceNoteCollaborationWrite(tx);
   await tx
     .insert(noteDocumentStates)
     .values({ noteId: scope.noteId, workspaceId: scope.workspaceId, state, revision: 1 })

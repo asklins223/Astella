@@ -11,7 +11,7 @@ import type { CompanionChannelDeps } from "./desktop-ipc-companion";
 
 export function registerAgentChannels(deps: Pick<CompanionChannelDeps, "channel" | "gateway" | "assertEpoch" | "getActiveWorkspaceEpoch" | "contract" | "requireM2Route">) {
   const { channel, gateway, assertEpoch, getActiveWorkspaceEpoch, requireM2Route, contract } = deps;
-  const base = { meta: requestMetaSchema }, uuid = z.string().uuid();
+  const base = { meta: requestMetaSchema }, uuid = z.string().guid();
   function authorize(meta: z.infer<typeof requestMetaSchema>) {
     requireM2Route(contract, "room.home"); assertEpoch(meta, getActiveWorkspaceEpoch());
   }

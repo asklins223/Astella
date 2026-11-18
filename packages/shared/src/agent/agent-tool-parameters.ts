@@ -1,65 +1,47 @@
 import { z } from "zod";
 
-/** Deliberately supports the contract shapes used by agent manifests; unsupported shapes fail at registration. */
-export function agentToolParameters(schema: z.ZodTypeAny): Record<string, unknown> {
-  const parameters = parameterShape(schema);
-  return schema.description ? { ...parameters, description: schema.description } : parameters;
+export function agentToolParameters(schema: z.ZodType): Record<string, unknown> {
+  return parameterShape(schema);
 }
 
-function parameterShape(schema: z.ZodTypeAny): Record<string, unknown> {
-  if (schema instanceof z.ZodOptional || schema instanceof z.ZodDefault) return agentToolParameters(schema._def.innerType);
-  if (schema instanceof z.ZodEffects) {
-    if (schema._def.effect.type !== "refinement") throw new Error("Unsupported agent parameter transform");
-    // Cross-field checks remain enforced by the same server schema.
-    return agentToolParameters(schema._def.schema);
-  }
-  if (schema instanceof z.ZodNullable) return { anyOf: [agentToolParameters(schema.unwrap()), { type: "null" }] };
-  if (schema instanceof z.ZodBoolean) return { type: "boolean" };
-  if (schema instanceof z.ZodUnion) {
-    const options = schema.options as z.ZodTypeAny[];
-    if (options.every(option => option instanceof z.ZodLiteral)
-      && options.every(option => typeof (option as z.ZodLiteral<unknown>).value === typeof (options[0] as z.ZodLiteral<unknown>).value)) {
-      const values = options.map(option => (option as z.ZodLiteral<unknown>).value);
-      return { type: typeof values[0] === "number" && values.every(Number.isInteger) ? "integer" : typeof values[0], enum: values };
-    }
-    return { anyOf: options.map(agentToolParameters) };
-  }
-  if (schema instanceof z.ZodObject) {
+function parameterShape(schema: z.ZodType): Record<string, unknown> {
+  const def = schema._zod.def as any;
+  const type = def.type;
+  if (type === "optional" || type === "default") { const inner = agentToolParameters(def.innerType); return schema.description ? { ...inner, description: schema.description } : inner; }
+  if (type === "pipe" || type === "transform") throw new Error("Unsupported agent parameter transform");
+  let result: Record<string, unknown>;
+  if (type === "nullable") result = { anyOf: [agentToolParameters(def.innerType), { type: "null" }] };
+  else if (type === "boolean") result = { type: "boolean" };
+  else if (type === "union") {
+    const options = def.options as z.ZodType[];
+    const literals = options.map(option => (option._zod.def as any).type === "literal" ? (option._zod.def as any).values[0] : undefined);
+    if (literals.every(x => x !== undefined && typeof x === typeof literals[0])) result = { type: typeof literals[0] === "number" && literals.every(Number.isInteger) ? "integer" : typeof literals[0], enum: literals };
+    else result = { anyOf: options.map(agentToolParameters) };
+  } else if (type === "object") {
     const properties: Record<string, unknown> = {}, required: string[] = [];
-    for (const [name, field] of Object.entries(schema.shape) as [string, z.ZodTypeAny][]) {
+    for (const [name, field] of Object.entries(def.shape) as [string, z.ZodType][]) {
       properties[name] = agentToolParameters(field);
       if (!field.isOptional()) required.push(name);
     }
-    return { type: "object", properties, required, additionalProperties: false };
-  }
-  if (schema instanceof z.ZodString) {
-    const result: Record<string, unknown> = { type: "string" };
-    for (const check of schema._def.checks) {
-      if (check.kind === "min") result.minLength = check.value;
-      else if (check.kind === "max") result.maxLength = check.value;
-      else if (check.kind === "uuid") result.format = "uuid";
-      else if (check.kind === "datetime") result.format = "date-time";
-      else if (check.kind === "regex") {
-        if (check.regex.flags) throw new Error("Unsupported agent string regex flags");
-        result.pattern = check.regex.source;
-      }
-      else if (check.kind === "url") result.format = "uri";
-      else if (check.kind !== "trim") throw new Error(`Unsupported agent string constraint: ${check.kind}`);
+    result = { type: "object", properties, required, additionalProperties: false };
+  } else if (type === "string" || type === "number" || type === "array") {
+    result = type === "array" ? { type, items: agentToolParameters(def.element) } : { type };
+    for (const item of (def.checks ?? [])) {
+      const check = item._zod.def;
+      if (check.check === "min_length") result[type === "array" ? "minItems" : "minLength"] = check.minimum;
+      else if (check.check === "max_length") result[type === "array" ? "maxItems" : "maxLength"] = check.maximum;
+      else if (check.check === "number_format" && check.format === "safeint") result.type = "integer";
+      else if (check.check === "greater_than") result[check.inclusive ? "minimum" : "exclusiveMinimum"] = check.value;
+      else if (check.check === "less_than") result[check.inclusive ? "maximum" : "exclusiveMaximum"] = check.value;
+      else if (check.check === "overwrite" || check.check === "custom") continue;
+      else if (check.check === "string_format") {
+        if (check.format === "regex") { if (check.pattern.flags) throw new Error("Unsupported agent string regex flags"); result.pattern = check.pattern.source; }
+        else if (["uuid", "guid", "datetime", "url"].includes(check.format)) result.format = check.format === "datetime" ? "date-time" : check.format === "url" ? "uri" : check.format === "guid" ? "uuid" : check.format;
+        else throw new Error(`Unsupported agent string constraint: ${check.format}`);
+      } else throw new Error(`Unsupported agent constraint: ${check.check}`);
     }
-    return result;
-  }
-  if (schema instanceof z.ZodNumber) {
-    const result: Record<string, unknown> = { type: schema.isInt ? "integer" : "number" };
-    for (const check of schema._def.checks) {
-      if (check.kind === "min") result[check.inclusive ? "minimum" : "exclusiveMinimum"] = check.value;
-      else if (check.kind === "max") result[check.inclusive ? "maximum" : "exclusiveMaximum"] = check.value;
-      else if (check.kind !== "int" && check.kind !== "finite") throw new Error(`Unsupported agent number constraint: ${check.kind}`);
-    }
-    return result;
-  }
-  if (schema instanceof z.ZodEnum) return { type: "string", enum: schema.options };
-  if (schema instanceof z.ZodLiteral) return { type: typeof schema.value, const: schema.value };
-  if (schema instanceof z.ZodArray) return { type: "array", items: agentToolParameters(schema.element),
-    ...(schema._def.minLength ? { minItems: schema._def.minLength.value } : {}), ...(schema._def.maxLength ? { maxItems: schema._def.maxLength.value } : {}) };
-  throw new Error(`Unsupported agent parameter contract: ${schema._def.typeName}`);
+  } else if (type === "enum") result = { type: "string", enum: Object.values(def.entries) };
+  else if (type === "literal") { const value = def.values[0]; result = { type: typeof value, const: value }; }
+  else throw new Error(`Unsupported agent parameter contract: ${type}`);
+  return schema.description ? { ...result, description: schema.description } : result;
 }

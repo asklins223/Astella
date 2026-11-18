@@ -22,7 +22,7 @@
 | --- | --- | --- |
 | Docker + Compose v2 | 整套依赖（postgres、minio、edge-tts、api、worker）都在 `docker-compose.dev.yml` 里；本机**不需要**装 PostgreSQL | `docker compose version` |
 | `make` | 所有开发入口都是 Make 目标，`make` 不带参数等于 `make up`（`.DEFAULT_GOAL := up`） | `make -v` |
-| Node 22 | 镜像基座是 `node:22.11.0-alpine3.20`（`apps/api/Dockerfile:4`、`workers/ai-worker/Dockerfile:3`），CI 用 `NODE_VERSION: "22"`（`.github/workflows/main-ci.yml`） | `node -v` |
+| Node 22 | API 和 Worker 的 Dockerfile 锁定 Node 22 与 Alpine 镜像，CI 使用 Node 22 的当前补丁版。 | `node -v` |
 | 每个包各跑一次 `npm ci` | 各包有独立的 `package-lock.json`；`.astella/*` 是 `file:` 软链，但 `tsc` 要靠**被引包自己的** `node_modules` 解析 `zod` / `drizzle-orm` | `ls package-lock.json packages/*/package-lock.json apps/*/package-lock.json workers/*/package-lock.json` |
 | `python3` | 一部分现场探针（`scripts/companion-inbox-sse-probe.py` 等）与 `edge-tts` 的服务脚本是 Python | `python3 -V` |
 
@@ -79,7 +79,7 @@ make up
 3. `compose --profile storage up -d --build --remove-orphans`：构建 `target: dev` 镜像并拉起 postgres / minio / api / worker / edge-tts。开发栈**默认带 storage profile**（`DEV_PROFILES`），所以头像与笔记图片上传开箱可用，不用再单独 `make storage`。
 4. 对 `role-bootstrap`、`migrate`、`role-grants`、`minio-init` 逐个 `docker wait`。
 
-第 4 步的语义要说准：`docker wait` **阻塞到容器退出并打印它的退出码**，但 CLI 自身的退出码是 0（本机 2026-10-06 实测：容器 `exit 3` 时 `docker wait` 打印 `3`、`$?` 仍是 `0`），而 Makefile 又把输出重定向到 `/dev/null`。所以"等初始化跑完"是真的，"迁移失败就中断 `make up`"**不是**——`make up` 会绿着结束，故障要另外看。判断依据用 `/ready` 或 `docker compose -p astella-dev -f docker-compose.dev.yml logs migrate`。
+第 4 步读取 `docker wait` 打印的容器退出码；初始化失败时 `make up` 会报错并输出对应服务日志。启动后仍应检查 `/ready`，确认运行时依赖已经就绪。
 
 `migrate`、`role-bootstrap` 与 `role-grants` 每次启动都跑（幂等，没有变化时是 no-op），不是"只在首次跑"；`minio-init` 与 `seed-*` 才是真一次性。
 
@@ -114,10 +114,10 @@ make desktop-client-dev       # cd apps/desktop-client && npm run dev
 | 端点 | 检查什么 | 失败意味着 |
 | --- | --- | --- |
 | `GET /health` | 进程活着、事件循环能应答 HTTP。`server.ts` 只返回 `{status:"ok",service:"api",timestamp}` | 进程本身有问题 |
-| `GET /ready` | `SELECT 1`；`information_schema.tables` 里九张核心表都在（`users`、`workspaces`、`notes`、`jobs`、`sessions`、`learning_runs`、`learning_run_private_contracts`、`learning_tasks`、`learning_task_variants`）；`drizzle.__drizzle_migrations` 的最大 `created_at` ≥ `MIN_READY_MIGRATION_CREATED_AT`（默认 `1786683800000`） | 库可达但 schema 不完整——没迁移，或迁移跑了一半 |
+| `GET /ready` | API 检查数据库连通性、核心表及随版本打包的最后一条迁移标记。Worker 检查数据库连通性。 | 数据库不可用，或 API 所用数据库需要迁移。 |
 | `GET /metrics` | Prometheus 文本格式 | 与存活/就绪无关 |
 
-`/ready` 是 compose 给 api 用的健康检查目标。**worker 侧不对称**：代码里 `/ready` 存在（`workers/ai-worker/src/lib/metrics.ts`，探针是 `db.execute(sql`SELECT 1`)`），但 `docker-compose.dev.yml` 的 healthcheck 打的还是 `/metrics`——DB 挂了而 worker 容器不会被判不健康。这是已知的形状差，别把"compose 显示 worker healthy"读成"worker 能干活"。
+开发和生产 Compose 均使用各服务的 `/ready` 端点做健康检查。
 
 ## 端口表
 
@@ -247,7 +247,7 @@ make disposable-db DISPOSABLE_DB=astella_it   # scripts/dev-disposable-db.sh，�
 
 - `make up` 在 compose 解析阶段就报 `Set EDGE_TTS_AUTH_TOKEN in .env`：`.env` 里那行还是注释状态。填上任意本机 token，`make config` 先验一遍。
 - 窗口能开但登录报连接配置问题：`ASTELLA_DESKTOP_PAIRING_*` / `ASTELLA_DOMAIN_SCHEMA_REVISION` 没填，或 `.env` 改了但没重启主进程（`electron.vite.config.ts` 只在启动时 `loadDotenv` 一次）。
-- 迁移或角色授权没生效但 `make up` 是绿的：见 [启动步骤](#2-make-up)里 `docker wait` 的那段——`docker compose -p astella-dev -f docker-compose.dev.yml logs migrate` 与 `GET /ready` 才是判据。
+- 迁移或角色授权失败：检查 `make up` 输出和 `docker compose -p astella-dev -f docker-compose.dev.yml logs migrate`，再用 `GET /ready` 检查运行时状态。
 
 完整的现象→原因→处理在 [faq-and-troubleshooting.md](faq-and-troubleshooting.md)，本页不重复那份清单。
 

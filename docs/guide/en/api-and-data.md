@@ -196,10 +196,10 @@ Variable names and purposes only. Values live in [`.env.example`](../../../.env.
 | Endpoint | Semantics |
 | --- | --- |
 | `GET /health` | Liveness only: proves the process and event loop can answer HTTP. It never touches the database, so a transient dependency outage does not make the orchestrator kill an otherwise healthy API |
-| `GET /ready` | `SELECT 1`, plus a query against `information_schema.tables` compared with a set of core table names (`users`, `workspaces`, `notes`, `jobs`, `sessions`, `learning_runs`, `learning_run_private_contracts`, `learning_tasks`, `learning_task_variants`), plus `max(created_at)` from `drizzle.__drizzle_migrations` compared against `MIN_READY_MIGRATION_CREATED_AT`; any failure returns 503 with the gap reported |
+| `GET /ready` | Checks connectivity, core user, workspace, note, source, job, session and learning card tables, and the current build's migration marker. A failed check returns HTTP 503. |
 | `GET /metrics` | Prometheus text, **deliberately unauthenticated** — the boundary is network policy (only the scraper can reach it), not a token check in the application layer |
 
-The readiness check's migration clause is really a **timestamp floor**: it proves the largest applied `created_at` (the journal's `when`) is at least the threshold, not that every migration ran. The default floor is `1786683800000` and needs to be raised as versions move forward; leave it alone and a database holding only the early core tables still reports ready. It is documented here precisely because it reads like a schema validation.
+The deployed build requires the exact timestamp of the final entry in its migration journal. Operators can raise the required maximum timestamp with `MIN_READY_MIGRATION_CREATED_AT`. The migration runner checks every SQL file's recorded hash when applying the journal.
 
 `astella_*` families worth knowing (the full list is in `lib/metrics.ts`):
 

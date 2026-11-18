@@ -40,9 +40,9 @@ export type CompanionChatEnsureResultV1 = z.infer<typeof companionChatEnsureResu
 
 export const companionChatSendTurnRequestV1Schema = z.strictObject({
   version: z.literal(1),
-  conversationId: z.string().uuid(),
+  conversationId: z.string().guid(),
   /** 幂等键（UUID），透传为 `Idempotency-Key` 头。 */
-  idempotencyKey: z.string().uuid(),
+  idempotencyKey: z.string().guid(),
   /** 本回合是否允许语音输出；缺省按静音处理，也作为服务端预热意图。 */
   voiceOutput: z.boolean().optional(),
   turn: createCompanionTurnRequestV1Schema,
@@ -54,7 +54,7 @@ export type CompanionChatSendTurnResultV1 = z.infer<typeof companionChatSendTurn
 
 export const companionChatListMessagesRequestV1Schema = z.strictObject({
   version: z.literal(1),
-  conversationId: z.string().uuid(),
+  conversationId: z.string().guid(),
   /** 只取最近的：固定请求最近 50 条（服务端上限内）。 */
   limit: z.number().int().min(1).max(100).optional(),
   beforeSeq: z.number().int().positive().optional(),
@@ -77,7 +77,7 @@ export type CompanionChatListMessagesResultV1 = z.infer<typeof companionChatList
 
 export const companionChatProposalGetRequestV1Schema = z.strictObject({
   version: z.literal(1),
-  proposalId: z.string().uuid(),
+  proposalId: z.string().guid(),
 });
 export type CompanionChatProposalGetRequestV1 = z.infer<typeof companionChatProposalGetRequestV1Schema>;
 
@@ -86,10 +86,10 @@ export type CompanionChatProposalGetResultV1 = z.infer<typeof companionChatPropo
 
 export const companionChatProposalDecideRequestV1Schema = z.strictObject({
   version: z.literal(1),
-  proposalId: z.string().uuid(),
+  proposalId: z.string().guid(),
   decision: z.enum(["confirm", "reject"]),
   /** 幂等键（UUID），透传为 `Idempotency-Key` 头。 */
-  idempotencyKey: z.string().uuid(),
+  idempotencyKey: z.string().guid(),
   /** 从快照读到的 payloadSha256；confirm 时服务端做冻结校验。 */
   expectedPayloadSha256: z.string().regex(/^[a-f0-9]{64}$/),
 });
@@ -123,7 +123,7 @@ export type CompanionAgentRouteEventV1 = z.infer<typeof companionAgentRouteEvent
 
 export const companionAgentRoutesListRequestV1Schema = z.strictObject({
   version: z.literal(1),
-  conversationId: z.string().uuid(),
+  conversationId: z.string().guid(),
   /** 只返回 seq > afterSeq 的事件；缺省 0（最近窗口）。 */
   afterSeq: z.number().int().nonnegative().optional(),
 });
@@ -154,7 +154,7 @@ export const companionRunNodeEventV1Schema = z.strictObject({
   /** 事件 payload（与 SSE 帧里的 payload 同一个对象）。 */
   payload: z.unknown(),
   /** 事件归属的 run；早期事件可能没有（nullable 是数据事实，不是本设计的自由度）。 */
-  runId: z.string().uuid().nullable(),
+  runId: z.string().guid().nullable(),
 });
 export type CompanionRunNodeEventV1 = z.infer<typeof companionRunNodeEventV1Schema>;
 
@@ -165,9 +165,9 @@ export type CompanionRunNodeEventV1 = z.infer<typeof companionRunNodeEventV1Sche
  */
 export const companionRunSummaryV1Schema = z.strictObject({
   version: z.literal(1),
-  runId: z.string().uuid(),
+  runId: z.string().guid(),
   /** Internal consideration has no user message; keep the API's source identity. */
-  userMessageId: z.string().uuid().nullable().optional(),
+  userMessageId: z.string().guid().nullable().optional(),
   status: z.string().min(1).max(32),
   /**
    * 这一轮的 generation（`companion_turn_runs.generation`）。
@@ -187,7 +187,7 @@ export const companionRunSummaryV1Schema = z.strictObject({
   maxSteps: z.number().int().positive().nullable(),
   maxToolCalls: z.number().int().positive().nullable(),
   /** 本轮终态 assistant 消息 id；用户停止时是那条 kind='cancelled' 的部分记录。 */
-  assistantMessageId: z.string().uuid().nullable(),
+  assistantMessageId: z.string().guid().nullable(),
   /** 仅在 includeThinking 请求中返回；独立于答案正文保存的本轮思考记录。 */
   thinkingText: z.string().nullable().optional(),
   /** 随对话保留的思考与工具事件，按 seq 排列；实时事件清理不影响这份记录。 */
@@ -211,7 +211,7 @@ export function canResumeCompanionRun(run: { status: string; errorCode?: string 
 }
 
 export const companionChatResumeRunRequestV1Schema = z.strictObject({
-  version: z.literal(1), runId: z.string().uuid(), generation: z.number().int().positive(),
+  version: z.literal(1), runId: z.string().guid(), generation: z.number().int().positive(),
   expectedEventCursor: z.number().int().nonnegative(),
   reconcileOnly: z.boolean().optional(),
 });
@@ -223,7 +223,7 @@ export type CompanionChatResumeRunResultV1 = z.infer<typeof companionChatResumeR
 
 export const companionRunNodesListRequestV1Schema = z.strictObject({
   version: z.literal(1),
-  conversationId: z.string().uuid(),
+  conversationId: z.string().guid(),
   /**
    * 只要 seq > afterSeq 的事件；缺省 0。**它是下界，不是翻页游标**：服务端在
    * `seq > afterSeq` 里取最新的一批（最多 200 条），所以把它调大只是把窗口推向更新的
@@ -233,9 +233,9 @@ export const companionRunNodesListRequestV1Schema = z.strictObject({
   /** 读取完整思考与过程档案；流式轮询不应重复传输大段文本。 */
   includeThinking: z.boolean().optional(),
   /** 读取已加载历史消息对应的轮次，避免旧消息受最近 20 轮窗口限制。 */
-  runIds: z.array(z.string().uuid()).max(100).optional(),
+  runIds: z.array(z.string().guid()).max(100).optional(),
   /** User-only turns still own a run even when no assistant message was saved. */
-  userMessageIds: z.array(z.string().uuid()).max(100).optional(),
+  userMessageIds: z.array(z.string().guid()).max(100).optional(),
   /** Include unfinished or recoverable work beyond the recent-history window. */
   includeRecoverable: z.boolean().optional(),
 });
@@ -265,7 +265,7 @@ export type CompanionRunNodesListResultV1 = z.infer<typeof companionRunNodesList
 
 export const companionChatCancelRunRequestV1Schema = z.strictObject({
   version: z.literal(1),
-  runId: z.string().uuid(),
+  runId: z.string().guid(),
   /** 必须与提交 turn 时拿到的 generation 一致：服务端用它做 CAS，不匹配即 409。 */
   generation: z.number().int().positive(),
 });

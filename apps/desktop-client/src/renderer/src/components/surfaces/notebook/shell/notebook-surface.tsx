@@ -1829,7 +1829,11 @@ const noteDocLive = useNoteDocLiveView(
    * 而用户并没有做过任何让它变新的动作，不说他只会以为这篇一直就是这样。写在纸面上、
    * 不用弹窗：它是一条状态，不是一次需要处理的打断。
    */
-  const restoredDraftNote = noteDocLive.restoredDraft ? (
+  const restoredDraftNote = noteDocLive.draftSaveFailed ? (
+    <p className="small notebook-note" role="alert">
+      本机笔记缓存无法读取或保存，请检查磁盘空间和权限并保留缓存文件；未同步的改动请保持窗口打开并重试同步。
+    </p>
+  ) : noteDocLive.restoredDraft ? (
     <p className="small notebook-note" role="status">
       本机草稿已恢复：{formatClock(noteDocLive.restoredDraft.savedAt)} 之前还没交上去的改动已经接回来，接着写会自动一起提交。
     </p>

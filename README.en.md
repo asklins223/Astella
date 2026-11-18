@@ -15,7 +15,7 @@ A desktop study room for personal learning. Turn material into notes, understand
 
 [中文](README.md) · [English](README.en.md) · [User and developer guide](docs/guide/README.md)
 
-Server version: `s-v2.0.28` · [release/version.json](release/version.json)<br />
+Server version: `s-v2.0.29` · [release/version.json](release/version.json)<br />
 Desktop client version: `c-v2.0.6` · [apps/desktop-client/version.json](apps/desktop-client/version.json)
 
 </div>
@@ -30,9 +30,9 @@ Installers live on [GitHub Releases](https://github.com/asklins223/Astella/relea
 
 | Platform | Direct | Accelerated (GH-Proxy) |
 | --- | --- | --- |
-| macOS (Apple silicon, ZIP) | [astella-1.6.0-mac-arm64.zip]({direct.format(asset='astella-1.6.0-mac-arm64.zip')}) | [Download]({mirror.format(asset='astella-1.6.0-mac-arm64.zip')}) |
-| macOS (DMG image) | [astella-1.6.0-mac-arm64.dmg]({direct.format(asset='astella-1.6.0-mac-arm64.dmg')}) | [Download]({mirror.format(asset='astella-1.6.0-mac-arm64.dmg')}) |
-| Windows (x64 installer) | [astella-1.6.0-win-x64.exe]({direct.format(asset='astella-1.6.0-win-x64.exe')}) | [Download]({mirror.format(asset='astella-1.6.0-win-x64.exe')}) |
+| macOS (Apple silicon, ZIP) | [astella-2.0.6-mac-arm64.zip](https://github.com/asklins223/Astella/releases/download/c-v2.0.6/astella-2.0.6-mac-arm64.zip) | [Download](https://v4.gh-proxy.org/https://github.com/asklins223/Astella/releases/download/c-v2.0.6/astella-2.0.6-mac-arm64.zip) |
+| macOS (DMG image) | [astella-2.0.6-mac-arm64.dmg](https://github.com/asklins223/Astella/releases/download/c-v2.0.6/astella-2.0.6-mac-arm64.dmg) | [Download](https://v4.gh-proxy.org/https://github.com/asklins223/Astella/releases/download/c-v2.0.6/astella-2.0.6-mac-arm64.dmg) |
+| Windows (x64 installer) | [astella-2.0.6-win-x64.exe](https://github.com/asklins223/Astella/releases/download/c-v2.0.6/astella-2.0.6-win-x64.exe) | [Download](https://v4.gh-proxy.org/https://github.com/asklins223/Astella/releases/download/c-v2.0.6/astella-2.0.6-win-x64.exe) |
 
 In-app updates follow the same rule: direct to GitHub first, accelerated only if that fails — no setting to flip. Keep this table in step with the asset names GitHub Releases actually publishes.
 
@@ -95,7 +95,7 @@ make up
 make seed-demo
 ```
 
-`make up` builds hot-reload images, enables local MinIO and waits for role bootstrap, migrations, grants and storage initialization to exit. It does not inspect the container exit code printed by `docker wait`, so check readiness and initialization logs as well:
+`make up` builds hot-reload images, enables local MinIO and waits for role bootstrap, migrations, grants and storage initialization to exit. It fails and prints the service log if an initialization container exits unsuccessfully. You can also check readiness and initialization logs:
 
 ```bash
 curl -fsS http://127.0.0.1:4000/health
@@ -165,7 +165,6 @@ workers/ai-worker/         Dialogue, generation, parsing and background jobs
 packages/shared/           Contracts, capability catalog and database schema
 packages/agent-core/       Turns, context, budgets and compaction policies
 packages/agent-host/       Database host, governance and persistence
-packages/card-generation/  Card-generation domain services
 packages/ai-quality/       Offline quality evaluation
 config/                    Models and capability-slot configuration
 infra/                     Database roles, deployment, monitoring and backups
@@ -191,10 +190,9 @@ For a first verification, install package dependencies and build the desktop out
 
 ```bash
 npm ci
-for dir in packages/shared packages/card-generation packages/agent-core packages/agent-host packages/ai-quality apps/api workers/ai-worker apps/desktop-client; do
+for dir in packages/shared packages/agent-core packages/agent-host packages/ai-quality apps/api workers/ai-worker apps/desktop-client; do
   (cd "$dir" && npm ci) || exit 1
 done
-make desktop-client-build
 make verify
 ```
 

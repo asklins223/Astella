@@ -2,8 +2,8 @@ import { z } from "zod";
 import type { AgentAttentionObjectV1 } from "@astella/shared/agent-contracts";
 import type { ReadContext } from "../turn/companion-dialogue-store.ts";
 
-const refs = z.object({ context: z.object({ noteId: z.string().uuid().optional(), noteVersionId: z.string().uuid().optional(),
-  cardId: z.string().uuid().optional(), runId: z.string().uuid().optional(),
+const refs = z.object({ context: z.object({ noteId: z.string().guid().optional(), noteVersionId: z.string().guid().optional(),
+  cardId: z.string().guid().optional(), runId: z.string().guid().optional(),
 }).passthrough() }).passthrough();
 
 /** Projection of the server's persisted page/goal identity, not model-created

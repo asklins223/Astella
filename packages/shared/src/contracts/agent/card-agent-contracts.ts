@@ -148,7 +148,7 @@ export type ProviderUsage = z.infer<typeof providerUsageSchema>;
  * - **调用方不得把句柄写入日志或事件 payload**（它仍是模型侧数据）。
  * - 形状为不透明记录（而非固定字段），因为不同 provider/协议的句柄字段不同。
  */
-export const providerReasoningHandleSchema = z.record(z.unknown());
+export const providerReasoningHandleSchema = z.record(z.string(), z.unknown());
 export type ProviderReasoningHandle = z.infer<typeof providerReasoningHandleSchema>;
 
 /** Agent turn 请求 */
@@ -192,7 +192,7 @@ export const agentTurnRequestSchema = z.object({
     toolCalls: z.array(z.object({
       id: z.string().min(1),
       name: z.string().min(1),
-      arguments: z.record(z.unknown()),
+      arguments: z.record(z.string(), z.unknown()),
     }).strict()).optional(),
     /**
      * 该 assistant 消息对应的 reasoning 句柄（由 provider 产出，见
@@ -213,7 +213,7 @@ export const agentTurnRequestSchema = z.object({
   tools: z.array(z.object({
     name: z.string(),
     description: z.string(),
-    parameters: z.record(z.unknown()),
+    parameters: z.record(z.string(), z.unknown()),
   })).default([]),
   /** 明确动作请求可要求本步至少调用一个已授权工具。 */
   toolChoice: z.enum(["auto", "required"]).optional(),
@@ -252,7 +252,7 @@ export const agentTurnResultSchema = z.object({
     id: z.string().min(1),
     name: z.string().min(1),
     /** 工具参数（已 JSON 解析） */
-    arguments: z.record(z.unknown()),
+    arguments: z.record(z.string(), z.unknown()),
   })).default([]),
   /** 完成原因：stop | tool_calls | length | content_filter | error */
   finishReason: z.string(),

@@ -23,7 +23,7 @@ import { logger } from "../lib/logger.ts";
 
 // v0.4: the API must use its own database role in production.  The shared
 // DATABASE_URL remains a development/test compatibility path only.
-function resolveConnectionString(): string {
+export function resolveConnectionString(): string {
   const roleUrl = process.env.DATABASE_URL_API?.trim();
   if (roleUrl) return roleUrl;
 

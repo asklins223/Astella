@@ -16,6 +16,7 @@ import { parseBody } from "../../lib/validate.ts";
 import {
   createRateLimitStoreFromEnv,
   RateLimiter,
+  type RateLimitStore,
 } from "../../lib/rate-limit-store.ts";
 import { isEmailChannelConfigured } from "../../lib/outbound-email.ts";
 import {
@@ -63,8 +64,8 @@ function retryAfterSeconds(resetAt: number): number {
   return Math.max(1, Math.ceil((resetAt - Date.now()) / 1000));
 }
 
-export async function emailCodeRoutes(app: FastifyInstance) {
-  const store = createRateLimitStoreFromEnv();
+export async function emailCodeRoutes(app: FastifyInstance, options: { rateLimitStore?: RateLimitStore } = {}) {
+  const store = options.rateLimitStore ?? createRateLimitStoreFromEnv();
   const cleanupTimer = setInterval(() => {
     void store.sweep?.(Date.now());
   }, 5 * 60 * 1000);
@@ -169,11 +170,11 @@ export async function emailCodeRoutes(app: FastifyInstance) {
     // 401 那一路在界面上是「当前密码不正确，请重新输入」，既当场说出这个邮箱没注册过，
     // 又指着一屏里根本不存在的密码格。
     const verification = await verifyEmailCode(body.email, "login", body.code);
-    const user = await findLoginUserByEmail(body.email);
     if (!verification.ok) {
       const mapped = EMAIL_CODE_VERIFY_MESSAGES[verification.error];
       return reply.code(mapped.status).send({ error: mapped.error, message: mapped.message });
     }
+    const user = await findLoginUserByEmail(body.email);
     // 码是对的，账号却没了（发码之后被删除）：码已消费，只能重新发起。
     if (!user) {
       throw app.httpErrors.unauthorized("invalid credentials");
@@ -216,12 +217,11 @@ export async function emailCodeRoutes(app: FastifyInstance) {
     }
     const user = await findLoginUserByEmail(body.email);
     // 码是本人的但账号已不存在（发码后被删除）：码已消费，要求重新走流程。
-    if (!user) {
+    if (!user || !(await resetPassword(user.id, body.newPassword))) {
       return reply
         .code(400)
         .send({ error: "account_unavailable", message: "账号状态已变化，请重新发起找回。" });
     }
-    await resetPassword(user.id, body.newPassword);
     await resetLimiter.reset(emailKey);
     reply.header("Cache-Control", "no-store");
     return reply.code(204).send();

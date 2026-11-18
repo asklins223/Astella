@@ -19,7 +19,7 @@
 import { z } from "zod";
 import { DesktopGatewayFailure } from "./desktop-gateway-failure";
 
-const uuidSchema = z.string().uuid();
+const uuidSchema = z.string().guid();
 
 export function safeUuid(value: string): string {
   const parsed = uuidSchema.safeParse(value);

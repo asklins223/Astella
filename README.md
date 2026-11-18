@@ -18,7 +18,7 @@
 
 [中文](README.md) · [English](README.en.md) · [使用与开发手册](docs/guide/README.md)
 
-服务端版本：`s-v2.0.28` · [release/version.json](release/version.json)<br />
+服务端版本：`s-v2.0.29` · [release/version.json](release/version.json)<br />
 桌面客户端版本：`c-v2.0.6` · [apps/desktop-client/version.json](apps/desktop-client/version.json)
 
 > 手机端（iOS SwiftUI / Android Compose）已于 2026-10-24 拆分为独立私有仓库 [asklins223/astella-mobile](https://github.com/asklins223/astella-mobile)，本仓库不再包含 `apps/mobile-client`。
@@ -35,9 +35,9 @@
 
 | 平台 | 直连下载 | 加速下载（GH-Proxy） |
 | --- | --- | --- |
-| macOS（Apple 芯片，ZIP） | [astella-1.6.0-mac-arm64.zip]({direct.format(asset='astella-1.6.0-mac-arm64.zip')}) | [加速下载]({mirror.format(asset='astella-1.6.0-mac-arm64.zip')}) |
-| macOS（DMG 安装镜像） | [astella-1.6.0-mac-arm64.dmg]({direct.format(asset='astella-1.6.0-mac-arm64.dmg')}) | [加速下载]({mirror.format(asset='astella-1.6.0-mac-arm64.dmg')}) |
-| Windows（x64 安装器） | [astella-1.6.0-win-x64.exe]({direct.format(asset='astella-1.6.0-win-x64.exe')}) | [加速下载]({mirror.format(asset='astella-1.6.0-win-x64.exe')}) |
+| macOS（Apple 芯片，ZIP） | [astella-2.0.6-mac-arm64.zip](https://github.com/asklins223/Astella/releases/download/c-v2.0.6/astella-2.0.6-mac-arm64.zip) | [加速下载](https://v4.gh-proxy.org/https://github.com/asklins223/Astella/releases/download/c-v2.0.6/astella-2.0.6-mac-arm64.zip) |
+| macOS（DMG 安装镜像） | [astella-2.0.6-mac-arm64.dmg](https://github.com/asklins223/Astella/releases/download/c-v2.0.6/astella-2.0.6-mac-arm64.dmg) | [加速下载](https://v4.gh-proxy.org/https://github.com/asklins223/Astella/releases/download/c-v2.0.6/astella-2.0.6-mac-arm64.dmg) |
+| Windows（x64 安装器） | [astella-2.0.6-win-x64.exe](https://github.com/asklins223/Astella/releases/download/c-v2.0.6/astella-2.0.6-win-x64.exe) | [加速下载](https://v4.gh-proxy.org/https://github.com/asklins223/Astella/releases/download/c-v2.0.6/astella-2.0.6-win-x64.exe) |
 
 应用内的自动更新走同一条规则：先连 GitHub，连不上才改走加速地址，不用你手动设置。换版本时本表要跟着 GitHub Releases 上的实际文件名更新。
 
@@ -102,7 +102,7 @@ make up
 make seed-demo
 ```
 
-`make up` 构建热重载镜像，默认启用本地 MinIO，并等待角色引导、迁移、授权和存储初始化容器退出。它不检查 `docker wait` 打印的容器退出码，所以还需确认就绪状态与初始化日志：
+`make up` 构建热重载镜像，默认启用本地 MinIO，并等待角色引导、迁移、授权和存储初始化容器退出；任一初始化容器失败时命令会报错并输出该服务日志。启动后可检查就绪状态与初始化日志：
 
 ```bash
 curl -fsS http://127.0.0.1:4000/health
@@ -172,7 +172,6 @@ workers/ai-worker/         对话、生成、解析与后台作业
 packages/shared/           契约、能力目录与数据库 schema
 packages/agent-core/       回合、上下文、预算与压缩判据
 packages/agent-host/       数据库宿主、治理与持久化
-packages/card-generation/  制卡领域服务
 packages/ai-quality/       离线质量评测
 config/                    模型与能力槽位配置
 infra/                     数据库角色、部署、监控与备份
@@ -194,14 +193,13 @@ release/                   统一版本与发布说明
 
 开发 PostgreSQL 使用 external 卷 `astella-dev_dev_postgres_data`。`make down` 与 Compose 的 `down -v` 保留它；显式的 `make reset-db CONFIRM_RESET_DB=DELETE_DEV_DB` 会永久删除它并重启。该保护不覆盖 MinIO 卷，数据库与长期对象需分别备份。
 
-首次验证需按包安装依赖，再构建桌面产物：
+首次验证需按包安装依赖；`make verify` 会先构建桌面产物（资产守卫读 `out/`）：
 
 ```bash
 npm ci
-for dir in packages/shared packages/card-generation packages/agent-core packages/agent-host packages/ai-quality apps/api workers/ai-worker apps/desktop-client; do
+for dir in packages/shared packages/agent-core packages/agent-host packages/ai-quality apps/api workers/ai-worker apps/desktop-client; do
   (cd "$dir" && npm ci) || exit 1
 done
-make desktop-client-build
 make verify
 ```
 

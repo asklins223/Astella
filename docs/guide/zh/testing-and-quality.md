@@ -84,19 +84,23 @@ make test-postgres COMPANION_HOME_TEST_DB=astella_it
 
 | 工作流 | 用途 |
 | --- | --- |
-| `main-ci.yml` | main、PR、v* 标签与手动触发；包矩阵、API、Worker、desktop（先构建）和备份脚本自测 |
+| `main-ci.yml` | main、PR、发布标签与手动触发；包测试、desktop 构建、备份脚本自测及真实 PostgreSQL 隔离检查 |
 | `server-deploy.yml` | v* 标签的 CI 通过后复用；部署脚本测试、GHCR 生产镜像构建、digest 与 SSH 部署 |
 | `desktop-client.yml` | 桌面质量与打包冒烟，由发布或手动调用 |
 | `desktop-package.yml` | Windows／macOS 安装包构建，可单独取得测试包 |
 | `desktop-release.yml` | 版本检查、打包、质量检查与更新清单通过后公开 Release |
+| `security-scan.yml` | 每周依赖审计（带到期白名单）、Gitleaks 与 Trivy 文件系统扫描；不阻塞 PR |
+| `nightly-database-guard.yml` | 定时运行，并由主 CI 调用；在一次性 PostgreSQL 上跑迁移、RLS 棘轮、跨租户读取与策略完整性 |
 
-普通 CI 不起真实 PostgreSQL，也不执行付费模型请求；Tag 部署另有真实镜像构建，不能再概括为「CI 从不构建生产镜像」。覆盖率、skip/todo、密钥／镜像扫描和恢复演练不自动属于这些基线，需要按用途显式执行或接线。
+主 CI 使用一次性 PostgreSQL 执行隔离子集，但不执行完整实库套件或付费模型请求；服务端标签部署依赖该子集通过。覆盖率、skip/todo 和恢复演练不自动属于这些基线；密钥／依赖扫描由定时 `security-scan` 执行。
 
 `VITE_HOME_SCENE_VARIANT` 在旧脚本／矩阵中仍出现，但当前源码不读取它；矩阵标签本身不证明两种首页都被测试。已有脚本和过时注释不能代替可执行接线核对。
 
 ## 真实模型与窗口
 
 真实模型探针需明确启用并配置测试账号、权限与预算。近期入口在 `workers/ai-worker/src/live-tests/README.md`，旧脚本和固定 Mock 不代表当前模型已验收。探针可能收费，报告要区分业务链路、生成内容正确性、自然度与等待时间。
+
+发布涉及模型、提示词或工具策略的变更前，应在隔离环境用合成案例运行 `quality-comparison.ts` 与相关真实链路探针，保留模型、代码版本、请求数、耗时和人工复核结果；未运行时在发布记录明确标注，而不能把 Mock 通过写成真实模型验收。此检查目前是人工发布程序，不是自动阻断门禁。
 
 窗口检查使用实际运行构建与长内容，覆盖阅读／编辑／源码、全屏／册页、快速反向、停止／失败、焦点／Esc、缩放、伴星位置和 Full／Lite／Off／系统减少动态。附着已有开发窗口可在桌面包目录运行：
 

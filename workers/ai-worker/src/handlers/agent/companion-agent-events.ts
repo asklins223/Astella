@@ -44,7 +44,8 @@ import { lockJobLease } from "../../lib/job-lease.ts";
 import { CompanionAgentBudgetExceededError, CompanionContextChangedError } from "../../lib/non-retryable-errors.ts";
 import type { AgentEventContext } from "../tools/companion-read-tools.ts";
 import { assertCompanionContextSourcesCurrent } from "../context/companion-context-sources.ts";
-import { companionExecutionPolicy } from "./companion-execution-policy.ts";
+import { companionExecutionPolicy, shouldWarnCompanionModelCalls } from "./companion-execution-policy.ts";
+import { logger } from "../../lib/logger.ts";
 import { agentTurnInterpretationV1Schema, type AgentTurnInterpretationV1, type AgentAttentionObjectV1 } from "@astella/shared/agent-contracts";
 import { lockCompanionRunForEventWrite } from "@astella/shared/companion-lock-order";
 import { withCompanionRecoveryTransaction, type CompanionRuntimeCheckpoint } from "./companion-runtime-checkpoint.ts";
@@ -65,11 +66,11 @@ export async function reserveCompanionProviderCall(event: {
 }): Promise<void> {
   if (event.ctx.requestedBy !== event.read.userId) throw new CompanionAgentBudgetExceededError("companion initiating user changed");
   const modelCallLimit = companionExecutionPolicy().maxModelCalls ?? null;
-  await withWorkerWorkspaceTransaction({ workspaceId: event.ctx.workspaceId, userId: event.read.userId }, async tx => {
+  const modelCallCount = await withWorkerWorkspaceTransaction({ workspaceId: event.ctx.workspaceId, userId: event.read.userId }, async tx => {
     await lockCompanionRunForEventWrite(tx, event.read.runId);
     await lockJobLease(tx, event.ctx);
     await assertCompanionContextSourcesCurrent(tx, { workspaceId: event.ctx.workspaceId, userId: event.read.userId }, event.read.runId);
-    const rows = await tx.execute(sql`UPDATE companion_turn_runs r
+    const rows = await tx.execute<{ model_call_count: number }>(sql`UPDATE companion_turn_runs r
       SET model_call_count=model_call_count+1,updated_at=now()
       FROM user_companion_account_state a
       WHERE r.id=${event.read.runId} AND r.workspace_id=${event.ctx.workspaceId}
@@ -90,7 +91,12 @@ export async function reserveCompanionProviderCall(event: {
       }
       throw new CompanionAgentBudgetExceededError("companion provider budget exhausted or turn obsolete");
     }
+    return Number(rows[0]!.model_call_count);
   });
+  if (shouldWarnCompanionModelCalls(modelCallCount)) {
+    logger.warn({ workspaceId: event.ctx.workspaceId, runId: event.read.runId, modelCallCount, modelCallLimit },
+      "companion run has made many model calls");
+  }
 }
 
 /** Reserve the single optional post-turn model call against the originating run's call budget. */

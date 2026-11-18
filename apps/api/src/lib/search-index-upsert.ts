@@ -70,7 +70,7 @@ export function searchProjectionValues(document: SearchProjectionDocument) {
 /** 索引写失败时统一走这里记日志——三处的措辞必须一致，否则 grep 不到。 */
 export function logSearchProjectionFailure(err: unknown, document: SearchProjectionDocument): void {
   logger.error(
-    { err, ...document },
+    { err, workspaceId: document.workspaceId, objectType: document.objectType, objectId: document.objectId },
     "search index upsert failed — index may be stale, run reindex to compensate",
   );
 }

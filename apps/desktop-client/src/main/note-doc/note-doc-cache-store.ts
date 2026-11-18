@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, open, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { z } from "zod";
 import { TRANSFER_MAX_BYTES } from "@astella/shared/object-transfer-contracts";
@@ -24,10 +24,10 @@ import { TRANSFER_MAX_BYTES } from "@astella/shared/object-transfer-contracts";
  * 读到别人的私有笔记正文——边界画在服务器上，却从本机磁盘漏出去。
  *
  * 这里存的是**内容**，不是元数据，所以：文件权限 0600、有条数与字节上限、
- * 解析不上一律当空（宁缺不复活未经校验的内容）。
+ * 无法安全解析时保留原文件并报告恢复错误，避免覆盖待同步内容。
  */
 
-const uuidSchema = z.string().uuid();
+const uuidSchema = z.string().guid();
 /** base64 必须是"编码回去一模一样"的那一种，和 `note-doc-state.ts` 同一个口径。 */
 const base64Schema = z.string().regex(/^[A-Za-z0-9+/]*={0,2}$/);
 
@@ -47,8 +47,18 @@ const ENTRY_LIMIT = 48;
  * 上限比笔记本身能有多大还小，等于在最不该出声的地方出声。
  */
 export const NOTE_DOC_CACHE_ENTRY_MAX_BYTES = TRANSFER_MAX_BYTES;
-/** 整个缓存文件的读取闸门：至少容得下两篇满额笔记，否则读回来直接整份丢弃。 */
+/** 新写入文件的总容量上限；旧超限文件单独采用有界恢复策略。 */
 export const NOTE_DOC_CACHE_FILE_MAX_BYTES = 2 * TRANSFER_MAX_BYTES;
+// Old versions could write past the file limit. Recover a bounded amount; larger
+// files stay untouched for manual recovery instead of being read into memory.
+const NOTE_DOC_CACHE_RECOVERY_MAX_BYTES = NOTE_DOC_CACHE_FILE_MAX_BYTES + TRANSFER_MAX_BYTES / 2;
+
+export class NoteDocCacheRecoveryError extends Error {
+  constructor() {
+    super("local note cache cannot be safely recovered; the original file was preserved");
+    this.name = "NoteDocCacheRecoveryError";
+  }
+}
 
 /**
  * 界面手里那一份**还没交给主进程**的草稿（刷新/崩溃不丢字）。
@@ -156,7 +166,32 @@ export class MemoryNoteDocCacheStore implements NoteDocCacheStore {
    * 留这个口子只为一件事：证明"太大那一条是**拒绝**、不是截断正文"这条支路还活着——
    * 按默认值测一次要在测试里现造 100 MB 的字符串。
    */
-  constructor(private readonly maxEntryBytes: number = NOTE_DOC_CACHE_ENTRY_MAX_BYTES) {}
+  constructor(
+    private readonly maxEntryBytes: number = NOTE_DOC_CACHE_ENTRY_MAX_BYTES,
+    private readonly maxFileBytes: number = Number.POSITIVE_INFINITY,
+  ) {}
+
+  private replaceWithinLimits(id: string, key: NoteDocCacheKey, entry: NoteDocCacheEntryV1): boolean {
+    if (Buffer.byteLength(JSON.stringify(entry), "utf8") > this.maxEntryBytes) return false;
+    const next = new Map(this.entries);
+    next.set(id, { key, entry });
+    const payloadBytes = () => Buffer.byteLength(JSON.stringify({
+      version: NOTE_DOC_CACHE_VERSION,
+      entries: [...next.values()].map(({ key: itemKey, entry: item }) => ({ ...itemKey, ...item })),
+    }), "utf8");
+    while (next.size > ENTRY_LIMIT || (Number.isFinite(this.maxFileBytes) && payloadBytes() > this.maxFileBytes)) {
+      // A queued update or an unsubmitted draft has no other durable copy.
+      // The entry being written must also remain present for a truthful receipt.
+      const oldestClean = [...next.entries()]
+        .filter(([candidateId, value]) => candidateId !== id && value.entry.pending.length === 0 && !value.entry.draft)
+        .sort((a, b) => a[1].entry.updatedAt.localeCompare(b[1].entry.updatedAt))[0];
+      if (!oldestClean) return false;
+      next.delete(oldestClean[0]);
+    }
+    this.entries.clear();
+    for (const [candidateId, value] of next) this.entries.set(candidateId, value);
+    return true;
+  }
 
   snapshot(): Storage["entries"] {
     return [...this.entries.values()].map(({ key, entry }) => ({ ...key, ...entry }));
@@ -178,8 +213,6 @@ export class MemoryNoteDocCacheStore implements NoteDocCacheStore {
 
   async set(key: NoteDocCacheKey, entry: NoteDocCacheEntryV1): Promise<boolean> {
     const parsed = noteDocCacheEntryV1Schema.parse(entry);
-    const bytes = JSON.stringify(parsed).length;
-    if (bytes > this.maxEntryBytes) return false;
     const id = entryKey(key);
     // 落盘本机文档那一次**不顺手抹掉草稿**：草稿是"界面还没交给主进程的那几个操作"，
     // 与 `docState` 是两条时间线。打开一篇笔记时先读起点、再读草稿，两次 IPC 谁先到
@@ -187,14 +220,7 @@ export class MemoryNoteDocCacheStore implements NoteDocCacheStore {
     // 清草稿只有一条路：`clearDraft`（确认交出去之后）。
     const draft = this.entries.get(id)?.entry.draft;
     const next = draft && parsed.draft === undefined ? { ...parsed, draft } : parsed;
-    this.entries.set(id, { key, entry: next });
-    // 超出条数就先放下最旧的那一份：常用的那几篇才会不断被刷新 `updatedAt`。
-    if (this.entries.size > ENTRY_LIMIT) {
-      const oldest = [...this.entries.entries()].sort((a, b) =>
-        a[1].entry.updatedAt.localeCompare(b[1].entry.updatedAt))[0];
-      if (oldest && oldest[0] !== id) this.entries.delete(oldest[0]);
-    }
-    return true;
+    return this.replaceWithinLimits(id, key, next);
   }
 
   async getDraft(key: NoteDocCacheKey): Promise<NoteDocDraftV1 | null> {
@@ -207,9 +233,7 @@ export class MemoryNoteDocCacheStore implements NoteDocCacheStore {
     if (!existing) return false;
     const parsed = noteDocDraftV1Schema.parse(draft);
     const entry: NoteDocCacheEntryV1 = { ...existing.entry, draft: parsed, updatedAt: draft.savedAt };
-    if (JSON.stringify(entry).length > this.maxEntryBytes) return false;
-    this.entries.set(id, { key: existing.key, entry });
-    return true;
+    return this.replaceWithinLimits(id, existing.key, entry);
   }
 
   async clearDraft(key: NoteDocCacheKey): Promise<boolean> {
@@ -243,24 +267,44 @@ export class FileNoteDocCacheStore implements NoteDocCacheStore {
   private loaded: Promise<void> | null = null;
   private flushQueue: Promise<void> = Promise.resolve();
   private readonly maxFileBytes: number;
+  private readonly maxRecoveryBytes: number;
 
-  constructor(private readonly filePath: string, limits: { maxEntryBytes?: number; maxFileBytes?: number } = {}) {
-    this.memory = new MemoryNoteDocCacheStore(limits.maxEntryBytes);
+  constructor(private readonly filePath: string, limits: { maxEntryBytes?: number; maxFileBytes?: number; maxRecoveryBytes?: number } = {}) {
     this.maxFileBytes = limits.maxFileBytes ?? NOTE_DOC_CACHE_FILE_MAX_BYTES;
+    this.maxRecoveryBytes = limits.maxRecoveryBytes ?? Math.max(this.maxFileBytes, NOTE_DOC_CACHE_RECOVERY_MAX_BYTES);
+    this.memory = new MemoryNoteDocCacheStore(limits.maxEntryBytes, this.maxFileBytes);
   }
 
   private async ensureLoaded(): Promise<void> {
     if (!this.loaded) {
       this.loaded = (async () => {
         try {
-          const raw = await readFile(this.filePath, "utf8");
-          if (raw.length > this.maxFileBytes) return;
+          const file = await open(this.filePath, "r");
+          let raw: string;
+          try {
+            const size = (await file.stat()).size;
+            if (size > this.maxRecoveryBytes) throw new NoteDocCacheRecoveryError();
+            const buffer = Buffer.allocUnsafe(size + 1);
+            let offset = 0;
+            while (offset < buffer.length) {
+              const { bytesRead } = await file.read(buffer, offset, buffer.length - offset, offset);
+              if (bytesRead === 0) break;
+              offset += bytesRead;
+            }
+            if (offset !== size) throw new NoteDocCacheRecoveryError();
+            raw = buffer.subarray(0, offset).toString("utf8");
+          } finally {
+            await file.close();
+          }
+          // Earlier versions could write a valid file larger than the read limit.
+          // Load it instead of silently treating pending edits as an empty cache.
           const parsed = storageSchema.safeParse(JSON.parse(raw) as unknown);
-          // 解析不上就是"本机没有这一份"。不逐条挑、不部分恢复：那等于把一份没经过
-          // 整体校验的正文接回编辑器。
-          if (parsed.success) this.memory.load(parsed.data.entries);
-        } catch {
-          // 缺文件、坏 JSON 都走同一条：本机没有缓存。
+          // 不逐条挑、不部分恢复：不经过整体校验的正文不能接回编辑器。
+          // 同时保留原件，不允许后续写入覆盖潜在的离线编辑。
+          if (!parsed.success) throw new NoteDocCacheRecoveryError();
+          this.memory.load(parsed.data.entries);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw new NoteDocCacheRecoveryError();
         }
         await this.pruneStaleTempFiles();
       })();
@@ -305,6 +349,10 @@ export class FileNoteDocCacheStore implements NoteDocCacheStore {
         throw new Error(`note-doc cache holds ${entries.length} entries, over the ${ENTRY_LIMIT * 2} bound`);
       }
       const payload: Storage = { version: NOTE_DOC_CACHE_VERSION, entries };
+      const serialized = JSON.stringify(payload);
+      if (Buffer.byteLength(serialized, "utf8") > this.maxFileBytes) {
+        throw new Error("note-doc cache exceeds its storage limit");
+      }
       await mkdir(dirname(this.filePath), { recursive: true });
       /**
        * 固定名（0269 轮 L8）：以前带 `randomUUID()`，进程在 writeFile 与 rename 之间被杀
@@ -313,7 +361,7 @@ export class FileNoteDocCacheStore implements NoteDocCacheStore {
        * 清掉升级前那些带 uuid 的旧残留。
        */
       const temporaryPath = `${this.filePath}.tmp`;
-      await writeFile(temporaryPath, JSON.stringify(payload), { mode: 0o600 });
+      await writeFile(temporaryPath, serialized, { mode: 0o600 });
       await rename(temporaryPath, this.filePath);
     });
     this.flushQueue = write.then(() => undefined, () => undefined);

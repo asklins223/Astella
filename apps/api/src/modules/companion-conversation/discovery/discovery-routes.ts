@@ -52,7 +52,7 @@ const identityBody = z.strictObject({
 
 const annotateBody = z.strictObject({
   meta: metaSchema,
-  request: z.strictObject({ entryId: z.string().uuid(), annotation: z.string().max(2000).nullable() }),
+  request: z.strictObject({ entryId: z.string().guid(), annotation: z.string().max(2000).nullable() }),
 });
 
 function scopeOf(req: { session?: unknown }): DiscoveryScope {

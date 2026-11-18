@@ -124,6 +124,9 @@ export async function runCompanionFollowupSuggestions(job: JobPayload): Promise<
       {
         userId,
         operation: "companion_followup_suggestions",
+        ...(textProvider.providerName.toLowerCase() === "mock" ? {} : {
+          resolveGovernance: () => resolveAIGovernanceContext(job.workspaceId, userId),
+        }),
         jobId: job.id,
         dataCategories: ["user_answer", "note_content"],
         reserveCall: () => reserveCompanionFollowupProviderCall({

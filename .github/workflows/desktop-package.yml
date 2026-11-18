@@ -60,6 +60,9 @@ on:
       macos_signed:
         description: macOS 是否配置了 Developer ID 签名
         value: ${{ jobs.macos.outputs.signed }}
+      macos_notarized:
+        description: macOS 应用是否包含有效的公证票据
+        value: ${{ jobs.macos.outputs.notarized }}
 
 permissions:
   contents: read
@@ -83,7 +86,7 @@ jobs:
     timeout-minutes: 90
     outputs:
       version: ${{ steps.version.outputs.version }}
-      signed: ${{ steps.signing.outputs.signed }}
+      signed: ${{ steps.verify_signature.outputs.signed }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -109,10 +112,12 @@ jobs:
         # （`[ -n … ]` / `$GITHUB_OUTPUT`）。不显式声明 shell 的话，PowerShell 会在
         # 第一行就报 `Missing '(' after 'if' in if statement`。
         shell: bash
+        env:
+          REQUESTED_DESKTOP_VERSION: ${{ inputs.version }}
         run: |
           node .github/scripts/desktop-version.mjs --check
-          if [ -n "${{ inputs.version }}" ]; then
-            node .github/scripts/desktop-version.mjs --set "${{ inputs.version }}"
+          if [ -n "$REQUESTED_DESKTOP_VERSION" ]; then
+            node .github/scripts/desktop-version.mjs --set "$REQUESTED_DESKTOP_VERSION"
           fi
           node .github/scripts/desktop-version.mjs --check
           echo "version=$(node -e "console.log(require('./apps/desktop-client/version.json').version)")" >> "$GITHUB_OUTPUT"
@@ -129,12 +134,18 @@ jobs:
         #   • empty password will be used for code signing  reason=CSC_KEY_PASSWORD is not defined
         #   ⨯ .../apps/desktop-client not a file
         # 两条日志都不指向真正的原因。所以只有 secret 真存在时才写进 GITHUB_ENV。
+        env:
+          WIN_SIGNING_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_SIGNING_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          if [ -n "${{ secrets.WIN_CSC_LINK }}" ]; then
-            echo "CSC_LINK=${{ secrets.WIN_CSC_LINK }}" >> "$GITHUB_ENV"
-            echo "CSC_KEY_PASSWORD=${{ secrets.WIN_CSC_KEY_PASSWORD }}" >> "$GITHUB_ENV"
-            echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
+          if [ -n "$WIN_SIGNING_LINK" ]; then
+            delimiter="$(node -p 'require("node:crypto").randomUUID()')"
+            {
+              printf 'CSC_LINK<<%s\n%s\n%s\n' "$delimiter" "$WIN_SIGNING_LINK" "$delimiter"
+              printf 'CSC_KEY_PASSWORD<<%s\n%s\n%s\n' "$delimiter" "$WIN_SIGNING_PASSWORD" "$delimiter"
+              echo 'CSC_IDENTITY_AUTO_DISCOVERY=false'
+            } >> "$GITHUB_ENV"
             echo "signed=true" >> "$GITHUB_OUTPUT"
             echo "Windows code signing: 已启用"
           else
@@ -156,6 +167,23 @@ jobs:
         run: |
           node ../../.github/scripts/desktop-deployment.mjs
           npm run package:win:x64
+      - name: Verify Windows release signatures
+        id: verify_signature
+        shell: pwsh
+        working-directory: apps/desktop-client
+        env:
+          SIGNING_CONFIGURED: ${{ steps.signing.outputs.signed }}
+          EXPECTED_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if ($env:SIGNING_CONFIGURED -ne 'true') { 'signed=false' >> $env:GITHUB_OUTPUT; exit 0 }
+          $exe = Get-AuthenticodeSignature -LiteralPath 'release/win-unpacked/Astella.exe'
+          $setup = Get-AuthenticodeSignature -LiteralPath "release/astella-$env:EXPECTED_VERSION-win-x64.exe"
+          if ($exe.Status -ne 'Valid' -or $setup.Status -ne 'Valid' -or !$exe.SignerCertificate -or !$setup.SignerCertificate -or
+              $exe.SignerCertificate.GetKeyAlgorithm() -ne $setup.SignerCertificate.GetKeyAlgorithm() -or
+              $exe.SignerCertificate.GetPublicKeyString() -ne $setup.SignerCertificate.GetPublicKeyString()) {
+            throw 'Windows app and installer must have valid signatures from the same signing key'
+          }
+          'signed=true' >> $env:GITHUB_OUTPUT
       - name: Verify Windows installer, native UI and uninstall
         shell: pwsh
         working-directory: apps/desktop-client
@@ -204,7 +232,8 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       arch: ${{ inputs.mac_arch || 'arm64' }}
-      signed: ${{ steps.signing.outputs.signed }}
+      signed: ${{ steps.verify_signature.outputs.signed }}
+      notarized: ${{ steps.verify_signature.outputs.notarized }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -222,10 +251,12 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Resolve desktop version
         id: version
+        env:
+          REQUESTED_DESKTOP_VERSION: ${{ inputs.version }}
         run: |
           node .github/scripts/desktop-version.mjs --check
-          if [ -n "${{ inputs.version }}" ]; then
-            node .github/scripts/desktop-version.mjs --set "${{ inputs.version }}"
+          if [ -n "$REQUESTED_DESKTOP_VERSION" ]; then
+            node .github/scripts/desktop-version.mjs --set "$REQUESTED_DESKTOP_VERSION"
           fi
           node .github/scripts/desktop-version.mjs --check
           echo "version=$(node -e "console.log(require('./apps/desktop-client/version.json').version)")" >> "$GITHUB_OUTPUT"
@@ -235,12 +266,21 @@ jobs:
         # 同 Windows 那一节：secret 缺失时不能把空串写进 CSC_LINK，否则
         # electron-builder 会拿空前缀当证书路径，报一条完全指不到根因的
         # "not a file"。
+        env:
+          MAC_SIGNING_LINK: ${{ secrets.MAC_CSC_LINK }}
+          MAC_SIGNING_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          NOTARY_APPLE_ID: ${{ secrets.APPLE_ID }}
+          NOTARY_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          NOTARY_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
         run: |
           set -euo pipefail
-          if [ -n "${{ secrets.MAC_CSC_LINK }}" ]; then
-            echo "CSC_LINK=${{ secrets.MAC_CSC_LINK }}" >> "$GITHUB_ENV"
-            echo "CSC_KEY_PASSWORD=${{ secrets.MAC_CSC_KEY_PASSWORD }}" >> "$GITHUB_ENV"
-            echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
+          delimiter="$(node -p 'require("node:crypto").randomUUID()')"
+          if [ -n "$MAC_SIGNING_LINK" ]; then
+            {
+              printf 'CSC_LINK<<%s\n%s\n%s\n' "$delimiter" "$MAC_SIGNING_LINK" "$delimiter"
+              printf 'CSC_KEY_PASSWORD<<%s\n%s\n%s\n' "$delimiter" "$MAC_SIGNING_PASSWORD" "$delimiter"
+              echo 'CSC_IDENTITY_AUTO_DISCOVERY=false'
+            } >> "$GITHUB_ENV"
             echo "signed=true" >> "$GITHUB_OUTPUT"
             echo "macOS code signing: 已启用"
           else
@@ -249,22 +289,61 @@ jobs:
             echo "macOS code signing: 使用完整 ad-hoc 签名和跨版本稳定的更新要求；首次打开仍需用户在隐私与安全中允许"
           fi
           # 公证凭据存在才会真的去跑 notarize；缺了就让 electron-builder 自行跳过。
-          if [ -n "${{ secrets.APPLE_ID }}" ] && [ -n "${{ secrets.APPLE_TEAM_ID }}" ]; then
-            echo "APPLE_ID=${{ secrets.APPLE_ID }}" >> "$GITHUB_ENV"
-            echo "APPLE_APP_SPECIFIC_PASSWORD=${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}" >> "$GITHUB_ENV"
-            echo "APPLE_TEAM_ID=${{ secrets.APPLE_TEAM_ID }}" >> "$GITHUB_ENV"
+          if [ -n "$NOTARY_APPLE_ID" ] && [ -n "$NOTARY_TEAM_ID" ] && [ -n "$NOTARY_PASSWORD" ]; then
+            {
+              printf 'APPLE_ID<<%s\n%s\n%s\n' "$delimiter" "$NOTARY_APPLE_ID" "$delimiter"
+              printf 'APPLE_APP_SPECIFIC_PASSWORD<<%s\n%s\n%s\n' "$delimiter" "$NOTARY_PASSWORD" "$delimiter"
+              printf 'APPLE_TEAM_ID<<%s\n%s\n%s\n' "$delimiter" "$NOTARY_TEAM_ID" "$delimiter"
+            } >> "$GITHUB_ENV"
             echo "macOS notarization: 已启用"
           else
             echo "macOS notarization: 未配置"
           fi
       - name: Build and package macOS installers
         working-directory: apps/desktop-client
+        env:
+          REQUESTED_MAC_ARCH: ${{ inputs.mac_arch || 'arm64' }}
         # 同 Windows 那一节：CI + tag checkout 会让 electron-builder 自行尝试发布。
         run: |
+          case "$REQUESTED_MAC_ARCH" in
+            arm64|x64) ;;
+            *) echo 'Unsupported macOS architecture' >&2; exit 1 ;;
+          esac
           node scripts/check-macos-update-signature.cjs
           node scripts/check-macos-update-download.mjs
           node ../../.github/scripts/desktop-deployment.mjs
-          npm run package:mac:${{ inputs.mac_arch || 'arm64' }} -- --publish never
+          npm run "package:mac:$REQUESTED_MAC_ARCH" -- --publish never
+      - name: Verify macOS release signature
+        id: verify_signature
+        working-directory: apps/desktop-client
+        env:
+          SIGNING_CONFIGURED: ${{ steps.signing.outputs.signed }}
+          EXPECTED_VERSION: ${{ steps.version.outputs.version }}
+          MAC_ARCH: ${{ inputs.mac_arch || 'arm64' }}
+        run: |
+          set -euo pipefail
+          if [ "$SIGNING_CONFIGURED" != true ]; then
+            echo 'signed=false' >> "$GITHUB_OUTPUT"
+            echo 'notarized=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          /usr/bin/ditto -x -k "release/astella-${EXPECTED_VERSION}-mac-${MAC_ARCH}.zip" "$tmp"
+          app="$tmp/Astella.app"
+          details="$(/usr/bin/codesign --display --verbose=4 "$app" 2>&1)"
+          printf '%s\n' "$details" | grep -q '^Authority=Developer ID Application: '
+          team="$(printf '%s\n' "$details" | sed -n 's/^TeamIdentifier=\([A-Z0-9]\{10\}\)$/\1/p')"
+          test -n "$team"
+          /usr/bin/codesign --verify --deep --strict -R "=anchor apple generic and identifier \"com.asklins.astella\" and certificate leaf[subject.OU] = \"$team\" and certificate leaf[field.1.2.840.113635.100.6.1.13] exists" "$app"
+          echo 'signed=true' >> "$GITHUB_OUTPUT"
+          # A Developer ID signature alone does not prove that Apple accepted
+          # the app. Check the ticket in the exact ZIP shipped to users.
+          if /usr/bin/xcrun stapler validate "$app"; then
+            echo 'notarized=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'notarized=false' >> "$GITHUB_OUTPUT"
+          fi
       - name: Verify macOS deliverables (zip → app bundle → launch)
         working-directory: apps/desktop-client
         env:

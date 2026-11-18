@@ -15,6 +15,11 @@ const activeLive2dModels = [
     outRoot: resolve(rendererOut, 'assets/companion/live2d-v3/whale'),
     modelFile: 'c_0120.model3.json',
   },
+  {
+    sourceRoot: resolve(appRoot, 'src/renderer/public/assets/companion/live2d-v4/fatfish'),
+    outRoot: resolve(rendererOut, 'assets/companion/live2d-v4/fatfish'),
+    modelFile: 'fatfish.model3.json',
+  },
 ]
 // 已删除的两个形态：源树与打包产物里都不得再出现，连目录带文件。
 const removedLive2dPackages = [

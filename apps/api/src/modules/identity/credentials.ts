@@ -19,8 +19,8 @@
  * ——不导出就等于这三个函数在原地消失了。
  */
 
-import { createHash, randomBytes } from "node:crypto";
-import bcrypt from "bcryptjs";
+import { createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual } from "node:crypto";
+import bcrypt from "bcrypt";
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 export const SESSION_ABSOLUTE_MAX_MS = 180 * 24 * 60 * 60 * 1000;
 export const SESSION_RENEW_WHEN_REMAINING_MS = SESSION_TTL_MS / 2;
@@ -55,21 +55,86 @@ export type SessionClientKind = (typeof SESSION_CLIENT_KINDS)[number];
 export function toSessionClientKind(value: string | null | undefined): SessionClientKind {
   return SESSION_CLIENT_KINDS.find((kind) => kind === value) ?? "desktop";
 }
-const BCRYPT_COST = 10;
+const SCRYPT_PREFIX = "$scrypt$v1$";
+// V1 parameters are part of the stored format, not Node's mutable defaults.
+function derivePasswordKey(plain: string, salt: Buffer): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    scryptCallback(plain, salt, 64, { N: 16_384, r: 8, p: 1, maxmem: 32 * 1024 * 1024 },
+      (error, key) => error ? reject(error) : resolve(key));
+  });
+}
 // Keep unknown-account logins on the same expensive bcrypt path as known
 // accounts so response timing does not become a reliable email oracle.
 export const DUMMY_PASSWORD_HASH = "$2a$10$cgxNDTz4bljIsmxLn2w.7O6Cd/C3cZK3neQBb/2Xxx4xNJkIgMrse";
+const DUMMY_SCRYPT_HASH = `${SCRYPT_PREFIX}${Buffer.alloc(16).toString("base64url")}$${Buffer.alloc(64).toString("base64url")}`;
+
+// bcryptjs accepts the PHP-compatible $2y$ spelling, whereas native bcrypt
+// accepts $2a$ and $2b$. They use the same algorithm, so preserve existing
+// $2y$ credentials without keeping their CPU work on the event loop.
+function compareLegacyPassword(plain: string, hash: string): Promise<boolean> {
+  return bcrypt.compare(plain, hash.startsWith("$2y$") ? `$2b$${hash.slice(4)}` : hash);
+}
 
 export function canonicalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
-export function hashPassword(plain: string): Promise<string> {
-  return bcrypt.hash(plain, BCRYPT_COST);
+export async function hashPassword(plain: string): Promise<string> {
+  const salt = randomBytes(16);
+  const hash = await derivePasswordKey(plain, salt);
+  return `${SCRYPT_PREFIX}${salt.toString("base64url")}$${hash.toString("base64url")}`;
 }
 
 export async function verifyPassword(plain: string, stored: string): Promise<boolean> {
-  return bcrypt.compare(plain, stored);
+  if (!stored.startsWith(SCRYPT_PREFIX)) {
+    if (!/^\$2[aby]\$\d{2}\$/.test(stored)) return false;
+    return compareLegacyPassword(plain, stored);
+  }
+  const parts = stored.slice(SCRYPT_PREFIX.length).split("$");
+  if (parts.length !== 2 || !/^[A-Za-z0-9_-]+$/.test(parts[0]!) || !/^[A-Za-z0-9_-]+$/.test(parts[1]!)) return false;
+  const salt = Buffer.from(parts[0]!, "base64url");
+  const expected = Buffer.from(parts[1]!, "base64url");
+  if (salt.length !== 16 || expected.length !== 64) return false;
+  const actual = await derivePasswordKey(plain, salt);
+  return timingSafeEqual(actual, expected);
+}
+
+/** Run both algorithms for known and unknown accounts to avoid revealing the
+ * account's existence or hash generation through an obvious timing difference. */
+export type LegacyPasswordPolicy = "allow" | "require_reset";
+
+/**
+ * Disabling legacy login requires a working independent recovery channel.
+ * Configuration alone does not prove mail delivery; operators must test that
+ * before enabling this policy. Existing authenticated sessions can still change
+ * their own passwords, and verified email recovery always creates a scrypt hash.
+ */
+export function resolveLegacyPasswordPolicy(
+  env: NodeJS.ProcessEnv = process.env,
+  emailChannelConfigured = false,
+): LegacyPasswordPolicy {
+  const value = env.AUTH_LEGACY_PASSWORD_POLICY?.trim().toLowerCase() || "allow";
+  if (value !== "allow" && value !== "require_reset") {
+    throw new Error("AUTH_LEGACY_PASSWORD_POLICY must be allow or require_reset");
+  }
+  if (value === "require_reset" && !emailChannelConfigured) {
+    throw new Error("AUTH_LEGACY_PASSWORD_POLICY=require_reset requires a configured email recovery channel");
+  }
+  return value;
+}
+
+export async function verifyPasswordForLogin(
+  plain: string,
+  stored: string | null,
+  legacyPolicy: LegacyPasswordPolicy = "allow",
+): Promise<boolean> {
+  const legacy = stored !== null && /^\$2[aby]\$\d{2}\$/.test(stored);
+  const modern = stored !== null && stored.startsWith(SCRYPT_PREFIX);
+  const [bcryptMatch, scryptMatch] = await Promise.all([
+    compareLegacyPassword(plain, legacy ? stored : DUMMY_PASSWORD_HASH),
+    verifyPassword(plain, modern ? stored : DUMMY_SCRYPT_HASH),
+  ]);
+  return legacy ? legacyPolicy === "allow" && bcryptMatch : modern && scryptMatch;
 }
 
 export function generateToken(): string {

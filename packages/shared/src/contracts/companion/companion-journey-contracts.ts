@@ -163,7 +163,7 @@ export const companionJourneyStepSchema = z.enum([
 export const companionInvitationSchema = z
   .object({
     version: z.literal(2),
-    userId: z.string().uuid(),
+    userId: z.string().guid(),
     status: z.enum(["offered", "deferred", "accepted", "skipped"]),
     offeredAt: z.string().nullable(),
     decidedAt: z.string().nullable(),
@@ -174,16 +174,16 @@ export const companionInvitationSchema = z
     // 一直有该字段；schema 曾缺失导致 strict 校验拒绝合法响应）。
     journey: z
       .object({
-        journeyId: z.string().uuid(),
+        journeyId: z.string().guid(),
         branch: z.enum(["own_material", "blank_note", "sandbox_sample"]),
         // refs 对象恒存在（服务端契约 CompanionInvitationV2.journey.refs）；
         // 各引用值可能缺席（尚未创建对应对象）。
         refs: z
           .object({
-            sandboxNamespaceId: z.string().uuid().optional(),
-            noteId: z.string().uuid().optional(),
-            cardId: z.string().uuid().optional(),
-            keyPointId: z.string().uuid().optional(),
+            sandboxNamespaceId: z.string().guid().optional(),
+            noteId: z.string().guid().optional(),
+            cardId: z.string().guid().optional(),
+            keyPointId: z.string().guid().optional(),
           }),
       })
       .optional(),
@@ -193,10 +193,10 @@ export const companionInvitationSchema = z
 export const companionJourneySchema = z
   .object({
     version: z.literal(2),
-    journeyId: z.string().uuid(),
-    userId: z.string().uuid(),
-    workspaceId: z.string().uuid(),
-    assistantSessionId: z.string().uuid().nullable(),
+    journeyId: z.string().guid(),
+    userId: z.string().guid(),
+    workspaceId: z.string().guid(),
+    assistantSessionId: z.string().guid().nullable(),
     status: z.enum(["active", "paused", "skipped", "completed", "recoverable_error"]),
     branch: z.enum(["own_material", "blank_note", "sandbox_sample"]),
     currentStep: companionJourneyStepSchema.nullable(),
@@ -204,14 +204,14 @@ export const companionJourneySchema = z
     dismissedNarrationSteps: z.array(companionJourneyStepSchema),
     refs: z
       .object({
-        sourceId: z.string().uuid().optional(),
-        generationJobId: z.string().uuid().optional(),
-        noteId: z.string().uuid().optional(),
-        cardId: z.string().uuid().optional(),
-        keyPointId: z.string().uuid().optional(),
-        runId: z.string().uuid().optional(),
-        reviewScheduleId: z.string().uuid().optional(),
-        sandboxNamespaceId: z.string().uuid().optional(),
+        sourceId: z.string().guid().optional(),
+        generationJobId: z.string().guid().optional(),
+        noteId: z.string().guid().optional(),
+        cardId: z.string().guid().optional(),
+        keyPointId: z.string().guid().optional(),
+        runId: z.string().guid().optional(),
+        reviewScheduleId: z.string().guid().optional(),
+        sandboxNamespaceId: z.string().guid().optional(),
       })
       .strict(),
     lastDomainEventId: z.string().nullable(),
@@ -243,12 +243,12 @@ export const companionInvitationActionSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("skip") }),
   z.strictObject({
     kind: z.literal("start_journey"),
-    workspaceId: z.string().uuid(),
+    workspaceId: z.string().guid(),
     branch: z.enum(["own_material", "blank_note", "sandbox_sample"]),
   }),
   z.strictObject({
     kind: z.literal("replay"),
-    workspaceId: z.string().uuid(),
+    workspaceId: z.string().guid(),
     branch: z.enum(["own_material", "blank_note", "sandbox_sample"]),
   }),
 ]);

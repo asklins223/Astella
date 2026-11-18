@@ -53,6 +53,8 @@ The helper accepts `astella_*` names except `astella`, but deletes an existing d
 
 Narrower entries include `make test-companion-home-profile-postgres` and `make test-companion-integration-postgres`. Register new integration files in package scripts; file existence does not imply automatic execution.
 
+The workspace FK reconciliation test needs its own **empty** database, not the migrated `astella_it` database: it creates a deliberately incomplete public schema and temporary login roles. Create an empty database whose name starts with `astella_workspace_fk_test_`, configure `DATABASE_URL_FK_TEST` privately with a superuser connection to it, then run `make test-workspace-fk-validation-postgres`. Dispose of that database after the run. The database guard runs this separately on a disposable PostgreSQL service; `make test-postgres` excludes it because that target shares one migrated database across suites.
+
 `npm --prefix apps/api run test:object-storage:s3` is separate from `make test-postgres` and needs an isolated database, remote credentials and cleanup scope. See [Server deployment](deployment.md).
 
 ## What guards check
@@ -84,19 +86,21 @@ Desktop filesystem guards live in `src/main/__tests__/`; functional renderer tes
 
 | Workflow | Purpose |
 | --- | --- |
-| `main-ci.yml` | main, PR, v* tags and manual runs; package matrix, API, Worker, desktop (build first), backup-script tests |
+| `main-ci.yml` | main, PR, release tags and manual runs; package checks, desktop build, backup-script tests and PostgreSQL isolation checks |
 | `server-deploy.yml` | Reused after tag CI passes; deployment-script checks, GHCR production images, digests and SSH deployment |
 | `desktop-client.yml` | Desktop quality and packaged smoke, called by release/manual runs |
 | `desktop-package.yml` | Windows/macOS installers; can supply test packages separately |
 | `desktop-release.yml` | Publish after version, packaging, quality and updater-metadata checks |
 
-Ordinary CI does not start PostgreSQL or make paid model requests. Tag deployment does build real production images, so “CI never builds images” is outdated. Coverage, skip/todo, secret/image scans and restore drills are not automatically part of these baselines.
+CI runs a disposable PostgreSQL isolation subset, but not the full database suite or paid model requests. Server tag deployment depends on that subset. Coverage, skip/todo and restore drills are not automatically part of this baseline.
 
 Old scripts/matrices still mention `VITE_HOME_SCENE_VARIANT`, but current source does not read it. Matrix labels do not prove different home scenes were exercised. Follow executable wiring rather than comments or file existence.
 
 ## Real models and windows
 
 Enable real-model probes explicitly and configure the test actor, permissions and budget. Current entries are in `workers/ai-worker/src/live-tests/README.md`; old probes and fixed Mocks do not accept the current model. Calls may incur cost. Separate business completion, factual correctness, naturalness and latency in reports.
+
+Before releasing model, prompt or tool-policy changes, run `quality-comparison.ts` and relevant real-path probes with synthetic cases in an isolated environment. Record the model, code version, request count, latency and human review; explicitly record when a run was not performed. This is currently a manual release procedure, not an automated blocking gate.
 
 Use the actual build and long content. Check read/edit/source, full-screen/booklet, fast reversal, cancel/failure, focus/Esc, zoom, companion placement and Full/Lite/Off/system reduced motion. From the desktop package, attach to a running development window with:
 

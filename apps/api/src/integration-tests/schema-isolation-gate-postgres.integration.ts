@@ -27,35 +27,18 @@ const sql = postgres(CONN, { max: 2 });
 /** 有 workspace_id 列、但没有指向 workspaces 外键的表。只能缩小，不能增长。 */
 const BASELINE_WITHOUT_FK = [
   "ai_artifacts", "ai_audit_log", "assistant_deliveries", "assistant_memory_embeddings",
-  "assistant_memory_items", "assistant_page_contexts", "candidate_evidence_binding_plans_v2",
-  "canonical_learning_event_outbox", "card_activation_receipts_v2", "card_candidate_feedback_v2",
-  "card_candidate_quality_reports_v2", "card_content_capability_state", "card_domain_events_v2",
-  "card_exposure_ledger_v2", "card_generation_candidates_v2", "card_generation_events_v2",
-  "card_generation_input_snapshots_v2", "card_generation_plans_v2",
-  "card_generation_post_activation_consumptions", "card_generation_run_outbox_v2",
-  "card_generation_runs_v2", "card_generation_semantic_specs_v2", "companion_action_proposals",
-  "companion_agent_steps", "companion_agent_tool_calls", "companion_audit",
-  "companion_daily_summaries", "companion_invitation_ledger", "companion_journey_pending_events",
-  "companion_journeys", "companion_messages", "companion_proactive_deliveries",
-  "companion_room_profiles", "companion_sandbox_namespaces", "companion_stream_events",
-  "companion_turn_runs", "companion_voice_artifacts", "conversation_summaries",
-  "evidence_eligibility_states_v2", "evidence_redactions_v2", "evidence_snapshots_v2",
-  "initial_validation_reminders_v2", "learning_activity_leases", "learning_artifacts",
-  "learning_assessments", "learning_card_publication_revisions_v2", "learning_card_revisions_v2",
-  "learning_cards_v2", "learning_exposures_v2", "learning_metric_events",
-  "learning_objective_equivalence_reports_v2", "learning_objective_evidence_bindings_v2",
-  "learning_objective_lineage_v2", "learning_objective_origins_v2",
-  "learning_objective_revision_equivalence_v2", "learning_objective_revisions_v2",
-  "learning_objectives_v2", "learning_run_action_ledger", "learning_run_events",
-  "learning_run_idempotency", "learning_run_private_contracts", "learning_run_processing_outbox",
-  "learning_runs", "learning_target_snapshots_v2", "learning_task_disclosure_profiles",
-  "learning_task_drafts", "learning_task_presentation_history", "learning_task_private_solutions",
-  "learning_task_safety_reports", "learning_task_variants", "learning_tasks", "memory_links",
-  "memory_usage_log", "note_blocks", "note_image_assets", "note_versions", "notes",
-  "pet_profiles", "practice_trail_event_outbox", "review_schedules", "search_documents",
-  "semantic_support_reports_v2", "source_segments", "sources", "understanding_change_sets",
+  "assistant_memory_items", "assistant_page_contexts",
+  // The deletion ledger survives its workspace so orphaned object bytes can be purged.
+  "chat_upload_objects",
+  "companion_action_proposals", "companion_agent_steps", "companion_agent_tool_calls",
+  "companion_audit", "companion_daily_summaries", "companion_invitation_ledger",
+  "companion_journey_pending_events", "companion_journeys", "companion_messages",
+  "companion_proactive_deliveries", "companion_room_profiles", "companion_sandbox_namespaces",
+  "companion_stream_events", "companion_turn_runs", "companion_voice_artifacts",
+  "conversation_summaries", "learning_metric_events", "memory_links", "memory_usage_log",
+  "note_blocks", "note_image_assets", "note_versions", "notes", "pet_profiles",
+  "search_documents", "source_segments", "sources", "understanding_change_sets",
   "understanding_projection_checkpoints", "understanding_route_plans", "user_learning_preferences",
-  "validation_assistance_exposures",
 ];
 
 /**
@@ -78,6 +61,25 @@ const BASELINE_WITHOUT_FK = [
  * 棘轮只减不增——现在减到底了。
  */
 const BASELINE_WITHOUT_RLS: string[] = [];
+
+test("new workspace foreign keys enforce cascade and validate in a fresh database", async () => {
+  const names = [
+    "companion_reflections_workspace_fk",
+    "companion_reflection_sources_workspace_fk",
+    "companion_reflection_checkpoints_workspace_fk",
+    "companion_release_router_samples_workspace_fk",
+    "note_mind_map_stages_workspace_fk",
+  ];
+  const rows = await sql<{ name: string; validated: boolean; cascade: boolean }[]>`
+    SELECT c.conname AS name, c.convalidated AS validated, (c.confdeltype = 'c') AS cascade
+    FROM pg_constraint c
+    WHERE c.conname = ANY(${names}) AND c.contype = 'f'
+      AND c.confrelid = 'public.workspaces'::regclass
+    ORDER BY c.conname
+  `;
+  assert.deepEqual(rows.map(row => row.name), [...names].sort());
+  assert.ok(rows.every(row => row.validated && row.cascade), "fresh migration must validate each cascade FK");
+});
 
 after(async () => {
   await sql.end({ timeout: 5 }).catch(() => {});

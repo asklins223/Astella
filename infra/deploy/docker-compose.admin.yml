@@ -1,0 +1,13 @@
+# Opt-in overlay for the admin panel's container page only.
+#
+# Mounting the host Docker socket is root-equivalent. The base production
+# overlay deliberately does not mount it; deploy.sh adds this file only when
+# ADMIN_DOCKER_GID is present in /etc/astella/production.env.
+services:
+  api:
+    environment:
+      ADMIN_DOCKER_SOCKET: /var/run/docker.sock
+    group_add:
+      - '${ADMIN_DOCKER_GID:-0}'
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock

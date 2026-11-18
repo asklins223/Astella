@@ -63,7 +63,7 @@ async function bridgeRateLimited(
 }
 
 const publishBodySchema = z.object({
-  contextId: z.string().uuid(),
+  contextId: z.string().guid(),
   deviceSessionId: z.string().min(1).max(200),
   pageInstanceId: z.string().min(1).max(200),
   accountSessionId: z.string().min(1).max(200),
@@ -71,7 +71,7 @@ const publishBodySchema = z.object({
 });
 
 const renewBodySchema = z.object({
-  contextId: z.string().uuid(),
+  contextId: z.string().guid(),
   pageInstanceId: z.string().min(1).max(200),
   expectedRevision: z.string().min(1).max(200),
 });

@@ -165,6 +165,8 @@ export type NoteDocLiveView = {
    * 时间是这个）。界面据此说一句"草稿已恢复"；确认交出去之后它自己变回 `null`。
    */
   restoredDraft: { savedAt: string } | null;
+  /** The current edits have not been confirmed on local storage. */
+  draftSaveFailed: boolean;
   /**
    * 文档此刻的正文（含本机没交出去的部分）。阅读态画的就是这一份——它比 HTTP 回读新，
    * 因为回读要等作者那台机器把自动保存发出去、再等服务端刷进投影（实窗量到 3.5 秒）。
@@ -217,6 +219,7 @@ export function useNoteDocLiveView(
   const [seeded, setSeeded] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [restoredDraft, setRestoredDraft] = useState<{ savedAt: string } | null>(null);
+  const [draftSaveFailed, setDraftSaveFailed] = useState(false);
   const pendingRef = useRef<string[]>([]);
   /** 最近一次写下去的那份草稿（合并后的 base64）：同一份不重复落盘。 */
   const draftWrittenRef = useRef<string | null>(null);
@@ -246,17 +249,20 @@ export function useNoteDocLiveView(
     }
     // 同一份不重复写：自动保存失败重试的那段时间里，每次停笔都重写一遍是白写的。
     if (merged === draftWrittenRef.current) return;
-    draftWrittenRef.current = merged;
     try {
-      await docApi.draftSave({
+      const response = await docApi.draftSave({
         meta: createRequestMeta(epochRef?.current ?? undefined),
         noteId: targetNoteId,
         update: merged,
       });
+      if (!response.ok || !response.data.saved) throw new Error("draft not saved");
+      draftWrittenRef.current = merged;
+      setDraftSaveFailed(false);
     } catch {
       // 写不进去只是"这一次没保住"，不该把编辑器上的字或自动保存带塌：那条路照旧，
       // 下一次停笔还会再试。
       draftWrittenRef.current = null;
+      setDraftSaveFailed(true);
     }
   }, [epochRef]);
 
@@ -277,6 +283,7 @@ export function useNoteDocLiveView(
   const clearDraft = useCallback((targetNoteId: string): void => {
     draftWrittenRef.current = null;
     setRestoredDraft(null);
+    setDraftSaveFailed(false);
     const docApi = window.astella?.note?.doc;
     if (!docApi?.draftClear) return;
     void docApi.draftClear({
@@ -326,6 +333,7 @@ export function useNoteDocLiveView(
       setDirty(false);
       setSeeded(false);
       setRestoredDraft(null);
+      setDraftSaveFailed(false);
       setStream({ peers: [], authorizedScope: null, failure: null });
     }
   }
@@ -374,7 +382,11 @@ export function useNoteDocLiveView(
     let disposed = false;
     void docApi.state({ meta: meta(), noteId })
       .then(async (response) => {
-        if (disposed || !response.ok) return;
+        if (disposed) return;
+        if (!response.ok) {
+          if (response.error.code === "local_storage_unavailable") setDraftSaveFailed(true);
+          return;
+        }
         const bytes = decodeUpdate(response.data.update);
         if (bytes) Y.applyUpdate(doc, bytes, REMOTE_ORIGIN);
         if (response.workspaceEpoch && epochRef) epochRef.current = response.workspaceEpoch;
@@ -414,6 +426,14 @@ export function useNoteDocLiveView(
     }
     void saveDraft(targetRef.current, pendingRef.current);
   }, [saveDraft]);
+
+  useEffect(() => {
+    if (!draftSaveFailed || !noteId) return undefined;
+    const timer = setInterval(() => {
+      void saveDraft(noteId, pendingRef.current);
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [draftSaveFailed, noteId, saveDraft]);
 
   /**
    * 把本机这一格**整份**报出去：档位（在读/在写）与块号是同一条 awareness。
@@ -599,6 +619,7 @@ export function useNoteDocLiveView(
     failure: stream.failure,
     dirty,
     restoredDraft,
+    draftSaveFailed,
     flush,
     setLocalTitle,
     setLocalBlock,

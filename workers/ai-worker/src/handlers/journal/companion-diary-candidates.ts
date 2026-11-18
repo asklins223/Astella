@@ -6,7 +6,7 @@ import type { DiaryMaterial, DiaryPiece } from "./companion-diary-content.ts";
 export const companionDiarySelectionSchema = z.object({
   selected_id: z.string().min(1).max(80).nullable(),
   reason_summary: z.string().trim().min(1).max(240),
-  source_ids: z.array(z.string().uuid()).max(16),
+  source_ids: z.array(z.string().guid()).max(16),
 }).strict();
 
 export type CompanionDiarySelection = z.infer<typeof companionDiarySelectionSchema>;

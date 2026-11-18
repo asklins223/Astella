@@ -5,6 +5,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const electron = vi.hoisted(() => ({
   app: { isPackaged: true, getPath: vi.fn() },
+  safeStorage: {
+    isEncryptionAvailable: vi.fn(),
+    getSelectedStorageBackend: vi.fn(),
+    encryptString: vi.fn((value: string) => Buffer.from(`encrypted:${value}`)),
+    decryptString: vi.fn((value: Buffer) => {
+      const decoded = value.toString();
+      if (!decoded.startsWith("encrypted:")) throw new Error("invalid ciphertext");
+      return decoded.slice("encrypted:".length);
+    }),
+  },
 }));
 vi.mock("electron", () => electron);
 
@@ -20,20 +30,22 @@ describe("session credential storage", () => {
     directory = await mkdtemp(join(tmpdir(), "astella-session-test-"));
     electron.app.isPackaged = true;
     electron.app.getPath.mockReturnValue(directory);
+    electron.safeStorage.isEncryptionAvailable.mockReturnValue(true);
+    electron.safeStorage.getSelectedStorageBackend.mockReturnValue("gnome_libsecret");
   });
   afterEach(async () => { await rm(directory, { recursive: true, force: true }); });
 
-  it("keeps the session across a restart without asking the system for anything", async () => {
+  it("stores encrypted credentials and restores them across a restart", async () => {
     const store = createSessionCredentialStore();
     await store.save("test-session-token");
 
-    expect((await readFile(join(directory, filename), "utf8"))).toBe("test-session-token");
+    expect((await readFile(join(directory, filename), "utf8"))).not.toContain("test-session-token");
     expect((await stat(join(directory, filename))).mode & 0o777).toBe(0o600);
 
     const restarted = createSessionCredentialStore();
     expect(restarted.hasStored()).toBe(true);
     await expect(restarted.load()).resolves.toBe("test-session-token");
-    expect(await readFile(join(directory, filename), "utf8")).toBe("test-session-token");
+    expect(await readFile(join(directory, filename), "utf8")).not.toContain("test-session-token");
   });
 
   it("reports nothing stored until a credential is saved", async () => {
@@ -47,12 +59,22 @@ describe("session credential storage", () => {
     await expect(createSessionCredentialStore().load()).resolves.toBeNull();
   });
 
-  it("keeps a credential it cannot make sense of for the server to reject", async () => {
+  it("migrates a legacy plaintext credential without losing it", async () => {
     // 一次偶发的读取问题不该让人重登，更不该把还可能是好的凭据删掉。
     await writeFile(join(directory, filename), "not-a-token-from-this-app", "utf8");
     const store = createSessionCredentialStore();
     await expect(store.load()).resolves.toBe("not-a-token-from-this-app");
+    expect(await readFile(join(directory, filename), "utf8")).not.toContain("not-a-token-from-this-app");
     await expect(stat(join(directory, filename))).resolves.toBeTruthy();
+  });
+
+  it("does not replace legacy credentials or persist new plaintext when secure storage is unavailable", async () => {
+    await writeFile(join(directory, filename), "legacy-token", "utf8");
+    electron.safeStorage.isEncryptionAvailable.mockReturnValue(false);
+    const store = createSessionCredentialStore();
+    await expect(store.load()).resolves.toBeNull();
+    await expect(store.save("new-token")).rejects.toThrow("Secure credential storage");
+    expect(await readFile(join(directory, filename), "utf8")).toBe("legacy-token");
   });
 
   it("throws when the write cannot land, so the caller keeps the session in memory", async () => {
@@ -84,6 +106,7 @@ describe("session credential storage", () => {
     const store = createSessionCredentialStore();
     await store.save("active-token");
     await store.saveRemembered!(saved);
+    expect(await readFile(join(directory, "quick-login-account-v1.json"), "utf8")).not.toContain("quick-token");
     await store.clear();
     const restarted = createSessionCredentialStore();
     expect(restarted.hasStored()).toBe(false);

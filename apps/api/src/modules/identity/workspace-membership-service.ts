@@ -47,6 +47,7 @@ import {
 } from "./invitation-token.ts";
 // 类型引入：编译期被抹掉，不构成运行时环
 import type { WorkspaceInfo } from "./service.ts";
+import { notifySessionRevoked } from "./session-revocations.ts";
 /**
  * ADR-0009: 切换工作区 — 重新签发绑定目标 workspace 的 session。
  * 验证用户是否仍是目标 workspace 的活跃成员（left_at IS NULL）。
@@ -57,12 +58,17 @@ import type { WorkspaceInfo } from "./service.ts";
 export async function switchWorkspace(
   userId: string,
   workspaceId: string,
-  previousToken: string | null,
+  previousToken: string,
   clientKind?: string | null,
 ): Promise<{ token: string; ctx: SessionContext } | null> {
   // 目标空间在这条路的入口就是已知量（请求体带 workspaceId），所以直接进
   // workspace 事务：成员行要过租户守卫，会话行的撤销与签发要过 actor 策略。
-  return withWorkspaceTransaction({ workspaceId, userId }, async (tx) => {
+  const result = await withWorkspaceTransaction({ workspaceId, userId }, async (tx) => {
+    // Serialize token rotation with password reset/change. Checking only the
+    // old session row is insufficient: a reset could otherwise delete sessions
+    // using a snapshot taken before this transaction inserts the replacement.
+    const [user] = await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).for("update");
+    if (!user) return null;
     const membership = await tx.query.workspaceMembers.findFirst({
       where: and(
         eq(workspaceMembers.workspaceId, workspaceId),
@@ -73,9 +79,14 @@ export async function switchWorkspace(
     if (!membership) return null;
     // 2026-08-11（安全修复）：同一事务内"撤销旧 token + 签发新 token"——
     // 此前 routes 先签发后撤销，revoke 失败时被窃取的旧 token 继续有效。
-    if (previousToken) {
-      await tx.delete(sessions).where(eq(sessions.token, hashToken(previousToken)));
-    }
+    const deleted = await tx.delete(sessions).where(and(
+      eq(sessions.token, hashToken(previousToken)),
+      eq(sessions.userId, userId),
+      sql`${sessions.expiresAt} > clock_timestamp()`,
+    )).returning({ token: sessions.token });
+    // A request may have passed authentication just before a password reset
+    // or logout removed its token. Do not replace a revoked credential.
+    if (!deleted.length) return null;
     const kind = toSessionClientKind(clientKind);
     const session = await issueSession(userId, workspaceId, tx, kind);
     return {
@@ -89,6 +100,8 @@ export async function switchWorkspace(
       },
     };
   });
+  if (result) notifySessionRevoked({ tokenHash: hashToken(previousToken) });
+  return result;
 }
 
 /**
@@ -477,7 +490,8 @@ export type LeaveWorkspaceError =
   | "not_member"
   | "owner_cannot_leave"
   | "personal_workspace_cannot_leave"
-  | "personal_workspace_missing";
+  | "personal_workspace_missing"
+  | "invalid_session";
 
 /**
  * ADR-0009: 用户主动退出协作工作区。
@@ -489,7 +503,8 @@ export type LeaveWorkspaceError =
 export async function leaveWorkspace(
   userId: string,
   workspaceId: string,
-): Promise<{ ok: true; personalWorkspaceId: string } | { ok: false; error: LeaveWorkspaceError }> {
+  credential?: { token: string; workspaceId: string; clientKind?: string | null },
+): Promise<{ ok: true; personalWorkspaceId: string; replacement?: { token: string; ctx: SessionContext } } | { ok: false; error: LeaveWorkspaceError }> {
   const result = await withActorTransaction({ userId }, async (tx) => {
     const userRows = await tx
       .select()
@@ -498,6 +513,18 @@ export async function leaveWorkspace(
       .for("update");
     const userRow = userRows[0];
     if (!userRow) return { ok: false as const, error: "not_found" as LeaveWorkspaceError };
+    if (credential) {
+      // Hold the user row and the requesting session until departure commits.
+      // A concurrent reset/logout cannot turn an already-revoked request into
+      // a replacement token after it has finished.
+      const [active] = await tx.select({ token: sessions.token }).from(sessions).where(and(
+        eq(sessions.token, hashToken(credential.token)),
+        eq(sessions.userId, userId),
+        eq(sessions.workspaceId, credential.workspaceId),
+        sql`${sessions.expiresAt} > clock_timestamp()`,
+      )).for("update");
+      if (!active) return { ok: false as const, error: "invalid_session" as LeaveWorkspaceError };
+    }
     if (!userRow.personalWorkspaceId) {
       return { ok: false as const, error: "personal_workspace_missing" as LeaveWorkspaceError };
     }
@@ -584,9 +611,25 @@ export async function leaveWorkspace(
     // 而 owner 移人时上下文里的 actor 不是当事人。
     await retireWorkspaceMemoriesOnDeparture(tx, { workspaceId, userId });
 
-    return { ok: true as const, personalWorkspaceId: userRow.personalWorkspaceId };
+    let replacement: { token: string; ctx: SessionContext } | undefined;
+    if (credential?.workspaceId === workspaceId) {
+      // The previous session was removed above. Issue its replacement in the
+      // same transaction and user lock, never after a concurrent password reset.
+      await adoptWorkspaceContext(tx, userRow.personalWorkspaceId);
+      const [personalMembership] = await tx.select({ role: workspaceMembers.role })
+        .from(workspaceMembers).where(and(
+          eq(workspaceMembers.workspaceId, userRow.personalWorkspaceId),
+          eq(workspaceMembers.userId, userId),
+          isNull(workspaceMembers.leftAt),
+        ));
+      if (!personalMembership) throw new Error("Personal workspace membership is missing");
+      const next = await issueSession(userId, userRow.personalWorkspaceId, tx, toSessionClientKind(credential.clientKind));
+      replacement = { token: next.token, ctx: { ...next.ctx, membershipRole: personalMembership.role ?? null } };
+    }
+    return { ok: true as const, personalWorkspaceId: userRow.personalWorkspaceId, ...(replacement ? { replacement } : {}) };
   });
 
+  if (result.ok) notifySessionRevoked({ userId, workspaceId });
   return result;
 }
 

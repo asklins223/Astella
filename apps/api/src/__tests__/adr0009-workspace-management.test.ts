@@ -384,10 +384,10 @@ describe("Identity service constants", () => {
     assert.equal(canonicalizeEmail("already@lower.com"), "already@lower.com");
   });
 
-  test("hashPassword returns bcrypt hash", async () => {
+  test("hashPassword returns versioned scrypt hash", async () => {
     const hash = await hashPassword("testpassword123");
-    assert.ok(hash.startsWith("$2"), "bcrypt hash should start with $2");
-    assert.ok(hash.length > 30, "bcrypt hash should be reasonably long");
+    assert.ok(hash.startsWith("$scrypt$v1$"));
+    assert.ok(hash.length > 30);
   });
 
   test("hashPassword produces different hashes for same password (salt)", async () => {

@@ -30,7 +30,7 @@ export type FormalAssessmentGuardReason = z.infer<typeof formalAssessmentGuardRe
 
 export const formalAssessmentGuardV1Schema = z.strictObject({
   version: z.literal(1),
-  runId: z.string().uuid().nullable(),
+  runId: z.string().guid().nullable(),
   runtimeEpoch: z.number().int().min(0).nullable(),
   state: formalAssessmentGuardStateSchema,
   reason: formalAssessmentGuardReasonSchema,

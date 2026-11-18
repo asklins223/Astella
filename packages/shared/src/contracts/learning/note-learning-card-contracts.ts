@@ -54,7 +54,7 @@ export type NoteLearningCardQuestionGroundingV1 = z.infer<
 >;
 
 export const noteLearningCardQuestionV1Schema = z.strictObject({
-  questionId: z.string().uuid(),
+  questionId: z.string().guid(),
   ordinal: z.number().int().min(0),
   type: z.enum(NOTE_LEARNING_CARD_QUESTION_TYPES),
   stem: z.string().trim().min(4).max(2000),
@@ -64,15 +64,15 @@ export const noteLearningCardQuestionV1Schema = z.strictObject({
   /** Number of blanks for fill_blank; never the accepted answers. */
   blankCount: z.number().int().min(1).max(12).nullable(),
   grounding: noteLearningCardQuestionGroundingV1Schema,
-  operationArtifactId: z.string().uuid().nullable(),
+  operationArtifactId: z.string().guid().nullable(),
 
 });
 export type NoteLearningCardQuestionV1 = z.infer<typeof noteLearningCardQuestionV1Schema>;
 
 export const noteLearningCardV1Schema = z.strictObject({
-  cardId: z.string().uuid(),
-  noteId: z.string().uuid(),
-  noteVersionId: z.string().uuid(),
+  cardId: z.string().guid(),
+  noteId: z.string().guid(),
+  noteVersionId: z.string().guid(),
   status: z.enum(NOTE_LEARNING_CARD_STATUSES),
   questions: z.array(noteLearningCardQuestionV1Schema).min(1).max(8),
   /**
@@ -85,7 +85,7 @@ export const noteLearningCardV1Schema = z.strictObject({
   completedAttemptCount: z.number().int().min(0).optional(),
   lastAttempt: z
     .strictObject({
-      attemptId: z.string().uuid(),
+      attemptId: z.string().guid(),
       status: z.enum(NOTE_LEARNING_CARD_ATTEMPT_STATUSES),
       score: z.number().int().min(0).max(100).nullable(),
       stars: z.number().int().min(0).max(5).nullable(),

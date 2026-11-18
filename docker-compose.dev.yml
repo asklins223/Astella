@@ -227,6 +227,8 @@ services:
       AUTH_RATE_LIMIT_WINDOW_MS: ${AUTH_RATE_LIMIT_WINDOW_MS:-900000}
       # Dev 栈放宽登录限流（E2E 多 spec 连续登录）；生产 compose 保持默认 5 次。
       AUTH_RATE_LIMIT_MAX_ATTEMPTS: ${AUTH_RATE_LIMIT_MAX_ATTEMPTS:-100}
+      AUTH_LEGACY_PASSWORD_POLICY: ${AUTH_LEGACY_PASSWORD_POLICY:-allow}
+      AUTH_LEGACY_PASSWORD_POLICY: ${AUTH_LEGACY_PASSWORD_POLICY:-allow}
       # 邮箱验证码发信通道（可选）。注册默认强制验证码，只有这里显式声明
       # EMAIL_VERIFICATION_DISABLED=true 才跳过（生产 compose 不透传该变量）。
       EMAIL_VERIFICATION_DISABLED: ${EMAIL_VERIFICATION_DISABLED:-}
@@ -382,6 +384,7 @@ services:
       # Handler budgets are independent of the 120s crash-recovery lease; active jobs renew it.
       WORKER_MODEL_TIMEOUT_MS: ${WORKER_MODEL_TIMEOUT_MS:-}
       WORKER_PROVIDER_TIMEOUT_MS: ${WORKER_PROVIDER_TIMEOUT_MS:-900000}
+      WORKER_COMPANION_CALL_WARNING_INTERVAL: ${WORKER_COMPANION_CALL_WARNING_INTERVAL:-50}
       COMPANION_PROVIDER_FIRST_OUTPUT_TIMEOUT_MS: ${COMPANION_PROVIDER_FIRST_OUTPUT_TIMEOUT_MS:-60000}
       COMPANION_PROVIDER_IDLE_TIMEOUT_MS: ${COMPANION_PROVIDER_IDLE_TIMEOUT_MS:-60000}
       COMPANION_PROVIDER_FIRST_MEANINGFUL_OUTPUT_TIMEOUT_MS: ${COMPANION_PROVIDER_FIRST_MEANINGFUL_OUTPUT_TIMEOUT_MS:-}
@@ -404,7 +407,7 @@ services:
     ports:
       - "${WORKER_METRICS_BIND_ADDRESS:-127.0.0.1}:${WORKER_METRICS_PORT:-9100}:${WORKER_METRICS_PORT:-9100}"
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"const port=process.env.WORKER_METRICS_PORT || '9100'; fetch('http://127.0.0.1:'+port+'/metrics').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      test: ["CMD-SHELL", "node -e \"const port=process.env.WORKER_METRICS_PORT || '9100'; fetch('http://127.0.0.1:'+port+'/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
       interval: 5s
       timeout: 5s
       start_period: 10s

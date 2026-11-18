@@ -18,7 +18,7 @@ import { assistantDeliveryAckV2Schema } from "@astella/shared";
 import { ackDelivery, claimDisplayLease, DeliveryServiceError } from "./delivery-service.ts";
 import { isCompanionJourneyV2Enabled } from "../../../config/learning-companion-flags.ts";
 
-const deliveryParamsSchema = z.object({ id: z.string().uuid() });
+const deliveryParamsSchema = z.object({ id: z.string().guid() });
 
 const leaseBodySchema = z
   .object({

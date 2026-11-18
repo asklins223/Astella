@@ -57,6 +57,7 @@ const SMTP_TIMEOUT_MS = 10_000;
 
 interface EmailProvider {
   send(message: OutboundEmailMessage): Promise<void>;
+  verify(): Promise<void>;
 }
 
 interface ProviderEntry {
@@ -82,20 +83,26 @@ function smtpEntry(
   // 发件地址默认就是账号本身：QQ/2925 这类个人邮箱只认自己的地址做 From，
   // 需要别名时用 fromEnv 覆盖（前提别名已挂在该账号下）。
   const from = env(fromEnv) ?? user;
+  const connect = () => nodemailer.createTransport({
+    host,
+    port: 465,
+    secure: true,
+    auth: { user, pass },
+    connectionTimeout: SMTP_TIMEOUT_MS,
+    greetingTimeout: SMTP_TIMEOUT_MS,
+    socketTimeout: SMTP_TIMEOUT_MS,
+  });
   return {
     name,
     missing: [],
     provider: {
+      async verify() {
+        const transport = connect();
+        try { await transport.verify(); }
+        finally { transport.close(); }
+      },
       async send(message) {
-        const transport = nodemailer.createTransport({
-          host,
-          port: 465,
-          secure: true,
-          auth: { user, pass },
-          connectionTimeout: SMTP_TIMEOUT_MS,
-          greetingTimeout: SMTP_TIMEOUT_MS,
-          socketTimeout: SMTP_TIMEOUT_MS,
-        });
+        const transport = connect();
         try {
           await transport.sendMail({
             from: `"${SENDER_NAME}" <${from}>`,
@@ -141,6 +148,25 @@ export function emailChannelStatus(): { configured: boolean; providers: EmailPro
 /** 通道是否至少有一家配置齐全——验证码功能的总开关。 */
 export function isEmailChannelConfigured(): boolean {
   return emailChannelStatus().configured;
+}
+
+/** Verify the configured TLS/authentication paths without sending a message. */
+export async function verifyOutboundEmail() {
+  return Promise.all(providerCatalog().map(async ({ name, provider, missing }) => {
+    if (!provider) return { name, status: "unconfigured" as const, missing };
+    try {
+      await provider.verify();
+      return { name, status: "verified" as const };
+    } catch (error) {
+      // SMTP responses can contain account names or other provider details.
+      const code = error instanceof Error && "code" in error ? error.code : undefined;
+      const category = code === "EAUTH" ? "authentication"
+        : code === "ETLS" ? "tls"
+        : code === "ECONNECTION" || code === "ETIMEDOUT" || code === "ESOCKET" || code === "EDNS" ? "connection"
+        : "smtp";
+      return { name, status: "failed" as const, category };
+    }
+  }));
 }
 
 /**

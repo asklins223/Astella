@@ -98,6 +98,36 @@ test("governed provider enforces sendImageContent for multimodal messages", asyn
   );
 });
 
+test("each outbound call refreshes consent and policy during a long turn", async () => {
+  let calls = 0;
+  const { provider } = makeProvider();
+  provider.chatCompletion = async () => { calls++; return { content: "ok", usage: {} }; };
+  let sendToExternal = true;
+  const governed = createGovernedProvider(provider,
+    { consentOk: true, policy: policy({ auditLogging: false }) }, workspaceId,
+    { userId: "00000000-0000-0000-0000-000000000002", operation: "test",
+      resolveGovernance: async () => ({ consentOk: true, policy: policy({ sendToExternal, auditLogging: false }) }) });
+  await governed.chatCompletion([{ role: "user", content: "first" }], {});
+  sendToExternal = false;
+  await assert.rejects(() => governed.chatCompletion([{ role: "user", content: "second" }], {}), AIDataPolicyDeniedError);
+  assert.equal(calls, 1);
+});
+
+test("policy revoked while reserving the call stops the request before egress", async () => {
+  let calls = 0;
+  let sendToExternal = true;
+  const { provider } = makeProvider();
+  provider.chatCompletion = async () => { calls++; return { content: "ok", usage: {} }; };
+  const current = () => ({ consentOk: true, policy: policy({ sendToExternal, auditLogging: false }) });
+  const governed = createGovernedProvider(provider, current(), workspaceId, {
+    userId: "00000000-0000-0000-0000-000000000002", operation: "test",
+    resolveGovernance: async () => current(),
+    reserveCall: async () => { sendToExternal = false; },
+  });
+  await assert.rejects(() => governed.chatCompletion([{ role: "user", content: "not sent" }], {}), AIDataPolicyDeniedError);
+  assert.equal(calls, 0);
+});
+
 test("governance preserves a prototype streaming capability and host-origin request metadata", async () => {
   const { provider } = makeProvider();
   Object.setPrototypeOf(provider, { get chatCompletionStreamToolCalls() { return true; } });

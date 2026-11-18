@@ -40,9 +40,9 @@ export const COMPANION_INBOX_NOTIFY_CHANNEL = "astella_companion_inbox_v1";
 
 export const companionConversationV1Schema = z.object({
   version: z.literal(1),
-  id: z.string().uuid(),
-  workspaceId: z.string().uuid(),
-  userId: z.string().uuid(),
+  id: z.string().guid(),
+  workspaceId: z.string().guid(),
+  userId: z.string().guid(),
   kind: z.enum(["dialogue", "inbox", "journey"]),
   title: z.string().min(1).max(120),
   titleSource: z.enum(["placeholder", "auto", "user", "system"]),
@@ -100,8 +100,8 @@ export const companionQuoteBlockV1Schema = z.object({
   text: z.string().min(1).max(2_000),
   /** Executor-owned identity; a label alone never invents a source location. */
   sourceRef: z.discriminatedUnion("kind", [
-    z.object({ kind: z.literal("note"), noteId: z.string().uuid(), noteVersionId: z.string().uuid(), blockOrdinal: z.number().int().min(0).optional() }).strict(),
-    z.object({ kind: z.literal("source"), sourceId: z.string().uuid(), segmentOrdinal: z.number().int().min(0).optional() }).strict(),
+    z.object({ kind: z.literal("note"), noteId: z.string().guid(), noteVersionId: z.string().guid(), blockOrdinal: z.number().int().min(0).optional() }).strict(),
+    z.object({ kind: z.literal("source"), sourceId: z.string().guid(), segmentOrdinal: z.number().int().min(0).optional() }).strict(),
   ]).optional(),
 }).strict();
 
@@ -135,7 +135,7 @@ export const companionImageBlockV1Schema = z.object({
    *（客户端给的值一律被服务端结果覆盖）。她读图时 `visual.read_image` 的
    * assetId 与这里是同一个 id。她摆出来的图（服务端拼 url 的展示块）没有该字段。
    */
-  assetId: z.string().uuid().optional(),
+  assetId: z.string().guid().optional(),
 }).strict();
 
 /**
@@ -181,7 +181,7 @@ export const companionRecommendLearningV1Schema = z.object({
   items: z.array(z.object({
     kind: z.enum(COMPANION_RECOMMENDATION_TARGET_KINDS_V1)
       .describe("note=她搜到的笔记，card=学习卡，artifact=笔记学出来的互动演示/思维导图/速看"),
-    targetId: z.string().uuid().describe("这一样的 id：本轮工具回执里的那个，不要沿用旧回复"),
+    targetId: z.string().guid().describe("这一样的 id：本轮工具回执里的那个，不要沿用旧回复"),
     reason: z.string().min(1).max(COMPANION_RECOMMENDATION_REASON_MAX_CHARS).optional()
       .describe("为什么把这一样推荐给他，一句话；不是标题的复述"),
   }).strict()).min(1).max(COMPANION_RECOMMENDATION_MAX_ITEMS),
@@ -221,7 +221,7 @@ export const companionContentBlockV1Schema = z.discriminatedUnion("type", [
   }).strict(),
   z.object({
     type: z.literal("action_ref"),
-    proposalId: z.string().uuid(),
+    proposalId: z.string().guid(),
   }).strict(),
   /**
    * 跳转落点**进消息流**（方案 29 §4.8，抱怨 #5「连跳到某个笔记都做不到」的收尾）。
@@ -284,7 +284,7 @@ export const companionContentBlockV1Schema = z.discriminatedUnion("type", [
    */
   z.object({
     type: z.literal("card"),
-    cardId: z.string().uuid(),
+    cardId: z.string().guid(),
     front: z.string().min(1).max(COMPANION_CARD_BLOCK_PREVIEW_MAX_CHARS),
     summary: z.string().max(COMPANION_CARD_BLOCK_PREVIEW_MAX_CHARS).nullable(),
     knowledgeForm: z.string().max(40).nullable(),
@@ -310,7 +310,7 @@ export type CompanionSelectionV1 = z.infer<typeof companionSelectionV1Schema>;
 
 /** 用户主动随消息带上的来源身份；不包含页面权限、编辑坐标或后台上下文。 */
 export const companionInputReferenceV1Schema = z.discriminatedUnion("kind", [
-  z.strictObject({ kind: z.literal("note"), noteId: z.string().uuid(), noteVersionId: z.string().uuid().optional(), title: z.string().min(1).max(200).optional() }),
+  z.strictObject({ kind: z.literal("note"), noteId: z.string().guid(), noteVersionId: z.string().guid().optional(), title: z.string().min(1).max(200).optional() }),
   z.strictObject({ kind: z.literal("diary"), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), version: z.number().int().positive() }),
 ]);
 
@@ -318,9 +318,9 @@ export const companionInputReferenceV1Schema = z.discriminatedUnion("kind", [
 
 export const companionMessageV1Schema = z.object({
   version: z.literal(1),
-  id: z.string().uuid(),
-  workspaceId: z.string().uuid(),
-  conversationId: z.string().uuid(),
+  id: z.string().guid(),
+  workspaceId: z.string().guid(),
+  conversationId: z.string().guid(),
   seq: z.number().int().positive(),
   role: z.enum(["user", "assistant", "system"]),
   kind: z.enum([
@@ -348,8 +348,8 @@ export const companionMessageV1Schema = z.object({
   followUpPrompts: z.array(z.string().min(4).max(120)).max(3).optional(),
   selection: companionSelectionV1Schema.optional(),
   inputReference: companionInputReferenceV1Schema.optional(),
-  runId: z.string().uuid().nullable(),
-  clientMessageId: z.string().uuid().nullable(),
+  runId: z.string().guid().nullable(),
+  clientMessageId: z.string().guid().nullable(),
   // 2026-08-11：API 实际返回 contentSha256（内容校验用），契约补齐声明
   contentSha256: z.string().length(64),
   createdAt: z.string().datetime(),
@@ -375,10 +375,10 @@ export type CompanionRunStatusV1 = z.infer<typeof companionRunStatusV1Schema>;
 
 export const companionTurnRunV1Schema = z.object({
   version: z.literal(1),
-  id: z.string().uuid(),
-  conversationId: z.string().uuid(),
-  userMessageId: z.string().uuid().nullable(),
-  assistantMessageId: z.string().uuid().nullable(),
+  id: z.string().guid(),
+  conversationId: z.string().guid(),
+  userMessageId: z.string().guid().nullable(),
+  assistantMessageId: z.string().guid().nullable(),
   generation: z.number().int().positive(),
   status: companionRunStatusV1Schema,
   phase: z.enum(["accepted", "thinking", "streaming", "acting", "awaiting_confirmation"]).nullable(),
@@ -401,8 +401,8 @@ export const cancelCompanionRunRequestV1Schema = z.object({
 
 export const cancelCompanionRunResponseV1Schema = z.object({
   version: z.literal(1),
-  conversationId: z.string().uuid(),
-  runId: z.string().uuid(),
+  conversationId: z.string().guid(),
+  runId: z.string().guid(),
   generation: z.number().int().positive(),
   status: companionRunStatusV1Schema,
   eventCursor: z.number().int().nonnegative(),
@@ -417,8 +417,8 @@ export const companionPageContextV1Schema = z.discriminatedUnion("pageKind", [
   z.object({
     pageKind: z.literal("note"),
     sharing: z.literal("page_registered"),
-    noteId: z.string().uuid(),
-    noteVersionId: z.string().uuid().optional(),
+    noteId: z.string().guid(),
+    noteVersionId: z.string().guid().optional(),
     noteTitle: z.string().trim().min(1).max(200).optional(),
     editing: companionNoteEditingContextV1Schema.optional(),
     replyPurpose: z.enum(["annotation", "overview", "recall", "recall_hint", "expansion"]).optional(),
@@ -427,7 +427,7 @@ export const companionPageContextV1Schema = z.discriminatedUnion("pageKind", [
   z.object({
     pageKind: z.literal("star_map"),
     sharing: z.enum(["page_registered", "user_selected"]),
-    keyPointId: z.string().uuid().optional(),
+    keyPointId: z.string().guid().optional(),
     contextRevision: companionHashV1Schema.optional(),
   }).strict(),
 
@@ -441,7 +441,7 @@ export const COMPANION_TURN_MAX_IMAGES_V1 = 12;
 
 export const createCompanionTurnRequestV1Schema = z.object({
   version: z.literal(1),
-  clientMessageId: z.string().uuid(),
+  clientMessageId: z.string().guid(),
   inputKind: z.enum(["text", "voice_transcript"]),
   /**
    * 2026-10-23：可选的首块文字＋最多 9 张图片＋最多一个文件；允许仅附件。
@@ -449,7 +449,7 @@ export const createCompanionTurnRequestV1Schema = z.object({
    * 语音转写仍必须是唯一文字块、不携带附件。
    */
   blocks: z.array(companionContentBlockV1Schema).min(1).max(COMPANION_TURN_MAX_IMAGES_V1 + 2),
-  voiceArtifactId: z.string().uuid().optional(),
+  voiceArtifactId: z.string().guid().optional(),
   sourceSurface: z.enum(["pet", "main"]),
   /**
    * 发起端界面（2026-10-15 扩展 C）：`mobile` 发起的回合里，伴星对笔记正文的
@@ -506,10 +506,10 @@ export type CreateCompanionTurnRequestV1 = z.infer<
 
 export const createCompanionTurnResponseV1Schema = z.object({
   version: z.literal(1),
-  conversationId: z.string().uuid(),
-  clientMessageId: z.string().uuid(),
-  userMessageId: z.string().uuid(),
-  runId: z.string().uuid(),
+  conversationId: z.string().guid(),
+  clientMessageId: z.string().guid(),
+  userMessageId: z.string().guid(),
+  runId: z.string().guid(),
   generation: z.number().int().positive(),
   // 幂等重放已终态 run 时返回真实状态（§6.3），客户端据此决定挂 SSE 还是恢复快照。
   status: z.enum(["accepted", "running", "succeeded", "cancelled", "failed", "superseded"]),
@@ -527,14 +527,14 @@ export const companionPersistedPageContextV1Schema = z.object({
     z.object({
       pageKind: z.literal("note"),
       sharing: z.literal("page_registered"),
-      noteId: z.string().uuid(),
-      noteVersionId: z.string().uuid().optional(),
+      noteId: z.string().guid(),
+      noteVersionId: z.string().guid().optional(),
       contextRevision: companionHashV1Schema,
     }).strict(),
     z.object({
       pageKind: z.literal("star_map"),
       sharing: z.enum(["page_registered", "user_selected"]),
-      keyPointId: z.string().uuid().optional(),
+      keyPointId: z.string().guid().optional(),
       contextRevision: companionHashV1Schema,
     }).strict(),
   ]),
@@ -591,13 +591,13 @@ export type CompanionCharacterCueV1 = z.infer<typeof companionCharacterCueV1Sche
 export const understandingRoutePlanRequestV1Schema = z.object({
   version: z.literal(1),
   intent: z.enum(["repair_gap", "prepare_review", "explore_neighbors"]),
-  targetKeyPointId: z.string().uuid().optional(),
+  targetKeyPointId: z.string().guid().optional(),
   maxSteps: z.number().int().min(1).max(5),
   lens: z.enum(["current_target", "evidence", "provenance", "issues"]),
   filter: z.object({
     showArchived: z.boolean(),
-    sourceId: z.string().uuid().optional(),
-    cardId: z.string().uuid().optional(),
+    sourceId: z.string().guid().optional(),
+    cardId: z.string().guid().optional(),
     relationKinds: z.array(z.string()).optional(),
   }).passthrough(),
   expectedCheckpointToken: z.string().min(1),
@@ -632,18 +632,18 @@ export const proposedLearningActionPayloadV1Schema = z.discriminatedUnion("kind"
     // Domain tool (`companion_notes_write`) or internal operation (`notes.write.create`).
     // The ledger keys on the operation, so a confirmed card must be able to name it too.
     toolName: z.string().regex(/^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)*$/).max(80),
-    arguments: z.record(z.unknown()),
+    arguments: z.record(z.string(), z.unknown()),
     confirmationStage: z.enum(["after_preview", "before_execute"]),
-    expectedTarget: z.record(z.unknown()).optional(),
+    expectedTarget: z.record(z.string(), z.unknown()).optional(),
     preview: z.object({
       title: z.string().min(1).max(200),
       markdown: z.string().optional(),
       beforeMarkdown: z.string().optional(),
-      noteId: z.string().uuid().optional(),
+      noteId: z.string().guid().optional(),
     }).strict(),
   }).strict(),
-  z.object({ kind: z.literal("open_card"), cardId: z.string().uuid() }).strict(),
-  z.object({ kind: z.literal("open_star_map"), keyPointId: z.string().uuid().optional() }).strict(),
+  z.object({ kind: z.literal("open_card"), cardId: z.string().guid() }).strict(),
+  z.object({ kind: z.literal("open_star_map"), keyPointId: z.string().guid().optional() }).strict(),
   // 已删除两个无法实现的 kind（2026-09-16）：
   // - ask_grounded_tutor：无 producer、无 decision 分支，确认必落 409；当前 target
   //   Tutor 由 companion-context-grants + grounded evidence 流程交付。
@@ -655,13 +655,13 @@ export const proposedLearningActionPayloadV1Schema = z.discriminatedUnion("kind"
   // 全部为"用户确认后才执行"的业务动作；导航类同步 succeeded，业务类
   // 事务内确定性执行（执行函数见 learning-action-bridge.ts）。
   // `plan_understanding_route` 已删除（2026-09-24，39d W2-1）：它唯一的 producer 是
-  // `companion_plan_route`，而那个工具的参数曾是 `z.record(z.unknown())`——31 个工具里
+  // `companion_plan_route`，而那个工具的参数曾是 `z.record(z.string(), z.unknown())`——31 个工具里
   // 唯一能改状态却零字段校验的写工具；全窗口 30 天真实流量 **0 次调用**（总盘 144 轮 /
   // 181 次调用），连一条状态行都没有。按 AGENTS.md 与 39b §9.8 的规则整条删。
   // `route-plan-service` 本身**保留**：它同时服务 HTTP 路由 `POST /understanding/routes/plan`。
   z.object({
     kind: z.literal("focus_graph_node"),
-    keyPointId: z.string().uuid(),
+    keyPointId: z.string().guid(),
     lens: z.enum(["current_target", "evidence", "provenance", "issues"]),
   }).strict(),
   z.object({
@@ -671,13 +671,13 @@ export const proposedLearningActionPayloadV1Schema = z.discriminatedUnion("kind"
     // revision = 目标记忆 updatedAt 的 epoch millis（单调 CAS 令牌；
     // 记忆无独立 revision 列，见 assistant-memory 表）。
     kind: z.literal("confirm_or_reject_memory"),
-    memoryId: z.string().uuid(),
+    memoryId: z.string().guid(),
     revision: z.number().int().nonnegative(),
     decision: z.enum(["confirm", "reject"]),
   }).strict(),
   z.object({
     kind: z.literal("delete_assistant_memory"),
-    memoryId: z.string().uuid(),
+    memoryId: z.string().guid(),
     revision: z.number().int().nonnegative(),
   }).strict(),
   // ── 2026-09-19：auto-set / auto-fill 工具（guided 档提案确认后的执行分支）──
@@ -694,7 +694,7 @@ export const proposedLearningActionPayloadV1Schema = z.discriminatedUnion("kind"
   }).strict(),
   z.object({
     kind: z.literal("revise_memory"),
-    memoryId: z.string().uuid(),
+    memoryId: z.string().guid(),
     expectedRevision: z.number().int().min(1),
     content: z.string().min(1).max(200),
     appliesWhen: z.string().max(200).nullable().optional(),
@@ -717,11 +717,11 @@ export const proposedLearningActionPayloadV1Schema = z.discriminatedUnion("kind"
 
 export const companionActionProposalV1Schema = z.object({
   version: z.literal(1),
-  proposalId: z.string().uuid(),
-  conversationId: z.string().uuid(),
-  sourceMessageId: z.string().uuid(),
+  proposalId: z.string().guid(),
+  conversationId: z.string().guid(),
+  sourceMessageId: z.string().guid(),
   sourceGeneration: z.number().int().nonnegative(),
-  contextGrantId: z.string().uuid().nullable(),
+  contextGrantId: z.string().guid().nullable(),
   payload: proposedLearningActionPayloadV1Schema,
   payloadSha256: z.string().regex(/^[a-f0-9]{64}$/),
   title: z.string().min(1).max(80),
@@ -753,8 +753,8 @@ export type CompanionProposalSnapshotV1 = z.infer<typeof companionProposalSnapsh
 // ── 方案 16 §18.1：通用工具 proposal 请求（Orchestrator 网关入口） ──
 export const createToolProposalRequestV1Schema = z.object({
   version: z.literal(1),
-  conversationId: z.string().uuid().optional(),
-  clientMessageId: z.string().uuid(),
+  conversationId: z.string().guid().optional(),
+  clientMessageId: z.string().guid(),
   payload: proposedLearningActionPayloadV1Schema,
   title: z.string().min(1).max(80),
   targetSummary: z.string().min(1).max(160),
@@ -767,16 +767,16 @@ export type CreateToolProposalRequestV1 = z.infer<typeof createToolProposalReque
 
 export const proposalDecisionRequestV1Schema = z.object({
   version: z.literal(1),
-  proposalId: z.string().uuid(),
+  proposalId: z.string().guid(),
   decision: z.enum(["confirm", "reject"]),
-  idempotencyKey: z.string().uuid(),
+  idempotencyKey: z.string().guid(),
   // §6.6：confirm 必须匹配服务端冻结的 payload hash。
   expectedPayloadSha256: z.string().regex(/^[a-f0-9]{64}$/),
 }).strict();
 
 export const proposalDecisionResponseV1Schema = z.object({
   version: z.literal(1),
-  proposalId: z.string().uuid(),
+  proposalId: z.string().guid(),
   status: z.enum(["rejected", "accepted", "executing", "succeeded", "failed"]),
   resultRef: z.string().min(1).max(240).nullable(),
   // 2026-08-15：服务端 navigationRouteFor 返回 V2 合同（§18 新导航 kind 的
@@ -873,9 +873,9 @@ const companionStreamEventBaseShapeV1 = {
   version: z.literal(1),
   eventId: z.string().min(1).max(200),
   seq: z.number().int().nonnegative(),
-  workspaceId: z.string().uuid(),
-  conversationId: z.string().uuid(),
-  runId: z.string().uuid().nullable(),
+  workspaceId: z.string().guid(),
+  conversationId: z.string().guid(),
+  runId: z.string().guid().nullable(),
   generation: z.number().int().nonnegative(),
   accountEpoch: z.number().int().nonnegative(),
   createdAt: z.string().datetime(),
@@ -901,7 +901,7 @@ export type CharacterCuePayloadV1 = z.infer<typeof characterCuePayloadV1Schema>;
  */
 export const companionVoiceSegmentReadyPayloadV2Schema = z.strictObject({
   version: z.literal(2),
-  messageId: z.string().uuid().optional(),
+  messageId: z.string().guid().optional(),
   segmentId: z.string().regex(/^[a-f0-9]{64}$/),
   ordinal: z.number().int().min(1).max(200),
   displayText: z.string().min(1).max(160),
@@ -932,10 +932,10 @@ export type CompanionVoiceSegmentReadyPayloadV2 = z.infer<typeof companionVoiceS
 
 const actionProposedProposalV1Schema = z.object({
   version: z.literal(1),
-  id: z.string().uuid(),
-  workspaceId: z.string().uuid(),
-  conversationId: z.string().uuid(),
-  sourceMessageId: z.string().uuid(),
+  id: z.string().guid(),
+  workspaceId: z.string().guid(),
+  conversationId: z.string().guid(),
+  sourceMessageId: z.string().guid(),
   sourceGeneration: z.number().int().nonnegative(),
   kind: proposedLearningActionPayloadV1Schema,
   payloadSha256: z.string().regex(/^[a-f0-9]{64}$/),
@@ -949,7 +949,7 @@ const actionProposedProposalV1Schema = z.object({
 
 export const companionStreamEventV1Schema = z.discriminatedUnion("type", [
   z.object({ ...companionStreamEventBaseShapeV1, type: z.literal("turn.accepted"), payload: z.object({
-    clientMessageId: z.string().uuid(), userMessageId: z.string().uuid(), status: z.literal("accepted"), resumed: z.boolean().optional(),
+    clientMessageId: z.string().guid(), userMessageId: z.string().guid(), status: z.literal("accepted"), resumed: z.boolean().optional(),
   }).strict() }).strict(),
   z.object({ ...companionStreamEventBaseShapeV1, type: z.literal("assistant.status"), payload: z.object({
     /**
@@ -986,27 +986,27 @@ export const companionStreamEventV1Schema = z.discriminatedUnion("type", [
     appendFrom: z.number().int().nonnegative(), textDelta: z.string().min(1).max(2_000),
   }).strict() }).strict(),
   z.object({ ...companionStreamEventBaseShapeV1, type: z.literal("assistant.utterance"), payload: z.object({
-    messageId: z.string().uuid(), messageSeq: z.number().int().positive(),
+    messageId: z.string().guid(), messageSeq: z.number().int().positive(),
     text: z.string().min(1).max(12_000), proactive: z.boolean(),
     deviceSessionId: z.string().max(200).nullable(),
   }).strict() }).strict(),
   z.object({ ...companionStreamEventBaseShapeV1, type: z.literal("turn.completed"), payload: z.object({
-    messageIds: z.array(z.string().uuid()).max(40), silent: z.boolean(),
+    messageIds: z.array(z.string().guid()).max(40), silent: z.boolean(),
   }).strict() }).strict(),
   z.object({ ...companionStreamEventBaseShapeV1, type: z.literal("assistant.final"), payload: z.object({
-    messageId: z.string().uuid(), textLength: z.number().int().nonnegative(),
+    messageId: z.string().guid(), textLength: z.number().int().nonnegative(),
     textSha256: z.string().regex(/^[a-f0-9]{64}$/),
     messageContentSha256: z.string().regex(/^[a-f0-9]{64}$/),
     // 22 方案 §12.3/§14.5/§16.3：本轮真正使用的记忆引用，仅 UI 展示。
     memoryRefs: z.array(z.object({
-      memoryId: z.string().uuid(),
+      memoryId: z.string().guid(),
       kind: z.string().min(1).max(64),
       content: z.string().min(1).max(80),
     }).strict()).max(3).optional(),
     followUpPrompts: z.array(z.string().min(4).max(120)).min(1).max(3).optional(),
   }).strict() }).strict(),
   z.object({ ...companionStreamEventBaseShapeV1, type: z.literal("assistant.followups.ready"), payload: z.object({
-    messageId: z.string().uuid(),
+    messageId: z.string().guid(),
     messageContentSha256: z.string().regex(/^[a-f0-9]{64}$/),
     followUpPrompts: z.array(z.string().min(4).max(120)).max(3),
   }).strict() }).strict(),
@@ -1017,11 +1017,11 @@ export const companionStreamEventV1Schema = z.discriminatedUnion("type", [
     proposal: actionProposedProposalV1Schema,
   }).strict() }).strict(),
   z.object({ ...companionStreamEventBaseShapeV1, type: z.literal("action.decision"), payload: z.object({
-    proposalId: z.string().uuid(), decision: z.enum(["confirm", "reject"]),
+    proposalId: z.string().guid(), decision: z.enum(["confirm", "reject"]),
     status: z.enum(["accepted", "rejected"]),
   }).strict() }).strict(),
   z.object({ ...companionStreamEventBaseShapeV1, type: z.literal("action.expired"), payload: z.object({
-    proposalId: z.string().uuid(),
+    proposalId: z.string().guid(),
   }).strict() }).strict(),
   z.object({
     ...companionStreamEventBaseShapeV1,
@@ -1029,11 +1029,11 @@ export const companionStreamEventV1Schema = z.discriminatedUnion("type", [
     payload: companionVoiceSegmentReadyPayloadV2Schema,
   }).strict(),
   z.object({ ...companionStreamEventBaseShapeV1, type: z.literal("proactive.delivery"), payload: z.object({
-    deliveryId: z.string().uuid(), messageId: z.string().uuid(), expiresAt: z.string().datetime(),
+    deliveryId: z.string().guid(), messageId: z.string().guid(), expiresAt: z.string().datetime(),
     contentPolicy: z.enum(["content", "content_hidden"]),
   }).strict() }).strict(),
   z.object({ ...companionStreamEventBaseShapeV1, type: z.literal("proactive.delivery.updated"), payload: z.object({
-    deliveryId: z.string().uuid(), status: z.enum(["shown", "suppressed", "dismissed", "expired"]),
+    deliveryId: z.string().guid(), status: z.enum(["shown", "suppressed", "dismissed", "expired"]),
     contentClaimed: z.boolean(),
   }).strict() }).strict(),
   z.object({ ...companionStreamEventBaseShapeV1, type: z.literal("turn.cancelled"), payload: z.object({
@@ -1060,7 +1060,7 @@ export type CompanionPublicErrorCodeV1 = z.infer<typeof companionPublicErrorCode
 
 export const companionTtsStreamRequestV1Schema = z.object({
   version: z.literal(1),
-  runId: z.string().uuid(),
+  runId: z.string().guid(),
   generation: z.number().int().positive(),
   ordinal: z.number().int().min(1).max(200),
   segmentId: z.string().regex(/^[a-f0-9]{64}$/),
@@ -1072,7 +1072,7 @@ export const companionTtsStreamRequestV1Schema = z.object({
    * generation, ordinal, segmentId) 五个字段才能确认"这一段确实是这一轮签发的"。
    * 不给这个字段时仍按 `text` 直接合成（普通朗读/探针走的那条）。
    */
-  conversationId: z.string().uuid().optional(),
+  conversationId: z.string().guid().optional(),
   voice: z.string().min(1).max(120).optional(),
   // 2026-08-12（伴星语音设置）：语速（"-30%" | "+0%" | "+30%"）。
   rate: z.string().min(1).max(16).optional(),

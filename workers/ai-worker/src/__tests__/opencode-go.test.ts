@@ -31,6 +31,7 @@ import { ProviderRequestError, ProviderStreamError } from "../lib/provider-reque
 import { AgentOutputError } from "../lib/non-retryable-errors.ts";
 import { runStreamingAgentStep } from "../handlers/agent/companion-agent-streaming-step.ts";
 import { createGovernedProvider } from "../lib/governance.ts";
+import { logger } from "../lib/logger.ts";
 
 interface CapturedRequest {
   url: string;
@@ -680,6 +681,21 @@ test("chatCompletion: HTTP 错误抛 ProviderRequestError 并带 error.type", as
       return true;
     },
   );
+});
+
+test("provider rejection logs omit untrusted error bodies", async () => {
+  const originalWarn = logger.warn;
+  const records: unknown[] = [];
+  logger.warn = ((...args: unknown[]) => { records.push(args); }) as typeof logger.warn;
+  try {
+    const { request } = recordingRequester({ status: 400, statusText: "Bad Request",
+      body: { error: { type: "secret-code-13812345678", message: "private request and credential" } } });
+    await assert.rejects(() => makeProvider({ request }).chatCompletion([{ role: "user", content: "hi" }], {}));
+    assert.ok(records.length > 0);
+    assert.doesNotMatch(JSON.stringify(records), /secret-code|13812345678|private request|credential/);
+  } finally {
+    logger.warn = originalWarn;
+  }
 });
 
 test("chatCompletion: 2xx + status=failed 视为失败", async () => {

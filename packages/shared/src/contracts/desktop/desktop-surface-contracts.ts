@@ -11,7 +11,7 @@ import { noteBlockWriteV1Schema } from "../note/note-save-contracts.ts";
 import { noteShelfStateV1Schema } from "../note/note-shelf-state-contracts.ts";
 
 const isoTimestamp = z.string().datetime({ offset: true });
-const uuid = z.string().uuid();
+const uuid = z.string().guid();
 
 export const desktopSourceListItemSchema = z.object({
   id: uuid,
@@ -55,7 +55,7 @@ export type DesktopSourceSegment = z.infer<typeof desktopSourceSegmentSchema>;
 
 export const desktopSourceDetailSchema = z.object({
   source: desktopSourceListItemSchema.extend({
-    metadata: z.record(z.unknown()).nullable().optional(),
+    metadata: z.record(z.string(), z.unknown()).nullable().optional(),
   }),
   segments: z.array(desktopSourceSegmentSchema),
 }).passthrough();

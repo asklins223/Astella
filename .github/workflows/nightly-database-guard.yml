@@ -1,0 +1,145 @@
+name: Nightly database guard
+
+# The strongest isolation invariants live in real-Postgres integration tests
+# (RLS ratchet, cross-tenant reads, policy completeness). They are deliberately
+# run on a disposable database both nightly and as a reusable release/PR gate;
+# see docs/guide/zh/testing-and-quality.md for the full suite.
+
+on:
+  workflow_call:
+  schedule:
+    - cron: "43 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: database-guard-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  isolation:
+    name: Isolation ratchet
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: astella
+          POSTGRES_PASSWORD: astella_ci
+          POSTGRES_DB: astella
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U astella"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      NODE_ENV: test
+      POSTGRES_USER: astella
+      POSTGRES_PASSWORD: astella_ci
+      POSTGRES_DB: astella
+      POSTGRES_PORT: "5432"
+      MIGRATOR_PASSWORD: astella_ci_migrator
+      API_PASSWORD: astella_ci_api
+      WORKER_PASSWORD: astella_ci_worker
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            packages/shared/package-lock.json
+            packages/agent-core/package-lock.json
+            packages/agent-host/package-lock.json
+            apps/api/package-lock.json
+
+      - name: Install the migration dependency tree
+        run: |
+          for dir in packages/shared packages/agent-core packages/agent-host apps/api; do
+            echo "── npm ci $dir"
+            (cd "$dir" && npm ci --no-audit --no-fund)
+          done
+
+      - name: Build a disposable database
+        env:
+          DISPOSABLE_DB_HOST: 127.0.0.1
+          DISPOSABLE_DB_PORT: "5432"
+        run: |
+          cat > .env <<'EOF'
+          POSTGRES_USER=astella
+          POSTGRES_PASSWORD=astella_ci
+          POSTGRES_DB=astella
+          POSTGRES_PORT=5432
+          MIGRATOR_PASSWORD=astella_ci_migrator
+          API_PASSWORD=astella_ci_api
+          WORKER_PASSWORD=astella_ci_worker
+          EOF
+          bash scripts/dev-disposable-db.sh astella_it
+
+      - name: Run the isolation ratchet
+        working-directory: apps/api
+        env:
+          DATABASE_URL_API: postgres://astella_api:astella_ci_api@127.0.0.1:5432/astella_it
+          RLS_TEST_MIGRATOR_DATABASE_URL: postgres://astella_migrator:astella_ci_migrator@127.0.0.1:5432/astella_it
+          RLS_TEST_API_DATABASE_URL: postgres://astella_api:astella_ci_api@127.0.0.1:5432/astella_it
+          RLS_TEST_WORKER_DATABASE_URL: postgres://astella_worker:astella_ci_worker@127.0.0.1:5432/astella_it
+        run: |
+          node --import tsx --test --test-concurrency=1 \
+            src/integration-tests/schema-isolation-gate-postgres.integration.ts \
+            src/integration-tests/users-rls-postgres.integration.ts \
+            src/integration-tests/rls-policies-postgres.integration.ts \
+            src/integration-tests/db-migrations.integration.ts
+
+      - name: Verify collaboration and search against PostgreSQL
+        working-directory: apps/api
+        env:
+          DATABASE_URL: postgres://astella:astella_ci@127.0.0.1:5432/astella_it
+          DATABASE_URL_API: postgres://astella_api:astella_ci_api@127.0.0.1:5432/astella_it
+          NOTE_LEADER_TEST_DATABASE_URL: postgres://astella:astella_ci@127.0.0.1:5432/astella_it
+          NOTE_LEADER_TEST_RUNTIME_DATABASE_URL: postgres://astella_api:astella_ci_api@127.0.0.1:5432/astella_it
+          SEARCH_REINDEX_TEST_DATABASE_URL: postgres://astella:astella_ci@127.0.0.1:5432/astella_it
+          SEARCH_REINDEX_ADMIN_DATABASE_URL: postgres://astella:astella_ci@127.0.0.1:5432/astella_it
+        run: |
+          node --import tsx --test --test-concurrency=1 \
+            src/integration-tests/note-collaboration-leader-postgres.integration.ts \
+            src/integration-tests/search-reindex-postgres.integration.ts \
+            src/integration-tests/search-reindex-rls-postgres.integration.ts \
+            src/integration-tests/note-collaboration-postgres.integration.ts
+
+      - name: Verify identity, password recovery and workspace session transitions
+        working-directory: apps/api
+        env:
+          DATABASE_URL_MIGRATOR: postgres://astella:astella_ci@127.0.0.1:5432/astella_it
+          DATABASE_URL_API: postgres://astella_api:astella_ci_api@127.0.0.1:5432/astella_it
+          AUTH_RATE_LIMIT_STORE: memory
+        run: |
+          node --import tsx --test --test-concurrency=1 \
+            src/integration-tests/auth-me-rls-postgres.integration.ts \
+            src/integration-tests/account-settings-rls-postgres.integration.ts \
+            src/integration-tests/legacy-password-policy-postgres.integration.ts \
+            src/integration-tests/email-code-concurrency-postgres.integration.ts
+
+      - name: Verify workspace FK reconciliation against an isolated database
+        working-directory: apps/api
+        env:
+          DATABASE_URL_FK_TEST_ADMIN: postgres://astella:astella_ci@127.0.0.1:5432/postgres
+          DATABASE_URL_FK_TEST: postgres://astella:astella_ci@127.0.0.1:5432/astella_workspace_fk_test_ci
+        run: |
+          node --input-type=module -e 'import postgres from "postgres"; const sql = postgres(process.env.DATABASE_URL_FK_TEST_ADMIN); try { await sql.unsafe("CREATE DATABASE astella_workspace_fk_test_ci"); } finally { await sql.end(); }'
+          npm run test:workspace-fk-validation:postgres
+
+      - name: Verify legacy session revocation against an isolated database
+        working-directory: apps/api
+        env:
+          DATABASE_URL_FIXTURE_ADMIN: postgres://astella:astella_ci@127.0.0.1:5432/postgres
+          DATABASE_URL_LEGACY_SESSIONS_TEST: postgres://astella:astella_ci@127.0.0.1:5432/astella_legacy_sessions_test_ci
+          DATABASE_URL_LEGACY_SESSIONS_RESTRICTED_TEST: postgres://astella_api:astella_ci_api@127.0.0.1:5432/astella_legacy_sessions_test_ci
+        run: |
+          node --input-type=module -e 'import postgres from "postgres"; const sql = postgres(process.env.DATABASE_URL_FIXTURE_ADMIN); try { await sql.unsafe("CREATE DATABASE astella_legacy_sessions_test_ci"); } finally { await sql.end(); }'
+          npm run test:legacy-password-sessions:isolated-postgres

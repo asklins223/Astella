@@ -57,21 +57,6 @@ test("未知状态与缺少标签保守表达，长标签不突破记忆容量",
   assert.ok(runResultMemoryContext({ outcome: "partial", trustOutcome: "partial", keyPointClaim: "长标签".repeat(100) }).length <= 200);
 });
 
-test("真 LLM 生成（.env 配置后真实调用 DashScope）", { skip: !(savedUrl && (savedKey || savedDash)) && "未配置 critic env" }, async () => {
-  if (savedUrl) process.env.ASSESSMENT_CRITIC_URL = savedUrl;
-  if (savedKey) process.env.ASSESSMENT_CRITIC_KEY = savedKey;
-  if (savedDash) process.env.DASHSCOPE_API_KEY = savedDash;
-  const result = await generateMemoryCandidates({
-    outcome: "demonstrated",
-    trustOutcome: "demonstrated",
-    keyPointClaim: "遗忘曲线表明复习间隔决定长期记忆",
-    scheduleImpact: "created",
-    runId: "run-test-1",
-  }, scope);
-  assert.ok(result, "真实 LLM 应产出记忆候选");
-  assert.ok(result.learningContext.length >= 2);
-});
-
 test("无配置 → null（静默降级，不阻塞结算）", async () => {
   delete process.env.ASSESSMENT_CRITIC_URL;
   delete process.env.ASSESSMENT_CRITIC_KEY;

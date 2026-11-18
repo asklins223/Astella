@@ -197,6 +197,8 @@ export function gatewayErrorMessage(error: unknown): string {
       return "这一轮已经取消。";
     case "safe_internal_error":
       return "学习服务内部出了点问题，已记录；请稍后重试。";
+    case "local_storage_unavailable":
+      return "改动还没有保存到本机，请检查磁盘空间或权限，保持此窗口打开并重试。";
     // Auth-form outcomes. These read as account and invitation problems, not as
     // learning-content problems, because that is the surface they appear on.
     case "email_exists":

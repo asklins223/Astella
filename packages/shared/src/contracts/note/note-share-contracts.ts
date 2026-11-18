@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 
-const uuidSchema = z.string().uuid();
+const uuidSchema = z.string().guid();
 const isoTimestampSchema = z.string().datetime({ offset: true });
 
 export const noteShareScopeValuesV1 = ["private", "shared"] as const;

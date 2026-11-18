@@ -62,7 +62,7 @@ export function feedSelectionToCompanion(selection: CompanionFeedSelection): str
   const text = selection.text.trim();
   if (text.length === 0) return null;
   const initialPrompt = selection.initialPrompt?.trim();
-  const noteId = z.string().uuid().safeParse(selection.noteAnchor?.noteId);
+  const noteId = z.string().guid().safeParse(selection.noteAnchor?.noteId);
   const anchor = noteAnnotationAnchorV1Schema.safeParse(selection.noteAnchor?.anchor);
   const requestId = crypto.randomUUID();
   const target = noteId.success && anchor.success ? { noteId: noteId.data, anchor: anchor.data } : null;
@@ -109,11 +109,11 @@ export function feedDiaryReferenceToCompanion(anchor: CompanionFeedDiaryAnchor):
 }
 
 export function feedNoteIntentToCompanion(intent: CompanionNoteIntent): void {
-  const noteId = z.string().uuid().safeParse(intent.noteId);
-  const noteVersionId = z.string().uuid().safeParse(intent.noteVersionId);
+  const noteId = z.string().guid().safeParse(intent.noteId);
+  const noteVersionId = z.string().guid().safeParse(intent.noteVersionId);
   const noteTitle = intent.noteTitle.trim();
   if (!noteId.success || !noteVersionId.success || !noteTitle) return;
-  const recallId = intent.kind === "recall_hint" ? z.string().uuid().safeParse(intent.recallId) : null;
+  const recallId = intent.kind === "recall_hint" ? z.string().guid().safeParse(intent.recallId) : null;
   const question = intent.kind === "recall_hint" ? intent.question?.trim() : undefined;
   if (intent.kind === "recall_hint" && (!recallId?.success || !question)) return;
   window.dispatchEvent(new CustomEvent<CompanionNoteIntent>(COMPANION_NOTE_INTENT_EVENT, {
@@ -143,7 +143,7 @@ export function subscribeCompanionFeed(handlers: {
     const detail = (event as CustomEvent<CompanionFeedSelection>).detail;
     if (detail && typeof detail.text === "string" && detail.text.length > 0) {
       handlers.onFeed({
-        ...(z.string().uuid().safeParse(detail.requestId).success
+        ...(z.string().guid().safeParse(detail.requestId).success
           ? { requestId: detail.requestId }
           : {}),
         text: detail.text,
@@ -151,12 +151,12 @@ export function subscribeCompanionFeed(handlers: {
         ...(typeof detail.initialPrompt === "string" && detail.initialPrompt.trim().length > 0
           ? { initialPrompt: detail.initialPrompt.trim() }
           : {}),
-        ...(detail.noteAnchor && z.string().uuid().safeParse(detail.noteAnchor.noteId).success
+        ...(detail.noteAnchor && z.string().guid().safeParse(detail.noteAnchor.noteId).success
           && noteAnnotationAnchorV1Schema.safeParse(detail.noteAnchor.anchor).success
           ? { noteAnchor: {
             noteId: detail.noteAnchor.noteId,
             anchor: noteAnnotationAnchorV1Schema.parse(detail.noteAnchor.anchor),
-            ...(z.string().uuid().safeParse(detail.noteAnchor.explanationId).success ? { explanationId: detail.noteAnchor.explanationId } : {}),
+            ...(z.string().guid().safeParse(detail.noteAnchor.explanationId).success ? { explanationId: detail.noteAnchor.explanationId } : {}),
           } }
           : {}),
         // 日记引用必须在这里透传，否则「聊聊这篇」只是打开对话：订阅端逐字段
@@ -178,18 +178,18 @@ export function subscribeCompanionFeed(handlers: {
   const onOpenChat = () => handlers.onOpenChat();
   const onNoteIntent = (event: Event) => {
     const detail = (event as CustomEvent<CompanionNoteIntent>).detail;
-    const noteId = z.string().uuid().safeParse(detail?.noteId);
-    const noteVersionId = z.string().uuid().safeParse(detail?.noteVersionId);
+    const noteId = z.string().guid().safeParse(detail?.noteId);
+    const noteVersionId = z.string().guid().safeParse(detail?.noteVersionId);
     if (!noteId.success || !noteVersionId.success
       || !["overview", "recall", "recall_hint", "expansion"].includes(detail?.kind ?? "")
       || typeof detail?.noteTitle !== "string") return;
     const noteTitle = detail.noteTitle.trim();
     if (detail.kind === "recall_hint") {
-      const recallId = z.string().uuid().safeParse(detail.recallId);
+      const recallId = z.string().guid().safeParse(detail.recallId);
       const question = typeof detail.question === "string" ? detail.question.trim() : "";
       if (!recallId.success || !question) return;
       handlers.onNoteIntent({
-        ...(z.string().uuid().safeParse(detail.requestId).success ? { requestId: detail.requestId } : {}),
+        ...(z.string().guid().safeParse(detail.requestId).success ? { requestId: detail.requestId } : {}),
         kind: "recall_hint",
         noteId: noteId.data,
         noteVersionId: noteVersionId.data,
@@ -200,7 +200,7 @@ export function subscribeCompanionFeed(handlers: {
       return;
     }
     handlers.onNoteIntent({
-      ...(z.string().uuid().safeParse(detail.requestId).success ? { requestId: detail.requestId } : {}),
+      ...(z.string().guid().safeParse(detail.requestId).success ? { requestId: detail.requestId } : {}),
       kind: detail.kind as "overview" | "recall" | "expansion",
       noteId: noteId.data,
       noteVersionId: noteVersionId.data,

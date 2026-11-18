@@ -135,10 +135,10 @@ export const paginationQuerySchema = z.object({
 });
 
 export const uuidParamSchema = z.object({
-  id: z.string().uuid(),
+  id: z.string().guid(),
 });
 
 // R-022: cardId 路径参数校验
 export const cardIdParamSchema = z.object({
-  cardId: z.string().uuid(),
+  cardId: z.string().guid(),
 });

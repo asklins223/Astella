@@ -29,7 +29,7 @@ import { companionJourneys } from "@astella/shared/db-schema/companion-journey";
 import { and, eq } from "drizzle-orm";
 import { isCompanionJourneyV2Enabled } from "../../config/learning-companion-flags.ts";
 
-const journeyParamsSchema = z.object({ journeyId: z.string().uuid() });
+const journeyParamsSchema = z.object({ journeyId: z.string().guid() });
 
 export async function companionJourneyRoutes(app: FastifyInstance) {
   app.addHook("onRequest", async (_req, reply) => {

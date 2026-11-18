@@ -7,7 +7,8 @@ import { objectTransferRoutes } from "./modules/storage/routes.ts";
 import { agentRoutes } from "./modules/agent/routes.ts";
 import { agentMethodRoutes } from "./modules/agent/method-routes.ts";
 import { sql } from "drizzle-orm";
-import { closeDatabase, db, dbPoolOptionsMax } from "./db/client.ts";
+import { closeDatabase, db, dbPoolOptionsMax, resolveConnectionString } from "./db/client.ts";
+import migrationJournal from "./db/migrations/meta/_journal.json" with { type: "json" };
 import Fastify from "fastify";
 import websocket from "@fastify/websocket";
 import cors from "@fastify/cors";
@@ -15,6 +16,7 @@ import sensible from "@fastify/sensible";
 import multipart from "@fastify/multipart";
 import compress from "@fastify/compress";
 import { logger } from "./lib/logger.ts";
+import { isBoundedRequestShape } from "./request-shape-limit.ts";
 import { runWithRequestContext } from "./lib/request-context.ts";
 import { authRoutes } from "./modules/identity/routes.ts";
 import { emailCodeRoutes } from "./modules/identity/email-code-routes.ts";
@@ -27,6 +29,7 @@ import { noteExpansionRoutes } from "./modules/note-expansions/routes.ts";
 import { noteLearningArtifactRoutes } from "./modules/note-learning-artifacts/routes.ts";
 import { noteLearningCardRoutes } from "./modules/note-learning-cards/routes.ts";
 import { noteCollaborationRoutes, closeNoteCollaboration } from "./modules/note/collaboration.ts";
+import { acquireNoteCollaborationLeader, installNoteCollaborationLeader } from "./modules/note/collaboration-leader.ts";
 import { jobRoutes } from "./modules/job/routes.ts";
 import { sourceRoutes } from "./modules/source/routes.ts";
 import { importRoutes } from "./modules/import/routes.ts";
@@ -113,6 +116,16 @@ const app = Fastify({
   // 不再无条件信任任意 X-Forwarded-For。默认不信任透传值；只有已覆写
   // X-Forwarded-For 的前置代理才允许部署方显式配置 TRUST_PROXY。
   trustProxy,
+});
+
+// JSON may fit a route's byte limit while containing enough invalid elements
+// for Zod 3 to allocate an unbounded validation issue list. Bound shape before
+// route schemas run; large text/file bodies retain their own byte limits.
+app.addHook("preValidation", async (request, reply) => {
+  const contentType = request.headers["content-type"]?.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+  if ((contentType === "application/json" || contentType.endsWith("+json")) && !isBoundedRequestShape(request.body)) {
+    return reply.code(413).send({ error: "request_too_complex", message: "请求结构过于复杂" });
+  }
 });
 
 // Liveness only proves the process/event loop can answer HTTP. Database and
@@ -264,9 +277,8 @@ app.get("/ready", async (_req, reply) => {
     ];
     const missingTables = coreTables.filter((table) => !presentTables.has(table));
 
-    // Drizzle journal 的最新迁移时间戳。可通过环境变量在后续版本提升门槛，
-    // 避免只存在早期核心表时 readiness 仍误报成功。
-    const minimumMigrationRaw = process.env.MIN_READY_MIGRATION_CREATED_AT ?? "1786683800000";
+    const releaseMigration = migrationJournal.entries.at(-1)!.when;
+    const minimumMigrationRaw = process.env.MIN_READY_MIGRATION_CREATED_AT ?? releaseMigration;
     const minimumMigration = Number(minimumMigrationRaw);
     if (!Number.isSafeInteger(minimumMigration) || minimumMigration <= 0) {
       readinessStatus.set(0);
@@ -277,15 +289,15 @@ app.get("/ready", async (_req, reply) => {
         timestamp: new Date().toISOString(),
       });
     }
-    const migrationRows = await db.execute(sql`
-      SELECT max(created_at)::bigint AS created_at
+    const requiredMigration = Math.max(releaseMigration, minimumMigration);
+    const [migrationState] = await db.execute<{ created_at: string | number | null; present: boolean }>(sql`
+      SELECT max(created_at)::bigint AS created_at, COALESCE(bool_or(created_at = ${releaseMigration}), false) AS present
       FROM drizzle.__drizzle_migrations
     `);
-    const appliedMigration = Number(
-      (migrationRows[0] as { created_at: string | number | null } | undefined)?.created_at ?? 0,
-    );
+    const appliedMigration = Number(migrationState?.created_at ?? 0);
+    const releaseMigrationPresent = migrationState?.present === true;
 
-    if (missingTables.length > 0 || appliedMigration < minimumMigration) {
+    if (missingTables.length > 0 || !releaseMigrationPresent || appliedMigration < requiredMigration) {
       readinessStatus.set(0);
       return reply.code(503).send({
         status: "not_ready",
@@ -293,7 +305,9 @@ app.get("/ready", async (_req, reply) => {
         error: "business schema is incomplete — run migrations",
         missingTables,
         appliedMigration,
-        requiredMigration: minimumMigration,
+        requiredMigration,
+        releaseMigration,
+        releaseMigrationPresent,
         timestamp: new Date().toISOString(),
       });
     }
@@ -316,6 +330,13 @@ app.get("/ready", async (_req, reply) => {
 
 // G-002: 包装在 async IIFE 中，使 esbuild --format=cjs 能正确构建（CJS 不支持 top-level await）
 async function main() {
+  const noteLeader = await acquireNoteCollaborationLeader(resolveConnectionString(), () => {
+    // A lost session must never reconnect and resume serving stale in-memory
+    // documents. The transaction fence rejects writes even before this callback.
+    logger.fatal("Note collaboration leader session lost; terminating API");
+    process.exit(1);
+  });
+  installNoteCollaborationLeader(noteLeader);
   // Register at the root scope before any WebSocket routes are mounted.
   // 单帧上限跟着正文/文件那一个 100 MB 走（`TRANSFER_MAX_BYTES`），再加 64 KB 给 sync
   // 协议的头：2026-10-31 实测到粘贴 400 KB 时这一格是 256 KB，结局不是报错而是**连接被断开**，
@@ -472,6 +493,7 @@ async function main() {
     closeServer: async () => {
       await closeNoteCollaboration();
       await app.close();
+      await noteLeader.close();
     },
     // 2026-08-11：NOTIFY listener 连接必须显式关闭，否则进程退出挂起
     afterClose: () => {

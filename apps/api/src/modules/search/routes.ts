@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireSession, requireOwner } from "../identity/middleware.ts";
 import { scopeOfSession, withWorkspaceTransaction } from "../../db/client.ts";
-import { detectSearchDrift, decodeSearchCursor, reindexWorkspaceSearch, search, autoFixSearchDrift } from "./service.ts";
+import { detectSearchDrift, decodeSearchCursor, reindexWorkspaceSearch, search, autoFixSearchDrift, searchDriftForViewer } from "./service.ts";
 import { parseQuery } from "../../lib/pagination.ts";
 
 const searchQuerySchema = z.object({
@@ -43,7 +43,8 @@ export async function searchRoutes(app: FastifyInstance) {
   app.get("/search/drift", { preHandler: [requireOwner] }, async (req) => {
     return withWorkspaceTransaction(
       scopeOfSession(req.session),
-      (transaction) => detectSearchDrift(transaction, req.session.workspaceId),
+      async (transaction) => searchDriftForViewer(transaction, req.session.workspaceId, req.session.userId,
+        await detectSearchDrift(transaction, req.session.workspaceId)),
     );
   });
 
@@ -62,7 +63,10 @@ export async function searchRoutes(app: FastifyInstance) {
   app.post("/search/auto-fix", { preHandler: [requireOwner] }, async (req) => {
     return withWorkspaceTransaction(
       scopeOfSession(req.session),
-      (transaction) => autoFixSearchDrift(transaction, req.session.workspaceId),
+      async (transaction) => {
+        const result = await autoFixSearchDrift(transaction, req.session.workspaceId);
+        return { ...result, drift: await searchDriftForViewer(transaction, req.session.workspaceId, req.session.userId, result.drift) };
+      },
     );
   });
 }

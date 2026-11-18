@@ -6,7 +6,7 @@
  */
 import { z } from "zod";
 
-const uuidSchema = z.string().uuid();
+const uuidSchema = z.string().guid();
 const isoTimestampSchema = z.string().datetime({ offset: true });
 const nonEmptyStringSchema = z.string().min(1).max(1000).refine(
   (value) => !/[\u0000-\u001f\u007f]/.test(value),
