@@ -285,7 +285,7 @@ expectedDomainSchemaRevision/configRevision），启动时在 env 缺项处补�
 - `Desktop Tauri shell` 在 push 后以 `workflow_dispatch` 实跑（run 44315724812）：
   **Windows compile check ✅**（含 `cargo test --no-run --features voice-engine`），
   **Windows package ✅**（artifact `astella-tauri-windows` 99,352,579 B；解出 `2.0.6/Astella_2.0.6_x64-setup.exe`，PE32 GUI、NSIS 自解压，sha256 前缀 `846776dfe530…`）；
-  补充：与 Windows job **并行**时 macOS job 连续三次排队约 15 分钟被取消（steps 为空），改为 `only=macos` 单独运行后立即分到 runner 并全绿——推测为账户并发 macOS 排队的限制；macOS job 单独跑已完成（run 44325304139）：renderer 构建、**68/9 测试**、app+DMG 打包、产物上传全部成功；CI 产物尺寸 **Astella.app 101.63 MiB、DMG 96.45 MiB**（均低于 150 MiB 门槛）。
+  补充：与 Windows job **并行**时 macOS job 连续三次排队约 15 分钟被取消（steps 为空），改为 `only=macos` 单独运行后立即分到 runner 并全绿——推测为账户并发 macOS 排队的限制；macOS job 单独跑已完成（run 44325304139）：renderer 构建、**68/9 测试**、app+DMG 打包、产物上传全部成功；CI 产物尺寸 **Astella.app 101.63 MiB、DMG 96.45 MiB**（均低于 150 MiB 门槛）。 最终 HEAD（含 randomUUID polyfill / platform=win32 / 单实例日志）复跑 `only=macos` 仍全绿：68 passed / 9 ignored，app 101.63 MiB、DMG 96.45 MiB（run 44375199975）。
 - 首跑修出的 CI 问题（均已提交）：`macos-14` 退役 → `macos-15`；sherpa 构建脚本假定
   `target/<profile>/deps|examples` 存在（mac/win 均需预建并清理 `build/sherpa-rs*` 旧缓存）；
   Windows check job 缺 renderer 产物 → 写 stub index.html；Windows 上 `npx` 是 `.cmd`
