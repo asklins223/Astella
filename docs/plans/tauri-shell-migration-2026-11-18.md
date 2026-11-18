@@ -291,6 +291,14 @@ expectedDomainSchemaRevision/configRevision），启动时在 env 缺项处补�
   Windows check job 缺 renderer 产物 → 写 stub index.html；Windows 上 `npx` 是 `.cmd`
   （脚本改为 shell 启动），`--config` 改传文件避免 shell 拆 JSON。
 
+### Windows 安装/启动冒烟（CI，2026-11-18）
+
+- NSIS 静默安装成功（`%LOCALAPPDATA%\Astella\astella-desktop-tauri.exe`）；
+  进程可启动并存活，但 120s 后仍无窗口、无 WebView2 子进程、CPU=0、线程=2，
+  且 `main()` 首行的 startup.log（`ASTELLA_STARTUP_LOG=1`）都未产生——卡在 Rust 入口之前，
+  排除 Defender（已加排除路径）。判定为托管 Windows runner 的桌面会话限制，**不能替代真机**；
+  `main.rs` 保留 env 门控的 `startup_log` 便于真机定位。真机验收清单不变。
+
 ### 目标验收对照（2026-11-18 末轮审计锚点）
 
 | 目标条款 | 现状 | 证据 |
