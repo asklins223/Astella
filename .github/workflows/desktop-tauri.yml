@@ -51,7 +51,7 @@ jobs:
         run: npm run build
       - name: Prepare target dirs (sherpa build script expects deps/)
         working-directory: apps/desktop-tauri
-        run: mkdir -p target/debug/deps target/debug/examples target/release/deps target/release/examples
+        run: mkdir -p target/debug/deps target/debug/examples target/release/deps target/release/examples && rm -rf target/debug/build/sherpa-rs* target/release/build/sherpa-rs*
       - name: Rust tests
         working-directory: apps/desktop-tauri
         run: cargo test --features voice-engine
@@ -83,7 +83,7 @@ jobs:
       - name: Prepare target dirs (sherpa build script expects deps/)
         working-directory: apps/desktop-tauri
         shell: bash
-        run: mkdir -p target/debug/deps target/debug/examples target/release/deps target/release/examples
+        run: mkdir -p target/debug/deps target/debug/examples target/release/deps target/release/examples && rm -rf target/debug/build/sherpa-rs* target/release/build/sherpa-rs*
       - name: Stub renderer dist (compile check only)
         working-directory: apps/desktop-client
         shell: bash
@@ -125,7 +125,7 @@ jobs:
       - name: Prepare target dirs (sherpa build script expects deps/)
         working-directory: apps/desktop-tauri
         shell: bash
-        run: mkdir -p target/debug/deps target/debug/examples target/release/deps target/release/examples
+        run: mkdir -p target/debug/deps target/debug/examples target/release/deps target/release/examples && rm -rf target/debug/build/sherpa-rs* target/release/build/sherpa-rs*
       - name: Package (NSIS)
         working-directory: apps/desktop-tauri
         shell: bash
