@@ -161,7 +161,9 @@ jobs:
           Remove-Item $logPath -ErrorAction SilentlyContinue
           $env:ASTELLA_STARTUP_LOG = '1'
           try { Add-MpPreference -ExclusionPath (Split-Path $exe) -ErrorAction Stop; Write-Host 'Defender exclusion added' } catch { Write-Warning "Defender exclusion failed: $_" }
-          $proc = Start-Process -FilePath $exe -PassThru -WorkingDirectory (Split-Path $exe)
+          $md = Join-Path $env:TEMP 'astella-launch-md.md'
+          Set-Content -Path $md -Value '# launch'
+          $proc = Start-Process -FilePath $exe -ArgumentList $md -PassThru -WorkingDirectory (Split-Path $exe)
           Start-Sleep -Seconds 120
           $live = Get-Process -Id $proc.Id -ErrorAction SilentlyContinue
           if (-not $live) { throw 'app exited during startup' }
