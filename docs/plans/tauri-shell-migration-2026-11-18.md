@@ -280,6 +280,17 @@ expectedDomainSchemaRevision/configRevision），启动时在 env 缺项处补�
 | macOS 先行 | ✅ | 全部实测在 macOS 26 / arm64 |
 | Windows 跟进 | 🟡 编译面通过 | `cargo xwin check --target x86_64-pc-windows-msvc --all-targets` **通过（0 error，仅警告）**；过程中修掉三处真实缺口：`tauri-build` 需要 `icons/icon.ico`（已用 Pillow 从 `icon.png` 生成 16–256 七尺寸）、`update.rs` 的 macOS 安装脚本未门控 `std::os::unix`（已加 `cfg(not(windows))`）、交叉工具链缺 `llvm-lib`/`llvm-rc`（本机用 `~/.local/bin` 下 shim 顶上，仅影响本机 check；Windows 实机用 MSVC 自带 `lib.exe`/`rc.exe`。已固化为 `apps/desktop-tauri/scripts/windows-check.sh [--features voice-engine] [--release]`，自建 shim 与目录，一条命令复跑。链接级验证的边界（2026-11-18 实测）：用 `rust-lld` 做 `lld-link`（argv[0] 选风味）后，`cargo xwin build --release` 能进入最终链接，但 ring 的静态库是 macOS `ar` 打的 BSD/COFF 混合归档，lld-link 解不出成员符号（`ring_core_*__sha256_*` 未定义）；补真正的 LLVM 失败：Homebrew 拒绝（macOS 27 非 Tier 1 配置）且 GHCR 瓶被限速（2 分钟 ~3MB）。故 **exe/NSIS 产物只在 windows-latest 出**，本机仅到 check。`tauri.conf` bundle 图标已加入 `icon.ico`；双端复验：MSVC 交叉 check 7.96s、macOS `cargo check` 6.51s，均 0 error。Windows 文件关联（md 家族）与单实例转发已接（插件 2.5.5 + bundle.fileAssociations），PDF 导出接 WebView2 `PrintToPdf`（`pdf_export_windows.rs`），以上均交叉 check 通过；`--features voice-engine`（sherpa Windows 预编译库）也已交叉 check 通过，release profile 同样通过（31.66s）（本机需先建 `target/<triple>/debug/{deps,examples}`，sherpa 构建脚本假定其存在）；WebView2 行为、安装器、关联、PDF 与 ASR 实机仍须 `windows-latest`。发布脚本已加 Windows 分支：`--bundles nsis`，`deployment.json` 以 `bundle.resources` 平铺注入安装目录，产物从 `bundle/nsis/*.exe` 汇总；`ASTELLA_PACKAGE_PLATFORM=windows` 可在 mac 上 dry-run 演练该分支（已演练）。工作流增加手动 `windows-package` job（dispatch 才跑，NSIS + 产物上传），尚未实际运行 |
 
+### GitHub Actions 首跑（2026-11-18）
+
+- `Desktop Tauri shell` 在 push 后以 `workflow_dispatch` 实跑（run 44315724812）：
+  **Windows compile check ✅**（含 `cargo test --no-run --features voice-engine`），
+  **Windows package ✅**（NSIS 安装包，artifact `astella-tauri-windows` ≈ 99.35 MB）；
+  macOS job 仍在公开仓库的 macOS runner 队列里等待（此前一次被排队超时取消后单独 rerun）。
+- 首跑修出的 CI 问题（均已提交）：`macos-14` 退役 → `macos-15`；sherpa 构建脚本假定
+  `target/<profile>/deps|examples` 存在（mac/win 均需预建并清理 `build/sherpa-rs*` 旧缓存）；
+  Windows check job 缺 renderer 产物 → 写 stub index.html；Windows 上 `npx` 是 `.cmd`
+  （脚本改为 shell 启动），`--config` 改传文件避免 shell 拆 JSON。
+
 ### 目标验收对照（2026-11-18 末轮审计锚点）
 
 | 目标条款 | 现状 | 证据 |
@@ -290,7 +301,7 @@ expectedDomainSchemaRevision/configRevision），启动时在 env 缺项处补�
 | 登录门稳定态 < 600MB | ✅ 411–454MB | 60s×12 采样，max 454MB |
 | DMG < 150MB | ✅ 99.55 MiB | 新包 `dist/2.0.6/Astella_2.0.6_aarch64.dmg`；app 104.74 MiB |
 | 模型外置 | ✅ | 鉴权下载 + 整份校验，不入安装包 |
-| Windows 跟进 | 🟡 编译面过；实机未验 | 交叉 check（dev+release、含 voice-engine）；NSIS/关联/PDF/ASR 待 `windows-latest` 或真机 |
+| Windows 跟进 | 🟡 CI 已产包；实机未验 | 交叉 check（dev+release、含 voice-engine）；NSIS/关联/PDF/ASR 待 `windows-latest` 或真机 |
 | Electron 并行发布直到对齐 | 🟡 | Electron 仍在发；Tauri 构建工作流已备但 Actions 未跑（需 push） |
 | 发布链（补丁） | 🟡 本地链路齐 | 平台标记命名 + `make_patch --verify` 对真实二进制通过；补丁与当版 Tauri 二进制资产未上传 Release。清单由 Electron 发布链产出（服务端改写 url），Tauri 不发布清单 |
 | 验收：登录门内存 <600MB | ✅ | 2026-11-18 末复测 **540MB**（主进程 132 + WebKit 408），当前打包产物 |
