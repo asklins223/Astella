@@ -26,7 +26,23 @@ mod window;
 
 use tauri::Manager;
 
+/// 启动阶段体检（仅 ASTELLA_STARTUP_LOG=1 时启用）：写 %LOCALAPPDATA%\Astella\startup.log。
+fn startup_log(stage: &str) {
+    if std::env::var_os("ASTELLA_STARTUP_LOG").is_none() {
+        return;
+    }
+    let Some(dir) = std::env::var_os("LOCALAPPDATA").map(std::path::PathBuf::from) else { return };
+    let path = dir.join("Astella").join("startup.log");
+    let _ = std::fs::create_dir_all(path.parent().unwrap_or(&dir));
+    let _ = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .and_then(|mut file| std::io::Write::write_all(&mut file, format!("{stage}\n").as_bytes()));
+}
+
 fn main() {
+    startup_log("main:enter");
     let mut builder = tauri::Builder::default();
     #[cfg(target_os = "windows")]
     {
@@ -58,6 +74,7 @@ fn main() {
         ]);
     protocol::register(builder)
         .setup(|app| {
+            startup_log("setup:enter");
             // 会话凭据与 API 传输的宿主（切片 2）。目录取 Tauri 的 app data：
             // macOS 上是 ~/Library/Application Support/com.astella.desktop。
             // 打包安装时随资源附带的部署默认值：env 优先，缺失才由 deployment.json 补。
@@ -76,10 +93,13 @@ fn main() {
                 }
             }
             let user_data = app.path().app_data_dir().expect("app data dir");
+            startup_log("setup:voice-models");
             voice_model::install(&user_data);
             voice_engine::install(&user_data);
+            startup_log("setup:gateway");
             let gateway = gateway::Gateway::from_env(&user_data);
             let contract = bridge::contract::contract_snapshot(gateway.configuration());
+            startup_log("setup:window");
             // PDF 导出演练钩子：显式设置 ASTELLA_PDF_REHEARSAL=<输出路径> 才触发（生产不设置）。
             if let Ok(pdf_path) = std::env::var("ASTELLA_PDF_REHEARSAL") {
                 let handle = app.handle().clone();
@@ -140,6 +160,7 @@ fn main() {
             app.manage(std::sync::Arc::new(tokio::sync::Mutex::new(gateway)));
             app.manage(models);
             window::create_main_window(app, bridge::boot_script(&contract))?;
+            startup_log("setup:window-ready");
             // 冷启动时随命令行带进来的文件（Windows 关联/命令行打开）。
             let launch_paths: Vec<std::path::PathBuf> = std::env::args()
                 .skip(1)

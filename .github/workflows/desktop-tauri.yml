@@ -164,7 +164,10 @@ jobs:
           $exe = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
           if (-not $exe) { throw 'installed exe not found' }
           Write-Host "Installed: $exe"
-          $proc = Start-Process -FilePath $exe -PassThru
+          $logPath = Join-Path $env:LOCALAPPDATA 'Astella\startup.log'
+          Remove-Item $logPath -ErrorAction SilentlyContinue
+          $env:ASTELLA_STARTUP_LOG = '1'
+          $proc = Start-Process -FilePath $exe -PassThru -WorkingDirectory (Split-Path $exe)
           Start-Sleep -Seconds 25
           $live = Get-Process -Id $proc.Id -ErrorAction SilentlyContinue
           if (-not $live) { throw 'app exited during startup' }
@@ -175,6 +178,7 @@ jobs:
           Write-Host "Running: pid=$($proc.Id) session=$($live.SessionId) ws=${ws}MiB mainWindow=$($live.MainWindowHandle) title='$($live.MainWindowTitle)'"
           Write-Host ("PowerShell session=" + (Get-Process -Id $PID).SessionId)
           Get-ChildItem -Path (Split-Path $exe) | Select-Object -ExpandProperty Name | Out-String | Write-Host
+          if (Test-Path $logPath) { Write-Host 'startup.log:'; Get-Content $logPath | ForEach-Object { Write-Host "  $_" } } else { Write-Host 'startup.log: (missing)' }
           $children = Get-CimInstance Win32_Process -Filter "ParentProcessId=$($proc.Id)" | Select-Object ProcessId, Name
           Write-Host ("Children: " + (($children | ForEach-Object { "$($_.Name)#$($_.ProcessId)" }) -join ', '))
           $runtimeDirs = Get-ChildItem 'C:\Program Files (x86)\Microsoft\EdgeWebView\Application' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name
