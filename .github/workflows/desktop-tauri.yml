@@ -77,6 +77,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: apps/desktop-tauri
+      - name: Prepare target dirs (sherpa build script expects deps/)
+        working-directory: apps/desktop-tauri
+        shell: bash
+        run: mkdir -p target/debug/deps target/debug/examples target/release/deps target/release/examples
       - name: Cargo check (all targets)
         working-directory: apps/desktop-tauri
         run: cargo check --all-targets --features voice-engine
@@ -111,6 +115,10 @@ jobs:
       - name: Build renderer
         working-directory: apps/desktop-client
         run: npm run build
+      - name: Prepare target dirs (sherpa build script expects deps/)
+        working-directory: apps/desktop-tauri
+        shell: bash
+        run: mkdir -p target/debug/deps target/debug/examples target/release/deps target/release/examples
       - name: Package (NSIS)
         working-directory: apps/desktop-tauri
         shell: bash
