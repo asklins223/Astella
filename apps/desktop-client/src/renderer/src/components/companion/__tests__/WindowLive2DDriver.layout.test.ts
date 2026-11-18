@@ -72,8 +72,10 @@ beforeEach(async () => {
     const prefix = "/device/models/";
     if (!pathname.startsWith(prefix)) return `../../../../public${pathname}`;
     const rest = pathname.slice(prefix.length);
-    if (rest.startsWith("companion-live2d-whale-v3/")) return `../../../../../../assets/companion-models/live2d-v3/whale/${rest.slice("companion-live2d-whale-v3/".length)}`;
-    if (rest.startsWith("companion-live2d-fatfish-v4/")) return `../../../../../../assets/companion-models/live2d-v4/fatfish/${rest.slice("companion-live2d-fatfish-v4/".length)}`;
+    // 服务端把 manifest.json 改名 client-manifest.json 下发；仓库里保留源文件名。
+    const localFile = (file: string) => file.replace(/client-manifest\.json$/, "manifest.json");
+    if (rest.startsWith("companion-live2d-whale-v3/")) return localFile(`../../../../../../assets/companion-models/live2d-v3/whale/${rest.slice("companion-live2d-whale-v3/".length)}`);
+    if (rest.startsWith("companion-live2d-fatfish-v4/")) return localFile(`../../../../../../assets/companion-models/live2d-v4/fatfish/${rest.slice("companion-live2d-fatfish-v4/".length)}`);
     throw new Error(`unexpected model asset: ${pathname}`);
   };
   vi.stubGlobal("fetch", vi.fn(async (url: string) => ({
