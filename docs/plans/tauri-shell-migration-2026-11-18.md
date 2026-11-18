@@ -233,7 +233,7 @@ expectedDomainSchemaRevision/configRevision），启动时在 env 缺项处补�
 - 打开文件：**接收/去重/取批/在文件管理器中显示已移植**（macOS `RunEvent::Opened`
   + 冷启动 argv；只收 .md/.markdown/.mdown/.mkd，reveal 仅限系统交过的路径；
   `onIncoming` 用同契约的 take 轮询）。`openedFile.prepareImport`（正文图片上传）
-  未移植，如实回 `feature_disabled`。Windows 文件关联与单实例转发已接，待实机。
+  未移植，如实回 `feature_disabled`。Windows 文件关联与单实例转发已接并实测（冷启动 `launch-paths:1`、热转发 `second-instance:1`）。
 - artifact frame：**读取路由已通**（`astella-app://artifact/<uuid>` → `<appData>/artifacts/<uuid>.html`，
   严格 CSP、nosniff、只认 uuid）。产物的**写入侧**（讲解生成流程与模板组装）未移植——
   依赖笔记深读通道；路由先就位，写入随那些通道一起补。
@@ -258,7 +258,7 @@ expectedDomainSchemaRevision/configRevision），启动时在 env 缺项处补�
     `ASTELLA_UPDATE_REHEARSAL=1`）：available → 补丁(2.4MB)下载 → 应用 → 结果哈希
     核对 → install.sh 等进程退出 → 替换运行中的可执行文件；替换后文件哈希与
     2.0.7 新包一致。`.app` 形态的重新拉起未演练（debug 为裸二进制）
-- Windows：WebView2 形态与安装器未验证。
+- Windows：NSIS 安装器/WebView2 启动/窗口渲染已在 windows-latest 实测（截图与 startup.log 为证）；真人交互走查待做。
 - 已知 flaky 已修：测试临时目录统一走原子计数器（`test_temp_dir`）。
 
 ## 完成度审计（2026-11-18，终版）
@@ -312,7 +312,7 @@ expectedDomainSchemaRevision/configRevision），启动时在 env 缺项处补�
 | 登录门稳定态 < 600MB | ✅ 411–454MB | 60s×12 采样，max 454MB |
 | DMG < 150MB | ✅ 99.55 MiB（本地）/ 96.45 MiB（CI） | `dist/2.0.6/Astella_2.0.6_aarch64.dmg`；CI 产物 app 101.63 MiB |
 | 模型外置 | ✅ | 鉴权下载 + 整份校验，不入安装包 |
-| Windows 跟进 | 🟡 CI 已产包；实机未验 | 交叉 check（dev+release、含 voice-engine）；NSIS/关联/PDF/ASR 待 `windows-latest` 或真机 |
+| Windows 跟进 | 🟡 CI 端到端已通；待人工交互 | 交叉 check（dev+release、含 voice-engine 0 error）；NSIS（含 ASR DLL）静默安装→启动→窗口渲染→截图；冷启动/热转发文件打开、PDF `%PDF-`、剪贴板读写均实测；剩余：连后端真人走查（登录/ASR 识别）与资产上架 |
 | Electron 并行发布直到对齐 | 🟡 | Electron 仍在发；Tauri Actions 已实跑并全绿（mac 构建/测试/打包、win check/NSIS+ASR 包/冒烟） |
 | 发布链（补丁） | 🟡 本地链路齐 | 平台标记命名 + `make_patch --verify` 对真实二进制通过；补丁与当版 Tauri 二进制资产未上传 Release。清单由 Electron 发布链产出（服务端改写 url），Tauri 不发布清单 |
 | 验收：登录门内存 <600MB | ✅ | 2026-11-18 末复测 **540MB**（主进程 132 + WebKit 408），当前打包产物 |
