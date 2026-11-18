@@ -17,7 +17,7 @@
  *     [--skip-renderer] [--skip-bundle] [--dry-run]
  */
 import { execFileSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -86,6 +86,23 @@ if (deployment && isWindows) {
 }
 if (!flag("skip-bundle")) {
   const featureArgs = features ? ["--features", features] : [];
+  // Windows + voice-engine：sherpa 的运行时 DLL 必须随安装包平铺到安装根目录，
+  // 否则 exe 的导入表在加载期就失败（main 不会执行）。
+  if (isWindows && features?.split(",").includes("voice-engine")) {
+    const depsDir = join(appRoot, "target", "release", "deps");
+    const runtimeDir = join(appRoot, "sherpa-runtime");
+    if (!dryRun) {
+      rmSync(runtimeDir, { recursive: true, force: true });
+      mkdirSync(runtimeDir, { recursive: true });
+      const dlls = existsSync(depsDir) ? readdirSync(depsDir).filter((file) => file.endsWith(".dll")) : [];
+      if (dlls.length === 0) {
+        console.error(`没有在 ${depsDir} 找到 sherpa 运行时 DLL；不能出带 ASR 的包`);
+        process.exit(1);
+      }
+      for (const file of dlls) copyFileSync(join(depsDir, file), join(runtimeDir, file));
+      console.log(`sherpa-runtime <- ${dlls.length} dll`);
+    }
+  }
   const bundles = isWindows ? "nsis" : "app,dmg";
   run("cargo", ["build", "--release", "--bin", "astella-desktop-tauri", ...featureArgs]);
   run("npx", ["--yes", "@tauri-apps/cli@latest", "build", "--bundles", bundles, ...featureArgs,

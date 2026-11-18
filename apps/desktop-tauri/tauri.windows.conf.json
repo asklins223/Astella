@@ -1,0 +1,7 @@
+{
+  "bundle": {
+    "resources": {
+      "sherpa-runtime/*.dll": "./"
+    }
+  }
+}
