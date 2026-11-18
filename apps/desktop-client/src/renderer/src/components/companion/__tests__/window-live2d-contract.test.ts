@@ -32,7 +32,7 @@ function parameterValue(
 describe("window Live2D policy", () => {
   it("uses real head parts from the whale asset and excludes tail/table parts", () => {
     const parts = JSON.parse(readFileSync(
-      new URL("../../../../public/assets/companion/live2d-v3/whale/c_0120.cdi3.json", import.meta.url),
+      new URL("../../../../../../assets/companion-models/live2d-v3/whale/c_0120.cdi3.json", import.meta.url),
       "utf8",
     )).Parts as { Id: string; Name: string }[];
     const headParts = WINDOW_LIVE2D_MODEL_REGISTRY.whale.layoutHeadParts!;
@@ -93,7 +93,7 @@ describe("window Live2D policy", () => {
   it("公皮的体型三选一与隐藏部件都和资产对得上", async () => {
     const descriptor = WINDOW_LIVE2D_MODEL_REGISTRY.fatfish;
     const parts = JSON.parse(await readFile(
-      new URL("../../../../public/assets/companion/live2d-v4/fatfish/fatfish.cdi3.json", import.meta.url),
+      new URL("../../../../../../assets/companion-models/live2d-v4/fatfish/fatfish.cdi3.json", import.meta.url),
       "utf8",
     )).Parts as { Id: string; Name: string }[];
     // 登记的隐藏部件必须真的存在于这个模型里，而且就是作者那块黑鼻子。

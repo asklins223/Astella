@@ -33,6 +33,75 @@
   will-change: transform;
 }
 
+
+/* 伴星模型下载门（2026-11-18）：模型不随安装包分发，首次载入时整份下载。 */
+.companion-model-gate {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: rgba(250, 244, 232, 0.94);
+  border: 1px solid rgba(90, 70, 50, 0.18);
+  box-shadow: 0 10px 24px rgba(58, 47, 38, 0.12);
+  color: #3a2f26;
+  text-align: center;
+}
+.companion-model-gate--quiet {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+.companion-model-gate__title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.companion-model-gate__detail {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #7a6a58;
+}
+.companion-model-gate__track {
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(90, 70, 50, 0.14);
+  overflow: hidden;
+}
+.companion-model-gate__track > span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: #b5651d;
+  transition: width 240ms ease;
+}
+.companion-model-gate__meta {
+  margin: 0;
+  font-size: 11px;
+  color: #7a6a58;
+  font-variant-numeric: tabular-nums;
+}
+.companion-model-gate__action {
+  margin-top: 2px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(181, 101, 29, 0.35);
+  background: rgba(181, 101, 29, 0.08);
+  color: #8a4c16;
+  font-size: 12px;
+  cursor: pointer;
+}
+.companion-model-gate__action:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 /* 角色脚下的影子：拖动时抬起、变小变淡，与上面那条 transform 同一套时长。 */
 .companion-presence[data-surface="room"] .companion-visual-shell::before {
   position: absolute;

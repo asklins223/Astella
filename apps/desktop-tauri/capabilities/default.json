@@ -1,0 +1,6 @@
+{
+  "identifier": "default",
+  "description": "Astella desktop shell: dialogs for local file and export flows.",
+  "windows": ["main"],
+  "permissions": ["core:default", "dialog:default"]
+}

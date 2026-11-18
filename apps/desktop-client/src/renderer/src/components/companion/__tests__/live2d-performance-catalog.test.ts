@@ -26,7 +26,7 @@ const assets = import.meta.glob(
   // 2026-09-30：本文件移进 `__tests__/` 时，这一条**也要多一层**——
   // `import.meta.glob` 按**当前文件位置**解析，不走 import 重写那套。
   // 普通 import 会被打包器改写，glob 的字符串是原样交给 Vite 的。
-  "../../../../public/assets/companion/**/*.json", {
+  "../../../../../../assets/companion-models/**/*.json", {
   eager: true,
   import: "default",
 }) as Record<string, unknown>;

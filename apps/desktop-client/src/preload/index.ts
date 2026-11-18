@@ -291,6 +291,13 @@ const desktopApi: AstellaDesktopApiM2 = {
     feedbackMethod: (input) => invoke(DESKTOP_IPC_CHANNELS.agentMethodFeedback, input),
   },
   companion: {
+    // 伴星 Live2D 模型（2026-11-18）：设备级四条，下载由主进程经会话完成。
+    model: {
+      getState: (input) => invoke(DESKTOP_IPC_CHANNELS.companionModelState, input),
+      download: (input) => invoke(DESKTOP_IPC_CHANNELS.companionModelDownload, input),
+      cancel: (input) => invoke(DESKTOP_IPC_CHANNELS.companionModelCancel, input),
+      remove: (input) => invoke(DESKTOP_IPC_CHANNELS.companionModelRemove, input),
+    },
     initiative: {
       getPreferences: input => invoke(DESKTOP_IPC_CHANNELS.companionParticipationGet, input),
       setPreferences: input => invoke(DESKTOP_IPC_CHANNELS.companionParticipationPut, input),

@@ -1,0 +1,126 @@
+name: Desktop Tauri shell
+
+# Tauri 外壳的构建与验证（迁移期并行于 Electron 流水线）。
+# 手动运行：Actions → Desktop Tauri shell → Run workflow。
+# macOS 出 .app/DMG（CI=true 绕开 macOS 26 的 Finder 脚本超时）；
+# Windows 只做编译检查——安装器与 WebView2 行为尚未在实机验证。
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-tauri-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "22"
+
+jobs:
+  macos:
+    name: macOS build, tests and package
+    runs-on: macos-14
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            packages/shared/package-lock.json
+            apps/desktop-client/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop-tauri
+      - name: Install shared dependencies
+        working-directory: packages/shared
+        run: npm ci --no-audit --no-fund
+      - name: Install desktop dependencies
+        working-directory: apps/desktop-client
+        run: npm ci --no-audit --no-fund
+      - name: Typecheck renderer
+        working-directory: apps/desktop-client
+        run: npm run typecheck
+      - name: Build renderer
+        working-directory: apps/desktop-client
+        run: npm run build
+      - name: Rust tests
+        working-directory: apps/desktop-tauri
+        run: cargo test --features voice-engine
+      - name: Package (app + dmg)
+        working-directory: apps/desktop-tauri
+        env:
+          CI: "true"
+        run: |
+          VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+          node scripts/package-release.mjs --version "$VERSION" --skip-renderer --features voice-engine
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: astella-tauri-macos
+          path: apps/desktop-tauri/dist/**
+          if-no-files-found: error
+          retention-days: 14
+
+  windows:
+    name: Windows compile check
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop-tauri
+      - name: Cargo check (all targets)
+        working-directory: apps/desktop-tauri
+        run: cargo check --all-targets --features voice-engine
+      - name: Rust tests (non-Mock runtime paths compile on Windows)
+        working-directory: apps/desktop-tauri
+        run: cargo test --no-run --features voice-engine
+
+  windows-package:
+    name: Windows package (manual)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            packages/shared/package-lock.json
+            apps/desktop-client/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop-tauri
+      - name: Install shared dependencies
+        working-directory: packages/shared
+        run: npm ci --no-audit --no-fund
+      - name: Install desktop dependencies
+        working-directory: apps/desktop-client
+        run: npm ci --no-audit --no-fund
+      - name: Build renderer
+        working-directory: apps/desktop-client
+        run: npm run build
+      - name: Package (NSIS)
+        working-directory: apps/desktop-tauri
+        shell: bash
+        run: |
+          VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+          node scripts/package-release.mjs --version "$VERSION" --skip-renderer --features voice-engine
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: astella-tauri-windows
+          path: apps/desktop-tauri/dist/**
+          if-no-files-found: error
+          retention-days: 14

@@ -1,3 +1,4 @@
+import { companionModelManifestV1Schema } from "@astella/shared/companion-model-contracts";
 import { companionParticipationPreferencesV1Schema, companionParticipationPreferencesWriteV1Schema, companionAwarenessObservationV1Schema, companionAwarenessReceiptV1Schema } from "@astella/shared/companion-initiative-contracts";
 import { resolveObjectResponse, uploadRemoteObject } from "../store/desktop-object-transfers";
 /**
@@ -406,6 +407,24 @@ export async function getCompanionModelCatalog(t: GatewayTransport, requestId?: 
   await t.ensureConnected(requestId);
   const result = await t.request("/companion/model/catalog", { method: "GET" }, true, true, requestId);
   const parsed = companionModelCatalogV1Schema.safeParse(result.body);
+  if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+  return parsed.data;
+}
+
+/**
+ * 一份伴星模型的下载清单（2026-11-18）。服务端为每个文件签发临时下载 URL
+ * （远程对象存储）或给出会话授权的同 origin 路径（本地存储）。
+ */
+export async function getCompanionModelManifest(t: GatewayTransport, modelId: string, requestId?: string) {
+  await t.ensureConnected(requestId);
+  const result = await t.request(
+    `/companion/model/manifest?modelId=${encodeURIComponent(modelId)}`,
+    { method: "GET" },
+    true,
+    true,
+    requestId,
+  );
+  const parsed = companionModelManifestV1Schema.safeParse(result.body);
   if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
   return parsed.data;
 }

@@ -35,7 +35,8 @@ export function SettingsCompanionVoice(props: { onReadable: (value: SettingsRead
     voice.setVoicePreferenceRead(!voiceResource.loading);
   }, [voiceResource.section, voiceResource.loading, voice.setVoicePreference, voice.setVoicePreferenceRead]);
   const answerMode = answer.section?.ok ? answer.section.value : null;
-  // 桌面端的模型打在安装包里。手机端才向服务端要对象存储链接，再在手机上下载。
+  // 桌面端与手机端同一条分发（2026-11-18）：模型不进安装包，首次载入时
+  // 经已登录会话从对象存储取回，校验完整后才进入。
   const models = (Object.entries(WINDOW_LIVE2D_MODEL_REGISTRY) as Array<[WindowLive2DModelId, { displayName: string }]>).map(
     ([id, descriptor]) => [id, descriptor.displayName] as const,
   );

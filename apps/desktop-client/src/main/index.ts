@@ -19,6 +19,14 @@ import { CompanionMessageAudioCache } from './voice/companion-message-audio-cach
 import { primeUpdateStateFromCache } from './update/desktop-update'
 import { voiceAsrModelDirectory } from '../shared/voice-asr-model-path'
 import { createVoiceAsrModelResponder } from './voice/voice-asr-model-route'
+import { companionModelDirectory } from '../shared/companion-model-path'
+import { CompanionModelStore } from './companion-model/companion-model-store'
+import { createCompanionModelResponder } from './companion-model/companion-model-route'
+import { COMPANION_MODEL_IDS, COMPANION_MODEL_ROUTE_PREFIX } from '@astella/shared/companion-model-contracts'
+import { getCompanionModelManifest } from './gateway/desktop-gateway-ns-companion'
+import { fetchObjectDownload } from './store/desktop-object-transfers'
+import { DesktopGatewayFailure } from './gateway/desktop-gateway-failure'
+import type { GatewayTransport } from './gateway/desktop-gateway-transport'
 import { createAvatarImageStore } from './store/avatar-image-store'
 import { createNoteImageStore } from './note-doc/note-image-store'
 import { VOICE_ASR_MODEL_ROUTE_PREFIX } from '@astella/shared/voice-asr-model-contracts'
@@ -197,9 +205,13 @@ async function artifactDocumentResponse(requestUrl: URL, method: string): Promis
   })
 }
 
-function registerAppProtocol(voiceAsrModel: VoiceAsrModelStore): void {
+function registerAppProtocol(
+  voiceAsrModel: VoiceAsrModelStore,
+  companionModelStores: ReadonlyMap<string, CompanionModelStore>,
+): void {
   const rendererRoot = resolve(__dirname, '../renderer')
   const respondVoiceAsr = createVoiceAsrModelResponder(voiceAsrModel)
+  const respondCompanionModel = createCompanionModelResponder(companionModelStores)
 
   /**
    * `rendererRoot` 整个进程里不会变，它的 realpath 没必要每个资源请求都再问一次磁盘
@@ -271,6 +283,14 @@ function registerAppProtocol(voiceAsrModel: VoiceAsrModelStore): void {
      */
     if (requestedPath === VOICE_ASR_MODEL_ROUTE_PREFIX.slice(0, -1) || requestedPath.startsWith(VOICE_ASR_MODEL_ROUTE_PREFIX)) {
       return respondVoiceAsr(requestedPath.slice(VOICE_ASR_MODEL_ROUTE_PREFIX.length), request)
+    }
+
+    /**
+     * `device/models/<modelId>/…`：伴星 Live2D 模型，与识别模型同一条同源理由。
+     * 准入名单是模型目录里的安装标记；未登记的名字一律 404。
+     */
+    if (requestedPath === COMPANION_MODEL_ROUTE_PREFIX.slice(0, -1) || requestedPath.startsWith(COMPANION_MODEL_ROUTE_PREFIX)) {
+      return respondCompanionModel(requestedPath.slice(COMPANION_MODEL_ROUTE_PREFIX.length), request)
     }
 
     const assetPath = requestedPath || 'index.html'
@@ -897,9 +917,42 @@ app.whenReady()
   )
   await voiceAsrModel.sweepPartialFiles()
   traceBoot('voice-asr-swept')
+  /**
+   * 伴星 Live2D 模型的仓库（2026-11-18）。模型不进安装包：目录一开始是空的，
+   * 首次载入伴星时经已登录会话从对象存储取回，逐文件校验通过后才进入。
+   * 网关在 IPC 注册时才构造，所以用一个闭包等它出现。
+   */
+  let companionModelTransport: GatewayTransport | null = null
+  const companionModelStores = new Map<string, CompanionModelStore>(
+    COMPANION_MODEL_IDS.map((modelId) => [modelId, new CompanionModelStore(
+      modelId,
+      companionModelDirectory({ env: process.env, userDataDir: app.getPath('userData') }),
+      {
+        fetchManifest: async () => {
+          if (!companionModelTransport) throw new DesktopGatewayFailure('configuration_error', 'never')
+          return getCompanionModelManifest(companionModelTransport, modelId)
+        },
+        openFile: async (file, signal) => {
+          if (!companionModelTransport) throw new DesktopGatewayFailure('configuration_error', 'never')
+          if ('authorization' in file.download) {
+            // 本地存储模式：文件由 API 转发，必须带会话。
+            const result = await companionModelTransport.requestBinaryBytes(
+              file.download.url,
+              { method: 'GET' },
+              { accept: '*/*', contentTypePrefix: '', maxBytes: file.byteLength },
+            )
+            return new Response(Buffer.from(result.bytes), { status: 200, headers: { 'Content-Type': file.contentType } })
+          }
+          return fetchObjectDownload(companionModelTransport, file.download, signal)
+        },
+      },
+    )] as const),
+  )
+  await Promise.all([...companionModelStores.values()].map((store) => store.sweepPartialFiles()))
+  traceBoot('companion-models-swept')
   createNoteImageStore(join(app.getPath('userData'), 'note-images'))
   createAvatarImageStore(join(app.getPath('userData'), 'avatars'))
-  registerAppProtocol(voiceAsrModel)
+  registerAppProtocol(voiceAsrModel, companionModelStores)
   traceBoot('app-protocol-registered')
   registerRendererSecurityPolicy()
   traceBoot('renderer-security-policy-registered')
@@ -938,6 +991,10 @@ app.whenReady()
     // 语音识别模型的仓库。与协议层那一条路由共用**同一个 store 实例**：
     // 下载写进去的与 worker 读出来的必须是同一个目录，不能各拼一次路径。
     voiceAsrModelStore: voiceAsrModel,
+    companionModelStores,
+    onGatewayReady: (gateway) => {
+      companionModelTransport = gateway.gatewayTransport
+    },
     openedFileBroker: openedFiles
   })
 

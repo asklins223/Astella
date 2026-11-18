@@ -31,6 +31,7 @@ import { createSessionCredentialStore } from "../store/session-credential-store"
 export type { NoteDocCacheStore };
 import { VoiceAsrModelStore } from "../voice/voice-asr-model-store";
 import { registerVoiceAsrChannels } from "./desktop-ipc-voice-asr";
+import { registerCompanionModelChannels } from "./desktop-ipc-companion-model";
 import type { WindowStateSnapshot } from "../../shared/window-state";
 
 type WindowResolver = (contents: WebContents, sourceUrl: string) => BrowserWindow | null;
@@ -64,6 +65,10 @@ export type DesktopIpcRegistrationOptions = {
    * 读不到别处去拿一个"应该有"的模型，那正是把 239 MB 偷偷塞回安装包的老路。
    */
   readonly voiceAsrModelStore?: VoiceAsrModelStore;
+  /** 伴星 Live2D 模型的仓库（按 modelId 寻址）；与识别模型同族，设备级。 */
+  readonly companionModelStores?: ReadonlyMap<string, import("../companion-model/companion-model-store").CompanionModelStore>;
+  /** 网关建好后的回调：协议层与下载仓库要拿它出网（不经 IPC 的长任务）。 */
+  readonly onGatewayReady?: (gateway: DesktopGateway) => void;
   /** 系统文件关联：主进程收下的路径靠它交给渲染层（首帧补读与后续推送共用）。 */
   readonly openedFileBroker?: OpenedFileBroker;
 };
@@ -353,6 +358,7 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): As
     guidanceAudioCache: options.guidanceAudioCache,
     messageAudioCache: options.messageAudioCache,
   });
+  options.onGatewayReady?.(gateway);
   const env = options.env ?? process.env;
   const contract = contractSnapshot(gateway, env);
 
@@ -1169,6 +1175,13 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): As
     assertEpochBoundaryExempt,
     activeWorkspaceEpoch: () => activeWorkspaceEpoch,
     voiceAsrModelStore: options.voiceAsrModelStore,
+  });
+
+  registerCompanionModelChannels({
+    channel,
+    assertEpochBoundaryExempt,
+    activeWorkspaceEpoch: () => activeWorkspaceEpoch,
+    companionModelStores: options.companionModelStores,
   });
 
   installHandler(DESKTOP_IPC_CHANNELS.clipboardReadLinks, runtimeInputSchema, options, async () => {

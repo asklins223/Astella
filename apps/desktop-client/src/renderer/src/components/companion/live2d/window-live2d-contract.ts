@@ -517,8 +517,8 @@ export const WINDOW_LIVE2D_MODEL_REGISTRY: Readonly<
     // IDs verified against c_0120.cdi3.json; tail and desk parts are deliberately separate.
     layoutHeadParts: ["Part92", "Part19", "Part14", "Part28", "Part160", "Part161", "hair_d",
       "Part102", "Part44", "Part47", "Part68", "Part45", "Part46"],
-    manifest: "assets/companion/live2d-v3/whale/manifest.json",
-    model: "assets/companion/live2d-v3/whale/c_0120.model3.json",
+    manifest: "device/models/companion-live2d-whale-v3/client-manifest.json",
+    model: "device/models/companion-live2d-whale-v3/c_0120.model3.json",
     manifestExpectation: {
       modelId: "companion-live2d-whale-v3",
       status: "production",
@@ -551,8 +551,8 @@ export const WINDOW_LIVE2D_MODEL_REGISTRY: Readonly<
   fatfish: {
     displayName: "大肥鱼二号",
     layoutHeadParts: ["Part99", "Part2", "Part47", "Part161", "Part3", "Part4", "Part147", "Part162"],
-    manifest: "assets/companion/live2d-v4/fatfish/manifest.json",
-    model: "assets/companion/live2d-v4/fatfish/fatfish.model3.json",
+    manifest: "device/models/companion-live2d-fatfish-v4/client-manifest.json",
+    model: "device/models/companion-live2d-fatfish-v4/fatfish.model3.json",
     manifestExpectation: {
       modelId: "companion-live2d-fatfish-v4",
       status: "production",

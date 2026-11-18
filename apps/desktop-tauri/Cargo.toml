@@ -1,0 +1,61 @@
+[package]
+name = "astella-desktop-tauri"
+version = "2.0.6"
+edition = "2021"
+default-run = "astella-desktop-tauri"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+base64 = "0.22"
+hex = "0.4"
+percent-encoding = "2"
+arboard = "3"
+open = "5"
+regex = "1"
+hmac = "0.12"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+comrak = { version = "0.29", default-features = false }
+encoding_rs = "0.8"
+rand = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "multipart", "stream"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+yrs = "0.21"
+tokio-tungstenite = { version = "0.24", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
+futures-util = "0.3"
+sha2 = "0.10"
+qbsdiff = "1"
+tokio = { version = "1", features = ["fs", "io-util", "sync", "process", "macros"] }
+sherpa-rs = { version = "0.6", optional = true, default-features = false, features = ["download-binaries"] }
+
+[target.'cfg(windows)'.dependencies]
+tauri-plugin-single-instance = "2"
+webview2-com = "0.39"
+windows = { version = "0.62", features = ["Win32_Foundation"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSString", "NSData", "NSValue"] }
+objc2-web-kit = { version = "0.3", features = ["WKWebView", "WKPDFConfiguration", "block2", "objc2-core-foundation"] }
+objc2-core-foundation = "0.3"
+block2 = "0.6"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+# 安装包体积是验收基线之一：LTO + 去符号。codegen-units=1 换来更慢的构建，
+# 但这是最终随包发布的 profile，开发迭代走默认 dev profile。
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true
+
+[features]
+# 本机语音识别引擎：需要下载 sherpa-onnx 预编译库（约 36MB）。
+# 本地网络受限时默认关；CI 的 macOS 任务用 `--features voice-engine` 打开。
+voice-engine = ["dep:sherpa-rs"]

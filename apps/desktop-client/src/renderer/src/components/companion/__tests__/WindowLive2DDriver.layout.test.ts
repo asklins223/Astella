@@ -66,9 +66,19 @@ beforeEach(async () => {
   vi.spyOn(document, "baseURI", "get").mockReturnValue("https://study.test/");
   vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
   vi.stubGlobal("Live2DCubismCore", {});
+  const modelAssetPath = (pathname: string): string => {
+    // 2026-11-18 起模型经 `device/models/<modelId>/…` 提供：测试直接从仓库的
+    // assets/companion-models/ 读同一批文件（modelId → 目录一一对应）。
+    const prefix = "/device/models/";
+    if (!pathname.startsWith(prefix)) return `../../../../public${pathname}`;
+    const rest = pathname.slice(prefix.length);
+    if (rest.startsWith("companion-live2d-whale-v3/")) return `../../../../../../assets/companion-models/live2d-v3/whale/${rest.slice("companion-live2d-whale-v3/".length)}`;
+    if (rest.startsWith("companion-live2d-fatfish-v4/")) return `../../../../../../assets/companion-models/live2d-v4/fatfish/${rest.slice("companion-live2d-fatfish-v4/".length)}`;
+    throw new Error(`unexpected model asset: ${pathname}`);
+  };
   vi.stubGlobal("fetch", vi.fn(async (url: string) => ({
     ok: true,
-    json: async () => JSON.parse(readFileSync(new NodeURL(`../../../../public${new NodeURL(url).pathname}`, import.meta.url), "utf8")),
+    json: async () => JSON.parse(readFileSync(new NodeURL(modelAssetPath(new NodeURL(url).pathname), import.meta.url), "utf8")),
   })));
   vi.stubGlobal("PIXI", {
     Application: class {
@@ -98,7 +108,7 @@ beforeEach(async () => {
 });
 
 async function performanceCatalog(cues: WindowLive2DPerformanceCue[]) {
-  const asset = (path: string) => JSON.parse(readFileSync(new NodeURL(`../../../../public/assets/companion/live2d-v3/whale/${path}`, import.meta.url), "utf8"));
+  const asset = (path: string) => JSON.parse(readFileSync(new NodeURL(`../../../../../../assets/companion-models/live2d-v3/whale/${path}`, import.meta.url), "utf8"));
   const model = asset("c_0120.model3.json") as Model3File;
   const expressions = new Map<string, Expression3File>((model.FileReferences?.Expressions ?? []).map(entry =>
     [entry!.Name as string, asset(entry!.File as string)]));

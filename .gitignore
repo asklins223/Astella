@@ -175,3 +175,4 @@ apps/desktop-client/astella-diagnostics/
 
 # Native CMake intermediates
 apps/mobile-client/android/app/.cxx/
+/.tauri-keys

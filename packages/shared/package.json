@@ -272,6 +272,11 @@
       "import": "./src/contracts/desktop/desktop-ipc-contracts.ts",
       "default": "./src/contracts/desktop/desktop-ipc-contracts.ts"
     },
+    "./companion-model-contracts": {
+      "types": "./src/contracts/desktop/companion-model-contracts.ts",
+      "import": "./src/contracts/desktop/companion-model-contracts.ts",
+      "default": "./src/contracts/desktop/companion-model-contracts.ts"
+    },
     "./desktop-surface-contracts": {
       "types": "./src/contracts/desktop/desktop-surface-contracts.ts",
       "import": "./src/contracts/desktop/desktop-surface-contracts.ts",

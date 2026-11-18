@@ -9,6 +9,8 @@ import type { Plugin } from 'vite'
 
 import { sharedAlias } from './shared-alias.ts'
 import { voiceAsrModelDirectory } from './src/shared/voice-asr-model-path.ts'
+import { companionModelDirectory } from './src/shared/companion-model-path.ts'
+import { COMPANION_MODEL_IDS, COMPANION_MODEL_ROUTE_PREFIX } from '../../packages/shared/src/contracts/desktop/companion-model-contracts.ts'
 // ⚠️ 走**源码相对路径**而不是 `@astella/shared/…`：本文件由 Node 直接加载，
 // 还没有 vite 的 alias（`sharedAlias` 只作用于被打包的那三份），而
 // `node_modules/@astella/shared` 是 pnpm 的安装期快照——它还不知道新增的那条
@@ -92,6 +94,73 @@ function voiceAsrModelDevAssets(): Plugin {
 }
 
 /**
+ * 开发模式下 `device/models/<modelId>/…` 的同源提供方（2026-11-18）。
+ *
+ * 打包后由 app scheme 路由从 userData 读；开发时页面在 localhost，由开发服务器
+ * 从**同一个目录**（`companionModelDirectory()`）读——与服务端清单、主进程仓库
+ * 用同一条路径规则，两边不会各拼一份。只放行已安装（`installed.json` 在）
+ * 的模型目录内的文件；没下载过就如实 404，界面由下载门负责引导。
+ */
+function companionModelDevAssets(): Plugin {
+  const directory = companionModelDirectory()
+  return {
+    name: 'astella:companion-model-assets',
+    configureServer(server) {
+      server.middlewares.use((request, response, next) => {
+        const path = (request.url ?? '').split('?')[0]
+        if (!path?.startsWith(`/${COMPANION_MODEL_ROUTE_PREFIX}`)) {
+          next()
+          return
+        }
+        let rest: string
+        try {
+          rest = decodeURIComponent(path.slice(COMPANION_MODEL_ROUTE_PREFIX.length + 1))
+        } catch {
+          response.statusCode = 400
+          response.end('Bad request')
+          return
+        }
+        const [modelId, ...segments] = rest.split('/')
+        if (!(COMPANION_MODEL_IDS as readonly string[]).includes(modelId) || segments.length === 0) {
+          response.statusCode = 404
+          response.end('Not found')
+          return
+        }
+        const modelDir = resolve(directory, modelId)
+        const filePath = resolve(modelDir, segments.join('/'))
+        if (!filePath.startsWith(`${modelDir}/`)) {
+          response.statusCode = 404
+          response.end('Not found')
+          return
+        }
+        let size: number
+        try {
+          if (!statSync(resolve(modelDir, 'installed.json')).isFile()) throw new Error('not installed')
+          const stats = statSync(filePath)
+          if (!stats.isFile()) throw new Error('not a file')
+          size = stats.size
+        } catch {
+          response.statusCode = 404
+          response.end('Not found')
+          return
+        }
+        const extension = filePath.slice(filePath.lastIndexOf('.')).toLowerCase()
+        response.setHeader('Content-Type', extension === '.json' ? 'application/json' : extension === '.png' ? 'image/png' : 'application/octet-stream')
+        response.setHeader('Content-Length', String(size))
+        response.setHeader('Accept-Ranges', 'bytes')
+        // 整文件 GET/HEAD：pixi-live2d-display 走 XHR 整读，不发 Range。
+        // 打包后那条 app scheme 路由有完整 Range 实现，两者不一致处无人走。
+        if (request.method === 'HEAD') {
+          response.end()
+          return
+        }
+        createReadStream(filePath).pipe(response)
+      })
+    },
+  }
+}
+
+/**
  * `@astella/shared` 的实时源码别名定义在 `shared-alias.ts`，与 `vitest.config.ts`
  * 共用同一份（两边解析的不是同一个文件，就有一边在测一份快照）。
  */
@@ -148,6 +217,6 @@ export default defineConfig({
       // 别名指向仓库根的 packages/shared，dev server 默认只允许 root 内的文件。
       fs: { allow: [resolve('../..')] },
     },
-    plugins: [react(), voiceAsrModelDevAssets()]
+    plugins: [react(), voiceAsrModelDevAssets(), companionModelDevAssets()]
   }
 })

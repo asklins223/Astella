@@ -22,7 +22,7 @@ import { dirname, join, resolve, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const outDir = join(root, 'src/renderer/public/assets/companion/live2d-v4/fatfish');
+const outDir = join(root, 'assets/companion-models/live2d-v4/fatfish');
 const check = process.argv.includes('--check');
 const sourceArg = process.argv.indexOf('--source');
 const source = sourceArg >= 0 ? resolve(process.argv[sourceArg + 1]) : null;

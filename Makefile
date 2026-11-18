@@ -80,7 +80,7 @@ storage: ensure-db-volume
 #
 # 只限本机开发：whale 模型 `redistributionAllowed=false`，不要发布到生产或
 # 共享对象存储；对外分发前需重新确认许可。
-COMPANION_MODEL_DIR ?= ../desktop-client/src/renderer/public/assets/companion/live2d-v3/whale
+COMPANION_MODEL_DIR ?= ../desktop-client/assets/companion-models/live2d-v3/whale
 COMPANION_MODEL_ID ?= companion-live2d-whale-v3
 companion-model:
 	@test -x apps/api/node_modules/.bin/tsx || { \

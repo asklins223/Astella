@@ -9,15 +9,16 @@ const runtimeRoot = resolve(publicRoot, 'assets/learning-room/v1')
 const rendererOut = resolve(appRoot, 'out/renderer')
 // 2026-10-04 Owner 裁决删除 mao / 小彩 后，运行时只剩大肥鱼一个形态。
 // `window-live2d-contract.ts` 的 WINDOW_LIVE2D_MODEL_REGISTRY 是唯一真话。
+// 2026-11-18 起模型**不随安装包分发**：源资产留在仓库的 assets/companion-models/，
+// 由服务端清单分发到 userData 后经 device/models/ 路由给渲染层读。这里的断言
+// 因此是双向的：源资产必须在、渲染产物里必须没有。
 const activeLive2dModels = [
   {
-    sourceRoot: resolve(appRoot, 'src/renderer/public/assets/companion/live2d-v3/whale'),
-    outRoot: resolve(rendererOut, 'assets/companion/live2d-v3/whale'),
+    sourceRoot: resolve(appRoot, 'assets/companion-models/live2d-v3/whale'),
     modelFile: 'c_0120.model3.json',
   },
   {
-    sourceRoot: resolve(appRoot, 'src/renderer/public/assets/companion/live2d-v4/fatfish'),
-    outRoot: resolve(rendererOut, 'assets/companion/live2d-v4/fatfish'),
+    sourceRoot: resolve(appRoot, 'assets/companion-models/live2d-v4/fatfish'),
     modelFile: 'fatfish.model3.json',
   },
 ]
@@ -114,19 +115,20 @@ describe('runtime asset containment', () => {
     }
   })
 
-  it('keeps migration archives out while shipping the bundled Live2D runtimes', () => {
+  it('keeps migration archives out and the Live2D models unbundled', () => {
     const outFiles = listFiles(rendererOut).map((file) => relative(rendererOut, file).split(sep).join('/'))
     for (const prefix of releaseExcludedOutPrefixes) {
       expect(outFiles.some((file) => file.startsWith(prefix))).toBe(false)
     }
     // 2026-09-16 裁决移除 orb：它不得再进入 runtime 产物。
     expect(outFiles).not.toContain('assets/learning-room/v1/objects/companion-orb.webp')
-    // 在役模型的源资产必须都在。
+    // 在役模型的源资产必须都在（仓库里）。
     for (const model of activeLive2dModels) {
       expect(existsSync(resolve(model.sourceRoot, model.modelFile))).toBe(true)
     }
-    expect(outFiles).toContain('assets/companion/live2d-v3/whale/c_0120.model3.json')
+    // 运行时脚本仍随包；模型本体一份都不许进渲染产物。
     expect(outFiles).toContain('assets/companion/vendor/pixi.min.js')
+    expect(outFiles.some((file) => file.startsWith('assets/companion/live2d-'))).toBe(false)
   })
 
   it('keeps the retired Mao and Seethrough packages out of source and renderer out', () => {
@@ -160,11 +162,9 @@ describe('runtime asset containment', () => {
     }
   })
 
-  it('keeps the bundled whale runtime identical between source and renderer out', () => {
+  it('keeps the whale model internals complete in source', () => {
     const whale = activeLive2dModels[0]
     const sourceModel = JSON.parse(readFileSync(resolve(whale.sourceRoot, whale.modelFile), 'utf8'))
-    const outputModel = JSON.parse(readFileSync(resolve(whale.outRoot, whale.modelFile), 'utf8'))
-    expect(outputModel).toEqual(sourceModel)
 
     const references = [
       sourceModel.FileReferences.Moc,
@@ -176,7 +176,6 @@ describe('runtime asset containment', () => {
       ...Object.values(sourceModel.FileReferences.Motions ?? {}).flat().map((motion) => motion.File),
     ]
     expect(references.filter((reference) => !existsSync(resolve(whale.sourceRoot, reference)))).toEqual([])
-    expect(references.filter((reference) => !existsSync(resolve(whale.outRoot, reference)))).toEqual([])
   })
 
   it('declares the whale runtime groups the driver relies on', () => {

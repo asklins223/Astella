@@ -47,6 +47,7 @@ import {
   shouldCommitCompanionDrag,
 } from "./companion-home-placement";
 import { WindowLive2D, type WindowLive2DStatus } from "../live2d/WindowLive2D";
+import { CompanionModelGate } from "../live2d/companion-model-gate";
 import {
   presentationForCharacterCueIntent,
   type WindowLive2DCharacterMoment,
@@ -1504,6 +1505,7 @@ export function CompanionPresence() {
             />
           ) : null}
           <div ref={characterMotionRef} className="companion-character-motion">
+            <CompanionModelGate modelId={companionModelId}>
             <WindowLive2D
               key={live2dAttempt}
               active={!presenceHidden && !companionUnavailable}
@@ -1560,6 +1562,7 @@ export function CompanionPresence() {
               }}
               ariaLabel="书桌上的 AI 伴星"
             />
+            </CompanionModelGate>
           </div>
           {status === "loading" && !presenceHidden ? (
             <span className="companion-loading-state" role="status">正在加载{companionName}的形象…</span>

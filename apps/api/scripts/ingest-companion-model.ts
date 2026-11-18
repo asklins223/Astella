@@ -90,20 +90,23 @@ async function main() {
   if (!entryFile) throw new Error(`no .model3.json under ${dir}`);
   const relativeFiles = allFiles.filter((f) => {
     const name = path.basename(f);
-    return name !== "manifest.json" && name !== "README.md" && name !== ".DS_Store" && !name.startsWith(".");
+    // manifest.json 必须随模型分发：桌面端驱动加载前要用它做许可/形态核验。
+    return name !== "README.md" && name !== ".DS_Store" && !name.startsWith(".");
   });
 
   const files: Array<{ path: string; contentType: string; byteLength: number; sha256: string }> = [];
   const versionHash = createHash("sha256");
   for (const rel of relativeFiles) {
     const posixRel = rel.split(path.sep).join("/");
+    // 根上的 manifest.json 与分发清单同名，入库时改名，避免对象键互相覆盖。
+    const publishedPath = posixRel === "manifest.json" ? "client-manifest.json" : posixRel;
     const bytes = await readFile(path.join(dir, rel));
     const sha256 = createHash("sha256").update(bytes).digest("hex");
     const contentType = contentTypeFor(rel);
-    const key = legacyFlat ? `${prefix}${posixRel}` : `${prefix}${modelId}/${posixRel}`;
+    const key = legacyFlat ? `${prefix}${publishedPath}` : `${prefix}${modelId}/${publishedPath}`;
     await client.send(new PutObjectCommand({ Bucket: config.bucket, Key: key, Body: bytes, ContentType: contentType }));
-    files.push({ path: posixRel, contentType, byteLength: bytes.length, sha256 });
-    versionHash.update(posixRel).update(sha256);
+    files.push({ path: publishedPath, contentType, byteLength: bytes.length, sha256 });
+    versionHash.update(publishedPath).update(sha256);
     console.log(`uploaded ${key} (${bytes.length} bytes)`);
   }
 

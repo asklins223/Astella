@@ -349,6 +349,12 @@ export const DESKTOP_IPC_CHANNELS = {
   companionVoiceAsrModelDownload: "astella.v1.companion.voice.asrModel.download",
   companionVoiceAsrModelCancel: "astella.v1.companion.voice.asrModel.cancel",
   companionVoiceAsrModelRemove: "astella.v1.companion.voice.asrModel.remove",
+  // 伴星 Live2D 模型的四条（2026-11-18）：读状态 / 下载 / 中止 / 移除。
+  // 与识别模型同族：设备级、不要求工作区纪元；模型经已登录会话从对象存储取回。
+  companionModelState: "astella.v1.companion.model.state",
+  companionModelDownload: "astella.v1.companion.model.download",
+  companionModelCancel: "astella.v1.companion.model.cancel",
+  companionModelRemove: "astella.v1.companion.model.remove",
   /**
    * 本机识别（2026-10-06）：把渲染层录到的一段 16 kHz PCM 交给**主进程侧的本地引擎**，
    * 换回文字。同样是设备级通道，不要求工作区纪元。
@@ -2624,6 +2630,16 @@ export interface AstellaDesktopApiM2 extends AstellaDesktopApiM1 {
         meta: RequestMetaV1;
         request: CompanionRoomProfilePatchV1;
       }): Promise<GatewayResultV1<z.infer<typeof companionRoomProfileV1Schema>>>;
+    };
+    /**
+     * 伴星 Live2D 模型（2026-11-18）。设备级：模型在这台机器上，不在谁的名下，
+     * 与识别模型同族不要求工作区纪元。`download` 发起即返回，进度靠再读状态拿。
+     */
+    readonly model: {
+      getState(input: { meta: RequestMetaV1; modelId: string }): Promise<GatewayResultV1<import("./companion-model-contracts.ts").CompanionModelSnapshotV1>>;
+      download(input: { meta: RequestMetaV1; modelId: string }): Promise<GatewayResultV1<import("./companion-model-contracts.ts").CompanionModelSnapshotV1>>;
+      cancel(input: { meta: RequestMetaV1; modelId: string }): Promise<GatewayResultV1<import("./companion-model-contracts.ts").CompanionModelSnapshotV1>>;
+      remove(input: { meta: RequestMetaV1; modelId: string }): Promise<GatewayResultV1<import("./companion-model-contracts.ts").CompanionModelSnapshotV1>>;
     };
     readonly voice: {
       cachedList(input: {
