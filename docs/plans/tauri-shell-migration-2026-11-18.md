@@ -270,7 +270,7 @@ expectedDomainSchemaRevision/configRevision），启动时在 env 缺项处补�
 | 网关与身份 | ✅ | HMAC 配对信任、远程健康、60x0 凭据独立文件、会话恢复：本地真栈 live 测试通过；Node↔Rust 签名交叉向量 |
 | 设备能力：模型分发 | ✅ | 清单→鉴权下载→逐文件 SHA-256→同源路由→入口门→伴星出画（真栈 + MinIO 全链路） |
 | 设备能力：识别模型管理 | ✅ | 三源按序、字节+SHA-256、取消/移除/占用；设置页四通道接线（下载未跑过 239MB 全量） |
-| 设备能力：剪贴板/外链 | ✅ | 提取规则与合同逐条对齐；剪贴板主线程读写；外链白名单打开（单测） |
+| 设备能力：剪贴板/外链 | ✅ | 提取规则与合同逐条对齐；剪贴板主线程读写（CI 真 Windows 写入→读回 ok）；外链白名单打开（单测） |
 | 设备能力：打开文件 | ✅（mac）/🟡（win） | RunEvent::Opened + argv；去重/白名单/reveal 授权集合（单测）；Finder 真机路径未点过。Windows：`tauri-plugin-single-instance`（2.5.5，仅 Windows 注册）把第二实例 argv 转给首实例并聚焦窗口，`tauri.conf` 增加 md/markdown/mdown/mkd 的 `bundle.fileAssociations`；MSVC 交叉 check 通过，实机打开方式待验 |
 | 设备能力：图片上传 | ✅（本地路径） | multipart `/uploads/images`，真栈传 1x1 PNG 通过；**远程对象存储直传未移植** |
 | 自更新链 | ✅（mac 演练） | 检查（自家 yml，6h 缓存）+ qbsdiff 增量（102MB→1.7MB 基线；E2E 替换演练通过）+ mac/Windows 安装脚本；**真实补丁资产与 Windows 实机未验** |
@@ -335,8 +335,7 @@ shim 缺失为 **0**；`source.bundleImport` 目录与 zip 两模式完整落地
 四种格式全部可用（PDF 走 WKWebView 原生 createPDF）。
 Markdown AST 重写已移植（`comrak`，7 条单测）：导出图片本地化、`noteWriting` 的
 `save/assets` 图片落盘、`export` 的 **md/html**（html 内联 data URI + 完整文档外壳）、
-`clipboard` 富文本（HTML+纯文本备选，纯函数构造有单测；**未实机写剪贴板**，避免覆盖
-使用者的剪贴板内容）。**真图片节点导出 E2E 已通过**：上传 PNG → yjs `paragraph>image`
+`clipboard` 富文本（HTML+纯文本备选，纯函数构造有单测；mac 本机为避免覆盖使用者剪贴板未实写）。CI 真 Windows 冒烟用 `ASTELLA_CLIPBOARD_REHEARSAL` 做写入→读回校验，结果 `clipboard-rehearsal:ok`。**真图片节点导出 E2E 已通过**：上传 PNG → yjs `paragraph>image`
 增量上行 → `notes.markdownExport` 把图落到 `assets/<sha256 前 20>.png` 且正文改为
 `assets/…`（`imageFailures=0`）。**DOCX 已通**（手写 WordprocessingML zip：标题/正文/粗斜体/行内代码/列表/引用/代码块/
 表格/PNG·JPEG·GIF 图；macOS `textutil` 实解探针取回标题与正文，live 导出落盘校验 zip 魔数）。
