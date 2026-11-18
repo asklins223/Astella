@@ -168,8 +168,13 @@ jobs:
           Start-Sleep -Seconds 25
           $live = Get-Process -Id $proc.Id -ErrorAction SilentlyContinue
           if (-not $live) { throw 'app exited during startup' }
+          Start-Sleep -Seconds 55
+          $live = Get-Process -Id $proc.Id -ErrorAction SilentlyContinue
+          if (-not $live) { throw 'app exited during startup (second check)' }
           $ws = [math]::Round($live.WorkingSet64 / 1MB, 1)
-          Write-Host "Running: pid=$($proc.Id) workingSet=${ws}MiB mainWindow=$($live.MainWindowHandle) title='$($live.MainWindowTitle)'"
+          Write-Host "Running: pid=$($proc.Id) session=$($live.SessionId) ws=${ws}MiB mainWindow=$($live.MainWindowHandle) title='$($live.MainWindowTitle)'"
+          Write-Host ("PowerShell session=" + (Get-Process -Id $PID).SessionId)
+          Get-ChildItem -Path (Split-Path $exe) | Select-Object -ExpandProperty Name | Out-String | Write-Host
           $children = Get-CimInstance Win32_Process -Filter "ParentProcessId=$($proc.Id)" | Select-Object ProcessId, Name
           Write-Host ("Children: " + (($children | ForEach-Object { "$($_.Name)#$($_.ProcessId)" }) -join ', '))
           $runtimeDirs = Get-ChildItem 'C:\Program Files (x86)\Microsoft\EdgeWebView\Application' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name
@@ -179,6 +184,7 @@ jobs:
             $webview | Select-Object ProcessName, Id, WorkingSet64 | Format-Table | Out-String | Write-Host
           } else {
             Write-Warning 'WebView2 processes not found (runtime/session issue?)'
+            Get-WinEvent -FilterHashtable @{LogName='Application'; StartTime=(Get-Date).AddMinutes(-5)} -ErrorAction SilentlyContinue | Where-Object { $_.Message -like '*astella*' } | Select-Object -First 3 | Format-List | Out-String | Write-Host
           }
           Stop-Process -Id $proc.Id -Force
           Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -like '*msedgewebview2*' } | Stop-Process -Force
