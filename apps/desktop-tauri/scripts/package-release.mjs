@@ -48,7 +48,9 @@ const isWindows = process.env.ASTELLA_PACKAGE_PLATFORM === "windows" || process.
 function run(command, args, options = {}) {
   console.log(`$ ${command} ${args.join(" ")}`);
   if (dryRun) return;
-  execFileSync(command, args, { stdio: "inherit", cwd: appRoot, ...options });
+  // Windows 上 npm/npx 是 .cmd，必须经 shell 启动。
+  const shell = process.platform === "win32" && (command === "npm" || command === "npx");
+  execFileSync(command, args, { stdio: "inherit", cwd: appRoot, shell, ...options });
 }
 
 // 1. 渲染层产物（out/renderer 是 Tauri 的 frontendDist）。
@@ -65,7 +67,12 @@ if (deployment && isWindows) {
     mkdirSync(resourceDir, { recursive: true });
     copyFileSync(deployment, join(resourceDir, "deployment.json"));
   }
-  bundleConfig = JSON.stringify({ bundle: { resources: { "resources/deployment.json": "deployment.json" } } });
+  const configPath = join(appRoot, "target", "tauri-bundle-config.json");
+  if (!dryRun) {
+    mkdirSync(join(appRoot, "target"), { recursive: true });
+    writeFileSync(configPath, JSON.stringify({ bundle: { resources: { "resources/deployment.json": "deployment.json" } } }));
+  }
+  bundleConfig = configPath;
 }
 if (!flag("skip-bundle")) {
   const featureArgs = features ? ["--features", features] : [];
