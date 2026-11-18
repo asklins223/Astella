@@ -203,6 +203,24 @@ jobs:
           } catch { Write-Warning "screenshot failed: $_" }
           Stop-Process -Id $proc.Id -Force
           Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -like '*msedgewebview2*' } | Stop-Process -Force
+          $pdf = Join-Path $env:TEMP 'astella-smoke.pdf'
+          Remove-Item $pdf -ErrorAction SilentlyContinue
+          $env:ASTELLA_PDF_REHEARSAL = $pdf
+          $pdfProc = Start-Process -FilePath $exe -PassThru -WorkingDirectory (Split-Path $exe)
+          Wait-Process -Id $pdfProc.Id -Timeout 90 -ErrorAction SilentlyContinue
+          Remove-Item Env:ASTELLA_PDF_REHEARSAL
+          Start-Sleep -Seconds 3
+          if (Test-Path $pdf) {
+            $bytes = [IO.File]::ReadAllBytes($pdf)
+            $head = [Text.Encoding]::ASCII.GetString($bytes[0..4])
+            if ($head -like '%PDF*' -and $bytes.Length -gt 1000) {
+              Write-Host "PDF export OK ($($bytes.Length) bytes, head=$head)"
+            } else {
+              Write-Warning "PDF head unexpected: $head ($($bytes.Length) bytes)"
+            }
+          } else {
+            Write-Warning 'PDF export file missing'
+          }
           $uninstall = Join-Path $env:LOCALAPPDATA 'Astella\uninstall.exe'
           if (Test-Path $uninstall) { Start-Process -FilePath $uninstall -ArgumentList '/S' -Wait }
       - name: Upload artifacts
