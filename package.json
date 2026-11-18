@@ -10,7 +10,7 @@
   },
   "devDependencies": {
     "c8": "^12.0.0",
-    "js-yaml": "^5.2.1"
+    "js-yaml": "^5.5.0"
   },
   "license": "PolyForm-Noncommercial-1.0.0"
 }
