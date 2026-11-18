@@ -46,7 +46,7 @@ jobs:
       from_tag: ${{ steps.resolve.outputs.from_tag }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -148,7 +148,7 @@ jobs:
           test "$WINDOWS_SIGNED" = true || { echo '::error::Windows release is not signed and verified'; exit 1; }
           test "$MACOS_SIGNED" = true || { echo '::error::macOS release is not Developer ID signed and verified'; exit 1; }
           test "$MACOS_NOTARIZED" = true || { echo '::error::macOS release has no verified notarization ticket'; exit 1; }
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
