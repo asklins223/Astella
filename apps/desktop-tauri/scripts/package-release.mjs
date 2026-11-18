@@ -50,7 +50,17 @@ function run(command, args, options = {}) {
   if (dryRun) return;
   // Windows 上 npm/npx 是 .cmd，必须经 shell 启动。
   const shell = process.platform === "win32" && (command === "npm" || command === "npx");
-  execFileSync(command, args, { stdio: "inherit", cwd: appRoot, shell, ...options });
+  const attempts = command === "npx" ? 2 : 1; // npx 的 optional native binding 偶发缺失，重试一次
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      execFileSync(command, args, { stdio: "inherit", cwd: appRoot, shell, ...options });
+      return;
+    } catch (error) {
+      if (attempt >= attempts) throw error;
+      console.warn(`retrying ${command} after failure (attempt ${attempt + 1}/${attempts})`);
+      execFileSync("npm", ["cache", "clean", "--force"], { stdio: "ignore", cwd: appRoot, shell });
+    }
+  }
 }
 
 // 1. 渲染层产物（out/renderer 是 Tauri 的 frontendDist）。
